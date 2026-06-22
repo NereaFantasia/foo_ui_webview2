@@ -1,0 +1,81 @@
+# ============================================================
+# foo_ui_webview2 .gitignore
+# ============================================================
+
+# ------ Build output ------
+bin/
+obj/
+Debug/
+Release/
+x64/
+x86/
+Win32/
+dist/
+*.fb2k-component
+
+# ------ MSVC build intermediates ------
+*.iobj
+*.ipdb
+*.pch
+*.pdb
+*.idb
+*.ilk
+*.recipe
+*.lastbuildstate
+*.FileListAbsolute.txt
+*.tlog/
+pch.i
+*.obj
+*.lib
+# foobar2000 SDK prebuilt shared libraries are intentionally tracked
+!lib/foobar2000_sdk/foobar2000/shared/*.lib
+
+# ------ Visual Studio ------
+.vs/
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+*.VC.db
+*.VC.VC.opendb
+*.cache
+compile_commands.json
+
+# ------ NuGet ------
+packages/
+*.nupkg
+nuget.exe
+
+# ------ Node (SDK build) ------
+node_modules/
+sdk/node_modules/
+sdk/dist/
+sdk/.tsup/
+sdk/*.tgz
+
+# ------ VitePress docs site ------
+docs/vitepress/.vitepress/cache/
+docs/vitepress/dist/
+
+# ------ Logs ------
+*.log
+build_log*.txt
+
+# ------ Test output ------
+test-results*.xml
+test_results*.xml
+test_output*.txt
+test-output*.txt
+
+# ------ WebView2 user data ------
+AppData/
+WebView2/
+
+# ------ OS files ------
+Thumbs.db
+.DS_Store
+
+# ------ Temporary files ------
+*.tmp
+*.temp
+~$*

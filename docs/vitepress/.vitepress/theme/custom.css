@@ -1,0 +1,471 @@
+/**
+ * VitePress 自定义样式 - 深色模式优化
+ * foo_ui_webview2 文档
+ * 主题色：青色/蓝绿色系
+ */
+
+/* ============================================
+   深色模式主题色优化 - 青色系
+   ============================================ */
+
+:root {
+  /* 浅色模式主题色 - 保持蓝色 */
+  --vp-c-brand-1: #0ea5e9;
+  --vp-c-brand-2: #38bdf8;
+  --vp-c-brand-3: #7dd3fc;
+  --vp-c-brand-soft: rgba(14, 165, 233, 0.14);
+
+  /* 代码块背景 */
+  --vp-code-block-bg: #f6f8fa;
+  --vp-code-bg: #f6f8fa;
+}
+
+.dark {
+  /* 深色模式主题色 - 青色/蓝绿色系 */
+  --vp-c-brand-1: #06b6d4; /* 主要青色 */
+  --vp-c-brand-2: #22d3ee; /* 亮青色 */
+  --vp-c-brand-3: #67e8f9; /* 浅青色 */
+  --vp-c-brand-soft: rgba(6, 182, 212, 0.16);
+
+  /* 背景色 - 更深的背景提升对比度 */
+  --vp-c-bg: #0d1117;
+  --vp-c-bg-alt: #161b22;
+  --vp-c-bg-elv: #1c2128;
+  --vp-c-bg-soft: #21262d;
+
+  /* 文字颜色 - 提升可读性 */
+  --vp-c-text-1: #e6edf3;
+  --vp-c-text-2: #c9d1d9;
+  --vp-c-text-3: #8b949e;
+
+  /* 边框颜色 */
+  --vp-c-border: #30363d;
+  --vp-c-divider: #21262d;
+  --vp-c-gutter: #161b22;
+
+  /* 代码块背景 - 更深的背景 */
+  --vp-code-block-bg: #161b22;
+  --vp-code-bg: #21262d;
+
+  /* 侧边栏背景 */
+  --vp-sidebar-bg-color: #0d1117;
+
+  /* 导航栏背景 */
+  --vp-nav-bg-color: #0d1117;
+}
+
+/* ============================================
+   代码块样式优化
+   ============================================ */
+
+.dark .vp-code-group .tabs {
+  background-color: #161b22;
+  border-bottom: 1px solid #30363d;
+}
+
+.dark .vp-code-group .tabs label {
+  color: #8b949e;
+}
+
+.dark .vp-code-group .tabs label.active {
+  color: #e6edf3;
+  border-bottom-color: #06b6d4;
+}
+
+.dark div[class*='language-'] {
+  background-color: #161b22;
+  border: 1px solid #30363d;
+  border-radius: 8px;
+}
+
+.dark div[class*='language-'] code {
+  color: #e6edf3;
+}
+
+.dark div[class*='language-'] .line {
+  color: #e6edf3;
+}
+
+.dark div[class*='language-'] .line-number {
+  color: #6e7681;
+}
+
+/* 行内代码 */
+.dark :not(pre) > code {
+  background-color: #21262d;
+  color: #79c0ff;
+  border: 1px solid #30363d;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 0.9em;
+}
+
+/* ============================================
+   表格样式优化
+   ============================================ */
+
+/* VitePress 默认把 <table> 设为 display:block（为窄屏横向滚动），
+   块级盒子撑满内容区而内部表格行收缩到内容宽度——配合下方的整框
+   边框就会出现"边框满格、单元格不满"的空尾巴。桌面端改回真正的
+   table 布局并撑满；窄屏维持默认 display:block 保留横向滚动。 */
+@media (min-width: 768px) {
+  .vp-doc table {
+    display: table;
+    width: 100%;
+  }
+}
+
+.dark table {
+  border-collapse: collapse;
+  border: 1px solid #30363d;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.dark th {
+  background-color: #161b22;
+  color: #e6edf3;
+  font-weight: 600;
+  border-bottom: 2px solid #30363d;
+}
+
+.dark td {
+  border-bottom: 1px solid #21262d;
+  color: #c9d1d9;
+}
+
+.dark tr:hover {
+  background-color: #21262d;
+}
+
+/* ============================================
+   提示框样式优化
+   ============================================ */
+
+.dark .tip,
+.dark .info {
+  background-color: rgba(56, 139, 253, 0.1);
+  border-color: #388bfd;
+}
+
+.dark .tip .custom-block-title,
+.dark .info .custom-block-title {
+  color: #79c0ff;
+}
+
+.dark .warning {
+  background-color: rgba(187, 128, 9, 0.1);
+  border-color: #bb8009;
+}
+
+.dark .warning .custom-block-title {
+  color: #d29922;
+}
+
+.dark .danger {
+  background-color: rgba(248, 81, 73, 0.1);
+  border-color: #f85149;
+}
+
+.dark .danger .custom-block-title {
+  color: #ff7b72;
+}
+
+/* ============================================
+   侧边栏样式优化
+   ============================================ */
+
+.dark .VPSidebar {
+  background-color: #0d1117;
+  border-right: 1px solid #30363d;
+}
+
+.dark .VPSidebarItem.level-0 .text {
+  font-weight: 600;
+  color: #e6edf3;
+}
+
+.dark .VPSidebarItem.is-active > .item > .link > .text {
+  color: #06b6d4;
+}
+
+.dark .VPSidebarItem:hover > .item > .link {
+  background-color: #161b22;
+}
+
+/* ============================================
+   导航栏样式优化
+   ============================================ */
+
+.dark .VPNav {
+  background-color: #0d1117;
+  border-bottom: 1px solid #30363d;
+}
+
+.dark .VPNavBar {
+  background-color: #0d1117;
+}
+
+.dark .VPNavBarTitle .title {
+  color: #e6edf3;
+  font-weight: 600;
+}
+
+.dark .VPNavBarMenu .VPLink {
+  color: #c9d1d9;
+}
+
+.dark .VPNavBarMenu .VPLink:hover {
+  color: #06b6d4;
+}
+
+/* ============================================
+   搜索框样式优化
+   ============================================ */
+
+.dark .DocSearch-Button {
+  background-color: #161b22;
+  border: 1px solid #30363d;
+}
+
+.dark .DocSearch-Button:hover {
+  background-color: #21262d;
+  border-color: #06b6d4;
+}
+
+.dark .DocSearch-Button-Placeholder {
+  color: #8b949e;
+}
+
+/* ============================================
+   链接样式优化
+   ============================================ */
+
+.dark a {
+  color: #06b6d4;
+  text-decoration: none;
+}
+
+.dark a:hover {
+  color: #22d3ee;
+  text-decoration: underline;
+}
+
+.dark .vp-doc a {
+  color: #06b6d4;
+  font-weight: 500;
+}
+
+.dark .vp-doc a:hover {
+  color: #22d3ee;
+}
+
+/* ============================================
+   标题样式优化
+   ============================================ */
+
+.dark h1,
+.dark h2,
+.dark h3,
+.dark h4,
+.dark h5,
+.dark h6 {
+  color: #e6edf3;
+  font-weight: 600;
+}
+
+.dark h1 {
+  border-bottom: 1px solid #30363d;
+  padding-bottom: 0.3em;
+}
+
+.dark h2 {
+  border-bottom: 1px solid #21262d;
+  padding-bottom: 0.3em;
+}
+
+/* ============================================
+   引用块样式优化
+   ============================================ */
+
+.dark blockquote {
+  border-left: 4px solid #30363d;
+  background-color: #161b22;
+  color: #8b949e;
+  padding: 12px 16px;
+  margin: 16px 0;
+  border-radius: 4px;
+}
+
+/* ============================================
+   分隔线样式优化
+   ============================================ */
+
+.dark hr {
+  border-color: #30363d;
+  margin: 24px 0;
+}
+
+/* ============================================
+   徽章样式优化
+   ============================================ */
+
+.dark .VPBadge {
+  background-color: #21262d;
+  border: 1px solid #30363d;
+  color: #c9d1d9;
+}
+
+.dark .VPBadge.tip {
+  background-color: rgba(56, 139, 253, 0.15);
+  border-color: #388bfd;
+  color: #79c0ff;
+}
+
+.dark .VPBadge.warning {
+  background-color: rgba(187, 128, 9, 0.15);
+  border-color: #bb8009;
+  color: #d29922;
+}
+
+.dark .VPBadge.danger {
+  background-color: rgba(248, 81, 73, 0.15);
+  border-color: #f85149;
+  color: #ff7b72;
+}
+
+/* ============================================
+   页脚样式优化
+   ============================================ */
+
+.dark .VPDocFooter {
+  border-top: 1px solid #30363d;
+}
+
+.dark .VPDocFooter .prev-link,
+.dark .VPDocFooter .next-link {
+  background-color: #161b22;
+  border: 1px solid #30363d;
+}
+
+.dark .VPDocFooter .prev-link:hover,
+.dark .VPDocFooter .next-link:hover {
+  background-color: #21262d;
+  border-color: #06b6d4;
+}
+
+/* ============================================
+   目录样式优化
+   ============================================ */
+
+.dark .VPDocAsideOutline {
+  background-color: #0d1117;
+}
+
+.dark .VPDocAsideOutline .outline-link {
+  color: #8b949e;
+}
+
+.dark .VPDocAsideOutline .outline-link:hover {
+  color: #c9d1d9;
+}
+
+.dark .VPDocAsideOutline .outline-link.active {
+  color: #06b6d4;
+  font-weight: 600;
+}
+
+/* ============================================
+   滚动条样式优化
+   ============================================ */
+
+.dark ::-webkit-scrollbar {
+  width: 12px;
+  height: 12px;
+}
+
+.dark ::-webkit-scrollbar-track {
+  background-color: #0d1117;
+}
+
+.dark ::-webkit-scrollbar-thumb {
+  background-color: #30363d;
+  border-radius: 6px;
+  border: 2px solid #0d1117;
+}
+
+.dark ::-webkit-scrollbar-thumb:hover {
+  background-color: #484f58;
+}
+
+/* ============================================
+   响应式优化
+   ============================================ */
+
+@media (max-width: 768px) {
+  .dark .VPNav {
+    background-color: #0d1117;
+  }
+
+  .dark .VPSidebar {
+    background-color: #0d1117;
+  }
+}
+
+/* ============================================
+   代码高亮优化 (GitHub Dark 主题)
+   ============================================ */
+
+.dark .shiki,
+.dark .shiki span {
+  color: var(--shiki-dark, inherit);
+  background-color: transparent;
+}
+
+/* 关键字 */
+.dark .shiki .token.keyword {
+  color: #ff7b72;
+}
+
+/* 字符串 */
+.dark .shiki .token.string {
+  color: #a5d6ff;
+}
+
+/* 注释 */
+.dark .shiki .token.comment {
+  color: #8b949e;
+  font-style: italic;
+}
+
+/* 函数 */
+.dark .shiki .token.function {
+  color: #d2a8ff;
+}
+
+/* 数字 */
+.dark .shiki .token.number {
+  color: #79c0ff;
+}
+
+/* 变量 */
+.dark .shiki .token.variable {
+  color: #ffa657;
+}
+
+/* ============================================
+   打印样式优化
+   ============================================ */
+
+@media print {
+  .dark {
+    --vp-c-bg: #ffffff;
+    --vp-c-text-1: #000000;
+  }
+
+  .dark .VPNav,
+  .dark .VPSidebar,
+  .dark .VPDocAsideOutline {
+    display: none;
+  }
+}

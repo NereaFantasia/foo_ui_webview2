@@ -1,0 +1,90 @@
+name: CodeQL
+
+# Security / data-flow (taint) scanning for the C++ component and the
+# TypeScript/JavaScript surface (SDK + MCP). Complements, does not overlap:
+#   - GoogleTest  -> runtime unit tests
+#   - clang-tidy  -> C++ lint
+#   - SonarQube   -> on-demand local health / hotspots
+# CodeQL adds cross-procedural source -> sink taint analysis with GitHub-native
+# alerts (Security tab + PR annotations). Free for public repositories.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    # Weekly re-scan so new CodeQL query packs catch latent issues.
+    - cron: '23 5 * * 1'
+
+concurrency:
+  group: codeql-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  analyze:
+    name: "CodeQL (${{ matrix.language }})"
+    runs-on: ${{ matrix.os }}
+    permissions:
+      security-events: write
+      contents: read
+      actions: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Compiled language: requires a real build (manual build-mode).
+          - language: c-cpp
+            build-mode: manual
+            os: windows-latest
+          # Interpreted languages: no build needed.
+          - language: javascript-typescript
+            build-mode: none
+            os: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v3
+        with:
+          languages: ${{ matrix.language }}
+          build-mode: ${{ matrix.build-mode }}
+          # paths-ignore applies to interpreted languages only (ignored for C++):
+          # keep generated/bundled output out of the JS/TS analysis.
+          config: |
+            paths-ignore:
+              - '**/dist/**'
+              - '**/generated/**'
+              - '**/node_modules/**'
+              - '**/*.min.js'
+
+      # ---- C++ manual build (c-cpp job only); mirrors the ci.yml build job ----
+      - name: Clone columns_ui-sdk
+        if: matrix.language == 'c-cpp'
+        shell: pwsh
+        run: |
+          git clone --depth=1 https://github.com/reupen/columns_ui-sdk.git lib/columns_ui-sdk
+          (Get-Content lib/columns_ui-sdk/ui_extension.h) `
+            -replace '\.\./pfc/', '../foobar2000_sdk/pfc/' `
+            -replace '\.\./foobar2000/', '../foobar2000_sdk/foobar2000/' |
+            Set-Content lib/columns_ui-sdk/ui_extension.h
+
+      - name: Setup MSBuild
+        if: matrix.language == 'c-cpp'
+        uses: microsoft/setup-msbuild@v3
+
+      - name: Restore NuGet packages
+        if: matrix.language == 'c-cpp'
+        shell: pwsh
+        run: nuget restore foo_ui_webview2.sln
+
+      - name: Build (Release x64)
+        if: matrix.language == 'c-cpp'
+        shell: pwsh
+        run: .\build.ps1 -Config Release -Platform x64 -PlatformToolset v143
+
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@v3
+        with:
+          category: "/language:${{ matrix.language }}"

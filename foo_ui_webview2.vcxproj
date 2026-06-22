@@ -1,0 +1,382 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  
+  <ItemGroup Label="ProjectConfigurations">
+    <ProjectConfiguration Include="Debug|Win32">
+      <Configuration>Debug</Configuration>
+      <Platform>Win32</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Release|Win32">
+      <Configuration>Release</Configuration>
+      <Platform>Win32</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Debug|x64">
+      <Configuration>Debug</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Release|x64">
+      <Configuration>Release</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+  </ItemGroup>
+
+  <PropertyGroup Label="Globals">
+    <VCProjectVersion>17.0</VCProjectVersion>
+    <ProjectGuid>{7B8E4A3C-2F1D-4E5A-9C8B-0D3F6E7A2B1C}</ProjectGuid>
+    <RootNamespace>foo_ui_webview2</RootNamespace>
+    <WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion>
+    <Keyword>Win32Proj</Keyword>
+  </PropertyGroup>
+
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
+
+  <!-- 配置类型：DLL -->
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'" Label="Configuration">
+    <ConfigurationType>DynamicLibrary</ConfigurationType>
+    <UseDebugLibraries>true</UseDebugLibraries>
+    <PlatformToolset>v145</PlatformToolset>
+    <CharacterSet>Unicode</CharacterSet>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'" Label="Configuration">
+    <ConfigurationType>DynamicLibrary</ConfigurationType>
+    <UseDebugLibraries>false</UseDebugLibraries>
+    <PlatformToolset>v145</PlatformToolset>
+    <CharacterSet>Unicode</CharacterSet>
+    <WholeProgramOptimization>true</WholeProgramOptimization>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'" Label="Configuration">
+    <ConfigurationType>DynamicLibrary</ConfigurationType>
+    <UseDebugLibraries>true</UseDebugLibraries>
+    <PlatformToolset>v145</PlatformToolset>
+    <CharacterSet>Unicode</CharacterSet>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'" Label="Configuration">
+    <ConfigurationType>DynamicLibrary</ConfigurationType>
+    <UseDebugLibraries>false</UseDebugLibraries>
+    <PlatformToolset>v145</PlatformToolset>
+    <CharacterSet>Unicode</CharacterSet>
+    <!-- LTCG disabled: MSVC C1001 ICE in nlohmann/json.hpp during LTCG pass (v145 compiler bug) -->
+    <WholeProgramOptimization>false</WholeProgramOptimization>
+  </PropertyGroup>
+
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
+  
+  <ImportGroup Label="ExtensionSettings">
+  </ImportGroup>
+  
+  <ImportGroup Label="Shared">
+  </ImportGroup>
+  
+  <ImportGroup Label="PropertySheets">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+  </ImportGroup>
+
+  <PropertyGroup Label="UserMacros" />
+
+  <!-- 输出目录 -->
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
+    <OutDir>$(SolutionDir)bin\$(Configuration)\</OutDir>
+    <IntDir>$(SolutionDir)obj\$(ProjectName)\$(Configuration)\</IntDir>
+    <TargetName>foo_ui_webview2</TargetName>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
+    <OutDir>$(SolutionDir)bin\$(Configuration)\</OutDir>
+    <IntDir>$(SolutionDir)obj\$(ProjectName)\$(Configuration)\</IntDir>
+    <TargetName>foo_ui_webview2</TargetName>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
+    <OutDir>$(SolutionDir)bin\$(Configuration)_x64\</OutDir>
+    <IntDir>$(SolutionDir)obj\$(ProjectName)\$(Configuration)_x64\</IntDir>
+    <TargetName>foo_ui_webview2</TargetName>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
+    <OutDir>$(SolutionDir)bin\$(Configuration)_x64\</OutDir>
+    <IntDir>$(SolutionDir)obj\$(ProjectName)\$(Configuration)_x64\</IntDir>
+    <TargetName>foo_ui_webview2</TargetName>
+  </PropertyGroup>
+
+  <!-- 通用编译设置 -->
+  <ItemDefinitionGroup>
+    <ClCompile>
+      <WarningLevel>Level3</WarningLevel>
+      <SDLCheck>true</SDLCheck>
+      <ConformanceMode>true</ConformanceMode>
+      <LanguageStandard>stdcpp20</LanguageStandard>
+      <PreprocessorDefinitions>
+        WIN32;
+        _WINDOWS;
+        _USRDLL;
+        FOOBAR2000_TARGET_VERSION=82;
+        FOO_UI_WEBVIEW2_EXPORTS;
+        %(PreprocessorDefinitions)
+      </PreprocessorDefinitions>
+      <AdditionalIncludeDirectories>
+        $(ProjectDir)src;
+        $(ProjectDir)lib\foobar2000_sdk;
+        $(ProjectDir)lib\columns_ui-sdk;
+        $(ProjectDir)lib\json\include;
+        %(AdditionalIncludeDirectories)
+      </AdditionalIncludeDirectories>
+      <PrecompiledHeader>Use</PrecompiledHeader>
+      <PrecompiledHeaderFile>pch.h</PrecompiledHeaderFile>
+      <MultiProcessorCompilation>true</MultiProcessorCompilation>
+      <AdditionalOptions>/utf-8 %(AdditionalOptions)</AdditionalOptions>
+    </ClCompile>
+    
+    <Link>
+      <SubSystem>Windows</SubSystem>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
+      <AdditionalDependencies>
+        dwmapi.lib;
+        Comctl32.lib;
+        Shlwapi.lib;
+        %(AdditionalDependencies)
+      </AdditionalDependencies>
+      <AdditionalLibraryDirectories>
+        $(ProjectDir)lib\foobar2000_sdk\foobar2000\shared;
+        %(AdditionalLibraryDirectories)
+      </AdditionalLibraryDirectories>
+    </Link>
+  </ItemDefinitionGroup>
+
+  <!-- Win32 特定链接设置 -->
+  <ItemDefinitionGroup Condition="'$(Platform)'=='Win32'">
+    <Link>
+      <AdditionalDependencies>shared-Win32.lib;%(AdditionalDependencies)</AdditionalDependencies>
+    </Link>
+  </ItemDefinitionGroup>
+  
+  <!-- x64 特定链接设置 -->
+  <ItemDefinitionGroup Condition="'$(Platform)'=='x64'">
+    <Link>
+      <AdditionalDependencies>shared-x64.lib;%(AdditionalDependencies)</AdditionalDependencies>
+    </Link>
+  </ItemDefinitionGroup>
+
+  <!-- Debug 特定设置 -->
+  <ItemDefinitionGroup Condition="'$(Configuration)'=='Debug'">
+    <ClCompile>
+      <Optimization>Disabled</Optimization>
+      <PreprocessorDefinitions>_DEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <RuntimeLibrary>MultiThreadedDebugDLL</RuntimeLibrary>
+    </ClCompile>
+  </ItemDefinitionGroup>
+
+  <!-- Release 特定设置 -->
+  <ItemDefinitionGroup Condition="'$(Configuration)'=='Release'">
+    <ClCompile>
+      <Optimization>MaxSpeed</Optimization>
+      <FunctionLevelLinking>true</FunctionLevelLinking>
+      <IntrinsicFunctions>true</IntrinsicFunctions>
+      <PreprocessorDefinitions>NDEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <RuntimeLibrary>MultiThreadedDLL</RuntimeLibrary>
+    </ClCompile>
+    <Link>
+      <EnableCOMDATFolding>true</EnableCOMDATFolding>
+      <OptimizeReferences>true</OptimizeReferences>
+    </Link>
+  </ItemDefinitionGroup>
+
+  <!-- 源文件 -->
+  <ItemGroup>
+    <ClCompile Include="src\pch.cpp">
+      <PrecompiledHeader>Create</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="src\main.cpp" />
+    <ClCompile Include="src\core\UserInterface.cpp" />
+    <ClCompile Include="src\core\PreferencesPage.cpp" />
+    <ClCompile Include="src\core\QueueManager.cpp" />
+    <ClCompile Include="src\core\LibraryCache.cpp" />
+    <ClCompile Include="src\core\LibraryTreeIndex.cpp" />
+    <ClCompile Include="src\core\BackgroundService.cpp" />
+    <ClCompile Include="src\core\WebViewContext.cpp" />
+    <ClCompile Include="src\core\WebViewPanel.cpp" />
+    <ClCompile Include="src\window\MainWindow.cpp">
+      <WholeProgramOptimization>false</WholeProgramOptimization>
+    </ClCompile>
+    <ClCompile Include="src\window\MainWindowDwm.cpp" />
+    <ClCompile Include="src\window\MainWindowMenu.cpp" />
+    <ClCompile Include="src\window\PopupWindow.cpp" />
+    <ClCompile Include="src\window\MenuOverlayHost.cpp" />
+    <ClCompile Include="src\window\StartupPresentationCoordinator.cpp" />
+    <ClCompile Include="src\window\WindowChromeResolver.cpp" />
+    <ClCompile Include="src\window\WindowChromeApplier.cpp" />
+    <ClCompile Include="src\window\WindowShellBase.cpp" />
+    <ClCompile Include="src\window\ChromeController.cpp" />
+    <ClCompile Include="src\window\WindowTargetResolver.cpp" />
+    <ClCompile Include="src\window\WindowManager.cpp" />
+    <ClCompile Include="src\webview\WebViewHost.cpp" />
+    <ClCompile Include="src\webview\WebViewEnvironment.cpp" />
+    <ClCompile Include="src\api\BridgeCore.cpp" />
+    <ClCompile Include="src\api\CallerContext.cpp" />
+    <ClCompile Include="src\api\PlaybackApi.cpp" />
+    <ClCompile Include="src\api\ConfigApi.cpp" />
+    <ClCompile Include="src\api\PlaylistApi.cpp" />
+    <ClCompile Include="src\api\LibraryApi.cpp" />
+    <ClCompile Include="src\api\WindowApi.cpp" />
+    <ClCompile Include="src\api\ArtworkApi.cpp" />
+    <ClCompile Include="src\utils\ImageUtils.cpp" />
+    <ClCompile Include="src\utils\PathExpansion.cpp" />
+    <ClCompile Include="src\api\PluginRegistry.cpp" />
+    <ClCompile Include="src\api\FileApi.cpp" />
+    <ClCompile Include="src\api\DialogApi.cpp" />
+    <ClCompile Include="src\api\ClipboardApi.cpp" />
+    <ClCompile Include="src\api\ShellApi.cpp" />
+    <ClCompile Include="src\api\HttpApi.cpp" />
+    <ClCompile Include="src\api\KeyboardApi.cpp" />
+    <ClCompile Include="src\api\UiApi.cpp" />
+    <ClCompile Include="src\api\CursorApi.cpp" />
+    <ClCompile Include="src\api\LyricsApi.cpp" />
+    <ClCompile Include="src\api\MetadataApi.cpp">
+      <WholeProgramOptimization>false</WholeProgramOptimization>
+    </ClCompile>
+    <ClCompile Include="src\api\AudioApi.cpp" />
+    <ClCompile Include="src\api\ConsoleApi.cpp" />
+    <ClCompile Include="src\api\MiscApi.cpp" />
+    <ClCompile Include="src\api\MenuApi.cpp" />
+    <ClCompile Include="src\api\DndApi.cpp" />
+    <ClCompile Include="src\api\QueueApi.cpp" />
+    <ClCompile Include="src\api\DiscoveryApi.cpp" />
+    <ClCompile Include="src\api\ReplayGainApi.cpp" />
+    <ClCompile Include="src\api\PlaycountApi.cpp" />
+    <ClCompile Include="src\api\TitleformatApi.cpp" />
+    <ClCompile Include="src\api\SelectionApi.cpp" />
+    <ClCompile Include="src\api\TrayApi.cpp" />
+    <ClCompile Include="src\api\TaskbarApi.cpp" />
+    <ClCompile Include="src\utils\IconLoader.cpp" />
+    <ClCompile Include="src\window\TrayIcon.cpp" />
+    <ClCompile Include="src\window\TaskbarIntegration.cpp" />
+    <ClCompile Include="src\api\PortHub.cpp" />
+    <ClCompile Include="src\api\PortApi.cpp" />
+    <ClCompile Include="src\callbacks\PlaybackCallback.cpp" />
+    <ClCompile Include="src\callbacks\QueueCallback.cpp" />
+    <ClCompile Include="src\callbacks\DspCallback.cpp" />
+    <ClCompile Include="src\callbacks\ConfigCallback.cpp" />
+    <ClCompile Include="src\callbacks\AudioConfigCallback.cpp" />
+    <ClCompile Include="src\callbacks\PlaybackStatsCallback.cpp" />
+    <ClCompile Include="src\callbacks\PlaylistCallback.cpp" />
+    <ClCompile Include="src\callbacks\LibraryCallback.cpp" />
+    <ClCompile Include="src\callbacks\MetadbCallback.cpp" />
+    <ClCompile Include="src\panels\PanelConfig.cpp" />
+    <ClCompile Include="src\panels\PanelConfigDialog.cpp" />
+    <ClCompile Include="src\panels\WebViewDuiElement.cpp" />
+    <ClCompile Include="src\panels\WebViewCuiPanel.cpp" />
+    <ClCompile Include="src\selection\SelectionWatcher.cpp" />
+    <ClCompile Include="src\selection\SelectionHolder.cpp" />
+    <ClCompile Include="lib\columns_ui-sdk\ui_extension.cpp">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+    </ClCompile>
+  </ItemGroup>
+
+  <!-- 头文件 -->
+  <ItemGroup>
+    <ClInclude Include="src\pch.h" />
+    <ClInclude Include="src\core\UserInterface.h" />
+    <ClInclude Include="src\core\PreferencesPage.h" />
+    <ClInclude Include="src\core\QueueManager.h" />
+    <ClInclude Include="src\core\LibraryCache.h" />
+    <ClInclude Include="src\core\LibraryTreeIndex.h" />
+    <ClInclude Include="src\core\BackgroundService.h" />
+    <ClInclude Include="src\core\WebViewContext.h" />
+    <ClInclude Include="src\core\WebViewPanel.h" />
+    <ClInclude Include="src\window\MainWindow.h" />
+    <ClInclude Include="src\window\MainWindowInternal.h" />
+    <ClInclude Include="src\window\PopupWindow.h" />
+    <ClInclude Include="src\window\MenuOverlayHost.h" />
+    <ClInclude Include="src\window\StartupPresentationCoordinator.h" />
+    <ClInclude Include="src\window\TaskbarTrayContracts.h" />
+    <ClInclude Include="src\window\WindowChromeState.h" />
+    <ClInclude Include="src\window\WindowChromeResolver.h" />
+    <ClInclude Include="src\window\WindowChromeApplier.h" />
+    <ClInclude Include="src\window\WindowShellBase.h" />
+    <ClInclude Include="src\window\ChromeController.h" />
+    <ClInclude Include="src\window\WindowTargetResolver.h" />
+    <ClInclude Include="src\window\WindowManager.h" />
+    <ClInclude Include="src\webview\WebViewHost.h" />
+    <ClInclude Include="src\webview\WebViewEnvironment.h" />
+    <ClInclude Include="src\api\BridgeCore.h" />
+    <ClInclude Include="src\api\CallerContext.h" />
+    <ClInclude Include="src\api\ErrorEnvelope.h" />
+    <ClInclude Include="src\api\PlaybackApi.h" />
+    <ClInclude Include="src\interfaces\IPlaybackService.h" />
+    <ClInclude Include="src\interfaces\Fb2kPlaybackService.h" />
+    <ClInclude Include="src\api\ConfigApi.h" />
+    <ClInclude Include="src\api\PlaylistApi.h" />
+    <ClInclude Include="src\api\LibraryApi.h" />
+    <ClInclude Include="src\api\WindowApi.h" />
+    <ClInclude Include="src\api\ArtworkApi.h" />
+    <ClInclude Include="src\api\PluginRegistry.h" />
+    <ClInclude Include="src\api\FileApi.h" />
+    <ClInclude Include="src\api\DialogApi.h" />
+    <ClInclude Include="src\api\ClipboardApi.h" />
+    <ClInclude Include="src\api\ShellApi.h" />
+    <ClInclude Include="src\api\HttpApi.h" />
+    <ClInclude Include="src\api\KeyboardApi.h" />
+    <ClInclude Include="src\api\UiApi.h" />
+    <ClInclude Include="src\api\CursorApi.h" />
+    <ClInclude Include="src\api\LyricsApi.h" />
+    <ClInclude Include="src\api\MetadataApi.h" />
+    <ClInclude Include="src\api\AudioApi.h" />
+    <ClInclude Include="src\api\ConsoleApi.h" />
+    <ClInclude Include="src\api\MiscApi.h" />
+    <ClInclude Include="src\api\MenuApi.h" />
+    <ClInclude Include="src\api\DndApi.h" />
+    <ClInclude Include="src\api\QueueApi.h" />
+    <ClInclude Include="src\api\DiscoveryApi.h" />
+    <ClInclude Include="src\api\ReplayGainApi.h" />
+    <ClInclude Include="src\api\PlaycountApi.h" />
+    <ClInclude Include="src\api\TitleformatApi.h" />
+    <ClInclude Include="src\api\SelectionApi.h" />
+    <ClInclude Include="src\api\PortHub.h" />
+    <ClInclude Include="src\api\PortApi.h" />
+    <ClInclude Include="src\callbacks\PlaybackCallback.h" />
+    <ClInclude Include="src\callbacks\QueueCallback.h" />
+    <ClInclude Include="src\callbacks\DspCallback.h" />
+    <ClInclude Include="src\callbacks\ConfigCallback.h" />
+    <ClInclude Include="src\callbacks\AudioConfigCallback.h" />
+    <ClInclude Include="src\callbacks\PlaybackStatsCallback.h" />
+    <ClInclude Include="src\callbacks\PlaylistCallback.h" />
+    <ClInclude Include="src\callbacks\LibraryCallback.h" />
+    <ClInclude Include="src\callbacks\MetadbCallback.h" />
+    <ClInclude Include="src\panels\PanelConfig.h" />
+    <ClInclude Include="src\panels\PanelConfigDialog.h" />
+    <ClInclude Include="src\panels\WebViewDuiElement.h" />
+    <ClInclude Include="src\panels\WebViewCuiPanel.h" />
+    <ClInclude Include="src\selection\SelectionWatcher.h" />
+    <ClInclude Include="src\selection\SelectionHolder.h" />
+    <ClInclude Include="src\utils\GuidUtils.h" />
+    <ClInclude Include="src\utils\ImageUtils.h" />
+    <ClInclude Include="src\utils\SubsongUtils.h" />
+    <ClInclude Include="src\utils\PathExpansion.h" />
+    <ClInclude Include="src\utils\WindowUtils.h" />
+  </ItemGroup>
+
+  <!-- foobar2000 SDK 引用 -->
+  <ItemGroup>
+    <ProjectReference Include="lib\foobar2000_sdk\foobar2000\SDK\foobar2000_SDK.vcxproj">
+      <Project>{E8091321-D79D-4575-86EF-064EA1A4A20D}</Project>
+    </ProjectReference>
+    <ProjectReference Include="lib\foobar2000_sdk\foobar2000\foobar2000_component_client\foobar2000_component_client.vcxproj">
+      <Project>{71AD2674-065B-48F5-B8B0-E1F9D3892081}</Project>
+    </ProjectReference>
+    <ProjectReference Include="lib\foobar2000_sdk\pfc\pfc.vcxproj">
+      <Project>{EBFFFB4E-261D-44D3-B89C-4FC076D94B4D}</Project>
+    </ProjectReference>
+  </ItemGroup>
+
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
+  
+  <ImportGroup Label="ExtensionTargets">
+    <Import Project="packages\Microsoft.Web.WebView2.1.0.3719.77\build\native\Microsoft.Web.WebView2.targets" Condition="Exists('packages\Microsoft.Web.WebView2.1.0.3719.77\build\native\Microsoft.Web.WebView2.targets')" />
+    <Import Project="packages\Microsoft.Windows.ImplementationLibrary.1.0.240803.1\build\native\Microsoft.Windows.ImplementationLibrary.targets" Condition="Exists('packages\Microsoft.Windows.ImplementationLibrary.1.0.240803.1\build\native\Microsoft.Windows.ImplementationLibrary.targets')" />
+  </ImportGroup>
+
+  <!-- NuGet 包错误检查 -->
+  <Target Name="EnsureNuGetPackageBuildImports" BeforeTargets="PrepareForBuild">
+    <PropertyGroup>
+      <ErrorText>This project references NuGet package(s) that are missing on this computer. Use NuGet Package Restore to download them.  For more information, see http://go.microsoft.com/fwlink/?LinkID=322105. The missing file is {0}.</ErrorText>
+    </PropertyGroup>
+    <Error Condition="!Exists('packages\Microsoft.Web.WebView2.1.0.3719.77\build\native\Microsoft.Web.WebView2.targets')" Text="$([System.String]::Format('$(ErrorText)', 'packages\Microsoft.Web.WebView2.1.0.3719.77\build\native\Microsoft.Web.WebView2.targets'))" />
+    <Error Condition="!Exists('packages\Microsoft.Windows.ImplementationLibrary.1.0.240803.1\build\native\Microsoft.Windows.ImplementationLibrary.targets')" Text="$([System.String]::Format('$(ErrorText)', 'packages\Microsoft.Windows.ImplementationLibrary.1.0.240803.1\build\native\Microsoft.Windows.ImplementationLibrary.targets'))" />
+  </Target>
+</Project>

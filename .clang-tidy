@@ -1,0 +1,80 @@
+---
+# foo_ui_webview2 clang-tidy config
+# Phase 1: high-confidence checks
+
+Checks: >
+  -*,
+  bugprone-*,
+  -bugprone-easily-swappable-parameters,
+  -bugprone-implicit-widening-of-multiplication-result,
+  -bugprone-narrowing-conversions,
+  -bugprone-empty-catch,
+  -bugprone-macro-parentheses,
+  -bugprone-reserved-identifier,
+  -bugprone-switch-missing-default-case,
+  clang-analyzer-*,
+  -clang-analyzer-osx.*,
+  -clang-analyzer-optin.core.EnumCastOutOfRange,
+  -clang-analyzer-optin.cplusplus.VirtualCall,
+  performance-*,
+  -performance-enum-size,
+  -performance-no-int-to-ptr,
+  modernize-*,
+  -modernize-use-trailing-return-type,
+  -modernize-avoid-c-arrays,
+  -modernize-use-nodiscard,
+  -modernize-concat-nested-namespaces,
+  -modernize-use-ranges,
+  -modernize-use-designated-initializers,
+  -modernize-use-auto,
+  -modernize-use-integer-sign-comparison,
+  -modernize-return-braced-init-list,
+  -modernize-raw-string-literal,
+  readability-*,
+  -readability-magic-numbers,
+  -readability-identifier-length,
+  -readability-implicit-bool-conversion,
+  -readability-function-cognitive-complexity,
+  -readability-braces-around-statements,
+  -readability-else-after-return,
+  -readability-uppercase-literal-suffix,
+  -readability-math-missing-parentheses,
+  -readability-static-definition-in-anonymous-namespace,
+  -readability-isolate-declaration,
+  -readability-qualified-auto,
+  -readability-redundant-inline-specifier,
+  -readability-convert-member-functions-to-static,
+  -readability-use-std-min-max,
+  -readability-avoid-nested-conditional-operator,
+  -readability-const-return-type,
+  -readability-named-parameter,
+  -readability-use-anyofallof,
+  -readability-redundant-casting
+
+# Only report warnings in src/, exclude third-party libs
+HeaderFilterRegex: 'src/.*'
+
+WarningsAsErrors: ''
+
+FormatStyle: none
+
+CheckOptions:
+  # bugprone-argument-comment: argument name comment check
+  - key: bugprone-argument-comment.StrictMode
+    value: false
+  # bugprone-assert-side-effect: assert side-effect check
+  - key: bugprone-assert-side-effect.AssertMacros
+    value: 'assert,FB2K_ASSERT'
+  # bugprone-unused-return-value: functions whose return value must be checked
+  - key: bugprone-unused-return-value.CheckedFunctions
+    value: '::std::async;::std::launder;::std::remove;::std::remove_if;::std::unique;::WinHttpOpenRequest;::WinHttpSendRequest;::WinHttpReceiveResponse;::WinHttpQueryHeaders;::CreateDirectoryW'
+  # bugprone-unused-return-value: LLVM 20+ requires this to honour `(void)` cast
+  # as the canonical "intentionally ignored" marker. Without it the check
+  # rejects every `(void)WinHttpQueryHeaders(...)` etc. even when the
+  # subsequent `GetLastError()` / fall-back logic genuinely consumes the
+  # failure side-channel.
+  - key: bugprone-unused-return-value.AllowCastToVoid
+    value: true
+
+SystemHeaders: false
+...

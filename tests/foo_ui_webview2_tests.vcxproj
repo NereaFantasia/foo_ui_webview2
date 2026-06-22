@@ -1,0 +1,136 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+
+  <ItemGroup Label="ProjectConfigurations">
+    <ProjectConfiguration Include="Debug|x64">
+      <Configuration>Debug</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Release|x64">
+      <Configuration>Release</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+  </ItemGroup>
+
+  <PropertyGroup Label="Globals">
+    <VCProjectVersion>17.0</VCProjectVersion>
+    <ProjectGuid>{A1B2C3D4-E5F6-7890-ABCD-EF1234567890}</ProjectGuid>
+    <RootNamespace>foo_ui_webview2_tests</RootNamespace>
+    <WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion>
+    <Keyword>Win32Proj</Keyword>
+    <!-- Force-enable GoogleTest NuGet for v145 toolset -->
+    <Force-Enable-Microsoft-googletest-v140-windesktop-msvcstl-static-rt-dyn>true</Force-Enable-Microsoft-googletest-v140-windesktop-msvcstl-static-rt-dyn>
+  </PropertyGroup>
+
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
+
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'" Label="Configuration">
+    <ConfigurationType>Application</ConfigurationType>
+    <UseDebugLibraries>true</UseDebugLibraries>
+    <PlatformToolset>v145</PlatformToolset>
+    <CharacterSet>Unicode</CharacterSet>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'" Label="Configuration">
+    <ConfigurationType>Application</ConfigurationType>
+    <UseDebugLibraries>false</UseDebugLibraries>
+    <PlatformToolset>v145</PlatformToolset>
+    <CharacterSet>Unicode</CharacterSet>
+  </PropertyGroup>
+
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
+
+  <!-- Output directories -->
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
+    <OutDir>$(ProjectDir)..\bin\tests\Debug_x64\</OutDir>
+    <IntDir>$(ProjectDir)..\obj\tests\Debug_x64\</IntDir>
+    <TargetName>foo_ui_webview2_tests</TargetName>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
+    <OutDir>$(ProjectDir)..\bin\tests\Release_x64\</OutDir>
+    <IntDir>$(ProjectDir)..\obj\tests\Release_x64\</IntDir>
+    <TargetName>foo_ui_webview2_tests</TargetName>
+  </PropertyGroup>
+
+  <!-- Compiler settings -->
+  <ItemDefinitionGroup>
+    <ClCompile>
+      <LanguageStandard>stdcpp20</LanguageStandard>
+      <AdditionalIncludeDirectories>
+        $(ProjectDir);
+        $(ProjectDir)compat;
+        $(ProjectDir)..\src;
+        $(ProjectDir)..\lib\foobar2000_sdk;
+        $(ProjectDir)..\lib\columns_ui-sdk;
+        $(ProjectDir)..\lib\json\include;
+        $(ProjectDir)..\packages\Microsoft.Windows.ImplementationLibrary.1.0.240803.1\include;
+        $(ProjectDir)..\packages\Microsoft.Web.WebView2.1.0.3719.77\build\native\include;
+        $(ProjectDir)..\packages\Microsoft.googletest.v140.windesktop.msvcstl.static.rt-dyn.1.8.1.7\build\native\include;
+        %(AdditionalIncludeDirectories)
+      </AdditionalIncludeDirectories>
+      <PreprocessorDefinitions>
+        WIN32;
+        _CONSOLE;
+        NOMINMAX;
+        %(PreprocessorDefinitions)
+      </PreprocessorDefinitions>
+      <PrecompiledHeader>Use</PrecompiledHeader>
+      <PrecompiledHeaderFile>pch.h</PrecompiledHeaderFile>
+      <AdditionalOptions>/utf-8 %(AdditionalOptions)</AdditionalOptions>
+      <MultiProcessorCompilation>true</MultiProcessorCompilation>
+      <WarningLevel>Level3</WarningLevel>
+    </ClCompile>
+    <Link>
+      <SubSystem>Console</SubSystem>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
+    </Link>
+  </ItemDefinitionGroup>
+
+  <!-- PCH source -->
+  <ItemGroup>
+    <ClCompile Include="pch.cpp">
+      <PrecompiledHeader>Create</PrecompiledHeader>
+    </ClCompile>
+  </ItemGroup>
+
+  <!-- Test sources -->
+  <ItemGroup>
+    <ClCompile Include="..\src\utils\ImageUtils.cpp" />
+    <ClCompile Include="test_error_envelope.cpp" />
+    <ClCompile Include="test_base64.cpp" />
+    <ClCompile Include="test_guid_utils.cpp" />
+    <ClCompile Include="test_artwork_cache_key.cpp" />
+    <ClCompile Include="test_subsong_utils.cpp" />
+    <ClCompile Include="test_api_constants.cpp" />
+    <ClCompile Include="test_detect_mime.cpp" />
+    <ClCompile Include="test_url_encode.cpp" />
+    <ClCompile Include="test_track_number.cpp" />
+    <ClCompile Include="test_window_utils.cpp" />
+    <ClCompile Include="test_match_pattern.cpp" />
+    <ClCompile Include="test_bridge_dispatch.cpp" />
+    <ClCompile Include="test_send_format.cpp" />
+    <ClCompile Include="test_path_security_decorator.cpp" />
+    <ClCompile Include="test_api_path_security.cpp" />
+    <ClCompile Include="test_path_prefix_boundary.cpp" />
+    <ClCompile Include="test_caller_context.cpp" />
+    <ClCompile Include="test_playback_handlers.cpp" />
+    <ClCompile Include="test_playlist_handlers.cpp" />
+    <ClCompile Include="test_image_utils.cpp" />
+    <ClCompile Include="test_metadata_write_subsong.cpp" />
+    <ClCompile Include="test_taskbar_tray_contracts.cpp" />
+  </ItemGroup>
+
+  <!-- Headers -->
+  <ItemGroup>
+    <ClInclude Include="pch.h" />
+    <ClInclude Include="compat\fb2k_types.h" />
+    <ClInclude Include="harness\BridgeDispatchSimulator.h" />
+    <ClInclude Include="..\src\window\TaskbarTrayContracts.h" />
+  </ItemGroup>
+
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
+
+  <!-- GoogleTest NuGet -->
+  <Import Project="$(ProjectDir)..\packages\Microsoft.googletest.v140.windesktop.msvcstl.static.rt-dyn.1.8.1.7\build\native\Microsoft.googletest.v140.windesktop.msvcstl.static.rt-dyn.targets"
+          Condition="Exists('$(ProjectDir)..\packages\Microsoft.googletest.v140.windesktop.msvcstl.static.rt-dyn.1.8.1.7\build\native\Microsoft.googletest.v140.windesktop.msvcstl.static.rt-dyn.targets')" />
+
+</Project>

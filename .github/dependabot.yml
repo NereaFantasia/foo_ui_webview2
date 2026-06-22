@@ -1,0 +1,49 @@
+# Dependabot — automated dependency + GitHub Actions version updates.
+# Fills the supply-chain scanning gap; no overlap with CodeQL / SonarQube.
+# Only manifests that exist in the public repo are listed.
+version: 2
+updates:
+  # npm — SDK source dependencies (published artifact lives on npm).
+  - package-ecosystem: "npm"
+    directory: "/sdk"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "chore"
+
+  # npm — MCP server source dependencies.
+  - package-ecosystem: "npm"
+    directory: "/mcp"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "chore"
+
+  # npm — VitePress documentation site.
+  - package-ecosystem: "npm"
+    directory: "/docs/vitepress"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "chore"
+
+  # NuGet — WebView2 / component packages (packages.config at repo root).
+  - package-ecosystem: "nuget"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "chore"
+
+  # GitHub Actions — keep workflow action versions current.
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "chore"

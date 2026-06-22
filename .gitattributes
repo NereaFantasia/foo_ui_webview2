@@ -1,0 +1,44 @@
+# 确保文本文件使用 LF 换行符
+* text=auto eol=lf
+
+# 指定特定文件类型的处理方式
+*.cpp text
+*.h text
+*.rc text
+*.def text
+*.txt text
+*.md text
+*.json text
+*.html text
+*.css text
+*.js text
+*.ts text
+*.xml text
+*.svg text
+
+# 二进制文件
+*.dll binary
+*.exe binary
+*.lib binary
+*.pdb binary
+*.idb binary
+*.ilk binary
+*.exp binary
+*.bsc binary
+*.sbr binary
+*.res binary
+*.ico binary
+*.cur binary
+*.bmp binary
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.woff binary
+*.woff2 binary
+*.ttf binary
+*.eot binary
+*.mp3 binary
+*.wav binary
+*.ogg binary
+*.flac binary

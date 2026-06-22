@@ -1,0 +1,59 @@
+# .clang-format — foo_ui_webview2 C++ 代码格式化
+# 注意：当前仅作为参考基线，项目暂不强制自动格式化
+# 若要启用，需先完成 baseline commit（见 docs/DEVELOPMENT_WORKFLOW.md §8）
+
+Language: Cpp
+Standard: c++20
+BasedOnStyle: LLVM
+
+# 缩进 — 与 .editorconfig 保持一致
+IndentWidth: 4
+TabWidth: 4
+UseTab: ForIndentation
+IndentCaseLabels: false
+NamespaceIndentation: None
+
+# 大括号
+BreakBeforeBraces: Custom
+BraceWrapping:
+  AfterCaseLabel: false
+  AfterClass: true
+  AfterControlStatement: Never
+  AfterEnum: true
+  AfterFunction: true
+  AfterNamespace: true
+  AfterStruct: true
+  BeforeCatch: true
+  BeforeElse: true
+  IndentBraces: false
+
+# 列宽
+ColumnLimit: 120
+
+# 指针/引用对齐
+PointerAlignment: Left
+ReferenceAlignment: Left
+
+# 头文件排序
+SortIncludes: CaseInsensitive
+IncludeBlocks: Preserve
+
+# 其他
+AllowShortFunctionsOnASingleLine: Inline
+AllowShortIfStatementsOnASingleLine: Never
+AllowShortLoopsOnASingleLine: false
+AllowShortBlocksOnASingleLine: Empty
+AlignAfterOpenBracket: Align
+AlignOperands: Align
+AlignTrailingComments: true
+SpaceBeforeParens: ControlStatements
+SpaceInEmptyBlock: false
+SpacesInAngles: Never
+SpacesInParens: Never
+
+# Lambda
+AllowShortLambdasOnASingleLine: All
+LambdaBodyIndentation: Signature
+
+# 访问修饰符
+AccessModifierOffset: -4

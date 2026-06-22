@@ -1,0 +1,58 @@
+{
+  "name": "foo-ui-webview2-mcp",
+  "version": "0.1.0",
+  "description": "MCP Server for foo_ui_webview2 - AI agent bridge to fb2k WebView2",
+  "type": "module",
+  "main": "dist/index.js",
+  "bin": {
+    "foo-ui-webview2-mcp": "dist/index.js"
+  },
+  "scripts": {
+    "clean": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\"",
+    "build": "npm run clean && tsc",
+    "dev": "tsc --watch",
+    "start": "node dist/index.js",
+    "prepack": "npm run build"
+  },
+  "keywords": [
+    "foobar2000",
+    "webview2",
+    "mcp",
+    "model-context-protocol",
+    "ai-agent",
+    "cdp"
+  ],
+  "author": "NereaFantasia <52458173+NereaFantasia@users.noreply.github.com>",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/NereaFantasia/foo_ui_webview2.git",
+    "directory": "mcp"
+  },
+  "homepage": "https://github.com/NereaFantasia/foo_ui_webview2#readme",
+  "bugs": {
+    "url": "https://github.com/NereaFantasia/foo_ui_webview2/issues"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.12.1",
+    "chrome-remote-interface": "^0.33.2",
+    "zod": "^4.3.6"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "typescript": "^5.5.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "README.zh-CN.md",
+    "CHANGELOG.md",
+    "LICENSE"
+  ]
+}

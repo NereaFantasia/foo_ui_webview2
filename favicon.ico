@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Create Simple Icon</title>
+</head>
+<body>
+    <h1>Simple Favicon Generator</h1>
+    <p>This creates a simple 16x16 icon</p>
+    <canvas id="canvas" width="16" height="16"></canvas>
+
+    <script>
+        const canvas = document.getElementById('canvas');
+        const ctx = canvas.getContext('2d');
+
+        // Draw a simple musical note
+        ctx.fillStyle = '#0078D4';
+        ctx.fillRect(0, 0, 16, 16);
+
+        ctx.fillStyle = '#FFFFFF';
+        ctx.font = '12px Arial';
+        ctx.fillText('♪', 2, 12);
+
+        // Download as ICO (simplified as PNG for compatibility)
+        canvas.toBlob(blob => {
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'favicon.png';
+            a.click();
+        });
+    </script>
+</body>
+</html>

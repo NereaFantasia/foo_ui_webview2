@@ -1,0 +1,76 @@
+{
+  "name": "foo-webview-sdk",
+  "version": "1.9.0",
+  "description": "Simplified SDK for foo_ui_webview2 - foobar2000 WebView2 Plugin",
+  "type": "module",
+  "main": "./dist/bridge.js",
+  "module": "./dist/bridge.js",
+  "types": "./dist/index.d.ts",
+  "browser": "./dist/bridge.global.js",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/bridge.js",
+      "default": "./dist/bridge.js"
+    },
+    "./bridge": {
+      "types": "./dist/bridge.d.ts",
+      "import": "./dist/bridge.js",
+      "default": "./dist/bridge.js"
+    },
+    "./bridge.global": "./dist/bridge.global.js",
+    "./components": {
+      "types": "./dist/components.d.ts",
+      "import": "./dist/components.js",
+      "default": "./dist/components.js"
+    },
+    "./components.global": "./dist/components.global.js",
+    "./smp-compat": {
+      "types": "./dist/smp-compat.d.ts",
+      "import": "./dist/smp-compat.js",
+      "default": "./dist/smp-compat.js"
+    },
+    "./smp-compat.global": "./dist/smp-compat.global.js"
+  },
+  "scripts": {
+    "type-check": "tsc --noEmit -p tsconfig.json",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "build": "tsup --config tsup.config.esm.ts && tsup --config tsup.config.iife.ts",
+    "build:esm": "tsup --config tsup.config.esm.ts",
+    "build:iife": "tsup --config tsup.config.iife.ts",
+    "watch": "tsup --config tsup.config.esm.ts --watch"
+  },
+  "keywords": [
+    "foobar2000",
+    "webview2",
+    "audio",
+    "player",
+    "sdk",
+    "web-components",
+    "music",
+    "theme"
+  ],
+  "author": "NereaFantasia <edractic123@gmail.com>",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/NereaFantasia/foo_ui_webview2.git",
+    "directory": "sdk"
+  },
+  "homepage": "https://github.com/NereaFantasia/foo_ui_webview2#readme",
+  "bugs": {
+    "url": "https://github.com/NereaFantasia/foo_ui_webview2/issues"
+  },
+  "devDependencies": {
+    "tsup": "^8.5.0",
+    "typescript": "^6.0.2",
+    "vitest": "^2.1.9"
+  },
+  "files": [
+    "dist",
+    "LICENSE",
+    "README.md",
+    "CHANGELOG.md"
+  ]
+}

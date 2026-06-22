@@ -1,0 +1,151 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  release:
+    types: [published]
+
+# Cancel previous runs on the same ref.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  SOLUTION: foo_ui_webview2.sln
+  CONFIG: Release
+  PLATFORM: x64
+
+jobs:
+  # PR / push gate: compile the component and run the GoogleTest suite.
+  build:
+    name: "Build (Release x64) + GoogleTest"
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Clone columns_ui-sdk
+        run: |
+          git clone --depth=1 https://github.com/reupen/columns_ui-sdk.git lib/columns_ui-sdk
+          (Get-Content lib/columns_ui-sdk/ui_extension.h) `
+            -replace '\.\./pfc/', '../foobar2000_sdk/pfc/' `
+            -replace '\.\./foobar2000/', '../foobar2000_sdk/foobar2000/' |
+            Set-Content lib/columns_ui-sdk/ui_extension.h
+
+      - name: Setup MSBuild
+        uses: microsoft/setup-msbuild@v3
+
+      - name: Restore NuGet packages
+        run: nuget restore ${{ env.SOLUTION }}
+
+      - name: Build
+        run: .\build.ps1 -Config ${{ env.CONFIG }} -Platform ${{ env.PLATFORM }} -PlatformToolset v143
+
+      - name: Run GoogleTest unit tests
+        run: .\bin\tests\Release_x64\foo_ui_webview2_tests.exe --gtest_output=xml:test-results.xml
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: test-results
+          path: test-results.xml
+
+      - name: Upload build log
+        if: failure()
+        uses: actions/upload-artifact@v6
+        with:
+          name: build-log
+          path: build_log.txt
+
+  # PR / push gate: type-check the TypeScript SDK source.
+  sdk-typecheck:
+    name: "SDK Type Check"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 20
+          cache: 'npm'
+          cache-dependency-path: sdk/package-lock.json
+
+      - name: Install SDK dependencies
+        working-directory: sdk
+        run: npm ci
+
+      - name: Type check (tsc --noEmit)
+        working-directory: sdk
+        run: npx tsc --noEmit -p tsconfig.json
+
+  # Informational static analysis (non-blocking, release-only). The full scan is
+  # slow (~20-30 min), so it runs on release rather than every push/PR. Requires
+  # the VS LLVM ClangToolset on the runner, so it is continue-on-error to avoid
+  # blocking on tool availability.
+  clang-tidy:
+    name: "clang-tidy (full scan)"
+    if: github.event_name == 'release'
+    runs-on: windows-latest
+    needs: [build]
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Clone columns_ui-sdk
+        run: |
+          git clone --depth=1 https://github.com/reupen/columns_ui-sdk.git lib/columns_ui-sdk
+          (Get-Content lib/columns_ui-sdk/ui_extension.h) `
+            -replace '\.\./pfc/', '../foobar2000_sdk/pfc/' `
+            -replace '\.\./foobar2000/', '../foobar2000_sdk/foobar2000/' |
+            Set-Content lib/columns_ui-sdk/ui_extension.h
+
+      - name: Setup MSBuild
+        uses: microsoft/setup-msbuild@v3
+
+      - name: Restore NuGet packages
+        run: nuget restore ${{ env.SOLUTION }}
+
+      - name: Run clang-tidy
+        run: .\scripts\run-clang-tidy.ps1
+
+      - name: Upload clang-tidy report
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: clang-tidy-report
+          path: clang-tidy-report.txt
+
+  # Release gate: produce the .fb2k-component package.
+  package:
+    name: "Package (.fb2k-component)"
+    if: github.event_name == 'release'
+    runs-on: windows-latest
+    needs: [build, sdk-typecheck]
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Clone columns_ui-sdk
+        run: |
+          git clone --depth=1 https://github.com/reupen/columns_ui-sdk.git lib/columns_ui-sdk
+          (Get-Content lib/columns_ui-sdk/ui_extension.h) `
+            -replace '\.\./pfc/', '../foobar2000_sdk/pfc/' `
+            -replace '\.\./foobar2000/', '../foobar2000_sdk/foobar2000/' |
+            Set-Content lib/columns_ui-sdk/ui_extension.h
+
+      - name: Setup MSBuild
+        uses: microsoft/setup-msbuild@v3
+
+      - name: Restore NuGet packages
+        run: nuget restore ${{ env.SOLUTION }}
+
+      - name: Build package
+        run: .\build-package.ps1 -Configuration Release
+
+      - name: Upload package artifact
+        uses: actions/upload-artifact@v6
+        with:
+          name: fb2k-component
+          path: dist/*.fb2k-component
