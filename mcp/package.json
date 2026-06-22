@@ -35,7 +35,7 @@
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.12.1",
-    "chrome-remote-interface": "^0.33.2",
+    "chrome-remote-interface": "^0.34.0",
     "zod": "^4.3.6"
   },
   "devDependencies": {
