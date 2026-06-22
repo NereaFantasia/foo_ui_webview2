@@ -24,7 +24,7 @@ jobs:
     name: "Build (Release x64) + GoogleTest"
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - name: Clone columns_ui-sdk
         run: |
@@ -65,7 +65,7 @@ jobs:
     name: "SDK Type Check"
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - uses: actions/setup-node@v6
         with:
@@ -92,7 +92,7 @@ jobs:
     needs: [build]
     continue-on-error: true
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - name: Clone columns_ui-sdk
         run: |
@@ -125,7 +125,7 @@ jobs:
     runs-on: windows-latest
     needs: [build, sdk-typecheck]
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - name: Clone columns_ui-sdk
         run: |
