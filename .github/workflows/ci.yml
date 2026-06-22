@@ -48,14 +48,14 @@ jobs:
 
       - name: Upload test results
         if: always()
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: test-results
           path: test-results.xml
 
       - name: Upload build log
         if: failure()
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: build-log
           path: build_log.txt
@@ -113,7 +113,7 @@ jobs:
 
       - name: Upload clang-tidy report
         if: always()
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: clang-tidy-report
           path: clang-tidy-report.txt
@@ -145,7 +145,7 @@ jobs:
         run: .\build-package.ps1 -Configuration Release
 
       - name: Upload package artifact
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: fb2k-component
           path: dist/*.fb2k-component
