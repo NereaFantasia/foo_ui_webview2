@@ -14,7 +14,7 @@ Signature: `fb.menu.getContextMenu(options?: MenuGetContextMenuParams): Promise<
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `options.mode` | `string` | No | Context mode: `'auto'`, `'playlist'`, `'nowPlaying'`, or `'handles'`. |
+| `options.mode` | `string` | No | Context mode: `'auto'`, `'selection'`, `'playlist'`, `'nowPlaying'`, or `'handles'`. |
 | `options.handles` | `unknown[]` | No | Handles used by handle-based context. |
 | `options.path` | `string` | No | Optional track path. |
 | `options.subsong` | `number` | No | Optional subsong index. |
@@ -26,6 +26,13 @@ Returns a `MenuGetContextMenuResponse` containing the recursive `items` menu tre
 
 ```javascript
 const result = await fb.menu.getContextMenu({ mode: 'nowPlaying' });
+```
+
+Use `selection` for the selected tracks in the active playlist. `playlist` is
+the playlist-level context and may contain only playlist-wide commands.
+
+```javascript
+const result = await fb.menu.getContextMenu({ mode: 'selection' });
 ```
 
 ### getMainMenu()
@@ -72,11 +79,11 @@ const result = await fb.menu.runMainMenuCommand('View/Console');
 
 ### showNativePopup()
 
-Signature: `fb.menu.showNativePopup(options: MenuShowNativePopupParams): Promise<MenuShowNativePopupResponse>`
+Signature: `fb.menu.showNativePopup(options?: MenuShowNativePopupParams): Promise<MenuShowNativePopupResponse>`
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `options.mode` | `string` | No | Context mode; defaults to `'playlist'`. |
+| `options.mode` | `string` | No | Context mode; defaults to `'auto'`. Auto tries handles, now playing, playlist selection, then playlist context. |
 | `options.handles` | `unknown[]` | No | Optional handle list. |
 | `options.path` | `string` | No | Optional track path. |
 | `options.subsong` | `number` | No | Optional subsong index. |
@@ -84,7 +91,7 @@ Signature: `fb.menu.showNativePopup(options: MenuShowNativePopupParams): Promise
 Returns the `menu.showNativePopup` response envelope. Native rendering is scheduled by the host.
 
 ```javascript
-const result = await fb.menu.showNativePopup({ mode: 'playlist' });
+const result = await fb.menu.showNativePopup({ mode: 'selection' });
 ```
 
 <!-- END AUTO-GENERATED SDK STUBS -->
@@ -173,8 +180,8 @@ await fb.menu.getMainMenu('View');
 await fb.menu.getContextMenu({ mode: 'auto' });
 await fb.menu.runMainMenuCommand('View/Console');
 await fb.menu.runContextCommand('Properties');
-await fb.menu.runContextCommandById(3, { mode: 'playlist' });
-await fb.menu.showNativePopup({ mode: 'playlist' });
+await fb.menu.runContextCommandById(3, { mode: 'selection' });
+await fb.menu.showNativePopup({ mode: 'selection' });
 ```
 
 `runContextCommandById(id, options?)` is a separate facade method even though it is not listed in the generated stub block. `options` is `Omit<MenuRunContextCommandByIdParams, 'id'>`.

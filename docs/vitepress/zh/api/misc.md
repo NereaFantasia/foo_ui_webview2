@@ -166,7 +166,7 @@ await fb2k.invoke('menu.runContextCommand', { command: 'Playback Statistics/Rati
 | `handles` | `array` | 否 | 可选；默认 []。 |
 | `i18n` | `boolean` | 否 | 可选；默认 true。 |
 | `locale` | `string` | 否 | 可选；默认 auto。 |
-| `mode` | `string` | 否 | 可选；默认 auto。 |
+| `mode` | `string` | 否 | 可选；`auto` / `selection` / `playlist` / `nowPlaying` / `handles`，默认 auto。 |
 | `withAvailability` | `boolean` | 否 | 可选；默认 true。 |
 
 **返回值**: `{ "success": true, "mode": "nowPlaying", "items": [...] }`
@@ -190,12 +190,12 @@ await fb2k.invoke('menu.runContextCommandById', { id: item.commandId, mode: 'now
 
 ### menu.showNativePopup
 
-在光标位置弹出 foobar2000 原生上下文菜单（Win32 TrackPopupMenu）。支持播放列表选中项、当前播放曲目或指定曲目列表。
+在光标位置弹出 foobar2000 原生上下文菜单（Win32 TrackPopupMenu）。支持活动播放列表选中项、播放列表级上下文、当前播放曲目或指定曲目列表。
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
 | `handles` | `array` | 否 | 可选；默认 []。 |
-| `mode` | `string` | 否 | 可选；默认 playlist。 |
+| `mode` | `string` | 否 | 可选；`auto` / `selection` / `playlist` / `nowPlaying` / `handles`，默认 auto。 |
 
 **返回值**: `{ "success": true }`
 
@@ -204,7 +204,10 @@ await fb2k.invoke('menu.runContextCommandById', { id: item.commandId, mode: 'now
 :::
 
 ```javascript
-// 播放列表选中项的原生右键菜单
+// 播放列表选中曲目的原生右键菜单
+await fb2k.invoke('menu.showNativePopup', { mode: 'selection' });
+
+// 播放列表级上下文菜单
 await fb2k.invoke('menu.showNativePopup', { mode: 'playlist' });
 
 // 当前播放曲目的原生右键菜单

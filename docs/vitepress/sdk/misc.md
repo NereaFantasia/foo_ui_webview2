@@ -19,7 +19,7 @@ Returns a context-menu tree.
 
 | Parameter | Type | Description |
 | --- | --- | --- |
-| `options.mode` | `'auto' \| 'playlist' \| 'nowPlaying' \| 'handles'` | Selects the context source. |
+| `options.mode` | `'auto' \| 'selection' \| 'playlist' \| 'nowPlaying' \| 'handles'` | Selects the context source. |
 | `options.handles` | `unknown[]` | Handle list used with `mode: 'handles'`. |
 | `options.path` | `string` | Optional track path. |
 | `options.subsong` | `number` | Optional subsong index. |
@@ -30,6 +30,8 @@ Returns a context-menu tree.
 ```javascript
 const ctx = await fb.menu.getContextMenu({ mode: 'nowPlaying' });
 ```
+
+Use `selection` for selected tracks. `playlist` requests playlist-level commands.
 
 ### runMainMenuCommand(command)
 
@@ -56,12 +58,13 @@ Executes a context-menu command by numeric ID.
 | `id` | `number` | Command ID. |
 | `options` | `Omit<MenuRunContextCommandByIdParams, 'id'>` | Optional `mode`, `handles`, `path`, and `subsong` context. |
 
-### showNativePopup(options)
+### showNativePopup(options?)
 
-Schedules a native popup menu using `MenuShowNativePopupParams`.
+Schedules a native popup menu using `MenuShowNativePopupParams`. The default
+`auto` mode tries handles, now playing, playlist selection, then playlist context.
 
 ```javascript
-await fb.menu.showNativePopup({ mode: 'playlist' });
+await fb.menu.showNativePopup({ mode: 'selection' });
 ```
 
 For the WebView-rendered `menu.show`, `menu.close`, and `menu.popup` APIs, see [fb.menu](./menu).

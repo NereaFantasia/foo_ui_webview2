@@ -19,11 +19,18 @@ const fileMenu = await fb.menu.getMainMenu('File');
 
 | 参数 | 类型 | 说明 |
 | --- | --- | --- |
-| options.mode | string | 'auto' / 'playlist' / 'nowPlaying' / 'handles' |
+| options.mode | string | 'auto' / 'selection' / 'playlist' / 'nowPlaying' / 'handles' |
 | options.handles | array | mode 为 'handles' 时提供 |
 
 ```javascript
 const ctx = await fb.menu.getContextMenu({ mode: 'nowPlaying' });
+```
+
+`selection` 表示活动播放列表中的选中曲目；`playlist` 表示播放列表级上下文，
+通常只包含播放列表整体命令。
+
+```javascript
+const ctx = await fb.menu.getContextMenu({ mode: 'selection' });
 ```
 
 ### runMainMenuCommand(command)
@@ -51,12 +58,13 @@ await fb.menu.runContextCommand('Properties');
 | id | number | 命令 ID |
 | options | object | 可选，{ mode, handles } |
 
-### showNativePopup(options)
+### showNativePopup(options?)
 
-显示原生弹出菜单。
+显示原生上下文菜单。默认 `auto` 会依次尝试指定 handles、当前播放曲目、
+活动播放列表选中曲目，最后回退到播放列表级上下文。
 
 ```javascript
-await fb.menu.showNativePopup({ x: 100, y: 200, items: [...] });
+await fb.menu.showNativePopup({ mode: 'selection' });
 ```
 
 ## fb.console 控制台

@@ -161,6 +161,6 @@ await fb.menu.getMainMenu('View');
 await fb.menu.getContextMenu({ mode: 'auto' });
 await fb.menu.runMainMenuCommand('View/Console');
 await fb.menu.runContextCommand('Properties');
-await fb.menu.runContextCommandById(3, { mode: 'playlist' });
-await fb.menu.showNativePopup({ mode: 'playlist' });
+await fb.menu.runContextCommandById(3, { mode: 'selection' });
+await fb.menu.showNativePopup({ mode: 'selection' });
 ```

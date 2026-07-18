@@ -186,7 +186,7 @@ Public API method. Runtime authority: `src/api/MenuApi.cpp:1318`.
 | `handles` | `array` | No | Optional; default []. |
 | `i18n` | `boolean` | No | Optional; default true. |
 | `locale` | `string` | No | Optional; default auto. |
-| `mode` | `string` | No | Optional; default auto. |
+| `mode` | `string` | No | Optional; `auto`, `selection`, `playlist`, `nowPlaying`, or `handles`; default `auto`. |
 | `withAvailability` | `boolean` | No | Optional; default true. |
 
 **Returns**: `{"Failed to initialize context menu":"...","error":"...","i18n":"...","items":"...","locale":"...","mode":"...","success":true,"withAvailability":"..."}`
@@ -279,7 +279,7 @@ Public API method. Runtime authority: `src/api/MenuApi.cpp:1320`.
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `handles` | `array` | No | Optional; default []. |
-| `mode` | `string` | No | Optional; default playlist. |
+| `mode` | `string` | No | Optional; `auto`, `selection`, `playlist`, `nowPlaying`, or `handles`; default `auto`. |
 
 **Returns**: `{"error":"...","success":true}`
 
@@ -394,7 +394,7 @@ const result = await fb2k.invoke('misc.showPopupMessage', { message: /* value */
 
 - `clipboard.writeFiles` accepts media-read-authorized paths. `clipboard.writeHTML` writes HTML plus a plain-text fallback; `clipboard.read` reports only formats currently available from the Windows clipboard.
 - `console.log`, `console.warn`, `console.error`, and `log.write` require one of `message` or `args`. `log.write.file`, when accepted, is only a leaf `.log` or `.txt` filename under the profile directory; paths, traversal and Windows reserved device names are rejected by the runtime.
-- `menu.getContextMenu` and `menu.runContextCommandById` use `mode` to select `handles`, `nowPlaying`, `selection`, or `playlist` context. In `handles` mode, every path is media-access validated before a handle is created. `menu.showNativePopup` uses screen cursor coordinates and returns before the native menu is displayed.
+- `menu.getContextMenu`, `menu.runContextCommandById`, and `menu.showNativePopup` use `mode` to select `handles`, `nowPlaying`, `selection`, or `playlist` context. `auto` tries those sources in that order, ending with playlist context. In `handles` mode, every path is media-access validated before a handle is created. `menu.showNativePopup` uses screen cursor coordinates and returns before the native menu is displayed.
 - `menu.show` opens the self-drawn overlay after resource validation. `menu.close` only closes the active overlay; `menu.__*` endpoints are internal and are not public APIs.
 - `misc.showPopupMessage` accepts `message`, falling back to `msg`, and defaults `title` to `"Message"`. The restart and exit methods request the corresponding foobar2000 standard command.
 - `panel.setConfig` changes only its documented panel fields. `system.*` reports registered runtime and plugin information; `test.*` is diagnostic surface rather than application behavior.
