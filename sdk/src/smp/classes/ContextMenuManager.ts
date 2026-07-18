@@ -22,7 +22,7 @@ import type {
     SmpStructuredMenuItem,
 } from '../types.js';
 
-type ContextMode = 'handles' | 'playlist' | 'nowPlaying' | 'auto';
+type ContextMode = 'handles' | 'selection' | 'playlist' | 'nowPlaying' | 'auto';
 
 interface ContextMenuResponse {
     success?: boolean;

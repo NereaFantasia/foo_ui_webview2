@@ -38,7 +38,7 @@ export const menu = {
         bridge.invoke<MenuGetMainMenuResponse>('menu.getMainMenu', {
             ...(root ? { root } : {}),
         }),
-    /** `mode` is one of `'auto' | 'playlist' | 'nowPlaying' | 'handles'`. */
+    /** `mode` is one of `'auto' | 'selection' | 'playlist' | 'nowPlaying' | 'handles'`. */
     getContextMenu: (opts?: MenuGetContextMenuParams) =>
         bridge.invoke<MenuGetContextMenuResponse>('menu.getContextMenu', opts || {}),
     runMainMenuCommand: (command: string) =>
@@ -57,10 +57,11 @@ export const menu = {
     ) =>
         bridge.invoke<BaseResponse>('menu.runContextCommandById', {
             id,
-            ...(opts || {}),
+            ...opts,
         }),
-    showNativePopup: (opts: MenuShowNativePopupParams) =>
-        bridge.invoke<MenuShowNativePopupResponse>('menu.showNativePopup', opts),
+    /** Defaults to `auto`: handles, now playing, playlist selection, then playlist context. */
+    showNativePopup: (opts?: MenuShowNativePopupParams) =>
+        bridge.invoke<MenuShowNativePopupResponse>('menu.showNativePopup', opts || {}),
 
     /**
      * Show a self-drawn (WebView-rendered) popup menu at `position`

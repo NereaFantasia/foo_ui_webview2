@@ -1544,7 +1544,7 @@ export interface MenuShowParams {
  * Parameters for `menu.showNativePopup`.
  */
 export interface MenuShowNativePopupParams {
-    /** @default "playlist" */
+    /** @default "auto" */
     mode?: string;
     /** @default `json :: array ( )` */
     handles?: unknown[];

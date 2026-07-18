@@ -357,6 +357,7 @@
     <ClInclude Include="src\selection\SelectionHolder.h" />
     <ClInclude Include="src\utils\GuidUtils.h" />
     <ClInclude Include="src\utils\ImageUtils.h" />
+    <ClInclude Include="src\utils\StringUtils.h" />
     <ClInclude Include="src\utils\SubsongUtils.h" />
     <ClInclude Include="src\utils\PathExpansion.h" />
     <ClInclude Include="src\utils\WindowUtils.h" />

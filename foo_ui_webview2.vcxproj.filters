@@ -25,6 +25,9 @@
     <Filter Include="src\callbacks">
       <UniqueIdentifier>{D4E5F6A7-B8C9-0123-DEF0-234567890123}</UniqueIdentifier>
     </Filter>
+    <Filter Include="src\utils">
+      <UniqueIdentifier>{E5F6A7B8-C9D0-1234-EF01-345678901234}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="src\pch.cpp">
@@ -91,6 +94,9 @@
     </ClInclude>
     <ClInclude Include="src\window\MenuResourceLimits.h">
       <Filter>src\window</Filter>
+    </ClInclude>
+    <ClInclude Include="src\utils\StringUtils.h">
+      <Filter>src\utils</Filter>
     </ClInclude>
     <ClInclude Include="src\window\PopupWindow.h">
       <Filter>src\window</Filter>

@@ -102,6 +102,35 @@ describe('menu.close', () => {
     });
 });
 
+describe('menu context facade', () => {
+    beforeEach(() => vi.resetModules());
+    afterEach(() => vi.unstubAllGlobals());
+
+    it('uses an empty payload for the default native auto context', async () => {
+        const native = makeNative();
+        native.invoke.mockResolvedValue({ success: true });
+        vi.stubGlobal('window', { fb2k: native });
+        const { menu } = await import('./menu.js');
+
+        await menu.showNativePopup();
+
+        expect(native.invoke).toHaveBeenCalledWith('menu.showNativePopup', {});
+    });
+
+    it('forwards the explicit selection context mode', async () => {
+        const native = makeNative();
+        native.invoke.mockResolvedValue({ success: true, items: [] });
+        vi.stubGlobal('window', { fb2k: native });
+        const { menu } = await import('./menu.js');
+
+        await menu.getContextMenu({ mode: 'selection' });
+
+        expect(native.invoke).toHaveBeenCalledWith('menu.getContextMenu', {
+            mode: 'selection',
+        });
+    });
+});
+
 describe('menu.popup', () => {
     beforeEach(() => vi.resetModules());
     afterEach(() => vi.unstubAllGlobals());

@@ -9,67 +9,17 @@
 #include "api/BridgeCore.h"
 #include <foobar2000/SDK/menu_helpers.h>
 #include "utils/GuidUtils.h"
+#include "utils/StringUtils.h"
 
 namespace {
     using json = nlohmann::json;
 
     using GuidUtils::GuidToString;
     using GuidUtils::StringToGuid;
-    
-    // Helper: Ensure valid UTF-8 string for JSON serialization
-    // Replaces invalid UTF-8 sequences with replacement character
-    std::string SafeUtf8String(const char* str) {
-        if (!str || !*str) return "";
-        
-        std::string result;
-        const unsigned char* p = reinterpret_cast<const unsigned char*>(str);
-        const unsigned char* end = p + std::strlen(str);
-        
-        while (p < end) {
-            if (*p < 0x80) {
-                // ASCII
-                result += static_cast<char>(*p++);
-            } else if ((*p & 0xE0) == 0xC0) {
-                // 2-byte sequence
-                if (p + 1 < end && (p[1] & 0xC0) == 0x80) {
-                    result += static_cast<char>(*p++);
-                    result += static_cast<char>(*p++);
-                } else {
-                    result += '?';
-                    p++;
-                }
-            } else if ((*p & 0xF0) == 0xE0) {
-                // 3-byte sequence (includes \u2605 U+2605)
-                if (p + 2 < end && (p[1] & 0xC0) == 0x80 &&
-                    (p[2] & 0xC0) == 0x80) {
-                    result += static_cast<char>(*p++);
-                    result += static_cast<char>(*p++);
-                    result += static_cast<char>(*p++);
-                } else {
-                    result += '?';
-                    p++;
-                }
-            } else if ((*p & 0xF8) == 0xF0) {
-                // 4-byte sequence
-                if (p + 3 < end && (p[1] & 0xC0) == 0x80 &&
-                    (p[2] & 0xC0) == 0x80 &&
-                    (p[3] & 0xC0) == 0x80) {
-                    result += static_cast<char>(*p++);
-                    result += static_cast<char>(*p++);
-                    result += static_cast<char>(*p++);
-                    result += static_cast<char>(*p++);
-                } else {
-                    result += '?';
-                    p++;
-                }
-            } else {
-                // Invalid UTF-8 start byte
-                result += '?';
-                p++;
-            }
-        }
-        
-        return result;
+
+    // Thin alias: shared implementation lives in StringUtils.h
+    inline std::string SafeUtf8String(const char* str) {
+        return StringUtils::SafeUtf8(str);
     }
 
     //==========================================================================
@@ -152,7 +102,7 @@ namespace {
             if (ptr->service_query_t(popup)) {
                 pfc::string8 popupName;
                 popup->get_display_string(popupName);
-                name = popupName.get_ptr();
+                name = SafeUtf8String(popupName.get_ptr());
             }
             
             groups.push_back({
@@ -814,10 +764,12 @@ namespace {
                 ptr->get_description(i, desc);
                 
                 // Search matching
-                std::string lowerName = name.get_ptr();
+                std::string safeName = SafeUtf8String(name.get_ptr());
+                std::string safeDesc = SafeUtf8String(desc.get_ptr());
+                std::string lowerName = safeName;
                 std::transform(lowerName.begin(), lowerName.end(), lowerName.begin(), ::tolower);
                 
-                std::string lowerDesc = desc.get_ptr();
+                std::string lowerDesc = safeDesc;
                 std::transform(lowerDesc.begin(), lowerDesc.end(), lowerDesc.begin(), ::tolower);
                 
                 if (lowerName.find(lowerQuery) != std::string::npos ||
@@ -826,8 +778,8 @@ namespace {
                     GUID cmdGuid = ptr->get_command(i);
                     
                     results.push_back({
-                        {"name", name.get_ptr()},
-                        {"description", desc.get_ptr()},
+                        {"name", safeName},
+                        {"description", safeDesc},
                         {"guid", GuidToString(cmdGuid)},
                         {"type", "mainmenu"}
                     });

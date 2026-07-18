@@ -16,6 +16,7 @@
 #include <unordered_map>
 #include "utils/GuidUtils.h"
 #include "utils/PathSecurity.h"
+#include "utils/StringUtils.h"
 #include "window/MenuOverlayHost.h"
 #include "window/MenuResourceLimits.h"
 
@@ -239,7 +240,8 @@ namespace {
                 ptr->get_name(i, name);
 
                 GUID cmdGuid = ptr->get_command(i);
-                std::string label = name.get_ptr() ? name.get_ptr() : "";
+                // Plugin/SDK names may contain truncated UTF-8; sanitize before JSON.
+                std::string label = StringUtils::SafeUtf8(name.get_ptr());
                 std::string displayLabel = TranslateMenuLabel(label, locale, enableI18n);
 
                 json item = {
@@ -514,6 +516,12 @@ namespace {
         return items;
     }
 
+    metadb_handle_list GetSelectedContextItems() {
+        metadb_handle_list items;
+        playlist_manager::get()->activeplaylist_get_selected_items(items);
+        return items;
+    }
+
     bool ParseHandleList(const json& handlesJson, metadb_handle_list& out) {
         if (!handlesJson.is_array()) return false;
 
@@ -572,7 +580,8 @@ namespace {
     static ContextMenuInitResult InitContextMenu(
         service_ptr_t<contextmenu_manager>& mgr,
         const std::string& mode,
-        const json& params) {
+        const json& params,
+        unsigned flags = contextmenu_manager::flag_view_full) {
         ContextMenuInitResult result;
         result.effectiveMode = mode;
 
@@ -584,33 +593,41 @@ namespace {
                 result.error = "handles required for mode=handles";
                 return result;
             }
-            mgr->init_context(handles, contextmenu_manager::flag_view_full);
+            mgr->init_context(handles, flags);
             result.inited = true;
         } else if (mode == "playlist") {
-            mgr->init_context_playlist(contextmenu_manager::flag_view_full);
+            mgr->init_context_playlist(flags);
             result.inited = true;
         } else if (mode == "nowPlaying") {
-            result.inited = mgr->init_context_now_playing(contextmenu_manager::flag_view_full);
+            result.inited = mgr->init_context_now_playing(flags);
             if (!result.inited) {
                 result.error = "No now playing item";
             }
+        } else if (mode == "selection") {
+            metadb_handle_list selection = GetSelectedContextItems();
+            if (selection.get_count() == 0) {
+                result.error = "No playlist items selected";
+                return result;
+            }
+            mgr->init_context(selection, flags);
+            result.inited = true;
         } else {
             // auto mode: handles → nowPlaying → selection → playlist
             if (hasHandles) {
-                mgr->init_context(handles, contextmenu_manager::flag_view_full);
+                mgr->init_context(handles, flags);
                 result.inited = true;
                 result.effectiveMode = "handles";
-            } else if (mgr->init_context_now_playing(contextmenu_manager::flag_view_full)) {
+            } else if (mgr->init_context_now_playing(flags)) {
                 result.inited = true;
                 result.effectiveMode = "nowPlaying";
             } else {
-                metadb_handle_list fallback = GetDefaultContextItems();
-                if (fallback.get_count() > 0) {
-                    mgr->init_context(fallback, contextmenu_manager::flag_view_full);
+                metadb_handle_list selection = GetSelectedContextItems();
+                if (selection.get_count() > 0) {
+                    mgr->init_context(selection, flags);
                     result.inited = true;
                     result.effectiveMode = "selection";
                 } else {
-                    mgr->init_context_playlist(contextmenu_manager::flag_view_full);
+                    mgr->init_context_playlist(flags);
                     result.inited = true;
                     result.effectiveMode = "playlist";
                 }
@@ -633,8 +650,10 @@ namespace {
             return { { "type", "separator" } };
         }
 
+        // menu_tree_item::name() may return truncated/invalid UTF-8 from plugins
+        // or localized SDK builds; nlohmann::json dump throws type_error.316 otherwise.
         const char* namePtr = node->name();
-        std::string label = namePtr ? namePtr : "";
+        std::string label = StringUtils::SafeUtf8(namePtr);
         std::string displayLabel = TranslateMenuLabel(label, locale, enableI18n);
         std::string path = pathPrefix.empty() ? label : (pathPrefix + "/" + label);
         std::string displayPath = displayPathPrefix.empty() ? displayLabel : (displayPathPrefix + "/" + displayLabel);
@@ -860,7 +879,7 @@ static std::optional<json> TryGetMainMenuFromV2(const std::string& rootName,
         if (found.is_valid() && found->isSubmenu()) {
             base = found;
             const char* label = base->name();
-            baseLabel = label ? label : rootName;
+            baseLabel = StringUtils::SafeUtf8(label ? label : rootName.c_str());
         }
     }
 
@@ -1046,7 +1065,7 @@ json MenuRunContextCommandById(const json& params) {
 
 
 json MenuShowNativePopup(const json& params) {
-    std::string mode = params.value("mode", "playlist");
+    std::string mode = params.value("mode", "auto");
     unsigned flags = contextmenu_manager::flag_show_shortcuts | contextmenu_manager::flag_view_full;
     
     // 获取面板 HWND 用于坐标转换
@@ -1068,23 +1087,16 @@ json MenuShowNativePopup(const json& params) {
     service_ptr_t<contextmenu_manager> mgr;
     contextmenu_manager::g_create(mgr);
     
-    bool inited = false;
-    if (mode == "playlist") {
-        mgr->init_context_playlist(flags);
-        inited = true;
-    } else if (mode == "nowPlaying") {
-        inited = mgr->init_context_now_playing(flags);
-    } else if (mode == "handles") {
-        metadb_handle_list handles;
-        if (ParseHandleList(params.value("handles", json::array()), handles)) {
-            mgr->init_context(handles, flags);
-            inited = true;
-        }
+    auto initResult = InitContextMenu(mgr, mode, params, flags);
+    if (!initResult.inited) {
+        return {{"success", false},
+                {"error", initResult.error.empty()
+                    ? "Failed to init context for mode: " + mode
+                    : initResult.error}};
     }
-    
-    if (!inited) {
-        return {{"success", false}, {"error", "Failed to init context for mode: " + mode}};
-    }
+
+    console::printf("[MenuApi] showNativePopup: requestedMode=%s effectiveMode=%s",
+                    mode.c_str(), initResult.effectiveMode.c_str());
     
     // 保存状态，通过 SetTimer 延迟执行 TrackPopupMenu
     // 让桥接回调先返回，WebView2 待处理消息先完成，然后再弹菜单

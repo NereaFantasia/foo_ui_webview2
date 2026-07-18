@@ -15,6 +15,7 @@
 #include <foobar2000/SDK/album_art.h>
 #include "utils/Base64.h"
 #include "utils/ImageUtils.h"
+#include "utils/StringUtils.h"
 
 TrayIcon& TrayIcon::GetInstance() {
     static TrayIcon instance;
@@ -94,8 +95,8 @@ bool FormatCurrentTitleArtist(std::string& title, std::string& artist) {
             return false;   // nothing playing
         }
         pc->playback_format_title(nullptr, a, s_artist, nullptr, playback_control::display_level_titles);
-        title = t.c_str();
-        artist = a.c_str();
+        title = StringUtils::SafeUtf8(t.c_str());
+        artist = StringUtils::SafeUtf8(a.c_str());
         return true;
     } catch (...) {
         return false;
