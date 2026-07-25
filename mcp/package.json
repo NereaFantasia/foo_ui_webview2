@@ -1,6 +1,6 @@
 {
   "name": "foo-ui-webview2-mcp",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "MCP Server for foo_ui_webview2 - AI agent bridge to fb2k WebView2",
   "type": "module",
   "main": "dist/index.js",
@@ -38,7 +38,7 @@
     "url": "https://github.com/NereaFantasia/foo_ui_webview2/issues"
   },
   "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.12.1",
+    "@modelcontextprotocol/sdk": "^1.23.0",
     "chrome-remote-interface": "^0.33.2",
     "zod": "^4.3.6"
   },

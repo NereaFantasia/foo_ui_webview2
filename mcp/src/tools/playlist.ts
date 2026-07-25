@@ -1,7 +1,7 @@
 /**
- * Playlist tools - P0
+ * Playlist tools.
  *
- * Wraps playlist.* bridge API as MCP tools.
+ * Wraps the `playlist.*` bridge API as MCP tools.
  */
 
 import type { ToolDefinition } from "../types.js";

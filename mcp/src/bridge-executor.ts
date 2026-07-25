@@ -30,6 +30,18 @@ export class BridgeExecutor {
     ): Promise<BridgeResult> {
         try {
             const result = await this.cdp.invoke(method, params);
+            if (isHandlerFailure(result)) {
+                return {
+                    success: false,
+                    error: typeof result.error === "string" && result.error.length > 0
+                        ? result.error
+                        : `Bridge method '${method}' returned success:false`,
+                    ...(typeof result.code === "string" ? { code: result.code } : {}),
+                    ...(Object.prototype.hasOwnProperty.call(result, "details")
+                        ? { details: result.details }
+                        : {}),
+                };
+            }
             return {
                 success: true,
                 data: result,
@@ -68,6 +80,58 @@ export class BridgeExecutor {
     }
 }
 
+function isHandlerFailure(value: unknown): value is Record<string, unknown> & {
+    success: false;
+} {
+    return value !== null
+        && typeof value === "object"
+        && !Array.isArray(value)
+        && (value as Record<string, unknown>).success === false;
+}
+
+/**
+ * Format a failed bridge call for MCP text content without discarding the
+ * stable host error code or structured details.
+ */
+export function formatBridgeFailure(result: BridgeResult): string {
+    const lines = [`Error: ${result.error ?? "Unknown bridge error"}`];
+    if (result.code) {
+        lines.push(`Code: ${result.code}`);
+    }
+    if (result.details !== undefined) {
+        lines.push(`Details: ${JSON.stringify(result.details)}`);
+    }
+    return lines.join("\n");
+}
+
+/**
+ * Create the generic MCP handler used by bridge-backed tools.
+ */
+export function createBridgeToolHandler(
+    bridge: Pick<BridgeExecutor, "call">,
+    method: string
+) {
+    return async (params: Record<string, unknown>) => {
+        const result = await bridge.call(method, params);
+        if (!result.success) {
+            return {
+                content: [
+                    { type: "text" as const, text: formatBridgeFailure(result) },
+                ],
+                isError: true,
+            };
+        }
+        return {
+            content: [
+                {
+                    type: "text" as const,
+                    text: JSON.stringify(result.data, null, 2),
+                },
+            ],
+        };
+    };
+}
+
 /**
  * Normalized result of a bridge call, returned by {@link BridgeExecutor.call}.
  */
@@ -78,4 +142,8 @@ export interface BridgeResult {
     data?: unknown;
     /** Error message; present when `success` is false. */
     error?: string;
+    /** Stable host error code when the handler returned one. */
+    code?: string;
+    /** Structured host error context when the handler returned it. */
+    details?: unknown;
 }

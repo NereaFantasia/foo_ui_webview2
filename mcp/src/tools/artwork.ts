@@ -1,7 +1,7 @@
 /**
- * Artwork tools - P0
+ * Artwork tools.
  *
- * Wraps artwork.* bridge API as MCP tools.
+ * Wraps the `artwork.*` bridge API as MCP tools.
  */
 
 import type { ToolDefinition } from "../types.js";

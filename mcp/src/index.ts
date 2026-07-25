@@ -7,11 +7,12 @@
  */
 
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
 
 import { CdpClient } from "./cdp-client.js";
 import { BridgeExecutor } from "./bridge-executor.js";
+import { registerBridgeTools } from "./bridge-tools.js";
+import { GuardedStdioServerTransport } from "./guarded-stdio-transport.js";
 import { logger } from "./logger.js";
 import { playbackTools, playbackMethodMap } from "./tools/playback.js";
 import { playbackExtTools, playbackExtMethodMap } from "./tools/playback-ext.js";
@@ -26,9 +27,16 @@ import type { ToolDefinition } from "./types.js";
 // ── CDP connection parameters ──
 const CDP_PORT = parseInt(process.env.FB2K_CDP_PORT || "9222", 10);
 const CDP_HOST = process.env.FB2K_CDP_HOST || "localhost";
+// Optional URL substring to pin the CDP page target when several WebViews
+// (popups, panels, overlays) share the debugging port.
+const CDP_TARGET_URL = process.env.FB2K_CDP_TARGET_URL || "";
 
 // ── Initialization ──
-const cdp = new CdpClient({ host: CDP_HOST, port: CDP_PORT });
+const cdp = new CdpClient({
+    host: CDP_HOST,
+    port: CDP_PORT,
+    ...(CDP_TARGET_URL ? { targetUrlFilter: CDP_TARGET_URL } : {}),
+});
 const bridge = new BridgeExecutor(cdp);
 
 // Merge all bridge method maps.
@@ -62,67 +70,8 @@ const server = new McpServer({
     version: "0.1.0",
 });
 
-// Register bridge API tools through a generic handler.
-for (const tool of allBridgeTools) {
-    const method = allMethodMaps[tool.name];
-    if (!method) continue;
-
-    // Build a zod schema for argument validation.
-    const shape: Record<string, z.ZodTypeAny> = {};
-    const required = new Set(tool.inputSchema.required || []);
-    for (const [key, prop] of Object.entries(tool.inputSchema.properties)) {
-        let schema: z.ZodTypeAny;
-        switch (prop.type) {
-            case "string":
-                schema = prop.enum
-                    ? z.enum(prop.enum as [string, ...string[]])
-                    : z.string();
-                break;
-            case "number":
-                schema = z.number();
-                break;
-            case "integer":
-                schema = z.number().int();
-                break;
-            case "boolean":
-                schema = z.boolean();
-                break;
-            case "array":
-                schema = z.array(z.unknown());
-                break;
-            default:
-                schema = z.unknown();
-        }
-        if (prop.default !== undefined && !required.has(key)) {
-            shape[key] = schema.optional().default(prop.default as never);
-        } else {
-            shape[key] = required.has(key) ? schema : schema.optional();
-        }
-    }
-
-    server.registerTool(tool.name, {
-        description: tool.description,
-        inputSchema: shape,
-    }, async (params) => {
-        const result = await bridge.call(method, params as Record<string, unknown>);
-        if (!result.success) {
-            return {
-                content: [
-                    { type: "text" as const, text: `Error: ${result.error}` },
-                ],
-                isError: true,
-            };
-        }
-        return {
-            content: [
-                {
-                    type: "text" as const,
-                    text: JSON.stringify(result.data, null, 2),
-                },
-            ],
-        };
-    });
-}
+// Register bridge API tools through the shared production registration path.
+registerBridgeTools(server, bridge, allBridgeTools, allMethodMaps);
 
 // ── UI testing tools (special handlers) ─────────────────
 
@@ -271,7 +220,7 @@ server.registerTool(
 // ── Startup ──
 
 async function main() {
-    const transport = new StdioServerTransport();
+    const transport = new GuardedStdioServerTransport();
     await server.connect(transport);
     logger.info("Server started", { cdpHost: CDP_HOST, cdpPort: CDP_PORT });
 

@@ -447,4 +447,231 @@ describe("CdpClient", () => {
             expect(defaultClient.connected).toBe(false);
         });
     });
+
+    // ── connect 超时 ─────────────────────────
+
+    describe("connect 超时", () => {
+        it("List 永不返回时按 connectTimeoutMs 超时并附带挂起提示", async () => {
+            mockList.mockImplementation(() => new Promise(() => {}));
+
+            const fastClient = new CdpClient({
+                host: "localhost",
+                port: 9222,
+                connectTimeoutMs: 50,
+            });
+
+            await expect(fastClient.connect()).rejects.toThrow(
+                /connect timed out after 50ms.*suspended/s
+            );
+        });
+
+        it("warmup 截图挂死不阻塞 connect（受 warmupTimeoutMs 约束）", async () => {
+            mockPageCaptureScreenshot.mockImplementationOnce(
+                () => new Promise(() => {})
+            );
+
+            const fastClient = new CdpClient({
+                host: "localhost",
+                port: 9222,
+                connectTimeoutMs: 500,
+                warmupTimeoutMs: 20,
+            });
+
+            await fastClient.connect();
+            expect(fastClient.connected).toBe(true);
+        });
+    });
+
+    // ── 惰性心跳 ─────────────────────────────
+
+    describe("惰性心跳", () => {
+        it("空闲超阈值后 ping 失败则丢弃旧连接并重连", async () => {
+            const pingClient = new CdpClient({
+                host: "localhost",
+                port: 9222,
+                pingIdleMs: 0, // 每次 ensureConnected 都触发健康检查
+                pingTimeoutMs: 50,
+                reconnectBaseMs: 1,
+                warmupTimeoutMs: 20,
+            });
+            await pingClient.connect();
+            expect(mockCDP).toHaveBeenCalledTimes(1);
+
+            mockRuntimeEvaluate.mockRejectedValueOnce(new Error("socket hang up"));
+
+            await pingClient.ensureConnected();
+
+            expect(mockClose).toHaveBeenCalled();
+            expect(mockCDP).toHaveBeenCalledTimes(2);
+            expect(pingClient.connected).toBe(true);
+        });
+
+        it("空闲超阈值后 ping 成功则复用缓存连接", async () => {
+            const pingClient = new CdpClient({
+                host: "localhost",
+                port: 9222,
+                pingIdleMs: 0,
+                pingTimeoutMs: 50,
+            });
+            await pingClient.connect();
+            expect(mockCDP).toHaveBeenCalledTimes(1);
+
+            mockRuntimeEvaluate.mockResolvedValueOnce({ result: { value: 1 } });
+
+            await pingClient.ensureConnected();
+
+            expect(mockClose).not.toHaveBeenCalled();
+            expect(mockCDP).toHaveBeenCalledTimes(1);
+        });
+
+        it("空闲未超阈值时不 ping 直接复用", async () => {
+            await client.connect();
+            vi.clearAllMocks();
+
+            await client.ensureConnected();
+
+            expect(mockRuntimeEvaluate).not.toHaveBeenCalled();
+            expect(mockCDP).not.toHaveBeenCalled();
+        });
+    });
+
+    // ── target 选择 ──────────────────────────
+
+    describe("target 选择", () => {
+        it("优先选择非 about:blank 的 page target", async () => {
+            mockList.mockResolvedValue([
+                { type: "page", url: "about:blank", id: "overlay" },
+                {
+                    type: "page",
+                    url: "https://foo-ui-webview2.local/index.html",
+                    id: "main",
+                },
+            ]);
+
+            await client.connect();
+
+            expect(mockCDP).toHaveBeenCalledWith(
+                expect.objectContaining({
+                    target: expect.objectContaining({ id: "main" }),
+                })
+            );
+        });
+
+        it("候选全为 about:blank 时回退选取第一个（测试页兜底场景）", async () => {
+            mockList.mockResolvedValue([
+                { type: "page", url: "about:blank", id: "testpage-main" },
+            ]);
+
+            await client.connect();
+
+            expect(mockCDP).toHaveBeenCalledWith(
+                expect.objectContaining({
+                    target: expect.objectContaining({ id: "testpage-main" }),
+                })
+            );
+            expect(client.connected).toBe(true);
+        });
+
+        it("targetUrlFilter 命中时选中匹配 target", async () => {
+            mockList.mockResolvedValue([
+                { type: "page", url: "about:blank", id: "overlay" },
+                {
+                    type: "page",
+                    url: "https://foo-ui-webview2.local/index.html",
+                    id: "main",
+                },
+                { type: "page", url: "https://example.com/popup.html", id: "popup" },
+            ]);
+
+            const pinned = new CdpClient({
+                host: "localhost",
+                port: 9222,
+                targetUrlFilter: "foo-ui-webview2.local",
+            });
+            await pinned.connect();
+
+            expect(mockCDP).toHaveBeenCalledWith(
+                expect.objectContaining({
+                    target: expect.objectContaining({ id: "main" }),
+                })
+            );
+        });
+
+        it("targetUrlFilter 未命中时报错并列出候选", async () => {
+            mockList.mockResolvedValue([
+                { type: "page", url: "about:blank", id: "overlay" },
+                { type: "page", url: "https://example.com/popup.html", id: "popup" },
+            ]);
+
+            const pinned = new CdpClient({
+                host: "localhost",
+                port: 9222,
+                targetUrlFilter: "foo-ui-webview2.local",
+            });
+
+            await expect(pinned.connect()).rejects.toThrow(
+                /No page target matches FB2K_CDP_TARGET_URL="foo-ui-webview2\.local".*about:blank.*example\.com/s
+            );
+        });
+
+        it("targetUrlFilter 可显式选中 about:blank", async () => {
+            mockList.mockResolvedValue([
+                {
+                    type: "page",
+                    url: "https://example.com/popup.html",
+                    id: "popup",
+                },
+                { type: "page", url: "about:blank", id: "overlay" },
+            ]);
+
+            const pinned = new CdpClient({
+                host: "localhost",
+                port: 9222,
+                targetUrlFilter: "about:blank",
+            });
+            await pinned.connect();
+
+            expect(mockCDP).toHaveBeenCalledWith(
+                expect.objectContaining({
+                    target: expect.objectContaining({ id: "overlay" }),
+                })
+            );
+        });
+    });
+
+    // ── 调用超时提示 ─────────────────────────
+
+    describe("调用超时提示", () => {
+        it("invoke 超时错误包含挂起诊断提示", async () => {
+            const slow = new CdpClient({
+                host: "localhost",
+                port: 9222,
+                invokeTimeoutMs: 50,
+                warmupTimeoutMs: 20,
+            });
+            await slow.connect();
+            mockRuntimeEvaluate.mockImplementationOnce(() => new Promise(() => {}));
+
+            await expect(slow.invoke("playback.getState")).rejects.toThrow(
+                /timed out after 50ms.*keep-alive/s
+            );
+        });
+
+        it("screenshot 超时错误包含挂起诊断提示", async () => {
+            const slow = new CdpClient({
+                host: "localhost",
+                port: 9222,
+                screenshotTimeoutMs: 50,
+                warmupTimeoutMs: 20,
+            });
+            await slow.connect();
+            mockPageCaptureScreenshot.mockImplementationOnce(
+                () => new Promise(() => {})
+            );
+
+            await expect(slow.screenshot()).rejects.toThrow(
+                /screenshot timed out after 50ms.*suspended/s
+            );
+        });
+    });
 });

@@ -1,8 +1,9 @@
 /**
- * Playback extended tools (P1)
+ * Extended playback tools.
  *
- * Bridge API: playback.* methods not covered by playback.ts (P0)
- * Includes: mute, volume steps, playback order, stop-after-current, track location, path play, random
+ * Wraps the `playback.*` bridge methods that `playback.ts` does not cover:
+ * mute, volume steps, playback order, stop-after-current, track location,
+ * play-by-path, and random.
  */
 
 import type { ToolDefinition } from "../types.js";
@@ -54,17 +55,23 @@ export const playbackExtTools: ToolDefinition[] = [
             type: "object",
             properties: {
                 order: {
-                    type: "string",
+                    type: "union",
                     description:
-                        "Playback order: number(0-6) or name (default/repeat-playlist/repeat-track/random/shuffle-tracks/shuffle-albums/shuffle-folders)",
-                    enum: [
-                        "default",
-                        "repeat-playlist",
-                        "repeat-track",
-                        "random",
-                        "shuffle-tracks",
-                        "shuffle-albums",
-                        "shuffle-folders",
+                        "Playback order: integer index 0-6 or name (default/repeat-playlist/repeat-track/random/shuffle-tracks/shuffle-albums/shuffle-folders)",
+                    anyOf: [
+                        { type: "integer", minimum: 0, maximum: 6 },
+                        {
+                            type: "string",
+                            enum: [
+                                "default",
+                                "repeat-playlist",
+                                "repeat-track",
+                                "random",
+                                "shuffle-tracks",
+                                "shuffle-albums",
+                                "shuffle-folders",
+                            ],
+                        },
                     ],
                 },
             },

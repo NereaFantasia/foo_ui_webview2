@@ -18,6 +18,7 @@ import { libraryTools, libraryMethodMap } from "../src/tools/library.js";
 import { artworkTools, artworkMethodMap } from "../src/tools/artwork.js";
 import { queueTools, queueMethodMap } from "../src/tools/queue.js";
 import { metadataTools, metadataMethodMap } from "../src/tools/metadata.js";
+import { buildToolInputSchema } from "../src/tool-schema.js";
 import type { ToolDefinition } from "../src/types.js";
 
 const allTools: ToolDefinition[] = [
@@ -85,6 +86,7 @@ describe("工具定义完整性", () => {
                         "number",
                         "integer",
                         "boolean",
+                        "union",
                         "array",
                         "object",
                     ]).toContain(prop.type);
@@ -200,6 +202,18 @@ describe("参数校验边界", () => {
             (t) => t.name === "fb2k_library_search"
         )!;
         expect(tool.inputSchema.required).toContain("query");
+    });
+
+    it("library.search 与 Bridge 默认值 100 对齐且不注入 MCP default", () => {
+        const tool = libraryTools.find(
+            (t) => t.name === "fb2k_library_search"
+        )!;
+        const limit = tool.inputSchema.properties.limit;
+
+        expect(limit.description).toContain("default 100");
+        expect(limit.default).toBeUndefined();
+        expect(buildToolInputSchema(tool.inputSchema).parse({ query: "artist IS Mili" }))
+            .toEqual({ query: "artist IS Mili" });
     });
 
     it("artwork.getForTrack 的 path 是必填", () => {

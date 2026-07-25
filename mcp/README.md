@@ -313,6 +313,24 @@ AI -> fb2k_screenshot { fullPage: true }
 AI: [shows screenshot] The theme loaded correctly; the playback bar is at the bottom…
 ```
 
+### Error responses
+
+Bridge handlers can return a structured failure such as
+`{ success: false, error, code, details }`. The MCP server reports that result
+as a tool error and includes the host error message, stable code, and details in
+the text content. CDP connection failures and invocation timeouts are also
+reported as tool errors.
+
+### Parameter validation
+
+Tool arguments are validated before the bridge handler runs. Declared numeric
+bounds, integer and array element types, string enums, defaults, and nested
+required fields are enforced. Undeclared top-level arguments and metadata tag
+keys remain available to the bridge runtime instead of being silently removed.
+Defaults must be safe JSON values. Prototype-sensitive keys (`__proto__`,
+`prototype`, and `constructor`) are rejected at any argument depth before bridge
+invocation rather than being normalized or forwarded ambiguously.
+
 ---
 
 ## Development
@@ -344,6 +362,9 @@ mcp/
 │   ├── index.ts              # MCP server entry point
 │   ├── cdp-client.ts         # CDP connection management (auto-discovery, reconnect, timeout)
 │   ├── bridge-executor.ts    # fb2k.invoke() wrapper
+│   ├── bridge-tools.ts       # Production MCP tool registration
+│   ├── guarded-stdio-transport.ts # Raw JSON safety before SDK normalization
+│   ├── tool-schema.ts        # Declarative JSON Schema to Zod validation
 │   ├── types.ts              # Shared types
 │   └── tools/
 │       ├── playback.ts       # 12 playback-control tools
@@ -360,6 +381,8 @@ mcp/
 │   ├── bridge-executor.test.ts    # BridgeExecutor unit tests
 │   ├── cdp-client.test.ts         # CdpClient unit tests
 │   ├── error-paths.test.ts        # Error-path coverage
+│   ├── guarded-stdio-transport.test.ts # Raw stdio JSON safety tests
+│   ├── tool-schema.test.ts        # Schema builder and production registration tests
 │   ├── tools-integration.test.ts  # Tool integration tests
 │   ├── e2e-smoke.mjs              # CDP end-to-end smoke test
 │   └── e2e-interact.mjs          # CDP interaction test

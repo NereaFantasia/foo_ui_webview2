@@ -96,9 +96,7 @@ export const metadataTools: ToolDefinition[] = [
                 items: {
                     type: "array",
                     description: "Array of write items, each containing path and tags",
-                    items: {
-                        type: "object",
-                    },
+                    items: { type: "object" },
                 },
             },
             required: ["items"],

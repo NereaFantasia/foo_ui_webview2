@@ -10,7 +10,11 @@
  */
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { BridgeExecutor } from "../src/bridge-executor.js";
+import {
+    BridgeExecutor,
+    createBridgeToolHandler,
+    formatBridgeFailure,
+} from "../src/bridge-executor.js";
 import type { CdpClient } from "../src/cdp-client.js";
 
 // ── Mock CdpClient ──────────────────────────
@@ -89,6 +93,54 @@ describe("BridgeExecutor", () => {
 
             expect(result.success).toBe(true);
             expect(result.data).toEqual(tracks);
+        });
+
+        it("handler success:false 返回结构化 MCP failure", async () => {
+            vi.mocked(cdp.invoke).mockResolvedValue({
+                success: false,
+                error: "Invalid playlist index",
+                code: "INVALID_INDEX",
+                details: { playlist: 999 },
+            });
+
+            const result = await bridge.call("playlist.remove", { playlist: 999 });
+
+            expect(result).toEqual({
+                success: false,
+                error: "Invalid playlist index",
+                code: "INVALID_INDEX",
+                details: { playlist: 999 },
+            });
+        });
+
+        it("handler success:false 缺少 error 时 fail-closed", async () => {
+            vi.mocked(cdp.invoke).mockResolvedValue({
+                success: false,
+                code: "INVALID_REQUEST",
+            });
+
+            const result = await bridge.call("playlist.remove", { playlist: -1 });
+
+            expect(result).toEqual({
+                success: false,
+                error: "Bridge method 'playlist.remove' returned success:false",
+                code: "INVALID_REQUEST",
+            });
+        });
+
+        it("嵌套对象中的 success:false 不会被误判为 handler failure", async () => {
+            const mockResult = {
+                success: true,
+                item: { success: false, reason: "unavailable" },
+            };
+            vi.mocked(cdp.invoke).mockResolvedValue(mockResult);
+
+            const result = await bridge.call("library.getStatus");
+
+            expect(result).toEqual({
+                success: true,
+                data: mockResult,
+            });
         });
 
         it("CDP invoke 抛出 Error 时返回 success: false", async () => {
@@ -211,6 +263,71 @@ describe("BridgeExecutor", () => {
             const result = await bridge.getConsoleMessages();
 
             expect(result).toEqual([]);
+        });
+    });
+});
+
+describe("formatBridgeFailure", () => {
+    it("保留 handler error 的 code 和 details", () => {
+        expect(formatBridgeFailure({
+            success: false,
+            error: "Invalid playlist index",
+            code: "INVALID_INDEX",
+            details: { playlist: 999 },
+        })).toBe(
+            "Error: Invalid playlist index\n" +
+            "Code: INVALID_INDEX\n" +
+            'Details: {"playlist":999}'
+        );
+    });
+
+    it("transport error 保持既有 Error 前缀", () => {
+        expect(formatBridgeFailure({
+            success: false,
+            error: "CDP connection closed",
+        })).toBe("Error: CDP connection closed");
+    });
+});
+
+describe("createBridgeToolHandler", () => {
+    it("将结构化 handler failure 映射为最终 MCP tool error", async () => {
+        const call = vi.fn().mockResolvedValue({
+            success: false,
+            error: "Invalid playlist index",
+            code: "INVALID_INDEX",
+            details: { playlist: 999 },
+        });
+        const handler = createBridgeToolHandler({ call }, "playlist.remove");
+
+        const result = await handler({ playlist: 999 });
+
+        expect(call).toHaveBeenCalledWith("playlist.remove", { playlist: 999 });
+        expect(result).toEqual({
+            content: [{
+                type: "text",
+                text:
+                    "Error: Invalid playlist index\n" +
+                    "Code: INVALID_INDEX\n" +
+                    'Details: {"playlist":999}',
+            }],
+            isError: true,
+        });
+    });
+
+    it("将成功结果映射为 JSON 文本且不设置 isError", async () => {
+        const call = vi.fn().mockResolvedValue({
+            success: true,
+            data: { playing: true },
+        });
+        const handler = createBridgeToolHandler({ call }, "playback.getState");
+
+        const result = await handler({});
+
+        expect(result).toEqual({
+            content: [{
+                type: "text",
+                text: JSON.stringify({ playing: true }, null, 2),
+            }],
         });
     });
 });

@@ -1,7 +1,7 @@
 /**
- * Library tools - P0
+ * Library tools.
  *
- * Wraps library.* bridge API as MCP tools.
+ * Wraps the `library.*` bridge API as MCP tools.
  */
 
 import type { ToolDefinition } from "../types.js";
@@ -24,7 +24,7 @@ export const libraryTools: ToolDefinition[] = [
                 },
                 limit: {
                     type: "integer",
-                    description: "Maximum number of results, default 50",
+                    description: "Maximum number of results, default 100",
                     minimum: 1,
                     maximum: 500,
                 },

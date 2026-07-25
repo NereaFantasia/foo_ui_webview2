@@ -313,6 +313,20 @@ AI -> fb2k_screenshot { fullPage: true }
 AI: [显示截图] 当前主题加载正常，播放栏在底部……
 ```
 
+### 错误响应
+
+Bridge handler 可返回 `{ success: false, error, code, details }` 形式的结构化
+失败。MCP Server 会将其报告为工具错误，并在文本内容中保留 host 错误消息、
+稳定错误码和 details。CDP 连接失败与调用超时同样会报告为工具错误。
+
+### 参数校验
+
+工具参数会在 bridge handler 执行前完成校验。声明中的数值范围、整数与数组元素
+类型、字符串枚举、默认值和嵌套必填字段都会生效。未声明的顶层参数与 metadata
+tag 普通键仍会交给 bridge runtime，不会被静默剥除。默认值必须是安全 JSON value；
+`__proto__`、`prototype` 和 `constructor` 等原型敏感键会在任意参数层级、bridge
+调用之前受控拒绝，不会被含糊地规范化或继续转发。
+
 ---
 
 ## 开发
@@ -344,6 +358,9 @@ mcp/
 │   ├── index.ts              # MCP Server 入口
 │   ├── cdp-client.ts         # CDP 连接管理（自动发现、重连、超时）
 │   ├── bridge-executor.ts    # fb2k.invoke() 封装
+│   ├── bridge-tools.ts       # 生产 MCP 工具注册
+│   ├── guarded-stdio-transport.ts # SDK 规范化前的原始 JSON 安全防线
+│   ├── tool-schema.ts        # 声明式 JSON Schema 到 Zod 校验
 │   ├── types.ts              # 共享类型
 │   └── tools/
 │       ├── playback.ts       # 12 个播放控制工具
@@ -360,6 +377,8 @@ mcp/
 │   ├── bridge-executor.test.ts    # BridgeExecutor 单元测试
 │   ├── cdp-client.test.ts         # CdpClient 单元测试
 │   ├── error-paths.test.ts        # 错误路径覆盖
+│   ├── guarded-stdio-transport.test.ts # 原始 stdio JSON 安全测试
+│   ├── tool-schema.test.ts        # Schema builder 与生产注册测试
 │   ├── tools-integration.test.ts  # 工具集成测试
 │   ├── e2e-smoke.mjs              # CDP 端到端冒烟测试
 │   └── e2e-interact.mjs          # CDP 交互测试
