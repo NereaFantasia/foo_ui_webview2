@@ -155,6 +155,15 @@ docs/vitepress/.vitepress/cache/
 .vite/
 temp_sdk/
 
+# ------ Screenshot captures (agent-context hygiene) ------
+# Tracked PNGs poison agent context: `git show` / `git diff` on a binary image
+# pulls the whole picture into the transcript. Ignore the paths that actually
+# emit screenshots - report evidence batches and MCP automation captures -
+# rather than a repo-wide `*.png`, which would also silence product assets
+# (favicons, docs-site imagery). Use `git add -f` for a deliberate exception.
+docs/report/**/*.png
+mcp/*.png
+
 # 
 
 # ------ npm pack outputs ------
