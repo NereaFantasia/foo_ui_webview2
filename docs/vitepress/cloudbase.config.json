@@ -1,0 +1,22 @@
+{
+  "envId": "",
+  "functionRoot": "./",
+  "functions": [],
+  "hosting": {
+    "source": "dist",
+    "publicPath": "/",
+    "resourceOptions": {
+      "cacheControl": "max-age=3600",
+      "ignore": [
+        "*.map"
+      ]
+    },
+    "routes": [
+      {
+        "path": "/**",
+        "target": "/index.html",
+        "statusCode": 200
+      }
+    ]
+  }
+}

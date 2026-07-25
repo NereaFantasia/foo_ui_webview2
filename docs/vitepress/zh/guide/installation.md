@@ -112,3 +112,5 @@ await fb.player.play()
 - 将 WebView2 UI 作为歌词、封面等辅助信息窗口
 - 使用 Default UI 管理播放列表，同时用 WebView2 UI 显示可视化效果
 - 在另一个主 UI 运行时，用伴随窗口执行自定义脚本
+
+**页面可见性契约：** 窗口最小化、隐藏到托盘或锁屏时，WebView 页面进入 `visibilityState=hidden`——`requestAnimationFrame` 停止、定时器被大幅节流。主题应优先使用事件驱动更新（`fb2k.on(...)`）而非轮询循环，恢复时才不会错乱。若通过 CDP/MCP 自动化播放器，参见 [MCP 配置指南](/zh/mcp/setup)中的 keep-alive 开关以在上述状态保持页面活跃。

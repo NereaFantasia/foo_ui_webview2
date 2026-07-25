@@ -28,6 +28,42 @@ Writes text to a file. `options.encoding` defaults to `utf-8`; set `options.appe
 await fb.file.write('C:\\Logs\\theme.log', 'Theme initialized\n', { append: true });
 ```
 
+### Binary payloads
+
+Prefer the additive byte helpers when application code already has bytes or a
+Data URL:
+
+- `readBinary(path): Promise<Uint8Array>` decodes the host response.
+- `writeBinary(path, bytes, options?)` accepts `ArrayBuffer | Uint8Array`.
+- `writeDataUrl(path, dataUrl, options?)` accepts a canonical Base64 Data URL,
+  validates it, and writes only its payload. The media type is validated but
+  does not determine the destination extension.
+
+```javascript
+const bytes = await fb.file.readBinary('C:\\Config\\icon.ico');
+await fb.file.writeBinary('C:\\Config\\icon-copy.ico', bytes);
+
+await fb.file.writeDataUrl('C:\\Config\\cover.png', coverDataUrl);
+```
+
+These helpers adapt to the existing Host contract; they do not add a new Host
+endpoint. The low-level `read()` and `write()` methods remain available and
+preserve the raw wire behavior:
+
+- `read(path, { encoding: 'binary' })` returns Base64 in `content` and sets
+	`encoding` to `'base64'`; the returned payload has no `base64:` prefix.
+- `write(path, content, { encoding: 'binary' })` decodes only when `content`
+	starts with `base64:`.
+- A Data URL (`data:image/...;base64,...`) and an `fb2k://` URL are not binary
+	file payloads and must not be passed directly to binary `write`.
+
+```javascript
+const source = await fb.file.read('C:\\Config\\icon.ico', { encoding: 'binary' });
+await fb.file.write('C:\\Config\\icon-copy.ico', `base64:${source.content}`, {
+		encoding: 'binary',
+});
+```
+
 ### exists(path)
 
 Signature: `fb.file.exists(path: string): Promise<{ exists: boolean }>`

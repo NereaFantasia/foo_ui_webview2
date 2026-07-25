@@ -43,7 +43,7 @@ Signature: `fb.tray.create(opts?: { icon?: string | null; tooltip?: string }): P
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `opts` | `{ icon?: string \| null; tooltip?: string }` | No | Initial icon and tooltip |
+| `opts` | `{ icon?: string \| null; tooltip?: string }` | No | Initial icon as raw Base64 `.ico` file bytes, plus tooltip |
 
 Creates the tray icon. Call this before other `tray.*` methods.
 
@@ -142,9 +142,14 @@ Signature: `fb.tray.setIcon(icon?: string | null): Promise<BaseResponse>`
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `icon` | `string \| null` | No | Base64 icon payload; omitted/null uses the main icon |
+| `icon` | `string \| null` | No | Raw Base64-encoded `.ico` file bytes without a prefix; omitted/null uses the main icon |
 
 Returns the `tray.setIcon` result.
+
+PNG, JPEG, SVG, Data URLs, and `base64:`-prefixed strings are not valid tray
+icon payloads. Invalid values fall back to the foobar2000 main icon. The
+separate `TrayMenuItem.icon` field is reserved and not rendered by either menu
+backend; use `iconSvg` for WebView-rendered menu-item icons.
 
 ```javascript
 const result = await fb.tray.setIcon();
@@ -213,7 +218,7 @@ await fb.tray.showBalloon({
 
 <!-- END AUTO-GENERATED SDK STUBS -->
 
-## Phase 2 layout guide (`layoutMode`)
+## Layout guide (`layoutMode`)
 
 `TrayMenuConfig.layoutMode` is **`'flat'` by default**. Zero-config WebView tray menus keep the legacy direct-child DOM (`#menu > .fb-item` / `.fb-sep`), so existing structure selectors do not need to migrate.
 
@@ -257,7 +262,7 @@ await fb.tray.setContextMenu(items, {
 - `data-item-token` is an internal single-show identity — **not** a public CSS contract.
 - This is an opt-in capability, not a claim of “full compatibility” with every historical theme selector.
 
-## Phase 3 slider orientation & accessibility
+## Slider orientation & accessibility
 
 `TrayMenuItem.orientation` is **slider-only** (`'horizontal' | 'vertical'`). Default when omitted: horizontal. The SDK passes the field through as supplied and does **not** inject a default.
 

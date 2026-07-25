@@ -95,9 +95,15 @@ console.log(`共 ${summary.totalServices} 个服务`);
 
 获取所有主菜单命令。
 
-- **参数**: 无
+默认会展开 `mainmenu_commands_v2` 的动态子菜单（ESLyric 等 SMP 老组件常用），因此结果中除父命令槽位外还包含其运行时子命令。
 
-**返回值**: `{ "success": true, "commands": [{ "name": "...", "description": "...", "guid": "{...}", "parentGuid": "{...}", "index": 0 }], "count": 156 }`
+| 参数 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `expandDynamic` | `boolean` | 否 | 默认 `true`。设为 `false` 仅返回静态注册表条目。 |
+
+**返回值**: `{ "success": true, "commands": [{ "name": "...", "description": "...", "guid": "{...}", "parentGuid": "{...}", "index": 0, "path": "...", "isDynamic": false }], "count": 156, "dynamicCount": 12, "expandDynamic": true }`
+
+动态展开出来的条目额外带 `subGuid`、`isDynamic: true`、`path`（如 `ESLyric/Search lyric`）以及 `flags`（`mainmenu_commands` 原始显示位掩码：`1` 禁用、`2` 勾选、`4` 单选勾选、`8` 默认隐藏）。父命令槽位为 `isDynamicParent: true`，仅作容器、本身不可执行。执行动态子命令必须把 `subGuid` 一起传给 `discovery.executeMainMenuCommand`。
 
 ### discovery.getMainMenuGroups
 
@@ -113,25 +119,29 @@ console.log(`共 ${summary.totalServices} 个服务`);
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
-| `guid` | `string` | 否 | 可选；默认 。 |
+| `guid` | `string` | 是 | 命令 GUID；动态子命令传其父命令 GUID。 |
+| `subGuid` | `string` | 否 | 动态子命令的 `subGuid`。传入时走 `mainmenu_commands::g_execute_dynamic`。 |
 
-**返回值**: `{ "success": true, "guid": "{...}" }`
+**返回值**: `{ "success": true, "guid": "{...}", "subGuid": "{...}", "dynamic": true }`
 
 ### discovery.searchCommands
 
-按名称/描述搜索主菜单命令（不区分大小写）。
+按名称/描述/菜单路径搜索主菜单命令（不区分大小写）。默认展开动态子菜单，因此能搜到 ESLyric 之类组件的运行时子命令。
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
-| `query` | `string` | 否 | 可选；默认 。 |
+| `query` | `string` | 是 | 搜索关键词。 |
+| `expandDynamic` | `boolean` | 否 | 默认 `true`。设为 `false` 仅搜索静态注册表。 |
 
-**返回值**: `{ "success": true, "query": "lyric", "results": [{ "name": "...", "description": "...", "guid": "{...}", "type": "mainmenu" }], "count": 3 }`
+**返回值**: `{ "success": true, "query": "lyric", "results": [{ "name": "...", "description": "...", "guid": "{...}", "subGuid": "{...}", "path": "...", "isDynamic": true, "type": "mainmenu" }], "count": 3 }`
 
 ```javascript
-// 搜索并执行命令
+// 搜索并执行命令（动态子命令需要带上 subGuid）
 const result = await fb2k.invoke('discovery.searchCommands', { query: 'lyric' });
-if (result.results[0]) {
-    await fb2k.invoke('discovery.executeMainMenuCommand', { guid: result.results[0].guid });
+const hit = result.results[0];
+if (hit) {
+    await fb2k.invoke('discovery.executeMainMenuCommand',
+        hit.subGuid ? { guid: hit.guid, subGuid: hit.subGuid } : { guid: hit.guid });
 }
 ```
 

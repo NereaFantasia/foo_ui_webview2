@@ -2,7 +2,7 @@
 
 完整的 Spider Monkey Panel（SMP）兼容层，用于在 WebView2 UI 中运行 SMP 风格脚本。权威源代码层为 `sdk/src/smp/**`（bootstrap 入口：`bootstrapSmpCompat`）；发布到 `dist` 的产物由构建生成，禁止手工编辑。
 
-v1.2.0 新增完整的 Spider Monkey Panel (SMP) 兼容层，可在 WebView2 UI 中运行 SMP 脚本。v1.2.1 补全 Phase 4 API（剪贴板/DSP/输出/队列扩展）、`utils` 对象（22 方法）和 `window` 属性方法。
+v1.2.0 新增完整的 Spider Monkey Panel (SMP) 兼容层，可在 WebView2 UI 中运行 SMP 脚本。v1.2.1 补全剪贴板/DSP/输出/队列扩展 API、`utils` 对象（22 方法）和 `window` 属性方法。
 
 ## 快速开始
 

@@ -656,7 +656,7 @@ fb2k.on('library:itemsAdded', (data) => {
 
 ## 补充的公开 API
 
-以下章节由 Phase 3 按 `RegisterApi` 动态补齐，参数键来自 C++ handler 静态提取。
+以下章节按 `RegisterApi` 动态补齐，参数键来自 C++ handler 静态提取。
 
 ### library.getFieldValues
 

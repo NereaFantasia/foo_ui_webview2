@@ -24,7 +24,7 @@ Windows 任务栏缩略图按钮与系统托盘图标。共 19 个 API、5 个�
 | --- | --- | --- | --- |
 | `id` | string | 否 | 默认值：空字符串。作为后续 `taskbar.updateButton` 与点击事件的按钮标识。 |
 | `tooltip` | string | 否 | 默认值：空字符串。缩略图按钮的提示文本。 |
-| `icon` | string | 否 | 默认值：空字符串。可传 base64 图标；`null` 也按空图标处理。 |
+| `icon` | string | 否 | 裸 Base64 编码的 `.ico` 文件字节，不带 `data:` 或 `base64:` 前缀；`null` 也按空图标处理。 |
 | `enabled` | boolean | 否 | 默认值：`true`。 |
 | `visible` | boolean | 否 | 默认值：`true`。 |
 | `dismissOnClick` | boolean | 否 | 默认值：`false`。点击后是否关闭缩略图预览。 |
@@ -57,7 +57,7 @@ fb2k.on('taskbar:buttonClicked', ({ id }) => {
 | --- | --- | --- | --- |
 | `id` | string | 否 | 默认值：空字符串。 |
 | `tooltip` | string | 否 | 可省略；handler 仅在提供该字段时读取。 |
-| `icon` | string | 否 | 可选 base64 图标，由 `ParseIconParam` 解析；空、`null` 或省略时向更新逻辑传入空图标值。 |
+| `icon` | string | 否 | 裸 Base64 编码的 `.ico` 文件字节，不带前缀；空、`null` 或省略时向更新逻辑传入空图标值。 |
 | `enabled` | boolean | 否 | 可省略；handler 仅在提供该字段时读取。 |
 | `visible` | boolean | 否 | 可省略；handler 仅在提供该字段时读取。 |
 
@@ -118,7 +118,7 @@ fb2k.on('playback:time', ({ position }) => {
 
 | 参数 | 类型 | 必填 | 描述 |
 | --- | --- | --- | --- |
-| `icon` | string | 否 | 可选 base64 图标，由 `ParseIconParam` 解析；空、`null` 或省略时清除叠加图标。 |
+| `icon` | string | 否 | 裸 Base64 编码的 `.ico` 文件字节，不带前缀；空、`null` 或省略时清除叠加图标。 |
 | `description` | string | 否 | 可省略；handler 仅在提供该字段时读取。 |
 
 **返回值**：`{ "success": true }`
@@ -173,7 +173,7 @@ fb2k.on('playback:trackChanged', () => {
 
 | 参数 | 类型 | 必填 | 描述 |
 | --- | --- | --- | --- |
-| `icon` | string | 否 | 可选 base64 图标，由 `ResolveIconParam` 解析；空、无效或省略时回退到 foobar2000 主图标。 |
+| `icon` | string | 否 | 裸 Base64 编码的 `.ico` 文件字节，不带 `data:` 或 `base64:` 前缀；空、无效或省略时回退到 foobar2000 主图标。 |
 | `tooltip` | string | 否 | 默认值：`foobar2000`。 |
 
 **返回值**：`{ "success": true }`
@@ -198,7 +198,7 @@ await fb2k.invoke('tray.create', { tooltip: 'foobar2000 - 已停止' });
 
 | 参数 | 类型 | 必填 | 描述 |
 | --- | --- | --- | --- |
-| `icon` | string | 否 | 可选 base64 图标，由 `ResolveIconParam` 解析；空、无效或省略时回退到 foobar2000 主图标。 |
+| `icon` | string | 否 | 裸 Base64 编码的 `.ico` 文件字节，不带前缀；空、无效或省略时回退到 foobar2000 主图标。 |
 
 **返回值**：`{ "success": true }`
 
@@ -240,7 +240,7 @@ fb2k.on('playback:trackChanged', async (track) => {
 
 ### tray.setContextMenu
 
-设置右键菜单。菜单项点击后触发 `tray:menuItemClicked` 事件。
+设置右键菜单。**普通用户项**点击后触发 `tray:menuItemClicked`；内置 `showPlaybackControls` / `showSystemItems` 注入项，以及声明了 `playbackAction` 的项，由插件原生执行且**不发**该事件。
 
 | 参数 | 类型 | 必填 | 描述 |
 | --- | --- | --- | --- |
@@ -257,7 +257,7 @@ fb2k.on('playback:trackChanged', async (track) => {
 | `enabled` | boolean | `true` | 是否可用。 |
 | `visible` | boolean | `true` | 是否可见。 |
 | `checked` | boolean | 可省略 | **显式提供该属性（含 `checked: false`）**即建立 checkable 身份：WebView 映射为 `menuitemcheckbox`，`getMenuItems()` 会 round-trip 该键；省略则不是 checkbox。`tray.setMenuItemState(id, { checked })` 也会建立 checkable 身份。 |
-| `icon` | string | 空字符串 | 可选图标字符串。 |
+| `icon` | string | 空字符串 | 保留兼容字段；native 与 WebView 两种后端当前都不渲染。WebView 菜单项图标请使用 `iconSvg`。 |
 | `iconSvg` | object | 可省略 | `{ viewBox, content }` 内联单色 SVG 图标，**仅 `render: 'webview'` 渲染**（native 忽略）。运行时经 `DOMParser` 与元素/属性白名单克隆进 DOM；非法或单图大于 32 KiB 时丢弃图标但继续显示菜单。 |
 | `submenu` | array | 可省略 | 递归菜单项数组。 |
 | `cover` | string | 空字符串 | `nowplaying` 项的封面数据。 |
@@ -267,13 +267,20 @@ fb2k.on('playback:trackChanged', async (track) => {
 | `min` | integer | `0` | `slider` 项最小值。 |
 | `max` | integer | `100` | `slider` 项最大值。 |
 | `orientation` | string | 可省略 | `slider` 方向；支持 `horizontal` 或 `vertical`。 |
+| `playbackAction` | string | 可省略 | 声明式原生播放动作：`'play-pause' \| 'previous' \| 'next' \| 'stop'`。仅合法于 `type:'normal'` 叶子；组装时盖章为内置播放路由并原生执行，**不发** `tray:menuItemClicked`。外观/`id`/`label`/`icon` 仍由调用方控制；主窗口最小化/托盘隐藏/锁屏深挂起时仍可靠。非法取值或写在 separator/submenu/富控件上 → 整次调用 fail-loud `INVALID_PARAMS`。不接受 `'exit'`（退出仍走精确 `_sys_exit`）。对 `menu.show` 无效。`getMenuItems()` round-trip。 |
 | `segments` | array | 可省略 | `segmented` 项的分段数组。 |
 
 > `rating` / `slider` / `segmented` 的值变化通过 `tray:menuItemClicked` 携带 `{ id, value }` 上报，且**不关闭菜单**（`segmented` 的 `value` = 选中段索引，点击段或键盘 Left/Right 切换；index→业务语义由前端映射，契约保持通用）；`nowplaying` 点击与普通项一样发 `{ id }` 并关闭。值控件不参与 `autoNowPlaying` 兜底（仅 `nowplaying`）。
 >
-> **Slider 方向（Phase 3，仅 webview）**：水平 min 左 max 右；纵向 min 底 max 顶（`clientY` / height，fill `height` 自 bottom，thumb `bottom`）。键盘 Up/Right 增、Down/Left 减、Home=min、End=max。pointermove 50ms 节流，pointerup 强发终值。常量滑块不发 value。DOM 钩子：`.fb-slider[data-orientation]`。
+> **声明式原生播放（`playbackAction`）**：自定义外观托盘播放项在后台仍需可靠时，应声明本字段（或使用内置 `showPlaybackControls`），不要只靠 `tray:menuItemClicked` → `playback.*`——主页面深挂起时 JS 事件循环不保证运行。按钮态从 `playback:*` 事件反映。
 >
-> **可访问性（Phase 3）**：两态焦点（导航 roving tabindex / 真实 focus；富控件 Enter/Right 进入编辑态，Escape/Enter 返回）。ARIA：普通/子菜单 `menuitem`，checkable `menuitemcheckbox`，slider/rating 内部 `role=slider`，segmented `radiogroup`/`radio`。默认入退场在 `prefers-reduced-motion: reduce` 下禁用 transform/transition（自定义 CSS 由主题作者同样遵守）。
+> **Slider 方向（仅 webview）**：水平 min 左 max 右；纵向 min 底 max 顶（`clientY` / height，fill `height` 自 bottom，thumb `bottom`）。键盘 Up/Right 增、Down/Left 减、Home=min、End=max。pointermove 50ms 节流，pointerup 强发终值。常量滑块不发 value。DOM 钩子：`.fb-slider[data-orientation]`。
+>
+> **可访问性**：两态焦点（导航 roving tabindex / 真实 focus；富控件 Enter/Right 进入编辑态，Escape/Enter 返回）。ARIA：普通/子菜单 `menuitem`，checkable `menuitemcheckbox`，slider/rating 内部 `role=slider`，segmented `radiogroup`/`radio`。默认入退场在 `prefers-reduced-motion: reduce` 下禁用 transform/transition（自定义 CSS 由主题作者同样遵守）。
+
+::: warning 顶层图标格式
+`taskbar.*` 与 `tray.create` / `tray.setIcon` 的顶层 `icon` 不是通用图片输入，只接受裸 Base64 `.ico` 文件字节。PNG、JPEG、SVG、Data URL 与 `base64:` wire 字符串都不会按预期解析。解析失败时，任务栏按钮可能回退默认图标，overlay 可能等价于清除，tray 会回退 foobar2000 主图标。
+:::
 
 ```javascript
 await fb2k.invoke('tray.setContextMenu', {
@@ -294,7 +301,7 @@ fb2k.on('tray:menuItemClicked', ({ id }) => {
 
 **返回值**：`{ "success": true }`
 
-**自绘托盘菜单（`config.render: 'webview'`）**：将 `config.render` 设为 `'webview'`，右键托盘改用 WebView2 自绘菜单渲染同一份三区菜单（`showPlaybackControls` / `showSystemItems` / `customPosition` 行为不变）。**前端零改动**——选中仍走 `tray:menuItemClicked`，`tray:beforeContextMenu` 语义不变（弹出前发射）；自绘托盘菜单**不**发射 `menu:select` / `menu:dismiss`（这两个属 `menu.*` 命名空间）。默认 `'native'` 与原生托盘菜单完全一致。自绘菜单使用**内容尺寸窗**——按菜单内容大小定位、**浮于任务栏之上且不压暗任务栏**，子菜单支持 1 层展开。
+**自绘托盘菜单（`config.render: 'webview'`）**：将 `config.render` 设为 `'webview'`，右键托盘改用 WebView2 自绘菜单渲染同一份三区菜单（`showPlaybackControls` / `showSystemItems` / `customPosition` 行为不变）。**前端零改动**——普通用户项选中仍走 `tray:menuItemClicked`；内置注入项与声明了 `playbackAction` 的项由插件原生执行且不发该事件。`tray:beforeContextMenu` 语义不变（弹出前发射）；自绘托盘菜单**不**发射 `menu:select` / `menu:dismiss`（这两个属 `menu.*` 命名空间）。默认 `'native'` 与原生托盘菜单完全一致。自绘菜单使用**内容尺寸窗**——按菜单内容大小定位、**浮于任务栏之上且不压暗任务栏**，子菜单支持 1 层展开。
 
 ```javascript
 await fb2k.invoke('tray.setContextMenu', {
@@ -370,7 +377,7 @@ await fb2k.invoke('tray.setContextMenu', {
 - 默认 **override 叠加** 模式：你的规则叠加在内置样式之上，按菜单的**稳定 class 名**编写并靠源序或 `!important` 取胜。可用的稳定 class（自绘菜单 overlay 是独立顶层 document，宿主页的 `::part()` 无法跨 document 触达，故钩子 = class 名）：容器 `.fb-menu`；菜单项 `.fb-item`（+ `.nrm` / `.disabled` / `.active` / `.checked` / `.has-sub`）、图标列 `.fb-item-ico`、子菜单箭头 `.fb-arrow`、分隔线 `.fb-sep`；nowplaying `.fb-np` / `.fb-np-cover` / `.fb-np-text` / `.fb-np-title` / `.fb-np-sub`；rating `.fb-rating` / `.fb-stars` / `.fb-star`（+ `.on`）；slider `.fb-slider` / `.fb-slider-track` / `.fb-slider-fill` / `.fb-slider-thumb` / `.fb-slider-val`。
 - `cssReplace: true` 切 **replace** 模式：禁用全部内置默认样式，整张菜单（含入场动画）以你的 `css` 为准，仅保留一层**受保护结构层**（`#viewport` 几何、菜单盒模型 / 固定定位 / 溢出、隐藏态 fallback）以保证内容尺寸窗测量稳定。**可见态 display（block / flex / grid）不再由受保护层强制**，主题可直接布局根菜单；用户 CSS 无法用 `display:* !important` 重新显示已隐藏的菜单。
 - `native` 后端忽略 `css` / `cssReplace`。
-- **`layoutMode`（Phase 2）**：默认 `'flat'`，零配置时 DOM 仍为 `#menu > .fb-item` / separator 直接子结构（旧主题选择器继续成立）。仅显式 `'zones'` 时生成 `.fb-zone[data-zone]`。稳定钩子：`.fb-menu[data-depth]`、`.fb-zone[data-zone]`、`.fb-item[data-item-id][data-kind][data-depth][data-zone]`；`data-item-token` 为内部单次 show 身份，**不是**公共 CSS 契约。需要 zones 的主题应先用 `config.getVersionInfo().plugin.version` 探测插件版本（最低版本号尚未最终确认前不要写死假版本）。`menu.show` 始终保持 legacy 直接子 DOM，不继承 tray zones。
+- **`layoutMode`**：默认 `'flat'`，零配置时 DOM 仍为 `#menu > .fb-item` / separator 直接子结构（旧主题选择器继续成立）。仅显式 `'zones'` 时生成 `.fb-zone[data-zone]`。稳定钩子：`.fb-menu[data-depth]`、`.fb-zone[data-zone]`、`.fb-item[data-item-id][data-kind][data-depth][data-zone]`；`data-item-token` 为内部单次 show 身份，**不是**公共 CSS 契约。zones 自 1.10.0 起提供；需兼容旧版的主题应先用 `config.getVersionInfo().plugin.version` 探测运行时版本。`menu.show` 始终保持 legacy 直接子 DOM，不继承 tray zones。
 
 ```javascript
 // override：仅微调配色，复用内置布局
@@ -559,7 +566,7 @@ await fb2k.invoke('tray.setContextMenu', {
 | --- | --- | --- |
 | `tray:click` | `{ button: number, x: number, y: number }` | 托盘图标被单击（button: 0=左键） |
 | `tray:doubleClick` | `{ x: number, y: number }` | 托盘图标被双击 |
-| `tray:menuItemClicked` | `{ id: string }` | 右键菜单项被点击 |
+| `tray:menuItemClicked` | `{ id: string, value?: number }` | 普通用户项 / 富值控件被操作。内置注入项与声明了 `playbackAction` 的项**不发**此事件 |
 | `tray:beforeContextMenu` | `{ x: number, y: number }` | 菜单即将显示的异步通知；handler 内的 append/remove/clear 只影响后续右键菜单，不阻塞本次弹出 |
 
 ---
@@ -698,14 +705,14 @@ await fb2k.invoke('tray.removeMenuItems', { ids: ['revealInExplorer', 'copyPath'
 
 > **语义提示**：`tray:beforeContextMenu` 是异步通知，handler 内的 `clearMenuItems` / `appendMenuItems` 只影响下一次菜单弹出，不阻塞本次弹出。若希望首次右键菜单也包含上下文项，应在 `playback:trackChanged` 中同步预填充。
 
-## Phase 3 合同补充
+## 合同补充
 
 以下章节补齐严格参数审计发现的公开 contract；不会改变前文的已有说明。
 
 <!-- phase3-supplement:taskbar.setProgress -->
 ### Contract 补充：`taskbar.setProgress`
 
-经 Phase 3 复核的补充 contract。权威源：`src/api/TaskbarApi.cpp:178`。
+经复核的补充 contract。权威源：`src/api/TaskbarApi.cpp:178`。
 
 | 参数 | 类型 | 必填 | 默认值 | 说明 |
 | --- | --- | --- | --- | --- |
@@ -725,6 +732,38 @@ await fb2k.invoke('tray.removeMenuItems', { ids: ['revealInExplorer', 'copyPath'
 const result = await fb2k.invoke('taskbar.setProgress', { state: /* value */, value: /* value */ });
 ```
 
+<!-- contract-supplement:tray.playbackAction -->
+### Contract 补充：`items[].playbackAction`
+
+运行时权威：`src/api/TrayApi.cpp`（`ParseMenuItem`）与 `src/window/TrayIcon.h`（`PromoteDeclaredPlaybackItems`、`BuildEffectiveTrayZones`）。
+
+`playbackAction` 声明由插件原生执行的播放动作（而非页面 JS）。取值之一：`'play-pause' | 'previous' | 'next' | 'stop'`；仅合法于 `type: 'normal'` 叶子。
+
+| 方面 | 行为 |
+| --- | --- |
+| 执行 | 组装阶段翻译为匹配的内置命令，由插件原生执行。 |
+| 后台可靠 | 窗口最小化、关闭到托盘或会话锁屏（主页面深挂起）时仍可用。 |
+| 事件 | 声明项**不发** `tray:menuItemClicked`；按钮态从 `playback:*` 反映。 |
+| 外观 | 调用方完整控制 `label` / `icon` / `id`；仅路由改变。 |
+| 校验 | fail-loud：未知 token，或写在 separator / submenu / 富控件上，整次 `setContextMenu` / `appendMenuItems` 返回 `INVALID_PARAMS`。 |
+| `'exit'` | 不接受——应用退出仍走精确 `_sys_exit`。 |
+| 作用域 | 仅 tray 菜单；对 `menu.show` 无效。 |
+| Round-trip | `getMenuItems()` 回传已声明的 `playbackAction`。 |
+
+未声明本字段、仅靠 `tray:menuItemClicked` 再 `invoke('playback.*')` 的用户项，在主页面深挂起时不保证执行。后台可靠的托盘播放控制请用 `playbackAction`（或内置 `showPlaybackControls` 项）。这与 Electron `MenuItem.role` / Tauri `PredefinedMenuItem` 的声明式原生动作模式同构。
+
+```js
+// 自定义外观 + 后台可靠的原生播放：
+await fb2k.invoke('tray.setContextMenu', {
+    items: [
+        { id: 'prev', label: '⏮', playbackAction: 'previous' },
+        { id: 'pp', label: '⏯', playbackAction: 'play-pause' },
+        { id: 'next', label: '⏭', playbackAction: 'next' },
+    ],
+    config: { showPlaybackControls: false, render: 'webview' },
+});
+```
+
 ## 运行时生命周期、菜单数据与事件
 
 `taskbar.*` 与 `tray.*` 需要 standalone 主窗口。在 panel 中，每个 handler 返回
@@ -738,14 +777,17 @@ const result = await fb2k.invoke('taskbar.setProgress', { state: /* value */, va
 托盘菜单由 `tray.setContextMenu` 配置，后续可使用 `tray.appendMenuItems`、
 `tray.removeMenuItems`、`tray.clearMenuItems` 与 `tray.setMenuItemState` 更新。
 `tray:menuItemClicked` 通常携带 `{ id }`；rating、slider 与 segmented 控件还会提供
-`value`。图标事件为带 `{ button, x, y }` 的 `tray:click`、带 `{ x, y }` 的
+`value`。由插件原生执行的项**不会**触发该事件：内置 `showPlaybackControls` /
+`showSystemItems` 注入项，以及声明了 `playbackAction` 的项，直接执行其命令。
+图标事件为带 `{ button, x, y }` 的 `tray:click`、带 `{ x, y }` 的
 `tray:doubleClick`，以及带 `{ x, y }` 的 `tray:beforeContextMenu`。最后一个事件是
 异步通知：handler 的变更影响下一次打开的菜单，不会阻塞当前正在构建的菜单。
 
 菜单可使用 `data:image/...` 封面数据和可选的 webview 渲染。对于 webview renderer，
 配置 stylesheet 可包含 `display:flex`、`flex-direction:column` 与
-`background:rgba(...)` 等声明。托盘事件契约仍是 `tray:menuItemClicked`；它不会替换
-无关的 `menu:select` 或 `menu:dismiss` 事件。
+`background:rgba(...)` 等声明。普通用户项的点击事件是 `tray:menuItemClicked`；它不会替换
+无关的 `menu:select` 或 `menu:dismiss` 事件。由插件原生执行的项——内置注入项以及声明了
+`playbackAction` 的项——不发 `tray:menuItemClicked`。
 
 ```js
 fb2k.on('taskbar:buttonClicked', ({ id }) => console.log(id));

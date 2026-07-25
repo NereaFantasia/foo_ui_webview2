@@ -136,9 +136,9 @@ The tray icon is application-scoped and has no source window. Its events are bro
 | `tray:click` | The tray icon is clicked | `{ button, x, y }` |
 | `tray:doubleClick` | The tray icon is double-clicked | `{ x, y }` |
 | `tray:beforeContextMenu` | Before the context menu opens | `{ x, y }` |
-| `tray:menuItemClicked` | A tray item is selected or a rich value changes | `{ id, value? }` |
+| `tray:menuItemClicked` | An ordinary tray item is selected or a rich value changes | `{ id, value? }` |
 
-Ordinary items and now-playing cards report `{ id }` and close the menu. Rich value controls report `{ id, value }` and keep it open: ratings use `0..5`, sliders use an integer in `[min, max]`, and segmented controls use the selected zero-based index.
+Ordinary user items and now-playing cards report `{ id }` and close the menu. Rich value controls report `{ id, value }` and keep it open: ratings use `0..5`, sliders use an integer in `[min, max]`, and segmented controls use the selected zero-based index. Built-in `showPlaybackControls` / `showSystemItems` injections and items declaring `playbackAction` execute natively and do **not** fire this event.
 
 ## Application, keyboard, and menu events
 

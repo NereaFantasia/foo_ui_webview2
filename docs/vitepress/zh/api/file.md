@@ -21,6 +21,8 @@
 
 二进制模式额外返回 `"encoding": "base64"`。
 
+二进制读取时，`content` 是**不带 `base64:` 前缀的裸 Base64 payload**；它是传输表示，不是文本，也不是 Data URL。要把读取结果原样写回，必须在写入时补上 `base64:`，并同时保持 `encoding: 'binary'`。
+
 ```javascript
 // 读取文本文件
 const { content } = await fb2k.invoke('file.read', { path: '%profile%\\\\config.json' });
@@ -43,6 +45,8 @@ console.log(bin.encoding); // "base64"
 
 **返回值**: `{ "success": true, "bytesWritten": 1024 }`
 
+二进制写入只有在以下两个条件同时满足时才会解码：`encoding` 必须精确为 `'binary'`，且 `content` 必须以 `base64:` 开头。该前缀是 Bridge wire 标记，解码前会被移除。裸 Base64、`data:image/...;base64,...` Data URL 或 `fb2k://` 封面 URL 都不会进入该解码分支；调用仍可能返回 `success: true`，但文件内容会错误。
+
 ```javascript
 // 写入 JSON 配置
 await fb2k.invoke('file.write', {
@@ -53,6 +57,16 @@ await fb2k.invoke('file.write', {
 // 追加日志
 await fb2k.invoke('file.write', {
     path: '%profile%\\\\debug.log', content: 'log entry\\n', append: true
+});
+
+// binary read → write：必须补回 base64: wire 前缀
+const binary = await fb2k.invoke('file.read', {
+    path: '%profile%\\\\data.bin', encoding: 'binary'
+});
+await fb2k.invoke('file.write', {
+    path: '%profile%\\\\data-copy.bin',
+    content: `base64:${binary.content}`,
+    encoding: 'binary'
 });
 ```
 
@@ -395,14 +409,14 @@ if (result.success === false) {
 await fb2k.invoke('shell.openWith', { path: 'C:\\\\Music\\\\notes.txt' });
 ```
 
-## Phase 3 合同补充
+## 合同补充
 
 以下章节补齐严格参数审计发现的公开 contract；不会改变前文的已有说明。
 
 <!-- phase3-supplement:dialog.openFile -->
 ### Contract 补充：`dialog.openFile`
 
-经 Phase 3 复核的补充 contract。权威源：`src/api/DialogApi.cpp:62-167`。
+经复核的补充 contract。权威源：`src/api/DialogApi.cpp:62-167`。
 
 | 参数 | 类型 | 必填 | 默认值 | 说明 |
 | --- | --- | --- | --- | --- |
@@ -427,7 +441,7 @@ const result = await fb2k.invoke('dialog.openFile', { defaultPath: /* value */, 
 <!-- phase3-supplement:dialog.saveFile -->
 ### Contract 补充：`dialog.saveFile`
 
-经 Phase 3 复核的补充 contract。权威源：`src/api/DialogApi.cpp:171-231`。
+经复核的补充 contract。权威源：`src/api/DialogApi.cpp:171-231`。
 
 | 参数 | 类型 | 必填 | 默认值 | 说明 |
 | --- | --- | --- | --- | --- |

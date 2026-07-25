@@ -574,13 +574,13 @@ await fb2k.invoke('log.write', {
 
 **返回值**: `{ "success": true }`
 
-## Phase 3 合同补充
+## 合同补充
 
 以下章节补齐严格参数审计发现的公开 contract；不会改变前文的已有说明。
 
 ### menu.close
 
-经 Phase 3 复核的公开 API。权威源：`src/api/MenuApi.cpp:1141-1146`。
+经复核的公开 API。权威源：`src/api/MenuApi.cpp:1141-1146`。
 
 | 参数 | 类型 | 必填 | 默认值 | 说明 |
 | --- | --- | --- | --- | --- |
@@ -594,7 +594,7 @@ const result = await fb2k.invoke('menu.close', { reason: 'api' });
 
 ### menu.show
 
-经 Phase 3 复核的公开 API。权威源：`src/api/MenuApi.cpp:1321`。
+经复核的公开 API。权威源：`src/api/MenuApi.cpp:1321`。
 
 | 参数 | 类型 | 必填 | 默认值 | 说明 |
 | --- | --- | --- | --- | --- |
@@ -611,7 +611,7 @@ const result = await fb2k.invoke('menu.show', { items: [], x: -1, y: -1 });
 <!-- phase3-supplement:log.write -->
 ### Contract 补充：`log.write`
 
-经 Phase 3 复核的补充 contract。权威源：`src/api/ConsoleApi.cpp:140-221`。
+经复核的补充 contract。权威源：`src/api/ConsoleApi.cpp:140-221`。
 
 | 参数 | 类型 | 必填 | 默认值 | 说明 |
 | --- | --- | --- | --- | --- |
@@ -638,7 +638,7 @@ const result = await fb2k.invoke('log.write', { message: /* value */, args: /* v
 <!-- phase3-supplement:menu.getContextMenu -->
 ### Contract 补充：`menu.getContextMenu`
 
-经 Phase 3 复核的补充 contract。权威源：`src/api/MenuApi.cpp:980-1024`。
+经复核的补充 contract。权威源：`src/api/MenuApi.cpp:980-1024`。
 
 | 参数 | 类型 | 必填 | 默认值 | 说明 |
 | --- | --- | --- | --- | --- |
@@ -668,7 +668,7 @@ const result = await fb2k.invoke('menu.getContextMenu', { handles: /* value */, 
 <!-- phase3-supplement:menu.runContextCommandById -->
 ### Contract 补充：`menu.runContextCommandById`
 
-经 Phase 3 复核的补充 contract。权威源：`src/api/MenuApi.cpp:1024-1045`。
+经复核的补充 contract。权威源：`src/api/MenuApi.cpp:1024-1045`。
 
 | 参数 | 类型 | 必填 | 默认值 | 说明 |
 | --- | --- | --- | --- | --- |
@@ -691,7 +691,7 @@ const result = await fb2k.invoke('menu.runContextCommandById', { id: /* value */
 <!-- phase3-supplement:misc.showPopupMessage -->
 ### Contract 补充：`misc.showPopupMessage`
 
-经 Phase 3 复核的补充 contract。权威源：`src/api/MiscApi.cpp:97-105`。
+经复核的补充 contract。权威源：`src/api/MiscApi.cpp:97-105`。
 
 | 参数 | 类型 | 必填 | 默认值 | 说明 |
 | --- | --- | --- | --- | --- |

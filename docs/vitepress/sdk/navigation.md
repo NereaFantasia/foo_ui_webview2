@@ -143,14 +143,14 @@ const off = fb.on('jitQueue:needNext', ({ currentTrackId, reason }) => {
 
 | Method | Contract |
 | --- | --- |
-| `getMainMenuCommands()` | Returns `{ commands, count }`. Each command includes `name`, `description`, `guid`, `parentGuid`, and `index`. |
-| `getMainMenuGroups()` | Returns `{ groups, count }`. |
-| `executeMainMenuCommand(guid)` | Invokes a main-menu command by GUID. |
+| `getMainMenuCommands(options?)` | Returns `{ commands, count, dynamicCount }`. Each command includes `name`, `description`, `guid`, `parentGuid`, and `index`. Runtime submenus (`mainmenu_commands_v2`) are expanded by default; expanded children add `subGuid`, `isDynamic`, and `path`. Pass `{ expandDynamic: false }` for the static registry only. |
+| `getMainMenuGroups()` | Returns `{ groups, count }`. Only statically registered `mainmenu_group` services are listed; runtime submenus are command-node trees, so use `getMainMenuCommands()` for those. |
+| `executeMainMenuCommand(guid, subGuid?)` | Invokes a main-menu command by GUID; pass `subGuid` for an entry expanded from a dynamic submenu. |
 | `getContextMenuCommands()` | Returns `{ commands, count }`. |
 | `executeContextMenuCommand(options)` | Accepts `DiscoveryExecuteContextMenuCommandParams`; the facade forwards `guid`. |
 | `executeContextMenuByPath(options)` | Accepts `path` and optional `trackPath`, then may return `foundName` and `itemCount`. |
 | `getContextMenuTree()` | Returns the current context-menu tree and optional `itemCount`. |
-| `searchCommands(query)` | Searches main-menu commands and returns optional `results` and `count`. |
+| `searchCommands(query, options?)` | Searches main-menu command names, descriptions, and paths; returns optional `results` and `count`. Dynamic submenus are expanded by default. |
 
 ```javascript
 const commands = await fb.discovery.getMainMenuCommands();

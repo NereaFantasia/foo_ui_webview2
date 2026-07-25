@@ -192,6 +192,12 @@ Public API method. Runtime authority: `src/api/FileApi.cpp:638`.
 const result = await fb2k.invoke('file.read', { encoding: /* value */, path: /* value */ });
 ```
 
+When `encoding: 'binary'`, `content` is a **raw Base64 payload** without a
+`base64:` prefix and the response sets `encoding: 'base64'`. This is a
+transport representation, not text and not a Data URL. To write the bytes
+back, add the `base64:` prefix required by `file.write` and keep
+`encoding: 'binary'`.
+
 ### file.rename
 
 Public API method. Runtime authority: `src/api/FileApi.cpp:668`.
@@ -222,6 +228,26 @@ Public API method. Runtime authority: `src/api/FileApi.cpp:641`.
 
 ```js
 const result = await fb2k.invoke('file.write', { append: /* value */, content: /* value */, encoding: /* value */, path: /* value */ });
+```
+
+For binary writes, decoding happens only when **both** conditions are true:
+`encoding` is exactly `'binary'` and `content` starts with `base64:`. The
+prefix is a Bridge wire marker and is removed before decoding. A raw Base64
+string, a `data:image/...;base64,...` Data URL, or a `fb2k://` artwork URL is
+not decoded by this branch; such input can still produce `success: true` while
+writing the wrong bytes.
+
+```js
+const binary = await fb2k.invoke('file.read', {
+	path: '%profile%\\data.bin',
+	encoding: 'binary',
+});
+
+await fb2k.invoke('file.write', {
+	path: '%profile%\\data-copy.bin',
+	content: `base64:${binary.content}`,
+	encoding: 'binary',
+});
 ```
 
 ## shell
@@ -303,14 +329,14 @@ Public API method. Runtime authority: `src/api/ShellApi.cpp:430`.
 const result = await fb2k.invoke('shell.spawn', { args: /* value */, cwd: /* value */, executable: /* value */, hidden: /* value */, waitForExitMs: /* value */ });
 ```
 
-## Phase 3 contract supplements
+## Contract supplements
 
 The sections below close public-contract findings from the strict parameter audit without replacing existing explanations.
 
 <!-- phase3-supplement:dialog.openFile -->
 ### Contract supplement: `dialog.openFile`
 
-Phase 3 verified contract supplement. Runtime authority: `src/api/DialogApi.cpp:62-167`.
+Verified contract supplement. Runtime authority: `src/api/DialogApi.cpp:62-167`.
 
 | Parameter | Type | Required | Default | Description |
 | --- | --- | --- | --- | --- |
@@ -335,7 +361,7 @@ const result = await fb2k.invoke('dialog.openFile', { defaultPath: /* value */, 
 <!-- phase3-supplement:dialog.saveFile -->
 ### Contract supplement: `dialog.saveFile`
 
-Phase 3 verified contract supplement. Runtime authority: `src/api/DialogApi.cpp:171-231`.
+Verified contract supplement. Runtime authority: `src/api/DialogApi.cpp:171-231`.
 
 | Parameter | Type | Required | Default | Description |
 | --- | --- | --- | --- | --- |

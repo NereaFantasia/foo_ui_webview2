@@ -14,7 +14,7 @@ Searches the media library with foobar2000 query syntax, for example `artist IS 
 | `offset` | integer | No | Declared minimum `0`; the Bridge default is `0` |
 | `limit` | integer | No | Declared range `1` to `500`; the Bridge default is `100` |
 
-The `ToolDefinition` description currently says default `50`, but it declares no MCP default. Omission therefore reaches `library.search`, whose handler uses `100`; that runtime behavior is documented here.
+The MCP declaration describes the runtime default but does not inject a `default` value. When `limit` is omitted, the request reaches `library.search`, whose handler uses `100`.
 
 **Example result:**
 

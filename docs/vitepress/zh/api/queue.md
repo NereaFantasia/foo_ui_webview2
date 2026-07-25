@@ -35,7 +35,7 @@ if (r.found) {
 ### selection.get
 
 <!-- phase3-major1-review:selection.get -->
-#### Phase 3 Major 1 源码复核 contract
+#### 源码复核 contract
 权威源: `src/api/SelectionApi.cpp:192-250`.
 
 | 参数 | 类型 | 必填 | 默认值 |
@@ -63,7 +63,7 @@ if (r.found) {
 ### selection.getType
 
 <!-- phase3-major1-review:selection.getType -->
-#### Phase 3 Major 1 源码复核 contract
+#### 源码复核 contract
 权威源: `src/api/SelectionApi.cpp:255-278`.
 
 _无公开参数。_
@@ -87,7 +87,7 @@ _无公开参数。_
 ### selection.set
 
 <!-- phase3-major1-review:selection.set -->
-#### Phase 3 Major 1 源码复核 contract
+#### 源码复核 contract
 权威源: `src/api/SelectionApi.cpp:283-361`.
 
 | 参数 | 类型 | 必填 | 默认值 |
@@ -129,7 +129,7 @@ _无公开参数。_
 
 
 <!-- phase3-major1-review:queue.addPaths -->
-#### Phase 3 Major 1 源码复核 contract
+#### 源码复核 contract
 权威源: `src/api/QueueApi.cpp:266-337`.
 
 | 参数 | 类型 | 必填 | 默认值 |
@@ -162,7 +162,7 @@ await fb2k.invoke('queue.addPaths', {
 ### queue.add
 
 <!-- phase3-major1-review:queue.add -->
-#### Phase 3 Major 1 源码复核 contract
+#### 源码复核 contract
 权威源: `src/api/QueueApi.cpp:221-261`.
 
 | 参数 | 类型 | 必填 | 默认值 |
@@ -239,7 +239,7 @@ await fb2k.invoke('queue.add', { tracks: [0, 1, 2], playlist: 0 });
 ### queue.remove
 
 <!-- phase3-major1-review:queue.remove -->
-#### Phase 3 Major 1 源码复核 contract
+#### 源码复核 contract
 权威源: `src/api/QueueApi.cpp:341-392`.
 
 | 参数 | 类型 | 必填 | 默认值 |
@@ -300,7 +300,7 @@ console.log(`队列中有 ${result.count} 项`);
 ### queue.moveToTop
 
 <!-- phase3-major1-review:queue.moveToTop -->
-#### Phase 3 Major 1 源码复核 contract
+#### 源码复核 contract
 权威源: `src/api/QueueApi.cpp:422-459`.
 
 | 参数 | 类型 | 必填 | 默认值 |
@@ -442,7 +442,7 @@ await fb2k.invoke('jitQueue.playNow', {
 ### jitQueue.preloadBatch
 
 <!-- phase3-major1-review:jitQueue.preloadBatch -->
-#### Phase 3 Major 1 源码复核 contract
+#### 源码复核 contract
 权威源: `src/api/QueueApi.cpp:600-645`.
 
 | 参数 | 类型 | 必填 | 默认值 |
@@ -509,14 +509,14 @@ await fb2k.invoke('jitQueue.preloadBatch', {
 | `jitQueue:preloadComplete` | 批量预加载完成。 | `{ count, startIndex, replace }` |
 | `jitQueue:error` | 某首曲目的 JIT 操作失败。 | URL 分支为 `{ trackId, error, url }`，本地路径分支为 `{ trackId, error, path }`。 |
 
-## Phase 3 合同补充
+## 合同补充
 
 以下章节补齐严格参数审计发现的公开 contract；不会改变前文的已有说明。
 
 <!-- phase3-supplement:jitQueue.preloadBatch -->
 ### Contract 补充：`jitQueue.preloadBatch`
 
-经 Phase 3 复核的补充 contract。权威源：`src/api/QueueApi.cpp:600-645`。
+经复核的补充 contract。权威源：`src/api/QueueApi.cpp:600-645`。
 
 | 参数 | 类型 | 必填 | 默认值 | 说明 |
 | --- | --- | --- | --- | --- |

@@ -2,7 +2,7 @@
 
  SDK 通过聚合 `fb` 对象提供 40 个运行时命名空间，此外还提供响应式 `fb.state` 镜像以及顶层的 `fb.on`、`fb.off`、`fb.once`、`fb.invoke`、`fb.isAvailable()` 和 `fb.ready()` 辅助方法。
 
-Phase 4 AST 门禁当前从导出的命名空间对象提取完整公开 facade，统计为 `443` 个 method / `0` 个文档示例调用缺口；较窄的直接 `invoke` 提取器仅保留为诊断子集，不再作为 SDK 总数。
+AST 覆盖门禁当前从导出的命名空间对象提取完整公开 facade，统计为 `443` 个 method / `0` 个文档示例调用缺口；较窄的直接 `invoke` 提取器仅保留为诊断子集，不再作为 SDK 总数。
 
 ## 核心命名空间
 

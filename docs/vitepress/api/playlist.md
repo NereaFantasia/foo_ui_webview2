@@ -20,7 +20,7 @@ const { count } = await fb2k.invoke('playlist.getCount');
 ### playlist.getAll
 
 <!-- phase3-major1-review:playlist.getAll -->
-#### Phase 3 Major 1 source-reviewed contract
+#### Source-reviewed contract
 Authority: `src/api/PlaylistApi.cpp:750-772`.
 
 _No public parameters._
@@ -73,7 +73,7 @@ Get the active playlist. Includes a `duration` field.
 ### playlist.setActive
 
 <!-- phase3-major1-review:playlist.setActive -->
-#### Phase 3 Major 1 source-reviewed contract
+#### Source-reviewed contract
 Authority: `src/api/PlaylistApi.cpp:796-808`.
 
 | Parameter | Type | Required | Default |
@@ -112,7 +112,7 @@ Get the currently playing playlist.includes `duration` Field.
 ### playlist.create
 
 <!-- phase3-major1-review:playlist.create -->
-#### Phase 3 Major 1 source-reviewed contract
+#### Source-reviewed contract
 Authority: `src/api/PlaylistApi.cpp:832-845`.
 
 | Parameter | Type | Required | Default |
@@ -142,7 +142,7 @@ const result = await fb2k.invoke('playlist.create', { name: 'Rock Music' });
 ### playlist.remove
 
 <!-- phase3-major1-review:playlist.remove -->
-#### Phase 3 Major 1 source-reviewed contract
+#### Source-reviewed contract
 Authority: `src/api/PlaylistApi.cpp:845-867`.
 
 | Parameter | Type | Required | Default |
@@ -166,7 +166,7 @@ Remove a playlist.if Play column lockedthen noneRemove ...
 ### playlist.rename
 
 <!-- phase3-major1-review:playlist.rename -->
-#### Phase 3 Major 1 source-reviewed contract
+#### Source-reviewed contract
 Authority: `src/api/PlaylistApi.cpp:867-880`.
 
 | Parameter | Type | Required | Default |
@@ -196,7 +196,7 @@ await fb2k.invoke('playlist.rename', { playlist: 0, name: 'My Favorites' });
 ### playlist.clear
 
 <!-- phase3-major1-review:playlist.clear -->
-#### Phase 3 Major 1 source-reviewed contract
+#### Source-reviewed contract
 Authority: `src/api/PlaylistApi.cpp:880-910`.
 
 | Parameter | Type | Required | Default |
@@ -229,7 +229,7 @@ Clear Play column  in all track ...
 ### playlist.duplicate
 
 <!-- phase3-major1-review:playlist.duplicate -->
-#### Phase 3 Major 1 source-reviewed contract
+#### Source-reviewed contract
 Authority: `src/api/PlaylistApi.cpp:1402-1436`.
 
 | Parameter | Type | Required | Default |
@@ -257,7 +257,7 @@ Duplicate a playlist.column Insert to column  after ..
 ### playlist.getTrackCount
 
 <!-- phase3-major1-review:playlist.getTrackCount -->
-#### Phase 3 Major 1 source-reviewed contract
+#### Source-reviewed contract
 Authority: `src/api/PlaylistApi.cpp:948-961`.
 
 | Parameter | Type | Required | Default |
@@ -283,7 +283,7 @@ Get Play column  in track count...
 ### playlist.getTracks
 
 <!-- phase3-major1-review:playlist.getTracks -->
-#### Phase 3 Major 1 source-reviewed contract
+#### Source-reviewed contract
 Authority: `src/api/PlaylistApi.cpp:961-981`.
 
 | Parameter | Type | Required | Default |
@@ -372,7 +372,7 @@ const result = await fb2k.invoke('playlist.getTracks', {
 ### playlist.playTrack
 
 <!-- phase3-major1-review:playlist.playTrack -->
-#### Phase 3 Major 1 source-reviewed contract
+#### Source-reviewed contract
 Authority: `src/api/PlaylistApi.cpp:1089-1134`.
 
 | Parameter | Type | Required | Default |
@@ -411,7 +411,7 @@ await fb2k.invoke('playlist.playTrack', { playlist: 0, index: 0, deferred: true 
 ### playlist.removeTracks
 
 <!-- phase3-major1-review:playlist.removeTracks -->
-#### Phase 3 Major 1 source-reviewed contract
+#### Source-reviewed contract
 Authority: `src/api/PlaylistApi.cpp:1017-1041`.
 
 | Parameter | Type | Required | Default |
@@ -439,7 +439,7 @@ Authority: `src/api/PlaylistApi.cpp:1017-1041`.
 ### playlist.removeSelectedTracks
 
 <!-- phase3-major1-review:playlist.removeSelectedTracks -->
-#### Phase 3 Major 1 source-reviewed contract
+#### Source-reviewed contract
 Authority: `src/api/PlaylistApi.cpp:1041-1059`.
 
 | Parameter | Type | Required | Default |
@@ -465,7 +465,7 @@ Remove Play column  in current selected track ...
 ### playlist.moveTracks
 
 <!-- phase3-major1-review:playlist.moveTracks -->
-#### Phase 3 Major 1 source-reviewed contract
+#### Source-reviewed contract
 Authority: `src/api/PlaylistApi.cpp:1059-1089`.
 
 | Parameter | Type | Required | Default |
@@ -500,7 +500,7 @@ await fb2k.invoke('playlist.moveTracks', { items: [5, 6], delta: -2 });
 ### playlist.addPaths
 
 <!-- phase3-major1-review:playlist.addPaths -->
-#### Phase 3 Major 1 source-reviewed contract
+#### Source-reviewed contract
 Authority: `src/api/PlaylistApi.cpp:1439-1474`.
 
 | Parameter | Type | Required | Default |
@@ -537,12 +537,12 @@ Add file /file  to Play column .use `playlist_incoming_item_filter` sync,  CUE f
 
 ## Additional public APIs
 
- Phase 3  `RegisterApi` , Parameter C++ handler .
+The sections below are generated from `RegisterApi`; parameter keys are taken from the C++ handler.
 
 ### playlist.addHandles
 
 <!-- phase3-major1-review:playlist.addHandles -->
-#### Phase 3 Major 1 source-reviewed contract
+#### Source-reviewed contract
 Authority: `src/api/PlaylistApi.cpp:1478-1513`.
 
 | Parameter | Type | Required | Default |
@@ -575,7 +575,7 @@ const result = await fb2k.invoke('playlist.addHandles', { handles: /* value */, 
 ### playlist.addPathsAsync
 
 <!-- phase3-major1-review:playlist.addPathsAsync -->
-#### Phase 3 Major 1 source-reviewed contract
+#### Source-reviewed contract
 Authority: `src/api/PlaylistApi.cpp:1678-1722`.
 
 | Parameter | Type | Required | Default |
@@ -604,7 +604,7 @@ const result = await fb2k.invoke('playlist.addPathsAsync', { paths: /* value */,
 ### playlist.addPathsSequential
 
 <!-- phase3-major1-review:playlist.addPathsSequential -->
-#### Phase 3 Major 1 source-reviewed contract
+#### Source-reviewed contract
 Authority: `src/api/PlaylistApi.cpp:1650-1675`.
 
 | Parameter | Type | Required | Default |
@@ -633,7 +633,7 @@ const result = await fb2k.invoke('playlist.addPathsSequential', { paths: /* valu
 ### playlist.convertToAutoplaylist
 
 <!-- phase3-major1-review:playlist.convertToAutoplaylist -->
-#### Phase 3 Major 1 source-reviewed contract
+#### Source-reviewed contract
 Authority: `src/api/PlaylistApi.cpp:1294-1315`.
 
 | Parameter | Type | Required | Default |
@@ -683,7 +683,7 @@ const result = await fb2k.invoke('playlist.createAutoplaylist', { keepSorted: /*
 ### playlist.deselectAll
 
 <!-- phase3-major1-review:playlist.deselectAll -->
-#### Phase 3 Major 1 source-reviewed contract
+#### Source-reviewed contract
 Authority: `src/api/PlaylistApi.cpp:1562-1572`.
 
 | Parameter | Type | Required | Default |
@@ -710,7 +710,7 @@ const result = await fb2k.invoke('playlist.deselectAll', { playlist: /* value */
 ### playlist.focusTrack
 
 <!-- phase3-major1-review:playlist.focusTrack -->
-#### Phase 3 Major 1 source-reviewed contract
+#### Source-reviewed contract
 Authority: `src/api/PlaylistApi.cpp:1137-1151`.
 
 | Parameter | Type | Required | Default |
@@ -741,7 +741,7 @@ const result = await fb2k.invoke('playlist.focusTrack', { index: /* value */, pl
 ### playlist.getAutoplaylistInfo
 
 <!-- phase3-major1-review:playlist.getAutoplaylistInfo -->
-#### Phase 3 Major 1 source-reviewed contract
+#### Source-reviewed contract
 Authority: `src/api/PlaylistApi.cpp:1344-1369`.
 
 | Parameter | Type | Required | Default |
@@ -767,7 +767,7 @@ const result = await fb2k.invoke('playlist.getAutoplaylistInfo', { playlist: /* 
 ### playlist.getAutoplaylistQuery
 
 <!-- phase3-major1-review:playlist.getAutoplaylistQuery -->
-#### Phase 3 Major 1 source-reviewed contract
+#### Source-reviewed contract
 Authority: `src/api/PlaylistApi.cpp:1372-1399`.
 
 | Parameter | Type | Required | Default |
@@ -793,7 +793,7 @@ const result = await fb2k.invoke('playlist.getAutoplaylistQuery', { playlist: /*
 ### playlist.getAvailableColumns
 
 <!-- phase3-major1-review:playlist.getAvailableColumns -->
-#### Phase 3 Major 1 source-reviewed contract
+#### Source-reviewed contract
 Authority: `src/api/PlaylistApi.cpp:1816-1848`.
 
 _No public parameters._
@@ -816,7 +816,7 @@ const result = await fb2k.invoke('playlist.getAvailableColumns');
 ### playlist.getFocusTrack
 
 <!-- phase3-major1-review:playlist.getFocusTrack -->
-#### Phase 3 Major 1 source-reviewed contract
+#### Source-reviewed contract
 Authority: `src/api/PlaylistApi.cpp:1154-1163`.
 
 | Parameter | Type | Required | Default |
@@ -843,7 +843,7 @@ const result = await fb2k.invoke('playlist.getFocusTrack', { playlist: /* value 
 ### playlist.getFocusedTrack
 
 <!-- phase3-major1-review:playlist.getFocusedTrack -->
-#### Phase 3 Major 1 source-reviewed contract
+#### Source-reviewed contract
 Authority: `src/api/PlaylistApi.cpp:1572-1582`.
 
 | Parameter | Type | Required | Default |
@@ -870,7 +870,7 @@ const result = await fb2k.invoke('playlist.getFocusedTrack', { playlist: /* valu
 ### playlist.getLockInfo
 
 <!-- phase3-major1-review:playlist.getLockInfo -->
-#### Phase 3 Major 1 source-reviewed contract
+#### Source-reviewed contract
 Authority: `src/api/PlaylistApi.cpp:1516-1525`.
 
 | Parameter | Type | Required | Default |
@@ -897,7 +897,7 @@ const result = await fb2k.invoke('playlist.getLockInfo', { playlist: /* value */
 ### playlist.getSelectedTracks
 
 <!-- phase3-major1-review:playlist.getSelectedTracks -->
-#### Phase 3 Major 1 source-reviewed contract
+#### Source-reviewed contract
 Authority: `src/api/PlaylistApi.cpp:981-995`.
 
 | Parameter | Type | Required | Default |
@@ -926,7 +926,7 @@ const result = await fb2k.invoke('playlist.getSelectedTracks');
 ### playlist.getSelection
 
 <!-- phase3-major1-review:playlist.getSelection -->
-#### Phase 3 Major 1 source-reviewed contract
+#### Source-reviewed contract
 Authority: `src/api/PlaylistApi.cpp:1538-1552`.
 
 | Parameter | Type | Required | Default |
@@ -953,7 +953,7 @@ const result = await fb2k.invoke('playlist.getSelection', { playlist: /* value *
 ### playlist.insertTracks
 
 <!-- phase3-major1-review:playlist.insertTracks -->
-#### Phase 3 Major 1 source-reviewed contract
+#### Source-reviewed contract
 Authority: `src/api/PlaylistApi.cpp:913-948`.
 
 | Parameter | Type | Required | Default |
@@ -992,7 +992,7 @@ const result = await fb2k.invoke('playlist.insertTracks', { handles: /* value */
 ### playlist.isAutoplaylist
 
 <!-- phase3-major1-review:playlist.isAutoplaylist -->
-#### Phase 3 Major 1 source-reviewed contract
+#### Source-reviewed contract
 Authority: `src/api/PlaylistApi.cpp:1250-1262`.
 
 | Parameter | Type | Required | Default |
@@ -1018,7 +1018,7 @@ const result = await fb2k.invoke('playlist.isAutoplaylist', { playlist: /* value
 ### playlist.isLocked
 
 <!-- phase3-major1-review:playlist.isLocked -->
-#### Phase 3 Major 1 source-reviewed contract
+#### Source-reviewed contract
 Authority: `src/api/PlaylistApi.cpp:1528-1535`.
 
 | Parameter | Type | Required | Default |
@@ -1045,7 +1045,7 @@ const result = await fb2k.invoke('playlist.isLocked', { playlist: /* value */ })
 ### playlist.redo
 
 <!-- phase3-major1-review:playlist.redo -->
-#### Phase 3 Major 1 source-reviewed contract
+#### Source-reviewed contract
 Authority: `src/api/PlaylistApi.cpp:1234-1245`.
 
 | Parameter | Type | Required | Default |
@@ -1072,7 +1072,7 @@ const result = await fb2k.invoke('playlist.redo', { playlist: /* value */ });
 ### playlist.removeAutoplaylist
 
 <!-- phase3-major1-review:playlist.removeAutoplaylist -->
-#### Phase 3 Major 1 source-reviewed contract
+#### Source-reviewed contract
 Authority: `src/api/PlaylistApi.cpp:1318-1341`.
 
 | Parameter | Type | Required | Default |
@@ -1099,7 +1099,7 @@ const result = await fb2k.invoke('playlist.removeAutoplaylist', { playlist: /* v
 ### playlist.reorder
 
 <!-- phase3-major1-review:playlist.reorder -->
-#### Phase 3 Major 1 source-reviewed contract
+#### Source-reviewed contract
 Authority: `src/api/PlaylistApi.cpp:1618-1647`.
 
 | Parameter | Type | Required | Default |
@@ -1128,7 +1128,7 @@ const result = await fb2k.invoke('playlist.reorder', { newOrder: /* value */, pl
 ### playlist.reorderPlaylists
 
 <!-- phase3-major1-review:playlist.reorderPlaylists -->
-#### Phase 3 Major 1 source-reviewed contract
+#### Source-reviewed contract
 Authority: `src/api/PlaylistApi.cpp:1782-1813`.
 
 | Parameter | Type | Required | Default |
@@ -1155,7 +1155,7 @@ const result = await fb2k.invoke('playlist.reorderPlaylists', { newOrder: /* val
 ### playlist.replaceAllAndPlay
 
 <!-- phase3-major1-review:playlist.replaceAllAndPlay -->
-#### Phase 3 Major 1 source-reviewed contract
+#### Source-reviewed contract
 Authority: `src/api/PlaylistApi.cpp:1725-1779`.
 
 | Parameter | Type | Required | Default |
@@ -1190,7 +1190,7 @@ const result = await fb2k.invoke('playlist.replaceAllAndPlay', { autoPlay: /* va
 ### playlist.reverse
 
 <!-- phase3-major1-review:playlist.reverse -->
-#### Phase 3 Major 1 source-reviewed contract
+#### Source-reviewed contract
 Authority: `src/api/PlaylistApi.cpp:1597-1615`.
 
 | Parameter | Type | Required | Default |
@@ -1217,7 +1217,7 @@ const result = await fb2k.invoke('playlist.reverse', { playlist: /* value */ });
 ### playlist.selectAll
 
 <!-- phase3-major1-review:playlist.selectAll -->
-#### Phase 3 Major 1 source-reviewed contract
+#### Source-reviewed contract
 Authority: `src/api/PlaylistApi.cpp:1552-1562`.
 
 | Parameter | Type | Required | Default |
@@ -1244,7 +1244,7 @@ const result = await fb2k.invoke('playlist.selectAll', { playlist: /* value */ }
 ### playlist.setFocusedTrack
 
 <!-- phase3-major1-review:playlist.setFocusedTrack -->
-#### Phase 3 Major 1 source-reviewed contract
+#### Source-reviewed contract
 Authority: `src/api/PlaylistApi.cpp:1582-1597`.
 
 | Parameter | Type | Required | Default |
@@ -1273,7 +1273,7 @@ const result = await fb2k.invoke('playlist.setFocusedTrack', { index: /* value *
 ### playlist.setSelection
 
 <!-- phase3-major1-review:playlist.setSelection -->
-#### Phase 3 Major 1 source-reviewed contract
+#### Source-reviewed contract
 Authority: `src/api/PlaylistApi.cpp:995-1017`.
 
 | Parameter | Type | Required | Default |
@@ -1339,7 +1339,7 @@ const result = await fb2k.invoke('playlist.sort', { descending: /* value */, pat
 ### playlist.undo
 
 <!-- phase3-major1-review:playlist.undo -->
-#### Phase 3 Major 1 source-reviewed contract
+#### Source-reviewed contract
 Authority: `src/api/PlaylistApi.cpp:1223-1234`.
 
 | Parameter | Type | Required | Default |
@@ -1386,14 +1386,14 @@ const result = await fb2k.invoke('playlist.undo', { playlist: /* value */ });
 
  foobar2000 may report `from`, `to`, `oldIndex`, and `newIndex` as `-1` when an index is unavailable.
 
-## Phase 3 contract supplements
+## Contract supplements
 
 The sections below close public-contract findings from the strict parameter audit without replacing existing explanations.
 
 <!-- phase3-supplement:playlist.moveTracks -->
 ### Contract supplement: `playlist.moveTracks`
 
-Phase 3 verified contract supplement. Runtime authority: `src/api/PlaylistApi.cpp:1059-1089`.
+Verified contract supplement. Runtime authority: `src/api/PlaylistApi.cpp:1059-1089`.
 
 | Parameter | Type | Required | Default | Description |
 | --- | --- | --- | --- | --- |
@@ -1417,7 +1417,7 @@ const result = await fb2k.invoke('playlist.moveTracks', { playlist: /* value */,
 <!-- phase3-supplement:playlist.playTrack -->
 ### Contract supplement: `playlist.playTrack`
 
-Phase 3 verified contract supplement. Runtime authority: `src/api/PlaylistApi.cpp:1089-1134`.
+Verified contract supplement. Runtime authority: `src/api/PlaylistApi.cpp:1089-1134`.
 
 | Parameter | Type | Required | Default | Description |
 | --- | --- | --- | --- | --- |
@@ -1442,7 +1442,7 @@ const result = await fb2k.invoke('playlist.playTrack', { playlist: /* value */, 
 <!-- phase3-supplement:playlist.removeSelectedTracks -->
 ### Contract supplement: `playlist.removeSelectedTracks`
 
-Phase 3 verified contract supplement. Runtime authority: `src/api/PlaylistApi.cpp:1041-1059`.
+Verified contract supplement. Runtime authority: `src/api/PlaylistApi.cpp:1041-1059`.
 
 | Parameter | Type | Required | Default | Description |
 | --- | --- | --- | --- | --- |
@@ -1464,7 +1464,7 @@ const result = await fb2k.invoke('playlist.removeSelectedTracks', { playlist: /*
 <!-- phase3-supplement:playlist.removeTracks -->
 ### Contract supplement: `playlist.removeTracks`
 
-Phase 3 verified contract supplement. Runtime authority: `src/api/PlaylistApi.cpp:1017-1041`.
+Verified contract supplement. Runtime authority: `src/api/PlaylistApi.cpp:1017-1041`.
 
 | Parameter | Type | Required | Default | Description |
 | --- | --- | --- | --- | --- |
@@ -1487,7 +1487,7 @@ const result = await fb2k.invoke('playlist.removeTracks', { playlist: /* value *
 <!-- phase3-supplement:playlist.setSelection -->
 ### Contract supplement: `playlist.setSelection`
 
-Phase 3 verified contract supplement. Runtime authority: `src/api/PlaylistApi.cpp:995-1017`.
+Verified contract supplement. Runtime authority: `src/api/PlaylistApi.cpp:995-1017`.
 
 | Parameter | Type | Required | Default | Description |
 | --- | --- | --- | --- | --- |
@@ -1511,7 +1511,7 @@ const result = await fb2k.invoke('playlist.setSelection', { playlist: /* value *
 <!-- phase3-supplement:playlist.shuffle -->
 ### Contract supplement: `playlist.shuffle`
 
-Phase 3 verified contract supplement. Runtime authority: `src/api/PlaylistApi.cpp:1190-1223`.
+Verified contract supplement. Runtime authority: `src/api/PlaylistApi.cpp:1190-1223`.
 
 | Parameter | Type | Required | Default | Description |
 | --- | --- | --- | --- | --- |
@@ -1533,7 +1533,7 @@ const result = await fb2k.invoke('playlist.shuffle', { playlist: /* value */, in
 <!-- phase3-supplement:playlist.sort -->
 ### Contract supplement: `playlist.sort`
 
-Phase 3 verified contract supplement. Runtime authority: `src/api/PlaylistApi.cpp:1163-1190`.
+Verified contract supplement. Runtime authority: `src/api/PlaylistApi.cpp:1163-1190`.
 
 | Parameter | Type | Required | Default | Description |
 | --- | --- | --- | --- | --- |

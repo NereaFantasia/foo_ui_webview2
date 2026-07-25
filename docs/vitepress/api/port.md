@@ -174,14 +174,14 @@ Public API method. Runtime authority: `src/api/PortApi.cpp:158`.
 const result = await fb2k.invoke('state.set', { key: /* value */, silent: /* value */, ttlMs: /* value */, value: /* value */ });
 ```
 
-## Phase 3 contract supplements
+## Contract supplements
 
 The sections below close public-contract findings from the strict parameter audit without replacing existing explanations.
 
 <!-- phase3-supplement:state.set -->
 ### Contract supplement: `state.set`
 
-Phase 3 verified contract supplement. Runtime authority: `src/api/PortApi.cpp:158-175`.
+Verified contract supplement. Runtime authority: `src/api/PortApi.cpp:158-175`.
 
 | Parameter | Type | Required | Default | Description |
 | --- | --- | --- | --- | --- |
@@ -209,6 +209,7 @@ const result = await fb2k.invoke('state.set', { key: /* value */, silent: /* val
 - `port.connect` binds the new port to the invoking window. Only that owner may disconnect it or send through it; `port.postMessage` excludes the sending port and routes `port:message` to peer ports on the same name.
 - `event.emit` broadcasts the requested event name and `event.emitTo` targets one window. Receivers get the envelope `{ payload, sourceWindowId }`; `excludeSelf` affects only `event.emit`. Use the `namespace:eventName` convention for application-defined event names, such as `ui:themeChanged` or `lyrics:update`.
 - State keys are opaque strings; `lyrics:offset` and `lyrics:theme` are ordinary application key examples, not reserved runtime state names.
+- `state.*` is an in-memory store owned by the process-wide `PortHub` singleton. It is shared across this component's WebView windows in the current foobar2000 process, but it is not written to disk, does not survive process restart, and is not a cross-process or SMP/global persistence mechanism. It is distinct from the SDK `fb.state` playback-state mirror.
 - `state.get` returns `exists: false` and `value: null` when a key is absent. `state.set` requires both `key` and `value`; positive `ttlMs` creates an expiration timestamp, and `silent: true` suppresses `state:changed`.
 - `state.delete` returns `existed`. Explicit deletion emits `state:deleted` with `reason: "deleted"`; expiration emits the same event with `reason: "expired"` and an empty `sourceWindowId`.
 - Public PortHub events are `port:connected`, `port:disconnected`, `port:message`, `state:changed`, and `state:deleted`. Their payloads are emitted by `src/api/PortHub.cpp`.

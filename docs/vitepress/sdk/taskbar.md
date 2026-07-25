@@ -29,7 +29,7 @@ Signature: `fb.taskbar.setOverlayIcon(options?: { icon?: string | null; descript
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| options.icon | string \| null | No | Base64 ICO payload. Omit or pass `null` to clear the overlay |
+| options.icon | string \| null | No | Raw Base64-encoded `.ico` file bytes; no `data:` or `base64:` prefix. Omit or pass `null` to clear the overlay |
 | options.description | string | No | Accessible icon description |
 
 Returns the result of the underlying `taskbar.setOverlayIcon` call.
@@ -45,6 +45,10 @@ Signature: `fb.taskbar.setThumbnailButtons(buttons: ThumbnailButton[]): Promise<
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | buttons | ThumbnailButton[] | Yes | Up to seven buttons with `id`, `tooltip`, optional `icon`, and optional state flags |
+
+Every button `icon` uses raw Base64-encoded `.ico` file bytes. PNG, JPEG, SVG,
+Data URLs, and the `file.write`-specific `base64:` marker are not accepted icon
+representations. Invalid values may fall back to a default icon.
 
 Installs the thumbnail toolbar once for the window. Use `updateButton(options)` for later state changes; it cannot add or remove buttons. Button clicks emit `taskbar:buttonClicked` with `{ id }`. `setProgress({ state, value? })` accepts `none`, `indeterminate`, `normal`, `error`, or `paused`; `value` is a 0-1 fraction for determinate states.
 

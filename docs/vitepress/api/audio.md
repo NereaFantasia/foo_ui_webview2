@@ -8,7 +8,7 @@ This page is the primary owner for the namespaces listed below. Method names, pa
 
 ### audio.analyzeBPM
 
-Public API method. Runtime authority: `src/api/AudioApi.cpp:1725`.
+Public API method. Runtime authority: `src/api/AudioApi.cpp:1744`.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
@@ -23,7 +23,7 @@ const result = await fb2k.invoke('audio.analyzeBPM', { forceAnalysis: /* value *
 
 ### audio.generateFullWaveform
 
-Public API method. Runtime authority: `src/api/AudioApi.cpp:1727`.
+Public API method. Runtime authority: `src/api/AudioApi.cpp:1746`.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
@@ -43,7 +43,7 @@ const result = await fb2k.invoke('audio.generateFullWaveform', { cueIndex: /* va
 
 ### audio.generateWaveform
 
-Public API method. Runtime authority: `src/api/AudioApi.cpp:1726`.
+Public API method. Runtime authority: `src/api/AudioApi.cpp:1745`.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
@@ -58,7 +58,7 @@ const result = await fb2k.invoke('audio.generateWaveform', { path: /* value */, 
 
 ### audio.getOutputInfo
 
-Public API method. Runtime authority: `src/api/AudioApi.cpp:1730`.
+Public API method. Runtime authority: `src/api/AudioApi.cpp:1749`.
 
 _No parameters._
 
@@ -70,7 +70,7 @@ const result = await fb2k.invoke('audio.getOutputInfo');
 
 ### audio.getSpectrum
 
-Public API method. Runtime authority: `src/api/AudioApi.cpp:1715`.
+Public API method. Runtime authority: `src/api/AudioApi.cpp:1734`.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
@@ -84,7 +84,7 @@ const result = await fb2k.invoke('audio.getSpectrum', { bands: /* value */ });
 
 ### audio.getSpectrumDebugState
 
-Public API method. Runtime authority: `src/api/AudioApi.cpp:1716`.
+Public API method. Runtime authority: `src/api/AudioApi.cpp:1735`.
 
 _No parameters._
 
@@ -96,7 +96,7 @@ const result = await fb2k.invoke('audio.getSpectrumDebugState');
 
 ### audio.getStreamInfo
 
-Public API method. Runtime authority: `src/api/AudioApi.cpp:1731`.
+Public API method. Runtime authority: `src/api/AudioApi.cpp:1750`.
 
 _No parameters._
 
@@ -108,7 +108,7 @@ const result = await fb2k.invoke('audio.getStreamInfo');
 
 ### audio.getWaveform
 
-Public API method. Runtime authority: `src/api/AudioApi.cpp:1717`.
+Public API method. Runtime authority: `src/api/AudioApi.cpp:1736`.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
@@ -123,7 +123,7 @@ const result = await fb2k.invoke('audio.getWaveform', { duration: /* value */, s
 
 ### audio.isVisualizationAvailable
 
-Public API method. Runtime authority: `src/api/AudioApi.cpp:1732`.
+Public API method. Runtime authority: `src/api/AudioApi.cpp:1751`.
 
 _No parameters._
 
@@ -135,7 +135,7 @@ const result = await fb2k.invoke('audio.isVisualizationAvailable');
 
 ### audio.setChannelMode
 
-Public API method. Runtime authority: `src/api/AudioApi.cpp:1718`.
+Public API method. Runtime authority: `src/api/AudioApi.cpp:1737`.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
@@ -149,7 +149,7 @@ const result = await fb2k.invoke('audio.setChannelMode', { mode: /* value */ });
 
 ### audio.subscribeSpectrum
 
-Public API method. Runtime authority: `src/api/AudioApi.cpp:1713`.
+Public API method. Runtime authority: `src/api/AudioApi.cpp:1732`.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
@@ -167,7 +167,7 @@ const result = await fb2k.invoke('audio.subscribeSpectrum', { bands: /* value */
 
 ### audio.subscribeStream
 
-Public API method. Runtime authority: `src/api/AudioApi.cpp:1721`.
+Public API method. Runtime authority: `src/api/AudioApi.cpp:1740`.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
@@ -182,7 +182,7 @@ const result = await fb2k.invoke('audio.subscribeStream', { event: /* value */, 
 
 ### audio.unsubscribeSpectrum
 
-Public API method. Runtime authority: `src/api/AudioApi.cpp:1714`.
+Public API method. Runtime authority: `src/api/AudioApi.cpp:1733`.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
@@ -196,7 +196,7 @@ const result = await fb2k.invoke('audio.unsubscribeSpectrum', { subscriptionId: 
 
 ### audio.unsubscribeStream
 
-Public API method. Runtime authority: `src/api/AudioApi.cpp:1722`.
+Public API method. Runtime authority: `src/api/AudioApi.cpp:1741`.
 
 _No parameters._
 
@@ -478,14 +478,14 @@ const result = await fb2k.invoke('replaygain.setPreamp', { withRg: /* value */, 
 - `output.getSettings` is read-only discovery information. Output configuration is managed by foobar2000 Preferences rather than this API.
 - `replaygain.get` reads each supplied media path; `replaygain.clear` writes ReplayGain metadata asynchronously through foobar2000. `replaygain.scan` requests the host scanner and is not a synchronous analysis result.
 
-## Phase 3 contract supplements
+## Contract supplements
 
 The sections below close public-contract findings from the strict parameter audit without replacing existing explanations.
 
 <!-- phase3-supplement:audio.subscribeSpectrum -->
 ### Contract supplement: `audio.subscribeSpectrum`
 
-Phase 3 verified contract supplement. Runtime authority: `src/api/AudioApi.cpp:719-762`.
+Verified contract supplement. Runtime authority: `src/api/AudioApi.cpp:719-762`.
 
 | Parameter | Type | Required | Default | Description |
 | --- | --- | --- | --- | --- |

@@ -389,14 +389,14 @@ _No parameters._
 const result = await fb2k.invoke('config.showLibraryPreferences');
 ```
 
-## Phase 3 contract supplements
+## Contract supplements
 
 The sections below close public-contract findings from the strict parameter audit without replacing existing explanations.
 
 <!-- phase3-supplement:config.set -->
 ### Contract supplement: `config.set`
 
-Phase 3 verified contract supplement. Runtime authority: `src/api/ConfigApi.cpp:821-840`.
+Verified contract supplement. Runtime authority: `src/api/ConfigApi.cpp:821-840`.
 
 | Parameter | Type | Required | Default | Description |
 | --- | --- | --- | --- | --- |
@@ -419,7 +419,7 @@ const result = await fb2k.invoke('config.set', { key: /* value */, value: /* val
 <!-- phase3-supplement:config.setAdvancedConfigValue -->
 ### Contract supplement: `config.setAdvancedConfigValue`
 
-Phase 3 verified contract supplement. Runtime authority: `src/api/ConfigApi.cpp:321-387`.
+Verified contract supplement. Runtime authority: `src/api/ConfigApi.cpp:321-387`.
 
 | Parameter | Type | Required | Default | Description |
 | --- | --- | --- | --- | --- |
@@ -439,7 +439,7 @@ const result = await fb2k.invoke('config.setAdvancedConfigValue', { guid: /* val
 <!-- phase3-supplement:config.setCursorFollowPlayback -->
 ### Contract supplement: `config.setCursorFollowPlayback`
 
-Phase 3 verified contract supplement. Runtime authority: `src/api/ConfigApi.cpp:689-697`.
+Verified contract supplement. Runtime authority: `src/api/ConfigApi.cpp:689-697`.
 
 | Parameter | Type | Required | Default | Description |
 | --- | --- | --- | --- | --- |
@@ -461,7 +461,7 @@ const result = await fb2k.invoke('config.setCursorFollowPlayback', { enabled: /*
 <!-- phase3-supplement:config.setOutputBuffer -->
 ### Contract supplement: `config.setOutputBuffer`
 
-Phase 3 verified contract supplement. Runtime authority: `src/api/ConfigApi.cpp:138-164`.
+Verified contract supplement. Runtime authority: `src/api/ConfigApi.cpp:138-164`.
 
 | Parameter | Type | Required | Default | Description |
 | --- | --- | --- | --- | --- |
@@ -481,7 +481,7 @@ const result = await fb2k.invoke('config.setOutputBuffer', { bufferLength: /* va
 <!-- phase3-supplement:config.setPlaybackFollowCursor -->
 ### Contract supplement: `config.setPlaybackFollowCursor`
 
-Phase 3 verified contract supplement. Runtime authority: `src/api/ConfigApi.cpp:702-710`.
+Verified contract supplement. Runtime authority: `src/api/ConfigApi.cpp:702-710`.
 
 | Parameter | Type | Required | Default | Description |
 | --- | --- | --- | --- | --- |
@@ -503,7 +503,7 @@ const result = await fb2k.invoke('config.setPlaybackFollowCursor', { enabled: /*
 <!-- phase3-supplement:config.setReplaygainMode -->
 ### Contract supplement: `config.setReplaygainMode`
 
-Phase 3 verified contract supplement. Runtime authority: `src/api/ConfigApi.cpp:720-744`.
+Verified contract supplement. Runtime authority: `src/api/ConfigApi.cpp:720-744`.
 
 | Parameter | Type | Required | Default | Description |
 | --- | --- | --- | --- | --- |

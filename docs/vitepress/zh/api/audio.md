@@ -819,14 +819,14 @@ await fb2k.invoke('replaygain.scan', {
 - `output.getSettings` 仅提供只读发现信息。输出配置由 foobar2000 Preferences 管理，而非本 API。
 - `replaygain.get` 读取每个传入媒体路径；`replaygain.clear` 通过 foobar2000 异步写入 ReplayGain 元数据。`replaygain.scan` 请求 host 扫描器，并非同步分析结果。
 
-## Phase 3 合同补充
+## 合同补充
 
 以下章节补齐严格参数审计发现的公开 contract；不会改变前文的已有说明。
 
 <!-- phase3-supplement:audio.subscribeSpectrum -->
 ### Contract 补充：`audio.subscribeSpectrum`
 
-经 Phase 3 复核的补充 contract。权威源：`src/api/AudioApi.cpp:719-762`。
+经复核的补充 contract。权威源：`src/api/AudioApi.cpp:719-762`。
 
 | 参数 | 类型 | 必填 | 默认值 | 说明 |
 | --- | --- | --- | --- | --- |

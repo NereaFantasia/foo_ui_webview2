@@ -8,7 +8,7 @@ This page is the primary owner for the namespaces listed below. Method names, pa
 
 ### artwork.getAvailableArtwork
 
-Public API method. Runtime authority: `src/api/ArtworkApi.cpp:1371`.
+Public API method. Runtime authority: `src/api/ArtworkApi.cpp:1413`.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
@@ -22,7 +22,7 @@ const result = await fb2k.invoke('artwork.getAvailableArtwork', { path: /* value
 
 ### artwork.getAvailableTypes
 
-Public API method. Runtime authority: `src/api/ArtworkApi.cpp:1361`.
+Public API method. Runtime authority: `src/api/ArtworkApi.cpp:1403`.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
@@ -36,7 +36,7 @@ const result = await fb2k.invoke('artwork.getAvailableTypes', { path: /* value *
 
 ### artwork.getBatch
 
-Public API method. Runtime authority: `src/api/ArtworkApi.cpp:1370`.
+Public API method. Runtime authority: `src/api/ArtworkApi.cpp:1412`.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
@@ -51,7 +51,7 @@ const result = await fb2k.invoke('artwork.getBatch', { paths: /* value */, type:
 
 ### artwork.getByPath
 
-Public API method. Runtime authority: `src/api/ArtworkApi.cpp:1358`.
+Public API method. Runtime authority: `src/api/ArtworkApi.cpp:1400`.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
@@ -66,7 +66,7 @@ const result = await fb2k.invoke('artwork.getByPath', { path: /* value */, type:
 
 ### artwork.getByPlaylistItem
 
-Public API method. Runtime authority: `src/api/ArtworkApi.cpp:1360`.
+Public API method. Runtime authority: `src/api/ArtworkApi.cpp:1402`.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
@@ -82,7 +82,7 @@ const result = await fb2k.invoke('artwork.getByPlaylistItem', { index: /* value 
 
 ### artwork.getCurrent
 
-Public API method. Runtime authority: `src/api/ArtworkApi.cpp:1356`.
+Public API method. Runtime authority: `src/api/ArtworkApi.cpp:1398`.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
@@ -102,7 +102,7 @@ const result = await fb2k.invoke('artwork.getCurrent', { type: /* value */ });
 
 ### artwork.getFb2kUrl
 
-Public API method. Runtime authority: `src/api/ArtworkApi.cpp:1363`.
+Public API method. Runtime authority: `src/api/ArtworkApi.cpp:1405`.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
@@ -117,7 +117,7 @@ const result = await fb2k.invoke('artwork.getFb2kUrl', { maxSize: /* value */, t
 
 ### artwork.getFb2kUrlByPath
 
-Public API method. Runtime authority: `src/api/ArtworkApi.cpp:1364`.
+Public API method. Runtime authority: `src/api/ArtworkApi.cpp:1406`.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
@@ -133,7 +133,7 @@ const result = await fb2k.invoke('artwork.getFb2kUrlByPath', { maxSize: /* value
 
 ### artwork.getFb2kUrlByPathBatch
 
-Public API method. Runtime authority: `src/api/ArtworkApi.cpp:1372`.
+Public API method. Runtime authority: `src/api/ArtworkApi.cpp:1414`.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
@@ -150,7 +150,7 @@ const result = await fb2k.invoke('artwork.getFb2kUrlByPathBatch', { items: /* va
 
 ### artwork.getFolderImages
 
-Public API method. Runtime authority: `src/api/ArtworkApi.cpp:1373`.
+Public API method. Runtime authority: `src/api/ArtworkApi.cpp:1417`.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
@@ -164,7 +164,7 @@ const result = await fb2k.invoke('artwork.getFolderImages', { directory: /* valu
 
 ### artwork.getForTrack
 
-Public API method. Runtime authority: `src/api/ArtworkApi.cpp:1359`.
+Public API method. Runtime authority: `src/api/ArtworkApi.cpp:1401`.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
@@ -179,7 +179,7 @@ const result = await fb2k.invoke('artwork.getForTrack', { path: /* value */, typ
 
 ### artwork.getLyrics
 
-Public API method. Runtime authority: `src/api/ArtworkApi.cpp:1366`.
+Public API method. Runtime authority: `src/api/ArtworkApi.cpp:1408`.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
@@ -193,7 +193,7 @@ const result = await fb2k.invoke('artwork.getLyrics', { path: /* value */ });
 
 ### artwork.getMetadata
 
-Public API method. Runtime authority: `src/api/ArtworkApi.cpp:1368`.
+Public API method. Runtime authority: `src/api/ArtworkApi.cpp:1410`.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
@@ -209,7 +209,8 @@ const result = await fb2k.invoke('artwork.getMetadata', { path: /* value */ });
 
 - Valid artwork `type` values are `front` (also `cover_front`), `back` (also `cover_back`), `disc`, `icon`, and `artist`. Omitted `type` means `front`; an unknown value returns `INVALID_PARAMS`.
 - `artwork.getByPath` and `artwork.getForTrack` accept native paths, `file://` paths, and `path|subsong:N`. They reject `file-relative://` because an extractor has no playlist context; use `artwork.getByPlaylistItem` for those items.
-- Direct artwork reads return a `data:image/...` URL. `artwork.getFb2kUrl` and its path variants instead return a `fb2k://artwork/` URL in the `dataUrl` field. `maxSize` is applied only when it is greater than `0`.
+- Direct artwork reads return a standard `data:image/...;base64,...` URL. `artwork.getFb2kUrl` and its path variants instead return a `fb2k://artwork/` URL in the `dataUrl` field. Despite the field name, that value is not a Data URL or image bytes: it is resolved only by this component's WebView2 resource handler and is intended for immediate `<img src>` rendering. Do not persist it, pass it to `file.write`, or treat it as a system-wide URL. `maxSize` is applied only when it is greater than `0`.
+- To save a direct-read Data URL with `file.write`, split it at the first comma, keep the Base64 payload after the comma, and write `content: 'base64:' + payload` with `encoding: 'binary'`. To pass the same artwork to `metadata.embedArtwork`, pass only the raw Base64 payload without the Data URL header and without the `base64:` marker.
 - `artwork.getFb2kUrlByPathBatch` requires exactly one array input named `paths` or `items`. Array entries may be strings or objects with a `path` member. It has no top-level `path` parameter. The result is `{ success, artworks }`, with one `available`/`error` result for each supplied entry.
 - `artwork.getAvailableArtwork` reports embedded items and external source labels such as `folder:cover.jpg`. The implementation opens files through `album_art_extractor`; absence of artwork is represented by `available: false`, not necessarily an error.
 - `artwork.getFolderImages` reads a directory and returns matching `.jpg`, `.jpeg`, `.png`, `.gif`, `.bmp`, and `.webp` files. Its `directory` argument is subject to the runtime `Read` security level.

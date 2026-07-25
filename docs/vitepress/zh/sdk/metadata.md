@@ -120,9 +120,36 @@ const raw = await fb.metadata.readRaw('E:\\Music\\album.flac', {
 
 ## 封面
 
+### 字节与 Data URL helper
+
+图片已经是 `ArrayBuffer` 或 `Uint8Array` 时，优先使用
+`embedArtworkBytes(path, bytes, options?)`。规范的 Base64 `data:image/*` URL
+应使用 `embedArtworkFromDataUrl(path, dataUrl, options?)`；后者会在调用 Host
+前拒绝非图片或畸形 Data URL。
+
+两个 helper 都只负责生成或提取裸 Base64 `imageData`，并调用现有
+`metadata.embedArtwork` 端点；原始 facade 行为保持不变。
+
+```javascript
+await fb.metadata.embedArtworkBytes(
+	'E:\\Music\\song.flac',
+	coverBytes,
+	{ type: 'front', target: 'embedded' },
+);
+
+await fb.metadata.embedArtworkFromDataUrl(
+	'E:\\Music\\song.flac',
+	coverDataUrl,
+	{ type: 'front', target: ['embedded', 'file'] },
+);
+```
+
 ### embedArtwork(path, options?)
 
 `fb.metadata.embedArtwork()` 可将图片写入音频文件、写为同目录图片，或同时写入两个目标。`MetadataEmbedArtworkParams` 包含 `imageData`、`type`、`filename` 与 `target`。
+
+`imageData` 只接受裸 Base64 payload，不能包含 `data:image/...;base64,`
+头、`file.write` 专用的 `base64:` 标记或 `fb2k://` URL。
 
 - `'embedded'` 通过主机标签容器写入；CUE 等格式可能不支持。
 - `'file'` 写入 `cover.<ext>` 等同目录图片，扩展名根据图片字节推断。
@@ -130,10 +157,12 @@ const raw = await fb.metadata.readRaw('E:\\Music\\album.flac', {
 - `filename` 只作用于文件输出；路径分隔符和 `..` 会被拒绝。
 
 ```javascript
+const comma = coverDataUrl.indexOf(',');
+const coverBase64 = coverDataUrl.slice(comma + 1);
 const result = await fb.metadata.embedArtwork(
 	'E:\\Music\\song.flac',
 	{
-		imageData: coverDataUrl,
+		imageData: coverBase64,
 		type: 'front',
 		target: ['embedded', 'file'],
 	},

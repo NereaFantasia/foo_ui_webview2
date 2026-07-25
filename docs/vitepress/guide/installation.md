@@ -112,3 +112,5 @@ Visibility depends on background-mode settings and the last Show/Hide state. Whe
 - Use WebView2 UI as a lyrics/artwork companion window
 - Keep Default UI for playlist management while WebView2 UI shows visualizations
 - Run custom scripts in a companion window while another UI remains primary
+
+**Page visibility contract:** when the window is minimized, hidden to the tray, or the session is locked, the WebView page becomes `visibilityState=hidden` — `requestAnimationFrame` stops and timers are heavily throttled. Prefer event-driven updates (`fb2k.on(...)`) over polling loops so your theme resumes cleanly. If you automate the player over CDP/MCP, see the keep-alive option in the [MCP setup guide](/mcp/setup) to keep the page active in these states.

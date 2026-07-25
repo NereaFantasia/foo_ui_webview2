@@ -2,6 +2,10 @@
 
 本页是 `fb.taskbar` 的 SDK 视角文档入口。
 
+所有 `icon` 字段只接受裸 Base64 编码的 `.ico` 文件字节，不带 `data:` 或
+`base64:` 前缀。PNG、JPEG、SVG 和 Data URL 不是有效的 taskbar 图标表示；
+无效值可能回退到默认图标。
+
 <!-- BEGIN AUTO-GENERATED SDK STUBS -->
 
 ## SDK 方法 stub

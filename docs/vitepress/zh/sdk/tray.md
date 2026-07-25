@@ -2,6 +2,11 @@
 
 本页是 `fb.tray` 的 SDK 视角文档入口。
 
+`create()` / `setIcon()` 的顶层 `icon` 只接受裸 Base64 编码的 `.ico`
+文件字节，不带 `data:` 或 `base64:` 前缀。PNG、JPEG、SVG、Data URL 或
+无效 Base64 会回退到 foobar2000 主图标。`TrayMenuItem.icon` 是当前不渲染
+的保留字段；WebView 菜单项图标请使用 `iconSvg`。
+
 <!-- BEGIN AUTO-GENERATED SDK STUBS -->
 
 ## SDK 方法 stub
@@ -210,7 +215,7 @@ await fb.tray.showBalloon({
 
 <!-- END AUTO-GENERATED SDK STUBS -->
 
-## Phase 2 layout guide (`layoutMode`)
+## Layout guide (`layoutMode`)
 
 `TrayMenuConfig.layoutMode` is **`'flat'` by default**. Zero-config WebView tray menus keep the legacy direct-child DOM (`#menu > .fb-item` / `.fb-sep`), so existing structure selectors do not need to migrate.
 
@@ -254,7 +259,7 @@ await fb.tray.setContextMenu(items, {
 - `data-item-token` is an internal single-show identity — **not** a public CSS contract.
 - This is an opt-in capability, not a claim of “full compatibility” with every historical theme selector.
 
-## Phase 3 slider orientation & accessibility
+## Slider orientation & accessibility
 
 `TrayMenuItem.orientation` is **slider-only** (`'horizontal' | 'vertical'`). Default when omitted: horizontal. The SDK passes the field through as supplied and does **not** inject a default.
 

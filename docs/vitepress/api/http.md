@@ -163,14 +163,14 @@ Public API method. Runtime authority: `src/api/HttpApi.cpp:1522`.
 const result = await fb2k.invoke('http.put', { async: /* value */, body: /* value */, headers: /* value */, insecureTls: /* value */, redirect: /* value */, responseType: /* value */, timeout: /* value */, url: /* value */ });
 ```
 
-## Phase 3 contract supplements
+## Contract supplements
 
 The sections below close public-contract findings from the strict parameter audit without replacing existing explanations.
 
 <!-- phase3-supplement:http.delete -->
 ### Contract supplement: `http.delete`
 
-Phase 3 verified contract supplement. Runtime authority: `src/api/HttpApi.cpp:1396-1432`.
+Verified contract supplement. Runtime authority: `src/api/HttpApi.cpp:1396-1432`.
 
 | Parameter | Type | Required | Default | Description |
 | --- | --- | --- | --- | --- |
@@ -200,7 +200,7 @@ const result = await fb2k.invoke('http.delete', { url: /* value */, body: /* val
 <!-- phase3-supplement:http.download -->
 ### Contract supplement: `http.download`
 
-Phase 3 verified contract supplement. Runtime authority: `src/api/HttpApi.cpp:1237-1352`.
+Verified contract supplement. Runtime authority: `src/api/HttpApi.cpp:1237-1352`.
 
 | Parameter | Type | Required | Default | Description |
 | --- | --- | --- | --- | --- |
@@ -231,7 +231,7 @@ const result = await fb2k.invoke('http.download', { async: /* value */, headers:
 <!-- phase3-supplement:http.get -->
 ### Contract supplement: `http.get`
 
-Phase 3 verified contract supplement. Runtime authority: `src/api/HttpApi.cpp:822-862`.
+Verified contract supplement. Runtime authority: `src/api/HttpApi.cpp:822-862`.
 
 | Parameter | Type | Required | Default | Description |
 | --- | --- | --- | --- | --- |
@@ -260,7 +260,7 @@ const result = await fb2k.invoke('http.get', { async: /* value */, headers: /* v
 <!-- phase3-supplement:http.head -->
 ### Contract supplement: `http.head`
 
-Phase 3 verified contract supplement. Runtime authority: `src/api/HttpApi.cpp:906-950`.
+Verified contract supplement. Runtime authority: `src/api/HttpApi.cpp:906-950`.
 
 | Parameter | Type | Required | Default | Description |
 | --- | --- | --- | --- | --- |
@@ -288,7 +288,7 @@ const result = await fb2k.invoke('http.head', { async: /* value */, headers: /* 
 <!-- phase3-supplement:http.patch -->
 ### Contract supplement: `http.patch`
 
-Phase 3 verified contract supplement. Runtime authority: `src/api/HttpApi.cpp:1436-1472`.
+Verified contract supplement. Runtime authority: `src/api/HttpApi.cpp:1436-1472`.
 
 | Parameter | Type | Required | Default | Description |
 | --- | --- | --- | --- | --- |
@@ -318,7 +318,7 @@ const result = await fb2k.invoke('http.patch', { url: /* value */, body: /* valu
 <!-- phase3-supplement:http.post -->
 ### Contract supplement: `http.post`
 
-Phase 3 verified contract supplement. Runtime authority: `src/api/HttpApi.cpp:866-902`.
+Verified contract supplement. Runtime authority: `src/api/HttpApi.cpp:866-902`.
 
 | Parameter | Type | Required | Default | Description |
 | --- | --- | --- | --- | --- |
@@ -348,7 +348,7 @@ const result = await fb2k.invoke('http.post', { url: /* value */, body: /* value
 <!-- phase3-supplement:http.put -->
 ### Contract supplement: `http.put`
 
-Phase 3 verified contract supplement. Runtime authority: `src/api/HttpApi.cpp:1356-1392`.
+Verified contract supplement. Runtime authority: `src/api/HttpApi.cpp:1356-1392`.
 
 | Parameter | Type | Required | Default | Description |
 | --- | --- | --- | --- | --- |
@@ -378,7 +378,8 @@ const result = await fb2k.invoke('http.put', { url: /* value */, body: /* value 
 
 ## Request lifecycle and security
 
-- `http.get`, `http.post`, `http.put`, `http.delete`, `http.patch`, and `http.head` default to asynchronous execution. Their immediate success response contains `requestId`; final results are sent to the invoking window as `http:response`.
+- `http.get`, `http.post`, `http.put`, `http.delete`, `http.patch`, and `http.head` default to asynchronous execution. Their immediate `success: true` response means only that dispatch succeeded and contains `requestId`; it is not the HTTP result. Final results are sent to the invoking window as `http:response` and must be correlated by `requestId`.
+- The SDK `fb.http.request()` helper waits for the matching completion event; use it when application code needs an awaited final result without manually subscribing to `http:response`.
 - The SDK convenience call `fb.http.get(` is a facade over the same invoke contract and may decode binary response bodies for its caller.
 - For synchronous execution, pass `async: false`. Successful non-download responses include `status`, `headers`, `body`, and `responseType`. A successful synchronous or asynchronous HEAD response may additionally include numeric `contentLength` when the response exposes `Content-Length`.
 - `http.download` defaults to synchronous execution. With `async: true`, its final result is emitted as `http:downloadComplete` with `requestId`; `http.abort` requests cancellation of an active asynchronous request.

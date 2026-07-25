@@ -5,6 +5,8 @@
 1. **展示用途（推荐）**: `fb.artwork.getFb2kUrl()` / `getFb2kUrlByPath()` — 返回 `fb2k://` URL，高性能二进制响应
 2. **需要图片内容**: `fb.artwork.getForTrack()` — 返回 `dataUrl`，适合保存/上传/写入标签
 
+两种表示不可互换：`fb2k://` 只由本组件 WebView2 解析，不是可持久化的图片内容；直接读取返回标准 Data URL，保存前必须提取 Base64 payload，并按目标 API 的 wire 契约转换。
+
 > 本项目已采用"方案B（一刀切）"，统一使用 `available` / `dataUrl` / `url` 字段。
 
 获取当前播放曲目的 `fb2k://` 封面 URL（高性能展示）。
@@ -30,6 +32,24 @@ const res = await fb.artwork.getFb2kUrlByPath('E:\\\\Music\\\\song.flac', 'front
 - URL 结构: `fb2k://artwork/<编码后的path>/<type>?maxSize=200`
 - path 必须做 URL 编码（SDK 已处理）
 - `maxSize` 可选，插件端会在协议层缩放后再返回二进制
+- 该 URL 只适合当前组件 WebView 中即时展示，不能传给 `fb.file.write()` 或 `fb.metadata.embedArtwork()`。
+
+## 保存返回的封面
+
+直接封面读取返回 `data:<mime>;base64,<payload>`。`fb.file.write()` 需要
+`base64:<payload>` 并同时传 `{ encoding: 'binary' }`；
+`fb.metadata.embedArtwork()` 则只接受裸 `<payload>`。
+
+```javascript
+const cover = await fb.artwork.getCurrent('front');
+if (cover.available && cover.dataUrl) {
+    const comma = cover.dataUrl.indexOf(',');
+    const payload = cover.dataUrl.slice(comma + 1);
+    await fb.file.write('C:\\Config\\cover.jpg', `base64:${payload}`, {
+        encoding: 'binary',
+    });
+}
+```
 
 ## getForTrack(path, type?, options?)
 

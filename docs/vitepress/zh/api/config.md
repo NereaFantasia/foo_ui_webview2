@@ -450,14 +450,14 @@ await fb2k.invoke('config.setReplaygainMode', { mode: 1 });
 await fb2k.invoke('config.setReplaygainMode', { sourceMode: 'track' });
 ```
 
-## Phase 3 合同补充
+## 合同补充
 
 以下章节补齐严格参数审计发现的公开 contract；不会改变前文的已有说明。
 
 <!-- phase3-supplement:config.set -->
 ### Contract 补充：`config.set`
 
-经 Phase 3 复核的补充 contract。权威源：`src/api/ConfigApi.cpp:821-840`。
+经复核的补充 contract。权威源：`src/api/ConfigApi.cpp:821-840`。
 
 | 参数 | 类型 | 必填 | 默认值 | 说明 |
 | --- | --- | --- | --- | --- |
@@ -480,7 +480,7 @@ const result = await fb2k.invoke('config.set', { key: /* value */, value: /* val
 <!-- phase3-supplement:config.setAdvancedConfigValue -->
 ### Contract 补充：`config.setAdvancedConfigValue`
 
-经 Phase 3 复核的补充 contract。权威源：`src/api/ConfigApi.cpp:321-387`。
+经复核的补充 contract。权威源：`src/api/ConfigApi.cpp:321-387`。
 
 | 参数 | 类型 | 必填 | 默认值 | 说明 |
 | --- | --- | --- | --- | --- |
@@ -500,7 +500,7 @@ const result = await fb2k.invoke('config.setAdvancedConfigValue', { guid: /* val
 <!-- phase3-supplement:config.setCursorFollowPlayback -->
 ### Contract 补充：`config.setCursorFollowPlayback`
 
-经 Phase 3 复核的补充 contract。权威源：`src/api/ConfigApi.cpp:689-697`。
+经复核的补充 contract。权威源：`src/api/ConfigApi.cpp:689-697`。
 
 | 参数 | 类型 | 必填 | 默认值 | 说明 |
 | --- | --- | --- | --- | --- |
@@ -522,7 +522,7 @@ const result = await fb2k.invoke('config.setCursorFollowPlayback', { enabled: /*
 <!-- phase3-supplement:config.setOutputBuffer -->
 ### Contract 补充：`config.setOutputBuffer`
 
-经 Phase 3 复核的补充 contract。权威源：`src/api/ConfigApi.cpp:138-164`。
+经复核的补充 contract。权威源：`src/api/ConfigApi.cpp:138-164`。
 
 | 参数 | 类型 | 必填 | 默认值 | 说明 |
 | --- | --- | --- | --- | --- |
@@ -542,7 +542,7 @@ const result = await fb2k.invoke('config.setOutputBuffer', { bufferLength: /* va
 <!-- phase3-supplement:config.setPlaybackFollowCursor -->
 ### Contract 补充：`config.setPlaybackFollowCursor`
 
-经 Phase 3 复核的补充 contract。权威源：`src/api/ConfigApi.cpp:702-710`。
+经复核的补充 contract。权威源：`src/api/ConfigApi.cpp:702-710`。
 
 | 参数 | 类型 | 必填 | 默认值 | 说明 |
 | --- | --- | --- | --- | --- |
@@ -564,7 +564,7 @@ const result = await fb2k.invoke('config.setPlaybackFollowCursor', { enabled: /*
 <!-- phase3-supplement:config.setReplaygainMode -->
 ### Contract 补充：`config.setReplaygainMode`
 
-经 Phase 3 复核的补充 contract。权威源：`src/api/ConfigApi.cpp:720-744`。
+经复核的补充 contract。权威源：`src/api/ConfigApi.cpp:720-744`。
 
 | 参数 | 类型 | 必填 | 默认值 | 说明 |
 | --- | --- | --- | --- | --- |

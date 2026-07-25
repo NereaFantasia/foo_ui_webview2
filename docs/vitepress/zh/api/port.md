@@ -294,14 +294,14 @@ console.log('状态键:', result.keys);
 | state:changed | state.set 且非 silent | key, value, previousValue, sourceWindowId, expiresAt? |
 | state:deleted | state.delete 或 TTL 到期 | key, sourceWindowId, reason |
 
-## Phase 3 合同补充
+## 合同补充
 
 以下章节补齐严格参数审计发现的公开 contract；不会改变前文的已有说明。
 
 <!-- phase3-supplement:state.set -->
 ### Contract 补充：`state.set`
 
-经 Phase 3 复核的补充 contract。权威源：`src/api/PortApi.cpp:158-175`。
+经复核的补充 contract。权威源：`src/api/PortApi.cpp:158-175`。
 
 | 参数 | 类型 | 必填 | 默认值 | 说明 |
 | --- | --- | --- | --- | --- |
@@ -328,6 +328,7 @@ const result = await fb2k.invoke('state.set', { key: /* value */, silent: /* val
 
 - `port.connect` 将新端口绑定到调用窗口。只有该 owner 能断开端口或通过该端口发送；`port.postMessage` 会排除发送端口，并将 `port:message` 路由到同名的其他端口。
 - `event.emit` 广播指定事件名，`event.emitTo` 定向到一个窗口。接收方获得 envelope `{ payload, sourceWindowId }`；只有 `event.emit` 使用 `excludeSelf`。应用自定义事件名使用 `namespace:eventName` 约定，例如 `ui:themeChanged` 或 `lyrics:update`。
+- `state.*` 是进程级 `PortHub` 单例持有的内存状态。在当前 foobar2000 进程中，本组件的多个 WebView 窗口可共享它；但它不会写入磁盘、进程重启后丢失，也不是跨进程或 SMP/全局持久化机制。它与 SDK 的 `fb.state` 播放状态镜像不同。
 - 键不存在时，`state.get` 返回 `exists: false` 与 `value: null`。`state.set` 同时要求 `key` 和 `value`；正数 `ttlMs` 会创建过期时间戳，`silent: true` 会抑制 `state:changed`。
 - `state.delete` 返回 `existed`。显式删除会发出 `reason: "deleted"` 的 `state:deleted`；过期会发出相同事件，但 `reason` 为 `"expired"`，且 `sourceWindowId` 为空。
 - 公开 PortHub 事件包括 `port:connected`、`port:disconnected`、`port:message`、`state:changed` 和 `state:deleted`。它们的 payload 由 `src/api/PortHub.cpp` 发出。

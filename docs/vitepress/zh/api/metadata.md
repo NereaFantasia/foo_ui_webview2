@@ -191,6 +191,20 @@ await fb2k.invoke('metadata.embedArtwork', {
 });
 ```
 
+`imageData` 必须是**裸 Base64 图片字节**。不要传
+`data:image/...;base64,` 头、`base64:` 标记或 `fb2k://` URL。若来源是
+Artwork API 返回的标准 Data URL，应先取第一个逗号之后的 payload：
+
+```javascript
+const cover = await fb2k.invoke('artwork.getCurrent', { type: 'front' });
+const payload = cover.dataUrl.slice(cover.dataUrl.indexOf(',') + 1);
+await fb2k.invoke('metadata.embedArtwork', {
+    path: 'E:\\\\Music\\\\song.flac',
+    imageData: payload,
+    type: 'front',
+});
+```
+
 ### metadata.removeEmbeddedArt
 
 移除音频文件中的嵌入封面。

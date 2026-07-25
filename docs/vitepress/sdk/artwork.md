@@ -7,6 +7,11 @@ Choose an API according to the representation you need:
 
 Read `available` before consuming `dataUrl` or `url`.
 
+These representations are not interchangeable. An `fb2k://` URL is resolved
+only inside this component's WebView2 and is not persistable image content.
+Direct reads return a standard Data URL; saving it requires extracting the
+Base64 payload and adapting it to the destination API's wire contract.
+
 ## getFb2kUrl(type?, options?)
 
 Resolves an `fb2k://` artwork URL for the current track.
@@ -38,6 +43,24 @@ const res = await fb.artwork.getFb2kUrlByPath(
 - The URL structure is `fb2k://artwork/<encoded-path>/<type>?maxSize=200`.
 - The SDK asks the host to construct the URL; consume the returned `dataUrl` rather than assembling protocol URLs manually.
 - `maxSize` is optional and requests host-side downsampling.
+- The URL is for immediate rendering in the component WebView only. Do not pass it to `fb.file.write()` or `fb.metadata.embedArtwork()`.
+
+## Saving returned artwork
+
+Direct artwork reads return `data:<mime>;base64,<payload>`. `fb.file.write()`
+requires `base64:<payload>` together with `{ encoding: 'binary' }`, while
+`fb.metadata.embedArtwork()` requires only the raw `<payload>`.
+
+```javascript
+const cover = await fb.artwork.getCurrent('front');
+if (cover.available && cover.dataUrl) {
+    const comma = cover.dataUrl.indexOf(',');
+    const payload = cover.dataUrl.slice(comma + 1);
+    await fb.file.write('C:\\Config\\cover.jpg', `base64:${payload}`, {
+        encoding: 'binary',
+    });
+}
+```
 
 ## getForTrack(path, type?, options?)
 

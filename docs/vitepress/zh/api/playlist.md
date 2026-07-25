@@ -20,7 +20,7 @@ const { count } = await fb2k.invoke('playlist.getCount');
 ### playlist.getAll
 
 <!-- phase3-major1-review:playlist.getAll -->
-#### Phase 3 Major 1 源码复核 contract
+#### 源码复核 contract
 权威源: `src/api/PlaylistApi.cpp:750-772`.
 
 _无公开参数。_
@@ -73,7 +73,7 @@ _无公开参数。_
 ### playlist.setActive
 
 <!-- phase3-major1-review:playlist.setActive -->
-#### Phase 3 Major 1 源码复核 contract
+#### 源码复核 contract
 权威源: `src/api/PlaylistApi.cpp:796-808`.
 
 | 参数 | 类型 | 必填 | 默认值 |
@@ -112,7 +112,7 @@ await fb2k.invoke('playlist.setActive', { playlist: 1 });
 ### playlist.create
 
 <!-- phase3-major1-review:playlist.create -->
-#### Phase 3 Major 1 源码复核 contract
+#### 源码复核 contract
 权威源: `src/api/PlaylistApi.cpp:832-845`.
 
 | 参数 | 类型 | 必填 | 默认值 |
@@ -142,7 +142,7 @@ const result = await fb2k.invoke('playlist.create', { name: 'Rock Music' });
 ### playlist.remove
 
 <!-- phase3-major1-review:playlist.remove -->
-#### Phase 3 Major 1 源码复核 contract
+#### 源码复核 contract
 权威源: `src/api/PlaylistApi.cpp:845-867`.
 
 | 参数 | 类型 | 必填 | 默认值 |
@@ -166,7 +166,7 @@ const result = await fb2k.invoke('playlist.create', { name: 'Rock Music' });
 ### playlist.rename
 
 <!-- phase3-major1-review:playlist.rename -->
-#### Phase 3 Major 1 源码复核 contract
+#### 源码复核 contract
 权威源: `src/api/PlaylistApi.cpp:867-880`.
 
 | 参数 | 类型 | 必填 | 默认值 |
@@ -196,7 +196,7 @@ await fb2k.invoke('playlist.rename', { playlist: 0, name: 'My Favorites' });
 ### playlist.clear
 
 <!-- phase3-major1-review:playlist.clear -->
-#### Phase 3 Major 1 源码复核 contract
+#### 源码复核 contract
 权威源: `src/api/PlaylistApi.cpp:880-910`.
 
 | 参数 | 类型 | 必填 | 默认值 |
@@ -229,7 +229,7 @@ await fb2k.invoke('playlist.rename', { playlist: 0, name: 'My Favorites' });
 ### playlist.duplicate
 
 <!-- phase3-major1-review:playlist.duplicate -->
-#### Phase 3 Major 1 源码复核 contract
+#### 源码复核 contract
 权威源: `src/api/PlaylistApi.cpp:1402-1436`.
 
 | 参数 | 类型 | 必填 | 默认值 |
@@ -257,7 +257,7 @@ await fb2k.invoke('playlist.rename', { playlist: 0, name: 'My Favorites' });
 ### playlist.getTrackCount
 
 <!-- phase3-major1-review:playlist.getTrackCount -->
-#### Phase 3 Major 1 源码复核 contract
+#### 源码复核 contract
 权威源: `src/api/PlaylistApi.cpp:948-961`.
 
 | 参数 | 类型 | 必填 | 默认值 |
@@ -283,7 +283,7 @@ await fb2k.invoke('playlist.rename', { playlist: 0, name: 'My Favorites' });
 ### playlist.getTracks
 
 <!-- phase3-major1-review:playlist.getTracks -->
-#### Phase 3 Major 1 源码复核 contract
+#### 源码复核 contract
 权威源: `src/api/PlaylistApi.cpp:961-981`.
 
 | 参数 | 类型 | 必填 | 默认值 |
@@ -372,7 +372,7 @@ const result = await fb2k.invoke('playlist.getTracks', {
 ### playlist.playTrack
 
 <!-- phase3-major1-review:playlist.playTrack -->
-#### Phase 3 Major 1 源码复核 contract
+#### 源码复核 contract
 权威源: `src/api/PlaylistApi.cpp:1089-1134`.
 
 | 参数 | 类型 | 必填 | 默认值 |
@@ -411,7 +411,7 @@ await fb2k.invoke('playlist.playTrack', { playlist: 0, index: 0, deferred: true 
 ### playlist.removeTracks
 
 <!-- phase3-major1-review:playlist.removeTracks -->
-#### Phase 3 Major 1 源码复核 contract
+#### 源码复核 contract
 权威源: `src/api/PlaylistApi.cpp:1017-1041`.
 
 | 参数 | 类型 | 必填 | 默认值 |
@@ -439,7 +439,7 @@ await fb2k.invoke('playlist.playTrack', { playlist: 0, index: 0, deferred: true 
 ### playlist.removeSelectedTracks
 
 <!-- phase3-major1-review:playlist.removeSelectedTracks -->
-#### Phase 3 Major 1 源码复核 contract
+#### 源码复核 contract
 权威源: `src/api/PlaylistApi.cpp:1041-1059`.
 
 | 参数 | 类型 | 必填 | 默认值 |
@@ -465,7 +465,7 @@ await fb2k.invoke('playlist.playTrack', { playlist: 0, index: 0, deferred: true 
 ### playlist.moveTracks
 
 <!-- phase3-major1-review:playlist.moveTracks -->
-#### Phase 3 Major 1 源码复核 contract
+#### 源码复核 contract
 权威源: `src/api/PlaylistApi.cpp:1059-1089`.
 
 | 参数 | 类型 | 必填 | 默认值 |
@@ -500,7 +500,7 @@ await fb2k.invoke('playlist.moveTracks', { items: [5, 6], delta: -2 });
 ### playlist.addPaths
 
 <!-- phase3-major1-review:playlist.addPaths -->
-#### Phase 3 Major 1 源码复核 contract
+#### 源码复核 contract
 权威源: `src/api/PlaylistApi.cpp:1439-1474`.
 
 | 参数 | 类型 | 必填 | 默认值 |
@@ -537,13 +537,13 @@ await fb2k.invoke('playlist.moveTracks', { items: [5, 6], delta: -2 });
 
 ## 补充的公开 API
 
-以下章节由 Phase 3 按 `RegisterApi` 动态补齐，参数键来自 C++ handler 静态提取。
+以下章节按 `RegisterApi` 动态补齐，参数键来自 C++ handler 静态提取。
 
 ### playlist.addHandles
 
 
 <!-- phase3-major1-review:playlist.addHandles -->
-#### Phase 3 Major 1 源码复核 contract
+#### 源码复核 contract
 权威源: `src/api/PlaylistApi.cpp:1478-1513`.
 
 | 参数 | 类型 | 必填 | 默认值 |
@@ -578,7 +578,7 @@ const result = await fb2k.invoke('playlist.addHandles', { handles: /* value */, 
 
 
 <!-- phase3-major1-review:playlist.addPathsAsync -->
-#### Phase 3 Major 1 源码复核 contract
+#### 源码复核 contract
 权威源: `src/api/PlaylistApi.cpp:1678-1722`.
 
 | 参数 | 类型 | 必填 | 默认值 |
@@ -609,7 +609,7 @@ const result = await fb2k.invoke('playlist.addPathsAsync', { paths: /* value */,
 
 
 <!-- phase3-major1-review:playlist.addPathsSequential -->
-#### Phase 3 Major 1 源码复核 contract
+#### 源码复核 contract
 权威源: `src/api/PlaylistApi.cpp:1650-1675`.
 
 | 参数 | 类型 | 必填 | 默认值 |
@@ -640,7 +640,7 @@ const result = await fb2k.invoke('playlist.addPathsSequential', { paths: /* valu
 
 
 <!-- phase3-major1-review:playlist.convertToAutoplaylist -->
-#### Phase 3 Major 1 源码复核 contract
+#### 源码复核 contract
 权威源: `src/api/PlaylistApi.cpp:1294-1315`.
 
 | 参数 | 类型 | 必填 | 默认值 |
@@ -693,7 +693,7 @@ const result = await fb2k.invoke('playlist.createAutoplaylist', { keepSorted: /*
 
 
 <!-- phase3-major1-review:playlist.deselectAll -->
-#### Phase 3 Major 1 源码复核 contract
+#### 源码复核 contract
 权威源: `src/api/PlaylistApi.cpp:1562-1572`.
 
 | 参数 | 类型 | 必填 | 默认值 |
@@ -722,7 +722,7 @@ const result = await fb2k.invoke('playlist.deselectAll', { playlist: /* value */
 
 
 <!-- phase3-major1-review:playlist.focusTrack -->
-#### Phase 3 Major 1 源码复核 contract
+#### 源码复核 contract
 权威源: `src/api/PlaylistApi.cpp:1137-1151`.
 
 | 参数 | 类型 | 必填 | 默认值 |
@@ -755,7 +755,7 @@ const result = await fb2k.invoke('playlist.focusTrack', { index: /* value */, pl
 
 
 <!-- phase3-major1-review:playlist.getAutoplaylistInfo -->
-#### Phase 3 Major 1 源码复核 contract
+#### 源码复核 contract
 权威源: `src/api/PlaylistApi.cpp:1344-1369`.
 
 | 参数 | 类型 | 必填 | 默认值 |
@@ -783,7 +783,7 @@ const result = await fb2k.invoke('playlist.getAutoplaylistInfo', { playlist: /* 
 
 
 <!-- phase3-major1-review:playlist.getAutoplaylistQuery -->
-#### Phase 3 Major 1 源码复核 contract
+#### 源码复核 contract
 权威源: `src/api/PlaylistApi.cpp:1372-1399`.
 
 | 参数 | 类型 | 必填 | 默认值 |
@@ -811,7 +811,7 @@ const result = await fb2k.invoke('playlist.getAutoplaylistQuery', { playlist: /*
 
 
 <!-- phase3-major1-review:playlist.getAvailableColumns -->
-#### Phase 3 Major 1 源码复核 contract
+#### 源码复核 contract
 权威源: `src/api/PlaylistApi.cpp:1816-1848`.
 
 _无公开参数。_
@@ -836,7 +836,7 @@ const result = await fb2k.invoke('playlist.getAvailableColumns');
 
 
 <!-- phase3-major1-review:playlist.getFocusTrack -->
-#### Phase 3 Major 1 源码复核 contract
+#### 源码复核 contract
 权威源: `src/api/PlaylistApi.cpp:1154-1163`.
 
 | 参数 | 类型 | 必填 | 默认值 |
@@ -865,7 +865,7 @@ const result = await fb2k.invoke('playlist.getFocusTrack', { playlist: /* value 
 
 
 <!-- phase3-major1-review:playlist.getFocusedTrack -->
-#### Phase 3 Major 1 源码复核 contract
+#### 源码复核 contract
 权威源: `src/api/PlaylistApi.cpp:1572-1582`.
 
 | 参数 | 类型 | 必填 | 默认值 |
@@ -894,7 +894,7 @@ const result = await fb2k.invoke('playlist.getFocusedTrack', { playlist: /* valu
 
 
 <!-- phase3-major1-review:playlist.getLockInfo -->
-#### Phase 3 Major 1 源码复核 contract
+#### 源码复核 contract
 权威源: `src/api/PlaylistApi.cpp:1516-1525`.
 
 | 参数 | 类型 | 必填 | 默认值 |
@@ -923,7 +923,7 @@ const result = await fb2k.invoke('playlist.getLockInfo', { playlist: /* value */
 
 
 <!-- phase3-major1-review:playlist.getSelectedTracks -->
-#### Phase 3 Major 1 源码复核 contract
+#### 源码复核 contract
 权威源: `src/api/PlaylistApi.cpp:981-995`.
 
 | 参数 | 类型 | 必填 | 默认值 |
@@ -954,7 +954,7 @@ const result = await fb2k.invoke('playlist.getSelectedTracks');
 
 
 <!-- phase3-major1-review:playlist.getSelection -->
-#### Phase 3 Major 1 源码复核 contract
+#### 源码复核 contract
 权威源: `src/api/PlaylistApi.cpp:1538-1552`.
 
 | 参数 | 类型 | 必填 | 默认值 |
@@ -983,7 +983,7 @@ const result = await fb2k.invoke('playlist.getSelection', { playlist: /* value *
 
 
 <!-- phase3-major1-review:playlist.insertTracks -->
-#### Phase 3 Major 1 源码复核 contract
+#### 源码复核 contract
 权威源: `src/api/PlaylistApi.cpp:913-948`.
 
 | 参数 | 类型 | 必填 | 默认值 |
@@ -1024,7 +1024,7 @@ const result = await fb2k.invoke('playlist.insertTracks', { handles: /* value */
 
 
 <!-- phase3-major1-review:playlist.isAutoplaylist -->
-#### Phase 3 Major 1 源码复核 contract
+#### 源码复核 contract
 权威源: `src/api/PlaylistApi.cpp:1250-1262`.
 
 | 参数 | 类型 | 必填 | 默认值 |
@@ -1052,7 +1052,7 @@ const result = await fb2k.invoke('playlist.isAutoplaylist', { playlist: /* value
 
 
 <!-- phase3-major1-review:playlist.isLocked -->
-#### Phase 3 Major 1 源码复核 contract
+#### 源码复核 contract
 权威源: `src/api/PlaylistApi.cpp:1528-1535`.
 
 | 参数 | 类型 | 必填 | 默认值 |
@@ -1081,7 +1081,7 @@ const result = await fb2k.invoke('playlist.isLocked', { playlist: /* value */ })
 
 
 <!-- phase3-major1-review:playlist.redo -->
-#### Phase 3 Major 1 源码复核 contract
+#### 源码复核 contract
 权威源: `src/api/PlaylistApi.cpp:1234-1245`.
 
 | 参数 | 类型 | 必填 | 默认值 |
@@ -1110,7 +1110,7 @@ const result = await fb2k.invoke('playlist.redo', { playlist: /* value */ });
 
 
 <!-- phase3-major1-review:playlist.removeAutoplaylist -->
-#### Phase 3 Major 1 源码复核 contract
+#### 源码复核 contract
 权威源: `src/api/PlaylistApi.cpp:1318-1341`.
 
 | 参数 | 类型 | 必填 | 默认值 |
@@ -1139,7 +1139,7 @@ const result = await fb2k.invoke('playlist.removeAutoplaylist', { playlist: /* v
 
 
 <!-- phase3-major1-review:playlist.reorder -->
-#### Phase 3 Major 1 源码复核 contract
+#### 源码复核 contract
 权威源: `src/api/PlaylistApi.cpp:1618-1647`.
 
 | 参数 | 类型 | 必填 | 默认值 |
@@ -1170,7 +1170,7 @@ const result = await fb2k.invoke('playlist.reorder', { newOrder: /* value */, pl
 
 
 <!-- phase3-major1-review:playlist.reorderPlaylists -->
-#### Phase 3 Major 1 源码复核 contract
+#### 源码复核 contract
 权威源: `src/api/PlaylistApi.cpp:1782-1813`.
 
 | 参数 | 类型 | 必填 | 默认值 |
@@ -1199,7 +1199,7 @@ const result = await fb2k.invoke('playlist.reorderPlaylists', { newOrder: /* val
 
 
 <!-- phase3-major1-review:playlist.replaceAllAndPlay -->
-#### Phase 3 Major 1 源码复核 contract
+#### 源码复核 contract
 权威源: `src/api/PlaylistApi.cpp:1725-1779`.
 
 | 参数 | 类型 | 必填 | 默认值 |
@@ -1236,7 +1236,7 @@ const result = await fb2k.invoke('playlist.replaceAllAndPlay', { autoPlay: /* va
 
 
 <!-- phase3-major1-review:playlist.reverse -->
-#### Phase 3 Major 1 源码复核 contract
+#### 源码复核 contract
 权威源: `src/api/PlaylistApi.cpp:1597-1615`.
 
 | 参数 | 类型 | 必填 | 默认值 |
@@ -1265,7 +1265,7 @@ const result = await fb2k.invoke('playlist.reverse', { playlist: /* value */ });
 
 
 <!-- phase3-major1-review:playlist.selectAll -->
-#### Phase 3 Major 1 源码复核 contract
+#### 源码复核 contract
 权威源: `src/api/PlaylistApi.cpp:1552-1562`.
 
 | 参数 | 类型 | 必填 | 默认值 |
@@ -1294,7 +1294,7 @@ const result = await fb2k.invoke('playlist.selectAll', { playlist: /* value */ }
 
 
 <!-- phase3-major1-review:playlist.setFocusedTrack -->
-#### Phase 3 Major 1 源码复核 contract
+#### 源码复核 contract
 权威源: `src/api/PlaylistApi.cpp:1582-1597`.
 
 | 参数 | 类型 | 必填 | 默认值 |
@@ -1325,7 +1325,7 @@ const result = await fb2k.invoke('playlist.setFocusedTrack', { index: /* value *
 
 
 <!-- phase3-major1-review:playlist.setSelection -->
-#### Phase 3 Major 1 源码复核 contract
+#### 源码复核 contract
 权威源: `src/api/PlaylistApi.cpp:995-1017`.
 
 | 参数 | 类型 | 必填 | 默认值 |
@@ -1395,7 +1395,7 @@ const result = await fb2k.invoke('playlist.sort', { descending: /* value */, pat
 
 
 <!-- phase3-major1-review:playlist.undo -->
-#### Phase 3 Major 1 源码复核 contract
+#### 源码复核 contract
 权威源: `src/api/PlaylistApi.cpp:1223-1234`.
 
 | 参数 | 类型 | 必填 | 默认值 |
@@ -1442,14 +1442,14 @@ const result = await fb2k.invoke('playlist.undo', { playlist: /* value */ });
 
 当 foobar2000 回调没有具体的前一个或后一个索引时，`from`、`to`、`oldIndex` 与 `newIndex` 可以为 `-1`。
 
-## Phase 3 合同补充
+## 合同补充
 
 以下章节补齐严格参数审计发现的公开 contract；不会改变前文的已有说明。
 
 <!-- phase3-supplement:playlist.moveTracks -->
 ### Contract 补充：`playlist.moveTracks`
 
-经 Phase 3 复核的补充 contract。权威源：`src/api/PlaylistApi.cpp:1059-1089`。
+经复核的补充 contract。权威源：`src/api/PlaylistApi.cpp:1059-1089`。
 
 | 参数 | 类型 | 必填 | 默认值 | 说明 |
 | --- | --- | --- | --- | --- |
@@ -1473,7 +1473,7 @@ const result = await fb2k.invoke('playlist.moveTracks', { playlist: /* value */,
 <!-- phase3-supplement:playlist.playTrack -->
 ### Contract 补充：`playlist.playTrack`
 
-经 Phase 3 复核的补充 contract。权威源：`src/api/PlaylistApi.cpp:1089-1134`。
+经复核的补充 contract。权威源：`src/api/PlaylistApi.cpp:1089-1134`。
 
 | 参数 | 类型 | 必填 | 默认值 | 说明 |
 | --- | --- | --- | --- | --- |
@@ -1498,7 +1498,7 @@ const result = await fb2k.invoke('playlist.playTrack', { playlist: /* value */, 
 <!-- phase3-supplement:playlist.removeSelectedTracks -->
 ### Contract 补充：`playlist.removeSelectedTracks`
 
-经 Phase 3 复核的补充 contract。权威源：`src/api/PlaylistApi.cpp:1041-1059`。
+经复核的补充 contract。权威源：`src/api/PlaylistApi.cpp:1041-1059`。
 
 | 参数 | 类型 | 必填 | 默认值 | 说明 |
 | --- | --- | --- | --- | --- |
@@ -1520,7 +1520,7 @@ const result = await fb2k.invoke('playlist.removeSelectedTracks', { playlist: /*
 <!-- phase3-supplement:playlist.removeTracks -->
 ### Contract 补充：`playlist.removeTracks`
 
-经 Phase 3 复核的补充 contract。权威源：`src/api/PlaylistApi.cpp:1017-1041`。
+经复核的补充 contract。权威源：`src/api/PlaylistApi.cpp:1017-1041`。
 
 | 参数 | 类型 | 必填 | 默认值 | 说明 |
 | --- | --- | --- | --- | --- |
@@ -1543,7 +1543,7 @@ const result = await fb2k.invoke('playlist.removeTracks', { playlist: /* value *
 <!-- phase3-supplement:playlist.setSelection -->
 ### Contract 补充：`playlist.setSelection`
 
-经 Phase 3 复核的补充 contract。权威源：`src/api/PlaylistApi.cpp:995-1017`。
+经复核的补充 contract。权威源：`src/api/PlaylistApi.cpp:995-1017`。
 
 | 参数 | 类型 | 必填 | 默认值 | 说明 |
 | --- | --- | --- | --- | --- |
@@ -1567,7 +1567,7 @@ const result = await fb2k.invoke('playlist.setSelection', { playlist: /* value *
 <!-- phase3-supplement:playlist.shuffle -->
 ### Contract 补充：`playlist.shuffle`
 
-经 Phase 3 复核的补充 contract。权威源：`src/api/PlaylistApi.cpp:1190-1223`。
+经复核的补充 contract。权威源：`src/api/PlaylistApi.cpp:1190-1223`。
 
 | 参数 | 类型 | 必填 | 默认值 | 说明 |
 | --- | --- | --- | --- | --- |
@@ -1589,7 +1589,7 @@ const result = await fb2k.invoke('playlist.shuffle', { playlist: /* value */, in
 <!-- phase3-supplement:playlist.sort -->
 ### Contract 补充：`playlist.sort`
 
-经 Phase 3 复核的补充 contract。权威源：`src/api/PlaylistApi.cpp:1163-1190`。
+经复核的补充 contract。权威源：`src/api/PlaylistApi.cpp:1163-1190`。
 
 | 参数 | 类型 | 必填 | 默认值 | 说明 |
 | --- | --- | --- | --- | --- |

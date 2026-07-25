@@ -84,9 +84,26 @@ const result = await fb2k.invoke('artwork.getFb2kUrlByPathBatch', {
 
 `fb2k://artwork/?path={encodedPath}&type={type}&maxSize={size}`
 
+`getFb2kUrl*` 虽然把结果放在 `dataUrl` 字段中，但该值不是标准 Data URL，也不是图片字节。它只由本组件 WebView2 的资源拦截器解析，适合当前 WebView 中即时赋给 `<img src>`；不要把它持久化、传给 `file.write`，也不要当作系统级 URL 使用。
+
+需要真实图片内容时，应使用 `getCurrent`、`getByPath`、`getForTrack`、`getByPlaylistItem` 或 `getBatch`，它们返回标准 `data:image/...;base64,...`。落盘时取逗号后的裸 Base64 payload，再以 `content: 'base64:' + payload` 和 `encoding: 'binary'` 调用 `file.write`；传给 `metadata.embedArtwork` 时则只传裸 payload，不要带 Data URL 头或 `base64:`。
+
 ::: tip 新格式（v1.4.0+）
 路径放在 query string 的 `path` 参数中，避免 Chromium URL 规范化解码 `%5C`/`%2F` 导致 Windows 路径损坏。 旧格式 `fb2k://artwork/{encodedPath}?type=...` 仍向后兼容。
 :::
+
+```javascript
+const artwork = await fb2k.invoke('artwork.getCurrent', { type: 'front' });
+if (artwork.available) {
+    const comma = artwork.dataUrl.indexOf(',');
+    const payload = artwork.dataUrl.slice(comma + 1);
+    await fb2k.invoke('file.write', {
+        path: '%profile%\\\\cover.jpg',
+        content: `base64:${payload}`,
+        encoding: 'binary',
+    });
+}
+```
 
 | 用途 | maxSize | 预计大小 |
 | --- | --- | --- |
@@ -127,7 +144,7 @@ const result = await fb2k.invoke('artwork.getFb2kUrlByPathBatch', {
 
 **返回值**: `{"available":true,"dataUrl":"...","error":"...","mimeType":"...","path":"...","size":0,"type":"..."}`
 
-::: tip 路径 Contract (Phase 9)
+::: tip 路径 Contract
 
 - **支持**: 原生路径、`file://` 前缀、`path|subsong:N`（subsong 会被剥离，提取器以文件级别操作）
 - **拒绝**: `file-relative://` 路径会返回显式错误，请改用 `artwork.getByPlaylistItem`
@@ -265,7 +282,7 @@ const result = await fb2k.invoke('artwork.getFb2kUrlByPathBatch', { paths, type:
 
 ## 补充的公开 API
 
-以下章节由 Phase 3 按 `RegisterApi` 动态补齐，参数键来自 C++ handler 静态提取。
+以下章节按 `RegisterApi` 动态补齐，参数键来自 C++ handler 静态提取。
 
 ### artwork.getBatch
 

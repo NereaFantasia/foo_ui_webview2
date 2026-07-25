@@ -14,17 +14,24 @@
 
 返回 `services` 中各服务类别的数量，以及汇总后的 `totalServices`。
 
-### getMainMenuCommands()
+### getMainMenuCommands(options?)
 
-签名：`fb.discovery.getMainMenuCommands(): Promise<DiscoveryGetMainMenuCommandsResponse>`
+签名：`fb.discovery.getMainMenuCommands(options?: { expandDynamic?: boolean }): Promise<DiscoveryGetMainMenuCommandsResponse>`
 
-返回 `{ commands, count }`。每个命令包含 `name`、`description`、`guid`、`parentGuid` 与 `index`。
+返回 `{ commands, count, dynamicCount }`。每个命令包含 `name`、`description`、`guid`、`parentGuid` 与 `index`。
 
-### executeMainMenuCommand(guid)
+对在运行时构建子菜单的组件（`mainmenu_commands_v2`，例如 ESLyric），默认会展开其动态子树，因此结果中除静态父项外还包含子命令。展开出的子项带有 `subGuid`、`isDynamic: true` 以及形如 `View/ESLyric/搜索歌词` 的 `path`。传入 `{ expandDynamic: false }` 可只枚举静态注册表。
 
-签名：`fb.discovery.executeMainMenuCommand(guid: string): Promise<BaseResponse>`
+```javascript
+const all = await fb.discovery.getMainMenuCommands();
+const dynamic = all.commands.filter((cmd) => cmd.isDynamic);
+```
 
-按 GUID 执行主菜单命令。
+### executeMainMenuCommand(guid, subGuid?)
+
+签名：`fb.discovery.executeMainMenuCommand(guid: string, subGuid?: string): Promise<BaseResponse & { subGuid?: string; dynamic?: boolean }>`
+
+按 GUID 执行主菜单命令。若目标是从动态子菜单展开出的条目，需同时传入其 `subGuid`；否则只会派发静态父命令。
 
 ### executeContextMenuCommand(options)
 
@@ -156,14 +163,16 @@ const result = await fb.discovery.getPreferencePages();
 const result = await fb.discovery.getUIElements();
 ```
 
-### searchCommands(query)
+### searchCommands(query, options?)
 
-签名：`fb.discovery.searchCommands(query: string): Promise<DiscoverySearchCommandsResponse>`
+签名：`fb.discovery.searchCommands(query: string, options?: { expandDynamic?: boolean }): Promise<DiscoverySearchCommandsResponse>`
 
-搜索主菜单命令，返回原始 `query`、`results` 与 `count`；当前结果的 `type` 分类值为 `mainmenu`。
+搜索主菜单命令，返回原始 `query`、`results` 与 `count`；名称、描述与菜单路径均按不区分大小写匹配。结果的 `type` 为静态命令 `mainmenu`，或运行时子菜单展开项 `mainmenu-dynamic`，后者还带有 `subGuid` 与 `path`。传入 `{ expandDynamic: false }` 可只搜索静态注册表。
 
 ```javascript
-const result = await fb.discovery.searchCommands('preferences');
+const result = await fb.discovery.searchCommands('lyric');
+const hit = result.results[0];
+await fb.discovery.executeMainMenuCommand(hit.guid, hit.subGuid);
 ```
 
 <!-- END AUTO-GENERATED SDK STUBS -->

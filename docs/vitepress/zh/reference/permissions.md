@@ -8,9 +8,9 @@
 | --- | ---: | --- |
 | `Read` | 9 | 普通文件系统只读校验 |
 | `Write` | 1 | 严格写入目标（配置/临时目录策略） |
-| `MediaRead` | 39 | 媒体上下文只读校验 |
+| `MediaRead` | 40 | 媒体上下文只读校验 |
 | `MediaWrite` | 17 | 媒体上下文写校验 |
-| **合计** | **66** | **64 个唯一 API** |
+| **合计** | **67** | **64 个唯一 API** |
 
 ## 五级权限模型
 
@@ -67,7 +67,7 @@ if (!result.success && result.code === 'PERMISSION_DENIED') {
 | --- | --- | --- | --- | --- |
 | `http.download` | `saveTo` | — | — | 权威源：`HttpApi.cpp` |
 
-### MediaRead — 读取媒体文件（39 条）
+### MediaRead — 读取媒体文件（40 条）
 
 | API | 参数 | 数组 | 嵌套键 | 说明 |
 | --- | --- | --- | --- | --- |
@@ -77,6 +77,7 @@ if (!result.success && result.code === 'PERMISSION_DENIED') {
 | `artwork.getByPath` | `path` | — | — | 权威源：`ArtworkApi.cpp` |
 | `artwork.getFb2kUrlByPath` | `path` | — | — | 权威源：`ArtworkApi.cpp` |
 | `artwork.getFb2kUrlByPathBatch` | `paths` | 是 | — | 权威源：`ArtworkApi.cpp` |
+| `artwork.getFb2kUrlByPathBatch` | `items` | 是 | `path` | 权威源：`ArtworkApi.cpp` |
 | `artwork.getForTrack` | `path` | — | — | 权威源：`ArtworkApi.cpp` |
 | `artwork.getLyrics` | `path` | — | — | 权威源：`ArtworkApi.cpp` |
 | `artwork.getMetadata` | `path` | — | — | 权威源：`ArtworkApi.cpp` |
@@ -191,8 +192,8 @@ if (!result.success && result.code === 'PERMISSION_DENIED') {
 | --- | ---: | ---: |
 | Read | 9 | 9 |
 | Write | 1 | 1 |
-| MediaRead | 39 | 39 |
+| MediaRead | 40 | 39 |
 | MediaWrite | 17 | 16 |
-| **合计** | **66** | **64** |
+| **合计** | **67** | **64** |
 
 以上计数由组件源码中的 C++ `RegisterApi` 路径安全 spec 动态生成。

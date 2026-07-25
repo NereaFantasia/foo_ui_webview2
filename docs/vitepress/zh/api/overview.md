@@ -54,4 +54,4 @@
 - 高层 SDK 可以提供 `fb.player.play()` 一类的辅助方法；需要精确的 Bridge 请求或返回结构时，请使用对应的命名空间页面。
 - 例如，`playback:trackChanged` 是事件订阅名，不是可调用的方法。
 - 符合 `*.__*` 的内部端点不属于公开 API 表面。
-- 每个 family 页面通过 Phase 3 page map 负责一个或多个命名空间。
+- 每个 family 页面通过 page map 负责一个或多个命名空间。

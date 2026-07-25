@@ -144,25 +144,30 @@ const { discovery } = fb;
 const r = await discovery.getAllServices();
 ```
 
-### getMainMenuCommands()
+### getMainMenuCommands(options?)
 
-获取所有主菜单命令。
+获取所有主菜单命令。默认会展开运行时构建子菜单的组件（`mainmenu_commands_v2`，如 ESLyric），因此结果中除父命令外还包含其子命令；传 `{ expandDynamic: false }` 则只返回静态注册表。
 
 ```javascript
 const cmds = await fb.discovery.getMainMenuCommands();
-// cmds.commands: [{ guid, name, path }, ...]
+// cmds.commands: [{ guid, subGuid?, name, path, isDynamic, kind }, ...]
+// cmds.dynamicCount: 展开出来的子命令数量
 ```
 
 ### getMainMenuGroups()
 
-获取主菜单分组。
+获取主菜单分组。仅枚举静态注册的 `mainmenu_group` 服务；运行时子菜单是命令节点树，不在此列表中，请用 `getMainMenuCommands()`。
 
-### executeMainMenuCommand(guid)
+### executeMainMenuCommand(guid, subGuid?)
 
-执行指定 GUID 的主菜单命令。
+执行指定 GUID 的主菜单命令。对展开自动态子菜单的条目，必须同时传该条目的 `subGuid`，否则只会派发静态父命令。
 
 ```javascript
 await fb.discovery.executeMainMenuCommand('{xxxxxxxx-...}');
+
+// 动态子命令：guid + subGuid 成对使用
+const lyric = cmds.commands.find((c) => c.isDynamic && c.name.includes('ESLyric'));
+await fb.discovery.executeMainMenuCommand(lyric.guid, lyric.subGuid);
 ```
 
 ### getContextMenuCommands()

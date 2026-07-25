@@ -2,6 +2,11 @@
 
 `fb.sharedState` exposes a cross-window key/value store. It is distinct from the synchronous `fb.state` playback mirror: shared-state values can be assigned a TTL and changes are published through the `state:*` event family.
 
+The store is process-local memory owned by the component's `PortHub` singleton.
+It is shared by this component's WebView windows in the current foobar2000
+process, but it is not persisted to disk, does not survive restart, and is not
+shared with other processes or SMP runtimes.
+
 <!-- BEGIN AUTO-GENERATED SDK STUBS -->
 
 ## SDK Method Stubs

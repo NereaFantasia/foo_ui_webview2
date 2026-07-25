@@ -56,7 +56,7 @@ function installLocaleSeoObserver() {
 }
 
 /**
- * Phase 1: preserve pathname + hash across locale switches.
+ * Preserve pathname + hash across locale switches.
  *
  * Root cause (auditor real-browser regression):
  * VitePress createRouter() registers a window capture click handler before

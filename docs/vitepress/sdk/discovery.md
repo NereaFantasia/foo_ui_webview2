@@ -14,11 +14,18 @@ Signature: `fb.discovery.getAllServices(): Promise<DiscoveryGetAllServicesRespon
 
 Returns category counts in `services` and their sum in `totalServices`.
 
-### getMainMenuCommands()
+### getMainMenuCommands(options?)
 
-Signature: `fb.discovery.getMainMenuCommands(): Promise<DiscoveryGetMainMenuCommandsResponse>`
+Signature: `fb.discovery.getMainMenuCommands(options?: { expandDynamic?: boolean }): Promise<DiscoveryGetMainMenuCommandsResponse>`
 
-Returns `{ commands, count }`. Each command includes `name`, `description`, `guid`, `parentGuid`, and `index`.
+Returns `{ commands, count, dynamicCount }`. Each command includes `name`, `description`, `guid`, `parentGuid`, and `index`.
+
+Components that build their submenu at runtime (`mainmenu_commands_v2`, for example ESLyric) are expanded by default, so their child commands appear alongside the static parent slot. Expanded children carry `subGuid`, `isDynamic: true`, and a `path` such as `View/ESLyric/Search lyrics`. Pass `{ expandDynamic: false }` to enumerate the static registry only.
+
+```javascript
+const all = await fb.discovery.getMainMenuCommands();
+const dynamic = all.commands.filter((cmd) => cmd.isDynamic);
+```
 
 ### getMainMenuGroups()
 
@@ -26,11 +33,11 @@ Signature: `fb.discovery.getMainMenuGroups(): Promise<DiscoveryGetMainMenuGroups
 
 Returns `{ groups, count }`. Group descriptors include `guid`, `parentGuid`, `name`, and `sortPriority`.
 
-### executeMainMenuCommand(guid)
+### executeMainMenuCommand(guid, subGuid?)
 
-Signature: `fb.discovery.executeMainMenuCommand(guid: string): Promise<BaseResponse>`
+Signature: `fb.discovery.executeMainMenuCommand(guid: string, subGuid?: string): Promise<BaseResponse & { subGuid?: string; dynamic?: boolean }>`
 
-Executes a main-menu command by GUID.
+Executes a main-menu command by GUID. For an entry expanded from a dynamic submenu, pass its `subGuid` as well; otherwise only the static parent command is dispatched.
 
 ### getContextMenuCommands()
 
@@ -100,14 +107,16 @@ Signature: `fb.discovery.getUIElements(): Promise<DiscoveryGetUIElementsResponse
 
 Returns `{ elements, count }`; each element includes `guid`, `subclassGuid`, `name`, `description`, and `isUserAddable`.
 
-### searchCommands(query)
+### searchCommands(query, options?)
 
-Signature: `fb.discovery.searchCommands(query: string): Promise<DiscoverySearchCommandsResponse>`
+Signature: `fb.discovery.searchCommands(query: string, options?: { expandDynamic?: boolean }): Promise<DiscoverySearchCommandsResponse>`
 
-Searches main-menu commands and returns the echoed `query`, `results`, and `count`. The result `type` taxonomy currently uses `mainmenu`.
+Searches main-menu commands and returns the echoed `query`, `results`, and `count`. Names, descriptions, and menu paths are matched case-insensitively. The result `type` taxonomy uses `mainmenu` for static commands and `mainmenu-dynamic` for entries expanded from a runtime submenu; those entries also carry `subGuid` and `path`. Pass `{ expandDynamic: false }` to search the static registry only.
 
 ```javascript
-const result = await fb.discovery.searchCommands('preferences');
+const result = await fb.discovery.searchCommands('lyric');
+const hit = result.results[0];
+await fb.discovery.executeMainMenuCommand(hit.guid, hit.subGuid);
 ```
 
 <!-- END AUTO-GENERATED SDK STUBS -->

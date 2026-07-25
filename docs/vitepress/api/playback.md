@@ -10,7 +10,7 @@ This page is the primary owner for the namespaces listed below. Method names, pa
 
 
 <!-- phase3-major1-review:playback.getCurrentTrack -->
-#### Phase 3 Major 1 source-reviewed contract
+#### Source-reviewed contract
 Authority: `src/api/PlaybackApi.cpp:372-380`.
 
 _No public parameters._
@@ -72,7 +72,7 @@ const result = await fb2k.invoke('playback.getPlayingPlaylist');
 
 
 <!-- phase3-major1-review:playback.getPosition -->
-#### Phase 3 Major 1 source-reviewed contract
+#### Source-reviewed contract
 Authority: `src/api/PlaybackApi.cpp:231-246`.
 
 _No public parameters._
@@ -96,7 +96,7 @@ const result = await fb2k.invoke('playback.getPosition');
 
 
 <!-- phase3-major1-review:playback.getState -->
-#### Phase 3 Major 1 source-reviewed contract
+#### Source-reviewed contract
 Authority: `src/api/PlaybackApi.cpp:216-231`.
 
 _No public parameters._
@@ -132,7 +132,7 @@ const result = await fb2k.invoke('playback.getStopAfterCurrent');
 
 
 <!-- phase3-major1-review:playback.getVolume -->
-#### Phase 3 Major 1 source-reviewed contract
+#### Source-reviewed contract
 Authority: `src/api/PlaybackApi.cpp:291-314`.
 
 _No public parameters._
@@ -234,7 +234,7 @@ Use a `path|subsong:N` value to address a CUE subsong explicitly. The handler se
 
 
 <!-- phase3-major1-review:playback.playPaths -->
-#### Phase 3 Major 1 source-reviewed contract
+#### Source-reviewed contract
 Authority: `src/api/PlaybackApi.cpp:586-615`.
 
 | Parameter | Type | Required | Default |
@@ -302,7 +302,7 @@ const result = await fb2k.invoke('playback.random');
 
 
 <!-- phase3-major1-review:playback.setPlaybackOrder -->
-#### Phase 3 Major 1 source-reviewed contract
+#### Source-reviewed contract
 Authority: `src/api/PlaybackApi.cpp:395-418`.
 
 | Parameter | Type | Required | Default |
@@ -362,7 +362,7 @@ const result = await fb2k.invoke('playback.setStopAfterCurrent', { enabled: /* v
 
 
 <!-- phase3-major1-review:playback.setVolume -->
-#### Phase 3 Major 1 source-reviewed contract
+#### Source-reviewed contract
 Authority: `src/api/PlaybackApi.cpp:314-333`.
 
 | Parameter | Type | Required | Default |
@@ -450,14 +450,14 @@ const result = await fb2k.invoke('playback.volumeUp');
 
 Related event `playback:stopAfterCurrentChanged` uses payload `{ enabled }` (same field name as the API).
 
-## Phase 3 contract supplements
+## Contract supplements
 
 The sections below close public-contract findings from the strict parameter audit without replacing existing explanations.
 
 <!-- phase3-supplement:playback.setPosition -->
 ### Contract supplement: `playback.setPosition`
 
-Phase 3 verified contract supplement. Runtime authority: `src/api/PlaybackApi.cpp:246-288`.
+Verified contract supplement. Runtime authority: `src/api/PlaybackApi.cpp:246-288`.
 
 | Parameter | Type | Required | Default | Description |
 | --- | --- | --- | --- | --- |

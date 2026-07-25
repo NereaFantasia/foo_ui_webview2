@@ -138,9 +138,9 @@ fb.off('playback:time', handler);
 | tray:click | 单击托盘图标 | {button, x, y} |
 | tray:doubleClick | 双击托盘图标 | {x, y} |
 | tray:beforeContextMenu | 右键菜单弹出前（异步；处理器内修改仅影响下一次右键） | {x, y} |
-| tray:menuItemClicked | 托盘菜单项点击 / 富控件值变更 | {id, value?} |
+| tray:menuItemClicked | 普通用户托盘项点击 / 富控件值变更 | {id, value?} |
 
-`tray:menuItemClicked` 的 `value` 语义：普通项与 now-playing 卡片回报 `{id}` 并**关闭**菜单；富**值控件**回报 `{id, value}` 并**保持菜单打开**——`rating` 为 `0..5`，`slider` 为 `[min, max]` 内的整数，`segmented` 为被选中分段的从 0 起索引。忽略 `value` 的前端保持既有 `{id}` 行为。
+`tray:menuItemClicked` 的 `value` 语义：普通用户项与 now-playing 卡片回报 `{id}` 并**关闭**菜单；富**值控件**回报 `{id, value}` 并**保持菜单打开**——`rating` 为 `0..5`，`slider` 为 `[min, max]` 内的整数，`segmented` 为被选中分段的从 0 起索引。忽略 `value` 的前端保持既有 `{id}` 行为。内置 `showPlaybackControls` / `showSystemItems` 注入项，以及声明了 `playbackAction` 的项，由插件原生执行且**不发**此事件。
 
 ## 应用 / 键盘 / 菜单事件
 

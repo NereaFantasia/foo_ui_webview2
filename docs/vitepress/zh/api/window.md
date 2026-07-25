@@ -80,7 +80,7 @@ if (state.isMaximized) {
 
 
 <!-- phase3-major1-review:window.setFullscreen -->
-#### Phase 3 Major 1 源码复核 contract
+#### 源码复核 contract
 权威源: `src/api/WindowApi.cpp:899-921`.
 
 | 参数 | 类型 | 必填 | 默认值 |
@@ -113,7 +113,7 @@ await fb2k.invoke('window.setFullscreen', { enabled: false });
 
 
 <!-- phase3-major1-review:window.setBounds -->
-#### Phase 3 Major 1 源码复核 contract
+#### 源码复核 contract
 权威源: `src/api/WindowApi.cpp:761-789`.
 
 | 参数 | 类型 | 必填 | 默认值 |
@@ -349,7 +349,7 @@ console.log(info.resolvedBehavior.showInTaskbar);
 
 
 <!-- phase3-major1-review:window.setPopupBehavior -->
-#### Phase 3 Major 1 源码复核 contract
+#### 源码复核 contract
 权威源: `src/api/WindowApi.cpp:1978-2011`.
 
 | 参数 | 类型 | 必填 | 默认值 |
@@ -397,7 +397,7 @@ await fb2k.invoke('window.setPopupBehavior', {
 
 
 <!-- phase3-major1-review:window.getBackdropPolicy -->
-#### Phase 3 Major 1 源码复核 contract
+#### 源码复核 contract
 权威源: `src/api/WindowApi.cpp:2014-2023`.
 
 | 参数 | 类型 | 必填 | 默认值 |
@@ -450,7 +450,7 @@ console.log(info.resolvedBackdropPolicy.activeEffect); // 'mica'
 
 
 <!-- phase3-major1-review:window.setBackdropPolicy -->
-#### Phase 3 Major 1 源码复核 contract
+#### 源码复核 contract
 权威源: `src/api/WindowApi.cpp:2026-2047`.
 
 | 参数 | 类型 | 必填 | 默认值 |
@@ -500,13 +500,13 @@ await fb2k.invoke('window.setBackdropPolicy', {
 
 ## 补充的公开 API
 
-以下章节由 Phase 3 按 `RegisterApi` 动态补齐，参数键来自 C++ handler 静态提取。
+以下章节按 `RegisterApi` 动态补齐，参数键来自 C++ handler 静态提取。
 
 ### window.broadcast
 
 
 <!-- phase3-major1-review:window.broadcast -->
-#### Phase 3 Major 1 源码复核 contract
+#### 源码复核 contract
 权威源: `src/api/WindowApi.cpp:2245-2256`.
 
 | 参数 | 类型 | 必填 | 默认值 |
@@ -677,7 +677,7 @@ const result = await fb2k.invoke('window.createPopup', { alwaysOnTop: /* value *
 
 
 <!-- phase3-major1-review:window.enterFullscreen -->
-#### Phase 3 Major 1 源码复核 contract
+#### 源码复核 contract
 权威源: `src/api/WindowApi.cpp:1538-1554`.
 
 | 参数 | 类型 | 必填 | 默认值 |
@@ -706,7 +706,7 @@ const result = await fb2k.invoke('window.enterFullscreen');
 
 
 <!-- phase3-major1-review:window.exitFullscreen -->
-#### Phase 3 Major 1 源码复核 contract
+#### 源码复核 contract
 权威源: `src/api/WindowApi.cpp:1554-1570`.
 
 | 参数 | 类型 | 必填 | 默认值 |
@@ -1015,7 +1015,7 @@ const result = await fb2k.invoke('window.restore');
 
 
 <!-- phase3-major1-review:window.sendMessage -->
-#### Phase 3 Major 1 源码复核 contract
+#### 源码复核 contract
 权威源: `src/api/WindowApi.cpp:2223-2242`.
 
 | 参数 | 类型 | 必填 | 默认值 |
@@ -1046,7 +1046,7 @@ const result = await fb2k.invoke('window.sendMessage', { message: /* value */, t
 
 
 <!-- phase3-major1-review:window.setAcrylic -->
-#### Phase 3 Major 1 源码复核 contract
+#### 源码复核 contract
 权威源: `src/api/WindowApi.cpp:1593-1617`.
 
 | 参数 | 类型 | 必填 | 默认值 |
@@ -1236,7 +1236,7 @@ const result = await fb2k.invoke('window.setMaxSize', { height: /* value */, wid
 
 
 <!-- phase3-major1-review:window.setMica -->
-#### Phase 3 Major 1 源码复核 contract
+#### 源码复核 contract
 权威源: `src/api/WindowApi.cpp:1573-1576`.
 
 | 参数 | 类型 | 必填 | 默认值 |
@@ -1270,7 +1270,7 @@ const result = await fb2k.invoke('window.setMica');
 
 
 <!-- phase3-major1-review:window.setMicaEffect -->
-#### Phase 3 Major 1 源码复核 contract
+#### 源码复核 contract
 权威源: `src/api/WindowApi.cpp:1579-1582`.
 
 | 参数 | 类型 | 必填 | 默认值 |
@@ -1455,7 +1455,7 @@ const result = await fb2k.invoke('window.toggleAlwaysOnTop');
 
 
 <!-- phase3-major1-review:window.toggleFullscreen -->
-#### Phase 3 Major 1 源码复核 contract
+#### 源码复核 contract
 权威源: `src/api/WindowApi.cpp:921-944`.
 
 | 参数 | 类型 | 必填 | 默认值 |
@@ -1479,14 +1479,14 @@ const result = await fb2k.invoke('window.toggleAlwaysOnTop');
 const result = await fb2k.invoke('window.toggleFullscreen');
 ```
 
-## Phase 3 合同补充
+## 合同补充
 
 以下章节补齐严格参数审计发现的公开 contract；不会改变前文的已有说明。
 
 <!-- phase3-supplement:window.focus -->
 ### Contract 补充：`window.focus`
 
-经 Phase 3 复核的补充 contract。权威源：`src/api/WindowApi.cpp:947-1009`。
+经复核的补充 contract。权威源：`src/api/WindowApi.cpp:947-1009`。
 
 | 参数 | 类型 | 必填 | 默认值 | 说明 |
 | --- | --- | --- | --- | --- |
@@ -1507,7 +1507,7 @@ const result = await fb2k.invoke('window.focus', { windowId: /* value */ });
 <!-- phase3-supplement:window.getBackdropPolicy -->
 ### Contract 补充：`window.getBackdropPolicy`
 
-经 Phase 3 复核的补充 contract。权威源：`src/api/WindowApi.cpp:2014-2023`。
+经复核的补充 contract。权威源：`src/api/WindowApi.cpp:2014-2023`。
 
 | 参数 | 类型 | 必填 | 默认值 | 说明 |
 | --- | --- | --- | --- | --- |
@@ -1531,7 +1531,7 @@ const result = await fb2k.invoke('window.getBackdropPolicy', { windowId: /* valu
 <!-- phase3-supplement:window.isFullscreen -->
 ### Contract 补充：`window.isFullscreen`
 
-经 Phase 3 复核的补充 contract。权威源：`src/api/WindowApi.cpp:577-584`。
+经复核的补充 contract。权威源：`src/api/WindowApi.cpp:577-584`。
 
 | 参数 | 类型 | 必填 | 默认值 | 说明 |
 | --- | --- | --- | --- | --- |
@@ -1552,7 +1552,7 @@ const result = await fb2k.invoke('window.isFullscreen', { windowId: /* value */ 
 <!-- phase3-supplement:window.setAcrylic -->
 ### Contract 补充：`window.setAcrylic`
 
-经 Phase 3 复核的补充 contract。权威源：`src/api/WindowApi.cpp:1593-1617`。
+经复核的补充 contract。权威源：`src/api/WindowApi.cpp:1593-1617`。
 
 | 参数 | 类型 | 必填 | 默认值 | 说明 |
 | --- | --- | --- | --- | --- |
@@ -1573,7 +1573,7 @@ const result = await fb2k.invoke('window.setAcrylic', { windowId: /* value */, e
 <!-- phase3-supplement:window.setBackdropPolicy -->
 ### Contract 补充：`window.setBackdropPolicy`
 
-经 Phase 3 复核的补充 contract。权威源：`src/api/WindowApi.cpp:2026-2047`。
+经复核的补充 contract。权威源：`src/api/WindowApi.cpp:2026-2047`。
 
 | 参数 | 类型 | 必填 | 默认值 | 说明 |
 | --- | --- | --- | --- | --- |
@@ -1598,7 +1598,7 @@ const result = await fb2k.invoke('window.setBackdropPolicy', { windowId: /* valu
 <!-- phase3-supplement:window.setBackgroundTransparency -->
 ### Contract 补充：`window.setBackgroundTransparency`
 
-经 Phase 3 复核的补充 contract。权威源：`src/api/WindowApi.cpp:1632-1658`。
+经复核的补充 contract。权威源：`src/api/WindowApi.cpp:1632-1658`。
 
 | 参数 | 类型 | 必填 | 默认值 | 说明 |
 | --- | --- | --- | --- | --- |
@@ -1622,7 +1622,7 @@ const result = await fb2k.invoke('window.setBackgroundTransparency', { windowId:
 <!-- phase3-supplement:window.setBlur -->
 ### Contract 补充：`window.setBlur`
 
-经 Phase 3 复核的补充 contract。权威源：`src/api/WindowApi.cpp:1582-1593`。
+经复核的补充 contract。权威源：`src/api/WindowApi.cpp:1582-1593`。
 
 | 参数 | 类型 | 必填 | 默认值 | 说明 |
 | --- | --- | --- | --- | --- |
@@ -1644,7 +1644,7 @@ const result = await fb2k.invoke('window.setBlur', { windowId: /* value */, enab
 <!-- phase3-supplement:window.setDarkMode -->
 ### Contract 补充：`window.setDarkMode`
 
-经 Phase 3 复核的补充 contract。权威源：`src/api/WindowApi.cpp:1617-1627`。
+经复核的补充 contract。权威源：`src/api/WindowApi.cpp:1617-1627`。
 
 | 参数 | 类型 | 必填 | 默认值 | 说明 |
 | --- | --- | --- | --- | --- |
@@ -1666,7 +1666,7 @@ const result = await fb2k.invoke('window.setDarkMode', { windowId: /* value */, 
 <!-- phase3-supplement:window.setFrameless -->
 ### Contract 补充：`window.setFrameless`
 
-经 Phase 3 复核的补充 contract。权威源：`src/api/WindowApi.cpp:2088-2101`。
+经复核的补充 contract。权威源：`src/api/WindowApi.cpp:2088-2101`。
 
 | 参数 | 类型 | 必填 | 默认值 | 说明 |
 | --- | --- | --- | --- | --- |
@@ -1689,7 +1689,7 @@ const result = await fb2k.invoke('window.setFrameless', { windowId: /* value */,
 <!-- phase3-supplement:window.setFullscreen -->
 ### Contract 补充：`window.setFullscreen`
 
-经 Phase 3 复核的补充 contract。权威源：`src/api/WindowApi.cpp:899-921`。
+经复核的补充 contract。权威源：`src/api/WindowApi.cpp:899-921`。
 
 | 参数 | 类型 | 必填 | 默认值 | 说明 |
 | --- | --- | --- | --- | --- |

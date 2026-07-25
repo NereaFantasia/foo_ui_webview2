@@ -12,7 +12,7 @@ const ZH_DESCRIPTION =
   'foobar2000 WebView2 UI 插件：用 HTML/CSS/JavaScript + Vue/React 构建 foobar2000 自定义界面，支持 Windows 11 Mica/Acrylic 原生效果、400+ API、Web Components 与 MCP AI 集成。'
 
 /**
- * Phase 2 complete locale contract:
+ * Complete locale contract:
  * - root: English / en-US (default public entry)
  * - zh: 简体中文 / zh-CN under /zh/
  * - Per-page canonical / hreflang / x-default / og:url via transformHead
@@ -58,7 +58,7 @@ const englishNav: DefaultTheme.NavItem[] = [
   { text: 'Reference', link: '/reference/events' },
   { text: 'MCP', link: '/mcp/overview' },
   {
-    text: 'v1.10.0',
+    text: 'v1.11.0',
     items: [{ text: 'Changelog', link: '/changelog' }],
   },
 ]
@@ -71,7 +71,7 @@ const chineseNav: DefaultTheme.NavItem[] = [
   { text: '参考', link: '/reference/events' },
   { text: 'MCP', link: '/mcp/overview' },
   {
-    text: 'v1.10.0',
+    text: 'v1.11.0',
     items: [{ text: '更新日志', link: '/changelog' }],
   },
 ]

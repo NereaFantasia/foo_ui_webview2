@@ -135,9 +135,38 @@ const raw = await fb.metadata.readRaw('E:\\Music\\album.flac', {
 
 ## Artwork
 
+### Byte and Data URL helpers
+
+Prefer `embedArtworkBytes(path, bytes, options?)` when the image is already an
+`ArrayBuffer` or `Uint8Array`. Use
+`embedArtworkFromDataUrl(path, dataUrl, options?)` for a canonical Base64
+`data:image/*` URL. The latter rejects non-image or malformed Data URLs before
+invoking the Host.
+
+Both helpers encode or extract a raw Base64 `imageData` payload and call the
+existing `metadata.embedArtwork` endpoint; the raw facade remains unchanged.
+
+```javascript
+await fb.metadata.embedArtworkBytes(
+	'E:\\Music\\song.flac',
+	coverBytes,
+	{ type: 'front', target: 'embedded' },
+);
+
+await fb.metadata.embedArtworkFromDataUrl(
+	'E:\\Music\\song.flac',
+	coverDataUrl,
+	{ type: 'front', target: ['embedded', 'file'] },
+);
+```
+
 ### embedArtwork(path, options?)
 
 `fb.metadata.embedArtwork()` writes an image into the file, to a sibling image file, or to both destinations. `MetadataEmbedArtworkParams` includes `imageData`, `type`, `filename`, and `target`.
+
+`imageData` is the raw Base64 payload only. It must not contain a
+`data:image/...;base64,` header, the `file.write`-specific `base64:` marker, or
+an `fb2k://` URL.
 
 - `'embedded'` writes through the host's tag container and may fail for formats such as CUE.
 - `'file'` writes a sidecar such as `cover.<ext>`; the extension is inferred from the image bytes.
@@ -145,10 +174,12 @@ const raw = await fb.metadata.readRaw('E:\\Music\\album.flac', {
 - `filename` applies only to file output; path separators and `..` are rejected.
 
 ```javascript
+const comma = coverDataUrl.indexOf(',');
+const coverBase64 = coverDataUrl.slice(comma + 1);
 const result = await fb.metadata.embedArtwork(
 	'E:\\Music\\song.flac',
 	{
-		imageData: coverDataUrl,
+		imageData: coverBase64,
 		type: 'front',
 		target: ['embedded', 'file'],
 	},

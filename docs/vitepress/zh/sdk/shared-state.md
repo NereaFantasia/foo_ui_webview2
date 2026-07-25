@@ -2,6 +2,10 @@
 
 `fb.sharedState` 提供跨窗口键值存储。它不同于同步的 `fb.state` 播放状态镜像：共享状态值可设置 TTL，并通过 `state:*` 事件族发布变化。
 
+该存储是组件 `PortHub` 单例持有的进程内内存。在当前 foobar2000 进程中，
+本组件的多个 WebView 窗口可共享；它不写磁盘、重启后丢失，也不与其它进程
+或 SMP 运行时共享。
+
 <!-- BEGIN AUTO-GENERATED SDK STUBS -->
 
 ## SDK 方法 stub

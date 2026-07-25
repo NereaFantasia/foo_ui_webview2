@@ -215,10 +215,16 @@ if (result.cancelled) {
 
 ## 错误处理
 
+下例显式使用同步模式，因为默认 `async: true` 时当前返回值只是
+`{ success: true, requestId, async: true }` 派发回执，不包含最终 HTTP
+状态与 body。默认异步模式应按 `requestId` 等待 `http:response`，或使用
+SDK 的 `fb.http.request()` awaited helper。
+
 ```javascript
 try {
     const result = await fb2k.invoke('http.get', {
-        url: 'https://api.example.com/data'
+        url: 'https://api.example.com/data',
+        async: false
     });
 
     if (!result.success) {
@@ -277,14 +283,14 @@ Blocked Hosts: localhost, 127.0.0.1, 192.168.*
 
 **返回值**: 同步返回 path/bytesWritten/status；异步返回 requestId。
 
-## Phase 3 合同补充
+## 合同补充
 
 以下章节补齐严格参数审计发现的公开 contract；不会改变前文的已有说明。
 
 <!-- phase3-supplement:http.delete -->
 ### Contract 补充：`http.delete`
 
-经 Phase 3 复核的补充 contract。权威源：`src/api/HttpApi.cpp:1396-1432`。
+经复核的补充 contract。权威源：`src/api/HttpApi.cpp:1396-1432`。
 
 | 参数 | 类型 | 必填 | 默认值 | 说明 |
 | --- | --- | --- | --- | --- |
@@ -314,7 +320,7 @@ const result = await fb2k.invoke('http.delete', { url: /* value */, body: /* val
 <!-- phase3-supplement:http.download -->
 ### Contract 补充：`http.download`
 
-经 Phase 3 复核的补充 contract。权威源：`src/api/HttpApi.cpp:1237-1352`。
+经复核的补充 contract。权威源：`src/api/HttpApi.cpp:1237-1352`。
 
 | 参数 | 类型 | 必填 | 默认值 | 说明 |
 | --- | --- | --- | --- | --- |
@@ -345,7 +351,7 @@ const result = await fb2k.invoke('http.download', { async: /* value */, headers:
 <!-- phase3-supplement:http.get -->
 ### Contract 补充：`http.get`
 
-经 Phase 3 复核的补充 contract。权威源：`src/api/HttpApi.cpp:822-862`。
+经复核的补充 contract。权威源：`src/api/HttpApi.cpp:822-862`。
 
 | 参数 | 类型 | 必填 | 默认值 | 说明 |
 | --- | --- | --- | --- | --- |
@@ -374,7 +380,7 @@ const result = await fb2k.invoke('http.get', { async: /* value */, headers: /* v
 <!-- phase3-supplement:http.head -->
 ### Contract 补充：`http.head`
 
-经 Phase 3 复核的补充 contract。权威源：`src/api/HttpApi.cpp:906-950`。
+经复核的补充 contract。权威源：`src/api/HttpApi.cpp:906-950`。
 
 | 参数 | 类型 | 必填 | 默认值 | 说明 |
 | --- | --- | --- | --- | --- |
@@ -402,7 +408,7 @@ const result = await fb2k.invoke('http.head', { async: /* value */, headers: /* 
 <!-- phase3-supplement:http.patch -->
 ### Contract 补充：`http.patch`
 
-经 Phase 3 复核的补充 contract。权威源：`src/api/HttpApi.cpp:1436-1472`。
+经复核的补充 contract。权威源：`src/api/HttpApi.cpp:1436-1472`。
 
 | 参数 | 类型 | 必填 | 默认值 | 说明 |
 | --- | --- | --- | --- | --- |
@@ -432,7 +438,7 @@ const result = await fb2k.invoke('http.patch', { url: /* value */, body: /* valu
 <!-- phase3-supplement:http.post -->
 ### Contract 补充：`http.post`
 
-经 Phase 3 复核的补充 contract。权威源：`src/api/HttpApi.cpp:866-902`。
+经复核的补充 contract。权威源：`src/api/HttpApi.cpp:866-902`。
 
 | 参数 | 类型 | 必填 | 默认值 | 说明 |
 | --- | --- | --- | --- | --- |
@@ -462,7 +468,7 @@ const result = await fb2k.invoke('http.post', { url: /* value */, body: /* value
 <!-- phase3-supplement:http.put -->
 ### Contract 补充：`http.put`
 
-经 Phase 3 复核的补充 contract。权威源：`src/api/HttpApi.cpp:1356-1392`。
+经复核的补充 contract。权威源：`src/api/HttpApi.cpp:1356-1392`。
 
 | 参数 | 类型 | 必填 | 默认值 | 说明 |
 | --- | --- | --- | --- | --- |
@@ -492,7 +498,7 @@ const result = await fb2k.invoke('http.put', { url: /* value */, body: /* value 
 
 ## 请求生命周期与安全
 
-- `http.get`、`http.post`、`http.put`、`http.delete`、`http.patch` 和 `http.head` 默认异步执行。立即成功响应包含 `requestId`；最终结果会以 `http:response` 发回调用窗口。
+- `http.get`、`http.post`、`http.put`、`http.delete`、`http.patch` 和 `http.head` 默认异步执行。立即返回的 `success: true` 只表示派发成功，并包含 `requestId`；它不是 HTTP 最终结果。最终结果会以 `http:response` 发回调用窗口，调用方必须按 `requestId` 关联。
 - 若需同步执行，传入 `async: false`。成功的非下载响应包含 `status`、`headers`、`body` 和 `responseType`。当响应包含 `Content-Length` 时，成功的同步或异步 HEAD 结果还可能包含数值 `contentLength`。
 - `http.download` 默认同步。传入 `async: true` 后，最终结果会作为带 `requestId` 的 `http:downloadComplete` 发出；`http.abort` 用于请求取消活跃的异步请求。
 - 仅接受 `http` 与 `https` URL。除非 host 的 Advanced Settings 显式允许，否则私有或本地网络目标会被拒绝；每次重定向都会重新检查，最多允许 10 跳。

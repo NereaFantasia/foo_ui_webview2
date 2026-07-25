@@ -78,7 +78,7 @@ const result = await fb2k.invoke('jitQueue.playNow', { title: /* value */, track
 
 
 <!-- phase3-major1-review:jitQueue.preloadBatch -->
-#### Phase 3 Major 1 source-reviewed contract
+#### Source-reviewed contract
 Authority: `src/api/QueueApi.cpp:600-645`.
 
 | Parameter | Type | Required | Default |
@@ -137,7 +137,7 @@ const result = await fb2k.invoke('jitQueue.stop', { clearBuffer: /* value */ });
 
 
 <!-- phase3-major1-review:queue.add -->
-#### Phase 3 Major 1 source-reviewed contract
+#### Source-reviewed contract
 Authority: `src/api/QueueApi.cpp:221-261`.
 
 | Parameter | Type | Required | Default |
@@ -174,7 +174,7 @@ const result = await fb2k.invoke('queue.add', { playlist: /* value */, track: /*
 
 
 <!-- phase3-major1-review:queue.addPaths -->
-#### Phase 3 Major 1 source-reviewed contract
+#### Source-reviewed contract
 Authority: `src/api/QueueApi.cpp:266-337`.
 
 | Parameter | Type | Required | Default |
@@ -254,7 +254,7 @@ const result = await fb2k.invoke('queue.getCount');
 
 
 <!-- phase3-major1-review:queue.moveToTop -->
-#### Phase 3 Major 1 source-reviewed contract
+#### Source-reviewed contract
 Authority: `src/api/QueueApi.cpp:422-459`.
 
 | Parameter | Type | Required | Default |
@@ -282,7 +282,7 @@ const result = await fb2k.invoke('queue.moveToTop', { index: /* value */ });
 
 
 <!-- phase3-major1-review:queue.remove -->
-#### Phase 3 Major 1 source-reviewed contract
+#### Source-reviewed contract
 Authority: `src/api/QueueApi.cpp:341-392`.
 
 | Parameter | Type | Required | Default |
@@ -314,7 +314,7 @@ const result = await fb2k.invoke('queue.remove', { index: /* value */, indices: 
 
 
 <!-- phase3-major1-review:selection.get -->
-#### Phase 3 Major 1 source-reviewed contract
+#### Source-reviewed contract
 Authority: `src/api/SelectionApi.cpp:192-250`.
 
 | Parameter | Type | Required | Default |
@@ -343,7 +343,7 @@ const result = await fb2k.invoke('selection.get', { limit: /* value */, offset: 
 
 
 <!-- phase3-major1-review:selection.getType -->
-#### Phase 3 Major 1 source-reviewed contract
+#### Source-reviewed contract
 Authority: `src/api/SelectionApi.cpp:255-278`.
 
 _No public parameters._
@@ -393,7 +393,7 @@ const result = await fb2k.invoke('selection.getViewingTrack', { includeTrackInfo
 
 
 <!-- phase3-major1-review:selection.set -->
-#### Phase 3 Major 1 source-reviewed contract
+#### Source-reviewed contract
 Authority: `src/api/SelectionApi.cpp:283-361`.
 
 | Parameter | Type | Required | Default |
@@ -452,14 +452,14 @@ Paths supplied to `queue.addPaths` or JIT Queue batch operations may use the `pa
 | `jitQueue:preloadComplete` | A batch preload completed. | `{ count, startIndex, replace }` |
 | `jitQueue:error` | A JIT operation failed for a track. | `{ trackId, error, path }` |
 
-## Phase 3 contract supplements
+## Contract supplements
 
 The sections below close public-contract findings from the strict parameter audit without replacing existing explanations.
 
 <!-- phase3-supplement:jitQueue.preloadBatch -->
 ### Contract supplement: `jitQueue.preloadBatch`
 
-Phase 3 verified contract supplement. Runtime authority: `src/api/QueueApi.cpp:600-645`.
+Verified contract supplement. Runtime authority: `src/api/QueueApi.cpp:600-645`.
 
 | Parameter | Type | Required | Default | Description |
 | --- | --- | --- | --- | --- |

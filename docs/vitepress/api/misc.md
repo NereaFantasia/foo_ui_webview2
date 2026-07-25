@@ -179,7 +179,7 @@ const result = await fb2k.invoke('menu.close', { reason: 'api' });
 
 ### menu.getContextMenu
 
-Public API method. Runtime authority: `src/api/MenuApi.cpp:1318`.
+Public API method. Runtime authority: `src/api/MenuApi.cpp:1330`.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
@@ -197,7 +197,7 @@ const result = await fb2k.invoke('menu.getContextMenu', { i18n: /* value */, loc
 
 ### menu.getMainMenu
 
-Public API method. Runtime authority: `src/api/MenuApi.cpp:1317`.
+Public API method. Runtime authority: `src/api/MenuApi.cpp:1329`.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
@@ -214,7 +214,7 @@ const result = await fb2k.invoke('menu.getMainMenu', { i18n: /* value */, locale
 
 ### menu.runContextCommand
 
-Public API method. Runtime authority: `src/api/MenuApi.cpp:1316`.
+Public API method. Runtime authority: `src/api/MenuApi.cpp:1328`.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
@@ -228,7 +228,7 @@ const result = await fb2k.invoke('menu.runContextCommand', { command: /* value *
 
 ### menu.runContextCommandById
 
-Public API method. Runtime authority: `src/api/MenuApi.cpp:1319`.
+Public API method. Runtime authority: `src/api/MenuApi.cpp:1331`.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
@@ -244,7 +244,7 @@ const result = await fb2k.invoke('menu.runContextCommandById', { id: /* value */
 
 ### menu.runMainMenuCommand
 
-Public API method. Runtime authority: `src/api/MenuApi.cpp:1315`.
+Public API method. Runtime authority: `src/api/MenuApi.cpp:1327`.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
@@ -258,7 +258,7 @@ const result = await fb2k.invoke('menu.runMainMenuCommand', { command: /* value 
 
 ### menu.show
 
-Public API method. Runtime authority: `src/api/MenuApi.cpp:1321`.
+Public API method. Runtime authority: `src/api/MenuApi.cpp:1333`.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
@@ -274,7 +274,7 @@ const result = await fb2k.invoke('menu.show', { items: /* value */, x: /* value 
 
 ### menu.showNativePopup
 
-Public API method. Runtime authority: `src/api/MenuApi.cpp:1320`.
+Public API method. Runtime authority: `src/api/MenuApi.cpp:1332`.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
@@ -589,14 +589,14 @@ _No parameters._
 const result = await fb2k.invoke('test.ping');
 ```
 
-## Phase 3 contract supplements
+## Contract supplements
 
 The sections below close public-contract findings from the strict parameter audit without replacing existing explanations.
 
 <!-- phase3-supplement:log.write -->
 ### Contract supplement: `log.write`
 
-Phase 3 verified contract supplement. Runtime authority: `src/api/ConsoleApi.cpp:140-221`.
+Verified contract supplement. Runtime authority: `src/api/ConsoleApi.cpp:140-221`.
 
 | Parameter | Type | Required | Default | Description |
 | --- | --- | --- | --- | --- |
@@ -623,7 +623,7 @@ const result = await fb2k.invoke('log.write', { message: /* value */, args: /* v
 <!-- phase3-supplement:menu.getContextMenu -->
 ### Contract supplement: `menu.getContextMenu`
 
-Phase 3 verified contract supplement. Runtime authority: `src/api/MenuApi.cpp:980-1024`.
+Verified contract supplement. Runtime authority: `src/api/MenuApi.cpp:980-1024`.
 
 | Parameter | Type | Required | Default | Description |
 | --- | --- | --- | --- | --- |
@@ -653,7 +653,7 @@ const result = await fb2k.invoke('menu.getContextMenu', { handles: /* value */, 
 <!-- phase3-supplement:menu.runContextCommandById -->
 ### Contract supplement: `menu.runContextCommandById`
 
-Phase 3 verified contract supplement. Runtime authority: `src/api/MenuApi.cpp:1024-1045`.
+Verified contract supplement. Runtime authority: `src/api/MenuApi.cpp:1024-1045`.
 
 | Parameter | Type | Required | Default | Description |
 | --- | --- | --- | --- | --- |
@@ -676,7 +676,7 @@ const result = await fb2k.invoke('menu.runContextCommandById', { id: /* value */
 <!-- phase3-supplement:misc.showPopupMessage -->
 ### Contract supplement: `misc.showPopupMessage`
 
-Phase 3 verified contract supplement. Runtime authority: `src/api/MiscApi.cpp:97-105`.
+Verified contract supplement. Runtime authority: `src/api/MiscApi.cpp:97-105`.
 
 | Parameter | Type | Required | Default | Description |
 | --- | --- | --- | --- | --- |

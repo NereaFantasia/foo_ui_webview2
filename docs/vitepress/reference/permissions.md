@@ -8,9 +8,9 @@ Authority counts are taken from current `RegisterApi` path-security specs of the
 | --- | ---: | --- |
 | `Read` | 9 | Ordinary filesystem read checks |
 | `Write` | 1 | Strict write destinations (config/temp style policy) |
-| `MediaRead` | 39 | Media-context read checks |
+| `MediaRead` | 40 | Media-context read checks |
 | `MediaWrite` | 17 | Media-context write checks |
-| **Total** | **66** | **64 unique APIs** |
+| **Total** | **67** | **64 unique APIs** |
 
 ## Five-level model
 
@@ -67,7 +67,7 @@ if (!result.success && result.code === 'PERMISSION_DENIED') {
 | --- | --- | --- | --- | --- |
 | `http.download` | `saveTo` | — | — | Runtime authority: `HttpApi.cpp` |
 
-### MediaRead — media reads (39 specs)
+### MediaRead — media reads (40 specs)
 
 | API | Parameter | Array | Nested key | Notes |
 | --- | --- | --- | --- | --- |
@@ -76,6 +76,7 @@ if (!result.success && result.code === 'PERMISSION_DENIED') {
 | `artwork.getBatch` | `paths` | yes | — | Runtime authority: `ArtworkApi.cpp` |
 | `artwork.getByPath` | `path` | — | — | Runtime authority: `ArtworkApi.cpp` |
 | `artwork.getFb2kUrlByPath` | `path` | — | — | Runtime authority: `ArtworkApi.cpp` |
+| `artwork.getFb2kUrlByPathBatch` | `items` | yes | `path` | Runtime authority: `ArtworkApi.cpp` |
 | `artwork.getFb2kUrlByPathBatch` | `paths` | yes | — | Runtime authority: `ArtworkApi.cpp` |
 | `artwork.getForTrack` | `path` | — | — | Runtime authority: `ArtworkApi.cpp` |
 | `artwork.getLyrics` | `path` | — | — | Runtime authority: `ArtworkApi.cpp` |
@@ -193,8 +194,8 @@ In addition to MediaRead:
 | --- | ---: | ---: |
 | Read | 9 | 9 |
 | Write | 1 | 1 |
-| MediaRead | 39 | 39 |
+| MediaRead | 40 | 39 |
 | MediaWrite | 17 | 16 |
-| **Total** | **66** | **64** |
+| **Total** | **67** | **64** |
 
 These counts are regenerated from the C++ `RegisterApi` path-security specs in the component source.

@@ -22,7 +22,7 @@ const result = await fb2k.invoke('window.blur');
 
 
 <!-- phase3-major1-review:window.broadcast -->
-#### Phase 3 Major 1 source-reviewed contract
+#### Source-reviewed contract
 Authority: `src/api/WindowApi.cpp:2245-2256`.
 
 | Parameter | Type | Required | Default |
@@ -195,7 +195,7 @@ const result = await fb2k.invoke('window.createPopup', { alwaysOnTop: /* value *
 
 
 <!-- phase3-major1-review:window.enterFullscreen -->
-#### Phase 3 Major 1 source-reviewed contract
+#### Source-reviewed contract
 Authority: `src/api/WindowApi.cpp:1538-1554`.
 
 | Parameter | Type | Required | Default |
@@ -223,7 +223,7 @@ const result = await fb2k.invoke('window.enterFullscreen');
 
 
 <!-- phase3-major1-review:window.exitFullscreen -->
-#### Phase 3 Major 1 source-reviewed contract
+#### Source-reviewed contract
 Authority: `src/api/WindowApi.cpp:1554-1570`.
 
 | Parameter | Type | Required | Default |
@@ -306,7 +306,7 @@ const result = await fb2k.invoke('window.getAllWindows');
 
 
 <!-- phase3-major1-review:window.getBackdropPolicy -->
-#### Phase 3 Major 1 source-reviewed contract
+#### Source-reviewed contract
 Authority: `src/api/WindowApi.cpp:2014-2023`.
 
 | Parameter | Type | Required | Default |
@@ -674,7 +674,7 @@ const result = await fb2k.invoke('window.restore');
 
 
 <!-- phase3-major1-review:window.sendMessage -->
-#### Phase 3 Major 1 source-reviewed contract
+#### Source-reviewed contract
 Authority: `src/api/WindowApi.cpp:2223-2242`.
 
 | Parameter | Type | Required | Default |
@@ -704,7 +704,7 @@ const result = await fb2k.invoke('window.sendMessage', { message: /* value */, t
 
 
 <!-- phase3-major1-review:window.setAcrylic -->
-#### Phase 3 Major 1 source-reviewed contract
+#### Source-reviewed contract
 Authority: `src/api/WindowApi.cpp:1593-1617`.
 
 | Parameter | Type | Required | Default |
@@ -749,7 +749,7 @@ const result = await fb2k.invoke('window.setAlwaysOnTop', { enabled: /* value */
 
 
 <!-- phase3-major1-review:window.setBackdropPolicy -->
-#### Phase 3 Major 1 source-reviewed contract
+#### Source-reviewed contract
 Authority: `src/api/WindowApi.cpp:2026-2047`.
 
 | Parameter | Type | Required | Default |
@@ -809,7 +809,7 @@ const result = await fb2k.invoke('window.setBlur', { enabled: /* value */, windo
 
 
 <!-- phase3-major1-review:window.setBounds -->
-#### Phase 3 Major 1 source-reviewed contract
+#### Source-reviewed contract
 Authority: `src/api/WindowApi.cpp:761-789`.
 
 | Parameter | Type | Required | Default |
@@ -946,7 +946,7 @@ const result = await fb2k.invoke('window.setFrameless', { frameless: /* value */
 
 
 <!-- phase3-major1-review:window.setFullscreen -->
-#### Phase 3 Major 1 source-reviewed contract
+#### Source-reviewed contract
 Authority: `src/api/WindowApi.cpp:899-921`.
 
 | Parameter | Type | Required | Default |
@@ -991,7 +991,7 @@ const result = await fb2k.invoke('window.setMaxSize', { height: /* value */, wid
 
 
 <!-- phase3-major1-review:window.setMica -->
-#### Phase 3 Major 1 source-reviewed contract
+#### Source-reviewed contract
 Authority: `src/api/WindowApi.cpp:1573-1576`.
 
 | Parameter | Type | Required | Default |
@@ -1024,7 +1024,7 @@ const result = await fb2k.invoke('window.setMica', { enabled: true, variant: 'mi
 
 
 <!-- phase3-major1-review:window.setMicaEffect -->
-#### Phase 3 Major 1 source-reviewed contract
+#### Source-reviewed contract
 Authority: `src/api/WindowApi.cpp:1579-1582`.
 
 | Parameter | Type | Required | Default |
@@ -1086,7 +1086,7 @@ const result = await fb2k.invoke('window.setNoDragRegions', { regions: /* value 
 
 
 <!-- phase3-major1-review:window.setPopupBehavior -->
-#### Phase 3 Major 1 source-reviewed contract
+#### Source-reviewed contract
 Authority: `src/api/WindowApi.cpp:1978-2011`.
 
 | Parameter | Type | Required | Default |
@@ -1272,7 +1272,7 @@ const result = await fb2k.invoke('window.toggleAlwaysOnTop');
 
 
 <!-- phase3-major1-review:window.toggleFullscreen -->
-#### Phase 3 Major 1 source-reviewed contract
+#### Source-reviewed contract
 Authority: `src/api/WindowApi.cpp:921-944`.
 
 | Parameter | Type | Required | Default |
@@ -1308,14 +1308,14 @@ _No parameters._
 const result = await fb2k.invoke('window.toggleMaximize');
 ```
 
-## Phase 3 contract supplements
+## Contract supplements
 
 The sections below close public-contract findings from the strict parameter audit without replacing existing explanations.
 
 <!-- phase3-supplement:window.focus -->
 ### Contract supplement: `window.focus`
 
-Phase 3 verified contract supplement. Runtime authority: `src/api/WindowApi.cpp:947-1009`.
+Verified contract supplement. Runtime authority: `src/api/WindowApi.cpp:947-1009`.
 
 | Parameter | Type | Required | Default | Description |
 | --- | --- | --- | --- | --- |
@@ -1336,7 +1336,7 @@ const result = await fb2k.invoke('window.focus', { windowId: /* value */ });
 <!-- phase3-supplement:window.getBackdropPolicy -->
 ### Contract supplement: `window.getBackdropPolicy`
 
-Phase 3 verified contract supplement. Runtime authority: `src/api/WindowApi.cpp:2014-2023`.
+Verified contract supplement. Runtime authority: `src/api/WindowApi.cpp:2014-2023`.
 
 | Parameter | Type | Required | Default | Description |
 | --- | --- | --- | --- | --- |
@@ -1360,7 +1360,7 @@ const result = await fb2k.invoke('window.getBackdropPolicy', { windowId: /* valu
 <!-- phase3-supplement:window.isFullscreen -->
 ### Contract supplement: `window.isFullscreen`
 
-Phase 3 verified contract supplement. Runtime authority: `src/api/WindowApi.cpp:577-584`.
+Verified contract supplement. Runtime authority: `src/api/WindowApi.cpp:577-584`.
 
 | Parameter | Type | Required | Default | Description |
 | --- | --- | --- | --- | --- |
@@ -1381,7 +1381,7 @@ const result = await fb2k.invoke('window.isFullscreen', { windowId: /* value */ 
 <!-- phase3-supplement:window.setAcrylic -->
 ### Contract supplement: `window.setAcrylic`
 
-Phase 3 verified contract supplement. Runtime authority: `src/api/WindowApi.cpp:1593-1617`.
+Verified contract supplement. Runtime authority: `src/api/WindowApi.cpp:1593-1617`.
 
 | Parameter | Type | Required | Default | Description |
 | --- | --- | --- | --- | --- |
@@ -1402,7 +1402,7 @@ const result = await fb2k.invoke('window.setAcrylic', { windowId: /* value */, e
 <!-- phase3-supplement:window.setBackdropPolicy -->
 ### Contract supplement: `window.setBackdropPolicy`
 
-Phase 3 verified contract supplement. Runtime authority: `src/api/WindowApi.cpp:2026-2047`.
+Verified contract supplement. Runtime authority: `src/api/WindowApi.cpp:2026-2047`.
 
 | Parameter | Type | Required | Default | Description |
 | --- | --- | --- | --- | --- |
@@ -1427,7 +1427,7 @@ const result = await fb2k.invoke('window.setBackdropPolicy', { windowId: /* valu
 <!-- phase3-supplement:window.setBackgroundTransparency -->
 ### Contract supplement: `window.setBackgroundTransparency`
 
-Phase 3 verified contract supplement. Runtime authority: `src/api/WindowApi.cpp:1632-1658`.
+Verified contract supplement. Runtime authority: `src/api/WindowApi.cpp:1632-1658`.
 
 | Parameter | Type | Required | Default | Description |
 | --- | --- | --- | --- | --- |
@@ -1451,7 +1451,7 @@ const result = await fb2k.invoke('window.setBackgroundTransparency', { windowId:
 <!-- phase3-supplement:window.setBlur -->
 ### Contract supplement: `window.setBlur`
 
-Phase 3 verified contract supplement. Runtime authority: `src/api/WindowApi.cpp:1582-1593`.
+Verified contract supplement. Runtime authority: `src/api/WindowApi.cpp:1582-1593`.
 
 | Parameter | Type | Required | Default | Description |
 | --- | --- | --- | --- | --- |
@@ -1473,7 +1473,7 @@ const result = await fb2k.invoke('window.setBlur', { windowId: /* value */, enab
 <!-- phase3-supplement:window.setDarkMode -->
 ### Contract supplement: `window.setDarkMode`
 
-Phase 3 verified contract supplement. Runtime authority: `src/api/WindowApi.cpp:1617-1627`.
+Verified contract supplement. Runtime authority: `src/api/WindowApi.cpp:1617-1627`.
 
 | Parameter | Type | Required | Default | Description |
 | --- | --- | --- | --- | --- |
@@ -1495,7 +1495,7 @@ const result = await fb2k.invoke('window.setDarkMode', { windowId: /* value */, 
 <!-- phase3-supplement:window.setFrameless -->
 ### Contract supplement: `window.setFrameless`
 
-Phase 3 verified contract supplement. Runtime authority: `src/api/WindowApi.cpp:2088-2101`.
+Verified contract supplement. Runtime authority: `src/api/WindowApi.cpp:2088-2101`.
 
 | Parameter | Type | Required | Default | Description |
 | --- | --- | --- | --- | --- |
@@ -1518,7 +1518,7 @@ const result = await fb2k.invoke('window.setFrameless', { windowId: /* value */,
 <!-- phase3-supplement:window.setFullscreen -->
 ### Contract supplement: `window.setFullscreen`
 
-Phase 3 verified contract supplement. Runtime authority: `src/api/WindowApi.cpp:899-921`.
+Verified contract supplement. Runtime authority: `src/api/WindowApi.cpp:899-921`.
 
 | Parameter | Type | Required | Default | Description |
 | --- | --- | --- | --- | --- |

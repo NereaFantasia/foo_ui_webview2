@@ -46,7 +46,7 @@ Sets the playback-order mode.
 
 | Parameter | Type | Required | Values |
 | --- | --- | --- | --- |
-| `order` | string | Yes | `default`, `repeat-playlist`, `repeat-track`, `random`, `shuffle-tracks`, `shuffle-albums`, or `shuffle-folders` |
+| `order` | integer or string | Yes | Integer index `0` to `6`, or `default`, `repeat-playlist`, `repeat-track`, `random`, `shuffle-tracks`, `shuffle-albums`, or `shuffle-folders` |
 
 ## Stop after current
 

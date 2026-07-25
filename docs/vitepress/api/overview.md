@@ -54,4 +54,4 @@ Current dynamic inventory: **428** public methods across **40** namespaces (**6*
 - The high-level SDK can expose helpers such as `fb.player.play()`; use the family pages when an application needs the precise Bridge request or response shape.
 - For example, `playback:trackChanged` is an event subscription, not an invoke method.
 - Internal endpoints matching `*.__*` are not part of the public API surface.
-- Each family page owns one or more namespaces via the Phase 3 page map.
+- Each family page owns one or more namespaces via the page map.
