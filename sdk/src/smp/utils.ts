@@ -2,11 +2,10 @@ import type { JsonObject } from '../types/json.js';
 /**
  * `smpUtils` — Shared helpers for the SMP wrapper layer.
  *
- * Migrated from `sdk/smp/utils.js`. Keeps the original public shape
- * (`getInvoke`, `toHandleId`, `normalizeHandleList`, `toHandleIdArray`,
- * `clamp`, `sleep`, `MENU_FLAGS`, `buildMenuItems`) so the tsup IIFE
- * bundle can install the module onto `window.smpUtils` without
- * forcing per-call adapters.
+ * Exposes `getInvoke`, `toHandleId`, `normalizeHandleList`,
+ * `toHandleIdArray`, `clamp`, `sleep`, `MENU_FLAGS`, and
+ * `buildMenuItems` as a flat module shape, so the IIFE bundle can
+ * install it onto `window.smpUtils` without per-call adapters.
  */
 
 import { formatHandleId } from './handleId.js';

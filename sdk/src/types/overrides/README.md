@@ -1,28 +1,25 @@
 # `@codegen-override` Registry
 
-Hand-written type definitions consumed by `scripts/gen_sdk_types.mjs --all`
-when the auto-generator under `sdk/src/types/generated/` cannot infer the
-correct shape from the Phase A C++ schema alone.
-
-> **Authority document**: `docs/execution/sdk-codegen/SDK_CODEGEN_PLAN.md`
-> §7.3.2 (override mechanism) + §11.4 (when to override).
+Hand-written type definitions consumed by the SDK type generator when the
+auto-generator under `sdk/src/types/generated/` cannot infer the correct
+shape from the extracted C++ schema alone.
 
 ## When to add an override
 
 Reach for an override only when the auto-generated type would be **wrong**
 or **unusably loose** for downstream consumers, e.g.
 
-| Symptom in `code-index.json`                                         | Why an override helps |
+| Symptom in the extracted schema                                      | Why an override helps |
 |----------------------------------------------------------------------|-----------------------|
-| All fields land as `call:basic_json` (Phase A saw `.toJson()` calls) | Hand-written type can describe the actual JSON shape the helper produces. |
+| All fields land as `call:basic_json` (the extractor saw `.toJson()` calls) | Hand-written type can describe the actual JSON shape the helper produces. |
 | The C++ side packs JSON-`object`/`array` placeholders with no items_schema | Override enumerates the real key set / element shape. |
 | The C++ shape is generic (e.g. `state.value` may be any JSON)        | Override exposes a TS generic parameter (`SharedStateChange<T>`). |
 | The runtime shape is a discriminated union (different keys per case) | Override emits a TS `|`-union; the auto-generator only handles flat structs. |
 
 If none of those apply, **prefer fixing the auto-generator** (better
-mapping in `scripts/graph/lib/cpp-to-ts-mapping.mjs` / Phase A extractor)
-instead of pinning a hand-written type. Overrides are an escape hatch, not
-the default path.
+mapping in the C++-to-TypeScript type mapping, or in the C++ schema
+extractor) instead of pinning a hand-written type. Overrides are an escape
+hatch, not the default path.
 
 ## Author guide
 
@@ -69,7 +66,7 @@ Where `class` is one of:
 | `primitive` | `bool` / `int` / `int64` / `uint32` / `float` / `double` / `string` / `null` / `enum<...>` |
 | `array`     | `array` / `array<T>`                                        |
 | `object`    | `object` / `map<...>`                                       |
-| `callexpr`  | `call:*` (Phase A saw a function call but could not see the return type) |
+| `callexpr`  | `call:*` (the extractor saw a function call but could not see the return type) |
 | `unknown`   | Schema entry has no `type` field, or `type === "unknown"`   |
 | Variant     | `variant<a|b|...>` collapses to the *widest* member class. |
 
@@ -106,8 +103,8 @@ For example:
 | `params:playback.setPosition` | `PlaybackSetPositionParams`     |
 | `response:library.search` | `LibrarySearchResponse`            |
 
-Mismatched names are accepted by the registry but break Phase D, which
-expects the override symbols to satisfy the typed `bridge.invoke<M>` /
+Mismatched names are accepted by the registry but break the typed facade,
+which expects the override symbols to satisfy the typed `bridge.invoke<M>` /
 `fb.on<E>` overload set. The CI gate (`audit:all`) will surface the
 mismatch as an unresolved import.
 

@@ -1,12 +1,10 @@
 // sdk/src/bridge/namespaces/artwork.test.ts
 //
-// Phase 2 test gate — `artwork.withMaxSize` is the simplest of the seven
-// "complex" methods (plan §588 / §596 — pure URL utility) and the one
-// most likely to silently regress because it is just string manipulation
-// without a host round-trip.
+// `artwork.withMaxSize` is a pure URL utility with no host round-trip, so
+// it can silently regress under string-manipulation changes.
 //
-// Phase 5 §5.4 — also lock `artwork.getFb2kUrlByPathBatch` payload shape
-// so the C++ contract (`{ paths | items, type, maxSize }`) cannot drift.
+// Also locks the `artwork.getFb2kUrlByPathBatch` payload shape so the host
+// contract (`{ paths | items, type, maxSize }`) cannot drift.
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -68,7 +66,7 @@ describe('artwork.getFb2kUrlByPathBatch (§5.4)', () => {
         vi.unstubAllGlobals();
     });
 
-    it('forwards bare-string paths under the `paths` key (§5.4 BLOCKER)', async () => {
+    it('forwards bare-string paths under the `paths` key', async () => {
         const native = makeNative();
         native.invoke.mockResolvedValue({ success: true, artworks: [] });
         vi.stubGlobal('window', { fb2k: native });

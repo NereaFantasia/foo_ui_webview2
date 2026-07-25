@@ -1,12 +1,15 @@
 {
   "name": "foo-webview-sdk",
-  "version": "1.10.0",
+  "version": "1.11.0",
   "description": "Simplified SDK for foo_ui_webview2 - foobar2000 WebView2 Plugin",
   "type": "module",
   "main": "./dist/bridge.js",
   "module": "./dist/bridge.js",
   "types": "./dist/index.d.ts",
   "browser": "./dist/bridge.global.js",
+  "sideEffects": [
+    "**/*.global.js"
+  ],
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
@@ -62,6 +65,12 @@
   "bugs": {
     "url": "https://github.com/NereaFantasia/foo_ui_webview2/issues"
   },
+  "engines": {
+    "node": ">=18"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
   "devDependencies": {
     "tsup": "^8.5.0",
     "typescript": "^6.0.2",
@@ -71,6 +80,7 @@
     "dist",
     "LICENSE",
     "README.md",
+    "README.zh-CN.md",
     "CHANGELOG.md"
   ]
 }

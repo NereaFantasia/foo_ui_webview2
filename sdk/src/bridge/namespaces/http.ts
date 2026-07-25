@@ -348,7 +348,6 @@ function httpRequest(
     opts?: HttpRequestOptions,
 ): Promise<HttpResponse | HttpBinaryResponse> {
     const promise = _httpRequest(
-        'http.get',
         { url, ...(opts || {}) },
         typeof opts?.timeout === 'number' ? opts.timeout + 5000 : 35000,
     );
@@ -407,7 +406,6 @@ interface HttpResponseEvent extends HttpResponse {
 }
 
 function _httpRequest(
-    method: string,
     payload: JsonObject,
     clientTimeoutMs = 35000,
 ): Promise<HttpResponse> {
@@ -427,7 +425,7 @@ function _httpRequest(
         };
 
         bridge
-            .invoke<HttpInitResponse>(method, payload)
+            .invoke<HttpInitResponse>('http.get', payload)
             .then((init) => {
                 // Synchronous path: host already returned the full response.
                 if (!init || !init.async) {

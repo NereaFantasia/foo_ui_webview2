@@ -1,7 +1,7 @@
 // sdk/src/smp/smp-compat.test.ts
 //
-// Phase 5.1 test gate (plan §8.7) — bootstrap orchestrator end-to-end
-// contract. Verifies that the SMP compat layer:
+// Bootstrap orchestrator end-to-end contract.
+// Verifies that the SMP compat layer:
 //
 // 1. Surfaces every public field of `SmpCompatApi` (cache, ready,
 //    invoke, parseHandleId, formatHandleId, stripSubsongSuffix,

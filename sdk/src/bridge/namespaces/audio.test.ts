@@ -1,8 +1,7 @@
 // sdk/src/bridge/namespaces/audio.test.ts
 //
 // Regression guards for `audio` namespace methods that are sensitive to
-// host-side stub state. Currently covers Bug #6
-// (`AUDIT_REPORT_2026-05-09 §3 MINOR`):
+// host-side stub state:
 //
 //   `audio.subscribeStream` bridges into a C++ handler that returns
 //   `{success: false, error: "Stream capture requires
@@ -30,7 +29,7 @@ function makeNative(): MockNative {
     };
 }
 
-describe('audio.subscribeStream (Bug #6 host stub guard)', () => {
+describe('audio.subscribeStream (host stub guard)', () => {
     let warnSpy: ReturnType<typeof vi.spyOn>;
 
     beforeEach(() => {

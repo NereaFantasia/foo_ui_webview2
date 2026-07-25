@@ -28,18 +28,31 @@ export const discovery = {
         bridge.invoke<DiscoveryGetAllServicesResponse>(
             'discovery.getAllServices',
         ),
-    getMainMenuCommands: () =>
+    /**
+     * Lists main-menu commands. Components that build their submenu at runtime
+     * (`mainmenu_commands_v2`, e.g. ESLyric) are expanded by default, so the
+     * result includes their child commands in addition to the parent slot.
+     * Pass `{ expandDynamic: false }` for the raw static registry only.
+     */
+    getMainMenuCommands: (opts?: { expandDynamic?: boolean }) =>
         bridge.invoke<DiscoveryGetMainMenuCommandsResponse>(
             'discovery.getMainMenuCommands',
+            opts,
         ),
     getMainMenuGroups: () =>
         bridge.invoke<DiscoveryGetMainMenuGroupsResponse>(
             'discovery.getMainMenuGroups',
         ),
-    executeMainMenuCommand: (guid: string) =>
-        bridge.invoke<BaseResponse>('discovery.executeMainMenuCommand', {
-            guid,
-        }),
+    /**
+     * Executes a main-menu command. For a command expanded from a dynamic
+     * submenu, pass the entry's `subGuid` as well; without it only the static
+     * command GUID is dispatched.
+     */
+    executeMainMenuCommand: (guid: string, subGuid?: string) =>
+        bridge.invoke<BaseResponse & { subGuid?: string; dynamic?: boolean }>(
+            'discovery.executeMainMenuCommand',
+            subGuid ? { guid, subGuid } : { guid },
+        ),
     getContextMenuCommands: () =>
         bridge.invoke<DiscoveryGetContextMenuCommandsResponse>(
             'discovery.getContextMenuCommands',
@@ -75,9 +88,14 @@ export const discovery = {
         bridge.invoke<DiscoveryGetPreferencePagesResponse>(
             'discovery.getPreferencePages',
         ),
-    searchCommands: (query: string) =>
+    /**
+     * Case-insensitive substring search over main-menu command names,
+     * descriptions and menu paths. Dynamic submenus are expanded by default;
+     * pass `{ expandDynamic: false }` to search the static registry only.
+     */
+    searchCommands: (query: string, opts?: { expandDynamic?: boolean }) =>
         bridge.invoke<DiscoverySearchCommandsResponse>(
             'discovery.searchCommands',
-            { query },
+            { query, ...opts },
         ),
 };

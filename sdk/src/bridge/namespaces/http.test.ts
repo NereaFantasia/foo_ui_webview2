@@ -1,8 +1,8 @@
 // sdk/src/bridge/namespaces/http.test.ts
 //
-// Phase 2 test gate — covers BLOCKER 2 + CRITICAL 3 contracts:
+// Covers the core `http` wrapper contracts:
 //
-//   - the eight verbs map 1:1 to registered cpp_api_handler names
+//   - the eight verbs map 1:1 to registered host handler names
 //     (http.{get,post,put,delete,patch,head,download,abort})
 //   - http.request implements the legacy event-wrapped behaviour:
 //       * synchronous host response (`async: false`) → resolves immediately
@@ -67,13 +67,13 @@ describe('http namespace', () => {
             'download',
             'abort',
             'request',
-            // Phase 5 §5.6: opt-out for the default `http:downloadComplete`
-            // failure logger installed at module load.
+            // Opt-out for the default `http:downloadComplete` failure
+            // logger installed at module load.
             'disableDefaultDownloadLogger',
         ].sort();
 
         expect(Object.keys(http).sort()).toEqual(expectedKeys);
-        // BLOCKER 2 regression guard
+        // These methods do not exist on the host and must stay absent.
         expect(http).not.toHaveProperty('cancel');
         expect(http).not.toHaveProperty('clearCache');
         expect(http).not.toHaveProperty('getCacheStats');
@@ -90,10 +90,9 @@ describe('http namespace', () => {
         vi.stubGlobal('window', { fb2k: native });
         const { http } = await import('./http.js');
 
-        // Module load installs the default `http:downloadComplete` logger
-        // (Phase 5 §5.6). We snapshot how many native.on calls existed
-        // before http.request runs so the assertion below targets only the
-        // request-induced listener.
+        // Module load installs the default `http:downloadComplete` logger.
+        // Snapshot how many native.on calls existed before http.request runs
+        // so the assertion below targets only the request-induced listener.
         const onCallsBefore = native.on.mock.calls.length;
         expect(
             native.on.mock.calls.some((c) => c[0] === 'http:downloadComplete'),
@@ -110,6 +109,37 @@ describe('http namespace', () => {
         // No additional listener (e.g. for `http:response`) must be
         // installed when the host returns synchronously.
         expect(native.on.mock.calls.length).toBe(onCallsBefore);
+    });
+
+    it('http.request forwards the complete registered http.get payload', async () => {
+        const native = makeNative();
+        native.invoke.mockResolvedValue({
+            success: true,
+            async: false,
+            status: 200,
+            body: 'ok',
+        });
+        vi.stubGlobal('window', { fb2k: native });
+        const { http } = await import('./http.js');
+
+        await http.request('https://example.com/data', {
+            headers: { Accept: 'application/json' },
+            timeout: 1234,
+            async: false,
+            redirect: 'manual',
+            responseType: 'text',
+            insecureTls: true,
+        });
+
+        expect(native.invoke).toHaveBeenCalledWith('http.get', {
+            url: 'https://example.com/data',
+            headers: { Accept: 'application/json' },
+            timeout: 1234,
+            async: false,
+            redirect: 'manual',
+            responseType: 'text',
+            insecureTls: true,
+        });
     });
 
     it('http.request resolves on matching http:response when async: true', async () => {

@@ -40,12 +40,10 @@ export const playlist = {
     /**
      * Fetch a slice of tracks from a playlist.
      *
-     * The C++ `playlist.getTracks` handler returns a page envelope
-     * `{ playlist, start, count, total, tracks }`; this SDK wrapper
-     * unwraps `tracks` and resolves with `PlaylistTrack[]` so callers
-     * can iterate directly without poking at `.tracks` (audit §5.3 real
-     * drift finding: previous `PlaylistTrack[]` typing mismatched the
-     * runtime envelope, causing `Array.isArray(...)` checks to fail).
+     * The host returns a page envelope
+     * `{ playlist, start, count, total, tracks }`; this wrapper unwraps
+     * `tracks` and resolves with `PlaylistTrack[]` so callers can iterate
+     * the result directly.
      *
      * Callers that need pagination metadata (`total` etc.) should hit
      * the bridge directly:

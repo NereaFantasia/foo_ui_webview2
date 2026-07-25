@@ -7,6 +7,86 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.11.0] - 2026-07-25
+
+### Added
+
+- **`TrayMenuItem.playbackAction`** (`'play-pause' | 'previous' | 'next' |
+  'stop'`) — declare a native playback action on a custom tray menu item.
+  Appearance (`label` / `icon` / `id`) stays caller-controlled; at composition
+  time the host stamps the item as a trusted built-in playback route and runs
+  `playback_control` natively. Declared items therefore do **not** emit
+  `tray:menuItemClicked` (mirror Electron `MenuItem.role` / Tauri
+  `PredefinedMenuItem`). Valid only on a `type: 'normal'` leaf; unknown tokens
+  or declarations on separator / submenu / rich controls reject the whole
+  `setContextMenu` / `appendMenuItems` call with `INVALID_PARAMS`; nothing is
+  applied partially.
+  `'exit'` is not accepted (app exit stays the reserved `_sys_exit` item).
+  Scope is tray menus only — no effect on `menu.show`. `getMenuItems()`
+  round-trips the field. Use this (or built-in `showPlaybackControls` items)
+  for background-reliable tray playback while the main page is deep-suspended
+  (minimize / tray hide / lock); plain user items that only forward
+  `tray:menuItemClicked` to `playback.*` are not guaranteed in those states.
+  Requires plugin 1.11.0 or newer; probe
+  `config.getVersionInfo().plugin.version` before relying on it. The SDK
+  wrapper passes the field through and does not invent a default.
+- **`menu.getMainMenu(root?, opts?)`** — added a second options argument
+  carrying `locale`, `i18n`, and `withAvailability`. `locale` (default
+  `'auto'`) selects the `displayLabel` translation locale, `i18n: false`
+  disables label translation entirely, and `withAvailability` (default `true`)
+  includes per-submenu command availability counters. The original
+  single-argument call keeps its previous behavior.
+- **Dynamic main-menu submenus in `discovery`** — `getMainMenuCommands(opts?)`
+  and `searchCommands(query, opts?)` accept `{ expandDynamic }`, and
+  `executeMainMenuCommand(guid, subGuid?)` accepts the sub-command GUID needed
+  to run an expanded entry. `DiscoveryMainMenuCommand` and
+  `DiscoverySearchResult` gained `path`, `isDynamic`, `subGuid` (plus
+  `isDynamicParent` / `flags` on the former), and the responses now echo
+  `expandDynamic` / `dynamicCount`.
+- Added `WindowGetBackdropPolicyParams` and `WindowSetBackdropPolicyParams`,
+  documenting the `windowId` field that the host resolves through its shared
+  window-target resolver. `setBackdropPolicy` requires `backdropPolicy` and
+  does not fall back to the main window when no target resolves.
+- **SDK-only binary adapters** — added `fb.file.readBinary()`,
+  `fb.file.writeBinary()`, `fb.file.writeDataUrl()`,
+  `fb.metadata.embedArtworkBytes()`, and
+  `fb.metadata.embedArtworkFromDataUrl()`, plus the public
+  `FileBinaryWriteOptions` and `MetadataArtworkBytesOptions` types.
+- These additive helpers adapt `ArrayBuffer` / `Uint8Array` values and strict
+  Base64 Data URLs to the existing `file.read`, `file.write`, and
+  `metadata.embedArtwork` wire contracts. They add no Bridge endpoint and do
+  not change raw `invoke` or existing facades. Canonical Base64 and Data URL
+  validation happens in the SDK before invocation; Host behavior is unchanged.
+
+### Changed
+
+- Documented that `tray:menuItemClicked` is for ordinary user items / rich
+  value controls only. Built-in `showPlaybackControls` / `showSystemItems`
+  injections and items declaring `playbackAction` execute natively and do not
+  fire the click event; reflect playback button state from `playback:*`.
+- `discovery.getMainMenuCommands()` and `discovery.searchCommands()` now expand
+  dynamic submenus by default, so results include child commands contributed by
+  components that build their menu at runtime (`mainmenu_commands_v2`, e.g.
+  ESLyric) in addition to the parent slot. Callers that need the raw static
+  registry must pass `{ expandDynamic: false }`. Entries flagged
+  `isDynamicParent` are container slots and are not executable on their own.
+- `playcount.set()` no longer sends the `count` key. The host never read it, so
+  the value silently did nothing; the wire payload is now limited to what the
+  handler actually consumes.
+
+### Fixed
+
+- Corrected the declared response types for `ui.isMinimized()` and
+  `ui.isAlwaysOnTop()`. The host returns `{ minimized }` and
+  `{ enabled, isAlwaysOnTop }`; the previous declarations claimed
+  `{ isMinimized }` and `{ alwaysOnTop }`, which never existed on the wire.
+  Code written against the old declarations read `undefined` at runtime and now
+  fails type-checking instead — read `minimized` / `enabled` (or
+  `isAlwaysOnTop`) going forward.
+- Corrected `http.*` request dispatch to invoke `http.get` directly instead of
+  threading an unused method parameter, and aligned `menu` / `ui` facades with
+  the generated parameter and response contracts.
+
 ## [1.10.0] - 2026-07-16
 
 ### Added

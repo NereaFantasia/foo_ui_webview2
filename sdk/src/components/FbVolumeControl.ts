@@ -67,8 +67,7 @@ export class FbVolumeControl extends FbBaseElement {
             `:host([vertical]){flex-direction:column-reverse}` +
             `:host([no-icon]) [part=mute-button]{display:none}` +
             // `padding:6px 0` widens the click target for the thin
-            // volume track — hit-target only, not a visual decision
-            // (see AGENTS.md §2.6.1 "Hit-target padding" whitelist).
+            // volume track — hit-target only, not a visual decision.
             `[part=track]{position:relative;cursor:pointer;padding:6px 0}` +
             `[part=fill]{position:absolute;pointer-events:none}` +
             `:host(:not([vertical])) [part=fill]{top:50%;left:0;transform:translateY(-50%)}` +

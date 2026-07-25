@@ -1,6 +1,6 @@
 // sdk/src/bridge/namespaces/titleformat.test.ts
 //
-// Phase 5 §5.4 regression guards — `titleformat.evalFields` and
+// Regression guards — `titleformat.evalFields` and
 // `titleformat.evalFieldsBatch` previously sent `fields: string[]` to
 // the host, but the C++ handler expects `fields: { fieldName: pattern,
 // ... }`. This test gate locks the new contract:

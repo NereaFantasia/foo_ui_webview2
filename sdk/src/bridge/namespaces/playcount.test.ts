@@ -1,8 +1,8 @@
 // sdk/src/bridge/namespaces/playcount.test.ts
 //
-// Phase 5 §5.2 regression guards — covers the two M4 audit findings:
+// Regression guards for two `playcount` wrapper contracts:
 //
-//   §5.2.1  `playcount.get(path)` MUST send `{ paths: [path] }` (not
+//   1. `playcount.get(path)` MUST send `{ paths: [path] }` (not
 //           `{ path }`) and unwrap the first per-track result, because
 //           the C++ handler `PlaycountApi.cpp::PlaycountGet` rejects any
 //           payload that doesn't carry a `paths` JSON array.
@@ -53,7 +53,7 @@ describe('playcount namespace', () => {
         );
     });
 
-    it('get(path) sends `paths: [path]` to the host (§5.2.1 BLOCKER)', async () => {
+    it('get(path) sends `paths: [path]` to the host', async () => {
         const native = makeNative();
         native.invoke.mockResolvedValue({
             success: true,
@@ -170,15 +170,14 @@ describe('playcount namespace', () => {
         vi.stubGlobal('window', { fb2k: native });
         const { playcount } = await import('./playcount.js');
 
-        // The wrapper passes the count through (so the cpp_api_param
-        // schema stays satisfied) but consumers must still get a value
-        // back, not an exception.
+        // The count argument remains in the public signature for compatibility,
+        // but the host does not read it and the wrapper intentionally omits it.
         const r = await playcount.set('/music/track.flac', 100);
 
         expect(native.invoke).toHaveBeenCalledWith('playcount.set', {
             path: '/music/track.flac',
-            count: 100,
         });
+        expect(native.invoke.mock.calls[0][1]).not.toHaveProperty('count');
         expect(r).toBeDefined();
         expect((r as { success: boolean }).success).toBe(false);
     });

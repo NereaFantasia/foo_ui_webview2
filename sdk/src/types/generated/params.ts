@@ -15,8 +15,8 @@ import type { JsonObject } from '../json.js';
 import type { ConfigSetReplaygainModeParams } from "../overrides/config.js";
 import type { CursorSetHiddenParams } from "../overrides/cursor.js";
 import type { TraySetIconParams } from "../overrides/tray.js";
-import type { WindowCreatePopupParams, WindowSetPopupBehaviorParams } from "../overrides/window.js";
-export type { ConfigSetReplaygainModeParams, CursorSetHiddenParams, TraySetIconParams, WindowCreatePopupParams, WindowSetPopupBehaviorParams };
+import type { WindowCreatePopupParams, WindowGetBackdropPolicyParams, WindowSetBackdropPolicyParams, WindowSetPopupBehaviorParams } from "../overrides/window.js";
+export type { ConfigSetReplaygainModeParams, CursorSetHiddenParams, TraySetIconParams, WindowCreatePopupParams, WindowGetBackdropPolicyParams, WindowSetBackdropPolicyParams, WindowSetPopupBehaviorParams };
 
 /**
  * Parameters for `artwork.getAvailableArtwork`.
@@ -77,10 +77,8 @@ export interface ArtworkGetCurrentParams {
  * Parameters for `artwork.getFb2kUrl`.
  */
 export interface ArtworkGetFb2kUrlParams {
-    /** @default "front" */
     type?: string;
-    /** @default 0 */
-    maxSize?: number;
+    maxSize?: unknown;
 }
 
 /**
@@ -89,10 +87,8 @@ export interface ArtworkGetFb2kUrlParams {
 export interface ArtworkGetFb2kUrlByPathParams {
     /** @default "" */
     path?: string;
-    /** @default "front" */
     type?: string;
-    /** @default 0 */
-    maxSize?: number;
+    maxSize?: unknown;
 }
 
 /**
@@ -101,12 +97,8 @@ export interface ArtworkGetFb2kUrlByPathParams {
 export interface ArtworkGetFb2kUrlByPathBatchParams {
     paths?: unknown;
     items?: unknown;
-    /** @default "front" */
     type?: string;
-    /** @default 0 */
-    maxSize?: number;
-    /** @default "" */
-    path?: string;
+    maxSize?: unknown;
 }
 
 /**
@@ -141,7 +133,6 @@ export interface ArtworkGetLyricsParams {
 export interface ArtworkGetMetadataParams {
     /** @default "" */
     path?: string;
-    lyric?: unknown;
 }
 
 /**
@@ -540,9 +531,6 @@ export interface DialogOpenFileParams {
     /** @default "" */
     defaultPath?: string;
     filters?: string[];
-    /** @default "Files" */
-    name?: string;
-    extensions?: unknown;
 }
 
 /**
@@ -562,9 +550,6 @@ export interface DialogSaveFileParams {
     /** @default "" */
     defaultName?: string;
     filters?: string[];
-    /** @default "Files" */
-    name?: string;
-    extensions?: unknown;
 }
 
 /**
@@ -591,6 +576,8 @@ export interface DiscoveryExecuteContextMenuCommandParams {
 export interface DiscoveryExecuteMainMenuCommandParams {
     /** @default "" */
     guid?: string;
+    /** @default "" */
+    subGuid?: string;
 }
 
 /**
@@ -624,9 +611,12 @@ export type DiscoveryGetDspEntriesParams = Record<string, never>;
 export type DiscoveryGetInputFormatsParams = Record<string, never>;
 
 /**
- * Parameters for `discovery.getMainMenuCommands` (this API takes no parameters).
+ * Parameters for `discovery.getMainMenuCommands`.
  */
-export type DiscoveryGetMainMenuCommandsParams = Record<string, never>;
+export interface DiscoveryGetMainMenuCommandsParams {
+    /** @default true */
+    expandDynamic?: boolean;
+}
 
 /**
  * Parameters for `discovery.getMainMenuGroups` (this API takes no parameters).
@@ -654,6 +644,8 @@ export type DiscoveryGetUIElementsParams = Record<string, never>;
 export interface DiscoverySearchCommandsParams {
     /** @default "" */
     query?: string;
+    /** @default true */
+    expandDynamic?: boolean;
 }
 
 /**
@@ -748,8 +740,6 @@ export interface DspRemoveDspParams {
  */
 export interface DspSetChainParams {
     dsps?: string[];
-    /** @default "" */
-    guid?: string;
 }
 
 /**
@@ -959,8 +949,6 @@ export interface HttpHeadParams {
     /** @default false */
     insecureTls?: boolean;
     headers?: unknown;
-    /** @default false */
-    success?: boolean;
 }
 
 /**
@@ -1131,8 +1119,11 @@ export interface KeyboardUnregisterHotkeyParams {
 export interface LibraryAddToPlaylistParams {
     /** @default `json :: array ( )` */
     paths?: unknown[];
-    /** @default `pfc :: infinite_size` */
-    playlist?: unknown;
+    /**
+     * int64 — may lose precision above 2^53
+     * @default `pfc :: infinite_size`
+     */
+    playlist?: number;
 }
 
 /**
@@ -1156,8 +1147,6 @@ export interface LibraryBrowseTreeParams {
     includeFiles?: boolean;
     /** @default false */
     recursiveFiles?: boolean;
-    /** @default false */
-    success?: boolean;
 }
 
 /**
@@ -1315,12 +1304,9 @@ export interface LibraryGetRecentlyAddedParams {
 }
 
 /**
- * Parameters for `library.getRoots`.
+ * Parameters for `library.getRoots` (this API takes no parameters).
  */
-export interface LibraryGetRootsParams {
-    /** @default false */
-    success?: boolean;
-}
+export type LibraryGetRootsParams = Record<string, never>;
 
 /**
  * Parameters for `library.getStats` (this API takes no parameters).
@@ -1451,8 +1437,6 @@ export interface LyricsSaveParams {
     format?: string;
     /** @default "file" */
     target?: string[];
-    /** @default false */
-    success?: boolean;
 }
 
 /**
@@ -1477,10 +1461,6 @@ export interface MenuGetContextMenuParams {
     withAvailability?: boolean;
     /** @default `json :: array ( )` */
     handles?: unknown[];
-    /** @default "" */
-    path?: string;
-    /** @default 0 */
-    subsong?: number;
 }
 
 /**
@@ -1515,10 +1495,6 @@ export interface MenuRunContextCommandByIdParams {
     mode?: string;
     /** @default `json :: array ( )` */
     handles?: unknown[];
-    /** @default "" */
-    path?: string;
-    /** @default 0 */
-    subsong?: number;
 }
 
 /**
@@ -1548,10 +1524,6 @@ export interface MenuShowNativePopupParams {
     mode?: string;
     /** @default `json :: array ( )` */
     handles?: unknown[];
-    /** @default "" */
-    path?: string;
-    /** @default 0 */
-    subsong?: number;
 }
 
 /**
@@ -1568,8 +1540,6 @@ export interface MetadataEmbedArtworkParams {
     filename?: string;
     /** @default "embedded" */
     target?: string[];
-    /** @default false */
-    success?: boolean;
 }
 
 /**
@@ -1593,7 +1563,6 @@ export interface MetadataReadBatchParams {
 export interface MetadataReadByPathParams {
     /** @default "" */
     path?: string;
-    TRACKNUMBER?: unknown;
 }
 
 /**
@@ -1656,13 +1625,6 @@ export interface MetadataWriteParams {
  */
 export interface MetadataWriteBatchParams {
     items?: string[];
-    /** @default "" */
-    path?: string;
-    tags?: unknown;
-    /** @default false */
-    success?: boolean;
-    /** @default "Unknown error" */
-    error?: string;
 }
 
 /**
@@ -2111,10 +2073,16 @@ export type PlaylistGetPlayingParams = Record<string, never>;
  * Parameters for `playlist.getSelectedTracks`.
  */
 export interface PlaylistGetSelectedTracksParams {
-    /** @default `pfc :: infinite_size` */
-    playlist?: boolean;
-    /** @default `pfc :: infinite_size` */
-    index?: unknown;
+    /**
+     * int64 — may lose precision above 2^53
+     * @default `pfc :: infinite_size`
+     */
+    playlist?: number;
+    /**
+     * int64 — may lose precision above 2^53
+     * @default `pfc :: infinite_size`
+     */
+    index?: number;
 }
 
 /**
@@ -2128,10 +2096,16 @@ export interface PlaylistGetSelectionParams {
  * Parameters for `playlist.getTrackCount`.
  */
 export interface PlaylistGetTrackCountParams {
-    /** @default `pfc :: infinite_size` */
-    playlist?: boolean;
-    /** @default `pfc :: infinite_size` */
-    index?: unknown;
+    /**
+     * int64 — may lose precision above 2^53
+     * @default `pfc :: infinite_size`
+     */
+    playlist?: number;
+    /**
+     * int64 — may lose precision above 2^53
+     * @default `pfc :: infinite_size`
+     */
+    index?: number;
 }
 
 /**
@@ -2150,10 +2124,16 @@ export interface PlaylistGetTracksParams {
     count?: number;
     /** @default `json :: object ( )` */
     formats?: JsonObject;
-    /** @default `pfc :: infinite_size` */
-    playlist?: boolean;
-    /** @default `pfc :: infinite_size` */
-    index?: unknown;
+    /**
+     * int64 — may lose precision above 2^53
+     * @default `pfc :: infinite_size`
+     */
+    playlist?: number;
+    /**
+     * int64 — may lose precision above 2^53
+     * @default `pfc :: infinite_size`
+     */
+    index?: number;
 }
 
 /**
@@ -2197,10 +2177,16 @@ export interface PlaylistMoveTracksParams {
     items?: unknown[];
     /** @default 0 */
     delta?: number;
-    /** @default `pfc :: infinite_size` */
-    playlist?: boolean;
-    /** @default `pfc :: infinite_size` */
-    index?: unknown;
+    /**
+     * int64 — may lose precision above 2^53
+     * @default `pfc :: infinite_size`
+     */
+    playlist?: number;
+    /**
+     * int64 — may lose precision above 2^53
+     * @default `pfc :: infinite_size`
+     */
+    index?: number;
 }
 
 /**
@@ -2249,10 +2235,16 @@ export interface PlaylistRemoveAutoplaylistParams {
  * Parameters for `playlist.removeSelectedTracks`.
  */
 export interface PlaylistRemoveSelectedTracksParams {
-    /** @default `pfc :: infinite_size` */
-    playlist?: boolean;
-    /** @default `pfc :: infinite_size` */
-    index?: unknown;
+    /**
+     * int64 — may lose precision above 2^53
+     * @default `pfc :: infinite_size`
+     */
+    playlist?: number;
+    /**
+     * int64 — may lose precision above 2^53
+     * @default `pfc :: infinite_size`
+     */
+    index?: number;
 }
 
 /**
@@ -2261,10 +2253,16 @@ export interface PlaylistRemoveSelectedTracksParams {
 export interface PlaylistRemoveTracksParams {
     /** @default `json :: array ( )` */
     items?: unknown[];
-    /** @default `pfc :: infinite_size` */
-    playlist?: boolean;
-    /** @default `pfc :: infinite_size` */
-    index?: unknown;
+    /**
+     * int64 — may lose precision above 2^53
+     * @default `pfc :: infinite_size`
+     */
+    playlist?: number;
+    /**
+     * int64 — may lose precision above 2^53
+     * @default `pfc :: infinite_size`
+     */
+    index?: number;
 }
 
 /**
@@ -2348,20 +2346,32 @@ export interface PlaylistSetSelectionParams {
     indices?: unknown[];
     /** @default true */
     clearOthers?: boolean;
-    /** @default `pfc :: infinite_size` */
-    playlist?: boolean;
-    /** @default `pfc :: infinite_size` */
-    index?: unknown;
+    /**
+     * int64 — may lose precision above 2^53
+     * @default `pfc :: infinite_size`
+     */
+    playlist?: number;
+    /**
+     * int64 — may lose precision above 2^53
+     * @default `pfc :: infinite_size`
+     */
+    index?: number;
 }
 
 /**
  * Parameters for `playlist.shuffle`.
  */
 export interface PlaylistShuffleParams {
-    /** @default `pfc :: infinite_size` */
-    playlist?: boolean;
-    /** @default `pfc :: infinite_size` */
-    index?: unknown;
+    /**
+     * int64 — may lose precision above 2^53
+     * @default `pfc :: infinite_size`
+     */
+    playlist?: number;
+    /**
+     * int64 — may lose precision above 2^53
+     * @default `pfc :: infinite_size`
+     */
+    index?: number;
 }
 
 /**
@@ -2374,10 +2384,16 @@ export interface PlaylistSortParams {
     descending?: boolean;
     /** @default false */
     selectedOnly?: boolean;
-    /** @default `pfc :: infinite_size` */
-    playlist?: boolean;
-    /** @default `pfc :: infinite_size` */
-    index?: unknown;
+    /**
+     * int64 — may lose precision above 2^53
+     * @default `pfc :: infinite_size`
+     */
+    playlist?: number;
+    /**
+     * int64 — may lose precision above 2^53
+     * @default `pfc :: infinite_size`
+     */
+    index?: number;
 }
 
 /**
@@ -2434,12 +2450,18 @@ export interface PortPostMessageToParams {
  * Parameters for `queue.add`.
  */
 export interface QueueAddParams {
-    /** @default `pfc :: infinite_size` */
-    playlist?: unknown;
+    /**
+     * int64 — may lose precision above 2^53
+     * @default `pfc :: infinite_size`
+     */
+    playlist?: number;
     /** int64 — may lose precision above 2^53 */
     tracks?: number[];
-    /** @default `pfc :: infinite_size` */
-    track?: boolean;
+    /**
+     * int64 — may lose precision above 2^53
+     * @default `pfc :: infinite_size`
+     */
+    track?: number;
 }
 
 /**
@@ -2450,8 +2472,11 @@ export interface QueueAddPathsParams {
     paths?: unknown[];
     /** @default true */
     useQueuePlaylist?: boolean;
-    /** @default `pfc :: infinite_size` */
-    playlist?: boolean;
+    /**
+     * int64 — may lose precision above 2^53
+     * @default `pfc :: infinite_size`
+     */
+    playlist?: number;
 }
 
 /**
@@ -2478,16 +2503,22 @@ export type QueueGetCountParams = Record<string, never>;
  * Parameters for `queue.moveToTop`.
  */
 export interface QueueMoveToTopParams {
-    /** @default `pfc :: infinite_size` */
-    index?: unknown;
+    /**
+     * int64 — may lose precision above 2^53
+     * @default `pfc :: infinite_size`
+     */
+    index?: number;
 }
 
 /**
  * Parameters for `queue.remove`.
  */
 export interface QueueRemoveParams {
-    /** @default `pfc :: infinite_size` */
-    index?: boolean;
+    /**
+     * int64 — may lose precision above 2^53
+     * @default `pfc :: infinite_size`
+     */
+    index?: number;
     /** int64 — may lose precision above 2^53 */
     indices?: number[];
 }
@@ -2512,8 +2543,6 @@ export interface RatingSetParams {
     rating?: number;
     /** @default `- 1` */
     cueIndex?: number;
-    /** @default false */
-    success?: boolean;
 }
 
 /**
@@ -2552,9 +2581,6 @@ export interface ReplaygainScanParams {
     paths?: unknown;
     /** @default "track" */
     mode?: string;
-    album?: unknown;
-    track?: unknown;
-    Scan?: unknown;
 }
 
 /**
@@ -2801,18 +2827,6 @@ export interface TaskbarSetProgressParams {
  */
 export interface TaskbarSetThumbnailButtonsParams {
     buttons?: string[];
-    /** @default "" */
-    id?: string;
-    /** @default "" */
-    icon?: string;
-    /** @default "" */
-    tooltip?: string;
-    /** @default true */
-    enabled?: boolean;
-    /** @default true */
-    visible?: boolean;
-    /** @default false */
-    dismissOnClick?: boolean;
 }
 
 /**
@@ -2938,17 +2952,6 @@ export interface TraySetCloseToTrayParams {
 export interface TraySetContextMenuParams {
     items?: unknown;
     config?: unknown;
-    showPlaybackControls?: unknown;
-    showSystemItems?: unknown;
-    customPosition?: unknown;
-    render?: unknown;
-    autoNowPlaying?: unknown;
-    css?: unknown;
-    cssReplace?: unknown;
-    backdrop?: unknown;
-    backdropDarkMode?: unknown;
-    closeAnimationMs?: unknown;
-    layoutMode?: unknown;
 }
 
 /**
@@ -3019,19 +3022,6 @@ export interface UiShowCustomMenuParams {
     w?: number;
     /** @default 0 */
     h?: number;
-    /** @default "item" */
-    type?: string;
-    submenu?: unknown;
-    /** @default "" */
-    label?: string;
-    /** @default "" */
-    id?: string;
-    /** @default true */
-    enabled?: boolean;
-    /** @default "" */
-    shortcut?: string;
-    /** @default false */
-    checked?: boolean;
 }
 
 /**
@@ -3165,11 +3155,6 @@ export interface WindowFocusParams {
  * Parameters for `window.getAllWindows` (this API takes no parameters).
  */
 export type WindowGetAllWindowsParams = Record<string, never>;
-
-/**
- * Parameters for `window.getBackdropPolicy` (this API takes no parameters).
- */
-export type WindowGetBackdropPolicyParams = Record<string, never>;
 
 /**
  * Parameters for `window.getBounds` (shape unspecified — pass any JSON object).
@@ -3345,13 +3330,6 @@ export interface WindowSetAlwaysOnTopParams {
 }
 
 /**
- * Parameters for `window.setBackdropPolicy`.
- */
-export interface WindowSetBackdropPolicyParams {
-    backdropPolicy?: unknown;
-}
-
-/**
  * Parameters for `window.setBackgroundTransparency`.
  */
 export interface WindowSetBackgroundTransparencyParams {
@@ -3394,14 +3372,6 @@ export interface WindowSetClickThroughExcludeRegionsParams {
     /** @default "" */
     windowId?: string;
     regions?: unknown;
-    /** @default 0 */
-    width?: number;
-    /** @default 0 */
-    height?: number;
-    /** @default 0 */
-    x?: number;
-    /** @default 0 */
-    y?: number;
 }
 
 /**
@@ -3435,14 +3405,6 @@ export interface WindowSetDevServerConfigParams {
  */
 export interface WindowSetDragRegionsParams {
     regions?: unknown;
-    /** @default 0 */
-    x?: number;
-    /** @default 0 */
-    y?: number;
-    /** @default 0 */
-    width?: number;
-    /** @default 0 */
-    height?: number;
 }
 
 /**
@@ -3510,14 +3472,6 @@ export interface WindowSetMinSizeParams {
  */
 export interface WindowSetNoDragRegionsParams {
     regions?: unknown;
-    /** @default 0 */
-    x?: number;
-    /** @default 0 */
-    y?: number;
-    /** @default 0 */
-    width?: number;
-    /** @default 0 */
-    height?: number;
 }
 
 /**

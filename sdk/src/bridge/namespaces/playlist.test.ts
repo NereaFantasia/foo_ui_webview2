@@ -1,9 +1,8 @@
 // sdk/src/bridge/namespaces/playlist.test.ts
 //
-// Phase 5 §5.3 regression guards — covers the playlist-envelope drift
-// discovered by `scripts/audit_sdk_cpp_payloads.mjs`.
+// Regression guards for playlist-envelope drift.
 //
-//   §5.3 finding  Before the fix, `bridge.invoke<PlaylistTrack[]>(
+//   Finding       Before the fix, `bridge.invoke<PlaylistTrack[]>(
 //                 'playlist.getTracks', …)` pretended the response was
 //                 a bare array, but the C++ handler always returns
 //                 `{ playlist, start, count, total, tracks: [...] }`.
@@ -96,7 +95,7 @@ describe('playlist namespace — §5.3 envelope unwrap', () => {
         expect(native.invoke.mock.calls[0][1]).not.toHaveProperty('formats');
     });
 
-    it('getTracks unwraps `tracks` from the envelope (§5.3 BLOCKER)', async () => {
+    it('getTracks unwraps `tracks` from the envelope', async () => {
         const native = makeNative();
         native.invoke.mockResolvedValue({
             playlist: 0,

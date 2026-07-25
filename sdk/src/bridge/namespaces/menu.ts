@@ -17,6 +17,7 @@ import type {
 } from '../../types/generated/responses.js';
 import type {
     MenuGetContextMenuParams,
+    MenuGetMainMenuParams,
     MenuRunContextCommandByIdParams,
     MenuShowNativePopupParams,
 } from '../../types/generated/params.js';
@@ -33,10 +34,18 @@ function withPosition<T extends object>(
 }
 
 export const menu = {
-    /** `root` scopes the returned menu tree (e.g. `'Main'` / `'View'`). */
-    getMainMenu: (root?: string) =>
+    /**
+     * `root` scopes the returned menu tree (e.g. `'Main'` / `'View'`).
+     * `opts.locale` selects the `displayLabel` translation locale; the
+     * default `'auto'` keeps the host's native labels untranslated.
+     * `opts.i18n: false` disables label translation entirely.
+     * `opts.withAvailability` (default `true`) includes per-submenu
+     * command availability counters.
+     */
+    getMainMenu: (root?: string, opts?: Omit<MenuGetMainMenuParams, 'root'>) =>
         bridge.invoke<MenuGetMainMenuResponse>('menu.getMainMenu', {
             ...(root ? { root } : {}),
+            ...opts,
         }),
     /** `mode` is one of `'auto' | 'selection' | 'playlist' | 'nowPlaying' | 'handles'`. */
     getContextMenu: (opts?: MenuGetContextMenuParams) =>

@@ -1,7 +1,7 @@
 // sdk/src/smp/classes/FbMetadbHandleList.test.ts
 //
-// Phase 5.1 test gate (plan §8.7) — FbMetadbHandleList Proxy / mutation
-// contract. Themes treat the list as a hybrid array-like so the
+// FbMetadbHandleList Proxy / mutation contract.
+// Themes treat the list as a hybrid array-like so the
 // numeric-index access path and the `Count` getter must both work.
 
 import { describe, expect, it } from 'vitest';

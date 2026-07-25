@@ -1,11 +1,10 @@
 // sdk/src/bridge/Bridge.test.ts
 //
-// Phase 2 test gate (plan §8.7.1) — minimum coverage of Bridge core
-// semantics that audit BLOCKER 1 / 2 / CRITICAL 3 depend on:
+// Core Bridge semantics:
 //
 //   - mock fallback when window.fb2k is missing
 //   - happy-path delegation to the native invoke()
-//   - ready() returns Promise<void> (NOT a method reference — BLOCKER 1)
+//   - ready() returns Promise<void> (NOT a method reference)
 //   - on() returns an unsubscribe callback that calls native.off()
 //   - once() auto-detaches its wrapper after first delivery
 //   - invoke() propagates host rejections without swallowing them
@@ -78,15 +77,15 @@ describe('Bridge', () => {
         );
     });
 
-    it('ready() returns a Promise<void> (BLOCKER 1 regression guard)', async () => {
+    it('ready() returns a Promise<void>', async () => {
         const native = makeNative();
         vi.stubGlobal('window', { fb2k: native });
         const { bridge } = await import('./Bridge.js');
 
         const ready = bridge.ready();
         expect(ready).toBeInstanceOf(Promise);
-        // BLOCKER 1: must resolve to undefined (void), not return the
-        // method reference itself.
+        // Must resolve to undefined (void), not return the method
+        // reference itself.
         await expect(ready).resolves.toBeUndefined();
     });
 

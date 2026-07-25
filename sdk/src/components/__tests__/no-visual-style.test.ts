@@ -1,6 +1,7 @@
 // sdk/src/components/__tests__/no-visual-style.test.ts
 //
-// Phase 4 drift guard — enforces `AGENTS.md §2.6.1` "功能骨架，零视觉主张":
+// Drift guard for the zero-style component contract: components ship
+// functional structure only and leave every visual decision to the theme.
 //
 //   * Structural CSS (display / position / overflow / flex / grid / gap /
 //     width / height / cursor / pointer-events / user-select / box-sizing /
@@ -118,7 +119,7 @@ const BANNED: BannedRule[] = [
  * declarations as hit-target wideners, and those are documented in
  * the immediately adjacent comment line. `padding` isn't on the
  * banned list, but we spot-check that every `padding:` inside a
- * `<style>` block has an adjacent AGENTS.md §2.6.1 citation to keep
+ * `<style>` block has an adjacent `hit-target` justification to keep
  * future contributors from sneaking in visual padding. */
 function assertPaddingIsDocumented(
     fileName: string,
@@ -131,7 +132,7 @@ function assertPaddingIsDocumented(
         const block = m[1];
         // Any `padding:` inside the block must have a sibling comment
         // somewhere in the same template-literal cluster mentioning
-        // either "hit-target" or "§2.6.1" to signal intent.
+        // "hit-target" to signal intent.
         if (/(?:^|[\s;{])padding\s*:/i.test(block)) {
             // Walk backwards ~400 chars from the block's start to find
             // the documenting comment; if we can't find one, fail.
@@ -140,13 +141,11 @@ function assertPaddingIsDocumented(
                 Math.max(0, blockStart - 600),
                 blockStart + block.length,
             );
-            const documented =
-                /hit-target/i.test(window) || /§\s*2\.6\.1/.test(window);
+            const documented = /hit-target/i.test(window);
             if (!documented) {
                 throw new Error(
                     `${fileName}: <style> contains \`padding:\` without an ` +
-                        `adjacent "hit-target" / "§2.6.1" justification ` +
-                        `comment — see AGENTS.md §2.6.1 whitelist rules.`,
+                        `adjacent "hit-target" justification comment.`,
                 );
             }
         }
@@ -187,8 +186,7 @@ describe('components drift guard — no visual-intent CSS in <style>', () => {
                     match,
                     `${f}: banned property "${rule.name}" found in <style>:\n` +
                         `  match = ${match?.[0]?.trim()}\n` +
-                        `  Move the declaration to the theme layer ` +
-                        `(see AGENTS.md §2.6.1).`,
+                        `  Move the declaration to the theme layer.`,
                 ).toBeNull();
             }
 

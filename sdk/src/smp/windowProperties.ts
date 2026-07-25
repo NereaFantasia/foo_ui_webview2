@@ -8,8 +8,6 @@
  * - `window.GetProperty(name, default)`  → `config.get`  (`smp.prop.<name>` namespace).
  * - `window.SetProperty(name, value)`    → `config.set` / `config.remove`.
  * - `window.NotifyOthers(name, info)`    → `window.broadcast` with a wrapped envelope.
- *
- * Migrated from `sdk/smp-compat.js:1671-1705`.
  */
 
 import type { SmpBridgeShape } from './bridgeShape.js';

@@ -44,8 +44,7 @@ export class FbSeekBar extends FbBaseElement {
             `<style>${FbBaseElement.baseCSS}` +
             `:host{display:flex;align-items:center;width:100%}` +
             // `padding:6px 0` widens the click target for the thin
-            // seek track — hit-target only, not a visual decision
-            // (see AGENTS.md §2.6.1 "Hit-target padding" whitelist).
+            // seek track — hit-target only, not a visual decision.
             `[part=track]{position:relative;flex:1;cursor:pointer;padding:6px 0}` +
             `[part=fill]{position:absolute;top:50%;left:0;transform:translateY(-50%);pointer-events:none}` +
             `[part=thumb]{position:absolute;top:50%;transform:translateY(-50%);pointer-events:none}` +

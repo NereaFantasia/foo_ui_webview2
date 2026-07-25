@@ -123,6 +123,32 @@ export interface TrayMenuItem {
     segments?: { label?: string; iconSvg?: { viewBox: string; content: string }; enabled?: boolean }[];
     /** Child items; requires `type: 'submenu'`. */
     submenu?: TrayMenuItem[];
+    /**
+     * Declare a native playback action executed by the plugin instead of the
+     * page. One of `'play-pause' | 'previous' | 'next' | 'stop'`; omit for an
+     * ordinary item. Valid only on a `type: 'normal'` leaf (never on a
+     * separator, submenu, or rich control).
+     *
+     * When set, the item keeps its caller-supplied `label` / `icon` / `id` but
+     * the selection is translated at composition time into the matching built-in
+     * command and run natively by the plugin. Because it does not depend on the
+     * main WebView, it stays reliable while the window is minimized, hidden to
+     * the tray, or the session is locked — states in which the page is
+     * deep-suspended and a `tray:menuItemClicked` handler would not run.
+     *
+     * A declared item therefore does **not** fire `tray:menuItemClicked`; reflect
+     * button state from `playback:*` events instead. This mirrors Electron
+     * `MenuItem.role` and Tauri `PredefinedMenuItem`: a declared native action
+     * supersedes the click callback. Plain items without this field still report
+     * through `tray:menuItemClicked` and only work while the page is running.
+     *
+     * The value is validated fail-loud: an unknown token, or a declaration on an
+     * unsupported item type, rejects the whole `setContextMenu` /
+     * `appendMenuItems` call with an `INVALID_PARAMS` error. `'exit'` is not
+     * accepted (application exit stays the reserved `_sys_exit` item). This field
+     * applies to tray menus only and has no effect on `menu.show`.
+     */
+    playbackAction?: 'play-pause' | 'previous' | 'next' | 'stop';
 }
 
 /** Menu zone identifier. See {@link TrayMenuConfig.customPosition}. */
@@ -147,10 +173,14 @@ export interface TrayMenuConfig {
      *
      * - `'native'`: Win32 tray menu (`TrackPopupMenu`).
      * - `'webview'`: self-drawn content-sized overlay rendered by the WebView2
-     *   engine, floating above the taskbar. Selection still arrives via the
-     *   `tray:menuItemClicked` event and `tray:beforeContextMenu` is still
-     *   fired; the webview tray menu does **not** emit `menu:select` /
-     *   `menu:dismiss` (those belong to the `menu.*` namespace).
+     *   engine, floating above the taskbar. Selecting an ordinary user item
+     *   arrives via the `tray:menuItemClicked` event, and
+     *   `tray:beforeContextMenu` is still fired; the webview tray menu does
+     *   **not** emit `menu:select` / `menu:dismiss` (those belong to the
+     *   `menu.*` namespace). Items executed natively by the plugin — the
+     *   built-in `showPlaybackControls` / `showSystemItems` injections and any
+     *   item declaring {@link TrayMenuItem.playbackAction} — run their command
+     *   directly and do **not** fire `tray:menuItemClicked`.
      *
      * The rich item kinds (`'nowplaying'` / `'rating'` / `'slider'` /
      * `'segmented'`) are only fully rendered by `'webview'`. Their interactions
@@ -209,8 +239,8 @@ export interface TrayMenuConfig {
      * segmented `.fb-seg*` (`.fb-seg-label` / `.fb-seg-group` / `.fb-seg-btn` with
      * `.on` / `.disabled`) — and win by source order or `!important`. (The
      * overlay is an isolated top-level document, so a host page's `::part()`
-     * cannot reach it; the stable class / data-attribute hooks are the supported
-     * contract — see STYLING_TAKEOVER_DESIGN §12.3 D-B and DESIGN §5.4.)
+     * cannot reach it; the stable class / data-attribute hooks above are the
+     * supported styling contract.)
      *
      * A small protected structural layer (`#viewport`, menu box-sizing / fixed
      * positioning / overflow, and the hidden-state fallback) is always

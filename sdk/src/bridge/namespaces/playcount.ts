@@ -39,12 +39,13 @@ export const playcount = {
      * mutating playback statistics. The C++ handler is a placeholder that
      * always responds with `{success:false, error:"Direct playcount
      * modification not supported. Use rating.set for ratings."}`. The
-     * `count` argument is accepted for backwards compatibility but is
-     * silently dropped on the host side. Use `fb.rating.set` for
-     * rating mutation, or trigger play counts via actual playback.
+     * `count` argument is retained for signature compatibility but is
+     * not sent to the host (the handler never reads it). Use
+     * `fb.rating.set` for rating mutation, or trigger play counts via
+     * actual playback.
      */
     set: (path: string, count: number) =>
-        bridge.invoke<BaseResponse>('playcount.set', { path, count }),
+        bridge.invoke<BaseResponse>('playcount.set', { path }),
     /** Aggregate library-wide playcount statistics. */
     getStats: () => bridge.invoke<PlaycountStats>('playcount.getStats'),
 };

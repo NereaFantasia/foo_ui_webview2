@@ -547,7 +547,7 @@ export class FbPlaylistView extends FbBaseElement {
             // Structure only — themes hook `[data-star][data-filled]` for
             // the fill colour and any hover transitions.
             // `padding:0 1px` widens the click target for the rating
-            // cells (see `AGENTS.md §2.6.1` hit-target rule).
+            // cells — hit-target only, not a visual decision.
             s.style.cssText = 'cursor:pointer;padding:0 1px;display:inline-block';
             if (filled) s.dataset.filled = '';
             cell.appendChild(s);

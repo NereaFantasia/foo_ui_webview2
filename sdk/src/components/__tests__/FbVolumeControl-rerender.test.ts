@@ -1,8 +1,6 @@
 // sdk/src/components/__tests__/FbVolumeControl-rerender.test.ts
 //
-// Regression guard for AUDIT_REPORT_2026-05-09 Bug #5
-// (`docs/report/sdk-source-audit/AUDIT_REPORT_2026-05-09.md` MINOR
-// section).
+// Regression guard for runtime `vertical` attribute changes.
 //
 // Symptom — `<fb-volume-control>` declares `['vertical', 'no-icon']`
 // in `observedAttributes`, but for a long time it had no

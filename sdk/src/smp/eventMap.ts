@@ -11,8 +11,6 @@
  * - `SMP_EVENT_MAP` resolves the SMP name to the canonical FB event.
  * - `SMP_PARAM_ADAPTERS` reshapes each canonical payload into the
  *   positional argument list SMP scripts expect.
- *
- * Migrated from `sdk/smp-compat.js:304-504`.
  */
 
 import type { SmpBridgeShape } from './bridgeShape.js';

@@ -8,8 +8,6 @@ import type { JsonObject } from '../types/json.js';
  * small composition); the cache-backed properties read from the
  * shared {@link SmpCompatCache}.
  *
- * Migrated from `sdk/smp-compat.js:509-832, 1212-1352, 1605-1665`.
- *
  * Cache rollback rule: every cache-backed setter writes the new value
  * optimistically, fires the C++ invoke, and on rejection rolls the
  * cache back so UI subscribers see eventual consistency. Sync helpers

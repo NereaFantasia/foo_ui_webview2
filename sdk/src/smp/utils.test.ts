@@ -1,6 +1,6 @@
 // sdk/src/smp/utils.test.ts
 //
-// Phase 5.1 test gate — smpUtils helpers (toHandleId / normalizeHandleList /
+// smpUtils helpers (toHandleId / normalizeHandleList /
 // toHandleIdArray / clamp / sleep / buildMenuItems) contract.
 
 import { describe, expect, it, vi } from 'vitest';

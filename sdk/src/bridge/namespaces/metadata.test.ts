@@ -1,11 +1,10 @@
 // sdk/src/bridge/namespaces/metadata.test.ts
 //
-// Phase 5 §5.6 contract: default `metadata:writeComplete` subscriber.
+// Contract for the default `metadata:writeComplete` subscriber.
 //
 // The `metadata.ts` module installs a module-level `bridge.on(
 // 'metadata:writeComplete', ...)` logger so async-write failures surface
-// in the JS console and so the `cpp_api_event` is not flagged as W5
-// orphan. This test gate locks in three properties:
+// in the JS console. This test locks in three properties:
 //
 //   1. importing the module registers exactly one listener for the
 //      `metadata:writeComplete` event;
@@ -88,6 +87,8 @@ describe('metadata namespace (§5.6 default logger)', () => {
             'write',
             'writeBatch',
             'embedArtwork',
+            'embedArtworkBytes',
+            'embedArtworkFromDataUrl',
             'removeEmbeddedArt',
             'removeField',
             'removeTag',
@@ -97,9 +98,9 @@ describe('metadata namespace (§5.6 default logger)', () => {
         expect(Object.keys(metadata).sort()).toEqual(expectedKeys);
     });
 
-    // ── Phase 5 §5.3 envelope typing guards ──────────────────────────
+    // ── Envelope typing guards ───────────────────────────────────────
     //
-    // Before the audit fix, `metadata.read` was typed as
+    // Previously, `metadata.read` was typed as
     // `bridge.invoke<TrackInfo>('metadata.read', …)` but the C++ handler
     // always returns `{ success, path, tags, info }`. Consumer code had
     // to cast through `unknown` to reach `.tags` / `.info`. These tests
@@ -208,5 +209,70 @@ describe('metadata namespace (§5.6 default logger)', () => {
         expect(result?.TRACKNUMBER).toBe('7');
         expect(result?.canonicalPath).toBe('C:\\music\\track.flac');
         expect(result).not.toHaveProperty('tags');
+    });
+
+    it('embedArtworkBytes sends raw Base64 imageData to the existing endpoint', async () => {
+        const native = makeNative();
+        native.invoke.mockResolvedValue({ success: true });
+        vi.stubGlobal('window', { fb2k: native });
+        const { metadata } = await import('./metadata.js');
+
+        await metadata.embedArtworkBytes(
+            '/music/track.flac',
+            new Uint8Array([0xff, 0xd8, 0xff, 0xe0]),
+            {
+                type: 'front',
+                target: 'all',
+                path: '/wrong.flac',
+                imageData: 'wrong',
+            } as never,
+        );
+
+        expect(native.invoke).toHaveBeenCalledWith('metadata.embedArtwork', {
+            path: '/music/track.flac',
+            imageData: '/9j/4A==',
+            type: 'front',
+            target: 'all',
+        });
+    });
+
+    it('embedArtworkFromDataUrl strips the image data URL header', async () => {
+        const native = makeNative();
+        native.invoke.mockResolvedValue({ success: true });
+        vi.stubGlobal('window', { fb2k: native });
+        const { metadata } = await import('./metadata.js');
+
+        await metadata.embedArtworkFromDataUrl(
+            '/music/track.flac',
+            'data:image/png;base64,iVBORw==',
+            {
+                target: ['embedded', 'file'],
+                path: '/wrong.flac',
+                imageData: 'wrong',
+            } as never,
+        );
+
+        expect(native.invoke).toHaveBeenCalledWith('metadata.embedArtwork', {
+            path: '/music/track.flac',
+            imageData: 'iVBORw==',
+            target: ['embedded', 'file'],
+        });
+    });
+
+    it.each([
+        'data:text/plain;base64,SGVsbG8=',
+        'data:image/+;base64,iVBORw==',
+        'data:image/png,iVBORw==',
+        'data:image/png;charset=utf-8;base64,iVBORw==',
+        'data:image/png;base64,not-base64',
+    ])('embedArtworkFromDataUrl rejects invalid image input: %s', async (input) => {
+        const native = makeNative();
+        vi.stubGlobal('window', { fb2k: native });
+        const { metadata } = await import('./metadata.js');
+
+        await expect(
+            metadata.embedArtworkFromDataUrl('/music/track.flac', input),
+        ).rejects.toThrow(TypeError);
+        expect(native.invoke).not.toHaveBeenCalled();
     });
 });

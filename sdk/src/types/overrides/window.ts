@@ -39,7 +39,7 @@ export type WindowPopupProfile =
  *   4. host built-in defaults
  *
  * @codegen-override params:window.createPopup
- * @codegen-snapshot alwaysOnTop:primitive,backdropPolicy:primitive,beforeClose:primitive,behavior:primitive,clickThrough:primitive,frame:primitive,height:primitive,maxHeight:primitive,maxWidth:primitive,minHeight:primitive,minWidth:primitive,profile:primitive,resizable:primitive,showInTaskbar:primitive,title:primitive,transparent:primitive,url:primitive,width:primitive,x:primitive,y:primitive
+ * @codegen-snapshot alwaysOnTop:primitive,backdropPolicy:unknown,beforeClose:primitive,behavior:unknown,clickThrough:primitive,frame:primitive,height:primitive,maxHeight:primitive,maxWidth:primitive,minHeight:primitive,minWidth:primitive,profile:primitive,resizable:primitive,showInTaskbar:primitive,title:primitive,transparent:primitive,url:primitive,width:primitive,x:primitive,y:primitive
  */
 export interface WindowCreatePopupParams {
     /** Initial document URL. @default "" */
@@ -103,7 +103,7 @@ export interface WindowCreatePopupParams {
  * emits `window:behaviorChanged` once the patch is applied.
  *
  * @codegen-override params:window.setPopupBehavior
- * @codegen-snapshot behavior:primitive,profile:primitive,windowId:primitive
+ * @codegen-snapshot behavior:unknown,profile:primitive,windowId:primitive
  */
 export interface WindowSetPopupBehaviorParams {
     /** Target popup id; omit to address the calling window. @default "" */
@@ -112,4 +112,39 @@ export interface WindowSetPopupBehaviorParams {
     profile?: WindowPopupProfile;
     /** Per-field overrides; pass `null` to clear an individual field. */
     behavior?: WindowPopupBehaviorPatch;
+}
+
+/**
+ * Parameters for `window.getBackdropPolicy`.
+ *
+ * The host resolves the target window through the shared window-target
+ * resolver, which lives in a separate translation unit from the handler —
+ * the auto-generator's single-TU AST walk cannot see the `windowId` read,
+ * so this override documents it by hand.
+ *
+ * @codegen-override params:window.getBackdropPolicy
+ * @codegen-snapshot 
+ */
+export interface WindowGetBackdropPolicyParams {
+    /** Target window id; omit to address the calling window (main-window fallback). */
+    windowId?: string;
+}
+
+/**
+ * Parameters for `window.setBackdropPolicy`.
+ *
+ * `backdropPolicy` is required: the host rejects requests that omit it or
+ * pass a non-object. `windowId` is read by the shared window-target
+ * resolver in a separate translation unit (invisible to the
+ * auto-generator's single-TU AST walk); mutations do not fall back to the
+ * main window when neither `windowId` nor a caller window is resolvable.
+ *
+ * @codegen-override params:window.setBackdropPolicy
+ * @codegen-snapshot backdropPolicy:unknown
+ */
+export interface WindowSetBackdropPolicyParams {
+    /** Target window id; omit to address the calling window. */
+    windowId?: string;
+    /** Per-field DWM backdrop overrides; pass `null` to clear an individual field. */
+    backdropPolicy: WindowBackdropPolicyPatch;
 }

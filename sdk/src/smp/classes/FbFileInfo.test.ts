@@ -1,6 +1,6 @@
 // sdk/src/smp/classes/FbFileInfo.test.ts
 //
-// Phase 5.1 test gate — FbFileInfo case-insensitive lookup contract.
+// FbFileInfo case-insensitive lookup contract.
 
 import { describe, expect, it } from 'vitest';
 

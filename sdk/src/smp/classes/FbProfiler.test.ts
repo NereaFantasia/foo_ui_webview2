@@ -1,6 +1,6 @@
 // sdk/src/smp/classes/FbProfiler.test.ts
 //
-// Phase 5.1 test gate — FbProfiler stopwatch contract.
+// FbProfiler stopwatch contract.
 
 import { describe, expect, it, vi } from 'vitest';
 

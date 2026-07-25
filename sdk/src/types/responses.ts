@@ -2334,6 +2334,22 @@ export interface DiscoveryMainMenuCommand {
     guid: string;
     parentGuid: string;
     index: number;
+    /** Slash-separated label path, e.g. `ESLyric/Search lyrics`. */
+    path?: string;
+    /** True for a dynamic parent slot and for every command expanded from it. */
+    isDynamic?: boolean;
+    /**
+     * True only for the container slot of a dynamic submenu. Such an entry is
+     * not executable on its own — use the expanded child entries instead.
+     */
+    isDynamicParent?: boolean;
+    /**
+     * Sub-command GUID of a dynamic child. Pass it alongside `guid` to
+     * `executeMainMenuCommand` to run the command.
+     */
+    subGuid?: string;
+    /** Raw display flags reported by the dynamic menu node. */
+    flags?: number;
 }
 
 /** Main-menu group descriptor returned by `discovery.getMainMenuGroups`. */
@@ -2406,7 +2422,10 @@ export interface DiscoveryPreferencePageInfo {
 
 /** Aggregate service counts returned by `discovery.getAllServices`. */
 export interface DiscoveryServiceCounts {
+    /** Includes commands expanded from dynamic submenus. */
     mainMenuCommands: number;
+    /** Subset of `mainMenuCommands` contributed by dynamic submenus. */
+    mainMenuDynamicCommands?: number;
     mainMenuGroups: number;
     inputFormats: number;
     uiElements: number;
@@ -2423,12 +2442,22 @@ export interface DiscoverySearchResult {
     guid: string;
     /** Source taxonomy — currently only `'mainmenu'`. */
     type: string;
+    /** Slash-separated label path of the command. */
+    path?: string;
+    /** True when the hit came from an expanded dynamic submenu. */
+    isDynamic?: boolean;
+    /** Sub-command GUID required to execute a dynamic child. */
+    subGuid?: string;
 }
 
 /** Response shape returned by `discovery.getMainMenuCommands`. */
 export interface DiscoveryGetMainMenuCommandsResponse extends BaseResponse {
     commands: DiscoveryMainMenuCommand[];
     count: number;
+    /** Echoes whether dynamic submenus were expanded for this call. */
+    expandDynamic?: boolean;
+    /** Number of entries contributed by expanded dynamic submenus. */
+    dynamicCount?: number;
 }
 
 /** Response shape returned by `discovery.getMainMenuGroups`. */
@@ -2497,6 +2526,8 @@ export interface DiscoverySearchCommandsResponse extends BaseResponse {
     query?: string;
     results?: DiscoverySearchResult[];
     count?: number;
+    /** Echoes whether dynamic subtrees were expanded before matching. */
+    expandDynamic?: boolean;
 }
 
 // ============================================================================

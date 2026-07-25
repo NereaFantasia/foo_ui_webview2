@@ -3,6 +3,7 @@
  */
 
 import { bridge } from '../Bridge.js';
+import { bytesToBase64, parseBase64DataUrl } from '../binaryData.js';
 import type {
     BaseResponse,
     MetadataReadBatchResponse,
@@ -17,6 +18,14 @@ import type {
     MetadataRemoveEmbeddedArtParams,
 } from '../../types/generated/params.js';
 import type { MetadataEmbedArtworkResponse } from '../../types/generated/responses.js';
+
+/** Options for artwork byte helpers; the helper owns `imageData`. */
+export type MetadataArtworkBytesOptions = Omit<
+    MetadataEmbedArtworkParams,
+    'path' | 'imageData' | 'target'
+> & {
+    target?: 'embedded' | 'file' | 'all' | Array<'embedded' | 'file'>;
+};
 
 /**
  * Default failure logger for `metadata:writeComplete`.
@@ -57,6 +66,40 @@ export function disableDefaultMetadataLogger(): void {
         _defaultMetadataLoggerOff();
         _defaultMetadataLoggerOff = null;
     }
+}
+
+function metadataEmbedArtworkBytes(
+    path: string,
+    bytes: ArrayBuffer | Uint8Array,
+    opts?: MetadataArtworkBytesOptions,
+) {
+    return bridge.invoke<MetadataEmbedArtworkResponse>(
+        'metadata.embedArtwork',
+        {
+            ...opts,
+            path,
+            imageData: bytesToBase64(bytes),
+        },
+    );
+}
+
+async function metadataEmbedArtworkFromDataUrl(
+    path: string,
+    dataUrl: string,
+    opts?: MetadataArtworkBytesOptions,
+) {
+    const { mediaType, base64 } = parseBase64DataUrl(dataUrl);
+    if (!mediaType.startsWith('image/')) {
+        throw new TypeError('Expected an image Base64 data URL.');
+    }
+    return bridge.invoke<MetadataEmbedArtworkResponse>(
+        'metadata.embedArtwork',
+        {
+            ...opts,
+            path,
+            imageData: base64,
+        },
+    );
 }
 
 export const metadata = {
@@ -173,6 +216,10 @@ export const metadata = {
                 note?: string;
             }
         >('metadata.removeTag', { path, tags }),
+    /** Embed exact image bytes without exposing the raw Base64 wire format. */
+    embedArtworkBytes: metadataEmbedArtworkBytes,
+    /** Embed a Base64 `data:image/*` URL; rejects malformed input. */
+    embedArtworkFromDataUrl: metadataEmbedArtworkFromDataUrl,
     /** Detach the default failure logger; see {@link disableDefaultMetadataLogger}. */
     disableDefaultLogger: disableDefaultMetadataLogger,
 };

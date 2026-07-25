@@ -1,6 +1,6 @@
 // sdk/src/smp/handleId.test.ts
 //
-// Phase 5.1 test gate (plan §8.7) — handle-id round-trip semantics.
+// Handle-id round-trip semantics.
 // These contract-level tests defend the legacy SMP `path|subsong:N`
 // vocabulary used across selection.set / metadata.read / etc.
 

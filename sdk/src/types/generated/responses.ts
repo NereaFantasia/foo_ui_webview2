@@ -102,11 +102,11 @@ export interface ArtworkGetCurrentResponse {
  */
 export interface ArtworkGetFb2kUrlResponse {
     available: boolean;
-    type: string;
+    type?: string;
     reason?: string;
-    dataUrl?: string;
     error?: string;
-    code: string;
+    code?: string;
+    dataUrl?: string;
 }
 
 /**
@@ -114,11 +114,11 @@ export interface ArtworkGetFb2kUrlResponse {
  */
 export interface ArtworkGetFb2kUrlByPathResponse {
     available: boolean;
-    type: string;
+    type?: string;
     error?: string;
+    code?: string;
     path?: string;
     dataUrl?: string;
-    code: string;
 }
 
 /**
@@ -127,9 +127,8 @@ export interface ArtworkGetFb2kUrlByPathResponse {
 export interface ArtworkGetFb2kUrlByPathBatchResponse {
     success: boolean;
     error?: string;
+    code?: string;
     artworks?: JsonObject;
-    available: boolean;
-    code: string;
 }
 
 /**
@@ -203,20 +202,20 @@ export interface AudioAnalyzeBPMResponse {
  */
 export interface AudioGenerateFullWaveformResponse {
     success: boolean;
-    status: string;
-    cached: boolean;
+    error?: unknown;
+    code?: unknown;
+    status?: string;
+    cached?: boolean;
     waveform?: number[];
     duration?: number;
     sampleRate?: number;
     channels?: number;
-    resolution: number;
-    method: string;
-    scale: string;
-    path: string;
+    resolution?: number;
+    method?: string;
+    scale?: string;
+    path?: string;
     taskId?: string;
     signed?: boolean;
-    error: unknown;
-    code: unknown;
 }
 
 /**
@@ -725,6 +724,8 @@ export interface DiscoveryExecuteMainMenuCommandResponse {
     success: boolean;
     error?: string;
     guid?: string;
+    subGuid?: string;
+    dynamic?: boolean;
 }
 
 /**
@@ -794,6 +795,8 @@ export interface DiscoveryGetMainMenuCommandsResponse {
     success: boolean;
     commands: JsonObject;
     count: number;
+    expandDynamic: boolean;
+    dynamicCount: number;
 }
 
 /**
@@ -841,6 +844,7 @@ export interface DiscoverySearchCommandsResponse {
     query?: string;
     results?: JsonObject;
     count?: number;
+    expandDynamic?: boolean;
 }
 
 /**
@@ -1357,10 +1361,10 @@ export interface LibraryBrowseDirectoryResponse {
  * Response from `library.browseTree`.
  */
 export interface LibraryBrowseTreeResponse {
-    files: unknown;
-    success: boolean;
-    error: unknown;
-    code: unknown;
+    success?: boolean;
+    error?: unknown;
+    code?: unknown;
+    files?: unknown;
 }
 
 /**
@@ -1681,8 +1685,8 @@ export interface LyricsGetResponse {
 export interface LyricsSaveResponse {
     success: boolean;
     error?: string;
-    results?: JsonObject;
     savedTo?: string;
+    results?: JsonObject;
 }
 
 /**
@@ -1778,10 +1782,10 @@ export interface MenuRunMainMenuCommandResponse {
  */
 export interface MenuShowResponse {
     success: boolean;
-    error?: string;
+    error?: unknown;
+    code?: unknown;
+    details?: JsonObject;
     menuId?: string;
-    code: unknown;
-    details: JsonObject;
 }
 
 /**
@@ -1800,9 +1804,9 @@ export interface MetadataEmbedArtworkResponse {
     error?: string;
     path?: string;
     type?: string;
-    results?: JsonObject;
     size?: number;
     savedTo?: string;
+    results?: JsonObject;
 }
 
 /**
@@ -2324,6 +2328,8 @@ export interface PlaycountSetResponse {
 export interface PlaylistAddHandlesResponse {
     success: boolean;
     error?: string;
+    code?: unknown;
+    details?: JsonObject;
     /** int64 — may lose precision above 2^53 */
     playlist?: number;
     requestedCount?: number;
@@ -2335,8 +2341,6 @@ export interface PlaylistAddHandlesResponse {
     countBefore?: number;
     /** int64 — may lose precision above 2^53 */
     totalCount?: number;
-    code: unknown;
-    details: JsonObject;
 }
 
 /**
@@ -2345,6 +2349,8 @@ export interface PlaylistAddHandlesResponse {
 export interface PlaylistAddPathsResponse {
     success: boolean;
     error?: string;
+    code?: unknown;
+    details?: JsonObject;
     /** int64 — may lose precision above 2^53 */
     playlist?: number;
     requestedPaths?: number;
@@ -2356,8 +2362,6 @@ export interface PlaylistAddPathsResponse {
     addedCount?: number;
     /** int64 — may lose precision above 2^53 */
     totalCount?: number;
-    code: unknown;
-    details: JsonObject;
 }
 
 /**
@@ -2366,14 +2370,14 @@ export interface PlaylistAddPathsResponse {
 export interface PlaylistAddPathsAsyncResponse {
     success: boolean;
     error?: string;
+    code?: unknown;
+    details?: JsonObject;
     /** int64 — may lose precision above 2^53 */
     invalidCount?: number;
     operationId?: string;
     status?: string;
     /** int64 — may lose precision above 2^53 */
     totalCount?: number;
-    code: unknown;
-    details: JsonObject;
 }
 
 /**
@@ -2382,13 +2386,13 @@ export interface PlaylistAddPathsAsyncResponse {
 export interface PlaylistAddPathsSequentialResponse {
     success: boolean;
     error?: string;
+    code?: unknown;
+    details?: JsonObject;
     /** int64 — may lose precision above 2^53 */
     playlist?: number;
     /** int64 — may lose precision above 2^53 */
     addedCount?: number;
     order?: JsonObject;
-    code: unknown;
-    details: JsonObject;
 }
 
 /**
@@ -2397,14 +2401,14 @@ export interface PlaylistAddPathsSequentialResponse {
 export interface PlaylistClearResponse {
     success: boolean;
     error?: string;
+    code?: unknown;
+    details?: JsonObject;
     /** int64 — may lose precision above 2^53 */
     playlist?: number;
     /** int64 — may lose precision above 2^53 */
     clearedCount?: number;
     /** int64 — may lose precision above 2^53 */
     remainingCount?: number;
-    code: unknown;
-    details: JsonObject;
 }
 
 /**
@@ -2634,6 +2638,8 @@ export interface PlaylistGetTracksResponse {
 export interface PlaylistInsertTracksResponse {
     success: boolean;
     error?: string;
+    code?: unknown;
+    details?: JsonObject;
     /** int64 — may lose precision above 2^53 */
     playlist?: number;
     requestedCount?: number;
@@ -2647,8 +2653,6 @@ export interface PlaylistInsertTracksResponse {
     countBefore?: number;
     /** int64 — may lose precision above 2^53 */
     totalCount?: number;
-    code: unknown;
-    details: JsonObject;
 }
 
 /**
@@ -2678,8 +2682,8 @@ export interface PlaylistIsLockedResponse {
 export interface PlaylistMoveTracksResponse {
     success: boolean;
     error?: string;
-    code: unknown;
-    details: JsonObject;
+    code?: unknown;
+    details?: JsonObject;
 }
 
 /**
@@ -2704,8 +2708,8 @@ export interface PlaylistRedoResponse {
 export interface PlaylistRemoveResponse {
     success: boolean;
     error?: string;
-    code: unknown;
-    details: JsonObject;
+    code?: unknown;
+    details?: JsonObject;
 }
 
 /**
@@ -2726,8 +2730,8 @@ export interface PlaylistRemoveAutoplaylistResponse {
 export interface PlaylistRemoveSelectedTracksResponse {
     success: boolean;
     error?: string;
-    code: unknown;
-    details: JsonObject;
+    code?: unknown;
+    details?: JsonObject;
 }
 
 /**
@@ -2736,8 +2740,8 @@ export interface PlaylistRemoveSelectedTracksResponse {
 export interface PlaylistRemoveTracksResponse {
     success: boolean;
     error?: string;
-    code: unknown;
-    details: JsonObject;
+    code?: unknown;
+    details?: JsonObject;
 }
 
 /**
@@ -2754,6 +2758,8 @@ export interface PlaylistRenameResponse {
 export interface PlaylistReorderResponse {
     success: boolean;
     error?: string;
+    code?: unknown;
+    details?: JsonObject;
     /** int64 — may lose precision above 2^53 */
     expected?: number;
     got?: number;
@@ -2763,8 +2769,6 @@ export interface PlaylistReorderResponse {
     playlist?: number;
     /** int64 — may lose precision above 2^53 */
     itemCount?: number;
-    code: unknown;
-    details: JsonObject;
 }
 
 /**
@@ -2788,6 +2792,8 @@ export interface PlaylistReorderPlaylistsResponse {
 export interface PlaylistReplaceAllAndPlayResponse {
     success: boolean;
     error?: string;
+    code?: unknown;
+    details?: JsonObject;
     /** int64 — may lose precision above 2^53 */
     clearedCount?: number;
     /** int64 — may lose precision above 2^53 */
@@ -2800,8 +2806,6 @@ export interface PlaylistReplaceAllAndPlayResponse {
     totalCount?: number;
     /** int64 — may lose precision above 2^53 */
     playIndex?: number;
-    code: unknown;
-    details: JsonObject;
 }
 
 /**
@@ -2809,9 +2813,9 @@ export interface PlaylistReplaceAllAndPlayResponse {
  */
 export interface PlaylistReverseResponse {
     success: boolean;
-    error: unknown;
-    code: unknown;
-    details: JsonObject;
+    error?: unknown;
+    code?: unknown;
+    details?: JsonObject;
 }
 
 /**
@@ -2851,8 +2855,8 @@ export interface PlaylistSetSelectionResponse {
 export interface PlaylistShuffleResponse {
     success: boolean;
     error?: string;
-    code: unknown;
-    details: JsonObject;
+    code?: unknown;
+    details?: JsonObject;
 }
 
 /**
@@ -2861,8 +2865,8 @@ export interface PlaylistShuffleResponse {
 export interface PlaylistSortResponse {
     success: boolean;
     error?: string;
-    code: unknown;
-    details: JsonObject;
+    code?: unknown;
+    details?: JsonObject;
 }
 
 /**
@@ -3339,7 +3343,7 @@ export type SystemSearchApisResponse = JsonObject;
  */
 export interface TaskbarFlashResponse {
     success: boolean;
-    panelMode: boolean;
+    panelMode?: boolean;
 }
 
 /**
@@ -3347,7 +3351,7 @@ export interface TaskbarFlashResponse {
  */
 export interface TaskbarSetOverlayIconResponse {
     success: boolean;
-    panelMode: boolean;
+    panelMode?: boolean;
 }
 
 /**
@@ -3355,7 +3359,7 @@ export interface TaskbarSetOverlayIconResponse {
  */
 export interface TaskbarSetProgressResponse {
     success: boolean;
-    panelMode: boolean;
+    panelMode?: boolean;
 }
 
 /**
@@ -3363,8 +3367,8 @@ export interface TaskbarSetProgressResponse {
  */
 export interface TaskbarSetThumbnailButtonsResponse {
     success: boolean;
+    panelMode?: boolean;
     error?: string;
-    panelMode: boolean;
 }
 
 /**
@@ -3372,8 +3376,8 @@ export interface TaskbarSetThumbnailButtonsResponse {
  */
 export interface TaskbarUpdateButtonResponse {
     success: boolean;
+    panelMode?: boolean;
     error?: string;
-    panelMode: boolean;
 }
 
 /**
@@ -3452,10 +3456,10 @@ export interface TitleformatGetBuiltinFieldsResponse {
  */
 export interface TrayAppendMenuItemsResponse {
     success: boolean;
+    panelMode?: boolean;
     error?: string;
-    panelMode: boolean;
-    code: unknown;
-    details: JsonObject;
+    code?: unknown;
+    details?: JsonObject;
 }
 
 /**
@@ -3463,7 +3467,7 @@ export interface TrayAppendMenuItemsResponse {
  */
 export interface TrayClearMenuItemsResponse {
     success: boolean;
-    panelMode: boolean;
+    panelMode?: boolean;
 }
 
 /**
@@ -3471,8 +3475,8 @@ export interface TrayClearMenuItemsResponse {
  */
 export interface TrayCreateResponse {
     success: boolean;
+    panelMode?: boolean;
     error?: string;
-    panelMode: boolean;
 }
 
 /**
@@ -3480,7 +3484,7 @@ export interface TrayCreateResponse {
  */
 export interface TrayDestroyResponse {
     success: boolean;
-    panelMode: boolean;
+    panelMode?: boolean;
 }
 
 /**
@@ -3488,8 +3492,8 @@ export interface TrayDestroyResponse {
  */
 export interface TrayGetMenuItemsResponse {
     success: boolean;
-    items: JsonObject;
-    panelMode: boolean;
+    panelMode?: boolean;
+    items?: JsonObject;
 }
 
 /**
@@ -3497,8 +3501,8 @@ export interface TrayGetMenuItemsResponse {
  */
 export interface TrayIsVisibleResponse {
     success: boolean;
-    visible: boolean;
-    panelMode: boolean;
+    panelMode?: boolean;
+    visible?: boolean;
 }
 
 /**
@@ -3506,9 +3510,9 @@ export interface TrayIsVisibleResponse {
  */
 export interface TrayRemoveMenuItemsResponse {
     success: boolean;
+    panelMode?: boolean;
     error?: string;
     removed?: number;
-    panelMode: boolean;
 }
 
 /**
@@ -3516,7 +3520,7 @@ export interface TrayRemoveMenuItemsResponse {
  */
 export interface TraySetCloseToTrayResponse {
     success: boolean;
-    panelMode: boolean;
+    panelMode?: boolean;
 }
 
 /**
@@ -3524,10 +3528,10 @@ export interface TraySetCloseToTrayResponse {
  */
 export interface TraySetContextMenuResponse {
     success: boolean;
+    panelMode?: boolean;
     error?: string;
-    panelMode: boolean;
-    code: unknown;
-    details: JsonObject;
+    code?: unknown;
+    details?: JsonObject;
 }
 
 /**
@@ -3535,7 +3539,7 @@ export interface TraySetContextMenuResponse {
  */
 export interface TraySetIconResponse {
     success: boolean;
-    panelMode: boolean;
+    panelMode?: boolean;
 }
 
 /**
@@ -3543,9 +3547,9 @@ export interface TraySetIconResponse {
  */
 export interface TraySetMenuItemStateResponse {
     success: boolean;
+    panelMode?: boolean;
     error?: string;
     found?: boolean;
-    panelMode: boolean;
 }
 
 /**
@@ -3553,7 +3557,7 @@ export interface TraySetMenuItemStateResponse {
  */
 export interface TraySetMinimizeToTrayResponse {
     success: boolean;
-    panelMode: boolean;
+    panelMode?: boolean;
 }
 
 /**
@@ -3561,7 +3565,7 @@ export interface TraySetMinimizeToTrayResponse {
  */
 export interface TraySetTooltipResponse {
     success: boolean;
-    panelMode: boolean;
+    panelMode?: boolean;
 }
 
 /**
@@ -3569,7 +3573,7 @@ export interface TraySetTooltipResponse {
  */
 export interface TrayShowBalloonResponse {
     success: boolean;
-    panelMode: boolean;
+    panelMode?: boolean;
 }
 
 /**
@@ -3643,9 +3647,9 @@ export interface WindowCancelCloseResponse {
  */
 export interface WindowCenterResponse {
     success: boolean;
+    supported?: boolean;
+    panelMode?: boolean;
     error?: string;
-    supported: boolean;
-    panelMode: boolean;
 }
 
 /**
@@ -3662,9 +3666,9 @@ export interface WindowClearClickThroughExcludeRegionsResponse {
  */
 export interface WindowClearDragRegionsResponse {
     success: boolean;
+    supported?: boolean;
+    panelMode?: boolean;
     error?: string;
-    supported: boolean;
-    panelMode: boolean;
 }
 
 /**
@@ -3672,9 +3676,9 @@ export interface WindowClearDragRegionsResponse {
  */
 export interface WindowClearNoDragRegionsResponse {
     success: boolean;
+    supported?: boolean;
+    panelMode?: boolean;
     error?: string;
-    supported: boolean;
-    panelMode: boolean;
 }
 
 /**
@@ -3682,9 +3686,9 @@ export interface WindowClearNoDragRegionsResponse {
  */
 export interface WindowCloseResponse {
     success: boolean;
-    supported: boolean;
-    panelMode: boolean;
-    error: string;
+    supported?: boolean;
+    panelMode?: boolean;
+    error?: string;
 }
 
 /**
@@ -3724,10 +3728,10 @@ export interface WindowCreatePopupResponse {
  */
 export interface WindowEnterFullscreenResponse {
     success: boolean;
-    isFullscreen?: boolean;
+    supported?: boolean;
+    panelMode?: boolean;
     error?: string;
-    supported: boolean;
-    panelMode: boolean;
+    isFullscreen?: boolean;
 }
 
 /**
@@ -3735,10 +3739,10 @@ export interface WindowEnterFullscreenResponse {
  */
 export interface WindowExitFullscreenResponse {
     success: boolean;
-    isFullscreen?: boolean;
+    supported?: boolean;
+    panelMode?: boolean;
     error?: string;
-    supported: boolean;
-    panelMode: boolean;
+    isFullscreen?: boolean;
 }
 
 /**
@@ -3746,9 +3750,9 @@ export interface WindowExitFullscreenResponse {
  */
 export interface WindowFlashResponse {
     success: boolean;
+    supported?: boolean;
+    panelMode?: boolean;
     error?: string;
-    supported: boolean;
-    panelMode: boolean;
 }
 
 /**
@@ -3756,9 +3760,9 @@ export interface WindowFlashResponse {
  */
 export interface WindowFlashTaskbarResponse {
     success: boolean;
-    supported: boolean;
-    panelMode: boolean;
-    error: string;
+    supported?: boolean;
+    panelMode?: boolean;
+    error?: string;
 }
 
 /**
@@ -3781,9 +3785,9 @@ export interface WindowGetAllWindowsResponse {
  * Response from `window.getBackdropPolicy`.
  */
 export interface WindowGetBackdropPolicyResponse {
-    success: unknown;
-    windowId: unknown;
-    error: string;
+    success: boolean;
+    error?: string;
+    windowId?: unknown;
 }
 
 /**
@@ -3986,9 +3990,9 @@ export interface WindowIsResizableResponse {
  */
 export interface WindowMaximizeResponse {
     success: boolean;
+    supported?: boolean;
+    panelMode?: boolean;
     error?: string;
-    supported: boolean;
-    panelMode: boolean;
 }
 
 /**
@@ -3996,9 +4000,9 @@ export interface WindowMaximizeResponse {
  */
 export interface WindowMinimizeResponse {
     success: boolean;
+    supported?: boolean;
+    panelMode?: boolean;
     error?: string;
-    supported: boolean;
-    panelMode: boolean;
 }
 
 /**
@@ -4031,9 +4035,9 @@ export interface WindowResetZoomResponse {
  */
 export interface WindowRestoreResponse {
     success: boolean;
+    supported?: boolean;
+    panelMode?: boolean;
     error?: string;
-    supported: boolean;
-    panelMode: boolean;
 }
 
 /**
@@ -4048,12 +4052,12 @@ export interface WindowSendMessageResponse {
  * Response from `window.setAcrylic`.
  */
 export interface WindowSetAcrylicResponse {
-    darkMode: unknown;
     success: boolean;
-    enabled: boolean;
-    supported: boolean;
-    panelMode: boolean;
-    error: string;
+    supported?: boolean;
+    panelMode?: boolean;
+    error?: string;
+    darkMode?: unknown;
+    enabled?: boolean;
 }
 
 /**
@@ -4061,9 +4065,9 @@ export interface WindowSetAcrylicResponse {
  */
 export interface WindowSetAlwaysOnTopResponse {
     success: boolean;
+    supported?: boolean;
+    panelMode?: boolean;
     error?: string;
-    supported: boolean;
-    panelMode: boolean;
 }
 
 /**
@@ -4090,10 +4094,10 @@ export interface WindowSetBackgroundTransparencyResponse {
  */
 export interface WindowSetBlurResponse {
     success: boolean;
-    enabled: boolean;
-    supported: boolean;
-    panelMode: boolean;
-    error: string;
+    supported?: boolean;
+    panelMode?: boolean;
+    error?: string;
+    enabled?: boolean;
 }
 
 /**
@@ -4101,9 +4105,9 @@ export interface WindowSetBlurResponse {
  */
 export interface WindowSetBoundsResponse {
     success: boolean;
+    supported?: boolean;
+    panelMode?: boolean;
     error?: string;
-    supported: boolean;
-    panelMode: boolean;
 }
 
 /**
@@ -4132,9 +4136,9 @@ export interface WindowSetClickThroughExcludeRegionsResponse {
  */
 export interface WindowSetCornerPreferenceResponse {
     success: boolean;
+    supported?: boolean;
+    panelMode?: boolean;
     error?: string;
-    supported: boolean;
-    panelMode: boolean;
 }
 
 /**
@@ -4142,10 +4146,10 @@ export interface WindowSetCornerPreferenceResponse {
  */
 export interface WindowSetDarkModeResponse {
     success: boolean;
-    enabled: boolean;
-    supported: boolean;
-    panelMode: boolean;
-    error: string;
+    supported?: boolean;
+    panelMode?: boolean;
+    error?: string;
+    enabled?: boolean;
 }
 
 /**
@@ -4162,11 +4166,11 @@ export interface WindowSetDevServerConfigResponse {
  */
 export interface WindowSetDragRegionsResponse {
     success: boolean;
+    supported?: boolean;
+    panelMode?: boolean;
     error?: string;
     count?: number;
     dpiScale?: number;
-    supported: boolean;
-    panelMode: boolean;
 }
 
 /**
@@ -4183,10 +4187,10 @@ export interface WindowSetFramelessResponse {
  */
 export interface WindowSetFullscreenResponse {
     success: boolean;
-    fullscreen: boolean;
+    supported?: boolean;
+    panelMode?: boolean;
     error?: string;
-    supported: boolean;
-    panelMode: boolean;
+    fullscreen?: boolean;
 }
 
 /**
@@ -4194,35 +4198,35 @@ export interface WindowSetFullscreenResponse {
  */
 export interface WindowSetMaxSizeResponse {
     success: boolean;
+    supported?: boolean;
+    panelMode?: boolean;
     error?: string;
-    supported: boolean;
-    panelMode: boolean;
 }
 
 /**
  * Response from `window.setMica`.
  */
 export interface WindowSetMicaResponse {
-    darkMode: unknown;
     success: boolean;
-    enabled: boolean;
-    variant: string;
-    supported: boolean;
-    panelMode: boolean;
-    error: string;
+    supported?: boolean;
+    panelMode?: boolean;
+    error?: string;
+    darkMode?: unknown;
+    enabled?: boolean;
+    variant?: string;
 }
 
 /**
  * Response from `window.setMicaEffect`.
  */
 export interface WindowSetMicaEffectResponse {
-    darkMode: unknown;
     success: boolean;
-    enabled: boolean;
-    variant: string;
-    supported: boolean;
-    panelMode: boolean;
-    error: string;
+    supported?: boolean;
+    panelMode?: boolean;
+    error?: string;
+    darkMode?: unknown;
+    enabled?: boolean;
+    variant?: string;
 }
 
 /**
@@ -4230,9 +4234,9 @@ export interface WindowSetMicaEffectResponse {
  */
 export interface WindowSetMinSizeResponse {
     success: boolean;
+    supported?: boolean;
+    panelMode?: boolean;
     error?: string;
-    supported: boolean;
-    panelMode: boolean;
 }
 
 /**
@@ -4240,11 +4244,11 @@ export interface WindowSetMinSizeResponse {
  */
 export interface WindowSetNoDragRegionsResponse {
     success: boolean;
+    supported?: boolean;
+    panelMode?: boolean;
     error?: string;
     count?: number;
     dpiScale?: number;
-    supported: boolean;
-    panelMode: boolean;
 }
 
 /**
@@ -4261,9 +4265,9 @@ export interface WindowSetPopupBehaviorResponse {
  */
 export interface WindowSetPositionResponse {
     success: boolean;
-    supported: boolean;
-    panelMode: boolean;
-    error: string;
+    supported?: boolean;
+    panelMode?: boolean;
+    error?: string;
 }
 
 /**
@@ -4271,9 +4275,9 @@ export interface WindowSetPositionResponse {
  */
 export interface WindowSetResizableResponse {
     success: boolean;
+    supported?: boolean;
+    panelMode?: boolean;
     error?: string;
-    supported: boolean;
-    panelMode: boolean;
 }
 
 /**
@@ -4281,9 +4285,9 @@ export interface WindowSetResizableResponse {
  */
 export interface WindowSetSizeResponse {
     success: boolean;
-    supported: boolean;
-    panelMode: boolean;
-    error: string;
+    supported?: boolean;
+    panelMode?: boolean;
+    error?: string;
 }
 
 /**
@@ -4291,9 +4295,9 @@ export interface WindowSetSizeResponse {
  */
 export interface WindowSetTitleResponse {
     success: boolean;
+    supported?: boolean;
+    panelMode?: boolean;
     error?: string;
-    supported: boolean;
-    panelMode: boolean;
 }
 
 /**
@@ -4301,10 +4305,10 @@ export interface WindowSetTitleResponse {
  */
 export interface WindowSetTitlebarHeightResponse {
     success: boolean;
+    supported?: boolean;
+    panelMode?: boolean;
     error?: string;
     height?: number;
-    supported: boolean;
-    panelMode: boolean;
 }
 
 /**
@@ -4331,9 +4335,9 @@ export interface WindowSetZoomForDpiResponse {
  */
 export interface WindowShowSystemMenuResponse {
     success: boolean;
+    supported?: boolean;
+    panelMode?: boolean;
     error?: string;
-    supported: boolean;
-    panelMode: boolean;
 }
 
 /**
@@ -4341,9 +4345,9 @@ export interface WindowShowSystemMenuResponse {
  */
 export interface WindowStartDragResponse {
     success: boolean;
+    supported?: boolean;
+    panelMode?: boolean;
     error?: string;
-    supported: boolean;
-    panelMode: boolean;
 }
 
 /**
@@ -4351,9 +4355,9 @@ export interface WindowStartDragResponse {
  */
 export interface WindowStartResizeResponse {
     success: boolean;
+    supported?: boolean;
+    panelMode?: boolean;
     error?: string;
-    supported: boolean;
-    panelMode: boolean;
 }
 
 /**
@@ -4361,10 +4365,10 @@ export interface WindowStartResizeResponse {
  */
 export interface WindowToggleAlwaysOnTopResponse {
     success: boolean;
-    enabled: boolean;
-    supported: boolean;
-    panelMode: boolean;
-    error: string;
+    supported?: boolean;
+    panelMode?: boolean;
+    error?: string;
+    enabled?: boolean;
 }
 
 /**
@@ -4372,10 +4376,10 @@ export interface WindowToggleAlwaysOnTopResponse {
  */
 export interface WindowToggleFullscreenResponse {
     success: boolean;
-    fullscreen: boolean;
+    supported?: boolean;
+    panelMode?: boolean;
     error?: string;
-    supported: boolean;
-    panelMode: boolean;
+    fullscreen?: boolean;
 }
 
 /**
@@ -4383,10 +4387,10 @@ export interface WindowToggleFullscreenResponse {
  */
 export interface WindowToggleMaximizeResponse {
     success: boolean;
-    maximized: boolean;
-    supported: boolean;
-    panelMode: boolean;
-    error: string;
+    supported?: boolean;
+    panelMode?: boolean;
+    error?: string;
+    maximized?: boolean;
 }
 // ── API-name → Response map ──────────────────────────────────────────────
 /**

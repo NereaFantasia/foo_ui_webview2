@@ -1,7 +1,7 @@
 // sdk/src/smp/classes/FbMetadbHandle.test.ts
 //
-// Phase 5.1 test gate (plan §8.7) — FbMetadbHandle constructor variants
-// and getter contract. The legacy SMP API allowed string handle-ids,
+// FbMetadbHandle constructor variants and getter contract.
+// The legacy SMP API allowed string handle-ids,
 // raw track-info objects, and copy-construction; this test defends
 // each variant.
 

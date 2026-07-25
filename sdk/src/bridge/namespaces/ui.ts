@@ -31,6 +31,10 @@ import type {
     WindowSetClickThroughParams,
     WindowSetDevServerConfigParams,
 } from '../../types/generated/params.js';
+import type {
+    WindowIsAlwaysOnTopResponse,
+    WindowIsMinimizedResponse,
+} from '../../types/generated/responses.js';
 
 export const ui = {
     // === Basic window controls ===
@@ -51,12 +55,14 @@ export const ui = {
     getState: () => bridge.invoke<WindowState>('window.getState'),
     isMaximized: () =>
         bridge.invoke<{ isMaximized: boolean }>('window.isMaximized'),
+    /** Resolves with `{ minimized }` (the host does not send an `isMinimized` alias). */
     isMinimized: () =>
-        bridge.invoke<{ isMinimized: boolean }>('window.isMinimized'),
+        bridge.invoke<WindowIsMinimizedResponse>('window.isMinimized'),
     isFullscreen: () =>
         bridge.invoke<{ isFullscreen: boolean }>('window.isFullscreen'),
+    /** Resolves with `{ enabled, isAlwaysOnTop }` (both carry the same value). */
     isAlwaysOnTop: () =>
-        bridge.invoke<{ alwaysOnTop: boolean }>('window.isAlwaysOnTop'),
+        bridge.invoke<WindowIsAlwaysOnTopResponse>('window.isAlwaysOnTop'),
     isResizable: () =>
         bridge.invoke<{ resizable: boolean }>('window.isResizable'),
     getTitle: () => bridge.invoke<{ title: string }>('window.getTitle'),

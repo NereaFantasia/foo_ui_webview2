@@ -49,25 +49,11 @@ import { FbWindowControls } from './FbWindowControls.js';
 /**
  * Tag-name ↔ class map for every component shipped by this entry.
  *
- * Phases delivered so far:
- * - 4a: 4 playback-control buttons (play / stop / prev / next).
- * - 4b: progress + volume sliders (seek-bar / volume-control).
- * - 4c: track-info display (track-text / cover-art /
- *   time-current / time-total / time-remaining / tech-info).
- * - 4d: playback enhancements + rating (shuffle-button /
- *   repeat-button / stop-after-current / playback-order / rating).
- * - 4e: playlist + queue (playlist-tabs / resizable-header /
- *   playlist-view / queue-view / playlist-selector).
- * - 4f: window management (titlebar / window-controls / popup-panel).
- * - 4g: audio settings (output-selector / dsp-preset-selector /
- *   replaygain-selector).
- * - 4h: lyrics + visualisation + tag/log + library trees
- *   (lyrics-panel / spectrum-visualizer / waveform /
- *   properties-panel / search-bar / console / library-tree /
- *   library-filesystem-tree).
- *
- * Subsequent batches append additional entries here without altering
- * the map's shape (string keys, `CustomElementConstructor` values).
+ * Covers playback controls (play / stop / prev / next), sliders
+ * (seek-bar / volume-control), track-info displays, playback
+ * enhancements and rating, playlist and queue views, window
+ * management, audio settings, and the lyrics / visualisation /
+ * tag-log / library-tree panels.
  */
 export const defaultComponents: Record<string, CustomElementConstructor> = {
     // A. Playback control

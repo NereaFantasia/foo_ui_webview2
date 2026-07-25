@@ -4,8 +4,6 @@
  * Owns the {@link SmpCompatCache} literal and the array of subscribed
  * `fb.on(...)` handlers that keep the cache in sync with playback /
  * playlist / config events emitted by the C++ host.
- *
- * Migrated from `sdk/smp-compat.js:121-275`.
  */
 
 import type { SmpBridgeShape } from './bridgeShape.js';
