@@ -1,11 +1,15 @@
 ﻿#include "pch.h"
 #include "webview/WebViewHost.h"
 #include "webview/WebViewEnvironment.h"
+#include "webview/WebViewCrashPolicy.h"
 #include "webview/SdkBridgeScript.inl"
+#include "webview/ArtworkWorkerQueue.h"
 #include "window/WindowChromeTrace.h"
 #include "api/ArtworkApi.h"
+#include "api/ArtworkRequestParser.h"
 #include "utils/ArtworkCacheKey.h"
 #include "utils/ImageUtils.h"
+#include "utils/PathSecurity.h"
 #include <Shlobj.h>
 #include <wrl/client.h>
 #include <wrl/event.h>
@@ -21,11 +25,34 @@
 #include <unordered_map>  // scaled artwork cache
 #include <fstream>     // 崩溃诊断日志落盘 (webview_crash.log)
 #include <ctime>       // 崩溃日志时间戳
+#include <iomanip>     // 生命周期日志 UTC 时间戳
+#include <mutex>       // 生命周期日志跨回调串行写盘
 #include <WebView2EnvironmentOptions.h>  // SDK 提供的环境选项辅助类
 
 #pragma comment(lib, "dcomp.lib")
 
 using namespace Microsoft::WRL;
+
+namespace {
+    constexpr unsigned long long kLifecycleLogMaxBytes = 4ULL * 1024ULL * 1024ULL;
+
+    std::string SanitizeLifecycleLogLine(const std::string& line) {
+        std::string sanitized = line;
+        std::ranges::replace(sanitized, '\r', ' ');
+        std::ranges::replace(sanitized, '\n', ' ');
+        return sanitized;
+    }
+
+    std::wstring GetProfileLogPath(const wchar_t* fileName) {
+        pfc::string8 profilePath;
+        filesystem::g_get_display_path(core_api::get_profile_path(), profilePath);
+        std::wstring path =
+            pfc::stringcvt::string_wide_from_utf8(profilePath.get_ptr()).get_ptr();
+        path += L"\\";
+        path += fileName;
+        return path;
+    }
+}
 
 // ==========================================================================
 // 自定义协议注册
@@ -36,6 +63,18 @@ using namespace Microsoft::WRL;
 
 WebViewHost::~WebViewHost() {
     try {
+    LogLifecycle("host.destroy.begin");
+    suspendState_->alive.store(false, std::memory_order_release);
+    suspendState_->generation.fetch_add(1, std::memory_order_acq_rel);
+    // Mark alive-flag false so pending completions skip member access,
+    // then drain the worker queue (cancels in-flight + queued items).
+    artworkHostAlive_->store(false, std::memory_order_release);
+    if (artworkWorkerQueue_) {
+        artworkWorkerQueue_->DrainAll();
+        artworkWorkerQueue_.reset();  // joins worker thread
+    }
+    RemoveArtworkEventHandlers();
+    artworkLifecycle_.OnClose();
         // 清理光标事件监听
         if (compositionController_ && cursorChangedToken_.value != 0) {
             compositionController_->remove_CursorChanged(cursorChangedToken_);
@@ -86,6 +125,9 @@ std::wstring WebViewHost::GetUserDataPath() {
 HRESULT WebViewHost::Initialize(HWND parentHwnd, InitCallback callback, bool useVisualHosting) {
     parentHwnd_ = parentHwnd;
     useVisualHosting_ = useVisualHosting;
+    ownerThreadId_ = GetCurrentThreadId();
+    LogLifecycle("host.initialize.begin",
+        std::string("visualHosting=") + (useVisualHosting ? "true" : "false"));
     
     LOG("WebViewHost::Initialize - useVisualHosting=", useVisualHosting ? "true" : "false",
         " parentHwnd=0x", pfc::format_hex((uintptr_t)parentHwnd));
@@ -103,12 +145,14 @@ HRESULT WebViewHost::Initialize(HWND parentHwnd, InitCallback callback, bool use
     WebViewEnvironment::GetInstance().GetEnvironment(
         [this, callback, dcompHr](ICoreWebView2Environment* env) {
             if (!env) {
+                LogLifecycle("host.environment.failed", "environment=null");
                 LOG("Failed to get WebView2 environment");
                 if (callback) callback(false);
                 return;
             }
             
             environment_ = env;
+            LogLifecycle("host.environment.ready");
             LOG("Using shared WebView2 environment");
             
             // Create controller using shared environment
@@ -131,6 +175,8 @@ void WebViewHost::CreateControllerWithEnvironment(ICoreWebView2Environment* env,
                 [this, callback](HRESULT result, ICoreWebView2CompositionController* compositionController) -> HRESULT {
                     
                     if (FAILED(result) || !compositionController) {
+                        LogLifecycle("controller.create.failed",
+                            "mode=composition hr=" + std::to_string((long long)result));
                         LOG("Failed to create CompositionController, HRESULT: ", pfc::format_hex((uint32_t)result));
                         if (callback) callback(false);
                         return result;
@@ -148,8 +194,15 @@ void WebViewHost::CreateControllerWithEnvironment(ICoreWebView2Environment* env,
                     
                     controller_->put_IsVisible(TRUE);
                     controller_->get_CoreWebView2(&webview_);
-                    
-                    // Setup Visual Hosting connection
+                    artworkLifecycle_.OnControllerCreated();
+                    if (!artworkWorkerQueue_) {
+                        artworkWorkerQueue_ =
+                            std::make_unique<artwork_worker::ArtworkWorkerQueue>();
+                    } else {
+                        artworkWorkerQueue_->CancelStale(
+                            artworkLifecycle_.NavigationGeneration(),
+                            artworkLifecycle_.HostGeneration());
+                    }
                     if (dcompWebViewVisual_) {
                         hr = compositionController_->put_RootVisualTarget(dcompWebViewVisual_.get());
                         if (SUCCEEDED(hr)) {
@@ -168,6 +221,8 @@ void WebViewHost::CreateControllerWithEnvironment(ICoreWebView2Environment* env,
                     SetupProcessFailedHandling();
                     InjectBridgeScript();
                     InjectSdkBridgeScript();
+
+                    LogLifecycle("controller.create.ready", "mode=composition");
                     
                     LOG("WebView2 initialized successfully (Visual Hosting mode)");
                     if (callback) callback(true);
@@ -187,6 +242,8 @@ void WebViewHost::CreateControllerWithEnvironment(ICoreWebView2Environment* env,
             [this, callback](HRESULT result, ICoreWebView2Controller* controller) -> HRESULT {
                 
                 if (FAILED(result) || !controller) {
+                    LogLifecycle("controller.create.failed",
+                        "mode=standard hr=" + std::to_string((long long)result));
                     LOG("Failed to create WebView2 controller, HRESULT: ", pfc::format_hex((uint32_t)result));
                     if (callback) callback(false);
                     return result;
@@ -195,7 +252,16 @@ void WebViewHost::CreateControllerWithEnvironment(ICoreWebView2Environment* env,
                 controller_ = controller;
                 controller_->put_IsVisible(TRUE);
                 controller->get_CoreWebView2(&webview_);
-                
+                artworkLifecycle_.OnControllerCreated();
+                if (!artworkWorkerQueue_) {
+                    artworkWorkerQueue_ =
+                        std::make_unique<artwork_worker::ArtworkWorkerQueue>();
+                } else {
+                    artworkWorkerQueue_->CancelStale(
+                        artworkLifecycle_.NavigationGeneration(),
+                        artworkLifecycle_.HostGeneration());
+                }
+
                 SetupWebView();
                 SetupSettings();
                 SetupCustomProtocol();
@@ -203,6 +269,8 @@ void WebViewHost::CreateControllerWithEnvironment(ICoreWebView2Environment* env,
                 SetupProcessFailedHandling();
                 InjectBridgeScript();
                 InjectSdkBridgeScript();
+
+                LogLifecycle("controller.create.ready", "mode=standard");
                 
                 LOG("WebView2 initialized successfully (standard mode)");
                 if (callback) callback(true);
@@ -334,6 +402,27 @@ void WebViewHost::SetupSettings() {
         // 仅在禁用 DevTools 时禁用快捷键
         settings3->put_AreBrowserAcceleratorKeysEnabled(FALSE);  // 禁用 F5/Ctrl+R/F12 等
     }
+
+    // ============================================
+    // 设置减法：关闭播放器场景用不到的 WebView2 功能，减少每次导航与
+    // 资源请求的额外工作。
+    // ============================================
+
+    // Settings4: 播放器 UI 无表单登录场景，关闭自动填充与密码保存，
+    // 减少每次导航/表单交互的额外工作
+    wil::com_ptr<ICoreWebView2Settings4> settings4;
+    if (SUCCEEDED(settings->QueryInterface(IID_PPV_ARGS(&settings4)))) {
+        settings4->put_IsPasswordAutosaveEnabled(FALSE);
+        settings4->put_IsGeneralAutofillEnabled(FALSE);
+    }
+
+    // Settings8: 关闭 SmartScreen 信誉检查 — 导航面受控（fb2k://、虚拟主机、
+    // dev server），所有 WebView 均为 FALSE 时 SmartScreen 组件进程不再启动。
+    // 若未来引入任意外部 URL 浏览能力，须重新评估此项。
+    wil::com_ptr<ICoreWebView2Settings8> settings8;
+    if (SUCCEEDED(settings->QueryInterface(IID_PPV_ARGS(&settings8)))) {
+        settings8->put_IsReputationCheckingRequired(FALSE);
+    }
     
     // 启用 Non-Client Region Support，让 -webkit-app-region CSS 属性生效
     // 这样前端可以使用 app-region: drag 来定义可拖拽区域
@@ -406,8 +495,7 @@ void WebViewHost::SetupSettings() {
 }
 
 //==========================================================================
-// 安全修复: Origin 验证门禁
-// 只允许受信任的来源调用 Bridge API
+// Origin 验证: 只允许受信任的来源调用 Bridge API
 //==========================================================================
 
 // 严格 origin 边界匹配: 命中前缀后, 下一个字符必须是分隔符,
@@ -566,9 +654,29 @@ void WebViewHost::RegisterMessageHandler() {
     );
     
     // 导航完成事件
-    webview_->add_NavigationCompleted(
+    const HRESULT navigationStartingHr = webview_->add_NavigationStarting(
+        Callback<ICoreWebView2NavigationStartingEventHandler>(
+            [this](ICoreWebView2*, ICoreWebView2NavigationStartingEventArgs*) -> HRESULT {
+                artworkLifecycle_.OnNavigationStarting();
+                // Abort queued/in-flight work that captured the previous generation.
+                if (artworkWorkerQueue_) {
+                    artworkWorkerQueue_->CancelStale(
+                        artworkLifecycle_.NavigationGeneration(),
+                        artworkLifecycle_.HostGeneration());
+                }
+                return S_OK;
+            }
+        ).Get(),
+        &artworkNavigationStartingToken_
+    );
+    artworkLifecycle_.RecordTokenAdd(
+        artwork_request::TokenKind::NavigationStarting,
+        SUCCEEDED(navigationStartingHr));
+
+    const HRESULT navigationCompletedHr = webview_->add_NavigationCompleted(
         Callback<ICoreWebView2NavigationCompletedEventHandler>(
             [this](ICoreWebView2* /*sender*/, ICoreWebView2NavigationCompletedEventArgs* args) {
+                artworkLifecycle_.OnNavigationCompleted();
                 BOOL success;
                 args->get_IsSuccess(&success);
                 
@@ -587,10 +695,33 @@ void WebViewHost::RegisterMessageHandler() {
                 return S_OK;
             }
         ).Get(),
-        nullptr
+        &navigationCompletedToken_
     );
+    artworkLifecycle_.RecordTokenAdd(
+        artwork_request::TokenKind::NavigationCompleted,
+        SUCCEEDED(navigationCompletedHr));
     
     LOG("Message handlers registered");
+}
+
+void WebViewHost::RemoveArtworkEventHandlers() noexcept {
+    if (!webview_) return;
+
+    if (artworkResourceRequestedToken_.value != 0 &&
+        SUCCEEDED(webview_->remove_WebResourceRequested(artworkResourceRequestedToken_))) {
+        artworkLifecycle_.RemoveToken(artwork_request::TokenKind::WebResourceRequested);
+        artworkResourceRequestedToken_ = {};
+    }
+    if (artworkNavigationStartingToken_.value != 0 &&
+        SUCCEEDED(webview_->remove_NavigationStarting(artworkNavigationStartingToken_))) {
+        artworkLifecycle_.RemoveToken(artwork_request::TokenKind::NavigationStarting);
+        artworkNavigationStartingToken_ = {};
+    }
+    if (navigationCompletedToken_.value != 0 &&
+        SUCCEEDED(webview_->remove_NavigationCompleted(navigationCompletedToken_))) {
+        artworkLifecycle_.RemoveToken(artwork_request::TokenKind::NavigationCompleted);
+        navigationCompletedToken_ = {};
+    }
 }
 
 
@@ -964,6 +1095,30 @@ HRESULT WebViewHost::PostMessage(const std::wstring& json) {
     return webview_->PostWebMessageAsJson(json.c_str());
 }
 
+HRESULT WebViewHost::PostEventMessage(const std::string& eventName, const std::wstring& json) {
+    if (!webview_) return E_FAIL;
+
+    if (suspendState_->pageHidden.load(std::memory_order_acquire)) {
+        switch (event_gate::Classify(eventName)) {
+        case event_gate::Action::Drop: {
+            std::lock_guard<std::mutex> lock(eventGateMutex_);
+            ++gateDroppedCount_;
+            return S_OK;
+        }
+        case event_gate::Action::Latest: {
+            std::lock_guard<std::mutex> lock(eventGateMutex_);
+            eventGateBuffer_.Put(eventName, json);
+            ++gateBufferedCount_;
+            return S_OK;
+        }
+        case event_gate::Action::Pass:
+            break;  // 控制面事件直通（会唤醒挂起页面，属预期语义）
+        }
+    }
+
+    return PostMessage(json);
+}
+
 void WebViewHost::SetMessageHandler(MessageHandler handler) {
     messageHandler_ = std::move(handler);
 }
@@ -990,6 +1145,94 @@ void WebViewHost::SetNavigationCompletedCallback(NavigationCompletedCallback cal
 
 void WebViewHost::SetProcessFailedCallback(ProcessFailedCallback callback) {
     processFailedCallback_ = std::move(callback);
+}
+
+void WebViewHost::WriteLifecycleLog(const std::string& line) {
+    static std::mutex logMutex;
+    const std::scoped_lock lock(logMutex);
+
+    try {
+        const std::wstring path = GetProfileLogPath(L"webview_lifecycle.log");
+        const std::wstring rotatedPath = path + L".1";
+
+        WIN32_FILE_ATTRIBUTE_DATA attributes{};
+        if (GetFileAttributesExW(path.c_str(), GetFileExInfoStandard, &attributes)) {
+            const unsigned long long size =
+                (static_cast<unsigned long long>(attributes.nFileSizeHigh) << 32) |
+                attributes.nFileSizeLow;
+            if (size >= kLifecycleLogMaxBytes) {
+                DeleteFileW(rotatedPath.c_str());
+                MoveFileExW(path.c_str(), rotatedPath.c_str(),
+                            MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH);
+            }
+        }
+
+        SYSTEMTIME utc{};
+        GetSystemTime(&utc);
+        std::ofstream file(path, std::ios::app);
+        if (!file.is_open()) {
+            return;
+        }
+        file << '[' << std::setfill('0')
+             << std::setw(4) << utc.wYear << '-'
+             << std::setw(2) << utc.wMonth << '-'
+             << std::setw(2) << utc.wDay << 'T'
+             << std::setw(2) << utc.wHour << ':'
+             << std::setw(2) << utc.wMinute << ':'
+             << std::setw(2) << utc.wSecond << '.'
+             << std::setw(3) << utc.wMilliseconds << "Z] "
+             << SanitizeLifecycleLogLine(line) << '\n';
+        file.flush();
+    } catch (...) {
+        // Diagnostics must never interfere with the recovery path.
+    }
+}
+
+void WebViewHost::LogLifecycle(const char* event, const std::string& detail) const {
+    try {
+        BOOL visible = FALSE;
+        RECT bounds{};
+        const HRESULT visibleHr = controller_
+            ? controller_->get_IsVisible(&visible) : E_POINTER;
+        const HRESULT boundsHr = controller_
+            ? controller_->get_Bounds(&bounds) : E_POINTER;
+
+        BOOL suspended = FALSE;
+        HRESULT suspendedHr = E_NOINTERFACE;
+        if (webview_) {
+            wil::com_ptr<ICoreWebView2_3> webview3;
+            if (SUCCEEDED(webview_.try_query_to(&webview3)) && webview3) {
+                suspendedHr = webview3->get_IsSuspended(&suspended);
+            }
+        }
+
+        std::ostringstream stream;
+        stream << "event=" << (event && event[0] ? event : "-")
+               << " uptimeMs=" << GetTickCount64()
+               << " pid=" << GetCurrentProcessId()
+               << " tid=" << GetCurrentThreadId()
+               << " hwnd=0x" << pfc::format_hex((size_t)parentHwnd_)
+               << " hwndValid=" << (parentHwnd_ && IsWindow(parentHwnd_) ? 1 : 0)
+               << " host=0x" << pfc::format_hex((size_t)this)
+               << " controller=0x" << pfc::format_hex((size_t)controller_.get())
+               << " webview=0x" << pfc::format_hex((size_t)webview_.get())
+               << " composition=0x" << pfc::format_hex((size_t)compositionController_.get())
+               << " dcompTarget=0x" << pfc::format_hex((size_t)dcompTarget_.get())
+               << " hidden=" << (suspendState_->pageHidden.load(std::memory_order_acquire) ? 1 : 0)
+               << " alive=" << (suspendState_->alive.load(std::memory_order_acquire) ? 1 : 0)
+               << " generation=" << suspendState_->generation.load(std::memory_order_acquire)
+               << " visibleHr=0x" << pfc::format_hex((uint32_t)visibleHr)
+               << " visible=" << (visible != FALSE ? 1 : 0)
+               << " boundsHr=0x" << pfc::format_hex((uint32_t)boundsHr)
+               << " bounds=(" << bounds.left << ',' << bounds.top << ','
+               << bounds.right << ',' << bounds.bottom << ')'
+               << " suspendedHr=0x" << pfc::format_hex((uint32_t)suspendedHr)
+               << " suspended=" << (suspended != FALSE ? 1 : 0)
+               << " detail=" << (detail.empty() ? "-" : detail);
+        WriteLifecycleLog(stream.str());
+    } catch (...) {
+        // COM state inspection is best-effort and must remain non-throwing.
+    }
 }
 
 // ==========================================================================
@@ -1067,30 +1310,39 @@ void WebViewHost::SetupProcessFailedHandling() {
                     }
                 }
 
-                // 判断是否为可 Reload 恢复的渲染进程类崩溃
-                const bool isRenderKind =
+                // 分级判定下沉到 webview_crash_policy（纯函数、可单测）。
+                const auto failureClass = webview_crash_policy::ClassifyFailedKind(
                     kind == COREWEBVIEW2_PROCESS_FAILED_KIND_RENDER_PROCESS_EXITED ||
                     kind == COREWEBVIEW2_PROCESS_FAILED_KIND_RENDER_PROCESS_UNRESPONSIVE ||
-                    kind == COREWEBVIEW2_PROCESS_FAILED_KIND_FRAME_RENDER_PROCESS_EXITED;
+                    kind == COREWEBVIEW2_PROCESS_FAILED_KIND_FRAME_RENDER_PROCESS_EXITED,
+                    kind == COREWEBVIEW2_PROCESS_FAILED_KIND_BROWSER_PROCESS_EXITED);
 
-                const bool isBrowserKind =
-                    kind == COREWEBVIEW2_PROCESS_FAILED_KIND_BROWSER_PROCESS_EXITED;
-
-                bool recovered = false;
-                if (isRenderKind) {
-                    // 渲染进程崩溃：controller / DComp 连接仍有效，重新加载页面即可恢复
-                    HRESULT reloadHr = webview_ ? webview_->Reload() : E_FAIL;
-                    recovered = SUCCEEDED(reloadHr);
-                    diag << " action=Reload result=" << (recovered ? "ok" : "failed");
-                } else if (isBrowserKind) {
-                    // 浏览器进程退出：整个 WebView 失效，需上层重建
+                // 渲染进程类崩溃先尝试 Reload 自愈（controller / DComp 连接仍有效）。
+                bool reloadSucceeded = false;
+                if (failureClass == webview_crash_policy::FailureClass::Render) {
+                    const HRESULT reloadHr = webview_ ? webview_->Reload() : E_FAIL;
+                    reloadSucceeded = SUCCEEDED(reloadHr);
+                    diag << " action=Reload result=" << (reloadSucceeded ? "ok" : "failed");
+                } else if (failureClass == webview_crash_policy::FailureClass::Browser) {
                     diag << " action=needRebuild";
                 } else {
-                    // GPU / 工具进程等：运行时通常自愈，仅记录
                     diag << " action=logOnly";
                 }
 
+                const auto disposition =
+                    webview_crash_policy::Decide(failureClass, reloadSucceeded);
+
+                // 共享 environment 绑定的正是已死的浏览器进程；若不作废，重建会命中
+                // 缓存拿到失效 environment，导致 CreateCoreWebView2*Controller 必然失败。
+                if (disposition.invalidateEnvironment) {
+                    WebViewEnvironment::GetInstance().Invalidate("browserProcessExited");
+                    diag << " envInvalidated=1";
+                }
+
+                const bool recovered = disposition.recovered;
+
                 WriteCrashLog(diag.str());
+                LogLifecycle("process.failed", diag.str());
                 LOG("WebViewHost: ", diag.str().c_str());
 
                 if (processFailedCallback_) {
@@ -1142,9 +1394,91 @@ void WebViewHost::Resize(const RECT& bounds) {
     }
 }
 
-void WebViewHost::SetVisible(bool visible) {
-    if (controller_) {
-        controller_->put_IsVisible(visible ? TRUE : FALSE);
+bool WebViewHost::SetVisible(bool visible) {
+    LogLifecycle("visibility.request",
+        std::string("requested=") + (visible ? "1" : "0"));
+    if (visible) {
+        // 任何恢复可见的动作都使在途 TrySuspend 完成回调过期。
+        suspendState_->generation.fetch_add(1, std::memory_order_acq_rel);
+    }
+
+    if (!controller_) {
+        LogLifecycle("visibility.failed", "reason=no-controller");
+        return false;
+    }
+
+    HRESULT resumeHr = S_OK;
+    if (visible && webview_) {
+        // WebView2 官方恢复示例使用 Resume() -> put_IsVisible(TRUE)。虽然显示
+        // controller 通常会自动 Resume，锁屏解除的系统切换窗口存在低频竞态；
+        // 显式 Resume 使 renderer 恢复先于 DComp surface 重新呈现。
+        wil::com_ptr<ICoreWebView2_3> wv3;
+        if (SUCCEEDED(webview_.try_query_to(&wv3)) && wv3) {
+            // 官方示例直接 Resume，不先读 IsSuspended。避免 get=false 后
+            // TrySuspend 才完成的 TOCTOU 窗口。
+            resumeHr = wv3->Resume();
+        }
+    }
+
+    const HRESULT visibleHr = controller_->put_IsVisible(visible ? TRUE : FALSE);
+    BOOL actualVisible = FALSE;
+    const HRESULT queryHr = controller_->get_IsVisible(&actualVisible);
+    const bool confirmed = SUCCEEDED(resumeHr) && SUCCEEDED(visibleHr) &&
+        SUCCEEDED(queryHr) && ((actualVisible != FALSE) == visible);
+
+    if (!confirmed) {
+        std::ostringstream detail;
+        detail << "requested=" << (visible ? 1 : 0)
+               << " resumeHr=0x" << pfc::format_hex((uint32_t)resumeHr)
+               << " putHr=0x" << pfc::format_hex((uint32_t)visibleHr)
+               << " getHr=0x" << pfc::format_hex((uint32_t)queryHr)
+               << " actual=" << (actualVisible != FALSE ? 1 : 0);
+        LogLifecycle("visibility.failed", detail.str());
+        console::printf(
+            "[WebView2 UI] visibility transition failed (requested=%d resume=0x%08X put=0x%08X get=0x%08X actual=%d)",
+            visible ? 1 : 0, (unsigned)resumeHr, (unsigned)visibleHr,
+            (unsigned)queryHr, actualVisible != FALSE ? 1 : 0);
+        return false;
+    }
+
+    // 事件门控记账：put_IsVisible 即页面 hidden/visible 的执行动作。
+    // 先置状态再冲刷，避免恢复瞬间新事件与重放交错时被再次拦截。
+    const bool wasHidden =
+        suspendState_->pageHidden.exchange(!visible, std::memory_order_acq_rel);
+    if (visible && wasHidden) {
+        FlushGatedEvents();
+    }
+
+    if (visible && dcompDevice_) {
+        // 锁屏解除后即使 controller 已恢复，DComp target 也可能尚未收到新的
+        // present。提交现有视觉树，后续 surface convergence 再执行 bounds nudge。
+        dcompDevice_->Commit();
+    }
+    LogLifecycle("visibility.confirmed",
+        std::string("requested=") + (visible ? "1" : "0"));
+    return true;
+}
+
+void WebViewHost::FlushGatedEvents() {
+    std::vector<event_gate::LatestBuffer::Entry> entries;
+    uint64_t dropped = 0;
+    uint64_t buffered = 0;
+    {
+        std::lock_guard<std::mutex> lock(eventGateMutex_);
+        entries = eventGateBuffer_.Flush();
+        dropped = gateDroppedCount_;
+        buffered = gateBufferedCount_;
+        gateDroppedCount_ = 0;
+        gateBufferedCount_ = 0;
+    }
+
+    for (const auto& entry : entries) {
+        PostMessage(entry.payload);
+    }
+
+    if (dropped > 0 || buffered > 0 || !entries.empty()) {
+        console::printf("[EventGate] resume flush: replayed=%u (latest-of %u buffered), dropped=%u",
+            (unsigned)entries.size(), (unsigned)buffered, (unsigned)dropped);
     }
 }
 
@@ -1158,6 +1492,110 @@ void WebViewHost::SetMemoryUsageLow(bool low) {
             low ? COREWEBVIEW2_MEMORY_USAGE_TARGET_LEVEL_LOW
                 : COREWEBVIEW2_MEMORY_USAGE_TARGET_LEVEL_NORMAL);
     }
+}
+
+// ==========================================================================
+// 深度挂起（TrySuspend）
+// 调用前提：SetVisible(false) 已执行（页面 hidden、事件门控已生效）。
+// 互斥铁律：TrySuspend 自动置 Low、Resume/put_IsVisible(TRUE) 自动回 Normal，
+// 本路径成功后不得再手动 SetMemoryUsageLow（由 MainWindow 投影应用层保证）。
+// ==========================================================================
+void WebViewHost::TrySuspendDeep() {
+    if (!webview_) {
+        LogLifecycle("suspend.skipped", "reason=no-webview");
+        return;
+    }
+
+    // 本请求的代数：回调只认它；期间任何 SetVisible(true) 或新的挂起请求
+    // 都会使其过期（"最小化→秒恢复"时恢复动作先于完成回调到达）。
+    const auto state = suspendState_;
+    const uint64_t generation =
+        state->generation.fetch_add(1, std::memory_order_acq_rel) + 1;
+    LogLifecycle("suspend.request",
+        "generation=" + std::to_string(generation));
+
+    wil::com_ptr<ICoreWebView2_3> wv3;
+    if (FAILED(webview_.try_query_to(&wv3)) || !wv3) {
+        // Runtime 过老：深挂起降级为现状 Low 路径（失败是降级不是错误）
+        console::print("[WebView2 UI] deep suspend unavailable (ICoreWebView2_3), falling back to low memory target");
+        SetMemoryUsageLow(true);
+        LogLifecycle("suspend.unavailable",
+            "generation=" + std::to_string(generation));
+        return;
+    }
+
+    const wil::com_ptr<ICoreWebView2> webview = webview_;
+    HRESULT hr = wv3->TrySuspend(
+        Callback<ICoreWebView2TrySuspendCompletedHandler>(
+            [state, webview, generation](HRESULT errorCode, BOOL isSuccessful) -> HRESULT {
+                std::ostringstream completion;
+                completion << "event=suspend.completed"
+                           << " uptimeMs=" << GetTickCount64()
+                           << " pid=" << GetCurrentProcessId()
+                           << " tid=" << GetCurrentThreadId()
+                           << " generation=" << generation
+                           << " currentGeneration="
+                           << state->generation.load(std::memory_order_acquire)
+                           << " alive="
+                           << (state->alive.load(std::memory_order_acquire) ? 1 : 0)
+                           << " hidden="
+                           << (state->pageHidden.load(std::memory_order_acquire) ? 1 : 0)
+                           << " hr=0x" << pfc::format_hex((uint32_t)errorCode)
+                           << " success=" << (isSuccessful != FALSE ? 1 : 0);
+                WebViewHost::WriteLifecycleLog(completion.str());
+                if (!state->alive.load(std::memory_order_acquire)) return S_OK;
+
+                if (generation != state->generation.load(std::memory_order_acquire)) {
+                    // 代数过期：请求发出后页面已恢复可见（put_IsVisible(TRUE)
+                    // 自动 resume）或有更新的挂起请求接管。不写状态、不回退 Low；
+                    // 若页面此刻应可见而运行时仍报告挂起（回调晚于恢复的窗口期），
+                    // 立即 Resume 兜底。
+                    if (!state->pageHidden.load(std::memory_order_acquire)) {
+                        wil::com_ptr<ICoreWebView2_3> wv3Late;
+                        if (SUCCEEDED(webview.try_query_to(&wv3Late)) && wv3Late) {
+                            BOOL suspended = FALSE;
+                            if (SUCCEEDED(wv3Late->get_IsSuspended(&suspended)) && suspended) {
+                                wv3Late->Resume();
+                                console::print("[WebView2 UI] stale deep-suspend completion resumed (page visible again)");
+                            }
+                        }
+                    }
+                    return S_OK;
+                }
+                if (SUCCEEDED(errorCode) && isSuccessful) {
+                    console::print("[WebView2 UI] deep suspend engaged (renderer timers frozen)");
+                } else {
+                    // sleeping tabs 排除条件（如 DevTools 打开）→ 回退 Low
+                    console::printf(
+                        "[WebView2 UI] deep suspend declined (hr=0x%08X success=%d), falling back to low memory target",
+                        (unsigned)errorCode, (int)(isSuccessful != FALSE));
+                    wil::com_ptr<ICoreWebView2_19> wv19;
+                    if (SUCCEEDED(webview.try_query_to(&wv19)) && wv19) {
+                        wv19->put_MemoryUsageTargetLevel(
+                            COREWEBVIEW2_MEMORY_USAGE_TARGET_LEVEL_LOW);
+                    }
+                }
+                return S_OK;
+            })
+            .Get());
+    if (FAILED(hr)) {
+        LogLifecycle("suspend.call-failed",
+            "generation=" + std::to_string(generation) +
+            " hr=" + std::to_string((long long)hr));
+        console::printf(
+            "[WebView2 UI] TrySuspend call failed (hr=0x%08X), falling back to low memory target",
+            (unsigned)hr);
+        SetMemoryUsageLow(true);
+    }
+}
+
+bool WebViewHost::IsSuspended() const {
+    if (!webview_) return false;
+    wil::com_ptr<ICoreWebView2_3> wv3;
+    if (FAILED(webview_.try_query_to(&wv3)) || !wv3) return false;
+    BOOL suspended = FALSE;
+    if (FAILED(wv3->get_IsSuspended(&suspended))) return false;
+    return suspended != FALSE;
 }
 
 void WebViewHost::SetBoundsVisible(bool visible) {
@@ -1185,9 +1623,89 @@ void WebViewHost::OpenDevTools() {
 }
 
 void WebViewHost::Reload() {
-    if (webview_) {
-        webview_->Reload();
+    const HRESULT hr = webview_ ? webview_->Reload() : E_POINTER;
+    LogLifecycle("page.reload",
+        "hr=" + std::to_string((long long)hr));
+}
+
+HRESULT WebViewHost::ProbePageHealth(const PageHealthCallback& callback) {
+    if (!webview_) {
+        LogLifecycle("health.submit-failed", "reason=no-webview");
+        if (callback) callback(false);
+        return E_FAIL;
     }
+
+    LogLifecycle("health.submit");
+
+    // Keep the probe independent from the public bridge and CDP. It verifies
+    // the document execution context that owns the DirectComposition surface.
+    static constexpr wchar_t kHealthProbe[] = LR"(
+        (() => {
+            try {
+                return {
+                    readyState: document.readyState,
+                    href: location.href,
+                    hasDocumentElement: !!document.documentElement,
+                    hasBridge: !!window.fb2k
+                };
+            } catch (_) {
+                return { readyState: "error" };
+            }
+        })()
+    )";
+
+    const HRESULT hr = webview_->ExecuteScript(
+        kHealthProbe,
+        Callback<ICoreWebView2ExecuteScriptCompletedHandler>(
+            [callback](HRESULT result, LPCWSTR resultJson) {
+                try {
+                    bool healthy = false;
+                    bool hasReadyState = false;
+                    bool hasRealLocation = false;
+                    bool hasDocumentElement = false;
+                    bool hasBridge = false;
+                    if (SUCCEEDED(result) && resultJson) {
+                        const std::wstring value(resultJson);
+                        hasReadyState =
+                            value.find(L"\"readyState\":\"complete\"") != std::wstring::npos ||
+                            value.find(L"\"readyState\":\"interactive\"") != std::wstring::npos ||
+                            value.find(L"\"readyState\":\"loading\"") != std::wstring::npos;
+                        hasRealLocation =
+                            value.find(L"\"href\":\"about:blank\"") == std::wstring::npos &&
+                            value.find(L"\"href\":\"\"") == std::wstring::npos;
+                        hasDocumentElement =
+                            value.find(L"\"hasDocumentElement\":true") != std::wstring::npos;
+                        hasBridge = value.find(L"\"hasBridge\":true") != std::wstring::npos;
+                        healthy = hasReadyState && hasRealLocation &&
+                            hasDocumentElement && hasBridge;
+                    }
+                    std::ostringstream completion;
+                    completion << "event=health.callback"
+                               << " uptimeMs=" << GetTickCount64()
+                               << " pid=" << GetCurrentProcessId()
+                               << " tid=" << GetCurrentThreadId()
+                               << " hr=0x" << pfc::format_hex((uint32_t)result)
+                               << " healthy=" << (healthy ? 1 : 0)
+                               << " readyState=" << (hasReadyState ? 1 : 0)
+                               << " realLocation=" << (hasRealLocation ? 1 : 0)
+                               << " documentElement=" << (hasDocumentElement ? 1 : 0)
+                               << " bridge=" << (hasBridge ? 1 : 0)
+                               << " resultChars=" << (resultJson ? wcslen(resultJson) : 0);
+                    WebViewHost::WriteLifecycleLog(completion.str());
+                    if (callback) callback(healthy);
+                } catch (...) {
+                    // Never unwind through the WebView2 COM callback boundary.
+                }
+                return S_OK;
+            }
+        ).Get()
+    );
+    if (FAILED(hr) && callback) {
+        LogLifecycle("health.submit-failed",
+            "hr=" + std::to_string((long long)hr));
+        callback(false);
+    }
+    return hr;
 }
 
 HRESULT WebViewHost::SetVirtualHostMapping(const std::wstring& hostName, const std::wstring& folderPath) {
@@ -1387,7 +1905,7 @@ void WebViewHost::SetupCharsetFixForVirtualHost() {
                 }
             }
         ).Get(),
-        nullptr
+        &artworkResourceRequestedToken_
     );
 
     LOG("Charset fix: WebResourceRequested handler registered for virtual host JS/CSS");
@@ -1908,14 +2426,50 @@ namespace {
     struct ScaledArtworkEntry {
         std::vector<uint8_t> jpegBytes;
         std::string mimeType;
+        std::chrono::steady_clock::time_point created;     // TTL expiry
+        std::chrono::steady_clock::time_point lastAccess;  // LRU eviction order
+    };
+
+    struct NegativeCacheEntry {
         std::chrono::steady_clock::time_point timestamp;
     };
 
     std::unordered_map<std::string, ScaledArtworkEntry> s_scaledArtworkCache;
-    std::mutex s_scaledArtworkCacheMutex;
-    // Increased capacity (200->500) and TTL (60s->300s) for better cache hit rate
+    std::unordered_map<std::string, NegativeCacheEntry> s_artworkNegativeCache;
+    std::mutex s_scaledArtworkCacheMutex;  // guards both positive and negative caches
     static constexpr size_t MAX_SCALED_CACHE = 500;
     static constexpr int SCALED_CACHE_TTL_SEC = 300;
+    static constexpr int NEGATIVE_CACHE_TTL_SEC = 30;
+}
+
+// Compute a source-content fingerprint from filesystem metadata.
+// Returns an empty string when no source paths are accessible.
+static std::string ComputeSourceFingerprint(const std::vector<std::string>& sourcePaths) {
+    std::string data;
+    data.reserve(sourcePaths.size() * 64);
+    for (const auto& p : sourcePaths) {
+        const std::wstring wp = pfc::stringcvt::string_wide_from_utf8(p.c_str()).get_ptr();
+        WIN32_FILE_ATTRIBUTE_DATA attrs = {};
+        if (GetFileAttributesExW(wp.c_str(), GetFileExInfoStandard, &attrs)) {
+            const uint64_t mtime =
+                (static_cast<uint64_t>(attrs.ftLastWriteTime.dwHighDateTime) << 32) |
+                static_cast<uint64_t>(attrs.ftLastWriteTime.dwLowDateTime);
+            const uint64_t fsize =
+                (static_cast<uint64_t>(attrs.nFileSizeHigh) << 32) |
+                static_cast<uint64_t>(attrs.nFileSizeLow);
+            data += p;
+            data += ':';
+            data += std::to_string(mtime);
+            data += ':';
+            data += std::to_string(fsize);
+            data += ';';
+        } else {
+            // Stat failed: include path so a later successful stat produces a different hash.
+            data += p;
+            data += ":x;";
+        }
+    }
+    return data;
 }
 
 // ==========================================================================
@@ -1988,94 +2542,13 @@ void WebViewHost::SetupCustomProtocol() {
                     return S_OK;  // 不是我们的协议
                 }
                 
-                // 解析 URI
-                std::string artworkType = "front";  // 默认类型
-                int maxSize = 0;  // 0 = no resize
-                std::string pathUtf8;
-                
-                // 计算路径开始位置（动态计算，避免硬编码长度）
-                size_t pathStart = isFb2kArtwork ? 15 : (isArtworkScheme ? 10 : sameOriginPrefix.length());
-                size_t queryPos = uriStr.find(L'?', pathStart);
-                
-                // 从 URL path 部分提取路径（向后兼容旧格式）
-                std::wstring pathPartFromUrl;
-                if (queryPos != std::wstring::npos) {
-                    pathPartFromUrl = uriStr.substr(pathStart, queryPos - pathStart);
-                } else {
-                    pathPartFromUrl = uriStr.substr(pathStart);
-                }
-                
-                // 解析查询参数的通用 lambda
-                auto parseQueryParam = [](const std::wstring& query, const std::wstring& key) -> std::wstring {
-                    std::wstring needle = key + L"=";
-                    size_t pos = 0;
-                    while ((pos = query.find(needle, pos)) != std::wstring::npos) {
-                        // 确保是参数开头（pos==0 或前一字符为'&'）
-                        if (pos == 0 || query[pos - 1] == L'&') {
-                            size_t valStart = pos + needle.length();
-                            size_t valEnd = query.find(L'&', valStart);
-                            return (valEnd != std::wstring::npos)
-                                ? query.substr(valStart, valEnd - valStart)
-                                : query.substr(valStart);
-                        }
-                        pos += needle.length();
-                    }
-                    return {};
-                };
-                
-                if (queryPos != std::wstring::npos) {
-                    std::wstring query = uriStr.substr(queryPos + 1);
-                    
-                    // 优先从 query param 提取 path（新格式：fb2k://artwork/?path=ENCODED&type=...）
-                    // Query string 不受 Chromium URL 路径规范化影响，%5C/%2F 保持原样
-                    if (auto pathParam = parseQueryParam(query, L"path"); !pathParam.empty()) {
-                        pathUtf8 = UrlDecode(pathParam);
-                    }
-                    
-                    // Parse type parameter
-                    if (auto typeParam = parseQueryParam(query, L"type"); !typeParam.empty()) {
-                        artworkType = UrlDecode(typeParam);
-                    }
-                    
-                    // Parse maxSize parameter
-                    std::wstring maxSizeParam = parseQueryParam(query, L"maxSize");
-                    if (!maxSizeParam.empty()) {
-                        try {
-                            maxSize = std::stoi(maxSizeParam);
-                        } catch (...) {
-                            maxSize = 0;
-                        }
-                    }
-                }
-                
-                // 向后兼容：如果 query param 中没有 path，从 URL path 部分解码
-                // （旧格式：fb2k://artwork/ENCODED_PATH?type=...）
-                if (pathUtf8.empty() && !pathPartFromUrl.empty()) {
-                    pathUtf8 = UrlDecode(pathPartFromUrl);
-                }
-                
-                // 注意：不做 '/' → '\\' 全局替换！
-                // 旧代码的 std::replace('/', '\\') 会破坏 file:// 前缀
-                // g_get_canonical_path 已能正确处理正斜杠和反斜杠路径
-                
-                LOG("Custom protocol request: path=", pathUtf8.c_str(), ", type=", artworkType.c_str(), ", maxSize=", maxSize);
-                
-                // 生成 ETag（基于路径 + 类型 + maxSize）
-                auto GenerateETag = [](const std::string& path, const std::string& type, int maxSize) -> std::string {
-                    // 简单哈希：路径 + 类型 + maxSize
-                    size_t hash = std::hash<std::string>{}(path + type + std::to_string(maxSize));
-                    char buf[32];
-                    snprintf(buf, sizeof(buf), "\"%zx\"", hash);
-                    return buf;
-                };
-                
-                std::string etag = GenerateETag(pathUtf8, artworkType, maxSize);
-                
                 // 处理 OPTIONS 预检请求 (CORS preflight)
                 wil::unique_cotaskmem_string method;
-                if (SUCCEEDED(request->get_Method(&method)) && method) {
-                    std::wstring methodStr(method.get());
-                    if (methodStr == L"OPTIONS") {
+                if (FAILED(request->get_Method(&method)) || !method) {
+                    return S_OK;
+                }
+                const std::wstring methodStr(method.get());
+                if (methodStr == L"OPTIONS") {
                         wil::com_ptr<ICoreWebView2WebResourceResponse> response;
                         std::wstring corsHeaders = 
                             L"Access-Control-Allow-Origin: *\r\n"
@@ -2088,85 +2561,356 @@ void WebViewHost::SetupCustomProtocol() {
                             LOG("OPTIONS preflight response sent");
                         }
                         return S_OK;
-                    }
                 }
-                
-                // 检查 If-None-Match 请求头（支持 304 响应）
-                wil::com_ptr<ICoreWebView2HttpRequestHeaders> requestHeaders;
-                if (wil::unique_cotaskmem_string ifNoneMatch;
-                    SUCCEEDED(request->get_Headers(&requestHeaders)) && requestHeaders &&
-                    SUCCEEDED(requestHeaders->GetHeader(L"If-None-Match", &ifNoneMatch)) && ifNoneMatch) {
-                    std::wstring ifNoneMatchW(ifNoneMatch.get());
-                    std::string ifNoneMatchStr(ifNoneMatchW.begin(), ifNoneMatchW.end());
-                    
-                    // ETag 匹配，返回 304 Not Modified (带 CORS 头)
-                    if (ifNoneMatchStr == etag) {
-                        wil::com_ptr<ICoreWebView2WebResourceResponse> response;
-                        std::wstring headers304 = L"Access-Control-Allow-Origin: *\r\n";
-                        if (SUCCEEDED(environment_->CreateWebResourceResponse(
-                                nullptr, 304, L"Not Modified", headers304.c_str(), &response))) {
-                            args->put_Response(response.get());
-                            LOG("304 Not Modified: ", pathUtf8.c_str());
+                if (methodStr != L"GET") {
+                    wil::com_ptr<ICoreWebView2WebResourceResponse> response;
+                    if (SUCCEEDED(environment_->CreateWebResourceResponse(
+                            nullptr, 405, L"Method Not Allowed",
+                            L"Allow: GET, OPTIONS\r\nAccess-Control-Allow-Origin: *\r\n",
+                            &response))) {
+                        args->put_Response(response.get());
+                    }
+                    return S_OK;
+                }
+
+                const std::string uriUtf8 =
+                    pfc::stringcvt::string_utf8_from_wide(uriStr.c_str()).get_ptr();
+                const auto parsed = artwork_request::Parse(uriUtf8);
+                if (!parsed.ok()) {
+                    wil::com_ptr<ICoreWebView2WebResourceResponse> response;
+                    const int status = parsed.httpStatus();
+                    const wchar_t* reason = status == 414 ? L"URI Too Long" : L"Bad Request";
+                    if (SUCCEEDED(environment_->CreateWebResourceResponse(
+                            nullptr, status, reason, L"Access-Control-Allow-Origin: *\r\n",
+                            &response))) {
+                        args->put_Response(response.get());
+                    }
+                    return S_OK;
+                }
+
+                const std::string& pathUtf8 = parsed.request.path;
+                const std::string& artworkType = parsed.request.type;
+                const int maxSize = parsed.request.maxSize;
+                const auto lifecycleCapture = artworkLifecycle_.CaptureRequest();
+                if (!lifecycleCapture.has_value()) {
+                    return S_OK;
+                }
+                auto instrumentation = artworkInstrumentation_.Begin({
+                    isFb2kArtwork ? "fb2k" : (isArtworkScheme ? "artwork" : "same-origin"),
+                    GetCurrentThreadId(), ownerThreadId_,
+                    lifecycleCapture->navigationGeneration,
+                    lifecycleCapture->hostGeneration,
+                    pathUtf8, artworkType, static_cast<uint32_t>(maxSize),
+                });
+                const std::wstring pathWide =
+                    pfc::stringcvt::string_wide_from_utf8(pathUtf8.c_str()).get_ptr();
+                std::wstring permissionError;
+                if (!PathSecurity::Instance().ValidateMediaAccess(pathWide, permissionError)) {
+                    instrumentation.SetPermissionResult("denied");
+                    instrumentation.Complete("denied", "permission-denied");
+                    artworkLifecycle_.Complete(*lifecycleCapture);
+                    wil::com_ptr<ICoreWebView2WebResourceResponse> response;
+                    if (SUCCEEDED(environment_->CreateWebResourceResponse(
+                            nullptr, 403, L"Forbidden", L"Access-Control-Allow-Origin: *\r\n",
+                            &response))) {
+                        args->put_Response(response.get());
+                    }
+                    LOG("Artwork resource denied by MediaRead");
+                    return S_OK;
+                }
+                instrumentation.SetPermissionResult("allowed");
+
+                // === Source-aware ETag: resolve source paths unconditionally ===
+                instrumentation.RecordSourceResolve();
+                std::vector<std::string> artworkSourcePaths;
+                artwork_internal::TryGetArtworkSourcePathsForPath(
+                    pathUtf8, artworkType, artworkSourcePaths);
+                const std::string sourceFingerprint =
+                    ComputeSourceFingerprint(artworkSourcePaths);
+                const std::string& fingerprintBase =
+                    sourceFingerprint.empty() ? pathUtf8 : sourceFingerprint;
+                const size_t contentHash = std::hash<std::string>{}(
+                    fingerprintBase + artworkType + std::to_string(maxSize));
+                char etagBuffer[32];
+                snprintf(etagBuffer, sizeof(etagBuffer), "\"%zx\"", contentHash);
+                const std::string etag(etagBuffer);
+                LOG("Artwork resource authorized: type=", artworkType.c_str(),
+                    ", maxSize=", maxSize, ", sources=",
+                    static_cast<int>(artworkSourcePaths.size()));
+
+                // === Negative cache check (avoids extractor on known-missing artwork) ===
+                const std::string negCacheKey =
+                    artworkType + ":" +
+                    (artworkSourcePaths.empty() ? pathUtf8 : artworkSourcePaths[0]);
+                {
+                    std::lock_guard lock(s_scaledArtworkCacheMutex);
+                    auto nit = s_artworkNegativeCache.find(negCacheKey);
+                    if (nit != s_artworkNegativeCache.end()) {
+                        const auto age =
+                            std::chrono::steady_clock::now() - nit->second.timestamp;
+                        if (std::chrono::duration_cast<std::chrono::seconds>(age).count()
+                                < NEGATIVE_CACHE_TTL_SEC) {
+                            instrumentation.Complete("missing", "negative-cache-hit");
+                            artworkLifecycle_.Complete(*lifecycleCapture);
+                            wil::com_ptr<ICoreWebView2WebResourceResponse> response;
+                            if (SUCCEEDED(environment_->CreateWebResourceResponse(
+                                    nullptr, 404, L"Not Found",
+                                    L"Cache-Control: no-store\r\nAccess-Control-Allow-Origin: *\r\n",
+                                    &response))) {
+                                args->put_Response(response.get());
+                            }
+                            return S_OK;
                         }
-                        return S_OK;
+                        s_artworkNegativeCache.erase(nit);  // expired entry
                     }
                 }
-                
-                // === Shared scaled artwork cache lookup ===
+
+                // === If-None-Match against source-aware ETag (after source resolve) ===
+                {
+                    wil::com_ptr<ICoreWebView2HttpRequestHeaders> reqHdrs;
+                    if (wil::unique_cotaskmem_string ifNoneMatch;
+                        SUCCEEDED(request->get_Headers(&reqHdrs)) && reqHdrs &&
+                        SUCCEEDED(reqHdrs->GetHeader(L"If-None-Match", &ifNoneMatch)) &&
+                        ifNoneMatch) {
+                        const std::string ifNoneMatchStr(
+                            pfc::stringcvt::string_utf8_from_wide(ifNoneMatch.get()).get_ptr());
+                        if (ifNoneMatchStr == etag) {
+                            const std::wstring etagW(etag.begin(), etag.end());
+                            const std::wstring headers304 =
+                                L"ETag: " + etagW + L"\r\n"
+                                L"Cache-Control: no-cache\r\n"
+                                L"Access-Control-Allow-Origin: *\r\n";
+                            wil::com_ptr<ICoreWebView2WebResourceResponse> response;
+                            if (SUCCEEDED(environment_->CreateWebResourceResponse(
+                                    nullptr, 304, L"Not Modified",
+                                    headers304.c_str(), &response))) {
+                                args->put_Response(response.get());
+                                LOG("Artwork 304 Not Modified (source-aware ETag)");
+                            }
+                            instrumentation.Complete("not-modified", "etag-match");
+                            artworkLifecycle_.Complete(*lifecycleCapture);
+                            return S_OK;
+                        }
+                    }
+                }
+
+                // === Scaled artwork cache lookup ===
                 std::string cacheKey;
                 if (maxSize > 0) {
-                    std::vector<std::string> artworkSourcePaths;
-                    artwork_internal::TryGetArtworkSourcePathsForPath(
-                        pathUtf8, artworkType, artworkSourcePaths
-                    );
                     cacheKey = BuildScaledArtworkCacheKey(
-                        pathUtf8, artworkType, maxSize, std::move(artworkSourcePaths)
-                    );
+                        pathUtf8, artworkType, maxSize, artworkSourcePaths);
                 }
 
-                // 提取缓存命中检查为扁平化 lambda（消除 4-5 层嵌套）
+                // Copy bytes under lock, build response outside lock; update LRU lastAccess.
                 auto tryScaledCacheHit = [&]() {
                     if (maxSize <= 0 || cacheKey.empty()) return false;
-                    std::lock_guard lock(s_scaledArtworkCacheMutex);
-                    auto it = s_scaledArtworkCache.find(cacheKey);
-                    if (it == s_scaledArtworkCache.end()) return false;
-                    auto& entry = it->second;
-                    if (auto age = std::chrono::steady_clock::now() - entry.timestamp;
-                        std::chrono::duration_cast<std::chrono::seconds>(age).count() >= SCALED_CACHE_TTL_SEC)
-                        return false;
-                    // Cache hit: return cached JPEG directly, skip I/O + WIC
+                    std::vector<uint8_t> hitBytes;
+                    std::string hitMime;
+                    {
+                        std::lock_guard lock(s_scaledArtworkCacheMutex);
+                        auto it = s_scaledArtworkCache.find(cacheKey);
+                        if (it == s_scaledArtworkCache.end()) return false;
+                        auto& entry = it->second;
+                        const auto now = std::chrono::steady_clock::now();
+                        if (std::chrono::duration_cast<std::chrono::seconds>(
+                                now - entry.created).count() >= SCALED_CACHE_TTL_SEC)
+                            return false;
+                        entry.lastAccess = now;  // true LRU update
+                        hitBytes = entry.jpegBytes;
+                        hitMime  = entry.mimeType;
+                    }
+                    // Build response outside the lock
                     IStream* cacheStream = SHCreateMemStream(
-                        entry.jpegBytes.data(),
-                        static_cast<UINT>(entry.jpegBytes.size())
-                    );
+                        hitBytes.data(), static_cast<UINT>(hitBytes.size()));
                     if (!cacheStream) return false;
-                    std::wstring mimeTypeW(entry.mimeType.begin(), entry.mimeType.end());
-                    std::wstring etagW(etag.begin(), etag.end());
+                    const std::wstring mimeTypeW(hitMime.begin(), hitMime.end());
+                    const std::wstring etagW(etag.begin(), etag.end());
                     std::wstring headers = L"Content-Type: " + mimeTypeW + L"\r\n";
-                    headers += L"Cache-Control: public, max-age=604800, immutable\r\n";
+                    headers += L"Cache-Control: public, max-age=86400\r\n";
                     headers += L"ETag: " + etagW + L"\r\n";
                     headers += L"Access-Control-Allow-Origin: *\r\n";
-
                     wil::com_ptr<ICoreWebView2WebResourceResponse> response;
                     if (SUCCEEDED(environment_->CreateWebResourceResponse(
                             cacheStream, 200, L"OK", headers.c_str(), &response))) {
                         args->put_Response(response.get());
-                        LOG("Scaled artwork cache hit: ", entry.jpegBytes.size(), " bytes, path=", pathUtf8.c_str());
+                        LOG("Scaled artwork cache hit: ", hitBytes.size(), " bytes");
                     }
                     cacheStream->Release();
                     return true;
                 };
-                if (tryScaledCacheHit()) return S_OK;
+                if (tryScaledCacheHit()) {
+                    instrumentation.Complete("success", "scaled-cache-hit");
+                    artworkLifecycle_.Complete(*lifecycleCapture);
+                    return S_OK;
+                }
 
-                // === Cache miss: full extraction + resize pipeline ===
+                // === Async cache miss: GetDeferral + worker queue ===
+                wil::com_ptr<ICoreWebView2Deferral> deferral;
+                if (FAILED(args->GetDeferral(&deferral)) || !deferral) {
+                    // GetDeferral failed — fall through to inline sync extraction below.
+                    goto sync_extraction;
+                }
+
+                {
+                    // Capture everything needed for owner-thread completion.
+                    // artworkHostAlive_ guards against WebViewHost destruction.
+                    auto aliveFlag   = artworkHostAlive_;
+                    auto envCapture  = environment_;   // COM AddRef
+                    wil::com_ptr<ICoreWebView2WebResourceRequestedEventArgs> argsCapture = args;
+                    auto lifecycle   = &artworkLifecycle_;
+                    auto capture     = *lifecycleCapture;
+                    const std::string etagCopy      = etag;
+                    const std::string cacheKeyCopy  = cacheKey;
+
+                    // Read If-None-Match once more for the async path.
+                    std::string ifNoneMatchEtag;
+                    {
+                        wil::com_ptr<ICoreWebView2HttpRequestHeaders> reqHdrs2;
+                        if (SUCCEEDED(request->get_Headers(&reqHdrs2)) && reqHdrs2) {
+                            if (wil::unique_cotaskmem_string inm;
+                                SUCCEEDED(reqHdrs2->GetHeader(L"If-None-Match", &inm)) && inm)
+                                ifNoneMatchEtag = pfc::stringcvt::string_utf8_from_wide(
+                                    inm.get()).get_ptr();
+                        }
+                    }
+
+                    artwork_worker::WorkItem workItem;
+                    workItem.pathUtf8        = pathUtf8;
+                    workItem.artworkType     = artworkType;
+                    workItem.maxSize         = maxSize;
+                    workItem.cacheKey        = cacheKey;
+                    workItem.negCacheKey     = negCacheKey;
+                    workItem.etag            = etag;
+                    workItem.ifNoneMatchEtag = std::move(ifNoneMatchEtag);
+                    workItem.navGen          = lifecycleCapture->navigationGeneration;
+                    workItem.hostGen         = lifecycleCapture->hostGeneration;
+                    workItem.abort           = std::make_shared<abort_callback_impl>();
+                    // Capture deferral by copy (wil::com_ptr is refcounted). Do NOT move it:
+                    // Submit(std::move(workItem)) always takes ownership of the WorkItem, even when
+                    // it returns false for queue-full; the outer deferral must remain usable for 503.
+                    workItem.complete = [
+                        aliveFlag, envCapture, argsCapture = std::move(argsCapture),
+                        deferral, lifecycle, capture,
+                        etagCopy, cacheKeyCopy
+                    ](artwork_worker::ArtworkResult result) mutable {
+                        // Runs on fb2k main thread (== WebView owner thread).
+                        if (!aliveFlag->load(std::memory_order_acquire)) {
+                            if (deferral) deferral->Complete();
+                            return;
+                        }
+                        const auto completionStatus = lifecycle->Complete(capture);
+                        if (completionStatus != artwork_request::CompletionResult::Accepted) {
+                            if (deferral) deferral->Complete();
+                            return;
+                        }
+
+                        wil::com_ptr<ICoreWebView2WebResourceResponse> response;
+                        if (result.statusCode == 200 && !result.bytes.empty()) {
+                            // Write L1 positive cache.
+                            if (!result.cacheKey.empty()) {
+                                std::lock_guard lock(s_scaledArtworkCacheMutex);
+                                const auto now = std::chrono::steady_clock::now();
+                                s_scaledArtworkCache[result.cacheKey] = {
+                                    result.bytes, result.mime, now, now};
+                            }
+                            IStream* stream = SHCreateMemStream(
+                                result.bytes.data(),
+                                static_cast<UINT>(result.bytes.size()));
+                            if (stream) {
+                                const std::wstring mimeW(
+                                    result.mime.begin(), result.mime.end());
+                                const std::wstring etagW(
+                                    result.etag.begin(), result.etag.end());
+                                std::wstring h = L"Content-Type: " + mimeW + L"\r\n";
+                                h += L"Cache-Control: public, max-age=86400\r\n";
+                                h += L"ETag: " + etagW + L"\r\n";
+                                h += L"Access-Control-Allow-Origin: *\r\n";
+                                envCapture->CreateWebResourceResponse(
+                                    stream, 200, L"OK", h.c_str(), &response);
+                                stream->Release();
+                            }
+                        } else if (result.statusCode == 304 || result.is304) {
+                            const std::wstring etagW(
+                                result.etag.begin(), result.etag.end());
+                            const std::wstring h304 =
+                                L"ETag: " + etagW + L"\r\n"
+                                L"Cache-Control: no-cache\r\n"
+                                L"Access-Control-Allow-Origin: *\r\n";
+                            envCapture->CreateWebResourceResponse(
+                                nullptr, 304, L"Not Modified", h304.c_str(), &response);
+                        } else if (result.statusCode == 404) {
+                            if (result.isNegative && !result.negCacheKey.empty()) {
+                                std::lock_guard lock(s_scaledArtworkCacheMutex);
+                                s_artworkNegativeCache[result.negCacheKey] =
+                                    NegativeCacheEntry{std::chrono::steady_clock::now()};
+                            }
+                            envCapture->CreateWebResourceResponse(
+                                nullptr, 404, L"Not Found",
+                                L"Cache-Control: no-store\r\nAccess-Control-Allow-Origin: *\r\n",
+                                &response);
+                        } else {
+                            // 503 (queue-full/cancelled) or 500
+                            const int sc = result.statusCode;
+                            const wchar_t* reason = sc == 503
+                                ? L"Service Unavailable" : L"Internal Server Error";
+                            const std::wstring h5xx =
+                                sc == 503
+                                ? L"Retry-After: 5\r\nAccess-Control-Allow-Origin: *\r\n"
+                                : L"Access-Control-Allow-Origin: *\r\n";
+                            envCapture->CreateWebResourceResponse(
+                                nullptr, sc, reason, h5xx.c_str(), &response);
+                        }
+
+                        if (response && argsCapture) {
+                            argsCapture->put_Response(response.get());
+                        }
+                        if (deferral) deferral->Complete();
+                        LOG("[ArtworkWorker] async complete: status=", result.statusCode);
+                    };
+
+                    if (artworkWorkerQueue_ &&
+                        artworkWorkerQueue_->Submit(std::move(workItem))) {
+                        instrumentation.RecordExtractor();
+                        instrumentation.Complete("async", "worker-queued");
+                        return S_OK;  // deferral will be completed by worker
+                    }
+
+                    // Queue full / worker unavailable — respond 503 and complete deferral.
+                    // workItem (and its completion lambda) was destroyed inside Submit; use the
+                    // outer refcounted deferral / args / lifecycle still on this stack.
+                    wil::com_ptr<ICoreWebView2WebResourceResponse> response503;
+                    if (SUCCEEDED(environment_->CreateWebResourceResponse(
+                            nullptr, 503, L"Service Unavailable",
+                            L"Retry-After: 5\r\nAccess-Control-Allow-Origin: *\r\n",
+                            &response503))) {
+                        args->put_Response(response503.get());
+                    }
+                    instrumentation.Complete("rejected", "worker-queue-full");
+                    artworkLifecycle_.Complete(*lifecycleCapture);
+                    if (deferral) deferral->Complete();
+                    return S_OK;
+                }
+
+                sync_extraction:
+                // === Sync fallback (GetDeferral failed or async path unavailable) ===
+                instrumentation.RecordExtractor();
                 artwork_internal::BinaryArtwork artwork;
                 bool found = artwork_internal::GetArtworkBinaryForPath(pathUtf8, artworkType, artwork);
                 
                 if (!found || artwork.bytes.empty()) {
+                    // Write negative cache so repeated requests skip the extractor.
+                    {
+                        std::lock_guard lock(s_scaledArtworkCacheMutex);
+                        s_artworkNegativeCache[negCacheKey] =
+                            NegativeCacheEntry{std::chrono::steady_clock::now()};
+                    }
+                    instrumentation.Complete("missing", "artwork-not-found");
+                    artworkLifecycle_.Complete(*lifecycleCapture);
                     wil::com_ptr<ICoreWebView2WebResourceResponse> response;
-                    std::wstring headers404 = L"Access-Control-Allow-Origin: *\r\n";
                     if (SUCCEEDED(environment_->CreateWebResourceResponse(
-                            nullptr, 404, L"Not Found", headers404.c_str(), &response))) {
+                            nullptr, 404, L"Not Found",
+                            L"Cache-Control: no-store\r\nAccess-Control-Allow-Origin: *\r\n",
+                            &response))) {
                         args->put_Response(response.get());
                     }
                     return S_OK;
@@ -2179,6 +2923,7 @@ void WebViewHost::SetupCustomProtocol() {
                 std::vector<uint8_t> resizedData;
                 
                 if (maxSize > 0) {
+                    instrumentation.RecordResize();
                     int outWidth = 0, outHeight = 0;
                     const char* outMimeType = nullptr;
                     
@@ -2199,25 +2944,32 @@ void WebViewHost::SetupCustomProtocol() {
 
                         // Store in scaled artwork cache (eviction logic extracted to reduce nesting)
                         auto evictScaledCache = [&]() {
-                            auto now = std::chrono::steady_clock::now();
-                            for (auto ci = s_scaledArtworkCache.begin(); ci != s_scaledArtworkCache.end(); ) {
-                                if (std::chrono::duration_cast<std::chrono::seconds>(now - ci->second.timestamp).count() >= SCALED_CACHE_TTL_SEC) {
+                            const auto now = std::chrono::steady_clock::now();
+                            // Remove TTL-expired entries first.
+                            for (auto ci = s_scaledArtworkCache.begin();
+                                 ci != s_scaledArtworkCache.end(); ) {
+                                if (std::chrono::duration_cast<std::chrono::seconds>(
+                                        now - ci->second.created).count() >= SCALED_CACHE_TTL_SEC) {
                                     ci = s_scaledArtworkCache.erase(ci);
                                 } else {
                                     ++ci;
                                 }
                             }
                             if (s_scaledArtworkCache.size() < MAX_SCALED_CACHE) return;
-                            // LRU eviction of oldest 20% instead of clear()
+                            // LRU eviction by lastAccess: evict 20% least-recently-accessed.
                             std::vector<decltype(s_scaledArtworkCache)::iterator> entries;
                             entries.reserve(s_scaledArtworkCache.size());
-                            for (auto it = s_scaledArtworkCache.begin(); it != s_scaledArtworkCache.end(); ++it) {
+                            for (auto it = s_scaledArtworkCache.begin();
+                                 it != s_scaledArtworkCache.end(); ++it) {
                                 entries.push_back(it);
                             }
-                            size_t toEvict = MAX_SCALED_CACHE / 5;  // evict 20%
+                            size_t toEvict = MAX_SCALED_CACHE / 5;
                             if (toEvict > entries.size()) toEvict = entries.size();
-                            std::partial_sort(entries.begin(), entries.begin() + toEvict, entries.end(),
-                                [](auto a, auto b) { return a->second.timestamp < b->second.timestamp; });
+                            std::partial_sort(
+                                entries.begin(), entries.begin() + toEvict, entries.end(),
+                                [](auto a, auto b) {
+                                    return a->second.lastAccess < b->second.lastAccess;
+                                });
                             for (size_t i = 0; i < toEvict; ++i) {
                                 s_scaledArtworkCache.erase(entries[i]);
                             }
@@ -2226,9 +2978,9 @@ void WebViewHost::SetupCustomProtocol() {
                             std::lock_guard lock(s_scaledArtworkCacheMutex);
                             if (s_scaledArtworkCache.size() >= MAX_SCALED_CACHE)
                                 evictScaledCache();
+                            const auto now = std::chrono::steady_clock::now();
                             s_scaledArtworkCache[cacheKey] = {
-                                resizedData, finalMimeType,
-                                std::chrono::steady_clock::now()
+                                resizedData, finalMimeType, now, now
                             };
                         }
                     } else if (outWidth > 0) {
@@ -2246,10 +2998,10 @@ void WebViewHost::SetupCustomProtocol() {
                     std::wstring etagW(etag.begin(), etag.end());
                     
                     std::wstring headers = L"Content-Type: " + mimeTypeW + L"\r\n";
-                    headers += L"Cache-Control: public, max-age=604800, immutable\r\n";
+                    headers += L"Cache-Control: public, max-age=86400\r\n";  // no immutable
                     headers += L"ETag: " + etagW + L"\r\n";
                     headers += L"Access-Control-Allow-Origin: *\r\n";
-                    
+
                     wil::com_ptr<ICoreWebView2WebResourceResponse> response;
                     if (SUCCEEDED(environment_->CreateWebResourceResponse(
                             stream, 200, L"OK", headers.c_str(), &response))) {
@@ -2259,10 +3011,19 @@ void WebViewHost::SetupCustomProtocol() {
                     
                     stream->Release();
                 }
+
+                instrumentation.Complete("success", "response-created");
+                artworkLifecycle_.Complete(*lifecycleCapture);
                 
                 return S_OK;
                 } catch (...) {
-                    return S_OK;  // 异常逃逸即放行默认处理，绝不让异常穿透 COM 回调边界
+                    wil::com_ptr<ICoreWebView2WebResourceResponse> response;
+                    if (environment_ && SUCCEEDED(environment_->CreateWebResourceResponse(
+                            nullptr, 500, L"Internal Server Error",
+                            L"Access-Control-Allow-Origin: *\r\n", &response))) {
+                        args->put_Response(response.get());
+                    }
+                    return S_OK;
                 }
             }
         ).Get(),
@@ -2270,6 +3031,8 @@ void WebViewHost::SetupCustomProtocol() {
     );
     
     if (SUCCEEDED(hr)) {
+        artworkLifecycle_.RecordTokenAdd(
+            artwork_request::TokenKind::WebResourceRequested, true);
         LOG("Custom protocol handlers registered (fb2k://artwork, artwork://)");
     } else {
         LOG("Failed to register WebResourceRequested handler, HRESULT: ", pfc::format_hex((uint32_t)hr));

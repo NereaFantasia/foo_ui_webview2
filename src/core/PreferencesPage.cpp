@@ -1190,10 +1190,8 @@ void WebViewPreferencesInstance::OnRenameTemplate(HWND hwnd) {
         "(只允许字母、数字、连字符和下划线)\n\n"
         "点击取消以中止。");
     
-    // 使用 TaskDialog 带输入框（需要 CommCtrl v6），回退到简化方案
-    // 简化方案：使用 FindText 技巧创建一个带编辑框的对话框
-    // 最终方案：组合 MessageBox 提示 + 剪贴板约定，过于 hacky
-    // 实际方案：直接构建最小 DLGTEMPLATE（3 个控件）
+    // Win32 没有现成的"带输入框的消息框"：TaskDialog 不支持文本输入，
+    // 因此在内存中构建最小 DLGTEMPLATE（label + edit + OK/Cancel）。
 
     // 构建内存中的对话框模板
     // 布局: [Label] [Edit] [OK] [Cancel]

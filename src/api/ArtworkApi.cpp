@@ -10,6 +10,7 @@
 
 #include "pch.h"
 #include "api/ArtworkApi.h"
+#include "api/ArtworkRequestParser.h"
 #include "api/BridgeCore.h"
 #include <foobar2000/SDK/album_art.h>
 #include <foobar2000/SDK/album_art_helpers.h>
@@ -63,26 +64,8 @@ static const char* DetectMimeType(const uint8_t* data, size_t len) {
 // This ensures consistent encoding like: E%3A%5COST%5Cvoid%5C...
 // The UrlDecode function in WebViewHost.cpp will decode everything correctly
 // ==========================================================================
-static std::string UrlEncode(const std::string& str) {
-    std::ostringstream escaped;
-    escaped.fill('0');
-    escaped << std::hex;
-    escaped << std::uppercase;
-
-    for (size_t i = 0; i < str.size(); ++i) {
-        unsigned char c = static_cast<unsigned char>(str[i]);
-        
-        // Keep only alphanumeric, hyphen, underscore, period, tilde
-        // Everything else including /, \, : must be encoded
-        if (isalnum(c) || c == '-' || c == '_' || c == '.' || c == '~') {
-            escaped << static_cast<char>(c);
-        } else {
-            // Encode everything else including: / \ : # ? & % space and all non-ASCII
-            escaped << '%' << std::setw(2) << static_cast<int>(c);
-        }
-    }
-
-    return escaped.str();
+[[maybe_unused]] static std::string UrlEncode(const std::string& str) {
+    return artwork_request::UrlEncode(str);
 }
 
 
@@ -107,6 +90,54 @@ static json ValidateArtworkType(const std::string& type) {
         return nullptr;  // valid
     }
     return {{"available", false}, {"error", "Unknown artwork type: " + type}, {"code", "INVALID_PARAMS"}};
+}
+
+static json MakeArtworkUrlInputError(artwork_request::ParseError error) {
+    return {
+        {"available", false},
+        {"error", std::string("Invalid artwork URL parameters: ") +
+            artwork_request::ParseErrorName(error)},
+        {"code", "INVALID_PARAMS"},
+    };
+}
+
+static bool ReadArtworkUrlOptions(
+    const json& params,
+    std::string& type,
+    std::optional<std::int64_t>& maxSize,
+    json& error) {
+    type = "front";
+    maxSize.reset();
+
+    if (params.contains("type")) {
+        if (!params["type"].is_string()) {
+            error = MakeArtworkUrlInputError(artwork_request::ParseError::InvalidType);
+            return false;
+        }
+        type = params["type"].get<std::string>();
+    }
+
+    if (params.contains("maxSize")) {
+        try {
+            if (params["maxSize"].is_number_unsigned()) {
+                const auto value = params["maxSize"].get<std::uint64_t>();
+                if (value > static_cast<std::uint64_t>(std::numeric_limits<std::int64_t>::max())) {
+                    error = MakeArtworkUrlInputError(artwork_request::ParseError::MaxSizeOverflow);
+                    return false;
+                }
+                maxSize = static_cast<std::int64_t>(value);
+            } else if (params["maxSize"].is_number_integer()) {
+                maxSize = params["maxSize"].get<std::int64_t>();
+            } else {
+                error = MakeArtworkUrlInputError(artwork_request::ParseError::InvalidMaxSize);
+                return false;
+            }
+        } catch (...) {
+            error = MakeArtworkUrlInputError(artwork_request::ParseError::MaxSizeOverflow);
+            return false;
+        }
+    }
+    return true;
 }
 
 namespace {
@@ -176,12 +207,16 @@ static bool GetArtworkBinaryForMetadbHandle(metadb_handle_ptr track, const GUID&
     if (!track.is_valid()) return false;
 
     // 1) now_playing_album_art_notify_manager (fast, cached) - only for cover_front
-    // IMPORTANT: This cache is ONLY valid for the currently playing track and ONLY holds cover_front!
-    if (artType == album_art_ids::cover_front) {
+    // IMPORTANT:
+    // - This cache is ONLY valid for the currently playing track and ONLY holds cover_front.
+    // - playback_control is main-thread-only (SDK: "work from main app thread only").
+    //   Calling get_now_playing() from fb2k::inCpuWorkerThread raises uBugCheck
+    //   (failure_00000253). Worker/async artwork extraction must skip this shortcut.
+    if (artType == album_art_ids::cover_front && core_api::is_main_thread()) {
         try {
             auto pc = playback_control::get();
             metadb_handle_ptr nowPlaying;
-        
+
             // Only use now_playing_manager cache if the requested track is actually the current playing track
             if (pc->get_now_playing(nowPlaying) && nowPlaying.is_valid() && nowPlaying == track) {
                 auto manager = now_playing_album_art_notify_manager::get();
@@ -854,10 +889,10 @@ json ArtworkGetAvailableTypes(const json& params) {
 // Return a fb2k://artwork/... URL for current playing track.
 // The WebView2 protocol handler will fetch and (optionally) scale the artwork.
 json ArtworkGetFb2kUrl(const json& params) {
-    std::string type = params.value("type", "front");
-    auto typeErr = ValidateArtworkType(type);
-    if (!typeErr.is_null()) return typeErr;
-    int maxSize = params.value("maxSize", 0);
+    std::string type;
+    std::optional<std::int64_t> maxSize;
+    json optionError;
+    if (!ReadArtworkUrlOptions(params, type, maxSize, optionError)) return optionError;
 
     try {
         auto pc = playback_control::get();
@@ -876,13 +911,10 @@ json ArtworkGetFb2kUrl(const json& params) {
 
         // Path placed in query parameter (not URL path) to avoid
         // Chromium URL normalization of %5C/%2F in path segments
-        std::ostringstream oss;
-        oss << "fb2k://artwork/?path=" << UrlEncode(trackPath) << "&type=" << type;
-        if (maxSize > 0) {
-            oss << "&maxSize=" << maxSize;
-        }
-
-        std::string url = oss.str();
+        const auto built = artwork_request::BuildFb2kArtworkUrl(trackPath, type, maxSize);
+        if (!built.ok()) return MakeArtworkUrlInputError(built.error);
+        type = built.type;
+        const std::string& url = built.url;
         LOG("[fb2k://] getFb2kUrl: url=%s", url.c_str());
 
         return {
@@ -904,10 +936,10 @@ json ArtworkGetFb2kUrl(const json& params) {
 // Return a fb2k://artwork/... URL for a given track path.
 json ArtworkGetFb2kUrlByPath(const json& params) {
     std::string path = params.value("path", "");
-    std::string type = params.value("type", "front");
-    auto typeErr = ValidateArtworkType(type);
-    if (!typeErr.is_null()) return typeErr;
-    int maxSize = params.value("maxSize", 0);
+    std::string type;
+    std::optional<std::int64_t> maxSize;
+    json optionError;
+    if (!ReadArtworkUrlOptions(params, type, maxSize, optionError)) return optionError;
 
     if (path.empty()) {
         return {
@@ -919,18 +951,15 @@ json ArtworkGetFb2kUrlByPath(const json& params) {
 
     // Path placed in query parameter (not URL path) to avoid
     // Chromium URL normalization of %5C/%2F in path segments
-    std::ostringstream oss;
-    oss << "fb2k://artwork/?path=" << UrlEncode(path) << "&type=" << type;
-    if (maxSize > 0) {
-        oss << "&maxSize=" << maxSize;
-    }
+    const auto built = artwork_request::BuildFb2kArtworkUrl(path, type, maxSize);
+    if (!built.ok()) return MakeArtworkUrlInputError(built.error);
+    type = built.type;
 
-    std::string url = oss.str();
     return {
         {"available", true},
         {"type", type},
         {"path", path},
-        {"dataUrl", url},
+        {"dataUrl", built.url},
     };
 }
 
@@ -1240,30 +1269,44 @@ json ArtworkGetAvailableArtwork(const json& params) {
 
 // artwork.getFb2kUrlByPathBatch - Batch generate fb2k:// URLs for multiple tracks
 json ArtworkGetFb2kUrlByPathBatch(const json& params) {
+    static constexpr size_t kMaxBatchItems = 100;
+    const bool hasPaths = params.contains("paths");
+    const bool hasItems = params.contains("items");
+    if (hasPaths == hasItems) {
+        return {{"success", false}, {"error", "exactly one of paths or items is required"},
+                {"code", "INVALID_PARAMS"}};
+    }
+
     const json* pathList = nullptr;
-    if (params.contains("paths") && params["paths"].is_array()) {
+    if (hasPaths && params["paths"].is_array()) {
         pathList = &params["paths"];
-    } else if (params.contains("items") && params["items"].is_array()) {
+    } else if (hasItems && params["items"].is_array()) {
         pathList = &params["items"];
     }
 
     if (pathList == nullptr) {
-        return {{"success", false}, {"error", "paths or items array is required"}};
+        return {{"success", false}, {"error", "paths or items must be an array"},
+                {"code", "INVALID_PARAMS"}};
     }
-    
-    std::string type = params.value("type", "front");
-    auto typeErr = ValidateArtworkType(type);
-    if (!typeErr.is_null()) return typeErr;
-    int maxSize = params.value("maxSize", 0);
+    if (pathList->size() > kMaxBatchItems) {
+        return {{"success", false}, {"error", "artwork batch limit exceeded"},
+                {"code", "INVALID_PARAMS"}};
+    }
+
+    std::string type;
+    std::optional<std::int64_t> maxSize;
+    json optionError;
+    if (!ReadArtworkUrlOptions(params, type, maxSize, optionError)) return optionError;
     
     json artworks = json::array();
     
     for (const auto& pathJson : *pathList) {
         std::string path;
-        if (pathJson.is_string()) {
+        if (hasPaths && pathJson.is_string()) {
             path = pathJson.get<std::string>();
-        } else if (pathJson.is_object()) {
-            path = pathJson.value("path", "");
+        } else if (hasItems && pathJson.is_object() && pathJson.contains("path") &&
+                   pathJson["path"].is_string()) {
+            path = pathJson["path"].get<std::string>();
         }
 
         if (path.empty()) {
@@ -1271,19 +1314,18 @@ json ArtworkGetFb2kUrlByPathBatch(const json& params) {
             continue;
         }
         
-        // Path placed in query parameter (not URL path) to avoid
-        // Chromium URL normalization of %5C/%2F in path segments
-        std::ostringstream oss;
-        oss << "fb2k://artwork/?path=" << UrlEncode(path) << "&type=" << type;
-        if (maxSize > 0) {
-            oss << "&maxSize=" << maxSize;
+        const auto built = artwork_request::BuildFb2kArtworkUrl(path, type, maxSize);
+        if (!built.ok()) {
+            artworks.push_back({{"path", path}, {"available", false},
+                {"error", artwork_request::ParseErrorName(built.error)}});
+            continue;
         }
         
         artworks.push_back({
             {"path", path},
             {"available", true},
-            {"type", type},
-            {"dataUrl", oss.str()},
+            {"type", built.type},
+            {"dataUrl", built.url},
         });
     }
     
@@ -1369,7 +1411,9 @@ void RegisterArtworkApi() {
     // Extended Artwork APIs
     bridge.RegisterApi("artwork.getBatch", ArtworkGetBatch, {{"paths", SecurityLevel::MediaRead, true}});
     bridge.RegisterApi("artwork.getAvailableArtwork", ArtworkGetAvailableArtwork, {{"path", SecurityLevel::MediaRead}});
-    bridge.RegisterApi("artwork.getFb2kUrlByPathBatch", ArtworkGetFb2kUrlByPathBatch, {{"paths", SecurityLevel::MediaRead, true}});
+    bridge.RegisterApi("artwork.getFb2kUrlByPathBatch", ArtworkGetFb2kUrlByPathBatch,
+        {{"paths", SecurityLevel::MediaRead, true},
+         {"items", SecurityLevel::MediaRead, true, "path"}});
     bridge.RegisterApi("artwork.getFolderImages", ArtworkGetFolderImages, {{"directory", SecurityLevel::Read}});
 
     LOG("Artwork API registered (13 APIs)");

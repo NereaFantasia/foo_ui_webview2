@@ -797,8 +797,8 @@ LRESULT MainWindow::HandleMessage(UINT msg, WPARAM wParam, LPARAM lParam) {
             
         case WM_CREATE:
             OnCreate();
-            // 注册会话锁定/解锁通知：锁屏=必然不可见，借此 SetVisible(false)+Low 省内存，
-            // 解锁复原。零误判风险（锁屏期间窗口绝不可见）。
+            // 注册会话锁定/解锁通知：锁屏=必然不可见，借此 SetVisible(false)+深挂起
+            //（TrySuspend，回退 Low）省内存，解锁复原。零误判风险（锁屏期间窗口绝不可见）。
             WTSRegisterSessionNotification(hwnd_, NOTIFY_FOR_THIS_SESSION);
             return 0;
             
@@ -816,6 +816,7 @@ LRESULT MainWindow::HandleMessage(UINT msg, WPARAM wParam, LPARAM lParam) {
             return 0;
             
         case WM_DESTROY:
+            LogWebViewLifecycle("window.destroy");
             WTSUnRegisterSessionNotification(hwnd_);
             OnDestroy();
             return 0;
@@ -823,8 +824,10 @@ LRESULT MainWindow::HandleMessage(UINT msg, WPARAM wParam, LPARAM lParam) {
         case WM_WTSSESSION_CHANGE:
             // 锁屏 → 隐藏 WebView 释放内存；解锁 → 复原。
             if (wParam == WTS_SESSION_LOCK) {
+                LogWebViewLifecycle("session.lock");
                 SetBgSuspend(kBgSuspendLocked, true, "session-lock");
             } else if (wParam == WTS_SESSION_UNLOCK) {
+                LogWebViewLifecycle("session.unlock");
                 SetBgSuspend(kBgSuspendLocked, false, "session-unlock");
             }
             return 0;
@@ -833,6 +836,16 @@ LRESULT MainWindow::HandleMessage(UINT msg, WPARAM wParam, LPARAM lParam) {
             std::string extra = std::string("show=") + WindowChromeTrace::BoolText(wParam != FALSE) +
                 " status=" + std::to_string((long long)lParam);
             TraceWindowPhase("WM_SHOWWINDOW", nullptr, nullptr, nullptr, nullptr, extra.c_str());
+            if (wParam != FALSE) {
+                // 托盘恢复的统一入口：所有重新显示窗口的路径（WebViewUI::activate /
+                // window.focus / BackgroundService::ShowWindow / 任务栏）都经过这里，
+                // 清 kBgSuspendTrayHidden 并按投影恢复页面（挂起态经 put_IsVisible(TRUE)
+                // 自动 resume）。未设置该 reason 时是 no-op：背景窗口 show、启动 reveal
+                // 不受影响。此刻窗口尚未真正可见，RestoreSurfaceAfterHidden 可能拒绝，
+                // SetBgSuspend 内部会兜底 SetVisible(true)；完整 chrome/surface 收敛由
+                // 各恢复调用方既有的 RestoreSurfaceAfterHidden 后置调用完成。
+                SetBgSuspend(kBgSuspendTrayHidden, false, "window-shown");
+            }
             if (wParam != FALSE && !isMinimized_ &&
                 !startupRevealPending_ && startupRevealCommitted_ && !startupRevealSettling_) {
                 ApplyResolvedChrome(true);
@@ -913,7 +926,7 @@ LRESULT MainWindow::HandleMessage(UINT msg, WPARAM wParam, LPARAM lParam) {
                 webView_->GetController()->NotifyParentWindowPositionChanged();
             }
 
-            // -- 期望置顶状态守护（capability 级收口）--
+            // -- 期望置顶状态守护 --
             // 任何 z-order 路径（现有或未来新增）若让主窗口的 WS_EX_TOPMOST 偏离期望
             // ——升段 = 被相对插入隐式授予置顶（意外覆盖全桌面），
             //   降段 = 用户显式置顶被撤销路径悄悄剥除——在此统一矫正。
@@ -995,9 +1008,10 @@ LRESULT MainWindow::HandleMessage(UINT msg, WPARAM wParam, LPARAM lParam) {
             }
             if (wParam == RESTORE_SURFACE_CONVERGE_TIMER_ID) {
                 KillTimer(hwnd_, RESTORE_SURFACE_CONVERGE_TIMER_ID);
-                // 最小化恢复后强制一次 DComp surface 重呈现，兜底 occlusion 恢复空白
+                // 后台恢复后延迟重复完整 Resume/visible/surface 收敛。安全桌面切换
+                // 期间即使首次 put_IsVisible(TRUE) 成功，DComp 首帧仍可能尚未提交。
                 if (!isMinimized_) {
-                    EnsureSurfaceConvergedAfterNativeFrame("restore-from-minimize");
+                    RestoreSurfaceAfterHidden("deferred-background-resume");
                 }
                 return 0;
             }
@@ -1011,13 +1025,30 @@ LRESULT MainWindow::HandleMessage(UINT msg, WPARAM wParam, LPARAM lParam) {
                 EvaluateCoverState();
                 return 0;
             }
+            if (wParam == BG_RESUME_RETRY_TIMER_ID) {
+                KillTimer(hwnd_, BG_RESUME_RETRY_TIMER_ID);
+                SetBgSuspend(0, false, "bg-resume-retry");
+                return 0;
+            }
+            if (wParam == PAGE_HEALTH_RETRY_TIMER_ID) {
+                KillTimer(hwnd_, PAGE_HEALTH_RETRY_TIMER_ID);
+                if (pageHealthProbePending_) {
+                    LogWebViewLifecycle("health.timeout");
+                    pageHealthProbePending_ = false;
+                    ++pageHealthProbeGeneration_;
+                    HandleRestoredPageHealthResult(false, "page-health-timeout");
+                    return 0;
+                }
+                ProbeRestoredPageHealth("page-health-retry");
+                return 0;
+            }
             if (wParam == DEFERRED_BACKDROP_TIMER_ID) {
                 KillTimer(hwnd_, DEFERRED_BACKDROP_TIMER_ID);
                 deferredBackdropPending_ = false;
                 if (needsAuthoritativeChromeReapply_ && !isMinimized_ && IsWindowVisible(hwnd_)) {
                     needsAuthoritativeChromeReapply_ = false;
                     TraceWindowPhase("DeferredBackdropTimer.enter");
-                    // [Experiment I] 简化为 Chrome 层 reapply（仅在 WebView 就绪后触发）
+                    // Chrome 层 reapply（仅在 WebView 就绪后触发）
                     ApplyResolvedChrome(true);
                     TraceWindowPhase("DeferredBackdropTimer.done");
                 } else {
@@ -1026,7 +1057,7 @@ LRESULT MainWindow::HandleMessage(UINT msg, WPARAM wParam, LPARAM lParam) {
                 return 0;
             }
             if (wParam == BACKDROP_KICK_EXIT_TIMER_ID) {
-                // 保留以防后续需要，当前不使用
+                // 当前无 backdrop kick 序列使用该计时器，仅做安全清理
                 KillTimer(hwnd_, BACKDROP_KICK_EXIT_TIMER_ID);
                 return 0;
             }
@@ -1111,35 +1142,34 @@ LRESULT MainWindow::HandleMessage(UINT msg, WPARAM wParam, LPARAM lParam) {
 
             if (wParam == SIZE_MINIMIZED) {
                 BroadcastWindowStateChangedIfNeeded();
-                // 最小化时让 WebView 进入 hidden/暂停态，才能真正回收内存。
-                // 关键经验（CDP 实测）：仅 MemoryUsageTargetLevel=Low 是净零——本项目最小化时 controller
-                // 仍 IsVisible=TRUE 且 occlusion 已禁用，页面 visibilityState 始终 visible、rAF/定时器不停，
-                // 释放的内存立刻被回占。put_IsVisible(FALSE) 使页面 visibilityState=hidden 并暂停，此时
-                // Low 才真正生效并保持；恢复见下方 SetVisible(true) + RESTORE_SURFACE_CONVERGE nudge。
+                // 最小化统一走 background_suspend_policy 投影（不再直调
+                // SetVisible(false)+SetMemoryUsageLow(true)）。投影决定：
+                // put_IsVisible(FALSE)（页面 visibilityState=hidden，事件门控随之生效）
+                // → TrySuspend 深挂起（advconfig 关闭时回退 Low）；CDP 自动化
+                // keep-alive veto 在投影内（截图需持续出帧）。
+                // 关键经验（CDP 实测）：仅 Low 是净零——occlusion 已禁用时页面保持
+                // visible、rAF/定时器不停，释放的内存立刻被回占；必须先 hidden。
                 // 仍不使用 SetBoundsVisible(false)（零视口会导致 HMR 导航失败）。
-                if (webView_) {
-                    webView_->SetVisible(false);
-                    webView_->SetMemoryUsageLow(true);
-                }
                 ClearCoverSuspend();  // 进入最小化：清覆盖记账+停轮询，恢复后会重新评估
+                SetBgSuspend(kBgSuspendMinimized, true, "minimize");
                 return 0;
             }
 
-            // 从最小化恢复：先恢复可见性（put_IsVisible(TRUE) → visibilityState=visible、页面恢复运行）
-            // 并复原内存目标等级；DComp 表面随后由 RESTORE_SURFACE_CONVERGE nudge 强制重呈现，防空窗。
-            // 顺序与 RefreshStartupRevealSurface 一致：先 SetVisible(true) 再 Resize（OnSize）。
-            if (wasMinimized && webView_) {
-                webView_->SetVisible(true);
-                webView_->SetMemoryUsageLow(false);
-                ScheduleCoverReevaluation();  // 恢复后若仍处于被覆盖位置则重新隐藏
+            // 从最小化恢复：统一恢复序列——SetBgSuspend 清 kMinimized
+            // 后经 RestoreSurfaceAfterHidden 执行 put_IsVisible(TRUE)（挂起态自动
+            // resume）+ chrome/surface 收敛，再按当前 reasons 重投影内存等级；DComp
+            // 表面随后仍由 RESTORE_SURFACE_CONVERGE nudge 兜底强制重呈现，防空窗。
+            if (wasMinimized) {
+                SetBgSuspend(kBgSuspendMinimized, false, "restore-from-minimize");
             }
 
             OnSize(LOWORD(lParam), HIWORD(lParam));
             if (wasMinimized && !startupRevealPending_ && startupRevealCommitted_ && !startupRevealSettling_) {
                 ApplyResolvedChrome(true);
                 // 兜底：恢复后延迟一拍强制一次真实 surface transition（nudge），防 DComp 表面留空。
-                // 最小化时已显式 SetVisible(false) 隐藏 WebView，故此处 SetVisible(true)+nudge
-                // 等效既有 RestoreSurfaceAfterHidden 的恢复序列（已验证可靠，非历史“无法恢复”场景）。
+                // 最小化时投影已把页面隐藏（SetVisible(false)+TrySuspend/Low），上方
+                // SetBgSuspend 恢复分支执行统一恢复序列，此 nudge 为其既有兜底
+                //（已验证可靠，非历史“无法恢复”场景）。
                 if (hwnd_ && IsWindow(hwnd_)) {
                     KillTimer(hwnd_, RESTORE_SURFACE_CONVERGE_TIMER_ID);
                     SetTimer(hwnd_, RESTORE_SURFACE_CONVERGE_TIMER_ID,
@@ -1382,7 +1412,7 @@ LRESULT MainWindow::HandleMessage(UINT msg, WPARAM wParam, LPARAM lParam) {
 void MainWindow::OnCreate() {
     LOG("MainWindow::OnCreate");
     
-    // [Experiment I] 完全复刻 v1.1.19 OnCreate 的 DWM 调用序列。
+    // OnCreate 阶段只做最小 DWM 调用序列：
     // 不调用 Chrome 统一层（ApplyResolvedChrome / WindowChromeApplier），
     // 不写 corner preference、BlurBehind、MICA_EFFECT=FALSE 等额外属性，
     // 不触发额外的 SWP_FRAMECHANGED / RedrawWindow。
@@ -1424,7 +1454,7 @@ void MainWindow::OnCreate() {
             &cornerPref, sizeof(cornerPref));
     }
 
-    // [Experiment K] 显式启用 DWM 窗口过渡动画。
+    // 显式启用 DWM 窗口过渡动画。
     // CaptionlessOverlapped 窗口依赖此属性保持标准 DWM 动画。
     {
         constexpr DWORD DWMWA_TRANSITIONS_FORCEDISABLED = 3;
@@ -1469,6 +1499,8 @@ void MainWindow::OnDestroy() {
     KillTimer(hwnd_, SIZE_MAXIMIZED_PROBE_T100_TIMER_ID);
     KillTimer(hwnd_, SIZE_RESTORED_PROBE_T100_TIMER_ID);
     KillTimer(hwnd_, RESTORE_SURFACE_CONVERGE_TIMER_ID);
+    KillTimer(hwnd_, BG_RESUME_RETRY_TIMER_ID);
+    KillTimer(hwnd_, PAGE_HEALTH_RETRY_TIMER_ID);
     KillTimer(hwnd_, BACKDROP_KICK_EXIT_TIMER_ID);
     startupPresentationCoordinator_.MarkClosed();
     SyncStartupRevealProjection();
@@ -1495,14 +1527,15 @@ void MainWindow::OnClose() {
 }
 
 void MainWindow::HideWindowToTray() {
-    // 隐藏到托盘前让 WebView 进入 hidden/暂停态以回收内存（仅 SW_HIDE 不会让页面
-    // visibilityState=hidden，因 IsVisible 仍 TRUE + occlusion 已禁用）。
-    // 恢复端由 RestoreSurfaceAfterHidden 兜 SetVisible(true)+nudge + 复原 Normal。
-    if (webView_) {
-        webView_->SetVisible(false);
-        webView_->SetMemoryUsageLow(true);
-    }
+    // 托盘隐藏统一走 background_suspend_policy 投影（不再直调
+    // SetVisible(false)+SetMemoryUsageLow(true)）。投影在 SW_HIDE 前
+    // 应用（仅 SW_HIDE 不会让页面 visibilityState=hidden，因 IsVisible 仍 TRUE +
+    // occlusion 已禁用）：put_IsVisible(FALSE) → TrySuspend 深挂起（advconfig 关闭
+    // 时回退 Low）；CDP 自动化 keep-alive veto 在投影内（托盘期间 CDP 工具须持续可用）。
+    // 恢复路径统一在 WM_SHOWWINDOW(TRUE)（清 kBgSuspendTrayHidden），完整 surface
+    // 收敛由各恢复调用方既有的 RestoreSurfaceAfterHidden 后置调用完成。
     ClearCoverSuspend();
+    SetBgSuspend(kBgSuspendTrayHidden, true, "tray-hide");
     ShowWindow(hwnd_, SW_HIDE);
 }
 
@@ -1613,6 +1646,8 @@ void MainWindow::OnPaint() {
 
 void MainWindow::OnWebViewReady() {
     LOG("MainWindow::OnWebViewReady");
+    webViewRebuildInProgress_ = false;
+    LogWebViewLifecycle("window.webview-ready");
     
     // 初始化 WindowManager（windowId 已在 OnCreate 中设置）
     WindowManager::GetInstance().Initialize(this);
@@ -1636,9 +1671,9 @@ void MainWindow::OnWebViewReady() {
     lastBroadcastIsMinimized_ = isMinimized_;
     lastBroadcastIsActive_ = isActive_;
     OnSize(rect.right, rect.bottom);
+    LogWebViewLifecycle("window.webview-ready-sized");
 
-    // [Legacy] cold-start reveal 路径下 startupChromeLayerSuppressed_ 始终为 false，
-    // 此赋值为无害 legacy 保留。
+    // cold-start reveal 路径下该标志始终为 false（immediate-show 才会置位）。
     startupChromeLayerSuppressed_ = false;
 
     // [Chrome Reconciliation] 不再在 OnWebViewReady 中切换 WS_POPUP。
@@ -1669,6 +1704,8 @@ void MainWindow::OnWebViewReady() {
 // ============================================
 
 void MainWindow::OnNavigationCompleted(bool success) {
+    LogWebViewLifecycle("navigation.completed",
+        std::string("success=") + (success ? "1" : "0"));
     ApplyStartupPresentationDecision(
         startupPresentationCoordinator_.OnNavigationCompleted(success, IsStartupRevealChromeReady()),
         success ? "OnNavigationCompleted" : "OnNavigationCompletedFailed");
@@ -1734,10 +1771,23 @@ void MainWindow::OnWebViewProcessFailed(COREWEBVIEW2_PROCESS_FAILED_KIND failedK
     }
 
     // 渲染进程类崩溃：WebViewHost 已自行 Reload，恢复后重新把焦点路由进页面，
-    // 避免"恢复但键盘失灵"。浏览器进程退出（recovered=false）的整窗重建留待后续阶段。
+    // 避免"恢复但键盘失灵"。浏览器进程退出（recovered=false）不在此路径处理，
+    // 由健康检查驱动的整窗重建负责。
     if (recovered && webView_ && webView_->IsReady() && !isMinimized_) {
         webView_->MoveFocus(COREWEBVIEW2_MOVE_FOCUS_REASON_PROGRAMMATIC);
     }
+}
+
+void MainWindow::OnWebViewInitFailed() {
+    // InitializeWebView 只报告"是否成功启动"，controller 创建失败发生在异步
+    // 回调里。若不在此处释放重建锁，RebuildWebViewAfterHealthFailure 会返回
+    // true 而锁永不清零，后续所有重建（含健康探针路径）被永久堵死。
+    if (webViewRebuildInProgress_) {
+        webViewRebuildInProgress_ = false;
+        LogWebViewLifecycle("rebuild.failed", "reason=controller-create-failed");
+        console::print("[WebView2 UI] WebView rebuild failed during controller creation");
+    }
+    WebViewPanel::OnWebViewInitFailed();
 }
 
 bool MainWindow::IsStartupRevealChromeReady() const {
@@ -1807,8 +1857,8 @@ void MainWindow::BypassStartupRevealForImmediateShow() {
     startupDeferredSurfaceConvergePending_ = false;
     deferredBackdropPending_ = false;
 
-    // Experiment G: 即使在 immediate show 模式下，也启动 deferred backdrop timer
-    // 以触发 NRB 翻转，迫使 DWM 重建 visual tree。
+    // immediate show 模式下也启动 deferred backdrop timer，以触发 NRB 翻转，
+    // 迫使 DWM 重建 visual tree。
     if (hwnd_ && IsWindow(hwnd_) && !isMinimized_) {
         needsAuthoritativeChromeReapply_ = true;
         SetTimer(hwnd_, DEFERRED_BACKDROP_TIMER_ID, DEFERRED_BACKDROP_DELAY_MS, nullptr);
@@ -1845,15 +1895,18 @@ void MainWindow::ApplyStartupPresentationDecision(const StartupPresentationCoord
     TryCommitStartupReveal();
 }
 
-void MainWindow::RefreshStartupRevealSurface() {
+bool MainWindow::RefreshStartupRevealSurface() {
     if (!hwnd_ || !IsWindow(hwnd_) || !webView_ || !webView_->IsReady() || isMinimized_) {
-        return;
+        return false;
     }
 
     RECT clientRect{};
     GetClientRect(hwnd_, &clientRect);
-    webView_->SetVisible(true);
+    if (!webView_->SetVisible(true)) {
+        return false;
+    }
     webView_->Resize(clientRect);
+    return true;
 }
 
 bool MainWindow::RestoreSurfaceAfterHidden(const char* reason) {
@@ -1872,52 +1925,249 @@ bool MainWindow::RestoreSurfaceAfterHidden(const char* reason) {
     }
 
     LogSurfaceDiagnostics((std::string("RestoreSurfaceAfterHidden.enter/") + restoreReason).c_str());
-    // 复原内存目标等级：隐藏到托盘/后台时设过 Low，恢复可见后必须回 Normal，
-    // 否则可见态下仍被激进 trim 影响性能。（SetVisible(true) 由 RefreshStartupRevealSurface 负责。）
-    webView_->SetMemoryUsageLow(false);
+    LogWebViewLifecycle("restore.begin", std::string("reason=") + restoreReason);
     EnsureAuthoritativeNativeChrome(restoreReason);
-    RefreshStartupRevealSurface();
-    const bool restored = EnsureSurfaceConvergedAfterNativeFrame(restoreReason);
+    // 恢复顺序必须先 put_IsVisible(TRUE)：挂起态由运行时自动 Resume 并把内存目标
+    // 恢复为 Normal。随后 SetBgSuspend 以当前 reasons 重新投影，必要时（例如仍被
+    // covered）再手动补 Low；禁止在 TrySuspend 尚未 Resume 时手动改内存目标。
+    const bool visible = RefreshStartupRevealSurface();
+    const bool restored = visible && EnsureSurfaceConvergedAfterNativeFrame(restoreReason);
 
     if (auto* controller = webView_->GetController()) {
         controller->NotifyParentWindowPositionChanged();
     }
 
     LogSurfaceDiagnostics((std::string("RestoreSurfaceAfterHidden.exit/") + restoreReason).c_str());
+    LogWebViewLifecycle(restored ? "restore.surface-confirmed" : "restore.surface-failed",
+                        std::string("reason=") + restoreReason);
     CaptureRuntimeDomProbe(std::string("RestoreSurfaceAfterHidden.exit/") + restoreReason);
+    if (restored) {
+        bgSuspendHealthRecoveryAttempts_ = 0;
+        KillTimer(hwnd_, PAGE_HEALTH_RETRY_TIMER_ID);
+        SetTimer(hwnd_, PAGE_HEALTH_RETRY_TIMER_ID,
+                 PAGE_HEALTH_RETRY_DELAY_MS, nullptr);
+    }
     // 任何隐藏→可见的恢复后，重新评估是否（仍）被完全覆盖
     ScheduleCoverReevaluation();
     return restored;
+}
+
+void MainWindow::ProbeRestoredPageHealth(const char* reason) {
+    if (!hwnd_ || !IsWindow(hwnd_) || !webView_ ||
+        bgSuspendPageHidden_ || isMinimized_ || pageHealthProbePending_) {
+        return;
+    }
+
+    LogSurfaceDiagnostics((std::string("PageHealthProbe/") +
+        (reason && reason[0] ? reason : "restore") + "/start").c_str());
+    const HWND expectedHwnd = hwnd_;
+    WebViewHost* const expectedHost = webView_.get();
+    const uint64_t generation = ++pageHealthProbeGeneration_;
+    LogWebViewLifecycle("health.probe-start",
+        std::string("reason=") + (reason && reason[0] ? reason : "restore") +
+        " generation=" + std::to_string(generation));
+    pageHealthProbePending_ = true;
+    KillTimer(hwnd_, PAGE_HEALTH_RETRY_TIMER_ID);
+    SetTimer(hwnd_, PAGE_HEALTH_RETRY_TIMER_ID,
+             PAGE_HEALTH_PROBE_TIMEOUT_MS, nullptr);
+    webView_->ProbePageHealth([expectedHwnd, expectedHost, generation](bool healthy) noexcept {
+        try {
+            if (!expectedHwnd || !IsWindow(expectedHwnd)) return;
+            auto* self = reinterpret_cast<MainWindow*>(
+                GetWindowLongPtrW(expectedHwnd, GWLP_USERDATA));
+            if (!self || self->hwnd_ != expectedHwnd ||
+                self->webView_.get() != expectedHost || self->bgSuspendPageHidden_ ||
+                !self->pageHealthProbePending_ ||
+                self->pageHealthProbeGeneration_ != generation) {
+                return;
+            }
+            KillTimer(expectedHwnd, PAGE_HEALTH_RETRY_TIMER_ID);
+            self->pageHealthProbePending_ = false;
+            self->HandleRestoredPageHealthResult(healthy, "page-health-callback");
+        } catch (...) {
+            // WebViewHost also guards its COM boundary; keep this callback safe
+            // if future recovery bookkeeping gains throwing operations.
+        }
+    });
+}
+
+void MainWindow::HandleRestoredPageHealthResult(bool healthy, const char* reason) {
+    const char* probeReason = reason && reason[0] ? reason : "page-health";
+    const auto action = background_suspend_policy::DecidePageHealthRecovery(
+        healthy, bgSuspendHealthRecoveryAttempts_, PAGE_HEALTH_RECOVERY_LIMIT);
+    const char* actionText = action == background_suspend_policy::PageHealthRecoveryAction::Accept
+        ? "accept"
+        : (action == background_suspend_policy::PageHealthRecoveryAction::Reload
+            ? "reload" : "rebuild");
+    LogWebViewLifecycle("health.decision",
+        std::string("reason=") + probeReason +
+        " healthy=" + (healthy ? "1" : "0") +
+        " attempts=" + std::to_string(bgSuspendHealthRecoveryAttempts_) +
+        " action=" + actionText);
+    if (action == background_suspend_policy::PageHealthRecoveryAction::Accept) {
+        bgSuspendHealthRecoveryAttempts_ = 0;
+        LogSurfaceDiagnostics((std::string(probeReason) + "/healthy").c_str());
+        return;
+    }
+
+    LogSurfaceDiagnostics((std::string(probeReason) + "/unhealthy").c_str());
+    if (action == background_suspend_policy::PageHealthRecoveryAction::Rebuild) {
+        console::printf(
+            "[WebView2 UI] page health did not recover after %u reload attempts; rebuilding",
+            bgSuspendHealthRecoveryAttempts_);
+        RebuildWebViewAfterHealthFailure(probeReason);
+        return;
+    }
+
+    ++bgSuspendHealthRecoveryAttempts_;
+    webView_->Reload();
+    KillTimer(hwnd_, PAGE_HEALTH_RETRY_TIMER_ID);
+    SetTimer(hwnd_, PAGE_HEALTH_RETRY_TIMER_ID,
+             PAGE_HEALTH_RETRY_DELAY_MS, nullptr);
+}
+
+bool MainWindow::RebuildWebViewAfterHealthFailure(const char* reason) {
+    if (webViewRebuildInProgress_ || !hwnd_ || !IsWindow(hwnd_)) {
+        return false;
+    }
+
+    webViewRebuildInProgress_ = true;
+    LogWebViewLifecycle("rebuild.begin",
+        std::string("reason=") + (reason && reason[0] ? reason : "page-health"));
+    bgSuspendHealthRecoveryAttempts_ = 0;
+    bgSuspendPageHidden_ = false;
+    bgSuspendDeepRequested_ = false;
+    pageHealthProbePending_ = false;
+    ++pageHealthProbeGeneration_;
+    KillTimer(hwnd_, PAGE_HEALTH_RETRY_TIMER_ID);
+    KillTimer(hwnd_, BG_RESUME_RETRY_TIMER_ID);
+    KillTimer(hwnd_, RESTORE_SURFACE_CONVERGE_TIMER_ID);
+
+    console::printf("[WebView2 UI] rebuilding unhealthy WebView, reason=%s",
+                    reason && reason[0] ? reason : "page-health");
+    const HWND rebuildHwnd = hwnd_;
+    BridgeCore::GetInstance().SetWebView(nullptr);
+    DestroyWebView();
+    const bool started = InitializeWebView(rebuildHwnd, WebViewPanelMode::Standalone);
+    LogWebViewLifecycle(started ? "rebuild.started" : "rebuild.start-failed",
+        std::string("reason=") + (reason && reason[0] ? reason : "page-health"));
+    if (!started) {
+        webViewRebuildInProgress_ = false;
+        console::print("[WebView2 UI] WebView rebuild failed to start");
+    }
+    return started;
 }
 
 void MainWindow::SetBgSuspend(unsigned reason, bool active, const char* why) {
     const unsigned prev = bgSuspendReasons_;
     if (active) bgSuspendReasons_ |= reason;
     else        bgSuspendReasons_ &= ~reason;
-    if (bgSuspendReasons_ == prev) return;   // 该原因状态未变
     if (!webView_) return;
 
-    // 最小化 / 托盘隐藏各自管理可见性（页面已被它们隐藏）。这两种状态下本路径
-    // 不动可见性，只维护位掩码；待回到普通可见态时各自的恢复路径会重新呈现。
-    if (isMinimized_ || !hwnd_ || !IsWindow(hwnd_) || !IsWindowVisible(hwnd_)) return;
+    // 仅保护"窗口尚未创建/已销毁"。最小化/托盘隐藏是投影驱动的 reasons
+    //（kMinimized/kTrayHidden），必须落到下方投影分支；不再有 isMinimized_/
+    // !IsWindowVisible 旁路豁免。
+    if (!hwnd_ || !IsWindow(hwnd_)) return;
 
-    const auto previousProjection = background_suspend_policy::Project(prev);
-    const auto currentProjection = background_suspend_policy::Project(bgSuspendReasons_);
+    const bool keepAlive = security_config::IsAutomationKeepAliveActive();
+    const auto currentProjection =
+        background_suspend_policy::Project(bgSuspendReasons_, keepAlive);
+    const bool deepSuspendEnabled = security_config::IsDeepSuspendEnabled();
 
-    if (currentProjection.hideSurface && !previousProjection.hideSurface) {
-        // 锁屏是唯一没有可见 surface 消费者的后台原因，可暂停页面并 trim 内存。
-        webView_->SetVisible(false);
+    // 原因未变化时通常是 no-op；但上次 hidden→visible 命令失败后，实际状态
+    // 仍与投影不一致，重试定时器必须能再次进入同一收敛逻辑。
+    if (bgSuspendReasons_ == prev &&
+        currentProjection.hideSurface == bgSuspendPageHidden_) {
+        return;
+    }
+
+    {
+        std::ostringstream detail;
+        detail << "why=" << (why && why[0] ? why : "-")
+               << " reason=0x" << pfc::format_hex(reason)
+               << " active=" << (active ? 1 : 0)
+               << " prevReasons=0x" << pfc::format_hex(prev)
+               << " reasons=0x" << pfc::format_hex(bgSuspendReasons_)
+               << " projectedHidden=" << (currentProjection.hideSurface ? 1 : 0)
+               << " projectedLow=" << (currentProjection.useLowMemory ? 1 : 0)
+               << " projectedDeep=" << (currentProjection.deepSuspend ? 1 : 0)
+               << " deepEnabled=" << (deepSuspendEnabled ? 1 : 0)
+               << " keepAlive=" << (keepAlive ? 1 : 0);
+        LogWebViewLifecycle("background.project", detail.str());
+    }
+
+    // CDP 自动化 keep-alive 豁免命中时留一条运行时证据（仅状态迁移时到达此处，
+    // 不刷屏）。
+    if (keepAlive && !currentProjection.hideSurface &&
+        background_suspend_policy::Project(bgSuspendReasons_).hideSurface) {
+        console::print("[WebView2 UI] background suspend skipped (automation keep-alive)");
+    }
+
+    // 迁移检测以"上次实际应用的隐藏状态"为准，而非用当前 keep-alive 值重算
+    // prev 投影：挂起期间子开关变化会漏检 hidden→visible 迁移。
+    if (currentProjection.hideSurface && !bgSuspendPageHidden_) {
+        // 锁屏/最小化/托盘隐藏都没有可见 surface 消费者，可暂停页面并回收内存。
+        // 顺序：SetVisible(false)（页面 hidden，事件门控随之生效）
+        // → TrySuspend。深挂起与手动 Low 互斥（TrySuspend 自动置 Low、Resume 自动
+        // 回 Normal）；advconfig 关闭时退化为现状 Low 路径（尾部统一投影）。
+        const bool hidden = webView_->SetVisible(false);
+        const auto applied = background_suspend_policy::ApplyVisibilityResult(
+            bgSuspendPageHidden_, /*desiredHidden=*/true, hidden);
+        bgSuspendPageHidden_ = applied.pageHidden;
+        bgSuspendResumeRetryCount_ = 0;
+        KillTimer(hwnd_, BG_RESUME_RETRY_TIMER_ID);
+        if (hidden && currentProjection.deepSuspend && deepSuspendEnabled) {
+            bgSuspendDeepRequested_ = true;
+            webView_->TrySuspendDeep();
+        }
         LogSurfaceDiagnostics((std::string("BgSuspend.hide/") + (why ? why : "")).c_str());
     }
 
-    if (!currentProjection.hideSurface && previousProjection.hideSurface) {
+    if (!currentProjection.hideSurface && bgSuspendPageHidden_) {
         // 即使仍处于 covered/Low，也必须先恢复 surface，供窗口本体与 DWM 预览消费。
-        RestoreSurfaceAfterHidden(why ? why : "bg-resume");
+        // put_IsVisible(TRUE)（在 RefreshStartupRevealSurface 内）会自动 resume 挂起态。
+        bool restored = RestoreSurfaceAfterHidden(why ? why : "bg-resume");
+        if (!restored) {
+            // 启动 reveal 门槛或窗口尚未真正可见（如 WM_SHOWWINDOW 时刻）拒绝了
+            // 完整 nudge：页面可见性记账仍必须收敛（否则事件门控卡在 hidden、
+            // 挂起态无法 resume）。完整收敛由调用方后置 nudge 或下一次恢复补齐。
+            restored = webView_->SetVisible(true);
+        }
+
+        const auto applied = background_suspend_policy::ApplyVisibilityResult(
+            bgSuspendPageHidden_, /*desiredHidden=*/false, restored);
+        bgSuspendPageHidden_ = applied.pageHidden;
+        if (!bgSuspendPageHidden_) {
+            bgSuspendDeepRequested_ = false;
+            bgSuspendResumeRetryCount_ = 0;
+            KillTimer(hwnd_, BG_RESUME_RETRY_TIMER_ID);
+            // 覆盖首次 API 成功但安全桌面/DComp 尚未重新 present 的窗口期。
+            KillTimer(hwnd_, RESTORE_SURFACE_CONVERGE_TIMER_ID);
+            SetTimer(hwnd_, RESTORE_SURFACE_CONVERGE_TIMER_ID,
+                     RESTORE_SURFACE_CONVERGE_DELAY_MS, nullptr);
+        } else if (applied.retryResume &&
+                   bgSuspendResumeRetryCount_ < BG_RESUME_RETRY_LIMIT) {
+            ++bgSuspendResumeRetryCount_;
+            SetTimer(hwnd_, BG_RESUME_RETRY_TIMER_ID,
+                     BG_RESUME_RETRY_DELAY_MS, nullptr);
+        } else if (applied.retryResume) {
+            console::printf(
+                "[WebView2 UI] background resume did not converge after %u attempts",
+                bgSuspendResumeRetryCount_);
+        }
     }
 
-    // 覆盖态只降低内存目标，不隐藏 DirectComposition surface。Shell 的任务栏
-    // 预览宿主可能在几何上覆盖本窗口，却仍需要该 surface 持续生成预览。
-    webView_->SetMemoryUsageLow(currentProjection.useLowMemory);
+    // 按当前 reasons 统一重投影内存等级（统一恢复序列的收尾）：覆盖态只降内存
+    // 不隐藏 surface（DWM 任务栏预览仍消费）；"锁屏解除但仍被覆盖"等组合在此
+    // 自然落位 Low，不等覆盖轮询兜底。深挂起在途/生效期间跳过——互斥铁律
+    //（TrySuspend 自动管理内存目标，手动设置会被忽略且破坏状态推理）。
+    if (!bgSuspendDeepRequested_) {
+        // kill-switch 关闭时，deepSuspend 投影显式降级为手动 Low；正常深挂起路径
+        // 的 useLowMemory=false，由 TrySuspend/Resume 独占内存目标控制。
+        const bool useManualLow = currentProjection.useLowMemory ||
+            (currentProjection.deepSuspend && !deepSuspendEnabled);
+        webView_->SetMemoryUsageLow(useManualLow);
+    }
 }
 
 bool MainWindow::IsMainWindowFullyCovered() const {
@@ -1936,7 +2186,7 @@ bool MainWindow::IsMainWindowFullyCovered() const {
     // 桌面外壳例外：点击桌面会让 Progman/WorkerW 成为前台，其矩形覆盖整屏，
     // 下方"前台几何完全包含本窗口"会把"桌面在前台"误判为"本窗口被完全覆盖"，
     // 进而错误地把 WebView SetVisible(false) 挂起、内容消失（聚焦才恢复）。
-    // 桌面成为前台时本窗口实际仍完全可见，必须在覆盖谓词本身排除（治本）。
+    // 桌面成为前台时本窗口实际仍完全可见，因此在覆盖谓词本身排除该情况。
     if (fg == ::GetShellWindow()) return false;
     {
         wchar_t fgClass[64] = {};
@@ -2101,6 +2351,50 @@ void MainWindow::LogSurfaceDiagnostics(const char* phase) const {
            << " iconic=" << WindowChromeTrace::BoolText(IsIconic(hwnd_) != FALSE)
            << " zoomed=" << WindowChromeTrace::BoolText(IsZoomed(hwnd_) != FALSE);
     S_EmitEvidenceLine(stream.str());
+}
+
+void MainWindow::LogWebViewLifecycle(const char* event, const std::string& detail) const {
+    try {
+        RECT clientRect{};
+        if (hwnd_ && IsWindow(hwnd_)) {
+            GetClientRect(hwnd_, &clientRect);
+        }
+
+        std::ostringstream stream;
+        stream << "windowId=" << (GetWindowId().empty() ? "main" : GetWindowId())
+               << " reasons=0x" << pfc::format_hex(bgSuspendReasons_)
+               << " appliedHidden=" << (bgSuspendPageHidden_ ? 1 : 0)
+               << " deepRequested=" << (bgSuspendDeepRequested_ ? 1 : 0)
+               << " resumeRetries=" << bgSuspendResumeRetryCount_
+               << " healthAttempts=" << bgSuspendHealthRecoveryAttempts_
+               << " healthPending=" << (pageHealthProbePending_ ? 1 : 0)
+               << " healthGeneration=" << pageHealthProbeGeneration_
+               << " rebuildInProgress=" << (webViewRebuildInProgress_ ? 1 : 0)
+               << " minimized=" << (isMinimized_ ? 1 : 0)
+               << " windowVisible="
+               << (hwnd_ && IsWindow(hwnd_) && IsWindowVisible(hwnd_) ? 1 : 0)
+               << " client=(" << clientRect.left << ',' << clientRect.top << ','
+               << clientRect.right << ',' << clientRect.bottom << ')';
+        if (!detail.empty()) {
+            stream << ' ' << detail;
+        }
+
+        if (webView_) {
+            webView_->LogLifecycle(event, stream.str());
+            return;
+        }
+
+        std::ostringstream fallback;
+        fallback << "event=" << (event && event[0] ? event : "-")
+                 << " uptimeMs=" << GetTickCount64()
+                 << " pid=" << GetCurrentProcessId()
+                 << " tid=" << GetCurrentThreadId()
+                 << " hwnd=0x" << pfc::format_hex((size_t)hwnd_)
+                 << " host=none detail=" << stream.str();
+        WebViewHost::WriteLifecycleLog(fallback.str());
+    } catch (...) {
+        // Diagnostics must never alter window lifecycle behavior.
+    }
 }
 
 void MainWindow::CaptureRuntimeDomProbe(const std::string& phase, int scheduledDelayMs) {
@@ -2463,7 +2757,7 @@ void MainWindow::FinalizeStartupRevealSettlement() {
 
     chromeBackdropBroadcastReady_ = true;
 
-    // [Bug Fix] 临时解除 deferredBackdropPending_ 门控，使 ApplyResolvedChrome
+    // 此处需短暂解除 deferredBackdropPending_ 门控，使 ApplyResolvedChrome
     // 能穿透 ApplyBackdropPolicyForActivation 中的延迟写入守卫。
     // 根因：deferredBackdropPending_ 的职责是阻止 ShowWindow 后同步消息触发的
     // DWM backdrop 重复写入，但它同时也阻止了 NativeFrameStrategy（style bits）
@@ -2622,8 +2916,8 @@ void MainWindow::TryCommitStartupReveal() {
     }
 
     // BackgroundService 协同：startupVisibilityHint_=false 时强制 SW_HIDE，
-    // 让窗口从 cold-start reveal 起全程不可见，避免 SW_SHOWMINNOACTIVE+hideTimer
-    // hack 与 reveal 流程争抢 ShowWindow 调用导致物理状态闪现。
+    // 让窗口从 cold-start reveal 起全程不可见，避免外部 SW_SHOWMINNOACTIVE +
+    // 延迟隐藏序列与 reveal 流程争抢 ShowWindow 调用导致物理状态闪现。
     // chrome / backdrop 等 DWM 状态已在前面 ResolveBackdropPolicy / EnableMicaEffect
     // 中设置好，下次用户主动 Show 窗口时会立刻应用，不会丢失。
     const int finalShowCmd = startupVisibilityHint_ ? showCmd : SW_HIDE;
@@ -3025,7 +3319,7 @@ void MainWindow::ApplyWindowActivationState(bool active, const char* reason) {
             {"data", {{"active", isActive_}}}
         };
         pfc::stringcvt::string_wide_from_utf8 wideStr(event.dump().c_str());
-        webView_->PostMessage(std::wstring(wideStr.get_ptr()));
+        webView_->PostEventMessage("window:activated", std::wstring(wideStr.get_ptr()));
         emittedWindowActivated = true;
     }
 
@@ -3081,7 +3375,7 @@ void MainWindow::OnDpiChanged(WPARAM wParam, LPARAM lParam) {
             }}
         };
         pfc::stringcvt::string_wide_from_utf8 wideStr(event.dump().c_str());
-        webView_->PostMessage(std::wstring(wideStr.get_ptr()));
+        webView_->PostEventMessage("window:dpiChanged", std::wstring(wideStr.get_ptr()));
         
         // 2. 注入 CSS 变量更新脚本
         std::wstring cssUpdateScript = L"(function() {"

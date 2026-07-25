@@ -1,6 +1,6 @@
   html,body{margin:0;padding:0;width:100%;height:100%;overflow:hidden;background:transparent;font:13px "Segoe UI",sans-serif;}
   #block{position:fixed;inset:0;}
-  /* Visible display is NOT locked here (Phase 2): default block, or user flex/grid.
+  /* Visible display is NOT locked here: default block, or user flex/grid.
      Hidden state uses .fb-hidden + inline display:none !important (see layout helpers). */
   .fb-menu{position:fixed;min-width:170px;max-height:100vh;overflow:auto;background:#2b2b2b;color:#eaeaea;border:1px solid #555;border-radius:6px;padding:4px 0;box-shadow:0 6px 20px rgba(0,0,0,.45);z-index:10;}
   .fb-zone{display:block;}
@@ -27,7 +27,7 @@
   body.content-sized #menu.in{opacity:1;transform:none;}
   /* 退场动画（opt-in，镜像入场）：收到 menu:__hide 时 #menu 去 .in 加 .out 播淡出；前端可经 css 覆盖 #menu.out。*/
   body.content-sized #menu.out{opacity:0;transform:translateY(4px) scale(.985);transition:opacity .13s ease-out,transform .13s ease-out;}
-  /* Phase 3: respect prefers-reduced-motion for default enter/exit only.
+  /* Respect prefers-reduced-motion for default enter/exit only.
      Hidden protocol / closeAnimationMs are unchanged. Not in protected CSS. */
   @media (prefers-reduced-motion: reduce){
     body.content-sized #menu,
@@ -52,7 +52,7 @@
   .fb-slider-fill{position:absolute;left:0;top:0;height:100%;background:#3d6fd0;border-radius:2px;}
   .fb-slider-thumb{position:absolute;top:50%;width:10px;height:10px;margin-left:-5px;border-radius:50%;background:#fff;transform:translateY(-50%);box-shadow:0 0 2px rgba(0,0,0,.5);}
   .fb-slider-val{flex:0 0 auto;min-width:26px;text-align:right;opacity:.8;}
-  /* Vertical slider (Phase 3): track grows tall; fill from bottom; thumb on bottom axis. */
+  /* Vertical slider: track grows tall; fill from bottom; thumb on bottom axis. */
   .fb-slider[data-orientation="vertical"]{display:grid;grid-template-columns:minmax(0,1fr) minmax(20px,auto) minmax(26px,auto);align-items:center;min-height:112px;}
   .fb-slider[data-orientation="vertical"] .fb-slider-track{--fb-slider-visual-width:4px;justify-self:center;min-width:20px;width:20px;min-height:88px;height:88px;margin:4px 8px;background:linear-gradient(90deg,transparent 8px,#555 8px,#555 12px,transparent 12px);}
   .fb-slider[data-orientation="vertical"] .fb-slider-control{position:absolute;inset:-6px;}

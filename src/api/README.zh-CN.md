@@ -110,12 +110,12 @@ bridge.RegisterApi("playback.playPaths", PlaybackPlayPaths,
 
 以新增 `playback.fooBar` 为例（内置 API）：
 
-1. **三点验证先行**（强制，见 `AGENTS.md` §2.5）：确认 SDK 有对应能力、参数 key 与 handler 内 `params.value("key", ...)` 对齐、事件名用 colon 格式。
+1. **三点验证先行**（强制）：确认 SDK 有对应能力、参数 key 与 handler 内 `params.value("key", ...)` 对齐、事件名用 colon 格式。
 2. **实现 handler**：在 `PlaybackApi.cpp` 写 `static json PlaybackFooBar(const json& params)`，从 `params` 取参，调用 SDK / 服务接口，返回 JSON；失败用 `ApiEnvelope::MakeError`。
 3. **注册**：在该文件的 `RegisterPlaybackApi()` 内加 `bridge.RegisterApi("playback.fooBar", PlaybackFooBar);`；若带路径参数，用装饰器重载附加 `PathSecuritySpec`。
 4. **更新头部注释**：在 `PlaybackApi.h` 顶部「Registered APIs」列表补上 `playback.fooBar`，保持文档与代码一致。
 5. **（如发事件）** 在对应 `callbacks/` 里用 `EmitEvent("playback:fooChanged", data)` 推送，并保证 invoke 用 dot、事件用 colon。
-6. **同步 SDK 与文档**：API 改动需同步 `sdk/`（bridge.js / 类型）与 `docs/`（见 `CLAUDE.md` 开发流程）。
+6. **同步 SDK 与文档**：API 改动需同步 `sdk/`（bridge / 类型）与 `docs/vitepress/` 文档站。
 7. **构建验证**：`\.\build.ps1 -Config Release -Platform x64`。
 
 > 若 handler 需要把异步事件回送给「发起调用的那个窗口」，用 `CallerContext::FromParams(params)` 拿到调用方 bridge 再 `EmitEvent`，避免错发到其它实例。
@@ -183,4 +183,4 @@ const result = await fb2k.invoke('my_plugin.doSomething', { param1: 'value' });
 
 ---
 
-参见：仓库根 [README.md](../../README.md)「API 概览 / 插件扩展 / 安全限制」、`docs/AI_API_REFERENCE.md`、`sdk/`。
+参见：仓库根 [README.md](../../README.md)「API 概览 / 插件扩展 / 安全限制」、`docs/vitepress/` 文档站、`sdk/`。

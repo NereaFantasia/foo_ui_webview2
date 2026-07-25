@@ -73,9 +73,9 @@ static void DoInitialize() {
 
         // Create main window for background operation。
         // 在 Create() 之前提示 cold-start reveal 的最终可见性，让 reveal 流程
-        // 自己决定 SW_SHOW 或 SW_HIDE，避免在外面叠加 SW_SHOWMINNOACTIVE/hideTimer
-        // hack（旧实现会在 ~250ms 内被 cold-start reveal 的 SW_SHOW 覆盖再
-        // 1500ms 后 SW_HIDE，物理窗口与菜单 IsWindowVisible 状态在该窗口内不一致）。
+        // 自己决定 SW_SHOW 或 SW_HIDE。不得在外部叠加额外的 SW_SHOWMINNOACTIVE +
+        // 延迟隐藏序列：那会与 reveal 自身的 SW_SHOW 争抢，使物理窗口可见性与
+        // 菜单读到的 IsWindowVisible 在数百毫秒内不一致。
         g_backgroundWindow = std::make_unique<MainWindow>();
         g_backgroundWindow->SetStartupVisibility(showOnStartup);
         g_backgroundHwnd = g_backgroundWindow->Create(nullptr);

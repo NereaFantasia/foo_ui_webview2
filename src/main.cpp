@@ -114,6 +114,16 @@ static constexpr GUID guid_adv_allow_insecure_tls =
 static constexpr GUID guid_adv_cdp_remote =
     { 0xa1b2c3db, 0xe5f6, 0x7890, { 0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc, 0xde, 0xf7 } };
 
+// CDP 自动化 keep-alive 开关 GUID
+// {A1B2C3DE-E5F6-7890-1234-56789ABCDEF9}
+static constexpr GUID guid_adv_cdp_keepalive =
+    { 0xa1b2c3de, 0xe5f6, 0x7890, { 0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc, 0xde, 0xf9 } };
+
+// 深度挂起（TrySuspend）开关 GUID
+// {A1B2C3DF-E5F6-7890-1234-56789ABCDEFA}
+static constexpr GUID guid_adv_deep_suspend =
+    { 0xa1b2c3df, 0xe5f6, 0x7890, { 0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc, 0xde, 0xfa } };
+
 // 高级设置分支: Preferences → Advanced → Tools → WebView2 UI
 advconfig_branch_factory g_adv_branch(
     "WebView2 UI",
@@ -138,6 +148,29 @@ advconfig_checkbox_factory g_cfg_cdp_remote(
     guid_adv_branch_webview,
     0.5,
     false  // 默认关闭 (安全)
+);
+
+// CDP 自动化 keep-alive 子开关 (默认开启)。仅在本进程实际开启 CDP 端口时
+// 参与判定 (见 security_config::IsAutomationKeepAliveActive)；生效时托盘/
+// 最小化/锁屏不再挂起页面，以保证 CDP 截图与时序类工具稳定。
+advconfig_checkbox_factory g_cfg_cdp_keepalive(
+    "Keep WebView active in background while CDP remote debugging is on (tray/minimize/lock)",
+    guid_adv_cdp_keepalive,
+    guid_adv_branch_webview,
+    0.6,
+    true  // 默认开启 (开 CDP 即默认要自动化稳定；牺牲后台省电为显式权衡)
+);
+
+// 深度挂起开关 (默认开启)。最小化/托盘/锁屏隐藏页面后用 TrySuspend 冻结
+// renderer（等效 Edge sleeping tab，OS 可回收其内存）；关闭时回退为仅
+// MemoryUsageTargetLevel=Low 的现状路径。keep-alive 生效时本开关不参与
+//（页面根本不隐藏）。
+advconfig_checkbox_factory g_cfg_deep_suspend(
+    "Deep-suspend WebView when hidden (TrySuspend; frees renderer memory)",
+    guid_adv_deep_suspend,
+    guid_adv_branch_webview,
+    0.7,
+    true  // 默认开启；关闭后退回 MemoryUsageTargetLevel=Low 路径
 );
 
 // 本地网络访问开关 (默认关闭) - SSRF 防护用
@@ -226,6 +259,23 @@ namespace security_config {
         // CDP remote port must always respect user config
         // even in Debug builds, to avoid unintended network exposure
         return g_cfg_cdp_remote.get();
+    }
+
+    // CDP 端口进程级快照：advconfig 实时值与"端口需重启"语义不一致,
+    // 运行中勾/取消 CDP 会产生 keep-alive 失配窗口, 故绑定真实端口状态。
+    // 环境创建先于任何后台挂起事件, 单线程置位无竞争顾虑。
+    static bool g_cdp_port_opened_this_process = false;
+
+    void NoteCdpPortOpenedThisProcess() {
+        g_cdp_port_opened_this_process = true;
+    }
+
+    bool IsAutomationKeepAliveActive() {
+        return g_cdp_port_opened_this_process && g_cfg_cdp_keepalive.get();
+    }
+
+    bool IsDeepSuspendEnabled() {
+        return g_cfg_deep_suspend.get();
     }
 
     bool IsLocalNetworkAccessAllowed() {
@@ -339,6 +389,16 @@ DECLARE_COMPONENT_VERSION(
     "  Test      (2)   - Echo, version check\n"
 "\n"
 "  NEW IN v" PLUGIN_VERSION_STR "\n"
+    "========================================\n"
+    "\n"
+    "  + Tray items can declare a native playback action\n"
+    "  + Dynamic main-menu submenus expanded in discovery.*\n"
+    "  + menu.getMainMenu: locale / i18n / availability options\n"
+    "  + Events are gated while the page is hidden\n"
+    "  + Deep-suspend and hardened crash recovery for WebView2\n"
+    "  + Album-art cache correctness and off-thread decoding\n"
+    "\n"
+"  NEW IN v1.3.0\n"
     "========================================\n"
     "\n"
     "  + Real library roots: library.getRoots / fb.library.getRoots\n"

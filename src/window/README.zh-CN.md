@@ -112,4 +112,4 @@ ChromeController::ResolveAndApply
 
 ---
 
-参见：`docs/execution/self-drawn-menu/`（自绘菜单设计）、仓库根 [README.md](../../README.md)。
+参见：仓库根 [README.md](../../README.md)。

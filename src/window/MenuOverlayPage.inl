@@ -9,7 +9,7 @@ inline std::wstring BuildMenuOverlayHtmlFromSources() {
 <style id="fb-default">
   html,body{margin:0;padding:0;width:100%;height:100%;overflow:hidden;background:transparent;font:13px "Segoe UI",sans-serif;}
   #block{position:fixed;inset:0;}
-  /* Visible display is NOT locked here (Phase 2): default block, or user flex/grid.
+  /* Visible display is NOT locked here: default block, or user flex/grid.
      Hidden state uses .fb-hidden + inline display:none !important (see layout helpers). */
   .fb-menu{position:fixed;min-width:170px;max-height:100vh;overflow:auto;background:#2b2b2b;color:#eaeaea;border:1px solid #555;border-radius:6px;padding:4px 0;box-shadow:0 6px 20px rgba(0,0,0,.45);z-index:10;}
   .fb-zone{display:block;}
@@ -36,7 +36,7 @@ inline std::wstring BuildMenuOverlayHtmlFromSources() {
   body.content-sized #menu.in{opacity:1;transform:none;}
   /* 退场动画（opt-in，镜像入场）：收到 menu:__hide 时 #menu 去 .in 加 .out 播淡出；前端可经 css 覆盖 #menu.out。*/
   body.content-sized #menu.out{opacity:0;transform:translateY(4px) scale(.985);transition:opacity .13s ease-out,transform .13s ease-out;}
-  /* Phase 3: respect prefers-reduced-motion for default enter/exit only.
+  /* Respect prefers-reduced-motion for default enter/exit only.
      Hidden protocol / closeAnimationMs are unchanged. Not in protected CSS. */
   @media (prefers-reduced-motion: reduce){
     body.content-sized #menu,
@@ -61,7 +61,7 @@ inline std::wstring BuildMenuOverlayHtmlFromSources() {
   .fb-slider-fill{position:absolute;left:0;top:0;height:100%;background:#3d6fd0;border-radius:2px;}
   .fb-slider-thumb{position:absolute;top:50%;width:10px;height:10px;margin-left:-5px;border-radius:50%;background:#fff;transform:translateY(-50%);box-shadow:0 0 2px rgba(0,0,0,.5);}
   .fb-slider-val{flex:0 0 auto;min-width:26px;text-align:right;opacity:.8;}
-  /* Vertical slider (Phase 3): track grows tall; fill from bottom; thumb on bottom axis. */
+  /* Vertical slider: track grows tall; fill from bottom; thumb on bottom axis. */
   .fb-slider[data-orientation="vertical"]{display:grid;grid-template-columns:minmax(0,1fr) minmax(20px,auto) minmax(26px,auto);align-items:center;min-height:112px;}
   .fb-slider[data-orientation="vertical"] .fb-slider-track{--fb-slider-visual-width:4px;justify-self:center;min-width:20px;width:20px;min-height:88px;height:88px;margin:4px 8px;background:linear-gradient(90deg,transparent 8px,#555 8px,#555 12px,transparent 12px);}
   .fb-slider[data-orientation="vertical"] .fb-slider-control{position:absolute;inset:-6px;}
@@ -73,16 +73,16 @@ inline std::wstring BuildMenuOverlayHtmlFromSources() {
   .fb-seg-group{min-width:0;display:flex;flex-wrap:wrap;justify-content:flex-end;gap:2px;}
   .fb-seg-btn{display:inline-flex;min-width:0;max-width:120px;align-items:center;justify-content:center;padding:2px 8px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:pointer;border-radius:4px;color:#cfcfcf;}
   .fb-seg-btn svg{width:16px;height:16px;display:block;fill:currentColor;}
-  .fb-seg-btn.on{background:#3d6fd0;color:#ff)MENUHTML"
-        LR"MENUHTML(f;}
-  .fb-seg-btn.disabled{color:#666;cursor:default;}
+  .fb-seg-btn.on{background:#3d6fd0;color:#fff;}
+  .fb-seg-btn.disabled{co)MENUHTML"
+        LR"MENUHTML(lor:#666;cursor:default;}
   /* 富项 hover/active 用克制的灰底（覆盖上面 .fb-item 蓝底），保留控件辨识度。*/
   .fb-np:hover,.fb-np.active,.fb-rating:hover,.fb-rating.active,.fb-slider:hover,.fb-slider.active,.fb-seg:hover,.fb-seg.active{background:#3a3a3a;color:#eaeaea;}
 </style>
 <!-- Frontend style takeover: default(fb-default) -> user(fb-user) -> protected(fb-protected). -->
 <style id="fb-user"></style>
 <style id="fb-protected">
-  /* Protected structural layer (DESIGN §5.4 Phase 2): viewport geometry, menu
+  /* Protected structural layer: viewport geometry, menu
      box model / fixed positioning / overflow, and hidden fallback only.
      Visible display (block/flex/grid) is owned by default CSS or user CSS. */
   html,body{margin:0!important;padding:0!important;width:100%!important;height:100%!important;overflow:hidden!important;box-sizing:border-box!important;}
@@ -247,10 +247,10 @@ function isValidTransform(value) {
     if (i >= n) break;
 
     const nameStart = i;
-    if (!/[A-Za-z)MENUHTML"
-        LR"MENUHTML(]/.test(s[i])) return false;
+    if (!/[A-Za-z]/.test(s[i])) return false;
     i += 1;
-    while (i < n && /[A-Za-z]/.test(s[i])) i += 1;
+    while )MENUHTML"
+        LR"MENUHTML((i < n && /[A-Za-z]/.test(s[i])) i += 1;
     const name = s.slice(nameStart, i).toLowerCase();
     const arity = TRANSFORM_ARITY[name];
     if (!arity) return false;
@@ -431,8 +431,8 @@ function mountSanitizedSvgIcon(host, viewBox, content) {
     return true;
   }
 
-)MENUHTML"
-        LR"MENUHTML(  var svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  var svg = document.createElementNS('http://www.w3)MENUHTML"
+        LR"MENUHTML(.org/2000/svg', 'svg');
   svg.setAttribute('viewBox', vb);
   svg.setAttribute('width', '16');
   svg.setAttribute('height', '16');
@@ -443,7 +443,7 @@ function mountSanitizedSvgIcon(host, viewBox, content) {
   return true;
 }
 
-// Pure layout / DOM-model helpers for the self-drawn menu overlay (DESIGN §5 / Phase 2).
+// Pure layout / DOM-model helpers for the self-drawn menu overlay.
 // Node tests import this module directly. The overlay page inlines a stripped
 // browser build via scripts/gen_menu_overlay_page.mjs — keep both paths in sync.
 
@@ -495,7 +495,7 @@ function buildSeparatorStableAttrs({ depth = 0, zone = undefined, zoneSeparator 
 }
 
 /**
- * Hide protocol (DESIGN §5.4): class first, then inline display:none !important.
+ * Hide protocol: class first, then inline display:none !important.
  * Visible state must NOT write inline display.
  */
 function hideMenuProtocol() {
@@ -623,9 +623,9 @@ function menuZones(doc) {
 }
 
 function hasClass(node, name) {
-  const parts = String(n)MENUHTML"
-        LR"MENUHTML(ode && node.className || '').split(/\s+/).filter(Boolean);
-  return parts.includes(name);
+  const parts = String(node && node.className || '').split(/\s+/).filter(Boolean);
+  return parts.includes(name)MENUHTML"
+        LR"MENUHTML();
 }
 
 function findById(node, id) {
@@ -638,7 +638,7 @@ function findById(node, id) {
   return null;
 }
 
-/** Source-file contract checks for protected CSS (Phase 2 shrink). */
+/** Source-file contract checks for protected CSS. */
 function analyzeProtectedCss(css) {
   const text = String(css || '');
   return {
@@ -757,9 +757,9 @@ function analyzeIndependentSubmenuWindowContract(source) {
   const escapeBody = escapeMatch ? escapeMatch[1] : '';
   return {
     reportsMonotonicSequence: /submenuPanelSequence\s*=\s*0/.test(text)
-      && /sequence\)MENUHTML"
-        LR"MENUHTML(s*:\s*\+\+submenuPanelSequence/.test(text),
-    reportsParentToken: /parentToken\s*:\s*\(L\.rows\[rowIdx\]\.item&&L\.rows\[rowIdx\]\.item\._token\)/.test(text),
+      && /sequence\s*:\s*\+\+submenuPanelSequence/.test(text),
+    reportsParentToken: /parentToken\s*:\s*\(L\.rows\[rowIdx)MENUHTML"
+        LR"MENUHTML(\]\.item&&L\.rows\[rowIdx\]\.item\._token\)/.test(text),
     computesVirtualWindowPlacement: /submenuWindowPlacement\(\{[\s\S]*?virtualRootTop:geom\.virtualRootTop/.test(text),
     treatsSubmenuAsLeafSurface: /cur\.windowModel==="submenu"\) return/.test(text),
     reconcilesNativeSubmenuClose: /fb2k\.on\("menu:__submenuClosed"/.test(text),
@@ -865,12 +865,12 @@ function analyzeContentSizedGeometryContract(source) {
 function analyzeHtmlShell(html) {
   const text = String(html || '');
   const hasViewport = /id\s*=\s*["']viewport["']/.test(text);
-  const menuInsideViewport = /id\s*=\s*["']viewport["'][\s\S]*id\s*=\s*["']menu["']/.test(te)MENUHTML"
-        LR"MENUHTML(xt);
+  const menuInsideViewport = /id\s*=\s*["']viewport["'][\s\S]*id\s*=\s*["']menu["']/.test(text);
   return { hasViewport, menuInsideViewport };
 }
 
-// ── Phase 3: slider orientation / range / paint / pointer / keyboard ────────
+// ── Slider orientation / range / paint / pointer)MENUHTML"
+        LR"MENUHTML( / keyboard ─────────────────
 
 /**
  * Resolve slider orientation. Only exact "vertical" is vertical; missing /
@@ -983,7 +983,7 @@ function sameMeasurePayload(a, b) {
  * Returns { kind:'delta', delta } | { kind:'edge', edge:'min'|'max' } | null.
  */
 function sliderKeyAction(key, orientation) {
-  void orientation; // both orientations share the same key semantics (DESIGN §6.3)
+  void orientation; // both orientations share the same key semantics
   switch (key) {
     case 'ArrowUp':
     case 'ArrowRight':
@@ -1031,7 +1031,7 @@ function shouldThrottleEmit(now, lastSent, force, throttleMs = 50) {
   return (now - lastSent) >= throttleMs;
 }
 
-// ── Phase 3: ARIA / focus helpers ───────────────────────────────────────────
+// ── ARIA / focus helpers ────────────────────────────────────────────────────
 
 /**
  * Row role for navigation mode.
@@ -1051,13 +1051,13 @@ function buildRichNavAriaLabel({ kind, label, value, min, max }) {
     return `${name}, ${value}, range ${min} to ${max}. Press Enter to adjust`;
   }
   if (kind === 'rating') {
-    return `${name}, ${value} of 5 stars. Press Ent)MENUHTML"
-        LR"MENUHTML(er to adjust`;
+    return `${name}, ${value} of 5 stars. Press Enter to adjust`;
   }
   if (kind === 'segmented') {
     return `${name}, option ${value}. Press Enter to adjust`;
   }
-  return `${name}. Press Enter to adjust`;
+  r)MENUHTML"
+        LR"MENUHTML(eturn `${name}. Press Enter to adjust`;
 }
 
 /** Detect explicit checkable identity (field present, including false). */
@@ -1078,7 +1078,7 @@ function analyzeReducedMotionCss(css) {
   };
 }
 
-// ── Phase 3 follow-up: pointer focus + segmented roving + hide cleanup ──────
+// ── Pointer focus + segmented roving + hide cleanup ─────────────────────────
 
 /**
  * setActive focus gate. Pointer hover may update active/roving, but must not
@@ -1226,9 +1226,9 @@ function analyzeMouseenterSetActiveFocus(jsSource) {
   }
   return {
     handlers,
-    setActive)MENUHTML"
-        LR"MENUHTML(HandlerCount: handlers.filter((h) => h.hasSetActive).length,
-    allSetActiveNonFocusing: handlers.filter((h) => h.hasSetActive).every((h) => h.allNonFocusing),
+    setActiveHandlerCount: handlers.filter((h) => h.hasSetActive).length,
+    allSetActiveNonFocusing: handlers.filter((h) => h.has)MENUHTML"
+        LR"MENUHTML(SetActive).every((h) => h.allNonFocusing),
   };
 }
 
@@ -1276,7 +1276,7 @@ function analyzeMenuInteractionCleanup(jsSource) {
 
     var cur = null;
     var layers = [];   // index=depth: {el, rows:[{el,item,navigable,hasSub}], active}
-    // Phase 3: single interaction mode — navigation | editor (DESIGN §9.1).
+    // Single interaction mode — navigation | editor.
     var interactionMode = "navigation";  // "navigation" | "editor"
     var editorCtx = null;                // { depth, rowIdx, focusEl, exit }
     var pendingRootFocus = false;        // ContentSized: focus after first placed
@@ -1301,7 +1301,7 @@ function analyzeMenuInteractionCleanup(jsSource) {
     function isNormalKind(it){ return !!it && it.type!=="separator" && it.type!=="nowplaying" && it.type!=="rating" && it.type!=="slider" && it.type!=="segmented"; }   // 仅普通/子菜单项参与图标列（富项含 segmented 不参与，镜像 C++ TrayItemKindRendersIcon）
     function isRichKind(k){ return k==="rating"||k==="slider"||k==="segmented"; }
 
-    // Phase 2: shared hide/show protocol + stable attrs (from menu-overlay-layout.mjs).
+    // Shared hide/show protocol + stable attrs (from menu-overlay-layout.mjs).
     function applyAttrs(el, attrs){
       if(!el||!attrs) return;
       for(var k in attrs){ if(Object.prototype.hasOwnProperty.call(attrs,k)) el.setAttribute(k, attrs[k]); }
@@ -1328,13 +1328,13 @@ function analyzeMenuInteractionCleanup(jsSource) {
       el.style.setProperty("max-width",geometry.maxWidth,"important");
       el.style.setProperty("max-height",geometry.maxHeight,"important");
       el.style.setProperty("min-width","0px","important");
-      el.style.setProperty("overflow","auto","impor)MENUHTML"
-        LR"MENUHTML(tant");
+      el.style.setProperty("overflow","auto","important");
     }
     function clearContentSizedGeometry(el){
       if(!el) return;
       el.style.removeProperty("left");
-      el.style.removeProperty("top");
+      el.style.removeProperty(")MENUHTML"
+        LR"MENUHTML(top");
       el.style.removeProperty("max-width");
       el.style.removeProperty("max-height");
       el.style.removeProperty("min-width");
@@ -1385,7 +1385,7 @@ function analyzeMenuInteractionCleanup(jsSource) {
       if(idx>=0 && L.rows[idx]){
         var e=L.rows[idx].el; e.classList.add("active");
         try{ e.scrollIntoView({block:"nearest"}); }catch(x){}
-        // Pointer hover must not steal keyboard/editor focus (DESIGN §9).
+        // Pointer hover must not steal keyboard/editor focus.
         if(interactionMode==="navigation" && shouldFocusOnActivate(opts)){
           try{ e.focus({preventScroll:true}); }catch(x2){ try{ e.focus(); }catch(x3){} }
         }
@@ -1462,12 +1462,12 @@ function analyzeMenuInteractionCleanup(jsSource) {
       var d=document.createElement("div");
       d.className="fb-item fb-np"+(!en?" disabled":"");
       d.setAttribute("part","item");
-      st)MENUHTML"
-        LR"MENUHTML(ampItem(d, it, depth, zone);
+      stampItem(d, it, depth, zone);
       d.setAttribute("role","menuitem");
       d.setAttribute("tabindex","-1");
       applyDisabledAria(d, en);
-      var cv=document.createElement("div"); cv.className="fb-np-cover"; cv.setAttribute("part","nowplaying-cover"); cv.setAttribute("aria-hidden","true");
+      var cv=document)MENUHTML"
+        LR"MENUHTML(.createElement("div"); cv.className="fb-np-cover"; cv.setAttribute("part","nowplaying-cover"); cv.setAttribute("aria-hidden","true");
       if(it.cover){ var cvv=""+it.cover, u=null;
         if(/^data:image\/[a-z0-9.+-]+;base64,[A-Za-z0-9+\/=]+$/i.test(cvv) || /^https?:\/\/[^\s"')]+$/i.test(cvv)){ u=cvv; }   // data: 或 http(s) 白名单（排除引号/括号/空白，杜绝 url() 注入/坏图）
         else if(/^[A-Za-z0-9+\/=]+$/.test(cvv)){ u="data:image/jpeg;base64,"+cvv; }   // 裸 base64 兼容
@@ -1557,9 +1557,9 @@ function analyzeMenuInteractionCleanup(jsSource) {
       d.setAttribute("data-orientation", orient);
       applyDisabledAria(d, en);
       if(it.label){ var lb=document.createElement("span"); lb.className="fb-slider-label"; lb.textContent=it.label; d.appendChild(lb); }
-      var track=docu)MENUHTML"
-        LR"MENUHTML(ment.createElement("span"); track.className="fb-slider-track"; track.setAttribute("part","slider-track");
-      var fill=document.createElement("span"); fill.className="fb-slider-fill"; track.appendChild(fill);
+      var track=document.createElement("span"); track.className="fb-slider-track"; track.setAttribute("part","slider-track");
+      var fill=document.createElement("span"); fill.clas)MENUHTML"
+        LR"MENUHTML(sName="fb-slider-fill"; track.appendChild(fill);
       var thumb=document.createElement("span"); thumb.className="fb-slider-thumb"; track.appendChild(thumb);
       // Internal focusable slider control.
       var focusEl=document.createElement("span");
@@ -1651,10 +1651,10 @@ function analyzeMenuInteractionCleanup(jsSource) {
       stampItem(d, it, depth, zone);
       applyDisabledAria(d, en);
       if(it.label){ var lb=document.createElement("span"); lb.className="fb-seg-label"; lb.setAttribute("part","segmented-label"); lb.textContent=it.label; d.appendChild(lb); }
-      var grp=document.createElement("span"); grp.className="fb-seg-)MENUHTML"
-        LR"MENUHTML(group"; grp.setAttribute("part","segmented-group");
+      var grp=document.createElement("span"); grp.className="fb-seg-group"; grp.setAttribute("part","segmented-group");
       grp.setAttribute("role","radiogroup");
-      var segs=(it.segments||[]), btns=[]; var ctl={v:(typeof it.value==="number")?it.value:-1};
+      var segs=(it.segments||[]), btns=[]; var ctl={v:(typeof it.)MENUHTML"
+        LR"MENUHTML(value==="number")?it.value:-1};
       function applySegmentPlan(plan, doFocus){
         if(!plan) return;
         for(var k=0;k<btns.length;k++){
@@ -1760,9 +1760,9 @@ function analyzeMenuInteractionCleanup(jsSource) {
         d.className="fb-item nrm"+(!en?" disabled":"")+(it&&it.checked?" checked":"")+(hasSub?" has-sub":"");
         d.setAttribute("part","item");
         stampItem(d, it, depth, z);
-        // ARIA: normal / ch)MENUHTML"
-        LR"MENUHTML(eckable / submenu (DESIGN §9.2). Shared menu.show path benefits.
-        var role=resolveNavRowRole({kind:hasSub?"submenu":(it&&it.type)||"normal", checkable:checkable, checked:!!(it&&it.checked)});
+        // ARIA: normal / checkable / submenu. Shared menu.show path benefits.
+        var role=resolveNavRowRole({kind:hasSub?"submenu":(it&&it.type)||"normal", checkable:checkable, checked)MENUHTML"
+        LR"MENUHTML(:!!(it&&it.checked)});
         d.setAttribute("role", role);
         d.setAttribute("tabindex","-1");
         applyDisabledAria(d, en);
@@ -1827,7 +1827,7 @@ function analyzeMenuInteractionCleanup(jsSource) {
           var zs=document.createElement("div");
           zs.className="fb-sep fb-zone-separator";
           zs.setAttribute("part","separator");
-          // Inter-zone separator inherits the preceding zone (DESIGN §5.3).
+          // Inter-zone separator inherits the preceding zone.
           var prevZone=present[i-1].id||"";
           stampSep(zs, depth, prevZone, true);
           menuEl.appendChild(zs);
@@ -1864,17 +1864,17 @@ function analyzeMenuInteractionCleanup(jsSource) {
       layers[parentDepth+1].parentRowIdx = rowIdx;   // 子菜单归属父项（hover 幂等，bug2）
       parentEl.setAttribute("aria-expanded","true");
       // Temporary measure pass: keep the node invisible to the user, then clear
-      // inline display so the final visible state stays CSS-owned (DESIGN §5.4).
-      // Off-screen measure must not steal focus (Phase 3).
+      // inline display so the final visible state stays CSS-owned.
+      // Off-screen measure must not steal focus.
       sub.style.setProperty("visibility","hidden","important");
       sub.style.setProperty("display","block","important");
       var pr=parentEl.getBoundingClientRect(), sw=sub.offsetWidth, sh=sub.offsetHeight;
       if(content){
         // The submenu is rendered by a distinct tight HWND. This temporary DOM
         // node is used only to measure the panel before its native host is
-        // positioned)MENUHTML"
-        LR"MENUHTML(; no DWM-backed reservation exists in the root HWND.
-        var geom=placedGeometry||{rootSlotW:pr.right,subSlotW:Math.max(0,window.innerWidth-pr.right),viewportH:window.innerHeight,virtualViewportH:window.innerHeight,virtualRootTop:0};
+        // positioned; no DWM-backed reservation exists in the root HWND.
+        var geom=placedGeometry||{rootSlotW:pr.right,subSlotW:Math.max(0,window.innerWidth-pr.right),viewportH:window.innerHeight,virtualViewportH:window.innerHe)MENUHTML"
+        LR"MENUHTML(ight,virtualRootTop:0};
         var subStyle=visibleSubmenuStyle({rootSlotW:geom.rootSlotW,subSlotW:geom.subSlotW,viewportH:geom.viewportH,parentTop:pr.top,submenuHeight:sh});
         applyContentSizedGeometry(sub,subStyle);
       } else {
@@ -1994,13 +1994,13 @@ function analyzeMenuInteractionCleanup(jsSource) {
         layers.length=oldLength;
         layers[0]=rootLayer;
       }
-    )MENUHTML"
-        LR"MENUHTML(  return out;
+      return out;
     }
 
     // Wait for fonts and two equal animation-frame measurements before reporting
     // actual root + first-level submenu maxima. The host validates all integers
-    // before atomically consuming the measure state.
+    // before atomically consu)MENUHTML"
+        LR"MENUHTML(ming the measure state.
     var _measureRaf=0;
     var _measureGeneration=0;
     function measureAndReport(){
@@ -2038,7 +2038,7 @@ function analyzeMenuInteractionCleanup(jsSource) {
         var root=document.getElementById("menu");
         requestAnimationFrame(function(){
           root.classList.add("in");
-          // ContentSized: real focus only after first visible place (Phase 3).
+          // ContentSized: real focus only after first visible place.
           if(pendingRootFocus){
             pendingRootFocus=false;
             setActive(0, layers[0]?layers[0].active:firstNav(0), {focus:true});
@@ -2047,7 +2047,7 @@ function analyzeMenuInteractionCleanup(jsSource) {
       }
     }
 
-    // Single window-capture keydown: mode split first, handle once (DESIGN §9.1).
+    // Single window-capture keydown: mode split first, handle once.
     function onKey(e){
       if(!layers.length) return;
       // Editor mode: only editor handler; navigation never sees the same key.

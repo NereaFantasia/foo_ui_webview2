@@ -295,7 +295,16 @@ void BridgeCore::EmitEvent(const std::string& event, const json& data) {
     message["type"] = "event";
     message["event"] = event;
     message["data"] = data;
-    SendToWeb(message);
+
+    // 事件经可见性门控发送；invoke 响应仍走 SendToWeb 直发。
+    WebViewHost* webView = nullptr;
+    {
+        std::lock_guard lock(mutex_);
+        webView = webView_;
+    }
+    if (!webView) return;
+
+    webView->PostEventMessage(event, Utf8ToWide(message.dump()));
 }
 
 void BridgeCore::SendToWeb(const json& message) {

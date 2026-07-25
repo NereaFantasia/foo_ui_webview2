@@ -30,6 +30,13 @@ public:
     // 调用后 environment_ 被释放，后续 GetEnvironment 将重新创建
     void Shutdown();
     
+    // 作废缓存环境（WebView2 浏览器进程崩溃退出时调用）。
+    // 浏览器进程退出后 environment_ COM 指针仍非空，但它绑定的进程已死，
+    // 用它创建 controller 会失败。此处只清 ready_，让下一次 GetEnvironment
+    // 走真实创建路径；旧 COM 引用不主动释放（理由同 Shutdown），由下次成功
+    // 创建时的 environment_ = env 赋值自然替换。
+    void Invalidate(const char* reason);
+    
     // 获取共享环境（如果未就绪则创建）
     // callback 会在环境就绪时调用
     using EnvironmentCallback = std::function<void(ICoreWebView2Environment*)>;

@@ -6,9 +6,8 @@
 #include "window/WindowManager.h"
 
 // ============================================
-// GUID definition - must be unique!
-// Re-generated: 2026-01-07 using PowerShell [guid]::NewGuid()
-// Previous GUID conflicted with foobar2000 built-in component
+// GUID definition — must not collide with any other component's UI element
+// (including foobar2000 built-ins), otherwise fb2k rejects registration.
 // ============================================
 // {3BF13CCC-477E-459A-A093-990D801AD37E}
 const GUID WebViewUI::guid = 

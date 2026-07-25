@@ -1,4 +1,4 @@
-// Pure layout / DOM-model helpers for the self-drawn menu overlay (DESIGN §5 / Phase 2).
+// Pure layout / DOM-model helpers for the self-drawn menu overlay.
 // Node tests import this module directly. The overlay page inlines a stripped
 // browser build via scripts/gen_menu_overlay_page.mjs — keep both paths in sync.
 
@@ -50,7 +50,7 @@ export function buildSeparatorStableAttrs({ depth = 0, zone = undefined, zoneSep
 }
 
 /**
- * Hide protocol (DESIGN §5.4): class first, then inline display:none !important.
+ * Hide protocol: class first, then inline display:none !important.
  * Visible state must NOT write inline display.
  */
 export function hideMenuProtocol() {
@@ -192,7 +192,7 @@ export function findById(node, id) {
   return null;
 }
 
-/** Source-file contract checks for protected CSS (Phase 2 shrink). */
+/** Source-file contract checks for protected CSS. */
 export function analyzeProtectedCss(css) {
   const text = String(css || '');
   return {
@@ -422,7 +422,7 @@ export function analyzeHtmlShell(html) {
   return { hasViewport, menuInsideViewport };
 }
 
-// ── Phase 3: slider orientation / range / paint / pointer / keyboard ────────
+// ── Slider orientation / range / paint / pointer / keyboard ─────────────────
 
 /**
  * Resolve slider orientation. Only exact "vertical" is vertical; missing /
@@ -535,7 +535,7 @@ export function sameMeasurePayload(a, b) {
  * Returns { kind:'delta', delta } | { kind:'edge', edge:'min'|'max' } | null.
  */
 export function sliderKeyAction(key, orientation) {
-  void orientation; // both orientations share the same key semantics (DESIGN §6.3)
+  void orientation; // both orientations share the same key semantics
   switch (key) {
     case 'ArrowUp':
     case 'ArrowRight':
@@ -583,7 +583,7 @@ export function shouldThrottleEmit(now, lastSent, force, throttleMs = 50) {
   return (now - lastSent) >= throttleMs;
 }
 
-// ── Phase 3: ARIA / focus helpers ───────────────────────────────────────────
+// ── ARIA / focus helpers ────────────────────────────────────────────────────
 
 /**
  * Row role for navigation mode.
@@ -629,7 +629,7 @@ export function analyzeReducedMotionCss(css) {
   };
 }
 
-// ── Phase 3 follow-up: pointer focus + segmented roving + hide cleanup ──────
+// ── Pointer focus + segmented roving + hide cleanup ─────────────────────────
 
 /**
  * setActive focus gate. Pointer hover may update active/roving, but must not

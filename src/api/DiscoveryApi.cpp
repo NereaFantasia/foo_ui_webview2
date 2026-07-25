@@ -23,41 +23,218 @@ namespace {
     }
 
     //==========================================================================
-    // discovery.getMainMenuCommands - Get all main menu commands
+    // Shared main-menu enumeration
+    //
+    // Plain service_enum_t<mainmenu_commands> only sees statically registered
+    // command slots. Components built on mainmenu_commands_v2 (ESLyric and most
+    // SMP-era plugins) register a single parent slot and build their real
+    // submenu at runtime via dynamic_instantiate(). Enumerating without
+    // expanding that node tree hides every dynamic child command.
     //==========================================================================
-    json GetMainMenuCommands(const json& /*params*/) {
+
+    // Guards against a malformed / self-referencing node tree.
+    constexpr int kMaxDynamicMenuDepth = 16;
+
+    struct DynamicCommandOwner {
+        std::string guid;        // owning static command GUID
+        std::string parentGuid;  // owning service group GUID
+        t_uint32 index;          // owning static command index
+    };
+
+    // Walks a mainmenu_node tree and appends one flat entry per leaf command.
+    void CollectDynamicMenuNodes(const mainmenu_node::ptr& node,
+                                 const std::string& pathPrefix,
+                                 const DynamicCommandOwner& owner,
+                                 json& out,
+                                 int depth) {
+        if (!node.is_valid() || depth > kMaxDynamicMenuDepth) return;
+
+        t_uint32 type = mainmenu_node::type_separator;
+        try {
+            type = node->get_type();
+        } catch (...) {
+            return;
+        }
+
+        if (type == mainmenu_node::type_separator) return;
+
+        pfc::string8 text;
+        t_uint32 flags = 0;
+        try {
+            node->get_display(text, flags);
+        } catch (...) {
+            // Keep walking with an empty label rather than dropping the subtree.
+        }
+
+        std::string label = SafeUtf8String(text.get_ptr());
+        std::string path = pathPrefix;
+        if (!label.empty()) {
+            if (!path.empty()) path += '/';
+            path += label;
+        }
+
+        if (type == mainmenu_node::type_group) {
+            t_size childCount = 0;
+            try {
+                childCount = node->get_children_count();
+            } catch (...) {
+                return;
+            }
+
+            for (t_size i = 0; i < childCount; i++) {
+                mainmenu_node::ptr child;
+                try {
+                    child = node->get_child(i);
+                } catch (...) {
+                    continue;
+                }
+                CollectDynamicMenuNodes(child, path, owner, out, depth + 1);
+            }
+            return;
+        }
+
+        // type_command: executable leaf, addressed by owner GUID + node subGuid.
+        GUID subGuid = pfc::guid_null;
+        try {
+            subGuid = node->get_guid();
+        } catch (...) {
+            // Leave null; caller can still fall back to path-based execution.
+        }
+
+        std::string description;
+        try {
+            pfc::string8 desc;
+            if (node->get_description(desc)) {
+                description = SafeUtf8String(desc.get_ptr());
+            }
+        } catch (...) {
+            // Description is optional.
+        }
+
+        json item = {
+            {"name", label},
+            {"description", description},
+            {"guid", owner.guid},
+            {"parentGuid", owner.parentGuid},
+            {"index", owner.index},
+            {"path", path},
+            {"isDynamic", true},
+            {"isDynamicParent", false},
+            {"flags", flags}
+        };
+
+        if (subGuid != pfc::guid_null) {
+            item["subGuid"] = GuidToString(subGuid);
+        }
+
+        out.push_back(item);
+    }
+
+    // Enumerates every static command slot, optionally expanding v2 dynamic
+    // subtrees. Static entries keep their historical shape; expansion is purely
+    // additive so existing callers keep seeing the parent slot.
+    json CollectMainMenuCommands(bool expandDynamic, int& dynamicCount) {
         json commands = json::array();
-        
+        dynamicCount = 0;
+
         service_enum_t<mainmenu_commands> e;
         service_ptr_t<mainmenu_commands> ptr;
-        
+
         while (e.next(ptr)) {
-            t_uint32 count = ptr->get_command_count();
-            
+            t_uint32 count = 0;
+            try {
+                count = ptr->get_command_count();
+            } catch (...) {
+                continue;
+            }
+
+            service_ptr_t<mainmenu_commands_v2> v2;
+            const bool hasV2 = ptr->service_query_t(v2);
+
+            GUID parentGuid = pfc::guid_null;
+            try {
+                parentGuid = ptr->get_parent();
+            } catch (...) {
+                // Fall back to null group.
+            }
+            const std::string parentGuidStr = GuidToString(parentGuid);
+
             for (t_uint32 i = 0; i < count; i++) {
                 pfc::string8 name;
-                ptr->get_name(i, name);
-                
                 pfc::string8 desc;
-                ptr->get_description(i, desc);
-                
-                GUID cmdGuid = ptr->get_command(i);
-                GUID parentGuid = ptr->get_parent();
-                
+                GUID cmdGuid = pfc::guid_null;
+
+                try {
+                    ptr->get_name(i, name);
+                } catch (...) {
+                }
+                try {
+                    ptr->get_description(i, desc);
+                } catch (...) {
+                }
+                try {
+                    cmdGuid = ptr->get_command(i);
+                } catch (...) {
+                }
+
+                const std::string label = SafeUtf8String(name.get_ptr());
+                const std::string cmdGuidStr = GuidToString(cmdGuid);
+
+                bool isDynamic = false;
+                if (expandDynamic && hasV2) {
+                    try {
+                        isDynamic = v2->is_command_dynamic(i);
+                    } catch (...) {
+                        isDynamic = false;
+                    }
+                }
+
                 commands.push_back({
-                    {"name", SafeUtf8String(name.get_ptr())},
+                    {"name", label},
                     {"description", SafeUtf8String(desc.get_ptr())},
-                    {"guid", GuidToString(cmdGuid)},
-                    {"parentGuid", GuidToString(parentGuid)},
-                    {"index", i}
+                    {"guid", cmdGuidStr},
+                    {"parentGuid", parentGuidStr},
+                    {"index", i},
+                    {"path", label},
+                    {"isDynamic", isDynamic},
+                    {"isDynamicParent", isDynamic}
                 });
+
+                if (!isDynamic) continue;
+
+                mainmenu_node::ptr root;
+                try {
+                    root = v2->dynamic_instantiate(i);
+                } catch (...) {
+                    continue;
+                }
+                if (!root.is_valid()) continue;
+
+                const size_t before = commands.size();
+                const DynamicCommandOwner owner{cmdGuidStr, parentGuidStr, i};
+                CollectDynamicMenuNodes(root, label, owner, commands, 0);
+                dynamicCount += static_cast<int>(commands.size() - before);
             }
         }
-        
+
+        return commands;
+    }
+
+    //==========================================================================
+    // discovery.getMainMenuCommands - Get all main menu commands
+    //==========================================================================
+    json GetMainMenuCommands(const json& params) {
+        const bool expandDynamic = params.value("expandDynamic", true);
+
+        int dynamicCount = 0;
+        json commands = CollectMainMenuCommands(expandDynamic, dynamicCount);
+
         return {
             {"success", true},
             {"commands", commands},
-            {"count", commands.size()}
+            {"count", commands.size()},
+            {"expandDynamic", expandDynamic},
+            {"dynamicCount", dynamicCount}
         };
     }
     
@@ -74,12 +251,32 @@ namespace {
         if (!StringToGuid(guidStr, cmdGuid)) {
             return {{"success", false}, {"error", "Invalid GUID format"}};
         }
+
+        // Dynamic children reported by getMainMenuCommands are addressed by the
+        // owning command GUID plus the node subGuid; g_execute alone cannot
+        // reach them.
+        std::string subGuidStr = params.value("subGuid", "");
+        if (!subGuidStr.empty()) {
+            GUID subGuid;
+            if (!StringToGuid(subGuidStr, subGuid)) {
+                return {{"success", false}, {"error", "Invalid subGuid format"}};
+            }
+
+            bool executedDynamic = mainmenu_commands::g_execute_dynamic(cmdGuid, subGuid);
+            return {
+                {"success", executedDynamic},
+                {"guid", guidStr},
+                {"subGuid", subGuidStr},
+                {"dynamic", true}
+            };
+        }
         
         bool executed = mainmenu_commands::g_execute(cmdGuid);
         
         return {
             {"success", executed},
-            {"guid", guidStr}
+            {"guid", guidStr},
+            {"dynamic", false}
         };
     }
     
@@ -645,13 +842,12 @@ namespace {
         int preferencePages = 0;
         int components = 0;
         
-        // Main menu commands
+        // Main menu commands (dynamic v2 subtrees included, mirroring
+        // discovery.getMainMenuCommands so the summary matches the listing)
+        int mainMenuDynamicCommands = 0;
         {
-            service_enum_t<mainmenu_commands> e;
-            service_ptr_t<mainmenu_commands> ptr;
-            while (e.next(ptr)) {
-                mainMenuCommands += ptr->get_command_count();
-            }
+            json commands = CollectMainMenuCommands(true, mainMenuDynamicCommands);
+            mainMenuCommands = static_cast<int>(commands.size());
         }
         
         // Main menu groups
@@ -721,6 +917,7 @@ namespace {
             {"success", true},
             {"services", {
                 {"mainMenuCommands", mainMenuCommands},
+                {"mainMenuDynamicCommands", mainMenuDynamicCommands},
                 {"mainMenuGroups", mainMenuGroups},
                 {"inputFormats", inputFormats},
                 {"uiElements", uiElements},
@@ -743,55 +940,64 @@ namespace {
         if (query.empty()) {
             return {{"success", false}, {"error", "query is required"}};
         }
-        
+
+        const bool expandDynamic = params.value("expandDynamic", true);
+
         // Convert to lowercase for search
         std::string lowerQuery = query;
         std::transform(lowerQuery.begin(), lowerQuery.end(), lowerQuery.begin(), ::tolower);
-        
+
+        int dynamicCount = 0;
+        json commands = CollectMainMenuCommands(expandDynamic, dynamicCount);
+
         json results = json::array();
-        
-        service_enum_t<mainmenu_commands> e;
-        service_ptr_t<mainmenu_commands> ptr;
-        
-        while (e.next(ptr)) {
-            t_uint32 count = ptr->get_command_count();
-            
-            for (t_uint32 i = 0; i < count; i++) {
-                pfc::string8 name;
-                ptr->get_name(i, name);
-                
-                pfc::string8 desc;
-                ptr->get_description(i, desc);
-                
-                // Search matching
-                std::string safeName = SafeUtf8String(name.get_ptr());
-                std::string safeDesc = SafeUtf8String(desc.get_ptr());
-                std::string lowerName = safeName;
-                std::transform(lowerName.begin(), lowerName.end(), lowerName.begin(), ::tolower);
-                
-                std::string lowerDesc = safeDesc;
-                std::transform(lowerDesc.begin(), lowerDesc.end(), lowerDesc.begin(), ::tolower);
-                
-                if (lowerName.find(lowerQuery) != std::string::npos ||
-                    lowerDesc.find(lowerQuery) != std::string::npos) {
-                    
-                    GUID cmdGuid = ptr->get_command(i);
-                    
-                    results.push_back({
-                        {"name", safeName},
-                        {"description", safeDesc},
-                        {"guid", GuidToString(cmdGuid)},
-                        {"type", "mainmenu"}
-                    });
-                }
+
+        for (const auto& command : commands) {
+            // A dynamic parent slot is only a container; its expanded children
+            // carry the executable identity, so skip it to avoid duplicate hits.
+            if (command.value("isDynamicParent", false)) continue;
+
+            std::string safeName = command.value("name", "");
+            std::string safeDesc = command.value("description", "");
+            std::string safePath = command.value("path", "");
+
+            std::string lowerName = safeName;
+            std::transform(lowerName.begin(), lowerName.end(), lowerName.begin(), ::tolower);
+
+            std::string lowerDesc = safeDesc;
+            std::transform(lowerDesc.begin(), lowerDesc.end(), lowerDesc.begin(), ::tolower);
+
+            std::string lowerPath = safePath;
+            std::transform(lowerPath.begin(), lowerPath.end(), lowerPath.begin(), ::tolower);
+
+            if (lowerName.find(lowerQuery) == std::string::npos &&
+                lowerDesc.find(lowerQuery) == std::string::npos &&
+                lowerPath.find(lowerQuery) == std::string::npos) {
+                continue;
             }
+
+            json hit = {
+                {"name", safeName},
+                {"description", safeDesc},
+                {"guid", command.value("guid", "")},
+                {"path", safePath},
+                {"isDynamic", command.value("isDynamic", false)},
+                {"type", "mainmenu"}
+            };
+
+            if (command.contains("subGuid")) {
+                hit["subGuid"] = command["subGuid"];
+            }
+
+            results.push_back(hit);
         }
-        
+
         return {
             {"success", true},
             {"query", query},
             {"results", results},
-            {"count", results.size()}
+            {"count", results.size()},
+            {"expandDynamic", expandDynamic}
         };
     }
     

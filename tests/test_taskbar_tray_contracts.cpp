@@ -22,7 +22,8 @@ TEST(BackgroundSuspendPolicyTest, SessionLockHidesSurface) {
         background_suspend_policy::kLocked);
 
     EXPECT_TRUE(projection.hideSurface);
-    EXPECT_TRUE(projection.useLowMemory);
+    EXPECT_FALSE(projection.useLowMemory);
+    EXPECT_TRUE(projection.deepSuspend);
 }
 
 TEST(BackgroundSuspendPolicyTest, UnlockWhileCoveredRestoresSurfaceButStaysLow) {
@@ -41,6 +42,199 @@ TEST(BackgroundSuspendPolicyTest, ClearingLastReasonRestoresNormalProjection) {
 
     EXPECT_FALSE(projection.hideSurface);
     EXPECT_FALSE(projection.useLowMemory);
+}
+
+TEST(BackgroundSuspendPolicyTest, AutomationKeepAliveVetoesSessionLockHide) {
+    constexpr auto projection = background_suspend_policy::Project(
+        background_suspend_policy::kLocked, /*automationKeepAlive=*/true);
+
+    EXPECT_FALSE(projection.hideSurface);
+    EXPECT_TRUE(projection.useLowMemory);
+}
+
+TEST(BackgroundSuspendPolicyTest, ExplicitNoKeepAliveMatchesLegacyProjection) {
+    constexpr auto explicitOff = background_suspend_policy::Project(
+        background_suspend_policy::kLocked, /*automationKeepAlive=*/false);
+    constexpr auto legacy = background_suspend_policy::Project(
+        background_suspend_policy::kLocked);
+
+    EXPECT_EQ(explicitOff.hideSurface, legacy.hideSurface);
+    EXPECT_EQ(explicitOff.useLowMemory, legacy.useLowMemory);
+    EXPECT_TRUE(legacy.hideSurface);
+}
+
+TEST(BackgroundSuspendPolicyTest, MayHidePageTruthTable) {
+    static_assert(background_suspend_policy::MayHidePage(false),
+                  "no keep-alive must allow hiding");
+    static_assert(!background_suspend_policy::MayHidePage(true),
+                  "keep-alive must veto hiding");
+    EXPECT_TRUE(background_suspend_policy::MayHidePage(false));
+    EXPECT_FALSE(background_suspend_policy::MayHidePage(true));
+}
+
+TEST(BackgroundSuspendPolicyTest, CoveredNeverHidesRegardlessOfKeepAlive) {
+    constexpr auto keepAliveOn = background_suspend_policy::Project(
+        background_suspend_policy::kCovered, /*automationKeepAlive=*/true);
+    constexpr auto keepAliveOff = background_suspend_policy::Project(
+        background_suspend_policy::kCovered, /*automationKeepAlive=*/false);
+
+    EXPECT_FALSE(keepAliveOn.hideSurface);
+    EXPECT_FALSE(keepAliveOff.hideSurface);
+    EXPECT_TRUE(keepAliveOn.useLowMemory);
+    EXPECT_TRUE(keepAliveOff.useLowMemory);
+}
+
+// ── P2b deep-suspend projection truth table (DESIGN §6.3) ───────────────────
+// New reasons kMinimized/kTrayHidden route the former direct-call paths through
+// the projection; deepSuspend gates the TrySuspend upgrade and must stay equal
+// to hideSurface (put_IsVisible(FALSE) is its API precondition).
+
+TEST(BackgroundSuspendPolicyTest, MinimizedHidesSurfaceAndDeepSuspends) {
+    constexpr auto projection = background_suspend_policy::Project(
+        background_suspend_policy::kMinimized);
+
+    EXPECT_TRUE(projection.hideSurface);
+    EXPECT_FALSE(projection.useLowMemory);
+    EXPECT_TRUE(projection.deepSuspend);
+}
+
+TEST(BackgroundSuspendPolicyTest, TrayHiddenHidesSurfaceAndDeepSuspends) {
+    constexpr auto projection = background_suspend_policy::Project(
+        background_suspend_policy::kTrayHidden);
+
+    EXPECT_TRUE(projection.hideSurface);
+    EXPECT_FALSE(projection.useLowMemory);
+    EXPECT_TRUE(projection.deepSuspend);
+}
+
+TEST(BackgroundSuspendPolicyTest, SessionLockUpgradesToDeepSuspend) {
+    constexpr auto projection = background_suspend_policy::Project(
+        background_suspend_policy::kLocked);
+
+    EXPECT_TRUE(projection.hideSurface);
+    EXPECT_TRUE(projection.deepSuspend);
+}
+
+// Covered-only projection is explicitly unchanged by P2b: the surface stays
+// (DWM taskbar preview) and the memory tool remains the manual Low target.
+TEST(BackgroundSuspendPolicyTest, CoveredOnlyNeverDeepSuspends) {
+    constexpr auto projection = background_suspend_policy::Project(
+        background_suspend_policy::kCovered);
+
+    EXPECT_FALSE(projection.hideSurface);
+    EXPECT_TRUE(projection.useLowMemory);
+    EXPECT_FALSE(projection.deepSuspend);
+}
+
+TEST(BackgroundSuspendPolicyTest, MinimizedWhileCoveredStillDeepSuspends) {
+    constexpr auto projection = background_suspend_policy::Project(
+        background_suspend_policy::kMinimized | background_suspend_policy::kCovered);
+
+    EXPECT_TRUE(projection.hideSurface);
+    EXPECT_TRUE(projection.deepSuspend);
+}
+
+// "covered(Low) → minimized(suspend) → restore while still covered": after the
+// minimized reason clears, the covered-only projection must ask for Low again
+// (Resume auto-restored Normal; the unified restore path re-projects).
+TEST(BackgroundSuspendPolicyTest, RestoreWhileStillCoveredReprojectsLowNotDeep) {
+    constexpr auto whileMinimized = background_suspend_policy::Project(
+        background_suspend_policy::kMinimized | background_suspend_policy::kCovered);
+    constexpr auto afterRestore = background_suspend_policy::Project(
+        background_suspend_policy::kCovered);
+
+    EXPECT_TRUE(whileMinimized.deepSuspend);
+    EXPECT_FALSE(whileMinimized.useLowMemory);
+    EXPECT_FALSE(afterRestore.deepSuspend);
+    EXPECT_FALSE(afterRestore.hideSurface);
+    EXPECT_TRUE(afterRestore.useLowMemory);
+}
+
+TEST(BackgroundSuspendPolicyTest, KeepAliveVetoesDeepSuspendForEveryReasonCombo) {
+    constexpr unsigned kAllReasons =
+        background_suspend_policy::kLocked | background_suspend_policy::kCovered |
+        background_suspend_policy::kMinimized | background_suspend_policy::kTrayHidden;
+
+    for (unsigned reasons = 0; reasons <= kAllReasons; ++reasons) {
+        const auto projection = background_suspend_policy::Project(
+            reasons, /*automationKeepAlive=*/true);
+        EXPECT_FALSE(projection.hideSurface) << "reasons=" << reasons;
+        EXPECT_FALSE(projection.deepSuspend) << "reasons=" << reasons;
+        EXPECT_EQ(projection.useLowMemory, reasons != 0) << "reasons=" << reasons;
+    }
+}
+
+// deepSuspend == hideSurface invariant across the full reasons × keep-alive
+// space: TrySuspend is only legal on a hidden page, and the keep-alive veto is
+// folded into hideSurface, so the two must never diverge.
+TEST(BackgroundSuspendPolicyTest, DeepSuspendAlwaysEqualsHideSurface) {
+    constexpr unsigned kAllReasons =
+        background_suspend_policy::kLocked | background_suspend_policy::kCovered |
+        background_suspend_policy::kMinimized | background_suspend_policy::kTrayHidden;
+
+    for (unsigned reasons = 0; reasons <= kAllReasons; ++reasons) {
+        for (const bool keepAlive : {false, true}) {
+            const auto projection = background_suspend_policy::Project(reasons, keepAlive);
+            EXPECT_EQ(projection.deepSuspend, projection.hideSurface)
+                << "reasons=" << reasons << " keepAlive=" << keepAlive;
+        }
+    }
+}
+
+TEST(BackgroundSuspendPolicyTest, ClearingAllReasonsClearsDeepSuspend) {
+    constexpr auto projection = background_suspend_policy::Project(0);
+
+    EXPECT_FALSE(projection.hideSurface);
+    EXPECT_FALSE(projection.useLowMemory);
+    EXPECT_FALSE(projection.deepSuspend);
+}
+
+TEST(BackgroundSuspendPolicyTest, SuccessfulResumeCommitsVisibleState) {
+    constexpr auto result = background_suspend_policy::ApplyVisibilityResult(
+        /*pageHidden=*/true, /*desiredHidden=*/false,
+        /*commandSucceeded=*/true);
+
+    EXPECT_FALSE(result.pageHidden);
+    EXPECT_FALSE(result.retryResume);
+}
+
+TEST(BackgroundSuspendPolicyTest, FailedResumeRetainsHiddenStateForRetry) {
+    constexpr auto result = background_suspend_policy::ApplyVisibilityResult(
+        /*pageHidden=*/true, /*desiredHidden=*/false,
+        /*commandSucceeded=*/false);
+
+    EXPECT_TRUE(result.pageHidden);
+    EXPECT_TRUE(result.retryResume);
+}
+
+TEST(BackgroundSuspendPolicyTest, FailedHideDoesNotInventAppliedHiddenState) {
+    constexpr auto result = background_suspend_policy::ApplyVisibilityResult(
+        /*pageHidden=*/false, /*desiredHidden=*/true,
+        /*commandSucceeded=*/false);
+
+    EXPECT_FALSE(result.pageHidden);
+    EXPECT_FALSE(result.retryResume);
+}
+
+TEST(BackgroundSuspendPolicyTest, HealthyPageCompletesRestoreWithoutReload) {
+    constexpr auto action = background_suspend_policy::DecidePageHealthRecovery(
+        /*healthy=*/true, /*reloadAttempts=*/4, /*reloadLimit=*/4);
+
+    EXPECT_EQ(action, background_suspend_policy::PageHealthRecoveryAction::Accept);
+}
+
+TEST(BackgroundSuspendPolicyTest, UnhealthyPageReloadsBeforeLimit) {
+    constexpr auto action = background_suspend_policy::DecidePageHealthRecovery(
+        /*healthy=*/false, /*reloadAttempts=*/3, /*reloadLimit=*/4);
+
+    EXPECT_EQ(action, background_suspend_policy::PageHealthRecoveryAction::Reload);
+}
+
+TEST(BackgroundSuspendPolicyTest, UnhealthyPageRebuildsAtLimit) {
+    constexpr auto action = background_suspend_policy::DecidePageHealthRecovery(
+        /*healthy=*/false, /*reloadAttempts=*/4, /*reloadLimit=*/4);
+
+    EXPECT_EQ(action, background_suspend_policy::PageHealthRecoveryAction::Rebuild);
 }
 
 TEST(TaskbarTrayContractsTest, UserButtonsCanReplaceImplicitDefaultsBeforeCustomAdd) {
@@ -1177,4 +1371,229 @@ TEST(TaskbarTrayContractsTest, TokenTableRejectsConstantSliderValue) {
     const std::string tok = items[0]["_token"];
     EXPECT_FALSE(table.ResolveValue(tok, 7).has_value());
     EXPECT_FALSE(table.ResolveValue(tok, 8).has_value());
+}
+
+// ── DESIGN §6.6: caller-declared native playback action (playbackAction) ────
+
+// The public token maps to exactly the four playback built-ins; `exit` and any
+// unknown token yield nullopt so the API layer can reject them fail-loud.
+TEST(TaskbarTrayContractsTest, PlaybackActionFromStringMapsFourTokens) {
+    using namespace menu_action;
+    EXPECT_EQ(PlaybackActionFromString("play-pause"), std::optional<Builtin>(Builtin::PlayPause));
+    EXPECT_EQ(PlaybackActionFromString("previous"),   std::optional<Builtin>(Builtin::Previous));
+    EXPECT_EQ(PlaybackActionFromString("next"),       std::optional<Builtin>(Builtin::Next));
+    EXPECT_EQ(PlaybackActionFromString("stop"),       std::optional<Builtin>(Builtin::Stop));
+
+    EXPECT_FALSE(PlaybackActionFromString("exit").has_value());
+    EXPECT_FALSE(PlaybackActionFromString("").has_value());
+    EXPECT_FALSE(PlaybackActionFromString("Play-Pause").has_value());
+    EXPECT_FALSE(PlaybackActionFromString("play_pause").has_value());
+    EXPECT_FALSE(PlaybackActionFromString("_pb_next").has_value());
+    EXPECT_FALSE(PlaybackActionFromString("nonsense").has_value());
+}
+
+// Round-trip inverse: only the four playback actions have a public token;
+// None and Exit map to empty so getMenuItems never surfaces a synthetic token.
+TEST(TaskbarTrayContractsTest, PlaybackActionToStringRoundTrips) {
+    using namespace menu_action;
+    EXPECT_STREQ(PlaybackActionToString(Builtin::PlayPause), "play-pause");
+    EXPECT_STREQ(PlaybackActionToString(Builtin::Previous),  "previous");
+    EXPECT_STREQ(PlaybackActionToString(Builtin::Next),      "next");
+    EXPECT_STREQ(PlaybackActionToString(Builtin::Stop),      "stop");
+    EXPECT_STREQ(PlaybackActionToString(Builtin::None),      "");
+    EXPECT_STREQ(PlaybackActionToString(Builtin::Exit),      "");
+    for (const char* tok : {"play-pause", "previous", "next", "stop"}) {
+        auto b = PlaybackActionFromString(tok);
+        ASSERT_TRUE(b.has_value());
+        EXPECT_STREQ(PlaybackActionToString(*b), tok);
+    }
+}
+
+// A user leaf that declares a valid playbackAction is stamped BuiltinPlayback
+// during effective composition while keeping its caller-supplied label / icon /
+// id, so it routes to ExecutePlayback (reliable while the main page is hidden).
+TEST(TaskbarTrayContractsTest, DeclaredPlaybackActionStampsBuiltinAndKeepsAppearance) {
+    TrayMenuItem custom = MkTrayItem("my-next-btn");
+    custom.label = "跳到下一首";
+    custom.icon = "data:image/png;base64,AAAA";
+    custom.playbackAction = "next";
+
+    TrayMenuConfig config;  // showPlaybackControls / showSystemItems default off
+    auto zones = BuildEffectiveTrayZones({ custom }, {}, {}, config);
+
+    ASSERT_EQ(zones.top.size(), 1u);
+    const TrayMenuItem& stamped = zones.top[0];
+    EXPECT_EQ(stamped.origin, menu_action::Origin::BuiltinPlayback);
+    EXPECT_EQ(stamped.builtinAction, menu_action::Builtin::Next);
+    // Appearance and identity are caller-owned and untouched by the stamp.
+    EXPECT_EQ(stamped.id, "my-next-btn");
+    EXPECT_EQ(stamped.label, "跳到下一首");
+    EXPECT_EQ(stamped.icon, "data:image/png;base64,AAAA");
+    EXPECT_EQ(stamped.playbackAction, "next");
+    EXPECT_EQ(menu_action::DecideRoute(ResolveTrayMenuItemAction(stamped)),
+              menu_action::RouteDecision::ExecutePlayback);
+}
+
+// All four tokens stamp their matching built-in action.
+TEST(TaskbarTrayContractsTest, DeclaredPlaybackActionStampsEachOfFourActions) {
+    struct Case { const char* token; menu_action::Builtin builtin; };
+    const Case cases[] = {
+        { "play-pause", menu_action::Builtin::PlayPause },
+        { "previous",   menu_action::Builtin::Previous },
+        { "next",       menu_action::Builtin::Next },
+        { "stop",       menu_action::Builtin::Stop },
+    };
+    for (const auto& c : cases) {
+        TrayMenuItem item = MkTrayItem("btn");
+        item.playbackAction = c.token;
+        auto zones = BuildEffectiveTrayZones({ item }, {}, {}, TrayMenuConfig{});
+        ASSERT_EQ(zones.top.size(), 1u);
+        EXPECT_EQ(zones.top[0].origin, menu_action::Origin::BuiltinPlayback);
+        EXPECT_EQ(zones.top[0].builtinAction, c.builtin);
+        EXPECT_EQ(menu_action::DecideRoute(ResolveTrayMenuItemAction(zones.top[0])),
+                  menu_action::RouteDecision::ExecutePlayback);
+    }
+}
+
+// Composition-layer defence: an invalid token that somehow reaches assembly
+// (the API layer rejects it earlier fail-loud) must NOT gain a built-in route.
+TEST(TaskbarTrayContractsTest, InvalidDeclaredPlaybackActionStaysUserAtComposition) {
+    for (const char* bad : {"exit", "Next", "nonsense", "_pb_next"}) {
+        TrayMenuItem item = MkTrayItem("btn");
+        item.playbackAction = bad;
+        auto zones = BuildEffectiveTrayZones({ item }, {}, {}, TrayMenuConfig{});
+        ASSERT_EQ(zones.top.size(), 1u);
+        EXPECT_EQ(zones.top[0].origin, menu_action::Origin::User);
+        EXPECT_EQ(zones.top[0].builtinAction, menu_action::Builtin::None);
+        EXPECT_EQ(menu_action::DecideRoute(ResolveTrayMenuItemAction(zones.top[0])),
+                  menu_action::RouteDecision::FireUserCallback);
+    }
+}
+
+// Only normal leaves are eligible. A rich control / separator that carries the
+// field is never stamped, so it never runs a built-in playback command.
+TEST(TaskbarTrayContractsTest, DeclaredPlaybackActionIgnoredOnNonNormalLeaves) {
+    for (const char* type : {"separator", "rating", "slider", "segmented", "nowplaying", "checkbox"}) {
+        TrayMenuItem item = MkTrayItem("rich");
+        item.type = type;
+        item.playbackAction = "next";
+        auto zones = BuildEffectiveTrayZones({ item }, {}, {}, TrayMenuConfig{});
+        ASSERT_EQ(zones.top.size(), 1u);
+        EXPECT_EQ(zones.top[0].origin, menu_action::Origin::User)
+            << "type=" << type;
+        EXPECT_EQ(zones.top[0].builtinAction, menu_action::Builtin::None)
+            << "type=" << type;
+    }
+}
+
+// A submenu parent is not a selectable leaf; the field on it is ignored, and a
+// declaring leaf INSIDE the submenu is still stamped (recursion works).
+TEST(TaskbarTrayContractsTest, DeclaredPlaybackActionIgnoredOnSubmenuParentButAppliedToChild) {
+    TrayMenuItem child = MkTrayItem("child-prev");
+    child.playbackAction = "previous";
+    TrayMenuItem parent = MkTrayItem("parent");
+    parent.type = "submenu";
+    parent.playbackAction = "next";  // must be ignored on the parent
+    parent.submenu.push_back(child);
+
+    auto zones = BuildEffectiveTrayZones({ parent }, {}, {}, TrayMenuConfig{});
+    ASSERT_EQ(zones.top.size(), 1u);
+    const TrayMenuItem& composedParent = zones.top[0];
+    EXPECT_EQ(composedParent.origin, menu_action::Origin::User);
+    EXPECT_EQ(composedParent.builtinAction, menu_action::Builtin::None);
+    ASSERT_EQ(composedParent.submenu.size(), 1u);
+    EXPECT_EQ(composedParent.submenu[0].origin, menu_action::Origin::BuiltinPlayback);
+    EXPECT_EQ(composedParent.submenu[0].builtinAction, menu_action::Builtin::Previous);
+}
+
+// Event-emission gap coverage (previously only implicit): a plain user item
+// routes to the frontend callback (tray:menuItemClicked), while a declared
+// playback item routes to native execution and therefore fires no click event.
+TEST(TaskbarTrayContractsTest, PlainUserItemFiresCallbackDeclaredPlaybackDoesNot) {
+    TrayMenuItem plain = MkTrayItem("open-settings");
+    TrayMenuItem declared = MkTrayItem("bg-play");
+    declared.playbackAction = "play-pause";
+
+    auto zones = BuildEffectiveTrayZones({ plain, declared }, {}, {}, TrayMenuConfig{});
+    ASSERT_EQ(zones.top.size(), 2u);
+
+    // Plain user item -> FireUserCallback (the only path to tray:menuItemClicked).
+    const auto plainAction = ResolveTrayMenuItemAction(zones.top[0]);
+    EXPECT_EQ(plainAction.origin, menu_action::Origin::User);
+    EXPECT_EQ(menu_action::DecideRoute(plainAction),
+              menu_action::RouteDecision::FireUserCallback);
+
+    // Declared playback item -> ExecutePlayback, NOT FireUserCallback, so
+    // RouteResolvedAction returns before touching m_menuItemCb (no click event).
+    const auto declaredAction = ResolveTrayMenuItemAction(zones.top[1]);
+    EXPECT_EQ(declaredAction.origin, menu_action::Origin::BuiltinPlayback);
+    EXPECT_NE(menu_action::DecideRoute(declaredAction),
+              menu_action::RouteDecision::FireUserCallback);
+    EXPECT_EQ(menu_action::DecideRoute(declaredAction),
+              menu_action::RouteDecision::ExecutePlayback);
+}
+
+// A forged internal action pair still fails closed even when playbackAction is
+// absent: the public field is the only sanctioned promotion path, and it is
+// stamped by the host, never trusted from renderer-supplied _origin/_builtinAction.
+TEST(TaskbarTrayContractsTest, ForgedInternalFieldsIgnoredWhilePlaybackActionPathIsHostOnly) {
+    // Renderer-forged internal pair without the public field: token table with
+    // the default (untrusted) policy must keep it a user action.
+    json items = json::array({{
+        {"id", "forged"}, {"label", "Forged next"},
+        {"_origin", "builtin-playback"}, {"_builtinAction", "next"}
+    }});
+    MenuTokenTable table;
+    ASSERT_TRUE(table.Rebuild(items, SeqGen(std::make_shared<int>(0))));
+    const auto action = table.ResolveSelect(items[0]["_token"].get<std::string>());
+    ASSERT_TRUE(action.has_value());
+    EXPECT_EQ(action->origin, menu_action::Origin::User);
+    EXPECT_EQ(action->builtin, menu_action::Builtin::None);
+
+    // The sanctioned path is the public field stamped by the host during
+    // composition; it does not depend on any renderer-supplied internal field.
+    TrayMenuItem declared = MkTrayItem("bg-next");
+    declared.playbackAction = "next";
+    auto zones = BuildEffectiveTrayZones({ declared }, {}, {}, TrayMenuConfig{});
+    ASSERT_EQ(zones.top.size(), 1u);
+    EXPECT_EQ(zones.top[0].origin, menu_action::Origin::BuiltinPlayback);
+    EXPECT_EQ(zones.top[0].builtinAction, menu_action::Builtin::Next);
+}
+
+// Dual-backend consistency (mirrors ExplicitExitPreservesTrustedRouteAcrossBackends):
+// a declared playback leaf carries the same stamp into the native command map
+// and the WebView token transport, and the renderer never sees internal fields.
+TEST(TaskbarTrayContractsTest, DeclaredPlaybackPreservesTrustedRouteAcrossBackends) {
+    TrayMenuItem declared = MkTrayItem("bg-play");
+    declared.label = "后台播放/暂停";
+    declared.playbackAction = "play-pause";
+    auto zones = BuildEffectiveTrayZones({ declared }, {}, {}, TrayMenuConfig{});
+    ASSERT_EQ(zones.top.size(), 1u);
+    const TrayMenuItem& composed = zones.top[0];
+
+    // Native BuildMenu stores this exact helper result in m_menuIdMap.
+    const auto nativeAction = ResolveTrayMenuItemAction(composed);
+    EXPECT_EQ(menu_action::DecideRoute(nativeAction),
+              menu_action::RouteDecision::ExecutePlayback);
+    EXPECT_EQ(nativeAction.builtin, menu_action::Builtin::PlayPause);
+
+    // WebView TrayItemToMenuJson emits the same internal fields; the token table
+    // strips them from renderer-visible JSON and resolves the opaque token.
+    const auto fields = TrayMenuItemActionFields(composed);
+    ASSERT_TRUE(fields.IsStamped());
+    EXPECT_EQ(*fields.origin, "builtin-playback");
+    EXPECT_EQ(*fields.builtin, "play-pause");
+    json webItems = json::array({{
+        {"id", composed.id}, {"label", composed.label},
+        {"_origin", *fields.origin}, {"_builtinAction", *fields.builtin}
+    }});
+    MenuTokenTable table;
+    ASSERT_TRUE(table.Rebuild(webItems, SeqGen(std::make_shared<int>(0)), true));
+    EXPECT_FALSE(webItems[0].contains("_origin"));
+    EXPECT_FALSE(webItems[0].contains("_builtinAction"));
+    const auto webAction = table.ResolveSelect(webItems[0]["_token"].get<std::string>());
+    ASSERT_TRUE(webAction.has_value());
+    EXPECT_EQ(menu_action::DecideRoute(*webAction),
+              menu_action::RouteDecision::ExecutePlayback);
+    EXPECT_EQ(webAction->builtin, menu_action::Builtin::PlayPause);
 }

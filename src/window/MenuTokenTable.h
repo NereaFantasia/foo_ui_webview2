@@ -139,8 +139,8 @@ private:
                 if (mx < mn) std::swap(mn, mx);   // normalize for range validation
                 entry.sliderMin = mn;
                 entry.sliderMax = mx;
-                // Constant slider (min==max): never accept value changes
-                // (DESIGN §6.3). ResolveValue rejects via RichValueInRange when
+                // Constant slider (min==max): never accept value changes.
+                // ResolveValue rejects via RichValueInRange when
                 // sliderMin==sliderMax after the constant gate below.
             } else if (type == "segmented" && it.contains("segments") && it["segments"].is_array()) {
                 for (const auto& s : it["segments"]) {

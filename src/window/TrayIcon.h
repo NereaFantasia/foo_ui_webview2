@@ -31,8 +31,7 @@ struct TrayMenuItem {
     bool checked = false;
     // True when the caller explicitly supplied `checked` (including false), set
     // type to "checkbox", or later called setMenuItemState with checked. Preserves
-    // checkable identity so checked:false is not lost as "not a checkbox"
-    // (DESIGN §9.2 Phase 3).
+    // checkable identity so checked:false is not lost as "not a checkbox".
     bool checkable = false;
     std::string icon;   // base64 or empty
 
@@ -52,10 +51,20 @@ struct TrayMenuItem {
                              // segmented: zero-based index of the selected segment
     int minValue = 0;        // slider: range minimum
     int maxValue = 100;      // slider: range maximum
-    // Slider-only axis (DESIGN §6.2). Exact "vertical" is vertical; missing /
+    // Slider-only axis. Exact "vertical" is vertical; missing /
     // "horizontal" / unknown → horizontal. Non-slider types ignore this field.
     // Native backend ignores orientation and keeps the stepped-submenu degrade.
     std::string orientation;
+
+    // Caller-declared native playback action (public API field).
+    // One of "play-pause" | "previous" | "next" | "stop", or empty. Unlike the
+    // internal origin/builtinAction below, this IS parsed from setContextMenu
+    // JSON and round-tripped by getMenuItems. Effective-zone composition stamps
+    // a normal leaf that carries a valid value with Origin::BuiltinPlayback so
+    // selection executes natively (reliable while the main page is suspended)
+    // instead of firing tray:menuItemClicked. The API layer rejects invalid
+    // values fail-loud, so a stored item only ever holds a valid token or "".
+    std::string playbackAction;
 
     // segmented: the inline single-select options (webview backend only).
     std::vector<TraySegment> segments;
@@ -99,7 +108,7 @@ enum class TrayMenuRender {
     WebView = 1,
 };
 
-// WebView tray DOM structure mode (DESIGN §5.2 / §6.1 Phase 2).
+// WebView tray DOM structure mode.
 // Flat  = default; root keeps direct-child .fb-item / separator DOM (legacy selectors).
 // Zones = opt-in; emits .fb-zone[data-zone] wrappers for top/playback/bottom.
 // Native backends ignore this field and always flatten from effective zones.
@@ -120,7 +129,7 @@ struct TrayMenuConfig {
     bool autoNowPlaying = false;
 
     // Frontend style takeover for the self-drawn (webview) tray menu only
-    // (STYLING_TAKEOVER_DESIGN S-CSS). css is injected into the overlay's
+    // css is injected into the overlay's
     // <style id="fb-user">; cssReplace=true switches to replace mode (default
     // styles disabled, only the user CSS + protected structural layer remain),
     // false (default) keeps override/append on top of the built-in styles.
@@ -181,7 +190,7 @@ inline std::vector<TrayMenuItem> ComposeTrayZones(const std::vector<TrayMenuItem
     return composed;
 }
 
-// Single effective-zone authority (DESIGN §5.2 Phase 2):
+// Single effective-zone authority:
 //   top
 //   playback = builtin playback + user playback
 //   bottom   = user bottom + builtin system
@@ -199,7 +208,7 @@ struct EffectiveTrayZones {
 };
 
 // Recursively drop !visible nodes before any backend consumes the tree
-// (DESIGN §5.2). A visible submenu parent whose children are all hidden is
+// A visible submenu parent whose children are all hidden is
 // degraded to a normal leaf so native does not open an empty popup and the
 // WebView does not keep an empty submenu array that would still look like a
 // parent row.
@@ -220,7 +229,7 @@ inline std::vector<TrayMenuItem> NormalizeVisibleMenuItems(std::vector<TrayMenuI
 }
 
 // Single recursive slider normalization shared by storage / WebView / native /
-// token index / getMenuItems (DESIGN §6.2–6.3 Phase 3):
+// token index / getMenuItems:
 //   - max < min → swap
 //   - max == min → constant slider (display only; no value change)
 //   - value clamped into the normalized range
@@ -316,6 +325,32 @@ inline void PromoteReservedBuiltinItems(std::vector<TrayMenuItem>& items) {
     }
 }
 
+// Stamp caller-declared native playback actions recursively. A
+// normal leaf whose public `playbackAction` maps to a playback Builtin gains
+// Origin::BuiltinPlayback so selection routes to ExecutePlayback natively,
+// reliable while the main page is suspended, and never fires
+// tray:menuItemClicked. The caller keeps full control of label / icon / id.
+// Only normal leaves qualify: separators, submenus and rich controls
+// (rating / slider / segmented / nowplaying) ignore the field. The API layer
+// already rejected invalid tokens fail-loud, so a non-empty value here is a
+// valid playback action; PlaybackActionFromString still gates defensively.
+// Runs after reserved-id promotion and before default injection so the stamp
+// is present when the token table indexes the internal action fields.
+inline void PromoteDeclaredPlaybackItems(std::vector<TrayMenuItem>& items) {
+    for (auto& item : items) {
+        if (!item.submenu.empty()) {
+            PromoteDeclaredPlaybackItems(item.submenu);
+            continue;  // a submenu parent is not itself a selectable leaf
+        }
+        if (item.playbackAction.empty()) continue;
+        if (item.type != "normal") continue;
+        if (auto action = menu_action::PlaybackActionFromString(item.playbackAction)) {
+            item.origin = menu_action::Origin::BuiltinPlayback;
+            item.builtinAction = *action;
+        }
+    }
+}
+
 inline bool TrayMenuContainsPublicId(const std::vector<TrayMenuItem>& items,
                                      const std::string& publicId) {
     for (const auto& item : items) {
@@ -351,6 +386,13 @@ inline EffectiveTrayZones BuildEffectiveTrayZones(
     PromoteReservedBuiltinItems(z.playback);
     PromoteReservedBuiltinItems(z.bottom);
 
+    // Caller-declared playbackAction is stamped after reserved-id promotion and
+    // before default injection, so a declared leaf routes natively without
+    // colliding with the exact `_sys_exit` compatibility contract.
+    PromoteDeclaredPlaybackItems(z.top);
+    PromoteDeclaredPlaybackItems(z.playback);
+    PromoteDeclaredPlaybackItems(z.bottom);
+
     if (config.showPlaybackControls) {
         auto defaults = BuildPlaybackDefaultItems();
         z.playback.insert(z.playback.begin(),
@@ -375,7 +417,7 @@ inline std::vector<TrayMenuItem> FlattenEffectiveZones(const EffectiveTrayZones&
 // Flat list with per-node zone stamps for WebView flat DOM / tests.
 // Inter-zone separators inherit the *last emitted* zone id (not a hardcoded
 // neighbour name), so top→bottom with an empty playback zone tags the
-// separator as "top" (DESIGN §5.3).
+// separator as "top".
 struct ZoneTaggedTrayItem {
     TrayMenuItem item;
     std::string zone;
@@ -505,7 +547,7 @@ inline menu_limits::CheckResult TryReplaceContextMenuZone(
     TrayMenuConfig conf = newConfig.has_value() ? *newConfig : storage.config;
     StripOversizedSvgInTree(items);
     // Shared recursive slider normalization before storage / backends share
-    // the same min/max/value/orientation (DESIGN §6.3 Phase 3).
+    // the same min/max/value/orientation.
     NormalizeSliderMenuItems(items);
 
     std::vector<TrayMenuItem> preview[3] = {

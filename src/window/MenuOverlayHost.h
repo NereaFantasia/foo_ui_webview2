@@ -38,7 +38,7 @@ private:
 //   ContentSized      = 内容尺寸窗，按光标定位、rcMonitor 边界、可浮于任务栏之上（tray 用）。
 enum class MenuWindowModel { FullscreenOverlay, ContentSized };
 
-// Overlay DOM input model（DESIGN §5.2 Phase 2）：与 windowModel / ownerMode 正交。
+// Overlay DOM input model：与 windowModel / ownerMode 正交。
 //   LegacyItems = menu.show 与 tray layoutMode:'flat' — 扁平 items，根直接子 DOM。
 //   TrayZones   = tray layoutMode:'zones' — 结构化 zones 数组。
 enum class MenuOverlayModel { LegacyItems, TrayZones };
@@ -48,7 +48,7 @@ enum class MenuOverlayModel { LegacyItems, TrayZones };
 struct MenuShowOptions {
     MenuWindowModel windowModel = MenuWindowModel::FullscreenOverlay;  // 默认=现状，零回归
     MenuOverlayModel overlayModel = MenuOverlayModel::LegacyItems;     // 默认=legacy flat items
-    // 前端样式接管（S-CSS，STYLING_TAKEOVER_DESIGN §12）：css = 前端注入样式字符串；
+    // 前端样式接管：css = 前端注入样式字符串；
     // cssReplace = true 时 replace 模式（禁用默认样式，仅留受保护结构层），false（默认）= override 叠加。
     std::string css;
     bool cssReplace = false;

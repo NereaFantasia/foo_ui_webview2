@@ -1,6 +1,6 @@
     var cur = null;
     var layers = [];   // index=depth: {el, rows:[{el,item,navigable,hasSub}], active}
-    // Phase 3: single interaction mode — navigation | editor (DESIGN §9.1).
+    // Single interaction mode — navigation | editor.
     var interactionMode = "navigation";  // "navigation" | "editor"
     var editorCtx = null;                // { depth, rowIdx, focusEl, exit }
     var pendingRootFocus = false;        // ContentSized: focus after first placed
@@ -25,7 +25,7 @@
     function isNormalKind(it){ return !!it && it.type!=="separator" && it.type!=="nowplaying" && it.type!=="rating" && it.type!=="slider" && it.type!=="segmented"; }   // 仅普通/子菜单项参与图标列（富项含 segmented 不参与，镜像 C++ TrayItemKindRendersIcon）
     function isRichKind(k){ return k==="rating"||k==="slider"||k==="segmented"; }
 
-    // Phase 2: shared hide/show protocol + stable attrs (from menu-overlay-layout.mjs).
+    // Shared hide/show protocol + stable attrs (from menu-overlay-layout.mjs).
     function applyAttrs(el, attrs){
       if(!el||!attrs) return;
       for(var k in attrs){ if(Object.prototype.hasOwnProperty.call(attrs,k)) el.setAttribute(k, attrs[k]); }
@@ -108,7 +108,7 @@
       if(idx>=0 && L.rows[idx]){
         var e=L.rows[idx].el; e.classList.add("active");
         try{ e.scrollIntoView({block:"nearest"}); }catch(x){}
-        // Pointer hover must not steal keyboard/editor focus (DESIGN §9).
+        // Pointer hover must not steal keyboard/editor focus.
         if(interactionMode==="navigation" && shouldFocusOnActivate(opts)){
           try{ e.focus({preventScroll:true}); }catch(x2){ try{ e.focus(); }catch(x3){} }
         }
@@ -480,7 +480,7 @@
         d.className="fb-item nrm"+(!en?" disabled":"")+(it&&it.checked?" checked":"")+(hasSub?" has-sub":"");
         d.setAttribute("part","item");
         stampItem(d, it, depth, z);
-        // ARIA: normal / checkable / submenu (DESIGN §9.2). Shared menu.show path benefits.
+        // ARIA: normal / checkable / submenu. Shared menu.show path benefits.
         var role=resolveNavRowRole({kind:hasSub?"submenu":(it&&it.type)||"normal", checkable:checkable, checked:!!(it&&it.checked)});
         d.setAttribute("role", role);
         d.setAttribute("tabindex","-1");
@@ -546,7 +546,7 @@
           var zs=document.createElement("div");
           zs.className="fb-sep fb-zone-separator";
           zs.setAttribute("part","separator");
-          // Inter-zone separator inherits the preceding zone (DESIGN §5.3).
+          // Inter-zone separator inherits the preceding zone.
           var prevZone=present[i-1].id||"";
           stampSep(zs, depth, prevZone, true);
           menuEl.appendChild(zs);
@@ -583,8 +583,8 @@
       layers[parentDepth+1].parentRowIdx = rowIdx;   // 子菜单归属父项（hover 幂等，bug2）
       parentEl.setAttribute("aria-expanded","true");
       // Temporary measure pass: keep the node invisible to the user, then clear
-      // inline display so the final visible state stays CSS-owned (DESIGN §5.4).
-      // Off-screen measure must not steal focus (Phase 3).
+      // inline display so the final visible state stays CSS-owned.
+      // Off-screen measure must not steal focus.
       sub.style.setProperty("visibility","hidden","important");
       sub.style.setProperty("display","block","important");
       var pr=parentEl.getBoundingClientRect(), sw=sub.offsetWidth, sh=sub.offsetHeight;
@@ -755,7 +755,7 @@
         var root=document.getElementById("menu");
         requestAnimationFrame(function(){
           root.classList.add("in");
-          // ContentSized: real focus only after first visible place (Phase 3).
+          // ContentSized: real focus only after first visible place.
           if(pendingRootFocus){
             pendingRootFocus=false;
             setActive(0, layers[0]?layers[0].active:firstNav(0), {focus:true});
@@ -764,7 +764,7 @@
       }
     }
 
-    // Single window-capture keydown: mode split first, handle once (DESIGN §9.1).
+    // Single window-capture keydown: mode split first, handle once.
     function onKey(e){
       if(!layers.length) return;
       // Editor mode: only editor handler; navigation never sees the same key.

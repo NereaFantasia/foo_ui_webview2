@@ -1,5 +1,9 @@
 ﻿#pragma once
 #include "pch.h"
+#include "webview/EventGatePolicy.h"
+#include "webview/ArtworkRequestInstrumentation.h"
+#include "webview/ArtworkRequestLifecycle.h"
+#include "webview/ArtworkWorkerQueue.h"
 #include <dcomp.h>
 #include <atomic>
 
@@ -13,6 +17,7 @@ public:
     using InitCallback = std::function<void(bool success)>;
     using MessageHandler = std::function<void(const std::wstring& json)>;
     using ScriptCallback = std::function<void(const std::wstring& result)>;
+    using PageHealthCallback = std::function<void(bool healthy)>;
 
     WebViewHost() = default;
     ~WebViewHost();
@@ -52,6 +57,19 @@ public:
     
     // 发送消息到 JavaScript (JSON 格式)
     HRESULT PostMessage(const std::wstring& json);
+
+    // 发送事件消息（经可见性门控）。
+    // 页面 hidden 期间按 event_gate::Classify 处置：Pass 直通 / Drop 丢弃 /
+    // Latest 缓存最新 payload 并在恢复可见时按最后到达顺序重放。
+    // invoke 响应不得走此方法（响应一律 PostMessage 直发，避免悬挂 Promise）。
+    HRESULT PostEventMessage(const std::string& eventName, const std::wstring& json);
+
+    // 页面是否处于 hidden（SetVisible(false) 生效中）。
+    // put_IsVisible 是使页面 visibilityState=hidden 的执行动作，
+    // 最小化/托盘/锁屏三条隐藏路径必经，故此记账即门控权威。
+    bool IsPageHidden() const {
+        return suspendState_->pageHidden.load(std::memory_order_acquire);
+    }
     
     // 设置消息处理器
     void SetMessageHandler(MessageHandler handler);
@@ -89,8 +107,10 @@ public:
     void Resize(int width, int height);
     void Resize(const RECT& bounds);
     
-    // 显示/隐藏
-    void SetVisible(bool visible);
+    // 显示/隐藏。返回底层 Controller 是否确认目标 IsVisible 状态。
+    // visible=true 时按 WebView2 官方恢复顺序先 Resume() 再
+    // put_IsVisible(TRUE)，避免会话解锁期间的低频恢复竞态。
+    bool SetVisible(bool visible);
     
     // Bounds-based 可见性控制（DUI 模式专用）
     // 不使用 put_IsVisible()，改用 put_Bounds({0,0,0,0}) 隐藏
@@ -102,12 +122,39 @@ public:
     // 不要求 IsVisible=false、不暂停脚本，与 Visual Hosting 架构兼容；
     // 运行时不支持 ICoreWebView2_19 时安全 no-op。
     void SetMemoryUsageLow(bool low);
+
+    // 深度挂起：ICoreWebView2_3::TrySuspend，等效 Edge sleeping
+    // tab——冻结渲染进程定时器/动画，允许 OS 直接复用 renderer 内存。
+    // 前置条件（API 约束）：必须先 SetVisible(false)，可见页面调用会失败
+    // （ERROR_INVALID_STATE）。互斥铁律（官方）：TrySuspend 内部自动置
+    // MemoryUsageTargetLevel=Low、Resume/put_IsVisible(TRUE) 自动回 Normal，
+    // 走深挂起的路径不得再手动 SetMemoryUsageLow。
+    // 失败是降级不是错误：接口不可用、调用失败或完成回调 false（sleeping tabs
+    // 排除条件，如 DevTools 打开）时回退 SetMemoryUsageLow(true) 并记日志。
+    // 代数防竞态：请求携带自增代数，SetVisible(true) 亦使代数前进；
+    // 完成回调发现代数过期即放弃写状态，若此刻页面应可见而运行时仍挂起则立即
+    // Resume() 兜底（防"最小化→秒恢复"时回调晚于 put_IsVisible(TRUE)）。
+    void TrySuspendDeep();
+
+    // 页面当前是否处于挂起态（ICoreWebView2_3::get_IsSuspended 实时查询；
+    // 接口不可用或 WebView 未就绪时返回 false）。
+    bool IsSuspended() const;
     
     // 开发者工具
     void OpenDevTools();
     
     // 重新加载
     void Reload();
+
+    // 异步确认当前 document 和脚本运行时仍可执行。
+    // Controller 存在且 IsVisible=true 并不代表 renderer/page 仍然健康。
+    HRESULT ProbePageHealth(const PageHealthCallback& callback);
+
+    // 低频宿主生命周期诊断，追加写入 profile://webview_lifecycle.log。
+    // 每条记录立即 flush，文件达到上限后轮转为 .log.1，适用于锁屏后
+    // DevTools/page target 均不可用的现场取证。
+    void LogLifecycle(const char* event, const std::string& detail = {}) const;
+    static void WriteLifecycleLog(const std::string& line);
 
     // ============================================
     // 获取接口
@@ -233,6 +280,24 @@ private:
     HCURSOR currentCursor_ = nullptr;
     bool cursorHidden_ = false;
     
+    struct SuspendState {
+        std::atomic<bool> pageHidden{false};
+        std::atomic<uint64_t> generation{0};
+        std::atomic<bool> alive{true};
+    };
+
+    // 事件可见性门控: pageHidden 由 SetVisible 维护;
+    // hidden 期间 Latest 类事件进 eventGateBuffer_，恢复可见时冲刷重放。
+    // 异步 TrySuspend 回调只捕获此共享状态和 COM 引用，不捕获 WebViewHost
+    // 裸指针；析构先置 alive=false，使迟到回调安全退出。
+    std::shared_ptr<SuspendState> suspendState_ = std::make_shared<SuspendState>();
+    event_gate::LatestBuffer eventGateBuffer_;
+    std::mutex eventGateMutex_;
+    // 采样诊断计数（[EventGate] 日志用）
+    uint64_t gateDroppedCount_ = 0;
+    uint64_t gateBufferedCount_ = 0;
+    void FlushGatedEvents();
+
     MessageHandler messageHandler_;
     FocusChangedCallback focusChangedCallback_;
     NavigationCompletedCallback navigationCompletedCallback_;
@@ -240,6 +305,25 @@ private:
     EventRegistrationToken gotFocusToken_ = {};
     EventRegistrationToken lostFocusToken_ = {};
     EventRegistrationToken processFailedToken_ = {};
+
+    // Artwork request lifecycle is independent from suspendState_. The three
+    // WebView2 tokens are removed before controller close; navigation starting
+    // is the only document-generation source.
+    EventRegistrationToken artworkResourceRequestedToken_ = {};
+    EventRegistrationToken artworkNavigationStartingToken_ = {};
+    EventRegistrationToken navigationCompletedToken_ = {};
+    artwork_request::ArtworkRequestLifecycle artworkLifecycle_;
+    artwork_instrumentation::ArtworkRequestInstrumentation artworkInstrumentation_;
+    DWORD ownerThreadId_ = 0;
+    void RemoveArtworkEventHandlers() noexcept;
+
+    // Async worker, owned per WebViewHost instance.
+    // Must be destroyed (DrainAll + join) before controller close.
+    std::unique_ptr<artwork_worker::ArtworkWorkerQueue> artworkWorkerQueue_;
+    // Shared alive-flag captured by async completion lambdas so they skip
+    // WebViewHost member access after the host is destroyed.
+    std::shared_ptr<std::atomic<bool>> artworkHostAlive_ =
+        std::make_shared<std::atomic<bool>>(true);
     
     // 虚拟主机映射 (hostName -> folderPath) + charset 修复
     std::wstring virtualHostName_;

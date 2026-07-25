@@ -61,9 +61,16 @@ public:
     BridgeCore* GetBridge() const { return bridge_.get(); }
     WebViewPanelMode GetMode() const { return mode_; }
     
-    bool IsWebViewReady() const { return webViewReady_; }
+    bool IsWebViewReady() const { return webViewReady_ && !webViewProcessDead_; }
     bool IsPanelMode() const { return mode_ != WebViewPanelMode::Standalone; }
     bool HasFocus() const { return hasFocus_; }
+
+    /**
+     * WebView2 宿主进程是否已崩溃退出（僵尸态）。
+     * 浏览器进程退出后 COM 指针依然非空，但所有调用都会返回
+     * ERROR_INVALID_STATE (0x8007139F)；此标记让门卫能拦住死对象。
+     */
+    bool IsWebViewProcessDead() const { return webViewProcessDead_; }
     
     // 窗口 ID（多窗口系统用）
     const std::string& GetWindowId() const { return windowId_; }
@@ -168,6 +175,14 @@ protected:
     virtual void OnWebViewProcessFailed(COREWEBVIEW2_PROCESS_FAILED_KIND failedKind, bool recovered);
     
     /**
+     * WebView 异步初始化失败时调用（controller / environment 创建回调失败）。
+     * InitializeWebView 返回的只是"是否成功启动"，真正的失败发生在异步回调里，
+     * 因此持有重建/初始化状态的子类必须在此清理，否则状态会永久悬挂。
+     * 基类空实现。
+     */
+    virtual void OnWebViewInitFailed();
+    
+    /**
      * 获取前端资源目录（子类可重写以自定义路径）
      */
     virtual std::wstring GetFrontendResourcesDir() const;
@@ -199,6 +214,13 @@ protected:
      */
     bool SetupVirtualHostMapping(const std::wstring& resourcesDir);
     
+    /**
+     * WebView 是否可安全接受 COM 调用。
+     * 统一门卫：宿主存在 + 宿主就绪 + 进程未崩溃。所有会下发 COM 调用的
+     * 面板级操作都必须经过此判定，否则崩溃后的僵尸指针会被放行。
+     */
+    bool IsWebViewOperable() const;
+    
 protected:
     // 窗口句柄
     HWND hwnd_ = nullptr;
@@ -214,6 +236,10 @@ protected:
     
     // WebView 是否已准备就绪
     bool webViewReady_ = false;
+    
+    // WebView2 宿主进程已崩溃退出（僵尸态）。由 OnWebViewProcessFailed 在
+    // 不可自愈的崩溃上置位，DestroyWebView / 重建成功后清零。
+    bool webViewProcessDead_ = false;
     
     // 焦点状态（用于 Selection API）
     bool hasFocus_ = false;

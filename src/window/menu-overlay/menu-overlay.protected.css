@@ -1,4 +1,4 @@
-  /* Protected structural layer (DESIGN §5.4 Phase 2): viewport geometry, menu
+  /* Protected structural layer: viewport geometry, menu
      box model / fixed positioning / overflow, and hidden fallback only.
      Visible display (block/flex/grid) is owned by default CSS or user CSS. */
   html,body{margin:0!important;padding:0!important;width:100%!important;height:100%!important;overflow:hidden!important;box-sizing:border-box!important;}

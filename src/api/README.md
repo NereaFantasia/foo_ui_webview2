@@ -110,12 +110,12 @@ bridge.RegisterApi("playback.playPaths", PlaybackPlayPaths,
 
 Using `playback.fooBar` as an example (a built-in API):
 
-1. **Three-point verification first** (mandatory, see `AGENTS.md` §2.5): confirm the SDK has the corresponding capability, that parameter keys align with `params.value("key", ...)` inside the handler, and that event names use the colon format.
+1. **Three-point verification first** (mandatory): confirm the SDK has the corresponding capability, that parameter keys align with `params.value("key", ...)` inside the handler, and that event names use the colon format.
 2. **Implement the handler**: in `PlaybackApi.cpp`, write `static json PlaybackFooBar(const json& params)`, read parameters from `params`, call the SDK / service interface, and return JSON; on failure use `ApiEnvelope::MakeError`.
 3. **Register**: inside that file's `RegisterPlaybackApi()`, add `bridge.RegisterApi("playback.fooBar", PlaybackFooBar);`; if it has path parameters, attach a `PathSecuritySpec` via the decorator overload.
 4. **Update the header comment**: add `playback.fooBar` to the "Registered APIs" list at the top of `PlaybackApi.h`, keeping the documentation consistent with the code.
 5. **(If emitting events)** push via `EmitEvent("playback:fooChanged", data)` in the corresponding `callbacks/`, and make sure invoke uses dot while events use colon.
-6. **Sync the SDK and docs**: API changes must be synced to `sdk/` (bridge.js / types) and `docs/` (see the development workflow in `CLAUDE.md`).
+6. **Sync the SDK and docs**: API changes must be synced to `sdk/` (bridge / types) and the documentation site under `docs/vitepress/`.
 7. **Build verification**: `\.\build.ps1 -Config Release -Platform x64`.
 
 > If a handler needs to send an asynchronous event back to "the window that initiated the call", use `CallerContext::FromParams(params)` to obtain the caller's bridge and then `EmitEvent`, to avoid mistakenly sending it to other instances.
@@ -183,4 +183,4 @@ const result = await fb2k.invoke('my_plugin.doSomething', { param1: 'value' });
 
 ---
 
-See also: the repository root [README.md](../../README.md) ("API Overview / Plugin Extension / Security Restrictions"), `docs/AI_API_REFERENCE.md`, and `sdk/`.
+See also: the repository root [README.md](../../README.md) ("API Overview / Plugin Extension / Security Restrictions"), the documentation site under `docs/vitepress/`, and `sdk/`.

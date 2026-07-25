@@ -34,7 +34,7 @@ PlaybackCallback (src/callbacks) ──> BridgeCore::EmitEvent / WebViewContext:
 
 ## 模块全景
 
-> P1：核心模块，已配独立 README。P2：支撑模块，职责见本页「支撑模块（P2）」一节。
+> 核心模块已配独立 README；支撑模块的职责见本页「支撑模块」一节。
 
 | 模块 | 文件数 | 职责 | 关键类/文件 | 文档 |
 |------|-------|------|------------|------|
@@ -42,11 +42,11 @@ PlaybackCallback (src/callbacks) ──> BridgeCore::EmitEvent / WebViewContext:
 | `window/` | 31 | 窗口体系：主窗口/弹窗、Chrome（Mica/标题栏）、托盘/任务栏 | `MainWindow`、`WindowManager`、`ChromeController`、`WindowChrome*` | [window/README.zh-CN.md](window/README.zh-CN.md) |
 | `callbacks/` | 18 | foobar2000 SDK 事件 → BridgeCore 事件广播 | `InitPlaybackCallbacks` 等 9 个回调 | [callbacks/README.zh-CN.md](callbacks/README.zh-CN.md) |
 | `core/` | 17 | WebView 生命周期、UI 入口、库缓存、JIT 队列 | `UserInterface`、`WebViewPanel`、`WebViewContext`、`LibraryCache` | [core/README.zh-CN.md](core/README.zh-CN.md) |
-| `utils/` | 13 | 路径安全 / Base64 / 图标 / i18n 等工具 | `PathSecurity`、`PathExpansion`、`Base64`、`I18n` | 见本页 P2 |
+| `utils/` | 13 | 路径安全 / Base64 / 图标 / i18n 等工具 | `PathSecurity`、`PathExpansion`、`Base64`、`I18n` | 见本页下文 |
 | `panels/` | 8 | DUI/CUI 面板集成与配置持久化 | `WebViewDuiElement`、`WebViewCuiPanel`、`PanelConfig` | [panels/README.zh-CN.md](panels/README.zh-CN.md) |
-| `webview/` | 5 | WebView2 宿主与共享环境、注入脚本 | `WebViewHost`、`WebViewEnvironment` | 见本页 P2 |
-| `interfaces/` | 4 | 服务抽象（依赖注入 / 可测试） | `IPlaybackService`、`IPlaylistService` | 见本页 P2 |
-| `selection/` | 4 | 选择追踪 | `SelectionHolder`、`SelectionWatcher` | 见本页 P2 |
+| `webview/` | 5 | WebView2 宿主与共享环境、注入脚本 | `WebViewHost`、`WebViewEnvironment` | 见本页下文 |
+| `interfaces/` | 4 | 服务抽象（依赖注入 / 可测试） | `IPlaybackService`、`IPlaylistService` | 见本页下文 |
+| `selection/` | 4 | 选择追踪 | `SelectionHolder`、`SelectionWatcher` | 见本页下文 |
 
 > 顶层还有 `main.cpp`（组件入口与 cfg_var 配置）、`pch.h/.cpp`（预编译头）、`version.h`（版本号）。
 
@@ -82,7 +82,7 @@ PlaybackCallback (src/callbacks) ──> BridgeCore::EmitEvent / WebViewContext:
 
 ---
 
-## 支撑模块（P2）
+## 支撑模块
 
 这些模块不单独配 README，职责如下：
 
@@ -122,4 +122,4 @@ main.cpp / UserInterface
 .\build.ps1 -Config Release -Platform x64
 ```
 
-更多约定见仓库根 [README.md](../README.md)、`AGENTS.md` 与 `CLAUDE.md`。
+更多约定见仓库根 [README.md](../README.md)。

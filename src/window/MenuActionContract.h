@@ -99,6 +99,34 @@ inline Builtin BuiltinFromString(const std::string& s) {
     return Builtin::None;
 }
 
+// Caller-declared native playback action (public `TrayMenuItem.playbackAction`).
+// Maps the four accepted tokens to their built-in action; `exit` is deliberately
+// NOT accepted so this public field can never declare a system-exit route (that
+// stays exclusive to the exact `_sys_exit` compatibility id). An unknown token
+// yields nullopt, which the API layer rejects fail-loud.
+inline std::optional<Builtin> PlaybackActionFromString(const std::string& s) {
+    if (s == "play-pause") return Builtin::PlayPause;
+    if (s == "previous")   return Builtin::Previous;
+    if (s == "next")       return Builtin::Next;
+    if (s == "stop")       return Builtin::Stop;
+    return std::nullopt;
+}
+
+// Inverse of PlaybackActionFromString for round-tripping the public field via
+// getMenuItems. Only the four playback actions have a public token; every other
+// built-in (including Exit) and None return an empty string.
+inline const char* PlaybackActionToString(Builtin b) {
+    switch (b) {
+        case Builtin::PlayPause: return "play-pause";
+        case Builtin::Previous:  return "previous";
+        case Builtin::Next:      return "next";
+        case Builtin::Stop:      return "stop";
+        case Builtin::None:
+        case Builtin::Exit:      return "";
+    }
+    return "";
+}
+
 // Internal action fields are trusted only when they describe one complete,
 // known origin/action pair. This keeps malformed or partial private metadata
 // on the user-action path rather than granting a built-in route.
@@ -170,7 +198,7 @@ inline bool CanSelectLeaf(const std::string& kind, bool enabled, bool hasSubmenu
 // segmented an existing AND enabled segment index. Everything else is rejected
 // (a non-value kind, an out-of-range value, or a disabled/absent segment).
 // Constant sliders (normalized min==max) never accept value changes — they are
-// display-only (DESIGN §6.3 Phase 3). Out-of-range values are rejected as-is
+// display-only. Out-of-range values are rejected as-is
 // (no clamp-and-accept).
 inline bool RichValueInRange(const std::string& kind, int value,
                              int sliderMin, int sliderMax,

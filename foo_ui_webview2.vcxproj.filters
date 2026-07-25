@@ -69,6 +69,9 @@
     <ClCompile Include="src\webview\WebViewHost.cpp">
       <Filter>src\webview</Filter>
     </ClCompile>
+    <ClCompile Include="src\api\ArtworkRequestParser.cpp">
+      <Filter>src\api</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="src\pch.h">
@@ -119,7 +122,22 @@
     <ClInclude Include="src\window\WindowChromeState.h">
       <Filter>src\window</Filter>
     </ClInclude>
+    <ClInclude Include="src\webview\EventGatePolicy.h">
+      <Filter>src\webview</Filter>
+    </ClInclude>
     <ClInclude Include="src\webview\WebViewHost.h">
+      <Filter>src\webview</Filter>
+    </ClInclude>
+    <ClInclude Include="src\api\ArtworkRequestParser.h">
+      <Filter>src\api</Filter>
+    </ClInclude>
+    <ClInclude Include="src\webview\ArtworkRequestLifecycle.h">
+      <Filter>src\webview</Filter>
+    </ClInclude>
+    <ClInclude Include="src\webview\ArtworkRequestInstrumentation.h">
+      <Filter>src\webview</Filter>
+    </ClInclude>
+    <ClInclude Include="src\webview\ArtworkWorkerQueue.h">
       <Filter>src\webview</Filter>
     </ClInclude>
   </ItemGroup>

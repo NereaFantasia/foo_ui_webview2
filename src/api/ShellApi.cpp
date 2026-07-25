@@ -205,8 +205,8 @@ namespace {
         // 不限制可执行命令: 主题来自用户自己或可信来源, 信任边界等同于安装一个
         // foobar2000 组件。命令名白名单 (cmd/powershell/node 等解释器) 既挡不住
         // 恶意主题 (可经 cmd /c、powershell -Command 任意执行), 又绊住正常主题的
-        // 直接调用, 属于无效的 security theater。真正的 fail-safe 护栏是 cwd 的
-        // 路径校验 (见下) 与 FileApi 的 MediaWrite 路径黑名单。
+        // 直接调用, 因此不作为安全边界。实际护栏是 cwd 的路径校验 (见下)
+        // 与 FileApi 的 MediaWrite 路径黑名单。
         
         // Build command line
         std::vector<std::wstring> argStrings;
@@ -300,8 +300,8 @@ namespace {
             return {{"success", false}, {"error", "executable is empty after trim"}};
         }
 
-        // 不限制可执行文件: 见 ShellExec 说明。信任主题作者前提下, 可执行白名单是
-        // 无效的 security theater。真正的 fail-safe 护栏是下方绝对路径与 cwd 的
+        // 不限制可执行文件: 见 ShellExec 说明。信任主题作者前提下, 可执行白名单
+        // 挡不住恶意输入, 不作为安全边界。实际护栏是下方绝对路径与 cwd 的
         // PathSecurity 校验, 以及 FileApi 的 MediaWrite 路径黑名单。
 
         // 绝对路径可执行文件需要通过路径安全校验

@@ -41,8 +41,8 @@ public:
     // 在 Create() 之前调用，提示 cold-start reveal 流程在最终 ShowWindow
     // 阶段使用 SW_HIDE 还是恢复的 showCmd（默认 true=按 savedShowCmd_ 显示）。
     // 用途：BackgroundService 在 lastVisible=false 时让窗口从启动到关闭全程
-    // 不可见，避免 SW_SHOWMINNOACTIVE/hideTimer hack 与 cold-start reveal 的
-    // 冲突，保持物理 IsWindowVisible 与 cfg_background_window_visible 一致。
+    // 不可见，避免外部 SW_SHOWMINNOACTIVE + 延迟隐藏序列与 cold-start reveal
+    // 争抢，保持物理 IsWindowVisible 与 cfg_background_window_visible 一致。
     void SetStartupVisibility(bool visible) { startupVisibilityHint_ = visible; }
     bool GetStartupVisibility() const { return startupVisibilityHint_; }
 
@@ -117,7 +117,7 @@ public:
 
     // ========== 期望置顶状态守护 ==========
 
-    // 登记主窗口「应有」的 WS_EX_TOPMOST 状态（capability 级兜底的参照真相）。
+    // 登记主窗口「应有」的 WS_EX_TOPMOST 状态，作为守护逻辑的参照真相。
     // 仅允许两类显式用户意图路径改写：window.setAlwaysOnTop / window.toggleAlwaysOnTop
     // （见 WindowApi.cpp）。全屏的临时 HWND_TOPMOST 不经此处——守护在全屏期间暂停。
     // WM_WINDOWPOSCHANGED 中发现实际位与期望不符即矫正（见 WndProc）。
@@ -153,6 +153,7 @@ protected:
     void OnSetFocus() override;
     void OnKillFocus() override;
     void OnWebViewProcessFailed(COREWEBVIEW2_PROCESS_FAILED_KIND failedKind, bool recovered) override;
+    void OnWebViewInitFailed() override;
     std::wstring GetTestPageHtml() const override;
     
 private:
@@ -190,17 +191,35 @@ private:
     bool lastBroadcastIsActive_ = true;
     bool lastBroadcastIsFullscreen_ = false;
 
-    // ===== 后台降级（锁屏 / 被完全覆盖） =====
-    // 锁屏可隐藏 WebView；完全覆盖只降低内存目标，必须保留供 DWM 任务栏预览
-    // 消费的 DirectComposition surface。位掩码用于正确投影组合状态。
+    // ===== 后台降级（最小化 / 托盘隐藏 / 锁屏 / 被完全覆盖） =====
+    // 最小化/托盘/锁屏三条隐藏路径统一由 SetBgSuspend 投影驱动。完全覆盖仍只
+    // 降低内存目标，必须保留供 DWM 任务栏预览消费的 DirectComposition surface。
+    // 位掩码用于正确投影组合状态。
     enum BgSuspendReason : unsigned {
-        kBgSuspendLocked  = background_suspend_policy::kLocked,
-        kBgSuspendCovered = background_suspend_policy::kCovered,
+        kBgSuspendLocked     = background_suspend_policy::kLocked,
+        kBgSuspendCovered    = background_suspend_policy::kCovered,
+        kBgSuspendMinimized  = background_suspend_policy::kMinimized,
+        kBgSuspendTrayHidden = background_suspend_policy::kTrayHidden,
     };
     unsigned bgSuspendReasons_ = 0;
-    // 每次原因变化都分别投影 surface 可见性与内存等级；仅发生 hidden→visible
-    // 转换时经 RestoreSurfaceAfterHidden 执行 SetVisible(true)+nudge。
-    // 仅在“普通可见态”（非最小化、非托盘隐藏）下改动可见性。
+    // 上次经 SetBgSuspend 实际应用的页面隐藏状态（全路径唯一 hidden 记账，
+    // 事件门控的权威输入经 WebViewHost::SetVisible 执行端同步）。迁移检测必须
+    // 比较"实际应用"而非用当前 keep-alive 值重算 prev 投影：挂起期间子开关
+    // 变化会漏检 hidden→visible 迁移。
+    bool bgSuspendPageHidden_ = false;
+    // 深度挂起在途/生效记账：TrySuspendDeep 已下发且尚未恢复可见。
+    // 互斥铁律——该状态期间不得手动 SetMemoryUsageLow（TrySuspend 自动置 Low、
+    // Resume 自动回 Normal，混用会被运行时忽略并破坏状态推理）。
+    bool bgSuspendDeepRequested_ = false;
+    unsigned bgSuspendResumeRetryCount_ = 0;
+    unsigned bgSuspendHealthRecoveryAttempts_ = 0;
+    bool webViewRebuildInProgress_ = false;
+    bool pageHealthProbePending_ = false;
+    uint64_t pageHealthProbeGeneration_ = 0;
+    // 每次原因变化都重新投影：hidden 迁移经 SetVisible(false)+TrySuspend（深挂起
+    // 开）或 SetVisible(false)+Low（回退）；hidden→visible 迁移经
+    // RestoreSurfaceAfterHidden 执行 SetVisible(true)+nudge，再按当前 reasons
+    // 重投影内存等级（统一恢复序列）。
     void SetBgSuspend(unsigned reason, bool active, const char* why);
 
     // 隐藏窗口到托盘：SC_MINIMIZE(minimizeToTray) / SC_CLOSE(closeToTray) /
@@ -265,6 +284,13 @@ private:
     static constexpr DWORD    COVER_REEVAL_DELAY_MS = 600;
     static constexpr UINT_PTR COVER_POLL_TIMER_ID = 124;       // 覆盖态周期重检（检测重新露出）
     static constexpr DWORD    COVER_POLL_INTERVAL_MS = 1000;
+    static constexpr UINT_PTR BG_RESUME_RETRY_TIMER_ID = 125;  // hidden→visible 失败后的有限重试
+    static constexpr DWORD BG_RESUME_RETRY_DELAY_MS = 100;
+    static constexpr unsigned BG_RESUME_RETRY_LIMIT = 50;
+    static constexpr UINT_PTR PAGE_HEALTH_RETRY_TIMER_ID = 126;
+    static constexpr DWORD PAGE_HEALTH_RETRY_DELAY_MS = 1000;
+    static constexpr DWORD PAGE_HEALTH_PROBE_TIMEOUT_MS = 3000;
+    static constexpr unsigned PAGE_HEALTH_RECOVERY_LIMIT = 4;
     static constexpr UINT_PTR DEFERRED_BACKDROP_TIMER_ID = 130;
     static constexpr DWORD DEFERRED_BACKDROP_DELAY_MS = 200;
     static constexpr UINT_PTR BACKDROP_KICK_EXIT_TIMER_ID = 131;
@@ -323,15 +349,19 @@ private:
     // 启动 reveal 辅助
     void TryCommitStartupReveal();
     void ArmStartupFallbackTimer();
-    void RefreshStartupRevealSurface();
+    bool RefreshStartupRevealSurface();
     bool ReapplyNativeChromeAfterStartupReveal();
     bool EnsureAuthoritativeNativeChrome(const char* reason);
     bool EnsureSurfaceConvergedAfterNativeFrame(const char* reason);
+    void ProbeRestoredPageHealth(const char* reason);
+    void HandleRestoredPageHealthResult(bool healthy, const char* reason);
+    bool RebuildWebViewAfterHealthFailure(const char* reason);
     void FinalizeStartupRevealSettlement();
     void CaptureRuntimeDomProbe(const std::string& phase, int scheduledDelayMs = -1);
     void ScheduleFinalizeStartupRuntimeProbes();
     void ScheduleManualResizeRuntimeProbes(const char* sizeType);
     void LogSurfaceDiagnostics(const char* phase) const;
+    void LogWebViewLifecycle(const char* event, const std::string& detail = {}) const;
     void EmitInteractiveResizeEvidence(const char* phase,
                                        const char* detail,
                                        const RECT* sizingRect,

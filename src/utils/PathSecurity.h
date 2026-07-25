@@ -1,7 +1,7 @@
 ﻿#pragma once
 // ============================================
 // PathSecurity.h - 统一路径安全验证模块
-// 安全修复: 动态信任模式
+// 动态信任模式
 // ============================================
 // 
 // 策略:
@@ -200,9 +200,6 @@ public:
                 }
             } catch (...) {}
         }
-        
-        // 4. 后续扩展点: trusted media roots (暂不启用)
-        // if (IsInTrustedMediaRoots(realPath)) { return true; }
         
         errorMsg = L"Write access denied: system drive path is not in trusted media context";
         return false;

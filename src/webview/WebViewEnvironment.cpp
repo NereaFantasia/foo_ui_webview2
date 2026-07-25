@@ -128,6 +128,27 @@ void WebViewEnvironment::CreateEnvironmentInternal() {
         schemeRegistrationArtwork.Get()
     };
     envOptions->SetCustomSchemeRegistrations(2, schemeRegistrations);
+
+    // ============================================
+    // 环境选项减法（关闭运行期纯开销特性）
+    // SDK 辅助类 CoreWebView2EnvironmentOptions 已实现 Options1-8 全链，
+    // QI 恒成功；保留 SUCCEEDED 判空仅为防御（勿改用 WRL ComPtr::As 搭配
+    // wil::com_ptr，模板不匹配）。
+    // ============================================
+
+    // Options5: 关闭跟踪防护 — 本项目导航面受控（fb2k://、虚拟主机、dev server），
+    // 过滤引擎对每个资源请求都是纯开销（官方文档明确关闭可提升运行时性能）
+    wil::com_ptr<ICoreWebView2EnvironmentOptions5> options5;
+    if (SUCCEEDED(envOptions->QueryInterface(IID_PPV_ARGS(&options5)))) {
+        options5->put_EnableTrackingPrevention(FALSE);
+    }
+
+    // Options3: 崩溃转储仅本地保留（用户数据目录 CrashDumps），不向微软上报，
+    // 消除崩溃上报的后台 IO/网络开销；本地转储仍可配合 webview_crash.log 诊断
+    wil::com_ptr<ICoreWebView2EnvironmentOptions3> options3;
+    if (SUCCEEDED(envOptions->QueryInterface(IID_PPV_ARGS(&options3)))) {
+        options3->put_IsCustomCrashReportingEnabled(TRUE);
+    }
     
     // ============================================
     // 浏览器命令行参数
@@ -139,14 +160,34 @@ void WebViewEnvironment::CreateEnvironmentInternal() {
     // （现象：最小化→恢复后只剩空 Win32 窗口壳，且不触发 ProcessFailed）。
     // 关闭该特性可让 WebView 始终保持呈现，规避恢复空白。
     // 代价：窗口最小化时后台仍持续渲染，CPU/GPU 占用略增（音乐播放器常驻后台，可接受）。
-    std::wstring browserArgs = L"--disable-features=CalculateNativeWinOcclusion";
+    // --disable-features 必须保持单一 switch（逗号分隔值）：WebView2 对重复
+    // switch 的语义是 last-instance-wins、仅 features 类做 union 合并，
+    // 为规避运行时版本差异，一律在此处自行合并。
+    //
+    // SpareRendererForSitePerProcess: 防御性禁用 Chromium "备用渲染进程"预热。
+    // 本组件是单源单页应用，备用 renderer 纯属内存浪费；本机基线未观测到该进程
+    // （官方口径 only consulted in site-per-process mode），显式禁用以挡住任意
+    // Runtime 版本/导航时机下的创建。
+    std::wstring disableFeatures = L"CalculateNativeWinOcclusion,SpareRendererForSitePerProcess";
+    std::wstring extraArgs;
 
     // CDP remote debugging port — 仅在 CDP 远程调试开关启用时开放
     // 允许 MCP 工具集 / AI 智能体通过 CDP 操控 WebView2
     if (security_config::IsCdpRemoteEnabled()) {
-        browserArgs += L" --remote-debugging-port=9222";
+        // CDP 模式追加后台节流禁用，消除 hidden ≥5min 后定时器分钟级对齐的长尾
+        // （IntensiveWakeUpThrottling 是 blink feature、没有独立 switch，只能并入
+        // --disable-features）。
+        extraArgs += L" --remote-debugging-port=9222"
+                     L" --disable-background-timer-throttling"
+                     L" --disable-renderer-backgrounding";
+        disableFeatures += L",IntensiveWakeUpThrottling";
+        // keep-alive 判定绑定"本进程真实开了端口"的快照，而非 advconfig 实时值
+        // （运行中勾/取消 CDP 不影响已创建环境的端口状态）。
+        security_config::NoteCdpPortOpenedThisProcess();
         console::print("[WebView2 UI] CDP remote debugging enabled on port 9222");
     }
+
+    std::wstring browserArgs = L"--disable-features=" + disableFeatures + extraArgs;
 
     envOptions->put_AdditionalBrowserArguments(browserArgs.c_str());
     
@@ -225,6 +266,24 @@ void WebViewEnvironment::DrainPendingCallbacksOnFailure() {
     for (auto& cb : failedCallbacks) {
         if (cb) cb(nullptr);
     }
+}
+
+void WebViewEnvironment::Invalidate(const char* reason) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    
+    if (!ready_) {
+        // 已经不处于就绪态（未创建过 / 已作废 / 正在创建），无需重复处理。
+        return;
+    }
+    
+    // 只清就绪标记。旧 environment_ COM 引用不主动释放：WebView2 运行时在
+    // 浏览器进程退出后仍可能有异步清理回调访问它（理由同 Shutdown）。
+    // 下一次 GetEnvironment 会走创建分支，成功后 environment_ = env 自然替换。
+    ready_ = false;
+    
+    FB2K_console_formatter()
+        << "[WebView2 UI] WebView2 environment invalidated, reason: "
+        << (reason && reason[0] ? reason : "unspecified");
 }
 
 void WebViewEnvironment::Shutdown() {

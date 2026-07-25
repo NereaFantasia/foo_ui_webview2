@@ -95,10 +95,15 @@
   <!-- Test sources -->
   <ItemGroup>
     <ClCompile Include="..\src\utils\ImageUtils.cpp" />
+    <ClCompile Include="..\src\api\ArtworkRequestParser.cpp" />
     <ClCompile Include="test_error_envelope.cpp" />
     <ClCompile Include="test_base64.cpp" />
     <ClCompile Include="test_guid_utils.cpp" />
     <ClCompile Include="test_artwork_cache_key.cpp" />
+    <ClCompile Include="test_artwork_cache_p1.cpp" />
+    <ClCompile Include="test_artwork_request_parser.cpp" />
+    <ClCompile Include="test_artwork_request_lifecycle.cpp" />
+    <ClCompile Include="test_artwork_instrumentation.cpp" />
     <ClCompile Include="test_subsong_utils.cpp" />
     <ClCompile Include="test_string_utils.cpp" />
     <ClCompile Include="test_api_constants.cpp" />
@@ -118,6 +123,7 @@
     <ClCompile Include="test_image_utils.cpp" />
     <ClCompile Include="test_metadata_write_subsong.cpp" />
     <ClCompile Include="test_taskbar_tray_contracts.cpp" />
+    <ClCompile Include="test_webview_crash_policy.cpp" />
   </ItemGroup>
 
   <!-- Headers -->
@@ -128,6 +134,7 @@
     <ClInclude Include="..\src\window\BackgroundSuspendPolicy.h" />
     <ClInclude Include="..\src\utils\StringUtils.h" />
     <ClInclude Include="..\src\window\TaskbarTrayContracts.h" />
+    <ClInclude Include="..\src\webview\WebViewCrashPolicy.h" />
   </ItemGroup>
 
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />

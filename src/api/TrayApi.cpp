@@ -100,6 +100,15 @@ static json TrayShowBalloon(const json& params) {
 // tray.setContextMenu
 // ============================================================
 static std::vector<TrayMenuItem> ParseMenuItemsVec(const json& arr);
+
+// Thrown by ParseMenuItem when a public field carries a value the tray contract
+// rejects fail-loud. Caught at each setContextMenu / appendMenuItems
+// entry and converted to an INVALID_PARAMS envelope so no partial menu is stored.
+struct TrayMenuParseError {
+    std::string message;
+    json details;
+};
+
 static TrayMenuItem ParseMenuItem(const json& item) {
     TrayMenuItem m;
     m.id = item.value("id", "");
@@ -108,7 +117,7 @@ static TrayMenuItem ParseMenuItem(const json& item) {
     m.enabled = item.value("enabled", true);
     m.visible = item.value("visible", true);
     // Explicit `checked` presence (including false) marks the item checkable so
-    // checked:false is not lost as "not a checkbox" (DESIGN §9.2 Phase 3).
+    // checked:false is not lost as "not a checkbox".
     if (item.contains("checked") && item["checked"].is_boolean()) {
         m.checked = item["checked"].get<bool>();
         m.checkable = true;
@@ -167,6 +176,36 @@ static TrayMenuItem ParseMenuItem(const json& item) {
         }
     } else {
         m.orientation.clear();
+    }
+    // Caller-declared native playback action. Validated fail-loud:
+    // it must be one of the four accepted tokens AND declared on a normal leaf.
+    // An invalid token or a declaration on a separator / submenu / rich control
+    // is a hard error rather than a silent no-promote, because such an item
+    // would look like a working control yet silently fail in the background.
+    if (item.contains("playbackAction") && item["playbackAction"].is_string()) {
+        std::string pa = item["playbackAction"].get<std::string>();
+        if (!pa.empty()) {
+            if (!menu_action::PlaybackActionFromString(pa).has_value()) {
+                throw TrayMenuParseError{
+                    "invalid playbackAction",
+                    { {"id", m.id}, {"playbackAction", pa},
+                      {"allowed", json::array({"play-pause", "previous", "next", "stop"})} }
+                };
+            }
+            if (m.type != "normal") {
+                throw TrayMenuParseError{
+                    "playbackAction requires type 'normal'",
+                    { {"id", m.id}, {"playbackAction", pa}, {"type", m.type} }
+                };
+            }
+            if (!m.submenu.empty()) {
+                throw TrayMenuParseError{
+                    "playbackAction cannot be declared on a submenu item",
+                    { {"id", m.id}, {"playbackAction", pa} }
+                };
+            }
+            m.playbackAction = pa;
+        }
     }
     return m;
 }
@@ -242,7 +281,14 @@ static json TraySetContextMenu(const json& params) {
         newConf = conf;
     }
 
-    auto breach = tray.TrySetContextMenu(ParseMenuItemsVec(params["items"]), newConf);
+    std::vector<TrayMenuItem> parsedItems;
+    try {
+        parsedItems = ParseMenuItemsVec(params["items"]);
+    } catch (const TrayMenuParseError& e) {
+        return ApiEnvelope::MakeError(e.message, ApiErrorCode::INVALID_PARAMS, e.details);
+    }
+
+    auto breach = tray.TrySetContextMenu(std::move(parsedItems), newConf);
     if (!breach.ok) {
         return ApiEnvelope::MakeError("tray menu resource limit exceeded",
                                       ApiErrorCode::INVALID_PARAMS,
@@ -250,7 +296,6 @@ static json TraySetContextMenu(const json& params) {
     }
     return {{"success", true}};
 }
-
 // ============================================================
 // Incremental menu management
 // ============================================================
@@ -261,8 +306,14 @@ static json TrayAppendMenuItems(const json& params) {
     TrayMenuPosition pos = TrayMenuPosition::Top;
     if (params.contains("position") && params["position"].is_string())
         pos = ParsePosition(params["position"].get<std::string>());
+    std::vector<TrayMenuItem> parsedItems;
+    try {
+        parsedItems = ParseMenuItemsVec(params["items"]);
+    } catch (const TrayMenuParseError& e) {
+        return ApiEnvelope::MakeError(e.message, ApiErrorCode::INVALID_PARAMS, e.details);
+    }
     auto breach = TrayIcon::GetInstance().TryAppendMenuItems(
-        ParseMenuItemsVec(params["items"]), pos);
+        std::move(parsedItems), pos);
     if (!breach.ok) {
         return ApiEnvelope::MakeError("tray menu resource limit exceeded",
                                       ApiErrorCode::INVALID_PARAMS,
@@ -341,6 +392,8 @@ static json MenuItemToJson(const TrayMenuItem& m) {
         for (const auto& s : m.submenu) sub.push_back(MenuItemToJson(s));
         out["submenu"] = sub;
     }
+    // Round-trip the caller-declared native playback action.
+    if (!m.playbackAction.empty()) out["playbackAction"] = m.playbackAction;
     return out;
 }
 

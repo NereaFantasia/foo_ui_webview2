@@ -15,9 +15,8 @@ using namespace mainwindow_detail;
 // Mica 效果 (Windows 11)
 // ============================================
 void MainWindow::EnableMicaEffect() {
-    // [Experiment I] 精确复刻 v1.1.19 的直接 DWM 写入。
-    // 不走 Chrome 统一层，不写 corner preference、BlurBehind、MICA_EFFECT=FALSE。
-    // Chrome 层在 OnWebViewReady 后首次激活。
+    // 直接写 DWM 属性，不走 Chrome 统一层，不写 corner preference、
+    // BlurBehind、MICA_EFFECT=FALSE。Chrome 层在 OnWebViewReady 后首次激活。
 
     // 启用深色模式
     BOOL darkMode = TRUE;
@@ -268,9 +267,8 @@ void MainWindow::ResolveBackdropPolicy() {
 }
 
 bool MainWindow::ApplyBackdropPolicyForActivation(bool active, bool forceRefresh) {
-    // [Legacy] immediate-show 旧实验门控（Experiment J），cold-start reveal 路径下
-    // startupChromeLayerSuppressed_ 始终为 false，此分支不再触发。
-    // 保留代码以便调试历史行为，待后续审计决定是否物理删除。
+    // cold-start reveal 路径下 startupChromeLayerSuppressed_ 始终为 false，
+    // 该分支当前不可达；保留作为 immediate-show 路径的防御。
     if (startupChromeLayerSuppressed_) {
         std::ostringstream stream;
         stream << "[ActivationEvidence] source=ApplyBackdropPolicyForActivation.chromeLayerSuppressed"

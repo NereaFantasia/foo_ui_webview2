@@ -112,4 +112,4 @@ To avoid "black/white screen first, then content", the main window starts hidden
 
 ---
 
-See also: `docs/execution/self-drawn-menu/` (self-drawn menu design) and the repository root [README.md](../../README.md).
+See also: the repository root [README.md](../../README.md).

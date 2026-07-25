@@ -8,6 +8,7 @@
 #include "api/ErrorEnvelope.h"
 #include "core/WebViewContext.h"
 #include "utils/SubsongUtils.h"
+#include "webview/WebViewHost.h"
 #include <foobar2000/SDK/vis.h>
 #include <foobar2000/SDK/playback_control.h>
 #include <foobar2000/SDK/metadb.h>
@@ -310,6 +311,23 @@ namespace {
                     if (!isAlive) {
                         it = subscriptions.erase(it);
                         pruned = true;
+                        continue;
+                    }
+
+                    // 可见性门控：hidden 窗口从分发目标中剔除（订阅保留，
+                    // 恢复可见后下一拍自然出帧，无需重订阅/重启动作）。
+                    // 全部目标 hidden 时本函数返回空，SpectrumTimerProc 在 FFT 之前早退。
+                    WebViewHost* targetHost = nullptr;
+                    if (!it->second.windowId.empty()) {
+                        if (HWND windowHwnd = context.GetHwndByWindowId(it->second.windowId)) {
+                            targetHost = context.GetWebViewHost(windowHwnd);
+                        }
+                    }
+                    if (!targetHost && it->second.ownerHwnd) {
+                        targetHost = context.GetHostByHwnd(it->second.ownerHwnd);
+                    }
+                    if (targetHost && targetHost->IsPageHidden()) {
+                        ++it;
                         continue;
                     }
 

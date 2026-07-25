@@ -215,6 +215,7 @@
     <ClCompile Include="src\api\LibraryApi.cpp" />
     <ClCompile Include="src\api\WindowApi.cpp" />
     <ClCompile Include="src\api\ArtworkApi.cpp" />
+    <ClCompile Include="src\api\ArtworkRequestParser.cpp" />
     <ClCompile Include="src\utils\ImageUtils.cpp" />
     <ClCompile Include="src\utils\PathExpansion.cpp" />
     <ClCompile Include="src\api\PluginRegistry.cpp" />
@@ -316,6 +317,10 @@
     <ClInclude Include="src\api\LibraryApi.h" />
     <ClInclude Include="src\api\WindowApi.h" />
     <ClInclude Include="src\api\ArtworkApi.h" />
+    <ClInclude Include="src\api\ArtworkRequestParser.h" />
+    <ClInclude Include="src\webview\ArtworkRequestLifecycle.h" />
+    <ClInclude Include="src\webview\ArtworkRequestInstrumentation.h" />
+    <ClInclude Include="src\webview\ArtworkWorkerQueue.h" />
     <ClInclude Include="src\api\PluginRegistry.h" />
     <ClInclude Include="src\api\FileApi.h" />
     <ClInclude Include="src\api\DialogApi.h" />

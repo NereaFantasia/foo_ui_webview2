@@ -34,7 +34,7 @@ PlaybackCallback (src/callbacks) ──> BridgeCore::EmitEvent / WebViewContext:
 
 ## Module Landscape
 
-> P1: core modules, each with its own README. P2: supporting modules, whose responsibilities are described in the "Supporting Modules (P2)" section on this page.
+> Core modules each have their own README. Supporting modules are described in the "Supporting Modules" section on this page.
 
 | Module | Files | Responsibility | Key Classes/Files | Docs |
 |------|-------|------|------------|------|
@@ -42,11 +42,11 @@ PlaybackCallback (src/callbacks) ──> BridgeCore::EmitEvent / WebViewContext:
 | `window/` | 31 | Window system: main window/popups, Chrome (Mica/title bar), tray/taskbar | `MainWindow`, `WindowManager`, `ChromeController`, `WindowChrome*` | [window/README.md](window/README.md) |
 | `callbacks/` | 18 | foobar2000 SDK events → BridgeCore event broadcasting | 9 callbacks such as `InitPlaybackCallbacks` | [callbacks/README.md](callbacks/README.md) |
 | `core/` | 17 | WebView lifecycle, UI entry, library cache, JIT queue | `UserInterface`, `WebViewPanel`, `WebViewContext`, `LibraryCache` | [core/README.md](core/README.md) |
-| `utils/` | 13 | Utilities: path security / Base64 / icons / i18n, etc. | `PathSecurity`, `PathExpansion`, `Base64`, `I18n` | See P2 on this page |
+| `utils/` | 13 | Utilities: path security / Base64 / icons / i18n, etc. | `PathSecurity`, `PathExpansion`, `Base64`, `I18n` | See below on this page |
 | `panels/` | 8 | DUI/CUI panel integration & config persistence | `WebViewDuiElement`, `WebViewCuiPanel`, `PanelConfig` | [panels/README.md](panels/README.md) |
-| `webview/` | 5 | WebView2 host & shared environment, injected scripts | `WebViewHost`, `WebViewEnvironment` | See P2 on this page |
-| `interfaces/` | 4 | Service abstractions (dependency injection / testability) | `IPlaybackService`, `IPlaylistService` | See P2 on this page |
-| `selection/` | 4 | Selection tracking | `SelectionHolder`, `SelectionWatcher` | See P2 on this page |
+| `webview/` | 5 | WebView2 host & shared environment, injected scripts | `WebViewHost`, `WebViewEnvironment` | See below on this page |
+| `interfaces/` | 4 | Service abstractions (dependency injection / testability) | `IPlaybackService`, `IPlaylistService` | See below on this page |
+| `selection/` | 4 | Selection tracking | `SelectionHolder`, `SelectionWatcher` | See below on this page |
 
 > The top level also contains `main.cpp` (component entry and cfg_var configuration), `pch.h/.cpp` (precompiled header), and `version.h` (version number).
 
@@ -82,7 +82,7 @@ External foobar2000 components register their own namespaced APIs via the export
 
 ---
 
-## Supporting Modules (P2)
+## Supporting Modules
 
 These modules do not have their own README; their responsibilities are as follows:
 
@@ -122,4 +122,4 @@ All source is compiled through the build script at the repository root; never ha
 .\build.ps1 -Config Release -Platform x64
 ```
 
-For more conventions, see the repository root [README.md](../README.md), `AGENTS.md`, and `CLAUDE.md`.
+For more conventions, see the repository root [README.md](../README.md).

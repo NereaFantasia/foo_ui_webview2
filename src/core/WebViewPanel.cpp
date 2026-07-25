@@ -141,6 +141,8 @@ bool WebViewPanel::InitializeWebView(HWND hwnd, WebViewPanelMode mode) {
             OnWebViewReady();
         } else {
             LOG("ERROR: WebView2 initialization failed");
+            // 先让子类清理初始化/重建状态，再触发导航失败信号允许窗口显示。
+            OnWebViewInitFailed();
             // WebView 初始化失败，触发导航失败信号以允许窗口显示
             OnNavigationCompleted(false);
         }
@@ -175,11 +177,16 @@ void WebViewPanel::DestroyWebView() {
     webView_.reset();
     bridge_.reset();
     webViewReady_ = false;
+    webViewProcessDead_ = false;
     hwnd_ = nullptr;
 }
 
+bool WebViewPanel::IsWebViewOperable() const {
+    return webView_ && webView_->IsReady() && !webViewProcessDead_;
+}
+
 void WebViewPanel::ResizeWebView() {
-    if (!webView_ || !webView_->IsReady() || !hwnd_) {
+    if (!IsWebViewOperable() || !hwnd_) {
         return;
     }
     
@@ -189,21 +196,21 @@ void WebViewPanel::ResizeWebView() {
 }
 
 bool WebViewPanel::Navigate(const std::wstring& url) {
-    if (!webView_ || !webView_->IsReady()) {
+    if (!IsWebViewOperable()) {
         return false;
     }
     return SUCCEEDED(webView_->Navigate(url));
 }
 
 bool WebViewPanel::NavigateToString(const std::wstring& html) {
-    if (!webView_ || !webView_->IsReady()) {
+    if (!IsWebViewOperable()) {
         return false;
     }
     return SUCCEEDED(webView_->NavigateToString(html));
 }
 
 void WebViewPanel::Reload() {
-    if (webView_ && webView_->IsReady()) {
+    if (IsWebViewOperable()) {
         webView_->Reload();
     }
 }
@@ -392,6 +399,24 @@ namespace {
 }  // namespace
 
 void WebViewPanel::OnWebViewProcessFailed(COREWEBVIEW2_PROCESS_FAILED_KIND failedKind, bool recovered) {
+    // A crash the host could not self-heal leaves every COM pointer non-null
+    // but permanently unusable (ERROR_INVALID_STATE on each call). Mark the
+    // panel so IsWebViewReady() starts rejecting, and drop the WebViewContext
+    // registration so broadcasts stop targeting a dead instance. Subclasses
+    // may still rebuild afterwards; RebuildWebView* clears the flag on success.
+    //
+    // `!recovered` is the panel-visible projection of
+    // webview_crash_policy::Disposition::markPanelDead -- the policy keeps the
+    // two mutually exclusive in every branch (see
+    // WebViewCrashPolicyTest.RecoveredAndMarkDeadAreMutuallyExclusive), so the
+    // host does not need a second callback parameter to carry it.
+    if (!recovered) {
+        webViewProcessDead_ = true;
+        if (hwnd_) {
+            WebViewContext::GetInstance().UnregisterInstance(hwnd_);
+        }
+    }
+
     // Base-class default: broadcast `webview:processFailed` so every window
     // can react. Subclasses that override this method MUST call
     // WebViewPanel::OnWebViewProcessFailed(failedKind, recovered) before
@@ -407,6 +432,11 @@ void WebViewPanel::OnWebViewProcessFailed(COREWEBVIEW2_PROCESS_FAILED_KIND faile
         };
         WebViewContext::GetInstance().BroadcastEvent("webview:processFailed", payload);
     } catch (...) {}
+}
+
+void WebViewPanel::OnWebViewInitFailed() {
+    // 默认空实现；持有重建状态的子类必须重写以释放重建锁，
+    // 否则一次异步创建失败会让后续重建被永久堵死。
 }
 
 void WebViewPanel::OnWindowReadySignal(const std::string& source) {
@@ -581,7 +611,7 @@ void WebViewPanel::InitializeCallbacks() {
 }
 
 void WebViewPanel::ReloadFrontend() {
-    if (!webViewReady_ || !webView_ || !webView_->IsReady()) {
+    if (!webViewReady_ || !IsWebViewOperable()) {
         LOG("WebViewPanel::ReloadFrontend - WebView not ready, skipping");
         return;
     }
@@ -594,7 +624,7 @@ void WebViewPanel::ReloadFrontend() {
 }
 
 void WebViewPanel::ApplyConfig(const PanelConfig& oldCfg, const PanelConfig& newCfg) {
-    if (!webViewReady_ || !webView_ || !webView_->IsReady()) {
+    if (!webViewReady_ || !IsWebViewOperable()) {
         LOG("WebViewPanel::ApplyConfig - WebView not ready, skipping");
         return;
     }

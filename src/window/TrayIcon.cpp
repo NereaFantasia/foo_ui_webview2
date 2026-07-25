@@ -464,7 +464,7 @@ HMENU TrayIcon::BuildMenu(const std::vector<TrayMenuItem>& items, int& cmdId) {
                 Utf8ToWide(plabel).c_str());
         } else if (item.type == "slider") {
             // Native degrade: a quantised "level" submenu (endpoints inclusive);
-            // each pick reports a value. Orientation is ignored (DESIGN §6.2).
+            // each pick reports a value. Orientation is ignored.
             // Constant slider (min==max) emits a single greyed display value and
             // no selectable duplicates / no value map entries.
             HMENU hSub = CreatePopupMenu();
@@ -547,7 +547,7 @@ json TrayItemToMenuJson(const TrayMenuItem& m, const char* zone = nullptr) {
     j["label"] = m.label;
     j["enabled"] = m.enabled;
     // Preserve checkable field existence (including checked:false) for ARIA
-    // menuitemcheckbox mapping in the overlay (DESIGN §9.2).
+    // menuitemcheckbox mapping in the overlay.
     if (m.checkable || m.checked || m.type == "checkbox") j["checked"] = m.checked;
     if (zone && *zone) j["_zone"] = zone;
 
@@ -651,7 +651,7 @@ json TrayEffectiveZonesToZonesJson(const EffectiveTrayZones& z) {
 }  // namespace
 
 std::vector<TrayMenuItem> TrayIcon::ComposeMenu() const {
-    // Single effective-zone authority shared by native + webview (DESIGN §5.2).
+    // Single effective-zone authority shared by native + webview.
     return FlattenEffectiveZones(BuildEffectiveTrayZones(
         m_zones[(int)TrayMenuPosition::Top],
         m_zones[(int)TrayMenuPosition::Playback],
@@ -720,7 +720,7 @@ void TrayIcon::ShowContextMenu() {
         m_zones[(int)TrayMenuPosition::Playback],
         m_zones[(int)TrayMenuPosition::Bottom],
         m_menuConfig);
-    // All-hidden / empty: do not create overlay or enter measure timeout (DESIGN §5.2).
+    // All-hidden / empty: do not create overlay or enter measure timeout.
     if (!effective.HasAnyVisible()) return;
 
     // Now-playing smart fallback (generic): when config.autoNowPlaying is on, fill
