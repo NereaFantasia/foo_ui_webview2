@@ -1,7 +1,7 @@
-// SVG allowlist predicates for the self-drawn menu icon sanitizer (DESIGN 8.4).
+// SVG allowlist predicates for the self-drawn menu icon sanitizer.
 // Pure logic only — no DOM. The overlay page inlines a browser build of these
 // predicates plus a DOMParser-based cloner; node:test imports this module
-// directly. Keep both paths in sync via scripts/gen_menu_overlay_page.mjs.
+// directly. Keep both paths in sync when editing either side.
 
 export const ALLOWED_ELEMENTS = Object.freeze([
   'path', 'circle', 'rect', 'line', 'polyline', 'polygon', 'ellipse', 'g',

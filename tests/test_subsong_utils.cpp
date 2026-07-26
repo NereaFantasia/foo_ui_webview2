@@ -59,8 +59,8 @@ TEST(SubsongUtils, LargeSubsongIndex) {
 }
 
 // ============================================================================
-// T1: MakeSidecarPath tests (plans/lyrics-save-cue-iso-fix.md §5.1 T1)
-// Re-implements MakeSidecarPath inline to avoid full SDK dependency.
+// MakeSidecarPath tests — re-implements MakeSidecarPath inline to avoid a
+// full SDK dependency.
 // ============================================================================
 #include <filesystem>
 

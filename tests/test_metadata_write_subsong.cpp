@@ -1,6 +1,5 @@
-﻿// test_metadata_write_subsong.cpp — T3: MetadataWrite/MetadataRemoveTag subsong parsing
+﻿// test_metadata_write_subsong.cpp — MetadataWrite/MetadataRemoveTag subsong parsing
 // Validates ParseSubsongIndex logic used by MetadataWrite and MetadataRemoveTag.
-// Refs: plans/lyrics-save-cue-iso-fix.md §5.1 T3
 #include "pch.h"
 #include "compat/fb2k_types.h"
 

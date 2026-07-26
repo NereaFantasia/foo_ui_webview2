@@ -1,9 +1,9 @@
 // ─────────────────────────────────────────────────────────────
 // GENERATED FILE — DO NOT EDIT
 // File: sdk/src/components/generated/global.d.ts
-// Emitter: scripts/gen_sdk_components_global.mjs
-// Regenerate: npm run gen:components-global (in sdk/) or
-//             `node scripts/gen_sdk_components_global.mjs`
+// These declarations are derived from the component definitions under
+// sdk/src/components/ and are refreshed together with the SDK release.
+// Edit the component sources instead.
 // ─────────────────────────────────────────────────────────────
 
 /* eslint-disable */

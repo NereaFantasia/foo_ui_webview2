@@ -42,8 +42,8 @@ const COMMON: Pick<
  * is re-exported by the components entry itself, so the block resolves
  * against the bundled declarations.
  *
- * Read at config-load time so the footer always tracks the codegen
- * output (`npm run gen:components-global`) without manual sync.
+ * Read at config-load time so the footer always tracks
+ * `src/components/generated/global.d.ts` without manual sync.
  */
 function componentsGlobalFooter(): string {
     const raw = readFileSync(
@@ -53,8 +53,8 @@ function componentsGlobalFooter(): string {
     const start = raw.indexOf('declare global');
     if (start < 0) {
         throw new Error(
-            'tsup.config.esm.ts: no `declare global` block found in src/components/generated/global.d.ts — '
-            + 'regenerate it via `npm run gen:components-global`',
+            'tsup.config.esm.ts: no `declare global` block found in '
+            + 'src/components/generated/global.d.ts',
         );
     }
     // Drop the trailing `export {};` module marker — dist/components.d.ts
