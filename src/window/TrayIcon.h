@@ -2,6 +2,7 @@
 #include "pch.h"
 #include "window/MenuActionContract.h"
 #include "window/MenuResourceLimits.h"
+#include "utils/I18n.h"
 #include <string>
 #include <vector>
 #include <map>
@@ -287,10 +288,11 @@ inline std::vector<TrayMenuItem> BuildPlaybackDefaultItems() {
         m.builtinAction = action;
         items.push_back(std::move(m));
     };
-    add("_pb_playPause", "Play / Pause",   menu_action::Builtin::PlayPause);
-    add("_pb_prev",      "Previous Track",  menu_action::Builtin::Previous);
-    add("_pb_next",      "Next Track",      menu_action::Builtin::Next);
-    add("_pb_stop",      "Stop",            menu_action::Builtin::Stop);
+    // Ids stay stable across locales; only the display label follows the fb2k UI language.
+    add("_pb_playPause", TRU("Play / Pause", "播放 / 暂停"), menu_action::Builtin::PlayPause);
+    add("_pb_prev",      TRU("Previous Track", "上一首"),    menu_action::Builtin::Previous);
+    add("_pb_next",      TRU("Next Track", "下一首"),        menu_action::Builtin::Next);
+    add("_pb_stop",      TRU("Stop", "停止"),                menu_action::Builtin::Stop);
     return items;
 }
 
@@ -301,7 +303,7 @@ inline std::vector<TrayMenuItem> BuildSystemDefaultItems() {
     std::vector<TrayMenuItem> items;
     TrayMenuItem exitItem;
     exitItem.id = "_sys_exit";
-    exitItem.label = "Exit foobar2000";
+    exitItem.label = TRU("Exit foobar2000", "退出 foobar2000");
     exitItem.type = "normal";
     exitItem.origin = menu_action::Origin::BuiltinSystem;
     exitItem.builtinAction = menu_action::Builtin::Exit;

@@ -4,6 +4,7 @@
 #include "pch.h"
 #include "api/DialogApi.h"
 #include "api/BridgeCore.h"
+#include "utils/I18n.h"
 #include <ShObjIdl.h>
 #include <ShlObj.h>
 #include <comdef.h>
@@ -30,7 +31,7 @@ namespace {
         DialogFilterData data;
         if (params.contains("filters") && params["filters"].is_array()) {
             for (const auto& filter : params["filters"]) {
-                std::string name = filter.value("name", "Files");
+                std::string name = filter.value("name", TRU("Files", "文件"));
                 data.names.push_back(Utf8ToWide(name));
 
                 std::wstring pattern;
@@ -50,7 +51,7 @@ namespace {
         }
 
         if (data.specs.empty()) {
-            data.names.emplace_back(L"All Files");
+            data.names.emplace_back(TR("All Files", "所有文件"));
             data.patterns.emplace_back(L"*.*");
             data.specs.push_back({ data.names[0].c_str(), data.patterns[0].c_str() });
         }
@@ -61,7 +62,7 @@ namespace {
     // dialog.openFile - Open file selection dialog
     //==========================================================================
     json DialogOpenFile(const json& params) {
-        std::string title = params.value("title", "Open File");
+        std::string title = params.value("title", TRU("Open File", "打开文件"));
         bool multiple = params.value("multiple", false);
         std::string defaultPath = params.value("defaultPath", "");
 
@@ -170,7 +171,7 @@ namespace {
     // dialog.saveFile - Save file dialog
     //==========================================================================
     json DialogSaveFile(const json& params) {
-        std::string title = params.value("title", "Save File");
+        std::string title = params.value("title", TRU("Save File", "保存文件"));
         std::string defaultName = params.value("defaultName", "");
 
         auto filterData = ParseFilterSpecs(params);
@@ -234,7 +235,7 @@ namespace {
     // dialog.openFolder - Folder selection dialog
     //==========================================================================
     json DialogOpenFolder(const json& params) {
-        std::string title = params.value("title", "Select Folder");
+        std::string title = params.value("title", TRU("Select Folder", "选择文件夹"));
         
         json result;
         result["canceled"] = true;
@@ -288,7 +289,7 @@ namespace {
     // dialog.confirm - Confirmation dialog with custom buttons
     //==========================================================================
     json DialogConfirm(const json& params) {
-        std::string title = params.value("title", "Confirm");
+        std::string title = params.value("title", TRU("Confirm", "确认"));
         std::string message = params.value("message", "");
         std::string type = params.value("type", "question");  // info, warning, error, question
         int defaultButton = params.value("defaultButton", 0);
@@ -302,8 +303,8 @@ namespace {
         }
         
         if (buttons.empty()) {
-            buttons.emplace_back(L"OK");
-            buttons.emplace_back(L"Cancel");
+            buttons.emplace_back(TR("OK", "确定"));
+            buttons.emplace_back(TR("Cancel", "取消"));
         }
         
         // Store wide strings to ensure lifetime

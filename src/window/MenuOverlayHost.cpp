@@ -5,6 +5,7 @@
 #include "api/BridgeCore.h"
 #include "webview/WebViewHost.h"
 #include "utils/GuidUtils.h"
+#include "utils/I18n.h"
 #include "window/MenuOverlayPage.inl"
 
 // ============================================
@@ -589,7 +590,12 @@ json MenuOverlayHost::GetMenuStateJson(HWND caller) const {
         // 前端样式接管（S-CSS）：css = 前端注入样式字符串（写入 <style id="fb-user">）；
         // cssReplace = true 时 replace 模式（禁用默认样式，仅留 fb-user+fb-protected），false = override 叠加。
         {"css", currentCss_},
-        {"cssReplace", currentCssReplace_}
+        {"cssReplace", currentCssReplace_},
+        // 屏幕阅读器文本语言：与 utils/I18n.h 同源，即 Windows 用户 UI 语言
+        // (GetUserDefaultUILanguage)，与本组件其余原生界面文案保持一致。
+        // 不用 navigator.language —— 那是 WebView2 自身的语言，可能与之不符。
+        // 只有中/英两档，全部 zh-* (含繁体) 都归为 "zh"。
+        {"locale", i18n::IsChineseLocale() ? "zh" : "en"}
     };
     if (isSubmenuSurface) {
         st["overlayModel"] = "legacyItems";

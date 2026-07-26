@@ -456,10 +456,10 @@ HMENU TrayIcon::BuildMenu(const std::vector<TrayMenuItem>& items, int& cmdId) {
             }
             int clearId = cmdId++;
             m_menuValueMap[clearId] = { item.id, 0 };
-            AppendMenuW(hSub, MF_STRING, clearId, L"Clear");
+            AppendMenuW(hSub, MF_STRING, clearId, TR("Clear", "清除"));
             UINT pflags = MF_POPUP;
             if (!item.enabled) pflags |= MF_GRAYED;
-            std::string plabel = !item.label.empty() ? item.label : "Rating";
+            std::string plabel = !item.label.empty() ? item.label : TRU("Rating", "评分");
             AppendMenuW(hMenu, pflags, reinterpret_cast<UINT_PTR>(hSub),
                 Utf8ToWide(plabel).c_str());
         } else if (item.type == "slider") {
@@ -492,7 +492,7 @@ HMENU TrayIcon::BuildMenu(const std::vector<TrayMenuItem>& items, int& cmdId) {
             }
             UINT pflags = MF_POPUP;
             if (!item.enabled) pflags |= MF_GRAYED;
-            std::string plabel = !item.label.empty() ? item.label : "Volume";
+            std::string plabel = !item.label.empty() ? item.label : TRU("Volume", "音量");
             AppendMenuW(hMenu, pflags, reinterpret_cast<UINT_PTR>(hSub),
                 Utf8ToWide(plabel).c_str());
         } else if (item.type == "submenu" && !item.submenu.empty()) {

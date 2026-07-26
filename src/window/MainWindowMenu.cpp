@@ -3,6 +3,7 @@
 #include "window/MainWindowInternal.h"
 #include "webview/WebViewHost.h"
 #include "core/PreferencesPage.h"
+#include "utils/I18n.h"
 #include <foobar2000/SDK/menu_helpers.h>
 #include <shellapi.h>
 
@@ -32,139 +33,139 @@ void MainWindow::OnContextMenu(int x, int y) {
     // File menu
     HMENU hFileMenu = CreatePopupMenu();
     if (hFileMenu) {
-        AppendMenuW(hFileMenu, MF_STRING, 2001, L"New Playlist");
-        AppendMenuW(hFileMenu, MF_STRING, CMD_OPEN_FILE, L"Open...\tCtrl+O");
-        AppendMenuW(hFileMenu, MF_STRING, 2002, L"Add Files...");
-        AppendMenuW(hFileMenu, MF_STRING, CMD_OPEN_FOLDER, L"Add Folder...");
-        AppendMenuW(hFileMenu, MF_STRING, 2003, L"Add Location...");
+        AppendMenuW(hFileMenu, MF_STRING, 2001, TR("New Playlist", "新建播放列表"));
+        AppendMenuW(hFileMenu, MF_STRING, CMD_OPEN_FILE, TR("Open...\tCtrl+O", "打开...\tCtrl+O"));
+        AppendMenuW(hFileMenu, MF_STRING, 2002, TR("Add Files...", "添加文件..."));
+        AppendMenuW(hFileMenu, MF_STRING, CMD_OPEN_FOLDER, TR("Add Folder...", "添加文件夹..."));
+        AppendMenuW(hFileMenu, MF_STRING, 2003, TR("Add Location...", "添加位置..."));
         AppendMenuW(hFileMenu, MF_SEPARATOR, 0, nullptr);
-        AppendMenuW(hFileMenu, MF_STRING, 2004, L"Save Playlist...");
-        AppendMenuW(hFileMenu, MF_STRING, 2005, L"Load Playlist...");
+        AppendMenuW(hFileMenu, MF_STRING, 2004, TR("Save Playlist...", "保存播放列表..."));
+        AppendMenuW(hFileMenu, MF_STRING, 2005, TR("Load Playlist...", "载入播放列表..."));
         AppendMenuW(hFileMenu, MF_SEPARATOR, 0, nullptr);
-        AppendMenuW(hFileMenu, MF_STRING, CMD_PREFERENCES, L"Preferences...\tCtrl+P");
+        AppendMenuW(hFileMenu, MF_STRING, CMD_PREFERENCES, TR("Preferences...\tCtrl+P", "首选项...\tCtrl+P"));
         AppendMenuW(hFileMenu, MF_SEPARATOR, 0, nullptr);
-        AppendMenuW(hFileMenu, MF_STRING, 2006, L"Exit");
-        AppendMenuW(hMenu, MF_STRING | MF_POPUP, (UINT_PTR)hFileMenu, L"File");
+        AppendMenuW(hFileMenu, MF_STRING, 2006, TR("Exit", "退出"));
+        AppendMenuW(hMenu, MF_STRING | MF_POPUP, (UINT_PTR)hFileMenu, TR("File", "文件"));
     }
     
     // Edit menu
     HMENU hEditMenu = CreatePopupMenu();
     if (hEditMenu) {
-        AppendMenuW(hEditMenu, MF_STRING, 1201, L"Undo\tCtrl+Z");
-        AppendMenuW(hEditMenu, MF_STRING, 1202, L"Redo\tCtrl+Y");
+        AppendMenuW(hEditMenu, MF_STRING, 1201, TR("Undo\tCtrl+Z", "撤销\tCtrl+Z"));
+        AppendMenuW(hEditMenu, MF_STRING, 1202, TR("Redo\tCtrl+Y", "重做\tCtrl+Y"));
         AppendMenuW(hEditMenu, MF_SEPARATOR, 0, nullptr);
-        AppendMenuW(hEditMenu, MF_STRING, 1203, L"Cut\tCtrl+X");
-        AppendMenuW(hEditMenu, MF_STRING, 1204, L"Copy\tCtrl+C");
-        AppendMenuW(hEditMenu, MF_STRING, 1205, L"Paste\tCtrl+V");
+        AppendMenuW(hEditMenu, MF_STRING, 1203, TR("Cut\tCtrl+X", "剪切\tCtrl+X"));
+        AppendMenuW(hEditMenu, MF_STRING, 1204, TR("Copy\tCtrl+C", "复制\tCtrl+C"));
+        AppendMenuW(hEditMenu, MF_STRING, 1205, TR("Paste\tCtrl+V", "粘贴\tCtrl+V"));
         AppendMenuW(hEditMenu, MF_SEPARATOR, 0, nullptr);
-        AppendMenuW(hEditMenu, MF_STRING, 1206, L"Select All\tCtrl+A");
-        AppendMenuW(hEditMenu, MF_STRING, 1207, L"Deselect All");
-        AppendMenuW(hEditMenu, MF_STRING, 1208, L"Invert Selection");
+        AppendMenuW(hEditMenu, MF_STRING, 1206, TR("Select All\tCtrl+A", "全选\tCtrl+A"));
+        AppendMenuW(hEditMenu, MF_STRING, 1207, TR("Deselect All", "取消全选"));
+        AppendMenuW(hEditMenu, MF_STRING, 1208, TR("Invert Selection", "反向选择"));
         AppendMenuW(hEditMenu, MF_SEPARATOR, 0, nullptr);
-        AppendMenuW(hEditMenu, MF_STRING, 1209, L"Remove Dead Entries");
-        AppendMenuW(hEditMenu, MF_STRING, 1210, L"Crop");
+        AppendMenuW(hEditMenu, MF_STRING, 1209, TR("Remove Dead Entries", "移除失效项目"));
+        AppendMenuW(hEditMenu, MF_STRING, 1210, TR("Crop", "仅保留所选"));
         AppendMenuW(hEditMenu, MF_SEPARATOR, 0, nullptr);
-        AppendMenuW(hEditMenu, MF_STRING, 1211, L"Sort");
-        AppendMenuW(hEditMenu, MF_STRING, 1212, L"Find...\tCtrl+F");
-        AppendMenuW(hMenu, MF_STRING | MF_POPUP, (UINT_PTR)hEditMenu, L"Edit");
+        AppendMenuW(hEditMenu, MF_STRING, 1211, TR("Sort", "排序"));
+        AppendMenuW(hEditMenu, MF_STRING, 1212, TR("Find...\tCtrl+F", "查找...\tCtrl+F"));
+        AppendMenuW(hMenu, MF_STRING | MF_POPUP, (UINT_PTR)hEditMenu, TR("Edit", "编辑"));
     }
     
     // View menu
     HMENU hViewMenu = CreatePopupMenu();
     if (hViewMenu) {
-        AppendMenuW(hViewMenu, MF_STRING, 3001, L"Always on Top");
+        AppendMenuW(hViewMenu, MF_STRING, 3001, TR("Always on Top", "始终置顶"));
         AppendMenuW(hViewMenu, MF_SEPARATOR, 0, nullptr);
-        AppendMenuW(hViewMenu, MF_STRING, 3002, L"Layout");
-        AppendMenuW(hViewMenu, MF_STRING, 3003, L"Playlist Manager");
+        AppendMenuW(hViewMenu, MF_STRING, 3002, TR("Layout", "布局"));
+        AppendMenuW(hViewMenu, MF_STRING, 3003, TR("Playlist Manager", "播放列表管理器"));
         AppendMenuW(hViewMenu, MF_SEPARATOR, 0, nullptr);
-        AppendMenuW(hViewMenu, MF_STRING, CMD_RELOAD, L"Reload UI\tF5");
+        AppendMenuW(hViewMenu, MF_STRING, CMD_RELOAD, TR("Reload UI\tF5", "重新加载界面\tF5"));
         AppendMenuW(hViewMenu, MF_SEPARATOR, 0, nullptr);
-        AppendMenuW(hViewMenu, MF_STRING, CMD_CONSOLE, L"Console");
-        AppendMenuW(hMenu, MF_STRING | MF_POPUP, (UINT_PTR)hViewMenu, L"View");
+        AppendMenuW(hViewMenu, MF_STRING, CMD_CONSOLE, TR("Console", "控制台"));
+        AppendMenuW(hMenu, MF_STRING | MF_POPUP, (UINT_PTR)hViewMenu, TR("View", "视图"));
     }
     
     // Playback menu
     HMENU hPlaybackMenu = CreatePopupMenu();
     if (hPlaybackMenu) {
-        AppendMenuW(hPlaybackMenu, MF_STRING, 4001, L"Play\tSpace");
-        AppendMenuW(hPlaybackMenu, MF_STRING, 4002, L"Pause");
-        AppendMenuW(hPlaybackMenu, MF_STRING, 4003, L"Stop\tV");
-        AppendMenuW(hPlaybackMenu, MF_STRING, 4004, L"Previous\tZ");
-        AppendMenuW(hPlaybackMenu, MF_STRING, 4005, L"Next\tB");
-        AppendMenuW(hPlaybackMenu, MF_STRING, 4006, L"Random\tX");
+        AppendMenuW(hPlaybackMenu, MF_STRING, 4001, TR("Play\tSpace", "播放\tSpace"));
+        AppendMenuW(hPlaybackMenu, MF_STRING, 4002, TR("Pause", "暂停"));
+        AppendMenuW(hPlaybackMenu, MF_STRING, 4003, TR("Stop\tV", "停止\tV"));
+        AppendMenuW(hPlaybackMenu, MF_STRING, 4004, TR("Previous\tZ", "上一首\tZ"));
+        AppendMenuW(hPlaybackMenu, MF_STRING, 4005, TR("Next\tB", "下一首\tB"));
+        AppendMenuW(hPlaybackMenu, MF_STRING, 4006, TR("Random\tX", "随机\tX"));
         AppendMenuW(hPlaybackMenu, MF_SEPARATOR, 0, nullptr);
-        AppendMenuW(hPlaybackMenu, MF_STRING, 4007, L"Stop After Current\tShift+V");
+        AppendMenuW(hPlaybackMenu, MF_STRING, 4007, TR("Stop After Current\tShift+V", "当前音轨后停止\tShift+V"));
         AppendMenuW(hPlaybackMenu, MF_SEPARATOR, 0, nullptr);
         
         // Playback Order submenu
         HMENU hOrderMenu = CreatePopupMenu();
         if (hOrderMenu) {
-            AppendMenuW(hOrderMenu, MF_STRING, 4101, L"Default");
-            AppendMenuW(hOrderMenu, MF_STRING, 4102, L"Repeat (Playlist)");
-            AppendMenuW(hOrderMenu, MF_STRING, 4103, L"Repeat (Track)");
-            AppendMenuW(hOrderMenu, MF_STRING, 4104, L"Shuffle (Tracks)");
-            AppendMenuW(hOrderMenu, MF_STRING, 4105, L"Shuffle (Albums)");
-            AppendMenuW(hOrderMenu, MF_STRING, 4106, L"Shuffle (Folders)");
-            AppendMenuW(hPlaybackMenu, MF_STRING | MF_POPUP, (UINT_PTR)hOrderMenu, L"Order");
+            AppendMenuW(hOrderMenu, MF_STRING, 4101, TR("Default", "默认"));
+            AppendMenuW(hOrderMenu, MF_STRING, 4102, TR("Repeat (Playlist)", "重复(播放列表)"));
+            AppendMenuW(hOrderMenu, MF_STRING, 4103, TR("Repeat (Track)", "重复(音轨)"));
+            AppendMenuW(hOrderMenu, MF_STRING, 4104, TR("Shuffle (Tracks)", "乱序(音轨)"));
+            AppendMenuW(hOrderMenu, MF_STRING, 4105, TR("Shuffle (Albums)", "乱序(专辑)"));
+            AppendMenuW(hOrderMenu, MF_STRING, 4106, TR("Shuffle (Folders)", "乱序(文件夹)"));
+            AppendMenuW(hPlaybackMenu, MF_STRING | MF_POPUP, (UINT_PTR)hOrderMenu, TR("Order", "播放顺序"));
         }
         
         // Volume submenu
         HMENU hVolumeMenu = CreatePopupMenu();
         if (hVolumeMenu) {
-            AppendMenuW(hVolumeMenu, MF_STRING, 4201, L"Up\t+");
-            AppendMenuW(hVolumeMenu, MF_STRING, 4202, L"Down\t-");
-            AppendMenuW(hVolumeMenu, MF_STRING, 4203, L"Mute");
-            AppendMenuW(hPlaybackMenu, MF_STRING | MF_POPUP, (UINT_PTR)hVolumeMenu, L"Volume");
+            AppendMenuW(hVolumeMenu, MF_STRING, 4201, TR("Up\t+", "调高\t+"));
+            AppendMenuW(hVolumeMenu, MF_STRING, 4202, TR("Down\t-", "调低\t-"));
+            AppendMenuW(hVolumeMenu, MF_STRING, 4203, TR("Mute", "静音"));
+            AppendMenuW(hPlaybackMenu, MF_STRING | MF_POPUP, (UINT_PTR)hVolumeMenu, TR("Volume", "音量"));
         }
         
         // ReplayGain submenu
         HMENU hReplayGainMenu = CreatePopupMenu();
         if (hReplayGainMenu) {
-            AppendMenuW(hReplayGainMenu, MF_STRING, 4301, L"None");
-            AppendMenuW(hReplayGainMenu, MF_STRING, 4302, L"Track Gain");
-            AppendMenuW(hReplayGainMenu, MF_STRING, 4303, L"Album Gain");
-            AppendMenuW(hReplayGainMenu, MF_STRING, 4304, L"Track Gain (Auto)");
-            AppendMenuW(hPlaybackMenu, MF_STRING | MF_POPUP, (UINT_PTR)hReplayGainMenu, L"ReplayGain");
+            AppendMenuW(hReplayGainMenu, MF_STRING, 4301, TR("None", "无"));
+            AppendMenuW(hReplayGainMenu, MF_STRING, 4302, TR("Track Gain", "音轨增益"));
+            AppendMenuW(hReplayGainMenu, MF_STRING, 4303, TR("Album Gain", "专辑增益"));
+            AppendMenuW(hReplayGainMenu, MF_STRING, 4304, TR("Track Gain (Auto)", "音轨增益(自动)"));
+            AppendMenuW(hPlaybackMenu, MF_STRING | MF_POPUP, (UINT_PTR)hReplayGainMenu, TR("ReplayGain", "播放增益"));
         }
         
         AppendMenuW(hPlaybackMenu, MF_SEPARATOR, 0, nullptr);
-        AppendMenuW(hPlaybackMenu, MF_STRING, 4008, L"Seek\tCtrl+G");
-        AppendMenuW(hPlaybackMenu, MF_STRING, 4009, L"Cursor Follows Playback");
-        AppendMenuW(hPlaybackMenu, MF_STRING, 4010, L"Playback Follows Cursor");
+        AppendMenuW(hPlaybackMenu, MF_STRING, 4008, TR("Seek\tCtrl+G", "跳转\tCtrl+G"));
+        AppendMenuW(hPlaybackMenu, MF_STRING, 4009, TR("Cursor Follows Playback", "光标跟随播放"));
+        AppendMenuW(hPlaybackMenu, MF_STRING, 4010, TR("Playback Follows Cursor", "播放跟随光标"));
         
-        AppendMenuW(hMenu, MF_STRING | MF_POPUP, (UINT_PTR)hPlaybackMenu, L"Playback");
+        AppendMenuW(hMenu, MF_STRING | MF_POPUP, (UINT_PTR)hPlaybackMenu, TR("Playback", "播放"));
     }
     
     // Library menu
     HMENU hLibraryMenu = CreatePopupMenu();
     if (hLibraryMenu) {
-        AppendMenuW(hLibraryMenu, MF_STRING, 5001, L"Configure...");
+        AppendMenuW(hLibraryMenu, MF_STRING, 5001, TR("Configure...", "配置..."));
         AppendMenuW(hLibraryMenu, MF_SEPARATOR, 0, nullptr);
-        AppendMenuW(hLibraryMenu, MF_STRING, 5002, L"Rescan");
-        AppendMenuW(hLibraryMenu, MF_STRING, 5003, L"Search...\tAlt+Q");
+        AppendMenuW(hLibraryMenu, MF_STRING, 5002, TR("Rescan", "重新扇描"));
+        AppendMenuW(hLibraryMenu, MF_STRING, 5003, TR("Search...\tAlt+Q", "搜索...\tAlt+Q"));
         AppendMenuW(hLibraryMenu, MF_SEPARATOR, 0, nullptr);
-        AppendMenuW(hLibraryMenu, MF_STRING, 5004, L"Album List");
-        AppendMenuW(hMenu, MF_STRING | MF_POPUP, (UINT_PTR)hLibraryMenu, L"Library");
+        AppendMenuW(hLibraryMenu, MF_STRING, 5004, TR("Album List", "专辑列表"));
+        AppendMenuW(hMenu, MF_STRING | MF_POPUP, (UINT_PTR)hLibraryMenu, TR("Library", "媒体库"));
     }
     
     // Help menu
     HMENU hHelpMenu = CreatePopupMenu();
     if (hHelpMenu) {
-        AppendMenuW(hHelpMenu, MF_STRING, 6001, L"Contents");
-        AppendMenuW(hHelpMenu, MF_STRING, 6002, L"Titleformatting Help");
+        AppendMenuW(hHelpMenu, MF_STRING, 6001, TR("Contents", "帮助目录"));
+        AppendMenuW(hHelpMenu, MF_STRING, 6002, TR("Titleformatting Help", "标题格式帮助"));
         AppendMenuW(hHelpMenu, MF_SEPARATOR, 0, nullptr);
-        AppendMenuW(hHelpMenu, MF_STRING, 6003, L"Components");
-        AppendMenuW(hHelpMenu, MF_STRING, 6004, L"Online Resources");
+        AppendMenuW(hHelpMenu, MF_STRING, 6003, TR("Components", "组件"));
+        AppendMenuW(hHelpMenu, MF_STRING, 6004, TR("Online Resources", "在线资源"));
         AppendMenuW(hHelpMenu, MF_SEPARATOR, 0, nullptr);
-        AppendMenuW(hHelpMenu, MF_STRING, CMD_ABOUT, L"About foobar2000...");
-        AppendMenuW(hMenu, MF_STRING | MF_POPUP, (UINT_PTR)hHelpMenu, L"Help");
+        AppendMenuW(hHelpMenu, MF_STRING, CMD_ABOUT, TR("About foobar2000...", "关于 foobar2000..."));
+        AppendMenuW(hMenu, MF_STRING | MF_POPUP, (UINT_PTR)hHelpMenu, TR("Help", "帮助"));
     }
     
     AppendMenuW(hMenu, MF_SEPARATOR, 0, nullptr);
     
     // Developer Tools - 仅在配置启用时显示
     if (webview_prefs::GetDevToolsEnabled()) {
-        AppendMenuW(hMenu, MF_STRING, CMD_DEVTOOLS, L"Developer Tools\tF12");
+        AppendMenuW(hMenu, MF_STRING, CMD_DEVTOOLS, TR("Developer Tools\tF12", "开发者工具\tF12"));
     }
     
     // Constrain menu position within window bounds

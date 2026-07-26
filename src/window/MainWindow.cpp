@@ -5,6 +5,7 @@
 #include "window/ChromeController.h"
 #include "window/WindowChromeResolver.h"
 #include "window/WindowChromeTrace.h"
+#include "utils/I18n.h"
 #include "webview/WebViewHost.h"
 #include "core/SecurityConfig.h"
 #include "api/BridgeCore.h"
@@ -1483,8 +1484,9 @@ void MainWindow::OnCreate() {
             startupPresentationCoordinator_.ForceFallbackReveal(),
             "InitializeWebViewFailed");
         MessageBoxW(hwnd_, 
-            L"Failed to initialize WebView2.\n\nPlease ensure WebView2 Runtime is installed:\nhttps://go.microsoft.com/fwlink/p/?LinkId=2124703",
-            L"WebView2 UI Error",
+            TR("Failed to initialize WebView2.\n\nPlease ensure WebView2 Runtime is installed:\nhttps://go.microsoft.com/fwlink/p/?LinkId=2124703",
+               "WebView2 初始化失败。\n\n请确认已安装 WebView2 运行时:\nhttps://go.microsoft.com/fwlink/p/?LinkId=2124703"),
+            TR("WebView2 UI Error", "WebView2 UI 错误"),
             MB_OK | MB_ICONERROR);
     }
 }

@@ -1043,20 +1043,36 @@ function resolveNavRowRole({ kind, checkable, checked }) {
   return 'menuitem';
 }
 
-/** Build aria-label for a rich control row in navigation mode. */
-function buildRichNavAriaLabel({ kind, label, value, min, max }) {
-  const name = label || kind || 'control';
+/**
+ * Build aria-label for a rich control row in navigation mode.
+ * `locale` selects the text language: 'zh' for Chinese, anything else English.
+ * It arrives via the overlay state JSON, where the host derives it from the
+ * Windows user UI language, so it matches the rest of the native chrome instead
+ * of the WebView2 browser language.
+ * The literal key name "Enter" stays untranslated in both languages because it
+ * names a physical key, not a word.
+ */
+function buildRichNa)MENUHTML"
+        LR"MENUHTML(vAriaLabel({ kind, label, value, min, max, locale }) {
+  const zh = locale === 'zh';
+  const name = label || kind || (zh ? '控件' : 'control');
+  const hint = zh ? '按 Enter 键调整' : 'Press Enter to adjust';
   if (kind === 'slider') {
-    return `${name}, ${value}, range ${min} to ${max}. Press Enter to adjust`;
+    return zh
+      ? `${name}，${value}，范围 ${min} 到 ${max}。${hint}`
+      : `${name}, ${value}, range ${min} to ${max}. ${hint}`;
   }
   if (kind === 'rating') {
-    return `${name}, ${value} of 5 stars. Press Enter to adjust`;
+    return zh
+      ? `${name}，5 星中的 ${value} 星。${hint}`
+      : `${name}, ${value} of 5 stars. ${hint}`;
   }
   if (kind === 'segmented') {
-    return `${name}, option ${value}. Press Enter to adjust`;
+    return zh
+      ? `${name}，选项 ${value}。${hint}`
+      : `${name}, option ${value}. ${hint}`;
   }
-  r)MENUHTML"
-        LR"MENUHTML(eturn `${name}. Press Enter to adjust`;
+  return zh ? `${name}。${hint}` : `${name}. ${hint}`;
 }
 
 /** Detect explicit checkable identity (field present, including false). */
@@ -1205,7 +1221,8 @@ function analyzeMouseenterSetActiveFocus(jsSource) {
       for (; p < body.length && pd > 0; p++) {
         if (body[p] === '(') pd++;
         else if (body[p] === ')') pd--;
-        else if (body[p] === '{') {
+        else if (bod)MENUHTML"
+        LR"MENUHTML(y[p] === '{') {
           // still inside args
         }
       }
@@ -1226,8 +1243,7 @@ function analyzeMouseenterSetActiveFocus(jsSource) {
   return {
     handlers,
     setActiveHandlerCount: handlers.filter((h) => h.hasSetActive).length,
-    allSetActiveNonFocusing: handlers.filter((h) => h.has)MENUHTML"
-        LR"MENUHTML(SetActive).every((h) => h.allNonFocusing),
+    allSetActiveNonFocusing: handlers.filter((h) => h.hasSetActive).every((h) => h.allNonFocusing),
   };
 }
 
@@ -1282,6 +1298,7 @@ function analyzeMenuInteractionCleanup(jsSource) {
     var placedGeometry = null;           // ContentSized CSS-pixel slot geometry
     var submenuPanelSequence = 0;        // monotonic root→host panel state reports
     var submenuPanelOpen = false;        // host confirms that the child HWND is visible
+    var uiLocale = "en";                 // host UI language for aria text; refreshed per render
 
     // Clear editor/focus pending state without stealing focus. Used by dismiss/select/hide/render.
     function cleanupMenuInteraction(){
@@ -1317,7 +1334,8 @@ function analyzeMenuInteractionCleanup(jsSource) {
     }
     function hideMenuEl(el){ runProtocol(el, hideMenuProtocol()); }
     function showMenuEl(el){ runProtocol(el, showMenuProtocol()); }
-    function itemZone(it, fallback){ return (it&&it._zone)||fallback||""; }
+    function itemZone(it, fallback)MENUHTML"
+        LR"MENUHTML(){ return (it&&it._zone)||fallback||""; }
     function mountHost(){ return document.getElementById("viewport")||document.body; }
 
     function applyContentSizedGeometry(el, geometry){
@@ -1332,8 +1350,7 @@ function analyzeMenuInteractionCleanup(jsSource) {
     function clearContentSizedGeometry(el){
       if(!el) return;
       el.style.removeProperty("left");
-      el.style.removeProperty(")MENUHTML"
-        LR"MENUHTML(top");
+      el.style.removeProperty("top");
       el.style.removeProperty("max-width");
       el.style.removeProperty("max-height");
       el.style.removeProperty("min-width");
@@ -1448,7 +1465,8 @@ function analyzeMenuInteractionCleanup(jsSource) {
     }
 
     function stampItem(el, it, depth, zone){
-      applyAttrs(el, buildItemStableAttrs(it, { depth: depth, zone: zone }));
+      applyAttrs(el, buildItemStableAttrs(it, { depth: depth, zone: zone }));)MENUHTML"
+        LR"MENUHTML(
     }
     function stampSep(el, depth, zone, zoneSeparator){
       applyAttrs(el, buildSeparatorStableAttrs({ depth: depth, zone: zone, zoneSeparator: !!zoneSeparator }));
@@ -1465,8 +1483,7 @@ function analyzeMenuInteractionCleanup(jsSource) {
       d.setAttribute("role","menuitem");
       d.setAttribute("tabindex","-1");
       applyDisabledAria(d, en);
-      var cv=document)MENUHTML"
-        LR"MENUHTML(.createElement("div"); cv.className="fb-np-cover"; cv.setAttribute("part","nowplaying-cover"); cv.setAttribute("aria-hidden","true");
+      var cv=document.createElement("div"); cv.className="fb-np-cover"; cv.setAttribute("part","nowplaying-cover"); cv.setAttribute("aria-hidden","true");
       if(it.cover){ var cvv=""+it.cover, u=null;
         if(/^data:image\/[a-z0-9.+-]+;base64,[A-Za-z0-9+\/=]+$/i.test(cvv) || /^https?:\/\/[^\s"')]+$/i.test(cvv)){ u=cvv; }   // data: 或 http(s) 白名单（排除引号/括号/空白，杜绝 url() 注入/坏图）
         else if(/^[A-Za-z0-9+\/=]+$/.test(cvv)){ u="data:image/jpeg;base64,"+cvv; }   // 裸 base64 兼容
@@ -1525,7 +1542,7 @@ function analyzeMenuInteractionCleanup(jsSource) {
       function applyNavAria(){
         d.setAttribute("role","menuitem");
         d.setAttribute("tabindex","-1");
-        d.setAttribute("aria-label", buildRichNavAriaLabel({kind:"rating", label:it.label, value:ctl.v}));
+        d.setAttribute("aria-label", buildRichNavAriaLabel({kind:"rating", label:it.label, value:ctl.v, locale:uiLocale}));
         setSubtreeInert(box, true);
       }
       applyNavAria();
@@ -1545,7 +1562,8 @@ function analyzeMenuInteractionCleanup(jsSource) {
       d.addEventListener("mouseenter", function(){ if(interactionMode==="editor") return; closeLayersFrom(depth+1); setActiveFromPointer(depth, ridx); });
     }
 
-    function buildSlider(menuEl, L, it, en, depth, zone){
+    function buildSlider(menuEl,)MENUHTML"
+        LR"MENUHTML( L, it, en, depth, zone){
       var norm=normalizeSliderRange(it);
       var mn=norm.min, mx=norm.max, orient=norm.orientation, constant=norm.constant;
       var ctl={v:norm.value};
@@ -1557,8 +1575,7 @@ function analyzeMenuInteractionCleanup(jsSource) {
       applyDisabledAria(d, en);
       if(it.label){ var lb=document.createElement("span"); lb.className="fb-slider-label"; lb.textContent=it.label; d.appendChild(lb); }
       var track=document.createElement("span"); track.className="fb-slider-track"; track.setAttribute("part","slider-track");
-      var fill=document.createElement("span"); fill.clas)MENUHTML"
-        LR"MENUHTML(sName="fb-slider-fill"; track.appendChild(fill);
+      var fill=document.createElement("span"); fill.className="fb-slider-fill"; track.appendChild(fill);
       var thumb=document.createElement("span"); thumb.className="fb-slider-thumb"; track.appendChild(thumb);
       // Internal focusable slider control.
       var focusEl=document.createElement("span");
@@ -1615,7 +1632,7 @@ function analyzeMenuInteractionCleanup(jsSource) {
       function applyNavAria(){
         d.setAttribute("role","menuitem");
         d.setAttribute("tabindex","-1");
-        d.setAttribute("aria-label", buildRichNavAriaLabel({kind:"slider", label:it.label, value:ctl.v, min:mn, max:mx}));
+        d.setAttribute("aria-label", buildRichNavAriaLabel({kind:"slider", label:it.label, value:ctl.v, min:mn, max:mx, locale:uiLocale}));
         setSubtreeInert(track, true);
       }
       applyNavAria();
@@ -1643,7 +1660,8 @@ function analyzeMenuInteractionCleanup(jsSource) {
     }
 
     // segmented 分段单选：读 it.segments（互斥选项），it.value=选中段索引。点启用段→paint+valueChange（走现有 value 通道，不关菜单）；
-    // Left/Right 经 row.adjust 移到上/下一个【启用】段并 valueChange（clamp 边界）。index→业务语义由前端映射。
+    // Left/Right 经 row.adjust 移到上/下一个【启用】段并 valueCh)MENUHTML"
+        LR"MENUHTML(ange（clamp 边界）。index→业务语义由前端映射。
     // Editor 态：选中迁移时同步 roving tabindex + 真实 focus（键盘）；pointer pick 至少同步 tabindex。
     function buildSegmented(menuEl, L, it, en, depth, zone){
       var d=document.createElement("div"); d.className="fb-item fb-seg"+(!en?" disabled":""); d.setAttribute("part","item");
@@ -1652,8 +1670,7 @@ function analyzeMenuInteractionCleanup(jsSource) {
       if(it.label){ var lb=document.createElement("span"); lb.className="fb-seg-label"; lb.setAttribute("part","segmented-label"); lb.textContent=it.label; d.appendChild(lb); }
       var grp=document.createElement("span"); grp.className="fb-seg-group"; grp.setAttribute("part","segmented-group");
       grp.setAttribute("role","radiogroup");
-      var segs=(it.segments||[]), btns=[]; var ctl={v:(typeof it.)MENUHTML"
-        LR"MENUHTML(value==="number")?it.value:-1};
+      var segs=(it.segments||[]), btns=[]; var ctl={v:(typeof it.value==="number")?it.value:-1};
       function applySegmentPlan(plan, doFocus){
         if(!plan) return;
         for(var k=0;k<btns.length;k++){
@@ -1708,7 +1725,7 @@ function analyzeMenuInteractionCleanup(jsSource) {
       function applyNavAria(){
         d.setAttribute("role","menuitem");
         d.setAttribute("tabindex","-1");
-        d.setAttribute("aria-label", buildRichNavAriaLabel({kind:"segmented", label:it.label, value:ctl.v}));
+        d.setAttribute("aria-label", buildRichNavAriaLabel({kind:"segmented", label:it.label, value:ctl.v, locale:uiLocale}));
         setSubtreeInert(grp, true);
       }
       applyNavAria();
@@ -1750,7 +1767,8 @@ function analyzeMenuInteractionCleanup(jsSource) {
         }
         if(it && it.type==="nowplaying"){ buildNowPlaying(menuEl, L, it, !(it.enabled===false), depth, z); continue; }
         if(it && it.type==="rating"){ buildRating(menuEl, L, it, !(it.enabled===false), depth, z); continue; }
-        if(it && it.type==="slider"){ buildSlider(menuEl, L, it, !(it.enabled===false), depth, z); continue; }
+       )MENUHTML"
+        LR"MENUHTML( if(it && it.type==="slider"){ buildSlider(menuEl, L, it, !(it.enabled===false), depth, z); continue; }
         if(it && it.type==="segmented"){ buildSegmented(menuEl, L, it, !(it.enabled===false), depth, z); continue; }
         var hasSub=!!(it && it.submenu && it.submenu.length);
         var en=!(it && it.enabled===false);
@@ -1760,8 +1778,7 @@ function analyzeMenuInteractionCleanup(jsSource) {
         d.setAttribute("part","item");
         stampItem(d, it, depth, z);
         // ARIA: normal / checkable / submenu. Shared menu.show path benefits.
-        var role=resolveNavRowRole({kind:hasSub?"submenu":(it&&it.type)||"normal", checkable:checkable, checked)MENUHTML"
-        LR"MENUHTML(:!!(it&&it.checked)});
+        var role=resolveNavRowRole({kind:hasSub?"submenu":(it&&it.type)||"normal", checkable:checkable, checked:!!(it&&it.checked)});
         d.setAttribute("role", role);
         d.setAttribute("tabindex","-1");
         applyDisabledAria(d, en);
@@ -1862,7 +1879,8 @@ function analyzeMenuInteractionCleanup(jsSource) {
       buildLayer(sub, items, parentDepth+1, parentZone);
       layers[parentDepth+1].parentRowIdx = rowIdx;   // 子菜单归属父项（hover 幂等，bug2）
       parentEl.setAttribute("aria-expanded","true");
-      // Temporary measure pass: keep the node invisible to the user, then clear
+      // Temporary measure )MENUHTML"
+        LR"MENUHTML(pass: keep the node invisible to the user, then clear
       // inline display so the final visible state stays CSS-owned.
       // Off-screen measure must not steal focus.
       sub.style.setProperty("visibility","hidden","important");
@@ -1872,8 +1890,7 @@ function analyzeMenuInteractionCleanup(jsSource) {
         // The submenu is rendered by a distinct tight HWND. This temporary DOM
         // node is used only to measure the panel before its native host is
         // positioned; no DWM-backed reservation exists in the root HWND.
-        var geom=placedGeometry||{rootSlotW:pr.right,subSlotW:Math.max(0,window.innerWidth-pr.right),viewportH:window.innerHeight,virtualViewportH:window.innerHe)MENUHTML"
-        LR"MENUHTML(ight,virtualRootTop:0};
+        var geom=placedGeometry||{rootSlotW:pr.right,subSlotW:Math.max(0,window.innerWidth-pr.right),viewportH:window.innerHeight,virtualViewportH:window.innerHeight,virtualRootTop:0};
         var subStyle=visibleSubmenuStyle({rootSlotW:geom.rootSlotW,subSlotW:geom.subSlotW,viewportH:geom.viewportH,parentTop:pr.top,submenuHeight:sh});
         applyContentSizedGeometry(sub,subStyle);
       } else {
@@ -1918,6 +1935,9 @@ function analyzeMenuInteractionCleanup(jsSource) {
       root.setAttribute("data-depth","0");
       var content = !!(st && st.windowModel==="contentSized");
       var submenuSurface = !!(st && st.windowModel==="submenu");
+      // 宿主下发的 UI 语言（源自 C++ utils/I18n.h 的 fb2k UI 语言判定）。
+      // 必须在 buildZonesRoot / buildLayer 之前赋值：aria-label 在建行时就生成。
+      uiLocale = (st && st.locale === "zh") ? "zh" : "en";
       document.body.classList.toggle("content-sized", content);
       var useZones = !!(st && st.overlayModel==="trayZones" && st.layoutMode==="zones" && st.zones && st.zones.length);
       var hasContent = useZones
@@ -1977,7 +1997,8 @@ function analyzeMenuInteractionCleanup(jsSource) {
         if(!row||!row.hasSub||!row.item||!row.item.submenu) continue;
         var sub=document.createElement("div");
         sub.className="fb-menu fb-submenu fb-measure-submenu";
-        sub.setAttribute("role","menu");
+        sub.setAttribute)MENUHTML"
+        LR"MENUHTML(("role","menu");
         sub.style.setProperty("position","fixed","important");
         sub.style.setProperty("left","-32000px","important");
         sub.style.setProperty("top","-32000px","important");
@@ -1998,8 +2019,7 @@ function analyzeMenuInteractionCleanup(jsSource) {
 
     // Wait for fonts and two equal animation-frame measurements before reporting
     // actual root + first-level submenu maxima. The host validates all integers
-    // before atomically consu)MENUHTML"
-        LR"MENUHTML(ming the measure state.
+    // before atomically consuming the measure state.
     var _measureRaf=0;
     var _measureGeneration=0;
     function measureAndReport(){
@@ -2105,7 +2125,8 @@ function analyzeMenuInteractionCleanup(jsSource) {
     window.addEventListener("mousedown", function(e){ if(!inMenu(e.target)) dismiss("outside"); }, true);
     window.addEventListener("contextmenu", function(e){ e.preventDefault(); if(!inMenu(e.target)) dismiss("outside"); }, true);
     window.addEventListener("keydown", onKey, true);
-    if(window.fb2k && fb2k.on){ fb2k.on("menu:show", pull); fb2k.on("menu:__placed", onPlaced); fb2k.on("menu:__submenuOpened", function(){ submenuPanelOpen=true; }); fb2k.on("menu:__submenuVisible", function(){ setActive(0,firstNav(0),{focus:true}); }); fb2k.on("menu:__submenuClosed", function(){ submenuPanelOpen=false; var parentIdx=(layers[1]&&layers[1].parentRowIdx!=null)?layers[1].parentRowIdx:-1; closeLayersFrom(1); if(parentIdx>=0) setActive(0,parentIdx,{focus:true}); }); fb2k.on("menu:__hide", function(){ cleanupMenuInteraction(); var root=document.getElementById("menu"); if(root){ root.classList.remove("in"); root.classList.add("out"); } }); }
+    if(window.fb2k && fb2k.on){ f)MENUHTML"
+        LR"MENUHTML(b2k.on("menu:show", pull); fb2k.on("menu:__placed", onPlaced); fb2k.on("menu:__submenuOpened", function(){ submenuPanelOpen=true; }); fb2k.on("menu:__submenuVisible", function(){ setActive(0,firstNav(0),{focus:true}); }); fb2k.on("menu:__submenuClosed", function(){ submenuPanelOpen=false; var parentIdx=(layers[1]&&layers[1].parentRowIdx!=null)?layers[1].parentRowIdx:-1; closeLayersFrom(1); if(parentIdx>=0) setActive(0,parentIdx,{focus:true}); }); fb2k.on("menu:__hide", function(){ cleanupMenuInteraction(); var root=document.getElementById("menu"); if(root){ root.classList.remove("in"); root.classList.add("out"); } }); }
     pull();
 </script>
 </body></html>

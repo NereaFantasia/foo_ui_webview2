@@ -7,6 +7,7 @@
     var placedGeometry = null;           // ContentSized CSS-pixel slot geometry
     var submenuPanelSequence = 0;        // monotonic root→host panel state reports
     var submenuPanelOpen = false;        // host confirms that the child HWND is visible
+    var uiLocale = "en";                 // host UI language for aria text; refreshed per render
 
     // Clear editor/focus pending state without stealing focus. Used by dismiss/select/hide/render.
     function cleanupMenuInteraction(){
@@ -248,7 +249,7 @@
       function applyNavAria(){
         d.setAttribute("role","menuitem");
         d.setAttribute("tabindex","-1");
-        d.setAttribute("aria-label", buildRichNavAriaLabel({kind:"rating", label:it.label, value:ctl.v}));
+        d.setAttribute("aria-label", buildRichNavAriaLabel({kind:"rating", label:it.label, value:ctl.v, locale:uiLocale}));
         setSubtreeInert(box, true);
       }
       applyNavAria();
@@ -337,7 +338,7 @@
       function applyNavAria(){
         d.setAttribute("role","menuitem");
         d.setAttribute("tabindex","-1");
-        d.setAttribute("aria-label", buildRichNavAriaLabel({kind:"slider", label:it.label, value:ctl.v, min:mn, max:mx}));
+        d.setAttribute("aria-label", buildRichNavAriaLabel({kind:"slider", label:it.label, value:ctl.v, min:mn, max:mx, locale:uiLocale}));
         setSubtreeInert(track, true);
       }
       applyNavAria();
@@ -429,7 +430,7 @@
       function applyNavAria(){
         d.setAttribute("role","menuitem");
         d.setAttribute("tabindex","-1");
-        d.setAttribute("aria-label", buildRichNavAriaLabel({kind:"segmented", label:it.label, value:ctl.v}));
+        d.setAttribute("aria-label", buildRichNavAriaLabel({kind:"segmented", label:it.label, value:ctl.v, locale:uiLocale}));
         setSubtreeInert(grp, true);
       }
       applyNavAria();
@@ -637,6 +638,9 @@
       root.setAttribute("data-depth","0");
       var content = !!(st && st.windowModel==="contentSized");
       var submenuSurface = !!(st && st.windowModel==="submenu");
+      // 宿主下发的 UI 语言（源自 C++ utils/I18n.h 的 fb2k UI 语言判定）。
+      // 必须在 buildZonesRoot / buildLayer 之前赋值：aria-label 在建行时就生成。
+      uiLocale = (st && st.locale === "zh") ? "zh" : "en";
       document.body.classList.toggle("content-sized", content);
       var useZones = !!(st && st.overlayModel==="trayZones" && st.layoutMode==="zones" && st.zones && st.zones.length);
       var hasContent = useZones

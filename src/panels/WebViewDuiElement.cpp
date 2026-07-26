@@ -203,7 +203,7 @@ LRESULT WebViewDuiElementInstance::HandleMessage(HWND hwnd, UINT msg, WPARAM wPa
                 
                 HMENU hMenu = CreatePopupMenu();
                 if (hMenu) {
-                    AppendMenuW(hMenu, MF_STRING, 1, L"Configure...");
+                    AppendMenuW(hMenu, MF_STRING, 1, TR("Configure...", "配置..."));
                     
                     int cmd = TrackPopupMenu(hMenu, 
                         TPM_RETURNCMD | TPM_RIGHTBUTTON | TPM_NONOTIFY,
@@ -375,7 +375,7 @@ void WebViewDuiElementInstance::PaintEditModePlaceholder(HDC hdc, const RECT& rc
     SetTextColor(hdc, isDark ? RGB(140, 140, 140) : RGB(120, 120, 120));
     RECT rcHint = rc;
     rcHint.top = rc.top + (rc.bottom - rc.top) / 2 + 4;
-    DrawTextW(hdc, L"Right-click to configure", -1, &rcHint, 
+    DrawTextW(hdc, TR("Right-click to configure", "右键单击进行配置"), -1, &rcHint, 
         DT_CENTER | DT_TOP | DT_SINGLELINE | DT_NOPREFIX);
     
     // 清理

@@ -596,19 +596,35 @@ export function resolveNavRowRole({ kind, checkable, checked }) {
   return 'menuitem';
 }
 
-/** Build aria-label for a rich control row in navigation mode. */
-export function buildRichNavAriaLabel({ kind, label, value, min, max }) {
-  const name = label || kind || 'control';
+/**
+ * Build aria-label for a rich control row in navigation mode.
+ * `locale` selects the text language: 'zh' for Chinese, anything else English.
+ * It arrives via the overlay state JSON, where the host derives it from the
+ * Windows user UI language, so it matches the rest of the native chrome instead
+ * of the WebView2 browser language.
+ * The literal key name "Enter" stays untranslated in both languages because it
+ * names a physical key, not a word.
+ */
+export function buildRichNavAriaLabel({ kind, label, value, min, max, locale }) {
+  const zh = locale === 'zh';
+  const name = label || kind || (zh ? '控件' : 'control');
+  const hint = zh ? '按 Enter 键调整' : 'Press Enter to adjust';
   if (kind === 'slider') {
-    return `${name}, ${value}, range ${min} to ${max}. Press Enter to adjust`;
+    return zh
+      ? `${name}，${value}，范围 ${min} 到 ${max}。${hint}`
+      : `${name}, ${value}, range ${min} to ${max}. ${hint}`;
   }
   if (kind === 'rating') {
-    return `${name}, ${value} of 5 stars. Press Enter to adjust`;
+    return zh
+      ? `${name}，5 星中的 ${value} 星。${hint}`
+      : `${name}, ${value} of 5 stars. ${hint}`;
   }
   if (kind === 'segmented') {
-    return `${name}, option ${value}. Press Enter to adjust`;
+    return zh
+      ? `${name}，选项 ${value}。${hint}`
+      : `${name}, option ${value}. ${hint}`;
   }
-  return `${name}. Press Enter to adjust`;
+  return zh ? `${name}。${hint}` : `${name}. ${hint}`;
 }
 
 /** Detect explicit checkable identity (field present, including false). */

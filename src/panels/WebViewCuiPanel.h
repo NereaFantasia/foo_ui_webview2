@@ -33,7 +33,7 @@ public:
     
     const GUID& get_extension_guid() const override { return g_webview_cui_panel_guid; }
     void get_name(pfc::string_base& out) const override { out = "WebView2 Panel"; }
-    void get_category(pfc::string_base& out) const override { out = "Panels"; }
+    void get_category(pfc::string_base& out) const override { out = TRU("Panels", "面板"); }
     
     // ========== uie::window interface ==========
     
