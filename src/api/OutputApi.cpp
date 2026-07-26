@@ -30,7 +30,7 @@ namespace {
             // p_name_length may be a sentinel meaning "unknown length, p_name is
             // NUL-terminated" (foobar2000 passes unsigned(-1) for some backends).
             // Constructing std::string(ptr, count) would memcpy that raw count, so
-            // clamp to the real length first - this mirrors what the SDK's own
+            // clamp to the real length first — this mirrors what the SDK's own
             // consumer does via pfc::string_base::set_string().
             pfc::string8 name;
             name.set_string(p_name, p_name_length);
@@ -111,7 +111,11 @@ namespace {
 
     //==========================================================================
     // output.getSettings - Get current output settings (read-only)
-    // Note: Actual output settings are managed through foobar2000 preferences
+    // Note: Actual output settings are managed through foobar2000 preferences.
+    // `availableOutputs` is a plain name list, so entries that share a display
+    // name (several backends are called "Default") are indistinguishable and a
+    // backend reporting an empty name shows up as "". Prefer
+    // `output.getEntries`, which pairs every name with its GUID.
     //==========================================================================
     json OutputGetSettings(const json& /*params*/) {
         try {
@@ -119,7 +123,9 @@ namespace {
             // We can only report what's available to configure
             
             json settings;
-            settings["note"] = "Output settings are managed through foobar2000 Preferences > Playback > Output";
+            settings["note"] = "Output settings are managed through foobar2000 Preferences > Playback > Output. "
+                               "availableOutputs lists display names only and cannot disambiguate backends that "
+                               "share a name; use output.getEntries for name + GUID pairs.";
             
             // Enumerate to show available options
             json entries = json::array();

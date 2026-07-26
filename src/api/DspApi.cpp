@@ -42,10 +42,15 @@ namespace {
                 });
             }
 
-            // Get selected preset (if available)
-            json result = {{"dsps", dsps}};
-            
-            // Try to get active preset name from v2 API
+            // Both keys are always present so callers never have to probe for
+            // them: null / -1 means "no preset selected" or "presets not
+            // supported by this host".
+            json result = {
+                {"dsps", dsps},
+                {"activePreset", nullptr},
+                {"activePresetIndex", -1}
+            };
+
             try {
                 auto dsp_mgr_v2 = dsp_config_manager_v2::get();
                 size_t selected = dsp_mgr_v2->get_selected_preset();
@@ -53,10 +58,10 @@ namespace {
                     pfc::string8 presetName;
                     dsp_mgr_v2->get_preset_name(selected, presetName);
                     result["activePreset"] = presetName.get_ptr();
-                    result["activePresetIndex"] = selected;
+                    result["activePresetIndex"] = static_cast<int64_t>(selected);
                 }
             } catch (...) {
-                result["activePreset"] = nullptr;
+                // Host without dsp_config_manager_v2: keep the null / -1 defaults.
             }
 
             return result;
@@ -86,10 +91,18 @@ namespace {
                 });
             }
 
+            // `get_selected_preset` reports pfc::infinite_size when nothing is
+            // selected. That value is not representable as a JS number, so it is
+            // normalized to -1 instead of overflowing into an unusable float.
+            const int64_t selectedIndex =
+                (selected == pfc::infinite_size || selected >= count)
+                    ? -1
+                    : static_cast<int64_t>(selected);
+
             return {
                 {"presets", presets},
                 {"count", count},
-                {"selectedIndex", selected}
+                {"selectedIndex", selectedIndex}
             };
         } catch (const std::exception& e) {
             return {{"success", false}, {"error", e.what()}};
