@@ -21,7 +21,7 @@ CUE、ISO 镜像与多轨文件都是一个文件路径下含多首曲目。所�
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
-| `path` | `string` | 否 | 可选；默认 。支持 `路径|subsong:N`。 |
+| `path` | `string` | 是 | 必填。支持 `路径|subsong:N`。 |
 | `cueIndex` | `integer` | 否 | 可选；默认 -1。显式指定容器内曲目序号，优先级高于路径后缀。 |
 
 > 读取链路会先剥离 `|subsong:N` 后缀并 canonicalize 路径，再按解析出的 subsong 通过 `handle_create()` 读取 cached info；若 cached info 缺少关键元数据，则以同一 subsong 退回 direct file read。CUE / ISO 等多轨容器的寻址规则见[定位容器内的单曲](#subsong-addressing)。
@@ -60,7 +60,7 @@ console.log(raw.tags.TITLE, raw.source); // "file"
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
-| `path` | `string` | 否 | 可选；默认 。支持 `路径|subsong:N`。 |
+| `path` | `string` | 是 | 必填。支持 `路径|subsong:N`。 |
 | `cueIndex` | `integer` | 否 | 可选；默认 -1。显式指定容器内曲目序号，优先级高于路径后缀。 |
 
 **返回值**: `{"TRACKNUMBER":"...","canonicalPath":"...","error":"...","path":"...","success":true}`
@@ -114,7 +114,7 @@ batch.results.forEach(r => {
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
 | `cueIndex` | `integer` | 否 | 可选；默认 -1。 |
-| `path` | `string` | 否 | 可选；默认 。 |
+| `path` | `string` | 是 | 必填。 |
 | `tags` | `object` | 是 | 必填。 |
 
 **返回值**: `{"canonicalPath":"...","dispatched":"...","error":"...","handlePath":"...","note":"...","path":"...","subsong":"...","success":true,"tagsApplied":"...","tagsRemoved":"...","tagsSet":"..."}`
@@ -144,7 +144,7 @@ await fb2k.invoke('metadata.write', {
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
 | `cueIndex` | `integer` | 否 | 可选；默认 -1。 |
-| `path` | `string` | 否 | 可选；默认 。 |
+| `path` | `string` | 是 | 必填。 |
 | `tags` | `array` | 是 | 必填。 |
 
 **返回值**: `{"dispatched":"...","error":"...","note":"...","path":"...","removedCount":"...","removedTags":"...","subsong":"...","success":true}`
@@ -189,7 +189,7 @@ await fb2k.invoke('metadata.writeBatch', {
 | --- | --- | --- | --- |
 | `filename` | `string` | 否 | 可选；默认 。 |
 | `imageData` | `string` | 否 | 可选；默认 。 |
-| `path` | `string` | 否 | 可选；默认 。 |
+| `path` | `string` | 是 | 必填。 |
 | `target` | `array` | 否 | 可选；默认 embedded。 |
 | `type` | `string` | 否 | 可选；默认 front。 |
 
@@ -226,7 +226,7 @@ await fb2k.invoke('metadata.embedArtwork', {
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
-| `path` | `string` | 否 | 可选；默认 。 |
+| `path` | `string` | 是 | 必填。 |
 | `removeAll` | `boolean` | 否 | 可选；默认 false。 |
 | `type` | `string` | 否 | 可选；默认 。 |
 
@@ -239,7 +239,7 @@ await fb2k.invoke('metadata.embedArtwork', {
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
 | `cueIndex` | `integer` | 否 | 可选；默认 -1。 |
-| `path` | `string` | 否 | 可选；默认 。 |
+| `path` | `string` | 是 | 必填。 |
 | `tags` | `array` | 是 | 必填。 |
 
 
@@ -279,7 +279,7 @@ fb2k.on('metadata:writeComplete', (e) => {
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
 | `cueIndex` | `integer` | 否 | 可选；默认 -1。 |
-| `path` | `string` | 否 | 可选；默认 。 |
+| `path` | `string` | 是 | 必填。 |
 
 **返回值**:
 
@@ -304,7 +304,7 @@ fb2k.on('metadata:writeComplete', (e) => {
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
 | `cueIndex` | `integer` | 否 | 可选；默认 -1。 |
-| `path` | `string` | 否 | 可选；默认 。 |
+| `path` | `string` | 是 | 必填。 |
 | `rating` | `integer` | 否 | 可选；默认 -1。 |
 
 

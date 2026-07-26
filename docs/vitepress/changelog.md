@@ -43,7 +43,7 @@
 - These helpers adapt `ArrayBuffer` / `Uint8Array` values and strict Base64 Data URLs to the existing `file.read`, `file.write`, and `metadata.embedArtwork` wire contracts. They add no new Bridge endpoints and do not change raw `invoke` or existing facades. Canonical Base64 and Data URL validation occurs in the SDK before invocation; Host validation and behavior are unchanged.
 - **Breaking type fix** — the published response types for `ui.isMinimized()` and `ui.isAlwaysOnTop()` were wrong and now match the wire contract: `isMinimized` resolves with `{ minimized }` (there is no `isMinimized` alias), and `isAlwaysOnTop` resolves with `{ enabled, isAlwaysOnTop }` (both carry the same value). Runtime behavior is unchanged; TypeScript code written against the old declarations must be updated.
 - `fb.playcount.set()` no longer sends the `count` key, which the host never read. No behavior change; the wire payload is simply smaller.
-- `fb.http.*` binary responses (`responseType: 'arraybuffer' | 'binary'`) are routed through the documented `http.get` endpoint in all cases; a stale internal parameter could previously forward a mismatched method name.
+- `fb.http.request()` now dispatches through the documented `http.get` endpoint; a stale internal parameter could previously forward a mismatched method name. The verb helpers (`fb.http.post()` / `put()` / `delete()` / `patch()`) keep dispatching to their own endpoints, including for binary responses.
 - Added `windowId` parameter typings for `window.getBackdropPolicy` and `window.setBackdropPolicy`. `setBackdropPolicy` requires `backdropPolicy` and does not fall back to the main window when no target resolves.
 
 ## v1.10.0 (2026-07-16)

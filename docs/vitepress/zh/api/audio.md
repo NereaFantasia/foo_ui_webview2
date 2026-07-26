@@ -540,7 +540,7 @@ await fb2k.invoke('dsp.applyPreset', { index: 0 });
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
-| `guid` | `string` | 否 | 可选；默认 。 |
+| `guid` | `string` | 是 | 必填。 |
 | `position` | `integer` | 否 | 可选；默认 -1。 |
 
 **返回值**: `{ "success": true, "addedDsp": "Equalizer", "position": 2 }`

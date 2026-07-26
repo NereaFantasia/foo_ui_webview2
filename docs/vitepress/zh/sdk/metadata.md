@@ -19,7 +19,7 @@
 返回值：底层 `metadata.read` 调用结果。
 
 ```javascript
-const result = await fb.metadata.read();
+const result = await fb.metadata.read('E:\\Music\\song.flac');
 ```
 
 ### readBatch()
@@ -33,7 +33,7 @@ const result = await fb.metadata.read();
 返回值：底层 `metadata.readBatch` 调用结果。
 
 ```javascript
-const result = await fb.metadata.readBatch();
+const result = await fb.metadata.readBatch(['E:\\Music\\a.flac', 'E:\\Music\\b.flac']);
 ```
 
 ### readByPath()
@@ -44,10 +44,10 @@ const result = await fb.metadata.readBatch();
 | --- | --- | --- | --- |
 | ...args | unknown[] | 视方法而定 | 透传给 SDK wrapper；详细类型以 `sdk/src/bridge/namespaces/` 源码和生成类型为准 |
 
-返回值：底层 `metadata.readByPath`, `metadata.readRaw` 调用结果。
+返回值：底层 `metadata.readByPath` 调用结果（不会调用 `metadata.readRaw`）。
 
 ```javascript
-const result = await fb.metadata.readByPath();
+const result = await fb.metadata.readByPath('E:\\Music\\song.flac');
 ```
 
 ### removeField()
@@ -61,7 +61,7 @@ const result = await fb.metadata.readByPath();
 返回值：底层 `metadata.removeField` 调用结果。
 
 ```javascript
-const result = await fb.metadata.removeField();
+const result = await fb.metadata.removeField('E:\\Music\\song.flac', 'COMMENT');
 ```
 
 ### removeTag()
@@ -75,7 +75,7 @@ const result = await fb.metadata.removeField();
 返回值：底层 `metadata.removeTag` 调用结果。
 
 ```javascript
-const result = await fb.metadata.removeTag();
+const result = await fb.metadata.removeTag('E:\\Music\\song.flac', ['COMMENT', 'LYRICS']);
 ```
 
 ### write()
@@ -89,7 +89,7 @@ const result = await fb.metadata.removeTag();
 返回值：底层 `metadata.write` 调用结果。
 
 ```javascript
-const result = await fb.metadata.write();
+const result = await fb.metadata.write('E:\\Music\\song.flac', { COMMENT: 'nice' });
 ```
 
 ### writeBatch()
@@ -100,10 +100,12 @@ const result = await fb.metadata.write();
 | --- | --- | --- | --- |
 | ...args | unknown[] | 视方法而定 | 透传给 SDK wrapper；详细类型以 `sdk/src/bridge/namespaces/` 源码和生成类型为准 |
 
-返回值：底层 `metadata.embedArtwork`, `metadata.removeEmbeddedArt` 调用结果。
+返回值：底层 `metadata.writeBatch` 调用结果。
 
 ```javascript
-const result = await fb.metadata.writeBatch();
+const result = await fb.metadata.writeBatch([
+    { path: 'E:\\Music\\a.flac', tags: { COMMENT: 'nice' } },
+]);
 ```
 
 <!-- END AUTO-GENERATED SDK STUBS -->

@@ -4,7 +4,7 @@
 
 ### 托盘与菜单
 
-- 新增 `TrayMenuItem.playbackAction`（`'play-pause' | 'previous' | 'next' | 'stop'`）：自定义托盘项可声明由插件原生执行的播放动作。外观仍由调用方控制；声明项**不发** `tray:menuItemClicked`（同 Electron `role` / Tauri `PredefinedMenuItem`）。仅可用于 `type:'normal'` 的叶子项；取值非法，或写在分隔符 / 子菜单 / 富控件上时，整次 `setContextMenu` / `appendMenuItems` 调用会以 `INVALID_PARAMS` 失败，而不是静默忽略。不接受 `'exit'`。仅托盘菜单生效，对 `menu.show` 无效；`getMenuItems` 会原样回读该字段。主页面深挂起（最小化 / 托盘隐藏 / 锁屏）时要后台可靠的托盘播放控制，请用本字段或内置 `showPlaybackControls`；仅靠 click→`playback.*` 不保证执行。自 v1.11.0 起提供；需兼容更旧宿主时请先探测 `config.getVersionInfo().plugin.version`。
+- 新增 `TrayMenuItem.playbackAction`（`'play-pause' | 'previous' | 'next' | 'stop'`）：自定义托盘项可声明由插件原生执行的播放动作。外观仍由调用方控制；声明项**不发** `tray:menuItemClicked`（同 Electron `role` / Tauri `PredefinedMenuItem`）。仅可用于 `type:'normal'` 的叶子项；取值非法，或写在分隔符 / 子菜单 / 富控件上时，整次 `setContextMenu` / `appendMenuItems` 调用会以 `INVALID_PARAMS` 失败，而不是静默忽略。不接受 `'exit'`。仅托盘菜单生效，对 `menu.show` 无效；`getMenuItems` 会原样回读该字段。主页面深挂起（最小化 / 托盘隐藏 / 锁屏）时要后台可靠的托盘播放控制，请用本字段或内置 `showPlaybackControls`；仅靠 click→`playback.*` 不保证执行。自 v1.11.0 起可用；需兼容旧宿主时先用 `config.getVersionInfo().plugin.version` 探测。
 - 文档澄清：`tray:menuItemClicked` 仅覆盖普通用户项与富值控件；内置播放 / 系统注入项与声明了 `playbackAction` 的项原生执行且不发点击事件，按钮态从 `playback:*` 反映
 - `menu.getMainMenu` 新增 `locale`、`i18n`、`withAvailability` 三个选项。`locale` 默认 `'auto'`，保持宿主原生标签不翻译；`i18n: false` 完全关闭 `displayLabel` 翻译；`withAvailability` 默认 `true`，附带各子菜单的命令可用性计数。SDK 侧签名相应变为 `getMainMenu(root?, opts?)`。
 - 修复自定义菜单的 UTF-8 序列化与上下文模式选择。
@@ -20,17 +20,17 @@
 
 ### Discovery
 
-- **行为变更** —— `discovery.getMainMenuCommands` 与 `discovery.searchCommands` 现在默认展开运行时构建子菜单的组件（`mainmenu_commands_v2`，例如 ESLyric）。**这会改变既有返回结果**：除父级槽位外还会含其子命令。传 `{ expandDynamic: false }` 可回到仅静态注册表的旧行为。
+- `discovery.getMainMenuCommands` 与 `discovery.searchCommands` 现在默认展开运行时构建子菜单的组件（`mainmenu_commands_v2`，例如 ESLyric）。**这会改变既有返回结果**：除父级槽位外还会含其子命令。传 `{ expandDynamic: false }` 可回到仅静态注册表的旧行为。
 - 命令条目新增 `path`、`isDynamic`、`isDynamicParent`、`subGuid`、`flags` 字段；响应新增 `expandDynamic`、`dynamicCount`，`discovery.getAllServices` 新增 `mainMenuDynamicCommands`。标记 `isDynamicParent` 的条目是容器槽位，自身不可执行。
-- `discovery.executeMainMenuCommand` 新增第二个可选参数 `subGuid`：执行由动态子菜单展开出的命令时必须一并传入，否则只会派发静态命令 GUID。响应会回显 `subGuid` 与 `dynamic`。
+- `discovery.executeMainMenuCommand` 新增第二个可选参数 `subGuid`：执行由动态子菜单展开出的命令时必须一并传入，否则只会派发静态命令 GUID。
 
 ### 性能与稳定性
 
-- **行为变更** —— 页面不可见期间（最小化 / 被遮挡 / 托盘隐藏 / 锁屏）的事件推送改为门控。控制面事件（`menu:*`、`jitQueue:*`、`tray:*`、`port:*`、`state:changed`、`state:deleted`、`window:message`、`window:beforeClose`、`app:beforeQuit`、`keyboard:hotkey`、`taskbar:buttonClicked`、`ui:menuItemClicked`、`webview:processFailed`）仍直通；可再生流（`audio:spectrum`、`playback:time`、`playback:timeHighRes`、`window:hoverStateChanged`、`cursor:hiddenChanged`）在隐藏期间丢弃，恢复后下一拍自然到达；其余事件按事件名缓存最新 payload，恢复时按最后到达顺序重放。依赖后台持续收到高频事件的主题需要改为在恢复后重新读取状态。
+- 页面不可见期间的事件推送改为门控。控制面事件（`menu:*`、`tray:*`、`port:*`、`jitQueue:*`、`keyboard:hotkey`、`window:beforeClose`、`state:changed`、`state:deleted`、`window:message`、`app:beforeQuit`、`ui:menuItemClicked` 等）仍直通；可再生流（`audio:spectrum`、`playback:time`、`playback:timeHighRes`、`window:hoverStateChanged`、`cursor:hiddenChanged`）在隐藏期间丢弃，恢复后下一拍自然到达；其余事件按事件名缓存最新 payload，恢复时按最后到达顺序重放。依赖后台持续收到高频事件的主题需要改为在恢复后重新读取状态。
 - 最小化 / 被遮挡 / 锁屏 / 托盘隐藏时新增深度挂起（`TrySuspend`），冻结渲染进程计时器与动画以便系统回收内存。新增 foobar2000 高级设置项 `Deep-suspend WebView when hidden (TrySuspend; frees renderer memory)`（默认开启，关闭后退回原 Low 内存路径）。
 - 新增高级设置项 `Keep WebView active in background while CDP remote debugging is on (tray/minimize/lock)`（默认开启）：开启 CDP 远程调试时保持 WebView 后台活跃，以保证截图与时序类自动化工具稳定。
-- 加固 WebView2 崩溃后的恢复：渲染进程失败后不再停留在无响应的空白窗口，而是按上限次数重载页面，反复失败后重建 WebView。
-- 改进封面获取：修正了换曲或改标签后可能返回上一首封面的缓存问题，收紧了请求与参数校验，并把图片解码移出界面线程，大尺寸封面不再造成界面卡顿。`artwork.*` 的请求与响应结构未变。
+- 收敛 WebView2 崩溃后的僵尸态：进程失败后按重载次数上限决定重载或重建，不再停留在无响应页面。
+- 改进封面获取：修正了换曲或改标签后可能返回上一首封面的缓存问题，并把解码移出 UI 线程、改为逐个排队处理，大尺寸封面不再造成界面卡顿。`artwork.*` 的请求与响应结构未变。
 
 ### 元数据
 
@@ -39,12 +39,11 @@
 
 ### SDK
 
-- 新增仅 SDK 层的二进制适配 helper：`fb.file.readBinary()`、`fb.file.writeBinary()`、`fb.file.writeDataUrl()`、`fb.metadata.embedArtworkBytes()`、`fb.metadata.embedArtworkFromDataUrl()`，以及公开类型 `FileBinaryWriteOptions`、`MetadataArtworkBytesOptions`。
+- 新增仅 SDK 层的 additive 二进制适配 helper：`fb.file.readBinary()`、`fb.file.writeBinary()`、`fb.file.writeDataUrl()`、`fb.metadata.embedArtworkBytes()`、`fb.metadata.embedArtworkFromDataUrl()`，以及公开类型 `FileBinaryWriteOptions`、`MetadataArtworkBytesOptions`。
 - 这些 helper 只把 `ArrayBuffer` / `Uint8Array` 与严格 Base64 Data URL 适配到既有 `file.read`、`file.write`、`metadata.embedArtwork` wire 契约；不新增 Bridge endpoint，不改变 raw `invoke` 或旧 facade。canonical Base64 与 Data URL 校验发生在 SDK 调用 Host 之前，Host 自身的校验和行为没有变化。
 - 修正两处错误的 TypeScript 返回类型声明，使其与宿主实际 wire 契约一致：`ui.isMinimized()` 为 `{ minimized }`（不存在 `isMinimized` 别名）、`ui.isAlwaysOnTop()` 为 `{ enabled, isAlwaysOnTop }`（两个键同值）。**按旧声明编写的 TypeScript 代码需要相应调整。**
-- `fb.playcount.set()` 不再发送宿主从未读取的 `count` 键；行为不变，只是传输负载更小。
-- `fb.http.*` 的二进制响应（`responseType: 'arraybuffer' | 'binary'`）现在一律走文档所述的 `http.get` 端点；此前一处遗留的内部参数可能转发不匹配的方法名。
-- `window.getBackdropPolicy` / `window.setBackdropPolicy` 补齐 `windowId` 参数类型声明。`setBackdropPolicy` 要求传入 `backdropPolicy`，且在解析不到目标窗口时不会回退到主窗口。
+- `fb.playcount.set()` 不再发送宿主从未读取的 `count` 键；`window.getBackdropPolicy` / `window.setBackdropPolicy` 补齐 `windowId` 参数类型声明。
+- `fb.http.request()` 现在经由文档声明的 `http.get` 端点派发；此前一个失效的内部参数可能转发错配的方法名。动词 helper（`fb.http.post()` / `put()` / `delete()` / `patch()`）仍各自派发到自己的端点，二进制响应也一样。
 
 ## v1.10.0 (2026-07-16)
 

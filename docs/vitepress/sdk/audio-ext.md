@@ -19,10 +19,10 @@ Replaces the active DSP chain.
 
 | Parameter | Type | Description |
 | --- | --- | --- |
-| dsps | unknown[] | DSP configuration array passed to `dsp.setChain` |
+| dsps | unknown[] | DSP configuration array passed to `dsp.setChain`; each entry is read for its `guid` only |
 
 ```javascript
-await fb.dsp.setChain([{ guid: '...', enabled: true }]);
+await fb.dsp.setChain([{ guid: '{xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx}' }]);
 ```
 
 ### getPresets()
@@ -89,7 +89,7 @@ Returns a flat array of available audio output devices. The SDK unwraps the host
 
 ```javascript
 const devices = await fb.output.getDevices();
-// [{ id, name, isCurrent, outputId, deviceId }, ...]
+// [{ guid, name, entry, entryGuid }, ...]
 ```
 
 ### getEntries()

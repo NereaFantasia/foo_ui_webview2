@@ -32,7 +32,7 @@ Public API method. Runtime authority: `src/api/MetadataApi.cpp:1675`.
 | --- | --- | --- | --- |
 | `filename` | `string` | No | Optional; default . |
 | `imageData` | `string` | No | Optional; default . |
-| `path` | `string` | No | Optional; default . |
+| `path` | `string` | Yes | Required. |
 | `target` | `array` | No | Optional; default embedded. |
 | `type` | `string` | No | Optional; default front. |
 
@@ -48,7 +48,7 @@ Public API method. Runtime authority: `src/api/MetadataApi.cpp:1657`.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `path` | `string` | No | Optional; default . |
+| `path` | `string` | Yes | Required. |
 | `cueIndex` | `integer` | No | Optional; default -1. Subsong index override, wins over a `|subsong:N` suffix in `path`. |
 
 **Returns**: `{"error":"...","info":"...","path":"...","success":true,"tags":"..."}`
@@ -57,7 +57,7 @@ Public API method. Runtime authority: `src/api/MetadataApi.cpp:1657`.
 const result = await fb2k.invoke('metadata.read', { path: /* value */ });
 ```
 
-See [Addressing a track inside a container](#addressing-a-track-inside-a-container) for CUE sheets, ISO images, and other multi-track files.
+See [Addressing a track inside a container](#subsong-addressing) for CUE sheets, ISO images, and other multi-track files.
 
 ### metadata.readBatch
 
@@ -81,7 +81,7 @@ Public API method. Runtime authority: `src/api/MetadataApi.cpp:1660`.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `path` | `string` | No | Optional; default . |
+| `path` | `string` | Yes | Required. |
 | `cueIndex` | `integer` | No | Optional; default -1. Subsong index override, wins over a `|subsong:N` suffix in `path`. |
 
 **Returns**: `{"TRACKNUMBER":"...","canonicalPath":"...","error":"...","path":"...","success":true}`
@@ -97,7 +97,7 @@ Public API method. Runtime authority: `src/api/MetadataApi.cpp:1663`.
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `cueIndex` | `integer` | No | Optional; default -1. |
-| `path` | `string` | No | Optional; default . |
+| `path` | `string` | Yes | Required. |
 
 **Returns**: `{"error":"...","info":"...","path":"...","source":"...","success":true,"tags":"..."}`
 
@@ -111,7 +111,7 @@ Public API method. Runtime authority: `src/api/MetadataApi.cpp:1678`.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `path` | `string` | No | Optional; default . |
+| `path` | `string` | Yes | Required. |
 | `removeAll` | `boolean` | No | Optional; default false. |
 | `type` | `string` | No | Optional; default . |
 
@@ -128,7 +128,7 @@ Public API method. Runtime authority: `src/api/MetadataApi.cpp:1684`.
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `cueIndex` | `integer` | No | Optional; default -1. |
-| `path` | `string` | No | Optional; default . |
+| `path` | `string` | Yes | Required. |
 | `tags` | `array` | Yes | Required. |
 
 **Returns**: `{"dispatched":"...","error":"...","note":"...","path":"...","removedCount":"...","removedTags":"...","subsong":"...","success":true}`
@@ -144,7 +144,7 @@ Public API method. Runtime authority: `src/api/MetadataApi.cpp:1681`.
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `cueIndex` | `integer` | No | Optional; default -1. |
-| `path` | `string` | No | Optional; default . |
+| `path` | `string` | Yes | Required. |
 | `tags` | `array` | Yes | Required. |
 
 **Returns**: `{"dispatched":"...","error":"...","note":"...","path":"...","removedCount":"...","removedTags":"...","subsong":"...","success":true}`
@@ -160,7 +160,7 @@ Public API method. Runtime authority: `src/api/MetadataApi.cpp:1669`.
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `cueIndex` | `integer` | No | Optional; default -1. |
-| `path` | `string` | No | Optional; default . |
+| `path` | `string` | Yes | Required. |
 | `tags` | `object` | Yes | Required. |
 
 **Returns**: `{"canonicalPath":"...","dispatched":"...","error":"...","handlePath":"...","note":"...","path":"...","subsong":"...","success":true,"tagsApplied":"...","tagsRemoved":"...","tagsSet":"..."}`
@@ -192,7 +192,7 @@ Public API method. Runtime authority: `src/api/MetadataApi.cpp:1690`.
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `cueIndex` | `integer` | No | Optional; default -1. |
-| `path` | `string` | No | Optional; default . |
+| `path` | `string` | Yes | Required. |
 
 **Returns**: `{"error":"...","path":"...","rating":"...","storage":"...","success":true}`
 
@@ -207,7 +207,7 @@ Public API method. Runtime authority: `src/api/MetadataApi.cpp:1687`.
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `cueIndex` | `integer` | No | Optional; default -1. |
-| `path` | `string` | No | Optional; default . |
+| `path` | `string` | Yes | Required. |
 | `rating` | `integer` | No | Optional; default -1. |
 
 **Returns**: `{"(current)":"...","error":"...","menuPath":"...","note":"...","path":"...","rating":"...","storage":"...","success":true}`

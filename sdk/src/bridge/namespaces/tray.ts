@@ -1,7 +1,7 @@
 /**
  * `tray` namespace - system tray icon bindings.
  *
- * See docs/vitepress/api/taskbar-tray.md for the full reference.
+ * See the taskbar-tray page of the API reference for the full contract.
  */
 
 import { bridge } from '../Bridge.js';
@@ -57,7 +57,7 @@ export interface TrayMenuItem {
      * backend only (the native backend ignores it). `content` is the SVG inner
      * markup (e.g. `"<path d=\"...\"/>"`). The overlay runtime parses it with
      * `DOMParser` and clones only an allowlisted set of shape elements /
-     * attributes into the live document (DESIGN 8.4); raw `innerHTML` injection
+     * attributes into the live document; raw `innerHTML` injection
      * is not used. Illegal or oversized (>32 KiB) icons are dropped and the
      * menu row continues without an icon. Within a menu layer, if any item
      * supplies a renderable icon, every normal/submenu item reserves a fixed
@@ -217,11 +217,11 @@ export interface TrayMenuConfig {
      *   `top` / `playback` / `bottom` containers so themes can lay out each zone
      *   with flex/grid. Public `menu.show` is unaffected and never emits zones.
      *
-     * Older plugin runtimes ignore the unknown key (no crash) but do **not**
-     * create zone wrappers — themes that need zones must probe
-     * `config.getVersionInfo().plugin.version` before opting in. The minimum
-     * plugin version that ships zones is not finalized yet; do not hard-code a
-     * fake floor. `data-item-token` is an internal single-show identity and is
+     * Zones require plugin 1.10.0 or newer. Older plugin runtimes ignore the
+     * unknown key (no crash) but do **not** create zone wrappers — themes
+     * that must support older hosts should probe
+     * `config.getVersionInfo().plugin.version` before opting in.
+     * `data-item-token` is an internal single-show identity and is
      * **not** a public CSS contract.
      */
     layoutMode?: 'flat' | 'zones';

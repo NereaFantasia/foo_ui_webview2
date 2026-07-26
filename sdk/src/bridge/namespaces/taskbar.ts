@@ -2,7 +2,7 @@
  * `taskbar` namespace - Windows taskbar thumbnail toolbar, progress bar,
  * overlay icon and flash bindings.
  *
- * See docs/vitepress/api/taskbar-tray.md for the full reference.
+ * See the taskbar-tray page of the API reference for the full contract.
  */
 
 import { bridge } from '../Bridge.js';

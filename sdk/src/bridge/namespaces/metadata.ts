@@ -120,10 +120,10 @@ export const metadata = {
         bridge.invoke<MetadataReadBatchResponse>('metadata.readBatch', { paths }),
     /**
      * Flat-form single-track read — every tag becomes a top-level field
-     * alongside `success` / `path` / `canonicalPath`. Keys use upstream
-     * casing (typically UPPERCASE); the return shape is intentionally
-     * loose because the C++ host forwards whatever tags the file
-     * happens to carry.
+     * alongside `success` / `path`. Keys use upstream casing (typically
+     * UPPERCASE); the return shape is intentionally loose because the
+     * C++ host forwards whatever tags the file happens to carry.
+     * `canonicalPath` appears only on the file-open failure envelope.
      */
     readByPath: (path: string) =>
         bridge.invoke<JsonObject>('metadata.readByPath', { path }),

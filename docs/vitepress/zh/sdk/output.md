@@ -40,9 +40,12 @@ const result = await fb.output.getSettings();
 
 ## 输出设备列表
 
-`fb.output.getDevices(): Promise<OutputDevice[]>` 调用 `output.getDevices`，并解包宿主返回的 `{ devices, count }` 信封。每个设备包含 `id`、`deviceId`、`outputId`、`name` 和 `isCurrent`。
+`fb.output.getDevices(): Promise<OutputDeviceInfo[]>` 调用 `output.getDevices`，并解包宿主返回的 `{ devices, count }` 信封。每个设备携带 `guid`、`name`、`entry`（所属输出后端显示名）与 `entryGuid`（所属后端 GUID）。宿主报告失败时，封装会抛出带宿主错误文本的 `Error`，而不是返回空数组。
+
+设备 `guid` 在各后端的“默认设备”行为全零（`{00000000-0000-0000-0000-000000000000}`）且可能跨后端重复 —— 请用 `(entryGuid, guid)` 组合作键，不要单独用 `guid`。
 
 ```javascript
 const devices = await fb.output.getDevices();
-const current = devices.find((device) => device.isCurrent);
+// [{ guid, name, entry, entryGuid }, ...]
+const byKey = new Map(devices.map((d) => [`${d.entryGuid}|${d.guid}`, d]));
 ```

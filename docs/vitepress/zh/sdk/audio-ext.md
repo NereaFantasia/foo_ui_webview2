@@ -19,10 +19,10 @@ const chain = await fb.dsp.getChain();
 
 | 参数 | 类型 | 说明 |
 | --- | --- | --- |
-| dsps | array | DSP 配置数组 |
+| dsps | array | DSP 配置数组；每项只读取 `guid` |
 
 ```javascript
-await fb.dsp.setChain([{ guid: '...', enabled: true }]);
+await fb.dsp.setChain([{ guid: '{xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx}' }]);
 ```
 
 ### getPresets() 
@@ -85,11 +85,11 @@ await fb.dsp.moveDsp(0, 2); // 将第1个DSP移到第3位
 
 ### getDevices() 
 
-获取所有可用的音频输出设备。
+获取所有可用的音频输出设备。SDK 封装会解包宿主的 `{ devices, count }` 信封，直接返回扁平数组。
 
 ```javascript
-const r = await fb.output.getDevices();
-// r.devices: [{ id, name, isDefault }, ...]
+const devices = await fb.output.getDevices();
+// [{ guid, name, entry, entryGuid }, ...]
 ```
 
 ### getEntries() 
@@ -102,7 +102,7 @@ const r = await fb.output.getEntries();
 
 ### getSettings() 
 
-获取当前输出设置。
+返回提示文本 `note` 与输出模块名称列表 `availableOutputs`，**不返回当前生效的设备配置**；名称可能重复且顺序不稳定，需要名称 + GUID 请改用 `output.getEntries`。
 
 ```javascript
 const settings = await fb.output.getSettings();

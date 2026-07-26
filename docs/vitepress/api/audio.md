@@ -208,14 +208,16 @@ const result = await fb2k.invoke('audio.unsubscribeStream');
 
 ## dsp
 
+> Note: `dsp.getActivePreset` / `dsp.setActivePreset` are not registered on the C++ side — use `config.getActiveDspPreset` / `config.setActiveDspPreset` instead.
+
 ### dsp.addDsp
 
 Public API method. Runtime authority: `src/api/DspApi.cpp:418`.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `guid` | `string` | No | Optional; default . |
-| `position` | `integer` | No | Optional; default -1. |
+| `guid` | `string` | Yes | Required. |
+| `position` | `integer` | No | Optional; default -1 (append to the end). |
 
 **Returns**: `{"addedDsp":"...","error":"...","position":"...","success":true}`
 
@@ -304,8 +306,9 @@ const result = await fb2k.invoke('dsp.moveDsp', { from: /* value */, to: /* valu
 ```
 
 `to` is the final index in the reordered chain and matches the value you passed,
-in both directions. Use this — not `getChain` fed back into `setChain` — to
-reorder a chain, because it preserves each DSP's configuration.
+in both directions. When `from === to` nothing moves and the response carries
+`message: "No change needed"`. Use this — not `getChain` fed back into
+`setChain` — to reorder a chain, because it preserves each DSP's configuration.
 
 ### dsp.removeDsp
 

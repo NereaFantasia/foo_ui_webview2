@@ -19,7 +19,7 @@
 返回值：底层 `dsp.addDsp` 调用结果。
 
 ```javascript
-const result = await fb.dsp.addDsp();
+const result = await fb.dsp.addDsp('{xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx}');
 ```
 
 ### applyPreset()
@@ -33,7 +33,8 @@ const result = await fb.dsp.addDsp();
 返回值：底层 `dsp.applyPreset` 调用结果。
 
 ```javascript
-const result = await fb.dsp.applyPreset();
+const result = await fb.dsp.applyPreset(0);           // 按索引
+const byName = await fb.dsp.applyPreset('My Preset'); // 按名称
 ```
 
 ### getAvailable()
@@ -89,7 +90,7 @@ const result = await fb.dsp.getPresets();
 返回值：底层 `dsp.moveDsp` 调用结果。
 
 ```javascript
-const result = await fb.dsp.moveDsp();
+const result = await fb.dsp.moveDsp(0, 2);
 ```
 
 ### removeDsp()
@@ -103,7 +104,7 @@ const result = await fb.dsp.moveDsp();
 返回值：底层 `dsp.removeDsp` 调用结果。
 
 ```javascript
-const result = await fb.dsp.removeDsp();
+const result = await fb.dsp.removeDsp(2);
 ```
 
 ### setChain()
@@ -117,7 +118,7 @@ const result = await fb.dsp.removeDsp();
 返回值：底层 `dsp.setChain` 调用结果。
 
 ```javascript
-const result = await fb.dsp.setChain();
+const result = await fb.dsp.setChain([{ guid: '{xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx}' }]);
 ```
 
 <!-- END AUTO-GENERATED SDK STUBS -->

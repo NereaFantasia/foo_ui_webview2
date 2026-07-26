@@ -12,7 +12,7 @@
 
 Signature: `fb.dsp.getChain(): Promise<DspGetChainResponse>`
 
-Returns the active DSP entries in execution order. A successful result may also include `activePreset` and `activePresetIndex`.
+Returns the active DSP entries in execution order. A successful result always includes `activePreset` (`null` when no preset is selected) and `activePresetIndex` (`-1` when none).
 
 ```javascript
 const { dsps, activePreset } = await fb.dsp.getChain();
@@ -64,9 +64,9 @@ Removes the DSP at the supplied active-chain index.
 
 ### moveDsp(from, to)
 
-Signature: `fb.dsp.moveDsp(from: number, to: number): Promise<BaseResponse & { movedDsp?: string; message?: string }>`
+Signature: `fb.dsp.moveDsp(from: number, to: number): Promise<BaseResponse & { movedDsp?: string; from?: number; to?: number; message?: string }>`
 
-Moves an active DSP from one chain index to another.
+Moves an active DSP from one chain index to another. The response echoes `from` and `to`, where `to` is the final landing index; `message` is present when `from === to` and nothing moved.
 
 ```javascript
 await fb.dsp.moveDsp(2, 0);

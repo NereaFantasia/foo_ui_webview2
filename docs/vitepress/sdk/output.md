@@ -40,9 +40,12 @@ const settings = await fb.output.getSettings();
 
 ## Device List
 
-`fb.output.getDevices(): Promise<OutputDevice[]>` invokes `output.getDevices` and unwraps the host's `{ devices, count }` envelope. A device includes `id`, `deviceId`, `outputId`, `name`, and `isCurrent`.
+`fb.output.getDevices(): Promise<OutputDeviceInfo[]>` invokes `output.getDevices` and unwraps the host's `{ devices, count }` envelope. A device carries `guid`, `name`, `entry` (owning output backend display name), and `entryGuid` (owning backend GUID). When the host reports a failure the wrapper throws an `Error` with the host message instead of returning an empty array.
+
+The device `guid` is all-zero (`{00000000-0000-0000-0000-000000000000}`) for a backend's "default device" row and may repeat across backends — key rows by the `(entryGuid, guid)` pair, never by `guid` alone.
 
 ```javascript
 const devices = await fb.output.getDevices();
-const current = devices.find((device) => device.isCurrent);
+// [{ guid, name, entry, entryGuid }, ...]
+const byKey = new Map(devices.map((d) => [`${d.entryGuid}|${d.guid}`, d]));
 ```
