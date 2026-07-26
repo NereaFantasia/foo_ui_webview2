@@ -238,9 +238,10 @@ Public API method. Runtime authority: `src/api/DspApi.cpp:416`.
 const result = await fb2k.invoke('dsp.applyPreset', { index: /* value */, name: /* value */ });
 ```
 
-Supply either `index` or `name` — both address the same presets, and the response
-echoes `appliedPreset` / `appliedIndex` either way. Applying a preset replaces the
-whole active chain; it never writes back to the stored preset, so the files under
+Supply either `index` or `name`; at least one is required, and `index` wins when
+both are present. Both address the same presets, and the response echoes
+`appliedPreset` / `appliedIndex` either way. Applying a preset replaces the whole
+active chain; it never writes back to the stored preset, so the files under
 `profile\dsp-presets\<name>.fb2k-dsp` are left untouched.
 
 ### dsp.getAvailable
@@ -342,8 +343,9 @@ without touching the current chain, and the error names the offending index:
 
 | Condition | Error |
 | --- | --- |
+| `dsps` absent or not an array | `dsps array is required` |
 | Element is not an object | `dsps[0] must be an object` |
-| `guid` missing or empty | `dsps[0]: guid is required` |
+| `guid` missing, empty, or not a string | `dsps[0]: guid is required` |
 | `guid` malformed | `dsps[0]: Invalid GUID format: <value>` |
 | `guid` well-formed but DSP not installed | `dsps[0]: DSP not found or no default preset: <guid>` |
 

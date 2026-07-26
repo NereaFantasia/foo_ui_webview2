@@ -575,7 +575,7 @@ if (eq) {
 
 **返回值**: `{"from":"...","message":"...","movedDsp":"...","success":true,"to":"..."}`
 
-> `from` 与 `to` 都是移动**前**的链下标；返回的 `to` 是该项移动后的实际下标。`from === to` 时不做改动，返回 `message: "No change needed"`。需要重排链请用本接口，不要用 `setChain`（后者只接受 `guid`，不承诺保留参数）。
+> `from` 是移动**前**的下标；`to` 是该项移动后的最终下标，升序、降序都与传入值一致，返回的 `to` 即为该值。`from === to` 时不做改动，返回 `message: "No change needed"`。需要重排链请用本接口，不要用 `setChain`（后者只接受 `guid`，不承诺保留参数）。
 
 ### dsp.setChain
 
@@ -589,10 +589,13 @@ if (eq) {
 
 | 情况 | `error` |
 | --- | --- |
+| `dsps` 缺失或不是数组 | `dsps array is required` |
 | 元素不是对象 | `dsps[0] must be an object` |
-| 缺 `guid` 或为空串 | `dsps[0]: guid is required` |
+| 缺 `guid`、为空串，或不是字符串 | `dsps[0]: guid is required` |
 | GUID 格式非法 | `dsps[0]: Invalid GUID format: <值>` |
 | GUID 合法但该 DSP 未安装 | `dsps[0]: DSP not found or no default preset: <值>` |
+
+传入空数组是合法的，表示清空整条链，返回 `count: 0`。
 
 **返回值**: `{ "success": true, "count": 3 }`
 
@@ -605,7 +608,7 @@ await fb2k.invoke('dsp.setChain', {
 });
 ```
 
-> 传空数组会清空整条链。本接口只接受 `guid`，各 DSP 的参数取自 `dsp_entry` 的默认预设——参数是否得以保留**取决于该 DSP 的实现**（把设置存在全局 `cfg_var` 里的 DSP 通常会保留，按预设实例存参的通常不会），因此不要依赖此行为，也不要把 `getChain` 的输出直接回灌 `setChain` 来做重排序。
+> 传空数组会清空整条链。本接口只接受 `guid`，因此每个 DSP 都按其默认预设加入——参数是否得以保留**取决于该 DSP 的实现**：多数 foobar2000 内置 DSP 把设置存在全局配置里，参数会保留；而按预设实例存参的 DSP（VST 包装器、部分第三方 DSP）会退回出厂值。不要依赖此行为，也不要把 `getChain` 的输出直接回灌 `setChain` 来做重排序，重排请用 `dsp.moveDsp`。
 
 ## Output API - 音频输出
 

@@ -11,10 +11,10 @@
 
 ### DSP 与输出
 
-- **`dsp.*` 与 `output.*` 现在真正可用。** 这 11 个处理器（`dsp.getChain` / `getPresets` / `getAvailable` / `addDsp` / `removeDsp` / `moveDsp` / `applyPreset` / `setChain`，`output.getDevices` / `getEntries` / `getSettings`）此前虽有文档，但其源文件从未被加入编译，所以任何调用都会因方法未注册而失败。自本版起已编译并注册。这两个命名空间没有 SDK facade，请通过 `fb2k.invoke()` 调用。
+- **`dsp.*` 与 `output.*` 现在真正可用。** 这 11 个处理器（`dsp.getChain` / `getPresets` / `getAvailable` / `addDsp` / `removeDsp` / `moveDsp` / `applyPreset` / `setChain`，`output.getDevices` / `getEntries` / `getSettings`）此前虽有文档，但其源文件从未被加入编译，所以任何调用都会因方法未注册而失败。自本版起已编译并注册。已发布的 `fb.dsp.*` / `fb.output.*` SDK 封装本来就存在，配合本版插件后开始真正生效；插件版本低于本版时，无论 SDK 版本如何都会被拒绝。
 - 修复 `output.getDevices` 崩溃。部分输出后端在回调里用「长度未知」哨兵值代替真实长度，原实现直接采用该值，导致读取远超字符串末尾并使 foobar2000 终止。
 - 修复 `dsp.moveDsp` 移动到错误位置。升序移动会少一格，因此向上移动一位等于无操作，且任何项都无法移到链尾；降序移动本来是正确的。返回的 `to` 现在是真实的最终索引。
-- **行为变更** —— `dsp.setChain` 遇到任何不可用条目时整体拒绝，不再静默跳过。此前用三个条目构造的链可能只应用两个却仍返回 `success: true`。四种失败各自返回带索引的原因：`dsps[0] must be an object`、`dsps[0]: guid is required`、`dsps[0]: Invalid GUID format: …`、`dsps[0]: DSP not found or no default preset: …`（GUID 格式合法但该 DSP 未安装）。调用被拒绝时链保持不变。
+- **行为变更** —— `dsp.setChain` 遇到任何不可用条目时整体拒绝，不再静默跳过。此前用三个条目构造的链可能只应用两个却仍返回 `success: true`。每个条目级失败都返回带索引的原因：`dsps[0] must be an object`（元素不是对象，例如裸字符串或数字）、`dsps[0]: guid is required`（缺失、空串或不是字符串）、`dsps[0]: Invalid GUID format: …`、`dsps[0]: DSP not found or no default preset: …`（GUID 格式合法但该 DSP 未安装）。`dsps` 本身缺失或不是数组时仍返回 `dsps array is required`。任何调用被拒绝时链都保持不变。
 - `dsp.getPresets` 在无选中预设时返回 `selectedIndex: -1`。此前返回内部哨兵值 `18446744073709551615`，该值无法用 JavaScript number 表示，到达前端时已是不可用的浮点数。
 - `dsp.getChain` 始终包含 `activePreset` 与 `activePresetIndex`，无选中预设或宿主不支持预设时为 `null` / `-1`。此前这两个键在上述情况下完全缺失，调用方不得不自行探测。
 

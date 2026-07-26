@@ -9,7 +9,7 @@ import type { BaseResponse, DspPreset } from '../../types/responses.js';
 export interface DspGetPresetsResponse {
     presets: Array<DspPreset & { active?: boolean }>;
     count: number;
-    /** Index of the currently selected preset; `pfc::infinite_size` when none. */
+    /** Index of the currently selected preset, or `-1` when none is selected. */
     selectedIndex: number;
 }
 
@@ -33,7 +33,10 @@ export interface DspGetChainResponse {
     dsps?: DspChainEntry[];
     /** Active preset display name; `null` when no preset is currently selected. */
     activePreset?: string | null;
-    /** Active preset index; only present when `activePreset` is non-null. */
+    /**
+     * Active preset index, or `-1` when no preset is selected or the host
+     * does not expose presets. Always present alongside `activePreset`.
+     */
     activePresetIndex?: number;
     /** Only present on failure. */
     success?: false;
