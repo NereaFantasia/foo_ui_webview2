@@ -253,8 +253,8 @@ npm start
 
 | 工具 | 参数 | 说明 |
 |------|------|------|
-| `fb2k_metadata_read` | `path` | 读取文件元数据（结构化：tags + info 分离） |
-| `fb2k_metadata_read_by_path` | `path` | 按路径读取元数据（扁平格式） |
+| `fb2k_metadata_read` | `path`, `cueIndex?` | 读取文件元数据（结构化：tags + info 分离） |
+| `fb2k_metadata_read_by_path` | `path`, `cueIndex?` | 按路径读取元数据（扁平格式） |
 | `fb2k_metadata_read_raw` | `path`, `cueIndex?` | 直接从文件读取原始元数据 |
 | `fb2k_metadata_read_batch` | `paths` | 批量读取元数据 |
 | `fb2k_metadata_write` | `path`, `tags` | 写入元数据标签 |

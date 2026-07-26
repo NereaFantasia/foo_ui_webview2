@@ -253,8 +253,8 @@ Add the same configuration under **MCP Servers** in Cursor settings.
 
 | Tool | Params | Description |
 |------|--------|-------------|
-| `fb2k_metadata_read` | `path` | Read file metadata (structured: tags + info separated) |
-| `fb2k_metadata_read_by_path` | `path` | Read metadata by path (flat format) |
+| `fb2k_metadata_read` | `path`, `cueIndex?` | Read file metadata (structured: tags + info separated) |
+| `fb2k_metadata_read_by_path` | `path`, `cueIndex?` | Read metadata by path (flat format) |
 | `fb2k_metadata_read_raw` | `path`, `cueIndex?` | Read raw metadata directly from the file |
 | `fb2k_metadata_read_batch` | `paths` | Read metadata in batch |
 | `fb2k_metadata_write` | `path`, `tags` | Write metadata tags |

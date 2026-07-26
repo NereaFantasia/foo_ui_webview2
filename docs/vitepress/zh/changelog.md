@@ -35,7 +35,7 @@
 ### 元数据
 
 - 修复 `metadata.read`、`metadata.readByPath`、`metadata.readBatch` 忽略容器内轨道编号的问题。路径里的 `|subsong:N` 后缀既没有被剥离也没有被采用，因此从 CUE、ISO 镜像或多轨文件里读取单条轨道时，要么直接失败，要么返回首轨的标签。这正是这类文件在 foobar2000 界面里能读、经 API 读不到的原因。`metadata.readRaw` 原本就是正确的。
-- `metadata.read` 与 `metadata.readByPath` 新增 `cueIndex` 参数，可显式指定轨道，与 `metadata.readRaw` 一致；其优先级高于路径中的 `|subsong:N` 后缀。
+- `metadata.read` 与 `metadata.readByPath` 新增 `cueIndex` 参数，可显式指定轨道，与 `metadata.readRaw` 一致；其优先级高于路径中的 `|subsong:N` 后缀。SDK 的 `fb.metadata.read()` / `readByPath()` 通过第二个 `opts` 参数传入，MCP 的 `fb2k_metadata_read` / `fb2k_metadata_read_by_path` 已声明该参数。`metadata.readBatch` 不接受此参数，批量读取请在各自路径上使用 `|subsong:N` 后缀。
 
 ### SDK
 

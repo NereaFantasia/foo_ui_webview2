@@ -211,6 +211,55 @@ describe('metadata namespace (§5.6 default logger)', () => {
         expect(result).not.toHaveProperty('tags');
     });
 
+    // ── Container sub-track addressing ───────────────────────────────
+    //
+    // `read` / `readByPath` accept an explicit track index for CUE
+    // sheets, ISO images and other multi-track containers. The host
+    // gives `cueIndex` precedence over a `|subsong:N` path suffix, so
+    // the wrapper must forward it untouched and must not synthesize a
+    // default when the caller omits it.
+
+    it('read forwards cueIndex when supplied', async () => {
+        const native = makeNative();
+        native.invoke.mockResolvedValue({ success: true, tags: {}, info: {} });
+        vi.stubGlobal('window', { fb2k: native });
+        const { metadata } = await import('./metadata.js');
+
+        await metadata.read('/music/album.cue', { cueIndex: 2 });
+
+        expect(native.invoke).toHaveBeenCalledWith('metadata.read', {
+            path: '/music/album.cue',
+            cueIndex: 2,
+        });
+    });
+
+    it('read omits cueIndex entirely when not supplied', async () => {
+        const native = makeNative();
+        native.invoke.mockResolvedValue({ success: true, tags: {}, info: {} });
+        vi.stubGlobal('window', { fb2k: native });
+        const { metadata } = await import('./metadata.js');
+
+        await metadata.read('/music/album.cue|subsong:2');
+
+        expect(native.invoke).toHaveBeenCalledWith('metadata.read', {
+            path: '/music/album.cue|subsong:2',
+        });
+    });
+
+    it('readByPath forwards cueIndex when supplied', async () => {
+        const native = makeNative();
+        native.invoke.mockResolvedValue({ success: true, TITLE: 'Track 3' });
+        vi.stubGlobal('window', { fb2k: native });
+        const { metadata } = await import('./metadata.js');
+
+        await metadata.readByPath('/music/album.cue', { cueIndex: 3 });
+
+        expect(native.invoke).toHaveBeenCalledWith('metadata.readByPath', {
+            path: '/music/album.cue',
+            cueIndex: 3,
+        });
+    });
+
     it('embedArtworkBytes sends raw Base64 imageData to the existing endpoint', async () => {
         const native = makeNative();
         native.invoke.mockResolvedValue({ success: true });

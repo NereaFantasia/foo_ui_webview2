@@ -35,7 +35,7 @@
 ### Metadata
 
 - Fixed `metadata.read`, `metadata.readByPath`, and `metadata.readBatch` ignoring the track index inside a container. A `|subsong:N` suffix was neither stripped nor honored, so reading a single track out of a CUE sheet, ISO image, or multi-track file either failed outright or returned the first track's tags. This is why such files could be read in the foobar2000 UI but not through the API. `metadata.readRaw` was already correct.
-- `metadata.read` and `metadata.readByPath` accept `cueIndex` to address a track explicitly, matching `metadata.readRaw`. It takes precedence over a `|subsong:N` suffix in the path.
+- `metadata.read` and `metadata.readByPath` accept `cueIndex` to address a track explicitly, matching `metadata.readRaw`. It takes precedence over a `|subsong:N` suffix in the path. The `fb.metadata.read()` / `readByPath()` wrappers take it as a second `opts` argument, and the `fb2k_metadata_read` / `fb2k_metadata_read_by_path` MCP tools declare it. `metadata.readBatch` does not accept it — address per-track reads there with a `|subsong:N` suffix.
 
 ### SDK
 

@@ -12,7 +12,8 @@ Reads file metadata in a structured result with separate `tags` and `info` objec
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `path` | string | Yes | Audio file path |
+| `path` | string | Yes | Audio file path; supports `|subsong:N` or `#N` |
+| `cueIndex` | integer | No | CUE sub-track index; overrides the subsong marker in `path` |
 
 **Example result:**
 
@@ -48,7 +49,8 @@ Reads metadata by path in a flat result.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `path` | string | Yes | Audio file path |
+| `path` | string | Yes | Audio file path; supports `|subsong:N` or `#N` |
+| `cueIndex` | integer | No | CUE sub-track index; overrides the subsong marker in `path` |
 
 ### fb2k_metadata_read_raw 
 

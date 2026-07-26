@@ -11,6 +11,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `metadata.read()` and `metadata.readByPath()` accept an optional second
+  argument carrying `cueIndex`, matching `metadata.readRaw()`. Use it to select
+  a single track inside a CUE sheet or image file; it takes precedence over a
+  `|subsong:N` suffix in the path. `metadata.readBatch()` does not accept it —
+  that endpoint resolves each path's sub-track from the path itself.
 - **`TrayMenuItem.playbackAction`** (`'play-pause' | 'previous' | 'next' |
   'stop'`) — declare a native playback action on a custom tray menu item.
   Appearance (`label` / `icon` / `id`) stays caller-controlled; at composition

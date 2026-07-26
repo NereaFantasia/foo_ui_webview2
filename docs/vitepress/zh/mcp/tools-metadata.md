@@ -12,7 +12,8 @@
 
 | 参数 | 类型 | 必填 | 描述 |
 | --- | --- | --- | --- |
-| path | string | ? | 文件路径 |
+| path | string | ? | 文件路径，支持 \|subsong:N 或 #N 格式 |
+| cueIndex | integer | ? | CUE 子曲目索引（覆盖路径中的 subsong 标记） |
 
 **返回值**:
 
@@ -48,7 +49,8 @@
 
 | 参数 | 类型 | 必填 | 描述 |
 | --- | --- | --- | --- |
-| path | string | ? | 文件路径 |
+| path | string | ? | 文件路径，支持 \|subsong:N 或 #N 格式 |
+| cueIndex | integer | ? | CUE 子曲目索引（覆盖路径中的 subsong 标记） |
 
 ### fb2k_metadata_read_raw 
 

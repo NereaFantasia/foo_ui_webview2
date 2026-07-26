@@ -437,7 +437,7 @@ await fb.ui.createPopup({
 
 获取当前窗口 ID。
 
-### getPopupBehavior(windowId?) / setPopupBehavior(opts)
+### getPopupBehavior(windowId?) / setPopupBehavior(opts) {#popup-behavior}
 
 获取/设置弹出窗口行为。
 
@@ -448,7 +448,7 @@ await fb.ui.setPopupBehavior({
 });
 ```
 
-### getBackdropPolicy(windowId?) / setBackdropPolicy(opts)
+### getBackdropPolicy(windowId?) / setBackdropPolicy(opts) {#dwm-backdrop}
 
 获取/设置窗口背景策略。
 

@@ -9,6 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.1.1] - 2026-07-25
 
+### Added
+
+- `fb2k_metadata_read` and `fb2k_metadata_read_by_path` declare the optional
+  `cueIndex` parameter, matching `fb2k_metadata_read_raw`. Both tools already
+  forwarded the value, but it was absent from the published schema, so clients
+  had no way to discover it. `fb2k_metadata_read_batch` intentionally omits it
+  because the underlying handler resolves each path's sub-track from the path
+  itself.
+
 ### Changed
 
 - **Behavior change** — a bridge handler response with `success: false` is now

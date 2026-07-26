@@ -16,7 +16,11 @@ export const metadataTools: ToolDefinition[] = [
             properties: {
                 path: {
                     type: "string",
-                    description: "Audio file path",
+                    description: "Audio file path (supports |subsong:N or #N for CUE sub-tracks)",
+                },
+                cueIndex: {
+                    type: "integer",
+                    description: "CUE sub-track index (overrides subsong marker in path)",
                 },
             },
             required: ["path"],
@@ -30,7 +34,11 @@ export const metadataTools: ToolDefinition[] = [
             properties: {
                 path: {
                     type: "string",
-                    description: "Audio file path",
+                    description: "Audio file path (supports |subsong:N or #N for CUE sub-tracks)",
+                },
+                cueIndex: {
+                    type: "integer",
+                    description: "CUE sub-track index (overrides subsong marker in path)",
                 },
             },
             required: ["path"],

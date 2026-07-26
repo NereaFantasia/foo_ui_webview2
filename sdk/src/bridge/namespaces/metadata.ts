@@ -109,12 +109,22 @@ export const metadata = {
      * Returns `{ success, path, tags, info }`. `tags` preserves upstream
      * key casing and may hold a single string or a `string[]` per
      * multi-value field.
+     *
+     * For a track inside a container (CUE sheet, ISO image, multi-track
+     * file), either append `|subsong:N` to `path` or pass
+     * `opts.cueIndex`; the option wins when both are given. CUE track
+     * numbering starts at 1.
      */
-    read: (path: string) =>
-        bridge.invoke<MetadataReadResponse>('metadata.read', { path }),
+    read: (path: string, opts?: { cueIndex?: number }) =>
+        bridge.invoke<MetadataReadResponse>('metadata.read', {
+            path,
+            ...(opts || {}),
+        }),
     /**
      * Batch variant; returns a `results[]` array with one envelope entry
-     * per requested path.
+     * per requested path. Each path is resolved independently and may
+     * carry its own `|subsong:N` suffix; there is no batch-wide
+     * subsong option.
      */
     readBatch: (paths: string[]) =>
         bridge.invoke<MetadataReadBatchResponse>('metadata.readBatch', { paths }),
@@ -124,9 +134,14 @@ export const metadata = {
      * UPPERCASE); the return shape is intentionally loose because the
      * C++ host forwards whatever tags the file happens to carry.
      * `canonicalPath` appears only on the file-open failure envelope.
+     *
+     * Container tracks are addressed the same way as `read()`.
      */
-    readByPath: (path: string) =>
-        bridge.invoke<JsonObject>('metadata.readByPath', { path }),
+    readByPath: (path: string, opts?: { cueIndex?: number }) =>
+        bridge.invoke<JsonObject>('metadata.readByPath', {
+            path,
+            ...(opts || {}),
+        }),
     readRaw: (
         path: string,
         opts?: Omit<MetadataReadRawParams, 'path'>,
