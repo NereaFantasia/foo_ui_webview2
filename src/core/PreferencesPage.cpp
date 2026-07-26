@@ -11,12 +11,14 @@
 #include "window/MainWindow.h"
 #include <CommCtrl.h>
 #include <shlobj.h>
+#include <uxtheme.h>
 #include <filesystem>
 #include <cstring>
 #include <fstream>
 #include <algorithm>
 #include <utility>
 #include "utils/I18n.h"
+#include "utils/GuidUtils.h"
 
 namespace fs = std::filesystem;
 
@@ -1179,6 +1181,8 @@ void WebViewPreferencesInstance::OnRenameTemplate(HWND hwnd) {
     // 避免复杂的 DLGTEMPLATE 构建，使用 GetSaveFileName 技巧或 prompt 组合
     // 这里采用最简方案：循环 prompt 直到用户给出合法名称或取消
     
+    // 注意：promptMsg 目前未被使用——下方对话框在 WM_INITDIALOG 里自行设置
+    // 标签文本。此处保留双语文案，供后续改回消息框式提示时复用。
     std::wstring promptMsg = TR(
         "Enter new name for template \"", "请输入模板 \"");
     promptMsg += oldNameW;
@@ -1265,11 +1269,14 @@ void WebViewPreferencesInstance::OnRenameTemplate(HWND hwnd) {
     auto DlgProc = [](HWND hDlg, UINT msg, WPARAM wParam, LPARAM) -> INT_PTR {
         switch (msg) {
         case WM_INITDIALOG: {
-            SetWindowTextW(hDlg, TR("Rename Template", "\u91CD\u547D\u540D\u6A21\u677F"));
+            SetWindowTextW(hDlg, TR("Rename Template", "重命名模板"));
             HWND hLabel = GetDlgItem(hDlg, 1000);
             if (hLabel) {
-                std::wstring labelText = TR("New name for \"", "\u65B0\u540D\u79F0 (\"");
-                labelText += s_renameOldName + L"\"):";
+                // 前后缀成对翻译：英文用 "name": 收尾，中文用括号包裹，
+                // 避免任一语言出现括号不配对。
+                std::wstring labelText = TR("New name for \"", "新名称 (\"");
+                labelText += s_renameOldName;
+                labelText += TR("\":", "\"):");
                 SetWindowTextW(hLabel, labelText.c_str());
             }
             HWND hEdit = GetDlgItem(hDlg, 1001);
@@ -1315,10 +1322,10 @@ void WebViewPreferencesInstance::OnRenameTemplate(HWND hwnd) {
             TR("Failed to rename template. Make sure:\n"
                "- The name only contains letters, numbers, hyphens and underscores\n"
                "- A template with the new name doesn't already exist",
-               "\u91CD\u547D\u540D\u5931\u8D25\u3002\u8BF7\u786E\u4FDD:\n"
-               "- \u540D\u79F0\u53EA\u5305\u542B\u5B57\u6BCD\u3001\u6570\u5B57\u3001\u8FDE\u5B57\u7B26\u548C\u4E0B\u5212\u7EBF\n"
-               "- \u4E0D\u5B58\u5728\u540C\u540D\u6A21\u677F"),
-            TR("Rename Failed", "\u91CD\u547D\u540D\u5931\u8D25"), MB_OK | MB_ICONERROR);
+               "重命名失败。请确保:\n"
+               "- 名称只包含字母、数字、连字符和下划线\n"
+               "- 不存在同名模板"),
+            TR("Rename Failed", "重命名失败"), MB_OK | MB_ICONERROR);
         return;
     }
     
@@ -1440,25 +1447,137 @@ void WebViewPreferencesInstance::OnOpenTemplateFolder(HWND hwnd) {
 // API List Dialog
 // ============================================
 
+namespace {
+
+constexpr DWORD DWMWA_USE_IMMERSIVE_DARK_MODE_V = 20;
+constexpr int IDC_API_LIST_EDIT = 1001;
+
+// 每窗口状态：字体与背景画刷统一在 WM_DESTROY 释放
+struct ApiListState {
+    HFONT monoFont = nullptr;
+    HBRUSH bkBrush = nullptr;
+    COLORREF bkColor = 0;
+    COLORREF textColor = 0;
+    bool isDark = false;
+};
+
+bool IsFb2kDarkMode() {
+    auto api = ui_config_manager::tryGet();
+    return api.is_valid() && api->is_dark_mode();
+}
+
+std::wstring WideFromUtf8(const char* s) {
+    return pfc::stringcvt::string_wide_from_utf8(s ? s : "").get_ptr();
+}
+
+std::wstring GuidToWide(const GUID& guid) {
+    return WideFromUtf8(GuidUtils::GuidToString(guid).c_str());
+}
+
+// 按当前 fb2k 深浅色重建配色，并同步标题栏与滚动条主题
+void ApplyApiListTheme(HWND hwnd, ApiListState* state) {
+    if (!state) return;
+
+    state->isDark = IsFb2kDarkMode();
+    // 深色取值与 Preferences 页面自绘背景一致；浅色沿用系统 Window 配色
+    state->bkColor = state->isDark ? RGB(32, 32, 32) : GetSysColor(COLOR_WINDOW);
+    state->textColor = state->isDark ? RGB(222, 222, 222) : GetSysColor(COLOR_WINDOWTEXT);
+
+    if (state->bkBrush) DeleteObject(state->bkBrush);
+    state->bkBrush = CreateSolidBrush(state->bkColor);
+
+    BOOL darkTitleBar = state->isDark ? TRUE : FALSE;
+    ::DwmSetWindowAttribute(hwnd, DWMWA_USE_IMMERSIVE_DARK_MODE_V,
+        &darkTitleBar, sizeof(darkTitleBar));
+
+    // EDIT 的非客户区滚动条只能靠 UxTheme 切换，WM_CTLCOLOR 管不到
+    HWND hEdit = GetDlgItem(hwnd, IDC_API_LIST_EDIT);
+    if (hEdit) {
+        SetWindowTheme(hEdit, state->isDark ? L"DarkMode_Explorer" : nullptr, nullptr);
+    }
+
+    InvalidateRect(hwnd, nullptr, TRUE);
+    if (hEdit) InvalidateRect(hEdit, nullptr, TRUE);
+}
+
+// mainmenu_commands_v2 组件（ESLyric 等）只注册一个父槽位，真正的子命令由
+// dynamic_instantiate() 在运行时构建。不展开这棵树，枚举结果里只剩下不可执行
+// 的容器 GUID。语义与 DiscoveryApi::CollectDynamicMenuNodes 保持一致。
+constexpr int kMaxDynamicMenuDepth = 16;
+
+void AppendDynamicMenuNodes(const mainmenu_node::ptr& node,
+                            const std::wstring& pathPrefix,
+                            const std::wstring& ownerGuid,
+                            std::wstring& out,
+                            int& count,
+                            int depth) {
+    if (!node.is_valid() || depth > kMaxDynamicMenuDepth) return;
+
+    t_uint32 type = mainmenu_node::type_separator;
+    try { type = node->get_type(); } catch (...) { return; }
+    if (type == mainmenu_node::type_separator) return;
+
+    pfc::string8 display;
+    t_uint32 flags = 0;
+    try { node->get_display(display, flags); } catch (...) {
+        // 标签取不到时继续遍历子树，不整棵丢弃
+    }
+
+    std::wstring label = WideFromUtf8(display.get_ptr());
+    std::wstring path = pathPrefix;
+    // 部分组件把动态子树根节点的标签写成与静态父槽位同名，再拼一次会得到
+    // "桌面歌词/桌面歌词/显示" 这样的重复路径
+    const bool duplicatesOwnerLabel = (depth == 0 && label == pathPrefix);
+    if (!label.empty() && !duplicatesOwnerLabel) {
+        if (!path.empty()) path += L'/';
+        path += label;
+    }
+
+    if (type == mainmenu_node::type_group) {
+        t_size childCount = 0;
+        try { childCount = node->get_children_count(); } catch (...) { return; }
+        for (t_size i = 0; i < childCount; i++) {
+            mainmenu_node::ptr child;
+            try { child = node->get_child(i); } catch (...) { continue; }
+            AppendDynamicMenuNodes(child, path, ownerGuid, out, count, depth + 1);
+        }
+        return;
+    }
+
+    GUID subGuid = pfc::guid_null;
+    try { subGuid = node->get_guid(); } catch (...) {}
+    if (subGuid == pfc::guid_null) return;  // 无法定址，无法执行
+
+    out += L"    { path: \"" + path + L"\", guid: \"" + ownerGuid +
+           L"\", subGuid: \"" + GuidToWide(subGuid) + L"\" },\r\n";
+    count++;
+}
+
+} // anonymous namespace
+
 // API 列表对话框窗口过程
 static LRESULT CALLBACK ApiListWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
+    auto* state = reinterpret_cast<ApiListState*>(GetWindowLongPtrW(hwnd, GWLP_USERDATA));
+
     switch (msg) {
     case WM_CREATE:
         {
-            HFONT hFont = (HFONT)GetStockObject(DEFAULT_GUI_FONT);
             RECT rc;
             GetClientRect(hwnd, &rc);
-            
+
+            state = new ApiListState();
+            SetWindowLongPtrW(hwnd, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(state));
+
             // 创建只读编辑框
             HWND hEdit = CreateWindowExW(
-                WS_EX_CLIENTEDGE,
+                0,
                 L"EDIT",
                 L"",
                 WS_CHILD | WS_VISIBLE | WS_VSCROLL | WS_HSCROLL | 
                 ES_MULTILINE | ES_READONLY | ES_AUTOVSCROLL | ES_AUTOHSCROLL,
                 0, 0, rc.right, rc.bottom,
                 hwnd,
-                (HMENU)1001,
+                reinterpret_cast<HMENU>(static_cast<UINT_PTR>(IDC_API_LIST_EDIT)),
                 (HINSTANCE)GetWindowLongPtrW(hwnd, GWLP_HINSTANCE),
                 nullptr);
             
@@ -1489,6 +1608,9 @@ static LRESULT CALLBACK ApiListWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARA
                     CLEARTYPE_QUALITY, FIXED_PITCH | FF_MODERN, L"Consolas");
             }
             SendMessageW(hEdit, WM_SETFONT, (WPARAM)hMonoFont, TRUE);
+            state->monoFont = hMonoFont;
+
+            ApplyApiListTheme(hwnd, state);
             
             // 获取所有注册的 API
             auto apiNames = BridgeCore::GetInstance().GetRegisteredApiNames();
@@ -1523,35 +1645,78 @@ static LRESULT CALLBACK ApiListWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARA
             text += L"//------------------------------------------------------------------------------\r\n";
             text += L"// SECTION 2: External Plugin Menu Commands\r\n";
             text += L"// Use: discovery.executeMainMenuCommand({ guid: '...' })\r\n";
+            text += L"//\r\n";
+            text += L"// GUIDs are compile-time constants inside each component, so they are\r\n";
+            text += L"// identical on English and localized foobar2000 installs. Only the 'name'\r\n";
+            text += L"// field follows the UI language - never match on it across machines.\r\n";
+            text += L"//\r\n";
+            text += L"// Entries with dynamic: true are parent slots created by\r\n";
+            text += L"// mainmenu_commands_v2 (ESLyric and most SMP-era components). The parent\r\n";
+            text += L"// GUID is only a container and is NOT executable on its own - see the\r\n";
+            text += L"// dynamicMenuCommands list below for the executable children.\r\n";
             text += L"//------------------------------------------------------------------------------\r\n\r\n";
             
             {
                 service_enum_t<mainmenu_commands> e;
                 service_ptr_t<mainmenu_commands> ptr;
                 int cmdCount = 0;
+                int dynamicParentCount = 0;
+                // 动态子命令单独成表，避免与静态命令混在一起被误当作可直接执行
+                std::wstring dynamicText;
+                int dynamicCount = 0;
+
                 text += L"const externalMenuCommands = [\r\n";
                 while (e.next(ptr)) {
-                    t_uint32 count = ptr->get_command_count();
+                    t_uint32 count = 0;
+                    try { count = ptr->get_command_count(); } catch (...) { continue; }
+
+                    service_ptr_t<mainmenu_commands_v2> v2;
+                    const bool hasV2 = ptr->service_query_t(v2);
+
                     for (t_uint32 i = 0; i < count; i++) {
-                        pfc::string8 name, desc;
-                        ptr->get_name(i, name);
-                        ptr->get_description(i, desc);
-                        GUID cmdGuid = ptr->get_command(i);
-                        
-                        char guidBuf[64];
-                        sprintf_s(guidBuf, "{%08X-%04X-%04X-%02X%02X-%02X%02X%02X%02X%02X%02X}",
-                            cmdGuid.Data1, cmdGuid.Data2, cmdGuid.Data3,
-                            cmdGuid.Data4[0], cmdGuid.Data4[1], cmdGuid.Data4[2], cmdGuid.Data4[3],
-                            cmdGuid.Data4[4], cmdGuid.Data4[5], cmdGuid.Data4[6], cmdGuid.Data4[7]);
-                        
-                        std::wstring wname = pfc::stringcvt::string_wide_from_utf8(name.get_ptr()).get_ptr();
-                        std::wstring wguid = pfc::stringcvt::string_wide_from_utf8(guidBuf).get_ptr();
-                        
-                        text += L"    { name: \"" + wname + L"\", guid: \"" + wguid + L"\" },\r\n";
+                        pfc::string8 name;
+                        GUID cmdGuid = pfc::guid_null;
+                        try { ptr->get_name(i, name); } catch (...) {}
+                        try { cmdGuid = ptr->get_command(i); } catch (...) {}
+
+                        std::wstring wname = WideFromUtf8(name.get_ptr());
+                        std::wstring wguid = GuidToWide(cmdGuid);
+
+                        bool isDynamic = false;
+                        if (hasV2) {
+                            try { isDynamic = v2->is_command_dynamic(i); } catch (...) {}
+                        }
+
+                        text += L"    { name: \"" + wname + L"\", guid: \"" + wguid + L"\"";
+                        if (isDynamic) text += L", dynamic: true";
+                        text += L" },\r\n";
                         cmdCount++;
+
+                        if (!isDynamic) continue;
+                        dynamicParentCount++;
+
+                        mainmenu_node::ptr root;
+                        try { root = v2->dynamic_instantiate(i); } catch (...) { continue; }
+                        if (!root.is_valid()) continue;
+
+                        AppendDynamicMenuNodes(root, wname, wguid, dynamicText, dynamicCount, 0);
                     }
                 }
-                text += L"];  // " + std::to_wstring(cmdCount) + L" commands\r\n\r\n";
+                text += L"];  // " + std::to_wstring(cmdCount) + L" commands, " +
+                        std::to_wstring(dynamicParentCount) + L" dynamic parent slots\r\n\r\n";
+
+                text += L"//------------------------------------------------------------------------------\r\n";
+                text += L"// SECTION 2b: Dynamic Submenu Commands (expanded at runtime)\r\n";
+                text += L"// Use: discovery.executeMainMenuCommand({ guid: '...', subGuid: '...' })\r\n";
+                text += L"//\r\n";
+                text += L"// These are the executable leaves of the dynamic: true parents above.\r\n";
+                text += L"// Both guid and subGuid are required. subGuid may change between\r\n";
+                text += L"// component versions, so resolve it at runtime via\r\n";
+                text += L"// discovery.getMainMenuCommands() instead of hardcoding it.\r\n";
+                text += L"//------------------------------------------------------------------------------\r\n\r\n";
+                text += L"const dynamicMenuCommands = [\r\n";
+                text += dynamicText;
+                text += L"];  // " + std::to_wstring(dynamicCount) + L" dynamic commands\r\n\r\n";
             }
             
             // Section 3: Installed Components
@@ -1688,8 +1853,16 @@ static LRESULT CALLBACK ApiListWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARA
             text += L"// window.fb2k.invoke('playlist.getAll')\r\n\r\n";
             text += L"// Library search:\r\n";
             text += L"// window.fb2k.invoke('library.search', { query: 'artist:Beatles' })\r\n\r\n";
-            text += L"// Discovery - execute external plugin main menu command:\r\n";
+            text += L"// Discovery - execute a static main menu command:\r\n";
             text += L"// window.fb2k.invoke('discovery.executeMainMenuCommand', { guid: '{...}' })\r\n\r\n";
+            text += L"// Discovery - execute a dynamic child command (ESLyric etc.):\r\n";
+            text += L"// Both guid and subGuid are required; the parent slot alone is not executable.\r\n";
+            text += L"// window.fb2k.invoke('discovery.executeMainMenuCommand', { guid: '{...}', subGuid: '{...}' })\r\n\r\n";
+            text += L"// Resolve commands at runtime instead of hardcoding GUIDs from this dump.\r\n";
+            text += L"// GUIDs are locale-independent, but they change across plugin versions:\r\n";
+            text += L"// const { commands } = await fb2k.invoke('discovery.getMainMenuCommands', {});\r\n";
+            text += L"// const cmd = commands.find(c => c.isDynamic && /lyric/i.test(c.path));\r\n";
+            text += L"// await fb2k.invoke('discovery.executeMainMenuCommand', { guid: cmd.guid, subGuid: cmd.subGuid });\r\n\r\n";
             text += L"// Discovery - execute external plugin context menu command:\r\n";
             text += L"// window.fb2k.invoke('discovery.executeContextMenuCommand', { guid: '{...}' })\r\n";
             text += L"// Note: Context menu commands operate on currently playing or selected tracks\r\n\r\n";
@@ -1697,15 +1870,12 @@ static LRESULT CALLBACK ApiListWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARA
             text += L"// window.fb2k.invoke('discovery.getContextMenuCommands')\r\n";
             
             SetWindowTextW(hEdit, text.c_str());
-            
-            // 保存字体句柄以便稍后释放
-            SetWindowLongPtrW(hwnd, GWLP_USERDATA, (LONG_PTR)hMonoFont);
             return 0;
         }
         
     case WM_SIZE:
         {
-            HWND hEdit = GetDlgItem(hwnd, 1001);
+            HWND hEdit = GetDlgItem(hwnd, IDC_API_LIST_EDIT);
             if (hEdit) {
                 RECT rc;
                 GetClientRect(hwnd, &rc);
@@ -1714,11 +1884,41 @@ static LRESULT CALLBACK ApiListWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARA
             return 0;
         }
         
+    // 系统主题切换时（浅色 <-> 深色）重新应用配色
+    case WM_SETTINGCHANGE:
+        if (state && lParam &&
+            _wcsicmp(reinterpret_cast<const wchar_t*>(lParam), L"ImmersiveColorSet") == 0) {
+            ApplyApiListTheme(hwnd, state);
+        }
+        break;
+        
+    case WM_CTLCOLORSTATIC:
+    case WM_CTLCOLOREDIT:
+        if (state && state->bkBrush) {
+            HDC hdc = (HDC)wParam;
+            SetTextColor(hdc, state->textColor);
+            SetBkColor(hdc, state->bkColor);
+            return (LRESULT)state->bkBrush;
+        }
+        break;
+        
+    case WM_ERASEBKGND:
+        if (state && state->bkBrush) {
+            HDC hdc = (HDC)wParam;
+            RECT rc;
+            GetClientRect(hwnd, &rc);
+            FillRect(hdc, &rc, state->bkBrush);
+            return TRUE;
+        }
+        break;
+        
     case WM_DESTROY:
         {
-            HFONT hFont = (HFONT)GetWindowLongPtrW(hwnd, GWLP_USERDATA);
-            if (hFont) {
-                DeleteObject(hFont);
+            if (state) {
+                if (state->monoFont) DeleteObject(state->monoFont);
+                if (state->bkBrush) DeleteObject(state->bkBrush);
+                delete state;
+                SetWindowLongPtrW(hwnd, GWLP_USERDATA, 0);
             }
             return 0;
         }
@@ -1743,7 +1943,8 @@ void WebViewPreferencesInstance::OnShowApiList(HWND hwnd) {
         wc.lpfnWndProc = ApiListWndProc;
         wc.hInstance = core_api::get_my_instance();
         wc.hCursor = LoadCursor(nullptr, IDC_ARROW);
-        wc.hbrBackground = (HBRUSH)(COLOR_WINDOW + 1);
+        // 背景由 WM_ERASEBKGND 按当前深浅色自绘，避免深色模式下闪白
+        wc.hbrBackground = nullptr;
         wc.lpszClassName = className;
         wc.hIcon = nullptr;
         wc.hIconSm = nullptr;
