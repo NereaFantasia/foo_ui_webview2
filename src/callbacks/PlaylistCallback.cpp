@@ -128,10 +128,15 @@ public:
         size_t p_name_len
     ) override {
         try {
+            // p_name_len may be a "length unknown" sentinel; pfc clamps it to the
+            // real NUL-terminated length. Constructing std::string directly from
+            // the raw pair would copy the sentinel count verbatim.
+            pfc::string8 name;
+            name.set_string(p_name, p_name_len);
             Fb2kPlaylistService::InvalidatePlaylistCache();
             WebViewContext::GetInstance().BroadcastEvent("playlist:created", {
                 {"index", p_index},
-                {"name", std::string(p_name, p_name_len)},
+                {"name", name.get_ptr()},
             });
         } catch (...) {}
     }
@@ -185,10 +190,13 @@ public:
         size_t p_new_name_len
     ) override {
         try {
+            // Same sentinel-length caveat as on_playlist_created.
+            pfc::string8 newName;
+            newName.set_string(p_new_name, p_new_name_len);
             Fb2kPlaylistService::InvalidatePlaylistCache();
             WebViewContext::GetInstance().BroadcastEvent("playlist:renamed", {
                 {"index", p_index},
-                {"name", std::string(p_new_name, p_new_name_len)},
+                {"name", newName.get_ptr()},
             });
         } catch (...) {}
     }

@@ -27,9 +27,17 @@ namespace {
         std::string currentEntryName;
 
         void on_device(const GUID& p_guid, const char* p_name, unsigned p_name_length) override {
+            // p_name_length may be a sentinel meaning "unknown length, p_name is
+            // NUL-terminated" (foobar2000 passes unsigned(-1) for some backends).
+            // Constructing std::string(ptr, count) would memcpy that raw count, so
+            // clamp to the real length first - this mirrors what the SDK's own
+            // consumer does via pfc::string_base::set_string().
+            pfc::string8 name;
+            name.set_string(p_name, p_name_length);
+
             devices.push_back({
                 {"guid", GuidToString(p_guid)},
-                {"name", std::string(p_name, p_name_length)},
+                {"name", name.get_ptr()},
                 {"entry", currentEntryName},
                 {"entryGuid", GuidToString(currentEntryGuid)}
             });
