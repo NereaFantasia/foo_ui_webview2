@@ -83,6 +83,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Code written against the old declarations read `undefined` at runtime and now
   fails type-checking instead — read `minimized` / `enabled` (or
   `isAlwaysOnTop`) going forward.
+- Corrected `output.getDevices()` element typing and error handling. The
+  declared element type previously borrowed the `config.getOutputDevices`
+  shape (`id` / `isCurrent` / `outputId` / `deviceId`), none of which exist on
+  the wire; devices actually carry `guid`, `name`, `entry`, and `entryGuid`
+  (exported as `OutputDeviceInfo`). Device `guid` is all-zero for a backend's
+  "default device" row and may repeat across backends, so key rows by the
+  `(entryGuid, guid)` pair. The wrapper also silently returned an empty array
+  when the host reported a failure; it now throws with the host error message
+  instead, since the flat array return type has no error channel.
+- `dsp.moveDsp()` now types the `from` / `to` fields echoed in the response;
+  `to` reflects the final landing index after the move.
 - Corrected `http.*` request dispatch to invoke `http.get` directly instead of
   threading an unused method parameter, and aligned `menu` / `ui` facades with
   the generated parameter and response contracts.

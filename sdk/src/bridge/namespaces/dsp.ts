@@ -94,8 +94,15 @@ export const dsp = {
             { index },
         ),
     moveDsp: (from: number, to: number) =>
-        bridge.invoke<BaseResponse & { movedDsp?: string; message?: string }>(
-            'dsp.moveDsp',
-            { from, to },
-        ),
+        bridge.invoke<
+            BaseResponse & {
+                movedDsp?: string;
+                /** Source index as passed in. */
+                from?: number;
+                /** Final landing index after the move. */
+                to?: number;
+                /** Present when `from === to` and no move was needed. */
+                message?: string;
+            }
+        >('dsp.moveDsp', { from, to }),
 };
