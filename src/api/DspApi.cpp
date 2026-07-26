@@ -355,17 +355,47 @@ namespace {
         try {
             dsp_chain_config_impl newChain;
 
-            for (const auto& item : params["dsps"]) {
-                std::string guidStr = item.value("guid", "");
-                if (guidStr.empty()) continue;
+            // Every entry must resolve to an installed DSP. Skipping bad entries
+            // silently would apply a shorter chain than the caller asked for while
+            // still reporting success, so each failure mode rejects the whole call
+            // with an index-tagged reason instead.
+            const json& items = params["dsps"];
+            for (size_t i = 0; i < items.size(); i++) {
+                const json& item = items[i];
+                const std::string at = "dsps[" + std::to_string(i) + "]";
+
+                if (!item.is_object()) {
+                    return {{"success", false},
+                            {"error", at + " must be an object"}};
+                }
+
+                const json::const_iterator guidIt = item.find("guid");
+                if (guidIt == item.end() || !guidIt->is_string()) {
+                    return {{"success", false},
+                            {"error", at + ": guid is required"}};
+                }
+
+                const std::string guidStr = guidIt->get<std::string>();
+                if (guidStr.empty()) {
+                    return {{"success", false},
+                            {"error", at + ": guid is required"}};
+                }
 
                 GUID guid;
-                if (!StringToGuid(guidStr, guid)) continue;
-
-                dsp_preset_impl preset;
-                if (dsp_entry::g_get_default_preset(preset, guid)) {
-                    newChain.insert_item(preset, newChain.get_count());
+                if (!StringToGuid(guidStr, guid)) {
+                    return {{"success", false},
+                            {"error", at + ": Invalid GUID format: " + guidStr}};
                 }
+
+                // A well-formed GUID for a DSP that is not installed (component
+                // removed, typo in a hand-built GUID) lands here.
+                dsp_preset_impl preset;
+                if (!dsp_entry::g_get_default_preset(preset, guid)) {
+                    return {{"success", false},
+                            {"error", at + ": DSP not found or no default preset: " + guidStr}};
+                }
+
+                newChain.insert_item(preset, newChain.get_count());
             }
 
             auto dsp_mgr = dsp_config_manager::get();
