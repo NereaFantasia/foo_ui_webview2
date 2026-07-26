@@ -98,17 +98,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   submenu degrade). Older runtimes ignore the unknown key and keep horizontal
   interaction. Range normalization is shared (`max<min` swap, `max==min`
   constant with no value change, initial clamp, IPC out-of-range reject).
-  `getMenuItems()` round-trips orientation. Themes that need vertical sliders
-  should probe `config.getVersionInfo().plugin.version` first (minimum plugin
-  version not finalized — do not hard-code a fake floor). The SDK wrapper
+  `getMenuItems()` round-trips orientation. Requires plugin 1.10.0 or newer;
+  themes that must support older hosts should probe
+  `config.getVersionInfo().plugin.version` first. The SDK wrapper
   passes the field through and does not inject a default.
 - **`TrayMenuConfig.layoutMode`** (`'flat' | 'zones'`) — opt-in WebView tray DOM
   structure. Default `'flat'` keeps legacy `#menu > .fb-item` direct children.
   `'zones'` emits `.fb-zone[data-zone]` wrappers for non-empty top / playback /
   bottom containers. Native backends ignore the field; older runtimes ignore the
   unknown key without creating wrappers. Public `menu.show` is unaffected.
-  Themes that need zones should probe `config.getVersionInfo().plugin.version`
-  first (minimum plugin version not finalized — do not hard-code a fake floor).
+  Requires plugin 1.10.0 or newer; themes that must support older hosts should
+  probe `config.getVersionInfo().plugin.version` first.
   Stable CSS hooks: `.fb-menu[data-depth]`, `.fb-zone[data-zone]`,
   `.fb-item[data-item-id|data-kind|data-depth|data-zone]`. `data-item-token` is
   internal and not a public CSS contract.

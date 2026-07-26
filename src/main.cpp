@@ -388,7 +388,10 @@ DECLARE_COMPONENT_VERSION(
     "  Panel     (2)   - Panel mode detection\n"
     "  Test      (2)   - Echo, version check\n"
 "\n"
-"  NEW IN v" PLUGIN_VERSION_STR "\n"
+// Historical "NEW IN" sections use literal versions on purpose: the list
+// below describes 1.11.0 and must not follow PLUGIN_VERSION_STR into the
+// next release. When cutting a new version, add a fresh section above.
+"  NEW IN v1.11.0\n"
     "========================================\n"
     "\n"
     "  + Tray items can declare a native playback action\n"

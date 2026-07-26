@@ -14,7 +14,7 @@ foobar2000 v2.0 is the 64-bit cutoff. If you still run v1.x, upgrade to v2.0+ fi
 
 ## Install the component package
 
-1. **Download the package** — get `foo_ui_webview2-<version>.fb2k-component` from the release page (the filename includes the component version, for example `foo_ui_webview2-1.9.0.fb2k-component`)
+1. **Download the package** — get `foo_ui_webview2-<version>.fb2k-component` from the release page (the filename includes the component version, for example `foo_ui_webview2-1.11.0.fb2k-component`)
 2. **Install through foobar2000** — open or double-click the package so foobar2000 shows its component install confirmation
 3. **Confirm** — click `Yes` and let foobar2000 install the package contents
 4. **Restart foobar2000**

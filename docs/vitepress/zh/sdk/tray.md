@@ -237,7 +237,7 @@ await fb.tray.setContextMenu(items, {
 ```javascript
 const ver = await fb.config.getVersionInfo();
 const plugin = ver?.plugin?.version; // probe before opting into zones
-// Minimum plugin version that ships zones is not finalized yet — do not hard-code a fake floor.
+// zones 自 1.10.0 起提供；需兼容旧版时先探测运行时版本。
 await fb.tray.setContextMenu(items, {
   render: 'webview',
   layoutMode: 'zones',

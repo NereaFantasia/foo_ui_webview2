@@ -408,7 +408,7 @@ await fb2k.invoke('tray.setContextMenu', {
     },
 });
 
-// layoutMode:'zones'（opt-in）：先探测插件版本；最低版本未最终确认前不要写死假版本
+// layoutMode:'zones'（opt-in）：zones 自 1.10.0 起提供；需兼容旧版时先探测运行时版本
 const ver = await fb2k.invoke('config.getVersionInfo', {});
 const _pluginVersion = ver && ver.plugin && ver.plugin.version;
 await fb2k.invoke('tray.setContextMenu', {
