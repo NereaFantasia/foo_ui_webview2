@@ -323,14 +323,12 @@ namespace {
             pfc::string8 name;
             dsp_entry::g_name_from_guid(name, preset.get_owner());
 
-            // Remove from original position
+            // Remove from original position. The chain is now one shorter, so
+            // inserting at `to` already yields final index `to` — subtracting 1
+            // for upward moves would over-correct (a 1-slot upward move would
+            // become a no-op, and nothing could reach the tail).
             chain.remove_item(from);
-
-            // Adjust target position: removing from earlier index shifts later items left by 1
-            size_t actualTo = (from < to) ? to - 1 : to;
-
-            // Insert at new position
-            chain.insert_item(preset, actualTo);
+            chain.insert_item(preset, to);
 
             // Apply
             dsp_mgr->set_core_settings(chain);
@@ -339,7 +337,7 @@ namespace {
                 {"success", true},
                 {"movedDsp", name.get_ptr()},
                 {"from", from},
-                {"to", actualTo}
+                {"to", to}
             };
         } catch (const std::exception& e) {
             return {{"success", false}, {"error", e.what()}};
