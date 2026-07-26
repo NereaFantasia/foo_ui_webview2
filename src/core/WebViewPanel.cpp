@@ -28,6 +28,8 @@
 #include "api/LyricsApi.h"
 #include "api/MetadataApi.h"
 #include "api/AudioApi.h"
+#include "api/DspApi.h"
+#include "api/OutputApi.h"
 #include "api/ConsoleApi.h"
 #include "api/MiscApi.h"
 #include "api/MenuApi.h"
@@ -561,6 +563,8 @@ void WebViewPanel::RegisterAllApis() {
     RegisterLyricsApi();
     RegisterMetadataApi();
     RegisterAudioApi();
+    RegisterDspApi();
+    RegisterOutputApi();
     RegisterConsoleApi();
     RegisterMiscApi();
     RegisterMenuApi();

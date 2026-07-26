@@ -232,6 +232,8 @@
       <WholeProgramOptimization>false</WholeProgramOptimization>
     </ClCompile>
     <ClCompile Include="src\api\AudioApi.cpp" />
+    <ClCompile Include="src\api\DspApi.cpp" />
+    <ClCompile Include="src\api\OutputApi.cpp" />
     <ClCompile Include="src\api\ConsoleApi.cpp" />
     <ClCompile Include="src\api\MiscApi.cpp" />
     <ClCompile Include="src\api\MenuApi.cpp" />
@@ -333,6 +335,8 @@
     <ClInclude Include="src\api\LyricsApi.h" />
     <ClInclude Include="src\api\MetadataApi.h" />
     <ClInclude Include="src\api\AudioApi.h" />
+    <ClInclude Include="src\api\DspApi.h" />
+    <ClInclude Include="src\api\OutputApi.h" />
     <ClInclude Include="src\api\ConsoleApi.h" />
     <ClInclude Include="src\api\MiscApi.h" />
     <ClInclude Include="src\api\MenuApi.h" />
