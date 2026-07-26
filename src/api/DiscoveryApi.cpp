@@ -68,7 +68,11 @@ namespace {
 
         std::string label = SafeUtf8String(text.get_ptr());
         std::string path = pathPrefix;
-        if (!label.empty()) {
+        // Some components label the root of their dynamic subtree with the same
+        // text as the owning static slot; appending it again would yield paths
+        // like "Desktop Lyrics/Desktop Lyrics/Show".
+        const bool duplicatesOwnerLabel = (depth == 0 && label == pathPrefix);
+        if (!label.empty() && !duplicatesOwnerLabel) {
             if (!path.empty()) path += '/';
             path += label;
         }

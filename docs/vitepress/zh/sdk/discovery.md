@@ -20,7 +20,7 @@
 
 返回 `{ commands, count, dynamicCount }`。每个命令包含 `name`、`description`、`guid`、`parentGuid` 与 `index`。
 
-对在运行时构建子菜单的组件（`mainmenu_commands_v2`，例如 ESLyric），默认会展开其动态子树，因此结果中除静态父项外还包含子命令。展开出的子项带有 `subGuid`、`isDynamic: true` 以及形如 `View/ESLyric/搜索歌词` 的 `path`。传入 `{ expandDynamic: false }` 可只枚举静态注册表。
+对在运行时构建子菜单的组件（`mainmenu_commands_v2`，例如 ESLyric），默认会展开其动态子树，因此结果中除静态父项外还包含子命令。展开出的子项带有 `subGuid`、`isDynamic: true` 以及形如 `ESLyric/搜索歌词` 的 `path`。该路径以所属静态命令为根，不含顶层菜单。传入 `{ expandDynamic: false }` 可只枚举静态注册表。
 
 ```javascript
 const all = await fb.discovery.getMainMenuCommands();

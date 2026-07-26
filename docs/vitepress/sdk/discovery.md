@@ -20,7 +20,7 @@ Signature: `fb.discovery.getMainMenuCommands(options?: { expandDynamic?: boolean
 
 Returns `{ commands, count, dynamicCount }`. Each command includes `name`, `description`, `guid`, `parentGuid`, and `index`.
 
-Components that build their submenu at runtime (`mainmenu_commands_v2`, for example ESLyric) are expanded by default, so their child commands appear alongside the static parent slot. Expanded children carry `subGuid`, `isDynamic: true`, and a `path` such as `View/ESLyric/Search lyrics`. Pass `{ expandDynamic: false }` to enumerate the static registry only.
+Components that build their submenu at runtime (`mainmenu_commands_v2`, for example ESLyric) are expanded by default, so their child commands appear alongside the static parent slot. Expanded children carry `subGuid`, `isDynamic: true`, and a `path` such as `ESLyric/Search lyrics`. The path is rooted at the owning static command, not at the top-level menu. Pass `{ expandDynamic: false }` to enumerate the static registry only.
 
 ```javascript
 const all = await fb.discovery.getMainMenuCommands();
