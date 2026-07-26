@@ -287,10 +287,14 @@ static bool TryReadInfoDirect(const char *canonicalPath, t_uint32 subsong,
 
 static bool ReadMetadataInfoWithFallback(const metadb_handle_ptr& handle,
                                          const char *canonicalPath,
+                                         t_uint32 subsong,
                                          file_info_impl &info) {
   bool gotInfo = handle->get_info(info);
 
-  if ((!gotInfo || !HasEssentialMetadataFields(info)) && TryReadInfoDirect(canonicalPath, 0, info)) {
+  // The direct reader must receive the same subsong the handle was built with;
+  // multi-subsong containers (ISO / CUE / multi-track FLAC) would otherwise
+  // fall back to track 0 and report the wrong track's tags.
+  if ((!gotInfo || !HasEssentialMetadataFields(info)) && TryReadInfoDirect(canonicalPath, subsong, info)) {
     gotInfo = true;
   }
 
@@ -1113,13 +1117,19 @@ json MetadataRead(const json &params) {
   }
 
   try {
+    // Resolve the subsong so multi-track containers (CUE sheets, ISO images)
+    // report the requested track instead of always falling back to track 0.
+    int explicitCueIndex = params.value("cueIndex", -1);
+    auto parsed = ParseSubsongIndex(path, explicitCueIndex);
+    const auto subsong = static_cast<t_uint32>(parsed.subsongIndex);
+
     // Convert path to canonical form (essential for Unicode paths)
     pfc::string8 canonicalPath;
-    filesystem::g_get_canonical_path(path.c_str(), canonicalPath);
+    filesystem::g_get_canonical_path(parsed.cleanPath.c_str(), canonicalPath);
 
     auto mdb = metadb::get();
     metadb_handle_ptr handle;
-    handle = mdb->handle_create(canonicalPath.c_str(), 0);
+    handle = mdb->handle_create(canonicalPath.c_str(), subsong);
 
     if (!handle.is_valid()) {
       return {
@@ -1127,7 +1137,8 @@ json MetadataRead(const json &params) {
     }
 
     file_info_impl info;
-    if (!ReadMetadataInfoWithFallback(handle, canonicalPath.c_str(), info)) {
+    if (!ReadMetadataInfoWithFallback(handle, canonicalPath.c_str(), subsong,
+                                     info)) {
       return {{"success", false}, {"error", "Failed to get track info"}};
     }
 
@@ -1191,11 +1202,16 @@ json MetadataReadBatch(const json &params) {
     std::string path = pathItem.get<std::string>();
     
     try {
+      // Per-entry subsong: batch paths may mix plain files and
+      // "container|subsong:N" references.
+      auto parsed = ParseSubsongIndex(path, -1);
+      const auto subsong = static_cast<t_uint32>(parsed.subsongIndex);
+
       pfc::string8 canonicalPath;
-      filesystem::g_get_canonical_path(path.c_str(), canonicalPath);
+      filesystem::g_get_canonical_path(parsed.cleanPath.c_str(), canonicalPath);
 
       metadb_handle_ptr handle;
-      handle = mdb->handle_create(canonicalPath.c_str(), 0);
+      handle = mdb->handle_create(canonicalPath.c_str(), subsong);
 
       if (!handle.is_valid()) {
         results.push_back({{"path", path}, {"success", false}, {"error", "Failed to open file"}});
@@ -1204,7 +1220,8 @@ json MetadataReadBatch(const json &params) {
       }
 
       file_info_impl info;
-      if (!ReadMetadataInfoWithFallback(handle, canonicalPath.c_str(), info)) {
+      if (!ReadMetadataInfoWithFallback(handle, canonicalPath.c_str(), subsong,
+                                       info)) {
         results.push_back({{"path", path}, {"success", false}, {"error", "Failed to get track info"}});
         errorCount++;
         continue;
@@ -1300,13 +1317,21 @@ json MetadataReadByPath(const json &params) {
   }
 
   try {
+    // Multi-subsong containers (CUE / ISO / multi-track files) address a single
+    // track as `path|subsong:N`. The suffix must be stripped before the path is
+    // canonicalized, and the index has to reach both handle_create() and the
+    // direct-read fallback, otherwise track N reports track 0's tags.
+    int explicitCueIndex = params.value("cueIndex", -1);
+    auto parsed = ParseSubsongIndex(path, explicitCueIndex);
+    const auto subsong = static_cast<t_uint32>(parsed.subsongIndex);
+
     // Convert path to canonical form (essential for Unicode paths)
     pfc::string8 canonicalPath;
-    filesystem::g_get_canonical_path(path.c_str(), canonicalPath);
+    filesystem::g_get_canonical_path(parsed.cleanPath.c_str(), canonicalPath);
 
     auto mdb = metadb::get();
     metadb_handle_ptr handle;
-    handle = mdb->handle_create(canonicalPath.c_str(), 0);
+    handle = mdb->handle_create(canonicalPath.c_str(), subsong);
 
     if (!handle.is_valid()) {
       return {{"success", false},
@@ -1316,7 +1341,8 @@ json MetadataReadByPath(const json &params) {
     }
 
     file_info_impl info;
-    if (!ReadMetadataInfoWithFallback(handle, canonicalPath.c_str(), info)) {
+    if (!ReadMetadataInfoWithFallback(handle, canonicalPath.c_str(), subsong,
+                                      info)) {
       return {{"success", false}, {"error", "Failed to get track info"}};
     }
 
