@@ -2,6 +2,17 @@
 
 元数据读写、封面嵌入、批量操作、评分。共 10 个 API（含别名 `metadata.removeField` → `metadata.removeTag` 共享同一 handler）。
 
+## 定位容器内的单曲 {#subsong-addressing}
+
+CUE、ISO 镜像与多轨文件都是一个文件路径下含多首曲目。所有读取方法用同一种方式定位其中一首：
+
+- 在路径后追加 `|subsong:N`，例如 `D:\album.cue|subsong:2`；
+- 或在普通路径之外另传 `cueIndex: N`。两者同时给出时以 `cueIndex` 为准。
+
+编号沿用 foobar2000 的规则，**CUE 从 1 开始**：`|subsong:1` 是第一首。不带后缀的容器路径（或 `|subsong:0`）指向 subsong 0，而 CUE 中并不存在该编号，因此会返回 `Failed to get track info` —— 这是宿主的编号方式，不是请求写错了。
+
+读取普通单轨文件无需后缀；`|subsong:0` 与不写等价。
+
 ## 读取
 
 ### metadata.read
@@ -10,9 +21,10 @@
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
-| `path` | `string` | 否 | 可选；默认 。 |
+| `path` | `string` | 否 | 可选；默认 。支持 `路径|subsong:N`。 |
+| `cueIndex` | `integer` | 否 | 可选；默认 -1。显式指定容器内曲目序号，优先级高于路径后缀。 |
 
-> 读取链路会先 canonicalize 路径，再通过 `handle_create()` 读取 cached info；若 cached info 缺少关键元数据，则自动退回 direct file read。
+> 读取链路会先剥离 `|subsong:N` 后缀并 canonicalize 路径，再按解析出的 subsong 通过 `handle_create()` 读取 cached info；若 cached info 缺少关键元数据，则以同一 subsong 退回 direct file read。CUE / ISO 等多轨容器的寻址规则见[定位容器内的单曲](#subsong-addressing)。
 
 **返回值**: `{"error":"...","info":"...","path":"...","success":true,"tags":"..."}`
 
@@ -48,11 +60,12 @@ console.log(raw.tags.TITLE, raw.source); // "file"
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
-| `path` | `string` | 否 | 可选；默认 。 |
+| `path` | `string` | 否 | 可选；默认 。支持 `路径|subsong:N`。 |
+| `cueIndex` | `integer` | 否 | 可选；默认 -1。显式指定容器内曲目序号，优先级高于路径后缀。 |
 
 **返回值**: `{"TRACKNUMBER":"...","canonicalPath":"...","error":"...","path":"...","success":true}`
 
-> 若文件缺少 `TRACKNUMBER` 标签，会尝试从文件名提取。若 cached info 不完整，会自动退回 direct file read。
+> 若文件缺少 `TRACKNUMBER` 标签，会尝试从文件名提取。若 cached info 不完整，会自动退回 direct file read。多轨容器寻址见[定位容器内的单曲](#subsong-addressing)。
 
 ```javascript
 const meta = await fb2k.invoke('metadata.readByPath', { path: 'E:\\\\Music\\\\song.flac' });
@@ -65,7 +78,9 @@ console.log(meta.TITLE, meta.ARTIST, meta.DURATION);
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
-| `paths` | `array` | 是 | 必填。 |
+| `paths` | `array` | 是 | 必填。每个元素都可带 `|subsong:N` 后缀，逐项独立解析。 |
+
+> 本方法没有 `cueIndex` 参数：批量调用中每个路径只能通过 `|subsong:N` 指定曲目。见[定位容器内的单曲](#subsong-addressing)。
 
 **返回值**:
 

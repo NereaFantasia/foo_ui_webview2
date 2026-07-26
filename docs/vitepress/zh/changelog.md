@@ -9,6 +9,15 @@
 - `menu.getMainMenu` 新增 `locale`、`i18n`、`withAvailability` 三个选项。`locale` 默认 `'auto'`，保持宿主原生标签不翻译；`i18n: false` 完全关闭 `displayLabel` 翻译；`withAvailability` 默认 `true`，附带各子菜单的命令可用性计数。SDK 侧签名相应变为 `getMainMenu(root?, opts?)`。
 - 修复自定义菜单的 UTF-8 序列化与上下文模式选择。
 
+### DSP 与输出
+
+- **`dsp.*` 与 `output.*` 现在真正可用。** 这 11 个处理器（`dsp.getChain` / `getPresets` / `getAvailable` / `addDsp` / `removeDsp` / `moveDsp` / `applyPreset` / `setChain`，`output.getDevices` / `getEntries` / `getSettings`）此前虽有文档，但其源文件从未被加入编译，所以任何调用都会因方法未注册而失败。自本版起已编译并注册。这两个命名空间没有 SDK facade，请通过 `fb2k.invoke()` 调用。
+- 修复 `output.getDevices` 崩溃。部分输出后端在回调里用「长度未知」哨兵值代替真实长度，原实现直接采用该值，导致读取远超字符串末尾并使 foobar2000 终止。
+- 修复 `dsp.moveDsp` 移动到错误位置。升序移动会少一格，因此向上移动一位等于无操作，且任何项都无法移到链尾；降序移动本来是正确的。返回的 `to` 现在是真实的最终索引。
+- **行为变更** —— `dsp.setChain` 遇到任何不可用条目时整体拒绝，不再静默跳过。此前用三个条目构造的链可能只应用两个却仍返回 `success: true`。四种失败各自返回带索引的原因：`dsps[0] must be an object`、`dsps[0]: guid is required`、`dsps[0]: Invalid GUID format: …`、`dsps[0]: DSP not found or no default preset: …`（GUID 格式合法但该 DSP 未安装）。调用被拒绝时链保持不变。
+- `dsp.getPresets` 在无选中预设时返回 `selectedIndex: -1`。此前返回内部哨兵值 `18446744073709551615`，该值无法用 JavaScript number 表示，到达前端时已是不可用的浮点数。
+- `dsp.getChain` 始终包含 `activePreset` 与 `activePresetIndex`，无选中预设或宿主不支持预设时为 `null` / `-1`。此前这两个键在上述情况下完全缺失，调用方不得不自行探测。
+
 ### Discovery
 
 - **行为变更** —— `discovery.getMainMenuCommands` 与 `discovery.searchCommands` 现在默认展开运行时构建子菜单的组件（`mainmenu_commands_v2`，例如 ESLyric）。**这会改变既有返回结果**：除父级槽位外还会含其子命令。传 `{ expandDynamic: false }` 可回到仅静态注册表的旧行为。
@@ -22,6 +31,11 @@
 - 新增高级设置项 `Keep WebView active in background while CDP remote debugging is on (tray/minimize/lock)`（默认开启）：开启 CDP 远程调试时保持 WebView 后台活跃，以保证截图与时序类自动化工具稳定。
 - 加固 WebView2 崩溃后的恢复：渲染进程失败后不再停留在无响应的空白窗口，而是按上限次数重载页面，反复失败后重建 WebView。
 - 改进封面获取：修正了换曲或改标签后可能返回上一首封面的缓存问题，收紧了请求与参数校验，并把图片解码移出界面线程，大尺寸封面不再造成界面卡顿。`artwork.*` 的请求与响应结构未变。
+
+### 元数据
+
+- 修复 `metadata.read`、`metadata.readByPath`、`metadata.readBatch` 忽略容器内轨道编号的问题。路径里的 `|subsong:N` 后缀既没有被剥离也没有被采用，因此从 CUE、ISO 镜像或多轨文件里读取单条轨道时，要么直接失败，要么返回首轨的标签。这正是这类文件在 foobar2000 界面里能读、经 API 读不到的原因。`metadata.readRaw` 原本就是正确的。
+- `metadata.read` 与 `metadata.readByPath` 新增 `cueIndex` 参数，可显式指定轨道，与 `metadata.readRaw` 一致；其优先级高于路径中的 `|subsong:N` 后缀。
 
 ### SDK
 

@@ -473,7 +473,7 @@ console.log(debug.subscriptions);
 }
 ```
 
-> `activePreset` 和 `activePresetIndex` 仅在 DSP v2 API 可用时返回。
+> `activePreset` 与 `activePresetIndex` 始终存在，无需判断键是否缺失：当前链不对应任何预设（或宿主不支持预设）时分别为 `null` 和 `-1`。手工改链的操作（`addDsp` / `removeDsp` / `moveDsp` / `setChain`）会使活动链脱离预设，此后这两个字段即为 `null` / `-1`。
 
 ### dsp.getPresets
 
@@ -493,6 +493,8 @@ console.log(debug.subscriptions);
 }
 ```
 
+> 未选中任何预设时 `selectedIndex` 为 `-1`。预设本身持久化在 profile 的 `dsp-presets\<名称>.fb2k-dsp`。
+
 ### dsp.applyPreset
 
 应用指定的 DSP 预设。通过名称或索引指定。
@@ -502,7 +504,7 @@ console.log(debug.subscriptions);
 | `index` | `integer` | 否 | 可选；默认 omitted。 |
 | `name` | `string` | 否 | 可选；默认 omitted。 |
 
-> `name` 和 `index` 至少提供一个。
+> `name` 和 `index` 至少提供一个；同时提供时 `index` 优先。
 
 **返回值**: `{ "success": true, "appliedPreset": "My Preset", "appliedIndex": 0 }`
 
@@ -512,6 +514,8 @@ await fb2k.invoke('dsp.applyPreset', { name: 'My Preset' });
 // 按索引
 await fb2k.invoke('dsp.applyPreset', { index: 0 });
 ```
+
+> 应用预设会整条替换当前活动链（含各 DSP 的参数），因此它也是把链恢复到某个已知状态的最可靠方式。预设文件本身不会被改写——本接口只写活动链。
 
 ### dsp.getAvailable
 
@@ -571,6 +575,8 @@ if (eq) {
 
 **返回值**: `{"from":"...","message":"...","movedDsp":"...","success":true,"to":"..."}`
 
+> `from` 与 `to` 都是移动**前**的链下标；返回的 `to` 是该项移动后的实际下标。`from === to` 时不做改动，返回 `message: "No change needed"`。需要重排链请用本接口，不要用 `setChain`（后者只接受 `guid`，不承诺保留参数）。
+
 ### dsp.setChain
 
 设置完整的 DSP 效果器链（高级用法，替换整个链）。
@@ -578,6 +584,15 @@ if (eq) {
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
 | `dsps` | `array` | 是 | 必填。 |
+
+`dsps` 的每一项必须是含 `guid` 的对象。任意一项无法解析时整次调用被拒绝且**活动链保持不变**，错误信息带出错下标：
+
+| 情况 | `error` |
+| --- | --- |
+| 元素不是对象 | `dsps[0] must be an object` |
+| 缺 `guid` 或为空串 | `dsps[0]: guid is required` |
+| GUID 格式非法 | `dsps[0]: Invalid GUID format: <值>` |
+| GUID 合法但该 DSP 未安装 | `dsps[0]: DSP not found or no default preset: <值>` |
 
 **返回值**: `{ "success": true, "count": 3 }`
 
@@ -589,6 +604,8 @@ await fb2k.invoke('dsp.setChain', {
     ]
 });
 ```
+
+> 传空数组会清空整条链。本接口只接受 `guid`，各 DSP 的参数取自 `dsp_entry` 的默认预设——参数是否得以保留**取决于该 DSP 的实现**（把设置存在全局 `cfg_var` 里的 DSP 通常会保留，按预设实例存参的通常不会），因此不要依赖此行为，也不要把 `getChain` 的输出直接回灌 `setChain` 来做重排序。
 
 ## Output API - 音频输出
 
@@ -613,6 +630,10 @@ await fb2k.invoke('dsp.setChain', {
     "count": 5
 }
 ```
+
+> **`guid` 在本端点内不唯一。** foobar2000 用全零 GUID
+> `{00000000-0000-0000-0000-000000000000}` 表示某个输出模块的「默认设备」，因此多个模块下会各出现一次全零 GUID。
+> 请用 `(entryGuid, guid)` 组合作为设备的唯一键，不要只用 `guid`。
 
 ### output.getEntries
 
@@ -649,12 +670,17 @@ await fb2k.invoke('dsp.setChain', {
 
 ```json
 {
-    "note": "Output settings are managed through foobar2000 Preferences > Playback > Output",
+    "note": "Output settings are managed through foobar2000 Preferences > Playback > Output. availableOutputs lists display names only and cannot disambiguate backends that share a name; use output.getEntries for name + GUID pairs.",
     "availableOutputs": ["WASAPI (event)", "WASAPI (push)", "DirectSound", "Primary Sound Driver"]
 }
 ```
 
 > 实际输出设置通过 foobar2000 首选项管理。如需切换输出设备，请使用 `config.setOutputDevice`。
+
+> **不建议在新代码中使用 `availableOutputs`。** 它只是一个显示名数组，存在两个已实测的问题：
+> 同名模块无法区分（多个后端都叫「默认」），以及某些模块的名称为空字符串。
+> 此外该数组的顺序来自服务枚举，**多次调用之间并不稳定**，因此不能依赖数组下标定位模块。
+> 需要可编程地识别输出模块时请改用 `output.getEntries`，它为每个名称附带 GUID。
 
 ## ReplayGain API
 

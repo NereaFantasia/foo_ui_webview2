@@ -4,6 +4,24 @@ English API reference for the `metadata`, `rating` family.
 
 This page is the primary owner for the namespaces listed below. Method names, parameter keys, and return fields follow the C++ `RegisterApi` handlers.
 
+## Addressing a track inside a container {#subsong-addressing}
+
+A CUE sheet, ISO image, or multi-track file holds several tracks behind one
+file path. Every read method addresses an individual track the same way:
+
+- Append `|subsong:N` to the path, e.g. `D:\album.cue|subsong:2`.
+- Or pass `cueIndex: N` alongside the plain path. When both are supplied,
+  `cueIndex` wins.
+
+Track numbering follows foobar2000, which is **1-based for CUE sheets**:
+`|subsong:1` is the first track. A bare container path (or `|subsong:0`)
+addresses subsong 0, which does not exist in a CUE sheet and therefore fails
+with `Failed to get track info` — that is the host's numbering, not an error in
+the request.
+
+Reading a plain single-track file needs no suffix; `|subsong:0` is equivalent
+to omitting it.
+
 ## metadata
 
 ### metadata.embedArtwork
@@ -31,12 +49,15 @@ Public API method. Runtime authority: `src/api/MetadataApi.cpp:1657`.
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `path` | `string` | No | Optional; default . |
+| `cueIndex` | `integer` | No | Optional; default -1. Subsong index override, wins over a `|subsong:N` suffix in `path`. |
 
 **Returns**: `{"error":"...","info":"...","path":"...","success":true,"tags":"..."}`
 
 ```js
 const result = await fb2k.invoke('metadata.read', { path: /* value */ });
 ```
+
+See [Addressing a track inside a container](#addressing-a-track-inside-a-container) for CUE sheets, ISO images, and other multi-track files.
 
 ### metadata.readBatch
 
@@ -52,6 +73,8 @@ Public API method. Runtime authority: `src/api/MetadataApi.cpp:1666`.
 const result = await fb2k.invoke('metadata.readBatch', { paths: /* value */ });
 ```
 
+Each entry is resolved independently, so a batch may mix plain file paths and `container|subsong:N` references. There is no batch-wide `cueIndex`; put the index in each path.
+
 ### metadata.readByPath
 
 Public API method. Runtime authority: `src/api/MetadataApi.cpp:1660`.
@@ -59,6 +82,7 @@ Public API method. Runtime authority: `src/api/MetadataApi.cpp:1660`.
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `path` | `string` | No | Optional; default . |
+| `cueIndex` | `integer` | No | Optional; default -1. Subsong index override, wins over a `|subsong:N` suffix in `path`. |
 
 **Returns**: `{"TRACKNUMBER":"...","canonicalPath":"...","error":"...","path":"...","success":true}`
 

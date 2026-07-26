@@ -9,6 +9,15 @@
 - `menu.getMainMenu` accepts `locale`, `i18n`, and `withAvailability`. `locale` (default `'auto'`) selects the `displayLabel` translation locale and keeps the host's native labels untranslated by default; `i18n: false` disables label translation entirely; `withAvailability` (default `true`) includes per-submenu command availability counters. The SDK signature is now `getMainMenu(root?, opts?)`.
 - Fixed UTF-8 serialization and context-mode selection for custom menus.
 
+### DSP and output
+
+- **`dsp.*` and `output.*` now actually work.** The eleven handlers (`dsp.getChain` / `getPresets` / `getAvailable` / `addDsp` / `removeDsp` / `moveDsp` / `applyPreset` / `setChain`, `output.getDevices` / `getEntries` / `getSettings`) were documented but their source files had never been added to the build, so every call failed as an unregistered method. They are compiled and registered from this release on. There is no SDK facade for these namespaces — call them through `fb2k.invoke()`.
+- Fixed a crash in `output.getDevices`. Some output backends report a device name with a "length unknown" sentinel instead of a real length; the handler used that value verbatim and read far past the end of the string, terminating foobar2000.
+- Fixed `dsp.moveDsp` moving items to the wrong slot. Upward moves landed one position short, so moving an item up by one did nothing and no item could reach the end of the chain. Downward moves were already correct. The returned `to` now reports the real final index.
+- **Behavior change** — `dsp.setChain` rejects a call that contains any unusable entry instead of silently skipping it. Previously a chain built from three entries could apply only two and still report `success: true`. Each failure mode now returns an index-tagged reason: `dsps[0] must be an object`, `dsps[0]: guid is required`, `dsps[0]: Invalid GUID format: …`, or `dsps[0]: DSP not found or no default preset: …` (a well-formed GUID for a DSP that is not installed). The chain is left untouched when a call is rejected.
+- `dsp.getPresets` reports `selectedIndex: -1` when no preset is selected. It previously returned the internal sentinel `18446744073709551615`, which is not representable as a JavaScript number and arrived as an unusable float.
+- `dsp.getChain` always includes `activePreset` and `activePresetIndex`, using `null` / `-1` when no preset is selected or the host does not support presets. The keys were previously absent in those cases, so callers had to probe for them.
+
 ### Discovery
 
 - **Behavior change** — `discovery.getMainMenuCommands` and `discovery.searchCommands` now expand components that build their submenu at runtime (`mainmenu_commands_v2`, e.g. ESLyric), so results include child commands in addition to the parent slot. Pass `{ expandDynamic: false }` for the previous static-registry-only result.
@@ -22,6 +31,11 @@
 - Added the advanced-preferences option *Keep WebView active in background while CDP remote debugging is on (tray/minimize/lock)* (default on), so screenshot and timing automation over the DevTools Protocol stays stable instead of being suspended.
 - Hardened recovery after a WebView2 crash: a failed render process no longer leaves an unresponsive blank window. The page is reloaded up to a bounded number of attempts and the WebView is rebuilt after repeated failures.
 - Improved album-art delivery: fixed cache entries that could serve another track's image, tightened request and parameter validation, and moved image decoding off the interface thread so large covers no longer make the window unresponsive. `artwork.*` request and response shapes are unchanged.
+
+### Metadata
+
+- Fixed `metadata.read`, `metadata.readByPath`, and `metadata.readBatch` ignoring the track index inside a container. A `|subsong:N` suffix was neither stripped nor honored, so reading a single track out of a CUE sheet, ISO image, or multi-track file either failed outright or returned the first track's tags. This is why such files could be read in the foobar2000 UI but not through the API. `metadata.readRaw` was already correct.
+- `metadata.read` and `metadata.readByPath` accept `cueIndex` to address a track explicitly, matching `metadata.readRaw`. It takes precedence over a `|subsong:N` suffix in the path.
 
 ### SDK
 

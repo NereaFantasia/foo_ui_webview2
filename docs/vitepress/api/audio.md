@@ -238,6 +238,11 @@ Public API method. Runtime authority: `src/api/DspApi.cpp:416`.
 const result = await fb2k.invoke('dsp.applyPreset', { index: /* value */, name: /* value */ });
 ```
 
+Supply either `index` or `name` — both address the same presets, and the response
+echoes `appliedPreset` / `appliedIndex` either way. Applying a preset replaces the
+whole active chain; it never writes back to the stored preset, so the files under
+`profile\dsp-presets\<name>.fb2k-dsp` are left untouched.
+
 ### dsp.getAvailable
 
 Public API method. Runtime authority: `src/api/DspApi.cpp:417`.
@@ -262,6 +267,11 @@ _No parameters._
 const result = await fb2k.invoke('dsp.getChain');
 ```
 
+`activePreset` and `activePresetIndex` are always present. When no preset is
+selected — including right after `dsp.setChain`, `addDsp`, `removeDsp` or
+`moveDsp` edit the chain by hand — they report `null` and `-1` respectively
+rather than being omitted.
+
 ### dsp.getPresets
 
 Public API method. Runtime authority: `src/api/DspApi.cpp:415`.
@@ -273,6 +283,9 @@ _No parameters._
 ```js
 const result = await fb2k.invoke('dsp.getPresets');
 ```
+
+`selectedIndex` is `-1` when no preset is selected. Presets live in
+`profile\dsp-presets\<name>.fb2k-dsp`.
 
 ### dsp.moveDsp
 
@@ -288,6 +301,10 @@ Public API method. Runtime authority: `src/api/DspApi.cpp:420`.
 ```js
 const result = await fb2k.invoke('dsp.moveDsp', { from: /* value */, to: /* value */ });
 ```
+
+`to` is the final index in the reordered chain and matches the value you passed,
+in both directions. Use this — not `getChain` fed back into `setChain` — to
+reorder a chain, because it preserves each DSP's configuration.
 
 ### dsp.removeDsp
 
@@ -317,6 +334,29 @@ Public API method. Runtime authority: `src/api/DspApi.cpp:421`.
 const result = await fb2k.invoke('dsp.setChain', { dsps: /* value */ });
 ```
 
+Replaces the entire chain. Passing `dsps: []` clears it. Each element must be an
+object carrying a `guid`; entries are applied in array order.
+
+Every entry must resolve to an installed DSP — the call is rejected as a whole,
+without touching the current chain, and the error names the offending index:
+
+| Condition | Error |
+| --- | --- |
+| Element is not an object | `dsps[0] must be an object` |
+| `guid` missing or empty | `dsps[0]: guid is required` |
+| `guid` malformed | `dsps[0]: Invalid GUID format: <value>` |
+| `guid` well-formed but DSP not installed | `dsps[0]: DSP not found or no default preset: <guid>` |
+
+Because entries only carry a `guid`, each DSP is added using its default preset.
+**Whether that keeps the DSP's current settings depends on the DSP itself** —
+many foobar2000 DSPs store configuration globally, so their settings survive, but
+a DSP that keeps configuration per preset instance (VST wrappers, some
+third-party DSPs) will fall back to factory values. Do not rely on `setChain` to
+preserve configuration; use `moveDsp` when you only need to reorder.
+
+Editing the chain this way detaches it from any preset, so `getChain` afterwards
+reports `activePreset: null` and `getPresets` reports `selectedIndex: -1`.
+
 ## output
 
 ### output.getDevices
@@ -330,6 +370,11 @@ _No parameters._
 ```js
 const result = await fb2k.invoke('output.getDevices');
 ```
+
+**`guid` is not unique within this response.** foobar2000 reports an output
+module's "default device" using the all-zero GUID
+`{00000000-0000-0000-0000-000000000000}`, so it appears once per module. Key
+devices by the `(entryGuid, guid)` pair rather than by `guid` alone.
 
 ### output.getEntries
 
@@ -354,6 +399,15 @@ _No parameters._
 ```js
 const result = await fb2k.invoke('output.getSettings');
 ```
+
+Informational only — output configuration is owned by foobar2000 Preferences, and
+`config.setOutputDevice` is the way to switch devices.
+
+**Avoid `availableOutputs` in new code.** It is a bare list of display names with
+two observed problems: modules that share a display name are indistinguishable,
+and some modules report an empty name. Its order comes from service enumeration
+and is **not stable between calls**, so array indices are not usable as
+identifiers. Use `output.getEntries`, which pairs each name with its GUID.
 
 ## replaygain
 
