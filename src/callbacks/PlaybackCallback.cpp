@@ -179,9 +179,16 @@ public:
             // Throttle is effectively a pass-through here since the callback
             // itself is ~1Hz, but kept for resilience against SDK changes.
             if (m_lastTime < 0 || std::abs(time - m_lastTime) >= 0.5) {
-                WebViewContext::GetInstance().BroadcastEvent("playback:time", {
-                    {"position", time},
-                });
+                // 生产侧可见性门控只覆盖事件投递：本事件是可再生流（~1Hz 全量
+                // 重发），全部窗口 hidden 时跳过无损。下方 JIT 预取**不可**一并
+                // 跳过——它驱动播放接续时机，扣发即断播（同理 jitQueue:needNext
+                // 属直通类事件）。节流记账 m_lastTime 也必须无条件推进，
+                // 否则恢复后节流状态与真实时间脱节。
+                if (WebViewContext::GetInstance().HasVisibleInstance()) {
+                    WebViewContext::GetInstance().BroadcastEvent("playback:time", {
+                        {"position", time},
+                    });
+                }
                 m_lastTime = time;
                 
                 // Notify JIT Queue Manager for prefetch timing
@@ -321,6 +328,15 @@ private:
             auto pc = playback_control::get();
             // Guard against stray ticks after playback ended.
             if (!pc->is_playing()) {
+                return;
+            }
+            // 生产侧可见性门控（与频谱 CollectDispatchTargets 同模型）：
+            // 本事件是可再生流——每拍重发全量新位置，跳过无损，恢复后下一拍
+            // 自然到达。全部窗口 hidden 时在位置查询与 JSON 构造之前早退，
+            // 不做无用功；定时器保持运行，恢复无需重启动作。
+            // 注意与 on_playback_time 的区别：那条回调还驱动 JIT 预取时机，
+            // 不可在此模型下早退。
+            if (!WebViewContext::GetInstance().HasVisibleInstance()) {
                 return;
             }
             double position = pc->playback_get_position();

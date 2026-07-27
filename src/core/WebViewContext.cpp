@@ -1,6 +1,8 @@
 ﻿#include "pch.h"
 #include "core/WebViewContext.h"
 #include "api/BridgeCore.h"
+// HasVisibleInstance 查询 host 的页面可见性，需要完整定义（头文件只前向声明）。
+#include "webview/WebViewHost.h"
 
 WebViewContext& WebViewContext::GetInstance() {
     static WebViewContext instance;
@@ -213,6 +215,18 @@ void WebViewContext::BroadcastEventExcept(const std::string& event, const json& 
 // ============================================
 // 窗口 ID 查询（多窗口系统用）
 // ============================================
+
+bool WebViewContext::HasVisibleInstance() const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    for (const auto& [hwnd, info] : instances_) {
+        // 无 host 的实例（注册在途/已析构）不计入可见，保守跳过该拍：
+        // 可再生流下一拍自然重发，不存在丢值风险。
+        if (info.host && !info.host->IsPageHidden()) {
+            return true;
+        }
+    }
+    return false;
+}
 
 bool WebViewContext::SendEventTo(const std::string& windowId, const std::string& event, const json& data) {
     std::lock_guard<std::mutex> lock(mutex_);

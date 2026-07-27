@@ -1095,27 +1095,15 @@ HRESULT WebViewHost::PostMessage(const std::wstring& json) {
     return webview_->PostWebMessageAsJson(json.c_str());
 }
 
-HRESULT WebViewHost::PostEventMessage(const std::string& eventName, const std::wstring& json) {
-    if (!webview_) return E_FAIL;
-
-    if (suspendState_->pageHidden.load(std::memory_order_acquire)) {
-        switch (event_gate::Classify(eventName)) {
-        case event_gate::Action::Drop: {
-            std::lock_guard<std::mutex> lock(eventGateMutex_);
-            ++gateDroppedCount_;
-            return S_OK;
-        }
-        case event_gate::Action::Latest: {
-            std::lock_guard<std::mutex> lock(eventGateMutex_);
-            eventGateBuffer_.Put(eventName, json);
-            ++gateBufferedCount_;
-            return S_OK;
-        }
-        case event_gate::Action::Pass:
-            break;  // 控制面事件直通（会唤醒挂起页面，属预期语义）
-        }
-    }
-
+HRESULT WebViewHost::PostEventMessage(const std::string& /*eventName*/, const std::wstring& json) {
+    // 无条件可靠投递。历史上此处曾按事件名字符串分类做 hidden 期间的
+    // 丢弃/合并（event_gate），已撤销：事件名空间开放（port.emit 等允许调用方传入
+    // 任意名字），宿主无法从名字推断投递语义，默认合并会造成静默丢弃：
+    // 带 correlation id 的异步应答（http:response / library:getAllResult /
+    // audio:fullWaveform*）按名去重会让并发请求互相覆盖；
+    // 不可合并的逐次事实（playback:itemPlayed 等）会丢失记录。
+    // 可再生高频流的节约改由生产侧显式承担（IsPageHidden 判定，见
+    // AudioApi 频谱分发与 PlaybackCallback 的 timeHighRes）。
     return PostMessage(json);
 }
 
@@ -1441,13 +1429,9 @@ bool WebViewHost::SetVisible(bool visible) {
         return false;
     }
 
-    // 事件门控记账：put_IsVisible 即页面 hidden/visible 的执行动作。
-    // 先置状态再冲刷，避免恢复瞬间新事件与重放交错时被再次拦截。
-    const bool wasHidden =
-        suspendState_->pageHidden.exchange(!visible, std::memory_order_acq_rel);
-    if (visible && wasHidden) {
-        FlushGatedEvents();
-    }
+    // 可见性记账：put_IsVisible 即页面 hidden/visible 的执行动作。生产侧的
+    // 可再生流节约（频谱 / timeHighRes）以此为权威判定，恢复后下一拍自然出帧。
+    suspendState_->pageHidden.store(!visible, std::memory_order_release);
 
     if (visible && dcompDevice_) {
         // 锁屏解除后即使 controller 已恢复，DComp target 也可能尚未收到新的
@@ -1457,29 +1441,6 @@ bool WebViewHost::SetVisible(bool visible) {
     LogLifecycle("visibility.confirmed",
         std::string("requested=") + (visible ? "1" : "0"));
     return true;
-}
-
-void WebViewHost::FlushGatedEvents() {
-    std::vector<event_gate::LatestBuffer::Entry> entries;
-    uint64_t dropped = 0;
-    uint64_t buffered = 0;
-    {
-        std::lock_guard<std::mutex> lock(eventGateMutex_);
-        entries = eventGateBuffer_.Flush();
-        dropped = gateDroppedCount_;
-        buffered = gateBufferedCount_;
-        gateDroppedCount_ = 0;
-        gateBufferedCount_ = 0;
-    }
-
-    for (const auto& entry : entries) {
-        PostMessage(entry.payload);
-    }
-
-    if (dropped > 0 || buffered > 0 || !entries.empty()) {
-        console::printf("[EventGate] resume flush: replayed=%u (latest-of %u buffered), dropped=%u",
-            (unsigned)entries.size(), (unsigned)buffered, (unsigned)dropped);
-    }
 }
 
 void WebViewHost::SetMemoryUsageLow(bool low) {

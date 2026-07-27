@@ -1,6 +1,6 @@
 ﻿#pragma once
 #include "pch.h"
-#include "webview/EventGatePolicy.h"
+
 #include "webview/ArtworkRequestInstrumentation.h"
 #include "webview/ArtworkRequestLifecycle.h"
 #include "webview/ArtworkWorkerQueue.h"
@@ -58,10 +58,11 @@ public:
     // 发送消息到 JavaScript (JSON 格式)
     HRESULT PostMessage(const std::wstring& json);
 
-    // 发送事件消息（经可见性门控）。
-    // 页面 hidden 期间按 event_gate::Classify 处置：Pass 直通 / Drop 丢弃 /
-    // Latest 缓存最新 payload 并在恢复可见时按最后到达顺序重放。
-    // invoke 响应不得走此方法（响应一律 PostMessage 直发，避免悬挂 Promise）。
+    // 发送事件消息。投递可靠且无条件：事件语义只有生产者知道，宿主不得按
+    // 事件名字符串推断可丢弃性——事件名空间是开放的（port.emit 等允许调用方
+    // 传入任意名字），字符串分类必然误判。可再生流由生产侧自行按
+    // IsPageHidden() 跳过投递（见 AudioApi 频谱与 playback:timeHighRes）。
+    // eventName 仅用于诊断，不参与投递决策。
     HRESULT PostEventMessage(const std::string& eventName, const std::wstring& json);
 
     // 页面是否处于 hidden（SetVisible(false) 生效中）。
@@ -286,17 +287,10 @@ private:
         std::atomic<bool> alive{true};
     };
 
-    // 事件可见性门控: pageHidden 由 SetVisible 维护;
-    // hidden 期间 Latest 类事件进 eventGateBuffer_，恢复可见时冲刷重放。
+    // pageHidden 由 SetVisible 维护，供生产侧可见性判定（IsPageHidden）使用。
     // 异步 TrySuspend 回调只捕获此共享状态和 COM 引用，不捕获 WebViewHost
     // 裸指针；析构先置 alive=false，使迟到回调安全退出。
     std::shared_ptr<SuspendState> suspendState_ = std::make_shared<SuspendState>();
-    event_gate::LatestBuffer eventGateBuffer_;
-    std::mutex eventGateMutex_;
-    // 采样诊断计数（[EventGate] 日志用）
-    uint64_t gateDroppedCount_ = 0;
-    uint64_t gateBufferedCount_ = 0;
-    void FlushGatedEvents();
 
     MessageHandler messageHandler_;
     FocusChangedCallback focusChangedCallback_;
