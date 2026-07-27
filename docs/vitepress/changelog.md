@@ -1,6 +1,6 @@
 # Changelog
 
-## v1.11.0 (2026-07-25)
+## v1.11.0 (2026-07-27)
 
 ### Tray and menus
 
@@ -26,7 +26,7 @@
 
 ### Performance and stability
 
-- **Behavior change** — event delivery is gated while the page is hidden (minimized, covered, tray-hidden, or locked). Control-plane events (`menu:*`, `jitQueue:*`, `tray:*`, `port:*`, `state:changed`, `state:deleted`, `window:message`, `window:beforeClose`, `app:beforeQuit`, `keyboard:hotkey`, `taskbar:buttonClicked`, `ui:menuItemClicked`, `webview:processFailed`) always pass through. High-rate regenerable streams (`audio:spectrum`, `playback:time`, `playback:timeHighRes`, `window:hoverStateChanged`, `cursor:hiddenChanged`) are dropped while hidden and resume on the next tick. Remaining events are coalesced to their latest payload per event name and replayed in arrival order when the page becomes visible again. Themes that relied on a continuous background event stream should re-read state after becoming visible.
+- **Behavior change** — while the page is hidden (minimized, covered, tray-hidden, or locked), high-rate regenerable streams stop at the source: `audio:spectrum`, `playback:time`, and `playback:timeHighRes` are not produced, and resume on the next tick once the page is visible again. `window:hoverStateChanged` and `cursor:hiddenChanged` are naturally silent while hidden. Every other event is delivered reliably and in order — nothing is dropped or merged — including async replies such as `http:response`, `library:getAllResult`, and `audio:fullWaveformReady`, and one-off facts such as `playback:itemPlayed`. Themes that draw a spectrum or a seek position should read a gap as "page hidden", not as "playback stopped".
 - Added deep suspend while minimized, covered, locked, or tray-hidden: renderer timers and animations are frozen so the OS can reclaim memory. Controlled by the new advanced-preferences option *Deep-suspend WebView when hidden (TrySuspend; frees renderer memory)* (default on; turning it off falls back to the previous low-memory path).
 - Added the advanced-preferences option *Keep WebView active in background while CDP remote debugging is on (tray/minimize/lock)* (default on), so screenshot and timing automation over the DevTools Protocol stays stable instead of being suspended.
 - Hardened recovery after a WebView2 crash: a failed render process no longer leaves an unresponsive blank window. The page is reloaded up to a bounded number of attempts and the WebView is rebuilt after repeated failures.

@@ -1,6 +1,6 @@
 # 更新日志
 
-## v1.11.0 (2026-07-25)
+## v1.11.0 (2026-07-27)
 
 ### 托盘与菜单
 
@@ -26,7 +26,7 @@
 
 ### 性能与稳定性
 
-- 页面不可见期间的事件推送改为门控。控制面事件（`menu:*`、`tray:*`、`port:*`、`jitQueue:*`、`keyboard:hotkey`、`window:beforeClose`、`state:changed`、`state:deleted`、`window:message`、`app:beforeQuit`、`ui:menuItemClicked` 等）仍直通；可再生流（`audio:spectrum`、`playback:time`、`playback:timeHighRes`、`window:hoverStateChanged`、`cursor:hiddenChanged`）在隐藏期间丢弃，恢复后下一拍自然到达；其余事件按事件名缓存最新 payload，恢复时按最后到达顺序重放。依赖后台持续收到高频事件的主题需要改为在恢复后重新读取状态。
+- 页面不可见期间（最小化、被遮挡、托盘隐藏或锁屏），高频可再生流在生产侧即停止：`audio:spectrum`、`playback:time`、`playback:timeHighRes` 不再产生，恢复可见后下一拍自然到达；`window:hoverStateChanged` 与 `cursor:hiddenChanged` 在隐藏期间天然静默。其余事件一律可靠按序投递，不丢弃也不合并，包括 `http:response`、`library:getAllResult`、`audio:fullWaveformReady` 等异步应答与 `playback:itemPlayed` 等逐次事实。绘制频谱或播放进度的主题应把数据中断理解为「页面隐藏」而非「播放停止」。
 - 最小化 / 被遮挡 / 锁屏 / 托盘隐藏时新增深度挂起（`TrySuspend`），冻结渲染进程计时器与动画以便系统回收内存。新增 foobar2000 高级设置项 `Deep-suspend WebView when hidden (TrySuspend; frees renderer memory)`（默认开启，关闭后退回原 Low 内存路径）。
 - 新增高级设置项 `Keep WebView active in background while CDP remote debugging is on (tray/minimize/lock)`（默认开启）：开启 CDP 远程调试时保持 WebView 后台活跃，以保证截图与时序类自动化工具稳定。
 - 收敛 WebView2 崩溃后的僵尸态：进程失败后按重载次数上限决定重载或重建，不再停留在无响应页面。
