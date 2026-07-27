@@ -217,15 +217,13 @@ void WebViewContext::BroadcastEventExcept(const std::string& event, const json& 
 // ============================================
 
 bool WebViewContext::HasVisibleInstance() const {
-    std::lock_guard<std::mutex> lock(mutex_);
-    for (const auto& [hwnd, info] : instances_) {
-        // 无 host 的实例（注册在途/已析构）不计入可见，保守跳过该拍：
-        // 可再生流下一拍自然重发，不存在丢值风险。
-        if (info.host && !info.host->IsPageHidden()) {
-            return true;
-        }
-    }
-    return false;
+    const std::scoped_lock lock(mutex_);
+    // 无 host 的实例（注册在途/已析构）不计入可见，保守跳过该拍：
+    // 可再生流下一拍自然重发，不存在丢值风险。
+    return std::ranges::any_of(instances_, [](const auto& entry) {
+        const InstanceInfo& info = entry.second;
+        return info.host && !info.host->IsPageHidden();
+    });
 }
 
 bool WebViewContext::SendEventTo(const std::string& windowId, const std::string& event, const json& data) {
