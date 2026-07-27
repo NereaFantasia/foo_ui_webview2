@@ -69,22 +69,40 @@ function Resolve-SiteFile([string]$requestPath) {
     return $fullPath
 }
 
-$listener = New-Object System.Net.HttpListener
+function Get-CandidatePorts {
+    # Windows reserves large blocks of the dynamic range (Hyper-V, WSL, WinNAT),
+    # so a sequential scan from a fixed start port can fail hundreds of times.
+    # Probe a randomized spread of the private range instead.
+    $ports = New-Object System.Collections.Generic.List[int]
+    $random = New-Object System.Random
+    while ($ports.Count -lt 64) {
+        $candidate = $random.Next(49152, 65536)
+        if (-not $ports.Contains($candidate)) { $ports.Add($candidate) }
+    }
+    return $ports
+}
+
+$listener = $null
 $port = $null
-for ($candidatePort = 49152; $candidatePort -le 65535; $candidatePort++) {
+foreach ($candidatePort in Get-CandidatePorts) {
+    # A failed Start() disposes the HttpListener, so every attempt needs a new
+    # instance. Reusing one makes .Prefixes null on the next iteration.
+    $candidateListener = New-Object System.Net.HttpListener
     try {
-        $listener.Prefixes.Clear()
-        $listener.Prefixes.Add("http://127.0.0.1:$candidatePort/")
-        $listener.Start()
+        $candidateListener.Prefixes.Add("http://127.0.0.1:$candidatePort/")
+        $candidateListener.Start()
+        $listener = $candidateListener
         $port = $candidatePort
         break
-    } catch [System.Net.HttpListenerException] {
-        if ($listener.IsListening) { $listener.Stop() }
+    } catch {
+        try { $candidateListener.Close() } catch {}
     }
 }
 
-if ($null -eq $port) {
-    throw 'No free local port was available.'
+if ($null -eq $listener) {
+    Write-Host 'No free local port was available for the documentation server.' -ForegroundColor Red
+    Write-Host 'Close other local web servers and run open-docs.cmd again.'
+    exit 1
 }
 
 $url = "http://127.0.0.1:$port$siteBase"
