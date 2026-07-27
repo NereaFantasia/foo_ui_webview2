@@ -45,6 +45,9 @@
 - `fb.playcount.set()` no longer sends the `count` key, which the host never read. No behavior change; the wire payload is simply smaller.
 - `fb.http.request()` now dispatches through the documented `http.get` endpoint; a stale internal parameter could previously forward a mismatched method name. The verb helpers (`fb.http.post()` / `put()` / `delete()` / `patch()`) keep dispatching to their own endpoints, including for binary responses.
 - Added `windowId` parameter typings for `window.getBackdropPolicy` and `window.setBackdropPolicy`. `setBackdropPolicy` requires `backdropPolicy` and does not fall back to the main window when no target resolves.
+- Added optional trailing `opts` arguments to five wrappers whose host handlers already read the corresponding keys: `fb.file.delete(path, opts?)` (`moveToTrash`), `fb.file.copy(source, destination, opts?)` (`overwrite`), and `fb.metadata.write(path, tags, opts?)` / `removeField(path, field, opts?)` / `removeTag(path, tags, opts?)` (`cueIndex`). `metadata.write` accepting `cueIndex` closes a real gap: v1.11.0 wired `cueIndex` into the metadata *read* path only, so writing a tag to a single track inside a CUE sheet or image file was not expressible through the SDK. Existing call sites are unaffected — every new argument is optional.
+- `fb.metadata.readByPath()` now resolves with `MetadataReadByPathResponse` instead of a bare `JsonObject`.
+- Corrected two published type declarations that did not match the host contract: `dsp.setChain` takes a **required** `dsps` array of `{ guid }` objects (it was typed `dsps?: string[]`, wrong in optionality, element type, and shape — the host rejects the call unless `dsps` is an array, and reads `guid` off each entry), and the `playlist:created` / `playlist:renamed` payloads keep `name: string`. TypeScript code written against the old `dsp.setChain` declaration must be updated.
 
 ## v1.10.0 (2026-07-16)
 

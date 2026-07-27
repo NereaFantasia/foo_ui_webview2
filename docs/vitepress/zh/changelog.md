@@ -44,6 +44,9 @@
 - 修正两处错误的 TypeScript 返回类型声明，使其与宿主实际 wire 契约一致：`ui.isMinimized()` 为 `{ minimized }`（不存在 `isMinimized` 别名）、`ui.isAlwaysOnTop()` 为 `{ enabled, isAlwaysOnTop }`（两个键同值）。**按旧声明编写的 TypeScript 代码需要相应调整。**
 - `fb.playcount.set()` 不再发送宿主从未读取的 `count` 键；`window.getBackdropPolicy` / `window.setBackdropPolicy` 补齐 `windowId` 参数类型声明。
 - `fb.http.request()` 现在经由文档声明的 `http.get` 端点派发；此前一个失效的内部参数可能转发错配的方法名。动词 helper（`fb.http.post()` / `put()` / `delete()` / `patch()`）仍各自派发到自己的端点，二进制响应也一样。
+- 为五个 wrapper 补上可选的末位 `opts` 参数，对应的键宿主 handler 早已读取：`fb.file.delete(path, opts?)`（`moveToTrash`）、`fb.file.copy(source, destination, opts?)`（`overwrite`），以及 `fb.metadata.write(path, tags, opts?)` / `removeField(path, field, opts?)` / `removeTag(path, tags, opts?)`（`cueIndex`）。其中 `metadata.write` 支持 `cueIndex` 补上了一处真实缺口：v1.11.0 只把 `cueIndex` 接进了元数据**读取**侧，因此此前无法通过 SDK 向 CUE 或镜像文件中的单曲写标签。所有新增参数均为可选，既有调用点不受影响。
+- `fb.metadata.readByPath()` 的返回类型由裸 `JsonObject` 收窄为 `MetadataReadByPathResponse`。
+- 修正两处与宿主契约不符的公开类型声明：`dsp.setChain` 的 `dsps` 是**必填**的 `{ guid }` 对象数组（原声明为 `dsps?: string[]`，在可选性、元素类型、结构三处均错——宿主要求 `dsps` 必须是数组，并逐项读取 `guid`）；`playlist:created` / `playlist:renamed` 的 payload 保持 `name: string`。**按旧 `dsp.setChain` 声明编写的 TypeScript 代码需要相应调整。**
 
 ## v1.10.0 (2026-07-16)
 

@@ -83,11 +83,20 @@ const result = await fb.file.list('C:\\Music', {
 });
 ```
 
-### delete(path)
+### delete(path, opts?)
 
-Signature: `fb.file.delete(path: string): Promise<BaseResponse>`
+Signature: `fb.file.delete(path: string, opts?: Omit<FileDeleteParams, 'path'>): Promise<BaseResponse>`
 
-Deletes the file-system entry. The SDK facade passes only `path`, so the host's default `moveToTrash: true` behavior applies.
+Deletes the file-system entry. `opts.moveToTrash` defaults to `true` on the
+host; pass `false` for a permanent delete.
+
+```javascript
+// Recycle Bin (default)
+await fb.file.delete('C:\\Config\\old-theme.json');
+
+// Permanent, bypassing the Recycle Bin
+await fb.file.delete('C:\\Config\\cache.tmp', { moveToTrash: false });
+```
 
 ### mkdir(path)
 
@@ -95,14 +104,20 @@ Signature: `fb.file.mkdir(path: string): Promise<BaseResponse & { created?: bool
 
 Creates a directory, including missing parent directories.
 
-### copy(source, destination)
+### copy(source, destination, opts?)
 
-Signature: `fb.file.copy(source: string, destination: string): Promise<BaseResponse>`
+Signature: `fb.file.copy(source: string, destination: string, opts?: Omit<FileCopyParams, 'source' | 'destination'>): Promise<BaseResponse>`
 
-Copies a file. The SDK facade does not expose the host's optional `overwrite` field, so existing destinations are not overwritten by default.
+Copies a file. `opts.overwrite` defaults to `false`, so an existing
+destination is left untouched unless you opt in.
 
 ```javascript
 await fb.file.copy('C:\\Music\\track.flac', 'C:\\Backup\\track.flac');
+
+// Replace an existing destination
+await fb.file.copy('C:\\Music\\track.flac', 'C:\\Backup\\track.flac', {
+	overwrite: true
+});
 ```
 
 ### move(source, destination)

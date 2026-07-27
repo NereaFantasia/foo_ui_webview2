@@ -78,6 +78,7 @@
   },
   "files": [
     "dist",
+    "!dist/**/*.map",
     "LICENSE",
     "README.md",
     "README.zh-CN.md",

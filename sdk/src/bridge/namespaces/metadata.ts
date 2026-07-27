@@ -16,8 +16,14 @@ import type {
     MetadataEmbedArtworkParams,
     MetadataReadRawParams,
     MetadataRemoveEmbeddedArtParams,
+    MetadataRemoveFieldParams,
+    MetadataRemoveTagParams,
+    MetadataWriteParams,
 } from '../../types/generated/params.js';
-import type { MetadataEmbedArtworkResponse } from '../../types/generated/responses.js';
+import type {
+    MetadataEmbedArtworkResponse,
+    MetadataReadByPathResponse,
+} from '../../types/generated/responses.js';
 
 /** Options for artwork byte helpers; the helper owns `imageData`. */
 export type MetadataArtworkBytesOptions = Omit<
@@ -138,10 +144,13 @@ export const metadata = {
      * Container tracks are addressed the same way as `read()`.
      */
     readByPath: (path: string, opts?: { cueIndex?: number }) =>
-        bridge.invoke<JsonObject>('metadata.readByPath', {
-            path,
-            ...(opts || {}),
-        }),
+        bridge.invoke<MetadataReadByPathResponse & JsonObject>(
+            'metadata.readByPath',
+            {
+                path,
+                ...(opts || {}),
+            },
+        ),
     readRaw: (
         path: string,
         opts?: Omit<MetadataReadRawParams, 'path'>,
@@ -155,7 +164,11 @@ export const metadata = {
      * `metadata:writeComplete`. The receipt below describes the dispatch
      * envelope; the final outcome is on the event payload.
      */
-    write: (path: string, tags: JsonObject) =>
+    write: (
+        path: string,
+        tags: JsonObject,
+        opts?: Omit<MetadataWriteParams, 'path' | 'tags'>,
+    ) =>
         bridge.invoke<
             BaseResponse & {
                 dispatched?: boolean;
@@ -167,7 +180,7 @@ export const metadata = {
                 tagsRemoved?: number;
                 note?: string;
             }
-        >('metadata.write', { path, tags }),
+        >('metadata.write', { path, tags, ...(opts || {}) }),
     writeBatch: (items: Array<{ path: string; tags: JsonObject }>) =>
         bridge.invoke<
             BaseResponse & {
@@ -211,7 +224,11 @@ export const metadata = {
             { path, ...(opts || {}) },
         ),
     /** Removes a single tag field. */
-    removeField: (path: string, field: string) =>
+    removeField: (
+        path: string,
+        field: string,
+        opts?: Omit<MetadataRemoveFieldParams, 'path' | 'tags'>,
+    ) =>
         bridge.invoke<
             BaseResponse & {
                 dispatched?: boolean;
@@ -220,8 +237,16 @@ export const metadata = {
                 removedCount?: number;
                 note?: string;
             }
-        >('metadata.removeField', { path, tags: [field] }),
-    removeTag: (path: string, tags: string[]) =>
+        >('metadata.removeField', {
+            path,
+            tags: [field],
+            ...(opts || {}),
+        }),
+    removeTag: (
+        path: string,
+        tags: string[],
+        opts?: Omit<MetadataRemoveTagParams, 'path' | 'tags'>,
+    ) =>
         bridge.invoke<
             BaseResponse & {
                 dispatched?: boolean;
@@ -230,7 +255,7 @@ export const metadata = {
                 removedCount?: number;
                 note?: string;
             }
-        >('metadata.removeTag', { path, tags }),
+        >('metadata.removeTag', { path, tags, ...(opts || {}) }),
     /** Embed exact image bytes without exposing the raw Base64 wire format. */
     embedArtworkBytes: metadataEmbedArtworkBytes,
     /** Embed a Base64 `data:image/*` URL; rejects malformed input. */

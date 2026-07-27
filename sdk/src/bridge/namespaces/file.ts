@@ -14,6 +14,8 @@ import type {
     FileGetInfoResponse,
 } from '../../types/responses.js';
 import type {
+    FileCopyParams,
+    FileDeleteParams,
     FileListParams,
     FileReadParams,
     FileWriteParams,
@@ -101,14 +103,25 @@ export const file = {
             path,
             ...(opts || {}),
         }),
-    delete: (path: string) =>
-        bridge.invoke<BaseResponse>('file.delete', { path }),
+    delete: (path: string, opts?: Omit<FileDeleteParams, 'path'>) =>
+        bridge.invoke<BaseResponse>('file.delete', {
+            path,
+            ...(opts || {}),
+        }),
     mkdir: (path: string) =>
         bridge.invoke<BaseResponse & { created?: boolean }>('file.mkdir', {
             path,
         }),
-    copy: (source: string, destination: string) =>
-        bridge.invoke<BaseResponse>('file.copy', { source, destination }),
+    copy: (
+        source: string,
+        destination: string,
+        opts?: Omit<FileCopyParams, 'source' | 'destination'>,
+    ) =>
+        bridge.invoke<BaseResponse>('file.copy', {
+            source,
+            destination,
+            ...(opts || {}),
+        }),
     move: (source: string, destination: string) =>
         bridge.invoke<BaseResponse>('file.move', { source, destination }),
     rename: (path: string, newName: string) =>

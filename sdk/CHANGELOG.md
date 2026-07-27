@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [1.11.0] - 2026-07-25
+## [1.11.0] - 2026-07-27
 
 ### Added
 
@@ -62,6 +62,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `metadata.embedArtwork` wire contracts. They add no Bridge endpoint and do
   not change raw `invoke` or existing facades. Canonical Base64 and Data URL
   validation happens in the SDK before invocation; Host behavior is unchanged.
+- Optional trailing `opts` arguments on five wrappers, forwarding parameters
+  the Host already read but the SDK had no way to send: `file.delete(path,
+  opts?)` and `file.copy(source, destination, opts?)` take `moveToTrash` /
+  `overwrite`; `metadata.write(path, tags, opts?)`,
+  `metadata.removeField(path, field, opts?)` and
+  `metadata.removeTag(path, tags, opts?)` take `cueIndex` to address a single
+  track inside a CUE sheet or image file. `metadata.write` gaining `cueIndex`
+  closes a real gap in the v1.11.0 CUE work, which wired `cueIndex` into the
+  read path only. Omitting `opts` preserves the previous payloads exactly.
+- `metadata.readByPath()` now resolves as `MetadataReadByPathResponse &
+  JsonObject` instead of a bare `JsonObject`, so the documented fields are
+  typed while extra tag keys remain accessible.
 
 ### Changed
 

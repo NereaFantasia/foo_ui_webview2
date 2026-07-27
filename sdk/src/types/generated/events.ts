@@ -13,8 +13,8 @@ import type { JsonObject } from '../json.js';
 
 // ── Hand-written overrides — see sdk/src/types/overrides/ ────────────────
 import type { CursorHiddenChangedPayload } from "../overrides/cursor.js";
-import type { ApiRegisteredPayload, ApiUnregisteredPayload, AppBeforeQuitPayload, AudioFullWaveformFailedPayload, AudioFullWaveformReadyPayload, AudioOutputDeviceChangedPayload, AudioReplaygainModeChangedPayload, AudioSpectrumPayload, HttpDownloadCompletePayload, HttpResponsePayload, JitQueueErrorPayload, JitQueuePreloadCompletePayload, LibraryGetAllResultPayload, LibraryItemsAddedPayload, LibraryItemsModifiedPayload, LibraryItemsRemovedPayload, MetadataWriteCompletePayload, MetadbChangedPayload, PanelBlurPayload, PanelFocusPayload, PanelInitializedPayload, PanelVisibilityChangedPayload, PlaybackCursorFollowChangedPayload, PlaybackDynamicInfoPayload, PlaybackDynamicInfoTrackPayload, PlaybackEditedPayload, PlaybackFollowCursorChangedPayload, PlaybackItemPlayedPayload, PlaybackQueueChangedPayload, PlaybackStartingPayload, PlaybackStateChangedPayload, PlaybackStopAfterCurrentChangedPayload, PlaybackStoppedPayload, PlaybackTrackChangedPayload, PluginRegisteredPayload, PluginUnregisteredPayload, StateChangedPayload, StateDeletedPayload, TrayMenuItemClickedPayload, UiToastPayload, WindowAlwaysOnTopChangedPayload } from "../overrides/events.js";
-export type { ApiRegisteredPayload, ApiUnregisteredPayload, AppBeforeQuitPayload, AudioFullWaveformFailedPayload, AudioFullWaveformReadyPayload, AudioOutputDeviceChangedPayload, AudioReplaygainModeChangedPayload, AudioSpectrumPayload, CursorHiddenChangedPayload, HttpDownloadCompletePayload, HttpResponsePayload, JitQueueErrorPayload, JitQueuePreloadCompletePayload, LibraryGetAllResultPayload, LibraryItemsAddedPayload, LibraryItemsModifiedPayload, LibraryItemsRemovedPayload, MetadataWriteCompletePayload, MetadbChangedPayload, PanelBlurPayload, PanelFocusPayload, PanelInitializedPayload, PanelVisibilityChangedPayload, PlaybackCursorFollowChangedPayload, PlaybackDynamicInfoPayload, PlaybackDynamicInfoTrackPayload, PlaybackEditedPayload, PlaybackFollowCursorChangedPayload, PlaybackItemPlayedPayload, PlaybackQueueChangedPayload, PlaybackStartingPayload, PlaybackStateChangedPayload, PlaybackStopAfterCurrentChangedPayload, PlaybackStoppedPayload, PlaybackTrackChangedPayload, PluginRegisteredPayload, PluginUnregisteredPayload, StateChangedPayload, StateDeletedPayload, TrayMenuItemClickedPayload, UiToastPayload, WindowAlwaysOnTopChangedPayload };
+import type { ApiRegisteredPayload, ApiUnregisteredPayload, AppBeforeQuitPayload, AudioFullWaveformFailedPayload, AudioFullWaveformReadyPayload, AudioOutputDeviceChangedPayload, AudioReplaygainModeChangedPayload, AudioSpectrumPayload, HttpDownloadCompletePayload, HttpResponsePayload, JitQueueErrorPayload, JitQueuePreloadCompletePayload, LibraryGetAllResultPayload, LibraryItemsAddedPayload, LibraryItemsModifiedPayload, LibraryItemsRemovedPayload, MetadataWriteCompletePayload, MetadbChangedPayload, PanelBlurPayload, PanelFocusPayload, PanelInitializedPayload, PanelVisibilityChangedPayload, PlaybackCursorFollowChangedPayload, PlaybackDynamicInfoPayload, PlaybackDynamicInfoTrackPayload, PlaybackEditedPayload, PlaybackFollowCursorChangedPayload, PlaybackItemPlayedPayload, PlaybackQueueChangedPayload, PlaybackStartingPayload, PlaybackStateChangedPayload, PlaybackStopAfterCurrentChangedPayload, PlaybackStoppedPayload, PlaybackTrackChangedPayload, PlaylistCreatedPayload, PlaylistRenamedPayload, PluginRegisteredPayload, PluginUnregisteredPayload, StateChangedPayload, StateDeletedPayload, TrayMenuItemClickedPayload, UiToastPayload, WindowAlwaysOnTopChangedPayload } from "../overrides/events.js";
+export type { ApiRegisteredPayload, ApiUnregisteredPayload, AppBeforeQuitPayload, AudioFullWaveformFailedPayload, AudioFullWaveformReadyPayload, AudioOutputDeviceChangedPayload, AudioReplaygainModeChangedPayload, AudioSpectrumPayload, CursorHiddenChangedPayload, HttpDownloadCompletePayload, HttpResponsePayload, JitQueueErrorPayload, JitQueuePreloadCompletePayload, LibraryGetAllResultPayload, LibraryItemsAddedPayload, LibraryItemsModifiedPayload, LibraryItemsRemovedPayload, MetadataWriteCompletePayload, MetadbChangedPayload, PanelBlurPayload, PanelFocusPayload, PanelInitializedPayload, PanelVisibilityChangedPayload, PlaybackCursorFollowChangedPayload, PlaybackDynamicInfoPayload, PlaybackDynamicInfoTrackPayload, PlaybackEditedPayload, PlaybackFollowCursorChangedPayload, PlaybackItemPlayedPayload, PlaybackQueueChangedPayload, PlaybackStartingPayload, PlaybackStateChangedPayload, PlaybackStopAfterCurrentChangedPayload, PlaybackStoppedPayload, PlaybackTrackChangedPayload, PlaylistCreatedPayload, PlaylistRenamedPayload, PluginRegisteredPayload, PluginUnregisteredPayload, StateChangedPayload, StateDeletedPayload, TrayMenuItemClickedPayload, UiToastPayload, WindowAlwaysOnTopChangedPayload };
 
 /**
  * Payload of the `audio:dspPresetChanged` event (no fields).
@@ -174,15 +174,6 @@ export interface PlaylistAddCompletePayload {
 }
 
 /**
- * Payload of the `playlist:created` event.
- */
-export interface PlaylistCreatedPayload {
-    /** int64 — may lose precision above 2^53 */
-    index: number;
-    name: string;
-}
-
-/**
  * Payload of the `playlist:defaultFormatChanged` event (no fields).
  */
 export type PlaylistDefaultFormatChangedPayload = Record<string, never>;
@@ -258,15 +249,6 @@ export interface PlaylistRemovedPayload {
     oldCount: number;
     /** int64 — may lose precision above 2^53 */
     newCount: number;
-}
-
-/**
- * Payload of the `playlist:renamed` event.
- */
-export interface PlaylistRenamedPayload {
-    /** int64 — may lose precision above 2^53 */
-    index: number;
-    name: string;
 }
 
 /**

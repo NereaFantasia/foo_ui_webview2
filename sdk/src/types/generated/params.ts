@@ -14,9 +14,10 @@ import type { JsonObject } from '../json.js';
 // ── Hand-written overrides — see sdk/src/types/overrides/ ────────────────
 import type { ConfigSetReplaygainModeParams } from "../overrides/config.js";
 import type { CursorSetHiddenParams } from "../overrides/cursor.js";
+import type { DspSetChainParams } from "../overrides/dsp.js";
 import type { TraySetIconParams } from "../overrides/tray.js";
 import type { WindowCreatePopupParams, WindowGetBackdropPolicyParams, WindowSetBackdropPolicyParams, WindowSetPopupBehaviorParams } from "../overrides/window.js";
-export type { ConfigSetReplaygainModeParams, CursorSetHiddenParams, TraySetIconParams, WindowCreatePopupParams, WindowGetBackdropPolicyParams, WindowSetBackdropPolicyParams, WindowSetPopupBehaviorParams };
+export type { ConfigSetReplaygainModeParams, CursorSetHiddenParams, DspSetChainParams, TraySetIconParams, WindowCreatePopupParams, WindowGetBackdropPolicyParams, WindowSetBackdropPolicyParams, WindowSetPopupBehaviorParams };
 
 /**
  * Parameters for `artwork.getAvailableArtwork`.
@@ -733,13 +734,6 @@ export interface DspMoveDspParams {
 export interface DspRemoveDspParams {
     /** int64 — may lose precision above 2^53 */
     index?: number;
-}
-
-/**
- * Parameters for `dsp.setChain`.
- */
-export interface DspSetChainParams {
-    dsps?: string[];
 }
 
 /**
@@ -1548,6 +1542,8 @@ export interface MetadataEmbedArtworkParams {
 export interface MetadataReadParams {
     /** @default "" */
     path?: string;
+    /** @default `- 1` */
+    cueIndex?: number;
 }
 
 /**
@@ -1563,6 +1559,8 @@ export interface MetadataReadBatchParams {
 export interface MetadataReadByPathParams {
     /** @default "" */
     path?: string;
+    /** @default `- 1` */
+    cueIndex?: number;
 }
 
 /**
@@ -1670,7 +1668,7 @@ export interface MiscShowLibrarySearchParams {
  */
 export interface MiscShowPopupMessageParams {
     /** @default `params . value ( "msg" , "" )` */
-    message?: unknown;
+    message?: string;
     /** @default "" */
     msg?: string;
     /** @default "Message" */
@@ -2004,8 +2002,11 @@ export interface PlaylistDuplicateParams {
  */
 export interface PlaylistFocusTrackParams {
     playlist?: number;
-    /** @default `params . value ( "track" , SIZE_MAX )` */
-    index?: unknown;
+    /**
+     * int64 — may lose precision above 2^53
+     * @default `params . value ( "track" , SIZE_MAX )`
+     */
+    index?: number;
     track?: number;
 }
 

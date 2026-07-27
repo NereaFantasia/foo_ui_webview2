@@ -629,3 +629,38 @@ export interface TrayMenuItemClickedPayload {
      */
     value?: number;
 }
+
+/**
+ * Payload for `playlist:created`.
+ *
+ * `name` reaches the extractor as `pfc::string8::get_ptr()`, whose return type
+ * lives in another translation unit, so the C++ schema records it as
+ * `call:get_ptr` and codegen would emit `unknown`. The emit site
+ * (`PlaylistCallback.cpp` `on_playlist_created`) writes both keys
+ * unconditionally from a `pfc::string8`, so both are required strings/numbers.
+ *
+ * @codegen-override event:playlist:created
+ * @codegen-snapshot index:primitive,name:callexpr
+ */
+export interface PlaylistCreatedPayload {
+    /** Zero-based index of the newly created playlist. */
+    index: number;
+    /** Playlist name as created. */
+    name: string;
+}
+
+/**
+ * Payload for `playlist:renamed`.
+ *
+ * Same `call:get_ptr` limitation as {@link PlaylistCreatedPayload}; the emit
+ * site (`on_playlist_renamed`) writes both keys unconditionally.
+ *
+ * @codegen-override event:playlist:renamed
+ * @codegen-snapshot index:primitive,name:callexpr
+ */
+export interface PlaylistRenamedPayload {
+    /** Zero-based index of the renamed playlist. */
+    index: number;
+    /** The new playlist name. */
+    name: string;
+}

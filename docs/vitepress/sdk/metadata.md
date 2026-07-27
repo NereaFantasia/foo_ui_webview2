@@ -10,16 +10,20 @@
 
 ### read()
 
-Signature: `fb.metadata.read(path: string): Promise<MetadataReadResponse>`
+Signature: `fb.metadata.read(path: string, opts?: { cueIndex?: number }): Promise<MetadataReadResponse>`
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `path` | `string` | Yes | Track path. |
+| `opts.cueIndex` | `number` | No | 1-based track index inside a CUE sheet or image. Equivalent to a `\|subsong:<n>` path suffix; the option wins when both are given. |
 
 Returns `{ success, path?, tags?, info? }`. `tags` preserves upstream key casing and each value is a `string` or `string[]`.
 
 ```javascript
 const result = await fb.metadata.read('E:\\Music\\song.flac');
+
+// Track 3 of a CUE sheet
+const track3 = await fb.metadata.read('E:\\Music\\album.cue', { cueIndex: 3 });
 ```
 
 ### readBatch()
@@ -41,11 +45,12 @@ const result = await fb.metadata.readBatch([
 
 ### readByPath()
 
-Signature: `fb.metadata.readByPath(path: string): Promise<JsonObject>`
+Signature: `fb.metadata.readByPath(path: string, opts?: { cueIndex?: number }): Promise<MetadataReadByPathResponse & JsonObject>`
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `path` | `string` | Yes | Track path. |
+| `opts.cueIndex` | `number` | No | 1-based track index inside a CUE sheet or image, as in `read()`. |
 
 Returns the flat `metadata.readByPath` object. Tag keys become top-level fields alongside host status and path fields. This method does not invoke `metadata.readRaw`.
 
@@ -55,12 +60,13 @@ const fields = await fb.metadata.readByPath('E:\\Music\\song.flac');
 
 ### removeField()
 
-Signature: `fb.metadata.removeField(path: string, field: string): Promise<BaseResponse>`
+Signature: `fb.metadata.removeField(path: string, field: string, opts?: Omit<MetadataRemoveFieldParams, 'path' | 'tags'>): Promise<BaseResponse>`
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `path` | `string` | Yes | Track path. |
 | `field` | `string` | Yes | Single tag name to remove. |
+| `opts.cueIndex` | `number` | No | 1-based track index inside a CUE sheet or image; targets a single contained track instead of the container. |
 
 Dispatches `metadata.removeField` with `tags: [field]`. The receipt can contain `dispatched`, `subsong`, `removedTags`, `removedCount`, and `note`; final completion is reported by `metadata:writeComplete`.
 
@@ -73,27 +79,36 @@ const receipt = await fb.metadata.removeField(
 
 ### removeTag()
 
-Signature: `fb.metadata.removeTag(path: string, tags: string[]): Promise<BaseResponse>`
+Signature: `fb.metadata.removeTag(path: string, tags: string[], opts?: Omit<MetadataRemoveTagParams, 'path' | 'tags'>): Promise<BaseResponse>`
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `path` | `string` | Yes | Track path. |
 | `tags` | `string[]` | Yes | Tag names to remove. |
+| `opts.cueIndex` | `number` | No | 1-based track index inside a CUE sheet or image; targets a single contained track instead of the container. |
 
 Dispatches an asynchronous removal and returns its receipt. Observe `metadata:writeComplete` for the final outcome.
 
+`removeField()` and `removeTag()` share one host handler, so both accept the same `cueIndex` option.
+
 ```javascript
 await fb.metadata.removeTag('E:\\Music\\song.flac', ['COMMENT', 'GROUPING']);
+
+// Clear a tag on track 3 of a CUE sheet only
+await fb.metadata.removeTag('E:\\Music\\album.cue', ['COMMENT'], {
+	cueIndex: 3,
+});
 ```
 
 ### write()
 
-Signature: `fb.metadata.write(path: string, tags: JsonObject): Promise<BaseResponse>`
+Signature: `fb.metadata.write(path: string, tags: JsonObject, opts?: Omit<MetadataWriteParams, 'path' | 'tags'>): Promise<BaseResponse>`
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `path` | `string` | Yes | Track path. |
 | `tags` | `JsonObject` | Yes | Tag updates; a `null` or empty value removes the corresponding tag. |
+| `opts.cueIndex` | `number` | No | 1-based track index inside a CUE sheet or image; writes tags to that single contained track instead of the container. |
 
 Dispatches the write and returns a receipt that can include `canonicalPath`, `handlePath`, `subsong`, and tag counters. The receipt is not the final write result.
 
@@ -101,6 +116,11 @@ Dispatches the write and returns a receipt that can include `canonicalPath`, `ha
 await fb.metadata.write('E:\\Music\\song.flac', {
 	TITLE: 'New title',
 	COMMENT: null,
+});
+
+// Tag track 3 of a CUE sheet
+await fb.metadata.write('E:\\Music\\album.cue', { TITLE: 'Track three' }, {
+	cueIndex: 3,
 });
 ```
 
