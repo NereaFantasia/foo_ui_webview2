@@ -527,45 +527,162 @@ namespace {
     //==========================================================================
     // discovery.getContextMenuCommands - Get context menu commands (most plugins)
     //==========================================================================
+
+    // Resolves the track set that context-menu state is evaluated against.
+    // Mirrors the selection policy used when actually executing a command, so
+    // reported state matches what execution would see. Returns false when
+    // nothing is selected or playing.
+    bool TryGetContextSelection(metadb_handle_list& out) {
+        out.remove_all();
+        try {
+            metadb_handle_ptr nowPlaying;
+            if (playback_control::get()->get_now_playing(nowPlaying)) {
+                out.add_item(nowPlaying);
+                return true;
+            }
+            playlist_manager::get()->activeplaylist_get_selected_items(out);
+        } catch (...) {
+            return false;
+        }
+        return out.get_count() != 0;
+    }
+
+    menu_node::ContextEnabledState ReadEnabledState(
+        const service_ptr_t<contextmenu_item>& item, t_uint32 index) {
+        try {
+            switch (item->get_enabled_state(index)) {
+                case contextmenu_item::FORCE_OFF:
+                    return menu_node::ContextEnabledState::ForceOff;
+                case contextmenu_item::DEFAULT_OFF:
+                    return menu_node::ContextEnabledState::DefaultOff;
+                default:
+                    return menu_node::ContextEnabledState::DefaultOn;
+            }
+        } catch (...) {
+            // A throwing component is treated as ordinarily visible rather than
+            // silently dropped from the listing.
+            return menu_node::ContextEnabledState::DefaultOn;
+        }
+    }
+
     json GetContextMenuCommands(const json& params) {
+        // Hidden entries are filtered by default for the same reason as the main
+        // menu: FORCE_OFF items are shortcut-list-only per the SDK, so listing
+        // them as invocable commands misleads callers.
+        const bool includeHidden = params.value("includeHidden", false);
+
+        // `item_get_display_data_root()` takes a metadb_handle_list, so display
+        // flags are only readable when something is selected or playing. Without
+        // a selection the listing still works (it did before this change and
+        // must keep working), but enabled/checked are reported as unknown rather
+        // than fabricated.
+        metadb_handle_list selection;
+        const bool haveSelection = TryGetContextSelection(selection);
+        const GUID caller = contextmenu_item::caller_active_playlist_selection;
+
         json commands = json::array();
-        
+        int hiddenFiltered = 0;
+
         service_enum_t<contextmenu_item> e;
         service_ptr_t<contextmenu_item> ptr;
-        
+
         while (e.next(ptr)) {
-            t_uint32 count = ptr->get_num_items();
-            
+            t_uint32 count = 0;
+            try {
+                count = ptr->get_num_items();
+            } catch (...) {
+                continue;
+            }
+
             // Try to get parent GUID (v2 API)
             GUID parentGuid = pfc::guid_null;
             service_ptr_t<contextmenu_item_v2> v2;
             if (ptr->service_query_t(v2)) {
                 parentGuid = v2->get_parent();
             }
-            
+
             for (t_uint32 i = 0; i < count; i++) {
                 pfc::string8 name;
-                ptr->get_item_name(i, name);
-                
+                try {
+                    ptr->get_item_name(i, name);
+                } catch (...) {
+                }
+
                 pfc::string8 desc;
-                ptr->get_item_description(i, desc);
-                
-                GUID cmdGuid = ptr->get_item_guid(i);
-                
+                bool haveDesc = false;
+                try {
+                    // Only fill `description` when the SDK actually returns one;
+                    // the previous code kept whatever the buffer happened to
+                    // hold (SPEC D16).
+                    haveDesc = ptr->get_item_description(i, desc);
+                } catch (...) {
+                }
+
+                GUID cmdGuid = pfc::guid_null;
+                try {
+                    cmdGuid = ptr->get_item_guid(i);
+                } catch (...) {
+                }
+
+                const menu_node::ContextEnabledState enabledState =
+                    ReadEnabledState(ptr, i);
+
+                menu_node::State state;
+                if (haveSelection) {
+                    pfc::string8 displayText;
+                    unsigned displayFlags = 0;
+                    bool displayed = true;
+                    try {
+                        displayed = ptr->item_get_display_data_root(
+                            displayText, displayFlags, i, selection, caller);
+                    } catch (...) {
+                        displayed = true;
+                        displayFlags = 0;
+                    }
+                    state = menu_node::NormalizeContextMenu(
+                        displayFlags, displayed, enabledState);
+                } else {
+                    state = menu_node::NormalizeContextMenuStateUnknown(enabledState);
+                }
+
+                if (state.hidden && !includeHidden) {
+                    ++hiddenFiltered;
+                    continue;
+                }
+
+                const std::string label = SafeUtf8String(name.get_ptr());
+                const menu_node::Unaddressable reason =
+                    menu_node::ClassifyAddressability(
+                        menu_node::Kind::Command, /*isDynamicParent=*/false,
+                        !label.empty(), cmdGuid != pfc::guid_null);
+
                 commands.push_back({
-                    {"name", SafeUtf8String(name.get_ptr())},
-                    {"description", SafeUtf8String(desc.get_ptr())},
+                    {"name", label},
+                    {"description", haveDesc ? SafeUtf8String(desc.get_ptr()) : std::string()},
                     {"guid", GuidToString(cmdGuid)},
                     {"parentGuid", GuidToString(parentGuid)},
-                    {"index", i}
+                    {"index", i},
+                    {"enabled", state.enabled},
+                    {"checked", state.checked},
+                    {"radioChecked", state.radioChecked},
+                    {"hidden", state.hidden},
+                    {"stateKnown", state.stateKnown},
+                    {"flags", state.flags},
+                    {"source", menu_node::ToString(menu_node::Source::ContextMenuStatic)},
+                    {"executable", menu_node::IsExecutable(reason)},
+                    {"unaddressableReason", menu_node::ToString(reason)}
                 });
             }
         }
-        
+
         return {
             {"success", true},
             {"commands", commands},
-            {"count", commands.size()}
+            {"count", commands.size()},
+            {"includeHidden", includeHidden},
+            {"hiddenFiltered", hiddenFiltered},
+            {"stateKnown", haveSelection},
+            {"selectionCount", selection.get_count()}
         };
     }
     

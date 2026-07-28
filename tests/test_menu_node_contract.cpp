@@ -280,6 +280,44 @@ TEST(MenuNodeContractTest, EveryMatchKindHasAWireToken) {
 }
 
 // ===========================================================================
+// State observability - "unknown" must never masquerade as "enabled"
+//
+// `item_get_display_data_root()` takes a metadb_handle_list, so with an empty
+// selection there are no display flags to read. Emitting a default enabled=true
+// would be indistinguishable from a real observation, so the contract carries
+// `stateKnown` explicitly.
+// ===========================================================================
+
+TEST(MenuNodeContractTest, ObservedStatesAreMarkedKnown) {
+    EXPECT_TRUE(NormalizeMainMenu(0, true).stateKnown);
+    EXPECT_TRUE(NormalizeContextMenu(0, true,
+                                     ContextEnabledState::DefaultOn).stateKnown);
+    EXPECT_TRUE(NormalizeHmenu(0).stateKnown);
+}
+
+TEST(MenuNodeContractTest, UnqueriedContextStateIsMarkedUnknown) {
+    const State s =
+        NormalizeContextMenuStateUnknown(ContextEnabledState::DefaultOn);
+    EXPECT_FALSE(s.stateKnown)
+        << "no selection means enabled/checked were never observed";
+    EXPECT_EQ(s.flags, 0u) << "no display flags were read, so none may be claimed";
+    EXPECT_FALSE(s.checked);
+    EXPECT_FALSE(s.radioChecked);
+}
+
+TEST(MenuNodeContractTest, ForceOffIsStillDetectableWithoutASelection) {
+    // get_enabled_state() takes only an index and stays callable, and the SDK
+    // documents FORCE_OFF as a constant property of the item rather than a
+    // per-selection one. So hidden remains decidable even when nothing else is.
+    EXPECT_TRUE(
+        NormalizeContextMenuStateUnknown(ContextEnabledState::ForceOff).hidden);
+    EXPECT_FALSE(
+        NormalizeContextMenuStateUnknown(ContextEnabledState::DefaultOn).hidden);
+    EXPECT_FALSE(
+        NormalizeContextMenuStateUnknown(ContextEnabledState::DefaultOff).hidden);
+}
+
+// ===========================================================================
 // SPEC §9.2 cases 8 and 9 - truncation is reported; one shared depth cap
 // ===========================================================================
 

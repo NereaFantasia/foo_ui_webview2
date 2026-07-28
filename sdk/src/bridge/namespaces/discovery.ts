@@ -21,6 +21,8 @@ import type {
 import type {
     DiscoveryExecuteContextMenuByPathParams,
     DiscoveryExecuteContextMenuCommandParams,
+    DiscoveryGetContextMenuCommandsParams,
+    DiscoveryGetMainMenuCommandsParams,
 } from '../../types/generated/params.js';
 
 export const discovery = {
@@ -33,8 +35,13 @@ export const discovery = {
      * (`mainmenu_commands_v2`, e.g. ESLyric) are expanded by default, so the
      * result includes their child commands in addition to the parent slot.
      * Pass `{ expandDynamic: false }` for the raw static registry only.
+     *
+     * Entries the host would not show — a command whose `get_display()` returns
+     * false, or one carrying `flag_defaulthidden` — are omitted by default,
+     * because they are not reachable from the real menu. Pass
+     * `{ includeHidden: true }` to get the unfiltered superset.
      */
-    getMainMenuCommands: (opts?: { expandDynamic?: boolean }) =>
+    getMainMenuCommands: (opts?: DiscoveryGetMainMenuCommandsParams) =>
         bridge.invoke<DiscoveryGetMainMenuCommandsResponse>(
             'discovery.getMainMenuCommands',
             opts,
@@ -53,9 +60,19 @@ export const discovery = {
             'discovery.executeMainMenuCommand',
             subGuid ? { guid, subGuid } : { guid },
         ),
-    getContextMenuCommands: () =>
+    /**
+     * Lists context-menu commands with their state.
+     *
+     * `enabled` / `checked` are only observable when a track is selected or
+     * playing, because the SDK evaluates display data against a track set.
+     * Check the response's `stateKnown` before trusting them: when it is false,
+     * only `hidden` is meaningful. `FORCE_OFF` entries are shortcut-list-only
+     * per the SDK and are omitted unless `includeHidden` is set.
+     */
+    getContextMenuCommands: (opts?: DiscoveryGetContextMenuCommandsParams) =>
         bridge.invoke<DiscoveryGetContextMenuCommandsResponse>(
             'discovery.getContextMenuCommands',
+            opts,
         ),
     executeContextMenuCommand: (opts: DiscoveryExecuteContextMenuCommandParams) =>
         bridge.invoke<BaseResponse & { itemCount?: number }>(

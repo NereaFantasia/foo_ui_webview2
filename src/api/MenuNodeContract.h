@@ -94,11 +94,19 @@ enum class ContextEnabledState {
 // One vocabulary for every source. `flags` keeps the untranslated bits so
 // advanced callers can still distinguish e.g. defaultHidden from FORCE_OFF,
 // which both normalize to hidden == true.
+//
+// `stateKnown` records whether enabled/checked were actually observed. The
+// context-menu tier can only report them when a track selection exists, because
+// `item_get_display_data_root()` takes a `metadb_handle_list`. Reporting a
+// cheerful `enabled: true` for an unqueried item would be indistinguishable
+// from a genuinely enabled one, so the distinction is carried explicitly rather
+// than papered over (SPEC §5.1 fail-loud).
 struct State {
     bool enabled = true;
     bool checked = false;
     bool radioChecked = false;
     bool hidden = false;
+    bool stateKnown = true;
     std::uint32_t flags = 0;
 };
 
@@ -130,6 +138,26 @@ inline State NormalizeContextMenu(std::uint32_t flags,
     s.radioChecked = (flags & contextmenu_flag::kRadioChecked) != 0;
     s.checked = s.radioChecked || (flags & contextmenu_flag::kChecked) != 0;
     s.hidden = !displayReturnedTrue || enabledState == ContextEnabledState::ForceOff;
+    s.stateKnown = true;
+    return s;
+}
+
+// Context menu when no track selection is available.
+//
+// `item_get_display_data_root()` requires a `metadb_handle_list`, so with an
+// empty selection there are no display flags to read at all. `get_enabled_state()`
+// takes only an index and stays callable, which is enough to decide `hidden`
+// (FORCE_OFF is a constant property of the item per the SDK, not a per-selection
+// one). Everything else is genuinely unknown and is reported as such instead of
+// defaulting to a value the caller cannot tell apart from a real observation.
+inline State NormalizeContextMenuStateUnknown(ContextEnabledState enabledState) {
+    State s;
+    s.flags = 0;
+    s.enabled = true;   // meaningless while stateKnown == false
+    s.checked = false;
+    s.radioChecked = false;
+    s.hidden = enabledState == ContextEnabledState::ForceOff;
+    s.stateKnown = false;
     return s;
 }
 

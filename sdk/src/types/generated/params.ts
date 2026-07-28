@@ -592,9 +592,12 @@ export type DiscoveryGetAllServicesParams = Record<string, never>;
 export type DiscoveryGetComponentsParams = Record<string, never>;
 
 /**
- * Parameters for `discovery.getContextMenuCommands` (this API takes no parameters).
+ * Parameters for `discovery.getContextMenuCommands`.
  */
-export type DiscoveryGetContextMenuCommandsParams = Record<string, never>;
+export interface DiscoveryGetContextMenuCommandsParams {
+    /** @default false */
+    includeHidden?: boolean;
+}
 
 /**
  * Parameters for `discovery.getContextMenuTree` (this API takes no parameters).

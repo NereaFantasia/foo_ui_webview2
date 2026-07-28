@@ -753,6 +753,10 @@ export interface DiscoveryGetContextMenuCommandsResponse {
     success: boolean;
     commands: JsonObject;
     count: number;
+    includeHidden: boolean;
+    hiddenFiltered: number;
+    stateKnown: boolean;
+    selectionCount: number;
 }
 
 /**
