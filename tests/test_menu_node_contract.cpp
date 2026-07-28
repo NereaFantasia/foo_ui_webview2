@@ -5,11 +5,6 @@
 // Coverage in this file is deliberately EXHAUSTIVE over flag bit combinations
 // rather than sampled: the pre-refactor defects were all "a state bit was never
 // read", which sampling does not reliably catch.
-//
-// S1 will add path normalization / exact matching / candidate disambiguation.
-// The corresponding SPEC §9.2 cases 6 and 7 are NOT present here because the
-// logic does not exist yet; adding placeholder tests that assert nothing would
-// misrepresent coverage.
 #include "pch.h"
 #include "api/MenuNodeContract.h"
 
@@ -192,6 +187,96 @@ TEST(MenuNodeContractTest, AddressValidityRequiresOwnerGuid) {
 
     a.subGuid = "{A222D5A9-2903-AA8C-EEAE-4B9230558B55}";
     EXPECT_TRUE(a.hasSubGuid());
+}
+
+// ===========================================================================
+// SPEC §9.2 case 6 - path matching is EXACT, never a substring test
+//
+// This is the D9 regression lock. The pre-refactor matcher accepted a substring
+// hit in either direction and took the first winner, so "Rating/1" could resolve
+// to "Rating/10" and execute the wrong command while reporting success.
+// ===========================================================================
+
+TEST(MenuNodeContractTest, RatingOneMustNotMatchRatingTen) {
+    EXPECT_FALSE(SegmentsEqual("1", "10"));
+    EXPECT_FALSE(SegmentsEqual("10", "1"));
+    EXPECT_TRUE(SegmentsEqual("1", "1"));
+}
+
+TEST(MenuNodeContractTest, SubstringInEitherDirectionIsNotAMatch) {
+    // Both directions of the old fuzzy test must now fail.
+    EXPECT_FALSE(SegmentsEqual("Sort", "Sort by album"));
+    EXPECT_FALSE(SegmentsEqual("Sort by album", "Sort"));
+    // A single character used to match nearly anything.
+    EXPECT_FALSE(SegmentsEqual("S", "Sort"));
+}
+
+TEST(MenuNodeContractTest, NormalizationIgnoresMnemonicsEllipsisAndAccelerator) {
+    // The same command as rendered in different tiers must compare equal.
+    EXPECT_TRUE(SegmentsEqual("&Open...", "open"));
+    EXPECT_TRUE(SegmentsEqual("Open...\tCtrl+O", "Open"));
+    EXPECT_TRUE(SegmentsEqual("  Preferences  ", "preferences"));
+}
+
+TEST(MenuNodeContractTest, AsciiFoldingDoesNotTouchNonAsciiBytes) {
+    // CJK has no case to fold; the bytes must survive verbatim so a
+    // multi-byte sequence is never corrupted mid-character.
+    const std::string zh = "\xE6\xA1\x8C\xE9\x9D\xA2\xE6\xAD\x8C\xE8\xAF\x8D";  // 桌面歌词
+    EXPECT_EQ(NormalizeLabel(zh), zh);
+    EXPECT_TRUE(SegmentsEqual(zh, zh));
+
+    // Distinct CJK labels must stay distinct.
+    const std::string zhOther = "\xE6\x82\xAC\xE6\xB5\xAE\xE6\xAD\x8C\xE8\xAF\x8D";  // 悬浮歌词
+    EXPECT_FALSE(SegmentsEqual(zh, zhOther));
+}
+
+TEST(MenuNodeContractTest, HighBytesAreNeverPassedToCtypeFunctions) {
+    // Guards the UB the old NormalizeLabel had: ::tolower(negative char).
+    // A byte-wise fold would alter these; ours must not.
+    std::string raw;
+    for (int b = 0x80; b <= 0xFF; ++b) raw.push_back(static_cast<char>(b));
+
+    const std::string folded = NormalizeLabel(raw);
+    EXPECT_EQ(folded, raw) << "no byte >= 0x80 may be altered";
+}
+
+TEST(MenuNodeContractTest, PathSplittingIsSeparatorAgnosticAndDropsEmpties) {
+    const auto a = SplitPath("View/ESLyric/Reset position");
+    ASSERT_EQ(a.size(), 3u);
+    EXPECT_EQ(a[0], "View");
+    EXPECT_EQ(a[2], "Reset position");
+
+    // Backslash is accepted, and repeated separators collapse.
+    EXPECT_EQ(SplitPath("a\\b").size(), 2u);
+    EXPECT_EQ(SplitPath("a//b").size(), 2u);
+    EXPECT_EQ(SplitPath("/a/").size(), 1u);
+    EXPECT_TRUE(SplitPath("").empty());
+}
+
+TEST(MenuNodeContractTest, JoinPathRoundTripsThroughSplit) {
+    const std::string path = "View/ESLyric/Desktop lyrics/Reset position";
+    EXPECT_EQ(JoinPath(SplitPath(path)), path);
+}
+
+// ===========================================================================
+// SPEC §9.2 case 7 - an ambiguous path yields ALL candidates, not the first
+//
+// The live host has 15 duplicated labels (e.g. "重置位置" x3), so first-match-
+// wins is not a theoretical concern.
+// ===========================================================================
+
+TEST(MenuNodeContractTest, AmbiguityIsClassifiedRatherThanSilentlyResolved) {
+    EXPECT_EQ(ClassifyMatch(0), MatchKind::NotFound);
+    EXPECT_EQ(ClassifyMatch(1), MatchKind::Unique);
+    EXPECT_EQ(ClassifyMatch(2), MatchKind::Ambiguous);
+    EXPECT_EQ(ClassifyMatch(3), MatchKind::Ambiguous)
+        << "the observed 3x duplicate label must report ambiguous";
+}
+
+TEST(MenuNodeContractTest, EveryMatchKindHasAWireToken) {
+    EXPECT_STREQ(ToString(MatchKind::NotFound), "notFound");
+    EXPECT_STREQ(ToString(MatchKind::Unique), "unique");
+    EXPECT_STREQ(ToString(MatchKind::Ambiguous), "ambiguous");
 }
 
 // ===========================================================================

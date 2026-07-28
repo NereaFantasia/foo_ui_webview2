@@ -8,19 +8,16 @@
 // Scope of this file: everything that is pure decision logic.
 //   - flag -> boolean state normalization for all node sources
 //   - addressability classification
+//   - label / path normalization and exact segment matching
 //   - shared traversal limits
 // SDK interaction lives in MenuNodeCollector; execution in MenuExecutionGuard.
 //
 // GUIDs are carried as already-formatted strings so this header needs no
 // Win32 GUID type. The collector performs GUID<->string conversion.
-//
-// SPEC stage: S0 delivers the type surface and state normalization. Path
-// normalization / exact matching / candidate disambiguation arrive in S1 and
-// are deliberately ABSENT here rather than present as stubs returning wrong
-// answers.
 
 #include <cstdint>
 #include <string>
+#include <vector>
 
 namespace menu_node {
 
@@ -222,6 +219,128 @@ inline const char* ToString(Source source) {
         case Source::HmenuFallback:      return "hmenu_fallback";
     }
     return "";
+}
+
+// ---------------------------------------------------------------------------
+// Label and path normalization
+//
+// Paths are DISPLAY-ONLY for addressing purposes (see Address above), but they
+// still have to be normalized consistently for two jobs: rendering a stable
+// `path` field, and resolving a caller-supplied path well enough to report a
+// precise error. Matching here is EXACT per segment.
+//
+// Why exact: the pre-refactor matcher accepted a substring hit in EITHER
+// direction and took the first winner, so "Rating/1" could resolve to
+// "Rating/10" and silently execute the wrong command.
+// ---------------------------------------------------------------------------
+
+// ASCII-only case folding. Bytes >= 0x80 are passed through untouched, so a
+// UTF-8 multi-byte sequence can never be corrupted mid-character and no
+// negative char is ever handed to a <cctype> function (that is UB, and the
+// pre-refactor code did exactly that).
+inline char FoldAsciiByte(char c) {
+    const unsigned char u = static_cast<unsigned char>(c);
+    if (u >= 'A' && u <= 'Z') return static_cast<char>(u - 'A' + 'a');
+    return c;
+}
+
+inline bool IsAsciiSpace(char c) {
+    const unsigned char u = static_cast<unsigned char>(c);
+    return u == ' ' || u == '\t' || u == '\n' || u == '\r' || u == '\v' || u == '\f';
+}
+
+inline std::string TrimAscii(const std::string& in) {
+    std::size_t begin = 0;
+    while (begin < in.size() && IsAsciiSpace(in[begin])) ++begin;
+    std::size_t end = in.size();
+    while (end > begin && IsAsciiSpace(in[end - 1])) --end;
+    return in.substr(begin, end - begin);
+}
+
+// Canonical form of a single menu label:
+//   - drop everything from the first tab (Win32 accelerator text, e.g.
+//     "Open...\tCtrl+O")
+//   - drop '&' mnemonic markers
+//   - drop one trailing "..." (a dialog hint, not part of the identity)
+//   - trim, then fold ASCII case
+inline std::string NormalizeLabel(const std::string& raw) {
+    std::string s = raw;
+
+    const std::size_t tab = s.find('\t');
+    if (tab != std::string::npos) s.erase(tab);
+
+    std::string noMnemonic;
+    noMnemonic.reserve(s.size());
+    for (const char c : s) {
+        if (c != '&') noMnemonic.push_back(c);
+    }
+    s = TrimAscii(noMnemonic);
+
+    if (s.size() >= 3 && s.compare(s.size() - 3, 3, "...") == 0) {
+        s.erase(s.size() - 3);
+    }
+    s = TrimAscii(s);
+
+    for (char& c : s) c = FoldAsciiByte(c);
+    return s;
+}
+
+// Split on '/' or '\', dropping empty segments so "a//b" and "a/b" agree.
+inline std::vector<std::string> SplitPath(const std::string& path) {
+    std::vector<std::string> parts;
+    std::string current;
+    for (const char c : path) {
+        if (c == '/' || c == '\\') {
+            if (!current.empty()) {
+                parts.push_back(current);
+                current.clear();
+            }
+        } else {
+            current.push_back(c);
+        }
+    }
+    if (!current.empty()) parts.push_back(current);
+    return parts;
+}
+
+// Exact match after normalization. Never a substring test.
+inline bool SegmentsEqual(const std::string& a, const std::string& b) {
+    return NormalizeLabel(a) == NormalizeLabel(b);
+}
+
+inline std::string JoinPath(const std::vector<std::string>& parts) {
+    std::string out;
+    for (std::size_t i = 0; i < parts.size(); ++i) {
+        if (i != 0) out.push_back('/');
+        out += parts[i];
+    }
+    return out;
+}
+
+// Result of resolving a caller-supplied path. `Ambiguous` exists so a genuinely
+// ambiguous request is reported as such instead of silently resolving to
+// whichever node happened to be enumerated first.
+enum class MatchKind {
+    NotFound,
+    Unique,
+    Ambiguous,
+};
+
+inline const char* ToString(MatchKind kind) {
+    switch (kind) {
+        case MatchKind::NotFound:  return "notFound";
+        case MatchKind::Unique:    return "unique";
+        case MatchKind::Ambiguous: return "ambiguous";
+    }
+    return "";
+}
+
+// Classify how many candidates a lookup produced. Callers pair this with the
+// candidate list so the response can carry disambiguation hints.
+inline MatchKind ClassifyMatch(std::size_t candidateCount) {
+    if (candidateCount == 0) return MatchKind::NotFound;
+    if (candidateCount == 1) return MatchKind::Unique;
+    return MatchKind::Ambiguous;
 }
 
 // ---------------------------------------------------------------------------
