@@ -851,9 +851,9 @@ void WebViewPreferencesInstance::InitializeControls(HWND hwnd) {
     // ============================================
     
     // "Web" 分组标签
-    HWND hLabel = CreateWindowExW(0, L"STATIC", L"Web",
+    HWND hLabel = CreateWindowExW(0, L"STATIC", TR("Web Template:", "Web 模板:"),
         WS_CHILD | WS_VISIBLE | SS_LEFT,
-        MARGIN, y, DpiScale(100, dpi), LABEL_HEIGHT,
+        MARGIN, y, DpiScale(120, dpi), LABEL_HEIGHT,
         hwnd, (HMENU)IDC_STATIC_TEMPLATE, hInst, nullptr);
     SendMessageW(hLabel, WM_SETFONT, (WPARAM)hFont, TRUE);
     y += LABEL_HEIGHT + DpiScale(2, dpi);
@@ -1279,6 +1279,10 @@ void WebViewPreferencesInstance::OnRenameTemplate(HWND hwnd) {
                 labelText += TR("\":", "\"):");
                 SetWindowTextW(hLabel, labelText.c_str());
             }
+            // 按钮文案在此设置：DLGITEMTEMPLATE 的 titleArray 是定长内联数组,
+            // 放不下更长的译文, 故模板里只留 ASCII 兜底文本。
+            SetDlgItemTextW(hDlg, IDOK, TR("OK", "确定"));
+            SetDlgItemTextW(hDlg, IDCANCEL, TR("Cancel", "取消"));
             HWND hEdit = GetDlgItem(hDlg, 1001);
             if (hEdit) {
                 SetWindowTextW(hEdit, s_renameNewName.c_str());
