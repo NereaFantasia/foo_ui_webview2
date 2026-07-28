@@ -87,6 +87,21 @@ enum class ContextEnabledState {
     DefaultOn = 2,
 };
 
+// Execution pre-flight for a context-menu command.
+//
+// The SDK treats FORCE_OFF as "this command belongs in the keyboard-shortcut
+// list only" — it is never drawn in the real menu for the current selection.
+// Dispatching it anyway is what let callers "successfully" run commands the user
+// could not have clicked. DEFAULT_OFF is deliberately NOT refused: it only means
+// "hidden unless Shift is held", so it remains reachable and invocable.
+//
+// `force` exists because a caller holding a GUID it obtained deliberately may
+// still want the old unchecked behaviour; it must be opt-in, never the default.
+inline bool ShouldRefuseExecution(ContextEnabledState state, bool force) {
+    if (force) return false;
+    return state == ContextEnabledState::ForceOff;
+}
+
 // ---------------------------------------------------------------------------
 // Normalized state
 // ---------------------------------------------------------------------------

@@ -569,6 +569,8 @@ export interface DiscoveryExecuteContextMenuByPathParams {
 export interface DiscoveryExecuteContextMenuCommandParams {
     /** @default "" */
     guid?: string;
+    /** @default false */
+    force?: boolean;
 }
 
 /**

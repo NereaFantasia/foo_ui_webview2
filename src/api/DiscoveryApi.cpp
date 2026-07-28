@@ -689,6 +689,46 @@ namespace {
     //==========================================================================
     // discovery.executeContextMenuCommand - Execute a context menu command
     //==========================================================================
+    // Locates a context-menu command by GUID and reports whether the host would
+    // let it run. Returns false when no registered item owns the GUID.
+    bool TryResolveContextCommand(const GUID& cmdGuid,
+                                  menu_node::ContextEnabledState& outState,
+                                  std::string& outName) {
+        service_enum_t<contextmenu_item> e;
+        service_ptr_t<contextmenu_item> ptr;
+
+        while (e.next(ptr)) {
+            t_uint32 count = 0;
+            try {
+                count = ptr->get_num_items();
+            } catch (...) {
+                continue;
+            }
+
+            for (t_uint32 i = 0; i < count; i++) {
+                GUID candidate = pfc::guid_null;
+                try {
+                    candidate = ptr->get_item_guid(i);
+                } catch (...) {
+                    continue;
+                }
+                if (candidate != cmdGuid) continue;
+
+                outState = ReadEnabledState(ptr, i);
+
+                pfc::string8 name;
+                try {
+                    ptr->get_item_name(i, name);
+                    outName = SafeUtf8String(name.get_ptr());
+                } catch (...) {
+                    outName.clear();
+                }
+                return true;
+            }
+        }
+        return false;
+    }
+
     json ExecuteContextMenuCommand(const json& params) {
         std::string guidStr = params.value("guid", "");
         if (guidStr.empty()) {
@@ -717,6 +757,32 @@ namespace {
         if (items.get_count() == 0) {
             return {{"success", false}, {"error", "No track selected or playing"}};
         }
+
+        // Pre-flight check. Previously any GUID was handed straight to
+        // run_command_context, so a FORCE_OFF command — which the SDK documents
+        // as shortcut-list-only and never shows in the real menu — was dispatched
+        // as if it were an ordinary entry. Callers can still opt out.
+        const bool force = params.value("force", false);
+        menu_node::ContextEnabledState enabledState =
+            menu_node::ContextEnabledState::DefaultOn;
+        std::string resolvedName;
+        const bool resolved =
+            TryResolveContextCommand(cmdGuid, enabledState, resolvedName);
+
+        if (resolved &&
+            menu_node::ShouldRefuseExecution(enabledState, force)) {
+            // FORCE_OFF is not an addressability problem — the command has a
+            // perfectly good GUID — so this is reported as "hidden for the
+            // current selection", not as an unaddressable node.
+            return {
+                {"success", false},
+                {"error", "Command is not available for the current selection"},
+                {"guid", guidStr},
+                {"name", resolvedName},
+                {"hidden", true},
+                {"force", force}
+            };
+        }
         
         // Execute the context menu command
         bool executed = menu_helpers::run_command_context(cmdGuid, pfc::guid_null, items);
@@ -724,6 +790,9 @@ namespace {
         return {
             {"success", executed},
             {"guid", guidStr},
+            {"name", resolvedName},
+            {"resolved", resolved},
+            {"force", force},
             {"itemCount", items.get_count()}
         };
     }
@@ -734,69 +803,63 @@ namespace {
     // Uses contextmenu_manager to traverse the full menu tree
     //==========================================================================
     
-    // Helper: Find menu node by path (recursive)
-    contextmenu_node* FindNodeByPath(contextmenu_node* node, const std::vector<std::string>& pathParts, size_t index) {
-        if (!node || index >= pathParts.size()) return nullptr;
-        
-        const std::string& targetName = pathParts[index];
-        bool isLastPart = (index == pathParts.size() - 1);
-        
-        // If this is a popup/folder, search its children
-        if (node->get_type() == contextmenu_item_node::TYPE_POPUP) {
-            t_size childCount = node->get_num_children();
-            for (t_size i = 0; i < childCount; i++) {
-                contextmenu_node* child = node->get_child(i);
-                if (!child) continue;
-                
-                const char* childName = child->get_name();
-                if (!childName) continue;
-                
-                // Compare names (case-insensitive, trim whitespace)
-                std::string name = childName;
-                
-                // Check if name matches (exact or contains)
-                bool matches = (name == targetName) || 
-                               (name.find(targetName) != std::string::npos) ||
-                               (targetName.find(name) != std::string::npos);
-                
-                if (matches) {
-                    if (isLastPart) {
-                        // This is the target command
-                        if (child->get_type() == contextmenu_item_node::TYPE_COMMAND) {
-                            return child;
-                        }
-                    } else {
-                        // Continue search in child
-                        contextmenu_node* result = FindNodeByPath(child, pathParts, index + 1);
-                        if (result) return result;
+    // Collects EVERY node whose path matches, rather than returning the first
+    // hit. The previous matcher accepted a substring hit in either direction and
+    // took the first winner, so "Rating/1" could resolve to "Rating/10" and
+    // silently execute the wrong command. Matching now goes through
+    // menu_node::SegmentsEqual (exact after normalization), and an ambiguous
+    // request is reported as such instead of being resolved arbitrarily.
+    void CollectNodesByPath(contextmenu_node* node,
+                            const std::vector<std::string>& pathParts,
+                            size_t index,
+                            std::vector<contextmenu_node*>& out,
+                            std::vector<std::string>& outNames,
+                            int depth) {
+        if (!node || index >= pathParts.size()) return;
+        if (menu_node::DepthExceeded(depth)) return;
+        if (node->get_type() != contextmenu_item_node::TYPE_POPUP) return;
+
+        const bool isLastPart = (index == pathParts.size() - 1);
+
+        t_size childCount = 0;
+        try {
+            childCount = node->get_num_children();
+        } catch (...) {
+            return;
+        }
+
+        for (t_size i = 0; i < childCount; i++) {
+            contextmenu_node* child = nullptr;
+            try {
+                child = node->get_child(i);
+            } catch (...) {
+                continue;
+            }
+            if (!child) continue;
+
+            const char* childName = child->get_name();
+            if (!childName) continue;
+
+            if (!menu_node::SegmentsEqual(childName, pathParts[index])) continue;
+
+            if (isLastPart) {
+                if (child->get_type() == contextmenu_item_node::TYPE_COMMAND) {
+                    out.push_back(child);
+                    pfc::string8 fullName;
+                    try {
+                        child->get_full_name(fullName);
+                        outNames.push_back(SafeUtf8String(fullName.get_ptr()));
+                    } catch (...) {
+                        outNames.push_back(SafeUtf8String(childName));
                     }
                 }
-            }
-        }
-        
-        return nullptr;
-    }
-    
-    // Helper: Split path string
-    std::vector<std::string> SplitPath(const std::string& path) {
-        std::vector<std::string> parts;
-        std::string current;
-        for (char c : path) {
-            if (c == '/') {
-                if (!current.empty()) {
-                    parts.push_back(current);
-                    current.clear();
-                }
             } else {
-                current += c;
+                CollectNodesByPath(child, pathParts, index + 1, out, outNames,
+                                   depth + 1);
             }
         }
-        if (!current.empty()) {
-            parts.push_back(current);
-        }
-        return parts;
     }
-    
+
     json ExecuteContextMenuByPath(const json& params) {
         std::string path = params.value("path", "");
         std::string trackPath = params.value("trackPath", "");
@@ -843,45 +906,84 @@ namespace {
         }
         
         // Split path and search for matching node
-        std::vector<std::string> pathParts = SplitPath(path);
+        const std::vector<std::string> pathParts = menu_node::SplitPath(path);
         if (pathParts.empty()) {
             return {{"success", false}, {"error", "path contains no valid segments"}};
         }
-        
-        // Search from root's children
-        contextmenu_node* targetNode = nullptr;
+
+        // Walk from the root's children, collecting every match so an ambiguous
+        // path can be reported instead of silently resolved to the first hit.
+        std::vector<contextmenu_node*> matches;
+        std::vector<std::string> matchNames;
         if (root->get_type() == contextmenu_item_node::TYPE_POPUP) {
-            t_size childCount = root->get_num_children();
-            for (t_size i = 0; i < childCount && !targetNode; i++) {
-                contextmenu_node* child = root->get_child(i);
+            t_size childCount = 0;
+            try {
+                childCount = root->get_num_children();
+            } catch (...) {
+                childCount = 0;
+            }
+
+            for (t_size i = 0; i < childCount; i++) {
+                contextmenu_node* child = nullptr;
+                try {
+                    child = root->get_child(i);
+                } catch (...) {
+                    continue;
+                }
                 if (!child) continue;
-                
+
                 const char* childName = child->get_name();
                 if (!childName) continue;
-                
-                std::string name = childName;
-                bool matches = (name == pathParts[0]) || 
-                               (name.find(pathParts[0]) != std::string::npos) ||
-                               (pathParts[0].find(name) != std::string::npos);
-                
-                if (matches) {
-                    if (pathParts.size() == 1 && child->get_type() == contextmenu_item_node::TYPE_COMMAND) {
-                        targetNode = child;
-                    } else {
-                        targetNode = FindNodeByPath(child, pathParts, 1);
+
+                if (!menu_node::SegmentsEqual(childName, pathParts[0])) continue;
+
+                if (pathParts.size() == 1) {
+                    if (child->get_type() == contextmenu_item_node::TYPE_COMMAND) {
+                        matches.push_back(child);
+                        pfc::string8 fullName;
+                        try {
+                            child->get_full_name(fullName);
+                            matchNames.push_back(SafeUtf8String(fullName.get_ptr()));
+                        } catch (...) {
+                            matchNames.push_back(SafeUtf8String(childName));
+                        }
                     }
+                } else {
+                    CollectNodesByPath(child, pathParts, 1, matches, matchNames, 1);
                 }
             }
         }
-        
-        if (!targetNode) {
+
+        const menu_node::MatchKind matchKind =
+            menu_node::ClassifyMatch(matches.size());
+
+        if (matchKind == menu_node::MatchKind::NotFound) {
             return {
                 {"success", false},
                 {"error", "Command not found in menu tree: " + path},
-                {"path", path}
+                {"path", path},
+                {"match", menu_node::ToString(matchKind)},
+                {"candidateCount", 0}
             };
         }
-        
+
+        // Refusing to guess is deliberate: the live host has duplicated labels
+        // (e.g. three separate "Reset position" entries), so executing whichever
+        // one happened to be enumerated first is a correctness bug, not a
+        // convenience.
+        if (matchKind == menu_node::MatchKind::Ambiguous) {
+            return {
+                {"success", false},
+                {"error", "Path is ambiguous; refine it to address one command: " + path},
+                {"path", path},
+                {"match", menu_node::ToString(matchKind)},
+                {"candidateCount", matches.size()},
+                {"candidates", matchNames}
+            };
+        }
+
+        contextmenu_node* targetNode = matches.front();
+
         // Execute the command
         try {
             targetNode->execute();
@@ -893,6 +995,8 @@ namespace {
                 {"success", true},
                 {"path", path},
                 {"foundName", SafeUtf8String(fullName.get_ptr())},
+                {"match", menu_node::ToString(matchKind)},
+                {"candidateCount", matches.size()},
                 {"itemCount", items.get_count()}
             };
         } catch (...) {

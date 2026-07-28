@@ -703,6 +703,9 @@ export interface DiscoveryExecuteContextMenuByPathResponse {
     success: boolean;
     error?: string;
     path?: string;
+    match?: string;
+    candidateCount?: number;
+    candidates?: string[];
     foundName?: string;
     itemCount?: number;
 }
@@ -714,6 +717,10 @@ export interface DiscoveryExecuteContextMenuCommandResponse {
     success: boolean;
     error?: string;
     guid?: string;
+    name?: string;
+    hidden?: boolean;
+    force?: boolean;
+    resolved?: boolean;
     itemCount?: number;
 }
 

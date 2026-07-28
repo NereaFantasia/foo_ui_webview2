@@ -259,6 +259,35 @@ TEST(MenuNodeContractTest, JoinPathRoundTripsThroughSplit) {
 }
 
 // ===========================================================================
+// Execution pre-flight - a FORCE_OFF command must not be dispatched
+//
+// Before this guard existed, any GUID was handed straight to
+// run_command_context, so a command the user could never have clicked was
+// executed and reported as success.
+// ===========================================================================
+
+TEST(MenuNodeContractTest, ForceOffCommandIsRefusedByDefault) {
+    EXPECT_TRUE(ShouldRefuseExecution(ContextEnabledState::ForceOff, false));
+}
+
+TEST(MenuNodeContractTest, DefaultOffRemainsInvocable) {
+    // DEFAULT_OFF only means "hidden unless Shift is held" - it is still a
+    // reachable command, so refusing it would be a regression.
+    EXPECT_FALSE(ShouldRefuseExecution(ContextEnabledState::DefaultOff, false));
+    EXPECT_FALSE(ShouldRefuseExecution(ContextEnabledState::DefaultOn, false));
+}
+
+TEST(MenuNodeContractTest, ForceFlagOverridesTheRefusalForEveryState) {
+    // force is an explicit opt-out; it must never be the default, but when set
+    // it has to bypass the guard for every state without exception.
+    for (const ContextEnabledState s : {ContextEnabledState::ForceOff,
+                                        ContextEnabledState::DefaultOff,
+                                        ContextEnabledState::DefaultOn}) {
+        EXPECT_FALSE(ShouldRefuseExecution(s, /*force=*/true));
+    }
+}
+
+// ===========================================================================
 // SPEC §9.2 case 7 - an ambiguous path yields ALL candidates, not the first
 //
 // The live host has 15 duplicated labels (e.g. "重置位置" x3), so first-match-

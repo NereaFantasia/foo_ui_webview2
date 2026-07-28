@@ -74,14 +74,54 @@ export const discovery = {
             'discovery.getContextMenuCommands',
             opts,
         ),
+    /**
+     * Executes a context-menu command by GUID against the current selection (or
+     * the playing track).
+     *
+     * A `FORCE_OFF` command is refused rather than dispatched: the SDK treats
+     * that state as "keyboard-shortcut list only", so the host never draws it and
+     * running it would perform something the user could not have clicked. Such a
+     * refusal comes back as `success: false` with `hidden: true`. Pass
+     * `{ force: true }` to dispatch anyway. `DEFAULT_OFF` commands (hidden unless
+     * Shift is held) are still invocable and are never refused.
+     */
     executeContextMenuCommand: (opts: DiscoveryExecuteContextMenuCommandParams) =>
-        bridge.invoke<BaseResponse & { itemCount?: number }>(
+        bridge.invoke<
+            BaseResponse & {
+                itemCount?: number;
+                name?: string;
+                hidden?: boolean;
+                resolved?: boolean;
+                force?: boolean;
+            }
+        >(
             'discovery.executeContextMenuCommand',
             opts,
         ),
+    /**
+     * Executes a context-menu command addressed by its display path, e.g.
+     * `'Playback Statistics/Rating/5'`.
+     *
+     * Each path segment must match a menu label exactly once, after normalization
+     * (mnemonic `&`, a trailing ellipsis, accelerator text and ASCII case are
+     * ignored). Matching is never a substring test, so `'Rating/1'` cannot
+     * resolve to `'Rating/10'`.
+     *
+     * A path that matches several commands is refused instead of guessed —
+     * duplicated labels are common in real hosts. That comes back as
+     * `success: false` with `match: 'ambiguous'` and a `candidates` list of full
+     * names; use it to refine the path, or address the command by GUID via
+     * {@link executeContextMenuCommand}, which is the only stable identifier.
+     */
     executeContextMenuByPath: (opts: DiscoveryExecuteContextMenuByPathParams) =>
         bridge.invoke<
-            BaseResponse & { foundName?: string; itemCount?: number }
+            BaseResponse & {
+                foundName?: string;
+                itemCount?: number;
+                match?: string;
+                candidateCount?: number;
+                candidates?: string[];
+            }
         >('discovery.executeContextMenuByPath', opts),
     getContextMenuTree: () =>
         bridge.invoke<DiscoveryGetContextMenuTreeResponse>(
