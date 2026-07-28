@@ -1906,6 +1906,7 @@ export interface PlaycountSetParams {
  * Parameters for `playlist.addHandles`.
  */
 export interface PlaylistAddHandlesParams {
+    /** @default `SIZE_MAX` */
     playlist?: number;
     /** @default `json :: array ( )` */
     handles?: unknown[];
@@ -1915,6 +1916,7 @@ export interface PlaylistAddHandlesParams {
  * Parameters for `playlist.addPaths`.
  */
 export interface PlaylistAddPathsParams {
+    /** @default `SIZE_MAX` */
     playlist?: number;
     /** @default `json :: array ( )` */
     paths?: unknown[];
@@ -1924,6 +1926,7 @@ export interface PlaylistAddPathsParams {
  * Parameters for `playlist.addPathsAsync`.
  */
 export interface PlaylistAddPathsAsyncParams {
+    /** @default `SIZE_MAX` */
     playlist?: number;
     /** @default `json :: array ( )` */
     paths?: unknown[];
@@ -1933,6 +1936,7 @@ export interface PlaylistAddPathsAsyncParams {
  * Parameters for `playlist.addPathsSequential`.
  */
 export interface PlaylistAddPathsSequentialParams {
+    /** @default `SIZE_MAX` */
     playlist?: number;
     /** @default `json :: array ( )` */
     paths?: unknown[];
@@ -1942,6 +1946,7 @@ export interface PlaylistAddPathsSequentialParams {
  * Parameters for `playlist.clear`.
  */
 export interface PlaylistClearParams {
+    /** @default `SIZE_MAX` */
     playlist?: number;
 }
 
@@ -1949,6 +1954,7 @@ export interface PlaylistClearParams {
  * Parameters for `playlist.convertToAutoplaylist`.
  */
 export interface PlaylistConvertToAutoplaylistParams {
+    /** @default `SIZE_MAX` */
     playlist?: number;
     /** @default "" */
     query?: string;
@@ -1964,6 +1970,7 @@ export interface PlaylistConvertToAutoplaylistParams {
 export interface PlaylistCreateParams {
     /** @default "New Playlist" */
     name?: string;
+    /** @default `SIZE_MAX` */
     position?: number;
 }
 
@@ -1985,6 +1992,7 @@ export interface PlaylistCreateAutoplaylistParams {
  * Parameters for `playlist.deselectAll`.
  */
 export interface PlaylistDeselectAllParams {
+    /** @default `SIZE_MAX` */
     playlist?: number;
 }
 
@@ -1992,6 +2000,7 @@ export interface PlaylistDeselectAllParams {
  * Parameters for `playlist.duplicate`.
  */
 export interface PlaylistDuplicateParams {
+    /** @default `SIZE_MAX` */
     playlist?: number;
     /** @default "" */
     name?: string;
@@ -2001,12 +2010,14 @@ export interface PlaylistDuplicateParams {
  * Parameters for `playlist.focusTrack`.
  */
 export interface PlaylistFocusTrackParams {
+    /** @default `SIZE_MAX` */
     playlist?: number;
     /**
      * int64 — may lose precision above 2^53
      * @default `params . value ( "track" , SIZE_MAX )`
      */
     index?: number;
+    /** @default `SIZE_MAX` */
     track?: number;
 }
 
@@ -2024,6 +2035,7 @@ export type PlaylistGetAllParams = Record<string, never>;
  * Parameters for `playlist.getAutoplaylistInfo`.
  */
 export interface PlaylistGetAutoplaylistInfoParams {
+    /** @default `SIZE_MAX` */
     playlist?: number;
 }
 
@@ -2031,6 +2043,7 @@ export interface PlaylistGetAutoplaylistInfoParams {
  * Parameters for `playlist.getAutoplaylistQuery`.
  */
 export interface PlaylistGetAutoplaylistQueryParams {
+    /** @default `SIZE_MAX` */
     playlist?: number;
 }
 
@@ -2048,6 +2061,7 @@ export type PlaylistGetCountParams = Record<string, never>;
  * Parameters for `playlist.getFocusedTrack`.
  */
 export interface PlaylistGetFocusedTrackParams {
+    /** @default `SIZE_MAX` */
     playlist?: number;
 }
 
@@ -2055,6 +2069,7 @@ export interface PlaylistGetFocusedTrackParams {
  * Parameters for `playlist.getFocusTrack`.
  */
 export interface PlaylistGetFocusTrackParams {
+    /** @default `SIZE_MAX` */
     playlist?: number;
 }
 
@@ -2062,6 +2077,7 @@ export interface PlaylistGetFocusTrackParams {
  * Parameters for `playlist.getLockInfo`.
  */
 export interface PlaylistGetLockInfoParams {
+    /** @default `SIZE_MAX` */
     playlist?: number;
 }
 
@@ -2090,6 +2106,7 @@ export interface PlaylistGetSelectedTracksParams {
  * Parameters for `playlist.getSelection`.
  */
 export interface PlaylistGetSelectionParams {
+    /** @default `SIZE_MAX` */
     playlist?: number;
 }
 
@@ -2141,6 +2158,7 @@ export interface PlaylistGetTracksParams {
  * Parameters for `playlist.insertTracks`.
  */
 export interface PlaylistInsertTracksParams {
+    /** @default `SIZE_MAX` */
     playlist?: number;
     /**
      * int64 — may lose precision above 2^53
@@ -2160,6 +2178,7 @@ export interface PlaylistInsertTracksParams {
  * Parameters for `playlist.isAutoplaylist`.
  */
 export interface PlaylistIsAutoplaylistParams {
+    /** @default `SIZE_MAX` */
     playlist?: number;
 }
 
@@ -2167,6 +2186,7 @@ export interface PlaylistIsAutoplaylistParams {
  * Parameters for `playlist.isLocked`.
  */
 export interface PlaylistIsLockedParams {
+    /** @default `SIZE_MAX` */
     playlist?: number;
 }
 
@@ -2194,6 +2214,7 @@ export interface PlaylistMoveTracksParams {
  * Parameters for `playlist.playTrack`.
  */
 export interface PlaylistPlayTrackParams {
+    /** @default `SIZE_MAX` */
     playlist?: number;
     /**
      * int64 — may lose precision above 2^53
@@ -2215,6 +2236,7 @@ export interface PlaylistPlayTrackParams {
  * Parameters for `playlist.redo`.
  */
 export interface PlaylistRedoParams {
+    /** @default `SIZE_MAX` */
     playlist?: number;
 }
 
@@ -2222,6 +2244,7 @@ export interface PlaylistRedoParams {
  * Parameters for `playlist.remove`.
  */
 export interface PlaylistRemoveParams {
+    /** @default `SIZE_MAX` */
     playlist?: number;
 }
 
@@ -2229,6 +2252,7 @@ export interface PlaylistRemoveParams {
  * Parameters for `playlist.removeAutoplaylist`.
  */
 export interface PlaylistRemoveAutoplaylistParams {
+    /** @default `SIZE_MAX` */
     playlist?: number;
 }
 
@@ -2270,6 +2294,7 @@ export interface PlaylistRemoveTracksParams {
  * Parameters for `playlist.rename`.
  */
 export interface PlaylistRenameParams {
+    /** @default `SIZE_MAX` */
     playlist?: number;
     /** @default "" */
     name?: string;
@@ -2279,6 +2304,7 @@ export interface PlaylistRenameParams {
  * Parameters for `playlist.reorder`.
  */
 export interface PlaylistReorderParams {
+    /** @default `SIZE_MAX` */
     playlist?: number;
     /** @default `json :: array ( )` */
     newOrder?: unknown[];
@@ -2296,6 +2322,7 @@ export interface PlaylistReorderPlaylistsParams {
  * Parameters for `playlist.replaceAllAndPlay`.
  */
 export interface PlaylistReplaceAllAndPlayParams {
+    /** @default `SIZE_MAX` */
     playlist?: number;
     /** @default `json :: array ( )` */
     paths?: unknown[];
@@ -2314,6 +2341,7 @@ export interface PlaylistReplaceAllAndPlayParams {
  * Parameters for `playlist.reverse`.
  */
 export interface PlaylistReverseParams {
+    /** @default `SIZE_MAX` */
     playlist?: number;
 }
 
@@ -2321,6 +2349,7 @@ export interface PlaylistReverseParams {
  * Parameters for `playlist.selectAll`.
  */
 export interface PlaylistSelectAllParams {
+    /** @default `SIZE_MAX` */
     playlist?: number;
 }
 
@@ -2328,6 +2357,7 @@ export interface PlaylistSelectAllParams {
  * Parameters for `playlist.setActive`.
  */
 export interface PlaylistSetActiveParams {
+    /** @default `SIZE_MAX` */
     playlist?: number;
 }
 
@@ -2335,7 +2365,9 @@ export interface PlaylistSetActiveParams {
  * Parameters for `playlist.setFocusedTrack`.
  */
 export interface PlaylistSetFocusedTrackParams {
+    /** @default `SIZE_MAX` */
     playlist?: number;
+    /** @default `SIZE_MAX` */
     index?: number;
 }
 
@@ -2401,6 +2433,7 @@ export interface PlaylistSortParams {
  * Parameters for `playlist.undo`.
  */
 export interface PlaylistUndoParams {
+    /** @default `SIZE_MAX` */
     playlist?: number;
 }
 

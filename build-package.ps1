@@ -393,6 +393,19 @@ if ($IncludeSDK) {
         $SdkTargetDir = Join-Path $SdkTempDir "sdk"
         Copy-Item $SdkSourceDir $SdkTargetDir -Recurse -Force
 
+        # 排除依赖安装目录。node_modules 可由 package.json 完整重建，属于本机
+        # 安装产物而非源码：收进 ZIP 会让包体从 1.12 MB 膨胀到 19.85 MB，
+        # 超出 audit_fb2k_component.ps1 的 5 MB SDK 预算（size_regression）。
+        # 先删目录再跑文件模式扫描，避免遍历上千个依赖文件。
+        $SdkExcludeDirs = @("node_modules")
+        foreach ($dirName in $SdkExcludeDirs) {
+            Get-ChildItem $SdkTargetDir -Recurse -Directory -Filter $dirName -Force |
+                Sort-Object { $_.FullName.Length } -Descending |
+                ForEach-Object {
+                    Remove-Item $_.FullName -Recurse -Force -ErrorAction SilentlyContinue
+                }
+        }
+
         # 排除测试文件和非发布文件
         $SdkExcludePatterns = @("test_*", "*.test.*", "*.tgz", "*.zip")
         foreach ($pattern in $SdkExcludePatterns) {
