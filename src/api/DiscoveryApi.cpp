@@ -7,6 +7,7 @@
 #include "pch.h"
 #include "api/DiscoveryApi.h"
 #include "api/BridgeCore.h"
+#include "api/MenuNodeContract.h"
 #include <foobar2000/SDK/menu_helpers.h>
 #include "utils/GuidUtils.h"
 #include "utils/StringUtils.h"
@@ -45,6 +46,7 @@ namespace {
     void CollectDynamicMenuNodes(const mainmenu_node::ptr& node,
                                  const std::string& pathPrefix,
                                  const DynamicCommandOwner& owner,
+                                 bool includeHidden,
                                  json& out,
                                  int depth) {
         if (!node.is_valid() || depth > kMaxDynamicMenuDepth) return;
@@ -92,7 +94,8 @@ namespace {
                 } catch (...) {
                     continue;
                 }
-                CollectDynamicMenuNodes(child, path, owner, out, depth + 1);
+                CollectDynamicMenuNodes(child, path, owner, includeHidden, out,
+                                        depth + 1);
             }
             return;
         }
@@ -115,6 +118,15 @@ namespace {
             // Description is optional.
         }
 
+        // mainmenu_node::get_display() returns void, unlike the
+        // mainmenu_commands::get_display() used for static slots. A dynamic node
+        // therefore has no "return false to hide" signal at all; the only hidden
+        // indication available here is flag_defaulthidden, so displayed is
+        // unconditionally true.
+        const menu_node::State state =
+            menu_node::NormalizeMainMenu(flags, /*displayReturnedTrue=*/true);
+        if (state.hidden && !includeHidden) return;
+
         json item = {
             {"name", label},
             {"description", description},
@@ -124,7 +136,12 @@ namespace {
             {"path", path},
             {"isDynamic", true},
             {"isDynamicParent", false},
-            {"flags", flags}
+            {"flags", flags},
+            {"enabled", state.enabled},
+            {"checked", state.checked},
+            {"radioChecked", state.radioChecked},
+            {"hidden", state.hidden},
+            {"source", menu_node::ToString(menu_node::Source::MainMenuDynamic)}
         };
 
         if (subGuid != pfc::guid_null) {
@@ -137,7 +154,8 @@ namespace {
     // Enumerates every static command slot, optionally expanding v2 dynamic
     // subtrees. Static entries keep their historical shape; expansion is purely
     // additive so existing callers keep seeing the parent slot.
-    json CollectMainMenuCommands(bool expandDynamic, int& dynamicCount) {
+    json CollectMainMenuCommands(bool expandDynamic, bool includeHidden,
+                                 int& dynamicCount) {
         json commands = json::array();
         dynamicCount = 0;
 
@@ -184,6 +202,23 @@ namespace {
                 const std::string label = SafeUtf8String(name.get_ptr());
                 const std::string cmdGuidStr = GuidToString(cmdGuid);
 
+                // Static slots previously reported no state at all: get_display()
+                // was never called, so disabled / checked was invisible and a
+                // command that returns false (shortcut-only) looked like an
+                // ordinary invocable entry. `label` still comes from get_name()
+                // so the existing `name` / `path` fields keep their shape.
+                t_uint32 flags = 0;
+                bool displayed = true;
+                try {
+                    pfc::string8 displayText;
+                    displayed = ptr->get_display(i, displayText, flags);
+                } catch (...) {
+                    // Treat a throwing component as "shown with no flags".
+                }
+                const menu_node::State state =
+                    menu_node::NormalizeMainMenu(flags, displayed);
+                if (state.hidden && !includeHidden) continue;
+
                 bool isDynamic = false;
                 if (expandDynamic && hasV2) {
                     try {
@@ -193,6 +228,13 @@ namespace {
                     }
                 }
 
+                // A dynamic parent slot is a container, not a command: executing
+                // it is undefined behaviour in the SDK.
+                const menu_node::Unaddressable reason =
+                    menu_node::ClassifyAddressability(
+                        menu_node::Kind::Command, isDynamic, !label.empty(),
+                        cmdGuid != pfc::guid_null);
+
                 commands.push_back({
                     {"name", label},
                     {"description", SafeUtf8String(desc.get_ptr())},
@@ -201,7 +243,15 @@ namespace {
                     {"index", i},
                     {"path", label},
                     {"isDynamic", isDynamic},
-                    {"isDynamicParent", isDynamic}
+                    {"isDynamicParent", isDynamic},
+                    {"flags", flags},
+                    {"enabled", state.enabled},
+                    {"checked", state.checked},
+                    {"radioChecked", state.radioChecked},
+                    {"hidden", state.hidden},
+                    {"source", menu_node::ToString(menu_node::Source::MainMenuStatic)},
+                    {"executable", menu_node::IsExecutable(reason)},
+                    {"unaddressableReason", menu_node::ToString(reason)}
                 });
 
                 if (!isDynamic) continue;
@@ -216,7 +266,8 @@ namespace {
 
                 const size_t before = commands.size();
                 const DynamicCommandOwner owner{cmdGuidStr, parentGuidStr, i};
-                CollectDynamicMenuNodes(root, label, owner, commands, 0);
+                CollectDynamicMenuNodes(root, label, owner, includeHidden,
+                                        commands, 0);
                 dynamicCount += static_cast<int>(commands.size() - before);
             }
         }
@@ -229,15 +280,22 @@ namespace {
     //==========================================================================
     json GetMainMenuCommands(const json& params) {
         const bool expandDynamic = params.value("expandDynamic", true);
+        // Hidden entries (get_display() == false, or flag_defaulthidden) are
+        // filtered by default: they are not reachable from the real menu, so
+        // listing them as invocable commands was misleading. Callers that want
+        // the historical superset can opt back in.
+        const bool includeHidden = params.value("includeHidden", false);
 
         int dynamicCount = 0;
-        json commands = CollectMainMenuCommands(expandDynamic, dynamicCount);
+        json commands =
+            CollectMainMenuCommands(expandDynamic, includeHidden, dynamicCount);
 
         return {
             {"success", true},
             {"commands", commands},
             {"count", commands.size()},
             {"expandDynamic", expandDynamic},
+            {"includeHidden", includeHidden},
             {"dynamicCount", dynamicCount}
         };
     }
@@ -847,10 +905,14 @@ namespace {
         int components = 0;
         
         // Main menu commands (dynamic v2 subtrees included, mirroring
-        // discovery.getMainMenuCommands so the summary matches the listing)
+        // discovery.getMainMenuCommands so the summary matches the listing).
+        // includeHidden tracks that endpoint's default, otherwise this count
+        // would silently stop matching the list it claims to summarize.
         int mainMenuDynamicCommands = 0;
         {
-            json commands = CollectMainMenuCommands(true, mainMenuDynamicCommands);
+            json commands = CollectMainMenuCommands(
+                /*expandDynamic=*/true, /*includeHidden=*/false,
+                mainMenuDynamicCommands);
             mainMenuCommands = static_cast<int>(commands.size());
         }
         
@@ -952,7 +1014,11 @@ namespace {
         std::transform(lowerQuery.begin(), lowerQuery.end(), lowerQuery.begin(), ::tolower);
 
         int dynamicCount = 0;
-        json commands = CollectMainMenuCommands(expandDynamic, dynamicCount);
+        // Left at the historical superset on purpose: this endpoint keeps its
+        // current result set until it is migrated with the rest of the menu
+        // surface, so a pilot change here cannot alter search behaviour.
+        json commands = CollectMainMenuCommands(
+            expandDynamic, /*includeHidden=*/true, dynamicCount);
 
         json results = json::array();
 

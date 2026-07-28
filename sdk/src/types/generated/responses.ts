@@ -796,6 +796,7 @@ export interface DiscoveryGetMainMenuCommandsResponse {
     commands: JsonObject;
     count: number;
     expandDynamic: boolean;
+    includeHidden: boolean;
     dynamicCount: number;
 }
 

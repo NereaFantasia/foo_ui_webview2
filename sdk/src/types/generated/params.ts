@@ -617,6 +617,8 @@ export type DiscoveryGetInputFormatsParams = Record<string, never>;
 export interface DiscoveryGetMainMenuCommandsParams {
     /** @default true */
     expandDynamic?: boolean;
+    /** @default false */
+    includeHidden?: boolean;
 }
 
 /**
