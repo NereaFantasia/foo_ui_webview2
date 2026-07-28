@@ -123,6 +123,7 @@
     <ClCompile Include="test_image_utils.cpp" />
     <ClCompile Include="test_metadata_write_subsong.cpp" />
     <ClCompile Include="test_taskbar_tray_contracts.cpp" />
+    <ClCompile Include="test_menu_node_contract.cpp" />
     <ClCompile Include="test_webview_crash_policy.cpp" />
   </ItemGroup>
 
@@ -134,6 +135,7 @@
     <ClInclude Include="..\src\window\BackgroundSuspendPolicy.h" />
     <ClInclude Include="..\src\utils\StringUtils.h" />
     <ClInclude Include="..\src\window\TaskbarTrayContracts.h" />
+    <ClInclude Include="..\src\api\MenuNodeContract.h" />
     <ClInclude Include="..\src\webview\WebViewCrashPolicy.h" />
   </ItemGroup>
 
