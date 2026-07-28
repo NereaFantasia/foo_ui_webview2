@@ -100,7 +100,7 @@ await fb.player.play()
 
 **启用步骤：**
 
-1. `Preferences → Advanced → Tools → WebView2 UI` → `Enable Background Mode`
+1. `Preferences → Advanced → Tools → WebView2 UI` → `Enable background mode (run WebView when using other UIs) - requires restart`
 2. `Preferences` → `Display` → `Default User Interface` → 选择其他 UI
 3. 重启 foobar2000
 4. `View → WebView2 UI → Show/Hide Window`

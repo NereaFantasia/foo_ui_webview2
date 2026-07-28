@@ -100,7 +100,7 @@ Background mode lets WebView2 UI run alongside Default UI or Columns UI.
 
 **Enable steps:**
 
-1. `Preferences → Advanced → Tools → WebView2 UI` → `Enable Background Mode`
+1. `Preferences → Advanced → Tools → WebView2 UI` → `Enable background mode (run WebView when using other UIs) - requires restart`
 2. `Preferences` → `Display` → `Default User Interface` → choose another UI
 3. Restart foobar2000
 4. `View → WebView2 UI → Show/Hide Window`
