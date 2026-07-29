@@ -44,9 +44,9 @@ export type WindowPopupProfile =
 export interface WindowCreatePopupParams {
     /** Initial document URL. @default "" */
     url?: string;
-    /** Initial width in DIPs. @default 400 */
+    /** Initial width in physical pixels; no DPI scaling is applied. @default 400 */
     width?: number;
-    /** Initial height in DIPs. @default 300 */
+    /** Initial height in physical pixels; no DPI scaling is applied. @default 300 */
     height?: number;
     /** Initial top-left X in screen coordinates; defaults to centred. */
     x?: number;
@@ -66,13 +66,13 @@ export interface WindowCreatePopupParams {
     alwaysOnTop?: boolean;
     /** Show in Windows taskbar / Alt-Tab. @default false */
     showInTaskbar?: boolean;
-    /** Lower-bound for user resize (DIPs). @default 200 */
+    /** Lower-bound for user resize, in physical pixels. @default 200 */
     minWidth?: number;
-    /** Lower-bound for user resize (DIPs). @default 150 */
+    /** Lower-bound for user resize, in physical pixels. @default 150 */
     minHeight?: number;
-    /** Upper-bound for user resize, 0 disables the cap. @default 0 */
+    /** Upper-bound for user resize, in physical pixels; 0 disables the cap. @default 0 */
     maxWidth?: number;
-    /** Upper-bound for user resize, 0 disables the cap. @default 0 */
+    /** Upper-bound for user resize, in physical pixels; 0 disables the cap. @default 0 */
     maxHeight?: number;
     /** Render native window frame / caption. @default true */
     frame?: boolean;

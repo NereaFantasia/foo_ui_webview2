@@ -464,11 +464,11 @@ export interface WindowBackdropPolicyResponse extends BaseResponse {
 
 /** Result shape returned by `window.getTitlebarInfo`. */
 export interface WindowTitlebarInfo {
-    /** Titlebar height in DIPs. */
+    /** Titlebar height in physical pixels. */
     height: number;
-    /** Combined width of the three caption buttons (min/max/close). */
+    /** Combined width of the three caption buttons (min/max/close), in physical pixels. */
     captionButtonsWidth: number;
-    /** Width of a single caption button. */
+    /** Width of a single caption button, in physical pixels. */
     captionButtonWidth: number;
     /** True when the window is currently maximised (zoomed). */
     isMaximized: boolean;
