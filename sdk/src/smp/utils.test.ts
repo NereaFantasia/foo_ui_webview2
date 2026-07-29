@@ -209,6 +209,66 @@ describe('utils.buildMenuItems', () => {
         }
     });
 
+    it('prefers normalized booleans over the raw flag word', () => {
+        // The host has already decoded state; trusting flags over it would
+        // re-derive the same answer at best and disagree at worst.
+        const items: SmpRawMenuItem[] = [
+            {
+                type: 'command',
+                label: 'A',
+                commandId: 1,
+                enabled: false,
+                checked: true,
+                flags: 0,
+            },
+        ];
+        const out = buildMenuItems(items, makeState());
+        const first = out[0];
+        if ('id' in first) {
+            expect(first.enabled).toBe(false);
+            expect(first.checked).toBe(true);
+        }
+    });
+
+    it('offers an item as enabled when its state was never observed', () => {
+        // flags == 0 is bit-identical to "enabled, unchecked", so without
+        // stateKnown a never-evaluated row is indistinguishable from a live one.
+        // Greying it out would hide a command the host would happily run.
+        const items: SmpRawMenuItem[] = [
+            {
+                type: 'command',
+                label: 'A',
+                commandId: 1,
+                enabled: false,
+                checked: true,
+                stateKnown: false,
+            },
+        ];
+        const out = buildMenuItems(items, makeState());
+        const first = out[0];
+        if ('id' in first) {
+            expect(first.enabled).toBe(true);
+        }
+    });
+
+    it('falls back to flags when no booleans are present', () => {
+        // An older host sends only the flag word; that path must keep working.
+        const items: SmpRawMenuItem[] = [
+            {
+                type: 'command',
+                label: 'A',
+                commandId: 1,
+                flags: MENU_FLAGS.radiochecked,
+            },
+        ];
+        const out = buildMenuItems(items, makeState());
+        const first = out[0];
+        if ('id' in first) {
+            expect(first.enabled).toBe(true);
+            expect(first.checked).toBe(true);
+        }
+    });
+
     it('honours the limit cap', () => {
         const items: SmpRawMenuItem[] = [
             { type: 'command', label: 'A', commandId: 1 },
@@ -233,5 +293,31 @@ describe('utils.buildMenuItems', () => {
         buildMenuItems(items, state);
         expect(state.idMap.get(1)).toBe('main/Playback/Play');
         expect(state.idMap.get(2)).toBe('abcd-1234');
+    });
+
+    it('prefers guid over path when both are present', () => {
+        // The host resolves a GUID directly, while a path has to be matched
+        // against a generated menu tree — a lookup that fails outright on
+        // localized hosts. Preferring path there left main-menu dispatch broken.
+        const items: SmpRawMenuItem[] = [
+            {
+                type: 'command',
+                label: 'Both',
+                path: 'main/Playback/Play',
+                guid: 'abcd-1234',
+            },
+        ];
+        const state = makeState();
+        buildMenuItems(items, state);
+        expect(state.idMap.get(1)).toBe('abcd-1234');
+    });
+
+    it('still prefers commandId over guid for context-menu sessions', () => {
+        const items: SmpRawMenuItem[] = [
+            { type: 'command', label: 'C', commandId: 42, guid: 'abcd-1234' },
+        ];
+        const state = makeState();
+        buildMenuItems(items, state);
+        expect(state.idMap.get(1)).toBe(42);
     });
 });

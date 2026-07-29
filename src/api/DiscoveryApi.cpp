@@ -127,6 +127,14 @@ namespace {
             menu_node::NormalizeMainMenu(flags, /*displayReturnedTrue=*/true);
         if (state.hidden && !includeHidden) return;
 
+        // A dynamic leaf is addressed by the owner GUID plus this node's subGuid,
+        // so the owner GUID is what has to exist. Reported on the entry itself so
+        // a caller never has to infer executability from field presence.
+        const menu_node::Unaddressable reason =
+            menu_node::ClassifyAddressability(
+                menu_node::Kind::Command, /*isDynamicParent=*/false,
+                !label.empty(), !owner.guid.empty());
+
         json item = {
             {"name", label},
             {"description", description},
@@ -141,7 +149,10 @@ namespace {
             {"checked", state.checked},
             {"radioChecked", state.radioChecked},
             {"hidden", state.hidden},
-            {"source", menu_node::ToString(menu_node::Source::MainMenuDynamic)}
+            {"stateKnown", state.stateKnown},
+            {"source", menu_node::ToString(menu_node::Source::MainMenuDynamic)},
+            {"executable", menu_node::IsExecutable(reason)},
+            {"unaddressableReason", menu_node::ToString(reason)}
         };
 
         if (subGuid != pfc::guid_null) {
@@ -249,6 +260,7 @@ namespace {
                     {"checked", state.checked},
                     {"radioChecked", state.radioChecked},
                     {"hidden", state.hidden},
+                    {"stateKnown", state.stateKnown},
                     {"source", menu_node::ToString(menu_node::Source::MainMenuStatic)},
                     {"executable", menu_node::IsExecutable(reason)},
                     {"unaddressableReason", menu_node::ToString(reason)}
@@ -565,12 +577,19 @@ namespace {
         }
     }
 
-    json GetContextMenuCommands(const json& params) {
-        // Hidden entries are filtered by default for the same reason as the main
-        // menu: FORCE_OFF items are shortcut-list-only per the SDK, so listing
-        // them as invocable commands misleads callers.
-        const bool includeHidden = params.value("includeHidden", false);
+    // Outcome of one full pass over the registered context-menu items, kept
+    // separate from the entries so the summary numbers survive being reused by
+    // more than one endpoint.
+    struct ContextMenuScan {
+        int hiddenFiltered = 0;
+        bool stateKnown = false;
+        t_size selectionCount = 0;
+    };
 
+    // Shared context-menu enumeration. Extracted so search and the aggregate
+    // summary see exactly the entries `discovery.getContextMenuCommands`
+    // reports, instead of each endpoint growing its own partial walk.
+    json CollectContextMenuCommands(bool includeHidden, ContextMenuScan& scan) {
         // `item_get_display_data_root()` takes a metadb_handle_list, so display
         // flags are only readable when something is selected or playing. Without
         // a selection the listing still works (it did before this change and
@@ -580,8 +599,11 @@ namespace {
         const bool haveSelection = TryGetContextSelection(selection);
         const GUID caller = contextmenu_item::caller_active_playlist_selection;
 
+        scan.stateKnown = haveSelection;
+        scan.selectionCount = selection.get_count();
+        scan.hiddenFiltered = 0;
+
         json commands = json::array();
-        int hiddenFiltered = 0;
 
         service_enum_t<contextmenu_item> e;
         service_ptr_t<contextmenu_item> ptr;
@@ -646,7 +668,7 @@ namespace {
                 }
 
                 if (state.hidden && !includeHidden) {
-                    ++hiddenFiltered;
+                    ++scan.hiddenFiltered;
                     continue;
                 }
 
@@ -675,14 +697,26 @@ namespace {
             }
         }
 
+        return commands;
+    }
+
+    json GetContextMenuCommands(const json& params) {
+        // Hidden entries are filtered by default for the same reason as the main
+        // menu: FORCE_OFF items are shortcut-list-only per the SDK, so listing
+        // them as invocable commands misleads callers.
+        const bool includeHidden = params.value("includeHidden", false);
+
+        ContextMenuScan scan;
+        json commands = CollectContextMenuCommands(includeHidden, scan);
+
         return {
             {"success", true},
             {"commands", commands},
             {"count", commands.size()},
             {"includeHidden", includeHidden},
-            {"hiddenFiltered", hiddenFiltered},
-            {"stateKnown", haveSelection},
-            {"selectionCount", selection.get_count()}
+            {"hiddenFiltered", scan.hiddenFiltered},
+            {"stateKnown", scan.stateKnown},
+            {"selectionCount", scan.selectionCount}
         };
     }
     
@@ -769,6 +803,11 @@ namespace {
         const bool resolved =
             TryResolveContextCommand(cmdGuid, enabledState, resolvedName);
 
+        // FORCE_OFF is the only state that means "the host would never draw
+        // this"; an unresolved GUID has no state to report at all.
+        const bool hidden =
+            resolved && enabledState == menu_node::ContextEnabledState::ForceOff;
+
         if (resolved &&
             menu_node::ShouldRefuseExecution(enabledState, force)) {
             // FORCE_OFF is not an addressability problem — the command has a
@@ -780,6 +819,7 @@ namespace {
                 {"guid", guidStr},
                 {"name", resolvedName},
                 {"hidden", true},
+                {"resolved", resolved},
                 {"force", force}
             };
         }
@@ -787,10 +827,14 @@ namespace {
         // Execute the context menu command
         bool executed = menu_helpers::run_command_context(cmdGuid, pfc::guid_null, items);
         
+        // `hidden` is reported on both paths on purpose: with it only on the
+        // refusal branch, a caller could not tell "was not refused" apart from
+        // "this build does not report the field".
         return {
             {"success", executed},
             {"guid", guidStr},
             {"name", resolvedName},
+            {"hidden", hidden},
             {"resolved", resolved},
             {"force", force},
             {"itemCount", items.get_count()}
@@ -1005,49 +1049,105 @@ namespace {
     }
     
     //==========================================================================
-    // discovery.getContextMenuTree - Debug: Get full context menu tree structure
+    // discovery.getContextMenuTree - Full context menu tree structure
     //==========================================================================
-    
-    // Helper: Recursively dump menu tree to JSON
-    json DumpMenuNode(contextmenu_node* node, int depth = 0) {
-        if (!node || depth > 10) return nullptr;  // Prevent infinite recursion
-        
+
+    // Recursively dumps the menu tree. Both traversal limits now come from the
+    // shared contract and, more importantly, are REPORTED: the previous walk
+    // capped children at 50 and depth at 10 while still emitting the true
+    // childCount, so `children.length != childCount` with nothing explaining it.
+    json DumpMenuNode(contextmenu_node* node,
+                      int depth,
+                      menu_node::Truncation& truncation) {
+        if (!node) return nullptr;
+
         json result;
-        
+
         const char* name = node->get_name();
         result["name"] = SafeUtf8String(name ? name : "(null)");
-        
+
         auto type = node->get_type();
         result["type"] = (type == contextmenu_item_node::TYPE_COMMAND) ? "command" :
                          (type == contextmenu_item_node::TYPE_POPUP) ? "popup" :
                          (type == contextmenu_item_node::TYPE_SEPARATOR) ? "separator" : "unknown";
-        
+        result["depth"] = depth;
+
+        // A separator carries no state and no identity, so only its kind is
+        // meaningful; commands and popups both report display flags.
+        if (type != contextmenu_item_node::TYPE_SEPARATOR) {
+            unsigned displayFlags = 0;
+            try {
+                displayFlags = node->get_display_flags();
+            } catch (...) {
+                displayFlags = 0;
+            }
+            // The manager builds this tree against a real selection and omits
+            // anything the host would not draw, so the observed state is
+            // trustworthy and nothing here is hidden.
+            const menu_node::State state = menu_node::NormalizeContextMenu(
+                displayFlags, /*displayReturnedTrue=*/true,
+                menu_node::ContextEnabledState::DefaultOn);
+            result["enabled"] = state.enabled;
+            result["checked"] = state.checked;
+            result["radioChecked"] = state.radioChecked;
+            result["hidden"] = state.hidden;
+            result["stateKnown"] = state.stateKnown;
+            result["flags"] = state.flags;
+        }
+
         if (type == contextmenu_item_node::TYPE_COMMAND) {
             pfc::string8 fullName;
-            node->get_full_name(fullName);
+            try {
+                node->get_full_name(fullName);
+            } catch (...) {
+            }
             result["fullName"] = SafeUtf8String(fullName.get_ptr());
         }
-        
+
+        menu_node::Truncation local;
+
         if (type == contextmenu_item_node::TYPE_POPUP) {
-            json children = json::array();
-            t_size childCount = node->get_num_children();
+            t_size childCount = 0;
+            try {
+                childCount = node->get_num_children();
+            } catch (...) {
+                childCount = 0;
+            }
             result["childCount"] = childCount;
-            
-            for (t_size i = 0; i < childCount && i < 50; i++) {  // Limit to 50 children
-                contextmenu_node* child = node->get_child(i);
-                if (child) {
-                    json childJson = DumpMenuNode(child, depth + 1);
-                    if (!childJson.is_null()) {
-                        children.push_back(childJson);
-                    }
+
+            const menu_node::ChildWalkPlan plan =
+                menu_node::PlanChildWalk(depth, childCount);
+            local.merge(plan.truncation);
+
+            json children = json::array();
+            for (t_size i = 0; i < plan.visitCount; i++) {
+                contextmenu_node* child = nullptr;
+                try {
+                    child = node->get_child(i);
+                } catch (...) {
+                    continue;
+                }
+                if (!child) continue;
+
+                json childJson = DumpMenuNode(child, depth + 1, local);
+                if (!childJson.is_null()) {
+                    children.push_back(childJson);
                 }
             }
+            // Emitted so `childCount` can be reconciled with what was actually
+            // returned without the caller having to count the array itself.
+            result["childrenReturned"] = children.size();
             result["children"] = children;
         }
-        
+
+        result["truncated"] = local.any();
+        result["depthExceeded"] = local.depthExceeded;
+        result["childrenExceeded"] = local.childrenExceeded;
+
+        truncation.merge(local);
         return result;
     }
-    
+
     json GetContextMenuTree(const json& /*params*/) {
         // Get target track
         metadb_handle_list items;
@@ -1074,12 +1174,19 @@ namespace {
             return {{"success", false}, {"error", "Failed to create context menu"}};
         }
         
-        // Dump the tree
-        json tree = DumpMenuNode(root);
+        // Dump the tree, carrying truncation up to the response so a caller can
+        // tell a complete tree from a clipped one.
+        menu_node::Truncation truncation;
+        json tree = DumpMenuNode(root, /*depth=*/0, truncation);
         
         return {
             {"success", true},
             {"tree", tree},
+            {"truncated", truncation.any()},
+            {"depthExceeded", truncation.depthExceeded},
+            {"childrenExceeded", truncation.childrenExceeded},
+            {"maxDepth", menu_node::kMaxMenuTreeDepth},
+            {"maxChildrenPerNode", menu_node::kMaxChildrenPerNode},
             {"itemCount", items.get_count()}
         };
     }
@@ -1135,6 +1242,21 @@ namespace {
                 /*expandDynamic=*/true, /*includeHidden=*/false,
                 mainMenuDynamicCommands);
             mainMenuCommands = static_cast<int>(commands.size());
+        }
+        
+        // Context-menu commands, counted through the same walk
+        // discovery.getContextMenuCommands uses. Previously absent entirely, so
+        // the summary claimed to describe the discoverable surface while omitting
+        // one of its two menu families.
+        int contextMenuCommands = 0;
+        int contextMenuHiddenFiltered = 0;
+        bool contextMenuStateKnown = false;
+        {
+            ContextMenuScan scan;
+            json commands = CollectContextMenuCommands(/*includeHidden=*/false, scan);
+            contextMenuCommands = static_cast<int>(commands.size());
+            contextMenuHiddenFiltered = scan.hiddenFiltered;
+            contextMenuStateKnown = scan.stateKnown;
         }
         
         // Main menu groups
@@ -1206,6 +1328,7 @@ namespace {
                 {"mainMenuCommands", mainMenuCommands},
                 {"mainMenuDynamicCommands", mainMenuDynamicCommands},
                 {"mainMenuGroups", mainMenuGroups},
+                {"contextMenuCommands", contextMenuCommands},
                 {"inputFormats", inputFormats},
                 {"uiElements", uiElements},
                 {"dspEntries", dspEntries},
@@ -1213,7 +1336,13 @@ namespace {
                 {"preferencePages", preferencePages},
                 {"components", components}
             }},
-            {"totalServices", mainMenuCommands + mainMenuGroups + inputFormats + 
+            // Both menu families are filtered to what the host would show, so the
+            // counts stay comparable with the listing endpoints. The number of
+            // entries that filtering removed is reported rather than lost.
+            {"contextMenuHiddenFiltered", contextMenuHiddenFiltered},
+            {"stateKnown", contextMenuStateKnown},
+            {"totalServices", mainMenuCommands + mainMenuGroups +
+                              contextMenuCommands + inputFormats +
                               uiElements + dspEntries + 
                               outputDevices + preferencePages + components}
         };
@@ -1222,6 +1351,29 @@ namespace {
     //==========================================================================
     // discovery.searchCommands - Search menu commands
     //==========================================================================
+
+    // Copies the state vocabulary from an enumerated entry onto a search hit.
+    // Search results previously carried no state at all, so a caller had to
+    // re-enumerate to find out whether a hit was even invocable.
+    void CopyCommandStateToHit(const json& command, json& hit) {
+        static const char* const kStateKeys[] = {
+            "enabled", "checked", "radioChecked", "hidden",
+            "stateKnown", "flags", "source", "executable",
+            "unaddressableReason"
+        };
+        for (const char* key : kStateKeys) {
+            if (command.contains(key)) hit[key] = command[key];
+        }
+    }
+
+    bool CommandMatchesQuery(const json& command, const std::string& query) {
+        // Path is included because a command's identity is often only
+        // distinguishable through its parent labels.
+        return menu_node::ContainsFolded(command.value("name", ""), query) ||
+               menu_node::ContainsFolded(command.value("description", ""), query) ||
+               menu_node::ContainsFolded(command.value("path", ""), query);
+    }
+
     json SearchCommands(const json& params) {
         std::string query = params.value("query", "");
         if (query.empty()) {
@@ -1229,58 +1381,72 @@ namespace {
         }
 
         const bool expandDynamic = params.value("expandDynamic", true);
-
-        // Convert to lowercase for search
-        std::string lowerQuery = query;
-        std::transform(lowerQuery.begin(), lowerQuery.end(), lowerQuery.begin(), ::tolower);
-
-        int dynamicCount = 0;
-        // Left at the historical superset on purpose: this endpoint keeps its
-        // current result set until it is migrated with the rest of the menu
-        // surface, so a pilot change here cannot alter search behaviour.
-        json commands = CollectMainMenuCommands(
-            expandDynamic, /*includeHidden=*/true, dynamicCount);
+        // Both menu families are searched by default. Restricting search to the
+        // main menu while hard-coding `type: "mainmenu"` made every right-click
+        // command unfindable and left the field carrying no information.
+        const menu_node::SearchScope scope =
+            menu_node::ParseSearchScope(params.value("scope", std::string()));
+        // Search matches against what the host would actually show, mirroring the
+        // enumeration endpoints; the historical superset is still reachable.
+        const bool includeHidden = params.value("includeHidden", false);
 
         json results = json::array();
+        int mainMenuHits = 0;
+        int contextMenuHits = 0;
+        int dynamicCount = 0;
+        ContextMenuScan contextScan;
 
-        for (const auto& command : commands) {
-            // A dynamic parent slot is only a container; its expanded children
-            // carry the executable identity, so skip it to avoid duplicate hits.
-            if (command.value("isDynamicParent", false)) continue;
+        if (menu_node::ScopeIncludesMainMenu(scope)) {
+            json commands =
+                CollectMainMenuCommands(expandDynamic, includeHidden, dynamicCount);
 
-            std::string safeName = command.value("name", "");
-            std::string safeDesc = command.value("description", "");
-            std::string safePath = command.value("path", "");
+            for (const auto& command : commands) {
+                // A dynamic parent slot is only a container; its expanded children
+                // carry the executable identity, so skip it to avoid duplicate hits.
+                if (command.value("isDynamicParent", false)) continue;
+                if (!CommandMatchesQuery(command, query)) continue;
 
-            std::string lowerName = safeName;
-            std::transform(lowerName.begin(), lowerName.end(), lowerName.begin(), ::tolower);
+                json hit = {
+                    {"name", command.value("name", "")},
+                    {"description", command.value("description", "")},
+                    {"guid", command.value("guid", "")},
+                    {"path", command.value("path", "")},
+                    {"isDynamic", command.value("isDynamic", false)},
+                    {"type", menu_node::ToString(menu_node::SearchScope::MainMenu)}
+                };
+                if (command.contains("subGuid")) {
+                    hit["subGuid"] = command["subGuid"];
+                }
+                CopyCommandStateToHit(command, hit);
 
-            std::string lowerDesc = safeDesc;
-            std::transform(lowerDesc.begin(), lowerDesc.end(), lowerDesc.begin(), ::tolower);
-
-            std::string lowerPath = safePath;
-            std::transform(lowerPath.begin(), lowerPath.end(), lowerPath.begin(), ::tolower);
-
-            if (lowerName.find(lowerQuery) == std::string::npos &&
-                lowerDesc.find(lowerQuery) == std::string::npos &&
-                lowerPath.find(lowerQuery) == std::string::npos) {
-                continue;
+                results.push_back(hit);
+                ++mainMenuHits;
             }
+        }
 
-            json hit = {
-                {"name", safeName},
-                {"description", safeDesc},
-                {"guid", command.value("guid", "")},
-                {"path", safePath},
-                {"isDynamic", command.value("isDynamic", false)},
-                {"type", "mainmenu"}
-            };
+        if (menu_node::ScopeIncludesContextMenu(scope)) {
+            json commands =
+                CollectContextMenuCommands(includeHidden, contextScan);
 
-            if (command.contains("subGuid")) {
-                hit["subGuid"] = command["subGuid"];
+            for (const auto& command : commands) {
+                if (!CommandMatchesQuery(command, query)) continue;
+
+                // Context entries have no menu path of their own — they are
+                // registered flat and placed by the host — so `path` falls back to
+                // the label rather than being fabricated.
+                json hit = {
+                    {"name", command.value("name", "")},
+                    {"description", command.value("description", "")},
+                    {"guid", command.value("guid", "")},
+                    {"path", command.value("name", "")},
+                    {"isDynamic", false},
+                    {"type", menu_node::ToString(menu_node::SearchScope::ContextMenu)}
+                };
+                CopyCommandStateToHit(command, hit);
+
+                results.push_back(hit);
+                ++contextMenuHits;
             }
-
-            results.push_back(hit);
         }
 
         return {
@@ -1288,7 +1454,16 @@ namespace {
             {"query", query},
             {"results", results},
             {"count", results.size()},
-            {"expandDynamic", expandDynamic}
+            {"expandDynamic", expandDynamic},
+            {"scope", menu_node::ToString(scope)},
+            {"includeHidden", includeHidden},
+            {"mainMenuHits", mainMenuHits},
+            {"contextMenuHits", contextMenuHits},
+            // False when the context-menu side was searched without a selection:
+            // its enabled/checked values are unobservable then, so a caller must
+            // not filter hits on them.
+            {"stateKnown", menu_node::ScopeIncludesContextMenu(scope)
+                               ? contextScan.stateKnown : true}
         };
     }
     

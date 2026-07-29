@@ -129,9 +129,9 @@ export const MENU_FLAGS = SMP_MENU_FLAGS;
  *
  * - Walks `items` depth-first, allocating a new `id` from
  *   `state.nextId++` for each leaf command.
- * - Maps each allocated `id` to either the C++ `commandId` (context
- *   menus) or the `path` / `guid` string (main menu) inside
- *   `state.idMap` so callers can later dispatch via `ExecuteByID`.
+ * - Maps each allocated `id` to the most stable identifier the item
+ *   offers, inside `state.idMap`, so callers can later dispatch via
+ *   `ExecuteByID`.
  * - Stops once `state.limit` is hit (when set).
  *
  * Pure function: never mutates the input `items`.
@@ -165,9 +165,26 @@ export function buildMenuItems(
         }
 
         const menuId = state.nextId++;
+
+        // Normalized booleans win over the raw flag word. Decoding flags alone
+        // cannot express "state was not observed": an item the host never
+        // evaluated arrives with flags == 0, which is bit-identical to a
+        // genuinely enabled, unchecked one. Flags remain the fallback so an
+        // older host that only sends them keeps working.
         const flags = Number(item.flags) || 0;
-        const checked = (flags & (MENU_FLAGS.checked | MENU_FLAGS.radiochecked)) !== 0;
-        const enabled = (flags & MENU_FLAGS.disabled) === 0;
+        const checked =
+            typeof item.checked === 'boolean'
+                ? item.checked
+                : (flags & (MENU_FLAGS.checked | MENU_FLAGS.radiochecked)) !== 0;
+        // An item whose state is explicitly unknown is offered as enabled: the
+        // host decides at dispatch time, and greying out a row that is actually
+        // invocable would hide a working command from the user.
+        const enabled =
+            item.stateKnown === false
+                ? true
+                : typeof item.enabled === 'boolean'
+                  ? item.enabled
+                  : (flags & MENU_FLAGS.disabled) === 0;
 
         out.push({
             id: menuId,
@@ -176,12 +193,17 @@ export function buildMenuItems(
             checked,
         });
 
+        // Most stable identifier first. `commandId` is the context-menu session
+        // handle and is authoritative there. `guid` is preferred over `path`
+        // because the host resolves a GUID directly, while a path has to be
+        // matched against a generated menu tree — a lookup that fails outright on
+        // localized hosts, which is why main-menu dispatch did not work at all.
         if (typeof item.commandId === 'number') {
             state.idMap.set(menuId, item.commandId);
-        } else if (typeof item.path === 'string' && item.path.length > 0) {
-            state.idMap.set(menuId, item.path);
         } else if (typeof item.guid === 'string' && item.guid.length > 0) {
             state.idMap.set(menuId, item.guid);
+        } else if (typeof item.path === 'string' && item.path.length > 0) {
+            state.idMap.set(menuId, item.path);
         }
     }
 

@@ -19,7 +19,9 @@
     "success": true,
     "services": {
         "mainMenuCommands": 156,
+        "mainMenuDynamicCommands": 22,
         "mainMenuGroups": 40,
+        "contextMenuCommands": 64,
         "inputFormats": 30,
         "uiElements": 25,
         "dspEntries": 18,
@@ -27,9 +29,13 @@
         "preferencePages": 20,
         "components": 32
     },
-    "totalServices": 324
+    "contextMenuHiddenFiltered": 5,
+    "stateKnown": true,
+    "totalServices": 388
 }
 ```
+
+`services.contextMenuCommands` 与 `discovery.getContextMenuCommands` 走同一次枚举，并计入 `totalServices`。两个菜单族都已过滤为宿主实际会显示的条目，因此计数与列举端点可直接对照；被过滤掉的数量由 `contextMenuHiddenFiltered` 给出。无选中且无播放曲目时 `stateKnown` 为 `false`。
 
 ```javascript
 const summary = await fb2k.invoke('discovery.getAllServices');
@@ -126,14 +132,20 @@ console.log(`共 ${summary.totalServices} 个服务`);
 
 ### discovery.searchCommands
 
-按名称/描述/菜单路径搜索主菜单命令（不区分大小写）。默认展开动态子菜单，因此能搜到 ESLyric 之类组件的运行时子命令。
+按名称/描述/菜单路径搜索菜单命令（不区分大小写），默认同时覆盖主菜单与右键菜单。默认展开动态子菜单，因此能搜到 ESLyric 之类组件的运行时子命令。
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
 | `query` | `string` | 是 | 搜索关键词。 |
 | `expandDynamic` | `boolean` | 否 | 默认 `true`。设为 `false` 仅搜索静态注册表。 |
+| `scope` | `string` | 否 | 默认 `all`。设为 `mainmenu` 或 `contextmenu` 仅搜索单一菜单族；无法识别的取值放宽为 `all`，而不是丢结果。 |
+| `includeHidden` | `boolean` | 否 | 默认 `false`。设为 `true` 时连宿主不会显示的条目一并搜索。 |
 
-**返回值**: `{ "success": true, "query": "lyric", "results": [{ "name": "...", "description": "...", "guid": "{...}", "subGuid": "{...}", "path": "...", "isDynamic": true, "type": "mainmenu" }], "count": 3 }`
+**返回值**: `{ "success": true, "query": "lyric", "results": [{ "name": "...", "description": "...", "guid": "{...}", "subGuid": "{...}", "path": "...", "isDynamic": true, "type": "mainmenu", "enabled": true, "checked": false, "stateKnown": true, "executable": true }], "count": 3, "scope": "all", "includeHidden": false, "mainMenuHits": 3, "contextMenuHits": 0, "stateKnown": true }`
+
+每条结果的 `type` 为 `"mainmenu"` 或 `"contextmenu"`，并携带与列举端点一致的状态字段（`enabled`、`checked`、`radioChecked`、`hidden`、`stateKnown`、`flags`、`source`、`executable`、`unaddressableReason`），调用方无需再发一次请求即可判断能否执行。动态父槽位会被跳过。右键菜单条目是扁平注册、由宿主决定位置，因此其 `path` 即标签本身。
+
+搜索包含右键菜单但无选中且无播放曲目时，响应的 `stateKnown` 为 `false`：此时结果里的 `enabled` / `checked` 不构成观测，不得用于过滤。
 
 ```javascript
 // 搜索并执行命令（动态子命令需要带上 subGuid）
@@ -151,6 +163,10 @@ if (hit) {
 
 获取所有已注册的右键菜单命令。
 
+| 参数 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `includeHidden` | `boolean` | 否 | 默认 `false`。设为 `true` 时连宿主不会显示的条目一并列出。 |
+
 **返回值**:
 
 ```json
@@ -162,12 +178,27 @@ if (hit) {
             "description": "Shows track properties",
             "guid": "{...}",
             "parentGuid": "{...}",
-            "index": 0
+            "index": 0,
+            "enabled": true,
+            "checked": false,
+            "radioChecked": false,
+            "hidden": false,
+            "stateKnown": true,
+            "flags": 0,
+            "source": "contextmenu_static",
+            "executable": true,
+            "unaddressableReason": ""
         }
     ],
-    "count": 200
+    "count": 64,
+    "includeHidden": false,
+    "hiddenFiltered": 5,
+    "stateKnown": true,
+    "selectionCount": 1
 }
 ```
+
+`enabled` / `checked` 只有在有选中曲目或正在播放时才可观测——SDK 的 `item_get_display_data_root()` 需要一个 `metadb_handle_list`。因此请先看响应的 `stateKnown`：为 `false` 时这两个字段不构成观测，只有 `hidden` 仍然有意义（`FORCE_OFF` 是条目的固有属性，与选中无关）。
 
 ### discovery.executeContextMenuCommand
 
@@ -176,8 +207,13 @@ if (hit) {
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
 | `guid` | `string` | 否 | 可选；默认 。 |
+| `force` | `boolean` | 否 | 默认 `false`。设为 `true` 时即使宿主永不绘制该命令也照样派发。 |
 
-**返回值**: `{ "success": true, "guid": "{...}", "itemCount": 1 }`
+**返回值**: `{ "success": true, "guid": "{...}", "name": "...", "hidden": false, "resolved": true, "force": false, "itemCount": 1 }`
+
+`FORCE_OFF` 的命令会被拒绝而非派发：SDK 将该状态定义为「仅出现在快捷键列表」，宿主从不绘制它，执行等于做了一件用户根本点不到的事。拒绝时返回 `success: false` 且 `hidden: true`。`DEFAULT_OFF`（按 Shift 才显示）仍可到达，永不拒绝。
+
+`hidden` 与 `resolved` 在拒绝与成功两条路径上都会返回，因此「未被拒绝」与「本版本不返回该字段」可以区分。无注册项拥有该 GUID 时 `resolved` 为 `false`，此时没有可评估的状态。
 
 ### discovery.executeContextMenuByPath
 
@@ -196,14 +232,16 @@ if (hit) {
 
 - **参数**: 无
 
-**返回值**: `{ "success": true, "tree": { ... }, "itemCount": 1 }`
+**返回值**: `{ "success": true, "tree": { ... }, "itemCount": 1, "truncated": false, "depthExceeded": false, "childrenExceeded": false, "maxDepth": 16, "maxChildrenPerNode": 512 }`
 
-树节点结构：每个节点包含 `name`、`type` (`"command"` / `"popup"` / `"separator"`)、`children`（popup 类型）、`fullName`（command 类型）。最多递归 10 层，每层最多 50 个子节点。
+树节点结构：每个节点包含 `name`、`type` (`"command"` / `"popup"` / `"separator"`) 与 `depth`。非分隔符节点还带有与列举端点一致的状态字段：`enabled`、`checked`、`radioChecked`、`hidden`、`stateKnown` 以及原始 `flags`；`command` 节点另有 `fullName`。
+
+截断不再静默：`popup` 节点同时给出 `childCount`（宿主的真实子项数）与 `childrenReturned`（本次响应实际包含的数量），无需自行数数组即可对账。子树被裁剪的节点带 `truncated`，并由 `depthExceeded` / `childrenExceeded` 区分原因；标记会向上传播，因此顶层 `truncated` 覆盖整棵树。`maxDepth` 与 `maxChildrenPerNode` 回显本次生效的上限。
 
 ## 发现范围与执行规则
 
 - 返回结果枚举当前 foobar2000 进程中已注册的服务；计数与名称会随已安装组件和 host 配置而变化。
 - `discovery.executeMainMenuCommand` 与 `discovery.executeContextMenuCommand` 要求有效 GUID。右键菜单命令优先作用于正在播放曲目，否则作用于活动播放列表选中项。
 - `discovery.executeContextMenuByPath` 要求 `path`；可选 `trackPath` 受媒体读取安全策略保护。省略时，runtime 使用相同的正在播放/选中项回退逻辑。
-- `discovery.getContextMenuTree` 是诊断输出，需要活动目标曲目；递归最多 10 层，每个 popup 最多 50 个子项。
-- `discovery.searchCommands` 要求非空 `query`，并在主菜单命令名称与描述中进行不区分大小写的匹配。
+- `discovery.getContextMenuTree` 是诊断输出，需要活动目标曲目；递归深度与每节点子项数均有上限，任何裁剪都通过 `truncated` / `depthExceeded` / `childrenExceeded` 显式上报，生效上限由 `maxDepth` 与 `maxChildrenPerNode` 回显。
+- `discovery.searchCommands` 要求非空 `query`，并在主菜单与右键菜单两侧的命令名称、描述、菜单路径中进行不区分大小写的匹配。大小写折叠仅作用于 ASCII，UTF-8 多字节序列（如无大小写可折叠的中文标签）原样通过。

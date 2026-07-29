@@ -7,6 +7,68 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Unified menu state vocabulary in `discovery`** — added the exported types
+  `MenuNodeState`, `MenuNodeSource`, and `MenuUnaddressableReason`, and applied
+  them across `DiscoveryMainMenuCommand`, `DiscoveryContextMenuCommand`,
+  `DiscoveryContextMenuTreeNode`, and `DiscoverySearchResult`. Every enumerated
+  node now carries `enabled`, `checked`, `radioChecked`, `hidden`, `stateKnown`,
+  the raw `flags`, `source`, `executable`, and `unaddressableReason`.
+  `stateKnown` is the field to check first on the context-menu side: the SDK
+  evaluates display data against a track set, so with nothing selected or
+  playing `enabled` / `checked` carry no observation and only `hidden` is
+  meaningful.
+- **`discovery.searchCommands` covers the context menu** — the wrapper accepts
+  `{ scope }` (`'all'` default, or `'mainmenu'` / `'contextmenu'`) and
+  `{ includeHidden }`. Hits carry `type: 'mainmenu' | 'contextmenu'` plus the
+  state fields above, and the response echoes `scope` / `includeHidden` and adds
+  `mainMenuHits` / `contextMenuHits` / `stateKnown`.
+- **`discovery.getContextMenuTree` reports truncation** — the response gained
+  `truncated`, `depthExceeded`, `childrenExceeded`, `maxDepth`, and
+  `maxChildrenPerNode`; each node gained `depth`, `childrenReturned`, and its own
+  `truncated` / `depthExceeded` / `childrenExceeded`. A `popup` node's
+  `childCount` (the host's real count) can now be reconciled against
+  `childrenReturned` (what the response contains).
+- `DiscoveryServiceCounts` gained `contextMenuCommands`, and
+  `DiscoveryGetAllServicesResponse` gained `contextMenuHiddenFiltered` and
+  `stateKnown`.
+- `DiscoveryGetContextMenuCommandsResponse` and
+  `DiscoveryGetMainMenuCommandsResponse` declare the `includeHidden` /
+  `hiddenFiltered` / `stateKnown` / `selectionCount` fields the host already
+  returns; `getContextMenuCommands()` now takes the `includeHidden` option.
+- `executeContextMenuCommand()` declares `hidden`, `resolved`, `name`, and
+  `force` on its response.
+
+### Changed
+
+- **Breaking type fix** — `DiscoveryContextMenuCommand` was a type alias for
+  `DiscoveryMainMenuCommand`, which claimed fields the context tier never
+  returns. It is now an independent interface: context items are registered flat
+  and placed by the host, so they have no menu `path` and no dynamic-expansion
+  fields. TypeScript code that read `path` / `isDynamic` / `subGuid` off a
+  context-menu command was reading a field that was never populated.
+- `SmpRawMenuItem` gained `enabled`, `checked`, `stateKnown`, and `subGuid`.
+
+### Fixed
+
+- **SMP main-menu dispatch** — `buildMenuItems` mapped an allocated menu id to
+  the item's `path` before its `guid`. A path has to be matched against a
+  generated menu tree, a lookup that fails outright on localized hosts, whereas
+  the host resolves a GUID directly; `ExecuteByID` on a main menu therefore did
+  not work at all there. GUID is now preferred over path. `commandId` still wins
+  for context-menu sessions, where it is authoritative.
+- **SMP menu state decoding** — `buildMenuItems` derived `enabled` / `checked`
+  by decoding the raw `flags` word, ignoring the normalized booleans the host
+  sends. It now prefers `enabled` / `checked`, falling back to `flags` only when
+  they are absent, so an older host keeps working. An item marked
+  `stateKnown: false` is offered as enabled rather than greyed out: `flags == 0`
+  is bit-identical to "enabled, unchecked", so treating unobserved state as
+  disabled hid commands the host would have run.
+- Corrected the documented `discovery.searchCommands` result taxonomy, which
+  claimed a `mainmenu-dynamic` `type` value the host has never emitted. Dynamic
+  entries are identified by `isDynamic` / `subGuid`, not by `type`.
+
 ## [1.11.0] - 2026-07-27
 
 ### Added

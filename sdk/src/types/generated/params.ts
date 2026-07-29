@@ -654,6 +654,10 @@ export interface DiscoverySearchCommandsParams {
     query?: string;
     /** @default true */
     expandDynamic?: boolean;
+    /** @default `std :: string ( )` */
+    scope?: string;
+    /** @default false */
+    includeHidden?: boolean;
 }
 
 /**
@@ -1504,6 +1508,8 @@ export interface MenuRunContextCommandByIdParams {
 export interface MenuRunMainMenuCommandParams {
     /** @default "" */
     command?: string;
+    /** @default "" */
+    subGuid?: string;
 }
 
 /**

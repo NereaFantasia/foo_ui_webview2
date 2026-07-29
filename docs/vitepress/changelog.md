@@ -1,5 +1,27 @@
 # Changelog
 
+## Unreleased
+
+### Discovery menus
+
+- **Behavior change** — `discovery.searchCommands` now searches the context menu as well as the main menu, so result counts increase and `type` carries a new `'contextmenu'` value. Pass `{ scope: 'mainmenu' }` for the previous coverage. The endpoint previously hard-coded `type: 'mainmenu'` into every hit while only ever looking at the main menu, which made right-click commands unfindable and left the field carrying no information.
+- **Behavior change** — `discovery.searchCommands` filters entries the host would not show, matching the enumeration endpoints. Pass `{ includeHidden: true }` for the unfiltered superset.
+- **Behavior change** — `discovery.getAllServices` counts context-menu commands in `services.contextMenuCommands` and includes them in `totalServices`, so `totalServices` changes value. The summary previously claimed to describe the discoverable surface while omitting one of its two menu families. `contextMenuHiddenFiltered` reports how many entries the filtering removed, and `stateKnown` is false when nothing was selected or playing.
+- Search hits carry the same state fields as the enumeration endpoints (`enabled`, `checked`, `radioChecked`, `hidden`, `stateKnown`, `flags`, `source`, `executable`, `unaddressableReason`), so a caller can tell whether a hit is invocable without a second round trip. When the context family was searched without a track selected or playing, the response's `stateKnown` is false and those hits' `enabled` / `checked` must not be filtered on.
+- Search case folding is now ASCII-only. The previous implementation ran `::tolower` over every byte, which is undefined behavior for bytes at or above `0x80` and could corrupt a UTF-8 sequence. Observable matching behavior for CJK labels is unchanged — they have no case to fold.
+- **`discovery.getContextMenuTree` no longer truncates silently.** The walk capped children at 50 and depth at 10 while still reporting the host's real `childCount`, so `children.length` disagreed with `childCount` with nothing explaining the difference. Both limits now come from the shared menu contract (depth 16, 512 children per node) and any clipping is reported: a `popup` node gives both `childCount` and `childrenReturned`, and a node whose subtree was clipped carries `truncated` with `depthExceeded` / `childrenExceeded` naming the cause. The flags propagate upward, so the response's top-level `truncated` covers the whole tree; `maxDepth` and `maxChildrenPerNode` echo the applied limits.
+- `discovery.getContextMenuTree` nodes now report state — `enabled`, `checked`, `radioChecked`, `hidden`, `stateKnown`, `flags` — and `depth`. Separators carry only their kind, which is all that is meaningful for them.
+- `discovery.executeContextMenuCommand` returns `hidden` and `resolved` on the success path, not only when refusing. With them on the refusal branch alone, a caller could not tell "was not refused" apart from "this build does not report the field". `resolved` is false when no registered item owns the GUID, in which case there was no state to evaluate.
+- `discovery.getMainMenuCommands` entries expanded from a dynamic submenu now carry `stateKnown`, `executable`, and `unaddressableReason`, matching the static slots.
+
+### SDK
+
+- **Breaking type fix** — `DiscoveryContextMenuCommand` was a type alias for `DiscoveryMainMenuCommand` and therefore claimed fields the context tier never returns. It is now an independent interface: context items are registered flat and placed by the host, so they have no menu `path` and no dynamic-expansion fields. TypeScript code that read `path` / `isDynamic` / `subGuid` off a context-menu command was reading a field that was never populated.
+- Added the exported `MenuNodeState`, `MenuNodeSource`, and `MenuUnaddressableReason` types, shared by every menu enumeration result.
+- `fb.discovery.searchCommands()` accepts `{ scope, includeHidden }`; `fb.discovery.getContextMenuCommands()` accepts `{ includeHidden }`.
+- Fixed SMP main-menu dispatch. `buildMenuItems` mapped a menu id to the item's `path` before its `guid`; a path must be matched against a generated menu tree, which fails outright on localized hosts, while the host resolves a GUID directly. `ExecuteByID` on a main menu therefore did not work there at all. GUID is now preferred; `commandId` still wins for context-menu sessions.
+- Fixed SMP menu state decoding. `buildMenuItems` re-derived `enabled` / `checked` from the raw `flags` word and ignored the normalized booleans the host sends. It now prefers those booleans and falls back to `flags` only when they are absent. An item marked `stateKnown: false` is offered as enabled rather than greyed out, because `flags == 0` is bit-identical to "enabled, unchecked" and treating unobserved state as disabled hid commands the host would have run.
+
 ## v1.11.0 (2026-07-27)
 
 ### Tray and menus

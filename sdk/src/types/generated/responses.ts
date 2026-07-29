@@ -719,8 +719,8 @@ export interface DiscoveryExecuteContextMenuCommandResponse {
     guid?: string;
     name?: string;
     hidden?: boolean;
-    force?: boolean;
     resolved?: boolean;
+    force?: boolean;
     itemCount?: number;
 }
 
@@ -741,6 +741,8 @@ export interface DiscoveryExecuteMainMenuCommandResponse {
 export interface DiscoveryGetAllServicesResponse {
     success: boolean;
     services: JsonObject;
+    contextMenuHiddenFiltered: number;
+    stateKnown: boolean;
     totalServices: number;
 }
 
@@ -763,7 +765,7 @@ export interface DiscoveryGetContextMenuCommandsResponse {
     includeHidden: boolean;
     hiddenFiltered: number;
     stateKnown: boolean;
-    selectionCount: number;
+    selectionCount: unknown;
 }
 
 /**
@@ -773,11 +775,24 @@ export interface DiscoveryGetContextMenuTreeResponse {
     success: boolean;
     error?: string;
     tree?: JsonObject;
+    truncated?: boolean;
+    depthExceeded?: boolean;
+    childrenExceeded?: boolean;
+    maxDepth?: number;
+    maxChildrenPerNode?: number;
     itemCount?: number;
     name: unknown;
     type: unknown;
+    depth: unknown;
+    enabled: unknown;
+    checked: unknown;
+    radioChecked: unknown;
+    hidden: unknown;
+    stateKnown: unknown;
+    flags: unknown;
     fullName: unknown;
     childCount: unknown;
+    childrenReturned: unknown;
     children: unknown;
 }
 
@@ -857,6 +872,11 @@ export interface DiscoverySearchCommandsResponse {
     results?: JsonObject;
     count?: number;
     expandDynamic?: boolean;
+    scope?: string;
+    includeHidden?: boolean;
+    mainMenuHits?: number;
+    contextMenuHits?: number;
+    stateKnown?: boolean;
 }
 
 /**
@@ -1731,6 +1751,8 @@ export interface MenuGetContextMenuResponse {
     available?: unknown;
     guid?: unknown;
     subGuid?: unknown;
+    executable?: unknown;
+    unaddressableReason?: unknown;
 }
 
 /**
@@ -1753,6 +1775,8 @@ export interface MenuGetMainMenuResponse {
     available?: unknown;
     guid?: unknown;
     subGuid?: unknown;
+    executable?: unknown;
+    unaddressableReason?: unknown;
     source: unknown;
     root: string;
     requestedRoot: string;
@@ -1786,7 +1810,14 @@ export interface MenuRunContextCommandByIdResponse {
 export interface MenuRunMainMenuCommandResponse {
     success: boolean;
     error?: string;
+    code?: string;
     guid?: string;
+    dynamic?: boolean;
+    subGuid?: string;
+    source?: string;
+    match?: string;
+    candidateCount?: number;
+    candidates?: JsonObject;
 }
 
 /**

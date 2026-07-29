@@ -23,6 +23,7 @@ import type {
     DiscoveryExecuteContextMenuCommandParams,
     DiscoveryGetContextMenuCommandsParams,
     DiscoveryGetMainMenuCommandsParams,
+    DiscoverySearchCommandsParams,
 } from '../../types/generated/params.js';
 
 export const discovery = {
@@ -123,6 +124,16 @@ export const discovery = {
                 candidates?: string[];
             }
         >('discovery.executeContextMenuByPath', opts),
+    /**
+     * Dumps the full context-menu tree for the current selection (or the playing
+     * track), as the host would build it.
+     *
+     * The walk is bounded in depth and in children per node, and any clipping is
+     * reported rather than silent: check `truncated` on the response for the whole
+     * tree, or on an individual node for its subtree. A popup node carries both
+     * `childCount` (the host's real count) and `childrenReturned` (what this
+     * response contains) so the two can be reconciled without counting.
+     */
     getContextMenuTree: () =>
         bridge.invoke<DiscoveryGetContextMenuTreeResponse>(
             'discovery.getContextMenuTree',
@@ -146,11 +157,30 @@ export const discovery = {
             'discovery.getPreferencePages',
         ),
     /**
-     * Case-insensitive substring search over main-menu command names,
-     * descriptions and menu paths. Dynamic submenus are expanded by default;
-     * pass `{ expandDynamic: false }` to search the static registry only.
+     * Case-insensitive substring search over command names, descriptions and menu
+     * paths, across both menu families.
+     *
+     * Each hit carries `type` (`'mainmenu'` / `'contextmenu'`) plus the same state
+     * fields the enumeration endpoints return, so a caller can tell whether a hit
+     * is invocable without a second round trip. Pass `{ scope: 'mainmenu' }` or
+     * `{ scope: 'contextmenu' }` to search one family only.
+     *
+     * Entries the host would not show are excluded, matching the enumeration
+     * endpoints; pass `{ includeHidden: true }` for the unfiltered superset.
+     * Dynamic submenus are expanded by default — pass `{ expandDynamic: false }`
+     * for the static registry only.
+     *
+     * Context-menu state is only observable with a track selected or playing.
+     * When the context family was searched without one, the response's
+     * `stateKnown` is false and its hits' `enabled` / `checked` must not be
+     * filtered on.
      */
-    searchCommands: (query: string, opts?: { expandDynamic?: boolean }) =>
+    searchCommands: (
+        query: string,
+        opts?: Omit<DiscoverySearchCommandsParams, 'query' | 'scope'> & {
+            scope?: 'all' | 'mainmenu' | 'contextmenu';
+        },
+    ) =>
         bridge.invoke<DiscoverySearchCommandsResponse>(
             'discovery.searchCommands',
             { query, ...opts },

@@ -339,10 +339,21 @@ export interface SmpRawMenuItem {
     type?: 'command' | 'separator' | 'submenu';
     label?: string;
     flags?: number;
+    /**
+     * Normalized state. Preferred over decoding {@link SmpRawMenuItem.flags},
+     * which cannot express "not observed": a zero flag word and a genuinely
+     * enabled item are indistinguishable.
+     */
+    enabled?: boolean;
+    checked?: boolean;
+    /** False when `enabled` / `checked` carry no observation. */
+    stateKnown?: boolean;
     /** Context menu uses `commandId`; main menu uses `path` or `guid`. */
     commandId?: number;
     path?: string;
     guid?: string;
+    /** Sub-command GUID of a dynamic submenu child. */
+    subGuid?: string;
     children?: SmpRawMenuItem[];
 }
 

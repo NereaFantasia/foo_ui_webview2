@@ -328,6 +328,57 @@ inline std::string NormalizeLabel(const std::string& raw) {
     return s;
 }
 
+// ASCII case fold of a whole string. Bytes >= 0x80 pass through, so this is
+// safe on UTF-8 and never hands a negative char to <cctype> — which is what
+// `std::transform(..., ::tolower)` did, and is undefined behaviour.
+inline std::string FoldAscii(const std::string& in) {
+    std::string out = in;
+    for (char& c : out) c = FoldAsciiByte(c);
+    return out;
+}
+
+// Case-insensitive substring test used by command search. Separate from
+// SegmentsEqual on purpose: search is deliberately fuzzy, addressing is not.
+// An empty needle matches, mirroring std::string::find.
+inline bool ContainsFolded(const std::string& haystack, const std::string& needle) {
+    return FoldAscii(haystack).find(FoldAscii(needle)) != std::string::npos;
+}
+
+// Which menu families a search covers. The pre-refactor search only ever looked
+// at the main menu while hard-coding `type: "mainmenu"` into every hit, so a
+// right-click command was unfindable and the field carried no information.
+enum class SearchScope {
+    All,
+    MainMenu,
+    ContextMenu,
+};
+
+inline const char* ToString(SearchScope scope) {
+    switch (scope) {
+        case SearchScope::All:         return "all";
+        case SearchScope::MainMenu:    return "mainmenu";
+        case SearchScope::ContextMenu: return "contextmenu";
+    }
+    return "all";
+}
+
+// Unrecognized input falls back to All rather than erroring: the parameter is a
+// narrowing filter, so the safe default is the full result set.
+inline SearchScope ParseSearchScope(const std::string& raw) {
+    const std::string folded = FoldAscii(TrimAscii(raw));
+    if (folded == "mainmenu") return SearchScope::MainMenu;
+    if (folded == "contextmenu") return SearchScope::ContextMenu;
+    return SearchScope::All;
+}
+
+inline bool ScopeIncludesMainMenu(SearchScope scope) {
+    return scope == SearchScope::All || scope == SearchScope::MainMenu;
+}
+
+inline bool ScopeIncludesContextMenu(SearchScope scope) {
+    return scope == SearchScope::All || scope == SearchScope::ContextMenu;
+}
+
 // Split on '/' or '\', dropping empty segments so "a//b" and "a/b" agree.
 inline std::vector<std::string> SplitPath(const std::string& path) {
     std::vector<std::string> parts;
@@ -404,12 +455,46 @@ struct Truncation {
     bool childrenExceeded = false;
 
     bool any() const { return depthExceeded || childrenExceeded; }
+
+    // Folds a child's truncation into this one, so a container can report that
+    // something below it was cut off even when its own children all fit.
+    void merge(const Truncation& other) {
+        depthExceeded = depthExceeded || other.depthExceeded;
+        childrenExceeded = childrenExceeded || other.childrenExceeded;
+    }
 };
 
 inline bool DepthExceeded(int depth) { return depth > kMaxMenuTreeDepth; }
 
 inline bool ChildrenExceeded(std::size_t childCount) {
     return childCount > static_cast<std::size_t>(kMaxChildrenPerNode);
+}
+
+// How much of a container's child list a walk may visit, and why the rest was
+// left out. Centralized because the pre-refactor tree dump inlined its own caps
+// (depth 10, 50 children) and reported neither, so `childCount` disagreed with
+// the returned `children` array with nothing marking the discrepancy.
+struct ChildWalkPlan {
+    std::size_t visitCount = 0;
+    Truncation truncation;
+};
+
+inline ChildWalkPlan PlanChildWalk(int depth, std::size_t childCount) {
+    ChildWalkPlan plan;
+
+    // Children of a node at `depth` live at `depth + 1`; if that is past the cap
+    // none of them can be walked. Reported only when there was something to
+    // lose, so an empty container is never flagged as truncated.
+    if (DepthExceeded(depth + 1)) {
+        plan.truncation.depthExceeded = childCount != 0;
+        return plan;
+    }
+
+    plan.visitCount = childCount > static_cast<std::size_t>(kMaxChildrenPerNode)
+                          ? static_cast<std::size_t>(kMaxChildrenPerNode)
+                          : childCount;
+    plan.truncation.childrenExceeded = plan.visitCount < childCount;
+    return plan;
 }
 
 }  // namespace menu_node

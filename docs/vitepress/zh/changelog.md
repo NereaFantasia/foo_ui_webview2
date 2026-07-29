@@ -1,5 +1,27 @@
 # 更新日志
 
+## 未发布
+
+### Discovery 菜单
+
+- **行为变更** —— `discovery.searchCommands` 现在同时搜索右键菜单与主菜单，因此结果数增加，`type` 出现新取值 `'contextmenu'`。传 `{ scope: 'mainmenu' }` 可回到原有覆盖面。该端点此前只查主菜单，却把 `type: 'mainmenu'` 硬编码进每条结果，导致右键命令搜不到、且该字段不携带任何信息。
+- **行为变更** —— `discovery.searchCommands` 会过滤宿主不会显示的条目，与列举端点保持一致。传 `{ includeHidden: true }` 可取回完整集合。
+- **行为变更** —— `discovery.getAllServices` 将右键菜单命令计入 `services.contextMenuCommands` 并纳入 `totalServices`，因此 `totalServices` 数值变化。该汇总此前声称描述可发现面，却漏掉了两个菜单族之一。被过滤掉的数量由 `contextMenuHiddenFiltered` 给出；无选中且无播放曲目时 `stateKnown` 为 `false`。
+- 搜索结果携带与列举端点一致的状态字段（`enabled`、`checked`、`radioChecked`、`hidden`、`stateKnown`、`flags`、`source`、`executable`、`unaddressableReason`），调用方无需再发一次请求即可判断能否执行。搜索包含右键菜单但无选中且无播放曲目时，响应的 `stateKnown` 为 `false`，此时这些结果的 `enabled` / `checked` 不得用于过滤。
+- 搜索的大小写折叠改为仅作用于 ASCII。此前实现对每个字节调用 `::tolower`，对 `0x80` 及以上的字节属未定义行为，可能破坏 UTF-8 序列。对中文标签的可观测匹配行为不变——中文没有可折叠的大小写。
+- **`discovery.getContextMenuTree` 不再静默截断。** 此前遍历把子项截到 50、深度截到 10，却仍上报宿主的真实 `childCount`，导致 `children.length` 与 `childCount` 不符且无任何说明。两个上限现统一取自共享菜单契约（深度 16、每节点 512 子项），且任何裁剪都会上报：`popup` 节点同时给出 `childCount` 与 `childrenReturned`，子树被裁剪的节点带 `truncated`，并由 `depthExceeded` / `childrenExceeded` 说明原因。标记向上传播，因此顶层 `truncated` 覆盖整棵树；`maxDepth` 与 `maxChildrenPerNode` 回显生效上限。
+- `discovery.getContextMenuTree` 的节点现在上报状态——`enabled`、`checked`、`radioChecked`、`hidden`、`stateKnown`、`flags`——以及 `depth`。分隔符只带类型，这也是对它唯一有意义的信息。
+- `discovery.executeContextMenuCommand` 在成功路径上也返回 `hidden` 与 `resolved`，不再只在拒绝时返回。若只在拒绝分支返回，调用方无法区分「未被拒绝」与「本版本不返回该字段」。无注册项拥有该 GUID 时 `resolved` 为 `false`，此时没有可评估的状态。
+- `discovery.getMainMenuCommands` 中由动态子菜单展开的条目现在也带 `stateKnown`、`executable`、`unaddressableReason`，与静态槽位一致。
+
+### SDK
+
+- **破坏性类型修正** —— `DiscoveryContextMenuCommand` 原本是 `DiscoveryMainMenuCommand` 的类型别名，因而声明了右键侧根本不会返回的字段。现改为独立接口：右键条目是扁平注册、由宿主决定位置，因此没有菜单 `path`，也没有动态展开相关字段。此前读取右键命令的 `path` / `isDynamic` / `subGuid` 的 TypeScript 代码，读的是从未被填充过的字段。
+- 新增导出类型 `MenuNodeState`、`MenuNodeSource`、`MenuUnaddressableReason`，由所有菜单列举结果共用。
+- `fb.discovery.searchCommands()` 接受 `{ scope, includeHidden }`；`fb.discovery.getContextMenuCommands()` 接受 `{ includeHidden }`。
+- 修复 SMP 主菜单派发。`buildMenuItems` 把菜单 id 优先映射到条目的 `path` 而非 `guid`；路径必须去比对生成的菜单树，而该查找在汉化宿主上直接失败，GUID 则由宿主直接解析。因此主菜单的 `ExecuteByID` 在这类宿主上完全不工作。现改为优先 `guid`；右键菜单会话仍以 `commandId` 为准。
+- 修复 SMP 菜单状态解码。`buildMenuItems` 从原始 `flags` 位重新推导 `enabled` / `checked`，忽略了宿主已给出的归一化布尔值。现优先使用布尔值，仅在其缺失时回退到 `flags`。标记为 `stateKnown: false` 的条目按可用呈现而非置灰，因为 `flags == 0` 与「可用且未勾选」在位上完全相同，把未观测状态当作禁用会隐藏宿主本可执行的命令。
+
 ## v1.11.0 (2026-07-27)
 
 ### 托盘与菜单
