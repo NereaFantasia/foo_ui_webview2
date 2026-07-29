@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+### Main menu
+
+- **`menu.runMainMenuCommand` no longer leaks host exceptions.** The v2 menu-tree branch had no exception guard, and `generate_menu()` throws on localized foobar2000 builds. The exception escaped to JavaScript as a raw host-language `Error` and — worse — skipped every fallback below it, so the name and path forms failed outright on those hosts. Failures are now reported as `success: false` with a `code`: `MENU_ITEM_DISABLED`, `MENU_MATCH_AMBIGUOUS` (with `candidates`), or `MENU_COMMAND_NOT_FOUND`.
+- **`menu.getMainMenu` leaves are addressable on localized hosts.** The v1 HMENU fallback tier — the only tier available there — structurally cannot produce a GUID, because a Win32 menu carries just `wID`, and that id dies with the transient menu that generated it. Leaves are now matched against the same `get_display()` text the host rendered the menu from and backfilled with `guid` / `subGuid`; measured 0 of 158 leaves before, 131 of 167 after on a localized host. The tier also began reporting `flags`, `enabled`, `checked`, and `hidden`, where previously it reported none of them.
+- **Behavior change** — a disabled command is refused instead of reporting success. Execution previously returned `success: true` for a greyed-out command, and the GUID form skipped the check the name form applied, so the same command was refused by name yet "succeeded" by GUID. All three request forms now validate alike and return `MENU_ITEM_DISABLED`. A GUID absent from the enumeration is still attempted, because a caller may hold a valid address the enumeration did not surface.
+- Name and path resolution matches by exact segment. An ambiguous name is reported rather than resolved: on a localized host three separate commands can share one label, so picking the first match would silently run the wrong command. Address by `guid` to be unambiguous — it is the only form stable across hosts, since a localized build reports localized labels.
+- `menu.runMainMenuCommand` accepts `subGuid` to address a dynamic child command, paired with its owning command GUID.
+- A leaf that could not be resolved to an address now says so, carrying `executable: false` and `unaddressableReason` rather than appearing as an ordinary command the caller cannot act on. The flat fallback tier's `available` is read from `get_display()` instead of being hard-coded `true`, so a disabled command is no longer indistinguishable from an enabled one.
+
 ### Discovery menus
 
 - **Behavior change** — `discovery.searchCommands` now searches the context menu as well as the main menu, so result counts increase and `type` carries a new `'contextmenu'` value. Pass `{ scope: 'mainmenu' }` for the previous coverage. The endpoint previously hard-coded `type: 'mainmenu'` into every hit while only ever looking at the main menu, which made right-click commands unfindable and left the field carrying no information.

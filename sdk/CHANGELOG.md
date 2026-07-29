@@ -49,8 +49,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   fields. TypeScript code that read `path` / `isDynamic` / `subGuid` off a
   context-menu command was reading a field that was never populated.
 - `SmpRawMenuItem` gained `enabled`, `checked`, `stateKnown`, and `subGuid`.
+- **`MenuCommand.flags` / `commandId` are now optional** — both are tier
+  dependent, and declaring them required made every v1-tier response a type lie:
+  the HMENU tier reads state from Win32 and has no SDK `flags`, and the flat
+  tier produces neither. `MenuSubmenu.flags` is optional for the same reason.
+  `MenuCommand` also extends `MenuNodeState` and gained `source`, `executable`,
+  and `unaddressableReason`. Note that `commandId` is a transient Win32 menu id
+  that dies with the menu it came from — only `guid` is a durable address.
+- **`menu.runMainMenuCommand` accepts `{ subGuid }`** and resolves a name or
+  path by exact segment match. An ambiguous name is reported rather than
+  resolved: on a localized host three separate commands can share one label, so
+  picking the first match would silently run the wrong one.
 
 ### Fixed
+
+- **`menu.runMainMenuCommand` no longer leaks host exceptions** — the v2
+  menu-tree branch had no exception guard, and `generate_menu()` throws on
+  localized foobar2000 builds. The exception escaped to JS as a raw
+  host-language `Error` and, worse, skipped every fallback below it, so name and
+  path forms failed outright. Failures are now reported as `success: false` with
+  a `code`: `MENU_ITEM_DISABLED`, `MENU_MATCH_AMBIGUOUS` (with `candidates`), or
+  `MENU_COMMAND_NOT_FOUND`.
+- **`menu.getMainMenu` leaves are addressable on localized hosts** — the v1
+  HMENU fallback tier, which is the only tier available there, structurally
+  cannot produce a GUID: a Win32 menu carries just `wID`. Leaves are now matched
+  against the same `get_display()` text the host rendered the menu from and
+  backfilled with `guid` / `subGuid` (measured 0/158 → 131/167 on a localized
+  host). A leaf whose label is ambiguous is left without a `guid` and marked
+  `executable: false` with `unaddressableReason` instead of carrying a guess.
+  The tier also began reporting `flags` / `enabled` / `checked` / `hidden`.
+- **Disabled main-menu commands are refused** — execution previously reported
+  `success: true` for a greyed-out command, and the GUID form skipped the check
+  that the name form applied, so the same command was refused by name yet
+  "succeeded" by GUID. All three request forms now validate alike. A GUID absent
+  from the enumeration is still attempted: the caller may hold a valid address
+  this enumeration did not surface.
 
 - **SMP main-menu dispatch** — `buildMenuItems` mapped an allocated menu id to
   the item's `path` before its `guid`. A path has to be matched against a

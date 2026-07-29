@@ -2,6 +2,15 @@
 
 ## 未发布
 
+### 主菜单
+
+- **`menu.runMainMenuCommand` 不再透传宿主异常。** v2 菜单树分支此前没有异常保护，而汉化版 foobar2000 的 `generate_menu()` 会抛出异常。该异常以宿主语言的原始 `Error` 逃逸到 JavaScript，更糟的是它跳过了下方所有兜底，导致名称与路径形式在这类宿主上彻底失效。失败现统一以 `success: false` 加 `code` 返回：`MENU_ITEM_DISABLED`、`MENU_MATCH_AMBIGUOUS`（附 `candidates`）或 `MENU_COMMAND_NOT_FOUND`。
+- **`menu.getMainMenu` 的叶子在汉化版宿主上可寻址了。** v1 HMENU 兜底层——在该宿主上唯一可用的层——结构上产不出 GUID：Win32 菜单只携带 `wID`，而这个 id 随生成它的临时菜单一同失效。叶子现在按宿主渲染该菜单所用的同一份 `get_display()` 文本匹配，并回填 `guid` / `subGuid`；汉化版宿主实测由 158 个叶子中 0 个带 guid 提升到 167 个中 131 个。该层同时开始上报 `flags`、`enabled`、`checked`、`hidden`——此前这些一个都没有。
+- **行为变更** —— 禁用命令会被拒绝执行，而不再报告成功。此前对灰显命令执行会返回 `success: true`；且 GUID 形式跳过了名称形式所做的校验，导致同一条命令按名字被拒、按 GUID 却「成功」。三种请求形式现在校验一致，返回 `MENU_ITEM_DISABLED`。不在枚举结果中的 GUID 仍会尝试执行——调用方可能持有本次枚举未覆盖的有效地址。
+- 名称与路径按段精确匹配。名字有歧义时上报而不替调用方决定：汉化版宿主上可能有三条不同命令共用同一标签，取首个匹配会静默执行错误的命令。要无歧义请用 `guid` 寻址——它是唯一跨宿主稳定的形式，因为汉化版上报的是本地化标签。
+- `menu.runMainMenuCommand` 新增 `subGuid` 参数，与所属命令 GUID 搭配用于寻址动态子命令。
+- 无法解析出地址的叶子会明示这一点，带 `executable: false` 与 `unaddressableReason`，而不再伪装成一条调用方却无法执行的普通命令。flat 兜底层的 `available` 改为从 `get_display()` 实读，不再硬编码为 `true`，禁用命令不会再与启用命令无从分辨。
+
 ### Discovery 菜单
 
 - **行为变更** —— `discovery.searchCommands` 现在同时搜索右键菜单与主菜单，因此结果数增加，`type` 出现新取值 `'contextmenu'`。传 `{ scope: 'mainmenu' }` 可回到原有覆盖面。该端点此前只查主菜单，却把 `type: 'mainmenu'` 硬编码进每条结果，导致右键命令搜不到、且该字段不携带任何信息。
