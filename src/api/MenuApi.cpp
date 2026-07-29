@@ -5,6 +5,7 @@
 #include "api/MenuApi.h"
 #include "api/BridgeCore.h"
 #include "api/ErrorEnvelope.h"
+#include "api/MenuNodeContract.h"
 #include "api/PluginRegistry.h"
 #include <foobar2000/SDK/menu_helpers.h>
 #include <foobar2000/SDK/menu.h>
@@ -211,6 +212,234 @@ namespace {
         return (f & menu_flags::disabled) == 0;
     }
 
+    // ================================================================
+    // Main menu resolution index
+    //
+    // A flat "display name -> GUID + live state" table built straight from the
+    // mainmenu_commands service enumeration, deliberately WITHOUT going through
+    // mainmenu_manager_v2::generate_menu(). That call throws on localized hosts
+    // (see MenuGetMainMenu below), which is exactly why the v2 menu tree cannot
+    // be the only way to resolve or execute a command.
+    //
+    // The index is what lets three separate defects share one fix:
+    //   - execution can resolve a name without the v2 tree
+    //   - the v1 HMENU tier can backfill the `guid` it structurally lacks
+    //   - the flat tier can report real availability instead of hardcoding it
+    //
+    // Text comes from get_display(), which is the same call generate_menu_win32()
+    // uses to render the HMENU. That shared origin is why HMENU labels line up
+    // with index entries; a JS-side join can never reach this alignment point.
+    //
+    // State is a SNAPSHOT. get_display() is only meaningful at the moment a menu
+    // is about to be shown (Pause/Resume, Always-on-top swap as the user acts),
+    // so the index must be rebuilt per request and never cached across calls.
+    // ================================================================
+
+    struct MainMenuIndexEntry {
+        std::string name;         // get_name(), the stable-ish internal label
+        std::string displayText;  // get_display() text, what the menu really shows
+        std::string path;         // dynamic children only; empty for static slots
+        GUID guid = pfc::guid_null;
+        GUID subGuid = pfc::guid_null;  // non-null only for dynamic children
+        menu_node::State state;
+        bool isDynamicParent = false;  // container slot: never executable
+    };
+
+    // Recursively appends the leaf commands of a v2 dynamic subtree.
+    void CollectIndexDynamicNodes(const mainmenu_node::ptr& node,
+                                  const std::string& pathPrefix,
+                                  const GUID& ownerGuid,
+                                  int depth,
+                                  std::vector<MainMenuIndexEntry>& out) {
+        if (!node.is_valid() || menu_node::DepthExceeded(depth)) return;
+
+        t_uint32 type = mainmenu_node::type_separator;
+        try {
+            type = node->get_type();
+        } catch (...) {
+            return;
+        }
+        if (type == mainmenu_node::type_separator) return;
+
+        pfc::string8 text;
+        t_uint32 flags = 0;
+        try {
+            node->get_display(text, flags);
+        } catch (...) {
+            // Keep walking with an empty label rather than dropping the subtree.
+        }
+
+        const std::string label = StringUtils::SafeUtf8(text.get_ptr());
+        std::string path = pathPrefix;
+        // Components often label the root of their dynamic subtree with the same
+        // text as the owning static slot; appending it twice yields paths like
+        // "Desktop Lyrics/Desktop Lyrics/Show".
+        const bool duplicatesOwnerLabel = (depth == 0 && label == pathPrefix);
+        if (!label.empty() && !duplicatesOwnerLabel) {
+            if (!path.empty()) path += '/';
+            path += label;
+        }
+
+        if (type == mainmenu_node::type_group) {
+            t_size childCount = 0;
+            try {
+                childCount = node->get_children_count();
+            } catch (...) {
+                return;
+            }
+            for (t_size i = 0; i < childCount; i++) {
+                mainmenu_node::ptr child;
+                try {
+                    child = node->get_child(i);
+                } catch (...) {
+                    continue;
+                }
+                CollectIndexDynamicNodes(child, path, ownerGuid, depth + 1, out);
+            }
+            return;
+        }
+
+        MainMenuIndexEntry entry;
+        entry.name = label;
+        entry.displayText = label;
+        entry.path = path;
+        entry.guid = ownerGuid;
+        try {
+            entry.subGuid = node->get_guid();
+        } catch (...) {
+            // Leave null; the entry then resolves to the owning slot only.
+        }
+        // mainmenu_node::get_display() returns void, so a dynamic node has no
+        // "return false to hide" signal; flag_defaulthidden is the only cue.
+        entry.state = menu_node::NormalizeMainMenu(flags, /*displayReturnedTrue=*/true);
+        out.push_back(std::move(entry));
+    }
+
+    std::vector<MainMenuIndexEntry> BuildMainMenuIndex() {
+        std::vector<MainMenuIndexEntry> index;
+
+        service_enum_t<mainmenu_commands> e;
+        service_ptr_t<mainmenu_commands> ptr;
+        while (e.next(ptr)) {
+            t_uint32 count = 0;
+            try {
+                count = ptr->get_command_count();
+            } catch (...) {
+                continue;
+            }
+
+            service_ptr_t<mainmenu_commands_v2> v2;
+            const bool hasV2 = ptr->service_query_t(v2);
+
+            for (t_uint32 i = 0; i < count; i++) {
+                MainMenuIndexEntry entry;
+
+                pfc::string8 name;
+                try {
+                    ptr->get_name(i, name);
+                } catch (...) {
+                    // A throwing component still gets an entry via get_display.
+                }
+                entry.name = StringUtils::SafeUtf8(name.get_ptr());
+
+                try {
+                    entry.guid = ptr->get_command(i);
+                } catch (...) {
+                    continue;  // No GUID means no stable address; skip.
+                }
+                if (entry.guid == pfc::guid_null) continue;
+
+                t_uint32 flags = 0;
+                bool displayed = true;
+                pfc::string8 displayText;
+                try {
+                    displayed = ptr->get_display(i, displayText, flags);
+                } catch (...) {
+                    // Treat a throwing component as "shown with no flags".
+                }
+                entry.displayText = StringUtils::SafeUtf8(displayText.get_ptr());
+                if (entry.displayText.empty()) entry.displayText = entry.name;
+                entry.state = menu_node::NormalizeMainMenu(flags, displayed);
+
+                bool isDynamic = false;
+                if (hasV2) {
+                    try {
+                        isDynamic = v2->is_command_dynamic(i);
+                    } catch (...) {
+                        isDynamic = false;
+                    }
+                }
+                entry.isDynamicParent = isDynamic;
+                index.push_back(entry);
+
+                if (!isDynamic) continue;
+
+                mainmenu_node::ptr root;
+                try {
+                    root = v2->dynamic_instantiate(i);
+                } catch (...) {
+                    continue;
+                }
+                CollectIndexDynamicNodes(root, entry.name, entry.guid, 0, index);
+            }
+        }
+
+        return index;
+    }
+
+    // Exact-match lookup by leaf label, against both the internal name and the
+    // displayed text. Matching is EXACT per menu_node::SegmentsEqual: a substring
+    // matcher would let "Rating/1" resolve to "Rating/10" and run the wrong
+    // command while reporting success.
+    //
+    // Only the LAST path segment is matched. Uniqueness is then enforced across
+    // the whole menu, so a preceding path prefix could not have narrowed a unique
+    // hit any further; an ambiguous leaf name is reported rather than guessed.
+    std::vector<const MainMenuIndexEntry*> FindIndexCandidates(
+        const std::vector<MainMenuIndexEntry>& index, const std::string& query) {
+        std::vector<const MainMenuIndexEntry*> matches;
+
+        const auto parts = menu_node::SplitPath(query);
+        if (parts.empty()) return matches;
+        const std::string& leaf = parts.back();
+
+        for (const auto& entry : index) {
+            if (entry.isDynamicParent) continue;  // container, not a command
+            const bool hit = menu_node::SegmentsEqual(entry.name, leaf) ||
+                             menu_node::SegmentsEqual(entry.displayText, leaf);
+            if (hit) matches.push_back(&entry);
+        }
+        return matches;
+    }
+
+    // Looks up a leaf label for the guid backfill in the v1 HMENU tier. Returns
+    // nullptr unless exactly one entry matches, so an ambiguous label leaves the
+    // `guid` field absent instead of attaching a guessed address.
+    const MainMenuIndexEntry* FindUniqueIndexEntry(
+        const std::vector<MainMenuIndexEntry>& index, const std::string& label) {
+        const auto matches = FindIndexCandidates(index, label);
+        return matches.size() == 1 ? matches.front() : nullptr;
+    }
+
+    // Looks up an entry by address so the GUID request form can be state-checked
+    // like the name and path forms. Without this the same disabled command would
+    // be refused by name yet report success by GUID.
+    //
+    // Returns nullptr when the address is not in the index at all; the caller
+    // must then still attempt execution, because a GUID the caller obtained
+    // elsewhere may be valid even though this enumeration did not surface it.
+    const MainMenuIndexEntry* FindIndexEntryByAddress(
+        const std::vector<MainMenuIndexEntry>& index,
+        const GUID& guid,
+        const GUID& subGuid) {
+        for (const auto& entry : index) {
+            if (entry.guid != guid) continue;
+            if (entry.subGuid != subGuid) continue;
+            return &entry;
+        }
+        return nullptr;
+    }
+
     void CountCommandAvailability(const menu_tree_item::ptr& node, int& total, int& available) {
         if (!node.is_valid()) return;
         if (node->isCommand()) {
@@ -228,34 +457,55 @@ namespace {
         }
     }
 
-    json BuildMainMenuFlatFallback(const std::string& locale, bool enableI18n) {
+    // Last-resort tier: a flat command list with no hierarchy at all.
+    //
+    // Built from the shared index so availability is READ from get_display()
+    // rather than hardcoded. The previous version claimed `available: true` for
+    // every entry, which meant the one tier that always produces a usable GUID
+    // also reported state that was outright fabricated — disabled commands were
+    // indistinguishable from enabled ones.
+    json BuildMainMenuFlatFallback(const std::string& locale, bool enableI18n,
+                                   const std::vector<MainMenuIndexEntry>& index) {
         json items = json::array();
 
-        service_enum_t<mainmenu_commands> e;
-        service_ptr_t<mainmenu_commands> ptr;
-        while (e.next(ptr)) {
-            t_uint32 count = ptr->get_command_count();
-            for (t_uint32 i = 0; i < count; i++) {
-                pfc::string8 name;
-                ptr->get_name(i, name);
+        for (const auto& entry : index) {
+            // A dynamic container slot is not invokable; executing one is
+            // undefined behaviour in the SDK.
+            if (entry.isDynamicParent) continue;
 
-                GUID cmdGuid = ptr->get_command(i);
-                // Plugin/SDK names may contain truncated UTF-8; sanitize before JSON.
-                std::string label = StringUtils::SafeUtf8(name.get_ptr());
-                std::string displayLabel = TranslateMenuLabel(label, locale, enableI18n);
-
-                json item = {
-                    { "type", "command" },
-                    { "label", label },
-                    { "displayLabel", displayLabel },
-                    { "path", label },
-                    { "displayPath", displayLabel },
-                    { "guid", GuidToString(cmdGuid) },
-                    { "available", true },
-                    { "fallback", true }
-                };
-                items.push_back(item);
+            const std::string& label = entry.name.empty() ? entry.displayText : entry.name;
+            std::string displayLabel = TranslateMenuLabel(label, locale, enableI18n);
+            if (!entry.displayText.empty() && entry.displayText != entry.name) {
+                // Prefer what the menu actually shows; on a localized host this
+                // is the only label the user can recognize.
+                displayLabel = entry.displayText;
             }
+
+            const std::string path = entry.path.empty() ? label : entry.path;
+
+            json item = {
+                { "type", "command" },
+                { "label", label },
+                { "displayLabel", displayLabel },
+                { "path", path },
+                { "displayPath", path },
+                { "guid", GuidToString(entry.guid) },
+                { "available", entry.state.enabled },
+                { "enabled", entry.state.enabled },
+                { "checked", entry.state.checked },
+                { "radioChecked", entry.state.radioChecked },
+                { "hidden", entry.state.hidden },
+                { "flags", entry.state.flags },
+                { "source", menu_node::ToString(entry.subGuid != pfc::guid_null
+                                                    ? menu_node::Source::MainMenuDynamic
+                                                    : menu_node::Source::MainMenuStatic) },
+                { "executable", true },
+                { "fallback", true }
+            };
+            if (entry.subGuid != pfc::guid_null) {
+                item["subGuid"] = GuidToString(entry.subGuid);
+            }
+            items.push_back(item);
         }
 
         return items;
@@ -269,7 +519,8 @@ namespace {
     // ================================================================
 
     json WalkHMenu(HMENU hmenu, const std::string& pathPrefix, const std::string& displayPathPrefix,
-                   const std::string& locale, bool enableI18n) {
+                   const std::string& locale, bool enableI18n,
+                   const std::vector<MainMenuIndexEntry>* index) {
         json items = json::array();
         int count = GetMenuItemCount(hmenu);
         if (count <= 0) return items;
@@ -313,7 +564,7 @@ namespace {
                 }
 
                 if (mii.hSubMenu) {
-                    json children = WalkHMenu(mii.hSubMenu, path, displayPath, locale, enableI18n);
+                    json children = WalkHMenu(mii.hSubMenu, path, displayPath, locale, enableI18n, index);
                     json submenu = {
                         { "type", "submenu" },
                         { "label", cleanLabel },
@@ -324,8 +575,8 @@ namespace {
                     };
                     items.push_back(submenu);
                 } else {
-                    bool disabled = (mii.fState & MFS_DISABLED) || (mii.fState & MFS_GRAYED);
-                    bool checked = (mii.fState & MFS_CHECKED) != 0;
+                    const menu_node::State state =
+                        menu_node::NormalizeHmenu(static_cast<std::uint32_t>(mii.fState));
 
                     json item = {
                         { "type", "command" },
@@ -333,10 +584,39 @@ namespace {
                         { "displayLabel", displayLabel },
                         { "path", path },
                         { "displayPath", displayPath },
-                        { "available", !disabled },
-                        { "checked", checked },
+                        { "available", state.enabled },
+                        { "enabled", state.enabled },
+                        { "checked", state.checked },
+                        { "radioChecked", state.radioChecked },
+                        { "hidden", state.hidden },
+                        { "flags", state.flags },
+                        { "source", menu_node::ToString(menu_node::Source::HmenuFallback) },
                         { "commandId", (int)mii.wID }
                     };
+
+                    // Backfill the GUID this tier cannot produce on its own: a
+                    // Win32 HMENU carries only wID, and that id dies with the
+                    // local mainmenu_manager that generated it, so it addresses
+                    // nothing. Resolving the label against the index makes the
+                    // v1 tier executable for the first time.
+                    //
+                    // The label is matched against the same get_display() text
+                    // generate_menu_win32() rendered this HMENU from, so the two
+                    // agree by construction. An ambiguous label yields no guid
+                    // rather than a guessed one.
+                    const MainMenuIndexEntry* hit =
+                        index ? FindUniqueIndexEntry(*index, cleanLabel) : nullptr;
+                    if (hit) {
+                        item["guid"] = GuidToString(hit->guid);
+                        if (hit->subGuid != pfc::guid_null) {
+                            item["subGuid"] = GuidToString(hit->subGuid);
+                        }
+                        item["executable"] = true;
+                    } else {
+                        item["executable"] = false;
+                        item["unaddressableReason"] =
+                            menu_node::ToString(menu_node::Unaddressable::NoStableIdentifier);
+                    }
                     items.push_back(item);
                 }
             } catch (...) {
@@ -384,6 +664,12 @@ namespace {
 
         json items = json::array();
 
+        // Built once per request and shared by every top-level menu: the index
+        // enumerates all mainmenu_commands services, so rebuilding it per menu
+        // would repeat the same full enumeration six times. It must NOT outlive
+        // the request — get_display() state is a snapshot (Pause/Resume flips).
+        const std::vector<MainMenuIndexEntry> index = BuildMainMenuIndex();
+
         for (const auto& top : topMenus) {
             try {
                 auto mgr = mainmenu_manager::get();
@@ -397,7 +683,7 @@ namespace {
 
                 std::string label = top.enName;
                 std::string displayLabel = TranslateMenuLabel(label, locale, enableI18n);
-                json children = WalkHMenu(hmenu, label, displayLabel, locale, enableI18n);
+                json children = WalkHMenu(hmenu, label, displayLabel, locale, enableI18n, &index);
 
                 DestroyMenu(hmenu);
 
@@ -636,13 +922,17 @@ namespace {
         return result;
     }
 
+    // Shared by the main-menu v2 tier and the context-menu tier, hence the
+    // explicit `source`: the two produce structurally identical nodes but must
+    // not claim the same origin in the response.
     json BuildMenuTreeJson(
         const menu_tree_item::ptr& node,
         const std::string& pathPrefix,
         const std::string& displayPathPrefix,
         const std::string& locale,
         bool enableI18n,
-        bool withAvailability
+        bool withAvailability,
+        menu_node::Source source
     ) {
         if (!node.is_valid()) return json();
 
@@ -665,7 +955,7 @@ namespace {
                 try {
                     auto child = node->childAt(i);
                     if (!child.is_valid()) continue;
-                    auto item = BuildMenuTreeJson(child, path, displayPath, locale, enableI18n, withAvailability);
+                    auto item = BuildMenuTreeJson(child, path, displayPath, locale, enableI18n, withAvailability, source);
                     if (!item.is_null()) children.push_back(item);
                 } catch (const std::exception& ex) {
                     // 跳过有问题的子项（中文版 SDK 可能对某些项抛异常）
@@ -705,13 +995,34 @@ namespace {
         }
 
         if (node->isCommand()) {
+            // menu_flags (menu_common.h) uses the same bit assignments as
+            // mainmenu_commands' flags, so one normalizer covers both. The v2
+            // tier previously reported `available` + `flags` while the v1 tier
+            // reported `available` + `checked`, so a caller had to know which
+            // tier answered before it could read state at all.
+            std::uint32_t rawFlags = 0;
+            try {
+                rawFlags = static_cast<std::uint32_t>(node->flags());
+            } catch (...) {
+                // Treat a throwing node as unflagged.
+            }
+            // menu_tree_item exposes no get_display() bool, so there is no
+            // "return false to hide" signal here; defaulthidden is the only cue.
+            const menu_node::State state =
+                menu_node::NormalizeMainMenu(rawFlags, /*displayReturnedTrue=*/true);
+
             json item = {
                 { "type", "command" },
                 { "label", label },
                 { "displayLabel", displayLabel },
                 { "path", path },
                 { "displayPath", displayPath },
-                { "flags", node->flags() }
+                { "flags", rawFlags },
+                { "enabled", state.enabled },
+                { "checked", state.checked },
+                { "radioChecked", state.radioChecked },
+                { "hidden", state.hidden },
+                { "source", menu_node::ToString(source) }
             };
 
             // commandID / commandGuid / subCommandGuid 在中文版 SDK 可能抛异常
@@ -725,17 +1036,40 @@ namespace {
             } catch (...) {
                 item["available"] = true;
             }
+            // A throwing commandGuid() is why a v2 leaf can come back with no
+            // address at all. Swallowing it silently is what made the whole
+            // failure invisible: the node still looked like a normal command.
+            bool haveGuid = false;
             try {
                 GUID guid = node->commandGuid();
-                if (guid != pfc::guid_null) item["guid"] = GuidToString(guid);
+                if (guid != pfc::guid_null) {
+                    item["guid"] = GuidToString(guid);
+                    haveGuid = true;
+                }
+            } catch (const std::exception& ex) {
+                console::printf("[MenuApi] BuildMenuTreeJson: commandGuid() failed for '%s': %s",
+                                label.c_str(), ex.what());
             } catch (...) {
-                // Silently ignore — guid field omitted
+                console::printf("[MenuApi] BuildMenuTreeJson: commandGuid() failed for '%s' (unknown)",
+                                label.c_str());
             }
             try {
                 GUID subGuid = node->subCommandGuid();
                 if (subGuid != pfc::guid_null) item["subGuid"] = GuidToString(subGuid);
+            } catch (const std::exception& ex) {
+                console::printf("[MenuApi] BuildMenuTreeJson: subCommandGuid() failed for '%s': %s",
+                                label.c_str(), ex.what());
             } catch (...) {
-                // Silently ignore — subGuid field omitted
+                console::printf("[MenuApi] BuildMenuTreeJson: subCommandGuid() failed for '%s' (unknown)",
+                                label.c_str());
+            }
+
+            // State a missing address explicitly rather than emitting a listed
+            // entry the caller cannot act on and cannot explain.
+            item["executable"] = haveGuid;
+            if (!haveGuid) {
+                item["unaddressableReason"] =
+                    menu_node::ToString(menu_node::Unaddressable::NoStableIdentifier);
             }
 
             return item;
@@ -761,37 +1095,161 @@ json MenuRunMainMenuCommand(const json& params) {
     // GUID form
     GUID guid;
     if (StringToGuid(command, guid)) {
-        bool ok = mainmenu_commands::g_execute(guid);
-        return { {"success", ok}, {"guid", command} };
+        // A dynamic child is addressed by owning GUID + subGuid; g_execute alone
+        // cannot reach it.
+        GUID subGuid = pfc::guid_null;
+        std::string subGuidStr = params.value("subGuid", "");
+        if (!subGuidStr.empty() && !StringToGuid(subGuidStr, subGuid)) {
+            return { {"success", false}, {"error", "Invalid subGuid format"} };
+        }
+        const bool dynamic = !subGuidStr.empty();
+
+        // The GUID form is state-checked exactly like the name and path forms.
+        // Skipping it here is what let a disabled command ("Undo" with nothing to
+        // undo) report success when addressed by GUID while the very same command
+        // was correctly refused when addressed by name.
+        //
+        // A GUID absent from the index is NOT refused: the caller may hold a
+        // valid address this enumeration did not surface, and refusing it would
+        // turn a working call into a failure.
+        const auto index = BuildMainMenuIndex();
+        const MainMenuIndexEntry* known = FindIndexEntryByAddress(index, guid, subGuid);
+        if (known && !known->state.enabled) {
+            return {
+                {"success", false},
+                {"error", "Command is currently disabled: " + command},
+                {"code", "MENU_ITEM_DISABLED"},
+                {"guid", command}
+            };
+        }
+
+        const bool ok = dynamic
+            ? mainmenu_commands::g_execute_dynamic(guid, subGuid)
+            : mainmenu_commands::g_execute(guid);
+
+        // Both arms are spelled as braced literals on purpose: the response
+        // schema extractor enumerates keys statically, so building one object and
+        // conditionally inserting a key downgrades this endpoint's inferred
+        // response to a partial guess (SPEC §10.2 / §12).
+        if (dynamic) {
+            return {
+                {"success", ok},
+                {"guid", command},
+                {"dynamic", true},
+                {"subGuid", subGuidStr}
+            };
+        }
+        return { {"success", ok}, {"guid", command}, {"dynamic", false} };
     }
 
-    // Path/name form
-    auto mgr = mainmenu_manager_v2::tryGet();
-    if (mgr.is_valid()) {
-        auto root = mgr->generate_menu(mainmenu_manager::flag_view_full);
-        if (root.is_valid()) {
-            auto parts = SplitPath(command);
-            menu_tree_item::ptr item;
-            if (parts.size() > 1) {
-                item = FindMainMenuCommandByPath(root, parts, 0);
-            } else {
-                item = FindMainMenuCommandByName(root, command);
-            }
-            if (item.is_valid()) {
-                item->execute(service_ptr_t<service_base>());
-                return { {"success", true} };
+    // Path/name form.
+    //
+    // The v2 menu tree is tried first because it is the only tier that carries
+    // full submenu paths. It is wrapped because generate_menu() throws on
+    // localized hosts ("找不到命令"); before this guard the exception escaped the
+    // handler, surfaced to JS as a raw host-language Error, and — worse — skipped
+    // every fallback below, making name and path forms fail outright.
+    try {
+        auto mgr = mainmenu_manager_v2::tryGet();
+        if (mgr.is_valid()) {
+            auto root = mgr->generate_menu(mainmenu_manager::flag_view_full);
+            if (root.is_valid()) {
+                auto parts = SplitPath(command);
+                menu_tree_item::ptr item;
+                if (parts.size() > 1) {
+                    item = FindMainMenuCommandByPath(root, parts, 0);
+                } else {
+                    item = FindMainMenuCommandByName(root, command);
+                }
+                if (item.is_valid()) {
+                    // Refuse a disabled command instead of reporting a success
+                    // the user would never observe.
+                    if (!IsMenuItemAvailable(item)) {
+                        return {
+                            {"success", false},
+                            {"error", "Command is currently disabled: " + command},
+                            {"code", "MENU_ITEM_DISABLED"}
+                        };
+                    }
+                    item->execute(service_ptr_t<service_base>());
+                    return { {"success", true}, {"source", "v2-tree"} };
+                }
             }
         }
+    } catch (const std::exception& ex) {
+        console::printf("[MenuApi] runMainMenuCommand: v2 tree failed (%s), trying index...",
+                        ex.what());
+    } catch (...) {
+        console::printf("[MenuApi] runMainMenuCommand: v2 tree failed (unknown), trying index...");
     }
 
-    // Fallback: exact command name
-    GUID foundGuid;
-    if (mainmenu_commands::g_find_by_name(command.c_str(), foundGuid)) {
-        bool ok = mainmenu_commands::g_execute(foundGuid);
-        return { {"success", ok}, {"guid", GuidToString(foundGuid)} };
+    // Fallback: resolve through the service-enumeration index, which needs no v2
+    // tree and therefore still works on hosts where the above throws. This
+    // replaces a mainmenu_commands::g_find_by_name() call that could only ever
+    // match an exact leaf name via stricmp_utf8 — never a path, and never the
+    // displayed text.
+    const auto index = BuildMainMenuIndex();
+    const auto matches = FindIndexCandidates(index, command);
+    const menu_node::MatchKind matchKind = menu_node::ClassifyMatch(matches.size());
+
+    if (matchKind == menu_node::MatchKind::Ambiguous) {
+        json candidates = json::array();
+        for (const auto* entry : matches) {
+            candidates.push_back({
+                {"name", entry->name},
+                {"displayLabel", entry->displayText},
+                {"guid", GuidToString(entry->guid)}
+            });
+        }
+        return {
+            {"success", false},
+            {"error", "Command is ambiguous; address it by GUID instead: " + command},
+            {"code", "MENU_MATCH_AMBIGUOUS"},
+            {"match", menu_node::ToString(matchKind)},
+            {"candidateCount", matches.size()},
+            {"candidates", candidates}
+        };
     }
 
-    return { {"success", false}, {"error", "Command not found"} };
+    if (matchKind == menu_node::MatchKind::Unique) {
+        const MainMenuIndexEntry* entry = matches.front();
+        if (!entry->state.enabled) {
+            return {
+                {"success", false},
+                {"error", "Command is currently disabled: " + command},
+                {"code", "MENU_ITEM_DISABLED"}
+            };
+        }
+
+        const bool dynamic = entry->subGuid != pfc::guid_null;
+        const bool ok = dynamic
+            ? mainmenu_commands::g_execute_dynamic(entry->guid, entry->subGuid)
+            : mainmenu_commands::g_execute(entry->guid);
+
+        if (dynamic) {
+            return {
+                {"success", ok},
+                {"guid", GuidToString(entry->guid)},
+                {"dynamic", true},
+                {"subGuid", GuidToString(entry->subGuid)},
+                {"source", "index"}
+            };
+        }
+        return {
+            {"success", ok},
+            {"guid", GuidToString(entry->guid)},
+            {"dynamic", false},
+            {"source", "index"}
+        };
+    }
+
+    return {
+        {"success", false},
+        {"error", "Command not found: " + command},
+        {"code", "MENU_COMMAND_NOT_FOUND"},
+        {"match", menu_node::ToString(matchKind)},
+        {"candidateCount", 0}
+    };
 }
 
 
@@ -893,7 +1351,8 @@ static std::optional<json> TryGetMainMenuFromV2(const std::string& rootName,
 
             auto item = BuildMenuTreeJson(child, baseLabel, baseLabel,
                                           locale, enableI18n,
-                                          withAvailability);
+                                          withAvailability,
+                                          menu_node::Source::MainMenuStatic);
             if (!item.is_null()) {
                 items.push_back(item);
             }
@@ -986,7 +1445,8 @@ json MenuGetMainMenu(const json& params) {
     try {
         json result = BuildMainMenuResponse("", rootName, false, locale,
                                             enableI18n, withAvailability,
-                                            BuildMainMenuFlatFallback(locale, enableI18n));
+                                            BuildMainMenuFlatFallback(locale, enableI18n,
+                                                                      BuildMainMenuIndex()));
         result["fallback"] = "flat-mainmenu-commands";
         return result;
     } catch (...) {
@@ -1028,7 +1488,8 @@ json MenuGetContextMenu(const json& params) {
     for (size_t i = 0; i < count; i++) {
         auto child = root->childAt(i);
         if (!child.is_valid()) continue;
-        auto item = BuildMenuTreeJson(child, "", "", locale, enableI18n, withAvailability);
+        auto item = BuildMenuTreeJson(child, "", "", locale, enableI18n, withAvailability,
+                                      menu_node::Source::ContextMenuStatic);
         if (!item.is_null()) items.push_back(item);
     }
 

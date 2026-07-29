@@ -35,10 +35,14 @@ Use `selection` for selected tracks. `playlist` requests playlist-level commands
 
 ### runMainMenuCommand(command)
 
-Executes a main-menu command by path.
+Executes a main-menu command by GUID, leaf name, or path.
+
+Prefer the GUID: a localized foobar2000 build reports localized command labels,
+so an English name or path will not resolve there. See
+[Misc API](../api/misc.md#menu-runmainmenucommand) for the failure codes.
 
 ```javascript
-await fb.menu.runMainMenuCommand('File/Preferences');
+await fb.menu.runMainMenuCommand('{11213A01-9F36-4E69-A1BB-7A72F418DE3A}');
 ```
 
 ### runContextCommand(command)

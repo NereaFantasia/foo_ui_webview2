@@ -65,16 +65,34 @@ const result = await fb.menu.runContextCommand('Properties');
 
 ### runMainMenuCommand()
 
-Signature: `fb.menu.runMainMenuCommand(command: string): Promise<BaseResponse & { guid?: string }>`
+Signature: `fb.menu.runMainMenuCommand(command: string, options?: Omit<MenuRunMainMenuCommandParams, 'command'>): Promise<MenuRunMainMenuCommandResponse>`
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `command` | `string` | Yes | Main-menu command path. |
+| `command` | `string` | Yes | Command GUID, leaf name, or slash-separated path. |
+| `options.subGuid` | `string` | No | Sub-command GUID of a dynamic child. |
 
 Returns the `menu.runMainMenuCommand` response envelope and may include the resolved `guid`.
 
+Prefer the GUID form: it is the only address that is stable across hosts. A
+localized foobar2000 build reports localized command labels, so an English name
+or path will not resolve there. Obtain a GUID from
+`discovery.getMainMenuCommands()` or from the `guid` on a `menu.getMainMenu()`
+leaf.
+
+Failure is reported as `success: false` with a `code` — `MENU_ITEM_DISABLED`,
+`MENU_MATCH_AMBIGUOUS` (see `candidates`), or `MENU_COMMAND_NOT_FOUND`.
+
 ```javascript
-const result = await fb.menu.runMainMenuCommand('View/Console');
+// Preferred: address by GUID.
+const result = await fb.menu.runMainMenuCommand(
+    '{11213A01-9F36-4E69-A1BB-7A72F418DE3A}',
+);
+
+// A dynamic child command needs its owning GUID plus subGuid.
+await fb.menu.runMainMenuCommand('{41D98AF1-8C4F-4F0E-8B7A-1A4B0F7B1234}', {
+    subGuid: '{A222D5A9-2903-AA8C-EEAE-4B9230558B55}',
+});
 ```
 
 ### showNativePopup()

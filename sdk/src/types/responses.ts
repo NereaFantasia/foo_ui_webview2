@@ -2143,18 +2143,35 @@ export interface MenuSeparator {
     type: 'separator';
 }
 
-/** Menu command — invokable leaf node. */
-export interface MenuCommand {
+/**
+ * Menu command — invokable leaf node.
+ *
+ * `flags` and `commandId` are optional because they are tier-dependent, not
+ * because they are unimportant: the v1 HMENU tier reads state from Win32 and
+ * has no SDK `flags`, while the flat tier produces neither. Declaring them
+ * required made every v1-tier response a type lie.
+ *
+ * `guid` is the ONLY stable way to run the command. `commandId` is a Win32
+ * menu id that dies with the transient menu it was generated from, so it must
+ * never be persisted or passed back as an address.
+ */
+export interface MenuCommand extends MenuNodeState {
     type: 'command';
     label: string;
     displayLabel: string;
     path: string;
     displayPath: string;
-    flags: number;
-    commandId: number;
+    commandId?: number;
+    /** Kept as an alias of `enabled` for callers written against the old shape. */
     available: boolean;
     guid?: string;
     subGuid?: string;
+    source?: MenuNodeSource;
+    /** False when no GUID could be resolved; see `unaddressableReason`. */
+    executable?: boolean;
+    unaddressableReason?: MenuUnaddressableReason;
+    /** Present on entries from the flat fallback tier, which has no hierarchy. */
+    fallback?: boolean;
 }
 
 /** Menu submenu — container with child nodes. */
@@ -2164,7 +2181,8 @@ export interface MenuSubmenu {
     displayLabel: string;
     path: string;
     displayPath: string;
-    flags: number;
+    /** Absent in the v1 HMENU tier, which has no SDK flags to report. */
+    flags?: number;
     children: MenuItem[];
     availability?: MenuAvailability;
 }
@@ -2327,8 +2345,58 @@ export interface DndGetDropZonesResponse extends BaseResponse {
 // Discovery (services / menu / components / formats)
 // ============================================================================
 
+/**
+ * Why a listed menu node cannot be executed. Empty string when it can.
+ *
+ * - `separator` — nothing to invoke.
+ * - `dynamicParent` — a container slot; the SDK leaves `execute()` on one
+ *   undefined, so its expanded children must be used instead.
+ * - `noStableIdentifier` — the tier exposes no GUID for the node.
+ * - `emptyNode` — a degenerate registration with neither name nor children.
+ */
+export type MenuUnaddressableReason =
+    | ''
+    | 'separator'
+    | 'dynamicParent'
+    | 'noStableIdentifier'
+    | 'emptyNode';
+
+/** Which registration tier a menu node was enumerated from. */
+export type MenuNodeSource =
+    | 'mainmenu_static'
+    | 'mainmenu_dynamic'
+    | 'contextmenu_static'
+    | 'contextmenu_dynamic'
+    | 'hmenu_fallback';
+
+/**
+ * State vocabulary shared by every menu enumeration endpoint.
+ *
+ * `flags` keeps the untranslated SDK bits, so an advanced caller can still tell
+ * apart states that normalize to the same boolean — `flag_defaulthidden`
+ * ("hidden unless Shift is held") and `FORCE_OFF` ("keyboard-shortcut list
+ * only") both surface as `hidden: true`.
+ *
+ * `stateKnown` is not decoration: the context-menu tier can only report
+ * `enabled` / `checked` when a track selection exists, because the SDK evaluates
+ * display data against a track set. When it is false those two fields carry no
+ * observation and must not be filtered on.
+ */
+export interface MenuNodeState {
+    enabled?: boolean;
+    checked?: boolean;
+    /** Set for a radio-group member; implies `checked`. */
+    radioChecked?: boolean;
+    /** The host would not draw this entry — `get_display()` false, or `FORCE_OFF`. */
+    hidden?: boolean;
+    /** False when `enabled` / `checked` could not be observed. */
+    stateKnown?: boolean;
+    /** Raw SDK display flags. */
+    flags?: number;
+}
+
 /** Main-menu command descriptor returned by `discovery.getMainMenuCommands`. */
-export interface DiscoveryMainMenuCommand {
+export interface DiscoveryMainMenuCommand extends MenuNodeState {
     name: string;
     description: string;
     guid: string;
@@ -2348,8 +2416,10 @@ export interface DiscoveryMainMenuCommand {
      * `executeMainMenuCommand` to run the command.
      */
     subGuid?: string;
-    /** Raw display flags reported by the dynamic menu node. */
-    flags?: number;
+    source?: MenuNodeSource;
+    /** False when this entry cannot be dispatched; see `unaddressableReason`. */
+    executable?: boolean;
+    unaddressableReason?: MenuUnaddressableReason;
 }
 
 /** Main-menu group descriptor returned by `discovery.getMainMenuGroups`. */
@@ -2399,18 +2469,53 @@ export interface DiscoveryOutputDeviceEntry {
     guid: string;
 }
 
-/** Context-menu command descriptor returned by `discovery.getContextMenuCommands`. */
-export type DiscoveryContextMenuCommand = DiscoveryMainMenuCommand;
+/**
+ * Context-menu command descriptor returned by `discovery.getContextMenuCommands`.
+ *
+ * Declared independently of {@link DiscoveryMainMenuCommand} rather than aliased
+ * to it: the two tiers do not carry the same fields. Context items are
+ * registered flat and placed by the host, so they have no menu `path` of their
+ * own and no dynamic-expansion fields.
+ */
+export interface DiscoveryContextMenuCommand extends MenuNodeState {
+    name: string;
+    description: string;
+    guid: string;
+    /** Owning service-group GUID; zero-GUID when the item declares none. */
+    parentGuid: string;
+    /** Index within the owning `contextmenu_item`; not stable across restarts. */
+    index: number;
+    source?: MenuNodeSource;
+    /** False when this entry cannot be dispatched; see `unaddressableReason`. */
+    executable?: boolean;
+    unaddressableReason?: MenuUnaddressableReason;
+}
 
-/** Recursive context-menu tree node returned by `discovery.getContextMenuTree`. */
-export interface DiscoveryContextMenuTreeNode {
+/**
+ * Recursive context-menu tree node returned by `discovery.getContextMenuTree`.
+ *
+ * Truncation is explicit. The walk is bounded in both depth and children per
+ * node, and any node whose subtree was clipped says so — `childCount` is the
+ * host's real count while `childrenReturned` is what this response contains.
+ */
+export interface DiscoveryContextMenuTreeNode extends MenuNodeState {
     name: string;
     type: 'command' | 'popup' | 'separator' | 'unknown';
+    /** Distance from the tree root; the root itself is 0. */
+    depth?: number;
     /** Set when `type === 'command'` — full path with parent labels. */
     fullName?: string;
-    /** Set when `type === 'popup'`. */
+    /** Set when `type === 'popup'` — the host's child count before any clipping. */
     childCount?: number;
+    /** Number of entries actually present in `children`. */
+    childrenReturned?: number;
     children?: DiscoveryContextMenuTreeNode[];
+    /** True when this node or anything under it was clipped by a walk limit. */
+    truncated?: boolean;
+    /** A subtree was dropped because it sat past the depth cap. */
+    depthExceeded?: boolean;
+    /** A child list was cut short at the per-node child cap. */
+    childrenExceeded?: boolean;
 }
 
 /** Preference-page descriptor returned by `discovery.getPreferencePages`. */
@@ -2427,6 +2532,12 @@ export interface DiscoveryServiceCounts {
     /** Subset of `mainMenuCommands` contributed by dynamic submenus. */
     mainMenuDynamicCommands?: number;
     mainMenuGroups: number;
+    /**
+     * Context-menu commands, counted through the same walk
+     * `discovery.getContextMenuCommands` uses — so hidden entries are excluded
+     * and the number stays comparable with that listing.
+     */
+    contextMenuCommands?: number;
     inputFormats: number;
     uiElements: number;
     dspEntries: number;
@@ -2435,19 +2546,30 @@ export interface DiscoveryServiceCounts {
     components: number;
 }
 
-/** Search hit returned by `discovery.searchCommands`. */
-export interface DiscoverySearchResult {
+/**
+ * Search hit returned by `discovery.searchCommands`.
+ *
+ * Carries the same state vocabulary as the enumeration endpoints, so a caller
+ * can tell whether a hit is invocable without a second round trip.
+ */
+export interface DiscoverySearchResult extends MenuNodeState {
     name: string;
     description: string;
     guid: string;
-    /** Source taxonomy — currently only `'mainmenu'`. */
-    type: string;
-    /** Slash-separated label path of the command. */
+    /** Which menu family the hit came from. */
+    type: 'mainmenu' | 'contextmenu' | (string & {});
+    /**
+     * Slash-separated label path. Context-menu items are registered flat, so for
+     * those this is just the label.
+     */
     path?: string;
     /** True when the hit came from an expanded dynamic submenu. */
     isDynamic?: boolean;
     /** Sub-command GUID required to execute a dynamic child. */
     subGuid?: string;
+    source?: MenuNodeSource;
+    executable?: boolean;
+    unaddressableReason?: MenuUnaddressableReason;
 }
 
 /** Response shape returned by `discovery.getMainMenuCommands`. */
@@ -2458,6 +2580,8 @@ export interface DiscoveryGetMainMenuCommandsResponse extends BaseResponse {
     expandDynamic?: boolean;
     /** Number of entries contributed by expanded dynamic submenus. */
     dynamicCount?: number;
+    /** Echoes whether entries the host would not show were listed. */
+    includeHidden?: boolean;
 }
 
 /** Response shape returned by `discovery.getMainMenuGroups`. */
@@ -2500,12 +2624,34 @@ export interface DiscoveryGetOutputDevicesResponse extends BaseResponse {
 export interface DiscoveryGetContextMenuCommandsResponse extends BaseResponse {
     commands: DiscoveryContextMenuCommand[];
     count: number;
+    /** Echoes whether entries the host would not show were listed. */
+    includeHidden?: boolean;
+    /** Number of entries omitted for being hidden. */
+    hiddenFiltered?: number;
+    /**
+     * False when nothing was selected or playing. Every entry's `enabled` /
+     * `checked` is then unobserved and must not be filtered on — only `hidden`
+     * stays meaningful, because `FORCE_OFF` is a constant property of the item.
+     */
+    stateKnown?: boolean;
+    /** Tracks the reported state was evaluated against. */
+    selectionCount?: number;
 }
 
 /** Response shape returned by `discovery.getContextMenuTree`. */
 export interface DiscoveryGetContextMenuTreeResponse extends BaseResponse {
     tree?: DiscoveryContextMenuTreeNode;
     itemCount?: number;
+    /** True when any node in the tree was clipped by a walk limit. */
+    truncated?: boolean;
+    /** A subtree was dropped for sitting past the depth cap. */
+    depthExceeded?: boolean;
+    /** Some child list was cut short at the per-node child cap. */
+    childrenExceeded?: boolean;
+    /** The depth cap this walk applied. */
+    maxDepth?: number;
+    /** The per-node child cap this walk applied. */
+    maxChildrenPerNode?: number;
 }
 
 /** Response shape returned by `discovery.getPreferencePages`. */
@@ -2519,6 +2665,13 @@ export interface DiscoveryGetAllServicesResponse extends BaseResponse {
     services: DiscoveryServiceCounts;
     /** Sum of every entry in `services`. */
     totalServices: number;
+    /** Context-menu entries excluded from the count for being hidden. */
+    contextMenuHiddenFiltered?: number;
+    /**
+     * False when no track was selected or playing, which makes the
+     * context-menu count a filter over unobservable state.
+     */
+    stateKnown?: boolean;
 }
 
 /** Response shape returned by `discovery.searchCommands`. */
@@ -2528,6 +2681,19 @@ export interface DiscoverySearchCommandsResponse extends BaseResponse {
     count?: number;
     /** Echoes whether dynamic subtrees were expanded before matching. */
     expandDynamic?: boolean;
+    /** Echoes the menu families that were searched. */
+    scope?: 'all' | 'mainmenu' | 'contextmenu' | (string & {});
+    /** Echoes whether hidden entries were searched. */
+    includeHidden?: boolean;
+    /** Hits contributed by the main menu. */
+    mainMenuHits?: number;
+    /** Hits contributed by the context menu. */
+    contextMenuHits?: number;
+    /**
+     * False when the context family was searched without a selection; its hits'
+     * `enabled` / `checked` then carry no observation.
+     */
+    stateKnown?: boolean;
 }
 
 // ============================================================================

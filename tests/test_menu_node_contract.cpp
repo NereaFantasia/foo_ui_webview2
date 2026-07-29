@@ -69,6 +69,43 @@ TEST(MenuNodeContractTest, GrayedOnlyStillCountsAsDisabled) {
     EXPECT_FALSE(NormalizeHmenu(hmenu_state::kGrayed).enabled);
 }
 
+// The v1 HMENU tier is the ONLY tier available on localized hosts, so its state
+// decoding is exercised exhaustively rather than sampled.
+TEST(MenuNodeContractTest, HmenuNormalizationIsExhaustivelyCorrect) {
+    constexpr std::uint32_t kAllBits =
+        hmenu_state::kGrayed | hmenu_state::kDisabled | hmenu_state::kChecked;
+
+    for (std::uint32_t bits = 0; bits <= kAllBits; ++bits) {
+        const State s = NormalizeHmenu(bits);
+
+        EXPECT_EQ(s.flags, bits) << "raw Win32 state must survive untranslated";
+        const bool expectEnabled =
+            (bits & (hmenu_state::kDisabled | hmenu_state::kGrayed)) == 0;
+        EXPECT_EQ(s.enabled, expectEnabled) << "bits=" << bits;
+        EXPECT_EQ(s.checked, (bits & hmenu_state::kChecked) != 0) << "bits=" << bits;
+        // MENUITEMINFO state bits cannot express radio-check, so claiming one
+        // would be fabricated state.
+        EXPECT_FALSE(s.radioChecked) << "bits=" << bits;
+        // An item absent from a generated HMENU is simply never walked, so this
+        // tier has no hidden state to recover.
+        EXPECT_FALSE(s.hidden) << "bits=" << bits;
+        EXPECT_TRUE(s.stateKnown) << "bits=" << bits;
+    }
+}
+
+TEST(MenuNodeContractTest, HmenuDisabledUnionIsDecodedBitwise) {
+    // MFS_DISABLED == MFS_GRAYED == MF_GRAYED|MF_DISABLED == 0x3. Both single
+    // bits and the union must all read as disabled.
+    EXPECT_FALSE(NormalizeHmenu(hmenu_state::kDisabled).enabled);
+    EXPECT_FALSE(NormalizeHmenu(hmenu_state::kGrayed).enabled);
+    EXPECT_FALSE(
+        NormalizeHmenu(hmenu_state::kGrayed | hmenu_state::kDisabled).enabled);
+    EXPECT_TRUE(NormalizeHmenu(0).enabled);
+    // A checked-but-enabled item must not be mistaken for disabled.
+    EXPECT_TRUE(NormalizeHmenu(hmenu_state::kChecked).enabled);
+    EXPECT_TRUE(NormalizeHmenu(hmenu_state::kChecked).checked);
+}
+
 // ===========================================================================
 // SPEC §9.2 case 2 - get_display() returning false means hidden, not dropped
 // ===========================================================================
@@ -258,6 +295,25 @@ TEST(MenuNodeContractTest, JoinPathRoundTripsThroughSplit) {
     EXPECT_EQ(JoinPath(SplitPath(path)), path);
 }
 
+// The main-menu index resolves a caller-supplied path by its LAST segment,
+// because the flat service enumeration has no submenu hierarchy to walk. This
+// locks the two primitives that composition relies on: a path yields its leaf,
+// and the leaf compares exactly.
+TEST(MenuNodeContractTest, PathQueryReducesToItsLeafSegment) {
+    const auto parts = SplitPath("File/Preferences");
+    ASSERT_FALSE(parts.empty());
+    EXPECT_EQ(parts.back(), "Preferences");
+
+    // A bare name and a fully-qualified path must reach the same leaf, so both
+    // request forms resolve identically.
+    EXPECT_TRUE(SegmentsEqual(SplitPath("Preferences").back(),
+                              SplitPath("File/Preferences").back()));
+
+    // Reducing to the leaf must not turn a distinct command into a match.
+    EXPECT_FALSE(SegmentsEqual(SplitPath("Rating/1").back(),
+                               SplitPath("Rating/10").back()));
+}
+
 // ===========================================================================
 // Execution pre-flight - a FORCE_OFF command must not be dispatched
 //
@@ -373,6 +429,136 @@ TEST(MenuNodeContractTest, TruncationAggregatesBothCauses) {
     Truncation c;
     c.childrenExceeded = true;
     EXPECT_TRUE(c.any());
+}
+
+TEST(MenuNodeContractTest, TruncationMergePropagatesUpward) {
+    // A container whose own children all fit must still report that something
+    // deeper was cut off, otherwise the caller sees a complete-looking subtree.
+    Truncation parent;
+    Truncation child;
+    child.depthExceeded = true;
+    parent.merge(child);
+    EXPECT_TRUE(parent.depthExceeded);
+    EXPECT_FALSE(parent.childrenExceeded);
+
+    Truncation other;
+    other.childrenExceeded = true;
+    parent.merge(other);
+    EXPECT_TRUE(parent.depthExceeded) << "merge must never clear a set cause";
+    EXPECT_TRUE(parent.childrenExceeded);
+
+    // Merging a clean walk changes nothing.
+    Truncation clean;
+    Truncation empty;
+    clean.merge(empty);
+    EXPECT_FALSE(clean.any());
+}
+
+TEST(MenuNodeContractTest, ChildWalkPlanVisitsEverythingWhenNothingIsCut) {
+    const ChildWalkPlan plan = PlanChildWalk(/*depth=*/0, /*childCount=*/7);
+    EXPECT_EQ(plan.visitCount, 7u);
+    EXPECT_FALSE(plan.truncation.any());
+}
+
+TEST(MenuNodeContractTest, ChildWalkPlanCapsAtTheChildLimitAndSaysSo) {
+    const std::size_t cap = static_cast<std::size_t>(kMaxChildrenPerNode);
+
+    const ChildWalkPlan atCap = PlanChildWalk(0, cap);
+    EXPECT_EQ(atCap.visitCount, cap);
+    EXPECT_FALSE(atCap.truncation.childrenExceeded)
+        << "exactly at the cap nothing is lost";
+
+    const ChildWalkPlan overCap = PlanChildWalk(0, cap + 1);
+    EXPECT_EQ(overCap.visitCount, cap);
+    EXPECT_TRUE(overCap.truncation.childrenExceeded);
+    EXPECT_FALSE(overCap.truncation.depthExceeded);
+}
+
+TEST(MenuNodeContractTest, ChildWalkPlanStopsAtTheDepthCapAndSaysSo) {
+    // A node sitting exactly at the cap may not have its children visited,
+    // because those children would live one level past it.
+    const ChildWalkPlan atCap = PlanChildWalk(kMaxMenuTreeDepth, /*childCount=*/3);
+    EXPECT_EQ(atCap.visitCount, 0u);
+    EXPECT_TRUE(atCap.truncation.depthExceeded);
+
+    // One level above the cap the children still fit.
+    const ChildWalkPlan below = PlanChildWalk(kMaxMenuTreeDepth - 1, 3);
+    EXPECT_EQ(below.visitCount, 3u);
+    EXPECT_FALSE(below.truncation.any());
+}
+
+TEST(MenuNodeContractTest, ChildWalkPlanDoesNotFlagAnEmptyContainer) {
+    // Nothing was lost, so claiming truncation would be a false positive that
+    // callers cannot distinguish from a real cut.
+    const ChildWalkPlan plan = PlanChildWalk(kMaxMenuTreeDepth, /*childCount=*/0);
+    EXPECT_EQ(plan.visitCount, 0u);
+    EXPECT_FALSE(plan.truncation.any());
+}
+
+// ===========================================================================
+// Search matching - fuzzy on purpose, and safe on non-ASCII input
+// ===========================================================================
+
+TEST(MenuNodeContractTest, FoldedContainsIsCaseInsensitiveForAscii) {
+    EXPECT_TRUE(ContainsFolded("Search Lyrics", "lyric"));
+    EXPECT_TRUE(ContainsFolded("search lyrics", "LYRIC"));
+    EXPECT_TRUE(ContainsFolded("SEARCH LYRICS", "Lyric"));
+    EXPECT_FALSE(ContainsFolded("Search Lyrics", "rating"));
+}
+
+TEST(MenuNodeContractTest, FoldedContainsLeavesMultiByteSequencesIntact) {
+    // The pre-refactor code ran std::transform with ::tolower over every byte,
+    // which is undefined behaviour for bytes >= 0x80 and could corrupt UTF-8.
+    const std::string zh = "\xE6\xA1\x8C\xE9\x9D\xA2\xE6\xAD\x8C\xE8\xAF\x8D";  // 桌面歌词
+    EXPECT_TRUE(ContainsFolded(zh, zh));
+    EXPECT_TRUE(ContainsFolded(zh, "\xE6\xAD\x8C\xE8\xAF\x8D"));  // 歌词
+    EXPECT_EQ(FoldAscii(zh), zh) << "CJK has no case to fold";
+}
+
+TEST(MenuNodeContractTest, EmptyNeedleMatchesEverything) {
+    EXPECT_TRUE(ContainsFolded("anything", ""));
+    EXPECT_TRUE(ContainsFolded("", ""));
+    EXPECT_FALSE(ContainsFolded("", "x"));
+}
+
+TEST(MenuNodeContractTest, SearchScopeParsingIsCaseAndSpaceInsensitive) {
+    EXPECT_EQ(ParseSearchScope("mainmenu"), SearchScope::MainMenu);
+    EXPECT_EQ(ParseSearchScope("  MainMenu  "), SearchScope::MainMenu);
+    EXPECT_EQ(ParseSearchScope("contextmenu"), SearchScope::ContextMenu);
+    EXPECT_EQ(ParseSearchScope("CONTEXTMENU"), SearchScope::ContextMenu);
+    EXPECT_EQ(ParseSearchScope("all"), SearchScope::All);
+}
+
+TEST(MenuNodeContractTest, UnknownScopeWidensRatherThanFailing) {
+    // A narrowing filter that cannot be understood must not silently drop
+    // results, so anything unrecognized means "no filter".
+    EXPECT_EQ(ParseSearchScope(""), SearchScope::All);
+    EXPECT_EQ(ParseSearchScope("tray"), SearchScope::All);
+    EXPECT_EQ(ParseSearchScope("main"), SearchScope::All);
+}
+
+TEST(MenuNodeContractTest, ScopePredicatesCoverEveryFamily) {
+    EXPECT_TRUE(ScopeIncludesMainMenu(SearchScope::All));
+    EXPECT_TRUE(ScopeIncludesContextMenu(SearchScope::All));
+
+    EXPECT_TRUE(ScopeIncludesMainMenu(SearchScope::MainMenu));
+    EXPECT_FALSE(ScopeIncludesContextMenu(SearchScope::MainMenu));
+
+    EXPECT_FALSE(ScopeIncludesMainMenu(SearchScope::ContextMenu));
+    EXPECT_TRUE(ScopeIncludesContextMenu(SearchScope::ContextMenu));
+}
+
+TEST(MenuNodeContractTest, EverySearchScopeHasAWireToken) {
+    EXPECT_STREQ(ToString(SearchScope::All), "all");
+    EXPECT_STREQ(ToString(SearchScope::MainMenu), "mainmenu");
+    EXPECT_STREQ(ToString(SearchScope::ContextMenu), "contextmenu");
+
+    // Round-trips, so an echoed scope can be fed back in.
+    EXPECT_EQ(ParseSearchScope(ToString(SearchScope::MainMenu)),
+              SearchScope::MainMenu);
+    EXPECT_EQ(ParseSearchScope(ToString(SearchScope::ContextMenu)),
+              SearchScope::ContextMenu);
+    EXPECT_EQ(ParseSearchScope(ToString(SearchScope::All)), SearchScope::All);
 }
 
 // ===========================================================================

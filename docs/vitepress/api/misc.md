@@ -249,11 +249,38 @@ Public API method. Runtime authority: `src/api/MenuApi.cpp:1327`.
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `command` | `string` | No | Optional; default . |
+| `subGuid` | `string` | No | Optional; default . |
 
 **Returns**: `{"error":"...","guid":"...","success":true}`
 
+`command` accepts a GUID, a leaf command name, or a slash-separated path. Prefer
+the GUID: it is the only form that is stable across hosts. A localized
+foobar2000 build reports localized command labels, so an English name or path
+will not resolve there.
+
+Name and path forms are matched exactly per segment. When a name matches more
+than one command the call fails with `MENU_MATCH_AMBIGUOUS` and lists the
+candidates, rather than picking one.
+
+Failure is always reported as `success: false` with a `code`:
+
+| `code` | Meaning |
+| --- | --- |
+| `MENU_ITEM_DISABLED` | Command exists but is currently greyed out. |
+| `MENU_MATCH_AMBIGUOUS` | Name matched several commands; see `candidates`. |
+| `MENU_COMMAND_NOT_FOUND` | No command matched. |
+
 ```js
-const result = await fb2k.invoke('menu.runMainMenuCommand', { command: /* value */ });
+// Preferred: address by GUID.
+const result = await fb2k.invoke('menu.runMainMenuCommand', {
+    command: '{11213A01-9F36-4E69-A1BB-7A72F418DE3A}',
+});
+
+// A dynamic child command needs its owning command GUID plus subGuid.
+await fb2k.invoke('menu.runMainMenuCommand', {
+    command: '{41D98AF1-8C4F-4F0E-8B7A-1A4B0F7B1234}',
+    subGuid: '{A222D5A9-2903-AA8C-EEAE-4B9230558B55}',
+});
 ```
 
 ### menu.show

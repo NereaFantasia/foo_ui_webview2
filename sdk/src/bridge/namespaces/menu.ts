@@ -14,11 +14,13 @@ import type {
 import type {
     MenuShowResponse,
     MenuCloseResponse,
+    MenuRunMainMenuCommandResponse,
 } from '../../types/generated/responses.js';
 import type {
     MenuGetContextMenuParams,
     MenuGetMainMenuParams,
     MenuRunContextCommandByIdParams,
+    MenuRunMainMenuCommandParams,
     MenuShowNativePopupParams,
 } from '../../types/generated/params.js';
 
@@ -50,10 +52,28 @@ export const menu = {
     /** `mode` is one of `'auto' | 'selection' | 'playlist' | 'nowPlaying' | 'handles'`. */
     getContextMenu: (opts?: MenuGetContextMenuParams) =>
         bridge.invoke<MenuGetContextMenuResponse>('menu.getContextMenu', opts || {}),
-    runMainMenuCommand: (command: string) =>
-        bridge.invoke<BaseResponse & { guid?: string }>(
+    /**
+     * Runs a main menu command.
+     *
+     * `command` accepts a GUID (`'{11213A01-...}'`), a leaf name, or a
+     * slash-separated path. Prefer the GUID: it is the only form that is stable
+     * across hosts, because a localized build reports localized labels.
+     *
+     * `opts.subGuid` addresses a dynamic child command, paired with its owning
+     * command GUID.
+     *
+     * Failure is reported as `success: false` with a `code`, never as a thrown
+     * host error: `MENU_ITEM_DISABLED` (command exists but is greyed out),
+     * `MENU_MATCH_AMBIGUOUS` (the name matched several commands — `candidates`
+     * lists them), `MENU_COMMAND_NOT_FOUND`.
+     */
+    runMainMenuCommand: (
+        command: string,
+        opts?: Omit<MenuRunMainMenuCommandParams, 'command'>,
+    ) =>
+        bridge.invoke<MenuRunMainMenuCommandResponse>(
             'menu.runMainMenuCommand',
-            { command },
+            { command, ...opts },
         ),
     runContextCommand: (command: string) =>
         bridge.invoke<BaseResponse & { guid?: string; itemCount?: number }>(

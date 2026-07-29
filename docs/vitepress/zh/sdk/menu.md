@@ -52,16 +52,32 @@ const result = await fb.menu.runContextCommand();
 
 ### runMainMenuCommand()
 
-签名：`fb.menu.runMainMenuCommand(...args): Promise<unknown>`
+签名：`fb.menu.runMainMenuCommand(command: string, options?: Omit<MenuRunMainMenuCommandParams, 'command'>): Promise<MenuRunMainMenuCommandResponse>`
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
-| ...args | unknown[] | 视方法而定 | 透传给 SDK wrapper；详细类型以 `sdk/src/bridge/namespaces/` 源码和生成类型为准 |
+| `command` | `string` | 是 | 命令 GUID、叶子命令名或斜杠分隔的路径 |
+| `options.subGuid` | `string` | 否 | 动态子命令的子 GUID |
 
-返回值：底层 `menu.runMainMenuCommand` 调用结果。
+返回值：底层 `menu.runMainMenuCommand` 调用结果，可能带上解析出的 `guid`。
+
+**推荐用 GUID 形式**：它是唯一跨宿主稳定的寻址方式。汉化版 foobar2000 上报的是中文命令名，
+英文名或英文路径在该宿主上解析不到。GUID 可从 `discovery.getMainMenuCommands()` 或
+`menu.getMainMenu()` 叶子节点的 `guid` 字段取得。
+
+失败以 `success: false` 加 `code` 返回：`MENU_ITEM_DISABLED`、
+`MENU_MATCH_AMBIGUOUS`（详见 `candidates`）、`MENU_COMMAND_NOT_FOUND`。
 
 ```javascript
-const result = await fb.menu.runMainMenuCommand();
+// 推荐：按 GUID 寻址
+const result = await fb.menu.runMainMenuCommand(
+    '{11213A01-9F36-4E69-A1BB-7A72F418DE3A}',
+);
+
+// 动态子命令需要「所属命令 GUID + subGuid」
+await fb.menu.runMainMenuCommand('{41D98AF1-8C4F-4F0E-8B7A-1A4B0F7B1234}', {
+    subGuid: '{A222D5A9-2903-AA8C-EEAE-4B9230558B55}',
+});
 ```
 
 ### showNativePopup()

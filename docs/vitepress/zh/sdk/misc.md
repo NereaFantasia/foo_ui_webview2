@@ -35,10 +35,13 @@ const ctx = await fb.menu.getContextMenu({ mode: 'selection' });
 
 ### runMainMenuCommand(command)
 
-执行主菜单命令（按路径）。
+执行主菜单命令，支持 GUID、命令名或路径。
+
+**推荐用 GUID**：汉化版 foobar2000 上报的是中文命令名，英文名或英文路径在该宿主上解析不到。
+失败码见 [Misc API](../api/misc.md#menu-runmainmenucommand)。
 
 ```javascript
-await fb.menu.runMainMenuCommand('File/Preferences');
+await fb.menu.runMainMenuCommand('{11213A01-9F36-4E69-A1BB-7A72F418DE3A}');
 ```
 
 ### runContextCommand(command)

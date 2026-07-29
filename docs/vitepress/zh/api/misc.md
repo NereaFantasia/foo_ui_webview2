@@ -116,15 +116,39 @@ v1.2.0 新增。提供主菜单和上下文菜单的执行和查询。
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
 | `command` | `string` | 否 | 可选；默认 。 |
+| `subGuid` | `string` | 否 | 可选；默认 。 |
 
 
 **返回值**: `{"guid":"...","success":true}`
 
+`command` 接受 GUID、叶子命令名或斜杠分隔的路径。**推荐用 GUID**：它是唯一跨宿主稳定的形式。
+汉化版 foobar2000 上报的是中文命令名，因此英文名或英文路径在该宿主上解析不到。
+
+命令名与路径按段精确匹配。若某个名字匹配到多条命令，调用会以
+`MENU_MATCH_AMBIGUOUS` 失败并列出候选，而不会替你挑一个。
+
+失败一律以 `success: false` 加 `code` 返回：
+
+| `code` | 含义 |
+| --- | --- |
+| `MENU_ITEM_DISABLED` | 命令存在但当前为禁用（灰显）态。 |
+| `MENU_MATCH_AMBIGUOUS` | 名字匹配到多条命令，详见 `candidates`。 |
+| `MENU_COMMAND_NOT_FOUND` | 没有匹配到命令。 |
+
 ```javascript
-// 路径形式
-await fb2k.invoke('menu.runMainMenuCommand', { command: 'File/Preferences' });
-// 命令名
-await fb2k.invoke('menu.runMainMenuCommand', { command: 'Preferences' });
+// 推荐：按 GUID 寻址
+await fb2k.invoke('menu.runMainMenuCommand', {
+    command: '{11213A01-9F36-4E69-A1BB-7A72F418DE3A}',
+});
+
+// 路径形式（仅在标签语言与宿主一致时可用）
+await fb2k.invoke('menu.runMainMenuCommand', { command: '文件/首选项' });
+
+// 动态子命令需要「所属命令 GUID + subGuid」
+await fb2k.invoke('menu.runMainMenuCommand', {
+    command: '{41D98AF1-8C4F-4F0E-8B7A-1A4B0F7B1234}',
+    subGuid: '{A222D5A9-2903-AA8C-EEAE-4B9230558B55}',
+});
 ```
 
 ### menu.runContextCommand
