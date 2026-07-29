@@ -1,28 +1,15 @@
 #pragma once
 #include <string>
 #include <string_view>
-#include <algorithm>
-#include <cctype>
 #include <nlohmann/json.hpp>
 #include "core/PreferencesPage.h"
+// 零 foobar2000 SDK 依赖的 helper（ToLower / TryGetBool /
+// IsPluginManagedBackdropEffect）已拆到 WindowUtilsCore.h，位于同一
+// namespace，故本头文件的既有消费者无需任何改动。
+// 拆分动机见 WindowUtilsCore.h 头部说明（P0-b / R3：让测试链接真实生产符号）。
+#include "utils/WindowUtilsCore.h"
 
 namespace WindowUtils {
-
-using json = nlohmann::json;
-
-// Shared string-to-lowercase (eliminates duplication across PopupWindow / MainWindow / WindowChromeResolver)
-inline std::string ToLower(std::string v) {
-    std::transform(v.begin(), v.end(), v.begin(),
-        [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
-    return v;
-}
-
-// Shared JSON bool safe extraction (eliminates duplication across PopupWindow / MainWindow / WindowChromeResolver)
-inline bool TryGetBool(const json& obj, const char* key, bool& out) {
-    if (!obj.is_object() || !obj.contains(key) || !obj[key].is_boolean()) return false;
-    out = obj[key].get<bool>();
-    return true;
-}
 
 inline std::string GetUserBackdropEffectString() {
     switch (webview_prefs::GetBackdropEffect()) {
@@ -37,10 +24,6 @@ inline std::string GetUserBackdropEffectString() {
         default:
             return "mica";
     }
-}
-
-inline bool IsPluginManagedBackdropEffect(std::string_view effect) {
-    return effect == "mica" || effect == "mica-alt" || effect == "acrylic";
 }
 
 } // namespace WindowUtils
