@@ -1,6 +1,7 @@
 ﻿#pragma once
 
 #include "pch.h"
+#include "window/WindowTargetPolicy.h"
 
 class WindowShellBase;
 
@@ -41,11 +42,14 @@ struct WindowTargetResult {
 // 替代 WindowApi.cpp 中散落的 GetCallerHwnd /
 // FindMainByCallerHwnd / FindPopupByCallerHwnd 模式。
 //
-// 两种意图的差别只在「显式 id 与 caller 都不可用」时：
-//   - Mutation:    失败（禁止静默改错窗口）
-//   - Observation: 同样失败
-// 即两者当前语义一致（见 ResolveForObservation 的说明），保留双入口是为了
-// 在调用点表达意图，并为将来可能的意图相关策略留出位置。
+// 分支决策不在本类内实现：`ResolveWithIntent` 先把 params 归类为
+// `window_target_policy::TargetRequest`（这一步需要 Win32 查找），再由
+// `window_target_policy::SelectTarget` 选路。这样决策表只有一份、且被
+// `tests/test_window_target_policy.cpp` 固定住——避免出现「策略层与真实
+// 解析各写一份分支」的漂移。
+//
+// 两种意图当前语义一致（Q7-1 取消了 observation 的主窗口回退），保留双入口
+// 是为了在调用点表达意图，并为将来可能的意图相关策略留出位置。
 //
 // 面板调用方（DUI/CUI）一律显式失败：面板不实现 WindowShellBase。
 // ============================================
@@ -56,6 +60,11 @@ public:
 
     // 对 observation API: 同样禁止回退 main（见 .cpp 内说明）
     static WindowTargetResult ResolveForObservation(const json& params);
+
+    // 依给定意图解析。Mutation/Observation 两个入口都委托到此，
+    // 决策交给 window_target_policy::SelectTarget。
+    static WindowTargetResult ResolveWithIntent(
+        const json& params, window_target_policy::TargetIntent intent);
 
     // 通过显式 windowId 解析
     static WindowTargetResult ResolveById(const std::string& windowId);

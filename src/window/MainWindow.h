@@ -117,8 +117,6 @@ public:
         return true;
     }
     bool IsResizableShell() const override { return resizable_; }
-    // 主窗口始终是标准可变边框形态，运行时切换恒可用。
-    bool SupportsRuntimeResizableToggle() const override { return true; }
     
     // ========== 运行时标题栏控制 ==========
     
@@ -319,13 +317,30 @@ private:
     static constexpr UINT_PTR SHORT_REVEAL_TIMER_ID = 140;
     static constexpr DWORD SHORT_REVEAL_TIMEOUT_MS = 250;
     
+    // 主窗口默认尺寸下限的**历史口径是物理像素**。
+    //
+    // P1' 把约束存储改为 DIP 时，若直接把这两个字面量当作 DIP，在 125%
+    // 缩放下实际下限会从 400 物理变成 500 物理——即默认值被静默放大。
+    // 故保留「物理」语义，由 SeedDefaultConstraintsFromDpi() 在窗口创建前
+    // 按初始显示器 DPI 换算成 DIP，使任一缩放下的**物理**下限与改动前一致。
+    static constexpr int kDefaultMinWidthPhysical = 400;
+    static constexpr int kDefaultMinHeightPhysical = 300;
+    
     // 窗口尺寸限制（单位：DIP）
     // 字段名带 Dip 后缀是有意为之：这些值不可直接写入 MINMAXINFO，
     // 必须先经 window_geometry::DipToPhysical 换算。
-    int minWidthDip_ = 400;
-    int minHeightDip_ = 300;
+    //
+    // 初值见 kDefaultMinWidthPhysical 等常量的说明：历史默认值是**物理像素**，
+    // 故 Create() 会按初始显示器 DPI 换算后覆盖这里的初值。此处的字面量只是
+    // 「尚未换算」时的保底，等价于 96 DPI 下的历史行为。
+    int minWidthDip_ = kDefaultMinWidthPhysical;
+    int minHeightDip_ = kDefaultMinHeightPhysical;
     int maxWidthDip_ = 0;   // 0 表示无限制
     int maxHeightDip_ = 0;  // 0 表示无限制
+
+    // 最小化期间收到的约束变更被推迟到恢复后执行。
+    // 对 iconic 窗口调 SetWindowPos 会改写还原态几何，故不能就地校正。
+    bool pendingConstraintRevalidate_ = false;
     
     // 窗口圆角偏好
     std::string cornerPreference_ = "default";  // default, none, round, small
@@ -444,6 +459,10 @@ private:
     // RestoreWindowPosition 在 CreateWindowExW 之前运行，无 hwnd_ 可用，
     // 故不能用 GetDpiForWindow。取不到时返回基准 DPI（等价于不缩放）。
     static int GetDpiForSavedRect(int x, int y, int width, int height);
+    
+    // 把物理口径的默认尺寸下限迁移为 DIP 存储值。
+    // 必须在 RestoreWindowPosition 之前调用——后者会用这些约束钳制保存的尺寸。
+    void SeedDefaultConstraintsFromInitialDpi();
     
     // 菜单命令ID
     enum MenuCommands {

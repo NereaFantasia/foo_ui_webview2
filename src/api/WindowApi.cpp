@@ -580,8 +580,20 @@ json WindowIsMinimized(const json& params) {
 
 json WindowIsFullscreen(const json& params) {
     auto target = WindowTargetResolver::ResolveForObservation(params);
-    bool fs = target.Success() ? target.shell->IsFullscreen() : false;
-    return { {"fullscreen", fs}, {"isFullscreen", fs} };
+    // 解析失败时返回错误信封，而不是 fullscreen:false。
+    //
+    // 旧实现把「解析失败」与「窗口确实不在全屏」压成同一个 false，调用方
+    // 无从分辨——正是 Q7-1 要消灭的静默错值形态。取消 observation 的主窗口
+    // 回退后，面板调用方与已销毁的 caller 都会走到这里，故必须显式失败。
+    if (!target.Success()) return target.ErrorResponse();
+
+    const bool fs = target.shell->IsFullscreen();
+    return {
+        {"success", true},
+        {"fullscreen", fs},
+        {"isFullscreen", fs},
+        {"windowId", target.windowId}
+    };
 }
 
 
@@ -905,15 +917,14 @@ json WindowSetResizable(const json& params) {
 
     bool resizable = params.value("resizable", true);
 
-    // SetResizableShell 只在「该 shell 形态不支持运行时切换」时返回 false
-    // （WS_POPUP 形态无 WS_THICKFRAME 可增删）。幂等设值返回 true，符合
-    // Q10 约束①：「无变化」不得报失败。
+    // SetResizableShell 只在 Win32 调用**真实失败**时返回 false（样式写入或
+    // 帧刷新失败）。幂等设值返回 true——Q10 约束①：「无变化」不得报失败。
+    // 所有 shell 形态都支持运行时切换，故不存在「能力不支持」这一失败类别。
     if (!target.shell->SetResizableShell(resizable)) {
         return {
             {"success", false},
-            {"supported", false},
             {"windowId", target.windowId},
-            {"error", "This window shell does not support toggling resizable at runtime"}
+            {"error", "Failed to apply the resizable window style"}
         };
     }
 
@@ -927,7 +938,6 @@ json WindowIsResizable(const json& params) {
 
     return {
         {"resizable", target.shell->IsResizableShell()},
-        {"supportsRuntimeToggle", target.shell->SupportsRuntimeResizableToggle()},
         {"windowId", target.windowId}
     };
 }

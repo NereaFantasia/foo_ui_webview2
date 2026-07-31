@@ -427,6 +427,10 @@ HWND MainWindow::Create(HWND parent) {
     
     parentHwnd_ = parent;
     
+    // 把物理口径的默认尺寸下限迁移为 DIP 存储。
+    // 必须先于 RestoreWindowPosition——后者会用这些约束钳制保存的尺寸。
+    SeedDefaultConstraintsFromInitialDpi();
+    
     // 恢复保存的窗口位置，或使用默认值
     int x, y, width, height, showCmd;
     RestoreWindowPosition(x, y, width, height, showCmd);
@@ -1167,6 +1171,13 @@ LRESULT MainWindow::HandleMessage(UINT msg, WPARAM wParam, LPARAM lParam) {
             }
 
             OnSize(LOWORD(lParam), HIWORD(lParam));
+
+            // 补做最小化期间被推迟的约束校正（见 RevalidateSizeAgainstConstraints
+            // 的 iconic 分支）。此时窗口已回到还原态，几何可安全改写。
+            if (pendingConstraintRevalidate_ && !isMinimized_ && !IsIconic(hwnd_)) {
+                pendingConstraintRevalidate_ = false;
+                RevalidateSizeAgainstConstraints();
+            }
             if (wasMinimized && !startupRevealPending_ && startupRevealCommitted_ && !startupRevealSettling_) {
                 ApplyResolvedChrome(true);
                 // 兜底：恢复后延迟一拍强制一次真实 surface transition（nudge），防 DComp 表面留空。
@@ -3561,6 +3572,13 @@ void MainWindow::RevalidateSizeAgainstConstraints() {
     // 最大化/全屏由系统或全屏逻辑掌管尺寸，不在此干预。
     if (isMaximized_ || isFullscreen_ || IsZoomed(hwnd_)) return;
 
+    // 最小化时 GetWindowRect 返回的是 iconic 位置，对其调 SetWindowPos 会
+    // 污染还原态几何。改为登记待办，等恢复后的 WM_SIZE 再执行，使约束不丢失。
+    if (isMinimized_ || IsIconic(hwnd_)) {
+        pendingConstraintRevalidate_ = true;
+        return;
+    }
+
     RECT rc{};
     if (!GetWindowRect(hwnd_, &rc)) return;
 
@@ -3627,6 +3645,43 @@ void MainWindow::SaveWindowPosition() {
 int MainWindow::GetDpiForSavedRect(int x, int y, int width, int height) {
     // 委托给共享探测器（两个 shell 共用，避免各自复制 shcore 解析逻辑）。
     return window_dpi_probe::GetDpiForScreenRect(x, y, width, height);
+}
+
+void MainWindow::SeedDefaultConstraintsFromInitialDpi() {
+    // 历史默认下限的口径是**物理像素**（见 kDefaultMinWidthPhysical 说明）。
+    // 约束存储改为 DIP 后，若把那两个字面量直接当 DIP，125% 缩放下实际下限
+    // 会从 400 物理放大到 500 物理。此处按初始显示器 DPI 反向换算，使
+    // WM_GETMINMAXINFO 再换算回物理时得到与改动前一致的值。
+    //
+    // 只迁移**默认值**：用户显式设过的值会经 SetMinSizeDip 覆盖，那条路径
+    // 的 wire 单位换算已在 handler 层完成，与此无关。
+    //
+    // 初始 DPI 的取法：窗口尚未创建，故用「即将落到哪个显示器」推导——
+    // 有保存位置时用该矩形，否则用主显示器原点。这与 RestoreWindowPosition
+    // 随后对保存尺寸所用的 DPI 口径一致。
+    int probeX = 0;
+    int probeY = 0;
+    int probeW = 1;
+    int probeH = 1;
+
+    if (webview_prefs::GetRememberWindowPosition() && window_config::HasSavedPosition()) {
+        int savedX = 0, savedY = 0, savedW = 0, savedH = 0;
+        bool savedMaximized = false;
+        window_config::GetWindowPosition(savedX, savedY, savedW, savedH, savedMaximized);
+        probeX = savedX;
+        probeY = savedY;
+        probeW = savedW;
+        probeH = savedH;
+    }
+
+    const int initialDpi = window_dpi_probe::GetDpiForScreenRect(probeX, probeY, probeW, probeH);
+
+    minWidthDip_ = window_geometry::PhysicalToDip(kDefaultMinWidthPhysical, initialDpi);
+    minHeightDip_ = window_geometry::PhysicalToDip(kDefaultMinHeightPhysical, initialDpi);
+
+    LOG("SeedDefaultConstraintsFromInitialDpi: dpi=", initialDpi,
+        " min=", minWidthDip_, "x", minHeightDip_, " DIP",
+        " (physical baseline ", kDefaultMinWidthPhysical, "x", kDefaultMinHeightPhysical, ")");
 }
 
 void MainWindow::RestoreWindowPosition(int& x, int& y, int& width, int& height, int& showCmd) {

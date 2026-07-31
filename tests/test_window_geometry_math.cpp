@@ -78,6 +78,64 @@ TEST(WindowGeometryPhysicalToDip, RoundTripMayDriftByOnePixel) {
 }
 
 // ============================================
+// wire 方向的往返（physical → DIP → physical）
+//
+// 这是尺寸约束 API 的**真实**方向：wire 单位是物理像素，shell 存储是 DIP。
+// 上面的 RoundTripMayDriftByOnePixel 测的是反方向（DIP 起点），不能替代。
+//
+// 契约：整数 DIP 存储导致该往返每轴最多漂移 1px。文档据此声明 ±1px
+// 而非「无损」。若此处出现 >1px 漂移，说明取整实现退化，文档承诺失效。
+// ============================================
+
+TEST(WindowGeometryWireRoundTrip, NonRepresentableValueDriftsAtMostOnePixel) {
+    // 复审给出的具体反例：125% 缩放下 202px 读回 203px。
+    const int dpi = 120;
+    const int requested = 202;
+    const int stored = PhysicalToDip(requested, dpi);        // 161.6 -> 162
+    const int readBack = DipToPhysical(stored, dpi);         // 202.5 -> 203
+    EXPECT_EQ(stored, 162);
+    EXPECT_EQ(readBack, 203);
+    EXPECT_TRUE(SizeMatchesWithinTolerance(readBack, requested, 1));
+}
+
+TEST(WindowGeometryWireRoundTrip, DriftStaysWithinOnePixelAcrossCommonScales) {
+    // 覆盖 Windows 常见缩放档位；每档扫一段连续物理值。
+    for (int dpi : { 96, 120, 144, 168, 192, 240 }) {
+        for (int requested = 1; requested <= 400; ++requested) {
+            const int back = DipToPhysical(PhysicalToDip(requested, dpi), dpi);
+            EXPECT_TRUE(SizeMatchesWithinTolerance(back, requested, 1))
+                << "dpi=" << dpi << " requested=" << requested << " back=" << back;
+        }
+    }
+}
+
+// 「无上限」哨兵必须精确存活：0 若漂成非 0 会把无上限变成一个真实上限。
+TEST(WindowGeometryWireRoundTrip, ZeroSentinelSurvivesExactly) {
+    for (int dpi : { 96, 120, 144, 168, 192, 240 }) {
+        EXPECT_EQ(PhysicalToDip(0, dpi), 0) << "dpi=" << dpi;
+        EXPECT_EQ(DipToPhysical(0, dpi), 0) << "dpi=" << dpi;
+    }
+}
+
+// C2 回归：历史默认下限的口径是**物理像素**。
+// MainWindow 把 400x300 物理经 PhysicalToDip 存为 DIP，WM_GETMINMAXINFO 再
+// 换算回物理。该往返必须在 ±1px 内复现原物理值——否则默认下限会随缩放
+// 被静默放大（125% 下 400 变 500 正是本次复审发现的缺陷）。
+TEST(WindowGeometryWireRoundTrip, MainWindowDefaultMinimumKeepsPhysicalMeaning) {
+    constexpr int kDefaultMinWidthPhysical = 400;
+    constexpr int kDefaultMinHeightPhysical = 300;
+
+    for (int dpi : { 96, 120, 144, 168, 192, 240 }) {
+        const int wBack = DipToPhysical(PhysicalToDip(kDefaultMinWidthPhysical, dpi), dpi);
+        const int hBack = DipToPhysical(PhysicalToDip(kDefaultMinHeightPhysical, dpi), dpi);
+        EXPECT_TRUE(SizeMatchesWithinTolerance(wBack, kDefaultMinWidthPhysical, 1))
+            << "dpi=" << dpi << " width back=" << wBack;
+        EXPECT_TRUE(SizeMatchesWithinTolerance(hBack, kDefaultMinHeightPhysical, 1))
+            << "dpi=" << dpi << " height back=" << hBack;
+    }
+}
+
+// ============================================
 // ClampSize
 // ============================================
 

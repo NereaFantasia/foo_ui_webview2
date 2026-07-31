@@ -192,19 +192,6 @@ TEST(WindowTargetPolicyPanelCaller, ExplicitIdStillOutranksPanel) {
 }
 
 // ============================================
-// caller 查找失败后一律不回退（Q7-1）
-// ============================================
-
-TEST(WindowTargetPolicyFallback, MutationDisallowsFallbackAfterCallerMiss) {
-    EXPECT_FALSE(AllowsFallbackAfterCallerMiss(TargetIntent::Mutation));
-}
-
-// Q7-1 之前此例期望 true。
-TEST(WindowTargetPolicyFallback, ObservationAlsoDisallowsFallbackAfterCallerMiss) {
-    EXPECT_FALSE(AllowsFallbackAfterCallerMiss(TargetIntent::Observation));
-}
-
-// ============================================
 // 错误常量不得与 ApiError 漂移
 // ============================================
 

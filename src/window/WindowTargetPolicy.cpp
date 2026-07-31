@@ -42,10 +42,4 @@ TargetDecision SelectTarget(const TargetRequest& request, TargetIntent intent) {
     return decision;
 }
 
-bool AllowsFallbackAfterCallerMiss(TargetIntent /*intent*/) {
-    // Q7-1 之后两种意图都不回退主窗口。保留此函数是为了让「不回退」成为
-    // 一条被测试固定住的显式契约，而不是靠调用点缺失回退代码来隐式表达。
-    return false;
-}
-
 }  // namespace window_target_policy

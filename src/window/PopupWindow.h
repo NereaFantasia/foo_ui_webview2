@@ -184,9 +184,6 @@ public:
     }
     bool SetResizableShell(bool resizable) override;
     bool IsResizableShell() const override { return resizable_; }
-    // WS_POPUP 形态（桌面歌词等 frame=false + transparent + 无 DWM 效果）
-    // 没有 WS_THICKFRAME 可供增删，故不支持运行时切换。
-    bool SupportsRuntimeResizableToggle() const override { return !usePopupStyle_; }
 
     // 依当前 min/max 约束校正窗口尺寸。
     // 约束变化后已存在的窗口尺寸不会被系统自动纠正，需主动 revalidate。
@@ -223,6 +220,10 @@ private:
     int maxWidthDip_ = 0;   // 0 = 无限制
     int maxHeightDip_ = 0;
     bool resizable_ = true;
+
+    // 最小化期间收到的约束变更被推迟到恢复后执行。
+    // 对 iconic 窗口调 SetWindowPos 会改写还原态几何，故不能就地校正。
+    bool pendingConstraintRevalidate_ = false;
 
     std::vector<DragRegion> dragRegions_;
     std::vector<DragRegion> noDragRegions_;

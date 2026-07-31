@@ -120,13 +120,11 @@ public:
     virtual void GetMaxSizeDip(int& widthDip, int& heightDip) const = 0;
 
     // 是否允许用户拖拽调整大小。
-    // 返回 false 表示调用未生效（例如该 shell 形态不支持可变边框）。
+    //
+    // 返回 false 表示 Win32 调用真实失败（样式写入或帧刷新失败）。
+    // 幂等设值（目标值与当前值相同）返回 true——「无变化」不是失败。
     virtual bool SetResizableShell(bool resizable) = 0;
     virtual bool IsResizableShell() const = 0;
-    // 该 shell 当前形态是否支持运行时切换可调整大小。
-    // WS_POPUP 形态的 popup（桌面歌词等全透明无边框场景）没有 WS_THICKFRAME
-    // 可供增删，故恒为 false。
-    virtual bool SupportsRuntimeResizableToggle() const = 0;
 
     // ========== 全屏预保存状态（per-window，Chromium 风格） ==========
     // savedWindowInfo_.has_value() == true 表示窗口当前处于全屏模式。

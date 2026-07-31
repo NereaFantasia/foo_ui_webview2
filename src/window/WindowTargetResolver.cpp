@@ -23,9 +23,14 @@ WindowTargetResult WindowTargetResolver::ResolveById(const std::string& windowId
     WindowTargetResult result;
     auto& wm = WindowManager::GetInstance();
 
+    // 句柄非空不等于句柄有效：正在销毁的 shell 仍持有陈旧 HWND。若放它通过，
+    // 下游按 96 DPI 回退换算后仍返回 success，等于把无效目标伪装成成功变更。
+    // 故此处与 GetShellDpi 采用同一强度的校验。
+    const auto isLive = [](HWND hwnd) { return hwnd && IsWindow(hwnd); };
+
     if (windowId == "main") {
         auto* mainWin = wm.GetMainWindow();
-        if (mainWin && mainWin->GetHwnd()) {
+        if (mainWin && isLive(mainWin->GetHwnd())) {
             result.shell = static_cast<WindowShellBase*>(mainWin);
             result.windowId = "main";
         } else {
@@ -35,7 +40,7 @@ WindowTargetResult WindowTargetResolver::ResolveById(const std::string& windowId
     }
 
     auto* popup = wm.GetPopup(windowId);
-    if (popup && popup->GetHwnd()) {
+    if (popup && isLive(popup->GetHwnd())) {
         result.shell = static_cast<WindowShellBase*>(popup);
         result.windowId = windowId;
     } else {
@@ -46,7 +51,9 @@ WindowTargetResult WindowTargetResolver::ResolveById(const std::string& windowId
 
 WindowTargetResult WindowTargetResolver::ResolveByCallerHwnd(HWND callerHwnd) {
     WindowTargetResult result;
-    if (!callerHwnd) {
+    // 本方法是 public，调用方未必经过 ExtractCallerHwnd 的 IsWindow 校验，
+    // 故在入口独立校验一次：陈旧句柄不得解析成 target。
+    if (!callerHwnd || !IsWindow(callerHwnd)) {
         result.error = ApiError::WINDOW_NOT_FOUND;
         return result;
     }
@@ -115,52 +122,81 @@ bool WindowTargetResolver::IsPanelCallerHwnd(HWND callerHwnd) {
     return false;
 }
 
-WindowTargetResult WindowTargetResolver::ResolveForMutation(const json& params) {
-    // 1. 显式 windowId 优先
+// 把 params 归类为纯策略层的输入。
+//
+// 归类需要 HWND 查找（IsWindow 校验、面板判定），而策略层不依赖 Win32，
+// 故分类在此完成、决策交给 window_target_policy::SelectTarget。
+WindowTargetResult WindowTargetResolver::ResolveWithIntent(
+    const json& params, window_target_policy::TargetIntent intent) {
+    using namespace window_target_policy;
+
+    TargetRequest request;
     if (params.contains("windowId") && params["windowId"].is_string()) {
         std::string wid = params["windowId"].get<std::string>();
         if (!wid.empty()) {
-            return ResolveById(wid);
+            request.hasExplicitWindowId = true;
+            request.explicitWindowId = std::move(wid);
         }
     }
 
-    // 2. _callerHwnd
-    HWND callerHwnd = ExtractCallerHwnd(params);
-    if (callerHwnd) {
-        return ResolveByCallerHwnd(callerHwnd);
+    // 只有在没有显式 windowId 时才需要检查 caller —— 显式 id 无条件优先，
+    // 此时省掉 caller 解析既避免无谓的实例遍历与加锁，也避免面板页面
+    // 显式操作其他窗口（如 window.focus("main")）被自身面板身份拦下。
+    //
+    // caller 解析**只做一次**并缓存：面板判定必须复用 ResolveByCallerHwnd
+    // 内部的 main → popup → panel 优先级，而不是在此另立一套。否则一旦
+    // 某个 HWND 同时命中我们的 shell 与某个面板实例（拓扑上是否可能取决于
+    // 宿主窗口层级，不应由本层假设），两处判定就会分歧。
+    HWND callerHwnd = nullptr;
+    std::optional<WindowTargetResult> callerResult;
+    if (!request.hasExplicitWindowId) {
+        callerHwnd = ExtractCallerHwnd(params);
+        if (callerHwnd) {
+            request.hasCallerHwnd = true;
+            callerResult = ResolveByCallerHwnd(callerHwnd);
+            // panelCaller 由 ResolveByCallerHwnd 在「既非 main 也非 popup、
+            // 但属于某个 DUI/CUI 实例」时置位，正是策略层需要的分类。
+            request.callerIsPanel = callerResult->panelCaller;
+        }
     }
 
-    // 3. 对 mutating shell API: 禁止静默回退到 main
-    WindowTargetResult result;
-    result.error = ApiError::WINDOW_NOT_FOUND;
-    return result;
+    const TargetDecision decision = SelectTarget(request, intent);
+
+    switch (decision.route) {
+        case TargetRoute::ById:
+            return ResolveById(decision.windowId);
+
+        case TargetRoute::ByCallerHwnd:
+        case TargetRoute::FailPanelCaller:
+            // 两者都用已缓存的解析结果：成功时它就是目标，面板时它已带上
+            // panelCaller 标志与 PANEL_CALLER_UNSUPPORTED 错误。
+            if (callerResult.has_value()) {
+                return *callerResult;
+            }
+            [[fallthrough]];
+
+        case TargetRoute::Fail:
+        default: {
+            WindowTargetResult result;
+            result.error = decision.error.empty()
+                ? ApiError::WINDOW_NOT_FOUND
+                : decision.error;
+            return result;
+        }
+    }
+}
+
+WindowTargetResult WindowTargetResolver::ResolveForMutation(const json& params) {
+    // 决策表由 window_target_policy 持有并被单测固定，此处不再复制分支逻辑。
+    // 对 mutating shell API：找不到 target 必须失败，禁止静默回退 main。
+    return ResolveWithIntent(params, window_target_policy::TargetIntent::Mutation);
 }
 
 WindowTargetResult WindowTargetResolver::ResolveForObservation(const json& params) {
-    // 1. 显式 windowId
-    if (params.contains("windowId") && params["windowId"].is_string()) {
-        std::string wid = params["windowId"].get<std::string>();
-        if (!wid.empty()) {
-            return ResolveById(wid);
-        }
-    }
-
-    // 2. _callerHwnd
-    HWND callerHwnd = ExtractCallerHwnd(params);
-    if (callerHwnd) {
-        return ResolveByCallerHwnd(callerHwnd);
-    }
-
-    // 3. 不回退主窗口（Q7）。
+    // 与 Mutation 共用同一决策表。
     //
-    // 旧实现在此回退 main，理由是「向后兼容」。但对**非主窗口**的调用方
-    // （面板、或 caller 已销毁），回退会返回一个看似合法、实际属于另一个
-    // 窗口的几何/状态值——调用方无从分辨。这正是本项目要消灭的静默错值
-    // 形态，比返回错误更有害。
-    //
-    // 因此 observation 与 mutation 在「无显式 id 且 caller 不可解析」时
-    // 行为一致：显式失败。
-    WindowTargetResult result;
-    result.error = ApiError::WINDOW_NOT_FOUND;
-    return result;
+    // Q7-1 取消了 observation 的主窗口回退：回退会向非主窗口的调用方返回
+    // 属于另一个窗口的几何/状态值，调用方无从分辨——这正是本项目要消灭的
+    // 静默错值形态，比返回错误更有害。故两种意图行为一致。
+    return ResolveWithIntent(params, window_target_policy::TargetIntent::Observation);
 }

@@ -102,6 +102,13 @@ void PopupWindow::RevalidateSizeAgainstConstraints() {
     // 最大化/全屏时尺寸由系统或全屏逻辑掌管，不在此干预。
     if (isMaximized_ || IsFullscreen() || IsZoomed(hwnd_)) return;
 
+    // 最小化时 GetWindowRect 返回 iconic 位置，对其调 SetWindowPos 会污染
+    // 还原态几何。改为登记待办，等恢复后的 WM_SIZE 再执行，使约束不丢失。
+    if (isMinimized_ || IsIconic(hwnd_)) {
+        pendingConstraintRevalidate_ = true;
+        return;
+    }
+
     RECT rc{};
     if (!GetWindowRect(hwnd_, &rc)) return;
 
@@ -125,34 +132,61 @@ void PopupWindow::RevalidateSizeAgainstConstraints() {
 }
 
 bool PopupWindow::SetResizableShell(bool resizable) {
-    // WS_POPUP 形态没有 WS_THICKFRAME 可增删（桌面歌词等全透明无边框场景），
-    // 无法在运行时切换，显式失败而不是静默无操作。
-    if (!SupportsRuntimeResizableToggle()) {
-        return false;
-    }
-
+    // 幂等设值必须**先于**任何其他判定：目标值与当前值相同时一律成功。
+    // Q10 约束①——「无变化」不得报 false（前端 useMiniWindowManager 任一步
+    // ok:false 即整体中止并逆序回滚）。
     if (resizable_ == resizable) {
-        // 幂等设值：不算失败（Q10 前端约束——「无变化」不得报 false）。
         return true;
     }
-    resizable_ = resizable;
 
     if (!hwnd_ || !IsWindow(hwnd_)) {
         // 窗口尚未创建：新值会在 Create() 的样式计算中生效。
+        resizable_ = resizable;
         return true;
     }
 
-    LONG_PTR style = GetWindowLongPtrW(hwnd_, GWL_STYLE);
-    if (resizable_) {
-        style |= (WS_THICKFRAME | WS_MAXIMIZEBOX);
-    } else {
-        style &= ~(WS_THICKFRAME | WS_MAXIMIZEBOX);
+    // 所有 popup 形态都支持运行时切换，WS_POPUP 形态（桌面歌词等
+    // frame=false + transparent + 无 DWM 效果）也不例外：
+    //   - WS_THICKFRAME 可以合法地加到 WS_POPUP 上；
+    //   - 该形态的 WM_NCCALCSIZE 对非最大化窗口直接 return 0，把非客户区
+    //     整体收掉，故新增 WS_THICKFRAME **不会**带来可见边框；
+    //   - 拖拽手感本就由自绘的 WM_NCHITTEST（读 resizable_）提供，
+    //     样式位只负责让 DefWindowProc 认可 SC_SIZE。
+    const LONG_PTR oldStyle = GetWindowLongPtrW(hwnd_, GWL_STYLE);
+    const LONG_PTR newStyle = resizable
+        ? (oldStyle | WS_THICKFRAME | WS_MAXIMIZEBOX)
+        : (oldStyle & ~static_cast<LONG_PTR>(WS_THICKFRAME | WS_MAXIMIZEBOX));
+
+    // SetWindowLongPtrW 返回 0 既可能是失败也可能是「原值本就为 0」，
+    // 故用 SetLastError(0) + 回读校验，而不是只看返回值。
+    ::SetLastError(0);
+    SetWindowLongPtrW(hwnd_, GWL_STYLE, newStyle);
+    if (::GetLastError() != 0 &&
+        GetWindowLongPtrW(hwnd_, GWL_STYLE) != newStyle) {
+        // 样式未写入：保持 resizable_ 不变，让调用方看到真实失败。
+        return false;
     }
-    SetWindowLongPtrW(hwnd_, GWL_STYLE, style);
 
     // 样式改动须 SWP_FRAMECHANGED 才会重算非客户区。
-    SetWindowPos(hwnd_, nullptr, 0, 0, 0, 0,
-        SWP_FRAMECHANGED | SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE);
+    // SWP_NOACTIVATE：overlay popup（WS_EX_NOACTIVATE / clickThrough）绝不能
+    // 因样式切换而被激活。
+    if (!SetWindowPos(hwnd_, nullptr, 0, 0, 0, 0,
+            SWP_FRAMECHANGED | SWP_NOMOVE | SWP_NOSIZE |
+            SWP_NOZORDER | SWP_NOACTIVATE)) {
+        // 帧刷新失败：回滚样式，避免留下「样式已改但帧未刷新」的中间态。
+        SetWindowLongPtrW(hwnd_, GWL_STYLE, oldStyle);
+        return false;
+    }
+
+    // 只有 Win32 两步都成功后才提交运行时状态。
+    resizable_ = resizable;
+
+    // 外框尺寸未变，但非客户区厚度变了 → 客户区随之变化，需重算 WebView 边界。
+    // 与 MainWindow::SetResizable 走 OnSize 的做法对齐。
+    RECT clientRect{};
+    if (GetClientRect(hwnd_, &clientRect)) {
+        OnSize(clientRect.right, clientRect.bottom);
+    }
 
     return true;
 }
@@ -821,6 +855,13 @@ LRESULT PopupWindow::HandleMessage(UINT msg, WPARAM wParam, LPARAM lParam) {
             if (wasMinimized && !startupRevealPending_ && startupRevealCommitted_ && !startupRevealSettling_) {
                 ApplyBackdropForActivation(isActive_, true);
             }
+
+            // 补做最小化期间被推迟的约束校正（见 RevalidateSizeAgainstConstraints
+            // 的 iconic 分支）。此时窗口已回到还原态，几何可安全改写。
+            if (pendingConstraintRevalidate_ && !isMinimized_ && !IsIconic(hwnd_)) {
+                pendingConstraintRevalidate_ = false;
+                RevalidateSizeAgainstConstraints();
+            }
             return 0;
         }
 
@@ -854,6 +895,33 @@ LRESULT PopupWindow::HandleMessage(UINT msg, WPARAM wParam, LPARAM lParam) {
             }
             if (maxHeightDip_ > 0) {
                 mmi->ptMaxTrackSize.y = window_geometry::DipToPhysical(maxHeightDip_, dpi);
+            }
+            return 0;
+        }
+
+        case WM_DPICHANGED: {
+            // 跨显示器移动或系统缩放变更。约束以 DIP 存储，故其**物理**取值
+            // 随 DPI 变化，但系统不会追认已存在窗口的尺寸——WM_GETMINMAXINFO
+            // 只约束后续的拖拽/程序化改尺寸。需主动校正（Q9-c）。
+            //
+            // 先采纳系统建议矩形（与 MainWindow::OnDpiChanged 一致），
+            // 再按新 DPI 下的物理约束校正。
+            // SWP_NOACTIVATE：overlay popup（WS_EX_NOACTIVATE / clickThrough）
+            // 绝不能因 DPI 变更而被激活。
+            if (auto* suggested = reinterpret_cast<RECT*>(lParam)) {
+                SetWindowPos(hwnd_, nullptr,
+                    suggested->left, suggested->top,
+                    suggested->right - suggested->left,
+                    suggested->bottom - suggested->top,
+                    SWP_NOZORDER | SWP_NOACTIVATE);
+            }
+
+            RevalidateSizeAgainstConstraints();
+
+            // 客户区尺寸已变，重算 WebView 边界。
+            RECT clientRect{};
+            if (GetClientRect(hwnd_, &clientRect)) {
+                OnSize(clientRect.right, clientRect.bottom);
             }
             return 0;
         }

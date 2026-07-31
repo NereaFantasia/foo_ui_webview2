@@ -102,11 +102,9 @@ inline constexpr const char* kErrorPanelCallerUnsupported =
 //
 // panel 判定先于 caller 判定：面板的 caller HWND 是可解析出实例的，
 // 若先走 ByCallerHwnd 就会退化成泛化的 WINDOW_NOT_FOUND，丢失确切原因。
+//
+// 「caller 查找失败后不回退主窗口」不再需要单独的谓词来表达：TargetRoute
+// 里已经没有 FallbackMain 这一路，故该性质由类型系统保证，而非靠约定。
 TargetDecision SelectTarget(const TargetRequest& request, TargetIntent intent);
-
-// caller 路径查找失败后，该意图是否允许回退主窗口。
-// Q7-1 之后**两种意图均为 false**。保留此函数是为了让「不回退」成为一条
-// 被测试固定住的显式契约，而非靠调用点缺失回退代码来隐式表达。
-bool AllowsFallbackAfterCallerMiss(TargetIntent intent);
 
 }  // namespace window_target_policy
