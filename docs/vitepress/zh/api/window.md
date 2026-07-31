@@ -790,6 +790,18 @@ const result = await fb2k.invoke('window.getBounds');
 
 ### window.getCornerPreference
 
+
+<!-- phase3-major1-review:window.getCornerPreference -->
+#### 源码复核契约
+权威：`src/api/WindowApi.cpp:1489-1495`。
+
+_无参数。_ 此调用**仅作用于主窗口**：不接受 `windowId`，也忽略调用方窗口。
+
+**返回键**：`mode`、`preference`
+
+**语义**：返回主窗口的 Windows 11 圆角偏好；`mode` 与 `preference` 是同一个值的两个名字。popup 不暴露该设置——它自行管理圆角（无边框时圆角，否则用系统默认），并在能力中声明 `supportsCornerPreference: false`，故此调用没有 popup 作用域的等价形式。无主窗口时返回 `"default"` 而非错误。
+
+<!-- phase3-major1-review-end:window.getCornerPreference -->
 公开 API。运行时权威：`src/api/WindowApi.cpp:2428`。
 
 _无参数。_
@@ -829,6 +841,20 @@ const result = await fb2k.invoke('window.getDevServerConfig');
 
 ### window.getMaxSize
 
+
+<!-- phase3-major1-review:window.getMaxSize -->
+#### 源码复核契约
+权威：`src/api/WindowApi.cpp:884-898`。
+
+| 参数 | 类型 | 必填 | 默认值 |
+| --- | --- | --- | --- |
+| `windowId` | `string` | 否 | `调用方窗口` |
+
+**返回键（随响应变体而异）**：`error`、`success`；`height`、`width`、`windowId`
+
+**语义**：观测型解析取显式 `windowId` 或调用方窗口，**不再回退主窗口**——无法解析调用上下文时直接失败，而不是静默返回另一个窗口的约束。面板（DUI/CUI）调用方会被拒绝并返回 `panelMode: true`，因为面板不是窗口 shell。数值单位为物理像素；宿主以 DIP 存储约束，并按**目标窗口**的 DPI 换算。`0` 表示无上限。返回的是**请求值**而非当前生效值，故 `set` 后 `get` 可无损往返。
+
+<!-- phase3-major1-review-end:window.getMaxSize -->
 公开 API。运行时权威：`src/api/WindowApi.cpp:2405`。
 
 _无参数。_
@@ -842,6 +868,20 @@ const result = await fb2k.invoke('window.getMaxSize');
 
 ### window.getMinSize
 
+
+<!-- phase3-major1-review:window.getMinSize -->
+#### 源码复核契约
+权威：`src/api/WindowApi.cpp:848-864`。
+
+| 参数 | 类型 | 必填 | 默认值 |
+| --- | --- | --- | --- |
+| `windowId` | `string` | 否 | `调用方窗口` |
+
+**返回键（随响应变体而异）**：`error`、`success`；`height`、`width`、`windowId`
+
+**语义**：观测型解析取显式 `windowId` 或调用方窗口，**不再回退主窗口**——无法解析调用上下文时直接失败，而不是静默返回另一个窗口的约束。面板（DUI/CUI）调用方会被拒绝并返回 `panelMode: true`，因为面板不是窗口 shell。数值单位为物理像素；宿主以 DIP 存储约束，并按**目标窗口**的 DPI 换算。返回的是**请求值**而非当前生效值，故 `set` 后 `get` 可无损往返。
+
+<!-- phase3-major1-review-end:window.getMinSize -->
 公开 API。运行时权威：`src/api/WindowApi.cpp:2403`。
 
 _无参数。_
@@ -922,6 +962,20 @@ const result = await fb2k.invoke('window.isClickThrough', { windowId: /* value *
 
 ### window.isResizable
 
+
+<!-- phase3-major1-review:window.isResizable -->
+#### 源码复核契约
+权威：`src/api/WindowApi.cpp:924-933`。
+
+| 参数 | 类型 | 必填 | 默认值 |
+| --- | --- | --- | --- |
+| `windowId` | `string` | 否 | `调用方窗口` |
+
+**返回键（随响应变体而异）**：`error`、`success`；`resizable`、`supportsRuntimeToggle`、`windowId`
+
+**语义**：观测型解析取显式 `windowId` 或调用方窗口，**不再回退主窗口**。面板（DUI/CUI）调用方会被拒绝并返回 `panelMode: true`。`supportsRuntimeToggle` 表示 `window.setResizable` 能否在运行时改变该窗口：完全无边框的 popup（`frame: false` 且 `transparent: true` 且无背景效果）没有可增删的可调整边框，故为 `false`。
+
+<!-- phase3-major1-review-end:window.isResizable -->
 公开 API。运行时权威：`src/api/WindowApi.cpp:2407`。
 
 _无参数。_
@@ -1155,6 +1209,22 @@ const result = await fb2k.invoke('window.setClickThroughExcludeRegions', { regio
 
 ### window.setCornerPreference
 
+
+<!-- phase3-major1-review:window.setCornerPreference -->
+#### 源码复核契约
+权威：`src/api/WindowApi.cpp:1477-1486`。
+
+| 参数 | 类型 | 必填 | 默认值 |
+| --- | --- | --- | --- |
+| `mode` | `string` | 否 | `"default"` |
+
+此调用**仅作用于主窗口**：不接受 `windowId`，也忽略调用方窗口。
+
+**返回键（随响应变体而异）**：`error`、`success`；`success`
+
+**语义**：设置主窗口的 Windows 11 圆角偏好。可取 `"default"`、`"none"`、`"round"`、`"small"`；其中 `"default"` 映射为圆角，因为无边框窗口没有标准非客户区框架可供系统默认值生效。popup 不接受该设置——它自行管理圆角并声明 `supportsCornerPreference: false`——故此调用没有 popup 作用域的形式。面板（DUI/CUI）调用方会被拒绝并返回 `panelMode: true`。
+
+<!-- phase3-major1-review-end:window.setCornerPreference -->
 公开 API。运行时权威：`src/api/WindowApi.cpp:2427`。
 
 | 参数 | 类型 | 必填 | 说明 |
@@ -1218,6 +1288,22 @@ const result = await fb2k.invoke('window.setFrameless', { frameless: /* value */
 
 ### window.setMaxSize
 
+
+<!-- phase3-major1-review:window.setMaxSize -->
+#### 源码复核契约
+权威：`src/api/WindowApi.cpp:867-881`。
+
+| 参数 | 类型 | 必填 | 默认值 |
+| --- | --- | --- | --- |
+| `windowId` | `string` | 否 | `调用方窗口` |
+| `width` | `integer` | 否 | `0` |
+| `height` | `integer` | 否 | `0` |
+
+**返回键（随响应变体而异）**：`error`、`success`；`success`、`windowId`
+
+**语义**：变更型解析取显式 `windowId` 或调用方窗口，**绝不回退主窗口**——无法解析时直接失败，而不是改到非预期的窗口。面板（DUI/CUI）调用方会被拒绝并返回 `panelMode: true`。数值单位为物理像素，按**目标窗口**的 DPI 换算为宿主的 DIP 存储；`0`（或负值）表示清除该上限。施加约束后会立即校正当前窗口尺寸，故已超出新上限的窗口会被收缩，而非等到下次用户拖拽。
+
+<!-- phase3-major1-review-end:window.setMaxSize -->
 公开 API。运行时权威：`src/api/WindowApi.cpp:2404`。
 
 | 参数 | 类型 | 必填 | 说明 |
@@ -1302,6 +1388,22 @@ const result = await fb2k.invoke('window.setMicaEffect');
 
 ### window.setMinSize
 
+
+<!-- phase3-major1-review:window.setMinSize -->
+#### 源码复核契约
+权威：`src/api/WindowApi.cpp:831-845`。
+
+| 参数 | 类型 | 必填 | 默认值 |
+| --- | --- | --- | --- |
+| `windowId` | `string` | 否 | `调用方窗口` |
+| `width` | `integer` | 否 | `0` |
+| `height` | `integer` | 否 | `0` |
+
+**返回键（随响应变体而异）**：`error`、`success`；`success`、`windowId`
+
+**语义**：变更型解析取显式 `windowId` 或调用方窗口，**绝不回退主窗口**——无法解析时直接失败，而不是改到非预期的窗口。面板（DUI/CUI）调用方会被拒绝并返回 `panelMode: true`。数值单位为物理像素，按**目标窗口**的 DPI 换算为宿主的 DIP 存储，使约束在 DPI 变化后仍然稳定。非正值会归一为 1px 下限。施加约束后会立即校正当前窗口尺寸，故已小于新下限的窗口会被放大，而非等到下次用户拖拽。
+
+<!-- phase3-major1-review-end:window.setMinSize -->
 公开 API。运行时权威：`src/api/WindowApi.cpp:2402`。
 
 | 参数 | 类型 | 必填 | 说明 |
@@ -1349,6 +1451,21 @@ const result = await fb2k.invoke('window.setPosition', { x: /* value */, y: /* v
 
 ### window.setResizable
 
+
+<!-- phase3-major1-review:window.setResizable -->
+#### 源码复核契约
+权威：`src/api/WindowApi.cpp:901-921`。
+
+| 参数 | 类型 | 必填 | 默认值 |
+| --- | --- | --- | --- |
+| `windowId` | `string` | 否 | `调用方窗口` |
+| `resizable` | `boolean` | 否 | `true` |
+
+**返回键（随响应变体而异）**：`error`、`success`；`success`、`windowId`；`error`、`success`、`supported`、`windowId`
+
+**语义**：变更型解析取显式 `windowId` 或调用方窗口，**绝不回退主窗口**。此前该调用无论来自哪个窗口都硬改主窗口，故从 popup 调用会改错窗口。面板（DUI/CUI）调用方会被拒绝并返回 `panelMode: true`。设为与当前相同的值视为成功——幂等调用不算失败。仅当目标 shell 没有可切换的可调整边框时才返回 `supported: false`：完全无边框的 popup（`frame: false` 且 `transparent: true` 且无背景效果）创建时就没有尺寸边框，无法在运行时切换。依赖此调用前可先用 `window.isResizable` 查询 `supportsRuntimeToggle`。
+
+<!-- phase3-major1-review-end:window.setResizable -->
 公开 API。运行时权威：`src/api/WindowApi.cpp:2406`。
 
 | 参数 | 类型 | 必填 | 说明 |

@@ -342,6 +342,18 @@ const result = await fb2k.invoke('window.getBounds');
 
 ### window.getCaptionButtonsWidth
 
+
+<!-- phase3-major1-review:window.getCaptionButtonsWidth -->
+#### Source-reviewed contract
+Authority: `src/api/WindowApi.cpp:1203-1214`.
+
+_No parameters._ This call is **main-window only**: it does not accept `windowId` and ignores the calling window.
+
+**Return keys**: `buttonWidth`, `width`
+
+**Semantics**: Reports the geometry of the main window's custom-drawn caption buttons (minimise / maximise / close), used by frontends that render their own titlebar. Popups have no custom-drawn caption buttons, so there is no popup-scoped value to report and passing `windowId` has no effect. Values are physical pixels and track the main window's DPI. When no main window exists the call returns DIP-baseline defaults (`width: 138`, `buttonWidth: 46`) rather than an error, so callers cannot distinguish "no window" from a genuine 100%-scale measurement.
+
+<!-- phase3-major1-review-end:window.getCaptionButtonsWidth -->
 Public API method. Runtime authority: `src/api/WindowApi.cpp:2418`.
 
 _No parameters._
@@ -354,6 +366,18 @@ const result = await fb2k.invoke('window.getCaptionButtonsWidth');
 
 ### window.getCornerPreference
 
+
+<!-- phase3-major1-review:window.getCornerPreference -->
+#### Source-reviewed contract
+Authority: `src/api/WindowApi.cpp:1489-1495`.
+
+_No parameters._ This call is **main-window only**: it does not accept `windowId` and ignores the calling window.
+
+**Return keys**: `mode`, `preference`
+
+**Semantics**: Returns the main window's Windows 11 corner-rounding preference; `mode` and `preference` are the same value under two names. Popups do not expose this setting — they manage corner rounding internally (rounded when borderless, system default otherwise) and report `supportsCornerPreference: false` in their capabilities, so this call has no popup-scoped equivalent. When no main window exists the call returns `"default"` rather than an error.
+
+<!-- phase3-major1-review-end:window.getCornerPreference -->
 Public API method. Runtime authority: `src/api/WindowApi.cpp:2428`.
 
 _No parameters._
@@ -402,6 +426,20 @@ const result = await fb2k.invoke('window.getDpiScale');
 
 ### window.getMaxSize
 
+
+<!-- phase3-major1-review:window.getMaxSize -->
+#### Source-reviewed contract
+Authority: `src/api/WindowApi.cpp:884-898`.
+
+| Parameter | Type | Required | Default |
+| --- | --- | --- | --- |
+| `windowId` | `string` | No | `caller window` |
+
+**Return keys (vary by response variant)**: `error`, `success`; `height`, `width`, `windowId`
+
+**Semantics**: Observation resolution selects the explicit `windowId` or the calling window; it does **not** fall back to the main window, so a call from an unresolvable context fails instead of silently reporting another window's constraints. Panel (DUI/CUI) callers are rejected with `panelMode: true` because a panel is not a window shell. Values are physical pixels; the host stores constraints in DIPs and converts using the target window's DPI. `0` means "no upper bound". The returned values are the **requested** constraints, not the currently effective ones, so `set` followed by `get` round-trips losslessly.
+
+<!-- phase3-major1-review-end:window.getMaxSize -->
 Public API method. Runtime authority: `src/api/WindowApi.cpp:2405`.
 
 _No parameters._
@@ -414,6 +452,20 @@ const result = await fb2k.invoke('window.getMaxSize');
 
 ### window.getMinSize
 
+
+<!-- phase3-major1-review:window.getMinSize -->
+#### Source-reviewed contract
+Authority: `src/api/WindowApi.cpp:848-864`.
+
+| Parameter | Type | Required | Default |
+| --- | --- | --- | --- |
+| `windowId` | `string` | No | `caller window` |
+
+**Return keys (vary by response variant)**: `error`, `success`; `height`, `width`, `windowId`
+
+**Semantics**: Observation resolution selects the explicit `windowId` or the calling window; it does **not** fall back to the main window, so a call from an unresolvable context fails instead of silently reporting another window's constraints. Panel (DUI/CUI) callers are rejected with `panelMode: true` because a panel is not a window shell. Values are physical pixels; the host stores constraints in DIPs and converts using the target window's DPI. The returned values are the **requested** constraints, not the currently effective ones, so `set` followed by `get` round-trips losslessly.
+
+<!-- phase3-major1-review-end:window.getMinSize -->
 Public API method. Runtime authority: `src/api/WindowApi.cpp:2403`.
 
 _No parameters._
@@ -488,6 +540,18 @@ const result = await fb2k.invoke('window.getTitlebarHeight');
 
 ### window.getTitlebarInfo
 
+
+<!-- phase3-major1-review:window.getTitlebarInfo -->
+#### Source-reviewed contract
+Authority: `src/api/WindowApi.cpp:1335-1355`.
+
+_No parameters._ This call is **main-window only**: it does not accept `windowId` and ignores the calling window.
+
+**Return keys**: `captionButtonWidth`, `captionButtonsWidth`, `height`, `isMaximized`
+
+**Semantics**: Bundles the main window's titlebar height with its custom-drawn caption-button geometry and maximised state. Three of the four fields have no popup equivalent (popups expose only a titlebar height and have no custom-drawn caption buttons), so the call stays main-scoped rather than returning zeros for the missing fields. Values are physical pixels and track the main window's DPI. When no main window exists the call returns DIP-baseline defaults (`height: 32`, `captionButtonsWidth: 138`, `captionButtonWidth: 46`) rather than an error; those fallbacks are unscaled, so they differ in unit from the normal path on non-100% displays.
+
+<!-- phase3-major1-review-end:window.getTitlebarInfo -->
 Public API method. Runtime authority: `src/api/WindowApi.cpp:2423`.
 
 _No parameters._
@@ -588,6 +652,20 @@ const result = await fb2k.invoke('window.isMinimized');
 
 ### window.isResizable
 
+
+<!-- phase3-major1-review:window.isResizable -->
+#### Source-reviewed contract
+Authority: `src/api/WindowApi.cpp:924-933`.
+
+| Parameter | Type | Required | Default |
+| --- | --- | --- | --- |
+| `windowId` | `string` | No | `caller window` |
+
+**Return keys (vary by response variant)**: `error`, `success`; `resizable`, `supportsRuntimeToggle`, `windowId`
+
+**Semantics**: Observation resolution selects the explicit `windowId` or the calling window; it does **not** fall back to the main window. Panel (DUI/CUI) callers are rejected with `panelMode: true`. `supportsRuntimeToggle` reports whether {@link window.setResizable} can change this window at runtime: fully borderless popups (`frame: false` plus `transparent: true` with no backdrop effect) have no resizable frame to add or remove, so they report `false`.
+
+<!-- phase3-major1-review-end:window.isResizable -->
 Public API method. Runtime authority: `src/api/WindowApi.cpp:2407`.
 
 _No parameters._
@@ -871,6 +949,22 @@ const result = await fb2k.invoke('window.setClickThroughExcludeRegions', { regio
 
 ### window.setCornerPreference
 
+
+<!-- phase3-major1-review:window.setCornerPreference -->
+#### Source-reviewed contract
+Authority: `src/api/WindowApi.cpp:1477-1486`.
+
+| Parameter | Type | Required | Default |
+| --- | --- | --- | --- |
+| `mode` | `string` | No | `"default"` |
+
+This call is **main-window only**: it does not accept `windowId` and ignores the calling window.
+
+**Return keys (vary by response variant)**: `error`, `success`; `success`
+
+**Semantics**: Sets the main window's Windows 11 corner-rounding preference. Accepted values are `"default"`, `"none"`, `"round"` and `"small"`; `"default"` maps to rounded corners because a borderless window has no standard non-client frame for the system default to apply to. Popups do not accept this setting — they manage corner rounding internally and report `supportsCornerPreference: false` — so the call has no popup-scoped form. Panel (DUI/CUI) callers are rejected with `panelMode: true`.
+
+<!-- phase3-major1-review-end:window.setCornerPreference -->
 Public API method. Runtime authority: `src/api/WindowApi.cpp:2427`.
 
 | Parameter | Type | Required | Description |
@@ -974,6 +1068,22 @@ const result = await fb2k.invoke('window.setFullscreen', { enabled: /* value */ 
 
 ### window.setMaxSize
 
+
+<!-- phase3-major1-review:window.setMaxSize -->
+#### Source-reviewed contract
+Authority: `src/api/WindowApi.cpp:867-881`.
+
+| Parameter | Type | Required | Default |
+| --- | --- | --- | --- |
+| `windowId` | `string` | No | `caller window` |
+| `width` | `integer` | No | `0` |
+| `height` | `integer` | No | `0` |
+
+**Return keys (vary by response variant)**: `error`, `success`; `success`, `windowId`
+
+**Semantics**: Mutation resolution selects the explicit `windowId` or the calling window; it never falls back to the main window, so a call from an unresolvable context fails rather than resizing an unintended window. Panel (DUI/CUI) callers are rejected with `panelMode: true`. Values are physical pixels, converted to the host's DIP storage using the target window's DPI; `0` (or negative) clears the bound. Applying a constraint re-validates the current window size immediately, so a window already larger than the new maximum is shrunk rather than waiting for the next user resize.
+
+<!-- phase3-major1-review-end:window.setMaxSize -->
 Public API method. Runtime authority: `src/api/WindowApi.cpp:2404`.
 
 | Parameter | Type | Required | Description |
@@ -1055,6 +1165,22 @@ const result = await fb2k.invoke('window.setMicaEffect', { enabled: true, varian
 
 ### window.setMinSize
 
+
+<!-- phase3-major1-review:window.setMinSize -->
+#### Source-reviewed contract
+Authority: `src/api/WindowApi.cpp:831-845`.
+
+| Parameter | Type | Required | Default |
+| --- | --- | --- | --- |
+| `windowId` | `string` | No | `caller window` |
+| `width` | `integer` | No | `0` |
+| `height` | `integer` | No | `0` |
+
+**Return keys (vary by response variant)**: `error`, `success`; `success`, `windowId`
+
+**Semantics**: Mutation resolution selects the explicit `windowId` or the calling window; it never falls back to the main window, so a call from an unresolvable context fails rather than resizing an unintended window. Panel (DUI/CUI) callers are rejected with `panelMode: true`. Values are physical pixels, converted to the host's DIP storage using the target window's DPI, which keeps the constraint stable across DPI changes. Non-positive values normalise to a 1px floor. Applying a constraint re-validates the current window size immediately, so a window already smaller than the new minimum is grown rather than waiting for the next user resize.
+
+<!-- phase3-major1-review-end:window.setMinSize -->
 Public API method. Runtime authority: `src/api/WindowApi.cpp:2402`.
 
 | Parameter | Type | Required | Description |
@@ -1130,6 +1256,21 @@ const result = await fb2k.invoke('window.setPosition', { x: /* value */, y: /* v
 
 ### window.setResizable
 
+
+<!-- phase3-major1-review:window.setResizable -->
+#### Source-reviewed contract
+Authority: `src/api/WindowApi.cpp:901-921`.
+
+| Parameter | Type | Required | Default |
+| --- | --- | --- | --- |
+| `windowId` | `string` | No | `caller window` |
+| `resizable` | `boolean` | No | `true` |
+
+**Return keys (vary by response variant)**: `error`, `success`; `success`, `windowId`; `error`, `success`, `supported`, `windowId`
+
+**Semantics**: Mutation resolution selects the explicit `windowId` or the calling window; it never falls back to the main window. Previously this call always targeted the main window regardless of caller, so invoking it from a popup reconfigured the main window instead. Panel (DUI/CUI) callers are rejected with `panelMode: true`. Setting the value a window already has succeeds — idempotent calls are not failures. `supported: false` is returned only when the target shell has no resizable frame to toggle: fully borderless popups (`frame: false` plus `transparent: true` with no backdrop effect) are created without a sizing border, so runtime toggling is unavailable. Query {@link window.isResizable} for `supportsRuntimeToggle` before relying on this call.
+
+<!-- phase3-major1-review-end:window.setResizable -->
 Public API method. Runtime authority: `src/api/WindowApi.cpp:2406`.
 
 | Parameter | Type | Required | Description |
