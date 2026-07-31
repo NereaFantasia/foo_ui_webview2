@@ -16,8 +16,8 @@ import type { ConfigSetReplaygainModeParams } from "../overrides/config.js";
 import type { CursorSetHiddenParams } from "../overrides/cursor.js";
 import type { DspSetChainParams } from "../overrides/dsp.js";
 import type { TraySetIconParams } from "../overrides/tray.js";
-import type { WindowCreatePopupParams, WindowGetBackdropPolicyParams, WindowSetBackdropPolicyParams, WindowSetPopupBehaviorParams } from "../overrides/window.js";
-export type { ConfigSetReplaygainModeParams, CursorSetHiddenParams, DspSetChainParams, TraySetIconParams, WindowCreatePopupParams, WindowGetBackdropPolicyParams, WindowSetBackdropPolicyParams, WindowSetPopupBehaviorParams };
+import type { WindowCreatePopupParams, WindowGetBackdropPolicyParams, WindowGetMaxSizeParams, WindowGetMinSizeParams, WindowIsResizableParams, WindowSetBackdropPolicyParams, WindowSetMaxSizeParams, WindowSetMinSizeParams, WindowSetPopupBehaviorParams, WindowSetResizableParams } from "../overrides/window.js";
+export type { ConfigSetReplaygainModeParams, CursorSetHiddenParams, DspSetChainParams, TraySetIconParams, WindowCreatePopupParams, WindowGetBackdropPolicyParams, WindowGetMaxSizeParams, WindowGetMinSizeParams, WindowIsResizableParams, WindowSetBackdropPolicyParams, WindowSetMaxSizeParams, WindowSetMinSizeParams, WindowSetPopupBehaviorParams, WindowSetResizableParams };
 
 /**
  * Parameters for `artwork.getAvailableArtwork`.
@@ -3234,16 +3234,6 @@ export type WindowGetDevServerConfigParams = Record<string, never>;
 export type WindowGetDpiScaleParams = JsonObject;
 
 /**
- * Parameters for `window.getMaxSize` (this API takes no parameters).
- */
-export type WindowGetMaxSizeParams = Record<string, never>;
-
-/**
- * Parameters for `window.getMinSize` (this API takes no parameters).
- */
-export type WindowGetMinSizeParams = Record<string, never>;
-
-/**
  * Parameters for `window.getMode` (shape unspecified — pass any JSON object).
  */
 export type WindowGetModeParams = JsonObject;
@@ -3313,11 +3303,6 @@ export type WindowIsMaximizedParams = JsonObject;
  * Parameters for `window.isMinimized` (shape unspecified — pass any JSON object).
  */
 export type WindowIsMinimizedParams = JsonObject;
-
-/**
- * Parameters for `window.isResizable` (this API takes no parameters).
- */
-export type WindowIsResizableParams = Record<string, never>;
 
 /**
  * Parameters for `window.maximize` (shape unspecified — pass any JSON object).
@@ -3471,16 +3456,6 @@ export interface WindowSetFullscreenParams {
 }
 
 /**
- * Parameters for `window.setMaxSize`.
- */
-export interface WindowSetMaxSizeParams {
-    /** @default 0 */
-    width?: number;
-    /** @default 0 */
-    height?: number;
-}
-
-/**
  * Parameters for `window.setMica`.
  */
 export interface WindowSetMicaParams {
@@ -3505,16 +3480,6 @@ export interface WindowSetMicaEffectParams {
 }
 
 /**
- * Parameters for `window.setMinSize`.
- */
-export interface WindowSetMinSizeParams {
-    /** @default 0 */
-    width?: number;
-    /** @default 0 */
-    height?: number;
-}
-
-/**
  * Parameters for `window.setNoDragRegions`.
  */
 export interface WindowSetNoDragRegionsParams {
@@ -3529,14 +3494,6 @@ export interface WindowSetPositionParams {
     x?: number;
     /** @default 0 */
     y?: number;
-}
-
-/**
- * Parameters for `window.setResizable`.
- */
-export interface WindowSetResizableParams {
-    /** @default true */
-    resizable?: boolean;
 }
 
 /**

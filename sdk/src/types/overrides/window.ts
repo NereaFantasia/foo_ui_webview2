@@ -148,3 +148,99 @@ export interface WindowSetBackdropPolicyParams {
     /** Per-field DWM backdrop overrides; pass `null` to clear an individual field. */
     backdropPolicy: WindowBackdropPolicyPatch;
 }
+
+/**
+ * Parameters for `window.setMinSize`.
+ *
+ * The host resolves the target window through the shared window-target
+ * resolver, which lives in a separate translation unit from the handler —
+ * the auto-generator's single-TU AST walk cannot see the `windowId` read,
+ * so this override documents it by hand.
+ *
+ * @codegen-override params:window.setMinSize
+ * @codegen-snapshot height:primitive,width:primitive
+ */
+export interface WindowSetMinSizeParams {
+    /** Target window id; omit to address the calling window. */
+    windowId?: string;
+    /** Lower-bound width in physical pixels. @default 0 */
+    width?: number;
+    /** Lower-bound height in physical pixels. @default 0 */
+    height?: number;
+}
+
+/**
+ * Parameters for `window.getMinSize`.
+ *
+ * `windowId` is read by the shared window-target resolver in a separate
+ * translation unit, invisible to the auto-generator's single-TU AST walk.
+ *
+ * @codegen-override params:window.getMinSize
+ * @codegen-snapshot 
+ */
+export interface WindowGetMinSizeParams {
+    /** Target window id; omit to address the calling window. */
+    windowId?: string;
+}
+
+/**
+ * Parameters for `window.setMaxSize`.
+ *
+ * `windowId` is read by the shared window-target resolver in a separate
+ * translation unit, invisible to the auto-generator's single-TU AST walk.
+ *
+ * @codegen-override params:window.setMaxSize
+ * @codegen-snapshot height:primitive,width:primitive
+ */
+export interface WindowSetMaxSizeParams {
+    /** Target window id; omit to address the calling window. */
+    windowId?: string;
+    /** Upper-bound width in physical pixels; 0 disables the cap. @default 0 */
+    width?: number;
+    /** Upper-bound height in physical pixels; 0 disables the cap. @default 0 */
+    height?: number;
+}
+
+/**
+ * Parameters for `window.getMaxSize`.
+ *
+ * `windowId` is read by the shared window-target resolver in a separate
+ * translation unit, invisible to the auto-generator's single-TU AST walk.
+ *
+ * @codegen-override params:window.getMaxSize
+ * @codegen-snapshot 
+ */
+export interface WindowGetMaxSizeParams {
+    /** Target window id; omit to address the calling window. */
+    windowId?: string;
+}
+
+/**
+ * Parameters for `window.setResizable`.
+ *
+ * `windowId` is read by the shared window-target resolver in a separate
+ * translation unit, invisible to the auto-generator's single-TU AST walk.
+ *
+ * @codegen-override params:window.setResizable
+ * @codegen-snapshot resizable:primitive
+ */
+export interface WindowSetResizableParams {
+    /** Target window id; omit to address the calling window. */
+    windowId?: string;
+    /** Whether the user may resize the window. @default true */
+    resizable?: boolean;
+}
+
+/**
+ * Parameters for `window.isResizable`.
+ *
+ * `windowId` is read by the shared window-target resolver in a separate
+ * translation unit, invisible to the auto-generator's single-TU AST walk.
+ *
+ * @codegen-override params:window.isResizable
+ * @codegen-snapshot 
+ */
+export interface WindowIsResizableParams {
+    /** Target window id; omit to address the calling window. */
+    windowId?: string;
+}
