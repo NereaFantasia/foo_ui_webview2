@@ -437,7 +437,9 @@ Authority: `src/api/WindowApi.cpp:884-898`.
 
 **Return keys (vary by response variant)**: `error`, `success`; `height`, `width`, `windowId`
 
-**Semantics**: Observation resolution selects the explicit `windowId` or the calling window; it does **not** fall back to the main window, so a call from an unresolvable context fails instead of silently reporting another window's constraints. Panel (DUI/CUI) callers are rejected with `panelMode: true` because a panel is not a window shell. Values are physical pixels; the host stores constraints in DIPs and converts using the target window's DPI. `0` means "no upper bound". The returned values are the **requested** constraints, not the currently effective ones, so `set` followed by `get` round-trips losslessly.
+**Semantics**: Observation resolution selects the explicit `windowId` or the calling window; it does **not** fall back to the main window, so a call from an unresolvable context fails instead of silently reporting another window's constraints. Panel (DUI/CUI) callers are rejected with `panelMode: true` because a panel is not a window shell. Values are physical pixels; the host stores constraints in DIPs and converts using the target window's DPI. `0` means "no upper bound" and survives the conversion exactly.
+
+The returned values are the **requested** constraints, not the currently effective window size. Note that a physical → DIP → physical round-trip is quantized to whole DIPs, so at non-100% scaling `get` may differ from the value passed to `set` by up to 1px per axis (for example, `202px` at 125% reads back as `203px`). Treat the getters as reporting the constraint you set to within ±1px rather than byte-for-byte. `0` is exempt.
 
 <!-- phase3-major1-review-end:window.getMaxSize -->
 Public API method. Runtime authority: `src/api/WindowApi.cpp:2405`.
@@ -463,7 +465,9 @@ Authority: `src/api/WindowApi.cpp:848-864`.
 
 **Return keys (vary by response variant)**: `error`, `success`; `height`, `width`, `windowId`
 
-**Semantics**: Observation resolution selects the explicit `windowId` or the calling window; it does **not** fall back to the main window, so a call from an unresolvable context fails instead of silently reporting another window's constraints. Panel (DUI/CUI) callers are rejected with `panelMode: true` because a panel is not a window shell. Values are physical pixels; the host stores constraints in DIPs and converts using the target window's DPI. The returned values are the **requested** constraints, not the currently effective ones, so `set` followed by `get` round-trips losslessly.
+**Semantics**: Observation resolution selects the explicit `windowId` or the calling window; it does **not** fall back to the main window, so a call from an unresolvable context fails instead of silently reporting another window's constraints. Panel (DUI/CUI) callers are rejected with `panelMode: true` because a panel is not a window shell. Values are physical pixels; the host stores constraints in DIPs and converts using the target window's DPI.
+
+The returned values are the **requested** constraints, not the currently effective window size. Note that a physical → DIP → physical round-trip is quantized to whole DIPs, so at non-100% scaling `get` may differ from the value passed to `set` by up to 1px per axis (for example, `202px` at 125% reads back as `203px`). Treat the getters as reporting the constraint you set to within ±1px rather than byte-for-byte.
 
 <!-- phase3-major1-review-end:window.getMinSize -->
 Public API method. Runtime authority: `src/api/WindowApi.cpp:2403`.
@@ -661,9 +665,9 @@ Authority: `src/api/WindowApi.cpp:924-933`.
 | --- | --- | --- | --- |
 | `windowId` | `string` | No | `caller window` |
 
-**Return keys (vary by response variant)**: `error`, `success`; `resizable`, `supportsRuntimeToggle`, `windowId`
+**Return keys (vary by response variant)**: `error`, `success`; `resizable`, `windowId`
 
-**Semantics**: Observation resolution selects the explicit `windowId` or the calling window; it does **not** fall back to the main window. Panel (DUI/CUI) callers are rejected with `panelMode: true`. `supportsRuntimeToggle` reports whether {@link window.setResizable} can change this window at runtime: fully borderless popups (`frame: false` plus `transparent: true` with no backdrop effect) have no resizable frame to add or remove, so they report `false`.
+**Semantics**: Observation resolution selects the explicit `windowId` or the calling window; it does **not** fall back to the main window. Panel (DUI/CUI) callers are rejected with `panelMode: true`. Reports the requested resizable state; every window shell — including fully borderless popups — supports changing it at runtime via {@link window.setResizable}.
 
 <!-- phase3-major1-review-end:window.isResizable -->
 Public API method. Runtime authority: `src/api/WindowApi.cpp:2407`.
@@ -1266,9 +1270,11 @@ Authority: `src/api/WindowApi.cpp:901-921`.
 | `windowId` | `string` | No | `caller window` |
 | `resizable` | `boolean` | No | `true` |
 
-**Return keys (vary by response variant)**: `error`, `success`; `success`, `windowId`; `error`, `success`, `supported`, `windowId`
+**Return keys (vary by response variant)**: `error`, `success`; `success`, `windowId`
 
-**Semantics**: Mutation resolution selects the explicit `windowId` or the calling window; it never falls back to the main window. Previously this call always targeted the main window regardless of caller, so invoking it from a popup reconfigured the main window instead. Panel (DUI/CUI) callers are rejected with `panelMode: true`. Setting the value a window already has succeeds — idempotent calls are not failures. `supported: false` is returned only when the target shell has no resizable frame to toggle: fully borderless popups (`frame: false` plus `transparent: true` with no backdrop effect) are created without a sizing border, so runtime toggling is unavailable. Query {@link window.isResizable} for `supportsRuntimeToggle` before relying on this call.
+**Semantics**: Mutation resolution selects the explicit `windowId` or the calling window; it never falls back to the main window. Previously this call always targeted the main window regardless of caller, so invoking it from a popup reconfigured the main window instead. Panel (DUI/CUI) callers are rejected with `panelMode: true`. Setting the value a window already has succeeds — idempotent calls are not failures.
+
+Every window shell supports this at runtime, including fully borderless popups (`frame: false` plus `transparent: true` with no backdrop effect): those windows collapse their entire non-client area, so adding a sizing border changes hit-testing without altering appearance. `success: false` therefore indicates a genuine Win32 failure (the style could not be written or the frame could not be refreshed), not an unsupported window shape; the requested state is not committed in that case.
 
 <!-- phase3-major1-review-end:window.setResizable -->
 Public API method. Runtime authority: `src/api/WindowApi.cpp:2406`.

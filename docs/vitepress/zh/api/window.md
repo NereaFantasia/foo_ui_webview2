@@ -852,7 +852,9 @@ const result = await fb2k.invoke('window.getDevServerConfig');
 
 **返回键（随响应变体而异）**：`error`、`success`；`height`、`width`、`windowId`
 
-**语义**：观测型解析取显式 `windowId` 或调用方窗口，**不再回退主窗口**——无法解析调用上下文时直接失败，而不是静默返回另一个窗口的约束。面板（DUI/CUI）调用方会被拒绝并返回 `panelMode: true`，因为面板不是窗口 shell。数值单位为物理像素；宿主以 DIP 存储约束，并按**目标窗口**的 DPI 换算。`0` 表示无上限。返回的是**请求值**而非当前生效值，故 `set` 后 `get` 可无损往返。
+**语义**：观测型解析取显式 `windowId` 或调用方窗口，**不再回退主窗口**——无法解析调用上下文时直接失败，而不是静默返回另一个窗口的约束。面板（DUI/CUI）调用方会被拒绝并返回 `panelMode: true`，因为面板不是窗口 shell。数值单位为物理像素；宿主以 DIP 存储约束，并按**目标窗口**的 DPI 换算。`0` 表示无上限，且换算前后精确不变。
+
+返回的是**请求值**，不是当前窗口尺寸。注意「物理 → DIP → 物理」的往返会量化到整数 DIP，故在非 100% 缩放下 `get` 与传给 `set` 的值每轴最多相差 1px（例如 125% 下 `202px` 读回为 `203px`）。请把 getter 理解为「在 ±1px 内复述你设置的约束」，而非逐字节一致。`0` 不受此影响。
 
 <!-- phase3-major1-review-end:window.getMaxSize -->
 公开 API。运行时权威：`src/api/WindowApi.cpp:2405`。
@@ -879,7 +881,9 @@ const result = await fb2k.invoke('window.getMaxSize');
 
 **返回键（随响应变体而异）**：`error`、`success`；`height`、`width`、`windowId`
 
-**语义**：观测型解析取显式 `windowId` 或调用方窗口，**不再回退主窗口**——无法解析调用上下文时直接失败，而不是静默返回另一个窗口的约束。面板（DUI/CUI）调用方会被拒绝并返回 `panelMode: true`，因为面板不是窗口 shell。数值单位为物理像素；宿主以 DIP 存储约束，并按**目标窗口**的 DPI 换算。返回的是**请求值**而非当前生效值，故 `set` 后 `get` 可无损往返。
+**语义**：观测型解析取显式 `windowId` 或调用方窗口，**不再回退主窗口**——无法解析调用上下文时直接失败，而不是静默返回另一个窗口的约束。面板（DUI/CUI）调用方会被拒绝并返回 `panelMode: true`，因为面板不是窗口 shell。数值单位为物理像素；宿主以 DIP 存储约束，并按**目标窗口**的 DPI 换算。
+
+返回的是**请求值**，不是当前窗口尺寸。注意「物理 → DIP → 物理」的往返会量化到整数 DIP，故在非 100% 缩放下 `get` 与传给 `set` 的值每轴最多相差 1px（例如 125% 下 `202px` 读回为 `203px`）。请把 getter 理解为「在 ±1px 内复述你设置的约束」，而非逐字节一致。
 
 <!-- phase3-major1-review-end:window.getMinSize -->
 公开 API。运行时权威：`src/api/WindowApi.cpp:2403`。
@@ -971,9 +975,9 @@ const result = await fb2k.invoke('window.isClickThrough', { windowId: /* value *
 | --- | --- | --- | --- |
 | `windowId` | `string` | 否 | `调用方窗口` |
 
-**返回键（随响应变体而异）**：`error`、`success`；`resizable`、`supportsRuntimeToggle`、`windowId`
+**返回键（随响应变体而异）**：`error`、`success`；`resizable`、`windowId`
 
-**语义**：观测型解析取显式 `windowId` 或调用方窗口，**不再回退主窗口**。面板（DUI/CUI）调用方会被拒绝并返回 `panelMode: true`。`supportsRuntimeToggle` 表示 `window.setResizable` 能否在运行时改变该窗口：完全无边框的 popup（`frame: false` 且 `transparent: true` 且无背景效果）没有可增删的可调整边框，故为 `false`。
+**语义**：观测型解析取显式 `windowId` 或调用方窗口，**不再回退主窗口**。面板（DUI/CUI）调用方会被拒绝并返回 `panelMode: true`。返回的是请求态的可调整性；所有窗口 shell（含完全无边框的 popup）都支持通过 `window.setResizable` 在运行时改变它。
 
 <!-- phase3-major1-review-end:window.isResizable -->
 公开 API。运行时权威：`src/api/WindowApi.cpp:2407`。
@@ -1461,9 +1465,11 @@ const result = await fb2k.invoke('window.setPosition', { x: /* value */, y: /* v
 | `windowId` | `string` | 否 | `调用方窗口` |
 | `resizable` | `boolean` | 否 | `true` |
 
-**返回键（随响应变体而异）**：`error`、`success`；`success`、`windowId`；`error`、`success`、`supported`、`windowId`
+**返回键（随响应变体而异）**：`error`、`success`；`success`、`windowId`
 
-**语义**：变更型解析取显式 `windowId` 或调用方窗口，**绝不回退主窗口**。此前该调用无论来自哪个窗口都硬改主窗口，故从 popup 调用会改错窗口。面板（DUI/CUI）调用方会被拒绝并返回 `panelMode: true`。设为与当前相同的值视为成功——幂等调用不算失败。仅当目标 shell 没有可切换的可调整边框时才返回 `supported: false`：完全无边框的 popup（`frame: false` 且 `transparent: true` 且无背景效果）创建时就没有尺寸边框，无法在运行时切换。依赖此调用前可先用 `window.isResizable` 查询 `supportsRuntimeToggle`。
+**语义**：变更型解析取显式 `windowId` 或调用方窗口，**绝不回退主窗口**。此前该调用无论来自哪个窗口都硬改主窗口，故从 popup 调用会改错窗口。面板（DUI/CUI）调用方会被拒绝并返回 `panelMode: true`。设为与当前相同的值视为成功——幂等调用不算失败。
+
+所有窗口 shell 都支持运行时切换，包括完全无边框的 popup（`frame: false` 且 `transparent: true` 且无背景效果）：这类窗口会把整个非客户区收掉，故新增尺寸边框只改变命中测试，不改变外观。因此 `success: false` 表示 Win32 调用**真实失败**（样式未写入或帧刷新失败），而非「窗口形态不支持」；此时请求态不会被提交。
 
 <!-- phase3-major1-review-end:window.setResizable -->
 公开 API。运行时权威：`src/api/WindowApi.cpp:2406`。
