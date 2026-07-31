@@ -9,6 +9,7 @@
 #include "window/WindowManager.h"
 #include "window/WindowTargetResolver.h"
 #include "window/WindowShellBase.h"
+#include "window/WindowGeometryMath.h"
 #include "webview/WebViewHost.h"
 #include "core/SecurityConfig.h"
 #include "core/WebViewPanel.h"  // panel.getConfig/setConfig API
@@ -814,85 +815,121 @@ json WindowCenter(const json& params) {
 
 // ========== Size Constraints ==========
 
+// 取目标 shell 当前 DPI。
+//
+// 尺寸约束的 wire 单位仍是**物理像素**（P1' 不翻转 wire 单位），而 shell
+// 存储单位是 DIP，故 handler 层需要按目标窗口的 DPI 换算。
+//
+// 换算基准必须取**目标窗口**的 DPI，而不是 caller 的：多显示器混合缩放下
+// 两者可能不同，用错会引入与 D2 同类的量纲错误。
+static int GetShellDpi(WindowShellBase* shell) {
+    HWND hwnd = shell ? shell->GetShellHwnd() : nullptr;
+    if (!hwnd || !IsWindow(hwnd)) return window_geometry::kBaselineDpi;
+    return GetDpiForWindow(hwnd);
+}
+
 json WindowSetMinSize(const json& params) {
     PANEL_MODE_UNSUPPORTED("window.setMinSize");
-    auto* ui = WebViewUI::GetInstance();
-    if (!ui || !ui->GetMainWindow()) {
-        return { {"success", false}, {"error", "Window not found"} };
-    }
-    
+    auto target = WindowTargetResolver::ResolveForMutation(params);
+    if (!target.Success()) return target.ErrorResponse();
+
     int width = params.value("width", 0);
     int height = params.value("height", 0);
-    
-    ui->GetMainWindow()->SetMinSize(width, height);
-    
-    return { {"success", true} };
+
+    const int dpi = GetShellDpi(target.shell);
+    target.shell->SetMinSizeDip(
+        window_geometry::PhysicalToDip(width, dpi),
+        window_geometry::PhysicalToDip(height, dpi));
+
+    return { {"success", true}, {"windowId", target.windowId} };
 }
 
 
 json WindowGetMinSize(const json& params) {
-    auto* ui = WebViewUI::GetInstance();
-    if (!ui || !ui->GetMainWindow()) {
-        return { {"width", 0}, {"height", 0} };
-    }
-    
-    int width, height;
-    ui->GetMainWindow()->GetMinSize(width, height);
-    
-    return { {"width", width}, {"height", height} };
+    auto target = WindowTargetResolver::ResolveForObservation(params);
+    if (!target.Success()) return target.ErrorResponse();
+
+    int widthDip = 0;
+    int heightDip = 0;
+    target.shell->GetMinSizeDip(widthDip, heightDip);
+
+    // 返回**请求值**（换算回 wire 单位）而非生效值，保证 set 后 get 的往返
+    // 语义稳定（Q9-b）。生效值/钳制信息由 setSize 的响应承载。
+    const int dpi = GetShellDpi(target.shell);
+    return {
+        {"width", window_geometry::DipToPhysical(widthDip, dpi)},
+        {"height", window_geometry::DipToPhysical(heightDip, dpi)},
+        {"windowId", target.windowId}
+    };
 }
 
 
 json WindowSetMaxSize(const json& params) {
     PANEL_MODE_UNSUPPORTED("window.setMaxSize");
-    auto* ui = WebViewUI::GetInstance();
-    if (!ui || !ui->GetMainWindow()) {
-        return { {"success", false}, {"error", "Window not found"} };
-    }
-    
+    auto target = WindowTargetResolver::ResolveForMutation(params);
+    if (!target.Success()) return target.ErrorResponse();
+
     int width = params.value("width", 0);
     int height = params.value("height", 0);
-    
-    ui->GetMainWindow()->SetMaxSize(width, height);
-    
-    return { {"success", true} };
+
+    const int dpi = GetShellDpi(target.shell);
+    target.shell->SetMaxSizeDip(
+        window_geometry::PhysicalToDip(width, dpi),
+        window_geometry::PhysicalToDip(height, dpi));
+
+    return { {"success", true}, {"windowId", target.windowId} };
 }
 
 
 json WindowGetMaxSize(const json& params) {
-    auto* ui = WebViewUI::GetInstance();
-    if (!ui || !ui->GetMainWindow()) {
-        return { {"width", 0}, {"height", 0} };
-    }
-    
-    int width, height;
-    ui->GetMainWindow()->GetMaxSize(width, height);
-    
-    return { {"width", width}, {"height", height} };
+    auto target = WindowTargetResolver::ResolveForObservation(params);
+    if (!target.Success()) return target.ErrorResponse();
+
+    int widthDip = 0;
+    int heightDip = 0;
+    target.shell->GetMaxSizeDip(widthDip, heightDip);
+
+    const int dpi = GetShellDpi(target.shell);
+    return {
+        {"width", window_geometry::DipToPhysical(widthDip, dpi)},
+        {"height", window_geometry::DipToPhysical(heightDip, dpi)},
+        {"windowId", target.windowId}
+    };
 }
 
 
 json WindowSetResizable(const json& params) {
     PANEL_MODE_UNSUPPORTED("window.setResizable");
-    auto* ui = WebViewUI::GetInstance();
-    if (!ui || !ui->GetMainWindow()) {
-        return { {"success", false}, {"error", "Window not found"} };
-    }
-    
+    auto target = WindowTargetResolver::ResolveForMutation(params);
+    if (!target.Success()) return target.ErrorResponse();
+
     bool resizable = params.value("resizable", true);
-    ui->GetMainWindow()->SetResizable(resizable);
-    
-    return { {"success", true} };
+
+    // SetResizableShell 只在「该 shell 形态不支持运行时切换」时返回 false
+    // （WS_POPUP 形态无 WS_THICKFRAME 可增删）。幂等设值返回 true，符合
+    // Q10 约束①：「无变化」不得报失败。
+    if (!target.shell->SetResizableShell(resizable)) {
+        return {
+            {"success", false},
+            {"supported", false},
+            {"windowId", target.windowId},
+            {"error", "This window shell does not support toggling resizable at runtime"}
+        };
+    }
+
+    return { {"success", true}, {"windowId", target.windowId} };
 }
 
 
 json WindowIsResizable(const json& params) {
-    auto* ui = WebViewUI::GetInstance();
-    if (!ui || !ui->GetMainWindow()) {
-        return { {"resizable", true} };
-    }
-    
-    return { {"resizable", ui->GetMainWindow()->IsResizable()} };
+    auto target = WindowTargetResolver::ResolveForObservation(params);
+    if (!target.Success()) return target.ErrorResponse();
+
+    return {
+        {"resizable", target.shell->IsResizableShell()},
+        {"supportsRuntimeToggle", target.shell->SupportsRuntimeResizableToggle()},
+        {"windowId", target.windowId}
+    };
 }
 
 

@@ -206,6 +206,7 @@
     <ClCompile Include="src\window\WindowTargetResolver.cpp" />
     <ClCompile Include="src\window\WindowTargetPolicy.cpp" />
     <ClCompile Include="src\window\WindowGeometryMath.cpp" />
+    <ClCompile Include="src\window\WindowDpiProbe.cpp" />
     <ClCompile Include="src\window\WindowManager.cpp" />
     <ClCompile Include="src\webview\WebViewHost.cpp" />
     <ClCompile Include="src\webview\WebViewEnvironment.cpp" />
@@ -309,6 +310,7 @@
     <ClInclude Include="src\window\WindowTargetResolver.h" />
     <ClInclude Include="src\window\WindowTargetPolicy.h" />
     <ClInclude Include="src\window\WindowGeometryMath.h" />
+    <ClInclude Include="src\window\WindowDpiProbe.h" />
     <ClInclude Include="src\window\WindowManager.h" />
     <ClInclude Include="src\webview\WebViewHost.h" />
     <ClInclude Include="src\webview\WebViewEnvironment.h" />

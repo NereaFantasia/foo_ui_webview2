@@ -54,6 +54,8 @@
 #include "utils/WindowUtils.h"
 #include "core/PreferencesPage.h"
 #include "window/WindowManager.h"
+#include "window/WindowGeometryMath.h"
+#include "window/WindowDpiProbe.h"
 #include "window/MainWindowInternal.h"
 
 #pragma comment(lib, "uxtheme.lib")
@@ -1244,16 +1246,27 @@ LRESULT MainWindow::HandleMessage(UINT msg, WPARAM wParam, LPARAM lParam) {
         case WM_GETMINMAXINFO: {
             auto* mmi = reinterpret_cast<MINMAXINFO*>(lParam);
             
+            // 约束以 DIP 存储，此处换算为物理像素。
+            // 这是唯一把约束值交给 Win32 的地方，也是唯一天然知道当前 DPI
+            // 的时刻，因此换算落在这里（Q9）。DPI 变更后系统下次询问会自动
+            // 用新 DPI 换算，无需额外的重算逻辑。
+            //
+            // 注意：hwnd_ 在 WM_NCCREATE 前尚未赋值，而 WM_GETMINMAXINFO
+            // 可能早于它到达（CreateWindowEx 内部），故 dpi 取用需容错。
+            const int dpi = (hwnd_ && IsWindow(hwnd_))
+                ? GetDpiForWindow(hwnd_)
+                : window_geometry::kBaselineDpi;
+            
             // 最小尺寸
-            mmi->ptMinTrackSize.x = minWidth_;
-            mmi->ptMinTrackSize.y = minHeight_;
+            mmi->ptMinTrackSize.x = window_geometry::DipToPhysical(minWidthDip_, dpi);
+            mmi->ptMinTrackSize.y = window_geometry::DipToPhysical(minHeightDip_, dpi);
             
             // 最大尺寸 (0 表示无限制)
-            if (maxWidth_ > 0) {
-                mmi->ptMaxTrackSize.x = maxWidth_;
+            if (maxWidthDip_ > 0) {
+                mmi->ptMaxTrackSize.x = window_geometry::DipToPhysical(maxWidthDip_, dpi);
             }
-            if (maxHeight_ > 0) {
-                mmi->ptMaxTrackSize.y = maxHeight_;
+            if (maxHeightDip_ > 0) {
+                mmi->ptMaxTrackSize.y = window_geometry::DipToPhysical(maxHeightDip_, dpi);
             }
 
             // frameless 最大化时，通过 ptMaxPosition/ptMaxSize 将窗口向四周扩展
@@ -3359,6 +3372,11 @@ void MainWindow::OnDpiChanged(WPARAM wParam, LPARAM lParam) {
         suggested->bottom - suggested->top,
         SWP_NOZORDER | SWP_NOACTIVATE);
     
+    // DPI 提高后，系统建议的尺寸可能已低于新 DPI 下的物理最小值。
+    // WM_GETMINMAXINFO 只约束后续的拖拽/程序化改尺寸，不会追认这次
+    // 系统主动施加的尺寸，故此处主动 revalidate（Q9-c）。
+    RevalidateSizeAgainstConstraints();
+    
     // 通知 WebView DPI 变化
     if (webView_ && webView_->IsReady()) {
         int dpi = HIWORD(wParam);
@@ -3521,14 +3539,46 @@ void MainWindow::ShowSystemMenu(int screenX, int screenY) {
 // 窗口尺寸限制方法
 // ============================================
 
-void MainWindow::SetMinSize(int width, int height) {
-    minWidth_ = width > 0 ? width : 1;
-    minHeight_ = height > 0 ? height : 1;
+void MainWindow::SetMinSizeDip(int widthDip, int heightDip) {
+    minWidthDip_ = widthDip > 0 ? widthDip : 1;
+    minHeightDip_ = heightDip > 0 ? heightDip : 1;
+
+    // DPI 提高后，当前窗口尺寸可能已低于新的物理下限。系统不会主动纠正
+    // 已存在的窗口尺寸（WM_GETMINMAXINFO 只约束后续的拖拽/程序化改尺寸），
+    // 故此处主动 revalidate 一次，使新约束立即生效而不是等到下次 resize。
+    RevalidateSizeAgainstConstraints();
 }
 
-void MainWindow::SetMaxSize(int width, int height) {
-    maxWidth_ = width >= 0 ? width : 0;
-    maxHeight_ = height >= 0 ? height : 0;
+void MainWindow::SetMaxSizeDip(int widthDip, int heightDip) {
+    maxWidthDip_ = widthDip >= 0 ? widthDip : 0;
+    maxHeightDip_ = heightDip >= 0 ? heightDip : 0;
+
+    RevalidateSizeAgainstConstraints();
+}
+
+void MainWindow::RevalidateSizeAgainstConstraints() {
+    if (!hwnd_ || !IsWindow(hwnd_)) return;
+    // 最大化/全屏由系统或全屏逻辑掌管尺寸，不在此干预。
+    if (isMaximized_ || isFullscreen_ || IsZoomed(hwnd_)) return;
+
+    RECT rc{};
+    if (!GetWindowRect(hwnd_, &rc)) return;
+
+    const int curW = rc.right - rc.left;
+    const int curH = rc.bottom - rc.top;
+    const int dpi = GetDpiForWindow(hwnd_);
+
+    const auto clamped = window_geometry::ClampSize(
+        curW, curH,
+        window_geometry::DipToPhysical(minWidthDip_, dpi),
+        window_geometry::DipToPhysical(minHeightDip_, dpi),
+        window_geometry::DipToPhysical(maxWidthDip_, dpi),
+        window_geometry::DipToPhysical(maxHeightDip_, dpi));
+
+    if (!clamped.clamped) return;
+
+    SetWindowPos(hwnd_, nullptr, 0, 0, clamped.width, clamped.height,
+        SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE);
 }
 
 
@@ -3574,6 +3624,11 @@ void MainWindow::SaveWindowPosition() {
     LOG("SaveWindowPosition: x=", x, " y=", y, " w=", width, " h=", height, " max=", maximized);
 }
 
+int MainWindow::GetDpiForSavedRect(int x, int y, int width, int height) {
+    // 委托给共享探测器（两个 shell 共用，避免各自复制 shcore 解析逻辑）。
+    return window_dpi_probe::GetDpiForScreenRect(x, y, width, height);
+}
+
 void MainWindow::RestoreWindowPosition(int& x, int& y, int& width, int& height, int& showCmd) {
     // 默认值
     width = 1280;
@@ -3601,11 +3656,24 @@ void MainWindow::RestoreWindowPosition(int& x, int& y, int& width, int& height, 
     bool maximized = false;
     window_config::GetWindowPosition(x, y, width, height, maximized);
     
-    // 验证窗口尺寸是否合理
-    if (width < minWidth_) width = minWidth_;
-    if (height < minHeight_) height = minHeight_;
-    if (maxWidth_ > 0 && width > maxWidth_) width = maxWidth_;
-    if (maxHeight_ > 0 && height > maxHeight_) height = maxHeight_;
+    // 验证窗口尺寸是否合理。
+    //
+    // 保存值是**物理像素**（来自 GetWindowRect），而约束字段是 DIP，
+    // 故须先把约束换算到物理空间再比较——直接比较会在非 100% 缩放下
+    // 用错量纲。
+    //
+    // 此函数在 Create() 内、CreateWindowExW **之前**被调用，此时尚无
+    // hwnd_ 可供 GetDpiForWindow，故用保存的窗口矩形所在显示器的 DPI。
+    // 取不到时退回基准 DPI（等价于不缩放，即旧行为）。
+    const int restoreDpi = GetDpiForSavedRect(x, y, width, height);
+    const auto clamped = window_geometry::ClampSize(
+        width, height,
+        window_geometry::DipToPhysical(minWidthDip_, restoreDpi),
+        window_geometry::DipToPhysical(minHeightDip_, restoreDpi),
+        window_geometry::DipToPhysical(maxWidthDip_, restoreDpi),
+        window_geometry::DipToPhysical(maxHeightDip_, restoreDpi));
+    width = clamped.width;
+    height = clamped.height;
     
     // 验证窗口位置是否在任一显示器内
     // 使用 MonitorFromRect 检查窗口是否可见

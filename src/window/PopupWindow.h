@@ -168,6 +168,30 @@ public:
     void SetFullscreenFlag(bool isFullscreen) override;
     bool IsActive() const override;
 
+    // ========== 尺寸约束（单位：DIP，运行时可变） ==========
+    //
+    // P1' 之前这些值只存在于 createParams_（创建期不可变），运行时无法修改。
+    // 现提升为独立的可变字段，createParams_ 只作为初始值来源。
+    void SetMinSizeDip(int widthDip, int heightDip) override;
+    void GetMinSizeDip(int& widthDip, int& heightDip) const override {
+        widthDip = minWidthDip_;
+        heightDip = minHeightDip_;
+    }
+    void SetMaxSizeDip(int widthDip, int heightDip) override;
+    void GetMaxSizeDip(int& widthDip, int& heightDip) const override {
+        widthDip = maxWidthDip_;
+        heightDip = maxHeightDip_;
+    }
+    bool SetResizableShell(bool resizable) override;
+    bool IsResizableShell() const override { return resizable_; }
+    // WS_POPUP 形态（桌面歌词等 frame=false + transparent + 无 DWM 效果）
+    // 没有 WS_THICKFRAME 可供增删，故不支持运行时切换。
+    bool SupportsRuntimeResizableToggle() const override { return !usePopupStyle_; }
+
+    // 依当前 min/max 约束校正窗口尺寸。
+    // 约束变化后已存在的窗口尺寸不会被系统自动纠正，需主动 revalidate。
+    void RevalidateSizeAgainstConstraints();
+
     // ========== 标题栏/拖拽区域 ==========
     static constexpr int DEFAULT_TITLEBAR_HEIGHT = 32;
     int GetTitlebarHeight() const { return titlebarHeight_; }
@@ -190,6 +214,16 @@ private:
     bool isActive_ = true;
     bool restoreFromMinimizePending_ = false;
     int titlebarHeight_ = DEFAULT_TITLEBAR_HEIGHT;
+
+    // 尺寸约束与可调整性的运行时状态（单位：DIP）。
+    // 初值在 Create() 中从 createParams_ 复制；此后二者可能分歧，
+    // 消费端（WM_GETMINMAXINFO / 样式计算）一律读这些字段，勿读 createParams_。
+    int minWidthDip_ = 200;
+    int minHeightDip_ = 150;
+    int maxWidthDip_ = 0;   // 0 = 无限制
+    int maxHeightDip_ = 0;
+    bool resizable_ = true;
+
     std::vector<DragRegion> dragRegions_;
     std::vector<DragRegion> noDragRegions_;
     mutable std::mutex regionsMutex_;

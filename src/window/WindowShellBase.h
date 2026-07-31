@@ -102,6 +102,32 @@ public:
     virtual bool IsActive() const = 0;
     virtual bool IsFrameless() const = 0;
 
+    // ========== 尺寸约束（单位：DIP） ==========
+    //
+    // 权威单位是 **DIP**，物理像素换算只发生在把值交给 Win32 的那一刻
+    // （各 shell 的 WM_GETMINMAXINFO 处，那里才知道窗口当前 DPI）。
+    // 因此这组接口的入参与返回值一律是 DIP，调用方（API handler）负责
+    // 在 wire 单位与 DIP 之间换算。
+    //
+    // 约定：
+    //   - min <= 0 表示该维度无下限
+    //   - max <= 0 表示该维度无上限
+    //   - min 与 max 矛盾时由消费端决定优先级（现状为 max 胜，见
+    //     WindowGeometryMath::ClampSize 的说明）
+    virtual void SetMinSizeDip(int widthDip, int heightDip) = 0;
+    virtual void GetMinSizeDip(int& widthDip, int& heightDip) const = 0;
+    virtual void SetMaxSizeDip(int widthDip, int heightDip) = 0;
+    virtual void GetMaxSizeDip(int& widthDip, int& heightDip) const = 0;
+
+    // 是否允许用户拖拽调整大小。
+    // 返回 false 表示调用未生效（例如该 shell 形态不支持可变边框）。
+    virtual bool SetResizableShell(bool resizable) = 0;
+    virtual bool IsResizableShell() const = 0;
+    // 该 shell 当前形态是否支持运行时切换可调整大小。
+    // WS_POPUP 形态的 popup（桌面歌词等全透明无边框场景）没有 WS_THICKFRAME
+    // 可供增删，故恒为 false。
+    virtual bool SupportsRuntimeResizableToggle() const = 0;
+
     // ========== 全屏预保存状态（per-window，Chromium 风格） ==========
     // savedWindowInfo_.has_value() == true 表示窗口当前处于全屏模式。
     // EnterFullscreenMode 设置，ExitFullscreenMode 读取后 reset。

@@ -85,19 +85,40 @@ public:
     // 显示上下文菜单（供 API 调用）
     void ShowContextMenu(int screenX, int screenY);
     
-    // ========== 窗口尺寸限制 ==========
+    // ========== 窗口尺寸限制（存储单位：DIP） ==========
+    //
+    // 权威单位是 DIP；物理像素换算只发生在 WM_GETMINMAXINFO 内
+    // （那里才知道窗口当前 DPI）。详见 WindowShellBase 的接口说明。
     
-    // 设置/获取最小尺寸
-    void SetMinSize(int width, int height);
-    void GetMinSize(int& width, int& height) const { width = minWidth_; height = minHeight_; }
+    void SetMinSizeDip(int widthDip, int heightDip) override;
+    void GetMinSizeDip(int& widthDip, int& heightDip) const override {
+        widthDip = minWidthDip_;
+        heightDip = minHeightDip_;
+    }
     
-    // 设置/获取最大尺寸 (0 表示无限制)
-    void SetMaxSize(int width, int height);
-    void GetMaxSize(int& width, int& height) const { width = maxWidth_; height = maxHeight_; }
+    // 0 表示无限制
+    void SetMaxSizeDip(int widthDip, int heightDip) override;
+    void GetMaxSizeDip(int& widthDip, int& heightDip) const override {
+        widthDip = maxWidthDip_;
+        heightDip = maxHeightDip_;
+    }
     
     // 设置/获取是否可调整大小
     void SetResizable(bool resizable);
     bool IsResizable() const { return resizable_; }
+    
+    // 依当前 min/max 约束校正窗口尺寸。
+    // 供 SetMinSizeDip/SetMaxSizeDip 与 WM_DPICHANGED 复用：DPI 变化或约束
+    // 变化后，已存在的窗口尺寸不会被系统自动纠正，需主动 revalidate。
+    void RevalidateSizeAgainstConstraints();
+    
+    bool SetResizableShell(bool resizable) override {
+        SetResizable(resizable);
+        return true;
+    }
+    bool IsResizableShell() const override { return resizable_; }
+    // 主窗口始终是标准可变边框形态，运行时切换恒可用。
+    bool SupportsRuntimeResizableToggle() const override { return true; }
     
     // ========== 运行时标题栏控制 ==========
     
@@ -298,11 +319,13 @@ private:
     static constexpr UINT_PTR SHORT_REVEAL_TIMER_ID = 140;
     static constexpr DWORD SHORT_REVEAL_TIMEOUT_MS = 250;
     
-    // 窗口尺寸限制
-    int minWidth_ = 400;
-    int minHeight_ = 300;
-    int maxWidth_ = 0;   // 0 表示无限制
-    int maxHeight_ = 0;  // 0 表示无限制
+    // 窗口尺寸限制（单位：DIP）
+    // 字段名带 Dip 后缀是有意为之：这些值不可直接写入 MINMAXINFO，
+    // 必须先经 window_geometry::DipToPhysical 换算。
+    int minWidthDip_ = 400;
+    int minHeightDip_ = 300;
+    int maxWidthDip_ = 0;   // 0 表示无限制
+    int maxHeightDip_ = 0;  // 0 表示无限制
     
     // 窗口圆角偏好
     std::string cornerPreference_ = "default";  // default, none, round, small
@@ -416,6 +439,11 @@ private:
     // 窗口位置记忆
     void SaveWindowPosition();
     void RestoreWindowPosition(int& x, int& y, int& width, int& height, int& showCmd);
+    
+    // 推导「保存的窗口矩形」所在显示器的 DPI。
+    // RestoreWindowPosition 在 CreateWindowExW 之前运行，无 hwnd_ 可用，
+    // 故不能用 GetDpiForWindow。取不到时返回基准 DPI（等价于不缩放）。
+    static int GetDpiForSavedRect(int x, int y, int width, int height);
     
     // 菜单命令ID
     enum MenuCommands {

@@ -41,6 +41,10 @@ namespace ApiError {
     constexpr const char* POPUP_CREATE_FAILED = "Failed to create popup window";
     constexpr const char* MAX_POPUPS_REACHED = "Maximum number of popup windows reached";
     constexpr const char* STANDALONE_ONLY = "This API is only available in standalone window mode";
+    // 调用方是 DUI/CUI 面板实例。面板不是窗口 shell（不实现 WindowShellBase），
+    // 无法作为窗口 API 的 target，必须显式失败而非回退到其他窗口。
+    constexpr const char* PANEL_CALLER_UNSUPPORTED =
+        "Window shell APIs are not supported for panel callers";
 }
 
 // API success messages (rarely used, for consistency)

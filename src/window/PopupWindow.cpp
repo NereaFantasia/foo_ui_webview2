@@ -19,6 +19,8 @@
 #include <cctype>
 #include <sstream>  // For ostringstream (ActivationEvidence logging)
 #include "utils/WindowUtils.h"
+#include "window/WindowGeometryMath.h"
+#include "window/WindowDpiProbe.h"
 
 using namespace Microsoft::WRL;  // For Callback<> (MoveFocusRequested handler)
 
@@ -75,6 +77,84 @@ void PopupWindow::SetTitlebarHeight(int height) {
     if (height > 0) {
         titlebarHeight_ = height;
     }
+}
+
+// ============================================
+// 尺寸约束（单位：DIP，运行时可变）
+// ============================================
+
+void PopupWindow::SetMinSizeDip(int widthDip, int heightDip) {
+    // 与 MainWindow::SetMinSizeDip 的入口规范化保持一致：<=0 归一为 1，
+    // 即「无下限」在存储层表达为 1px 而非 0，避免 ptMinTrackSize 出现 0。
+    minWidthDip_ = widthDip > 0 ? widthDip : 1;
+    minHeightDip_ = heightDip > 0 ? heightDip : 1;
+    RevalidateSizeAgainstConstraints();
+}
+
+void PopupWindow::SetMaxSizeDip(int widthDip, int heightDip) {
+    maxWidthDip_ = widthDip >= 0 ? widthDip : 0;
+    maxHeightDip_ = heightDip >= 0 ? heightDip : 0;
+    RevalidateSizeAgainstConstraints();
+}
+
+void PopupWindow::RevalidateSizeAgainstConstraints() {
+    if (!hwnd_ || !IsWindow(hwnd_)) return;
+    // 最大化/全屏时尺寸由系统或全屏逻辑掌管，不在此干预。
+    if (isMaximized_ || IsFullscreen() || IsZoomed(hwnd_)) return;
+
+    RECT rc{};
+    if (!GetWindowRect(hwnd_, &rc)) return;
+
+    const int curW = rc.right - rc.left;
+    const int curH = rc.bottom - rc.top;
+    const int dpi = GetDpiForWindow(hwnd_);
+
+    const auto clamped = window_geometry::ClampSize(
+        curW, curH,
+        window_geometry::DipToPhysical(minWidthDip_, dpi),
+        window_geometry::DipToPhysical(minHeightDip_, dpi),
+        window_geometry::DipToPhysical(maxWidthDip_, dpi),
+        window_geometry::DipToPhysical(maxHeightDip_, dpi));
+
+    if (!clamped.clamped) return;
+
+    // SWP_NOACTIVATE：overlay popup（WS_EX_NOACTIVATE / clickThrough）绝不能
+    // 因约束校正而被激活。
+    SetWindowPos(hwnd_, nullptr, 0, 0, clamped.width, clamped.height,
+        SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE);
+}
+
+bool PopupWindow::SetResizableShell(bool resizable) {
+    // WS_POPUP 形态没有 WS_THICKFRAME 可增删（桌面歌词等全透明无边框场景），
+    // 无法在运行时切换，显式失败而不是静默无操作。
+    if (!SupportsRuntimeResizableToggle()) {
+        return false;
+    }
+
+    if (resizable_ == resizable) {
+        // 幂等设值：不算失败（Q10 前端约束——「无变化」不得报 false）。
+        return true;
+    }
+    resizable_ = resizable;
+
+    if (!hwnd_ || !IsWindow(hwnd_)) {
+        // 窗口尚未创建：新值会在 Create() 的样式计算中生效。
+        return true;
+    }
+
+    LONG_PTR style = GetWindowLongPtrW(hwnd_, GWL_STYLE);
+    if (resizable_) {
+        style |= (WS_THICKFRAME | WS_MAXIMIZEBOX);
+    } else {
+        style &= ~(WS_THICKFRAME | WS_MAXIMIZEBOX);
+    }
+    SetWindowLongPtrW(hwnd_, GWL_STYLE, style);
+
+    // 样式改动须 SWP_FRAMECHANGED 才会重算非客户区。
+    SetWindowPos(hwnd_, nullptr, 0, 0, 0, 0,
+        SWP_FRAMECHANGED | SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE);
+
+    return true;
 }
 
 void PopupWindow::SetDragRegions(const std::vector<DragRegion>& regions) {
@@ -189,6 +269,24 @@ HWND PopupWindow::Create(const CreateParams& params, const std::string& windowId
         if (y == CW_USEDEFAULT) y = (screenHeight - params.height) / 2;
     }
     
+    // 尺寸约束的运行时状态：从创建参数取初值。
+    //
+    // createParams_ 的 min/max 是 **wire 单位（物理像素）**，而运行时字段以
+    // DIP 存储（权威单位，Q9），故此处换算一次。窗口尚未创建，DPI 只能由
+    // 目标矩形所在显示器推导。
+    //
+    // 恒定 DPI 下这次「物理→DIP，WM_GETMINMAXINFO 再 DIP→物理」的往返是
+    // 恒等的（除取整残留），故创建期行为与 P1' 之前一致。
+    {
+        const int createDpi = window_dpi_probe::GetDpiForScreenRect(
+            x, y, params.width, params.height);
+        minWidthDip_ = window_geometry::PhysicalToDip(params.minWidth, createDpi);
+        minHeightDip_ = window_geometry::PhysicalToDip(params.minHeight, createDpi);
+        maxWidthDip_ = window_geometry::PhysicalToDip(params.maxWidth, createDpi);
+        maxHeightDip_ = window_geometry::PhysicalToDip(params.maxHeight, createDpi);
+        resizable_ = params.resizable;
+    }
+
     // 判断是否使用 WS_POPUP 模式（frame=false + transparent + 无 DWM 效果）
     // 用于桌面歌词等需要完全无边框/无阴影的场景
     usePopupStyle_ = !params.frame && params.transparent &&
@@ -201,7 +299,7 @@ HWND PopupWindow::Create(const CreateParams& params, const std::string& windowId
         style = WS_POPUP | WS_CLIPCHILDREN;
     } else {
         style = WS_OVERLAPPEDWINDOW | WS_CLIPCHILDREN;
-        if (!params.resizable) {
+        if (!resizable_) {
             style &= ~(WS_THICKFRAME | WS_MAXIMIZEBOX);
         }
     }
@@ -739,13 +837,23 @@ LRESULT PopupWindow::HandleMessage(UINT msg, WPARAM wParam, LPARAM lParam) {
             
         case WM_GETMINMAXINFO: {
             auto* mmi = reinterpret_cast<MINMAXINFO*>(lParam);
-            mmi->ptMinTrackSize.x = createParams_.minWidth;
-            mmi->ptMinTrackSize.y = createParams_.minHeight;
-            if (createParams_.maxWidth > 0) {
-                mmi->ptMaxTrackSize.x = createParams_.maxWidth;
+
+            // 约束以 DIP 存储，此处换算为物理像素——这是唯一把约束值交给
+            // Win32 的地方，也是唯一天然知道当前 DPI 的时刻（Q9）。
+            //
+            // hwnd_ 在 WM_NCCREATE 才赋值，而本消息可能早于它到达
+            // （CreateWindowExW 内部），故 DPI 取用需容错退回基准值。
+            const int dpi = (hwnd_ && IsWindow(hwnd_))
+                ? GetDpiForWindow(hwnd_)
+                : window_geometry::kBaselineDpi;
+
+            mmi->ptMinTrackSize.x = window_geometry::DipToPhysical(minWidthDip_, dpi);
+            mmi->ptMinTrackSize.y = window_geometry::DipToPhysical(minHeightDip_, dpi);
+            if (maxWidthDip_ > 0) {
+                mmi->ptMaxTrackSize.x = window_geometry::DipToPhysical(maxWidthDip_, dpi);
             }
-            if (createParams_.maxHeight > 0) {
-                mmi->ptMaxTrackSize.y = createParams_.maxHeight;
+            if (maxHeightDip_ > 0) {
+                mmi->ptMaxTrackSize.y = window_geometry::DipToPhysical(maxHeightDip_, dpi);
             }
             return 0;
         }
@@ -966,7 +1074,8 @@ LRESULT PopupWindow::OnNcHitTest(LPARAM lParam) {
     }
 
     // 调整大小边缘（仅 resizable 且非最大化时）
-    if (createParams_.resizable && !isMaximized_) {
+    // 读运行时字段而非 createParams_，使 SetResizableShell 能影响命中测试。
+    if (resizable_ && !isMaximized_) {
         const int CORNER = 8, EDGE = 4;
         bool cT = pt.y < rcWindow.top + CORNER;
         bool cB = pt.y >= rcWindow.bottom - CORNER;
@@ -1067,7 +1176,8 @@ bool PopupWindow::HandleDragAreaMouse(UINT msg, WPARAM /*wParam*/, LPARAM lParam
         SendMessageW(hwnd_, WM_NCLBUTTONDOWN, HTCAPTION, lParam);
         return true;
     }
-    if (msg == WM_LBUTTONDBLCLK && createParams_.resizable) {
+    // 读运行时字段而非 createParams_，使 SetResizableShell 能影响双击行为。
+    if (msg == WM_LBUTTONDBLCLK && resizable_) {
         // 双击标题栏切换最大化/还原
         ShowWindow(hwnd_, isMaximized_ ? SW_RESTORE : SW_MAXIMIZE);
         return true;
