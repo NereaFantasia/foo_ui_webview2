@@ -126,7 +126,11 @@ export interface WindowSetPopupBehaviorParams {
  * @codegen-snapshot 
  */
 export interface WindowGetBackdropPolicyParams {
-    /** Target window id; omit to address the calling window (main-window fallback). */
+    /**
+     * Target window id; omit to address the calling window. Callers that
+     * cannot be resolved to a window receive an error rather than the main
+     * window's policy.
+     */
     windowId?: string;
 }
 

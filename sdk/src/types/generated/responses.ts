@@ -4014,8 +4014,13 @@ export interface WindowIsClickThroughResponse {
  * Response from `window.isFullscreen`.
  */
 export interface WindowIsFullscreenResponse {
-    fullscreen: boolean;
-    isFullscreen: boolean;
+    success: boolean;
+    supported?: boolean;
+    panelMode?: boolean;
+    error?: string;
+    fullscreen?: boolean;
+    isFullscreen?: boolean;
+    windowId?: string;
 }
 
 /**
@@ -4042,7 +4047,6 @@ export interface WindowIsResizableResponse {
     panelMode?: boolean;
     error?: string;
     resizable?: boolean;
-    supportsRuntimeToggle?: boolean;
     windowId?: string;
 }
 
