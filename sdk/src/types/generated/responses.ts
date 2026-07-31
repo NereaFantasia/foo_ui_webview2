@@ -3829,6 +3829,8 @@ export interface WindowGetAllWindowsResponse {
  */
 export interface WindowGetBackdropPolicyResponse {
     success: boolean;
+    supported?: boolean;
+    panelMode?: boolean;
     error?: string;
     windowId?: unknown;
 }
@@ -3889,16 +3891,26 @@ export interface WindowGetDpiScaleResponse {
  * Response from `window.getMaxSize`.
  */
 export interface WindowGetMaxSizeResponse {
-    width: number;
-    height: number;
+    success?: boolean;
+    supported?: boolean;
+    panelMode?: boolean;
+    error?: string;
+    width?: number;
+    height?: number;
+    windowId?: string;
 }
 
 /**
  * Response from `window.getMinSize`.
  */
 export interface WindowGetMinSizeResponse {
-    width: number;
-    height: number;
+    success?: boolean;
+    supported?: boolean;
+    panelMode?: boolean;
+    error?: string;
+    width?: number;
+    height?: number;
+    windowId?: string;
 }
 
 /**
@@ -4025,7 +4037,13 @@ export interface WindowIsMinimizedResponse {
  * Response from `window.isResizable`.
  */
 export interface WindowIsResizableResponse {
-    resizable: boolean;
+    success?: boolean;
+    supported?: boolean;
+    panelMode?: boolean;
+    error?: string;
+    resizable?: boolean;
+    supportsRuntimeToggle?: boolean;
+    windowId?: string;
 }
 
 /**
@@ -4119,6 +4137,8 @@ export interface WindowSetAlwaysOnTopResponse {
 export interface WindowSetBackdropPolicyResponse {
     success: boolean;
     error?: string;
+    supported?: boolean;
+    panelMode?: boolean;
     windowId?: unknown;
 }
 
@@ -4127,6 +4147,8 @@ export interface WindowSetBackdropPolicyResponse {
  */
 export interface WindowSetBackgroundTransparencyResponse {
     success: boolean;
+    supported?: boolean;
+    panelMode?: boolean;
     error?: string;
     transparent?: boolean;
     description?: unknown;
@@ -4222,6 +4244,8 @@ export interface WindowSetDragRegionsResponse {
 export interface WindowSetFramelessResponse {
     success: boolean;
     error?: string;
+    supported?: boolean;
+    panelMode?: boolean;
     frameless?: boolean;
 }
 
@@ -4244,6 +4268,7 @@ export interface WindowSetMaxSizeResponse {
     supported?: boolean;
     panelMode?: boolean;
     error?: string;
+    windowId?: string;
 }
 
 /**
@@ -4280,6 +4305,7 @@ export interface WindowSetMinSizeResponse {
     supported?: boolean;
     panelMode?: boolean;
     error?: string;
+    windowId?: string;
 }
 
 /**
@@ -4321,6 +4347,7 @@ export interface WindowSetResizableResponse {
     supported?: boolean;
     panelMode?: boolean;
     error?: string;
+    windowId?: string;
 }
 
 /**
