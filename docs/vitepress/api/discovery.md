@@ -8,26 +8,26 @@ This page is the primary owner for the namespaces listed below. Method names, pa
 
 ### discovery.executeContextMenuByPath
 
-Public API method. Runtime authority: `src/api/DiscoveryApi.cpp:1018`.
+Runs a context-menu command addressed by its slash-separated label path.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `path` | `string` | No | Optional; default . |
-| `trackPath` | `string` | No | Optional; default . |
+| `path` | `string` | Yes | Slash-separated label path of the command, for example `Playback Statistics/Rating/5`. An empty path is rejected. |
+| `trackPath` | `string` | No | Target a specific file instead of the current one. Subject to media-read security. Omit to use the playing track, or the active playlist selection when nothing is playing. |
 
 **Returns**: `{"error":"...","foundName":"...","itemCount":"...","path":"...","success":true}`
 
 ```js
-const result = await fb2k.invoke('discovery.executeContextMenuByPath', { path: /* value */, trackPath: /* value */ });
+await fb2k.invoke('discovery.executeContextMenuByPath', { path: 'Playback Statistics/Rating/5' });
 ```
 
 ### discovery.executeContextMenuCommand
 
-Public API method. Runtime authority: `src/api/DiscoveryApi.cpp:1017`.
+Runs a context-menu command addressed by GUID.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `guid` | `string` | No | Optional; default . |
+| `guid` | `string` | Yes | Braced command GUID, as returned by `discovery.getContextMenuCommands`. A missing or empty value is rejected. |
 | `force` | `boolean` | No | Default `false`. Set to `true` to dispatch even a command the host would never draw. |
 
 **Returns**: `{"error":"...","guid":"...","itemCount":"...","success":true,"name":"...","hidden":false,"resolved":true,"force":false}`
@@ -37,12 +37,16 @@ A `FORCE_OFF` command is refused rather than dispatched: the SDK treats that sta
 `hidden` and `resolved` are returned on both the refusal and the success path, so "was not refused" is distinguishable from "this build does not report the field". `resolved` is false when no registered item owns the GUID, in which case there was no state to evaluate.
 
 ```js
-const result = await fb2k.invoke('discovery.executeContextMenuCommand', { guid: /* value */ });
+const { commands } = await fb2k.invoke('discovery.getContextMenuCommands');
+const rate5 = commands.find((c) => c.name === 'Rating/5');
+await fb2k.invoke('discovery.executeContextMenuCommand', { guid: rate5.guid });
 ```
+
+`name` is the label the host reports, so it is localized on a translated build. Cache the `guid` rather than repeating the label match.
 
 ### discovery.executeMainMenuCommand
 
-Public API method. Runtime authority: `src/api/DiscoveryApi.cpp:1015`.
+Runs a main-menu command addressed by GUID, including a child of a dynamic submenu.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
@@ -52,12 +56,16 @@ Public API method. Runtime authority: `src/api/DiscoveryApi.cpp:1015`.
 **Returns**: `{"error":"...","guid":"...","subGuid":"...","dynamic":true,"success":true}`
 
 ```js
-const result = await fb2k.invoke('discovery.executeMainMenuCommand', { guid: /* value */ });
+const { commands } = await fb2k.invoke('discovery.getMainMenuCommands');
+const prefs = commands.find((c) => c.path === 'File/Preferences');
+await fb2k.invoke('discovery.executeMainMenuCommand', { guid: prefs.guid });
 ```
+
+`path` is built from host labels, so it is localized on a translated build. Cache the `guid` rather than repeating the path match.
 
 ### discovery.getAllServices
 
-Public API method. Runtime authority: `src/api/DiscoveryApi.cpp:1012`.
+Returns a count-only summary of the discoverable service families in the running process.
 
 _No parameters._
 
@@ -71,7 +79,7 @@ const result = await fb2k.invoke('discovery.getAllServices');
 
 ### discovery.getComponents
 
-Public API method. Runtime authority: `src/api/DiscoveryApi.cpp:1021`.
+Lists the installed components, each with its `filename`, `name`, `version` and `about` text.
 
 _No parameters._
 
@@ -83,7 +91,7 @@ const result = await fb2k.invoke('discovery.getComponents');
 
 ### discovery.getContextMenuCommands
 
-Public API method. Runtime authority: `src/api/DiscoveryApi.cpp:1016`.
+Lists the registered context-menu commands, flattened, with their per-selection state.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
@@ -101,7 +109,7 @@ const result = await fb2k.invoke('discovery.getContextMenuCommands');
 
 ### discovery.getContextMenuTree
 
-Public API method. Runtime authority: `src/api/DiscoveryApi.cpp:1019`.
+Dumps the context menu as a nested tree, preserving submenu structure and separators.
 
 _No parameters._
 
@@ -117,7 +125,7 @@ const result = await fb2k.invoke('discovery.getContextMenuTree');
 
 ### discovery.getDspEntries
 
-Public API method. Runtime authority: `src/api/DiscoveryApi.cpp:1023`.
+Lists the registered DSP entries, each with its `guid` and `name`.
 
 _No parameters._
 
@@ -129,7 +137,7 @@ const result = await fb2k.invoke('discovery.getDspEntries');
 
 ### discovery.getInputFormats
 
-Public API method. Runtime authority: `src/api/DiscoveryApi.cpp:1020`.
+Lists the playable input file types, each with a display `name` and a filename `mask`.
 
 _No parameters._
 
@@ -141,7 +149,7 @@ const result = await fb2k.invoke('discovery.getInputFormats');
 
 ### discovery.getMainMenuCommands
 
-Public API method. Runtime authority: `src/api/DiscoveryApi.cpp:1013`.
+Lists the main-menu commands, flattened, with their label path and GUID.
 
 Dynamic submenus registered through `mainmenu_commands_v2` (used by SMP-era components such as ESLyric) are expanded by default, so their runtime child commands appear alongside the static parent slot.
 
@@ -159,7 +167,7 @@ const result = await fb2k.invoke('discovery.getMainMenuCommands');
 
 ### discovery.getMainMenuGroups
 
-Public API method. Runtime authority: `src/api/DiscoveryApi.cpp:1014`.
+Lists the main-menu groups that commands are filed under, each with its `guid`, `parentGuid`, `name` and `sortPriority`.
 
 _No parameters._
 
@@ -171,7 +179,7 @@ const result = await fb2k.invoke('discovery.getMainMenuGroups');
 
 ### discovery.getOutputDevices
 
-Public API method. Runtime authority: `src/api/DiscoveryApi.cpp:1024`.
+Lists the registered output backends by `guid`.
 
 _No parameters._
 
@@ -183,7 +191,7 @@ const result = await fb2k.invoke('discovery.getOutputDevices');
 
 ### discovery.getPreferencePages
 
-Public API method. Runtime authority: `src/api/DiscoveryApi.cpp:1025`.
+Lists the pages in the Preferences dialog, each with its `guid`, `parentGuid` and `name`.
 
 _No parameters._
 
@@ -195,7 +203,7 @@ const result = await fb2k.invoke('discovery.getPreferencePages');
 
 ### discovery.getUIElements
 
-Public API method. Runtime authority: `src/api/DiscoveryApi.cpp:1022`.
+Lists the registered UI elements, each with its `guid`, `subclassGuid`, `name`, `description` and `isUserAddable`.
 
 _No parameters._
 
@@ -207,11 +215,11 @@ const result = await fb2k.invoke('discovery.getUIElements');
 
 ### discovery.searchCommands
 
-Public API method. Runtime authority: `src/api/DiscoveryApi.cpp:1026`.
+Searches both menu families by name, description and menu path.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `query` | `string` | No | Optional; default . |
+| `query` | `string` | Yes | Search text, matched case-insensitively. An empty query is rejected. |
 | `expandDynamic` | `boolean` | No | Default `true`. Also searches commands expanded from `mainmenu_commands_v2` dynamic submenus. |
 | `scope` | `string` | No | Default `all`. Set to `mainmenu` or `contextmenu` to search one family only; an unrecognized value widens to `all` rather than dropping results. |
 | `includeHidden` | `boolean` | No | Default `false`. Set to `true` to also search entries the host would not show. |
@@ -223,7 +231,7 @@ Both menu families are searched by default. Each result carries `name`, `descrip
 When the context family was searched without a track selected or playing, the response's `stateKnown` is false: its hits' `enabled` / `checked` carry no observation and must not be filtered on.
 
 ```js
-const result = await fb2k.invoke('discovery.searchCommands', { query: /* value */ });
+const { results } = await fb2k.invoke('discovery.searchCommands', { query: 'rating' });
 ```
 
 ## Discovery scope and execution rules

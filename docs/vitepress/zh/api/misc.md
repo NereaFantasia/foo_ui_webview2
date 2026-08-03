@@ -8,7 +8,7 @@ v1.2.0 新增。提供系统路径查询和常用 UI 命令。
 
 获取 foobar2000 安装目录路径。
 
-**返回值**: `{ "path": "C:\\\\...\\\\foobar2000", "value": "C:\\\\...\\\\foobar2000" }`
+**返回值**: `{ "path": "C:\\...\\foobar2000", "value": "C:\\...\\foobar2000" }`
 
 ::: tip TIP
 `value` 是 `path` 的别名，两者值相同。
@@ -23,7 +23,7 @@ console.log('安装目录:', result.path);
 
 获取用户配置文件目录路径。
 
-**返回值**: `{ "path": "C:\\\\...\\\\foobar2000\\\\profile", "value": "C:\\\\...\\\\foobar2000\\\\profile" }`
+**返回值**: `{ "path": "C:\\...\\foobar2000\\profile", "value": "C:\\...\\foobar2000\\profile" }`
 
 ```javascript
 const result = await fb2k.invoke('misc.getProfilePath');
@@ -34,7 +34,7 @@ console.log('配置目录:', result.path);
 
 获取插件组件目录路径。
 
-**返回值**: `{ "path": "C:\\\\...\\\\foobar2000\\\\user-components\\\\foo_ui_webview2", "value": "..." }`
+**返回值**: `{ "path": "C:\\...\\foobar2000\\user-components\\foo_ui_webview2", "value": "..." }`
 
 ```javascript
 const result = await fb2k.invoke('misc.getComponentPath');
@@ -67,7 +67,7 @@ await fb2k.invoke('misc.showPreferences');
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
-| `query` | `string` | 否 | 可选；默认 。 |
+| `query` | `string` | 否 | 预填入搜索框的关键词；省略则打开空白搜索。 |
 
 **返回值**: `{ "success": true, "query": "..." }`
 
@@ -77,9 +77,13 @@ await fb2k.invoke('misc.showPreferences');
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
-| `message` | `string` | 否 | 可选；默认 。 |
-| `msg` | `string` | 否 | 可选；默认 。 |
-| `title` | `string` | 否 | 可选；默认 Message。 |
+| `message` | `string` | 否 | 对话框正文；省略则弹出空内容对话框。 |
+| `msg` | `string` | 否 | 早期别名，仅在未传 `message` 时生效；新代码请用 `message`。 |
+| `title` | `string` | 否 | 标题栏文本；默认 `Message`。 |
+
+::: tip 提示
+早期版本的 `msg` 仍被接受，但已弃用。同时传入时以 `message` 为准，新代码请只写 `message`。
+:::
 
 ### misc.restart
 
@@ -115,8 +119,8 @@ v1.2.0 新增。提供主菜单和上下文菜单的执行和查询。
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
-| `command` | `string` | 否 | 可选；默认 。 |
-| `subGuid` | `string` | 否 | 可选；默认 。 |
+| `command` | `string` | 是 | GUID、叶子命令名或斜杠分隔路径。空值直接以 `command is required` 失败。 |
+| `subGuid` | `string` | 否 | 动态子命令的 `subGuid`；此时 `command` 传其所属命令的 GUID。 |
 
 
 **返回值**: `{"guid":"...","success":true}`
@@ -157,7 +161,7 @@ await fb2k.invoke('menu.runMainMenuCommand', {
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
-| `command` | `string` | 否 | 可选；默认 。 |
+| `command` | `string` | 是 | GUID 或斜杠分隔的命令路径。空值直接以 `command is required` 失败。 |
 
 
 **返回值**: `{"guid":"...","itemCount":"...","success":true}`
@@ -172,10 +176,10 @@ await fb2k.invoke('menu.runContextCommand', { command: 'Playback Statistics/Rati
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
-| `i18n` | `boolean` | 否 | 可选；默认 true。 |
-| `locale` | `string` | 否 | 可选；默认 auto。 |
-| `root` | `string` | 否 | 可选；默认 。 |
-| `withAvailability` | `boolean` | 否 | 可选；默认 true。 |
+| `i18n` | `boolean` | 否 | 是否本地化菜单标签；默认 `true`。 |
+| `locale` | `string` | 否 | 本地化使用的区域标识；默认 `auto`（跟随宿主）。 |
+| `root` | `string` | 否 | 只返回该顶级菜单名下的子树；省略则返回整棵主菜单。 |
+| `withAvailability` | `boolean` | 否 | 是否附带启用/勾选等可用性字段；默认 `true`。 |
 
 **返回值**: `{"error":"...","fallback":"...","items":[],"success":true}`
 
@@ -187,13 +191,15 @@ await fb2k.invoke('menu.runContextCommand', { command: 'Playback Statistics/Rati
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
-| `handles` | `array` | 否 | 可选；默认 []。 |
-| `i18n` | `boolean` | 否 | 可选；默认 true。 |
-| `locale` | `string` | 否 | 可选；默认 auto。 |
-| `mode` | `string` | 否 | 可选；`auto` / `selection` / `playlist` / `nowPlaying` / `handles`，默认 auto。 |
-| `withAvailability` | `boolean` | 否 | 可选；默认 true。 |
+| `handles` | `array` | 否 | 目标曲目列表，元素可为路径字符串（可带 `\|subsong:N`）或 `{ path, subsong }` 对象。`mode: 'handles'` 时必须提供。 |
+| `i18n` | `boolean` | 否 | 是否本地化菜单标签；默认 `true`。 |
+| `locale` | `string` | 否 | 本地化使用的区域标识；默认 `auto`（跟随宿主）。 |
+| `mode` | `string` | 否 | 取值为 `auto`、`selection`、`playlist`、`nowPlaying`、`handles` 之一；默认 `auto`，其他任何值同样按 `auto` 处理。 |
+| `withAvailability` | `boolean` | 否 | 是否附带启用/勾选等可用性字段；默认 `true`。 |
 
 **返回值**: `{ "success": true, "mode": "nowPlaying", "items": [...] }`
+
+`auto` 按「`handles` → 当前播放 → 播放列表选中项 → 播放列表本身」顺序取目标，实际采用的模式由返回的 `mode` 给出。
 
 ### menu.runContextCommandById
 
@@ -201,9 +207,13 @@ await fb2k.invoke('menu.runContextCommand', { command: 'Playback Statistics/Rati
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
-| `id` | `integer` | 否 | 可选；默认 -1。 |
-| `mode` | `string` | 否 | 可选；默认 auto。 |
-| `handles` | `array` | 否 | 可选；默认 []。 |
+| `id` | `integer` | 是 | 来自 `menu.getContextMenu` 的 `commandId`。缺失、非整数或负数一律以 `id is required` 失败。 |
+| `mode` | `string` | 否 | 取值为 `auto`、`selection`、`playlist`、`nowPlaying`、`handles` 之一；默认 `auto`，其他任何值同样按 `auto` 处理。 |
+| `handles` | `array` | 否 | 目标曲目列表；`mode: 'handles'` 时必须提供。 |
+
+::: warning 注意
+`commandId` 是某次 `menu.getContextMenu` 结果内的序号，只在相同 `mode` 与相同目标曲目下有效。执行时请沿用取菜单时的 `mode`。
+:::
 
 ```javascript
 // 获取菜单树并执行
@@ -218,8 +228,8 @@ await fb2k.invoke('menu.runContextCommandById', { id: item.commandId, mode: 'now
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
-| `handles` | `array` | 否 | 可选；默认 []。 |
-| `mode` | `string` | 否 | 可选；`auto` / `selection` / `playlist` / `nowPlaying` / `handles`，默认 auto。 |
+| `handles` | `array` | 否 | 目标曲目列表，元素可为路径字符串（可带 `\|subsong:N`）或 `{ path, subsong }` 对象。`mode: 'handles'` 时必须提供。 |
+| `mode` | `string` | 否 | 取值为 `auto`、`selection`、`playlist`、`nowPlaying`、`handles` 之一；默认 `auto`，其他任何值同样按 `auto` 处理。 |
 
 **返回值**: `{ "success": true }`
 
@@ -240,7 +250,7 @@ await fb2k.invoke('menu.showNativePopup', { mode: 'nowPlaying' });
 // 指定曲目的原生右键菜单
 await fb2k.invoke('menu.showNativePopup', {
     mode: 'handles',
-    handles: ['C:\\\\Music\\\\song.flac']
+    handles: ['C:\\Music\\song.flac']
 });
 ```
 
@@ -254,8 +264,8 @@ API 发现机制和外部插件注册管理。
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
-| `includeExternal` | `boolean` | 否 | 可选；默认 true。 |
-| `includeInternal` | `boolean` | 否 | 可选；默认 true。 |
+| `includeExternal` | `boolean` | 否 | 是否包含外部插件注册的 API；默认 `true`。 |
+| `includeInternal` | `boolean` | 否 | 是否包含内置 API；默认 `true`。 |
 
 ### system.getApisByNamespace
 
@@ -263,7 +273,7 @@ API 发现机制和外部插件注册管理。
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
-| `namespace` | `string` | 否 | 可选；默认 。 |
+| `namespace` | `string` | 是 | 命名空间名，如 `playback`。空值以 `namespace is required` 失败。 |
 
 ### system.searchApis
 
@@ -271,7 +281,7 @@ API 发现机制和外部插件注册管理。
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
-| `query` | `string` | 否 | 可选；默认 。 |
+| `query` | `string` | 是 | 搜索关键词。空值以 `query is required` 失败。 |
 
 ### system.getApiStats
 
@@ -293,7 +303,7 @@ API 发现机制和外部插件注册管理。
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
-| `namespace` | `string` | 否 | 可选；默认 。 |
+| `namespace` | `string` | 是 | 待检查的插件命名空间。空值以 `namespace is required` 失败。 |
 
 
 **返回值**: `{"registered":"...","success":true}`
@@ -365,7 +375,7 @@ console.log(`区域: ${locale.locale}, 语言: ${locale.language}`);
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
-| `message` | `json` | 否 | 可选；默认 omitted。 |
+| `message` | `json` | 否 | 任意 JSON 值，原样回显到 `echo`；省略时 `echo` 为整个参数对象。 |
 
 **返回值**: `{"echo":"...","input":"...","success":true}`
 
@@ -419,10 +429,10 @@ console.log('pong:', result.timestamp);
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
-| `enableDragDrop` | `boolean` | 否 | 可选；默认 omitted。 |
-| `grabFocus` | `boolean` | 否 | 可选；默认 omitted。 |
-| `panelName` | `string` | 否 | 可选；默认 omitted。 |
-| `transparentBackground` | `boolean` | 否 | 可选；默认 omitted。 |
+| `enableDragDrop` | `boolean` | 否 | 是否允许拖放到面板；省略则保持当前值。 |
+| `grabFocus` | `boolean` | 否 | 是否允许面板抢占焦点；省略则保持当前值。 |
+| `panelName` | `string` | 否 | 面板显示名；省略则保持当前值。 |
+| `transparentBackground` | `boolean` | 否 | 是否使用透明背景；省略则保持当前值。 |
 
 ::: warning WARNING
 `enableDevTools`、`urlOverride`、`templateName` 仅可通过配置对话框修改。
@@ -447,7 +457,7 @@ console.log('pong:', result.timestamp);
     "hasImage": false,
     "hasFiles": true,
     "text": "剪贴板文本",
-    "files": ["C:\\\\Music\\\\song.flac"]
+    "files": ["C:\\Music\\song.flac"]
 }
 ```
 
@@ -463,7 +473,7 @@ if (clip.hasFiles) console.log('文件:', clip.files);
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
-| `text` | `string` | 否 | 可选；默认 。 |
+| `text` | `string` | 是 | 待写入的文本。空值以 `text is required` 失败。 |
 
 **返回值**: `{ "success": true }`
 
@@ -473,8 +483,8 @@ if (clip.hasFiles) console.log('文件:', clip.files);
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
-| `html` | `string` | 否 | 可选；默认 。 |
-| `plainText` | `string` | 否 | 可选；默认 。 |
+| `html` | `string` | 是 | HTML 片段，写入 CF_HTML。空值以 `html is required` 失败。 |
+| `plainText` | `string` | 否 | 同时写入 CF_UNICODETEXT 的纯文本回退内容。 |
 
 **返回值**: `{"htmlWritten":"...","success":true,"textWritten":"..."}`
 
@@ -497,7 +507,7 @@ await fb2k.invoke('clipboard.writeHTML', {
 
 ```javascript
 await fb2k.invoke('clipboard.writeFiles', {
-    paths: ['C:\\\\Music\\\\song1.flac', 'C:\\\\Music\\\\song2.flac']
+    paths: ['C:\\Music\\song1.flac', 'C:\\Music\\song2.flac']
 });
 ```
 
@@ -553,14 +563,18 @@ await fb2k.invoke('console.log', { args: ['用户:', userName, '播放次数:', 
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
-| `message` | `string` | 否 | 可选；默认 omitted。 |
-| `args` | `array` | 否 | 可选；默认 []。 |
-| `file` | `string` | 否 | 可选；默认 omitted。 |
-| `level` | `string` | 否 | 可选；默认 info。 |
-| `append` | `boolean` | 否 | 可选；默认 true。 |
-| `timestamp` | `boolean` | 否 | 可选；默认 true。 |
+| `message` | `string` | 否 | 日志文本；非字符串会序列化。与 `args` 至少提供其一，否则返回 `message is required`。 |
+| `args` | `array` | 否 | 当省略 `message` 时，用空格拼接的参数列表。 |
+| `file` | `string` | 否 | 配置目录下的目标文件名；默认 `webview_ui.log`。 |
+| `level` | `string` | 否 | 级别文本，转为大写后写入行前缀；默认 `info`。 |
+| `append` | `boolean` | 否 | `true` 追加写入，`false` 覆盖重写；默认 `true`。 |
+| `timestamp` | `boolean` | 否 | 是否在行首写入时间戳；默认 `true`。 |
 
-**返回值**: `{ "success": true, "path": "C:\\\\...\\\\webview_ui.log" }`
+::: tip 提示
+`file` 只接受不含路径分隔符的裸文件名，扩展名限 `.log` / `.txt`，且不能是 Windows 保留设备名；不满足时回落到默认日志文件。
+:::
+
+**返回值**: `{ "success": true, "path": "C:\\...\\webview_ui.log" }`
 
 ```javascript
 await fb2k.invoke('log.write', {
@@ -576,7 +590,7 @@ await fb2k.invoke('log.write', {
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
-| `lines` | `integer` | 否 | 可选；默认 100。 |
+| `lines` | `integer` | 否 | 读取末尾多少行；默认 `100`。负数以 `lines must be non-negative` 失败。 |
 
 **返回值**:
 
@@ -604,7 +618,7 @@ await fb2k.invoke('log.write', {
 
 ### menu.close
 
-经复核的公开 API。权威源：`src/api/MenuApi.cpp:1141-1146`。
+关闭当前打开的自绘菜单浮层（若有）。
 
 | 参数 | 类型 | 必填 | 默认值 | 说明 |
 | --- | --- | --- | --- | --- |
@@ -618,33 +632,36 @@ const result = await fb2k.invoke('menu.close', { reason: 'api' });
 
 ### menu.show
 
-经复核的公开 API。权威源：`src/api/MenuApi.cpp:1321`。
+打开自绘菜单浮层并返回其 id；用户的选择稍后通过 `menu:select` 与 `menu:dismiss` 事件送达。
 
 | 参数 | 类型 | 必填 | 默认值 | 说明 |
 | --- | --- | --- | --- | --- |
-| `items` | `array` | 否 | 可省略 | 可选；默认 omitted。 |
-| `x` | `integer` | 否 | `-1` | 可选；默认 -1。 |
-| `y` | `integer` | 否 | `-1` | 可选；默认 -1。 |
+| `items` | `array` | 否 | 可省略 | 菜单项数组；省略或非数组时按空菜单处理。 |
+| `x` | `integer` | 否 | `-1` | 屏幕横坐标；负数或省略时取当前光标位置。 |
+| `y` | `integer` | 否 | `-1` | 屏幕纵坐标；负数或省略时取当前光标位置。 |
 
 **返回字段**: `{ "success": true, "menuId": "..." }`
 
 ```js
-const result = await fb2k.invoke('menu.show', { items: [], x: -1, y: -1 });
+const { menuId } = await fb2k.invoke('menu.show', {
+    items: [
+        { id: 'play', label: '播放' },
+        { id: 'enqueue', label: '加入播放列表' },
+    ],
+});
 ```
 
 <!-- phase3-supplement:log.write -->
 ### Contract 补充：`log.write`
 
-经复核的补充 contract。权威源：`src/api/ConsoleApi.cpp:140-221`。
-
 | 参数 | 类型 | 必填 | 默认值 | 说明 |
 | --- | --- | --- | --- | --- |
-| `message` | `string` | 否 | 可省略 | 可选；默认 omitted。 |
-| `args` | `array` | 否 | `[]` | 可选；默认 []。 |
-| `file` | `string` | 否 | 可省略 | 可选；默认 omitted。 |
-| `level` | `string` | 否 | `info` | 可选；默认 info。 |
-| `append` | `boolean` | 否 | `true` | 可选；默认 true。 |
-| `timestamp` | `boolean` | 否 | `true` | 可选；默认 true。 |
+| `message` | `string` | 否 | 可省略 | 日志文本；非字符串会序列化。与 `args` 至少提供其一，否则返回 `message is required`。 |
+| `args` | `array` | 否 | `[]` | 当省略 `message` 时，用空格拼接的参数列表。 |
+| `file` | `string` | 否 | 可省略 | 配置目录下的目标文件名；默认 `webview_ui.log`。 |
+| `level` | `string` | 否 | `info` | 级别文本，转为大写后写入行前缀。 |
+| `append` | `boolean` | 否 | `true` | `true` 追加写入，`false` 覆盖重写。 |
+| `timestamp` | `boolean` | 否 | `true` | 是否在行首写入时间戳。 |
 
 #### 返回字段
 
@@ -657,20 +674,18 @@ const result = await fb2k.invoke('menu.show', { items: [], x: -1, y: -1 });
 语义：省略可选参数时使用 handler 默认值；失败分支及错误字段以该源文件为准。
 
 ```js
-const result = await fb2k.invoke('log.write', { message: /* value */, args: /* value */, file: /* value */, level: /* value */, append: /* value */, timestamp: /* value */ });
+await fb2k.invoke('log.write', { message: '播放开始' });
 ```
 <!-- phase3-supplement:menu.getContextMenu -->
 ### Contract 补充：`menu.getContextMenu`
 
-经复核的补充 contract。权威源：`src/api/MenuApi.cpp:980-1024`。
-
 | 参数 | 类型 | 必填 | 默认值 | 说明 |
 | --- | --- | --- | --- | --- |
-| `handles` | `array` | 否 | `[]` | 可选；默认 []。 |
-| `i18n` | `boolean` | 否 | `true` | 可选；默认 true。 |
-| `locale` | `string` | 否 | `auto` | 可选；默认 auto。 |
-| `mode` | `string` | 否 | `auto` | 可选；默认 auto。 |
-| `withAvailability` | `boolean` | 否 | `true` | 可选；默认 true。 |
+| `handles` | `array` | 否 | `[]` | 目标曲目列表；`mode: 'handles'` 时必须提供。 |
+| `i18n` | `boolean` | 否 | `true` | 是否本地化菜单标签。 |
+| `locale` | `string` | 否 | `auto` | 本地化使用的区域标识；`auto` 表示跟随宿主。 |
+| `mode` | `string` | 否 | `auto` | 取值为 `auto`、`selection`、`playlist`、`nowPlaying`、`handles` 之一；其他任何值同样按 `auto` 处理。 |
+| `withAvailability` | `boolean` | 否 | `true` | 是否附带启用/勾选等可用性字段。 |
 
 #### 返回字段
 
@@ -687,18 +702,16 @@ const result = await fb2k.invoke('log.write', { message: /* value */, args: /* v
 语义：省略可选参数时使用 handler 默认值；失败分支及错误字段以该源文件为准。
 
 ```js
-const result = await fb2k.invoke('menu.getContextMenu', { handles: /* value */, i18n: /* value */, locale: /* value */, mode: /* value */, withAvailability: /* value */ });
+const { items, mode } = await fb2k.invoke('menu.getContextMenu');
 ```
 <!-- phase3-supplement:menu.runContextCommandById -->
 ### Contract 补充：`menu.runContextCommandById`
 
-经复核的补充 contract。权威源：`src/api/MenuApi.cpp:1024-1045`。
-
 | 参数 | 类型 | 必填 | 默认值 | 说明 |
 | --- | --- | --- | --- | --- |
-| `id` | `integer` | 否 | `-1` | 可选；默认 -1。 |
-| `mode` | `string` | 否 | `auto` | 可选；默认 auto。 |
-| `handles` | `array` | 否 | `[]` | 可选；默认 []。 |
+| `id` | `integer` | 是 | 无 | 来自 `menu.getContextMenu` 的 `commandId`。缺失、非整数或负数一律以 `id is required` 失败。 |
+| `mode` | `string` | 否 | `auto` | 取值为 `auto`、`selection`、`playlist`、`nowPlaying`、`handles` 之一；其他任何值同样按 `auto` 处理。请沿用取菜单时的 `mode`。 |
+| `handles` | `array` | 否 | `[]` | 目标曲目列表；`mode: 'handles'` 时必须提供。 |
 
 #### 返回字段
 
@@ -710,18 +723,17 @@ const result = await fb2k.invoke('menu.getContextMenu', { handles: /* value */, 
 语义：省略可选参数时使用 handler 默认值；失败分支及错误字段以该源文件为准。
 
 ```js
-const result = await fb2k.invoke('menu.runContextCommandById', { id: /* value */, mode: /* value */, handles: /* value */ });
+const { items } = await fb2k.invoke('menu.getContextMenu');
+await fb2k.invoke('menu.runContextCommandById', { id: items[0].commandId });
 ```
 <!-- phase3-supplement:misc.showPopupMessage -->
 ### Contract 补充：`misc.showPopupMessage`
 
-经复核的补充 contract。权威源：`src/api/MiscApi.cpp:97-105`。
-
 | 参数 | 类型 | 必填 | 默认值 | 说明 |
 | --- | --- | --- | --- | --- |
-| `message` | `string` | 否 | `` | 可选；默认 。 |
-| `msg` | `string` | 否 | `` | 可选；默认 。 |
-| `title` | `string` | 否 | `Message` | 可选；默认 Message。 |
+| `message` | `string` | 否 | `` | 对话框正文。 |
+| `msg` | `string` | 否 | `` | 早期别名，仅在未传 `message` 时生效。 |
+| `title` | `string` | 否 | `Message` | 标题栏文本。 |
 
 #### 返回字段
 
@@ -732,5 +744,5 @@ const result = await fb2k.invoke('menu.runContextCommandById', { id: /* value */
 语义：省略可选参数时使用 handler 默认值；失败分支及错误字段以该源文件为准。
 
 ```js
-const result = await fb2k.invoke('misc.showPopupMessage', { message: /* value */, msg: /* value */, title: /* value */ });
+await fb2k.invoke('misc.showPopupMessage', { message: '导出完成' });
 ```

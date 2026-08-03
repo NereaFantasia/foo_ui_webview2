@@ -8,7 +8,7 @@ This page is the primary owner for the namespaces listed below. Method names, pa
 
 ### clipboard.read
 
-Public API method. Runtime authority: `src/api/ClipboardApi.cpp:319`.
+Reads the Windows clipboard and reports which of text, file list, and image data it currently holds.
 
 _No parameters._
 
@@ -20,52 +20,52 @@ const result = await fb2k.invoke('clipboard.read');
 
 ### clipboard.write
 
-Public API method. Runtime authority: `src/api/ClipboardApi.cpp:322`.
+Replaces the clipboard contents with Unicode text.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `text` | `string` | No | Optional; default . |
+| `text` | `string` | Yes | Text to place on the clipboard. An empty string fails with `text is required`. |
 
 **Returns**: `{"error":"...","success":true}`
 
 ```js
-const result = await fb2k.invoke('clipboard.write', { text: /* value */ });
+await fb2k.invoke('clipboard.write', { text: 'copied text' });
 ```
 
 ### clipboard.writeFiles
 
-Public API method. Runtime authority: `src/api/ClipboardApi.cpp:328`.
+Places a file list on the clipboard so that Explorer and other shell targets can paste it.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `paths` | `array` | Yes | Required. |
+| `paths` | `array` | Yes | Array of absolute file paths. A missing, non-array, or empty value fails. |
 
 **Returns**: `{"error":"...","fileCount":"...","success":true}`
 
 ```js
-const result = await fb2k.invoke('clipboard.writeFiles', { paths: /* value */ });
+await fb2k.invoke('clipboard.writeFiles', { paths: ['C:\\Music\\song.flac'] });
 ```
 
 ### clipboard.writeHTML
 
-Public API method. Runtime authority: `src/api/ClipboardApi.cpp:325`.
+Writes rich text to the clipboard in `HTML Format`, together with a plain-text fallback.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `html` | `string` | No | Optional; default . |
-| `plainText` | `string` | No | Optional; default . |
+| `html` | `string` | Yes | HTML fragment to write. An empty string fails with `html is required`. |
+| `plainText` | `string` | No | Plain-text fallback. Defaults to the `html` string itself. |
 
 **Returns**: `{"error":"...","htmlWritten":"...","success":true,"textWritten":"..."}`
 
 ```js
-const result = await fb2k.invoke('clipboard.writeHTML', { html: /* value */, plainText: /* value */ });
+await fb2k.invoke('clipboard.writeHTML', { html: '<b>Now playing</b>' });
 ```
 
 ## console
 
 ### console.error
 
-Public API method. Runtime authority: `src/api/ConsoleApi.cpp:308`.
+Prints a message to the foobar2000 console with an `ERROR` marker.
 
 Provide one of `message` or `args`. Empty payloads fail with `message is required`.
 
@@ -82,7 +82,7 @@ const result = await fb2k.invoke('console.error', { message: 'failed to load art
 
 ### console.log
 
-Public API method. Runtime authority: `src/api/ConsoleApi.cpp:302`.
+Prints a message to the foobar2000 console.
 
 Provide one of `message` or `args`. Empty payloads fail with `message is required`.
 
@@ -99,7 +99,7 @@ const result = await fb2k.invoke('console.log', { message: 'track started' });
 
 ### console.warn
 
-Public API method. Runtime authority: `src/api/ConsoleApi.cpp:305`.
+Prints a message to the foobar2000 console with a `WARN` marker.
 
 Provide one of `message` or `args`. Empty payloads fail with `message is required`.
 
@@ -118,7 +118,7 @@ const result = await fb2k.invoke('console.warn', { args: ['retry', 3] });
 
 ### log.clear
 
-Public API method. Runtime authority: `src/api/ConsoleApi.cpp:317`.
+Truncates the component log file in the profile directory.
 
 _No parameters._
 
@@ -130,42 +130,44 @@ const result = await fb2k.invoke('log.clear');
 
 ### log.read
 
-Public API method. Runtime authority: `src/api/ConsoleApi.cpp:314`.
+Reads the tail of the component log file.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `lines` | `integer` | No | Optional; default 100. |
+| `lines` | `integer` | No | Number of trailing lines to return. Defaults to `100`. Negative values fail with `lines must be non-negative`. |
 
 **Returns**: `{"content":"...","error":"...","lineCount":"...","lines":"...","success":true,"totalLines":"..."}`
 
 ```js
-const result = await fb2k.invoke('log.read', { lines: /* value */ });
+const { content } = await fb2k.invoke('log.read', { lines: 50 });
 ```
 
 ### log.write
 
-Public API method. Runtime authority: `src/api/ConsoleApi.cpp:311`.
+Appends a line to a log file in the profile directory.
+
+Provide one of `message` or `args`. Empty payloads fail with `message is required`.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `message` | `string` | No | Optional; default omitted. |
-| `args` | `array` | No | Optional; default []. |
-| `file` | `string` | No | Optional; default omitted. |
-| `level` | `string` | No | Optional; default info. |
-| `append` | `boolean` | No | Optional; default true. |
-| `timestamp` | `boolean` | No | Optional; default true. |
+| `message` | `string` | No | Log text. Non-string values are serialized. |
+| `args` | `array` | No | Argument list joined with spaces when `message` is omitted. |
+| `file` | `string` | No | Leaf `.log` or `.txt` filename under the profile directory. Defaults to `webview_ui.log`. |
+| `level` | `string` | No | Level tag written in upper case before the message. Defaults to `info`. |
+| `append` | `boolean` | No | Appends when `true` (the default); truncates the file first when `false`. |
+| `timestamp` | `boolean` | No | Prefixes each line with a timestamp. Defaults to `true`. |
 
 **Returns**: `{"error":"...","path":"...","success":true}`
 
 ```js
-const result = await fb2k.invoke('log.write', { message: /* value */, args: /* value */, append: /* value */, file: /* value */, level: /* value */, timestamp: /* value */ });
+await fb2k.invoke('log.write', { message: 'panel initialized' });
 ```
 
 ## menu
 
 ### menu.close
 
-Public API method. Runtime authority: `src/api/MenuApi.cpp:1141-1146`.
+Closes the active self-drawn menu overlay, if one is open.
 
 | Parameter | Type | Required | Default | Description |
 | --- | --- | --- | --- | --- |
@@ -179,77 +181,77 @@ const result = await fb2k.invoke('menu.close', { reason: 'api' });
 
 ### menu.getContextMenu
 
-Public API method. Runtime authority: `src/api/MenuApi.cpp:1330`.
+Returns the context menu tree that foobar2000 would build for the selected context.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `handles` | `array` | No | Optional; default []. |
-| `i18n` | `boolean` | No | Optional; default true. |
-| `locale` | `string` | No | Optional; default auto. |
-| `mode` | `string` | No | Optional; `auto`, `selection`, `playlist`, `nowPlaying`, or `handles`; default `auto`. |
-| `withAvailability` | `boolean` | No | Optional; default true. |
+| `handles` | `array` | No | Track paths, or `{ path, subsong }` objects, used as the menu context. Required when `mode` is `handles`. |
+| `i18n` | `boolean` | No | Translates item labels into `displayLabel`. Defaults to `true`. |
+| `locale` | `string` | No | Translation locale. Defaults to `auto`, which keeps the host's own labels. |
+| `mode` | `string` | No | One of `auto`, `selection`, `playlist`, `nowPlaying`, or `handles`. Defaults to `auto`, which is also used for any other value. |
+| `withAvailability` | `boolean` | No | Includes per-submenu availability counters. Defaults to `true`. |
 
 **Returns**: `{"Failed to initialize context menu":"...","error":"...","i18n":"...","items":"...","locale":"...","mode":"...","success":true,"withAvailability":"..."}`
 
 ```js
-const result = await fb2k.invoke('menu.getContextMenu', { i18n: /* value */, locale: /* value */, mode: /* value */, withAvailability: /* value */, handles: /* value */ });
+const { items } = await fb2k.invoke('menu.getContextMenu', { mode: 'selection' });
 ```
 
 ### menu.getMainMenu
 
-Public API method. Runtime authority: `src/api/MenuApi.cpp:1329`.
+Returns the main menu tree, falling back to a flat command list when the host cannot build a tree.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `i18n` | `boolean` | No | Optional; default true. |
-| `locale` | `string` | No | Optional; default auto. |
-| `root` | `string` | No | Optional; default . |
-| `withAvailability` | `boolean` | No | Optional; default true. |
+| `i18n` | `boolean` | No | Translates item labels into `displayLabel`. Defaults to `true`. |
+| `locale` | `string` | No | Translation locale. Defaults to `auto`, which keeps the host's own labels. |
+| `root` | `string` | No | Restricts the tree to one top-level menu, such as `View`. Defaults to the whole menu. |
+| `withAvailability` | `boolean` | No | Includes per-submenu availability counters. Defaults to `true`. |
 
 **Returns**: `{"error":"...","fallback":"...","items":[],"success":true}`
 
 ```js
-const result = await fb2k.invoke('menu.getMainMenu', { i18n: /* value */, locale: /* value */, root: /* value */, withAvailability: /* value */ });
+const { items } = await fb2k.invoke('menu.getMainMenu', { root: 'View' });
 ```
 
 ### menu.runContextCommand
 
-Public API method. Runtime authority: `src/api/MenuApi.cpp:1328`.
+Runs a context menu command against the current selection or the now playing track.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `command` | `string` | No | Optional; default . |
+| `command` | `string` | Yes | Command name or GUID string. An empty value fails with `command is required`. |
 
 **Returns**: `{"error":"...","guid":"...","itemCount":"...","success":true}`
 
 ```js
-const result = await fb2k.invoke('menu.runContextCommand', { command: /* value */ });
+await fb2k.invoke('menu.runContextCommand', { command: 'Playback Statistics/Rating/5' });
 ```
 
 ### menu.runContextCommandById
 
-Public API method. Runtime authority: `src/api/MenuApi.cpp:1331`.
+Runs a context menu command by the numeric id reported by `menu.getContextMenu`.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `id` | `integer` | No | Optional; default -1. |
-| `mode` | `string` | No | Optional; default auto. |
-| `handles` | `array` | No | Optional; default []. |
+| `id` | `integer` | Yes | Command id from the built context menu. Missing, non-integer, or negative values fail with `id is required`. |
+| `mode` | `string` | No | One of `selection`, `playlist`, `nowPlaying`, `handles`, or `auto`. Defaults to `auto`, which is also used for any other value. |
+| `handles` | `array` | No | Track paths, or `{ path, subsong }` objects, used as the menu context. Required when `mode` is `handles`. |
 
 **Returns**: `{"Failed to initialize context menu":"...","error":"...","success":true}`
 
 ```js
-const result = await fb2k.invoke('menu.runContextCommandById', { id: /* value */, mode: /* value */, handles: /* value */ });
+await fb2k.invoke('menu.runContextCommandById', { id: 3 });
 ```
 
 ### menu.runMainMenuCommand
 
-Public API method. Runtime authority: `src/api/MenuApi.cpp:1327`.
+Runs a main menu command.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `command` | `string` | No | Optional; default . |
-| `subGuid` | `string` | No | Optional; default . |
+| `command` | `string` | Yes | GUID, leaf command name, or slash-separated path. An empty value fails with `command is required`. |
+| `subGuid` | `string` | No | GUID of a dynamic child command, paired with its owning command GUID. A malformed value fails with `Invalid subGuid format`. |
 
 **Returns**: `{"error":"...","guid":"...","success":true}`
 
@@ -285,40 +287,46 @@ await fb2k.invoke('menu.runMainMenuCommand', {
 
 ### menu.show
 
-Public API method. Runtime authority: `src/api/MenuApi.cpp:1333`.
+Opens the self-drawn menu overlay and returns its id; the user's choice arrives later through the `menu:select` and `menu:dismiss` events.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `items` | `array` | No | Optional; default omitted. |
-| `x` | `integer` | No | Optional; default -1. |
-| `y` | `integer` | No | Optional; default -1. |
+| `items` | `array` | No | Menu rows, each with `id`, `label`, and optional `type`, `enabled`, `checked`, and nested `submenu`. Defaults to an empty menu. |
+| `x` | `integer` | No | Screen-space X anchor in pixels. Defaults to the cursor X, which is also used for negative values. |
+| `y` | `integer` | No | Screen-space Y anchor in pixels. Defaults to the cursor Y, which is also used for negative values. |
 
 **Returns**: `{"error":"...","menuId":"...","success":true}`
 
 ```js
-const result = await fb2k.invoke('menu.show', { items: /* value */, x: /* value */, y: /* value */ });
+const { menuId } = await fb2k.invoke('menu.show', {
+    items: [
+        { id: 'play', label: 'Play' },
+        { type: 'separator' },
+        { id: 'props', label: 'Properties' },
+    ],
+});
 ```
 
 ### menu.showNativePopup
 
-Public API method. Runtime authority: `src/api/MenuApi.cpp:1332`.
+Opens the native foobar2000 context menu at the current cursor position.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `handles` | `array` | No | Optional; default []. |
-| `mode` | `string` | No | Optional; `auto`, `selection`, `playlist`, `nowPlaying`, or `handles`; default `auto`. |
+| `handles` | `array` | No | Track paths, or `{ path, subsong }` objects, used as the menu context. Required when `mode` is `handles`. |
+| `mode` | `string` | No | One of `auto`, `selection`, `playlist`, `nowPlaying`, or `handles`. Defaults to `auto`, which is also used for any other value. |
 
 **Returns**: `{"error":"...","success":true}`
 
 ```js
-const result = await fb2k.invoke('menu.showNativePopup', { handles: /* value */, mode: /* value */ });
+await fb2k.invoke('menu.showNativePopup', { mode: 'nowPlaying' });
 ```
 
 ## misc
 
 ### misc.exit
 
-Public API method. Runtime authority: `src/api/MiscApi.cpp:132`.
+Requests the foobar2000 exit command.
 
 _No parameters._
 
@@ -330,7 +338,7 @@ const result = await fb2k.invoke('misc.exit');
 
 ### misc.getComponentPath
 
-Public API method. Runtime authority: `src/api/MiscApi.cpp:126`.
+Returns the directory the component DLL was loaded from.
 
 _No parameters._
 
@@ -342,7 +350,7 @@ const result = await fb2k.invoke('misc.getComponentPath');
 
 ### misc.getFoobarPath
 
-Public API method. Runtime authority: `src/api/MiscApi.cpp:124`.
+Returns the foobar2000 installation directory.
 
 _No parameters._
 
@@ -354,7 +362,7 @@ const result = await fb2k.invoke('misc.getFoobarPath');
 
 ### misc.getProfilePath
 
-Public API method. Runtime authority: `src/api/MiscApi.cpp:125`.
+Returns the foobar2000 profile directory.
 
 _No parameters._
 
@@ -366,7 +374,7 @@ const result = await fb2k.invoke('misc.getProfilePath');
 
 ### misc.restart
 
-Public API method. Runtime authority: `src/api/MiscApi.cpp:131`.
+Requests the foobar2000 restart command.
 
 _No parameters._
 
@@ -378,7 +386,7 @@ const result = await fb2k.invoke('misc.restart');
 
 ### misc.showConsole
 
-Public API method. Runtime authority: `src/api/MiscApi.cpp:127`.
+Opens the foobar2000 console window.
 
 _No parameters._
 
@@ -390,32 +398,35 @@ const result = await fb2k.invoke('misc.showConsole');
 
 ### misc.showLibrarySearch
 
-Public API method. Runtime authority: `src/api/MiscApi.cpp:129`.
+Opens the media library search window, optionally pre-filled with a query.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `query` | `string` | No | Optional; default . |
+| `query` | `string` | No | Initial search query. Defaults to an empty query. |
 
 **Returns**: `{"query":"...","success":true}`
 
 ```js
-const result = await fb2k.invoke('misc.showLibrarySearch', { query: /* value */ });
+await fb2k.invoke('misc.showLibrarySearch', { query: 'artist has Radiohead' });
 ```
 
 ### misc.showPopupMessage
 
-Public API method. Runtime authority: `src/api/MiscApi.cpp:130`.
+Shows a foobar2000 popup message dialog. Always reports `success: true`.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `message` | `string` | No | Optional; default . |
-| `msg` | `string` | No | Optional; default . |
-| `title` | `string` | No | Optional; default Message. |
+| `message` | `string` | No | Message body. Defaults to an empty message. |
+| `msg` | `string` | No | Legacy alias, used only when `message` is absent. Prefer `message`. |
+| `title` | `string` | No | Dialog title. Defaults to `Message`. |
 
 **Returns**: `{"success":true}`
 
 ```js
-const result = await fb2k.invoke('misc.showPopupMessage', { message: /* value */, msg: /* value */, title: /* value */ });
+await fb2k.invoke('misc.showPopupMessage', {
+    message: 'Playlist exported.',
+    title: 'Now Playing',
+});
 ```
 ## Owner-family behavior and limits
 
@@ -428,7 +439,7 @@ const result = await fb2k.invoke('misc.showPopupMessage', { message: /* value */
 
 ### misc.showPreferences
 
-Public API method. Runtime authority: `src/api/MiscApi.cpp:128`.
+Opens the foobar2000 preferences dialog.
 
 _No parameters._
 
@@ -442,7 +453,7 @@ const result = await fb2k.invoke('misc.showPreferences');
 
 ### panel.getConfig
 
-Public API method. Runtime authority: `src/api/WindowApi.cpp:2470`.
+Returns the calling panel's configuration.
 
 _No parameters._
 
@@ -454,26 +465,26 @@ const result = await fb2k.invoke('panel.getConfig');
 
 ### panel.setConfig
 
-Public API method. Runtime authority: `src/api/WindowApi.cpp:2471`.
+Updates the calling panel's configuration. Only the fields below may be changed from JavaScript; omitted fields keep their current value.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `enableDragDrop` | `boolean` | No | Optional; default omitted. |
-| `grabFocus` | `boolean` | No | Optional; default omitted. |
-| `panelName` | `string` | No | Optional; default omitted. |
-| `transparentBackground` | `boolean` | No | Optional; default omitted. |
+| `enableDragDrop` | `boolean` | No | Enables drag-and-drop onto the panel. |
+| `grabFocus` | `boolean` | No | Lets the panel take keyboard focus on click. |
+| `panelName` | `string` | No | Display name of the panel. |
+| `transparentBackground` | `boolean` | No | Renders the panel with a transparent background. |
 
 **Returns**: `{"changed":"...","error":"...","success":true}`
 
 ```js
-const result = await fb2k.invoke('panel.setConfig', { enableDragDrop: /* value */, grabFocus: /* value */, panelName: /* value */, transparentBackground: /* value */ });
+await fb2k.invoke('panel.setConfig', { grabFocus: true });
 ```
 
 ## system
 
 ### system.getApiStats
 
-Public API method. Runtime authority: `src/api/PluginRegistry.cpp:490`.
+Returns counters describing the registered API surface.
 
 _No parameters._
 
@@ -485,21 +496,21 @@ const result = await fb2k.invoke('system.getApiStats');
 
 ### system.getApisByNamespace
 
-Public API method. Runtime authority: `src/api/PluginRegistry.cpp:454`.
+Lists the registered APIs belonging to one namespace.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `namespace` | `string` | No | Optional; default . |
+| `namespace` | `string` | Yes | Namespace to list, such as `playback`. An empty value fails with `namespace is required`. |
 
 **Returns**: JSON object from the runtime handler.
 
 ```js
-const result = await fb2k.invoke('system.getApisByNamespace', { namespace: /* value */ });
+const apis = await fb2k.invoke('system.getApisByNamespace', { namespace: 'playback' });
 ```
 
 ### system.getDPI
 
-Public API method. Runtime authority: `src/api/WindowApi.cpp:2426`.
+Returns the DPI and scale factor of the panel's display.
 
 _No parameters._
 
@@ -511,7 +522,7 @@ const result = await fb2k.invoke('system.getDPI');
 
 ### system.getLocale
 
-Public API method. Runtime authority: `src/api/WindowApi.cpp:2429`.
+Returns the current Windows user locale, language, and country.
 
 _No parameters._
 
@@ -523,7 +534,7 @@ const result = await fb2k.invoke('system.getLocale');
 
 ### system.getRegisteredPlugins
 
-Public API method. Runtime authority: `src/api/PluginRegistry.cpp:496`.
+Lists the external plugins registered with the bridge.
 
 _No parameters._
 
@@ -535,7 +546,7 @@ const result = await fb2k.invoke('system.getRegisteredPlugins');
 
 ### system.getTheme
 
-Public API method. Runtime authority: `src/api/WindowApi.cpp:2425`.
+Returns the Windows theme state: dark mode, accent color, and transparency.
 
 _No parameters._
 
@@ -547,66 +558,66 @@ const result = await fb2k.invoke('system.getTheme');
 
 ### system.isPluginRegistered
 
-Public API method. Runtime authority: `src/api/PluginRegistry.cpp:509`.
+Reports whether a plugin namespace is registered.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `namespace` | `string` | No | Optional; default . |
+| `namespace` | `string` | Yes | Plugin namespace to check. An empty value fails with `namespace is required`. |
 
 **Returns**: `{"registered":"...","success":true}`
 
 ```js
-const result = await fb2k.invoke('system.isPluginRegistered', { namespace: /* value */ });
+const { registered } = await fb2k.invoke('system.isPluginRegistered', { namespace: 'myplugin' });
 ```
 
 ### system.listAvailableApis
 
-Public API method. Runtime authority: `src/api/PluginRegistry.cpp:438`.
+Lists every API currently available through the bridge.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `includeExternal` | `boolean` | No | Optional; default true. |
-| `includeInternal` | `boolean` | No | Optional; default true. |
+| `includeExternal` | `boolean` | No | Includes APIs registered by external plugins. Defaults to `true`. |
+| `includeInternal` | `boolean` | No | Includes APIs built into the component. Defaults to `true`. |
 
 **Returns**: JSON object from the runtime handler.
 
 ```js
-const result = await fb2k.invoke('system.listAvailableApis', { includeExternal: /* value */, includeInternal: /* value */ });
+const apis = await fb2k.invoke('system.listAvailableApis', { includeExternal: false });
 ```
 
 ### system.searchApis
 
-Public API method. Runtime authority: `src/api/PluginRegistry.cpp:472`.
+Searches registered APIs by name or description.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `query` | `string` | No | Optional; default . |
+| `query` | `string` | Yes | Search text. An empty value fails with `query is required`. |
 
 **Returns**: JSON object from the runtime handler.
 
 ```js
-const result = await fb2k.invoke('system.searchApis', { query: /* value */ });
+const apis = await fb2k.invoke('system.searchApis', { query: 'playlist' });
 ```
 
 ## test
 
 ### test.echo
 
-Public API method. Runtime authority: `src/api/PlaybackApi.cpp:697`.
+Echoes the request back, for round-trip diagnostics.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `message` | `json` | No | Optional; default omitted. |
+| `message` | `json` | No | Any JSON value, returned in `echo`. When omitted, the whole params object is echoed instead. |
 
 **Returns**: `{"echo":"...","input":"...","success":true}`
 
 ```js
-const result = await fb2k.invoke('test.echo', { message: /* value */ });
+const { echo } = await fb2k.invoke('test.echo', { message: 'ping' });
 ```
 
 ### test.ping
 
-Public API method. Runtime authority: `src/api/PlaybackApi.cpp:698`.
+Returns a liveness marker and the host's current Unix timestamp.
 
 _No parameters._
 
@@ -623,16 +634,14 @@ The sections below close public-contract findings from the strict parameter audi
 <!-- phase3-supplement:log.write -->
 ### Contract supplement: `log.write`
 
-Verified contract supplement. Runtime authority: `src/api/ConsoleApi.cpp:140-221`.
-
 | Parameter | Type | Required | Default | Description |
 | --- | --- | --- | --- | --- |
-| `message` | `string` | No | omitted | Optional; default omitted. |
-| `args` | `array` | No | `[]` | Optional; default []. |
-| `file` | `string` | No | omitted | Optional; default omitted. |
-| `level` | `string` | No | `info` | Optional; default info. |
-| `append` | `boolean` | No | `true` | Optional; default true. |
-| `timestamp` | `boolean` | No | `true` | Optional; default true. |
+| `message` | `string` | No | omitted | Log text. Non-string values are serialized. |
+| `args` | `array` | No | `[]` | Argument list joined with spaces when `message` is omitted. |
+| `file` | `string` | No | omitted | Leaf `.log` or `.txt` filename under the profile directory. |
+| `level` | `string` | No | `info` | Level tag written in upper case before the message. |
+| `append` | `boolean` | No | `true` | Appends when `true`; truncates the file first when `false`. |
+| `timestamp` | `boolean` | No | `true` | Prefixes each line with a timestamp. |
 
 #### Return fields
 
@@ -642,23 +651,21 @@ Verified contract supplement. Runtime authority: `src/api/ConsoleApi.cpp:140-221
 | `success` | `boolean` | No |
 | `path` | `json` | No |
 
-Semantics: omitted optional parameters use handler defaults; failure branches and error fields are defined by this source file.
+Semantics: omitted optional parameters use handler defaults. One of `message` or `args` must be present.
 
 ```js
-const result = await fb2k.invoke('log.write', { message: /* value */, args: /* value */, file: /* value */, level: /* value */, append: /* value */, timestamp: /* value */ });
+await fb2k.invoke('log.write', { message: 'startup complete', level: 'warn' });
 ```
 <!-- phase3-supplement:menu.getContextMenu -->
 ### Contract supplement: `menu.getContextMenu`
 
-Verified contract supplement. Runtime authority: `src/api/MenuApi.cpp:980-1024`.
-
 | Parameter | Type | Required | Default | Description |
 | --- | --- | --- | --- | --- |
-| `handles` | `array` | No | `[]` | Optional; default []. |
-| `i18n` | `boolean` | No | `true` | Optional; default true. |
-| `locale` | `string` | No | `auto` | Optional; default auto. |
-| `mode` | `string` | No | `auto` | Optional; default auto. |
-| `withAvailability` | `boolean` | No | `true` | Optional; default true. |
+| `handles` | `array` | No | `[]` | Track paths, or `{ path, subsong }` objects, used as the menu context. |
+| `i18n` | `boolean` | No | `true` | Translates item labels into `displayLabel`. |
+| `locale` | `string` | No | `auto` | Translation locale; `auto` keeps the host's own labels. |
+| `mode` | `string` | No | `auto` | One of `auto`, `selection`, `playlist`, `nowPlaying`, or `handles`. |
+| `withAvailability` | `boolean` | No | `true` | Includes per-submenu availability counters. |
 
 #### Return fields
 
@@ -672,21 +679,19 @@ Verified contract supplement. Runtime authority: `src/api/MenuApi.cpp:980-1024`.
 | `mode` | `json` | No |
 | `withAvailability` | `json` | No |
 
-Semantics: omitted optional parameters use handler defaults; failure branches and error fields are defined by this source file.
+Semantics: omitted optional parameters use handler defaults. `mode: 'handles'` additionally requires a non-empty `handles` array.
 
 ```js
-const result = await fb2k.invoke('menu.getContextMenu', { handles: /* value */, i18n: /* value */, locale: /* value */, mode: /* value */, withAvailability: /* value */ });
+const { items } = await fb2k.invoke('menu.getContextMenu', { mode: 'nowPlaying' });
 ```
 <!-- phase3-supplement:menu.runContextCommandById -->
 ### Contract supplement: `menu.runContextCommandById`
 
-Verified contract supplement. Runtime authority: `src/api/MenuApi.cpp:1024-1045`.
-
 | Parameter | Type | Required | Default | Description |
 | --- | --- | --- | --- | --- |
-| `id` | `integer` | No | `-1` | Optional; default -1. |
-| `mode` | `string` | No | `auto` | Optional; default auto. |
-| `handles` | `array` | No | `[]` | Optional; default []. |
+| `id` | `integer` | Yes | — | Command id from the built context menu. Missing, non-integer, or negative values fail with `id is required`. |
+| `mode` | `string` | No | `auto` | One of `selection`, `playlist`, `nowPlaying`, `handles`, or `auto`. |
+| `handles` | `array` | No | `[]` | Track paths, or `{ path, subsong }` objects, used as the menu context. |
 
 #### Return fields
 
@@ -695,21 +700,19 @@ Verified contract supplement. Runtime authority: `src/api/MenuApi.cpp:1024-1045`
 | `error` | `string` | Yes |
 | `success` | `boolean` | No |
 
-Semantics: omitted optional parameters use handler defaults; failure branches and error fields are defined by this source file.
+Semantics: omitted optional parameters use handler defaults. `mode: 'handles'` additionally requires a non-empty `handles` array.
 
 ```js
-const result = await fb2k.invoke('menu.runContextCommandById', { id: /* value */, mode: /* value */, handles: /* value */ });
+await fb2k.invoke('menu.runContextCommandById', { id: 3, mode: 'selection' });
 ```
 <!-- phase3-supplement:misc.showPopupMessage -->
 ### Contract supplement: `misc.showPopupMessage`
 
-Verified contract supplement. Runtime authority: `src/api/MiscApi.cpp:97-105`.
-
 | Parameter | Type | Required | Default | Description |
 | --- | --- | --- | --- | --- |
-| `message` | `string` | No | `` | Optional; default . |
-| `msg` | `string` | No | `` | Optional; default . |
-| `title` | `string` | No | `Message` | Optional; default Message. |
+| `message` | `string` | No | `` | Message body. |
+| `msg` | `string` | No | `` | Legacy alias, used only when `message` is absent. |
+| `title` | `string` | No | `Message` | Dialog title. |
 
 #### Return fields
 
@@ -717,8 +720,8 @@ Verified contract supplement. Runtime authority: `src/api/MiscApi.cpp:97-105`.
 | --- | --- | --- |
 | `success` | `boolean` | No |
 
-Semantics: omitted optional parameters use handler defaults; failure branches and error fields are defined by this source file.
+Semantics: omitted optional parameters use handler defaults. There is no failure branch; the call always reports `success: true`.
 
 ```js
-const result = await fb2k.invoke('misc.showPopupMessage', { message: /* value */, msg: /* value */, title: /* value */ });
+await fb2k.invoke('misc.showPopupMessage', { message: 'Export finished.' });
 ```
