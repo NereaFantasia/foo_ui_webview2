@@ -267,7 +267,7 @@ fb2k.on('playback:trackChanged', async (track) => {
 | `min` | integer | `0` | `slider` 项最小值。 |
 | `max` | integer | `100` | `slider` 项最大值。 |
 | `orientation` | string | 可省略 | `slider` 方向；支持 `horizontal` 或 `vertical`。 |
-| `playbackAction` | string | 可省略 | 声明式原生播放动作：`'play-pause' \| 'previous' \| 'next' \| 'stop'`。仅合法于 `type:'normal'` 叶子；组装时盖章为内置播放路由并原生执行，**不发** `tray:menuItemClicked`。外观/`id`/`label`/`icon` 仍由调用方控制；主窗口最小化/托盘隐藏/锁屏深挂起时仍可靠。非法取值或写在 separator/submenu/富控件上 → 整次调用 fail-loud `INVALID_PARAMS`。不接受 `'exit'`（退出仍走精确 `_sys_exit`）。对 `menu.show` 无效。`getMenuItems()` round-trip。 |
+| `playbackAction` | string | 可省略 | 声明式原生播放动作：`'play-pause' \| 'previous' \| 'next' \| 'stop'`。仅合法于 `type:'normal'` 叶子；组装时盖章为内置播放路由并原生执行，**不发** `tray:menuItemClicked`。外观/`id`/`label`/`icon` 仍由调用方控制；主窗口最小化/托盘隐藏/锁屏深挂起时仍可靠。非法取值或写在 separator/submenu/富控件上 → 整次调用 fail-loud `INVALID_PARAMS`。不接受 `'exit'` / `'show-main-window'`（系统动作仍走精确 `_sys_exit` / `_sys_show`）。对 `menu.show` 无效。`getMenuItems()` round-trip。 |
 | `segments` | array | 可省略 | `segmented` 项的分段数组。 |
 
 > `rating` / `slider` / `segmented` 的值变化通过 `tray:menuItemClicked` 携带 `{ id, value }` 上报，且**不关闭菜单**（`segmented` 的 `value` = 选中段索引，点击段或键盘 Left/Right 切换；index→业务语义由前端映射，契约保持通用）；`nowplaying` 点击与普通项一样发 `{ id }` 并关闭。值控件不参与 `autoNowPlaying` 兜底（仅 `nowplaying`）。
@@ -331,7 +331,7 @@ await fb2k.invoke('tray.setContextMenu', {
 ```typescript
 interface TrayMenuConfig {
     showPlaybackControls?: boolean;   // 默认 true，自动注入 4 项播放控制（上一首 / 播放暂停 / 下一首 / 停止）到 playback 分区
-    showSystemItems?: boolean;        // 默认 true，自动注入「Exit foobar2000」到 bottom 分区
+    showSystemItems?: boolean;        // 默认 true，自动注入「显示主窗口」+「Exit foobar2000」到 bottom 分区（均原生执行）
     customPosition?: 'top' | 'playback' | 'bottom';  // 默认 'top'，setContextMenu 的 items 写入哪个分区
     render?: 'native' | 'webview';    // 默认 'native'（Win32 菜单）；'webview' 改用 WebView2 自绘菜单
     autoNowPlaying?: boolean;         // 默认 false；nowplaying 项的空字段(cover/title/subtitle)右键时按「前端优先、后端兜底」自动填当前曲目（cover 仅 webview）
@@ -653,7 +653,7 @@ await fb2k.invoke('tray.setContextMenu', {
     items: [{ id: 'addFav', label: '☆ 添加到收藏夹' }],
     config: {
         showPlaybackControls: true,    // 自动注入 playback 分区（上一首 / 播放暂停 / 下一首 / 停止）
-        showSystemItems: true,         // 自动注入 bottom 分区 Exit foobar2000
+        showSystemItems: true,         // 自动注入 bottom 分区「显示主窗口」+ Exit foobar2000
         customPosition: 'top',         // items 写入 top 分区
     },
 });
@@ -712,12 +712,10 @@ await fb2k.invoke('tray.removeMenuItems', { ids: ['revealInExplorer', 'copyPath'
 <!-- phase3-supplement:taskbar.setProgress -->
 ### Contract 补充：`taskbar.setProgress`
 
-经复核的补充 contract。权威源：`src/api/TaskbarApi.cpp:178`。
-
 | 参数 | 类型 | 必填 | 默认值 | 说明 |
 | --- | --- | --- | --- | --- |
-| `state` | `string` | 否 | `none` | 以当前 handler 为准。 |
-| `value` | `number` | 否 | — | 以当前 handler 为准。 |
+| `state` | `string` | 否 | `none` | 取 `none`、`indeterminate`、`normal`、`error`、`paused` 之一；其他任何值同样按 `none` 处理。 |
+| `value` | `number` | 否 | — | 仅当取值为 0 到 1（含端点）的数字时生效，否则保持原有进度。 |
 
 #### 返回字段
 
@@ -726,16 +724,15 @@ await fb2k.invoke('tray.removeMenuItems', { ids: ['revealInExplorer', 'copyPath'
 | `success` | `boolean` | 否 |
 | `panelMode` | `boolean` | 否 |
 
-语义：省略可选参数时使用 handler 默认值；失败分支及错误字段以该源文件为准。
+`success` 反映任务栏是否接受了本次变更，因此即使参数合法，COM 集成尚未初始化时也可能为 `false`。panel 模式下返回 `{ success: false, panelMode: true }`。
 
 ```js
-const result = await fb2k.invoke('taskbar.setProgress', { state: /* value */, value: /* value */ });
+// indeterminate 下 value 不生效
+await fb2k.invoke('taskbar.setProgress', { state: 'indeterminate' });
 ```
 
 <!-- contract-supplement:tray.playbackAction -->
 ### Contract 补充：`items[].playbackAction`
-
-运行时权威：`src/api/TrayApi.cpp`（`ParseMenuItem`）与 `src/window/TrayIcon.h`（`PromoteDeclaredPlaybackItems`、`BuildEffectiveTrayZones`）。
 
 `playbackAction` 声明由插件原生执行的播放动作（而非页面 JS）。取值之一：`'play-pause' | 'previous' | 'next' | 'stop'`；仅合法于 `type: 'normal'` 叶子。
 
@@ -746,7 +743,7 @@ const result = await fb2k.invoke('taskbar.setProgress', { state: /* value */, va
 | 事件 | 声明项**不发** `tray:menuItemClicked`；按钮态从 `playback:*` 反映。 |
 | 外观 | 调用方完整控制 `label` / `icon` / `id`；仅路由改变。 |
 | 校验 | fail-loud：未知 token，或写在 separator / submenu / 富控件上，整次 `setContextMenu` / `appendMenuItems` 返回 `INVALID_PARAMS`。 |
-| `'exit'` | 不接受——应用退出仍走精确 `_sys_exit`。 |
+| `'exit'` / `'show-main-window'` | 不接受——系统动作仍走精确 `_sys_exit` / `_sys_show`。 |
 | 作用域 | 仅 tray 菜单；对 `menu.show` 无效。 |
 | Round-trip | `getMenuItems()` 回传已声明的 `playbackAction`。 |
 
@@ -788,6 +785,24 @@ await fb2k.invoke('tray.setContextMenu', {
 `background:rgba(...)` 等声明。普通用户项的点击事件是 `tray:menuItemClicked`；它不会替换
 无关的 `menu:select` 或 `menu:dismiss` 事件。由插件原生执行的项——内置注入项以及声明了
 `playbackAction` 的项——不发 `tray:menuItemClicked`。
+
+### 保留系统项
+
+`showSystemItems`（默认 `true`）向 bottom 分区注入两个**原生执行**的内置项，顺序固定：
+
+| id | 标签 | 动作 |
+| --- | --- | --- |
+| `_sys_show` | 显示主窗口 | 恢复并前置主窗口，保留其最大化 / 正常放置状态 |
+| `_sys_exit` | Exit foobar2000 | 真正退出应用，绕过 `setCloseToTray` |
+
+两项都原生执行，因此**不发** `tray:menuItemClicked`。这对 `_sys_show` 是必要设计：
+隐藏到托盘会对主页面施加 `put_IsVisible(FALSE)` + 深度挂起（`TrySuspend`），renderer
+被冻结，`tray:menuItemClicked` 的 handler 根本跑不起来，也就无法自行调用
+`window.focus`。走前端事件的路线在这个项唯一有用的状态下恰好是死的。
+
+若想自绘该行而不用注入项，直接使用精确、大小写敏感的 id `_sys_show`（或 `_sys_exit`）：
+它获得同样的原生路由，你的 `label` / `icon` 被保留，对应的注入项则自动跳过。形似 id
+（如 `_sys_show_alt`、`_SYS_SHOW`）仍是普通用户项，且**不会**抑制注入。
 
 ```js
 fb2k.on('taskbar:buttonClicked', ({ id }) => console.log(id));

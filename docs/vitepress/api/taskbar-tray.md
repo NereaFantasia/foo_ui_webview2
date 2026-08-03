@@ -8,47 +8,51 @@ This page is the primary owner for the namespaces listed below. Method names, pa
 
 ### taskbar.flash
 
-Public API method. Runtime authority: `src/api/TaskbarApi.cpp:180`.
+Flashes the taskbar button to draw attention.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `count` | integer | No | Default: `3`. |
-| `interval` | integer | No | Default: `0`. |
+| `count` | integer | No | Number of flashes. Default `3`. |
+| `interval` | integer | No | Milliseconds between flashes. Default `0`. |
 
 **Returns**: `{"success":true}`
 
 ```js
-const result = await fb2k.invoke('taskbar.flash', { count: /* value */, interval: /* value */ });
+await fb2k.invoke('taskbar.flash', { count: 3 });
 ```
 
 ### taskbar.setOverlayIcon
 
-Public API method. Runtime authority: `src/api/TaskbarApi.cpp:179`.
+Draws a small overlay badge on the taskbar button.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `description` | string | No | Optional; the handler reads this field only when it is supplied. |
+| `description` | string | No | Accessibility text for the overlay. |
 | `icon` | string | No | Raw Base64-encoded `.ico` file bytes, without `data:` or `base64:` prefixes. Empty, `null`, or omitted clears the overlay icon. |
 
 **Returns**: `{"success":true}`
 
 ```js
-const result = await fb2k.invoke('taskbar.setOverlayIcon', { description: /* value */, icon: /* value */ });
+// icoBase64: raw Base64-encoded .ico file bytes
+await fb2k.invoke('taskbar.setOverlayIcon', { icon: icoBase64, description: 'Paused' });
+
+// clear the overlay
+await fb2k.invoke('taskbar.setOverlayIcon', { icon: '' });
 ```
 
 ### taskbar.setProgress
 
-Public API method. Runtime authority: `src/api/TaskbarApi.cpp:178`.
+Sets the taskbar button's progress bar state and fill.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `state` | string | No | Default: `none`. |
-| `value` | number | No | Optional; the handler reads this field only when it is supplied. |
+| `state` | string | No | One of `none`, `indeterminate`, `normal`, `error`, `paused`. Defaults to `none`, which is also used for any other value. |
+| `value` | number | No | Fill fraction. Applied only when it is a number between 0 and 1 inclusive. |
 
 **Returns**: `{"success":true}`
 
 ```js
-const result = await fb2k.invoke('taskbar.setProgress', { state: /* value */, value: /* value */ });
+await fb2k.invoke('taskbar.setProgress', { state: 'normal', value: 0.42 });
 ```
 ## Runtime lifecycle, menu data, and events
 
@@ -82,6 +86,28 @@ not substitute the unrelated `menu:select` or `menu:dismiss` events. Items that
 the plugin executes natively — the built-in injections and any item declaring
 `playbackAction` — do not emit `tray:menuItemClicked`.
 
+#### Reserved system items
+
+`showSystemItems` (default `true`) injects two natively-executed items into the
+bottom zone, in this order:
+
+| Id | Label | Action |
+| --- | --- | --- |
+| `_sys_show` | Show Main Window | Restores and foregrounds the main window, preserving its maximized / normal placement. |
+| `_sys_exit` | Exit foobar2000 | Quits the application, bypassing `setCloseToTray`. |
+
+Both run natively and therefore do **not** fire `tray:menuItemClicked`. This is
+load-bearing for `_sys_show`: hiding to the tray applies `put_IsVisible(FALSE)`
+plus a deep suspend to the main page, so a `tray:menuItemClicked` handler cannot
+run to call `window.focus` itself. A frontend-event route would be dead in
+exactly the state the item exists for.
+
+To render your own row instead of the injected one, use the exact,
+case-sensitive id `_sys_show` (or `_sys_exit`). It receives the same native
+route, your `label` / `icon` are preserved, and the matching injection is
+skipped. Lookalike ids such as `_sys_show_alt` or `_SYS_SHOW` stay ordinary user
+items and do not suppress the injection.
+
 Top-level taskbar and tray icon fields are not generic image inputs. Non-empty
 values must be raw Base64-encoded `.ico` file bytes, without a Data URL header
 or `base64:` marker. PNG, JPEG, SVG, and Data URL payloads are not decoded by
@@ -102,7 +128,7 @@ fb2k.on('playback:trackChanged', () => {});
 
 ### taskbar.setThumbnailButtons
 
-Public API method. Runtime authority: `src/api/TaskbarApi.cpp:176`.
+Installs the thumbnail toolbar shown on the taskbar preview.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
@@ -110,77 +136,97 @@ Public API method. Runtime authority: `src/api/TaskbarApi.cpp:176`.
 
 **Returns**: `{"error":"...","success":true}`
 
+More than seven entries fails the whole call with `too many thumbnail buttons; Windows allows at most 7`; the list is never truncated. A missing or non-array `buttons` fails with `buttons array required`.
+
 ```js
-const result = await fb2k.invoke('taskbar.setThumbnailButtons', { buttons: /* value */ });
+await fb2k.invoke('taskbar.setThumbnailButtons', {
+    buttons: [
+        { id: 'prev', tooltip: 'Previous' },
+        { id: 'pp', tooltip: 'Play / Pause' },
+        { id: 'next', tooltip: 'Next' },
+    ],
+});
 ```
 
 ### taskbar.updateButton
 
-Public API method. Runtime authority: `src/api/TaskbarApi.cpp:177`.
+Updates one already-installed thumbnail button.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `enabled` | boolean | No | Optional; the handler reads this field only when it is supplied. |
+| `id` | string | Yes | Id of the button to update, as passed to `taskbar.setThumbnailButtons`. |
+| `enabled` | boolean | No | Whether the button accepts clicks. |
 | `icon` | string | No | Raw Base64-encoded `.ico` file bytes without a prefix. Empty, `null`, or omitted supplies an empty icon value. |
-| `id` | string | No | Default: empty string. |
-| `tooltip` | string | No | Optional; the handler reads this field only when it is supplied. |
-| `visible` | boolean | No | Optional; the handler reads this field only when it is supplied. |
+| `tooltip` | string | No | Hover text. |
+| `visible` | boolean | No | Whether the button is shown. |
 
 **Returns**: `{"error":"...","success":true}`
 
+An empty or missing `id` fails with `id required`.
+
 ```js
-const result = await fb2k.invoke('taskbar.updateButton', { enabled: /* value */, icon: /* value */, id: /* value */, tooltip: /* value */, visible: /* value */ });
+await fb2k.invoke('taskbar.updateButton', { id: 'pp', tooltip: 'Pause' });
 ```
 
 ## tray
 
 ### tray.appendMenuItems
 
-Public API method. Runtime authority: `src/api/TrayApi.cpp:497`.
+Appends rows to an existing tray menu zone.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `items` | array | Yes | Default: `null`. |
-| `position` | string | No | Optional; the handler reads this field only when it is supplied. |
+| `items` | array | Yes | Rows to append. A missing or non-array value fails with `items array required`. |
+| `position` | string | No | Target zone: `top`, `playback`, or `bottom`. Defaults to `top`, which is also used for any other value. |
 
 **Returns**: `{"error":"...","success":true}`
 
 ```js
-const result = await fb2k.invoke('tray.appendMenuItems', { items: /* value */, position: /* value */ });
+await fb2k.invoke('tray.appendMenuItems', {
+    items: [
+        { id: 'rescan', label: 'Rescan library' },
+        { type: 'separator' },
+    ],
+    position: 'bottom',
+});
 ```
 
 ### tray.clearMenuItems
 
-Public API method. Runtime authority: `src/api/TrayApi.cpp:499`.
+Removes user rows from a tray menu zone.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `position` | string | No | Optional; the handler reads this field only when it is supplied. |
+| `position` | string | No | Zone to clear: `top`, `playback`, or `bottom`. Omit to clear every zone. |
 
 **Returns**: `{"success":true}`
 
 ```js
-const result = await fb2k.invoke('tray.clearMenuItems', { position: /* value */ });
+// clear one zone
+await fb2k.invoke('tray.clearMenuItems', { position: 'top' });
+
+// clear all zones
+await fb2k.invoke('tray.clearMenuItems');
 ```
 
 ### tray.create
 
-Public API method. Runtime authority: `src/api/TrayApi.cpp:486`.
+Creates the tray icon. Call this before relying on tray visibility, callbacks, or menu operations.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `icon` | string | No | Raw Base64-encoded `.ico` file bytes without `data:` or `base64:` prefixes; empty, invalid, or omitted falls back to the foobar2000 main icon. |
-| `tooltip` | string | No | Default: `foobar2000`. |
+| `tooltip` | string | No | Hover text. Default `foobar2000`. |
 
 **Returns**: `{"error":"...","success":true}`
 
 ```js
-const result = await fb2k.invoke('tray.create', { icon: /* value */, tooltip: /* value */ });
+await fb2k.invoke('tray.create', { tooltip: 'foobar2000' });
 ```
 
 ### tray.destroy
 
-Public API method. Runtime authority: `src/api/TrayApi.cpp:487`.
+Removes the tray icon.
 
 _No parameters._
 
@@ -192,7 +238,7 @@ const result = await fb2k.invoke('tray.destroy');
 
 ### tray.getMenuItems
 
-Public API method. Runtime authority: `src/api/TrayApi.cpp:500`.
+Returns the current tray menu rows, including any declared `playbackAction`.
 
 _No parameters._
 
@@ -204,7 +250,7 @@ const result = await fb2k.invoke('tray.getMenuItems');
 
 ### tray.isVisible
 
-Public API method. Runtime authority: `src/api/TrayApi.cpp:494`.
+Reports whether the tray icon is currently shown.
 
 _No parameters._
 
@@ -216,40 +262,42 @@ const result = await fb2k.invoke('tray.isVisible');
 
 ### tray.removeMenuItems
 
-Public API method. Runtime authority: `src/api/TrayApi.cpp:498`.
+Removes specific rows by id.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `ids` | array | Yes | Default: `null`. |
+| `ids` | array | Yes | Ids to remove. A missing or non-array value fails with `ids array required`. |
 
 **Returns**: `{"error":"...","removed":"...","success":true}`
 
+`removed` reports how many rows were actually removed, which is not necessarily the number of ids passed.
+
 ```js
-const result = await fb2k.invoke('tray.removeMenuItems', { ids: /* value */ });
+const { removed } = await fb2k.invoke('tray.removeMenuItems', { ids: ['rescan'] });
 ```
 
 ### tray.setCloseToTray
 
-Public API method. Runtime authority: `src/api/TrayApi.cpp:493`.
+Makes closing the window hide it to the tray instead of quitting.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `enabled` | boolean | No | Default: `false`. |
+| `enabled` | boolean | No | Default `false`. |
 
 **Returns**: `{"success":true}`
 
 ```js
-const result = await fb2k.invoke('tray.setCloseToTray', { enabled: /* value */ });
+await fb2k.invoke('tray.setCloseToTray', { enabled: true });
 ```
 
 ### tray.setContextMenu
 
-Public API method. Runtime authority: `src/api/TrayApi.cpp:491`.
+Replaces the whole tray menu definition.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `config` | object | No | Optional; the handler reads this field only when it is supplied. |
-| `items` | array | Yes | Default: `null`. |
+| `items` | array | Yes | Menu rows. A missing or non-array value fails with `items array required`. |
+| `config` | object | No | Menu-wide options such as `showPlaybackControls`, `showSystemItems`, and `render`. |
 
 `items[].icon` is a reserved compatibility field and is not rendered by either
 the native or WebView menu backend. For WebView-rendered item icons, use
@@ -258,12 +306,19 @@ the native or WebView menu backend. For WebView-rendered item icons, use
 **Returns**: `{"error":"...","success":true}`
 
 ```js
-const result = await fb2k.invoke('tray.setContextMenu', { config: /* value */, items: /* value */ });
+await fb2k.invoke('tray.setContextMenu', {
+    items: [
+        { id: 'rescan', label: 'Rescan library' },
+        { type: 'separator' },
+        { id: 'settings', label: 'Settings', enabled: false },
+    ],
+    config: { showSystemItems: true },
+});
 ```
 
 ### tray.setIcon
 
-Public API method. Runtime authority: `src/api/TrayApi.cpp:488`.
+Replaces the tray icon image.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
@@ -272,67 +327,70 @@ Public API method. Runtime authority: `src/api/TrayApi.cpp:488`.
 **Returns**: `{"success":true}`
 
 ```js
-const result = await fb2k.invoke('tray.setIcon', { icon: /* value */ });
+// icoBase64: raw Base64-encoded .ico file bytes
+await fb2k.invoke('tray.setIcon', { icon: icoBase64 });
 ```
 
 ### tray.setMenuItemState
 
-Public API method. Runtime authority: `src/api/TrayApi.cpp:501`.
+Toggles the checked or enabled state of one existing row.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `checked` | boolean | No | Optional; the handler reads this field only when it is supplied. |
-| `enabled` | boolean | No | Optional; the handler reads this field only when it is supplied. |
-| `id` | string | No | Default: empty string. |
+| `id` | string | Yes | Id of the row to update. |
+| `checked` | boolean | No | New checked state. |
+| `enabled` | boolean | No | New enabled state. |
 
 **Returns**: `{"error":"...","found":"...","success":true}`
 
+An empty or missing `id` fails with `id required`, and omitting both `checked` and `enabled` fails with `at least one of checked/enabled required`. `found` reports whether a row with that id existed.
+
 ```js
-const result = await fb2k.invoke('tray.setMenuItemState', { checked: /* value */, enabled: /* value */, id: /* value */ });
+await fb2k.invoke('tray.setMenuItemState', { id: 'settings', enabled: true });
 ```
 
 ### tray.setMinimizeToTray
 
-Public API method. Runtime authority: `src/api/TrayApi.cpp:492`.
+Makes minimizing the window hide it to the tray.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `enabled` | boolean | No | Default: `false`. |
+| `enabled` | boolean | No | Default `false`. |
 
 **Returns**: `{"success":true}`
 
 ```js
-const result = await fb2k.invoke('tray.setMinimizeToTray', { enabled: /* value */ });
+await fb2k.invoke('tray.setMinimizeToTray', { enabled: true });
 ```
 
 ### tray.setTooltip
 
-Public API method. Runtime authority: `src/api/TrayApi.cpp:489`.
+Updates the tray icon's hover text.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `tooltip` | string | No | Default: empty string. |
+| `tooltip` | string | No | Hover text. Defaults to an empty string, which clears it. |
 
 **Returns**: `{"success":true}`
 
 ```js
-const result = await fb2k.invoke('tray.setTooltip', { tooltip: /* value */ });
+await fb2k.invoke('tray.setTooltip', { tooltip: 'Artist - Title' });
 ```
 
 ### tray.showBalloon
 
-Public API method. Runtime authority: `src/api/TrayApi.cpp:490`.
+Shows a balloon notification from the tray icon.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `icon` | string | No | Default: `info`. |
-| `message` | string | No | Default: empty string. |
-| `title` | string | No | Default: empty string. |
+| `title` | string | No | Notification title. Defaults to an empty string. |
+| `message` | string | No | Notification body. Defaults to an empty string. |
+| `icon` | string | No | One of `info`, `warning`, `error`. Defaults to `info`, which is also used for any other value. |
 
 **Returns**: `{"success":true}`
 
 ```js
-const result = await fb2k.invoke('tray.showBalloon', { icon: /* value */, message: /* value */, title: /* value */ });
+await fb2k.invoke('tray.showBalloon', { title: 'Now Playing', message: 'Artist - Title' });
 ```
 
 ## Contract supplements
@@ -342,12 +400,10 @@ The sections below close public-contract findings from the strict parameter audi
 <!-- phase3-supplement:taskbar.setProgress -->
 ### Contract supplement: `taskbar.setProgress`
 
-Verified contract supplement. Runtime authority: `src/api/TrayApi.cpp:490`.
-
 | Parameter | Type | Required | Default | Description |
 | --- | --- | --- | --- | --- |
-| `state` | `string` | No | `none` | Defined by the current handler. |
-| `value` | `number` | No | — | Defined by the current handler. |
+| `state` | `string` | No | `none` | One of `none`, `indeterminate`, `normal`, `error`, `paused`; any other value behaves as `none`. |
+| `value` | `number` | No | — | Applied only when it is a number between 0 and 1 inclusive; otherwise the fill is left unchanged. |
 
 #### Return fields
 
@@ -356,17 +412,15 @@ Verified contract supplement. Runtime authority: `src/api/TrayApi.cpp:490`.
 | `success` | `boolean` | No |
 | `panelMode` | `boolean` | No |
 
-Semantics: omitted optional parameters use handler defaults; failure branches and error fields are defined by this source file.
+`success` reflects whether the taskbar accepted the change, so it can be `false` even for valid parameters when the COM integration is not yet initialized. In panel mode the call returns `{ success: false, panelMode: true }`.
 
 ```js
-const result = await fb2k.invoke('taskbar.setProgress', { state: /* value */, value: /* value */ });
+// indeterminate ignores value
+await fb2k.invoke('taskbar.setProgress', { state: 'indeterminate' });
 ```
 
 <!-- contract-supplement:tray.playbackAction -->
 ### Contract supplement: `items[].playbackAction`
-
-Runtime authority: `src/api/TrayApi.cpp` (`ParseMenuItem`) and
-`src/window/TrayIcon.h` (`PromoteDeclaredPlaybackItems`, `BuildEffectiveTrayZones`).
 
 `playbackAction` declares a native playback action executed by the plugin
 instead of the page. It accepts one of `'play-pause' | 'previous' | 'next' |
@@ -379,7 +433,7 @@ instead of the page. It accepts one of `'play-pause' | 'previous' | 'next' |
 | Event | A declared item does **not** fire `tray:menuItemClicked`; reflect button state from `playback:*` events. |
 | Appearance | The caller keeps full control of `label` / `icon` / `id`; only routing changes. |
 | Validation | Fail-loud: an unknown token, or a declaration on a separator / submenu / rich control, rejects the whole `setContextMenu` / `appendMenuItems` call with `INVALID_PARAMS`. |
-| `'exit'` | Not accepted — application exit stays the reserved `_sys_exit` item. |
+| `'exit'` / `'show-main-window'` | Not accepted — the system actions stay the reserved `_sys_exit` / `_sys_show` items. |
 | Scope | Tray menus only; no effect on `menu.show`. |
 | Round-trip | `getMenuItems()` echoes the declared `playbackAction`. |
 
