@@ -14,7 +14,7 @@
 | options | object | 可选，如 { encoding: 'utf-8' } |
 
 ```javascript
-const content = await fb.file.read('E:\\\\config.json');
+const content = await fb.file.read('E:\\config.json');
 ```
 
 ### write(path, content, options?)
@@ -28,7 +28,7 @@ const content = await fb.file.read('E:\\\\config.json');
 | options | object | 可选，如 { encoding: 'utf-8' } |
 
 ```javascript
-await fb.file.write('E:\\\\output.txt', 'Hello World');
+await fb.file.write('E:\\output.txt', 'Hello World');
 ```
 
 ### exists(path)
@@ -36,7 +36,7 @@ await fb.file.write('E:\\\\output.txt', 'Hello World');
 检查文件是否存在。返回 `{exists: boolean}`。
 
 ```javascript
-const r = await fb.file.exists('E:\\\\Music\\\\song.flac');
+const r = await fb.file.exists('E:\\Music\\song.flac');
 if (r.exists) { /* ... */ }
 ```
 
@@ -50,7 +50,7 @@ if (r.exists) { /* ... */ }
 | options | object | 可选，如 { recursive: true } |
 
 ```javascript
-const r = await fb.file.list('E:\\\\Music');
+const r = await fb.file.list('E:\\Music');
 // r.files, r.directories
 ```
 
@@ -59,7 +59,7 @@ const r = await fb.file.list('E:\\\\Music');
 删除文件。
 
 ```javascript
-await fb.file.delete('E:\\\\temp\\\\cache.dat');
+await fb.file.delete('E:\\temp\\cache.dat');
 ```
 
 ### mkdir(path)
@@ -67,7 +67,7 @@ await fb.file.delete('E:\\\\temp\\\\cache.dat');
 创建目录（含递归创建父目录）。
 
 ```javascript
-await fb.file.mkdir('E:\\\\output\\\\logs');
+await fb.file.mkdir('E:\\output\\logs');
 ```
 
 ### copy(source, destination)
@@ -75,7 +75,7 @@ await fb.file.mkdir('E:\\\\output\\\\logs');
 复制文件。
 
 ```javascript
-await fb.file.copy('E:\\\\src.txt', 'E:\\\\backup\\\\src.txt');
+await fb.file.copy('E:\\src.txt', 'E:\\backup\\src.txt');
 ```
 
 ### move(source, destination)
@@ -83,7 +83,7 @@ await fb.file.copy('E:\\\\src.txt', 'E:\\\\backup\\\\src.txt');
 移动文件。
 
 ```javascript
-await fb.file.move('E:\\\\old\\\\file.txt', 'E:\\\\new\\\\file.txt');
+await fb.file.move('E:\\old\\file.txt', 'E:\\new\\file.txt');
 ```
 
 ### rename(path, newName)
@@ -96,7 +96,7 @@ await fb.file.move('E:\\\\old\\\\file.txt', 'E:\\\\new\\\\file.txt');
 | newName | string | 新文件名（仅名称，非完整路径） |
 
 ```javascript
-await fb.file.rename('E:\\\\Music\\\\old.mp3', 'new.mp3');
+await fb.file.rename('E:\\Music\\old.mp3', 'new.mp3');
 ```
 
 ### getInfo(path)
@@ -104,7 +104,7 @@ await fb.file.rename('E:\\\\Music\\\\old.mp3', 'new.mp3');
 获取文件信息（大小、修改时间等）。
 
 ```javascript
-const info = await fb.file.getInfo('E:\\\\Music\\\\song.flac');
+const info = await fb.file.getInfo('E:\\Music\\song.flac');
 // info.size, info.lastModified, ...
 ```
 
@@ -153,7 +153,7 @@ const r = await fb.http.head('https://example.com/file.zip');
 | options | object | 可选配置 |
 
 ```javascript
-await fb.http.download('https://example.com/cover.jpg', 'E:\\\\covers\\\\cover.jpg');
+await fb.http.download('https://example.com/cover.jpg', 'E:\\covers\\cover.jpg');
 ```
 
 ### put(url, body, options?)
@@ -242,5 +242,5 @@ await fb.clipboard.writeHTML('<b>粗体</b>', '粗体');
 将文件路径列表写入剪贴板（用于粘贴文件）。
 
 ```javascript
-await fb.clipboard.writeFiles(['E:\\\\Music\\\\a.flac', 'E:\\\\Music\\\\b.flac']);
+await fb.clipboard.writeFiles(['E:\\Music\\a.flac', 'E:\\Music\\b.flac']);
 ```

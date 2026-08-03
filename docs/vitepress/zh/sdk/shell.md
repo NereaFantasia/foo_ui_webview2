@@ -5,7 +5,7 @@
 在资源管理器中显示文件。
 
 ```javascript
-await fb.shell.showInExplorer('E:\\\\Music\\\\song.flac');
+await fb.shell.showInExplorer('E:\\Music\\song.flac');
 ```
 
 ## openWith(path) 
@@ -17,7 +17,7 @@ await fb.shell.showInExplorer('E:\\\\Music\\\\song.flac');
 :::
 
 ```javascript
-await fb.shell.openWith('E:\\\\Music\\\\cover.jpg');
+await fb.shell.openWith('E:\\Music\\cover.jpg');
 ```
 
 ## openExternal(url) 
@@ -42,7 +42,7 @@ await fb.shell.openExternal('https://www.foobar2000.org');
 | options | object | 可选：{args, cwd, hidden} |
 
 ```javascript
-await fb.shell.exec('notepad', { args: ['E:\\\\notes.txt'] });
+await fb.shell.exec('notepad', { args: ['E:\\notes.txt'] });
 ```
 
 ## spawn(executable, options?) 
@@ -59,9 +59,9 @@ await fb.shell.exec('notepad', { args: ['E:\\\\notes.txt'] });
 | options | object | 可选：{args, cwd, hidden, waitForExitMs} |
 
 ```javascript
-const result = await fb.shell.spawn('E:\\\\FB2K\\\\Runtime\\\\node.exe', {
-  args: ['E:\\\\FB2K\\\\NeteaseApi\\\\server.js'],
-  cwd: 'E:\\\\FB2K\\\\NeteaseApi',
+const result = await fb.shell.spawn('E:\\FB2K\\Runtime\\node.exe', {
+  args: ['E:\\FB2K\\NeteaseApi\\server.js'],
+  cwd: 'E:\\FB2K\\NeteaseApi',
   hidden: true,
   waitForExitMs: 900
 });

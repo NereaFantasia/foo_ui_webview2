@@ -8,57 +8,68 @@ This page is the primary owner for the namespaces listed below. Method names, pa
 
 ### audio.analyzeBPM
 
-Public API method. Runtime authority: `src/api/AudioApi.cpp:1744`.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `forceAnalysis` | `boolean` | No | Optional; default false. |
-| `path` | `string` | No | Optional; default . |
+| `forceAnalysis` | `boolean` | No | Optional; default false. Set true to skip the existing `BPM` tag and fall through to genre estimation. |
+| `path` | `string` | Yes | Track path to analyze. |
 
 **Returns**: `{"bpm":"...","confidence":"...","error":"...","source":"...","success":true}`
 
 ```js
-const result = await fb2k.invoke('audio.analyzeBPM', { forceAnalysis: /* value */, path: /* value */ });
+const { bpm, source } = await fb2k.invoke('audio.analyzeBPM', {
+    path: 'C:\\Music\\song.flac'
+});
 ```
 
 ### audio.generateFullWaveform
 
-Public API method. Runtime authority: `src/api/AudioApi.cpp:1746`.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `cueIndex` | `integer` | No | Optional; default -1. |
-| `method` | `string` | No | Optional; default rms. |
-| `path` | `string` | No | Optional; default . |
+| `cueIndex` | `integer` | No | Optional; default -1. Subsong index; values `>= 0` override the `|subsong:N` suffix in `path`. |
+| `method` | `string` | No | Optional; default rms. Accepts `rms` or `peak`. |
+| `path` | `string` | Yes | Track path to decode. |
 | `preferCache` | `boolean` | No | Optional; default true. |
-| `resolution` | `integer` | No | Optional; default 256. |
-| `scale` | `string` | No | Optional; default linear. |
+| `resolution` | `integer` | No | Optional; default 256. Clamped to 64-4096. |
+| `scale` | `string` | No | Optional; default linear. Accepts `linear` or `db`. |
 | `signed` | `boolean` | No | Optional; default false. |
 
 **Returns**: `{"cached":"...","channels":"...","duration":"...","method":"...","path":"...","resolution":"...","sampleRate":"...","scale":"...","signed":"...","status":"...","success":true,"taskId":"...","waveform":"..."}`
 
 ```js
-const result = await fb2k.invoke('audio.generateFullWaveform', { cueIndex: /* value */, method: /* value */, path: /* value */, preferCache: /* value */, resolution: /* value */, scale: /* value */, signed: /* value */ });
+// Minimal call: cache hit returns status 'ready', otherwise 'pending' + taskId
+const { status, taskId } = await fb2k.invoke('audio.generateFullWaveform', {
+    path: 'C:\\Music\\song.flac'
+});
+
+// Higher-resolution peak waveform on a dB scale
+const detailed = await fb2k.invoke('audio.generateFullWaveform', {
+    path: 'C:\\Music\\song.flac',
+    resolution: 1000,
+    method: 'peak',
+    scale: 'db'
+});
 ```
 
 ### audio.generateWaveform
 
-Public API method. Runtime authority: `src/api/AudioApi.cpp:1745`.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `path` | `string` | No | Optional; default . |
-| `resolution` | `integer` | No | Optional; default 800. |
+| `path` | `string` | Yes | Track path to inspect. |
+| `resolution` | `integer` | No | Optional; default 800. Clamped to 50-4000. |
 
 **Returns**: `{"channels":"...","duration":"...","error":"...","requestedResolution":"...","sampleRate":"...","success":true}`
 
 ```js
-const result = await fb2k.invoke('audio.generateWaveform', { path: /* value */, resolution: /* value */ });
+const result = await fb2k.invoke('audio.generateWaveform', {
+    path: 'C:\\Music\\song.flac'
+});
 ```
 
 ### audio.getOutputInfo
 
-Public API method. Runtime authority: `src/api/AudioApi.cpp:1749`.
 
 _No parameters._
 
@@ -70,21 +81,19 @@ const result = await fb2k.invoke('audio.getOutputInfo');
 
 ### audio.getSpectrum
 
-Public API method. Runtime authority: `src/api/AudioApi.cpp:1734`.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `bands` | `integer` | No | Optional; default 0. |
+| `bands` | `integer` | No | Optional; default 0, meaning the band count of the active subscription. |
 
 **Returns**: `{"bands":"...","error":"...","fftSize":"...","spectrum":"...","success":true}`
 
 ```js
-const result = await fb2k.invoke('audio.getSpectrum', { bands: /* value */ });
+const { spectrum } = await fb2k.invoke('audio.getSpectrum', { bands: 48 });
 ```
 
 ### audio.getSpectrumDebugState
 
-Public API method. Runtime authority: `src/api/AudioApi.cpp:1735`.
 
 _No parameters._
 
@@ -96,7 +105,6 @@ const result = await fb2k.invoke('audio.getSpectrumDebugState');
 
 ### audio.getStreamInfo
 
-Public API method. Runtime authority: `src/api/AudioApi.cpp:1750`.
 
 _No parameters._
 
@@ -108,22 +116,20 @@ const result = await fb2k.invoke('audio.getStreamInfo');
 
 ### audio.getWaveform
 
-Public API method. Runtime authority: `src/api/AudioApi.cpp:1736`.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `duration` | `number` | No | Optional; default 0.05. |
+| `duration` | `number` | No | Optional; default 0.05. Window length in seconds. |
 | `signed` | `boolean` | No | Optional; default false. |
 
 **Returns**: `{"duration":"...","error":"...","signed":"...","success":true,"waveform":"..."}`
 
 ```js
-const result = await fb2k.invoke('audio.getWaveform', { duration: /* value */, signed: /* value */ });
+const { waveform } = await fb2k.invoke('audio.getWaveform', { duration: 0.1 });
 ```
 
 ### audio.isVisualizationAvailable
 
-Public API method. Runtime authority: `src/api/AudioApi.cpp:1751`.
 
 _No parameters._
 
@@ -135,68 +141,71 @@ const result = await fb2k.invoke('audio.isVisualizationAvailable');
 
 ### audio.setChannelMode
 
-Public API method. Runtime authority: `src/api/AudioApi.cpp:1737`.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `mode` | `string` | No | Optional; default default. |
+| `mode` | `string` | No | One of `default`, `mono`, `front`, `back`. Defaults to `default`, which is also used for any other value. |
 
 **Returns**: `{"mode":"...","success":true}`
 
 ```js
-const result = await fb2k.invoke('audio.setChannelMode', { mode: /* value */ });
+await fb2k.invoke('audio.setChannelMode', { mode: 'mono' });
 ```
 
 ### audio.subscribeSpectrum
 
-Public API method. Runtime authority: `src/api/AudioApi.cpp:1732`.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `subscriptionId` | `string` | No | Optional; default . |
-| `fftSize` | `integer` | No | Optional; default 1024. |
+| `subscriptionId` | `string` | No | Optional. Omit to reuse the per-window legacy token derived from `event`. |
+| `fftSize` | `integer` | No | Optional; default 1024. Must be a power of two between 256 and 16384. |
 | `event` | `string` | No | Optional; default audio:spectrum. |
-| `fps` | `integer` | No | Optional; default 30. |
-| `bands` | `integer` | No | Optional; default 48. |
+| `fps` | `integer` | No | Optional; default 30. Clamped to 1-60. |
+| `bands` | `integer` | No | Optional; default 48. Clamped to 8-`fftSize / 2`. |
 
 **Returns**: `{"bands":"...","error":"...","event":"...","fftSize":"...","fps":"...","subscriptionId":"...","success":true}`
 
 ```js
-const result = await fb2k.invoke('audio.subscribeSpectrum', { bands: /* value */, event: /* value */, fftSize: /* value */, fps: /* value */, subscriptionId: /* value */ });
+// Minimal call: all defaults, result delivered on 'audio:spectrum'
+const { subscriptionId } = await fb2k.invoke('audio.subscribeSpectrum');
+
+// Explicit configuration
+const custom = await fb2k.invoke('audio.subscribeSpectrum', {
+    bands: 64,
+    fftSize: 2048,
+    fps: 60
+});
 ```
 
 ### audio.subscribeStream
 
-Public API method. Runtime authority: `src/api/AudioApi.cpp:1740`.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `event` | `string` | No | Optional; default audio:stream. |
-| `interval` | `number` | No | Optional; default 0.05. |
+| `interval` | `number` | No | Optional; default 0.05. Interval in seconds. |
 
 **Returns**: `{"error":"...","event":"...","interval":"...","success":true}`
 
 ```js
-const result = await fb2k.invoke('audio.subscribeStream', { event: /* value */, interval: /* value */ });
+const result = await fb2k.invoke('audio.subscribeStream', { interval: 0.1 });
 ```
 
 ### audio.unsubscribeSpectrum
 
-Public API method. Runtime authority: `src/api/AudioApi.cpp:1733`.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `subscriptionId` | `string` | No | Optional; default . |
+| `subscriptionId` | `string` | No | Optional. Omit to remove the per-window legacy subscription. |
 
 **Returns**: `{"removed":"...","subscriptionId":"...","success":true}`
 
 ```js
-const result = await fb2k.invoke('audio.unsubscribeSpectrum', { subscriptionId: /* value */ });
+await fb2k.invoke('audio.unsubscribeSpectrum', { subscriptionId });
 ```
 
 ### audio.unsubscribeStream
 
-Public API method. Runtime authority: `src/api/AudioApi.cpp:1741`.
 
 _No parameters._
 
@@ -212,32 +221,34 @@ const result = await fb2k.invoke('audio.unsubscribeStream');
 
 ### dsp.addDsp
 
-Public API method. Runtime authority: `src/api/DspApi.cpp:418`.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `guid` | `string` | Yes | Required. |
+| `guid` | `string` | Yes | GUID of an installed DSP, as reported by `dsp.getAvailable`. |
 | `position` | `integer` | No | Optional; default -1 (append to the end). |
 
 **Returns**: `{"addedDsp":"...","error":"...","position":"...","success":true}`
 
 ```js
-const result = await fb2k.invoke('dsp.addDsp', { guid: /* value */, position: /* value */ });
+const { dsps } = await fb2k.invoke('dsp.getAvailable');
+const eq = dsps.find(d => d.name === 'Equalizer');
+if (eq) {
+    await fb2k.invoke('dsp.addDsp', { guid: eq.guid });
+}
 ```
 
 ### dsp.applyPreset
 
-Public API method. Runtime authority: `src/api/DspApi.cpp:416`.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `index` | `integer` | No | Optional; default omitted. |
-| `name` | `string` | No | Optional; default omitted. |
+| `index` | `integer` | No | Optional; omitted by default. Preset index as reported by `dsp.getPresets`. |
+| `name` | `string` | No | Optional; omitted by default. Preset name as reported by `dsp.getPresets`. |
 
 **Returns**: `{"appliedIndex":"...","appliedPreset":"...","error":"...","success":true}`
 
 ```js
-const result = await fb2k.invoke('dsp.applyPreset', { index: /* value */, name: /* value */ });
+const result = await fb2k.invoke('dsp.applyPreset', { name: 'Headphones' });
 ```
 
 Supply either `index` or `name`; at least one is required, and `index` wins when
@@ -248,7 +259,6 @@ active chain; it never writes back to the stored preset, so the files under
 
 ### dsp.getAvailable
 
-Public API method. Runtime authority: `src/api/DspApi.cpp:417`.
 
 _No parameters._
 
@@ -260,7 +270,6 @@ const result = await fb2k.invoke('dsp.getAvailable');
 
 ### dsp.getChain
 
-Public API method. Runtime authority: `src/api/DspApi.cpp:414`.
 
 _No parameters._
 
@@ -277,7 +286,6 @@ rather than being omitted.
 
 ### dsp.getPresets
 
-Public API method. Runtime authority: `src/api/DspApi.cpp:415`.
 
 _No parameters._
 
@@ -292,17 +300,16 @@ const result = await fb2k.invoke('dsp.getPresets');
 
 ### dsp.moveDsp
 
-Public API method. Runtime authority: `src/api/DspApi.cpp:420`.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `from` | `integer` | Yes | Required. |
-| `to` | `integer` | Yes | Required. |
+| `from` | `integer` | Yes | Current index of the DSP to move. |
+| `to` | `integer` | Yes | Target index in the reordered chain. |
 
 **Returns**: `{"error":"...","from":"...","message":"...","movedDsp":"...","success":true,"to":"..."}`
 
 ```js
-const result = await fb2k.invoke('dsp.moveDsp', { from: /* value */, to: /* value */ });
+const result = await fb2k.invoke('dsp.moveDsp', { from: 2, to: 0 });
 ```
 
 `to` is the final index in the reordered chain and matches the value you passed,
@@ -312,30 +319,33 @@ in both directions. When `from === to` nothing moves and the response carries
 
 ### dsp.removeDsp
 
-Public API method. Runtime authority: `src/api/DspApi.cpp:419`.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `index` | `integer` | Yes | Required. |
+| `index` | `integer` | Yes | Index of the DSP to remove from the active chain. |
 
 **Returns**: `{"error":"...","removedDsp":"...","removedIndex":"...","success":true}`
 
 ```js
-const result = await fb2k.invoke('dsp.removeDsp', { index: /* value */ });
+const result = await fb2k.invoke('dsp.removeDsp', { index: 0 });
 ```
 
 ### dsp.setChain
 
-Public API method. Runtime authority: `src/api/DspApi.cpp:421`.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `dsps` | `array` | Yes | Required. |
+| `dsps` | `array` | Yes | Ordered chain entries; each element is an object carrying a `guid`. |
 
 **Returns**: `{"count":"...","error":"...","success":true}`
 
 ```js
-const result = await fb2k.invoke('dsp.setChain', { dsps: /* value */ });
+const { dsps } = await fb2k.invoke('dsp.getAvailable');
+const eq = dsps.find(d => d.name === 'Equalizer');
+await fb2k.invoke('dsp.setChain', { dsps: [{ guid: eq.guid }] });
+
+// Clear the chain
+await fb2k.invoke('dsp.setChain', { dsps: [] });
 ```
 
 Replaces the entire chain. Passing `dsps: []` clears it. Each element must be an
@@ -366,7 +376,6 @@ reports `activePreset: null` and `getPresets` reports `selectedIndex: -1`.
 
 ### output.getDevices
 
-Public API method. Runtime authority: `src/api/OutputApi.cpp:144`.
 
 _No parameters._
 
@@ -383,7 +392,6 @@ devices by the `(entryGuid, guid)` pair rather than by `guid` alone.
 
 ### output.getEntries
 
-Public API method. Runtime authority: `src/api/OutputApi.cpp:147`.
 
 _No parameters._
 
@@ -395,7 +403,6 @@ const result = await fb2k.invoke('output.getEntries');
 
 ### output.getSettings
 
-Public API method. Runtime authority: `src/api/OutputApi.cpp:150`.
 
 _No parameters._
 
@@ -418,35 +425,36 @@ identifiers. Use `output.getEntries`, which pairs each name with its GUID.
 
 ### replaygain.clear
 
-Public API method. Runtime authority: `src/api/ReplayGainApi.cpp:538`.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `paths` | `array` | Yes | Required. |
+| `paths` | `array` | Yes | File path list whose ReplayGain metadata should be removed. |
 
 **Returns**: `{"clearedCount":"...","error":"...","success":true}`
 
 ```js
-const result = await fb2k.invoke('replaygain.clear', { paths: /* value */ });
+const result = await fb2k.invoke('replaygain.clear', {
+    paths: ['C:\\Music\\song.flac']
+});
 ```
 
 ### replaygain.get
 
-Public API method. Runtime authority: `src/api/ReplayGainApi.cpp:535`.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `paths` | `array` | Yes | Required. |
+| `paths` | `array` | Yes | File path list to read ReplayGain metadata from. |
 
 **Returns**: `{"count":"...","error":"...","results":"...","success":true}`
 
 ```js
-const result = await fb2k.invoke('replaygain.get', { paths: /* value */ });
+const { results } = await fb2k.invoke('replaygain.get', {
+    paths: ['C:\\Music\\song.flac']
+});
 ```
 
 ### replaygain.getMode
 
-Public API method. Runtime authority: `src/api/ReplayGainApi.cpp:523`.
 
 _No parameters._
 
@@ -458,7 +466,6 @@ const result = await fb2k.invoke('replaygain.getMode');
 
 ### replaygain.getPreamp
 
-Public API method. Runtime authority: `src/api/ReplayGainApi.cpp:529`.
 
 _No parameters._
 
@@ -470,7 +477,6 @@ const result = await fb2k.invoke('replaygain.getPreamp');
 
 ### replaygain.getSettings
 
-Public API method. Runtime authority: `src/api/ReplayGainApi.cpp:520`.
 
 _No parameters._
 
@@ -482,47 +488,51 @@ const result = await fb2k.invoke('replaygain.getSettings');
 
 ### replaygain.scan
 
-Public API method. Runtime authority: `src/api/ReplayGainApi.cpp:541`.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `mode` | `string` | No | Optional; default track. |
-| `paths` | `array` | Yes | Required. |
+| `mode` | `string` | No | Optional; default track. Accepts `track` or `album`. |
+| `paths` | `array` | Yes | File path list to scan. |
 
 **Returns**: `{"error":"...","mode":"...","note":"...","scannedCount":"...","success":true}`
 
 ```js
-const result = await fb2k.invoke('replaygain.scan', { mode: /* value */, paths: /* value */ });
+// Per-file track gain (default)
+await fb2k.invoke('replaygain.scan', { paths: ['C:\\Music\\song.flac'] });
+
+// Scan the selection as a single album
+await fb2k.invoke('replaygain.scan', {
+    paths: ['C:\\Music\\song.flac', 'C:\\Music\\other.flac'],
+    mode: 'album'
+});
 ```
 
 ### replaygain.setMode
 
-Public API method. Runtime authority: `src/api/ReplayGainApi.cpp:526`.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `processingMode` | `string` | No | Optional; default omitted. |
-| `sourceMode` | `string` | No | Optional; default omitted. |
+| `processingMode` | `string` | No | Optional; omitted by default. Accepts `none`, `gain`, `gain_and_peak`, `peak`. |
+| `sourceMode` | `string` | No | Optional; omitted by default. Accepts `none`, `track`, `album`, `auto` (alias `byPlaybackOrder`). |
 
 **Returns**: `{"changed":"...","error":"...","processingMode":"...","sourceMode":"...","success":true}`
 
 ```js
-const result = await fb2k.invoke('replaygain.setMode', { processingMode: /* value */, sourceMode: /* value */ });
+const result = await fb2k.invoke('replaygain.setMode', { sourceMode: 'album' });
 ```
 
 ### replaygain.setPreamp
 
-Public API method. Runtime authority: `src/api/ReplayGainApi.cpp:532`.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `withoutRg` | `number` | No | Optional; default omitted. |
-| `withRg` | `number` | No | Optional; default omitted. |
+| `withoutRg` | `number` | No | Optional; omitted by default. Preamp in dB for tracks without ReplayGain info; clamped to -24..+24. |
+| `withRg` | `number` | No | Optional; omitted by default. Preamp in dB for tracks with ReplayGain info; clamped to -24..+24. |
 
 **Returns**: `{"changed":"...","error":"...","success":true,"withRg":"...","withoutRg":"..."}`
 
 ```js
-const result = await fb2k.invoke('replaygain.setPreamp', { withRg: /* value */, withoutRg: /* value */ });
+const result = await fb2k.invoke('replaygain.setPreamp', { withRg: -3 });
 ```
 
 ## Runtime behavior notes
@@ -536,38 +546,3 @@ const result = await fb2k.invoke('replaygain.setPreamp', { withRg: /* value */, 
 - DSP registrations are present in every build. When the foobar2000 DSP SDK surface is unavailable, all `dsp.*` methods return the runtime's "DSP API not available in this build" failure instead of emulating a chain.
 - `output.getSettings` is read-only discovery information. Output configuration is managed by foobar2000 Preferences rather than this API.
 - `replaygain.get` reads each supplied media path; `replaygain.clear` writes ReplayGain metadata asynchronously through foobar2000. `replaygain.scan` requests the host scanner and is not a synchronous analysis result.
-
-## Contract supplements
-
-The sections below close public-contract findings from the strict parameter audit without replacing existing explanations.
-
-<!-- phase3-supplement:audio.subscribeSpectrum -->
-### Contract supplement: `audio.subscribeSpectrum`
-
-Verified contract supplement. Runtime authority: `src/api/AudioApi.cpp:719-762`.
-
-| Parameter | Type | Required | Default | Description |
-| --- | --- | --- | --- | --- |
-| `subscriptionId` | `string` | No | `` | Optional; default . |
-| `fftSize` | `integer` | No | `1024` | Optional; default 1024. |
-| `event` | `string` | No | `audio:spectrum` | Optional; default audio:spectrum. |
-| `fps` | `integer` | No | `30` | Optional; default 30. |
-| `bands` | `integer` | No | `48` | Optional; default 48. |
-
-#### Return fields
-
-| Field | Type | Optional |
-| --- | --- | --- |
-| `error` | `string` | Yes |
-| `success` | `boolean` | No |
-| `bands` | `json` | No |
-| `event` | `json` | No |
-| `fftSize` | `json` | No |
-| `fps` | `json` | No |
-| `subscriptionId` | `json` | No |
-
-Semantics: omitted optional parameters use handler defaults; failure branches and error fields are defined by this source file.
-
-```js
-const result = await fb2k.invoke('audio.subscribeSpectrum', { subscriptionId: /* value */, fftSize: /* value */, event: /* value */, fps: /* value */, bands: /* value */ });
-```

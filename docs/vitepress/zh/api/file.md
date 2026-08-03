@@ -15,7 +15,7 @@
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
 | `encoding` | `string` | 否 | 可选；默认 utf-8。 |
-| `path` | `string` | 否 | 可选；默认 。 |
+| `path` | `string` | 否 | 可选。 |
 
 **返回值**: `{"content":"...","encoding":"...","size":0,"success":true}`
 
@@ -25,10 +25,10 @@
 
 ```javascript
 // 读取文本文件
-const { content } = await fb2k.invoke('file.read', { path: '%profile%\\\\config.json' });
+const { content } = await fb2k.invoke('file.read', { path: '%profile%\\config.json' });
 
 // 读取二进制文件
-const bin = await fb2k.invoke('file.read', { path: '%profile%\\\\data.bin', encoding: 'binary' });
+const bin = await fb2k.invoke('file.read', { path: '%profile%\\data.bin', encoding: 'binary' });
 console.log(bin.encoding); // "base64"
 ```
 
@@ -39,9 +39,9 @@ console.log(bin.encoding); // "base64"
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
 | `append` | `boolean` | 否 | 可选；默认 false。 |
-| `content` | `string` | 否 | 可选；默认 。 |
+| `content` | `string` | 否 | 可选。 |
 | `encoding` | `string` | 否 | 可选；默认 utf-8。 |
-| `path` | `string` | 否 | 可选；默认 。 |
+| `path` | `string` | 否 | 可选。 |
 
 **返回值**: `{ "success": true, "bytesWritten": 1024 }`
 
@@ -50,21 +50,21 @@ console.log(bin.encoding); // "base64"
 ```javascript
 // 写入 JSON 配置
 await fb2k.invoke('file.write', {
-    path: '%profile%\\\\my-skin\\\\config.json',
+    path: '%profile%\\my-skin\\config.json',
     content: JSON.stringify({ theme: 'dark' })
 });
 
 // 追加日志
 await fb2k.invoke('file.write', {
-    path: '%profile%\\\\debug.log', content: 'log entry\\n', append: true
+    path: '%profile%\\debug.log', content: 'log entry\\n', append: true
 });
 
 // binary read → write：必须补回 base64: wire 前缀
 const binary = await fb2k.invoke('file.read', {
-    path: '%profile%\\\\data.bin', encoding: 'binary'
+    path: '%profile%\\data.bin', encoding: 'binary'
 });
 await fb2k.invoke('file.write', {
-    path: '%profile%\\\\data-copy.bin',
+    path: '%profile%\\data-copy.bin',
     content: `base64:${binary.content}`,
     encoding: 'binary'
 });
@@ -76,12 +76,12 @@ await fb2k.invoke('file.write', {
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
-| `path` | `string` | 否 | 可选；默认 。 |
+| `path` | `string` | 否 | 可选。 |
 
 **返回值**: `{ "exists": true, "isFile": true, "isDirectory": false }`
 
 ```javascript
-const { exists, isFile } = await fb2k.invoke('file.exists', { path: '%profile%\\\\config.json' });
+const { exists, isFile } = await fb2k.invoke('file.exists', { path: '%profile%\\config.json' });
 ```
 
 ### file.list
@@ -90,7 +90,7 @@ const { exists, isFile } = await fb2k.invoke('file.exists', { path: '%profile%\\
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
-| `path` | `string` | 否 | 可选；默认 。 |
+| `path` | `string` | 否 | 可选。 |
 | `pattern` | `string` | 否 | 可选；默认 *。 |
 | `recursive` | `boolean` | 否 | 可选；默认 false。 |
 
@@ -112,16 +112,16 @@ const { files } = await fb2k.invoke('file.list', {
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
 | `moveToTrash` | `boolean` | 否 | 可选；默认 true。 |
-| `path` | `string` | 否 | 可选；默认 。 |
+| `path` | `string` | 否 | 可选。 |
 
 **返回值**: `{ "success": true }`
 
 ```javascript
 // 删除到回收站（安全）
-await fb2k.invoke('file.delete', { path: '%profile%\\\\old-config.json' });
+await fb2k.invoke('file.delete', { path: '%profile%\\old-config.json' });
 
 // 永久删除
-await fb2k.invoke('file.delete', { path: '%temp%\\\\cache.tmp', moveToTrash: false });
+await fb2k.invoke('file.delete', { path: '%temp%\\cache.tmp', moveToTrash: false });
 ```
 
 ### file.mkdir
@@ -130,7 +130,7 @@ await fb2k.invoke('file.delete', { path: '%temp%\\\\cache.tmp', moveToTrash: fal
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
-| `path` | `string` | 否 | 可选；默认 。 |
+| `path` | `string` | 否 | 可选。 |
 
 **返回值**: `{"created":"...","message":"...","success":true}`
 
@@ -140,16 +140,16 @@ await fb2k.invoke('file.delete', { path: '%temp%\\\\cache.tmp', moveToTrash: fal
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
-| `destination` | `string` | 否 | 可选；默认 。 |
+| `destination` | `string` | 否 | 可选。 |
 | `overwrite` | `boolean` | 否 | 可选；默认 false。 |
-| `source` | `string` | 否 | 可选；默认 。 |
+| `source` | `string` | 否 | 可选。 |
 
 **返回值**: `{ "success": true, "source": "...", "destination": "..." }`
 
 ```javascript
 await fb2k.invoke('file.copy', {
-    source: '%profile%\\\\config.json',
-    destination: '%profile%\\\\config.bak.json'
+    source: '%profile%\\config.json',
+    destination: '%profile%\\config.bak.json'
 });
 ```
 
@@ -159,8 +159,8 @@ await fb2k.invoke('file.copy', {
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
-| `destination` | `string` | 否 | 可选；默认 。 |
-| `source` | `string` | 否 | 可选；默认 。 |
+| `destination` | `string` | 否 | 可选。 |
+| `source` | `string` | 否 | 可选。 |
 
 **返回值**: `{ "success": true, "source": "...", "destination": "..." }`
 
@@ -170,8 +170,8 @@ await fb2k.invoke('file.copy', {
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
-| `newName` | `string` | 否 | 可选；默认 。 |
-| `path` | `string` | 否 | 可选；默认 。 |
+| `newName` | `string` | 否 | 可选。 |
+| `path` | `string` | 否 | 可选。 |
 
 **返回值**: `{ "success": true, "oldPath": "...", "newPath": "..." }`
 
@@ -181,7 +181,7 @@ await fb2k.invoke('file.copy', {
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
-| `path` | `string` | 否 | 可选；默认 。 |
+| `path` | `string` | 否 | 可选。 |
 
 **返回值**:
 
@@ -195,7 +195,7 @@ await fb2k.invoke('file.copy', {
     "modified": 1736064000000,
     "name": "song.flac",
     "extension": ".flac",
-    "parent": "C:\\\\Music"
+    "parent": "C:\\Music"
 }
 ```
 
@@ -214,7 +214,7 @@ await fb2k.invoke('file.copy', {
 | `multiple` | `boolean` | 否 | 可选；默认 false。 |
 | `title` | `string` | 否 | 可选；默认 Open File。 |
 
-**返回值**: `{ "canceled": false, "filePaths": ["C:\\\\Music\\\\song.mp3"] }`
+**返回值**: `{ "canceled": false, "filePaths": ["C:\\Music\\song.mp3"] }`
 
 用户取消时 `canceled` 为 `true`，`filePaths` 为空数组。
 
@@ -240,7 +240,7 @@ if (!result.canceled) {
 | `filters` | `array` | 否 | 可选过滤器 `{ name, extensions[] }`，由 `ParseFilterSpecs` 解析。 |
 | `title` | `string` | 否 | 可选；默认 Save File。 |
 
-**返回值**: `{ "canceled": false, "filePath": "C:\\\\Music\\\\export.json" }`
+**返回值**: `{ "canceled": false, "filePath": "C:\\Music\\export.json" }`
 
 ```javascript
 const result = await fb2k.invoke('dialog.saveFile', {
@@ -276,9 +276,9 @@ if (!result.canceled) {
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
-| `buttons` | `array` | 否 | 可选；默认 omitted。 |
+| `buttons` | `array` | 否 | 可省略。 |
 | `defaultButton` | `integer` | 否 | 可选；默认 0。 |
-| `message` | `string` | 否 | 可选；默认 。 |
+| `message` | `string` | 否 | 可选。 |
 | `title` | `string` | 否 | 可选；默认 Confirm。 |
 | `type` | `string` | 否 | 可选；默认 question。 |
 
@@ -306,12 +306,12 @@ if (response === 0) {
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
-| `path` | `string` | 否 | 可选；默认 。 |
+| `path` | `string` | 否 | 可选。 |
 
 **返回值**: `{ "success": true }`
 
 ```javascript
-await fb2k.invoke('shell.showInExplorer', { path: 'C:\\\\Music\\\\song.flac' });
+await fb2k.invoke('shell.showInExplorer', { path: 'C:\\Music\\song.flac' });
 ```
 
 ### shell.openExternal
@@ -320,7 +320,7 @@ await fb2k.invoke('shell.showInExplorer', { path: 'C:\\\\Music\\\\song.flac' });
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
-| `url` | `string` | 否 | 可选；默认 。 |
+| `url` | `string` | 否 | 可选。 |
 
 **返回值**: `{ "success": true }`
 
@@ -338,9 +338,9 @@ await fb2k.invoke('shell.openExternal', { url: 'https://www.foobar2000.org' });
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
-| `args` | `array` | 否 | 可选；默认 omitted。 |
-| `command` | `string` | 否 | 可选；默认 。 |
-| `cwd` | `string` | 否 | 可选；默认 。 |
+| `args` | `array` | 否 | 可省略。 |
+| `command` | `string` | 否 | 可选。 |
+| `cwd` | `string` | 否 | 可选。 |
 | `hidden` | `boolean` | 否 | 可选；默认 true。 |
 
 **返回值**: `{ "success": true, "processId": 12345 }`
@@ -351,7 +351,7 @@ await fb2k.invoke('shell.openExternal', { url: 'https://www.foobar2000.org' });
 
 ```javascript
 // 启动 Node.js 服务器
-await fb2k.invoke('shell.exec', { command: 'cmd /c start /b node "E:\\\\server.js"' });
+await fb2k.invoke('shell.exec', { command: 'cmd /c start /b node "E:\\server.js"' });
 
 // 无命令白名单：任意命令均可执行（信任主题作者）
 await fb2k.invoke('shell.exec', { command: 'curl http://example.com' });
@@ -367,9 +367,9 @@ await fb2k.invoke('shell.exec', { command: 'curl http://example.com' });
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
-| `args` | `array` | 否 | 可选；默认 omitted。 |
-| `cwd` | `string` | 否 | 可选；默认 。 |
-| `executable` | `string` | 否 | 可选；默认 。 |
+| `args` | `array` | 否 | 可省略。 |
+| `cwd` | `string` | 否 | 可选。 |
+| `executable` | `string` | 否 | 可选。 |
 | `hidden` | `boolean` | 否 | 可选；默认 true。 |
 | `waitForExitMs` | `integer` | 否 | 可选；默认 0。 |
 
@@ -379,9 +379,9 @@ await fb2k.invoke('shell.exec', { command: 'curl http://example.com' });
 ```javascript
 // ✅ 推荐：直接启动 node server.js（可检测 CreateProcess 失败）
 const result = await fb2k.invoke('shell.spawn', {
-  executable: 'E:\\\\FB2K\\\\Runtime\\\\node.exe',
-  args: ['E:\\\\FB2K\\\\NeteaseApi\\\\server.js'],
-  cwd: 'E:\\\\FB2K\\\\NeteaseApi',
+  executable: 'E:\\FB2K\\Runtime\\node.exe',
+  args: ['E:\\FB2K\\NeteaseApi\\server.js'],
+  cwd: 'E:\\FB2K\\NeteaseApi',
   hidden: true,
   waitForExitMs: 900
 });
@@ -401,66 +401,12 @@ if (result.success === false) {
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
-| `path` | `string` | 否 | 可选；默认 。 |
+| `path` | `string` | 否 | 可选。 |
 
 **返回值**: `{ "success": true }`
 
 ```javascript
-await fb2k.invoke('shell.openWith', { path: 'C:\\\\Music\\\\notes.txt' });
-```
-
-## 合同补充
-
-以下章节补齐严格参数审计发现的公开 contract；不会改变前文的已有说明。
-
-<!-- phase3-supplement:dialog.openFile -->
-### Contract 补充：`dialog.openFile`
-
-经复核的补充 contract。权威源：`src/api/DialogApi.cpp:62-167`。
-
-| 参数 | 类型 | 必填 | 默认值 | 说明 |
-| --- | --- | --- | --- | --- |
-| `defaultPath` | `string` | 否 | `` | 可选；默认空。支持 `%music%` 展开。 |
-| `filters` | `array` | 否 | `omitted` | 可选过滤器 `{ name, extensions[] }`，由 `ParseFilterSpecs` 解析。 |
-| `multiple` | `boolean` | 否 | `false` | 可选；默认 false。 |
-| `title` | `string` | 否 | `Open File` | 可选；默认 Open File。 |
-
-#### 返回字段
-
-| 字段 | 类型 | 可选 |
-| --- | --- | --- |
-| `canceled` | `json` | 否 |
-| `error` | `string` | 是 |
-| `filePaths` | `json` | 否 |
-
-语义：省略可选参数时使用 handler 默认值；失败分支及错误字段以该源文件为准。
-
-```js
-const result = await fb2k.invoke('dialog.openFile', { defaultPath: /* value */, filters: /* value */, multiple: /* value */, title: /* value */ });
-```
-<!-- phase3-supplement:dialog.saveFile -->
-### Contract 补充：`dialog.saveFile`
-
-经复核的补充 contract。权威源：`src/api/DialogApi.cpp:171-231`。
-
-| 参数 | 类型 | 必填 | 默认值 | 说明 |
-| --- | --- | --- | --- | --- |
-| `defaultName` | `string` | 否 | `` | 可选；默认空。 |
-| `filters` | `array` | 否 | `omitted` | 可选过滤器 `{ name, extensions[] }`，由 `ParseFilterSpecs` 解析。 |
-| `title` | `string` | 否 | `Save File` | 可选；默认 Save File。 |
-
-#### 返回字段
-
-| 字段 | 类型 | 可选 |
-| --- | --- | --- |
-| `canceled` | `json` | 否 |
-| `error` | `string` | 是 |
-| `filePath` | `json` | 否 |
-
-语义：省略可选参数时使用 handler 默认值；失败分支及错误字段以该源文件为准。
-
-```js
-const result = await fb2k.invoke('dialog.saveFile', { defaultName: /* value */, filters: /* value */, title: /* value */ });
+await fb2k.invoke('shell.openWith', { path: 'C:\\Music\\notes.txt' });
 ```
 
 ## 文件、对话框与 Shell 边界

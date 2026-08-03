@@ -212,5 +212,5 @@ For `jitQueue:error`, local-file failures include `path`, while remote-source fa
 ## Notes
 
 - `playback:stopAfterCurrentChanged` uses `{ enabled }`, the same field as its API.
-- Playlist lifecycle payloads are authoritative in `src/callbacks/PlaylistCallback.cpp`.
+- Playlist lifecycle payload fields may gain entries in future versions; treat unknown keys as additive.
 - The exact emit source and field set for every row follow the C++ `EmitEvent` / `BroadcastEvent` call sites in the component source.

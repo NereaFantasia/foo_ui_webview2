@@ -8,35 +8,36 @@ This page is the primary owner for the namespaces listed below. Method names, pa
 
 ### artwork.getAvailableArtwork
 
-Public API method. Runtime authority: `src/api/ArtworkApi.cpp:1413`.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `path` | `string` | No | Optional; default . |
+| `path` | `string` | Yes | Track path. Accepts `path|subsong:N`. |
 
 **Returns**: `{"artworks":"...","available":"...","error":"...","sources":"...","success":true}`
 
 ```js
-const result = await fb2k.invoke('artwork.getAvailableArtwork', { path: /* value */ });
+const { artworks, sources } = await fb2k.invoke('artwork.getAvailableArtwork', {
+	path: 'C:\\Music\\song.flac',
+});
 ```
 
 ### artwork.getAvailableTypes
 
-Public API method. Runtime authority: `src/api/ArtworkApi.cpp:1403`.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `path` | `string` | No | Optional; default . |
+| `path` | `string` | No | Optional; falls back to the now-playing track. |
 
 **Returns**: `{"error":"...","success":true,"types":"..."}`
 
 ```js
-const result = await fb2k.invoke('artwork.getAvailableTypes', { path: /* value */ });
+const { types } = await fb2k.invoke('artwork.getAvailableTypes', {
+	path: 'C:\\Music\\song.flac',
+});
 ```
 
 ### artwork.getBatch
 
-Public API method. Runtime authority: `src/api/ArtworkApi.cpp:1412`.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
@@ -46,43 +47,46 @@ Public API method. Runtime authority: `src/api/ArtworkApi.cpp:1412`.
 **Returns**: `{"artworks":"...","error":"...","success":true}`
 
 ```js
-const result = await fb2k.invoke('artwork.getBatch', { paths: /* value */, type: /* value */ });
+const { artworks } = await fb2k.invoke('artwork.getBatch', {
+	paths: ['C:\\Music\\a.flac', 'C:\\Music\\b.flac'],
+});
 ```
 
 ### artwork.getByPath
 
-Public API method. Runtime authority: `src/api/ArtworkApi.cpp:1400`.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `path` | `string` | No | Optional; default . |
+| `path` | `string` | Yes | Track path. Accepts native paths, `file://`, and `path|subsong:N`. |
 | `type` | `string` | No | Optional; default front. |
 
 **Returns**: `{"available":"...","dataUrl":"...","error":"...","mimeType":"...","path":"...","size":"...","type":"..."}`
 
 ```js
-const result = await fb2k.invoke('artwork.getByPath', { path: /* value */, type: /* value */ });
+const { available, dataUrl } = await fb2k.invoke('artwork.getByPath', {
+	path: 'C:\\Music\\song.flac',
+});
 ```
 
 ### artwork.getByPlaylistItem
 
-Public API method. Runtime authority: `src/api/ArtworkApi.cpp:1402`.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `index` | `integer` | No | Optional; default -1. |
-| `playlist` | `integer` | No | Optional; default -1. |
+| `index` | `integer` | No | Optional; default -1, which selects item 0. |
+| `playlist` | `integer` | No | Optional; default -1, which selects the active playlist. |
 | `type` | `string` | No | Optional; default front. |
 
 **Returns**: `{"available":"...","dataUrl":"...","error":"...","index":"...","mimeType":"...","playlist":"...","size":"...","type":"..."}`
 
 ```js
-const result = await fb2k.invoke('artwork.getByPlaylistItem', { index: /* value */, playlist: /* value */, type: /* value */ });
+const { available, dataUrl } = await fb2k.invoke('artwork.getByPlaylistItem', {
+	index: 3,
+});
 ```
 
 ### artwork.getCurrent
 
-Public API method. Runtime authority: `src/api/ArtworkApi.cpp:1398`.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
@@ -97,12 +101,11 @@ Public API method. Runtime authority: `src/api/ArtworkApi.cpp:1398`.
 | `extractor` | Artwork resolved directly by the file extractor fallback. |
 
 ```js
-const result = await fb2k.invoke('artwork.getCurrent', { type: /* value */ });
+const { available, dataUrl, source } = await fb2k.invoke('artwork.getCurrent');
 ```
 
 ### artwork.getFb2kUrl
 
-Public API method. Runtime authority: `src/api/ArtworkApi.cpp:1405`.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
@@ -112,100 +115,109 @@ Public API method. Runtime authority: `src/api/ArtworkApi.cpp:1405`.
 **Returns**: `{"available":"...","dataUrl":"...","error":"...","reason":"...","type":"..."}`
 
 ```js
-const result = await fb2k.invoke('artwork.getFb2kUrl', { maxSize: /* value */, type: /* value */ });
+const { available, dataUrl } = await fb2k.invoke('artwork.getFb2kUrl', {
+	maxSize: 300,
+});
 ```
 
 ### artwork.getFb2kUrlByPath
 
-Public API method. Runtime authority: `src/api/ArtworkApi.cpp:1406`.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `maxSize` | `integer` | No | Optional; default 0. |
-| `path` | `string` | No | Optional; default . |
+| `maxSize` | `integer` | No | Optional; default 0, which means no downscaling. |
+| `path` | `string` | Yes | Track path. |
 | `type` | `string` | No | Optional; default front. |
 
 **Returns**: `{"available":"...","dataUrl":"...","error":"...","path":"...","type":"..."}`
 
 ```js
-const result = await fb2k.invoke('artwork.getFb2kUrlByPath', { maxSize: /* value */, path: /* value */, type: /* value */ });
+const { available, dataUrl } = await fb2k.invoke('artwork.getFb2kUrlByPath', {
+	path: 'C:\\Music\\song.flac',
+	maxSize: 300,
+});
 ```
 
 ### artwork.getFb2kUrlByPathBatch
 
-Public API method. Runtime authority: `src/api/ArtworkApi.cpp:1414`.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `items` | `array` | No | Optional; default omitted. |
+| `items` | `array` | No | Optional; omitted by default. |
 | `maxSize` | `integer` | No | Optional; default 0. |
-| `paths` | `array` | No | Optional; default omitted. |
+| `paths` | `array` | No | Optional; omitted by default. |
 | `type` | `string` | No | Optional; default front. |
 
 **Returns**: `{"artworks":"...","error":"...","success":true}`
 
 ```js
-const result = await fb2k.invoke('artwork.getFb2kUrlByPathBatch', { items: /* value */, maxSize: /* value */, paths: /* value */, type: /* value */ });
+const result = await fb2k.invoke('artwork.getFb2kUrlByPathBatch', {
+    paths: ['C:\\Music\\a.flac', 'C:\\Music\\b.flac'],
+    type: 'front',
+});
 ```
 
 ### artwork.getFolderImages
 
-Public API method. Runtime authority: `src/api/ArtworkApi.cpp:1417`.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `directory` | `string` | No | Optional; default . |
+| `directory` | `string` | Yes | Directory to scan for image files. |
 
 **Returns**: `{"error":"...","images":"...","success":true}`
 
 ```js
-const result = await fb2k.invoke('artwork.getFolderImages', { directory: /* value */ });
+const { images } = await fb2k.invoke('artwork.getFolderImages', {
+	directory: 'C:\\Music\\Album',
+});
 ```
 
 ### artwork.getForTrack
 
-Public API method. Runtime authority: `src/api/ArtworkApi.cpp:1401`.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `path` | `string` | No | Optional; default . |
+| `path` | `string` | Yes | Track path. Accepts native paths, `file://`, and `path|subsong:N`. |
 | `type` | `string` | No | Optional; default front. |
 
 **Returns**: `{"available":"...","dataUrl":"...","error":"...","height":"...","mimeType":"...","path":"...","size":"...","type":"...","width":"..."}`
 
 ```js
-const result = await fb2k.invoke('artwork.getForTrack', { path: /* value */, type: /* value */ });
+const { available, dataUrl } = await fb2k.invoke('artwork.getForTrack', {
+	path: 'C:\\Music\\song.flac',
+	type: 'back',
+});
 ```
 
 ### artwork.getLyrics
 
-Public API method. Runtime authority: `src/api/ArtworkApi.cpp:1408`.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `path` | `string` | No | Optional; default . |
+| `path` | `string` | No | Optional; falls back to the now-playing track. |
 
 **Returns**: `{"available":"...","error":"...","lyrics":"...","synced":"...","tag":"..."}`
 
 ```js
-const result = await fb2k.invoke('artwork.getLyrics', { path: /* value */ });
+const { available, lyrics } = await fb2k.invoke('artwork.getLyrics');
 ```
 
 ### artwork.getMetadata
 
-Public API method. Runtime authority: `src/api/ArtworkApi.cpp:1410`.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `path` | `string` | No | Optional; default . |
+| `path` | `string` | No | Optional; falls back to the now-playing track. |
 
 **Returns**: `{"album":"...","albumArtist":"...","artist":"...","available":true,"discNumber":"...","error":"...","genre":"...","hasEmbedded":true,"hasLyrics":true,"title":"...","trackNumber":"...","year":"..."}`
 
 ```js
-const result = await fb2k.invoke('artwork.getMetadata', { path: /* value */ });
+const { title, album, hasEmbedded } = await fb2k.invoke('artwork.getMetadata', {
+	path: 'C:\\Music\\song.flac',
+});
 ```
 
-## Contract notes
+## Usage notes
 
 - Valid artwork `type` values are `front` (also `cover_front`), `back` (also `cover_back`), `disc`, `icon`, and `artist`. Omitted `type` means `front`; an unknown value returns `INVALID_PARAMS`.
 - `artwork.getByPath` and `artwork.getForTrack` accept native paths, `file://` paths, and `path|subsong:N`. They reject `file-relative://` because an extractor has no playlist context; use `artwork.getByPlaylistItem` for those items.

@@ -40,7 +40,7 @@ CUE、ISO 镜像与多轨文件都是一个文件路径下含多首曲目。所�
 | 参数 | 类型 | 必填 | 默认值 | 说明 |
 | --- | --- | --- | --- | --- |
 | `cueIndex` | `integer` | 否 | `-1` | 可选；默认 -1。 |
-| `path` | `string` | 否 | `` | 可选；默认 。 |
+| `path` | `string` | 否 | — | 可选。 |
 
 **返回值**: `{"error":"...","info":"...","path":"...","source":"...","success":true,"tags":"..."}`
 
@@ -48,7 +48,7 @@ CUE、ISO 镜像与多轨文件都是一个文件路径下含多首曲目。所�
 > 始终直接打开文件解码器读取，不受 metadb 缓存影响。`source` 字段固定为 `"file"`。
 
 ```javascript
-const raw = await fb2k.invoke('metadata.readRaw', { path: 'E:\\\\Music\\\\song.flac' });
+const raw = await fb2k.invoke('metadata.readRaw', { path: 'E:\\Music\\song.flac' });
 console.log(raw.tags.TITLE, raw.source); // "file"
 ```
 
@@ -68,7 +68,7 @@ console.log(raw.tags.TITLE, raw.source); // "file"
 > 若文件缺少 `TRACKNUMBER` 标签，会尝试从文件名提取。若 cached info 不完整，会自动退回 direct file read。多轨容器寻址见[定位容器内的单曲](#subsong-addressing)。
 
 ```javascript
-const meta = await fb2k.invoke('metadata.readByPath', { path: 'E:\\\\Music\\\\song.flac' });
+const meta = await fb2k.invoke('metadata.readByPath', { path: 'E:\\Music\\song.flac' });
 console.log(meta.TITLE, meta.ARTIST, meta.DURATION);
 ```
 
@@ -98,7 +98,7 @@ console.log(meta.TITLE, meta.ARTIST, meta.DURATION);
 
 ```javascript
 const batch = await fb2k.invoke('metadata.readBatch', {
-    paths: ['E:\\\\Music\\\\a.flac', 'E:\\\\Music\\\\b.flac']
+    paths: ['E:\\Music\\a.flac', 'E:\\Music\\b.flac']
 });
 batch.results.forEach(r => {
     if (r.success) console.log(r.tags.TITLE);
@@ -126,13 +126,13 @@ batch.results.forEach(r => {
 
 ```javascript
 await fb2k.invoke('metadata.write', {
-    path: 'E:\\\\Music\\\\song.flac',
+    path: 'E:\\Music\\song.flac',
     tags: { TITLE: 'New Title', ARTIST: 'New Artist', COMMENT: null }
 });
 
 // CUE 子轨写入
 await fb2k.invoke('metadata.write', {
-    path: 'E:\\\\Music\\\\album.flac|subsong:2',
+    path: 'E:\\Music\\album.flac|subsong:2',
     tags: { COMMENT: 'Track 3 comment' }
 });
 ```
@@ -151,13 +151,13 @@ await fb2k.invoke('metadata.write', {
 
 ```javascript
 await fb2k.invoke('metadata.removeTag', {
-    path: 'E:\\\\Music\\\\song.flac',
+    path: 'E:\\Music\\song.flac',
     tags: ['COMMENT', 'LYRICS']
 });
 
 // CUE 子轨移除
 await fb2k.invoke('metadata.removeTag', {
-    path: 'E:\\\\Music\\\\album.flac|subsong:2',
+    path: 'E:\\Music\\album.flac|subsong:2',
     tags: ['COMMENT']
 });
 ```
@@ -175,8 +175,8 @@ await fb2k.invoke('metadata.removeTag', {
 ```javascript
 await fb2k.invoke('metadata.writeBatch', {
     items: [
-        { path: 'E:\\\\Music\\\\a.flac', tags: { GENRE: 'Rock' } },
-        { path: 'E:\\\\Music\\\\b.flac', tags: { GENRE: 'Pop' } }
+        { path: 'E:\\Music\\a.flac', tags: { GENRE: 'Rock' } },
+        { path: 'E:\\Music\\b.flac', tags: { GENRE: 'Pop' } }
     ]
 });
 ```
@@ -187,8 +187,8 @@ await fb2k.invoke('metadata.writeBatch', {
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
-| `filename` | `string` | 否 | 可选；默认 。 |
-| `imageData` | `string` | 否 | 可选；默认 。 |
+| `filename` | `string` | 否 | 可选。 |
+| `imageData` | `string` | 否 | 可选。 |
 | `path` | `string` | 是 | 必填。 |
 | `target` | `array` | 否 | 可选；默认 embedded。 |
 | `type` | `string` | 否 | 可选；默认 front。 |
@@ -200,7 +200,7 @@ await fb2k.invoke('metadata.writeBatch', {
 ```javascript
 // 将 Base64 图片嵌入为封面
 await fb2k.invoke('metadata.embedArtwork', {
-    path: 'E:\\\\Music\\\\song.flac',
+    path: 'E:\\Music\\song.flac',
     imageData: base64String,
     type: 'front'
 });
@@ -214,7 +214,7 @@ Artwork API 返回的标准 Data URL，应先取第一个逗号之后的 payload
 const cover = await fb2k.invoke('artwork.getCurrent', { type: 'front' });
 const payload = cover.dataUrl.slice(cover.dataUrl.indexOf(',') + 1);
 await fb2k.invoke('metadata.embedArtwork', {
-    path: 'E:\\\\Music\\\\song.flac',
+    path: 'E:\\Music\\song.flac',
     imageData: payload,
     type: 'front',
 });
@@ -228,7 +228,7 @@ await fb2k.invoke('metadata.embedArtwork', {
 | --- | --- | --- | --- |
 | `path` | `string` | 是 | 必填。 |
 | `removeAll` | `boolean` | 否 | 可选；默认 false。 |
-| `type` | `string` | 否 | 可选；默认 。 |
+| `type` | `string` | 否 | 可选。 |
 
 **返回值**: `{"error":"...","path":"...","removedTypes":"...","success":true}`
 
@@ -286,7 +286,7 @@ fb2k.on('metadata:writeComplete', (e) => {
 ```json
 {
     "success": true,
-    "path": "C:\\\\Music\\\\song.flac",
+    "path": "C:\\Music\\song.flac",
     "rating": 5,
     "storage": "stats"
 }
@@ -311,11 +311,11 @@ fb2k.on('metadata:writeComplete', (e) => {
 **返回值**: `{"menuPath":"...","note":"...","path":"...","rating":"...","storage":"...","success":true}`
 
 ```javascript
-await fb2k.invoke('rating.set', { path: 'C:\\\\Music\\\\song.flac', rating: 5 });
+await fb2k.invoke('rating.set', { path: 'C:\\Music\\song.flac', rating: 5 });
 await fb2k.invoke('rating.set', { rating: 0 }); // 清除当前播放曲目评分
 ```
 
-## Contract 说明
+## 使用说明
 
 - `metadata.read`、`metadata.readByPath` 和 `metadata.readRaw` 都需要 `path`。`readRaw` 绕过 metadb 缓存，接受默认值为 `-1` 的 `cueIndex`；`path|subsong:N` 可选择容器 subsong。成功结果会在结构化 `{ success, path, tags, info }` 中添加 `source: "file"`。
 - `metadata.write`、`metadata.removeTag` 和兼容端点 `metadata.removeField` 都会异步派发更新。派发成功不等于已经持久化完成：请监听广播事件 `metadata:writeComplete`，其 payload 为 `{ operation, path, subsong, code, success, status }`。

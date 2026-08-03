@@ -8,69 +8,64 @@ This page is the primary owner for the namespaces listed below. Method names, pa
 
 ### event.emit
 
-Public API method. Runtime authority: `src/api/PortApi.cpp:121`.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `event` | `string` | No | Optional; default . |
+| `event` | `string` | Yes | Event name to broadcast; a missing or empty value returns `INVALID_PARAMS`. |
 | `excludeSelf` | `boolean` | No | Optional; default false. |
 | `payload` | `object` | No | Optional; default {}. |
 
 **Returns**: `{"code":"...","error":"...","success":true}`
 
 ```js
-const result = await fb2k.invoke('event.emit', { event: /* value */, excludeSelf: /* value */, payload: /* value */ });
+await fb2k.invoke('event.emit', { event: 'ui:themeChanged', payload: { theme: 'dark' } });
 ```
 
 ### event.emitTo
 
-Public API method. Runtime authority: `src/api/PortApi.cpp:133`.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `event` | `string` | No | Optional; default . |
+| `event` | `string` | Yes | Event name to deliver; a missing or empty value returns `INVALID_PARAMS`. |
 | `payload` | `object` | No | Optional; default {}. |
-| `targetWindowId` | `string` | No | Optional; default . |
+| `targetWindowId` | `string` | Yes | Receiving window id; a missing or empty value returns `INVALID_PARAMS`. |
 
 **Returns**: `{"code":"...","error":"...","success":true}`
 
 ```js
-const result = await fb2k.invoke('event.emitTo', { event: /* value */, payload: /* value */, targetWindowId: /* value */ });
+await fb2k.invoke('event.emitTo', { event: 'lyrics:update', targetWindowId: 'popup_01', payload: { line: 5 } });
 ```
 
 ## port
 
 ### port.connect
 
-Public API method. Runtime authority: `src/api/PortApi.cpp:58`.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `name` | `string` | No | Optional; default . |
+| `name` | `string` | Yes | Channel name to bind; a missing or empty value returns `INVALID_PARAMS`. |
 
 **Returns**: `{"code":"...","error":"..."}`
 
 ```js
-const result = await fb2k.invoke('port.connect', { name: /* value */ });
+const { portId } = await fb2k.invoke('port.connect', { name: 'lyrics' });
 ```
 
 ### port.disconnect
 
-Public API method. Runtime authority: `src/api/PortApi.cpp:68`.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `portId` | `string` | No | Optional; default . |
+| `portId` | `string` | Yes | Port to destroy; a missing or empty value returns `INVALID_PARAMS`. |
 
 **Returns**: `{"code":"...","error":"..."}`
 
 ```js
-const result = await fb2k.invoke('port.disconnect', { portId: /* value */ });
+await fb2k.invoke('port.disconnect', { portId: 'port_00000001' });
 ```
 
 ### port.getPorts
 
-Public API method. Runtime authority: `src/api/PortApi.cpp:108-114` → `PortHub::GetPorts`.
 
 | Parameter | Type | Required | Default | Description |
 | --- | --- | --- | --- | --- |
@@ -79,73 +74,68 @@ Public API method. Runtime authority: `src/api/PortApi.cpp:108-114` → `PortHub
 **Returns**: `{"success":true,"ports":[{"portId":"...","name":"...","windowId":"..."}]}`
 
 ```js
-const result = await fb2k.invoke('port.getPorts', { name: /* value */ });
+const { ports } = await fb2k.invoke('port.getPorts', { name: 'lyrics' });
 ```
 
 ### port.postMessage
 
-Public API method. Runtime authority: `src/api/PortApi.cpp:77`.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `message` | `json` | Yes | Required. |
-| `portId` | `string` | No | Optional; default . |
+| `portId` | `string` | Yes | Sending port; a missing or empty value returns `INVALID_PARAMS`. |
 
 **Returns**: `{"code":"...","error":"...","success":true}`
 
 ```js
-const result = await fb2k.invoke('port.postMessage', { message: /* value */, portId: /* value */ });
+await fb2k.invoke('port.postMessage', { portId: 'port_00000001', message: { text: 'hello' } });
 ```
 
 ### port.postMessageTo
 
-Public API method. Runtime authority: `src/api/PortApi.cpp:92`.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `message` | `json` | Yes | Required. |
-| `portId` | `string` | No | Optional; default . |
-| `targetPortId` | `string` | No | Optional; default . |
+| `portId` | `string` | Yes | Sending port; a missing or empty value returns `INVALID_PARAMS`. |
+| `targetPortId` | `string` | Yes | Receiving port; a missing or empty value returns `INVALID_PARAMS`. |
 
 **Returns**: `{"code":"...","error":"...","success":true}`
 
 ```js
-const result = await fb2k.invoke('port.postMessageTo', { message: /* value */, portId: /* value */, targetPortId: /* value */ });
+await fb2k.invoke('port.postMessageTo', { portId: 'port_00000001', targetPortId: 'port_00000002', message: { text: 'sync' } });
 ```
 
 ## state
 
 ### state.delete
 
-Public API method. Runtime authority: `src/api/PortApi.cpp:178`.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `key` | `string` | No | Optional; default . |
+| `key` | `string` | Yes | State key to delete; a missing or empty value returns `INVALID_PARAMS`. |
 
 **Returns**: `{"code":"...","error":"...","success":true}`
 
 ```js
-const result = await fb2k.invoke('state.delete', { key: /* value */ });
+await fb2k.invoke('state.delete', { key: 'lyrics:offset' });
 ```
 
 ### state.get
 
-Public API method. Runtime authority: `src/api/PortApi.cpp:149`.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `key` | `string` | No | Optional; default . |
+| `key` | `string` | Yes | State key to read; a missing or empty value returns `INVALID_PARAMS`. |
 
 **Returns**: `{"code":"...","error":"..."}`
 
 ```js
-const result = await fb2k.invoke('state.get', { key: /* value */ });
+const { value, exists } = await fb2k.invoke('state.get', { key: 'lyrics:offset' });
 ```
 
 ### state.keys
 
-Public API method. Runtime authority: `src/api/PortApi.cpp:188-191` → `PortHub::GetStateKeys`.
 
 | Parameter | Type | Required | Default | Description |
 | --- | --- | --- | --- | --- |
@@ -154,54 +144,23 @@ Public API method. Runtime authority: `src/api/PortApi.cpp:188-191` → `PortHub
 **Returns**: `{"success":true,"keys":["..."]}`
 
 ```js
-const result = await fb2k.invoke('state.keys', { pattern: /* value */ });
+const { keys } = await fb2k.invoke('state.keys', { pattern: 'lyrics:*' });
 ```
 
 ### state.set
 
-Public API method. Runtime authority: `src/api/PortApi.cpp:158`.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `key` | `string` | No | Optional; default . |
+| `key` | `string` | Yes | State key to write; a missing or empty value returns `INVALID_PARAMS`. |
 | `silent` | `boolean` | No | Optional; default false. |
-| `ttlMs` | `integer` | No | Optional; default omitted. |
+| `ttlMs` | `integer` | No | Optional; omitted by default. |
 | `value` | `json` | Yes | Required. |
 
 **Returns**: `{"code":"...","error":"...","success":true}`
 
 ```js
-const result = await fb2k.invoke('state.set', { key: /* value */, silent: /* value */, ttlMs: /* value */, value: /* value */ });
-```
-
-## Contract supplements
-
-The sections below close public-contract findings from the strict parameter audit without replacing existing explanations.
-
-<!-- phase3-supplement:state.set -->
-### Contract supplement: `state.set`
-
-Verified contract supplement. Runtime authority: `src/api/PortApi.cpp:158-175`.
-
-| Parameter | Type | Required | Default | Description |
-| --- | --- | --- | --- | --- |
-| `key` | `string` | No | `` | Optional; default . |
-| `silent` | `boolean` | No | `false` | Optional; default false. |
-| `ttlMs` | `integer` | No | omitted | Optional; default omitted. |
-| `value` | `json` | Yes | none | Required. |
-
-#### Return fields
-
-| Field | Type | Optional |
-| --- | --- | --- |
-| `code` | `string` | Yes |
-| `error` | `string` | Yes |
-| `success` | `boolean` | No |
-
-Semantics: omitted optional parameters use handler defaults; failure branches and error fields are defined by this source file.
-
-```js
-const result = await fb2k.invoke('state.set', { key: /* value */, silent: /* value */, ttlMs: /* value */, value: /* value */ });
+await fb2k.invoke('state.set', { key: 'lyrics:offset', value: 120 });
 ```
 
 ## Routing, state, and event envelopes
@@ -212,4 +171,4 @@ const result = await fb2k.invoke('state.set', { key: /* value */, silent: /* val
 - `state.*` is an in-memory store owned by the process-wide `PortHub` singleton. It is shared across this component's WebView windows in the current foobar2000 process, but it is not written to disk, does not survive process restart, and is not a cross-process or SMP/global persistence mechanism. It is distinct from the SDK `fb.state` playback-state mirror.
 - `state.get` returns `exists: false` and `value: null` when a key is absent. `state.set` requires both `key` and `value`; positive `ttlMs` creates an expiration timestamp, and `silent: true` suppresses `state:changed`.
 - `state.delete` returns `existed`. Explicit deletion emits `state:deleted` with `reason: "deleted"`; expiration emits the same event with `reason: "expired"` and an empty `sourceWindowId`.
-- Public PortHub events are `port:connected`, `port:disconnected`, `port:message`, `state:changed`, and `state:deleted`. Their payloads are emitted by `src/api/PortHub.cpp`.
+- Public PortHub events are `port:connected`, `port:disconnected`, `port:message`, `state:changed`, and `state:deleted`.

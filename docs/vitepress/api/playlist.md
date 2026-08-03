@@ -19,17 +19,6 @@ const { count } = await fb2k.invoke('playlist.getCount');
 
 ### playlist.getAll
 
-<!-- phase3-major1-review:playlist.getAll -->
-#### Source-reviewed contract
-Authority: `src/api/PlaylistApi.cpp:750-772`.
-
-_No public parameters._
-
-**Return keys (vary by response variant)**: No named fields.
-
-**Semantics**: No request fields are read. The method returns an array of playlist summaries containing index, name, trackCount, active/playing/locked, and autoplaylist state.
-
-<!-- phase3-major1-review-end:playlist.getAll -->
 
 Get information for all playlists.
 
@@ -68,31 +57,19 @@ Get the active playlist. Includes a `duration` field.
 **Returns**: `{"duration":"...","found":true,"index":0,"isActive":true,"isLocked":true,"isPlaying":true,"name":"...","success":true,"trackCount":"..."}`
 
 
-> noneactivePlay column  when return `{ "success": true, "found": false }`..
+> Returns `{ "success": true, "found": false }` when there is no active playlist.
 
 ### playlist.setActive
 
-<!-- phase3-major1-review:playlist.setActive -->
-#### Source-reviewed contract
-Authority: `src/api/PlaylistApi.cpp:796-808`.
-
-| Parameter | Type | Required | Default |
-| --- | --- | --- | --- |
-| `playlist` | `integer` | No | `not supplied` |
-
-**Return keys (vary by response variant)**: `error`, `success`; `success`
-
-**Semantics**: setActive requires a valid playlist index in practice: its SIZE_MAX default is rejected and does not fall back to the current active playlist.
-
-<!-- phase3-major1-review-end:playlist.setActive -->
-
-Set active Play column ...
+Set the active playlist.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `playlist` | `integer` | No | Optional; default not supplied. |
+| `playlist` | `integer` | Yes | Target index. There is **no** active-playlist fallback, so omitting it fails. |
 
-**Returns**: `{ "success": true, "error": "..." }`
+**Returns**: `{ "success": true }`
+
+Unlike most playlist methods, omitting `playlist` does not fall back to the active playlist — it returns `{ "success": false, "error": "Invalid playlist index" }`.
 
 ```javascript
 await fb2k.invoke('playlist.setActive', { playlist: 1 });
@@ -100,33 +77,18 @@ await fb2k.invoke('playlist.setActive', { playlist: 1 });
 
 ### playlist.getPlaying
 
-Get the currently playing playlist.includes `duration` Field.
+Get the currently playing playlist. Includes a `duration` field.
 
 - **Parameters**: none
 
 **Returns**: `{"duration":"...","found":true,"index":0,"isActive":true,"isLocked":true,"isPlaying":true,"name":"...","success":true,"trackCount":"..."}`
 
 
-> nonePlay playlist when return `{ "success": true, "found": false }`..
+> Returns `{ "success": true, "found": false }` when nothing is playing.
 
 ### playlist.create
 
-<!-- phase3-major1-review:playlist.create -->
-#### Source-reviewed contract
-Authority: `src/api/PlaylistApi.cpp:832-845`.
-
-| Parameter | Type | Required | Default |
-| --- | --- | --- | --- |
-| `name` | `string` | No | `New Playlist` |
-| `position` | `integer` | No | `append` |
-
-**Return keys (vary by response variant)**: `index`, `success`
-
-**Semantics**: create forwards the optional name and insertion position to the playlist service; the SIZE_MAX sentinel appends and the returned index is the created playlist.
-
-<!-- phase3-major1-review-end:playlist.create -->
-
-Create  Play column ...
+Create a new playlist.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
@@ -141,53 +103,29 @@ const result = await fb2k.invoke('playlist.create', { name: 'Rock Music' });
 
 ### playlist.remove
 
-<!-- phase3-major1-review:playlist.remove -->
-#### Source-reviewed contract
-Authority: `src/api/PlaylistApi.cpp:845-867`.
 
-| Parameter | Type | Required | Default |
-| --- | --- | --- | --- |
-| `playlist` | `integer` | No | `active playlist` |
-
-**Return keys (vary by response variant)**: `error`, `success`; `success`
-
-**Semantics**: The target defaults to active. The service remove result is returned; a pre-existing lock is surfaced through the structured locked error path.
-
-<!-- phase3-major1-review-end:playlist.remove -->
-
-Remove a playlist.if Play column lockedthen noneRemove ...
+Remove a playlist.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `playlist` | `integer` | No | Optional; default active playlist. |
 
-**Returns**: `{ "success": true, "error": "..." }`
+**Returns**: `{ "success": true }`
+
+A locked playlist cannot be removed and returns `{ "success": false, "error": "Playlist is locked", "code": "LOCKED" }`. Removal can also report a plain `success: false` with no `error` when the operation is refused for another reason.
 
 ### playlist.rename
-
-<!-- phase3-major1-review:playlist.rename -->
-#### Source-reviewed contract
-Authority: `src/api/PlaylistApi.cpp:867-880`.
-
-| Parameter | Type | Required | Default |
-| --- | --- | --- | --- |
-| `playlist` | `integer` | No | `not supplied` |
-| `name` | `string` | No | `` |
-
-**Return keys (vary by response variant)**: `error`, `success`; `success`
-
-**Semantics**: Unlike most playlist operations, rename does not substitute the active playlist when omitted: the SIZE_MAX default is invalid. The response success mirrors the rename service result.
-
-<!-- phase3-major1-review-end:playlist.rename -->
 
 Rename a playlist.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `playlist` | `integer` | No | Optional; default not supplied. |
-| `name` | `string` | No | Optional; default . |
+| `playlist` | `integer` | Yes | Target index. There is **no** active-playlist fallback, so omitting it fails. |
+| `name` | `string` | No | New name. Defaults to an empty string. |
 
 **Returns**: `{ "success": true }`
+
+As with `playlist.setActive`, omitting `playlist` does not fall back to the active playlist — it returns `{ "success": false, "error": "Invalid playlist index" }`.
 
 ```javascript
 await fb2k.invoke('playlist.rename', { playlist: 0, name: 'My Favorites' });
@@ -195,21 +133,8 @@ await fb2k.invoke('playlist.rename', { playlist: 0, name: 'My Favorites' });
 
 ### playlist.clear
 
-<!-- phase3-major1-review:playlist.clear -->
-#### Source-reviewed contract
-Authority: `src/api/PlaylistApi.cpp:880-910`.
 
-| Parameter | Type | Required | Default |
-| --- | --- | --- | --- |
-| `playlist` | `integer` | No | `active playlist` |
-
-**Return keys (vary by response variant)**: `error`, `success`; `clearedCount`, `playlist`, `remainingCount`, `success`
-
-**Semantics**: The omitted playlist sentinel resolves to the active playlist. Valid unlocked targets receive an undo backup before clear; the result exposes pre-clear and remaining counts.
-
-<!-- phase3-major1-review-end:playlist.clear -->
-
-Clear Play column  in all track ...
+Remove all tracks from a playlist.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
@@ -228,22 +153,8 @@ Clear Play column  in all track ...
 
 ### playlist.duplicate
 
-<!-- phase3-major1-review:playlist.duplicate -->
-#### Source-reviewed contract
-Authority: `src/api/PlaylistApi.cpp:1402-1436`.
 
-| Parameter | Type | Required | Default |
-| --- | --- | --- | --- |
-| `playlist` | `integer` | No | `active playlist` |
-| `name` | `string` | No | `source name + ' (Copy)'` |
-
-**Return keys (vary by response variant)**: `error`, `success`; `error`, `success`; `index`, `name`, `newPlaylist`, `sourcePlaylist`, `success`, `trackCount`
-
-**Semantics**: The target defaults to the active playlist. An empty name is replaced with the source name plus (Copy); the result identifies sourcePlaylist and newPlaylist.
-
-<!-- phase3-major1-review-end:playlist.duplicate -->
-
-Duplicate a playlist.column Insert to column  after ..
+Duplicate a playlist. The copy is inserted immediately after the source playlist.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
@@ -256,51 +167,21 @@ Duplicate a playlist.column Insert to column  after ..
 
 ### playlist.getTrackCount
 
-<!-- phase3-major1-review:playlist.getTrackCount -->
-#### Source-reviewed contract
-Authority: `src/api/PlaylistApi.cpp:948-961`.
 
-| Parameter | Type | Required | Default |
-| --- | --- | --- | --- |
-| `playlist` | `integer` | No | `active playlist` |
-| `index` | `integer` | No | `used only if playlist is absent` |
-
-**Return keys (vary by response variant)**: `count`; `count`
-
-**Semantics**: The shared selector accepts playlist or index and defaults to active. Invalid resolution deliberately returns count:0 rather than an error envelope.
-
-<!-- phase3-major1-review-end:playlist.getTrackCount -->
-
-Get Play column  in track count...
+Get the number of tracks in a playlist.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `playlist` | `integer` | No | Optional; default active playlist. |
-| `index` | `integer` | No | Optional; default used only if playlist is absent. |
+| `index` | `integer` | No | Alias for `playlist`, read only when `playlist` is absent. |
 
 **Returns**: `{ "count": 150 }`
 
+This method returns no `success` field. An index that cannot be resolved yields `{ "count": 0 }` rather than an error, so a zero count does not distinguish an empty playlist from an invalid target.
+
 ### playlist.getTracks
 
-<!-- phase3-major1-review:playlist.getTracks -->
-#### Source-reviewed contract
-Authority: `src/api/PlaylistApi.cpp:961-981`.
-
-| Parameter | Type | Required | Default |
-| --- | --- | --- | --- |
-| `playlist` | `integer` | No | `active playlist` |
-| `index` | `integer` | No | `used only if playlist is absent` |
-| `start` | `integer` | No | `0` |
-| `count` | `integer` | No | `100` |
-| `formats` | `object` | No | `{}` |
-
-**Return keys (vary by response variant)**: `count`, `playlist`, `start`, `total`, `tracks`
-
-**Semantics**: The handler pages the resolved playlist and returns an empty tracks variant for an invalid target. formats accepts extra titleformat columns, while start/count bound the returned range.
-
-<!-- phase3-major1-review-end:playlist.getTracks -->
-
-Get Play column  in track column  () ...
+Get a paged list of tracks in a playlist. The response has no `success` field.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
@@ -331,7 +212,7 @@ Get Play column  in track column  () ...
             "discNumber": 1,
             "duration": 180.5,
             "path": "file://C:/Music/song1.flac",
-            "absolutePath": "C:\\\\Music\\\\song1.flac",
+            "absolutePath": "C:\\Music\\song1.flac",
             "fileSize": 25600000,
             "subsong": 0,
             "rating": 5,
@@ -361,125 +242,68 @@ const result = await fb2k.invoke('playlist.getTracks', {
         codec: '%codec%'
     }
 });
-//  track  myRating  codec Field
+// Each track object gains the extra myRating and codec fields
 ```
 :::
 
-::: tip TIP
-`absolutePath` Yesfile path, can used for `artwork.getForTrack` etc API.`path` Yes foobar2000 .
+::: tip Paths
+`absolutePath` is the local filesystem path and can be passed directly to APIs such as `artwork.getForTrack`. `path` is the foobar2000 internal form.
 :::
 
 ### playlist.playTrack
 
-<!-- phase3-major1-review:playlist.playTrack -->
-#### Source-reviewed contract
-Authority: `src/api/PlaylistApi.cpp:1089-1134`.
 
-| Parameter | Type | Required | Default |
-| --- | --- | --- | --- |
-| `playlist` | `integer` | No | `active playlist` |
-| `index` | `integer` | No | `track or 0` |
-| `track` | `integer` | No | `0` |
-| `deferred` | `boolean` | No | `false` |
-| `muted` | `boolean` | No | `false` |
-
-**Return keys (vary by response variant)**: `error`, `success`; `error`, `success`; `success`
-
-**Semantics**: index has precedence over the legacy track alias. deferred schedules the default action on the main thread; muted only mutes before play and does not restore a prior mute state.
-
-<!-- phase3-major1-review-end:playlist.playTrack -->
-
-Play playlist in specified track ..
+Play a specific track in a playlist.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `playlist` | `integer` | No | Optional; default active playlist. |
-| `index` | `integer` | No | Optional; default track or 0. |
-| `track` | `integer` | No | Optional; default 0. |
+| `index` | `integer` | No | Track index. Falls back to `track`, then `0`. |
+| `track` | `integer` | No | Legacy alias for `index`. |
 | `deferred` | `boolean` | No | Optional; default false. |
 | `muted` | `boolean` | No | Optional; default false. |
 
 **Returns**: `{ "success": true }`
 
+`muted: true` mutes before playback starts and never unmutes afterwards, so the player is left muted — restore the volume yourself when the intent was only to suppress the start of the track. An out-of-range `index` returns `{ "success": false, "error": "Invalid track index" }`.
+
 ```javascript
 await fb2k.invoke('playlist.playTrack', { playlist: 0, index: 5 });
 
-// （）
+// Deferred start, recommended for streaming sources
 await fb2k.invoke('playlist.playTrack', { playlist: 0, index: 0, deferred: true });
 ```
 
 ### playlist.removeTracks
 
-<!-- phase3-major1-review:playlist.removeTracks -->
-#### Source-reviewed contract
-Authority: `src/api/PlaylistApi.cpp:1017-1041`.
 
-| Parameter | Type | Required | Default |
-| --- | --- | --- | --- |
-| `playlist` | `integer` | No | `active playlist` |
-| `index` | `integer` | No | `used only if playlist is absent` |
-| `items` | `array<integer>` | No | `[]` |
-
-**Return keys (vary by response variant)**: `error`, `success`; `success`
-
-**Semantics**: The shared selector resolves playlist/index. items identifies track indices to remove; locked and invalid targets are rejected before mutation.
-
-<!-- phase3-major1-review-end:playlist.removeTracks -->
-
- from Play column  in Remove specified track ...
+Remove the specified tracks from a playlist.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `playlist` | `integer` | No | Optional; default active playlist. |
-| `index` | `integer` | No | Optional; default used only if playlist is absent. |
-| `items` | `array<integer>` | No | Optional; default []. |
+| `index` | `integer` | No | Alias for `playlist`, read only when `playlist` is absent. |
+| `items` | `array<integer>` | No | Track indices to remove. |
 
 **Returns**: `{ "success": true }`
+
+A locked playlist is rejected with `{ "success": false, "error": "Playlist is locked", "code": "LOCKED" }`.
 
 ### playlist.removeSelectedTracks
 
-<!-- phase3-major1-review:playlist.removeSelectedTracks -->
-#### Source-reviewed contract
-Authority: `src/api/PlaylistApi.cpp:1041-1059`.
-
-| Parameter | Type | Required | Default |
-| --- | --- | --- | --- |
-| `playlist` | `integer` | No | `active playlist` |
-| `index` | `integer` | No | `used only if playlist is absent` |
-
-**Return keys (vary by response variant)**: `error`, `success`; `success`
-
-**Semantics**: The shared selector resolves the target and removes its existing selection. Locked and invalid playlists return false/error; no explicit items argument is consumed.
-
-<!-- phase3-major1-review-end:playlist.removeSelectedTracks -->
-
-Remove Play column  in current selected track ...
+Remove the currently selected tracks from a playlist.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `playlist` | `integer` | No | Optional; default active playlist. |
-| `index` | `integer` | No | Optional; default used only if playlist is absent. |
+| `index` | `integer` | No | Alias for `playlist`, read only when `playlist` is absent. |
 
 **Returns**: `{ "success": true }`
 
+A locked playlist is rejected with `{ "success": false, "error": "Playlist is locked", "code": "LOCKED" }`.
+
 ### playlist.moveTracks
 
-<!-- phase3-major1-review:playlist.moveTracks -->
-#### Source-reviewed contract
-Authority: `src/api/PlaylistApi.cpp:1059-1089`.
-
-| Parameter | Type | Required | Default |
-| --- | --- | --- | --- |
-| `playlist` | `integer` | No | `active playlist` |
-| `index` | `integer` | No | `used only if playlist is absent` |
-| `items` | `array<integer>` | No | `[]` |
-| `delta` | `integer` | No | `0` |
-
-**Return keys (vary by response variant)**: `error`, `success`; `success`
-
-**Semantics**: The shared selector chooses playlist over index. Non-empty items replace the current selection before moving it by delta; empty items move the existing selection, with locked targets rejected.
-
-<!-- phase3-major1-review-end:playlist.moveTracks -->
 
 Move selected tracks by `delta`. When `items` is non-empty, those indices become the selection first; when `items` is empty, the current selection is moved (SMP-compatible).
 
@@ -499,27 +323,13 @@ await fb2k.invoke('playlist.moveTracks', { items: [5, 6], delta: -2 });
 
 ### playlist.addPaths
 
-<!-- phase3-major1-review:playlist.addPaths -->
-#### Source-reviewed contract
-Authority: `src/api/PlaylistApi.cpp:1439-1474`.
 
-| Parameter | Type | Required | Default |
-| --- | --- | --- | --- |
-| `playlist` | `integer` | No | `active playlist` |
-| `paths` | `array<string>` | No | `[]` |
-
-**Return keys (vary by response variant)**: `error`, `success`; `error`, `success`; `countBefore`, `error`, `invalidCount`, `playlist`, `requestedPaths`, `success`; `addedCount`, `countBefore`, `invalidCount`, `playlist`, `requestedPaths`, `success`, `totalCount`
-
-**Semantics**: The non-empty MediaRead paths array is resolved by playlist_incoming_item_filter with subsong handling. The handler rejects invalid or locked targets and reports requestedPaths, addedCount, invalidCount, and count totals.
-
-<!-- phase3-major1-review-end:playlist.addPaths -->
-
-Add file /file  to Play column .use `playlist_incoming_item_filter` sync,  CUE file ...
+Add files or folders to a playlist. Paths are resolved synchronously and CUE sheets are expanded automatically.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `playlist` | `integer` | No | Optional; default active playlist. |
-| `paths` | `array<string>` | No | Optional; default []. |
+| `paths` | `array<string>` | Yes | File or folder paths. An empty array fails with `No paths specified`. |
 
 **Returns**:
 
@@ -537,165 +347,82 @@ Add file /file  to Play column .use `playlist_incoming_item_filter` sync,  CUE f
 
 ## Additional public APIs
 
-The sections below are generated from `RegisterApi`; parameter keys are taken from the C++ handler.
-
 ### playlist.addHandles
 
-<!-- phase3-major1-review:playlist.addHandles -->
-#### Source-reviewed contract
-Authority: `src/api/PlaylistApi.cpp:1478-1513`.
-
-| Parameter | Type | Required | Default |
-| --- | --- | --- | --- |
-| `playlist` | `integer` | No | `active playlist` |
-| `handles` | `array<object or string>` | No | `[]` |
-
-**Return keys (vary by response variant)**: `error`, `success`; `error`, `success`; `error`, `invalidCount`, `playlist`, `requestedCount`, `success`; `addedCount`, `countBefore`, `invalidCount`, `playlist`, `requestedCount`, `success`, `totalCount`
-
-**Semantics**: The target defaults to the active playlist. Handles accept { path, subsong } objects or strings; malformed, empty, oversized, or unresolvable entries increase invalidCount, and a locked target is rejected.
-
-<!-- phase3-major1-review-end:playlist.addHandles -->
-Public API method. Runtime authority: `src/api/PlaylistApi.cpp:1887`。
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `playlist` | `integer` | No | Optional; default active playlist. |
-| `handles` | `array<object or string>` | No | Optional; default []. |
-
-| --- | --- | --- | --- |
-| `playlist` | `integer` | No | Optional; default active playlist. |
-| `handles` | `array<object\\\ | string>` | No Optional; default []. |
+| `handles` | `array<object \| string>` | Yes | Entries as `{ path, subsong }` objects or `path\|subsong:N` strings. |
 
 **Returns**: `{"addedCount":"...","countBefore":"...","error":"...","invalidCount":"...","playlist":"...","requestedCount":"...","success":true,"totalCount":"..."}`
 
 ```js
-const result = await fb2k.invoke('playlist.addHandles', { handles: /* value */, playlist: /* value */ });
+await fb2k.invoke('playlist.addHandles', { handles: ['C:\\Music\\song.flac'] });
 ```
 
 ### playlist.addPathsAsync
 
-<!-- phase3-major1-review:playlist.addPathsAsync -->
-#### Source-reviewed contract
-Authority: `src/api/PlaylistApi.cpp:1678-1722`.
-
-| Parameter | Type | Required | Default |
-| --- | --- | --- | --- |
-| `playlist` | `integer` | No | `active playlist` |
-| `paths` | `array<string>` | No | `[]` |
-
-**Return keys (vary by response variant)**: `error`, `success`; `error`, `success`; `error`, `invalidCount`, `success`; `invalidCount`, `operationId`, `status`, `success`, `totalCount`
-
-**Semantics**: A non-empty protected paths array starts an asynchronous add and returns operationId plus pending status. Completion is later broadcast as playlist:addComplete; immediate validation failure returns success:false and invalidCount.
-
-<!-- phase3-major1-review-end:playlist.addPathsAsync -->
-Public API method. Runtime authority: `src/api/PlaylistApi.cpp:1898`。
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `playlist` | `integer` | No | Optional; default active playlist. |
-| `paths` | `array<string>` | No | Optional; default []. |
+| `paths` | `array<string>` | Yes | File or folder paths. An empty array fails with `No paths specified`. |
 
 **Returns**: `{"error":"...","invalidCount":"...","operationId":"...","status":"...","success":true,"totalCount":"..."}`
 
 ```js
-const result = await fb2k.invoke('playlist.addPathsAsync', { paths: /* value */, playlist: /* value */ });
+const { operationId } = await fb2k.invoke('playlist.addPathsAsync', { paths: ['C:\\Music\\Album'] });
 ```
 
 ### playlist.addPathsSequential
 
-<!-- phase3-major1-review:playlist.addPathsSequential -->
-#### Source-reviewed contract
-Authority: `src/api/PlaylistApi.cpp:1650-1675`.
-
-| Parameter | Type | Required | Default |
-| --- | --- | --- | --- |
-| `playlist` | `integer` | No | `active playlist` |
-| `paths` | `array<string>` | No | `[]` |
-
-**Return keys (vary by response variant)**: `error`, `success`; `error`, `success`; `addedCount`, `order`, `playlist`, `success`
-
-**Semantics**: A non-empty protected paths array is resolved and inserted in the service’s sequential result order. Locked or invalid target playlists fail before the add; the return order lists inserted indices.
-
-<!-- phase3-major1-review-end:playlist.addPathsSequential -->
-Public API method. Runtime authority: `src/api/PlaylistApi.cpp:1897`。
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `playlist` | `integer` | No | Optional; default active playlist. |
-| `paths` | `array<string>` | No | Optional; default []. |
+| `paths` | `array<string>` | Yes | File or folder paths. An empty array fails with `No paths specified`. |
 
 **Returns**: `{"addedCount":"...","error":"...","order":"...","playlist":"...","success":true}`
 
 ```js
-const result = await fb2k.invoke('playlist.addPathsSequential', { paths: /* value */, playlist: /* value */ });
+await fb2k.invoke('playlist.addPathsSequential', { paths: ['C:\\Music\\a.flac', 'C:\\Music\\b.flac'] });
 ```
 
 ### playlist.convertToAutoplaylist
 
-<!-- phase3-major1-review:playlist.convertToAutoplaylist -->
-#### Source-reviewed contract
-Authority: `src/api/PlaylistApi.cpp:1294-1315`.
-
-| Parameter | Type | Required | Default |
-| --- | --- | --- | --- |
-| `playlist` | `integer` | No | `active playlist` |
-| `query` | `string` | No | `` |
-| `sort` | `string` | No | `` |
-| `keepSorted` | `boolean` | No | `false` |
-
-**Return keys (vary by response variant)**: `error`, `success`; `error`, `success`; `playlist`, `success`; `error`, `success`
-
-**Semantics**: A non-empty query is required despite its empty default. The target defaults to the active playlist; keepSorted controls the autoplaylist sort flag and service errors return success:false.
-
-<!-- phase3-major1-review-end:playlist.convertToAutoplaylist -->
-Public API method. Runtime authority: `src/api/PlaylistApi.cpp:1881`。
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `playlist` | `integer` | No | Optional; default active playlist. |
-| `query` | `string` | No | Optional; default . |
-| `sort` | `string` | No | Optional; default . |
+| `query` | `string` | Yes | Filter expression. An empty value fails with `Query is required`. |
+| `sort` | `string` | No | Optional. |
 | `keepSorted` | `boolean` | No | Optional; default false. |
 
 **Returns**: `{"error":"...","playlist":"...","success":true}`
 
 ```js
-const result = await fb2k.invoke('playlist.convertToAutoplaylist', { keepSorted: /* value */, playlist: /* value */, query: /* value */, sort: /* value */ });
+await fb2k.invoke('playlist.convertToAutoplaylist', { playlist: 0, query: '%genre% IS Rock' });
 ```
 
 ### playlist.createAutoplaylist
 
-Public API method. Runtime authority: `src/api/PlaylistApi.cpp:1880`。
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `keepSorted` | `boolean` | No | Optional; default false. |
 | `name` | `string` | No | Optional; default New Autoplaylist. |
-| `query` | `string` | No | Optional; default . |
-| `sort` | `string` | No | Optional; default . |
+| `query` | `string` | Yes | Filter expression. An empty value fails with `Query is required`. |
+| `sort` | `string` | No | Optional. |
 
 **Returns**: `{"error":"...","index":"...","name":"...","playlist":"...","query":"...","success":true}`
 
 ```js
-const result = await fb2k.invoke('playlist.createAutoplaylist', { keepSorted: /* value */, name: /* value */, query: /* value */, sort: /* value */ });
+const { index } = await fb2k.invoke('playlist.createAutoplaylist', { name: 'Rock', query: '%genre% IS Rock' });
 ```
 
 ### playlist.deselectAll
 
-<!-- phase3-major1-review:playlist.deselectAll -->
-#### Source-reviewed contract
-Authority: `src/api/PlaylistApi.cpp:1562-1572`.
-
-| Parameter | Type | Required | Default |
-| --- | --- | --- | --- |
-| `playlist` | `integer` | No | `active playlist` |
-
-**Return keys (vary by response variant)**: `success`; `success`
-
-**Semantics**: The optional playlist resolves to the active playlist. Invalid targets return success:false; otherwise all selection bits in that playlist are cleared.
-
-<!-- phase3-major1-review-end:playlist.deselectAll -->
-Public API method. Runtime authority: `src/api/PlaylistApi.cpp:1892`。
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
@@ -704,27 +431,11 @@ Public API method. Runtime authority: `src/api/PlaylistApi.cpp:1892`。
 **Returns**: `{"success":true}`
 
 ```js
-const result = await fb2k.invoke('playlist.deselectAll', { playlist: /* value */ });
+await fb2k.invoke('playlist.deselectAll', { playlist: 0 });
 ```
 
 ### playlist.focusTrack
 
-<!-- phase3-major1-review:playlist.focusTrack -->
-#### Source-reviewed contract
-Authority: `src/api/PlaylistApi.cpp:1137-1151`.
-
-| Parameter | Type | Required | Default |
-| --- | --- | --- | --- |
-| `playlist` | `integer` | No | `active playlist` |
-| `index` | `integer` | No | `no focused item` |
-| `track` | `integer` | No | `no focused item` |
-
-**Return keys (vary by response variant)**: `error`, `success`; `error`, `success`; `success`
-
-**Semantics**: Deprecated compatibility method: index wins over track. Omitted track clears focus using the infinite-size sentinel; invalid target or supplied track index returns success:false.
-
-<!-- phase3-major1-review-end:playlist.focusTrack -->
-Public API method. Runtime authority: `src/api/PlaylistApi.cpp:1873`。
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
@@ -735,79 +446,50 @@ Public API method. Runtime authority: `src/api/PlaylistApi.cpp:1873`。
 **Returns**: `{"error":"...","success":true}`
 
 ```js
-const result = await fb2k.invoke('playlist.focusTrack', { index: /* value */, playlist: /* value */, track: /* value */ });
+await fb2k.invoke('playlist.focusTrack', { playlist: 0, index: 3 });
 ```
 
 ### playlist.getAutoplaylistInfo
 
-<!-- phase3-major1-review:playlist.getAutoplaylistInfo -->
-#### Source-reviewed contract
-Authority: `src/api/PlaylistApi.cpp:1344-1369`.
-
-| Parameter | Type | Required | Default |
-| --- | --- | --- | --- |
-| `playlist` | `integer` | No | `active playlist` |
-
-**Returns**: `{"error":"...","isAutoplaylist":true,"keepSorted":"...","lockName":"...","playlist":0,"source":"...","success":true}`
-
-**Semantics**: The target defaults to active. The response distinguishes non-autoplaylists from SDK and DUI autoplaylists and reports keepSorted/source/lockName when available.
-
-<!-- phase3-major1-review-end:playlist.getAutoplaylistInfo -->
-Public API method. Runtime authority: `src/api/PlaylistApi.cpp:1883`。
+Reports whether a playlist is an autoplaylist, and its sort/source metadata when it is.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `playlist` | `integer` | No | Optional; default active playlist. |
 
+**Returns** — an autoplaylist: `{ "isAutoplaylist": true, "playlist": 0, "keepSorted": false, "source": "sdk" }`. Anything else: `{ "isAutoplaylist": false, "playlist": 0 }`, with `keepSorted` and `source` absent.
+
+`source` is `"sdk"` or `"dui"`; `keepSorted` is always `false` for a `dui` source. `lockName` accompanies a `dui` source only — an autoplaylist created through the SDK never carries it, even when the playlist is locked. Neither branch returns a `success` field — test `isAutoplaylist` instead. An out-of-range `playlist` returns `{ "success": false, "error": "Invalid playlist index" }`.
 
 ```js
-const result = await fb2k.invoke('playlist.getAutoplaylistInfo', { playlist: /* value */ });
+const info = await fb2k.invoke('playlist.getAutoplaylistInfo', { playlist: 0 });
+if (info.isAutoplaylist) console.log(info.source, info.keepSorted);
 ```
 
 ### playlist.getAutoplaylistQuery
 
-<!-- phase3-major1-review:playlist.getAutoplaylistQuery -->
-#### Source-reviewed contract
-Authority: `src/api/PlaylistApi.cpp:1372-1399`.
-
-| Parameter | Type | Required | Default |
-| --- | --- | --- | --- |
-| `playlist` | `integer` | No | `active playlist` |
-
-**Returns**: `{"error":"...","isAutoplaylist":true,"keepSorted":"...","lockName":"...","note":"...","playlist":0,"query":"...","source":"...","success":true}`
-
-**Semantics**: The target defaults to active. foobar2000 does not expose the query string, so an autoplaylist response deliberately carries query:null plus a note and source metadata.
-
-<!-- phase3-major1-review-end:playlist.getAutoplaylistQuery -->
-Public API method. Runtime authority: `src/api/PlaylistApi.cpp:1884`。
+Reports autoplaylist metadata for a playlist. The query string itself is not retrievable.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `playlist` | `integer` | No | Optional; default active playlist. |
 
+**Returns** — an autoplaylist: `{ "isAutoplaylist": true, "playlist": 0, "query": null, "keepSorted": false, "source": "sdk", "note": "Query string not exposed by SDK" }`. Anything else: `{ "isAutoplaylist": false, "playlist": 0, "query": null }`.
+
+`query` is **always** `null` — foobar2000 does not expose the filter expression, so this method cannot be used to read it back. `keepSorted`, `source`, and `note` appear only for an autoplaylist, and `lockName` only alongside a `dui` source. Neither branch returns a `success` field. An out-of-range `playlist` returns `{ "success": false, "error": "Invalid playlist index" }`.
 
 ```js
-const result = await fb2k.invoke('playlist.getAutoplaylistQuery', { playlist: /* value */ });
+const q = await fb2k.invoke('playlist.getAutoplaylistQuery', { playlist: 0 });
+// q.query is null even when q.isAutoplaylist is true
 ```
 
 ### playlist.getAvailableColumns
 
-<!-- phase3-major1-review:playlist.getAvailableColumns -->
-#### Source-reviewed contract
-Authority: `src/api/PlaylistApi.cpp:1816-1848`.
-
-_No public parameters._
-
-**Return keys (vary by response variant)**: No named fields.
-
-**Semantics**: No request fields are read. The return is an array assembled from DUI column providers; each item carries id, name, pattern, alignment, numeric, and optional sortPattern.
-
-<!-- phase3-major1-review-end:playlist.getAvailableColumns -->
-Public API method. Runtime authority: `src/api/PlaylistApi.cpp:1901`。
+Lists the columns provided by the Default UI, for use as titleformat patterns.
 
 _No parameters._
 
-**Returns**:  when handler return JSON .
+**Returns**: a bare JSON array — not an envelope, so there is no `success` field. Each entry carries `id`, `name`, `pattern`, `alignment` (`left` / `right` / `center`), and `numeric`; `sortPattern` is present only when the column defines a distinct sort script. The array is empty when no provider is registered.
 
 ```js
 const result = await fb2k.invoke('playlist.getAvailableColumns');
@@ -815,20 +497,6 @@ const result = await fb2k.invoke('playlist.getAvailableColumns');
 
 ### playlist.getFocusTrack
 
-<!-- phase3-major1-review:playlist.getFocusTrack -->
-#### Source-reviewed contract
-Authority: `src/api/PlaylistApi.cpp:1154-1163`.
-
-| Parameter | Type | Required | Default |
-| --- | --- | --- | --- |
-| `playlist` | `integer` | No | `active playlist` |
-
-**Return keys (vary by response variant)**: `error`, `success`; `index`, `playlist`, `success`
-
-**Semantics**: Deprecated compatibility getter. It resolves the active playlist when omitted and returns success:false for an invalid target; no focus is represented by index:-1.
-
-<!-- phase3-major1-review-end:playlist.getFocusTrack -->
-Public API method. Runtime authority: `src/api/PlaylistApi.cpp:1874`。
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
@@ -837,25 +505,11 @@ Public API method. Runtime authority: `src/api/PlaylistApi.cpp:1874`。
 **Returns**: `{"error":"...","index":"...","playlist":"...","success":true}`
 
 ```js
-const result = await fb2k.invoke('playlist.getFocusTrack', { playlist: /* value */ });
+const { index } = await fb2k.invoke('playlist.getFocusTrack', { playlist: 0 });
 ```
 
 ### playlist.getFocusedTrack
 
-<!-- phase3-major1-review:playlist.getFocusedTrack -->
-#### Source-reviewed contract
-Authority: `src/api/PlaylistApi.cpp:1572-1582`.
-
-| Parameter | Type | Required | Default |
-| --- | --- | --- | --- |
-| `playlist` | `integer` | No | `active playlist` |
-
-**Return keys (vary by response variant)**: `index`, `success`; `index`, `playlist`, `success`
-
-**Semantics**: The target defaults to active. Valid calls return the playlist and focused index, using -1 where no item has focus; an invalid target returns success:true with index:-1 for compatibility.
-
-<!-- phase3-major1-review-end:playlist.getFocusedTrack -->
-Public API method. Runtime authority: `src/api/PlaylistApi.cpp:1893`。
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
@@ -864,25 +518,11 @@ Public API method. Runtime authority: `src/api/PlaylistApi.cpp:1893`。
 **Returns**: `{"index":"...","playlist":"...","success":true}`
 
 ```js
-const result = await fb2k.invoke('playlist.getFocusedTrack', { playlist: /* value */ });
+const { index } = await fb2k.invoke('playlist.getFocusedTrack', { playlist: 0 });
 ```
 
 ### playlist.getLockInfo
 
-<!-- phase3-major1-review:playlist.getLockInfo -->
-#### Source-reviewed contract
-Authority: `src/api/PlaylistApi.cpp:1516-1525`.
-
-| Parameter | Type | Required | Default |
-| --- | --- | --- | --- |
-| `playlist` | `integer` | No | `active playlist` |
-
-**Return keys (vary by response variant)**: `error`, `success`; `isLocked`, `playlist`
-
-**Semantics**: The target defaults to active and returns playlist plus isLocked. Invalid targets use the false/error response variant.
-
-<!-- phase3-major1-review-end:playlist.getLockInfo -->
-Public API method. Runtime authority: `src/api/PlaylistApi.cpp:1888`。
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
@@ -891,26 +531,11 @@ Public API method. Runtime authority: `src/api/PlaylistApi.cpp:1888`。
 **Returns**: `{"error":"...","isLocked":"...","playlist":"...","success":true}`
 
 ```js
-const result = await fb2k.invoke('playlist.getLockInfo', { playlist: /* value */ });
+const { isLocked } = await fb2k.invoke('playlist.getLockInfo', { playlist: 0 });
 ```
 
 ### playlist.getSelectedTracks
 
-<!-- phase3-major1-review:playlist.getSelectedTracks -->
-#### Source-reviewed contract
-Authority: `src/api/PlaylistApi.cpp:981-995`.
-
-| Parameter | Type | Required | Default |
-| --- | --- | --- | --- |
-| `playlist` | `integer` | No | `active playlist` |
-| `index` | `integer` | No | `ignored when playlist is supplied` |
-
-**Return keys (vary by response variant)**: `error`, `success`, `tracks`
-
-**Semantics**: Both selector names are supported by the shared helper, with playlist taking precedence. The return tracks array contains currently selected track records or a false/error variant for invalid targets.
-
-<!-- phase3-major1-review-end:playlist.getSelectedTracks -->
-Public API method. Runtime authority: `src/api/PlaylistApi.cpp:1867`。
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
@@ -925,20 +550,6 @@ const result = await fb2k.invoke('playlist.getSelectedTracks');
 
 ### playlist.getSelection
 
-<!-- phase3-major1-review:playlist.getSelection -->
-#### Source-reviewed contract
-Authority: `src/api/PlaylistApi.cpp:1538-1552`.
-
-| Parameter | Type | Required | Default |
-| --- | --- | --- | --- |
-| `playlist` | `integer` | No | `active playlist` |
-
-**Return keys (vary by response variant)**: `error`, `success`; `count`, `items`, `playlist`, `success`
-
-**Semantics**: The target defaults to active. The response contains the selected item indices, count, and resolved playlist; invalid targets return false/error.
-
-<!-- phase3-major1-review-end:playlist.getSelection -->
-Public API method. Runtime authority: `src/api/PlaylistApi.cpp:1890`。
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
@@ -947,90 +558,47 @@ Public API method. Runtime authority: `src/api/PlaylistApi.cpp:1890`。
 **Returns**: `{"count":"...","error":"...","items":"...","playlist":"...","success":true}`
 
 ```js
-const result = await fb2k.invoke('playlist.getSelection', { playlist: /* value */ });
+const { items, count } = await fb2k.invoke('playlist.getSelection', { playlist: 0 });
 ```
 
 ### playlist.insertTracks
 
-<!-- phase3-major1-review:playlist.insertTracks -->
-#### Source-reviewed contract
-Authority: `src/api/PlaylistApi.cpp:913-948`.
-
-| Parameter | Type | Required | Default |
-| --- | --- | --- | --- |
-| `playlist` | `integer` | No | `active playlist` |
-| `position` | `integer` | No | `index or 0` |
-| `index` | `integer` | No | `0` |
-| `handles` | `array<object or string>` | No | `[]` |
-
-**Return keys (vary by response variant)**: `error`, `success`; `error`, `success`; `error`, `invalidCount`, `playlist`, `requestedCount`, `success`; `addedCount`, `countBefore`, `insertIndex`, `invalidCount`, `playlist`, `requestedCount`, `success`, `totalCount`
-
-**Semantics**: position wins over index as the insertion location. A non-empty handles array is required in practice; items are validated by the service and locked targets fail before mutation.
-
-<!-- phase3-major1-review-end:playlist.insertTracks -->
-Public API method. Runtime authority: `src/api/PlaylistApi.cpp:1864`。
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `playlist` | `integer` | No | Optional; default active playlist. |
-| `position` | `integer` | No | Optional; default index or 0. |
-| `index` | `integer` | No | Optional; default 0. |
-| `handles` | `array<object or string>` | No | Optional; default []. |
-
-| --- | --- | --- | --- |
-| `playlist` | `integer` | No | Optional; default active playlist. |
-| `position` | `integer` | No | Optional; default index or 0. |
-| `index` | `integer` | No | Optional; default 0. |
-| `handles` | `array<object\\\ | string>` | No Optional; default []. |
+| `position` | `integer` | No | Insert position. Falls back to `index`, then `0`. |
+| `index` | `integer` | No | Legacy alias for `position`. |
+| `handles` | `array<object \| string>` | Yes | Entries as `{ path, subsong }` objects or `path\|subsong:N` strings. |
 
 **Returns**: `{"addedCount":"...","countBefore":"...","error":"...","insertIndex":"...","invalidCount":"...","playlist":"...","requestedCount":"...","success":true,"totalCount":"..."}`
 
 ```js
-const result = await fb2k.invoke('playlist.insertTracks', { handles: /* value */, index: /* value */, playlist: /* value */, position: /* value */ });
+const result = await fb2k.invoke('playlist.insertTracks', {
+    playlist: 0,
+    position: 5,
+    handles: ['C:\\Music\\song.flac'],
+});
 ```
 
 ### playlist.isAutoplaylist
 
-<!-- phase3-major1-review:playlist.isAutoplaylist -->
-#### Source-reviewed contract
-Authority: `src/api/PlaylistApi.cpp:1250-1262`.
-
-| Parameter | Type | Required | Default |
-| --- | --- | --- | --- |
-| `playlist` | `integer` | No | `active playlist` |
-
-**Returns**: `{"error":"...","isAutoplaylist":true,"lockName":"...","playlist":0,"success":true}`
-
-**Semantics**: The target defaults to active and reports playlist/isAutoplaylist with optional lockName. Invalid targets use success:false with an error.
-
-<!-- phase3-major1-review-end:playlist.isAutoplaylist -->
-Public API method. Runtime authority: `src/api/PlaylistApi.cpp:1879`。
+Tests whether a playlist is an autoplaylist.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `playlist` | `integer` | No | Optional; default active playlist. |
 
+**Returns**: `{ "playlist": 0, "isAutoplaylist": true }`
+
+`lockName` is added whenever the playlist carries a named lock, independently of the result — so unlike the two methods above, it can appear together with `isAutoplaylist: false` for an ordinary locked playlist. The success path has **no** `success` field — test `isAutoplaylist` instead. An out-of-range `playlist` returns `{ "success": false, "error": "Invalid playlist index" }`.
 
 ```js
-const result = await fb2k.invoke('playlist.isAutoplaylist', { playlist: /* value */ });
+const { isAutoplaylist } = await fb2k.invoke('playlist.isAutoplaylist', { playlist: 0 });
 ```
 
 ### playlist.isLocked
 
-<!-- phase3-major1-review:playlist.isLocked -->
-#### Source-reviewed contract
-Authority: `src/api/PlaylistApi.cpp:1528-1535`.
-
-| Parameter | Type | Required | Default |
-| --- | --- | --- | --- |
-| `playlist` | `integer` | No | `active playlist` |
-
-**Return keys (vary by response variant)**: `error`, `isLocked`, `success`; `isLocked`, `success`
-
-**Semantics**: The target defaults to active. Valid responses include success and isLocked; an invalid target explicitly returns isLocked:false with an error.
-
-<!-- phase3-major1-review-end:playlist.isLocked -->
-Public API method. Runtime authority: `src/api/PlaylistApi.cpp:1889`。
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
@@ -1039,25 +607,11 @@ Public API method. Runtime authority: `src/api/PlaylistApi.cpp:1889`。
 **Returns**: `{"error":"...","isLocked":"...","success":true}`
 
 ```js
-const result = await fb2k.invoke('playlist.isLocked', { playlist: /* value */ });
+const { isLocked } = await fb2k.invoke('playlist.isLocked', { playlist: 0 });
 ```
 
 ### playlist.redo
 
-<!-- phase3-major1-review:playlist.redo -->
-#### Source-reviewed contract
-Authority: `src/api/PlaylistApi.cpp:1234-1245`.
-
-| Parameter | Type | Required | Default |
-| --- | --- | --- | --- |
-| `playlist` | `integer` | No | `active playlist` |
-
-**Return keys (vary by response variant)**: `error`, `success`; `success`
-
-**Semantics**: The target defaults to active. Invalid targets return success:false; otherwise success reflects whether the playlist redo stack had an action to restore.
-
-<!-- phase3-major1-review-end:playlist.redo -->
-Public API method. Runtime authority: `src/api/PlaylistApi.cpp:1878`。
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
@@ -1066,25 +620,11 @@ Public API method. Runtime authority: `src/api/PlaylistApi.cpp:1878`。
 **Returns**: `{"error":"...","success":true}`
 
 ```js
-const result = await fb2k.invoke('playlist.redo', { playlist: /* value */ });
+await fb2k.invoke('playlist.redo', { playlist: 0 });
 ```
 
 ### playlist.removeAutoplaylist
 
-<!-- phase3-major1-review:playlist.removeAutoplaylist -->
-#### Source-reviewed contract
-Authority: `src/api/PlaylistApi.cpp:1318-1341`.
-
-| Parameter | Type | Required | Default |
-| --- | --- | --- | --- |
-| `playlist` | `integer` | No | `active playlist` |
-
-**Return keys (vary by response variant)**: `error`, `success`; `playlist`, `source`, `success`; `note`, `playlist`, `source`, `success`; `error`, `success`
-
-**Semantics**: SDK autoplaylists are converted back to normal playlists. DUI-detected autoplaylists return a successful informational dui/source/note variant rather than directly removing the lock.
-
-<!-- phase3-major1-review-end:playlist.removeAutoplaylist -->
-Public API method. Runtime authority: `src/api/PlaylistApi.cpp:1882`。
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
@@ -1093,90 +633,45 @@ Public API method. Runtime authority: `src/api/PlaylistApi.cpp:1882`。
 **Returns**: `{"error":"...","note":"...","playlist":"...","source":"...","success":true}`
 
 ```js
-const result = await fb2k.invoke('playlist.removeAutoplaylist', { playlist: /* value */ });
+await fb2k.invoke('playlist.removeAutoplaylist', { playlist: 0 });
 ```
 
 ### playlist.reorder
 
-<!-- phase3-major1-review:playlist.reorder -->
-#### Source-reviewed contract
-Authority: `src/api/PlaylistApi.cpp:1618-1647`.
-
-| Parameter | Type | Required | Default |
-| --- | --- | --- | --- |
-| `playlist` | `integer` | No | `active playlist` |
-| `newOrder` | `array<integer>` | No | `[]` |
-
-**Return keys (vary by response variant)**: `error`, `success`; `error`, `expected`, `got`, `success`; `error`, `success`; `error`, `index`, `success`; `itemCount`, `playlist`, `success`
-
-**Semantics**: newOrder must have exactly one numeric in-range source index per playlist item. The handler validates length and elements, records undo, then applies the order; it does not prove uniqueness.
-
-<!-- phase3-major1-review-end:playlist.reorder -->
-Public API method. Runtime authority: `src/api/PlaylistApi.cpp:1896`。
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `playlist` | `integer` | No | Optional; default active playlist. |
-| `newOrder` | `array<integer>` | No | Optional; default []. |
+| `newOrder` | `array<integer>` | Yes | A full permutation of the playlist's track indices. Its length must equal the current item count. |
 
 **Returns**: `{"error":"...","expected":"...","got":"...","index":"...","itemCount":"...","playlist":"...","success":true}`
 
 ```js
-const result = await fb2k.invoke('playlist.reorder', { newOrder: /* value */, playlist: /* value */ });
+// newOrder must be a full permutation of the playlist's current track indices
+await fb2k.invoke('playlist.reorder', { playlist: 0, newOrder: [2, 0, 1] });
 ```
 
 ### playlist.reorderPlaylists
 
-<!-- phase3-major1-review:playlist.reorderPlaylists -->
-#### Source-reviewed contract
-Authority: `src/api/PlaylistApi.cpp:1782-1813`.
-
-| Parameter | Type | Required | Default |
-| --- | --- | --- | --- |
-| `newOrder` | `array<integer>` | No | `[]` |
-
-**Return keys (vary by response variant)**: `error`, `expected`, `got`, `success`; `error`, `success`; `error`, `index`, `success`; `count`, `success`
-
-**Semantics**: newOrder must match the current playlist count and contain in-range numeric indices. The service reorder result becomes success and the count is always returned on the normal result path.
-
-<!-- phase3-major1-review-end:playlist.reorderPlaylists -->
-Public API method. Runtime authority: `src/api/PlaylistApi.cpp:1900`。
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `newOrder` | `array<integer>` | No | Optional; default []. |
+| `newOrder` | `array<integer>` | Yes | A full permutation of the playlist indices. Its length must equal the playlist count. |
 
 **Returns**: `{"count":"...","error":"...","expected":"...","got":"...","index":"...","success":true}`
 
 ```js
-const result = await fb2k.invoke('playlist.reorderPlaylists', { newOrder: /* value */ });
+// newOrder must be a full permutation of the existing playlist indices
+await fb2k.invoke('playlist.reorderPlaylists', { newOrder: [2, 0, 1] });
 ```
 
 ### playlist.replaceAllAndPlay
 
-<!-- phase3-major1-review:playlist.replaceAllAndPlay -->
-#### Source-reviewed contract
-Authority: `src/api/PlaylistApi.cpp:1725-1779`.
-
-| Parameter | Type | Required | Default |
-| --- | --- | --- | --- |
-| `playlist` | `integer` | No | `active playlist` |
-| `paths` | `array<string>` | No | `[]` |
-| `playIndex` | `integer` | No | `0` |
-| `stopFirst` | `boolean` | No | `true` |
-| `autoPlay` | `boolean` | No | `true` |
-
-**Return keys (vary by response variant)**: `error`, `success`; `error`, `success`; `clearedCount`, `error`, `invalidCount`, `success`; `addedCount`, `clearedCount`, `playIndex`, `playlist`, `success`, `totalCount`
-
-**Semantics**: The non-empty MediaRead paths array replaces the resolved unlocked playlist atomically after optional stop. An out-of-range playIndex becomes zero; autoPlay false focuses the item instead of starting it.
-
-<!-- phase3-major1-review-end:playlist.replaceAllAndPlay -->
-Public API method. Runtime authority: `src/api/PlaylistApi.cpp:1899`。
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `playlist` | `integer` | No | Optional; default active playlist. |
-| `paths` | `array<string>` | No | Optional; default []. |
+| `paths` | `array<string>` | Yes | File or folder paths. An empty array fails with `No paths specified`. |
 | `playIndex` | `integer` | No | Optional; default 0. |
 | `stopFirst` | `boolean` | No | Optional; default true. |
 | `autoPlay` | `boolean` | No | Optional; default true. |
@@ -1184,25 +679,11 @@ Public API method. Runtime authority: `src/api/PlaylistApi.cpp:1899`。
 **Returns**: `{"addedCount":"...","clearedCount":"...","error":"...","invalidCount":"...","playIndex":"...","playlist":"...","success":true,"totalCount":"..."}`
 
 ```js
-const result = await fb2k.invoke('playlist.replaceAllAndPlay', { autoPlay: /* value */, paths: /* value */, playIndex: /* value */, playlist: /* value */, stopFirst: /* value */ });
+await fb2k.invoke('playlist.replaceAllAndPlay', { paths: ['C:\\Music\\song.flac'] });
 ```
 
 ### playlist.reverse
 
-<!-- phase3-major1-review:playlist.reverse -->
-#### Source-reviewed contract
-Authority: `src/api/PlaylistApi.cpp:1597-1615`.
-
-| Parameter | Type | Required | Default |
-| --- | --- | --- | --- |
-| `playlist` | `integer` | No | `active playlist` |
-
-**Return keys (vary by response variant)**: `success`; `success`; `success`
-
-**Semantics**: The target defaults to active. Locked or invalid playlists fail; lists with fewer than two items succeed without mutation, otherwise the handler stores undo and reverses all positions.
-
-<!-- phase3-major1-review-end:playlist.reverse -->
-Public API method. Runtime authority: `src/api/PlaylistApi.cpp:1895`。
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
@@ -1211,25 +692,11 @@ Public API method. Runtime authority: `src/api/PlaylistApi.cpp:1895`。
 **Returns**: `{"success":true}`
 
 ```js
-const result = await fb2k.invoke('playlist.reverse', { playlist: /* value */ });
+await fb2k.invoke('playlist.reverse', { playlist: 0 });
 ```
 
 ### playlist.selectAll
 
-<!-- phase3-major1-review:playlist.selectAll -->
-#### Source-reviewed contract
-Authority: `src/api/PlaylistApi.cpp:1552-1562`.
-
-| Parameter | Type | Required | Default |
-| --- | --- | --- | --- |
-| `playlist` | `integer` | No | `active playlist` |
-
-**Return keys (vary by response variant)**: `success`; `success`
-
-**Semantics**: The target defaults to active. Invalid targets return success:false; a valid target selects every item through the playlist service.
-
-<!-- phase3-major1-review-end:playlist.selectAll -->
-Public API method. Runtime authority: `src/api/PlaylistApi.cpp:1891`。
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
@@ -1238,26 +705,11 @@ Public API method. Runtime authority: `src/api/PlaylistApi.cpp:1891`。
 **Returns**: `{"success":true}`
 
 ```js
-const result = await fb2k.invoke('playlist.selectAll', { playlist: /* value */ });
+await fb2k.invoke('playlist.selectAll', { playlist: 0 });
 ```
 
 ### playlist.setFocusedTrack
 
-<!-- phase3-major1-review:playlist.setFocusedTrack -->
-#### Source-reviewed contract
-Authority: `src/api/PlaylistApi.cpp:1582-1597`.
-
-| Parameter | Type | Required | Default |
-| --- | --- | --- | --- |
-| `playlist` | `integer` | No | `active playlist` |
-| `index` | `integer` | No | `no focused item` |
-
-**Return keys (vary by response variant)**: `error`, `success`; `error`, `success`; `success`
-
-**Semantics**: The target defaults to active. index may be omitted to set the no-focus sentinel; supplied indices must be within the playlist track count.
-
-<!-- phase3-major1-review-end:playlist.setFocusedTrack -->
-Public API method. Runtime authority: `src/api/PlaylistApi.cpp:1894`。
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
@@ -1267,28 +719,11 @@ Public API method. Runtime authority: `src/api/PlaylistApi.cpp:1894`。
 **Returns**: `{"error":"...","success":true}`
 
 ```js
-const result = await fb2k.invoke('playlist.setFocusedTrack', { index: /* value */, playlist: /* value */ });
+await fb2k.invoke('playlist.setFocusedTrack', { playlist: 0, index: 3 });
 ```
 
 ### playlist.setSelection
 
-<!-- phase3-major1-review:playlist.setSelection -->
-#### Source-reviewed contract
-Authority: `src/api/PlaylistApi.cpp:995-1017`.
-
-| Parameter | Type | Required | Default |
-| --- | --- | --- | --- |
-| `playlist` | `integer` | No | `active playlist` |
-| `index` | `integer` | No | `used only if playlist is absent` |
-| `indices` | `array<integer>` | No | `[]` |
-| `clearOthers` | `boolean` | No | `true` |
-
-**Return keys (vary by response variant)**: `error`, `success`; `success`
-
-**Semantics**: The shared selector resolves playlist/index. indices are converted to item indices and clearOthers selects replacement versus additive selection; invalid target selection fails.
-
-<!-- phase3-major1-review-end:playlist.setSelection -->
-Public API method. Runtime authority: `src/api/PlaylistApi.cpp:1868`。
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
@@ -1300,12 +735,11 @@ Public API method. Runtime authority: `src/api/PlaylistApi.cpp:1868`。
 **Returns**: `{"error":"...","success":true}`
 
 ```js
-const result = await fb2k.invoke('playlist.setSelection', { clearOthers: /* value */, indices: /* value */ });
+await fb2k.invoke('playlist.setSelection', { playlist: 0, indices: [0, 1, 2] });
 ```
 
 ### playlist.shuffle
 
-Public API method. Runtime authority: `src/api/PlaylistApi.cpp:1876`。
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
@@ -1315,12 +749,11 @@ Public API method. Runtime authority: `src/api/PlaylistApi.cpp:1876`。
 **Returns**: `{"error":"...","success":true}`
 
 ```js
-const result = await fb2k.invoke('playlist.shuffle', { playlist: /* value */, index: /* value */ });
+await fb2k.invoke('playlist.shuffle', { playlist: 0 });
 ```
 
 ### playlist.sort
 
-Public API method. Runtime authority: `src/api/PlaylistApi.cpp:1875`。
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
@@ -1333,25 +766,11 @@ Public API method. Runtime authority: `src/api/PlaylistApi.cpp:1875`。
 **Returns**: `{"error":"...","success":true}`
 
 ```js
-const result = await fb2k.invoke('playlist.sort', { descending: /* value */, pattern: /* value */, selectedOnly: /* value */, playlist: /* value */, index: /* value */ });
+await fb2k.invoke('playlist.sort', { playlist: 0, pattern: '%artist% - %title%' });
 ```
 
 ### playlist.undo
 
-<!-- phase3-major1-review:playlist.undo -->
-#### Source-reviewed contract
-Authority: `src/api/PlaylistApi.cpp:1223-1234`.
-
-| Parameter | Type | Required | Default |
-| --- | --- | --- | --- |
-| `playlist` | `integer` | No | `active playlist` |
-
-**Return keys (vary by response variant)**: `error`, `success`; `success`
-
-**Semantics**: The target defaults to active. Invalid targets return success:false; otherwise success reflects whether the playlist undo stack restored an action.
-
-<!-- phase3-major1-review-end:playlist.undo -->
-Public API method. Runtime authority: `src/api/PlaylistApi.cpp:1877`。
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
@@ -1360,198 +779,28 @@ Public API method. Runtime authority: `src/api/PlaylistApi.cpp:1877`。
 **Returns**: `{"error":"...","success":true}`
 
 ```js
-const result = await fb2k.invoke('playlist.undo', { playlist: /* value */ });
+await fb2k.invoke('playlist.undo', { playlist: 0 });
 ```
 
 ## Related playlist events
 
-`src/callbacks/PlaylistCallback.cpp` will event. will  JIT shadow playlist event.
+The following playlist lifecycle events are broadcast. Item-level events for the JIT queue shadow playlist are intentionally suppressed.
 
-| event |  when  | Payload keys |
+| Event | Fired when | Payload keys |
 | --- | --- | --- |
-| `playlist:itemsAdded` | Insert Play column  after . | `{ playlist, start, count }` .. |
-| `playlist:itemsRemoved` | from Play column Remove after . | `{ playlist, oldCount, newCount }` .. |
-| `playlist:itemsReordered` | single Play column  in  after . | `{ playlist, count }` . |
-| `playlist:selectionChanged` | Play column Select  after . | `{ playlist }` .. |
-| `playlist:focusChanged` | Play column focus  after . | `{ playlist, from, to }` . |
-| `playlist:itemsReplaced` | Play column Replace after . | `{ playlist, count }` .. |
-| `playlist:created` | Play column  after . | `{ index, name }` . |
-| `playlist:removed` | Remove Play column  after . | `{ oldCount, newCount }` .. |
-| `playlist:reordered` | Play column  after . | `{ count }` . |
-| `playlist:activated` | Play column  after . | `{ oldIndex, newIndex }` . |
-| `playlist:renamed` | Play column Rename after . | `{ index, name }` .. |
-| `playlist:lockChanged` | Play column state  after . | `{ playlist, locked }` . |
-| `playlist:defaultFormatChanged` | default Play column  after . | `{}` . |
-| `playlist:addComplete` | asyncpathAdd  after . | `{ operationId, success, addedCount, totalCount }` . |
+| `playlist:itemsAdded` | Items were inserted into a playlist. | `{ playlist, start, count }` |
+| `playlist:itemsRemoved` | Items were removed from a playlist. | `{ playlist, oldCount, newCount }` |
+| `playlist:itemsReordered` | Items were reordered within a single playlist. | `{ playlist, count }` |
+| `playlist:selectionChanged` | The selection in a playlist changed. | `{ playlist }` |
+| `playlist:focusChanged` | The focused item in a playlist changed. | `{ playlist, from, to }` |
+| `playlist:itemsReplaced` | Items in a playlist were replaced. | `{ playlist, count }` |
+| `playlist:created` | A playlist was created. | `{ index, name }` |
+| `playlist:removed` | One or more playlists were removed. | `{ oldCount, newCount }` |
+| `playlist:reordered` | The playlist collection was reordered. | `{ count }` |
+| `playlist:activated` | The active playlist changed. | `{ oldIndex, newIndex }` |
+| `playlist:renamed` | A playlist was renamed. | `{ index, name }` |
+| `playlist:lockChanged` | A playlist's lock state changed. | `{ playlist, locked }` |
+| `playlist:defaultFormatChanged` | The default playlist format changed. | `{}` |
+| `playlist:addComplete` | An asynchronous path-add operation finished. | `{ operationId, success, addedCount, totalCount }` |
 
- foobar2000 may report `from`, `to`, `oldIndex`, and `newIndex` as `-1` when an index is unavailable.
-
-## Contract supplements
-
-The sections below close public-contract findings from the strict parameter audit without replacing existing explanations.
-
-<!-- phase3-supplement:playlist.moveTracks -->
-### Contract supplement: `playlist.moveTracks`
-
-Verified contract supplement. Runtime authority: `src/api/PlaylistApi.cpp:1059-1089`.
-
-| Parameter | Type | Required | Default | Description |
-| --- | --- | --- | --- | --- |
-| `playlist` | `integer` | No | `active playlist` | Optional; default active playlist. |
-| `index` | `integer` | No | `used only if playlist is absent` | Optional; default used only if playlist is absent. |
-| `items` | `array<integer>` | No | `[]` | Optional; default []. |
-| `delta` | `integer` | No | `0` | Optional; default 0. |
-
-#### Return fields
-
-| Field | Type | Optional |
-| --- | --- | --- |
-| `error` | `string` | Yes |
-| `success` | `boolean` | No |
-
-Semantics: omitted optional parameters use handler defaults; failure branches and error fields are defined by this source file.
-
-```js
-const result = await fb2k.invoke('playlist.moveTracks', { playlist: /* value */, index: /* value */, items: /* value */, delta: /* value */ });
-```
-<!-- phase3-supplement:playlist.playTrack -->
-### Contract supplement: `playlist.playTrack`
-
-Verified contract supplement. Runtime authority: `src/api/PlaylistApi.cpp:1089-1134`.
-
-| Parameter | Type | Required | Default | Description |
-| --- | --- | --- | --- | --- |
-| `playlist` | `integer` | No | `active playlist` | Optional; default active playlist. |
-| `index` | `integer` | No | `track or 0` | Optional; default track or 0. |
-| `track` | `integer` | No | `0` | Optional; default 0. |
-| `deferred` | `boolean` | No | `false` | Optional; default false. |
-| `muted` | `boolean` | No | `false` | Optional; default false. |
-
-#### Return fields
-
-| Field | Type | Optional |
-| --- | --- | --- |
-| `error` | `string` | Yes |
-| `success` | `boolean` | No |
-
-Semantics: omitted optional parameters use handler defaults; failure branches and error fields are defined by this source file.
-
-```js
-const result = await fb2k.invoke('playlist.playTrack', { playlist: /* value */, index: /* value */, track: /* value */, deferred: /* value */, muted: /* value */ });
-```
-<!-- phase3-supplement:playlist.removeSelectedTracks -->
-### Contract supplement: `playlist.removeSelectedTracks`
-
-Verified contract supplement. Runtime authority: `src/api/PlaylistApi.cpp:1041-1059`.
-
-| Parameter | Type | Required | Default | Description |
-| --- | --- | --- | --- | --- |
-| `playlist` | `integer` | No | `active playlist` | Optional; default active playlist. |
-| `index` | `integer` | No | `used only if playlist is absent` | Optional; default used only if playlist is absent. |
-
-#### Return fields
-
-| Field | Type | Optional |
-| --- | --- | --- |
-| `error` | `string` | Yes |
-| `success` | `boolean` | No |
-
-Semantics: omitted optional parameters use handler defaults; failure branches and error fields are defined by this source file.
-
-```js
-const result = await fb2k.invoke('playlist.removeSelectedTracks', { playlist: /* value */, index: /* value */ });
-```
-<!-- phase3-supplement:playlist.removeTracks -->
-### Contract supplement: `playlist.removeTracks`
-
-Verified contract supplement. Runtime authority: `src/api/PlaylistApi.cpp:1017-1041`.
-
-| Parameter | Type | Required | Default | Description |
-| --- | --- | --- | --- | --- |
-| `playlist` | `integer` | No | `active playlist` | Optional; default active playlist. |
-| `index` | `integer` | No | `used only if playlist is absent` | Optional; default used only if playlist is absent. |
-| `items` | `array<integer>` | No | `[]` | Optional; default []. |
-
-#### Return fields
-
-| Field | Type | Optional |
-| --- | --- | --- |
-| `error` | `string` | Yes |
-| `success` | `boolean` | No |
-
-Semantics: omitted optional parameters use handler defaults; failure branches and error fields are defined by this source file.
-
-```js
-const result = await fb2k.invoke('playlist.removeTracks', { playlist: /* value */, index: /* value */, items: /* value */ });
-```
-<!-- phase3-supplement:playlist.setSelection -->
-### Contract supplement: `playlist.setSelection`
-
-Verified contract supplement. Runtime authority: `src/api/PlaylistApi.cpp:995-1017`.
-
-| Parameter | Type | Required | Default | Description |
-| --- | --- | --- | --- | --- |
-| `playlist` | `integer` | No | `active playlist` | Optional; default active playlist. |
-| `index` | `integer` | No | `used only if playlist is absent` | Optional; default used only if playlist is absent. |
-| `indices` | `array<integer>` | No | `[]` | Optional; default []. |
-| `clearOthers` | `boolean` | No | `true` | Optional; default true. |
-
-#### Return fields
-
-| Field | Type | Optional |
-| --- | --- | --- |
-| `error` | `string` | Yes |
-| `success` | `boolean` | No |
-
-Semantics: omitted optional parameters use handler defaults; failure branches and error fields are defined by this source file.
-
-```js
-const result = await fb2k.invoke('playlist.setSelection', { playlist: /* value */, index: /* value */, indices: /* value */, clearOthers: /* value */ });
-```
-<!-- phase3-supplement:playlist.shuffle -->
-### Contract supplement: `playlist.shuffle`
-
-Verified contract supplement. Runtime authority: `src/api/PlaylistApi.cpp:1190-1223`.
-
-| Parameter | Type | Required | Default | Description |
-| --- | --- | --- | --- | --- |
-| `playlist` | `integer` | No | `active playlist` | Optional; default active playlist. |
-| `index` | `integer` | No | `used only if playlist is absent` | Optional; default used only if playlist is absent. |
-
-#### Return fields
-
-| Field | Type | Optional |
-| --- | --- | --- |
-| `error` | `string` | Yes |
-| `success` | `boolean` | No |
-
-Semantics: omitted optional parameters use handler defaults; failure branches and error fields are defined by this source file.
-
-```js
-const result = await fb2k.invoke('playlist.shuffle', { playlist: /* value */, index: /* value */ });
-```
-<!-- phase3-supplement:playlist.sort -->
-### Contract supplement: `playlist.sort`
-
-Verified contract supplement. Runtime authority: `src/api/PlaylistApi.cpp:1163-1190`.
-
-| Parameter | Type | Required | Default | Description |
-| --- | --- | --- | --- | --- |
-| `playlist` | `integer` | No | `active playlist` | Optional; default active playlist. |
-| `index` | `integer` | No | `used only if playlist is absent` | Optional; default used only if playlist is absent. |
-| `pattern` | `string` | No | `%title%` | Optional; default %title%. |
-| `descending` | `boolean` | No | `false` | Optional; default false. |
-| `selectedOnly` | `boolean` | No | `false` | Optional; default false. |
-
-#### Return fields
-
-| Field | Type | Optional |
-| --- | --- | --- |
-| `error` | `string` | Yes |
-| `success` | `boolean` | No |
-
-Semantics: omitted optional parameters use handler defaults; failure branches and error fields are defined by this source file.
-
-```js
-const result = await fb2k.invoke('playlist.sort', { playlist: /* value */, index: /* value */, pattern: /* value */, descending: /* value */, selectedOnly: /* value */ });
-```
+`from`, `to`, `oldIndex`, and `newIndex` are `-1` when the corresponding index is unavailable.

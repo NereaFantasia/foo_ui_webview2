@@ -113,7 +113,7 @@ Requests a library refresh and returns a `BaseResponse`.
 Looks up a library item by path. Metadata fields are returned at the top level when `found` is true.
 
 ```javascript
-const r = await fb.library.getByPath('E:\\\\Music\\\\song.flac');
+const r = await fb.library.getByPath('E:\\Music\\song.flac');
 if (r.found) console.log(r.title, r.artist);
 ```
 

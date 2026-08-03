@@ -38,7 +38,7 @@ if (result.available) document.getElementById('cover').src = result.dataUrl;
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
 | `maxSize` | `integer` | 否 | 可选；默认 0。 |
-| `path` | `string` | 否 | 可选；默认 。 |
+| `path` | `string` | 否 | 可选。 |
 | `type` | `string` | 否 | 可选；默认 front。 |
 
 
@@ -63,9 +63,9 @@ function getCoverUrl(trackPath, maxSize = 300) {
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
-| `items` | `array` | 否 | 可选；默认 omitted。 |
+| `items` | `array` | 否 | 可省略。 |
 | `maxSize` | `integer` | 否 | 可选；默认 0。 |
-| `paths` | `array` | 否 | 可选；默认 omitted。 |
+| `paths` | `array` | 否 | 可省略。 |
 | `type` | `string` | 否 | 可选；默认 front。 |
 
 
@@ -98,7 +98,7 @@ if (artwork.available) {
     const comma = artwork.dataUrl.indexOf(',');
     const payload = artwork.dataUrl.slice(comma + 1);
     await fb2k.invoke('file.write', {
-        path: '%profile%\\\\cover.jpg',
+        path: '%profile%\\cover.jpg',
         content: `base64:${payload}`,
         encoding: 'binary',
     });
@@ -125,7 +125,6 @@ if (artwork.available) {
 **返回值**: `{"available":true,"dataUrl":"...","error":"...","mimeType":"...","path":"...","reason":"...","size":0,"source":"...","type":"..."}`
 
 
-
 | source 值 | 说明 |
 | --- | --- |
 | `now_playing_manager` | 当前 front 封面的缓存数据。 |
@@ -138,7 +137,7 @@ if (artwork.available) {
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
-| `path` | `string` | 否 | 可选；默认 。 |
+| `path` | `string` | 否 | 可选。 |
 | `type` | `string` | 否 | 可选；默认 front。 |
 
 
@@ -158,7 +157,7 @@ if (artwork.available) {
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
-| `path` | `string` | 否 | 可选；默认 。 |
+| `path` | `string` | 否 | 可选。 |
 | `type` | `string` | 否 | 可选；默认 front。 |
 
 **返回值**: `{"available":true,"dataUrl":"...","error":"...","height":0,"mimeType":"...","path":"...","size":0,"type":"...","width":0}`
@@ -195,7 +194,7 @@ if (artwork.available) {
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
-| `path` | `string` | 否 | 可选；默认 。 |
+| `path` | `string` | 否 | 可选。 |
 
 **返回值**: `{"error":"...","success":true,"types":"..."}`
 
@@ -205,7 +204,7 @@ if (artwork.available) {
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
-| `path` | `string` | 否 | 可选；默认 。 |
+| `path` | `string` | 否 | 可选。 |
 
 **返回值**:
 
@@ -226,7 +225,7 @@ if (artwork.available) {
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
-| `directory` | `string` | 否 | 可选；默认 。 |
+| `directory` | `string` | 否 | 可选。 |
 
 支持的图片格式: `.jpg`, `.jpeg`, `.png`, `.gif`, `.bmp`, `.webp`
 
@@ -236,7 +235,7 @@ if (artwork.available) {
 {
     "success": true,
     "images": [
-        { "name": "cover.jpg", "path": "C:\\\\Music\\\\Album\\\\cover.jpg", "size": 123456 }
+        { "name": "cover.jpg", "path": "C:\\Music\\Album\\cover.jpg", "size": 123456 }
     ]
 }
 ```
@@ -247,10 +246,9 @@ if (artwork.available) {
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
-| `path` | `string` | 否 | 可选；默认 。 |
+| `path` | `string` | 否 | 可选。 |
 
 **返回值**: `{"available":true,"error":"...","lyrics":"...","synced":"...","tag":"..."}`
-
 
 
 支持的歌词标签: `LYRICS`, `UNSYNCED LYRICS`, `UNSYNCEDLYRICS`, `SYNCEDLYRICS`, `SYNCED LYRICS`
@@ -261,7 +259,7 @@ if (artwork.available) {
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
-| `path` | `string` | 否 | 可选；默认 。 |
+| `path` | `string` | 否 | 可选。 |
 
 **返回值**: `{"album":"...","albumArtist":"...","artist":"...","available":true,"discNumber":"...","error":"...","genre":"...","hasEmbedded":true,"hasLyrics":true,"title":"...","trackNumber":"...","year":"..."}`
 
@@ -280,13 +278,11 @@ const result = await fb2k.invoke('artwork.getBatch', { paths });
 const result = await fb2k.invoke('artwork.getFb2kUrlByPathBatch', { paths, type: 'front' });
 ```
 
-## 补充的公开 API
+## 其他公开 API
 
-以下章节按 `RegisterApi` 动态补齐，参数键来自 C++ handler 静态提取。
 
 ### artwork.getBatch
 
-公开 API。运行时权威：`src/api/ArtworkApi.cpp:1370`。
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
@@ -296,10 +292,12 @@ const result = await fb2k.invoke('artwork.getFb2kUrlByPathBatch', { paths, type:
 **返回值**: `{"artworks":"...","error":"...","success":true}`
 
 ```js
-const result = await fb2k.invoke('artwork.getBatch', { paths: /* value */, type: /* value */ });
+const { artworks } = await fb2k.invoke('artwork.getBatch', {
+	paths: ['C:\\Music\\a.flac', 'C:\\Music\\b.flac'],
+});
 ```
 
-## Contract 说明
+## 使用说明
 
 - 有效的 artwork `type` 为 `front`（也可用 `cover_front`）、`back`（也可用 `cover_back`）、`disc`、`icon` 和 `artist`。省略 `type` 时使用 `front`；未知值会返回 `INVALID_PARAMS`。
 - `artwork.getByPath` 和 `artwork.getForTrack` 接受原生路径、`file://` 路径和 `path|subsong:N`。它们拒绝 `file-relative://`，因为 extractor 没有播放列表上下文；此类条目请用 `artwork.getByPlaylistItem`。

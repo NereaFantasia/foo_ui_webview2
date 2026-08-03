@@ -93,7 +93,7 @@ console.log('波形数据:', result.waveform);
 
 ```javascript
 // 基础用法（缓存命中时立即返回）
-const result = await fb.audio.generateFullWaveform('E:\\\\Music\\\\song.flac', {
+const result = await fb.audio.generateFullWaveform('E:\\Music\\song.flac', {
     resolution: 256,
     method: 'peak'
 });
@@ -103,18 +103,18 @@ console.log('时长:', result.duration);
 console.log('是否来自缓存:', result.cached);
 
 // 支持 subsong 格式
-const result2 = await fb.audio.generateFullWaveform('E:\\\\Music\\\\disc.flac|subsong:2', {
+const result2 = await fb.audio.generateFullWaveform('E:\\Music\\disc.flac|subsong:2', {
     resolution: 512
 });
 
 // 使用 cueIndex（优先级高于路径中的 subsong）
-const result3 = await fb.audio.generateFullWaveform('E:\\\\Music\\\\album.cue', {
+const result3 = await fb.audio.generateFullWaveform('E:\\Music\\album.cue', {
     cueIndex: 3,
     resolution: 256
 });
 
 // RMS 模式（更平滑的能量包络）
-const result4 = await fb.audio.generateFullWaveform('E:\\\\Music\\\\song.flac', {
+const result4 = await fb.audio.generateFullWaveform('E:\\Music\\song.flac', {
     resolution: 512,
     method: 'rms'
 });
@@ -147,11 +147,11 @@ const result4 = await fb.audio.generateFullWaveform('E:\\\\Music\\\\song.flac', 
 | options.forceAnalysis | boolean | 强制重新分析（忽略已有的 BPM 标签） |
 
 ```javascript
-const result = await fb.audio.analyzeBPM('E:\\\\Music\\\\song.flac');
+const result = await fb.audio.analyzeBPM('E:\\Music\\song.flac');
 console.log(`BPM: ${result.bpm}`);
 
 // 强制重新分析
-const result2 = await fb.audio.analyzeBPM('E:\\\\Music\\\\song.flac', { forceAnalysis: true });
+const result2 = await fb.audio.analyzeBPM('E:\\Music\\song.flac', { forceAnalysis: true });
 ```
 
 设置声道模式。无效的 `mode` 值会自动规范化为 `"default"`。

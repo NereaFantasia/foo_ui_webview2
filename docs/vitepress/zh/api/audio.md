@@ -10,7 +10,7 @@
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
-| `subscriptionId` | `string` | 否 | 可选；默认 。 |
+| `subscriptionId` | `string` | 否 | 可选。 |
 | `fftSize` | `integer` | 否 | 可选；默认 1024。 |
 | `event` | `string` | 否 | 可选；默认 audio:spectrum。 |
 | `fps` | `integer` | 否 | 可选；默认 30。 |
@@ -69,7 +69,7 @@ await fb2k.invoke('audio.unsubscribeSpectrum', { subscriptionId });
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
-| `subscriptionId` | `string` | 否 | 可选；默认 。 |
+| `subscriptionId` | `string` | 否 | 可选。 |
 
 **返回值**: `{ "success": true, "removed": 1, "subscriptionId": "spectrum_main" }`
 
@@ -198,7 +198,7 @@ const result = await fb2k.invoke('audio.setChannelMode', { mode: 'invalid' });
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
 | `forceAnalysis` | `boolean` | 否 | 可选；默认 false。 |
-| `path` | `string` | 否 | 可选；默认 。 |
+| `path` | `string` | 否 | 可选。 |
 
 **返回值**:
 
@@ -216,13 +216,13 @@ const result = await fb2k.invoke('audio.setChannelMode', { mode: 'invalid' });
 ```javascript
 // 从元数据读取 BPM
 const result = await fb2k.invoke('audio.analyzeBPM', {
-    path: 'E:\\\\Music\\\\song.flac'
+    path: 'E:\\Music\\song.flac'
 });
 console.log(`BPM: ${result.bpm}, 来源: ${result.source}`);
 
 // 强制重新分析
 const result2 = await fb2k.invoke('audio.analyzeBPM', {
-    path: 'E:\\\\Music\\\\song.flac',
+    path: 'E:\\Music\\song.flac',
     forceAnalysis: true
 });
 ```
@@ -235,7 +235,7 @@ const result2 = await fb2k.invoke('audio.analyzeBPM', {
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
-| `path` | `string` | 否 | 可选；默认 。 |
+| `path` | `string` | 否 | 可选。 |
 | `resolution` | `integer` | 否 | 可选；默认 800。 |
 
 **返回值**: `{"channels":"...","duration":"...","error":"...","requestedResolution":"...","sampleRate":"...","success":true}`
@@ -249,7 +249,7 @@ const result2 = await fb2k.invoke('audio.analyzeBPM', {
 | --- | --- | --- | --- |
 | `cueIndex` | `integer` | 否 | 可选；默认 -1。 |
 | `method` | `string` | 否 | 可选；默认 rms。 |
-| `path` | `string` | 否 | 可选；默认 。 |
+| `path` | `string` | 否 | 可选。 |
 | `preferCache` | `boolean` | 否 | 可选；默认 true。 |
 | `resolution` | `integer` | 否 | 可选；默认 256。 |
 | `scale` | `string` | 否 | 可选；默认 linear。 |
@@ -270,7 +270,7 @@ const result2 = await fb2k.invoke('audio.analyzeBPM', {
 
 ```javascript
 const result = await fb2k.invoke('audio.generateFullWaveform', {
-    path: 'E:\\\\Music\\\\song.flac',
+    path: 'E:\\Music\\song.flac',
     resolution: 256
 });
 
@@ -291,27 +291,27 @@ if (result.taskId) {
 
 // 支持 subsong 格式
 const result2 = await fb2k.invoke('audio.generateFullWaveform', {
-    path: 'E:\\\\Music\\\\disc.flac|subsong:2',
+    path: 'E:\\Music\\disc.flac|subsong:2',
     resolution: 512
 });
 
 // 使用 cueIndex（优先级高于路径中的 subsong）
 const result3 = await fb2k.invoke('audio.generateFullWaveform', {
-    path: 'E:\\\\Music\\\\album.cue',
+    path: 'E:\\Music\\album.cue',
     cueIndex: 3,
     resolution: 256
 });
 
 // RMS 模式（更平滑的能量包络）
 const result4 = await fb2k.invoke('audio.generateFullWaveform', {
-    path: 'E:\\\\Music\\\\song.flac',
+    path: 'E:\\Music\\song.flac',
     resolution: 512,
     method: 'rms'
 });
 
 // signed 模式：输出 [-1, 1] 对称波形（适合绘制上下对称波形图）
 const result5 = await fb2k.invoke('audio.generateFullWaveform', {
-    path: 'E:\\\\Music\\\\song.flac',
+    path: 'E:\\Music\\song.flac',
     resolution: 512,
     signed: true
 });
@@ -501,8 +501,8 @@ console.log(debug.subscriptions);
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
-| `index` | `integer` | 否 | 可选；默认 omitted。 |
-| `name` | `string` | 否 | 可选；默认 omitted。 |
+| `index` | `integer` | 否 | 可省略。 |
+| `name` | `string` | 否 | 可省略。 |
 
 > `name` 和 `index` 至少提供一个；同时提供时 `index` 优先。
 
@@ -728,8 +728,8 @@ ReplayGain 音量标准化设置。
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
-| `processingMode` | `string` | 否 | 可选；默认 omitted。 |
-| `sourceMode` | `string` | 否 | 可选；默认 omitted。 |
+| `processingMode` | `string` | 否 | 可省略。 |
+| `sourceMode` | `string` | 否 | 可省略。 |
 
 **返回值**: `{ "success": true, "sourceMode": "track", "processingMode": "gain", "changed": true }`
 
@@ -760,8 +760,8 @@ await fb2k.invoke('replaygain.setMode', { sourceMode: 'album', processingMode: '
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
-| `withoutRg` | `number` | 否 | 可选；默认 omitted。 |
-| `withRg` | `number` | 否 | 可选；默认 omitted。 |
+| `withoutRg` | `number` | 否 | 可省略。 |
+| `withRg` | `number` | 否 | 可省略。 |
 
 **返回值**: `{ "success": true, "withRg": 3.0, "withoutRg": 0.0, "changed": true }`
 
@@ -785,7 +785,7 @@ await fb2k.invoke('replaygain.setPreamp', { withRg: 3.0, withoutRg: -3.0 });
     "count": 1,
     "results": [
         {
-            "path": "C:\\\\Music\\\\song.flac",
+            "path": "C:\\Music\\song.flac",
             "success": true,
             "trackGain": "-5.20 dB",
             "trackGainRaw": -5.2,
@@ -827,12 +827,12 @@ await fb2k.invoke('replaygain.setPreamp', { withRg: 3.0, withoutRg: -3.0 });
 ```javascript
 // 扫描单曲 track gain
 await fb2k.invoke('replaygain.scan', {
-    paths: ['C:\\\\Music\\\\song.flac'],
+    paths: ['C:\\Music\\song.flac'],
     mode: 'track'
 });
 // 扫描整张专辑
 await fb2k.invoke('replaygain.scan', {
-    paths: ['C:\\\\Music\\\\01.flac', 'C:\\\\Music\\\\02.flac'],
+    paths: ['C:\\Music\\01.flac', 'C:\\Music\\02.flac'],
     mode: 'album'
 });
 ```
@@ -847,38 +847,3 @@ await fb2k.invoke('replaygain.scan', {
 - 每个构建都会注册 DSP 方法。若 foobar2000 DSP SDK 表面不可用，全部 `dsp.*` 方法都会返回 runtime 的 "DSP API not available in this build" 失败，不会模拟 DSP 链。
 - `output.getSettings` 仅提供只读发现信息。输出配置由 foobar2000 Preferences 管理，而非本 API。
 - `replaygain.get` 读取每个传入媒体路径；`replaygain.clear` 通过 foobar2000 异步写入 ReplayGain 元数据。`replaygain.scan` 请求 host 扫描器，并非同步分析结果。
-
-## 合同补充
-
-以下章节补齐严格参数审计发现的公开 contract；不会改变前文的已有说明。
-
-<!-- phase3-supplement:audio.subscribeSpectrum -->
-### Contract 补充：`audio.subscribeSpectrum`
-
-经复核的补充 contract。权威源：`src/api/AudioApi.cpp:719-762`。
-
-| 参数 | 类型 | 必填 | 默认值 | 说明 |
-| --- | --- | --- | --- | --- |
-| `subscriptionId` | `string` | 否 | `` | 可选；默认 。 |
-| `fftSize` | `integer` | 否 | `1024` | 可选；默认 1024。 |
-| `event` | `string` | 否 | `audio:spectrum` | 可选；默认 audio:spectrum。 |
-| `fps` | `integer` | 否 | `30` | 可选；默认 30。 |
-| `bands` | `integer` | 否 | `48` | 可选；默认 48。 |
-
-#### 返回字段
-
-| 字段 | 类型 | 可选 |
-| --- | --- | --- |
-| `error` | `string` | 是 |
-| `success` | `boolean` | 否 |
-| `bands` | `json` | 否 |
-| `event` | `json` | 否 |
-| `fftSize` | `json` | 否 |
-| `fps` | `json` | 否 |
-| `subscriptionId` | `json` | 否 |
-
-语义：省略可选参数时使用 handler 默认值；失败分支及错误字段以该源文件为准。
-
-```js
-const result = await fb2k.invoke('audio.subscribeSpectrum', { subscriptionId: /* value */, fftSize: /* value */, event: /* value */, fps: /* value */, bands: /* value */ });
-```

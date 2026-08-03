@@ -212,5 +212,5 @@ foo_ui_webview2 的运行时事件 payload 参考。事件名使用 **冒号格�
 ## 说明
 
 - `playback:stopAfterCurrentChanged` 的 payload 为 `{ enabled }`，与对应 API 字段相同。
-- 播放列表生命周期 payload 以 `src/callbacks/PlaylistCallback.cpp` 为权威源。
+- 播放列表生命周期 payload 的字段在后续版本中可能增加；请把未知键视为增量而非异常。
 - 每一行的精确 emit source 和字段集以组件源码中的 C++ `EmitEvent` / `BroadcastEvent` 调用点为准。

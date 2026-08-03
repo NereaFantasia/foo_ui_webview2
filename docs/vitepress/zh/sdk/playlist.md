@@ -68,7 +68,7 @@ await fb.playlist.playTrack(0, 0, { muted: true }); // 播放但静音
 | paths | string[] | 文件路径数组 |
 
 ```javascript
-const r = await fb.playlist.add(0, ['E:\\\\Music\\\\song1.flac', 'E:\\\\Music\\\\song2.mp3']);
+const r = await fb.playlist.add(0, ['E:\\Music\\song1.flac', 'E:\\Music\\song2.mp3']);
 console.log(`添加了 ${r.addedCount} 首`);
 ```
 
@@ -151,7 +151,7 @@ console.log(`复制到索引 ${r.newPlaylist}`);
 | paths | string[] | 文件路径数组 |
 
 ```javascript
-await fb.playlist.addAsync(0, ['E:\\\\Music\\\\*.flac']);
+await fb.playlist.addAsync(0, ['E:\\Music\\*.flac']);
 await fb.playlist.addSequential(0, paths); // 保证文件顺序
 ```
 
@@ -166,8 +166,8 @@ await fb.playlist.addSequential(0, paths); // 保证文件顺序
 
 ```javascript
 await fb.playlist.addHandles(0, [
-    { path: 'E:\\\\Music\\\\album.cue', subsong: 1 },
-    { path: 'E:\\\\Music\\\\album.cue', subsong: 2 },
+    { path: 'E:\\Music\\album.cue', subsong: 1 },
+    { path: 'E:\\Music\\album.cue', subsong: 2 },
 ]);
 ```
 
@@ -364,7 +364,7 @@ const info = await fb.playlist.getLockInfo(0);   // {isLocked, lockName, ...}
 ```javascript
 await fb.playlist.replaceAllAndPlay({
     playlist: 0,
-    paths: ['E:\\\\Music\\\\album\\\\*.flac'],
+    paths: ['E:\\Music\\album\\*.flac'],
     playIndex: 0
 });
 ```

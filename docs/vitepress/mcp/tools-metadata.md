@@ -20,7 +20,7 @@ Reads file metadata in a structured result with separate `tags` and `info` objec
 ```json
 {
   "success": true,
-  "path": "D:\\\\Music\\\\track.flac",
+  "path": "D:\\Music\\track.flac",
   "tags": {
     "TITLE": "Redo",
     "ARTIST": "Mili",
@@ -186,7 +186,7 @@ Gets a track rating, reading foo_playcount statistics first and falling back to 
 ```json
 {
   "success": true,
-  "path": "D:\\\\Music\\\\track.flac",
+  "path": "D:\\Music\\track.flac",
   "rating": 4,
   "storage": "stats"
 }

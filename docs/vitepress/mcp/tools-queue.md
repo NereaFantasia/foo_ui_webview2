@@ -16,8 +16,8 @@ Gets every item in the playback queue.
   "items": [
     {
       "queueIndex": 0,
-      "path": "file://D:\\\\Music\\\\track.flac",
-      "absolutePath": "D:\\\\Music\\\\track.flac",
+      "path": "file://D:\\Music\\track.flac",
+      "absolutePath": "D:\\Music\\track.flac",
       "subsong": 0,
       "fileSize": 28456789,
       "title": "Redo",

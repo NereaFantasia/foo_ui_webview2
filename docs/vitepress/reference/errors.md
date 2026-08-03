@@ -1,6 +1,6 @@
 # Error reference
 
-> Overview: unified failure envelope (`ErrorEnvelope`) contract from `src/api/ErrorEnvelope.h`.
+> Overview: the unified `ErrorEnvelope` failure contract shared by every API.
 
 ## Error structure
 

@@ -6,11 +6,9 @@
 
 | 原生调用方式 | SDK 调用方式 |
 | --- | --- |
-| window.fb2k.invoke('playback.play', {}) | fb.player.play() |
-| window.fb2k.invoke('playlist.addPaths', {playlist: 0, paths: [...]}) | fb.playlist.add(0, paths) |
-| window.fb2k.invoke('playback.setVolume', {volume: 80}) | fb.player.setVolume(80) |
-
-## 核心优势 
+| `window.fb2k.invoke('playback.play', {})` | `fb.player.play()` |
+| `window.fb2k.invoke('playlist.addPaths', { playlist: 0, paths })` | `fb.playlist.add(0, paths)` |
+| `window.fb2k.invoke('playback.setVolume', { volume: 80 })` | `fb.player.setVolume(80)` |
 
 ## 安装 
 

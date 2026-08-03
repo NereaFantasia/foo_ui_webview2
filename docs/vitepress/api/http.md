@@ -8,26 +8,25 @@ This page is the primary owner for the namespaces listed below. Method names, pa
 
 ### http.abort
 
-Public API method. Runtime authority: `src/api/HttpApi.cpp:1531`.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `requestId` | `string` | No | Optional; default . |
+| `requestId` | `string` | Yes | The `requestId` returned by an async request. |
 
 **Returns**: `{"cancelled":"...","error":"...","requestId":"...","success":true}`
 
 ```js
-const result = await fb2k.invoke('http.abort', { requestId: /* value */ });
+const { requestId } = await fb2k.invoke('http.get', { url: 'https://example.com/large' });
+await fb2k.invoke('http.abort', { requestId });
 ```
 
 ### http.delete
 
-Public API method. Runtime authority: `src/api/HttpApi.cpp:1525`.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `url` | `string` | No | Optional; default . |
-| `body` | `json` | No | Optional; default omitted. |
+| `url` | `string` | Yes | Request URL. |
+| `body` | `json` | No | Optional; omitted by default. Objects and arrays are serialized automatically. |
 | `headers` | `object` | No | Optional; default {}. |
 | `timeout` | `integer` | No | Optional; default 30000. |
 | `async` | `boolean` | No | Optional; default true. |
@@ -38,76 +37,83 @@ Public API method. Runtime authority: `src/api/HttpApi.cpp:1525`.
 **Returns**: `{"async":"...","error":"...","requestId":"...","success":true}`
 
 ```js
-const result = await fb2k.invoke('http.delete', { async: /* value */, body: /* value */, headers: /* value */, insecureTls: /* value */, redirect: /* value */, responseType: /* value */, timeout: /* value */, url: /* value */ });
+await fb2k.invoke('http.delete', { url: 'https://example.com/api/items/1' });
 ```
 
 ### http.download
 
-Public API method. Runtime authority: `src/api/HttpApi.cpp:1519`.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `async` | `boolean` | No | Optional; default false. |
-| `headers` | `object` | No | Optional; default omitted. |
+| `headers` | `object` | No | Optional; omitted by default. |
 | `insecureTls` | `boolean` | No | Optional; default false. |
 | `redirect` | `string` | No | Optional; default follow. |
-| `saveTo` | `string` | No | Optional; default . |
+| `saveTo` | `string` | Yes | Destination path. |
 | `timeout` | `integer` | No | Optional; default 60000. |
-| `url` | `string` | No | Optional; default . |
+| `url` | `string` | Yes | Source URL. |
 
 **Returns**: `{"async":"...","code":"...","error":"...","message":"...","requestId":"...","success":true}`
 
+Unlike the other `http` methods, `async` defaults to `false` here, so the call resolves only once the file is written.
+
 ```js
-const result = await fb2k.invoke('http.download', { async: /* value */, headers: /* value */, insecureTls: /* value */, redirect: /* value */, saveTo: /* value */, timeout: /* value */, url: /* value */ });
+const result = await fb2k.invoke('http.download', {
+    url: 'https://example.com/cover.jpg',
+    saveTo: 'C:\\Temp\\cover.jpg',
+});
 ```
 
 ### http.get
 
-Public API method. Runtime authority: `src/api/HttpApi.cpp:1510`.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `async` | `boolean` | No | Optional; default true. |
-| `headers` | `object` | No | Optional; default omitted. |
+| `headers` | `object` | No | Optional; omitted by default. |
 | `insecureTls` | `boolean` | No | Optional; default false. |
 | `redirect` | `string` | No | Optional; default follow. |
 | `responseType` | `string` | No | Optional; default text. |
 | `timeout` | `integer` | No | Optional; default 30000. |
-| `url` | `string` | No | Optional; default . |
+| `url` | `string` | Yes | Request URL. |
 
 **Returns**: `{"async":"...","error":"...","requestId":"...","success":true}`
 
 ```js
-const result = await fb2k.invoke('http.get', { async: /* value */, headers: /* value */, insecureTls: /* value */, redirect: /* value */, responseType: /* value */, timeout: /* value */, url: /* value */ });
+// async is the default: the response arrives on the http:response event
+const { requestId } = await fb2k.invoke('http.get', { url: 'https://example.com/api' });
+
+// pass async: false to receive status, headers, and body directly
+const res = await fb2k.invoke('http.get', { url: 'https://example.com/api', async: false });
 ```
 
 ### http.head
 
-Public API method. Runtime authority: `src/api/HttpApi.cpp:1516`.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `async` | `boolean` | No | Optional; default true. |
-| `headers` | `object` | No | Optional; default omitted. |
+| `headers` | `object` | No | Optional; omitted by default. |
 | `insecureTls` | `boolean` | No | Optional; default false. |
 | `redirect` | `string` | No | Optional; default follow. |
 | `timeout` | `integer` | No | Optional; default 30000. |
-| `url` | `string` | No | Optional; default . |
+| `url` | `string` | Yes | Request URL. |
 
 **Returns**: `{"async":"...","contentLength":"...","requestId":"...","success":true}`
 
+`contentLength` is present only on a synchronous call whose response carried that header.
+
 ```js
-const result = await fb2k.invoke('http.head', { async: /* value */, headers: /* value */, insecureTls: /* value */, redirect: /* value */, timeout: /* value */, url: /* value */ });
+const res = await fb2k.invoke('http.head', { url: 'https://example.com/file.zip', async: false });
 ```
 
 ### http.patch
 
-Public API method. Runtime authority: `src/api/HttpApi.cpp:1528`.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `url` | `string` | No | Optional; default . |
-| `body` | `json` | No | Optional; default omitted. |
+| `url` | `string` | No | Optional. |
+| `body` | `json` | No | Optional; omitted by default. |
 | `headers` | `object` | No | Optional; default {}. |
 | `timeout` | `integer` | No | Optional; default 30000. |
 | `async` | `boolean` | No | Optional; default true. |
@@ -118,17 +124,20 @@ Public API method. Runtime authority: `src/api/HttpApi.cpp:1528`.
 **Returns**: `{"async":"...","error":"...","requestId":"...","success":true}`
 
 ```js
-const result = await fb2k.invoke('http.patch', { async: /* value */, body: /* value */, headers: /* value */, insecureTls: /* value */, redirect: /* value */, responseType: /* value */, timeout: /* value */, url: /* value */ });
+await fb2k.invoke('http.patch', {
+    url: 'https://example.com/api/items/1',
+    body: { rating: 5 },
+    headers: { 'Content-Type': 'application/json' },
+});
 ```
 
 ### http.post
 
-Public API method. Runtime authority: `src/api/HttpApi.cpp:1513`.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `url` | `string` | No | Optional; default . |
-| `body` | `json` | No | Optional; default omitted. |
+| `url` | `string` | No | Optional. |
+| `body` | `json` | No | Optional; omitted by default. |
 | `headers` | `object` | No | Optional; default {}. |
 | `timeout` | `integer` | No | Optional; default 30000. |
 | `async` | `boolean` | No | Optional; default true. |
@@ -139,17 +148,20 @@ Public API method. Runtime authority: `src/api/HttpApi.cpp:1513`.
 **Returns**: `{"async":"...","error":"...","requestId":"...","success":true}`
 
 ```js
-const result = await fb2k.invoke('http.post', { async: /* value */, body: /* value */, headers: /* value */, insecureTls: /* value */, redirect: /* value */, responseType: /* value */, timeout: /* value */, url: /* value */ });
+await fb2k.invoke('http.post', {
+    url: 'https://example.com/api/items',
+    body: { title: 'New item' },
+    headers: { 'Content-Type': 'application/json' },
+});
 ```
 
 ### http.put
 
-Public API method. Runtime authority: `src/api/HttpApi.cpp:1522`.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `url` | `string` | No | Optional; default . |
-| `body` | `json` | No | Optional; default omitted. |
+| `url` | `string` | Yes | Request URL. |
+| `body` | `json` | No | Optional; omitted by default. Objects and arrays are serialized automatically. |
 | `headers` | `object` | No | Optional; default {}. |
 | `timeout` | `integer` | No | Optional; default 30000. |
 | `async` | `boolean` | No | Optional; default true. |
@@ -160,220 +172,11 @@ Public API method. Runtime authority: `src/api/HttpApi.cpp:1522`.
 **Returns**: `{"async":"...","error":"...","requestId":"...","success":true}`
 
 ```js
-const result = await fb2k.invoke('http.put', { async: /* value */, body: /* value */, headers: /* value */, insecureTls: /* value */, redirect: /* value */, responseType: /* value */, timeout: /* value */, url: /* value */ });
-```
-
-## Contract supplements
-
-The sections below close public-contract findings from the strict parameter audit without replacing existing explanations.
-
-<!-- phase3-supplement:http.delete -->
-### Contract supplement: `http.delete`
-
-Verified contract supplement. Runtime authority: `src/api/HttpApi.cpp:1396-1432`.
-
-| Parameter | Type | Required | Default | Description |
-| --- | --- | --- | --- | --- |
-| `url` | `string` | No | `` | Optional; default . |
-| `body` | `json` | No | omitted | Optional; default omitted. |
-| `headers` | `object` | No | `{}` | Optional; default {}. |
-| `timeout` | `integer` | No | `30000` | Optional; default 30000. |
-| `async` | `boolean` | No | `true` | Optional; default true. |
-| `redirect` | `string` | No | `follow` | Optional; default follow. |
-| `responseType` | `string` | No | `text` | Optional; default text. |
-| `insecureTls` | `boolean` | No | `false` | Optional; default false. |
-
-#### Return fields
-
-| Field | Type | Optional |
-| --- | --- | --- |
-| `error` | `string` | Yes |
-| `success` | `boolean` | No |
-| `async` | `json` | No |
-| `requestId` | `json` | No |
-
-Semantics: omitted optional parameters use handler defaults; failure branches and error fields are defined by this source file.
-
-```js
-const result = await fb2k.invoke('http.delete', { url: /* value */, body: /* value */, headers: /* value */, timeout: /* value */, async: /* value */, redirect: /* value */, responseType: /* value */, insecureTls: /* value */ });
-```
-<!-- phase3-supplement:http.download -->
-### Contract supplement: `http.download`
-
-Verified contract supplement. Runtime authority: `src/api/HttpApi.cpp:1237-1352`.
-
-| Parameter | Type | Required | Default | Description |
-| --- | --- | --- | --- | --- |
-| `async` | `boolean` | No | `false` | Optional; default false. |
-| `headers` | `object` | No | omitted | Optional; default omitted. |
-| `insecureTls` | `boolean` | No | `false` | Optional; default false. |
-| `redirect` | `string` | No | `follow` | Optional; default follow. |
-| `saveTo` | `string` | No | `` | Optional; default . |
-| `timeout` | `integer` | No | `60000` | Optional; default 60000. |
-| `url` | `string` | No | `` | Optional; default . |
-
-#### Return fields
-
-| Field | Type | Optional |
-| --- | --- | --- |
-| `error` | `string` | Yes |
-| `success` | `boolean` | No |
-| `code` | `string` | Yes |
-| `async` | `json` | No |
-| `message` | `json` | No |
-| `requestId` | `json` | No |
-
-Semantics: omitted optional parameters use handler defaults; failure branches and error fields are defined by this source file.
-
-```js
-const result = await fb2k.invoke('http.download', { async: /* value */, headers: /* value */, insecureTls: /* value */, redirect: /* value */, saveTo: /* value */, timeout: /* value */, url: /* value */ });
-```
-<!-- phase3-supplement:http.get -->
-### Contract supplement: `http.get`
-
-Verified contract supplement. Runtime authority: `src/api/HttpApi.cpp:822-862`.
-
-| Parameter | Type | Required | Default | Description |
-| --- | --- | --- | --- | --- |
-| `async` | `boolean` | No | `true` | Optional; default true. |
-| `headers` | `object` | No | omitted | Optional; default omitted. |
-| `insecureTls` | `boolean` | No | `false` | Optional; default false. |
-| `redirect` | `string` | No | `follow` | Optional; default follow. |
-| `responseType` | `string` | No | `text` | Optional; default text. |
-| `timeout` | `integer` | No | `30000` | Optional; default 30000. |
-| `url` | `string` | No | `` | Optional; default . |
-
-#### Return fields
-
-| Field | Type | Optional |
-| --- | --- | --- |
-| `error` | `string` | Yes |
-| `success` | `boolean` | No |
-| `async` | `json` | No |
-| `requestId` | `json` | No |
-
-Semantics: omitted optional parameters use handler defaults; failure branches and error fields are defined by this source file.
-
-```js
-const result = await fb2k.invoke('http.get', { async: /* value */, headers: /* value */, insecureTls: /* value */, redirect: /* value */, responseType: /* value */, timeout: /* value */, url: /* value */ });
-```
-<!-- phase3-supplement:http.head -->
-### Contract supplement: `http.head`
-
-Verified contract supplement. Runtime authority: `src/api/HttpApi.cpp:906-950`.
-
-| Parameter | Type | Required | Default | Description |
-| --- | --- | --- | --- | --- |
-| `async` | `boolean` | No | `true` | Optional; default true. |
-| `headers` | `object` | No | omitted | Optional; default omitted. |
-| `insecureTls` | `boolean` | No | `false` | Optional; default false. |
-| `redirect` | `string` | No | `follow` | Optional; default follow. |
-| `timeout` | `integer` | No | `30000` | Optional; default 30000. |
-| `url` | `string` | No | `` | Optional; default . |
-
-#### Return fields
-
-| Field | Type | Optional |
-| --- | --- | --- |
-| `error` | `string` | Yes |
-| `success` | `boolean` | No |
-| `async` | `json` | No |
-| `requestId` | `json` | No |
-
-Semantics: omitted optional parameters use handler defaults; failure branches and error fields are defined by this source file.
-
-```js
-const result = await fb2k.invoke('http.head', { async: /* value */, headers: /* value */, insecureTls: /* value */, redirect: /* value */, timeout: /* value */, url: /* value */ });
-```
-<!-- phase3-supplement:http.patch -->
-### Contract supplement: `http.patch`
-
-Verified contract supplement. Runtime authority: `src/api/HttpApi.cpp:1436-1472`.
-
-| Parameter | Type | Required | Default | Description |
-| --- | --- | --- | --- | --- |
-| `url` | `string` | No | `` | Optional; default . |
-| `body` | `json` | No | omitted | Optional; default omitted. |
-| `headers` | `object` | No | `{}` | Optional; default {}. |
-| `timeout` | `integer` | No | `30000` | Optional; default 30000. |
-| `async` | `boolean` | No | `true` | Optional; default true. |
-| `redirect` | `string` | No | `follow` | Optional; default follow. |
-| `responseType` | `string` | No | `text` | Optional; default text. |
-| `insecureTls` | `boolean` | No | `false` | Optional; default false. |
-
-#### Return fields
-
-| Field | Type | Optional |
-| --- | --- | --- |
-| `error` | `string` | Yes |
-| `success` | `boolean` | No |
-| `async` | `json` | No |
-| `requestId` | `json` | No |
-
-Semantics: omitted optional parameters use handler defaults; failure branches and error fields are defined by this source file.
-
-```js
-const result = await fb2k.invoke('http.patch', { url: /* value */, body: /* value */, headers: /* value */, timeout: /* value */, async: /* value */, redirect: /* value */, responseType: /* value */, insecureTls: /* value */ });
-```
-<!-- phase3-supplement:http.post -->
-### Contract supplement: `http.post`
-
-Verified contract supplement. Runtime authority: `src/api/HttpApi.cpp:866-902`.
-
-| Parameter | Type | Required | Default | Description |
-| --- | --- | --- | --- | --- |
-| `url` | `string` | No | `` | Optional; default . |
-| `body` | `json` | No | omitted | Optional; default omitted. |
-| `headers` | `object` | No | `{}` | Optional; default {}. |
-| `timeout` | `integer` | No | `30000` | Optional; default 30000. |
-| `async` | `boolean` | No | `true` | Optional; default true. |
-| `redirect` | `string` | No | `follow` | Optional; default follow. |
-| `responseType` | `string` | No | `text` | Optional; default text. |
-| `insecureTls` | `boolean` | No | `false` | Optional; default false. |
-
-#### Return fields
-
-| Field | Type | Optional |
-| --- | --- | --- |
-| `error` | `string` | Yes |
-| `success` | `boolean` | No |
-| `async` | `json` | No |
-| `requestId` | `json` | No |
-
-Semantics: omitted optional parameters use handler defaults; failure branches and error fields are defined by this source file.
-
-```js
-const result = await fb2k.invoke('http.post', { url: /* value */, body: /* value */, headers: /* value */, timeout: /* value */, async: /* value */, redirect: /* value */, responseType: /* value */, insecureTls: /* value */ });
-```
-<!-- phase3-supplement:http.put -->
-### Contract supplement: `http.put`
-
-Verified contract supplement. Runtime authority: `src/api/HttpApi.cpp:1356-1392`.
-
-| Parameter | Type | Required | Default | Description |
-| --- | --- | --- | --- | --- |
-| `url` | `string` | No | `` | Optional; default . |
-| `body` | `json` | No | omitted | Optional; default omitted. |
-| `headers` | `object` | No | `{}` | Optional; default {}. |
-| `timeout` | `integer` | No | `30000` | Optional; default 30000. |
-| `async` | `boolean` | No | `true` | Optional; default true. |
-| `redirect` | `string` | No | `follow` | Optional; default follow. |
-| `responseType` | `string` | No | `text` | Optional; default text. |
-| `insecureTls` | `boolean` | No | `false` | Optional; default false. |
-
-#### Return fields
-
-| Field | Type | Optional |
-| --- | --- | --- |
-| `error` | `string` | Yes |
-| `success` | `boolean` | No |
-| `async` | `json` | No |
-| `requestId` | `json` | No |
-
-Semantics: omitted optional parameters use handler defaults; failure branches and error fields are defined by this source file.
-
-```js
-const result = await fb2k.invoke('http.put', { url: /* value */, body: /* value */, headers: /* value */, timeout: /* value */, async: /* value */, redirect: /* value */, responseType: /* value */, insecureTls: /* value */ });
+await fb2k.invoke('http.put', {
+    url: 'https://example.com/api/items/1',
+    body: { title: 'Updated' },
+    headers: { 'Content-Type': 'application/json' },
+});
 ```
 
 ## Request lifecycle and security

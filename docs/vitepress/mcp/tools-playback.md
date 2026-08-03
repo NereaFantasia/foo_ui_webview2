@@ -49,7 +49,7 @@ Gets detailed information about the current track. When nothing is playing, the 
 
 ```json
 {
-  "id": "D:\\\\Music\\\\Mili\\\\Redo.flac",
+  "id": "D:\\Music\\Mili\\Redo.flac",
   "title": "Redo",
   "artist": "Mili",
   "album": "Millennium Mother",
@@ -59,9 +59,9 @@ Gets detailed information about the current track. When nothing is playing, the 
   "trackNumber": 1,
   "discNumber": 1,
   "duration": 263.5,
-  "path": "file://D:\\\\Music\\\\Mili\\\\Redo.flac",
-  "absolutePath": "D:\\\\Music\\\\Mili\\\\Redo.flac",
-  "fullPath": "D:\\\\Music\\\\Mili\\\\Redo.flac",
+  "path": "file://D:\\Music\\Mili\\Redo.flac",
+  "absolutePath": "D:\\Music\\Mili\\Redo.flac",
+  "fullPath": "D:\\Music\\Mili\\Redo.flac",
   "subsong": 0,
   "fileSize": 28456789,
   "bitrate": 876,
@@ -113,7 +113,7 @@ Gets the playback position and total duration.
   "position": 45.2,
   "duration": 263.5,
   "subsong": 0,
-  "path": "D:\\\\Music\\\\Mili\\\\Redo.flac"
+  "path": "D:\\Music\\Mili\\Redo.flac"
 }
 ```
 

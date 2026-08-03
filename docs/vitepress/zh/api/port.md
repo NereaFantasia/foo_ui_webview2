@@ -16,7 +16,7 @@
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
-| `name` | `string` | 否 | 可选；默认 。 |
+| `name` | `string` | 否 | 可选。 |
 
 **返回值（成功）**:
 
@@ -45,7 +45,7 @@ console.log('端口 ID:', port.portId);
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
-| `portId` | `string` | 否 | 可选；默认 。 |
+| `portId` | `string` | 否 | 可选。 |
 
 **返回值（成功）**: `{ "success": true }`
 
@@ -66,7 +66,7 @@ await fb2k.invoke('port.disconnect', { portId: 'port_00000001' });
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
 | `message` | `json` | 是 | 必填。 |
-| `portId` | `string` | 否 | 可选；默认 。 |
+| `portId` | `string` | 否 | 可选。 |
 
 **返回值（成功）**:
 
@@ -94,8 +94,8 @@ await fb2k.invoke('port.postMessage', {
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
 | `message` | `json` | 是 | 必填。 |
-| `portId` | `string` | 否 | 可选；默认 。 |
-| `targetPortId` | `string` | 否 | 可选；默认 。 |
+| `portId` | `string` | 否 | 可选。 |
+| `targetPortId` | `string` | 否 | 可选。 |
 
 **返回值**:
 
@@ -115,7 +115,7 @@ await fb2k.invoke('port.postMessageTo', {
 
 ### port.getPorts
 
-获取端口列表（可选按 `name` 过滤）。权威源：`src/api/PortApi.cpp:108-114` → `PortHub::GetPorts`。
+获取端口列表（可选按 `name` 过滤）。
 
 | 参数 | 类型 | 必填 | 默认值 | 说明 |
 | --- | --- | --- | --- | --- |
@@ -145,7 +145,7 @@ console.log(`找到 ${result.ports.length} 个端口`);
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
-| `event` | `string` | 否 | 可选；默认 。 |
+| `event` | `string` | 否 | 可选。 |
 | `excludeSelf` | `boolean` | 否 | 可选；默认 false。 |
 | `payload` | `object` | 否 | 可选；默认 {}。 |
 
@@ -174,9 +174,9 @@ await fb2k.invoke('event.emit', {
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
-| `event` | `string` | 否 | 可选；默认 。 |
+| `event` | `string` | 否 | 可选。 |
 | `payload` | `object` | 否 | 可选；默认 {}。 |
-| `targetWindowId` | `string` | 否 | 可选；默认 。 |
+| `targetWindowId` | `string` | 否 | 可选。 |
 
 **返回值**:
 
@@ -200,7 +200,7 @@ await fb2k.invoke('event.emitTo', {
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
-| `key` | `string` | 否 | 可选；默认 。 |
+| `key` | `string` | 否 | 可选。 |
 
 
 **返回值**: `{"code":"...","error":"..."}`
@@ -228,9 +228,9 @@ if (result.exists) console.log('偶移:', result.value);
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
-| `key` | `string` | 否 | 可选；默认 。 |
+| `key` | `string` | 否 | 可选。 |
 | `silent` | `boolean` | 否 | 可选；默认 false。 |
-| `ttlMs` | `integer` | 否 | 可选；默认 omitted。 |
+| `ttlMs` | `integer` | 否 | 可省略。 |
 | `value` | `json` | 是 | 必填。 |
 
 **返回值**:
@@ -253,7 +253,7 @@ await fb2k.invoke('state.set', {
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
-| `key` | `string` | 否 | 可选；默认 。 |
+| `key` | `string` | 否 | 可选。 |
 
 **返回值**:
 
@@ -267,7 +267,7 @@ await fb2k.invoke('state.delete', { key: 'lyrics:offset' });
 
 ### state.keys
 
-列出状态键，支持 `*` 通配。权威源：`src/api/PortApi.cpp:188-191` → `PortHub::GetStateKeys`。
+列出状态键，支持 `*` 通配。
 
 | 参数 | 类型 | 必填 | 默认值 | 说明 |
 | --- | --- | --- | --- | --- |
@@ -294,36 +294,6 @@ console.log('状态键:', result.keys);
 | state:changed | state.set 且非 silent | key, value, previousValue, sourceWindowId, expiresAt? |
 | state:deleted | state.delete 或 TTL 到期 | key, sourceWindowId, reason |
 
-## 合同补充
-
-以下章节补齐严格参数审计发现的公开 contract；不会改变前文的已有说明。
-
-<!-- phase3-supplement:state.set -->
-### Contract 补充：`state.set`
-
-经复核的补充 contract。权威源：`src/api/PortApi.cpp:158-175`。
-
-| 参数 | 类型 | 必填 | 默认值 | 说明 |
-| --- | --- | --- | --- | --- |
-| `key` | `string` | 否 | `` | 可选；默认 。 |
-| `silent` | `boolean` | 否 | `false` | 可选；默认 false。 |
-| `ttlMs` | `integer` | 否 | 可省略 | 可选；默认 omitted。 |
-| `value` | `json` | 是 | 无 | 必填。 |
-
-#### 返回字段
-
-| 字段 | 类型 | 可选 |
-| --- | --- | --- |
-| `code` | `string` | 是 |
-| `error` | `string` | 是 |
-| `success` | `boolean` | 否 |
-
-语义：省略可选参数时使用 handler 默认值；失败分支及错误字段以该源文件为准。
-
-```js
-const result = await fb2k.invoke('state.set', { key: /* value */, silent: /* value */, ttlMs: /* value */, value: /* value */ });
-```
-
 ## 路由、状态与事件 envelope
 
 - `port.connect` 将新端口绑定到调用窗口。只有该 owner 能断开端口或通过该端口发送；`port.postMessage` 会排除发送端口，并将 `port:message` 路由到同名的其他端口。
@@ -331,4 +301,4 @@ const result = await fb2k.invoke('state.set', { key: /* value */, silent: /* val
 - `state.*` 是进程级 `PortHub` 单例持有的内存状态。在当前 foobar2000 进程中，本组件的多个 WebView 窗口可共享它；但它不会写入磁盘、进程重启后丢失，也不是跨进程或 SMP/全局持久化机制。它与 SDK 的 `fb.state` 播放状态镜像不同。
 - 键不存在时，`state.get` 返回 `exists: false` 与 `value: null`。`state.set` 同时要求 `key` 和 `value`；正数 `ttlMs` 会创建过期时间戳，`silent: true` 会抑制 `state:changed`。
 - `state.delete` 返回 `existed`。显式删除会发出 `reason: "deleted"` 的 `state:deleted`；过期会发出相同事件，但 `reason` 为 `"expired"`，且 `sourceWindowId` 为空。
-- 公开 PortHub 事件包括 `port:connected`、`port:disconnected`、`port:message`、`state:changed` 和 `state:deleted`。它们的 payload 由 `src/api/PortHub.cpp` 发出。
+- 公开 PortHub 事件包括 `port:connected`、`port:disconnected`、`port:message`、`state:changed` 和 `state:deleted`。

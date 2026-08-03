@@ -109,7 +109,7 @@ for await (const page of fb.library.enumerateTracks({ pageSize: 500 })) {
 通过文件路径在媒体库中搜索曲目。返回 `{found, path, title, artist, album, duration, ...}`（字段在顶层，无嵌套）。
 
 ```javascript
-const r = await fb.library.getByPath('E:\\\\Music\\\\song.flac');
+const r = await fb.library.getByPath('E:\\Music\\song.flac');
 if (r.found) console.log(r.title, r.artist);
 ```
 

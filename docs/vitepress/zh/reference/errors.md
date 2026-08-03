@@ -42,7 +42,7 @@ foo_ui_webview2 的所有 API 在失败时遵循统一的错误信封结构。
   "error": "Failed to open decoder",
   "code": "DECODER_FAILED",
   "taskId": "waveform_42",
-  "path": "E:\\\\Music\\\\song.flac"
+  "path": "E:\\Music\\song.flac"
 }
 ```
 

@@ -34,45 +34,30 @@ if (r.found) {
 
 ### selection.get
 
-<!-- phase3-major1-review:selection.get -->
-#### 源码复核 contract
-权威源: `src/api/SelectionApi.cpp:192-250`.
-
-| 参数 | 类型 | 必填 | 默认值 |
-| --- | --- | --- | --- |
-| `offset` | `integer` | 否 | `0` |
-| `limit` | `integer` | 否 | `100` |
-
-**返回值**: `{"count":0,"handles":"...","hasMore":true,"offset":"...","truncated":"...","type":"..."}`
-
-**语义**: Selection paging uses offset and a bounded limit in the selection service. The method observes global selection state and does not mutate the active playlist.
-
-<!-- phase3-major1-review-end:selection.get -->
 
 获取当前全局选择的曲目列表，支持分页。v1.1.16
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
-| `offset` | `integer` | 否 | 可选；默认 0。 |
-| `limit` | `integer` | 否 | 可选；默认 100。 |
+| `offset` | `integer` | 否 | 起始下标，默认 `0`。 |
+| `limit` | `integer` | 否 | 最多返回条数，默认 `100`；传 `0` 表示全部。 |
 
 ::: warning 性能提示
-选择超过 100 个曲目时，未指定 limit 会自动截断为 100 个。
+未指定 `limit` 时，选择超过 100 个曲目会自动截断为 100 条。显式传入的 `limit` **不会**被收窄，需要全部数据请传 `limit: 0`。
 :::
+
+**返回值**: `{ "count": 250, "type": "...", "handles": [...], "offset": 0, "hasMore": true }`；结果被自动截断时另有 `truncated: true`。
+
+本方法**不返回** `success`，也没有失败分支。`limit: 0` 表示不限条数，从 `offset` 开始返回其后的全部条目。
+
+`truncated: true` 仅在自动上限**真正生效**时出现，即选择数超过 100 **且**未传 `limit`。在 250 条选择中显式传 `limit: 10` 不属于截断，不会带该字段。它从不以 `false` 出现，因此应判断该字段是否存在而非判断其取值；是否需要继续分页请看 `hasMore`。`count` 是选择的总数，不是本次返回的条数。
+
+```js
+const { handles, count, hasMore } = await fb2k.invoke('selection.get', { limit: 0 });
+```
 
 ### selection.getType
 
-<!-- phase3-major1-review:selection.getType -->
-#### 源码复核 contract
-权威源: `src/api/SelectionApi.cpp:255-278`.
-
-_无公开参数。_
-
-**返回字段（按变体取值）**: `type`, `typeName`
-
-**语义**: No request fields are read. The returned numeric type and typeName describe the current foobar2000 selection source.
-
-<!-- phase3-major1-review-end:selection.getType -->
 
 获取当前选择类型。v1.1.16
 
@@ -86,63 +71,37 @@ _无公开参数。_
 
 ### selection.set
 
-<!-- phase3-major1-review:selection.set -->
-#### 源码复核 contract
-权威源: `src/api/SelectionApi.cpp:283-361`.
-
-| 参数 | 类型 | 必填 | 默认值 |
-| --- | --- | --- | --- |
-| `handles` | `array<object or string>` | 是 | 无 |
-
-**返回字段（按变体取值）**: `error`, `success`；`error`, `success`；`error`, `success`；`count`, `success`；`error`, `success`；`error`, `success`
-
-**语义**: handles is required and must be an array. Each item is resolved to a media handle by the selection service; conversion failures are reported by the false/error response variant.
-
-<!-- phase3-major1-review-end:selection.set -->
 
 设置当前全局选择。v1.1.16
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
-| `handles` | `array<object or string>` | 是 | 必填。 |
+| `handles` | `array<string>` | 是 | 非空路径数组，可带 `\|subsong:N` 后缀。 |
 
-| --- | --- | --- | --- |
-| `handles` | `array<object\\\|string>` | 是 | | 必填。 |
+**返回值**: `{ "success": true, "count": 2 }`
+
+非字符串条目会被静默跳过；`|subsong:` 后缀格式错误时回退为 subsong `0`。`handles` 缺失、非数组、为空数组，或无一条可解析时，返回 `{ "success": false, "error": "..." }`。
 
 ### selection.setPlaylistTracking
 
 设置播放列表跟踪模式。v1.1.16
 
-| mode 值 | 说明 |
-| --- | --- |
-| "selection" | 跟踪播放列表中用户选择的曲目 |
-| "playlist" | 跟踪整个播放列表 |
-
-
-**返回值**: `{"mode":"...","success":true}`
-
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
-| `mode` | `string` | 否 | 可选；默认 selection。 |
+| `mode` | `string` | 否 | `selection`（默认）或 `playlist`。 |
+
+| mode 值 | 说明 |
+| --- | --- |
+| `selection` | 跟踪播放列表中用户选择的曲目 |
+| `playlist` | 跟踪整个播放列表 |
+
+**返回值**: `{ "success": true, "mode": "selection" }`
+
+只有 `playlist` 会切换为整表跟踪；其余任何取值（包括拼写错误）都会**静默退化**为 selection 跟踪，且 `mode` 会把你传入的原值回显出来——因此不能用返回的 `mode` 来确认取值是否合法。
 
 ### queue.addPaths
 
 
-<!-- phase3-major1-review:queue.addPaths -->
-#### 源码复核 contract
-权威源: `src/api/QueueApi.cpp:266-337`.
-
-| 参数 | 类型 | 必填 | 默认值 |
-| --- | --- | --- | --- |
-| `paths` | `array<string>` | 否 | `[]` |
-| `useQueuePlaylist` | `boolean` | 否 | `true` |
-| `playlist` | `integer` | 否 | `active playlist when useQueuePlaylist is false` |
-
-**返回字段（按变体取值）**: `error`, `success`；`error`, `success`；`error`, `success`；`error`, `isLocked`, `playlist`, `success`；`error`, `invalidCount`, `success`；`addedCount`, `invalidCount`, `playlist`, `queueCount`, `success`
-
-**语义**: An empty paths array fails. The registration protects paths as a non-empty MediaRead array; each path is parsed for an optional subsong suffix, rejects oversized streams, then resolves to queueable handles. The handler rejects locked target playlists.
-
-<!-- phase3-major1-review-end:queue.addPaths -->
 一步添加 URL/本地路径到播放队列。自动处理添加到播放列表和入队操作。
 
 | 参数 | 类型 | 必填 | 说明 |
@@ -161,36 +120,18 @@ await fb2k.invoke('queue.addPaths', {
 
 ### queue.add
 
-<!-- phase3-major1-review:queue.add -->
-#### 源码复核 contract
-权威源: `src/api/QueueApi.cpp:221-261`.
-
-| 参数 | 类型 | 必填 | 默认值 |
-| --- | --- | --- | --- |
-| `playlist` | `integer` | 否 | `active playlist` |
-| `tracks` | `array<integer>` | 否 | `[]` |
-| `track` | `integer` | 否 | `not supplied` |
-
-**返回字段（按变体取值）**: `error`, `success`；`addedCount`, `queueCount`, `success`
-
-**语义**: playlist defaults to the active playlist. tracks takes precedence when it is an array; otherwise track is used. Invalid playlist or item indices produce a false result without queueing an item.
-
-<!-- phase3-major1-review-end:queue.add -->
 
 将播放列表中的曲目添加到队列。支持单个曲目或批量添加。
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
-| `playlist` | `integer` | 否 | 可选；默认 active playlist。 |
-| `tracks` | `array<integer>` | 否 | 可选；默认 []。 |
-| `track` | `integer` | 否 | 可选；默认 not supplied。 |
-
-| --- | --- | --- | --- |
-| `playlist` | `integer` | 否 | 可选；默认 active playlist。 |
-| `tracks` | `array<integer>` | 否 | 可选；默认 []。 |
-| `track` | `integer` | 否 | 可选；默认 not supplied。 |
+| `playlist` | `integer` | 否 | 可选；默认活动播放列表。 |
+| `tracks` | `array<integer>` | 否 | 曲目下标数组；优先于 `track`。 |
+| `track` | `integer` | 否 | 单个曲目下标；仅在未传 `tracks` 时生效。 |
 
 **返回值**: `{ "success": true, "addedCount": 3, "queueCount": 5 }`
+
+`tracks` 与 `track` 二选一——`tracks` 为数组时优先，`track` 被忽略。`success` 即 `addedCount > 0`。越界下标会被静默跳过，因此一条都没匹配上时返回 `success: false`、`addedCount: 0` 且**不带** `error`；空 `tracks` 数组同理。`playlist` 无效时返回 `{ "success": false, "error": "Invalid playlist index" }`。`tracks` 的元素必须是数字——非数字元素属于参数类型错误，不会被当作可跳过的条目。
 
 ```javascript
 // 添加单个曲目
@@ -212,7 +153,7 @@ await fb2k.invoke('queue.add', { tracks: [0, 1, 2], playlist: 0 });
         {
             "queueIndex": 0,
             "path": "file://C:/Music/song.mp3",
-            "absolutePath": "C:\\\\Music\\\\song.mp3",
+            "absolutePath": "C:\\Music\\song.mp3",
             "subsong": 0,
             "fileSize": 10485760,
             "title": "Song Title",
@@ -238,20 +179,6 @@ await fb2k.invoke('queue.add', { tracks: [0, 1, 2], playlist: 0 });
 
 ### queue.remove
 
-<!-- phase3-major1-review:queue.remove -->
-#### 源码复核 contract
-权威源: `src/api/QueueApi.cpp:341-392`.
-
-| 参数 | 类型 | 必填 | 默认值 |
-| --- | --- | --- | --- |
-| `index` | `integer` | 否 | `not supplied` |
-| `indices` | `array<integer>` | 否 | `[]` |
-
-**返回字段（按变体取值）**: `error`, `success`；`error`, `success`；`queueCount`, `removedIndex`, `success`；`queueCount`, `removedCount`, `success`；`error`, `success`
-
-**语义**: The handler prefers index when present; otherwise it removes distinct valid entries from indices. An empty queue, invalid single index, or neither field returns success:false with an error.
-
-<!-- phase3-major1-review-end:queue.remove -->
 
 从队列中移除指定项。支持单个索引或批量移除。
 
@@ -290,7 +217,7 @@ await fb2k.invoke('queue.remove', { indices: [0, 2, 4] });
 
 **返回值**: `{"count":0,"hasItems":true}`
 
-获取队列项数量。返回 `{ "count": 3, "hasItems": true }`
+获取队列项数量。返回 `{ "count": 3, "hasItems": true }`。本方法不返回 `success`；`hasItems` 就是 `count > 0`，仅为方便判断而提供。
 
 ```javascript
 const result = await fb2k.invoke('queue.getCount');
@@ -299,19 +226,6 @@ console.log(`队列中有 ${result.count} 项`);
 
 ### queue.moveToTop
 
-<!-- phase3-major1-review:queue.moveToTop -->
-#### 源码复核 contract
-权威源: `src/api/QueueApi.cpp:422-459`.
-
-| 参数 | 类型 | 必填 | 默认值 |
-| --- | --- | --- | --- |
-| `index` | `integer` | 否 | `not supplied` |
-
-**返回字段（按变体取值）**: `error`, `success`；`movedIndex`, `queueCount`, `success`
-
-**语义**: index must identify a non-first item in a non-empty queue. The operation rebuilds the native queue with that item first, so queue order—not playlist membership—is changed.
-
-<!-- phase3-major1-review-end:queue.moveToTop -->
 
 将队列中的指定项移动到队首（下一首播放）。内部通过清空队列并重建实现。
 
@@ -357,9 +271,9 @@ JIT Queue（Just-In-Time Queue）是专为流媒体设计的双层队列架构�
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
-| `title` | `string` | 否 | 可选；默认 。 |
-| `trackId` | `string` | 否 | 可选；默认 。 |
-| `url` | `string` | 否 | 可选；默认 。 |
+| `title` | `string` | 否 | 可选。 |
+| `trackId` | `string` | 否 | 可选。 |
+| `url` | `string` | 否 | 可选。 |
 
 
 **返回值**: `{"shadowPlaylist":"...","success":true,"trackId":"..."}`
@@ -381,9 +295,9 @@ await fb2k.invoke('jitQueue.playNow', {
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
-| `title` | `string` | 否 | 可选；默认 。 |
-| `trackId` | `string` | 否 | 可选；默认 。 |
-| `url` | `string` | 否 | 可选；默认 。 |
+| `title` | `string` | 否 | 可选。 |
+| `trackId` | `string` | 否 | 可选。 |
+| `url` | `string` | 否 | 可选。 |
 
 
 **返回值**: `{"bufferSize":"...","success":true,"trackId":"..."}`
@@ -441,35 +355,25 @@ await fb2k.invoke('jitQueue.playNow', {
 
 ### jitQueue.preloadBatch
 
-<!-- phase3-major1-review:jitQueue.preloadBatch -->
-#### 源码复核 contract
-权威源: `src/api/QueueApi.cpp:600-645`.
-
-| 参数 | 类型 | 必填 | 默认值 |
-| --- | --- | --- | --- |
-| `urls` | `array<string>` | 否 | `[]` |
-| `startIndex` | `integer` | 否 | `0` |
-| `replace` | `boolean` | 否 | `true` |
-
-**返回值**: `{"error":"...","invalidCount":"...","success":true,"tracksAdded":"..."}`
-
-**语义**: The handler accepts an omitted URLs array, delegates batch construction to QueueManager, and returns its success/error result. replace defaults to clearing the JIT buffer before preload; URL/path validity is evaluated by QueueManager.
-
-<!-- phase3-major1-review-end:jitQueue.preloadBatch -->
 
 批量预加载曲目到 shadow playlist。使用 `handle_create()` 纯内存创建句柄，零 I/O 开销。
 
-- **参数**:`urls` (string[], 必填) — 曲目 URL 列表，支持 `path|subsong:N` 格式
-- `startIndex` (number, 可选, 默认 0) — 起始播放位置
-- `replace` (boolean, 可选, 默认 true) — 是否清空现有 buffer
+| 参数 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `urls` | `array<string>` | 是 | 曲目 URL 或 `path\|subsong:N`，单次最多 10000 条。 |
+| `startIndex` | `integer` | 否 | 起始播放位置，默认 `0`。 |
+| `replace` | `boolean` | 否 | 默认 `true`，会**先清空 shadow playlist**；传 `false` 表示追加。 |
 
-**限制**: 单次最多 10000 条
+**返回值**: `{ "success": true, "tracksAdded": 2 }`；存在被拒条目时另有 `invalidCount`。
 
+`replace` 默认为 `true`，插入前会清空 shadow playlist；如需在不打扰已入队内容的前提下追加，请显式传 `false`。非字符串条目或长度超过 2048 的条目会被丢弃并计入 `invalidCount`，不会导致整次调用失败。
+
+10000 上限是在丢弃上述无效条目**之后**才判断的，因此只统计有效条目。超限会**整批失败**而非截断，且该分支返回 `{ "success": false, "error": "Batch exceeds maximum size (10000)" }`，**不含** `tracksAdded`。其他失败（如 `urls` 为空数组或 `startIndex` 越界）返回 `{ "success": false, "tracksAdded": 0, "error": "..." }`。
 
 ```js
 // 替换模式
 await fb2k.invoke('jitQueue.preloadBatch', {
-  urls: ['C:\\\\Music\\\\a.flac', 'C:\\\\Music\\\\b.flac'],
+  urls: ['C:\\Music\\a.flac', 'C:\\Music\\b.flac'],
   startIndex: 0,
   replace: true
 });
@@ -481,25 +385,15 @@ await fb2k.invoke('jitQueue.preloadBatch', {
 });
 ```
 
-### JIT Queue 事件
-
-| 事件 | 描述 | 数据 |
-| --- | --- | --- |
-| jitQueue:needNext | 后端请求下一首曲目 | { currentTrackId, reason } |
-| jitQueue:trackChanged | 播放曲目变化 | { trackId, title } |
-| jitQueue:listExhausted | 缓冲区耗尽 | { lastTrackId } |
-| jitQueue:preloadComplete | 批量预加载完成 | { count, startIndex, replace } |
-| jitQueue:error | JIT 操作中的曲目失败 | { trackId, error, path } |
-
 ## 选择行为
 
-`selection.getViewerMode` 返回 `prefer_playing` 或 `prefer_selection`。`selection.getViewingTrack` 先按该偏好选择来源；若首选来源没有曲目，则回退到另一个来源。`selection:changed` 由 `src/selection/SelectionWatcher.cpp` 在选择更新后广播；其 payload 以事件参考页为准。
+`selection.getViewerMode` 返回 `prefer_playing` 或 `prefer_selection`，该值由当前的选择类型推导，而非一项独立设置。`selection.getViewingTrack` 先按该偏好选择来源；若首选来源没有曲目，则回退到另一个来源——它**恒返回** `success: true`，请改判 `found`。`selection:changed` 在选择更新后广播到每个 WebView，并有 50 ms 节流；其 payload 见事件参考页。
 
-传给 `queue.addPaths` 或 JIT Queue 批量操作的路径可使用 `path|subsong:N` 形式来指定某个 subsong。
+队列与选择使用同一种 handle 字符串形式：原生路径，仅当 subsong 大于 `0` 时才附加 `|subsong:N`。传给 `queue.addPaths` 或 JIT Queue 操作的路径接受同样的后缀。单条路径或 URL 上限为 2048 字符。
 
 ## JIT Queue 事件
 
-`src/core/QueueManager.cpp` 在维护 JIT shadow playlist 时会发出以下事件。若前端需要补充或观察缓冲区，请在调用操作前订阅。
+维护 JIT shadow playlist 期间会发出以下事件。若前端需要补充或观察缓冲区，请在调用操作前订阅。
 
 | 事件 | 含义 | Payload keys |
 | --- | --- | --- |
@@ -508,31 +402,3 @@ await fb2k.invoke('jitQueue.preloadBatch', {
 | `jitQueue:listExhausted` | 前端报告没有更多可用曲目。 | `{ lastTrackId }` |
 | `jitQueue:preloadComplete` | 批量预加载完成。 | `{ count, startIndex, replace }` |
 | `jitQueue:error` | 某首曲目的 JIT 操作失败。 | URL 分支为 `{ trackId, error, url }`，本地路径分支为 `{ trackId, error, path }`。 |
-
-## 合同补充
-
-以下章节补齐严格参数审计发现的公开 contract；不会改变前文的已有说明。
-
-<!-- phase3-supplement:jitQueue.preloadBatch -->
-### Contract 补充：`jitQueue.preloadBatch`
-
-经复核的补充 contract。权威源：`src/api/QueueApi.cpp:600-645`。
-
-| 参数 | 类型 | 必填 | 默认值 | 说明 |
-| --- | --- | --- | --- | --- |
-| `urls` | `array<string>` | 否 | `[]` | 可选；默认 []。 |
-| `startIndex` | `integer` | 否 | `0` | 可选；默认 0。 |
-| `replace` | `boolean` | 否 | `true` | 可选；默认 true。 |
-
-#### 返回字段
-
-| 字段 | 类型 | 可选 |
-| --- | --- | --- |
-| `error` | `string` | 是 |
-| `success` | `boolean` | 否 |
-
-语义：省略可选参数时使用 handler 默认值；失败分支及错误字段以该源文件为准。
-
-```js
-const result = await fb2k.invoke('jitQueue.preloadBatch', { urls: /* value */, startIndex: /* value */, replace: /* value */ });
-```

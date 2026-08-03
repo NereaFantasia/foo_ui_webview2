@@ -5,7 +5,7 @@
 Reveals a file in Windows File Explorer.
 
 ```javascript
-await fb.shell.showInExplorer('E:\\\\Music\\\\song.flac');
+await fb.shell.showInExplorer('E:\\Music\\song.flac');
 ```
 
 ## openWith(path) 
@@ -17,7 +17,7 @@ Executable file types such as `.exe`, `.bat`, and `.cmd` are rejected.
 :::
 
 ```javascript
-await fb.shell.openWith('E:\\\\Music\\\\cover.jpg');
+await fb.shell.openWith('E:\\Music\\cover.jpg');
 ```
 
 ## openExternal(url) 
@@ -44,7 +44,7 @@ Commands are not allowlisted because installed themes are treated as trusted cod
 | options.hidden | boolean | Hide the child window. Defaults to `true` |
 
 ```javascript
-await fb.shell.exec('notepad', { args: ['E:\\\\notes.txt'] });
+await fb.shell.exec('notepad', { args: ['E:\\notes.txt'] });
 ```
 
 ## spawn(executable, options?) 
@@ -66,9 +66,9 @@ Executables are not allowlisted; trust the theme author. Absolute executable pat
 The response contains `processId` on success. If `waitForExitMs` is positive, it may also contain `exited` and, when the process exited in time, `exitCode`.
 
 ```javascript
-const result = await fb.shell.spawn('E:\\\\FB2K\\\\Runtime\\\\node.exe', {
-  args: ['E:\\\\FB2K\\\\NeteaseApi\\\\server.js'],
-  cwd: 'E:\\\\FB2K\\\\NeteaseApi',
+const result = await fb.shell.spawn('E:\\FB2K\\Runtime\\node.exe', {
+  args: ['E:\\FB2K\\NeteaseApi\\server.js'],
+  cwd: 'E:\\FB2K\\NeteaseApi',
   hidden: true,
   waitForExitMs: 900
 });

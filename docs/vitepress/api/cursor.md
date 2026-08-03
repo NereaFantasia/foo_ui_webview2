@@ -8,7 +8,6 @@ This page is the primary owner for the namespaces listed below. Method names, pa
 
 ### cursor.isHidden
 
-Public API method. Runtime authority: `src/api/CursorApi.cpp:76`.
 
 _No parameters._
 
@@ -20,7 +19,6 @@ const result = await fb2k.invoke('cursor.isHidden');
 
 ### cursor.setHidden
 
-Public API method. Runtime authority: `src/api/CursorApi.cpp:75`.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
@@ -29,7 +27,7 @@ Public API method. Runtime authority: `src/api/CursorApi.cpp:75`.
 **Returns**: `{"changed":"...","error":"...","success":true}`
 
 ```js
-const result = await fb2k.invoke('cursor.setHidden', { hidden: /* value */ });
+await fb2k.invoke('cursor.setHidden', { hidden: true });
 ```
 
 ## Cursor visibility lifecycle

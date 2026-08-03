@@ -9,7 +9,7 @@
 读取文件的结构化元数据，返回 `{ success, path, tags, info }`。底层会先 canonicalize 路径，再尝试 cached info；若关键元数据缺失，则自动退回 direct file read。
 
 ```javascript
-const meta = await fb.metadata.read('E:\\\\Music\\\\song.flac');
+const meta = await fb.metadata.read('E:\\Music\\song.flac');
 console.log(meta.tags, meta.info.sampleRate);
 ```
 
@@ -19,8 +19,8 @@ console.log(meta.tags, meta.info.sampleRate);
 
 ```javascript
 const results = await fb.metadata.readBatch([
-    'E:\\\\Music\\\\song1.flac',
-    'E:\\\\Music\\\\song2.flac'
+    'E:\\Music\\song1.flac',
+    'E:\\Music\\song2.flac'
 ]);
 ```
 
@@ -29,7 +29,7 @@ const results = await fb.metadata.readBatch([
 通过路径读取扁平元数据。与 `read` 共享同一 fallback 语义，但会把标签和技术字段统一展开为大写键名。
 
 ```javascript
-const meta = await fb.metadata.readByPath('E:\\\\Music\\\\song.flac');
+const meta = await fb.metadata.readByPath('E:\\Music\\song.flac');
 console.log(meta.TITLE, meta.DURATION, meta.SAMPLERATE);
 ```
 
@@ -43,7 +43,7 @@ console.log(meta.TITLE, meta.DURATION, meta.SAMPLERATE);
 | tags | object | 标签键值对，如 { artist: 'New Artist' } |
 
 ```javascript
-await fb.metadata.write('E:\\\\Music\\\\song.flac', {
+await fb.metadata.write('E:\\Music\\song.flac', {
     artist: 'New Artist',
     title: 'New Title'
 });
@@ -69,7 +69,7 @@ await fb.metadata.writeBatch([
 嵌入封面到文件。
 
 ```javascript
-await fb.metadata.embedArtwork('E:\\\\Music\\\\song.flac', { imageData: base64Data, type: 'front' });
+await fb.metadata.embedArtwork('E:\\Music\\song.flac', { imageData: base64Data, type: 'front' });
 ```
 
 ### removeEmbeddedArt(path, options?)
@@ -77,7 +77,7 @@ await fb.metadata.embedArtwork('E:\\\\Music\\\\song.flac', { imageData: base64Da
 移除文件中嵌入的封面。
 
 ```javascript
-await fb.metadata.removeEmbeddedArt('E:\\\\Music\\\\song.flac');
+await fb.metadata.removeEmbeddedArt('E:\\Music\\song.flac');
 ```
 
 ### removeField(path, field)
@@ -85,7 +85,7 @@ await fb.metadata.removeEmbeddedArt('E:\\\\Music\\\\song.flac');
 移除文件中的指定标签字段。内部传递 `tags: [field]` 数组。
 
 ```javascript
-await fb.metadata.removeField('E:\\\\Music\\\\song.flac', 'COMMENT');
+await fb.metadata.removeField('E:\\Music\\song.flac', 'COMMENT');
 ```
 
 ### readRaw(path, options?)
@@ -93,7 +93,7 @@ await fb.metadata.removeField('E:\\\\Music\\\\song.flac', 'COMMENT');
 以 raw 格式读取元数据（绕过 Titleformat 解析），返回未处理的标签键值。
 
 ```javascript
-const raw = await fb.metadata.readRaw('E:\\\\Music\\\\song.flac');
+const raw = await fb.metadata.readRaw('E:\\Music\\song.flac');
 // raw.tags: { ARTIST: ['...'], TITLE: ['...'], ... }
 ```
 
@@ -107,7 +107,7 @@ const raw = await fb.metadata.readRaw('E:\\\\Music\\\\song.flac');
 | tags | array | 要移除的标签名数组 |
 
 ```javascript
-await fb.metadata.removeTag('E:\\\\Music\\\\song.flac', ['COMMENT', 'LYRICS']);
+await fb.metadata.removeTag('E:\\Music\\song.flac', ['COMMENT', 'LYRICS']);
 ```
 
 ## fb.titleformat Titleformat 格式化
@@ -142,7 +142,7 @@ const results = await fb.titleformat.evalBatch(
 获取文件的字段值。`fields` 是字段名到 Titleformat 表达式的映射对象。
 
 ```javascript
-const result = await fb.titleformat.evalFields('E:\\\\Music\\\\song.flac', {
+const result = await fb.titleformat.evalFields('E:\\Music\\song.flac', {
     artist: '%artist%',
     title: '%title%',
     album: '%album%'
@@ -170,7 +170,7 @@ const r = await fb.titleformat.getBuiltinFields();
 获取指定文件的播放次数。
 
 ```javascript
-const r = await fb.playcount.get('E:\\\\Music\\\\song.flac');
+const r = await fb.playcount.get('E:\\Music\\song.flac');
 console.log(r.count);
 ```
 
@@ -187,7 +187,7 @@ const results = await fb.playcount.getBatch(['song1.flac', 'song2.flac']);
 设置文件的播放次数。
 
 ```javascript
-await fb.playcount.set('E:\\\\Music\\\\song.flac', 42);
+await fb.playcount.set('E:\\Music\\song.flac', 42);
 ```
 
 ### getStats()
@@ -262,7 +262,7 @@ const track = await fb.selection.getViewingTrack({ includeTrackInfo: true });
 获取曲目的 0 到 5 整数评分。路径可以带 `|subsong:N` 后缀。
 
 ```javascript
-const r = await fb.rating.get('E:\\\\Music\\\\song.flac');
+const r = await fb.rating.get('E:\\Music\\song.flac');
 console.log(r.rating); // 0-5
 ```
 
@@ -277,6 +277,6 @@ console.log(r.rating); // 0-5
 | options.cueIndex | number | 可选的 CUE 分轨索引 |
 
 ```javascript
-await fb.rating.set('E:\\\\Music\\\\song.flac', 5);
-await fb.rating.set('E:\\\\Music\\\\song.flac', 0); // 清除评分
+await fb.rating.set('E:\\Music\\song.flac', 5);
+await fb.rating.set('E:\\Music\\song.flac', 0); // 清除评分
 ```

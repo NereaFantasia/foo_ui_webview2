@@ -8,25 +8,26 @@ This page is the primary owner for the namespaces listed below. Method names, pa
 
 ### dialog.confirm
 
-Public API method. Runtime authority: `src/api/DialogApi.cpp:407`.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `buttons` | `array` | No | Optional; default omitted. |
+| `buttons` | `array` | No | Optional; omitted by default. |
 | `defaultButton` | `integer` | No | Optional; default 0. |
-| `message` | `string` | No | Optional; default . |
+| `message` | `string` | No | Optional. |
 | `title` | `string` | No | Optional; default Confirm. |
 | `type` | `string` | No | Optional; default question. |
 
 **Returns**: `{"response":"..."}`
 
 ```js
-const result = await fb2k.invoke('dialog.confirm', { buttons: /* value */, defaultButton: /* value */, message: /* value */, title: /* value */, type: /* value */ });
+const { response } = await fb2k.invoke('dialog.confirm', {
+	title: 'Remove Track',
+	message: 'Remove this track from the playlist?',
+});
 ```
 
 ### dialog.openFile
 
-Public API method. Runtime authority: `src/api/DialogApi.cpp:398`.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
@@ -38,12 +39,15 @@ Public API method. Runtime authority: `src/api/DialogApi.cpp:398`.
 **Returns**: `{"canceled":"...","error":"...","filePaths":"..."}`
 
 ```js
-const result = await fb2k.invoke('dialog.openFile', { defaultPath: /* value */, multiple: /* value */, title: /* value */, filters: /* value */ });
+const { canceled, filePaths } = await fb2k.invoke('dialog.openFile', {
+	title: 'Add Audio Files',
+	multiple: true,
+	filters: [{ name: 'Audio', extensions: ['flac', 'mp3', 'm4a'] }],
+});
 ```
 
 ### dialog.openFolder
 
-Public API method. Runtime authority: `src/api/DialogApi.cpp:404`.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
@@ -52,12 +56,13 @@ Public API method. Runtime authority: `src/api/DialogApi.cpp:404`.
 **Returns**: `{"canceled":"...","error":"...","folderPath":"..."}`
 
 ```js
-const result = await fb2k.invoke('dialog.openFolder', { title: /* value */ });
+const { canceled, folderPath } = await fb2k.invoke('dialog.openFolder', {
+	title: 'Choose Music Folder',
+});
 ```
 
 ### dialog.saveFile
 
-Public API method. Runtime authority: `src/api/DialogApi.cpp:401`.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
@@ -68,128 +73,138 @@ Public API method. Runtime authority: `src/api/DialogApi.cpp:401`.
 **Returns**: `{"canceled":"...","error":"...","filePath":"..."}`
 
 ```js
-const result = await fb2k.invoke('dialog.saveFile', { defaultName: /* value */, title: /* value */, filters: /* value */ });
+const { canceled, filePath } = await fb2k.invoke('dialog.saveFile', {
+	defaultName: 'export.m3u8',
+	filters: [{ name: 'Playlist', extensions: ['m3u8'] }],
+});
 ```
 
 ## file
 
 ### file.copy
 
-Public API method. Runtime authority: `src/api/FileApi.cpp:656`.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `destination` | `string` | No | Optional; default . |
-| `overwrite` | `boolean` | No | Optional; default false. |
-| `source` | `string` | No | Optional; default . |
+| `destination` | `string` | Yes | Destination path. Missing parent directories are created by the copy. |
+| `overwrite` | `boolean` | No | Optional; default false. Existing destinations are skipped when false. |
+| `source` | `string` | Yes | Source file or directory path. |
 
 **Returns**: `{"destination":"...","error":"...","source":"...","success":true}`
 
 ```js
-const result = await fb2k.invoke('file.copy', { destination: /* value */, overwrite: /* value */, source: /* value */ });
+await fb2k.invoke('file.copy', {
+	source: 'C:\\Music\\song.flac',
+	destination: '%profile%\\backup\\song.flac',
+});
 ```
 
 ### file.delete
 
-Public API method. Runtime authority: `src/api/FileApi.cpp:650`.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `moveToTrash` | `boolean` | No | Optional; default true. |
-| `path` | `string` | No | Optional; default . |
+| `moveToTrash` | `boolean` | No | Optional; default true. Set false for a permanent delete. |
+| `path` | `string` | Yes | Path of the file to delete. |
 
 **Returns**: `{"error":"...","success":true}`
 
 ```js
-const result = await fb2k.invoke('file.delete', { moveToTrash: /* value */, path: /* value */ });
+await fb2k.invoke('file.delete', { path: '%profile%\\cache\\stale.json' });
 ```
 
 ### file.exists
 
-Public API method. Runtime authority: `src/api/FileApi.cpp:644`.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `path` | `string` | No | Optional; default . |
+| `path` | `string` | Yes | Path to test. |
 
 **Returns**: `{"error":"...","exists":"...","isDirectory":"...","isFile":"...","success":true}`
 
 ```js
-const result = await fb2k.invoke('file.exists', { path: /* value */ });
+const { exists, isFile } = await fb2k.invoke('file.exists', {
+	path: 'C:\\Music\\song.flac',
+});
 ```
 
 ### file.getInfo
 
-Public API method. Runtime authority: `src/api/FileApi.cpp:671`.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `path` | `string` | No | Optional; default . |
+| `path` | `string` | Yes | Path to inspect. |
 
 **Returns**: `{"error":"...","exists":"...","extension":"...","isDirectory":"...","isFile":"...","modified":"...","name":"...","parent":"...","size":"...","success":true}`
 
 ```js
-const result = await fb2k.invoke('file.getInfo', { path: /* value */ });
+const info = await fb2k.invoke('file.getInfo', {
+	path: 'C:\\Music\\song.flac',
+});
 ```
 
 ### file.list
 
-Public API method. Runtime authority: `src/api/FileApi.cpp:647`.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `path` | `string` | No | Optional; default . |
-| `pattern` | `string` | No | Optional; default *. |
+| `path` | `string` | Yes | Directory to enumerate. |
+| `pattern` | `string` | No | Optional; default *. Also accepts a single extension glob such as `*.flac`. |
 | `recursive` | `boolean` | No | Optional; default false. |
 
 **Returns**: `{"directories":"...","error":"...","files":"...","items":"...","success":true}`
 
 ```js
-const result = await fb2k.invoke('file.list', { path: /* value */, pattern: /* value */, recursive: /* value */ });
+const { files } = await fb2k.invoke('file.list', {
+	path: 'C:\\Music',
+	pattern: '*.flac',
+});
 ```
 
 ### file.mkdir
 
-Public API method. Runtime authority: `src/api/FileApi.cpp:653`.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `path` | `string` | No | Optional; default . |
+| `path` | `string` | Yes | Directory to create. Intermediate directories are created as needed. |
 
 **Returns**: `{"created":"...","error":"...","message":"...","success":true}`
 
 ```js
-const result = await fb2k.invoke('file.mkdir', { path: /* value */ });
+await fb2k.invoke('file.mkdir', { path: '%profile%\\my-panel\\cache' });
 ```
 
 ### file.move
 
-Public API method. Runtime authority: `src/api/FileApi.cpp:662`.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `destination` | `string` | No | Optional; default . |
-| `source` | `string` | No | Optional; default . |
+| `destination` | `string` | Yes | Destination path. |
+| `source` | `string` | Yes | Source file or directory path. |
 
 **Returns**: `{"destination":"...","error":"...","source":"...","success":true}`
 
 ```js
-const result = await fb2k.invoke('file.move', { destination: /* value */, source: /* value */ });
+await fb2k.invoke('file.move', {
+	source: '%profile%\\inbox\\song.flac',
+	destination: 'C:\\Music\\song.flac',
+});
 ```
 
 ### file.read
 
-Public API method. Runtime authority: `src/api/FileApi.cpp:638`.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `encoding` | `string` | No | Optional; default utf-8. |
-| `path` | `string` | No | Optional; default . |
+| `encoding` | `string` | No | Optional; default utf-8. Pass `binary` for a Base64 payload. |
+| `path` | `string` | Yes | Path of the file to read. |
 
 **Returns**: `{"content":"...","encoding":"...","error":"...","size":"...","success":true}`
 
 ```js
-const result = await fb2k.invoke('file.read', { encoding: /* value */, path: /* value */ });
+const { content } = await fb2k.invoke('file.read', {
+	path: '%profile%\\my-panel\\settings.json',
+});
 ```
 
 When `encoding: 'binary'`, `content` is a **raw Base64 payload** without a
@@ -200,34 +215,38 @@ back, add the `base64:` prefix required by `file.write` and keep
 
 ### file.rename
 
-Public API method. Runtime authority: `src/api/FileApi.cpp:668`.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `newName` | `string` | No | Optional; default . |
-| `path` | `string` | No | Optional; default . |
+| `newName` | `string` | Yes | New file name only; path separators are rejected. |
+| `path` | `string` | Yes | Path of the existing file or directory. |
 
 **Returns**: `{"error":"...","newPath":"...","oldPath":"...","success":true}`
 
 ```js
-const result = await fb2k.invoke('file.rename', { newName: /* value */, path: /* value */ });
+await fb2k.invoke('file.rename', {
+	path: 'C:\\Music\\track01.flac',
+	newName: '01 - Intro.flac',
+});
 ```
 
 ### file.write
 
-Public API method. Runtime authority: `src/api/FileApi.cpp:641`.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `append` | `boolean` | No | Optional; default false. |
-| `content` | `string` | No | Optional; default . |
-| `encoding` | `string` | No | Optional; default utf-8. |
-| `path` | `string` | No | Optional; default . |
+| `append` | `boolean` | No | Optional; default false. When false the file is truncated. |
+| `content` | `string` | No | Optional; defaults to an empty string, which truncates the file. |
+| `encoding` | `string` | No | Optional; default utf-8. Pass `binary` together with a `base64:` prefixed `content`. |
+| `path` | `string` | Yes | Destination path. Missing parent directories are created. |
 
 **Returns**: `{"bytesWritten":"...","error":"...","success":true}`
 
 ```js
-const result = await fb2k.invoke('file.write', { append: /* value */, content: /* value */, encoding: /* value */, path: /* value */ });
+await fb2k.invoke('file.write', {
+	path: '%profile%\\my-panel\\settings.json',
+	content: JSON.stringify({ theme: 'dark' }),
+});
 ```
 
 For binary writes, decoding happens only when **both** conditions are true:
@@ -254,133 +273,83 @@ await fb2k.invoke('file.write', {
 
 ### shell.exec
 
-Public API method. Runtime authority: `src/api/ShellApi.cpp:427`.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `args` | `array` | No | Optional; default omitted. |
-| `command` | `string` | No | Optional; default . |
-| `cwd` | `string` | No | Optional; default . |
+| `args` | `array` | No | Optional; omitted by default. |
+| `command` | `string` | Yes | Command or executable to run. |
+| `cwd` | `string` | No | Optional working directory; validated when present. |
 | `hidden` | `boolean` | No | Optional; default true. |
 
 **Returns**: `{"error":"...","processId":"...","success":true}`
 
 ```js
-const result = await fb2k.invoke('shell.exec', { args: /* value */, command: /* value */, cwd: /* value */, hidden: /* value */ });
+await fb2k.invoke('shell.exec', {
+	command: 'ffprobe',
+	args: ['-hide_banner', 'C:\\Music\\song.flac'],
+});
 ```
 
 ### shell.openExternal
 
-Public API method. Runtime authority: `src/api/ShellApi.cpp:424`.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `url` | `string` | No | Optional; default . |
+| `url` | `string` | Yes | Must use the `http://`, `https://`, or `mailto:` scheme. |
 
 **Returns**: `{"error":"...","success":true}`
 
 ```js
-const result = await fb2k.invoke('shell.openExternal', { url: /* value */ });
+await fb2k.invoke('shell.openExternal', {
+	url: 'https://www.foobar2000.org/',
+});
 ```
 
 ### shell.openWith
 
-Public API method. Runtime authority: `src/api/ShellApi.cpp:421`.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `path` | `string` | No | Optional; default . |
+| `path` | `string` | Yes | File to hand to the shell's default handler. |
 
 **Returns**: `{"error":"...","success":true}`
 
 ```js
-const result = await fb2k.invoke('shell.openWith', { path: /* value */ });
+await fb2k.invoke('shell.openWith', { path: 'C:\\Music\\cover.jpg' });
 ```
 
 ### shell.showInExplorer
 
-Public API method. Runtime authority: `src/api/ShellApi.cpp:418`.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `path` | `string` | No | Optional; default . |
+| `path` | `string` | Yes | File or folder to reveal in Explorer. |
 
 **Returns**: `{"error":"...","success":true}`
 
 ```js
-const result = await fb2k.invoke('shell.showInExplorer', { path: /* value */ });
+await fb2k.invoke('shell.showInExplorer', { path: 'C:\\Music\\song.flac' });
 ```
 
 ### shell.spawn
 
-Public API method. Runtime authority: `src/api/ShellApi.cpp:430`.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `args` | `array` | No | Optional; default omitted. |
-| `cwd` | `string` | No | Optional; default . |
-| `executable` | `string` | No | Optional; default . |
+| `args` | `array` | No | Optional; omitted by default. |
+| `cwd` | `string` | No | Optional working directory; validated when present. |
+| `executable` | `string` | Yes | Executable to launch. Absolute paths are validated. |
 | `hidden` | `boolean` | No | Optional; default true. |
-| `waitForExitMs` | `integer` | No | Optional; default 0. |
+| `waitForExitMs` | `integer` | No | Optional; default 0 (do not wait). |
 
 **Returns**: `{"error":"...","exitCode":"...","exited":"...","processId":"...","success":true}`
 
 ```js
-const result = await fb2k.invoke('shell.spawn', { args: /* value */, cwd: /* value */, executable: /* value */, hidden: /* value */, waitForExitMs: /* value */ });
-```
-
-## Contract supplements
-
-The sections below close public-contract findings from the strict parameter audit without replacing existing explanations.
-
-<!-- phase3-supplement:dialog.openFile -->
-### Contract supplement: `dialog.openFile`
-
-Verified contract supplement. Runtime authority: `src/api/DialogApi.cpp:62-167`.
-
-| Parameter | Type | Required | Default | Description |
-| --- | --- | --- | --- | --- |
-| `defaultPath` | `string` | No | `` | Optional; default empty. Supports `%music%` expansion. |
-| `filters` | `array` | No | `omitted` | Optional filter specs `{ name, extensions[] }` parsed by `ParseFilterSpecs`. |
-| `multiple` | `boolean` | No | `false` | Optional; default false. |
-| `title` | `string` | No | `Open File` | Optional; default Open File. |
-
-#### Return fields
-
-| Field | Type | Optional |
-| --- | --- | --- |
-| `canceled` | `json` | No |
-| `error` | `string` | Yes |
-| `filePaths` | `json` | No |
-
-Semantics: omitted optional parameters use handler defaults; failure branches and error fields are defined by this source file.
-
-```js
-const result = await fb2k.invoke('dialog.openFile', { defaultPath: /* value */, filters: /* value */, multiple: /* value */, title: /* value */ });
-```
-<!-- phase3-supplement:dialog.saveFile -->
-### Contract supplement: `dialog.saveFile`
-
-Verified contract supplement. Runtime authority: `src/api/DialogApi.cpp:171-231`.
-
-| Parameter | Type | Required | Default | Description |
-| --- | --- | --- | --- | --- |
-| `defaultName` | `string` | No | `` | Optional; default empty. |
-| `filters` | `array` | No | `omitted` | Optional filter specs `{ name, extensions[] }` parsed by `ParseFilterSpecs`. |
-| `title` | `string` | No | `Save File` | Optional; default Save File. |
-
-#### Return fields
-
-| Field | Type | Optional |
-| --- | --- | --- |
-| `canceled` | `json` | No |
-| `error` | `string` | Yes |
-| `filePath` | `json` | No |
-
-Semantics: omitted optional parameters use handler defaults; failure branches and error fields are defined by this source file.
-
-```js
-const result = await fb2k.invoke('dialog.saveFile', { defaultName: /* value */, filters: /* value */, title: /* value */ });
+const { exited, exitCode } = await fb2k.invoke('shell.spawn', {
+	executable: 'ffprobe.exe',
+	args: ['C:\\Music\\song.flac'],
+	waitForExitMs: 5000,
+});
 ```
 
 ## Files, dialogs, and shell boundaries

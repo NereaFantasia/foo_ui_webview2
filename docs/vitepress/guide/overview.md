@@ -15,7 +15,6 @@ How it works: a **cache + event** model wraps async APIs as sync properties to m
 
 <a id="key-features"></a>
 <a id="主要特性"></a>
-## Key Features
 
 ## API distribution
 

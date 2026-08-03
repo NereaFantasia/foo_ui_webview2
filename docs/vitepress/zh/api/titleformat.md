@@ -10,15 +10,15 @@ foobar2000 Titleformat 表达式求值。共 5 个 API。
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
-| `path` | `string` | 否 | 可选；默认 。 |
-| `pattern` | `string` | 否 | 可选；默认 。 |
+| `path` | `string` | 否 | 可选。 |
+| `pattern` | `string` | 否 | 可选。 |
 
 **返回值**: `{"error":"...","path":"...","pattern":"...","result":{},"success":true}`
 
 
 ```javascript
 const r = await fb2k.invoke('titleformat.eval', {
-    path: 'C:\\\\Music\\\\song.flac',
+    path: 'C:\\Music\\song.flac',
     pattern: '%artist% - %title%'
 });
 console.log(r.result);
@@ -31,7 +31,7 @@ console.log(r.result);
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
 | `fields` | `object` | 是 | 必填。 |
-| `path` | `string` | 否 | 可选；默认 。 |
+| `path` | `string` | 否 | 可选。 |
 
 **返回值**: `{"error":"...","path":"...","success":true}`
 
@@ -56,7 +56,7 @@ const r = await fb2k.invoke('titleformat.evalFields', {
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
 | `paths` | `array` | 是 | 必填。 |
-| `pattern` | `string` | 否 | 可选；默认 。 |
+| `pattern` | `string` | 否 | 可选。 |
 
 **返回值**:
 

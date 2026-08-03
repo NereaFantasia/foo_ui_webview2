@@ -8,7 +8,6 @@ This page is the primary owner for the namespaces listed below. Method names, pa
 
 ### dnd.getDropZones
 
-Public API method. Runtime authority: `src/api/DndApi.cpp:290`.
 
 _No parameters._
 
@@ -20,55 +19,51 @@ const result = await fb2k.invoke('dnd.getDropZones');
 
 ### dnd.registerDropZone
 
-Public API method. Runtime authority: `src/api/DndApi.cpp:281`.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `accept` | `array` | No | Optional; default omitted. |
+| `accept` | `array` | No | Accepted payload kinds. Defaults to `["files"]` when omitted. |
 | `event` | `string` | No | Optional; default dnd:drop. |
-| `selector` | `string` | No | Optional; default . |
+| `selector` | `string` | Yes | CSS selector of the element that becomes the drop zone. |
 
 **Returns**: `{"accept":"...","error":"...","event":"...","script":"...","selector":"...","success":true,"zoneId":"..."}`
 
 ```js
-const result = await fb2k.invoke('dnd.registerDropZone', { accept: /* value */, event: /* value */, selector: /* value */ });
+const { zoneId, script } = await fb2k.invoke('dnd.registerDropZone', { selector: '#playlist' });
 ```
 
 ### dnd.startDrag
 
-Public API method. Runtime authority: `src/api/DndApi.cpp:287`.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `data` | `string` | No | Optional; default . |
-| `paths` | `array` | Yes | Required. |
+| `data` | `string` | No | Payload for a `text` drag. Required when `type` is `text`. |
+| `paths` | `array` | Yes | Track or file paths. Required when `type` is `tracks` or `files`. |
 | `type` | `string` | No | Optional; default text. |
 
 **Returns**: `{"error":"...","note":"...","success":true,"trackCount":"...","type":"..."}`
 
 ```js
-const result = await fb2k.invoke('dnd.startDrag', { data: /* value */, paths: /* value */, type: /* value */ });
+await fb2k.invoke('dnd.startDrag', { type: 'tracks', paths: ['C:\\Music\\song.flac'] });
 ```
 
 ### dnd.unregisterDropZone
 
-Public API method. Runtime authority: `src/api/DndApi.cpp:284`.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `zoneId` | `string` | No | Optional; default . |
+| `zoneId` | `string` | Yes | Zone id returned by `dnd.registerDropZone`. |
 
 **Returns**: `{"error":"...","script":"...","success":true,"zoneId":"..."}`
 
 ```js
-const result = await fb2k.invoke('dnd.unregisterDropZone', { zoneId: /* value */ });
+await fb2k.invoke('dnd.unregisterDropZone', { zoneId: 'dropzone_1' });
 ```
 
 ## keyboard
 
 ### keyboard.getRegisteredHotkeys
 
-Public API method. Runtime authority: `src/api/KeyboardApi.cpp:383`.
 
 _No parameters._
 
@@ -80,55 +75,55 @@ const result = await fb2k.invoke('keyboard.getRegisteredHotkeys');
 
 ### keyboard.registerHotkey
 
-Public API method. Runtime authority: `src/api/KeyboardApi.cpp:374`.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `action` | `string` | No | Optional; default . |
+| `action` | `string` | Yes | Action name echoed back in the `keyboard:hotkey` payload. |
 | `global` | `boolean` | No | Optional; default true. |
-| `key` | `string` | No | Optional; default . |
+| `key` | `string` | Yes | Key combination such as `Ctrl+Alt+P`. |
 
 **Returns**: `{"error":"...","id":"...","success":true}`
 
 ```js
-const result = await fb2k.invoke('keyboard.registerHotkey', { action: /* value */, global: /* value */, key: /* value */ });
+const { id } = await fb2k.invoke('keyboard.registerHotkey', {
+    key: 'Ctrl+Alt+P',
+    action: 'togglePause',
+});
 ```
 
 ### keyboard.registerShortcut
 
-Public API method. Runtime authority: `src/api/KeyboardApi.cpp:377`.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `action` | `string` | No | Optional; default . |
-| `key` | `string` | No | Optional; default . |
+| `action` | `string` | Yes | Action name stored with the shortcut. |
+| `key` | `string` | Yes | Key combination such as `Ctrl+Shift+L`. |
 
 **Returns**: `{"error":"...","success":true}`
 
 ```js
-const result = await fb2k.invoke('keyboard.registerShortcut', { action: /* value */, key: /* value */ });
+await fb2k.invoke('keyboard.registerShortcut', { key: 'Ctrl+Shift+L', action: 'focusSearch' });
 ```
 
 ### keyboard.unregisterHotkey
 
-Public API method. Runtime authority: `src/api/KeyboardApi.cpp:380`.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `id` | `string` | No | Optional; default omitted. |
-| `key` | `string` | No | Optional; default . |
+| `id` | `string` | No | Optional; omitted by default. |
+| `key` | `string` | No | Optional. |
 
 **Returns**: `{"error":"...","success":true}`
 
 ```js
-const result = await fb2k.invoke('keyboard.unregisterHotkey', { id: /* value */, key: /* value */ });
+// pass the id returned by keyboard.registerHotkey, or the original key string
+await fb2k.invoke('keyboard.unregisterHotkey', { id: 1 });
 ```
 
 ## ui
 
 ### ui.hideNotification
 
-Public API method. Runtime authority: `src/api/UiApi.cpp:343`.
 
 _No parameters._
 
@@ -140,7 +135,6 @@ const result = await fb2k.invoke('ui.hideNotification');
 
 ### ui.showContextMenu
 
-Public API method. Runtime authority: `src/api/WindowApi.cpp:2424`.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
@@ -150,12 +144,12 @@ Public API method. Runtime authority: `src/api/WindowApi.cpp:2424`.
 **Returns**: `{"error":"...","success":true}`
 
 ```js
-const result = await fb2k.invoke('ui.showContextMenu', { x: /* value */, y: /* value */ });
+// omit x and y to open at the current cursor position
+await fb2k.invoke('ui.showContextMenu');
 ```
 
 ### ui.showCustomMenu
 
-Public API method. Runtime authority: `src/api/UiApi.cpp:334`.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
@@ -169,41 +163,48 @@ Public API method. Runtime authority: `src/api/UiApi.cpp:334`.
 **Returns**: `{"error":"...","selectedId":"...","success":true}`
 
 ```js
-const result = await fb2k.invoke('ui.showCustomMenu', { h: /* value */, items: /* value */, suppressDefault: /* value */, w: /* value */, x: /* value */, y: /* value */ });
+const { selectedId } = await fb2k.invoke('ui.showCustomMenu', {
+    items: [
+        { id: 'play', label: 'Play' },
+        { type: 'separator' },
+        { id: 'remove', label: 'Remove', enabled: false },
+    ],
+});
 ```
 
 ### ui.showNotification
 
-Public API method. Runtime authority: `src/api/UiApi.cpp:340`.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `body` | `string` | No | Optional; default . |
+| `body` | `string` | No | Optional. |
 | `silent` | `boolean` | No | Optional; default false. |
 | `timeout` | `integer` | No | Optional; default 5000. |
-| `title` | `string` | No | Optional; default . |
+| `title` | `string` | No | Optional. |
 
 **Returns**: `{"error":"...","id":"...","success":true}`
 
 ```js
-const result = await fb2k.invoke('ui.showNotification', { body: /* value */, silent: /* value */, timeout: /* value */, title: /* value */ });
+await fb2k.invoke('ui.showNotification', {
+    title: 'Now Playing',
+    body: 'Daft Punk - Digital Love',
+});
 ```
 
 ### ui.showToast
 
-Public API method. Runtime authority: `src/api/UiApi.cpp:337`.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `duration` | `integer` | No | Optional; default 3000. |
-| `message` | `string` | No | Optional; default . |
+| `message` | `string` | Yes | Toast text. |
 | `position` | `string` | No | Optional; default bottom-right. |
-| `type` | `string` | No | Optional; default info. |
+| `type` | `string` | No | `info` (default), `success`, `warning`, or `error`. |
 
 **Returns**: `{"error":"...","success":true}`
 
 ```js
-const result = await fb2k.invoke('ui.showToast', { duration: /* value */, message: /* value */, position: /* value */, type: /* value */ });
+await fb2k.invoke('ui.showToast', { message: 'Playlist saved', type: 'success' });
 ```
 
 ## Interaction delivery and limitations

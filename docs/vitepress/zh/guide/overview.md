@@ -13,7 +13,8 @@ v1.2.0 提供完整的 SMP 兼容层，包含：
 核心工作原理：通过「缓存 + 事件」将异步 API 包装为同步属性，以兼容 SMP 的同步语义。这是**最终一致性**模型（而非强一致），适合 UI 渲染场景；对于需要精确控制的事务性操作，应直接使用底层 `fb2k.invoke()` API。⚠️ SMP 的 GDI/GDI+ 绘图（`on_paint(gr)` 等）无法迁移，UI 渲染层需要用 HTML/CSS/Canvas 重写。→ [查看 SMP 兼容层完整文档](/zh/reference/smp-compat)
 :::
 
-## 主要特性 
+<a id="主要特性"></a>
+<a id="key-features"></a>
 
 ## API 分布 
 

@@ -16,8 +16,8 @@
   "items": [
     {
       "queueIndex": 0,
-      "path": "file://D:\\\\Music\\\\track.flac",
-      "absolutePath": "D:\\\\Music\\\\track.flac",
+      "path": "file://D:\\Music\\track.flac",
+      "absolutePath": "D:\\Music\\track.flac",
       "subsong": 0,
       "fileSize": 28456789,
       "title": "天ノ弱",

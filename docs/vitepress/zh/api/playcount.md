@@ -28,7 +28,7 @@ foo_playcount 播放统计数据查询。共 4 个 API。
 
 ```javascript
 const result = await fb2k.invoke('playcount.get', {
-    paths: ['C:\\\\Music\\\\song.flac']
+    paths: ['C:\\Music\\song.flac']
 });
 console.log(`播放次数: ${result.results[0].playCount}`);
 ```
@@ -46,7 +46,7 @@ console.log(`播放次数: ${result.results[0].playCount}`);
 
 ```javascript
 const result = await fb2k.invoke('playcount.getBatch', {
-    paths: ['C:\\\\Music\\\\a.flac', 'C:\\\\Music\\\\b.flac']
+    paths: ['C:\\Music\\a.flac', 'C:\\Music\\b.flac']
 });
 ```
 
@@ -93,11 +93,11 @@ console.log(`已播放: ${stats.playedTracks}/${stats.totalTracks}`);
 
 ```javascript
 // 注意：此 API 始终返回失败，评分请使用 rating.set
-const result = await fb2k.invoke('playcount.set', { path: 'E:\\\\Music\\\\song.flac' });
+const result = await fb2k.invoke('playcount.set', { path: 'E:\\Music\\song.flac' });
 console.log(result.error); // "Direct playcount modification not supported..."
 ```
 
-## Contract 说明
+## 使用说明
 
 - `playcount.get` 和 `playcount.getBatch` 都需要 `paths` 数组。每个有效结果含原始 `path`、`success`、`playCount` 和 `inLibrary`；`firstPlayed`、`lastPlayed`、`added` 和 `rating` 只会在 foo_playcount 提供有效值时出现。
 - 输入路径可以使用 `path|subsong:N`。handler 会分别解析文件路径和 subsong，并在对应结果项中保留原始路径。

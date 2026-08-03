@@ -32,7 +32,7 @@ const { result } = await fb.utils.formatTitle('%artist% - %title%');
 console.log(result); // "The Beatles - Let It Be"
 
 // Evaluate against a specific track
-const r2 = await fb.utils.formatTitle('%codec% %bitrate%kbps', 'E:\\\\Music\\\\song.flac');
+const r2 = await fb.utils.formatTitle('%codec% %bitrate%kbps', 'E:\\Music\\song.flac');
 ```
 
 ## getFileInfo(path)
@@ -44,7 +44,7 @@ Reads file metadata through `metadata.read` and returns its structured response.
 | path | string | Audio file path |
 
 ```javascript
-const info = await fb.utils.getFileInfo('E:\\\\Music\\\\song.flac');
+const info = await fb.utils.getFileInfo('E:\\Music\\song.flac');
 // {success, path, tags: {TITLE, ARTIST, ...}, info: {duration, bitrate, sampleRate, channels, codec}}
 ```
 

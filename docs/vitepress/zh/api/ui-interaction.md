@@ -76,7 +76,7 @@ fb2k.on('ui:menuItemClicked', (data) => {
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
 | `duration` | `integer` | 否 | 可选；默认 3000。 |
-| `message` | `string` | 否 | 可选；默认 。 |
+| `message` | `string` | 否 | 可选。 |
 | `position` | `string` | 否 | 可选；默认 bottom-right。 |
 | `type` | `string` | 否 | 可选；默认 info。 |
 
@@ -114,10 +114,10 @@ fb2k.on('ui:toast', (data) => {
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
-| `body` | `string` | 否 | 可选；默认 。 |
+| `body` | `string` | 否 | 可选。 |
 | `silent` | `boolean` | 否 | 可选；默认 false。 |
 | `timeout` | `integer` | 否 | 可选；默认 5000。 |
-| `title` | `string` | 否 | 可选；默认 。 |
+| `title` | `string` | 否 | 可选。 |
 
 **返回值**: `{ "success": true, "id": 1 }`
 
@@ -168,9 +168,9 @@ document.addEventListener('contextmenu', (e) => {
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
-| `action` | `string` | 否 | 可选；默认 。 |
+| `action` | `string` | 否 | 可选。 |
 | `global` | `boolean` | 否 | 可选；默认 true。 |
-| `key` | `string` | 否 | 可选；默认 。 |
+| `key` | `string` | 否 | 可选。 |
 
 **返回值**: `{ "success": true, "id": 1 }`
 
@@ -199,8 +199,8 @@ fb2k.on('keyboard:hotkey', (data) => {
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
-| `action` | `string` | 否 | 可选；默认 。 |
-| `key` | `string` | 否 | 可选；默认 。 |
+| `action` | `string` | 否 | 可选。 |
+| `key` | `string` | 否 | 可选。 |
 
 **返回值**: `{ "success": true }`
 
@@ -210,8 +210,8 @@ fb2k.on('keyboard:hotkey', (data) => {
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
-| `id` | `string` | 否 | 可选；默认 omitted。 |
-| `key` | `string` | 否 | 可选；默认 。 |
+| `id` | `string` | 否 | 可省略。 |
+| `key` | `string` | 否 | 可选。 |
 
 **返回值**: `{ "success": true }`
 
@@ -246,9 +246,9 @@ await fb2k.invoke('keyboard.unregisterHotkey', { key: 'Ctrl+Alt+Space' });
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
-| `accept` | `array` | 否 | 可选；默认 omitted。 |
+| `accept` | `array` | 否 | 可省略。 |
 | `event` | `string` | 否 | 可选；默认 dnd:drop。 |
-| `selector` | `string` | 否 | 可选；默认 。 |
+| `selector` | `string` | 否 | 可选。 |
 
 **返回值**:
 
@@ -287,7 +287,7 @@ fb2k.on('dnd:drop', (data) => {
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
-| `zoneId` | `string` | 否 | 可选；默认 。 |
+| `zoneId` | `string` | 否 | 可选。 |
 
 **返回值**: `{ "success": true, "zoneId": "dropzone_1", "script": "..." }`
 
@@ -297,13 +297,15 @@ fb2k.on('dnd:drop', (data) => {
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
-| `data` | `string` | 否 | 可选；默认 。 |
+| `data` | `string` | 否 | 可选。 |
 | `paths` | `array` | 是 | 必填。 |
 | `type` | `string` | 否 | 可选；默认 text。 |
 
 **返回值**: `{"note":"...","success":true,"trackCount":"...","type":"..."}`
 
-::: tip注意 原生拖拽操作需要 OLE drag-drop 实现。对于 tracks/files 类型，建议使用 `playlist.add` 或文件选择对话框代替。 :::
+::: tip 注意
+原生拖拽操作需要 OLE drag-drop 实现。对于 tracks/files 类型，建议使用 `playlist.add` 或文件选择对话框代替。
+:::
 
 ### dnd.getDropZones
 

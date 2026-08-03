@@ -49,7 +49,7 @@
 
 ```json
 {
-  "id": "D:\\\\Music\\\\164\\\\天ノ弱.flac",
+  "id": "D:\\Music\\164\\天ノ弱.flac",
   "title": "天ノ弱",
   "artist": "164 feat. GUMI",
   "album": "天ノ弱",
@@ -59,9 +59,9 @@
   "trackNumber": 1,
   "discNumber": 1,
   "duration": 263.5,
-  "path": "file://D:\\\\Music\\\\164\\\\天ノ弱.flac",
-  "absolutePath": "D:\\\\Music\\\\164\\\\天ノ弱.flac",
-  "fullPath": "D:\\\\Music\\\\164\\\\天ノ弱.flac",
+  "path": "file://D:\\Music\\164\\天ノ弱.flac",
+  "absolutePath": "D:\\Music\\164\\天ノ弱.flac",
+  "fullPath": "D:\\Music\\164\\天ノ弱.flac",
   "subsong": 0,
   "fileSize": 28456789,
   "bitrate": 876,
@@ -113,7 +113,7 @@
   "position": 45.2,
   "duration": 263.5,
   "subsong": 0,
-  "path": "D:\\\\Music\\\\164\\\\天ノ弱.flac"
+  "path": "D:\\Music\\164\\天ノ弱.flac"
 }
 ```
 

@@ -108,7 +108,7 @@ Generates a complete file waveform with background decoding, caching, and asynch
 
 ```javascript
 // Basic usage; resolves immediately on a cache hit
-const result = await fb.audio.generateFullWaveform('E:\\\\Music\\\\song.flac', {
+const result = await fb.audio.generateFullWaveform('E:\\Music\\song.flac', {
     resolution: 256,
     method: 'peak'
 });
@@ -118,18 +118,18 @@ console.log('Duration:', result.duration);
 console.log('From cache:', result.cached);
 
 // Subsong path form
-const result2 = await fb.audio.generateFullWaveform('E:\\\\Music\\\\disc.flac|subsong:2', {
+const result2 = await fb.audio.generateFullWaveform('E:\\Music\\disc.flac|subsong:2', {
     resolution: 512
 });
 
 // cueIndex takes precedence over a subsong suffix
-const result3 = await fb.audio.generateFullWaveform('E:\\\\Music\\\\album.cue', {
+const result3 = await fb.audio.generateFullWaveform('E:\\Music\\album.cue', {
     cueIndex: 3,
     resolution: 256
 });
 
 // RMS mode produces a smoother energy envelope
-const result4 = await fb.audio.generateFullWaveform('E:\\\\Music\\\\song.flac', {
+const result4 = await fb.audio.generateFullWaveform('E:\\Music\\song.flac', {
     resolution: 512,
     method: 'rms'
 });
@@ -164,11 +164,11 @@ Analyzes a file's BPM and returns `{ bpm }`.
 | options.forceAnalysis | boolean | Force analysis instead of using an existing BPM tag. Defaults to `false` |
 
 ```javascript
-const result = await fb.audio.analyzeBPM('E:\\\\Music\\\\song.flac');
+const result = await fb.audio.analyzeBPM('E:\\Music\\song.flac');
 console.log(`BPM: ${result.bpm}`);
 
 // Force a fresh analysis
-const result2 = await fb.audio.analyzeBPM('E:\\\\Music\\\\song.flac', { forceAnalysis: true });
+const result2 = await fb.audio.analyzeBPM('E:\\Music\\song.flac', { forceAnalysis: true });
 ```
 
 ## setChannelMode(mode)

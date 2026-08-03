@@ -2,7 +2,6 @@
 
 Bridge connectivity helpers registered beside the playback family.
 
-Runtime authority: `src/api/PlaybackApi.cpp`.
 
 ## test.echo
 

@@ -2,7 +2,6 @@
 
 用于测试 Bridge 通信是否正常的工具 API。
 
-运行时权威：`src/api/PlaybackApi.cpp`。
 
 ## test.echo
 

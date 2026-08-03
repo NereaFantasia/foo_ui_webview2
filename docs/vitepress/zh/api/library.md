@@ -149,7 +149,7 @@ const page = await fb2k.invoke('library.getAll', { start: 0, count: 50 });
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
-| `path` | `string` | 否 | 可选；默认 。 |
+| `path` | `string` | 否 | 可选。 |
 
 
 **返回值**: `{"absolutePath":"...","album":"...","artist":"...","date":"...","duration":"...","found":true,"genre":"...","path":"...","success":true,"title":"...","trackNumber":"..."}`
@@ -160,7 +160,7 @@ const page = await fb2k.invoke('library.getAll', { start: 0, count: 50 });
 {
     "found": true,
     "path": "file://C:/Music/song.flac",
-    "absolutePath": "C:\\\\Music\\\\song.flac",
+    "absolutePath": "C:\\Music\\song.flac",
     "title": "Song Title",
     "artist": "Artist",
     "album": "Album",
@@ -174,7 +174,7 @@ const page = await fb2k.invoke('library.getAll', { start: 0, count: 50 });
 **返回值（未找到时）**: `{ "found": false, "path": "..." }`
 
 ```javascript
-const result = await fb2k.invoke('library.getByPath', { path: 'C:\\\\Music\\\\song.flac' });
+const result = await fb2k.invoke('library.getByPath', { path: 'C:\\Music\\song.flac' });
 if (result.found) {
     console.log(`找到: ${result.title} - ${result.artist}`);
 }
@@ -191,7 +191,7 @@ if (result.found) {
 | `includeTracks` | `boolean` | 否 | 可选；默认 false。 |
 | `limit` | `integer` | 否 | 可选；默认 100。 |
 | `offset` | `integer` | 否 | 可选；默认 0。 |
-| `query` | `string` | 否 | 可选；默认 。 |
+| `query` | `string` | 否 | 可选。 |
 | `sort` | `string` | 否 | 可选；默认 name。 |
 | `useCache` | `boolean` | 否 | 可选；默认 true。 |
 
@@ -223,8 +223,8 @@ const results = await fb2k.invoke('library.getAlbums', { query: 'Beatles' });
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
-| `album` | `string` | 否 | 可选；默认 。 |
-| `artist` | `string` | 否 | 可选；默认 。 |
+| `album` | `string` | 否 | 可选。 |
+| `artist` | `string` | 否 | 可选。 |
 
 **返回值**: `{"album":"...","artist":"...","items":[],"success":true,"total":"...","tracks":[]}`
 
@@ -260,7 +260,7 @@ const artists = await fb2k.invoke('library.getArtists', { sort: 'trackCount' });
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
-| `artist` | `string` | 否 | 可选；默认 。 |
+| `artist` | `string` | 否 | 可选。 |
 | `limit` | `integer` | 否 | 可选；默认 500。 |
 
 **返回值**: `{"artist":"...","count":0,"items":[],"success":true,"total":"...","tracks":[]}`
@@ -278,7 +278,7 @@ const { items } = await fb2k.invoke('library.getArtistTracks', { artist: 'The Be
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
-| `artist` | `string` | 否 | 可选；默认 。 |
+| `artist` | `string` | 否 | 可选。 |
 | `limit` | `integer` | 否 | 可选；默认 100。 |
 
 **返回值**:
@@ -415,7 +415,7 @@ for (const root of roots) {
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
 | `includeFiles` | `boolean` | 否 | 可选；默认 false。 |
-| `pathId` | `string` | 否 | 可选；默认 。 |
+| `pathId` | `string` | 否 | 可选。 |
 | `recursiveFiles` | `boolean` | 否 | 可选；默认 false。 |
 | `rootId` | `string` | 是 | 必填。 |
 
@@ -473,7 +473,7 @@ const sub = await fb2k.invoke('library.browseTree', {
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
 | `includeFiles` | `boolean` | 否 | 可选；默认 true。 |
-| `path` | `string` | 否 | 可选；默认 。 |
+| `path` | `string` | 否 | 可选。 |
 
 **返回值**:
 
@@ -502,7 +502,7 @@ const root = await fb2k.invoke('library.browseDirectory', { includeFiles: false 
 | --- | --- | --- | --- |
 | `limit` | `integer` | 否 | 可选；默认 100。 |
 | `offset` | `integer` | 否 | 可选；默认 0。 |
-| `query` | `string` | 否 | 可选；默认 。 |
+| `query` | `string` | 否 | 可选。 |
 
 **返回值**: `{"error":"...","hasMore":true,"items":[],"limit":"...","offset":"...","success":true,"total":"...","tracks":[]}`
 
@@ -530,8 +530,8 @@ const page2 = await fb2k.invoke('library.search', { query: 'rock', offset: 100, 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
 | `limit` | `integer` | 否 | 可选；默认 100。 |
-| `query` | `string` | 否 | 可选；默认 。 |
-| `sort` | `string` | 否 | 可选；默认 。 |
+| `query` | `string` | 否 | 可选。 |
+| `sort` | `string` | 否 | 可选。 |
 
 **返回值**:
 
@@ -647,34 +647,40 @@ const albums = await fb2k.invoke('library.getAlbums', { useCache: true });
 | library:initialized | 媒体库初始化完成 | { timestamp } |
 
 ```javascript
-fb2k.on('library:itemsAdded', (data) => {
+fb2k.on('library:itemsAdded', async (data) => {
     console.log(`新增 ${data.count} 首曲目`);
     // 缓存已自动失效，重新加载数据
     await fb2k.invoke('library.getStats');
 });
 ```
 
-## 补充的公开 API
+## 其他公开 API
 
-以下章节按 `RegisterApi` 动态补齐，参数键来自 C++ handler 静态提取。
 
 ### library.getFieldValues
 
-公开 API。运行时权威：`src/api/LibraryApi.cpp:1976`。
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
-| `field` | `string` | 否 | 可选；默认 。 |
+| `field` | `string` | 是 | 要统计的元数据字段名，缺失时返回 `field is required`。 |
 | `limit` | `integer` | 否 | 可选；默认 5000。 |
-| `separator` | `string` | 否 | 可选；默认 。 |
+| `separator` | `string` | 否 | 可选。用于把单个字段值再拆分为多个值，例如 `;`。 |
 
 **返回值**: `{"error":"...","field":"...","success":true,"total":"...","values":"..."}`
 
 ```js
-const result = await fb2k.invoke('library.getFieldValues', { field: /* value */, limit: /* value */, separator: /* value */ });
+// 最小调用：只传必填的 field
+const { values } = await fb2k.invoke('library.getFieldValues', { field: 'genre' });
+
+// 多值字段可用 separator 拆分，并限制返回条数
+const { values: artists } = await fb2k.invoke('library.getFieldValues', {
+    field: 'artist',
+    separator: ';',
+    limit: 50
+});
 ```
 
-## Contract 说明
+## 使用说明
 
 - `library.getAll` 可使用 `start` 或 `offset`，也可使用 `count` 或 `limit`；同一组同时提供时，`start` 和 `count` 优先。四个默认值依次为 `0`、`0`、`100`、`100`，`useCache` 默认是 `true`。
 - `asyncResult` 默认是 `false`。完整媒体库请求启用该项后，立即返回 `{ pending, requestId }`；完成后的 `{ requestId, tracks, items, total, offset, limit, fromCache }` 会通过 `library:getAllResult` 发送给发起调用的 WebView。
@@ -685,7 +691,7 @@ const result = await fb2k.invoke('library.getFieldValues', { field: /* value */,
 
 ## 媒体库事件 Contract
 
-四个事件均广播到每个 WebView，权威源为 `src/callbacks/LibraryCallback.cpp`。
+四个事件均广播到每个 WebView。
 
 | 事件 | Payload |
 | --- | --- |

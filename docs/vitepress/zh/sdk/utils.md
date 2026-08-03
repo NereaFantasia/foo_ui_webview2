@@ -22,7 +22,7 @@ const r = await fb.utils.formatTitle('%artist% - %title%');
 console.log(r); // "The Beatles - Let It Be"
 
 // 指定曲目
-const r2 = await fb.utils.formatTitle('%codec% %bitrate%kbps', 'E:\\\\Music\\\\song.flac');
+const r2 = await fb.utils.formatTitle('%codec% %bitrate%kbps', 'E:\\Music\\song.flac');
 ```
 
 ## getFileInfo(path) 
@@ -34,7 +34,7 @@ const r2 = await fb.utils.formatTitle('%codec% %bitrate%kbps', 'E:\\\\Music\\\\s
 | path | string | 音频文件路径 |
 
 ```javascript
-const info = await fb.utils.getFileInfo('E:\\\\Music\\\\song.flac');
+const info = await fb.utils.getFileInfo('E:\\Music\\song.flac');
 // {success, path, tags: {TITLE, ARTIST, ...}, info: {duration, bitrate, sampleRate, channels, codec}}
 ```
 

@@ -16,7 +16,6 @@
 需要安装 [foo_playcount](https://www.foobar2000.org/components/view/foo_playcount) 插件才能获得 stats 后端评分。
 :::
 
-运行时权威：`src/api/MetadataApi.cpp`（`rating.set`）。
 
 ## rating.get
 
@@ -43,7 +42,6 @@
 | `rating` | number | `0`-`5`，`0`=未评分 |
 | `storage` | string | `"stats"`（来自 foo_playcount）或 `"file"`（来自文件标签） |
 
-运行时权威：`src/api/MetadataApi.cpp`（`rating.get`）。
 
 ## playcount.get
 

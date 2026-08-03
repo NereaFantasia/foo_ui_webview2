@@ -8,21 +8,21 @@ This page is the primary owner for the namespaces listed below. Method names, pa
 
 ### playcount.get
 
-Public API method. Runtime authority: `src/api/PlaycountApi.cpp:251`.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `paths` | `array` | Yes | Required. |
+| `paths` | `array` | Yes | File path list. Entries may use `path|subsong:N`. |
 
 **Returns**: `{"count":"...","error":"...","results":"...","success":true}`
 
 ```js
-const result = await fb2k.invoke('playcount.get', { paths: /* value */ });
+const { results } = await fb2k.invoke('playcount.get', {
+    paths: ['C:\\Music\\song.flac']
+});
 ```
 
 ### playcount.getBatch
 
-Public API method. Runtime authority: `src/api/PlaycountApi.cpp:254`.
 
 Alias of `playcount.get`; the handler forwards the same public payload.
 
@@ -38,7 +38,6 @@ const result = await fb2k.invoke('playcount.getBatch', { paths: ['C:\\Music\\son
 
 ### playcount.getStats
 
-Public API method. Runtime authority: `src/api/PlaycountApi.cpp:260`.
 
 _No parameters._
 
@@ -50,19 +49,18 @@ const result = await fb2k.invoke('playcount.getStats');
 
 ### playcount.set
 
-Public API method. Runtime authority: `src/api/PlaycountApi.cpp:257`.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `path` | `string` | Yes | Required. |
+| `path` | `string` | Yes | Target file path. Accepted but never applied — see the usage notes. |
 
 **Returns**: `{"error":"...","success":true}`
 
 ```js
-const result = await fb2k.invoke('playcount.set', { path: /* value */ });
+const result = await fb2k.invoke('playcount.set', { path: 'C:\\Music\\song.flac' });
 ```
 
-## Contract notes
+## Usage notes
 
 - `playcount.get` and `playcount.getBatch` require a `paths` array. Each valid result contains its original `path`, `success`, `playCount`, and `inLibrary`; `firstPlayed`, `lastPlayed`, `added`, and `rating` are included only when foo_playcount provides usable values.
 - Input paths may use `path|subsong:N`. The handler resolves the file path and subsong separately, then preserves the original path in the corresponding result item.

@@ -10,8 +10,8 @@
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
-| `default` | `json` | 否 | 可选；默认 omitted。 |
-| `key` | `string` | 否 | 可选；默认 。 |
+| `default` | `json` | 否 | 可省略。 |
+| `key` | `string` | 否 | 可选。 |
 
 **返回值**: `{ "success": true, "key": "theme", "value": "dark", "found": true }`
 
@@ -27,7 +27,7 @@ const theme = await fb2k.invoke('config.get', { key: 'theme', default: 'light' }
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
-| `key` | `string` | 否 | 可选；默认 。 |
+| `key` | `string` | 否 | 可选。 |
 | `value` | `json` | 是 | 必填。 |
 
 **返回值**: `{ "success": true, "key": "volume" }`
@@ -42,7 +42,7 @@ await fb2k.invoke('config.set', { key: 'volume', value: 0.8 });
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
-| `key` | `string` | 否 | 可选；默认 。 |
+| `key` | `string` | 否 | 可选。 |
 
 **返回值**: `{ "success": true, "key": "theme", "existed": true }`
 
@@ -110,7 +110,7 @@ localStorage.setItem('fb2k_backup', exported.json);
         "name": "foo_ui_webview2",
         "version": "1.0.0"
     },
-    "profilePath": "C:\\\\Users\\\\user\\\\AppData\\\\Roaming\\\\foobar2000-v2"
+    "profilePath": "C:\\Users\\user\\AppData\\Roaming\\foobar2000-v2"
 }
 ```
 
@@ -172,8 +172,8 @@ console.log(`当前输出: ${current.name}`);
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
-| `deviceId` | `string` | 否 | 可选；默认 。 |
-| `outputId` | `string` | 否 | 可选；默认 。 |
+| `deviceId` | `string` | 否 | 可选。 |
+| `outputId` | `string` | 否 | 可选。 |
 
 
 **返回值**: `{"success":true}`
@@ -222,7 +222,7 @@ await fb2k.invoke('config.setOutputDevice', { outputId: '{...}', deviceId: '{...
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
-| `parentGuid` | `string` | 否 | 可选；默认 。 |
+| `parentGuid` | `string` | 否 | 可选。 |
 
 **返回值**: 数组，每个元素包含 `name`、`guid`、`type`（`"branch"`/`"checkbox"`/`"radio"`/`"string"`/`"integer"`）、`value`、`children`（分支时）。
 
@@ -232,7 +232,7 @@ await fb2k.invoke('config.setOutputDevice', { outputId: '{...}', deviceId: '{...
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
-| `guid` | `string` | 否 | 可选；默认 。 |
+| `guid` | `string` | 否 | 可选。 |
 
 **返回值**: `{ "name": "...", "guid": "...", "type": "checkbox", "value": true }`
 
@@ -242,7 +242,7 @@ await fb2k.invoke('config.setOutputDevice', { outputId: '{...}', deviceId: '{...
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
-| `guid` | `string` | 否 | 可选；默认 。 |
+| `guid` | `string` | 否 | 可选。 |
 | `value` | `boolean` | 是 | 必填。 |
 
 **返回值**: `{ "success": true }`
@@ -253,7 +253,7 @@ await fb2k.invoke('config.setOutputDevice', { outputId: '{...}', deviceId: '{...
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
-| `guid` | `string` | 否 | 可选；默认 。 |
+| `guid` | `string` | 否 | 可选。 |
 
 **返回值**: `{ "success": true }`
 
@@ -441,151 +441,17 @@ presets.forEach(p => console.log(`${p.index}: ${p.name}`));
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
 | `mode` | `integer` | 否 | 可选；默认 -1。 |
-| `sourceMode` | `string` | 否 | 可选；默认 omitted。 |
+| `sourceMode` | `string` | 否 | 可省略。 |
 | `value` | `integer` | 否 | 可选；默认 -1。 |
+
+**返回值**: `{ "success": true, "mode": 1, "value": 1 }`
+
+`sourceMode` 传入无法识别的字符串时返回 `{ "error": "...", "code": "INVALID_PARAMS" }`——该分支**完全不含** `success` 键，因此不要用 `result.success === false` 判断失败。负数 `mode` 会静默按 `none`（0）处理并报告成功；大于 3 的数值不会被校验，原样写入并回显。
 
 ```javascript
 await fb2k.invoke('config.setReplaygainMode', { mode: 1 });
 // 或
 await fb2k.invoke('config.setReplaygainMode', { sourceMode: 'track' });
-```
-
-## 合同补充
-
-以下章节补齐严格参数审计发现的公开 contract；不会改变前文的已有说明。
-
-<!-- phase3-supplement:config.set -->
-### Contract 补充：`config.set`
-
-经复核的补充 contract。权威源：`src/api/ConfigApi.cpp:821-840`。
-
-| 参数 | 类型 | 必填 | 默认值 | 说明 |
-| --- | --- | --- | --- | --- |
-| `key` | `string` | 否 | `` | 可选；默认 。 |
-| `value` | `json` | 是 | 无 | 必填。 |
-
-#### 返回字段
-
-| 字段 | 类型 | 可选 |
-| --- | --- | --- |
-| `error` | `string` | 是 |
-| `success` | `boolean` | 否 |
-| `key` | `json` | 否 |
-
-语义：省略可选参数时使用 handler 默认值；失败分支及错误字段以该源文件为准。
-
-```js
-const result = await fb2k.invoke('config.set', { key: /* value */, value: /* value */ });
-```
-<!-- phase3-supplement:config.setAdvancedConfigValue -->
-### Contract 补充：`config.setAdvancedConfigValue`
-
-经复核的补充 contract。权威源：`src/api/ConfigApi.cpp:321-387`。
-
-| 参数 | 类型 | 必填 | 默认值 | 说明 |
-| --- | --- | --- | --- | --- |
-| `guid` | `string` | 否 | `` | 可选；默认 。 |
-| `value` | `boolean` | 是 | 无 | 必填。 |
-
-#### 返回字段
-
-| 字段 | 类型 | 可选 |
-| --- | --- | --- |
-
-语义：省略可选参数时使用 handler 默认值；失败分支及错误字段以该源文件为准。
-
-```js
-const result = await fb2k.invoke('config.setAdvancedConfigValue', { guid: /* value */, value: /* value */ });
-```
-<!-- phase3-supplement:config.setCursorFollowPlayback -->
-### Contract 补充：`config.setCursorFollowPlayback`
-
-经复核的补充 contract。权威源：`src/api/ConfigApi.cpp:689-697`。
-
-| 参数 | 类型 | 必填 | 默认值 | 说明 |
-| --- | --- | --- | --- | --- |
-| `enabled` | `boolean` | 否 | `false` | 可选；默认 false。 |
-| `value` | `boolean` | 否 | `false` | 可选；默认 false。 |
-
-#### 返回字段
-
-| 字段 | 类型 | 可选 |
-| --- | --- | --- |
-| `enabled` | `json` | 否 |
-| `success` | `boolean` | 否 |
-
-语义：省略可选参数时使用 handler 默认值；失败分支及错误字段以该源文件为准。
-
-```js
-const result = await fb2k.invoke('config.setCursorFollowPlayback', { enabled: /* value */, value: /* value */ });
-```
-<!-- phase3-supplement:config.setOutputBuffer -->
-### Contract 补充：`config.setOutputBuffer`
-
-经复核的补充 contract。权威源：`src/api/ConfigApi.cpp:138-164`。
-
-| 参数 | 类型 | 必填 | 默认值 | 说明 |
-| --- | --- | --- | --- | --- |
-| `bufferLength` | `number` | 否 | `0` | 可选；默认 0。 |
-| `milliseconds` | `number` | 否 | `0` | 可选；默认 0。 |
-
-#### 返回字段
-
-| 字段 | 类型 | 可选 |
-| --- | --- | --- |
-
-语义：省略可选参数时使用 handler 默认值；失败分支及错误字段以该源文件为准。
-
-```js
-const result = await fb2k.invoke('config.setOutputBuffer', { bufferLength: /* value */, milliseconds: /* value */ });
-```
-<!-- phase3-supplement:config.setPlaybackFollowCursor -->
-### Contract 补充：`config.setPlaybackFollowCursor`
-
-经复核的补充 contract。权威源：`src/api/ConfigApi.cpp:702-710`。
-
-| 参数 | 类型 | 必填 | 默认值 | 说明 |
-| --- | --- | --- | --- | --- |
-| `enabled` | `boolean` | 否 | `false` | 可选；默认 false。 |
-| `value` | `boolean` | 否 | `false` | 可选；默认 false。 |
-
-#### 返回字段
-
-| 字段 | 类型 | 可选 |
-| --- | --- | --- |
-| `enabled` | `json` | 否 |
-| `success` | `boolean` | 否 |
-
-语义：省略可选参数时使用 handler 默认值；失败分支及错误字段以该源文件为准。
-
-```js
-const result = await fb2k.invoke('config.setPlaybackFollowCursor', { enabled: /* value */, value: /* value */ });
-```
-<!-- phase3-supplement:config.setReplaygainMode -->
-### Contract 补充：`config.setReplaygainMode`
-
-经复核的补充 contract。权威源：`src/api/ConfigApi.cpp:720-744`。
-
-| 参数 | 类型 | 必填 | 默认值 | 说明 |
-| --- | --- | --- | --- | --- |
-| `mode` | `integer` | 否 | `-1` | 可选；默认 -1。 |
-| `sourceMode` | `string` | 否 | 可省略 | 可选；默认 omitted。 |
-| `value` | `integer` | 否 | `-1` | 可选；默认 -1。 |
-
-#### 返回字段
-
-| 字段 | 类型 | 可选 |
-| --- | --- | --- |
-| `code` | `string` | 是 |
-| `error` | `string` | 是 |
-| `mode` | `json` | 否 |
-| `success` | `boolean` | 否 |
-| `value` | `json` | 否 |
-
-语义：省略可选参数时使用 handler 默认值；失败分支及错误字段以该源文件为准。
-
-```js
-const result = await fb2k.invoke('config.setReplaygainMode', { mode: /* value */, sourceMode: /* value */, value: /* value */ });
 ```
 
 ## 存储与偏好设置语义

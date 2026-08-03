@@ -15,7 +15,7 @@
 | 参数 | 类型 | 必填 | 默认值 | 说明 |
 | --- | --- | --- | --- | --- |
 | `format` | `string` | 否 | `any` | 可选；默认 any。 |
-| `path` | `string` | 否 | `` | 可选；默认 。 |
+| `path` | `string` | 否 | — | 可选。 |
 | `source` | `string` | 否 | `any` | 可选；默认 any。 |
 | `type` | `string` | 否 | `any` | 可选；默认 any。 |
 
@@ -64,7 +64,7 @@ const syncedOnly = await fb.lyrics.get(undefined, { type: 'synced' });
 
 | 参数 | 类型 | 必填 | 默认值 | 说明 |
 | --- | --- | --- | --- | --- |
-| `path` | `string` | 否 | `` | 可选；默认 。 |
+| `path` | `string` | 否 | — | 可选。 |
 
 
 **返回值**: `{"exists":"...","sources":"..."}`
@@ -79,13 +79,13 @@ const syncedOnly = await fb.lyrics.get(undefined, { type: 'synced' });
 ### 示例
 
 ```javascript
-const result = await fb2k.invoke('lyrics.exists', { path: 'C:\\\\Music\\\\song.flac' });
+const result = await fb2k.invoke('lyrics.exists', { path: 'C:\\Music\\song.flac' });
 if (result.exists) {
     console.log('歌词来源:', result.sources);
 }
 
 // SDK 封装
-const check = await fb.lyrics.exists('C:\\\\Music\\\\song.flac');
+const check = await fb.lyrics.exists('C:\\Music\\song.flac');
 ```
 
 ## lyrics.save
@@ -96,10 +96,10 @@ const check = await fb.lyrics.exists('C:\\\\Music\\\\song.flac');
 
 | 参数 | 类型 | 必填 | 默认值 | 说明 |
 | --- | --- | --- | --- | --- |
-| `filename` | `string` | 否 | `` | 可选；默认 。 |
+| `filename` | `string` | 否 | — | 可选。 |
 | `format` | `string` | 否 | `lrc` | 可选；默认 lrc。 |
-| `lyrics` | `string` | 否 | `` | 可选；默认 。 |
-| `path` | `string` | 否 | `` | 可选；默认 。 |
+| `lyrics` | `string` | 否 | — | 可选。 |
+| `path` | `string` | 否 | — | 可选。 |
 | `tagName` | `string` | 否 | `LYRICS` | 可选；默认 LYRICS。 |
 | `target` | `array` | 否 | `file` | 可选；默认 file。 |
 
@@ -140,14 +140,14 @@ const check = await fb.lyrics.exists('C:\\\\Music\\\\song.flac');
 ```javascript
 // 保存到 .lrc 文件（向后兼容）
 const result = await fb2k.invoke('lyrics.save', {
-    path: 'C:\\\\Music\\\\song.flac',
+    path: 'C:\\Music\\song.flac',
     lyrics: '[00:01.00]Hello world\\n[00:05.00]Second line',
     target: 'file'
 });
 
 // 嵌入到音频标签
 await fb2k.invoke('lyrics.save', {
-    path: 'C:\\\\Music\\\\song.flac',
+    path: 'C:\\Music\\song.flac',
     lyrics: '[00:01.00]Hello world',
     target: 'embedded',
     tagName: 'SYNCEDLYRICS'
@@ -155,27 +155,27 @@ await fb2k.invoke('lyrics.save', {
 
 // 保存到配置文件夹 (%profile%\\lyrics\\)
 await fb2k.invoke('lyrics.save', {
-    path: 'C:\\\\Music\\\\song.flac',
+    path: 'C:\\Music\\song.flac',
     lyrics: '[00:01.00]Hello world',
     target: 'config'
 });
 
 // 三合一：同时写入文件、标签和配置文件夹
 const all = await fb2k.invoke('lyrics.save', {
-    path: 'C:\\\\Music\\\\song.flac',
+    path: 'C:\\Music\\song.flac',
     lyrics: '[00:01.00]Hello world',
     target: 'all'
 });
 
 // 数组形式：只写文件和配置文件夹
 await fb2k.invoke('lyrics.save', {
-    path: 'C:\\\\Music\\\\song.flac',
+    path: 'C:\\Music\\song.flac',
     lyrics: '[00:01.00]Hello world',
     target: ['file', 'config']
 });
 
 // SDK 封装
-await fb.lyrics.save('C:\\\\Music\\\\song.flac', lyricsText, { target: 'all' });
+await fb.lyrics.save('C:\\Music\\song.flac', lyricsText, { target: 'all' });
 ```
 
 ## 容器格式（CUE / ISO / 多子轨文件）
@@ -206,7 +206,7 @@ await fb.lyrics.save('C:\\\\Music\\\\song.flac', lyricsText, { target: 'all' });
 ```javascript
 // CUE 第 3 轨（subsong=2）保存歌词到文件
 await fb2k.invoke('lyrics.save', {
-    path: 'D:\\\\album.flac|subsong:2',
+    path: 'D:\\album.flac|subsong:2',
     lyrics: '[00:01.00]Track 3 lyrics',
     target: 'file'
 });
@@ -214,7 +214,7 @@ await fb2k.invoke('lyrics.save', {
 
 // SACD ISO 第 2 轨保存歌词
 await fb2k.invoke('lyrics.save', {
-    path: 'D:\\\\SACD.iso|subsong:1',
+    path: 'D:\\SACD.iso|subsong:1',
     lyrics: '[00:01.00]Track 2 lyrics',
     target: 'file'
 });
@@ -222,7 +222,7 @@ await fb2k.invoke('lyrics.save', {
 
 // 读取时优先 per-track，回退到共享
 const result = await fb2k.invoke('lyrics.get', {
-    path: 'D:\\\\album.flac|subsong:2'
+    path: 'D:\\album.flac|subsong:2'
 });
 // sourcePath 为 "D:\\album.03.lrc"（若存在），否则回退到 "D:\\album.lrc"
 ```
@@ -232,7 +232,7 @@ const result = await fb2k.invoke('lyrics.get', {
 - [`artwork.getLyrics`](/zh/api/artwork#artwork-getlyrics) — 仅从内嵌标签读取歌词（不查外部文件）
 - [`<fb-lyrics-panel>`](/zh/components/media) — 歌词面板 Web Component，自动加载和同步高亮
 
-## Contract 说明
+## 使用说明
 
 - `lyrics.get` 提供 `path` 时使用该路径，否则解析当前播放曲目。`source`、`type` 和 `format` 默认均为 `any`；成功结果包含 `success`、`available` 和 `path`，找到歌词时还包含 `source`、`lyrics` 和 `synced`，文件来源额外包含 `sourcePath`。
 - 对 `path|subsong:N` 容器路径，文件读取会先检查 per-track sidecar，再检查共享 sidecar。`lyrics.exists` 返回 `file:song.lrc` 这类来源标签，缺失 `path` 不会回退为当前播放曲目。

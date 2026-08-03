@@ -20,7 +20,7 @@
 ```json
 {
   "success": true,
-  "path": "D:\\\\Music\\\\track.flac",
+  "path": "D:\\Music\\track.flac",
   "tags": {
     "TITLE": "天ノ弱",
     "ARTIST": "164 feat. GUMI",
@@ -186,7 +186,7 @@
 ```json
 {
   "success": true,
-  "path": "D:\\\\Music\\\\track.flac",
+  "path": "D:\\Music\\track.flac",
   "rating": 4,
   "storage": "stats"
 }

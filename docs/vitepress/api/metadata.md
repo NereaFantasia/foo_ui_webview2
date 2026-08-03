@@ -26,12 +26,11 @@ to omitting it.
 
 ### metadata.embedArtwork
 
-Public API method. Runtime authority: `src/api/MetadataApi.cpp:1675`.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `filename` | `string` | No | Optional; default . |
-| `imageData` | `string` | No | Optional; default . |
+| `filename` | `string` | No | Optional; default empty. Only used by the `file` target to name the sidecar image. |
+| `imageData` | `string` | Yes | Raw Base64 image bytes, without a Data URL header or `base64:` marker. |
 | `path` | `string` | Yes | Required. |
 | `target` | `array` | No | Optional; default embedded. |
 | `type` | `string` | No | Optional; default front. |
@@ -39,12 +38,14 @@ Public API method. Runtime authority: `src/api/MetadataApi.cpp:1675`.
 **Returns**: `{"error":"...","path":"...","results":"...","success":true,"type":"..."}`
 
 ```js
-const result = await fb2k.invoke('metadata.embedArtwork', { filename: /* value */, imageData: /* value */, path: /* value */, target: /* value */, type: /* value */ });
+await fb2k.invoke('metadata.embedArtwork', {
+	path: 'C:\\Music\\song.flac',
+	imageData: base64Jpeg,
+});
 ```
 
 ### metadata.read
 
-Public API method. Runtime authority: `src/api/MetadataApi.cpp:1657`.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
@@ -54,14 +55,15 @@ Public API method. Runtime authority: `src/api/MetadataApi.cpp:1657`.
 **Returns**: `{"error":"...","info":"...","path":"...","success":true,"tags":"..."}`
 
 ```js
-const result = await fb2k.invoke('metadata.read', { path: /* value */ });
+const { tags, info } = await fb2k.invoke('metadata.read', {
+	path: 'C:\\Music\\song.flac',
+});
 ```
 
 See [Addressing a track inside a container](#subsong-addressing) for CUE sheets, ISO images, and other multi-track files.
 
 ### metadata.readBatch
 
-Public API method. Runtime authority: `src/api/MetadataApi.cpp:1666`.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
@@ -70,14 +72,15 @@ Public API method. Runtime authority: `src/api/MetadataApi.cpp:1666`.
 **Returns**: `{"error":"...","errorCount":"...","results":"...","success":true,"successCount":"...","total":"..."}`
 
 ```js
-const result = await fb2k.invoke('metadata.readBatch', { paths: /* value */ });
+const { results } = await fb2k.invoke('metadata.readBatch', {
+	paths: ['C:\\Music\\song.flac', 'D:\\album.cue|subsong:2'],
+});
 ```
 
 Each entry is resolved independently, so a batch may mix plain file paths and `container|subsong:N` references. There is no batch-wide `cueIndex`; put the index in each path.
 
 ### metadata.readByPath
 
-Public API method. Runtime authority: `src/api/MetadataApi.cpp:1660`.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
@@ -87,12 +90,13 @@ Public API method. Runtime authority: `src/api/MetadataApi.cpp:1660`.
 **Returns**: `{"TRACKNUMBER":"...","canonicalPath":"...","error":"...","path":"...","success":true}`
 
 ```js
-const result = await fb2k.invoke('metadata.readByPath', { path: /* value */ });
+const result = await fb2k.invoke('metadata.readByPath', {
+	path: 'C:\\Music\\song.flac',
+});
 ```
 
 ### metadata.readRaw
 
-Public API method. Runtime authority: `src/api/MetadataApi.cpp:1663`.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
@@ -102,28 +106,31 @@ Public API method. Runtime authority: `src/api/MetadataApi.cpp:1663`.
 **Returns**: `{"error":"...","info":"...","path":"...","source":"...","success":true,"tags":"..."}`
 
 ```js
-const result = await fb2k.invoke('metadata.readRaw', { cueIndex: /* value */, path: /* value */ });
+const { tags } = await fb2k.invoke('metadata.readRaw', {
+	path: 'C:\\Music\\song.flac',
+});
 ```
 
 ### metadata.removeEmbeddedArt
 
-Public API method. Runtime authority: `src/api/MetadataApi.cpp:1678`.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `path` | `string` | Yes | Required. |
 | `removeAll` | `boolean` | No | Optional; default false. |
-| `type` | `string` | No | Optional; default . |
+| `type` | `string` | No | Optional; default empty, which also removes every artwork type. |
 
 **Returns**: `{"error":"...","path":"...","removedTypes":"...","success":true}`
 
 ```js
-const result = await fb2k.invoke('metadata.removeEmbeddedArt', { path: /* value */, removeAll: /* value */, type: /* value */ });
+await fb2k.invoke('metadata.removeEmbeddedArt', {
+	path: 'C:\\Music\\song.flac',
+	type: 'back',
+});
 ```
 
 ### metadata.removeField
 
-Public API method. Runtime authority: `src/api/MetadataApi.cpp:1684`.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
@@ -134,12 +141,14 @@ Public API method. Runtime authority: `src/api/MetadataApi.cpp:1684`.
 **Returns**: `{"dispatched":"...","error":"...","note":"...","path":"...","removedCount":"...","removedTags":"...","subsong":"...","success":true}`
 
 ```js
-const result = await fb2k.invoke('metadata.removeField', { cueIndex: /* value */, path: /* value */, tags: /* value */ });
+await fb2k.invoke('metadata.removeField', {
+	path: 'C:\\Music\\song.flac',
+	tags: ['COMMENT'],
+});
 ```
 
 ### metadata.removeTag
 
-Public API method. Runtime authority: `src/api/MetadataApi.cpp:1681`.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
@@ -150,12 +159,14 @@ Public API method. Runtime authority: `src/api/MetadataApi.cpp:1681`.
 **Returns**: `{"dispatched":"...","error":"...","note":"...","path":"...","removedCount":"...","removedTags":"...","subsong":"...","success":true}`
 
 ```js
-const result = await fb2k.invoke('metadata.removeTag', { cueIndex: /* value */, path: /* value */, tags: /* value */ });
+await fb2k.invoke('metadata.removeTag', {
+	path: 'C:\\Music\\song.flac',
+	tags: ['COMMENT', 'LYRICS'],
+});
 ```
 
 ### metadata.write
 
-Public API method. Runtime authority: `src/api/MetadataApi.cpp:1669`.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
@@ -166,12 +177,14 @@ Public API method. Runtime authority: `src/api/MetadataApi.cpp:1669`.
 **Returns**: `{"canonicalPath":"...","dispatched":"...","error":"...","handlePath":"...","note":"...","path":"...","subsong":"...","success":true,"tagsApplied":"...","tagsRemoved":"...","tagsSet":"..."}`
 
 ```js
-const result = await fb2k.invoke('metadata.write', { cueIndex: /* value */, path: /* value */, tags: /* value */ });
+await fb2k.invoke('metadata.write', {
+	path: 'C:\\Music\\song.flac',
+	tags: { TITLE: 'New Title', ARTIST: 'New Artist' },
+});
 ```
 
 ### metadata.writeBatch
 
-Public API method. Runtime authority: `src/api/MetadataApi.cpp:1672`.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
@@ -180,14 +193,18 @@ Public API method. Runtime authority: `src/api/MetadataApi.cpp:1672`.
 **Returns**: `{"error":"...","errors":"...","failCount":"...","success":true,"successCount":"..."}`
 
 ```js
-const result = await fb2k.invoke('metadata.writeBatch', { items: /* value */ });
+const { successCount, failCount } = await fb2k.invoke('metadata.writeBatch', {
+	items: [
+		{ path: 'C:\\Music\\song.flac', tags: { GENRE: 'Ambient' } },
+		{ path: 'C:\\Music\\other.flac', tags: { GENRE: 'Ambient' } },
+	],
+});
 ```
 
 ## rating
 
 ### rating.get
 
-Public API method. Runtime authority: `src/api/MetadataApi.cpp:1690`.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
@@ -197,26 +214,30 @@ Public API method. Runtime authority: `src/api/MetadataApi.cpp:1690`.
 **Returns**: `{"error":"...","path":"...","rating":"...","storage":"...","success":true}`
 
 ```js
-const result = await fb2k.invoke('rating.get', { cueIndex: /* value */, path: /* value */ });
+const { rating, storage } = await fb2k.invoke('rating.get', {
+	path: 'C:\\Music\\song.flac',
+});
 ```
 
 ### rating.set
 
-Public API method. Runtime authority: `src/api/MetadataApi.cpp:1687`.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `cueIndex` | `integer` | No | Optional; default -1. |
-| `path` | `string` | Yes | Required. |
-| `rating` | `integer` | No | Optional; default -1. |
+| `path` | `string` | No | Optional; falls back to the now-playing track and then the active playlist selection. |
+| `rating` | `integer` | Yes | Must be 0 through 5; the default of -1 is rejected. |
 
 **Returns**: `{"(current)":"...","error":"...","menuPath":"...","note":"...","path":"...","rating":"...","storage":"...","success":true}`
 
 ```js
-const result = await fb2k.invoke('rating.set', { cueIndex: /* value */, path: /* value */, rating: /* value */ });
+await fb2k.invoke('rating.set', {
+	path: 'C:\\Music\\song.flac',
+	rating: 5,
+});
 ```
 
-## Contract notes
+## Usage notes
 
 - `metadata.read`, `metadata.readByPath`, and `metadata.readRaw` require `path`. `readRaw` bypasses the metadb cache and accepts `cueIndex` with default `-1`; a `path|subsong:N` value selects a container subsong. Its successful result adds `source: "file"` to the structured `{ success, path, tags, info }` shape.
 - `metadata.write`, `metadata.removeTag`, and the compatibility endpoint `metadata.removeField` dispatch an asynchronous update. A successful dispatch is not final persistence confirmation: listen for the broadcast `metadata:writeComplete` payload `{ operation, path, subsong, code, success, status }`.

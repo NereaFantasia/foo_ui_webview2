@@ -68,7 +68,7 @@ Adds paths or URLs to a playlist. Each entry is limited to 2048 characters; long
 | `paths` | `string[]` | Paths or URLs |
 
 ```javascript
-const r = await fb.playlist.add(0, ['E:\\\\Music\\\\song1.flac', 'E:\\\\Music\\\\song2.mp3']);
+const r = await fb.playlist.add(0, ['E:\\Music\\song1.flac', 'E:\\Music\\song2.mp3']);
 console.log(`Added ${r.addedCount} tracks`);
 ```
 
@@ -152,7 +152,7 @@ Adds paths asynchronously or sequentially. The asynchronous form has operation m
 | `paths` | `string[]` | Paths or URLs |
 
 ```javascript
-await fb.playlist.addAsync(0, ['E:\\\\Music\\\\*.flac']);
+await fb.playlist.addAsync(0, ['E:\\Music\\*.flac']);
 await fb.playlist.addSequential(0, paths); // Preserve insertion order
 ```
 
@@ -167,8 +167,8 @@ Adds metadb-handle-like objects without automatic CUE expansion.
 
 ```javascript
 await fb.playlist.addHandles(0, [
-    { path: 'E:\\\\Music\\\\album.cue', subsong: 1 },
-    { path: 'E:\\\\Music\\\\album.cue', subsong: 2 },
+    { path: 'E:\\Music\\album.cue', subsong: 1 },
+    { path: 'E:\\Music\\album.cue', subsong: 2 },
 ]);
 ```
 
@@ -363,7 +363,7 @@ Atomically clears a playlist, adds paths, and optionally starts playback.
 ```javascript
 await fb.playlist.replaceAllAndPlay({
     playlist: 0,
-    paths: ['E:\\\\Music\\\\album\\\\*.flac'],
+    paths: ['E:\\Music\\album\\*.flac'],
     playIndex: 0
 });
 ```

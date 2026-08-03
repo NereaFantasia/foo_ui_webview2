@@ -8,7 +8,6 @@ This page is the primary owner for the namespaces listed below. Method names, pa
 
 ### config.export
 
-Public API method. Runtime authority: `src/api/ConfigApi.cpp:923`.
 
 _No parameters._
 
@@ -20,22 +19,20 @@ const result = await fb2k.invoke('config.export');
 
 ### config.get
 
-Public API method. Runtime authority: `src/api/ConfigApi.cpp:920`.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `default` | `json` | No | Optional; default omitted. |
-| `key` | `string` | No | Optional; default . |
+| `default` | `json` | No | Optional; omitted by default. |
+| `key` | `string` | Yes | Configuration key to read; a missing or empty value returns `key is required`. |
 
 **Returns**: `{"error":"...","found":"...","key":"...","success":true,"value":"..."}`
 
 ```js
-const result = await fb2k.invoke('config.get', { default: /* value */, key: /* value */ });
+const { value, found } = await fb2k.invoke('config.get', { key: 'theme' });
 ```
 
 ### config.getActiveDspPreset
 
-Public API method. Runtime authority: `src/api/ConfigApi.cpp:950`.
 
 _No parameters._
 
@@ -47,35 +44,32 @@ const result = await fb2k.invoke('config.getActiveDspPreset');
 
 ### config.getAdvancedConfig
 
-Public API method. Runtime authority: `src/api/ConfigApi.cpp:932`.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `parentGuid` | `string` | No | Optional; default . |
+| `parentGuid` | `string` | No | Optional; defaults to the advanced-preferences root branch. |
 
 **Returns**: JSON object from the runtime handler.
 
 ```js
-const result = await fb2k.invoke('config.getAdvancedConfig', { parentGuid: /* value */ });
+const entries = await fb2k.invoke('config.getAdvancedConfig');
 ```
 
 ### config.getAdvancedConfigValue
 
-Public API method. Runtime authority: `src/api/ConfigApi.cpp:933`.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `guid` | `string` | No | Optional; default . |
+| `guid` | `string` | Yes | Advanced-preferences entry GUID; a missing or empty value fails with `guid is required`. |
 
 **Returns**: `{"guid":"...","name":"...","type":"...","value":"..."}`
 
 ```js
-const result = await fb2k.invoke('config.getAdvancedConfigValue', { guid: /* value */ });
+const entry = await fb2k.invoke('config.getAdvancedConfigValue', { guid: '{some-guid}' });
 ```
 
 ### config.getAll
 
-Public API method. Runtime authority: `src/api/ConfigApi.cpp:922`.
 
 _No parameters._
 
@@ -87,7 +81,6 @@ const result = await fb2k.invoke('config.getAll');
 
 ### config.getComponents
 
-Public API method. Runtime authority: `src/api/ConfigApi.cpp:940`.
 
 _No parameters._
 
@@ -99,7 +92,6 @@ const result = await fb2k.invoke('config.getComponents');
 
 ### config.getCursorFollowPlayback
 
-Public API method. Runtime authority: `src/api/ConfigApi.cpp:954`.
 
 _No parameters._
 
@@ -111,7 +103,6 @@ const result = await fb2k.invoke('config.getCursorFollowPlayback');
 
 ### config.getDspPresets
 
-Public API method. Runtime authority: `src/api/ConfigApi.cpp:949`.
 
 _No parameters._
 
@@ -123,7 +114,6 @@ const result = await fb2k.invoke('config.getDspPresets');
 
 ### config.getLibraryFilePatterns
 
-Public API method. Runtime authority: `src/api/ConfigApi.cpp:945`.
 
 _No parameters._
 
@@ -135,7 +125,6 @@ const result = await fb2k.invoke('config.getLibraryFilePatterns');
 
 ### config.getLibraryStatus
 
-Public API method. Runtime authority: `src/api/ConfigApi.cpp:944`.
 
 _No parameters._
 
@@ -147,7 +136,6 @@ const result = await fb2k.invoke('config.getLibraryStatus');
 
 ### config.getOutputConfig
 
-Public API method. Runtime authority: `src/api/ConfigApi.cpp:927`.
 
 _No parameters._
 
@@ -159,7 +147,6 @@ const result = await fb2k.invoke('config.getOutputConfig');
 
 ### config.getOutputDevices
 
-Public API method. Runtime authority: `src/api/ConfigApi.cpp:926`.
 
 _No parameters._
 
@@ -171,7 +158,6 @@ const result = await fb2k.invoke('config.getOutputDevices');
 
 ### config.getPlaybackFollowCursor
 
-Public API method. Runtime authority: `src/api/ConfigApi.cpp:956`.
 
 _No parameters._
 
@@ -183,7 +169,6 @@ const result = await fb2k.invoke('config.getPlaybackFollowCursor');
 
 ### config.getPreferencesPages
 
-Public API method. Runtime authority: `src/api/ConfigApi.cpp:938`.
 
 _No parameters._
 
@@ -195,7 +180,6 @@ const result = await fb2k.invoke('config.getPreferencesPages');
 
 ### config.getPreferencesStandardGuids
 
-Public API method. Runtime authority: `src/api/ConfigApi.cpp:939`.
 
 _No parameters._
 
@@ -207,7 +191,6 @@ const result = await fb2k.invoke('config.getPreferencesStandardGuids');
 
 ### config.getReplaygainMode
 
-Public API method. Runtime authority: `src/api/ConfigApi.cpp:960`.
 
 _No parameters._
 
@@ -219,7 +202,6 @@ const result = await fb2k.invoke('config.getReplaygainMode');
 
 ### config.getVersionInfo
 
-Public API method. Runtime authority: `src/api/ConfigApi.cpp:941`.
 
 _No parameters._
 
@@ -231,50 +213,46 @@ const result = await fb2k.invoke('config.getVersionInfo');
 
 ### config.remove
 
-Public API method. Runtime authority: `src/api/ConfigApi.cpp:921`.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `key` | `string` | No | Optional; default . |
+| `key` | `string` | Yes | Configuration key to delete; a missing or empty value returns `key is required`. |
 
 **Returns**: `{"error":"...","existed":"...","key":"...","success":true}`
 
 ```js
-const result = await fb2k.invoke('config.remove', { key: /* value */ });
+await fb2k.invoke('config.remove', { key: 'theme' });
 ```
 
 ### config.resetAdvancedConfig
 
-Public API method. Runtime authority: `src/api/ConfigApi.cpp:935`.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `guid` | `string` | No | Optional; default . |
+| `guid` | `string` | Yes | Advanced-preferences entry GUID; a missing or empty value fails with `guid is required`. |
 
 **Returns**: `{"success":true}`
 
 ```js
-const result = await fb2k.invoke('config.resetAdvancedConfig', { guid: /* value */ });
+await fb2k.invoke('config.resetAdvancedConfig', { guid: '{some-guid}' });
 ```
 
 ### config.set
 
-Public API method. Runtime authority: `src/api/ConfigApi.cpp:919`.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `key` | `string` | No | Optional; default . |
+| `key` | `string` | Yes | Configuration key to write; a missing or empty value returns `key is required`. |
 | `value` | `json` | Yes | Required. |
 
 **Returns**: `{"error":"...","key":"...","success":true}`
 
 ```js
-const result = await fb2k.invoke('config.set', { key: /* value */, value: /* value */ });
+await fb2k.invoke('config.set', { key: 'theme', value: { mode: 'dark' } });
 ```
 
 ### config.setActiveDspPreset
 
-Public API method. Runtime authority: `src/api/ConfigApi.cpp:951`.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
@@ -283,27 +261,25 @@ Public API method. Runtime authority: `src/api/ConfigApi.cpp:951`.
 **Returns**: `{"success":true}`
 
 ```js
-const result = await fb2k.invoke('config.setActiveDspPreset', { index: /* value */ });
+await fb2k.invoke('config.setActiveDspPreset', { index: 0 });
 ```
 
 ### config.setAdvancedConfigValue
 
-Public API method. Runtime authority: `src/api/ConfigApi.cpp:934`.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `guid` | `string` | No | Optional; default . |
+| `guid` | `string` | Yes | Advanced-preferences entry GUID; a missing or empty value fails with `guid is required`. |
 | `value` | `boolean` | Yes | Required. |
 
 **Returns**: `{"success":true}`
 
 ```js
-const result = await fb2k.invoke('config.setAdvancedConfigValue', { guid: /* value */, value: /* value */ });
+await fb2k.invoke('config.setAdvancedConfigValue', { guid: '{some-guid}', value: true });
 ```
 
 ### config.setCursorFollowPlayback
 
-Public API method. Runtime authority: `src/api/ConfigApi.cpp:955`.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
@@ -313,12 +289,11 @@ Public API method. Runtime authority: `src/api/ConfigApi.cpp:955`.
 **Returns**: `{"enabled":"...","success":true}`
 
 ```js
-const result = await fb2k.invoke('config.setCursorFollowPlayback', { enabled: /* value */, value: /* value */ });
+await fb2k.invoke('config.setCursorFollowPlayback', { enabled: true });
 ```
 
 ### config.setOutputBuffer
 
-Public API method. Runtime authority: `src/api/ConfigApi.cpp:929`.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
@@ -328,27 +303,26 @@ Public API method. Runtime authority: `src/api/ConfigApi.cpp:929`.
 **Returns**: `{"success":true}`
 
 ```js
-const result = await fb2k.invoke('config.setOutputBuffer', { bufferLength: /* value */, milliseconds: /* value */ });
+// milliseconds is converted to seconds; the effective range is 0.05-2.0 seconds
+await fb2k.invoke('config.setOutputBuffer', { milliseconds: 1000 });
 ```
 
 ### config.setOutputDevice
 
-Public API method. Runtime authority: `src/api/ConfigApi.cpp:928`.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `deviceId` | `string` | No | Optional; default . |
-| `outputId` | `string` | No | Optional; default . |
+| `deviceId` | `string` | Yes | Device GUID; a missing or empty value fails with `outputId and deviceId are required`. |
+| `outputId` | `string` | Yes | Output-driver GUID; a missing or empty value fails with `outputId and deviceId are required`. |
 
 **Returns**: `{"success":true}`
 
 ```js
-const result = await fb2k.invoke('config.setOutputDevice', { deviceId: /* value */, outputId: /* value */ });
+await fb2k.invoke('config.setOutputDevice', { outputId: '{output-guid}', deviceId: '{device-guid}' });
 ```
 
 ### config.setPlaybackFollowCursor
 
-Public API method. Runtime authority: `src/api/ConfigApi.cpp:957`.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
@@ -358,28 +332,26 @@ Public API method. Runtime authority: `src/api/ConfigApi.cpp:957`.
 **Returns**: `{"enabled":"...","success":true}`
 
 ```js
-const result = await fb2k.invoke('config.setPlaybackFollowCursor', { enabled: /* value */, value: /* value */ });
+await fb2k.invoke('config.setPlaybackFollowCursor', { enabled: true });
 ```
 
 ### config.setReplaygainMode
 
-Public API method. Runtime authority: `src/api/ConfigApi.cpp:961`.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `mode` | `integer` | No | Optional; default -1. |
-| `sourceMode` | `string` | No | Optional; default omitted. |
+| `sourceMode` | `string` | No | Optional; omitted by default. |
 | `value` | `integer` | No | Optional; default -1. |
 
 **Returns**: `{"code":"...","error":"...","mode":"...","success":true,"value":"..."}`
 
 ```js
-const result = await fb2k.invoke('config.setReplaygainMode', { mode: /* value */, sourceMode: /* value */, value: /* value */ });
+await fb2k.invoke('config.setReplaygainMode', { sourceMode: 'album' });
 ```
 
 ### config.showLibraryPreferences
 
-Public API method. Runtime authority: `src/api/ConfigApi.cpp:946`.
 
 _No parameters._
 
@@ -387,144 +359,6 @@ _No parameters._
 
 ```js
 const result = await fb2k.invoke('config.showLibraryPreferences');
-```
-
-## Contract supplements
-
-The sections below close public-contract findings from the strict parameter audit without replacing existing explanations.
-
-<!-- phase3-supplement:config.set -->
-### Contract supplement: `config.set`
-
-Verified contract supplement. Runtime authority: `src/api/ConfigApi.cpp:821-840`.
-
-| Parameter | Type | Required | Default | Description |
-| --- | --- | --- | --- | --- |
-| `key` | `string` | No | `` | Optional; default . |
-| `value` | `json` | Yes | none | Required. |
-
-#### Return fields
-
-| Field | Type | Optional |
-| --- | --- | --- |
-| `error` | `string` | Yes |
-| `success` | `boolean` | No |
-| `key` | `json` | No |
-
-Semantics: omitted optional parameters use handler defaults; failure branches and error fields are defined by this source file.
-
-```js
-const result = await fb2k.invoke('config.set', { key: /* value */, value: /* value */ });
-```
-<!-- phase3-supplement:config.setAdvancedConfigValue -->
-### Contract supplement: `config.setAdvancedConfigValue`
-
-Verified contract supplement. Runtime authority: `src/api/ConfigApi.cpp:321-387`.
-
-| Parameter | Type | Required | Default | Description |
-| --- | --- | --- | --- | --- |
-| `guid` | `string` | No | `` | Optional; default . |
-| `value` | `boolean` | Yes | none | Required. |
-
-#### Return fields
-
-| Field | Type | Optional |
-| --- | --- | --- |
-
-Semantics: omitted optional parameters use handler defaults; failure branches and error fields are defined by this source file.
-
-```js
-const result = await fb2k.invoke('config.setAdvancedConfigValue', { guid: /* value */, value: /* value */ });
-```
-<!-- phase3-supplement:config.setCursorFollowPlayback -->
-### Contract supplement: `config.setCursorFollowPlayback`
-
-Verified contract supplement. Runtime authority: `src/api/ConfigApi.cpp:689-697`.
-
-| Parameter | Type | Required | Default | Description |
-| --- | --- | --- | --- | --- |
-| `enabled` | `boolean` | No | `false` | Optional; default false. |
-| `value` | `boolean` | No | `false` | Optional; default false. |
-
-#### Return fields
-
-| Field | Type | Optional |
-| --- | --- | --- |
-| `enabled` | `json` | No |
-| `success` | `boolean` | No |
-
-Semantics: omitted optional parameters use handler defaults; failure branches and error fields are defined by this source file.
-
-```js
-const result = await fb2k.invoke('config.setCursorFollowPlayback', { enabled: /* value */, value: /* value */ });
-```
-<!-- phase3-supplement:config.setOutputBuffer -->
-### Contract supplement: `config.setOutputBuffer`
-
-Verified contract supplement. Runtime authority: `src/api/ConfigApi.cpp:138-164`.
-
-| Parameter | Type | Required | Default | Description |
-| --- | --- | --- | --- | --- |
-| `bufferLength` | `number` | No | `0` | Optional; default 0. |
-| `milliseconds` | `number` | No | `0` | Optional; default 0. |
-
-#### Return fields
-
-| Field | Type | Optional |
-| --- | --- | --- |
-
-Semantics: omitted optional parameters use handler defaults; failure branches and error fields are defined by this source file.
-
-```js
-const result = await fb2k.invoke('config.setOutputBuffer', { bufferLength: /* value */, milliseconds: /* value */ });
-```
-<!-- phase3-supplement:config.setPlaybackFollowCursor -->
-### Contract supplement: `config.setPlaybackFollowCursor`
-
-Verified contract supplement. Runtime authority: `src/api/ConfigApi.cpp:702-710`.
-
-| Parameter | Type | Required | Default | Description |
-| --- | --- | --- | --- | --- |
-| `enabled` | `boolean` | No | `false` | Optional; default false. |
-| `value` | `boolean` | No | `false` | Optional; default false. |
-
-#### Return fields
-
-| Field | Type | Optional |
-| --- | --- | --- |
-| `enabled` | `json` | No |
-| `success` | `boolean` | No |
-
-Semantics: omitted optional parameters use handler defaults; failure branches and error fields are defined by this source file.
-
-```js
-const result = await fb2k.invoke('config.setPlaybackFollowCursor', { enabled: /* value */, value: /* value */ });
-```
-<!-- phase3-supplement:config.setReplaygainMode -->
-### Contract supplement: `config.setReplaygainMode`
-
-Verified contract supplement. Runtime authority: `src/api/ConfigApi.cpp:720-744`.
-
-| Parameter | Type | Required | Default | Description |
-| --- | --- | --- | --- | --- |
-| `mode` | `integer` | No | `-1` | Optional; default -1. |
-| `sourceMode` | `string` | No | omitted | Optional; default omitted. |
-| `value` | `integer` | No | `-1` | Optional; default -1. |
-
-#### Return fields
-
-| Field | Type | Optional |
-| --- | --- | --- |
-| `code` | `string` | Yes |
-| `error` | `string` | Yes |
-| `mode` | `json` | No |
-| `success` | `boolean` | No |
-| `value` | `json` | No |
-
-Semantics: omitted optional parameters use handler defaults; failure branches and error fields are defined by this source file.
-
-```js
-const result = await fb2k.invoke('config.setReplaygainMode', { mode: /* value */, sourceMode: /* value */, value: /* value */ });
 ```
 
 ## Storage and preference semantics

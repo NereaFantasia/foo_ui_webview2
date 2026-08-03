@@ -8,7 +8,6 @@ This page is the primary owner for the namespaces listed below. Method names, pa
 
 ### jitQueue.clear
 
-Public API method. Runtime authority: `src/api/QueueApi.cpp:660`.
 
 _No parameters._
 
@@ -20,23 +19,21 @@ const result = await fb2k.invoke('jitQueue.clear');
 
 ### jitQueue.enqueueNext
 
-Public API method. Runtime authority: `src/api/QueueApi.cpp:657`.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `title` | `string` | No | Optional; default . |
-| `trackId` | `string` | No | Optional; default . |
-| `url` | `string` | No | Optional; default . |
+| `trackId` | `string` | Yes | Caller-assigned track identifier. An empty value fails with `trackId is required`. |
+| `url` | `string` | Yes | Stream or file URL. An empty value fails with `url is required`. |
+| `title` | `string` | No | Optional display title. |
 
 **Returns**: `{"bufferSize":"...","error":"...","success":true,"trackId":"..."}`
 
 ```js
-const result = await fb2k.invoke('jitQueue.enqueueNext', { title: /* value */, trackId: /* value */, url: /* value */ });
+await fb2k.invoke('jitQueue.enqueueNext', { trackId: 'track-2', url: 'https://example.com/next.mp3' });
 ```
 
 ### jitQueue.getState
 
-Public API method. Runtime authority: `src/api/QueueApi.cpp:661`.
 
 _No parameters._
 
@@ -48,7 +45,6 @@ const result = await fb2k.invoke('jitQueue.getState');
 
 ### jitQueue.notifyEmpty
 
-Public API method. Runtime authority: `src/api/QueueApi.cpp:662`.
 
 _No parameters._
 
@@ -60,54 +56,44 @@ const result = await fb2k.invoke('jitQueue.notifyEmpty');
 
 ### jitQueue.playNow
 
-Public API method. Runtime authority: `src/api/QueueApi.cpp:656`.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `title` | `string` | No | Optional; default . |
-| `trackId` | `string` | No | Optional; default . |
-| `url` | `string` | No | Optional; default . |
+| `trackId` | `string` | Yes | Caller-assigned track identifier. An empty value fails with `trackId is required`. |
+| `url` | `string` | Yes | Stream or file URL. An empty value fails with `url is required`. |
+| `title` | `string` | No | Optional display title. |
 
 **Returns**: `{"error":"...","shadowPlaylist":"...","success":true,"trackId":"..."}`
 
 ```js
-const result = await fb2k.invoke('jitQueue.playNow', { title: /* value */, trackId: /* value */, url: /* value */ });
+await fb2k.invoke('jitQueue.playNow', { trackId: 'track-1', url: 'https://example.com/stream.mp3' });
 ```
 
 ### jitQueue.preloadBatch
 
-
-<!-- phase3-major1-review:jitQueue.preloadBatch -->
-#### Source-reviewed contract
-Authority: `src/api/QueueApi.cpp:600-645`.
-
-| Parameter | Type | Required | Default |
-| --- | --- | --- | --- |
-| `urls` | `array<string>` | No | `[]` |
-| `startIndex` | `integer` | No | `0` |
-| `replace` | `boolean` | No | `true` |
-
-**Returns**: `{"error":"...","invalidCount":"...","success":true,"tracksAdded":"..."}`
-
-**Semantics**: The handler accepts an omitted URLs array, delegates batch construction to QueueManager, and returns its success/error result. replace defaults to clearing the JIT buffer before preload; URL/path validity is evaluated by QueueManager.
-
-<!-- phase3-major1-review-end:jitQueue.preloadBatch -->
-Public API method. Runtime authority: `src/api/QueueApi.cpp:663`.
+Preloads a batch of tracks into the JIT shadow playlist.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `urls` | `array<string>` | No | Optional; default []. |
-| `startIndex` | `integer` | No | Optional; default 0. |
-| `replace` | `boolean` | No | Optional; default true. |
+| `urls` | `array<string>` | Yes | Track URLs or `path\|subsong:N` values. At most 10000 valid entries per call. |
+| `startIndex` | `integer` | No | Starting playback position. Default `0`. |
+| `replace` | `boolean` | No | Default `true`, which **clears the shadow playlist first**. Pass `false` to append. |
 
+**Returns**: `{ "success": true, "tracksAdded": 2 }`, plus `invalidCount` only when one or more entries were rejected.
+
+`replace: true` is the default and empties the shadow playlist before inserting, so pass `false` to add tracks without disturbing what is already queued. Entries that are not strings, or longer than 2048 characters, are dropped and counted in `invalidCount` rather than failing the call.
+
+The 10000 limit is applied *after* those invalid entries are dropped, so it counts valid entries only. Exceeding it fails the whole batch — the list is never truncated — and that particular failure returns `{ "success": false, "error": "Batch exceeds maximum size (10000)" }` with no `tracksAdded`. Other failures, such as an empty `urls` array or an out-of-range `startIndex`, return `{ "success": false, "tracksAdded": 0, "error": "..." }`.
 
 ```js
-const result = await fb2k.invoke('jitQueue.preloadBatch', { replace: /* value */, startIndex: /* value */, urls: /* value */ });
+// replace the shadow playlist
+await fb2k.invoke('jitQueue.preloadBatch', { urls, startIndex: 0 });
+// append without disturbing playback
+await fb2k.invoke('jitQueue.preloadBatch', { urls: moreUrls, replace: false });
 ```
 
 ### jitQueue.skip
 
-Public API method. Runtime authority: `src/api/QueueApi.cpp:658`.
 
 _No parameters._
 
@@ -119,7 +105,6 @@ const result = await fb2k.invoke('jitQueue.skip');
 
 ### jitQueue.stop
 
-Public API method. Runtime authority: `src/api/QueueApi.cpp:659`.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
@@ -128,83 +113,55 @@ Public API method. Runtime authority: `src/api/QueueApi.cpp:659`.
 **Returns**: `{"success":true}`
 
 ```js
-const result = await fb2k.invoke('jitQueue.stop', { clearBuffer: /* value */ });
+// stop and keep the preloaded buffer
+await fb2k.invoke('jitQueue.stop', { clearBuffer: false });
 ```
 
 ## queue
 
 ### queue.add
 
-
-<!-- phase3-major1-review:queue.add -->
-#### Source-reviewed contract
-Authority: `src/api/QueueApi.cpp:221-261`.
-
-| Parameter | Type | Required | Default |
-| --- | --- | --- | --- |
-| `playlist` | `integer` | No | `active playlist` |
-| `tracks` | `array<integer>` | No | `[]` |
-| `track` | `integer` | No | `not supplied` |
-
-**Return keys (vary by response variant)**: `error`, `success`; `addedCount`, `queueCount`, `success`
-
-**Semantics**: playlist defaults to the active playlist. tracks takes precedence when it is an array; otherwise track is used. Invalid playlist or item indices produce a false result without queueing an item.
-
-<!-- phase3-major1-review-end:queue.add -->
-Public API method. Runtime authority: `src/api/QueueApi.cpp:471`.
+Queues one or more tracks by their position in a playlist.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `playlist` | `integer` | No | Optional; default active playlist. |
-| `tracks` | `array<integer>` | No | Optional; default []. |
-| `track` | `integer` | No | Optional; default not supplied. |
+| `tracks` | `array<integer>` | No | Track indices. Takes precedence over `track`. |
+| `track` | `integer` | No | A single track index. Used only when `tracks` is absent. |
 
-| --- | --- | --- | --- |
-| `playlist` | `integer` | No | Optional; default active playlist. |
-| `tracks` | `array<integer>` | No | Optional; default []. |
-| `track` | `integer` | No | Optional; default not supplied. |
+**Returns**: `{ "success": true, "addedCount": 2, "queueCount": 5 }`
 
-**Returns**: `{"addedCount":"...","error":"...","queueCount":"...","success":true}`
+Supply either `tracks` or `track`, not both — when `tracks` is an array it wins and `track` is ignored. `success` is simply `addedCount > 0`. Out-of-range track indices are skipped silently, so a call that matches nothing returns `success: false` with `addedCount: 0` and **no** `error` field; the same is true for an empty `tracks` array. An invalid `playlist` returns `{ "success": false, "error": "Invalid playlist index" }`. Entries in `tracks` must be numbers — a non-numeric element is a parameter type error rather than a skipped entry.
 
 ```js
-const result = await fb2k.invoke('queue.add', { playlist: /* value */, track: /* value */, tracks: /* value */ });
+// queue several tracks from the active playlist
+await fb2k.invoke('queue.add', { tracks: [0, 1, 2] });
+// queue a single track
+await fb2k.invoke('queue.add', { track: 0 });
 ```
 
 ### queue.addPaths
 
-
-<!-- phase3-major1-review:queue.addPaths -->
-#### Source-reviewed contract
-Authority: `src/api/QueueApi.cpp:266-337`.
-
-| Parameter | Type | Required | Default |
-| --- | --- | --- | --- |
-| `paths` | `array<string>` | No | `[]` |
-| `useQueuePlaylist` | `boolean` | No | `true` |
-| `playlist` | `integer` | No | `active playlist when useQueuePlaylist is false` |
-
-**Return keys (vary by response variant)**: `error`, `success`; `error`, `success`; `error`, `success`; `error`, `isLocked`, `playlist`, `success`; `error`, `invalidCount`, `success`; `addedCount`, `invalidCount`, `playlist`, `queueCount`, `success`
-
-**Semantics**: An empty paths array fails. The registration protects paths as a non-empty MediaRead array; each path is parsed for an optional subsong suffix, rejects oversized streams, then resolves to queueable handles. The handler rejects locked target playlists.
-
-<!-- phase3-major1-review-end:queue.addPaths -->
-Public API method. Runtime authority: `src/api/QueueApi.cpp:472`.
+Queues tracks by file path, adding them to a playlist first.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `paths` | `array<string>` | No | Optional; default []. |
-| `useQueuePlaylist` | `boolean` | No | Optional; default true. |
-| `playlist` | `integer` | No | Optional; default active playlist when useQueuePlaylist is false. |
+| `paths` | `array<string>` | Yes | File paths, optionally with a `\|subsong:N` suffix. |
+| `useQueuePlaylist` | `boolean` | No | Default `true`, which targets a dedicated `[WebView Queue]` playlist, creating it if needed. |
+| `playlist` | `integer` | No | Target playlist index. Read only when `useQueuePlaylist` is `false`. |
 
-**Returns**: `{"addedCount":"...","error":"...","invalidCount":"...","isLocked":"...","playlist":"...","queueCount":"...","success":true}`
+**Returns**: `{ "success": true, "addedCount": 2, "invalidCount": 0, "playlist": 3, "queueCount": 5 }`
+
+Because queueing requires playlist membership, this method appends the paths to a playlist and then queues them. By default that target is a dedicated `[WebView Queue]` playlist rather than your active one. Setting `useQueuePlaylist: false` targets `playlist` instead, or the active playlist when `playlist` is also omitted — which fails with `No active playlist` if there is none.
+
+A locked target playlist is rejected with `{ "success": false, "error": "Playlist is locked", "isLocked": true, "playlist": N }`. When nothing resolves, the response carries `invalidCount` alongside the error. Other failures return `{ "success": false, "error": "..." }`: an empty `paths` array or an invalid `playlist`.
 
 ```js
-const result = await fb2k.invoke('queue.addPaths', { paths: /* value */, playlist: /* value */, useQueuePlaylist: /* value */ });
+await fb2k.invoke('queue.addPaths', { paths: ['C:\\Music\\a.flac'] });
 ```
 
 ### queue.clear
 
-Public API method. Runtime authority: `src/api/QueueApi.cpp:474`.
 
 _No parameters._
 
@@ -216,7 +173,6 @@ const result = await fb2k.invoke('queue.clear');
 
 ### queue.flush
 
-Public API method. Runtime authority: `src/api/QueueApi.cpp:479`.
 
 _No parameters._
 
@@ -228,132 +184,88 @@ const result = await fb2k.invoke('queue.flush');
 
 ### queue.get
 
-Public API method. Runtime authority: `src/api/QueueApi.cpp:470`.
+Returns the entire playback queue.
 
 _No parameters._
 
-**Returns**: `{"count":"...","items":"..."}`
+**Returns**: `{ "items": [...], "count": 5 }`
+
+There is no paging and no `success` field; the whole queue is always returned. Each entry carries `queueIndex`, `path`, `absolutePath`, `subsong`, `fileSize`, the usual metadata fields, and the originating `playlist` and `playlistItem`.
 
 ```js
-const result = await fb2k.invoke('queue.get');
+const { items, count } = await fb2k.invoke('queue.get');
 ```
 
 ### queue.getCount
 
-Public API method. Runtime authority: `src/api/QueueApi.cpp:475`.
+Returns the queue length.
 
 _No parameters._
 
-**Returns**: `{"count":"...","hasItems":"..."}`
+**Returns**: `{ "count": 5, "hasItems": true }`
+
+No `success` field. `hasItems` is exactly `count > 0`, provided as a convenience.
 
 ```js
-const result = await fb2k.invoke('queue.getCount');
+const { count } = await fb2k.invoke('queue.getCount');
 ```
 
 ### queue.moveToTop
 
-
-<!-- phase3-major1-review:queue.moveToTop -->
-#### Source-reviewed contract
-Authority: `src/api/QueueApi.cpp:422-459`.
-
-| Parameter | Type | Required | Default |
-| --- | --- | --- | --- |
-| `index` | `integer` | No | `not supplied` |
-
-**Return keys (vary by response variant)**: `error`, `success`; `movedIndex`, `queueCount`, `success`
-
-**Semantics**: index must identify a non-first item in a non-empty queue. The operation rebuilds the native queue with that item first, so queue order—not playlist membership—is changed.
-
-<!-- phase3-major1-review-end:queue.moveToTop -->
-Public API method. Runtime authority: `src/api/QueueApi.cpp:476`.
+Moves a queued entry to the front of the queue.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `index` | `integer` | No | Optional; default not supplied. |
+| `index` | `integer` | Yes | Queue index to promote. Must not already be `0`. |
 
-**Returns**: `{"error":"...","movedIndex":"...","queueCount":"...","success":true}`
+**Returns**: `{ "success": true, "movedIndex": 3, "queueCount": 5 }`
+
+Only queue order changes — playlist membership is untouched. The relative order of the remaining entries is preserved. A missing `index`, an out-of-range value, an entry already at the top, or an empty queue all return `{ "success": false, "error": "Invalid index or already at top" }`.
 
 ```js
-const result = await fb2k.invoke('queue.moveToTop', { index: /* value */ });
+await fb2k.invoke('queue.moveToTop', { index: 3 });
 ```
 
 ### queue.remove
 
-
-<!-- phase3-major1-review:queue.remove -->
-#### Source-reviewed contract
-Authority: `src/api/QueueApi.cpp:341-392`.
-
-| Parameter | Type | Required | Default |
-| --- | --- | --- | --- |
-| `index` | `integer` | No | `not supplied` |
-| `indices` | `array<integer>` | No | `[]` |
-
-**Return keys (vary by response variant)**: `error`, `success`; `error`, `success`; `queueCount`, `removedIndex`, `success`; `queueCount`, `removedCount`, `success`; `error`, `success`
-
-**Semantics**: The handler prefers index when present; otherwise it removes distinct valid entries from indices. An empty queue, invalid single index, or neither field returns success:false with an error.
-
-<!-- phase3-major1-review-end:queue.remove -->
-Public API method. Runtime authority: `src/api/QueueApi.cpp:473`.
+Removes one or more entries from the queue.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `index` | `integer` | No | Optional; default not supplied. |
-| `indices` | `array<integer>` | No | Optional; default []. |
+| `index` | `integer` | No | A single queue index. Takes precedence over `indices`. |
+| `indices` | `array<integer>` | No | Multiple queue indices. Used only when `index` is absent. |
 
-**Returns**: `{"error":"...","queueCount":"...","removedCount":"...","removedIndex":"...","success":true}`
+**Returns** — single: `{ "success": true, "removedIndex": 2, "queueCount": 4 }`. Batch: `{ "success": true, "removedCount": 3, "queueCount": 2 }`.
+
+Supply either `index` or `indices`, not both — `index` wins when present. Duplicate and out-of-range values in `indices` are skipped, and a batch that matches nothing returns `success: false` with **no** `error`. An empty queue, an out-of-range `index`, or neither field returns `{ "success": false, "error": "..." }`.
 
 ```js
-const result = await fb2k.invoke('queue.remove', { index: /* value */, indices: /* value */ });
+await fb2k.invoke('queue.remove', { indices: [0, 2] });
 ```
 
 ## selection
 
 ### selection.get
 
-
-<!-- phase3-major1-review:selection.get -->
-#### Source-reviewed contract
-Authority: `src/api/SelectionApi.cpp:192-250`.
-
-| Parameter | Type | Required | Default |
-| --- | --- | --- | --- |
-| `offset` | `integer` | No | `0` |
-| `limit` | `integer` | No | `100` |
-
-**Returns**: `{"count":0,"handles":"...","hasMore":true,"offset":"...","truncated":"...","type":"..."}`
-
-**Semantics**: Selection paging uses offset and a bounded limit in the selection service. The method observes global selection state and does not mutate the active playlist.
-
-<!-- phase3-major1-review-end:selection.get -->
-Public API method. Runtime authority: `src/api/SelectionApi.cpp:406`.
+Reads the current selection. This method observes state only and never modifies a playlist.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `offset` | `integer` | No | Optional; default 0. |
-| `limit` | `integer` | No | Optional; default 100. |
+| `offset` | `integer` | No | Starting index. Default `0`. |
+| `limit` | `integer` | No | Maximum entries to return. Defaults to `100`; pass `0` for all. |
 
+**Returns**: `{ "count": 250, "type": "...", "handles": [...], "offset": 0, "hasMore": true }`, plus `truncated: true` when the result was auto-capped.
+
+This method returns **no** `success` field and has no failure branch. The `100` cap applies only when `limit` is omitted — an explicit `limit` is honored as given, and `limit: 0` means "no limit", returning every entry from `offset` onward.
+
+`truncated: true` appears only when the automatic cap was actually applied, that is when the selection exceeds 100 **and** `limit` was omitted. Asking for `limit: 10` out of a 250-item selection is not truncation and reports nothing. The field is never present with a `false` value, so test for its presence rather than its value, and use `hasMore` to decide whether to page further. `count` is the total size of the selection, not the number of entries returned.
 
 ```js
-const result = await fb2k.invoke('selection.get', { limit: /* value */, offset: /* value */ });
+const { handles, count, hasMore } = await fb2k.invoke('selection.get', { limit: 0 });
 ```
 
 ### selection.getType
 
-
-<!-- phase3-major1-review:selection.getType -->
-#### Source-reviewed contract
-Authority: `src/api/SelectionApi.cpp:255-278`.
-
-_No public parameters._
-
-**Return keys (vary by response variant)**: `type`, `typeName`
-
-**Semantics**: No request fields are read. The returned numeric type and typeName describe the current foobar2000 selection source.
-
-<!-- phase3-major1-review-end:selection.getType -->
-Public API method. Runtime authority: `src/api/SelectionApi.cpp:407`.
 
 _No parameters._
 
@@ -365,7 +277,6 @@ const result = await fb2k.invoke('selection.getType');
 
 ### selection.getViewerMode
 
-Public API method. Runtime authority: `src/api/SelectionApi.cpp:404`.
 
 _No parameters._
 
@@ -377,7 +288,6 @@ const result = await fb2k.invoke('selection.getViewerMode');
 
 ### selection.getViewingTrack
 
-Public API method. Runtime authority: `src/api/SelectionApi.cpp:405`.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
@@ -386,96 +296,51 @@ Public API method. Runtime authority: `src/api/SelectionApi.cpp:405`.
 **Returns**: `{"found":true,"handle":"...","itemIndex":"...","mode":"...","playlistIndex":"...","source":"...","success":true,"track":{}}`
 
 ```js
-const result = await fb2k.invoke('selection.getViewingTrack', { includeTrackInfo: /* value */ });
+const { found, track } = await fb2k.invoke('selection.getViewingTrack', { includeTrackInfo: true });
 ```
 
 ### selection.set
 
 
-<!-- phase3-major1-review:selection.set -->
-#### Source-reviewed contract
-Authority: `src/api/SelectionApi.cpp:283-361`.
-
-| Parameter | Type | Required | Default |
-| --- | --- | --- | --- |
-| `handles` | `array<object or string>` | Yes | none |
-
-**Return keys (vary by response variant)**: `error`, `success`; `error`, `success`; `error`, `success`; `count`, `success`; `error`, `success`; `error`, `success`
-
-**Semantics**: handles is required and must be an array. Each item is resolved to a media handle by the selection service; conversion failures are reported by the false/error response variant.
-
-<!-- phase3-major1-review-end:selection.set -->
-Public API method. Runtime authority: `src/api/SelectionApi.cpp:408`.
-
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `handles` | `array<object or string>` | Yes | Required. |
+| `handles` | `array<string>` | Yes | Non-empty array of paths, optionally with a `\|subsong:N` suffix. |
 
-| --- | --- | --- | --- |
-| `handles` | `array<object\\\|string>` | Yes | | Required. |
+**Returns**: `{ "success": true, "count": 2 }`
 
-**Returns**: `{"count":"...","error":"...","success":true}`
+Entries that are not strings are skipped silently, and a malformed `|subsong:` suffix falls back to subsong `0`. Failures return `{ "success": false, "error": "..." }` — a missing or non-array `handles`, an empty array, no resolvable entries, or a failure to acquire the selection holder.
 
 ```js
-const result = await fb2k.invoke('selection.set', { handles: /* value */ });
+await fb2k.invoke('selection.set', { handles: ['C:\\Music\\a.flac'] });
 ```
 
 ### selection.setPlaylistTracking
 
-Public API method. Runtime authority: `src/api/SelectionApi.cpp:409`.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `mode` | `string` | No | Optional; default selection. |
+| `mode` | `string` | No | `'playlist'` or `'selection'`. Any other value is treated as `'selection'`, which is also the default. |
 
 **Returns**: `{"error":"...","mode":"...","success":true}`
 
 ```js
-const result = await fb2k.invoke('selection.setPlaylistTracking', { mode: /* value */ });
+await fb2k.invoke('selection.setPlaylistTracking', { mode: 'playlist' });
 ```
 
 ## Selection behavior
 
-`selection.getViewerMode` returns either `prefer_playing` or `prefer_selection`. `selection.getViewingTrack` applies that preference, falling back to the other source when the preferred source has no track. `selection:changed` is broadcast by `src/selection/SelectionWatcher.cpp` after a selection update; its documented payload is maintained in the event reference.
+`selection.getViewerMode` returns either `prefer_playing` or `prefer_selection`, derived from the live selection type rather than a stored setting. `selection.getViewingTrack` applies that preference and falls back to the other source when the preferred one has no track; it always reports `success: true`, so test `found` instead. `selection:changed` is broadcast to every WebView after a selection update and is throttled to 50 ms; its payload is documented in the event reference.
 
-Paths supplied to `queue.addPaths` or JIT Queue batch operations may use the `path|subsong:N` form when a specific subsong must be selected.
+Queue and selection handles share one string form: a native path with `|subsong:N` appended only when the subsong is greater than `0`. Paths supplied to `queue.addPaths` or the JIT Queue operations accept the same suffix. Individual paths and URLs are capped at 2048 characters.
 
 ## JIT Queue events
 
-`src/core/QueueManager.cpp` emits these events while it maintains the JIT shadow playlist. Subscribe before issuing operations when the frontend needs to refill or observe that buffer.
+These events are emitted while the JIT shadow playlist is maintained. Subscribe before issuing operations when the frontend needs to refill or observe that buffer.
 
 | Event | Meaning | Payload keys |
 | --- | --- | --- |
 | `jitQueue:needNext` | The manager needs the next logical track. | `{ currentTrackId, reason }` |
 | `jitQueue:trackChanged` | The JIT current track changed. | `{ trackId, title }` |
-| `jitQueue:listExhausted` | The frontend reported that no additional tracks are available. | `{ lastTrackId }` |
+| `jitQueue:listExhausted` | No further tracks are available — emitted on end of playback with an empty buffer, or after `jitQueue.notifyEmpty`. | `{ lastTrackId }` |
 | `jitQueue:preloadComplete` | A batch preload completed. | `{ count, startIndex, replace }` |
-| `jitQueue:error` | A JIT operation failed for a track. | `{ trackId, error, path }` |
-
-## Contract supplements
-
-The sections below close public-contract findings from the strict parameter audit without replacing existing explanations.
-
-<!-- phase3-supplement:jitQueue.preloadBatch -->
-### Contract supplement: `jitQueue.preloadBatch`
-
-Verified contract supplement. Runtime authority: `src/api/QueueApi.cpp:600-645`.
-
-| Parameter | Type | Required | Default | Description |
-| --- | --- | --- | --- | --- |
-| `urls` | `array<string>` | No | `[]` | Optional; default []. |
-| `startIndex` | `integer` | No | `0` | Optional; default 0. |
-| `replace` | `boolean` | No | `true` | Optional; default true. |
-
-#### Return fields
-
-| Field | Type | Optional |
-| --- | --- | --- |
-| `error` | `string` | Yes |
-| `success` | `boolean` | No |
-
-Semantics: omitted optional parameters use handler defaults; failure branches and error fields are defined by this source file.
-
-```js
-const result = await fb2k.invoke('jitQueue.preloadBatch', { urls: /* value */, startIndex: /* value */, replace: /* value */ });
-```
+| `jitQueue:error` | A JIT operation failed for a track. | `{ trackId, error }` plus **exactly one** of `url` (streaming source) or `path` (local file) |

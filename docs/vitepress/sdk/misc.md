@@ -145,7 +145,7 @@ const synced = await fb.lyrics.get(undefined, { type: 'synced' });
 Checks whether lyrics are available for a track path.
 
 ```javascript
-const r = await fb.lyrics.exists('E:\\\\Music\\\\song.flac');
+const r = await fb.lyrics.exists('E:\\Music\\song.flac');
 console.log(r.exists);
 ```
 
@@ -163,7 +163,7 @@ Saves lyrics to one or more configured targets.
 | `options.format` | `string` | Sidecar format; defaults to `'lrc'`. |
 
 ```javascript
-await fb.lyrics.save('E:\\\\Music\\\\song.flac', '[00:00.00]Lyrics...');
+await fb.lyrics.save('E:\\Music\\song.flac', '[00:00.00]Lyrics...');
 await fb.lyrics.save(path, text, { target: ['file', 'config'] });
 await fb.lyrics.save(path, text, {
     target: ['embedded'],

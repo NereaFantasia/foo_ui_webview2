@@ -34,7 +34,7 @@ await fb.queue.add({ playlist: 0, index: 5 });
 通过路径添加曲目到队列。
 
 ```javascript
-await fb.queue.addPaths(['E:\\\\Music\\\\song.flac']);
+await fb.queue.addPaths(['E:\\Music\\song.flac']);
 ```
 
 ### remove(index)
@@ -185,10 +185,13 @@ await discovery.executeContextMenuCommand({ guid: '...' });
 
 ### executeContextMenuByPath(options)
 
-通过菜单路径执行右键菜单命令。
+通过菜单路径执行右键菜单命令。省略 `trackPath` 时作用于当前正在播放/选择的曲目。
 
 ```javascript
-await fb.discovery.executeContextMenuByPath({ path: 'Properties', handles: [...] });
+await fb.discovery.executeContextMenuByPath({
+    path: 'Properties',
+    trackPath: 'C:\\Music\\song.flac',
+});
 ```
 
 ### getContextMenuTree()

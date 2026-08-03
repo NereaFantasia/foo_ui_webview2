@@ -19,7 +19,6 @@ Sets a track rating. Prefers the foo_playcount context-menu path when available;
 Install [foo_playcount](https://www.foobar2000.org/components/view/foo_playcount) for stats-backed ratings.
 :::
 
-Runtime authority: `src/api/MetadataApi.cpp` (`rating.set`).
 
 ## rating.get
 
@@ -46,7 +45,6 @@ Example return:
 | `rating` | number | `0`–`5`; `0` means unrated |
 | `storage` | string | `"stats"` (foo_playcount) or `"file"` (file tag) |
 
-Runtime authority: `src/api/MetadataApi.cpp` (`rating.get`).
 
 ## playcount.get
 

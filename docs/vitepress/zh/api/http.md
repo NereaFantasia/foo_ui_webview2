@@ -77,12 +77,12 @@ const result = await fb2k.invoke('http.get', {
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
 | `async` | `boolean` | 否 | 可选；默认 true。 |
-| `headers` | `object` | 否 | 可选；默认 omitted。 |
+| `headers` | `object` | 否 | 可省略。 |
 | `insecureTls` | `boolean` | 否 | 可选；默认 false。 |
 | `redirect` | `string` | 否 | 可选；默认 follow。 |
 | `responseType` | `string` | 否 | 可选；默认 text。 |
 | `timeout` | `integer` | 否 | 可选；默认 30000。 |
-| `url` | `string` | 否 | 可选；默认 。 |
+| `url` | `string` | 否 | 可选。 |
 
 **返回值**: `{"async":"...","requestId":"...","success":true}`
 
@@ -93,8 +93,8 @@ const result = await fb2k.invoke('http.get', {
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
-| `url` | `string` | 否 | 可选；默认 。 |
-| `body` | `json` | 否 | 可选；默认 omitted。 |
+| `url` | `string` | 否 | 可选。 |
+| `body` | `json` | 否 | 可省略。 |
 | `headers` | `object` | 否 | 可选；默认 {}。 |
 | `timeout` | `integer` | 否 | 可选；默认 30000。 |
 | `async` | `boolean` | 否 | 可选；默认 true。 |
@@ -112,11 +112,11 @@ const result = await fb2k.invoke('http.get', {
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
 | `async` | `boolean` | 否 | 可选；默认 true。 |
-| `headers` | `object` | 否 | 可选；默认 omitted。 |
+| `headers` | `object` | 否 | 可省略。 |
 | `insecureTls` | `boolean` | 否 | 可选；默认 false。 |
 | `redirect` | `string` | 否 | 可选；默认 follow。 |
 | `timeout` | `integer` | 否 | 可选；默认 30000。 |
-| `url` | `string` | 否 | 可选；默认 。 |
+| `url` | `string` | 否 | 可选。 |
 
 **返回值**: `{"async":"...","contentLength":"...","requestId":"...","success":true}`
 
@@ -127,8 +127,8 @@ const result = await fb2k.invoke('http.get', {
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
-| `url` | `string` | 否 | 可选；默认 。 |
-| `body` | `json` | 否 | 可选；默认 omitted。 |
+| `url` | `string` | 否 | 可选。 |
+| `body` | `json` | 否 | 可省略。 |
 | `headers` | `object` | 否 | 可选；默认 {}。 |
 | `timeout` | `integer` | 否 | 可选；默认 30000。 |
 | `async` | `boolean` | 否 | 可选；默认 true。 |
@@ -145,8 +145,8 @@ const result = await fb2k.invoke('http.get', {
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
-| `url` | `string` | 否 | 可选；默认 。 |
-| `body` | `json` | 否 | 可选；默认 omitted。 |
+| `url` | `string` | 否 | 可选。 |
+| `body` | `json` | 否 | 可省略。 |
 | `headers` | `object` | 否 | 可选；默认 {}。 |
 | `timeout` | `integer` | 否 | 可选；默认 30000。 |
 | `async` | `boolean` | 否 | 可选；默认 true。 |
@@ -163,8 +163,8 @@ const result = await fb2k.invoke('http.get', {
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
-| `url` | `string` | 否 | 可选；默认 。 |
-| `body` | `json` | 否 | 可选；默认 omitted。 |
+| `url` | `string` | 否 | 可选。 |
+| `body` | `json` | 否 | 可省略。 |
 | `headers` | `object` | 否 | 可选；默认 {}。 |
 | `timeout` | `integer` | 否 | 可选；默认 30000。 |
 | `async` | `boolean` | 否 | 可选；默认 true。 |
@@ -181,7 +181,7 @@ const result = await fb2k.invoke('http.get', {
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
-| `requestId` | `string` | 否 | 可选；默认 。 |
+| `requestId` | `string` | 否 | 可选。 |
 
 **返回值**：
 
@@ -274,227 +274,14 @@ Blocked Hosts: localhost, 127.0.0.1, 192.168.*
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
 | `async` | `boolean` | 否 | 可选；默认 false。 |
-| `headers` | `object` | 否 | 可选；默认 omitted。 |
+| `headers` | `object` | 否 | 可省略。 |
 | `insecureTls` | `boolean` | 否 | 可选；默认 false。 |
 | `redirect` | `string` | 否 | 可选；默认 follow。 |
-| `saveTo` | `string` | 否 | 可选；默认 。 |
+| `saveTo` | `string` | 否 | 可选。 |
 | `timeout` | `integer` | 否 | 可选；默认 60000。 |
-| `url` | `string` | 否 | 可选；默认 。 |
+| `url` | `string` | 否 | 可选。 |
 
 **返回值**: 同步返回 path/bytesWritten/status；异步返回 requestId。
-
-## 合同补充
-
-以下章节补齐严格参数审计发现的公开 contract；不会改变前文的已有说明。
-
-<!-- phase3-supplement:http.delete -->
-### Contract 补充：`http.delete`
-
-经复核的补充 contract。权威源：`src/api/HttpApi.cpp:1396-1432`。
-
-| 参数 | 类型 | 必填 | 默认值 | 说明 |
-| --- | --- | --- | --- | --- |
-| `url` | `string` | 否 | `` | 可选；默认 。 |
-| `body` | `json` | 否 | 可省略 | 可选；默认 omitted。 |
-| `headers` | `object` | 否 | `{}` | 可选；默认 {}。 |
-| `timeout` | `integer` | 否 | `30000` | 可选；默认 30000。 |
-| `async` | `boolean` | 否 | `true` | 可选；默认 true。 |
-| `redirect` | `string` | 否 | `follow` | 可选；默认 follow。 |
-| `responseType` | `string` | 否 | `text` | 可选；默认 text。 |
-| `insecureTls` | `boolean` | 否 | `false` | 可选；默认 false。 |
-
-#### 返回字段
-
-| 字段 | 类型 | 可选 |
-| --- | --- | --- |
-| `error` | `string` | 是 |
-| `success` | `boolean` | 否 |
-| `async` | `json` | 否 |
-| `requestId` | `json` | 否 |
-
-语义：省略可选参数时使用 handler 默认值；失败分支及错误字段以该源文件为准。
-
-```js
-const result = await fb2k.invoke('http.delete', { url: /* value */, body: /* value */, headers: /* value */, timeout: /* value */, async: /* value */, redirect: /* value */, responseType: /* value */, insecureTls: /* value */ });
-```
-<!-- phase3-supplement:http.download -->
-### Contract 补充：`http.download`
-
-经复核的补充 contract。权威源：`src/api/HttpApi.cpp:1237-1352`。
-
-| 参数 | 类型 | 必填 | 默认值 | 说明 |
-| --- | --- | --- | --- | --- |
-| `async` | `boolean` | 否 | `false` | 可选；默认 false。 |
-| `headers` | `object` | 否 | 可省略 | 可选；默认 omitted。 |
-| `insecureTls` | `boolean` | 否 | `false` | 可选；默认 false。 |
-| `redirect` | `string` | 否 | `follow` | 可选；默认 follow。 |
-| `saveTo` | `string` | 否 | `` | 可选；默认 。 |
-| `timeout` | `integer` | 否 | `60000` | 可选；默认 60000。 |
-| `url` | `string` | 否 | `` | 可选；默认 。 |
-
-#### 返回字段
-
-| 字段 | 类型 | 可选 |
-| --- | --- | --- |
-| `error` | `string` | 是 |
-| `success` | `boolean` | 否 |
-| `code` | `string` | 是 |
-| `async` | `json` | 否 |
-| `message` | `json` | 否 |
-| `requestId` | `json` | 否 |
-
-语义：省略可选参数时使用 handler 默认值；失败分支及错误字段以该源文件为准。
-
-```js
-const result = await fb2k.invoke('http.download', { async: /* value */, headers: /* value */, insecureTls: /* value */, redirect: /* value */, saveTo: /* value */, timeout: /* value */, url: /* value */ });
-```
-<!-- phase3-supplement:http.get -->
-### Contract 补充：`http.get`
-
-经复核的补充 contract。权威源：`src/api/HttpApi.cpp:822-862`。
-
-| 参数 | 类型 | 必填 | 默认值 | 说明 |
-| --- | --- | --- | --- | --- |
-| `async` | `boolean` | 否 | `true` | 可选；默认 true。 |
-| `headers` | `object` | 否 | 可省略 | 可选；默认 omitted。 |
-| `insecureTls` | `boolean` | 否 | `false` | 可选；默认 false。 |
-| `redirect` | `string` | 否 | `follow` | 可选；默认 follow。 |
-| `responseType` | `string` | 否 | `text` | 可选；默认 text。 |
-| `timeout` | `integer` | 否 | `30000` | 可选；默认 30000。 |
-| `url` | `string` | 否 | `` | 可选；默认 。 |
-
-#### 返回字段
-
-| 字段 | 类型 | 可选 |
-| --- | --- | --- |
-| `error` | `string` | 是 |
-| `success` | `boolean` | 否 |
-| `async` | `json` | 否 |
-| `requestId` | `json` | 否 |
-
-语义：省略可选参数时使用 handler 默认值；失败分支及错误字段以该源文件为准。
-
-```js
-const result = await fb2k.invoke('http.get', { async: /* value */, headers: /* value */, insecureTls: /* value */, redirect: /* value */, responseType: /* value */, timeout: /* value */, url: /* value */ });
-```
-<!-- phase3-supplement:http.head -->
-### Contract 补充：`http.head`
-
-经复核的补充 contract。权威源：`src/api/HttpApi.cpp:906-950`。
-
-| 参数 | 类型 | 必填 | 默认值 | 说明 |
-| --- | --- | --- | --- | --- |
-| `async` | `boolean` | 否 | `true` | 可选；默认 true。 |
-| `headers` | `object` | 否 | 可省略 | 可选；默认 omitted。 |
-| `insecureTls` | `boolean` | 否 | `false` | 可选；默认 false。 |
-| `redirect` | `string` | 否 | `follow` | 可选；默认 follow。 |
-| `timeout` | `integer` | 否 | `30000` | 可选；默认 30000。 |
-| `url` | `string` | 否 | `` | 可选；默认 。 |
-
-#### 返回字段
-
-| 字段 | 类型 | 可选 |
-| --- | --- | --- |
-| `error` | `string` | 是 |
-| `success` | `boolean` | 否 |
-| `async` | `json` | 否 |
-| `requestId` | `json` | 否 |
-
-语义：省略可选参数时使用 handler 默认值；失败分支及错误字段以该源文件为准。
-
-```js
-const result = await fb2k.invoke('http.head', { async: /* value */, headers: /* value */, insecureTls: /* value */, redirect: /* value */, timeout: /* value */, url: /* value */ });
-```
-<!-- phase3-supplement:http.patch -->
-### Contract 补充：`http.patch`
-
-经复核的补充 contract。权威源：`src/api/HttpApi.cpp:1436-1472`。
-
-| 参数 | 类型 | 必填 | 默认值 | 说明 |
-| --- | --- | --- | --- | --- |
-| `url` | `string` | 否 | `` | 可选；默认 。 |
-| `body` | `json` | 否 | 可省略 | 可选；默认 omitted。 |
-| `headers` | `object` | 否 | `{}` | 可选；默认 {}。 |
-| `timeout` | `integer` | 否 | `30000` | 可选；默认 30000。 |
-| `async` | `boolean` | 否 | `true` | 可选；默认 true。 |
-| `redirect` | `string` | 否 | `follow` | 可选；默认 follow。 |
-| `responseType` | `string` | 否 | `text` | 可选；默认 text。 |
-| `insecureTls` | `boolean` | 否 | `false` | 可选；默认 false。 |
-
-#### 返回字段
-
-| 字段 | 类型 | 可选 |
-| --- | --- | --- |
-| `error` | `string` | 是 |
-| `success` | `boolean` | 否 |
-| `async` | `json` | 否 |
-| `requestId` | `json` | 否 |
-
-语义：省略可选参数时使用 handler 默认值；失败分支及错误字段以该源文件为准。
-
-```js
-const result = await fb2k.invoke('http.patch', { url: /* value */, body: /* value */, headers: /* value */, timeout: /* value */, async: /* value */, redirect: /* value */, responseType: /* value */, insecureTls: /* value */ });
-```
-<!-- phase3-supplement:http.post -->
-### Contract 补充：`http.post`
-
-经复核的补充 contract。权威源：`src/api/HttpApi.cpp:866-902`。
-
-| 参数 | 类型 | 必填 | 默认值 | 说明 |
-| --- | --- | --- | --- | --- |
-| `url` | `string` | 否 | `` | 可选；默认 。 |
-| `body` | `json` | 否 | 可省略 | 可选；默认 omitted。 |
-| `headers` | `object` | 否 | `{}` | 可选；默认 {}。 |
-| `timeout` | `integer` | 否 | `30000` | 可选；默认 30000。 |
-| `async` | `boolean` | 否 | `true` | 可选；默认 true。 |
-| `redirect` | `string` | 否 | `follow` | 可选；默认 follow。 |
-| `responseType` | `string` | 否 | `text` | 可选；默认 text。 |
-| `insecureTls` | `boolean` | 否 | `false` | 可选；默认 false。 |
-
-#### 返回字段
-
-| 字段 | 类型 | 可选 |
-| --- | --- | --- |
-| `error` | `string` | 是 |
-| `success` | `boolean` | 否 |
-| `async` | `json` | 否 |
-| `requestId` | `json` | 否 |
-
-语义：省略可选参数时使用 handler 默认值；失败分支及错误字段以该源文件为准。
-
-```js
-const result = await fb2k.invoke('http.post', { url: /* value */, body: /* value */, headers: /* value */, timeout: /* value */, async: /* value */, redirect: /* value */, responseType: /* value */, insecureTls: /* value */ });
-```
-<!-- phase3-supplement:http.put -->
-### Contract 补充：`http.put`
-
-经复核的补充 contract。权威源：`src/api/HttpApi.cpp:1356-1392`。
-
-| 参数 | 类型 | 必填 | 默认值 | 说明 |
-| --- | --- | --- | --- | --- |
-| `url` | `string` | 否 | `` | 可选；默认 。 |
-| `body` | `json` | 否 | 可省略 | 可选；默认 omitted。 |
-| `headers` | `object` | 否 | `{}` | 可选；默认 {}。 |
-| `timeout` | `integer` | 否 | `30000` | 可选；默认 30000。 |
-| `async` | `boolean` | 否 | `true` | 可选；默认 true。 |
-| `redirect` | `string` | 否 | `follow` | 可选；默认 follow。 |
-| `responseType` | `string` | 否 | `text` | 可选；默认 text。 |
-| `insecureTls` | `boolean` | 否 | `false` | 可选；默认 false。 |
-
-#### 返回字段
-
-| 字段 | 类型 | 可选 |
-| --- | --- | --- |
-| `error` | `string` | 是 |
-| `success` | `boolean` | 否 |
-| `async` | `json` | 否 |
-| `requestId` | `json` | 否 |
-
-语义：省略可选参数时使用 handler 默认值；失败分支及错误字段以该源文件为准。
-
-```js
-const result = await fb2k.invoke('http.put', { url: /* value */, body: /* value */, headers: /* value */, timeout: /* value */, async: /* value */, redirect: /* value */, responseType: /* value */, insecureTls: /* value */ });
-```
 
 ## 请求生命周期与安全
 

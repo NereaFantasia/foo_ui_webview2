@@ -301,7 +301,7 @@ smp.dispose(); // 移除所有缓存更新的事件监听
 ### FbMetadbHandle
 
 ```javascript
-const handle = new FbMetadbHandle('C:\\\\Music\\\\song.flac');
+const handle = new FbMetadbHandle('C:\\Music\\song.flac');
 handle.Path;       // 文件路径
 handle.RawPath;    // 同 Path（兼容）
 handle.SubSong;    // 子曲目索引
@@ -507,20 +507,20 @@ window.NotifyOthers('theme_changed', { theme: 'light' });
 
 ```javascript
 // 文件操作
-if (await utils.FileExists('C:\\\\config.json')) {
-    const content = await utils.ReadTextFile('C:\\\\config.json');
+if (await utils.FileExists('C:\\config.json')) {
+    const content = await utils.ReadTextFile('C:\\config.json');
 }
 
 // 通配搜索
-const flacs = await utils.Glob('E:\\\\Music\\\\*.flac');
+const flacs = await utils.Glob('E:\\Music\\*.flac');
 
 // 格式化
 console.log(utils.FormatDuration(3661)); // "1:01:01"
 console.log(utils.FormatFileSize(1048576)); // "1.00 MB"
 
 // 路径拆分
-const [dir, name, ext] = utils.SplitFilePath('E:\\\\Music\\\\song.flac');
-// ["E:\\\\Music\\\\", "song", ".flac"]
+const [dir, name, ext] = utils.SplitFilePath('E:\\Music\\song.flac');
+// ["E:\\Music\\", "song", ".flac"]
 ```
 
 ## 行为差异说明

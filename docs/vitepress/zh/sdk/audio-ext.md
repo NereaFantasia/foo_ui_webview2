@@ -115,7 +115,7 @@ const settings = await fb.output.getSettings();
 获取指定文件的 ReplayGain 信息。支持单个路径或路径数组。
 
 ```javascript
-const r = await fb.replaygain.get('E:\\\\Music\\\\song.flac');
+const r = await fb.replaygain.get('E:\\Music\\song.flac');
 const r2 = await fb.replaygain.get(['song1.flac', 'song2.flac']);
 ```
 
@@ -171,7 +171,7 @@ const settings = await fb.replaygain.getSettings();
 扫描文件的 ReplayGain 值。
 
 ```javascript
-await fb.replaygain.scan(['E:\\\\Music\\\\song1.flac', 'E:\\\\Music\\\\song2.flac']);
+await fb.replaygain.scan(['E:\\Music\\song1.flac', 'E:\\Music\\song2.flac']);
 ```
 
 ### clear(paths) 
@@ -179,5 +179,5 @@ await fb.replaygain.scan(['E:\\\\Music\\\\song1.flac', 'E:\\\\Music\\\\song2.fla
 清除文件的 ReplayGain 值。
 
 ```javascript
-await fb.replaygain.clear(['E:\\\\Music\\\\song.flac']);
+await fb.replaygain.clear(['E:\\Music\\song.flac']);
 ```

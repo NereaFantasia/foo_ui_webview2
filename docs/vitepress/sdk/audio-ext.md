@@ -115,7 +115,7 @@ const settings = await fb.output.getSettings();
 Returns ReplayGain metadata for one path or an array of paths. The SDK always sends a `{ paths: string[] }` request.
 
 ```javascript
-const r = await fb.replaygain.get('E:\\\\Music\\\\song.flac');
+const r = await fb.replaygain.get('E:\\Music\\song.flac');
 const r2 = await fb.replaygain.get(['song1.flac', 'song2.flac']);
 ```
 
@@ -171,7 +171,7 @@ const settings = await fb.replaygain.getSettings();
 Starts a ReplayGain scan through the host context-menu pipeline. The default mode is `'track'`; pass `{ mode: 'album' }` to treat the selection as one album.
 
 ```javascript
-await fb.replaygain.scan(['E:\\\\Music\\\\song1.flac', 'E:\\\\Music\\\\song2.flac']);
+await fb.replaygain.scan(['E:\\Music\\song1.flac', 'E:\\Music\\song2.flac']);
 ```
 
 ### clear(paths)
@@ -179,5 +179,5 @@ await fb.replaygain.scan(['E:\\\\Music\\\\song1.flac', 'E:\\\\Music\\\\song2.fla
 Clears ReplayGain metadata from the specified files.
 
 ```javascript
-await fb.replaygain.clear(['E:\\\\Music\\\\song.flac']);
+await fb.replaygain.clear(['E:\\Music\\song.flac']);
 ```

@@ -143,7 +143,7 @@ const r3 = await fb.lyrics.get(undefined, { type: 'synced' });  // 仅同步歌�
 检查文件是否存在歌词。
 
 ```javascript
-const r = await fb.lyrics.exists('E:\\\\Music\\\\song.flac');
+const r = await fb.lyrics.exists('E:\\Music\\song.flac');
 console.log(r.exists);
 ```
 
@@ -161,7 +161,7 @@ console.log(r.exists);
 | options.format | string | 'lrc'（默认）/ 'txt'（仅 target 含 file/config） |
 
 ```javascript
-await fb.lyrics.save('E:\\\\Music\\\\song.flac', '[00:00.00]歌词内容...');
+await fb.lyrics.save('E:\\Music\\song.flac', '[00:00.00]歌词内容...');
 await fb.lyrics.save(path, text, { target: 'all' });             // 三合一：文件+标签+配置文件夹
 await fb.lyrics.save(path, text, { target: 'config' });          // 保存到 %profile%\\lyrics\\
 await fb.lyrics.save(path, text, { target: ['file', 'config'] }); // 数组组合

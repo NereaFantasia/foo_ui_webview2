@@ -8,67 +8,74 @@ This page is the primary owner for the namespaces listed below. Method names, pa
 
 ### titleformat.eval
 
-Public API method. Runtime authority: `src/api/TitleformatApi.cpp:401`.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `path` | `string` | No | Optional; default . |
-| `pattern` | `string` | No | Optional; default . |
+| `path` | `string` | Yes | File path to evaluate the pattern against. |
+| `pattern` | `string` | Yes | Titleformat pattern to compile and evaluate. |
 
 **Returns**: `{"error":"...","path":"...","pattern":"...","result":"...","success":true}`
 
 ```js
-const result = await fb2k.invoke('titleformat.eval', { path: /* value */, pattern: /* value */ });
+const { result } = await fb2k.invoke('titleformat.eval', {
+    path: 'C:\\Music\\song.flac',
+    pattern: '%artist% - %title%'
+});
 ```
 
 ### titleformat.evalBatch
 
-Public API method. Runtime authority: `src/api/TitleformatApi.cpp:402`.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `paths` | `array` | Yes | Required. |
-| `pattern` | `string` | No | Optional; default . |
+| `paths` | `array` | Yes | File path list to evaluate. |
+| `pattern` | `string` | Yes | Titleformat pattern compiled once and reused for every path. |
 
 **Returns**: `{"error":"...","errorCount":"...","pattern":"...","results":"...","success":true,"successCount":"...","total":"..."}`
 
 ```js
-const result = await fb2k.invoke('titleformat.evalBatch', { paths: /* value */, pattern: /* value */ });
+const { results } = await fb2k.invoke('titleformat.evalBatch', {
+    paths: ['C:\\Music\\song.flac', 'C:\\Music\\other.mp3'],
+    pattern: '%codec% %bitrate%kbps'
+});
 ```
 
 ### titleformat.evalFields
 
-Public API method. Runtime authority: `src/api/TitleformatApi.cpp:403`.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `fields` | `object` | Yes | Required. |
-| `path` | `string` | No | Optional; default . |
+| `fields` | `object` | Yes | Map of result field name to titleformat pattern. |
+| `path` | `string` | Yes | File path to evaluate the patterns against. |
 
 **Returns**: `{"error":"...","path":"...","success":true}`
 
 ```js
-const result = await fb2k.invoke('titleformat.evalFields', { fields: /* value */, path: /* value */ });
+const result = await fb2k.invoke('titleformat.evalFields', {
+    fields: { title: '%title%', artist: '%artist%', length: '%length%' },
+    path: 'C:\\Music\\song.flac'
+});
 ```
 
 ### titleformat.evalFieldsBatch
 
-Public API method. Runtime authority: `src/api/TitleformatApi.cpp:404`.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `fields` | `object` | Yes | Required. |
-| `paths` | `array` | Yes | Required. |
+| `fields` | `object` | Yes | Map of result field name to titleformat pattern. |
+| `paths` | `array` | Yes | File path list to evaluate. |
 
 **Returns**: `{"error":"...","errorCount":"...","results":"...","success":true,"successCount":"...","total":"..."}`
 
 ```js
-const result = await fb2k.invoke('titleformat.evalFieldsBatch', { fields: /* value */, paths: /* value */ });
+const { results } = await fb2k.invoke('titleformat.evalFieldsBatch', {
+    fields: { title: '%title%', album: '%album%' },
+    paths: ['C:\\Music\\song.flac', 'C:\\Music\\other.mp3']
+});
 ```
 
 ### titleformat.getBuiltinFields
 
-Public API method. Runtime authority: `src/api/TitleformatApi.cpp:405`.
 
 _No parameters._
 

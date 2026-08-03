@@ -8,7 +8,6 @@ This page is the primary owner for the namespaces listed below. Method names, pa
 
 ### window.blur
 
-Public API method. Runtime authority: `src/api/WindowApi.cpp:2411`.
 
 _No parameters._
 
@@ -21,21 +20,6 @@ const result = await fb2k.invoke('window.blur');
 ### window.broadcast
 
 
-<!-- phase3-major1-review:window.broadcast -->
-#### Source-reviewed contract
-Authority: `src/api/WindowApi.cpp:2245-2256`.
-
-| Parameter | Type | Required | Default |
-| --- | --- | --- | --- |
-| `message` | `json` | Yes | none |
-
-**Return keys (vary by response variant)**: `error`, `success`; `success`
-
-**Semantics**: message must be present but may be any JSON value. The handler identifies the caller window, broadcasts to the other managed windows, and returns no recipient count.
-
-<!-- phase3-major1-review-end:window.broadcast -->
-Public API method. Runtime authority: `src/api/WindowApi.cpp:2468`.
-
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `message` | `json` | Yes | Required. |
@@ -43,12 +27,11 @@ Public API method. Runtime authority: `src/api/WindowApi.cpp:2468`.
 **Returns**: `{"error":"...","success":true}`
 
 ```js
-const result = await fb2k.invoke('window.broadcast', { message: /* value */ });
+await fb2k.invoke('window.broadcast', { message: { type: 'themeChanged', theme: 'dark' } });
 ```
 
 ### window.cancelClose
 
-Public API method. Runtime authority: `src/api/WindowApi.cpp:2460`.
 
 _No parameters._
 
@@ -60,7 +43,6 @@ const result = await fb2k.invoke('window.cancelClose');
 
 ### window.center
 
-Public API method. Runtime authority: `src/api/WindowApi.cpp:2401`.
 
 _No parameters._
 
@@ -72,21 +54,20 @@ const result = await fb2k.invoke('window.center');
 
 ### window.clearClickThroughExcludeRegions
 
-Public API method. Runtime authority: `src/api/WindowApi.cpp:2466`.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `windowId` | `string` | No | Optional; default . |
+| `windowId` | `string` | No | Optional. |
 
 **Returns**: `{"error":"...","success":true,"windowId":"..."}`
 
 ```js
-const result = await fb2k.invoke('window.clearClickThroughExcludeRegions', { windowId: /* value */ });
+// popup-scoped; omit windowId only when calling from the popup itself
+await fb2k.invoke('window.clearClickThroughExcludeRegions', { windowId: 'popup-1' });
 ```
 
 ### window.clearDragRegions
 
-Public API method. Runtime authority: `src/api/WindowApi.cpp:2420`.
 
 _No parameters._
 
@@ -98,7 +79,6 @@ const result = await fb2k.invoke('window.clearDragRegions');
 
 ### window.clearNoDragRegions
 
-Public API method. Runtime authority: `src/api/WindowApi.cpp:2422`.
 
 _No parameters._
 
@@ -110,7 +90,6 @@ const result = await fb2k.invoke('window.clearNoDragRegions');
 
 ### window.close
 
-Public API method. Runtime authority: `src/api/WindowApi.cpp:2388`.
 
 _No parameters._
 
@@ -122,7 +101,6 @@ const result = await fb2k.invoke('window.close');
 
 ### window.closeAllPopups
 
-Public API method. Runtime authority: `src/api/WindowApi.cpp:2453`.
 
 _No parameters._
 
@@ -134,21 +112,20 @@ const result = await fb2k.invoke('window.closeAllPopups');
 
 ### window.closePopup
 
-Public API method. Runtime authority: `src/api/WindowApi.cpp:2452`.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `windowId` | `string` | No | Optional; default . |
+| `windowId` | `string` | No | Optional. |
 
 **Returns**: `{"error":"...","success":true}`
 
 ```js
-const result = await fb2k.invoke('window.closePopup', { windowId: /* value */ });
+// windowId is required here; there is no fallback to the calling window
+await fb2k.invoke('window.closePopup', { windowId: 'popup-1' });
 ```
 
 ### window.confirmClose
 
-Public API method. Runtime authority: `src/api/WindowApi.cpp:2461`.
 
 _No parameters._
 
@@ -160,14 +137,13 @@ const result = await fb2k.invoke('window.confirmClose');
 
 ### window.createPopup
 
-Public API method. Runtime authority: `src/api/WindowApi.cpp:2451`.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `alwaysOnTop` | `boolean` | No | Optional; default false. |
-| `backdropPolicy` | `object` | No | Optional; default omitted. |
+| `backdropPolicy` | `object` | No | Optional; omitted by default. |
 | `beforeClose` | `boolean` | No | Optional; default false. |
-| `behavior` | `object` | No | Optional; default omitted. |
+| `behavior` | `object` | No | Optional; omitted by default. |
 | `clickThrough` | `boolean` | No | Optional; default false. |
 | `frame` | `boolean` | No | Optional; default true. |
 | `height` | `integer` | No | Optional; default 300. |
@@ -175,12 +151,12 @@ Public API method. Runtime authority: `src/api/WindowApi.cpp:2451`.
 | `maxWidth` | `integer` | No | Optional; default 0. |
 | `minHeight` | `integer` | No | Optional; default 150. |
 | `minWidth` | `integer` | No | Optional; default 200. |
-| `profile` | `string` | No | Optional; default . |
+| `profile` | `string` | No | Optional. |
 | `resizable` | `boolean` | No | Optional; default true. |
 | `showInTaskbar` | `boolean` | No | Optional; default false. |
-| `title` | `string` | No | Optional; default . |
+| `title` | `string` | No | Optional. |
 | `transparent` | `boolean` | No | Optional; default false. |
-| `url` | `string` | No | Optional; default . |
+| `url` | `string` | No | Optional. |
 | `width` | `integer` | No | Optional; default 400. |
 | `x` | `integer` | No | Optional; default CW_USEDEFAULT. |
 | `y` | `integer` | No | Optional; default CW_USEDEFAULT. |
@@ -188,26 +164,16 @@ Public API method. Runtime authority: `src/api/WindowApi.cpp:2451`.
 **Returns**: `{"error":"...","success":true,"windowId":"..."}`
 
 ```js
-const result = await fb2k.invoke('window.createPopup', { alwaysOnTop: /* value */, backdropPolicy: /* value */, beforeClose: /* value */, behavior: /* value */, clickThrough: /* value */, frame: /* value */, height: /* value */, maxHeight: /* value */, maxWidth: /* value */, minHeight: /* value */, minWidth: /* value */, profile: /* value */, resizable: /* value */, showInTaskbar: /* value */, title: /* value */, transparent: /* value */, url: /* value */, width: /* value */, x: /* value */, y: /* value */ });
+const { windowId } = await fb2k.invoke('window.createPopup', {
+    url: 'popup.html',
+    width: 480,
+    height: 320,
+    title: 'Now Playing',
+});
 ```
 
 ### window.enterFullscreen
 
-
-<!-- phase3-major1-review:window.enterFullscreen -->
-#### Source-reviewed contract
-Authority: `src/api/WindowApi.cpp:1538-1554`.
-
-| Parameter | Type | Required | Default |
-| --- | --- | --- | --- |
-| `windowId` | `string` | No | `caller window` |
-
-**Return keys (vary by response variant)**: `error`, `isFullscreen`, `success`; `success`; `isFullscreen`, `success`
-
-**Semantics**: The resolver targets windowId when supplied or the caller otherwise. Panel mode and shells without fullscreen capability return errors; already-fullscreen calls return success:false without changing state.
-
-<!-- phase3-major1-review-end:window.enterFullscreen -->
-Public API method. Runtime authority: `src/api/WindowApi.cpp:2434`.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
@@ -222,21 +188,6 @@ const result = await fb2k.invoke('window.enterFullscreen');
 ### window.exitFullscreen
 
 
-<!-- phase3-major1-review:window.exitFullscreen -->
-#### Source-reviewed contract
-Authority: `src/api/WindowApi.cpp:1554-1570`.
-
-| Parameter | Type | Required | Default |
-| --- | --- | --- | --- |
-| `windowId` | `string` | No | `caller window` |
-
-**Return keys (vary by response variant)**: `error`, `isFullscreen`, `success`; `success`; `isFullscreen`, `success`
-
-**Semantics**: The resolver targets windowId when supplied or the caller otherwise. Panel mode and unsupported shells fail; a non-fullscreen target returns success:false without restoring geometry.
-
-<!-- phase3-major1-review-end:window.exitFullscreen -->
-Public API method. Runtime authority: `src/api/WindowApi.cpp:2435`.
-
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `windowId` | `string` | No | Optional; default caller window. |
@@ -249,7 +200,6 @@ const result = await fb2k.invoke('window.exitFullscreen');
 
 ### window.flash
 
-Public API method. Runtime authority: `src/api/WindowApi.cpp:2414`.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
@@ -259,12 +209,12 @@ Public API method. Runtime authority: `src/api/WindowApi.cpp:2414`.
 **Returns**: `{"error":"...","success":true}`
 
 ```js
-const result = await fb2k.invoke('window.flash', { count: /* value */, enabled: /* value */ });
+// omit count and enabled to start flashing 3 times
+await fb2k.invoke('window.flash');
 ```
 
 ### window.flashTaskbar
 
-Public API method. Runtime authority: `src/api/WindowApi.cpp:2433`.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
@@ -273,26 +223,26 @@ Public API method. Runtime authority: `src/api/WindowApi.cpp:2433`.
 **Returns**: `{"success":true}`
 
 ```js
-const result = await fb2k.invoke('window.flashTaskbar', { count: /* value */ });
+// omit count to flash 3 times
+await fb2k.invoke('window.flashTaskbar');
 ```
 
 ### window.focus
 
-Public API method. Runtime authority: `src/api/WindowApi.cpp:2410`.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `windowId` | `string` | No | Optional; default . |
+| `windowId` | `string` | No | Optional. |
 
 **Returns**: `{"error":"...","success":true}`
 
 ```js
-const result = await fb2k.invoke('window.focus', { windowId: /* value */ });
+// omit windowId to focus the calling window
+await fb2k.invoke('window.focus');
 ```
 
 ### window.getAllWindows
 
-Public API method. Runtime authority: `src/api/WindowApi.cpp:2454`.
 
 _No parameters._
 
@@ -304,33 +254,23 @@ const result = await fb2k.invoke('window.getAllWindows');
 
 ### window.getBackdropPolicy
 
+Reads a window's DWM backdrop policy. Supports both the main window and popups.
 
-<!-- phase3-major1-review:window.getBackdropPolicy -->
-#### Source-reviewed contract
-Authority: `src/api/WindowApi.cpp:2014-2023`.
-
-| Parameter | Type | Required | Default |
+| Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `windowId` | `string` | No | `caller window` |
+| `windowId` | `string` | No | Target window. Defaults to the calling window. |
 
-**Return keys (vary by response variant)**: `error`, `success`; `backdropPolicy`, `resolvedBackdropPolicy`, `success`, `windowId`
+**Returns**: `{ "success": true, "windowId": "...", "backdropPolicy": { ... }, "resolvedBackdropPolicy": { ... } }`
 
-**Semantics**: Observation resolution selects the explicit windowId or caller. The response is the shell’s backdrop-policy object augmented with success and resolved windowId, including profile/default-resolved policy fields.
-
-<!-- phase3-major1-review-end:window.getBackdropPolicy -->
-Public API method. Runtime authority: `src/api/WindowApi.cpp:2458`.
-
-_No parameters._
-
-**Returns**: JSON object from the runtime handler.
+`resolvedBackdropPolicy` is the effective policy after profile defaults are applied. A window that cannot be resolved returns `{ "success": false, "error": "..." }`.
 
 ```js
-const result = await fb2k.invoke('window.getBackdropPolicy');
+// omit windowId to read the calling window
+const { resolvedBackdropPolicy } = await fb2k.invoke('window.getBackdropPolicy');
 ```
 
 ### window.getBounds
 
-Public API method. Runtime authority: `src/api/WindowApi.cpp:2399`.
 
 _No parameters._
 
@@ -342,23 +282,13 @@ const result = await fb2k.invoke('window.getBounds');
 
 ### window.getCaptionButtonsWidth
 
-
-<!-- phase3-major1-review:window.getCaptionButtonsWidth -->
-#### Source-reviewed contract
-Authority: `src/api/WindowApi.cpp:1203-1214`.
-
-_No parameters._ This call is **main-window only**: it does not accept `windowId` and ignores the calling window.
-
-**Return keys**: `buttonWidth`, `width`
-
-**Semantics**: Reports the geometry of the main window's custom-drawn caption buttons (minimise / maximise / close), used by frontends that render their own titlebar. Popups have no custom-drawn caption buttons, so there is no popup-scoped value to report and passing `windowId` has no effect. Values are physical pixels and track the main window's DPI. When no main window exists the call returns DIP-baseline defaults (`width: 138`, `buttonWidth: 46`) rather than an error, so callers cannot distinguish "no window" from a genuine 100%-scale measurement.
-
-<!-- phase3-major1-review-end:window.getCaptionButtonsWidth -->
-Public API method. Runtime authority: `src/api/WindowApi.cpp:2418`.
+Reports the geometry of the main window's custom-drawn caption buttons (minimise / maximise / close), for frontends that render their own titlebar. Main window only: it does not accept `windowId` and ignores the calling window. Popups have no custom-drawn caption buttons, so there is no popup-scoped value to report.
 
 _No parameters._
 
 **Returns**: `{"buttonWidth":"...","width":"..."}`
+
+Values are physical pixels and track the main window's DPI. When no main window exists the call returns the DIP-baseline defaults (`width: 138`, `buttonWidth: 46`) rather than an error, so callers cannot distinguish "no window" from a genuine 100%-scale measurement.
 
 ```js
 const result = await fb2k.invoke('window.getCaptionButtonsWidth');
@@ -366,23 +296,13 @@ const result = await fb2k.invoke('window.getCaptionButtonsWidth');
 
 ### window.getCornerPreference
 
-
-<!-- phase3-major1-review:window.getCornerPreference -->
-#### Source-reviewed contract
-Authority: `src/api/WindowApi.cpp:1489-1495`.
-
-_No parameters._ This call is **main-window only**: it does not accept `windowId` and ignores the calling window.
-
-**Return keys**: `mode`, `preference`
-
-**Semantics**: Returns the main window's Windows 11 corner-rounding preference; `mode` and `preference` are the same value under two names. Popups do not expose this setting — they manage corner rounding internally (rounded when borderless, system default otherwise) and report `supportsCornerPreference: false` in their capabilities, so this call has no popup-scoped equivalent. When no main window exists the call returns `"default"` rather than an error.
-
-<!-- phase3-major1-review-end:window.getCornerPreference -->
-Public API method. Runtime authority: `src/api/WindowApi.cpp:2428`.
+Returns the main window's Windows 11 corner-rounding preference; `mode` and `preference` are the same value under two names. Main window only: it does not accept `windowId` and ignores the calling window. Popups do not expose this setting — they manage corner rounding internally (rounded when borderless, system default otherwise) and report `supportsCornerPreference: false` in their capabilities.
 
 _No parameters._
 
 **Returns**: `{"mode":"...","preference":"..."}`
+
+When no main window exists the call returns `"default"` rather than an error.
 
 ```js
 const result = await fb2k.invoke('window.getCornerPreference');
@@ -390,7 +310,6 @@ const result = await fb2k.invoke('window.getCornerPreference');
 
 ### window.getCurrentWindowId
 
-Public API method. Runtime authority: `src/api/WindowApi.cpp:2455`.
 
 _No parameters._
 
@@ -402,7 +321,6 @@ const result = await fb2k.invoke('window.getCurrentWindowId');
 
 ### window.getDevServerConfig
 
-Public API method. Runtime authority: `src/api/WindowApi.cpp:2444`.
 
 _No parameters._
 
@@ -414,7 +332,6 @@ const result = await fb2k.invoke('window.getDevServerConfig');
 
 ### window.getDpiScale
 
-Public API method. Runtime authority: `src/api/WindowApi.cpp:2432`.
 
 _No parameters._
 
@@ -426,27 +343,17 @@ const result = await fb2k.invoke('window.getDpiScale');
 
 ### window.getMaxSize
 
+Reads a window's requested maximum size. Resolution selects the explicit `windowId` or the calling window; it does **not** fall back to the main window, so a call from an unresolvable context fails instead of silently reporting another window's constraints. Panel (DUI/CUI) callers are rejected with `panelMode: true`, because a panel is not a window shell.
 
-<!-- phase3-major1-review:window.getMaxSize -->
-#### Source-reviewed contract
-Authority: `src/api/WindowApi.cpp:884-898`.
-
-| Parameter | Type | Required | Default |
+| Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `windowId` | `string` | No | `caller window` |
+| `windowId` | `string` | No | Target window. Defaults to the calling window. |
 
-**Return keys (vary by response variant)**: `error`, `success`; `height`, `width`, `windowId`
+**Returns**: `{"height":"...","success":true,"width":"...","windowId":"..."}`. A window that cannot be resolved returns `{ "success": false, "error": "..." }`.
 
-**Semantics**: Observation resolution selects the explicit `windowId` or the calling window; it does **not** fall back to the main window, so a call from an unresolvable context fails instead of silently reporting another window's constraints. Panel (DUI/CUI) callers are rejected with `panelMode: true` because a panel is not a window shell. Values are physical pixels; the host stores constraints in DIPs and converts using the target window's DPI. `0` means "no upper bound" and survives the conversion exactly.
+Values are physical pixels; the host stores constraints in DIPs and converts using the target window's DPI. `0` means "no upper bound" and survives the conversion exactly.
 
-The returned values are the **requested** constraints, not the currently effective window size. Note that a physical → DIP → physical round-trip is quantized to whole DIPs, so at non-100% scaling `get` may differ from the value passed to `set` by up to 1px per axis (for example, `202px` at 125% reads back as `203px`). Treat the getters as reporting the constraint you set to within ±1px rather than byte-for-byte. `0` is exempt.
-
-<!-- phase3-major1-review-end:window.getMaxSize -->
-Public API method. Runtime authority: `src/api/WindowApi.cpp:2405`.
-
-_No parameters._
-
-**Returns**: `{"height":"...","width":"..."}`
+The returned values are the **requested** constraints, not the currently effective window size. A physical → DIP → physical round-trip is quantized to whole DIPs, so at non-100% scaling `get` may differ from the value passed to `set` by up to 1px per axis (for example, `202px` at 125% reads back as `203px`). Treat the getters as reporting the constraint you set to within ±1px rather than byte-for-byte. `0` is exempt.
 
 ```js
 const result = await fb2k.invoke('window.getMaxSize');
@@ -454,27 +361,17 @@ const result = await fb2k.invoke('window.getMaxSize');
 
 ### window.getMinSize
 
+Reads a window's requested minimum size. Resolution selects the explicit `windowId` or the calling window; it does **not** fall back to the main window, so a call from an unresolvable context fails instead of silently reporting another window's constraints. Panel (DUI/CUI) callers are rejected with `panelMode: true`, because a panel is not a window shell.
 
-<!-- phase3-major1-review:window.getMinSize -->
-#### Source-reviewed contract
-Authority: `src/api/WindowApi.cpp:848-864`.
-
-| Parameter | Type | Required | Default |
+| Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `windowId` | `string` | No | `caller window` |
+| `windowId` | `string` | No | Target window. Defaults to the calling window. |
 
-**Return keys (vary by response variant)**: `error`, `success`; `height`, `width`, `windowId`
+**Returns**: `{"height":"...","success":true,"width":"...","windowId":"..."}`. A window that cannot be resolved returns `{ "success": false, "error": "..." }`.
 
-**Semantics**: Observation resolution selects the explicit `windowId` or the calling window; it does **not** fall back to the main window, so a call from an unresolvable context fails instead of silently reporting another window's constraints. Panel (DUI/CUI) callers are rejected with `panelMode: true` because a panel is not a window shell. Values are physical pixels; the host stores constraints in DIPs and converts using the target window's DPI.
+Values are physical pixels; the host stores constraints in DIPs and converts using the target window's DPI.
 
-The returned values are the **requested** constraints, not the currently effective window size. Note that a physical → DIP → physical round-trip is quantized to whole DIPs, so at non-100% scaling `get` may differ from the value passed to `set` by up to 1px per axis (for example, `202px` at 125% reads back as `203px`). Treat the getters as reporting the constraint you set to within ±1px rather than byte-for-byte.
-
-<!-- phase3-major1-review-end:window.getMinSize -->
-Public API method. Runtime authority: `src/api/WindowApi.cpp:2403`.
-
-_No parameters._
-
-**Returns**: `{"height":"...","width":"..."}`
+The returned values are the **requested** constraints, not the currently effective window size. A physical → DIP → physical round-trip is quantized to whole DIPs, so at non-100% scaling `get` may differ from the value passed to `set` by up to 1px per axis (for example, `202px` at 125% reads back as `203px`). Treat the getters as reporting the constraint you set to within ±1px rather than byte-for-byte.
 
 ```js
 const result = await fb2k.invoke('window.getMinSize');
@@ -482,7 +379,6 @@ const result = await fb2k.invoke('window.getMinSize');
 
 ### window.getMode
 
-Public API method. Runtime authority: `src/api/WindowApi.cpp:2469`.
 
 _No parameters._
 
@@ -494,21 +390,19 @@ const result = await fb2k.invoke('window.getMode');
 
 ### window.getPopupBehavior
 
-Public API method. Runtime authority: `src/api/WindowApi.cpp:2456`.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `windowId` | `string` | No | Optional; default . |
+| `windowId` | `string` | No | Optional. |
 
 **Returns**: `{"success":true,"windowId":"..."}`
 
 ```js
-const result = await fb2k.invoke('window.getPopupBehavior', { windowId: /* value */ });
+const info = await fb2k.invoke('window.getPopupBehavior', { windowId: 'popup-1' });
 ```
 
 ### window.getState
 
-Public API method. Runtime authority: `src/api/WindowApi.cpp:2393`.
 
 _No parameters._
 
@@ -520,7 +414,6 @@ const result = await fb2k.invoke('window.getState');
 
 ### window.getTitle
 
-Public API method. Runtime authority: `src/api/WindowApi.cpp:2413`.
 
 _No parameters._
 
@@ -532,7 +425,6 @@ const result = await fb2k.invoke('window.getTitle');
 
 ### window.getTitlebarHeight
 
-Public API method. Runtime authority: `src/api/WindowApi.cpp:2416`.
 
 _No parameters._
 
@@ -544,23 +436,13 @@ const result = await fb2k.invoke('window.getTitlebarHeight');
 
 ### window.getTitlebarInfo
 
-
-<!-- phase3-major1-review:window.getTitlebarInfo -->
-#### Source-reviewed contract
-Authority: `src/api/WindowApi.cpp:1335-1355`.
-
-_No parameters._ This call is **main-window only**: it does not accept `windowId` and ignores the calling window.
-
-**Return keys**: `captionButtonWidth`, `captionButtonsWidth`, `height`, `isMaximized`
-
-**Semantics**: Bundles the main window's titlebar height with its custom-drawn caption-button geometry and maximised state. Three of the four fields have no popup equivalent (popups expose only a titlebar height and have no custom-drawn caption buttons), so the call stays main-scoped rather than returning zeros for the missing fields. Values are physical pixels and track the main window's DPI. When no main window exists the call returns DIP-baseline defaults (`height: 32`, `captionButtonsWidth: 138`, `captionButtonWidth: 46`) rather than an error; those fallbacks are unscaled, so they differ in unit from the normal path on non-100% displays.
-
-<!-- phase3-major1-review-end:window.getTitlebarInfo -->
-Public API method. Runtime authority: `src/api/WindowApi.cpp:2423`.
+Bundles the main window's titlebar height with its custom-drawn caption-button geometry and maximised state. Main window only: it does not accept `windowId` and ignores the calling window. Three of the four fields have no popup equivalent — popups expose only a titlebar height and have no custom-drawn caption buttons — so the call stays main-scoped rather than returning zeros for the missing fields.
 
 _No parameters._
 
 **Returns**: `{"captionButtonWidth":"...","captionButtonsWidth":"...","height":"...","isMaximized":"..."}`
+
+Values are physical pixels and track the main window's DPI. When no main window exists the call returns the DIP-baseline defaults (`height: 32`, `captionButtonsWidth: 138`, `captionButtonWidth: 46`) rather than an error; those fallbacks are unscaled, so on non-100% displays they differ in unit from the normal path.
 
 ```js
 const result = await fb2k.invoke('window.getTitlebarInfo');
@@ -568,7 +450,6 @@ const result = await fb2k.invoke('window.getTitlebarInfo');
 
 ### window.getZoom
 
-Public API method. Runtime authority: `src/api/WindowApi.cpp:2448`.
 
 _No parameters._
 
@@ -580,11 +461,10 @@ const result = await fb2k.invoke('window.getZoom');
 
 ### window.hasSavedBounds
 
-Public API method. Runtime authority: `src/api/WindowApi.cpp:2446`.
 
 _No parameters._
 
-**Returns**: `{"Window has saved position from previous session":"...","description":"...","hasSavedBounds":"..."}`
+**Returns**: `{"description":"...","hasSavedBounds":"..."}`
 
 ```js
 const result = await fb2k.invoke('window.hasSavedBounds');
@@ -592,7 +472,6 @@ const result = await fb2k.invoke('window.hasSavedBounds');
 
 ### window.isAlwaysOnTop
 
-Public API method. Runtime authority: `src/api/WindowApi.cpp:2397`.
 
 _No parameters._
 
@@ -604,21 +483,19 @@ const result = await fb2k.invoke('window.isAlwaysOnTop');
 
 ### window.isClickThrough
 
-Public API method. Runtime authority: `src/api/WindowApi.cpp:2464`.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `windowId` | `string` | No | Optional; default . |
+| `windowId` | `string` | No | Optional. |
 
 **Returns**: `{"clickThrough":"...","error":"...","success":true}`
 
 ```js
-const result = await fb2k.invoke('window.isClickThrough', { windowId: /* value */ });
+const { clickThrough } = await fb2k.invoke('window.isClickThrough', { windowId: 'popup-1' });
 ```
 
 ### window.isFullscreen
 
-Public API method. Runtime authority: `src/api/WindowApi.cpp:2392`.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
@@ -627,12 +504,12 @@ Public API method. Runtime authority: `src/api/WindowApi.cpp:2392`.
 **Returns**: `{"fullscreen":"...","isFullscreen":"..."}`
 
 ```js
-const result = await fb2k.invoke('window.isFullscreen', { windowId: /* value */ });
+// omit windowId to query the calling window
+const { isFullscreen } = await fb2k.invoke('window.isFullscreen');
 ```
 
 ### window.isMaximized
 
-Public API method. Runtime authority: `src/api/WindowApi.cpp:2390`.
 
 _No parameters._
 
@@ -644,7 +521,6 @@ const result = await fb2k.invoke('window.isMaximized');
 
 ### window.isMinimized
 
-Public API method. Runtime authority: `src/api/WindowApi.cpp:2391`.
 
 _No parameters._
 
@@ -656,25 +532,15 @@ const result = await fb2k.invoke('window.isMinimized');
 
 ### window.isResizable
 
+Reports a window's requested resizable state. Resolution selects the explicit `windowId` or the calling window; it does **not** fall back to the main window. Panel (DUI/CUI) callers are rejected with `panelMode: true`.
 
-<!-- phase3-major1-review:window.isResizable -->
-#### Source-reviewed contract
-Authority: `src/api/WindowApi.cpp:924-933`.
-
-| Parameter | Type | Required | Default |
+| Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `windowId` | `string` | No | `caller window` |
+| `windowId` | `string` | No | Target window. Defaults to the calling window. |
 
-**Return keys (vary by response variant)**: `error`, `success`; `resizable`, `windowId`
+**Returns**: `{"resizable":"...","success":true,"windowId":"..."}`. A window that cannot be resolved returns `{ "success": false, "error": "..." }`.
 
-**Semantics**: Observation resolution selects the explicit `windowId` or the calling window; it does **not** fall back to the main window. Panel (DUI/CUI) callers are rejected with `panelMode: true`. Reports the requested resizable state; every window shell — including fully borderless popups — supports changing it at runtime via {@link window.setResizable}.
-
-<!-- phase3-major1-review-end:window.isResizable -->
-Public API method. Runtime authority: `src/api/WindowApi.cpp:2407`.
-
-_No parameters._
-
-**Returns**: `{"resizable":"..."}`
+Every window shell — including fully borderless popups — supports changing this at runtime via [`window.setResizable`](#window-setresizable).
 
 ```js
 const result = await fb2k.invoke('window.isResizable');
@@ -682,7 +548,6 @@ const result = await fb2k.invoke('window.isResizable');
 
 ### window.maximize
 
-Public API method. Runtime authority: `src/api/WindowApi.cpp:2386`.
 
 _No parameters._
 
@@ -694,7 +559,6 @@ const result = await fb2k.invoke('window.maximize');
 
 ### window.minimize
 
-Public API method. Runtime authority: `src/api/WindowApi.cpp:2385`.
 
 _No parameters._
 
@@ -706,7 +570,6 @@ const result = await fb2k.invoke('window.minimize');
 
 ### window.refreshWebView
 
-Public API method. Runtime authority: `src/api/WindowApi.cpp:2442`.
 
 _No parameters._
 
@@ -718,7 +581,6 @@ const result = await fb2k.invoke('window.refreshWebView');
 
 ### window.reload
 
-Public API method. Runtime authority: `src/api/WindowApi.cpp:2443`.
 
 _No parameters._
 
@@ -730,7 +592,6 @@ const result = await fb2k.invoke('window.reload');
 
 ### window.resetZoom
 
-Public API method. Runtime authority: `src/api/WindowApi.cpp:2449`.
 
 _No parameters._
 
@@ -742,7 +603,6 @@ const result = await fb2k.invoke('window.resetZoom');
 
 ### window.restore
 
-Public API method. Runtime authority: `src/api/WindowApi.cpp:2387`.
 
 _No parameters._
 
@@ -755,22 +615,6 @@ const result = await fb2k.invoke('window.restore');
 ### window.sendMessage
 
 
-<!-- phase3-major1-review:window.sendMessage -->
-#### Source-reviewed contract
-Authority: `src/api/WindowApi.cpp:2223-2242`.
-
-| Parameter | Type | Required | Default |
-| --- | --- | --- | --- |
-| `targetWindowId` | `string` | Yes | none |
-| `message` | `json` | Yes | none |
-
-**Return keys (vary by response variant)**: `error`, `success`; `error`, `success`; `error`, `success`; `success`
-
-**Semantics**: Both a non-empty targetWindowId and present message are required. The message is forwarded as arbitrary JSON from the caller identity; a missing recipient returns the target-not-found error.
-
-<!-- phase3-major1-review-end:window.sendMessage -->
-Public API method. Runtime authority: `src/api/WindowApi.cpp:2467`.
-
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `targetWindowId` | `string` | Yes | Required. |
@@ -779,43 +623,32 @@ Public API method. Runtime authority: `src/api/WindowApi.cpp:2467`.
 **Returns**: `{"error":"...","success":true}`
 
 ```js
-const result = await fb2k.invoke('window.sendMessage', { message: /* value */, targetWindowId: /* value */ });
+await fb2k.invoke('window.sendMessage', {
+    targetWindowId: 'popup-1',
+    message: { type: 'seek', position: 42 },
+});
 ```
 
 ### window.setAcrylic
 
-
-<!-- phase3-major1-review:window.setAcrylic -->
-#### Source-reviewed contract
-Authority: `src/api/WindowApi.cpp:1593-1617`.
-
-| Parameter | Type | Required | Default |
-| --- | --- | --- | --- |
-| `windowId` | `string` | No | `caller window` |
-| `enabled` | `boolean` | No | `true` |
-| `darkMode` | `boolean` | No | `leave existing mode` |
-
-**Returns**: `{"darkMode":"...","enabled":true,"success":true}`
-
-**Semantics**: The mutation resolver chooses explicit windowId or caller. enabled patches compatibility backdrop to acrylic or clears it; darkMode is only patched when supplied, and panel mode is unsupported.
-
-<!-- phase3-major1-review-end:window.setAcrylic -->
-Public API method. Runtime authority: `src/api/WindowApi.cpp:2439`.
+Applies or clears the acrylic backdrop. Not supported in panel mode.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `windowId` | `string` | No | Optional; default caller window. |
 | `enabled` | `boolean` | No | Optional; default true. |
-| `darkMode` | `boolean` | No | Optional; default leave existing mode. |
+| `darkMode` | `boolean` | No | Optional; leaves the existing mode when omitted. |
 
+**Returns**: `{ "success": true, "enabled": true }`, plus `darkMode` echoed back only when you supplied it.
+
+`success` reports whether the backdrop was actually applied, so it can be `false` even for a valid window when the platform refuses the effect.
 
 ```js
-const result = await fb2k.invoke('window.setAcrylic', { darkMode: /* value */, enabled: /* value */ });
+await fb2k.invoke('window.setAcrylic', { enabled: true, darkMode: true });
 ```
 
 ### window.setAlwaysOnTop
 
-Public API method. Runtime authority: `src/api/WindowApi.cpp:2396`.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
@@ -824,57 +657,41 @@ Public API method. Runtime authority: `src/api/WindowApi.cpp:2396`.
 **Returns**: `{"error":"...","success":true}`
 
 ```js
-const result = await fb2k.invoke('window.setAlwaysOnTop', { enabled: /* value */ });
+await fb2k.invoke('window.setAlwaysOnTop', { enabled: true });
 ```
 
 ### window.setBackdropPolicy
 
-
-<!-- phase3-major1-review:window.setBackdropPolicy -->
-#### Source-reviewed contract
-Authority: `src/api/WindowApi.cpp:2026-2047`.
-
-| Parameter | Type | Required | Default |
-| --- | --- | --- | --- |
-| `windowId` | `string` | No | `caller window` |
-| `backdropPolicy` | `object` | Yes | none |
-
-**Return keys (vary by response variant)**: `error`, `success`; `backdropPolicy`, `resolvedBackdropPolicy`, `success`, `windowId`
-
-**Semantics**: backdropPolicy must be present and an object before target resolution. The shell validates/applies the patch; the successful response returns the updated policy info plus success and windowId.
-
-<!-- phase3-major1-review-end:window.setBackdropPolicy -->
-Public API method. Runtime authority: `src/api/WindowApi.cpp:2459`.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `windowId` | `string` | No | Optional; default caller window. |
 | `backdropPolicy` | `object` | Yes | Required. |
 
-**Returns**: `{"error":"...","failed to update backdrop policy":"...","success":true}`
+**Returns**: `{"error":"...","success":true}`
 
 ```js
-const result = await fb2k.invoke('window.setBackdropPolicy', { backdropPolicy: /* value */ });
+await fb2k.invoke('window.setBackdropPolicy', {
+    backdropPolicy: { activeEffect: 'acrylic', darkMode: true },
+});
 ```
 
 ### window.setBackgroundTransparency
 
-Public API method. Runtime authority: `src/api/WindowApi.cpp:2441`.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `windowId` | `string` | No | Optional; default caller window. |
 | `transparent` | `boolean` | No | Optional; default true. |
 
-**Returns**: `{"WebView background is now transparent - DWM effects will show through":"...","description":"...","error":"...","success":true,"transparent":"..."}`
+**Returns**: `{"description":"...","error":"...","success":true,"transparent":"..."}`
 
 ```js
-const result = await fb2k.invoke('window.setBackgroundTransparency', { transparent: /* value */, windowId: /* value */ });
+await fb2k.invoke('window.setBackgroundTransparency', { transparent: true });
 ```
 
 ### window.setBlur
 
-Public API method. Runtime authority: `src/api/WindowApi.cpp:2438`.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
@@ -884,29 +701,11 @@ Public API method. Runtime authority: `src/api/WindowApi.cpp:2438`.
 **Returns**: `{"enabled":"...","success":true}`
 
 ```js
-const result = await fb2k.invoke('window.setBlur', { enabled: /* value */, windowId: /* value */ });
+await fb2k.invoke('window.setBlur', { enabled: true });
 ```
 
 ### window.setBounds
 
-
-<!-- phase3-major1-review:window.setBounds -->
-#### Source-reviewed contract
-Authority: `src/api/WindowApi.cpp:761-789`.
-
-| Parameter | Type | Required | Default |
-| --- | --- | --- | --- |
-| `x` | `integer` | No | `current x` |
-| `y` | `integer` | No | `current y` |
-| `width` | `integer` | No | `current width` |
-| `height` | `integer` | No | `current height` |
-
-**Return keys (vary by response variant)**: `error`, `success`; `success`
-
-**Semantics**: Only supplied fields are read as integers; omitted coordinates and dimensions retain the current window rectangle. The method is unsupported in panel mode and operates only on the caller window.
-
-<!-- phase3-major1-review-end:window.setBounds -->
-Public API method. Runtime authority: `src/api/WindowApi.cpp:2400`.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
@@ -918,72 +717,57 @@ Public API method. Runtime authority: `src/api/WindowApi.cpp:2400`.
 **Returns**: `{"error":"...","success":true}`
 
 ```js
-const result = await fb2k.invoke('window.setBounds', { height: /* value */, width: /* value */, x: /* value */, y: /* value */ });
+await fb2k.invoke('window.setBounds', { x: 100, y: 100, width: 480, height: 320 });
 ```
 
 ### window.setClickThrough
 
-Public API method. Runtime authority: `src/api/WindowApi.cpp:2463`.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `enabled` | `boolean` | No | Optional; default true. |
-| `windowId` | `string` | No | Optional; default . |
+| `windowId` | `string` | No | Optional. |
 
 **Returns**: `{"clickThrough":"...","error":"...","success":true}`
 
 ```js
-const result = await fb2k.invoke('window.setClickThrough', { enabled: /* value */, windowId: /* value */ });
+await fb2k.invoke('window.setClickThrough', { enabled: true });
 ```
 
 ### window.setClickThroughExcludeRegions
 
-Public API method. Runtime authority: `src/api/WindowApi.cpp:2465`.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `regions` | `array` | No | Optional; default omitted. |
-| `windowId` | `string` | No | Optional; default . |
+| `regions` | `array` | No | Optional; omitted by default. |
+| `windowId` | `string` | No | Optional. |
 
 **Returns**: `{"count":0,"dpiScale":"...","success":true,"warning":"...","windowId":"..."}`
 
 ```js
-const result = await fb2k.invoke('window.setClickThroughExcludeRegions', { regions: /* value */, windowId: /* value */ });
+await fb2k.invoke('window.setClickThroughExcludeRegions', {
+    regions: [{ x: 12, y: 12, width: 160, height: 40 }],
+});
 ```
 
 ### window.setCornerPreference
 
-
-<!-- phase3-major1-review:window.setCornerPreference -->
-#### Source-reviewed contract
-Authority: `src/api/WindowApi.cpp:1477-1486`.
-
-| Parameter | Type | Required | Default |
-| --- | --- | --- | --- |
-| `mode` | `string` | No | `"default"` |
-
-This call is **main-window only**: it does not accept `windowId` and ignores the calling window.
-
-**Return keys (vary by response variant)**: `error`, `success`; `success`
-
-**Semantics**: Sets the main window's Windows 11 corner-rounding preference. Accepted values are `"default"`, `"none"`, `"round"` and `"small"`; `"default"` maps to rounded corners because a borderless window has no standard non-client frame for the system default to apply to. Popups do not accept this setting — they manage corner rounding internally and report `supportsCornerPreference: false` — so the call has no popup-scoped form. Panel (DUI/CUI) callers are rejected with `panelMode: true`.
-
-<!-- phase3-major1-review-end:window.setCornerPreference -->
-Public API method. Runtime authority: `src/api/WindowApi.cpp:2427`.
+Sets the main window's Windows 11 corner-rounding preference. Main window only: it does not accept `windowId` and ignores the calling window. Popups do not accept this setting — they manage corner rounding internally and report `supportsCornerPreference: false` — so the call has no popup-scoped form. Panel (DUI/CUI) callers are rejected with `panelMode: true`.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `mode` | `string` | No | Optional; default default. |
+| `mode` | `string` | No | `"default"`, `"none"`, `"round"` or `"small"`. Defaults to `"default"`. |
 
 **Returns**: `{"error":"...","success":true}`
 
+`"default"` maps to rounded corners, because a borderless window has no standard non-client frame for the system default to apply to.
+
 ```js
-const result = await fb2k.invoke('window.setCornerPreference', { mode: /* value */ });
+await fb2k.invoke('window.setCornerPreference', { mode: 'round' });
 ```
 
 ### window.setDarkMode
 
-Public API method. Runtime authority: `src/api/WindowApi.cpp:2440`.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
@@ -993,41 +777,43 @@ Public API method. Runtime authority: `src/api/WindowApi.cpp:2440`.
 **Returns**: `{"enabled":"...","success":true}`
 
 ```js
-const result = await fb2k.invoke('window.setDarkMode', { enabled: /* value */, windowId: /* value */ });
+await fb2k.invoke('window.setDarkMode', { enabled: true });
 ```
 
 ### window.setDevServerConfig
 
-Public API method. Runtime authority: `src/api/WindowApi.cpp:2445`.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `devServerUrl` | `string` | No | Optional; default . |
+| `devServerUrl` | `string` | No | Optional. |
 | `useDevServer` | `boolean` | No | Optional; default false. |
 
 **Returns**: `{"devServerUrl":"...","success":true,"useDevServer":"..."}`
 
 ```js
-const result = await fb2k.invoke('window.setDevServerConfig', { devServerUrl: /* value */, useDevServer: /* value */ });
+await fb2k.invoke('window.setDevServerConfig', {
+    useDevServer: true,
+    devServerUrl: 'http://localhost:5173',
+});
 ```
 
 ### window.setDragRegions
 
-Public API method. Runtime authority: `src/api/WindowApi.cpp:2419`.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `regions` | `array` | No | Optional; default omitted. |
+| `regions` | `array` | No | Optional; omitted by default. |
 
 **Returns**: `{"count":"...","dpiScale":"...","error":"...","success":true}`
 
 ```js
-const result = await fb2k.invoke('window.setDragRegions', { regions: /* value */ });
+await fb2k.invoke('window.setDragRegions', {
+    regions: [{ x: 0, y: 0, width: 800, height: 32 }],
+});
 ```
 
 ### window.setFrameless
 
-Public API method. Runtime authority: `src/api/WindowApi.cpp:2462`.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
@@ -1037,27 +823,11 @@ Public API method. Runtime authority: `src/api/WindowApi.cpp:2462`.
 **Returns**: `{"error":"...","frameless":"...","success":true}`
 
 ```js
-const result = await fb2k.invoke('window.setFrameless', { frameless: /* value */, windowId: /* value */ });
+await fb2k.invoke('window.setFrameless', { frameless: true });
 ```
 
 ### window.setFullscreen
 
-
-<!-- phase3-major1-review:window.setFullscreen -->
-#### Source-reviewed contract
-Authority: `src/api/WindowApi.cpp:899-921`.
-
-| Parameter | Type | Required | Default |
-| --- | --- | --- | --- |
-| `windowId` | `string` | No | `caller window` |
-| `enabled` | `boolean` | No | `true` |
-
-**Return keys (vary by response variant)**: `error`, `fullscreen`, `success`; `fullscreen`, `success`
-
-**Semantics**: The mutation resolver chooses explicit windowId or caller. enabled enters and false exits fullscreen only on shells advertising fullscreen capability; panel mode is rejected.
-
-<!-- phase3-major1-review-end:window.setFullscreen -->
-Public API method. Runtime authority: `src/api/WindowApi.cpp:2408`.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
@@ -1067,185 +837,123 @@ Public API method. Runtime authority: `src/api/WindowApi.cpp:2408`.
 **Returns**: `{"error":"...","fullscreen":"...","success":true}`
 
 ```js
-const result = await fb2k.invoke('window.setFullscreen', { enabled: /* value */ });
+await fb2k.invoke('window.setFullscreen', { enabled: true });
 ```
 
 ### window.setMaxSize
 
-
-<!-- phase3-major1-review:window.setMaxSize -->
-#### Source-reviewed contract
-Authority: `src/api/WindowApi.cpp:867-881`.
-
-| Parameter | Type | Required | Default |
-| --- | --- | --- | --- |
-| `windowId` | `string` | No | `caller window` |
-| `width` | `integer` | No | `0` |
-| `height` | `integer` | No | `0` |
-
-**Return keys (vary by response variant)**: `error`, `success`; `success`, `windowId`
-
-**Semantics**: Mutation resolution selects the explicit `windowId` or the calling window; it never falls back to the main window, so a call from an unresolvable context fails rather than resizing an unintended window. Panel (DUI/CUI) callers are rejected with `panelMode: true`. Values are physical pixels, converted to the host's DIP storage using the target window's DPI; `0` (or negative) clears the bound. Applying a constraint re-validates the current window size immediately, so a window already larger than the new maximum is shrunk rather than waiting for the next user resize.
-
-<!-- phase3-major1-review-end:window.setMaxSize -->
-Public API method. Runtime authority: `src/api/WindowApi.cpp:2404`.
+Sets a window's maximum size. Resolution selects the explicit `windowId` or the calling window; it never falls back to the main window, so a call from an unresolvable context fails rather than resizing an unintended window. Panel (DUI/CUI) callers are rejected with `panelMode: true`.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
+| `windowId` | `string` | No | Target window. Defaults to the calling window. |
 | `height` | `integer` | No | Optional; default 0. |
 | `width` | `integer` | No | Optional; default 0. |
 
-**Returns**: `{"error":"...","success":true}`
+**Returns**: `{"error":"...","success":true,"windowId":"..."}`
+
+Values are physical pixels, converted to the host's DIP storage using the target window's DPI; `0` (or negative) clears the bound. Applying a constraint re-validates the current window size immediately, so a window already larger than the new maximum is shrunk rather than waiting for the next user resize.
 
 ```js
-const result = await fb2k.invoke('window.setMaxSize', { height: /* value */, width: /* value */ });
+await fb2k.invoke('window.setMaxSize', { width: 1920, height: 1080 });
 ```
 
 ### window.setMica
 
-
-<!-- phase3-major1-review:window.setMica -->
-#### Source-reviewed contract
-Authority: `src/api/WindowApi.cpp:1573-1576`.
-
-| Parameter | Type | Required | Default |
-| --- | --- | --- | --- |
-| `windowId` | `string` | No | `caller window` |
-| `enabled` | `boolean` | No | `true` |
-| `variant` | `string` | No | `mica` |
-| `darkMode` | `boolean` | No | `leave existing mode` |
-
-**Returns**: `{"darkMode":"...","enabled":true,"success":true,"variant":"..."}`
-
-**Semantics**: setMica delegates to SetMicaEffectImpl: only mica-alt selects the alternate variant, all other values normalize to mica. It patches the resolved caller/target shell and is unsupported in panel mode.
-
-<!-- phase3-major1-review-end:window.setMica -->
-Public API method. Runtime authority: `src/api/WindowApi.cpp:2436`.
+Applies or clears the Mica backdrop. Not supported in panel mode.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `windowId` | `string` | No | Optional; default caller window. |
 | `enabled` | `boolean` | No | Optional; default true. |
-| `variant` | `string` | No | Optional; default mica. |
-| `darkMode` | `boolean` | No | Optional; default leave existing mode. |
+| `variant` | `string` | No | `mica` (default) or `mica-alt`. |
+| `darkMode` | `boolean` | No | Optional; leaves the existing mode when omitted. |
 
+**Returns**: `{ "success": true, "enabled": true, "variant": "mica" }`, plus `darkMode` echoed back only when you supplied it.
+
+Only `mica-alt` selects the alternate variant; every other value — including an unrecognized one — is normalized to `mica` rather than rejected. The returned `variant` echoes that normalized request, not the effect that ended up on screen: popups do not support Mica Alt and are downgraded, so `variant: "mica-alt"` can come back for a window that received a different backdrop. `success` reports whether the backdrop was actually applied and can be `false` for a valid window when the platform refuses the effect.
 
 ```js
-const result = await fb2k.invoke('window.setMica', { enabled: true, variant: 'mica' });
+await fb2k.invoke('window.setMica', { enabled: true, variant: 'mica-alt' });
 ```
 
 ### window.setMicaEffect
 
-
-<!-- phase3-major1-review:window.setMicaEffect -->
-#### Source-reviewed contract
-Authority: `src/api/WindowApi.cpp:1579-1582`.
-
-| Parameter | Type | Required | Default |
-| --- | --- | --- | --- |
-| `windowId` | `string` | No | `caller window` |
-| `enabled` | `boolean` | No | `true` |
-| `variant` | `string` | No | `mica` |
-| `darkMode` | `boolean` | No | `leave existing mode` |
-
-**Returns**: `{"darkMode":"...","enabled":true,"success":true,"variant":"..."}`
-
-**Semantics**: setMicaEffect is a direct compatibility alias of setMica and delegates to the same Mica implementation, including variant normalization, target resolution, and panel restriction.
-
-<!-- phase3-major1-review-end:window.setMicaEffect -->
-Public API method. Runtime authority: `src/api/WindowApi.cpp:2437`.
+Compatibility alias of [`window.setMica`](#window-setmica). Same parameters, same behavior, same return shape — prefer `window.setMica` in new code. Because both share one implementation, the panel-mode rejection names `window.setMica` even when you called this alias.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `windowId` | `string` | No | Optional; default caller window. |
 | `enabled` | `boolean` | No | Optional; default true. |
-| `variant` | `string` | No | Optional; default mica. |
-| `darkMode` | `boolean` | No | Optional; default leave existing mode. |
+| `variant` | `string` | No | `mica` (default) or `mica-alt`. |
+| `darkMode` | `boolean` | No | Optional; leaves the existing mode when omitted. |
 
+**Returns**: `{ "success": true, "enabled": true, "variant": "mica" }`, plus `darkMode` echoed back only when you supplied it.
 
 ```js
-const result = await fb2k.invoke('window.setMicaEffect', { enabled: true, variant: 'mica' });
+await fb2k.invoke('window.setMicaEffect', { enabled: true });
 ```
 
 ### window.setMinSize
 
-
-<!-- phase3-major1-review:window.setMinSize -->
-#### Source-reviewed contract
-Authority: `src/api/WindowApi.cpp:831-845`.
-
-| Parameter | Type | Required | Default |
-| --- | --- | --- | --- |
-| `windowId` | `string` | No | `caller window` |
-| `width` | `integer` | No | `0` |
-| `height` | `integer` | No | `0` |
-
-**Return keys (vary by response variant)**: `error`, `success`; `success`, `windowId`
-
-**Semantics**: Mutation resolution selects the explicit `windowId` or the calling window; it never falls back to the main window, so a call from an unresolvable context fails rather than resizing an unintended window. Panel (DUI/CUI) callers are rejected with `panelMode: true`. Values are physical pixels, converted to the host's DIP storage using the target window's DPI, which keeps the constraint stable across DPI changes. Non-positive values normalise to a 1px floor. Applying a constraint re-validates the current window size immediately, so a window already smaller than the new minimum is grown rather than waiting for the next user resize.
-
-<!-- phase3-major1-review-end:window.setMinSize -->
-Public API method. Runtime authority: `src/api/WindowApi.cpp:2402`.
+Sets a window's minimum size. Resolution selects the explicit `windowId` or the calling window; it never falls back to the main window, so a call from an unresolvable context fails rather than resizing an unintended window. Panel (DUI/CUI) callers are rejected with `panelMode: true`.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
+| `windowId` | `string` | No | Target window. Defaults to the calling window. |
 | `height` | `integer` | No | Optional; default 0. |
 | `width` | `integer` | No | Optional; default 0. |
 
-**Returns**: `{"error":"...","success":true}`
+**Returns**: `{"error":"...","success":true,"windowId":"..."}`
+
+Values are physical pixels, converted to the host's DIP storage using the target window's DPI, which keeps the constraint stable across DPI changes. Non-positive values normalise to a 1px floor. Applying a constraint re-validates the current window size immediately, so a window already smaller than the new minimum is grown rather than waiting for the next user resize.
 
 ```js
-const result = await fb2k.invoke('window.setMinSize', { height: /* value */, width: /* value */ });
+await fb2k.invoke('window.setMinSize', { width: 480, height: 320 });
 ```
 
 ### window.setNoDragRegions
 
-Public API method. Runtime authority: `src/api/WindowApi.cpp:2421`.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `regions` | `array` | No | Optional; default omitted. |
+| `regions` | `array` | No | Optional; omitted by default. |
 
 **Returns**: `{"count":"...","dpiScale":"...","error":"...","success":true}`
 
 ```js
-const result = await fb2k.invoke('window.setNoDragRegions', { regions: /* value */ });
+await fb2k.invoke('window.setNoDragRegions', {
+    regions: [{ x: 690, y: 0, width: 110, height: 32 }],
+});
 ```
 
 ### window.setPopupBehavior
 
-
-<!-- phase3-major1-review:window.setPopupBehavior -->
-#### Source-reviewed contract
-Authority: `src/api/WindowApi.cpp:1978-2011`.
-
-| Parameter | Type | Required | Default |
-| --- | --- | --- | --- |
-| `windowId` | `string` | No | `caller popup` |
-| `profile` | `string` | No | `leave profile unchanged` |
-| `behavior` | `object` | No | `no behavior patch` |
-
-**Returns**: `{"error":"...","success":true,"windowId":"..."}`
-
-**Semantics**: Explicit windowId must name a popup rather than main; without it the caller must resolve to a popup. profile and behavior are independently presence-sensitive and are validated by UpdatePopupBehavior.
-
-<!-- phase3-major1-review-end:window.setPopupBehavior -->
-Public API method. Runtime authority: `src/api/WindowApi.cpp:2457`.
+Updates a popup's behavior policy at runtime. Popups only — the main window is not a valid target.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `windowId` | `string` | No | Optional; default caller popup. |
-| `profile` | `string` | No | Optional; default leave profile unchanged. |
-| `behavior` | `object` | No | Optional; default no behavior patch. |
+| `windowId` | `string` | No | Target popup id. Omit to use the calling popup. |
+| `profile` | `string` | No | `standard`, `miniPlayer`, or `desktopLyrics`. Leaves the profile unchanged when omitted. |
+| `behavior` | `object` | No | Field-level overrides. Applied only when supplied. |
 
+**Returns**: `{ "success": true, "windowId": "...", "profile": "...", "behavior": { ... }, "resolvedBehavior": { ... } }`
+
+`resolvedBehavior` is the effective policy after the profile defaults and your overrides are merged. `profile` and `behavior` are independent: supplying one does not reset the other, and a `null` value inside `behavior` erases that override rather than storing null.
+
+Profile matching is case-insensitive and also accepts hyphen and underscore spellings, so `miniPlayer`, `miniplayer`, `mini-player`, and `mini_player` are equivalent. The returned `profile` is always one of the three canonical names.
+
+Passing `windowId: "main"` fails with `window.setPopupBehavior does not support main window`. Omitting `windowId` requires the caller to itself be a popup, otherwise the call fails with `Window not found`.
 
 ```js
-const result = await fb2k.invoke('window.setPopupBehavior', { behavior: /* value */, profile: /* value */, windowId: /* value */ });
+// switch profile only
+await fb2k.invoke('window.setPopupBehavior', { profile: 'miniPlayer' });
+// field-level override, keeping the current profile
+await fb2k.invoke('window.setPopupBehavior', { behavior: { closeOnFocusLoss: true } });
 ```
 
 ### window.setPosition
 
-Public API method. Runtime authority: `src/api/WindowApi.cpp:2430`.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
@@ -1255,43 +963,32 @@ Public API method. Runtime authority: `src/api/WindowApi.cpp:2430`.
 **Returns**: `{"success":true}`
 
 ```js
-const result = await fb2k.invoke('window.setPosition', { x: /* value */, y: /* value */ });
+await fb2k.invoke('window.setPosition', { x: 100, y: 100 });
 ```
 
 ### window.setResizable
 
-
-<!-- phase3-major1-review:window.setResizable -->
-#### Source-reviewed contract
-Authority: `src/api/WindowApi.cpp:901-921`.
-
-| Parameter | Type | Required | Default |
-| --- | --- | --- | --- |
-| `windowId` | `string` | No | `caller window` |
-| `resizable` | `boolean` | No | `true` |
-
-**Return keys (vary by response variant)**: `error`, `success`; `success`, `windowId`
-
-**Semantics**: Mutation resolution selects the explicit `windowId` or the calling window; it never falls back to the main window. Previously this call always targeted the main window regardless of caller, so invoking it from a popup reconfigured the main window instead. Panel (DUI/CUI) callers are rejected with `panelMode: true`. Setting the value a window already has succeeds — idempotent calls are not failures.
-
-Every window shell supports this at runtime, including fully borderless popups (`frame: false` plus `transparent: true` with no backdrop effect): those windows collapse their entire non-client area, so adding a sizing border changes hit-testing without altering appearance. `success: false` therefore indicates a genuine Win32 failure (the style could not be written or the frame could not be refreshed), not an unsupported window shape; the requested state is not committed in that case.
-
-<!-- phase3-major1-review-end:window.setResizable -->
-Public API method. Runtime authority: `src/api/WindowApi.cpp:2406`.
+Sets whether a window can be resized by the user. Resolution selects the explicit `windowId` or the calling window; it never falls back to the main window. Panel (DUI/CUI) callers are rejected with `panelMode: true`. Setting the value a window already has succeeds — idempotent calls are not failures.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
+| `windowId` | `string` | No | Target window. Defaults to the calling window. |
 | `resizable` | `boolean` | No | Optional; default true. |
 
-**Returns**: `{"error":"...","success":true}`
+**Returns**: `{"error":"...","success":true,"windowId":"..."}`
+
+Every window shell supports this at runtime, including fully borderless popups (`frame: false` plus `transparent: true` with no backdrop effect): those windows collapse their entire non-client area, so adding a sizing border changes hit-testing without altering appearance. `success: false` therefore indicates a genuine Win32 failure — the style could not be written, or the frame could not be refreshed — not an unsupported window shape; the requested state is not committed in that case.
+
+::: warning Behavior change
+This call previously always targeted the main window regardless of caller, so invoking it from a popup reconfigured the main window instead.
+:::
 
 ```js
-const result = await fb2k.invoke('window.setResizable', { resizable: /* value */ });
+await fb2k.invoke('window.setResizable', { resizable: false });
 ```
 
 ### window.setSize
 
-Public API method. Runtime authority: `src/api/WindowApi.cpp:2431`.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
@@ -1301,12 +998,11 @@ Public API method. Runtime authority: `src/api/WindowApi.cpp:2431`.
 **Returns**: `{"success":true}`
 
 ```js
-const result = await fb2k.invoke('window.setSize', { height: /* value */, width: /* value */ });
+await fb2k.invoke('window.setSize', { width: 1024, height: 640 });
 ```
 
 ### window.setTitle
 
-Public API method. Runtime authority: `src/api/WindowApi.cpp:2412`.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
@@ -1315,12 +1011,11 @@ Public API method. Runtime authority: `src/api/WindowApi.cpp:2412`.
 **Returns**: `{"error":"...","success":true}`
 
 ```js
-const result = await fb2k.invoke('window.setTitle', { title: /* value */ });
+await fb2k.invoke('window.setTitle', { title: 'Now Playing' });
 ```
 
 ### window.setTitlebarHeight
 
-Public API method. Runtime authority: `src/api/WindowApi.cpp:2417`.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
@@ -1329,12 +1024,11 @@ Public API method. Runtime authority: `src/api/WindowApi.cpp:2417`.
 **Returns**: `{"error":"...","height":"...","success":true}`
 
 ```js
-const result = await fb2k.invoke('window.setTitlebarHeight', { height: /* value */ });
+await fb2k.invoke('window.setTitlebarHeight', { height: 40 });
 ```
 
 ### window.setZoom
 
-Public API method. Runtime authority: `src/api/WindowApi.cpp:2447`.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
@@ -1343,12 +1037,11 @@ Public API method. Runtime authority: `src/api/WindowApi.cpp:2447`.
 **Returns**: `{"error":"...","success":true,"zoom":"..."}`
 
 ```js
-const result = await fb2k.invoke('window.setZoom', { zoom: /* value */ });
+await fb2k.invoke('window.setZoom', { zoom: 1.25 });
 ```
 
 ### window.setZoomForDpi
 
-Public API method. Runtime authority: `src/api/WindowApi.cpp:2450`.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
@@ -1357,12 +1050,12 @@ Public API method. Runtime authority: `src/api/WindowApi.cpp:2450`.
 **Returns**: `{"dpi":"...","error":"...","success":true,"zoom":"..."}`
 
 ```js
-const result = await fb2k.invoke('window.setZoomForDpi', { dpi: /* value */ });
+// omit dpi to derive the zoom from the calling window's current DPI
+const { zoom } = await fb2k.invoke('window.setZoomForDpi');
 ```
 
 ### window.showSystemMenu
 
-Public API method. Runtime authority: `src/api/WindowApi.cpp:2415`.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
@@ -1374,12 +1067,12 @@ Public API method. Runtime authority: `src/api/WindowApi.cpp:2415`.
 **Returns**: `{"error":"...","success":true}`
 
 ```js
-const result = await fb2k.invoke('window.showSystemMenu', { h: /* value */, w: /* value */, x: /* value */, y: /* value */ });
+// pass w/h to keep the menu clear of the button that opened it
+await fb2k.invoke('window.showSystemMenu', { x: 8, y: 0, w: 32, h: 32 });
 ```
 
 ### window.startDrag
 
-Public API method. Runtime authority: `src/api/WindowApi.cpp:2394`.
 
 _No parameters._
 
@@ -1391,7 +1084,6 @@ const result = await fb2k.invoke('window.startDrag');
 
 ### window.startResize
 
-Public API method. Runtime authority: `src/api/WindowApi.cpp:2395`.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
@@ -1400,12 +1092,11 @@ Public API method. Runtime authority: `src/api/WindowApi.cpp:2395`.
 **Returns**: `{"error":"...","success":true}`
 
 ```js
-const result = await fb2k.invoke('window.startResize', { edge: /* value */ });
+await fb2k.invoke('window.startResize', { edge: 'bottomright' });
 ```
 
 ### window.toggleAlwaysOnTop
 
-Public API method. Runtime authority: `src/api/WindowApi.cpp:2398`.
 
 _No parameters._
 
@@ -1417,21 +1108,6 @@ const result = await fb2k.invoke('window.toggleAlwaysOnTop');
 
 ### window.toggleFullscreen
 
-
-<!-- phase3-major1-review:window.toggleFullscreen -->
-#### Source-reviewed contract
-Authority: `src/api/WindowApi.cpp:921-944`.
-
-| Parameter | Type | Required | Default |
-| --- | --- | --- | --- |
-| `windowId` | `string` | No | `caller window` |
-
-**Return keys (vary by response variant)**: `error`, `fullscreen`, `success`; `fullscreen`, `success`
-
-**Semantics**: The mutation resolver chooses explicit windowId or caller. The method flips the shell fullscreen state only when capability is available; panel mode and unsupported targets return false/error.
-
-<!-- phase3-major1-review-end:window.toggleFullscreen -->
-Public API method. Runtime authority: `src/api/WindowApi.cpp:2409`.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
@@ -1445,7 +1121,6 @@ const result = await fb2k.invoke('window.toggleFullscreen');
 
 ### window.toggleMaximize
 
-Public API method. Runtime authority: `src/api/WindowApi.cpp:2389`.
 
 _No parameters._
 
@@ -1453,237 +1128,6 @@ _No parameters._
 
 ```js
 const result = await fb2k.invoke('window.toggleMaximize');
-```
-
-## Contract supplements
-
-The sections below close public-contract findings from the strict parameter audit without replacing existing explanations.
-
-<!-- phase3-supplement:window.focus -->
-### Contract supplement: `window.focus`
-
-Verified contract supplement. Runtime authority: `src/api/WindowApi.cpp:947-1009`.
-
-| Parameter | Type | Required | Default | Description |
-| --- | --- | --- | --- | --- |
-| `windowId` | `string` | No | `` | Optional; default . |
-
-#### Return fields
-
-| Field | Type | Optional |
-| --- | --- | --- |
-| `error` | `string` | Yes |
-| `success` | `boolean` | No |
-
-Semantics: omitted optional parameters use handler defaults; failure branches and error fields are defined by this source file.
-
-```js
-const result = await fb2k.invoke('window.focus', { windowId: /* value */ });
-```
-<!-- phase3-supplement:window.getBackdropPolicy -->
-### Contract supplement: `window.getBackdropPolicy`
-
-Verified contract supplement. Runtime authority: `src/api/WindowApi.cpp:2014-2023`.
-
-| Parameter | Type | Required | Default | Description |
-| --- | --- | --- | --- | --- |
-| `windowId` | `string` | No | `caller window` | Optional; default caller window. |
-
-#### Return fields
-
-| Field | Type | Optional |
-| --- | --- | --- |
-| `error` | `string` | Yes |
-| `success` | `boolean` | No |
-| `backdropPolicy` | `object` | No |
-| `resolvedBackdropPolicy` | `object` | No |
-| `windowId` | `string` | No |
-
-Semantics: omitted optional parameters use handler defaults; failure branches and error fields are defined by this source file.
-
-```js
-const result = await fb2k.invoke('window.getBackdropPolicy', { windowId: /* value */ });
-```
-<!-- phase3-supplement:window.isFullscreen -->
-### Contract supplement: `window.isFullscreen`
-
-Verified contract supplement. Runtime authority: `src/api/WindowApi.cpp:577-584`.
-
-| Parameter | Type | Required | Default | Description |
-| --- | --- | --- | --- | --- |
-| `windowId` | `string` | No | `caller window` | Optional; default caller window. |
-
-#### Return fields
-
-| Field | Type | Optional |
-| --- | --- | --- |
-| `fullscreen` | `json` | No |
-| `isFullscreen` | `json` | No |
-
-Semantics: omitted optional parameters use handler defaults; failure branches and error fields are defined by this source file.
-
-```js
-const result = await fb2k.invoke('window.isFullscreen', { windowId: /* value */ });
-```
-<!-- phase3-supplement:window.setAcrylic -->
-### Contract supplement: `window.setAcrylic`
-
-Verified contract supplement. Runtime authority: `src/api/WindowApi.cpp:1593-1617`.
-
-| Parameter | Type | Required | Default | Description |
-| --- | --- | --- | --- | --- |
-| `windowId` | `string` | No | `caller window` | Optional; default caller window. |
-| `enabled` | `boolean` | No | `true` | Optional; default true. |
-| `darkMode` | `boolean` | No | `leave existing mode` | Optional; default leave existing mode. |
-
-#### Return fields
-
-| Field | Type | Optional |
-| --- | --- | --- |
-
-Semantics: omitted optional parameters use handler defaults; failure branches and error fields are defined by this source file.
-
-```js
-const result = await fb2k.invoke('window.setAcrylic', { windowId: /* value */, enabled: /* value */, darkMode: /* value */ });
-```
-<!-- phase3-supplement:window.setBackdropPolicy -->
-### Contract supplement: `window.setBackdropPolicy`
-
-Verified contract supplement. Runtime authority: `src/api/WindowApi.cpp:2026-2047`.
-
-| Parameter | Type | Required | Default | Description |
-| --- | --- | --- | --- | --- |
-| `windowId` | `string` | No | `caller window` | Optional; default caller window. |
-| `backdropPolicy` | `object` | Yes | none | Required. |
-
-#### Return fields
-
-| Field | Type | Optional |
-| --- | --- | --- |
-| `error` | `string` | Yes |
-| `success` | `boolean` | No |
-| `backdropPolicy` | `object` | No |
-| `resolvedBackdropPolicy` | `object` | No |
-| `windowId` | `string` | No |
-
-Semantics: omitted optional parameters use handler defaults; failure branches and error fields are defined by this source file.
-
-```js
-const result = await fb2k.invoke('window.setBackdropPolicy', { windowId: /* value */, backdropPolicy: /* value */ });
-```
-<!-- phase3-supplement:window.setBackgroundTransparency -->
-### Contract supplement: `window.setBackgroundTransparency`
-
-Verified contract supplement. Runtime authority: `src/api/WindowApi.cpp:1632-1658`.
-
-| Parameter | Type | Required | Default | Description |
-| --- | --- | --- | --- | --- |
-| `windowId` | `string` | No | `caller window` | Optional; default caller window. |
-| `transparent` | `boolean` | No | `true` | Optional; default true. |
-
-#### Return fields
-
-| Field | Type | Optional |
-| --- | --- | --- |
-| `error` | `string` | Yes |
-| `success` | `boolean` | No |
-| `description` | `json` | No |
-| `transparent` | `json` | No |
-
-Semantics: omitted optional parameters use handler defaults; failure branches and error fields are defined by this source file.
-
-```js
-const result = await fb2k.invoke('window.setBackgroundTransparency', { windowId: /* value */, transparent: /* value */ });
-```
-<!-- phase3-supplement:window.setBlur -->
-### Contract supplement: `window.setBlur`
-
-Verified contract supplement. Runtime authority: `src/api/WindowApi.cpp:1582-1593`.
-
-| Parameter | Type | Required | Default | Description |
-| --- | --- | --- | --- | --- |
-| `windowId` | `string` | No | `caller window` | Optional; default caller window. |
-| `enabled` | `boolean` | No | `true` | Optional; default true. |
-
-#### Return fields
-
-| Field | Type | Optional |
-| --- | --- | --- |
-| `enabled` | `json` | No |
-| `success` | `boolean` | No |
-
-Semantics: omitted optional parameters use handler defaults; failure branches and error fields are defined by this source file.
-
-```js
-const result = await fb2k.invoke('window.setBlur', { windowId: /* value */, enabled: /* value */ });
-```
-<!-- phase3-supplement:window.setDarkMode -->
-### Contract supplement: `window.setDarkMode`
-
-Verified contract supplement. Runtime authority: `src/api/WindowApi.cpp:1617-1627`.
-
-| Parameter | Type | Required | Default | Description |
-| --- | --- | --- | --- | --- |
-| `windowId` | `string` | No | `caller window` | Optional; default caller window. |
-| `enabled` | `boolean` | No | `true` | Optional; default true. |
-
-#### Return fields
-
-| Field | Type | Optional |
-| --- | --- | --- |
-| `enabled` | `json` | No |
-| `success` | `boolean` | No |
-
-Semantics: omitted optional parameters use handler defaults; failure branches and error fields are defined by this source file.
-
-```js
-const result = await fb2k.invoke('window.setDarkMode', { windowId: /* value */, enabled: /* value */ });
-```
-<!-- phase3-supplement:window.setFrameless -->
-### Contract supplement: `window.setFrameless`
-
-Verified contract supplement. Runtime authority: `src/api/WindowApi.cpp:2088-2101`.
-
-| Parameter | Type | Required | Default | Description |
-| --- | --- | --- | --- | --- |
-| `windowId` | `string` | No | `caller window` | Optional; default caller window. |
-| `frameless` | `boolean` | No | `true` | Optional; default true. |
-
-#### Return fields
-
-| Field | Type | Optional |
-| --- | --- | --- |
-| `error` | `string` | Yes |
-| `success` | `boolean` | No |
-| `frameless` | `json` | No |
-
-Semantics: omitted optional parameters use handler defaults; failure branches and error fields are defined by this source file.
-
-```js
-const result = await fb2k.invoke('window.setFrameless', { windowId: /* value */, frameless: /* value */ });
-```
-<!-- phase3-supplement:window.setFullscreen -->
-### Contract supplement: `window.setFullscreen`
-
-Verified contract supplement. Runtime authority: `src/api/WindowApi.cpp:899-921`.
-
-| Parameter | Type | Required | Default | Description |
-| --- | --- | --- | --- | --- |
-| `windowId` | `string` | No | `caller window` | Optional; default caller window. |
-| `enabled` | `boolean` | No | `true` | Optional; default true. |
-
-#### Return fields
-
-| Field | Type | Optional |
-| --- | --- | --- |
-| `error` | `string` | Yes |
-| `fullscreen` | `json` | No |
-| `success` | `boolean` | No |
-
-Semantics: omitted optional parameters use handler defaults; failure branches and error fields are defined by this source file.
-
-```js
-const result = await fb2k.invoke('window.setFullscreen', { windowId: /* value */, enabled: /* value */ });
 ```
 
 ## Runtime behavior and events

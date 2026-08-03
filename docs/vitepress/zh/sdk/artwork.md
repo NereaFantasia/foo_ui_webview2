@@ -24,7 +24,7 @@ if (res.available && res.dataUrl) {
 根据文件路径获取 `fb2k://` 封面 URL。
 
 ```javascript
-const res = await fb.artwork.getFb2kUrlByPath('E:\\\\Music\\\\song.flac', 'front', { maxSize: 200 });
+const res = await fb.artwork.getFb2kUrlByPath('E:\\Music\\song.flac', 'front', { maxSize: 200 });
 ```
 
 ## fb2k://artwork 协议说明
@@ -56,7 +56,7 @@ if (cover.available && cover.dataUrl) {
 获取指定曲目封面内容（返回 `dataUrl`）。适合保存/上传/写入标签。
 
 ```javascript
-const res = await fb.artwork.getForTrack('E:\\\\Music\\\\song.flac', 'front', { maxSize: 300 });
+const res = await fb.artwork.getForTrack('E:\\Music\\song.flac', 'front', { maxSize: 300 });
 ```
 
 ## getCurrent(type?)
@@ -94,8 +94,8 @@ const url = fb.artwork.withMaxSize('fb2k://artwork/...', 300);
 
 ```javascript
 const results = await fb.artwork.getBatch([
-    { path: 'E:\\\\Music\\\\a.flac' },
-    { path: 'E:\\\\Music\\\\b.mp3', type: 'back' }
+    { path: 'E:\\Music\\a.flac' },
+    { path: 'E:\\Music\\b.mp3', type: 'back' }
 ]);
 ```
 
@@ -113,7 +113,7 @@ const artwork = await fb.artwork.getByPlaylistItem(0, 12, 'front');
 
 ```javascript
 const batch = await fb.artwork.getFb2kUrlByPathBatch(
-    ['E:\\\\Music\\\\a.flac', 'E:\\\\Music\\\\b.flac'],
+    ['E:\\Music\\a.flac', 'E:\\Music\\b.flac'],
     { type: 'front', maxSize: 256 },
 );
 ```
