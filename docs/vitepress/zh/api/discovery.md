@@ -206,7 +206,7 @@ if (hit) {
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
-| `guid` | `string` | 否 | 可选；默认 。 |
+| `guid` | `string` | 是 | 带花括号的命令 GUID，取自 `discovery.getContextMenuCommands`；缺失或为空时被拒绝。 |
 | `force` | `boolean` | 否 | 默认 `false`。设为 `true` 时即使宿主永不绘制该命令也照样派发。 |
 
 **返回值**: `{ "success": true, "guid": "{...}", "name": "...", "hidden": false, "resolved": true, "force": false, "itemCount": 1 }`
@@ -221,8 +221,8 @@ if (hit) {
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
-| `path` | `string` | 否 | 可选；默认 。 |
-| `trackPath` | `string` | 否 | 可选；默认 。 |
+| `path` | `string` | 是 | 以斜杠分隔的命令路径，例如 `Playback Statistics/Rating/5`；为空时被拒绝。 |
+| `trackPath` | `string` | 否 | 指定其他文件而非当前曲目，受媒体读取安全约束。省略时作用于正在播放的曲目，无播放时作用于活动播放列表的选中项。 |
 
 **返回值**: `{"error":"...","foundName":"...","itemCount":"...","path":"...","success":true}`
 
