@@ -426,6 +426,9 @@ enum ControlIds {
     IDC_STATIC_BACKDROP = 1020,
     IDC_COMBO_BACKDROP = 1021,
     
+    IDC_STATIC_LANGUAGE = 1022,
+    IDC_COMBO_LANGUAGE = 1023,
+    
     IDC_STATIC_DEV = 1030,
     IDC_CHK_DEVTOOLS = 1031,
     IDC_CHK_LOCAL_NETWORK = 1032,
@@ -578,9 +581,16 @@ void WebViewPreferencesInstance::reset() {
     SetRememberWindowPosition(pendingRememberPosition_);
     SetAutoHideWithFoobar(pendingAutoHide_);
     SetBackdropEffect(pendingBackdrop_);
+    i18n::SetLanguageOverride(i18n::LanguageOverride::Auto);
     
     // 刷新 UI
     if (!hwnd_) return;
+
+    HWND hComboLanguage = GetDlgItem(hwnd_, IDC_COMBO_LANGUAGE);
+    if (hComboLanguage) {
+        SendMessageW(hComboLanguage, CB_SETCURSEL,
+            static_cast<int>(i18n::LanguageOverride::Auto), 0);
+    }
 
     HWND hComboTemplate = GetDlgItem(hwnd_, IDC_COMBO_TEMPLATE);
     if (hComboTemplate) {
@@ -701,6 +711,26 @@ INT_PTR WebViewPreferencesInstance::HandleMessage(
                 if (ui && ui->GetMainWindow()) {
                     ui->GetMainWindow()->RefreshBackdropEffect();
                 }
+            }
+            break;
+            
+        case IDC_COMBO_LANGUAGE:
+            if (HIWORD(wParam) != CBN_SELCHANGE) break;
+            {
+                HWND hCombo = GetDlgItem(hwnd, IDC_COMBO_LANGUAGE);
+                int sel = (int)SendMessageW(hCombo, CB_GETCURSEL, 0, 0);
+                // 下拉项顺序与 LanguageOverride 数值一致，越界一律回落 Auto。
+                auto mode = i18n::LanguageOverride::Auto;
+                if (sel == static_cast<int>(i18n::LanguageOverride::English)) {
+                    mode = i18n::LanguageOverride::English;
+                } else if (sel == static_cast<int>(i18n::LanguageOverride::Chinese)) {
+                    mode = i18n::LanguageOverride::Chinese;
+                }
+                // 内部会清缓存，后续 TR/TRU 立即改用新语言；
+                // 但本页已创建的控件文案不会重绘（TR 在创建时求值一次）。
+                i18n::SetLanguageOverride(mode);
+                hasChanges_ = true;
+                if (callback_.is_valid()) callback_->on_state_changed();
             }
             break;
             
@@ -947,6 +977,44 @@ void WebViewPreferencesInstance::InitializeControls(HWND hwnd) {
     SendMessageW(hComboBackdrop, CB_SETCURSEL, static_cast<int>(pendingBackdrop_), 0);
     
     y += CONTROL_HEIGHT + SECTION_SPACING;
+    
+    // ============================================
+    // 界面语言区域
+    // ============================================
+    
+    hLabel = CreateWindowExW(0, L"STATIC", TR("Interface Language:", "界面语言:"),
+        WS_CHILD | WS_VISIBLE | SS_LEFT,
+        MARGIN, y, DpiScale(200, dpi), LABEL_HEIGHT,
+        hwnd, (HMENU)IDC_STATIC_LANGUAGE, hInst, nullptr);
+    SendMessageW(hLabel, WM_SETFONT, (WPARAM)hFont, TRUE);
+    y += LABEL_HEIGHT + DpiScale(2, dpi);
+    
+    HWND hComboLanguage = CreateWindowExW(0, L"COMBOBOX", L"",
+        WS_CHILD | WS_VISIBLE | CBS_DROPDOWNLIST | WS_VSCROLL | WS_TABSTOP,
+        MARGIN + DpiScale(10, dpi), y, DpiScale(240, dpi), DpiScale(200, dpi),
+        hwnd, (HMENU)IDC_COMBO_LANGUAGE, hInst, nullptr);
+    SendMessageW(hComboLanguage, WM_SETFONT, (WPARAM)hFont, TRUE);
+    
+    // 顺序必须与 i18n::LanguageOverride 的数值一一对应（Auto=0 / English=1 / Chinese=2）。
+    SendMessageW(hComboLanguage, CB_ADDSTRING, 0,
+        (LPARAM)TR("Auto (follow foobar2000)", "自动 (跟随 foobar2000)"));
+    SendMessageW(hComboLanguage, CB_ADDSTRING, 0, (LPARAM)L"English");
+    SendMessageW(hComboLanguage, CB_ADDSTRING, 0, (LPARAM)L"中文");
+    SendMessageW(hComboLanguage, CB_SETCURSEL,
+        static_cast<int>(i18n::GetLanguageOverride()), 0);
+    
+    y += CONTROL_HEIGHT + DpiScale(2, dpi);
+    
+    // 语言切换不会重绘已创建的控件：TR/TRU 在控件创建时求值一次。
+    hLabel = CreateWindowExW(0, L"STATIC",
+        TR("Takes effect for newly opened dialogs; restart foobar2000 to update menus and panel descriptions.",
+           "新打开的对话框立即生效；菜单与面板描述需重启 foobar2000。"),
+        WS_CHILD | WS_VISIBLE | SS_LEFT,
+        MARGIN + DpiScale(10, dpi), y, CONTENT_WIDTH, LABEL_HEIGHT,
+        hwnd, (HMENU)-1, hInst, nullptr);
+    SendMessageW(hLabel, WM_SETFONT, (WPARAM)hFont, TRUE);
+    
+    y += LABEL_HEIGHT + SECTION_SPACING;
     
     // ============================================
     // 开发者选项区域 (可编辑复选框)

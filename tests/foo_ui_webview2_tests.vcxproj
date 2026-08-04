@@ -98,6 +98,11 @@
     <ClCompile Include="..\src\api\ArtworkRequestParser.cpp" />
     <ClCompile Include="..\src\window\WindowGeometryMath.cpp" />
     <ClCompile Include="..\src\window\WindowTargetPolicy.cpp" />
+    <!-- src\utils\I18n.cpp needs the full SDK to probe fb2k's own strings;
+         this project builds against compat\fb2k_types.h, so stub it instead. -->
+    <ClCompile Include="compat\i18n_stub.cpp">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+    </ClCompile>
     <ClCompile Include="test_error_envelope.cpp" />
     <ClCompile Include="test_base64.cpp" />
     <ClCompile Include="test_guid_utils.cpp" />

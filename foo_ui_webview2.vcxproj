@@ -221,6 +221,7 @@
     <ClCompile Include="src\api\ArtworkRequestParser.cpp" />
     <ClCompile Include="src\utils\ImageUtils.cpp" />
     <ClCompile Include="src\utils\PathExpansion.cpp" />
+    <ClCompile Include="src\utils\I18n.cpp" />
     <ClCompile Include="src\api\PluginRegistry.cpp" />
     <ClCompile Include="src\api\FileApi.cpp" />
     <ClCompile Include="src\api\DialogApi.cpp" />
