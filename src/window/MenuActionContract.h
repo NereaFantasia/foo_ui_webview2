@@ -24,7 +24,7 @@ enum class Origin { User, BuiltinPlayback, BuiltinSystem };
 
 // The concrete built-in command a built-in item runs. Meaningful only for
 // built-in origins; user items are always None.
-enum class Builtin { None, PlayPause, Previous, Next, Stop, Exit };
+enum class Builtin { None, PlayPause, Previous, Next, Stop, Exit, ShowMainWindow };
 
 // The resolved identity of a selected menu action: the public id echoed to the
 // frontend plus the trusted origin/built-in that decides routing.
@@ -40,9 +40,19 @@ struct ResolvedAction {
 // exit command. The playback ids were implementation identifiers for injected
 // defaults, not a documented caller-supplied command contract, so they remain
 // ordinary user ids when supplied by a frontend.
+//
+// `_sys_show` joins the same exact allowlist so a frontend that renders its own
+// "show main window" row (instead of relying on the showSystemItems injection)
+// still gets the native route. This matters because the frontend event route is
+// structurally unavailable in exactly the state such a row is used: hiding to
+// tray deep-suspends the main page (TrySuspend), so a tray:menuItemClicked
+// handler cannot run to call window.focus itself.
 inline std::optional<ResolvedAction> ReservedBuiltinForPublicId(const std::string& publicId) {
     if (publicId == "_sys_exit") {
         return ResolvedAction{ publicId, Origin::BuiltinSystem, Builtin::Exit };
+    }
+    if (publicId == "_sys_show") {
+        return ResolvedAction{ publicId, Origin::BuiltinSystem, Builtin::ShowMainWindow };
     }
     return std::nullopt;
 }
@@ -80,22 +90,24 @@ inline Origin OriginFromString(const std::string& s) {
 
 inline const char* BuiltinToString(Builtin b) {
     switch (b) {
-        case Builtin::None:      return "none";
-        case Builtin::PlayPause: return "play-pause";
-        case Builtin::Previous:  return "previous";
-        case Builtin::Next:      return "next";
-        case Builtin::Stop:      return "stop";
-        case Builtin::Exit:      return "exit";
+        case Builtin::None:           return "none";
+        case Builtin::PlayPause:      return "play-pause";
+        case Builtin::Previous:       return "previous";
+        case Builtin::Next:           return "next";
+        case Builtin::Stop:           return "stop";
+        case Builtin::Exit:           return "exit";
+        case Builtin::ShowMainWindow: return "show-main-window";
     }
     return "none";
 }
 
 inline Builtin BuiltinFromString(const std::string& s) {
-    if (s == "play-pause") return Builtin::PlayPause;
-    if (s == "previous")   return Builtin::Previous;
-    if (s == "next")       return Builtin::Next;
-    if (s == "stop")       return Builtin::Stop;
-    if (s == "exit")       return Builtin::Exit;
+    if (s == "play-pause")       return Builtin::PlayPause;
+    if (s == "previous")         return Builtin::Previous;
+    if (s == "next")             return Builtin::Next;
+    if (s == "stop")             return Builtin::Stop;
+    if (s == "exit")             return Builtin::Exit;
+    if (s == "show-main-window") return Builtin::ShowMainWindow;
     return Builtin::None;
 }
 
@@ -114,7 +126,7 @@ inline std::optional<Builtin> PlaybackActionFromString(const std::string& s) {
 
 // Inverse of PlaybackActionFromString for round-tripping the public field via
 // getMenuItems. Only the four playback actions have a public token; every other
-// built-in (including Exit) and None return an empty string.
+// built-in (including Exit and ShowMainWindow) and None return an empty string.
 inline const char* PlaybackActionToString(Builtin b) {
     switch (b) {
         case Builtin::PlayPause: return "play-pause";
@@ -122,7 +134,8 @@ inline const char* PlaybackActionToString(Builtin b) {
         case Builtin::Next:      return "next";
         case Builtin::Stop:      return "stop";
         case Builtin::None:
-        case Builtin::Exit:      return "";
+        case Builtin::Exit:
+        case Builtin::ShowMainWindow: return "";
     }
     return "";
 }
@@ -136,7 +149,7 @@ inline bool IsTrustedBuiltinPair(Origin origin, Builtin builtin) {
             return builtin == Builtin::PlayPause || builtin == Builtin::Previous ||
                 builtin == Builtin::Next || builtin == Builtin::Stop;
         case Origin::BuiltinSystem:
-            return builtin == Builtin::Exit;
+            return builtin == Builtin::Exit || builtin == Builtin::ShowMainWindow;
         case Origin::User:
             return false;
     }

@@ -144,9 +144,10 @@ export interface TrayMenuItem {
      *
      * The value is validated fail-loud: an unknown token, or a declaration on an
      * unsupported item type, rejects the whole `setContextMenu` /
-     * `appendMenuItems` call with an `INVALID_PARAMS` error. `'exit'` is not
-     * accepted (application exit stays the reserved `_sys_exit` item). This field
-     * applies to tray menus only and has no effect on `menu.show`.
+     * `appendMenuItems` call with an `INVALID_PARAMS` error. Neither `'exit'` nor
+     * `'show-main-window'` is accepted: the system actions stay exclusive to the
+     * reserved `_sys_exit` / `_sys_show` ids. This field applies to tray menus
+     * only and has no effect on `menu.show`.
      */
     playbackAction?: 'play-pause' | 'previous' | 'next' | 'stop';
 }
@@ -159,8 +160,14 @@ export type TrayMenuPosition = 'top' | 'playback' | 'bottom';
  *
  * - `showPlaybackControls` (default `true`): auto-inject built-in
  *   play/pause/prev/next/stop items in the playback zone.
- * - `showSystemItems` (default `true`): auto-inject "Exit foobar2000"
- *   in the bottom zone.
+ * - `showSystemItems` (default `true`): auto-inject "Show Main Window" followed
+ *   by "Exit foobar2000" in the bottom zone. Both run natively, so they keep
+ *   working while the main page is deep-suspended (minimize / tray / lock) —
+ *   which is exactly when "Show Main Window" is needed, since a
+ *   `tray:menuItemClicked` handler cannot run then to call `window.focus`
+ *   itself. To render your own row instead, use the exact reserved id
+ *   `_sys_show` (or `_sys_exit`) and it receives the same native route;
+ *   the matching injection is then skipped. Your `label` / `icon` are kept.
  * - `customPosition` (default `'top'`): which zone the `items` array
  *   passed to setContextMenu is written into.
  */

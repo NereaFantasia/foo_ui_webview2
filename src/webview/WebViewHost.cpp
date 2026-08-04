@@ -1230,14 +1230,11 @@ void WebViewHost::LogLifecycle(const char* event, const std::string& detail) con
 // ==========================================================================
 void WebViewHost::WriteCrashLog(const std::string& line) {
     try {
-        // profile 目录（与 ConsoleApi 的 webview_ui.log 同目录，但独立文件）
-        pfc::string8 profilePath;
-        filesystem::g_get_display_path("profile://", profilePath);
-        std::string dir(profilePath.get_ptr(), profilePath.get_length());
-
-        std::wstring widePath =
-            pfc::stringcvt::string_wide_from_utf8(dir.c_str()).get_ptr();
-        widePath += L"\\webview_crash.log";
+        // profile 目录（与 ConsoleApi 的 webview_ui.log 同目录，但独立文件）。
+        // 必须走 core_api::get_profile_path()：字面量 "profile://" 不是可解析的
+        // 路径，g_get_display_path 会抛异常并被下方 catch 静默吞掉，导致崩溃日志
+        // 全部丢失。
+        std::wstring widePath = GetProfileLogPath(L"webview_crash.log");
 
         // 时间戳前缀
         std::time_t now = std::time(nullptr);

@@ -235,6 +235,12 @@ private:
     bool webViewRebuildInProgress_ = false;
     bool pageHealthProbePending_ = false;
     uint64_t pageHealthProbeGeneration_ = 0;
+    // 僵尸态重建的限流状态（webview_crash_policy::DecideBrowserExitRebuild 持有
+    // 判定，此处只存"窗口内累计次数"与"窗口起点 tick"）。崩溃源若是每次创建
+    // 后必然复现的外部因素（实测：第三方注入钩子打崩浏览器进程），无界重试会
+    // 退化成重建死循环，故必须限流。
+    unsigned browserExitRebuildAttempts_ = 0;
+    unsigned long long browserExitRebuildWindowStartMs_ = 0;
     // 每次原因变化都重新投影：hidden 迁移经 SetVisible(false)+TrySuspend（深挂起
     // 开）或 SetVisible(false)+Low（回退）；hidden→visible 迁移经
     // RestoreSurfaceAfterHidden 执行 SetVisible(true)+nudge，再按当前 reasons
@@ -310,6 +316,10 @@ private:
     static constexpr DWORD PAGE_HEALTH_RETRY_DELAY_MS = 1000;
     static constexpr DWORD PAGE_HEALTH_PROBE_TIMEOUT_MS = 3000;
     static constexpr unsigned PAGE_HEALTH_RECOVERY_LIMIT = 4;
+    // 僵尸态（浏览器进程退出 / Reload 失败）整窗重建的延迟调度。必须延迟：
+    // ProcessFailed 是 COM 回调，不能在其栈上销毁 WebViewHost 本体。
+    static constexpr UINT_PTR PROCESS_DEAD_REBUILD_TIMER_ID = 127;
+    static constexpr DWORD PROCESS_DEAD_REBUILD_DELAY_MS = 500;
     static constexpr UINT_PTR DEFERRED_BACKDROP_TIMER_ID = 130;
     static constexpr DWORD DEFERRED_BACKDROP_DELAY_MS = 200;
     static constexpr UINT_PTR BACKDROP_KICK_EXIT_TIMER_ID = 131;
@@ -394,6 +404,9 @@ private:
     void ProbeRestoredPageHealth(const char* reason);
     void HandleRestoredPageHealthResult(bool healthy, const char* reason);
     bool RebuildWebViewAfterHealthFailure(const char* reason);
+    // 僵尸态整窗重建的唯一入口：限流后经 PROCESS_DEAD_REBUILD_TIMER_ID 延迟到
+    // 下一消息周期执行，避免在 ProcessFailed 的 COM 回调栈上销毁宿主。
+    void ScheduleProcessDeadRebuild(const char* reason);
     void FinalizeStartupRevealSettlement();
     void CaptureRuntimeDomProbe(const std::string& phase, int scheduledDelayMs = -1);
     void ScheduleFinalizeStartupRuntimeProbes();

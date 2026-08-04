@@ -425,11 +425,32 @@ TEST(TaskbarTrayContractsTest, PlaybackDefaultsCarryBuiltinOrigin) {
     EXPECT_EQ(items[3].builtinAction, menu_action::Builtin::Stop);
 }
 
+// System defaults inject show-main-window BEFORE exit (show/restore first, quit
+// last), both stamped Origin::BuiltinSystem by the builder. `_sys_show` must be
+// native for the same reason Exit is: hiding to tray deep-suspends the main page
+// (put_IsVisible(FALSE) + TrySuspend), so a tray:menuItemClicked handler cannot
+// run to call window.focus itself.
 TEST(TaskbarTrayContractsTest, SystemDefaultsCarryBuiltinExitOrigin) {
     auto items = BuildSystemDefaultItems();
-    ASSERT_EQ(items.size(), 1u);
-    EXPECT_EQ(items[0].origin, menu_action::Origin::BuiltinSystem);
-    EXPECT_EQ(items[0].builtinAction, menu_action::Builtin::Exit);
+    ASSERT_EQ(items.size(), 2u);
+    for (const auto& m : items) {
+        EXPECT_EQ(m.origin, menu_action::Origin::BuiltinSystem);
+        EXPECT_EQ(m.type, "normal");
+        EXPECT_TRUE(m.enabled);
+        EXPECT_TRUE(m.visible);
+        // Built-in system items never declare the public playbackAction field.
+        EXPECT_TRUE(m.playbackAction.empty());
+    }
+    EXPECT_EQ(items[0].id, "_sys_show");
+    EXPECT_EQ(items[0].builtinAction, menu_action::Builtin::ShowMainWindow);
+    EXPECT_EQ(items[1].id, "_sys_exit");
+    EXPECT_EQ(items[1].builtinAction, menu_action::Builtin::Exit);
+
+    // Both route natively, never to the frontend callback.
+    for (const auto& m : items) {
+        EXPECT_EQ(menu_action::DecideRoute({ m.id, m.origin, m.builtinAction }),
+                  menu_action::RouteDecision::ExecuteSystem);
+    }
 }
 
 // Exact historical ids map to fixed built-in actions. Prefix lookalikes and
@@ -442,8 +463,20 @@ TEST(TaskbarTrayContractsTest, ReservedBuiltinAllowlistIsExact) {
     EXPECT_EQ(exit->builtin, Builtin::Exit);
     EXPECT_EQ(DecideRoute(*exit), RouteDecision::ExecuteSystem);
 
+    // A frontend that renders its own "show main window" row still gets the
+    // native route, because the frontend-event route is structurally dead in
+    // exactly the tray-hidden state such a row exists for.
+    auto show = ReservedBuiltinForPublicId("_sys_show");
+    ASSERT_TRUE(show.has_value());
+    EXPECT_EQ(show->origin, Origin::BuiltinSystem);
+    EXPECT_EQ(show->builtin, Builtin::ShowMainWindow);
+    EXPECT_EQ(DecideRoute(*show), RouteDecision::ExecuteSystem);
+
     EXPECT_FALSE(ReservedBuiltinForPublicId("_sys_exit_backup").has_value());
     EXPECT_FALSE(ReservedBuiltinForPublicId("_SYS_EXIT").has_value());
+    EXPECT_FALSE(ReservedBuiltinForPublicId("_sys_show_alt").has_value());
+    EXPECT_FALSE(ReservedBuiltinForPublicId("_SYS_SHOW").has_value());
+    EXPECT_FALSE(ReservedBuiltinForPublicId("_sys_showMainWindow").has_value());
     EXPECT_FALSE(ReservedBuiltinForPublicId("_sys_").has_value());
     EXPECT_FALSE(ReservedBuiltinForPublicId("_pb_playPause").has_value());
     EXPECT_FALSE(ReservedBuiltinForPublicId("_pb_prev").has_value());
@@ -497,6 +530,44 @@ TEST(TaskbarTrayContractsTest, EffectiveZonesPromoteOnlyExitAndKeepPlaybackUserI
               menu_action::RouteDecision::FireUserCallback);
 }
 
+// showSystemItems injects `_sys_show` into bottom by default, and dedupes it
+// against a frontend-supplied row of the same exact id (which promotion has
+// already stamped native). A lookalike id stays a user action, so it is both
+// kept as-is AND does not suppress the injection.
+TEST(TaskbarTrayContractsTest, EffectiveZonesInjectAndDedupeShowMainWindow) {
+    TrayMenuConfig config;
+    config.showPlaybackControls = false;
+    config.showSystemItems = true;
+
+    // Default injection: both system items land in bottom, show before exit.
+    auto injected = BuildEffectiveTrayZones({ MkTrayItem("u") }, {}, {}, config);
+    ASSERT_EQ(injected.bottom.size(), 2u);
+    EXPECT_EQ(injected.bottom[0].id, "_sys_show");
+    EXPECT_EQ(injected.bottom[0].builtinAction, menu_action::Builtin::ShowMainWindow);
+    EXPECT_EQ(injected.bottom[1].id, "_sys_exit");
+
+    // Frontend supplies its own `_sys_show` row with a custom label: it is
+    // promoted native (label preserved) and the duplicate is not injected.
+    TrayMenuItem ownShow = MkTrayItem("_sys_show");
+    ownShow.label = "打开播放器";
+    auto deduped = BuildEffectiveTrayZones({ ownShow }, {}, {}, config);
+    EXPECT_EQ(std::ranges::count_if(deduped.top, [](const TrayMenuItem& item) {
+        return item.id == "_sys_show";
+    }), 1);
+    EXPECT_FALSE(TrayMenuContainsPublicId(deduped.bottom, "_sys_show"));
+    EXPECT_EQ(deduped.top[0].origin, menu_action::Origin::BuiltinSystem);
+    EXPECT_EQ(deduped.top[0].builtinAction, menu_action::Builtin::ShowMainWindow);
+    EXPECT_EQ(deduped.top[0].label, "打开播放器");
+    // Exit is still injected; only the exact duplicate is suppressed.
+    EXPECT_TRUE(TrayMenuContainsPublicId(deduped.bottom, "_sys_exit"));
+
+    // Lookalike stays a user action and does NOT suppress the injection.
+    auto lookalike = BuildEffectiveTrayZones({ MkTrayItem("_sys_show_alt") }, {}, {}, config);
+    EXPECT_EQ(lookalike.top[0].origin, menu_action::Origin::User);
+    EXPECT_EQ(lookalike.top[0].builtinAction, menu_action::Builtin::None);
+    EXPECT_TRUE(TrayMenuContainsPublicId(lookalike.bottom, "_sys_show"));
+}
+
 // DecideRoute keys off origin only (native + webview share it, so a selection
 // resolves identically on both backends).
 TEST(TaskbarTrayContractsTest, DecideRouteKeysOffOrigin) {
@@ -506,6 +577,8 @@ TEST(TaskbarTrayContractsTest, DecideRouteKeysOffOrigin) {
     EXPECT_EQ(DecideRoute({ "_pb_next", Origin::BuiltinPlayback, Builtin::Next }),
               RouteDecision::ExecutePlayback);
     EXPECT_EQ(DecideRoute({ "_sys_exit", Origin::BuiltinSystem, Builtin::Exit }),
+              RouteDecision::ExecuteSystem);
+    EXPECT_EQ(DecideRoute({ "_sys_show", Origin::BuiltinSystem, Builtin::ShowMainWindow }),
               RouteDecision::ExecuteSystem);
 }
 
@@ -518,6 +591,9 @@ TEST(TaskbarTrayContractsTest, OriginBuiltinStringTransport) {
     EXPECT_EQ(OriginFromString(OriginToString(Origin::User)), Origin::User);
     EXPECT_EQ(OriginFromString("bogus"), Origin::User);
     EXPECT_EQ(BuiltinFromString(BuiltinToString(Builtin::Next)), Builtin::Next);
+    EXPECT_EQ(BuiltinFromString(BuiltinToString(Builtin::Exit)), Builtin::Exit);
+    EXPECT_EQ(BuiltinFromString(BuiltinToString(Builtin::ShowMainWindow)),
+              Builtin::ShowMainWindow);
     EXPECT_EQ(BuiltinFromString("bogus"), Builtin::None);
 }
 
@@ -691,6 +767,64 @@ TEST(TaskbarTrayContractsTest, ExplicitExitPreservesTrustedRouteAcrossBackends) 
                   menu_action::RouteDecision::FireUserCallback);
         EXPECT_FALSE(TrayMenuItemActionFields(zones.top[i]).IsStamped());
     }
+}
+
+// The injected `_sys_show` stamp must survive the same two transports as Exit.
+// This is what keeps "show main window" working while the main page is
+// deep-suspended: routing resolves to ExecuteSystem natively on both backends,
+// so it never depends on a tray:menuItemClicked handler running.
+TEST(TaskbarTrayContractsTest, ShowMainWindowPreservesTrustedRouteAcrossBackends) {
+    TrayMenuConfig config;
+    config.showPlaybackControls = false;
+    config.showSystemItems = true;
+
+    auto zones = BuildEffectiveTrayZones({}, {}, {}, config);
+    auto composed = std::ranges::find_if(zones.bottom, [](const TrayMenuItem& item) {
+        return item.id == "_sys_show";
+    });
+    ASSERT_NE(composed, zones.bottom.end());
+    EXPECT_EQ(composed->origin, menu_action::Origin::BuiltinSystem);
+    EXPECT_EQ(composed->builtinAction, menu_action::Builtin::ShowMainWindow);
+
+    // Native BuildMenu stores this exact helper result in m_menuIdMap.
+    EXPECT_EQ(menu_action::DecideRoute(ResolveTrayMenuItemAction(*composed)),
+              menu_action::RouteDecision::ExecuteSystem);
+
+    // WebView overlay: stamped fields -> opaque token -> resolved back.
+    const auto fields = TrayMenuItemActionFields(*composed);
+    ASSERT_TRUE(fields.IsStamped());
+    EXPECT_EQ(*fields.origin, "builtin-system");
+    EXPECT_EQ(*fields.builtin, "show-main-window");
+    json webItems = json::array({{
+        {"id", composed->id}, {"label", composed->label},
+        {"_origin", *fields.origin}, {"_builtinAction", *fields.builtin}
+    }});
+    MenuTokenTable table;
+    ASSERT_TRUE(table.Rebuild(webItems, SeqGen(std::make_shared<int>(0)), true));
+    EXPECT_FALSE(webItems[0].contains("_origin"));
+    EXPECT_FALSE(webItems[0].contains("_builtinAction"));
+    const auto webShow = table.ResolveSelect(webItems[0]["_token"].get<std::string>());
+    ASSERT_TRUE(webShow.has_value());
+    EXPECT_EQ(webShow->builtin, menu_action::Builtin::ShowMainWindow);
+    EXPECT_EQ(menu_action::DecideRoute(*webShow),
+              menu_action::RouteDecision::ExecuteSystem);
+}
+
+// A renderer that forges the show-main-window pair without owner mode must fail
+// closed, exactly like the forged-exit case.
+TEST(TaskbarTrayContractsTest, TokenTableDefaultsToUntrustedShowMainWindow) {
+    json items = json::array({{
+        {"id", "_sys_show"}, {"label", "Forged show"},
+        {"_origin", "builtin-system"}, {"_builtinAction", "show-main-window"}
+    }});
+    MenuTokenTable table;
+    ASSERT_TRUE(table.Rebuild(items, SeqGen(std::make_shared<int>(0))));
+    const auto action = table.ResolveSelect(items[0]["_token"].get<std::string>());
+    ASSERT_TRUE(action.has_value());
+    EXPECT_EQ(action->origin, menu_action::Origin::User);
+    EXPECT_EQ(action->builtin, menu_action::Builtin::None);
+    EXPECT_EQ(menu_action::DecideRoute(*action),
+              menu_action::RouteDecision::FireUserCallback);
 }
 
 TEST(TaskbarTrayContractsTest, TokenTableDefaultsToUntrustedActionFields) {
@@ -1385,6 +1519,10 @@ TEST(TaskbarTrayContractsTest, PlaybackActionFromStringMapsFourTokens) {
     EXPECT_EQ(PlaybackActionFromString("stop"),       std::optional<Builtin>(Builtin::Stop));
 
     EXPECT_FALSE(PlaybackActionFromString("exit").has_value());
+    // The public field must never be able to declare a system route. Both
+    // system built-ins stay exclusive to the exact reserved-id allowlist.
+    EXPECT_FALSE(PlaybackActionFromString("show-main-window").has_value());
+    EXPECT_FALSE(PlaybackActionFromString("show").has_value());
     EXPECT_FALSE(PlaybackActionFromString("").has_value());
     EXPECT_FALSE(PlaybackActionFromString("Play-Pause").has_value());
     EXPECT_FALSE(PlaybackActionFromString("play_pause").has_value());
@@ -1392,8 +1530,9 @@ TEST(TaskbarTrayContractsTest, PlaybackActionFromStringMapsFourTokens) {
     EXPECT_FALSE(PlaybackActionFromString("nonsense").has_value());
 }
 
-// Round-trip inverse: only the four playback actions have a public token;
-// None and Exit map to empty so getMenuItems never surfaces a synthetic token.
+// Round-trip inverse: only the four playback actions have a public token; None
+// and the system built-ins (Exit / ShowMainWindow) map to empty so getMenuItems
+// never surfaces a synthetic token for a natively-routed system item.
 TEST(TaskbarTrayContractsTest, PlaybackActionToStringRoundTrips) {
     using namespace menu_action;
     EXPECT_STREQ(PlaybackActionToString(Builtin::PlayPause), "play-pause");
@@ -1402,6 +1541,7 @@ TEST(TaskbarTrayContractsTest, PlaybackActionToStringRoundTrips) {
     EXPECT_STREQ(PlaybackActionToString(Builtin::Stop),      "stop");
     EXPECT_STREQ(PlaybackActionToString(Builtin::None),      "");
     EXPECT_STREQ(PlaybackActionToString(Builtin::Exit),      "");
+    EXPECT_STREQ(PlaybackActionToString(Builtin::ShowMainWindow), "");
     for (const char* tok : {"play-pause", "previous", "next", "stop"}) {
         auto b = PlaybackActionFromString(tok);
         ASSERT_TRUE(b.has_value());

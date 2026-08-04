@@ -75,15 +75,17 @@ struct TrayMenuItem {
     // Internal routing identity (NOT a public API field): never parsed from
     // setContextMenu JSON and never serialized by getMenuItems / any event. A
     // frontend item starts as Origin::User; effective-menu composition may
-    // promote only the exact tray compatibility id `_sys_exit`. Playback ids
-    // supplied by a frontend remain user actions. Routing never uses a prefix.
+    // promote only the exact tray compatibility ids `_sys_show` / `_sys_exit`.
+    // Playback ids supplied by a frontend remain user actions. Routing never
+    // uses a prefix.
     menu_action::Origin origin = menu_action::Origin::User;
     menu_action::Builtin builtinAction = menu_action::Builtin::None;
 };
 
 // Single action authority for the native command map and the WebView token
-// transport. Effective-zone composition may stamp the exact `_sys_exit`
-// compatibility item; malformed metadata always falls back to a user action.
+// transport. Effective-zone composition may stamp the exact `_sys_show` /
+// `_sys_exit` compatibility items; malformed metadata always falls back to a
+// user action.
 inline menu_action::ResolvedAction ResolveTrayMenuItemAction(const TrayMenuItem& item) {
     return menu_action::NormalizeResolvedAction({
         item.id, item.origin, item.builtinAction
@@ -297,24 +299,40 @@ inline std::vector<TrayMenuItem> BuildPlaybackDefaultItems() {
 }
 
 // Built-in system items injected when TrayMenuConfig.showSystemItems is on.
-// Origin::BuiltinSystem + Builtin::Exit; the exact "_sys_exit" spelling is also
-// the tray-only public compatibility command handled by promotion above.
+// Origin::BuiltinSystem; the exact "_sys_show" / "_sys_exit" spellings are also
+// tray-only public compatibility commands handled by promotion above.
+//
+// "_sys_show" (show main window) must be native for the same reason Exit is:
+// hiding to tray applies put_IsVisible(FALSE) + TrySuspend to the main page, so
+// a tray:menuItemClicked handler cannot run to call window.focus itself. A
+// frontend-event route would be dead in exactly the state the item exists for.
+// It is injected before Exit (show/restore first, quit last), matching the
+// conventional Windows tray menu order.
 inline std::vector<TrayMenuItem> BuildSystemDefaultItems() {
     std::vector<TrayMenuItem> items;
-    TrayMenuItem exitItem;
-    exitItem.id = "_sys_exit";
-    exitItem.label = TRU("Exit foobar2000", "退出 foobar2000");
-    exitItem.type = "normal";
-    exitItem.origin = menu_action::Origin::BuiltinSystem;
-    exitItem.builtinAction = menu_action::Builtin::Exit;
-    items.push_back(std::move(exitItem));
+    auto add = [&](const char* id, const std::string& label, menu_action::Builtin action) {
+        TrayMenuItem m;
+        m.id = id;
+        m.label = label;
+        m.type = "normal";
+        m.enabled = true;
+        m.visible = true;
+        m.origin = menu_action::Origin::BuiltinSystem;
+        m.builtinAction = action;
+        items.push_back(std::move(m));
+    };
+    // Ids stay stable across locales; only the display label follows the fb2k UI language.
+    add("_sys_show", TRU("Show Main Window", "显示主窗口"),
+        menu_action::Builtin::ShowMainWindow);
+    add("_sys_exit", TRU("Exit foobar2000", "退出 foobar2000"),
+        menu_action::Builtin::Exit);
     return items;
 }
 
 // Apply the exact tray reserved-id compatibility contract recursively. Public
 // JSON cannot provide an origin or action; this function derives both from the
-// fixed `_sys_exit` allowlist. Similar ids and all caller-supplied `_pb_*` ids
-// remain Origin::User.
+// fixed `_sys_show` / `_sys_exit` allowlist. Similar ids and all caller-supplied
+// `_pb_*` ids remain Origin::User.
 inline void PromoteReservedBuiltinItems(std::vector<TrayMenuItem>& items) {
     for (auto& item : items) {
         if (auto reserved = menu_action::ReservedBuiltinForPublicId(item.id)) {
@@ -390,7 +408,7 @@ inline EffectiveTrayZones BuildEffectiveTrayZones(
 
     // Caller-declared playbackAction is stamped after reserved-id promotion and
     // before default injection, so a declared leaf routes natively without
-    // colliding with the exact `_sys_exit` compatibility contract.
+    // colliding with the exact `_sys_show` / `_sys_exit` compatibility contract.
     PromoteDeclaredPlaybackItems(z.top);
     PromoteDeclaredPlaybackItems(z.playback);
     PromoteDeclaredPlaybackItems(z.bottom);

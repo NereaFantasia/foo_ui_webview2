@@ -693,22 +693,25 @@ json WindowSetAlwaysOnTop(const json& params) {
     if (!hwnd) return { {"success", false}, {"error", "Window not found"} };
     
     bool enabled = params.value("enabled", true);
-    
-    SetWindowPos(
-        hwnd,
-        enabled ? HWND_TOPMOST : HWND_NOTOPMOST,
-        0, 0, 0, 0,
-        SWP_NOMOVE | SWP_NOSIZE
-    );
 
     // 主窗口期望置顶状态登记：用户显式 alwaysOnTop 意图是该状态的唯一改写来源，
     // 供 MainWindow 的 WM_WINDOWPOSCHANGED 守护矫正参照（popup 不参与守护）。
+    // 必须先于 SetWindowPos：SetWindowPos 会同步派发 WM_WINDOWPOSCHANGED，
+    // 守护在该消息里按 expectedTopmost_ 矫正实际 z-order。若期望值仍是旧值
+    // （冷启动首次为 false），守护会立即把刚设上的置顶撤销，置顶随即丢失。
     {
         auto* mainWin = WindowManager::GetInstance().GetMainWindow();
         if (mainWin && mainWin->GetShellHwnd() == hwnd) {
             mainWin->SetExpectedTopmost(enabled);
         }
     }
+
+    SetWindowPos(
+        hwnd,
+        enabled ? HWND_TOPMOST : HWND_NOTOPMOST,
+        0, 0, 0, 0,
+        SWP_NOMOVE | SWP_NOSIZE
+    );
     
     return { {"success", true} };
 }
@@ -731,21 +734,22 @@ json WindowToggleAlwaysOnTop(const json& params) {
     
     DWORD exStyle = GetWindowLongW(hwnd, GWL_EXSTYLE);
     bool wasOnTop = (exStyle & WS_EX_TOPMOST) != 0;
-    
-    SetWindowPos(
-        hwnd,
-        wasOnTop ? HWND_NOTOPMOST : HWND_TOPMOST,
-        0, 0, 0, 0,
-        SWP_NOMOVE | SWP_NOSIZE
-    );
 
     // 主窗口期望置顶状态登记（同 WindowSetAlwaysOnTop，守护矫正参照）
+    // 同样必须先于 SetWindowPos，理由见 WindowSetAlwaysOnTop 的说明。
     {
         auto* mainWin = WindowManager::GetInstance().GetMainWindow();
         if (mainWin && mainWin->GetShellHwnd() == hwnd) {
             mainWin->SetExpectedTopmost(!wasOnTop);
         }
     }
+
+    SetWindowPos(
+        hwnd,
+        wasOnTop ? HWND_NOTOPMOST : HWND_TOPMOST,
+        0, 0, 0, 0,
+        SWP_NOMOVE | SWP_NOSIZE
+    );
     
     return {
         {"success", true},

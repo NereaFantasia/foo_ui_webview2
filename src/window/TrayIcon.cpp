@@ -4,6 +4,9 @@
 #include "window/TaskbarTrayContracts.h"
 #include "utils/IconLoader.h"
 #include "api/BridgeCore.h"
+// WebViewUI::activate() 是"隐藏/最小化 → 恢复主窗口"的既有权威，
+// 托盘内置 _sys_show 原生路由复用它（见 RestoreMainWindowNatively）。
+#include "core/UserInterface.h"
 #include <shellapi.h>
 #include <foobar2000/SDK/playback_control.h>
 #include <foobar2000/SDK/core_api.h>
@@ -648,6 +651,26 @@ json TrayEffectiveZonesToZonesJson(const EffectiveTrayZones& z) {
     pushZone("bottom", z.bottom);
     return zones;
 }
+
+// 原生"显示主窗口"：不经过前端事件。托盘隐藏期间主页面处于
+// put_IsVisible(FALSE) + TrySuspend，JS 不执行，所以恢复动作必须留在原生侧。
+//
+// 权威实现复用 WebViewUI::activate()——fb2k 自身的 user_interface::activate
+// 入口（另一实例启动、任务栏激活等都走它），已正确处理：
+//   1. 隐藏态按保存的 WINDOWPLACEMENT.showCmd 恢复（不破坏最大化状态）
+//   2. 最小化态 SW_RESTORE
+//   3. 已可见且非最小化时不改状态
+//   4. wasHidden 时补 RestoreSurfaceAfterHidden（DComp surface 重新呈现）
+//   5. SetForegroundWindow
+// 托盘菜单路径调用前已 SetForegroundWindow(m_hwnd)，本进程即前台，
+// 故无需 AttachThreadInput 绕过前台锁。
+void RestoreMainWindowNatively() {
+    // 面板模式（DUI/CUI）没有 WebViewUI 实例；tray API 本身已拒绝面板模式，
+    // 此处仍空判防御，绝不解引用空单例。
+    if (auto* ui = WebViewUI::GetInstance()) {
+        ui->activate();
+    }
+}
 }  // namespace
 
 std::vector<TrayMenuItem> TrayIcon::ComposeMenu() const {
@@ -686,6 +709,19 @@ void TrayIcon::RouteResolvedAction(const menu_action::ResolvedAction& action) {
                 // 不再 PostMessage(WM_CLOSE)——否则在 closeToTray 开启时会被拦成隐藏到托盘。
                 try {
                     standard_commands::run_main(standard_commands::guid_main_exit);
+                } catch (...) {}
+            } else if (normalized.builtin == menu_action::Builtin::ShowMainWindow) {
+                // 托盘"显示主窗口"必须原生执行：隐藏到托盘会对主页面施加
+                // put_IsVisible(FALSE) + TrySuspend（见 MainWindow::HideWindowToTray →
+                // SetBgSuspend），renderer 被冻结，tray:menuItemClicked 的前端 handler
+                // 根本跑不起来，因此不能依赖前端回调再调 window.focus。
+                //
+                // 复用 WebViewUI::activate()：它是"隐藏/最小化 → 恢复"的既有权威，
+                // 保留 WINDOWPLACEMENT 的最大化/正常状态，并在 wasHidden 时补
+                // RestoreSurfaceAfterHidden。可见性记账的清除由 activate 触发的
+                // WM_SHOWWINDOW(TRUE) / WM_SIZE(非最小化) 统一完成，此处不重复投影。
+                try {
+                    RestoreMainWindowNatively();
                 } catch (...) {}
             }
             return;

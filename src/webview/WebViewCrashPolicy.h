@@ -44,6 +44,58 @@ constexpr FailureClass ClassifyFailedKind(bool isRenderKind, bool isBrowserKind)
     return FailureClass::Other;
 }
 
+// ==========================================================================
+// 僵尸态整窗重建的节流判定
+//
+// markPanelDead 之后必须有人真正发起重建，否则窗口会永久停留在空壳态
+// （实测：浏览器进程被第三方注入钩子打崩后，宿主带着僵尸 controller 运行
+// 了 10 小时）。但重建不能无界重试：若崩溃源是每次创建后必然复现的外部
+// 因素，无界重试会退化成"重建→崩溃→重建"死循环，持续重启浏览器进程并
+// 重新导航。故按"时间窗内最多 N 次"限流，窗口过期后重新计数。
+// ==========================================================================
+
+// 时间窗内允许的重建次数上限。
+constexpr unsigned kBrowserRebuildAttemptLimit = 3;
+// 限流时间窗长度（毫秒）。窗口过期即视为新一轮故障，重新计数。
+constexpr unsigned long long kBrowserRebuildWindowMs = 600000;  // 10 分钟
+
+struct BrowserRebuildDecision {
+    // 是否发起本次重建。
+    bool shouldRebuild;
+    // 是否因窗口内次数用尽而放弃（调用方据此提示用户手动干预）。
+    bool limitExhausted;
+    // 调用方应保存的窗口内累计次数。
+    unsigned nextAttempts;
+    // 调用方应保存的窗口起点（毫秒 tick）。
+    unsigned long long nextWindowStartMs;
+};
+
+// attempts / windowStartMs 是调用方持有的限流状态，nowMs 取单调递增的
+// GetTickCount64()。rebuildInFlight 为真表示已有重建在途，本次不重复发起。
+// 返回值同时给出"是否重建"与"调用方应保存的新状态"，使调用方无需自行推导。
+constexpr BrowserRebuildDecision DecideBrowserExitRebuild(
+    unsigned attempts,
+    unsigned long long windowStartMs,
+    unsigned long long nowMs,
+    bool rebuildInFlight,
+    unsigned limit = kBrowserRebuildAttemptLimit,
+    unsigned long long windowMs = kBrowserRebuildWindowMs) {
+    if (rebuildInFlight) {
+        // 重建在途期间的二次崩溃事件不占配额：本次不发起，状态原样保留。
+        return BrowserRebuildDecision{false, false, attempts, windowStartMs};
+    }
+    // attempts == 0 表示尚无记录；否则按窗口是否过期决定是重新计数还是累加。
+    const bool windowExpired = attempts == 0 || (nowMs - windowStartMs) >= windowMs;
+    if (windowExpired) {
+        return BrowserRebuildDecision{true, false, 1u, nowMs};
+    }
+    if (attempts < limit) {
+        return BrowserRebuildDecision{true, false, attempts + 1u, windowStartMs};
+    }
+    // 配额用尽：保留窗口状态，等窗口自然过期后才允许再次重建。
+    return BrowserRebuildDecision{false, true, attempts, windowStartMs};
+}
+
 // reloadSucceeded 仅在 Render 类有意义（其他分类不会发起 Reload）。
 constexpr Disposition Decide(FailureClass failure, bool reloadSucceeded) {
     switch (failure) {

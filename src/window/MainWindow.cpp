@@ -7,6 +7,7 @@
 #include "window/WindowChromeTrace.h"
 #include "utils/I18n.h"
 #include "webview/WebViewHost.h"
+#include "webview/WebViewCrashPolicy.h"
 #include "core/SecurityConfig.h"
 #include "api/BridgeCore.h"
 #include "core/WebViewContext.h"
@@ -1049,6 +1050,15 @@ LRESULT MainWindow::HandleMessage(UINT msg, WPARAM wParam, LPARAM lParam) {
                 ProbeRestoredPageHealth("page-health-retry");
                 return 0;
             }
+            if (wParam == PROCESS_DEAD_REBUILD_TIMER_ID) {
+                KillTimer(hwnd_, PROCESS_DEAD_REBUILD_TIMER_ID);
+                // 复检僵尸标记：调度与执行之间若已有其他路径完成重建
+                //（例如面板重挂载），此处不得再销毁一个健康的 WebView。
+                if (IsWebViewProcessDead()) {
+                    RebuildWebViewAfterHealthFailure("browser-process-exited");
+                }
+                return 0;
+            }
             if (wParam == DEFERRED_BACKDROP_TIMER_ID) {
                 KillTimer(hwnd_, DEFERRED_BACKDROP_TIMER_ID);
                 deferredBackdropPending_ = false;
@@ -1527,6 +1537,7 @@ void MainWindow::OnDestroy() {
     KillTimer(hwnd_, RESTORE_SURFACE_CONVERGE_TIMER_ID);
     KillTimer(hwnd_, BG_RESUME_RETRY_TIMER_ID);
     KillTimer(hwnd_, PAGE_HEALTH_RETRY_TIMER_ID);
+    KillTimer(hwnd_, PROCESS_DEAD_REBUILD_TIMER_ID);
     KillTimer(hwnd_, BACKDROP_KICK_EXIT_TIMER_ID);
     startupPresentationCoordinator_.MarkClosed();
     SyncStartupRevealProjection();
@@ -1797,10 +1808,18 @@ void MainWindow::OnWebViewProcessFailed(COREWEBVIEW2_PROCESS_FAILED_KIND failedK
     }
 
     // 渲染进程类崩溃：WebViewHost 已自行 Reload，恢复后重新把焦点路由进页面，
-    // 避免"恢复但键盘失灵"。浏览器进程退出（recovered=false）不在此路径处理，
-    // 由健康检查驱动的整窗重建负责。
+    // 避免"恢复但键盘失灵"。
     if (recovered && webView_ && webView_->IsReady() && !isMinimized_) {
         webView_->MoveFocus(COREWEBVIEW2_MOVE_FOCUS_REASON_PROGRAMMATIC);
+        return;
+    }
+
+    // 不可恢复（浏览器进程退出 / Reload 失败）：controller 已成僵尸，所有
+    // put_* 调用都会返回 ERROR_INVALID_STATE，窗口退化为空壳。健康探针只在
+    // 恢复成功后才装载，此路径够不到它，故必须由这里主动发起整窗重建，否则
+    // 空窗口会无限期存在（实测可持续 10 小时）。
+    if (!recovered) {
+        ScheduleProcessDeadRebuild("browser-process-exited");
     }
 }
 
@@ -1972,6 +1991,12 @@ bool MainWindow::RestoreSurfaceAfterHidden(const char* reason) {
         KillTimer(hwnd_, PAGE_HEALTH_RETRY_TIMER_ID);
         SetTimer(hwnd_, PAGE_HEALTH_RETRY_TIMER_ID,
                  PAGE_HEALTH_RETRY_DELAY_MS, nullptr);
+    } else if (IsWebViewProcessDead()) {
+        // 收敛失败本身是已知正常瞬态（安全桌面切换、DComp 首帧未提交），由
+        // RESTORE_SURFACE_CONVERGE_TIMER_ID 重试即可，不能据此重建。只有僵尸
+        // 标记（ProcessFailed 判定不可恢复时置位）才是确定性失效，此时重试永
+        // 远不会成功，必须重建。
+        ScheduleProcessDeadRebuild("restore-process-dead");
     }
     // 任何隐藏→可见的恢复后，重新评估是否（仍）被完全覆盖
     ScheduleCoverReevaluation();
@@ -2052,6 +2077,44 @@ void MainWindow::HandleRestoredPageHealthResult(bool healthy, const char* reason
              PAGE_HEALTH_RETRY_DELAY_MS, nullptr);
 }
 
+void MainWindow::ScheduleProcessDeadRebuild(const char* reason) {
+    const char* rebuildReason = (reason && reason[0]) ? reason : "browser-process-exited";
+    if (!hwnd_ || !IsWindow(hwnd_)) {
+        return;
+    }
+
+    const auto decision = webview_crash_policy::DecideBrowserExitRebuild(
+        browserExitRebuildAttempts_,
+        browserExitRebuildWindowStartMs_,
+        GetTickCount64(),
+        webViewRebuildInProgress_);
+    browserExitRebuildAttempts_ = decision.nextAttempts;
+    browserExitRebuildWindowStartMs_ = decision.nextWindowStartMs;
+
+    if (!decision.shouldRebuild) {
+        LogWebViewLifecycle("rebuild.skipped",
+            std::string("reason=") + rebuildReason +
+            " limitExhausted=" + (decision.limitExhausted ? "1" : "0") +
+            " attempts=" + std::to_string(decision.nextAttempts));
+        if (decision.limitExhausted) {
+            console::printf("[WebView2 UI] WebView browser process keeps dying "
+                            "(%u rebuilds within the throttle window); giving up. "
+                            "Third-party overlay/injection hooks are a common cause "
+                            "- see webview_crash.log. Restart foobar2000 to retry.",
+                            decision.nextAttempts);
+        }
+        return;
+    }
+
+    LogWebViewLifecycle("rebuild.scheduled",
+        std::string("reason=") + rebuildReason +
+        " attempts=" + std::to_string(decision.nextAttempts));
+    // 延迟到下一消息周期：ProcessFailed 是 COM 回调，不能在其栈上销毁宿主。
+    KillTimer(hwnd_, PROCESS_DEAD_REBUILD_TIMER_ID);
+    SetTimer(hwnd_, PROCESS_DEAD_REBUILD_TIMER_ID,
+             PROCESS_DEAD_REBUILD_DELAY_MS, nullptr);
+}
+
 bool MainWindow::RebuildWebViewAfterHealthFailure(const char* reason) {
     if (webViewRebuildInProgress_ || !hwnd_ || !IsWindow(hwnd_)) {
         return false;
@@ -2068,6 +2131,7 @@ bool MainWindow::RebuildWebViewAfterHealthFailure(const char* reason) {
     KillTimer(hwnd_, PAGE_HEALTH_RETRY_TIMER_ID);
     KillTimer(hwnd_, BG_RESUME_RETRY_TIMER_ID);
     KillTimer(hwnd_, RESTORE_SURFACE_CONVERGE_TIMER_ID);
+    KillTimer(hwnd_, PROCESS_DEAD_REBUILD_TIMER_ID);
 
     console::printf("[WebView2 UI] rebuilding unhealthy WebView, reason=%s",
                     reason && reason[0] ? reason : "page-health");

@@ -31,6 +31,12 @@
 - 修复 SMP 主菜单派发。`buildMenuItems` 把菜单 id 优先映射到条目的 `path` 而非 `guid`；路径必须去比对生成的菜单树，而该查找在汉化宿主上直接失败，GUID 则由宿主直接解析。因此主菜单的 `ExecuteByID` 在这类宿主上完全不工作。现改为优先 `guid`；右键菜单会话仍以 `commandId` 为准。
 - 修复 SMP 菜单状态解码。`buildMenuItems` 从原始 `flags` 位重新推导 `enabled` / `checked`，忽略了宿主已给出的归一化布尔值。现优先使用布尔值，仅在其缺失时回退到 `flags`。标记为 `stateKnown: false` 的条目按可用呈现而非置灰，因为 `flags == 0` 与「可用且未勾选」在位上完全相同，把未观测状态当作禁用会隐藏宿主本可执行的命令。
 
+### 托盘与菜单
+
+- **修复** —— 托盘菜单的「显示主窗口」不再依赖主页面。窗口一旦最小化或隐藏到托盘，`put_IsVisible(FALSE)` 加深度挂起会冻结 renderer，任何 `tray:menuItemClicked` handler 都跑不起来，也就无法调用 `window.focus` 把窗口找回来；左键单击图标同样无声。原生项（`_sys_exit`、`playbackAction`）全程正常，这正是该故障看起来像「事件分发断了」的原因——事件确实投出去了，只是投进了一个冻结的 renderer。
+- **行为变更** —— `showSystemItems`（默认 `true`）现在会在 bottom 分区的 `_sys_exit` 之前注入 `_sys_show`（「显示主窗口」）。该项原生恢复并前置主窗口，保留其最大化 / 正常放置状态；与所有原生项一致，它**不发** `tray:menuItemClicked`。因此使用 `showSystemItems: true` 的菜单会多出一行；传 `showSystemItems: false` 可退出该行为。
+- `_sys_show` 与 `_sys_exit` 一同进入精确、大小写敏感的保留 id 允许列表：前端自绘「显示主窗口」行时可获得同样的原生路由并保留自己的 `label` / `icon`，对应注入项自动跳过。形似 id（如 `_sys_show_alt`、`_SYS_SHOW`）仍是普通用户项，且不会抑制注入。`playbackAction` 仍拒绝 `'show-main-window'` 与 `'exit'`——系统路由始终专属于保留 id。
+
 ## v1.11.0 (2026-07-27)
 
 ### 托盘与菜单

@@ -31,6 +31,12 @@
 - Fixed SMP main-menu dispatch. `buildMenuItems` mapped a menu id to the item's `path` before its `guid`; a path must be matched against a generated menu tree, which fails outright on localized hosts, while the host resolves a GUID directly. `ExecuteByID` on a main menu therefore did not work there at all. GUID is now preferred; `commandId` still wins for context-menu sessions.
 - Fixed SMP menu state decoding. `buildMenuItems` re-derived `enabled` / `checked` from the raw `flags` word and ignored the normalized booleans the host sends. It now prefers those booleans and falls back to `flags` only when they are absent. An item marked `stateKnown: false` is offered as enabled rather than greyed out, because `flags == 0` is bit-identical to "enabled, unchecked" and treating unobserved state as disabled hid commands the host would have run.
 
+### Tray and menus
+
+- **Fixed** — the tray menu's "show main window" path no longer depends on the main page. Once the window was minimized or hidden to the tray, `put_IsVisible(FALSE)` plus deep suspend froze the renderer, so no `tray:menuItemClicked` handler could run and nothing could call `window.focus` to bring the window back. A left click on the icon was equally silent. Native items (`_sys_exit`, `playbackAction`) kept working throughout, which is why the failure looked like broken event delivery — events were still posted, just into a frozen renderer.
+- **Behavior change** — `showSystemItems` (default `true`) now injects `_sys_show` ("Show Main Window") before `_sys_exit` in the bottom zone. It restores and foregrounds the main window natively, preserving its maximized / normal placement, and like every native item it does **not** fire `tray:menuItemClicked`. Menus built with `showSystemItems: true` therefore gain one row; pass `showSystemItems: false` to opt out.
+- `_sys_show` joins `_sys_exit` in the exact, case-sensitive reserved-id allowlist, so a frontend that renders its own "show main window" row gets the same native route with its `label` / `icon` preserved, and the injection is skipped for it. Lookalikes such as `_sys_show_alt` or `_SYS_SHOW` remain ordinary user items and do not suppress the injection. `playbackAction` still rejects `'show-main-window'` and `'exit'`: system routes stay exclusive to the reserved ids.
+
 ## v1.11.0 (2026-07-27)
 
 ### Tray and menus

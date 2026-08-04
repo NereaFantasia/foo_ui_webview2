@@ -126,3 +126,78 @@ TEST(WebViewCrashPolicyTest, BrowserExitCrashFromRealIncidentInvalidatesEnvironm
     EXPECT_TRUE(d.markPanelDead);
     EXPECT_TRUE(d.invalidateEnvironment);
 }
+
+// ==========================================================================
+// DecideBrowserExitRebuild：僵尸态重建的时间窗限流
+// ==========================================================================
+
+TEST(WebViewCrashPolicyTest, FirstBrowserExitRebuildsAndOpensWindow) {
+    // 冷态（attempts=0）必须立即重建：现场故障就是"没人发起重建"。
+    const auto d = DecideBrowserExitRebuild(0, 0, 5000, /*rebuildInFlight=*/false);
+    EXPECT_TRUE(d.shouldRebuild);
+    EXPECT_FALSE(d.limitExhausted);
+    EXPECT_EQ(d.nextAttempts, 1u);
+    // 窗口起点必须落在本次，否则后续限流基准错位。
+    EXPECT_EQ(d.nextWindowStartMs, 5000u);
+}
+
+TEST(WebViewCrashPolicyTest, RepeatedBrowserExitsAccumulateUntilLimit) {
+    // 同一窗口内连续崩溃逐次累加，直到用满配额。
+    unsigned attempts = 0;
+    unsigned long long windowStart = 0;
+    for (unsigned i = 1; i <= kBrowserRebuildAttemptLimit; ++i) {
+        const auto d = DecideBrowserExitRebuild(attempts, windowStart, 1000 * i, false);
+        EXPECT_TRUE(d.shouldRebuild) << "attempt " << i << " must still rebuild";
+        EXPECT_EQ(d.nextAttempts, i);
+        attempts = d.nextAttempts;
+        windowStart = d.nextWindowStartMs;
+    }
+    // 第 limit+1 次落在同一窗口内，必须放弃并上报配额用尽。
+    const auto blocked = DecideBrowserExitRebuild(attempts, windowStart, 9000, false);
+    EXPECT_FALSE(blocked.shouldRebuild);
+    EXPECT_TRUE(blocked.limitExhausted);
+    // 状态保持不变，避免计数漂移把窗口起点推后。
+    EXPECT_EQ(blocked.nextAttempts, attempts);
+    EXPECT_EQ(blocked.nextWindowStartMs, windowStart);
+}
+
+TEST(WebViewCrashPolicyTest, ExpiredWindowRestartsCounting) {
+    // 窗口过期即视为新一轮故障：重新计数并重建，不受上一轮配额影响。
+    const auto d = DecideBrowserExitRebuild(
+        kBrowserRebuildAttemptLimit, 1000,
+        1000 + kBrowserRebuildWindowMs, false);
+    EXPECT_TRUE(d.shouldRebuild);
+    EXPECT_FALSE(d.limitExhausted);
+    EXPECT_EQ(d.nextAttempts, 1u);
+    EXPECT_EQ(d.nextWindowStartMs, 1000 + kBrowserRebuildWindowMs);
+}
+
+TEST(WebViewCrashPolicyTest, WindowBoundaryIsInclusive) {
+    // 恰好差 1ms 未到窗口长度仍属同一窗口，不得提前解封配额。
+    const auto justInside = DecideBrowserExitRebuild(
+        kBrowserRebuildAttemptLimit, 1000,
+        1000 + kBrowserRebuildWindowMs - 1, false);
+    EXPECT_FALSE(justInside.shouldRebuild);
+    EXPECT_TRUE(justInside.limitExhausted);
+}
+
+TEST(WebViewCrashPolicyTest, RebuildInFlightSuppressesDuplicateAndKeepsQuota) {
+    // 重建在途期间 ProcessFailed 可能再次触发（旧实例收尾）。此时既不重复
+    // 发起重建，也不能扣配额，否则一次故障会吃掉多个额度。
+    const auto d = DecideBrowserExitRebuild(2, 1000, 2000, /*rebuildInFlight=*/true);
+    EXPECT_FALSE(d.shouldRebuild);
+    EXPECT_FALSE(d.limitExhausted);
+    EXPECT_EQ(d.nextAttempts, 2u);
+    EXPECT_EQ(d.nextWindowStartMs, 1000u);
+}
+
+TEST(WebViewCrashPolicyTest, RebuildAndExhaustedAreMutuallyExclusive) {
+    // limitExhausted 是"放弃并提示用户"的信号，不可与已发起重建同时成立。
+    for (const unsigned attempts : {0u, 1u, kBrowserRebuildAttemptLimit,
+                                    kBrowserRebuildAttemptLimit + 1u}) {
+        for (const bool inFlight : {false, true}) {
+            const auto d = DecideBrowserExitRebuild(attempts, 1000, 2000, inFlight);
+            EXPECT_FALSE(d.shouldRebuild && d.limitExhausted);
+        }
+    }
+}
