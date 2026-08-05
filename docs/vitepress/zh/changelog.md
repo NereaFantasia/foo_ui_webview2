@@ -1,26 +1,26 @@
 # 更新日志
 
-## 未发布
+## v1.12.0 (2026-08-05)
 
 ### 主菜单
 
-- **`menu.runMainMenuCommand` 不再透传宿主异常。** v2 菜单树分支此前没有异常保护，而汉化版 foobar2000 的 `generate_menu()` 会抛出异常。该异常以宿主语言的原始 `Error` 逃逸到 JavaScript，更糟的是它跳过了下方所有兜底，导致名称与路径形式在这类宿主上彻底失效。失败现统一以 `success: false` 加 `code` 返回：`MENU_ITEM_DISABLED`、`MENU_MATCH_AMBIGUOUS`（附 `candidates`）或 `MENU_COMMAND_NOT_FOUND`。
-- **`menu.getMainMenu` 的叶子在汉化版宿主上可寻址了。** v1 HMENU 兜底层——在该宿主上唯一可用的层——结构上产不出 GUID：Win32 菜单只携带 `wID`，而这个 id 随生成它的临时菜单一同失效。叶子现在按宿主渲染该菜单所用的同一份 `get_display()` 文本匹配，并回填 `guid` / `subGuid`；汉化版宿主实测由 158 个叶子中 0 个带 guid 提升到 167 个中 131 个。该层同时开始上报 `flags`、`enabled`、`checked`、`hidden`——此前这些一个都没有。
-- **行为变更** —— 禁用命令会被拒绝执行，而不再报告成功。此前对灰显命令执行会返回 `success: true`；且 GUID 形式跳过了名称形式所做的校验，导致同一条命令按名字被拒、按 GUID 却「成功」。三种请求形式现在校验一致，返回 `MENU_ITEM_DISABLED`。不在枚举结果中的 GUID 仍会尝试执行——调用方可能持有本次枚举未覆盖的有效地址。
+- **`menu.runMainMenuCommand` 不再透传宿主异常。** 此前在汉化版 foobar2000 上，宿主异常会以宿主语言的原始 `Error` 逃逸到 JavaScript，并使名称与路径形式彻底失效。失败现统一以 `success: false` 加 `code` 返回：`MENU_ITEM_DISABLED`、`MENU_MATCH_AMBIGUOUS`（附 `candidates`）或 `MENU_COMMAND_NOT_FOUND`。
+- **`menu.getMainMenu` 的叶子在汉化版宿主上可寻址了。** 叶子现在按宿主渲染菜单所用的同一份文本匹配，并回填 `guid` / `subGuid`；汉化版宿主实测由 158 个叶子中 0 个带 guid 提升到 167 个中 131 个。同时开始上报 `flags`、`enabled`、`checked`、`hidden`——此前这些一个都没有。
+- **行为变更** —— 禁用命令会被拒绝执行，而不再报告成功。此前对灰显命令执行会返回 `success: true`，且同一条命令按名字被拒、按 GUID 却「成功」。三种请求形式现在校验一致，返回 `MENU_ITEM_DISABLED`。不在枚举结果中的 GUID 仍会尝试执行——调用方可能持有本次枚举未覆盖的有效地址。
 - 名称与路径按段精确匹配。名字有歧义时上报而不替调用方决定：汉化版宿主上可能有三条不同命令共用同一标签，取首个匹配会静默执行错误的命令。要无歧义请用 `guid` 寻址——它是唯一跨宿主稳定的形式，因为汉化版上报的是本地化标签。
 - `menu.runMainMenuCommand` 新增 `subGuid` 参数，与所属命令 GUID 搭配用于寻址动态子命令。
-- 无法解析出地址的叶子会明示这一点，带 `executable: false` 与 `unaddressableReason`，而不再伪装成一条调用方却无法执行的普通命令。flat 兜底层的 `available` 改为从 `get_display()` 实读，不再硬编码为 `true`，禁用命令不会再与启用命令无从分辨。
+- 无法解析出地址的叶子会明示这一点，带 `executable: false` 与 `unaddressableReason`，而不再伪装成一条调用方却无法执行的普通命令。扁平列举结果的 `available` 改为实读宿主状态，不再恒为 `true`，禁用命令不会再与启用命令无从分辨。
 
 ### Discovery 菜单
 
-- **行为变更** —— `discovery.searchCommands` 现在同时搜索右键菜单与主菜单，因此结果数增加，`type` 出现新取值 `'contextmenu'`。传 `{ scope: 'mainmenu' }` 可回到原有覆盖面。该端点此前只查主菜单，却把 `type: 'mainmenu'` 硬编码进每条结果，导致右键命令搜不到、且该字段不携带任何信息。
+- **行为变更** —— `discovery.searchCommands` 现在同时搜索右键菜单与主菜单，因此结果数增加，`type` 出现新取值 `'contextmenu'`。传 `{ scope: 'mainmenu' }` 可回到原有覆盖面。此前该端点只查主菜单，却把 `type: 'mainmenu'` 写进每条结果，导致右键命令搜不到。
 - **行为变更** —— `discovery.searchCommands` 会过滤宿主不会显示的条目，与列举端点保持一致。传 `{ includeHidden: true }` 可取回完整集合。
-- **行为变更** —— `discovery.getAllServices` 将右键菜单命令计入 `services.contextMenuCommands` 并纳入 `totalServices`，因此 `totalServices` 数值变化。该汇总此前声称描述可发现面，却漏掉了两个菜单族之一。被过滤掉的数量由 `contextMenuHiddenFiltered` 给出；无选中且无播放曲目时 `stateKnown` 为 `false`。
+- **行为变更** —— `discovery.getAllServices` 将右键菜单命令计入 `services.contextMenuCommands` 并纳入 `totalServices`，因此 `totalServices` 数值变化。被过滤掉的数量由 `contextMenuHiddenFiltered` 给出；无选中且无播放曲目时 `stateKnown` 为 `false`。
 - 搜索结果携带与列举端点一致的状态字段（`enabled`、`checked`、`radioChecked`、`hidden`、`stateKnown`、`flags`、`source`、`executable`、`unaddressableReason`），调用方无需再发一次请求即可判断能否执行。搜索包含右键菜单但无选中且无播放曲目时，响应的 `stateKnown` 为 `false`，此时这些结果的 `enabled` / `checked` 不得用于过滤。
-- 搜索的大小写折叠改为仅作用于 ASCII。此前实现对每个字节调用 `::tolower`，对 `0x80` 及以上的字节属未定义行为，可能破坏 UTF-8 序列。对中文标签的可观测匹配行为不变——中文没有可折叠的大小写。
-- **`discovery.getContextMenuTree` 不再静默截断。** 此前遍历把子项截到 50、深度截到 10，却仍上报宿主的真实 `childCount`，导致 `children.length` 与 `childCount` 不符且无任何说明。两个上限现统一取自共享菜单契约（深度 16、每节点 512 子项），且任何裁剪都会上报：`popup` 节点同时给出 `childCount` 与 `childrenReturned`，子树被裁剪的节点带 `truncated`，并由 `depthExceeded` / `childrenExceeded` 说明原因。标记向上传播，因此顶层 `truncated` 覆盖整棵树；`maxDepth` 与 `maxChildrenPerNode` 回显生效上限。
+- 搜索的大小写折叠改为仅作用于 ASCII，不再可能破坏 UTF-8 序列。对中文标签的可观测匹配行为不变——中文没有可折叠的大小写。
+- **`discovery.getContextMenuTree` 不再静默截断。** 此前子项截到 50、深度截到 10，却仍上报宿主的真实 `childCount`，导致 `children.length` 与 `childCount` 不符且无任何说明。两个上限现为深度 16、每节点 512 子项，且任何裁剪都会上报：`popup` 节点同时给出 `childCount` 与 `childrenReturned`，子树被裁剪的节点带 `truncated`，并由 `depthExceeded` / `childrenExceeded` 说明原因。标记向上传播，因此顶层 `truncated` 覆盖整棵树；`maxDepth` 与 `maxChildrenPerNode` 回显生效上限。
 - `discovery.getContextMenuTree` 的节点现在上报状态——`enabled`、`checked`、`radioChecked`、`hidden`、`stateKnown`、`flags`——以及 `depth`。分隔符只带类型，这也是对它唯一有意义的信息。
-- `discovery.executeContextMenuCommand` 在成功路径上也返回 `hidden` 与 `resolved`，不再只在拒绝时返回。若只在拒绝分支返回，调用方无法区分「未被拒绝」与「本版本不返回该字段」。无注册项拥有该 GUID 时 `resolved` 为 `false`，此时没有可评估的状态。
+- `discovery.executeContextMenuCommand` 在成功路径上也返回 `hidden` 与 `resolved`，不再只在拒绝时返回，调用方因此能区分「未被拒绝」与「本版本不返回该字段」。无注册项拥有该 GUID 时 `resolved` 为 `false`，此时没有可评估的状态。
 - `discovery.getMainMenuCommands` 中由动态子菜单展开的条目现在也带 `stateKnown`、`executable`、`unaddressableReason`，与静态槽位一致。
 
 ### SDK
@@ -28,14 +28,28 @@
 - **破坏性类型修正** —— `DiscoveryContextMenuCommand` 原本是 `DiscoveryMainMenuCommand` 的类型别名，因而声明了右键侧根本不会返回的字段。现改为独立接口：右键条目是扁平注册、由宿主决定位置，因此没有菜单 `path`，也没有动态展开相关字段。此前读取右键命令的 `path` / `isDynamic` / `subGuid` 的 TypeScript 代码，读的是从未被填充过的字段。
 - 新增导出类型 `MenuNodeState`、`MenuNodeSource`、`MenuUnaddressableReason`，由所有菜单列举结果共用。
 - `fb.discovery.searchCommands()` 接受 `{ scope, includeHidden }`；`fb.discovery.getContextMenuCommands()` 接受 `{ includeHidden }`。
-- 修复 SMP 主菜单派发。`buildMenuItems` 把菜单 id 优先映射到条目的 `path` 而非 `guid`；路径必须去比对生成的菜单树，而该查找在汉化宿主上直接失败，GUID 则由宿主直接解析。因此主菜单的 `ExecuteByID` 在这类宿主上完全不工作。现改为优先 `guid`；右键菜单会话仍以 `commandId` 为准。
-- 修复 SMP 菜单状态解码。`buildMenuItems` 从原始 `flags` 位重新推导 `enabled` / `checked`，忽略了宿主已给出的归一化布尔值。现优先使用布尔值，仅在其缺失时回退到 `flags`。标记为 `stateKnown: false` 的条目按可用呈现而非置灰，因为 `flags == 0` 与「可用且未勾选」在位上完全相同，把未观测状态当作禁用会隐藏宿主本可执行的命令。
+- 修复 SMP 主菜单派发。此前菜单 id 优先按 `path` 解析，而路径匹配在汉化宿主上直接失败，导致主菜单的 `ExecuteByID` 在这类宿主上完全不工作。现改为优先 `guid`（由宿主直接解析）；右键菜单会话仍以 `commandId` 为准。
+- 修复 SMP 菜单状态解码。此前 `enabled` / `checked` 由原始 `flags` 位重新推导，忽略了宿主已给出的归一化布尔值。现优先使用布尔值，仅在其缺失时回退到 `flags`。标记为 `stateKnown: false` 的条目按可用呈现而非置灰，因为「状态未知」与「可用且未勾选」在 `flags` 上无法区分，把未观测状态当作禁用会隐藏宿主本可执行的命令。
 
 ### 托盘与菜单
 
-- **修复** —— 托盘菜单的「显示主窗口」不再依赖主页面。窗口一旦最小化或隐藏到托盘，`put_IsVisible(FALSE)` 加深度挂起会冻结 renderer，任何 `tray:menuItemClicked` handler 都跑不起来，也就无法调用 `window.focus` 把窗口找回来；左键单击图标同样无声。原生项（`_sys_exit`、`playbackAction`）全程正常，这正是该故障看起来像「事件分发断了」的原因——事件确实投出去了，只是投进了一个冻结的 renderer。
+- **修复** —— 托盘菜单的「显示主窗口」不再依赖主页面。窗口一旦最小化或隐藏到托盘，页面会被深度挂起，任何 `tray:menuItemClicked` handler 都跑不起来，也就无法调用 `window.focus` 把窗口找回来；左键单击图标同样无声。原生项（`_sys_exit`、`playbackAction`）全程正常。
 - **行为变更** —— `showSystemItems`（默认 `true`）现在会在 bottom 分区的 `_sys_exit` 之前注入 `_sys_show`（「显示主窗口」）。该项原生恢复并前置主窗口，保留其最大化 / 正常放置状态；与所有原生项一致，它**不发** `tray:menuItemClicked`。因此使用 `showSystemItems: true` 的菜单会多出一行；传 `showSystemItems: false` 可退出该行为。
 - `_sys_show` 与 `_sys_exit` 一同进入精确、大小写敏感的保留 id 允许列表：前端自绘「显示主窗口」行时可获得同样的原生路由并保留自己的 `label` / `icon`，对应注入项自动跳过。形似 id（如 `_sys_show_alt`、`_SYS_SHOW`）仍是普通用户项，且不会抑制注入。`playbackAction` 仍拒绝 `'show-main-window'` 与 `'exit'`——系统路由始终专属于保留 id。
+
+### 窗口
+
+- **行为变更** —— 六个尺寸约束端点（`window.setMinSize` / `getMinSize` / `setMaxSize` / `getMaxSize` / `setResizable` / `isResizable`）现在作用于调用方窗口，或显式传入的 `windowId`，不再回退到主窗口。此前 popup 设置自己的最小尺寸，实际约束的是主窗口。解析不到目标时调用失败，而不是返回另一个窗口的约束。DUI / CUI 面板调用方会被拒绝，并带 `panelMode: true`。
+- **文档修正** —— 这些端点的尺寸单位是物理像素，而非此前文档所写的 DIP。按设备像素比换算的调用方，在高 DPI 显示器上会把系数乘两次。经 setter 与 getter 往返的取值精确到 ±1px。
+
+### 界面语言
+
+- 插件原生界面改为跟随 foobar2000 的呈现语言，不再跟随 Windows 界面语言，因此汉化版 foobar2000 不会再显示英文的首选项页面。语言由宿主自身的字符串探测得出，探测不可行时回退到 Windows 界面语言。
+- 新增*界面语言*首选项：*自动（跟随 foobar2000）*（默认）、*English* 或 *中文*。新打开的对话框立即生效；菜单标题与面板描述只向宿主注册一次，需重启 foobar2000 才会刷新。
+
+### 性能与稳定性
+
+- **修复** —— WebView2 *浏览器*进程死亡后，窗口不再一直空白。此前只有渲染进程有恢复路径，因此当外部原因（例如第三方钩子注入浏览器进程）导致其崩溃时，窗口会保持空白且无从自愈；实测有一次会话就这样运行了 10 小时。现在会重建窗口，并限制为 10 分钟内最多 3 次重建，使可复现的崩溃不会退化成「重建→崩溃→重建」死循环。窗口期过后计数重置，因此之后无关的失败仍可恢复。这与 v1.11.0 的渲染进程处理是两件事，后者负责重载页面与重建 WebView。
 
 ## v1.11.0 (2026-07-27)
 
