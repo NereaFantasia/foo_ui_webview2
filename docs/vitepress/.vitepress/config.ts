@@ -58,7 +58,7 @@ const englishNav: DefaultTheme.NavItem[] = [
   { text: 'Reference', link: '/reference/events' },
   { text: 'MCP', link: '/mcp/overview' },
   {
-    text: 'v1.11.0',
+    text: 'v1.12.0',
     items: [{ text: 'Changelog', link: '/changelog' }],
   },
 ]
@@ -71,7 +71,7 @@ const chineseNav: DefaultTheme.NavItem[] = [
   { text: '参考', link: '/reference/events' },
   { text: 'MCP', link: '/mcp/overview' },
   {
-    text: 'v1.11.0',
+    text: 'v1.12.0',
     items: [{ text: '更新日志', link: '/changelog' }],
   },
 ]

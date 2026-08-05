@@ -395,8 +395,18 @@ DECLARE_COMPONENT_VERSION(
     "  Test      (2)   - Echo, version check\n"
 "\n"
 // Historical "NEW IN" sections use literal versions on purpose: the list
-// below describes 1.11.0 and must not follow PLUGIN_VERSION_STR into the
+// below describes 1.12.0 and must not follow PLUGIN_VERSION_STR into the
 // next release. When cutting a new version, add a fresh section above.
+"  NEW IN v1.12.0\n"
+    "========================================\n"
+    "\n"
+    "  + Tray menu shows the main window natively\n"
+    "  + Interface language follows foobar2000's language\n"
+    "  + Recovery when the WebView2 browser process dies\n"
+    "  + Size limits target the calling window (breaking)\n"
+    "  + Menu enumeration works on localized hosts\n"
+    "  + Menu and discovery results report item state\n"
+    "\n"
 "  NEW IN v1.11.0\n"
     "========================================\n"
     "\n"

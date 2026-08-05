@@ -1,6 +1,6 @@
 {
   "name": "foo-webview-sdk",
-  "version": "1.11.0",
+  "version": "1.12.0",
   "description": "Simplified SDK for foo_ui_webview2 - foobar2000 WebView2 Plugin",
   "type": "module",
   "main": "./dist/bridge.js",
