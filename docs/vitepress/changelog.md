@@ -2,6 +2,15 @@
 
 ## v1.12.0 (2026-08-05)
 
+::: warning Breaking changes in this release
+Two changes may require code edits:
+
+- **Window size constraints target the calling window.** The six `window.setMinSize` / `getMinSize` / `setMaxSize` / `getMaxSize` / `setResizable` / `isResizable` endpoints no longer fall back to the main window, and a call that resolves no target now fails. A popup that relied on the old fallback was constraining the main window.
+- **`DiscoveryContextMenuCommand` is no longer a type alias.** Reading `path` / `isDynamic` / `subGuid` off a context-menu command no longer type-checks — those fields were never populated.
+
+The release stays on a minor version because the project's version axis has carried breaking changes in minor releases before (see 1.6.0). Pin an exact version if you need to upgrade deliberately.
+:::
+
 ### Main menu
 
 - **`menu.runMainMenuCommand` no longer leaks host exceptions.** On localized foobar2000 builds a host exception previously escaped to JavaScript as a raw host-language `Error` and made the name and path forms fail outright. Failures are now reported as `success: false` with a `code`: `MENU_ITEM_DISABLED`, `MENU_MATCH_AMBIGUOUS` (with `candidates`), or `MENU_COMMAND_NOT_FOUND`.

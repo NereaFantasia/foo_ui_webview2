@@ -2,6 +2,15 @@
 
 ## v1.12.0 (2026-08-05)
 
+::: warning 本版的破坏性变更
+以下两项可能需要修改代码：
+
+- **窗口尺寸约束改作用于调用方窗口。** `window.setMinSize` / `getMinSize` / `setMaxSize` / `getMaxSize` / `setResizable` / `isResizable` 这六个端点不再回退到主窗口，解析不到目标时调用失败。依赖旧回退行为的 popup，实际约束的是主窗口。
+- **`DiscoveryContextMenuCommand` 不再是类型别名。** 读取右键菜单命令的 `path` / `isDynamic` / `subGuid` 不再通过类型检查——这些字段从未被填充过。
+
+本版仍作为 minor 发布：本项目的版本轴历史上已有 minor 版本承载破坏性变更的先例（见 1.6.0）。需要可控升级时请锁定精确版本号。
+:::
+
 ### 主菜单
 
 - **`menu.runMainMenuCommand` 不再透传宿主异常。** 此前在汉化版 foobar2000 上，宿主异常会以宿主语言的原始 `Error` 逃逸到 JavaScript，并使名称与路径形式彻底失效。失败现统一以 `success: false` 加 `code` 返回：`MENU_ITEM_DISABLED`、`MENU_MATCH_AMBIGUOUS`（附 `candidates`）或 `MENU_COMMAND_NOT_FOUND`。
