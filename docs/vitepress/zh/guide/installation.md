@@ -14,7 +14,7 @@ foobar2000 v2.0 是 64 位版本的分水岭。如果你使用的是 v1.x 版本
 
 ## 安装组件包
 
-1. **下载安装包** — 从发布页面下载 `foo_ui_webview2-<version>.fb2k-component`（文件名包含组件版本，例如 `foo_ui_webview2-1.11.0.fb2k-component`）
+1. **下载安装包** — 从发布页面下载 `foo_ui_webview2-<version>.fb2k-component`（文件名包含组件版本，例如 `foo_ui_webview2-1.12.0.fb2k-component`）
 2. **通过 foobar2000 安装** — 打开或双击该安装包，让 foobar2000 弹出组件安装确认对话框
 3. **确认安装** — 点击 `Yes`，由 foobar2000 安装包内容
 4. **重启 foobar2000**

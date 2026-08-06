@@ -14,7 +14,7 @@
 
 基于 WebView2 的 foobar2000 现代 UI 组件 (C++ DLL)。将整个 foobar2000 窗口变为 WebView2 画布，使用现代 Web 技术构建界面，同时保留 Windows 11 原生视觉效果 (Mica/Acrylic)。
 
-- 版本: 1.11.0
+- 版本: 1.12.0
 - 许可证: GPL-3.0-or-later (主组件) / MIT (`sdk/`)
 
 <!-- TODO(screenshots): 首屏截图待补 —— 计划：内置 Winamp 经典风格预设主题 + 基于本组件开发的社区主题（独立窗口、DUI/CUI 面板、Mica/Acrylic 效果）。 -->
