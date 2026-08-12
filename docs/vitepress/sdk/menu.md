@@ -51,13 +51,14 @@ const result = await fb.menu.getMainMenu('View');
 
 ### runContextCommand()
 
-Signature: `fb.menu.runContextCommand(command: string): Promise<BaseResponse & { guid?: string; itemCount?: number }>`
+Signature: `fb.menu.runContextCommand(command: string, options?: Omit<MenuRunContextCommandParams, 'command'>): Promise<MenuRunContextCommandResponse>`
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `command` | `string` | Yes | Context-menu command path or name. |
+| `command` | `string` | Yes | Context-menu command path, name, or GUID. |
+| `options.subGuid` | `string` | No | Node GUID of a dynamically generated child. Without it the owning container is targeted, which runs nothing. |
 
-Invokes only `menu.runContextCommand`. The response may include the command `guid` and affected `itemCount`.
+Invokes only `menu.runContextCommand`. The response may include the command `guid`, the affected `itemCount`, and `executionConfirmed` — `false` there means the command reached an entry point that returns nothing, so completion could not be observed.
 
 ```javascript
 const result = await fb.menu.runContextCommand('Properties');

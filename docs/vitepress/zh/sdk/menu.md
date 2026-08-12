@@ -38,16 +38,17 @@ const result = await fb.menu.getMainMenu();
 
 ### runContextCommand()
 
-签名：`fb.menu.runContextCommand(...args): Promise<unknown>`
+签名：`fb.menu.runContextCommand(command: string, options?: Omit<MenuRunContextCommandParams, 'command'>): Promise<MenuRunContextCommandResponse>`
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
-| ...args | unknown[] | 视方法而定 | 透传给 SDK wrapper；详细类型以 `sdk/src/bridge/namespaces/` 源码和生成类型为准 |
+| `command` | `string` | 是 | 右键菜单命令路径、名称或 GUID |
+| `options.subGuid` | `string` | 否 | 动态生成子项的节点 GUID。不传则命中其父容器，等于什么都不执行 |
 
-返回值：底层 `menu.runContextCommand`, `menu.runContextCommandById` 调用结果。
+返回值：底层 `menu.runContextCommand` 调用结果，可能含 `guid`、`itemCount` 与 `executionConfirmed`——后者为 `false` 表示命令走的是不返回结果的入口，无法观测是否真的执行。
 
 ```javascript
-const result = await fb.menu.runContextCommand();
+const result = await fb.menu.runContextCommand('Properties');
 ```
 
 ### runMainMenuCommand()

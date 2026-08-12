@@ -230,7 +230,19 @@ public:
     
     // 获取 CompositionController（用于 Visual Hosting）
     ICoreWebView2CompositionController* GetCompositionController() const { return compositionController_.get(); }
-    
+
+    // CompositionController3 exposes the drag-drop forwarding entry points used
+    // by Visual Hosting. QI'd once and cached; null when the runtime predates it.
+    ICoreWebView2CompositionController3* GetCompositionController3();
+
+    // Origin of the document currently loaded, as scheme://host[:port].
+    //
+    // Read live from the WebView rather than from the configured start URL: a
+    // window may have navigated elsewhere since creation. Empty when the WebView
+    // is not ready or the source cannot be parsed, which callers must treat as
+    // untrusted rather than as a match.
+    std::wstring GetCurrentOriginNormalized();
+
     // ============================================
     // CSS app-region 查询 (用于 WM_NCHITTEST)
     // ============================================
@@ -255,6 +267,11 @@ private:
     // Visual Hosting 模式成员
     // ============================================
     wil::com_ptr<ICoreWebView2CompositionController> compositionController_;
+
+    // Cached result of the CompositionController3 QI. The probed flag is set on
+    // failure too, so an older runtime is not re-queried on every drag event.
+    wil::com_ptr<ICoreWebView2CompositionController3> compositionController3_;
+    bool compositionController3Probed_ = false;
     
     // DirectComposition 对象
     wil::com_ptr<IDCompositionDevice> dcompDevice_;

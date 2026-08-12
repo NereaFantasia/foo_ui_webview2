@@ -833,7 +833,7 @@ json WindowCenter(const json& params) {
 
 // 取目标 shell 当前 DPI。
 //
-// 尺寸约束的 wire 单位仍是**物理像素**（P1' 不翻转 wire 单位），而 shell
+// 尺寸约束的 wire 单位是**物理像素**（bridge 契约不随存储单位改动），而 shell
 // 存储单位是 DIP，故 handler 层需要按目标窗口的 DPI 换算。
 //
 // 换算基准必须取**目标窗口**的 DPI，而不是 caller 的：多显示器混合缩放下

@@ -4,6 +4,7 @@
 #include "api/PlaylistApi.h"
 #include "interfaces/Fb2kPlaylistService.h"
 #include "core/QueueManager.h"
+#include "utils/PathSecurity.h"
 
 // ============================================
 // PlaylistCallback Implementation
@@ -14,6 +15,29 @@
 static bool IsShadowPlaylist(size_t p_playlist) {
     size_t shadowIdx = QueueManager::GetInstance().GetShadowPlaylistIndex();
     return shadowIdx != pfc::infinite_size && p_playlist == shadowIdx;
+}
+
+// Invalidate the caches that derive from playlist membership.
+//
+// Must run before any IsShadowPlaylist early-return: shadow playlist entries are
+// real playlist_manager items, so PathSecurity indexes them and treats them as
+// trusted media context. Skipping invalidation for the shadow playlist would
+// leave the membership index permanently stale.
+//
+// Only for events that change which tracks a playlist holds. Pure reordering
+// keeps the membership set intact and must not trigger an index rebuild.
+static void InvalidatePlaylistMembershipCaches() {
+    Fb2kPlaylistService::InvalidatePlaylistCache();
+
+    // Touching the singleton before services are up would construct it with an
+    // empty whitelist (its core_api probes swallow failures and return ""), and
+    // a function-local static caches that degraded state for the whole session.
+    // Skipping is safe: an unconstructed index is already invalid, so the first
+    // query after startup builds it from live playlist state.
+    if (!core_api::are_services_available()) {
+        return;
+    }
+    PathSecurity::Instance().InvalidatePlaylistIndex();
 }
 
 // Use playlist_callback_static for static registration with service factory
@@ -32,7 +56,7 @@ public:
         const bit_array& p_selection
     ) override {
         try {
-            Fb2kPlaylistService::InvalidatePlaylistCache();
+            InvalidatePlaylistMembershipCaches();
             if (IsShadowPlaylist(p_playlist)) return;  // suppress JIT internal events
             WebViewContext::GetInstance().BroadcastEvent("playlist:itemsAdded", {
                 {"playlist", p_playlist},
@@ -50,7 +74,7 @@ public:
         size_t p_new_count
     ) override {
         try {
-            Fb2kPlaylistService::InvalidatePlaylistCache();
+            InvalidatePlaylistMembershipCaches();
             if (IsShadowPlaylist(p_playlist)) return;  // suppress JIT internal events
             WebViewContext::GetInstance().BroadcastEvent("playlist:itemsRemoved", {
                 {"playlist", p_playlist},
@@ -113,6 +137,9 @@ public:
         const pfc::list_base_const_t<t_on_items_replaced_entry>& p_data
     ) override {
         try {
+            // Replacement swaps in different tracks, so paths change even though
+            // the item count does not.
+            InvalidatePlaylistMembershipCaches();
             if (IsShadowPlaylist(p_playlist)) return;  // suppress JIT internal events
             WebViewContext::GetInstance().BroadcastEvent("playlist:itemsReplaced", {
                 {"playlist", p_playlist},
@@ -148,7 +175,7 @@ public:
         size_t p_new_count
     ) override {
         try {
-            Fb2kPlaylistService::InvalidatePlaylistCache();
+            InvalidatePlaylistMembershipCaches();
             WebViewContext::GetInstance().BroadcastEvent("playlist:removed", {
                 {"oldCount", p_old_count},
                 {"newCount", p_new_count},

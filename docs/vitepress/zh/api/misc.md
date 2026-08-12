@@ -162,12 +162,22 @@ await fb2k.invoke('menu.runMainMenuCommand', {
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
 | `command` | `string` | 是 | GUID 或斜杠分隔的命令路径。空值直接以 `command is required` 失败。 |
+| `subGuid` | `string` | 否 | 动态生成子项的节点 GUID。不传则命中其父容器，等于什么都不执行。 |
 
 
-**返回值**: `{"guid":"...","itemCount":"...","success":true}`
+**返回值**: `{"guid":"...","itemCount":"...","executionConfirmed":true,"success":true}`
+
+`executionConfirmed: false` 表示命令是通过一个不返回结果的入口交给宿主的，因此无法观测是否真的执行。
+只有在某个注册项没有稳定 GUID 时才会出现。
 
 ```javascript
 await fb2k.invoke('menu.runContextCommand', { command: 'Playback Statistics/Rating/5' });
+
+// 动态子项需要「所属命令 GUID + subGuid」
+await fb2k.invoke('menu.runContextCommand', {
+    command: '{5B69B9E3-1C7C-4C63-A9B0-1D0C0D0F0E0D}',
+    subGuid: '{A222D5A9-2903-AA8C-EEAE-4B9230558B55}',
+});
 ```
 
 ### menu.getMainMenu

@@ -38,7 +38,7 @@ How it works: a **cache + event** model wraps async APIs as sync properties to m
 | metadata | 9 | Metadata read/write and batch read |
 | audio | 12 | Audio analysis, spectrum, waveform |
 | console | 6 | Logging |
-| dnd | 4 | Drag and drop |
+| dnd | 3 | External file drop |
 | queue | 8 | Playback queue |
 | jitQueue | 7 | JIT immediate queue |
 | discovery | 15 | Service discovery and context menus |

@@ -3,6 +3,6 @@
 #include "BridgeCore.h"
 
 // Register all drag-and-drop related APIs
-// dnd.registerDropZone, dnd.unregisterDropZone, dnd.startDrag, dnd.getDropZones
+// dnd.getPathsAsync, dnd.getCapabilities, dnd.startDrag
 /** @brief Register the dnd.* (drag-and-drop) API handlers. */
 void RegisterDndApi();

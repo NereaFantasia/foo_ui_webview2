@@ -170,7 +170,7 @@ public:
 
     // ========== 尺寸约束（单位：DIP，运行时可变） ==========
     //
-    // P1' 之前这些值只存在于 createParams_（创建期不可变），运行时无法修改。
+    // 这些值曾只存在于 createParams_（创建期不可变），运行时无法修改。
     // 现提升为独立的可变字段，createParams_ 只作为初始值来源。
     void SetMinSizeDip(int widthDip, int heightDip) override;
     void GetMinSizeDip(int& widthDip, int& heightDip) const override {

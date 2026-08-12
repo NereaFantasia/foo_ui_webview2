@@ -15,7 +15,7 @@
 // `HTMLElementTagNameMap` and `HTMLElementEventMap`. The import is
 // type-only with an empty binding, so it carries no runtime cost yet
 // still pulls `./generated/global.d.ts` into the consumer's type
-// system.
+// system. Regenerate via `npm run gen:components-global`.
 import type {} from './generated/global.js';
 
 export { FbBaseElement } from './FbBaseElement.js';

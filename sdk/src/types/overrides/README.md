@@ -76,18 +76,24 @@ markers, swapping `array<int>` for `array<string>`, etc. does **not**
 invalidate the snapshot. Adding or removing keys, or moving a key from
 `primitive` to `array`, does.
 
-After an intentional C++ schema change, refresh the `@codegen-snapshot`
-tag so it matches the new shape classes. Always commit the snapshot update
-together with the C++ change that motivated it, leaving the interface body
-itself untouched.
+To regenerate the snapshot after an intentional C++ schema change:
+
+```bash
+node scripts/gen_sdk_types.mjs --all --fix-override-stale
+```
+
+The flag rewrites the `@codegen-snapshot` tag in place, leaving the
+interface body untouched. Always commit the snapshot update together with
+the C++ change that motivated it.
 
 ### 3. Keep the override interface ergonomically named
 
 The `interface` / `type` name immediately following the JSDoc block must
-match the name the auto-generator would have produced. The override is
-then re-exported verbatim from
-`sdk/src/types/generated/{params,responses,events}.ts`, so the public
-surface is unchanged.
+match the name the auto-generator would have produced — see
+`makeApiInterfaceName` / `makeEventInterfaceName` in
+`scripts/graph/lib/cpp-to-ts-mapping.mjs`. The override is then re-exported
+verbatim from `sdk/src/types/generated/{params,responses,events}.ts`, so
+the public surface is unchanged.
 
 For example:
 
@@ -99,8 +105,8 @@ For example:
 
 Mismatched names are accepted by the registry but break the typed facade,
 which expects the override symbols to satisfy the typed `bridge.invoke<M>` /
-`fb.on<E>` overload set. The mismatch then surfaces as an unresolved
-import during type-checking.
+`fb.on<E>` overload set. The CI gate (`audit:all`) will surface the
+mismatch as an unresolved import.
 
 ## File layout
 
@@ -121,6 +127,12 @@ filename is purely organisational.
 ## Local validation
 
 ```bash
-# Type-check the SDK, including every re-exported override symbol
-npm run type-check
+# Verify all overrides match current C++ schemas (no write)
+node scripts/gen_sdk_types.mjs --all --diff
+
+# Refresh stale snapshots in place
+node scripts/gen_sdk_types.mjs --all --fix-override-stale
+
+# Full sanity check (write generated/ + tsc --noEmit)
+node scripts/gen_sdk_types.mjs --all --validate
 ```

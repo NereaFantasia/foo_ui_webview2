@@ -20,8 +20,9 @@ const COMMON: Pick<
 > = {
     format: ['esm'],
     dts: true,
-    // Sourcemaps stay on so consumers can debug through the bundle. The npm
-    // tarball still excludes them via the "!dist/**/*.map" entry in package.json.
+    // Emitted for local debugging and required by the sourcemap integrity
+    // gate; `package.json`'s `files` excludes `dist/**/*.map` so the
+    // published tarball stays free of them.
     sourcemap: true,
     target: 'es2020',
     outDir: 'dist',
@@ -44,8 +45,8 @@ const COMMON: Pick<
  * is re-exported by the components entry itself, so the block resolves
  * against the bundled declarations.
  *
- * Read at config-load time so the footer always tracks
- * `src/components/generated/global.d.ts` without manual sync.
+ * Read at config-load time so the footer always tracks the codegen
+ * output (`npm run gen:components-global`) without manual sync.
  */
 function componentsGlobalFooter(): string {
     const raw = readFileSync(
@@ -55,8 +56,8 @@ function componentsGlobalFooter(): string {
     const start = raw.indexOf('declare global');
     if (start < 0) {
         throw new Error(
-            'tsup.config.esm.ts: no `declare global` block found in '
-            + 'src/components/generated/global.d.ts',
+            'tsup.config.esm.ts: no `declare global` block found in src/components/generated/global.d.ts — '
+            + 'regenerate it via `npm run gen:components-global`',
         );
     }
     // Drop the trailing `export {};` module marker — dist/components.d.ts

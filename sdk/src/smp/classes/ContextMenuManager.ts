@@ -92,6 +92,7 @@ export class ContextMenuManager {
             nextId: baseId,
             limit,
             idMap: this._idMap,
+            family: 'contextmenu',
         };
         const out = buildMenuItems(items, state);
 

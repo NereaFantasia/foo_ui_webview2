@@ -5,9 +5,7 @@ All notable changes to the foo-webview-sdk will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
-
-## [1.12.0] - 2026-08-05
+## [1.12.0] - 2026-08-12
 
 ### Added
 
@@ -41,6 +39,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   returns; `getContextMenuCommands()` now takes the `includeHidden` option.
 - `executeContextMenuCommand()` declares `hidden`, `resolved`, `name`, and
   `force` on its response.
+- `menu.runContextCommand` accepts `subGuid`, addressing a dynamically
+  generated child (a rating value, a converter preset). Without it the owning
+  container is targeted, which runs nothing. The wrapper signature is now
+  `runContextCommand(command, options?)`.
+- `MenuRunContextCommandResponse.executionConfirmed` distinguishes "the host
+  reported the command ran" from "the command was dispatched through an entry
+  point that returns nothing". It is absent on early-validation failures, where
+  nothing was dispatched at all.
+- `splitMenuAddress(value)` — decodes an `idMap` entry of the `mainmenu` family
+  back into `{ command, subGuid? }`. Exported because the encoding crosses the
+  boundary between the menu builder and the dispatcher.
+- `SmpMenuFamily` (`'mainmenu' | 'contextmenu'`) and the matching required
+  `family` field on `SmpMenuBuildState`. The two families use disjoint
+  identifier spaces, and a shared builder cannot infer which one it is walking.
+- **Native drag-drop pipeline (`dnd`)** — the host now observes drag gestures
+  itself through a native `IDropTarget` bridge and hands the page what HTML5
+  deliberately hides: real filesystem paths. New surface:
+  - `dnd.getPathsAsync(sessionId?)` — the reliable way to read a session's
+    paths from inside a HTML5 `drop` handler.
+  - `dnd.getPaths()` / `dnd.hasFiles()` — synchronous best-effort reads of the
+    page-side session snapshot, for optimistic UI during `dragover`.
+  - `dnd.getCapabilities()` — whether this window can deliver paths at all;
+    subscribe to `dnd:capabilitiesChanged` for withdrawals.
+  - Events `dnd:enter` (paths, `hasFiles`, cursor position), `dnd:leave`, and
+    `dnd:drop` (final paths, cursor position, `keyState`), correlated by
+    `sessionId`. Paths are withheld from untrusted origins while `hasFiles`
+    stays accurate.
 
 ### Changed
 
@@ -62,9 +87,63 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   path by exact segment match. An ambiguous name is reported rather than
   resolved: on a localized host three separate commands can share one label, so
   picking the first match would silently run the wrong one.
+- **Breaking type change** — `SmpMenuBuildState` gained a required `family`
+  field. Only direct callers of `buildMenuItems` are affected;
+  `MainMenuManager` / `ContextMenuManager` method signatures are unchanged. At
+  runtime an omitted `family` is treated as `'mainmenu'`.
+- `buildMenuItems` leaves an id unmapped when the item carries no identifier its
+  family can dispatch, instead of storing one the target endpoint rejects.
+  `ExecuteByID` then reports failure locally rather than raising a host error.
+- **Breaking — `dnd.startDrag` no longer fakes success**: dragging tracks out
+  of the window needs a native `IDropSource` this component does not provide.
+  The 1.11.0 call answered `success: true` with a `trackCount` while nothing
+  was actually dragged; it now resolves with `{ success: false, code:
+  'NOT_SUPPORTED' }` (resolves, not rejects — handler error envelopes arrive as
+  normal results, so test `success`). The wrapper keeps a single optional
+  argument for source compatibility and ignores it; the old second options
+  argument is gone.
+
+### Removed
+
+- **Breaking — the drop-zone registry is gone**: `dnd.registerDropZone`,
+  `dnd.unregisterDropZone`, and `dnd.getDropZones` have been removed. The old
+  flow injected a script that attached HTML5 drag handlers to a CSS selector
+  and re-emitted a page-side `dnd:drop` event carrying `File` metadata
+  (`name` / `type` / `size`) — never a real filesystem path. Drop observation
+  now happens natively in the host, which emits `dnd:enter` / `dnd:leave` /
+  `dnd:drop` to every window without registration; the `dnd:drop` payload is
+  redefined accordingly (`sessionId`, `paths`, `x`, `y`, `keyState`).
+  **Migration**: delete `registerDropZone` / `unregisterDropZone` /
+  `getDropZones` calls and any `zoneId` bookkeeping; keep (or add) plain HTML5
+  `dragover` / `drop` listeners for visuals and hit-testing; read real paths
+  with `await fb.dnd.getPathsAsync()` inside the `drop` handler, or from the
+  host-emitted `dnd:drop` payload; gate path-dependent UI on
+  `dnd.getCapabilities()`.
 
 ### Fixed
 
+- **`MainMenuManager.ExecuteByID` could not dispatch anything** — `buildMenuItems`
+  ranked an item's `commandId` above its `guid`, and both main-menu tiers emit a
+  `commandId` on every row. Every allocated id therefore mapped to a number,
+  while `menu.runMainMenuCommand` declares `command` as a string and rejects a
+  number on type, so main-menu dispatch failed for every row rather than for an
+  odd few. The two menu families now map only to what their host endpoint
+  accepts: the main menu to `guid` (or `path`), the context menu to `commandId`.
+- **Dynamic main-menu children were dispatched as their parent** — an item's
+  `subGuid` was dropped, so invoking a dynamically generated child ran the
+  container slot that owns it. The host documents executing a container slot as
+  undefined behaviour. `ExecuteByID` now forwards `subGuid` alongside `command`.
+- **`menu.runContextCommand` reported success it had not observed** — resolving
+  a command by name dispatched it through an entry point that returns nothing,
+  and the handler answered with a hardcoded `success: true` regardless of the
+  outcome. The name is now resolved to a GUID and dispatched through the
+  result-returning entry point, so `success` reflects what the host reported.
+- **`menu.runContextCommand` ran under the wrong caller** — the command was
+  executed as `caller_undefined` while enumeration reads item state as the
+  playlist-selection or now-playing caller. Components may vary an item's
+  visibility and enabled state per caller, so the state a caller was shown did
+  not necessarily describe what execution would do. Both sides now use the
+  caller matching where the tracks came from.
 - **`menu.runMainMenuCommand` no longer leaks host exceptions** — the v2
   menu-tree branch had no exception guard, and `generate_menu()` throws on
   localized foobar2000 builds. The exception escaped to JS as a raw

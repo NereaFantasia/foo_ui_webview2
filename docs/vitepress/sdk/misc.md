@@ -45,12 +45,23 @@ so an English name or path will not resolve there. See
 await fb.menu.runMainMenuCommand('{11213A01-9F36-4E69-A1BB-7A72F418DE3A}');
 ```
 
-### runContextCommand(command)
+### runContextCommand(command, options?)
 
-Executes a context-menu command against the default context.
+Executes a context-menu command against the default context (the now-playing
+track, falling back to the active playlist selection).
+
+| Parameter | Type | Description |
+| --- | --- | --- |
+| `command` | `string` | GUID or command name. |
+| `options.subGuid` | `string` | Node GUID of a dynamically generated child. Without it the owning container is targeted, which runs nothing. |
 
 ```javascript
 await fb.menu.runContextCommand('Properties');
+
+// A dynamic child needs the owning GUID plus its node GUID.
+await fb.menu.runContextCommand('{5B69B9E3-1C7C-4C63-A9B0-1D0C0D0F0E0D}', {
+    subGuid: '{A222D5A9-2903-AA8C-EEAE-4B9230558B55}',
+});
 ```
 
 ### runContextCommandById(id, options?)
@@ -283,42 +294,7 @@ Opens foobar2000 Preferences.
 
 ## fb.dnd Drag and Drop
 
-### registerDropZone(options)
-
-Registers a drop zone. `DndRegisterDropZoneParams` accepts `selector`, `event`, and `accept`; the host returns `{ zoneId }`.
-
-```javascript
-const { zoneId } = await fb.dnd.registerDropZone({
-    selector: '#drop-area',
-    event: 'dnd:drop',
-    accept: ['audio/*'],
-});
-```
-
-### unregisterDropZone(zoneId)
-
-Unregisters a drop zone by the ID returned from `registerDropZone()`.
-
-```javascript
-await fb.dnd.unregisterDropZone(zoneId);
-```
-
-### startDrag(type, options?)
-
-Starts a drag operation.
-
-| Parameter | Type | Description |
-| --- | --- | --- |
-| `type` | `string` | Drag type. |
-| `options` | `Omit<DndStartDragParams, 'type'>` | Optional `data` and `paths` payload. |
-
-### getDropZones()
-
-Returns `{ success, zones, count }`. Each `DropZone` contains `id`, `selector`, `accept`, and `event`.
-
-```javascript
-const zones = await fb.dnd.getDropZones();
-```
+External file drop, documented on its own page: [fb.dnd](./dnd.md).
 
 <!-- BEGIN AUTO-GENERATED SDK STUBS -->
 

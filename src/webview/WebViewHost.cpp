@@ -312,8 +312,10 @@ void WebViewHost::SetupWebView() {
     // 方法 2: 尝试使用 ICoreWebView2Controller4（更新的 API）
     wil::com_ptr<ICoreWebView2Controller4> controller4;
     if (SUCCEEDED(controller_->QueryInterface(IID_PPV_ARGS(&controller4)))) {
-        // 允许使用分层窗口（可能有助于透明效果）
-        // 注意：这个设置可能不是所有版本都有
+        // Controller4 只暴露 get/put_AllowExternalDrop（外部拖放开关），与透明
+        // 效果无关。此处仅探测接口可用性并记录，不修改任何设置：
+        // AllowExternalDrop 默认已是 TRUE，设为 FALSE 会让
+        // CompositionController3 的拖放转发方法返回 E_FAIL。
         LOG("✓ ICoreWebView2Controller4 available");
     }
 
@@ -729,6 +731,14 @@ void WebViewHost::InjectBridgeScript() {
     // 注入全局 bridge 脚本，在所有页面加载前执行
     const wchar_t* bridgeScript = LR"(
         // foobar2000 WebView2 UI Bridge
+
+        // Drag-drop snapshot slot, declared before any page code runs so a
+        // synchronous read never hits an undefined global. Runs once per
+        // document, so a navigation cannot leave the previous page's paths
+        // readable. The host fills it from dnd:* events; null means no drag
+        // session has been published to this document.
+        window.__fbDndSession = null;
+
         window.fb2k = window.fb2k || {
             _callbacks: new Map(),
             _callId: 0,
@@ -787,6 +797,18 @@ void WebViewHost::InjectBridgeScript() {
             },
             
             _emit: function(event, data) {
+                // 0. Publish the drag-drop snapshot before any listener runs.
+                //
+                // Must happen here rather than in an SDK wrapper: listeners are
+                // stored in _eventListeners and invoked below, so a wrapper
+                // registered through on() would be just another entry in that
+                // set with no ordering guarantee against page code. A drop
+                // handler calling fb.dnd.getPaths() has to observe the current
+                // session, not the previous one.
+                if (event === 'dnd:enter' || event === 'dnd:drop' || event === 'dnd:leave') {
+                    try { this._updateDndSnapshot(event, data); } catch(e) { console.error(e); }
+                }
+
                 // 1. Call registered callbacks
                 const listeners = this._eventListeners.get(event);
                 if (listeners) {
@@ -802,6 +824,61 @@ void WebViewHost::InjectBridgeScript() {
                         bubbles: true
                     }));
                 } catch(e) { console.error('CustomEvent dispatch error:', e); }
+            },
+
+            // Retains the snapshot briefly after a session ends so a drop
+            // handler that awaits something before reading paths still sees
+            // them. Kept short because the paths are stale by then.
+            _dndSnapshotGraceMs: 1500,
+            _dndClearTimer: null,
+
+            _updateDndSnapshot: function(event, data) {
+                const d = data || {};
+                const sessionId = d.sessionId || '';
+
+                if (this._dndClearTimer !== null) {
+                    clearTimeout(this._dndClearTimer);
+                    this._dndClearTimer = null;
+                }
+
+                if (event === 'dnd:enter') {
+                    window.__fbDndSession = {
+                        sessionId: sessionId,
+                        paths: Array.isArray(d.paths) ? d.paths.slice() : [],
+                        hasFiles: !!d.hasFiles,
+                        phase: 'active',
+                        publishedAt: performance.now()
+                    };
+                    return;
+                }
+
+                const current = window.__fbDndSession;
+                // A leave or drop for some other session is stale; ignoring it
+                // keeps a superseded gesture from clearing the live one.
+                if (!current || (sessionId && current.sessionId !== sessionId)) {
+                    return;
+                }
+
+                if (event === 'dnd:drop') {
+                    // Drop carries the authoritative list: the source may have
+                    // changed it since enter.
+                    if (Array.isArray(d.paths)) {
+                        current.paths = d.paths.slice();
+                        current.hasFiles = d.paths.length > 0;
+                    }
+                }
+
+                current.phase = 'ended';
+                current.publishedAt = performance.now();
+
+                const endedId = current.sessionId;
+                this._dndClearTimer = setTimeout(() => {
+                    this._dndClearTimer = null;
+                    const snap = window.__fbDndSession;
+                    if (snap && snap.sessionId === endedId && snap.phase === 'ended') {
+                        window.__fbDndSession = null;
+                    }
+                }, this._dndSnapshotGraceMs);
             }
         };
         
@@ -1349,7 +1426,11 @@ void WebViewHost::Resize(int width, int height) {
 
 void WebViewHost::Resize(const RECT& bounds) {
     if (controller_) {
-        LOG("WebViewHost::Resize - Bounds: ", bounds.left, ",", bounds.top, " to ", bounds.right, ",", bounds.bottom);
+        // Resize 在拖拽期间每条 WM_SIZE 都被调用，无条件写控制台会在逐帧路径上
+        // 产生真实开销（console::print 需格式化并投递到 fb2k 控制台）。
+        if (WindowChromeTrace::AuxiliaryTraceEnabled()) {
+            LOG("WebViewHost::Resize - Bounds: ", bounds.left, ",", bounds.top, " to ", bounds.right, ",", bounds.bottom);
+        }
         controller_->put_Bounds(bounds);
         
         // 如果当前是透明模式，resize 后需要重新应用透明背景
@@ -2298,6 +2379,39 @@ int WebViewHost::GetNonClientRegionAtPoint(POINT clientPt) {
         default:
             return 2;  // 其他
     }
+}
+
+// Drag-drop forwarding entry points for Visual Hosting.
+// The QI result is cached on both outcomes: a runtime that lacks the interface
+// would otherwise be re-queried on every DragOver, of which a single drag
+// produces dozens.
+ICoreWebView2CompositionController3* WebViewHost::GetCompositionController3() {
+    if (compositionController3Probed_) {
+        return compositionController3_.get();
+    }
+    if (!compositionController_) {
+        return nullptr;  // not Visual Hosting, or not initialised yet
+    }
+
+    compositionController3Probed_ = true;
+    HRESULT hr = compositionController_->QueryInterface(IID_PPV_ARGS(&compositionController3_));
+    if (FAILED(hr) || !compositionController3_) {
+        compositionController3_.reset();
+        LOG("GetCompositionController3: QI failed, hr=", pfc::format_hex((uint32_t)hr));
+        return nullptr;
+    }
+    return compositionController3_.get();
+}
+
+std::wstring WebViewHost::GetCurrentOriginNormalized() {
+    if (!webview_) {
+        return L"";
+    }
+    wil::unique_cotaskmem_string source;
+    if (FAILED(webview_->get_Source(&source)) || !source) {
+        return L"";
+    }
+    return NormalizeToOrigin(source.get());
 }
 
 // ==========================================================================

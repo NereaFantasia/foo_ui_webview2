@@ -105,8 +105,8 @@ bool WindowTargetResolver::IsPanelCallerHwnd(HWND callerHwnd) {
         // 宿主框架内的子窗口，其 GA_ROOT 是 fb2k 主框架而非实例自身，因此
         // 两种匹配方向都要检查。
         //
-        // 注意：面板下 GA_ROOT 究竟返回哪个窗口属于 R10 的未验证项，需在
-        // fb2k 运行时加载 DUI/CUI 面板后实测确认；此处同时匹配两种方向，
+        // 注意：面板下 GA_ROOT 究竟返回哪个窗口尚未验证，需在 fb2k 运行时
+        // 加载 DUI/CUI 面板后实测确认；此处同时匹配两种方向，
         // 无论实测结果如何都能命中。
         const bool matches = (instanceHwnd == callerHwnd) ||
                              (::GetAncestor(instanceHwnd, GA_ROOT) == callerHwnd);

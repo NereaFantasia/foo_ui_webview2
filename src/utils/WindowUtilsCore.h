@@ -3,7 +3,7 @@
 // ============================================
 // WindowUtilsCore.h - WindowUtils 中零 foobar2000 SDK 依赖的部分
 //
-// 拆分动机（P0-b / R3）：WindowUtils.h 因 GetUserBackdropEffectString() 需要
+// 拆分动机：WindowUtils.h 因 GetUserBackdropEffectString() 需要
 // core/PreferencesPage.h（fb2k SDK），导致整个头文件无法被测试项目包含。
 // 既有 tests/test_window_utils.cpp 因此在 namespace reimpl 内**重新实现**了
 // 这些 helper——生产代码漂移时测试仍会通过，等于没有防护。

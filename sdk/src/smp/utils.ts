@@ -13,6 +13,7 @@ import {
     SMP_MENU_FLAGS,
     type SmpHandleLike,
     type SmpMenuBuildState,
+    type SmpMenuFamily,
     type SmpRawMenuItem,
     type SmpStructuredMenuItem,
 } from './types.js';
@@ -124,14 +125,79 @@ export function sleep(ms: number): Promise<void> {
 export const MENU_FLAGS = SMP_MENU_FLAGS;
 
 /**
+ * Joins a dynamic main-menu child's owning command GUID to its node GUID
+ * inside a single `idMap` value. Safe as a delimiter because the host formats
+ * GUIDs as `{8-4-4-4-12}`, which cannot contain it.
+ */
+const MENU_ADDRESS_SEPARATOR = '|';
+
+/**
+ * Split an `idMap` value produced for the `mainmenu` family back into the
+ * parameters `menu.runMainMenuCommand` expects.
+ *
+ * @param value Encoded address, either `guid` or `guid|subGuid`.
+ * @returns `command` always set; `subGuid` present only for dynamic children.
+ */
+export function splitMenuAddress(value: string): {
+    command: string;
+    subGuid?: string;
+} {
+    const at = value.indexOf(MENU_ADDRESS_SEPARATOR);
+    if (at < 0) return { command: value };
+    return {
+        command: value.slice(0, at),
+        subGuid: value.slice(at + MENU_ADDRESS_SEPARATOR.length),
+    };
+}
+
+/**
+ * Pick the identifier a menu item must be dispatched by, given its family.
+ *
+ * Each family maps only to what its host endpoint actually accepts, rather
+ * than to whichever identifier happens to be present. An item routinely
+ * carries several: main-menu rows arrive with a `commandId` even though
+ * `menu.runMainMenuCommand` takes a string, and passing that number through
+ * makes the host reject the call on type instead of running the command.
+ *
+ * @returns `null` when the item carries nothing this family can dispatch; the
+ * caller then leaves the id unmapped so `ExecuteByID` reports failure rather
+ * than sending an identifier the host cannot parse.
+ */
+function resolveMenuAddress(
+    item: SmpRawMenuItem,
+    family: SmpMenuFamily,
+): number | string | null {
+    if (family === 'contextmenu') {
+        // Indexes the node tree of the manager instance that produced it, and
+        // `menu.runContextCommandById` accepts nothing else.
+        return typeof item.commandId === 'number' ? item.commandId : null;
+    }
+
+    if (typeof item.guid === 'string' && item.guid.length > 0) {
+        // A dynamic child is addressed by the owning GUID *plus* its own node
+        // GUID. Dispatching the owner alone runs the container slot, which the
+        // host documents as undefined behaviour.
+        return typeof item.subGuid === 'string' && item.subGuid.length > 0
+            ? `${item.guid}${MENU_ADDRESS_SEPARATOR}${item.subGuid}`
+            : item.guid;
+    }
+
+    // Path resolution is matched against a generated menu tree, which fails on
+    // localized hosts, so it ranks below a GUID but above nothing at all.
+    if (typeof item.path === 'string' && item.path.length > 0) return item.path;
+
+    return null;
+}
+
+/**
  * Recursive menu-item builder shared by `ContextMenuManager` and
  * `MainMenuManager`.
  *
  * - Walks `items` depth-first, allocating a new `id` from
  *   `state.nextId++` for each leaf command.
- * - Maps each allocated `id` to the most stable identifier the item
- *   offers, inside `state.idMap`, so callers can later dispatch via
- *   `ExecuteByID`.
+ * - Maps each allocated `id` to the identifier `state.family` can actually
+ *   dispatch, inside `state.idMap`, so callers can later dispatch via
+ *   `ExecuteByID`. Items offering no such identifier stay unmapped.
  * - Stops once `state.limit` is hit (when set).
  *
  * Pure function: never mutates the input `items`.
@@ -193,18 +259,8 @@ export function buildMenuItems(
             checked,
         });
 
-        // Most stable identifier first. `commandId` is the context-menu session
-        // handle and is authoritative there. `guid` is preferred over `path`
-        // because the host resolves a GUID directly, while a path has to be
-        // matched against a generated menu tree — a lookup that fails outright on
-        // localized hosts, which is why main-menu dispatch did not work at all.
-        if (typeof item.commandId === 'number') {
-            state.idMap.set(menuId, item.commandId);
-        } else if (typeof item.guid === 'string' && item.guid.length > 0) {
-            state.idMap.set(menuId, item.guid);
-        } else if (typeof item.path === 'string' && item.path.length > 0) {
-            state.idMap.set(menuId, item.path);
-        }
+        const address = resolveMenuAddress(item, state.family ?? 'mainmenu');
+        if (address !== null) state.idMap.set(menuId, address);
     }
 
     return out;
@@ -224,6 +280,7 @@ export const smpUtils = {
     sleep,
     MENU_FLAGS,
     buildMenuItems,
+    splitMenuAddress,
 } as const;
 
 export type SmpUtilsNamespace = typeof smpUtils;

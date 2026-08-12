@@ -1,6 +1,6 @@
 // Pure layout / DOM-model helpers for the self-drawn menu overlay.
 // Node tests import this module directly. The overlay page inlines a stripped
-// browser build of this module — keep both copies in sync.
+// browser build via scripts/gen_menu_overlay_page.mjs — keep both paths in sync.
 
 export const ZONE_IDS = Object.freeze(['top', 'playback', 'bottom']);
 

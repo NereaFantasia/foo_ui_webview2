@@ -238,78 +238,19 @@ await fb2k.invoke('keyboard.unregisterHotkey', { key: 'Ctrl+Alt+Space' });
 }
 ```
 
-## DnD API - 拖放 (4 个 API)
+## DnD API - 外部文件拖入 (3 个 API)
 
-### dnd.registerDropZone
+Windows 把拖入的文件列表交给原生窗口而非页面，且 HTML5 `File` 对象隐藏文件系统
+路径，因此本命名空间作为**旁路通道**提供宿主视角的真实路径。它不替代 HTML5 拖放：
+`dragenter` / `dragover` / `drop` 照原样触发。
 
-注册拖放区域。返回用于设置拖放区域的 JavaScript 代码。
+事件：`dnd:enter`、`dnd:leave`、`dnd:drop`、`dnd:capabilitiesChanged`。**没有**
+`dnd:over` 事件——一次拖放会产生上百次 `DragOver`，逐次发射会淹没 bridge；需要跟踪
+光标的页面用 HTML5 `dragover`。
 
-| 参数 | 类型 | 必填 | 说明 |
-| --- | --- | --- | --- |
-| `accept` | `array` | 否 | 可省略。 |
-| `event` | `string` | 否 | 可选；默认 dnd:drop。 |
-| `selector` | `string` | 否 | 可选。 |
+### dnd.getCapabilities
 
-**返回值**:
-
-```json
-{
-    "success": true,
-    "zoneId": "dropzone_1",
-    "selector": "#playlist-area",
-    "accept": ["files", "tracks"],
-    "event": "dnd:drop",
-    "script": "..."
-}
-```
-
-> `script` 字段包含自动注入的 JavaScript，用于设置 DOM 元素的 dragover/dragleave/drop 事件。
-
-```javascript
-await fb2k.invoke('dnd.registerDropZone', {
-    selector: '#playlist-area',
-    accept: ['files', 'tracks'],
-    event: 'dnd:drop'
-});
-
-fb2k.on('dnd:drop', (data) => {
-    console.log('Zone:', data.zoneId);
-    console.log('Files:', data.files);
-    console.log('Text:', data.text);
-});
-```
-
-> 事件总线统一使用 colon 命名约定，与全局 `fb2k.on()` 监听一致。
-
-### dnd.unregisterDropZone
-
-注销拖放区域。
-
-| 参数 | 类型 | 必填 | 说明 |
-| --- | --- | --- | --- |
-| `zoneId` | `string` | 否 | 可选。 |
-
-**返回值**: `{ "success": true, "zoneId": "dropzone_1", "script": "..." }`
-
-### dnd.startDrag
-
-启动拖拽操作（用于从 WebView 拖出内容）。
-
-| 参数 | 类型 | 必填 | 说明 |
-| --- | --- | --- | --- |
-| `data` | `string` | 否 | 可选。 |
-| `paths` | `array` | 是 | 必填。 |
-| `type` | `string` | 否 | 可选；默认 text。 |
-
-**返回值**: `{"note":"...","success":true,"trackCount":"...","type":"..."}`
-
-::: tip 注意
-原生拖拽操作需要 OLE drag-drop 实现。对于 tracks/files 类型，建议使用 `playlist.add` 或文件选择对话框代替。
-:::
-
-### dnd.getDropZones
-
-获取所有已注册的拖放区域。
+查询本窗口的拖放集成当前能提供什么。
 
 - **参数**: 无
 
@@ -318,12 +259,71 @@ fb2k.on('dnd:drop', (data) => {
 ```json
 {
     "success": true,
-    "zones": [
-        { "id": "dropzone_1", "selector": "#playlist-area", "accept": ["files"], "event": "dnd:drop" }
-    ],
-    "count": 1
+    "html5": true,
+    "paths": true,
+    "hosting": "visual",
+    "pathsUnavailableReason": "origin-untrusted"
 }
 ```
+
+`html5` 与 `paths` 相互独立：面板模式宿主会失去路径旁路通道，而 HTML5 拖放事件仍然
+工作（Chromium 自行处理）。`hosting` 为 `"visual"`（主窗口 / 弹出窗口）或
+`"standard"`（DUI / CUI 面板，此时路径不可用）。`pathsUnavailableReason` 仅当
+`paths` 为 `false` 时出现，取值为 `origin-untrusted`、`inner-target-not-found`、
+`forward-unavailable`、`chain-failed`、`displaced`、`register-failed` 之一。
+
+能力在窗口生命周期内并非恒定：导航到不同 origin 会收回路径访问权，并发射
+`dnd:capabilitiesChanged`，载荷携带同样的四个字段。
+
+```javascript
+const caps = await fb2k.invoke('dnd.getCapabilities');
+
+fb2k.on('dnd:capabilitiesChanged', (data) => {
+    dropZoneEl.hidden = !data.paths;
+});
+```
+
+### dnd.getPathsAsync
+
+查询某次拖放会话的真实文件系统路径。
+
+| 参数 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `sessionId` | `string` | 否 | 要查询的会话，取自 `dnd:*` 载荷；省略则查询本窗口当前活动或最近结束的会话。 |
+
+**返回值**: `{ "success": true, "sessionId": "dnd-1-12345", "paths": [] }`
+
+在 HTML5 `drop` 处理函数中取路径的可靠方式：读宿主会话状态而非推送到页面的快照，
+不依赖消息投递顺序。路径顺序与 `DataTransfer.files` 一致，可按下标配对。
+
+会话不存在、已过期、未携带文件列表，或 origin 不被信任时，`paths` 为空数组。会话
+存储是 per-window 的，仅凭 id 无法读取其他窗口的路径。
+
+```javascript
+document.addEventListener('drop', async (event) => {
+    event.preventDefault();
+    const { paths } = await fb2k.invoke('dnd.getPathsAsync');
+    if (paths.length) {
+        await fb2k.invoke('playlist.addPaths', { paths });
+    }
+});
+```
+
+### dnd.startDrag
+
+把内容从窗口**拖出**到其他应用。
+
+- **参数**: 无
+
+**返回值**: 总是返回 `NOT_SUPPORTED` 错误信封。
+
+::: tip 注意
+拖出需要 `IDropSource` 实现与宿主产出的数据对象，两者都不存在。它显式失败而非伪造
+`success: true`，使调用方无法建立在假成功之上。
+
+该 Promise 会 **resolve** 这个信封而不是 reject——宿主把 handler 返回的错误信封当作
+正常结果投递，因此应判断 `success`，不要依赖 `catch`。
+:::
 
 ## 交互投递与限制
 
@@ -335,6 +335,7 @@ native 代码中绘制 UI，而是向调用者发射 `ui:toast`，因此主题�
 注册它的窗口。`registerShortcut` 只保存应用内快捷键。两个注册方法都要求非空
 `key` 和 `action`；`unregisterHotkey` 接受数字 `id` 或原始 key 字符串。
 
-`dnd.registerDropZone` 返回页面必须自行应用到 DOM 的 script。默认回调为
-`dnd:drop`，payload 包含 zone ID、文件元数据、纯文本和 HTML。`dnd.startDrag`
-会报告 tracks/files 拖拽目前的 native 限制，而不是实现 OLE drag source。
+`dnd.getPathsAsync` 与 `dnd.getCapabilities` 都从消息自带的 HWND 解析调用窗口，
+因此页面无法读取其他窗口的拖放会话。路径对不受信任的 origin 不提供，而 HTML5 拖放
+事件仍然工作，因此应对 `paths` 与 `html5` 分别判断，而不是一并隐藏全部拖放提示。
+`dnd.startDrag` 会报告拖出目前的 native 限制，而不是实现 OLE drag source。

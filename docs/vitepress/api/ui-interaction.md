@@ -6,58 +6,72 @@ This page is the primary owner for the namespaces listed below. Method names, pa
 
 ## dnd
 
-### dnd.getDropZones
+External file drop. Windows hands the dropped file list to the native window
+rather than the page, and the HTML5 `File` object hides its filesystem path, so
+this namespace acts as a side channel for the host's own view of a drag. It does
+not replace HTML5 drag and drop: `dragenter` / `dragover` / `drop` keep firing.
+
+Events: `dnd:enter`, `dnd:leave`, `dnd:drop`, `dnd:capabilitiesChanged`. There is
+deliberately **no** `dnd:over` — a single drag produces hundreds of `DragOver`
+calls, so pages track the cursor with the HTML5 `dragover` event instead.
+
+### dnd.getCapabilities
 
 
 _No parameters._
 
-**Returns**: `{"count":"...","success":true,"zones":"..."}`
+**Returns**: `{"html5":true,"hosting":"visual","paths":true,"pathsUnavailableReason":"...","success":true}`
+
+`html5` and `paths` are independent: a panel-mode host can lose the path side
+channel while HTML5 drag events keep working, because Chromium handles those
+itself. `hosting` is `"visual"` (main or popup window) or `"standard"` (DUI / CUI
+panel, where paths are unavailable). `pathsUnavailableReason` appears only when
+`paths` is `false`, and is one of `origin-untrusted`, `inner-target-not-found`,
+`forward-unavailable`, `chain-failed`, `displaced`, `register-failed`.
+
+Capabilities are not constant for the window's lifetime; navigating to a different
+origin withdraws path access and emits `dnd:capabilitiesChanged` with the same
+four fields.
 
 ```js
-const result = await fb2k.invoke('dnd.getDropZones');
+const caps = await fb2k.invoke('dnd.getCapabilities');
 ```
 
-### dnd.registerDropZone
+### dnd.getPathsAsync
 
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `accept` | `array` | No | Accepted payload kinds. Defaults to `["files"]` when omitted. |
-| `event` | `string` | No | Optional; default dnd:drop. |
-| `selector` | `string` | Yes | CSS selector of the element that becomes the drop zone. |
+| `sessionId` | `string` | No | Session to query, from a `dnd:*` payload. Omit to query the session that is active or most recently ended for this window. |
 
-**Returns**: `{"accept":"...","error":"...","event":"...","script":"...","selector":"...","success":true,"zoneId":"..."}`
+**Returns**: `{"paths":"...","sessionId":"...","success":true}`
+
+The reliable way to obtain paths inside a HTML5 `drop` handler: it reads host
+session state rather than a snapshot pushed to the page, so it does not depend on
+message delivery order. Paths come back in the same order as
+`DataTransfer.files`, so a page can pair them by index.
+
+`paths` is an empty array when the session is unknown, expired, carried no file
+list, or the origin is not trusted with paths. Sessions are stored per window, so
+a session id alone cannot read another window's paths.
 
 ```js
-const { zoneId, script } = await fb2k.invoke('dnd.registerDropZone', { selector: '#playlist' });
+const { paths } = await fb2k.invoke('dnd.getPathsAsync');
 ```
 
 ### dnd.startDrag
 
 
-| Parameter | Type | Required | Description |
-| --- | --- | --- | --- |
-| `data` | `string` | No | Payload for a `text` drag. Required when `type` is `text`. |
-| `paths` | `array` | Yes | Track or file paths. Required when `type` is `tracks` or `files`. |
-| `type` | `string` | No | Optional; default text. |
+_No parameters._
 
-**Returns**: `{"error":"...","note":"...","success":true,"trackCount":"...","type":"..."}`
+**Returns**: always a `NOT_SUPPORTED` error envelope.
 
-```js
-await fb2k.invoke('dnd.startDrag', { type: 'tracks', paths: ['C:\\Music\\song.flac'] });
-```
-
-### dnd.unregisterDropZone
-
-
-| Parameter | Type | Required | Description |
-| --- | --- | --- | --- |
-| `zoneId` | `string` | Yes | Zone id returned by `dnd.registerDropZone`. |
-
-**Returns**: `{"error":"...","script":"...","success":true,"zoneId":"..."}`
+Dragging content *out of* the window needs an `IDropSource` implementation and a
+host-produced data object; neither exists. It fails explicitly rather than
+returning a fake `success: true`, so callers cannot build on a false success.
 
 ```js
-await fb2k.invoke('dnd.unregisterDropZone', { zoneId: 'dropzone_1' });
+const r = await fb2k.invoke('dnd.startDrag'); // resolves: { success: false, code: 'NOT_SUPPORTED' }
 ```
 
 ## keyboard
@@ -220,8 +234,9 @@ stores an application-local shortcut. Both registration methods require a
 non-empty `key` and `action`; `unregisterHotkey` accepts either the numeric
 `id` or the original key string.
 
-`dnd.registerDropZone` returns a script that the page must apply to its own
-DOM. Its default callback is `dnd:drop`; the callback payload contains the
-zone ID plus file metadata, plain text, and HTML data. `dnd.startDrag` reports
-the current native limitation for track and file drags rather than implementing
-an OLE drag source.
+`dnd.getPathsAsync` and `dnd.getCapabilities` both resolve the calling window
+from the message's own HWND, so a page cannot read another window's drag session.
+Paths are withheld from untrusted origins while HTML5 drag events keep working, so
+branch on `paths` and `html5` independently rather than hiding all drop
+affordances at once. `dnd.startDrag` reports the current native limitation for
+dragging content out of the window rather than implementing an OLE drag source.

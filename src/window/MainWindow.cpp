@@ -844,6 +844,11 @@ LRESULT MainWindow::HandleMessage(UINT msg, WPARAM wParam, LPARAM lParam) {
             std::string extra = std::string("show=") + WindowChromeTrace::BoolText(wParam != FALSE) +
                 " status=" + std::to_string((long long)lParam);
             TraceWindowPhase("WM_SHOWWINDOW", nullptr, nullptr, nullptr, nullptr, extra.c_str());
+            // 物理隐藏的唯一通用信号：最小化/最大化不发本消息，只有 ShowWindow(SW_HIDE)
+            // 会到达这里，故无需枚举各隐藏调用方。
+            if (wParam == FALSE) {
+                dwmCompositionResetPending_ = true;
+            }
             if (wParam != FALSE) {
                 // 托盘恢复的统一入口：所有重新显示窗口的路径（WebViewUI::activate /
                 // window.focus / BackgroundService::ShowWindow / 任务栏）都经过这里，
@@ -864,6 +869,8 @@ LRESULT MainWindow::HandleMessage(UINT msg, WPARAM wParam, LPARAM lParam) {
         case WM_ENTERSIZEMOVE: {
             interactiveSizingActive_ = true;
             ++interactiveSizingSessionId_;
+            hasPendingInteractiveResize_ = false;
+            lastInteractiveResizeQpc_ = 0;
             const std::string extra = std::string("session=") + std::to_string(interactiveSizingSessionId_) +
                 " interactiveSizingActive=" + WindowChromeTrace::BoolText(interactiveSizingActive_);
             TraceWindowPhase("WM_ENTERSIZEMOVE", nullptr, nullptr, nullptr, nullptr, extra.c_str());
@@ -874,59 +881,71 @@ LRESULT MainWindow::HandleMessage(UINT msg, WPARAM wParam, LPARAM lParam) {
         }
 
         case WM_SIZING: {
-            const RECT* sizingRect = reinterpret_cast<const RECT*>(lParam);
-            const char* edgeName = S_GetSizingEdgeName(wParam);
-            const std::string extra = std::string("edge=") + edgeName +
-                " session=" + std::to_string(interactiveSizingSessionId_) +
-                " sizingRect=" + (sizingRect ? S_FormatNativeRect(*sizingRect) : std::string("N/A"));
-            TraceWindowPhase("WM_SIZING", nullptr, nullptr, nullptr, nullptr, extra.c_str());
-            EmitInteractiveResizeEvidence("WM_SIZING", edgeName, sizingRect, nullptr);
+            // 本 case 全部内容都是诊断：拖拽期间逐帧触发，trace 关闭时连 extra
+            // 字符串都不应构造（TraceWindowPhase 内部门控在链路末端，不足以省下拼装）。
+            if (WindowChromeTrace::AuxiliaryTraceEnabled()) {
+                const RECT* sizingRect = reinterpret_cast<const RECT*>(lParam);
+                const char* edgeName = S_GetSizingEdgeName(wParam);
+                const std::string extra = std::string("edge=") + edgeName +
+                    " session=" + std::to_string(interactiveSizingSessionId_) +
+                    " sizingRect=" + (sizingRect ? S_FormatNativeRect(*sizingRect) : std::string("N/A"));
+                TraceWindowPhase("WM_SIZING", nullptr, nullptr, nullptr, nullptr, extra.c_str());
+                EmitInteractiveResizeEvidence("WM_SIZING", edgeName, sizingRect, nullptr);
+            }
             break;
         }
 
         case WM_WINDOWPOSCHANGING: {
-            const WINDOWPOS* windowPos = reinterpret_cast<const WINDOWPOS*>(lParam);
-            std::string extra;
-            if (windowPos) {
-                const std::string flagsHex = S_FormatHex32((uint32_t)windowPos->flags);
-                extra = std::string("session=") + std::to_string(interactiveSizingSessionId_) +
-                    " interactiveSizingActive=" + WindowChromeTrace::BoolText(interactiveSizingActive_) +
-                    " flags=0x" + flagsHex +
-                    " flagsText=" + S_FormatWindowPosFlags(windowPos->flags) +
-                    " x=" + std::to_string(windowPos->x) +
-                    " y=" + std::to_string(windowPos->y) +
-                    " cx=" + std::to_string(windowPos->cx) +
-                    " cy=" + std::to_string(windowPos->cy);
-            } else {
-                extra = std::string("session=") + std::to_string(interactiveSizingSessionId_) +
-                    " interactiveSizingActive=" + WindowChromeTrace::BoolText(interactiveSizingActive_) +
-                    " windowPos=null";
+            // 与 WM_SIZING 同理：整条 case 都是诊断，且本消息在拖拽/移动期间
+            // 频率高于 WM_SIZING，故把 extra 构造一并纳入门控。
+            if (WindowChromeTrace::AuxiliaryTraceEnabled()) {
+                const WINDOWPOS* windowPos = reinterpret_cast<const WINDOWPOS*>(lParam);
+                std::string extra;
+                if (windowPos) {
+                    const std::string flagsHex = S_FormatHex32((uint32_t)windowPos->flags);
+                    extra = std::string("session=") + std::to_string(interactiveSizingSessionId_) +
+                        " interactiveSizingActive=" + WindowChromeTrace::BoolText(interactiveSizingActive_) +
+                        " flags=0x" + flagsHex +
+                        " flagsText=" + S_FormatWindowPosFlags(windowPos->flags) +
+                        " x=" + std::to_string(windowPos->x) +
+                        " y=" + std::to_string(windowPos->y) +
+                        " cx=" + std::to_string(windowPos->cx) +
+                        " cy=" + std::to_string(windowPos->cy);
+                } else {
+                    extra = std::string("session=") + std::to_string(interactiveSizingSessionId_) +
+                        " interactiveSizingActive=" + WindowChromeTrace::BoolText(interactiveSizingActive_) +
+                        " windowPos=null";
+                }
+                TraceWindowPhase("WM_WINDOWPOSCHANGING", nullptr, nullptr, nullptr, nullptr, extra.c_str());
+                EmitInteractiveResizeEvidence("WM_WINDOWPOSCHANGING", "window-pos", nullptr, windowPos);
             }
-            TraceWindowPhase("WM_WINDOWPOSCHANGING", nullptr, nullptr, nullptr, nullptr, extra.c_str());
-            EmitInteractiveResizeEvidence("WM_WINDOWPOSCHANGING", "window-pos", nullptr, windowPos);
             break;
         }
 
         case WM_WINDOWPOSCHANGED: {
             const WINDOWPOS* windowPos = reinterpret_cast<const WINDOWPOS*>(lParam);
-            std::string extra;
-            if (windowPos) {
-                const std::string flagsHex = S_FormatHex32((uint32_t)windowPos->flags);
-                extra = std::string("session=") + std::to_string(interactiveSizingSessionId_) +
-                    " interactiveSizingActive=" + WindowChromeTrace::BoolText(interactiveSizingActive_) +
-                    " flags=0x" + flagsHex +
-                    " flagsText=" + S_FormatWindowPosFlags(windowPos->flags) +
-                    " x=" + std::to_string(windowPos->x) +
-                    " y=" + std::to_string(windowPos->y) +
-                    " cx=" + std::to_string(windowPos->cx) +
-                    " cy=" + std::to_string(windowPos->cy);
-            } else {
-                extra = std::string("session=") + std::to_string(interactiveSizingSessionId_) +
-                    " interactiveSizingActive=" + WindowChromeTrace::BoolText(interactiveSizingActive_) +
-                    " windowPos=null";
+            // 仅诊断段落纳入门控：本 case 后续的 NotifyParentWindowPositionChanged
+            // 与置顶状态守护是功能性代码，必须无条件执行，故此处不能提前 return。
+            if (WindowChromeTrace::AuxiliaryTraceEnabled()) {
+                std::string extra;
+                if (windowPos) {
+                    const std::string flagsHex = S_FormatHex32((uint32_t)windowPos->flags);
+                    extra = std::string("session=") + std::to_string(interactiveSizingSessionId_) +
+                        " interactiveSizingActive=" + WindowChromeTrace::BoolText(interactiveSizingActive_) +
+                        " flags=0x" + flagsHex +
+                        " flagsText=" + S_FormatWindowPosFlags(windowPos->flags) +
+                        " x=" + std::to_string(windowPos->x) +
+                        " y=" + std::to_string(windowPos->y) +
+                        " cx=" + std::to_string(windowPos->cx) +
+                        " cy=" + std::to_string(windowPos->cy);
+                } else {
+                    extra = std::string("session=") + std::to_string(interactiveSizingSessionId_) +
+                        " interactiveSizingActive=" + WindowChromeTrace::BoolText(interactiveSizingActive_) +
+                        " windowPos=null";
+                }
+                TraceWindowPhase("WM_WINDOWPOSCHANGED", nullptr, nullptr, nullptr, nullptr, extra.c_str());
+                EmitInteractiveResizeEvidence("WM_WINDOWPOSCHANGED", "window-pos", nullptr, windowPos);
             }
-            TraceWindowPhase("WM_WINDOWPOSCHANGED", nullptr, nullptr, nullptr, nullptr, extra.c_str());
-            EmitInteractiveResizeEvidence("WM_WINDOWPOSCHANGED", "window-pos", nullptr, windowPos);
             
             // WebView2 Composition 模式要求: 父窗口位置变化时通知控制器，
             // 否则 WebView2 内部输入窗口不跟随移动，产生「幽灵窗口」阻断桌面交互。
@@ -1012,6 +1031,10 @@ LRESULT MainWindow::HandleMessage(UINT msg, WPARAM wParam, LPARAM lParam) {
             if (wParam == SIZE_RESTORED_PROBE_T100_TIMER_ID) {
                 KillTimer(hwnd_, SIZE_RESTORED_PROBE_T100_TIMER_ID);
                 CaptureRuntimeDomProbe("WM_SIZE.sizeType=restored/+100ms", 100);
+                return 0;
+            }
+            if (wParam == RESIZE_COALESCE_TIMER_ID) {
+                FlushPendingInteractiveResize();
                 return 0;
             }
             if (wParam == RESTORE_SURFACE_CONVERGE_TIMER_ID) {
@@ -1112,6 +1135,9 @@ LRESULT MainWindow::HandleMessage(UINT msg, WPARAM wParam, LPARAM lParam) {
         case WM_EXITSIZEMOVE: {
             const unsigned int sessionId = interactiveSizingSessionId_;
             interactiveSizingActive_ = false;
+            // 必须在清 interactiveSizingActive_ 之后：此时 CoalesceInteractiveResize
+            // 已不再拦截，最后一个尺寸保证以真实 put_Bounds 落地。
+            FlushPendingInteractiveResize();
             const std::string extra = std::string("session=") + std::to_string(sessionId) +
                 " interactiveSizingActive=" + WindowChromeTrace::BoolText(interactiveSizingActive_);
             TraceWindowPhase("WM_EXITSIZEMOVE", nullptr, nullptr, nullptr, nullptr, extra.c_str());
@@ -1539,6 +1565,8 @@ void MainWindow::OnDestroy() {
     KillTimer(hwnd_, PAGE_HEALTH_RETRY_TIMER_ID);
     KillTimer(hwnd_, PROCESS_DEAD_REBUILD_TIMER_ID);
     KillTimer(hwnd_, BACKDROP_KICK_EXIT_TIMER_ID);
+    KillTimer(hwnd_, RESIZE_COALESCE_TIMER_ID);
+    hasPendingInteractiveResize_ = false;
     startupPresentationCoordinator_.MarkClosed();
     SyncStartupRevealProjection();
     startupSurfaceAuthorityPending_ = false;
@@ -1616,7 +1644,68 @@ void MainWindow::OnSize(int width, int height) {
     
     // WebView 覆盖整个客户区，让 DWM 效果完全穿透
     // 不再内缩，窗口调整由 WM_NCHITTEST 处理
+    if (CoalesceInteractiveResize(clientRect)) {
+        return;
+    }
     webView_->Resize(clientRect);
+}
+
+bool MainWindow::CoalesceInteractiveResize(const RECT& clientRect) {
+    if (!interactiveSizingActive_ || !hwnd_ || !IsWindow(hwnd_)) {
+        return false;
+    }
+
+    static const double qpcMsPerTick = [] {
+        LARGE_INTEGER freq{};
+        return QueryPerformanceFrequency(&freq) && freq.QuadPart
+            ? 1000.0 / static_cast<double>(freq.QuadPart)
+            : 0.0;
+    }();
+
+    LARGE_INTEGER now{};
+    if (qpcMsPerTick == 0.0 || !QueryPerformanceCounter(&now)) {
+        return false;  // 无高精度计时器：退回逐条直通，不引入未知行为
+    }
+
+    const double sinceLastMs = lastInteractiveResizeQpc_ == 0
+        ? RESIZE_COALESCE_MIN_INTERVAL_MS
+        : static_cast<double>(now.QuadPart - lastInteractiveResizeQpc_) * qpcMsPerTick;
+
+    if (sinceLastMs >= RESIZE_COALESCE_MIN_INTERVAL_MS) {
+        lastInteractiveResizeQpc_ = now.QuadPart;
+        hasPendingInteractiveResize_ = false;
+        KillTimer(hwnd_, RESIZE_COALESCE_TIMER_ID);
+        return false;
+    }
+
+    // 距上次落地过近：只记住最新尺寸。尾随定时器保证「按住不动」时它仍会落地，
+    // 而模态循环会分发 WM_TIMER，故无需外部消息泵配合。
+    pendingInteractiveResizeBounds_ = clientRect;
+    if (!hasPendingInteractiveResize_) {
+        hasPendingInteractiveResize_ = true;
+        SetTimer(hwnd_, RESIZE_COALESCE_TIMER_ID, RESIZE_COALESCE_TRAILING_MS, nullptr);
+    }
+    return true;
+}
+
+void MainWindow::FlushPendingInteractiveResize() {
+    if (hwnd_ && IsWindow(hwnd_)) {
+        KillTimer(hwnd_, RESIZE_COALESCE_TIMER_ID);
+    }
+    if (!hasPendingInteractiveResize_) {
+        return;
+    }
+    hasPendingInteractiveResize_ = false;
+
+    if (!webView_ || !webView_->IsReady() || isMinimized_ || startupSurfaceAuthorityPending_) {
+        return;
+    }
+
+    LARGE_INTEGER now{};
+    if (QueryPerformanceCounter(&now)) {
+        lastInteractiveResizeQpc_ = now.QuadPart;
+    }
+    webView_->Resize(pendingInteractiveResizeBounds_);
 }
 
 bool MainWindow::BroadcastWindowStateChangedIfNeeded(bool force) {
@@ -2351,6 +2440,13 @@ void MainWindow::EmitInteractiveResizeEvidence(const char* phase,
                                                const char* detail,
                                                const RECT* sizingRect,
                                                const WINDOWPOS* windowPos) const {
+    // 门控必须在函数入口，不能只依赖末尾 S_EmitEvidenceLine：本函数在
+    // WM_SIZING / WM_WINDOWPOSCHANGING / WM_WINDOWPOSCHANGED 上逐帧调用，
+    // 下方 get_Bounds + DwmGetWindowAttribute + 数十段 ostringstream 拼装
+    // 在 trace 关闭时是纯浪费（结果会被 EmitAuxiliaryLine 直接丢弃）。
+    if (!WindowChromeTrace::AuxiliaryTraceEnabled()) {
+        return;
+    }
     if (!hwnd_ || !IsWindow(hwnd_)) {
         return;
     }
@@ -2414,6 +2510,9 @@ void MainWindow::EmitInteractiveResizeEvidence(const char* phase,
 }
 
 void MainWindow::LogSurfaceDiagnostics(const char* phase) const {
+    // 同 EmitInteractiveResizeEvidence：门控前移到入口，避免 trace 关闭时
+    // 仍执行 get_Bounds 与字符串拼装。
+    if (!WindowChromeTrace::AuxiliaryTraceEnabled()) return;
     if (!hwnd_ || !IsWindow(hwnd_)) return;
 
     RECT clientRect{};
@@ -2488,6 +2587,14 @@ void MainWindow::LogWebViewLifecycle(const char* event, const std::string& detai
 }
 
 void MainWindow::CaptureRuntimeDomProbe(const std::string& phase, int scheduledDelayMs) {
+    // 门控必须在 ExecuteScript 之前：本函数向页面注入 DOM 探针脚本
+    // （getComputedStyle / elementFromPoint / getBoundingClientRect），
+    // 是跨进程调用且会在渲染进程主线程触发样式与布局计算。trace 关闭时
+    // 结果被丢弃，但注入与页面侧开销照发生，故在入口直接早退。
+    if (!WindowChromeTrace::AuxiliaryTraceEnabled()) {
+        return;
+    }
+
     const double requestedAtMs = static_cast<double>(WindowChromeTrace::RelativeMs());
     const HWND hwnd = hwnd_;
     const std::string windowId = GetWindowId().empty() ? "main" : GetWindowId();
@@ -2763,6 +2870,13 @@ void MainWindow::ScheduleFinalizeStartupRuntimeProbes() {
 }
 
 void MainWindow::ScheduleManualResizeRuntimeProbes(const char* sizeType) {
+    // 门控在入口，避免 trace 关闭时仍为每条 WM_SIZE 排布 +0ms / +100ms 两发
+    // DOM 探针。+100ms 定时器在连续 resize 中被反复 KillTimer/SetTimer 重置，
+    // 其注入会在渲染进程主线程制造额外样式/布局 pass。
+    if (!WindowChromeTrace::AuxiliaryTraceEnabled()) {
+        return;
+    }
+
     if (!sizeType || !sizeType[0]) {
         return;
     }
@@ -2800,19 +2914,23 @@ bool MainWindow::EnsureSurfaceConvergedAfterNativeFrame(const char* reason) {
     RECT currentBounds{};
     controller->get_Bounds(&currentBounds);
 
-    const bool boundsMatch = (clientRect.left == currentBounds.left &&
-                              clientRect.top == currentBounds.top &&
-                              clientRect.right == currentBounds.right &&
-                              clientRect.bottom == currentBounds.bottom);
-
-    FB2K_console_formatter()
-        << "[SurfaceConverge] reason=" << reason
-        << " t=" << WindowChromeTrace::RelativeMs() << "ms"
-        << " clientRect=(" << clientRect.left << "," << clientRect.top
-        << "," << clientRect.right << "," << clientRect.bottom << ")"
-        << " controllerBounds=(" << currentBounds.left << "," << currentBounds.top
-        << "," << currentBounds.right << "," << currentBounds.bottom << ")"
-        << " match=" << WindowChromeTrace::BoolText(boundsMatch);
+    // 此处历史上直连 FB2K_console_formatter，绕开了 S_EmitEvidenceLine，
+    // 因此辅助 trace 门控对其无效。改为显式门控；boundsMatch 只服务于该行日志，
+    // 一并纳入门控内以免留下未使用变量。下方 nudge 是功能性收敛，不受门控影响。
+    if (WindowChromeTrace::AuxiliaryTraceEnabled()) {
+        const bool boundsMatch = (clientRect.left == currentBounds.left &&
+                                  clientRect.top == currentBounds.top &&
+                                  clientRect.right == currentBounds.right &&
+                                  clientRect.bottom == currentBounds.bottom);
+        FB2K_console_formatter()
+            << "[SurfaceConverge] reason=" << reason
+            << " t=" << WindowChromeTrace::RelativeMs() << "ms"
+            << " clientRect=(" << clientRect.left << "," << clientRect.top
+            << "," << clientRect.right << "," << clientRect.bottom << ")"
+            << " controllerBounds=(" << currentBounds.left << "," << currentBounds.top
+            << "," << currentBounds.right << "," << currentBounds.bottom << ")"
+            << " match=" << WindowChromeTrace::BoolText(boundsMatch);
+    }
 
     // bounded nudge: right-1 ? finalRect
     // 即使 bounds 相同，也需通过尺寸抖动迫使 DComp surface 重新合成；
@@ -2882,23 +3000,35 @@ bool MainWindow::EnsureAuthoritativeNativeChrome(const char* reason) {
         " inactiveEffect=", resolvedChromeState_.effectiveInactiveEffect.c_str(),
         " transparent=", resolvedChromeState_.transparentBackground ? "true" : "false");
 
-    // DWM 对隐藏窗口设置的 SYSTEMBACKDROP_TYPE 不会初始化实际的合成管线，
-    // ShowWindow 后重设相同值被视为 no-op。先 reset 为 NONE 再由
-    // RefreshBackdropEffect 设回正确值，迫使 DWM 看到真正的状态变更。
-    int resetType = DWMSBT_NONE_V;
-    S_DwmSetWindowAttribute(hwnd_, DWMWA_SYSTEMBACKDROP_TYPE_V,
-        &resetType, sizeof(resetType));
+    // 仅在窗口真被 SW_HIDE 隐藏过时重置：DWM 对隐藏窗口写入 SYSTEMBACKDROP_TYPE 不会
+    // 初始化合成管线，重设相同值被视为 no-op，必须 NONE→目标值制造真实状态变更。
+    // 最小化不销毁合成状态（任务栏预览仍出图），此时重置只会让 acrylic 断掉一帧。
+    // 门控留到窗口真正可见才消费：隐藏期的写入同样被 DWM 丢弃。
+    const bool resetDwmComposition = dwmCompositionResetPending_ && IsWindowVisible(hwnd_);
 
-    // 重新扩展帧到客户区，确保 hidden→visible 后帧边距仍然生效
-    MARGINS margins = { -1, -1, -1, -1 };
-    S_DwmExtendFrameIntoClientArea(hwnd_, &margins);
+    if (resetDwmComposition) {
+        dwmCompositionResetPending_ = false;
+
+        int resetType = DWMSBT_NONE_V;
+        S_DwmSetWindowAttribute(hwnd_, DWMWA_SYSTEMBACKDROP_TYPE_V,
+            &resetType, sizeof(resetType));
+
+        // 重新扩展帧到客户区，确保 hidden→visible 后帧边距仍然生效
+        MARGINS margins = { -1, -1, -1, -1 };
+        S_DwmExtendFrameIntoClientArea(hwnd_, &margins);
+    }
 
     ApplyResolvedChrome(true);
-    ChromeController::RefreshNativeFrame(hwnd_);
+    // SWP_FRAMECHANGED 会让 DWM 重新评估帧合成，同样只在真重置后才需要。
+    if (resetDwmComposition) {
+        ChromeController::RefreshNativeFrame(hwnd_);
+    }
+    const std::string exitExtra = std::string(reason) +
+        " dwmCompositionReset=" + WindowChromeTrace::BoolText(resetDwmComposition);
     LogSurfaceDiagnostics((std::string("EnsureAuthoritativeNativeChrome.exit/") + reason).c_str());
     CaptureRuntimeDomProbe(std::string("EnsureAuthoritativeNativeChrome.exit/") + reason);
     TraceWindowPhase("EnsureAuthoritativeNativeChrome.exit", nullptr, "true",
-        nullptr, nullptr, reason);
+        nullptr, nullptr, exitExtra.c_str());
     return true;
 }
 

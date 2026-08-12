@@ -198,8 +198,11 @@ private:
     bool isMinimized_ = false;
     bool isActive_ = true;
     bool isFullscreen_ = false;  // per-window fullscreen state (replaces g_isFullscreen as authority)
-    bool interactiveSizingActive_ = false;  // instrumentation-only: tracks native interactive sizing loop state
+    bool interactiveSizingActive_ = false;  // native interactive sizing loop state; also gates resize coalescing
     unsigned int interactiveSizingSessionId_ = 0;  // increments on each WM_ENTERSIZEMOVE for evidence correlation
+    RECT pendingInteractiveResizeBounds_{};
+    bool hasPendingInteractiveResize_ = false;
+    long long lastInteractiveResizeQpc_ = 0;
     // 注: webViewInitialized_ 替换为基类的 IsWebViewReady()
     bool resizable_ = true;  // 是否允许调整大小
     bool frameless_ = true;  // 默认无标题栏（主窗口始终以 frameless 模式启动）
@@ -288,6 +291,10 @@ private:
     bool startupSurfaceFirstPresentCommitted_ = false;
     bool startupDeferredSurfaceConvergePending_ = false; // 一次性 startup-post-first-present converge 门控
     bool needsAuthoritativeChromeReapply_ = false; // 下一消息周期需要 DWM 完整重置
+    // 窗口曾被 SW_HIDE 物理隐藏，下次可见时需一次 NONE→目标值重置才能重建 DWM
+    // 合成管线。初值 false：cold-start reveal 不经过
+    // EnsureAuthoritativeNativeChrome，启动期从未依赖该重置。
+    bool dwmCompositionResetPending_ = false;
     bool startupImmediateShowMode_ = false;        // 默认 cold-start reveal 模式
     bool startupChromeLayerSuppressed_ = false;     // Legacy: immediate-show 旧实验门控，cold-start reveal 默认不启用
     int savedShowCmd_ = SW_SHOW;              // 延迟 reveal 的 showCmd
@@ -324,12 +331,19 @@ private:
     static constexpr DWORD DEFERRED_BACKDROP_DELAY_MS = 200;
     static constexpr UINT_PTR BACKDROP_KICK_EXIT_TIMER_ID = 131;
     static constexpr DWORD BACKDROP_KICK_EXIT_DELAY_MS = 50;
+    // 拖拽期间 put_Bounds 的合并节流：SC_SIZE 模态循环每次鼠标移动都产生一条
+    // WM_SIZE，速率可达显示器刷新率的数倍，而模态循环期间呈现被整体阻塞，过量
+    // 边界更新只会堆成松手后才排空的积压。尾随定时器保证「按住不动」时最后一个
+    // 尺寸仍会落地（Win32 最小定时器精度 USER_TIMER_MINIMUM=10ms）。
+    static constexpr UINT_PTR RESIZE_COALESCE_TIMER_ID = 132;
+    static constexpr DWORD RESIZE_COALESCE_TRAILING_MS = 10;
+    static constexpr double RESIZE_COALESCE_MIN_INTERVAL_MS = 8.0;
     static constexpr UINT_PTR SHORT_REVEAL_TIMER_ID = 140;
     static constexpr DWORD SHORT_REVEAL_TIMEOUT_MS = 250;
     
     // 主窗口默认尺寸下限的**历史口径是物理像素**。
     //
-    // P1' 把约束存储改为 DIP 时，若直接把这两个字面量当作 DIP，在 125%
+    // 约束存储单位已是 DIP，若直接把这两个字面量当作 DIP，在 125%
     // 缩放下实际下限会从 400 物理变成 500 物理——即默认值被静默放大。
     // 故保留「物理」语义，由 SeedDefaultConstraintsFromDpi() 在窗口创建前
     // 按初始显示器 DPI 换算成 DIP，使任一缩放下的**物理**下限与改动前一致。
@@ -408,6 +422,9 @@ private:
     // 下一消息周期执行，避免在 ProcessFailed 的 COM 回调栈上销毁宿主。
     void ScheduleProcessDeadRebuild(const char* reason);
     void FinalizeStartupRevealSettlement();
+    // 拖拽期间的 put_Bounds 合并入口；返回 true 表示本次已被合并（调用方不应再直接 Resize）。
+    bool CoalesceInteractiveResize(const RECT& clientRect);
+    void FlushPendingInteractiveResize();
     void CaptureRuntimeDomProbe(const std::string& phase, int scheduledDelayMs = -1);
     void ScheduleFinalizeStartupRuntimeProbes();
     void ScheduleManualResizeRuntimeProbes(const char* sizeType);

@@ -1,7 +1,7 @@
 // sdk/src/smp/utils.test.ts
 //
 // smpUtils helpers (toHandleId / normalizeHandleList /
-// toHandleIdArray / clamp / sleep / buildMenuItems) contract.
+// toHandleIdArray / clamp / sleep / buildMenuItems / splitMenuAddress) contract.
 
 import { describe, expect, it, vi } from 'vitest';
 
@@ -14,10 +14,15 @@ import {
     getInvoke,
     normalizeHandleList,
     sleep,
+    splitMenuAddress,
     toHandleId,
     toHandleIdArray,
 } from './utils.js';
-import type { SmpMenuBuildState, SmpRawMenuItem } from './types.js';
+import type {
+    SmpMenuBuildState,
+    SmpMenuFamily,
+    SmpRawMenuItem,
+} from './types.js';
 
 describe('utils.toHandleId', () => {
     it('returns string handles unchanged', () => {
@@ -138,8 +143,13 @@ describe('utils.getInvoke', () => {
 });
 
 describe('utils.buildMenuItems', () => {
-    function makeState(baseId = 1): SmpMenuBuildState {
-        return { nextId: baseId, limit: null, idMap: new Map() };
+    // Defaults to the context family because most cases below exercise
+    // `commandId`, which only that family dispatches.
+    function makeState(
+        baseId = 1,
+        family: SmpMenuFamily = 'contextmenu',
+    ): SmpMenuBuildState {
+        return { nextId: baseId, limit: null, idMap: new Map(), family };
     }
 
     it('expands command items with auto-incrementing ids', () => {
@@ -279,17 +289,18 @@ describe('utils.buildMenuItems', () => {
             nextId: 1,
             limit: 3, // exclusive — only 2 items fit (1, 2 → next would be 3)
             idMap: new Map(),
+            family: 'contextmenu',
         };
         const out = buildMenuItems(items, state);
         expect(out).toHaveLength(2);
     });
 
-    it('maps path / guid into idMap when commandId missing', () => {
+    it('maps path / guid into idMap for the main menu', () => {
         const items: SmpRawMenuItem[] = [
             { type: 'command', label: 'P', path: 'main/Playback/Play' },
             { type: 'command', label: 'G', guid: 'abcd-1234' },
         ];
-        const state = makeState();
+        const state = makeState(1, 'mainmenu');
         buildMenuItems(items, state);
         expect(state.idMap.get(1)).toBe('main/Playback/Play');
         expect(state.idMap.get(2)).toBe('abcd-1234');
@@ -307,7 +318,7 @@ describe('utils.buildMenuItems', () => {
                 guid: 'abcd-1234',
             },
         ];
-        const state = makeState();
+        const state = makeState(1, 'mainmenu');
         buildMenuItems(items, state);
         expect(state.idMap.get(1)).toBe('abcd-1234');
     });
@@ -319,5 +330,97 @@ describe('utils.buildMenuItems', () => {
         const state = makeState();
         buildMenuItems(items, state);
         expect(state.idMap.get(1)).toBe(42);
+    });
+
+    it('never maps a main-menu row to its commandId', () => {
+        // Both main-menu tiers emit a commandId unconditionally, so preferring
+        // it meant every allocated id held a number. `menu.runMainMenuCommand`
+        // declares `command` as a string and rejects one on type, which made
+        // main-menu dispatch fail for every row rather than for an odd few.
+        const items: SmpRawMenuItem[] = [
+            {
+                type: 'command',
+                label: 'Always on top',
+                commandId: 1,
+                guid: 'abcd-1234',
+                path: 'View/Always on top',
+            },
+        ];
+        const state = makeState(1, 'mainmenu');
+        buildMenuItems(items, state);
+        expect(state.idMap.get(1)).toBe('abcd-1234');
+    });
+
+    it('encodes a dynamic main-menu child as guid + subGuid', () => {
+        // Dispatching the owning GUID alone would run the container slot, which
+        // the host documents as undefined behaviour.
+        const items: SmpRawMenuItem[] = [
+            {
+                type: 'command',
+                label: 'Show',
+                commandId: 7,
+                guid: 'owner-guid',
+                subGuid: 'node-guid',
+            },
+        ];
+        const state = makeState(1, 'mainmenu');
+        buildMenuItems(items, state);
+        expect(state.idMap.get(1)).toBe('owner-guid|node-guid');
+    });
+
+    it('leaves a row unmapped when the family cannot dispatch it', () => {
+        // Storing an identifier the target endpoint rejects on type turns a
+        // clean "unmapped id" into a host exception, so neither family falls
+        // back to the other's identifier space.
+        const mainOnlyCommandId = makeState(1, 'mainmenu');
+        buildMenuItems(
+            [{ type: 'command', label: 'A', commandId: 3 }],
+            mainOnlyCommandId,
+        );
+        expect(mainOnlyCommandId.idMap.has(1)).toBe(false);
+
+        const contextOnlyGuid = makeState(1, 'contextmenu');
+        buildMenuItems(
+            [{ type: 'command', label: 'B', guid: 'abcd-1234' }],
+            contextOnlyGuid,
+        );
+        expect(contextOnlyGuid.idMap.has(1)).toBe(false);
+    });
+
+    it('falls back to the main menu when family is absent', () => {
+        // Untyped callers reach this function through `window.smpUtils`; the
+        // main menu is the safer default because it cannot dispatch a number
+        // under any circumstance.
+        const state = {
+            nextId: 1,
+            limit: null,
+            idMap: new Map<number, number | string>(),
+        } as SmpMenuBuildState;
+        buildMenuItems(
+            [{ type: 'command', label: 'A', commandId: 5, guid: 'abcd-1234' }],
+            state,
+        );
+        expect(state.idMap.get(1)).toBe('abcd-1234');
+    });
+});
+
+describe('utils.splitMenuAddress', () => {
+    it('returns a bare guid unchanged', () => {
+        expect(splitMenuAddress('{ABCD-1234}')).toEqual({
+            command: '{ABCD-1234}',
+        });
+    });
+
+    it('splits an owner/node pair', () => {
+        expect(splitMenuAddress('owner-guid|node-guid')).toEqual({
+            command: 'owner-guid',
+            subGuid: 'node-guid',
+        });
+    });
+
+    it('passes a path through untouched', () => {
+        expect(splitMenuAddress('View/Always on top')).toEqual({
+            command: 'View/Always on top',
+        });
     });
 });

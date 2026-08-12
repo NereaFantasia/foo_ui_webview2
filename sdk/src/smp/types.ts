@@ -371,6 +371,21 @@ export type SmpStructuredMenuItem =
         checked: boolean;
     };
 
+/**
+ * Which menu family a build pass is walking.
+ *
+ * The two families use disjoint identifier spaces and target different host
+ * endpoints, so an item carrying both `commandId` and `guid` is addressed
+ * differently depending on this value:
+ *
+ * - `mainmenu` dispatches through `menu.runMainMenuCommand`, whose `command`
+ *   parameter is a **string** (GUID or path). Its `commandId` is a transient
+ *   Win32 menu id that dies with the menu that produced it.
+ * - `contextmenu` dispatches through `menu.runContextCommandById`, whose `id`
+ *   parameter is a **number** valid only within the originating session.
+ */
+export type SmpMenuFamily = 'mainmenu' | 'contextmenu';
+
 /** Stateful counter passed to the recursive menu builder. */
 export interface SmpMenuBuildState {
     nextId: number;
@@ -378,4 +393,10 @@ export interface SmpMenuBuildState {
     limit: number | null;
     /** Maps allocated `id` ↔ the C++ command identifier. */
     idMap: Map<number, number | string>;
+    /**
+     * Selects the identifier space; see {@link SmpMenuFamily}. Omitting it
+     * falls back to `mainmenu`, because that family cannot dispatch a numeric
+     * identifier at all.
+     */
+    family: SmpMenuFamily;
 }

@@ -638,7 +638,12 @@ void RegisterFileApi() {
     bridge.RegisterApi("file.read", FileRead, {{"path", SecurityLevel::Read}});
     
     // file.write - Write content to file
-    bridge.RegisterApi("file.write", FileWrite, {{"path", SecurityLevel::MediaWrite}});
+    //
+    // 以下六个写端点使用 FileWrite 而非 MediaWrite: 它们操作的是任意文件,
+    // 不是媒体上下文中的文件。此前挂在 MediaWrite 上, 使"非系统盘直通"这一
+    // 通用文件写策略混进了媒体写入语义。统一权限架构 §7.2 要求它们最终归入
+    // Write (profile/temp), 该改归属破坏性变更, 单独决策。
+    bridge.RegisterApi("file.write", FileWrite, {{"path", SecurityLevel::FileWrite}});
     
     // file.exists - Check if file/directory exists
     bridge.RegisterApi("file.exists", FileExists, {{"path", SecurityLevel::Read}});
@@ -647,25 +652,25 @@ void RegisterFileApi() {
     bridge.RegisterApi("file.list", FileList, {{"path", SecurityLevel::Read}});
     
     // file.delete - Delete a file
-    bridge.RegisterApi("file.delete", FileDelete, {{"path", SecurityLevel::MediaWrite}});
+    bridge.RegisterApi("file.delete", FileDelete, {{"path", SecurityLevel::FileWrite}});
     
     // file.mkdir - Create directory
-    bridge.RegisterApi("file.mkdir", FileMkdir, {{"path", SecurityLevel::MediaWrite}});
+    bridge.RegisterApi("file.mkdir", FileMkdir, {{"path", SecurityLevel::FileWrite}});
 
     // file.copy - Copy file or directory
     bridge.RegisterApi("file.copy", FileCopy, {
         {"source", SecurityLevel::Read},
-        {"destination", SecurityLevel::MediaWrite}
+        {"destination", SecurityLevel::FileWrite}
     });
 
     // file.move - Move file or directory
     bridge.RegisterApi("file.move", FileMove, {
-        {"source", SecurityLevel::MediaWrite},
-        {"destination", SecurityLevel::MediaWrite}
+        {"source", SecurityLevel::FileWrite},
+        {"destination", SecurityLevel::FileWrite}
     });
 
     // file.rename - Rename a file or directory
-    bridge.RegisterApi("file.rename", FileRename, {{"path", SecurityLevel::MediaWrite}});
+    bridge.RegisterApi("file.rename", FileRename, {{"path", SecurityLevel::FileWrite}});
 
     // file.getInfo - Get file information
     bridge.RegisterApi("file.getInfo", FileGetInfo, {{"path", SecurityLevel::Read}});

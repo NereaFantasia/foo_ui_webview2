@@ -9,7 +9,8 @@
 | `Read` | 9 | 普通文件系统只读校验 |
 | `Write` | 1 | 严格写入目标（配置/临时目录策略） |
 | `MediaRead` | 40 | 媒体上下文只读校验 |
-| `MediaWrite` | 17 | 媒体上下文写校验 |
+| `MediaWrite` | 10 | 媒体上下文写校验 |
+| `FileWrite` | 7 | 通用文件写入（`file.*`） |
 | **合计** | **67** | **64 个唯一 API** |
 
 ## 五级权限模型
@@ -19,13 +20,18 @@
 | `None` | 不涉及文件路径 | 无路径校验 |
 | `Read` | 只读文件系统操作 | 禁止系统保护目录、设备路径与 `..` 遍历 |
 | `Write` | 严格写入目标 | 仅允许 PathSecurity 接受的配置/临时等写入目标 |
-| `MediaRead` | 读取媒体元数据/内容 | Read 规则 + 媒体库/播放列表上下文信任 |
-| `MediaWrite` | 修改媒体文件 | MediaRead 规则 + 写黑名单，且无非系统盘自动放行 |
+| `MediaRead` | 读取媒体元数据/内容 | 先走 Read 规则；媒体库/播放列表信任仅作为 Read 拒绝后的回退 |
+| `MediaWrite` | 修改媒体文件 | 独立校验链：保护目录黑名单，再按严格写入目标／媒体库或播放列表成员／媒体库监视目录／与受信音频同目录的伴生文件依次放行。**仅仅位于非系统盘不构成放行理由** |
+| `FileWrite` | 通用文件写入（`file.*`） | 在 `MediaWrite` 校验链之上追加"非系统盘放行"。缺少该步则 `file.mkdir` 与 `file.write` 永远建不出新路径 |
 
 ::: tip 权限层级关系
 `None < Read < Write` 是普通文件系统通道。
 `None < Read < MediaRead < MediaWrite` 是媒体通道。
-`Write` 与 `MediaWrite` 是两条独立写通道。
+`Write`、`MediaWrite` 与 `FileWrite` 是三条独立写通道。
+:::
+
+::: warning FileWrite 比 MediaWrite 宽
+`FileWrite` 接受非系统盘上的任意路径，是当前暴露面最宽的写通道。它之所以存在，是因为 `file.*` 操作的是任意文件而非媒体上下文中的文件，套用媒体写入规则会使新建文件与新建目录彻底不可能。审查主题时应优先审计这条通道。
 :::
 
 ## 错误响应
@@ -112,17 +118,10 @@ if (!result.success && result.code === 'PERMISSION_DENIED') {
 | `titleformat.evalFields` | `path` | — | — | 权威源：`TitleformatApi.cpp` |
 | `titleformat.evalFieldsBatch` | `paths` | 是 | — | 权威源：`TitleformatApi.cpp` |
 
-### MediaWrite — 修改媒体文件（17 条）
+### MediaWrite — 修改媒体文件（10 条）
 
 | API | 参数 | 数组 | 嵌套键 | 说明 |
 | --- | --- | --- | --- | --- |
-| `file.copy` | `destination` | — | — | 权威源：`FileApi.cpp` |
-| `file.delete` | `path` | — | — | 权威源：`FileApi.cpp` |
-| `file.mkdir` | `path` | — | — | 权威源：`FileApi.cpp` |
-| `file.move` | `destination` | — | — | 权威源：`FileApi.cpp` |
-| `file.move` | `source` | — | — | 权威源：`FileApi.cpp` |
-| `file.rename` | `path` | — | — | 权威源：`FileApi.cpp` |
-| `file.write` | `path` | — | — | 权威源：`FileApi.cpp` |
 | `lyrics.save` | `path` | — | — | 权威源：`LyricsApi.cpp` |
 | `metadata.embedArtwork` | `path` | — | — | 权威源：`MetadataApi.cpp` |
 | `metadata.removeEmbeddedArt` | `path` | — | — | 权威源：`MetadataApi.cpp` |
@@ -137,6 +136,20 @@ if (!result.success && result.code === 'PERMISSION_DENIED') {
 ::: info 嵌套数组校验
 `metadata.writeBatch` 的 `items` 是对象数组，系统会提取每个元素的 `path` 字段进行校验。
 :::
+
+### FileWrite — 通用文件写入（7 条）
+
+| API | 参数 | 数组 | 嵌套键 | 说明 |
+| --- | --- | --- | --- | --- |
+| `file.copy` | `destination` | — | — | 权威源：`FileApi.cpp` |
+| `file.delete` | `path` | — | — | 权威源：`FileApi.cpp` |
+| `file.mkdir` | `path` | — | — | 权威源：`FileApi.cpp` |
+| `file.move` | `destination` | — | — | 权威源：`FileApi.cpp` |
+| `file.move` | `source` | — | — | 权威源：`FileApi.cpp` |
+| `file.rename` | `path` | — | — | 权威源：`FileApi.cpp` |
+| `file.write` | `path` | — | — | 权威源：`FileApi.cpp` |
+
+`file.copy` 的 `source` 走 `Read`、`destination` 走 `FileWrite`；`file.move` 两端均走 `FileWrite`。
 
 ## 自定义策略 API
 
@@ -174,17 +187,46 @@ if (!result.success && result.code === 'PERMISSION_DENIED') {
 
 ### MediaRead
 
-在 Read 之上，目标还必须能解析到：
+先执行 Read 规则，一旦通过即放行。因此非系统盘路径（含 UNC / NAS 共享）**无需**
+查询媒体库或播放列表即可通过。
 
-- foobar2000 媒体库，或
-- 任意播放列表中的曲目（扫描上限由运行时实现界定）。
+媒体上下文信任只是 Read 拒绝后的回退（实际场景为白名单之外的系统盘路径）。以下
+任一条件成立即放行：
+
+- 该路径可被加入 foobar2000 媒体库，或
+- 该路径能解析到媒体库中的曲目，或
+- 该路径匹配某个播放列表中的曲目。该判定由完整覆盖全部播放列表的成员索引
+  支撑，没有扫描上限，实际存在的匹配总能命中。
 
 ### MediaWrite
 
-在 MediaRead 之上：
+MediaWrite 不复用 Read 或 MediaRead 的入口，而是走自己的校验链。在通用拒绝规则
+之后，保护目录黑名单始终生效；随后按顺序命中其中任意一条即放行：
 
-- 即使目标出现在媒体库/播放列表中，系统保护目录仍禁止写入
-- 不会因为位于非系统盘就自动放行
+- 严格写入目标（配置目录 / 临时目录），或
+- 位于媒体库 / 播放列表上下文中的路径，或
+- 位于媒体库监视目录之下的路径 —— 覆盖已落盘但尚未扫描入库的文件，或
+- 与受信上下文音频文件同目录的文件 —— `.lrc` 等附属文件正是据此放行。
+
+MediaWrite 相对 MediaRead 增加的是黑名单：即使目标确实出现在媒体库或播放列表中，
+系统保护目录仍禁止写入。
+
+**仅仅位于非系统盘不构成 MediaWrite 的放行理由。** 读策略允许非系统盘，但把这条
+继承到写侧就等于「任何主题都能改写 `D:` 或 `E:` 上的任意音频文件」。
+
+### FileWrite
+
+FileWrite 走自己的校验链，并非 MediaWrite 的超集：通用拒绝与保护目录黑名单之后，
+依次按严格写入目标（配置目录 / 临时目录）、以盘符寻址的非系统盘（UNC 不在此列）、
+媒体库 / 播放列表上下文放行；MediaWrite 的监视目录与伴生文件两步在 FileWrite
+中不存在。
+
+::: warning FileWrite 放行任意非系统盘
+这是当前暴露面最宽的写通道，`file.delete` 与 `file.write` 因此会接受 `D:`、`E:`
+等盘上的任意目标。该放行之所以保留，是因为 `file.mkdir` 与 `file.write` 创建的
+路径按定义不可能预先存在于媒体库、监视目录或播放列表中，只走媒体上下文链会拒绝
+每一次调用。
+:::
 
 ## 统计
 
@@ -193,7 +235,8 @@ if (!result.success && result.code === 'PERMISSION_DENIED') {
 | Read | 9 | 9 |
 | Write | 1 | 1 |
 | MediaRead | 40 | 39 |
-| MediaWrite | 17 | 16 |
+| MediaWrite | 10 | 10 |
+| FileWrite | 7 | 6 |
 | **合计** | **67** | **64** |
 
 以上计数由组件源码中的 C++ `RegisterApi` 路径安全 spec 动态生成。

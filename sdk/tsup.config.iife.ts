@@ -30,8 +30,7 @@ const COMMON: Pick<
 > = {
     format: ['iife'],
     clean: false,
-    // Sourcemaps stay on so consumers can debug through the bundle. The npm
-    // tarball still excludes them via the "!dist/**/*.map" entry in package.json.
+    // See the ESM config: maps are built but excluded from the tarball.
     sourcemap: true,
     target: 'es2020',
     outDir: 'dist',

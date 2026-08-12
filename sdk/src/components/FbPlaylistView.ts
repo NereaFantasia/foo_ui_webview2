@@ -28,6 +28,13 @@
  *
  * Reflects host attributes `track-count` and `selected-count`.
  *
+ * `fb-track-context` is dispatched only after the selection has been
+ * mirrored to the host, so a listener can open the native context menu
+ * with `fb.menu.showNativePopup({ mode: 'selection' })` and needs no
+ * `handles` array. Passing `handles` for the same rows is slower: every
+ * path is validated individually, whereas `selection` resolves handles
+ * from the host playlist with no path validation at all.
+ *
  * Implementation note: per-row render state (`_built`, `_ratingVal`,
  * …) is attached as ad-hoc properties on the row DOM nodes so the
  * row pool can reuse nodes without re-rendering identical cells.

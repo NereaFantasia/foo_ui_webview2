@@ -786,7 +786,12 @@ namespace {
         return nullptr;
     }
 
-    metadb_handle_list GetDefaultContextItems() {
+    // `outCaller` reports which caller GUID the returned tracks belong to.
+    // Components may vary an item's visibility and enabled state per caller, so
+    // executing under caller_undefined while the enumeration side reads state
+    // under the real caller can run a command the caller was told was
+    // unavailable — the two must agree on the same context.
+    metadb_handle_list GetDefaultContextItems(GUID* outCaller = nullptr) {
         metadb_handle_list items;
 
         // Prefer now playing item
@@ -794,11 +799,13 @@ namespace {
         metadb_handle_ptr nowPlaying;
         if (pc->get_now_playing(nowPlaying)) {
             items.add_item(nowPlaying);
+            if (outCaller) *outCaller = contextmenu_item::caller_now_playing;
             return items;
         }
 
         // Fallback to active playlist selection
         playlist_manager::get()->activeplaylist_get_selected_items(items);
+        if (outCaller) *outCaller = contextmenu_item::caller_active_playlist_selection;
         return items;
     }
 
@@ -812,6 +819,10 @@ namespace {
         if (!handlesJson.is_array()) return false;
 
         auto mdb = metadb::get();
+
+        // subsong 在校验前已从 path 剥离，故一张 CUE 的 N 个 subsong 会对同一裸路径
+        // 各校验一次。缓存结论（含拒绝）以消除该冗余；handle_create 仍需逐个执行。
+        std::unordered_map<std::string, bool> pathVerdicts;
 
         for (const auto& h : handlesJson) {
             std::string path;
@@ -838,12 +849,17 @@ namespace {
             if (path.empty()) continue;
 
             // Validate path against PathSecurity before creating handle
-            std::wstring wpath = pfc::stringcvt::string_wide_from_utf8(path.c_str()).get_ptr();
-            std::wstring pathError;
-            // Argument order verified correct: wpath -> path (in), pathError -> errorMsg (out).
-            // The name-similarity heuristic cross-matches the "path" prefix of pathError.
-            // NOLINTNEXTLINE(readability-suspicious-call-argument)
-            if (!PathSecurity::Instance().ValidateMediaAccess(wpath, pathError)) {
+            auto verdict = pathVerdicts.find(path);
+            if (verdict == pathVerdicts.end()) {
+                std::wstring wpath = pfc::stringcvt::string_wide_from_utf8(path.c_str()).get_ptr();
+                std::wstring pathError;
+                // Argument order verified correct: wpath -> path (in), pathError -> errorMsg (out).
+                // The name-similarity heuristic cross-matches the "path" prefix of pathError.
+                // NOLINTNEXTLINE(readability-suspicious-call-argument)
+                const bool allowed = PathSecurity::Instance().ValidateMediaAccess(wpath, pathError);
+                verdict = pathVerdicts.emplace(path, allowed).first;
+            }
+            if (!verdict->second) {
                 continue;
             }
 
@@ -1259,27 +1275,77 @@ json MenuRunContextCommand(const json& params) {
         return { {"success", false}, {"error", "command is required"} };
     }
 
-    metadb_handle_list items = GetDefaultContextItems();
+    // A dynamic context child is addressed by the owning command GUID plus its
+    // own node GUID. Passing guid_null unconditionally, as this handler used
+    // to, reaches the owner instead — for a container that is a silent no-op
+    // reported as success.
+    GUID subGuid = pfc::guid_null;
+    const std::string subGuidStr = params.value("subGuid", "");
+    if (!subGuidStr.empty() && !StringToGuid(subGuidStr, subGuid)) {
+        return { {"success", false}, {"error", "Invalid subGuid format"} };
+    }
+
+    GUID caller = contextmenu_item::caller_active_playlist_selection;
+    metadb_handle_list items = GetDefaultContextItems(&caller);
     if (items.get_count() == 0) {
         return { {"success", false}, {"error", "No track selected or playing"} };
     }
 
     GUID guid;
     if (StringToGuid(command, guid)) {
-        bool ok = menu_helpers::run_command_context(guid, pfc::guid_null, items);
-        return { {"success", ok}, {"guid", command}, {"itemCount", items.get_count()} };
+        bool ok = menu_helpers::run_command_context_ex(guid, subGuid, items, caller);
+        return {
+            {"success", ok},
+            {"guid", command},
+            {"itemCount", items.get_count()},
+            {"executionConfirmed", true}
+        };
     }
 
     service_ptr_t<contextmenu_item> item;
     unsigned index = 0;
     if (menu_helpers::find_command_by_name(command.c_str(), item, index)) {
-        item->item_execute_simple(index, pfc::guid_null, items, contextmenu_item::caller_undefined);
-        return { {"success", true}, {"itemCount", items.get_count()} };
+        // Resolve to a GUID and dispatch through the bool-returning entry
+        // point. item_execute_simple() returns void, so a caller could not tell
+        // a completed command from a no-op — which is why this branch reported
+        // a hardcoded success regardless of what actually happened.
+        GUID itemGuid = pfc::guid_null;
+        try {
+            itemGuid = item->get_item_guid(index);
+        } catch (...) {
+            // Leave null; the unconfirmed path below still dispatches.
+        }
+
+        if (itemGuid != pfc::guid_null) {
+            bool ok = menu_helpers::run_command_context_ex(itemGuid, subGuid, items, caller);
+            return {
+                {"success", ok},
+                {"guid", GuidToString(itemGuid)},
+                {"itemCount", items.get_count()},
+                {"executionConfirmed", true}
+            };
+        }
+
+        // Degenerate registration: no stable GUID, so the void entry point is
+        // the only way in and the SDK reports nothing back. `success` stays
+        // true because the command was dispatched, but `executionConfirmed`
+        // marks the difference between "ran" and "was handed to the host".
+        item->item_execute_simple(index, subGuid, items, caller);
+        return {
+            {"success", true},
+            {"itemCount", items.get_count()},
+            {"executionConfirmed", false}
+        };
     }
 
     if (menu_helpers::guid_from_name(command.c_str(), (unsigned)command.size(), guid)) {
-        bool ok = menu_helpers::run_command_context(guid, pfc::guid_null, items);
-        return { {"success", ok}, {"guid", GuidToString(guid)}, {"itemCount", items.get_count()} };
+        bool ok = menu_helpers::run_command_context_ex(guid, subGuid, items, caller);
+        return {
+            {"success", ok},
+            {"guid", GuidToString(guid)},
+            {"itemCount", items.get_count()},
+            {"executionConfirmed", true}
+        };
     }
 
     return { {"success", false}, {"error", "Command not found"} };
@@ -1618,7 +1684,7 @@ json MenuClose(const json& params) {
     return {{"success", true}};
 }
 
-// ── Internal overlay IPC (menu.__*) ─────────────────────────────────────────
+// ---- Internal overlay IPC (menu.__*) --------------------------------------
 // Every internal handler validates that the caller is the current overlay
 // window; select/dismiss/ready/valueChanged additionally validate menuId. The
 // validation LOGIC lives in MenuOverlayHost's narrow interface (not copied per

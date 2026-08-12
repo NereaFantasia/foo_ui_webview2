@@ -1,10 +1,10 @@
 // ─────────────────────────────────────────────────────────────
 // GENERATED FILE — DO NOT EDIT
 // File: sdk/src/types/generated/index.ts
+// Source: docs/graph/auto/code-index.json
+// Emitter: scripts/gen_sdk_types.mjs --all
 // schema_version: auto-1.0.0
-// These declarations are derived from the C++ handler signatures and are
-// refreshed together with the component release. Edit the hand-written
-// facades under sdk/src/bridge/ instead.
+// Regenerate: npm run gen:types (in sdk/) or `node scripts/gen_sdk_types.mjs --all`
 // ─────────────────────────────────────────────────────────────
 
 /* eslint-disable */
@@ -107,10 +107,9 @@ import type {
     DiscoveryGetPreferencePagesParams,
     DiscoveryGetUIElementsParams,
     DiscoverySearchCommandsParams,
-    DndGetDropZonesParams,
-    DndRegisterDropZoneParams,
+    DndGetCapabilitiesParams,
+    DndGetPathsAsyncParams,
     DndStartDragParams,
-    DndUnregisterDropZoneParams,
     DspAddDspParams,
     DspApplyPresetParams,
     DspGetAvailableParams,
@@ -537,10 +536,9 @@ import type {
     DiscoveryGetPreferencePagesResponse,
     DiscoveryGetUIElementsResponse,
     DiscoverySearchCommandsResponse,
-    DndGetDropZonesResponse,
-    DndRegisterDropZoneResponse,
+    DndGetCapabilitiesResponse,
+    DndGetPathsAsyncResponse,
     DndStartDragResponse,
-    DndUnregisterDropZoneResponse,
     DspAddDspResponse,
     DspApplyPresetResponse,
     DspGetAvailableResponse,
@@ -967,10 +965,9 @@ export interface ApiMethodMap {
     "discovery.getPreferencePages": [DiscoveryGetPreferencePagesParams, DiscoveryGetPreferencePagesResponse];
     "discovery.getUIElements": [DiscoveryGetUIElementsParams, DiscoveryGetUIElementsResponse];
     "discovery.searchCommands": [DiscoverySearchCommandsParams, DiscoverySearchCommandsResponse];
-    "dnd.getDropZones": [DndGetDropZonesParams, DndGetDropZonesResponse];
-    "dnd.registerDropZone": [DndRegisterDropZoneParams, DndRegisterDropZoneResponse];
+    "dnd.getCapabilities": [DndGetCapabilitiesParams, DndGetCapabilitiesResponse];
+    "dnd.getPathsAsync": [DndGetPathsAsyncParams, DndGetPathsAsyncResponse];
     "dnd.startDrag": [DndStartDragParams, DndStartDragResponse];
-    "dnd.unregisterDropZone": [DndUnregisterDropZoneParams, DndUnregisterDropZoneResponse];
     "dsp.addDsp": [DspAddDspParams, DspAddDspResponse];
     "dsp.applyPreset": [DspApplyPresetParams, DspApplyPresetResponse];
     "dsp.getAvailable": [DspGetAvailableParams, DspGetAvailableResponse];

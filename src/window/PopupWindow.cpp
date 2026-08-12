@@ -310,7 +310,7 @@ HWND PopupWindow::Create(const CreateParams& params, const std::string& windowId
     // 目标矩形所在显示器推导。
     //
     // 恒定 DPI 下这次「物理→DIP，WM_GETMINMAXINFO 再 DIP→物理」的往返是
-    // 恒等的（除取整残留），故创建期行为与 P1' 之前一致。
+    // 恒等的（除取整残留），故创建期行为与按物理像素直存时一致。
     {
         const int createDpi = window_dpi_probe::GetDpiForScreenRect(
             x, y, params.width, params.height);

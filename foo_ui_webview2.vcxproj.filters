@@ -13,6 +13,9 @@
     <Filter Include="src\webview">
       <UniqueIdentifier>{5FD5A6B8-E4C1-4D8F-B9A2-3E7C8D9F0A1B}</UniqueIdentifier>
     </Filter>
+    <Filter Include="src\webview\dnd">
+      <UniqueIdentifier>{7B1E4C2A-9D63-4F58-8C0E-2A6B5D4F1907}</UniqueIdentifier>
+    </Filter>
     <Filter Include="src\api">
       <UniqueIdentifier>{A1B2C3D4-E5F6-7890-ABCD-EF1234567890}</UniqueIdentifier>
     </Filter>
@@ -69,6 +72,30 @@
     <ClCompile Include="src\webview\WebViewHost.cpp">
       <Filter>src\webview</Filter>
     </ClCompile>
+    <ClCompile Include="src\webview\dnd\HdropReader.cpp">
+      <Filter>src\webview\dnd</Filter>
+    </ClCompile>
+    <ClCompile Include="src\webview\dnd\DropEffectPolicy.cpp">
+      <Filter>src\webview\dnd</Filter>
+    </ClCompile>
+    <ClCompile Include="src\webview\dnd\DragSession.cpp">
+      <Filter>src\webview\dnd</Filter>
+    </ClCompile>
+    <ClCompile Include="src\webview\dnd\DndOriginPolicy.cpp">
+      <Filter>src\webview\dnd</Filter>
+    </ClCompile>
+    <ClCompile Include="src\webview\dnd\DropTargetBridge.cpp">
+      <Filter>src\webview\dnd</Filter>
+    </ClCompile>
+    <ClCompile Include="src\webview\dnd\CompositionDelegate.cpp">
+      <Filter>src\webview\dnd</Filter>
+    </ClCompile>
+    <ClCompile Include="src\webview\dnd\ChainedDelegate.cpp">
+      <Filter>src\webview\dnd</Filter>
+    </ClCompile>
+    <ClCompile Include="src\webview\dnd\DndRegistrar.cpp">
+      <Filter>src\webview\dnd</Filter>
+    </ClCompile>
     <ClCompile Include="src\api\ArtworkRequestParser.cpp">
       <Filter>src\api</Filter>
     </ClCompile>
@@ -124,6 +151,33 @@
     </ClInclude>
     <ClInclude Include="src\webview\WebViewHost.h">
       <Filter>src\webview</Filter>
+    </ClInclude>
+    <ClInclude Include="src\webview\dnd\HdropReader.h">
+      <Filter>src\webview\dnd</Filter>
+    </ClInclude>
+    <ClInclude Include="src\webview\dnd\DropEffectPolicy.h">
+      <Filter>src\webview\dnd</Filter>
+    </ClInclude>
+    <ClInclude Include="src\webview\dnd\DragSession.h">
+      <Filter>src\webview\dnd</Filter>
+    </ClInclude>
+    <ClInclude Include="src\webview\dnd\DndOriginPolicy.h">
+      <Filter>src\webview\dnd</Filter>
+    </ClInclude>
+    <ClInclude Include="src\webview\dnd\IDropTargetDelegate.h">
+      <Filter>src\webview\dnd</Filter>
+    </ClInclude>
+    <ClInclude Include="src\webview\dnd\CompositionDelegate.h">
+      <Filter>src\webview\dnd</Filter>
+    </ClInclude>
+    <ClInclude Include="src\webview\dnd\ChainedDelegate.h">
+      <Filter>src\webview\dnd</Filter>
+    </ClInclude>
+    <ClInclude Include="src\webview\dnd\DropTargetBridge.h">
+      <Filter>src\webview\dnd</Filter>
+    </ClInclude>
+    <ClInclude Include="src\webview\dnd\DndRegistrar.h">
+      <Filter>src\webview\dnd</Filter>
     </ClInclude>
     <ClInclude Include="src\api\ArtworkRequestParser.h">
       <Filter>src\api</Filter>

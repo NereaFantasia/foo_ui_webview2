@@ -102,6 +102,38 @@ describe('menu.close', () => {
     });
 });
 
+describe('menu.runContextCommand', () => {
+    beforeEach(() => vi.resetModules());
+    afterEach(() => vi.unstubAllGlobals());
+
+    it('sends the command alone when no options are given', async () => {
+        const native = makeNative();
+        native.invoke.mockResolvedValue({ success: true, executionConfirmed: true });
+        vi.stubGlobal('window', { fb2k: native });
+        const { menu } = await import('./menu.js');
+
+        await menu.runContextCommand('Properties');
+
+        expect(native.invoke).toHaveBeenCalledWith('menu.runContextCommand', {
+            command: 'Properties',
+        });
+    });
+
+    it('forwards subGuid so a dynamic child is not dispatched as its parent', async () => {
+        const native = makeNative();
+        native.invoke.mockResolvedValue({ success: true, executionConfirmed: true });
+        vi.stubGlobal('window', { fb2k: native });
+        const { menu } = await import('./menu.js');
+
+        await menu.runContextCommand('{OWNER}', { subGuid: '{NODE}' });
+
+        expect(native.invoke).toHaveBeenCalledWith('menu.runContextCommand', {
+            command: '{OWNER}',
+            subGuid: '{NODE}',
+        });
+    });
+});
+
 describe('menu context facade', () => {
     beforeEach(() => vi.resetModules());
     afterEach(() => vi.unstubAllGlobals());

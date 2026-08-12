@@ -375,55 +375,33 @@ async function runSnapshots(Runtime) {
         { filesContain: ["cover-a.jpg", "note.txt"] },
     );
 
-    const selector = `[data-contract-probe='${snapshotId}']`;
-    await evaluateValue(
-        Runtime,
-        `(() => {
-            const element = document.createElement('div');
-            element.setAttribute('data-contract-probe', ${JSON.stringify(snapshotId)});
-            document.body.appendChild(element);
-            return true;
-        })()`,
-        false,
+    // A session lookup miss is reported as success with an empty result, not as
+    // an error, so a page cannot distinguish "expired" from "never existed".
+    const unknownSession = await invoke(Runtime, "dnd.getPathsAsync", {
+        sessionId: `no-such-session-${snapshotId}`,
+    });
+    assertCase(
+        "A-10 dnd.getPathsAsync reports an unknown session as empty success",
+        unknownSession?.success === true &&
+            unknownSession?.sessionId === "" &&
+            Array.isArray(unknownSession?.paths) &&
+            unknownSession.paths.length === 0,
+        unknownSession,
+        { success: true, sessionId: "", paths: [] },
     );
-    let zoneId;
-    try {
-        const register = await invoke(Runtime, "dnd.registerDropZone", {
-            selector,
-            event: "dnd:contractProbe",
-            accept: ["files"],
-        });
-        zoneId = register?.zoneId;
-        const datasetAfterRegister = await evaluateValue(
-            Runtime,
-            `document.querySelector(${JSON.stringify(selector)})?.dataset.dropZoneId || null`,
-            false,
-        );
-        assertCase(
-            "A-10 drop-zone script is returned but not auto-executed",
-            register?.success === true &&
-                typeof register?.script === "string" &&
-                register.script.length > 0 &&
-                datasetAfterRegister === null,
-            { register, datasetAfterRegister },
-            { success: true, hasScript: true, datasetDropZoneId: null },
-        );
-        if (zoneId) {
-            const unregister = await invoke(Runtime, "dnd.unregisterDropZone", { zoneId });
-            assertCase(
-                "A-10b drop-zone cleanup is also returned as script",
-                unregister?.success === true && typeof unregister?.script === "string",
-                unregister,
-                { success: true, hasScript: true },
-            );
-        }
-    } finally {
-        await evaluateValue(
-            Runtime,
-            `document.querySelector(${JSON.stringify(selector)})?.remove(); true`,
-            false,
-        ).catch(() => undefined);
-    }
+
+    // The host delivers a handler-returned error envelope through SendResponse,
+    // so the promise resolves with the envelope instead of rejecting.
+    const startDrag = await invokeRaw(Runtime, "dnd.startDrag", {});
+    assertCase(
+        "A-10b dnd.startDrag resolves a NOT_SUPPORTED envelope, not a fake success",
+        startDrag?.kind === "result" &&
+            startDrag.value?.success === false &&
+            startDrag.value?.code === "NOT_SUPPORTED" &&
+            /not implemented|IDropSource/i.test(startDrag.value?.error || ""),
+        startDrag,
+        { kind: "result", value: { success: false, code: "NOT_SUPPORTED" } },
+    );
 
     for (const method of ["dsp.getChain", "output.getDevices"]) {
         const outcome = await invokeRaw(Runtime, method, {});

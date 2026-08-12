@@ -14,12 +14,14 @@ import type {
 import type {
     MenuShowResponse,
     MenuCloseResponse,
+    MenuRunContextCommandResponse,
     MenuRunMainMenuCommandResponse,
 } from '../../types/generated/responses.js';
 import type {
     MenuGetContextMenuParams,
     MenuGetMainMenuParams,
     MenuRunContextCommandByIdParams,
+    MenuRunContextCommandParams,
     MenuRunMainMenuCommandParams,
     MenuShowNativePopupParams,
 } from '../../types/generated/params.js';
@@ -49,7 +51,15 @@ export const menu = {
             ...(root ? { root } : {}),
             ...opts,
         }),
-    /** `mode` is one of `'auto' | 'selection' | 'playlist' | 'nowPlaying' | 'handles'`. */
+    /**
+     * `mode` is one of `'auto' | 'selection' | 'playlist' | 'nowPlaying' | 'handles'`.
+     *
+     * Prefer `'selection'`, `'playlist'` or `'nowPlaying'` whenever the target
+     * is reachable from the host playlist: those resolve handles inside the
+     * host and validate no paths. `'handles'` validates every supplied path
+     * individually, which costs filesystem metadata calls per entry and is
+     * noticeably slower for network shares.
+     */
     getContextMenu: (opts?: MenuGetContextMenuParams) =>
         bridge.invoke<MenuGetContextMenuResponse>('menu.getContextMenu', opts || {}),
     /**
@@ -75,11 +85,26 @@ export const menu = {
             'menu.runMainMenuCommand',
             { command, ...opts },
         ),
-    runContextCommand: (command: string) =>
-        bridge.invoke<BaseResponse & { guid?: string; itemCount?: number }>(
-            'menu.runContextCommand',
-            { command },
-        ),
+    /**
+     * Runs a context-menu command against the now-playing track, falling back
+     * to the active playlist selection.
+     *
+     * `command` accepts a GUID or a command name. `opts.subGuid` addresses a
+     * dynamically generated child (a rating value, a converter preset); without
+     * it the owning container is targeted instead, which is a silent no-op.
+     *
+     * `executionConfirmed` distinguishes "the host reported the command ran"
+     * from "the command was dispatched through an entry point that returns
+     * nothing". It is absent on the early-validation failures.
+     */
+    runContextCommand: (
+        command: string,
+        opts?: Omit<MenuRunContextCommandParams, 'command'>,
+    ) =>
+        bridge.invoke<MenuRunContextCommandResponse>('menu.runContextCommand', {
+            command,
+            ...opts,
+        }),
     runContextCommandById: (
         id: number,
         opts?: Omit<MenuRunContextCommandByIdParams, 'id'>,
@@ -88,7 +113,13 @@ export const menu = {
             id,
             ...opts,
         }),
-    /** Defaults to `auto`: handles, now playing, playlist selection, then playlist context. */
+    /**
+     * Defaults to `auto`: handles, now playing, playlist selection, then
+     * playlist context.
+     *
+     * The same cost note as {@link getContextMenu} applies — prefer
+     * `mode: 'selection'` over supplying `handles` for playlist rows.
+     */
     showNativePopup: (opts?: MenuShowNativePopupParams) =>
         bridge.invoke<MenuShowNativePopupResponse>('menu.showNativePopup', opts || {}),
 

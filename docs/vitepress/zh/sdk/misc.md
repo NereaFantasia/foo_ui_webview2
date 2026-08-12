@@ -44,12 +44,22 @@ const ctx = await fb.menu.getContextMenu({ mode: 'selection' });
 await fb.menu.runMainMenuCommand('{11213A01-9F36-4E69-A1BB-7A72F418DE3A}');
 ```
 
-### runContextCommand(command)
+### runContextCommand(command, options?)
 
-执行右键菜单命令。使用默认上下文项。
+执行右键菜单命令。作用于默认上下文项（当前播放曲目，无则取活动播放列表选中项）。
+
+| 参数 | 类型 | 说明 |
+| --- | --- | --- |
+| `command` | `string` | GUID 或命令名 |
+| `options.subGuid` | `string` | 动态生成子项的节点 GUID。不传则命中其父容器，等于什么都不执行 |
 
 ```javascript
 await fb.menu.runContextCommand('Properties');
+
+// 动态子项需要「所属命令 GUID + subGuid」
+await fb.menu.runContextCommand('{5B69B9E3-1C7C-4C63-A9B0-1D0C0D0F0E0D}', {
+    subGuid: '{A222D5A9-2903-AA8C-EEAE-4B9230558B55}',
+});
 ```
 
 ### runContextCommandById(id, options?)
@@ -280,42 +290,7 @@ await fb.misc.showPopupMessage('操作完成', '提示');
 
 ## fb.dnd 拖放
 
-### registerDropZone(options)
-
-注册拖放区域。`DndRegisterDropZoneParams` 接受 `selector`、`event` 与 `accept`；主机返回 `{ zoneId }`。默认事件名为 `dnd:drop`。
-
-```javascript
-const { zoneId } = await fb.dnd.registerDropZone({
-    selector: '#drop-area',
-    event: 'dnd:drop',
-    accept: ['audio/*'],
-});
-```
-
-### unregisterDropZone(zoneId)
-
-注销拖放区域。注意 C++ 端参数键为 `zoneId`。
-
-```javascript
-await fb.dnd.unregisterDropZone('my-zone');
-```
-
-### startDrag(type, options?)
-
-开始拖动操作。
-
-| 参数 | 类型 | 说明 |
-| --- | --- | --- |
-| type | string | 拖动类型 |
-| options | object | 可选配置 |
-
-### getDropZones()
-
-获取所有已注册的拖放区域。
-
-```javascript
-const zones = await fb.dnd.getDropZones();
-```
+外部文件拖入，独立成页：[fb.dnd](./dnd.md)。
 
 <!-- BEGIN AUTO-GENERATED SDK STUBS -->
 

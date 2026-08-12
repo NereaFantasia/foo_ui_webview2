@@ -15,6 +15,10 @@ class WebViewHost;
 class BridgeCore;
 class SelectionHolder;
 
+namespace fb2k_dnd {
+class DndRegistrar;
+}
+
 /**
  * 面板模式枚举
  */
@@ -103,6 +107,9 @@ public:
     
     // 获取 SelectionHolder（用于 Selection API）
     SelectionHolder* GetSelectionHolder() const { return selectionHolder_.get(); }
+
+    // Null until the WebView is ready, and again after teardown.
+    fb2k_dnd::DndRegistrar* GetDndRegistrar() { return dndRegistrar_.get(); }
     
     // ========== WebView 操作 ==========
     
@@ -220,7 +227,18 @@ protected:
      * 面板级操作都必须经过此判定，否则崩溃后的僵尸指针会被放行。
      */
     bool IsWebViewOperable() const;
-    
+
+    /**
+     * WebView 创建成功后的收尾工作。
+     *
+     * 从 InitializeWebView 的异步回调里抽出，让该回调保持为纯分发。
+     * 非虚：拖放注册必须对每种宿主都生效，而 PopupWindow 覆盖
+     * OnWebViewReady() 时不调用基类实现，挂在虚函数上会被静默跳过。
+     *
+     * generation 为发起本次初始化时的代际值，用于向下传递给拖放注册器。
+     */
+    void CompleteWebViewInit(uint64_t generation);
+
 protected:
     // 窗口句柄
     HWND hwnd_ = nullptr;
@@ -240,6 +258,19 @@ protected:
     // WebView2 宿主进程已崩溃退出（僵尸态）。由 OnWebViewProcessFailed 在
     // 不可自愈的崩溃上置位，DestroyWebView / 重建成功后清零。
     bool webViewProcessDead_ = false;
+
+    // Bumped on every InitializeWebView and on DestroyWebView, so a late
+    // creation callback from a superseded generation can be discarded.
+    uint64_t webViewGeneration_ = 0;
+
+    // Sentinel proving the panel is still alive. Generation alone cannot
+    // prevent use-after-free, because comparing it already dereferences this.
+    struct PanelAlive {};
+    std::shared_ptr<PanelAlive> alive_ = std::make_shared<PanelAlive>();
+
+    // Owns the IDropTarget registered on hwnd_. Created after the WebView is
+    // ready and destroyed at the start of DestroyWebView.
+    std::unique_ptr<fb2k_dnd::DndRegistrar> dndRegistrar_;
     
     // 焦点状态（用于 Selection API）
     bool hasFocus_ = false;

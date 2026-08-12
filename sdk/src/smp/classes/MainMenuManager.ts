@@ -7,12 +7,14 @@ import type { JsonValue } from '../../types/json.js';
  * - `ExecuteByID(id)`                  → `menu.runMainMenuCommand` (`{ command }`)
  *
  * The root sub-menu (`Init('File')`, `Init('Playback')`, ...) is set
- * once and forwarded to the host. Allocated ids map to either the
- * host-supplied `path` string or `guid`, both of which the C++
- * handler accepts as the `command` parameter.
+ * once and forwarded to the host. Allocated ids map to the host-supplied
+ * `guid` (plus the node `subGuid` for a dynamic child) or, failing that, to
+ * the `path` string. The `commandId` main-menu rows also carry is deliberately
+ * never used: it is a transient Win32 menu id that addresses nothing once the
+ * menu that produced it is gone.
  */
 
-import { buildMenuItems, getInvoke } from '../utils.js';
+import { buildMenuItems, getInvoke, splitMenuAddress } from '../utils.js';
 import type {
     SmpMenuBuildState,
     SmpRawMenuItem,
@@ -62,6 +64,7 @@ export class MainMenuManager {
             nextId: baseId,
             limit,
             idMap: this._idMap,
+            family: 'mainmenu',
         };
         const out = buildMenuItems(items, state);
 
@@ -84,18 +87,27 @@ export class MainMenuManager {
         const inv = getInvoke();
         if (!inv) return false;
 
-        let command: number | string | null = null;
-        if (typeof id === 'number') command = this._idMap.get(id) ?? null;
-        else if (typeof id === 'string' && /^[0-9]+$/.test(id)) {
-            command = this._idMap.get(Number(id)) ?? null;
-        } else if (typeof id === 'string') {
-            command = id;
+        let mapped: number | string | null = null;
+        if (typeof id === 'number') mapped = this._idMap.get(id) ?? null;
+        else if (/^[0-9]+$/.test(id)) {
+            mapped = this._idMap.get(Number(id)) ?? null;
+        } else {
+            mapped = id;
         }
 
-        if (!command) return false;
+        // `menu.runMainMenuCommand` declares `command` as a string and rejects
+        // a number on type. Refusing one here keeps that failure inside the
+        // SDK, where it reads as "unmapped id", instead of surfacing as a host
+        // exception the caller cannot attribute.
+        if (typeof mapped !== 'string' || mapped.length === 0) return false;
 
+        // Spelled out as literal keys rather than spread: the repository's
+        // static audit layer reads payload keys off the call site, and a spread
+        // makes the invocation opaque to it.
+        const { command, subGuid } = splitMenuAddress(mapped);
         const res = (await inv('menu.runMainMenuCommand', {
             command,
+            ...(subGuid ? { subGuid } : {}),
         })) as { success?: boolean } | null;
         return !!res?.success;
     }

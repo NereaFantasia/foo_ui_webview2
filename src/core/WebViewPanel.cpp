@@ -7,6 +7,7 @@
 #include "core/SecurityConfig.h"
 #include "core/PreferencesPage.h"
 #include "webview/WebViewHost.h"
+#include "webview/dnd/DndRegistrar.h"
 #include "api/BridgeCore.h"
 #include "window/WindowChromeTrace.h"
 
@@ -106,7 +107,12 @@ bool WebViewPanel::InitializeWebView(HWND hwnd, WebViewPanelMode mode) {
     
     // 创建 WebView2 宿主
     webView_ = std::make_unique<WebViewHost>();
-    
+
+    // Declared before the callbacks below so each of them can capture the pair
+    // and discard itself when the panel is gone or a newer WebView superseded it.
+    const uint64_t myGeneration = ++webViewGeneration_;
+    std::weak_ptr<PanelAlive> weakAlive = alive_;
+
     // Set focus change callback for panel:focus/blur events
     webView_->SetFocusChangedCallback([this](bool gotFocus) {
         if (gotFocus) {
@@ -117,7 +123,19 @@ bool WebViewPanel::InitializeWebView(HWND hwnd, WebViewPanelMode mode) {
     });
 
     // 导航完成回调（启动可见性收敛用）
-    webView_->SetNavigationCompletedCallback([this](bool success) {
+    webView_->SetNavigationCompletedCallback([this, myGeneration, weakAlive](bool success) {
+        if (weakAlive.expired()) return;
+        if (myGeneration != webViewGeneration_) return;
+
+        // Re-evaluate the path gate here rather than inside the virtual
+        // OnNavigationCompleted: MainWindow and PopupWindow both override it,
+        // so a virtual hook would skip them. The gate cannot be decided once at
+        // registration time, because registration happens before the first
+        // navigation and the document origin is not known yet.
+        if (success && dndRegistrar_) {
+            dndRegistrar_->ApplyOriginGate(webView_.get());
+        }
+
         OnNavigationCompleted(success);
     });
 
@@ -128,19 +146,14 @@ bool WebViewPanel::InitializeWebView(HWND hwnd, WebViewPanelMode mode) {
         });
 
     bool useVisualHosting = (mode_ == WebViewPanelMode::Standalone);
-    HRESULT hr = webView_->Initialize(hwnd_, [this](bool success) {
+
+    HRESULT hr = webView_->Initialize(hwnd_, [this, myGeneration, weakAlive](bool success) {
+        // Discard callbacks from a destroyed panel or a superseded generation.
+        if (weakAlive.expired()) return;
+        if (myGeneration != webViewGeneration_) return;
+
         if (success) {
-            webViewReady_ = true;
-            
-            // 注册到 WebViewContext（带 windowId 支持多窗口系统）
-            if (!windowId_.empty()) {
-                WebViewContext::GetInstance().RegisterInstance(hwnd_, webView_.get(), bridge_.get(), windowId_);
-            } else {
-                WebViewContext::GetInstance().RegisterInstance(hwnd_, webView_.get(), bridge_.get());
-            }
-            
-            // 调用虚函数，允许子类添加额外Initializing
-            OnWebViewReady();
+            CompleteWebViewInit(myGeneration);
         } else {
             LOG("ERROR: WebView2 initialization failed");
             // 先让子类清理初始化/重建状态，再触发导航失败信号允许窗口显示。
@@ -159,7 +172,44 @@ bool WebViewPanel::InitializeWebView(HWND hwnd, WebViewPanelMode mode) {
     return true;
 }
 
+// Success half of the WebView creation callback. Extracted from the lambda so
+// the callback stays a thin dispatcher; the generation is passed through because
+// the registrar records it to reject a stale Unregister.
+void WebViewPanel::CompleteWebViewInit(uint64_t generation) {
+    webViewReady_ = true;
+
+    // 注册到 WebViewContext（带 windowId 支持多窗口系统）
+    if (!windowId_.empty()) {
+        WebViewContext::GetInstance().RegisterInstance(hwnd_, webView_.get(), bridge_.get(), windowId_);
+    } else {
+        WebViewContext::GetInstance().RegisterInstance(hwnd_, webView_.get(), bridge_.get());
+    }
+
+    // 调用虚函数，允许子类添加额外Initializing
+    OnWebViewReady();
+
+    // Registered after OnWebViewReady rather than inside it: PopupWindow
+    // overrides that virtual without calling the base, so a virtual hook would
+    // silently skip the main Visual Hosting host.
+    if (!dndRegistrar_) {
+        dndRegistrar_ = std::make_unique<fb2k_dnd::DndRegistrar>();
+    }
+    dndRegistrar_->Register(
+        hwnd_, webView_.get(), generation,
+        [this](const char* event, const nlohmann::json& data) {
+            if (bridge_) bridge_->EmitEvent(event, data);
+        });
+}
+
 void WebViewPanel::DestroyWebView() {
+    // First: OLE must stop delivering drops before the interfaces the delegate
+    // forwards to are released.
+    if (dndRegistrar_) {
+        dndRegistrar_->Unregister(webViewGeneration_);
+        dndRegistrar_.reset();
+    }
+    ++webViewGeneration_;   // invalidate any in-flight creation callback
+
     // Unregister from SelectionWatcher first
     SelectionWatcher::GetInstance().UnregisterPanel(this);
 

@@ -69,7 +69,7 @@ inline RouteDecision DecideRoute(const ResolvedAction& action) {
     return RouteDecision::FireUserCallback;
 }
 
-// ── string transport (for the opaque-token index JSON in DESIGN 8.3) ────────
+// ---- string transport (for the opaque-token index JSON in DESIGN 8.3) -----
 // Origin / Builtin cross the C++ <-> internal-JSON boundary as short strings so
 // MenuOverlayHost can index them without a compile-time dependency on TrayIcon.
 
@@ -193,7 +193,7 @@ inline ResolvedAction ResolveInternalActionFields(
     });
 }
 
-// ── select / value eligibility (opaque-token resolution in DESIGN 8.3) ──────
+// ---- select / value eligibility (opaque-token resolution in DESIGN 8.3) ---
 // The overlay resolves a renderer-echoed token to its indexed entry, then gates
 // the action with these pure predicates. Extracted so the security rules are
 // unit-testable without a live overlay window.
@@ -227,7 +227,7 @@ inline bool RichValueInRange(const std::string& kind, int value,
     return false;
 }
 
-// ── internal IPC caller / menuId gate (DESIGN 8.1 / 8.2) ────────────────────
+// ---- internal IPC caller / menuId gate (DESIGN 8.1 / 8.2) -----------------
 // The overlay accepts an internal menu.__* call only from its own window and,
 // for select/dismiss/ready/valueChanged, only for the currently-visible menu.
 // Extracted as pure predicates (window handles as opaque void* to stay Win32-

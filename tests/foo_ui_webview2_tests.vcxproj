@@ -98,6 +98,12 @@
     <ClCompile Include="..\src\api\ArtworkRequestParser.cpp" />
     <ClCompile Include="..\src\window\WindowGeometryMath.cpp" />
     <ClCompile Include="..\src\window\WindowTargetPolicy.cpp" />
+    <ClCompile Include="..\src\webview\dnd\HdropReader.cpp" />
+    <ClCompile Include="..\src\webview\dnd\DropEffectPolicy.cpp" />
+    <ClCompile Include="..\src\webview\dnd\DragSession.cpp" />
+    <ClCompile Include="..\src\webview\dnd\DndOriginPolicy.cpp" />
+    <ClCompile Include="..\src\utils\MediaMembershipIndex.cpp" />
+    <ClCompile Include="..\src\utils\PathCanonicalCache.cpp" />
     <!-- src\utils\I18n.cpp needs the full SDK to probe fb2k's own strings;
          this project builds against compat\fb2k_types.h, so stub it instead. -->
     <ClCompile Include="compat\i18n_stub.cpp">
@@ -124,6 +130,11 @@
     <ClCompile Include="test_path_security_decorator.cpp" />
     <ClCompile Include="test_api_path_security.cpp" />
     <ClCompile Include="test_path_prefix_boundary.cpp" />
+    <ClCompile Include="test_path_security_unc_bypass.cpp" />
+    <ClCompile Include="test_path_security_write_tiers.cpp" />
+    <ClCompile Include="test_menu_handle_list_dedup.cpp" />
+    <ClCompile Include="test_media_membership_index.cpp" />
+    <ClCompile Include="test_path_canonical_cache.cpp" />
     <ClCompile Include="test_caller_context.cpp" />
     <ClCompile Include="test_playback_handlers.cpp" />
     <ClCompile Include="test_playlist_handlers.cpp" />
@@ -134,6 +145,10 @@
     <ClCompile Include="test_webview_crash_policy.cpp" />
     <ClCompile Include="test_window_geometry_math.cpp" />
     <ClCompile Include="test_window_target_policy.cpp" />
+    <ClCompile Include="test_dnd_hdrop_parse.cpp" />
+    <ClCompile Include="test_dnd_effect_policy.cpp" />
+    <ClCompile Include="test_dnd_session.cpp" />
+    <ClCompile Include="test_dnd_origin_policy.cpp" />
   </ItemGroup>
 
   <!-- Headers -->
@@ -149,6 +164,12 @@
     <ClInclude Include="..\src\window\WindowGeometryMath.h" />
     <ClInclude Include="..\src\window\WindowTargetPolicy.h" />
     <ClInclude Include="..\src\utils\WindowUtilsCore.h" />
+    <ClInclude Include="..\src\webview\dnd\HdropReader.h" />
+    <ClInclude Include="..\src\webview\dnd\DropEffectPolicy.h" />
+    <ClInclude Include="..\src\webview\dnd\DragSession.h" />
+    <ClInclude Include="..\src\webview\dnd\DndOriginPolicy.h" />
+    <ClInclude Include="..\src\utils\MediaMembershipIndex.h" />
+    <ClInclude Include="..\src\utils\PathCanonicalCache.h" />
   </ItemGroup>
 
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />

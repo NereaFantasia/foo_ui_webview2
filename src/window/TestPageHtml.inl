@@ -271,9 +271,9 @@ std::wstring MainWindow::GetTestPageHtml() const {
         // Drag & Drop APIs
         L"<h2>Drag &amp; Drop</h2>"
         L"<div class=\"ct\">"
-        L"<button class=\"dnd\" onclick=\"dndRegister()\">Register Zone</button>"
-        L"<button class=\"dnd\" onclick=\"dndUnregister()\">Unregister</button>"
-        L"<button class=\"dnd\" onclick=\"dndGetZones()\">Get Zones</button></div>"
+        L"<button class=\"dnd\" onclick=\"dndCaps()\">Get Capabilities</button>"
+        L"<button class=\"dnd\" onclick=\"dndPaths()\">Get Paths (drag files first)</button>"
+        L"<button class=\"dnd\" onclick=\"dndStartDrag()\">Start Drag (expect NOT_SUPPORTED)</button></div>"
         
         // System APIs
         L"<h2>System</h2>"
@@ -422,9 +422,12 @@ std::wstring MainWindow::GetTestPageHtml() const {
         L"function logClear(){fb2k.invoke('log.clear').then(log).catch(err);}"
         
         // Drag & Drop
-        L"function dndRegister(){fb2k.invoke('dnd.registerDropZone',{elementId:'content',accepts:['audio/*']}).then(log).catch(err);}"
-        L"function dndUnregister(){fb2k.invoke('dnd.unregisterDropZone',{elementId:'content'}).then(log).catch(err);}"
-        L"function dndGetZones(){fb2k.invoke('dnd.getDropZones').then(log).catch(err);}"
+        L"function dndCaps(){fb2k.invoke('dnd.getCapabilities').then(log).catch(err);}"
+        // Reads the host-side session, which outlives the page snapshot, so this
+        // still returns paths seconds after the drop.
+        L"function dndPaths(){var s=window.__fbDndSession;"
+        L"fb2k.invoke('dnd.getPathsAsync',s?{sessionId:s.sessionId}:{}).then(log).catch(err);}"
+        L"function dndStartDrag(){fb2k.invoke('dnd.startDrag').then(log).catch(err);}"
         
         // System
         L"function sysTheme(){fb2k.invoke('system.getTheme').then(log).catch(err);}"

@@ -19,9 +19,10 @@ using ApiHandler = std::function<json(const json& params)>;
 enum class SecurityLevel {
     None,       // 无路径参数 / 不需要路径校验
     Read,       // ValidatePath (文件系统只读)
-    Write,      // ValidateWritePath (严格写白名单)
+    Write,      // ValidateWritePath (严格写白名单: profile/temp)
     MediaRead,  // ValidateMediaAccess (读 + 媒体库/播放列表上下文信任)
-    MediaWrite  // ValidateMediaWriteAccess (写 + 媒体库/播放列表上下文信任, 无非系统盘放行)
+    MediaWrite, // ValidateMediaWriteAccess (写受信媒体上下文; 无非系统盘放行)
+    FileWrite   // ValidateFileWriteAccess (通用文件写; 保留非系统盘放行, 待决)
 };
 
 // 路径参数校验规格

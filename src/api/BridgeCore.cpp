@@ -371,6 +371,8 @@ static bool ValidateSinglePath(const std::wstring& rawPath, SecurityLevel level,
             return ps.ValidateMediaAccess(expanded, errorMsg);
         case SecurityLevel::MediaWrite:
             return ps.ValidateMediaWriteAccess(expanded, errorMsg);
+        case SecurityLevel::FileWrite:
+            return ps.ValidateFileWriteAccess(expanded, errorMsg);
     }
     errorMsg = L"Unknown security level";
     return false;

@@ -221,11 +221,22 @@ Runs a context menu command against the current selection or the now playing tra
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `command` | `string` | Yes | Command name or GUID string. An empty value fails with `command is required`. |
+| `subGuid` | `string` | No | Node GUID of a dynamically generated child. Without it the owning container is targeted, which runs nothing. |
 
-**Returns**: `{"error":"...","guid":"...","itemCount":"...","success":true}`
+**Returns**: `{"error":"...","guid":"...","itemCount":"...","executionConfirmed":true,"success":true}`
+
+`executionConfirmed: false` means the command was handed to the host through an
+entry point that returns nothing, so completion could not be observed. It only
+occurs for a registration that exposes no stable GUID.
 
 ```js
 await fb2k.invoke('menu.runContextCommand', { command: 'Playback Statistics/Rating/5' });
+
+// A dynamic child needs the owning GUID plus its node GUID.
+await fb2k.invoke('menu.runContextCommand', {
+    command: '{5B69B9E3-1C7C-4C63-A9B0-1D0C0D0F0E0D}',
+    subGuid: '{A222D5A9-2903-AA8C-EEAE-4B9230558B55}',
+});
 ```
 
 ### menu.runContextCommandById

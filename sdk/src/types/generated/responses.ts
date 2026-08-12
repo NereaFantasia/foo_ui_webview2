@@ -1,10 +1,10 @@
 // ─────────────────────────────────────────────────────────────
 // GENERATED FILE — DO NOT EDIT
 // File: sdk/src/types/generated/responses.ts
+// Source: docs/graph/auto/code-index.json
+// Emitter: scripts/gen_sdk_types.mjs --all
 // schema_version: auto-1.0.0
-// These declarations are derived from the C++ handler signatures and are
-// refreshed together with the component release. Edit the hand-written
-// facades under sdk/src/bridge/ instead.
+// Regenerate: npm run gen:types (in sdk/) or `node scripts/gen_sdk_types.mjs --all`
 // ─────────────────────────────────────────────────────────────
 
 /* eslint-disable */
@@ -880,25 +880,27 @@ export interface DiscoverySearchCommandsResponse {
 }
 
 /**
- * Response from `dnd.getDropZones`.
+ * Response from `dnd.getCapabilities`.
  */
-export interface DndGetDropZonesResponse {
+export interface DndGetCapabilitiesResponse {
     success: boolean;
-    zones: JsonObject;
-    count: number;
+    error?: unknown;
+    code?: unknown;
+    html5?: boolean;
+    paths?: boolean;
+    hosting?: unknown;
+    pathsUnavailableReason?: unknown;
 }
 
 /**
- * Response from `dnd.registerDropZone`.
+ * Response from `dnd.getPathsAsync`.
  */
-export interface DndRegisterDropZoneResponse {
+export interface DndGetPathsAsyncResponse {
     success: boolean;
-    error?: string;
-    zoneId?: string;
-    selector?: string;
-    accept?: string[];
-    event?: string;
-    script?: string;
+    error?: unknown;
+    code?: unknown;
+    sessionId?: string;
+    paths?: unknown[];
 }
 
 /**
@@ -906,20 +908,8 @@ export interface DndRegisterDropZoneResponse {
  */
 export interface DndStartDragResponse {
     success: boolean;
-    error?: string;
-    type?: string;
-    note?: string;
-    trackCount?: number;
-}
-
-/**
- * Response from `dnd.unregisterDropZone`.
- */
-export interface DndUnregisterDropZoneResponse {
-    success: boolean;
-    error?: string;
-    zoneId?: string;
-    script?: string;
+    error: unknown;
+    code: unknown;
 }
 
 /**
@@ -1794,6 +1784,7 @@ export interface MenuRunContextCommandResponse {
     error?: string;
     guid?: string;
     itemCount?: number;
+    executionConfirmed?: boolean;
 }
 
 /**
@@ -4556,10 +4547,9 @@ export interface ApiResponseMap {
     "discovery.getPreferencePages": DiscoveryGetPreferencePagesResponse;
     "discovery.getUIElements": DiscoveryGetUIElementsResponse;
     "discovery.searchCommands": DiscoverySearchCommandsResponse;
-    "dnd.getDropZones": DndGetDropZonesResponse;
-    "dnd.registerDropZone": DndRegisterDropZoneResponse;
+    "dnd.getCapabilities": DndGetCapabilitiesResponse;
+    "dnd.getPathsAsync": DndGetPathsAsyncResponse;
     "dnd.startDrag": DndStartDragResponse;
-    "dnd.unregisterDropZone": DndUnregisterDropZoneResponse;
     "dsp.addDsp": DspAddDspResponse;
     "dsp.applyPreset": DspApplyPresetResponse;
     "dsp.getAvailable": DspGetAvailableResponse;

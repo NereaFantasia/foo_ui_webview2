@@ -14,7 +14,7 @@ Current dynamic inventory: **428** public methods across **40** namespaces (**6*
 - `cursor` (2 methods)
 - `dialog` (4 methods)
 - `discovery` (15 methods)
-- `dnd` (4 methods)
+- `dnd` (3 methods)
 - `dsp` (8 methods)
 - `event` (2 methods)
 - `file` (10 methods)

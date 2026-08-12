@@ -1,10 +1,10 @@
 // ─────────────────────────────────────────────────────────────
 // GENERATED FILE — DO NOT EDIT
 // File: sdk/src/types/generated/events.ts
+// Source: docs/graph/auto/code-index.json
+// Emitter: scripts/gen_sdk_types.mjs --all
 // schema_version: auto-1.0.0
-// These declarations are derived from the C++ handler signatures and are
-// refreshed together with the component release. Edit the hand-written
-// facades under sdk/src/bridge/ instead.
+// Regenerate: npm run gen:types (in sdk/) or `node scripts/gen_sdk_types.mjs --all`
 // ─────────────────────────────────────────────────────────────
 
 /* eslint-disable */

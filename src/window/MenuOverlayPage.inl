@@ -1,6 +1,7 @@
 // AUTO-GENERATED — do not edit.
 // Source: src/window/menu-overlay/{menu-overlay.html,menu-overlay.css,menu-overlay.protected.css,menu-overlay.js,menu-overlay-layout.mjs,svg-allowlist.mjs}
-// Edit the files under src/window/menu-overlay/ and keep this inlined copy in sync.
+// Regenerate: node scripts/gen_menu_overlay_page.mjs --write
+// Drift gate: node scripts/gen_menu_overlay_page.mjs --check
 #pragma once
 inline std::wstring BuildMenuOverlayHtmlFromSources() {
     return LR"MENUHTML(<!DOCTYPE html>
@@ -102,7 +103,7 @@ inline std::wstring BuildMenuOverlayHtmlFromSources() {
 // SVG allowlist predicates for the self-drawn menu icon sanitizer (DESIGN 8.4).
 // Pure logic only — no DOM. The overlay page inlines a browser build of these
 // predicates plus a DOMParser-based cloner; node:test imports this module
-// directly. Keep both paths in sync when editing either side.
+// directly. Keep both paths in sync via scripts/gen_menu_overlay_page.mjs.
 
 const ALLOWED_ELEMENTS = Object.freeze([
   'path', 'circle', 'rect', 'line', 'polyline', 'polygon', 'ellipse', 'g',
@@ -444,7 +445,7 @@ function mountSanitizedSvgIcon(host, viewBox, content) {
 
 // Pure layout / DOM-model helpers for the self-drawn menu overlay.
 // Node tests import this module directly. The overlay page inlines a stripped
-// browser build of this module — keep both copies in sync.
+// browser build via scripts/gen_menu_overlay_page.mjs — keep both paths in sync.
 
 const ZONE_IDS = Object.freeze(['top', 'playback', 'bottom']);
 

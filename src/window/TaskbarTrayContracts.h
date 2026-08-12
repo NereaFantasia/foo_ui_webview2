@@ -31,7 +31,7 @@ inline std::size_t ThumbnailToolbarSlotCount() {
     return 7;
 }
 
-// ── Rich tray menu items (webview self-drawn branch only) ────────────────
+// ---- Rich tray menu items (webview self-drawn branch only) ---------------
 // The webview overlay renders rich controls (now-playing card / inline star
 // rating / volume slider); the native TrackPopupMenu branch degrades them
 // (see TrayIcon::BuildMenu). These predicates keep both branches and the
@@ -77,7 +77,7 @@ inline bool RichTrayItemKeepsMenuOpen(const std::string& type) {
     return type == "rating" || type == "slider" || type == "segmented";
 }
 
-// Native degrade: a rating item becomes a "★1..N" submenu.
+// Native degrade: a rating item becomes a "1..N stars" submenu.
 inline int RatingNativeLevelCount() {
     return 5;
 }

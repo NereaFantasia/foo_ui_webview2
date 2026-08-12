@@ -1,10 +1,10 @@
 // ─────────────────────────────────────────────────────────────
 // GENERATED FILE — DO NOT EDIT
 // File: sdk/src/types/generated/params.ts
+// Source: docs/graph/auto/code-index.json
+// Emitter: scripts/gen_sdk_types.mjs --all
 // schema_version: auto-1.0.0
-// These declarations are derived from the C++ handler signatures and are
-// refreshed together with the component release. Edit the hand-written
-// facades under sdk/src/bridge/ instead.
+// Regenerate: npm run gen:types (in sdk/) or `node scripts/gen_sdk_types.mjs --all`
 // ─────────────────────────────────────────────────────────────
 
 /* eslint-disable */
@@ -661,39 +661,22 @@ export interface DiscoverySearchCommandsParams {
 }
 
 /**
- * Parameters for `dnd.getDropZones` (this API takes no parameters).
+ * Parameters for `dnd.getCapabilities` (shape unspecified — pass any JSON object).
  */
-export type DndGetDropZonesParams = Record<string, never>;
+export type DndGetCapabilitiesParams = JsonObject;
 
 /**
- * Parameters for `dnd.registerDropZone`.
+ * Parameters for `dnd.getPathsAsync`.
  */
-export interface DndRegisterDropZoneParams {
-    /** @default "" */
-    selector?: string;
-    /** @default "dnd:drop" */
-    event?: string;
-    accept?: string[];
+export interface DndGetPathsAsyncParams {
+    /** @default `std :: string ( )` */
+    sessionId?: string;
 }
 
 /**
- * Parameters for `dnd.startDrag`.
+ * Parameters for `dnd.startDrag` (this API takes no parameters).
  */
-export interface DndStartDragParams {
-    /** @default "text" */
-    type?: string;
-    /** @default "" */
-    data?: string;
-    paths?: unknown;
-}
-
-/**
- * Parameters for `dnd.unregisterDropZone`.
- */
-export interface DndUnregisterDropZoneParams {
-    /** @default "" */
-    zoneId?: string;
-}
+export type DndStartDragParams = Record<string, never>;
 
 /**
  * Parameters for `dsp.addDsp`.
@@ -1488,6 +1471,8 @@ export interface MenuGetMainMenuParams {
 export interface MenuRunContextCommandParams {
     /** @default "" */
     command?: string;
+    /** @default "" */
+    subGuid?: string;
 }
 
 /**
@@ -3669,10 +3654,9 @@ export interface ApiParamsMap {
     "discovery.getPreferencePages": DiscoveryGetPreferencePagesParams;
     "discovery.getUIElements": DiscoveryGetUIElementsParams;
     "discovery.searchCommands": DiscoverySearchCommandsParams;
-    "dnd.getDropZones": DndGetDropZonesParams;
-    "dnd.registerDropZone": DndRegisterDropZoneParams;
+    "dnd.getCapabilities": DndGetCapabilitiesParams;
+    "dnd.getPathsAsync": DndGetPathsAsyncParams;
     "dnd.startDrag": DndStartDragParams;
-    "dnd.unregisterDropZone": DndUnregisterDropZoneParams;
     "dsp.addDsp": DspAddDspParams;
     "dsp.applyPreset": DspApplyPresetParams;
     "dsp.getAvailable": DspGetAvailableParams;

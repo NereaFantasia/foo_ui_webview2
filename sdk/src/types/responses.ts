@@ -2322,23 +2322,53 @@ export interface SelectionGetViewingTrackResponse extends BaseResponse {
 }
 
 // ============================================================================
-// Drag-and-Drop (drop-zone listing)
+// Drag-and-Drop
 // ============================================================================
 
-/** Drop-zone descriptor returned by `dnd.getDropZones`. */
-export interface DropZone {
-    id: string;
-    selector: string;
-    /** Accept-types as registered by the frontend (media paths / file extensions). */
-    accept: string[];
-    /** Callback event name fired on drop (e.g. `'dnd:drop'`). */
-    event: string;
-}
+/** Why the real-path side channel is unavailable for the current window. */
+export type DndPathsUnavailableReason =
+    /** `RegisterDragDrop` failed on the host window. */
+    | 'register-failed'
+    /** The composition controller needed to forward drag events was missing. */
+    | 'forward-unavailable'
+    /** No descendant window carried an OLE drop target to chain into. */
+    | 'inner-target-not-found'
+    /** The revoke/register transaction that installs the chain failed. */
+    | 'chain-failed'
+    /** Chromium re-registered its own drop target over the host's. */
+    | 'displaced'
+    /** The document origin is not trusted with real filesystem paths. */
+    | 'origin-untrusted';
 
-/** Response shape returned by `dnd.getDropZones`. */
-export interface DndGetDropZonesResponse extends BaseResponse {
-    zones: DropZone[];
-    count: number;
+/**
+ * What the host's drag-drop integration can deliver to the current window,
+ * as resolved by `dnd.getCapabilities`.
+ *
+ * `html5` and `paths` are independent. A window can keep receiving standard
+ * HTML5 drag events while the real-path side channel is unavailable, because
+ * in standard controller mode Chromium handles those events itself.
+ */
+export interface DndCapabilities extends BaseResponse {
+    /**
+     * Page receives standard HTML5 drag events (`dragenter` / `dragover` /
+     * `drop`). When `false` the window has no drag-drop support at all and a
+     * theme should hide its drop affordances.
+     */
+    html5: boolean;
+    /**
+     * Real filesystem paths are obtainable through `getPathsAsync` /
+     * `getPaths` / the `dnd:*` events.
+     *
+     * Not fixed for the lifetime of the window: in standard controller mode
+     * Chromium can re-register its own drop target and displace the host's,
+     * which downgrades this to `false`. Keep HTML5 drop handling working when
+     * this is `false` and `html5` is `true`.
+     */
+    paths: boolean;
+    /** Which host mode was detected. Diagnostic only. */
+    hosting: 'visual' | 'standard';
+    /** Present only when `paths` is `false`. */
+    pathsUnavailableReason?: DndPathsUnavailableReason;
 }
 
 // ============================================================================
@@ -2904,8 +2934,8 @@ export type {
     ConfigSetActiveDspPresetResponse, ConfigSetAdvancedConfigValueResponse, ConfigSetCursorFollowPlaybackResponse, ConfigSetOutputBufferResponse, ConfigSetOutputDeviceResponse, ConfigSetPlaybackFollowCursorResponse,
     ConfigSetReplaygainModeResponse, ConfigSetResponse, ConfigShowLibraryPreferencesResponse, ConsoleErrorResponse, ConsoleLogResponse, ConsoleWarnResponse,
     CursorIsHiddenResponse, CursorSetHiddenResponse,
-    DialogConfirmResponse, DiscoveryExecuteContextMenuByPathResponse, DiscoveryExecuteContextMenuCommandResponse, DiscoveryExecuteMainMenuCommandResponse, DndRegisterDropZoneResponse, DndStartDragResponse,
-    DndUnregisterDropZoneResponse, DspAddDspResponse, DspApplyPresetResponse, DspGetAvailableResponse, DspGetChainResponse, DspGetPresetsResponse,
+    DialogConfirmResponse, DiscoveryExecuteContextMenuByPathResponse, DiscoveryExecuteContextMenuCommandResponse, DiscoveryExecuteMainMenuCommandResponse, DndGetCapabilitiesResponse, DndGetPathsAsyncResponse,
+    DndStartDragResponse, DspAddDspResponse, DspApplyPresetResponse, DspGetAvailableResponse, DspGetChainResponse, DspGetPresetsResponse,
     DspMoveDspResponse, DspRemoveDspResponse, DspSetChainResponse, EventEmitResponse, EventEmitToResponse, FileCopyResponse,
     FileDeleteResponse, FileExistsResponse, FileMkdirResponse, FileMoveResponse, FileReadResponse, FileRenameResponse,
     FileWriteResponse, HttpAbortResponse, HttpDeleteResponse, HttpDownloadResponse, HttpGetResponse, HttpHeadResponse,
