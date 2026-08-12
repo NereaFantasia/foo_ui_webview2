@@ -243,9 +243,8 @@ export async function populateCache(
 
     // Deliberately untyped: the queries are heterogeneous and each result
     // is narrowed via the local response interfaces (`StateResp`,
-    // `VolResp`, ...) at destructure-time. Letting TS infer the array
-    // type keeps the audit's `Promise<unknown>` text-probe clean while
-    // preserving call-site type precision.
+    // `VolResp`, ...) at destructure-time, which preserves call-site type
+    // precision without an unwieldy tuple annotation.
     const queries = [
         fb.invoke('playback.getState', {}),
         fb.invoke('playback.getVolume', {}),

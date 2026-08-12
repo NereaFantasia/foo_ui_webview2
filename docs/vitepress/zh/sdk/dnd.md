@@ -3,9 +3,6 @@
 `fb.dnd` 暴露宿主视角的外部文件拖放会话，让页面能取到 HTML5 `File` 对象刻意
 隐藏的真实文件系统路径。
 
-<!-- BEGIN AUTO-GENERATED SDK STUBS -->
-<!-- END AUTO-GENERATED SDK STUBS -->
-
 ## 工作原理
 
 Windows 把拖入的文件列表交给原生窗口而非页面，浏览器引擎中 `File.path` 恒为
@@ -58,6 +55,16 @@ fb.on('dnd:drop', (data) => {
     console.log(data.sessionId, data.paths, data.x, data.y);
 });
 ```
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `sessionId` | `string` | 关联同一次拖放手势的 `dnd:enter`、`dnd:leave` 与 `dnd:drop`。 |
+| `paths` | `string[]` | 绝对文件系统路径，顺序与 `DataTransfer.files` 一致；被扣留时为空数组。 |
+| `x`、`y` | `number` | 光标位置，客户区物理像素——除以 `devicePixelRatio` 得 CSS 像素。 |
+| `keyState` | `number` | drop 时刻的 Win32 `MK_*` 修饰键 / 鼠标键掩码。 |
+
+`dnd:enter` 携带 `sessionId`、`paths`、`hasFiles` 与同样的光标字段；
+`dnd:leave` 仅携带 `sessionId`。
 
 ### getPaths()
 

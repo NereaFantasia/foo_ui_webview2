@@ -2,7 +2,7 @@
 
 This section documents the public Bridge APIs registered by the component.
 
-Current dynamic inventory: **428** public methods across **40** namespaces (**6** internal `*.__*` endpoints excluded).
+Current dynamic inventory: **427** public methods across **40** namespaces (**6** internal `*.__*` endpoints excluded).
 
 ## Public namespaces
 

@@ -472,22 +472,22 @@ fb.on('myapp:lyricsUpdated', ({ payload, sourceWindowId }) => {
 
 ```javascript
 // Subscribe to playback state changes
-const unsubscribe = fb.on('playback.state', (data) => {
-    console.log('state:', data.state)
-    console.log('track:', data.track)
+const unsubscribe = fb.on('playback:stateChanged', (data) => {
+    console.log('state:', data.state)       // 'playing' | 'paused' | 'stopped'
     console.log('position:', data.position)
+    console.log('duration:', data.duration)
 })
 
-// Subscribe to playlist changes
-fb.on('playlist.changed', (data) => {
-    console.log('playlist:', data.playlistIndex)
+// Subscribe to playlist switching
+fb.on('playlist:activated', (data) => {
+    console.log('active playlist:', data.newIndex)
 })
 
 // Unsubscribe
 unsubscribe()
 
 // One-time subscription
-fb.once('playback.state', (data) => {
+fb.once('playback:stateChanged', (data) => {
     console.log('one-time event:', data)
 })
 ```

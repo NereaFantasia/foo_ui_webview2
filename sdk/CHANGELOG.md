@@ -7,14 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [1.12.0] - 2026-08-12
 
+> **Breaking changes**: the `dnd` drop-zone registry (`registerDropZone` /
+> `unregisterDropZone` / `getDropZones`) is removed and `dnd.startDrag` now
+> reports `NOT_SUPPORTED` instead of faking success — see *Removed* and
+> *Changed* below for migration. On the type level, `SmpMenuBuildState` gained
+> a required `family` field and `DiscoveryContextMenuCommand` is no longer an
+> alias of `DiscoveryMainMenuCommand`.
+
 ### Added
 
 - **Unified menu state vocabulary in `discovery`** — added the exported types
   `MenuNodeState`, `MenuNodeSource`, and `MenuUnaddressableReason`, and applied
   them across `DiscoveryMainMenuCommand`, `DiscoveryContextMenuCommand`,
   `DiscoveryContextMenuTreeNode`, and `DiscoverySearchResult`. Every enumerated
-  node now carries `enabled`, `checked`, `radioChecked`, `hidden`, `stateKnown`,
-  the raw `flags`, `source`, `executable`, and `unaddressableReason`.
+  node now carries the `MenuNodeState` fields — `enabled`, `checked`,
+  `radioChecked`, `hidden`, `stateKnown`, and the raw `flags`; command
+  enumerations and search results (not tree nodes) additionally carry `source`,
+  `executable`, and `unaddressableReason`.
   `stateKnown` is the field to check first on the context-menu side: the SDK
   evaluates display data against a track set, so with nothing selected or
   playing `enabled` / `checked` carry no observation and only `hidden` is
@@ -33,10 +42,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `DiscoveryServiceCounts` gained `contextMenuCommands`, and
   `DiscoveryGetAllServicesResponse` gained `contextMenuHiddenFiltered` and
   `stateKnown`.
-- `DiscoveryGetContextMenuCommandsResponse` and
-  `DiscoveryGetMainMenuCommandsResponse` declare the `includeHidden` /
+- `DiscoveryGetContextMenuCommandsResponse` declares the `includeHidden` /
   `hiddenFiltered` / `stateKnown` / `selectionCount` fields the host already
-  returns; `getContextMenuCommands()` now takes the `includeHidden` option.
+  returns, and `DiscoveryGetMainMenuCommandsResponse` declares `includeHidden`;
+  `getContextMenuCommands()` now takes the `includeHidden` option.
 - `executeContextMenuCommand()` declares `hidden`, `resolved`, `name`, and
   `force` on its response.
 - `menu.runContextCommand` accepts `subGuid`, addressing a dynamically
@@ -111,8 +120,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and re-emitted a page-side `dnd:drop` event carrying `File` metadata
   (`name` / `type` / `size`) — never a real filesystem path. Drop observation
   now happens natively in the host, which emits `dnd:enter` / `dnd:leave` /
-  `dnd:drop` to every window without registration; the `dnd:drop` payload is
-  redefined accordingly (`sessionId`, `paths`, `x`, `y`, `keyState`).
+  `dnd:drop` to the window under the cursor, no registration required; the
+  `dnd:drop` payload is redefined accordingly (`sessionId`, `paths`, `x`, `y`,
+  `keyState`).
   **Migration**: delete `registerDropZone` / `unregisterDropZone` /
   `getDropZones` calls and any `zoneId` bookkeeping; keep (or add) plain HTML5
   `dragover` / `drop` listeners for visuals and hit-testing; read real paths

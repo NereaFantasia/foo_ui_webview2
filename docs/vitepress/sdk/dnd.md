@@ -3,9 +3,6 @@
 `fb.dnd` exposes the host's view of an external file drag so a page can obtain
 real filesystem paths, which the HTML5 `File` object deliberately withholds.
 
-<!-- BEGIN AUTO-GENERATED SDK STUBS -->
-<!-- END AUTO-GENERATED SDK STUBS -->
-
 ## How it works
 
 Windows delivers a dropped file list to the native window, not to the page, and
@@ -62,6 +59,16 @@ fb.on('dnd:drop', (data) => {
     console.log(data.sessionId, data.paths, data.x, data.y);
 });
 ```
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `sessionId` | `string` | Correlates `dnd:enter`, `dnd:leave` and `dnd:drop` for one drag gesture. |
+| `paths` | `string[]` | Absolute filesystem paths, in `DataTransfer.files` order; empty when withheld. |
+| `x`, `y` | `number` | Cursor position in client-area physical pixels — divide by `devicePixelRatio` for CSS pixels. |
+| `keyState` | `number` | Win32 `MK_*` modifier / mouse-button mask at drop time. |
+
+`dnd:enter` carries `sessionId`, `paths`, `hasFiles` and the same cursor fields;
+`dnd:leave` carries only `sessionId`.
 
 ### getPaths()
 

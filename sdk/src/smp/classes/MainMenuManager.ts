@@ -101,9 +101,8 @@ export class MainMenuManager {
         // exception the caller cannot attribute.
         if (typeof mapped !== 'string' || mapped.length === 0) return false;
 
-        // Spelled out as literal keys rather than spread: the repository's
-        // static audit layer reads payload keys off the call site, and a spread
-        // makes the invocation opaque to it.
+        // Spelled out as literal keys rather than spread so the payload
+        // shape stays statically readable at the call site.
         const { command, subGuid } = splitMenuAddress(mapped);
         const res = (await inv('menu.runMainMenuCommand', {
             command,

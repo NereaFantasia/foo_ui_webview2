@@ -1,6 +1,6 @@
 # UI & Keyboard & DnD API
 
-界面交互、快捷键注册、拖放操作。共13 个 API。
+界面交互、快捷键注册、拖放操作。共12 个 API。
 
 ## UI API - 界面交互 (5 个 API)
 
@@ -76,7 +76,7 @@ fb2k.on('ui:menuItemClicked', (data) => {
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
 | `duration` | `integer` | 否 | 可选；默认 3000。 |
-| `message` | `string` | 否 | 可选。 |
+| `message` | `string` | 是 | 必填；Toast 文本。 |
 | `position` | `string` | 否 | 可选；默认 bottom-right。 |
 | `type` | `string` | 否 | 可选；默认 info。 |
 
@@ -168,9 +168,9 @@ document.addEventListener('contextmenu', (e) => {
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
-| `action` | `string` | 否 | 可选。 |
+| `action` | `string` | 是 | 必填。 |
 | `global` | `boolean` | 否 | 可选；默认 true。 |
-| `key` | `string` | 否 | 可选。 |
+| `key` | `string` | 是 | 必填。 |
 
 **返回值**: `{ "success": true, "id": 1 }`
 
@@ -199,8 +199,8 @@ fb2k.on('keyboard:hotkey', (data) => {
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
-| `action` | `string` | 否 | 可选。 |
-| `key` | `string` | 否 | 可选。 |
+| `action` | `string` | 是 | 必填。 |
+| `key` | `string` | 是 | 必填。 |
 
 **返回值**: `{ "success": true }`
 

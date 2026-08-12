@@ -13,7 +13,7 @@ Authority counts are taken from current `RegisterApi` path-security specs of the
 | `FileWrite` | 7 | General file writes (`file.*`) |
 | **Total** | **67** | **64 unique APIs** |
 
-## Five-level model
+## Six-level model
 
 | Level | Description | Validation summary |
 | --- | --- | --- |
@@ -22,7 +22,7 @@ Authority counts are taken from current `RegisterApi` path-security specs of the
 | `Write` | Write destinations under the strict write policy | Allowed only under foobar2000 profile / temp destinations enforced by PathSecurity |
 | `MediaRead` | Media metadata/content reads | Read rules first; media-library / playlist trust is a fallback used only when Read rejects the path |
 | `MediaWrite` | Media mutation (tags, lyrics, artwork, counts) | Own chain: protected-directory blacklist, then strict write destination, media-library / playlist membership, media-library watch folders, or a sidecar sharing the directory of a trusted audio file. A non-system drive alone does **not** grant write access |
-| `FileWrite` | General file writes (`file.*`) | Same chain as `MediaWrite` plus a non-system-drive allowance, without which `file.mkdir` and `file.write` could never create anything new |
+| `FileWrite` | General file writes (`file.*`) | Own chain, not a superset of `MediaWrite`: blacklist, then strict write destination, non-system drive (drive letter only, UNC excluded), or media-library / playlist membership — no watch-folder or sidecar steps. The non-system-drive allowance is what lets `file.mkdir` and `file.write` create anything new |
 
 ::: tip Level relationships
 `None < Read < Write` forms the ordinary filesystem channel.
