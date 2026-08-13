@@ -99,6 +99,9 @@
     <ClCompile Include="src\api\ArtworkRequestParser.cpp">
       <Filter>src\api</Filter>
     </ClCompile>
+    <ClCompile Include="src\utils\PlaylistFormatUtils.cpp">
+      <Filter>src\utils</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="src\pch.h">
@@ -126,6 +129,9 @@
       <Filter>src\window</Filter>
     </ClInclude>
     <ClInclude Include="src\utils\StringUtils.h">
+      <Filter>src\utils</Filter>
+    </ClInclude>
+    <ClInclude Include="src\utils\PlaylistFormatUtils.h">
       <Filter>src\utils</Filter>
     </ClInclude>
     <ClInclude Include="src\window\PopupWindow.h">

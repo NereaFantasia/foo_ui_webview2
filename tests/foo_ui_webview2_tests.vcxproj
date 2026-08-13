@@ -138,6 +138,7 @@
     <ClCompile Include="test_caller_context.cpp" />
     <ClCompile Include="test_playback_handlers.cpp" />
     <ClCompile Include="test_playlist_handlers.cpp" />
+    <ClCompile Include="test_playlist_format_utils.cpp" />
     <ClCompile Include="test_image_utils.cpp" />
     <ClCompile Include="test_metadata_write_subsong.cpp" />
     <ClCompile Include="test_taskbar_tray_contracts.cpp" />
@@ -174,6 +175,7 @@
     <ClInclude Include="..\src\webview\dnd\DndOriginPolicy.h" />
     <ClInclude Include="..\src\utils\MediaMembershipIndex.h" />
     <ClInclude Include="..\src\utils\PathCanonicalCache.h" />
+    <ClInclude Include="..\src\utils\PlaylistFormatUtils.h" />
   </ItemGroup>
 
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />

@@ -13,35 +13,9 @@
 #include "pch.h"
 #include "core/QueueManager.h"
 #include "api/BridgeCore.h"
+#include "utils/PlaylistFormatUtils.h"
 #include <algorithm>
 #include <cctype>
-
-//==============================================================================
-// 检测 URL 是否是 playlist wrapper(.pls/.m3u/.cue 等),需要展开成多个 handle。
-// 非 wrapper 的本地路径 / 流媒体直链可以直接 metadb::handle_create 同步处理,
-// 完全绕开 process_locations_async 的 fb2k 进度对话框。
-//==============================================================================
-static bool LooksLikePlaylistWrapper(const std::string& url) {
-    if (url.empty()) return false;
-    auto dotPos = url.find_last_of('.');
-    auto sepPos = url.find_last_of("/\\");
-    if (dotPos == std::string::npos) return false;
-    if (sepPos != std::string::npos && dotPos < sepPos) return false;
-
-    std::string ext = url.substr(dotPos);
-    auto q = ext.find_first_of("?#");
-    if (q != std::string::npos) ext = ext.substr(0, q);
-    std::transform(ext.begin(), ext.end(), ext.begin(),
-        [](unsigned char c) { return static_cast<char>(::tolower(c)); });
-
-    static const char* const kWrappers[] = {
-        ".pls", ".m3u", ".m3u8", ".asx", ".wpl", ".xspf", ".fpl", ".cue"
-    };
-    for (auto w : kWrappers) {
-        if (ext == w) return true;
-    }
-    return false;
-}
 
 //==============================================================================
 // Shadow Playlist Lock
@@ -1125,7 +1099,7 @@ void QueueManager::AddUrlToPlaylistAsync(const std::string& url, const std::stri
             // Fast path: 流媒体直链 / 本地文件路径直接 metadb::handle_create 同步生成 handle,
             // 完全绕开 process_locations_async 的 fb2k 进度对话框 (零弹窗、瞬间返回)。
             // Slow path: .pls / .m3u / .cue 等 wrapper 必须走 process_locations_async 展开。
-            if (!LooksLikePlaylistWrapper(urlCopy)) {
+            if (!PlaylistFormatUtils::LooksLikePlaylistWrapper(urlCopy)) {
                 auto mdb = metadb::get();
                 metadb_handle_ptr handle = mdb->handle_create(urlCopy.c_str(), 0);
                 if (handle.is_valid()) {

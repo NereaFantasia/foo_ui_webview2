@@ -6,6 +6,7 @@
 #include "core/WebViewContext.h"
 #include "interfaces/Fb2kPlaylistService.h"
 #include "interfaces/Fb2kPlaybackService.h"
+#include "utils/PlaylistFormatUtils.h"
 #include <atomic>
 #include <random>
 
@@ -33,31 +34,6 @@ struct ParsedPlayablePath {
     t_uint32 subsong = 0;
     bool hasSubsong = false;
 };
-
-// 检测 URL 是否是 playlist wrapper(.pls/.m3u/.cue 等),需要展开成多个 handle。
-// 非 wrapper 的本地路径 / 流媒体直链可以直接 metadb::handle_create 同步处理,
-// 完全绕开 process_locations_async 的 fb2k 进度对话框。
-static bool LooksLikePlaylistWrapper(const std::string& url) {
-    if (url.empty()) return false;
-    auto dotPos = url.find_last_of('.');
-    auto sepPos = url.find_last_of("/\\");
-    if (dotPos == std::string::npos) return false;
-    if (sepPos != std::string::npos && dotPos < sepPos) return false;
-
-    std::string ext = url.substr(dotPos);
-    auto q = ext.find_first_of("?#");
-    if (q != std::string::npos) ext = ext.substr(0, q);
-    std::transform(ext.begin(), ext.end(), ext.begin(),
-        [](unsigned char c) { return static_cast<char>(::tolower(c)); });
-
-    static const char* const kWrappers[] = {
-        ".pls", ".m3u", ".m3u8", ".asx", ".wpl", ".xspf", ".fpl", ".cue"
-    };
-    for (auto w : kWrappers) {
-        if (ext == w) return true;
-    }
-    return false;
-}
 
 // 解析 path|subsong:N，返回基础路径与 subsong 信息
 static ParsedPlayablePath ParsePlayablePath(const std::string& input) {
@@ -637,7 +613,7 @@ IPlaylistService::AsyncAddPathsInfo Fb2kPlaylistService::start_add_paths_async(
     pfc::list_t<const char*> slowList;
     for (size_t i = 0; i < urlList.get_count(); i++) {
         const char* url = urlList[i];
-        if (LooksLikePlaylistWrapper(url)) {
+        if (PlaylistFormatUtils::LooksLikePlaylistWrapper(url)) {
             slowStrings.add_item(pfc::string8(url));
         } else {
             metadb_handle_ptr handle = mdb->handle_create(url, 0);

@@ -231,6 +231,7 @@
     <ClCompile Include="src\utils\MediaMembershipIndex.cpp" />
     <ClCompile Include="src\utils\PathCanonicalCache.cpp" />
     <ClCompile Include="src\utils\PathExpansion.cpp" />
+    <ClCompile Include="src\utils\PlaylistFormatUtils.cpp" />
     <ClCompile Include="src\utils\I18n.cpp" />
     <ClCompile Include="src\api\PluginRegistry.cpp" />
     <ClCompile Include="src\api\FileApi.cpp" />
@@ -395,6 +396,7 @@
     <ClInclude Include="src\utils\StringUtils.h" />
     <ClInclude Include="src\utils\SubsongUtils.h" />
     <ClInclude Include="src\utils\PathExpansion.h" />
+    <ClInclude Include="src\utils\PlaylistFormatUtils.h" />
     <ClInclude Include="src\utils\WindowUtils.h" />
     <ClInclude Include="src\utils\WindowUtilsCore.h" />
   </ItemGroup>
