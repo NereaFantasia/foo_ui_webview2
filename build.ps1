@@ -74,6 +74,79 @@ if (-not (Test-Path $pchSource)) {
 Write-Host "✓ Precompiled headers OK" -ForegroundColor Green
 
 # ============================================================================
+# 3.5 依赖预检 (columns_ui-sdk + NuGet 包)
+# ============================================================================
+# lib/columns_ui-sdk 是第三方 SDK，不入库；干净检出时按 CI 同款方式获取。
+$cuiSdkHeader = Join-Path $PSScriptRoot "lib\columns_ui-sdk\ui_extension.h"
+if (-not (Test-Path $cuiSdkHeader)) {
+    Write-Host "`n📥 lib\columns_ui-sdk missing - cloning (same as CI)..." -ForegroundColor Yellow
+    git clone --depth=1 https://github.com/reupen/columns_ui-sdk.git (Join-Path $PSScriptRoot "lib\columns_ui-sdk")
+    if ($LASTEXITCODE -eq 0 -and (Test-Path $cuiSdkHeader)) {
+        # 该 SDK 的 include 以兄弟目录布局引用 pfc/foobar2000，本仓库位于 lib/foobar2000_sdk 下，需改写
+        (Get-Content $cuiSdkHeader) `
+            -replace '\.\./pfc/', '../foobar2000_sdk/pfc/' `
+            -replace '\.\./foobar2000/', '../foobar2000_sdk/foobar2000/' |
+            Set-Content $cuiSdkHeader
+        Write-Host "✓ columns_ui-sdk ready (include paths patched)" -ForegroundColor Green
+    } else {
+        Write-Host "❌ Failed to clone columns_ui-sdk. Fetch it manually:" -ForegroundColor Red
+        Write-Host '     git clone --depth=1 https://github.com/reupen/columns_ui-sdk.git lib/columns_ui-sdk' -ForegroundColor White
+        Write-Host '     (Get-Content lib/columns_ui-sdk/ui_extension.h) `' -ForegroundColor White
+        Write-Host "         -replace '\.\./pfc/', '../foobar2000_sdk/pfc/' ``" -ForegroundColor White
+        Write-Host "         -replace '\.\./foobar2000/', '../foobar2000_sdk/foobar2000/' |" -ForegroundColor White
+        Write-Host '         Set-Content lib/columns_ui-sdk/ui_extension.h' -ForegroundColor White
+        exit 1
+    }
+}
+
+# NuGet 包检查：解析根与 tests 的 packages.config，缺失时自动恢复。
+$missingPkgs = @()
+foreach ($cfgRel in @("packages.config", "tests\packages.config")) {
+    $cfgPath = Join-Path $PSScriptRoot $cfgRel
+    if (-not (Test-Path $cfgPath)) { continue }
+    [xml]$cfgXml = Get-Content $cfgPath
+    foreach ($p in $cfgXml.packages.package) {
+        $pkgDir = Join-Path $PSScriptRoot "packages\$($p.id).$($p.version)"
+        if (-not (Test-Path $pkgDir)) {
+            $missingPkgs += [pscustomobject]@{ Id = $p.id; Version = $p.version; Dir = $pkgDir }
+        }
+    }
+}
+
+if ($missingPkgs.Count -gt 0) {
+    Write-Host "`n📦 NuGet packages missing ($($missingPkgs.Count)) - restoring..." -ForegroundColor Yellow
+    $nugetCmd = Get-Command nuget -ErrorAction SilentlyContinue
+    if ($nugetCmd) {
+        & $nugetCmd.Source restore $sln
+    } else {
+        # msbuild 的 restore target 只覆盖主工程的 packages.config
+        & $msbuild $sln /t:Restore /p:RestorePackagesConfig=true /v:minimal
+    }
+
+    # 复查；仍缺失的包（如 tests 的 googletest）从 nuget.org 直接下载解压
+    foreach ($pkg in $missingPkgs) {
+        if (Test-Path $pkg.Dir) { continue }
+        Write-Host "  ⬇ Downloading $($pkg.Id) $($pkg.Version) from nuget.org..." -ForegroundColor Yellow
+        $tmpNupkg = Join-Path ([System.IO.Path]::GetTempPath()) "$($pkg.Id).$($pkg.Version).nupkg.zip"
+        try {
+            Invoke-WebRequest "https://www.nuget.org/api/v2/package/$($pkg.Id)/$($pkg.Version)" -OutFile $tmpNupkg -UseBasicParsing
+            Expand-Archive $tmpNupkg -DestinationPath $pkg.Dir -Force
+            Remove-Item $tmpNupkg -ErrorAction SilentlyContinue
+        } catch {
+            Write-Host "❌ Failed to download $($pkg.Id): $_" -ForegroundColor Red
+        }
+    }
+
+    $stillMissing = @($missingPkgs | Where-Object { -not (Test-Path $_.Dir) })
+    if ($stillMissing.Count -gt 0) {
+        Write-Host "❌ NuGet restore incomplete: $(($stillMissing | ForEach-Object { $_.Id }) -join ', ')" -ForegroundColor Red
+        Write-Host "   Install nuget.exe and run: nuget restore foo_ui_webview2.sln" -ForegroundColor Yellow
+        exit 1
+    }
+    Write-Host "✓ NuGet packages restored" -ForegroundColor Green
+}
+
+# ============================================================================
 # 4. 清理 (如果需要)
 # ============================================================================
 if ($Clean -or $Rebuild) {

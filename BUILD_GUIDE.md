@@ -25,9 +25,20 @@
 - PowerShell 5.1+ (Windows 自带)
 
 ### 依赖项
-项目使用 NuGet 管理依赖，首次构建会自动还原：
-- Microsoft.Web.WebView2 (1.0.2903.40+)
+项目使用 NuGet 管理依赖，`build.ps1` 构建前会自动检查并还原缺失的包（优先 `nuget restore`，无 nuget.exe 时回退 msbuild restore + nuget.org 直接下载）：
+- Microsoft.Web.WebView2 (1.0.3719.77)
 - Microsoft.Windows.ImplementationLibrary (1.0.240803.1)
+- Microsoft.googletest.v140.windesktop.msvcstl.static.rt-dyn (1.8.1.7，单元测试用)
+
+另需第三方 **Columns UI SDK**（`lib/columns_ui-sdk`，不入库）。`build.ps1` 检测到缺失时会自动克隆并修正 include 路径；若网络受限需手动获取：
+
+```powershell
+git clone --depth=1 https://github.com/reupen/columns_ui-sdk.git lib/columns_ui-sdk
+(Get-Content lib/columns_ui-sdk/ui_extension.h) `
+    -replace '\.\./pfc/', '../foobar2000_sdk/pfc/' `
+    -replace '\.\./foobar2000/', '../foobar2000_sdk/foobar2000/' |
+    Set-Content lib/columns_ui-sdk/ui_extension.h
+```
 
 ## 预编译头配置
 
