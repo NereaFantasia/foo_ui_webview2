@@ -1,6 +1,6 @@
 # Changelog
 
-## v1.12.0 (2026-08-12)
+## v1.12.0 (2026-08-13)
 
 ::: warning Breaking changes in this release
 Four changes may require code edits:
@@ -29,6 +29,13 @@ The release stays on a minor version because the project's version axis has carr
 - Name and path resolution matches by exact segment. An ambiguous name is reported rather than resolved: on a localized host three separate commands can share one label, so picking the first match would silently run the wrong command. Address by `guid` to be unambiguous — it is the only form stable across hosts, since a localized build reports localized labels.
 - `menu.runMainMenuCommand` accepts `subGuid` to address a dynamic child command, paired with its owning command GUID.
 - A leaf that could not be resolved to an address now says so, carrying `executable: false` and `unaddressableReason` rather than appearing as an ordinary command the caller cannot act on. `available` on flat enumeration results is read from live host state instead of being always `true`, so a disabled command is no longer indistinguishable from an enabled one.
+
+### Self-drawn menu
+
+- **Per-call presentation options.** `menu.show` / `menu.popup` take a third `MenuPopupOptions` argument, and keys the caller omits are not sent, so the host keeps its own defaults: `windowModel` (`'fullscreen'` default, or `'contentSized'` — draws the root and its first-level submenu as separate compact windows measured to their content, so each panel carries the real DWM backdrop material and the system window shadow; the recommended model for a context menu), `css` (at most 256 KiB) / `cssReplace` for style takeover, `backdrop` (`'acrylic'` default, `'mica'`, `'mica-alt'`, `'none'`) with `backdropDarkMode` (default `true`), and `closeAnimationMs` (default `0`, clamped to `0..1000`) for an exit fade.
+- **Rich items.** `MenuPopupItem.type` gains `'nowplaying'`, `'rating'`, `'slider'`, and `'segmented'` along with the fields they use (`value`, `min` / `max` / `orientation`, `segments`, and `cover` / `title` / `subtitle`), plus `iconSvg` for an inline monochrome icon on any row. Icons go through the runtime's allowlist sanitizer; an illegal or oversized one is dropped without failing the row.
+- **New event `menu:valueChanged`** reports a rating, slider, or segmented change as `{ menuId, itemId, value }` and keeps the menu open, while ordinary rows still report through `menu:select` and close it. Because `menu.popup` resolves only on selection or dismissal, subscribe to this event separately when a menu contains value controls.
+- **Fixed** — focus-loss dismissal is now reliable, and pooled submenu windows no longer show blank content in the `contentSized` model.
 
 ### Discovery menus
 
@@ -65,6 +72,10 @@ The release stays on a minor version because the project's version axis has carr
 
 - The plugin's native UI now follows foobar2000's presentation language instead of the Windows UI language, so a localized foobar2000 no longer shows an English preferences page. The language is detected from the host's own strings and falls back to the Windows UI language when detection is not possible.
 - Added the *Interface Language* preference: *Auto (follow foobar2000)* (default), *English*, or *中文*. Newly opened dialogs apply the change immediately; menu titles and panel descriptions are registered with the host once and need a foobar2000 restart to refresh.
+
+### Playlists
+
+- **Playlist files from third-party components now expand correctly.** Adding a playlist URL or file through the API used a hardcoded list of eight wrapper extensions (`.pls` / `.m3u` / `.m3u8` / `.asx` / `.wpl` / `.xspf` / `.fpl` / `.cue`); a playlist format registered by another installed component was treated as a single track. The host's playlist-loader registry is now consulted at runtime, so any format the host can load is expanded.
 
 ### Performance and stability
 

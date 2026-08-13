@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.12.0] - 2026-08-13
+
+> **Breaking changes**: the `dnd` drop-zone registry (`registerDropZone` /
+> `unregisterDropZone` / `getDropZones`) is removed and `dnd.startDrag` now
+> reports `NOT_SUPPORTED` instead of faking success — see *Removed* and
+> *Changed* below for migration. On the type level, `SmpMenuBuildState` gained
+> a required `family` field and `DiscoveryContextMenuCommand` is no longer an
+> alias of `DiscoveryMainMenuCommand`.
+
 ### Added
 
 - **Per-call presentation options for the self-drawn menu** — `menu.show` and
@@ -39,18 +48,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   while ordinary rows still report through `menu:select` and close it. Because
   `menu.popup` resolves only on selection or dismissal, subscribe to this event
   separately when a menu contains value controls.
-
-## [1.12.0] - 2026-08-12
-
-> **Breaking changes**: the `dnd` drop-zone registry (`registerDropZone` /
-> `unregisterDropZone` / `getDropZones`) is removed and `dnd.startDrag` now
-> reports `NOT_SUPPORTED` instead of faking success — see *Removed* and
-> *Changed* below for migration. On the type level, `SmpMenuBuildState` gained
-> a required `family` field and `DiscoveryContextMenuCommand` is no longer an
-> alias of `DiscoveryMainMenuCommand`.
-
-### Added
-
 - **Unified menu state vocabulary in `discovery`** — added the exported types
   `MenuNodeState`, `MenuNodeSource`, and `MenuUnaddressableReason`, and applied
   them across `DiscoveryMainMenuCommand`, `DiscoveryContextMenuCommand`,

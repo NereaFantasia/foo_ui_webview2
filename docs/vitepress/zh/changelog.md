@@ -1,6 +1,6 @@
 # 更新日志
 
-## v1.12.0 (2026-08-12)
+## v1.12.0 (2026-08-13)
 
 ::: warning 本版的破坏性变更
 以下四项可能需要修改代码：
@@ -29,6 +29,13 @@
 - 名称与路径按段精确匹配。名字有歧义时上报而不替调用方决定：汉化版宿主上可能有三条不同命令共用同一标签，取首个匹配会静默执行错误的命令。要无歧义请用 `guid` 寻址——它是唯一跨宿主稳定的形式，因为汉化版上报的是本地化标签。
 - `menu.runMainMenuCommand` 新增 `subGuid` 参数，与所属命令 GUID 搭配用于寻址动态子命令。
 - 无法解析出地址的叶子会明示这一点，带 `executable: false` 与 `unaddressableReason`，而不再伪装成一条调用方却无法执行的普通命令。扁平列举结果的 `available` 改为实读宿主状态，不再恒为 `true`，禁用命令不会再与启用命令无从分辨。
+
+### 自绘菜单
+
+- **逐调用呈现选项。** `menu.show` / `menu.popup` 新增第三个 `MenuPopupOptions` 参数，调用方未传的键不会发送，宿主保留自身默认值：`windowModel`（默认 `'fullscreen'`，可选 `'contentSized'`——把根菜单与一级子菜单绘制为按内容测量的独立紧凑窗口，每块面板各自承载真实 DWM 背景材质与系统窗口阴影；右键菜单推荐用此模型）；`css`（至多 256 KiB）/ `cssReplace` 样式接管；`backdrop`（默认 `'acrylic'`，可选 `'mica'` / `'mica-alt'` / `'none'`）与 `backdropDarkMode`（默认 `true`）；`closeAnimationMs`（默认 `0`，钳制到 `0..1000`）退出淡出时长。
+- **富条目。** `MenuPopupItem.type` 新增 `'nowplaying'`、`'rating'`、`'slider'`、`'segmented'` 及其配套字段（`value`、`min` / `max` / `orientation`、`segments`、`cover` / `title` / `subtitle`），任意行可用 `iconSvg` 内联单色图标。图标经运行时允许列表消毒；非法或超限的图标被丢弃，不会使该行失败。
+- **新事件 `menu:valueChanged`** 以 `{ menuId, itemId, value }` 上报评分、滑杆或分段控件的变化并保持菜单开启；普通行仍经 `menu:select` 上报并关闭菜单。`menu.popup` 只在选择或取消时 resolve，菜单含值控件时请单独订阅此事件。
+- **修复** —— 失焦关闭现在可靠生效；`contentSized` 模型下池化子菜单窗口不再出现空白内容。
 
 ### Discovery 菜单
 
@@ -65,6 +72,10 @@
 
 - 插件原生界面改为跟随 foobar2000 的呈现语言，不再跟随 Windows 界面语言，因此汉化版 foobar2000 不会再显示英文的首选项页面。语言由宿主自身的字符串探测得出，探测不可行时回退到 Windows 界面语言。
 - 新增*界面语言*首选项：*自动（跟随 foobar2000）*（默认）、*English* 或 *中文*。新打开的对话框立即生效；菜单标题与面板描述只向宿主注册一次，需重启 foobar2000 才会刷新。
+
+### 播放列表
+
+- **第三方组件的播放列表文件现在能正确展开。** 通过 API 添加播放列表 URL 或文件时，此前用硬编码的 8 种包装扩展名（`.pls` / `.m3u` / `.m3u8` / `.asx` / `.wpl` / `.xspf` / `.fpl` / `.cue`）判断；其他已安装组件注册的播放列表格式会被当作单条曲目。现在运行时查询宿主的 playlist_loader 注册表，宿主能加载的格式都会被展开。
 
 ### 性能与稳定性
 
