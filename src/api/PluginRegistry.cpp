@@ -57,8 +57,9 @@ bool PluginRegistry::RegisterPlugin(
     }
     
     // 验证命名空间格式（只允许小写字母、数字、下划线）
+    // unsigned char 转型：外部插件传入非 ASCII 字节时 isalnum(负值) 是 UB（Debug CRT 断言）
     for (char c : pluginNamespace) {
-        if (!std::isalnum(c) && c != '_') {
+        if (!std::isalnum(static_cast<unsigned char>(c)) && c != '_') {
             console::printf("[PluginRegistry] Error: Invalid namespace format '%s'", pluginNamespace.c_str());
             return false;
         }

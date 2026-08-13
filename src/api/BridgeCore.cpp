@@ -1,4 +1,5 @@
 ﻿#include "pch.h"
+#include "core/WebViewContext.h"
 #include "api/BridgeCore.h"
 #include "api/ErrorEnvelope.h"
 #include "utils/PathSecurity.h"
@@ -236,6 +237,13 @@ void BridgeCore::SendResponse(const std::string& id, const json& result, WebView
     
     // 如果指定了 target，直接发送到该 WebView；否则使用默认的 webView_
     if (target) {
+        // 存活校验：target 是 HandleMessage 时捕获的裸指针，经主线程回调延迟执行。
+        // WebView 崩溃重建（browserProcessExited）会在请求与响应之间销毁旧 host，
+        // 悬垂指针解引用曾致 AV（failure_00000195）。目标页面已死，响应丢弃即可。
+        if (!WebViewContext::GetInstance().IsLiveHost(target)) {
+            console::printf("[Bridge] SendResponse dropped: target WebViewHost no longer live (id=%s)", id.c_str());
+            return;
+        }
         std::string jsonStr = response.dump();
         std::wstring wideStr = Utf8ToWide(jsonStr);
         target->PostMessage(wideStr);
@@ -269,6 +277,11 @@ void BridgeCore::SendError(const std::string& id, int /*numericCode*/, const std
     
     // 如果指定了 target，直接发送到该 WebView；否则使用默认的 webView_
     if (target) {
+        // 与 SendResponse 同一守卫：目标 host 已随 WebView 重建销毁时丢弃错误响应。
+        if (!WebViewContext::GetInstance().IsLiveHost(target)) {
+            console::printf("[Bridge] SendError dropped: target WebViewHost no longer live (id=%s)", id.c_str());
+            return;
+        }
         std::string jsonStr = response.dump();
         std::wstring wideStr = Utf8ToWide(jsonStr);
         target->PostMessage(wideStr);

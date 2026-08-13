@@ -55,6 +55,11 @@ public:
     
     // 根据 HWND 获取 WebViewHost
     WebViewHost* GetWebViewHost(HWND hwnd) const;
+
+    // 指针存活校验：host 是否仍是当前已注册实例之一。
+    // 供延迟执行的响应路径（BridgeCore::SendResponse/SendError 捕获的裸指针）
+    // 在解引用前校验——WebView 崩溃重建会销毁旧 host，在途响应必须丢弃而非回投。
+    bool IsLiveHost(const WebViewHost* host) const;
     
     // 获取主实例的 BridgeCore (用于向后兼容)
     // 返回第一个注册的实例，如果没有则返回 nullptr

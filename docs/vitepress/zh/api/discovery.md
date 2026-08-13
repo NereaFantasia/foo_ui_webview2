@@ -106,8 +106,9 @@ console.log(`共 ${summary.totalServices} 个服务`);
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
 | `expandDynamic` | `boolean` | 否 | 默认 `true`。设为 `false` 仅返回静态注册表条目。 |
+| `includeHidden` | `boolean` | 否 | 默认 `false`。设为 `true` 时把宿主不会显示的隐藏条目也列出。 |
 
-**返回值**: `{ "success": true, "commands": [{ "name": "...", "description": "...", "guid": "{...}", "parentGuid": "{...}", "index": 0, "path": "...", "isDynamic": false }], "count": 156, "dynamicCount": 12, "expandDynamic": true }`
+**返回值**: `{ "success": true, "commands": [{ "name": "...", "description": "...", "guid": "{...}", "parentGuid": "{...}", "index": 0, "path": "...", "isDynamic": false }], "count": 156, "dynamicCount": 12, "expandDynamic": true, "includeHidden": false }`
 
 动态展开出来的条目额外带 `subGuid`、`isDynamic: true`、`path`（如 `ESLyric/Search lyric`）以及 `flags`（`mainmenu_commands` 原始显示位掩码：`1` 禁用、`2` 勾选、`4` 单选勾选、`8` 默认隐藏）。父命令槽位为 `isDynamicParent: true`，仅作容器、本身不可执行。执行动态子命令必须把 `subGuid` 一起传给 `discovery.executeMainMenuCommand`。
 

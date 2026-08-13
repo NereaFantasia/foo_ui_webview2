@@ -156,8 +156,9 @@ Dynamic submenus registered through `mainmenu_commands_v2` (used by SMP-era comp
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `expandDynamic` | `boolean` | No | Defaults to `true`. Set `false` for the static registry only. |
+| `includeHidden` | `boolean` | No | Default `false`. Set to `true` to also list entries the host would not show. |
 
-**Returns**: `{"commands":"...","count":"...","dynamicCount":"...","expandDynamic":true,"success":true}`
+**Returns**: `{"commands":"...","count":"...","dynamicCount":"...","expandDynamic":true,"includeHidden":false,"success":true}`
 
 Every entry carries `path` (slash-separated label path) plus `isDynamic` and `isDynamicParent`. A parent slot has `isDynamicParent: true` and is only a container — it is not executable on its own. Entries expanded from the subtree carry `isDynamic: true`, `subGuid`, and `flags` (the raw `mainmenu_commands` display bitmask: `1` disabled, `2` checked, `4` radio-checked, `8` default-hidden). Executing one requires passing its `subGuid` to `discovery.executeMainMenuCommand`.
 

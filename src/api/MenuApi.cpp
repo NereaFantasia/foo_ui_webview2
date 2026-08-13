@@ -1648,7 +1648,9 @@ json MenuShowNativePopup(const json& params) {
 }
 
 // ---- Self-Drawn Menu APIs (自绘菜单引擎) ----
-// menu.show {items, x?, y?}: 在屏幕坐标(缺省取光标)显示自绘菜单，返回 menuId。
+// menu.show {items, x?, y?, windowModel?, css?, cssReplace?, backdrop?,
+//            backdropDarkMode?, closeAnimationMs?}:
+// 在屏幕坐标(缺省取光标)显示自绘菜单，返回 menuId。全部可选参数缺省即现状行为。
 json MenuShow(const json& params) {
     json items = (params.contains("items") && params["items"].is_array()) ? params["items"] : json::array();
     // Resource preflight before opening the overlay (DESIGN 8.5): strip single
@@ -1661,6 +1663,44 @@ json MenuShow(const json& params) {
                                       ApiErrorCode::INVALID_PARAMS,
                                       menu_limits::DetailsJson(breach));
     }
+
+    // 引擎选项透传：逐键类型检查，类型不符即忽略该键并保留默认值（默认值 = 现状行为）。
+    MenuShowOptions opts{};
+    if (params.contains("windowModel") && params["windowModel"].is_string()) {
+        // 只有精确 "contentSized" 才切换到内容尺寸窗；未知串回落全屏覆盖面。
+        opts.windowModel = (params["windowModel"].get<std::string>() == "contentSized")
+            ? MenuWindowModel::ContentSized : MenuWindowModel::FullscreenOverlay;
+    }
+    if (params.contains("css") && params["css"].is_string()) {
+        opts.css = params["css"].get<std::string>();
+    }
+    if (params.contains("cssReplace") && params["cssReplace"].is_boolean()) {
+        opts.cssReplace = params["cssReplace"].get<bool>();
+    }
+    if (params.contains("backdrop") && params["backdrop"].is_string()) {
+        auto b = params["backdrop"].get<std::string>();
+        if (b == "acrylic" || b == "mica" || b == "mica-alt" || b == "none") opts.backdrop = b;
+    }
+    if (params.contains("backdropDarkMode") && params["backdropDarkMode"].is_boolean()) {
+        opts.backdropDarkMode = params["backdropDarkMode"].get<bool>();
+    }
+    if (params.contains("closeAnimationMs") && params["closeAnimationMs"].is_number_integer()) {
+        int v = params["closeAnimationMs"].get<int>();
+        opts.closeAnimationMs = v < 0 ? 0 : (v > 1000 ? 1000 : v);
+    }
+    // css 与 items 同属渲染器资源，同样必须在打开 overlay 之前预检（与 tray 共用帮助函数）。
+    auto cssBreach = menu_limits::ValidateCssBytes(opts.css);
+    if (!cssBreach.ok) {
+        return ApiEnvelope::MakeError("menu resource limit exceeded",
+                                      ApiErrorCode::INVALID_PARAMS,
+                                      menu_limits::DetailsJson(cssBreach));
+    }
+    // 锚定策略由窗口模型推导，不作为公共参数：内容尺寸窗是标准右键菜单语义（贴光标向下
+    // 展开），全屏覆盖面保持 bottomUp 默认（其定位由渲染器在客户区内完成，此值不参与）。
+    if (opts.windowModel == MenuWindowModel::ContentSized) {
+        opts.anchorPolicy = "cursor";
+    }
+
     int x = params.value("x", -1);
     int y = params.value("y", -1);
     if (x < 0 || y < 0) {
@@ -1669,8 +1709,8 @@ json MenuShow(const json& params) {
         if (x < 0) x = pt.x;
         if (y < 0) y = pt.y;
     }
-    // menu.show 走 FullscreenOverlay（默认）；tray 自绘菜单的 ContentSized 由 tray owner-mode 驱动。
-    std::string menuId = MenuOverlayHost::GetInstance().Show(items, x, y);
+    // 不传 sink = 非 owner-mode：select / dismiss / valueChanged 走公共 menu:* 事件。
+    std::string menuId = MenuOverlayHost::GetInstance().Show(items, x, y, nullptr, nullptr, opts);
     if (menuId.empty()) {
         return {{"success", false}, {"error", "failed to show menu overlay"}};
     }

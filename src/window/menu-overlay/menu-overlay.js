@@ -8,9 +8,14 @@
     var submenuPanelSequence = 0;        // monotonic root→host panel state reports
     var submenuPanelOpen = false;        // host confirms that the child HWND is visible
     var uiLocale = "en";                 // host UI language for aria text; refreshed per render
+    var hoverIntentTimer = 0;            // 单一 pending 层级变更计时器（高亮不走它）
+    var hoverIntentTarget = null;        // pending 目标 {depth,ridx}：供本行 mouseleave 精确取消
+    var hoverIntentGeneration = 0;       // render/hide/cleanup 递增：作废上一代菜单的延迟回调
 
     // Clear editor/focus pending state without stealing focus. Used by dismiss/select/hide/render.
+    // 同时作废 pending 悬停意图与其代际（render / hide / select / dismiss 共用此入口）。
     function cleanupMenuInteraction(){
+      invalidateHoverIntent();
       exitEditor(false);
       interactionMode="navigation";
       editorCtx=null;
@@ -143,6 +148,35 @@
       if(depth<=1 && cur && cur.windowModel==="contentSized") reportSubmenuPanel(null);
     }
 
+    // ---- 悬停意图（对齐 Windows MenuShowDelay）：行高亮立即，层级变更延迟 ----
+    // 代际 = menuId + render 代际计数；延迟回调触发时代际不匹配即作废，防止上一代菜单的回调打进新菜单。
+    function hoverIntentToken(){ return ((cur&&cur.menuId)||"")+"#"+hoverIntentGeneration; }
+    function hoverIntentDelayMs(){ return resolveMenuShowDelayMs(cur); }   // 宿主缺 menuShowDelayMs（旧宿主）时回退 400
+    function cancelHoverIntent(){ if(hoverIntentTimer){ try{ clearTimeout(hoverIntentTimer); }catch(e){} } hoverIntentTimer=0; hoverIntentTarget=null; }
+    function cancelHoverIntentFor(depth, ridx){ if(hoverIntentTarget && hoverIntentTarget.depth===depth && hoverIntentTarget.ridx===ridx) cancelHoverIntent(); }
+    function invalidateHoverIntent(){ cancelHoverIntent(); hoverIntentGeneration++; }
+    function runHoverIntent(depth, ridx, hasSub){
+      if(interactionMode==="editor") return;
+      var L=layers[depth]; if(!L||!L.rows[ridx]) return;   // 行已随重建消失
+      closeLayersFrom(depth+1);
+      if(hasSub) openSub(depth, ridx);
+    }
+    function applyHoverIntent(depth, ridx, hasSub){
+      var child=layers[depth+1];
+      var openParent=(child&&child.parentRowIdx!=null)?child.parentRowIdx:-1;
+      var plan=evaluateHoverIntent({openParentRowIdx:openParent, hoverRowIdx:ridx, hoverHasSub:!!hasSub, delayMs:hoverIntentDelayMs()});
+      cancelHoverIntent();
+      if(plan.action!=="schedule") return;   // cancel=回到已开子菜单的父行（幂等不重开）；none=无层可关且本行无子菜单
+      if(plan.delayMs<=0){ runHoverIntent(depth, ridx, hasSub); return; }   // MenuShowDelay=0 保持即时
+      var token=hoverIntentToken();
+      hoverIntentTarget={depth:depth, ridx:ridx};
+      hoverIntentTimer=setTimeout(function(){
+        hoverIntentTimer=0; hoverIntentTarget=null;
+        if(token!==hoverIntentToken()) return;   // 代际防护
+        runHoverIntent(depth, ridx, hasSub);
+      }, plan.delayMs);
+    }
+
     function enterEditor(depth, rowIdx){
       var L=layers[depth]; if(!L||!L.rows[rowIdx]) return;
       var row=L.rows[rowIdx];
@@ -204,7 +238,8 @@
       var ridx=L.rows.length;
       var row={el:d, item:it, navigable:en, hasSub:false, kind:"nowplaying", zone:zone};
       L.rows.push(row);
-      d.addEventListener("mouseenter", function(){ if(interactionMode==="editor") return; closeLayersFrom(depth+1); setActiveFromPointer(depth, ridx); });
+      d.addEventListener("mouseenter", function(){ if(interactionMode==="editor") return; setActiveFromPointer(depth, ridx); applyHoverIntent(depth, ridx, false); });
+      d.addEventListener("mouseleave", function(){ cancelHoverIntentFor(depth, ridx); });
       d.addEventListener("click", function(){ if(row.navigable) select(it._token); });   // 点击=普通项：回传 {id} + 关闭
     }
 
@@ -266,7 +301,8 @@
           return false;
         }};
       L.rows.push(row);
-      d.addEventListener("mouseenter", function(){ if(interactionMode==="editor") return; closeLayersFrom(depth+1); setActiveFromPointer(depth, ridx); });
+      d.addEventListener("mouseenter", function(){ if(interactionMode==="editor") return; setActiveFromPointer(depth, ridx); applyHoverIntent(depth, ridx, false); });
+      d.addEventListener("mouseleave", function(){ cancelHoverIntentFor(depth, ridx); });
     }
 
     function buildSlider(menuEl, L, it, en, depth, zone){
@@ -362,7 +398,8 @@
           return false;
         }};
       L.rows.push(row);
-      d.addEventListener("mouseenter", function(){ if(interactionMode==="editor") return; closeLayersFrom(depth+1); setActiveFromPointer(depth, ridx); });
+      d.addEventListener("mouseenter", function(){ if(interactionMode==="editor") return; setActiveFromPointer(depth, ridx); applyHoverIntent(depth, ridx, false); });
+      d.addEventListener("mouseleave", function(){ cancelHoverIntentFor(depth, ridx); });
     }
 
     // segmented 分段单选：读 it.segments（互斥选项），it.value=选中段索引。点启用段→paint+valueChange（走现有 value 通道，不关菜单）；
@@ -458,7 +495,8 @@
           return false;
         }};
       L.rows.push(row);
-      d.addEventListener("mouseenter", function(){ if(interactionMode==="editor") return; closeLayersFrom(depth+1); setActiveFromPointer(depth, ridx); });
+      d.addEventListener("mouseenter", function(){ if(interactionMode==="editor") return; setActiveFromPointer(depth, ridx); applyHoverIntent(depth, ridx, false); });
+      d.addEventListener("mouseleave", function(){ cancelHoverIntentFor(depth, ridx); });
     }
 
     function appendItems(menuEl, L, items, depth, zone, layerHasIcon){
@@ -502,13 +540,13 @@
         (function(r, ridx){
           r.el.addEventListener("mouseenter", function(){
             if(interactionMode==="editor") return;
-            if(r.navigable && r.hasSub && layers[depth+1] && layers[depth+1].parentRowIdx===ridx){ setActiveFromPointer(depth, ridx); return; }   // 幂等：本项子菜单已开则不重开（bug2 防抖）
-            closeLayersFrom(depth+1);
-            setActiveFromPointer(depth, ridx);
-            if(r.navigable && r.hasSub) openSub(depth, ridx);
+            setActiveFromPointer(depth, ridx);                              // 高亮立即（原生手感）
+            applyHoverIntent(depth, ridx, !!(r.navigable && r.hasSub));     // 层级变更延迟；回到本项已开子菜单则取消 pending（幂等，bug2 防抖）
           });
+          r.el.addEventListener("mouseleave", function(){ cancelHoverIntentFor(depth, ridx); });
           r.el.addEventListener("click", function(){
             if(!r.navigable) return;
+            cancelHoverIntent();   // 点击路径立即执行，作废 pending 悬停意图
             if(r.hasSub){ closeLayersFrom(depth+1); openSub(depth, ridx); setActive(depth+1, firstNav(depth+1)); }
             else select(r.item._token);
           });
@@ -577,6 +615,7 @@
       sub.setAttribute("data-depth", String(parentDepth+1));
       if(parentId) sub.setAttribute("data-parent-item-id", parentId);
       if(parentZone) sub.setAttribute("data-zone", parentZone);
+      sub.addEventListener("mouseenter", function(){ cancelHoverIntent(); });   // 指针进入子菜单面板：取消 pending 层级变更
       // Insert hidden, build content, measure while invisible, position, then show.
       hideMenuEl(sub);
       mountHost().appendChild(sub);
@@ -642,6 +681,8 @@
       // 必须在 buildZonesRoot / buildLayer 之前赋值：aria-label 在建行时就生成。
       uiLocale = (st && st.locale === "zh") ? "zh" : "en";
       document.body.classList.toggle("content-sized", content);
+      // 紧凑 HWND（contentSized 根窗 / 独立子菜单窗）：阴影交给 DWM 系统投影，CSS 阴影会被贴合内容的窗口裁掉。
+      document.documentElement.classList.toggle("fb-content-sized", content||submenuSurface);
       var useZones = !!(st && st.overlayModel==="trayZones" && st.layoutMode==="zones" && st.zones && st.zones.length);
       var hasContent = useZones
         ? st.zones.some(function(z){ return z && z.items && z.items.length; })
@@ -689,7 +730,11 @@
 
     function measureElement(el){
       var r=el.getBoundingClientRect();
-      return {w:Math.max(el.scrollWidth,Math.ceil(r.width)),h:Math.max(el.scrollHeight,Math.ceil(r.height))};
+      // 保留未取整的 CSS 浮点值：物理像素上取整只在 buildMeasurePayload 做一次
+      // （ceil(css*dpr)）。此处若先 ceil 一次会双重上取整，125% 缩放下窗口比内容
+      // 大出 ~2px，露出内容盖不住的裸 DWM 材质边。scrollWidth/scrollHeight 为整数
+      // 下界，仅在内容溢出时接管。
+      return {w:Math.max(el.scrollWidth,r.width),h:Math.max(el.scrollHeight,r.height)};
     }
 
     function measureFirstLevelSubmenus(){
@@ -771,6 +816,7 @@
     // Single window-capture keydown: mode split first, handle once.
     function onKey(e){
       if(!layers.length) return;
+      cancelHoverIntent();   // 键盘路径立即执行，作废 pending 悬停意图
       // Editor mode: only editor handler; navigation never sees the same key.
       if(interactionMode==="editor"){
         if(editorCtx && editorCtx.row && editorCtx.row.editorKey){

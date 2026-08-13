@@ -9,6 +9,7 @@ import type {
     MenuGetContextMenuResponse,
     MenuShowNativePopupResponse,
     MenuPopupItem,
+    MenuPopupOptions,
     MenuPopupPosition,
 } from '../../types/responses.js';
 import type {
@@ -35,6 +36,31 @@ function withPosition<T extends object>(
     if (position?.x !== undefined) merged.x = position.x;
     if (position?.y !== undefined) merged.y = position.y;
     return merged;
+}
+
+/** Wire shape of a `menu.show` request: items + anchor + presentation options. */
+type MenuShowPayload = { items: MenuPopupItem[]; x?: number; y?: number } & MenuPopupOptions;
+
+/**
+ * Build a `menu.show` payload. Keys the caller left undefined are omitted
+ * rather than sent as `undefined`, so the host keeps its own defaults.
+ * Field-by-field copies keep the payload fully typed (G3: no catch-all
+ * index signatures in sdk/src).
+ */
+function buildShowPayload(
+    items: MenuPopupItem[],
+    position?: MenuPopupPosition,
+    opts?: MenuPopupOptions,
+): MenuShowPayload {
+    const payload: MenuShowPayload = withPosition({ items }, position);
+    if (!opts) return payload;
+    if (opts.windowModel !== undefined) payload.windowModel = opts.windowModel;
+    if (opts.css !== undefined) payload.css = opts.css;
+    if (opts.cssReplace !== undefined) payload.cssReplace = opts.cssReplace;
+    if (opts.backdrop !== undefined) payload.backdrop = opts.backdrop;
+    if (opts.backdropDarkMode !== undefined) payload.backdropDarkMode = opts.backdropDarkMode;
+    if (opts.closeAnimationMs !== undefined) payload.closeAnimationMs = opts.closeAnimationMs;
+    return payload;
 }
 
 export const menu = {
@@ -127,13 +153,32 @@ export const menu = {
      * Show a self-drawn (WebView-rendered) popup menu at `position`
      * (defaults to the cursor). Resolves with the new menu id; the
      * user's choice arrives asynchronously via the `menu:select` /
-     * `menu:dismiss` events. Prefer {@link popup} when you only need
-     * the chosen item id.
+     * `menu:dismiss` events, and a rich control's value change via
+     * `menu:valueChanged` (which leaves the menu open). Prefer
+     * {@link popup} when you only need the chosen item id.
+     *
+     * `opts` configures presentation per call. For a context menu prefer
+     * `windowModel: 'contentSized'`, which draws each panel in a compact
+     * window carrying the real DWM {@link MenuPopupOptions.backdrop} material
+     * and the system shadow; `opts.css` restyles the menu (and with
+     * `cssReplace: true` takes the look over entirely).
+     *
+     * ```javascript
+     * const { menuId } = await fb.menu.show(items, { x: e.screenX, y: e.screenY }, {
+     *     windowModel: 'contentSized',
+     *     backdrop: 'acrylic',
+     *     css: '.fb-menu { background: rgba(32, 32, 32, 0.82); }',
+     * });
+     * ```
      */
-    show: (items: MenuPopupItem[], position?: MenuPopupPosition) =>
+    show: (
+        items: MenuPopupItem[],
+        position?: MenuPopupPosition,
+        opts?: MenuPopupOptions,
+    ) =>
         bridge.invoke<MenuShowResponse>(
             'menu.show',
-            withPosition({ items }, position),
+            buildShowPayload(items, position, opts),
         ),
 
     /** Close the active self-drawn popup menu, if any. */
@@ -149,14 +194,33 @@ export const menu = {
      * (outside click, Escape, or any other close reason). Events are
      * matched by the menu id returned from `menu.show`, so overlapping
      * callers never cross-resolve.
+     *
+     * `opts` is the same per-call presentation config as {@link show};
+     * `windowModel: 'contentSized'` is the recommended model for a context
+     * menu. Rich controls report through `menu:valueChanged` without closing
+     * the menu, so this promise stays pending until an ordinary row is chosen
+     * or the menu is dismissed — subscribe to that event separately to track
+     * value changes.
+     *
+     * ```javascript
+     * document.addEventListener('contextmenu', async (e) => {
+     *     e.preventDefault();
+     *     const id = await fb.menu.popup(items, undefined, {
+     *         windowModel: 'contentSized',
+     *         backdrop: 'acrylic',
+     *     });
+     *     if (id) console.log('selected', id);
+     * });
+     * ```
      */
     popup: async (
         items: MenuPopupItem[],
         position?: MenuPopupPosition,
+        opts?: MenuPopupOptions,
     ): Promise<string | null> => {
         const res = await bridge.invoke<MenuShowResponse>(
             'menu.show',
-            withPosition({ items }, position),
+            buildShowPayload(items, position, opts),
         );
         if (!res?.success || !res.menuId) return null;
         const menuId = res.menuId;

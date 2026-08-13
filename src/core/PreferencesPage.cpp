@@ -179,8 +179,9 @@ bool CreateTemplate(const std::string& name) {
     }
     
     // 验证名称（只允许字母数字和下划线连字符）
+    // unsigned char 转型：非 ASCII 输入的字节为负值时 isalnum 是 UB（Debug CRT 断言）
     for (char c : name) {
-        if (!std::isalnum(c) && c != '_' && c != '-') {
+        if (!std::isalnum(static_cast<unsigned char>(c)) && c != '_' && c != '-') {
             return false;
         }
     }
@@ -244,8 +245,9 @@ bool RenameTemplate(const std::string& oldName, const std::string& newName) {
     }
     
     // 验证新名称
+    // unsigned char 转型：非 ASCII 输入的字节为负值时 isalnum 是 UB（Debug CRT 断言）
     for (char c : newName) {
-        if (!std::isalnum(c) && c != '_' && c != '-') {
+        if (!std::isalnum(static_cast<unsigned char>(c)) && c != '_' && c != '-') {
             return false;
         }
     }

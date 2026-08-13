@@ -36,6 +36,9 @@ inline std::wstring BuildMenuOverlayHtmlFromSources() {
   body.content-sized #menu.in{opacity:1;transform:none;}
   /* 退场动画（opt-in，镜像入场）：收到 menu:__hide 时 #menu 去 .in 加 .out 播淡出；前端可经 css 覆盖 #menu.out。*/
   body.content-sized #menu.out{opacity:0;transform:translateY(4px) scale(.985);transition:opacity .13s ease-out,transform .13s ease-out;}
+  /* 紧凑 HWND（contentSized 根窗 / 独立子菜单窗，<html class="fb-content-sized">）：窗口贴合内容，
+     CSS 阴影会被裁掉，改由 DWM 系统阴影投影；圆角收到 4px 对齐系统菜单。fullscreen 不受影响。*/
+  .fb-content-sized .fb-menu{border-radius:4px;box-shadow:none;}
   /* Respect prefers-reduced-motion for default enter/exit only.
      Hidden protocol / closeAnimationMs are unchanged. Not in protected CSS. */
   @media (prefers-reduced-motion: reduce){
@@ -71,11 +74,11 @@ inline std::wstring BuildMenuOverlayHtmlFromSources() {
   .fb-seg{display:grid;grid-template-columns:minmax(0,auto) minmax(0,1fr);align-items:center;gap:10px;min-width:0;}
   .fb-seg-label{min-width:0;overflow:hidden;text-overflow:ellipsis;opacity:.85;}
   .fb-seg-group{min-width:0;display:flex;flex-wrap:wrap;justify-content:flex-end;gap:2px;}
-  .fb-seg-btn{display:inline-flex;min-width:0;max-width:120px;align-items:center;justify-content:center;padding:2px 8px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:pointer;border-radius:4px;color:#cfcfcf;}
+  .fb-seg-btn{display:inline-flex;min-width:0;max-width:120px;align-items:center;justify-content:center;padding:2px 8px;overflow:hidden;text-overflow:ellipsis;white-sp)MENUHTML"
+        LR"MENUHTML(ace:nowrap;cursor:pointer;border-radius:4px;color:#cfcfcf;}
   .fb-seg-btn svg{width:16px;height:16px;display:block;fill:currentColor;}
   .fb-seg-btn.on{background:#3d6fd0;color:#fff;}
-  .fb-seg-btn.disabled{co)MENUHTML"
-        LR"MENUHTML(lor:#666;cursor:default;}
+  .fb-seg-btn.disabled{color:#666;cursor:default;}
   /* 富项 hover/active 用克制的灰底（覆盖上面 .fb-item 蓝底），保留控件辨识度。*/
   .fb-np:hover,.fb-np.active,.fb-rating:hover,.fb-rating.active,.fb-slider:hover,.fb-slider.active,.fb-seg:hover,.fb-seg.active{background:#3a3a3a;color:#eaeaea;}
 </style>
@@ -238,7 +241,8 @@ function isValidTransform(value) {
   const n = s.length;
   let sawOne = false;
 
-  const skipWsp = () => {
+  const skipWsp = () =>)MENUHTML"
+        LR"MENUHTML( {
     while (i < n && isTransformWsp(s[i])) i += 1;
   };
 
@@ -249,8 +253,7 @@ function isValidTransform(value) {
     const nameStart = i;
     if (!/[A-Za-z]/.test(s[i])) return false;
     i += 1;
-    while )MENUHTML"
-        LR"MENUHTML((i < n && /[A-Za-z]/.test(s[i])) i += 1;
+    while (i < n && /[A-Za-z]/.test(s[i])) i += 1;
     const name = s.slice(nameStart, i).toLowerCase();
     const arity = TRANSFORM_ARITY[name];
     if (!arity) return false;
@@ -422,7 +425,8 @@ function mountSanitizedSvgIcon(host, viewBox, content) {
           var an = String(at.name || '').toLowerCase();
           if (an.indexOf('xmlns') === 0) continue;
           if (!isValidAttributeValue(name, an, at.value)) return false;
-          out.setAttribute(an, at.value);
+         )MENUHTML"
+        LR"MENUHTML( out.setAttribute(an, at.value);
         }
       }
       if (!cloneAllowed(node, out)) return false;
@@ -431,8 +435,7 @@ function mountSanitizedSvgIcon(host, viewBox, content) {
     return true;
   }
 
-  var svg = document.createElementNS('http://www.w3)MENUHTML"
-        LR"MENUHTML(.org/2000/svg', 'svg');
+  var svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
   svg.setAttribute('viewBox', vb);
   svg.setAttribute('width', '16');
   svg.setAttribute('height', '16');
@@ -619,13 +622,13 @@ function menuDirectSeparators(doc) {
 function menuZones(doc) {
   const menu = findById(doc, 'menu');
   if (!menu) return [];
-  return (menu.children || []).filter((c) => hasClass(c, 'fb-zone'));
+  retur)MENUHTML"
+        LR"MENUHTML(n (menu.children || []).filter((c) => hasClass(c, 'fb-zone'));
 }
 
 function hasClass(node, name) {
   const parts = String(node && node.className || '').split(/\s+/).filter(Boolean);
-  return parts.includes(name)MENUHTML"
-        LR"MENUHTML();
+  return parts.includes(name);
 }
 
 function findById(node, id) {
@@ -754,12 +757,12 @@ function analyzeIndependentSubmenuWindowContract(source) {
   const arrowLeftMatch = text.match(/case "ArrowLeft":\s*\{([\s\S]*?)case "Enter"/);
   const arrowLeftBody = arrowLeftMatch ? arrowLeftMatch[1] : '';
   const escapeMatch = text.match(/case "Escape":\s*([\s\S]*?)default:/);
-  const escapeBody = escapeMatch ? escapeMatch[1] : '';
+  const escapeBody = escapeMatch ? escapeMatch[1] : ')MENUHTML"
+        LR"MENUHTML(';
   return {
     reportsMonotonicSequence: /submenuPanelSequence\s*=\s*0/.test(text)
       && /sequence\s*:\s*\+\+submenuPanelSequence/.test(text),
-    reportsParentToken: /parentToken\s*:\s*\(L\.rows\[rowIdx)MENUHTML"
-        LR"MENUHTML(\]\.item&&L\.rows\[rowIdx\]\.item\._token\)/.test(text),
+    reportsParentToken: /parentToken\s*:\s*\(L\.rows\[rowIdx\]\.item&&L\.rows\[rowIdx\]\.item\._token\)/.test(text),
     computesVirtualWindowPlacement: /submenuWindowPlacement\(\{[\s\S]*?virtualRootTop:geom\.virtualRootTop/.test(text),
     treatsSubmenuAsLeafSurface: /cur\.windowModel==="submenu"\) return/.test(text),
     reconcilesNativeSubmenuClose: /fb2k\.on\("menu:__submenuClosed"/.test(text),
@@ -864,13 +867,13 @@ function analyzeContentSizedGeometryContract(source) {
 /** HTML shell must wrap #menu in #viewport. */
 function analyzeHtmlShell(html) {
   const text = String(html || '');
-  const hasViewport = /id\s*=\s*["']viewport["']/.test(text);
+  const hasViewport = /id\s*=\s*["']viewport["']/)MENUHTML"
+        LR"MENUHTML(.test(text);
   const menuInsideViewport = /id\s*=\s*["']viewport["'][\s\S]*id\s*=\s*["']menu["']/.test(text);
   return { hasViewport, menuInsideViewport };
 }
 
-// ── Slider orientation / range / paint / pointer)MENUHTML"
-        LR"MENUHTML( / keyboard ─────────────────
+// ── Slider orientation / range / paint / pointer / keyboard ─────────────────
 
 /**
  * Resolve slider orientation. Only exact "vertical" is vertical; missing /
@@ -1048,13 +1051,13 @@ function resolveNavRowRole({ kind, checkable, checked }) {
  * Build aria-label for a rich control row in navigation mode.
  * `locale` selects the text language: 'zh' for Chinese, anything else English.
  * It arrives via the overlay state JSON, where the host derives it from the
- * Windows user UI language, so it matches the rest of the native chrome instead
+ * Windows user UI language, so it matches the res)MENUHTML"
+        LR"MENUHTML(t of the native chrome instead
  * of the WebView2 browser language.
  * The literal key name "Enter" stays untranslated in both languages because it
  * names a physical key, not a word.
  */
-function buildRichNa)MENUHTML"
-        LR"MENUHTML(vAriaLabel({ kind, label, value, min, max, locale }) {
+function buildRichNavAriaLabel({ kind, label, value, min, max, locale }) {
   const zh = locale === 'zh';
   const name = label || kind || (zh ? '控件' : 'control');
   const hint = zh ? '按 Enter 键调整' : 'Press Enter to adjust';
@@ -1216,14 +1219,14 @@ function analyzeMouseenterSetActiveFocus(jsSource) {
     let cm;
     while ((cm = callRe.exec(body))) {
       // Capture argument list with nested braces/parens for {focus:false}.
-      let p = cm.index + cm[0].length;
+      let p = c)MENUHTML"
+        LR"MENUHTML(m.index + cm[0].length;
       let pd = 1;
       let argsStart = p;
       for (; p < body.length && pd > 0; p++) {
         if (body[p] === '(') pd++;
         else if (body[p] === ')') pd--;
-        else if (bod)MENUHTML"
-        LR"MENUHTML(y[p] === '{') {
+        else if (body[p] === '{') {
           // still inside args
         }
       }
@@ -1245,6 +1248,146 @@ function analyzeMouseenterSetActiveFocus(jsSource) {
     handlers,
     setActiveHandlerCount: handlers.filter((h) => h.hasSetActive).length,
     allSetActiveNonFocusing: handlers.filter((h) => h.hasSetActive).every((h) => h.allNonFocusing),
+  };
+}
+
+// ── Hover intent: native MenuShowDelay for submenu layer changes ────────────
+
+/**
+ * Fallback hover delay in milliseconds, matching the Windows MenuShowDelay
+ * default. Used when the host state carries no `menuShowDelayMs` key (older
+ * host) or reports an unusable value.
+ */
+const MENU_SHOW_DELAY_FALLBACK_MS = 400;
+
+/** Hover delay in milliseconds from the overlay state; 0 stays instantaneous. */
+function resolveMenuShowDelayMs(state) {
+  const raw = state ? state.menuShowDelayMs : undefined;
+  if (typeof raw !== 'number' || !Number.isFinite(raw) || raw < 0) return MENU_SHOW_DELAY_FALLBACK_MS;
+  return Math.round(raw);
+}
+
+/**
+ * Decide what one pointer row entry does to the submenu layer stack. Row
+ * highlight is always immediate; only the layer change is deferred, so
+ * diagonal travel toward an open submenu no longer closes it.
+ *
+ * openParentRowIdx: parent row index of the currently expanded child layer,
+ * or -1 when nothing is expanded.
+ *
+ * @returns {{ action: 'none'|'cancel'|'schedule', delayMs: number }}
+ *   cancel   — pointer is back on the row owning the open submenu: keep it,
+ *              drop any pending change (idempotent re-hover).
+ *   none     — nothing is expanded and this row has no submenu.
+ *   schedule — after delayMs close the expanded layer, then open this row's
+ *              submenu when it has one.
+ */
+function evaluateHoverIntent({ openParentRowIdx, hoverRowIdx, hoverHasSub, delayMs } = {}) {
+  const index = (v) => (typeof v === 'number' && Number.isFinite(v) ? Math.trunc(v) : -1);
+  const open = index(openParentRowIdx);
+  const hover = index(hoverRowIdx);
+  const wait = (typeof delayMs === 'number' && Number.isFinite(delayMs) && delayMs >= 0)
+    ? Math.round(delayMs)
+    : MENU_SHOW_DELAY_FALLBACK_MS;
+  if (hover < 0) return { action: 'none', delayMs: 0 };
+  if (open >= 0 && open === hover) return { action: 'cancel', delayMs: 0 };
+  if (open < 0 && !hoverHasSub) return { action: 'none', delayMs: 0 };
+  return { action: 'schedule', delayMs: wait };
+}
+
+/** Bodies of every `addEventListener("<type>", function(){...})` in a source. */
+function collectHandlerBodies(text, type) {
+  const re = new RegExp(`addEventListener\\(\\s*["']${type}["']\\s*,\\s*function\\s*\\([^)]*\\)\\s*\\{`, 'g');
+  const out = [];
+  let m;
+  while ((m = re.exec(text))) {
+    const start = m.index + m[0].length;
+    let depth = 1;
+    let i = start;
+    for (; i < text.length && depth > 0; i++) {
+      const ch = text[i];
+      if (ch === '{') depth++;
+      else if (ch === '}') depth--;
+    }
+    out.push(text.slice(start, i - 1));
+  }
+  return out;
+}
+
+/** Source slice between two top-level function declarations. */
+function sliceBetween(text, fromMarker, toMarker) {
+  const a = text.indexOf(fromMarker);
+  if (a < 0) return '';
+  const b = text.indexOf(toMarker, a + fromMarker.length);
+  return b > a ? text.slice(a, b) : text.slice(a);
+}
+
+/**
+ * Source contract for hover intent: pointer highlight stays immediate while
+ * every layer change funnels through one generation-guarded pending timer.
+ * Click / keyboard paths must keep changing layers immediately.
+ */
+function analyzeHoverIntentWiring(jsSource) {
+  const text = String(jsSource || '');
+  const rowHovers = collectHandlerBodies(text, 'mouseenter')
+    .filter((b) => /setActiveFromPointer\s*\(/.test(b));
+  // Per row-builder verification: one delegating hover + its own leave cancel.
+  const siteBounds = [
+    ['nowplaying', 'function buildNowPlaying(', 'function buildRating('],
+    ['rating', 'function buildRating(', 'function buildSlider('],
+    ['slider', 'function buildSlider(', 'function buildSegmented('],
+    ['segmented', 'function buildSegmented(', 'function appendItems('],
+    ['normal', 'function appendItems(', 'function itemsHaveIcon('],
+  ];
+  const hoverIntentSites = {};
+  for (const [name, from, to] of siteBounds) {
+    const region = sliceBetween(text, from, to);
+    const hovers = collectHandlerBodies(region, 'mouseenter')
+      .filter((b) => /setActiveFromPointer\s*\(/.test(b));
+    hoverIntentSites[name] = hovers.length === 1
+      && /applyHoverIntent\s*\(/.test(hovers[0])
+      && !/closeLayersFrom\s*\(/.test(hovers[0])
+      && !/openSub\s*\(/.test(hovers[0])
+      && collectHandlerBodies(region, 'mouseleave').some((b) => /cancelHoverIntentFor\s*\(/.test(b));
+  }
+  const rowLeaves = collectHandlerBodies(text, 'mouseleave')
+    .filter((b) => /cancelHoverIntentFor\s*\(/.test(b));
+  const openSubBody = sliceBetween(text, 'function openSub(', 'function placeRoot(');
+  const appendItemsBody = sliceBetween(text, 'function appendItems(', 'function itemsHaveIcon(');
+  const clickBodies = collectHandlerBodies(appendItemsBody, 'click');
+  const onKeyBody = sliceBetween(text, 'function onKey(e){', 'function pull()');
+  const cleanupMatch = text.match(/function cleanupMenuInteraction\(\)\{([\s\S]*?)\n\s*\}/);
+  const cleanupBody = cleanupMatch ? cleanupMatch[1] : '';
+  const timerMatch = text.match(/hoverIntentTimer\s*=\s*setTimeout\(function\(\)\{([\s\S]*?)\n\s*\}\s*,\s*plan\.delayMs\)/);
+  const timerBody = timerMatch ? t)MENUHTML"
+        LR"MENUHTML(imerMatch[1] : '';
+  return {
+    hoverIntentSites,
+    rowHoverHandlerCount: rowHovers.length,
+    allRowHoversDeferLayerChange: rowHovers.length > 0
+      && rowHovers.every((b) => /applyHoverIntent\s*\(/.test(b)),
+    noRowHoverChangesLayersInline: rowHovers.every((b) =>
+      !/closeLayersFrom\s*\(/.test(b) && !/openSub\s*\(/.test(b)),
+    highlightBeforeIntent: rowHovers.every((b) =>
+      b.indexOf('setActiveFromPointer(') >= 0
+      && b.indexOf('applyHoverIntent(') > b.indexOf('setActiveFromPointer(')),
+    rowLeaveCancelCount: rowLeaves.length,
+    submenuPanelEnterCancels: /sub\.addEventListener\("mouseenter",\s*function\(\)\{\s*cancelHoverIntent\(\)/.test(openSubBody),
+    singlePendingTimer: (text.match(/setTimeout\(/g) || []).length === 1
+      && (text.match(/hoverIntentTimer\s*=\s*setTimeout\(/g) || []).length === 1,
+    guardsGeneration: /var token\s*=\s*hoverIntentToken\(\)/.test(text)
+      && /token!==hoverIntentToken\(\)\)\s*return/.test(timerBody)
+      && /function hoverIntentToken\(\)\{[^}]*menuId[^}]*hoverIntentGeneration/.test(text),
+    invalidatesGenerationOnCleanup: /invalidateHoverIntent\(\)/.test(cleanupBody)
+      && /function invalidateHoverIntent\(\)\{[^}]*cancelHoverIntent\(\);\s*hoverIntentGeneration\+\+/.test(text),
+    clickPathStaysImmediate: clickBodies.some((b) =>
+      /closeLayersFrom\(depth\+1\);\s*openSub\(depth, ridx\)/.test(b))
+      && clickBodies.every((b) => !/applyHoverIntent\s*\(/.test(b)),
+    clickCancelsPendingIntent: clickBodies.some((b) => /cancelHoverIntent\(\)/.test(b)),
+    keyboardPathStaysImmediate: onKeyBody.length > 0 && !/applyHoverIntent\s*\(/.test(onKeyBody),
+    keyboardCancelsPendingIntent: /cancelHoverIntent\(\)/.test(onKeyBody),
+    readsHostDelayWithFallback: /function hoverIntentDelayMs\(\)\{\s*return resolveMenuShowDelayMs\(cur\)/.test(text)
+      && /delayMs:hoverIntentDelayMs\(\)/.test(text),
   };
 }
 
@@ -1290,6 +1433,55 @@ function analyzeMenuInteractionCleanup(jsSource) {
   };
 }
 
+// ── Compact-HWND (contentSized / independent submenu) chrome ────────────────
+
+/** Declaration block of the rule whose selector list contains `selector`. */
+function findCssRuleBody(css, selector) {
+  const clean = String(css || '').replace(/\/\*[\s\S]*?\*\//g, '');
+  for (const chunk of clean.split('}')) {
+    const brace = chunk.indexOf('{');
+    if (brace < 0) continue;
+    const selectors = chunk.slice(0, brace).split(',').map((s) => s.trim());
+    if (selectors.includes(selector)) return chunk.slice(brace + 1);
+  }
+  return null;
+}
+
+/**
+ * Default CSS contract for compact surfaces: a tight HWND clips CSS shadows,
+ * so the DWM system shadow takes over and the radius shrinks to the native
+ * 4px. The fullscreen sheet keeps its original radius and shadow.
+ */
+function analyzeContentSizedChromeCss(css) {
+  const compact = findCssRuleBody(css, '.fb-content-sized .fb-menu');
+  const base = findCssRuleBody(css, '.fb-menu');
+  return {
+    hasCompactMenuRule: compact != null,
+    compactRadiusIs4px: /border-radius\s*:\s*4px/.test(compact || ''),
+    compactDropsCssShadow: /box-shadow\s*:\s*none/.test(compact || ''),
+    fullscreenKeepsRadius: /border-radius\s*:\s*6px/.test(base || ''),
+    fullscreenKeepsShadow: /box-shadow\s*:\s*[^;]*rgba/.test(base || ''),
+  };
+}
+
+/**
+ * Source contract: the renderer must flag `<html>` for both compact window
+ * models so the compact chrome rules apply to root and submenu surfaces.
+ */
+function analyzeContentSizedRootClassWiring(jsSource) {
+  const text = String(jsSource || '');
+  const renderBody = sliceBetween(text, 'function render(st){', 'function reportSubmenuPanel(');
+  const match = renderBody.match(/document\.documentElement\.classList\.toggle\(\s*["']fb-content-sized["']\s*,\s*([^)]*)\)/);
+  const condition = match ? match[1] : '';
+  return {
+    togglesRootClassInRender: !!match,
+    coversContentSized: /\bcontent\b/.test(condition),
+    coversSubmenuSurface: /\bsubmenuSurface\b/.test(condition),
+    keepsBodyContentSizedFlag: /document\.body\.classList\.toggle\(\s*["']content-sized["']\s*,\s*conte)MENUHTML"
+        LR"MENUHTML(nt\s*\)/.test(renderBody),
+  };
+}
+
     var cur = null;
     var layers = [];   // index=depth: {el, rows:[{el,item,navigable,hasSub}], active}
     // Single interaction mode — navigation | editor.
@@ -1300,9 +1492,14 @@ function analyzeMenuInteractionCleanup(jsSource) {
     var submenuPanelSequence = 0;        // monotonic root→host panel state reports
     var submenuPanelOpen = false;        // host confirms that the child HWND is visible
     var uiLocale = "en";                 // host UI language for aria text; refreshed per render
+    var hoverIntentTimer = 0;            // 单一 pending 层级变更计时器（高亮不走它）
+    var hoverIntentTarget = null;        // pending 目标 {depth,ridx}：供本行 mouseleave 精确取消
+    var hoverIntentGeneration = 0;       // render/hide/cleanup 递增：作废上一代菜单的延迟回调
 
     // Clear editor/focus pending state without stealing focus. Used by dismiss/select/hide/render.
+    // 同时作废 pending 悬停意图与其代际（render / hide / select / dismiss 共用此入口）。
     function cleanupMenuInteraction(){
+      invalidateHoverIntent();
       exitEditor(false);
       interactionMode="navigation";
       editorCtx=null;
@@ -1335,8 +1532,7 @@ function analyzeMenuInteractionCleanup(jsSource) {
     }
     function hideMenuEl(el){ runProtocol(el, hideMenuProtocol()); }
     function showMenuEl(el){ runProtocol(el, showMenuProtocol()); }
-    function itemZone(it, fallback)MENUHTML"
-        LR"MENUHTML(){ return (it&&it._zone)||fallback||""; }
+    function itemZone(it, fallback){ return (it&&it._zone)||fallback||""; }
     function mountHost(){ return document.getElementById("viewport")||document.body; }
 
     function applyContentSizedGeometry(el, geometry){
@@ -1389,7 +1585,8 @@ function analyzeMenuInteractionCleanup(jsSource) {
       for(var i=0;i<L.rows.length;i++){
         var r=L.rows[i]; if(!r||!r.el) continue;
         if(!r.navigable){ r.el.setAttribute("tabindex","-1"); continue; }
-        r.el.setAttribute("tabindex", (interactionMode==="navigation" && i===L.active) ? "0" : "-1");
+        r.el.setAttribute("tabindex", (interactionMode)MENUHTML"
+        LR"MENUHTML(==="navigation" && i===L.active) ? "0" : "-1");
       }
     }
 
@@ -1436,6 +1633,35 @@ function analyzeMenuInteractionCleanup(jsSource) {
       if(depth<=1 && cur && cur.windowModel==="contentSized") reportSubmenuPanel(null);
     }
 
+    // ---- 悬停意图（对齐 Windows MenuShowDelay）：行高亮立即，层级变更延迟 ----
+    // 代际 = menuId + render 代际计数；延迟回调触发时代际不匹配即作废，防止上一代菜单的回调打进新菜单。
+    function hoverIntentToken(){ return ((cur&&cur.menuId)||"")+"#"+hoverIntentGeneration; }
+    function hoverIntentDelayMs(){ return resolveMenuShowDelayMs(cur); }   // 宿主缺 menuShowDelayMs（旧宿主）时回退 400
+    function cancelHoverIntent(){ if(hoverIntentTimer){ try{ clearTimeout(hoverIntentTimer); }catch(e){} } hoverIntentTimer=0; hoverIntentTarget=null; }
+    function cancelHoverIntentFor(depth, ridx){ if(hoverIntentTarget && hoverIntentTarget.depth===depth && hoverIntentTarget.ridx===ridx) cancelHoverIntent(); }
+    function invalidateHoverIntent(){ cancelHoverIntent(); hoverIntentGeneration++; }
+    function runHoverIntent(depth, ridx, hasSub){
+      if(interactionMode==="editor") return;
+      var L=layers[depth]; if(!L||!L.rows[ridx]) return;   // 行已随重建消失
+      closeLayersFrom(depth+1);
+      if(hasSub) openSub(depth, ridx);
+    }
+    function applyHoverIntent(depth, ridx, hasSub){
+      var child=layers[depth+1];
+      var openParent=(child&&child.parentRowIdx!=null)?child.parentRowIdx:-1;
+      var plan=evaluateHoverIntent({openParentRowIdx:openParent, hoverRowIdx:ridx, hoverHasSub:!!hasSub, delayMs:hoverIntentDelayMs()});
+      cancelHoverIntent();
+      if(plan.action!=="schedule") return;   // cancel=回到已开子菜单的父行（幂等不重开）；none=无层可关且本行无子菜单
+      if(plan.delayMs<=0){ runHoverIntent(depth, ridx, hasSub); return; }   // MenuShowDelay=0 保持即时
+      var token=hoverIntentToken();
+      hoverIntentTarget={depth:depth, ridx:ridx};
+      hoverIntentTimer=setTimeout(function(){
+        hoverIntentTimer=0; hoverIntentTarget=null;
+        if(token!==hoverIntentToken()) return;   // 代际防护
+        runHoverIntent(depth, ridx, hasSub);
+      }, plan.delayMs);
+    }
+
     function enterEditor(depth, rowIdx){
       var L=layers[depth]; if(!L||!L.rows[rowIdx]) return;
       var row=L.rows[rowIdx];
@@ -1466,8 +1692,7 @@ function analyzeMenuInteractionCleanup(jsSource) {
     }
 
     function stampItem(el, it, depth, zone){
-      applyAttrs(el, buildItemStableAttrs(it, { depth: depth, zone: zone }));)MENUHTML"
-        LR"MENUHTML(
+      applyAttrs(el, buildItemStableAttrs(it, { depth: depth, zone: zone }));
     }
     function stampSep(el, depth, zone, zoneSeparator){
       applyAttrs(el, buildSeparatorStableAttrs({ depth: depth, zone: zone, zoneSeparator: !!zoneSeparator }));
@@ -1478,7 +1703,8 @@ function analyzeMenuInteractionCleanup(jsSource) {
 
     function buildNowPlaying(menuEl, L, it, en, depth, zone){
       var d=document.createElement("div");
-      d.className="fb-item fb-np"+(!en?" disabled":"");
+      d.className="fb-item fb-np"+(!en?" disabled":)MENUHTML"
+        LR"MENUHTML("");
       d.setAttribute("part","item");
       stampItem(d, it, depth, zone);
       d.setAttribute("role","menuitem");
@@ -1498,7 +1724,8 @@ function analyzeMenuInteractionCleanup(jsSource) {
       var ridx=L.rows.length;
       var row={el:d, item:it, navigable:en, hasSub:false, kind:"nowplaying", zone:zone};
       L.rows.push(row);
-      d.addEventListener("mouseenter", function(){ if(interactionMode==="editor") return; closeLayersFrom(depth+1); setActiveFromPointer(depth, ridx); });
+      d.addEventListener("mouseenter", function(){ if(interactionMode==="editor") return; setActiveFromPointer(depth, ridx); applyHoverIntent(depth, ridx, false); });
+      d.addEventListener("mouseleave", function(){ cancelHoverIntentFor(depth, ridx); });
       d.addEventListener("click", function(){ if(row.navigable) select(it._token); });   // 点击=普通项：回传 {id} + 关闭
     }
 
@@ -1560,18 +1787,19 @@ function analyzeMenuInteractionCleanup(jsSource) {
           return false;
         }};
       L.rows.push(row);
-      d.addEventListener("mouseenter", function(){ if(interactionMode==="editor") return; closeLayersFrom(depth+1); setActiveFromPointer(depth, ridx); });
+      d.addEventListener("mouseenter", function(){ if(interactionMode==="editor") return; setActiveFromPointer(depth, ridx); applyHoverIntent(depth, ridx, false); });
+      d.addEventListener("mouseleave", function(){ cancelHoverIntentFor(depth, ridx); });
     }
 
-    function buildSlider(menuEl,)MENUHTML"
-        LR"MENUHTML( L, it, en, depth, zone){
+    function buildSlider(menuEl, L, it, en, depth, zone){
       var norm=normalizeSliderRange(it);
       var mn=norm.min, mx=norm.max, orient=norm.orientation, constant=norm.constant;
       var ctl={v:norm.value};
       var d=document.createElement("div");
       d.className="fb-item fb-slider"+(!en?" disabled":"");
       d.setAttribute("part","item");
-      stampItem(d, it, depth, zone);
+     )MENUHTML"
+        LR"MENUHTML( stampItem(d, it, depth, zone);
       d.setAttribute("data-orientation", orient);
       applyDisabledAria(d, en);
       if(it.label){ var lb=document.createElement("span"); lb.className="fb-slider-label"; lb.textContent=it.label; d.appendChild(lb); }
@@ -1657,15 +1885,16 @@ function analyzeMenuInteractionCleanup(jsSource) {
           return false;
         }};
       L.rows.push(row);
-      d.addEventListener("mouseenter", function(){ if(interactionMode==="editor") return; closeLayersFrom(depth+1); setActiveFromPointer(depth, ridx); });
+      d.addEventListener("mouseenter", function(){ if(interactionMode==="editor") return; setActiveFromPointer(depth, ridx); applyHoverIntent(depth, ridx, false); });
+      d.addEventListener("mouseleave", function(){ cancelHoverIntentFor(depth, ridx); });
     }
 
     // segmented 分段单选：读 it.segments（互斥选项），it.value=选中段索引。点启用段→paint+valueChange（走现有 value 通道，不关菜单）；
-    // Left/Right 经 row.adjust 移到上/下一个【启用】段并 valueCh)MENUHTML"
-        LR"MENUHTML(ange（clamp 边界）。index→业务语义由前端映射。
+    // Left/Right 经 row.adjust 移到上/下一个【启用】段并 valueChange（clamp 边界）。index→业务语义由前端映射。
     // Editor 态：选中迁移时同步 roving tabindex + 真实 focus（键盘）；pointer pick 至少同步 tabindex。
     function buildSegmented(menuEl, L, it, en, depth, zone){
-      var d=document.createElement("div"); d.className="fb-item fb-seg"+(!en?" disabled":""); d.setAttribute("part","item");
+      var d=document.createElement("div"); d.clas)MENUHTML"
+        LR"MENUHTML(sName="fb-item fb-seg"+(!en?" disabled":""); d.setAttribute("part","item");
       stampItem(d, it, depth, zone);
       applyDisabledAria(d, en);
       if(it.label){ var lb=document.createElement("span"); lb.className="fb-seg-label"; lb.setAttribute("part","segmented-label"); lb.textContent=it.label; d.appendChild(lb); }
@@ -1754,7 +1983,8 @@ function analyzeMenuInteractionCleanup(jsSource) {
           return false;
         }};
       L.rows.push(row);
-      d.addEventListener("mouseenter", function(){ if(interactionMode==="editor") return; closeLayersFrom(depth+1); setActiveFromPointer(depth, ridx); });
+      d.addEventListener("mouseenter", function(){ if(interactionMode==="editor") return; setActiveFromPointer(depth, ridx); applyHoverIntent(depth, ridx, false); });
+      d.addEventListener("mouseleave", function(){ cancelHoverIntentFor(depth, ridx); });
     }
 
     function appendItems(menuEl, L, items, depth, zone, layerHasIcon){
@@ -1768,9 +1998,9 @@ function analyzeMenuInteractionCleanup(jsSource) {
         }
         if(it && it.type==="nowplaying"){ buildNowPlaying(menuEl, L, it, !(it.enabled===false), depth, z); continue; }
         if(it && it.type==="rating"){ buildRating(menuEl, L, it, !(it.enabled===false), depth, z); continue; }
-       )MENUHTML"
-        LR"MENUHTML( if(it && it.type==="slider"){ buildSlider(menuEl, L, it, !(it.enabled===false), depth, z); continue; }
-        if(it && it.type==="segmented"){ buildSegmented(menuEl, L, it, !(it.enabled===false), depth, z); continue; }
+        if(it && it.type==="slider"){ buildSlider(menuEl, L, it, !(it.enabled===false), depth, z); continue; }
+        if(it && it)MENUHTML"
+        LR"MENUHTML(.type==="segmented"){ buildSegmented(menuEl, L, it, !(it.enabled===false), depth, z); continue; }
         var hasSub=!!(it && it.submenu && it.submenu.length);
         var en=!(it && it.enabled===false);
         var checkable=isExplicitCheckable(it);
@@ -1799,13 +2029,13 @@ function analyzeMenuInteractionCleanup(jsSource) {
         (function(r, ridx){
           r.el.addEventListener("mouseenter", function(){
             if(interactionMode==="editor") return;
-            if(r.navigable && r.hasSub && layers[depth+1] && layers[depth+1].parentRowIdx===ridx){ setActiveFromPointer(depth, ridx); return; }   // 幂等：本项子菜单已开则不重开（bug2 防抖）
-            closeLayersFrom(depth+1);
-            setActiveFromPointer(depth, ridx);
-            if(r.navigable && r.hasSub) openSub(depth, ridx);
+            setActiveFromPointer(depth, ridx);                              // 高亮立即（原生手感）
+            applyHoverIntent(depth, ridx, !!(r.navigable && r.hasSub));     // 层级变更延迟；回到本项已开子菜单则取消 pending（幂等，bug2 防抖）
           });
+          r.el.addEventListener("mouseleave", function(){ cancelHoverIntentFor(depth, ridx); });
           r.el.addEventListener("click", function(){
             if(!r.navigable) return;
+            cancelHoverIntent();   // 点击路径立即执行，作废 pending 悬停意图
             if(r.hasSub){ closeLayersFrom(depth+1); openSub(depth, ridx); setActive(depth+1, firstNav(depth+1)); }
             else select(r.item._token);
           });
@@ -1874,14 +2104,15 @@ function analyzeMenuInteractionCleanup(jsSource) {
       sub.setAttribute("data-depth", String(parentDepth+1));
       if(parentId) sub.setAttribute("data-parent-item-id", parentId);
       if(parentZone) sub.setAttribute("data-zone", parentZone);
+      sub.addEventListener("mouseenter", function(){ cancelHoverIntent(); });   // 指针进入子菜单面板：取消 pending 层级变更
       // Insert hidden, build content, measure while invisible, position, then show.
       hideMenuEl(sub);
       mountHost().appendChild(sub);
       buildLayer(sub, items, parentDepth+1, parentZone);
       layers[parentDepth+1].parentRowIdx = rowIdx;   // 子菜单归属父项（hover 幂等，bug2）
-      parentEl.setAttribute("aria-expanded","true");
-      // Temporary measure )MENUHTML"
-        LR"MENUHTML(pass: keep the node invisible to the user, then clear
+      parentEl.setAttribute("aria-expanded",")MENUHTML"
+        LR"MENUHTML(true");
+      // Temporary measure pass: keep the node invisible to the user, then clear
       // inline display so the final visible state stays CSS-owned.
       // Off-screen measure must not steal focus.
       sub.style.setProperty("visibility","hidden","important");
@@ -1940,6 +2171,8 @@ function analyzeMenuInteractionCleanup(jsSource) {
       // 必须在 buildZonesRoot / buildLayer 之前赋值：aria-label 在建行时就生成。
       uiLocale = (st && st.locale === "zh") ? "zh" : "en";
       document.body.classList.toggle("content-sized", content);
+      // 紧凑 HWND（contentSized 根窗 / 独立子菜单窗）：阴影交给 DWM 系统投影，CSS 阴影会被贴合内容的窗口裁掉。
+      document.documentElement.classList.toggle("fb-content-sized", content||submenuSurface);
       var useZones = !!(st && st.overlayModel==="trayZones" && st.layoutMode==="zones" && st.zones && st.zones.length);
       var hasContent = useZones
         ? st.zones.some(function(z){ return z && z.items && z.items.length; })
@@ -1987,10 +2220,15 @@ function analyzeMenuInteractionCleanup(jsSource) {
 
     function measureElement(el){
       var r=el.getBoundingClientRect();
-      return {w:Math.max(el.scrollWidth,Math.ceil(r.width)),h:Math.max(el.scrollHeight,Math.ceil(r.height))};
+      // 保留未取整的 CSS 浮点值：物理像素上取整只在 buildMeasurePayload 做一次
+      // （ceil(css*dpr)）。此处若先 ceil 一次会双重上取整，125% 缩放下窗口比内容
+      // 大出 ~2px，露出内容盖不住的裸 DWM 材质边。scrollWidth/scrollHeight 为整数
+      // 下界，仅在内容溢出时接管。
+      return {w:Math.max(el.scrollWidth,r.width),h:Math.max(el.scrollHeight,r.height)};
     }
 
-    function measureFirstLevelSubmenus(){
+    function measur)MENUHTML"
+        LR"MENUHTML(eFirstLevelSubmenus(){
       var out=[];
       var rootLayer=layers[0]; if(!rootLayer) return out;
       for(var i=0;i<rootLayer.rows.length;i++){
@@ -1998,8 +2236,7 @@ function analyzeMenuInteractionCleanup(jsSource) {
         if(!row||!row.hasSub||!row.item||!row.item.submenu) continue;
         var sub=document.createElement("div");
         sub.className="fb-menu fb-submenu fb-measure-submenu";
-        sub.setAttribute)MENUHTML"
-        LR"MENUHTML(("role","menu");
+        sub.setAttribute("role","menu");
         sub.style.setProperty("position","fixed","important");
         sub.style.setProperty("left","-32000px","important");
         sub.style.setProperty("top","-32000px","important");
@@ -2070,6 +2307,7 @@ function analyzeMenuInteractionCleanup(jsSource) {
     // Single window-capture keydown: mode split first, handle once.
     function onKey(e){
       if(!layers.length) return;
+      cancelHoverIntent();   // 键盘路径立即执行，作废 pending 悬停意图
       // Editor mode: only editor handler; navigation never sees the same key.
       if(interactionMode==="editor"){
         if(editorCtx && editorCtx.row && editorCtx.row.editorKey){
@@ -2121,13 +2359,13 @@ function analyzeMenuInteractionCleanup(jsSource) {
       }
     }
 
-    function pull(){ try{ if(window.fb2k&&fb2k.invoke){ var p=fb2k.invoke("menu.__getMenuState"); if(p&&p.then) p.then(render); } }catch(e){} }
+    function pull(){ try{ if(window.fb2k&&fb2k.invoke){ var p=fb2k.invoke("menu.__getMenuState")MENUHTML"
+        LR"MENUHTML(); if(p&&p.then) p.then(render); } }catch(e){} }
     function inMenu(t){ return t && t.closest && t.closest(".fb-menu"); }
     window.addEventListener("mousedown", function(e){ if(!inMenu(e.target)) dismiss("outside"); }, true);
     window.addEventListener("contextmenu", function(e){ e.preventDefault(); if(!inMenu(e.target)) dismiss("outside"); }, true);
     window.addEventListener("keydown", onKey, true);
-    if(window.fb2k && fb2k.on){ f)MENUHTML"
-        LR"MENUHTML(b2k.on("menu:show", pull); fb2k.on("menu:__placed", onPlaced); fb2k.on("menu:__submenuOpened", function(){ submenuPanelOpen=true; }); fb2k.on("menu:__submenuVisible", function(){ setActive(0,firstNav(0),{focus:true}); }); fb2k.on("menu:__submenuClosed", function(){ submenuPanelOpen=false; var parentIdx=(layers[1]&&layers[1].parentRowIdx!=null)?layers[1].parentRowIdx:-1; closeLayersFrom(1); if(parentIdx>=0) setActive(0,parentIdx,{focus:true}); }); fb2k.on("menu:__hide", function(){ cleanupMenuInteraction(); var root=document.getElementById("menu"); if(root){ root.classList.remove("in"); root.classList.add("out"); } }); }
+    if(window.fb2k && fb2k.on){ fb2k.on("menu:show", pull); fb2k.on("menu:__placed", onPlaced); fb2k.on("menu:__submenuOpened", function(){ submenuPanelOpen=true; }); fb2k.on("menu:__submenuVisible", function(){ setActive(0,firstNav(0),{focus:true}); }); fb2k.on("menu:__submenuClosed", function(){ submenuPanelOpen=false; var parentIdx=(layers[1]&&layers[1].parentRowIdx!=null)?layers[1].parentRowIdx:-1; closeLayersFrom(1); if(parentIdx>=0) setActive(0,parentIdx,{focus:true}); }); fb2k.on("menu:__hide", function(){ cleanupMenuInteraction(); var root=document.getElementById("menu"); if(root){ root.classList.remove("in"); root.classList.add("out"); } }); }
     pull();
 </script>
 </body></html>

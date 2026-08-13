@@ -61,6 +61,12 @@ struct MenuShowOptions {
     // >0 = 关闭前延迟该毫秒数播退场动画再隐藏（C++ 端已 clamp 到 0..1000）。前端应让该值
     // ≈ 自身 #menu.out 的 transition 时长。
     int closeAnimationMs = 0;
+    // ContentSized 根窗锚定策略（内部字段，不作为公共 API 参数暴露）：
+    //   "bottomUp"（默认）= 托盘现状，根底贴光标向上展开；
+    //   "cursor"          = 标准右键菜单，根左上贴光标向下展开，越界才翻转。
+    // 托盘调用点不传 = 维持 bottomUp = 零回归。取值经
+    // menu_overlay_geometry::ParseAnchorPolicy 归一，未知串回落 bottomUp。
+    std::string anchorPolicy = "bottomUp";
 };
 
 // 菜单覆盖面宿主（单例）。
@@ -146,6 +152,15 @@ public:
     bool ValidateMenuId(const std::string& menuId) const;
     bool HasFirstLevelSubmenu() const;
 
+    // 宿主窗口激活观感保持（原生菜单语义：菜单弹出不使宿主变灰）。
+    // 菜单以 SetForegroundWindow 夺走前台期间，打开菜单的宿主窗口在
+    // WM_NCACTIVATE / WM_ACTIVATE 里据此判断"本次失活是否让位给菜单面"，
+    // 是则维持激活外观（DWM 材质调暗跟随 NCACTIVATE 状态）。
+    // other = 消息报告的对端窗口；WM_NCACTIVATE 的 lParam 不保证携带对端，
+    // 交接瞬间由 activationHandoff_ 兜底。判定刻意保守：other 非菜单面且
+    // 不在交接瞬间 → 一律不保持，保证外点击/切他窗的失活语义不被劫持。
+    bool ShouldHoldOwnerActivation(HWND other) const;
+
     static constexpr const char* kOverlayWindowId = "__menu_overlay__";
 
 private:
@@ -227,12 +242,22 @@ private:
     // 注意：成员 overlayModel_ 与 opts.overlayModel 在 Show 时同步。
     menu_overlay_geometry::MeasureGate measureGate_;  // invalid report does not consume state
     POINT pendingAnchor_{};               // ContentSized：待定位的光标屏幕物理坐标
+    // 本次 show 的锚定策略与左手模式快照：measure 回报是异步的，若届时再读系统设置，
+    // 用户在菜单弹出后改设置会让同一个菜单前后两次定位口径不一致。
+    menu_overlay_geometry::AnchorPolicy currentAnchorPolicy_ =
+        menu_overlay_geometry::AnchorPolicy::BottomUp;
+    bool currentDropAlignLeft_ = false;   // SPI_GETMENUDROPALIGNMENT（show 时读取）
     std::optional<menu_overlay_geometry::Placement> placedGeometry_;
     POINT contentVirtualOrigin_{};        // measured virtual root/submenu canvas in screen pixels
     std::optional<menu_overlay_geometry::Rect> openSubmenuVirtualRect_;
     std::string openSubmenuParentToken_;
     std::string currentBackdrop_ = "acrylic";
     bool currentBackdropDarkMode_ = true;
+    // 激活交接状态（宿主激活观感保持）：handoff 仅在菜单面 SetForegroundWindow
+    // 的同步窗口期内为 true（宿主此刻收到的 NCACTIVATE/ACTIVATE 即交接产物）；
+    // previousForeground_ 记录 Show 前的前台窗口，FinalizeHide 时归还。
+    bool activationHandoff_ = false;
+    HWND previousForeground_ = nullptr;
     bool suppressSubmenuDismiss_ = false;
     bool openingSubmenu_ = false;
     std::uint64_t lastSubmenuPanelSequence_ = 0;

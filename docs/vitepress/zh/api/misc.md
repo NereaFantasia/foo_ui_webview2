@@ -642,13 +642,19 @@ const result = await fb2k.invoke('menu.close', { reason: 'api' });
 
 ### menu.show
 
-打开自绘菜单浮层并返回其 id；用户的选择稍后通过 `menu:select` 与 `menu:dismiss` 事件送达。
+打开自绘菜单浮层并返回其 id；用户的选择稍后通过 `menu:select` 与 `menu:dismiss` 事件送达，富控件的值变更经 `menu:valueChanged` 事件送达。
 
 | 参数 | 类型 | 必填 | 默认值 | 说明 |
 | --- | --- | --- | --- | --- |
-| `items` | `array` | 否 | 可省略 | 菜单项数组；省略或非数组时按空菜单处理。 |
+| `items` | `array` | 否 | 可省略 | 菜单项数组，每项支持 `id`、`label` 及可选 `type`、`enabled`、`checked`、`iconSvg` 与嵌套 `submenu`；富控件行（`nowplaying`、`rating`、`slider`、`segmented`）的值变更经 `menu:valueChanged` 回报且不关闭菜单。省略或非数组时按空菜单处理。 |
 | `x` | `integer` | 否 | `-1` | 屏幕横坐标；负数或省略时取当前光标位置。 |
 | `y` | `integer` | 否 | `-1` | 屏幕纵坐标；负数或省略时取当前光标位置。 |
+| `windowModel` | `string` | 否 | `fullscreen` | `fullscreen` 为铺满工作区的覆盖面；`contentSized` 为内容尺寸紧凑窗（DWM 材质 + 系统阴影）。未知值按 `fullscreen` 处理。 |
+| `css` | `string` | 否 | 空 | 注入浮层的前端样式接管，上限 256 KiB；超限在打开浮层前即被拒绝。 |
+| `cssReplace` | `boolean` | 否 | `false` | `true` 时替换内置默认样式而非叠加覆盖。 |
+| `backdrop` | `string` | 否 | `acrylic` | 取值 `acrylic`、`mica`、`mica-alt`、`none` 之一；其他值保留默认。 |
+| `backdropDarkMode` | `boolean` | 否 | `true` | DWM 背景材质的暗色调。 |
+| `closeAnimationMs` | `integer` | 否 | `0` | 关闭前的退场动画毫秒数，clamp 到 0–1000；`0` 为立即隐藏。 |
 
 **返回字段**: `{ "success": true, "menuId": "..." }`
 

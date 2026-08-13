@@ -72,6 +72,9 @@ foo_ui_webview2 的运行时事件 payload 参考。事件名使用 **冒号格�
 | menu:dismiss | `{ menuId, reason }` |
 | menu:select | `{ itemId, menuId }` |
 | menu:show | `{ menuId }` |
+| menu:valueChanged | `{ itemId, menuId, value }` |
+
+`menu:valueChanged` 在自绘菜单的 rating / slider / segmented 控件值变更时触发，且菜单保持打开；普通行仍走 `menu:select` 并关闭菜单。
 
 ## metadata 事件
 

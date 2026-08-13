@@ -150,6 +150,7 @@ fb.off('playback:time', handler);
 | keyboard:hotkey | 已注册快捷键触发 | {id, key, action} |
 | menu:show | 自定义菜单打开 | {menuId} |
 | menu:select | 选中自定义菜单项 | {menuId, itemId} |
+| menu:valueChanged | 自定义菜单里 rating / slider / segmented 值变更，菜单保持打开 | {menuId, itemId, value} |
 | menu:dismiss | 自定义菜单关闭 | {menuId, reason} |
 
 ## 跨窗口通信事件

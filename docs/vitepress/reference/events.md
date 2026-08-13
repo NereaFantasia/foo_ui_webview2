@@ -72,6 +72,9 @@ For `jitQueue:error`, local-file failures include `path`, while remote-source fa
 | menu:dismiss | `{ menuId, reason }` |
 | menu:select | `{ itemId, menuId }` |
 | menu:show | `{ menuId }` |
+| menu:valueChanged | `{ itemId, menuId, value }` |
+
+`menu:valueChanged` fires when a rating, slider, or segmented control in a self-drawn menu changes value, and the menu stays open; an ordinary row reports through `menu:select` and closes the menu.
 
 ## metadata events
 

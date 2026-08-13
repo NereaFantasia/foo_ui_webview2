@@ -142,6 +142,7 @@
     <ClCompile Include="test_metadata_write_subsong.cpp" />
     <ClCompile Include="test_taskbar_tray_contracts.cpp" />
     <ClCompile Include="test_menu_node_contract.cpp" />
+    <ClCompile Include="test_menu_overlay_anchor.cpp" />
     <ClCompile Include="test_webview_crash_policy.cpp" />
     <ClCompile Include="test_window_geometry_math.cpp" />
     <ClCompile Include="test_window_target_policy.cpp" />
@@ -160,6 +161,9 @@
     <ClInclude Include="..\src\utils\StringUtils.h" />
     <ClInclude Include="..\src\window\TaskbarTrayContracts.h" />
     <ClInclude Include="..\src\api\MenuNodeContract.h" />
+    <ClInclude Include="..\src\window\MenuOverlayGeometry.h" />
+    <ClInclude Include="..\src\window\MenuResourceLimits.h" />
+    <ClInclude Include="..\src\window\MenuTokenTable.h" />
     <ClInclude Include="..\src\webview\WebViewCrashPolicy.h" />
     <ClInclude Include="..\src\window\WindowGeometryMath.h" />
     <ClInclude Include="..\src\window\WindowTargetPolicy.h" />

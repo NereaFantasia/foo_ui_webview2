@@ -3,6 +3,7 @@
 #pragma comment(lib, "wtsapi32.lib")
 #include "window/MainWindow.h"
 #include "window/ChromeController.h"
+#include "window/MenuOverlayHost.h"
 #include "window/WindowChromeResolver.h"
 #include "window/WindowChromeTrace.h"
 #include "utils/I18n.h"
@@ -1244,8 +1245,18 @@ LRESULT MainWindow::HandleMessage(UINT msg, WPARAM wParam, LPARAM lParam) {
             return FALSE;
         }
             
+        case WM_NCACTIVATE:
+            // 自绘菜单持有前台期间，向 DefWindowProc 谎报激活态：DWM 对 mica/acrylic
+            // 的原生调暗跟随 NCACTIVATE 状态，谎报 TRUE 保住宿主材质的激活观感
+            //（经典 owner-popup 模式，原生菜单语义：菜单弹出不使宿主变灰）。
+            if (wParam == FALSE && MenuOverlayHost::GetInstance().ShouldHoldOwnerActivation(
+                    reinterpret_cast<HWND>(lParam))) {
+                return DefWindowProcW(hwnd_, WM_NCACTIVATE, TRUE, lParam);
+            }
+            break;
+
         case WM_ACTIVATE:
-            OnActivate(wParam);
+            OnActivate(wParam, lParam);
             // 覆盖检测：失活 → 防抖后评估是否被完全覆盖；激活 → 立即解除覆盖挂起（获焦必然未被覆盖）
             if (LOWORD(wParam) == WA_INACTIVE) {
                 ScheduleCoverReevaluation();
@@ -3357,8 +3368,18 @@ void MainWindow::SetExpectedTopmost(bool expected) {
     S_EmitEvidenceLine(stream.str());
 }
 
-void MainWindow::OnActivate(WPARAM wParam) {
+void MainWindow::OnActivate(WPARAM wParam, LPARAM lParam) {
     const bool active = (LOWORD(wParam) != WA_INACTIVE);
+
+    // 自绘菜单夺走前台期间维持激活状态（原生菜单语义）：跳过 inactive backdrop
+    // 切换与 window:deactivated 广播。菜单关闭后由 FinalizeHide 归还前台，主窗口
+    // 收到的 WM_ACTIVATE(TRUE) 与保持中的状态一致，无二次切换。外点击他窗时对端
+    // 非菜单面，不进此分支，真实失活语义不受影响。
+    if (!active && MenuOverlayHost::GetInstance().ShouldHoldOwnerActivation(
+            reinterpret_cast<HWND>(lParam))) {
+        ApplyWindowActivationState(true, "WM_ACTIVATE.menuOverlayHold");
+        return;
+    }
 
     // 第三波防御：用户点击 desktopLyrics 等 overlay 后，WebView2 在 popup 与主窗口两个
     // controller 间回授焦点，会让主窗口在点击后短时内被无意激活并覆盖外部应用。

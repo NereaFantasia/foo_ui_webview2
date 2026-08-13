@@ -90,6 +90,16 @@ public:
     // 设置 dismiss 回调（菜单覆盖面专用）：失焦(WM_ACTIVATEAPP)或 Esc 时触发请求关闭。
     // 默认空 -> 普通 popup 行为不变（显式接口，不依赖 profile 字符串隐式分支）。
     void SetMenuDismissCallback(std::function<void(const std::string&)> cb) { menuDismissCallback_ = std::move(cb); }
+    // Windows 11 DWM 圆角偏好取值（DWMWCP_*），供逐窗口覆盖的调用方使用，
+    // 避免在 host 侧散落裸数字。
+    static constexpr DWORD kCornerRound = 2;       // DWMWCP_ROUND
+    static constexpr DWORD kCornerRoundSmall = 3;  // DWMWCP_ROUNDSMALL
+    // 逐窗口覆盖 DWM 圆角偏好（默认无覆盖 = 维持 frameless→ROUND / 有帧→DEFAULT 现状）。
+    // 覆盖值立即生效（角偏好变更无需帧重组），并被后续 ApplyFramelessState 消费，
+    // 因为该函数有 framelessDwmApplied_ 短路守卫，不能指望它被重跑。
+    // WS_POPUP 模式窗口无 DWM 帧，覆盖对其无意义，直接跳过。
+    void SetCornerPreferenceOverride(DWORD dwmwcp);
+
     // Apply a client-area input/clipping region from physical-pixel rectangles.
     // This generic popup capability does not define system-backdrop visual
     // correctness; callers requiring isolated DWM material use tight HWNDs.
@@ -229,6 +239,7 @@ private:
     std::vector<DragRegion> noDragRegions_;
     mutable std::mutex regionsMutex_;
 
+    std::optional<DWORD> cornerPreferenceOverride_;  // 逐窗口圆角覆盖（空=按帧模式取默认值）
     bool framelessDwmApplied_ = false;  // ApplyFramelessState 短路守卫（与 MainWindow 对齐）
     bool lastFrameMarginExtended_ = false; // frame:true 时是否已应用 1px DWM 帧扩展
     bool usePopupStyle_ = false;           // frame=false + transparent + no-effect → WS_POPUP 模式

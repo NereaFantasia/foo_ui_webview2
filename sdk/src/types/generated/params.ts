@@ -1502,6 +1502,12 @@ export interface MenuRunMainMenuCommandParams {
  */
 export interface MenuShowParams {
     items?: unknown;
+    windowModel?: string;
+    css?: string;
+    cssReplace?: boolean;
+    backdrop?: string;
+    backdropDarkMode?: boolean;
+    closeAnimationMs?: number;
     /** @default `- 1` */
     x?: number;
     /** @default `- 1` */

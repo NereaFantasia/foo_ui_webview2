@@ -34,7 +34,16 @@ struct Placement {
     int subSlotW = 0;
     int rootTop = 0;
     int rootVisibleH = 0;
+    // 水平翻转形态：true = 子菜单预留槽在虚拟画布【左】侧、根面板在右
+    //（光标贴近屏幕右缘时的原生语义：根菜单边缘贴光标、子菜单向左展开）。
+    // false = 现状：根在左、子槽在右。由锚定计算决定，ComputePlacement 不感知。
+    bool subOnLeft = false;
 };
+
+// 根面板在虚拟画布内的 X 起点（子槽在左时根被推到子槽右侧）。
+inline int RootSlotX(const Placement& placement) {
+    return placement.subOnLeft ? placement.subSlotW : 0;
+}
 
 struct SubmenuPanelRequest {
     bool visible = false;
@@ -142,7 +151,8 @@ inline std::optional<Placement> ComputePlacement(const MeasureReport& report,
 }
 
 inline Rect RootPanelRect(const Placement& placement) {
-    return Rect{0, placement.rootTop, placement.rootSlotW, placement.rootVisibleH};
+    return Rect{RootSlotX(placement), placement.rootTop,
+                placement.rootSlotW, placement.rootVisibleH};
 }
 
 // The root surface is always a tight native window around the root panel. The
@@ -157,9 +167,13 @@ inline std::optional<Rect> ClampSubmenuRect(const Placement& placement, const Re
     if (placement.subSlotW <= 0 || requested.w <= 0 || requested.h <= 0) {
         return std::nullopt;
     }
-    const int x = placement.rootSlotW;
     const int maxW = placement.subSlotW;
     const int w = std::min(requested.w, maxW);
+    // 子菜单面板恒贴根面板的展开侧边缘：子槽在右 = 面板左缘贴根右缘（x=rootSlotW）；
+    // 子槽在左 = 面板右缘贴根左缘（x = 子槽宽 - 面板宽）。渲染器上报的 x 仅作
+    // 校验输入，落位由本函数裁决。
+    const int x = placement.subOnLeft ? std::max(0, placement.subSlotW - w)
+                                      : placement.rootSlotW;
     const int h = std::min(requested.h, placement.viewportH);
     const int maxTop = std::max(0, placement.viewportH - h);
     const int y = std::clamp(requested.y, 0, maxTop);
@@ -177,6 +191,118 @@ inline std::optional<Rect> SubmenuWindowExtent(const Placement& placement,
 
 inline Rect TranslateRect(const Rect& rect, int dx, int dy) {
     return Rect{rect.x + dx, rect.y + dy, rect.w, rect.h};
+}
+
+struct Point {
+    int x = 0;
+    int y = 0;
+};
+
+// 根窗锚定策略（与 windowModel / ownerMode 正交）：
+//   BottomUp = 托盘现状：根左 = 光标 x，根底 = 光标 y，整体向上展开（锚点是托盘图标，
+//              菜单只可能朝屏幕内侧长）。
+//   Cursor   = 标准右键菜单：根左上 = 光标，向下展开，空间不足才翻转。
+enum class AnchorPolicy { BottomUp, Cursor };
+
+inline AnchorPolicy ParseAnchorPolicy(std::string_view policy) {
+    return policy == "cursor" ? AnchorPolicy::Cursor : AnchorPolicy::BottomUp;
+}
+
+// 锚定结果：虚拟画布左上角 + 是否采用"子槽在左"的翻转形态。
+struct AnchoredOrigin {
+    Point origin;
+    bool subOnLeft = false;
+};
+
+// 计算根/子菜单虚拟画布左上角的屏幕物理像素坐标，并决定子菜单槽的展开侧。
+// full = 目标显示器矩形（rcMonitor，可压任务栏），以左上原点 + 宽高表示。
+// dropAlignLeft = SPI_GETMENUDROPALIGNMENT 左手模式：菜单优先向光标左侧展开。
+inline AnchoredOrigin ComputeAnchoredOrigin(Point anchor, const Placement& placement,
+                                            const Rect& full, AnchorPolicy policy,
+                                            bool dropAlignLeft) {
+    const int left = full.x;
+    const int top = full.y;
+    const int right = full.x + full.w;
+    const int bottom = full.y + full.h;
+    const int virtualW = placement.viewportW;
+    const int virtualH = placement.viewportH;
+
+    if (policy == AnchorPolicy::BottomUp) {
+        // 与托盘现状逐行等价：右侧预留超屏时整组左移，左/上边界 clamp；
+        // 下边界不参与（永远向上展开，底边即锚点）。子槽恒在右（现状形态）。
+        int x = anchor.x;
+        int y = anchor.y - virtualH;
+        if (x + virtualW > right) x = right - virtualW;
+        if (x < left) x = left;
+        if (y < top) y = top;
+        return AnchoredOrigin{Point{x, y}, false};
+    }
+
+    // Cursor：锚定语义作用于【根面板】而非整张画布——预留的子菜单槽不得改变
+    // 根菜单与光标的相对位置（修复：右缘翻转曾按画布宽整体平移，根右缘离光标
+    // 差一个子槽宽）。
+    const int rootW = placement.rootSlotW;
+    const int subW = placement.subSlotW;
+
+    // 垂直：根顶贴光标向下展开；下方放不下且上方放得下 → 根底贴光标向上翻。
+    int y = anchor.y - placement.rootTop;
+    if (anchor.y + placement.rootVisibleH > bottom &&
+        anchor.y - placement.rootVisibleH >= top) {
+        y = anchor.y - placement.rootTop - placement.rootVisibleH;
+    }
+
+    // 水平候选形态（origin = 画布左上角）：
+    //   rightAll = 根左贴光标、子槽在根右（现状形态）
+    //   subLeft  = 根左贴光标、子槽换到根左（根仍贴光标，子菜单向左展开）
+    //   flipped  = 根右贴光标、子槽在根左（原生右缘翻转）
+    const bool fitsRightAll = anchor.x + rootW + subW <= right;
+    const bool fitsSubLeft = (anchor.x + rootW <= right) && (anchor.x - subW >= left);
+    const bool fitsFlipped = anchor.x - rootW - subW >= left;
+
+    int x = anchor.x;
+    bool subOnLeft = false;
+    if (!dropAlignLeft) {
+        if (fitsRightAll) {
+            x = anchor.x;
+        } else if (subW > 0 && fitsSubLeft) {
+            x = anchor.x - subW;
+            subOnLeft = true;
+        } else if (fitsFlipped) {
+            x = anchor.x - rootW - subW;
+            subOnLeft = subW > 0;
+        }
+        // 都放不下：维持根左贴光标，交给最终 clamp（左上优先）。
+    } else {
+        // 左手模式镜像：优先根右贴光标向左展开，其次根贴光标子槽在左，最后回翻向右。
+        if (fitsFlipped) {
+            x = anchor.x - rootW - subW;
+            subOnLeft = subW > 0;
+        } else if (subW > 0 && fitsSubLeft) {
+            x = anchor.x - subW;
+            subOnLeft = true;
+        } else if (fitsRightAll) {
+            x = anchor.x;
+        }
+    }
+
+    // 翻转后仍可能越界（菜单比屏幕大 / 锚点贴边）：最终 clamp 进 full，左上优先。
+    x = std::max(left, std::min(x, right - virtualW));
+    y = std::max(top, std::min(y, bottom - virtualH));
+    return AnchoredOrigin{Point{x, y}, subOnLeft};
+}
+
+// 兼容包装（单矩形语义 = 无子菜单槽）：既有调用方与测试的稳定入口。
+inline Point ComputeContentAnchorOrigin(Point anchor, int virtualW, int virtualH,
+                                        const Rect& full, AnchorPolicy policy,
+                                        bool dropAlignLeft) {
+    Placement single;
+    single.viewportW = virtualW;
+    single.viewportH = virtualH;
+    single.rootSlotW = virtualW;
+    single.subSlotW = 0;
+    single.rootTop = 0;
+    single.rootVisibleH = virtualH;
+    return ComputeAnchoredOrigin(anchor, single, full, policy, dropAlignLeft).origin;
 }
 
 inline bool IsValidSubmenuPanelCoordinates(const SubmenuPanelRequest& request) {

@@ -535,11 +535,8 @@ inline void TallyTrayItem(const TrayMenuItem& item, long long& itemCount, long l
 // kept but non-expandable at runtime (DESIGN 8.5).
 inline menu_limits::CheckResult ValidateTrayMenuResources(
     const std::vector<TrayMenuItem>& composed, const std::string& css) {
-    const long long cssBytes = static_cast<long long>(css.size());
-    if (cssBytes > menu_limits::kMaxCssBytes) {
-        return menu_limits::CheckResult::Breach("css", menu_limits::kMaxCssBytes, cssBytes);
-    }
-    menu_limits::CheckResult breach = menu_limits::CheckResult::Ok();
+    menu_limits::CheckResult breach = menu_limits::ValidateCssBytes(css);
+    if (!breach.ok) return breach;
     long long itemCount = 0;
     long long svgTotal = 0;
     for (const auto& it : composed) {

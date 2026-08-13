@@ -98,6 +98,18 @@ WebViewHost* WebViewContext::GetWebViewHost(HWND hwnd) const {
     return nullptr;
 }
 
+bool WebViewContext::IsLiveHost(const WebViewHost* host) const {
+    if (!host) return false;
+    std::lock_guard<std::mutex> lock(mutex_);
+    // 实例数为个位数，线性扫描即可；按指针相等判定"仍注册"。
+    // WebView 崩溃重建（browserProcessExited）会先 Unregister 旧 host，
+    // 故悬垂指针在此必然判负。
+    for (const auto& [hwnd, info] : instances_) {
+        if (info.host == host) return true;
+    }
+    return false;
+}
+
 BridgeCore* WebViewContext::GetPrimaryBridge() const {
     std::lock_guard<std::mutex> lock(mutex_);
     if (primaryHwnd_ && instances_.count(primaryHwnd_)) {

@@ -798,6 +798,145 @@ export function analyzeMouseenterSetActiveFocus(jsSource) {
   };
 }
 
+// ── Hover intent: native MenuShowDelay for submenu layer changes ────────────
+
+/**
+ * Fallback hover delay in milliseconds, matching the Windows MenuShowDelay
+ * default. Used when the host state carries no `menuShowDelayMs` key (older
+ * host) or reports an unusable value.
+ */
+export const MENU_SHOW_DELAY_FALLBACK_MS = 400;
+
+/** Hover delay in milliseconds from the overlay state; 0 stays instantaneous. */
+export function resolveMenuShowDelayMs(state) {
+  const raw = state ? state.menuShowDelayMs : undefined;
+  if (typeof raw !== 'number' || !Number.isFinite(raw) || raw < 0) return MENU_SHOW_DELAY_FALLBACK_MS;
+  return Math.round(raw);
+}
+
+/**
+ * Decide what one pointer row entry does to the submenu layer stack. Row
+ * highlight is always immediate; only the layer change is deferred, so
+ * diagonal travel toward an open submenu no longer closes it.
+ *
+ * openParentRowIdx: parent row index of the currently expanded child layer,
+ * or -1 when nothing is expanded.
+ *
+ * @returns {{ action: 'none'|'cancel'|'schedule', delayMs: number }}
+ *   cancel   — pointer is back on the row owning the open submenu: keep it,
+ *              drop any pending change (idempotent re-hover).
+ *   none     — nothing is expanded and this row has no submenu.
+ *   schedule — after delayMs close the expanded layer, then open this row's
+ *              submenu when it has one.
+ */
+export function evaluateHoverIntent({ openParentRowIdx, hoverRowIdx, hoverHasSub, delayMs } = {}) {
+  const index = (v) => (typeof v === 'number' && Number.isFinite(v) ? Math.trunc(v) : -1);
+  const open = index(openParentRowIdx);
+  const hover = index(hoverRowIdx);
+  const wait = (typeof delayMs === 'number' && Number.isFinite(delayMs) && delayMs >= 0)
+    ? Math.round(delayMs)
+    : MENU_SHOW_DELAY_FALLBACK_MS;
+  if (hover < 0) return { action: 'none', delayMs: 0 };
+  if (open >= 0 && open === hover) return { action: 'cancel', delayMs: 0 };
+  if (open < 0 && !hoverHasSub) return { action: 'none', delayMs: 0 };
+  return { action: 'schedule', delayMs: wait };
+}
+
+/** Bodies of every `addEventListener("<type>", function(){...})` in a source. */
+function collectHandlerBodies(text, type) {
+  const re = new RegExp(`addEventListener\\(\\s*["']${type}["']\\s*,\\s*function\\s*\\([^)]*\\)\\s*\\{`, 'g');
+  const out = [];
+  let m;
+  while ((m = re.exec(text))) {
+    const start = m.index + m[0].length;
+    let depth = 1;
+    let i = start;
+    for (; i < text.length && depth > 0; i++) {
+      const ch = text[i];
+      if (ch === '{') depth++;
+      else if (ch === '}') depth--;
+    }
+    out.push(text.slice(start, i - 1));
+  }
+  return out;
+}
+
+/** Source slice between two top-level function declarations. */
+function sliceBetween(text, fromMarker, toMarker) {
+  const a = text.indexOf(fromMarker);
+  if (a < 0) return '';
+  const b = text.indexOf(toMarker, a + fromMarker.length);
+  return b > a ? text.slice(a, b) : text.slice(a);
+}
+
+/**
+ * Source contract for hover intent: pointer highlight stays immediate while
+ * every layer change funnels through one generation-guarded pending timer.
+ * Click / keyboard paths must keep changing layers immediately.
+ */
+export function analyzeHoverIntentWiring(jsSource) {
+  const text = String(jsSource || '');
+  const rowHovers = collectHandlerBodies(text, 'mouseenter')
+    .filter((b) => /setActiveFromPointer\s*\(/.test(b));
+  // Per row-builder verification: one delegating hover + its own leave cancel.
+  const siteBounds = [
+    ['nowplaying', 'function buildNowPlaying(', 'function buildRating('],
+    ['rating', 'function buildRating(', 'function buildSlider('],
+    ['slider', 'function buildSlider(', 'function buildSegmented('],
+    ['segmented', 'function buildSegmented(', 'function appendItems('],
+    ['normal', 'function appendItems(', 'function itemsHaveIcon('],
+  ];
+  const hoverIntentSites = {};
+  for (const [name, from, to] of siteBounds) {
+    const region = sliceBetween(text, from, to);
+    const hovers = collectHandlerBodies(region, 'mouseenter')
+      .filter((b) => /setActiveFromPointer\s*\(/.test(b));
+    hoverIntentSites[name] = hovers.length === 1
+      && /applyHoverIntent\s*\(/.test(hovers[0])
+      && !/closeLayersFrom\s*\(/.test(hovers[0])
+      && !/openSub\s*\(/.test(hovers[0])
+      && collectHandlerBodies(region, 'mouseleave').some((b) => /cancelHoverIntentFor\s*\(/.test(b));
+  }
+  const rowLeaves = collectHandlerBodies(text, 'mouseleave')
+    .filter((b) => /cancelHoverIntentFor\s*\(/.test(b));
+  const openSubBody = sliceBetween(text, 'function openSub(', 'function placeRoot(');
+  const appendItemsBody = sliceBetween(text, 'function appendItems(', 'function itemsHaveIcon(');
+  const clickBodies = collectHandlerBodies(appendItemsBody, 'click');
+  const onKeyBody = sliceBetween(text, 'function onKey(e){', 'function pull()');
+  const cleanupMatch = text.match(/function cleanupMenuInteraction\(\)\{([\s\S]*?)\n\s*\}/);
+  const cleanupBody = cleanupMatch ? cleanupMatch[1] : '';
+  const timerMatch = text.match(/hoverIntentTimer\s*=\s*setTimeout\(function\(\)\{([\s\S]*?)\n\s*\}\s*,\s*plan\.delayMs\)/);
+  const timerBody = timerMatch ? timerMatch[1] : '';
+  return {
+    hoverIntentSites,
+    rowHoverHandlerCount: rowHovers.length,
+    allRowHoversDeferLayerChange: rowHovers.length > 0
+      && rowHovers.every((b) => /applyHoverIntent\s*\(/.test(b)),
+    noRowHoverChangesLayersInline: rowHovers.every((b) =>
+      !/closeLayersFrom\s*\(/.test(b) && !/openSub\s*\(/.test(b)),
+    highlightBeforeIntent: rowHovers.every((b) =>
+      b.indexOf('setActiveFromPointer(') >= 0
+      && b.indexOf('applyHoverIntent(') > b.indexOf('setActiveFromPointer(')),
+    rowLeaveCancelCount: rowLeaves.length,
+    submenuPanelEnterCancels: /sub\.addEventListener\("mouseenter",\s*function\(\)\{\s*cancelHoverIntent\(\)/.test(openSubBody),
+    singlePendingTimer: (text.match(/setTimeout\(/g) || []).length === 1
+      && (text.match(/hoverIntentTimer\s*=\s*setTimeout\(/g) || []).length === 1,
+    guardsGeneration: /var token\s*=\s*hoverIntentToken\(\)/.test(text)
+      && /token!==hoverIntentToken\(\)\)\s*return/.test(timerBody)
+      && /function hoverIntentToken\(\)\{[^}]*menuId[^}]*hoverIntentGeneration/.test(text),
+    invalidatesGenerationOnCleanup: /invalidateHoverIntent\(\)/.test(cleanupBody)
+      && /function invalidateHoverIntent\(\)\{[^}]*cancelHoverIntent\(\);\s*hoverIntentGeneration\+\+/.test(text),
+    clickPathStaysImmediate: clickBodies.some((b) =>
+      /closeLayersFrom\(depth\+1\);\s*openSub\(depth, ridx\)/.test(b))
+      && clickBodies.every((b) => !/applyHoverIntent\s*\(/.test(b)),
+    clickCancelsPendingIntent: clickBodies.some((b) => /cancelHoverIntent\(\)/.test(b)),
+    keyboardPathStaysImmediate: onKeyBody.length > 0 && !/applyHoverIntent\s*\(/.test(onKeyBody),
+    keyboardCancelsPendingIntent: /cancelHoverIntent\(\)/.test(onKeyBody),
+    readsHostDelayWithFallback: /function hoverIntentDelayMs\(\)\{\s*return resolveMenuShowDelayMs\(cur\)/.test(text)
+      && /delayMs:hoverIntentDelayMs\(\)/.test(text),
+  };
+}
+
 /**
  * Static contract: hide / select / dismiss / render must clear editor interaction state.
  */
@@ -837,5 +976,53 @@ export function analyzeMenuInteractionCleanup(jsSource) {
     dismissCleans,
     renderCleans,
     allPathsClean: !!(hasCleanupHelper && hideCleans && selectCleans && dismissCleans && renderCleans),
+  };
+}
+
+// ── Compact-HWND (contentSized / independent submenu) chrome ────────────────
+
+/** Declaration block of the rule whose selector list contains `selector`. */
+function findCssRuleBody(css, selector) {
+  const clean = String(css || '').replace(/\/\*[\s\S]*?\*\//g, '');
+  for (const chunk of clean.split('}')) {
+    const brace = chunk.indexOf('{');
+    if (brace < 0) continue;
+    const selectors = chunk.slice(0, brace).split(',').map((s) => s.trim());
+    if (selectors.includes(selector)) return chunk.slice(brace + 1);
+  }
+  return null;
+}
+
+/**
+ * Default CSS contract for compact surfaces: a tight HWND clips CSS shadows,
+ * so the DWM system shadow takes over and the radius shrinks to the native
+ * 4px. The fullscreen sheet keeps its original radius and shadow.
+ */
+export function analyzeContentSizedChromeCss(css) {
+  const compact = findCssRuleBody(css, '.fb-content-sized .fb-menu');
+  const base = findCssRuleBody(css, '.fb-menu');
+  return {
+    hasCompactMenuRule: compact != null,
+    compactRadiusIs4px: /border-radius\s*:\s*4px/.test(compact || ''),
+    compactDropsCssShadow: /box-shadow\s*:\s*none/.test(compact || ''),
+    fullscreenKeepsRadius: /border-radius\s*:\s*6px/.test(base || ''),
+    fullscreenKeepsShadow: /box-shadow\s*:\s*[^;]*rgba/.test(base || ''),
+  };
+}
+
+/**
+ * Source contract: the renderer must flag `<html>` for both compact window
+ * models so the compact chrome rules apply to root and submenu surfaces.
+ */
+export function analyzeContentSizedRootClassWiring(jsSource) {
+  const text = String(jsSource || '');
+  const renderBody = sliceBetween(text, 'function render(st){', 'function reportSubmenuPanel(');
+  const match = renderBody.match(/document\.documentElement\.classList\.toggle\(\s*["']fb-content-sized["']\s*,\s*([^)]*)\)/);
+  const condition = match ? match[1] : '';
+  return {
+    togglesRootClassInRender: !!match,
+    coversContentSized: /\bcontent\b/.test(condition),
+    coversSubmenuSurface: /\bsubmenuSurface\b/.test(condition),
+    keepsBodyContentSizedFlag: /document\.body\.classList\.toggle\(\s*["']content-sized["']\s*,\s*content\s*\)/.test(renderBody),
   };
 }

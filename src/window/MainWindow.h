@@ -398,7 +398,8 @@ private:
     // ========== 客户区扩展到标题栏 ==========
     LRESULT OnNcCalcSize(WPARAM wParam, LPARAM lParam);
     LRESULT OnNcHitTest(int screenX, int screenY);
-    void OnActivate(WPARAM wParam);
+    // lParam = WM_ACTIVATE 报告的对端窗口（判断失活是否让位给自绘菜单面）。
+    void OnActivate(WPARAM wParam, LPARAM lParam);
     void OnActivateApp(bool active);
     void OnDpiChanged(WPARAM wParam, LPARAM lParam);
     

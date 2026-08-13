@@ -148,6 +148,7 @@ Ordinary user items and now-playing cards report `{ id }` and close the menu. Ri
 | `keyboard:hotkey` | A registered hotkey fires | `{ id, key, action }` |
 | `menu:show` | A custom menu opens | `{ menuId }` |
 | `menu:select` | A custom-menu item is selected | `{ menuId, itemId }` |
+| `menu:valueChanged` | A rating, slider, or segmented control in a custom menu changes value; the menu stays open | `{ menuId, itemId, value }` |
 | `menu:dismiss` | A custom menu closes | `{ menuId, reason }` |
 
 ## Cross-window events

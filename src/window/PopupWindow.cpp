@@ -1,5 +1,6 @@
 ﻿#include "pch.h"
 #include "window/PopupWindow.h"
+#include "window/MenuOverlayHost.h"
 #include "window/WindowChromeResolver.h"
 #include "window/WindowChromeTrace.h"
 #include "window/WindowManager.h"
@@ -39,6 +40,11 @@ namespace {
     constexpr DWORD DWMWA_WINDOW_CORNER_PREFERENCE_V = 33;
     constexpr DWORD DWMWCP_DEFAULT_V = 0;
     constexpr DWORD DWMWCP_ROUND_V = 2;
+    constexpr DWORD DWMWCP_ROUNDSMALL_V = 3;
+    // 覆盖接口对外暴露的取值与这里的 DWM 常量必须是同一真相，防两处漂移。
+    static_assert(PopupWindow::kCornerRound == DWMWCP_ROUND_V &&
+                  PopupWindow::kCornerRoundSmall == DWMWCP_ROUNDSMALL_V,
+                  "PopupWindow corner constants must mirror DWMWCP_*");
 
     // Windows 11: 背景类型
     constexpr DWORD DWMWA_SYSTEMBACKDROP_TYPE_V = 38;
@@ -501,8 +507,16 @@ LRESULT PopupWindow::HandleMessage(UINT msg, WPARAM wParam, LPARAM lParam) {
             case WM_NCACTIVATE: {
                 EmitActivationEvidence("WM_NCACTIVATE",
                     std::string("active=") + WindowChromeTrace::BoolText(wParam != FALSE));
+                // 自绘菜单持有前台期间谎报激活态，保住本弹窗（菜单调用方，或菜单面
+                // 自身的 root↔submenu 交接）的 DWM 材质激活观感；外部窗口夺走前台时
+                // 判定为 false，正常降为 inactive。
+                const WPARAM ncActive =
+                    (wParam == FALSE && MenuOverlayHost::GetInstance().ShouldHoldOwnerActivation(
+                         reinterpret_cast<HWND>(lParam)))
+                        ? TRUE
+                        : wParam;
                 // lParam = -1 告诉 DefWindowProc 仅更新激活状态，不重绘非客户区
-                return DefWindowProcW(hwnd_, msg, wParam, -1);
+                return DefWindowProcW(hwnd_, msg, ncActive, -1);
             }
             case WM_NCPAINT:
                 return 0;
@@ -587,6 +601,14 @@ LRESULT PopupWindow::HandleMessage(UINT msg, WPARAM wParam, LPARAM lParam) {
                 EmitActivationEvidence("WM_ACTIVATE.undoScheduled.inactiveToMain", e2.str());
                 PostMessage(hwnd_, WM_POPUP_UNDO_FOREGROUND, 0,
                     (LPARAM)lastForegroundBeforeClick_);
+            }
+            // 自绘菜单的内部激活交接（宿主→menu / root↔submenu）：维持本窗激活
+            // 状态，且不触发 blur dismiss。外点击的对端非菜单面，不进此分支，
+            // 失焦关闭语义不变。
+            if (activationKind == WA_INACTIVE &&
+                MenuOverlayHost::GetInstance().ShouldHoldOwnerActivation(otherHwnd)) {
+                EmitActivationEvidence("WM_ACTIVATE.menuOverlayHold");
+                break;
             }
             if (menuDismissCallback_ && activationKind == WA_INACTIVE) {
                 menuDismissCallback_("blur");
@@ -1757,6 +1779,17 @@ void PopupWindow::UpdateClickThroughEffective() {
     }
 }
 
+void PopupWindow::SetCornerPreferenceOverride(DWORD dwmwcp) {
+    cornerPreferenceOverride_ = dwmwcp;
+    // ApplyFramelessState 有 framelessDwmApplied_ 短路守卫（重入直接 return），
+    // 池化窗口第二次 show 时不会再跑到设角逻辑；而角偏好本身不需要帧重组，
+    // 这里直接写属性即可让覆盖立即生效。首次应用时 ApplyFramelessState 会消费同一覆盖值。
+    if (!hwnd_ || !IsWindow(hwnd_) || usePopupStyle_) return;
+    DWORD cornerPref = dwmwcp;
+    S_DwmSetWindowAttribute(hwnd_, DWMWA_WINDOW_CORNER_PREFERENCE_V,
+        &cornerPref, sizeof(cornerPref));
+}
+
 void PopupWindow::ApplyFramelessState(bool frameless) {
     if (!hwnd_ || !IsWindow(hwnd_)) return;
 
@@ -1789,7 +1822,7 @@ void PopupWindow::ApplyFramelessState(bool frameless) {
         MARGINS margins = { -1, -1, -1, -1 };
         S_DwmExtendFrameIntoClientArea(hwnd_, &margins);
 
-        DWORD cornerPref = DWMWCP_ROUND_V;
+        DWORD cornerPref = cornerPreferenceOverride_.value_or(DWMWCP_ROUND_V);
         S_DwmSetWindowAttribute(hwnd_, DWMWA_WINDOW_CORNER_PREFERENCE_V,
             &cornerPref, sizeof(cornerPref));
     } else {
@@ -1803,7 +1836,7 @@ void PopupWindow::ApplyFramelessState(bool frameless) {
         MARGINS margins = needsFrameMarginExtension ? MARGINS{ -1, -1, -1, -1 } : MARGINS{ 0, 0, 0, 0 };
         S_DwmExtendFrameIntoClientArea(hwnd_, &margins);
 
-        DWORD cornerPref = DWMWCP_DEFAULT_V;
+        DWORD cornerPref = cornerPreferenceOverride_.value_or(DWMWCP_DEFAULT_V);
         S_DwmSetWindowAttribute(hwnd_, DWMWA_WINDOW_CORNER_PREFERENCE_V,
             &cornerPref, sizeof(cornerPref));
     }

@@ -133,8 +133,20 @@ inline void TallyJsonItem(const nlohmann::json& item, int depth, long long& item
 
 }  // namespace detail
 
+// Shared css byte cap. Tray config css and menu.show css are the same renderer
+// resource, so both preflights must report the same field/limit/actual breach
+// instead of each caller rolling its own comparison.
+inline CheckResult ValidateCssBytes(const std::string& css) {
+    const long long cssBytes = static_cast<long long>(css.size());
+    if (cssBytes > kMaxCssBytes) {
+        return CheckResult::Breach("css", kMaxCssBytes, cssBytes);
+    }
+    return CheckResult::Ok();
+}
+
 // Validate menu.show items JSON AFTER StripOversizedSvgInJsonItems. Depth > 8
-// fails (legacy menu.show). Does not check css (tray-only).
+// fails (legacy menu.show). Does not check css (callers preflight css through
+// ValidateCssBytes).
 inline CheckResult ValidateShowMenuResources(const nlohmann::json& items) {
     if (!items.is_array()) {
         return CheckResult::Breach("items", kMaxMenuItems, 0);

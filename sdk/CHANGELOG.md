@@ -5,6 +5,41 @@ All notable changes to the foo-webview-sdk will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **Per-call presentation options for the self-drawn menu** — `menu.show` and
+  `menu.popup` take a third `MenuPopupOptions` argument, and keys the caller
+  omits are not sent, so the host keeps its own defaults:
+  - `windowModel` (`'fullscreen'` default, or `'contentSized'`) —
+    `'contentSized'` draws the root and its first-level submenu in separate
+    compact windows measured to their content, so each panel carries the real
+    DWM backdrop material across its own surface plus the system window shadow.
+    It is the recommended model for a context menu; `'fullscreen'` remains the
+    compatibility default.
+  - `css` (at most 256 KiB) and `cssReplace` — style takeover for the overlay,
+    layered over the built-in styles by default, or replacing them entirely so
+    the whole look including the entry animation is the theme's.
+  - `backdrop` (`'acrylic'` default, `'mica'`, `'mica-alt'`, `'none'`) and
+    `backdropDarkMode` (default `true`) — DWM system backdrop for the menu
+    window. Acrylic needs Windows 11 22H2 or newer and degrades on Windows 10.
+  - `closeAnimationMs` (default `0`, clamped to `0..1000`) — exit fade duration.
+    It animates the web content only; the DWM backdrop is a window-level effect
+    that snaps in and out with the window, so a fully smooth fade needs
+    `backdrop: 'none'` plus a translucent CSS background.
+- **Rich items in `MenuPopupItem`** — the `type` union gained `'nowplaying'`,
+  `'rating'`, `'slider'`, and `'segmented'` along with the fields they use
+  (`value`, `min` / `max` / `orientation`, `segments`, and `cover` / `title` /
+  `subtitle`), plus `iconSvg` for an inline monochrome icon on any row. Icons go
+  through the runtime's allowlist sanitizer; an illegal or oversized one is
+  dropped without failing the row.
+- **`menu:valueChanged`** — reports a rating, slider, or segmented change in a
+  self-drawn menu as `{ menuId, itemId, value }` and **keeps the menu open**,
+  while ordinary rows still report through `menu:select` and close it. Because
+  `menu.popup` resolves only on selection or dismissal, subscribe to this event
+  separately when a menu contains value controls.
+
 ## [1.12.0] - 2026-08-12
 
 > **Breaking changes**: the `dnd` drop-zone registry (`registerDropZone` /

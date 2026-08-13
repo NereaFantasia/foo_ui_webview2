@@ -90,6 +90,15 @@ export interface MenuShowPayload {
 }
 
 /**
+ * Payload of the `menu:valueChanged` event.
+ */
+export interface MenuValueChangedPayload {
+    menuId: string;
+    itemId: unknown;
+    value: number;
+}
+
+/**
  * Payload of the `panel:configChanged` event.
  */
 export interface PanelConfigChangedPayload {
@@ -489,6 +498,7 @@ export type FBEventName =
     | "menu:dismiss"
     | "menu:select"
     | "menu:show"
+    | "menu:valueChanged"
     | "metadata:writeComplete"
     | "metadb:changed"
     | "panel:blur"
@@ -590,6 +600,7 @@ export interface FBEventPayloadMap {
     "menu:dismiss": MenuDismissPayload;
     "menu:select": MenuSelectPayload;
     "menu:show": MenuShowPayload;
+    "menu:valueChanged": MenuValueChangedPayload;
     "metadata:writeComplete": MetadataWriteCompletePayload;
     "metadb:changed": MetadbChangedPayload;
     "panel:blur": PanelBlurPayload;

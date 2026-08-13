@@ -445,12 +445,15 @@ static int ParseTrackNumberToken(const std::string &value) {
 }
 
 static int ExtractLeadingTrackNumber(const std::string &filename) {
-  if (filename.length() <= 2 || !std::isdigit(filename[0])) {
+  // isdigit 的合法域是 [-1, 255]：CJK 文件名的 UTF-8 字节以 signed char 直传为负值，
+  // Debug CRT 直接断言（isctype.cpp c >= -1 && c <= 255），必须先转 unsigned char。
+  if (filename.length() <= 2 || !std::isdigit(static_cast<unsigned char>(filename[0]))) {
     return 0;
   }
 
   size_t endPos = 0;
-  while (endPos < filename.length() && std::isdigit(filename[endPos])) {
+  while (endPos < filename.length() &&
+         std::isdigit(static_cast<unsigned char>(filename[endPos]))) {
     endPos++;
   }
 

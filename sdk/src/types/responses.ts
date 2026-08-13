@@ -2229,14 +2229,180 @@ export interface MenuPopupItem {
     id?: string;
     /** Visible row text; omitted for separators. */
     label?: string;
-    /** `'separator'` renders a divider; any other value is a normal row. */
-    type?: 'normal' | 'separator';
+    /**
+     * Row kind. `'separator'` renders a divider; any other value is a normal row.
+     *
+     * The rich kinds (`'nowplaying'` / `'rating'` / `'slider'` / `'segmented'`)
+     * draw an inline control instead of a plain label row. A rating, slider, or
+     * segmented change reports through `menu:valueChanged` and **keeps the menu
+     * open**; a now-playing card is an ordinary selection that reports through
+     * `menu:select` and closes the menu.
+     */
+    type?: 'normal' | 'separator' | 'nowplaying' | 'rating' | 'slider' | 'segmented';
     /** Disabled rows are greyed out and cannot be chosen. Defaults to `true`. */
     enabled?: boolean;
     /** Renders a check mark to the left of the label. */
     checked?: boolean;
+    /**
+     * Inline monochrome SVG icon, drawn before the label. `content` is the SVG
+     * inner markup (e.g. `"<path d=\"...\"/>"`). The overlay runtime parses it
+     * with `DOMParser` and clones only an allowlisted set of shape elements /
+     * attributes into the live document; raw `innerHTML` injection is not used.
+     * An illegal or oversized (>32 KiB) icon is dropped silently and the row
+     * continues without an icon.
+     */
+    iconSvg?: { viewBox: string; content: string };
+
+    // ── Rich-item payload ─────────────────────────────────────────────────
+
+    /**
+     * `type: 'nowplaying'` album art, rendered as a fixed 40x40 thumbnail.
+     * Accepts three forms: a full data URL (`data:image/jpeg;base64,...`), an
+     * `http(s)://` URL (used directly), or raw base64 (decoded as JPEG).
+     */
+    cover?: string;
+    /** `type: 'nowplaying'` primary line (track title). Falls back to `label`. */
+    title?: string;
+    /** `type: 'nowplaying'` secondary line (artist / album). */
+    subtitle?: string;
+    /**
+     * Current value of a rich value control. `type: 'rating'` → integer stars
+     * `0..5`; `type: 'slider'` → integer within `[min, max]`;
+     * `type: 'segmented'` → zero-based index of the selected segment. Changes
+     * are reported through `menu:valueChanged` as `{ menuId, itemId, value }`
+     * without closing the menu, so the page owns what a value means.
+     */
+    value?: number;
+    /** `type: 'slider'` range minimum (default `0`). */
+    min?: number;
+    /** `type: 'slider'` range maximum (default `100`). */
+    max?: number;
+    /**
+     * `type: 'slider'` axis only (`'horizontal'` | `'vertical'`). Default when
+     * omitted: `'horizontal'`. Only the exact value `'vertical'` is vertical;
+     * unknown strings fall back to horizontal, and non-slider types ignore the
+     * field. Vertical semantics: min at bottom, max at top; ArrowUp / ArrowRight
+     * increase, ArrowDown / ArrowLeft decrease, Home=min, End=max. A constant
+     * slider (`min === max` after normalization) displays its value and never
+     * emits a value change.
+     */
+    orientation?: 'horizontal' | 'vertical';
+    /**
+     * `type: 'segmented'` segments — an inline single-select control (one row of
+     * mutually exclusive options). The selected segment is {@link value}, a
+     * zero-based index. Each segment shows its `iconSvg` when present, otherwise
+     * its `label`; a segment with `enabled: false` is greyed out and cannot be
+     * picked. Picking one reports `{ menuId, itemId, value }` through
+     * `menu:valueChanged` and keeps the menu open (Left/Right also move the
+     * selection). Segment icons go through the same allowlist sanitizer as item
+     * icons, so an illegal icon is dropped per segment.
+     */
+    segments?: { label?: string; iconSvg?: { viewBox: string; content: string }; enabled?: boolean }[];
     /** Nested child items; presence renders a flyout arrow. */
     submenu?: MenuPopupItem[];
+}
+
+/**
+ * Optional presentation configuration for `menu.show` / `menu.popup`.
+ *
+ * Every field is applied per call, so a page can follow its own theme state on
+ * each right-click. Omitted fields keep their documented defaults.
+ */
+export interface MenuPopupOptions {
+    /**
+     * Window geometry model for the self-drawn menu (default `'fullscreen'`).
+     *
+     * - `'contentSized'`: the menu is drawn in a compact window measured to the
+     *   menu content, with the root and its first-level submenu in separate,
+     *   tightly sized popup windows. Each panel therefore carries the real DWM
+     *   {@link backdrop} material across its own surface plus the system window
+     *   shadow. This is the recommended model for a context menu.
+     * - `'fullscreen'`: the compatibility default — one fullscreen overlay
+     *   window hosting the menu DOM.
+     */
+    windowModel?: 'fullscreen' | 'contentSized';
+
+    /**
+     * Frontend style takeover. The CSS string (at most 256 KiB) is injected into
+     * the overlay's dedicated `<style>` layer and applied on every open.
+     *
+     * By default this is **override / append** mode: your rules sit on top of the
+     * built-in styles, so target the menu's stable class names — `.fb-menu`,
+     * `.fb-item` (with `.nrm` / `.disabled` / `.active` / `.checked` / `.has-sub`),
+     * `.fb-item-ico`, `.fb-arrow`, `.fb-sep`, the now-playing `.fb-np*`, rating
+     * `.fb-rating*` / `.fb-star`, slider `.fb-slider*`, and segmented `.fb-seg*` —
+     * and win by source order or `!important`. (The overlay is an isolated
+     * top-level document, so a host page's `::part()` cannot reach it; the stable
+     * class hooks are the supported styling contract.) A small protected
+     * structural layer (`#viewport`, menu box-sizing / fixed positioning /
+     * overflow, and the hidden-state fallback) is always force-applied last.
+     *
+     * For a translucent menu, keep the background alpha around `0.75`–`0.9`:
+     * that preserves text contrast, and Windows 11's own system menus are
+     * similarly restrained about how much they let through.
+     */
+    css?: string;
+
+    /**
+     * When `true`, switches {@link css} from override/append to **replace** mode:
+     * the built-in default styles are disabled and only your `css` plus the
+     * protected structural layer remain, so the menu's entire look (including the
+     * entry animation) is yours to define. Default `false`.
+     */
+    cssReplace?: boolean;
+
+    /**
+     * DWM system backdrop for the menu window, sharing the effect vocabulary of
+     * the main / tabbed windows (mapped to DWM `DWMSBT_*`): `'none'` (no
+     * backdrop), `'mica'`, `'mica-alt'` and `'acrylic'`.
+     *
+     * Default `'acrylic'` — the transient-surface material, which is the correct
+     * default for a pop-up menu. `'mica'` / `'mica-alt'` are designed as
+     * main-window / tabbed-window backgrounds and may look off on a transient
+     * menu. The material is only visible through a translucent menu background,
+     * so pair it with a translucent `.fb-menu` background via {@link css}.
+     * Acrylic needs Windows 11 22H2 or newer; Windows 10 degrades to whatever
+     * backdrop the system supports.
+     *
+     * Warning: the DWM backdrop is a window-level, all-or-nothing effect: it
+     * appears / disappears the instant the window is shown / hidden and **cannot
+     * fade with CSS animations** (see {@link closeAnimationMs}). For an animated
+     * open / close, set this to `'none'` and give `.fb-menu` a translucent
+     * `background` via {@link css} — a CSS translucent background has no real
+     * blur, which is the trade-off.
+     */
+    backdrop?: 'acrylic' | 'mica' | 'mica-alt' | 'none';
+
+    /**
+     * Dark tint for the {@link backdrop}. Default `true`; pass `false` to follow
+     * a light theme. Applied together with {@link backdrop} on every open.
+     */
+    backdropDarkMode?: boolean;
+
+    /**
+     * Exit (fade-out) animation duration in milliseconds.
+     *
+     * Default `0` — the menu hides immediately on close with no exit animation.
+     * When `> 0` (clamped to `0..1000`), a user-initiated close (clicking
+     * outside, `Escape`, selecting an item, or losing focus) first plays an exit
+     * transition for this many milliseconds before the window is hidden. Set it
+     * to roughly your own `#menu.out` transition duration so the fade finishes
+     * just as the window disappears.
+     *
+     * On close the renderer toggles the root menu's class from `#menu.in` to
+     * `#menu.out`; the built-in `#menu.out` rule mirrors the entry animation, and
+     * you can override it via {@link css}. The `replaced` (a new menu opening
+     * over this one) and internal timeout close paths always hide immediately,
+     * regardless of this value.
+     *
+     * Warning: this animates the web content only — **not** the DWM
+     * {@link backdrop}, a window-level effect that snaps in / out with it. With
+     * `acrylic` / `mica` enabled, the backdrop pops while the content fades, so
+     * the transition is out of sync. For a fully smooth fade, use a CSS
+     * translucent background ({@link backdrop} `'none'` plus a translucent
+     * `.fb-menu` background via {@link css}) rather than the DWM backdrop.
+     */
+    closeAnimationMs?: number;
 }
 
 /**

@@ -17,6 +17,29 @@ namespace {
     std::wstring BuildMenuOverlayHtml() {
         return BuildMenuOverlayHtmlFromSources();
     }
+
+    // SPI_GETMENUDROPALIGNMENT：系统返回 TRUE 表示菜单相对锚点【右对齐】，
+    // 即整块菜单朝光标左侧展开（左手模式）。读取失败按默认的向右展开处理。
+    bool ReadMenuDropAlignLeft() {
+        BOOL rightAligned = FALSE;
+        if (!SystemParametersInfoW(SPI_GETMENUDROPALIGNMENT, 0, &rightAligned, 0)) {
+            return false;
+        }
+        return rightAligned != FALSE;
+    }
+
+    // SPI_GETMENUSHOWDELAY：系统子菜单悬停展开延迟（毫秒），渲染器据此对齐原生手感。
+    // 读取失败回退 Windows 默认 400ms；注册表可被写成任意值，故仍 clamp 上限。
+    constexpr int kMenuShowDelayFallbackMs = 400;
+    constexpr int kMenuShowDelayMaxMs = 5000;
+    int ReadMenuShowDelayMs() {
+        DWORD delay = 0;
+        if (!SystemParametersInfoW(SPI_GETMENUSHOWDELAY, 0, &delay, 0)) {
+            return kMenuShowDelayFallbackMs;
+        }
+        if (delay > static_cast<DWORD>(kMenuShowDelayMaxMs)) return kMenuShowDelayMaxMs;
+        return static_cast<int>(delay);
+    }
 }
 
 // ---------- MenuOverlayWindow ----------
@@ -60,6 +83,12 @@ bool MenuOverlayHost::EnsureCreated() {
     params.alwaysOnTop = true;
     params.showInTaskbar = false;
     params.beforeClose = false;
+    // 豁免 CreateParams 默认的 200×150 DIP 最小尺寸：菜单窗必须严格贴合测量出的
+    // 内容尺寸。窗口样式含 WS_CAPTION(WS_DLGFRAME)，DefWindowProc 会按
+    // WM_GETMINMAXINFO 钳制程序化 SetWindowPos——小菜单（如 min-width:170px）
+    // 若被钳到 200 DIP 宽，右/下缘会露出内容盖不住的裸 DWM 材质带。
+    params.minWidth = 1;
+    params.minHeight = 1;
 
     params.hasBehavior = true;
     params.behavior = {
@@ -131,6 +160,8 @@ std::string MenuOverlayHost::Show(const json& items, int screenX, int screenY,
     currentCloseAnimationMs_ = opts.closeAnimationMs;  // 退场动画时长（0=立即隐藏不动画，零回归）
     currentBackdrop_ = opts.backdrop;
     currentBackdropDarkMode_ = opts.backdropDarkMode;
+    currentAnchorPolicy_ = menu_overlay_geometry::ParseAnchorPolicy(opts.anchorPolicy);
+    currentDropAlignLeft_ = ReadMenuDropAlignLeft();  // 快照左手模式，供异步 measure 定位复用
 
     POINT pt{ screenX, screenY };
     HMONITOR mon = MonitorFromPoint(pt, MONITOR_DEFAULTTONEAREST);
@@ -223,8 +254,18 @@ std::string MenuOverlayHost::Show(const json& items, int screenX, int screenY,
         SetWindowPos(overlayHwnd_, HWND_TOPMOST, work.left, work.top, w, h, SWP_NOACTIVATE);
     }
 
+    // 记录交接前的前台窗口（FinalizeHide 归还激活与键盘焦点用）。菜单替换菜单时
+    // 前台可能已在菜单面上，此时保留上一轮记录，避免"还给菜单自己"。
+    const HWND fgBeforeShow = GetForegroundWindow();
+    if (fgBeforeShow && fgBeforeShow != overlayHwnd_ && fgBeforeShow != submenuHwnd_) {
+        previousForeground_ = fgBeforeShow;
+    }
+    // handoff 窗口期：SetForegroundWindow 同步派发宿主的 WM_NCACTIVATE/WM_ACTIVATE，
+    // 宿主经 ShouldHoldOwnerActivation 识别"失活是让位给菜单"从而维持激活观感。
+    activationHandoff_ = true;
     ShowWindow(overlayHwnd_, SW_SHOW);
     SetForegroundWindow(overlayHwnd_);
+    activationHandoff_ = false;
     SetWindowPos(overlayHwnd_, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
 
     // 运行时按本次 config 应用 DWM 系统背景：池化 overlay 被 tray（ContentSized）与
@@ -236,6 +277,12 @@ std::string MenuOverlayHost::Show(const json& items, int screenX, int screenY,
         overlay_->UpdateBackdropPolicy(
             json{ {"activeEffect", opts.backdrop}, {"inactiveEffect", opts.backdrop}, {"darkMode", opts.backdropDarkMode} },
             bderr);
+        // 圆角逐 show 应用：内容尺寸窗贴合原生菜单的小圆角；全屏覆盖面维持现状大圆角
+        // （其可见圆角由前端面板自己画）。池化单窗被两种模型共用，必须双向恢复。
+        overlay_->SetCornerPreferenceOverride(
+            windowModel_ == MenuWindowModel::ContentSized
+                ? PopupWindow::kCornerRoundSmall
+                : PopupWindow::kCornerRound);
     }
     if (overlay_->IsWebViewReady()) {
         if (auto* wv = overlay_->GetWebView()) {
@@ -332,6 +379,9 @@ void MenuOverlayHost::FinalizeHide(const std::string& reason) {
     // 外层继续时误判为非 owner 而泄漏 menu:dismiss。先置 visible_=false 且 closing_=false 让重入早退。
     visible_ = false;
     closing_ = false;
+    // 在隐藏任何菜单面之前采样前台归属：SW_HIDE 会让系统自行转移前台，之后就无从
+    // 判断"关闭时前台是否还在菜单面上"。
+    const HWND fgAtClose = GetForegroundWindow();
     measureGate_.Cancel();
     placedGeometry_.reset();
     contentVirtualOrigin_ = POINT{};
@@ -364,6 +414,16 @@ void MenuOverlayHost::FinalizeHide(const std::string& reason) {
     if (overlay_) {
         overlay_->ClearContentRegion();
     }
+    // 归还激活：Esc/select/看门狗等路径关闭时前台仍在菜单面上，显式还给打开菜单前
+    // 的窗口（激活观感与键盘焦点一并回到调用方）。外点击/切他窗时系统已把前台转走
+    //（fgAtClose 不在菜单面），不做干预，保证目标窗口的正常激活语义。
+    if (fgAtClose && (fgAtClose == overlayHwnd_ || fgAtClose == submenuHwnd_) &&
+        previousForeground_ && IsWindow(previousForeground_) &&
+        IsWindowVisible(previousForeground_)) {
+        SetForegroundWindow(previousForeground_);
+    }
+    previousForeground_ = nullptr;
+    activationHandoff_ = false;
     if (overlayHwnd_ && IsWindow(overlayHwnd_)) {
         ShowWindow(overlayHwnd_, SW_HIDE);
     }
@@ -436,8 +496,18 @@ void MenuOverlayHost::OnValueChanged(const std::string& token, int value) {
     if (!publicId.has_value()) {
         return;   // not a value control, out-of-range value, disabled item, or unknown token
     }
-    if (valueSink_) {
-        try { valueSink_(*publicId, value); } catch (...) {}
+    if (ownerMode_) {
+        if (valueSink_) {
+            try { valueSink_(*publicId, value); } catch (...) {}
+        }
+    } else {
+        // 公共 menu.show：与 menu:select 同口径，仅发索引里的 publicId（永不回 token）。
+        // 值变更不关闭菜单，故此处不调 Hide。
+        BridgeCore::GetInstance().EmitEvent("menu:valueChanged", {
+            {"menuId", currentMenuId_},
+            {"itemId", *publicId},
+            {"value", value}
+        });
     }
     console::printf("[MenuOverlayHost] ValueChanged item=%s value=%d owner=%d",
                     publicId->c_str(), value, (int)ownerMode_);
@@ -464,7 +534,7 @@ bool MenuOverlayHost::OnContentMeasured(const menu_overlay_geometry::MeasureRepo
         work = mi.rcWork;
     }
 
-    const auto placement = menu_overlay_geometry::ComputePlacement(
+    auto placement = menu_overlay_geometry::ComputePlacement(
         report, hasSubmenu, work.right - work.left, work.bottom - work.top);
     if (!placement.has_value()) {
         return false;
@@ -472,12 +542,18 @@ bool MenuOverlayHost::OnContentMeasured(const menu_overlay_geometry::MeasureRepo
     const int virtualW = placement->viewportW;
     const int virtualH = placement->viewportH;
 
-    // 定位：根底贴光标（上展贴托盘），根左=光标 x。窗口高=根高 → 窗口底=光标 y（不超屏，无垂直偏移）。
-    int x = pendingAnchor_.x;
-    int y = pendingAnchor_.y - virtualH;
-    if (x + virtualW > full.right) x = full.right - virtualW;    // 右预留超屏 → 左移整组根/子窗口
-    if (x < full.left) x = full.left;
-    if (y < full.top) y = full.top;
+    // 定位交由纯函数决策（可单测）：bottomUp = 托盘现状（根底贴光标向上展开）；
+    // cursor = 标准右键菜单——锚定语义作用于根面板本身（根边缘贴光标），右缘
+    // 翻转时子菜单槽换到根左侧（anchored.subOnLeft），根与光标不再有子槽宽偏差。
+    const auto anchored = menu_overlay_geometry::ComputeAnchoredOrigin(
+        menu_overlay_geometry::Point{pendingAnchor_.x, pendingAnchor_.y},
+        *placement,
+        menu_overlay_geometry::Rect{full.left, full.top,
+                                    full.right - full.left, full.bottom - full.top},
+        currentAnchorPolicy_, currentDropAlignLeft_);
+    placement->subOnLeft = anchored.subOnLeft;
+    const int x = anchored.origin.x;
+    const int y = anchored.origin.y;
 
     contentVirtualOrigin_ = POINT{x, y};
     // The root is a tight real HWND. Do not reserve an invisible native slot
@@ -590,6 +666,9 @@ json MenuOverlayHost::GetMenuStateJson(HWND caller) const {
         // cssReplace = true 时 replace 模式（禁用默认样式，仅留 fb-user+fb-protected），false = override 叠加。
         {"css", currentCss_},
         {"cssReplace", currentCssReplace_},
+        // 子菜单悬停展开延迟：直接下发系统 SPI_GETMENUSHOWDELAY，让自绘菜单的展开节奏
+        // 与原生菜单一致（渲染器不得自定义默认值）。
+        {"menuShowDelayMs", ReadMenuShowDelayMs()},
         // 屏幕阅读器文本语言：与 utils/I18n.h 同源，即 foobar2000 程序呈现语言
         // （探测核心字符串，失败时回退系统 UI 语言；可被偏好设置覆盖），
         // 与本组件其余原生界面文案保持一致。
@@ -632,6 +711,21 @@ bool MenuOverlayHost::IsOverlayCaller(HWND caller) const {
 
 bool MenuOverlayHost::IsRootOverlayCaller(HWND caller) const {
     return menu_action::IsSameOverlayWindow(caller, overlayHwnd_);
+}
+
+bool MenuOverlayHost::ShouldHoldOwnerActivation(HWND other) const {
+    // 菜单不在场（含交接瞬间之外的创建期）一律不保持。
+    if (!visible_ && !activationHandoff_) {
+        return false;
+    }
+    // 菜单面 SetForegroundWindow 的同步窗口期：此刻宿主收到的失活消息必然是
+    // 交接产物（WM_NCACTIVATE 的 lParam 不保证携带对端窗口，只能靠此兜底）。
+    if (activationHandoff_) {
+        return true;
+    }
+    // 稳态：仅当消息明确指认对端是菜单面才保持。other 为空或指向外部窗口时
+    // 一律放行失活——外点击/Alt-Tab 的变灰与 blur dismiss 语义必须保留。
+    return other && (other == overlayHwnd_ || (submenuHwnd_ && other == submenuHwnd_));
 }
 
 bool MenuOverlayHost::ValidateMenuId(const std::string& menuId) const {
@@ -730,6 +824,9 @@ bool MenuOverlayHost::EnsureSubmenuCreated() {
     params.alwaysOnTop = true;
     params.showInTaskbar = false;
     params.beforeClose = false;
+    // 同根窗：豁免默认最小尺寸，子菜单面板通常远小于 200×150 DIP。
+    params.minWidth = 1;
+    params.minHeight = 1;
     params.hasBehavior = true;
     params.behavior = {
         {"noActivate", false},
@@ -753,6 +850,8 @@ bool MenuOverlayHost::EnsureSubmenuCreated() {
     submenuOverlay_->SetMenuDismissCallback([](const std::string& reason) {
         MenuOverlayHost::GetInstance().OnSubmenuDismissRequested(reason);
     });
+    // 子菜单窗恒为内容尺寸面板，圆角与原生子菜单一致，不随根窗模型变化。
+    submenuOverlay_->SetCornerPreferenceOverride(PopupWindow::kCornerRoundSmall);
     ShowWindow(submenuHwnd_, SW_HIDE);
     return true;
 }
@@ -776,14 +875,17 @@ bool MenuOverlayHost::ShowSubmenuWindow(const menu_overlay_geometry::Rect& virtu
         return false;
     }
     if (!submenuOverlay_->ClearContentRegion()) return false;
+    submenuOverlay_->SetCornerPreferenceOverride(PopupWindow::kCornerRoundSmall);
     std::string backdropError;
     submenuOverlay_->UpdateBackdropPolicy(
         json{{"activeEffect", currentBackdrop_}, {"inactiveEffect", currentBackdrop_},
              {"darkMode", currentBackdropDarkMode_}}, backdropError);
     SyncWebViewToClient(submenuOverlay_.get(), submenuHwnd_);
     openingSubmenu_ = true;
+    activationHandoff_ = true;  // root→submenu 内部交接：root 的 NCACTIVATE(FALSE) 不降观感
     ShowWindow(submenuHwnd_, SW_SHOW);
     SetForegroundWindow(submenuHwnd_);
+    activationHandoff_ = false;
     openingSubmenu_ = false;
     SetWindowPos(submenuHwnd_, HWND_TOPMOST, 0, 0, 0, 0,
                  SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
@@ -806,6 +908,7 @@ void MenuOverlayHost::HideSubmenuWindow(bool restoreRootFocus, bool notifyRoot, 
     }
     if (!submenuHwnd_ || !IsWindow(submenuHwnd_)) return;
     suppressSubmenuDismiss_ = true;
+    activationHandoff_ = true;  // submenu→root 内部交接：submenu 的失活不降观感/不误 blur
     ShowWindow(submenuHwnd_, SW_HIDE);
     if (restoreRootFocus && visible_ && overlayHwnd_ && IsWindow(overlayHwnd_)) {
         SetForegroundWindow(overlayHwnd_);
@@ -813,6 +916,7 @@ void MenuOverlayHost::HideSubmenuWindow(bool restoreRootFocus, bool notifyRoot, 
             overlay_->GetWebView()->GetController()->MoveFocus(COREWEBVIEW2_MOVE_FOCUS_REASON_PROGRAMMATIC);
         }
     }
+    activationHandoff_ = false;
     suppressSubmenuDismiss_ = false;
     if (notifyRoot && overlay_ && overlay_->IsWebViewReady() && overlay_->GetBridge()) {
         overlay_->GetBridge()->EmitEvent("menu:__submenuClosed", {{"menuId", currentMenuId_}});

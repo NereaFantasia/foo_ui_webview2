@@ -298,13 +298,19 @@ await fb2k.invoke('menu.runMainMenuCommand', {
 
 ### menu.show
 
-Opens the self-drawn menu overlay and returns its id; the user's choice arrives later through the `menu:select` and `menu:dismiss` events.
+Opens the self-drawn menu overlay and returns its id; the user's choice arrives later through the `menu:select` and `menu:dismiss` events, and rich-control value changes through `menu:valueChanged`.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `items` | `array` | No | Menu rows, each with `id`, `label`, and optional `type`, `enabled`, `checked`, and nested `submenu`. Defaults to an empty menu. |
+| `items` | `array` | No | Menu rows, each with `id`, `label`, and optional `type`, `enabled`, `checked`, `iconSvg`, and nested `submenu`. Rich rows (`nowplaying`, `rating`, `slider`, `segmented`) report value changes through `menu:valueChanged` without closing the menu. Defaults to an empty menu. |
 | `x` | `integer` | No | Screen-space X anchor in pixels. Defaults to the cursor X, which is also used for negative values. |
 | `y` | `integer` | No | Screen-space Y anchor in pixels. Defaults to the cursor Y, which is also used for negative values. |
+| `windowModel` | `string` | No | `fullscreen` (default) keeps the full-workarea overlay; `contentSized` uses a tight per-panel window with the DWM backdrop and system shadow. Any other value falls back to `fullscreen`. |
+| `css` | `string` | No | Frontend style takeover injected into the overlay, at most 256 KiB; larger payloads are rejected before the overlay opens. |
+| `cssReplace` | `boolean` | No | `true` replaces the built-in default styles instead of layering on top of them. Defaults to `false`. |
+| `backdrop` | `string` | No | One of `acrylic` (default), `mica`, `mica-alt`, or `none`; any other value keeps the default. |
+| `backdropDarkMode` | `boolean` | No | Dark tint for the DWM backdrop. Defaults to `true`. |
+| `closeAnimationMs` | `integer` | No | Exit-animation delay before the overlay hides, clamped to 0-1000. Defaults to `0` (hide immediately). |
 
 **Returns**: `{"error":"...","menuId":"...","success":true}`
 
