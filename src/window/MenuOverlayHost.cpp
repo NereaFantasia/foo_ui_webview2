@@ -1,4 +1,4 @@
-#include "pch.h"
+﻿#include "pch.h"
 #include "window/MenuOverlayHost.h"
 #include "window/WindowManager.h"
 #include "core/WebViewContext.h"
@@ -7,6 +7,8 @@
 #include "utils/GuidUtils.h"
 #include "utils/I18n.h"
 #include "window/MenuOverlayPage.inl"
+#include "window/WindowChromeTrace.h"
+#include <sstream>
 
 // ============================================
 // Self-drawn menu overlay host (renderer + submenu + keyboard nav).
@@ -124,8 +126,8 @@ bool MenuOverlayHost::EnsureCreated() {
     overlayHwnd_ = hwnd;
 
     overlay_->SetSuppressLifecycleBroadcast(true);
-    overlay_->SetMenuDismissCallback([](const std::string& reason) {
-        MenuOverlayHost::GetInstance().OnRootDismissRequested(reason);
+    overlay_->SetMenuDismissCallback([](const std::string& reason, HWND other) {
+        MenuOverlayHost::GetInstance().OnRootDismissRequested(reason, other);
     });
 
     ShowWindow(overlayHwnd_, SW_HIDE);
@@ -277,12 +279,10 @@ std::string MenuOverlayHost::Show(const json& items, int screenX, int screenY,
         overlay_->UpdateBackdropPolicy(
             json{ {"activeEffect", opts.backdrop}, {"inactiveEffect", opts.backdrop}, {"darkMode", opts.backdropDarkMode} },
             bderr);
-        // 圆角逐 show 应用：内容尺寸窗贴合原生菜单的小圆角；全屏覆盖面维持现状大圆角
-        // （其可见圆角由前端面板自己画）。池化单窗被两种模型共用，必须双向恢复。
-        overlay_->SetCornerPreferenceOverride(
-            windowModel_ == MenuWindowModel::ContentSized
-                ? PopupWindow::kCornerRoundSmall
-                : PopupWindow::kCornerRound);
+        // 圆角逐 show 重申（写入幂等）：两种窗口模型统一 ROUND（8 DIP）——Win11 的
+        // 右键菜单标准半径就是 ROUND；ROUNDSMALL(4 DIP) 是 tooltip 级半径，曾误用
+        // 导致窗口 R 明显小于画布设计（用户实测反馈）。
+        overlay_->SetCornerPreferenceOverride(PopupWindow::kCornerRound);
     }
     if (overlay_->IsWebViewReady()) {
         if (auto* wv = overlay_->GetWebView()) {
@@ -317,6 +317,20 @@ std::string MenuOverlayHost::Show(const json& items, int screenX, int screenY,
 }
 
 void MenuOverlayHost::Hide(const std::string& reason) {
+    // dismiss 链取证：放在防抖/早退之前，锁死"Hide 被谁吞"——
+    // sinceShowMs<250 的 blur 走防抖；!visible_/closing_ 走幂等早退。
+    // 本文件的取证日志统一经 WindowChromeTrace::EmitAuxiliaryLine 输出：默认关闭，
+    // 置环境变量 FOO_UI_WEBVIEW2_WINDOW_TRACE=1 开启。禁止改回 console::printf——
+    // 它是 pfc 精简实现，只认 %s/%d/%u/%x/%c，%p/%llu 按字面输出且不消费变参，
+    // 错位后 %s 读野指针会崩（failure_00000211 实锤），故一律 ostringstream 拼串。
+    {
+        std::ostringstream oss;
+        oss << "[MenuOverlayHost] Hide enter reason=" << reason
+            << " visible=" << (visible_ ? 1 : 0)
+            << " closing=" << (closing_ ? 1 : 0)
+            << " sinceShowMs=" << (GetTickCount64() - showTick_);
+        WindowChromeTrace::EmitAuxiliaryLine(oss.str());
+    }
     if (reason == "blur" && visible_ && (GetTickCount64() - showTick_) < 250) {
         return;
     }
@@ -414,10 +428,10 @@ void MenuOverlayHost::FinalizeHide(const std::string& reason) {
     if (overlay_) {
         overlay_->ClearContentRegion();
     }
-    // 归还激活：Esc/select/看门狗等路径关闭时前台仍在菜单面上，显式还给打开菜单前
-    // 的窗口（激活观感与键盘焦点一并回到调用方）。外点击/切他窗时系统已把前台转走
-    //（fgAtClose 不在菜单面），不做干预，保证目标窗口的正常激活语义。
-    if (fgAtClose && (fgAtClose == overlayHwnd_ || fgAtClose == submenuHwnd_) &&
+    // 归还激活：Esc/select/看门狗等路径关闭时前台仍在菜单面上（含 Chromium 内部
+    // 子 HWND，按 GA_ROOT 归一判定），显式还给打开菜单前的窗口（激活观感与键盘
+    // 焦点一并回到调用方）。外点击/切他窗时系统已把前台转走，不做干预。
+    if (IsMenuSurfaceWindow(fgAtClose) &&
         previousForeground_ && IsWindow(previousForeground_) &&
         IsWindowVisible(previousForeground_)) {
         SetForegroundWindow(previousForeground_);
@@ -587,29 +601,49 @@ bool MenuOverlayHost::OnContentMeasured(const menu_overlay_geometry::MeasureRepo
 bool MenuOverlayHost::OnSubmenuPanelChanged(
     const menu_overlay_geometry::SubmenuPanelRequest& request,
     const std::string& parentToken) {
+    // 子菜单握手取证：参数 + 判定去向。
+    // outcome ∈ reject:*（拒绝原因）/ hide-accept / show-accept。
+    const auto logPanel = [&](const char* outcome) {
+        std::ostringstream oss;
+        oss << "[MenuOverlayHost] SubPanel visible=" << (request.visible ? 1 : 0)
+            << " seq=" << request.sequence
+            << " rect=(" << request.x << "," << request.y << ","
+            << request.w << "," << request.h << ")"
+            << " token=" << parentToken.substr(0, 8)
+            << " lastSeq=" << lastSubmenuPanelSequence_
+            << " pendingSeq="
+            << (pendingSubmenuPanelSequence_ ? std::to_string(*pendingSubmenuPanelSequence_) : "-")
+            << " outcome=" << outcome;
+        WindowChromeTrace::EmitAuxiliaryLine(oss.str());
+    };
     // Root close clears pending/open child state before a possible fade. Never
     // accept renderer hover reports while closing: an old ready/hover callback
     // must not resurrect a submenu HWND after its root started disappearing.
     if (!visible_ || closing_) {
+        logPanel("reject:not-visible-or-closing");
         return false;
     }
     const auto update = menu_overlay_geometry::EvaluateSubmenuPanelUpdate(
         windowModel_ == MenuWindowModel::ContentSized, placedGeometry_, request);
     const auto newestAppliedOrPending = pendingSubmenuPanelSequence_.value_or(lastSubmenuPanelSequence_);
     if (!update.accepted || !placedGeometry_.has_value()) {
+        logPanel("reject:update-or-geometry");
         return false;
     }
     if (!request.visible) {
         if (!menu_overlay_geometry::IsNewerSubmenuPanelSequence(newestAppliedOrPending, request.sequence)) {
+            logPanel("reject:stale-hide-seq");
             return false;
         }
         HideSubmenuWindow(false);
         lastSubmenuPanelSequence_ = request.sequence;
         pendingSubmenuPanelSequence_.reset();
+        logPanel("hide-accept");
         return true;
     }
     if (!update.submenuWindow.has_value() || parentToken.empty() ||
         !FindSubmenuItems(parentToken).has_value()) {
+        logPanel("reject:window-token-or-items");
         return false;
     }
     // A retry for the same still-pending renderer frame is accepted; a stale
@@ -617,12 +651,16 @@ bool MenuOverlayHost::OnSubmenuPanelChanged(
     // child WebView reaches its first hidden ready state.
     if (request.sequence != newestAppliedOrPending &&
         !menu_overlay_geometry::IsNewerSubmenuPanelSequence(newestAppliedOrPending, request.sequence)) {
+        logPanel("reject:stale-show-seq");
         return false;
     }
     openSubmenuVirtualRect_ = update.submenuWindow;
     openSubmenuParentToken_ = parentToken;
     pendingSubmenuPanelSequence_ = request.sequence;
-    if (!EnsureSubmenuCreated()) return false;
+    if (!EnsureSubmenuCreated()) {
+        logPanel("reject:create-failed");
+        return false;
+    }
     // Each open first refreshes the hidden renderer state. It acknowledges the
     // existing `menu.__submenuPanel` endpoint with `ready:true` before this HWND is made visible, avoiding a blank
     // DWM-material flash and stale items when hover switches siblings quickly.
@@ -630,16 +668,34 @@ bool MenuOverlayHost::OnSubmenuPanelChanged(
     if (submenuOverlay_ && submenuOverlay_->IsWebViewReady() && submenuOverlay_->GetBridge()) {
         submenuOverlay_->GetBridge()->EmitEvent("menu:show", {{"menuId", currentMenuId_}});
     }
+    logPanel("show-accept");
     return true;
 }
 
 bool MenuOverlayHost::OnSubmenuSurfaceReady(HWND caller, const std::string& parentToken) {
+    // 握手取证：逐条件展开，锁死 ready 回执被拒的确切原因。
+    {
+        std::ostringstream oss;
+        oss << "[MenuOverlayHost] SubReady callerOk=" << (caller == submenuHwnd_ ? 1 : 0)
+            << " visible=" << (visible_ ? 1 : 0)
+            << " closing=" << (closing_ ? 1 : 0)
+            << " rect=" << (openSubmenuVirtualRect_.has_value() ? 1 : 0)
+            << " token=" << parentToken.substr(0, 8)
+            << " openToken=" << openSubmenuParentToken_.substr(0, 8)
+            << " tokenMatch=" << (!parentToken.empty() && parentToken == openSubmenuParentToken_ ? 1 : 0)
+            << " pendingSeq="
+            << (pendingSubmenuPanelSequence_ ? std::to_string(*pendingSubmenuPanelSequence_) : "-");
+        WindowChromeTrace::EmitAuxiliaryLine(oss.str());
+    }
     if (caller != submenuHwnd_ || !visible_ || closing_ || !openSubmenuVirtualRect_.has_value() ||
         parentToken.empty() || parentToken != openSubmenuParentToken_ ||
         !pendingSubmenuPanelSequence_.has_value()) {
         return false;
     }
-    if (!ShowSubmenuWindow(*openSubmenuVirtualRect_, openSubmenuParentToken_)) return false;
+    if (!ShowSubmenuWindow(*openSubmenuVirtualRect_, openSubmenuParentToken_)) {
+        WindowChromeTrace::EmitAuxiliaryLine("[MenuOverlayHost] SubReady rejected: ShowSubmenuWindow failed");
+        return false;
+    }
     lastSubmenuPanelSequence_ = *pendingSubmenuPanelSequence_;
     pendingSubmenuPanelSequence_.reset();
     if (overlay_ && overlay_->IsWebViewReady() && overlay_->GetBridge()) {
@@ -698,6 +754,21 @@ json MenuOverlayHost::GetMenuStateJson(HWND caller) const {
         st["items"] = currentItems_;
         st["zones"] = json::array();
     }
+    // 握手取证：C++ 侧记录 pull 响应摘要，
+    // 与渲染器 render 分支（空内容 hide / submenu ready 回执）对照。
+    {
+        std::ostringstream oss;
+        oss << "[MenuOverlayHost] StatePull surface=" << (isSubmenuSurface ? "submenu" : "root")
+            << " visible=" << (visible_ ? 1 : 0)
+            << " menuId=" << currentMenuId_
+            << " itemsLen=" << st["items"].size()
+            << " zonesLen=" << st["zones"].size();
+        if (isSubmenuSurface) {
+            oss << " openToken=" << openSubmenuParentToken_.substr(0, 8)
+                << " geom=" << (openSubmenuVirtualRect_.has_value() ? 1 : 0);
+        }
+        WindowChromeTrace::EmitAuxiliaryLine(oss.str());
+    }
     return st;
 }
 
@@ -723,9 +794,19 @@ bool MenuOverlayHost::ShouldHoldOwnerActivation(HWND other) const {
     if (activationHandoff_) {
         return true;
     }
-    // 稳态：仅当消息明确指认对端是菜单面才保持。other 为空或指向外部窗口时
+    // 稳态：仅当消息明确指认对端属于菜单面才保持。other 为空或指向外部窗口时
     // 一律放行失活——外点击/Alt-Tab 的变灰与 blur dismiss 语义必须保留。
-    return other && (other == overlayHwnd_ || (submenuHwnd_ && other == submenuHwnd_));
+    return IsMenuSurfaceWindow(other);
+}
+
+bool MenuOverlayHost::IsMenuSurfaceWindow(HWND hwnd) const {
+    if (!hwnd) return false;
+    // Chromium 的 MoveFocus/点击会把前台与激活对端落到 WebView 内部子 HWND
+    //（Chrome_WidgetWin_*），必须归一到顶层窗再比较；顶层窗的 GA_ROOT 即自身。
+    HWND root = GetAncestor(hwnd, GA_ROOT);
+    const HWND target = root ? root : hwnd;
+    return (overlayHwnd_ && target == overlayHwnd_) ||
+           (submenuHwnd_ && target == submenuHwnd_);
 }
 
 bool MenuOverlayHost::ValidateMenuId(const std::string& menuId) const {
@@ -800,7 +881,14 @@ bool MenuOverlayHost::ApplyRootContentWindow(const menu_overlay_geometry::Placem
     // A tight HWND is the visual contract. Clear any region left from prior
     // pooled shows; the region is retained only for unrelated popup consumers,
     // never as the correctness mechanism for this overlay's DWM backdrop.
-    return !overlay_ || overlay_->ClearContentRegion();
+    const bool regionCleared = !overlay_ || overlay_->ClearContentRegion();
+    // 最终落位后重申圆角偏好：上面的 SetWindowPos 尺寸变更与 SetWindowRgn(NULL)
+    // 区域清理都可能让 DWM 重新评估窗口的圆角资格（regioned 窗口会被按方角处理），
+    // 属性值虽持久，裁角决策却随帧状态变化。写入幂等，逐 show 重申兜底。
+    if (overlay_ && windowModel_ == MenuWindowModel::ContentSized) {
+        overlay_->SetCornerPreferenceOverride(PopupWindow::kCornerRound);
+    }
+    return regionCleared;
 }
 
 bool MenuOverlayHost::EnsureSubmenuCreated() {
@@ -847,17 +935,27 @@ bool MenuOverlayHost::EnsureSubmenuCreated() {
         return false;
     }
     submenuOverlay_->SetSuppressLifecycleBroadcast(true);
-    submenuOverlay_->SetMenuDismissCallback([](const std::string& reason) {
-        MenuOverlayHost::GetInstance().OnSubmenuDismissRequested(reason);
+    submenuOverlay_->SetMenuDismissCallback([](const std::string& reason, HWND other) {
+        MenuOverlayHost::GetInstance().OnSubmenuDismissRequested(reason, other);
     });
-    // 子菜单窗恒为内容尺寸面板，圆角与原生子菜单一致，不随根窗模型变化。
-    submenuOverlay_->SetCornerPreferenceOverride(PopupWindow::kCornerRoundSmall);
+    // 子菜单窗恒为内容尺寸面板，半径与根菜单同为 ROUND（Win11 菜单标准 8 DIP）。
+    submenuOverlay_->SetCornerPreferenceOverride(PopupWindow::kCornerRound);
     ShowWindow(submenuHwnd_, SW_HIDE);
     return true;
 }
 
 bool MenuOverlayHost::ShowSubmenuWindow(const menu_overlay_geometry::Rect& virtualRect,
                                         const std::string& parentToken) {
+    // 握手取证：子菜单窗可见化的最终一步（仅 ready 校验通过后到达）。
+    {
+        std::ostringstream oss;
+        oss << "[MenuOverlayHost] ShowSubmenuWindow rect=(" << virtualRect.x << ","
+            << virtualRect.y << "," << virtualRect.w << "," << virtualRect.h << ")"
+            << " token=" << parentToken.substr(0, 8)
+            << " webviewReady="
+            << ((submenuOverlay_ && submenuOverlay_->IsWebViewReady()) ? 1 : 0);
+        WindowChromeTrace::EmitAuxiliaryLine(oss.str());
+    }
     if (!submenuOverlay_ || !submenuHwnd_ || !IsWindow(submenuHwnd_) ||
         !submenuOverlay_->IsWebViewReady() || parentToken.empty()) {
         return false;
@@ -875,7 +973,8 @@ bool MenuOverlayHost::ShowSubmenuWindow(const menu_overlay_geometry::Rect& virtu
         return false;
     }
     if (!submenuOverlay_->ClearContentRegion()) return false;
-    submenuOverlay_->SetCornerPreferenceOverride(PopupWindow::kCornerRoundSmall);
+    // 落位/清区域后重申（与根窗同理：区域操作会让 DWM 重估裁角资格）。
+    submenuOverlay_->SetCornerPreferenceOverride(PopupWindow::kCornerRound);
     std::string backdropError;
     submenuOverlay_->UpdateBackdropPolicy(
         json{{"activeEffect", currentBackdrop_}, {"inactiveEffect", currentBackdrop_},
@@ -889,6 +988,14 @@ bool MenuOverlayHost::ShowSubmenuWindow(const menu_overlay_geometry::Rect& virtu
     openingSubmenu_ = false;
     SetWindowPos(submenuHwnd_, HWND_TOPMOST, 0, 0, 0, 0,
                  SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+    // 池化复用空白修复：SW_SHOW 之后必须再同步一次 WebView surface。
+    // Visual Hosting 下，隐藏窗口期间的 Resize/帧提交可能被 Chromium 挂起，
+    // 显示后渲染器无 DOM 变化则永远不出新帧（用户看到 acrylic 裸窗）。
+    // 根窗池化 Show() 与冷启动 startup reveal（RefreshStartupRevealSurface）
+    // 均为"显示后同步"，仅本路径缺失——冷启动子菜单恰好被 startup reveal
+    // 补了显示后同步，故"第一次正常、池化复用空白"（2026-08-13 取证：
+    // 空白时握手全绿、DOM/opacity 均正常，唯窗口无内容帧）。
+    SyncWebViewToClient(submenuOverlay_.get(), submenuHwnd_);
     if (auto* wv = submenuOverlay_->GetWebView()) {
         if (auto* ctrl = wv->GetController()) {
             ctrl->MoveFocus(COREWEBVIEW2_MOVE_FOCUS_REASON_PROGRAMMATIC);
@@ -901,6 +1008,17 @@ bool MenuOverlayHost::ShowSubmenuWindow(const menu_overlay_geometry::Rect& virtu
 }
 
 void MenuOverlayHost::HideSubmenuWindow(bool restoreRootFocus, bool notifyRoot, bool clearState) {
+    // 握手取证：隐藏路径的三参语义 + 隐藏前窗口可见性（区分真隐藏与空操作）。
+    {
+        std::ostringstream oss;
+        oss << "[MenuOverlayHost] HideSubmenuWindow restoreFocus=" << (restoreRootFocus ? 1 : 0)
+            << " notifyRoot=" << (notifyRoot ? 1 : 0)
+            << " clearState=" << (clearState ? 1 : 0)
+            << " wasVisible="
+            << ((submenuHwnd_ && IsWindow(submenuHwnd_) && IsWindowVisible(submenuHwnd_)) ? 1 : 0)
+            << " openToken=" << openSubmenuParentToken_.substr(0, 8);
+        WindowChromeTrace::EmitAuxiliaryLine(oss.str());
+    }
     if (clearState) {
         openSubmenuVirtualRect_.reset();
         openSubmenuParentToken_.clear();
@@ -929,20 +1047,63 @@ void MenuOverlayHost::OnSubmenuWebViewReady() {
     // a backdrop before then.
 }
 
-void MenuOverlayHost::OnRootDismissRequested(const std::string& reason) {
+void MenuOverlayHost::OnRootDismissRequested(const std::string& reason, HWND other) {
     // Activating the independently hosted submenu deactivates the root HWND.
     // That hand-off is internal, not an outside click and must not close either
     // panel before the submenu receives its first input.
-    if (openingSubmenu_ || (openSubmenuVirtualRect_.has_value() && submenuHwnd_ && IsWindow(submenuHwnd_) &&
-        GetForegroundWindow() == submenuHwnd_)) {
+    // 内部交接判定只信失活消息的对端窗口 other（GA_ROOT 归一，覆盖 Chromium
+    // 内部子 HWND）：对端属于菜单面 = root↔submenu 交接 → 不关。禁止改用
+    // GetForegroundWindow()——失活消息的同步处理期间同进程激活转移尚未完成，
+    // 它仍返回菜单窗自己，会把"点击宿主窗口"的真实失焦全部误判成内部腾挪
+    //（2026-08-13 取证实锤：三次外点击 fg=overlay 自身而 other=主窗，菜单常驻）。
+    // other 为空（WM_ACTIVATEAPP 跨进程失活 / lParam=NULL）或外部窗口 → 关闭。
+    const bool internalHandoff = reason == "blur" && IsMenuSurfaceWindow(other);
+    const bool swallow = openingSubmenu_ || internalHandoff;
+    // dismiss 链取证。fg 仅作对照观测，不参与判定。
+    {
+        const HWND fg = GetForegroundWindow();
+        std::ostringstream oss;
+        oss << "[MenuOverlayHost] RootDismissReq reason=" << reason
+            << " other=0x" << pfc::format_hex((size_t)other)
+            << " fg=0x" << pfc::format_hex((size_t)fg)
+            << " overlay=0x" << pfc::format_hex((size_t)overlayHwnd_)
+            << " submenu=0x" << pfc::format_hex((size_t)submenuHwnd_)
+            << " openingSub=" << (openingSubmenu_ ? 1 : 0)
+            << " visible=" << (visible_ ? 1 : 0)
+            << " closing=" << (closing_ ? 1 : 0)
+            << " decision=" << (swallow ? "swallow" : "hide");
+        WindowChromeTrace::EmitAuxiliaryLine(oss.str());
+    }
+    if (swallow) {
         return;
     }
     Hide(reason);
 }
 
-void MenuOverlayHost::OnSubmenuDismissRequested(const std::string& reason) {
+void MenuOverlayHost::OnSubmenuDismissRequested(const std::string& reason, HWND other) {
     if (suppressSubmenuDismiss_ || !visible_ || closing_) return;
-    if (reason == "escape" || (overlayHwnd_ && GetForegroundWindow() == overlayHwnd_)) {
+    // escape = 键盘收子菜单回根面板；blur 且对端属于菜单面 = root↔submenu 内部
+    // 交接（第一道 ShouldHoldOwnerActivation 已 hold 大部分，此为纵深防御）→
+    // 仅收子菜单。其余（对端为外部窗口 / 跨进程失活的 nullptr）= 真实失焦 →
+    // 整菜单关闭。禁止改用 GetForegroundWindow() 判定（同上：外点击宿主时它仍
+    // 返回子菜单窗自己，误走 collapse 且 restoreRootFocus 会反抢用户点击目标的
+    // 前台，菜单常驻——2026-08-13 取证实锤）。
+    const bool collapse = reason == "escape" ||
+                          (reason == "blur" && IsMenuSurfaceWindow(other));
+    {
+        const HWND fg = GetForegroundWindow();
+        std::ostringstream oss;
+        oss << "[MenuOverlayHost] SubDismissReq reason=" << reason
+            << " other=0x" << pfc::format_hex((size_t)other)
+            << " fg=0x" << pfc::format_hex((size_t)fg)
+            << " overlay=0x" << pfc::format_hex((size_t)overlayHwnd_)
+            << " submenu=0x" << pfc::format_hex((size_t)submenuHwnd_)
+            << " visible=" << (visible_ ? 1 : 0)
+            << " closing=" << (closing_ ? 1 : 0)
+            << " decision=" << (collapse ? "collapse" : "hide");
+        WindowChromeTrace::EmitAuxiliaryLine(oss.str());
+    }
+    if (collapse) {
         HideSubmenuWindow(true, true);
         return;
     }

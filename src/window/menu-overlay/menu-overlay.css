@@ -28,8 +28,12 @@
   /* 退场动画（opt-in，镜像入场）：收到 menu:__hide 时 #menu 去 .in 加 .out 播淡出；前端可经 css 覆盖 #menu.out。*/
   body.content-sized #menu.out{opacity:0;transform:translateY(4px) scale(.985);transition:opacity .13s ease-out,transform .13s ease-out;}
   /* 紧凑 HWND（contentSized 根窗 / 独立子菜单窗，<html class="fb-content-sized">）：窗口贴合内容，
-     CSS 阴影会被裁掉，改由 DWM 系统阴影投影；圆角收到 4px 对齐系统菜单。fullscreen 不受影响。*/
-  .fb-content-sized .fb-menu{border-radius:4px;box-shadow:none;}
+     CSS 阴影会被裁掉，改由 DWM 系统阴影投影；圆角交给窗口级 DWM 裁形（原生菜单同款：
+     内容方角铺满四角 + DWMWCP_ROUNDSMALL 切圆 + 系统曲线描边）。CSS 若自带圆角，
+     DWM 裁角失效时圆弧外会露出内容盖不住的方形材质尖，故默认 0。fullscreen 不受影响。
+     :where() 把特异性压回 0-1-0：本条只是可主题化默认值，托盘/前端 css 接管的
+     普通 .fb-menu 规则（后载入的 fb-user 层）必须能覆盖圆角与阴影。*/
+  :where(.fb-content-sized) .fb-menu{border-radius:0;box-shadow:none;}
   /* Respect prefers-reduced-motion for default enter/exit only.
      Hidden protocol / closeAnimationMs are unchanged. Not in protected CSS. */
   @media (prefers-reduced-motion: reduce){

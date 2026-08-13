@@ -37,8 +37,12 @@ inline std::wstring BuildMenuOverlayHtmlFromSources() {
   /* 退场动画（opt-in，镜像入场）：收到 menu:__hide 时 #menu 去 .in 加 .out 播淡出；前端可经 css 覆盖 #menu.out。*/
   body.content-sized #menu.out{opacity:0;transform:translateY(4px) scale(.985);transition:opacity .13s ease-out,transform .13s ease-out;}
   /* 紧凑 HWND（contentSized 根窗 / 独立子菜单窗，<html class="fb-content-sized">）：窗口贴合内容，
-     CSS 阴影会被裁掉，改由 DWM 系统阴影投影；圆角收到 4px 对齐系统菜单。fullscreen 不受影响。*/
-  .fb-content-sized .fb-menu{border-radius:4px;box-shadow:none;}
+     CSS 阴影会被裁掉，改由 DWM 系统阴影投影；圆角交给窗口级 DWM 裁形（原生菜单同款：
+     内容方角铺满四角 + DWMWCP_ROUNDSMALL 切圆 + 系统曲线描边）。CSS 若自带圆角，
+     DWM 裁角失效时圆弧外会露出内容盖不住的方形材质尖，故默认 0。fullscreen 不受影响。
+     :where() 把特异性压回 0-1-0：本条只是可主题化默认值，托盘/前端 css 接管的
+     普通 .fb-menu 规则（后载入的 fb-user 层）必须能覆盖圆角与阴影。*/
+  :where(.fb-content-sized) .fb-menu{border-radius:0;box-shadow:none;}
   /* Respect prefers-reduced-motion for default enter/exit only.
      Hidden protocol / closeAnimationMs are unchanged. Not in protected CSS. */
   @media (prefers-reduced-motion: reduce){
@@ -73,9 +77,9 @@ inline std::wstring BuildMenuOverlayHtmlFromSources() {
   /* segmented 分段单选（仅 webview 自绘）：一行互斥选项；选中段用强调色高亮。各段可放 svg 图标或文字。*/
   .fb-seg{display:grid;grid-template-columns:minmax(0,auto) minmax(0,1fr);align-items:center;gap:10px;min-width:0;}
   .fb-seg-label{min-width:0;overflow:hidden;text-overflow:ellipsis;opacity:.85;}
-  .fb-seg-group{min-width:0;display:flex;flex-wrap:wrap;justify-content:flex-end;gap:2px;}
-  .fb-seg-btn{display:inline-flex;min-width:0;max-width:120px;align-items:center;justify-content:center;padding:2px 8px;overflow:hidden;text-overflow:ellipsis;white-sp)MENUHTML"
-        LR"MENUHTML(ace:nowrap;cursor:pointer;border-radius:4px;color:#cfcfcf;}
+  .fb-seg-group{min-width:0;display:flex;flex-wra)MENUHTML"
+        LR"MENUHTML(p:wrap;justify-content:flex-end;gap:2px;}
+  .fb-seg-btn{display:inline-flex;min-width:0;max-width:120px;align-items:center;justify-content:center;padding:2px 8px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:pointer;border-radius:4px;color:#cfcfcf;}
   .fb-seg-btn svg{width:16px;height:16px;display:block;fill:currentColor;}
   .fb-seg-btn.on{background:#3d6fd0;color:#fff;}
   .fb-seg-btn.disabled{color:#666;cursor:default;}
@@ -232,7 +236,8 @@ function isTransformWsp(ch) {
  * commas between functions, empty argument lists, and wrong arity.
  */
 function isValidTransform(value) {
-  if (value == null) return false;
+  if (v)MENUHTML"
+        LR"MENUHTML(alue == null) return false;
   const s = String(value).trim();
   if (!s) return false;
   if (/url\s*\(/i.test(s)) return false;
@@ -241,8 +246,7 @@ function isValidTransform(value) {
   const n = s.length;
   let sawOne = false;
 
-  const skipWsp = () =>)MENUHTML"
-        LR"MENUHTML( {
+  const skipWsp = () => {
     while (i < n && isTransformWsp(s[i])) i += 1;
   };
 
@@ -421,12 +425,12 @@ function mountSanitizedSvgIcon(host, viewBox, content) {
       var out = document.createElementNS('http://www.w3.org/2000/svg', name);
       if (node.attributes) {
         for (var a = 0; a < node.attributes.length; a++) {
-          var at = node.attributes[a];
+          var at =)MENUHTML"
+        LR"MENUHTML( node.attributes[a];
           var an = String(at.name || '').toLowerCase();
           if (an.indexOf('xmlns') === 0) continue;
           if (!isValidAttributeValue(name, an, at.value)) return false;
-         )MENUHTML"
-        LR"MENUHTML( out.setAttribute(an, at.value);
+          out.setAttribute(an, at.value);
         }
       }
       if (!cloneAllowed(node, out)) return false;
@@ -615,15 +619,15 @@ function menuDirectItems(doc) {
 /** Direct-child separators under #menu (excludes zone separators). */
 function menuDirectSeparators(doc) {
   const menu = findById(doc, 'menu');
-  if (!menu) return [];
+  if (!menu) return)MENUHTML"
+        LR"MENUHTML( [];
   return (menu.children || []).filter((c) => hasClass(c, 'fb-sep') && !hasClass(c, 'fb-zone-separator'));
 }
 
 function menuZones(doc) {
   const menu = findById(doc, 'menu');
   if (!menu) return [];
-  retur)MENUHTML"
-        LR"MENUHTML(n (menu.children || []).filter((c) => hasClass(c, 'fb-zone'));
+  return (menu.children || []).filter((c) => hasClass(c, 'fb-zone'));
 }
 
 function hasClass(node, name) {
@@ -754,11 +758,11 @@ function resolveMenuArrowLeftAction({ windowModel, depth } = {}) {
 /** Source-level contract for the independent first-level submenu surface. */
 function analyzeIndependentSubmenuWindowContract(source) {
   const text = String(source || '');
-  const arrowLeftMatch = text.match(/case "ArrowLeft":\s*\{([\s\S]*?)case "Enter"/);
+  const arrowLeftMatch = text.match(/case "ArrowLeft":\s*\{([\s\S]*)MENUHTML"
+        LR"MENUHTML(?)case "Enter"/);
   const arrowLeftBody = arrowLeftMatch ? arrowLeftMatch[1] : '';
   const escapeMatch = text.match(/case "Escape":\s*([\s\S]*?)default:/);
-  const escapeBody = escapeMatch ? escapeMatch[1] : ')MENUHTML"
-        LR"MENUHTML(';
+  const escapeBody = escapeMatch ? escapeMatch[1] : '';
   return {
     reportsMonotonicSequence: /submenuPanelSequence\s*=\s*0/.test(text)
       && /sequence\s*:\s*\+\+submenuPanelSequence/.test(text),
@@ -818,11 +822,19 @@ function visibleSubmenuStyle({ rootSlotW, subSlotW, viewportH, parentTop, submen
   };
 }
 
-/** Inline-important geometry owned by the ContentSized host. */
-function contentSizedGeometryPlan({ left, top, maxWidth, maxHeight }) {
+/**
+ * Inline-important geometry owned by the ContentSized host.
+ * `width`/`height` default to `auto` (natural size for the measure pass); the
+ * placed pass pins them so the panel exactly fills the tight HWND — max-*
+ * alone leaves a 1-2px right/bottom residue (window = ceil(natural×dpr),
+ * scrollWidth integer-ceils) of uncovered DWM material.
+ */
+function contentSizedGeometryPlan({ left, top, maxWidth, maxHeight, width = 'auto', height = 'auto' }) {
   return Object.freeze([
     { op: 'setProperty', name: 'left', value: String(left), priority: 'important' },
     { op: 'setProperty', name: 'top', value: String(top), priority: 'important' },
+    { op: 'setProperty', name: 'width', value: String(width), priority: 'important' },
+    { op: 'setProperty', name: 'height', value: String(height), priority: 'important' },
     { op: 'setProperty', name: 'max-width', value: String(maxWidth), priority: 'important' },
     { op: 'setProperty', name: 'max-height', value: String(maxHeight), priority: 'important' },
     { op: 'setProperty', name: 'min-width', value: '0px', priority: 'important' },
@@ -835,6 +847,8 @@ function clearContentSizedGeometryPlan() {
   return Object.freeze([
     { op: 'removeProperty', name: 'left' },
     { op: 'removeProperty', name: 'top' },
+    { op: 'removeProperty', name: 'width' },
+    { op: 'removeProperty', name: 'height' },
     { op: 'removeProperty', name: 'max-width' },
     { op: 'removeProperty', name: 'max-height' },
     { op: 'removeProperty', name: 'min-width' },
@@ -849,12 +863,13 @@ function analyzeContentSizedGeometryContract(source) {
   const clearMatch = text.match(/function clearContentSizedGeometry\s*\([^)]*\)\s*\{([\s\S]*?)\n\s*\}/);
   const applyBody = applyMatch ? applyMatch[1] : '';
   const clearBody = clearMatch ? clearMatch[1] : '';
-  const required = ['left', 'top', 'max-width', 'max-height', 'min-width', 'overflow'];
+  const required = ['left', 'top', 'width', 'height', 'max-width', 'max-height', 'min-width', 'overflow'];
   return {
     hasApplyHelper: !!applyMatch,
     hasClearHelper: !!clearMatch,
     appliesImportantGeometry: required.every((name) =>
-      new RegExp(`setProperty\\(\\s*["']${name}["'][^\\n]*["']important["']`).test(applyBody)),
+      new RegExp(`setProperty\\(\\s*["']${nam)MENUHTML"
+        LR"MENUHTML(e}["'][^\\n]*["']important["']`).test(applyBody)),
     clearsGeometry: required.every((name) =>
       new RegExp(`removeProperty\\(\\s*["']${name}["']\\s*\\)`).test(clearBody)),
     forcesVisibleDisplay: /setProperty\(\s*["']display["']/.test(applyBody),
@@ -867,8 +882,7 @@ function analyzeContentSizedGeometryContract(source) {
 /** HTML shell must wrap #menu in #viewport. */
 function analyzeHtmlShell(html) {
   const text = String(html || '');
-  const hasViewport = /id\s*=\s*["']viewport["']/)MENUHTML"
-        LR"MENUHTML(.test(text);
+  const hasViewport = /id\s*=\s*["']viewport["']/.test(text);
   const menuInsideViewport = /id\s*=\s*["']viewport["'][\s\S]*id\s*=\s*["']menu["']/.test(text);
   return { hasViewport, menuInsideViewport };
 }
@@ -1029,7 +1043,8 @@ function shouldEmitSliderValue({ min, max, value, previous }) {
 }
 
 /** Throttle gate for pointermove (50ms). force always passes. */
-function shouldThrottleEmit(now, lastSent, force, throttleMs = 50) {
+function shouldThrot)MENUHTML"
+        LR"MENUHTML(tleEmit(now, lastSent, force, throttleMs = 50) {
   if (force) return true;
   return (now - lastSent) >= throttleMs;
 }
@@ -1051,8 +1066,7 @@ function resolveNavRowRole({ kind, checkable, checked }) {
  * Build aria-label for a rich control row in navigation mode.
  * `locale` selects the text language: 'zh' for Chinese, anything else English.
  * It arrives via the overlay state JSON, where the host derives it from the
- * Windows user UI language, so it matches the res)MENUHTML"
-        LR"MENUHTML(t of the native chrome instead
+ * Windows user UI language, so it matches the rest of the native chrome instead
  * of the WebView2 browser language.
  * The literal key name "Enter" stays untranslated in both languages because it
  * names a physical key, not a word.
@@ -1197,7 +1211,8 @@ function planSegmentedNavigationInternals({ segments, selectedIndex } = {}) {
 /**
  * Static contract: every mouseenter callback that calls setActive must use a
  * non-stealing path (setActiveFromPointer, or setActive(..., {focus:false})).
- * Rating star hover preview (paint only) is allowed without setActive.
+ * Rating)MENUHTML"
+        LR"MENUHTML( star hover preview (paint only) is allowed without setActive.
  */
 function analyzeMouseenterSetActiveFocus(jsSource) {
   const text = String(jsSource || '');
@@ -1219,8 +1234,7 @@ function analyzeMouseenterSetActiveFocus(jsSource) {
     let cm;
     while ((cm = callRe.exec(body))) {
       // Capture argument list with nested braces/parens for {focus:false}.
-      let p = c)MENUHTML"
-        LR"MENUHTML(m.index + cm[0].length;
+      let p = cm.index + cm[0].length;
       let pd = 1;
       let argsStart = p;
       for (; p < body.length && pd > 0; p++) {
@@ -1348,7 +1362,8 @@ function analyzeHoverIntentWiring(jsSource) {
       && /applyHoverIntent\s*\(/.test(hovers[0])
       && !/closeLayersFrom\s*\(/.test(hovers[0])
       && !/openSub\s*\(/.test(hovers[0])
-      && collectHandlerBodies(region, 'mouseleave').some((b) => /cancelHoverIntentFor\s*\(/.test(b));
+      && collectHandlerBodies(region, 'mouseleave').s)MENUHTML"
+        LR"MENUHTML(ome((b) => /cancelHoverIntentFor\s*\(/.test(b));
   }
   const rowLeaves = collectHandlerBodies(text, 'mouseleave')
     .filter((b) => /cancelHoverIntentFor\s*\(/.test(b));
@@ -1359,8 +1374,7 @@ function analyzeHoverIntentWiring(jsSource) {
   const cleanupMatch = text.match(/function cleanupMenuInteraction\(\)\{([\s\S]*?)\n\s*\}/);
   const cleanupBody = cleanupMatch ? cleanupMatch[1] : '';
   const timerMatch = text.match(/hoverIntentTimer\s*=\s*setTimeout\(function\(\)\{([\s\S]*?)\n\s*\}\s*,\s*plan\.delayMs\)/);
-  const timerBody = timerMatch ? t)MENUHTML"
-        LR"MENUHTML(imerMatch[1] : '';
+  const timerBody = timerMatch ? timerMatch[1] : '';
   return {
     hoverIntentSites,
     rowHoverHandlerCount: rowHovers.length,
@@ -1453,11 +1467,17 @@ function findCssRuleBody(css, selector) {
  * 4px. The fullscreen sheet keeps its original radius and shadow.
  */
 function analyzeContentSizedChromeCss(css) {
-  const compact = findCssRuleBody(css, '.fb-content-sized .fb-menu');
+  // :where() keeps the compact-chrome default at 0-1-0 specificity so the
+  // frontend css takeover (fb-user layer) can still restyle radius/shadow.
+  // Radius stays 0 on compact surfaces: content must cover the corners so the
+  // window-level DWM clip (ROUNDSMALL) shapes them; a CSS arc would expose an
+  // uncovered square backdrop tip whenever the DWM clip is unavailable.
+  const compact = findCssRuleBody(css, ':where(.fb-content-s)MENUHTML"
+        LR"MENUHTML(ized) .fb-menu');
   const base = findCssRuleBody(css, '.fb-menu');
   return {
     hasCompactMenuRule: compact != null,
-    compactRadiusIs4px: /border-radius\s*:\s*4px/.test(compact || ''),
+    compactRadiusIsZero: /border-radius\s*:\s*0(?:px)?\s*(?:;|$)/.test(compact || ''),
     compactDropsCssShadow: /box-shadow\s*:\s*none/.test(compact || ''),
     fullscreenKeepsRadius: /border-radius\s*:\s*6px/.test(base || ''),
     fullscreenKeepsShadow: /box-shadow\s*:\s*[^;]*rgba/.test(base || ''),
@@ -1477,8 +1497,7 @@ function analyzeContentSizedRootClassWiring(jsSource) {
     togglesRootClassInRender: !!match,
     coversContentSized: /\bcontent\b/.test(condition),
     coversSubmenuSurface: /\bsubmenuSurface\b/.test(condition),
-    keepsBodyContentSizedFlag: /document\.body\.classList\.toggle\(\s*["']content-sized["']\s*,\s*conte)MENUHTML"
-        LR"MENUHTML(nt\s*\)/.test(renderBody),
+    keepsBodyContentSizedFlag: /document\.body\.classList\.toggle\(\s*["']content-sized["']\s*,\s*content\s*\)/.test(renderBody),
   };
 }
 
@@ -1539,6 +1558,12 @@ function analyzeContentSizedRootClassWiring(jsSource) {
       if(!el||!geometry) return;
       el.style.setProperty("left",geometry.left,"important");
       el.style.setProperty("top",geometry.top,"important");
+      // 落位后必须显式钉住 width/height 精确填满紧凑窗（缺省 "auto" = 测量期自然尺寸）。
+      // 只设 max-* 时内容按自然尺寸渲染，而窗口 = ceil(自然×dpr) 且 scrollWidth 是
+      // 整数上取整，1-2px 残差会在右/底露出内容盖不住的裸 DWM 材质带、四角圆角错位
+      //（tray zones 嵌套内容的小数布局尤其明显）。
+      el.style.setProperty("width",geometry.width||"auto","important");
+      el.style.setProperty("height",geometry.height||"auto","important");
       el.style.setProperty("max-width",geometry.maxWidth,"important");
       el.style.setProperty("max-height",geometry.maxHeight,"important");
       el.style.setProperty("min-width","0px","important");
@@ -1548,6 +1573,9 @@ function analyzeContentSizedRootClassWiring(jsSource) {
       if(!el) return;
       el.style.removeProperty("left");
       el.style.removeProperty("top");
+   )MENUHTML"
+        LR"MENUHTML(   el.style.removeProperty("width");
+      el.style.removeProperty("height");
       el.style.removeProperty("max-width");
       el.style.removeProperty("max-height");
       el.style.removeProperty("min-width");
@@ -1562,6 +1590,8 @@ function analyzeContentSizedRootClassWiring(jsSource) {
       if(root){
         applyContentSizedGeometry(root,{
           left:"0px",top:placedGeometry.rootTop+"px",
+          width:placedGeometry.rootSlotW+"px",
+          height:(placedGeometry.viewportH-placedGeometry.rootTop)+"px",
           maxWidth:placedGeometry.rootSlotW+"px",
           maxHeight:(placedGeometry.viewportH-placedGeometry.rootTop)+"px"
         });
@@ -1585,8 +1615,7 @@ function analyzeContentSizedRootClassWiring(jsSource) {
       for(var i=0;i<L.rows.length;i++){
         var r=L.rows[i]; if(!r||!r.el) continue;
         if(!r.navigable){ r.el.setAttribute("tabindex","-1"); continue; }
-        r.el.setAttribute("tabindex", (interactionMode)MENUHTML"
-        LR"MENUHTML(==="navigation" && i===L.active) ? "0" : "-1");
+        r.el.setAttribute("tabindex", (interactionMode==="navigation" && i===L.active) ? "0" : "-1");
       }
     }
 
@@ -1665,7 +1694,8 @@ function analyzeContentSizedRootClassWiring(jsSource) {
     function enterEditor(depth, rowIdx){
       var L=layers[depth]; if(!L||!L.rows[rowIdx]) return;
       var row=L.rows[rowIdx];
-      if(!row.navigable || !isRichKind(row.kind) || !row.enterEditor) return;
+      if(!row.navig)MENUHTML"
+        LR"MENUHTML(able || !isRichKind(row.kind) || !row.enterEditor) return;
       interactionMode="editor";
       editorCtx={ depth:depth, rowIdx:rowIdx, row:row };
       row.el.setAttribute("role","none");
@@ -1703,8 +1733,7 @@ function analyzeContentSizedRootClassWiring(jsSource) {
 
     function buildNowPlaying(menuEl, L, it, en, depth, zone){
       var d=document.createElement("div");
-      d.className="fb-item fb-np"+(!en?" disabled":)MENUHTML"
-        LR"MENUHTML("");
+      d.className="fb-item fb-np"+(!en?" disabled":"");
       d.setAttribute("part","item");
       stampItem(d, it, depth, zone);
       d.setAttribute("role","menuitem");
@@ -1771,7 +1800,8 @@ function analyzeContentSizedRootClassWiring(jsSource) {
         d.setAttribute("role","menuitem");
         d.setAttribute("tabindex","-1");
         d.setAttribute("aria-label", buildRichNavAriaLabel({kind:"rating", label:it.label, value:ctl.v, locale:uiLocale}));
-        setSubtreeInert(box, true);
+        setS)MENUHTML"
+        LR"MENUHTML(ubtreeInert(box, true);
       }
       applyNavAria();
       var row={el:d, item:it, navigable:en, hasSub:false, kind:"rating", zone:zone, controlRoot:box, applyNavAria:applyNavAria,
@@ -1798,8 +1828,7 @@ function analyzeContentSizedRootClassWiring(jsSource) {
       var d=document.createElement("div");
       d.className="fb-item fb-slider"+(!en?" disabled":"");
       d.setAttribute("part","item");
-     )MENUHTML"
-        LR"MENUHTML( stampItem(d, it, depth, zone);
+      stampItem(d, it, depth, zone);
       d.setAttribute("data-orientation", orient);
       applyDisabledAria(d, en);
       if(it.label){ var lb=document.createElement("span"); lb.className="fb-slider-label"; lb.textContent=it.label; d.appendChild(lb); }
@@ -1869,7 +1898,8 @@ function analyzeContentSizedRootClassWiring(jsSource) {
         adjust:function(delta){
           if(!en||constant) return;
           var nv=clampInt(ctl.v+delta*step,mn,mx);
-          if(nv!==ctl.v){ ctl.v=nv; applyPaintStyles(nv); valueChange(it._token, nv); }
+  )MENUHTML"
+        LR"MENUHTML(        if(nv!==ctl.v){ ctl.v=nv; applyPaintStyles(nv); valueChange(it._token, nv); }
         },
         enterEditor:function(){ d.setAttribute("role","none"); d.removeAttribute("aria-label"); setSubtreeInert(track,false); focusEl.setAttribute("tabindex","0"); return focusEl; },
         exitEditor:function(){ focusEl.setAttribute("tabindex","-1"); applyNavAria(); },
@@ -1893,8 +1923,7 @@ function analyzeContentSizedRootClassWiring(jsSource) {
     // Left/Right 经 row.adjust 移到上/下一个【启用】段并 valueChange（clamp 边界）。index→业务语义由前端映射。
     // Editor 态：选中迁移时同步 roving tabindex + 真实 focus（键盘）；pointer pick 至少同步 tabindex。
     function buildSegmented(menuEl, L, it, en, depth, zone){
-      var d=document.createElement("div"); d.clas)MENUHTML"
-        LR"MENUHTML(sName="fb-item fb-seg"+(!en?" disabled":""); d.setAttribute("part","item");
+      var d=document.createElement("div"); d.className="fb-item fb-seg"+(!en?" disabled":""); d.setAttribute("part","item");
       stampItem(d, it, depth, zone);
       applyDisabledAria(d, en);
       if(it.label){ var lb=document.createElement("span"); lb.className="fb-seg-label"; lb.setAttribute("part","segmented-label"); lb.textContent=it.label; d.appendChild(lb); }
@@ -1970,7 +1999,8 @@ function analyzeContentSizedRootClassWiring(jsSource) {
           valueChange(it._token, plan.nextIndex);
         },
         enterEditor:function(){
-          d.setAttribute("role","none"); d.removeAttribute("aria-label"); setSubtreeInert(grp,false);
+          d.setAttribute("ro)MENUHTML"
+        LR"MENUHTML(le","none"); d.removeAttribute("aria-label"); setSubtreeInert(grp,false);
           var plan=planSegmentedEditorRoving({segments:segs, selectedIndex:ctl.v});
           for(var k=0;k<btns.length;k++) btns[k].setAttribute("tabindex", plan.tabIndexes[k]);
           return plan.focusIndex>=0?btns[plan.focusIndex]:null;
@@ -1999,8 +2029,7 @@ function analyzeContentSizedRootClassWiring(jsSource) {
         if(it && it.type==="nowplaying"){ buildNowPlaying(menuEl, L, it, !(it.enabled===false), depth, z); continue; }
         if(it && it.type==="rating"){ buildRating(menuEl, L, it, !(it.enabled===false), depth, z); continue; }
         if(it && it.type==="slider"){ buildSlider(menuEl, L, it, !(it.enabled===false), depth, z); continue; }
-        if(it && it)MENUHTML"
-        LR"MENUHTML(.type==="segmented"){ buildSegmented(menuEl, L, it, !(it.enabled===false), depth, z); continue; }
+        if(it && it.type==="segmented"){ buildSegmented(menuEl, L, it, !(it.enabled===false), depth, z); continue; }
         var hasSub=!!(it && it.submenu && it.submenu.length);
         var en=!(it && it.enabled===false);
         var checkable=isExplicitCheckable(it);
@@ -2036,7 +2065,12 @@ function analyzeContentSizedRootClassWiring(jsSource) {
           r.el.addEventListener("click", function(){
             if(!r.navigable) return;
             cancelHoverIntent();   // 点击路径立即执行，作废 pending 悬停意图
-            if(r.hasSub){ closeLayersFrom(depth+1); openSub(depth, ridx); setActive(depth+1, firstNav(depth+1)); }
+            if(r.hasSub){
+              // 幂等：本项子菜单已开 → 仅移焦点，不 close→open 拆重建（重复点击
+              // 曾致独立子菜单窗闪烁透底，且拆开窗口期的陈旧状态拉取会渲染空窗）。
+              if(layers[depth+1] && layers[depth+1].parentRowIdx===ridx){ setActive(depth+1, firstNav(depth+1)); }
+              else { closeLayersFrom(depth+1); openSub(depth, ridx); setActive(depth+1, firstNav(depth+1)); }
+            }
             else select(r.item._token);
           });
         })(row, idx);
@@ -2071,7 +2105,8 @@ function analyzeContentSizedRootClassWiring(jsSource) {
       if(layerHasIcon) menuEl.classList.add("has-icons");
       for(var i=0;i<present.length;i++){
         if(i>0){
-          var zs=document.createElement("div");
+   )MENUHTML"
+        LR"MENUHTML(       var zs=document.createElement("div");
           zs.className="fb-sep fb-zone-separator";
           zs.setAttribute("part","separator");
           // Inter-zone separator inherits the preceding zone.
@@ -2091,6 +2126,10 @@ function analyzeContentSizedRootClassWiring(jsSource) {
 
     function openSub(parentDepth, rowIdx){
       var L=layers[parentDepth]; if(!L || !L.rows[rowIdx]) return;
+      // 幂等：本行子菜单已展开则不拆重建。键盘路径（Enter/ArrowRight 重复触发）
+      // 不经 closeLayersFrom 直接调此处，无守卫会堆叠幽灵层；content 模式还会
+      // 触发独立子菜单窗整轮 close→open 握手（闪烁透底 + 陈旧拉取渲染空窗）。
+      if(layers[parentDepth+1] && layers[parentDepth+1].parentRowIdx===rowIdx) return;
       var content = !!(cur && cur.windowModel==="contentSized");
       if(content && parentDepth>=1) return;   // 内容窗仅 1 层子菜单；2+ 层不展开（深层）
       if(cur && cur.windowModel==="submenu") return;  // independent submenu remains a leaf surface
@@ -2110,8 +2149,7 @@ function analyzeContentSizedRootClassWiring(jsSource) {
       mountHost().appendChild(sub);
       buildLayer(sub, items, parentDepth+1, parentZone);
       layers[parentDepth+1].parentRowIdx = rowIdx;   // 子菜单归属父项（hover 幂等，bug2）
-      parentEl.setAttribute("aria-expanded",")MENUHTML"
-        LR"MENUHTML(true");
+      parentEl.setAttribute("aria-expanded","true");
       // Temporary measure pass: keep the node invisible to the user, then clear
       // inline display so the final visible state stays CSS-owned.
       // Off-screen measure must not steal focus.
@@ -2178,7 +2216,8 @@ function analyzeContentSizedRootClassWiring(jsSource) {
         ? st.zones.some(function(z){ return z && z.items && z.items.length; })
         : !!(st && st.items && st.items.length);
       if(!st || !st.visible || !hasContent){ hideMenuEl(root); return; }
-      if(useZones) buildZonesRoot(root, st.zones, 0);
+      if(useZones) buildZonesRoot)MENUHTML"
+        LR"MENUHTML((root, st.zones, 0);
       else buildLayer(root, st.items, 0, "");
       // 前端样式接管（S-CSS）：每次 render 覆盖 fb-user 防串味；cssReplace=true 时禁用默认样式（仅留 fb-user+fb-protected）。
       // 务必在 measureAndReport / placeRoot 之前应用，保证测量基于最终样式。
@@ -2200,6 +2239,21 @@ function analyzeContentSizedRootClassWiring(jsSource) {
         setActive(0, firstNav(0));   // WAI-ARIA：菜单打开焦点置首项
       }
       if(submenuSurface){
+        // 独立子菜单窗与根窗同则：显式填满紧凑窗，消除自然尺寸与
+        // ceil(自然×dpr) 窗口之间的右/底残差带。st.geometry 为物理像素。
+        var sg = (st && st.geometry) || null;
+        var sdpr = window.devicePixelRatio||1;
+        var svw = sg && +sg.viewportW > 0 ? (+sg.viewportW)/sdpr : 0;
+        var svh = sg && +sg.viewportH > 0 ? (+sg.viewportH)/sdpr : 0;
+        if(svw > 0 && svh > 0){
+          var svp = mountHost();
+          if(svp){ svp.style.width=svw+"px"; svp.style.height=svh+"px"; }
+          applyContentSizedGeometry(root,{
+            left:"0px",top:"0px",
+            width:svw+"px",height:svh+"px",
+            maxWidth:svw+"px",maxHeight:svh+"px"
+          });
+        }
         setActive(0, firstNav(0), {focus:false});
         reportSubmenuSurfaceReady();
       }
@@ -2227,8 +2281,7 @@ function analyzeContentSizedRootClassWiring(jsSource) {
       return {w:Math.max(el.scrollWidth,r.width),h:Math.max(el.scrollHeight,r.height)};
     }
 
-    function measur)MENUHTML"
-        LR"MENUHTML(eFirstLevelSubmenus(){
+    function measureFirstLevelSubmenus(){
       var out=[];
       var rootLayer=layers[0]; if(!rootLayer) return out;
       for(var i=0;i<rootLayer.rows.length;i++){
@@ -2295,7 +2348,8 @@ function analyzeContentSizedRootClassWiring(jsSource) {
         var root=document.getElementById("menu");
         requestAnimationFrame(function(){
           root.classList.add("in");
-          // ContentSized: real focus only after first visible place.
+          // ContentSized: real focus)MENUHTML"
+        LR"MENUHTML( only after first visible place.
           if(pendingRootFocus){
             pendingRootFocus=false;
             setActive(0, layers[0]?layers[0].active:firstNav(0), {focus:true});
@@ -2359,8 +2413,7 @@ function analyzeContentSizedRootClassWiring(jsSource) {
       }
     }
 
-    function pull(){ try{ if(window.fb2k&&fb2k.invoke){ var p=fb2k.invoke("menu.__getMenuState")MENUHTML"
-        LR"MENUHTML(); if(p&&p.then) p.then(render); } }catch(e){} }
+    function pull(){ try{ if(window.fb2k&&fb2k.invoke){ var p=fb2k.invoke("menu.__getMenuState"); if(p&&p.then) p.then(render); } }catch(e){} }
     function inMenu(t){ return t && t.closest && t.closest(".fb-menu"); }
     window.addEventListener("mousedown", function(e){ if(!inMenu(e.target)) dismiss("outside"); }, true);
     window.addEventListener("contextmenu", function(e){ e.preventDefault(); if(!inMenu(e.target)) dismiss("outside"); }, true);

@@ -368,11 +368,19 @@ export function visibleSubmenuStyle({ rootSlotW, subSlotW, viewportH, parentTop,
   };
 }
 
-/** Inline-important geometry owned by the ContentSized host. */
-export function contentSizedGeometryPlan({ left, top, maxWidth, maxHeight }) {
+/**
+ * Inline-important geometry owned by the ContentSized host.
+ * `width`/`height` default to `auto` (natural size for the measure pass); the
+ * placed pass pins them so the panel exactly fills the tight HWND — max-*
+ * alone leaves a 1-2px right/bottom residue (window = ceil(natural×dpr),
+ * scrollWidth integer-ceils) of uncovered DWM material.
+ */
+export function contentSizedGeometryPlan({ left, top, maxWidth, maxHeight, width = 'auto', height = 'auto' }) {
   return Object.freeze([
     { op: 'setProperty', name: 'left', value: String(left), priority: 'important' },
     { op: 'setProperty', name: 'top', value: String(top), priority: 'important' },
+    { op: 'setProperty', name: 'width', value: String(width), priority: 'important' },
+    { op: 'setProperty', name: 'height', value: String(height), priority: 'important' },
     { op: 'setProperty', name: 'max-width', value: String(maxWidth), priority: 'important' },
     { op: 'setProperty', name: 'max-height', value: String(maxHeight), priority: 'important' },
     { op: 'setProperty', name: 'min-width', value: '0px', priority: 'important' },
@@ -385,6 +393,8 @@ export function clearContentSizedGeometryPlan() {
   return Object.freeze([
     { op: 'removeProperty', name: 'left' },
     { op: 'removeProperty', name: 'top' },
+    { op: 'removeProperty', name: 'width' },
+    { op: 'removeProperty', name: 'height' },
     { op: 'removeProperty', name: 'max-width' },
     { op: 'removeProperty', name: 'max-height' },
     { op: 'removeProperty', name: 'min-width' },
@@ -399,7 +409,7 @@ export function analyzeContentSizedGeometryContract(source) {
   const clearMatch = text.match(/function clearContentSizedGeometry\s*\([^)]*\)\s*\{([\s\S]*?)\n\s*\}/);
   const applyBody = applyMatch ? applyMatch[1] : '';
   const clearBody = clearMatch ? clearMatch[1] : '';
-  const required = ['left', 'top', 'max-width', 'max-height', 'min-width', 'overflow'];
+  const required = ['left', 'top', 'width', 'height', 'max-width', 'max-height', 'min-width', 'overflow'];
   return {
     hasApplyHelper: !!applyMatch,
     hasClearHelper: !!clearMatch,
@@ -999,11 +1009,16 @@ function findCssRuleBody(css, selector) {
  * 4px. The fullscreen sheet keeps its original radius and shadow.
  */
 export function analyzeContentSizedChromeCss(css) {
-  const compact = findCssRuleBody(css, '.fb-content-sized .fb-menu');
+  // :where() keeps the compact-chrome default at 0-1-0 specificity so the
+  // frontend css takeover (fb-user layer) can still restyle radius/shadow.
+  // Radius stays 0 on compact surfaces: content must cover the corners so the
+  // window-level DWM clip (ROUNDSMALL) shapes them; a CSS arc would expose an
+  // uncovered square backdrop tip whenever the DWM clip is unavailable.
+  const compact = findCssRuleBody(css, ':where(.fb-content-sized) .fb-menu');
   const base = findCssRuleBody(css, '.fb-menu');
   return {
     hasCompactMenuRule: compact != null,
-    compactRadiusIs4px: /border-radius\s*:\s*4px/.test(compact || ''),
+    compactRadiusIsZero: /border-radius\s*:\s*0(?:px)?\s*(?:;|$)/.test(compact || ''),
     compactDropsCssShadow: /box-shadow\s*:\s*none/.test(compact || ''),
     fullscreenKeepsRadius: /border-radius\s*:\s*6px/.test(base || ''),
     fullscreenKeepsShadow: /box-shadow\s*:\s*[^;]*rgba/.test(base || ''),

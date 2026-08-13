@@ -607,11 +607,31 @@ LRESULT PopupWindow::HandleMessage(UINT msg, WPARAM wParam, LPARAM lParam) {
             // 失焦关闭语义不变。
             if (activationKind == WA_INACTIVE &&
                 MenuOverlayHost::GetInstance().ShouldHoldOwnerActivation(otherHwnd)) {
+                // dismiss 链取证（仅菜单面窗口）：blur 在第一道判定被 hold。
+                // 走 WindowChromeTrace 辅助线（默认关闭，FOO_UI_WEBVIEW2_WINDOW_TRACE=1
+                // 开启）。禁止改回 console::printf：它只认 %s/%d/%u/%x/%c，%p 会错位
+                // 变参并使后续 %s 读野指针（failure_00000211），故一律 ostringstream。
+                if (menuDismissCallback_) {
+                    std::ostringstream oss;
+                    oss << "[PopupWindow] menuBlurHeld src=WM_ACTIVATE hwnd=0x"
+                        << pfc::format_hex((size_t)hwnd_)
+                        << " other=0x" << pfc::format_hex((size_t)otherHwnd);
+                    WindowChromeTrace::EmitAuxiliaryLine(oss.str());
+                }
                 EmitActivationEvidence("WM_ACTIVATE.menuOverlayHold");
                 break;
             }
             if (menuDismissCallback_ && activationKind == WA_INACTIVE) {
-                menuDismissCallback_("blur");
+                // dismiss 链取证：blur 放行进入 host 判定，记录消息对端（与
+                // host 侧 GetForegroundWindow() 采样对照，锁死时序差）。
+                std::ostringstream oss;
+                oss << "[PopupWindow] menuBlur src=WM_ACTIVATE hwnd=0x"
+                    << pfc::format_hex((size_t)hwnd_)
+                    << " other=0x" << pfc::format_hex((size_t)otherHwnd);
+                WindowChromeTrace::EmitAuxiliaryLine(oss.str());
+                // 对端窗口一并透传：host 判定内部交接必须用消息对端（lParam），
+                // 不能事后查 GetForegroundWindow()（同进程转移未完成时仍返回自己）。
+                menuDismissCallback_("blur", otherHwnd);
             }
             OnActivate(wParam);
             break;
@@ -623,7 +643,14 @@ LRESULT PopupWindow::HandleMessage(UINT msg, WPARAM wParam, LPARAM lParam) {
                   << " otherThreadId=" << (unsigned long)lParam;
             EmitActivationEvidence("WM_ACTIVATEAPP", extra.str());
             if (menuDismissCallback_ && wParam == FALSE) {
-                menuDismissCallback_("blur");
+                // dismiss 链取证：跨进程失活（Alt-Tab/点他应用）的 blur 源点。
+                std::ostringstream oss;
+                oss << "[PopupWindow] menuBlur src=WM_ACTIVATEAPP hwnd=0x"
+                    << pfc::format_hex((size_t)hwnd_);
+                WindowChromeTrace::EmitAuxiliaryLine(oss.str());
+                // 跨进程失活无对端 HWND（lParam 是线程 id）：other=nullptr，
+                // host 侧按"真实失焦"处理（必关）。
+                menuDismissCallback_("blur", nullptr);
             }
             break;  // fall through to DefWindowProc
         }
@@ -1018,7 +1045,7 @@ LRESULT PopupWindow::HandleMessage(UINT msg, WPARAM wParam, LPARAM lParam) {
             
         case WM_KEYDOWN:
             if (menuDismissCallback_ && wParam == VK_ESCAPE) {
-                menuDismissCallback_("escape");
+                menuDismissCallback_("escape", nullptr);   // 键盘路径无失活对端
                 return 0;
             }
             // F12 开发者工具（仅开发服务器模式）
@@ -1786,8 +1813,17 @@ void PopupWindow::SetCornerPreferenceOverride(DWORD dwmwcp) {
     // 这里直接写属性即可让覆盖立即生效。首次应用时 ApplyFramelessState 会消费同一覆盖值。
     if (!hwnd_ || !IsWindow(hwnd_) || usePopupStyle_) return;
     DWORD cornerPref = dwmwcp;
-    S_DwmSetWindowAttribute(hwnd_, DWMWA_WINDOW_CORNER_PREFERENCE_V,
+    const HRESULT hr = S_DwmSetWindowAttribute(hwnd_, DWMWA_WINDOW_CORNER_PREFERENCE_V,
         &cornerPref, sizeof(cornerPref));
+    // 圆角未生效的现场诊断线索：属性写失败（旧系统/无效值）与"写成功但 DWM 不裁角"
+    // 是两类问题，必须能区分。走 WindowChromeTrace 辅助线（默认关闭，
+    // FOO_UI_WEBVIEW2_WINDOW_TRACE=1 开启）。禁止改回 console::printf：它只认
+    // %s/%d/%u/%x/%c，%p/%lu 会错位变参（failure_00000211），故一律 ostringstream。
+    std::ostringstream oss;
+    oss << "[PopupWindow] cornerPreference write hwnd=0x" << pfc::format_hex((size_t)hwnd_)
+        << " value=" << (unsigned)cornerPref
+        << " hr=0x" << pfc::format_hex((unsigned)hr, 8);
+    WindowChromeTrace::EmitAuxiliaryLine(oss.str());
 }
 
 void PopupWindow::ApplyFramelessState(bool frameless) {

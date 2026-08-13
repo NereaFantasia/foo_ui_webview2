@@ -55,6 +55,12 @@
       if(!el||!geometry) return;
       el.style.setProperty("left",geometry.left,"important");
       el.style.setProperty("top",geometry.top,"important");
+      // 落位后必须显式钉住 width/height 精确填满紧凑窗（缺省 "auto" = 测量期自然尺寸）。
+      // 只设 max-* 时内容按自然尺寸渲染，而窗口 = ceil(自然×dpr) 且 scrollWidth 是
+      // 整数上取整，1-2px 残差会在右/底露出内容盖不住的裸 DWM 材质带、四角圆角错位
+      //（tray zones 嵌套内容的小数布局尤其明显）。
+      el.style.setProperty("width",geometry.width||"auto","important");
+      el.style.setProperty("height",geometry.height||"auto","important");
       el.style.setProperty("max-width",geometry.maxWidth,"important");
       el.style.setProperty("max-height",geometry.maxHeight,"important");
       el.style.setProperty("min-width","0px","important");
@@ -64,6 +70,8 @@
       if(!el) return;
       el.style.removeProperty("left");
       el.style.removeProperty("top");
+      el.style.removeProperty("width");
+      el.style.removeProperty("height");
       el.style.removeProperty("max-width");
       el.style.removeProperty("max-height");
       el.style.removeProperty("min-width");
@@ -78,6 +86,8 @@
       if(root){
         applyContentSizedGeometry(root,{
           left:"0px",top:placedGeometry.rootTop+"px",
+          width:placedGeometry.rootSlotW+"px",
+          height:(placedGeometry.viewportH-placedGeometry.rootTop)+"px",
           maxWidth:placedGeometry.rootSlotW+"px",
           maxHeight:(placedGeometry.viewportH-placedGeometry.rootTop)+"px"
         });
@@ -547,7 +557,12 @@
           r.el.addEventListener("click", function(){
             if(!r.navigable) return;
             cancelHoverIntent();   // 点击路径立即执行，作废 pending 悬停意图
-            if(r.hasSub){ closeLayersFrom(depth+1); openSub(depth, ridx); setActive(depth+1, firstNav(depth+1)); }
+            if(r.hasSub){
+              // 幂等：本项子菜单已开 → 仅移焦点，不 close→open 拆重建（重复点击
+              // 曾致独立子菜单窗闪烁透底，且拆开窗口期的陈旧状态拉取会渲染空窗）。
+              if(layers[depth+1] && layers[depth+1].parentRowIdx===ridx){ setActive(depth+1, firstNav(depth+1)); }
+              else { closeLayersFrom(depth+1); openSub(depth, ridx); setActive(depth+1, firstNav(depth+1)); }
+            }
             else select(r.item._token);
           });
         })(row, idx);
@@ -602,6 +617,10 @@
 
     function openSub(parentDepth, rowIdx){
       var L=layers[parentDepth]; if(!L || !L.rows[rowIdx]) return;
+      // 幂等：本行子菜单已展开则不拆重建。键盘路径（Enter/ArrowRight 重复触发）
+      // 不经 closeLayersFrom 直接调此处，无守卫会堆叠幽灵层；content 模式还会
+      // 触发独立子菜单窗整轮 close→open 握手（闪烁透底 + 陈旧拉取渲染空窗）。
+      if(layers[parentDepth+1] && layers[parentDepth+1].parentRowIdx===rowIdx) return;
       var content = !!(cur && cur.windowModel==="contentSized");
       if(content && parentDepth>=1) return;   // 内容窗仅 1 层子菜单；2+ 层不展开（深层）
       if(cur && cur.windowModel==="submenu") return;  // independent submenu remains a leaf surface
@@ -710,6 +729,21 @@
         setActive(0, firstNav(0));   // WAI-ARIA：菜单打开焦点置首项
       }
       if(submenuSurface){
+        // 独立子菜单窗与根窗同则：显式填满紧凑窗，消除自然尺寸与
+        // ceil(自然×dpr) 窗口之间的右/底残差带。st.geometry 为物理像素。
+        var sg = (st && st.geometry) || null;
+        var sdpr = window.devicePixelRatio||1;
+        var svw = sg && +sg.viewportW > 0 ? (+sg.viewportW)/sdpr : 0;
+        var svh = sg && +sg.viewportH > 0 ? (+sg.viewportH)/sdpr : 0;
+        if(svw > 0 && svh > 0){
+          var svp = mountHost();
+          if(svp){ svp.style.width=svw+"px"; svp.style.height=svh+"px"; }
+          applyContentSizedGeometry(root,{
+            left:"0px",top:"0px",
+            width:svw+"px",height:svh+"px",
+            maxWidth:svw+"px",maxHeight:svh+"px"
+          });
+        }
         setActive(0, firstNav(0), {focus:false});
         reportSubmenuSurfaceReady();
       }

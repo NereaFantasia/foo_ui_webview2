@@ -161,6 +161,12 @@ public:
     // 不在交接瞬间 → 一律不保持，保证外点击/切他窗的失活语义不被劫持。
     bool ShouldHoldOwnerActivation(HWND other) const;
 
+    // 窗口是否属于菜单面（根/子菜单），按 GA_ROOT 顶层归一后比较。
+    // WebView2/Chromium 会把 Win32 焦点落到其内部子 HWND（Chrome_WidgetWin_*）：
+    // WM_ACTIVATE 的对端与 GetForegroundWindow() 都可能是该子窗而非顶层窗，
+    // 裸指针相等会把菜单内部的焦点腾挪误判成"焦点离开菜单"（blur 误关整菜单）。
+    bool IsMenuSurfaceWindow(HWND hwnd) const;
+
     static constexpr const char* kOverlayWindowId = "__menu_overlay__";
 
 private:
@@ -197,8 +203,11 @@ private:
     void HideSubmenuWindow(bool restoreRootFocus, bool notifyRoot = false,
                            bool clearState = true);
     void OnSubmenuWebViewReady();
-    void OnRootDismissRequested(const std::string& reason);
-    void OnSubmenuDismissRequested(const std::string& reason);
+    // other = 失活消息的对端窗口（WM_ACTIVATE lParam；WM_ACTIVATEAPP/escape 为
+    // nullptr）。内部交接判定只信 other（GA_ROOT 归一）：失活消息同步处理期间
+    // GetForegroundWindow() 仍返回失活窗口自己（同进程转移未完成），不可作判据。
+    void OnRootDismissRequested(const std::string& reason, HWND other);
+    void OnSubmenuDismissRequested(const std::string& reason, HWND other);
     void SyncWebViewToClient(MenuOverlayWindow* window, HWND hwnd) const;
     json BuildRootGeometryJson(const menu_overlay_geometry::Placement& placement) const;
     std::optional<json> FindSubmenuItems(const std::string& parentToken) const;

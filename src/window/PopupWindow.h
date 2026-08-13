@@ -87,9 +87,14 @@ public:
     // 抑制 window:popupOpened / window:popupClosed 生命周期广播（菜单覆盖面专用，
     // 避免污染用户窗口事件流；普通 popup 默认 false，零影响）。
     void SetSuppressLifecycleBroadcast(bool v) { suppressLifecycleBroadcast_ = v; }
-    // 设置 dismiss 回调（菜单覆盖面专用）：失焦(WM_ACTIVATEAPP)或 Esc 时触发请求关闭。
+    // 设置 dismiss 回调（菜单覆盖面专用）：失焦(WM_ACTIVATE/WM_ACTIVATEAPP)或 Esc 时触发请求关闭。
     // 默认空 -> 普通 popup 行为不变（显式接口，不依赖 profile 字符串隐式分支）。
-    void SetMenuDismissCallback(std::function<void(const std::string&)> cb) { menuDismissCallback_ = std::move(cb); }
+    // other = 失活消息报告的对端窗口（WM_ACTIVATE 的 lParam）；WM_ACTIVATEAPP（跨进程失活，
+    // lParam 是线程 id）与 Esc 无对端，传 nullptr。host 判定"内部交接 vs 真实失焦"必须用
+    // other：失活消息的同步处理期间，同进程激活转移尚未完成，GetForegroundWindow() 仍返回
+    // 失活窗口自己，不可作判据（实锤见 2026-08-13 dismiss 链取证：外点击宿主时
+    // fg=菜单窗自身而 other=主窗，三次全被误判成内部腾挪，菜单常驻）。
+    void SetMenuDismissCallback(std::function<void(const std::string&, HWND)> cb) { menuDismissCallback_ = std::move(cb); }
     // Windows 11 DWM 圆角偏好取值（DWMWCP_*），供逐窗口覆盖的调用方使用，
     // 避免在 host 侧散落裸数字。
     static constexpr DWORD kCornerRound = 2;       // DWMWCP_ROUND
@@ -289,7 +294,7 @@ private:
     std::string profile_ = "legacy";
     // 菜单覆盖面支持成员（self-drawn-menu）
     bool suppressLifecycleBroadcast_ = false;
-    std::function<void(const std::string&)> menuDismissCallback_;
+    std::function<void(const std::string&, HWND)> menuDismissCallback_;
     json behaviorOverrides_ = json::object();
     json backdropPolicyOverrides_ = json::object();
     WindowChromeCompatibilityOverrides chromeCompatibilityOverrides_;
