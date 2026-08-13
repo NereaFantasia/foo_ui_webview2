@@ -1,15 +1,25 @@
 # 更新日志
 
-## v1.12.0 (2026-08-05)
+## v1.12.0 (2026-08-12)
 
 ::: warning 本版的破坏性变更
-以下两项可能需要修改代码：
+以下四项可能需要修改代码：
 
+- **拖放投放区注册表已移除。** `dnd.registerDropZone` / `unregisterDropZone` / `getDropZones` 不复存在；宿主现在原生观测拖放，并向光标下的窗口发射 `dnd:enter` / `dnd:leave` / `dnd:drop`，无需注册。真实路径改用 `fb.dnd.getPathsAsync()` 或 `dnd:drop` 载荷读取。
+- **`dnd.startDrag` 不再伪装成功。** 拖出窗口需要组件未提供的原生 `IDropSource`；调用现在 resolve `{ success: false, code: 'NOT_SUPPORTED' }`，而不是虚报 `success: true`。
 - **窗口尺寸约束改作用于调用方窗口。** `window.setMinSize` / `getMinSize` / `setMaxSize` / `getMaxSize` / `setResizable` / `isResizable` 这六个端点不再回退到主窗口，解析不到目标时调用失败。依赖旧回退行为的 popup，实际约束的是主窗口。
 - **`DiscoveryContextMenuCommand` 不再是类型别名。** 读取右键菜单命令的 `path` / `isDynamic` / `subGuid` 不再通过类型检查——这些字段从未被填充过。
 
 本版仍作为 minor 发布：本项目的版本轴历史上已有 minor 版本承载破坏性变更的先例（见 1.6.0）。需要可控升级时请锁定精确版本号。
 :::
+
+### 拖放
+
+- **拖放改为原生管线。** 宿主通过原生 `IDropTarget` 桥自行观测拖放手势，把 HTML5 刻意隐藏的真实文件系统路径交给页面。标准 HTML5 拖放事件照常触发，`fb.dnd` 作为旁路通道与之并行。
+- 新表面：`dnd.getPathsAsync(sessionId?)`（在 `drop` 处理函数内可靠读取）、`dnd.getPaths()` / `dnd.hasFiles()`（同步快照读取，用于乐观 UI）、`dnd.getCapabilities()`（本窗口能否交付路径）。
+- 事件 `dnd:enter` / `dnd:leave` / `dnd:drop`（载荷：`sessionId`、`paths`、`x`、`y`、`keyState`）与 `dnd:capabilitiesChanged`，按 `sessionId` 关联同一次手势，点对点投递到光标下的窗口。
+- 路径对不受信 origin 扣留，`hasFiles` 仍如实上报；DUI / CUI 面板（`hosting: 'standard'`）拿不到路径——用 `getCapabilities()` 判断，而不是按窗口类型假设。
+- **迁移**：删除 `registerDropZone` / `unregisterDropZone` / `getDropZones` 调用与 `zoneId` 簿记；保留（或补上）HTML5 `dragover` / `drop` 监听做视觉与命中判定；在 `drop` 处理函数内用 `await fb.dnd.getPathsAsync()` 读取真实路径；依赖路径的 UI 以 `dnd.getCapabilities()` 为准。
 
 ### 主菜单
 

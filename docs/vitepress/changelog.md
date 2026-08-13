@@ -1,15 +1,25 @@
 # Changelog
 
-## v1.12.0 (2026-08-05)
+## v1.12.0 (2026-08-12)
 
 ::: warning Breaking changes in this release
-Two changes may require code edits:
+Four changes may require code edits:
 
+- **The `dnd` drop-zone registry is gone.** `dnd.registerDropZone` / `unregisterDropZone` / `getDropZones` no longer exist; the host now observes drags natively and emits `dnd:enter` / `dnd:leave` / `dnd:drop` to the window under the cursor, no registration required. Read real paths with `fb.dnd.getPathsAsync()` or from the `dnd:drop` payload.
+- **`dnd.startDrag` no longer fakes success.** Dragging tracks out of the window needs a native `IDropSource` the component does not provide; the call now resolves with `{ success: false, code: 'NOT_SUPPORTED' }` instead of reporting `success: true`.
 - **Window size constraints target the calling window.** The six `window.setMinSize` / `getMinSize` / `setMaxSize` / `getMaxSize` / `setResizable` / `isResizable` endpoints no longer fall back to the main window, and a call that resolves no target now fails. A popup that relied on the old fallback was constraining the main window.
 - **`DiscoveryContextMenuCommand` is no longer a type alias.** Reading `path` / `isDynamic` / `subGuid` off a context-menu command no longer type-checks — those fields were never populated.
 
 The release stays on a minor version because the project's version axis has carried breaking changes in minor releases before (see 1.6.0). Pin an exact version if you need to upgrade deliberately.
 :::
+
+### Drag and drop
+
+- **Drag and drop is now a native pipeline.** The host observes drag gestures itself through a native `IDropTarget` bridge and hands the page what HTML5 deliberately hides: real filesystem paths. Standard HTML5 drag events keep firing as before; `fb.dnd` runs alongside them as a side channel.
+- New surface: `dnd.getPathsAsync(sessionId?)` (the reliable read inside a `drop` handler), `dnd.getPaths()` / `dnd.hasFiles()` (synchronous snapshot reads for optimistic UI), and `dnd.getCapabilities()` (whether this window can deliver paths at all).
+- Events `dnd:enter` / `dnd:leave` / `dnd:drop` (payload: `sessionId`, `paths`, `x`, `y`, `keyState`) and `dnd:capabilitiesChanged`, correlated by `sessionId` and delivered point-to-point to the window under the cursor.
+- Paths are withheld from untrusted origins while `hasFiles` stays accurate; a DUI / CUI panel (`hosting: 'standard'`) cannot receive paths — branch on `getCapabilities()` rather than assuming from the window type.
+- **Migration**: delete `registerDropZone` / `unregisterDropZone` / `getDropZones` calls and any `zoneId` bookkeeping; keep (or add) plain HTML5 `dragover` / `drop` listeners for visuals and hit-testing; read real paths with `await fb.dnd.getPathsAsync()` inside the `drop` handler; gate path-dependent UI on `dnd.getCapabilities()`.
 
 ### Main menu
 
