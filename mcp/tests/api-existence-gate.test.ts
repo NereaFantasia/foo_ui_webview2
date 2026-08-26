@@ -46,12 +46,20 @@ const allMethodMaps: Record<string, string> = {
 const PROJECT_ROOT = resolve(__dirname, "../..");
 const API_DIR = join(PROJECT_ROOT, "src", "api");
 
-/** 实时提取 src/api/*.cpp 中所有 RegisterApi("method.name", ...) 注册的方法名 */
+/**
+ * 实时提取 src/api/*.cpp 中所有 RegisterApi("method.name", ...) 注册的方法名。
+ *
+ * 延迟响应变体 RegisterApiDeferred("method.name", ...) 计入同一个注册面：BridgeCore
+ * 把两类 handler 分表存放，但对外只暴露一个注册面（src/api/BridgeCore.cpp:117 HasApi
+ * 对两张表取或，GetRegisteredApiNames 取并），所以把一个 API 迁到 deferred 不该让它
+ * 从存在性集合里掉出去、被误判成幻觉端点。与 Graph 侧权威扫描
+ * scripts/graph/lib/cpp-runtime-contract-scan.mjs 的 REGISTER_API_RE 同口径。
+ */
 function extractRegisteredApisFromCpp(): Set<string> {
     if (!existsSync(API_DIR)) return new Set();
 
     const apis = new Set<string>();
-    const pattern = /RegisterApi\(\s*"([^"]+)"/g;
+    const pattern = /RegisterApi(?:Deferred)?\s*\(\s*"([^"]+)"/g;
 
     const files = readdirSync(API_DIR).filter((f) => f.endsWith(".cpp"));
     for (const file of files) {
@@ -86,7 +94,7 @@ describe("API 存在性硬门禁（实时校验 C++ RegisterApi）", () => {
                         `║ 但 src/api/*.cpp 中没有对应的 RegisterApi 注册。   ║\n` +
                         `║                                                  ║\n` +
                         `║ 请执行：                                          ║\n` +
-                        `║ 1. grep RegisterApi\\("${method}" src/api/*.cpp\n` +
+                        `║ 1. grep -E 'RegisterApi(Deferred)?\\("${method}"' src/api/*.cpp\n` +
                         `║ 2. 若存在 → 检查方法名拼写是否一致                 ║\n` +
                         `║ 3. 若不存在 → 删除该 MCP 工具映射或修正方法名      ║\n` +
                         `╚══════════════════════════════════════════════════╝`

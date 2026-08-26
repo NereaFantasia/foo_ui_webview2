@@ -72,12 +72,19 @@ function loadApiSources(): Map<string, string> {
     return sources;
 }
 
-/** 从所有源码中提取 RegisterApi("method.name", ...) 注册记录 */
+/**
+ * 从所有源码中提取 RegisterApi("method.name", ...) 注册记录。
+ *
+ * 延迟响应变体 RegisterApiDeferred 计入同一个注册面：BridgeCore 分表存放两类
+ * handler，但对外只有一个注册面（src/api/BridgeCore.cpp:117 HasApi 对两张表取或），
+ * 迁到 deferred 的 API 不该从注册记录里掉出去。与 Graph 侧权威扫描
+ * scripts/graph/lib/cpp-runtime-contract-scan.mjs 的 REGISTER_API_RE 同口径。
+ */
 function extractRegisteredApis(
     sources: Map<string, string>
 ): Map<string, { file: string; line: number }> {
     const apis = new Map<string, { file: string; line: number }>();
-    const pattern = /RegisterApi\(\s*"([^"]+)"/g;
+    const pattern = /RegisterApi(?:Deferred)?\s*\(\s*"([^"]+)"/g;
 
     for (const [file, content] of sources) {
         const lines = content.split("\n");
@@ -110,9 +117,13 @@ function extractHandlerParamKeys(
 ): string[] {
     const keys = new Set<string>();
 
-    // 1. 找到 RegisterApi("apiName", HandlerFunc) 中的 HandlerFunc 名
+    // 1. 找到 RegisterApi("apiName", HandlerFunc) 中的 HandlerFunc 名。
+    //    RegisterApiDeferred 的第二参同样是 handler 符号（LibraryApi.cpp:2619 的
+    //    LibrarySearchDeferred），捕获组语义不变；其定义形如
+    //    `void XxxDeferred(const json& params, const DeferredResponder&)`，
+    //    返回类型 void 已在下方 funcPattern 的备选里，函数体仍能定位。
     const registerPattern = new RegExp(
-        `RegisterApi\\(\\s*"${escapeRegex(apiName)}"\\s*,\\s*(\\w+)`
+        `RegisterApi(?:Deferred)?\\s*\\(\\s*"${escapeRegex(apiName)}"\\s*,\\s*(\\w+)`
     );
     let handlerName: string | undefined;
     let sourceFile: string | undefined;
@@ -209,7 +220,7 @@ describe("API 参数对齐门禁", () => {
                 const registration = registeredApis.get(method);
                 expect(
                     registration,
-                    `RegisterApi("${method}") 未在 src/api/*.cpp 中找到`
+                    `RegisterApi("${method}") / RegisterApiDeferred("${method}") 均未在 src/api/*.cpp 中找到`
                 ).toBeDefined();
             });
         }
