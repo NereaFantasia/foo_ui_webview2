@@ -40,9 +40,11 @@ public:
     void RestoreDisplacedTarget();
 
     // Whether the page may see real filesystem paths. When false, dnd:enter and
-    // dnd:drop report an empty paths array while hasFiles stays accurate, since
-    // that flag reveals nothing about the filesystem. Sessions keep the real
-    // paths so the gate can reopen on navigation without losing the drag.
+    // dnd:drop report empty paths and resolvedPaths arrays while hasFiles stays
+    // accurate, since that flag reveals nothing about the filesystem. A
+    // shortcut target is a real path too, so it passes the same gate. Sessions
+    // keep the real paths so the gate can reopen on navigation without losing
+    // the drag.
     void SetPathsAllowed(bool allowed) { pathsAllowed_ = allowed; }
     bool PathsAllowed() const { return pathsAllowed_; }
 
@@ -77,6 +79,12 @@ private:
     // origin gate is open, an empty array otherwise. Single choke point so no
     // event payload can bypass the gate.
     nlohmann::json VisiblePaths(const std::vector<std::wstring>& paths) const;
+
+    // The shortcut-target array as the page is allowed to see it. Passes the
+    // same gate as VisiblePaths, and answers with the same length, so a page can
+    // pair the two by index in every case including a closed gate.
+    nlohmann::json VisibleResolvedPaths(const std::vector<std::wstring>& paths,
+                                        const std::vector<ResolvedTarget>& resolved) const;
 
     // Emits through sink_ if one was supplied, swallowing sink failures so a
     // faulty listener cannot break the drag.

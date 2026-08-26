@@ -211,8 +211,10 @@
     <ClCompile Include="src\webview\WebViewHost.cpp" />
     <ClCompile Include="src\webview\WebViewEnvironment.cpp" />
     <ClCompile Include="src\webview\dnd\HdropReader.cpp" />
+    <ClCompile Include="src\webview\dnd\ShortcutResolver.cpp" />
     <ClCompile Include="src\webview\dnd\DropEffectPolicy.cpp" />
     <ClCompile Include="src\webview\dnd\DragSession.cpp" />
+    <ClCompile Include="src\api\AsyncOperationRegistry.cpp" />
     <ClCompile Include="src\webview\dnd\DndOriginPolicy.cpp" />
     <ClCompile Include="src\webview\dnd\CompositionDelegate.cpp" />
     <ClCompile Include="src\webview\dnd\ChainedDelegate.cpp" />
@@ -327,6 +329,7 @@
     <ClInclude Include="src\webview\WebViewHost.h" />
     <ClInclude Include="src\webview\WebViewEnvironment.h" />
     <ClInclude Include="src\webview\dnd\HdropReader.h" />
+    <ClInclude Include="src\webview\dnd\ShortcutResolver.h" />
     <ClInclude Include="src\webview\dnd\DropEffectPolicy.h" />
     <ClInclude Include="src\webview\dnd\DragSession.h" />
     <ClInclude Include="src\webview\dnd\DndOriginPolicy.h" />
@@ -360,6 +363,7 @@
     <ClInclude Include="src\api\UiApi.h" />
     <ClInclude Include="src\api\CursorApi.h" />
     <ClInclude Include="src\api\LyricsApi.h" />
+    <ClInclude Include="src\api\AsyncOperationRegistry.h" />
     <ClInclude Include="src\api\MetadataApi.h" />
     <ClInclude Include="src\api\AudioApi.h" />
     <ClInclude Include="src\api\DspApi.h" />

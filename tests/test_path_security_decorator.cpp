@@ -21,6 +21,7 @@ struct PathSecuritySpec {
 struct ValidationResult {
     bool success;
     std::string errorMsg;
+    bool shapeError = false;  // Mirrors the production field the wrapper dispatches on
 };
 
 // Simplified validator: blocks paths containing ".." (traversal) or starting with "\\\\"  (UNC)
@@ -28,7 +29,8 @@ static ValidationResult ValidatePathParam(const json& params, const PathSecurity
                                            const std::string& /*method*/) {
     if (!params.contains(spec.paramKey) || !params[spec.paramKey].is_string()) {
         if (spec.required) {
-            return {false, "Required path parameter missing: " + spec.paramKey};
+            // Absent or wrong-typed parameter is a shape failure, not a security refusal
+            return {false, "Required path parameter missing: " + spec.paramKey, true};
         }
         return {true, ""};
     }
@@ -58,7 +60,9 @@ static ApiHandler WrapWithSecurity(ApiHandler inner, std::vector<PathSecuritySpe
         for (const auto& spec : innerSpecs) {
             auto r = ValidatePathParam(params, spec, methodName);
             if (!r.success) {
-                return ApiEnvelope::MakeError(r.errorMsg.c_str(), ApiErrorCode::PERMISSION_DENIED);
+                return ApiEnvelope::MakeError(
+                    r.errorMsg.c_str(),
+                    r.shapeError ? ApiErrorCode::INVALID_PARAMS : ApiErrorCode::PERMISSION_DENIED);
             }
         }
         return innerHandler(params);
@@ -117,7 +121,7 @@ TEST_F(PathSecurityDecoratorTest, RequiredParam_Missing_Error) {
         {{"path", true}}, "test.api");
     json result = wrapped(json::object());  // no "path" key
     EXPECT_FALSE(result["success"].get<bool>());
-    EXPECT_EQ(result["code"].get<std::string>(), "PERMISSION_DENIED");
+    EXPECT_EQ(result["code"].get<std::string>(), "INVALID_PARAMS");
 }
 
 TEST_F(PathSecurityDecoratorTest, OptionalParam_Missing_PassThrough) {
@@ -164,4 +168,36 @@ TEST_F(PathSecurityDecoratorTest, SecondSpec_Fails) {
     json result = wrapped({{"sourcePath", "E:\\ok"}, {"destPath", "\\\\server\\hack"}});
     EXPECT_FALSE(result["success"].get<bool>());
     EXPECT_EQ(result["code"].get<std::string>(), "PERMISSION_DENIED");
+}
+
+TEST_F(PathSecurityDecoratorTest, NonStringParam_Required_InvalidParams) {
+    auto safeHandler = [](const json&) -> json {
+        return {{"success", true}};
+    };
+    auto wrapped = reimpl::WrapWithSecurity(safeHandler,
+        {{"path", true}}, "test.api");
+    json result = wrapped({{"path", 42}});  // wrong type, and the spec requires it
+    EXPECT_FALSE(result["success"].get<bool>());
+    EXPECT_EQ(result["code"].get<std::string>(), "INVALID_PARAMS");
+}
+
+// Pins the dispatch itself: one wrapped handler, one spec, two inputs that differ
+// only in how they fail. A wrapper that collapses both onto one code fails here
+// even though every EXPECT_FALSE(success) above would still pass.
+TEST_F(PathSecurityDecoratorTest, ShapeAndSecurityFailures_GetDifferentCodes) {
+    auto safeHandler = [](const json&) -> json {
+        return {{"success", true}};
+    };
+    auto wrapped = reimpl::WrapWithSecurity(safeHandler,
+        {{"path", true}}, "test.api");
+
+    json shapeFailure = wrapped({{"path", 42}});
+    json securityFailure = wrapped({{"path", "\\\\server\\share\\file.mp3"}});
+
+    EXPECT_FALSE(shapeFailure["success"].get<bool>());
+    EXPECT_FALSE(securityFailure["success"].get<bool>());
+    EXPECT_EQ(shapeFailure["code"].get<std::string>(), "INVALID_PARAMS");
+    EXPECT_EQ(securityFailure["code"].get<std::string>(), "PERMISSION_DENIED");
+    EXPECT_NE(shapeFailure["code"].get<std::string>(),
+              securityFailure["code"].get<std::string>());
 }

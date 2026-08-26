@@ -99,6 +99,8 @@
     <ClCompile Include="..\src\window\WindowGeometryMath.cpp" />
     <ClCompile Include="..\src\window\WindowTargetPolicy.cpp" />
     <ClCompile Include="..\src\webview\dnd\HdropReader.cpp" />
+    <ClCompile Include="..\src\webview\dnd\ShortcutResolver.cpp" />
+    <ClCompile Include="..\src\api\AsyncOperationRegistry.cpp" />
     <ClCompile Include="..\src\webview\dnd\DropEffectPolicy.cpp" />
     <ClCompile Include="..\src\webview\dnd\DragSession.cpp" />
     <ClCompile Include="..\src\webview\dnd\DndOriginPolicy.cpp" />
@@ -132,6 +134,7 @@
     <ClCompile Include="test_path_prefix_boundary.cpp" />
     <ClCompile Include="test_path_security_unc_bypass.cpp" />
     <ClCompile Include="test_path_security_write_tiers.cpp" />
+    <ClCompile Include="test_path_security_canonical_form.cpp" />
     <ClCompile Include="test_menu_handle_list_dedup.cpp" />
     <ClCompile Include="test_media_membership_index.cpp" />
     <ClCompile Include="test_path_canonical_cache.cpp" />
@@ -151,6 +154,11 @@
     <ClCompile Include="test_dnd_effect_policy.cpp" />
     <ClCompile Include="test_dnd_session.cpp" />
     <ClCompile Include="test_dnd_origin_policy.cpp" />
+    <ClCompile Include="test_dnd_shortcut_resolver.cpp" />
+    <ClCompile Include="test_async_operation_registry.cpp" />
+    <ClCompile Include="test_json_writer.cpp" />
+    <ClCompile Include="test_bridge_deferred.cpp" />
+    <ClCompile Include="test_track_wire_snapshot.cpp" />
   </ItemGroup>
 
   <!-- Headers -->
@@ -170,6 +178,8 @@
     <ClInclude Include="..\src\window\WindowTargetPolicy.h" />
     <ClInclude Include="..\src\utils\WindowUtilsCore.h" />
     <ClInclude Include="..\src\webview\dnd\HdropReader.h" />
+    <ClInclude Include="..\src\webview\dnd\ShortcutResolver.h" />
+    <ClInclude Include="..\src\api\AsyncOperationRegistry.h" />
     <ClInclude Include="..\src\webview\dnd\DropEffectPolicy.h" />
     <ClInclude Include="..\src\webview\dnd\DragSession.h" />
     <ClInclude Include="..\src\webview\dnd\DndOriginPolicy.h" />

@@ -209,6 +209,10 @@ private:
     void OnRootDismissRequested(const std::string& reason, HWND other);
     void OnSubmenuDismissRequested(const std::string& reason, HWND other);
     void SyncWebViewToClient(MenuOverlayWindow* window, HWND hwnd) const;
+    // SyncWebViewToClient 的对称收口：宿主 HWND 隐藏时必须同步收敛其 WebView 的
+    // 渲染面积。Visual Hosting（CompositionController）下可见性由宿主 app 负责，
+    // 只 ShowWindow(SW_HIDE) 会留下一个属于 msedgewebview2.exe 的顶层渲染窗仍在出帧。
+    void CollapseWebViewSurface(MenuOverlayWindow* window, HWND hwnd) const;
     json BuildRootGeometryJson(const menu_overlay_geometry::Placement& placement) const;
     std::optional<json> FindSubmenuItems(const std::string& parentToken) const;
 

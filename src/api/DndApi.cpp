@@ -86,6 +86,11 @@ namespace {
     // depend on the delivery order of dnd:* messages, and it stays usable after
     // an await because it never touches event.dataTransfer. Reports an empty
     // array, not a failure, when the session expired or carried no file list.
+    //
+    // resolvedPaths is the parallel shortcut-target array, always the same
+    // length as paths. No shell work happens here: the targets were read once
+    // by the drop target and stored with the session, so a page may query this
+    // as often as it likes without touching the filesystem.
     //==========================================================================
     json DndGetPathsAsync(const json& params) {
         auto* registrar = ResolveCallerRegistrar(params);
@@ -103,24 +108,38 @@ namespace {
             return {
                 {"success", true},
                 {"sessionId", std::string()},
-                {"paths", json::array()}
+                {"paths", json::array()},
+                {"resolvedPaths", json::array()}
             };
         }
 
         // Same gate as the event payloads: when the document origin is not
         // trusted for the path side channel the session id is still reported,
-        // since it reveals nothing, but the paths are withheld.
+        // since it reveals nothing, but the paths are withheld. A shortcut
+        // target is a real path, so it is withheld by the same test, and both
+        // arrays stay empty together rather than one turning into nulls.
         json paths = json::array();
+        json resolvedPaths = json::array();
         if (bridge->PathsAllowed()) {
-            for (const std::wstring& path : session->paths) {
-                paths.push_back(WideToUtf8(path));
+            // Indexed off paths so the two arrays match in length whatever the
+            // session holds, which is what lets a page pair them by index.
+            for (size_t i = 0; i < session->paths.size(); ++i) {
+                paths.push_back(WideToUtf8(session->paths[i]));
+                const bool known = i < session->resolvedPaths.size() &&
+                                   session->resolvedPaths[i].has_value();
+                if (known) {
+                    resolvedPaths.push_back(WideToUtf8(*session->resolvedPaths[i]));
+                } else {
+                    resolvedPaths.push_back(json(nullptr));
+                }
             }
         }
 
         return {
             {"success", true},
             {"sessionId", session->sessionId},
-            {"paths", paths}
+            {"paths", paths},
+            {"resolvedPaths", resolvedPaths}
         };
     }
 

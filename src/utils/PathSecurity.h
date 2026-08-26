@@ -25,6 +25,7 @@
 #include <foobar2000/SDK/foobar2000.h>
 #include "utils/MediaMembershipIndex.h"
 #include "utils/PathCanonicalCache.h"
+#include "utils/PathCanonicalForm.h"
 
 namespace fs = std::filesystem;
 
@@ -199,9 +200,10 @@ public:
     
     // 验证通用文件写入 (file.* 端点)。
     //
-    // 与 ValidateMediaWriteAccess 的唯一差别是保留"非系统盘直通": file.mkdir
-    // 建的新目录、file.write 建的新文件都不可能预先存在于媒体库或监视目录,
-    // 套用媒体写入语义会使整族端点失效。
+    // 与 ValidateMediaWriteAccess 的差别: 本函数多"非系统盘直通"、少同目录
+    // 伴生文件信任, 且监视目录步排在直通之前。file.mkdir 建的新目录、
+    // file.write 建的新文件都不可能预先存在于媒体库或播放列表中, 只靠这两个
+    // 信任源会使整族端点失效。
     //
     // 该直通是已登记的待决项, 不是本函数的目标态: 统一权限架构 §7.2 要求
     // file.write / delete / mkdir / copy.destination / move / rename 归入
@@ -209,6 +211,12 @@ public:
     // 将被拒绝 —— 那是公开 SDK 文档当前明确承诺的行为, 属破坏性变更, 须随
     // 版本策略单独决策。此处先把它从媒体写入语义中摘出, 使其成为显式登记的
     // 独立策略, 而非搭媒体写入的便车。
+    //
+    // 监视目录信任源排在该直通**之前**是为了决定步稳定, 不是为了功能存续:
+    // 本链除黑名单外每步都只在命中时 return true, 没有一步在未命中时中断,
+    // 故位置不改变放行集合 —— 系统盘监视目录内的路径排在直通之后同样会命中
+    // (IsOnNonSystemDrive 对系统盘为 false, 遮不住它)。排在之前的收益是删
+    // 直通后由监视目录接管决定步, 判定归因与顺序用例断言都不变。
     bool ValidateFileWriteAccess(const std::wstring& rawPath, std::wstring& errorMsg) {
         std::wstring realPath;
         if (!PassBasicPathSafetyChecks(rawPath, realPath, errorMsg)) {
@@ -221,6 +229,17 @@ public:
         }
         
         if (IsInWriteWhitelist(realPath)) {
+            return true;
+        }
+        
+        // 接 canonical 之后的 realPath: 判定落点必须等于实际写入落点。用
+        // rawPath 判定时, 监视目录内的重解析点 (junction/symlink) 能把写入
+        // 重定向到监视目录之外、又不在黑名单内的位置 (如启动项目录), 而该位
+        // 置直接传入时是被拒绝的。与下方 8.3 展开处"判据必须取 canonical 之
+        // 后"是同一道理。realPath 对本步的两类正当输入均可用: 新建路径走
+        // weakly_canonical 逐级解析、不存在的尾段原样保留; UNC 跳过解析、
+        // 原样返回。
+        if (IsInTrustedMediaRoots(realPath)) {
             return true;
         }
         
@@ -271,102 +290,119 @@ private:
             systemDrive_ = ::towupper(winDir[0]);
         }
     }
-    
+
+    // 名单条目入表口: 统一规范化并丢弃空条目。
+    //
+    // 规范化依赖 systemDrive_, 故构造函数必须先跑 InitializeSystemDrive
+    // 再跑三个建表函数, 该顺序不可调换。
+    //
+    // 空条目必须丢弃: GetFoobarProfilePath / GetFoobarInstallPath 失败时返回空串,
+    // 而 IsPathPrefixOf 对空 prefix 会读 prefix.back() —— 空字符串上是未定义行为,
+    // 且长度 0 的前缀在逻辑上匹配一切路径, 是 fail-open 方向。
+    void PushNormalized(std::vector<std::wstring>& list, const std::wstring& raw) {
+        if (raw.empty()) return;
+        std::wstring normalized = path_canonical::ResolveToCanonicalForm(raw, systemDrive_);
+        if (normalized.empty()) return;
+        list.push_back(std::move(normalized));
+    }
+
+    // 所有条目经 PushNormalized 入表: 名单必须存 canonical + 8.3 展开后的形态,
+    // 才能与判定侧的 realPath 前缀匹配 (见 ResolveToCanonicalForm 注释)。
     void InitializeWhitelist() {
         whitelist_.clear();
-        
+
         // FB2K profile 目录
-        whitelist_.push_back(GetFoobarProfilePath());
-        
+        PushNormalized(whitelist_, GetFoobarProfilePath());
+
         // 用户音乐目录
         wchar_t path[MAX_PATH];
         if (SUCCEEDED(SHGetFolderPathW(nullptr, CSIDL_MYMUSIC, nullptr, 0, path))) {
-            whitelist_.push_back(path);
+            PushNormalized(whitelist_, path);
         }
-        
+
         // 用户桌面 (用户常放歌的位置)
         if (SUCCEEDED(SHGetFolderPathW(nullptr, CSIDL_DESKTOPDIRECTORY, nullptr, 0, path))) {
-            whitelist_.push_back(path);
+            PushNormalized(whitelist_, path);
         }
-        
+
         // 用户文档
         if (SUCCEEDED(SHGetFolderPathW(nullptr, CSIDL_PERSONAL, nullptr, 0, path))) {
-            whitelist_.push_back(path);
+            PushNormalized(whitelist_, path);
         }
-        
+
         // 用户下载目录
         PWSTR downloadPath = nullptr;
         if (SUCCEEDED(SHGetKnownFolderPath(FOLDERID_Downloads, 0, nullptr, &downloadPath))) {
-            whitelist_.push_back(downloadPath);
+            PushNormalized(whitelist_, downloadPath);
             CoTaskMemFree(downloadPath);
         }
-        
+
         // Temp 目录
         wchar_t tempPath[MAX_PATH];
         if (GetTempPathW(MAX_PATH, tempPath) > 0) {
-            whitelist_.push_back(tempPath);
+            PushNormalized(whitelist_, tempPath);
         }
-        
+
         // 便携版: 添加 FB2K 安装目录
         std::wstring installDir = GetFoobarInstallPath();
         if (!installDir.empty()) {
-            whitelist_.push_back(installDir);
+            PushNormalized(whitelist_, installDir);
         }
-        
+
         // 用户视频目录
         if (SUCCEEDED(SHGetFolderPathW(nullptr, CSIDL_MYVIDEO, nullptr, 0, path))) {
-            whitelist_.push_back(path);
+            PushNormalized(whitelist_, path);
         }
-        
+
         // OneDrive 目录 (很多用户在 OneDrive 同步音乐库)
         PWSTR oneDrivePath = nullptr;
         if (SUCCEEDED(SHGetKnownFolderPath(FOLDERID_SkyDrive, 0, nullptr, &oneDrivePath))) {
-            whitelist_.push_back(oneDrivePath);
+            PushNormalized(whitelist_, oneDrivePath);
             CoTaskMemFree(oneDrivePath);
         }
     }
     
     void InitializeBlacklist() {
         blacklist_.clear();
-        
+
         wchar_t path[MAX_PATH];
-        
+
         // Windows 目录
         if (GetWindowsDirectoryW(path, MAX_PATH) > 0) {
-            blacklist_.push_back(path);
+            PushNormalized(blacklist_, path);
         }
-        
+
         // System32
         if (GetSystemDirectoryW(path, MAX_PATH) > 0) {
-            blacklist_.push_back(path);
+            PushNormalized(blacklist_, path);
         }
-        
+
         // Program Files
         if (SUCCEEDED(SHGetFolderPathW(nullptr, CSIDL_PROGRAM_FILES, nullptr, 0, path))) {
-            blacklist_.push_back(path);
+            PushNormalized(blacklist_, path);
         }
-        
+
         // Program Files (x86)
         if (SUCCEEDED(SHGetFolderPathW(nullptr, CSIDL_PROGRAM_FILESX86, nullptr, 0, path))) {
-            blacklist_.push_back(path);
+            PushNormalized(blacklist_, path);
         }
-        
+
         // ProgramData
         if (SUCCEEDED(SHGetFolderPathW(nullptr, CSIDL_COMMON_APPDATA, nullptr, 0, path))) {
-            blacklist_.push_back(path);
+            PushNormalized(blacklist_, path);
         }
     }
-    
+
     void InitializeWriteAllowedDirs() {
         writeAllowedDirs_.clear();
-        
+
         // Profile 目录
-        writeAllowedDirs_.push_back(GetFoobarProfilePath());
-        
+        PushNormalized(writeAllowedDirs_, GetFoobarProfilePath());
+
         // Temp 目录
         wchar_t tempPath[MAX_PATH];
         if (GetTempPathW(MAX_PATH, tempPath) > 0) {
-            writeAllowedDirs_.push_back(tempPath);
+            PushNormalized(writeAllowedDirs_, tempPath);
         }
     }
     
@@ -458,47 +494,11 @@ private:
                 }
             }
             
-            // 解析符号链接到真实路径 (防止符号链接绕过)
-            try {
-                if (fs::exists(path)) {
-                    resolvedPath = fs::canonical(path).wstring();
-                } else {
-                    resolvedPath = fs::weakly_canonical(path).wstring();
-                }
-            } catch (...) {
-                resolvedPath = path;
-            }
-            
-            // 展开 8.3 短文件名 (防止 PROGRA~1 等绕过黑名单)
-            //
-            // 仅对系统盘执行: 8.3 展开的唯一消费者是黑白名单前缀匹配，而
-            //   - ValidatePath 对非系统盘在盘符判断处直接放行，不查黑白名单;
-            //   - ValidateMediaWriteAccess 的黑名单全是本机系统目录，非系统盘匹配不上;
-            //   - 其写白名单 (profile/temp) 若在非系统盘则匹配失败，落到"非系统盘放行"，
-            //     方向是更严格而非更宽松。
-            //
-            // 判据必须取 canonical **之后**的盘符: 按 raw 路径盘符提前跳过会让
-            // D:\link -> C:\Windows\System32 的 junction 被当作非系统盘，绕过黑名单。
-            const bool onSystemDrive = resolvedPath.length() >= 2 &&
-                                       resolvedPath[1] == L':' &&
-                                       ::towupper(resolvedPath[0]) == systemDrive_;
-            if (onSystemDrive) {
-                // 两段式调用: 缓冲区不足时 GetLongPathNameW 返回所需长度而不写入，
-                // 旧实现只判 len < MAX_PATH 会静默跳过超长路径的展开，形成黑名单弱化点。
-                wchar_t stackBuf[MAX_PATH];
-                DWORD len = GetLongPathNameW(resolvedPath.c_str(), stackBuf, MAX_PATH);
-                if (len > 0 && len < MAX_PATH) {
-                    resolvedPath.assign(stackBuf, len);
-                } else if (len >= MAX_PATH) {
-                    std::wstring longPath(len, L'\0');
-                    DWORD written = GetLongPathNameW(resolvedPath.c_str(), longPath.data(), len);
-                    if (written > 0 && written < len) {
-                        longPath.resize(written);
-                        resolvedPath = std::move(longPath);
-                    }
-                }
-            }
-            
+            // canonical 解析 + 系统盘 8.3 短名展开, 与名单建表共用同一形态化
+            // 函数: 判定侧 realPath 与名单条目的形态一致性由该函数单点保证,
+            // 逻辑与失败回退语义见其注释。
+            resolvedPath = path_canonical::ResolveToCanonicalForm(path, systemDrive_);
+
             if (parentStamp.has_value()) {
                 canonicalCache_.Store(path, resolvedPath, *parentStamp);
             }
@@ -725,6 +725,12 @@ private:
     // 与黑名单/读白名单一致使用分隔符感知的 IsPathPrefixOf: profile 项
     // 不带尾分隔符, 裸 find()==0 前缀匹配会把 "foobar2000evil" 这类
     // 兄弟目录误判为白名单内 (fail-open 方向), 故不可退回裸匹配。
+    //
+    // 条目已在建表时经 ResolveToCanonicalForm 规范化到与入参 realPath 同一
+    // 形态, 这是前缀匹配成立的前提: 条目存原始路径而入参已 canonical 时,
+    // 经 junction / 已知文件夹重定向的机器上两者形态错位, 匹配恒 miss
+    // (实测反例: profile 目录 junction 到非系统盘后, temp 条目仍是 C:\ 形态
+    // 而 realPath 已是 E:\ 形态, temp 写白名单整体静默失效)。
     bool IsInWriteWhitelist(const std::wstring& realPath) {
         std::wstring lowerPath = realPath;
         std::transform(lowerPath.begin(), lowerPath.end(), lowerPath.begin(), ::towlower);

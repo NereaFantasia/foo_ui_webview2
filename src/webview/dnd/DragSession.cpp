@@ -17,15 +17,31 @@ std::string MakeSessionId(int64_t nowMs) {
     return "dnd-" + std::to_string(ordinal) + "-" + std::to_string(nowMs);
 }
 
+// Forces the parallel array to the length of the path list.
+//
+// Single choke point for the invariant SessionData documents, so no caller can
+// store a mismatched pair: a short array would make an index read fall off the
+// end, and a long one would publish an entry with no path beside it. Resizing
+// is the safe direction because a missing entry means "target unknown", which
+// is exactly what an empty ResolvedTarget already says.
+void NormalizeResolved(std::vector<ResolvedTarget>& resolved, size_t pathCount) {
+    if (resolved.size() != pathCount) {
+        resolved.resize(pathCount);
+    }
+}
+
 }  // namespace
 
 std::string DragSessionStore::BeginSession(std::vector<std::wstring> paths,
-                                          bool hasFiles, int64_t nowMs) {
+                                          bool hasFiles, int64_t nowMs,
+                                          std::vector<ResolvedTarget> resolvedPaths) {
     // A new drag always supersedes the previous one: a source can re-enter
     // without a matching leave, and keeping both would make Query ambiguous.
     current_ = SessionData{};
     current_.sessionId = MakeSessionId(nowMs);
+    NormalizeResolved(resolvedPaths, paths.size());
     current_.paths = std::move(paths);
+    current_.resolvedPaths = std::move(resolvedPaths);
     current_.hasFiles = hasFiles;
     current_.startedAtMs = nowMs;
     valid_ = true;
@@ -42,11 +58,14 @@ void DragSessionStore::EndSession(const std::string& sessionId, int64_t nowMs) {
 
 void DragSessionStore::UpdatePaths(const std::string& sessionId,
                                    std::vector<std::wstring> paths,
-                                   bool hasFiles) {
+                                   bool hasFiles,
+                                   std::vector<ResolvedTarget> resolvedPaths) {
     if (!valid_ || current_.sessionId != sessionId) {
         return;
     }
+    NormalizeResolved(resolvedPaths, paths.size());
     current_.paths = std::move(paths);
+    current_.resolvedPaths = std::move(resolvedPaths);
     current_.hasFiles = hasFiles;
 }
 

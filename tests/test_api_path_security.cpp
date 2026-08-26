@@ -25,13 +25,15 @@ struct PathSecuritySpec {
 struct ValidationResult {
     bool success;
     std::string errorMsg;
+    bool shapeError = false;  // Mirrors the production field the wrapper dispatches on
 };
 
 static ValidationResult ValidatePathParam(const json& params, const PathSecuritySpec& spec,
                                            const std::string& /*method*/) {
     if (!params.contains(spec.paramKey) || !params[spec.paramKey].is_string()) {
         if (spec.required) {
-            return {false, "Required path parameter missing: " + spec.paramKey};
+            // Absent or wrong-typed parameter is a shape failure, not a security refusal
+            return {false, "Required path parameter missing: " + spec.paramKey, true};
         }
         return {true, ""};
     }
@@ -65,7 +67,9 @@ static ApiHandler WrapWithSecurity(ApiHandler inner, std::vector<PathSecuritySpe
         for (const auto& spec : innerSpecs) {
             auto r = ValidatePathParam(params, spec, methodName);
             if (!r.success) {
-                return ApiEnvelope::MakeError(r.errorMsg.c_str(), ApiErrorCode::PERMISSION_DENIED);
+                return ApiEnvelope::MakeError(
+                    r.errorMsg.c_str(),
+                    r.shapeError ? ApiErrorCode::INVALID_PARAMS : ApiErrorCode::PERMISSION_DENIED);
             }
         }
         return innerHandler(params);
@@ -124,7 +128,7 @@ TEST_F(HttpDownloadSecurityTest, SystemPath_Blocked) {
 TEST_F(HttpDownloadSecurityTest, MissingSaveTo_Error) {
     json result = wrappedDownload({{"url", "https://example.com/file.dat"}});
     EXPECT_FALSE(result["success"].get<bool>());
-    EXPECT_EQ(result["code"].get<std::string>(), "PERMISSION_DENIED");
+    EXPECT_EQ(result["code"].get<std::string>(), "INVALID_PARAMS");
     EXPECT_FALSE(handlerCalled);
 }
 
@@ -177,6 +181,7 @@ TEST_F(LyricsExistsSecurityTest, MissingPath_Error) {
 TEST_F(LyricsExistsSecurityTest, NonStringPath_RequiredBlocked) {
     json result = wrappedLyricsExists({{"path", 42}});
     EXPECT_FALSE(result["success"].get<bool>());
+    EXPECT_EQ(result["code"].get<std::string>(), "INVALID_PARAMS");
     EXPECT_FALSE(handlerCalled);
 }
 
@@ -269,6 +274,7 @@ TEST_F(ArtworkGetFolderImagesSecurityTest, MissingDirectory_Error) {
 TEST_F(ArtworkGetFolderImagesSecurityTest, NonStringDirectory_Error) {
     json result = wrappedArtwork({{"directory", json::array({"a", "b"})}});
     EXPECT_FALSE(result["success"].get<bool>());
+    EXPECT_EQ(result["code"].get<std::string>(), "INVALID_PARAMS");
     EXPECT_FALSE(handlerCalled);
 }
 

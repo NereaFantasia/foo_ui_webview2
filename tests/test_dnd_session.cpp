@@ -136,3 +136,81 @@ TEST(DragSession, ClearRemovesEverything) {
     EXPECT_FALSE(store.HasActiveSession());
     EXPECT_EQ(store.Query(id, 10), nullptr);
 }
+
+// --- Shortcut targets: the parallel array ------------------------------------
+
+TEST(DragSession, ShortcutTargetsAreStoredAtTheMatchingIndex) {
+    DragSessionStore store;
+    auto id = store.BeginSession({L"C:\\a.mp3", L"C:\\b.lnk"}, true, 0,
+                                 {std::nullopt, std::wstring(L"D:\\real.mp3")});
+    const auto* s = store.Query(id, 10);
+    ASSERT_NE(s, nullptr);
+    ASSERT_EQ(s->resolvedPaths.size(), 2u);
+    EXPECT_FALSE(s->resolvedPaths[0].has_value());
+    ASSERT_TRUE(s->resolvedPaths[1].has_value());
+    EXPECT_EQ(*s->resolvedPaths[1], L"D:\\real.mp3");
+}
+
+TEST(DragSession, OmittedShortcutTargetsBecomeAnEqualLengthEmptyArray) {
+    // Every existing caller that predates the parallel array lands here, and a
+    // reader indexing it with a paths index must not fall off the end.
+    DragSessionStore store;
+    auto id = store.BeginSession({L"C:\\a.mp3", L"C:\\b.mp3", L"C:\\c.mp3"}, true, 0);
+    const auto* s = store.Query(id, 10);
+    ASSERT_NE(s, nullptr);
+    ASSERT_EQ(s->resolvedPaths.size(), s->paths.size());
+    for (const auto& entry : s->resolvedPaths) {
+        EXPECT_FALSE(entry.has_value());
+    }
+}
+
+TEST(DragSession, ShortShortcutArrayIsPaddedToThePathCount) {
+    DragSessionStore store;
+    auto id = store.BeginSession({L"C:\\a.lnk", L"C:\\b.mp3", L"C:\\c.mp3"}, true, 0,
+                                 {std::wstring(L"D:\\real.mp3")});
+    const auto* s = store.Query(id, 10);
+    ASSERT_NE(s, nullptr);
+    ASSERT_EQ(s->resolvedPaths.size(), 3u);
+    ASSERT_TRUE(s->resolvedPaths[0].has_value());
+    EXPECT_FALSE(s->resolvedPaths[2].has_value());
+}
+
+TEST(DragSession, LongShortcutArrayIsTruncatedToThePathCount) {
+    // A longer array would publish a target with no path beside it, which has
+    // no index the page could pair it with.
+    DragSessionStore store;
+    auto id = store.BeginSession({L"C:\\a.lnk"}, true, 0,
+                                 {std::wstring(L"D:\\one.mp3"),
+                                  std::wstring(L"D:\\two.mp3")});
+    const auto* s = store.Query(id, 10);
+    ASSERT_NE(s, nullptr);
+    EXPECT_EQ(s->resolvedPaths.size(), 1u);
+}
+
+TEST(DragSession, DropReplacesBothArraysTogether) {
+    // Drop carries the authoritative list, so a stale target must not survive
+    // beside a path it no longer belongs to.
+    DragSessionStore store;
+    auto id = store.BeginSession({L"C:\\a.lnk"}, true, 0,
+                                 {std::wstring(L"D:\\enter.mp3")});
+    store.UpdatePaths(id, {L"C:\\b.lnk", L"C:\\c.mp3"}, true,
+                      {std::wstring(L"D:\\drop.mp3"), std::nullopt});
+
+    const auto* s = store.Query(id, 10);
+    ASSERT_NE(s, nullptr);
+    ASSERT_EQ(s->paths.size(), 2u);
+    ASSERT_EQ(s->resolvedPaths.size(), 2u);
+    ASSERT_TRUE(s->resolvedPaths[0].has_value());
+    EXPECT_EQ(*s->resolvedPaths[0], L"D:\\drop.mp3");
+    EXPECT_FALSE(s->resolvedPaths[1].has_value());
+}
+
+TEST(DragSession, EmptyPathListLeavesNoShortcutTargets) {
+    // The shape after ReadHdropPaths hits its catch-all and clears the list.
+    DragSessionStore store;
+    auto id = store.BeginSession({}, false, 0, {std::wstring(L"D:\\stale.mp3")});
+    const auto* s = store.Query(id, 10);
+    ASSERT_NE(s, nullptr);
+    EXPECT_TRUE(s->paths.empty());
+    EXPECT_TRUE(s->resolvedPaths.empty());
+}

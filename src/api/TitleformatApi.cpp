@@ -12,11 +12,20 @@
 static constexpr const char* kFieldSeparator = "\x01\x1F\x01";
 
 // Evaluate a single titleformat pattern for a track
-static std::string EvalPattern(const metadb_handle_ptr& track, const titleformat_object::ptr& script) {
+//
+// outInfoAvailable (optional) receives metadb_handle::format_title's return
+// value: false means a dummy file_info was substituted because this track's
+// metadb info is not (yet) known, so tag-derived output is untrustworthy
+// (per its @returns doc). It is set to false when the track or script is
+// invalid, i.e. it is always written before the function returns.
+static std::string EvalPattern(const metadb_handle_ptr& track, const titleformat_object::ptr& script,
+                               bool* outInfoAvailable = nullptr) {
+    if (outInfoAvailable) *outInfoAvailable = false;
     if (!track.is_valid() || !script.is_valid()) return "";
-    
+
     pfc::string8 result;
-    track->format_title(nullptr, result, script, nullptr);
+    const bool infoAvailable = track->format_title(nullptr, result, script, nullptr);
+    if (outInfoAvailable) *outInfoAvailable = infoAvailable;
     return result.get_ptr();
 }
 
@@ -54,7 +63,10 @@ static std::vector<std::string> SplitString(const std::string& str, const std::s
 //==========================================================================
 // titleformat.eval - Evaluate a single pattern for a single file
 // params: { path: string, pattern: string }
-// Returns: { success: true, result: string }
+// Returns: { success: true, result: string, infoAvailable: boolean }
+//   infoAvailable=false: this track's metadb info is not ready, so tag-based
+//   fields in result are untrustworthy (does not cover foo_playcount virtual
+//   fields such as %rating%). Absent on failure envelopes.
 //==========================================================================
 json TitleformatEval(const json& params) {
     std::string path = params.value("path", "");
@@ -83,13 +95,15 @@ json TitleformatEval(const json& params) {
         }
         
         // Evaluate
-        std::string result = EvalPattern(handle, script);
-        
+        bool infoAvailable = false;
+        std::string result = EvalPattern(handle, script, &infoAvailable);
+
         return {
             {"success", true},
             {"path", path},
             {"pattern", pattern},
-            {"result", result}
+            {"result", result},
+            {"infoAvailable", infoAvailable}
         };
     } catch (const std::exception& e) {
         return {{"success", false}, {"error", e.what()}};
@@ -99,7 +113,9 @@ json TitleformatEval(const json& params) {
 //==========================================================================
 // titleformat.evalBatch - Evaluate a single pattern for multiple files
 // params: { paths: string[], pattern: string }
-// Returns: { success: true, results: [{ path, result }] }
+// Returns: { success: true, results: [{ path, result, infoAvailable }] }
+//   infoAvailable is per row and only present on rows with success=true;
+//   see titleformat.eval above for its meaning.
 //==========================================================================
 json TitleformatEvalBatch(const json& params) {
     if (!params.contains("paths") || !params["paths"].is_array()) {
@@ -146,8 +162,10 @@ json TitleformatEvalBatch(const json& params) {
                 continue;
             }
             
-            std::string result = EvalPattern(handle, script);
-            results.push_back({{"path", path}, {"success", true}, {"result", result}});
+            bool infoAvailable = false;
+            std::string result = EvalPattern(handle, script, &infoAvailable);
+            results.push_back({{"path", path}, {"success", true}, {"result", result},
+                               {"infoAvailable", infoAvailable}});
             successCount++;
         }
         
@@ -167,7 +185,13 @@ json TitleformatEvalBatch(const json& params) {
 //==========================================================================
 // titleformat.evalFields - Evaluate multiple fields for a single file
 // params: { path: string, fields: { fieldName: pattern, ... } }
-// Returns: { success: true, fieldName: value, ... }
+// Returns: { success: true, infoAvailable: boolean, fieldName: value, ... }
+//   infoAvailable reports whether this track's metadb info is ready. Because
+//   all fields are merged into one script, a single flag cannot separate
+//   "%bitrate% is untrustworthy" from "%rating% is fine" — it only ever means
+//   "tag-derived fields are untrustworthy" and never covers foo_playcount
+//   virtual fields. Omitted when no format_title call happened (empty fields
+//   or merged-pattern compile failure).
 //==========================================================================
 json TitleformatEvalFields(const json& params) {
     std::string path = params.value("path", "");
@@ -211,7 +235,11 @@ json TitleformatEvalFields(const json& params) {
             titleformat_object::ptr mergedScript;
             if (compiler->compile(mergedScript, mergedPattern.c_str())) {
                 pfc::string8 formatted;
-                handle->format_title(nullptr, formatted, mergedScript, nullptr);
+                const bool infoAvailable =
+                    handle->format_title(nullptr, formatted, mergedScript, nullptr);
+                // 先写信号再写字段值，与既有 success / path 的顺序一致：
+                // 调用方若自带同名 infoAvailable 字段，仍按原行为覆盖它
+                result["infoAvailable"] = infoAvailable;
                 std::vector<std::string> parts = SplitString(formatted.c_str(), kFieldSeparator);
                 for (size_t i = 0; i < fieldNames.size(); i++) {
                     result[fieldNames[i]] = (i < parts.size()) ? parts[i] : "";
@@ -235,7 +263,10 @@ json TitleformatEvalFields(const json& params) {
 //==========================================================================
 // titleformat.evalFieldsBatch - Evaluate multiple fields for multiple files
 // params: { paths: string[], fields: { fieldName: pattern, ... } }
-// Returns: { success: true, results: [{ path, success, fieldName: value, ... }] }
+// Returns: { success: true,
+//            results: [{ path, success, infoAvailable, fieldName: value, ... }] }
+//   infoAvailable is per row, present on rows with success=true, and carries
+//   the same meaning and same merged-script limitation as evalFields above.
 //==========================================================================
 json TitleformatEvalFieldsBatch(const json& params) {
     if (!params.contains("paths") || !params["paths"].is_array()) {
@@ -302,15 +333,18 @@ json TitleformatEvalFieldsBatch(const json& params) {
             
             // 单次 format_title 调用获取所有字段
             pfc::string8 formatted;
-            handle->format_title(nullptr, formatted, mergedScript, nullptr);
-            
+            const bool infoAvailable =
+                handle->format_title(nullptr, formatted, mergedScript, nullptr);
+
             // Split 并映射回字段名
             std::vector<std::string> parts = SplitString(formatted.c_str(), kFieldSeparator);
-            
+
             json item;
             item["path"] = path;
             item["success"] = true;
-            
+            // 先写信号再写字段值，与 path / success 同序：同名调用方字段仍覆盖它
+            item["infoAvailable"] = infoAvailable;
+
             for (size_t i = 0; i < fieldNames.size(); i++) {
                 item[fieldNames[i]] = (i < parts.size()) ? parts[i] : "";
             }

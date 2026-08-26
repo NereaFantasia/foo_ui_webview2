@@ -737,6 +737,11 @@ void WebViewHost::InjectBridgeScript() {
         // document, so a navigation cannot leave the previous page's paths
         // readable. The host fills it from dnd:* events; null means no drag
         // session has been published to this document.
+        //
+        // Declared in every frame but only ever filled in the main one, see
+        // _isMainFrame below. A subframe therefore reads null here for the
+        // lifetime of its document, which is also what makes the accessors
+        // answer with an empty array instead of throwing.
         window.__fbDndSession = null;
 
         window.fb2k = window.fb2k || {
@@ -746,6 +751,25 @@ void WebViewHost::InjectBridgeScript() {
             // 发送请求到 C++
             invoke: function(method, params) {
                 return new Promise((resolve, reject) => {
+                    // A subframe's chrome.webview.postMessage does not reach
+                    // the host, so the request would sit in _callbacks until
+                    // the 30s timeout below rejected it with a message that
+                    // says nothing about the real cause. Reject now, on the
+                    // same _isMainFrame test the drag-drop snapshot uses, so a
+                    // framed caller cannot observe the two boundaries
+                    // disagreeing.
+                    //
+                    // Inside the executor rather than above it: a detached call
+                    // (const {invoke} = fb2k) leaves this === window, and the
+                    // resulting TypeError has to surface as a rejection like it
+                    // did before this guard existed, not as a synchronous throw.
+                    if (!this._isMainFrame()) {
+                        const err = new Error('fb2k.invoke is unavailable in subframes');
+                        err.code = 'NOT_SUPPORTED';
+                        reject(err);
+                        return;
+                    }
+
                     const id = ++this._callId;
                     this._callbacks.set(id, { resolve, reject });
                     
@@ -832,7 +856,52 @@ void WebViewHost::InjectBridgeScript() {
             _dndSnapshotGraceMs: 1500,
             _dndClearTimer: null,
 
+            // Whether this document is the top-level one.
+            //
+            // AddScriptToExecuteOnDocumentCreated runs in every frame, so
+            // without this test a subframe of any origin would get the same
+            // snapshot slot filled with real filesystem paths. That drag events
+            // do not reach a frame today is a side effect of how the host posts
+            // web messages, not a boundary this code states; this states it,
+            // on two attributes a framed document cannot redefine.
+            //
+            // Compared against window, not window.self: the HTML standard marks
+            // window and top [LegacyUnforgeable] but self [Replaceable], so one
+            // assignment of self = top inside a subframe would make a self-based
+            // test answer true. window.top is null in a detached document, which
+            // compares unequal and so counts as framed.
+            //
+            // Reading window.top across origins can throw, and a document that
+            // cannot show it is the top one is treated as framed.
+            _isMainFrame: function() {
+                try {
+                    return window.top === window;
+                } catch (e) {
+                    return false;
+                }
+            },
+
+            // Shortcut targets parallel to paths, padded to the same length so
+            // an index that is valid for one is valid for the other. A host that
+            // sends no resolvedPaths yields all nulls rather than a short array.
+            _dndResolvedPaths: function(paths, resolved) {
+                const out = [];
+                for (let i = 0; i < paths.length; i++) {
+                    const target = Array.isArray(resolved) ? resolved[i] : null;
+                    out.push(typeof target === 'string' ? target : null);
+                }
+                return out;
+            },
+
             _updateDndSnapshot: function(event, data) {
+                // Only the main frame ever holds a snapshot. Returning rather
+                // than throwing keeps getPaths() / getResolvedPaths() answering
+                // an empty array in a frame, so page code that does not know it
+                // is framed still runs.
+                if (!this._isMainFrame()) {
+                    return;
+                }
+
                 const d = data || {};
                 const sessionId = d.sessionId || '';
 
@@ -842,9 +911,11 @@ void WebViewHost::InjectBridgeScript() {
                 }
 
                 if (event === 'dnd:enter') {
+                    const paths = Array.isArray(d.paths) ? d.paths.slice() : [];
                     window.__fbDndSession = {
                         sessionId: sessionId,
-                        paths: Array.isArray(d.paths) ? d.paths.slice() : [],
+                        paths: paths,
+                        resolvedPaths: this._dndResolvedPaths(paths, d.resolvedPaths),
                         hasFiles: !!d.hasFiles,
                         phase: 'active',
                         publishedAt: performance.now()
@@ -864,6 +935,8 @@ void WebViewHost::InjectBridgeScript() {
                     // changed it since enter.
                     if (Array.isArray(d.paths)) {
                         current.paths = d.paths.slice();
+                        current.resolvedPaths =
+                            this._dndResolvedPaths(current.paths, d.resolvedPaths);
                         current.hasFiles = d.paths.length > 0;
                     }
                 }

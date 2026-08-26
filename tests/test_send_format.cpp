@@ -47,6 +47,119 @@ TEST_F(SendFormatTest, Response_EmptyResult) {
 }
 
 // ============================================
+// SendResponseRaw format (直写通道)
+//
+// result 段是调用方已序列化好的 UTF-8 JSON 串，信封靠字符串拼接。断言分两层：
+// 字节层看 id 二态与 result 原样嵌入，语义层与 SendResponse 的 DOM 产物对拍
+// （键序不作要求：SendResponse 走 nlohmann dump，其对象键序按 std::map 排序）。
+// ============================================
+
+TEST_F(SendFormatTest, Raw_EnvelopeIsThreeKeyResponse) {
+    bridge.SendResponseRaw("1", R"({"ok":true})");
+    EXPECT_EQ(bridge.LastRawMessage(), R"({"type":"response","id":1,"result":{"ok":true}})");
+
+    auto& msg = bridge.LastMessage();
+    EXPECT_EQ(msg["type"], "response");
+    EXPECT_EQ(msg.size(), 3u);  // 只有 type/id/result，不夹带 error/code
+    EXPECT_FALSE(msg.contains("error"));
+}
+
+TEST_F(SendFormatTest, Raw_NumericIdEmittedAsJsonNumber) {
+    bridge.SendResponseRaw("1", R"({"ok":true})");
+    // 字节层：不带引号（带引号即页面侧 _callbacks Map miss → 30s 超时假死）
+    EXPECT_NE(bridge.LastRawMessage().find(R"("id":1,)"), std::string::npos);
+    EXPECT_EQ(bridge.LastRawMessage().find(R"("id":"1")"), std::string::npos);
+    EXPECT_TRUE(bridge.LastMessage()["id"].is_number());
+    EXPECT_EQ(bridge.LastMessage()["id"].get<int>(), 1);
+}
+
+TEST_F(SendFormatTest, Raw_StringIdEmittedAsQuotedJsonString) {
+    bridge.SendResponseRaw("abc-def", R"({"ok":true})");
+    EXPECT_NE(bridge.LastRawMessage().find(R"("id":"abc-def",)"), std::string::npos);
+    EXPECT_TRUE(bridge.LastMessage()["id"].is_string());
+    EXPECT_EQ(bridge.LastMessage()["id"].get<std::string>(), "abc-def");
+}
+
+TEST_F(SendFormatTest, Raw_StringIdIsJsonEscaped) {
+    // 非数值 id 必须过 JSON 转义，否则引号/反斜杠会把信封拼坏
+    bridge.SendResponseRaw("a\"b\\c\nd", R"({"ok":true})");
+    EXPECT_NE(bridge.LastRawMessage().find(R"("id":"a\"b\\c\nd",)"), std::string::npos);
+    EXPECT_EQ(bridge.LastMessage()["id"].get<std::string>(), "a\"b\\c\nd");
+}
+
+TEST_F(SendFormatTest, Raw_OddIdFormsMatchSendResponse) {
+    // stoi 的前缀语义是既有 wire 行为，两条通道必须同口径：
+    // "007" -> 7（前导零丢弃）、"12abc" -> 12（尾部垃圾丢弃）、"" -> 字符串 ""
+    for (const char* id : {"1", "42", "007", "12abc", "abc-def", "", "0", "-5"}) {
+        bridge.ClearMessages();
+        const json result = {{"ok", true}};
+        bridge.SendResponse(id, result);
+        bridge.SendResponseRaw(id, result.dump());
+
+        ASSERT_EQ(bridge.GetMessageCount(), 2u) << "id=" << id;
+        // 语义等价（含 id 的 number/string 二态与其取值）
+        EXPECT_EQ(bridge.GetSentMessages()[0], bridge.GetSentMessages()[1]) << "id=" << id;
+    }
+}
+
+TEST_F(SendFormatTest, Raw_OddIdNumericValues) {
+    bridge.SendResponseRaw("007", "{}");
+    EXPECT_EQ(bridge.LastMessage()["id"].get<int>(), 7);
+    EXPECT_NE(bridge.LastRawMessage().find(R"("id":7,)"), std::string::npos);
+
+    bridge.SendResponseRaw("12abc", "{}");
+    EXPECT_EQ(bridge.LastMessage()["id"].get<int>(), 12);
+    EXPECT_NE(bridge.LastRawMessage().find(R"("id":12,)"), std::string::npos);
+}
+
+TEST_F(SendFormatTest, Raw_ResultEmbeddedVerbatim) {
+    // result 段原样拼入：不得二次转义（转义一次即页面侧拿到字符串而非对象）
+    const std::string payload =
+        R"({"tracks":[{"title":"播放 \"引号\"","path":"C:\\music\\a.flac"}],"total":1})";
+    bridge.SendResponseRaw("5", payload);
+
+    EXPECT_NE(bridge.LastRawMessage().find(payload), std::string::npos);
+    EXPECT_EQ(bridge.LastRawMessage().find(R"(\\\")"), std::string::npos);
+
+    auto& msg = bridge.LastMessage();
+    EXPECT_TRUE(msg["result"]["tracks"].is_array());
+    EXPECT_EQ(msg["result"]["tracks"][0]["title"], "播放 \"引号\"");
+    EXPECT_EQ(msg["result"]["tracks"][0]["path"], "C:\\music\\a.flac");
+    EXPECT_EQ(msg["result"]["total"].get<int>(), 1);
+}
+
+TEST_F(SendFormatTest, Raw_ResultNonObjectShapes) {
+    // result 段的形状由调用方决定，通道不假设是对象
+    bridge.SendResponseRaw("1", "[1,2,3]");
+    EXPECT_TRUE(bridge.LastMessage()["result"].is_array());
+    EXPECT_EQ(bridge.LastMessage()["result"].size(), 3u);
+
+    bridge.SendResponseRaw("2", "null");
+    EXPECT_TRUE(bridge.LastMessage()["result"].is_null());
+
+    bridge.SendResponseRaw("3", R"("hello")");
+    EXPECT_EQ(bridge.LastMessage()["result"], "hello");
+}
+
+TEST_F(SendFormatTest, Raw_EmptyResultObject) {
+    bridge.SendResponseRaw("1", "{}");
+    EXPECT_EQ(bridge.LastRawMessage(), R"({"type":"response","id":1,"result":{}})");
+    EXPECT_TRUE(bridge.LastMessage()["result"].is_object());
+    EXPECT_TRUE(bridge.LastMessage()["result"].empty());
+}
+
+TEST_F(SendFormatTest, Raw_OrderingSharedWithDomChannel) {
+    bridge.EmitEvent("ev1", {});
+    bridge.SendResponse("1", {{"a", 1}});
+    bridge.SendResponseRaw("2", R"({"b":2})");
+    ASSERT_EQ(bridge.GetMessageCount(), 3u);
+    EXPECT_EQ(bridge.GetSentMessages()[0]["event"], "ev1");
+    EXPECT_EQ(bridge.GetSentMessages()[1]["result"]["a"].get<int>(), 1);
+    EXPECT_EQ(bridge.GetSentMessages()[2]["result"]["b"].get<int>(), 2);
+    EXPECT_EQ(bridge.GetSentRawMessages().size(), 1u);  // 只有直写通道入 raw 队列
+}
+
+// ============================================
 // SendError format
 // ============================================
 

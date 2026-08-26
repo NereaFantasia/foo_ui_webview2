@@ -9,7 +9,9 @@
 #include "core/SecurityConfig.h"
 #include "webview/WebViewHost.h"
 #include "api/BridgeCore.h"
+#include "api/FileApi.h"
 #include "api/HttpApi.h"
+#include "api/MetadataApi.h"
 #include "api/PortHub.h"
 #include "api/WindowApi.h"  // ExitFullscreenIfActive
 #include "selection/SelectionWatcher.h"
@@ -1571,7 +1573,12 @@ void PopupWindow::OnDestroy() {
     
     // 取消该窗口所有未完成的异步 HTTP 请求，释放并发槽位
     CancelAllHttpRequestsForWindow(GetWindowId());
-    
+
+    // 同理取消该窗口发起的未完成文件操作与元数据探测：worker 每条之间查一次
+    // token，不取消就会把整个队列跑完，还把结果发往这个正在销毁的窗口。
+    CancelAllFileOpsForWindow(GetWindowId());
+    CancelAllProbesForWindow(GetWindowId());
+
     // 销毁 WebView（基类方法）
     chromeBackdropBroadcastReady_ = false;
     DestroyWebView();

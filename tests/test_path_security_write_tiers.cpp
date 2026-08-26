@@ -7,8 +7,16 @@
 // side would mean any theme could rewrite arbitrary audio files on D: or E:.
 //
 // FileWrite keeps that allowance on purpose. file.mkdir and file.write create
-// paths that by definition cannot already be in a library, watch folder or
-// playlist, so the media chain alone would reject every call.
+// paths that by definition are in no library and no playlist, so those two
+// trust sources alone would reject every call.
+//
+// Watch folders are the exception, and the reason FileWrite consults them:
+// is_path_addable answers a configuration question — do the user's current
+// media library settings allow this path in — which a path that does not exist
+// yet can still satisfy. It is checked ahead of the non-system-drive allowance
+// so that the deciding step stays stable once that allowance is removed. The
+// position does not change which paths are admitted: no step in either chain
+// rejects on a miss, so a later step is still reached.
 //
 // The real PathSecurity singleton constructor depends on core_api (profile /
 // install paths, library_manager, playlist_manager), so it is not unit-testable
@@ -66,13 +74,17 @@ Admission RunMediaWriteChain(const Facts& f) {
 }
 
 // Reimpl of ValidateFileWriteAccess, in source order. Differs from the media
-// chain by the non-system-drive step and by not offering sidecar trust.
+// chain by the non-system-drive step, by consulting watch folders ahead of that
+// step instead of after library membership, and by not offering sidecar trust.
 Admission RunFileWriteChain(const Facts& f) {
     if (f.blacklisted) {
         return Admission::BlacklistRejected;
     }
     if (f.inWriteWhitelist) {
         return Admission::WriteWhitelist;
+    }
+    if (f.inTrustedMediaRoots) {
+        return Admission::TrustedMediaRoots;
     }
     if (f.onNonSystemDrive) {
         return Admission::NonSystemDrive;
@@ -217,16 +229,40 @@ TEST(PathSecurityWriteTiers, WriteWhitelistOutranksNonSystemDriveOnFileWrite) {
 }
 
 // ============================================
-// Watch-folder trust must not leak into the general file channel
+// Watch folders as a FileWrite trust source of their own
 // ============================================
 
-TEST(PathSecurityWriteTiers, FileWriteDoesNotConsultWatchFoldersOrSidecarTrust) {
+TEST(PathSecurityWriteTiers, FileWriteAdmitsSystemDriveWatchFolderPath) {
     Facts f;
     f.inTrustedMediaRoots = true;
+
+    // A path the user's media library settings would accept is writable through
+    // file.* even on the system drive and outside profile/temp. This is what
+    // lets a theme write into a configured watch folder that happens to live
+    // under C:\Users.
+    EXPECT_EQ(RunFileWriteChain(f), Admission::TrustedMediaRoots);
+}
+
+TEST(PathSecurityWriteTiers, WatchFolderOutranksNonSystemDriveOnFileWrite) {
+    Facts f;
+    f.inTrustedMediaRoots = true;
+    f.onNonSystemDrive = true;
+
+    // Watch-folder trust decides before the non-system-drive allowance, so the
+    // same step keeps deciding these paths once that allowance is removed
+    // (GAP_606). Behind the allowance the path would still be admitted — no
+    // step rejects on a miss — but the verdict would be attributed to a step
+    // that is about to disappear. That is why the deciding step rather than the
+    // verdict is what this case pins.
+    EXPECT_EQ(RunFileWriteChain(f), Admission::TrustedMediaRoots);
+}
+
+TEST(PathSecurityWriteTiers, FileWriteDeniesSystemDrivePathOutsideWatchFolders) {
+    Facts f;
     f.sidecarOfTrustedMedia = true;
 
-    // Neither source participates in the general file chain; on the system
-    // drive such a path is refused. Widening file.* by media-context trust
-    // would be a separate decision, not a side effect of this split.
+    // Sidecar trust stays exclusive to the media chain, so a system-drive path
+    // that no watch folder covers is still refused. Widening file.* by
+    // same-directory trust would be a separate decision, not a side effect.
     EXPECT_EQ(RunFileWriteChain(f), Admission::Denied);
 }

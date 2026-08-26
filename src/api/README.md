@@ -79,9 +79,9 @@ Failures inside a handler uniformly build a synchronous error via `ApiEnvelope::
 
 ---
 
-## Path Security: the Five `SecurityLevel` Levels
+## Path Security: the Six `SecurityLevel` Levels
 
-APIs with path parameters declare a `PathSecuritySpec` validation spec (parameter key, level, whether it is an array, nested key, whether to skip invalid entries) via the decorator overload of `RegisterApi`. Before dispatch, `ValidatePathParam` intercepts uniformly; on validation failure it returns `PERMISSION_DENIED` directly and the handler is never invoked.
+APIs with path parameters declare a `PathSecuritySpec` validation spec (parameter key, level, whether it is an array, nested key, whether to skip invalid entries) via the decorator overload of `RegisterApi`. Before dispatch, `ValidatePathParam` intercepts uniformly and the handler is never invoked on failure; a refused path returns `PERMISSION_DENIED`, a parameter of the wrong shape or type returns `INVALID_PARAMS`.
 
 | SecurityLevel | Corresponding `utils/PathSecurity.h` function | Semantics |
 |---------------|-------------------------------|------|
@@ -90,13 +90,14 @@ APIs with path parameters declare a `PathSecuritySpec` validation spec (paramete
 | `Write` | `ValidateWritePath` | Strict write allowlist (profile / temp directories only) |
 | `MediaRead` | `ValidateMediaAccess` | Read + library/playlist context trust |
 | `MediaWrite` | `ValidateMediaWriteAccess` | Write + media context trust, but arbitrary paths on system drives are not allowed |
+| `FileWrite` | `ValidateFileWriteAccess` | Write whitelist -> watch folders -> non-system-drive pass-through -> library/playlist trust, in that order; carries the general `file.*` write endpoints (the pass-through is a registered pending decision, GAP_606) |
 
 Declaration example (from `FileApi.cpp`, where each parameter specifies its own level):
 
 ```cpp
 bridge.RegisterApi("file.copy", FileCopy, {
     {"source",      SecurityLevel::Read},
-    {"destination", SecurityLevel::MediaWrite}
+    {"destination", SecurityLevel::FileWrite}
 });
 
 // array parameter: the 3rd field true marks it as an array, the 5th true means skip invalid entries one by one

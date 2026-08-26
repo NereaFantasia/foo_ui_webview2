@@ -275,7 +275,8 @@ static std::pair<std::string, t_uint32> ArtworkParseSubsongPath(const std::strin
         } catch (...) {
             // Invalid subsong suffix — fall back to 0 with warning
             subsongIndex = 0;
-            FB2K_console_formatter() << "foo_ui_webview2: invalid subsong suffix in path: " << path.c_str();
+            // Report the failure reason only; the path itself must not be logged.
+            FB2K_console_formatter() << "foo_ui_webview2: invalid subsong suffix in path";
         }
     }
     return { filePath, subsongIndex };

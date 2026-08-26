@@ -3,6 +3,7 @@
 #include "api/BridgeCore.h"
 #include "api/CallerContext.h"
 #include "api/ErrorEnvelope.h"
+#include "api/TrackWireSnapshot.h"
 #include "core/LibraryCache.h"
 #include "core/LibraryTreeIndex.h"
 #include "core/WebViewContext.h"
@@ -13,6 +14,8 @@
 #include <set>
 #include <random>
 #include "utils/Base64.h"
+#include "utils/JsonWriter.h"
+#include "utils/StringUtils.h"
 
 
 // ============================================
@@ -458,7 +461,449 @@ json LibraryGetCacheStats(const json& params) {
 }
 
 
-// ========== Search (Optimized with search_index) ==========
+// ============================================================================
+// library.query / library.search 的延迟响应直写管线
+// ============================================================================
+//
+// 线程模型：
+//   主线程段：参数解析 → 前置校验（含 fields 白名单）→ create_ex →
+//             get_all_items + test_multi → 收集命中 handle（query 收全量或前
+//             limit 条，search 只收 [offset, offset+limit) 这一页）→ 每曲标量
+//             捕获（按 fields 掩码逐项门控）→ 编译 titleformat 脚本 → 把请求派给
+//             CPU worker
+//   worker 段：（query 请求排序时）算排序序并截 limit → queryMultiParallel_ 批量
+//             取 rec → rating（仅当被请求）→ 直写 UTF-8（省略 fields 出全 19 键，
+//             传 fields 出投影键集）→ SendRaw
+//
+// fields 投影是纯收窄：掩码由主线程解析一次随请求下传，捕获侧、rating、序列化侧
+// 三处各自按位门控。省略 fields 时掩码为全集，三处判定恒真，与投影前逐字等价。
+//
+// 查询段为什么仍留主线程：search_index 的 search() 可在任意线程跑，但它的输出是
+// 内部索引序，与现契约的库序不等价（实测四组查询集合全等、顺序全不等），换引擎
+// 即改变 tracks 顺序这一可观测面，故只把后段（批量元数据 + 序列化）下 worker。
+//
+// 每曲标量的线程放置依据：
+//   · path / absolutePath 留主线程。get_path() 本身可跨线程（location 随 handle
+//     不可变：metadb_handle.h:42-43 的 "valid till the object is released" 加
+//     metadb.h:298 的"一个位置只有一个 handle"），但 absolutePath 要过
+//     filesystem::g_get_native_path —— 它对非 file:// 路径转派
+//     filesystem_v3::getNativePath（filesystem.cpp:136-156，实现方可以是第三方
+//     插件）且 SDK 无线程标注，本仓库现有调用点全在主线程，无跨线程先例。
+//     absolutePath 既然留主线程，path 顺手一起捕获不额外要钱。
+//   · fileSize 走 get_filestats()（"最近一次"文件状态，是可变态），照 library.getAll
+//     async 路径的快照先例在主线程取；subsong 同批取，省一次遍历。
+//   · rating、元数据、排序键全在 worker：rating 用 metadb_v2::formatTitle_v2
+//     （免数据库访问），排序用 SDK 自己的 sort_by_format_get_order。
+//
+// 每请求恰好一次响应：主线程段的错误路径直接经 responder 回**正常**响应体（形状
+// 与同步版逐字一致，不能落成框架错误信封）；worker 段顶层 try/catch 同样回正常
+// 响应体 —— cpuThreadPool 会静默吞掉未捕获异常，漏响应即页面侧 30s 超时假死。
+
+// 主线程为每曲捕获的标量。输出数组内的 index 不入表：它由序列化侧的
+// baseIndex + i 决定（query 从 0 起、search 从 offset 起，与同步版
+// GetLibraryTrackInfo 的传参口径一致）。
+struct QueryTrackCapture {
+  std::string path;
+  std::string absolutePath;
+  int64_t fileSize = 0;
+  uint32_t subsong = 0;
+  bool valid = false;  // handle 无效时为 false，序列化侧照同步版输出 JSON null
+};
+
+// fieldMask 逐项门控：投影模式下未被请求的字段一次 SDK 调用都不做。四项里
+// absolutePath 是唯一可能转派进第三方实现的（g_get_native_path 对非 file:// 路径
+// 走 filesystem_v3::getNativePath），只要标签不要路径的查询由此完全绕开它。
+// handle 无效判定不受掩码影响：那决定的是数组里出 null 还是出对象，属形状面。
+QueryTrackCapture CaptureQueryTrack(const metadb_handle_ptr& track, uint32_t fieldMask) {
+  QueryTrackCapture cap;
+  if (!track.is_valid()) {
+    return cap;  // 同步版 GetLibraryTrackInfo 对无效 handle 直接返回 null
+  }
+  if (fieldMask & TrackField::kPath) {
+    cap.path = track->get_path();
+  }
+  if (fieldMask & TrackField::kAbsolutePath) {
+    pfc::string8 nativePath;
+    filesystem::g_get_native_path(track->get_path(), nativePath);
+    cap.absolutePath = nativePath.get_ptr();
+  }
+  if (fieldMask & TrackField::kFileSize) {
+    cap.fileSize = static_cast<int64_t>(track->get_filesize());
+  }
+  if (fieldMask & TrackField::kSubsong) {
+    cap.subsong = track->get_subsong_index();
+  }
+  cap.valid = true;
+  return cap;
+}
+
+// 两个 API 的信封与错误体形状不同，不得混写。
+enum class QueryWireApi { Query, Search };
+
+// 失败响应体：形状与各自同步版的 catch 分支逐字一致。query 的同步版把一切异常
+// 折成同一个固定串，故此处忽略 message。
+json MakeQueryWireErrorBody(QueryWireApi api, const char* message) {
+  if (api == QueryWireApi::Query) {
+    return {{"success", false}, {"error", "Invalid query syntax"}};
+  }
+  return {{"success", false},
+          {"error", message ? message : "Search failed"},
+          {"tracks", json::array()},
+          {"total", 0}};
+}
+
+// fields 校验失败的响应体。这条路径随 fields 参数新增，不在"错误形状不变"的回归面
+// 内（那管的是 query 语法错与 search 失败两条既有路径），故两个 API 共用同一形状：
+// ApiEnvelope::MakeError 产出的 success:false 正常响应体 + 机器可读 code，与其余
+// API 的参数错一致。
+//
+// 不用 DeferredResponder::SendError：那是框架错误信封通道（BridgeCore.h:78-82 明文
+// 只给框架兜底用），页面侧收到 error 字段会把 Promise reject 掉
+// （WebViewHost.cpp:794-799），而本仓库所有参数校验失败都是 resolve 出 success:false。
+json MakeTrackFieldsErrorBody(const TrackFieldSelection& fields) {
+  if (fields.unknownFields.empty()) {
+    return ApiEnvelope::MakeError(fields.errorMessage, ApiErrorCode::INVALID_PARAMS);
+  }
+  // 未知名回给调用方：拼写错误不静默丢字段，也不用逐个试
+  json unknown = json::array();
+  for (const std::string& name : fields.unknownFields) {
+    unknown.push_back(name);
+  }
+  return ApiEnvelope::MakeError(fields.errorMessage, ApiErrorCode::INVALID_PARAMS,
+                                {{"unknownFields", unknown}});
+}
+
+// 一次请求在 worker 段要用的全部输入。用 shared_ptr 传递：rating 兜底会在
+// worker → 主线程 → worker 之间多跳一次，各段必须共享同一份状态。
+struct QueryWireRequest {
+  QueryWireApi api = QueryWireApi::Query;
+  const char* method = "";                  // 静态串，只用于耗时日志
+  metadb_handle_list tracks;                // 待序列化的命中集
+  std::vector<QueryTrackCapture> caps;      // 与 tracks 同序同长
+  std::vector<metadb_v2::rec_t> recs;       // 批量取回的 info 记录，按槽位写入
+  std::vector<metadb_info_container::ptr> infos;  // 逐曲最终生效的 info 容器
+  std::vector<int> ratings;
+  titleformat_object::ptr ratingScript;     // 主线程编译；空 = 未请求 rating
+  titleformat_object::ptr sortScript;       // 主线程编译；空 = 不排序
+  uint32_t fieldMask = TrackField::kAll;    // 请求的字段集；省略 fields 时为全集
+  bool projected = false;                   // true = 显式传了 fields，走投影写法
+  size_t limit = 0;                         // 信封回显值，同时是截断上界
+  size_t offset = 0;                        // search 信封字段
+  size_t baseIndex = 0;                     // 输出 index 起点
+  size_t total = 0;                         // 信封 total（截断前的命中总数）
+  std::chrono::steady_clock::time_point workerStart;
+};
+
+// rating 的 worker 版：解析、回退、clamp 与主线程版 ComputeTrackRating 逐步一致，
+// 只把取值通道从 format_title 换成 formatTitle_v2（用预取的 rec，免数据库访问）。
+// 不在此吞异常 —— 抛出即触发调用方的整批主线程兜底。
+int ComputeTrackRatingFromRec(const metadb_v2::ptr& mdb, const metadb_handle_ptr& track,
+                              const metadb_v2::rec_t& rec, const file_info& info,
+                              const titleformat_object::ptr& script) {
+  int rating = 0;
+  pfc::string8 result;
+  mdb->formatTitle_v2(track, rec, nullptr, result, script, nullptr);
+  if (result.get_length() > 0 && result[0] != '?') {
+    rating = atoi(result.get_ptr());
+  }
+  // Fallback to file tag if foo_playcount not available
+  if (rating == 0) {
+    const char* tagValue = info.meta_get("rating", 0);
+    rating = tagValue ? atoi(tagValue) : 0;
+  }
+  if (rating < 0) rating = 0;
+  if (rating > 5) rating = 5;
+  return rating;
+}
+
+// tracks 数组文本（含首尾方括号），query 与 search 的信封各拼接一次。
+std::string BuildTracksArrayJson(const QueryWireRequest& req) {
+  const size_t count = req.tracks.get_count();
+  const uint32_t mask = req.fieldMask;
+
+  std::string out;
+  // 单曲全字段实测均值 582 字节，按 600 一次备足，避免增长期的多次搬运。投影时按
+  // 请求字段数缩放（上限仍是全字段那一档）：八万行一律按 600 备足会在 x86 宿主上
+  // 白占几十 MB，而这条路径的存在意义正是压掉那几十 MB。
+  const size_t perRow =
+      req.projected ? std::min<size_t>(600, 32 + 64 * TrackField::Count(mask)) : 600;
+  out.reserve(count * perRow + 2);
+  out.push_back('[');
+
+  TrackWireSnapshot snap;  // 循环外复用：字符串成员保住容量，省掉每曲重新分配
+  for (size_t i = 0; i < count; ++i) {
+    if (i > 0) out.push_back(',');
+
+    if (!req.caps[i].valid) {
+      // handle 无效：同步版 GetLibraryTrackInfo 在此返回 JSON null，数组里就是一个
+      // null 元素。此形状原样保留（投影也不例外：null 是整行形态，不是字段集）。
+      out.append("null");
+      continue;
+    }
+
+    // 以下逐字段的 mask 判定在全字段路径上恒真（mask == kAll），取值与写入次序
+    // 因此与投影前逐字不变；投影时未被请求的字段连取值都不做，省掉的是每行的
+    // meta_get / info_get 与随后的 SafeUtf8 拷贝，不只是几个字节的输出。
+    snap.index = req.baseIndex + i;
+    if (mask & TrackField::kPath) {
+      snap.path = StringUtils::SafeUtf8(req.caps[i].path);
+    }
+    if (mask & TrackField::kAbsolutePath) {
+      snap.absolutePath = StringUtils::SafeUtf8(req.caps[i].absolutePath);
+    }
+
+    const metadb_info_container::ptr& infoHolder = req.infos[i];
+    if (!infoHolder.is_valid()) {
+      // info 容器无效：同步版走 8 键 fallback，键集在此保持不变。duration 取 0.0
+      // —— 同步版这一支写的是 track->get_length()，而 get_length() 内部就是
+      // get_info_ref()->info().get_length()，容器为空时它自己就会解空指针，故该
+      // 取值不可复现；rating 同步版硬写 0，此处 ratings[i] 也恒为 0（rating 循环
+      // 跳过无 info 的曲目）。
+      snap.hasInfo = false;
+      snap.title.clear();
+      snap.artist.clear();
+      snap.album.clear();
+      snap.duration = 0.0;
+      snap.rating = req.ratings[i];
+      if (req.projected) {
+        // 投影下损坏条目同样出全部请求键，fallback 不产出的字段取类型默认
+        ResetFieldsAbsentFromFallback(snap);
+        WriteTrackJsonProjected(out, snap, mask);
+      } else {
+        WriteTrackJson(out, snap);
+      }
+      continue;
+    }
+
+    const file_info& info = infoHolder->info();
+    auto getMeta = [&](const char* name) -> std::string {
+      return StringUtils::SafeUtf8(info.meta_get(name, 0));
+    };
+    auto getMetaInt = [&](const char* name) -> int {
+      const char* value = info.meta_get(name, 0);
+      return value ? atoi(value) : 0;
+    };
+
+    snap.hasInfo = true;
+    if (mask & TrackField::kTitle) snap.title = getMeta("title");
+    if (mask & TrackField::kArtist) snap.artist = getMeta("artist");
+    if (mask & TrackField::kAlbum) snap.album = getMeta("album");
+    if (mask & TrackField::kAlbumArtist) snap.albumArtist = getMeta("album artist");
+    if (mask & TrackField::kGenre) snap.genre = getMeta("genre");
+    if (mask & TrackField::kDate) snap.date = getMeta("date");
+    if (mask & TrackField::kTrackNumber) snap.trackNumber = getMetaInt("tracknumber");
+    if (mask & TrackField::kDiscNumber) snap.discNumber = getMetaInt("discnumber");
+    if (mask & TrackField::kDuration) snap.duration = info.get_length();
+    if (mask & TrackField::kFileSize) snap.fileSize = req.caps[i].fileSize;
+    if (mask & TrackField::kBitrate) snap.bitrate = static_cast<int>(info.info_get_bitrate());
+    if (mask & TrackField::kSampleRate) {
+      snap.sampleRate = static_cast<int>(info.info_get_int("samplerate"));
+    }
+    if (mask & TrackField::kChannels) {
+      snap.channels = static_cast<int>(info.info_get_int("channels"));
+    }
+    if (mask & TrackField::kCodec) snap.codec = StringUtils::SafeUtf8(info.info_get("codec"));
+    if (mask & TrackField::kSubsong) snap.subsong = req.caps[i].subsong;
+    if (mask & TrackField::kRating) snap.rating = req.ratings[i];
+
+    if (req.projected) {
+      WriteTrackJsonProjected(out, snap, mask);
+    } else {
+      WriteTrackJson(out, snap);
+    }
+  }
+
+  out.push_back(']');
+  return out;
+}
+
+// 信封字符串：字段集与各自同步版逐字段一致（键序不同，契约只承诺语义等价）。
+std::string BuildQueryWireEnvelope(const QueryWireRequest& req, const std::string& tracksJson) {
+  std::string envelope;
+
+  if (req.api == QueryWireApi::Query) {
+    envelope.reserve(tracksJson.size() + 64);
+    envelope.append("{\"success\":true,\"tracks\":");
+    envelope.append(tracksJson);
+    envelope.append(",\"total\":");
+    JsonWriter::AppendJsonInt(envelope, static_cast<int64_t>(req.total));
+    envelope.push_back('}');
+    return envelope;
+  }
+
+  envelope.reserve(tracksJson.size() + 128);
+  envelope.append("{\"success\":true,\"tracks\":");
+  envelope.append(tracksJson);
+  envelope.append(",\"total\":");
+  JsonWriter::AppendJsonInt(envelope, static_cast<int64_t>(req.total));
+  envelope.append(",\"offset\":");
+  JsonWriter::AppendJsonInt(envelope, static_cast<int64_t>(req.offset));
+  envelope.append(",\"limit\":");
+  JsonWriter::AppendJsonInt(envelope, static_cast<int64_t>(req.limit));
+  envelope.append(",\"hasMore\":");
+  JsonWriter::AppendJsonBool(envelope, req.offset + req.tracks.get_count() < req.total);
+  envelope.push_back('}');
+  return envelope;
+}
+
+// 零行短路：待序列化行数为 0 时就地回包，不派 worker。返回 true = 已回包。
+//
+// 动机：零命中查询本身只有零点几毫秒，deferred 的两次线程跳变反而让它涨到 6ms
+// 级、越过"小结果集不得回归"的门槛；而零行没有任何可卸载的重活，卸载只剩纯税。
+// 主线程调用 responder 时 inMainThread2 就地执行，回包时机与同步版同拍。
+//
+// 形状一致性不靠"另写一份对齐"，而是复用 worker 路径同一个信封构造函数、tracks
+// 段固定 "[]"（BuildTracksArrayJson 在 0 行时的产物就是它）→ 逐字节相同。total
+// 仍取真实全命中数：行数为 0 不只有零命中一种成因（limit=0、search 的 offset
+// 越界翻页都会给出空页而 total 非零），写死 0 会篡改分页语义。
+bool SendEmptyQueryWireResultIfNoRows(const std::shared_ptr<QueryWireRequest>& req,
+                                      const DeferredResponder& responder) {
+  if (req->tracks.get_count() != 0) {
+    return false;
+  }
+  responder.SendRaw(BuildQueryWireEnvelope(*req, "[]"));
+  return true;
+}
+
+// worker 段末尾：序列化 + 拼信封 + 耗时日志 + 回包。ratings 必须已就绪。
+void FinishQueryWireOnWorker(const std::shared_ptr<QueryWireRequest>& req,
+                             const DeferredResponder& responder) {
+  try {
+    std::string payload = BuildQueryWireEnvelope(*req, BuildTracksArrayJson(*req));
+
+    // deferred 后 ApiPerformanceTracker 只覆盖主线程段，worker 段的耗时若不在此
+    // 补一条，慢查询就从性能日志里消失。阈值取与 ApiPerformanceTracker 的 INFO
+    // 同一档（50ms），免得小查询刷屏。console::printf 实为 pfc printf，只认
+    // %s/%i/%d/%u/%x/%c（没有 %f/%llu），所以数字先拼进串、单 %s 送出。
+    const auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
+                             std::chrono::steady_clock::now() - req->workerStart)
+                             .count();
+    if (elapsed >= 50) {
+      std::string line = "[Perf] ";
+      line += req->method;
+      line += " worker: rows=" + std::to_string(req->tracks.get_count());
+      line += " bytes=" + std::to_string(payload.size());
+      line += " took=" + std::to_string(elapsed) + "ms";
+      console::printf("%s", line.c_str());
+    }
+
+    responder.SendRaw(std::move(payload));
+  } catch (const std::exception& e) {
+    responder.SendJson(MakeQueryWireErrorBody(req->api, e.what()));
+  } catch (...) {
+    responder.SendJson(MakeQueryWireErrorBody(req->api, "Search failed"));
+  }
+}
+
+// worker 段主体。顶层 try/catch 把一切异常折成该 API 现状形状的正常响应体。
+void RunQueryWireWorker(const std::shared_ptr<QueryWireRequest>& req,
+                        const DeferredResponder& responder) {
+  try {
+    req->workerStart = std::chrono::steady_clock::now();
+
+    // 1. 排序（仅 query 且脚本编译成功）。用 SDK 自己的 sort_by_format_get_order
+    //    而不是自算排序键 + std::stable_sort：SDK 的排序键要过 tfhook_sort 与
+    //    fb2k::makeSortString、比较走 fb2k::sortStringCompare 且以原下标兜平局
+    //    （metadb_handle_list.cpp:348-487），自算键无法复现同一顺序，而顺序是
+    //    可观测契约。取 get_order 而非就地 reorder，是为了把同一置换套到捕获的
+    //    标量上；该函数内部即 queryMultiParallelEx_ + formatTitle_v2，与本管线
+    //    其余调用同属已验证可在 worker 跑的那一组。
+    if (req->sortScript.is_valid() && req->tracks.get_count() > 1) {
+      const size_t count = req->tracks.get_count();
+      pfc::array_t<t_size> order;
+      order.set_size(count);
+      req->tracks.sort_by_format_get_order(order.get_ptr(), req->sortScript, nullptr);
+
+      const size_t keep = std::min(req->limit, count);
+      metadb_handle_list ordered;
+      std::vector<QueryTrackCapture> orderedCaps;
+      orderedCaps.reserve(keep);
+      for (size_t i = 0; i < keep; ++i) {
+        const t_size src = order[i];  // reorder 的语义：新 [i] = 旧 [order[i]]
+        ordered.add_item(req->tracks[src]);
+        orderedCaps.push_back(std::move(req->caps[src]));
+      }
+      req->tracks = std::move(ordered);
+      req->caps = std::move(orderedCaps);
+    }
+
+    const size_t count = req->tracks.get_count();
+
+    // 2. 批量取 info 记录。回调会被多线程并发调用，故预分配 count 槽、按 idx 写
+    //    对应槽位，全程不扩容、不碰共享可变态。
+    req->recs.assign(count, metadb_v2::rec_t{});
+    auto mdb = metadb_v2::get();
+    if (count > 0) {
+      mdb->queryMultiParallel_(req->tracks, [&req](size_t idx, const metadb_v2::rec_t& rec) {
+        if (idx < req->recs.size()) {
+          req->recs[idx] = rec;
+        }
+      });
+    }
+
+    // 3. 逐曲定下最终生效的 info 容器。rec 里的 info 可能为空（该曲信息未知），
+    //    此时退回 get_info_ref()：SDK 明文该简化版永不返回空、可在任意上下文调用
+    //    且无锁语义（metadb_handle.h:126-127 与 108-110），同步版走的就是它，
+    //    形状因此不变。
+    req->infos.assign(count, metadb_info_container::ptr());
+    for (size_t i = 0; i < count; ++i) {
+      if (!req->caps[i].valid) continue;
+      req->infos[i] = req->recs[i].info.is_valid() ? req->recs[i].info
+                                                   : req->tracks[i]->get_info_ref();
+    }
+
+    // 4. rating。只在被请求（或省略 fields）时才算：未请求时整轮 formatTitle_v2
+    //    连同它的 provider 链求值全部免掉，ratings 保持全零且无人读取 —— 这是
+    //    F4「无论调用方要不要都算一次 %rating%」的按需化。ratingScript 也只在该
+    //    情形下编译（见两个 handler 的主线程段），此处的门控与它同一个判据。
+    //    任一曲抛异常 = 该请求整批改走主线程兜底（第三方 rating provider 违规
+    //    假设主线程的防线），不让单曲异常打断整个请求。
+    req->ratings.assign(count, 0);
+    if (req->fieldMask & TrackField::kRating) {
+      try {
+        for (size_t i = 0; i < count; ++i) {
+          if (!req->infos[i].is_valid()) continue;
+          req->ratings[i] = ComputeTrackRatingFromRec(mdb, req->tracks[i], req->recs[i],
+                                                      req->infos[i]->info(), req->ratingScript);
+        }
+      } catch (...) {
+        console::printf("[Library] worker rating failed, falling back to main thread batch");
+        fb2k::inMainThread([req, responder]() {
+          try {
+            const size_t n = req->tracks.get_count();
+            for (size_t i = 0; i < n; ++i) {
+              if (!req->infos[i].is_valid()) continue;
+              req->ratings[i] = ComputeTrackRating(req->tracks[i], req->infos[i]->info());
+            }
+            fb2k::inCpuWorkerThread([req, responder]() {
+              FinishQueryWireOnWorker(req, responder);
+            });
+          } catch (const std::exception& e) {
+            responder.SendJson(MakeQueryWireErrorBody(req->api, e.what()));
+          } catch (...) {
+            responder.SendJson(MakeQueryWireErrorBody(req->api, "Search failed"));
+          }
+        });
+        return;  // 回包交给续段，本段到此为止
+      }
+    }
+
+    // 5. 序列化 + 回包
+    FinishQueryWireOnWorker(req, responder);
+  } catch (const std::exception& e) {
+    responder.SendJson(MakeQueryWireErrorBody(req->api, e.what()));
+  } catch (...) {
+    responder.SendJson(MakeQueryWireErrorBody(req->api, "Search failed"));
+  }
+}
+
+
+// ========== Search ==========
+//
+// 过滤走全库 get_all_items + search_filter_v2::test_multi 并按库序收集，**不是**
+// search_index：索引查询虽可在任意线程执行，但返回内部索引序，与本 API 现契约的
+// 库序不等价，换过去即改变 tracks 顺序。元数据读取与序列化在 CPU worker 上做，
+// 见 LibrarySearchDeferred；本同步版保留为形状基准，已不在注册面上。
 
 json LibrarySearch(const json& params) {
   std::string query = params.value("query", "");
@@ -517,8 +962,7 @@ json LibrarySearch(const json& params) {
     }
 
     return {{"success", true},
-            {"items", tracks},  // Standard field
-            {"tracks", tracks}, // Legacy field (deprecated)
+            {"tracks", tracks},
             {"total", totalMatched},
             {"offset", offset},
             {"limit", limit},
@@ -526,15 +970,109 @@ json LibrarySearch(const json& params) {
   } catch (const std::exception &e) {
     return {{"success", false},
             {"error", e.what()},
-            {"items", json::array()},
             {"tracks", json::array()},
             {"total", 0}};
   } catch (...) {
     return {{"success", false},
             {"error", "Search failed"},
-            {"items", json::array()},
             {"tracks", json::array()},
             {"total", 0}};
+  }
+}
+
+
+// library.search 的延迟响应版：主线程只做过滤与标量捕获，元数据读取与序列化下
+// CPU worker。响应形状、错误形状、分页语义与 tracks 顺序与上面的同步版逐项一致。
+void LibrarySearchDeferred(const json& params, const DeferredResponder& responder) {
+  std::string query = params.value("query", "");
+  size_t offset = params.value("offset", static_cast<size_t>(0));
+  size_t limit = params.value("limit", static_cast<size_t>(100));
+
+  // fields 校验排在一切之前：形状错的请求不该先跑一遍全库扫描再被拒，也不该在
+  // 空 query 这类分支上"成功"返回 —— fail-closed。
+  const TrackFieldSelection fields = ParseTrackFieldSelection(params);
+  if (!fields.valid) {
+    responder.SendJson(MakeTrackFieldsErrorBody(fields));
+    return;
+  }
+
+  // 空 query 与库未启用都是同步版的"成功空集"形状（无 hasMore 键）
+  if (query.empty()) {
+    responder.SendJson({{"success", true},
+                        {"tracks", json::array()},
+                        {"total", 0},
+                        {"offset", offset},
+                        {"limit", limit}});
+    return;
+  }
+
+  auto lib = library_manager::get();
+  if (!lib->is_library_enabled()) {
+    responder.SendJson({{"success", true},
+                        {"tracks", json::array()},
+                        {"total", 0},
+                        {"offset", offset},
+                        {"limit", limit}});
+    return;
+  }
+
+  try {
+    // filter 的 flags 与同步版一致：search 带 AllowSort，query 不带 —— 同一条
+    // 带 SORT BY 的串在两个 API 下成败不同，flags 属可观测面，不得对齐。
+    search_filter_v2::ptr filter = search_filter_manager_v2::get()->create_ex(
+        query.c_str(), fb2k::service_new<completion_notify_dummy>(),
+        search_filter_manager_v2::KFlagSuppressNotify |
+            search_filter_manager_v2::KFlagAllowSort);
+
+    metadb_handle_list allItems;
+    lib->get_all_items(allItems);
+
+    pfc::array_t<bool> mask;
+    mask.set_size(allItems.get_count());
+    filter->test_multi(allItems, mask.get_ptr());
+
+    // 计全数、只收 [offset, offset+limit) 这一页，与同步版同一个循环形状
+    auto req = std::make_shared<QueryWireRequest>();
+    size_t totalMatched = 0;
+    for (size_t i = 0; i < allItems.get_count(); i++) {
+      if (mask[i]) {
+        if (totalMatched >= offset && req->tracks.get_count() < limit) {
+          req->tracks.add_item(allItems[i]);
+        }
+        totalMatched++;
+      }
+    }
+
+    req->api = QueryWireApi::Search;
+    req->method = "library.search";
+    req->limit = limit;
+    req->offset = offset;
+    req->baseIndex = offset;  // 同步版传给 GetLibraryTrackInfo 的是 offset + i
+    req->total = totalMatched;
+    req->fieldMask = fields.mask;
+    req->projected = fields.projected;
+
+    // 空页（零命中 / offset 越界 / limit=0）就地回包，不为零行付线程跳变的税。
+    // 信封与 tracks 段（"[]"）都与字段集无关，投影不改这一支。
+    if (SendEmptyQueryWireResultIfNoRows(req, responder)) {
+      return;
+    }
+
+    // rating 未被请求就连脚本都不编译（spec §3.1 语义 3 的按需化）
+    if (req->fieldMask & TrackField::kRating) {
+      static_api_ptr_t<titleformat_compiler>()->compile_safe(req->ratingScript, "%rating%");
+    }
+
+    req->caps.reserve(req->tracks.get_count());
+    for (size_t i = 0; i < req->tracks.get_count(); i++) {
+      req->caps.push_back(CaptureQueryTrack(req->tracks[i], req->fieldMask));
+    }
+
+    fb2k::inCpuWorkerThread([req, responder]() { RunQueryWireWorker(req, responder); });
+  } catch (const std::exception& e) {
+    responder.SendJson(MakeQueryWireErrorBody(QueryWireApi::Search, e.what()));
+  } catch (...) {
+    responder.SendJson(MakeQueryWireErrorBody(QueryWireApi::Search, "Search failed"));
   }
 }
 
@@ -1426,6 +1964,112 @@ json LibraryQuery(const json& params) {
 }
 
 
+// library.query 的延迟响应版：主线程只做过滤与标量捕获，排序、元数据读取与序列化
+// 下 CPU worker。响应形状、错误形状、total 口径、排序语义与截断次序与上面的同步版
+// 逐项一致（排序仍发生在截 limit 之前，total 是截断前的全命中数）。
+void LibraryQueryDeferred(const json& params, const DeferredResponder& responder) {
+  std::string query = params.value("query", "");
+  size_t limit = params.value("limit", static_cast<size_t>(100));
+  std::string sortBy = params.value("sort", "");
+
+  // fields 校验排在一切之前：形状错的请求不该先跑一遍全库扫描再被拒 —— fail-closed
+  const TrackFieldSelection fields = ParseTrackFieldSelection(params);
+  if (!fields.valid) {
+    responder.SendJson(MakeTrackFieldsErrorBody(fields));
+    return;
+  }
+
+  if (query.empty()) {
+    responder.SendJson({{"success", false}, {"error", "query is required"}});
+    return;
+  }
+
+  auto lib = library_manager::get();
+  if (!lib->is_library_enabled()) {
+    responder.SendJson({{"success", false}, {"error", "Library not enabled"}});
+    return;
+  }
+
+  try {
+    // flags 与同步版一致：query 只带 SuppressNotify，不带 AllowSort —— 带 SORT BY
+    // 的串在此会被 create_ex 拒掉，落到下面的 catch 出 "Invalid query syntax"。
+    search_filter_v2::ptr filter;
+    filter = search_filter_manager_v2::get()->create_ex(
+        query.c_str(), fb2k::service_new<completion_notify_dummy>(),
+        search_filter_manager_v2::KFlagSuppressNotify);
+
+    metadb_handle_list allItems;
+    lib->get_all_items(allItems);
+
+    pfc::array_t<bool> mask;
+    mask.set_size(allItems.get_count());
+    filter->test_multi(allItems, mask.get_ptr());
+
+    metadb_handle_list results;
+    for (size_t i = 0; i < allItems.get_count(); i++) {
+      if (mask[i]) {
+        results.add_item(allItems[i]);
+      }
+    }
+
+    auto req = std::make_shared<QueryWireRequest>();
+    req->api = QueryWireApi::Query;
+    req->method = "library.query";
+    req->limit = limit;
+    req->baseIndex = 0;
+    req->total = results.get_count();
+    req->fieldMask = fields.mask;
+    req->projected = fields.projected;
+
+    // 脚本一律在主线程编译（titleformat 编译的主线程口径见 titleformat.h:245-253
+    // 的 titleformat_object_cache 断言），worker 只负责求值。compile 失败 = 忽略
+    // 排序继续，与同步版一致。sort 与 fields 互不相干：排序键是调用方给的
+    // titleformat 串，不受投影字段集影响（排序仍在截 limit 之前）。
+    if (!sortBy.empty()) {
+      static_api_ptr_t<titleformat_compiler> compiler;
+      titleformat_object::ptr script;
+      if (compiler->compile(script, sortBy.c_str())) {
+        req->sortScript = script;
+      }
+    }
+    // rating 未被请求就连脚本都不编译（spec §3.1 语义 3 的按需化）
+    if (req->fieldMask & TrackField::kRating) {
+      static_api_ptr_t<titleformat_compiler>()->compile_safe(req->ratingScript, "%rating%");
+    }
+
+    // 不排序时只有前 limit 条会被序列化，标量就只捕获这一段（省下为丢弃的命中付
+    // 主线程开销）；要排序时留哪几条得等 worker 排完，只能整批捕获。
+    const size_t captureCount = req->sortScript.is_valid()
+                                    ? results.get_count()
+                                    : std::min(limit, results.get_count());
+    if (captureCount == results.get_count()) {
+      req->tracks = std::move(results);
+    } else {
+      for (size_t i = 0; i < captureCount; i++) {
+        req->tracks.add_item(results[i]);
+      }
+    }
+
+    // 零行（零命中 / limit=0）就地回包，不为零行付线程跳变的税。判据要等 tracks
+    // 填完才成立，故排在脚本编译之后 —— 零行时那次 %rating% 编译是微秒级冗余，
+    // 不值得为它把语句顺序重排（sortScript 又是 captureCount 的输入，动不了）。
+    // 信封与 tracks 段（"[]"）都与字段集无关，投影不改这一支。
+    if (SendEmptyQueryWireResultIfNoRows(req, responder)) {
+      return;
+    }
+
+    req->caps.reserve(req->tracks.get_count());
+    for (size_t i = 0; i < req->tracks.get_count(); i++) {
+      req->caps.push_back(CaptureQueryTrack(req->tracks[i], req->fieldMask));
+    }
+
+    fb2k::inCpuWorkerThread([req, responder]() { RunQueryWireWorker(req, responder); });
+  } catch (...) {
+    responder.SendJson(MakeQueryWireErrorBody(QueryWireApi::Query, nullptr));
+  }
+}
+
+
 // library.browseDirectory - Browse media library by directory
 // ========== Root/Tree API ==========
 
@@ -1963,7 +2607,9 @@ void RegisterLibraryApi() {
     bridge.RegisterApi("library.getStats", LibraryGetStats);
     bridge.RegisterApi("library.invalidateCache", LibraryInvalidateCache);
     bridge.RegisterApi("library.getCacheStats", LibraryGetCacheStats);
-    bridge.RegisterApi("library.search", LibrarySearch);
+    // query / search 走 deferred：主线程只出过滤结果，序列化在 CPU worker 上做。
+    // 注册名不变，两条路径不得同名并存 —— 同步表优先，留着同步注册等于改动作废。
+    bridge.RegisterApiDeferred("library.search", LibrarySearchDeferred);
     bridge.RegisterApi("library.getAlbums", LibraryGetAlbums);
     bridge.RegisterApi("library.getArtists", LibraryGetArtists);
     bridge.RegisterApi("library.getGenres", LibraryGetGenres_2);
@@ -1974,7 +2620,7 @@ void RegisterLibraryApi() {
     bridge.RegisterApi("library.addToPlaylist", LibraryAddToPlaylist);
     bridge.RegisterApi("library.getArtistAlbums", LibraryGetArtistAlbums);
     bridge.RegisterApi("library.getFieldValues", LibraryGetFieldValues);
-    bridge.RegisterApi("library.query", LibraryQuery);
+    bridge.RegisterApiDeferred("library.query", LibraryQueryDeferred);
     bridge.RegisterApi("library.getRoots", LibraryGetRoots);
     bridge.RegisterApi("library.browseTree", LibraryBrowseTree);
     bridge.RegisterApi("library.browseDirectory", LibraryBrowseDirectory);

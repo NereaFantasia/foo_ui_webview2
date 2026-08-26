@@ -79,9 +79,9 @@ handler 内失败统一用 `ApiEnvelope::MakeError(message, code)` 构造同步�
 
 ---
 
-## 路径安全：`SecurityLevel` 5 档
+## 路径安全：`SecurityLevel` 6 档
 
-带路径参数的 API 用 `RegisterApi` 的装饰器重载声明校验规格 `PathSecuritySpec`（参数 key、层级、是否数组、嵌套 key、是否跳过无效项）。分发前由 `ValidatePathParam` 统一拦截，校验失败直接 `PERMISSION_DENIED`，handler 不会被调用。
+带路径参数的 API 用 `RegisterApi` 的装饰器重载声明校验规格 `PathSecuritySpec`（参数 key、层级、是否数组、嵌套 key、是否跳过无效项）。分发前由 `ValidatePathParam` 统一拦截，校验失败时 handler 不会被调用；路径被拒返回 `PERMISSION_DENIED`，参数形状或类型不对返回 `INVALID_PARAMS`。
 
 | SecurityLevel | 对应 `utils/PathSecurity.h` 函数 | 语义 |
 |---------------|-------------------------------|------|
@@ -90,13 +90,14 @@ handler 内失败统一用 `ApiEnvelope::MakeError(message, code)` 构造同步�
 | `Write` | `ValidateWritePath` | 严格写白名单（仅 profile / temp 目录） |
 | `MediaRead` | `ValidateMediaAccess` | 读 + 媒体库/播放列表上下文信任 |
 | `MediaWrite` | `ValidateMediaWriteAccess` | 写 + 媒体上下文信任，但系统盘任意路径不放行 |
+| `FileWrite` | `ValidateFileWriteAccess` | 写白名单 → 监视目录 → 非系统盘直通 → 库/列表信任（按此顺序）；承载 `file.*` 通用写端点（直通为已登记待决项 GAP_606） |
 
 声明示例（来自 `FileApi.cpp`，多参数各自指定层级）：
 
 ```cpp
 bridge.RegisterApi("file.copy", FileCopy, {
     {"source",      SecurityLevel::Read},
-    {"destination", SecurityLevel::MediaWrite}
+    {"destination", SecurityLevel::FileWrite}
 });
 
 // 数组参数：第 3 个字段 true 表示数组，第 5 个 true 表示逐条跳过无效项

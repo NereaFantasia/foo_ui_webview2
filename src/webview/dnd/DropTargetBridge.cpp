@@ -5,6 +5,7 @@
 #include "api/BridgeCore.h"
 #include "webview/dnd/DropEffectPolicy.h"
 #include "webview/dnd/HdropReader.h"
+#include "webview/dnd/ShortcutResolver.h"
 
 namespace fb2k_dnd {
 namespace {
@@ -18,6 +19,26 @@ nlohmann::json PathsToJson(const std::vector<std::wstring>& paths) {
     nlohmann::json out = nlohmann::json::array();
     for (const std::wstring& path : paths) {
         out.push_back(WideToUtf8(path));
+    }
+    return out;
+}
+
+// The parallel shortcut-target array, always exactly as long as paths.
+//
+// Driven by the paths list rather than by resolved, so the equal-length part of
+// the contract holds by construction: a resolver that returned a short array,
+// or none at all, still yields one JSON element per path. An unknown target
+// becomes null, never an empty string, since "" would read as a real path of
+// zero length to a page that only checks for truthiness.
+nlohmann::json ResolvedPathsToJson(const std::vector<std::wstring>& paths,
+                                   const std::vector<ResolvedTarget>& resolved) {
+    nlohmann::json out = nlohmann::json::array();
+    for (size_t i = 0; i < paths.size(); ++i) {
+        if (i < resolved.size() && resolved[i].has_value()) {
+            out.push_back(WideToUtf8(*resolved[i]));
+        } else {
+            out.push_back(nlohmann::json(nullptr));
+        }
     }
     return out;
 }
@@ -64,6 +85,18 @@ nlohmann::json DropTargetBridge::VisiblePaths(
         return nlohmann::json::array();
     }
     return PathsToJson(paths);
+}
+
+nlohmann::json DropTargetBridge::VisibleResolvedPaths(
+    const std::vector<std::wstring>& paths,
+    const std::vector<ResolvedTarget>& resolved) const {
+    if (!pathsAllowed_) {
+        // Empty, not a list of nulls: VisiblePaths withholds the whole array in
+        // this case, and the two must stay the same length. A null-filled array
+        // would also leak the file count, which the empty one does not.
+        return nlohmann::json::array();
+    }
+    return ResolvedPathsToJson(paths, resolved);
 }
 
 void DropTargetBridge::EmitCapabilitiesChanged(const nlohmann::json& payload) const {
@@ -154,8 +187,23 @@ HRESULT STDMETHODCALLTYPE DropTargetBridge::DragEnter(IDataObject* data, DWORD k
         bool hadHdrop = false;
         std::vector<std::wstring> paths = ReadHdropPaths(data, &hadHdrop);
         const bool hasFiles = hadHdrop && !paths.empty();
+        // Derived from the list ReadHdropPaths actually returned, so its
+        // catch-all path (which clears paths) cannot leave a parallel array
+        // behind: an empty list resolves to an empty array.
+        //
+        // Skipped outright when the origin is not trusted with paths.
+        // VisibleResolvedPaths and dnd.getPathsAsync both withhold the array in
+        // that case, so every target read would be discarded - and the reading
+        // is shell and filesystem work on the thread the drag source is blocked
+        // on. Not a leak, just a cost an untrusted document must not be able to
+        // impose. BeginSession pads the empty vector to the length of paths, so
+        // the length invariant holds without a resolution pass.
+        std::vector<ResolvedTarget> resolved;
+        if (pathsAllowed_) {
+            resolved = ResolveShortcutTargets(paths);
+        }
         const int64_t now = NowMs();
-        activeSessionId_ = sessions_.BeginSession(paths, hasFiles, now);
+        activeSessionId_ = sessions_.BeginSession(paths, hasFiles, now, resolved);
 
         if (shuttingDown_) {
             *effect = DROPEFFECT_NONE;
@@ -179,6 +227,7 @@ HRESULT STDMETHODCALLTYPE DropTargetBridge::DragEnter(IDataObject* data, DWORD k
         nlohmann::json payload;
         payload["sessionId"] = activeSessionId_;
         payload["paths"] = VisiblePaths(paths);
+        payload["resolvedPaths"] = VisibleResolvedPaths(paths, resolved);
         payload["hasFiles"] = hasFiles;
         payload["x"] = point.client.x;
         payload["y"] = point.client.y;
@@ -290,7 +339,32 @@ HRESULT STDMETHODCALLTYPE DropTargetBridge::Drop(IDataObject* data, DWORD keySta
         bool hadHdrop = false;
         std::vector<std::wstring> paths = ReadHdropPaths(data, &hadHdrop);
         const bool hasFiles = hadHdrop && !paths.empty();
-        sessions_.UpdatePaths(sessionId, paths, hasFiles);
+
+        // Resolving shortcuts is the one step here that can block on the
+        // filesystem, so it is done only when its result can be used: an empty
+        // session id means no matching DragEnter arrived, and the code below
+        // neither stores nor emits anything in that case. Paying a COM budget
+        // there would stall the source inside DoDragDrop for nothing.
+        //
+        // Otherwise Drop usually repeats the list DragEnter already resolved.
+        // Reusing that answer when the list is unchanged keeps the worst case (a
+        // .lnk on an unreachable share) to one budget per gesture, not two. Only
+        // ever our own session: an empty id makes Query answer for the most
+        // recently ended gesture, whose targets are not ours to reuse.
+        //
+        // Gated on the origin verdict for the same reason DragEnter is: with
+        // paths withheld the whole array is dropped on the way out, so the work
+        // buys nothing and an untrusted document should not be able to order it.
+        std::vector<ResolvedTarget> resolved;
+        if (!sessionId.empty() && pathsAllowed_) {
+            const SessionData* previous = sessions_.Query(sessionId, NowMs());
+            if (previous && previous->paths == paths) {
+                resolved = previous->resolvedPaths;
+            } else {
+                resolved = ResolveShortcutTargets(paths);
+            }
+        }
+        sessions_.UpdatePaths(sessionId, paths, hasFiles, resolved);
 
         const DragPoint point = MakePoint(pt);
         DWORD downstream = allowedMask;
@@ -320,6 +394,7 @@ HRESULT STDMETHODCALLTYPE DropTargetBridge::Drop(IDataObject* data, DWORD keySta
         nlohmann::json payload;
         payload["sessionId"] = sessionId;
         payload["paths"] = VisiblePaths(paths);
+        payload["resolvedPaths"] = VisibleResolvedPaths(paths, resolved);
         payload["x"] = point.client.x;
         payload["y"] = point.client.y;
         payload["keyState"] = static_cast<uint32_t>(keyState);

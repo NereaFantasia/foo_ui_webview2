@@ -1,6 +1,7 @@
 ﻿#include "pch.h"
 #include "api/PlaylistApi.h"
 #include "api/ApiConstants.h"
+#include "api/AsyncOperationRegistry.h"
 #include "api/BridgeCore.h"
 #include "api/ErrorEnvelope.h"
 #include "core/WebViewContext.h"
@@ -13,21 +14,6 @@
 // ============================================
 // Helper Functions
 // ============================================
-
-// 生成随机字符串用于操作ID
-static std::string GenerateRandomString(size_t length) {
-    static const char chars[] = "abcdefghijklmnopqrstuvwxyz0123456789";
-    static std::random_device rd;
-    static std::mt19937 gen(rd());
-    static std::uniform_int_distribution<> dis(0, sizeof(chars) - 2);
-    
-    std::string result;
-    result.reserve(length);
-    for (size_t i = 0; i < length; i++) {
-        result += chars[dis(gen)];
-    }
-    return result;
-}
 
 struct ParsedPlayablePath {
     std::string path;
@@ -209,10 +195,18 @@ static json MakePlaylistLockedError(size_t playlistIndex) {
 }
 
 // 生成唯一操作 ID
+//
+// 走共享的 FormatAsyncOperationId（AsyncOperationRegistry.cpp:9-20），与
+// metadata.probeBatchAsync 的 probe_ 和 file.*Async 的 fileop_ 同一套格式。
+// 旧实现是「毫秒时间戳 + 6 位随机」，时间戳部分对任何页面都是可预测的，等于
+// 把 id 的熵砍到只剩那 6 位；operationId 对页面是不透明句柄，换格式不构成
+// 契约破坏（无任何前端按 op_ 前缀匹配）。
+//
+// 只在主线程的 handler 里调用，所以 mt19937_64 不需要加锁。
 static std::string GenerateOperationId() {
-    auto now = std::chrono::system_clock::now();
-    auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(now.time_since_epoch()).count();
-    return "op_" + std::to_string(ms) + "_" + GenerateRandomString(6);
+    static std::mt19937_64 rng(std::random_device{}());
+    static std::atomic<uint64_t> counter{0};
+    return fb2k_api::FormatAsyncOperationId("addpaths", counter.fetch_add(1) + 1, rng());
 }
 
 json GetPlaylistInfo(size_t index, bool includeDuration) {

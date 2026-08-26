@@ -75,6 +75,12 @@
     <ClCompile Include="src\webview\dnd\HdropReader.cpp">
       <Filter>src\webview\dnd</Filter>
     </ClCompile>
+    <ClCompile Include="src\webview\dnd\ShortcutResolver.cpp">
+      <Filter>src\webview\dnd</Filter>
+    </ClCompile>
+    <ClCompile Include="src\api\AsyncOperationRegistry.cpp">
+      <Filter>src\api</Filter>
+    </ClCompile>
     <ClCompile Include="src\webview\dnd\DropEffectPolicy.cpp">
       <Filter>src\webview\dnd</Filter>
     </ClCompile>
@@ -160,6 +166,12 @@
     </ClInclude>
     <ClInclude Include="src\webview\dnd\HdropReader.h">
       <Filter>src\webview\dnd</Filter>
+    </ClInclude>
+    <ClInclude Include="src\webview\dnd\ShortcutResolver.h">
+      <Filter>src\webview\dnd</Filter>
+    </ClInclude>
+    <ClInclude Include="src\api\AsyncOperationRegistry.h">
+      <Filter>src\api</Filter>
     </ClInclude>
     <ClInclude Include="src\webview\dnd\DropEffectPolicy.h">
       <Filter>src\webview\dnd</Filter>

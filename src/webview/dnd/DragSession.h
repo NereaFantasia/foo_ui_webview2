@@ -2,8 +2,11 @@
 #pragma once
 
 #include <cstdint>
+#include <optional>
 #include <string>
 #include <vector>
+
+#include "webview/dnd/ShortcutResolver.h"
 
 namespace fb2k_dnd {
 
@@ -26,6 +29,12 @@ enum class SessionPhase { Active, Ended };
 struct SessionData {
     std::string sessionId;
     std::vector<std::wstring> paths;
+    // Shortcut targets, one entry per path, in the same order. Empty entries
+    // for paths that are not shortcuts or whose target could not be read.
+    //
+    // The store keeps this the same length as paths, so a reader may index it
+    // with a paths index without a bounds check of its own.
+    std::vector<ResolvedTarget> resolvedPaths;
     bool hasFiles = false;
     SessionPhase phase = SessionPhase::Active;
     int64_t startedAtMs = 0;
@@ -37,15 +46,22 @@ class DragSessionStore {
 public:
     // Starts a new session, discarding any previous one (re-entrancy guard).
     // Returns the new sessionId.
+    //
+    // resolvedPaths is padded or truncated to the length of paths, so the two
+    // arrays cannot get out of step even if a caller supplies a mismatched one
+    // or omits it. Omitting it means "no shortcut targets known".
     std::string BeginSession(std::vector<std::wstring> paths, bool hasFiles,
-                             int64_t nowMs);
+                             int64_t nowMs,
+                             std::vector<ResolvedTarget> resolvedPaths = {});
 
     // Marks the session ended. Ignored when sessionId does not match.
     void EndSession(const std::string& sessionId, int64_t nowMs);
 
-    // Replaces the path list, used because Drop carries the final list.
+    // Replaces the path list, used because Drop carries the final list. Both
+    // arrays are replaced together, under the same length rule as BeginSession.
     void UpdatePaths(const std::string& sessionId,
-                     std::vector<std::wstring> paths, bool hasFiles);
+                     std::vector<std::wstring> paths, bool hasFiles,
+                     std::vector<ResolvedTarget> resolvedPaths = {});
 
     // Lookup for dnd.getPathsAsync. Empty sessionId means "current or most
     // recently ended". Returns nullptr when absent, past kHostSessionTtlMs after

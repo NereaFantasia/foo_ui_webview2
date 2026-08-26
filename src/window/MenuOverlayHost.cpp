@@ -440,6 +440,9 @@ void MenuOverlayHost::FinalizeHide(const std::string& reason) {
     activationHandoff_ = false;
     if (overlayHwnd_ && IsWindow(overlayHwnd_)) {
         ShowWindow(overlayHwnd_, SW_HIDE);
+        // 必须在 SW_HIDE 之后：SW_HIDE 同步触发 WM_KILLFOCUS → dismiss → 重入 Hide
+        //（见本函数开头注释），此刻 visible_/closing_ 已复位，重入会早退，收口不被打断。
+        CollapseWebViewSurface(overlay_.get(), overlayHwnd_);
     }
 
     if (wasOwnerMode) {
@@ -1028,6 +1031,9 @@ void MenuOverlayHost::HideSubmenuWindow(bool restoreRootFocus, bool notifyRoot, 
     suppressSubmenuDismiss_ = true;
     activationHandoff_ = true;  // submenu→root 内部交接：submenu 的失活不降观感/不误 blur
     ShowWindow(submenuHwnd_, SW_HIDE);
+    // 子菜单是独立 MenuOverlayWindow（: public PopupWindow，自带 WebView），收口同根窗。
+    // 置于 suppressSubmenuDismiss_/activationHandoff_ 窗口内，与随后的焦点归还同批完成。
+    CollapseWebViewSurface(submenuOverlay_.get(), submenuHwnd_);
     if (restoreRootFocus && visible_ && overlayHwnd_ && IsWindow(overlayHwnd_)) {
         SetForegroundWindow(overlayHwnd_);
         if (overlay_ && overlay_->GetWebView() && overlay_->GetWebView()->GetController()) {
@@ -1118,6 +1124,18 @@ void MenuOverlayHost::SyncWebViewToClient(MenuOverlayWindow* window, HWND hwnd) 
         wv->SetVisible(true);
         wv->Resize(rc);
         if (auto* ctrl = wv->GetController()) ctrl->NotifyParentWindowPositionChanged();
+    }
+}
+
+void MenuOverlayHost::CollapseWebViewSurface(MenuOverlayWindow* window, HWND hwnd) const {
+    if (!window || !hwnd || !IsWindow(hwnd) || !window->IsWebViewReady()) return;
+    if (auto* wv = window->GetWebView()) {
+        // 用 SetBoundsVisible(false)（put_Bounds({0,0,0,0}) + DComp 裁剪归零），
+        // 不用 SetVisible(false)：overlay 是池化复用的，put_IsVisible(FALSE) 会让页面
+        // 进 visibilityState=hidden 并节流定时器，下次开菜单可能首帧空白/延迟
+        //（"池化复用空白"已在 ShowSubmenuWindow 处踩过一次）。菜单场景要的是
+        // 命中区与出帧一起归零、页面保持热态，正是 SetBoundsVisible 的语义。
+        wv->SetBoundsVisible(false);
     }
 }
 
