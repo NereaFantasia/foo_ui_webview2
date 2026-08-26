@@ -27,6 +27,24 @@ import { clamp, normalizeHandleList } from './utils.js';
 
 const LOG_PREFIX = '[SMP-Compat]';
 
+/**
+ * Track keys requested from `library.search` by `fb.GetQueryItems`.
+ *
+ * Exactly the keys `FbMetadbHandle` reads out of a track-info object:
+ * `absolutePath` / `path` / `subsong` back `Path` and `SubSong`,
+ * `duration` and `fileSize` back `Length` and `FileSize`. Everything a
+ * handle exposes beyond those goes through `metadata.read` on demand,
+ * so narrowing the projection keeps the whole-library payload small
+ * without changing any observable handle property.
+ */
+const QUERY_ITEM_FIELDS = [
+    'absolutePath',
+    'path',
+    'subsong',
+    'duration',
+    'fileSize',
+];
+
 function _warn(...args: unknown[]): void {
     try {
         // eslint-disable-next-line no-console
@@ -351,33 +369,42 @@ export function attachFbExtensions(
             const q = String(query ?? '');
             if (!q) return new FbMetadbHandleList();
 
+            // Two calls, not one per page: `library.search` re-scans the
+            // whole library on every request, so a paged read of a
+            // multi-thousand-hit query pays one full scan per page. A
+            // one-row probe yields the hit count, then a single request
+            // pulls every hit.
+            //
+            // Race window: if the library changes between the two calls
+            // the probed count is stale, so hits added in between are
+            // dropped — `limit` is an upper bound, so a shrinking
+            // library is harmless. The returned set is not guaranteed
+            // stable while the library is being modified concurrently.
+            const probe = (await _invoke('library.search', {
+                query: q,
+                offset: 0,
+                limit: 1,
+            })) as { total?: number } | null;
+
+            const probed = probe?.total;
+            const total = typeof probed === 'number' && probed > 0 ? probed : 0;
+            if (total === 0) return new FbMetadbHandleList();
+
+            const res = (await _invoke('library.search', {
+                query: q,
+                offset: 0,
+                limit: total,
+                fields: QUERY_ITEM_FIELDS,
+            })) as { tracks?: unknown[]; items?: unknown[] } | null;
+            const tracks: unknown[] = Array.isArray(res?.tracks)
+                ? res!.tracks!
+                : Array.isArray(res?.items)
+                    ? res!.items!
+                    : [];
+
             const list = new FbMetadbHandleList();
-            const chunk = 500;
-            let offset = 0;
-            let total: number | null = null;
-
-            while (total === null || offset < total) {
-                const res = (await _invoke('library.search', {
-                    query: q,
-                    offset,
-                    limit: chunk,
-                })) as { tracks?: unknown[]; items?: unknown[]; total?: number } | null;
-                const tracks: unknown[] = Array.isArray(res?.tracks)
-                    ? res!.tracks!
-                    : Array.isArray(res?.items)
-                        ? res!.items!
-                        : [];
-
-                if (!Array.isArray(tracks) || tracks.length === 0) break;
-
-                for (const t of tracks) {
-                    list.Add(new FbMetadbHandle(t as SmpHandleLike));
-                }
-
-                if (typeof res?.total === 'number') total = res.total;
-                offset += tracks.length;
-
-                if (tracks.length < chunk && (total === null || offset >= total)) break;
+            for (const t of tracks) {
+                list.Add(new FbMetadbHandle(t as SmpHandleLike));
             }
             return list;
         },

@@ -158,8 +158,9 @@ export const audio = {
 
     /**
      * Short-window waveform of the current playback stream. Accepts
-     * either `(opts)` (preferred) or `(path, opts)` (legacy; the path
-     * is ignored because the host always uses the active stream).
+     * either `(opts)` (preferred) or `(path, opts)` (deprecated form;
+     * the path is ignored because the host always uses the active
+     * stream).
      */
     getWaveform: (
         pathOrOpts?: string | AudioGetWaveformParams,

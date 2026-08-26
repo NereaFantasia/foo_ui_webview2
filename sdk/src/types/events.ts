@@ -22,6 +22,8 @@ export type {
     AudioSpectrumPayload,
     AudioStreamPayload,
     CursorHiddenChangedPayload,
+    FileOpCompletePayload,
+    FileOpProgressPayload,
     HttpDownloadCompletePayload,
     HttpResponsePayload,
     JitQueueErrorPayload,
@@ -101,6 +103,21 @@ export type {
 export type { MetadbChangedTrackItem } from './overrides/events.js';
 
 export type { LibraryGetAllResultPayload } from './overrides/events.js';
+
+export type {
+    MetadataProbeCompletePayload,
+    MetadataProbeFailure,
+    MetadataProbeInfoSource,
+    MetadataProbeProgressPayload,
+    MetadataProbeResultItem,
+} from './overrides/events.js';
+
+export type {
+    FileOpKind,
+    FileOpResultItem,
+    FileOpResultReason,
+    FileOpStatus,
+} from './overrides/events.js';
 
 import type {
     AudioFullWaveformFailedPayload,
@@ -183,6 +200,23 @@ export interface DndEnterPayload extends DndSessionEventPayload {
     /** Absolute filesystem paths, in the same order as `DataTransfer.files`. */
     paths: string[];
     /**
+     * Target of the `.lnk` shortcut at the same index, or `null`.
+     *
+     * Always the same length as `paths`, including when both are withheld and
+     * therefore empty, so an index valid for one is valid for the other. Only
+     * `.lnk` is resolved; a shortcut to a shell namespace object, a recorded
+     * target too long to be read back intact (Windows caps it at `MAX_PATH`,
+     * and a truncated path would name a different file), an unavailable COM
+     * apartment, and any entry skipped to keep the drop responsive all report
+     * `null` rather than an empty string.
+     *
+     * A BROKEN shortcut is not one of those cases: it reports the path its
+     * `.lnk` recorded, since Windows returns that whether or not the target
+     * still exists. A non-null entry is therefore where the shortcut points,
+     * not a guarantee that a file is there.
+     */
+    resolvedPaths: (string | null)[];
+    /**
      * Whether the drag carries a `CF_HDROP` file list. Reported truthfully
      * even when `paths` is withheld, since it leaks nothing by itself.
      */
@@ -207,6 +241,11 @@ export type DndLeavePayload = DndSessionEventPayload;
 export interface DndDropPayload extends DndSessionEventPayload {
     /** Absolute filesystem paths, in the same order as `DataTransfer.files`. */
     paths: string[];
+    /**
+     * Target of the `.lnk` shortcut at the same index, or `null`. Same length
+     * and same rules as the `dnd:enter` field of this name.
+     */
+    resolvedPaths: (string | null)[];
     /** Cursor x in client-area physical pixels. */
     x: number;
     /** Cursor y in client-area physical pixels. */

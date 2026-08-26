@@ -68,6 +68,16 @@ export interface LibraryBrowseTreeParams {
 
 export const library = {
     // ── Search / aggregation ────────────────────────────────────────────
+    /**
+     * Run a foobar2000 query expression against the media library.
+     *
+     * `options.offset` / `limit` page the hit list; `total` and `hasMore`
+     * report the full extent. `options.fields` projects each row down to
+     * the requested {@link TrackInfo} keys — runtime rows then hold only
+     * those keys while the declared type stays complete. An invalid
+     * `fields` selection resolves — never rejects — with
+     * `{ success: false, code: 'INVALID_PARAMS' }`.
+     */
     search: (
         query: string,
         limit?: number,
@@ -194,7 +204,7 @@ export const library = {
                 : {}),
         }),
 
-    // ── Filesystem-based directory listing (legacy entry point) ─────────
+    // ── Filesystem-based directory listing ──────────────────────────────
     browseDirectory: (path: string, includeFiles?: boolean) =>
         bridge.invoke<LibraryBrowseDirectoryResponse>(
             'library.browseDirectory',
@@ -345,7 +355,7 @@ export const library = {
 
     /**
      * Async generator that walks library directories breadth- or
-     * depth-first via the legacy `library.browseDirectory` endpoint.
+     * depth-first via the `library.browseDirectory` endpoint.
      *
      * @deprecated Prefer {@link library.enumerateTree} for root-aware
      *             traversal.
@@ -530,11 +540,30 @@ export const library = {
     invalidateCache: () =>
         bridge.invoke<LibraryInvalidateCacheResponse>('library.invalidateCache'),
     isEnabled: () => bridge.invoke<{ enabled: boolean }>('library.isEnabled'),
-    query: (query: string, sort?: string, limit?: number) =>
+    /**
+     * Run a foobar2000 query expression with an optional Title Formatting
+     * sort expression. Sorting is applied before `limit` truncation and
+     * `total` reports the untruncated hit count.
+     *
+     * `fields` narrows the projection exactly as documented on
+     * {@link library.search}: rows then hold only the requested keys out of
+     * the same 19-name case-sensitive whitelist, omitting the argument
+     * returns all 19, and a malformed list resolves with
+     * `{ success: false, code: 'INVALID_PARAMS' }` plus
+     * `details.unknownFields`. An explicit `null` is forwarded to the host
+     * and rejected there instead of being read as "every field".
+     */
+    query: (
+        query: string,
+        sort?: string,
+        limit?: number,
+        fields?: string[],
+    ) =>
         bridge.invoke<LibraryQueryResponse>('library.query', {
             query,
             ...(sort ? { sort } : {}),
             ...(limit != null ? { limit } : {}),
+            ...(fields !== undefined ? { fields } : {}),
         }),
     rescan: () => bridge.invoke<BaseResponse>('library.rescan'),
 };

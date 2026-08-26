@@ -15,9 +15,11 @@ import type { JsonObject } from '../json.js';
 import type { ConfigSetReplaygainModeParams } from "../overrides/config.js";
 import type { CursorSetHiddenParams } from "../overrides/cursor.js";
 import type { DspSetChainParams } from "../overrides/dsp.js";
+import type { FileCancelOpParams, FileCopyAsyncParams, FileDeleteAsyncParams, FileMoveAsyncParams } from "../overrides/file.js";
+import type { LibraryQueryParams, LibrarySearchParams } from "../overrides/library.js";
 import type { TraySetIconParams } from "../overrides/tray.js";
 import type { WindowCreatePopupParams, WindowGetBackdropPolicyParams, WindowGetMaxSizeParams, WindowGetMinSizeParams, WindowIsResizableParams, WindowSetBackdropPolicyParams, WindowSetMaxSizeParams, WindowSetMinSizeParams, WindowSetPopupBehaviorParams, WindowSetResizableParams } from "../overrides/window.js";
-export type { ConfigSetReplaygainModeParams, CursorSetHiddenParams, DspSetChainParams, TraySetIconParams, WindowCreatePopupParams, WindowGetBackdropPolicyParams, WindowGetMaxSizeParams, WindowGetMinSizeParams, WindowIsResizableParams, WindowSetBackdropPolicyParams, WindowSetMaxSizeParams, WindowSetMinSizeParams, WindowSetPopupBehaviorParams, WindowSetResizableParams };
+export type { ConfigSetReplaygainModeParams, CursorSetHiddenParams, DspSetChainParams, FileCancelOpParams, FileCopyAsyncParams, FileDeleteAsyncParams, FileMoveAsyncParams, LibraryQueryParams, LibrarySearchParams, TraySetIconParams, WindowCreatePopupParams, WindowGetBackdropPolicyParams, WindowGetMaxSizeParams, WindowGetMinSizeParams, WindowIsResizableParams, WindowSetBackdropPolicyParams, WindowSetMaxSizeParams, WindowSetMinSizeParams, WindowSetPopupBehaviorParams, WindowSetResizableParams };
 
 /**
  * Parameters for `artwork.getAvailableArtwork`.
@@ -1317,21 +1319,6 @@ export type LibraryInvalidateCacheParams = Record<string, never>;
 export type LibraryIsEnabledParams = Record<string, never>;
 
 /**
- * Parameters for `library.query`.
- */
-export interface LibraryQueryParams {
-    /** @default "" */
-    query?: string;
-    /**
-     * int64 — may lose precision above 2^53
-     * @default `static_cast < size_t > ( 100 )`
-     */
-    limit?: number;
-    /** @default "" */
-    sort?: string;
-}
-
-/**
  * Parameters for `library.refresh` (this API takes no parameters).
  */
 export type LibraryRefreshParams = Record<string, never>;
@@ -1340,24 +1327,6 @@ export type LibraryRefreshParams = Record<string, never>;
  * Parameters for `library.rescan` (this API takes no parameters).
  */
 export type LibraryRescanParams = Record<string, never>;
-
-/**
- * Parameters for `library.search`.
- */
-export interface LibrarySearchParams {
-    /** @default "" */
-    query?: string;
-    /**
-     * int64 — may lose precision above 2^53
-     * @default `static_cast < size_t > ( 0 )`
-     */
-    offset?: number;
-    /**
-     * int64 — may lose precision above 2^53
-     * @default `static_cast < size_t > ( 100 )`
-     */
-    limit?: number;
-}
 
 /**
  * Parameters for `log.clear` (this API takes no parameters).
@@ -1525,6 +1494,14 @@ export interface MenuShowNativePopupParams {
 }
 
 /**
+ * Parameters for `metadata.cancelProbe`.
+ */
+export interface MetadataCancelProbeParams {
+    /** @default "" */
+    operationId?: string;
+}
+
+/**
  * Parameters for `metadata.embedArtwork`.
  */
 export interface MetadataEmbedArtworkParams {
@@ -1538,6 +1515,15 @@ export interface MetadataEmbedArtworkParams {
     filename?: string;
     /** @default "embedded" */
     target?: string[];
+}
+
+/**
+ * Parameters for `metadata.probeBatchAsync`.
+ */
+export interface MetadataProbeBatchAsyncParams {
+    paths?: unknown;
+    /** @default true */
+    includeTags?: boolean;
 }
 
 /**
@@ -3673,13 +3659,17 @@ export interface ApiParamsMap {
     "dsp.setChain": DspSetChainParams;
     "event.emit": EventEmitParams;
     "event.emitTo": EventEmitToParams;
+    "file.cancelOp": FileCancelOpParams;
     "file.copy": FileCopyParams;
+    "file.copyAsync": FileCopyAsyncParams;
     "file.delete": FileDeleteParams;
+    "file.deleteAsync": FileDeleteAsyncParams;
     "file.exists": FileExistsParams;
     "file.getInfo": FileGetInfoParams;
     "file.list": FileListParams;
     "file.mkdir": FileMkdirParams;
     "file.move": FileMoveParams;
+    "file.moveAsync": FileMoveAsyncParams;
     "file.read": FileReadParams;
     "file.rename": FileRenameParams;
     "file.write": FileWriteParams;
@@ -3742,7 +3732,9 @@ export interface ApiParamsMap {
     "menu.runMainMenuCommand": MenuRunMainMenuCommandParams;
     "menu.show": MenuShowParams;
     "menu.showNativePopup": MenuShowNativePopupParams;
+    "metadata.cancelProbe": MetadataCancelProbeParams;
     "metadata.embedArtwork": MetadataEmbedArtworkParams;
+    "metadata.probeBatchAsync": MetadataProbeBatchAsyncParams;
     "metadata.read": MetadataReadParams;
     "metadata.readBatch": MetadataReadBatchParams;
     "metadata.readByPath": MetadataReadByPathParams;

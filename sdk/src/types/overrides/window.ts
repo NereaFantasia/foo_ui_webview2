@@ -34,7 +34,7 @@ export type WindowPopupProfile =
  *
  * Field-resolution order (highest priority first):
  *   1. `behavior.*` / `backdropPolicy.*` per-field overrides
- *   2. legacy top-level fields (`showInTaskbar`, etc.)
+ *   2. flat top-level fields (`showInTaskbar`, etc.)
  *   3. `profile` preset defaults
  *   4. host built-in defaults
  *
@@ -85,7 +85,7 @@ export interface WindowCreatePopupParams {
     /** Behavior preset. See {@link WindowPopupProfile}. */
     profile?: WindowPopupProfile;
     /**
-     * Per-field overrides on top of the resolved profile / legacy defaults.
+     * Per-field overrides on top of the resolved profile / flat-field defaults.
      * Most callers that just want "popup pinned above the main window"
      * should prefer `profile: 'standard'`; reach for `behavior` only when
      * a single field needs to deviate from the preset.

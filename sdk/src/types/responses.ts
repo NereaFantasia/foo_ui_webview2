@@ -1269,8 +1269,23 @@ export interface LibraryPagedTracksResponse {
     fromCache?: boolean;
 }
 
-/** Result shape returned by `library.search`. */
-export interface LibrarySearchResponse extends LibraryPagedTracksResponse {
+/**
+ * Result shape returned by `library.search`.
+ *
+ * Declared standalone rather than via {@link LibraryPagedTracksResponse}:
+ * since v1.13.0 the host sends the row array once, under `tracks` — the
+ * same key `library.query` uses.
+ */
+export interface LibrarySearchResponse {
+    tracks: TrackInfo[];
+    /**
+     * @deprecated Duplicate of `tracks` that hosts stopped sending in
+     * v1.13.0. Older hosts still include it; read `tracks` instead.
+     */
+    items?: TrackInfo[];
+    total: number;
+    offset?: number;
+    limit?: number;
     hasMore: boolean;
     success?: boolean;
     error?: string;
@@ -1304,8 +1319,8 @@ export interface LibraryGenresResponse {
 
 /** Result shape returned by `library.getAlbumTracks`. */
 export interface LibraryAlbumTracksResponse {
+    /** Compatibility alias usually identical to `tracks`. */
     items: TrackInfo[];
-    /** Compatibility alias usually identical to `items`. */
     tracks: TrackInfo[];
     total: number;
     album: string;
@@ -1314,8 +1329,8 @@ export interface LibraryAlbumTracksResponse {
 
 /** Result shape returned by `library.getArtistTracks`. */
 export interface LibraryArtistTracksResponse {
+    /** Compatibility alias usually identical to `tracks`. */
     items: TrackInfo[];
-    /** Compatibility alias usually identical to `items`. */
     tracks: TrackInfo[];
     total: number;
     count: number;
@@ -1534,7 +1549,7 @@ export interface LibraryEnumerateTracksSummary {
     aborted: boolean;
 }
 
-/** @legacy @deprecated High-level options for `library.enumerateDirectories`. */
+/** @deprecated Options for `library.enumerateDirectories`; prefer {@link LibraryEnumerateTreeOptions} with `library.enumerateTree`. */
 export interface LibraryEnumerateDirectoriesOptions {
     rootPath?: string;
     includeFiles?: boolean;
@@ -1547,7 +1562,7 @@ export interface LibraryEnumerateDirectoriesOptions {
     }) => void;
 }
 
-/** @legacy @deprecated Single batch yielded by `library.enumerateDirectories`. */
+/** @deprecated Single batch yielded by `library.enumerateDirectories`; prefer {@link LibraryTreeBatch} from `library.enumerateTree`. */
 export interface LibraryDirectoryBatch {
     path: string;
     directories: string[];
@@ -1558,7 +1573,7 @@ export interface LibraryDirectoryBatch {
     error?: string;
 }
 
-/** @legacy Final summary returned by `library.enumerateDirectories`. */
+/** @deprecated Final summary returned by `library.enumerateDirectories`; prefer {@link LibraryEnumerateTreeSummary} from `library.enumerateTree`. */
 export interface LibraryEnumerateDirectoriesSummary {
     visited: number;
     aborted: boolean;
@@ -1656,6 +1671,35 @@ export interface MetadataReadBatchResponse extends BaseResponse {
     total?: number;
     successCount?: number;
     errorCount?: number;
+}
+
+/**
+ * Dispatch receipt returned by `metadata.probeBatchAsync`.
+ *
+ * The call returns as soon as the batch is queued; the results arrive on
+ * `metadata:probeProgress` and `metadata:probeComplete`. Keep `operationId`
+ * to correlate those events and to cancel the run.
+ *
+ * `totalCount` is the number of paths accepted, which equals the requested
+ * count: path validation is all-or-nothing, so a rejected batch produces an
+ * error envelope with no `operationId` rather than a shortened run.
+ */
+export interface MetadataProbeBatchAsyncResponse extends BaseResponse {
+    /** Correlation id for the two probe events and for `cancelProbe`. */
+    operationId?: string;
+    /** Paths accepted for probing. */
+    totalCount?: number;
+}
+
+/**
+ * Envelope returned by `metadata.cancelProbe`.
+ *
+ * `cancelled` is false when the `operationId` is not in flight - either it
+ * already finished or it never existed. The two cases are deliberately
+ * indistinguishable.
+ */
+export interface MetadataCancelProbeResponse extends BaseResponse {
+    cancelled?: boolean;
 }
 
 // ============================================================================
@@ -1776,6 +1820,8 @@ export interface TitleformatEvalResult {
     pattern: string;
     result: string;
     error?: string;
+    /** `false` = tag-derived output untrustworthy; absent on failures. */
+    infoAvailable?: boolean;
 }
 
 /** `titleformat.evalBatch` aggregate shape. */
@@ -1790,6 +1836,8 @@ export interface TitleformatBatchResult {
         success: boolean;
         result?: string;
         error?: string;
+        /** Per-row info readiness; present only when `success` is `true`. */
+        infoAvailable?: boolean;
     }>;
 }
 
@@ -1797,6 +1845,8 @@ export interface TitleformatBatchResult {
 export interface TitleformatFieldsResult {
     success: boolean;
     path: string;
+    /** `false` = tag-derived values untrustworthy; one flag per merged script. */
+    infoAvailable?: boolean;
     [fieldName: string]: string | boolean | undefined;
 }
 
@@ -1810,6 +1860,8 @@ export interface TitleformatFieldsBatchResult {
         path: string;
         success: boolean;
         error?: string;
+        /** Per-row info readiness; present only when `success` is `true`. */
+        infoAvailable?: boolean;
         [fieldName: string]: string | boolean | undefined;
     }>;
 }
@@ -2507,6 +2559,44 @@ export type DndPathsUnavailableReason =
     | 'origin-untrusted';
 
 /**
+ * Paths of one drag session, as resolved by `dnd.getPathsAsync`.
+ *
+ * `paths` and `resolvedPaths` are always the same length, so an index valid
+ * for one is valid for the other, and both line up with `DataTransfer.files`.
+ * Both are empty together when the session expired, carried no file list, or
+ * the origin is not trusted with paths.
+ */
+export interface DndSessionPaths extends BaseResponse {
+    /**
+     * Session the paths belong to. Empty string when no session was found, so
+     * that a caller can tell "nothing to report" from "a session with no
+     * files".
+     */
+    sessionId: string;
+    /** Absolute filesystem paths, in `DataTransfer.files` order. */
+    paths: string[];
+    /**
+     * Target of the `.lnk` shortcut at the same index, or `null`.
+     *
+     * `null` covers every case where no target is available: the entry is not
+     * a shortcut, it points at a shell namespace object rather than a file, its
+     * recorded target is too long to be read back intact (Windows caps it at
+     * `MAX_PATH`, and a truncated path would name a different file), COM was
+     * unavailable, or resolution was skipped to keep the drop responsive. Never
+     * an empty string.
+     *
+     * A BROKEN shortcut is not one of those cases: it reports the path its
+     * `.lnk` recorded, since Windows returns that whether or not the target
+     * still exists. Treat a non-null entry as where the shortcut points, and
+     * expect the file to be missing sometimes.
+     *
+     * Only `.lnk` is resolved. `.url`, `.library-ms` and virtual search
+     * results report `null`.
+     */
+    resolvedPaths: (string | null)[];
+}
+
+/**
  * What the host's drag-drop integration can deliver to the current window,
  * as resolved by `dnd.getCapabilities`.
  *
@@ -3102,9 +3192,10 @@ export type {
     CursorIsHiddenResponse, CursorSetHiddenResponse,
     DialogConfirmResponse, DiscoveryExecuteContextMenuByPathResponse, DiscoveryExecuteContextMenuCommandResponse, DiscoveryExecuteMainMenuCommandResponse, DndGetCapabilitiesResponse, DndGetPathsAsyncResponse,
     DndStartDragResponse, DspAddDspResponse, DspApplyPresetResponse, DspGetAvailableResponse, DspGetChainResponse, DspGetPresetsResponse,
-    DspMoveDspResponse, DspRemoveDspResponse, DspSetChainResponse, EventEmitResponse, EventEmitToResponse, FileCopyResponse,
-    FileDeleteResponse, FileExistsResponse, FileMkdirResponse, FileMoveResponse, FileReadResponse, FileRenameResponse,
-    FileWriteResponse, HttpAbortResponse, HttpDeleteResponse, HttpDownloadResponse, HttpGetResponse, HttpHeadResponse,
+    DspMoveDspResponse, DspRemoveDspResponse, DspSetChainResponse, EventEmitResponse, EventEmitToResponse, FileCancelOpResponse,
+    FileCopyAsyncResponse, FileCopyResponse, FileDeleteAsyncResponse, FileDeleteResponse, FileExistsResponse, FileMkdirResponse,
+    FileMoveAsyncResponse, FileMoveResponse, FileReadResponse, FileRenameResponse, FileWriteResponse, HttpAbortResponse,
+    HttpDeleteResponse, HttpDownloadResponse, HttpGetResponse, HttpHeadResponse,
     HttpPatchResponse, HttpPostResponse, HttpPutResponse, JitQueueClearResponse, JitQueueEnqueueNextResponse, JitQueueGetStateResponse,
     JitQueueNotifyEmptyResponse, JitQueuePlayNowResponse, JitQueuePreloadBatchResponse, JitQueueSkipResponse, JitQueueStopResponse, KeyboardRegisterHotkeyResponse,
     KeyboardRegisterShortcutResponse, KeyboardUnregisterHotkeyResponse, LibraryGetAlbumTracksResponse, LibraryGetAlbumsResponse, LibraryGetAllResponse, LibraryGetArtistAlbumsResponse,

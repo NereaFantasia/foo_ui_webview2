@@ -1,4 +1,4 @@
-import type { TrackInfo } from '../responses.js';
+import type { TrackInfo, TrackTechnicalInfo } from '../responses.js';
 
 /**
  * Per-track snapshot embedded in {@link MetadbChangedPayload}.`tracks`.
@@ -327,6 +327,95 @@ export interface MetadataWriteCompletePayload {
     /** Convenience flag; equals `code === 0`. */
     success: boolean;
     status: 'success' | 'aborted' | 'error';
+}
+
+/** Why one path in a `metadata.probeBatchAsync` batch produced no info. */
+export type MetadataProbeFailure =
+    | 'not-found'
+    | 'unsupported-format'
+    | 'read-error';
+
+/** Where a probed track's info came from. `'none'` accompanies a failure. */
+export type MetadataProbeInfoSource = 'cached' | 'direct' | 'none';
+
+/**
+ * One entry of {@link MetadataProbeProgressPayload}.`results`.
+ *
+ * `path` is echoed exactly as requested, `|subsong:N` suffix included, so it
+ * can be used as a lookup key without re-normalising.
+ *
+ * `infoSource` distinguishes a metadb cache hit from a fresh disk read, which
+ * is what makes the call useful for files the library has never seen. `info`
+ * and `tags` are present only when `success` is true; `failure` only when it
+ * is false. A cancelled item is not reported at all - it appears in neither
+ * `results` nor the success/failure counts.
+ */
+export interface MetadataProbeResultItem {
+    /** Requested path, echoed verbatim including any `|subsong:N`. */
+    path: string;
+    success: boolean;
+    infoSource: MetadataProbeInfoSource;
+    /** Present only when `success` is false. */
+    failure?: MetadataProbeFailure;
+    /** Duration / bitrate / sample rate / channels / codec, when read. */
+    info?: TrackTechnicalInfo;
+    /**
+     * Flat tag map with upstream keys upper-cased, matching
+     * `metadata.readBatch`. Omitted when the call passed
+     * `includeTags: false`.
+     */
+    tags?: Record<string, string | string[]>;
+}
+
+/**
+ * Payload for `metadata:probeProgress`.
+ *
+ * Batched, never one event per path: results accumulate until 64 are pending
+ * or 100ms have passed since the previous batch, whichever comes first. A
+ * fully cached batch therefore collapses to about `ceil(total / 64)` events,
+ * while a slow disk-bound batch trades extra events for a progress signal that
+ * keeps moving. `done` counts every path reported so far, so
+ * `done / total` is a usable progress fraction.
+ *
+ * The final partial batch always arrives before `metadata:probeComplete`.
+ *
+ * @codegen-override event:metadata:probeProgress
+ * @codegen-snapshot
+ */
+export interface MetadataProbeProgressPayload {
+    /** Correlation id returned by `metadata.probeBatchAsync`. */
+    operationId: string;
+    /** Paths reported so far across all batches, including failures. */
+    done: number;
+    /** Total paths accepted by the call; equals its `totalCount`. */
+    total: number;
+    /** This batch only, not the cumulative list. */
+    results: MetadataProbeResultItem[];
+}
+
+/**
+ * Payload for `metadata:probeComplete`.
+ *
+ * Always the last event for an `operationId`, emitted on the cancelled and
+ * failed paths too, so a listener can unconditionally clean up on it. Once it
+ * has arrived the `operationId` is gone: cancelling it afterwards reports
+ * `cancelled: false`.
+ *
+ * `successCount + failureCount` falls short of `total` when the run was
+ * cancelled - the untouched remainder is simply never reported.
+ *
+ * @codegen-override event:metadata:probeComplete
+ * @codegen-snapshot
+ */
+export interface MetadataProbeCompletePayload {
+    /** Correlation id returned by `metadata.probeBatchAsync`. */
+    operationId: string;
+    /** Total paths accepted by the call. */
+    total: number;
+    successCount: number;
+    failureCount: number;
+    /** `true` when `metadata.cancelProbe` stopped the run early. */
+    cancelled: boolean;
 }
 
 /**
@@ -663,4 +752,116 @@ export interface PlaylistRenamedPayload {
     index: number;
     /** The new playlist name. */
     name: string;
+}
+
+/** Which of the async file operations a `file:op*` event reports on. */
+export type FileOpKind = 'copy' | 'move' | 'delete';
+
+/**
+ * Outcome class of one {@link FileOpResultItem}.
+ *
+ * `'skipped'` means the entry was deliberately not carried out (it already
+ * existed, or the run was cancelled before reaching it), so it is not an
+ * error; `'failed'` is.
+ */
+export type FileOpStatus = 'ok' | 'skipped' | 'failed';
+
+/**
+ * Why a {@link FileOpResultItem} ended the way it did.
+ *
+ * `'cross-volume'` is the one value that accompanies `status: 'ok'`: the
+ * entry succeeded, but the move had to fall back to copy-then-delete because
+ * source and destination sit on different volumes, which costs a full copy
+ * instead of a rename.
+ */
+export type FileOpResultReason =
+    | 'already-exists'
+    | 'not-found'
+    | 'permission'
+    | 'cross-volume'
+    | 'io-error'
+    | 'cancelled';
+
+/**
+ * One entry of {@link FileOpProgressPayload}.`results`.
+ *
+ * `source` is echoed exactly as requested, `%variable%` placeholders included
+ * and unexpanded, so it can be used as a lookup key without re-normalising.
+ *
+ * One entry is reported per requested item, never per file: copying a
+ * directory yields a single entry once the whole tree has been walked.
+ */
+export interface FileOpResultItem {
+    /** Requested source path, echoed verbatim. */
+    source: string;
+    /**
+     * Requested destination path, echoed verbatim. Absent for
+     * `file.deleteAsync`, which has no destination.
+     */
+    destination?: string;
+    status: FileOpStatus;
+    /** Absent when the entry succeeded outright. */
+    reason?: FileOpResultReason;
+}
+
+/**
+ * Payload for `file:opProgress`.
+ *
+ * Batched, never one event per entry: results accumulate until 64 are pending
+ * or 100ms have passed since the previous batch, whichever comes first, so a
+ * fast run collapses to about `ceil(total / 64)` events while a slow one
+ * trades extra events for a progress signal that keeps moving. `done` counts
+ * every entry reported so far, so `done / total` is a usable progress
+ * fraction.
+ *
+ * Delivered only to the window that started the operation, which is what
+ * makes it safe for `results` to carry real filesystem paths.
+ *
+ * The final partial batch always arrives before `file:opComplete`.
+ *
+ * @codegen-override event:file:opProgress
+ * @codegen-snapshot
+ */
+export interface FileOpProgressPayload {
+    /** Correlation id returned by the `file.*Async` call that started the run. */
+    operationId: string;
+    op: FileOpKind;
+    /** Entries reported so far across all batches, including failures. */
+    done: number;
+    /** Entries accepted by the call; equals its `totalCount`. */
+    total: number;
+    /** This batch only, not the cumulative list. */
+    results: FileOpResultItem[];
+}
+
+/**
+ * Payload for `file:opComplete`.
+ *
+ * The last event for an `operationId` when it arrives, emitted on the
+ * cancelled and failed paths too. Two paths skip it: the host shutting down
+ * mid-run, and an unexpected host-side failure in the worker - so a listener
+ * that cleans up on this event should also carry its own timeout. Once it has
+ * arrived the `operationId` is gone: cancelling it afterwards reports
+ * `cancelled: false`.
+ *
+ * Cancelling does not drop entries the way a cancelled probe does - the
+ * untouched remainder is still reported as `skipped` with
+ * `reason: 'cancelled'` - so the three counts normally add up to `total`.
+ *
+ * @codegen-override event:file:opComplete
+ * @codegen-snapshot
+ */
+export interface FileOpCompletePayload {
+    /** Correlation id returned by the `file.*Async` call that started the run. */
+    operationId: string;
+    op: FileOpKind;
+    /** Entries accepted by the call. */
+    total: number;
+    /** Entries that were carried out, cross-volume fallbacks included. */
+    successCount: number;
+    /** Entries deliberately not carried out: already present, or cancelled. */
+    skippedCount: number;
+    failureCount: number;
+    /** `true` when at least one entry was reported with `reason: 'cancelled'`. */
+    cancelled: boolean;
 }

@@ -155,3 +155,90 @@ describe('file binary helpers', () => {
         expect(native.invoke).not.toHaveBeenCalled();
     });
 });
+
+// The host reads `items` / `paths` / `overwrite` / `moveToTrash` /
+// `operationId` and nothing else; a renamed or dropped key would silently
+// fall back to the host default instead of failing, so the payload keys are
+// asserted verbatim.
+describe('file async batch operations', () => {
+    beforeEach(() => {
+        vi.resetModules();
+    });
+
+    afterEach(() => {
+        vi.unstubAllGlobals();
+    });
+
+    it('copyAsync forwards the item list and omits absent options', async () => {
+        const native = makeNative();
+        native.invoke.mockResolvedValue({
+            success: true,
+            operationId: 'fileop_0000000100000001',
+            totalCount: 1,
+        });
+        vi.stubGlobal('window', { fb2k: native });
+        const { file } = await import('./file.js');
+
+        const items = [{ source: '/music/a.flac', destination: '/backup/a.flac' }];
+        await file.copyAsync(items);
+
+        expect(native.invoke).toHaveBeenCalledWith('file.copyAsync', { items });
+    });
+
+    it('copyAsync forwards overwrite when given', async () => {
+        const native = makeNative();
+        native.invoke.mockResolvedValue({ success: true });
+        vi.stubGlobal('window', { fb2k: native });
+        const { file } = await import('./file.js');
+
+        const items = [{ source: '/music/a.flac', destination: '/backup/a.flac' }];
+        await file.copyAsync(items, { overwrite: true });
+
+        expect(native.invoke).toHaveBeenCalledWith('file.copyAsync', {
+            items,
+            overwrite: true,
+        });
+    });
+
+    it('moveAsync forwards the item list and overwrite', async () => {
+        const native = makeNative();
+        native.invoke.mockResolvedValue({ success: true });
+        vi.stubGlobal('window', { fb2k: native });
+        const { file } = await import('./file.js');
+
+        const items = [{ source: '/inbox/album', destination: '/music/album' }];
+        await file.moveAsync(items, { overwrite: false });
+
+        expect(native.invoke).toHaveBeenCalledWith('file.moveAsync', {
+            items,
+            overwrite: false,
+        });
+    });
+
+    it('deleteAsync forwards paths and moveToTrash', async () => {
+        const native = makeNative();
+        native.invoke.mockResolvedValue({ success: true });
+        vi.stubGlobal('window', { fb2k: native });
+        const { file } = await import('./file.js');
+
+        await file.deleteAsync(['/tmp/a.log'], { moveToTrash: false });
+
+        expect(native.invoke).toHaveBeenCalledWith('file.deleteAsync', {
+            paths: ['/tmp/a.log'],
+            moveToTrash: false,
+        });
+    });
+
+    it('cancelOp forwards the operation id', async () => {
+        const native = makeNative();
+        native.invoke.mockResolvedValue({ success: true, cancelled: false });
+        vi.stubGlobal('window', { fb2k: native });
+        const { file } = await import('./file.js');
+
+        await file.cancelOp('fileop_0000000100000001');
+
+        expect(native.invoke).toHaveBeenCalledWith('file.cancelOp', {
+            operationId: 'fileop_0000000100000001',
+        });
+    });
+});

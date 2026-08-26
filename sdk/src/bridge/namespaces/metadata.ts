@@ -6,6 +6,8 @@ import { bridge } from '../Bridge.js';
 import { bytesToBase64, parseBase64DataUrl } from '../binaryData.js';
 import type {
     BaseResponse,
+    MetadataCancelProbeResponse,
+    MetadataProbeBatchAsyncResponse,
     MetadataReadBatchResponse,
     MetadataReadRawResponse,
     MetadataReadResponse,
@@ -158,6 +160,55 @@ export const metadata = {
         bridge.invoke<MetadataReadRawResponse>('metadata.readRaw', {
             path,
             ...(opts || {}),
+        }),
+    /**
+     * Cancellable, non-blocking batch probe. Reads happen on a host worker
+     * thread, so a few hundred paths no longer stall the UI the way
+     * `readBatch` does.
+     *
+     * Returns a `{ operationId, totalCount }` receipt immediately; the results
+     * arrive in batches on `metadata:probeProgress` and are followed by
+     * exactly one `metadata:probeComplete`. Each result reports where its info
+     * came from (`infoSource: 'cached' | 'direct'`) and, on failure, which of
+     * `'not-found'` / `'unsupported-format'` / `'read-error'` applies - the
+     * distinction `readBatch` collapses into one generic error string.
+     *
+     * Paths may carry a `|subsong:N` suffix and are resolved independently;
+     * they are echoed back verbatim so they work as lookup keys. Unlike
+     * `metadata.read`, the batch surface does not honour the legacy `#N`
+     * subsong spelling, which would mis-split an extensionless filename that
+     * happens to end in `#<digits>`.
+     *
+     * Path validation is all-or-nothing: if any path fails the host's media
+     * read check the whole call is rejected with `PERMISSION_DENIED` and no
+     * `operationId` is produced. Per-path rejection is not available.
+     *
+     * @param paths Paths to probe; must not be empty.
+     * @param opts `includeTags` (default `true`) attaches the flat tag map to
+     *   each successful result. Pass `false` when only technical info is
+     *   wanted.
+     * @returns Dispatch receipt; the actual results arrive by event.
+     */
+    probeBatchAsync: (paths: string[], opts?: { includeTags?: boolean }) =>
+        bridge.invoke<MetadataProbeBatchAsyncResponse>(
+            'metadata.probeBatchAsync',
+            { paths, ...(opts || {}) },
+        ),
+    /**
+     * Stop a probe started by {@link metadata.probeBatchAsync}.
+     *
+     * Cancellation interrupts the in-progress disk read rather than waiting
+     * for it, and the run always finishes with a `metadata:probeComplete`
+     * carrying `cancelled: true`. Paths not yet reached are never reported,
+     * and the interrupted path is reported as neither success nor failure.
+     *
+     * @param operationId The id from the `probeBatchAsync` receipt.
+     * @returns `cancelled: false` when the operation had already finished or
+     *   never existed.
+     */
+    cancelProbe: (operationId: string) =>
+        bridge.invoke<MetadataCancelProbeResponse>('metadata.cancelProbe', {
+            operationId,
         }),
     /**
      * Async write — dispatches immediately and signals completion via

@@ -72,7 +72,12 @@ export { dnd } from './namespaces/dnd.js';
 export { dsp } from './namespaces/dsp.js';
 export { event } from './namespaces/event.js';
 export { file } from './namespaces/file.js';
-export type { FileBinaryWriteOptions } from './namespaces/file.js';
+export type {
+    FileBinaryWriteOptions,
+    FileDeleteAsyncOptions,
+    FileOpAsyncOptions,
+    FileOpEntry,
+} from './namespaces/file.js';
 export { http } from './namespaces/http.js';
 export { jitQueue } from './namespaces/jitQueue.js';
 export { keyboard } from './namespaces/keyboard.js';

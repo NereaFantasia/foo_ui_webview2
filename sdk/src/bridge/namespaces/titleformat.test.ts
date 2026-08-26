@@ -10,6 +10,9 @@
 //   2. The wrappers return the flat envelope verbatim — fieldName keys
 //      sit at the top level (or per-row) alongside the `path`/`success`
 //      reply metadata.
+//   3. The `infoAvailable` readiness flag survives passthrough: `false`
+//      stays `false` (not `undefined`), and a failed row keeps it absent
+//      rather than coerced to `false`.
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -121,5 +124,57 @@ describe('titleformat namespace — §5.4 fields contract', () => {
         ).toBe('Band A');
         expect(result?.successCount).toBe(2);
         expect(result?.errorCount).toBe(0);
+    });
+
+    it('passes the infoAvailable flag through verbatim (top level)', async () => {
+        const native = makeNative();
+        native.invoke.mockResolvedValue({
+            success: true,
+            path: '/unindexed.flac',
+            bitrate: '',
+            infoAvailable: false,
+        });
+        vi.stubGlobal('window', { fb2k: native });
+        const { titleformat } = await import('./titleformat.js');
+
+        const result = await titleformat.evalFields('/unindexed.flac', {
+            bitrate: '%bitrate%',
+        });
+
+        // The wrapper must not normalise, default or drop the flag —
+        // `false` has to survive as `false`, not become `undefined`.
+        expect(result?.infoAvailable).toBe(false);
+        expect('infoAvailable' in (result as object)).toBe(true);
+    });
+
+    it('passes the infoAvailable flag through verbatim (per row)', async () => {
+        const native = makeNative();
+        native.invoke.mockResolvedValue({
+            success: true,
+            total: 3,
+            successCount: 2,
+            errorCount: 1,
+            results: [
+                { path: '/indexed.flac', success: true, infoAvailable: true },
+                { path: '/unindexed.flac', success: true, infoAvailable: false },
+                // Failed rows carry no flag at all.
+                { path: '/missing.flac', success: false, error: 'Failed to open file' },
+            ],
+        });
+        vi.stubGlobal('window', { fb2k: native });
+        const { titleformat } = await import('./titleformat.js');
+
+        const result = await titleformat.evalFieldsBatch(
+            ['/indexed.flac', '/unindexed.flac', '/missing.flac'],
+            { bitrate: '%bitrate%' },
+        );
+
+        const rows = result?.results ?? [];
+        expect(rows[0]?.infoAvailable).toBe(true);
+        expect(rows[1]?.infoAvailable).toBe(false);
+        expect('infoAvailable' in (rows[1] as object)).toBe(true);
+        // Absent on a failed row, not coerced to `false`.
+        expect(rows[2]?.infoAvailable).toBeUndefined();
+        expect('infoAvailable' in (rows[2] as object)).toBe(false);
     });
 });

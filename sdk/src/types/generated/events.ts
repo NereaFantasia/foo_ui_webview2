@@ -13,8 +13,8 @@ import type { JsonObject } from '../json.js';
 
 // ── Hand-written overrides — see sdk/src/types/overrides/ ────────────────
 import type { CursorHiddenChangedPayload } from "../overrides/cursor.js";
-import type { ApiRegisteredPayload, ApiUnregisteredPayload, AppBeforeQuitPayload, AudioFullWaveformFailedPayload, AudioFullWaveformReadyPayload, AudioOutputDeviceChangedPayload, AudioReplaygainModeChangedPayload, AudioSpectrumPayload, HttpDownloadCompletePayload, HttpResponsePayload, JitQueueErrorPayload, JitQueuePreloadCompletePayload, LibraryGetAllResultPayload, LibraryItemsAddedPayload, LibraryItemsModifiedPayload, LibraryItemsRemovedPayload, MetadataWriteCompletePayload, MetadbChangedPayload, PanelBlurPayload, PanelFocusPayload, PanelInitializedPayload, PanelVisibilityChangedPayload, PlaybackCursorFollowChangedPayload, PlaybackDynamicInfoPayload, PlaybackDynamicInfoTrackPayload, PlaybackEditedPayload, PlaybackFollowCursorChangedPayload, PlaybackItemPlayedPayload, PlaybackQueueChangedPayload, PlaybackStartingPayload, PlaybackStateChangedPayload, PlaybackStopAfterCurrentChangedPayload, PlaybackStoppedPayload, PlaybackTrackChangedPayload, PlaylistCreatedPayload, PlaylistRenamedPayload, PluginRegisteredPayload, PluginUnregisteredPayload, StateChangedPayload, StateDeletedPayload, TrayMenuItemClickedPayload, UiToastPayload, WindowAlwaysOnTopChangedPayload } from "../overrides/events.js";
-export type { ApiRegisteredPayload, ApiUnregisteredPayload, AppBeforeQuitPayload, AudioFullWaveformFailedPayload, AudioFullWaveformReadyPayload, AudioOutputDeviceChangedPayload, AudioReplaygainModeChangedPayload, AudioSpectrumPayload, CursorHiddenChangedPayload, HttpDownloadCompletePayload, HttpResponsePayload, JitQueueErrorPayload, JitQueuePreloadCompletePayload, LibraryGetAllResultPayload, LibraryItemsAddedPayload, LibraryItemsModifiedPayload, LibraryItemsRemovedPayload, MetadataWriteCompletePayload, MetadbChangedPayload, PanelBlurPayload, PanelFocusPayload, PanelInitializedPayload, PanelVisibilityChangedPayload, PlaybackCursorFollowChangedPayload, PlaybackDynamicInfoPayload, PlaybackDynamicInfoTrackPayload, PlaybackEditedPayload, PlaybackFollowCursorChangedPayload, PlaybackItemPlayedPayload, PlaybackQueueChangedPayload, PlaybackStartingPayload, PlaybackStateChangedPayload, PlaybackStopAfterCurrentChangedPayload, PlaybackStoppedPayload, PlaybackTrackChangedPayload, PlaylistCreatedPayload, PlaylistRenamedPayload, PluginRegisteredPayload, PluginUnregisteredPayload, StateChangedPayload, StateDeletedPayload, TrayMenuItemClickedPayload, UiToastPayload, WindowAlwaysOnTopChangedPayload };
+import type { ApiRegisteredPayload, ApiUnregisteredPayload, AppBeforeQuitPayload, AudioFullWaveformFailedPayload, AudioFullWaveformReadyPayload, AudioOutputDeviceChangedPayload, AudioReplaygainModeChangedPayload, AudioSpectrumPayload, FileOpCompletePayload, FileOpProgressPayload, HttpDownloadCompletePayload, HttpResponsePayload, JitQueueErrorPayload, JitQueuePreloadCompletePayload, LibraryGetAllResultPayload, LibraryItemsAddedPayload, LibraryItemsModifiedPayload, LibraryItemsRemovedPayload, MetadataProbeCompletePayload, MetadataProbeProgressPayload, MetadataWriteCompletePayload, MetadbChangedPayload, PanelBlurPayload, PanelFocusPayload, PanelInitializedPayload, PanelVisibilityChangedPayload, PlaybackCursorFollowChangedPayload, PlaybackDynamicInfoPayload, PlaybackDynamicInfoTrackPayload, PlaybackEditedPayload, PlaybackFollowCursorChangedPayload, PlaybackItemPlayedPayload, PlaybackQueueChangedPayload, PlaybackStartingPayload, PlaybackStateChangedPayload, PlaybackStopAfterCurrentChangedPayload, PlaybackStoppedPayload, PlaybackTrackChangedPayload, PlaylistCreatedPayload, PlaylistRenamedPayload, PluginRegisteredPayload, PluginUnregisteredPayload, StateChangedPayload, StateDeletedPayload, TrayMenuItemClickedPayload, UiToastPayload, WindowAlwaysOnTopChangedPayload } from "../overrides/events.js";
+export type { ApiRegisteredPayload, ApiUnregisteredPayload, AppBeforeQuitPayload, AudioFullWaveformFailedPayload, AudioFullWaveformReadyPayload, AudioOutputDeviceChangedPayload, AudioReplaygainModeChangedPayload, AudioSpectrumPayload, CursorHiddenChangedPayload, FileOpCompletePayload, FileOpProgressPayload, HttpDownloadCompletePayload, HttpResponsePayload, JitQueueErrorPayload, JitQueuePreloadCompletePayload, LibraryGetAllResultPayload, LibraryItemsAddedPayload, LibraryItemsModifiedPayload, LibraryItemsRemovedPayload, MetadataProbeCompletePayload, MetadataProbeProgressPayload, MetadataWriteCompletePayload, MetadbChangedPayload, PanelBlurPayload, PanelFocusPayload, PanelInitializedPayload, PanelVisibilityChangedPayload, PlaybackCursorFollowChangedPayload, PlaybackDynamicInfoPayload, PlaybackDynamicInfoTrackPayload, PlaybackEditedPayload, PlaybackFollowCursorChangedPayload, PlaybackItemPlayedPayload, PlaybackQueueChangedPayload, PlaybackStartingPayload, PlaybackStateChangedPayload, PlaybackStopAfterCurrentChangedPayload, PlaybackStoppedPayload, PlaybackTrackChangedPayload, PlaylistCreatedPayload, PlaylistRenamedPayload, PluginRegisteredPayload, PluginUnregisteredPayload, StateChangedPayload, StateDeletedPayload, TrayMenuItemClickedPayload, UiToastPayload, WindowAlwaysOnTopChangedPayload };
 
 /**
  * Payload of the `audio:dspPresetChanged` event (no fields).
@@ -482,6 +482,8 @@ export type FBEventName =
     | "audio:spectrum"
     | "audio:stream"
     | "cursor:hiddenChanged"
+    | "file:opComplete"
+    | "file:opProgress"
     | "http:downloadComplete"
     | "http:response"
     | "jitQueue:error"
@@ -499,6 +501,8 @@ export type FBEventName =
     | "menu:select"
     | "menu:show"
     | "menu:valueChanged"
+    | "metadata:probeComplete"
+    | "metadata:probeProgress"
     | "metadata:writeComplete"
     | "metadb:changed"
     | "panel:blur"
@@ -584,6 +588,8 @@ export interface FBEventPayloadMap {
     "audio:spectrum": AudioSpectrumPayload;
     "audio:stream": AudioStreamPayload;
     "cursor:hiddenChanged": CursorHiddenChangedPayload;
+    "file:opComplete": FileOpCompletePayload;
+    "file:opProgress": FileOpProgressPayload;
     "http:downloadComplete": HttpDownloadCompletePayload;
     "http:response": HttpResponsePayload;
     "jitQueue:error": JitQueueErrorPayload;
@@ -601,6 +607,8 @@ export interface FBEventPayloadMap {
     "menu:select": MenuSelectPayload;
     "menu:show": MenuShowPayload;
     "menu:valueChanged": MenuValueChangedPayload;
+    "metadata:probeComplete": MetadataProbeCompletePayload;
+    "metadata:probeProgress": MetadataProbeProgressPayload;
     "metadata:writeComplete": MetadataWriteCompletePayload;
     "metadb:changed": MetadbChangedPayload;
     "panel:blur": PanelBlurPayload;

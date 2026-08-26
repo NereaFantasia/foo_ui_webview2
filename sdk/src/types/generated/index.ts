@@ -120,13 +120,17 @@ import type {
     DspSetChainParams,
     EventEmitParams,
     EventEmitToParams,
+    FileCancelOpParams,
     FileCopyParams,
+    FileCopyAsyncParams,
     FileDeleteParams,
+    FileDeleteAsyncParams,
     FileExistsParams,
     FileGetInfoParams,
     FileListParams,
     FileMkdirParams,
     FileMoveParams,
+    FileMoveAsyncParams,
     FileReadParams,
     FileRenameParams,
     FileWriteParams,
@@ -189,7 +193,9 @@ import type {
     MenuRunMainMenuCommandParams,
     MenuShowParams,
     MenuShowNativePopupParams,
+    MetadataCancelProbeParams,
     MetadataEmbedArtworkParams,
+    MetadataProbeBatchAsyncParams,
     MetadataReadParams,
     MetadataReadBatchParams,
     MetadataReadByPathParams,
@@ -549,13 +555,17 @@ import type {
     DspSetChainResponse,
     EventEmitResponse,
     EventEmitToResponse,
+    FileCancelOpResponse,
     FileCopyResponse,
+    FileCopyAsyncResponse,
     FileDeleteResponse,
+    FileDeleteAsyncResponse,
     FileExistsResponse,
     FileGetInfoResponse,
     FileListResponse,
     FileMkdirResponse,
     FileMoveResponse,
+    FileMoveAsyncResponse,
     FileReadResponse,
     FileRenameResponse,
     FileWriteResponse,
@@ -618,7 +628,9 @@ import type {
     MenuRunMainMenuCommandResponse,
     MenuShowResponse,
     MenuShowNativePopupResponse,
+    MetadataCancelProbeResponse,
     MetadataEmbedArtworkResponse,
+    MetadataProbeBatchAsyncResponse,
     MetadataReadResponse,
     MetadataReadBatchResponse,
     MetadataReadByPathResponse,
@@ -978,13 +990,17 @@ export interface ApiMethodMap {
     "dsp.setChain": [DspSetChainParams, DspSetChainResponse];
     "event.emit": [EventEmitParams, EventEmitResponse];
     "event.emitTo": [EventEmitToParams, EventEmitToResponse];
+    "file.cancelOp": [FileCancelOpParams, FileCancelOpResponse];
     "file.copy": [FileCopyParams, FileCopyResponse];
+    "file.copyAsync": [FileCopyAsyncParams, FileCopyAsyncResponse];
     "file.delete": [FileDeleteParams, FileDeleteResponse];
+    "file.deleteAsync": [FileDeleteAsyncParams, FileDeleteAsyncResponse];
     "file.exists": [FileExistsParams, FileExistsResponse];
     "file.getInfo": [FileGetInfoParams, FileGetInfoResponse];
     "file.list": [FileListParams, FileListResponse];
     "file.mkdir": [FileMkdirParams, FileMkdirResponse];
     "file.move": [FileMoveParams, FileMoveResponse];
+    "file.moveAsync": [FileMoveAsyncParams, FileMoveAsyncResponse];
     "file.read": [FileReadParams, FileReadResponse];
     "file.rename": [FileRenameParams, FileRenameResponse];
     "file.write": [FileWriteParams, FileWriteResponse];
@@ -1047,7 +1063,9 @@ export interface ApiMethodMap {
     "menu.runMainMenuCommand": [MenuRunMainMenuCommandParams, MenuRunMainMenuCommandResponse];
     "menu.show": [MenuShowParams, MenuShowResponse];
     "menu.showNativePopup": [MenuShowNativePopupParams, MenuShowNativePopupResponse];
+    "metadata.cancelProbe": [MetadataCancelProbeParams, MetadataCancelProbeResponse];
     "metadata.embedArtwork": [MetadataEmbedArtworkParams, MetadataEmbedArtworkResponse];
+    "metadata.probeBatchAsync": [MetadataProbeBatchAsyncParams, MetadataProbeBatchAsyncResponse];
     "metadata.read": [MetadataReadParams, MetadataReadResponse];
     "metadata.readBatch": [MetadataReadBatchParams, MetadataReadBatchResponse];
     "metadata.readByPath": [MetadataReadByPathParams, MetadataReadByPathResponse];

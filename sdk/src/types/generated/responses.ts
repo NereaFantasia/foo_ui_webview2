@@ -901,6 +901,7 @@ export interface DndGetPathsAsyncResponse {
     code?: unknown;
     sessionId?: string;
     paths?: unknown[];
+    resolvedPaths?: unknown[];
 }
 
 /**
@@ -1020,13 +1021,37 @@ export interface EventEmitToResponse {
 }
 
 /**
+ * Response from `file.cancelOp`.
+ */
+export interface FileCancelOpResponse {
+    success: boolean;
+    error?: unknown;
+    code?: unknown;
+    cancelled?: boolean;
+}
+
+/**
  * Response from `file.copy`.
  */
 export interface FileCopyResponse {
     success: boolean;
-    error?: string;
+    error?: unknown;
+    code?: unknown;
     source?: string;
     destination?: string;
+    details?: JsonObject;
+}
+
+/**
+ * Response from `file.copyAsync`.
+ */
+export interface FileCopyAsyncResponse {
+    success: boolean;
+    error?: unknown;
+    code?: unknown;
+    operationId?: string;
+    /** int64 — may lose precision above 2^53 */
+    totalCount?: number;
 }
 
 /**
@@ -1034,7 +1059,21 @@ export interface FileCopyResponse {
  */
 export interface FileDeleteResponse {
     success: boolean;
-    error?: string;
+    error?: unknown;
+    code?: unknown;
+    details?: JsonObject;
+}
+
+/**
+ * Response from `file.deleteAsync`.
+ */
+export interface FileDeleteAsyncResponse {
+    success: boolean;
+    error?: unknown;
+    code?: unknown;
+    operationId?: string;
+    /** int64 — may lose precision above 2^53 */
+    totalCount?: number;
 }
 
 /**
@@ -1042,10 +1081,12 @@ export interface FileDeleteResponse {
  */
 export interface FileExistsResponse {
     success?: boolean;
-    error?: string;
+    error?: unknown;
+    code?: unknown;
     exists?: boolean;
     isFile?: boolean;
     isDirectory?: boolean;
+    details?: JsonObject;
 }
 
 /**
@@ -1053,7 +1094,8 @@ export interface FileExistsResponse {
  */
 export interface FileGetInfoResponse {
     success: boolean;
-    error?: string;
+    error?: unknown;
+    code?: unknown;
     exists?: boolean;
     isDirectory?: boolean;
     isFile?: boolean;
@@ -1063,6 +1105,7 @@ export interface FileGetInfoResponse {
     name?: string;
     extension?: string;
     parent?: string;
+    details?: JsonObject;
 }
 
 /**
@@ -1070,10 +1113,12 @@ export interface FileGetInfoResponse {
  */
 export interface FileListResponse {
     success: boolean;
-    error?: string;
+    error?: unknown;
+    code?: unknown;
     files?: JsonObject;
     directories?: JsonObject;
     items?: JsonObject;
+    details?: JsonObject;
 }
 
 /**
@@ -1081,9 +1126,11 @@ export interface FileListResponse {
  */
 export interface FileMkdirResponse {
     success: boolean;
-    error?: string;
+    error?: unknown;
+    code?: unknown;
     created?: boolean;
     message?: string;
+    details?: JsonObject;
 }
 
 /**
@@ -1091,9 +1138,23 @@ export interface FileMkdirResponse {
  */
 export interface FileMoveResponse {
     success: boolean;
-    error?: string;
+    error?: unknown;
+    code?: unknown;
     source?: string;
     destination?: string;
+    details?: JsonObject;
+}
+
+/**
+ * Response from `file.moveAsync`.
+ */
+export interface FileMoveAsyncResponse {
+    success: boolean;
+    error?: unknown;
+    code?: unknown;
+    operationId?: string;
+    /** int64 — may lose precision above 2^53 */
+    totalCount?: number;
 }
 
 /**
@@ -1101,10 +1162,12 @@ export interface FileMoveResponse {
  */
 export interface FileReadResponse {
     success: boolean;
-    error?: string;
+    error?: unknown;
+    code?: unknown;
     content?: string;
     size?: unknown;
     encoding?: string;
+    details?: JsonObject;
 }
 
 /**
@@ -1112,9 +1175,11 @@ export interface FileReadResponse {
  */
 export interface FileRenameResponse {
     success: boolean;
-    error?: string;
+    error?: unknown;
+    code?: unknown;
     oldPath?: string;
     newPath?: string;
+    details?: JsonObject;
 }
 
 /**
@@ -1122,8 +1187,10 @@ export interface FileRenameResponse {
  */
 export interface FileWriteResponse {
     success: boolean;
-    error?: string;
+    error?: unknown;
+    code?: unknown;
     bytesWritten?: unknown;
+    details?: JsonObject;
 }
 
 /**
@@ -1609,14 +1676,9 @@ export interface LibraryIsEnabledResponse {
 }
 
 /**
- * Response from `library.query`.
+ * Response from `library.query` (this API returns no payload).
  */
-export interface LibraryQueryResponse {
-    success: boolean;
-    error?: string;
-    tracks?: JsonObject;
-    total?: number;
-}
+export type LibraryQueryResponse = void;
 
 /**
  * Response from `library.refresh`.
@@ -1633,20 +1695,9 @@ export interface LibraryRescanResponse {
 }
 
 /**
- * Response from `library.search`.
+ * Response from `library.search` (this API returns no payload).
  */
-export interface LibrarySearchResponse {
-    success: boolean;
-    tracks: unknown[];
-    total: number;
-    /** int64 — may lose precision above 2^53 */
-    offset?: number;
-    /** int64 — may lose precision above 2^53 */
-    limit?: number;
-    items?: JsonObject;
-    hasMore?: boolean;
-    error?: string;
-}
+export type LibrarySearchResponse = void;
 
 /**
  * Response from `log.clear`.
@@ -1831,6 +1882,15 @@ export interface MenuShowNativePopupResponse {
 }
 
 /**
+ * Response from `metadata.cancelProbe`.
+ */
+export interface MetadataCancelProbeResponse {
+    success: boolean;
+    error?: string;
+    cancelled?: boolean;
+}
+
+/**
  * Response from `metadata.embedArtwork`.
  */
 export interface MetadataEmbedArtworkResponse {
@@ -1841,6 +1901,18 @@ export interface MetadataEmbedArtworkResponse {
     size?: number;
     savedTo?: string;
     results?: JsonObject;
+}
+
+/**
+ * Response from `metadata.probeBatchAsync`.
+ */
+export interface MetadataProbeBatchAsyncResponse {
+    success: boolean;
+    error?: unknown;
+    code?: unknown;
+    operationId?: string;
+    /** int64 — may lose precision above 2^53 */
+    totalCount?: number;
 }
 
 /**
@@ -3441,6 +3513,7 @@ export interface TitleformatEvalResponse {
     path?: string;
     pattern?: string;
     result?: string;
+    infoAvailable?: boolean;
 }
 
 /**
@@ -3463,6 +3536,7 @@ export interface TitleformatEvalFieldsResponse {
     success: boolean;
     error?: string;
     path?: string;
+    infoAvailable?: unknown;
 }
 
 /**
@@ -4560,13 +4634,17 @@ export interface ApiResponseMap {
     "dsp.setChain": DspSetChainResponse;
     "event.emit": EventEmitResponse;
     "event.emitTo": EventEmitToResponse;
+    "file.cancelOp": FileCancelOpResponse;
     "file.copy": FileCopyResponse;
+    "file.copyAsync": FileCopyAsyncResponse;
     "file.delete": FileDeleteResponse;
+    "file.deleteAsync": FileDeleteAsyncResponse;
     "file.exists": FileExistsResponse;
     "file.getInfo": FileGetInfoResponse;
     "file.list": FileListResponse;
     "file.mkdir": FileMkdirResponse;
     "file.move": FileMoveResponse;
+    "file.moveAsync": FileMoveAsyncResponse;
     "file.read": FileReadResponse;
     "file.rename": FileRenameResponse;
     "file.write": FileWriteResponse;
@@ -4629,7 +4707,9 @@ export interface ApiResponseMap {
     "menu.runMainMenuCommand": MenuRunMainMenuCommandResponse;
     "menu.show": MenuShowResponse;
     "menu.showNativePopup": MenuShowNativePopupResponse;
+    "metadata.cancelProbe": MetadataCancelProbeResponse;
     "metadata.embedArtwork": MetadataEmbedArtworkResponse;
+    "metadata.probeBatchAsync": MetadataProbeBatchAsyncResponse;
     "metadata.read": MetadataReadResponse;
     "metadata.readBatch": MetadataReadBatchResponse;
     "metadata.readByPath": MetadataReadByPathResponse;

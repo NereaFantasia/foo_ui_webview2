@@ -119,7 +119,7 @@ export const config = {
     /**
      * Full snapshot of the portable-config cache. Returns the
      * `{ success, items, configs, count }` envelope; `items` and
-     * `configs` reference the same map and are kept as legacy aliases.
+     * `configs` are interchangeable aliases of the same map.
      */
     getAll: () => bridge.invoke<ConfigGetAllResponse>('config.getAll'),
     export: () => bridge.invoke<ConfigExportResponse>('config.export'),

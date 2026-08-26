@@ -84,6 +84,8 @@ describe('metadata namespace (§5.6 default logger)', () => {
             'readBatch',
             'readByPath',
             'readRaw',
+            'probeBatchAsync',
+            'cancelProbe',
             'write',
             'writeBatch',
             'embedArtwork',
@@ -181,6 +183,72 @@ describe('metadata namespace (§5.6 default logger)', () => {
             path: '/missing.flac',
             success: false,
         });
+    });
+
+    // ── Cancellable batch probe ──────────────────────────────────────
+    //
+    // probeBatchAsync returns a dispatch receipt, not results; the results
+    // arrive on metadata:probeProgress / metadata:probeComplete. These tests
+    // pin the invoke payload and the receipt keys, since a wrapper that
+    // silently dropped `includeTags` or renamed `operationId` would leave the
+    // caller unable to correlate or cancel anything.
+
+    it('probeBatchAsync(paths) forwards paths and returns the dispatch receipt', async () => {
+        const native = makeNative();
+        native.invoke.mockResolvedValue({
+            success: true,
+            operationId: 'probe_deadbeef00000001',
+            totalCount: 2,
+        });
+        vi.stubGlobal('window', { fb2k: native });
+        const { metadata } = await import('./metadata.js');
+
+        const receipt = await metadata.probeBatchAsync([
+            '/a.flac',
+            '/album.cue|subsong:2',
+        ]);
+
+        expect(native.invoke).toHaveBeenCalledWith(
+            'metadata.probeBatchAsync',
+            { paths: ['/a.flac', '/album.cue|subsong:2'] },
+        );
+        expect(receipt?.operationId).toBe('probe_deadbeef00000001');
+        expect(receipt?.totalCount).toBe(2);
+    });
+
+    it('probeBatchAsync forwards includeTags when supplied', async () => {
+        const native = makeNative();
+        native.invoke.mockResolvedValue({
+            success: true,
+            operationId: 'probe_1',
+            totalCount: 1,
+        });
+        vi.stubGlobal('window', { fb2k: native });
+        const { metadata } = await import('./metadata.js');
+
+        await metadata.probeBatchAsync(['/a.flac'], { includeTags: false });
+
+        expect(native.invoke).toHaveBeenCalledWith(
+            'metadata.probeBatchAsync',
+            { paths: ['/a.flac'], includeTags: false },
+        );
+    });
+
+    it('cancelProbe(operationId) reports whether the run was still live', async () => {
+        const native = makeNative();
+        native.invoke.mockResolvedValue({ success: true, cancelled: false });
+        vi.stubGlobal('window', { fb2k: native });
+        const { metadata } = await import('./metadata.js');
+
+        const result = await metadata.cancelProbe('probe_gone');
+
+        expect(native.invoke).toHaveBeenCalledWith('metadata.cancelProbe', {
+            operationId: 'probe_gone',
+        });
+        // false covers both "already finished" and "never existed"; the
+        // wrapper must not turn that into a rejection.
+        expect(result?.success).toBe(true);
+        expect(result?.cancelled).toBe(false);
     });
 
     it('readByPath(path) returns the flat record shape (§5.3)', async () => {
