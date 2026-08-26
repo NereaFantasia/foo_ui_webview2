@@ -7,6 +7,54 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.13.0] - 2026-08-26
+
+> **Breaking changes**: `library.search` no longer duplicates its row array —
+> the host sends `tracks` only, and `LibrarySearchResponse.items` is now an
+> optional `@deprecated` field, so code that destructures `items` and calls
+> array methods on it stops type-checking under `strictNullChecks`. On the
+> type level, `dialog.confirm` now resolves with `{ response }` (the
+> previously declared `confirmed` flag was never populated by the host).
+> `file.*` error messages are standardized and no longer echo the rejected
+> path — parse `code` and `details` instead of `error` text. A parameter of
+> the wrong shape now reports `INVALID_PARAMS` rather than `PERMISSION_DENIED`.
+
+### Added
+
+- **Asynchronous file operations** — `file.copyAsync`, `file.moveAsync`,
+  `file.deleteAsync` and `file.cancelOp` run on a host worker thread and
+  return a `{ operationId, totalCount }` receipt; results arrive in batches
+  on `file:opProgress` followed by one `file:opComplete`. Directory entries
+  report once per entry after their whole tree is walked; at most 8
+  operations are in flight process-wide.
+- **Asynchronous metadata probing** — `metadata.probeBatchAsync` and
+  `metadata.cancelProbe`, with progress on `metadata:probeProgress` /
+  `metadata:probeComplete`. Each result carries `infoSource`
+  (`cached` / `direct` / `none`) and a per-path `failure` reason.
+- **Field projection** — `library.query` and `library.search` accept an
+  optional `fields` array naming the `TrackInfo` keys each returned row
+  should carry. An invalid selection resolves — never rejects — with
+  `{ success: false, code: 'INVALID_PARAMS' }`.
+- **Drag-and-drop path access** — `dnd.getCapabilities` reports what the
+  current window can deliver, `dnd.getPathsAsync` is the reliable way to
+  read real filesystem paths inside a `drop` handler, and shortcut (`.lnk`)
+  targets are exposed as a parallel `resolvedPaths` array.
+
+### Changed
+
+- `library.query` / `library.search` serialize off the host's main thread;
+  apart from the `items` removal above, both resolve the same shapes as
+  before. Large result sets no longer freeze the UI — page with
+  `offset` / `limit` or project with `fields` to keep single calls small.
+- The SMP compatibility layer fetches query hits in one call instead of
+  paging the whole library per 500 rows.
+
+### Deprecated
+
+- `LibrarySearchResponse.items` — hosts stopped sending it in 1.13.0; older
+  hosts still include it. Read `tracks`, which every host version sends on
+  every response shape.
+
 ## [1.12.0] - 2026-08-13
 
 > **Breaking changes**: the `dnd` drop-zone registry (`registerDropZone` /
@@ -665,7 +713,7 @@ component's JSDoc for the exact slot names.
 ## [1.5.0] - 2026-05-06
 
 Version realigned with the plugin DLL under the unified-versioning policy
-("SDK 版本与插件版本保持统一"). The numeric
+(the SDK version now always matches the component version). The numeric
 drop from `2.0.0` to `1.5.0` is a deliberate alignment with the plugin
 release cadence, **not** a regression of any SDK feature or behavior.
 
