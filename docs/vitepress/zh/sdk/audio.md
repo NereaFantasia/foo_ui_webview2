@@ -43,6 +43,8 @@ unsubscribeCustom();
 SDK `fb.audio.subscribeSpectrum()` 不暴露 `subscriptionId`。如果你需要显式控制订阅 ID、覆盖同名订阅，或做 caller 粒度调试，请改用 low-level `fb2k.invoke('audio.subscribeSpectrum', ...)`。
 :::
 
+## getSpectrum(options?)
+
 单次获取当前频谱数据（轮询模式）。仍需要先调用 `subscribeSpectrum` 启动可视化流。
 
 | 参数 | 类型 | 说明 |
@@ -61,6 +63,8 @@ console.log(result.bands);
 unsubscribe();
 ```
 
+## getWaveform(options?)
+
 获取当前播放流的短波形片段。需要先调用 `subscribeSpectrum` 启动可视化流。
 
 ::: warning 注意
@@ -75,6 +79,8 @@ fb.audio.subscribeSpectrum(() => {});
 const result = await fb.audio.getWaveform({ duration: 0.1 });
 console.log('波形数据:', result.waveform);
 ```
+
+## generateFullWaveform(path, options?)
 
 生成完整文件波形数据，支持后台解码、缓存和异步事件通知。适用于进度条概览、波形卡片和章节预览。
 
@@ -139,6 +145,8 @@ const result4 = await fb.audio.generateFullWaveform('E:\\Music\\song.flac', {
 调用者无需手动监听事件，直接 `await` 即可。
 :::
 
+## analyzeBPM(path, options?)
+
 分析文件 BPM。返回 `{bpm}`。
 
 | 参数 | 类型 | 说明 |
@@ -154,6 +162,8 @@ console.log(`BPM: ${result.bpm}`);
 const result2 = await fb.audio.analyzeBPM('E:\\Music\\song.flac', { forceAnalysis: true });
 ```
 
+## setChannelMode(mode)
+
 设置声道模式。无效的 `mode` 值会自动规范化为 `"default"`。
 
 | 参数 | 类型 | 说明 |
@@ -166,6 +176,8 @@ await fb.audio.setChannelMode('mono');
 const result = await fb.audio.setChannelMode('invalid'); // result.mode === "default"
 ```
 
+## getSpectrumDebugState()
+
 获取频谱系统内部调试状态。返回当前订阅列表、分发目标、FFT/FPS/Bands 参数、定时器状态等诊断信息。
 
 ```javascript
@@ -173,17 +185,13 @@ const debug = await fb.audio.getSpectrumDebugState();
 console.log(debug.subscriptions, debug.effectiveFps);
 ```
 
-## 补全方法参考
+## 其余方法
 
 ### getOutputInfo()
 
 签名：`fb.audio.getOutputInfo(): Promise<AudioOutputInfoResponse>`
 
-| 参数 | 类型 | 必填 | 说明 |
-| --- | --- | --- | --- |
-| - | - | - | 无参数 |
-
-返回值：当前输出设备、声道和采样相关信息。
+无参数。
 
 ```javascript
 const output = await fb.audio.getOutputInfo();
@@ -194,11 +202,7 @@ console.log(output.deviceName, output.sampleRate);
 
 签名：`fb.audio.getStreamInfo(): Promise<AudioStreamInfoResponse>`
 
-| 参数 | 类型 | 必填 | 说明 |
-| --- | --- | --- | --- |
-| - | - | - | 无参数 |
-
-返回值：当前播放流信息，如声道数、采样率或可视化流状态。
+无参数。
 
 ```javascript
 const stream = await fb.audio.getStreamInfo();
@@ -209,11 +213,7 @@ console.log(stream.channels, stream.sampleRate);
 
 签名：`fb.audio.isVisualizationAvailable(): Promise<{ available: boolean }>`
 
-| 参数 | 类型 | 必填 | 说明 |
-| --- | --- | --- | --- |
-| - | - | - | 无参数 |
-
-返回值：当前主机是否可提供可视化数据。
+无参数。
 
 ```javascript
 const { available } = await fb.audio.isVisualizationAvailable();
@@ -223,7 +223,7 @@ const { available } = await fb.audio.isVisualizationAvailable();
 
 签名：`fb.audio.subscribeStream(callback: StreamCallback, options?: AudioSubscribeStreamParams): () => void`
 
-启动已弃用的 raw stream 订阅并返回取消订阅函数。当前主机会拒绝 `audio.subscribeStream`，因此在主机接入流捕获能力之前回调不会触发。
+启动已弃用的 raw stream 订阅并返回取消订阅函数。当前宿主会拒绝 `audio.subscribeStream`，因此在宿主接入流捕获能力之前回调不会触发。
 
 ```javascript
 const unsubscribe = fb.audio.subscribeStream((chunk) => {
@@ -246,14 +246,10 @@ const result = await fb.audio.generateWaveform('C:\\Music\\song.flac');
 
 签名：`fb.audio.unsubscribeStream(): Promise<BaseResponse>`
 
-| 参数 | 类型 | 必填 | 说明 |
-| --- | --- | --- | --- |
-| - | - | - | 无参数 |
+无参数。
 
-返回值：停止 raw audio stream 订阅的操作结果。
-
-::: warning 已弃用且主机尚未实现
-`subscribeStream()` 与 `unsubscribeStream()` 已弃用。当前主机的 `audio.subscribeStream` 返回 `success: false`，且不会发出 `audio:stream`，因此在主机接入流捕获能力之前，订阅回调不会触发。
+::: warning 已弃用且宿主尚未实现
+`subscribeStream()` 与 `unsubscribeStream()` 已弃用。当前宿主的 `audio.subscribeStream` 返回 `success: false`，且不会发出 `audio:stream`，因此在宿主接入流捕获能力之前，订阅回调不会触发。
 :::
 
 ```javascript

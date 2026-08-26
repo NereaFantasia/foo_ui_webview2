@@ -1,17 +1,17 @@
 # 权限系统
 
-涉及文件路径的 Bridge API 会先由 BridgeCore 的路径安全 spec 校验；非法路径直接返回 `PERMISSION_DENIED`，不会进入文件系统或 foobar2000 SDK 的路径副作用。
+涉及文件路径的 Bridge API 会先由 BridgeCore 的路径安全 spec 校验，被拒的请求不会触及文件系统，也不会触发 foobar2000 SDK 的路径副作用。路径被安全策略拒绝返回 `PERMISSION_DENIED`；参数形状或类型不对返回 `INVALID_PARAMS`。
 
 权威计数来自当前 `src/api/**` 中 `RegisterApi` 路径安全 spec（形态为 `{ param, SecurityLevel::... }`）：
 
 | 级别 | spec 条数 | 含义 |
 | --- | ---: | --- |
-| `Read` | 9 | 普通文件系统只读校验 |
+| `Read` | 10 | 普通文件系统只读校验 |
 | `Write` | 1 | 严格写入目标（配置/临时目录策略） |
-| `MediaRead` | 40 | 媒体上下文只读校验 |
+| `MediaRead` | 41 | 媒体上下文只读校验 |
 | `MediaWrite` | 10 | 媒体上下文写校验 |
-| `FileWrite` | 7 | 通用文件写入（`file.*`） |
-| **合计** | **67** | **64 个唯一 API** |
+| `FileWrite` | 11 | 通用文件写入（`file.*`） |
+| **合计** | **73** | **68 个唯一 API** |
 
 ## 六级权限模型
 
@@ -22,7 +22,7 @@
 | `Write` | 严格写入目标 | 仅允许 PathSecurity 接受的配置/临时等写入目标 |
 | `MediaRead` | 读取媒体元数据/内容 | 先走 Read 规则；媒体库/播放列表信任仅作为 Read 拒绝后的回退 |
 | `MediaWrite` | 修改媒体文件 | 独立校验链：保护目录黑名单，再按严格写入目标／媒体库或播放列表成员／媒体库监视目录／与受信音频同目录的伴生文件依次放行。**仅仅位于非系统盘不构成放行理由** |
-| `FileWrite` | 通用文件写入（`file.*`） | 独立校验链，并非 `MediaWrite` 超集：黑名单后按严格写入目标／盘符寻址的非系统盘（UNC 不在此列）／媒体库或播放列表成员依次放行——不含监视目录与伴生文件两步。正是非系统盘放行让 `file.mkdir` 与 `file.write` 能创建新路径 |
+| `FileWrite` | 通用文件写入（`file.*`） | 独立校验链，并非 `MediaWrite` 超集：黑名单后按严格写入目标／媒体库监视目录／盘符寻址的非系统盘（UNC 不在此列）／媒体库或播放列表成员依次放行——不含伴生文件步。监视目录与非系统盘两步共同让 `file.mkdir` 与 `file.write` 能创建新路径 |
 
 ::: tip 权限层级关系
 `None < Read < Write` 是普通文件系统通道。
@@ -31,7 +31,7 @@
 :::
 
 ::: warning FileWrite 比 MediaWrite 宽
-`FileWrite` 接受非系统盘上的任意路径，是当前暴露面最宽的写通道。它之所以存在，是因为 `file.*` 操作的是任意文件而非媒体上下文中的文件，套用媒体写入规则会使新建文件与新建目录彻底不可能。审查主题时应优先审计这条通道。
+`FileWrite` 接受非系统盘上的任意路径，以及媒体库监视目录内的任意路径（含系统盘），是当前暴露面最宽的写通道。它之所以存在，是因为 `file.*` 操作的是任意文件而非媒体上下文中的文件，套用媒体写入规则会使新建文件与新建目录完全无法进行。审查主题时应优先审计这条通道。
 :::
 
 ## 错误响应
@@ -39,27 +39,42 @@
 ```json
 {
   "success": false,
-  "error": "Path rejected by security policy: C:\\Windows\\System32\\config.ini",
+  "error": "file.read: path security denied for 'path': Access denied: protected system path",
   "code": "PERMISSION_DENIED"
+}
+```
+
+被拒的路径本体不会回显。消息里只有方法名、出问题的参数（数组参数还带下标，形如 `items[2].destination`）和拒因，调用方据此能判断是哪个参数被拒，而宿主不会把文件系统位置泄漏到一个页面可能转发出去的 payload 里。
+
+```json
+{
+  "success": false,
+  "error": "file.read: param 'path' must be a string",
+  "code": "INVALID_PARAMS"
 }
 ```
 
 ```javascript
 const result = await fb2k.invoke('file.read', { path: somePath });
-if (!result.success && result.code === 'PERMISSION_DENIED') {
-  console.warn('路径被安全策略拒绝:', result.error);
+if (!result.success) {
+  if (result.code === 'PERMISSION_DENIED') {
+    console.warn('路径被安全策略拒绝:', result.error);
+  } else if (result.code === 'INVALID_PARAMS') {
+    console.warn('参数在进入 handler 前被拒:', result.error);
+  }
 }
 ```
 
 ## API 权限对照表
 
-### Read — 只读文件系统（9 条）
+### Read — 只读文件系统（10 条）
 
 | API | 参数 | 数组 | 嵌套键 | 说明 |
 | --- | --- | --- | --- | --- |
 | `artwork.getFolderImages` | `directory` | — | — | 权威源：`ArtworkApi.cpp` |
 | `clipboard.writeFiles` | `paths` | 是 | — | 权威源：`ClipboardApi.cpp` |
 | `file.copy` | `source` | — | — | 权威源：`FileApi.cpp` |
+| `file.copyAsync` | `items` | 是 | `source` | 权威源：`FileApi.cpp` |
 | `file.exists` | `path` | — | — | 权威源：`FileApi.cpp` |
 | `file.getInfo` | `path` | — | — | 权威源：`FileApi.cpp` |
 | `file.list` | `path` | — | — | 权威源：`FileApi.cpp` |
@@ -73,7 +88,7 @@ if (!result.success && result.code === 'PERMISSION_DENIED') {
 | --- | --- | --- | --- | --- |
 | `http.download` | `saveTo` | — | — | 权威源：`HttpApi.cpp` |
 
-### MediaRead — 读取媒体文件（40 条）
+### MediaRead — 读取媒体文件（41 条）
 
 | API | 参数 | 数组 | 嵌套键 | 说明 |
 | --- | --- | --- | --- | --- |
@@ -97,6 +112,7 @@ if (!result.success && result.code === 'PERMISSION_DENIED') {
 | `library.getByPath` | `path` | — | — | 权威源：`LibraryApi.cpp` |
 | `lyrics.exists` | `path` | — | — | 权威源：`LyricsApi.cpp` |
 | `lyrics.get` | `path` | — | — | 权威源：`LyricsApi.cpp` |
+| `metadata.probeBatchAsync` | `paths` | 是 | — | 权威源：`MetadataApi.cpp` |
 | `metadata.read` | `path` | — | — | 权威源：`MetadataApi.cpp` |
 | `metadata.readBatch` | `paths` | 是 | — | 权威源：`MetadataApi.cpp` |
 | `metadata.readByPath` | `path` | — | — | 权威源：`MetadataApi.cpp` |
@@ -137,19 +153,23 @@ if (!result.success && result.code === 'PERMISSION_DENIED') {
 `metadata.writeBatch` 的 `items` 是对象数组，系统会提取每个元素的 `path` 字段进行校验。
 :::
 
-### FileWrite — 通用文件写入（7 条）
+### FileWrite — 通用文件写入（11 条）
 
 | API | 参数 | 数组 | 嵌套键 | 说明 |
 | --- | --- | --- | --- | --- |
 | `file.copy` | `destination` | — | — | 权威源：`FileApi.cpp` |
+| `file.copyAsync` | `items` | 是 | `destination` | 权威源：`FileApi.cpp` |
 | `file.delete` | `path` | — | — | 权威源：`FileApi.cpp` |
+| `file.deleteAsync` | `paths` | 是 | — | 权威源：`FileApi.cpp` |
 | `file.mkdir` | `path` | — | — | 权威源：`FileApi.cpp` |
 | `file.move` | `destination` | — | — | 权威源：`FileApi.cpp` |
 | `file.move` | `source` | — | — | 权威源：`FileApi.cpp` |
+| `file.moveAsync` | `items` | 是 | `destination` | 权威源：`FileApi.cpp` |
+| `file.moveAsync` | `items` | 是 | `source` | 权威源：`FileApi.cpp` |
 | `file.rename` | `path` | — | — | 权威源：`FileApi.cpp` |
 | `file.write` | `path` | — | — | 权威源：`FileApi.cpp` |
 
-`file.copy` 的 `source` 走 `Read`、`destination` 走 `FileWrite`；`file.move` 两端均走 `FileWrite`。
+`file.copy` 的 `source` 走 `Read`、`destination` 走 `FileWrite`；`file.move` 两端均走 `FileWrite`。异步族沿用同一套分档：`file.copyAsync` 逐条校验 `items[].source`（`Read`）与 `items[].destination`（`FileWrite`），`file.moveAsync` 两个嵌套键都走 `FileWrite`，`file.deleteAsync` 的 `paths` 逐条走 `FileWrite`。逐条校验是 fail-fast：任一条被拒即整批失败返回 `PERMISSION_DENIED`，不派工。
 
 ## 自定义策略 API
 
@@ -217,26 +237,23 @@ MediaWrite 相对 MediaRead 增加的是黑名单：即使目标确实出现在�
 ### FileWrite
 
 FileWrite 走自己的校验链，并非 MediaWrite 的超集：通用拒绝与保护目录黑名单之后，
-依次按严格写入目标（配置目录 / 临时目录）、以盘符寻址的非系统盘（UNC 不在此列）、
-媒体库 / 播放列表上下文放行；MediaWrite 的监视目录与伴生文件两步在 FileWrite
-中不存在。
+依次按严格写入目标（配置目录 / 临时目录）、媒体库监视目录（`is_path_addable`——
+判配置而非成员性，因此新建路径与 UNC 监视目录同样放行）、以盘符寻址的非系统盘
+（UNC 不在此列）、媒体库 / 播放列表上下文放行；MediaWrite 的伴生文件步在
+FileWrite 中不存在。
 
 ::: warning FileWrite 放行任意非系统盘
 这是当前暴露面最宽的写通道，`file.delete` 与 `file.write` 因此会接受 `D:`、`E:`
 等盘上的任意目标。该放行之所以保留，是因为 `file.mkdir` 与 `file.write` 创建的
-路径按定义不可能预先存在于媒体库、监视目录或播放列表中，只走媒体上下文链会拒绝
-每一次调用。
+路径按定义不可能预先存在于媒体库或播放列表中，只按成员性放行会拒绝每一次调用。
+监视目录不同：`is_path_addable` 判的是配置而非成员性，监视目录内的新建路径不依
+赖本放行即可通过。
+
+**判据是 canonical 解析之后的盘符，不是调用方传入路径字面的盘符。** 若用户目录被
+junction / 符号链接重定向到非系统盘（例如 `C:\Users\<user>` → `E:\Users\<user>`，
+迁移过用户目录的机器上很常见），该目录整棵子树都以 `E:` 形态参与判定，从而落入本
+放行面 —— 尽管传入的路径以 `C:` 开头。放行与文件扩展名无关。审查主题时不能只看字
+面盘符，需按目标机器的实际重定向情况判断。
 :::
 
-## 统计
-
-| 权限级别 | spec 条数 | 该级别唯一 API 数 |
-| --- | ---: | ---: |
-| Read | 9 | 9 |
-| Write | 1 | 1 |
-| MediaRead | 40 | 39 |
-| MediaWrite | 10 | 10 |
-| FileWrite | 7 | 6 |
-| **合计** | **67** | **64** |
-
-以上计数由组件源码中的 C++ `RegisterApi` 路径安全 spec 动态生成。
+本页顶部的 spec 计数为人工维护，以组件源码中的 C++ `RegisterApi` 路径安全 spec 为准。

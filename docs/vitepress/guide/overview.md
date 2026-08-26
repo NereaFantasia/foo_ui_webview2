@@ -5,7 +5,7 @@
 **foo_ui_webview2** is a foobar2000 component that replaces the default user interface with WebView2, so you can build custom UIs with modern web technologies (HTML/CSS/JavaScript).
 
 ::: tip Migrating from Spider Monkey Panel (SMP)?
-v1.2.0 ships a full SMP compatibility layer, including:
+v1.2.0 ships an SMP compatibility layer, including:
 - **35 SMP event mappings** — SMP names such as `on_playback_new_track` work directly
 - **8 wrapper classes** — `FbMetadbHandle`, `FbTitleFormat`, `ContextMenuManager`, and more
 - **Full `fb` / `plman` objects** — sync properties, playback control, and playlist management

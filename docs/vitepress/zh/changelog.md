@@ -1,5 +1,86 @@
 # 更新日志
 
+## v1.13.0 (2026-08-26)
+
+::: warning 本版的破坏性变更
+以下四项可能需要修改代码：
+
+- **`library.search` 不再把行数组重复一份 `items`。** 响应此前把同一批行以 `items` 与 `tracks` 两个键各带一份，内容逐字节相同，现在只发 `tracks`——与 `library.query` 一直使用的键一致。读 `result.items` 的代码请改读 `result.tracks`；新旧宿主的每一种响应形状都带 `tracks`，因此先读 `tracks` 的代码在仍发送两份的旧宿主上同样成立。带行数据的 search 响应载荷就此减半。
+- **`dialog.confirm` 现在 resolve `{ response }`，而不是 `{ confirmed }`。** 原先声明的类型是错的：宿主一直返回的是所点按钮在 `buttons` 中的零基索引，从未返回过 `confirmed` 标志，读 `result.confirmed` 的 TypeScript 代码读的是从未被填充过的字段。默认按钮集为 `['OK', 'Cancel']`，因此 `0` 表示确认、`1` 表示取消。任务对话框创建时未带 `TDF_ALLOW_DIALOG_CANCELLATION`，所以 Esc 与关闭按钮都关不掉它，每个结果都来自一次真实的按钮点击；`-1` 只出现在宿主的兜底路径上——连普通消息框都显示不出来的时候。
+- **`file.*` 的错误消息变了，且被拒绝的路径不再回显。** 该命名空间内所有裸写的错误信封统一改走标准错误信封，`std::filesystem` 异常只外传 Win32 错误号——异常文本与出错路径不再进入 payload 和宿主日志。路径安全拒绝现在形如 `file.read: path security denied for 'path': Access denied: protected system path`：给出方法名、出错参数（数组参数带下标，如 `items[2].destination`）与策略原因，调用方能判断是哪个实参被拒，而宿主不会把一个文件系统位置泄漏到页面可能转发出去的 payload 里。此前解析 `result.error` 取路径或匹配特定措辞的代码，需改用 `result.code` 配合 `result.details`。
+- **参数形状不对现在返回 `INVALID_PARAMS`，不再是 `PERMISSION_DENIED`。** 路径安全装饰器此前把「路径被拒」与「实参格式错误」报在同一个 code 下。靠 `PERMISSION_DENIED` 分支去捕获类型错误的处理逻辑，将不再在那里收到它们。
+
+本版仍作为 minor 发布，与本项目的版本号惯例一致（见 1.6.0 与 1.12.0）。需要可控升级时请锁定精确版本号。
+:::
+
+### 异步文件操作
+
+- **新增 `file.copyAsync`、`file.moveAsync`、`file.deleteAsync` 与 `file.cancelOp`。** 实际工作在宿主 worker 线程上进行，复制一整张专辑不再像同步的 `file.copy` 那样冻结 UI。调用立即返回 `{ operationId, totalCount }` 回执；结果经 `file:opProgress` 陆续到达，最后由一个 `file:opComplete` 收尾。
+- 新事件 `file:opProgress` 与 `file:opComplete`（载荷：`operationId`、`op`、`done`、`total`、`results` / 三项计数与 `cancelled`）。结果是成批发送，绝不是每条一个事件：累积到 64 条待发或距上一批已过 100 ms 时发出，因此快速运行会收敛到约 `ceil(total / 64)` 个事件，而慢速运行则以额外事件换取持续推进的进度信号。`done / total` 可直接当进度分数用，最后一个不满批总在 `file:opComplete` 之前到达。
+- 每个请求条目上报一个结果，绝不是每个文件一个：目录条目在整棵树走完后才上报一次。每个结果按请求原样回显 `source`（以及 `destination`，`deleteAsync` 没有），`%变量%` 占位符原样保留不展开，因此可直接当查找键。`status` 取 `'ok'` / `'skipped'` / `'failed'`，`reason` 取自 `already-exists`、`not-found`、`permission`、`cross-volume`、`io-error` 与 `cancelled`。
+- **路径校验整批一致。** 任一条目未通过宿主的读或写检查，整个调用以 `PERMISSION_DENIED` 被拒且不产生 `operationId`——绝不会派发半批。`copyAsync` 按 `Read` 校验 `source`、按 `FileWrite` 校验 `destination`；`moveAsync` 两端都按 `FileWrite` 校验，因为 move 会删除源；`deleteAsync` 对每个路径按 `FileWrite` 校验。全进程最多 8 个操作同时进行。
+- copy 与 move 在目标已存在时行为不同：`copyAsync` 把目录合并进已存在的目录（其中已有的文件被跳过且不单独上报，该条目仍报 `status: 'ok'`），而 `moveAsync` 报 `skipped` / `already-exists`。`overwrite`（默认 `false`）只覆盖文件目标——Windows 无法原地替换目录，因此已存在的目录目标永不被替换。注意同步的 `file.move` 总是替换文件目标；异步形式不主动这么做。
+- 同卷内的 move 是一次重命名，无论文件多大都不花代价。跨卷时宿主回退为「先复制后删源」；该条目仍报 `status: 'ok'`，但带 `reason: 'cross-volume'`，让这份额外开销可见。
+- `deleteAsync` 默认 `moveToTrash: true`，它把每个路径交给 shell，因而需要主线程——这类删除在主线程上以 16 条一批进行并在批间让出。`moveToTrash: false` 在 worker 线程上删除，并且会删掉非空目录——同步的 `file.delete` 在该模式下拒绝这么做。
+- `file.cancelOp` 在批次中途生效，而不是等到批次末尾：copy 与 move 在一个文件之内停下，中止正在传输的文件并清除其半成品；delete 在下一个条目处停下。已完成的条目保留结果，其余每个条目都上报为 `skipped` / `cancelled`，且该次运行仍以带 `cancelled: true` 的 `file:opComplete` 收尾。关闭 popup 会取消该 popup 发起的操作；面板宿主没有这个钩子，因此其操作除显式取消外会跑到底。操作已结束或从未存在时返回 `cancelled: false`——这两种情况故意不作区分。
+- 只要发起调用的窗口还活着，两个事件都投递给它，这也正是 `results` 敢携带真实文件系统路径的前提。该窗口消失后宿主无法再解析它，会回退到主实例，因此迟到的事件可能出现在并未发起该操作的窗口里。有两条路径会跳过 `file:opComplete`——运行中宿主关闭，以及宿主侧意外失败——所以监听者若持有需要清理的状态，应自带超时，而不是无限期等它。
+
+### 元数据探测
+
+- **新增 `metadata.probeBatchAsync` 与 `metadata.cancelProbe`。** 落盘读在宿主 worker 线程上进行，几百个路径不再像 `metadata.readBatch` 那样卡住 UI。调用返回 `{ operationId, totalCount }` 回执；结果经 `metadata:probeProgress` 到达，最后由恰好一个 `metadata:probeComplete` 收尾。
+- 每条结果都上报信息来源——`infoSource: 'cached' | 'direct'`——这正是该端点对媒体库从未见过的文件有价值的原因。失败时按情况上报 `'not-found'` / `'unsupported-format'` / `'read-error'` 之一，而 `readBatch` 把这个区分合并成一个笼统的错误字符串。`includeTags`（默认 `true`）附上扁平标签表，上游键按 `readBatch` 的口径大写；只要技术信息时传 `false`。
+- 路径可带 `|subsong:N` 后缀、各自独立解析，并原样回显，因此可直接当查找键。与 `metadata.read` 不同，批量表面**不**认旧式 `#N` 子歌写法——它会把恰好以 `#<数字>` 结尾的无扩展名文件名切错。
+- 路径校验整批一致：任一路径未通过宿主的媒体读检查，整个调用以 `PERMISSION_DENIED` 被拒且不产生 `operationId`。不提供逐路径拒绝。
+- `metadata:probeProgress` 与文件事件用同一套「64 条或 100 ms」成批规则。`metadata:probeComplete` 总会到达，取消与失败路径上也一样。取消会中断正在进行的磁盘读而不是等它结束；尚未触及的路径永不上报，被中断的那个路径既不算成功也不算失败，因此取消的运行里 `successCount + failureCount` 会小于 `total`。
+
+### 拖放
+
+- **拖入的快捷方式现在会告诉你它指向哪里。** Windows 放进拖放文件列表的是 `.lnk` 文件本身，而 foobar2000 播不了它，因此每个路径来源现在都配了一个平行的快捷方式目标数组：`dnd:enter` / `dnd:drop` 载荷与 `dnd.getPathsAsync()` 上的 `resolvedPaths`，以及用于同步快照的新方法 `dnd.getResolvedPaths()`。两个数组长度恒定相等，因此 `paths.map((p, i) => targets[i] ?? p)` 即可得到可播列表。
+- 拿不到目标时该项为 `null`：路径不是快捷方式、快捷方式指向回收站一类 shell 命名空间对象而非文件、记录的目标太长无法完整取回（Windows 以 `MAX_PATH` 截断，而被截断的路径会指向另一个文件）、COM 不可用，或为保持投放响应性而跳过了解析。永远不会是空字符串，因此真值判断就够了。
+- 目标只说明快捷方式指向何处，不保证那个文件在。已失效的快捷方式上报其 `.lnk` 记录的路径而非 `null`——因为无论目标是否还存在，Windows 都会把那个路径交回来，而宿主在被拖放阻塞的线程上负担不起一次文件系统检查。非空项也可能指向已不存在的文件，请自行处理。只解析 `.lnk`——`.url`、`.library-ms` 与虚拟搜索结果都报 `null`。
+- 读 `resolvedPaths` 不产生任何文件系统访问：目标在拖放到达时已解析一次，因此 `getPathsAsync()` 只读宿主内存。
+- **已建档的限制** —— 页面侧快照只发布给顶层文档，因此 `dnd.getPaths()` 与 `dnd.getResolvedPaths()` 在 `<iframe>` 内返回空数组，且该槽位在这个文档的生命周期内一直是 `null`。被嵌入的页面若需要路径，须由主框架经 `postMessage` 转交。
+- 把曲目**拖出**窗口仍不支持，`dnd.startDrag` 继续 resolve `{ success: false, code: 'NOT_SUPPORTED' }`。一次实测已确定实现方案——它需要一条独立 STA 线程，因为在宿主主线程上执行拖出会让目标应用在整个手势期间冻结——但这项工作有意不放进本版。
+
+### 媒体库查询
+
+- **新增 `library.search` 与 `library.query` 的字段投影。** `library.search` 接受 `options.fields`，`library.query` 新增第四个 `fields` 参数。返回的每一行随后只持有所请求的键、别无其他，因此 `TrackInfo` 在运行时是局部视图，而声明类型仍是完整的。可用名是 19 个曲目键——`index`、`title`、`artist`、`album`、`albumArtist`、`genre`、`date`、`trackNumber`、`discNumber`、`duration`、`path`、`absolutePath`、`fileSize`、`bitrate`、`sampleRate`、`channels`、`codec`、`subsong`、`rating`——区分大小写匹配。省略该参数即返回全部 19 个。传入非数组、空数组、非字符串元素或未知名字都会 resolve（绝不 reject）`{ success: false, code: 'INVALID_PARAMS' }`，并在 `details.unknownFields` 回显出错的名字。
+- **`library.search` 与 `library.query` 现在在主线程之外做序列化**，并把结果直写到通道上，不再构建中间对象图。响应管线沿途不再深拷贝，零命中的查询会短路返回。除破坏性变更里列出的 `items` 移除外，JavaScript 契约不变：两者仍从同一个 promise resolve 同样的形状。
+- **Spider Monkey Panel 兼容层不再逐页重扫媒体库。** `fb.GetQueryItems` 此前按 500 条一页翻页，而 `library.search` 每次请求都重扫全库，于是几千条命中的查询要为每页付一次全库扫描——大库上是 160 次。现在改为先发一次单行探测取命中总数，再一次请求拉回全部命中，并把投影收窄到 `FbMetadbHandle` 实际会读的五个键。可观测的 handle 属性没有任何变化。代价：若两次调用之间媒体库发生变化，探测到的总数就过期了，期间新增的命中会被丢弃；媒体库被并发修改时不保证返回集合稳定。
+- **超大库的实务提示。** 这些改动去掉的是拷贝与载荷，不是产生这些行本身的成本。在六位数规模的库上，全字段全库查询仍会占用宿主主线程相当长的时间，主导项是交给页面的响应体量。不需要全部 19 个键时请用 `fields` 收窄投影——这是目前最有效的单一手段。32 位宿主上还请留意峰值：全字段全库结果在解析期间会同时以多种形态存在，六位数规模的库可能瞬时达到数百 MB。
+
+### 标题格式化
+
+- **`titleformat.eval`、`evalBatch`、`evalFields` 与 `evalFieldsBatch` 现在上报 `infoAvailable`。** 宿主本就知道某曲目的 metadb 信息是否就绪，却把这个信号丢掉了，导致标签派生的输出可能静默出错。`infoAvailable: false` 意味着标签派生的值不可信。批量形式按行携带该标志，失败的行不带它。
+- 两个需要知道的边界：在 `evalFields` 形式下一个标志覆盖整份合并脚本，因此说不出是哪个具体字段受影响；它也**从不**覆盖 foo_playcount 虚拟字段。名字恰好叫 `infoAvailable` 的 `fields` 键会覆写该标志，这与 `path`、`success` 的既有行为一致。
+
+### 错误与权限
+
+- **`fb2k.invoke` 在子框架内现在立即失败。** 它以带 `code: 'NOT_SUPPORTED'` 的 `Error` reject，消息为 `fb2k.invoke is unavailable in subframes`，取代此前静默挂到 30 秒超时。分离式调用（`const { invoke } = fb2k`）仍以 rejection 形式暴露其 `TypeError`，而不是同步抛出。
+- 跨卷的**目录** move 现在返回 `NOT_SUPPORTED` 并带 `details.reason: 'cross-volume'`，而不是一个笼统的失败。跨卷的*文件* move 本就成功，因为底层重命名会静默改走复制。
+- 路径白名单与黑名单条目现在规范化到与判定侧一致的 canonical 真实路径形态。此前用等价但不同写法书写的条目——映射盘、junction、8.3 短名——匹配不上它本想覆盖的路径。
+- 拖入快捷方式、元数据探测与异步文件操作都已纳入参考手册的权限矩阵；其中的计数由 64 个 API 上的 67 条 spec 变为 68 个 API 上的 73 条。
+
+::: danger FileWrite 现在接受媒体库监视目录
+`FileWrite` 链——所有 `file.*` 写操作背后的通道——新增了一步媒体库监视目录判定，因此监视目录内的路径现在**即使在系统盘上也可写**，而此前只有「非系统盘」那一步才可能放行。`FileWrite` 本就是暴露给主题的最宽写通道，这次进一步加宽。若你审计主题，这是第一个该看的通道，而监视目录列表现在也属于它的攻击面。
+:::
+
+### 窗口与菜单
+
+- **菜单收起不再留下看不见的点击陷阱。** WebView 渲染面积现在与菜单关闭同步收敛，不会再留下一块残余透明区域，拦截本该落到下层页面的点击。
+
+### SDK
+
+- 异步文件表面的新导出类型：`FileOpEntry`、`FileOpAsyncOptions`、`FileDeleteAsyncOptions`，以及四个新事件的载荷类型（`FileOpProgressPayload`、`FileOpCompletePayload`、`MetadataProbeProgressPayload`、`MetadataProbeCompletePayload`）与配套联合类型（`FileOpKind`、`FileOpStatus`、`FileOpResultReason`、`MetadataProbeFailure`、`MetadataProbeInfoSource`）。
+- `dialog.openFile`、`saveFile` 与 `openFolder` 现在建档了各自的 resolve 形状（`{ canceled, filePaths }` / `{ canceled, filePath }` / `{ canceled, folderPath }`），取消时路径字段为空。
+- `dnd.getPathsAsync` 改按共享的会话路径形状标注类型，使 `resolvedPaths` 对 TypeScript 可见。`dnd.getResolvedPaths()` 以 `paths` 为基准补齐，因此早于该字段的宿主会返回长度正确的 null 数组，而不是一个会让按下标配对的循环静默错位的短数组。
+
+### 文档
+
+- 双语 API 参考里的每个参数表现在都带默认值列，通篇删除了只复读参数名的填充话术。
+- 必填列逐条对照 C++ handler 的空值检查核验，双语共修正约 50 处标错的参数。
+- `library.coverMaxSize` 的单位建档为 KB 而非字节。三张损坏的 `library` 返回字段表按宿主真实结构重建。修正了 12 处文档错误，含两处语义反转与若干失真描述。
+
 ## v1.12.0 (2026-08-13)
 
 ::: warning 本版的破坏性变更
@@ -10,7 +91,7 @@
 - **窗口尺寸约束改作用于调用方窗口。** `window.setMinSize` / `getMinSize` / `setMaxSize` / `getMaxSize` / `setResizable` / `isResizable` 这六个端点不再回退到主窗口，解析不到目标时调用失败。依赖旧回退行为的 popup，实际约束的是主窗口。
 - **`DiscoveryContextMenuCommand` 不再是类型别名。** 读取右键菜单命令的 `path` / `isDynamic` / `subGuid` 不再通过类型检查——这些字段从未被填充过。
 
-本版仍作为 minor 发布：本项目的版本轴历史上已有 minor 版本承载破坏性变更的先例（见 1.6.0）。需要可控升级时请锁定精确版本号。
+本版仍作为 minor 发布：本项目的版本号历史上已有 minor 版本承载破坏性变更的先例（见 1.6.0）。需要可控升级时请锁定精确版本号。
 :::
 
 ### 拖放
@@ -32,7 +113,7 @@
 
 ### 自绘菜单
 
-- **逐调用呈现选项。** `menu.show` / `menu.popup` 新增第三个 `MenuPopupOptions` 参数，调用方未传的键不会发送，宿主保留自身默认值：`windowModel`（默认 `'fullscreen'`，可选 `'contentSized'`——把根菜单与一级子菜单绘制为按内容测量的独立紧凑窗口，每块面板各自承载真实 DWM 背景材质与系统窗口阴影；右键菜单推荐用此模型）；`css`（至多 256 KiB）/ `cssReplace` 样式接管；`backdrop`（默认 `'acrylic'`，可选 `'mica'` / `'mica-alt'` / `'none'`）与 `backdropDarkMode`（默认 `true`）；`closeAnimationMs`（默认 `0`，钳制到 `0..1000`）退出淡出时长。
+- **按调用指定菜单外观。** `menu.show` / `menu.popup` 新增第三个 `MenuPopupOptions` 参数，调用方未传的键不会发送，宿主保留自身默认值：`windowModel`（默认 `'fullscreen'`，可选 `'contentSized'`——把根菜单与一级子菜单绘制为按内容测量的独立紧凑窗口，每块面板各自承载真实 DWM 背景材质与系统窗口阴影；右键菜单推荐用此模型）；`css`（至多 256 KiB）/ `cssReplace` 样式接管；`backdrop`（默认 `'acrylic'`，可选 `'mica'` / `'mica-alt'` / `'none'`）与 `backdropDarkMode`（默认 `true`）；`closeAnimationMs`（默认 `0`，钳制到 `0..1000`）退出淡出时长。
 - **富条目。** `MenuPopupItem.type` 新增 `'nowplaying'`、`'rating'`、`'slider'`、`'segmented'` 及其配套字段（`value`、`min` / `max` / `orientation`、`segments`、`cover` / `title` / `subtitle`），任意行可用 `iconSvg` 内联单色图标。图标经运行时允许列表消毒；非法或超限的图标被丢弃，不会使该行失败。
 - **新事件 `menu:valueChanged`** 以 `{ menuId, itemId, value }` 上报评分、滑杆或分段控件的变化并保持菜单开启；普通行仍经 `menu:select` 上报并关闭菜单。`menu.popup` 只在选择或取消时 resolve，菜单含值控件时请单独订阅此事件。
 - **修复** —— 失焦关闭现在可靠生效；`contentSized` 模型下池化子菜单窗口不再出现空白内容。
@@ -60,7 +141,7 @@
 ### 托盘与菜单
 
 - **修复** —— 托盘菜单的「显示主窗口」不再依赖主页面。窗口一旦最小化或隐藏到托盘，页面会被深度挂起，任何 `tray:menuItemClicked` handler 都跑不起来，也就无法调用 `window.focus` 把窗口找回来；左键单击图标同样无声。原生项（`_sys_exit`、`playbackAction`）全程正常。
-- **行为变更** —— `showSystemItems`（默认 `true`）现在会在 bottom 分区的 `_sys_exit` 之前注入 `_sys_show`（「显示主窗口」）。该项原生恢复并前置主窗口，保留其最大化 / 正常放置状态；与所有原生项一致，它**不发** `tray:menuItemClicked`。因此使用 `showSystemItems: true` 的菜单会多出一行；传 `showSystemItems: false` 可退出该行为。
+- **行为变更** —— `showSystemItems`（默认 `true`）现在会在 bottom 分区的 `_sys_exit` 之前注入 `_sys_show`（「显示主窗口」）。该项原生恢复并前置主窗口，保留其最大化 / 正常放置状态；与所有原生项一致，它**不发** `tray:menuItemClicked`。因此使用 `showSystemItems: true` 的菜单会多出一行；传 `showSystemItems: false` 可关闭该行为。
 - `_sys_show` 与 `_sys_exit` 一同进入精确、大小写敏感的保留 id 允许列表：前端自绘「显示主窗口」行时可获得同样的原生路由并保留自己的 `label` / `icon`，对应注入项自动跳过。形似 id（如 `_sys_show_alt`、`_SYS_SHOW`）仍是普通用户项，且不会抑制注入。`playbackAction` 仍拒绝 `'show-main-window'` 与 `'exit'`——系统路由始终专属于保留 id。
 
 ### 窗口
@@ -86,7 +167,7 @@
 ### 托盘与菜单
 
 - 新增 `TrayMenuItem.playbackAction`（`'play-pause' | 'previous' | 'next' | 'stop'`）：自定义托盘项可声明由插件原生执行的播放动作。外观仍由调用方控制；声明项**不发** `tray:menuItemClicked`（同 Electron `role` / Tauri `PredefinedMenuItem`）。仅可用于 `type:'normal'` 的叶子项；取值非法，或写在分隔符 / 子菜单 / 富控件上时，整次 `setContextMenu` / `appendMenuItems` 调用会以 `INVALID_PARAMS` 失败，而不是静默忽略。不接受 `'exit'`。仅托盘菜单生效，对 `menu.show` 无效；`getMenuItems` 会原样回读该字段。主页面深挂起（最小化 / 托盘隐藏 / 锁屏）时要后台可靠的托盘播放控制，请用本字段或内置 `showPlaybackControls`；仅靠 click→`playback.*` 不保证执行。自 v1.11.0 起可用；需兼容旧宿主时先用 `config.getVersionInfo().plugin.version` 探测。
-- 文档澄清：`tray:menuItemClicked` 仅覆盖普通用户项与富值控件；内置播放 / 系统注入项与声明了 `playbackAction` 的项原生执行且不发点击事件，按钮态从 `playback:*` 反映
+- 文档澄清：`tray:menuItemClicked` 仅覆盖普通用户项与富值控件；内置播放 / 系统注入项与声明了 `playbackAction` 的项原生执行且不发点击事件，按钮状态请根据 `playback:*` 事件更新
 - `menu.getMainMenu` 新增 `locale`、`i18n`、`withAvailability` 三个选项。`locale` 默认 `'auto'`，保持宿主原生标签不翻译；`i18n: false` 完全关闭 `displayLabel` 翻译；`withAvailability` 默认 `true`，附带各子菜单的命令可用性计数。SDK 侧签名相应变为 `getMainMenu(root?, opts?)`。
 - 修复自定义菜单的 UTF-8 序列化与上下文模式选择。
 
@@ -146,7 +227,7 @@
 ## v1.9.0 (2026-06-18)
 
 - 托盘自绘菜单（`render: 'webview'`）普通/子菜单项支持图标：新增 `TrayMenuItem.iconSvg = { viewBox, content }`，内联单色 SVG、`currentColor` 跟随菜单文字色、左对齐固定 8px 间距；同层有图标时所有普通/子菜单项预留 16px 图标列以对齐文字（`native` 菜单忽略）
-- `tray.setContextMenu` 新增 `config.autoNowPlaying`：开启后 `nowplaying` 项的空字段（cover/title/subtitle）在右键弹出时由后端用当前曲目自动兜底（前端传了就用前端值，**前端优先**）；`cover` 兜底仅 `webview`，取当前曲目封面并缩略为缩略图，title/subtitle 走 `%title%`（自动回退文件名）/`%artist%`，兼容流媒体动态标题
+- `tray.setContextMenu` 新增 `config.autoNowPlaying`：开启后 `nowplaying` 项的空字段（cover/title/subtitle）在右键弹出时由后端用当前曲目自动补全（前端传了就用前端值，**前端优先**）；`cover` 补全仅 `webview`，取当前曲目封面并缩略为缩略图，title/subtitle 走 `%title%`（自动回退文件名）/`%artist%`，兼容流媒体动态标题
 - `TrayMenuItem.cover` 现额外支持 `http(s)://` URL（除既有 `data:` 与裸 base64 外），便于流媒体前端直传实时解析的封面
 - SDK 安装包同步到 `1.9.0`
 

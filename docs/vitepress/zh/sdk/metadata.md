@@ -4,19 +4,11 @@
 
 <!-- BEGIN AUTO-GENERATED SDK STUBS -->
 
-## SDK 方法 stub
-
-> 该区块用于补齐 SDK 视角方法覆盖，后续可人工扩展为完整示例与最佳实践。
+## 其余方法
 
 ### read()
 
-签名：`fb.metadata.read(...args): Promise<unknown>`
-
-| 参数 | 类型 | 必填 | 说明 |
-| --- | --- | --- | --- |
-| ...args | unknown[] | 视方法而定 | 透传给 SDK wrapper；详细类型以 `sdk/src/bridge/namespaces/` 源码和生成类型为准 |
-
-返回值：底层 `metadata.read` 调用结果。
+封装 `metadata.read`。参数与返回类型以 `foo-webview-sdk` 的 TypeScript 声明为准（IDE 悬浮提示或包内 `bridge.d.ts`），行为契约见 API 文档对应条目。
 
 ```javascript
 const result = await fb.metadata.read('E:\\Music\\song.flac');
@@ -24,13 +16,7 @@ const result = await fb.metadata.read('E:\\Music\\song.flac');
 
 ### readBatch()
 
-签名：`fb.metadata.readBatch(...args): Promise<unknown>`
-
-| 参数 | 类型 | 必填 | 说明 |
-| --- | --- | --- | --- |
-| ...args | unknown[] | 视方法而定 | 透传给 SDK wrapper；详细类型以 `sdk/src/bridge/namespaces/` 源码和生成类型为准 |
-
-返回值：底层 `metadata.readBatch` 调用结果。
+封装 `metadata.readBatch`。参数与返回类型以 `foo-webview-sdk` 的 TypeScript 声明为准（IDE 悬浮提示或包内 `bridge.d.ts`），行为契约见 API 文档对应条目。
 
 ```javascript
 const result = await fb.metadata.readBatch(['E:\\Music\\a.flac', 'E:\\Music\\b.flac']);
@@ -38,13 +24,7 @@ const result = await fb.metadata.readBatch(['E:\\Music\\a.flac', 'E:\\Music\\b.f
 
 ### readByPath()
 
-签名：`fb.metadata.readByPath(...args): Promise<unknown>`
-
-| 参数 | 类型 | 必填 | 说明 |
-| --- | --- | --- | --- |
-| ...args | unknown[] | 视方法而定 | 透传给 SDK wrapper；详细类型以 `sdk/src/bridge/namespaces/` 源码和生成类型为准 |
-
-返回值：底层 `metadata.readByPath` 调用结果（不会调用 `metadata.readRaw`）。
+封装 `metadata.readByPath`（不会调用 `metadata.readRaw`）。
 
 ```javascript
 const result = await fb.metadata.readByPath('E:\\Music\\song.flac');
@@ -52,13 +32,7 @@ const result = await fb.metadata.readByPath('E:\\Music\\song.flac');
 
 ### removeField()
 
-签名：`fb.metadata.removeField(...args): Promise<unknown>`
-
-| 参数 | 类型 | 必填 | 说明 |
-| --- | --- | --- | --- |
-| ...args | unknown[] | 视方法而定 | 透传给 SDK wrapper；详细类型以 `sdk/src/bridge/namespaces/` 源码和生成类型为准 |
-
-返回值：底层 `metadata.removeField` 调用结果。
+封装 `metadata.removeField`。参数与返回类型以 `foo-webview-sdk` 的 TypeScript 声明为准（IDE 悬浮提示或包内 `bridge.d.ts`），行为契约见 API 文档对应条目。
 
 ```javascript
 const result = await fb.metadata.removeField('E:\\Music\\song.flac', 'COMMENT');
@@ -66,13 +40,7 @@ const result = await fb.metadata.removeField('E:\\Music\\song.flac', 'COMMENT');
 
 ### removeTag()
 
-签名：`fb.metadata.removeTag(...args): Promise<unknown>`
-
-| 参数 | 类型 | 必填 | 说明 |
-| --- | --- | --- | --- |
-| ...args | unknown[] | 视方法而定 | 透传给 SDK wrapper；详细类型以 `sdk/src/bridge/namespaces/` 源码和生成类型为准 |
-
-返回值：底层 `metadata.removeTag` 调用结果。
+封装 `metadata.removeTag`。参数与返回类型以 `foo-webview-sdk` 的 TypeScript 声明为准（IDE 悬浮提示或包内 `bridge.d.ts`），行为契约见 API 文档对应条目。
 
 ```javascript
 const result = await fb.metadata.removeTag('E:\\Music\\song.flac', ['COMMENT', 'LYRICS']);
@@ -80,13 +48,7 @@ const result = await fb.metadata.removeTag('E:\\Music\\song.flac', ['COMMENT', '
 
 ### write()
 
-签名：`fb.metadata.write(...args): Promise<unknown>`
-
-| 参数 | 类型 | 必填 | 说明 |
-| --- | --- | --- | --- |
-| ...args | unknown[] | 视方法而定 | 透传给 SDK wrapper；详细类型以 `sdk/src/bridge/namespaces/` 源码和生成类型为准 |
-
-返回值：底层 `metadata.write` 调用结果。
+封装 `metadata.write`。参数与返回类型以 `foo-webview-sdk` 的 TypeScript 声明为准（IDE 悬浮提示或包内 `bridge.d.ts`），行为契约见 API 文档对应条目。
 
 ```javascript
 const result = await fb.metadata.write('E:\\Music\\song.flac', { COMMENT: 'nice' });
@@ -94,13 +56,7 @@ const result = await fb.metadata.write('E:\\Music\\song.flac', { COMMENT: 'nice'
 
 ### writeBatch()
 
-签名：`fb.metadata.writeBatch(...args): Promise<unknown>`
-
-| 参数 | 类型 | 必填 | 说明 |
-| --- | --- | --- | --- |
-| ...args | unknown[] | 视方法而定 | 透传给 SDK wrapper；详细类型以 `sdk/src/bridge/namespaces/` 源码和生成类型为准 |
-
-返回值：底层 `metadata.writeBatch` 调用结果。
+封装 `metadata.writeBatch`。参数与返回类型以 `foo-webview-sdk` 的 TypeScript 声明为准（IDE 悬浮提示或包内 `bridge.d.ts`），行为契约见 API 文档对应条目。
 
 ```javascript
 const result = await fb.metadata.writeBatch([
@@ -119,6 +75,77 @@ const raw = await fb.metadata.readRaw('E:\\Music\\album.flac', {
 	cueIndex: 2,
 });
 ```
+
+## 可取消的批量探测
+
+`readBatch()` 在宿主主线程上逐个读取，几百个未入库文件会把 UI 冻到读完为止，而且中途停不下来。`probeBatchAsync()` 做同一件事但没有这两个问题：读盘在 worker 线程、调用可取消、每个失败都有分类，不再合并成一条通用错误。
+
+它是新增面而非替代：`read()`、`readBatch()`、`readRaw()`、`readByPath()` 行为不变，而且这四个本来就能对未入库文件返回真实的 `duration` / `bitrate` / `sampleRate`。
+
+### probeBatchAsync(paths, options?)
+
+立即返回 `{ success, operationId, totalCount }`。结果通过 `metadata:probeProgress` 分批到达，最后必有且仅有一次 `metadata:probeComplete`。
+
+| 参数 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `paths` | `string[]` | 是 | 待探测路径，不能为空。每一条独立识别 `\|subsong:N` 后缀。 |
+| `options.includeTags` | `boolean` | 否 | 默认 `true`。为每条成功结果附带扁平标签表。 |
+
+每条结果是一个 `MetadataProbeResultItem`：
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `path` | `string` | 原样回显（含 `\|subsong:N`），可直接当查找键用。 |
+| `success` | `boolean` | 是否取到信息。 |
+| `infoSource` | `'cached' \| 'direct' \| 'none'` | `cached` 为 metadb 缓存命中，`direct` 为实际读盘，`none` 伴随失败出现。 |
+| `failure` | `'not-found' \| 'unsupported-format' \| 'read-error'` | 仅当 `success` 为 `false` 时存在。 |
+| `info` | `TrackTechnicalInfo` | `duration`、`bitrate`、`sampleRate`、`channels`、`codec`。 |
+| `tags` | `Record<string, string \| string[]>` | 键名大写的扁平表，与 `readBatch()` 一致。`includeTags` 为 `false` 时不返回。 |
+
+```javascript
+const off = fb.on('metadata:probeProgress', (event) => {
+	console.log(`${event.done} / ${event.total}`);
+	for (const item of event.results) {
+		if (item.success) {
+			console.log(item.path, item.infoSource, item.info.bitrate);
+		} else {
+			console.warn(item.path, item.failure);
+		}
+	}
+});
+
+fb.on('metadata:probeComplete', (event) => {
+	console.log('done', event.successCount, event.failureCount, event.cancelled);
+	off();
+});
+
+const receipt = await fb.metadata.probeBatchAsync(droppedPaths, {
+	includeTags: false,
+});
+```
+
+### cancelProbe(operationId)
+
+```javascript
+const { cancelled } = await fb.metadata.cancelProbe(receipt.operationId);
+```
+
+取消会打断正在进行的读盘，而不是等它读完。`metadata:probeComplete` 仍会到达并带 `cancelled: true`；还没轮到的路径不会出现在任何结果里，被打断的那一条既不计成功也不计失败。`cancelled` 为 `false` 表示该操作已结束或从未存在 —— 这两种情况故意不可区分。
+
+### 分批与事件量
+
+进度事件分批发射，绝不逐条：累计 64 条或距上次发射满 100ms，先到者触发。所以 10000 条全缓存命中的批次大约收敛到 `ceil(10000 / 64)` 个事件。读盘为主的批次会用更多事件换一个持续走动的进度信号 —— 100ms 上界换来的正是这个。最后一批一定排在 `metadata:probeComplete` 之前。
+
+### 路径校验是整批全过或整批拒绝
+
+`paths` 的每一条都在 handler 执行**之前**过宿主的媒体读策略。任一条不过，整个调用就以 `PERMISSION_DENIED` 被拒且不产生 `operationId` —— 没有部分执行，也没有逐条的 `invalid-path` 结果。需要容忍混合批次就在页面侧先自行过滤。
+
+同一道前置校验也会拒掉非数组的 `paths` 与非字符串的条目，但这类返回的是 `INVALID_PARAMS` 而不是 `PERMISSION_DENIED`。两者需要区别处理时按 `code` 分支。
+
+### 已知边界
+
+- 批量面不认 `read()` 仍然接受的 `#N` 旧式 subsong 写法。`#N` 会把「无扩展名且以 `#<数字>` 结尾」的文件名切错，而本端点的输入正是用户拖进来的任意文件名。请用 `|subsong:N`。
+- `read()` / `readBatch()` / `readRaw()` / `readByPath()` 判断要不要重新读盘时只看有没有 `title` 标签，所以「缓存里有 title 但没有 `bitrate`」不会被重读。`probeBatchAsync()` 改用宿主自己的 partial-info 标志，没有这个缺口；那四个 API 保持原样。
 
 ## 封面
 
@@ -153,7 +180,7 @@ await fb.metadata.embedArtworkFromDataUrl(
 `imageData` 只接受裸 Base64 payload，不能包含 `data:image/...;base64,`
 头、`file.write` 专用的 `base64:` 标记或 `fb2k://` URL。
 
-- `'embedded'` 通过主机标签容器写入；CUE 等格式可能不支持。
+- `'embedded'` 通过宿主标签容器写入；CUE 等格式可能不支持。
 - `'file'` 写入 `cover.<ext>` 等同目录图片，扩展名根据图片字节推断。
 - `['embedded', 'file']` 按 SDK 声明类型同时执行两个目标。
 - `filename` 只作用于文件输出；路径分隔符和 `..` 会被拒绝。

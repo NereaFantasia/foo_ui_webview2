@@ -22,8 +22,8 @@ const result = await fb2k.invoke('config.export');
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `default` | `json` | No | Optional; omitted by default. |
 | `key` | `string` | Yes | Configuration key to read; a missing or empty value returns `key is required`. |
+| `default` | `json` | No | Returned as `value` when the key is absent. |
 
 **Returns**: `{"error":"...","found":"...","key":"...","success":true,"value":"..."}`
 
@@ -47,7 +47,7 @@ const result = await fb2k.invoke('config.getActiveDspPreset');
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `parentGuid` | `string` | No | Optional; defaults to the advanced-preferences root branch. |
+| `parentGuid` | `string` | No | Defaults to the advanced-preferences root branch. |
 
 **Returns**: JSON object from the runtime handler.
 
@@ -243,7 +243,7 @@ await fb2k.invoke('config.resetAdvancedConfig', { guid: '{some-guid}' });
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `key` | `string` | Yes | Configuration key to write; a missing or empty value returns `key is required`. |
-| `value` | `json` | Yes | Required. |
+| `value` | `json` | Yes | Any JSON value. |
 
 **Returns**: `{"error":"...","key":"...","success":true}`
 
@@ -256,7 +256,7 @@ await fb2k.invoke('config.set', { key: 'theme', value: { mode: 'dark' } });
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `index` | `integer` | Yes | Required. |
+| `index` | `integer` | Yes | Preset index as reported by `config.getDspPresets`. |
 
 **Returns**: `{"success":true}`
 
@@ -270,7 +270,7 @@ await fb2k.invoke('config.setActiveDspPreset', { index: 0 });
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `guid` | `string` | Yes | Advanced-preferences entry GUID; a missing or empty value fails with `guid is required`. |
-| `value` | `boolean` | Yes | Required. |
+| `value` | `boolean` | Yes | Boolean for checkbox entries; string or number for string/integer entries (numbers are stringified, floats truncated for integer entries). |
 
 **Returns**: `{"success":true}`
 
@@ -281,10 +281,10 @@ await fb2k.invoke('config.setAdvancedConfigValue', { guid: '{some-guid}', value:
 ### config.setCursorFollowPlayback
 
 
-| Parameter | Type | Required | Description |
-| --- | --- | --- | --- |
-| `enabled` | `boolean` | No | Optional; default false. |
-| `value` | `boolean` | No | Optional; default false. |
+| Parameter | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `enabled` | `boolean` | No | `false` |  |
+| `value` | `boolean` | No | `false` | Compatibility alias of `enabled`. |
 
 **Returns**: `{"enabled":"...","success":true}`
 
@@ -295,10 +295,10 @@ await fb2k.invoke('config.setCursorFollowPlayback', { enabled: true });
 ### config.setOutputBuffer
 
 
-| Parameter | Type | Required | Description |
-| --- | --- | --- | --- |
-| `bufferLength` | `number` | No | Optional; default 0. |
-| `milliseconds` | `number` | No | Optional; default 0. |
+| Parameter | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `bufferLength` | `number` | No | `0` | Buffer in seconds; at least one of the two must be supplied (error otherwise), and `milliseconds` wins when both are present. |
+| `milliseconds` | `number` | No | `0` | Converted to seconds; effective range 0.05-2.0 s. |
 
 **Returns**: `{"success":true}`
 
@@ -324,10 +324,10 @@ await fb2k.invoke('config.setOutputDevice', { outputId: '{output-guid}', deviceI
 ### config.setPlaybackFollowCursor
 
 
-| Parameter | Type | Required | Description |
-| --- | --- | --- | --- |
-| `enabled` | `boolean` | No | Optional; default false. |
-| `value` | `boolean` | No | Optional; default false. |
+| Parameter | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `enabled` | `boolean` | No | `false` |  |
+| `value` | `boolean` | No | `false` | Compatibility alias of `enabled`. |
 
 **Returns**: `{"enabled":"...","success":true}`
 
@@ -338,11 +338,11 @@ await fb2k.invoke('config.setPlaybackFollowCursor', { enabled: true });
 ### config.setReplaygainMode
 
 
-| Parameter | Type | Required | Description |
-| --- | --- | --- | --- |
-| `mode` | `integer` | No | Optional; default -1. |
-| `sourceMode` | `string` | No | Optional; omitted by default. |
-| `value` | `integer` | No | Optional; default -1. |
+| Parameter | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `mode` | `integer` | No | `-1` | Numeric form: 0=none, 1=track, 2=album, 3=byPlaybackOrder. |
+| `sourceMode` | `string` | No | — | String form: `none`, `track`, `album`, `auto`, `byPlaybackOrder`. |
+| `value` | `integer` | No | `-1` | Compatibility alias of `mode`. |
 
 **Returns**: `{"code":"...","error":"...","mode":"...","success":true,"value":"..."}`
 

@@ -4,47 +4,27 @@
 
 <!-- BEGIN AUTO-GENERATED SDK STUBS -->
 
-## SDK 方法 stub
-
-> 该区块用于补齐 SDK 视角方法覆盖，后续可人工扩展为完整示例与最佳实践。
+## 其余方法
 
 ### getBatch()
 
-签名：`fb.playcount.getBatch(...args): Promise<unknown>`
-
-| 参数 | 类型 | 必填 | 说明 |
-| --- | --- | --- | --- |
-| ...args | unknown[] | 视方法而定 | 透传给 SDK wrapper；详细类型以 `sdk/src/bridge/namespaces/` 源码和生成类型为准 |
-
-返回值：底层 `playcount.getBatch` 调用结果。
+封装 `playcount.getBatch`。参数与返回类型以 `foo-webview-sdk` 的 TypeScript 声明为准（IDE 悬浮提示或包内 `bridge.d.ts`），行为契约见 API 文档对应条目。
 
 ```javascript
-const result = await fb.playcount.getBatch();
+await fb.playcount.getBatch(/* 参数见 TypeScript 声明 */);
 ```
 
 ### getStats()
 
-签名：`fb.playcount.getStats(...args): Promise<unknown>`
-
-| 参数 | 类型 | 必填 | 说明 |
-| --- | --- | --- | --- |
-| ...args | unknown[] | 视方法而定 | 透传给 SDK wrapper；详细类型以 `sdk/src/bridge/namespaces/` 源码和生成类型为准 |
-
-返回值：底层 `playcount.getStats` 调用结果。
+封装 `playcount.getStats`。参数与返回类型以 `foo-webview-sdk` 的 TypeScript 声明为准（IDE 悬浮提示或包内 `bridge.d.ts`），行为契约见 API 文档对应条目。
 
 ```javascript
-const result = await fb.playcount.getStats();
+await fb.playcount.getStats(/* 参数见 TypeScript 声明 */);
 ```
 
 ### set()
 
-签名：`fb.playcount.set(...args): Promise<unknown>`
-
-| 参数 | 类型 | 必填 | 说明 |
-| --- | --- | --- | --- |
-| ...args | unknown[] | 视方法而定 | 透传给 SDK wrapper；详细类型以 `sdk/src/bridge/namespaces/` 源码和生成类型为准 |
-
-返回值：底层 `playcount.set` 调用结果。该方法已弃用：宿主不支持直接修改播放次数，固定返回 `{ success: false }`，且不会应用 `count` 参数。评分应使用 `fb.rating.set()`，播放次数则由实际播放更新。
+封装 `playcount.set`。该方法已弃用：宿主不支持直接修改播放次数，固定返回 `{ success: false }`，且不会应用 `count` 参数。评分应使用 `fb.rating.set()`，播放次数则由实际播放更新。
 
 ```javascript
 const result = await fb.playcount.set();

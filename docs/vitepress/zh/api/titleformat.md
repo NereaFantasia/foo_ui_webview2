@@ -10,8 +10,8 @@ foobar2000 Titleformat 表达式求值。共 5 个 API。
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
-| `path` | `string` | 否 | 可选。 |
-| `pattern` | `string` | 否 | 可选。 |
+| `path` | `string` | 否 |  |
+| `pattern` | `string` | 否 | titleformat 表达式，如 `%artist% - %title%`。 |
 
 **返回值**: `{"error":"...","path":"...","pattern":"...","result":{},"success":true}`
 
@@ -30,8 +30,8 @@ console.log(r.result);
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
-| `fields` | `object` | 是 | 必填。 |
-| `path` | `string` | 否 | 可选。 |
+| `fields` | `object` | 是 | 字段名 → 表达式的映射对象。 |
+| `path` | `string` | 否 |  |
 
 **返回值**: `{"error":"...","path":"...","success":true}`
 
@@ -55,8 +55,8 @@ const r = await fb2k.invoke('titleformat.evalFields', {
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
-| `paths` | `array` | 是 | 必填。 |
-| `pattern` | `string` | 否 | 可选。 |
+| `paths` | `array` | 是 | 文件路径数组。 |
+| `pattern` | `string` | 否 | titleformat 表达式，只编译一次。 |
 
 **返回值**:
 
@@ -79,8 +79,8 @@ const r = await fb2k.invoke('titleformat.evalFields', {
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
-| `fields` | `object` | 是 | 必填。 |
-| `paths` | `array` | 是 | 必填。 |
+| `fields` | `object` | 是 | 字段名 → 表达式的映射对象。 |
+| `paths` | `array` | 是 | 文件路径数组。 |
 
 **返回值**:
 
@@ -121,7 +121,7 @@ const r = await fb2k.invoke('titleformat.evalFields', {
 }
 ```
 
-::: tip TIP
+::: tip
 完整字段列表包含标准标签、技术信息、文件信息、foo_playcount 字段和常用组合模式。
 :::
 

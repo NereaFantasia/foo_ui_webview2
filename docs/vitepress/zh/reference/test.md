@@ -23,4 +23,4 @@ const result = await fb2k.invoke('test.ping');
 // { "pong": true, "timestamp": 1234567890 }
 ```
 
-`timestamp` 为主机侧 Unix 纪元秒。
+`timestamp` 为宿主侧的 Unix 时间戳（秒）。

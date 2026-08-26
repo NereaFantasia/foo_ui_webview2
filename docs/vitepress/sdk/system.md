@@ -49,11 +49,11 @@ if (r.registered) { /* ... */ }
 
 ## getTheme() / getDPI() / getLocale()
 
-`getTheme()` returns `{ theme: string }`, `getDPI()` returns `{ dpi: number }`, and `getLocale()` returns `{ locale: string }`.
+`getTheme()` returns `{ darkMode, isDark, accentColor, transparency }`, `getDPI()` returns `{ dpi, scale }`, and `getLocale()` returns `{ locale: string }`.
 
 ```javascript
-const { theme } = await fb.system.getTheme();
-document.documentElement.dataset.theme = theme;
+const { isDark } = await fb.system.getTheme();
+document.documentElement.dataset.theme = isDark ? 'dark' : 'light';
 
 const { dpi } = await fb.system.getDPI();
 const { locale } = await fb.system.getLocale();
@@ -62,7 +62,7 @@ console.log(`DPI: ${dpi}; locale: ${locale}`);
 
 <!-- BEGIN AUTO-GENERATED SDK STUBS -->
 
-## SDK method stubs
+## Additional methods
 
 > This block completes SDK method coverage and may later be expanded with richer examples and guidance.
 

@@ -9,7 +9,7 @@ const playlists = await fb.playlist.getAll();
 // [{index: 0, name: "Default", trackCount: 100, isActive: true, isPlaying: false, isLocked: false, isAutoplaylist: false}, ...]
 ```
 
-::: tip TIP
+::: tip
 v1.1.18 起 `getAll()` 不再返回 `duration` 字段。如需 duration，请使用 `fb.playlist.getActive()` 或 `fb.playlist.getPlaying()`。
 :::
 
@@ -369,13 +369,15 @@ await fb.playlist.replaceAllAndPlay({
 });
 ```
 
+## reorderPlaylists(order)
+
 重新排序播放列表。`order` 为新顺序的索引数组。
 
 ```javascript
 await fb.playlist.reorderPlaylists([2, 0, 1]); // 将第3个移到最前
 ```
 
-## 补全方法参考
+## 其余方法
 
 ### focusTrack(playlistIndex, trackIndex)
 
@@ -385,8 +387,6 @@ await fb.playlist.reorderPlaylists([2, 0, 1]); // 将第3个移到最前
 | --- | --- | --- | --- |
 | playlistIndex | number | 是 | 播放列表索引 |
 | trackIndex | number | 是 | 曲目索引 |
-
-返回值：设置焦点曲目的操作结果。
 
 ```javascript
 await fb.playlist.focusTrack(0, 12);
@@ -400,7 +400,7 @@ await fb.playlist.focusTrack(0, 12);
 | --- | --- | --- | --- |
 | index | number | 是 | 播放列表索引 |
 
-返回值：智能播放列表查询信息；受 foobar2000 SDK 限制，部分来源的 `query` 可能为 `null`。
+受 foobar2000 SDK 限制，`query` 始终为 `null`（SDK 不暴露查询串），响应的 `note` 字段也会说明这一点。
 
 ```javascript
 const query = await fb.playlist.getAutoplaylistQuery(0);
@@ -410,11 +410,7 @@ const query = await fb.playlist.getAutoplaylistQuery(0);
 
 签名：`fb.playlist.getAvailableColumns(): Promise<PlaylistColumnsResponse>`
 
-| 参数 | 类型 | 必填 | 说明 |
-| --- | --- | --- | --- |
-| - | - | - | 无参数 |
-
-返回值：可用于播放列表显示或排序的列定义。
+无参数。
 
 ```javascript
 const columns = await fb.playlist.getAvailableColumns();
@@ -428,8 +424,6 @@ const columns = await fb.playlist.getAvailableColumns();
 | --- | --- | --- | --- |
 | index | number | 是 | 播放列表索引 |
 
-返回值：当前焦点曲目的索引或曲目信息。
-
 ```javascript
 const focus = await fb.playlist.getFocusTrack(0);
 ```
@@ -438,11 +432,7 @@ const focus = await fb.playlist.getFocusTrack(0);
 
 签名：`fb.playlist.getPlaylistCount(): Promise<{ count: number }>`
 
-| 参数 | 类型 | 必填 | 说明 |
-| --- | --- | --- | --- |
-| - | - | - | 无参数 |
-
-返回值：播放列表总数。
+无参数。
 
 ```javascript
 const { count } = await fb.playlist.getPlaylistCount();
@@ -456,8 +446,6 @@ const { count } = await fb.playlist.getPlaylistCount();
 | --- | --- | --- | --- |
 | index | number | 是 | 播放列表索引 |
 
-返回值：移除智能播放列表属性后的操作结果。
-
 ```javascript
 await fb.playlist.removeAutoplaylist(0);
 ```
@@ -469,8 +457,6 @@ await fb.playlist.removeAutoplaylist(0);
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
 | index | number | 是 | 播放列表索引 |
-
-返回值：移除所选曲目的操作结果。
 
 ```javascript
 await fb.playlist.removeSelectedTracks(0);

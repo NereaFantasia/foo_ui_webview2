@@ -12,7 +12,7 @@ foo_playcount 播放统计数据查询。共 4 个 API。
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
-| `paths` | `array` | 是 | 必填。 |
+| `paths` | `array` | 是 | 文件路径数组。 |
 
 **返回值**: `{"count":0,"results":[],"success":true}`
 
@@ -39,7 +39,7 @@ console.log(`播放次数: ${result.results[0].playCount}`);
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
-| `paths` | `array` | 是 | 必填文件路径列表；条目可使用 `path|subsong:N`。 |
+| `paths` | `array` | 是 | 必填文件路径列表；条目可使用 `path\|subsong:N`。 |
 
 
 **返回值**: `{"count":0,"error":"...","results":[],"success":true}`
@@ -85,7 +85,7 @@ console.log(`已播放: ${stats.playedTracks}/${stats.totalTracks}`);
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
-| `path` | `string` | 是 | 必填。 |
+| `path` | `string` | 是 | 文件路径。 |
 
 **返回值**: `{ "success": false, "error": "Direct playcount modification not supported. Use rating.set for ratings." }`
 

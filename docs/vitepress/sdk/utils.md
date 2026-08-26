@@ -50,7 +50,7 @@ const info = await fb.utils.getFileInfo('E:\\Music\\song.flac');
 
 <!-- BEGIN AUTO-GENERATED SDK STUBS -->
 
-## SDK Method Stub
+## Additional methods
 
 > This block records SDK method coverage and may later be expanded with complete examples and best practices.
 

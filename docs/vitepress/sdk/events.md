@@ -86,6 +86,8 @@ fb.off('playback:time', handler);
 | `library:initialized` | Library initialization completes | `{ timestamp }` |
 | `library:getAllResult` | An asynchronous `library.getAll` result is ready | `LibraryGetAllResultPayload` |
 | `metadata:writeComplete` | An asynchronous metadata write completes | `MetadataWriteCompletePayload` |
+| `metadata:probeProgress` | A batch of `metadata.probeBatchAsync` results is ready | `MetadataProbeProgressPayload` |
+| `metadata:probeComplete` | An asynchronous batch probe finishes, is cancelled, or fails | `MetadataProbeCompletePayload` |
 | `metadb:changed` | Metadata changes | `{ tracks, count, fromHook, timestamp }` |
 | `selection:changed` | Global selection changes | `{ count, type, handles, truncated, track, nowPlaying }` |
 
@@ -160,6 +162,15 @@ Ordinary user items and now-playing cards report `{ id }` and close the menu. Ri
 | `port:message` | A port message arrives | `{ portId, sourcePortId, sourceWindowId, message }` |
 | `state:changed` | Shared state changes | `{ key, value, previousValue, sourceWindowId, expiresAt? }` |
 | `state:deleted` | Shared state is removed or expires | `{ key, sourceWindowId, reason }` |
+
+## File operation events
+
+| Event | Emitted when | Payload |
+| --- | --- | --- |
+| `file:opProgress` | A batch of `file.copyAsync` / `moveAsync` / `deleteAsync` results is ready | `FileOpProgressPayload` |
+| `file:opComplete` | An asynchronous file operation finishes or is cancelled | `FileOpCompletePayload` |
+
+Both go to the window that started the operation, so their `results` may carry real paths. Once that window is gone the host cannot resolve it any more and the event falls back to the main instance, or is dropped when that instance has no WebView attached; see [`cancelOp()`](/sdk/file-io#cancelop-operationid) for when trailing events can still appear. Progress is batched at 64 entries or 100 ms, whichever comes first, and the final partial batch always precedes `file:opComplete`.
 
 ## Plugin, HTTP, and JIT queue events
 

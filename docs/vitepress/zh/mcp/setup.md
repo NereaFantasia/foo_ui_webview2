@@ -147,12 +147,12 @@ MCP Server 启动
 | 工具作用在错误窗口（如托盘菜单 overlay） | 多个 page target 共享 9222 端口 | 设置 `FB2K_CDP_TARGET_URL`（如 `foo-ui-webview2.local`） |
 
 ::: tip 固定 target
-弹窗、DUI/CUI 面板与托盘菜单 overlay 是同端口下彼此独立的 CDP page target。客户端优先选择有具体 URL 的 target——托盘 overlay 与内置测试页都显示为 `about:blank`——多候选时向 stderr 告警。用 `FB2K_CDP_TARGET_URL` 可确定性固定；过滤无匹配会报错并列出候选，而不是绑到任意页面。
+弹窗、DUI/CUI 面板与托盘菜单 overlay 是同端口下彼此独立的 CDP page target。客户端优先选择有具体 URL 的 target——托盘 overlay 与内置测试页都显示为 `about:blank`——多候选时向 stderr 告警。用 `FB2K_CDP_TARGET_URL` 可以锁定到唯一 target；过滤无匹配会报错并列出候选，而不是绑到任意页面。
 :::
 
 ## 与 Chrome DevTools MCP 配合 
 
-可搭配 [chrome-devtools-mcp](https://github.com/niclas-nicai/chrome-devtools-mcp) 使用：
+可搭配 [chrome-devtools-mcp](https://github.com/ChromeDevTools/chrome-devtools-mcp) 使用：
 
 | MCP Server | 职责 | 适用场景 |
 | --- | --- | --- |
@@ -161,6 +161,6 @@ MCP Server 启动
 
 两者均连接 `localhost:9222` 的同一个 WebView2 实例。
 
-::: tip TIP
+::: tip
 WebView2 CDP 同一时刻仅支持一个客户端连接同一 target。如果 chrome-devtools-mcp 已连接，foo-ui-webview2-mcp 可能需要等待其断开。
 :::

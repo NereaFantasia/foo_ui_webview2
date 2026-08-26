@@ -27,8 +27,7 @@
 
 **返回**:
 
-每行一个元素，格式: tag#id.class "textContent"
-缩进表示层级关系
+每行一个元素，形如 `tag#id.class "textContent"`，缩进表示层级关系。仅当元素只有一个文本子节点时才附带文本，且截断到 80 个字符。
 
 ## `fb2k_evaluate`
 
@@ -54,6 +53,8 @@
 
 **返回**:
 
+```text
 [info] Page loaded in 45ms
 [warn] Missing artwork for track 3
 [error] Failed to connect to lyrics server
+```

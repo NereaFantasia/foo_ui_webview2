@@ -14,10 +14,10 @@
 
 | 参数 | 类型 | 必填 | 默认值 | 说明 |
 | --- | --- | --- | --- | --- |
-| `format` | `string` | 否 | `any` | 可选；默认 any。 |
-| `path` | `string` | 否 | — | 可选。 |
-| `source` | `string` | 否 | `any` | 可选；默认 any。 |
-| `type` | `string` | 否 | `any` | 可选；默认 any。 |
+| `path` | `string` | 否 | — | 省略时回退到当前播放曲目。 |
+| `source` | `string` | 否 | `any` | `embedded` / `file` / `any`。 |
+| `type` | `string` | 否 | `any` | `synced` / `unsynced` / `any`。 |
+| `format` | `string` | 否 | `any` | `lrc` / `txt` / `any`。 |
 
 ### 返回值
 
@@ -64,7 +64,7 @@ const syncedOnly = await fb.lyrics.get(undefined, { type: 'synced' });
 
 | 参数 | 类型 | 必填 | 默认值 | 说明 |
 | --- | --- | --- | --- | --- |
-| `path` | `string` | 否 | — | 可选。 |
+| `path` | `string` | 是 | — |  |
 
 
 **返回值**: `{"exists":"...","sources":"..."}`
@@ -74,7 +74,7 @@ const syncedOnly = await fb.lyrics.get(undefined, { type: 'synced' });
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
 | exists | boolean | 是否存在任何歌词来源 |
-| source | string | `"embedded" "file"` 实际来源 |
+| sources | string[] | 全部可用来源，元素形如 `"embedded"` 或 `"file:song.lrc"` |
 
 ### 示例
 
@@ -90,18 +90,18 @@ const check = await fb.lyrics.exists('C:\\Music\\song.flac');
 
 ## lyrics.save
 
-保存歌词到外部文件（.lrc/.txt）、音频文件内嵌标签和/或配置文件夹。支持一次调用同时写入多个目标。
+保存歌词到外部文件（.lrc/.txt）、音频文件内嵌标签或配置文件夹，一次调用可同时写入多个目标。
 
 ### 参数
 
 | 参数 | 类型 | 必填 | 默认值 | 说明 |
 | --- | --- | --- | --- | --- |
-| `filename` | `string` | 否 | — | 可选。 |
-| `format` | `string` | 否 | `lrc` | 可选；默认 lrc。 |
-| `lyrics` | `string` | 否 | — | 可选。 |
-| `path` | `string` | 否 | — | 可选。 |
-| `tagName` | `string` | 否 | `LYRICS` | 可选；默认 LYRICS。 |
-| `target` | `array` | 否 | `file` | 可选；默认 file。 |
+| `path` | `string` | 是 | — | 歌词所属的曲目路径。 |
+| `lyrics` | `string` | 是 | — | 歌词文本，须非空。 |
+| `target` | `string \| string[]` | 否 | `file` | `file` / `embedded` / `config` / `all`，或前三者组成的数组。 |
+| `format` | `string` | 否 | `lrc` | `lrc` 或 `txt`，决定外挂文件扩展名。 |
+| `filename` | `string` | 否 | — | 纯文件名；`file` 与 `config` target 使用。 |
+| `tagName` | `string` | 否 | `LYRICS` | `embedded` target 使用的标签名。 |
 
 
 **返回值**: `{"results":[],"success":true}`
@@ -114,7 +114,6 @@ const check = await fb.lyrics.exists('C:\\Music\\song.flac');
 | "embedded" | 写入音频文件的嵌入标签（如 LYRICS） |
 | "config" | 保存到 %profile%\\lyrics\\.lrc（foobar2000 配置文件夹） |
 | "all" | 同时写入以上三种目标 |
-| source | string `"embedded" "file"` 实际来源 |
 
 ### 返回值
 

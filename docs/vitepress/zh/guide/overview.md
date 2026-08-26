@@ -46,7 +46,7 @@ v1.2.0 提供完整的 SMP 兼容层，包含：
 | output | 3 | 音频输出设备 |
 | replaygain | 8 | ReplayGain 设置 |
 | playcount | 6 | 播放统计、评分 |
-| titleformat | 5 | Titleformat 表达式评估 |
+| titleformat | 5 | Titleformat 表达式求值 |
 | selection | 6 | 选择同步、Viewer 模式 |
 | menu | 5 | 主菜单/上下文菜单命令 |
 | misc | 9 | 路径查询、首选项、控制台 |

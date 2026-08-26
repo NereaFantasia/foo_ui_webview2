@@ -1,17 +1,17 @@
 # Permissions reference
 
-Path-bearing Bridge endpoints are validated by BridgeCore path-security specs before the handler body runs. Rejected requests return `PERMISSION_DENIED` and never reach the filesystem or foobar2000 SDK path side effects.
+Path-bearing Bridge endpoints are validated by BridgeCore path-security specs before the handler body runs. Rejected requests never reach the filesystem or foobar2000 SDK path side effects. A path the policy refuses returns `PERMISSION_DENIED`; a parameter of the wrong shape or type returns `INVALID_PARAMS`.
 
 Authority counts are taken from current `RegisterApi` path-security specs of the form `{ param, SecurityLevel::... }` in `src/api/**`:
 
 | Level | Spec count | Meaning |
 | --- | ---: | --- |
-| `Read` | 9 | Ordinary filesystem read checks |
+| `Read` | 10 | Ordinary filesystem read checks |
 | `Write` | 1 | Strict write destinations (config/temp style policy) |
-| `MediaRead` | 40 | Media-context read checks |
+| `MediaRead` | 41 | Media-context read checks |
 | `MediaWrite` | 10 | Media-context write checks |
-| `FileWrite` | 7 | General file writes (`file.*`) |
-| **Total** | **67** | **64 unique APIs** |
+| `FileWrite` | 11 | General file writes (`file.*`) |
+| **Total** | **73** | **68 unique APIs** |
 
 ## Six-level model
 
@@ -22,7 +22,7 @@ Authority counts are taken from current `RegisterApi` path-security specs of the
 | `Write` | Write destinations under the strict write policy | Allowed only under foobar2000 profile / temp destinations enforced by PathSecurity |
 | `MediaRead` | Media metadata/content reads | Read rules first; media-library / playlist trust is a fallback used only when Read rejects the path |
 | `MediaWrite` | Media mutation (tags, lyrics, artwork, counts) | Own chain: protected-directory blacklist, then strict write destination, media-library / playlist membership, media-library watch folders, or a sidecar sharing the directory of a trusted audio file. A non-system drive alone does **not** grant write access |
-| `FileWrite` | General file writes (`file.*`) | Own chain, not a superset of `MediaWrite`: blacklist, then strict write destination, non-system drive (drive letter only, UNC excluded), or media-library / playlist membership — no watch-folder or sidecar steps. The non-system-drive allowance is what lets `file.mkdir` and `file.write` create anything new |
+| `FileWrite` | General file writes (`file.*`) | Own chain, not a superset of `MediaWrite`: blacklist, then strict write destination, media-library watch folders, non-system drive (drive letter only, UNC excluded), or media-library / playlist membership — no sidecar step. The watch-folder and non-system-drive steps are what let `file.mkdir` and `file.write` create brand-new paths |
 
 ::: tip Level relationships
 `None < Read < Write` forms the ordinary filesystem channel.
@@ -31,7 +31,7 @@ Authority counts are taken from current `RegisterApi` path-security specs of the
 :::
 
 ::: warning FileWrite is broader than MediaWrite
-`FileWrite` accepts any path on a non-system drive, so it is the widest write channel currently exposed. It exists because `file.*` operates on arbitrary files rather than on media-context files, and applying media-write rules would make creating new files or directories impossible. Treat it as the channel to audit first when reviewing a theme.
+`FileWrite` accepts any path on a non-system drive, and also any path inside a media-library watch folder (including on the system drive), so it is the widest write channel currently exposed. It exists because `file.*` operates on arbitrary files rather than on media-context files, and applying media-write rules would make creating new files or directories impossible. Treat it as the channel to audit first when reviewing a theme.
 :::
 
 ## Error response
@@ -39,27 +39,42 @@ Authority counts are taken from current `RegisterApi` path-security specs of the
 ```json
 {
   "success": false,
-  "error": "Path rejected by security policy: C:\\Windows\\System32\\config.ini",
+  "error": "file.read: path security denied for 'path': Access denied: protected system path",
   "code": "PERMISSION_DENIED"
+}
+```
+
+The rejected path is never echoed back. The message names the method, the offending parameter (plus its index for array parameters, as in `items[2].destination`) and the policy reason, so a caller can tell which argument was refused without the host leaking a filesystem location into a payload a page may forward elsewhere.
+
+```json
+{
+  "success": false,
+  "error": "file.read: param 'path' must be a string",
+  "code": "INVALID_PARAMS"
 }
 ```
 
 ```javascript
 const result = await fb2k.invoke('file.read', { path: somePath });
-if (!result.success && result.code === 'PERMISSION_DENIED') {
-  console.warn('Path rejected by security policy:', result.error);
+if (!result.success) {
+  if (result.code === 'PERMISSION_DENIED') {
+    console.warn('Path rejected by security policy:', result.error);
+  } else if (result.code === 'INVALID_PARAMS') {
+    console.warn('Parameter rejected before the handler ran:', result.error);
+  }
 }
 ```
 
 ## API permission matrix
 
-### Read — filesystem read (9 specs)
+### Read — filesystem read (10 specs)
 
 | API | Parameter | Array | Nested key | Notes |
 | --- | --- | --- | --- | --- |
 | `artwork.getFolderImages` | `directory` | — | — | Runtime authority: `ArtworkApi.cpp` |
 | `clipboard.writeFiles` | `paths` | yes | — | Runtime authority: `ClipboardApi.cpp` |
 | `file.copy` | `source` | — | — | Runtime authority: `FileApi.cpp` |
+| `file.copyAsync` | `items` | yes | `source` | Runtime authority: `FileApi.cpp` |
 | `file.exists` | `path` | — | — | Runtime authority: `FileApi.cpp` |
 | `file.getInfo` | `path` | — | — | Runtime authority: `FileApi.cpp` |
 | `file.list` | `path` | — | — | Runtime authority: `FileApi.cpp` |
@@ -73,7 +88,7 @@ if (!result.success && result.code === 'PERMISSION_DENIED') {
 | --- | --- | --- | --- | --- |
 | `http.download` | `saveTo` | — | — | Runtime authority: `HttpApi.cpp` |
 
-### MediaRead — media reads (40 specs)
+### MediaRead — media reads (41 specs)
 
 | API | Parameter | Array | Nested key | Notes |
 | --- | --- | --- | --- | --- |
@@ -97,6 +112,7 @@ if (!result.success && result.code === 'PERMISSION_DENIED') {
 | `library.getByPath` | `path` | — | — | Runtime authority: `LibraryApi.cpp` |
 | `lyrics.exists` | `path` | — | — | Runtime authority: `LyricsApi.cpp` |
 | `lyrics.get` | `path` | — | — | Runtime authority: `LyricsApi.cpp` |
+| `metadata.probeBatchAsync` | `paths` | yes | — | Runtime authority: `MetadataApi.cpp` |
 | `metadata.read` | `path` | — | — | Runtime authority: `MetadataApi.cpp` |
 | `metadata.readBatch` | `paths` | yes | — | Runtime authority: `MetadataApi.cpp` |
 | `metadata.readByPath` | `path` | — | — | Runtime authority: `MetadataApi.cpp` |
@@ -137,19 +153,23 @@ if (!result.success && result.code === 'PERMISSION_DENIED') {
 `metadata.writeBatch` validates each object in `items` by reading the nested `path` key.
 :::
 
-### FileWrite — general file writes (7 specs)
+### FileWrite — general file writes (11 specs)
 
 | API | Parameter | Array | Nested key | Notes |
 | --- | --- | --- | --- | --- |
 | `file.copy` | `destination` | — | — | Runtime authority: `FileApi.cpp` |
+| `file.copyAsync` | `items` | yes | `destination` | Runtime authority: `FileApi.cpp` |
 | `file.delete` | `path` | — | — | Runtime authority: `FileApi.cpp` |
+| `file.deleteAsync` | `paths` | yes | — | Runtime authority: `FileApi.cpp` |
 | `file.mkdir` | `path` | — | — | Runtime authority: `FileApi.cpp` |
 | `file.move` | `destination` | — | — | Runtime authority: `FileApi.cpp` |
 | `file.move` | `source` | — | — | Runtime authority: `FileApi.cpp` |
+| `file.moveAsync` | `items` | yes | `destination` | Runtime authority: `FileApi.cpp` |
+| `file.moveAsync` | `items` | yes | `source` | Runtime authority: `FileApi.cpp` |
 | `file.rename` | `path` | — | — | Runtime authority: `FileApi.cpp` |
 | `file.write` | `path` | — | — | Runtime authority: `FileApi.cpp` |
 
-`file.copy` validates `source` as `Read` and `destination` as `FileWrite`; `file.move` validates both endpoints as `FileWrite`.
+`file.copy` validates `source` as `Read` and `destination` as `FileWrite`; `file.move` validates both endpoints as `FileWrite`. The asynchronous family follows the same split: `file.copyAsync` checks every `items[].source` as `Read` and every `items[].destination` as `FileWrite`, `file.moveAsync` checks both nested keys as `FileWrite`, and `file.deleteAsync` checks every entry of `paths` as `FileWrite`. Validation is fail-fast per call: one rejected entry fails the whole batch with `PERMISSION_DENIED` and no operation is dispatched.
 
 ## Custom / non-decorator policy
 
@@ -227,26 +247,29 @@ would mean any theme could rewrite arbitrary audio files on `D:` or `E:`.
 FileWrite runs its own chain and is not a superset of MediaWrite. After the
 common rejections and the protected-directory blacklist, the first of these to
 match admits the path: a strict write destination (profile / temp), a
-non-system drive addressed by drive letter (UNC excluded), or media-library /
-playlist context. MediaWrite's watch-folder and sidecar steps are absent here.
+media-library watch folder (`is_path_addable` — configuration, not membership,
+so it admits brand-new paths and UNC folders), a non-system drive addressed by
+drive letter (UNC excluded), or media-library / playlist context. MediaWrite's
+sidecar step is absent here.
 
 ::: warning FileWrite accepts any non-system drive
 This is the widest write channel currently exposed. `file.delete` and
 `file.write` will therefore accept arbitrary destinations on `D:`, `E:` and so
 on. The allowance exists because `file.mkdir` and `file.write` create paths that
-by definition cannot already be in a library, watch folder or playlist, so the
-media-context chain alone would reject every call.
+by definition cannot already be in a library or playlist, so the membership
+steps alone would reject every call. Watch folders are different: since
+`is_path_addable` checks configuration rather than membership, new paths inside
+a configured folder are admitted without needing this allowance.
+
+**The test applies to the drive letter after canonicalization, not to the one in
+the path as passed in.** If a user directory is redirected onto a non-system
+drive by a junction or symbolic link (for example `C:\Users\<user>` →
+`E:\Users\<user>`, common on machines whose user profiles have been relocated),
+its entire subtree is evaluated in its `E:` form and therefore falls inside this
+allowance — even though the caller passed a path beginning with `C:`. The
+allowance is independent of file extension. When reviewing a theme, do not rely
+on the literal drive letter; check how the target machine actually redirects
+these directories.
 :::
 
-## Counts summary
-
-| Level | Specs | Unique APIs in this level table |
-| --- | ---: | ---: |
-| Read | 9 | 9 |
-| Write | 1 | 1 |
-| MediaRead | 40 | 39 |
-| MediaWrite | 10 | 10 |
-| FileWrite | 7 | 6 |
-| **Total** | **67** | **64** |
-
-These counts are regenerated from the C++ `RegisterApi` path-security specs in the component source.
+The spec counts at the top of this page are maintained by hand; the `RegisterApi` path-security specs in the component source are the authority.

@@ -4,64 +4,38 @@
 
 <!-- BEGIN AUTO-GENERATED SDK STUBS -->
 
-## SDK 方法 stub
-
-> 该区块用于补齐 SDK 视角方法覆盖，后续可人工扩展为完整示例与最佳实践。
+## 其余方法
 
 ### read()
 
-签名：`fb.clipboard.read(...args): Promise<unknown>`
-
-| 参数 | 类型 | 必填 | 说明 |
-| --- | --- | --- | --- |
-| ...args | unknown[] | 视方法而定 | 透传给 SDK wrapper；详细类型以 `sdk/src/bridge/namespaces/` 源码和生成类型为准 |
-
-返回值：底层 `clipboard.read` 调用结果。
+封装 `clipboard.read`。参数与返回类型以 `foo-webview-sdk` 的 TypeScript 声明为准（IDE 悬浮提示或包内 `bridge.d.ts`），行为契约见 API 文档对应条目。
 
 ```javascript
-const result = await fb.clipboard.read();
+await fb.clipboard.read(/* 参数见 TypeScript 声明 */);
 ```
 
 ### write()
 
-签名：`fb.clipboard.write(...args): Promise<unknown>`
-
-| 参数 | 类型 | 必填 | 说明 |
-| --- | --- | --- | --- |
-| ...args | unknown[] | 视方法而定 | 透传给 SDK wrapper；详细类型以 `sdk/src/bridge/namespaces/` 源码和生成类型为准 |
-
-返回值：底层 `clipboard.write` 调用结果。
+封装 `clipboard.write`。参数与返回类型以 `foo-webview-sdk` 的 TypeScript 声明为准（IDE 悬浮提示或包内 `bridge.d.ts`），行为契约见 API 文档对应条目。
 
 ```javascript
-const result = await fb.clipboard.write();
+await fb.clipboard.write(/* 参数见 TypeScript 声明 */);
 ```
 
 ### writeFiles()
 
-签名：`fb.clipboard.writeFiles(...args): Promise<unknown>`
-
-| 参数 | 类型 | 必填 | 说明 |
-| --- | --- | --- | --- |
-| ...args | unknown[] | 视方法而定 | 透传给 SDK wrapper；详细类型以 `sdk/src/bridge/namespaces/` 源码和生成类型为准 |
-
-返回值：底层 `clipboard.writeFiles` 调用结果。
+封装 `clipboard.writeFiles`。参数与返回类型以 `foo-webview-sdk` 的 TypeScript 声明为准（IDE 悬浮提示或包内 `bridge.d.ts`），行为契约见 API 文档对应条目。
 
 ```javascript
-const result = await fb.clipboard.writeFiles();
+await fb.clipboard.writeFiles(/* 参数见 TypeScript 声明 */);
 ```
 
 ### writeHTML()
 
-签名：`fb.clipboard.writeHTML(...args): Promise<unknown>`
-
-| 参数 | 类型 | 必填 | 说明 |
-| --- | --- | --- | --- |
-| ...args | unknown[] | 视方法而定 | 透传给 SDK wrapper；详细类型以 `sdk/src/bridge/namespaces/` 源码和生成类型为准 |
-
-返回值：底层 `clipboard.writeHTML` 调用结果。
+封装 `clipboard.writeHTML`。参数与返回类型以 `foo-webview-sdk` 的 TypeScript 声明为准（IDE 悬浮提示或包内 `bridge.d.ts`），行为契约见 API 文档对应条目。
 
 ```javascript
-const result = await fb.clipboard.writeHTML();
+await fb.clipboard.writeHTML(/* 参数见 TypeScript 声明 */);
 ```
 
 <!-- END AUTO-GENERATED SDK STUBS -->

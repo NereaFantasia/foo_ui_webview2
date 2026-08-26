@@ -2,7 +2,7 @@
 
 The aggregate `fb` object exposes 40 runtime namespaces, plus the reactive `fb.state` mirror and the top-level `fb.on`, `fb.off`, `fb.once`, `fb.invoke`, `fb.isAvailable()`, and `fb.ready()` helpers.
 
-The AST coverage gate currently reports `449` methods in the complete public facade and `0` undocumented example-call gaps. It derives that facade directly from the exported namespace objects; the narrower direct-`invoke` extractor remains a diagnostic subset rather than the SDK total.
+The `fb` facade currently exposes `456` methods in total across these namespaces.
 
 ## Core media and UI
 

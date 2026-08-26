@@ -16,12 +16,12 @@
 
 ### artwork.getFb2kUrl
 
-获取当前播放曲目的 `fb2k://artwork/...` URL。v1.1.7 新增
+（v1.1.7+）获取当前播放曲目的 `fb2k://artwork/...` URL。
 
-| 参数 | 类型 | 必填 | 说明 |
-| --- | --- | --- | --- |
-| `maxSize` | `integer` | 否 | 可选；默认 0。 |
-| `type` | `string` | 否 | 可选；默认 front。 |
+| 参数 | 类型 | 必填 | 默认值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `type` | `string` | 否 | `front` |  |
+| `maxSize` | `integer` | 否 | `0` | `0` 表示不缩放。 |
 
 
 **返回值**: `{"available":true,"dataUrl":"...","error":"...","reason":"...","type":"..."}`
@@ -33,13 +33,13 @@ if (result.available) document.getElementById('cover').src = result.dataUrl;
 
 ### artwork.getFb2kUrlByPath
 
-根据曲目路径生成 `fb2k://artwork/...` URL。v1.1.7 新增
+（v1.1.7+）根据曲目路径生成 `fb2k://artwork/...` URL。
 
-| 参数 | 类型 | 必填 | 说明 |
-| --- | --- | --- | --- |
-| `maxSize` | `integer` | 否 | 可选；默认 0。 |
-| `path` | `string` | 否 | 可选。 |
-| `type` | `string` | 否 | 可选；默认 front。 |
+| 参数 | 类型 | 必填 | 默认值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `path` | `string` | 是 | — |  |
+| `type` | `string` | 否 | `front` |  |
+| `maxSize` | `integer` | 否 | `0` | `0` 表示不缩放。 |
 
 
 **返回值**: `{"available":true,"dataUrl":"...","error":"...","path":"...","type":"..."}`
@@ -59,14 +59,14 @@ function getCoverUrl(trackPath, maxSize = 300) {
 
 ### artwork.getFb2kUrlByPathBatch
 
-批量返回多个曲目的 `fb2k://` URL。纯字符串拼接，无 SDK 访问，性能极佳。
+批量返回多个曲目的 `fb2k://` URL。纯字符串拼接，不访问 SDK。
 
-| 参数 | 类型 | 必填 | 说明 |
-| --- | --- | --- | --- |
-| `items` | `array` | 否 | 可省略。 |
-| `maxSize` | `integer` | 否 | 可选；默认 0。 |
-| `paths` | `array` | 否 | 可省略。 |
-| `type` | `string` | 否 | 可选；默认 front。 |
+| 参数 | 类型 | 必填 | 默认值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `paths` | `array` | 否 | — | 路径数组；与 `items` 二选一，必须提供其中之一。 |
+| `items` | `array` | 否 | — | 条目为含 `path` 成员的对象；字符串条目请使用 `paths`。两参数必须恰好提供其一。 |
+| `type` | `string` | 否 | `front` |  |
+| `maxSize` | `integer` | 否 | `0` | `0` 表示不缩放。 |
 
 
 **返回值**: `{"artworks":"...","success":true}`
@@ -118,9 +118,9 @@ if (artwork.available) {
 
 获取当前播放曲目的封面图片。
 
-| 参数 | 类型 | 必填 | 说明 |
-| --- | --- | --- | --- |
-| `type` | `string` | 否 | 可选；默认 front。 |
+| 参数 | 类型 | 必填 | 默认值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `type` | `string` | 否 | `front` |  |
 
 **返回值**: `{"available":true,"dataUrl":"...","error":"...","mimeType":"...","path":"...","reason":"...","size":0,"source":"...","type":"..."}`
 
@@ -135,10 +135,10 @@ if (artwork.available) {
 
 通过文件路径获取封面。直接使用 `album_art_extractor` 提取器。
 
-| 参数 | 类型 | 必填 | 说明 |
-| --- | --- | --- | --- |
-| `path` | `string` | 否 | 可选。 |
-| `type` | `string` | 否 | 可选；默认 front。 |
+| 参数 | 类型 | 必填 | 默认值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `path` | `string` | 是 | — | 支持原生路径、`file://` 与 `路径\|subsong:N`。 |
+| `type` | `string` | 否 | `front` |  |
 
 
 **返回值**: `{"available":true,"dataUrl":"...","error":"...","mimeType":"...","path":"...","size":0,"type":"..."}`
@@ -155,10 +155,10 @@ if (artwork.available) {
 
 获取指定曲目的封面。支持嵌入式封面和外部封面文件。
 
-| 参数 | 类型 | 必填 | 说明 |
-| --- | --- | --- | --- |
-| `path` | `string` | 否 | 可选。 |
-| `type` | `string` | 否 | 可选；默认 front。 |
+| 参数 | 类型 | 必填 | 默认值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `path` | `string` | 是 | — | 支持原生路径、`file://` 与 `路径\|subsong:N`。 |
+| `type` | `string` | 否 | `front` |  |
 
 **返回值**: `{"available":true,"dataUrl":"...","error":"...","height":0,"mimeType":"...","path":"...","size":0,"type":"...","width":0}`
 
@@ -171,7 +171,7 @@ if (artwork.available) {
 `width` 和 `height` 仅对 **PNG** 格式封面返回实际尺寸。JPEG、GIF、BMP、WebP 格式返回值为 `0`。
 :::
 
-::: warning WARNING
+::: warning
 如果曲目路径是 `file-relative://` 格式，请使用 `artwork.getByPlaylistItem`。
 :::
 
@@ -179,11 +179,11 @@ if (artwork.available) {
 
 通过播放列表索引获取封面。推荐用于播放列表中的曲目，能正确处理相对路径。
 
-| 参数 | 类型 | 必填 | 说明 |
-| --- | --- | --- | --- |
-| `index` | `integer` | 否 | 可选；默认 -1。 |
-| `playlist` | `integer` | 否 | 可选；默认 -1。 |
-| `type` | `string` | 否 | 可选；默认 front。 |
+| 参数 | 类型 | 必填 | 默认值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `playlist` | `integer` | 否 | `-1` | `-1` 表示活动播放列表。 |
+| `index` | `integer` | 否 | `-1` | `-1` 选中第 0 项。 |
+| `type` | `string` | 否 | `front` |  |
 
 
 **返回值**: `{"available":true,"dataUrl":"...","error":"...","index":0,"mimeType":"...","playlist":0,"size":0,"type":"..."}`
@@ -194,7 +194,7 @@ if (artwork.available) {
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
-| `path` | `string` | 否 | 可选。 |
+| `path` | `string` | 否 | 省略时回退到当前播放曲目。 |
 
 **返回值**: `{"error":"...","success":true,"types":"..."}`
 
@@ -204,7 +204,7 @@ if (artwork.available) {
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
-| `path` | `string` | 否 | 可选。 |
+| `path` | `string` | 是 | 支持 `路径\|subsong:N`。 |
 
 **返回值**:
 
@@ -225,7 +225,7 @@ if (artwork.available) {
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
-| `directory` | `string` | 否 | 可选。 |
+| `directory` | `string` | 是 | 要扫描的目录，受 `Read` 安全级别保护。 |
 
 支持的图片格式: `.jpg`, `.jpeg`, `.png`, `.gif`, `.bmp`, `.webp`
 
@@ -246,7 +246,7 @@ if (artwork.available) {
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
-| `path` | `string` | 否 | 可选。 |
+| `path` | `string` | 否 | 省略时回退到当前播放曲目。 |
 
 **返回值**: `{"available":true,"error":"...","lyrics":"...","synced":"...","tag":"..."}`
 
@@ -259,7 +259,7 @@ if (artwork.available) {
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
-| `path` | `string` | 否 | 可选。 |
+| `path` | `string` | 否 | 省略时回退到当前播放曲目。 |
 
 **返回值**: `{"album":"...","albumArtist":"...","artist":"...","available":true,"discNumber":"...","error":"...","genre":"...","hasEmbedded":true,"hasLyrics":true,"title":"...","trackNumber":"...","year":"..."}`
 
@@ -284,10 +284,10 @@ const result = await fb2k.invoke('artwork.getFb2kUrlByPathBatch', { paths, type:
 ### artwork.getBatch
 
 
-| 参数 | 类型 | 必填 | 说明 |
-| --- | --- | --- | --- |
-| `paths` | `array` | 是 | 必填。 |
-| `type` | `string` | 否 | 可选；默认 front。 |
+| 参数 | 类型 | 必填 | 默认值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `paths` | `array` | 是 | — | 文件路径数组。 |
+| `type` | `string` | 否 | `front` |  |
 
 **返回值**: `{"artworks":"...","error":"...","success":true}`
 

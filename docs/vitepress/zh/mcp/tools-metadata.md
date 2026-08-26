@@ -12,8 +12,8 @@
 
 | 参数 | 类型 | 必填 | 描述 |
 | --- | --- | --- | --- |
-| path | string | ? | 文件路径，支持 \|subsong:N 或 #N 格式 |
-| cueIndex | integer | ? | CUE 子曲目索引（覆盖路径中的 subsong 标记） |
+| path | string | 是 | 文件路径，支持 \|subsong:N 或 #N 格式 |
+| cueIndex | integer | 否 | CUE 子曲目索引（覆盖路径中的 subsong 标记） |
 
 **返回值**:
 
@@ -49,8 +49,8 @@
 
 | 参数 | 类型 | 必填 | 描述 |
 | --- | --- | --- | --- |
-| path | string | ? | 文件路径，支持 \|subsong:N 或 #N 格式 |
-| cueIndex | integer | ? | CUE 子曲目索引（覆盖路径中的 subsong 标记） |
+| path | string | 是 | 文件路径，支持 \|subsong:N 或 #N 格式 |
+| cueIndex | integer | 否 | CUE 子曲目索引（覆盖路径中的 subsong 标记） |
 
 ### fb2k_metadata_read_raw 
 
@@ -60,8 +60,8 @@
 
 | 参数 | 类型 | 必填 | 描述 |
 | --- | --- | --- | --- |
-| path | string | ? | 文件路径，支持 \|subsong:N 或 #N 格式 |
-| cueIndex | integer | ? | CUE 子曲目索引（覆盖路径中的 subsong 标记） |
+| path | string | 是 | 文件路径，支持 \|subsong:N 或 #N 格式 |
+| cueIndex | integer | 否 | CUE 子曲目索引（覆盖路径中的 subsong 标记） |
 
 ::: tip 与 `metadata.read` 的区别
 `readRaw` 确保从文件直接读取最新数据，而 `read` 可能返回缓存的元数据。当写入后需要立即验证时使用此方法。
@@ -87,10 +87,10 @@
 
 | 参数 | 类型 | 必填 | 描述 |
 | --- | --- | --- | --- |
-| path | string | ? | 文件路径 |
-| tags | object | ? | 键值对，如 {"TITLE": "新标题", "ARTIST": "新艺术家"} |
+| path | string | 是 | 文件路径 |
+| tags | object | 是 | 键值对，如 {"TITLE": "新标题", "ARTIST": "新艺术家"} |
 
-::: warning WARNING
+::: warning
 写入操作会直接修改文件。请确保文件可写且已备份。
 :::
 
@@ -102,7 +102,7 @@
 
 | 参数 | 类型 | 必填 | 描述 |
 | --- | --- | --- | --- |
-| items | array | ? | [{ path, tags }] 格式的数组 |
+| items | array | 是 | [{ path, tags }] 格式的数组 |
 
 ## 封面嵌入 
 
@@ -114,9 +114,9 @@
 
 | 参数 | 类型 | 必填 | 描述 |
 | --- | --- | --- | --- |
-| path | string | ? | 文件路径 |
-| imageData | string | ? | base64 编码的图片数据 |
-| type | string | ? | 封面类型（front / back / disc / icon / artist，默认 front） |
+| path | string | 是 | 文件路径 |
+| imageData | string | 是 | base64 编码的图片数据 |
+| type | string | 否 | 封面类型（front / back / disc / icon / artist，默认 front） |
 | target | string | 否 | 保存目标：`embedded`（默认）、`file` 或 `all` |
 | filename | string | 否 | `target` 包含 `file` 时使用的纯文件名；禁止路径分隔符和 `..` |
 
@@ -128,9 +128,9 @@
 
 | 参数 | 类型 | 必填 | 描述 |
 | --- | --- | --- | --- |
-| path | string | ? | 文件路径 |
-| type | string | ? | 要移除的封面类型：front / back / disc / icon / artist（省略时需配合 removeAll） |
-| removeAll | boolean | ? | 是否移除所有类型的封面（默认 false） |
+| path | string | 是 | 文件路径 |
+| type | string | 否 | 要移除的封面类型：front / back / disc / icon / artist（省略时需配合 removeAll） |
+| removeAll | boolean | 否 | 是否移除所有类型的封面（默认 false） |
 
 ## 标签删除 
 
@@ -142,8 +142,8 @@
 
 | 参数 | 类型 | 必填 | 描述 |
 | --- | --- | --- | --- |
-| path | string | ? | 文件路径 |
-| tags | array | ? | 要移除的标签名数组 |
+| path | string | 是 | 文件路径 |
+| tags | array | 是 | 要移除的标签名数组 |
 
 ### fb2k_metadata_remove_field 
 
@@ -153,8 +153,8 @@
 
 | 参数 | 类型 | 必填 | 描述 |
 | --- | --- | --- | --- |
-| path | string | ? | 文件路径 |
-| tags | array | ? | 要移除的字段名数组 |
+| path | string | 是 | 文件路径 |
+| tags | array | 是 | 要移除的字段名数组 |
 
 ## 评分 
 
@@ -166,9 +166,9 @@
 
 | 参数 | 类型 | 必填 | 描述 |
 | --- | --- | --- | --- |
-| rating | integer | ? | 评分值（0=清除, 1–5） |
-| path | string | ? | 文件路径（省略时使用当前播放或选中的曲目） |
-| cueIndex | integer | ? | CUE 子曲目索引 |
+| rating | integer | 是 | 评分值（0=清除, 1–5） |
+| path | string | 否 | 文件路径（省略时使用当前播放或选中的曲目） |
+| cueIndex | integer | 否 | CUE 子曲目索引 |
 
 ### fb2k_rating_get 
 
@@ -178,8 +178,8 @@
 
 | 参数 | 类型 | 必填 | 描述 |
 | --- | --- | --- | --- |
-| path | string | ? | 文件路径 |
-| cueIndex | integer | ? | CUE 子曲目索引 |
+| path | string | 是 | 文件路径 |
+| cueIndex | integer | 否 | CUE 子曲目索引 |
 
 **返回值**:
 

@@ -52,6 +52,8 @@ await fb.ui.toggleMaximize();
 await fb.ui.setTitle('Now Playing: Let It Be');
 ```
 
+### reload()
+
 重新加载页面（开发调试用）。
 
 ```javascript
@@ -503,19 +505,15 @@ fb2k.on('window:beforeClose', async () => {
 
 获取/设置开发服务器配置（仅开发模式）。
 
-## 补全方法参考
+## 其余方法
 
-本节补齐 `fb.ui` 中此前仅在分组标题或正文中提到、但缺少独立 SDK 示例调用的方法。`fb.ui` 是 SDK 视角的窗口门面，内部多数方法调用底层 `window.*` API。
+`fb.ui` 是 SDK 视角的窗口门面，内部多数方法调用底层 `window.*` API。
 
 ### blur()
 
 签名：`fb.ui.blur(): Promise<BaseResponse>`
 
-| 参数 | 类型 | 必填 | 说明 |
-| --- | --- | --- | --- |
-| - | - | - | 无参数 |
-
-返回值：窗口失焦操作结果。
+无参数。
 
 ```javascript
 await fb.ui.blur();
@@ -525,11 +523,7 @@ await fb.ui.blur();
 
 签名：`fb.ui.center(): Promise<BaseResponse>`
 
-| 参数 | 类型 | 必填 | 说明 |
-| --- | --- | --- | --- |
-| - | - | - | 无参数 |
-
-返回值：窗口居中操作结果。
+无参数。
 
 ```javascript
 await fb.ui.center();
@@ -543,8 +537,6 @@ await fb.ui.center();
 | --- | --- | --- | --- |
 | windowId | string | 否 | 目标窗口 ID；省略时作用于当前窗口 |
 
-返回值：清除点击穿透排除区域的操作结果。
-
 ```javascript
 await fb.ui.clearClickThroughExcludeRegions();
 ```
@@ -553,11 +545,7 @@ await fb.ui.clearClickThroughExcludeRegions();
 
 签名：`fb.ui.clearNoDragRegions(): Promise<BaseResponse>`
 
-| 参数 | 类型 | 必填 | 说明 |
-| --- | --- | --- | --- |
-| - | - | - | 无参数 |
-
-返回值：清除不可拖拽区域的操作结果。
+无参数。
 
 ```javascript
 await fb.ui.clearNoDragRegions();
@@ -567,11 +555,7 @@ await fb.ui.clearNoDragRegions();
 
 签名：`fb.ui.closeAllPopups(): Promise<BaseResponse>`
 
-| 参数 | 类型 | 必填 | 说明 |
-| --- | --- | --- | --- |
-| - | - | - | 无参数 |
-
-返回值：关闭所有 popup 的操作结果。
+无参数。
 
 ```javascript
 await fb.ui.closeAllPopups();
@@ -585,8 +569,6 @@ await fb.ui.closeAllPopups();
 | --- | --- | --- | --- |
 | windowId | string | 是 | 要关闭的 popup 窗口 ID |
 
-返回值：关闭指定 popup 的操作结果。
-
 ```javascript
 await fb.ui.closePopup('popup-settings');
 ```
@@ -595,11 +577,7 @@ await fb.ui.closePopup('popup-settings');
 
 签名：`fb.ui.enterFullscreen(): Promise<BaseResponse & { isFullscreen?: boolean }>`
 
-| 参数 | 类型 | 必填 | 说明 |
-| --- | --- | --- | --- |
-| - | - | - | 无参数 |
-
-返回值：进入全屏后的操作结果，可能包含 `isFullscreen`。
+无参数。
 
 ```javascript
 await fb.ui.enterFullscreen();
@@ -609,11 +587,7 @@ await fb.ui.enterFullscreen();
 
 签名：`fb.ui.exitFullscreen(): Promise<BaseResponse & { isFullscreen?: boolean }>`
 
-| 参数 | 类型 | 必填 | 说明 |
-| --- | --- | --- | --- |
-| - | - | - | 无参数 |
-
-返回值：退出全屏后的操作结果，可能包含 `isFullscreen`。
+无参数。
 
 ```javascript
 await fb.ui.exitFullscreen();
@@ -627,8 +601,6 @@ await fb.ui.exitFullscreen();
 | --- | --- | --- | --- |
 | opts | WindowFlashParams | 是 | 闪烁窗口的选项，如次数、间隔或目标窗口 |
 
-返回值：窗口闪烁操作结果。
-
 ```javascript
 await fb.ui.flash({ count: 3 });
 ```
@@ -641,8 +613,6 @@ await fb.ui.flash({ count: 3 });
 | --- | --- | --- | --- |
 | windowId | string | 否 | 目标窗口 ID；省略时聚焦当前窗口 |
 
-返回值：窗口聚焦操作结果。
-
 ```javascript
 await fb.ui.focus();
 ```
@@ -651,11 +621,7 @@ await fb.ui.focus();
 
 签名：`fb.ui.getAllWindows(): Promise<WindowListResponse>`
 
-| 参数 | 类型 | 必填 | 说明 |
-| --- | --- | --- | --- |
-| - | - | - | 无参数 |
-
-返回值：所有已知窗口的列表。
+无参数。
 
 ```javascript
 const windows = await fb.ui.getAllWindows();
@@ -669,8 +635,6 @@ const windows = await fb.ui.getAllWindows();
 | --- | --- | --- | --- |
 | windowId | string | 否 | 目标窗口 ID；省略时查询当前窗口 |
 
-返回值：窗口背景策略状态。
-
 ```javascript
 const policy = await fb.ui.getBackdropPolicy();
 ```
@@ -679,11 +643,7 @@ const policy = await fb.ui.getBackdropPolicy();
 
 签名：`fb.ui.getBounds(): Promise<WindowBounds>`
 
-| 参数 | 类型 | 必填 | 说明 |
-| --- | --- | --- | --- |
-| - | - | - | 无参数 |
-
-返回值：窗口边界 `{ x, y, width, height }`。
+无参数。
 
 ```javascript
 const bounds = await fb.ui.getBounds();
@@ -693,11 +653,7 @@ const bounds = await fb.ui.getBounds();
 
 签名：`fb.ui.getCaptionButtonsWidth(): Promise<{ width: number }>`
 
-| 参数 | 类型 | 必填 | 说明 |
-| --- | --- | --- | --- |
-| - | - | - | 无参数 |
-
-返回值：标题栏系统按钮区域宽度。
+无参数。
 
 ```javascript
 const { width } = await fb.ui.getCaptionButtonsWidth();
@@ -707,11 +663,7 @@ const { width } = await fb.ui.getCaptionButtonsWidth();
 
 签名：`fb.ui.getCornerPreference(): Promise<{ mode: string }>`
 
-| 参数 | 类型 | 必填 | 说明 |
-| --- | --- | --- | --- |
-| - | - | - | 无参数 |
-
-返回值：当前窗口圆角偏好模式。
+无参数。
 
 ```javascript
 const { mode } = await fb.ui.getCornerPreference();
@@ -721,11 +673,7 @@ const { mode } = await fb.ui.getCornerPreference();
 
 签名：`fb.ui.getCurrentWindowId(): Promise<{ windowId: string }>`
 
-| 参数 | 类型 | 必填 | 说明 |
-| --- | --- | --- | --- |
-| - | - | - | 无参数 |
-
-返回值：当前窗口 ID。
+无参数。
 
 ```javascript
 const { windowId } = await fb.ui.getCurrentWindowId();
@@ -735,11 +683,7 @@ const { windowId } = await fb.ui.getCurrentWindowId();
 
 签名：`fb.ui.getDevServerConfig(): Promise<WindowDevServerConfig>`
 
-| 参数 | 类型 | 必填 | 说明 |
-| --- | --- | --- | --- |
-| - | - | - | 无参数 |
-
-返回值：开发服务器配置。
+无参数。
 
 ```javascript
 const devServer = await fb.ui.getDevServerConfig();
@@ -749,11 +693,7 @@ const devServer = await fb.ui.getDevServerConfig();
 
 签名：`fb.ui.getMaxSize(): Promise<{ width: number; height: number }>`
 
-| 参数 | 类型 | 必填 | 说明 |
-| --- | --- | --- | --- |
-| - | - | - | 无参数 |
-
-返回值：窗口最大尺寸约束。
+无参数。
 
 ```javascript
 const maxSize = await fb.ui.getMaxSize();
@@ -763,11 +703,7 @@ const maxSize = await fb.ui.getMaxSize();
 
 签名：`fb.ui.getMode(): Promise<{ mode: string }>`
 
-| 参数 | 类型 | 必填 | 说明 |
-| --- | --- | --- | --- |
-| - | - | - | 无参数 |
-
-返回值：当前窗口模式。
+无参数。
 
 ```javascript
 const { mode } = await fb.ui.getMode();
@@ -781,8 +717,6 @@ const { mode } = await fb.ui.getMode();
 | --- | --- | --- | --- |
 | windowId | string | 否 | popup 窗口 ID；省略时查询当前窗口 |
 
-返回值：popup 行为策略。
-
 ```javascript
 const behavior = await fb.ui.getPopupBehavior('popup-settings');
 ```
@@ -791,11 +725,7 @@ const behavior = await fb.ui.getPopupBehavior('popup-settings');
 
 签名：`fb.ui.getTitle(): Promise<{ title: string }>`
 
-| 参数 | 类型 | 必填 | 说明 |
-| --- | --- | --- | --- |
-| - | - | - | 无参数 |
-
-返回值：当前窗口标题。
+无参数。
 
 ```javascript
 const { title } = await fb.ui.getTitle();
@@ -805,11 +735,7 @@ const { title } = await fb.ui.getTitle();
 
 签名：`fb.ui.getTitlebarInfo(): Promise<WindowTitlebarInfo>`
 
-| 参数 | 类型 | 必填 | 说明 |
-| --- | --- | --- | --- |
-| - | - | - | 无参数 |
-
-返回值：标题栏高度、按钮宽度和相关布局信息。
+无参数。
 
 ```javascript
 const titlebar = await fb.ui.getTitlebarInfo();
@@ -819,11 +745,7 @@ const titlebar = await fb.ui.getTitlebarInfo();
 
 签名：`fb.ui.hasSavedBounds(): Promise<{ hasSavedBounds: boolean }>`
 
-| 参数 | 类型 | 必填 | 说明 |
-| --- | --- | --- | --- |
-| - | - | - | 无参数 |
-
-返回值：是否存在已保存窗口位置。
+无参数。
 
 ```javascript
 const { hasSavedBounds } = await fb.ui.hasSavedBounds();
@@ -837,8 +759,6 @@ const { hasSavedBounds } = await fb.ui.hasSavedBounds();
 | --- | --- | --- | --- |
 | windowId | string | 否 | 目标窗口 ID；省略时查询当前窗口 |
 
-返回值：窗口是否处于点击穿透状态。
-
 ```javascript
 const { clickThrough } = await fb.ui.isClickThrough();
 ```
@@ -847,11 +767,7 @@ const { clickThrough } = await fb.ui.isClickThrough();
 
 签名：`fb.ui.refreshWebView(): Promise<BaseResponse>`
 
-| 参数 | 类型 | 必填 | 说明 |
-| --- | --- | --- | --- |
-| - | - | - | 无参数 |
-
-返回值：刷新 WebView 的操作结果。
+无参数。
 
 ```javascript
 await fb.ui.refreshWebView();
@@ -865,8 +781,6 @@ await fb.ui.refreshWebView();
 | --- | --- | --- | --- |
 | opts | WindowSetBackgroundTransparencyParams | 是 | 背景透明度配置 |
 
-返回值：设置结果，可能包含效果说明。
-
 ```javascript
 await fb.ui.setBackgroundTransparency({ enabled: true, opacity: 0.85 });
 ```
@@ -878,8 +792,6 @@ await fb.ui.setBackgroundTransparency({ enabled: true, opacity: 0.85 });
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
 | opts | WindowSetBlurParams | 是 | Blur 效果配置 |
-
-返回值：设置 Blur 的操作结果。
 
 ```javascript
 await fb.ui.setBlur({ enabled: true });
@@ -893,8 +805,6 @@ await fb.ui.setBlur({ enabled: true });
 | --- | --- | --- | --- |
 | opts | WindowSetClickThroughParams | 是 | 点击穿透配置 |
 
-返回值：设置结果，可能包含当前点击穿透状态。
-
 ```javascript
 await fb.ui.setClickThrough({ enabled: true });
 ```
@@ -906,8 +816,6 @@ await fb.ui.setClickThrough({ enabled: true });
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
 | opts | WindowSetClickThroughExcludeRegionsParams | 是 | 点击穿透排除区域配置 |
-
-返回值：设置结果，可能包含区域数量、DPI 缩放或警告。
 
 ```javascript
 await fb.ui.setClickThroughExcludeRegions({
@@ -923,8 +831,6 @@ await fb.ui.setClickThroughExcludeRegions({
 | --- | --- | --- | --- |
 | mode | string | 是 | Windows 11 圆角偏好，如 `default`、`round`、`square` |
 
-返回值：设置圆角偏好的操作结果。
-
 ```javascript
 await fb.ui.setCornerPreference('round');
 ```
@@ -937,8 +843,6 @@ await fb.ui.setCornerPreference('round');
 | --- | --- | --- | --- |
 | opts | WindowSetDevServerConfigParams | 是 | 开发服务器配置 |
 
-返回值：保存开发服务器配置的操作结果。
-
 ```javascript
 await fb.ui.setDevServerConfig({ enabled: true, url: 'http://localhost:5173' });
 ```
@@ -950,8 +854,6 @@ await fb.ui.setDevServerConfig({ enabled: true, url: 'http://localhost:5173' });
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
 | frameless | boolean | 是 | 是否启用无边框窗口 |
-
-返回值：设置无边框模式的操作结果。
 
 ```javascript
 await fb.ui.setFrameless(true);
@@ -966,8 +868,6 @@ await fb.ui.setFrameless(true);
 | width | number | 是 | 最大宽度 |
 | height | number | 是 | 最大高度 |
 
-返回值：设置最大尺寸的操作结果。
-
 ```javascript
 await fb.ui.setMaxSize(1920, 1080);
 ```
@@ -979,8 +879,6 @@ await fb.ui.setMaxSize(1920, 1080);
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
 | regions | unknown[] | 是 | 不可拖拽区域数组 |
-
-返回值：设置结果，可能包含区域数量和 DPI 缩放。
 
 ```javascript
 await fb.ui.setNoDragRegions([{ x: 720, y: 0, width: 80, height: 32 }]);
@@ -994,8 +892,6 @@ await fb.ui.setNoDragRegions([{ x: 720, y: 0, width: 80, height: 32 }]);
 | --- | --- | --- | --- |
 | resizable | boolean | 是 | 是否允许用户调整窗口大小 |
 
-返回值：设置可调整大小状态的操作结果。
-
 ```javascript
 await fb.ui.setResizable(false);
 ```
@@ -1007,8 +903,6 @@ await fb.ui.setResizable(false);
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
 | dpi | number | 否 | 指定 DPI；省略时使用当前窗口 DPI |
-
-返回值：设置结果，可能包含最终 zoom。
 
 ```javascript
 await fb.ui.setZoomForDpi();
@@ -1022,8 +916,6 @@ await fb.ui.setZoomForDpi();
 | --- | --- | --- | --- |
 | x | number | 否 | 屏幕 X 坐标 |
 | y | number | 否 | 屏幕 Y 坐标 |
-
-返回值：显示上下文菜单的操作结果。
 
 ```javascript
 await fb.ui.showContextMenu();
@@ -1040,8 +932,6 @@ await fb.ui.showContextMenu();
 | w | number | 否 | 标题栏区域宽度 |
 | h | number | 否 | 标题栏区域高度 |
 
-返回值：显示系统菜单的操作结果。
-
 ```javascript
 await fb.ui.showSystemMenu(100, 32);
 ```
@@ -1054,8 +944,6 @@ await fb.ui.showSystemMenu(100, 32);
 | --- | --- | --- | --- |
 | edge | string | 是 | 调整方向，如 `left`、`right`、`top`、`bottom` |
 
-返回值：开始系统级窗口 resize 的操作结果。
-
 ```javascript
 await fb.ui.startResize('right');
 ```
@@ -1064,11 +952,7 @@ await fb.ui.startResize('right');
 
 签名：`fb.ui.toggleAlwaysOnTop(): Promise<BaseResponse & { enabled?: boolean }>`
 
-| 参数 | 类型 | 必填 | 说明 |
-| --- | --- | --- | --- |
-| - | - | - | 无参数 |
-
-返回值：切换置顶后的操作结果，可能包含 `enabled`。
+无参数。
 
 ```javascript
 await fb.ui.toggleAlwaysOnTop();
@@ -1078,11 +962,7 @@ await fb.ui.toggleAlwaysOnTop();
 
 签名：`fb.ui.toggleFullscreen(): Promise<BaseResponse & { fullscreen?: boolean }>`
 
-| 参数 | 类型 | 必填 | 说明 |
-| --- | --- | --- | --- |
-| - | - | - | 无参数 |
-
-返回值：切换全屏后的操作结果，可能包含 `fullscreen`。
+无参数。
 
 ```javascript
 await fb.ui.toggleFullscreen();

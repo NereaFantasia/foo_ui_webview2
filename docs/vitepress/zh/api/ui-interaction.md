@@ -8,24 +8,24 @@
 
 显示自定义右键菜单。支持子菜单、分隔线、快捷键提示、勾选状态。
 
-| 参数 | 类型 | 必填 | 说明 |
-| --- | --- | --- | --- |
-| `h` | `integer` | 否 | 可选；默认 0。 |
-| `items` | `array` | 是 | 必填。 |
-| `suppressDefault` | `boolean` | 否 | 可选；默认 false。 |
-| `w` | `integer` | 否 | 可选；默认 0。 |
-| `x` | `integer` | 否 | 可选；默认 0。 |
-| `y` | `integer` | 否 | 可选；默认 0。 |
+| 参数 | 类型 | 必填 | 默认值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `items` | `array` | 是 | — | 菜单项数组，结构见下表。 |
+| `x` | `integer` | 否 | `0` | 当前实现忽略此参数，菜单固定在系统光标处弹出。 |
+| `y` | `integer` | 否 | `0` | 当前实现忽略此参数。 |
+| `w` | `integer` | 否 | `0` |  |
+| `h` | `integer` | 否 | `0` |  |
+| `suppressDefault` | `boolean` | 否 | `false` |  |
 
 **菜单项结构**:
 
 | 字段 | 类型 | 描述 |
 | --- | --- | --- |
-| `id` | string | id |
+| `id` | string | 菜单项标识，选中时经 `selectedId` 返回 |
 | `label` | string | 显示文本 |
-| `type` | string | type |
+| `type` | string | `separator` 表示分隔线 |
 | `enabled` | boolean | 是否可用（默认 true） |
-| `checked` | boolean | checked |
+| `checked` | boolean | 勾选状态 |
 | `shortcut` | string | 快捷键提示文本 |
 | `submenu` | array | 子菜单项数组 |
 
@@ -73,12 +73,12 @@ fb2k.on('ui:menuItemClicked', (data) => {
 
 显示 Toast 提示。通过触发 `ui:toast` 事件由前端渲染。
 
-| 参数 | 类型 | 必填 | 说明 |
-| --- | --- | --- | --- |
-| `duration` | `integer` | 否 | 可选；默认 3000。 |
-| `message` | `string` | 是 | 必填；Toast 文本。 |
-| `position` | `string` | 否 | 可选；默认 bottom-right。 |
-| `type` | `string` | 否 | 可选；默认 info。 |
+| 参数 | 类型 | 必填 | 默认值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `message` | `string` | 是 | — | Toast 文本。 |
+| `type` | `string` | 否 | `info` | 可取 `info` / `success` / `warning` / `error`。 |
+| `duration` | `integer` | 否 | `3000` | 显示时长（毫秒）。 |
+| `position` | `string` | 否 | `bottom-right` |  |
 
 **返回值**: `{ "success": true }`
 
@@ -112,12 +112,12 @@ fb2k.on('ui:toast', (data) => {
 
 显示系统托盘通知（Windows Balloon Notification）。
 
-| 参数 | 类型 | 必填 | 说明 |
-| --- | --- | --- | --- |
-| `body` | `string` | 否 | 可选。 |
-| `silent` | `boolean` | 否 | 可选；默认 false。 |
-| `timeout` | `integer` | 否 | 可选；默认 5000。 |
-| `title` | `string` | 否 | 可选。 |
+| 参数 | 类型 | 必填 | 默认值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `title` | `string` | 否 | — | 通知标题。 |
+| `body` | `string` | 否 | — | 通知正文。 |
+| `timeout` | `integer` | 否 | `5000` | 显示时长（毫秒）。 |
+| `silent` | `boolean` | 否 | `false` |  |
 
 **返回值**: `{ "success": true, "id": 1 }`
 
@@ -141,10 +141,10 @@ const { id } = await fb2k.invoke('ui.showNotification', {
 
 显示 foobar2000 原生上下文菜单。通常用于响应右键事件，在指定坐标位置弹出原生菜单。
 
-| 参数 | 类型 | 必填 | 说明 |
-| --- | --- | --- | --- |
-| `x` | `integer` | 否 | 可选；默认 -1。 |
-| `y` | `integer` | 否 | 可选；默认 -1。 |
+| 参数 | 类型 | 必填 | 默认值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `x` | `integer` | 否 | `-1` | 省略或 `-1` 时使用当前鼠标位置。 |
+| `y` | `integer` | 否 | `-1` | 省略或 `-1` 时使用当前鼠标位置。 |
 
 **返回值**: `{ "success": true }`
 
@@ -166,11 +166,11 @@ document.addEventListener('contextmenu', (e) => {
 
 注册全局热键。热键触发时通过 `keyboard:hotkey` 事件通知。
 
-| 参数 | 类型 | 必填 | 说明 |
-| --- | --- | --- | --- |
-| `action` | `string` | 是 | 必填。 |
-| `global` | `boolean` | 否 | 可选；默认 true。 |
-| `key` | `string` | 是 | 必填。 |
+| 参数 | 类型 | 必填 | 默认值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `key` | `string` | 是 | — | 组合键，如 `Ctrl+Alt+Space`。 |
+| `action` | `string` | 是 | — | 动作名，原样出现在 `keyboard:hotkey` 载荷中。 |
+| `global` | `boolean` | 否 | `true` |  |
 
 **返回值**: `{ "success": true, "id": 1 }`
 
@@ -199,8 +199,8 @@ fb2k.on('keyboard:hotkey', (data) => {
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
-| `action` | `string` | 是 | 必填。 |
-| `key` | `string` | 是 | 必填。 |
+| `key` | `string` | 是 | 组合键，如 `Ctrl+Shift+L`。 |
+| `action` | `string` | 是 | 随快捷键保存的动作名。 |
 
 **返回值**: `{ "success": true }`
 
@@ -210,8 +210,8 @@ fb2k.on('keyboard:hotkey', (data) => {
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
-| `id` | `string` | 否 | 可省略。 |
-| `key` | `string` | 否 | 可选。 |
+| `id` | `string` | 否 | 注册时返回的数字 id。 |
+| `key` | `string` | 否 | 注册时的原始 key 字符串。 |
 
 **返回值**: `{ "success": true }`
 
@@ -291,10 +291,14 @@ fb2k.on('dnd:capabilitiesChanged', (data) => {
 | --- | --- | --- | --- |
 | `sessionId` | `string` | 否 | 要查询的会话，取自 `dnd:*` 载荷；省略则查询本窗口当前活动或最近结束的会话。 |
 
-**返回值**: `{ "success": true, "sessionId": "dnd-1-12345", "paths": [] }`
+**返回值**: `{ "success": true, "sessionId": "dnd-1-12345", "paths": [], "resolvedPaths": [] }`
 
 在 HTML5 `drop` 处理函数中取路径的可靠方式：读宿主会话状态而非推送到页面的快照，
 不依赖消息投递顺序。路径顺序与 `DataTransfer.files` 一致，可按下标配对。
+
+`resolvedPaths` 携带快捷方式（`.lnk`）的目标路径，**长度恒等于 `paths`**，因此对一个
+数组有效的下标对另一个同样有效；非快捷方式的项为 `null`。它与 `paths` 同时被清空，
+不会单独为空。
 
 会话不存在、已过期、未携带文件列表，或 origin 不被信任时，`paths` 为空数组。会话
 存储是 per-window 的，仅凭 id 无法读取其他窗口的路径。
@@ -319,7 +323,7 @@ document.addEventListener('drop', async (event) => {
 
 ::: tip 注意
 拖出需要 `IDropSource` 实现与宿主产出的数据对象，两者都不存在。它显式失败而非伪造
-`success: true`，使调用方无法建立在假成功之上。
+`success: true`，避免调用方基于虚假的成功继续往下做。
 
 该 Promise 会 **resolve** 这个信封而不是 reject——宿主把 handler 返回的错误信封当作
 正常结果投递，因此应判断 `success`，不要依赖 `catch`。
@@ -336,6 +340,6 @@ native 代码中绘制 UI，而是向调用者发射 `ui:toast`，因此主题�
 `key` 和 `action`；`unregisterHotkey` 接受数字 `id` 或原始 key 字符串。
 
 `dnd.getPathsAsync` 与 `dnd.getCapabilities` 都从消息自带的 HWND 解析调用窗口，
-因此页面无法读取其他窗口的拖放会话。路径对不受信任的 origin 不提供，而 HTML5 拖放
+因此页面无法读取其他窗口的拖放会话。不受信任的 origin 拿不到路径，而 HTML5 拖放
 事件仍然工作，因此应对 `paths` 与 `html5` 分别判断，而不是一并隐藏全部拖放提示。
 `dnd.startDrag` 会报告拖出目前的 native 限制，而不是实现 OLE drag source。

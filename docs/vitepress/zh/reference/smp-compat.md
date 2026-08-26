@@ -1,8 +1,6 @@
 # SMP 兼容层
 
-完整的 Spider Monkey Panel（SMP）兼容层，用于在 WebView2 UI 中运行 SMP 风格脚本。权威源代码层为 `sdk/src/smp/**`（bootstrap 入口：`bootstrapSmpCompat`）；发布到 `dist` 的产物由构建生成，禁止手工编辑。
-
-v1.2.0 新增完整的 Spider Monkey Panel (SMP) 兼容层，可在 WebView2 UI 中运行 SMP 脚本。v1.2.1 补全剪贴板/DSP/输出/队列扩展 API、`utils` 对象（22 方法）和 `window` 属性方法。
+Spider Monkey Panel（SMP）兼容层，用于在 WebView2 UI 中运行 SMP 风格脚本。权威源代码层为 `sdk/src/smp/**`（bootstrap 入口：`bootstrapSmpCompat`）；发布到 `dist` 的产物由构建生成，禁止手工编辑。
 
 ## 快速开始
 
@@ -428,6 +426,9 @@ await plman.AddPlaylistItemToPlaybackQueue(0, 2);
 
 // 查找或创建
 const idx = await plman.FindOrCreatePlaylist('My Favorites');
+
+// 把第 4 个播放列表移到第 1 位
+await plman.MovePlaylist(3, 0);
 ```
 
 以下行为与原版 SMP 存在差异，属于已知设计取舍：
@@ -439,8 +440,6 @@ const idx = await plman.FindOrCreatePlaylist('My Favorites');
 | plman.FindOrCreatePlaylist(name, unlocked) | unlocked 参数被忽略 | 创建后不会自动 unlock |
 | plman.CreateAutoPlaylist(idx, ...) | idx 位置参数被忽略 | 始终追加到末尾 |
 | window.NotifyOthers(name, info) | 接收端 `on_notify_data` 未映射 | 发送正常（使用 window.broadcast），但 SMP 的 `on_notify_data` 回调不会被自动触发；接收端需改用 fb2k.on('window:message', ...) |
-
-// 移动播放列表位置 await plman.MovePlaylist(3, 0); // 将第4个移到第1个位置
 
 ## window 对象
 

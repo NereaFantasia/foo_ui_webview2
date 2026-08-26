@@ -11,7 +11,7 @@ This page is the primary owner for the namespaces listed below. Method names, pa
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `path` | `string` | Yes | Track path. Accepts `path|subsong:N`. |
+| `path` | `string` | Yes | Track path. Accepts `path\|subsong:N`. |
 
 **Returns**: `{"error":"...","exists":"...","sources":"...","success":true}`
 
@@ -24,12 +24,12 @@ const { exists, sources } = await fb2k.invoke('lyrics.exists', {
 ### lyrics.get
 
 
-| Parameter | Type | Required | Description |
-| --- | --- | --- | --- |
-| `format` | `string` | No | Optional; default any. Accepts `lrc`, `txt`, or `any`. |
-| `path` | `string` | No | Optional; falls back to the current playing track. |
-| `source` | `string` | No | Optional; default any. Accepts `embedded`, `file`, or `any`. |
-| `type` | `string` | No | Optional; default any. Accepts `synced`, `unsynced`, or `any`. |
+| Parameter | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `path` | `string` | No | — | Falls back to the current playing track. |
+| `source` | `string` | No | `any` | Accepts `embedded`, `file`, or `any`. |
+| `type` | `string` | No | `any` | Accepts `synced`, `unsynced`, or `any`. |
+| `format` | `string` | No | `any` | Accepts `lrc`, `txt`, or `any`. |
 
 **Returns**: `{"available":true,"lyrics":"...","path":"...","source":"...","sourcePath":"...","success":true,"synced":"..."}`
 
@@ -43,14 +43,14 @@ const { available, lyrics, synced } = await fb2k.invoke('lyrics.get', {
 ### lyrics.save
 
 
-| Parameter | Type | Required | Description |
-| --- | --- | --- | --- |
-| `filename` | `string` | No | Optional; plain filename only. Used by the `file` and `config` targets. |
-| `format` | `string` | No | Optional; default lrc. Accepts `lrc` or `txt` and selects the sidecar extension. |
-| `lyrics` | `string` | Yes | Lyrics text to save; must be non-empty. |
-| `path` | `string` | Yes | Track path the lyrics belong to. |
-| `tagName` | `string` | No | Optional; default LYRICS. Used by the `embedded` target. |
-| `target` | `array` | No | Optional; default file. Accepts `file`, `embedded`, `config`, `all`, or an array of the first three. |
+| Parameter | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `path` | `string` | Yes | — | Track path the lyrics belong to. |
+| `lyrics` | `string` | Yes | — | Lyrics text to save; must be non-empty. |
+| `target` | `string \| string[]` | No | `file` | Accepts `file`, `embedded`, `config`, `all`, or an array of the first three. |
+| `format` | `string` | No | `lrc` | Accepts `lrc` or `txt` and selects the sidecar extension. |
+| `filename` | `string` | No | — | Plain filename only. Used by the `file` and `config` targets. |
+| `tagName` | `string` | No | `LYRICS` | Used by the `embedded` target. |
 
 **Returns**: `{"error":"...","results":"...","success":true}`
 

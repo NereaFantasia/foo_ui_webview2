@@ -4,13 +4,11 @@
 
 <!-- BEGIN AUTO-GENERATED SDK STUBS -->
 
-## SDK Methods
-
-> This block provides SDK-level method coverage and may later be expanded with complete examples and best practices.
+## Additional methods
 
 ### confirm(options?)
 
-Signature: `fb.dialog.confirm(options?: DialogConfirmParams): Promise<{ confirmed: boolean }>`
+Signature: `fb.dialog.confirm(options?: DialogConfirmParams): Promise<{ response: number }>`
 
 | Field | Type | Description |
 | --- | --- | --- |
@@ -20,11 +18,16 @@ Signature: `fb.dialog.confirm(options?: DialogConfirmParams): Promise<{ confirme
 | `defaultButton` | `number` | Default button index |
 | `buttons` | `string[]` | Custom button labels |
 
+`response` is the zero-based index of the clicked button. With the default buttons `['OK', 'Cancel']`, `0` means confirmed and `1` cancelled; `-1` appears only on the host's fallback path.
+
 ```javascript
-const { confirmed } = await fb.dialog.confirm({
+const { response } = await fb.dialog.confirm({
 	title: 'Remove track',
 	message: 'Remove the selected track?'
 });
+if (response === 0) {
+	// confirmed
+}
 ```
 
 ### openFile(options?)

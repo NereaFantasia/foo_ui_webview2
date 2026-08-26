@@ -1,6 +1,6 @@
 # 其他 API
 
-v1.2.0 新增。提供系统路径查询和常用 UI 命令。
+（v1.2.0+）提供系统路径查询和常用 UI 命令。
 
 ## Misc API - 系统路径与命令
 
@@ -10,7 +10,7 @@ v1.2.0 新增。提供系统路径查询和常用 UI 命令。
 
 **返回值**: `{ "path": "C:\\...\\foobar2000", "value": "C:\\...\\foobar2000" }`
 
-::: tip TIP
+::: tip
 `value` 是 `path` 的别名，两者值相同。
 :::
 
@@ -109,7 +109,7 @@ await fb2k.invoke('misc.showConsole');
 await fb2k.invoke('misc.showPopupMessage', { message: 'Hello!', title: 'Test' });
 ```
 
-v1.2.0 新增。提供主菜单和上下文菜单的执行和查询。
+（v1.2.0+）提供主菜单和上下文菜单的执行和查询。
 
 ## Menu API - 菜单
 
@@ -219,7 +219,7 @@ await fb2k.invoke('menu.runContextCommand', {
 | --- | --- | --- | --- |
 | `id` | `integer` | 是 | 来自 `menu.getContextMenu` 的 `commandId`。缺失、非整数或负数一律以 `id is required` 失败。 |
 | `mode` | `string` | 否 | 取值为 `auto`、`selection`、`playlist`、`nowPlaying`、`handles` 之一；默认 `auto`，其他任何值同样按 `auto` 处理。 |
-| `handles` | `array` | 否 | 目标曲目列表；`mode: 'handles'` 时必须提供。 |
+| `handles` | `array` | 否 | 目标曲目列表，元素可为路径字符串（可带 `\|subsong:N`）或 `{ path, subsong }` 对象。`mode: 'handles'` 时必须提供。 |
 
 ::: warning 注意
 `commandId` 是某次 `menu.getContextMenu` 结果内的序号，只在相同 `mode` 与相同目标曲目下有效。执行时请沿用取菜单时的 `mode`。
@@ -444,7 +444,7 @@ console.log('pong:', result.timestamp);
 | `panelName` | `string` | 否 | 面板显示名；省略则保持当前值。 |
 | `transparentBackground` | `boolean` | 否 | 是否使用透明背景；省略则保持当前值。 |
 
-::: warning WARNING
+::: warning
 `enableDevTools`、`urlOverride`、`templateName` 仅可通过配置对话框修改。
 :::
 
@@ -511,7 +511,7 @@ await fb2k.invoke('clipboard.writeHTML', {
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
-| `paths` | `array` | 是 | 必填。 |
+| `paths` | `array` | 是 | 要写入剪贴板的文件路径数组。 |
 
 **返回值**: `{ "success": true, "fileCount": 3 }`
 
@@ -581,7 +581,7 @@ await fb2k.invoke('console.log', { args: ['用户:', userName, '播放次数:', 
 | `timestamp` | `boolean` | 否 | 是否在行首写入时间戳；默认 `true`。 |
 
 ::: tip 提示
-`file` 只接受不含路径分隔符的裸文件名，扩展名限 `.log` / `.txt`，且不能是 Windows 保留设备名；不满足时回落到默认日志文件。
+`file` 只接受不含路径分隔符的裸文件名，扩展名限 `.log` / `.txt`，且不能是 Windows 保留设备名；不满足时回退到默认日志文件。
 :::
 
 **返回值**: `{ "success": true, "path": "C:\\...\\webview_ui.log" }`
@@ -622,9 +622,9 @@ await fb2k.invoke('log.write', {
 
 **返回值**: `{ "success": true }`
 
-## 合同补充
+## 契约补充
 
-以下章节补齐严格参数审计发现的公开 contract；不会改变前文的已有说明。
+以下补充这些方法的完整参数契约，不改变前文的已有说明。
 
 ### menu.close
 
@@ -687,8 +687,6 @@ const { menuId } = await fb2k.invoke('menu.show', {
 | `success` | `boolean` | 否 |
 | `path` | `json` | 否 |
 
-语义：省略可选参数时使用 handler 默认值；失败分支及错误字段以该源文件为准。
-
 ```js
 await fb2k.invoke('log.write', { message: '播放开始' });
 ```
@@ -715,8 +713,6 @@ await fb2k.invoke('log.write', { message: '播放开始' });
 | `mode` | `json` | 否 |
 | `withAvailability` | `json` | 否 |
 
-语义：省略可选参数时使用 handler 默认值；失败分支及错误字段以该源文件为准。
-
 ```js
 const { items, mode } = await fb2k.invoke('menu.getContextMenu');
 ```
@@ -736,8 +732,6 @@ const { items, mode } = await fb2k.invoke('menu.getContextMenu');
 | `error` | `string` | 是 |
 | `success` | `boolean` | 否 |
 
-语义：省略可选参数时使用 handler 默认值；失败分支及错误字段以该源文件为准。
-
 ```js
 const { items } = await fb2k.invoke('menu.getContextMenu');
 await fb2k.invoke('menu.runContextCommandById', { id: items[0].commandId });
@@ -756,8 +750,6 @@ await fb2k.invoke('menu.runContextCommandById', { id: items[0].commandId });
 | 字段 | 类型 | 可选 |
 | --- | --- | --- |
 | `success` | `boolean` | 否 |
-
-语义：省略可选参数时使用 handler 默认值；失败分支及错误字段以该源文件为准。
 
 ```js
 await fb2k.invoke('misc.showPopupMessage', { message: '导出完成' });

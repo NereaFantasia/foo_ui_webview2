@@ -10,14 +10,20 @@ Searches the media library and returns a `LibrarySearchResponse`.
 | --- | --- | --- |
 | `query` | `string` | foobar2000 query expression |
 | `limit` | `number?` | Maximum result count |
-| `options` | `Omit<LibrarySearchParams, 'query' \| 'limit'>?` | Additional native search options |
+| `options` | `Omit<LibrarySearchParams, 'query' \| 'limit'>?` | Additional native search options (`offset`, `fields`) |
+| `options.fields` | `string[]?` | Track keys to project; see [Field projection](#field-projection) |
 
-`tracks` and the compatibility alias `items` contain track rows. `hasMore` indicates that more matching rows exist.
+`tracks` contains the track rows. `hasMore` indicates that more matching rows exist.
 
 ```javascript
 const results = await fb.library.search('artist HAS Beatles', 100);
 console.log(`Found ${results.total} tracks`);
 if (results.hasMore) console.log('More results are available');
+
+// Narrow the projection: each row of `tracks` carries only these keys
+const narrow = await fb.library.search('artist HAS Beatles', 500, {
+    fields: ['absolutePath', 'album'],
+});
 ```
 
 ## getAlbums(limit?) 
@@ -262,13 +268,76 @@ const years = await fb.library.getFieldValues('date', 50);
 const moreYears = await fb.library.enumerateFieldValues('date', { limit: 50 });
 ```
 
-## query(query, sort?, limit?)
+## query(query, sort?, limit?, fields?)
 
-Runs a foobar2000 query with an optional Title Formatting sort expression.
+Runs a foobar2000 query with an optional Title Formatting sort expression. Sorting is applied before `limit` truncation, and `total` reports the untruncated hit count.
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `query` | `string` | Yes | foobar2000 query expression; an empty value resolves with `success: false` |
+| `sort` | `string` | No | Title Formatting sort expression; omit to keep library order |
+| `limit` | `number` | No | Result cap (host default `100`) |
+| `fields` | `string[]` | No | Track keys to project; see [Field projection](#field-projection) |
 
 ```javascript
 const r = await fb.library.query('%rating% GREATER 3', '%rating%', 100);
+
+// Path-only projection over a large hit set
+const paths = await fb.library.query('%codec% IS FLAC', undefined, 100000, [
+    'absolutePath',
+]);
 ```
+
+## Field projection
+
+`query(..., fields)` and `search(query, limit, { fields })` accept an optional list of track keys. Omitting it keeps the current behaviour: every row carries all 19 keys.
+
+When the list is present each row holds **exactly** the requested keys and nothing else, so the declared `TrackInfo` type becomes a partial view at runtime. Rows whose metadata container could not be read still carry every requested key, filled with type defaults (empty string, zero). Response envelopes are unchanged.
+
+**Accepted key names** (exact match, case-sensitive):
+
+`index`, `title`, `artist`, `album`, `albumArtist`, `genre`, `date`, `trackNumber`, `discNumber`, `duration`, `path`, `absolutePath`, `fileSize`, `bitrate`, `sampleRate`, `channels`, `codec`, `subsong`, `rating`
+
+Duplicates are de-duplicated. `rating` is only computed when requested (or when the list is omitted).
+
+**Validation** is fail-closed and always resolves — the promise is never rejected. A non-array (including an explicit `null`), an empty array, a non-string element, or an unknown name produces:
+
+```javascript
+const bad = await fb.library.query('artist HAS Beatles', undefined, 100, [
+    'absolutepath',
+    'Rating',
+]); // wrong case
+// {
+//   success: false,
+//   error: 'fields contains unknown field names',
+//   code: 'INVALID_PARAMS',
+//   details: { unknownFields: ['absolutepath', 'Rating'] }
+// }
+```
+
+`details.unknownFields` appears only for the unknown-name case; the other malformed shapes resolve with `success` / `error` / `code` alone.
+
+**When to use it**
+
+| Scenario | Suggested list |
+| --- | --- |
+| Filtering tens of thousands of hits and only paths are needed | `['absolutePath']` |
+| Search results shown in a UI (hundreds of rows, all columns) | omit the argument |
+| Filtering plus per-album grouping | `['absolutePath', 'album']` |
+
+For an 80,000-row result set the single-key projection measured 45.1 MB down to 8.4 MB on the wire and `JSON.parse` in the page from 147 ms down to 37 ms.
+
+### Large result sets
+
+**The host's main thread is occupied in proportion to the response size.** Rows are built on a worker thread; the cost is in handing the finished response to the page, measured at 15–27 ms per MiB. Controlling how many bytes one call returns is the only effective lever, and there are two: projection (`fields`, roughly 4.6× less payload going from full-field to `['absolutePath']`) and paging (`offset` / `limit`, which scales occupancy with the rows in that page).
+
+**Supported access pattern**: up to about 20,000 rows per call after paging and/or projection, which keeps a single call's main-thread occupancy under 100 ms. Past that, page it.
+
+::: warning 32-bit (x86) hosts must avoid large result sets
+A 32-bit process has roughly 2–4 GB of user address space, and a whole-library full-field response is resident in several forms at once while it is parsed. Estimated instantaneous peaks: 80,000 rows ≈ 178 MB full-field / ≈ 39 MB projected to `['absolutePath']`; 165,306 rows ≈ 367 MB / ≈ 80 MB. Those stack on the host's existing usage, and `search()` doubles them again. On a 32-bit host, project or page when a query can match tens of thousands of rows; do not issue a full-field request for a whole library. A 64-bit host has no such limit, but the main-thread occupancy applies equally.
+
+The peaks are analytic upper bounds from the parse model, not measured working sets — guidance, not a budget.
+:::
 
 ## Supplemental method reference
 

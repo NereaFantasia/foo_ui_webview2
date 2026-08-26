@@ -4,50 +4,30 @@
 
 <!-- BEGIN AUTO-GENERATED SDK STUBS -->
 
-## SDK 方法 stub
-
-> 该区块用于补齐 SDK 视角方法覆盖，后续可人工扩展为完整示例与最佳实践。
+## 其余方法
 
 ### error()
 
-签名：`fb.console.error(...args): Promise<unknown>`
-
-| 参数 | 类型 | 必填 | 说明 |
-| --- | --- | --- | --- |
-| ...args | unknown[] | 视方法而定 | 透传给 SDK wrapper；详细类型以 `sdk/src/bridge/namespaces/` 源码和生成类型为准 |
-
-返回值：底层 `console.error` 调用结果。
+封装 `console.error`。参数与返回类型以 `foo-webview-sdk` 的 TypeScript 声明为准（IDE 悬浮提示或包内 `bridge.d.ts`），行为契约见 API 文档对应条目。
 
 ```javascript
-const result = await fb.console.error();
+await fb.console.error(/* 参数见 TypeScript 声明 */);
 ```
 
 ### log()
 
-签名：`fb.console.log(...args): Promise<unknown>`
-
-| 参数 | 类型 | 必填 | 说明 |
-| --- | --- | --- | --- |
-| ...args | unknown[] | 视方法而定 | 透传给 SDK wrapper；详细类型以 `sdk/src/bridge/namespaces/` 源码和生成类型为准 |
-
-返回值：底层 `console.log` 调用结果。
+封装 `console.log`。参数与返回类型以 `foo-webview-sdk` 的 TypeScript 声明为准（IDE 悬浮提示或包内 `bridge.d.ts`），行为契约见 API 文档对应条目。
 
 ```javascript
-const result = await fb.console.log();
+await fb.console.log(/* 参数见 TypeScript 声明 */);
 ```
 
 ### warn()
 
-签名：`fb.console.warn(...args): Promise<unknown>`
-
-| 参数 | 类型 | 必填 | 说明 |
-| --- | --- | --- | --- |
-| ...args | unknown[] | 视方法而定 | 透传给 SDK wrapper；详细类型以 `sdk/src/bridge/namespaces/` 源码和生成类型为准 |
-
-返回值：底层 `console.warn` 调用结果。
+封装 `console.warn`。参数与返回类型以 `foo-webview-sdk` 的 TypeScript 声明为准（IDE 悬浮提示或包内 `bridge.d.ts`），行为契约见 API 文档对应条目。
 
 ```javascript
-const result = await fb.console.warn();
+await fb.console.warn(/* 参数见 TypeScript 声明 */);
 ```
 
 <!-- END AUTO-GENERATED SDK STUBS -->

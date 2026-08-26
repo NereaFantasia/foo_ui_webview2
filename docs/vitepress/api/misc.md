@@ -185,7 +185,7 @@ Returns the context menu tree that foobar2000 would build for the selected conte
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `handles` | `array` | No | Track paths, or `{ path, subsong }` objects, used as the menu context. Required when `mode` is `handles`. |
+| `handles` | `array` | No | Track paths (optionally with a `\|subsong:N` suffix), or `{ path, subsong }` objects, used as the menu context. Required when `mode` is `handles`. |
 | `i18n` | `boolean` | No | Translates item labels into `displayLabel`. Defaults to `true`. |
 | `locale` | `string` | No | Translation locale. Defaults to `auto`, which keeps the host's own labels. |
 | `mode` | `string` | No | One of `auto`, `selection`, `playlist`, `nowPlaying`, or `handles`. Defaults to `auto`, which is also used for any other value. |
@@ -247,7 +247,7 @@ Runs a context menu command by the numeric id reported by `menu.getContextMenu`.
 | --- | --- | --- | --- |
 | `id` | `integer` | Yes | Command id from the built context menu. Missing, non-integer, or negative values fail with `id is required`. |
 | `mode` | `string` | No | One of `selection`, `playlist`, `nowPlaying`, `handles`, or `auto`. Defaults to `auto`, which is also used for any other value. |
-| `handles` | `array` | No | Track paths, or `{ path, subsong }` objects, used as the menu context. Required when `mode` is `handles`. |
+| `handles` | `array` | No | Track paths (optionally with a `\|subsong:N` suffix), or `{ path, subsong }` objects, used as the menu context. Required when `mode` is `handles`. |
 
 **Returns**: `{"Failed to initialize context menu":"...","error":"...","success":true}`
 
@@ -330,7 +330,7 @@ Opens the native foobar2000 context menu at the current cursor position.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `handles` | `array` | No | Track paths, or `{ path, subsong }` objects, used as the menu context. Required when `mode` is `handles`. |
+| `handles` | `array` | No | Track paths (optionally with a `\|subsong:N` suffix), or `{ path, subsong }` objects, used as the menu context. Required when `mode` is `handles`. |
 | `mode` | `string` | No | One of `auto`, `selection`, `playlist`, `nowPlaying`, or `handles`. Defaults to `auto`, which is also used for any other value. |
 
 **Returns**: `{"error":"...","success":true}`

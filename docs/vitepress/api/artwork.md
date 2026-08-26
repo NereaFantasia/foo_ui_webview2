@@ -11,7 +11,7 @@ This page is the primary owner for the namespaces listed below. Method names, pa
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `path` | `string` | Yes | Track path. Accepts `path|subsong:N`. |
+| `path` | `string` | Yes | Track path. Accepts `path\|subsong:N`. |
 
 **Returns**: `{"artworks":"...","available":"...","error":"...","sources":"...","success":true}`
 
@@ -26,7 +26,7 @@ const { artworks, sources } = await fb2k.invoke('artwork.getAvailableArtwork', {
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `path` | `string` | No | Optional; falls back to the now-playing track. |
+| `path` | `string` | No | Falls back to the now-playing track. |
 
 **Returns**: `{"error":"...","success":true,"types":"..."}`
 
@@ -39,10 +39,10 @@ const { types } = await fb2k.invoke('artwork.getAvailableTypes', {
 ### artwork.getBatch
 
 
-| Parameter | Type | Required | Description |
-| --- | --- | --- | --- |
-| `paths` | `array` | Yes | Required. |
-| `type` | `string` | No | Optional; default front. |
+| Parameter | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `paths` | `array` | Yes | — | File path list. |
+| `type` | `string` | No | `front` |  |
 
 **Returns**: `{"artworks":"...","error":"...","success":true}`
 
@@ -55,10 +55,10 @@ const { artworks } = await fb2k.invoke('artwork.getBatch', {
 ### artwork.getByPath
 
 
-| Parameter | Type | Required | Description |
-| --- | --- | --- | --- |
-| `path` | `string` | Yes | Track path. Accepts native paths, `file://`, and `path|subsong:N`. |
-| `type` | `string` | No | Optional; default front. |
+| Parameter | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `path` | `string` | Yes | — | Track path. Accepts native paths, `file://`, and `path\|subsong:N`. |
+| `type` | `string` | No | `front` |  |
 
 **Returns**: `{"available":"...","dataUrl":"...","error":"...","mimeType":"...","path":"...","size":"...","type":"..."}`
 
@@ -71,11 +71,11 @@ const { available, dataUrl } = await fb2k.invoke('artwork.getByPath', {
 ### artwork.getByPlaylistItem
 
 
-| Parameter | Type | Required | Description |
-| --- | --- | --- | --- |
-| `index` | `integer` | No | Optional; default -1, which selects item 0. |
-| `playlist` | `integer` | No | Optional; default -1, which selects the active playlist. |
-| `type` | `string` | No | Optional; default front. |
+| Parameter | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `playlist` | `integer` | No | `-1` | `-1` selects the active playlist. |
+| `index` | `integer` | No | `-1` | `-1` selects item 0. |
+| `type` | `string` | No | `front` |  |
 
 **Returns**: `{"available":"...","dataUrl":"...","error":"...","index":"...","mimeType":"...","playlist":"...","size":"...","type":"..."}`
 
@@ -88,9 +88,9 @@ const { available, dataUrl } = await fb2k.invoke('artwork.getByPlaylistItem', {
 ### artwork.getCurrent
 
 
-| Parameter | Type | Required | Description |
-| --- | --- | --- | --- |
-| `type` | `string` | No | Optional; default front. |
+| Parameter | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `type` | `string` | No | `front` |  |
 
 **Returns**: `{"available":"...","dataUrl":"...","error":"...","mimeType":"...","path":"...","reason":"...","size":"...","source":"...","type":"..."}`
 
@@ -107,10 +107,10 @@ const { available, dataUrl, source } = await fb2k.invoke('artwork.getCurrent');
 ### artwork.getFb2kUrl
 
 
-| Parameter | Type | Required | Description |
-| --- | --- | --- | --- |
-| `maxSize` | `integer` | No | Optional; default 0. |
-| `type` | `string` | No | Optional; default front. |
+| Parameter | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `type` | `string` | No | `front` |  |
+| `maxSize` | `integer` | No | `0` | `0` means no downscaling. |
 
 **Returns**: `{"available":"...","dataUrl":"...","error":"...","reason":"...","type":"..."}`
 
@@ -123,11 +123,11 @@ const { available, dataUrl } = await fb2k.invoke('artwork.getFb2kUrl', {
 ### artwork.getFb2kUrlByPath
 
 
-| Parameter | Type | Required | Description |
-| --- | --- | --- | --- |
-| `maxSize` | `integer` | No | Optional; default 0, which means no downscaling. |
-| `path` | `string` | Yes | Track path. |
-| `type` | `string` | No | Optional; default front. |
+| Parameter | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `path` | `string` | Yes | — | Track path. |
+| `type` | `string` | No | `front` |  |
+| `maxSize` | `integer` | No | `0` | `0` means no downscaling. |
 
 **Returns**: `{"available":"...","dataUrl":"...","error":"...","path":"...","type":"..."}`
 
@@ -141,12 +141,12 @@ const { available, dataUrl } = await fb2k.invoke('artwork.getFb2kUrlByPath', {
 ### artwork.getFb2kUrlByPathBatch
 
 
-| Parameter | Type | Required | Description |
-| --- | --- | --- | --- |
-| `items` | `array` | No | Optional; omitted by default. |
-| `maxSize` | `integer` | No | Optional; default 0. |
-| `paths` | `array` | No | Optional; omitted by default. |
-| `type` | `string` | No | Optional; default front. |
+| Parameter | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `paths` | `array` | No | — | Path array; provide exactly one of `paths` or `items`. |
+| `items` | `array` | No | — | Entries are objects with a `path` member; use `paths` for plain strings. Provide exactly one of the two. |
+| `type` | `string` | No | `front` |  |
+| `maxSize` | `integer` | No | `0` | `0` means no downscaling. |
 
 **Returns**: `{"artworks":"...","error":"...","success":true}`
 
@@ -175,10 +175,10 @@ const { images } = await fb2k.invoke('artwork.getFolderImages', {
 ### artwork.getForTrack
 
 
-| Parameter | Type | Required | Description |
-| --- | --- | --- | --- |
-| `path` | `string` | Yes | Track path. Accepts native paths, `file://`, and `path|subsong:N`. |
-| `type` | `string` | No | Optional; default front. |
+| Parameter | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `path` | `string` | Yes | — | Track path. Accepts native paths, `file://`, and `path\|subsong:N`. |
+| `type` | `string` | No | `front` |  |
 
 **Returns**: `{"available":"...","dataUrl":"...","error":"...","height":"...","mimeType":"...","path":"...","size":"...","type":"...","width":"..."}`
 
@@ -194,7 +194,7 @@ const { available, dataUrl } = await fb2k.invoke('artwork.getForTrack', {
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `path` | `string` | No | Optional; falls back to the now-playing track. |
+| `path` | `string` | No | Falls back to the now-playing track. |
 
 **Returns**: `{"available":"...","error":"...","lyrics":"...","synced":"...","tag":"..."}`
 
@@ -207,7 +207,7 @@ const { available, lyrics } = await fb2k.invoke('artwork.getLyrics');
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `path` | `string` | No | Optional; falls back to the now-playing track. |
+| `path` | `string` | No | Falls back to the now-playing track. |
 
 **Returns**: `{"album":"...","albumArtist":"...","artist":"...","available":true,"discNumber":"...","error":"...","genre":"...","hasEmbedded":true,"hasLyrics":true,"title":"...","trackNumber":"...","year":"..."}`
 

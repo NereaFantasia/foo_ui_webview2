@@ -4,7 +4,7 @@
 
 <!-- BEGIN AUTO-GENERATED SDK STUBS -->
 
-## SDK Method Stubs
+## Additional methods
 
 > This block maintains SDK-facing method coverage and may be expanded with complete examples and best practices.
 
@@ -152,6 +152,77 @@ const raw = await fb.metadata.readRaw('E:\\Music\\album.flac', {
 	cueIndex: 2,
 });
 ```
+
+## Cancellable Batch Probe
+
+`readBatch()` reads every path on the host's main thread, so a few hundred files that are not in the library will freeze the UI until it finishes, and there is no way to stop it. `probeBatchAsync()` covers the same ground without either problem: reads run on a worker thread, the call can be cancelled, and each failure is classified instead of collapsing into one generic message.
+
+It is an addition, not a replacement — `read()`, `readBatch()`, `readRaw()` and `readByPath()` are unchanged, and all four already return real `duration` / `bitrate` / `sampleRate` for files the library has never seen.
+
+### probeBatchAsync(paths, options?)
+
+Returns immediately with `{ success, operationId, totalCount }`. Results arrive on `metadata:probeProgress`, followed by exactly one `metadata:probeComplete`.
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `paths` | `string[]` | Yes | Paths to probe; must not be empty. A `\|subsong:N` suffix is honoured per entry. |
+| `options.includeTags` | `boolean` | No | Default `true`. Attaches the flat tag map to each successful result. |
+
+Each result entry is a `MetadataProbeResultItem`:
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `path` | `string` | Echoed verbatim, `\|subsong:N` included, so it works as a lookup key. |
+| `success` | `boolean` | Whether info was obtained. |
+| `infoSource` | `'cached' \| 'direct' \| 'none'` | `cached` is a metadb hit, `direct` is a fresh disk read, `none` accompanies a failure. |
+| `failure` | `'not-found' \| 'unsupported-format' \| 'read-error'` | Present only when `success` is `false`. |
+| `info` | `TrackTechnicalInfo` | `duration`, `bitrate`, `sampleRate`, `channels`, `codec`. |
+| `tags` | `Record<string, string \| string[]>` | Flat map with upper-cased keys, as in `readBatch()`. Omitted when `includeTags` is `false`. |
+
+```javascript
+const off = fb.on('metadata:probeProgress', (event) => {
+	console.log(`${event.done} / ${event.total}`);
+	for (const item of event.results) {
+		if (item.success) {
+			console.log(item.path, item.infoSource, item.info.bitrate);
+		} else {
+			console.warn(item.path, item.failure);
+		}
+	}
+});
+
+fb.on('metadata:probeComplete', (event) => {
+	console.log('done', event.successCount, event.failureCount, event.cancelled);
+	off();
+});
+
+const receipt = await fb.metadata.probeBatchAsync(droppedPaths, {
+	includeTags: false,
+});
+```
+
+### cancelProbe(operationId)
+
+```javascript
+const { cancelled } = await fb.metadata.cancelProbe(receipt.operationId);
+```
+
+Cancellation interrupts the disk read in progress rather than waiting for it. `metadata:probeComplete` still arrives, carrying `cancelled: true`; paths not yet reached are never reported, and the interrupted path is reported as neither a success nor a failure. `cancelled` is `false` when the operation had already finished or never existed — the two cases are deliberately indistinguishable.
+
+### Batching and event volume
+
+Progress events are batched, never one per path: results accumulate until 64 are pending or 100ms have passed since the previous batch, whichever comes first. A fully cached batch of 10000 paths therefore collapses to roughly `ceil(10000 / 64)` events. A disk-bound batch trades extra events for a progress signal that keeps moving — that is what the 100ms bound buys. The final partial batch always arrives before `metadata:probeComplete`.
+
+### Path validation is all-or-nothing
+
+Every entry in `paths` is checked against the host's media-read policy **before** the handler runs. If any single entry fails, the whole call is rejected with `PERMISSION_DENIED` and no `operationId` is produced — there is no partial run and no per-entry `invalid-path` result. Filter paths on the page side if a mixed batch has to be tolerated.
+
+The same pre-handler stage also rejects a `paths` that is not an array, or an entry that is not a string, but those come back as `INVALID_PARAMS` rather than `PERMISSION_DENIED`. Branch on `code` if the two need different handling.
+
+### Known boundaries
+
+- The batch surface does not honour the legacy `#N` subsong spelling that `read()` still accepts. `#N` would mis-split an extensionless filename ending in `#<digits>`, and this endpoint's input is arbitrary user-dropped filenames. Use `|subsong:N`.
+- `read()` / `readBatch()` / `readRaw()` / `readByPath()` decide whether to re-read from disk by looking for a `title` tag, so a cached entry that has a title but no `bitrate` is not re-read. `probeBatchAsync()` uses the host's own partial-info flag instead and does not have this gap; the older four are unchanged.
 
 ## Artwork
 

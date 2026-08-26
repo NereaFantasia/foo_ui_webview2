@@ -16,7 +16,7 @@
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
-| `name` | `string` | 否 | 可选。 |
+| `name` | `string` | 是 | 要绑定的通道名；缺失或为空返回 `INVALID_PARAMS`。 |
 
 **返回值（成功）**:
 
@@ -45,7 +45,7 @@ console.log('端口 ID:', port.portId);
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
-| `portId` | `string` | 否 | 可选。 |
+| `portId` | `string` | 是 | 要销毁的端口；缺失或为空返回 `INVALID_PARAMS`。 |
 
 **返回值（成功）**: `{ "success": true }`
 
@@ -65,8 +65,8 @@ await fb2k.invoke('port.disconnect', { portId: 'port_00000001' });
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
-| `message` | `json` | 是 | 必填。 |
-| `portId` | `string` | 否 | 可选。 |
+| `portId` | `string` | 是 | 发送端口；缺失或为空返回 `INVALID_PARAMS`。 |
+| `message` | `json` | 是 | 消息体。 |
 
 **返回值（成功）**:
 
@@ -93,9 +93,9 @@ await fb2k.invoke('port.postMessage', {
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
-| `message` | `json` | 是 | 必填。 |
-| `portId` | `string` | 否 | 可选。 |
-| `targetPortId` | `string` | 否 | 可选。 |
+| `portId` | `string` | 是 | 发送端口；缺失或为空返回 `INVALID_PARAMS`。 |
+| `targetPortId` | `string` | 是 | 接收端口；缺失或为空返回 `INVALID_PARAMS`。 |
+| `message` | `json` | 是 | 消息体。 |
 
 **返回值**:
 
@@ -143,11 +143,11 @@ console.log(`找到 ${result.ports.length} 个端口`);
 
 广播自定义事件到所有窗口。
 
-| 参数 | 类型 | 必填 | 说明 |
-| --- | --- | --- | --- |
-| `event` | `string` | 否 | 可选。 |
-| `excludeSelf` | `boolean` | 否 | 可选；默认 false。 |
-| `payload` | `object` | 否 | 可选；默认 {}。 |
+| 参数 | 类型 | 必填 | 默认值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `event` | `string` | 是 | — | 要广播的事件名；缺失或为空返回 `INVALID_PARAMS`。 |
+| `payload` | `object` | 否 | `{}` |  |
+| `excludeSelf` | `boolean` | 否 | `false` | 不回送给调用窗口。 |
 
 **返回值**:
 
@@ -172,11 +172,11 @@ await fb2k.invoke('event.emit', {
 
 定向投递事件到指定窗口。
 
-| 参数 | 类型 | 必填 | 说明 |
-| --- | --- | --- | --- |
-| `event` | `string` | 否 | 可选。 |
-| `payload` | `object` | 否 | 可选；默认 {}。 |
-| `targetWindowId` | `string` | 否 | 可选。 |
+| 参数 | 类型 | 必填 | 默认值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `event` | `string` | 是 | — | 要投递的事件名；缺失或为空返回 `INVALID_PARAMS`。 |
+| `targetWindowId` | `string` | 是 | — | 接收窗口 id；缺失或为空返回 `INVALID_PARAMS`。 |
+| `payload` | `object` | 否 | `{}` |  |
 
 **返回值**:
 
@@ -200,7 +200,7 @@ await fb2k.invoke('event.emitTo', {
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
-| `key` | `string` | 否 | 可选。 |
+| `key` | `string` | 是 | 要读取的状态键；缺失或为空返回 `INVALID_PARAMS`。 |
 
 
 **返回值**: `{"code":"...","error":"..."}`
@@ -219,19 +219,19 @@ await fb2k.invoke('event.emitTo', {
 
 ```javascript
 const result = await fb2k.invoke('state.get', { key: 'lyrics:offset' });
-if (result.exists) console.log('偶移:', result.value);
+if (result.exists) console.log('偏移:', result.value);
 ```
 
 ### state.set
 
 设置共享状态。
 
-| 参数 | 类型 | 必填 | 说明 |
-| --- | --- | --- | --- |
-| `key` | `string` | 否 | 可选。 |
-| `silent` | `boolean` | 否 | 可选；默认 false。 |
-| `ttlMs` | `integer` | 否 | 可省略。 |
-| `value` | `json` | 是 | 必填。 |
+| 参数 | 类型 | 必填 | 默认值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `key` | `string` | 是 | — | 要写入的状态键；缺失或为空返回 `INVALID_PARAMS`。 |
+| `value` | `json` | 是 | — | 任意 JSON 值。 |
+| `ttlMs` | `integer` | 否 | — | 正数时创建过期时间戳（毫秒）。 |
+| `silent` | `boolean` | 否 | `false` | 抑制 `state:changed` 事件。 |
 
 **返回值**:
 
@@ -253,7 +253,7 @@ await fb2k.invoke('state.set', {
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
-| `key` | `string` | 否 | 可选。 |
+| `key` | `string` | 是 | 要删除的状态键；缺失或为空返回 `INVALID_PARAMS`。 |
 
 **返回值**:
 

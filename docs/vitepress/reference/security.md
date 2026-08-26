@@ -8,7 +8,7 @@ Security goals are therefore **fail-safe** (prevent a buggy theme from damaging 
 
 - Primary guardrails are PathSecurity and protocol restrictions.
 - `shell.exec` / `shell.spawn` intentionally do **not** maintain an executable whitelist.
-- Path-bearing Bridge APIs still go through decorator validation and return `PERMISSION_DENIED` on rejection.
+- Path-bearing Bridge APIs still go through decorator validation and return `PERMISSION_DENIED` when the path is refused, `INVALID_PARAMS` when the parameter has the wrong shape or type.
 
 ## shell.exec
 
@@ -74,3 +74,4 @@ Disabled by default. Enable via:
 - `shell.openWith`
 - `shell.spawn`
 - `PERMISSION_DENIED`
+- `INVALID_PARAMS`

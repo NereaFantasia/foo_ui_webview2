@@ -47,6 +47,8 @@ const r = await fb.system.isPluginRegistered('my_plugin');
 if (r.registered) { /* ... */ }
 ```
 
+## getTheme() / getDPI()
+
 获取系统主题信息。返回 `{isDark, accentColor, ...}`。
 
 ```javascript
@@ -59,36 +61,22 @@ console.log(`DPI: ${dpi.dpi}, Scale: ${dpi.scale}`);
 
 <!-- BEGIN AUTO-GENERATED SDK STUBS -->
 
-## SDK 方法 stub
-
-> 该区块用于补齐 SDK 视角方法覆盖，后续可人工扩展为完整示例与最佳实践。
+## 其余方法
 
 ### getLocale()
 
-签名：`fb.system.getLocale(...args): Promise<unknown>`
-
-| 参数 | 类型 | 必填 | 说明 |
-| --- | --- | --- | --- |
-| ...args | unknown[] | 视方法而定 | 透传给 SDK wrapper；详细类型以 `sdk/src/bridge/namespaces/` 源码和生成类型为准 |
-
-返回值：底层 `system.getLocale` 调用结果。
+封装 `system.getLocale`。参数与返回类型以 `foo-webview-sdk` 的 TypeScript 声明为准（IDE 悬浮提示或包内 `bridge.d.ts`），行为契约见 API 文档对应条目。
 
 ```javascript
-const result = await fb.system.getLocale();
+await fb.system.getLocale(/* 参数见 TypeScript 声明 */);
 ```
 
 ### getRegisteredPlugins()
 
-签名：`fb.system.getRegisteredPlugins(...args): Promise<unknown>`
-
-| 参数 | 类型 | 必填 | 说明 |
-| --- | --- | --- | --- |
-| ...args | unknown[] | 视方法而定 | 透传给 SDK wrapper；详细类型以 `sdk/src/bridge/namespaces/` 源码和生成类型为准 |
-
-返回值：底层 `system.getRegisteredPlugins` 调用结果。
+封装 `system.getRegisteredPlugins`。参数与返回类型以 `foo-webview-sdk` 的 TypeScript 声明为准（IDE 悬浮提示或包内 `bridge.d.ts`），行为契约见 API 文档对应条目。
 
 ```javascript
-const result = await fb.system.getRegisteredPlugins();
+await fb.system.getRegisteredPlugins(/* 参数见 TypeScript 声明 */);
 ```
 
 <!-- END AUTO-GENERATED SDK STUBS -->

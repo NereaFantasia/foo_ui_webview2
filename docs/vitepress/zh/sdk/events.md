@@ -86,6 +86,8 @@ fb.off('playback:time', handler);
 | library:initialized | 媒体库初始化完成 | {timestamp} |
 | library:getAllResult | 异步 `library.getAll` 结果就绪 | LibraryGetAllResultPayload |
 | metadata:writeComplete | 异步元数据写入完成 | MetadataWriteCompletePayload |
+| metadata:probeProgress | 异步批量探测的一批结果就绪 | MetadataProbeProgressPayload |
+| metadata:probeComplete | 异步批量探测收尾（完成 / 取消 / 失败） | MetadataProbeCompletePayload |
 | metadb:changed | 元数据变化 | {tracks, count, fromHook, timestamp} |
 | selection:changed | 全局选择变化（50ms 节流） | {count, type, handles, truncated, track?, nowPlaying?} |
 
@@ -93,8 +95,8 @@ fb.off('playback:time', handler);
 
 | 事件名 | 触发时机 | 数据 |
 | --- | --- | --- |
-| audio:spectrum | 频谱数据更新（需订阅） | {spectrum} |
-| audio:stream | 音频流数据更新（需调用 subscribeStream 订阅） | 音频流数据 |
+| audio:spectrum | 频谱数据更新（需订阅） | {spectrum, fftSize?, bands?} |
+| audio:stream | 音频流数据更新（需调用 subscribeStream 订阅） | 目前类型为空对象 |
 | audio:dspPresetChanged | DSP 预设变化 | - |
 | audio:outputDeviceChanged | 输出设备变化 | - |
 | audio:replaygainModeChanged | ReplayGain 模式变化 | {mode} |
@@ -106,7 +108,7 @@ fb.off('playback:time', handler);
 | 事件名 | 触发时机 | 数据 |
 | --- | --- | --- |
 | window:alwaysOnTopChanged | 置顶状态变化 | {enabled} |
-| window:stateChanged | 窗口状态变化 | 规范字段 {isMaximized, isMinimized}（运行时暂兼容 maximized / minimized） |
+| window:stateChanged | 窗口状态变化 | 规范字段 {isMaximized, isMinimized, isActive, isFullscreen}，另带兼容别名 maximized / minimized / active / fullscreen |
 | window:popupOpened | 弹出窗口打开 | {windowId, title, url} |
 | window:popupClosed | 弹出窗口关闭 | {windowId} |
 | window:beforeClose | 窗口关闭前确认 | {windowId} |
@@ -160,8 +162,17 @@ fb.off('playback:time', handler);
 | port:connected | 命名通道连接 | {portId, name, windowId} |
 | port:disconnected | 命名通道断开 | {portId, name, windowId} |
 | port:message | 收到跨窗口消息 | {portId, sourcePortId, sourceWindowId, message} |
-| state:changed | 共享状态变更 | {key, value, sourceWindowId} |
-| state:deleted | 共享状态删除 | {key, sourceWindowId} |
+| state:changed | 共享状态变更 | {key, value, previousValue, sourceWindowId, expiresAt?} |
+| state:deleted | 共享状态删除或过期 | {key, sourceWindowId, reason} |
+
+## 文件操作事件
+
+| 事件名 | 触发时机 | 数据 |
+| --- | --- | --- |
+| file:opProgress | 异步 `file.copyAsync` / `moveAsync` / `deleteAsync` 的一批结果就绪 | FileOpProgressPayload |
+| file:opComplete | 异步文件操作收尾（完成 / 取消） | FileOpCompletePayload |
+
+两者都投递给发起该操作的那个窗口，这是 `results` 里可以带真实路径的前提。该窗口一旦销毁就解析不到，事件会回退投递到主实例，主实例未挂 WebView 时则被静默丢弃；什么情况下还会收到收尾事件见 [`cancelOp()`](/zh/sdk/file-io#cancelop-operationid)。进度按 64 条或 100 ms 先到者分批，最后的残余批必定排在 `file:opComplete` 之前。
 
 ## 插件事件
 

@@ -8,13 +8,13 @@
 
 订阅实时频谱数据。
 
-| 参数 | 类型 | 必填 | 说明 |
-| --- | --- | --- | --- |
-| `subscriptionId` | `string` | 否 | 可选。 |
-| `fftSize` | `integer` | 否 | 可选；默认 1024。 |
-| `event` | `string` | 否 | 可选；默认 audio:spectrum。 |
-| `fps` | `integer` | 否 | 可选；默认 30。 |
-| `bands` | `integer` | 否 | 可选；默认 48。 |
+| 参数 | 类型 | 必填 | 默认值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `subscriptionId` | `string` | 否 | — | 省略时复用按窗口派生的 legacy 标识。 |
+| `fftSize` | `integer` | 否 | `1024` | 须为 256–16384 之间的 2 的幂。 |
+| `bands` | `integer` | 否 | `48` | 截断到 8–`fftSize / 2`。 |
+| `fps` | `integer` | 否 | `30` | 截断到 1–60。 |
+| `event` | `string` | 否 | `audio:spectrum` | 频谱数据的事件名。 |
 
 **返回值**:
 
@@ -29,7 +29,7 @@
 }
 ```
 
-::: warning WARNING
+::: warning
 `fftSize` 必须是 2 的幂（256, 512, 1024, 2048, 4096, 8192, 16384），否则返回错误。
 :::
 
@@ -69,7 +69,7 @@ await fb2k.invoke('audio.unsubscribeSpectrum', { subscriptionId });
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
-| `subscriptionId` | `string` | 否 | 可选。 |
+| `subscriptionId` | `string` | 否 | 省略时取消当前调用方的全部频谱订阅。 |
 
 **返回值**: `{ "success": true, "removed": 1, "subscriptionId": "spectrum_main" }`
 
@@ -89,9 +89,9 @@ await fb2k.invoke('audio.unsubscribeSpectrum');
 
 手动获取当前频谱数据（轮询模式）。需要先调用 `subscribeSpectrum`。
 
-| 参数 | 类型 | 必填 | 说明 |
-| --- | --- | --- | --- |
-| `bands` | `integer` | 否 | 可选；默认 0。 |
+| 参数 | 类型 | 必填 | 默认值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `bands` | `integer` | 否 | `0` | `0` 表示沿用当前生效的频带数（多订阅时为聚合值）。 |
 
 **返回值**:
 
@@ -131,10 +131,10 @@ if (result.success) {
 此 API 用于获取**当前播放流**的实时波形片段，不是离线文件波形。如需生成完整文件波形，请使用 `audio.generateFullWaveform`。
 :::
 
-| 参数 | 类型 | 必填 | 说明 |
-| --- | --- | --- | --- |
-| `duration` | `number` | 否 | 可选；默认 0.05。 |
-| `signed` | `boolean` | 否 | 可选；默认 false。 |
+| 参数 | 类型 | 必填 | 默认值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `duration` | `number` | 否 | `0.05` | 窗口时长（秒）。 |
+| `signed` | `boolean` | 否 | `false` | 保留 PCM 极性，输出归一化到 `[-1, 1]`。 |
 
 **返回值**:
 
@@ -171,9 +171,9 @@ const signed = await fb2k.invoke('audio.getWaveform', { duration: 0.1, signed: t
 
 设置频谱分析的声道模式。无效的 `mode` 值会自动规范化为 `"default"`，返回值中的 `mode` 反映规范化后的结果。
 
-| 参数 | 类型 | 必填 | 说明 |
-| --- | --- | --- | --- |
-| `mode` | `string` | 否 | 可选；默认 default。 |
+| 参数 | 类型 | 必填 | 默认值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `mode` | `string` | 否 | `default` | 可取 `default` / `mono` / `front` / `back`，其他值归一为 `default`。 |
 
 - **返回值**: `{ "success": true, "mode": "mono" }`
 
@@ -195,10 +195,10 @@ const result = await fb2k.invoke('audio.setChannelMode', { mode: 'invalid' });
 
 分析曲目的 BPM。首先从元数据 `BPM` 标签读取，若不存在则尝试流派估算。
 
-| 参数 | 类型 | 必填 | 说明 |
-| --- | --- | --- | --- |
-| `forceAnalysis` | `boolean` | 否 | 可选；默认 false。 |
-| `path` | `string` | 否 | 可选。 |
+| 参数 | 类型 | 必填 | 默认值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `path` | `string` | 是 | — |  |
+| `forceAnalysis` | `boolean` | 否 | `false` | 跳过既有 `BPM` 标签，直接进入流派估算。 |
 
 **返回值**:
 
@@ -227,16 +227,16 @@ const result2 = await fb2k.invoke('audio.analyzeBPM', {
 });
 ```
 
+### audio.generateWaveform
+
 ::: danger 已废弃
 此 API 为历史遗留接口，当前仅返回文件基本信息（duration、sampleRate、channels），不包含实际波形数据。**请使用 `audio.generateFullWaveform` 代替**，它提供完整的后台解码、缓存和事件通知功能。
 :::
 
-### audio.generateWaveform
-
-| 参数 | 类型 | 必填 | 说明 |
-| --- | --- | --- | --- |
-| `path` | `string` | 否 | 可选。 |
-| `resolution` | `integer` | 否 | 可选；默认 800。 |
+| 参数 | 类型 | 必填 | 默认值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `path` | `string` | 是 | — |  |
+| `resolution` | `integer` | 否 | `800` | 截断到 50–4000。 |
 
 **返回值**: `{"channels":"...","duration":"...","error":"...","requestedResolution":"...","sampleRate":"...","success":true}`
 
@@ -245,15 +245,15 @@ const result2 = await fb2k.invoke('audio.analyzeBPM', {
 
 生成完整文件波形数据，支持后台解码、缓存和异步事件通知。适用于进度条概览、波形卡片和章节预览。
 
-| 参数 | 类型 | 必填 | 说明 |
-| --- | --- | --- | --- |
-| `cueIndex` | `integer` | 否 | 可选；默认 -1。 |
-| `method` | `string` | 否 | 可选；默认 rms。 |
-| `path` | `string` | 否 | 可选。 |
-| `preferCache` | `boolean` | 否 | 可选；默认 true。 |
-| `resolution` | `integer` | 否 | 可选；默认 256。 |
-| `scale` | `string` | 否 | 可选；默认 linear。 |
-| `signed` | `boolean` | 否 | 可选；默认 false。 |
+| 参数 | 类型 | 必填 | 默认值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `path` | `string` | 是 | — | 支持 `路径\|subsong:N`。 |
+| `cueIndex` | `integer` | 否 | `-1` | 显式指定容器内曲目序号，优先级高于路径后缀。 |
+| `resolution` | `integer` | 否 | `256` | 截断到 64–4096。 |
+| `method` | `string` | 否 | `rms` | `rms` 或 `peak`。 |
+| `scale` | `string` | 否 | `linear` | `linear` 或 `db`；`signed` 模式下被忽略。 |
+| `signed` | `boolean` | 否 | `false` | 保留 PCM 极性，输出 `[-1, 1]`。 |
+| `preferCache` | `boolean` | 否 | `true` | 优先返回缓存结果。 |
 
 
 **返回值**: `{"cached":"...","channels":"...","duration":"...","method":"...","path":"...","resolution":"...","sampleRate":"...","scale":"...","signed":"...","status":"...","success":true,"taskId":"...","waveform":{}}`
@@ -408,15 +408,15 @@ if (result.available) {
 
 订阅音频流捕获（用于录音/流媒体）。
 
-| 参数 | 类型 | 必填 | 说明 |
-| --- | --- | --- | --- |
-| `event` | `string` | 否 | 可选；默认 audio:stream。 |
-| `interval` | `number` | 否 | 可选；默认 0.05。 |
+| 参数 | 类型 | 必填 | 默认值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `event` | `string` | 否 | `audio:stream` | 流数据的事件名。 |
+| `interval` | `number` | 否 | `0.05` | 采样间隔（秒）。 |
 
 
 **返回值**: `{"error":"...","event":"...","interval":"...","success":true}`
 
-::: warning WARNING
+::: warning
 此功能需要 `playback_stream_capture` 集成，当前未完整实现。
 :::
 
@@ -501,8 +501,8 @@ console.log(debug.subscriptions);
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
-| `index` | `integer` | 否 | 可省略。 |
-| `name` | `string` | 否 | 可省略。 |
+| `index` | `integer` | 否 | 预设索引，来自 `dsp.getPresets`；与 `name` 同时提供时优先。 |
+| `name` | `string` | 否 | 预设名称，来自 `dsp.getPresets`。 |
 
 > `name` 和 `index` 至少提供一个；同时提供时 `index` 优先。
 
@@ -538,10 +538,10 @@ await fb2k.invoke('dsp.applyPreset', { index: 0 });
 
 添加 DSP 效果器到链中。
 
-| 参数 | 类型 | 必填 | 说明 |
-| --- | --- | --- | --- |
-| `guid` | `string` | 是 | 必填。 |
-| `position` | `integer` | 否 | 可选；默认 -1。 |
+| 参数 | 类型 | 必填 | 默认值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `guid` | `string` | 是 | — | 已安装 DSP 的 GUID，来自 `dsp.getAvailable`。 |
+| `position` | `integer` | 否 | `-1` | `-1` 表示追加到链尾。 |
 
 **返回值**: `{ "success": true, "addedDsp": "Equalizer", "position": 2 }`
 
@@ -560,7 +560,7 @@ if (eq) {
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
-| `index` | `integer` | 是 | 必填。 |
+| `index` | `integer` | 是 | 要移除的链内下标。 |
 
 **返回值**: `{ "success": true, "removedDsp": "Equalizer", "removedIndex": 2 }`
 
@@ -570,8 +570,8 @@ if (eq) {
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
-| `from` | `integer` | 是 | 必填。 |
-| `to` | `integer` | 是 | 必填。 |
+| `from` | `integer` | 是 | 移动前的下标。 |
+| `to` | `integer` | 是 | 移动后的最终下标。 |
 
 **返回值**: `{"from":"...","message":"...","movedDsp":"...","success":true,"to":"..."}`
 
@@ -583,7 +583,7 @@ if (eq) {
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
-| `dsps` | `array` | 是 | 必填。 |
+| `dsps` | `array` | 是 | 有序链条目，每项为含 `guid` 的对象。 |
 
 `dsps` 的每一项必须是含 `guid` 的对象。任意一项无法解析时整次调用被拒绝且**活动链保持不变**，错误信息带出错下标：
 
@@ -608,7 +608,7 @@ await fb2k.invoke('dsp.setChain', {
 });
 ```
 
-> 传空数组会清空整条链。本接口只接受 `guid`，因此每个 DSP 都按其默认预设加入——参数是否得以保留**取决于该 DSP 的实现**：多数 foobar2000 内置 DSP 把设置存在全局配置里，参数会保留；而按预设实例存参的 DSP（VST 包装器、部分第三方 DSP）会退回出厂值。不要依赖此行为，也不要把 `getChain` 的输出直接回灌 `setChain` 来做重排序，重排请用 `dsp.moveDsp`。
+> 传空数组会清空整条链。本接口只接受 `guid`，因此每个 DSP 都按其默认预设加入——参数是否得以保留**取决于该 DSP 的实现**：多数 foobar2000 内置 DSP 把设置存在全局配置里，参数会保留；而按预设实例存参的 DSP（VST 包装器、部分第三方 DSP）会回到默认值。不要依赖此行为，也不要把 `getChain` 的输出直接回灌 `setChain` 来做重排序，重排请用 `dsp.moveDsp`。
 
 ## Output API - 音频输出
 
@@ -728,8 +728,8 @@ ReplayGain 音量标准化设置。
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
-| `processingMode` | `string` | 否 | 可省略。 |
-| `sourceMode` | `string` | 否 | 可省略。 |
+| `sourceMode` | `string` | 否 | 可取 `none` / `track` / `album` / `auto`（别名 `byPlaybackOrder`）。 |
+| `processingMode` | `string` | 否 | 可取 `none` / `gain` / `gain_and_peak` / `peak`。 |
 
 **返回值**: `{ "success": true, "sourceMode": "track", "processingMode": "gain", "changed": true }`
 
@@ -760,8 +760,8 @@ await fb2k.invoke('replaygain.setMode', { sourceMode: 'album', processingMode: '
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
-| `withoutRg` | `number` | 否 | 可省略。 |
-| `withRg` | `number` | 否 | 可省略。 |
+| `withRg` | `number` | 否 | 有 RG 信息时的预增益（dB），截断到 -24..+24。 |
+| `withoutRg` | `number` | 否 | 无 RG 信息时的预增益（dB），截断到 -24..+24。 |
 
 **返回值**: `{ "success": true, "withRg": 3.0, "withoutRg": 0.0, "changed": true }`
 
@@ -775,7 +775,7 @@ await fb2k.invoke('replaygain.setPreamp', { withRg: 3.0, withoutRg: -3.0 });
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
-| `paths` | `array` | 是 | 必填。 |
+| `paths` | `array` | 是 | 文件路径数组。 |
 
 **返回值**:
 
@@ -809,7 +809,7 @@ await fb2k.invoke('replaygain.setPreamp', { withRg: 3.0, withoutRg: -3.0 });
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
-| `paths` | `array` | 是 | 必填。 |
+| `paths` | `array` | 是 | 文件路径数组。 |
 
 **返回值**: `{ "success": true, "clearedCount": 5 }`
 
@@ -817,10 +817,10 @@ await fb2k.invoke('replaygain.setPreamp', { withRg: 3.0, withoutRg: -3.0 });
 
 扫描文件的 ReplayGain（通过右键菜单触发，扫描结果自动写入文件）。
 
-| 参数 | 类型 | 必填 | 说明 |
-| --- | --- | --- | --- |
-| `mode` | `string` | 否 | 可选；默认 track。 |
-| `paths` | `array` | 是 | 必填。 |
+| 参数 | 类型 | 必填 | 默认值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `paths` | `array` | 是 | — | 要扫描的文件路径数组。 |
+| `mode` | `string` | 否 | `track` | `track` 或 `album`。 |
 
 **返回值**: `{ "success": true, "scannedCount": 10, "mode": "track", "note": "Scan started. Results will be written to files automatically." }`
 
@@ -839,11 +839,11 @@ await fb2k.invoke('replaygain.scan', {
 
 ## 运行时行为说明
 
-- `audio.subscribeSpectrum` 会创建或更新由调用方拥有的订阅。省略 `subscriptionId` 时，runtime 使用按调用方作用域生成的 legacy 标识；监听配置的 `event`，默认值为 `audio:spectrum`。
+- `audio.subscribeSpectrum` 会创建或更新由调用方拥有的订阅。省略 `subscriptionId` 时，运行时按调用方生成一个旧式标识；监听配置的 `event`，默认值为 `audio:spectrum`。
 - `audio.getSpectrum` 与 `audio.getWaveform` 读取可视化流。在存在频谱订阅且有可用音频数据前，它们会返回错误。
 - `audio.generateWaveform` 当前会返回文件元数据以及“尚未实现基于解码器的波形生成”的失败结果。异步且带缓存的流程应使用 `audio.generateFullWaveform`。
 - `audio.generateFullWaveform` 命中缓存时返回带数据的 `status: "ready"`，否则返回带 `taskId` 的 `status: "pending"`。调用方会收到 `audio:fullWaveformReady` 或 `audio:fullWaveformFailed`；非负的 `cueIndex` 优先于 `path|subsong:N` 后缀。
 - `audio.subscribeStream` 是能力 stub：在集成 `playback_stream_capture` 前始终返回 `success: false`。调用 `audio.unsubscribeStream` 仍然安全。
-- 每个构建都会注册 DSP 方法。若 foobar2000 DSP SDK 表面不可用，全部 `dsp.*` 方法都会返回 runtime 的 "DSP API not available in this build" 失败，不会模拟 DSP 链。
+- 每个构建都会注册 DSP 方法。若 foobar2000 未提供 DSP SDK 接口，全部 `dsp.*` 方法都会返回 runtime 的 "DSP API not available in this build" 失败，不会模拟 DSP 链。
 - `output.getSettings` 仅提供只读发现信息。输出配置由 foobar2000 Preferences 管理，而非本 API。
-- `replaygain.get` 读取每个传入媒体路径；`replaygain.clear` 通过 foobar2000 异步写入 ReplayGain 元数据。`replaygain.scan` 请求 host 扫描器，并非同步分析结果。
+- `replaygain.get` 读取每个传入媒体路径；`replaygain.clear` 通过 foobar2000 异步写入 ReplayGain 元数据。`replaygain.scan` 只是请求宿主扫描器开工，不同步返回分析结果。

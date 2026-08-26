@@ -184,162 +184,94 @@ await fb.config.setPlaybackFollowCursor(false);
 
 <!-- BEGIN AUTO-GENERATED SDK STUBS -->
 
-## SDK 方法 stub
-
-> 该区块用于补齐 SDK 视角方法覆盖，后续可人工扩展为完整示例与最佳实践。
+## 其余方法
 
 ### export()
 
-签名：`fb.config.export(...args): Promise<unknown>`
-
-| 参数 | 类型 | 必填 | 说明 |
-| --- | --- | --- | --- |
-| ...args | unknown[] | 视方法而定 | 透传给 SDK wrapper；详细类型以 `sdk/src/bridge/namespaces/` 源码和生成类型为准 |
-
-返回值：底层 `config.export` 调用结果。
+封装 `config.export`。参数与返回类型以 `foo-webview-sdk` 的 TypeScript 声明为准（IDE 悬浮提示或包内 `bridge.d.ts`），行为契约见 API 文档对应条目。
 
 ```javascript
-const result = await fb.config.export();
+await fb.config.export(/* 参数见 TypeScript 声明 */);
 ```
 
 ### getActiveDspPreset()
 
-签名：`fb.config.getActiveDspPreset(...args): Promise<unknown>`
-
-| 参数 | 类型 | 必填 | 说明 |
-| --- | --- | --- | --- |
-| ...args | unknown[] | 视方法而定 | 透传给 SDK wrapper；详细类型以 `sdk/src/bridge/namespaces/` 源码和生成类型为准 |
-
-返回值：底层 `config.getActiveDspPreset` 调用结果。
+封装 `config.getActiveDspPreset`。参数与返回类型以 `foo-webview-sdk` 的 TypeScript 声明为准（IDE 悬浮提示或包内 `bridge.d.ts`），行为契约见 API 文档对应条目。
 
 ```javascript
-const result = await fb.config.getActiveDspPreset();
+await fb.config.getActiveDspPreset(/* 参数见 TypeScript 声明 */);
 ```
 
 ### getAll()
 
-签名：`fb.config.getAll(...args): Promise<unknown>`
-
-| 参数 | 类型 | 必填 | 说明 |
-| --- | --- | --- | --- |
-| ...args | unknown[] | 视方法而定 | 透传给 SDK wrapper；详细类型以 `sdk/src/bridge/namespaces/` 源码和生成类型为准 |
-
-返回值：底层 `config.getAll` 调用结果。
+封装 `config.getAll`。参数与返回类型以 `foo-webview-sdk` 的 TypeScript 声明为准（IDE 悬浮提示或包内 `bridge.d.ts`），行为契约见 API 文档对应条目。
 
 ```javascript
-const result = await fb.config.getAll();
+await fb.config.getAll(/* 参数见 TypeScript 声明 */);
 ```
 
 ### getCursorFollowPlayback()
 
-签名：`fb.config.getCursorFollowPlayback(...args): Promise<unknown>`
-
-| 参数 | 类型 | 必填 | 说明 |
-| --- | --- | --- | --- |
-| ...args | unknown[] | 视方法而定 | 透传给 SDK wrapper；详细类型以 `sdk/src/bridge/namespaces/` 源码和生成类型为准 |
-
-返回值：底层 `config.getCursorFollowPlayback` 调用结果。
+封装 `config.getCursorFollowPlayback`。参数与返回类型以 `foo-webview-sdk` 的 TypeScript 声明为准（IDE 悬浮提示或包内 `bridge.d.ts`），行为契约见 API 文档对应条目。
 
 ```javascript
-const result = await fb.config.getCursorFollowPlayback();
+await fb.config.getCursorFollowPlayback(/* 参数见 TypeScript 声明 */);
 ```
 
 ### getLibraryFilePatterns()
 
-签名：`fb.config.getLibraryFilePatterns(...args): Promise<unknown>`
-
-| 参数 | 类型 | 必填 | 说明 |
-| --- | --- | --- | --- |
-| ...args | unknown[] | 视方法而定 | 透传给 SDK wrapper；详细类型以 `sdk/src/bridge/namespaces/` 源码和生成类型为准 |
-
-返回值：底层 `config.getLibraryFilePatterns` 调用结果。
+封装 `config.getLibraryFilePatterns`。参数与返回类型以 `foo-webview-sdk` 的 TypeScript 声明为准（IDE 悬浮提示或包内 `bridge.d.ts`），行为契约见 API 文档对应条目。
 
 ```javascript
-const result = await fb.config.getLibraryFilePatterns();
+await fb.config.getLibraryFilePatterns(/* 参数见 TypeScript 声明 */);
 ```
 
 ### getLibraryStatus()
 
-签名：`fb.config.getLibraryStatus(...args): Promise<unknown>`
-
-| 参数 | 类型 | 必填 | 说明 |
-| --- | --- | --- | --- |
-| ...args | unknown[] | 视方法而定 | 透传给 SDK wrapper；详细类型以 `sdk/src/bridge/namespaces/` 源码和生成类型为准 |
-
-返回值：底层 `config.getLibraryStatus` 调用结果。
+封装 `config.getLibraryStatus`。参数与返回类型以 `foo-webview-sdk` 的 TypeScript 声明为准（IDE 悬浮提示或包内 `bridge.d.ts`），行为契约见 API 文档对应条目。
 
 ```javascript
-const result = await fb.config.getLibraryStatus();
+await fb.config.getLibraryStatus(/* 参数见 TypeScript 声明 */);
 ```
 
 ### getOutputConfig()
 
-签名：`fb.config.getOutputConfig(...args): Promise<unknown>`
-
-| 参数 | 类型 | 必填 | 说明 |
-| --- | --- | --- | --- |
-| ...args | unknown[] | 视方法而定 | 透传给 SDK wrapper；详细类型以 `sdk/src/bridge/namespaces/` 源码和生成类型为准 |
-
-返回值：底层 `config.getOutputConfig` 调用结果。
+封装 `config.getOutputConfig`。参数与返回类型以 `foo-webview-sdk` 的 TypeScript 声明为准（IDE 悬浮提示或包内 `bridge.d.ts`），行为契约见 API 文档对应条目。
 
 ```javascript
-const result = await fb.config.getOutputConfig();
+await fb.config.getOutputConfig(/* 参数见 TypeScript 声明 */);
 ```
 
 ### getPlaybackFollowCursor()
 
-签名：`fb.config.getPlaybackFollowCursor(...args): Promise<unknown>`
-
-| 参数 | 类型 | 必填 | 说明 |
-| --- | --- | --- | --- |
-| ...args | unknown[] | 视方法而定 | 透传给 SDK wrapper；详细类型以 `sdk/src/bridge/namespaces/` 源码和生成类型为准 |
-
-返回值：底层 `config.getPlaybackFollowCursor` 调用结果。
+封装 `config.getPlaybackFollowCursor`。参数与返回类型以 `foo-webview-sdk` 的 TypeScript 声明为准（IDE 悬浮提示或包内 `bridge.d.ts`），行为契约见 API 文档对应条目。
 
 ```javascript
-const result = await fb.config.getPlaybackFollowCursor();
+await fb.config.getPlaybackFollowCursor(/* 参数见 TypeScript 声明 */);
 ```
 
 ### getPreferencesPages()
 
-签名：`fb.config.getPreferencesPages(...args): Promise<unknown>`
-
-| 参数 | 类型 | 必填 | 说明 |
-| --- | --- | --- | --- |
-| ...args | unknown[] | 视方法而定 | 透传给 SDK wrapper；详细类型以 `sdk/src/bridge/namespaces/` 源码和生成类型为准 |
-
-返回值：底层 `config.getPreferencesPages` 调用结果。
+封装 `config.getPreferencesPages`。参数与返回类型以 `foo-webview-sdk` 的 TypeScript 声明为准（IDE 悬浮提示或包内 `bridge.d.ts`），行为契约见 API 文档对应条目。
 
 ```javascript
-const result = await fb.config.getPreferencesPages();
+await fb.config.getPreferencesPages(/* 参数见 TypeScript 声明 */);
 ```
 
 ### getPreferencesStandardGuids()
 
-签名：`fb.config.getPreferencesStandardGuids(...args): Promise<unknown>`
-
-| 参数 | 类型 | 必填 | 说明 |
-| --- | --- | --- | --- |
-| ...args | unknown[] | 视方法而定 | 透传给 SDK wrapper；详细类型以 `sdk/src/bridge/namespaces/` 源码和生成类型为准 |
-
-返回值：底层 `config.getPreferencesStandardGuids` 调用结果。
+封装 `config.getPreferencesStandardGuids`。参数与返回类型以 `foo-webview-sdk` 的 TypeScript 声明为准（IDE 悬浮提示或包内 `bridge.d.ts`），行为契约见 API 文档对应条目。
 
 ```javascript
-const result = await fb.config.getPreferencesStandardGuids();
+await fb.config.getPreferencesStandardGuids(/* 参数见 TypeScript 声明 */);
 ```
 
 ### showLibraryPreferences()
 
-签名：`fb.config.showLibraryPreferences(...args): Promise<unknown>`
-
-| 参数 | 类型 | 必填 | 说明 |
-| --- | --- | --- | --- |
-| ...args | unknown[] | 视方法而定 | 透传给 SDK wrapper；详细类型以 `sdk/src/bridge/namespaces/` 源码和生成类型为准 |
-
-返回值：底层 `config.showLibraryPreferences` 调用结果。
+封装 `config.showLibraryPreferences`。参数与返回类型以 `foo-webview-sdk` 的 TypeScript 声明为准（IDE 悬浮提示或包内 `bridge.d.ts`），行为契约见 API 文档对应条目。
 
 ```javascript
-const result = await fb.config.showLibraryPreferences();
+await fb.config.showLibraryPreferences(/* 参数见 TypeScript 声明 */);
 ```
 
 <!-- END AUTO-GENERATED SDK STUBS -->

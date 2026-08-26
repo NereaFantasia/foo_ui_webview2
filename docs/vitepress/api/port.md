@@ -9,11 +9,11 @@ This page is the primary owner for the namespaces listed below. Method names, pa
 ### event.emit
 
 
-| Parameter | Type | Required | Description |
-| --- | --- | --- | --- |
-| `event` | `string` | Yes | Event name to broadcast; a missing or empty value returns `INVALID_PARAMS`. |
-| `excludeSelf` | `boolean` | No | Optional; default false. |
-| `payload` | `object` | No | Optional; default {}. |
+| Parameter | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `event` | `string` | Yes | — | Event name to broadcast; a missing or empty value returns `INVALID_PARAMS`. |
+| `payload` | `object` | No | `{}` |  |
+| `excludeSelf` | `boolean` | No | `false` | Skips the calling window. |
 
 **Returns**: `{"code":"...","error":"...","success":true}`
 
@@ -24,11 +24,11 @@ await fb2k.invoke('event.emit', { event: 'ui:themeChanged', payload: { theme: 'd
 ### event.emitTo
 
 
-| Parameter | Type | Required | Description |
-| --- | --- | --- | --- |
-| `event` | `string` | Yes | Event name to deliver; a missing or empty value returns `INVALID_PARAMS`. |
-| `payload` | `object` | No | Optional; default {}. |
-| `targetWindowId` | `string` | Yes | Receiving window id; a missing or empty value returns `INVALID_PARAMS`. |
+| Parameter | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `event` | `string` | Yes | — | Event name to deliver; a missing or empty value returns `INVALID_PARAMS`. |
+| `targetWindowId` | `string` | Yes | — | Receiving window id; a missing or empty value returns `INVALID_PARAMS`. |
+| `payload` | `object` | No | `{}` |  |
 
 **Returns**: `{"code":"...","error":"...","success":true}`
 
@@ -82,7 +82,7 @@ const { ports } = await fb2k.invoke('port.getPorts', { name: 'lyrics' });
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `message` | `json` | Yes | Required. |
+| `message` | `json` | Yes | Message body. |
 | `portId` | `string` | Yes | Sending port; a missing or empty value returns `INVALID_PARAMS`. |
 
 **Returns**: `{"code":"...","error":"...","success":true}`
@@ -96,7 +96,7 @@ await fb2k.invoke('port.postMessage', { portId: 'port_00000001', message: { text
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `message` | `json` | Yes | Required. |
+| `message` | `json` | Yes | Message body. |
 | `portId` | `string` | Yes | Sending port; a missing or empty value returns `INVALID_PARAMS`. |
 | `targetPortId` | `string` | Yes | Receiving port; a missing or empty value returns `INVALID_PARAMS`. |
 
@@ -150,12 +150,12 @@ const { keys } = await fb2k.invoke('state.keys', { pattern: 'lyrics:*' });
 ### state.set
 
 
-| Parameter | Type | Required | Description |
-| --- | --- | --- | --- |
-| `key` | `string` | Yes | State key to write; a missing or empty value returns `INVALID_PARAMS`. |
-| `silent` | `boolean` | No | Optional; default false. |
-| `ttlMs` | `integer` | No | Optional; omitted by default. |
-| `value` | `json` | Yes | Required. |
+| Parameter | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `key` | `string` | Yes | — | State key to write; a missing or empty value returns `INVALID_PARAMS`. |
+| `value` | `json` | Yes | — | Any JSON value. |
+| `ttlMs` | `integer` | No | — | Positive values create an expiration timestamp (ms). |
+| `silent` | `boolean` | No | `false` | Suppresses `state:changed`. |
 
 **Returns**: `{"code":"...","error":"...","success":true}`
 

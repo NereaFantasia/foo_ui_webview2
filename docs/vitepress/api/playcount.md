@@ -11,7 +11,7 @@ This page is the primary owner for the namespaces listed below. Method names, pa
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `paths` | `array` | Yes | File path list. Entries may use `path|subsong:N`. |
+| `paths` | `array` | Yes | File path list. Entries may use `path\|subsong:N`. |
 
 **Returns**: `{"count":"...","error":"...","results":"...","success":true}`
 
@@ -28,7 +28,7 @@ Alias of `playcount.get`; the handler forwards the same public payload.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `paths` | `array` | Yes | Required file path list. Entries may use `path|subsong:N`. |
+| `paths` | `array` | Yes | Required file path list. Entries may use `path\|subsong:N`. |
 
 **Returns**: `{"count":0,"error":"...","results":[],"success":true}`
 

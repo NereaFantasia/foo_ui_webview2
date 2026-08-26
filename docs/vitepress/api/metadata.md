@@ -24,16 +24,33 @@ to omitting it.
 
 ## metadata
 
-### metadata.embedArtwork
+### metadata.cancelProbe
 
+
+Cancels an in-flight `metadata.probeBatchAsync` operation.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `filename` | `string` | No | Optional; default empty. Only used by the `file` target to name the sidecar image. |
-| `imageData` | `string` | Yes | Raw Base64 image bytes, without a Data URL header or `base64:` marker. |
-| `path` | `string` | Yes | Required. |
-| `target` | `array` | No | Optional; default embedded. |
-| `type` | `string` | No | Optional; default front. |
+| `operationId` | `string` | Yes | Operation ID from the `metadata.probeBatchAsync` receipt; a missing or empty value fails with `operationId is required`. |
+
+**Returns**: `{"cancelled":true,"success":true}`
+
+`cancelled: false` means the operation already finished or never existed; the two are intentionally indistinguishable. A cancelled batch still ends with a final `metadata:probeComplete` event carrying `cancelled: true`.
+
+```js
+const { cancelled } = await fb2k.invoke('metadata.cancelProbe', { operationId });
+```
+
+### metadata.embedArtwork
+
+
+| Parameter | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `path` | `string` | Yes | — | The `embedded` target requires a format supported by `album_art_editor`. |
+| `imageData` | `string` | Yes | — | Raw Base64 image bytes, without a Data URL header or `base64:` marker. |
+| `type` | `string` | No | `front` | Artwork type: `front` / `back` / `disc` / `icon` / `artist`. |
+| `target` | `string \| string[]` | No | `embedded` | `embedded` (write into file tags), `file` (write a sidecar image next to the file), `all` (both), or an array of `embedded`/`file`. |
+| `filename` | `string` | No | — | Only used by the `file` target to name the sidecar image; empty picks a type-based name (`cover.jpg`, …). Path separators are rejected. |
 
 **Returns**: `{"error":"...","path":"...","results":"...","success":true,"type":"..."}`
 
@@ -44,13 +61,31 @@ await fb2k.invoke('metadata.embedArtwork', {
 });
 ```
 
+### metadata.probeBatchAsync
+
+
+Cancellable batch metadata probe; disk reads run on a worker thread.
+
+| Parameter | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `paths` | `array<string>` | Yes | — | Paths to probe; a missing or empty array fails with `INVALID_PARAMS`, as does a non-array value or a non-string entry. Entries may use `path\|subsong:N`. Per-item `MediaRead` validation is fail-fast: one rejected path fails the whole batch with `PERMISSION_DENIED` and no `operationId` is issued. |
+| `includeTags` | `boolean` | No | `true` | Attach a flat tag map to each successful result; pass `false` for technical info only. |
+
+**Returns**: `{"operationId":"probe_...","success":true,"totalCount":42}`
+
+The return value is only a dispatch receipt; results arrive via `metadata:probeProgress` (batched) and a final `metadata:probeComplete`. Each result carries `infoSource` (`cached` / `direct` / `none`); failed items carry `failure` (`not-found` / `unsupported-format` / `read-error`).
+
+```js
+const receipt = await fb2k.invoke('metadata.probeBatchAsync', { paths });
+```
+
 ### metadata.read
 
 
-| Parameter | Type | Required | Description |
-| --- | --- | --- | --- |
-| `path` | `string` | Yes | Required. |
-| `cueIndex` | `integer` | No | Optional; default -1. Subsong index override, wins over a `|subsong:N` suffix in `path`. |
+| Parameter | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `path` | `string` | Yes | — | Accepts `path\|subsong:N`. |
+| `cueIndex` | `integer` | No | `-1` | Subsong index override, wins over a `\|subsong:N` suffix in `path`. |
 
 **Returns**: `{"error":"...","info":"...","path":"...","success":true,"tags":"..."}`
 
@@ -67,7 +102,7 @@ See [Addressing a track inside a container](#subsong-addressing) for CUE sheets,
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `paths` | `array` | Yes | Required. |
+| `paths` | `array` | Yes | Each entry may carry a `\|subsong:N` suffix and is resolved independently. |
 
 **Returns**: `{"error":"...","errorCount":"...","results":"...","success":true,"successCount":"...","total":"..."}`
 
@@ -82,10 +117,10 @@ Each entry is resolved independently, so a batch may mix plain file paths and `c
 ### metadata.readByPath
 
 
-| Parameter | Type | Required | Description |
-| --- | --- | --- | --- |
-| `path` | `string` | Yes | Required. |
-| `cueIndex` | `integer` | No | Optional; default -1. Subsong index override, wins over a `|subsong:N` suffix in `path`. |
+| Parameter | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `path` | `string` | Yes | — | Accepts `path\|subsong:N`. |
+| `cueIndex` | `integer` | No | `-1` | Subsong index override, wins over a `\|subsong:N` suffix in `path`. |
 
 **Returns**: `{"TRACKNUMBER":"...","canonicalPath":"...","error":"...","path":"...","success":true}`
 
@@ -98,10 +133,10 @@ const result = await fb2k.invoke('metadata.readByPath', {
 ### metadata.readRaw
 
 
-| Parameter | Type | Required | Description |
-| --- | --- | --- | --- |
-| `cueIndex` | `integer` | No | Optional; default -1. |
-| `path` | `string` | Yes | Required. |
+| Parameter | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `path` | `string` | Yes | — | Accepts `path\|subsong:N`. |
+| `cueIndex` | `integer` | No | `-1` | Subsong index override, wins over a `\|subsong:N` suffix in `path`. |
 
 **Returns**: `{"error":"...","info":"...","path":"...","source":"...","success":true,"tags":"..."}`
 
@@ -114,11 +149,11 @@ const { tags } = await fb2k.invoke('metadata.readRaw', {
 ### metadata.removeEmbeddedArt
 
 
-| Parameter | Type | Required | Description |
-| --- | --- | --- | --- |
-| `path` | `string` | Yes | Required. |
-| `removeAll` | `boolean` | No | Optional; default false. |
-| `type` | `string` | No | Optional; default empty, which also removes every artwork type. |
+| Parameter | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `path` | `string` | Yes | — | Requires a format supported by `album_art_editor`. |
+| `type` | `string` | No | — | Artwork type to remove; empty removes every type. |
+| `removeAll` | `boolean` | No | `false` | When `true`, removes all artwork types and ignores `type`. |
 
 **Returns**: `{"error":"...","path":"...","removedTypes":"...","success":true}`
 
@@ -132,11 +167,11 @@ await fb2k.invoke('metadata.removeEmbeddedArt', {
 ### metadata.removeField
 
 
-| Parameter | Type | Required | Description |
-| --- | --- | --- | --- |
-| `cueIndex` | `integer` | No | Optional; default -1. |
-| `path` | `string` | Yes | Required. |
-| `tags` | `array` | Yes | Required. |
+| Parameter | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `path` | `string` | Yes | — | Accepts `path\|subsong:N`. |
+| `tags` | `array` | Yes | — | Tag names to remove. |
+| `cueIndex` | `integer` | No | `-1` | Subsong index override, wins over a `\|subsong:N` suffix in `path`. |
 
 **Returns**: `{"dispatched":"...","error":"...","note":"...","path":"...","removedCount":"...","removedTags":"...","subsong":"...","success":true}`
 
@@ -150,11 +185,11 @@ await fb2k.invoke('metadata.removeField', {
 ### metadata.removeTag
 
 
-| Parameter | Type | Required | Description |
-| --- | --- | --- | --- |
-| `cueIndex` | `integer` | No | Optional; default -1. |
-| `path` | `string` | Yes | Required. |
-| `tags` | `array` | Yes | Required. |
+| Parameter | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `path` | `string` | Yes | — | Accepts `path\|subsong:N`. |
+| `tags` | `array` | Yes | — | Tag names to remove. |
+| `cueIndex` | `integer` | No | `-1` | Subsong index override, wins over a `\|subsong:N` suffix in `path`. |
 
 **Returns**: `{"dispatched":"...","error":"...","note":"...","path":"...","removedCount":"...","removedTags":"...","subsong":"...","success":true}`
 
@@ -168,11 +203,11 @@ await fb2k.invoke('metadata.removeTag', {
 ### metadata.write
 
 
-| Parameter | Type | Required | Description |
-| --- | --- | --- | --- |
-| `cueIndex` | `integer` | No | Optional; default -1. |
-| `path` | `string` | Yes | Required. |
-| `tags` | `object` | Yes | Required. |
+| Parameter | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `path` | `string` | Yes | — | Accepts `path\|subsong:N`. |
+| `tags` | `object` | Yes | — | A `null` or empty-string value removes that tag. |
+| `cueIndex` | `integer` | No | `-1` | Subsong index override, wins over a `\|subsong:N` suffix in `path`. |
 
 **Returns**: `{"canonicalPath":"...","dispatched":"...","error":"...","handlePath":"...","note":"...","path":"...","subsong":"...","success":true,"tagsApplied":"...","tagsRemoved":"...","tagsSet":"..."}`
 
@@ -188,7 +223,7 @@ await fb2k.invoke('metadata.write', {
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `items` | `array` | Yes | Required. |
+| `items` | `array` | Yes | Each item is `{ path, tags }`. |
 
 **Returns**: `{"error":"...","errors":"...","failCount":"...","success":true,"successCount":"..."}`
 
@@ -206,10 +241,10 @@ const { successCount, failCount } = await fb2k.invoke('metadata.writeBatch', {
 ### rating.get
 
 
-| Parameter | Type | Required | Description |
-| --- | --- | --- | --- |
-| `cueIndex` | `integer` | No | Optional; default -1. |
-| `path` | `string` | Yes | Required. |
+| Parameter | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `path` | `string` | Yes | — | Accepts `path\|subsong:N`. |
+| `cueIndex` | `integer` | No | `-1` | Subsong index override, wins over a `\|subsong:N` suffix in `path`. |
 
 **Returns**: `{"error":"...","path":"...","rating":"...","storage":"...","success":true}`
 
@@ -222,11 +257,11 @@ const { rating, storage } = await fb2k.invoke('rating.get', {
 ### rating.set
 
 
-| Parameter | Type | Required | Description |
-| --- | --- | --- | --- |
-| `cueIndex` | `integer` | No | Optional; default -1. |
-| `path` | `string` | No | Optional; falls back to the now-playing track and then the active playlist selection. |
-| `rating` | `integer` | Yes | Must be 0 through 5; the default of -1 is rejected. |
+| Parameter | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `path` | `string` | No | — | Omitting it falls back to the now-playing track, then the active playlist selection; an empty string is rejected by path security. |
+| `rating` | `integer` | Yes | — | `0`–`5`; `0` clears the rating. |
+| `cueIndex` | `integer` | No | `-1` | Subsong index override, wins over a `\|subsong:N` suffix in `path`. |
 
 **Returns**: `{"(current)":"...","error":"...","menuPath":"...","note":"...","path":"...","rating":"...","storage":"...","success":true}`
 

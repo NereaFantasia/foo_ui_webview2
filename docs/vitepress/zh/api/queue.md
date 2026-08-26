@@ -4,17 +4,17 @@
 
 ### selection.getViewerMode
 
-获取用户的 Selection Viewer 偏好设置。v1.1.16
+（v1.1.16+）获取用户的 Selection Viewer 偏好设置。
 
 **返回值**: `{ "mode": "prefer_playing" }` 或 `{ "mode": "prefer_selection" }`
 
 ### selection.getViewingTrack
 
-获取当前应该显示的曲目，自动根据 Viewer 模式执行 Fallback。v1.1.16
+（v1.1.16+）获取当前应该显示的曲目，自动根据 Viewer 模式执行 Fallback。
 
-| 参数 | 类型 | 必填 | 说明 |
-| --- | --- | --- | --- |
-| `includeTrackInfo` | `boolean` | 否 | 可选；默认 false。 |
+| 参数 | 类型 | 必填 | 默认值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `includeTrackInfo` | `boolean` | 否 | `false` | 附带 `track` 曲目信息对象。 |
 
 
 **返回值**: `{"found":true,"handle":"...","itemIndex":"...","mode":"...","playlistIndex":"...","source":"...","success":true,"track":{}}`
@@ -35,7 +35,7 @@ if (r.found) {
 ### selection.get
 
 
-获取当前全局选择的曲目列表，支持分页。v1.1.16
+（v1.1.16+）获取当前全局选择的曲目列表，支持分页。
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
@@ -59,7 +59,7 @@ const { handles, count, hasMore } = await fb2k.invoke('selection.get', { limit: 
 ### selection.getType
 
 
-获取当前选择类型。v1.1.16
+（v1.1.16+）获取当前选择类型。
 
 | type | typeName | 说明 |
 | --- | --- | --- |
@@ -72,7 +72,7 @@ const { handles, count, hasMore } = await fb2k.invoke('selection.get', { limit: 
 ### selection.set
 
 
-设置当前全局选择。v1.1.16
+（v1.1.16+）设置当前全局选择。
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
@@ -84,7 +84,7 @@ const { handles, count, hasMore } = await fb2k.invoke('selection.get', { limit: 
 
 ### selection.setPlaylistTracking
 
-设置播放列表跟踪模式。v1.1.16
+（v1.1.16+）设置播放列表跟踪模式。
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
@@ -97,18 +97,18 @@ const { handles, count, hasMore } = await fb2k.invoke('selection.get', { limit: 
 
 **返回值**: `{ "success": true, "mode": "selection" }`
 
-只有 `playlist` 会切换为整表跟踪；其余任何取值（包括拼写错误）都会**静默退化**为 selection 跟踪，且 `mode` 会把你传入的原值回显出来——因此不能用返回的 `mode` 来确认取值是否合法。
+只有 `playlist` 会切换为整表跟踪；其余任何取值（包括拼写错误）都会**静默回退**为 selection 跟踪，且 `mode` 会把你传入的原值回显出来——因此不能用返回的 `mode` 来确认取值是否合法。
 
 ### queue.addPaths
 
 
 一步添加 URL/本地路径到播放队列。自动处理添加到播放列表和入队操作。
 
-| 参数 | 类型 | 必填 | 说明 |
-| --- | --- | --- | --- |
-| `paths` | `array<string>` | 否 | 可选；默认 []。 |
-| `useQueuePlaylist` | `boolean` | 否 | 可选；默认 true。 |
-| `playlist` | `integer` | 否 | 可选；默认 active playlist when useQueuePlaylist is false。 |
+| 参数 | 类型 | 必填 | 默认值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `paths` | `array<string>` | 是 | — | 文件路径或 URL，可带 `\|subsong:N` 后缀；空数组返回 `No paths specified`。 |
+| `useQueuePlaylist` | `boolean` | 否 | `true` | 使用专用 `[WebView Queue]` 播放列表，不存在则创建。 |
+| `playlist` | `integer` | 否 | — | 目标播放列表索引；仅 `useQueuePlaylist: false` 时读取。 |
 
 ```javascript
 await fb2k.invoke('queue.addPaths', {
@@ -123,11 +123,11 @@ await fb2k.invoke('queue.addPaths', {
 
 将播放列表中的曲目添加到队列。支持单个曲目或批量添加。
 
-| 参数 | 类型 | 必填 | 说明 |
-| --- | --- | --- | --- |
-| `playlist` | `integer` | 否 | 可选；默认活动播放列表。 |
-| `tracks` | `array<integer>` | 否 | 曲目下标数组；优先于 `track`。 |
-| `track` | `integer` | 否 | 单个曲目下标；仅在未传 `tracks` 时生效。 |
+| 参数 | 类型 | 必填 | 默认值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `playlist` | `integer` | 否 | 活动播放列表 |  |
+| `tracks` | `array<integer>` | 否 | — | 曲目下标数组；优先于 `track`。 |
+| `track` | `integer` | 否 | — | 单个曲目下标；仅在未传 `tracks` 时生效。 |
 
 **返回值**: `{ "success": true, "addedCount": 3, "queueCount": 5 }`
 
@@ -184,8 +184,8 @@ await fb2k.invoke('queue.add', { tracks: [0, 1, 2], playlist: 0 });
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
-| `index` | `integer` | 否 | 可选；默认 not supplied。 |
-| `indices` | `array<integer>` | 否 | 可选；默认 []。 |
+| `index` | `integer` | 否 | 单个队列下标；优先于 `indices`。 |
+| `indices` | `array<integer>` | 否 | 批量队列下标；仅在未传 `index` 时生效。 |
 
 **单个移除返回**: `{ "success": true, "removedIndex": 0, "queueCount": 2 }`
 
@@ -231,7 +231,7 @@ console.log(`队列中有 ${result.count} 项`);
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
-| `index` | `integer` | 否 | 可选；默认 not supplied。 |
+| `index` | `integer` | 是 | 要移到队首的队列下标；不能已是 `0`。 |
 
 **返回值**: `{ "success": true, "movedIndex": 3, "queueCount": 5 }`
 
@@ -263,7 +263,7 @@ JIT Queue（Just-In-Time Queue）是专为流媒体设计的双层队列架构�
 └─────────────────────────────────────────────────┘
 ```
 
-**核心优势**: URL 永不过期、内存极低、逻辑灵活、无缝衔接。
+后端只驻留 2-3 首曲目的缓冲并在播放前才解析 URL，完整的队列逻辑留在前端。
 
 ### jitQueue.playNow
 
@@ -271,9 +271,9 @@ JIT Queue（Just-In-Time Queue）是专为流媒体设计的双层队列架构�
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
-| `title` | `string` | 否 | 可选。 |
-| `trackId` | `string` | 否 | 可选。 |
-| `url` | `string` | 否 | 可选。 |
+| `trackId` | `string` | 是 | 调用方自定义的曲目标识；为空返回 `trackId is required`。 |
+| `url` | `string` | 是 | 流媒体或文件 URL；为空返回 `url is required`。 |
+| `title` | `string` | 否 | 显示标题。 |
 
 
 **返回值**: `{"shadowPlaylist":"...","success":true,"trackId":"..."}`
@@ -295,9 +295,9 @@ await fb2k.invoke('jitQueue.playNow', {
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
-| `title` | `string` | 否 | 可选。 |
-| `trackId` | `string` | 否 | 可选。 |
-| `url` | `string` | 否 | 可选。 |
+| `trackId` | `string` | 是 | 调用方自定义的曲目标识；为空返回 `trackId is required`。 |
+| `url` | `string` | 是 | 流媒体或文件 URL；为空返回 `url is required`。 |
+| `title` | `string` | 否 | 显示标题。 |
 
 
 **返回值**: `{"bufferSize":"...","success":true,"trackId":"..."}`
@@ -313,9 +313,9 @@ await fb2k.invoke('jitQueue.playNow', {
 
 停止播放并可选清空缓冲区。
 
-| 参数 | 类型 | 必填 | 说明 |
-| --- | --- | --- | --- |
-| `clearBuffer` | `boolean` | 否 | 可选；默认 true。 |
+| 参数 | 类型 | 必填 | 默认值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `clearBuffer` | `boolean` | 否 | `true` | 停止时同时清空缓冲区。 |
 
 
 **返回值**: `{"success":true}`

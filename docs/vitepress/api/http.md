@@ -23,16 +23,16 @@ await fb2k.invoke('http.abort', { requestId });
 ### http.delete
 
 
-| Parameter | Type | Required | Description |
-| --- | --- | --- | --- |
-| `url` | `string` | Yes | Request URL. |
-| `body` | `json` | No | Optional; omitted by default. Objects and arrays are serialized automatically. |
-| `headers` | `object` | No | Optional; default {}. |
-| `timeout` | `integer` | No | Optional; default 30000. |
-| `async` | `boolean` | No | Optional; default true. |
-| `redirect` | `string` | No | Optional; default follow. |
-| `responseType` | `string` | No | Optional; default text. |
-| `insecureTls` | `boolean` | No | Optional; default false. |
+| Parameter | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `url` | `string` | Yes | — | Request URL. |
+| `body` | `json` | No | — | Objects and arrays are serialized automatically. |
+| `headers` | `object` | No | `{}` |  |
+| `timeout` | `integer` | No | `30000` |  |
+| `async` | `boolean` | No | `true` |  |
+| `redirect` | `string` | No | `follow` |  |
+| `responseType` | `string` | No | `text` |  |
+| `insecureTls` | `boolean` | No | `false` |  |
 
 **Returns**: `{"async":"...","error":"...","requestId":"...","success":true}`
 
@@ -43,15 +43,15 @@ await fb2k.invoke('http.delete', { url: 'https://example.com/api/items/1' });
 ### http.download
 
 
-| Parameter | Type | Required | Description |
-| --- | --- | --- | --- |
-| `async` | `boolean` | No | Optional; default false. |
-| `headers` | `object` | No | Optional; omitted by default. |
-| `insecureTls` | `boolean` | No | Optional; default false. |
-| `redirect` | `string` | No | Optional; default follow. |
-| `saveTo` | `string` | Yes | Destination path. |
-| `timeout` | `integer` | No | Optional; default 60000. |
-| `url` | `string` | Yes | Source URL. |
+| Parameter | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `url` | `string` | Yes | — | Source URL. |
+| `saveTo` | `string` | Yes | — | Destination path; subject to the Bridge security policy. |
+| `headers` | `object` | No | — |  |
+| `timeout` | `integer` | No | `60000` |  |
+| `async` | `boolean` | No | `false` | Unlike other verbs, defaults to synchronous. |
+| `redirect` | `string` | No | `follow` |  |
+| `insecureTls` | `boolean` | No | `false` |  |
 
 **Returns**: `{"async":"...","code":"...","error":"...","message":"...","requestId":"...","success":true}`
 
@@ -67,15 +67,15 @@ const result = await fb2k.invoke('http.download', {
 ### http.get
 
 
-| Parameter | Type | Required | Description |
-| --- | --- | --- | --- |
-| `async` | `boolean` | No | Optional; default true. |
-| `headers` | `object` | No | Optional; omitted by default. |
-| `insecureTls` | `boolean` | No | Optional; default false. |
-| `redirect` | `string` | No | Optional; default follow. |
-| `responseType` | `string` | No | Optional; default text. |
-| `timeout` | `integer` | No | Optional; default 30000. |
-| `url` | `string` | Yes | Request URL. |
+| Parameter | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `url` | `string` | Yes | — | Request URL. |
+| `headers` | `object` | No | — |  |
+| `timeout` | `integer` | No | `30000` |  |
+| `async` | `boolean` | No | `true` |  |
+| `redirect` | `string` | No | `follow` |  |
+| `responseType` | `string` | No | `text` |  |
+| `insecureTls` | `boolean` | No | `false` |  |
 
 **Returns**: `{"async":"...","error":"...","requestId":"...","success":true}`
 
@@ -90,14 +90,14 @@ const res = await fb2k.invoke('http.get', { url: 'https://example.com/api', asyn
 ### http.head
 
 
-| Parameter | Type | Required | Description |
-| --- | --- | --- | --- |
-| `async` | `boolean` | No | Optional; default true. |
-| `headers` | `object` | No | Optional; omitted by default. |
-| `insecureTls` | `boolean` | No | Optional; default false. |
-| `redirect` | `string` | No | Optional; default follow. |
-| `timeout` | `integer` | No | Optional; default 30000. |
-| `url` | `string` | Yes | Request URL. |
+| Parameter | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `url` | `string` | Yes | — | Request URL. |
+| `headers` | `object` | No | — |  |
+| `timeout` | `integer` | No | `30000` |  |
+| `async` | `boolean` | No | `true` |  |
+| `redirect` | `string` | No | `follow` |  |
+| `insecureTls` | `boolean` | No | `false` |  |
 
 **Returns**: `{"async":"...","contentLength":"...","requestId":"...","success":true}`
 
@@ -110,16 +110,16 @@ const res = await fb2k.invoke('http.head', { url: 'https://example.com/file.zip'
 ### http.patch
 
 
-| Parameter | Type | Required | Description |
-| --- | --- | --- | --- |
-| `url` | `string` | No | Optional. |
-| `body` | `json` | No | Optional; omitted by default. |
-| `headers` | `object` | No | Optional; default {}. |
-| `timeout` | `integer` | No | Optional; default 30000. |
-| `async` | `boolean` | No | Optional; default true. |
-| `redirect` | `string` | No | Optional; default follow. |
-| `responseType` | `string` | No | Optional; default text. |
-| `insecureTls` | `boolean` | No | Optional; default false. |
+| Parameter | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `url` | `string` | Yes | — | Request URL. |
+| `body` | `json` | No | — | Request body. |
+| `headers` | `object` | No | `{}` |  |
+| `timeout` | `integer` | No | `30000` |  |
+| `async` | `boolean` | No | `true` |  |
+| `redirect` | `string` | No | `follow` |  |
+| `responseType` | `string` | No | `text` |  |
+| `insecureTls` | `boolean` | No | `false` |  |
 
 **Returns**: `{"async":"...","error":"...","requestId":"...","success":true}`
 
@@ -134,16 +134,16 @@ await fb2k.invoke('http.patch', {
 ### http.post
 
 
-| Parameter | Type | Required | Description |
-| --- | --- | --- | --- |
-| `url` | `string` | No | Optional. |
-| `body` | `json` | No | Optional; omitted by default. |
-| `headers` | `object` | No | Optional; default {}. |
-| `timeout` | `integer` | No | Optional; default 30000. |
-| `async` | `boolean` | No | Optional; default true. |
-| `redirect` | `string` | No | Optional; default follow. |
-| `responseType` | `string` | No | Optional; default text. |
-| `insecureTls` | `boolean` | No | Optional; default false. |
+| Parameter | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `url` | `string` | Yes | — | Request URL. |
+| `body` | `json` | No | — | Request body. |
+| `headers` | `object` | No | `{}` |  |
+| `timeout` | `integer` | No | `30000` |  |
+| `async` | `boolean` | No | `true` |  |
+| `redirect` | `string` | No | `follow` |  |
+| `responseType` | `string` | No | `text` |  |
+| `insecureTls` | `boolean` | No | `false` |  |
 
 **Returns**: `{"async":"...","error":"...","requestId":"...","success":true}`
 
@@ -158,16 +158,16 @@ await fb2k.invoke('http.post', {
 ### http.put
 
 
-| Parameter | Type | Required | Description |
-| --- | --- | --- | --- |
-| `url` | `string` | Yes | Request URL. |
-| `body` | `json` | No | Optional; omitted by default. Objects and arrays are serialized automatically. |
-| `headers` | `object` | No | Optional; default {}. |
-| `timeout` | `integer` | No | Optional; default 30000. |
-| `async` | `boolean` | No | Optional; default true. |
-| `redirect` | `string` | No | Optional; default follow. |
-| `responseType` | `string` | No | Optional; default text. |
-| `insecureTls` | `boolean` | No | Optional; default false. |
+| Parameter | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `url` | `string` | Yes | — | Request URL. |
+| `body` | `json` | No | — | Objects and arrays are serialized automatically. |
+| `headers` | `object` | No | `{}` |  |
+| `timeout` | `integer` | No | `30000` |  |
+| `async` | `boolean` | No | `true` |  |
+| `redirect` | `string` | No | `follow` |  |
+| `responseType` | `string` | No | `text` |  |
+| `insecureTls` | `boolean` | No | `false` |  |
 
 **Returns**: `{"async":"...","error":"...","requestId":"...","success":true}`
 

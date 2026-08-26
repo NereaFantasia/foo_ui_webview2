@@ -27,7 +27,7 @@
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
-| `hidden` | `boolean` | 是 | 必填。 |
+| `hidden` | `boolean` | 是 | `true` 隐藏客户区光标，`false` 恢复。 |
 
 **返回值**：
 
@@ -42,7 +42,7 @@
 | `error` | string | 失败时的人类可读描述（如 caller window not found） |
 
 ::: tip 幂等行为
-连续多次以同一 `hidden` 值调用，host 只会在第一次实际翻转标志位的调用上触发 `cursor:hiddenChanged` 事件，后续调用返回 `success: true, changed: false`。这一行为允许主题层用引用计数 / `Set` 等方式安全地协调多个独立的隐藏请求源。
+连续多次以同一 `hidden` 值调用，host 只会在第一次实际翻转标志位的调用上触发 `cursor:hiddenChanged` 事件，后续调用返回 `success: true, changed: false`。主题层因此可以用引用计数或 `Set` 协调多个独立的隐藏请求。
 :::
 
 ```javascript

@@ -1,6 +1,6 @@
 # SMP compatibility layer
 
-Complete Spider Monkey Panel (SMP) compatibility layer for running SMP-style scripts inside the WebView2 UI. The source layer is `sdk/src/smp/**` (bootstrap entry: `bootstrapSmpCompat`); published dist output is generated and must not be hand-edited.
+Spider Monkey Panel (SMP) compatibility layer for running SMP-style scripts inside the WebView2 UI. The source layer is `sdk/src/smp/**` (bootstrap entry: `bootstrapSmpCompat`); published dist output is generated and must not be hand-edited.
 
 ## Quick start
 

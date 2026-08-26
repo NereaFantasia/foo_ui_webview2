@@ -22,7 +22,7 @@ const result = await fb2k.invoke('window.blur');
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `message` | `json` | Yes | Required. |
+| `message` | `json` | Yes | JSON message body delivered to every window except the sender via `window:message`. |
 
 **Returns**: `{"error":"...","success":true}`
 
@@ -57,7 +57,7 @@ const result = await fb2k.invoke('window.center');
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `windowId` | `string` | No | Optional. |
+| `windowId` | `string` | No | Popups only; may be omitted when calling from the target popup itself. |
 
 **Returns**: `{"error":"...","success":true,"windowId":"..."}`
 
@@ -115,7 +115,7 @@ const result = await fb2k.invoke('window.closeAllPopups');
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `windowId` | `string` | No | Optional. |
+| `windowId` | `string` | Yes | Popup id to close; no fallback to the calling window. |
 
 **Returns**: `{"error":"...","success":true}`
 
@@ -138,28 +138,28 @@ const result = await fb2k.invoke('window.confirmClose');
 ### window.createPopup
 
 
-| Parameter | Type | Required | Description |
-| --- | --- | --- | --- |
-| `alwaysOnTop` | `boolean` | No | Optional; default false. |
-| `backdropPolicy` | `object` | No | Optional; omitted by default. |
-| `beforeClose` | `boolean` | No | Optional; default false. |
-| `behavior` | `object` | No | Optional; omitted by default. |
-| `clickThrough` | `boolean` | No | Optional; default false. |
-| `frame` | `boolean` | No | Optional; default true. |
-| `height` | `integer` | No | Optional; default 300. |
-| `maxHeight` | `integer` | No | Optional; default 0. |
-| `maxWidth` | `integer` | No | Optional; default 0. |
-| `minHeight` | `integer` | No | Optional; default 150. |
-| `minWidth` | `integer` | No | Optional; default 200. |
-| `profile` | `string` | No | Optional. |
-| `resizable` | `boolean` | No | Optional; default true. |
-| `showInTaskbar` | `boolean` | No | Optional; default false. |
-| `title` | `string` | No | Optional. |
-| `transparent` | `boolean` | No | Optional; default false. |
-| `url` | `string` | No | Optional. |
-| `width` | `integer` | No | Optional; default 400. |
-| `x` | `integer` | No | Optional; default CW_USEDEFAULT. |
-| `y` | `integer` | No | Optional; default CW_USEDEFAULT. |
+| Parameter | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `url` | `string` | No | — | Page loaded into the popup. |
+| `title` | `string` | No | — |  |
+| `x` | `integer` | No | system default | System placement when omitted (CW_USEDEFAULT). |
+| `y` | `integer` | No | system default |  |
+| `width` | `integer` | No | `400` |  |
+| `height` | `integer` | No | `300` |  |
+| `minWidth` | `integer` | No | `200` |  |
+| `minHeight` | `integer` | No | `150` |  |
+| `maxWidth` | `integer` | No | `0` | `0` means no upper bound. |
+| `maxHeight` | `integer` | No | `0` | `0` means no upper bound. |
+| `resizable` | `boolean` | No | `true` |  |
+| `frame` | `boolean` | No | `true` | `false` creates a borderless popup. |
+| `transparent` | `boolean` | No | `false` | Transparent background. |
+| `alwaysOnTop` | `boolean` | No | `false` |  |
+| `showInTaskbar` | `boolean` | No | `false` |  |
+| `clickThrough` | `boolean` | No | `false` | Mouse click-through. |
+| `beforeClose` | `boolean` | No | `false` | Emits `window:beforeClose` for close confirmation. |
+| `profile` | `string` | No | — | Behavior preset: `standard` / `miniPlayer` / `desktopLyrics`. |
+| `behavior` | `object` | No | — | Behavior overrides (see `setPopupBehavior`). |
+| `backdropPolicy` | `object` | No | — | Backdrop policy (see `setBackdropPolicy`). |
 
 **Returns**: `{"error":"...","success":true,"windowId":"..."}`
 
@@ -175,9 +175,9 @@ const { windowId } = await fb2k.invoke('window.createPopup', {
 ### window.enterFullscreen
 
 
-| Parameter | Type | Required | Description |
-| --- | --- | --- | --- |
-| `windowId` | `string` | No | Optional; default caller window. |
+| Parameter | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `windowId` | `string` | No | caller window |  |
 
 **Returns**: `{"error":"...","isFullscreen":"...","success":true}`
 
@@ -188,9 +188,9 @@ const result = await fb2k.invoke('window.enterFullscreen');
 ### window.exitFullscreen
 
 
-| Parameter | Type | Required | Description |
-| --- | --- | --- | --- |
-| `windowId` | `string` | No | Optional; default caller window. |
+| Parameter | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `windowId` | `string` | No | caller window |  |
 
 **Returns**: `{"error":"...","isFullscreen":"...","success":true}`
 
@@ -201,10 +201,10 @@ const result = await fb2k.invoke('window.exitFullscreen');
 ### window.flash
 
 
-| Parameter | Type | Required | Description |
-| --- | --- | --- | --- |
-| `count` | `integer` | No | Optional; default 3. |
-| `enabled` | `boolean` | No | Optional; default true. |
+| Parameter | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `count` | `integer` | No | `3` | Flash count. |
+| `enabled` | `boolean` | No | `true` |  |
 
 **Returns**: `{"error":"...","success":true}`
 
@@ -216,9 +216,9 @@ await fb2k.invoke('window.flash');
 ### window.flashTaskbar
 
 
-| Parameter | Type | Required | Description |
-| --- | --- | --- | --- |
-| `count` | `integer` | No | Optional; default 3. |
+| Parameter | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `count` | `integer` | No | `3` | Flash count. |
 
 **Returns**: `{"success":true}`
 
@@ -230,9 +230,9 @@ await fb2k.invoke('window.flashTaskbar');
 ### window.focus
 
 
-| Parameter | Type | Required | Description |
-| --- | --- | --- | --- |
-| `windowId` | `string` | No | Optional. |
+| Parameter | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `windowId` | `string` | No | caller window | `main` or a popup id. |
 
 **Returns**: `{"error":"...","success":true}`
 
@@ -256,9 +256,9 @@ const result = await fb2k.invoke('window.getAllWindows');
 
 Reads a window's DWM backdrop policy. Supports both the main window and popups.
 
-| Parameter | Type | Required | Description |
-| --- | --- | --- | --- |
-| `windowId` | `string` | No | Target window. Defaults to the calling window. |
+| Parameter | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `windowId` | `string` | No | caller window | Target window. |
 
 **Returns**: `{ "success": true, "windowId": "...", "backdropPolicy": { ... }, "resolvedBackdropPolicy": { ... } }`
 
@@ -345,9 +345,9 @@ const result = await fb2k.invoke('window.getDpiScale');
 
 Reads a window's requested maximum size. Resolution selects the explicit `windowId` or the calling window; it does **not** fall back to the main window, so a call from an unresolvable context fails instead of silently reporting another window's constraints. Panel (DUI/CUI) callers are rejected with `panelMode: true`, because a panel is not a window shell.
 
-| Parameter | Type | Required | Description |
-| --- | --- | --- | --- |
-| `windowId` | `string` | No | Target window. Defaults to the calling window. |
+| Parameter | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `windowId` | `string` | No | caller window | Target window. |
 
 **Returns**: `{"height":"...","success":true,"width":"...","windowId":"..."}`. A window that cannot be resolved returns `{ "success": false, "error": "..." }`.
 
@@ -363,9 +363,9 @@ const result = await fb2k.invoke('window.getMaxSize');
 
 Reads a window's requested minimum size. Resolution selects the explicit `windowId` or the calling window; it does **not** fall back to the main window, so a call from an unresolvable context fails instead of silently reporting another window's constraints. Panel (DUI/CUI) callers are rejected with `panelMode: true`, because a panel is not a window shell.
 
-| Parameter | Type | Required | Description |
-| --- | --- | --- | --- |
-| `windowId` | `string` | No | Target window. Defaults to the calling window. |
+| Parameter | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `windowId` | `string` | No | caller window | Target window. |
 
 **Returns**: `{"height":"...","success":true,"width":"...","windowId":"..."}`. A window that cannot be resolved returns `{ "success": false, "error": "..." }`.
 
@@ -391,9 +391,9 @@ const result = await fb2k.invoke('window.getMode');
 ### window.getPopupBehavior
 
 
-| Parameter | Type | Required | Description |
-| --- | --- | --- | --- |
-| `windowId` | `string` | No | Optional. |
+| Parameter | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `windowId` | `string` | No | calling popup | Popups only. |
 
 **Returns**: `{"success":true,"windowId":"..."}`
 
@@ -484,9 +484,9 @@ const result = await fb2k.invoke('window.isAlwaysOnTop');
 ### window.isClickThrough
 
 
-| Parameter | Type | Required | Description |
-| --- | --- | --- | --- |
-| `windowId` | `string` | No | Optional. |
+| Parameter | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `windowId` | `string` | No | caller window | Popups only. |
 
 **Returns**: `{"clickThrough":"...","error":"...","success":true}`
 
@@ -499,7 +499,7 @@ const { clickThrough } = await fb2k.invoke('window.isClickThrough', { windowId: 
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `windowId` | `string` | No | Optional target window id resolved by `WindowTargetResolver::ResolveForObservation`; omitted uses the caller window. |
+| `windowId` | `string` | No | Target window id. Defaults to the calling window. |
 
 **Returns**: `{"fullscreen":"...","isFullscreen":"..."}`
 
@@ -534,9 +534,9 @@ const result = await fb2k.invoke('window.isMinimized');
 
 Reports a window's requested resizable state. Resolution selects the explicit `windowId` or the calling window; it does **not** fall back to the main window. Panel (DUI/CUI) callers are rejected with `panelMode: true`.
 
-| Parameter | Type | Required | Description |
-| --- | --- | --- | --- |
-| `windowId` | `string` | No | Target window. Defaults to the calling window. |
+| Parameter | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `windowId` | `string` | No | caller window | Target window. |
 
 **Returns**: `{"resizable":"...","success":true,"windowId":"..."}`. A window that cannot be resolved returns `{ "success": false, "error": "..." }`.
 
@@ -617,8 +617,8 @@ const result = await fb2k.invoke('window.restore');
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `targetWindowId` | `string` | Yes | Required. |
-| `message` | `json` | Yes | Required. |
+| `targetWindowId` | `string` | Yes | Target window id (`main` or a popup id). |
+| `message` | `json` | Yes | Arbitrary JSON delivered via the `window:message` event. |
 
 **Returns**: `{"error":"...","success":true}`
 
@@ -633,11 +633,11 @@ await fb2k.invoke('window.sendMessage', {
 
 Applies or clears the acrylic backdrop. Not supported in panel mode.
 
-| Parameter | Type | Required | Description |
-| --- | --- | --- | --- |
-| `windowId` | `string` | No | Optional; default caller window. |
-| `enabled` | `boolean` | No | Optional; default true. |
-| `darkMode` | `boolean` | No | Optional; leaves the existing mode when omitted. |
+| Parameter | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `windowId` | `string` | No | caller window |  |
+| `enabled` | `boolean` | No | `true` |  |
+| `darkMode` | `boolean` | No | current mode |  |
 
 **Returns**: `{ "success": true, "enabled": true }`, plus `darkMode` echoed back only when you supplied it.
 
@@ -650,9 +650,9 @@ await fb2k.invoke('window.setAcrylic', { enabled: true, darkMode: true });
 ### window.setAlwaysOnTop
 
 
-| Parameter | Type | Required | Description |
-| --- | --- | --- | --- |
-| `enabled` | `boolean` | No | Optional; default true. |
+| Parameter | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `enabled` | `boolean` | No | `true` |  |
 
 **Returns**: `{"error":"...","success":true}`
 
@@ -663,10 +663,10 @@ await fb2k.invoke('window.setAlwaysOnTop', { enabled: true });
 ### window.setBackdropPolicy
 
 
-| Parameter | Type | Required | Description |
-| --- | --- | --- | --- |
-| `windowId` | `string` | No | Optional; default caller window. |
-| `backdropPolicy` | `object` | Yes | Required. |
+| Parameter | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `windowId` | `string` | No | caller window |  |
+| `backdropPolicy` | `object` | Yes | — | Field-level patch; a `null` field resets it to the default. |
 
 **Returns**: `{"error":"...","success":true}`
 
@@ -679,10 +679,10 @@ await fb2k.invoke('window.setBackdropPolicy', {
 ### window.setBackgroundTransparency
 
 
-| Parameter | Type | Required | Description |
-| --- | --- | --- | --- |
-| `windowId` | `string` | No | Optional; default caller window. |
-| `transparent` | `boolean` | No | Optional; default true. |
+| Parameter | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `windowId` | `string` | No | caller window |  |
+| `transparent` | `boolean` | No | `true` |  |
 
 **Returns**: `{"description":"...","error":"...","success":true,"transparent":"..."}`
 
@@ -693,10 +693,10 @@ await fb2k.invoke('window.setBackgroundTransparency', { transparent: true });
 ### window.setBlur
 
 
-| Parameter | Type | Required | Description |
-| --- | --- | --- | --- |
-| `windowId` | `string` | No | Optional; default caller window. |
-| `enabled` | `boolean` | No | Optional; default true. |
+| Parameter | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `windowId` | `string` | No | caller window |  |
+| `enabled` | `boolean` | No | `true` |  |
 
 **Returns**: `{"enabled":"...","success":true}`
 
@@ -707,12 +707,12 @@ await fb2k.invoke('window.setBlur', { enabled: true });
 ### window.setBounds
 
 
-| Parameter | Type | Required | Description |
-| --- | --- | --- | --- |
-| `x` | `integer` | No | Optional; default current x. |
-| `y` | `integer` | No | Optional; default current y. |
-| `width` | `integer` | No | Optional; default current width. |
-| `height` | `integer` | No | Optional; default current height. |
+| Parameter | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `x` | `integer` | No | current value |  |
+| `y` | `integer` | No | current value |  |
+| `width` | `integer` | No | current value |  |
+| `height` | `integer` | No | current value |  |
 
 **Returns**: `{"error":"...","success":true}`
 
@@ -723,10 +723,10 @@ await fb2k.invoke('window.setBounds', { x: 100, y: 100, width: 480, height: 320 
 ### window.setClickThrough
 
 
-| Parameter | Type | Required | Description |
-| --- | --- | --- | --- |
-| `enabled` | `boolean` | No | Optional; default true. |
-| `windowId` | `string` | No | Optional. |
+| Parameter | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `windowId` | `string` | No | caller window | Popups only. |
+| `enabled` | `boolean` | No | `true` |  |
 
 **Returns**: `{"clickThrough":"...","error":"...","success":true}`
 
@@ -737,10 +737,10 @@ await fb2k.invoke('window.setClickThrough', { enabled: true });
 ### window.setClickThroughExcludeRegions
 
 
-| Parameter | Type | Required | Description |
-| --- | --- | --- | --- |
-| `regions` | `array` | No | Optional; omitted by default. |
-| `windowId` | `string` | No | Optional. |
+| Parameter | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `windowId` | `string` | No | calling popup | Popups only. |
+| `regions` | `array` | No | — | CSS-pixel rectangles `{ x, y, width, height }`. |
 
 **Returns**: `{"count":0,"dpiScale":"...","success":true,"warning":"...","windowId":"..."}`
 
@@ -756,7 +756,7 @@ Sets the main window's Windows 11 corner-rounding preference. Main window only: 
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `mode` | `string` | No | `"default"`, `"none"`, `"round"` or `"small"`. Defaults to `"default"`. |
+| `mode` | `string` | No | `"default"`, `"none"`, `"round"` or `"small"`; defaults to `"default"`. |
 
 **Returns**: `{"error":"...","success":true}`
 
@@ -769,10 +769,10 @@ await fb2k.invoke('window.setCornerPreference', { mode: 'round' });
 ### window.setDarkMode
 
 
-| Parameter | Type | Required | Description |
-| --- | --- | --- | --- |
-| `windowId` | `string` | No | Optional; default caller window. |
-| `enabled` | `boolean` | No | Optional; default true. |
+| Parameter | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `windowId` | `string` | No | caller window |  |
+| `enabled` | `boolean` | No | `true` |  |
 
 **Returns**: `{"enabled":"...","success":true}`
 
@@ -783,10 +783,10 @@ await fb2k.invoke('window.setDarkMode', { enabled: true });
 ### window.setDevServerConfig
 
 
-| Parameter | Type | Required | Description |
-| --- | --- | --- | --- |
-| `devServerUrl` | `string` | No | Optional. |
-| `useDevServer` | `boolean` | No | Optional; default false. |
+| Parameter | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `useDevServer` | `boolean` | No | `false` |  |
+| `devServerUrl` | `string` | No | — | Dev server address, e.g. `http://localhost:5173`. |
 
 **Returns**: `{"devServerUrl":"...","success":true,"useDevServer":"..."}`
 
@@ -802,7 +802,7 @@ await fb2k.invoke('window.setDevServerConfig', {
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `regions` | `array` | No | Optional; omitted by default. |
+| `regions` | `array` | No | CSS-pixel rectangles `{ x, y, width, height }`. |
 
 **Returns**: `{"count":"...","dpiScale":"...","error":"...","success":true}`
 
@@ -815,10 +815,10 @@ await fb2k.invoke('window.setDragRegions', {
 ### window.setFrameless
 
 
-| Parameter | Type | Required | Description |
-| --- | --- | --- | --- |
-| `windowId` | `string` | No | Optional; default caller window. |
-| `frameless` | `boolean` | No | Optional; default true. |
+| Parameter | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `windowId` | `string` | No | caller window |  |
+| `frameless` | `boolean` | No | `true` |  |
 
 **Returns**: `{"error":"...","frameless":"...","success":true}`
 
@@ -829,10 +829,10 @@ await fb2k.invoke('window.setFrameless', { frameless: true });
 ### window.setFullscreen
 
 
-| Parameter | Type | Required | Description |
-| --- | --- | --- | --- |
-| `windowId` | `string` | No | Optional; default caller window. |
-| `enabled` | `boolean` | No | Optional; default true. |
+| Parameter | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `windowId` | `string` | No | caller window |  |
+| `enabled` | `boolean` | No | `true` |  |
 
 **Returns**: `{"error":"...","fullscreen":"...","success":true}`
 
@@ -844,11 +844,11 @@ await fb2k.invoke('window.setFullscreen', { enabled: true });
 
 Sets a window's maximum size. Resolution selects the explicit `windowId` or the calling window; it never falls back to the main window, so a call from an unresolvable context fails rather than resizing an unintended window. Panel (DUI/CUI) callers are rejected with `panelMode: true`.
 
-| Parameter | Type | Required | Description |
-| --- | --- | --- | --- |
-| `windowId` | `string` | No | Target window. Defaults to the calling window. |
-| `height` | `integer` | No | Optional; default 0. |
-| `width` | `integer` | No | Optional; default 0. |
+| Parameter | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `windowId` | `string` | No | caller window | Target window. |
+| `width` | `integer` | No | `0` |  |
+| `height` | `integer` | No | `0` |  |
 
 **Returns**: `{"error":"...","success":true,"windowId":"..."}`
 
@@ -862,12 +862,12 @@ await fb2k.invoke('window.setMaxSize', { width: 1920, height: 1080 });
 
 Applies or clears the Mica backdrop. Not supported in panel mode.
 
-| Parameter | Type | Required | Description |
-| --- | --- | --- | --- |
-| `windowId` | `string` | No | Optional; default caller window. |
-| `enabled` | `boolean` | No | Optional; default true. |
-| `variant` | `string` | No | `mica` (default) or `mica-alt`. |
-| `darkMode` | `boolean` | No | Optional; leaves the existing mode when omitted. |
+| Parameter | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `windowId` | `string` | No | caller window |  |
+| `enabled` | `boolean` | No | `true` |  |
+| `variant` | `string` | No | `mica` | `mica` or `mica-alt`. |
+| `darkMode` | `boolean` | No | current mode |  |
 
 **Returns**: `{ "success": true, "enabled": true, "variant": "mica" }`, plus `darkMode` echoed back only when you supplied it.
 
@@ -881,12 +881,12 @@ await fb2k.invoke('window.setMica', { enabled: true, variant: 'mica-alt' });
 
 Compatibility alias of [`window.setMica`](#window-setmica). Same parameters, same behavior, same return shape — prefer `window.setMica` in new code. Because both share one implementation, the panel-mode rejection names `window.setMica` even when you called this alias.
 
-| Parameter | Type | Required | Description |
-| --- | --- | --- | --- |
-| `windowId` | `string` | No | Optional; default caller window. |
-| `enabled` | `boolean` | No | Optional; default true. |
-| `variant` | `string` | No | `mica` (default) or `mica-alt`. |
-| `darkMode` | `boolean` | No | Optional; leaves the existing mode when omitted. |
+| Parameter | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `windowId` | `string` | No | caller window |  |
+| `enabled` | `boolean` | No | `true` |  |
+| `variant` | `string` | No | `mica` | `mica` or `mica-alt`. |
+| `darkMode` | `boolean` | No | current mode |  |
 
 **Returns**: `{ "success": true, "enabled": true, "variant": "mica" }`, plus `darkMode` echoed back only when you supplied it.
 
@@ -898,11 +898,11 @@ await fb2k.invoke('window.setMicaEffect', { enabled: true });
 
 Sets a window's minimum size. Resolution selects the explicit `windowId` or the calling window; it never falls back to the main window, so a call from an unresolvable context fails rather than resizing an unintended window. Panel (DUI/CUI) callers are rejected with `panelMode: true`.
 
-| Parameter | Type | Required | Description |
-| --- | --- | --- | --- |
-| `windowId` | `string` | No | Target window. Defaults to the calling window. |
-| `height` | `integer` | No | Optional; default 0. |
-| `width` | `integer` | No | Optional; default 0. |
+| Parameter | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `windowId` | `string` | No | caller window | Target window. |
+| `width` | `integer` | No | `0` |  |
+| `height` | `integer` | No | `0` |  |
 
 **Returns**: `{"error":"...","success":true,"windowId":"..."}`
 
@@ -917,7 +917,7 @@ await fb2k.invoke('window.setMinSize', { width: 480, height: 320 });
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `regions` | `array` | No | Optional; omitted by default. |
+| `regions` | `array` | No | CSS-pixel rectangles `{ x, y, width, height }`. |
 
 **Returns**: `{"count":"...","dpiScale":"...","error":"...","success":true}`
 
@@ -931,11 +931,11 @@ await fb2k.invoke('window.setNoDragRegions', {
 
 Updates a popup's behavior policy at runtime. Popups only — the main window is not a valid target.
 
-| Parameter | Type | Required | Description |
-| --- | --- | --- | --- |
-| `windowId` | `string` | No | Target popup id. Omit to use the calling popup. |
-| `profile` | `string` | No | `standard`, `miniPlayer`, or `desktopLyrics`. Leaves the profile unchanged when omitted. |
-| `behavior` | `object` | No | Field-level overrides. Applied only when supplied. |
+| Parameter | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `windowId` | `string` | No | calling popup | Target popup id. |
+| `profile` | `string` | No | current profile | `standard`, `miniPlayer`, or `desktopLyrics`. |
+| `behavior` | `object` | No | — | Field-level overrides. Applied only when supplied. |
 
 **Returns**: `{ "success": true, "windowId": "...", "profile": "...", "behavior": { ... }, "resolvedBehavior": { ... } }`
 
@@ -955,10 +955,10 @@ await fb2k.invoke('window.setPopupBehavior', { behavior: { closeOnFocusLoss: tru
 ### window.setPosition
 
 
-| Parameter | Type | Required | Description |
-| --- | --- | --- | --- |
-| `x` | `integer` | No | Optional; default 0. |
-| `y` | `integer` | No | Optional; default 0. |
+| Parameter | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `x` | `integer` | No | `0` |  |
+| `y` | `integer` | No | `0` |  |
 
 **Returns**: `{"success":true}`
 
@@ -970,10 +970,10 @@ await fb2k.invoke('window.setPosition', { x: 100, y: 100 });
 
 Sets whether a window can be resized by the user. Resolution selects the explicit `windowId` or the calling window; it never falls back to the main window. Panel (DUI/CUI) callers are rejected with `panelMode: true`. Setting the value a window already has succeeds — idempotent calls are not failures.
 
-| Parameter | Type | Required | Description |
-| --- | --- | --- | --- |
-| `windowId` | `string` | No | Target window. Defaults to the calling window. |
-| `resizable` | `boolean` | No | Optional; default true. |
+| Parameter | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `windowId` | `string` | No | caller window | Target window. |
+| `resizable` | `boolean` | No | `true` |  |
 
 **Returns**: `{"error":"...","success":true,"windowId":"..."}`
 
@@ -990,10 +990,10 @@ await fb2k.invoke('window.setResizable', { resizable: false });
 ### window.setSize
 
 
-| Parameter | Type | Required | Description |
-| --- | --- | --- | --- |
-| `height` | `integer` | No | Optional; default 600. |
-| `width` | `integer` | No | Optional; default 800. |
+| Parameter | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `width` | `integer` | No | `800` |  |
+| `height` | `integer` | No | `600` |  |
 
 **Returns**: `{"success":true}`
 
@@ -1004,9 +1004,9 @@ await fb2k.invoke('window.setSize', { width: 1024, height: 640 });
 ### window.setTitle
 
 
-| Parameter | Type | Required | Description |
-| --- | --- | --- | --- |
-| `title` | `string` | No | Optional; default foobar2000. |
+| Parameter | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `title` | `string` | No | `foobar2000` |  |
 
 **Returns**: `{"error":"...","success":true}`
 
@@ -1017,9 +1017,9 @@ await fb2k.invoke('window.setTitle', { title: 'Now Playing' });
 ### window.setTitlebarHeight
 
 
-| Parameter | Type | Required | Description |
-| --- | --- | --- | --- |
-| `height` | `integer` | No | Optional; default 32. |
+| Parameter | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `height` | `integer` | No | `32` | Valid range 24–100. |
 
 **Returns**: `{"error":"...","height":"...","success":true}`
 
@@ -1030,9 +1030,9 @@ await fb2k.invoke('window.setTitlebarHeight', { height: 40 });
 ### window.setZoom
 
 
-| Parameter | Type | Required | Description |
-| --- | --- | --- | --- |
-| `zoom` | `number` | No | Optional; default 1. |
+| Parameter | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `zoom` | `number` | No | `1` | Zoom factor, e.g. `1.25`. |
 
 **Returns**: `{"error":"...","success":true,"zoom":"..."}`
 
@@ -1043,9 +1043,9 @@ await fb2k.invoke('window.setZoom', { zoom: 1.25 });
 ### window.setZoomForDpi
 
 
-| Parameter | Type | Required | Description |
-| --- | --- | --- | --- |
-| `dpi` | `integer` | No | Optional; default 0. |
+| Parameter | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `dpi` | `integer` | No | `0` | Omit or `0` to derive from the calling window's current DPI. |
 
 **Returns**: `{"dpi":"...","error":"...","success":true,"zoom":"..."}`
 
@@ -1057,12 +1057,12 @@ const { zoom } = await fb2k.invoke('window.setZoomForDpi');
 ### window.showSystemMenu
 
 
-| Parameter | Type | Required | Description |
-| --- | --- | --- | --- |
-| `h` | `integer` | No | Optional; default 0. |
-| `w` | `integer` | No | Optional; default 0. |
-| `x` | `integer` | No | Optional; default 0. |
-| `y` | `integer` | No | Optional; default 0. |
+| Parameter | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `x` | `integer` | No | `0` | Exclusion area left; without `w`/`h`, `x`/`y` are used as the menu position. |
+| `y` | `integer` | No | `0` | Exclusion area top. |
+| `w` | `integer` | No | `0` | Exclusion area width. |
+| `h` | `integer` | No | `0` | Exclusion area height. |
 
 **Returns**: `{"error":"...","success":true}`
 
@@ -1085,9 +1085,9 @@ const result = await fb2k.invoke('window.startDrag');
 ### window.startResize
 
 
-| Parameter | Type | Required | Description |
-| --- | --- | --- | --- |
-| `edge` | `string` | No | Optional; default bottomright. |
+| Parameter | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `edge` | `string` | No | `bottomright` | Edge or corner to drag. |
 
 **Returns**: `{"error":"...","success":true}`
 
@@ -1109,9 +1109,9 @@ const result = await fb2k.invoke('window.toggleAlwaysOnTop');
 ### window.toggleFullscreen
 
 
-| Parameter | Type | Required | Description |
-| --- | --- | --- | --- |
-| `windowId` | `string` | No | Optional; default caller window. |
+| Parameter | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `windowId` | `string` | No | caller window |  |
 
 **Returns**: `{"error":"...","fullscreen":"...","success":true}`
 

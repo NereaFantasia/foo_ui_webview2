@@ -9,7 +9,7 @@ shared with other processes or SMP runtimes.
 
 <!-- BEGIN AUTO-GENERATED SDK STUBS -->
 
-## SDK Method Stubs
+## Additional methods
 
 > This block maintains SDK-facing method coverage and may be expanded with complete examples and best practices.
 

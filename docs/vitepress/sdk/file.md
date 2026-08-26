@@ -4,9 +4,7 @@
 
 <!-- BEGIN AUTO-GENERATED SDK STUBS -->
 
-## SDK Methods
-
-> This block provides SDK-level method coverage and may later be expanded with complete examples and best practices.
+## Additional methods
 
 ### read(path, options?)
 

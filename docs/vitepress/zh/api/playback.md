@@ -20,9 +20,9 @@ const result = await fb2k.invoke('playback.getCurrentTrack');
 ### playback.getCurrentTrackIndex
 
 
-| 参数 | 类型 | 必填 | 说明 |
-| --- | --- | --- | --- |
-| `includeTrackInfo` | `boolean` | 否 | 可选；默认 false。 |
+| 参数 | 类型 | 必填 | 默认值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `includeTrackInfo` | `boolean` | 否 | `false` | 附带 `track` 曲目信息对象。 |
 
 **返回值**: `{"found":true,"index":0,"playlist":0,"success":true,"track":{}}`
 
@@ -99,9 +99,9 @@ const result = await fb2k.invoke('playback.getVolume');
 ### playback.mute
 
 
-| 参数 | 类型 | 必填 | 说明 |
-| --- | --- | --- | --- |
-| `muted` | `boolean` | 否 | 可选；默认 true。 |
+| 参数 | 类型 | 必填 | 默认值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `muted` | `boolean` | 否 | `true` | `false` 表示取消静音。 |
 
 **返回值**: `{"success":true}`
 
@@ -166,16 +166,16 @@ const result = await fb2k.invoke('playback.playOrPause');
 await fb2k.invoke('playback.playPath', { path: 'C:\\Music\\song.flac' });
 ```
 
-Use a `path|subsong:N` value to address a CUE subsong explicitly. The handler separates the file path from the optional subsong suffix before playback.
+用 `path|subsong:N` 形式可以指定 CUE 中的某个子曲目。handler 会先把文件路径和可选的 subsong 后缀拆开，再开始播放。
 
 ### playback.playPaths
 
 
-| 参数 | 类型 | 必填 | 说明 |
-| --- | --- | --- | --- |
-| `paths` | `array<string>` | 是 | 必填。 |
-| `startIndex` | `integer` | 否 | 可选；默认 0。 |
-| `replace` | `boolean` | 否 | 可选；默认 false。 |
+| 参数 | 类型 | 必填 | 默认值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `paths` | `array<string>` | 是 | — | 文件路径或 URL 数组。 |
+| `startIndex` | `integer` | 否 | `0` | 添加后开始播放的下标。 |
+| `replace` | `boolean` | 否 | `false` | 为 `true` 时替换现有内容而非追加。 |
 
 **返回值**: `{"error":"...","startedAt":"...","success":true,"tracksAdded":"..."}`
 
@@ -225,7 +225,7 @@ const result = await fb2k.invoke('playback.random');
 
 **返回值**: `{ "success": true, "order": 3, "orderName": "random" }`
 
-索引与名称均可传入：`0` default、`1` repeat-playlist、`2` repeat-track、`3` random、`4` shuffle-tracks、`5` shuffle-albums、`6` shuffle-folders。无法识别的名称回落为 `0`。越界索引不做校验，原样回显于 `order`，而 `orderName` 报告为 `default`——需要确认实际生效值时请读取返回的这一对字段。
+索引与名称均可传入：`0` default、`1` repeat-playlist、`2` repeat-track、`3` random、`4` shuffle-tracks、`5` shuffle-albums、`6` shuffle-folders。无法识别的名称回退为 `0`。越界索引不做校验，原样回显于 `order`，而 `orderName` 报告为 `default`——需要确认实际生效值时请读取返回的这一对字段。
 
 ```js
 await fb2k.invoke('playback.setPlaybackOrder', { order: 'random' });
@@ -234,10 +234,10 @@ await fb2k.invoke('playback.setPlaybackOrder', { order: 'random' });
 ### playback.setPosition
 
 
-| 参数 | 类型 | 必填 | 说明 |
-| --- | --- | --- | --- |
-| `position` | `number` | 否 | 可选；默认 0。 |
-| `seconds` | `number` | 否 | 可选；默认 0。 |
+| 参数 | 类型 | 必填 | 默认值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `position` | `number` | 否 | `0` | 目标位置（秒）。 |
+| `seconds` | `number` | 否 | `0` | `position` 的别名，`position` 存在时被忽略。 |
 
 **返回值**: `{"actualPosition":"...","duration":"...","error":"...","newPosition":"...","oldPosition":"...","requestedPosition":"...","subsong":"...","success":true}`
 
@@ -248,9 +248,9 @@ await fb2k.invoke('playback.setPosition', { position: 42.5 });
 ### playback.setStopAfterCurrent
 
 
-| 参数 | 类型 | 必填 | 说明 |
-| --- | --- | --- | --- |
-| `enabled` | `boolean` | 否 | 可选；默认 false。 |
+| 参数 | 类型 | 必填 | 默认值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `enabled` | `boolean` | 否 | `false` |  |
 
 **返回值**: `{"enabled":"...","success":true}`
 
@@ -261,9 +261,9 @@ await fb2k.invoke('playback.setStopAfterCurrent', { enabled: true });
 ### playback.setVolume
 
 
-| 参数 | 类型 | 必填 | 说明 |
-| --- | --- | --- | --- |
-| `volume` | `number` | 否 | 可选；默认 100。 |
+| 参数 | 类型 | 必填 | 默认值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `volume` | `number` | 否 | `100` | 音量百分比（0–100）。 |
 
 **返回值**: `{"success":true}`
 
@@ -326,6 +326,6 @@ _无参数。_
 const result = await fb2k.invoke('playback.volumeUp');
 ```
 
-## Related events
+## 相关事件
 
-Related event `playback:stopAfterCurrentChanged` uses payload `{ enabled }` (same field name as the API).
+事件 `playback:stopAfterCurrentChanged` 的 payload 为 `{ enabled }`，字段名与 API 返回值相同。

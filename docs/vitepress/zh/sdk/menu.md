@@ -4,36 +4,22 @@
 
 <!-- BEGIN AUTO-GENERATED SDK STUBS -->
 
-## SDK 方法 stub
-
-> 该区块用于补齐 SDK 视角方法覆盖，后续可人工扩展为完整示例与最佳实践。
+## 其余方法
 
 ### getContextMenu()
 
-签名：`fb.menu.getContextMenu(...args): Promise<unknown>`
-
-| 参数 | 类型 | 必填 | 说明 |
-| --- | --- | --- | --- |
-| ...args | unknown[] | 视方法而定 | 透传给 SDK wrapper；详细类型以 `sdk/src/bridge/namespaces/` 源码和生成类型为准 |
-
-返回值：底层 `menu.getContextMenu` 调用结果。
+封装 `menu.getContextMenu`。参数与返回类型以 `foo-webview-sdk` 的 TypeScript 声明为准（IDE 悬浮提示或包内 `bridge.d.ts`），行为契约见 API 文档对应条目。
 
 ```javascript
-const result = await fb.menu.getContextMenu();
+await fb.menu.getContextMenu(/* 参数见 TypeScript 声明 */);
 ```
 
 ### getMainMenu()
 
-签名：`fb.menu.getMainMenu(...args): Promise<unknown>`
-
-| 参数 | 类型 | 必填 | 说明 |
-| --- | --- | --- | --- |
-| ...args | unknown[] | 视方法而定 | 透传给 SDK wrapper；详细类型以 `sdk/src/bridge/namespaces/` 源码和生成类型为准 |
-
-返回值：底层 `menu.getMainMenu` 调用结果。
+封装 `menu.getMainMenu`。参数与返回类型以 `foo-webview-sdk` 的 TypeScript 声明为准（IDE 悬浮提示或包内 `bridge.d.ts`），行为契约见 API 文档对应条目。
 
 ```javascript
-const result = await fb.menu.getMainMenu();
+await fb.menu.getMainMenu(/* 参数见 TypeScript 声明 */);
 ```
 
 ### runContextCommand()
@@ -45,7 +31,7 @@ const result = await fb.menu.getMainMenu();
 | `command` | `string` | 是 | 右键菜单命令路径、名称或 GUID |
 | `options.subGuid` | `string` | 否 | 动态生成子项的节点 GUID。不传则命中其父容器，等于什么都不执行 |
 
-返回值：底层 `menu.runContextCommand` 调用结果，可能含 `guid`、`itemCount` 与 `executionConfirmed`——后者为 `false` 表示命令走的是不返回结果的入口，无法观测是否真的执行。
+封装 `menu.runContextCommand`，返回值可能含 `guid`、`itemCount` 与 `executionConfirmed`——后者为 `false` 表示命令走的是不返回结果的入口，无法观测是否真的执行。
 
 ```javascript
 const result = await fb.menu.runContextCommand('Properties');
@@ -60,7 +46,7 @@ const result = await fb.menu.runContextCommand('Properties');
 | `command` | `string` | 是 | 命令 GUID、叶子命令名或斜杠分隔的路径 |
 | `options.subGuid` | `string` | 否 | 动态子命令的子 GUID |
 
-返回值：底层 `menu.runMainMenuCommand` 调用结果，可能带上解析出的 `guid`。
+封装 `menu.runMainMenuCommand`，返回值可能带上解析出的 `guid`。
 
 **推荐用 GUID 形式**：它是唯一跨宿主稳定的寻址方式。汉化版 foobar2000 上报的是中文命令名，
 英文名或英文路径在该宿主上解析不到。GUID 可从 `discovery.getMainMenuCommands()` 或
@@ -83,16 +69,10 @@ await fb.menu.runMainMenuCommand('{41D98AF1-8C4F-4F0E-8B7A-1A4B0F7B1234}', {
 
 ### showNativePopup()
 
-签名：`fb.menu.showNativePopup(...args): Promise<unknown>`
-
-| 参数 | 类型 | 必填 | 说明 |
-| --- | --- | --- | --- |
-| ...args | unknown[] | 视方法而定 | 透传给 SDK wrapper；详细类型以 `sdk/src/bridge/namespaces/` 源码和生成类型为准 |
-
-返回值：底层 `menu.showNativePopup` 调用结果。
+封装 `menu.showNativePopup`。参数与返回类型以 `foo-webview-sdk` 的 TypeScript 声明为准（IDE 悬浮提示或包内 `bridge.d.ts`），行为契约见 API 文档对应条目。
 
 ```javascript
-const result = await fb.menu.showNativePopup();
+await fb.menu.showNativePopup(/* 参数见 TypeScript 声明 */);
 ```
 
 <!-- END AUTO-GENERATED SDK STUBS -->
@@ -204,7 +184,7 @@ overlay 是独立的顶层文档，宿主页面的 `::part()` 选择器够不到
 
 要做半透明菜单，背景 alpha 建议保持在 0.75 到 0.9 之间：既能保住文字对比度，Windows 11 系统菜单本身对「透」也很克制。
 
-动画与材质之间存在取舍，因为 DWM 背景是窗口级、全有或全无的效果：它随窗口显示 / 隐藏瞬间出现或消失，无法跟 CSS 动画一起淡入淡出。因此 `closeAnimationMs` 只动画 web 内容，开着 `acrylic` / `mica` 时背景会「瞬灭」而内容还在淡出，过场不同步。要全程平滑，请改用 `backdrop: 'none'` 加 `.fb-menu` 的 CSS 半透明背景，代价是 CSS 半透明没有真实模糊。关闭时渲染器把根菜单的 class 从 `#menu.in` 切到 `#menu.out`，内置的 `#menu.out` 规则可经 `css` 覆盖；`replaced`（新菜单顶掉旧菜单）与内部超时路径始终立即隐藏。
+动画与材质之间存在取舍，因为 DWM 背景是窗口级效果，只能整窗生效或整窗没有：它随窗口显示 / 隐藏瞬间出现或消失，无法跟 CSS 动画一起淡入淡出。因此 `closeAnimationMs` 只动画 web 内容，开着 `acrylic` / `mica` 时背景会「瞬灭」而内容还在淡出，过场不同步。要全程平滑，请改用 `backdrop: 'none'` 加 `.fb-menu` 的 CSS 半透明背景，代价是 CSS 半透明没有真实模糊。关闭时渲染器把根菜单的 class 从 `#menu.in` 切到 `#menu.out`，内置的 `#menu.out` 规则可经 `css` 覆盖；`replaced`（新菜单顶掉旧菜单）与内部超时路径始终立即隐藏。
 
 #### 平台要求
 

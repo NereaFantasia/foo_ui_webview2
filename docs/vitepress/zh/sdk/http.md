@@ -4,15 +4,13 @@
 
 <!-- BEGIN AUTO-GENERATED SDK STUBS -->
 
-## SDK 方法 stub
-
-> 该区块用于补齐 SDK 视角方法覆盖，后续可人工扩展为完整示例与最佳实践。
+## 其余方法
 
 ### get(url, options?)
 
 签名：`fb.http.get(url: string, options?: HttpRequestOptions): Promise<HttpResponse | HttpBinaryResponse>`
 
-派发 GET 请求。主机默认异步执行请求，因此当前响应通常是 `{ success, requestId, async: true }`，最终响应通过 `http:response` 发出。传入 `{ async: false }` 可直接取得完整响应，也可以使用 `request()` 等待事件驱动结果。
+派发 GET 请求。宿主默认异步执行请求，因此当前响应通常是 `{ success, requestId, async: true }`，最终响应通过 `http:response` 发出。传入 `{ async: false }` 可直接取得完整响应，也可以使用 `request()` 等待事件驱动结果。
 
 ```javascript
 const response = await fb.http.get('https://api.example.com/data', { async: false });
@@ -22,7 +20,7 @@ const response = await fb.http.get('https://api.example.com/data', { async: fals
 
 签名：`fb.http.post(url: string, body?: JsonValue, options?: HttpRequestOptions): Promise<HttpResponse | HttpBinaryResponse>`
 
-派发 POST 请求；主机会序列化非字符串 JSON 请求体。
+派发 POST 请求；宿主会序列化非字符串 JSON 请求体。
 
 ### head(url, options?)
 
@@ -34,7 +32,7 @@ const response = await fb.http.get('https://api.example.com/data', { async: fals
 
 签名：`fb.http.download(url: string, saveTo: string, options?: HttpDownloadOptions): Promise<BaseResponse & { requestId?: string; path?: string; bytesWritten?: number; cancelled?: boolean }>`
 
-将 URL 下载到本地路径。默认以 60 秒主机超时同步执行；传入 `{ async: true }` 时，完成结果通过 `http:downloadComplete` 发出，并用 `requestId` 关联。
+将 URL 下载到本地路径。默认以 60 秒宿主超时同步执行；传入 `{ async: true }` 时，完成结果通过 `http:downloadComplete` 发出，并用 `requestId` 关联。
 
 ```javascript
 const receipt = await fb.http.download(
@@ -46,72 +44,42 @@ const receipt = await fb.http.download(
 
 ### abort()
 
-签名：`fb.http.abort(...args): Promise<unknown>`
-
-| 参数 | 类型 | 必填 | 说明 |
-| --- | --- | --- | --- |
-| ...args | unknown[] | 视方法而定 | 透传给 SDK wrapper；详细类型以 `sdk/src/bridge/namespaces/` 源码和生成类型为准 |
-
-返回值：底层 `http.abort` 调用结果。
+封装 `http.abort`。参数与返回类型以 `foo-webview-sdk` 的 TypeScript 声明为准（IDE 悬浮提示或包内 `bridge.d.ts`），行为契约见 API 文档对应条目。
 
 ```javascript
-const result = await fb.http.abort();
+await fb.http.abort(/* 参数见 TypeScript 声明 */);
 ```
 
 ### delete()
 
-签名：`fb.http.delete(...args): Promise<unknown>`
-
-| 参数 | 类型 | 必填 | 说明 |
-| --- | --- | --- | --- |
-| ...args | unknown[] | 视方法而定 | 透传给 SDK wrapper；详细类型以 `sdk/src/bridge/namespaces/` 源码和生成类型为准 |
-
-返回值：底层 `http.delete` 调用结果。
+封装 `http.delete`。参数与返回类型以 `foo-webview-sdk` 的 TypeScript 声明为准（IDE 悬浮提示或包内 `bridge.d.ts`），行为契约见 API 文档对应条目。
 
 ```javascript
-const result = await fb.http.delete();
+await fb.http.delete(/* 参数见 TypeScript 声明 */);
 ```
 
 ### patch()
 
-签名：`fb.http.patch(...args): Promise<unknown>`
-
-| 参数 | 类型 | 必填 | 说明 |
-| --- | --- | --- | --- |
-| ...args | unknown[] | 视方法而定 | 透传给 SDK wrapper；详细类型以 `sdk/src/bridge/namespaces/` 源码和生成类型为准 |
-
-返回值：底层 `http.patch` 调用结果。
+封装 `http.patch`。参数与返回类型以 `foo-webview-sdk` 的 TypeScript 声明为准（IDE 悬浮提示或包内 `bridge.d.ts`），行为契约见 API 文档对应条目。
 
 ```javascript
-const result = await fb.http.patch();
+await fb.http.patch(/* 参数见 TypeScript 声明 */);
 ```
 
 ### put()
 
-签名：`fb.http.put(...args): Promise<unknown>`
-
-| 参数 | 类型 | 必填 | 说明 |
-| --- | --- | --- | --- |
-| ...args | unknown[] | 视方法而定 | 透传给 SDK wrapper；详细类型以 `sdk/src/bridge/namespaces/` 源码和生成类型为准 |
-
-返回值：底层 `http.put` 调用结果。
+封装 `http.put`。参数与返回类型以 `foo-webview-sdk` 的 TypeScript 声明为准（IDE 悬浮提示或包内 `bridge.d.ts`），行为契约见 API 文档对应条目。
 
 ```javascript
-const result = await fb.http.put();
+await fb.http.put(/* 参数见 TypeScript 声明 */);
 ```
 
 ### request()
 
-签名：`fb.http.request(...args): Promise<unknown>`
-
-| 参数 | 类型 | 必填 | 说明 |
-| --- | --- | --- | --- |
-| ...args | unknown[] | 视方法而定 | 透传给 SDK wrapper；详细类型以 `sdk/src/bridge/namespaces/` 源码和生成类型为准 |
-
-返回值：底层 `http.get` 调用结果。
+封装 `http.get`。参数与返回类型以 `foo-webview-sdk` 的 TypeScript 声明为准（IDE 悬浮提示或包内 `bridge.d.ts`），行为契约见 API 文档对应条目。
 
 ```javascript
-const result = await fb.http.request();
+await fb.http.request(/* 参数见 TypeScript 声明 */);
 ```
 
 ### disableDefaultDownloadLogger()

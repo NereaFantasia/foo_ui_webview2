@@ -10,8 +10,8 @@
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
-| `default` | `json` | 否 | 可省略。 |
-| `key` | `string` | 否 | 可选。 |
+| `key` | `string` | 是 | 配置键；缺失或为空返回 `key is required`。 |
+| `default` | `json` | 否 | 键不存在时作为 `value` 返回。 |
 
 **返回值**: `{ "success": true, "key": "theme", "value": "dark", "found": true }`
 
@@ -27,8 +27,8 @@ const theme = await fb2k.invoke('config.get', { key: 'theme', default: 'light' }
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
-| `key` | `string` | 否 | 可选。 |
-| `value` | `json` | 是 | 必填。 |
+| `key` | `string` | 是 | 配置键；缺失或为空返回 `key is required`。 |
+| `value` | `json` | 是 | 任意 JSON 值。 |
 
 **返回值**: `{ "success": true, "key": "volume" }`
 
@@ -42,7 +42,7 @@ await fb2k.invoke('config.set', { key: 'volume', value: 0.8 });
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
-| `key` | `string` | 否 | 可选。 |
+| `key` | `string` | 是 | 要删除的配置键；缺失或为空返回 `key is required`。 |
 
 **返回值**: `{ "success": true, "key": "theme", "existed": true }`
 
@@ -172,8 +172,8 @@ console.log(`当前输出: ${current.name}`);
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
-| `deviceId` | `string` | 否 | 可选。 |
-| `outputId` | `string` | 否 | 可选。 |
+| `outputId` | `string` | 是 | 输出模块 GUID；两者缺一返回 `outputId and deviceId are required`。 |
+| `deviceId` | `string` | 是 | 设备 GUID。 |
 
 
 **返回值**: `{"success":true}`
@@ -207,10 +207,10 @@ await fb2k.invoke('config.setOutputDevice', { outputId: '{...}', deviceId: '{...
 
 设置输出缓冲区大小。
 
-| 参数 | 类型 | 必填 | 说明 |
-| --- | --- | --- | --- |
-| `bufferLength` | `number` | 否 | 可选；默认 0。 |
-| `milliseconds` | `number` | 否 | 可选；默认 0。 |
+| 参数 | 类型 | 必填 | 默认值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `bufferLength` | `number` | 否 | `0` | 缓冲区秒数；两者至少提供其一（否则报错），同传时 `milliseconds` 优先。 |
+| `milliseconds` | `number` | 否 | `0` | 毫秒数，换算为秒；有效范围 0.05–2.0 秒。 |
 
 **返回值**: `{ "success": true }`
 
@@ -222,7 +222,7 @@ await fb2k.invoke('config.setOutputDevice', { outputId: '{...}', deviceId: '{...
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
-| `parentGuid` | `string` | 否 | 可选。 |
+| `parentGuid` | `string` | 否 | 省略时从高级偏好根分支开始。 |
 
 **返回值**: 数组，每个元素包含 `name`、`guid`、`type`（`"branch"`/`"checkbox"`/`"radio"`/`"string"`/`"integer"`）、`value`、`children`（分支时）。
 
@@ -232,7 +232,7 @@ await fb2k.invoke('config.setOutputDevice', { outputId: '{...}', deviceId: '{...
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
-| `guid` | `string` | 否 | 可选。 |
+| `guid` | `string` | 是 | 高级配置项 GUID；缺失或为空返回 `guid is required`。 |
 
 **返回值**: `{ "name": "...", "guid": "...", "type": "checkbox", "value": true }`
 
@@ -242,8 +242,8 @@ await fb2k.invoke('config.setOutputDevice', { outputId: '{...}', deviceId: '{...
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
-| `guid` | `string` | 否 | 可选。 |
-| `value` | `boolean` | 是 | 必填。 |
+| `guid` | `string` | 是 | 高级配置项 GUID；缺失或为空返回 `guid is required`。 |
+| `value` | `boolean` | 是 | checkbox 项须传 boolean；string/integer 项接受字符串或数字（数字自动转为字符串，整数项截断浮点）。 |
 
 **返回值**: `{ "success": true }`
 
@@ -253,7 +253,7 @@ await fb2k.invoke('config.setOutputDevice', { outputId: '{...}', deviceId: '{...
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
-| `guid` | `string` | 否 | 可选。 |
+| `guid` | `string` | 是 | 高级配置项 GUID；缺失或为空返回 `guid is required`。 |
 
 **返回值**: `{ "success": true }`
 
@@ -375,7 +375,7 @@ presets.forEach(p => console.log(`${p.index}: ${p.name}`));
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
-| `index` | `integer` | 是 | 必填。 |
+| `index` | `integer` | 是 | 预设索引，来自 `config.getDspPresets`。 |
 
 **返回值**: `{ "success": true }`
 
@@ -393,10 +393,10 @@ presets.forEach(p => console.log(`${p.index}: ${p.name}`));
 
 设置「光标跟随播放」。
 
-| 参数 | 类型 | 必填 | 说明 |
-| --- | --- | --- | --- |
-| `enabled` | `boolean` | 否 | 可选；默认 false。 |
-| `value` | `boolean` | 否 | 可选；默认 false。 |
+| 参数 | 类型 | 必填 | 默认值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `enabled` | `boolean` | 否 | `false` |  |
+| `value` | `boolean` | 否 | `false` | `enabled` 的兼容别名。 |
 
 **返回值**: `{ "success": true, "enabled": true }`
 
@@ -412,10 +412,10 @@ presets.forEach(p => console.log(`${p.index}: ${p.name}`));
 
 设置「播放跟随光标」。
 
-| 参数 | 类型 | 必填 | 说明 |
-| --- | --- | --- | --- |
-| `enabled` | `boolean` | 否 | 可选；默认 false。 |
-| `value` | `boolean` | 否 | 可选；默认 false。 |
+| 参数 | 类型 | 必填 | 默认值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `enabled` | `boolean` | 否 | `false` |  |
+| `value` | `boolean` | 否 | `false` | `enabled` 的兼容别名。 |
 
 **返回值**: `{ "success": true, "enabled": false }`
 
@@ -438,11 +438,11 @@ presets.forEach(p => console.log(`${p.index}: ${p.name}`));
 
 设置 ReplayGain source mode。支持数字索引或字符串名称。
 
-| 参数 | 类型 | 必填 | 说明 |
-| --- | --- | --- | --- |
-| `mode` | `integer` | 否 | 可选；默认 -1。 |
-| `sourceMode` | `string` | 否 | 可省略。 |
-| `value` | `integer` | 否 | 可选；默认 -1。 |
+| 参数 | 类型 | 必填 | 默认值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `mode` | `integer` | 否 | `-1` | 数字形式：0=none、1=track、2=album、3=byPlaybackOrder。 |
+| `sourceMode` | `string` | 否 | — | 字符串形式：`none` / `track` / `album` / `auto` / `byPlaybackOrder`。 |
+| `value` | `integer` | 否 | `-1` | `mode` 的兼容别名。 |
 
 **返回值**: `{ "success": true, "mode": 1, "value": 1 }`
 
@@ -468,4 +468,4 @@ JSON 值。
 
 光标跟随和 ReplayGain setter 接受文档中的兼容形式。ReplayGain 的 `mode` 与 `value`
 为数字形式，`sourceMode` 接受 `track`、`album`、`auto`、`byPlaybackOrder` 或 `none`。
-未知字符串 source mode 时，handler 返回 `INVALID_PARAMS`。
+`sourceMode` 传入无法识别的字符串时，handler 返回 `INVALID_PARAMS`。

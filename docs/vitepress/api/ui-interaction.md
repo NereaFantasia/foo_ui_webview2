@@ -44,7 +44,7 @@ const caps = await fb2k.invoke('dnd.getCapabilities');
 | --- | --- | --- | --- |
 | `sessionId` | `string` | No | Session to query, from a `dnd:*` payload. Omit to query the session that is active or most recently ended for this window. |
 
-**Returns**: `{"paths":"...","sessionId":"...","success":true}`
+**Returns**: `{"paths":"...","resolvedPaths":"...","sessionId":"...","success":true}`
 
 The reliable way to obtain paths inside a HTML5 `drop` handler: it reads host
 session state rather than a snapshot pushed to the page, so it does not depend on
@@ -54,6 +54,10 @@ message delivery order. Paths come back in the same order as
 `paths` is an empty array when the session is unknown, expired, carried no file
 list, or the origin is not trusted with paths. Sessions are stored per window, so
 a session id alone cannot read another window's paths.
+
+`resolvedPaths` carries shortcut (`.lnk`) targets and is **always the same length
+as `paths`**, so an index valid for one is valid for the other; entries that are
+not shortcuts are `null`. It is emptied together with `paths`, never separately.
 
 ```js
 const { paths } = await fb2k.invoke('dnd.getPathsAsync');
@@ -90,11 +94,11 @@ const result = await fb2k.invoke('keyboard.getRegisteredHotkeys');
 ### keyboard.registerHotkey
 
 
-| Parameter | Type | Required | Description |
-| --- | --- | --- | --- |
-| `action` | `string` | Yes | Action name echoed back in the `keyboard:hotkey` payload. |
-| `global` | `boolean` | No | Optional; default true. |
-| `key` | `string` | Yes | Key combination such as `Ctrl+Alt+P`. |
+| Parameter | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `key` | `string` | Yes | — | Key combination such as `Ctrl+Alt+P`. |
+| `action` | `string` | Yes | — | Action name echoed back in the `keyboard:hotkey` payload. |
+| `global` | `boolean` | No | `true` |  |
 
 **Returns**: `{"error":"...","id":"...","success":true}`
 
@@ -124,8 +128,8 @@ await fb2k.invoke('keyboard.registerShortcut', { key: 'Ctrl+Shift+L', action: 'f
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `id` | `string` | No | Optional; omitted by default. |
-| `key` | `string` | No | Optional. |
+| `id` | `string` | No | Numeric id returned by `keyboard.registerHotkey`. |
+| `key` | `string` | No | The original key string. |
 
 **Returns**: `{"error":"...","success":true}`
 
@@ -150,10 +154,10 @@ const result = await fb2k.invoke('ui.hideNotification');
 ### ui.showContextMenu
 
 
-| Parameter | Type | Required | Description |
-| --- | --- | --- | --- |
-| `x` | `integer` | No | Optional; default -1. |
-| `y` | `integer` | No | Optional; default -1. |
+| Parameter | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `x` | `integer` | No | `-1` | Omit or `-1` to use the current cursor position. |
+| `y` | `integer` | No | `-1` | Omit or `-1` to use the current cursor position. |
 
 **Returns**: `{"error":"...","success":true}`
 
@@ -165,14 +169,14 @@ await fb2k.invoke('ui.showContextMenu');
 ### ui.showCustomMenu
 
 
-| Parameter | Type | Required | Description |
-| --- | --- | --- | --- |
-| `h` | `integer` | No | Optional; default 0. |
-| `items` | `array` | Yes | Required. |
-| `suppressDefault` | `boolean` | No | Optional; default false. |
-| `w` | `integer` | No | Optional; default 0. |
-| `x` | `integer` | No | Optional; default 0. |
-| `y` | `integer` | No | Optional; default 0. |
+| Parameter | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `items` | `array` | Yes | — | Menu item array. |
+| `x` | `integer` | No | `0` | Currently ignored; the menu opens at the system cursor position. |
+| `y` | `integer` | No | `0` | Currently ignored. |
+| `w` | `integer` | No | `0` |  |
+| `h` | `integer` | No | `0` |  |
+| `suppressDefault` | `boolean` | No | `false` |  |
 
 **Returns**: `{"error":"...","selectedId":"...","success":true}`
 
@@ -189,12 +193,12 @@ const { selectedId } = await fb2k.invoke('ui.showCustomMenu', {
 ### ui.showNotification
 
 
-| Parameter | Type | Required | Description |
-| --- | --- | --- | --- |
-| `body` | `string` | No | Optional. |
-| `silent` | `boolean` | No | Optional; default false. |
-| `timeout` | `integer` | No | Optional; default 5000. |
-| `title` | `string` | No | Optional. |
+| Parameter | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `title` | `string` | No | — | Notification title. |
+| `body` | `string` | No | — | Notification body. |
+| `timeout` | `integer` | No | `5000` | Display time in milliseconds. |
+| `silent` | `boolean` | No | `false` |  |
 
 **Returns**: `{"error":"...","id":"...","success":true}`
 
@@ -208,12 +212,12 @@ await fb2k.invoke('ui.showNotification', {
 ### ui.showToast
 
 
-| Parameter | Type | Required | Description |
-| --- | --- | --- | --- |
-| `duration` | `integer` | No | Optional; default 3000. |
-| `message` | `string` | Yes | Toast text. |
-| `position` | `string` | No | Optional; default bottom-right. |
-| `type` | `string` | No | `info` (default), `success`, `warning`, or `error`. |
+| Parameter | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `message` | `string` | Yes | — | Toast text. |
+| `type` | `string` | No | `info` | `info`, `success`, `warning`, or `error`. |
+| `duration` | `integer` | No | `3000` | Display time in milliseconds. |
+| `position` | `string` | No | `bottom-right` |  |
 
 **Returns**: `{"error":"...","success":true}`
 

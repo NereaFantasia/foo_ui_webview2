@@ -70,9 +70,9 @@ if (state.isMaximized) {
 
 获取窗口全屏状态。
 
-| 参数 | 类型 | 必填 | 说明 |
-| --- | --- | --- | --- |
-| `windowId` | `string` | 否 | 可选目标窗口 id，由 `WindowTargetResolver::ResolveForObservation` 解析；省略时使用调用方窗口。 |
+| 参数 | 类型 | 必填 | 默认值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `windowId` | `string` | 否 | 调用方窗口 | 目标窗口 id。 |
 
 - **返回值**: `{ "fullscreen": false, "isFullscreen": false }`
 
@@ -83,10 +83,10 @@ if (state.isMaximized) {
 
 主窗口与 popup 进入/退出 fullscreen 后，都会重新通过统一的 window chrome resolver/applier 应用当前 `backdropPolicy` / frameless / darkMode 状态。默认作用于当前调用窗口；如需显式指定目标窗口，可传 `windowId`。
 
-| 参数 | 类型 | 必填 | 说明 |
-| --- | --- | --- | --- |
-| `windowId` | `string` | 否 | 可选；默认 caller window。 |
-| `enabled` | `boolean` | 否 | 可选；默认 true。 |
+| 参数 | 类型 | 必填 | 默认值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `windowId` | `string` | 否 | 调用方窗口 |  |
+| `enabled` | `boolean` | 否 | `true` |  |
 
 - **返回值**: `{ "success": true, "fullscreen": true }`
 
@@ -101,12 +101,12 @@ await fb2k.invoke('window.setFullscreen', { enabled: false });
 
 设置窗口边界。所有参数可选，未传递的保持不变。
 
-| 参数 | 类型 | 必填 | 说明 |
-| --- | --- | --- | --- |
-| `x` | `integer` | 否 | 可选；默认 current x。 |
-| `y` | `integer` | 否 | 可选；默认 current y。 |
-| `width` | `integer` | 否 | 可选；默认 current width。 |
-| `height` | `integer` | 否 | 可选；默认 current height。 |
+| 参数 | 类型 | 必填 | 默认值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `x` | `integer` | 否 | 当前值 |  |
+| `y` | `integer` | 否 | 当前值 |  |
+| `width` | `integer` | 否 | 当前值 |  |
+| `height` | `integer` | 否 | 当前值 |  |
 
 - **返回值**: `{ "success": true }`
 
@@ -140,9 +140,9 @@ console.log(`DPI: ${dpi.dpi}, 缩放: ${dpi.scale}x`);
 
 使窗口获得焦点。支持可选的 `windowId` 参数，可从任意窗口聚焦指定的主窗口或弹窗。
 
-| 参数 | 类型 | 必填 | 说明 |
-| --- | --- | --- | --- |
-| `windowId` | `string` | 否 | 可选。 |
+| 参数 | 类型 | 必填 | 默认值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `windowId` | `string` | 否 | 调用方窗口 | `main` 或 popup id。 |
 
 - **返回值**: `{ "success": true }`
 - **行为**: 若目标窗口处于最小化状态，会先恢复再置顶激活
@@ -180,12 +180,12 @@ console.log('窗口标题:', result.title);
 ## window.showSystemMenu
  显示系统菜单（最小化/最大化/关闭等）。支持传入排除区域避免遮挡按钮。
 
-| 参数 | 类型 | 必填 | 说明 |
-| --- | --- | --- | --- |
-| `h` | `integer` | 否 | 可选；默认 0。 |
-| `w` | `integer` | 否 | 可选；默认 0。 |
-| `x` | `integer` | 否 | 可选；默认 0。 |
-| `y` | `integer` | 否 | 可选；默认 0。 |
+| 参数 | 类型 | 必填 | 默认值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `x` | `integer` | 否 | `0` | 排除区域左上角 X；未提供 `w`/`h` 时 `x`/`y` 直接作为菜单弹出坐标。 |
+| `y` | `integer` | 否 | `0` | 排除区域左上角 Y。 |
+| `w` | `integer` | 否 | `0` | 排除区域宽度。 |
+| `h` | `integer` | 否 | `0` | 排除区域高度。 |
 
 - **返回值**: `{ "success": true }`
 
@@ -214,17 +214,17 @@ titlebar.addEventListener('mousedown', async () => {
 ## window.setTitlebarHeight
  设置**当前调用窗口**（`main` 或 `popup`）的标题栏高度。
 
-| 参数 | 类型 | 必填 | 说明 |
-| --- | --- | --- | --- |
-| `height` | `integer` | 否 | 可选；默认 32。 |
+| 参数 | 类型 | 必填 | 默认值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `height` | `integer` | 否 | `32` | 有效范围 24–100。 |
 
 - **返回值**: `{ "success": true, "height": 32 }`
 
-::: warning WARNING
+::: warning
 高度必须在 24-100 之间，超出范围返回错误。
 :::
 
-::: tip TIP
+::: tip
 从 popup 调用仅影响该 popup，不会污染主窗口标题栏配置。
 :::
 
@@ -258,7 +258,7 @@ titlebar.addEventListener('mousedown', async () => {
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
-| `regions` | `array` | 否 | 可省略。 |
+| `regions` | `array` | 否 | CSS 像素矩形 `{ x, y, width, height }` 数组。 |
 
 - **返回值**: `{ "success": true, "count": 2, "dpiScale": 1.5 }`
 
@@ -279,9 +279,9 @@ await fb2k.invoke('window.setDragRegions', {
 
 获取弹出窗口（popup）的行为策略。仅对 popup 窗口生效，不支持 main 窗口。
 
-| 参数 | 类型 | 必填 | 说明 |
-| --- | --- | --- | --- |
-| `windowId` | `string` | 否 | 可选。 |
+| 参数 | 类型 | 必填 | 默认值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `windowId` | `string` | 否 | 调用方 popup | 仅 popup。 |
 
 **返回值**:
 
@@ -321,11 +321,11 @@ console.log(info.resolvedBehavior.showInTaskbar);
 
 运行时更新 popup 窗口的行为策略。可一次切换 profile，也可通过 `behavior` 做字段级覆盖。
 
-| 参数 | 类型 | 必填 | 说明 |
-| --- | --- | --- | --- |
-| `windowId` | `string` | 否 | 目标 popup id；省略时作用于调用方 popup。 |
-| `profile` | `string` | 否 | `standard`、`miniPlayer` 或 `desktopLyrics`；省略时保持当前 profile。 |
-| `behavior` | `object` | 否 | 字段级覆盖；仅在提供时应用。 |
+| 参数 | 类型 | 必填 | 默认值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `windowId` | `string` | 否 | 调用方 popup | 目标 popup id。 |
+| `profile` | `string` | 否 | 当前 profile | `standard`、`miniPlayer` 或 `desktopLyrics`。 |
+| `behavior` | `object` | 否 | — | 字段级覆盖；仅在提供时应用。 |
 
 字段优先级：`behavior.*` 字段覆盖 > `profile` 默认。
 
@@ -360,9 +360,9 @@ await fb2k.invoke('window.setPopupBehavior', {
 
 获取窗口的 DWM 背景效果策略。支持 main 与 popup。
 
-| 参数 | 类型 | 必填 | 说明 |
-| --- | --- | --- | --- |
-| `windowId` | `string` | 否 | 可选；默认 caller window。 |
+| 参数 | 类型 | 必填 | 默认值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `windowId` | `string` | 否 | 调用方窗口 |  |
 
 **返回值**:
 
@@ -400,10 +400,10 @@ console.log(info.resolvedBackdropPolicy.activeEffect); // 'mica'
 
 运行时更新 DWM 背景策略。可单独覆盖 `activeEffect` / `inactiveEffect` 等字段；传入 `null` 表示清空字段恢复默认。
 
-| 参数 | 类型 | 必填 | 说明 |
-| --- | --- | --- | --- |
-| `windowId` | `string` | 否 | 可选；默认 caller window。 |
-| `backdropPolicy` | `object` | 是 | 必填。 |
+| 参数 | 类型 | 必填 | 默认值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `windowId` | `string` | 否 | 调用方窗口 |  |
+| `backdropPolicy` | `object` | 是 | — | 字段级补丁；字段传 `null` 表示恢复默认。 |
 
 **返回值**: 同 `getBackdropPolicy`，附 `success: true`；失败时返回 `error`。
 
@@ -441,7 +441,7 @@ await fb2k.invoke('window.setBackdropPolicy', {
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
-| `message` | `json` | 是 | 必填。 |
+| `message` | `json` | 是 | 广播到除发送者外所有窗口的 JSON 消息体（经 `window:message` 事件送达）。 |
 
 **返回值**: `{"error":"...","success":true}`
 
@@ -479,7 +479,7 @@ const result = await fb2k.invoke('window.center');
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
-| `windowId` | `string` | 否 | 可选。 |
+| `windowId` | `string` | 否 | 仅 popup；从目标 popup 自身调用时可省略。 |
 
 **返回值**: `{"error":"...","success":true,"windowId":"..."}`
 
@@ -530,7 +530,7 @@ const result = await fb2k.invoke('window.closeAllPopups');
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
-| `windowId` | `string` | 否 | 可选。 |
+| `windowId` | `string` | 是 | 要关闭的 popup id；不回退到调用方窗口。 |
 
 **返回值**: `{"error":"...","success":true}`
 
@@ -555,28 +555,28 @@ const result = await fb2k.invoke('window.confirmClose');
 ### window.createPopup
 
 
-| 参数 | 类型 | 必填 | 说明 |
-| --- | --- | --- | --- |
-| `alwaysOnTop` | `boolean` | 否 | 可选；默认 false。 |
-| `backdropPolicy` | `object` | 否 | 可省略。 |
-| `beforeClose` | `boolean` | 否 | 可选；默认 false。 |
-| `behavior` | `object` | 否 | 可省略。 |
-| `clickThrough` | `boolean` | 否 | 可选；默认 false。 |
-| `frame` | `boolean` | 否 | 可选；默认 true。 |
-| `height` | `integer` | 否 | 可选；默认 300。 |
-| `maxHeight` | `integer` | 否 | 可选；默认 0。 |
-| `maxWidth` | `integer` | 否 | 可选；默认 0。 |
-| `minHeight` | `integer` | 否 | 可选；默认 150。 |
-| `minWidth` | `integer` | 否 | 可选；默认 200。 |
-| `profile` | `string` | 否 | 可选。 |
-| `resizable` | `boolean` | 否 | 可选；默认 true。 |
-| `showInTaskbar` | `boolean` | 否 | 可选；默认 false。 |
-| `title` | `string` | 否 | 可选。 |
-| `transparent` | `boolean` | 否 | 可选；默认 false。 |
-| `url` | `string` | 否 | 可选。 |
-| `width` | `integer` | 否 | 可选；默认 400。 |
-| `x` | `integer` | 否 | 可选；默认 CW_USEDEFAULT。 |
-| `y` | `integer` | 否 | 可选；默认 CW_USEDEFAULT。 |
+| 参数 | 类型 | 必填 | 默认值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `url` | `string` | 否 | — | 弹窗加载的页面地址。 |
+| `title` | `string` | 否 | — |  |
+| `x` | `integer` | 否 | 系统默认 | 省略时由系统定位（CW_USEDEFAULT）。 |
+| `y` | `integer` | 否 | 系统默认 |  |
+| `width` | `integer` | 否 | `400` |  |
+| `height` | `integer` | 否 | `300` |  |
+| `minWidth` | `integer` | 否 | `200` |  |
+| `minHeight` | `integer` | 否 | `150` |  |
+| `maxWidth` | `integer` | 否 | `0` | `0` 表示无上限。 |
+| `maxHeight` | `integer` | 否 | `0` | `0` 表示无上限。 |
+| `resizable` | `boolean` | 否 | `true` |  |
+| `frame` | `boolean` | 否 | `true` | `false` 为无边框。 |
+| `transparent` | `boolean` | 否 | `false` | 背景透明。 |
+| `alwaysOnTop` | `boolean` | 否 | `false` |  |
+| `showInTaskbar` | `boolean` | 否 | `false` |  |
+| `clickThrough` | `boolean` | 否 | `false` | 鼠标穿透。 |
+| `beforeClose` | `boolean` | 否 | `false` | 关闭前发送 `window:beforeClose` 供确认。 |
+| `profile` | `string` | 否 | — | 行为预设：`standard` / `miniPlayer` / `desktopLyrics`。 |
+| `behavior` | `object` | 否 | — | 行为字段覆盖（见 `setPopupBehavior`）。 |
+| `backdropPolicy` | `object` | 否 | — | 背景策略（见 `setBackdropPolicy`）。 |
 
 **返回值**: `{"error":"...","success":true,"windowId":"..."}`
 
@@ -593,9 +593,9 @@ const { windowId } = await fb2k.invoke('window.createPopup', {
 ### window.enterFullscreen
 
 
-| 参数 | 类型 | 必填 | 说明 |
-| --- | --- | --- | --- |
-| `windowId` | `string` | 否 | 可选；默认 caller window。 |
+| 参数 | 类型 | 必填 | 默认值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `windowId` | `string` | 否 | 调用方窗口 |  |
 
 **返回值**: `{"error":"...","isFullscreen":"...","success":true}`
 
@@ -607,9 +607,9 @@ const result = await fb2k.invoke('window.enterFullscreen');
 ### window.exitFullscreen
 
 
-| 参数 | 类型 | 必填 | 说明 |
-| --- | --- | --- | --- |
-| `windowId` | `string` | 否 | 可选；默认 caller window。 |
+| 参数 | 类型 | 必填 | 默认值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `windowId` | `string` | 否 | 调用方窗口 |  |
 
 **返回值**: `{"error":"...","isFullscreen":"...","success":true}`
 
@@ -621,10 +621,10 @@ const result = await fb2k.invoke('window.exitFullscreen');
 ### window.flash
 
 
-| 参数 | 类型 | 必填 | 说明 |
-| --- | --- | --- | --- |
-| `count` | `integer` | 否 | 可选；默认 3。 |
-| `enabled` | `boolean` | 否 | 可选；默认 true。 |
+| 参数 | 类型 | 必填 | 默认值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `count` | `integer` | 否 | `3` | 闪烁次数。 |
+| `enabled` | `boolean` | 否 | `true` |  |
 
 **返回值**: `{"error":"...","success":true}`
 
@@ -637,9 +637,9 @@ await fb2k.invoke('window.flash');
 ### window.flashTaskbar
 
 
-| 参数 | 类型 | 必填 | 说明 |
-| --- | --- | --- | --- |
-| `count` | `integer` | 否 | 可选；默认 3。 |
+| 参数 | 类型 | 必填 | 默认值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `count` | `integer` | 否 | `3` | 闪烁次数。 |
 
 **返回值**: `{"success":true}`
 
@@ -716,15 +716,15 @@ const result = await fb2k.invoke('window.getDevServerConfig');
 
 读取窗口的最大尺寸约束。解析取显式 `windowId` 或调用方窗口，**不回退主窗口**——无法解析调用上下文时直接失败，而不是静默返回另一个窗口的约束。面板（DUI/CUI）调用方会被拒绝并返回 `panelMode: true`，因为面板不是窗口 shell。
 
-| 参数 | 类型 | 必填 | 说明 |
-| --- | --- | --- | --- |
-| `windowId` | `string` | 否 | 可选；默认调用方窗口。 |
+| 参数 | 类型 | 必填 | 默认值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `windowId` | `string` | 否 | 调用方窗口 |  |
 
 **返回值**: `{"height":"...","success":true,"width":"...","windowId":"..."}`。无法解析目标窗口时返回 `{ "success": false, "error": "..." }`。
 
 数值单位为物理像素；宿主以 DIP 存储约束，并按**目标窗口**的 DPI 换算。`0` 表示无上限，且换算前后精确不变。
 
-返回的是**请求值**，不是当前窗口尺寸。「物理 → DIP → 物理」的往返会量化到整数 DIP，故在非 100% 缩放下 `get` 与传给 `set` 的值每轴最多相差 1px（例如 125% 下 `202px` 读回为 `203px`）。请把 getter 理解为「在 ±1px 内复述你设置的约束」，而非逐字节一致。`0` 不受此影响。
+返回的是**请求值**，不是当前窗口尺寸。「物理 → DIP → 物理」的往返会量化到整数 DIP，故在非 100% 缩放下 `get` 与传给 `set` 的值每轴最多相差 1px（例如 125% 下 `202px` 读回为 `203px`）。请把 getter 理解为「在 ±1px 内复述你设置的约束」，而非精确相等。`0` 不受此影响。
 
 ```js
 const result = await fb2k.invoke('window.getMaxSize');
@@ -735,15 +735,15 @@ const result = await fb2k.invoke('window.getMaxSize');
 
 读取窗口的最小尺寸约束。解析取显式 `windowId` 或调用方窗口，**不回退主窗口**——无法解析调用上下文时直接失败，而不是静默返回另一个窗口的约束。面板（DUI/CUI）调用方会被拒绝并返回 `panelMode: true`，因为面板不是窗口 shell。
 
-| 参数 | 类型 | 必填 | 说明 |
-| --- | --- | --- | --- |
-| `windowId` | `string` | 否 | 可选；默认调用方窗口。 |
+| 参数 | 类型 | 必填 | 默认值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `windowId` | `string` | 否 | 调用方窗口 |  |
 
 **返回值**: `{"height":"...","success":true,"width":"...","windowId":"..."}`。无法解析目标窗口时返回 `{ "success": false, "error": "..." }`。
 
 数值单位为物理像素；宿主以 DIP 存储约束，并按**目标窗口**的 DPI 换算。
 
-返回的是**请求值**，不是当前窗口尺寸。「物理 → DIP → 物理」的往返会量化到整数 DIP，故在非 100% 缩放下 `get` 与传给 `set` 的值每轴最多相差 1px（例如 125% 下 `202px` 读回为 `203px`）。请把 getter 理解为「在 ±1px 内复述你设置的约束」，而非逐字节一致。
+返回的是**请求值**，不是当前窗口尺寸。「物理 → DIP → 物理」的往返会量化到整数 DIP，故在非 100% 缩放下 `get` 与传给 `set` 的值每轴最多相差 1px（例如 125% 下 `202px` 读回为 `203px`）。请把 getter 理解为「在 ±1px 内复述你设置的约束」，而非精确相等。
 
 ```js
 const result = await fb2k.invoke('window.getMinSize');
@@ -801,9 +801,9 @@ const result = await fb2k.invoke('window.isAlwaysOnTop');
 ### window.isClickThrough
 
 
-| 参数 | 类型 | 必填 | 说明 |
-| --- | --- | --- | --- |
-| `windowId` | `string` | 否 | 可选。 |
+| 参数 | 类型 | 必填 | 默认值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `windowId` | `string` | 否 | 调用方窗口 | 仅 popup。 |
 
 **返回值**: `{"clickThrough":"...","error":"...","success":true}`
 
@@ -816,9 +816,9 @@ const { clickThrough } = await fb2k.invoke('window.isClickThrough', { windowId: 
 
 返回窗口请求态的可调整性。解析取显式 `windowId` 或调用方窗口，**不回退主窗口**。面板（DUI/CUI）调用方会被拒绝并返回 `panelMode: true`。
 
-| 参数 | 类型 | 必填 | 说明 |
-| --- | --- | --- | --- |
-| `windowId` | `string` | 否 | 可选；默认调用方窗口。 |
+| 参数 | 类型 | 必填 | 默认值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `windowId` | `string` | 否 | 调用方窗口 |  |
 
 **返回值**: `{"resizable":"...","success":true,"windowId":"..."}`。无法解析目标窗口时返回 `{ "success": false, "error": "..." }`。
 
@@ -906,8 +906,8 @@ const result = await fb2k.invoke('window.restore');
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
-| `targetWindowId` | `string` | 是 | 必填。 |
-| `message` | `json` | 是 | 必填。 |
+| `targetWindowId` | `string` | 是 | 目标窗口 id（`main` 或 popup id）。 |
+| `message` | `json` | 是 | 任意 JSON 消息体，经 `window:message` 事件送达。 |
 
 **返回值**: `{"error":"...","success":true}`
 
@@ -923,11 +923,11 @@ await fb2k.invoke('window.sendMessage', {
 
 应用或清除亚克力背景材质。panel 模式下不支持。
 
-| 参数 | 类型 | 必填 | 说明 |
-| --- | --- | --- | --- |
-| `windowId` | `string` | 否 | 可选；默认调用方窗口。 |
-| `enabled` | `boolean` | 否 | 可选；默认 `true`。 |
-| `darkMode` | `boolean` | 否 | 可选；省略时保持当前模式。 |
+| 参数 | 类型 | 必填 | 默认值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `windowId` | `string` | 否 | 调用方窗口 |  |
+| `enabled` | `boolean` | 否 | `true` |  |
+| `darkMode` | `boolean` | 否 | 当前模式 |  |
 
 **返回值**: `{ "success": true, "enabled": true }`；仅当你传入 `darkMode` 时才回显该字段。
 
@@ -941,9 +941,9 @@ await fb2k.invoke('window.setAcrylic', { enabled: true, darkMode: true });
 ### window.setAlwaysOnTop
 
 
-| 参数 | 类型 | 必填 | 说明 |
-| --- | --- | --- | --- |
-| `enabled` | `boolean` | 否 | 可选；默认 true。 |
+| 参数 | 类型 | 必填 | 默认值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `enabled` | `boolean` | 否 | `true` |  |
 
 **返回值**: `{"error":"...","success":true}`
 
@@ -955,10 +955,10 @@ await fb2k.invoke('window.setAlwaysOnTop', { enabled: true });
 ### window.setBackgroundTransparency
 
 
-| 参数 | 类型 | 必填 | 说明 |
-| --- | --- | --- | --- |
-| `windowId` | `string` | 否 | 可选；默认 caller window。 |
-| `transparent` | `boolean` | 否 | 可选；默认 true。 |
+| 参数 | 类型 | 必填 | 默认值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `windowId` | `string` | 否 | 调用方窗口 |  |
+| `transparent` | `boolean` | 否 | `true` |  |
 
 **返回值**: `{"description":"...","error":"...","success":true,"transparent":"..."}`
 
@@ -970,10 +970,10 @@ await fb2k.invoke('window.setBackgroundTransparency', { transparent: true });
 ### window.setBlur
 
 
-| 参数 | 类型 | 必填 | 说明 |
-| --- | --- | --- | --- |
-| `windowId` | `string` | 否 | 可选；默认 caller window。 |
-| `enabled` | `boolean` | 否 | 可选；默认 true。 |
+| 参数 | 类型 | 必填 | 默认值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `windowId` | `string` | 否 | 调用方窗口 |  |
+| `enabled` | `boolean` | 否 | `true` |  |
 
 **返回值**: `{"enabled":"...","success":true}`
 
@@ -985,10 +985,10 @@ await fb2k.invoke('window.setBlur', { enabled: true });
 ### window.setClickThrough
 
 
-| 参数 | 类型 | 必填 | 说明 |
-| --- | --- | --- | --- |
-| `enabled` | `boolean` | 否 | 可选；默认 true。 |
-| `windowId` | `string` | 否 | 可选。 |
+| 参数 | 类型 | 必填 | 默认值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `windowId` | `string` | 否 | 调用方窗口 | 仅 popup。 |
+| `enabled` | `boolean` | 否 | `true` |  |
 
 **返回值**: `{"clickThrough":"...","error":"...","success":true}`
 
@@ -1000,10 +1000,10 @@ await fb2k.invoke('window.setClickThrough', { enabled: true });
 ### window.setClickThroughExcludeRegions
 
 
-| 参数 | 类型 | 必填 | 说明 |
-| --- | --- | --- | --- |
-| `regions` | `array` | 否 | 可省略。 |
-| `windowId` | `string` | 否 | 可选。 |
+| 参数 | 类型 | 必填 | 默认值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `windowId` | `string` | 否 | 调用方 popup | 仅 popup。 |
+| `regions` | `array` | 否 | — | CSS 像素矩形 `{ x, y, width, height }` 数组。 |
 
 **返回值**: `{"count":0,"dpiScale":"...","success":true,"warning":"...","windowId":"..."}`
 
@@ -1018,9 +1018,9 @@ await fb2k.invoke('window.setClickThroughExcludeRegions', {
 
 设置主窗口的 Windows 11 圆角偏好。仅作用于主窗口：不接受 `windowId`，也忽略调用方窗口。popup 不接受该设置——它自行管理圆角并声明 `supportsCornerPreference: false`。面板（DUI/CUI）调用方会被拒绝并返回 `panelMode: true`。
 
-| 参数 | 类型 | 必填 | 说明 |
-| --- | --- | --- | --- |
-| `mode` | `string` | 否 | 可取 `"default"`、`"none"`、`"round"`、`"small"`；默认 `"default"`。 |
+| 参数 | 类型 | 必填 | 默认值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `mode` | `string` | 否 | `default` | 可取 `default` / `none` / `round` / `small`。 |
 
 **返回值**: `{"error":"...","success":true}`
 
@@ -1034,10 +1034,10 @@ await fb2k.invoke('window.setCornerPreference', { mode: 'round' });
 ### window.setDarkMode
 
 
-| 参数 | 类型 | 必填 | 说明 |
-| --- | --- | --- | --- |
-| `windowId` | `string` | 否 | 可选；默认 caller window。 |
-| `enabled` | `boolean` | 否 | 可选；默认 true。 |
+| 参数 | 类型 | 必填 | 默认值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `windowId` | `string` | 否 | 调用方窗口 |  |
+| `enabled` | `boolean` | 否 | `true` |  |
 
 **返回值**: `{"enabled":"...","success":true}`
 
@@ -1049,10 +1049,10 @@ await fb2k.invoke('window.setDarkMode', { enabled: true });
 ### window.setDevServerConfig
 
 
-| 参数 | 类型 | 必填 | 说明 |
-| --- | --- | --- | --- |
-| `devServerUrl` | `string` | 否 | 可选。 |
-| `useDevServer` | `boolean` | 否 | 可选；默认 false。 |
+| 参数 | 类型 | 必填 | 默认值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `useDevServer` | `boolean` | 否 | `false` |  |
+| `devServerUrl` | `string` | 否 | — | 开发服务器地址，如 `http://localhost:5173`。 |
 
 **返回值**: `{"devServerUrl":"...","success":true,"useDevServer":"..."}`
 
@@ -1067,10 +1067,10 @@ await fb2k.invoke('window.setDevServerConfig', {
 ### window.setFrameless
 
 
-| 参数 | 类型 | 必填 | 说明 |
-| --- | --- | --- | --- |
-| `windowId` | `string` | 否 | 可选；默认 caller window。 |
-| `frameless` | `boolean` | 否 | 可选；默认 true。 |
+| 参数 | 类型 | 必填 | 默认值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `windowId` | `string` | 否 | 调用方窗口 |  |
+| `frameless` | `boolean` | 否 | `true` |  |
 
 **返回值**: `{"error":"...","frameless":"...","success":true}`
 
@@ -1083,11 +1083,11 @@ await fb2k.invoke('window.setFrameless', { frameless: true });
 
 设置窗口的最大尺寸。解析取显式 `windowId` 或调用方窗口，**绝不回退主窗口**——无法解析时直接失败，而不是改到非预期的窗口。面板（DUI/CUI）调用方会被拒绝并返回 `panelMode: true`。
 
-| 参数 | 类型 | 必填 | 说明 |
-| --- | --- | --- | --- |
-| `windowId` | `string` | 否 | 可选；默认调用方窗口。 |
-| `height` | `integer` | 否 | 可选；默认 0。 |
-| `width` | `integer` | 否 | 可选；默认 0。 |
+| 参数 | 类型 | 必填 | 默认值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `windowId` | `string` | 否 | 调用方窗口 |  |
+| `width` | `integer` | 否 | `0` |  |
+| `height` | `integer` | 否 | `0` |  |
 
 **返回值**: `{"error":"...","success":true,"windowId":"..."}`
 
@@ -1102,12 +1102,12 @@ await fb2k.invoke('window.setMaxSize', { width: 1920, height: 1080 });
 
 应用或清除 Mica 背景材质。panel 模式下不支持。
 
-| 参数 | 类型 | 必填 | 说明 |
-| --- | --- | --- | --- |
-| `windowId` | `string` | 否 | 可选；默认调用方窗口。 |
-| `enabled` | `boolean` | 否 | 可选；默认 `true`。 |
-| `variant` | `string` | 否 | `mica`（默认）或 `mica-alt`。 |
-| `darkMode` | `boolean` | 否 | 可选；省略时保持当前模式。 |
+| 参数 | 类型 | 必填 | 默认值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `windowId` | `string` | 否 | 调用方窗口 |  |
+| `enabled` | `boolean` | 否 | `true` |  |
+| `variant` | `string` | 否 | `mica` | `mica` 或 `mica-alt`。 |
+| `darkMode` | `boolean` | 否 | 当前模式 |  |
 
 **返回值**: `{ "success": true, "enabled": true, "variant": "mica" }`；仅当你传入 `darkMode` 时才回显该字段。
 
@@ -1122,12 +1122,12 @@ await fb2k.invoke('window.setMica', { enabled: true, variant: 'mica-alt' });
 
 [`window.setMica`](#window-setmica) 的兼容别名：参数、行为与返回结构完全一致。新代码建议直接用 `window.setMica`。
 
-| 参数 | 类型 | 必填 | 说明 |
-| --- | --- | --- | --- |
-| `windowId` | `string` | 否 | 可选；默认调用方窗口。 |
-| `enabled` | `boolean` | 否 | 可选；默认 `true`。 |
-| `variant` | `string` | 否 | `mica`（默认）或 `mica-alt`。 |
-| `darkMode` | `boolean` | 否 | 可选；省略时保持当前模式。 |
+| 参数 | 类型 | 必填 | 默认值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `windowId` | `string` | 否 | 调用方窗口 |  |
+| `enabled` | `boolean` | 否 | `true` |  |
+| `variant` | `string` | 否 | `mica` | `mica` 或 `mica-alt`。 |
+| `darkMode` | `boolean` | 否 | 当前模式 |  |
 
 **返回值**: `{ "success": true, "enabled": true, "variant": "mica" }`；仅当你传入 `darkMode` 时才回显该字段。
 
@@ -1140,11 +1140,11 @@ await fb2k.invoke('window.setMicaEffect', { enabled: true });
 
 设置窗口的最小尺寸。解析取显式 `windowId` 或调用方窗口，**绝不回退主窗口**——无法解析时直接失败，而不是改到非预期的窗口。面板（DUI/CUI）调用方会被拒绝并返回 `panelMode: true`。
 
-| 参数 | 类型 | 必填 | 说明 |
-| --- | --- | --- | --- |
-| `windowId` | `string` | 否 | 可选；默认调用方窗口。 |
-| `height` | `integer` | 否 | 可选；默认 0。 |
-| `width` | `integer` | 否 | 可选；默认 0。 |
+| 参数 | 类型 | 必填 | 默认值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `windowId` | `string` | 否 | 调用方窗口 |  |
+| `width` | `integer` | 否 | `0` |  |
+| `height` | `integer` | 否 | `0` |  |
 
 **返回值**: `{"error":"...","success":true,"windowId":"..."}`
 
@@ -1160,7 +1160,7 @@ await fb2k.invoke('window.setMinSize', { width: 480, height: 320 });
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
-| `regions` | `array` | 否 | 可省略。 |
+| `regions` | `array` | 否 | CSS 像素矩形 `{ x, y, width, height }` 数组。 |
 
 **返回值**: `{"count":"...","dpiScale":"...","error":"...","success":true}`
 
@@ -1174,10 +1174,10 @@ await fb2k.invoke('window.setNoDragRegions', {
 ### window.setPosition
 
 
-| 参数 | 类型 | 必填 | 说明 |
-| --- | --- | --- | --- |
-| `x` | `integer` | 否 | 可选；默认 0。 |
-| `y` | `integer` | 否 | 可选；默认 0。 |
+| 参数 | 类型 | 必填 | 默认值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `x` | `integer` | 否 | `0` |  |
+| `y` | `integer` | 否 | `0` |  |
 
 **返回值**: `{"success":true}`
 
@@ -1190,10 +1190,10 @@ await fb2k.invoke('window.setPosition', { x: 100, y: 100 });
 
 设置窗口是否可由用户调整大小。解析取显式 `windowId` 或调用方窗口，**绝不回退主窗口**。面板（DUI/CUI）调用方会被拒绝并返回 `panelMode: true`。设为与当前相同的值视为成功——幂等调用不算失败。
 
-| 参数 | 类型 | 必填 | 说明 |
-| --- | --- | --- | --- |
-| `windowId` | `string` | 否 | 可选；默认调用方窗口。 |
-| `resizable` | `boolean` | 否 | 可选；默认 true。 |
+| 参数 | 类型 | 必填 | 默认值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `windowId` | `string` | 否 | 调用方窗口 |  |
+| `resizable` | `boolean` | 否 | `true` |  |
 
 **返回值**: `{"error":"...","success":true,"windowId":"..."}`
 
@@ -1211,10 +1211,10 @@ await fb2k.invoke('window.setResizable', { resizable: false });
 ### window.setSize
 
 
-| 参数 | 类型 | 必填 | 说明 |
-| --- | --- | --- | --- |
-| `height` | `integer` | 否 | 可选；默认 600。 |
-| `width` | `integer` | 否 | 可选；默认 800。 |
+| 参数 | 类型 | 必填 | 默认值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `width` | `integer` | 否 | `800` |  |
+| `height` | `integer` | 否 | `600` |  |
 
 **返回值**: `{"success":true}`
 
@@ -1226,9 +1226,9 @@ await fb2k.invoke('window.setSize', { width: 1024, height: 640 });
 ### window.setTitle
 
 
-| 参数 | 类型 | 必填 | 说明 |
-| --- | --- | --- | --- |
-| `title` | `string` | 否 | 可选；默认 foobar2000。 |
+| 参数 | 类型 | 必填 | 默认值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `title` | `string` | 否 | `foobar2000` |  |
 
 **返回值**: `{"error":"...","success":true}`
 
@@ -1240,9 +1240,9 @@ await fb2k.invoke('window.setTitle', { title: 'Now Playing' });
 ### window.setZoom
 
 
-| 参数 | 类型 | 必填 | 说明 |
-| --- | --- | --- | --- |
-| `zoom` | `number` | 否 | 可选；默认 1。 |
+| 参数 | 类型 | 必填 | 默认值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `zoom` | `number` | 否 | `1` | 缩放倍率，如 `1.25`。 |
 
 **返回值**: `{"error":"...","success":true,"zoom":"..."}`
 
@@ -1254,9 +1254,9 @@ await fb2k.invoke('window.setZoom', { zoom: 1.25 });
 ### window.setZoomForDpi
 
 
-| 参数 | 类型 | 必填 | 说明 |
-| --- | --- | --- | --- |
-| `dpi` | `integer` | 否 | 可选；默认 0。 |
+| 参数 | 类型 | 必填 | 默认值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `dpi` | `integer` | 否 | `0` | 省略或 `0` 时按调用方窗口当前 DPI 推导。 |
 
 **返回值**: `{"dpi":"...","error":"...","success":true,"zoom":"..."}`
 
@@ -1269,9 +1269,9 @@ const { zoom } = await fb2k.invoke('window.setZoomForDpi');
 ### window.startResize
 
 
-| 参数 | 类型 | 必填 | 说明 |
-| --- | --- | --- | --- |
-| `edge` | `string` | 否 | 可选；默认 bottomright。 |
+| 参数 | 类型 | 必填 | 默认值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `edge` | `string` | 否 | `bottomright` | 拖拽的边或角。 |
 
 **返回值**: `{"error":"...","success":true}`
 
@@ -1295,9 +1295,9 @@ const result = await fb2k.invoke('window.toggleAlwaysOnTop');
 ### window.toggleFullscreen
 
 
-| 参数 | 类型 | 必填 | 说明 |
-| --- | --- | --- | --- |
-| `windowId` | `string` | 否 | 可选；默认 caller window。 |
+| 参数 | 类型 | 必填 | 默认值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `windowId` | `string` | 否 | 调用方窗口 |  |
 
 **返回值**: `{"error":"...","fullscreen":"...","success":true}`
 
@@ -1321,5 +1321,5 @@ popup 专用操作拒绝主窗口目标。
 `window:popupOpened`、`window:popupClosed`、`window:message`、
 `window:behaviorChanged`、`window:backdropStateChanged`、
 `window:hoverStateChanged`、`window:minimizeSuppressed` 与
-`window:alwaysOnTopChanged`。事件 payload 是运行时数据，调用方应容忍 shell 后续
-添加字段。
+`window:alwaysOnTopChanged`。事件 payload 是运行时数据，调用方应兼容 shell 后续
+新增的字段。

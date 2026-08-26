@@ -1,6 +1,6 @@
 # 组件总览 
 
-foo_ui_webview2 提供 **36 个无样式 Web Components** — 零视觉主张的功能积木，通过 CSS Parts、Slots 和自定义事件实现完全可定制的 UI。
+foo_ui_webview2 提供 **36 个无样式 Web Components** — 不预设任何视觉样式的功能积木，通过 CSS Parts、Slots 和自定义事件实现完全可定制的 UI。
 
 ## 快速开始 
 
@@ -64,7 +64,7 @@ fb-rating::part(star) {
     font-size: 20px;
     cursor: pointer;
 }
-fb-rating::part(star) {
+fb-rating::part(star)[data-filled] {
     color: #ffc107;
 }
 ```
@@ -75,7 +75,7 @@ fb-rating::part(star) {
 
 | 标签名 | 说明 |
 | --- | --- |
-|  | 播放/暂停切换 |
+| [`<fb-play-button>`](./play-controls#fb-play-button) | 播放/暂停切换 |
 | [`<fb-stop-button>`](./play-controls#fb-stop-button) | 停止播放 |
 | [`<fb-prev-button>`](./play-controls#fb-prev-button) | 切换到上一首曲目 |
 | [`<fb-next-button>`](./play-controls#fb-next-button) | 切换到下一首曲目 |
@@ -87,15 +87,15 @@ fb-rating::part(star) {
 
 | 标签名 | 说明 |
 | --- | --- |
-|  | 播放进度条 |
-|  | 音量控制（含静音按钮） |
+| [`<fb-seek-bar>`](./progress#fb-seek-bar) | 播放进度条 |
+| [`<fb-volume-control>`](./progress#fb-volume-control) | 音量控制（含静音按钮） |
 | [`<fb-playback-order>`](./progress#fb-playback-order) | 七种状态的播放顺序选择器，支持 select 与 button 模式 |
 
 ### C. 曲目信息（6 个） 
 
 | 标签名 | 说明 |
 | --- | --- |
-|  | 通用曲目文本（title/artist/album/自定义 TF） |
+| [`<fb-track-text>`](./track-info#fb-track-text) | 通用曲目文本（title/artist/album/自定义 TF） |
 | [`<fb-cover-art>`](./track-info#fb-cover-art) | 封面图；可选用 SDK URL 辅助查询，并在需要时回退到标准封面 |
 | [`<fb-time-current>`](./track-info#fb-time-current) | 当前播放时间 |
 | [`<fb-time-total>`](./track-info#fb-time-total) | 曲目总时长 |

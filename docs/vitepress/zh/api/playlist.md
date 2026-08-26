@@ -44,7 +44,7 @@ const { count } = await fb2k.invoke('playlist.getCount');
 `playlist.getAll` 不再返回 `duration` 字段（避免 N 个播放列表 × M 首曲目的全量加载开销）。如需获取单个播放列表的 duration，请使用 `playlist.getActive` 或 `playlist.getPlaying`。
 :::
 
-::: tip v1.1.18 新增
+::: tip v1.1.18+
 `isAutoplaylist` 字段已内联到 `playlist.getAll` 返回值中，无需再逐个调用 `playlist.isAutoplaylist`。
 :::
 
@@ -64,9 +64,9 @@ const { count } = await fb2k.invoke('playlist.getCount');
 
 设置激活的播放列表。
 
-| 参数 | 类型 | 必填 | 说明 |
-| --- | --- | --- | --- |
-| `playlist` | `integer` | 否 | 可选；默认 not supplied。 |
+| 参数 | 类型 | 必填 | 默认值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `playlist` | `integer` | 是 | — | 要激活的播放列表索引；不回退活动播放列表，省略即报错。 |
 
 **返回值**: `{ "success": true, "error": "..." }`
 
@@ -90,10 +90,10 @@ await fb2k.invoke('playlist.setActive', { playlist: 1 });
 
 创建新的播放列表。
 
-| 参数 | 类型 | 必填 | 说明 |
-| --- | --- | --- | --- |
-| `name` | `string` | 否 | 可选；默认 New Playlist。 |
-| `position` | `integer` | 否 | 可选；默认 append。 |
+| 参数 | 类型 | 必填 | 默认值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `name` | `string` | 否 | `New Playlist` |  |
+| `position` | `integer` | 否 | — | 插入位置，省略时追加到末尾。 |
 
 **返回值**: `{ "success": true, "index": 2 }`
 
@@ -106,9 +106,9 @@ const result = await fb2k.invoke('playlist.create', { name: 'Rock Music' });
 
 删除播放列表。如果播放列表被锁定则无法删除。
 
-| 参数 | 类型 | 必填 | 说明 |
-| --- | --- | --- | --- |
-| `playlist` | `integer` | 否 | 可选；默认 active playlist。 |
+| 参数 | 类型 | 必填 | 默认值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `playlist` | `integer` | 否 | 活动播放列表 |  |
 
 **返回值**: `{ "success": true, "error": "..." }`
 
@@ -117,10 +117,10 @@ const result = await fb2k.invoke('playlist.create', { name: 'Rock Music' });
 
 重命名播放列表。
 
-| 参数 | 类型 | 必填 | 说明 |
-| --- | --- | --- | --- |
-| `playlist` | `integer` | 否 | 可选；默认 not supplied。 |
-| `name` | `string` | 否 | 可选。 |
+| 参数 | 类型 | 必填 | 默认值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `playlist` | `integer` | 是 | — | 要重命名的播放列表索引；不回退活动播放列表，省略即报错。 |
+| `name` | `string` | 否 | — | 新名称。 |
 
 **返回值**: `{ "success": true }`
 
@@ -133,9 +133,9 @@ await fb2k.invoke('playlist.rename', { playlist: 0, name: 'My Favorites' });
 
 清空播放列表中的所有曲目。
 
-| 参数 | 类型 | 必填 | 说明 |
-| --- | --- | --- | --- |
-| `playlist` | `integer` | 否 | 可选；默认 active playlist。 |
+| 参数 | 类型 | 必填 | 默认值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `playlist` | `integer` | 否 | 活动播放列表 |  |
 
 **返回值**:
 
@@ -153,10 +153,10 @@ await fb2k.invoke('playlist.rename', { playlist: 0, name: 'My Favorites' });
 
 复制播放列表。新列表插入到源列表后方。
 
-| 参数 | 类型 | 必填 | 说明 |
-| --- | --- | --- | --- |
-| `playlist` | `integer` | 否 | 可选；默认 active playlist。 |
-| `name` | `string` | 否 | 可选；默认 source name + ' (Copy)'。 |
+| 参数 | 类型 | 必填 | 默认值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `playlist` | `integer` | 否 | 活动播放列表 |  |
+| `name` | `string` | 否 | 源名称 + ` (Copy)` |  |
 
 **返回值**: `{ "success": true, "index": 1, "sourcePlaylist": 0, "newPlaylist": 1, "name": "Default (Copy)", "trackCount": 150 }`
 
@@ -167,10 +167,10 @@ await fb2k.invoke('playlist.rename', { playlist: 0, name: 'My Favorites' });
 
 获取播放列表中的曲目数量。
 
-| 参数 | 类型 | 必填 | 说明 |
-| --- | --- | --- | --- |
-| `playlist` | `integer` | 否 | 可选；默认 active playlist。 |
-| `index` | `integer` | 否 | 可选；默认 used only if playlist is absent。 |
+| 参数 | 类型 | 必填 | 默认值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `playlist` | `integer` | 否 | 活动播放列表 |  |
+| `index` | `integer` | 否 | — | `playlist` 的旧别名，`playlist` 存在时被忽略。 |
 
 **返回值**: `{ "count": 150 }`
 
@@ -179,13 +179,13 @@ await fb2k.invoke('playlist.rename', { playlist: 0, name: 'My Favorites' });
 
 获取播放列表中的曲目列表（分页）。
 
-| 参数 | 类型 | 必填 | 说明 |
-| --- | --- | --- | --- |
-| `playlist` | `integer` | 否 | 可选；默认 active playlist。 |
-| `index` | `integer` | 否 | 可选；默认 used only if playlist is absent。 |
-| `start` | `integer` | 否 | 可选；默认 0。 |
-| `count` | `integer` | 否 | 可选；默认 100。 |
-| `formats` | `object` | 否 | 可选；默认 {}。 |
+| 参数 | 类型 | 必填 | 默认值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `playlist` | `integer` | 否 | 活动播放列表 |  |
+| `index` | `integer` | 否 | — | `playlist` 的旧别名，`playlist` 存在时被忽略。 |
+| `start` | `integer` | 否 | `0` | 起始偏移。 |
+| `count` | `integer` | 否 | `100` | 返回条数。 |
+| `formats` | `object` | 否 | `{}` | 追加 TitleFormat 动态列（见下方提示）。 |
 
 **返回值**:
 
@@ -242,7 +242,7 @@ const result = await fb2k.invoke('playlist.getTracks', {
 ```
 :::
 
-::: tip TIP
+::: tip
 `absolutePath` 是本地文件系统路径，可直接用于 `artwork.getForTrack` 等 API。`path` 是 foobar2000 内部格式。
 :::
 
@@ -251,13 +251,13 @@ const result = await fb2k.invoke('playlist.getTracks', {
 
 播放播放列表中的指定曲目。
 
-| 参数 | 类型 | 必填 | 说明 |
-| --- | --- | --- | --- |
-| `playlist` | `integer` | 否 | 可选；默认 active playlist。 |
-| `index` | `integer` | 否 | 可选；默认 track or 0。 |
-| `track` | `integer` | 否 | 可选；默认 0。 |
-| `deferred` | `boolean` | 否 | 可选；默认 false。 |
-| `muted` | `boolean` | 否 | 可选；默认 false。 |
+| 参数 | 类型 | 必填 | 默认值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `playlist` | `integer` | 否 | 活动播放列表 |  |
+| `index` | `integer` | 否 | `0` | 曲目序号；与 `track` 同义，优先生效。 |
+| `track` | `integer` | 否 | `0` | `index` 的旧别名。 |
+| `deferred` | `boolean` | 否 | `false` | 延迟执行，流媒体场景推荐。 |
+| `muted` | `boolean` | 否 | `false` |  |
 
 **返回值**: `{ "success": true }`
 
@@ -273,11 +273,11 @@ await fb2k.invoke('playlist.playTrack', { playlist: 0, index: 0, deferred: true 
 
 从播放列表中删除指定曲目。
 
-| 参数 | 类型 | 必填 | 说明 |
-| --- | --- | --- | --- |
-| `playlist` | `integer` | 否 | 可选；默认 active playlist。 |
-| `index` | `integer` | 否 | 可选；默认 used only if playlist is absent。 |
-| `items` | `array<integer>` | 否 | 可选；默认 []。 |
+| 参数 | 类型 | 必填 | 默认值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `playlist` | `integer` | 否 | 活动播放列表 |  |
+| `index` | `integer` | 否 | — | `playlist` 的旧别名，`playlist` 存在时被忽略。 |
+| `items` | `array<integer>` | 否 | `[]` | 要删除的曲目索引数组。 |
 
 **返回值**: `{ "success": true, "error": "..." }`
 
@@ -286,10 +286,10 @@ await fb2k.invoke('playlist.playTrack', { playlist: 0, index: 0, deferred: true 
 
 删除播放列表中当前选中的曲目。
 
-| 参数 | 类型 | 必填 | 说明 |
-| --- | --- | --- | --- |
-| `playlist` | `integer` | 否 | 可选；默认 active playlist。 |
-| `index` | `integer` | 否 | 可选；默认 used only if playlist is absent。 |
+| 参数 | 类型 | 必填 | 默认值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `playlist` | `integer` | 否 | 活动播放列表 |  |
+| `index` | `integer` | 否 | — | `playlist` 的旧别名，`playlist` 存在时被忽略。 |
 
 **返回值**: `{ "success": true }`
 
@@ -298,12 +298,12 @@ await fb2k.invoke('playlist.playTrack', { playlist: 0, index: 0, deferred: true 
 
 移动曲目（向上或向下）。当 `items` 非空时会先设置选区再移动；当 `items` 为空时直接移动当前选区（SMP 兼容语义）。
 
-| 参数 | 类型 | 必填 | 说明 |
-| --- | --- | --- | --- |
-| `playlist` | `integer` | 否 | 可选；默认 active playlist。 |
-| `index` | `integer` | 否 | 可选；默认 used only if playlist is absent。 |
-| `items` | `array<integer>` | 否 | 可选；默认 []。 |
-| `delta` | `integer` | 否 | 可选；默认 0。 |
+| 参数 | 类型 | 必填 | 默认值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `playlist` | `integer` | 否 | 活动播放列表 |  |
+| `index` | `integer` | 否 | — | `playlist` 的旧别名，`playlist` 存在时被忽略。 |
+| `items` | `array<integer>` | 否 | `[]` | 为空时移动当前选区（SMP 兼容语义）。 |
+| `delta` | `integer` | 否 | `0` | 位移量，负数向上移动。 |
 
 **返回值**: `{ "success": true, "error": "..." }`
 
@@ -317,10 +317,10 @@ await fb2k.invoke('playlist.moveTracks', { items: [5, 6], delta: -2 });
 
 添加文件/文件夹到播放列表。使用 `playlist_incoming_item_filter` 同步解析，自动展开 CUE 文件。
 
-| 参数 | 类型 | 必填 | 说明 |
-| --- | --- | --- | --- |
-| `playlist` | `integer` | 否 | 可选；默认 active playlist。 |
-| `paths` | `array<string>` | 是 | 文件或文件夹路径。传空数组会失败并返回 `No paths specified`。 |
+| 参数 | 类型 | 必填 | 默认值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `playlist` | `integer` | 否 | 活动播放列表 |  |
+| `paths` | `array<string>` | 是 | — | 文件或文件夹路径。传空数组会失败并返回 `No paths specified`。 |
 
 **返回值**:
 
@@ -342,10 +342,10 @@ await fb2k.invoke('playlist.moveTracks', { items: [5, 6], delta: -2 });
 ### playlist.addHandles
 
 
-| 参数 | 类型 | 必填 | 说明 |
-| --- | --- | --- | --- |
-| `playlist` | `integer` | 否 | 可选；默认活动播放列表。 |
-| `handles` | `array<object \| string>` | 是 | 条目可为 `{ path, subsong }` 对象或 `path\|subsong:N` 字符串。 |
+| 参数 | 类型 | 必填 | 默认值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `playlist` | `integer` | 否 | 活动播放列表 |  |
+| `handles` | `array<object \| string>` | 是 | — | 条目可为 `{ path, subsong }` 对象或 `path\|subsong:N` 字符串。 |
 
 **返回值**: `{"addedCount":"...","countBefore":"...","error":"...","invalidCount":"...","playlist":"...","requestedCount":"...","success":true,"totalCount":"..."}`
 
@@ -357,10 +357,10 @@ await fb2k.invoke('playlist.addHandles', { handles: ['C:\\Music\\song.flac'] });
 ### playlist.addPathsAsync
 
 
-| 参数 | 类型 | 必填 | 说明 |
-| --- | --- | --- | --- |
-| `playlist` | `integer` | 否 | 可选；默认 active playlist。 |
-| `paths` | `array<string>` | 是 | 文件或文件夹路径。传空数组会失败并返回 `No paths specified`。 |
+| 参数 | 类型 | 必填 | 默认值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `playlist` | `integer` | 否 | 活动播放列表 |  |
+| `paths` | `array<string>` | 是 | — | 文件或文件夹路径。传空数组会失败并返回 `No paths specified`。 |
 
 **返回值**: `{"error":"...","invalidCount":"...","operationId":"...","status":"...","success":true,"totalCount":"..."}`
 
@@ -372,10 +372,10 @@ const { operationId } = await fb2k.invoke('playlist.addPathsAsync', { paths: ['C
 ### playlist.addPathsSequential
 
 
-| 参数 | 类型 | 必填 | 说明 |
-| --- | --- | --- | --- |
-| `playlist` | `integer` | 否 | 可选；默认 active playlist。 |
-| `paths` | `array<string>` | 是 | 文件或文件夹路径。传空数组会失败并返回 `No paths specified`。 |
+| 参数 | 类型 | 必填 | 默认值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `playlist` | `integer` | 否 | 活动播放列表 |  |
+| `paths` | `array<string>` | 是 | — | 文件或文件夹路径。传空数组会失败并返回 `No paths specified`。 |
 
 **返回值**: `{"addedCount":"...","error":"...","order":"...","playlist":"...","success":true}`
 
@@ -387,12 +387,12 @@ await fb2k.invoke('playlist.addPathsSequential', { paths: ['C:\\Music\\a.flac', 
 ### playlist.convertToAutoplaylist
 
 
-| 参数 | 类型 | 必填 | 说明 |
-| --- | --- | --- | --- |
-| `playlist` | `integer` | 否 | 可选；默认 active playlist。 |
-| `query` | `string` | 是 | 过滤表达式。传空值会失败并返回 `Query is required`。 |
-| `sort` | `string` | 否 | 可选。 |
-| `keepSorted` | `boolean` | 否 | 可选；默认 false。 |
+| 参数 | 类型 | 必填 | 默认值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `playlist` | `integer` | 否 | 活动播放列表 |  |
+| `query` | `string` | 是 | — | 过滤表达式。传空值会失败并返回 `Query is required`。 |
+| `sort` | `string` | 否 | — | TitleFormat 排序模式。 |
+| `keepSorted` | `boolean` | 否 | `false` | 保持按 `sort` 持续排序。 |
 
 **返回值**: `{"error":"...","playlist":"...","success":true}`
 
@@ -404,12 +404,12 @@ await fb2k.invoke('playlist.convertToAutoplaylist', { playlist: 0, query: '%genr
 ### playlist.createAutoplaylist
 
 
-| 参数 | 类型 | 必填 | 说明 |
-| --- | --- | --- | --- |
-| `keepSorted` | `boolean` | 否 | 可选；默认 false。 |
-| `name` | `string` | 否 | 可选；默认 New Autoplaylist。 |
-| `query` | `string` | 是 | 过滤表达式。传空值会失败并返回 `Query is required`。 |
-| `sort` | `string` | 否 | 可选。 |
+| 参数 | 类型 | 必填 | 默认值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `name` | `string` | 否 | `New Autoplaylist` |  |
+| `query` | `string` | 是 | — | 过滤表达式。传空值会失败并返回 `Query is required`。 |
+| `sort` | `string` | 否 | — | TitleFormat 排序模式。 |
+| `keepSorted` | `boolean` | 否 | `false` | 保持按 `sort` 持续排序。 |
 
 **返回值**: `{"error":"...","index":"...","name":"...","playlist":"...","query":"...","success":true}`
 
@@ -421,9 +421,9 @@ const { index } = await fb2k.invoke('playlist.createAutoplaylist', { name: 'Rock
 ### playlist.deselectAll
 
 
-| 参数 | 类型 | 必填 | 说明 |
-| --- | --- | --- | --- |
-| `playlist` | `integer` | 否 | 可选；默认 active playlist。 |
+| 参数 | 类型 | 必填 | 默认值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `playlist` | `integer` | 否 | 活动播放列表 |  |
 
 **返回值**: `{"success":true}`
 
@@ -435,11 +435,11 @@ await fb2k.invoke('playlist.deselectAll', { playlist: 0 });
 ### playlist.focusTrack
 
 
-| 参数 | 类型 | 必填 | 说明 |
-| --- | --- | --- | --- |
-| `playlist` | `integer` | 否 | 可选；默认 active playlist。 |
-| `index` | `integer` | 否 | 可选；默认 no focused item。 |
-| `track` | `integer` | 否 | 可选；默认 no focused item。 |
+| 参数 | 类型 | 必填 | 默认值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `playlist` | `integer` | 否 | 活动播放列表 |  |
+| `index` | `integer` | 否 | — | 目标曲目序号；与 `track` 同义，优先生效。省略时表示无焦点项。 |
+| `track` | `integer` | 否 | — | `index` 的旧别名。 |
 
 **返回值**: `{"error":"...","success":true}`
 
@@ -452,9 +452,9 @@ await fb2k.invoke('playlist.focusTrack', { playlist: 0, index: 3 });
 
 查询播放列表是否为智能播放列表；是则同时返回其排序与来源信息。
 
-| 参数 | 类型 | 必填 | 说明 |
-| --- | --- | --- | --- |
-| `playlist` | `integer` | 否 | 可选；默认活动播放列表。 |
+| 参数 | 类型 | 必填 | 默认值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `playlist` | `integer` | 否 | 活动播放列表 |  |
 
 **返回值** —— 智能播放列表：`{ "isAutoplaylist": true, "playlist": 0, "keepSorted": false, "source": "sdk" }`；其他情况：`{ "isAutoplaylist": false, "playlist": 0 }`，且不含 `keepSorted` 与 `source`。
 
@@ -470,9 +470,9 @@ if (info.isAutoplaylist) console.log(info.source, info.keepSorted);
 
 查询智能播放列表的元信息。查询表达式本身无法读回。
 
-| 参数 | 类型 | 必填 | 说明 |
-| --- | --- | --- | --- |
-| `playlist` | `integer` | 否 | 可选；默认活动播放列表。 |
+| 参数 | 类型 | 必填 | 默认值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `playlist` | `integer` | 否 | 活动播放列表 |  |
 
 **返回值** —— 智能播放列表：`{ "isAutoplaylist": true, "playlist": 0, "query": null, "keepSorted": false, "source": "sdk", "note": "Query string not exposed by SDK" }`；其他情况：`{ "isAutoplaylist": false, "playlist": 0, "query": null }`。
 
@@ -501,9 +501,9 @@ columns.forEach((c) => console.log(c.name, c.pattern));
 ### playlist.getFocusTrack
 
 
-| 参数 | 类型 | 必填 | 说明 |
-| --- | --- | --- | --- |
-| `playlist` | `integer` | 否 | 可选；默认 active playlist。 |
+| 参数 | 类型 | 必填 | 默认值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `playlist` | `integer` | 否 | 活动播放列表 |  |
 
 **返回值**: `{"error":"...","index":"...","playlist":"...","success":true}`
 
@@ -515,9 +515,9 @@ const { index } = await fb2k.invoke('playlist.getFocusTrack', { playlist: 0 });
 ### playlist.getFocusedTrack
 
 
-| 参数 | 类型 | 必填 | 说明 |
-| --- | --- | --- | --- |
-| `playlist` | `integer` | 否 | 可选；默认 active playlist。 |
+| 参数 | 类型 | 必填 | 默认值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `playlist` | `integer` | 否 | 活动播放列表 |  |
 
 **返回值**: `{"index":"...","playlist":"...","success":true}`
 
@@ -529,9 +529,9 @@ const { index } = await fb2k.invoke('playlist.getFocusedTrack', { playlist: 0 })
 ### playlist.getLockInfo
 
 
-| 参数 | 类型 | 必填 | 说明 |
-| --- | --- | --- | --- |
-| `playlist` | `integer` | 否 | 可选；默认 active playlist。 |
+| 参数 | 类型 | 必填 | 默认值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `playlist` | `integer` | 否 | 活动播放列表 |  |
 
 **返回值**: `{"error":"...","isLocked":"...","playlist":"...","success":true}`
 
@@ -543,10 +543,10 @@ const { isLocked } = await fb2k.invoke('playlist.getLockInfo', { playlist: 0 });
 ### playlist.getSelectedTracks
 
 
-| 参数 | 类型 | 必填 | 说明 |
-| --- | --- | --- | --- |
-| `playlist` | `integer` | 否 | 可选；默认 active playlist。 |
-| `index` | `integer` | 否 | 可选；默认 ignored when playlist is supplied。 |
+| 参数 | 类型 | 必填 | 默认值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `playlist` | `integer` | 否 | 活动播放列表 |  |
+| `index` | `integer` | 否 | — | `playlist` 的旧别名，`playlist` 存在时被忽略。 |
 
 **返回值**: `{"error":"...","success":true,"tracks":"..."}`
 
@@ -558,9 +558,9 @@ const result = await fb2k.invoke('playlist.getSelectedTracks');
 ### playlist.getSelection
 
 
-| 参数 | 类型 | 必填 | 说明 |
-| --- | --- | --- | --- |
-| `playlist` | `integer` | 否 | 可选；默认 active playlist。 |
+| 参数 | 类型 | 必填 | 默认值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `playlist` | `integer` | 否 | 活动播放列表 |  |
 
 **返回值**: `{"count":"...","error":"...","items":"...","playlist":"...","success":true}`
 
@@ -572,12 +572,12 @@ const { items, count } = await fb2k.invoke('playlist.getSelection', { playlist: 
 ### playlist.insertTracks
 
 
-| 参数 | 类型 | 必填 | 说明 |
-| --- | --- | --- | --- |
-| `playlist` | `integer` | 否 | 可选；默认活动播放列表。 |
-| `position` | `integer` | 否 | 插入位置；未传时回退到 `index`，再回退到 `0`。 |
-| `index` | `integer` | 否 | `position` 的旧别名。 |
-| `handles` | `array<object \| string>` | 是 | 条目可为 `{ path, subsong }` 对象或 `path\|subsong:N` 字符串。 |
+| 参数 | 类型 | 必填 | 默认值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `playlist` | `integer` | 否 | 活动播放列表 |  |
+| `position` | `integer` | 否 | `0` | 插入位置；未传时回退到 `index`。 |
+| `index` | `integer` | 否 | — | `position` 的旧别名。 |
+| `handles` | `array<object \| string>` | 是 | — | 条目可为 `{ path, subsong }` 对象或 `path\|subsong:N` 字符串。 |
 
 **返回值**: `{"addedCount":"...","countBefore":"...","error":"...","insertIndex":"...","invalidCount":"...","playlist":"...","requestedCount":"...","success":true,"totalCount":"..."}`
 
@@ -594,9 +594,9 @@ const result = await fb2k.invoke('playlist.insertTracks', {
 
 判断播放列表是否为智能播放列表。
 
-| 参数 | 类型 | 必填 | 说明 |
-| --- | --- | --- | --- |
-| `playlist` | `integer` | 否 | 可选；默认活动播放列表。 |
+| 参数 | 类型 | 必填 | 默认值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `playlist` | `integer` | 否 | 活动播放列表 |  |
 
 **返回值**: `{ "playlist": 0, "isAutoplaylist": true }`
 
@@ -610,9 +610,9 @@ const { isAutoplaylist } = await fb2k.invoke('playlist.isAutoplaylist', { playli
 ### playlist.isLocked
 
 
-| 参数 | 类型 | 必填 | 说明 |
-| --- | --- | --- | --- |
-| `playlist` | `integer` | 否 | 可选；默认 active playlist。 |
+| 参数 | 类型 | 必填 | 默认值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `playlist` | `integer` | 否 | 活动播放列表 |  |
 
 **返回值**: `{"error":"...","isLocked":"...","success":true}`
 
@@ -624,9 +624,9 @@ const { isLocked } = await fb2k.invoke('playlist.isLocked', { playlist: 0 });
 ### playlist.redo
 
 
-| 参数 | 类型 | 必填 | 说明 |
-| --- | --- | --- | --- |
-| `playlist` | `integer` | 否 | 可选；默认 active playlist。 |
+| 参数 | 类型 | 必填 | 默认值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `playlist` | `integer` | 否 | 活动播放列表 |  |
 
 **返回值**: `{"error":"...","success":true}`
 
@@ -638,9 +638,9 @@ await fb2k.invoke('playlist.redo', { playlist: 0 });
 ### playlist.removeAutoplaylist
 
 
-| 参数 | 类型 | 必填 | 说明 |
-| --- | --- | --- | --- |
-| `playlist` | `integer` | 否 | 可选；默认 active playlist。 |
+| 参数 | 类型 | 必填 | 默认值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `playlist` | `integer` | 否 | 活动播放列表 |  |
 
 **返回值**: `{"error":"...","note":"...","playlist":"...","source":"...","success":true}`
 
@@ -652,10 +652,10 @@ await fb2k.invoke('playlist.removeAutoplaylist', { playlist: 0 });
 ### playlist.reorder
 
 
-| 参数 | 类型 | 必填 | 说明 |
-| --- | --- | --- | --- |
-| `playlist` | `integer` | 否 | 可选；默认 active playlist。 |
-| `newOrder` | `array<integer>` | 是 | 该播放列表全部曲目索引的一个完整排列，长度必须等于当前条目数。 |
+| 参数 | 类型 | 必填 | 默认值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `playlist` | `integer` | 否 | 活动播放列表 |  |
+| `newOrder` | `array<integer>` | 是 | — | 该播放列表全部曲目索引的一个完整排列，长度必须等于当前条目数。 |
 
 **返回值**: `{"error":"...","expected":"...","got":"...","index":"...","itemCount":"...","playlist":"...","success":true}`
 
@@ -683,13 +683,13 @@ await fb2k.invoke('playlist.reorderPlaylists', { newOrder: [2, 0, 1] });
 ### playlist.replaceAllAndPlay
 
 
-| 参数 | 类型 | 必填 | 说明 |
-| --- | --- | --- | --- |
-| `playlist` | `integer` | 否 | 可选；默认 active playlist。 |
-| `paths` | `array<string>` | 是 | 文件或文件夹路径。传空数组会失败并返回 `No paths specified`。 |
-| `playIndex` | `integer` | 否 | 可选；默认 0。 |
-| `stopFirst` | `boolean` | 否 | 可选；默认 true。 |
-| `autoPlay` | `boolean` | 否 | 可选；默认 true。 |
+| 参数 | 类型 | 必填 | 默认值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `playlist` | `integer` | 否 | 活动播放列表 |  |
+| `paths` | `array<string>` | 是 | — | 文件或文件夹路径。传空数组会失败并返回 `No paths specified`。 |
+| `playIndex` | `integer` | 否 | `0` | 添加完成后开始播放的曲目序号。 |
+| `stopFirst` | `boolean` | 否 | `true` | 添加前先停止当前播放。 |
+| `autoPlay` | `boolean` | 否 | `true` | 添加后自动开始播放。 |
 
 **返回值**: `{"addedCount":"...","clearedCount":"...","error":"...","invalidCount":"...","playIndex":"...","playlist":"...","success":true,"totalCount":"..."}`
 
@@ -701,9 +701,9 @@ await fb2k.invoke('playlist.replaceAllAndPlay', { paths: ['C:\\Music\\song.flac'
 ### playlist.reverse
 
 
-| 参数 | 类型 | 必填 | 说明 |
-| --- | --- | --- | --- |
-| `playlist` | `integer` | 否 | 可选；默认 active playlist。 |
+| 参数 | 类型 | 必填 | 默认值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `playlist` | `integer` | 否 | 活动播放列表 |  |
 
 **返回值**: `{"success":true}`
 
@@ -715,9 +715,9 @@ await fb2k.invoke('playlist.reverse', { playlist: 0 });
 ### playlist.selectAll
 
 
-| 参数 | 类型 | 必填 | 说明 |
-| --- | --- | --- | --- |
-| `playlist` | `integer` | 否 | 可选；默认 active playlist。 |
+| 参数 | 类型 | 必填 | 默认值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `playlist` | `integer` | 否 | 活动播放列表 |  |
 
 **返回值**: `{"success":true}`
 
@@ -729,10 +729,10 @@ await fb2k.invoke('playlist.selectAll', { playlist: 0 });
 ### playlist.setFocusedTrack
 
 
-| 参数 | 类型 | 必填 | 说明 |
-| --- | --- | --- | --- |
-| `playlist` | `integer` | 否 | 可选；默认 active playlist。 |
-| `index` | `integer` | 否 | 可选；默认 no focused item。 |
+| 参数 | 类型 | 必填 | 默认值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `playlist` | `integer` | 否 | 活动播放列表 |  |
+| `index` | `integer` | 否 | — | 目标曲目序号，省略时表示无焦点项。 |
 
 **返回值**: `{"error":"...","success":true}`
 
@@ -744,12 +744,12 @@ await fb2k.invoke('playlist.setFocusedTrack', { playlist: 0, index: 3 });
 ### playlist.setSelection
 
 
-| 参数 | 类型 | 必填 | 说明 |
-| --- | --- | --- | --- |
-| `playlist` | `integer` | 否 | 可选；默认 active playlist。 |
-| `index` | `integer` | 否 | 可选；默认 used only if playlist is absent。 |
-| `indices` | `array<integer>` | 否 | 可选；默认 []。 |
-| `clearOthers` | `boolean` | 否 | 可选；默认 true。 |
+| 参数 | 类型 | 必填 | 默认值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `playlist` | `integer` | 否 | 活动播放列表 |  |
+| `index` | `integer` | 否 | — | `playlist` 的旧别名，`playlist` 存在时被忽略。 |
+| `indices` | `array<integer>` | 否 | `[]` | 要选中的曲目索引数组。 |
+| `clearOthers` | `boolean` | 否 | `true` | 先清除已有选区。 |
 
 **返回值**: `{"error":"...","success":true}`
 
@@ -761,10 +761,10 @@ await fb2k.invoke('playlist.setSelection', { playlist: 0, indices: [0, 1, 2] });
 ### playlist.shuffle
 
 
-| 参数 | 类型 | 必填 | 说明 |
-| --- | --- | --- | --- |
-| `playlist` | `integer` | 否 | 可选；默认 active playlist。 |
-| `index` | `integer` | 否 | 可选；默认 used only if playlist is absent。 |
+| 参数 | 类型 | 必填 | 默认值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `playlist` | `integer` | 否 | 活动播放列表 |  |
+| `index` | `integer` | 否 | — | `playlist` 的旧别名，`playlist` 存在时被忽略。 |
 
 **返回值**: `{"error":"...","success":true}`
 
@@ -776,13 +776,13 @@ await fb2k.invoke('playlist.shuffle', { playlist: 0 });
 ### playlist.sort
 
 
-| 参数 | 类型 | 必填 | 说明 |
-| --- | --- | --- | --- |
-| `playlist` | `integer` | 否 | 可选；默认 active playlist。 |
-| `index` | `integer` | 否 | 可选；默认 used only if playlist is absent。 |
-| `pattern` | `string` | 否 | 可选；默认 %title%。 |
-| `descending` | `boolean` | 否 | 可选；默认 false。 |
-| `selectedOnly` | `boolean` | 否 | 可选；默认 false。 |
+| 参数 | 类型 | 必填 | 默认值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `playlist` | `integer` | 否 | 活动播放列表 |  |
+| `index` | `integer` | 否 | — | `playlist` 的旧别名，`playlist` 存在时被忽略。 |
+| `pattern` | `string` | 否 | `%title%` | TitleFormat 排序模式。 |
+| `descending` | `boolean` | 否 | `false` | 降序排序。 |
+| `selectedOnly` | `boolean` | 否 | `false` | 仅排序选中的曲目。 |
 
 **返回值**: `{"error":"...","success":true}`
 
@@ -794,9 +794,9 @@ await fb2k.invoke('playlist.sort', { playlist: 0, pattern: '%artist% - %title%' 
 ### playlist.undo
 
 
-| 参数 | 类型 | 必填 | 说明 |
-| --- | --- | --- | --- |
-| `playlist` | `integer` | 否 | 可选；默认 active playlist。 |
+| 参数 | 类型 | 必填 | 默认值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `playlist` | `integer` | 否 | 活动播放列表 |  |
 
 **返回值**: `{"error":"...","success":true}`
 
@@ -806,7 +806,7 @@ await fb2k.invoke('playlist.undo', { playlist: 0 });
 
 ## 关联的播放列表事件
 
-以下播放列表生命周期事件会被广播。JIT 队列 shadow playlist 的条目级事件被有意抑制。回调会有意忽略 JIT shadow playlist 的条目事件。
+以下播放列表生命周期事件会被广播。JIT 队列 shadow playlist 的条目级事件被有意忽略。
 
 | 事件 | 触发时机 | Payload keys |
 | --- | --- | --- |

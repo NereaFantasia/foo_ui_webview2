@@ -95,7 +95,7 @@ Invalid requests or unknown methods are rejected by BridgeCore before a handler 
 
 | Code | Meaning |
 | --- | --- |
-| `PERMISSION_DENIED` | Path security policy rejected the request |
+| `PERMISSION_DENIED` | Path security policy rejected the request. A parameter that fails on shape or type instead of on path policy returns `INVALID_PARAMS` |
 
 ### Media / path
 

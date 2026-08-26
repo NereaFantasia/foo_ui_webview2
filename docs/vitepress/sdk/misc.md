@@ -298,7 +298,7 @@ External file drop, documented on its own page: [fb.dnd](./dnd.md).
 
 <!-- BEGIN AUTO-GENERATED SDK STUBS -->
 
-## SDK Method Stubs
+## Additional methods
 
 > This block maintains SDK-facing method coverage and may be expanded with complete examples and best practices.
 

@@ -1,6 +1,6 @@
 # 安全限制
 
-本组件是围绕 foobar2000 设计的**专用、垂直** UI 宿主。主题来自用户自己或可信来源，安装一个主题的信任边界大致等同于安装一个 foobar2000 组件。
+本组件是**专为 foobar2000 设计**的 UI 宿主。主题来自用户自己或可信来源，安装一个主题的信任边界大致等同于安装一个 foobar2000 组件。
 
 因此安全设计目标是 **fail-safe（防主题 bug 误伤系统）**，而不是完整 **sandbox（防不可信代码越权）**。
 
@@ -8,7 +8,7 @@
 
 - 主要护栏是 PathSecurity 与协议限制。
 - `shell.exec` / `shell.spawn` **故意**不维护可执行白名单。
-- 带路径参数的 Bridge API 仍走 decorator 校验，拒绝时返回 `PERMISSION_DENIED`。
+- 带路径参数的 Bridge API 仍走 decorator 校验，路径被拒返回 `PERMISSION_DENIED`，参数形状或类型不对返回 `INVALID_PARAMS`。
 
 ## shell.exec
 
@@ -19,7 +19,7 @@
 
 - 无可执行白名单。
 - 参数化启动，避免拼接 shell 命令字符串。
-- 可选 `waitForExitMs` 可检测进程早退。
+- 可选 `waitForExitMs` 可检测进程提前退出。
 - 绝对可执行路径与 `cwd` 会做路径校验。
 
 ## shell.openWith
@@ -64,7 +64,7 @@ SSRF 防护拒绝：
 
 **Preferences → Advanced → Tools → WebView UI → Enable DevTools**，然后重启 foobar2000。
 
-## 相关运行时 token
+## 相关 API 与错误码
 
 - `file.read`
 - `file.write`
@@ -74,3 +74,4 @@ SSRF 防护拒绝：
 - `shell.openWith`
 - `shell.spawn`
 - `PERMISSION_DENIED`
+- `INVALID_PARAMS`

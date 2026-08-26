@@ -19,10 +19,10 @@ CUE、ISO 镜像与多轨文件都是一个文件路径下含多首曲目。所�
 
 读取指定文件的元数据（结构化格式）。
 
-| 参数 | 类型 | 必填 | 说明 |
-| --- | --- | --- | --- |
-| `path` | `string` | 是 | 必填。支持 `路径|subsong:N`。 |
-| `cueIndex` | `integer` | 否 | 可选；默认 -1。显式指定容器内曲目序号，优先级高于路径后缀。 |
+| 参数 | 类型 | 必填 | 默认值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `path` | `string` | 是 | — | 支持 `路径\|subsong:N`。 |
+| `cueIndex` | `integer` | 否 | `-1` | 显式指定容器内曲目序号，优先级高于路径后缀。 |
 
 > 读取链路会先剥离 `|subsong:N` 后缀并 canonicalize 路径，再按解析出的 subsong 通过 `handle_create()` 读取 cached info；若 cached info 缺少关键元数据，则以同一 subsong 退回 direct file read。CUE / ISO 等多轨容器的寻址规则见[定位容器内的单曲](#subsong-addressing)。
 
@@ -33,14 +33,14 @@ CUE、ISO 镜像与多轨文件都是一个文件路径下含多首曲目。所�
 
 ### metadata.readRaw
 
-直接从文件读取元数据，绕过 metadb 缓存。v1.4.1 新增。
+（v1.4.1+）直接从文件读取元数据，绕过 metadb 缓存。
 
 与 `metadata.read` 返回格式一致，但始终从磁盘文件直接解码读取，不走 foobar2000 metadb 内存缓存。适用于需要获取最新文件标签的场景（如刚写入标签后立即读回验证）。
 
 | 参数 | 类型 | 必填 | 默认值 | 说明 |
 | --- | --- | --- | --- | --- |
-| `cueIndex` | `integer` | 否 | `-1` | 可选；默认 -1。 |
-| `path` | `string` | 否 | — | 可选。 |
+| `path` | `string` | 是 | — | 支持 `路径\|subsong:N`。 |
+| `cueIndex` | `integer` | 否 | `-1` | 显式指定容器内曲目序号，优先级高于路径后缀。 |
 
 **返回值**: `{"error":"...","info":"...","path":"...","source":"...","success":true,"tags":"..."}`
 
@@ -54,14 +54,14 @@ console.log(raw.tags.TITLE, raw.source); // "file"
 
 ### metadata.readByPath
 
-读取元数据（扁平格式）。v1.1.0 新增
+（v1.1.0+）读取元数据（扁平格式）。
 
 与 `metadata.read` 不同，此 API 返回扁平结构，所有标签键名转为大写；但两者共享同一条 fallback 读取链路。
 
-| 参数 | 类型 | 必填 | 说明 |
-| --- | --- | --- | --- |
-| `path` | `string` | 是 | 必填。支持 `路径|subsong:N`。 |
-| `cueIndex` | `integer` | 否 | 可选；默认 -1。显式指定容器内曲目序号，优先级高于路径后缀。 |
+| 参数 | 类型 | 必填 | 默认值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `path` | `string` | 是 | — | 支持 `路径\|subsong:N`。 |
+| `cueIndex` | `integer` | 否 | `-1` | 显式指定容器内曲目序号，优先级高于路径后缀。 |
 
 **返回值**: `{"TRACKNUMBER":"...","canonicalPath":"...","error":"...","path":"...","success":true}`
 
@@ -74,11 +74,11 @@ console.log(meta.TITLE, meta.ARTIST, meta.DURATION);
 
 ### metadata.readBatch
 
-批量读取多个文件的元数据。v1.1.11 新增。包含所有标签和技术信息（大写键名）。
+（v1.1.11+）批量读取多个文件的元数据，包含所有标签和技术信息（大写键名）。
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
-| `paths` | `array` | 是 | 必填。每个元素都可带 `|subsong:N` 后缀，逐项独立解析。 |
+| `paths` | `array` | 是 | 每个元素都可带 `\|subsong:N` 后缀，逐项独立解析。 |
 
 > 本方法没有 `cueIndex` 参数：批量调用中每个路径只能通过 `|subsong:N` 指定曲目。见[定位容器内的单曲](#subsong-addressing)。
 
@@ -105,17 +105,52 @@ batch.results.forEach(r => {
 });
 ```
 
+### metadata.probeBatchAsync
+
+可取消的批量元数据探测；读盘在 worker 线程，不阻塞 UI。
+
+| 参数 | 类型 | 必填 | 默认值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `paths` | `array<string>` | 是 | — | 待探测路径，缺失、空数组、非数组值或非字符串条目均返回 `INVALID_PARAMS`；条目可带 `\|subsong:N` 后缀；逐项 `MediaRead` 校验为 fail-fast，任一条不过即整批返回 `PERMISSION_DENIED`，不产生 `operationId`。 |
+| `includeTags` | `boolean` | 否 | `true` | 为每条成功结果附上扁平标签表；只要技术信息时传 `false`。 |
+
+**返回值**: `{"operationId":"probe_...","success":true,"totalCount":42}`
+
+返回值只是派工回执，结果经事件送达：`metadata:probeProgress`（分批）与收尾的 `metadata:probeComplete`（被取消的批次同样以 `cancelled: true` 收尾）。每条结果带 `infoSource`（`cached` / `direct` / `none`），失败项带 `failure`（`not-found` / `unsupported-format` / `read-error`）。
+
+```javascript
+const receipt = await fb2k.invoke('metadata.probeBatchAsync', {
+    paths: ['E:\\Music\\a.flac', 'E:\\Music\\b.flac']
+});
+```
+
+### metadata.cancelProbe
+
+取消进行中的 `metadata.probeBatchAsync` 操作。
+
+| 参数 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `operationId` | `string` | 是 | 来自 `metadata.probeBatchAsync` 回执；缺失或为空返回 `operationId is required`。 |
+
+**返回值**: `{"cancelled":true,"success":true}`
+
+`cancelled: false` 表示该操作已结束或从未存在，两者对调用方故意不可区分。
+
+```javascript
+const { cancelled } = await fb2k.invoke('metadata.cancelProbe', { operationId });
+```
+
 ## 写入
 
 ### metadata.write
 
 写入元数据标签到文件。使用 `metadb_io_v2::update_info_async` 异步写入。标签键名自动转为大写。
 
-| 参数 | 类型 | 必填 | 说明 |
-| --- | --- | --- | --- |
-| `cueIndex` | `integer` | 否 | 可选；默认 -1。 |
-| `path` | `string` | 是 | 必填。 |
-| `tags` | `object` | 是 | 必填。 |
+| 参数 | 类型 | 必填 | 默认值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `path` | `string` | 是 | — | 支持 `路径\|subsong:N`。 |
+| `tags` | `object` | 是 | — | 值为 `null` 或空字符串表示删除该标签。 |
+| `cueIndex` | `integer` | 否 | `-1` | 显式指定容器内曲目序号，优先级高于路径后缀。 |
 
 **返回值**: `{"canonicalPath":"...","dispatched":"...","error":"...","handlePath":"...","note":"...","path":"...","subsong":"...","success":true,"tagsApplied":"...","tagsRemoved":"...","tagsSet":"..."}`
 
@@ -141,11 +176,11 @@ await fb2k.invoke('metadata.write', {
 
 移除指定标签。标签名自动转为大写。
 
-| 参数 | 类型 | 必填 | 说明 |
-| --- | --- | --- | --- |
-| `cueIndex` | `integer` | 否 | 可选；默认 -1。 |
-| `path` | `string` | 是 | 必填。 |
-| `tags` | `array` | 是 | 必填。 |
+| 参数 | 类型 | 必填 | 默认值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `path` | `string` | 是 | — | 支持 `路径\|subsong:N`。 |
+| `tags` | `array` | 是 | — | 要移除的标签名数组。 |
+| `cueIndex` | `integer` | 否 | `-1` | 显式指定容器内曲目序号，优先级高于路径后缀。 |
 
 **返回值**: `{"dispatched":"...","error":"...","note":"...","path":"...","removedCount":"...","removedTags":"...","subsong":"...","success":true}`
 
@@ -168,7 +203,7 @@ await fb2k.invoke('metadata.removeTag', {
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
-| `items` | `array` | 是 | 必填。 |
+| `items` | `array` | 是 | 每项为 `{ path, tags }`。 |
 
 **返回值**: `{ "success": true, "successCount": 3, "failCount": 0, "errors": [] }`
 
@@ -185,13 +220,13 @@ await fb2k.invoke('metadata.writeBatch', {
 
 将封面图嵌入到音频文件。使用 foobar2000 SDK 的 `album_art_editor`。
 
-| 参数 | 类型 | 必填 | 说明 |
-| --- | --- | --- | --- |
-| `filename` | `string` | 否 | 可选。 |
-| `imageData` | `string` | 否 | 可选。 |
-| `path` | `string` | 是 | 必填。 |
-| `target` | `array` | 否 | 可选；默认 embedded。 |
-| `type` | `string` | 否 | 可选；默认 front。 |
+| 参数 | 类型 | 必填 | 默认值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `path` | `string` | 是 | — | `embedded` target 要求文件格式支持 `album_art_editor`。 |
+| `imageData` | `string` | 是 | — | 裸 Base64 图片字节，不带 Data URL 前缀。 |
+| `type` | `string` | 否 | `front` | 封面类型，取值见下。 |
+| `target` | `string \| string[]` | 否 | `embedded` | `embedded`（写入文件标签）、`file`（写同目录外挂图）、`all`（两者），或由 `embedded`/`file` 组成的数组。 |
+| `filename` | `string` | 否 | — | 仅 `file` target 使用；留空按类型自动命名（`cover.jpg` 等），不允许路径分隔符。 |
 
 **支持的封面类型**: `front`/`cover_front`, `back`/`cover_back`, `disc`, `icon`, `artist`
 
@@ -224,11 +259,11 @@ await fb2k.invoke('metadata.embedArtwork', {
 
 移除音频文件中的嵌入封面。
 
-| 参数 | 类型 | 必填 | 说明 |
-| --- | --- | --- | --- |
-| `path` | `string` | 是 | 必填。 |
-| `removeAll` | `boolean` | 否 | 可选；默认 false。 |
-| `type` | `string` | 否 | 可选。 |
+| 参数 | 类型 | 必填 | 默认值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `path` | `string` | 是 | — | 文件格式须支持 `album_art_editor`。 |
+| `type` | `string` | 否 | — | 要移除的封面类型；留空移除全部。 |
+| `removeAll` | `boolean` | 否 | `false` | 为 `true` 时移除全部封面，忽略 `type`。 |
 
 **返回值**: `{"error":"...","path":"...","removedTypes":"...","success":true}`
 
@@ -236,11 +271,11 @@ await fb2k.invoke('metadata.embedArtwork', {
 
 `metadata.removeTag` 的别名。移除指定标签。
 
-| 参数 | 类型 | 必填 | 说明 |
-| --- | --- | --- | --- |
-| `cueIndex` | `integer` | 否 | 可选；默认 -1。 |
-| `path` | `string` | 是 | 必填。 |
-| `tags` | `array` | 是 | 必填。 |
+| 参数 | 类型 | 必填 | 默认值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `path` | `string` | 是 | — | 支持 `路径\|subsong:N`。 |
+| `tags` | `array` | 是 | — | 要移除的标签名数组。 |
+| `cueIndex` | `integer` | 否 | `-1` | 显式指定容器内曲目序号，优先级高于路径后缀。 |
 
 
 **返回值**: `{"dispatched":"...","error":"...","note":"...","path":"...","removedCount":"...","removedTags":"...","subsong":"...","success":true}`
@@ -276,10 +311,10 @@ fb2k.on('metadata:writeComplete', (e) => {
 
 获取曲目评分。优先从 foo_playcount 读取，回退到文件 RATING 标签。
 
-| 参数 | 类型 | 必填 | 说明 |
-| --- | --- | --- | --- |
-| `cueIndex` | `integer` | 否 | 可选；默认 -1。 |
-| `path` | `string` | 是 | 必填。 |
+| 参数 | 类型 | 必填 | 默认值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `path` | `string` | 是 | — | 支持 `路径\|subsong:N`。 |
+| `cueIndex` | `integer` | 否 | `-1` | 显式指定容器内曲目序号，优先级高于路径后缀。 |
 
 **返回值**:
 
@@ -301,11 +336,11 @@ fb2k.on('metadata:writeComplete', (e) => {
 
 设置曲目评分。优先通过 foo_playcount 上下文菜单设置，回退到写入文件 RATING 标签。
 
-| 参数 | 类型 | 必填 | 说明 |
-| --- | --- | --- | --- |
-| `cueIndex` | `integer` | 否 | 可选；默认 -1。 |
-| `path` | `string` | 是 | 必填。 |
-| `rating` | `integer` | 否 | 可选；默认 -1。 |
+| 参数 | 类型 | 必填 | 默认值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `path` | `string` | 否 | — | 省略时作用于当前播放曲目，其次为活动播放列表选中项；传空字符串会被路径安全校验拒绝。 |
+| `rating` | `integer` | 是 | — | `0`–`5`，`0` 表示清除评分。 |
+| `cueIndex` | `integer` | 否 | `-1` | 显式指定容器内曲目序号，优先级高于路径后缀。 |
 
 
 **返回值**: `{"menuPath":"...","note":"...","path":"...","rating":"...","storage":"...","success":true}`
@@ -320,5 +355,5 @@ await fb2k.invoke('rating.set', { rating: 0 }); // 清除当前播放曲目评�
 - `metadata.read`、`metadata.readByPath` 和 `metadata.readRaw` 都需要 `path`。`readRaw` 绕过 metadb 缓存，接受默认值为 `-1` 的 `cueIndex`；`path|subsong:N` 可选择容器 subsong。成功结果会在结构化 `{ success, path, tags, info }` 中添加 `source: "file"`。
 - `metadata.write`、`metadata.removeTag` 和兼容端点 `metadata.removeField` 都会异步派发更新。派发成功不等于已经持久化完成：请监听广播事件 `metadata:writeComplete`，其 payload 为 `{ operation, path, subsong, code, success, status }`。
 - `metadata.embedArtwork` 需要非空 `path` 和 Base64 `imageData`。`type` 默认 `front`，`filename` 默认空字符串，`target` 默认 `embedded`，可取 `embedded`、`file`、`all` 或由 `embedded` 与 `file` 组成的数组。多个 target 时，`{ success, path, type, results }` 在任一 target 成功时即为成功。
-- `metadata.removeEmbeddedArt` 接受 `removeAll` 和可选的 `type`；空 `type` 同样表示删除全部封面。目标格式必须支持 `album_art_editor` 工作流。
+- `metadata.removeEmbeddedArt` 接受 `removeAll` 和可选的 `type`；空 `type` 同样表示删除全部封面。目标格式必须支持 `album_art_editor`。
 - `rating.set` 只接受 `0` 到 `5`，`0` 表示清除评分。存在匹配的 foo_playcount 上下文菜单时优先使用它，否则写入文件 `RATING` 标签。`rating.get` 通过 `storage` 返回 `stats` 或 `file`。

@@ -42,6 +42,6 @@ features:
   - icon:
       src: /icons/refresh-cw.svg
     title: "SMP compatibility layer"
-    details: "Run Spider Monkey Panel scripts with a cache+event model that wraps async APIs as sync properties — 8 wrapper classes and full fb/plman objects"
+    details: "Run Spider Monkey Panel scripts with a cache+event model that wraps async APIs as sync properties — 8 wrapper classes plus the fb/plman objects"
 ---
 

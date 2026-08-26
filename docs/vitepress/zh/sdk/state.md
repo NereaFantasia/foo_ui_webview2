@@ -53,7 +53,7 @@ fb.on('playback:trackChanged', () => {
 });
 ```
 
-::: tip TIP
+::: tip
 `fb.state` 是简单的状态快照，不是 Proxy 响应式对象。如需精确状态变化通知，请使用 `fb.on()` 订阅事件。如需精确的实时值，请使用 `fb.player.getState()` / `fb.player.getPosition()` 等 API。
 :::
 

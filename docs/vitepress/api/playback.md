@@ -20,9 +20,9 @@ const result = await fb2k.invoke('playback.getCurrentTrack');
 ### playback.getCurrentTrackIndex
 
 
-| Parameter | Type | Required | Description |
-| --- | --- | --- | --- |
-| `includeTrackInfo` | `boolean` | No | Optional; default false. |
+| Parameter | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `includeTrackInfo` | `boolean` | No | `false` | Includes the full `track` info object. |
 
 **Returns**: `{"found":true,"index":0,"playlist":0,"success":true,"track":{}}`
 
@@ -99,9 +99,9 @@ const result = await fb2k.invoke('playback.getVolume');
 ### playback.mute
 
 
-| Parameter | Type | Required | Description |
-| --- | --- | --- | --- |
-| `muted` | `boolean` | No | Optional; default true. |
+| Parameter | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `muted` | `boolean` | No | `true` | `false` unmutes. |
 
 **Returns**: `{"success":true}`
 
@@ -171,11 +171,11 @@ Use a `path|subsong:N` value to address a CUE subsong explicitly. The handler se
 ### playback.playPaths
 
 
-| Parameter | Type | Required | Description |
-| --- | --- | --- | --- |
-| `paths` | `array<string>` | Yes | Required. |
-| `startIndex` | `integer` | No | Optional; default 0. |
-| `replace` | `boolean` | No | Optional; default false. |
+| Parameter | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `paths` | `array<string>` | Yes | — | File paths or URLs. |
+| `startIndex` | `integer` | No | `0` | Index to start playing after the add. |
+| `replace` | `boolean` | No | `false` | Replaces existing content instead of appending. |
 
 **Returns**: `{"error":"...","startedAt":"...","success":true,"tracksAdded":"..."}`
 
@@ -234,10 +234,10 @@ await fb2k.invoke('playback.setPlaybackOrder', { order: 'random' });
 ### playback.setPosition
 
 
-| Parameter | Type | Required | Description |
-| --- | --- | --- | --- |
-| `position` | `number` | No | Optional; default 0. |
-| `seconds` | `number` | No | Optional; default 0. |
+| Parameter | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `position` | `number` | No | `0` | Target position in seconds. |
+| `seconds` | `number` | No | `0` | Alias of `position`; ignored when `position` is present. |
 
 **Returns**: `{"actualPosition":"...","duration":"...","error":"...","newPosition":"...","oldPosition":"...","requestedPosition":"...","subsong":"...","success":true}`
 
@@ -248,9 +248,9 @@ await fb2k.invoke('playback.setPosition', { position: 42.5 });
 ### playback.setStopAfterCurrent
 
 
-| Parameter | Type | Required | Description |
-| --- | --- | --- | --- |
-| `enabled` | `boolean` | No | Optional; default false. |
+| Parameter | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `enabled` | `boolean` | No | `false` |  |
 
 **Returns**: `{"enabled":"...","success":true}`
 
@@ -261,9 +261,9 @@ await fb2k.invoke('playback.setStopAfterCurrent', { enabled: true });
 ### playback.setVolume
 
 
-| Parameter | Type | Required | Description |
-| --- | --- | --- | --- |
-| `volume` | `number` | No | Optional; default 100. |
+| Parameter | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `volume` | `number` | No | `100` | Volume percent (0-100). |
 
 **Returns**: `{"success":true}`
 

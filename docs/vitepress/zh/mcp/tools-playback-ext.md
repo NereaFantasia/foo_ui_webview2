@@ -67,7 +67,9 @@
 获取"当前曲目后停止"状态。
 
 - **参数**: 无
-- **Bridge 方法**: `playback.getStopAfterCurrent`**返回值**:
+- **Bridge 方法**: `playback.getStopAfterCurrent`
+
+**返回值**:
 
 ```json
 { "enabled": false }
@@ -124,7 +126,7 @@
 }
 ```
 
-::: tip TIP
+::: tip
 设置 `includeTrackInfo: true` 时，返回值会额外包含 `track` 字段，包含完整曲目信息（同 `playback.getCurrentTrack` 的字段）。
 :::
 

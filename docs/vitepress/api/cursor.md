@@ -22,7 +22,7 @@ const result = await fb2k.invoke('cursor.isHidden');
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `hidden` | `boolean` | Yes | Required. |
+| `hidden` | `boolean` | Yes | `true` hides the client-area cursor, `false` restores it. |
 
 **Returns**: `{"changed":"...","error":"...","success":true}`
 

@@ -4,7 +4,7 @@
 
 <!-- BEGIN AUTO-GENERATED SDK STUBS -->
 
-## SDK Method Stubs
+## Additional methods
 
 > This block maintains SDK-facing method coverage and may be expanded with complete examples and best practices.
 
@@ -50,7 +50,7 @@ const result = await fb.panel.setConfig({
 Panel lifecycle and configuration changes use the `panel:*` event family. Subscribe through `fb.on()`:
 
 - `panel:configChanged` — `PanelConfigChangedPayload`
-- `panel:focus` and `panel:blur` — payload `{ windowId }`
+- `panel:focus` and `panel:blur` — empty payload `{}`
 - `panel:initialized` — payload `{ mode, panelMode, windowId }`
 - `panel:visibilityChanged` — payload `{ visible }`
 

@@ -56,11 +56,11 @@
 
 | 参数 | 类型 | 必填 | 描述 |
 | --- | --- | --- | --- |
-| playlist | integer | ? | 源播放列表索引（默认活动列表） |
-| tracks | integer[] | ? | 曲目索引数组（批量添加） |
-| track | integer | ? | 单个曲目索引（与 tracks 二选一） |
+| playlist | integer | 否 | 源播放列表索引（默认活动列表） |
+| tracks | integer[] | 条件必填 | 曲目索引数组（批量添加） |
+| track | integer | 条件必填 | 单个曲目索引（与 tracks 二选一） |
 
-::: tip TIP
+::: tip
 `tracks` 和 `track` 二选一。使用 `tracks` 一次添加多个，使用 `track` 添加单个。
 :::
 
@@ -72,9 +72,9 @@
 
 | 参数 | 类型 | 必填 | 描述 |
 | --- | --- | --- | --- |
-| paths | string[] | ? | 文件路径数组，支持 path\|subsong:N 格式 |
-| useQueuePlaylist | boolean | ? | 是否使用专用队列播放列表（默认 true） |
-| playlist | integer | ? | 目标播放列表索引（仅当 useQueuePlaylist=false 时有效） |
+| paths | string[] | 是 | 文件路径数组，支持 path\|subsong:N 格式 |
+| useQueuePlaylist | boolean | 否 | 是否使用专用队列播放列表（默认 true） |
+| playlist | integer | 否 | 目标播放列表索引（仅当 useQueuePlaylist=false 时有效） |
 
 ## fb2k_queue_remove 
 
@@ -84,8 +84,8 @@
 
 | 参数 | 类型 | 必填 | 描述 |
 | --- | --- | --- | --- |
-| index | integer | ? | 单个队列索引（最小 0） |
-| indices | integer[] | ? | 索引数组（与 index 二选一） |
+| index | integer | 条件必填 | 单个队列索引（最小 0） |
+| indices | integer[] | 条件必填 | 索引数组（与 index 二选一） |
 
 ## fb2k_queue_clear 
 
@@ -120,7 +120,7 @@
 
 | 参数 | 类型 | 必填 | 描述 |
 | --- | --- | --- | --- |
-| index | integer | ? | 从 0 起的队列曲目索引，最小值 0 |
+| index | integer | 是 | 从 0 起的队列曲目索引，最小值 0 |
 
 ## fb2k_queue_flush 
 

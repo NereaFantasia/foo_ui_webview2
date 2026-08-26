@@ -95,7 +95,7 @@ foo_ui_webview2 的所有 API 在失败时遵循统一的错误信封结构。
 
 | Code | 说明 |
 | --- | --- |
-| PERMISSION_DENIED | PathSecuritySpec 路径校验拒绝访问 |
+| PERMISSION_DENIED | PathSecuritySpec 路径校验拒绝访问；参数形状或类型不对而非路径策略拒绝时返回 INVALID_PARAMS |
 
 ### 媒体/路径相关
 
@@ -108,7 +108,7 @@ foo_ui_webview2 的所有 API 在失败时遵循统一的错误信封结构。
 | DECODER_FAILED | 音频解码器打开失败 |
 | DECODE_FAILED | 解码过程中发生异常 |
 | UNKNOWN_ERROR | 未知错误 |
-| EXCEPTION | 异常捕获兜底 |
+| EXCEPTION | 捕获到未归类异常时返回 |
 
 ## TypeScript 类型
 

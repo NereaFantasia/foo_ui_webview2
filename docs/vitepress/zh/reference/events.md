@@ -2,7 +2,7 @@
 
 foo_ui_webview2 的运行时事件 payload 参考。事件名使用 **冒号格式**（`namespace:eventName`），方法调用使用 **点格式**（`namespace.method`）。
 
-每个 payload key set 均来自对应 C++ emit 源的精确规则；内部 `:__` 事件和没有运行时 emit 证据的历史条目不在此参考中。
+每份 payload 的键集都按对应的 C++ emit 点逐一核对得出；内部 `:__` 事件和没有运行时 emit 证据的历史条目不在此参考中。
 
 ## app 事件
 
@@ -22,7 +22,7 @@ foo_ui_webview2 的运行时事件 payload 参考。事件名使用 **冒号格�
 | audio:spectrum | `{ spectrum }` |
 | audio:stream | `{}` |
 
-`audio:stream` 当前只是尚未实现的流捕获订阅 stub 返回的保留 token；运行时不会发射该事件。
+流捕获订阅尚未实现。`audio:stream` 只是该占位实现返回的保留名，运行时不会发射。
 
 ## cursor 事件
 

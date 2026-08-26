@@ -267,10 +267,10 @@ fb2k.on('playback:trackChanged', async (track) => {
 | `min` | integer | `0` | `slider` 项最小值。 |
 | `max` | integer | `100` | `slider` 项最大值。 |
 | `orientation` | string | 可省略 | `slider` 方向；支持 `horizontal` 或 `vertical`。 |
-| `playbackAction` | string | 可省略 | 声明式原生播放动作：`'play-pause' \| 'previous' \| 'next' \| 'stop'`。仅合法于 `type:'normal'` 叶子；组装时盖章为内置播放路由并原生执行，**不发** `tray:menuItemClicked`。外观/`id`/`label`/`icon` 仍由调用方控制；主窗口最小化/托盘隐藏/锁屏深挂起时仍可靠。非法取值或写在 separator/submenu/富控件上 → 整次调用 fail-loud `INVALID_PARAMS`。不接受 `'exit'` / `'show-main-window'`（系统动作仍走精确 `_sys_exit` / `_sys_show`）。对 `menu.show` 无效。`getMenuItems()` round-trip。 |
+| `playbackAction` | string | 可省略 | 声明式原生播放动作：`'play-pause' \| 'previous' \| 'next' \| 'stop'`。仅合法于 `type:'normal'` 叶子；组装时标记为内置播放路由并原生执行，**不发** `tray:menuItemClicked`。外观/`id`/`label`/`icon` 仍由调用方控制；主窗口最小化/托盘隐藏/锁屏深挂起时仍可靠。非法取值或写在 separator/submenu/富控件上 → 整次调用 fail-loud `INVALID_PARAMS`。不接受 `'exit'` / `'show-main-window'`（系统动作仍走精确 `_sys_exit` / `_sys_show`）。对 `menu.show` 无效。`getMenuItems()` round-trip。 |
 | `segments` | array | 可省略 | `segmented` 项的分段数组。 |
 
-> `rating` / `slider` / `segmented` 的值变化通过 `tray:menuItemClicked` 携带 `{ id, value }` 上报，且**不关闭菜单**（`segmented` 的 `value` = 选中段索引，点击段或键盘 Left/Right 切换；index→业务语义由前端映射，契约保持通用）；`nowplaying` 点击与普通项一样发 `{ id }` 并关闭。值控件不参与 `autoNowPlaying` 兜底（仅 `nowplaying`）。
+> `rating` / `slider` / `segmented` 的值变化通过 `tray:menuItemClicked` 携带 `{ id, value }` 上报，且**不关闭菜单**（`segmented` 的 `value` = 选中段索引，点击段或键盘 Left/Right 切换；index→业务语义由前端映射，契约保持通用）；`nowplaying` 点击与普通项一样发 `{ id }` 并关闭。值控件不参与 `autoNowPlaying` 自动补全（仅 `nowplaying`）。
 >
 > **声明式原生播放（`playbackAction`）**：自定义外观托盘播放项在后台仍需可靠时，应声明本字段（或使用内置 `showPlaybackControls`），不要只靠 `tray:menuItemClicked` → `playback.*`——主页面深挂起时 JS 事件循环不保证运行。按钮态从 `playback:*` 事件反映。
 >
@@ -334,10 +334,10 @@ interface TrayMenuConfig {
     showSystemItems?: boolean;        // 默认 true，自动注入「显示主窗口」+「Exit foobar2000」到 bottom 分区（均原生执行）
     customPosition?: 'top' | 'playback' | 'bottom';  // 默认 'top'，setContextMenu 的 items 写入哪个分区
     render?: 'native' | 'webview';    // 默认 'native'（Win32 菜单）；'webview' 改用 WebView2 自绘菜单
-    autoNowPlaying?: boolean;         // 默认 false；nowplaying 项的空字段(cover/title/subtitle)右键时按「前端优先、后端兜底」自动填当前曲目（cover 仅 webview）
+    autoNowPlaying?: boolean;         // 默认 false；nowplaying 项的空字段(cover/title/subtitle)右键时按「前端优先、后端补全」自动填当前曲目（cover 仅 webview）
     css?: string;                     // 仅 render:'webview'；前端样式字符串，注入自绘菜单专用 <style> 层（每次右键覆盖）
     cssReplace?: boolean;             // 默认 false=override 叠加在内置样式之上；true=replace（禁用内置样式，仅留前端 css + 受保护结构层）
-    backdrop?: 'acrylic' | 'mica' | 'mica-alt' | 'none';  // 仅 render:'webview'；DWM 系统背景材质，默认 'acrylic'（瞬态菜单语义正确）；每次右键应用
+    backdrop?: 'acrylic' | 'mica' | 'mica-alt' | 'none';  // 仅 render:'webview'；DWM 系统背景材质，默认 'acrylic'（瞬态窗口的材质，与菜单语义相符）；每次右键应用
     backdropDarkMode?: boolean;       // 仅 render:'webview'；背景暗色调，默认 true，前端可据主题传 false 跟随浅色
     closeAnimationMs?: number;        // 仅 render:'webview'；默认 0=立即关闭；>0=关闭前播退场动画的毫秒数（应≈你的 #menu.out transition 时长）。退场态 class=#menu.out，可经 css 自定义；replaced/超时仍立即关闭
     layoutMode?: 'flat' | 'zones';    // 仅 render:'webview'；默认 'flat' 保留 #menu > .fb-item；'zones' 为 opt-in zone 容器。native 忽略；旧 runtime 忽略未知字段但不生成 wrapper；menu.show 不受影响
@@ -356,7 +356,7 @@ await fb2k.invoke('tray.setContextMenu', {
 });
 ```
 
-**nowplaying 智能兜底（`autoNowPlaying`）**：开启后，`type: 'nowplaying'` 项中**前端没传的字段**会在右键弹出时由后端用当前曲目自动补全（前端传了就用前端的，**前端优先**）。`cover` 自动补全仅 `render: 'webview'`，取当前曲目内嵌/本地封面并缩略为缩略图；对 foobar2000 取不到封面的来源（如多数流媒体）请前端自行传 `cover` —— 支持 `http(s)://` / `data:` / 裸 base64 三种形态。`title` 走 `%title%`（自动回退文件名），`subtitle` 走 `%artist%`，兼容流媒体动态标题。
+**nowplaying 自动补全（`autoNowPlaying`）**：开启后，`type: 'nowplaying'` 项中**前端没传的字段**会在右键弹出时由后端用当前曲目自动补全（前端传了就用前端的，**前端优先**）。`cover` 自动补全仅 `render: 'webview'`，取当前曲目内嵌/本地封面并缩略为缩略图；对 foobar2000 取不到封面的来源（如多数流媒体）请前端自行传 `cover` —— 支持 `http(s)://` / `data:` / 裸 base64 三种形态。`title` 走 `%title%`（自动回退文件名），`subtitle` 走 `%artist%`，兼容流媒体动态标题。
 
 ```javascript
 // 纯本地：只声明空 nowplaying，cover/title/subtitle 全自动
@@ -365,7 +365,7 @@ await fb2k.invoke('tray.setContextMenu', {
     config: { render: 'webview', autoNowPlaying: true },
 });
 
-// 流媒体 / 混合：前端传 http 封面与文本（优先于后端兜底）
+// 流媒体 / 混合：前端传 http 封面与文本（优先于后端补全）
 await fb2k.invoke('tray.setContextMenu', {
     items: [{ type: 'nowplaying', id: 'np', cover: 'https://example.com/art.jpg', title: '歌名', subtitle: '歌手' }],
     config: { render: 'webview', autoNowPlaying: true },
@@ -447,7 +447,7 @@ fb2k.on('tray:menuItemClicked', ({ id, value }) => {
 });
 ```
 
-**DWM 背景效果（`backdrop` / `backdropDarkMode`，仅 `render: 'webview'`）**：自绘托盘菜单的系统级背景材质，词表与主窗口一致：`'acrylic'`（默认，瞬态面 = 菜单语义正确）/ `'mica'` / `'mica-alt'` / `'none'`，每次右键弹出时应用、可随主题切换。`backdropDarkMode`（默认 `true`）控制背景暗色调，前端可据主题传 `false` 跟随浅色。ContentSized 会真实测量 root 与一级子菜单；root 和展开的一级子菜单分别使用紧凑的独立 HWND，并各自应用调用方配置的 backdrop。未展开时不存在原生 submenu 预留窗口，因此不会在 root 外绘制空白 DWM 材质；runtime 也不会因存在子菜单而把调用方 backdrop 静默改成 `none`。注意：自绘菜单 `.fb-menu` 默认背景**不透明会遮住背景效果**——需前端经 `css` 把 `.fb-menu` 背景改半透明才能透出亚克力/云母。`native` 后端忽略。
+**DWM 背景效果（`backdrop` / `backdropDarkMode`，仅 `render: 'webview'`）**：自绘托盘菜单的系统级背景材质，取值与主窗口一致：`'acrylic'`（默认；亚克力是瞬态窗口的材质，与菜单语义相符）/ `'mica'` / `'mica-alt'` / `'none'`，每次右键弹出时应用、可随主题切换。`backdropDarkMode`（默认 `true`）控制背景暗色调，前端可据主题传 `false` 跟随浅色。ContentSized 会真实测量 root 与一级子菜单；root 和展开的一级子菜单分别使用紧凑的独立 HWND，并各自应用调用方配置的 backdrop。未展开时不存在原生 submenu 预留窗口，因此不会在 root 外绘制空白 DWM 材质；runtime 也不会因存在子菜单而把调用方 backdrop 静默改成 `none`。注意：自绘菜单 `.fb-menu` 默认背景**不透明会遮住背景效果**——需前端经 `css` 把 `.fb-menu` 背景改半透明才能透出亚克力/云母。`native` 后端忽略。
 
 ```javascript
 await fb2k.invoke('tray.setContextMenu', {
@@ -461,7 +461,7 @@ await fb2k.invoke('tray.setContextMenu', {
 });
 ```
 
-> ⚠️ **DWM 背景（亚克力/云母）与淡入淡出动画冲突**：DWM 背景是**窗口级二元效果**，随 Win32 窗口瞬间显示/隐藏，**不随 CSS 动画淡入淡出**（`closeAnimationMs` 只动画 web 内容）。两者同用时背景会"啪"地出现/消失而内容在淡——过场不同步。想要全程平滑的开关动画，请改用 **CSS 半透明背景**（`backdrop: 'none'` + `.fb-menu{background:rgba(...)}`）代替 DWM 背景。**真·桌面模糊** 与 **可动画过场** 二选一（Windows 合成架构所限，非实现 bug；overlay 为 WebView2 Visual Hosting/DirectComposition 透明窗，无法用 `WS_EX_LAYERED` 淡整窗 alpha）。
+> ⚠️ **DWM 背景（亚克力/云母）与淡入淡出动画冲突**：DWM 背景是**窗口级二元效果**，随 Win32 窗口瞬间显示/隐藏，**不随 CSS 动画淡入淡出**（`closeAnimationMs` 只动画 web 内容）。两者同用时背景会"啪"地出现/消失而内容在做淡入淡出——两者不同步。想要全程平滑的开关动画，请改用 **CSS 半透明背景**（`backdrop: 'none'` + `.fb-menu{background:rgba(...)}`）代替 DWM 背景。**真正的桌面模糊** 与 **可动画的过渡** 二选一（Windows 合成架构所限，非实现 bug；overlay 为 WebView2 Visual Hosting/DirectComposition 透明窗，无法用 `WS_EX_LAYERED` 淡整窗 alpha）。
 
 ---
 
@@ -705,9 +705,9 @@ await fb2k.invoke('tray.removeMenuItems', { ids: ['revealInExplorer', 'copyPath'
 
 > **语义提示**：`tray:beforeContextMenu` 是异步通知，handler 内的 `clearMenuItems` / `appendMenuItems` 只影响下一次菜单弹出，不阻塞本次弹出。若希望首次右键菜单也包含上下文项，应在 `playback:trackChanged` 中同步预填充。
 
-## 合同补充
+## 契约补充
 
-以下章节补齐严格参数审计发现的公开 contract；不会改变前文的已有说明。
+以下补充这些方法的完整参数契约，不改变前文的已有说明。
 
 <!-- phase3-supplement:taskbar.setProgress -->
 ### Contract 补充：`taskbar.setProgress`
@@ -764,11 +764,11 @@ await fb2k.invoke('tray.setContextMenu', {
 ## 运行时生命周期、菜单数据与事件
 
 `taskbar.*` 与 `tray.*` 需要 standalone 主窗口。在 panel 中，每个 handler 返回
-`{ success: false, panelMode: true }`。调用 `tray.create` 后再依赖托盘可见性、回调或
-菜单操作。Windows 最多接受七个缩略图按钮；任务栏 COM 尚未初始化时，安装缩略图也会失败。
+`{ success: false, panelMode: true }`。先调用 `tray.create`，再使用托盘可见性、回调与
+菜单操作。Windows 最多接受七个缩略图按钮；任务栏 COM 尚未初始化时，设置缩略图按钮也会失败。
 
 `taskbar.setProgress` 支持 `none`、`indeterminate`、`normal`、`error` 和 `paused`。
-只有 0–1 范围内的数值 `value` 才会被使用。缩略图按钮激活时广播
+只有 0–1 之间的 `value` 才生效。缩略图按钮激活时广播
 `taskbar:buttonClicked`，payload 为 `{ id }`。
 
 托盘菜单由 `tray.setContextMenu` 配置，后续可使用 `tray.appendMenuItems`、
@@ -780,10 +780,10 @@ await fb2k.invoke('tray.setContextMenu', {
 `tray:doubleClick`，以及带 `{ x, y }` 的 `tray:beforeContextMenu`。最后一个事件是
 异步通知：handler 的变更影响下一次打开的菜单，不会阻塞当前正在构建的菜单。
 
-菜单可使用 `data:image/...` 封面数据和可选的 webview 渲染。对于 webview renderer，
+菜单可带 `data:image/...` 封面数据，并可选用 webview 渲染。对于 webview renderer，
 配置 stylesheet 可包含 `display:flex`、`flex-direction:column` 与
-`background:rgba(...)` 等声明。普通用户项的点击事件是 `tray:menuItemClicked`；它不会替换
-无关的 `menu:select` 或 `menu:dismiss` 事件。由插件原生执行的项——内置注入项以及声明了
+`background:rgba(...)` 等声明。普通用户项的点击事件是 `tray:menuItemClicked`；它与
+`menu:select` / `menu:dismiss` 无关，不会取代二者。由插件原生执行的项——内置注入项以及声明了
 `playbackAction` 的项——不发 `tray:menuItemClicked`。
 
 ### 保留系统项
@@ -798,7 +798,7 @@ await fb2k.invoke('tray.setContextMenu', {
 两项都原生执行，因此**不发** `tray:menuItemClicked`。这对 `_sys_show` 是必要设计：
 隐藏到托盘会对主页面施加 `put_IsVisible(FALSE)` + 深度挂起（`TrySuspend`），renderer
 被冻结，`tray:menuItemClicked` 的 handler 根本跑不起来，也就无法自行调用
-`window.focus`。走前端事件的路线在这个项唯一有用的状态下恰好是死的。
+`window.focus`。偏偏在这个项唯一有用的状态下，前端事件路线是死的。
 
 若想自绘该行而不用注入项，直接使用精确、大小写敏感的 id `_sys_show`（或 `_sys_exit`）：
 它获得同样的原生路由，你的 `label` / `icon` 被保留，对应的注入项则自动跳过。形似 id

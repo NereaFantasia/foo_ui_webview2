@@ -90,10 +90,10 @@ Get the currently playing playlist. Includes a `duration` field.
 
 Create a new playlist.
 
-| Parameter | Type | Required | Description |
-| --- | --- | --- | --- |
-| `name` | `string` | No | Optional; default New Playlist. |
-| `position` | `integer` | No | Optional; default append. |
+| Parameter | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `name` | `string` | No | `New Playlist` |  |
+| `position` | `integer` | No | — | Insert position; appends when omitted. |
 
 **Returns**: `{ "success": true, "index": 2 }`
 
@@ -106,9 +106,9 @@ const result = await fb2k.invoke('playlist.create', { name: 'Rock Music' });
 
 Remove a playlist.
 
-| Parameter | Type | Required | Description |
-| --- | --- | --- | --- |
-| `playlist` | `integer` | No | Optional; default active playlist. |
+| Parameter | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `playlist` | `integer` | No | active playlist |  |
 
 **Returns**: `{ "success": true }`
 
@@ -118,10 +118,10 @@ A locked playlist cannot be removed and returns `{ "success": false, "error": "P
 
 Rename a playlist.
 
-| Parameter | Type | Required | Description |
-| --- | --- | --- | --- |
-| `playlist` | `integer` | Yes | Target index. There is **no** active-playlist fallback, so omitting it fails. |
-| `name` | `string` | No | New name. Defaults to an empty string. |
+| Parameter | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `playlist` | `integer` | Yes | — | Target index. There is **no** active-playlist fallback, so omitting it fails. |
+| `name` | `string` | No | `""` | New name. |
 
 **Returns**: `{ "success": true }`
 
@@ -136,9 +136,9 @@ await fb2k.invoke('playlist.rename', { playlist: 0, name: 'My Favorites' });
 
 Remove all tracks from a playlist.
 
-| Parameter | Type | Required | Description |
-| --- | --- | --- | --- |
-| `playlist` | `integer` | No | Optional; default active playlist. |
+| Parameter | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `playlist` | `integer` | No | active playlist |  |
 
 **Returns**:
 
@@ -156,10 +156,10 @@ Remove all tracks from a playlist.
 
 Duplicate a playlist. The copy is inserted immediately after the source playlist.
 
-| Parameter | Type | Required | Description |
-| --- | --- | --- | --- |
-| `playlist` | `integer` | No | Optional; default active playlist. |
-| `name` | `string` | No | Optional; default source name + ' (Copy)'. |
+| Parameter | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `playlist` | `integer` | No | active playlist |  |
+| `name` | `string` | No | source name + ` (Copy)` |  |
 
 **Returns**: `{ "success": true, "index": 1, "sourcePlaylist": 0, "newPlaylist": 1, "name": "Default (Copy)", "trackCount": 150 }`
 
@@ -170,10 +170,10 @@ Duplicate a playlist. The copy is inserted immediately after the source playlist
 
 Get the number of tracks in a playlist.
 
-| Parameter | Type | Required | Description |
-| --- | --- | --- | --- |
-| `playlist` | `integer` | No | Optional; default active playlist. |
-| `index` | `integer` | No | Alias for `playlist`, read only when `playlist` is absent. |
+| Parameter | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `playlist` | `integer` | No | active playlist |  |
+| `index` | `integer` | No | — | Alias for `playlist`, read only when `playlist` is absent. |
 
 **Returns**: `{ "count": 150 }`
 
@@ -183,13 +183,13 @@ This method returns no `success` field. An index that cannot be resolved yields 
 
 Get a paged list of tracks in a playlist. The response has no `success` field.
 
-| Parameter | Type | Required | Description |
-| --- | --- | --- | --- |
-| `playlist` | `integer` | No | Optional; default active playlist. |
-| `index` | `integer` | No | Optional; default used only if playlist is absent. |
-| `start` | `integer` | No | Optional; default 0. |
-| `count` | `integer` | No | Optional; default 100. |
-| `formats` | `object` | No | Optional; default {}. |
+| Parameter | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `playlist` | `integer` | No | active playlist |  |
+| `index` | `integer` | No | — | Alias for `playlist`, read only when `playlist` is absent. |
+| `start` | `integer` | No | `0` | Page offset. |
+| `count` | `integer` | No | `100` | Page size. |
+| `formats` | `object` | No | `{}` | Extra TitleFormat columns (see tip below). |
 
 **Returns**:
 
@@ -255,13 +255,13 @@ const result = await fb2k.invoke('playlist.getTracks', {
 
 Play a specific track in a playlist.
 
-| Parameter | Type | Required | Description |
-| --- | --- | --- | --- |
-| `playlist` | `integer` | No | Optional; default active playlist. |
-| `index` | `integer` | No | Track index. Falls back to `track`, then `0`. |
-| `track` | `integer` | No | Legacy alias for `index`. |
-| `deferred` | `boolean` | No | Optional; default false. |
-| `muted` | `boolean` | No | Optional; default false. |
+| Parameter | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `playlist` | `integer` | No | active playlist |  |
+| `index` | `integer` | No | `0` | Track index. Falls back to `track`, then `0`. |
+| `track` | `integer` | No | `0` | Legacy alias for `index`. |
+| `deferred` | `boolean` | No | `false` | Deferred start, recommended for streaming sources. |
+| `muted` | `boolean` | No | `false` | Mutes before playback starts (see note below). |
 
 **Returns**: `{ "success": true }`
 
@@ -279,11 +279,11 @@ await fb2k.invoke('playlist.playTrack', { playlist: 0, index: 0, deferred: true 
 
 Remove the specified tracks from a playlist.
 
-| Parameter | Type | Required | Description |
-| --- | --- | --- | --- |
-| `playlist` | `integer` | No | Optional; default active playlist. |
-| `index` | `integer` | No | Alias for `playlist`, read only when `playlist` is absent. |
-| `items` | `array<integer>` | No | Track indices to remove. |
+| Parameter | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `playlist` | `integer` | No | active playlist |  |
+| `index` | `integer` | No | — | Alias for `playlist`, read only when `playlist` is absent. |
+| `items` | `array<integer>` | No | `[]` | Track indices to remove. |
 
 **Returns**: `{ "success": true }`
 
@@ -293,10 +293,10 @@ A locked playlist is rejected with `{ "success": false, "error": "Playlist is lo
 
 Remove the currently selected tracks from a playlist.
 
-| Parameter | Type | Required | Description |
-| --- | --- | --- | --- |
-| `playlist` | `integer` | No | Optional; default active playlist. |
-| `index` | `integer` | No | Alias for `playlist`, read only when `playlist` is absent. |
+| Parameter | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `playlist` | `integer` | No | active playlist |  |
+| `index` | `integer` | No | — | Alias for `playlist`, read only when `playlist` is absent. |
 
 **Returns**: `{ "success": true }`
 
@@ -307,12 +307,12 @@ A locked playlist is rejected with `{ "success": false, "error": "Playlist is lo
 
 Move selected tracks by `delta`. When `items` is non-empty, those indices become the selection first; when `items` is empty, the current selection is moved (SMP-compatible).
 
-| Parameter | Type | Required | Description |
-| --- | --- | --- | --- |
-| `playlist` | `integer` | No | Optional; default active playlist. |
-| `index` | `integer` | No | Optional; default used only if playlist is absent. |
-| `items` | `array<integer>` | No | Optional; default []. |
-| `delta` | `integer` | No | Optional; default 0. |
+| Parameter | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `playlist` | `integer` | No | active playlist |  |
+| `index` | `integer` | No | — | Alias for `playlist`, read only when `playlist` is absent. |
+| `items` | `array<integer>` | No | `[]` | Empty moves the current selection (SMP-compatible). |
+| `delta` | `integer` | No | `0` | Displacement; negative moves up. |
 
 **Returns**: `{ "success": true }`
 
@@ -324,12 +324,12 @@ await fb2k.invoke('playlist.moveTracks', { items: [5, 6], delta: -2 });
 ### playlist.addPaths
 
 
-Add files or folders to a playlist. Paths are resolved synchronously and CUE sheets are expanded automatically.
+Add files or folders to a playlist. Paths are resolved synchronously via `playlist_incoming_item_filter` and CUE sheets are expanded automatically.
 
-| Parameter | Type | Required | Description |
-| --- | --- | --- | --- |
-| `playlist` | `integer` | No | Optional; default active playlist. |
-| `paths` | `array<string>` | Yes | File or folder paths. An empty array fails with `No paths specified`. |
+| Parameter | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `playlist` | `integer` | No | active playlist |  |
+| `paths` | `array<string>` | Yes | — | File or folder paths. An empty array fails with `No paths specified`. |
 
 **Returns**:
 
@@ -350,10 +350,10 @@ Add files or folders to a playlist. Paths are resolved synchronously and CUE she
 ### playlist.addHandles
 
 
-| Parameter | Type | Required | Description |
-| --- | --- | --- | --- |
-| `playlist` | `integer` | No | Optional; default active playlist. |
-| `handles` | `array<object \| string>` | Yes | Entries as `{ path, subsong }` objects or `path\|subsong:N` strings. |
+| Parameter | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `playlist` | `integer` | No | active playlist |  |
+| `handles` | `array<object \| string>` | Yes | — | Entries as `{ path, subsong }` objects or `path\|subsong:N` strings. |
 
 **Returns**: `{"addedCount":"...","countBefore":"...","error":"...","invalidCount":"...","playlist":"...","requestedCount":"...","success":true,"totalCount":"..."}`
 
@@ -364,10 +364,10 @@ await fb2k.invoke('playlist.addHandles', { handles: ['C:\\Music\\song.flac'] });
 ### playlist.addPathsAsync
 
 
-| Parameter | Type | Required | Description |
-| --- | --- | --- | --- |
-| `playlist` | `integer` | No | Optional; default active playlist. |
-| `paths` | `array<string>` | Yes | File or folder paths. An empty array fails with `No paths specified`. |
+| Parameter | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `playlist` | `integer` | No | active playlist |  |
+| `paths` | `array<string>` | Yes | — | File or folder paths. An empty array fails with `No paths specified`. |
 
 **Returns**: `{"error":"...","invalidCount":"...","operationId":"...","status":"...","success":true,"totalCount":"..."}`
 
@@ -378,10 +378,10 @@ const { operationId } = await fb2k.invoke('playlist.addPathsAsync', { paths: ['C
 ### playlist.addPathsSequential
 
 
-| Parameter | Type | Required | Description |
-| --- | --- | --- | --- |
-| `playlist` | `integer` | No | Optional; default active playlist. |
-| `paths` | `array<string>` | Yes | File or folder paths. An empty array fails with `No paths specified`. |
+| Parameter | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `playlist` | `integer` | No | active playlist |  |
+| `paths` | `array<string>` | Yes | — | File or folder paths. An empty array fails with `No paths specified`. |
 
 **Returns**: `{"addedCount":"...","error":"...","order":"...","playlist":"...","success":true}`
 
@@ -392,12 +392,12 @@ await fb2k.invoke('playlist.addPathsSequential', { paths: ['C:\\Music\\a.flac', 
 ### playlist.convertToAutoplaylist
 
 
-| Parameter | Type | Required | Description |
-| --- | --- | --- | --- |
-| `playlist` | `integer` | No | Optional; default active playlist. |
-| `query` | `string` | Yes | Filter expression. An empty value fails with `Query is required`. |
-| `sort` | `string` | No | Optional. |
-| `keepSorted` | `boolean` | No | Optional; default false. |
+| Parameter | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `playlist` | `integer` | No | active playlist |  |
+| `query` | `string` | Yes | — | Filter expression. An empty value fails with `Query is required`. |
+| `sort` | `string` | No | — | Titleformat sort pattern. |
+| `keepSorted` | `boolean` | No | `false` | Keeps the playlist sorted by `sort`. |
 
 **Returns**: `{"error":"...","playlist":"...","success":true}`
 
@@ -408,12 +408,12 @@ await fb2k.invoke('playlist.convertToAutoplaylist', { playlist: 0, query: '%genr
 ### playlist.createAutoplaylist
 
 
-| Parameter | Type | Required | Description |
-| --- | --- | --- | --- |
-| `keepSorted` | `boolean` | No | Optional; default false. |
-| `name` | `string` | No | Optional; default New Autoplaylist. |
-| `query` | `string` | Yes | Filter expression. An empty value fails with `Query is required`. |
-| `sort` | `string` | No | Optional. |
+| Parameter | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `name` | `string` | No | `New Autoplaylist` |  |
+| `query` | `string` | Yes | — | Filter expression. An empty value fails with `Query is required`. |
+| `sort` | `string` | No | — | Titleformat sort pattern. |
+| `keepSorted` | `boolean` | No | `false` | Keeps the playlist sorted by `sort`. |
 
 **Returns**: `{"error":"...","index":"...","name":"...","playlist":"...","query":"...","success":true}`
 
@@ -424,9 +424,9 @@ const { index } = await fb2k.invoke('playlist.createAutoplaylist', { name: 'Rock
 ### playlist.deselectAll
 
 
-| Parameter | Type | Required | Description |
-| --- | --- | --- | --- |
-| `playlist` | `integer` | No | Optional; default active playlist. |
+| Parameter | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `playlist` | `integer` | No | active playlist |  |
 
 **Returns**: `{"success":true}`
 
@@ -437,11 +437,11 @@ await fb2k.invoke('playlist.deselectAll', { playlist: 0 });
 ### playlist.focusTrack
 
 
-| Parameter | Type | Required | Description |
-| --- | --- | --- | --- |
-| `playlist` | `integer` | No | Optional; default active playlist. |
-| `index` | `integer` | No | Optional; default no focused item. |
-| `track` | `integer` | No | Optional; default no focused item. |
+| Parameter | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `playlist` | `integer` | No | active playlist |  |
+| `index` | `integer` | No | — | Target track; synonym of `track`, takes precedence. Omitting focuses nothing. |
+| `track` | `integer` | No | — | Legacy alias for `index`. |
 
 **Returns**: `{"error":"...","success":true}`
 
@@ -453,9 +453,9 @@ await fb2k.invoke('playlist.focusTrack', { playlist: 0, index: 3 });
 
 Reports whether a playlist is an autoplaylist, and its sort/source metadata when it is.
 
-| Parameter | Type | Required | Description |
-| --- | --- | --- | --- |
-| `playlist` | `integer` | No | Optional; default active playlist. |
+| Parameter | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `playlist` | `integer` | No | active playlist |  |
 
 **Returns** — an autoplaylist: `{ "isAutoplaylist": true, "playlist": 0, "keepSorted": false, "source": "sdk" }`. Anything else: `{ "isAutoplaylist": false, "playlist": 0 }`, with `keepSorted` and `source` absent.
 
@@ -470,9 +470,9 @@ if (info.isAutoplaylist) console.log(info.source, info.keepSorted);
 
 Reports autoplaylist metadata for a playlist. The query string itself is not retrievable.
 
-| Parameter | Type | Required | Description |
-| --- | --- | --- | --- |
-| `playlist` | `integer` | No | Optional; default active playlist. |
+| Parameter | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `playlist` | `integer` | No | active playlist |  |
 
 **Returns** — an autoplaylist: `{ "isAutoplaylist": true, "playlist": 0, "query": null, "keepSorted": false, "source": "sdk", "note": "Query string not exposed by SDK" }`. Anything else: `{ "isAutoplaylist": false, "playlist": 0, "query": null }`.
 
@@ -498,9 +498,9 @@ const result = await fb2k.invoke('playlist.getAvailableColumns');
 ### playlist.getFocusTrack
 
 
-| Parameter | Type | Required | Description |
-| --- | --- | --- | --- |
-| `playlist` | `integer` | No | Optional; default active playlist. |
+| Parameter | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `playlist` | `integer` | No | active playlist |  |
 
 **Returns**: `{"error":"...","index":"...","playlist":"...","success":true}`
 
@@ -511,9 +511,9 @@ const { index } = await fb2k.invoke('playlist.getFocusTrack', { playlist: 0 });
 ### playlist.getFocusedTrack
 
 
-| Parameter | Type | Required | Description |
-| --- | --- | --- | --- |
-| `playlist` | `integer` | No | Optional; default active playlist. |
+| Parameter | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `playlist` | `integer` | No | active playlist |  |
 
 **Returns**: `{"index":"...","playlist":"...","success":true}`
 
@@ -524,9 +524,9 @@ const { index } = await fb2k.invoke('playlist.getFocusedTrack', { playlist: 0 })
 ### playlist.getLockInfo
 
 
-| Parameter | Type | Required | Description |
-| --- | --- | --- | --- |
-| `playlist` | `integer` | No | Optional; default active playlist. |
+| Parameter | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `playlist` | `integer` | No | active playlist |  |
 
 **Returns**: `{"error":"...","isLocked":"...","playlist":"...","success":true}`
 
@@ -537,10 +537,10 @@ const { isLocked } = await fb2k.invoke('playlist.getLockInfo', { playlist: 0 });
 ### playlist.getSelectedTracks
 
 
-| Parameter | Type | Required | Description |
-| --- | --- | --- | --- |
-| `playlist` | `integer` | No | Optional; default active playlist. |
-| `index` | `integer` | No | Optional; default ignored when playlist is supplied. |
+| Parameter | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `playlist` | `integer` | No | active playlist |  |
+| `index` | `integer` | No | — | Alias for `playlist`, read only when `playlist` is absent. |
 
 **Returns**: `{"error":"...","success":true,"tracks":"..."}`
 
@@ -551,9 +551,9 @@ const result = await fb2k.invoke('playlist.getSelectedTracks');
 ### playlist.getSelection
 
 
-| Parameter | Type | Required | Description |
-| --- | --- | --- | --- |
-| `playlist` | `integer` | No | Optional; default active playlist. |
+| Parameter | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `playlist` | `integer` | No | active playlist |  |
 
 **Returns**: `{"count":"...","error":"...","items":"...","playlist":"...","success":true}`
 
@@ -564,12 +564,12 @@ const { items, count } = await fb2k.invoke('playlist.getSelection', { playlist: 
 ### playlist.insertTracks
 
 
-| Parameter | Type | Required | Description |
-| --- | --- | --- | --- |
-| `playlist` | `integer` | No | Optional; default active playlist. |
-| `position` | `integer` | No | Insert position. Falls back to `index`, then `0`. |
-| `index` | `integer` | No | Legacy alias for `position`. |
-| `handles` | `array<object \| string>` | Yes | Entries as `{ path, subsong }` objects or `path\|subsong:N` strings. |
+| Parameter | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `playlist` | `integer` | No | active playlist |  |
+| `position` | `integer` | No | `0` | Insert position. Falls back to `index`. |
+| `index` | `integer` | No | — | Legacy alias for `position`. |
+| `handles` | `array<object \| string>` | Yes | — | Entries as `{ path, subsong }` objects or `path\|subsong:N` strings. |
 
 **Returns**: `{"addedCount":"...","countBefore":"...","error":"...","insertIndex":"...","invalidCount":"...","playlist":"...","requestedCount":"...","success":true,"totalCount":"..."}`
 
@@ -585,9 +585,9 @@ const result = await fb2k.invoke('playlist.insertTracks', {
 
 Tests whether a playlist is an autoplaylist.
 
-| Parameter | Type | Required | Description |
-| --- | --- | --- | --- |
-| `playlist` | `integer` | No | Optional; default active playlist. |
+| Parameter | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `playlist` | `integer` | No | active playlist |  |
 
 **Returns**: `{ "playlist": 0, "isAutoplaylist": true }`
 
@@ -600,9 +600,9 @@ const { isAutoplaylist } = await fb2k.invoke('playlist.isAutoplaylist', { playli
 ### playlist.isLocked
 
 
-| Parameter | Type | Required | Description |
-| --- | --- | --- | --- |
-| `playlist` | `integer` | No | Optional; default active playlist. |
+| Parameter | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `playlist` | `integer` | No | active playlist |  |
 
 **Returns**: `{"error":"...","isLocked":"...","success":true}`
 
@@ -613,9 +613,9 @@ const { isLocked } = await fb2k.invoke('playlist.isLocked', { playlist: 0 });
 ### playlist.redo
 
 
-| Parameter | Type | Required | Description |
-| --- | --- | --- | --- |
-| `playlist` | `integer` | No | Optional; default active playlist. |
+| Parameter | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `playlist` | `integer` | No | active playlist |  |
 
 **Returns**: `{"error":"...","success":true}`
 
@@ -626,9 +626,9 @@ await fb2k.invoke('playlist.redo', { playlist: 0 });
 ### playlist.removeAutoplaylist
 
 
-| Parameter | Type | Required | Description |
-| --- | --- | --- | --- |
-| `playlist` | `integer` | No | Optional; default active playlist. |
+| Parameter | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `playlist` | `integer` | No | active playlist |  |
 
 **Returns**: `{"error":"...","note":"...","playlist":"...","source":"...","success":true}`
 
@@ -639,10 +639,10 @@ await fb2k.invoke('playlist.removeAutoplaylist', { playlist: 0 });
 ### playlist.reorder
 
 
-| Parameter | Type | Required | Description |
-| --- | --- | --- | --- |
-| `playlist` | `integer` | No | Optional; default active playlist. |
-| `newOrder` | `array<integer>` | Yes | A full permutation of the playlist's track indices. Its length must equal the current item count. |
+| Parameter | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `playlist` | `integer` | No | active playlist |  |
+| `newOrder` | `array<integer>` | Yes | — | A full permutation of the playlist's track indices. Its length must equal the current item count. |
 
 **Returns**: `{"error":"...","expected":"...","got":"...","index":"...","itemCount":"...","playlist":"...","success":true}`
 
@@ -668,13 +668,13 @@ await fb2k.invoke('playlist.reorderPlaylists', { newOrder: [2, 0, 1] });
 ### playlist.replaceAllAndPlay
 
 
-| Parameter | Type | Required | Description |
-| --- | --- | --- | --- |
-| `playlist` | `integer` | No | Optional; default active playlist. |
-| `paths` | `array<string>` | Yes | File or folder paths. An empty array fails with `No paths specified`. |
-| `playIndex` | `integer` | No | Optional; default 0. |
-| `stopFirst` | `boolean` | No | Optional; default true. |
-| `autoPlay` | `boolean` | No | Optional; default true. |
+| Parameter | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `playlist` | `integer` | No | active playlist |  |
+| `paths` | `array<string>` | Yes | — | File or folder paths. An empty array fails with `No paths specified`. |
+| `playIndex` | `integer` | No | `0` | Track to start playing after the add. |
+| `stopFirst` | `boolean` | No | `true` | Stops current playback before adding. |
+| `autoPlay` | `boolean` | No | `true` | Starts playback after adding. |
 
 **Returns**: `{"addedCount":"...","clearedCount":"...","error":"...","invalidCount":"...","playIndex":"...","playlist":"...","success":true,"totalCount":"..."}`
 
@@ -685,9 +685,9 @@ await fb2k.invoke('playlist.replaceAllAndPlay', { paths: ['C:\\Music\\song.flac'
 ### playlist.reverse
 
 
-| Parameter | Type | Required | Description |
-| --- | --- | --- | --- |
-| `playlist` | `integer` | No | Optional; default active playlist. |
+| Parameter | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `playlist` | `integer` | No | active playlist |  |
 
 **Returns**: `{"success":true}`
 
@@ -698,9 +698,9 @@ await fb2k.invoke('playlist.reverse', { playlist: 0 });
 ### playlist.selectAll
 
 
-| Parameter | Type | Required | Description |
-| --- | --- | --- | --- |
-| `playlist` | `integer` | No | Optional; default active playlist. |
+| Parameter | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `playlist` | `integer` | No | active playlist |  |
 
 **Returns**: `{"success":true}`
 
@@ -711,10 +711,10 @@ await fb2k.invoke('playlist.selectAll', { playlist: 0 });
 ### playlist.setFocusedTrack
 
 
-| Parameter | Type | Required | Description |
-| --- | --- | --- | --- |
-| `playlist` | `integer` | No | Optional; default active playlist. |
-| `index` | `integer` | No | Optional; default no focused item. |
+| Parameter | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `playlist` | `integer` | No | active playlist |  |
+| `index` | `integer` | No | — | Target track; omitting focuses nothing. |
 
 **Returns**: `{"error":"...","success":true}`
 
@@ -725,12 +725,12 @@ await fb2k.invoke('playlist.setFocusedTrack', { playlist: 0, index: 3 });
 ### playlist.setSelection
 
 
-| Parameter | Type | Required | Description |
-| --- | --- | --- | --- |
-| `playlist` | `integer` | No | Optional; default active playlist. |
-| `index` | `integer` | No | Optional; default used only if playlist is absent. |
-| `indices` | `array<integer>` | No | Optional; default []. |
-| `clearOthers` | `boolean` | No | Optional; default true. |
+| Parameter | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `playlist` | `integer` | No | active playlist |  |
+| `index` | `integer` | No | — | Alias for `playlist`, read only when `playlist` is absent. |
+| `indices` | `array<integer>` | No | `[]` | Track indices to select. |
+| `clearOthers` | `boolean` | No | `true` | Clears the existing selection first. |
 
 **Returns**: `{"error":"...","success":true}`
 
@@ -741,10 +741,10 @@ await fb2k.invoke('playlist.setSelection', { playlist: 0, indices: [0, 1, 2] });
 ### playlist.shuffle
 
 
-| Parameter | Type | Required | Description |
-| --- | --- | --- | --- |
-| `playlist` | `integer` | No | Optional; default active playlist. |
-| `index` | `integer` | No | Optional; default used only if playlist is absent. |
+| Parameter | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `playlist` | `integer` | No | active playlist |  |
+| `index` | `integer` | No | — | Alias for `playlist`, read only when `playlist` is absent. |
 
 **Returns**: `{"error":"...","success":true}`
 
@@ -755,13 +755,13 @@ await fb2k.invoke('playlist.shuffle', { playlist: 0 });
 ### playlist.sort
 
 
-| Parameter | Type | Required | Description |
-| --- | --- | --- | --- |
-| `playlist` | `integer` | No | Optional; default active playlist. |
-| `index` | `integer` | No | Optional; default used only if playlist is absent. |
-| `pattern` | `string` | No | Optional; default %title%. |
-| `descending` | `boolean` | No | Optional; default false. |
-| `selectedOnly` | `boolean` | No | Optional; default false. |
+| Parameter | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `playlist` | `integer` | No | active playlist |  |
+| `index` | `integer` | No | — | Alias for `playlist`, read only when `playlist` is absent. |
+| `pattern` | `string` | No | `%title%` | Titleformat sort pattern. |
+| `descending` | `boolean` | No | `false` | Sort descending. |
+| `selectedOnly` | `boolean` | No | `false` | Sort only the selected tracks. |
 
 **Returns**: `{"error":"...","success":true}`
 
@@ -772,9 +772,9 @@ await fb2k.invoke('playlist.sort', { playlist: 0, pattern: '%artist% - %title%' 
 ### playlist.undo
 
 
-| Parameter | Type | Required | Description |
-| --- | --- | --- | --- |
-| `playlist` | `integer` | No | Optional; default active playlist. |
+| Parameter | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `playlist` | `integer` | No | active playlist |  |
 
 **Returns**: `{"error":"...","success":true}`
 

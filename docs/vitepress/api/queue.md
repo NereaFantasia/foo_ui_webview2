@@ -106,9 +106,9 @@ const result = await fb2k.invoke('jitQueue.skip');
 ### jitQueue.stop
 
 
-| Parameter | Type | Required | Description |
-| --- | --- | --- | --- |
-| `clearBuffer` | `boolean` | No | Optional; default true. |
+| Parameter | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `clearBuffer` | `boolean` | No | `true` | Also clears the buffer when stopping. |
 
 **Returns**: `{"success":true}`
 
@@ -123,11 +123,11 @@ await fb2k.invoke('jitQueue.stop', { clearBuffer: false });
 
 Queues one or more tracks by their position in a playlist.
 
-| Parameter | Type | Required | Description |
-| --- | --- | --- | --- |
-| `playlist` | `integer` | No | Optional; default active playlist. |
-| `tracks` | `array<integer>` | No | Track indices. Takes precedence over `track`. |
-| `track` | `integer` | No | A single track index. Used only when `tracks` is absent. |
+| Parameter | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `playlist` | `integer` | No | active playlist |  |
+| `tracks` | `array<integer>` | No | — | Track indices. Takes precedence over `track`. |
+| `track` | `integer` | No | — | A single track index. Used only when `tracks` is absent. |
 
 **Returns**: `{ "success": true, "addedCount": 2, "queueCount": 5 }`
 
@@ -289,9 +289,9 @@ const result = await fb2k.invoke('selection.getViewerMode');
 ### selection.getViewingTrack
 
 
-| Parameter | Type | Required | Description |
-| --- | --- | --- | --- |
-| `includeTrackInfo` | `boolean` | No | Optional; default false. |
+| Parameter | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `includeTrackInfo` | `boolean` | No | `false` | Includes the full `track` info object. |
 
 **Returns**: `{"found":true,"handle":"...","itemIndex":"...","mode":"...","playlistIndex":"...","source":"...","success":true,"track":{}}`
 

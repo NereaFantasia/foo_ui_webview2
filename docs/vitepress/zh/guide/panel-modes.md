@@ -93,7 +93,7 @@ console.log(current.mode, current.panelMode, current.windowId);
 | config.* | ✓ | ✓ | ✓ |
 | metadata.* | ✓ | ✓ | ✓ |
 
-不存在合并的 DWM effect 设置 API。请使用已注册的辅助接口 window.setMica 和 window.setAcrylic。
+不存在合并的 DWM effect 设置 API。请使用辅助接口 window.setMica 和 window.setAcrylic。
 
 ## 最佳实践
 

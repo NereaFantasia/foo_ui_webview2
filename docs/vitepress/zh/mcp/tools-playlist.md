@@ -87,7 +87,7 @@
 
 | 参数 | 类型 | 必填 | 描述 |
 | --- | --- | --- | --- |
-| playlist | integer | ? | 从 0 起的播放列表索引，最小值 0 |
+| playlist | integer | 是 | 从 0 起的播放列表索引，最小值 0 |
 
 ### fb2k_playlist_create 
 
@@ -97,7 +97,7 @@
 
 | 参数 | 类型 | 必填 | 描述 |
 | --- | --- | --- | --- |
-| name | string | ? | 播放列表名称 |
+| name | string | 是 | 播放列表名称 |
 
 ### fb2k_playlist_remove 
 
@@ -107,7 +107,7 @@
 
 | 参数 | 类型 | 必填 | 描述 |
 | --- | --- | --- | --- |
-| playlist | integer | ? | 从 0 起的播放列表索引，最小值 0 |
+| playlist | integer | 是 | 从 0 起的播放列表索引，最小值 0 |
 
 ## 曲目操作 
 
@@ -119,9 +119,9 @@
 
 | 参数 | 类型 | 必填 | 描述 |
 | --- | --- | --- | --- |
-| playlist | integer | ? | 播放列表索引（默认活动列表） |
-| start | integer | ? | 起始索引（默认 0） |
-| count | integer | ? | 返回数量，声明范围 1–500；Bridge 默认 100 |
+| playlist | integer | 否 | 播放列表索引（默认活动列表） |
+| start | integer | 否 | 起始索引（默认 0） |
+| count | integer | 否 | 返回数量，声明范围 1–500；Bridge 默认 100 |
 
 **返回值**:
 
@@ -175,6 +175,6 @@
 
 | 参数 | 类型 | 必填 | 描述 |
 | --- | --- | --- | --- |
-| index | integer | ? | 从 0 起的曲目索引，最小值 0 |
-| playlist | integer | ? | 从 0 起的播放列表索引，最小值 0 |
-| deferred | boolean | ? | 是否延迟播放 |
+| index | integer | 是 | 从 0 起的曲目索引，最小值 0 |
+| playlist | integer | 否 | 从 0 起的播放列表索引，最小值 0 |
+| deferred | boolean | 否 | 是否延迟播放 |

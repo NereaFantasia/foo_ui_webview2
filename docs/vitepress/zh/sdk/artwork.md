@@ -7,7 +7,9 @@
 
 两种表示不可互换：`fb2k://` 只由本组件 WebView2 解析，不是可持久化的图片内容；直接读取返回标准 Data URL，保存前必须提取 Base64 payload，并按目标 API 的 wire 契约转换。
 
-> 本项目已采用"方案B（一刀切）"，统一使用 `available` / `dataUrl` / `url` 字段。
+> 封面接口统一返回 `available` / `dataUrl` / `url` 字段。
+
+## getFb2kUrl(type?, options?)
 
 获取当前播放曲目的 `fb2k://` 封面 URL（高性能展示）。
 
@@ -20,6 +22,8 @@ if (res.available && res.dataUrl) {
     document.getElementById('cover').src = res.dataUrl;
 }
 ```
+
+## getFb2kUrlByPath(path, type?, options?)
 
 根据文件路径获取 `fb2k://` 封面 URL。
 
@@ -81,7 +85,7 @@ if (res.available) img.src = res.dataUrl;
 | path | string | 音频文件路径 |
 | type | string | 封面类型（默认 'front'） |
 
-## withMaxSize(url, maxSize)
+## withMaxSize(url, maxSize?)
 
 工具函数：给 `fb2k://` URL 追加 `maxSize` 参数。
 
@@ -90,12 +94,14 @@ const url = fb.artwork.withMaxSize('fb2k://artwork/...', 300);
 // 'fb2k://artwork/...?maxSize=300'
 ```
 
-批量获取封面。`paths` 为 `[{path, type?}, ...]`。
+## getBatch(paths)
+
+批量获取封面。`paths` 为字符串数组（`string[]`）。
 
 ```javascript
 const results = await fb.artwork.getBatch([
-    { path: 'E:\\Music\\a.flac' },
-    { path: 'E:\\Music\\b.mp3', type: 'back' }
+    'E:\\Music\\a.flac',
+    'E:\\Music\\b.mp3'
 ]);
 ```
 
@@ -118,7 +124,7 @@ const batch = await fb.artwork.getFb2kUrlByPathBatch(
 );
 ```
 
-## 补全方法参考
+## 其余方法
 
 ### getAvailableArtwork(path?)
 
@@ -127,8 +133,6 @@ const batch = await fb.artwork.getFb2kUrlByPathBatch(
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
 | path | string | 否 | 音频文件路径；省略时检查当前播放曲目 |
-
-返回值：可用封面类型与状态。
 
 ```javascript
 const available = await fb.artwork.getAvailableArtwork('E:\\Music\\song.flac');
@@ -141,8 +145,6 @@ const available = await fb.artwork.getAvailableArtwork('E:\\Music\\song.flac');
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
 | path | string | 否 | 音频文件路径；省略时检查当前播放曲目 |
-
-返回值：可用封面类型列表。
 
 ```javascript
 const types = await fb.artwork.getAvailableTypes();
@@ -158,8 +160,6 @@ const types = await fb.artwork.getAvailableTypes();
 | type | string | 否 | 封面类型，默认 `front` |
 | options | object | 否 | 缩略图或返回格式选项 |
 
-返回值：指定文件的封面内容或可用状态。
-
 ```javascript
 const cover = await fb.artwork.getByPath('E:\\Music\\song.flac', 'front');
 ```
@@ -171,8 +171,6 @@ const cover = await fb.artwork.getByPath('E:\\Music\\song.flac', 'front');
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
 | path | string | 是 | 音频文件或目录路径 |
-
-返回值：同目录下可识别的图片文件列表。
 
 ```javascript
 const images = await fb.artwork.getFolderImages('E:\\Music\\Album\\song.flac');
@@ -186,8 +184,6 @@ const images = await fb.artwork.getFolderImages('E:\\Music\\Album\\song.flac');
 | --- | --- | --- | --- |
 | path | string | 否 | 音频文件路径；省略时读取当前播放曲目 |
 
-返回值：歌词文本或可用状态。
-
 ```javascript
 const lyrics = await fb.artwork.getLyrics('E:\\Music\\song.flac');
 ```
@@ -199,8 +195,6 @@ const lyrics = await fb.artwork.getLyrics('E:\\Music\\song.flac');
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
 | path | string | 是 | 音频文件路径 |
-
-返回值：与封面/图片相关的元数据。
 
 ```javascript
 const metadata = await fb.artwork.getMetadata('E:\\Music\\song.flac');

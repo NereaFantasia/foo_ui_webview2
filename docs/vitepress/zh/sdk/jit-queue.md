@@ -4,9 +4,7 @@
 
 <!-- BEGIN AUTO-GENERATED SDK STUBS -->
 
-## SDK 方法 stub
-
-> 该区块用于补齐 SDK 视角方法覆盖，后续可人工扩展为完整示例与最佳实践。
+## 其余方法
 
 ### getState()
 
@@ -48,72 +46,42 @@ await fb.jitQueue.playNow({
 
 ### clear()
 
-签名：`fb.jitQueue.clear(...args): Promise<unknown>`
-
-| 参数 | 类型 | 必填 | 说明 |
-| --- | --- | --- | --- |
-| ...args | unknown[] | 视方法而定 | 透传给 SDK wrapper；详细类型以 `sdk/src/bridge/namespaces/` 源码和生成类型为准 |
-
-返回值：底层 `jitQueue.clear` 调用结果。
+封装 `jitQueue.clear`。参数与返回类型以 `foo-webview-sdk` 的 TypeScript 声明为准（IDE 悬浮提示或包内 `bridge.d.ts`），行为契约见 API 文档对应条目。
 
 ```javascript
-const result = await fb.jitQueue.clear();
+await fb.jitQueue.clear(/* 参数见 TypeScript 声明 */);
 ```
 
 ### notifyEmpty()
 
-签名：`fb.jitQueue.notifyEmpty(...args): Promise<unknown>`
-
-| 参数 | 类型 | 必填 | 说明 |
-| --- | --- | --- | --- |
-| ...args | unknown[] | 视方法而定 | 透传给 SDK wrapper；详细类型以 `sdk/src/bridge/namespaces/` 源码和生成类型为准 |
-
-返回值：底层 `jitQueue.notifyEmpty` 调用结果。
+封装 `jitQueue.notifyEmpty`。参数与返回类型以 `foo-webview-sdk` 的 TypeScript 声明为准（IDE 悬浮提示或包内 `bridge.d.ts`），行为契约见 API 文档对应条目。
 
 ```javascript
-const result = await fb.jitQueue.notifyEmpty();
+await fb.jitQueue.notifyEmpty(/* 参数见 TypeScript 声明 */);
 ```
 
 ### preloadBatch()
 
-签名：`fb.jitQueue.preloadBatch(...args): Promise<unknown>`
-
-| 参数 | 类型 | 必填 | 说明 |
-| --- | --- | --- | --- |
-| ...args | unknown[] | 视方法而定 | 透传给 SDK wrapper；详细类型以 `sdk/src/bridge/namespaces/` 源码和生成类型为准 |
-
-返回值：底层 `jitQueue.preloadBatch` 调用结果。
+封装 `jitQueue.preloadBatch`。参数与返回类型以 `foo-webview-sdk` 的 TypeScript 声明为准（IDE 悬浮提示或包内 `bridge.d.ts`），行为契约见 API 文档对应条目。
 
 ```javascript
-const result = await fb.jitQueue.preloadBatch();
+await fb.jitQueue.preloadBatch(/* 参数见 TypeScript 声明 */);
 ```
 
 ### skip()
 
-签名：`fb.jitQueue.skip(...args): Promise<unknown>`
-
-| 参数 | 类型 | 必填 | 说明 |
-| --- | --- | --- | --- |
-| ...args | unknown[] | 视方法而定 | 透传给 SDK wrapper；详细类型以 `sdk/src/bridge/namespaces/` 源码和生成类型为准 |
-
-返回值：底层 `jitQueue.skip` 调用结果。
+封装 `jitQueue.skip`。参数与返回类型以 `foo-webview-sdk` 的 TypeScript 声明为准（IDE 悬浮提示或包内 `bridge.d.ts`），行为契约见 API 文档对应条目。
 
 ```javascript
-const result = await fb.jitQueue.skip();
+await fb.jitQueue.skip(/* 参数见 TypeScript 声明 */);
 ```
 
 ### stop()
 
-签名：`fb.jitQueue.stop(...args): Promise<unknown>`
-
-| 参数 | 类型 | 必填 | 说明 |
-| --- | --- | --- | --- |
-| ...args | unknown[] | 视方法而定 | 透传给 SDK wrapper；详细类型以 `sdk/src/bridge/namespaces/` 源码和生成类型为准 |
-
-返回值：底层 `jitQueue.stop` 调用结果。
+封装 `jitQueue.stop`。参数与返回类型以 `foo-webview-sdk` 的 TypeScript 声明为准（IDE 悬浮提示或包内 `bridge.d.ts`），行为契约见 API 文档对应条目。
 
 ```javascript
-const result = await fb.jitQueue.stop();
+await fb.jitQueue.stop(/* 参数见 TypeScript 声明 */);
 ```
 
 ## 事件

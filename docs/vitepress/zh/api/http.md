@@ -74,15 +74,15 @@ const result = await fb2k.invoke('http.get', {
 
 发送 HTTP GET 请求。
 
-| 参数 | 类型 | 必填 | 说明 |
-| --- | --- | --- | --- |
-| `async` | `boolean` | 否 | 可选；默认 true。 |
-| `headers` | `object` | 否 | 可省略。 |
-| `insecureTls` | `boolean` | 否 | 可选；默认 false。 |
-| `redirect` | `string` | 否 | 可选；默认 follow。 |
-| `responseType` | `string` | 否 | 可选；默认 text。 |
-| `timeout` | `integer` | 否 | 可选；默认 30000。 |
-| `url` | `string` | 否 | 可选。 |
+| 参数 | 类型 | 必填 | 默认值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `url` | `string` | 是 | — |  |
+| `headers` | `object` | 否 | — |  |
+| `timeout` | `integer` | 否 | `30000` |  |
+| `async` | `boolean` | 否 | `true` |  |
+| `redirect` | `string` | 否 | `follow` |  |
+| `responseType` | `string` | 否 | `text` |  |
+| `insecureTls` | `boolean` | 否 | `false` |  |
 
 **返回值**: `{"async":"...","requestId":"...","success":true}`
 
@@ -91,16 +91,16 @@ const result = await fb2k.invoke('http.get', {
 
 发送 HTTP POST 请求。
 
-| 参数 | 类型 | 必填 | 说明 |
-| --- | --- | --- | --- |
-| `url` | `string` | 否 | 可选。 |
-| `body` | `json` | 否 | 可省略。 |
-| `headers` | `object` | 否 | 可选；默认 {}。 |
-| `timeout` | `integer` | 否 | 可选；默认 30000。 |
-| `async` | `boolean` | 否 | 可选；默认 true。 |
-| `redirect` | `string` | 否 | 可选；默认 follow。 |
-| `responseType` | `string` | 否 | 可选；默认 text。 |
-| `insecureTls` | `boolean` | 否 | 可选；默认 false。 |
+| 参数 | 类型 | 必填 | 默认值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `url` | `string` | 是 | — |  |
+| `body` | `json` | 否 | — | 请求体。 |
+| `headers` | `object` | 否 | `{}` |  |
+| `timeout` | `integer` | 否 | `30000` |  |
+| `async` | `boolean` | 否 | `true` |  |
+| `redirect` | `string` | 否 | `follow` |  |
+| `responseType` | `string` | 否 | `text` |  |
+| `insecureTls` | `boolean` | 否 | `false` |  |
 
 **返回值**: 同 `http.get`。
 
@@ -109,14 +109,14 @@ const result = await fb2k.invoke('http.get', {
 
 发送 HTTP HEAD 请求（仅获取响应头，不下载内容）。
 
-| 参数 | 类型 | 必填 | 说明 |
-| --- | --- | --- | --- |
-| `async` | `boolean` | 否 | 可选；默认 true。 |
-| `headers` | `object` | 否 | 可省略。 |
-| `insecureTls` | `boolean` | 否 | 可选；默认 false。 |
-| `redirect` | `string` | 否 | 可选；默认 follow。 |
-| `timeout` | `integer` | 否 | 可选；默认 30000。 |
-| `url` | `string` | 否 | 可选。 |
+| 参数 | 类型 | 必填 | 默认值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `url` | `string` | 是 | — |  |
+| `headers` | `object` | 否 | — |  |
+| `timeout` | `integer` | 否 | `30000` |  |
+| `async` | `boolean` | 否 | `true` |  |
+| `redirect` | `string` | 否 | `follow` |  |
+| `insecureTls` | `boolean` | 否 | `false` |  |
 
 **返回值**: `{"async":"...","contentLength":"...","requestId":"...","success":true}`
 
@@ -125,16 +125,16 @@ const result = await fb2k.invoke('http.get', {
 
 发送 HTTP PUT 请求。默认为异步模式。
 
-| 参数 | 类型 | 必填 | 说明 |
-| --- | --- | --- | --- |
-| `url` | `string` | 否 | 可选。 |
-| `body` | `json` | 否 | 可省略。 |
-| `headers` | `object` | 否 | 可选；默认 {}。 |
-| `timeout` | `integer` | 否 | 可选；默认 30000。 |
-| `async` | `boolean` | 否 | 可选；默认 true。 |
-| `redirect` | `string` | 否 | 可选；默认 follow。 |
-| `responseType` | `string` | 否 | 可选；默认 text。 |
-| `insecureTls` | `boolean` | 否 | 可选；默认 false。 |
+| 参数 | 类型 | 必填 | 默认值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `url` | `string` | 是 | — |  |
+| `body` | `json` | 否 | — | 请求体。 |
+| `headers` | `object` | 否 | `{}` |  |
+| `timeout` | `integer` | 否 | `30000` |  |
+| `async` | `boolean` | 否 | `true` |  |
+| `redirect` | `string` | 否 | `follow` |  |
+| `responseType` | `string` | 否 | `text` |  |
+| `insecureTls` | `boolean` | 否 | `false` |  |
 
 **返回值**: 同 `http.get`，异步结果通过 `http:response` 推送。
 
@@ -143,16 +143,16 @@ const result = await fb2k.invoke('http.get', {
 
 发送 HTTP DELETE 请求。默认为异步模式。
 
-| 参数 | 类型 | 必填 | 说明 |
-| --- | --- | --- | --- |
-| `url` | `string` | 否 | 可选。 |
-| `body` | `json` | 否 | 可省略。 |
-| `headers` | `object` | 否 | 可选；默认 {}。 |
-| `timeout` | `integer` | 否 | 可选；默认 30000。 |
-| `async` | `boolean` | 否 | 可选；默认 true。 |
-| `redirect` | `string` | 否 | 可选；默认 follow。 |
-| `responseType` | `string` | 否 | 可选；默认 text。 |
-| `insecureTls` | `boolean` | 否 | 可选；默认 false。 |
+| 参数 | 类型 | 必填 | 默认值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `url` | `string` | 是 | — |  |
+| `body` | `json` | 否 | — | 请求体。 |
+| `headers` | `object` | 否 | `{}` |  |
+| `timeout` | `integer` | 否 | `30000` |  |
+| `async` | `boolean` | 否 | `true` |  |
+| `redirect` | `string` | 否 | `follow` |  |
+| `responseType` | `string` | 否 | `text` |  |
+| `insecureTls` | `boolean` | 否 | `false` |  |
 
 **返回值**: 同 `http.get`，异步结果通过 `http:response` 推送。
 
@@ -161,16 +161,16 @@ const result = await fb2k.invoke('http.get', {
 
 发送 HTTP PATCH 请求。默认为异步模式。
 
-| 参数 | 类型 | 必填 | 说明 |
-| --- | --- | --- | --- |
-| `url` | `string` | 否 | 可选。 |
-| `body` | `json` | 否 | 可省略。 |
-| `headers` | `object` | 否 | 可选；默认 {}。 |
-| `timeout` | `integer` | 否 | 可选；默认 30000。 |
-| `async` | `boolean` | 否 | 可选；默认 true。 |
-| `redirect` | `string` | 否 | 可选；默认 follow。 |
-| `responseType` | `string` | 否 | 可选；默认 text。 |
-| `insecureTls` | `boolean` | 否 | 可选；默认 false。 |
+| 参数 | 类型 | 必填 | 默认值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `url` | `string` | 是 | — |  |
+| `body` | `json` | 否 | — | 请求体。 |
+| `headers` | `object` | 否 | `{}` |  |
+| `timeout` | `integer` | 否 | `30000` |  |
+| `async` | `boolean` | 否 | `true` |  |
+| `redirect` | `string` | 否 | `follow` |  |
+| `responseType` | `string` | 否 | `text` |  |
+| `insecureTls` | `boolean` | 否 | `false` |  |
 
 **返回值**: 同 `http.get`，异步结果通过 `http:response` 推送。
 
@@ -181,7 +181,7 @@ const result = await fb2k.invoke('http.get', {
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
-| `requestId` | `string` | 否 | 可选。 |
+| `requestId` | `string` | 是 | 要中止的异步请求 id。 |
 
 **返回值**：
 
@@ -212,6 +212,22 @@ if (result.cancelled) {
     console.log('请求已完成，无法中止');
 }
 ```
+
+### http.download
+
+下载文件到本地。默认 **同步**（与其他 verb 不同），需显式 `async: true` 启用异步。
+
+| 参数 | 类型 | 必填 | 默认值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `url` | `string` | 是 | — |  |
+| `saveTo` | `string` | 是 | — | 保存路径，受 Bridge 安全策略保护。 |
+| `headers` | `object` | 否 | — |  |
+| `timeout` | `integer` | 否 | `60000` |  |
+| `async` | `boolean` | 否 | `false` | 与其他 verb 不同，默认同步。 |
+| `redirect` | `string` | 否 | `follow` |  |
+| `insecureTls` | `boolean` | 否 | `false` |  |
+
+**返回值**: 同步返回 path/bytesWritten/status；异步返回 requestId。
 
 ## 错误处理
 
@@ -267,27 +283,11 @@ Blocked Hosts: localhost, 127.0.0.1, 192.168.*
 - [File API](./file) - 文件读写
 - [Events API](./events) - 事件监听系统
 
-### http.download
-
-下载文件到本地。默认 **同步**（与其他 verb 不同），需显式 `async: true` 启用异步。
-
-| 参数 | 类型 | 必填 | 说明 |
-| --- | --- | --- | --- |
-| `async` | `boolean` | 否 | 可选；默认 false。 |
-| `headers` | `object` | 否 | 可省略。 |
-| `insecureTls` | `boolean` | 否 | 可选；默认 false。 |
-| `redirect` | `string` | 否 | 可选；默认 follow。 |
-| `saveTo` | `string` | 否 | 可选。 |
-| `timeout` | `integer` | 否 | 可选；默认 60000。 |
-| `url` | `string` | 否 | 可选。 |
-
-**返回值**: 同步返回 path/bytesWritten/status；异步返回 requestId。
-
 ## 请求生命周期与安全
 
 - `http.get`、`http.post`、`http.put`、`http.delete`、`http.patch` 和 `http.head` 默认异步执行。立即返回的 `success: true` 只表示派发成功，并包含 `requestId`；它不是 HTTP 最终结果。最终结果会以 `http:response` 发回调用窗口，调用方必须按 `requestId` 关联。
 - 若需同步执行，传入 `async: false`。成功的非下载响应包含 `status`、`headers`、`body` 和 `responseType`。当响应包含 `Content-Length` 时，成功的同步或异步 HEAD 结果还可能包含数值 `contentLength`。
 - `http.download` 默认同步。传入 `async: true` 后，最终结果会作为带 `requestId` 的 `http:downloadComplete` 发出；`http.abort` 用于请求取消活跃的异步请求。
 - 仅接受 `http` 与 `https` URL。除非 host 的 Advanced Settings 显式允许，否则私有或本地网络目标会被拒绝；每次重定向都会重新检查，最多允许 10 跳。
-- 只有调用方传入 `insecureTls: true` **且** host 的无效证书设置已启用时，才会跳过 TLS 校验。此旁路不适用于公网流量。
+- 只有调用方传入 `insecureTls: true` **且** host 的无效证书设置已启用时，才会跳过 TLS 校验。该绕过方式不适用于公网流量。
 - 响应体上限为 100 MB，下载上限为 500 MB。`http.download.saveTo` 是受 Bridge 安全策略保护的写入路径参数。

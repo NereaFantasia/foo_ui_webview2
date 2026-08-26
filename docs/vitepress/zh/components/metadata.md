@@ -55,7 +55,7 @@ el.addEventListener('fb-search-result', e => {
 
 ## `<fb-console>` {#fb-console}
 
-控制台日志面板，自动轮询更新，所有日志行经 `_escHtml` 转义。
+控制台日志面板，自动轮询更新，所有日志行都做 HTML 转义。
 
 ```html
 <fb-console></fb-console>

@@ -1,6 +1,6 @@
 # Discovery 服务发现
 
-主动发现 foobar2000 中其他组件注册的服务。v1.1.3+。共 15 个 API。
+（v1.1.3+）主动发现 foobar2000 中其他组件注册的服务。共 15 个 API。
 
 > 与 PluginRegistry 的被动注册模式不同，Discovery API 主动枚举系统中所有已注册的服务。
 
@@ -245,4 +245,4 @@ if (hit) {
 - `discovery.executeMainMenuCommand` 与 `discovery.executeContextMenuCommand` 要求有效 GUID。右键菜单命令优先作用于正在播放曲目，否则作用于活动播放列表选中项。
 - `discovery.executeContextMenuByPath` 要求 `path`；可选 `trackPath` 受媒体读取安全策略保护。省略时，runtime 使用相同的正在播放/选中项回退逻辑。
 - `discovery.getContextMenuTree` 是诊断输出，需要活动目标曲目；递归深度与每节点子项数均有上限，任何裁剪都通过 `truncated` / `depthExceeded` / `childrenExceeded` 显式上报，生效上限由 `maxDepth` 与 `maxChildrenPerNode` 回显。
-- `discovery.searchCommands` 要求非空 `query`，并在主菜单与右键菜单两侧的命令名称、描述、菜单路径中进行不区分大小写的匹配。大小写折叠仅作用于 ASCII，UTF-8 多字节序列（如无大小写可折叠的中文标签）原样通过。
+- `discovery.searchCommands` 要求非空 `query`，按不区分大小写匹配主菜单与右键菜单两侧的命令名称、描述与菜单路径。大小写折叠仅作用于 ASCII，UTF-8 多字节序列（如无大小写可折叠的中文标签）原样通过。

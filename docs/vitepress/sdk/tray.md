@@ -4,7 +4,7 @@
 
 <!-- BEGIN AUTO-GENERATED SDK STUBS -->
 
-## SDK method stubs
+## Additional methods
 
 > This block completes SDK method coverage and may later be expanded with richer examples and guidance.
 

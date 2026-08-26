@@ -9,10 +9,10 @@ This page is the primary owner for the namespaces listed below. Method names, pa
 ### audio.analyzeBPM
 
 
-| Parameter | Type | Required | Description |
-| --- | --- | --- | --- |
-| `forceAnalysis` | `boolean` | No | Optional; default false. Set true to skip the existing `BPM` tag and fall through to genre estimation. |
-| `path` | `string` | Yes | Track path to analyze. |
+| Parameter | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `path` | `string` | Yes | — | Track path to analyze. |
+| `forceAnalysis` | `boolean` | No | `false` | Skips the existing `BPM` tag and falls through to genre estimation. |
 
 **Returns**: `{"bpm":"...","confidence":"...","error":"...","source":"...","success":true}`
 
@@ -25,15 +25,15 @@ const { bpm, source } = await fb2k.invoke('audio.analyzeBPM', {
 ### audio.generateFullWaveform
 
 
-| Parameter | Type | Required | Description |
-| --- | --- | --- | --- |
-| `cueIndex` | `integer` | No | Optional; default -1. Subsong index; values `>= 0` override the `|subsong:N` suffix in `path`. |
-| `method` | `string` | No | Optional; default rms. Accepts `rms` or `peak`. |
-| `path` | `string` | Yes | Track path to decode. |
-| `preferCache` | `boolean` | No | Optional; default true. |
-| `resolution` | `integer` | No | Optional; default 256. Clamped to 64-4096. |
-| `scale` | `string` | No | Optional; default linear. Accepts `linear` or `db`. |
-| `signed` | `boolean` | No | Optional; default false. |
+| Parameter | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `path` | `string` | Yes | — | Track path to decode; accepts `path\|subsong:N`. |
+| `cueIndex` | `integer` | No | `-1` | Subsong index; values `>= 0` override the `\|subsong:N` suffix in `path`. |
+| `resolution` | `integer` | No | `256` | Clamped to 64-4096. |
+| `method` | `string` | No | `rms` | Accepts `rms` or `peak`. |
+| `scale` | `string` | No | `linear` | Accepts `linear` or `db`; ignored in `signed` mode. |
+| `signed` | `boolean` | No | `false` | Keeps PCM polarity; output normalized to `[-1, 1]`. |
+| `preferCache` | `boolean` | No | `true` |  |
 
 **Returns**: `{"cached":"...","channels":"...","duration":"...","method":"...","path":"...","resolution":"...","sampleRate":"...","scale":"...","signed":"...","status":"...","success":true,"taskId":"...","waveform":"..."}`
 
@@ -55,10 +55,10 @@ const detailed = await fb2k.invoke('audio.generateFullWaveform', {
 ### audio.generateWaveform
 
 
-| Parameter | Type | Required | Description |
-| --- | --- | --- | --- |
-| `path` | `string` | Yes | Track path to inspect. |
-| `resolution` | `integer` | No | Optional; default 800. Clamped to 50-4000. |
+| Parameter | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `path` | `string` | Yes | — | Track path to inspect. |
+| `resolution` | `integer` | No | `800` | Clamped to 50-4000. |
 
 **Returns**: `{"channels":"...","duration":"...","error":"...","requestedResolution":"...","sampleRate":"...","success":true}`
 
@@ -82,9 +82,9 @@ const result = await fb2k.invoke('audio.getOutputInfo');
 ### audio.getSpectrum
 
 
-| Parameter | Type | Required | Description |
-| --- | --- | --- | --- |
-| `bands` | `integer` | No | Optional; default 0, meaning the band count of the active subscription. |
+| Parameter | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `bands` | `integer` | No | `0` | `0` means the currently effective band count (aggregated across subscriptions). |
 
 **Returns**: `{"bands":"...","error":"...","fftSize":"...","spectrum":"...","success":true}`
 
@@ -117,10 +117,10 @@ const result = await fb2k.invoke('audio.getStreamInfo');
 ### audio.getWaveform
 
 
-| Parameter | Type | Required | Description |
-| --- | --- | --- | --- |
-| `duration` | `number` | No | Optional; default 0.05. Window length in seconds. |
-| `signed` | `boolean` | No | Optional; default false. |
+| Parameter | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `duration` | `number` | No | `0.05` | Window length in seconds. |
+| `signed` | `boolean` | No | `false` | Keeps PCM polarity; output normalized to `[-1, 1]`. |
 
 **Returns**: `{"duration":"...","error":"...","signed":"...","success":true,"waveform":"..."}`
 
@@ -142,9 +142,9 @@ const result = await fb2k.invoke('audio.isVisualizationAvailable');
 ### audio.setChannelMode
 
 
-| Parameter | Type | Required | Description |
-| --- | --- | --- | --- |
-| `mode` | `string` | No | One of `default`, `mono`, `front`, `back`. Defaults to `default`, which is also used for any other value. |
+| Parameter | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `mode` | `string` | No | `default` | One of `default`, `mono`, `front`, `back`; any other value maps to `default`. |
 
 **Returns**: `{"mode":"...","success":true}`
 
@@ -155,13 +155,13 @@ await fb2k.invoke('audio.setChannelMode', { mode: 'mono' });
 ### audio.subscribeSpectrum
 
 
-| Parameter | Type | Required | Description |
-| --- | --- | --- | --- |
-| `subscriptionId` | `string` | No | Optional. Omit to reuse the per-window legacy token derived from `event`. |
-| `fftSize` | `integer` | No | Optional; default 1024. Must be a power of two between 256 and 16384. |
-| `event` | `string` | No | Optional; default audio:spectrum. |
-| `fps` | `integer` | No | Optional; default 30. Clamped to 1-60. |
-| `bands` | `integer` | No | Optional; default 48. Clamped to 8-`fftSize / 2`. |
+| Parameter | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `subscriptionId` | `string` | No | — | Omit to reuse the per-window legacy token derived from `event`. |
+| `fftSize` | `integer` | No | `1024` | Must be a power of two between 256 and 16384. |
+| `bands` | `integer` | No | `48` | Clamped to 8-`fftSize / 2`. |
+| `fps` | `integer` | No | `30` | Clamped to 1-60. |
+| `event` | `string` | No | `audio:spectrum` | Event name the spectrum data is delivered on. |
 
 **Returns**: `{"bands":"...","error":"...","event":"...","fftSize":"...","fps":"...","subscriptionId":"...","success":true}`
 
@@ -180,10 +180,10 @@ const custom = await fb2k.invoke('audio.subscribeSpectrum', {
 ### audio.subscribeStream
 
 
-| Parameter | Type | Required | Description |
-| --- | --- | --- | --- |
-| `event` | `string` | No | Optional; default audio:stream. |
-| `interval` | `number` | No | Optional; default 0.05. Interval in seconds. |
+| Parameter | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `event` | `string` | No | `audio:stream` | Event name the stream data is delivered on. |
+| `interval` | `number` | No | `0.05` | Interval in seconds. |
 
 **Returns**: `{"error":"...","event":"...","interval":"...","success":true}`
 
@@ -196,7 +196,7 @@ const result = await fb2k.invoke('audio.subscribeStream', { interval: 0.1 });
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `subscriptionId` | `string` | No | Optional. Omit to remove the per-window legacy subscription. |
+| `subscriptionId` | `string` | No | Omit to remove every spectrum subscription owned by the calling window. |
 
 **Returns**: `{"removed":"...","subscriptionId":"...","success":true}`
 
@@ -222,10 +222,10 @@ const result = await fb2k.invoke('audio.unsubscribeStream');
 ### dsp.addDsp
 
 
-| Parameter | Type | Required | Description |
-| --- | --- | --- | --- |
-| `guid` | `string` | Yes | GUID of an installed DSP, as reported by `dsp.getAvailable`. |
-| `position` | `integer` | No | Optional; default -1 (append to the end). |
+| Parameter | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `guid` | `string` | Yes | — | GUID of an installed DSP, as reported by `dsp.getAvailable`. |
+| `position` | `integer` | No | `-1` | `-1` appends to the end. |
 
 **Returns**: `{"addedDsp":"...","error":"...","position":"...","success":true}`
 
@@ -242,8 +242,8 @@ if (eq) {
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `index` | `integer` | No | Optional; omitted by default. Preset index as reported by `dsp.getPresets`. |
-| `name` | `string` | No | Optional; omitted by default. Preset name as reported by `dsp.getPresets`. |
+| `index` | `integer` | No | Preset index as reported by `dsp.getPresets`; wins when both are present. |
+| `name` | `string` | No | Preset name as reported by `dsp.getPresets`. |
 
 **Returns**: `{"appliedIndex":"...","appliedPreset":"...","error":"...","success":true}`
 
@@ -489,10 +489,10 @@ const result = await fb2k.invoke('replaygain.getSettings');
 ### replaygain.scan
 
 
-| Parameter | Type | Required | Description |
-| --- | --- | --- | --- |
-| `mode` | `string` | No | Optional; default track. Accepts `track` or `album`. |
-| `paths` | `array` | Yes | File path list to scan. |
+| Parameter | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `paths` | `array` | Yes | — | File path list to scan. |
+| `mode` | `string` | No | `track` | Accepts `track` or `album`. |
 
 **Returns**: `{"error":"...","mode":"...","note":"...","scannedCount":"...","success":true}`
 
@@ -512,8 +512,8 @@ await fb2k.invoke('replaygain.scan', {
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `processingMode` | `string` | No | Optional; omitted by default. Accepts `none`, `gain`, `gain_and_peak`, `peak`. |
-| `sourceMode` | `string` | No | Optional; omitted by default. Accepts `none`, `track`, `album`, `auto` (alias `byPlaybackOrder`). |
+| `sourceMode` | `string` | No | Accepts `none`, `track`, `album`, `auto` (alias `byPlaybackOrder`). |
+| `processingMode` | `string` | No | Accepts `none`, `gain`, `gain_and_peak`, `peak`. |
 
 **Returns**: `{"changed":"...","error":"...","processingMode":"...","sourceMode":"...","success":true}`
 
@@ -526,8 +526,8 @@ const result = await fb2k.invoke('replaygain.setMode', { sourceMode: 'album' });
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `withoutRg` | `number` | No | Optional; omitted by default. Preamp in dB for tracks without ReplayGain info; clamped to -24..+24. |
-| `withRg` | `number` | No | Optional; omitted by default. Preamp in dB for tracks with ReplayGain info; clamped to -24..+24. |
+| `withRg` | `number` | No | Preamp in dB for tracks with ReplayGain info; clamped to -24..+24. |
+| `withoutRg` | `number` | No | Preamp in dB for tracks without ReplayGain info; clamped to -24..+24. |
 
 **Returns**: `{"changed":"...","error":"...","success":true,"withRg":"...","withoutRg":"..."}`
 

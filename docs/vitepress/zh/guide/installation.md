@@ -16,11 +16,11 @@ foobar2000 v2.0 是 64 位版本的分水岭。如果你使用的是 v1.x 版本
 
 1. **下载安装包** — 从发布页面下载 `foo_ui_webview2-<version>.fb2k-component`（文件名包含组件版本，例如 `foo_ui_webview2-1.12.0.fb2k-component`）
 2. **通过 foobar2000 安装** — 打开或双击该安装包，让 foobar2000 弹出组件安装确认对话框
-3. **确认安装** — 点击 `Yes`，由 foobar2000 安装包内容
+3. **确认安装** — 点击 `Yes`，foobar2000 会安装包内的文件
 4. **重启 foobar2000**
 5. **选择 UI** — `File → Preferences → Display → Default User Interface` → 选择 `Webview2 UI`
 
-::: info INFO
+::: info
 `.fb2k-component` 是 foobar2000 官方组件安装包格式。请使用 foobar2000 的组件安装流程安装；不要把它当作普通 zip 手工解压到 profile。
 :::
 
@@ -59,7 +59,7 @@ profile/
 3. 组件自带资源：`foo_ui_webview2_resources/dist`
 4. 兼容回退：`profile/webview-ui/default/`
 
-`default` 只是常见起始模板名，不是永久或唯一 contract。创建模板只会生成模板目录和起始 `index.html`，**不会**自动部署 SDK 目录。
+`default` 只是常见起始模板名，不是固定不变的约定。创建模板只会生成模板目录和起始 `index.html`，**不会**自动部署 SDK 目录。
 
 ## 获取 SDK
 
