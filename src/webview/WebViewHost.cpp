@@ -880,7 +880,7 @@ void WebViewHost::InjectBridgeScript() {
                     return false;
                 }
             },
-
+    )" LR"(
             // Shortcut targets parallel to paths, padded to the same length so
             // an index that is valid for one is valid for the other. A host that
             // sends no resolvedPaths yields all nulls rather than a short array.
