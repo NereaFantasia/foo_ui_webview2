@@ -37,9 +37,9 @@ export interface LibraryQueryParams {
     sort?: string;
     /**
      * Track keys to project. Every returned row then holds exactly these keys
-     * and nothing else; omit the parameter to receive all 19. Accepted names,
-     * matched case-sensitively: `index`, `title`, `artist`, `album`,
-     * `albumArtist`, `genre`, `date`, `trackNumber`, `discNumber`,
+     * and nothing else; omit the parameter to receive all 20. Accepted names,
+     * matched case-sensitively: `index`, `title`, `artist`, `artists`,
+     * `album`, `albumArtist`, `genre`, `date`, `trackNumber`, `discNumber`,
      * `duration`, `path`, `absolutePath`, `fileSize`, `bitrate`,
      * `sampleRate`, `channels`, `codec`, `subsong`, `rating`. A non-array, an
      * empty array, a non-string element or an unknown name resolves with
@@ -78,10 +78,10 @@ export interface LibrarySearchParams {
      */
     limit?: number;
     /**
-     * Track keys to project, from the same case-sensitive 19-name whitelist
-     * as {@link LibraryQueryParams.fields}. Every returned row of both
-     * `tracks` and the `items` alias then holds exactly these keys and
-     * nothing else; omit the parameter to receive all 19. A non-array, an
+     * Track keys to project, from the same case-sensitive 20-name whitelist
+     * as {@link LibraryQueryParams.fields}. Every returned row of `tracks`
+     * then holds exactly these keys and nothing else; omit the parameter to
+     * receive all 20. A non-array, an
      * empty array, a non-string element or an unknown name resolves with
      * `{ success: false, code: 'INVALID_PARAMS' }` and lists the offending
      * names under `details.unknownFields`.

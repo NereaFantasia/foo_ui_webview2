@@ -21,7 +21,10 @@ TrackWireSnapshot MakeFullSnapshot() {
     TrackWireSnapshot snap;
     snap.index = 42;
     snap.title = "Track Title";
-    snap.artist = "Artist Name";
+    // 多值曲目：artist 恒等于 artists 按 ", " 拼接的结果（对外契约），取值侧由
+    // MetaValuesRaw + JoinMetaValues 保证，此处的夹具按同一口径构造
+    snap.artist = "Artist Name, Second Artist";
+    snap.artists = {"Artist Name", "Second Artist"};
     snap.album = "Album Name";
     snap.albumArtist = "Album Artist";
     snap.genre = "Post-Rock";
@@ -48,6 +51,7 @@ json ExpectedFullDom(const TrackWireSnapshot& snap) {
         {"index", snap.index},
         {"title", snap.title},
         {"artist", snap.artist},
+        {"artists", snap.artists},
         {"album", snap.album},
         {"albumArtist", snap.albumArtist},
         {"genre", snap.genre},
@@ -127,20 +131,25 @@ TEST(TrackWireSnapshot, FullFieldSetMatchesDomSemantics) {
     EXPECT_EQ(parsed, track_wire_test::ExpectedFullDom(snap));
 }
 
-TEST(TrackWireSnapshot, FullFieldSetHasExactlyNineteenKeys) {
+TEST(TrackWireSnapshot, FullFieldSetHasExactlyTwentyKeys) {
     const auto snap = track_wire_test::MakeFullSnapshot();
     const json parsed = track_wire_test::WriteAndParse(snap);
 
     ASSERT_TRUE(parsed.is_object());
-    EXPECT_EQ(parsed.size(), 19u);
+    EXPECT_EQ(parsed.size(), 20u);
 
     // 键名逐个钉住：拼错一个字符 = 主题侧字段凭空消失
-    for (const char* key : {"index", "title", "artist", "album", "albumArtist", "genre",
-                            "date", "trackNumber", "discNumber", "duration", "path",
+    for (const char* key : {"index", "title", "artist", "artists", "album", "albumArtist",
+                            "genre", "date", "trackNumber", "discNumber", "duration", "path",
                             "absolutePath", "fileSize", "bitrate", "sampleRate",
                             "channels", "codec", "subsong", "rating"}) {
         EXPECT_TRUE(parsed.contains(key)) << "missing key: " << key;
     }
+
+    // artists 是数组形态，且 join(", ") 还原成 artist
+    ASSERT_TRUE(parsed["artists"].is_array());
+    EXPECT_EQ(parsed["artists"].get<std::vector<std::string>>(), snap.artists);
+    EXPECT_EQ(parsed["artist"].get<std::string>(), "Artist Name, Second Artist");
 }
 
 TEST(TrackWireSnapshot, DefaultSnapshotMatchesDomSemantics) {
@@ -167,10 +176,11 @@ TEST(TrackWireSnapshot, FallbackEmitsEightKeysOnly) {
     EXPECT_EQ(parsed.size(), 8u);
     EXPECT_EQ(parsed, track_wire_test::ExpectedFallbackDom(snap));
 
-    // 全字段专属的键一个都不能漏出来
-    for (const char* key : {"albumArtist", "genre", "date", "trackNumber", "discNumber",
-                            "fileSize", "bitrate", "sampleRate", "channels", "codec",
-                            "subsong"}) {
+    // 全字段专属的键一个都不能漏出来。artists 在此列：fallback 分支任何标签都取不到，
+    // artist 恒为 ""，再出一个恒空数组是纯噪声，键集因此仍是既有的 8 键
+    for (const char* key : {"artists", "albumArtist", "genre", "date", "trackNumber",
+                            "discNumber", "fileSize", "bitrate", "sampleRate", "channels",
+                            "codec", "subsong"}) {
         EXPECT_FALSE(parsed.contains(key)) << "unexpected key: " << key;
     }
 }
@@ -199,7 +209,8 @@ TEST(TrackWireSnapshot, FallbackKeepsIndexPathAndRating) {
 TEST(TrackWireSnapshot, ChineseAndEscapedFieldValues) {
     auto snap = track_wire_test::MakeFullSnapshot();
     snap.title = "无损 \"测试\" 曲目\t第一首";
-    snap.artist = "反斜杠\\艺人";
+    snap.artist = "反斜杠\\艺人, 引号\"艺人";
+    snap.artists = {"反斜杠\\艺人", "引号\"艺人"};  // 数组元素与单串字段同一套转义
     snap.album = "专辑\n换行";
     snap.albumArtist = "群星";
     snap.genre = "古典";
@@ -566,7 +577,7 @@ TEST(TrackWireProjection, FullMaskMatchesFullFieldWriter) {
 
     const json projected = track_wire_test::WriteProjectedAndParse(snap, TrackField::kAll);
     EXPECT_EQ(projected, track_wire_test::ExpectedFullDom(snap));  // 语义等价（判据）
-    EXPECT_EQ(projected.size(), 19u);
+    EXPECT_EQ(projected.size(), 20u);
 
     // 字节相同不是对外契约，但两支同序同原语时它成立 —— 拿它当"两支没漂移"的哨兵
     std::string full;
@@ -624,13 +635,14 @@ TEST(TrackWireProjection, BrokenRowStillEmitsEveryRequestedKey) {
     ResetFieldsAbsentFromFallback(snap);
 
     const json parsed = track_wire_test::WriteProjectedAndParse(snap, TrackField::kAll);
-    ASSERT_EQ(parsed.size(), 19u);
+    ASSERT_EQ(parsed.size(), 20u);
 
     // fallback 自己产出的真值
     EXPECT_EQ(parsed["index"], snap.index);
     EXPECT_EQ(parsed["path"].get<std::string>(), snap.path);
     EXPECT_EQ(parsed["absolutePath"].get<std::string>(), snap.absolutePath);
-    // 其余按类型默认填充
+    // 其余按类型默认填充；artists 的类型默认是空数组，不是空串
+    EXPECT_EQ(parsed["artists"], json::array());
     for (const char* key : {"title", "artist", "album", "albumArtist", "genre", "date", "codec"}) {
         EXPECT_EQ(parsed[key], "") << "not defaulted: " << key;
     }
@@ -673,16 +685,18 @@ TEST(TrackWireProjection, ResetLeavesNoResidueFromPreviousRow) {
     // 序列化侧的快照对象在行循环外复用：损坏行必须先归零，否则上一行的
     // genre/codec/fileSize 会原样出现在这一行，成为无法从输出反查的串值
     TrackWireSnapshot snap = track_wire_test::MakeFullSnapshot();
-    const uint32_t mask =
-        track_wire_test::MaskOf({"genre", "codec", "fileSize", "subsong", "trackNumber"});
+    const uint32_t mask = track_wire_test::MaskOf(
+        {"artists", "genre", "codec", "fileSize", "subsong", "trackNumber"});
 
     const json previous = track_wire_test::WriteProjectedAndParse(snap, mask);
     ASSERT_EQ(previous["genre"], "Post-Rock");
+    ASSERT_EQ(previous["artists"].size(), 2u);
 
     snap.hasInfo = false;
     ResetFieldsAbsentFromFallback(snap);
     const json current = track_wire_test::WriteProjectedAndParse(snap, mask);
 
+    EXPECT_EQ(current["artists"], json::array());
     EXPECT_EQ(current["genre"], "");
     EXPECT_EQ(current["codec"], "");
     EXPECT_EQ(current["fileSize"], 0);
@@ -691,7 +705,7 @@ TEST(TrackWireProjection, ResetLeavesNoResidueFromPreviousRow) {
 }
 
 TEST(TrackWireProjection, ResetKeepsFallbackOwnFields) {
-    // 归零只碰 fallback 不产出的 11 键，index/path/absolutePath/rating 是真值
+    // 归零只碰 fallback 不产出的 12 键，index/path/absolutePath/rating 是真值
     TrackWireSnapshot snap = track_wire_test::MakeFullSnapshot();
     ResetFieldsAbsentFromFallback(snap);
 

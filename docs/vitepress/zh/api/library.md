@@ -74,6 +74,8 @@ if (!enabled) console.warn('媒体库未启用');
 | `cacheValid` | boolean | 缓存是否有效 |
 | `lastModified` | number | 缓存最后修改时间戳 |
 
+> `totalArtists` 按参与艺术家计——一首多艺术家曲目会计进其中每一位——因此与 `library.getArtists` 的条目数一致。
+
 ```javascript
 const stats = await fb2k.invoke('library.getStats');
 console.log(`${stats.totalTracks} 首曲目, ${stats.totalAlbums} 张专辑`);
@@ -117,6 +119,7 @@ const { count } = await fb2k.invoke('library.getCount');
 | `index` | number | 索引 |
 | `title` | string | 标题 |
 | `artist` | string | 艺术家 |
+| `artists` | string[] | 艺术家原子值数组，`artists.join(', ')` 即 `artist` |
 | `album` | string | 专辑 |
 | `albumArtist` | string | 专辑艺术家 |
 | `genre` | string | 流派 |
@@ -133,6 +136,10 @@ const { count } = await fb2k.invoke('library.getCount');
 | `codec` | string | 编解码器 |
 | `subsong` | number | 子轨道索引 |
 | `rating` | number | 评分 (0-5)，优先读取 foo_playcount，回退到文件标签 |
+
+> `artist` / `albumArtist` / `genre` / `composer`（仅指该 API 实际返回的字段）的多值标签按 `, ` 原序拼接，不去重。
+
+> `artists` 是 `artist` 的原子值数组：`artists.join(', ')` 恰好等于 `artist`，多值标签只能从 `artists` 精确还原，从 `artist` 还原不了。该字段由媒体库侧返回曲目对象的 API 提供（`library.getAll` / `library.query` / `library.search` / `library.getByPath` 等）；`playlist.getTracks` / `playback.getCurrentTrack` / `queue.get`、artwork 载荷与事件载荷里的 track 对象不含此字段。
 
 ```javascript
 // 分页获取
@@ -152,7 +159,7 @@ const page = await fb2k.invoke('library.getAll', { start: 0, count: 50 });
 | `path` | `string` | 是 | 媒体库内文件路径；不在库中时返回 `{ found: false }`。 |
 
 
-**返回值**: `{"absolutePath":"...","album":"...","artist":"...","date":"...","duration":"...","found":true,"genre":"...","path":"...","success":true,"title":"...","trackNumber":"..."}`
+**返回值**: `{"absolutePath":"...","album":"...","artist":"...","artists":[],"date":"...","duration":"...","found":true,"genre":"...","path":"...","success":true,"title":"...","trackNumber":"..."}`
 
 **返回值（找到时）**:
 
@@ -162,7 +169,8 @@ const page = await fb2k.invoke('library.getAll', { start: 0, count: 50 });
     "path": "file://C:/Music/song.flac",
     "absolutePath": "C:\\Music\\song.flac",
     "title": "Song Title",
-    "artist": "Artist",
+    "artist": "Artist A, Artist B",
+    "artists": ["Artist A", "Artist B"],
     "album": "Album",
     "duration": 245.5,
     "trackNumber": "1",
@@ -170,6 +178,10 @@ const page = await fb2k.invoke('library.getAll', { start: 0, count: 50 });
     "date": "2024"
 }
 ```
+
+> `artist` / `albumArtist` / `genre` / `composer`（仅指该 API 实际返回的字段）的多值标签按 `, ` 原序拼接，不去重。
+
+> `artists` 是 `artist` 的原子值数组：`artists.join(', ')` 恰好等于 `artist`，多值标签只能从 `artists` 精确还原，从 `artist` 还原不了。该字段由媒体库侧返回曲目对象的 API 提供（`library.getAll` / `library.query` / `library.search` / `library.getByPath` 等）；`playlist.getTracks` / `playback.getCurrentTrack` / `queue.get`、artwork 载荷与事件载荷里的 track 对象不含此字段。本 API 返回扁平对象，因此只多 `artists` 这一个数组键。
 
 **返回值（未找到时）**: `{ "found": false, "path": "..." }`
 
@@ -248,6 +260,7 @@ const { items } = await fb2k.invoke('library.getAlbumTracks', {
 
 **返回值**: `{"count":0,"error":"...","items":[],"success":true}`
 
+> 每位参与艺术家各成一个条目，一首多艺术家曲目会计进其中每一位。`trackCount` 是参与曲目数，各条目相加会大于曲目总数；`albumCount` 与 `totalDuration` 同样按每位艺术家重复计入。
 
 ```javascript
 // 按曲目数量排序
@@ -300,7 +313,7 @@ const { albums } = await fb2k.invoke('library.getArtistAlbums', { artist: 'Beatl
 
 获取流派列表（含每个流派的曲目数）。
 
-> 此 API 注册了两次，后注册的版本（含 `trackCount`）覆盖先注册的版本。
+> 多值 `genre` 的每个值各成一个条目，`trackCount` 是参与曲目数：一首标了多个流派的曲目会计进其中每一个。
 
 - **参数**: 无
 
@@ -348,8 +361,6 @@ const { tracks } = await fb2k.invoke('library.getRandomTracks', { count: 20 });
 - `"added"` — 使用 `%added%` titleformat（需安装 foo_playcount 组件）
 - `"modified"` — 使用文件修改时间（SDK 原生，无额外依赖）
 - 若 foo_playcount 不可用，`"added"` 模式自动回退为 `"modified"`，并在返回中设 `fallback: true`
-
-> 此 API 注册了两次，后注册的版本（支持 `sortBy` 参数）覆盖先注册的版本。
 
 **返回值**:
 
@@ -509,7 +520,7 @@ const root = await fb2k.invoke('library.browseDirectory', { includeFiles: false 
 | `query` | `string` | 否 | — | foobar2000 查询语法（见下方示例）。 |
 | `offset` | `integer` | 否 | `0` | 分页偏移。 |
 | `limit` | `integer` | 否 | `100` | 单页条数。 |
-| `fields` | `string[]` | 否 | 全部 19 键 | 要投影的曲目字段名。见[字段投影](#field-projection)。 |
+| `fields` | `string[]` | 否 | 全部 20 键 | 要投影的曲目字段名。见[字段投影](#field-projection)。 |
 
 **返回值**: `{"error":"...","hasMore":true,"limit":"...","offset":"...","success":true,"total":"...","tracks":[]}`
 
@@ -543,7 +554,7 @@ const albums = await fb2k.invoke('library.search', {
 | `query` | `string` | 否 | — | foobar2000 查询语法。 |
 | `sort` | `string` | 否 | — | TitleFormat 排序模式，如 `%added%`。 |
 | `limit` | `integer` | 否 | `100` | 返回条数上限。 |
-| `fields` | `string[]` | 否 | 全部 19 键 | 要投影的曲目字段名。见[字段投影](#field-projection)。 |
+| `fields` | `string[]` | 否 | 全部 20 键 | 要投影的曲目字段名。见[字段投影](#field-projection)。 |
 
 **返回值**:
 
@@ -579,13 +590,17 @@ const paths = await fb2k.invoke('library.query', {
 
 ## 字段投影 {#field-projection}
 
-`library.query` 与 `library.search` 支持可选参数 `fields`，用来限定每行返回哪些曲目字段。省略 `fields` 即现状行为：每行输出全部 19 键。
+`library.query` 与 `library.search` 支持可选参数 `fields`，用来限定每行返回哪些曲目字段。省略 `fields` 即现状行为：每行输出全部 20 键。
 
 传 `fields` 时，每行**恰好**包含请求的那几个键，不附带任何未请求字段；元数据容器读取失败的损坏条目同样输出全部请求键，其中损坏分支本身不产出的字段以类型默认值填充（空串、0），保证"请求键必在"。响应信封不受影响：`library.query` 仍返回 `success` / `tracks` / `total`，`library.search` 仍返回 `success` / `tracks` / `total` / `offset` / `limit` / `hasMore`。
 
 **可用字段名**（精确匹配、大小写敏感）：
 
-`index`、`title`、`artist`、`album`、`albumArtist`、`genre`、`date`、`trackNumber`、`discNumber`、`duration`、`path`、`absolutePath`、`fileSize`、`bitrate`、`sampleRate`、`channels`、`codec`、`subsong`、`rating`
+`index`、`title`、`artist`、`artists`、`album`、`albumArtist`、`genre`、`date`、`trackNumber`、`discNumber`、`duration`、`path`、`absolutePath`、`fileSize`、`bitrate`、`sampleRate`、`channels`、`codec`、`subsong`、`rating`
+
+> `artist` / `albumArtist` / `genre` / `composer`（仅指该 API 实际返回的字段）的多值标签按 `, ` 原序拼接，不去重。
+
+> `artists` 是 `artist` 的原子值数组：`artists.join(', ')` 恰好等于 `artist`，多值标签只能从 `artists` 精确还原，从 `artist` 还原不了。该字段由媒体库侧返回曲目对象的 API 提供（`library.getAll` / `library.query` / `library.search` / `library.getByPath` 等）；`playlist.getTracks` / `playback.getCurrentTrack` / `queue.get`、artwork 载荷与事件载荷里的 track 对象不含此字段。`artists` 与 `artist` 可单独投影其一，两者同源于一次取值；元数据容器读取失败的损坏条目上，被请求的 `artists` 返回 `[]`。
 
 重复字段名会去重。`rating` 仅在被请求（或省略 `fields`）时才计算——不请求 `rating` 的投影查询因此省下大部分开销。
 

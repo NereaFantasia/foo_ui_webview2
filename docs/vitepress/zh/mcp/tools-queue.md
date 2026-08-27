@@ -41,6 +41,8 @@
 }
 ```
 
+> `artist` / `albumArtist` / `genre` / `composer`（仅指该 API 实际返回的字段）的多值标签按 `, ` 原序拼接，不去重。
+
 | 字段 | 类型 | 描述 |
 | --- | --- | --- |
 | queueIndex | integer | 队列中的位置 |

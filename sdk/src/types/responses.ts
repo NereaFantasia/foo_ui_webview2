@@ -46,6 +46,18 @@ export interface TrackInfo {
     index?: number;
     title: string;
     artist: string;
+    /**
+     * Atomic values behind `artist`, in tag order, neither de-duplicated nor
+     * stripped of empty values: `artists.join(', ')` is exactly `artist`, so a
+     * multi-value tag can be recovered from this field and not from `artist`.
+     * Carried by track rows from the library namespace — `library.getAll`,
+     * `library.query`, `library.search`, `library.getByPath` and the other
+     * `library.*` track endpoints. Track objects from other namespaces
+     * (`playlist.getTracks`, `playback.getCurrentTrack`, `queue.get`, artwork
+     * payloads, event payloads) do not carry it, which is why the field is
+     * optional on this shared shape.
+     */
+    artists?: string[];
     album: string;
     albumArtist?: string;
     genre?: string;

@@ -9,13 +9,17 @@
 // SDK 调用与线程放置的约束全留在提取侧。
 //
 // 字段集与取值语义逐字段对齐 DOM 版本 BuildTrackJsonFromSnapshot：info 容器
-// 有效时 19 键，无效时退到 8 键（index/title/artist/album/duration/path/
+// 有效时 20 键，无效时退到 8 键（index/title/artist/album/duration/path/
 // absolutePath/rating）。键序与 DOM 产物不同（nlohmann 对象按键名排序输出），
 // 契约上只承诺 parse 回来语义相等，不承诺字节等价。
 //
+// artists 是 artist 的原子值数组并列形态：artists.join(", ") 与 artist 逐字节
+// 相等（取值侧由 MetaValuesRaw + JoinMetaValues 保证）。8 键 fallback 不出
+// artists —— 那一支任何标签都取不到，再出一个恒空数组是纯噪声。
+//
 // 调用方传 fields 时走投影写法（WriteTrackJsonProjected）：每行恰好输出请求的那
 // 几键，损坏条目也照样出全部请求键。省略 fields 的全字段路径走 WriteTrackJson，
-// 形状（含 8 键 fallback）不受投影面影响 —— 两支的 19/8 键形状是既有契约。
+// 形状（含 8 键 fallback）不受投影面影响 —— 两支的 20/8 键形状是既有契约。
 //
 // 入参字符串必须已是合法 UTF-8（JsonWriter.h 的约定）：标签值、codec 等来源
 // 不可信的串由提取侧先过 StringUtils::SafeUtf8，否则坏字节会直接进 wire。
@@ -35,6 +39,7 @@ struct TrackWireSnapshot {
     size_t index = 0;              // 输出数组内的位置（query = 0 起，search = offset 起）
     std::string title;
     std::string artist;
+    std::vector<std::string> artists;  // artist 的原子值数组；join(", ") 即 artist
     std::string album;
     std::string albumArtist;
     std::string genre;
@@ -58,31 +63,35 @@ struct TrackWireSnapshot {
 // 字段投影面（library.query / library.search 的 fields 参数）
 // ============================================
 //
-// 掩码而非字段名集合：每行序列化要对 19 个字段各判一次"要不要出"，位测试是常数
+// 掩码而非字段名集合：每行序列化要对 20 个字段各判一次"要不要出"，位测试是常数
 // 时间且无分配；名字只在解析入口出现一次。位序 = 输出键序 = WriteTrackJson 的
 // 声明序，三者同源于下面这张表，加字段只需改一处。
+//
+// 位值不落盘、不上线路（每次都从 fields 名字重新解析），因此在中间插字段、让后面
+// 的位顺延没有外部影响 —— 表序要跟着输出键序走，不迁就历史位号。
 
 namespace TrackField {
 
 constexpr uint32_t kIndex        = 1u << 0;
 constexpr uint32_t kTitle        = 1u << 1;
 constexpr uint32_t kArtist       = 1u << 2;
-constexpr uint32_t kAlbum        = 1u << 3;
-constexpr uint32_t kAlbumArtist  = 1u << 4;
-constexpr uint32_t kGenre        = 1u << 5;
-constexpr uint32_t kDate         = 1u << 6;
-constexpr uint32_t kTrackNumber  = 1u << 7;
-constexpr uint32_t kDiscNumber   = 1u << 8;
-constexpr uint32_t kDuration     = 1u << 9;
-constexpr uint32_t kPath         = 1u << 10;
-constexpr uint32_t kAbsolutePath = 1u << 11;
-constexpr uint32_t kFileSize     = 1u << 12;
-constexpr uint32_t kBitrate      = 1u << 13;
-constexpr uint32_t kSampleRate   = 1u << 14;
-constexpr uint32_t kChannels     = 1u << 15;
-constexpr uint32_t kCodec        = 1u << 16;
-constexpr uint32_t kSubsong      = 1u << 17;
-constexpr uint32_t kRating       = 1u << 18;
+constexpr uint32_t kArtists      = 1u << 3;
+constexpr uint32_t kAlbum        = 1u << 4;
+constexpr uint32_t kAlbumArtist  = 1u << 5;
+constexpr uint32_t kGenre        = 1u << 6;
+constexpr uint32_t kDate         = 1u << 7;
+constexpr uint32_t kTrackNumber  = 1u << 8;
+constexpr uint32_t kDiscNumber   = 1u << 9;
+constexpr uint32_t kDuration     = 1u << 10;
+constexpr uint32_t kPath         = 1u << 11;
+constexpr uint32_t kAbsolutePath = 1u << 12;
+constexpr uint32_t kFileSize     = 1u << 13;
+constexpr uint32_t kBitrate      = 1u << 14;
+constexpr uint32_t kSampleRate   = 1u << 15;
+constexpr uint32_t kChannels     = 1u << 16;
+constexpr uint32_t kCodec        = 1u << 17;
+constexpr uint32_t kSubsong      = 1u << 18;
+constexpr uint32_t kRating       = 1u << 19;
 
 struct Entry {
     const char* name;
@@ -94,6 +103,7 @@ inline constexpr Entry kTable[] = {
     {"index",        kIndex},
     {"title",        kTitle},
     {"artist",       kArtist},
+    {"artists",      kArtists},
     {"album",        kAlbum},
     {"albumArtist",  kAlbumArtist},
     {"genre",        kGenre},
@@ -243,6 +253,8 @@ inline void WriteTrackJson(std::string& out, const TrackWireSnapshot& snap) {
     JsonWriter::AppendJsonString(out, snap.title);
     out.append(",\"artist\":");
     JsonWriter::AppendJsonString(out, snap.artist);
+    out.append(",\"artists\":");
+    JsonWriter::AppendJsonStringArray(out, snap.artists);
     out.append(",\"album\":");
     JsonWriter::AppendJsonString(out, snap.album);
     out.append(",\"albumArtist\":");
@@ -278,13 +290,14 @@ inline void WriteTrackJson(std::string& out, const TrackWireSnapshot& snap) {
     out.push_back('}');
 }
 
-// 把 8 键 fallback 不产出的那 11 个字段归零到类型默认（字符串 ""、整型 0）。
+// 把 8 键 fallback 不产出的那 12 个字段归零到类型默认（字符串 ""、空数组、整型 0）。
 //
 // 只投影模式需要：损坏条目在投影下同样要出全部请求键，值取类型默认。序列化侧的
 // 快照对象在行循环外复用（省分配），不归零就会把上一行的 genre/codec 等带进这一
 // 行，成为无法从输出反查的串值。index/path/absolutePath/rating 是 fallback 自己
 // 产出的真值，不在此列。
 inline void ResetFieldsAbsentFromFallback(TrackWireSnapshot& snap) {
+    snap.artists.clear();
     snap.albumArtist.clear();
     snap.genre.clear();
     snap.date.clear();
@@ -332,6 +345,10 @@ inline void WriteTrackJsonProjected(std::string& out, const TrackWireSnapshot& s
     if (mask & TrackField::kArtist) {
         appendKey("artist");
         JsonWriter::AppendJsonString(out, snap.artist);
+    }
+    if (mask & TrackField::kArtists) {
+        appendKey("artists");
+        JsonWriter::AppendJsonStringArray(out, snap.artists);
     }
     if (mask & TrackField::kAlbum) {
         appendKey("album");

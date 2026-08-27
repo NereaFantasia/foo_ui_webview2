@@ -159,6 +159,7 @@
     <ClCompile Include="test_json_writer.cpp" />
     <ClCompile Include="test_bridge_deferred.cpp" />
     <ClCompile Include="test_track_wire_snapshot.cpp" />
+    <ClCompile Include="test_meta_value_ops.cpp" />
   </ItemGroup>
 
   <!-- Headers -->

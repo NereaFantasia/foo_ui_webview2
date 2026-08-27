@@ -44,6 +44,8 @@ Returns artist aggregates.
 | `limit` | `number?` | Maximum result count |
 | `options` | `Omit<LibraryGetArtistsParams, 'limit'>?` | Additional native options |
 
+> Every credited artist gets its own entry, so a track tagged with several artists is counted under each of them. `trackCount` is a participation count and the entries add up to more than the total number of tracks; `albumCount` and `totalDuration` are counted per artist the same way.
+
 ```javascript
 const artists = await fb.library.getArtists(100);
 ```
@@ -51,6 +53,8 @@ const artists = await fb.library.getArtists(100);
 ## getStats() 
 
 Returns aggregate statistics such as `totalTracks`, `totalAlbums`, `totalArtists`, `totalDuration`, and `totalSize`.
+
+> `totalArtists` counts credited artists — a track tagged with several artists contributes to each of them — so it matches the entry count of `getArtists()`.
 
 ```javascript
 const stats = await fb.library.getStats();
@@ -60,6 +64,8 @@ console.log(`${stats.totalTracks} tracks, ${stats.totalDuration} seconds`);
 ## getGenres() 
 
 Returns `{ success, genres: [{ name, trackCount }] }`.
+
+> Every value of a multi-value `genre` gets its own entry, and `trackCount` is a participation count: a track tagged with several genres is counted under each of them.
 
 ```javascript
 const r = await fb.library.getGenres();
@@ -100,6 +106,8 @@ console.log(`${r.total} total tracks; received ${r.tracks.length}`);
 
 `items` is a compatibility alias that normally contains the same rows as `tracks`.
 
+> `artists` holds the atomic values behind `artist`: `artists.join(', ')` is exactly `artist`, so a multi-value tag can be recovered from `artists` and not from `artist`. It is returned by the media-library track APIs — `getAll()`, `query()`, `search()` and `getByPath()` among them; the track objects returned by other namespaces (`fb.playlist.getTracks`, `fb.player.getCurrentTrack`, `fb.queue.get`, artwork payloads, event payloads) do not carry it.
+
 ## enumerateTracks(options?)
 
 This high-level async generator pages through the library and supports `pageSize`, `start`, `useCache`, `signal`, and `onProgress`.
@@ -122,6 +130,8 @@ Looks up a library item by path. Metadata fields are returned at the top level w
 const r = await fb.library.getByPath('E:\\Music\\song.flac');
 if (r.found) console.log(r.title, r.artist);
 ```
+
+> The flat result carries `artists` alongside `artist`, with the same meaning as on `getAll()` rows: `artists.join(', ')` is exactly `artist`. It has no `albumArtist` / `composer`, so `artists` is the only array key it gains.
 
 ## getRoots()
 
@@ -290,13 +300,17 @@ const paths = await fb.library.query('%codec% IS FLAC', undefined, 100000, [
 
 ## Field projection
 
-`query(..., fields)` and `search(query, limit, { fields })` accept an optional list of track keys. Omitting it keeps the current behaviour: every row carries all 19 keys.
+`query(..., fields)` and `search(query, limit, { fields })` accept an optional list of track keys. Omitting it keeps the current behaviour: every row carries all 20 keys.
 
 When the list is present each row holds **exactly** the requested keys and nothing else, so the declared `TrackInfo` type becomes a partial view at runtime. Rows whose metadata container could not be read still carry every requested key, filled with type defaults (empty string, zero). Response envelopes are unchanged.
 
 **Accepted key names** (exact match, case-sensitive):
 
-`index`, `title`, `artist`, `album`, `albumArtist`, `genre`, `date`, `trackNumber`, `discNumber`, `duration`, `path`, `absolutePath`, `fileSize`, `bitrate`, `sampleRate`, `channels`, `codec`, `subsong`, `rating`
+`index`, `title`, `artist`, `artists`, `album`, `albumArtist`, `genre`, `date`, `trackNumber`, `discNumber`, `duration`, `path`, `absolutePath`, `fileSize`, `bitrate`, `sampleRate`, `channels`, `codec`, `subsong`, `rating`
+
+> Multi-value tags in `artist` / `albumArtist` / `genre` / `composer` (only the fields this API actually returns) are joined with `, ` in their original order, without de-duplication.
+
+> `artists` holds the atomic values behind `artist`: `artists.join(', ')` is exactly `artist`. It is returned by the media-library track APIs — `getAll()`, `query()`, `search()` and `getByPath()` among them; the track objects returned by other namespaces (`fb.playlist.getTracks`, `fb.player.getCurrentTrack`, `fb.queue.get`, artwork payloads, event payloads) do not carry it. Either key may be projected without the other; both are read in one pass. On a row whose metadata container could not be read, a requested `artists` comes back as `[]`.
 
 Duplicates are de-duplicated. `rating` is only computed when requested (or when the list is omitted).
 

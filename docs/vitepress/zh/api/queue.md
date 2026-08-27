@@ -177,6 +177,8 @@ await fb2k.invoke('queue.add', { tracks: [0, 1, 2], playlist: 0 });
 }
 ```
 
+> `artist` / `albumArtist` / `genre` / `composer`（仅指该 API 实际返回的字段）的多值标签按 `, ` 原序拼接，不去重。
+
 ### queue.remove
 
 

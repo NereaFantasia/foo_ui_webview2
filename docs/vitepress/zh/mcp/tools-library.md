@@ -25,6 +25,8 @@
 }
 ```
 
+> `artist` / `albumArtist` / `genre` / `composer`（仅指该 API 实际返回的字段）的多值标签按 `, ` 原序拼接，不去重。
+
 ::: tip 查询语法
 支持标准 foobar2000 查询语法：
 - `artist IS Mili` — 精确匹配

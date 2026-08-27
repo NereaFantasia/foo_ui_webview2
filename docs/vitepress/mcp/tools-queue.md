@@ -41,6 +41,8 @@ Gets every item in the playback queue.
 }
 ```
 
+> Multi-value tags in `artist` / `albumArtist` / `genre` / `composer` (only the fields this API actually returns) are joined with `, ` in their original order, without de-duplication.
+
 | Field | Type | Description |
 | --- | --- | --- |
 | `queueIndex` | integer | Position in the queue |

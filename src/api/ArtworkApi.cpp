@@ -12,6 +12,7 @@
 #include "api/ArtworkApi.h"
 #include "api/ArtworkRequestParser.h"
 #include "api/BridgeCore.h"
+#include "api/MetaAccess.h"
 #include <foobar2000/SDK/album_art.h>
 #include <foobar2000/SDK/album_art_helpers.h>
 #include <sstream>
@@ -1065,11 +1066,11 @@ json ArtworkGetMetadata(const json& params) {
         
         // Album info
         result["album"] = info.meta_get("ALBUM", 0) ? info.meta_get("ALBUM", 0) : "";
-        result["artist"] = info.meta_get("ARTIST", 0) ? info.meta_get("ARTIST", 0) : "";
-        result["albumArtist"] = info.meta_get("ALBUM ARTIST", 0) ? info.meta_get("ALBUM ARTIST", 0) : "";
+        result["artist"] = MetaJoined(info, "ARTIST");
+        result["albumArtist"] = MetaJoined(info, "ALBUM ARTIST");
         result["title"] = info.meta_get("TITLE", 0) ? info.meta_get("TITLE", 0) : "";
         result["year"] = info.meta_get("DATE", 0) ? info.meta_get("DATE", 0) : "";
-        result["genre"] = info.meta_get("GENRE", 0) ? info.meta_get("GENRE", 0) : "";
+        result["genre"] = MetaJoined(info, "GENRE");
         result["trackNumber"] = info.meta_get("TRACKNUMBER", 0) ? info.meta_get("TRACKNUMBER", 0) : "";
         result["discNumber"] = info.meta_get("DISCNUMBER", 0) ? info.meta_get("DISCNUMBER", 0) : "";
         

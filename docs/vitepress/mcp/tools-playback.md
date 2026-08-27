@@ -93,6 +93,8 @@ Gets detailed information about the current track. When nothing is playing, the 
 | `channels` | integer | Channel count |
 | `codec` | string | Codec name |
 
+> Multi-value tags in `artist` / `albumArtist` / `genre` / `composer` (only the fields this API actually returns) are joined with `, ` in their original order, without de-duplication.
+
 **Example result while stopped:**
 
 ```json

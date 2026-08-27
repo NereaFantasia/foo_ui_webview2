@@ -163,6 +163,8 @@
 }
 ```
 
+> `artist` / `albumArtist` / `genre` / `composer`（仅指该 API 实际返回的字段）的多值标签按 `, ` 原序拼接，不去重。
+
 ::: tip 分页
 对于大型播放列表，建议使用 `start` 和 `count` 进行分页获取。返回值中的 `total` 字段表示曲目总数。
 :::

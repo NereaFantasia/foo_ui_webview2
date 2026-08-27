@@ -227,6 +227,8 @@ await fb2k.invoke('playlist.rename', { playlist: 0, name: 'My Favorites' });
 }
 ```
 
+> `artist` / `albumArtist` / `genre` / `composer`（仅指该 API 实际返回的字段）的多值标签按 `, ` 原序拼接，不去重。
+
 ::: tip 自定义动态列 (`formats` 参数)
 `playlist.getTracks` 支持通过 `formats` 参数追加任意 TitleFormat 动态列：
 

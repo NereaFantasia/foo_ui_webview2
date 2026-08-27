@@ -43,6 +43,8 @@ const albums = await fb.library.getAlbums(50);
 | --- | --- | --- |
 | limit | number | 最大返回数量 |
 
+> 每位参与艺术家各成一个条目，一首多艺术家曲目会计进其中每一位。`trackCount` 是参与曲目数，各条目相加会大于曲目总数；`albumCount` 与 `totalDuration` 同样按每位艺术家重复计入。
+
 ```javascript
 const artists = await fb.library.getArtists(100);
 ```
@@ -50,6 +52,8 @@ const artists = await fb.library.getArtists(100);
 ## getStats()
 
 获取媒体库统计信息。返回 `{totalTracks, totalDuration, totalSize, ...}`。
+
+> `totalArtists` 按参与艺术家计——一首多艺术家曲目会计进其中每一位——因此与 `getArtists()` 的条目数一致。
 
 ```javascript
 const stats = await fb.library.getStats();
@@ -59,6 +63,8 @@ console.log(`${stats.totalTracks} 首，总时长 ${stats.totalDuration} 秒`);
 ## getGenres()
 
 获取流派列表。返回 `{genres: [{name, trackCount}]}`。
+
+> 多值 `genre` 的每个值各成一个条目，`trackCount` 是参与曲目数：一首标了多个流派的曲目会计进其中每一个。
 
 ```javascript
 const r = await fb.library.getGenres();
@@ -99,6 +105,8 @@ console.log(`媒体库共 ${r.total} 首，本次返回 ${r.tracks.length} 首`)
 
 > `tracks` 与 `items` 内容相同，`items` 为兼容别名。
 
+> `artists` 是 `artist` 的原子值数组：`artists.join(', ')` 恰好等于 `artist`，多值标签只能从 `artists` 精确还原，从 `artist` 还原不了。该字段由媒体库侧返回曲目对象的 API 提供（`getAll()` / `query()` / `search()` / `getByPath()` 等）；`fb.playlist.getTracks` / `fb.player.getCurrentTrack` / `fb.queue.get`、artwork 载荷与事件载荷里的 track 对象不含此字段。
+
 ## enumerateTracks(options?)
 
 高层分页枚举器（异步生成器），内部基于 `getCount()` + `getAll()`。
@@ -115,12 +123,14 @@ for await (const page of fb.library.enumerateTracks({ pageSize: 500 })) {
 
 ## getByPath(path)
 
-通过文件路径在媒体库中搜索曲目。返回 `{found, path, title, artist, album, duration, ...}`（字段在顶层，无嵌套）。
+通过文件路径在媒体库中搜索曲目。返回 `{found, path, title, artist, artists, album, duration, ...}`（字段在顶层，无嵌套）。
 
 ```javascript
 const r = await fb.library.getByPath('E:\\Music\\song.flac');
 if (r.found) console.log(r.title, r.artist);
 ```
+
+> 扁平结果里 `artists` 与 `artist` 并列，含义与 `getAll()` 的行一致：`artists.join(', ')` 恰好等于 `artist`。本方法不返回 `albumArtist` / `composer`，因此只多 `artists` 这一个数组键。
 
 ## getRoots()
 
@@ -289,13 +299,17 @@ const paths = await fb.library.query('%codec% IS FLAC', undefined, 100000, [
 
 ## 字段投影 {#field-projection}
 
-`query(..., fields)` 与 `search(query, limit, { fields })` 支持可选的曲目字段名列表。省略即现状行为：每行输出全部 19 键。
+`query(..., fields)` 与 `search(query, limit, { fields })` 支持可选的曲目字段名列表。省略即现状行为：每行输出全部 20 键。
 
 传了列表时，每行**恰好**包含请求的那几个键，不附带任何未请求字段——因此运行时 `TrackInfo` 是部分视图，而声明的类型仍为完整形状。元数据容器读取失败的损坏条目同样输出全部请求键，缺失值以类型默认值填充（空串、0）。响应信封不受影响。
 
 **可用字段名**（精确匹配、大小写敏感）：
 
-`index`、`title`、`artist`、`album`、`albumArtist`、`genre`、`date`、`trackNumber`、`discNumber`、`duration`、`path`、`absolutePath`、`fileSize`、`bitrate`、`sampleRate`、`channels`、`codec`、`subsong`、`rating`
+`index`、`title`、`artist`、`artists`、`album`、`albumArtist`、`genre`、`date`、`trackNumber`、`discNumber`、`duration`、`path`、`absolutePath`、`fileSize`、`bitrate`、`sampleRate`、`channels`、`codec`、`subsong`、`rating`
+
+> `artist` / `albumArtist` / `genre` / `composer`（仅指该 API 实际返回的字段）的多值标签按 `, ` 原序拼接，不去重。
+
+> `artists` 是 `artist` 的原子值数组：`artists.join(', ')` 恰好等于 `artist`。该字段由媒体库侧返回曲目对象的 API 提供（`getAll()` / `query()` / `search()` / `getByPath()` 等）；`fb.playlist.getTracks` / `fb.player.getCurrentTrack` / `fb.queue.get`、artwork 载荷与事件载荷里的 track 对象不含此字段。`artists` 与 `artist` 可单独投影其一，两者同源于一次取值；元数据容器读取失败的损坏条目上，被请求的 `artists` 返回 `[]`。
 
 重复字段名会去重。`rating` 仅在被请求（或省略列表）时才计算。
 

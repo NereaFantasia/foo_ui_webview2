@@ -121,6 +121,8 @@ For `jitQueue:error`, local-file failures include `path`, while remote-source fa
 | playback:trackChanged | `{ absolutePath, album, albumArtist, artist, bitrate, channels, codec, date, discNumber, duration, fileSize, fullPath, genre, id, path, sampleRate, subsong, title, trackNumber }` |
 | playback:volumeChanged | `{ isMuted, muted, volume, volumeDb }` |
 
+> Multi-value tags in `artist` / `albumArtist` / `genre` / `composer` (only the fields a payload actually carries) are joined with `, ` in their original order, without de-duplication.
+
 ## playlist events
 
 | Event | Payload keys |
@@ -153,6 +155,8 @@ For `jitQueue:error`, local-file failures include `path`, while remote-source fa
 | Event | Payload keys |
 | --- | --- |
 | selection:changed | `{ absolutePath, album, albumArtist, artist, bitrate, channels, codec, count, date, discNumber, duration, fileSize, fullPath, genre, handles, id, nowPlaying, path, sampleRate, subsong, title, track, trackNumber, truncated, type }` |
+
+> Multi-value tags in `artist` / `albumArtist` / `genre` / `composer` (only the fields a payload actually carries) are joined with `, ` in their original order, without de-duplication.
 
 ## state events
 

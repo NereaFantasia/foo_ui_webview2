@@ -10,6 +10,7 @@
 
 #include <cstring>
 #include <limits>
+#include <vector>
 
 using json = nlohmann::json;
 
@@ -21,6 +22,19 @@ void ExpectStringMatchesDump(const std::string& input) {
     JsonWriter::AppendJsonString(out, input);
 
     const json expected = input;
+    EXPECT_EQ(out, expected.dump());
+
+    json parsed;
+    ASSERT_NO_THROW(parsed = json::parse(out));
+    EXPECT_EQ(parsed, expected);
+}
+
+// 字符串数组：元素转义与单串同源，故同样按字节对齐 dump()
+void ExpectStringArrayMatchesDump(const std::vector<std::string>& values) {
+    std::string out;
+    JsonWriter::AppendJsonStringArray(out, values);
+
+    const json expected = values;
     EXPECT_EQ(out, expected.dump());
 
     json parsed;
@@ -286,6 +300,55 @@ TEST(JsonWriter, BoolLiterals) {
     EXPECT_EQ(out, "truefalse");
     EXPECT_TRUE(json::parse("true").get<bool>());
     EXPECT_FALSE(json::parse("false").get<bool>());
+}
+
+// ============================================
+// AppendJsonStringArray — artists 等多值字段的数组形态
+// ============================================
+
+TEST(JsonWriter, StringArrayEmptyIsBracketPair) {
+    std::string out;
+    JsonWriter::AppendJsonStringArray(out, {});
+    EXPECT_EQ(out, "[]");
+    json_writer_test::ExpectStringArrayMatchesDump({});
+}
+
+TEST(JsonWriter, StringArraySingleAndMultipleElements) {
+    std::string out;
+    JsonWriter::AppendJsonStringArray(out, {"Artist Name"});
+    EXPECT_EQ(out, R"(["Artist Name"])");  // 单元素不带逗号
+
+    out.clear();
+    JsonWriter::AppendJsonStringArray(out, {"A", "B", "C"});
+    EXPECT_EQ(out, R"(["A","B","C"])");  // 分隔符与 dump 一致：逗号后无空格
+    json_writer_test::ExpectStringArrayMatchesDump({"A", "B", "C"});
+}
+
+TEST(JsonWriter, StringArrayKeepsEmptyAndDuplicateElements) {
+    // 取值侧（MetaValuesRaw）不去重、不丢空值，写出侧不得替它做取舍
+    json_writer_test::ExpectStringArrayMatchesDump({"A", "A"});
+    json_writer_test::ExpectStringArrayMatchesDump({"", "B", ""});
+}
+
+TEST(JsonWriter, StringArrayElementsShareStringEscaping) {
+    std::string out;
+    JsonWriter::AppendJsonStringArray(out, {R"(反斜杠\艺人)", "引号\"艺人", "换行\n艺人"});
+    EXPECT_EQ(out, R"(["反斜杠\\艺人","引号\"艺人","换行\n艺人"])");
+    json_writer_test::ExpectStringArrayMatchesDump(
+        {R"(反斜杠\艺人)", "引号\"艺人", "换行\n艺人", std::string("控制符\x01")});
+}
+
+TEST(JsonWriter, StringArrayAppendsWithoutClearingBuffer) {
+    std::string out = R"({"artists":)";
+    JsonWriter::AppendJsonStringArray(out, {"A", "B"});
+    out.push_back('}');
+
+    json expected;
+    expected["artists"] = std::vector<std::string>{"A", "B"};
+
+    json parsed;
+    ASSERT_NO_THROW(parsed = json::parse(out));
+    EXPECT_EQ(parsed, expected);
 }
 
 // ============================================

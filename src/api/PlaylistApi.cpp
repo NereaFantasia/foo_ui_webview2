@@ -4,6 +4,7 @@
 #include "api/AsyncOperationRegistry.h"
 #include "api/BridgeCore.h"
 #include "api/ErrorEnvelope.h"
+#include "api/MetaAccess.h"
 #include "core/WebViewContext.h"
 #include "interfaces/Fb2kPlaylistService.h"
 #include "interfaces/Fb2kPlaybackService.h"
@@ -321,10 +322,10 @@ json GetPlaylistTrackInfo(const metadb_handle_ptr& track, size_t index) {
     return {
         {"index", index},
         {"title", getMeta("title")},
-        {"artist", getMeta("artist")},
+        {"artist", MetaJoined(info, "artist")},
         {"album", getMeta("album")},
-        {"albumArtist", getMeta("album artist")},
-        {"genre", getMeta("genre")},
+        {"albumArtist", MetaJoined(info, "album artist")},
+        {"genre", MetaJoined(info, "genre")},
         {"date", getMeta("date")},
         {"trackNumber", getMetaInt("tracknumber")},
         {"discNumber", getMetaInt("discnumber")},
@@ -338,7 +339,7 @@ json GetPlaylistTrackInfo(const metadb_handle_ptr& track, size_t index) {
         {"bitrate", bitrate},
         {"sampleRate", sampleRate},
         {"channels", channels},
-        {"composer", getMeta("composer")},
+        {"composer", MetaJoined(info, "composer")},
         {"comment", getMeta("comment")},
     };
 }

@@ -93,6 +93,8 @@
 | channels | integer | 声道数 |
 | codec | string | 编解码器名称 |
 
+> `artist` / `albumArtist` / `genre` / `composer`（仅指该 API 实际返回的字段）的多值标签按 `, ` 原序拼接，不去重。
+
 **返回值**（未播放时）:
 
 ```json

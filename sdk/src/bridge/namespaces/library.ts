@@ -547,8 +547,8 @@ export const library = {
      *
      * `fields` narrows the projection exactly as documented on
      * {@link library.search}: rows then hold only the requested keys out of
-     * the same 19-name case-sensitive whitelist, omitting the argument
-     * returns all 19, and a malformed list resolves with
+     * the same 20-name case-sensitive whitelist, omitting the argument
+     * returns all 20, and a malformed list resolves with
      * `{ success: false, code: 'INVALID_PARAMS' }` plus
      * `details.unknownFields`. An explicit `null` is forwarded to the host
      * and rejected there instead of being read as "every field".

@@ -1,6 +1,7 @@
 ﻿#include "pch.h"
 #include "callbacks/PlaybackCallback.h"
 #include "core/WebViewContext.h"
+#include "api/MetaAccess.h"
 #include "api/PlaybackApi.h"
 #include "core/QueueManager.h"
 #include "window/TaskbarIntegration.h"
@@ -227,10 +228,9 @@ public:
             // Similar to on_playback_dynamic_info but for track-level changes
             json dynamicInfo;
             
-            const char* artist = info.meta_get("ARTIST", 0);
             const char* title = info.meta_get("TITLE", 0);
-            
-            if (artist) dynamicInfo["artist"] = std::string(artist);
+
+            if (MetaPresent(info, "ARTIST")) dynamicInfo["artist"] = MetaJoined(info, "ARTIST");
             if (title) dynamicInfo["title"] = std::string(title);
             
             if (!dynamicInfo.empty()) {

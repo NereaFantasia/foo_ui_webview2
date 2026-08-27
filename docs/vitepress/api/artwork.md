@@ -211,6 +211,8 @@ const { available, lyrics } = await fb2k.invoke('artwork.getLyrics');
 
 **Returns**: `{"album":"...","albumArtist":"...","artist":"...","available":true,"discNumber":"...","error":"...","genre":"...","hasEmbedded":true,"hasLyrics":true,"title":"...","trackNumber":"...","year":"..."}`
 
+> Multi-value tags in `artist` / `albumArtist` / `genre` / `composer` (only the fields this API actually returns) are joined with `, ` in their original order, without de-duplication.
+
 ```js
 const { title, album, hasEmbedded } = await fb2k.invoke('artwork.getMetadata', {
 	path: 'C:\\Music\\song.flac',

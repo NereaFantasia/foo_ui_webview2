@@ -27,6 +27,8 @@ The MCP declaration describes the runtime default but does not inject a `default
 }
 ```
 
+> Multi-value tags in `artist` / `albumArtist` / `genre` / `composer` (only the fields this API actually returns) are joined with `, ` in their original order, without de-duplication.
+
 ::: tip Query examples
 - `artist IS Mili` — exact match
 - `title HAS love` — substring match

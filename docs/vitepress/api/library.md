@@ -149,6 +149,8 @@ const filtered = await fb2k.invoke('library.getAlbums', { query: 'Beatles' });
 
 **Returns**: `{"error":"...","fromCache":"...","items":[],"limit":"...","offset":"...","pending":"...","requestId":"...","total":"...","tracks":[]}`
 
+> `artists` holds the atomic values behind `artist`: `artists.join(', ')` is exactly `artist`, so a multi-value tag can be recovered from `artists` and not from `artist`. It is returned by the media-library track APIs — `library.getAll`, `library.query`, `library.search` and `library.getByPath` among them; the track objects returned by other namespaces (`playlist.getTracks`, `playback.getCurrentTrack`, `queue.get`, artwork payloads, event payloads) do not carry it.
+
 ```js
 // Minimal call: first 100 tracks
 const { items, total } = await fb2k.invoke('library.getAll');
@@ -199,6 +201,8 @@ const { items } = await fb2k.invoke('library.getArtistTracks', {
 
 **Returns**: `{"count":"...","error":"...","items":"...","success":true}`
 
+> Every credited artist gets its own entry, so a track tagged with several artists is counted under each of them. `trackCount` is a participation count and the entries add up to more than the total number of tracks; `albumCount` and `totalDuration` are counted per artist the same way.
+
 ```js
 // Minimal call: up to 1000 artists sorted by name
 const { items } = await fb2k.invoke('library.getArtists');
@@ -217,7 +221,11 @@ const top = await fb2k.invoke('library.getArtists', {
 | --- | --- | --- | --- |
 | `path` | `string` | Yes | File path to look up. Returns `found: false` when the track is not in the library. |
 
-**Returns**: `{"absolutePath":"...","album":"...","artist":"...","date":"...","duration":"...","error":"...","found":"...","genre":"...","path":"...","success":true,"title":"...","trackNumber":"..."}`
+**Returns**: `{"absolutePath":"...","album":"...","artist":"...","artists":[],"date":"...","duration":"...","error":"...","found":"...","genre":"...","path":"...","success":true,"title":"...","trackNumber":"..."}`
+
+> Multi-value tags in `artist` / `albumArtist` / `genre` / `composer` (only the fields this API actually returns) are joined with `, ` in their original order, without de-duplication.
+
+> `artists` holds the atomic values behind `artist`: `artists.join(', ')` is exactly `artist`, so a multi-value tag can be recovered from `artists` and not from `artist`. It is returned by the media-library track APIs — `library.getAll`, `library.query`, `library.search` and `library.getByPath` among them; the track objects returned by other namespaces (`playlist.getTracks`, `playback.getCurrentTrack`, `queue.get`, artwork payloads, event payloads) do not carry it. This API is a flat object, so `artists` is the only array key it gains.
 
 ```js
 const { found, title } = await fb2k.invoke('library.getByPath', {
@@ -277,6 +285,8 @@ _No parameters._
 
 **Returns**: `{"error":"...","genres":"...","success":true}`
 
+> Every value of a multi-value `genre` gets its own entry, and `trackCount` is a participation count: a track tagged with several genres is counted under each of them.
+
 ```js
 const result = await fb2k.invoke('library.getGenres');
 ```
@@ -333,6 +343,8 @@ _No parameters._
 
 **Returns**: `{"cacheValid":"...","lastModified":"...","totalAlbums":"...","totalArtists":"...","totalDuration":"...","totalSize":"...","totalTracks":"..."}`
 
+> `totalArtists` counts credited artists — a track tagged with several artists contributes to each of them — so it matches the entry count of `library.getArtists`.
+
 ```js
 const result = await fb2k.invoke('library.getStats');
 ```
@@ -378,7 +390,7 @@ const result = await fb2k.invoke('library.isEnabled');
 | `query` | `string` | Yes | — | foobar2000 query expression. |
 | `sort` | `string` | No | — | Titleformat pattern used to sort the matches. |
 | `limit` | `integer` | No | `100` | Result cap. |
-| `fields` | `string[]` | No | all 19 keys | Track keys to project. See [Field projection](#field-projection). |
+| `fields` | `string[]` | No | all 20 keys | Track keys to project. See [Field projection](#field-projection). |
 
 **Returns**: `{"error":"...","success":true,"total":"...","tracks":"..."}`
 
@@ -433,7 +445,7 @@ const result = await fb2k.invoke('library.rescan');
 | `query` | `string` | No | — | foobar2000 query expression. An empty query returns an empty result set with `success: true`. |
 | `offset` | `integer` | No | `0` | Page offset. |
 | `limit` | `integer` | No | `100` | Page size. |
-| `fields` | `string[]` | No | all 19 keys | Track keys to project. See [Field projection](#field-projection). |
+| `fields` | `string[]` | No | all 20 keys | Track keys to project. See [Field projection](#field-projection). |
 
 **Returns**: `{"error":"...","hasMore":"...","limit":"...","offset":"...","success":true,"total":"...","tracks":"..."}`
 
@@ -462,7 +474,7 @@ const albums = await fb2k.invoke('library.search', {
 
 `library.query` and `library.search` accept an optional `fields` array that
 restricts which track keys each returned row carries. Omitting `fields` keeps
-the current behaviour: every row carries all 19 keys.
+the current behaviour: every row carries all 20 keys.
 
 When `fields` is present, each row holds **exactly** the requested keys and no
 others — including rows whose metadata container could not be read, where the
@@ -474,9 +486,13 @@ requested key is never missing. The response envelope itself is unchanged:
 
 **Accepted key names** (exact match, case-sensitive):
 
-`index`, `title`, `artist`, `album`, `albumArtist`, `genre`, `date`,
+`index`, `title`, `artist`, `artists`, `album`, `albumArtist`, `genre`, `date`,
 `trackNumber`, `discNumber`, `duration`, `path`, `absolutePath`, `fileSize`,
 `bitrate`, `sampleRate`, `channels`, `codec`, `subsong`, `rating`
+
+> Multi-value tags in `artist` / `albumArtist` / `genre` / `composer` (only the fields this API actually returns) are joined with `, ` in their original order, without de-duplication.
+
+> `artists` holds the atomic values behind `artist`: `artists.join(', ')` is exactly `artist`, so a multi-value tag can be recovered from `artists` and not from `artist`. It is returned by the media-library track APIs — `library.getAll`, `library.query`, `library.search` and `library.getByPath` among them; the track objects returned by other namespaces (`playlist.getTracks`, `playback.getCurrentTrack`, `queue.get`, artwork payloads, event payloads) do not carry it. Projecting `artists` without `artist` (or the other way round) is allowed; both are read in one pass. On a row whose metadata container could not be read, a requested `artists` comes back as `[]`.
 
 Duplicate names are de-duplicated. `rating` is only computed when it is
 requested (or when `fields` is omitted), which is where most of the saving on

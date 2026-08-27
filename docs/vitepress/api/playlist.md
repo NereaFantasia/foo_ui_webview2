@@ -231,6 +231,8 @@ Get a paged list of tracks in a playlist. The response has no `success` field.
 }
 ```
 
+> Multi-value tags in `artist` / `albumArtist` / `genre` / `composer` (only the fields this API actually returns) are joined with `, ` in their original order, without de-duplication.
+
 ::: tip column (`formats` Parameter)
 `playlist.getTracks` supports  `formats` Parameter TitleFormat column :
 

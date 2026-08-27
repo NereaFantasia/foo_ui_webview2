@@ -11,6 +11,7 @@
 #include "api/QueueApi.h"
 #include "api/ApiConstants.h"
 #include "api/BridgeCore.h"
+#include "api/MetaAccess.h"
 #include "api/PlaylistApi.h"
 #include "core/QueueManager.h"
 
@@ -146,20 +147,17 @@ namespace {
             
             // Basic metadata
             const char* title = fi.meta_get("TITLE", 0);
-            const char* artist = fi.meta_get("ARTIST", 0);
             const char* album = fi.meta_get("ALBUM", 0);
-            const char* albumArtist = fi.meta_get("ALBUM ARTIST", 0);
-            const char* genre = fi.meta_get("GENRE", 0);
             const char* date = fi.meta_get("DATE", 0);
             const char* tracknumber = fi.meta_get("TRACKNUMBER", 0);
             const char* discnumber = fi.meta_get("DISCNUMBER", 0);
             const char* codec = fi.info_get("codec");
-            
+
             track["title"] = title ? title : "";
-            track["artist"] = artist ? artist : "";
+            track["artist"] = MetaJoined(fi, "ARTIST");
             track["album"] = album ? album : "";
-            track["albumArtist"] = albumArtist ? albumArtist : "";
-            track["genre"] = genre ? genre : "";
+            track["albumArtist"] = MetaJoined(fi, "ALBUM ARTIST");
+            track["genre"] = MetaJoined(fi, "GENRE");
             track["date"] = date ? date : "";
             track["trackNumber"] = tracknumber ? atoi(tracknumber) : 0;
             track["discNumber"] = discnumber ? atoi(discnumber) : 0;

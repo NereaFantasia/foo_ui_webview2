@@ -3,6 +3,7 @@
 #include "api/BridgeCore.h"
 #include "api/CallerContext.h"
 #include "api/ErrorEnvelope.h"
+#include "api/MetaAccess.h"
 #include "api/TrackWireSnapshot.h"
 #include "core/LibraryCache.h"
 #include "core/LibraryTreeIndex.h"
@@ -267,13 +268,20 @@ static json BuildTrackJsonFromSnapshot(const TrackSnapshot& snap) {
   const char* codecValue = info.info_get("codec");
   std::string codec = codecValue ? codecValue : "";
 
+  // artist 与 artists 共用一次字段查找：拼接串必须是数组按 ", " join 的结果
+  // （artists.join(", ") === artist 是对外契约），两边各查一次既多一次 meta_find，
+  // 也留下两侧取值漂移的口子。键集必须与 wire 版 WriteTrackJson 一致，否则
+  // getAll(DOM) 与 query(wire) 形状分叉。
+  const std::vector<std::string> artistValues = MetaValuesRaw(info, "artist");
+
   return {
       {"index", snap.index},
       {"title", getMeta("title")},
-      {"artist", getMeta("artist")},
+      {"artist", JoinMetaValues(artistValues, ", ")},
+      {"artists", artistValues},
       {"album", getMeta("album")},
-      {"albumArtist", getMeta("album artist")},
-      {"genre", getMeta("genre")},
+      {"albumArtist", MetaJoined(info, "album artist")},
+      {"genre", MetaJoined(info, "genre")},
       {"date", getMeta("date")},
       {"trackNumber", getMetaInt("tracknumber")},
       {"discNumber", getMetaInt("discnumber")},
@@ -408,6 +416,8 @@ json LibraryGetStats(const json& params) {
 
     // 使用 get_info_ref() 替代已弃用的 get_info()，避免每轨的 file_info_impl 值拷贝开销
     metadb_info_container::ptr infoContainer = item->get_info_ref();
+    if (!infoContainer.is_valid())
+      continue;
     const file_info& info = infoContainer->info();
     {
       const char *album = info.meta_get("album", 0);
@@ -415,14 +425,19 @@ json LibraryGetStats(const json& params) {
       const char *albumArtist = info.meta_get("album artist", 0);
 
       // 使用 album + album artist 组合作为唯一标识（与 getAlbums 保持一致）
+      // albumKey 的回退项刻意仍取首值：改成全值会让本函数的 totalAlbums
+      // 与 getAlbums.total 失配
       if (album && strlen(album) > 0) {
         std::string albumKey = album;
         albumKey += '\0';
         albumKey += (albumArtist ? albumArtist : (artist ? artist : ""));
         albums.insert(albumKey);
       }
-      if (artist && strlen(artist) > 0)
-        artists.insert(artist);
+      // totalArtists 按参与艺术家计：多值 artist 的每个值各计一次，
+      // 与 getArtists 的条目数口径一致。同字段查两次是刻意的，本函数
+      // 不在送达热路径上
+      for (const auto &artistValue : MetaValues(info, "artist"))
+        artists.insert(artistValue);
     }
   }
 
@@ -472,7 +487,7 @@ json LibraryGetCacheStats(const json& params) {
 //             捕获（按 fields 掩码逐项门控）→ 编译 titleformat 脚本 → 把请求派给
 //             CPU worker
 //   worker 段：（query 请求排序时）算排序序并截 limit → queryMultiParallel_ 批量
-//             取 rec → rating（仅当被请求）→ 直写 UTF-8（省略 fields 出全 19 键，
+//             取 rec → rating（仅当被请求）→ 直写 UTF-8（省略 fields 出全 20 键，
 //             传 fields 出投影键集）→ SendRaw
 //
 // fields 投影是纯收窄：掩码由主线程解析一次随请求下传，捕获侧、rating、序列化侧
@@ -686,10 +701,19 @@ std::string BuildTracksArrayJson(const QueryWireRequest& req) {
 
     snap.hasInfo = true;
     if (mask & TrackField::kTitle) snap.title = getMeta("title");
-    if (mask & TrackField::kArtist) snap.artist = getMeta("artist");
+    // artists 被请求时，artist 从同一次枚举结果 join 出来（保住 artists.join(", ")
+    // === artist），字段查找不翻倍；只要 artist 不要 artists 时仍走 MetaJoined 的
+    // 单值快路径（count == 1 不分配 vector）。
+    if (mask & TrackField::kArtists) {
+      auto raw = MetaValuesRaw(info, "artist");
+      snap.artists = raw;
+      if (mask & TrackField::kArtist) snap.artist = JoinMetaValues(raw, ", ");
+    } else if (mask & TrackField::kArtist) {
+      snap.artist = MetaJoined(info, "artist");
+    }
     if (mask & TrackField::kAlbum) snap.album = getMeta("album");
-    if (mask & TrackField::kAlbumArtist) snap.albumArtist = getMeta("album artist");
-    if (mask & TrackField::kGenre) snap.genre = getMeta("genre");
+    if (mask & TrackField::kAlbumArtist) snap.albumArtist = MetaJoined(info, "album artist");
+    if (mask & TrackField::kGenre) snap.genre = MetaJoined(info, "genre");
     if (mask & TrackField::kDate) snap.date = getMeta("date");
     if (mask & TrackField::kTrackNumber) snap.trackNumber = getMetaInt("tracknumber");
     if (mask & TrackField::kDiscNumber) snap.discNumber = getMetaInt("discnumber");
@@ -1352,18 +1376,17 @@ json LibraryGetArtists(const json& params) {
         continue;
       const file_info& info = infoContainer->info();
 
-      const char *artistName = info.meta_get("artist", 0);
-      if (!artistName || strlen(artistName) == 0)
-        continue;
+      // 按值遍历：多值 artist 的每个值各成一个条目，曲目计进每一位参与者
+      for (const auto &artistName : MetaValues(info, "artist")) {
+        auto &artist = artistMap[artistName];
+        artist.name = artistName;
+        artist.trackCount++;
+        artist.totalDuration += info.get_length();
 
-      auto &artist = artistMap[artistName];
-      artist.name = artistName;
-      artist.trackCount++;
-      artist.totalDuration += info.get_length();
-
-      const char *album = info.meta_get("album", 0);
-      if (album && strlen(album) > 0) {
-        artist.albums.insert(album);
+        const char *album = info.meta_get("album", 0);
+        if (album && strlen(album) > 0) {
+          artist.albums.insert(album);
+        }
       }
     }
 
@@ -1415,9 +1438,9 @@ json LibraryGetArtists(const json& params) {
 
 
 // ========== Genres ==========
-// 注意: 此 API 与下方 library.getGenres（带 trackCount 版本）重复注册
-// 后注册版本会覆盖此版本，但为遵守仓库规则保留原始代码
-// 返回 {success, genres[{name, trackCount}]}
+// 注意: 此函数全仓零注册，是保留的死代码 —— library.getGenres 实际注册的是
+// 下方的 LibraryGetGenres_2（带 trackCount 的版本）。删除需先征求用户同意。
+// 返回 {success, items[{name}], count}
 json LibraryGetGenres(const json& params) {
   auto lib = library_manager::get();
   if (!lib->is_library_enabled()) {
@@ -1828,8 +1851,8 @@ json LibraryGetGenres_2(const json& params) {
       continue;
     const file_info& info = infoContainer->info();
 
-    const char *genre = info.meta_get("genre", 0);
-    if (genre && strlen(genre) > 0) {
+    // 按值遍历：多值 genre 的每个值各成一个条目，曲目计进每一个值
+    for (const auto &genre : MetaValues(info, "genre")) {
       genreCount[genre]++;
     }
   }
@@ -2467,16 +2490,21 @@ json LibraryGetByPath(const json& params) {
     return v ? v : "";
   };
 
+  // 与 DOM 版同口径：artist / artists 同源于一次字段查找。本 API 是扁平对象，
+  // 不返回 albumArtist / composer，故只多这一个数组键。
+  const std::vector<std::string> artistValues = MetaValuesRaw(info, "artist");
+
   return {{"success", true},
           {"found", true},
           {"path", handle->get_path()},
           {"absolutePath", std::string(nativePath.get_ptr())},
           {"title", getMeta("title")},
-          {"artist", getMeta("artist")},
+          {"artist", JoinMetaValues(artistValues, ", ")},
+          {"artists", artistValues},
           {"album", getMeta("album")},
           {"duration", info.get_length()},
           {"trackNumber", getMeta("tracknumber")},
-          {"genre", getMeta("genre")},
+          {"genre", MetaJoined(info, "genre")},
           {"date", getMeta("date")}};
 }
 

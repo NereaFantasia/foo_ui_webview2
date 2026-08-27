@@ -5,8 +5,10 @@
 //
 // 大结果集响应的热路径不再经 nlohmann DOM：调用方把值直接追加成 UTF-8 JSON
 // 字符串，省掉「建 DOM → dump」两段与其间的深拷贝。本文件只提供最小原语
-// （字符串 / 整型 / 浮点 / 布尔），对象与数组的括号、逗号、键名由调用方拼，
-// 因为热路径的字段集是编译期已知的固定形状，通用 builder 反而多一层开销。
+// （字符串 / 字符串数组 / 整型 / 浮点 / 布尔），对象的花括号、逗号、键名由调用方
+// 拼，因为热路径的字段集是编译期已知的固定形状，通用 builder 反而多一层开销。
+// 字符串数组是唯一成型的容器原语：元素转义必须与 AppendJsonString 同源，让调用方
+// 自己拼方括号就等于放任第二份转义实现出现。
 //
 // 与 nlohmann dump() 的等价口径（直写产物与 DOM 产物必须可互换）：
 //   - 转义面：仅 `"` `\` 与控制字符 U+0000–U+001F 被转义，`/` 与 DEL(0x7F)
@@ -27,6 +29,7 @@
 #include <string>
 #include <string_view>
 #include <system_error>
+#include <vector>
 
 namespace JsonWriter {
 
@@ -74,6 +77,19 @@ inline void AppendJsonString(std::string& out, std::string_view value) {
     out.append(value.data() + plainBegin, value.size() - plainBegin);
 
     out.push_back('"');
+}
+
+// 追加 JSON 字符串数组（含首尾方括号）。空数组出 []，元素逐个走 AppendJsonString，
+// 转义与单串字段完全一致。
+inline void AppendJsonStringArray(std::string& out, const std::vector<std::string>& values) {
+    out.push_back('[');
+    for (size_t i = 0; i < values.size(); ++i) {
+        if (i > 0) {
+            out.push_back(',');
+        }
+        AppendJsonString(out, values[i]);
+    }
+    out.push_back(']');
 }
 
 // 追加 JSON 整型。

@@ -44,10 +44,13 @@
 
 ### 媒体库查询
 
-- **新增 `library.search` 与 `library.query` 的字段投影。** `library.search` 接受 `options.fields`，`library.query` 新增第四个 `fields` 参数。返回的每一行随后只持有所请求的键、别无其他，因此 `TrackInfo` 在运行时是局部视图，而声明类型仍是完整的。可用名是 19 个曲目键——`index`、`title`、`artist`、`album`、`albumArtist`、`genre`、`date`、`trackNumber`、`discNumber`、`duration`、`path`、`absolutePath`、`fileSize`、`bitrate`、`sampleRate`、`channels`、`codec`、`subsong`、`rating`——区分大小写匹配。省略该参数即返回全部 19 个。传入非数组、空数组、非字符串元素或未知名字都会 resolve（绝不 reject）`{ success: false, code: 'INVALID_PARAMS' }`，并在 `details.unknownFields` 回显出错的名字。
+- **多值标签不再截断到第一个值。** 自首个版本起，标了多位艺术家的曲目在 `metadata.read` 之外的所有地方都只报第一位。曲目对象现在把各值按标签顺序以 `, ` 拼接、不去重——与 foobar2000 本体的显示一致——作用于 `artist`、`albumArtist`、`genre`、`composer` 四个字段，各 API 仍只带自己本来就有的字段。
+- **新增 `artist` 的原子形态 `artists`。** 拼接串分不清一位叫 `"A, B"` 的艺术家和 `A`、`B` 两位艺术家，因此 library 命名空间的曲目对象——`library.getAll`、`library.query`、`library.search`、`library.getByPath` 及其余 `library.*` 曲目端点——额外携带 `artists: string[]` 原样值数组，`artists.join(', ') === artist` 逐字节成立。其他命名空间的曲目对象（`playlist.getTracks`、`playback.getCurrentTrack`、`queue.get`、artwork 与事件载荷）不含此字段。
+- **聚合按每位参与艺术家计数。** `library.getArtists` 给每位参与艺术家各建一个条目，`trackCount` 因此成为参与计数：各条目相加会大于曲目总数，`albumCount` 与 `totalDuration` 同样按每位艺术家重复计入。`library.getStats` 的 `totalArtists` 现在与 `getArtists` 的条目数一致；`library.getGenres` 对多值 `genre` 的每个值各建一个条目。
+- **新增 `library.search` 与 `library.query` 的字段投影。** `library.search` 接受 `options.fields`，`library.query` 新增第四个 `fields` 参数。返回的每一行随后只持有所请求的键、别无其他，因此 `TrackInfo` 在运行时是局部视图，而声明类型仍是完整的。可用名是 20 个曲目键——`index`、`title`、`artist`、`artists`、`album`、`albumArtist`、`genre`、`date`、`trackNumber`、`discNumber`、`duration`、`path`、`absolutePath`、`fileSize`、`bitrate`、`sampleRate`、`channels`、`codec`、`subsong`、`rating`——区分大小写匹配。省略该参数即返回全部 20 个。传入非数组、空数组、非字符串元素或未知名字都会 resolve（绝不 reject）`{ success: false, code: 'INVALID_PARAMS' }`，并在 `details.unknownFields` 回显出错的名字。
 - **`library.search` 与 `library.query` 现在在主线程之外做序列化**，并把结果直写到通道上，不再构建中间对象图。响应管线沿途不再深拷贝，零命中的查询会短路返回。除破坏性变更里列出的 `items` 移除外，JavaScript 契约不变：两者仍从同一个 promise resolve 同样的形状。
 - **Spider Monkey Panel 兼容层不再逐页重扫媒体库。** `fb.GetQueryItems` 此前按 500 条一页翻页，而 `library.search` 每次请求都重扫全库，于是几千条命中的查询要为每页付一次全库扫描——大库上是 160 次。现在改为先发一次单行探测取命中总数，再一次请求拉回全部命中，并把投影收窄到 `FbMetadbHandle` 实际会读的五个键。可观测的 handle 属性没有任何变化。代价：若两次调用之间媒体库发生变化，探测到的总数就过期了，期间新增的命中会被丢弃；媒体库被并发修改时不保证返回集合稳定。
-- **超大库的实务提示。** 这些改动去掉的是拷贝与载荷，不是产生这些行本身的成本。在六位数规模的库上，全字段全库查询仍会占用宿主主线程相当长的时间，主导项是交给页面的响应体量。不需要全部 19 个键时请用 `fields` 收窄投影——这是目前最有效的单一手段。32 位宿主上还请留意峰值：全字段全库结果在解析期间会同时以多种形态存在，六位数规模的库可能瞬时达到数百 MB。
+- **超大库的实务提示。** 这些改动去掉的是拷贝与载荷，不是产生这些行本身的成本。在六位数规模的库上，全字段全库查询仍会占用宿主主线程相当长的时间，主导项是交给页面的响应体量。不需要全部 20 个键时请用 `fields` 收窄投影——这是目前最有效的单一手段。32 位宿主上还请留意峰值：全字段全库结果在解析期间会同时以多种形态存在，六位数规模的库可能瞬时达到数百 MB。
 
 ### 标题格式化
 

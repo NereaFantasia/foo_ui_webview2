@@ -10,6 +10,7 @@
 #include "pch.h"
 #include "callbacks/MetadbCallback.h"
 #include "api/BridgeCore.h"
+#include "api/MetaAccess.h"
 #include "core/WebViewContext.h"
 
 
@@ -128,9 +129,8 @@ public:
         if (title)
           track["title"] = title;
 
-        const char *artist = fi.meta_get("ARTIST", 0);
-        if (artist)
-          track["artist"] = artist;
+        if (MetaPresent(fi, "ARTIST"))
+          track["artist"] = MetaJoined(fi, "ARTIST");
       }
 
       tracks.push_back(track);

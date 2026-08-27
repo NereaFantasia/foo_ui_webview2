@@ -1,6 +1,7 @@
 ﻿#include "pch.h"
 #include "api/PlaybackApi.h"
 #include "api/BridgeCore.h"
+#include "api/MetaAccess.h"
 #include "interfaces/IPlaybackService.h"
 #include "interfaces/Fb2kPlaybackService.h"
 #include "utils/SubsongUtils.h"
@@ -74,10 +75,10 @@ json GetTrackInfo(metadb_handle_ptr track) {
     return {
         {"id", idPath},                  // Use full path as ID (含 subsong 后缀)
         {"title", getMeta("title")},
-        {"artist", getMeta("artist")},
+        {"artist", MetaJoined(info, "artist")},
         {"album", getMeta("album")},
-        {"albumArtist", getMeta("album artist")},
-        {"genre", getMeta("genre")},
+        {"albumArtist", MetaJoined(info, "album artist")},
+        {"genre", MetaJoined(info, "genre")},
         {"date", getMeta("date")},
         {"trackNumber", getMetaInt("tracknumber")},
         {"discNumber", getMetaInt("discnumber")},

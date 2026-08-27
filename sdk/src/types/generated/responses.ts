@@ -1537,6 +1537,7 @@ export interface LibraryGetByPathResponse {
     absolutePath?: unknown;
     title?: string;
     artist?: string;
+    artists?: unknown;
     album?: string;
     duration?: number;
     trackNumber?: string;
@@ -1606,6 +1607,7 @@ export interface LibraryGetRecentlyAddedResponse {
     path: unknown;
     absolutePath: string;
     rating: number;
+    artists?: unknown;
     albumArtist?: string;
     genre?: string;
     date?: string;

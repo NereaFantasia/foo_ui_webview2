@@ -165,6 +165,8 @@ The `ToolDefinition` description currently says default `50`, but it declares no
 }
 ```
 
+> Multi-value tags in `artist` / `albumArtist` / `genre` / `composer` (only the fields this API actually returns) are joined with `, ` in their original order, without de-duplication.
+
 ::: tip Pagination
 Use `start` and `count` to page through large playlists. The `total` field reports the playlist's total track count.
 :::

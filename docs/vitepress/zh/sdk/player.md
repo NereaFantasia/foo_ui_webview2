@@ -129,6 +129,8 @@ const state = await fb.player.getState();
 | channels | number | 声道数 |
 | codec | string | 编码格式 |
 
+> `artist` / `albumArtist` / `genre` / `composer`（仅指该 API 实际返回的字段）的多值标签按 `, ` 原序拼接，不去重。
+
 ```javascript
 const track = await fb.player.getCurrentTrack();
 if (track.found !== false) {

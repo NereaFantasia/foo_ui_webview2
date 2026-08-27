@@ -121,6 +121,8 @@ foo_ui_webview2 的运行时事件 payload 参考。事件名使用 **冒号格�
 | playback:trackChanged | `{ absolutePath, album, albumArtist, artist, bitrate, channels, codec, date, discNumber, duration, fileSize, fullPath, genre, id, path, sampleRate, subsong, title, trackNumber }` |
 | playback:volumeChanged | `{ isMuted, muted, volume, volumeDb }` |
 
+> `artist` / `albumArtist` / `genre` / `composer`（仅指该载荷实际携带的字段）的多值标签按 `, ` 原序拼接，不去重。
+
 ## playlist 事件
 
 | 事件 | Payload keys |
@@ -153,6 +155,8 @@ foo_ui_webview2 的运行时事件 payload 参考。事件名使用 **冒号格�
 | 事件 | Payload keys |
 | --- | --- |
 | selection:changed | `{ absolutePath, album, albumArtist, artist, bitrate, channels, codec, count, date, discNumber, duration, fileSize, fullPath, genre, handles, id, nowPlaying, path, sampleRate, subsong, title, track, trackNumber, truncated, type }` |
+
+> `artist` / `albumArtist` / `genre` / `composer`（仅指该载荷实际携带的字段）的多值标签按 `, ` 原序拼接，不去重。
 
 ## state 事件
 

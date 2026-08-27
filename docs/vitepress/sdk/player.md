@@ -123,6 +123,8 @@ Returns the current `TrackInfo`, or `null` when no track is loaded.
 | `channels` | `number?` | Channel count |
 | `codec` | `string?` | Codec identifier |
 
+> Multi-value tags in `artist` / `albumArtist` / `genre` / `composer` (only the fields this API actually returns) are joined with `, ` in their original order, without de-duplication.
+
 ```javascript
 const track = await fb.player.getCurrentTrack();
 if (track) {
