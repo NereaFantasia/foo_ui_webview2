@@ -1,9 +1,9 @@
 #pragma once
 
 //! Provides control for various playback-related operations. \n
-//! All methods provided by this interface work from main app thread only. Calling from another thread will do nothing or trigger an exception. If you need to trigger one of playback_control methods from another thread, see main_thread_callback. \n
-//! Do not call playback_control methods from inside any kind of global callback (e.g. playlist callback), otherwise race conditions may occur. \n
-//! Use playback_control::get() to obtain an instance.
+//! All methods provided by this interface work from main app thread only. Calling from another thread will do nothing or trigger an exception. If you need to trigger one of @c playback_control methods from another thread, see @c main_thread_callback. \n
+//! Do not call @c playback_control methods from inside any kind of global callback (e.g. playlist callback), otherwise race conditions may occur. \n
+//! Use @c playback_control::get() to obtain an instance.
 class NOVTABLE playback_control : public service_base {
 	FB2K_MAKE_SERVICE_COREAPI(playback_control);
 public:
@@ -116,7 +116,7 @@ public:
 	
 	//! Helper; retrieves length of currently playing item.
 	double playback_get_length();
-	// Extended version: queries dynamic track info for the rare cases where that is different from static info.
+	//! Extended version: queries dynamic track info for the rare cases where that is different from static info.
 	double playback_get_length_ex();
 
 	//! Toggles stop-after-current state.
@@ -154,7 +154,7 @@ public:
 	void userRewind();
 	void nonUserPause();
 
-	// #$@! FiiO hack $!#@
+    //! Obsolete, do not use
 	void userActionHook() {}
 };
 
@@ -171,17 +171,17 @@ class playback_control_v3 : public playback_control_v2 {
 public:
 	//! Custom volume API - for use with specific output devices only. \n
 	//! Note that custom volume SHOULD NOT EVER be presented as a slider where the user can immediately go to the maximum value. \n
-	//! Custom volume mode dispatches on_volume_changed callbacks on change, though the passed value is meaningless; \n
-	//! the components should query the current value from playback_control_v3. \n
-	//! Note that custom volume mode makes set_volume() / get_volume() meaningless, \n
-	//! but volume_up() / volume_down() / volume_mute_toggle() still work like they should (increment/decrement by one unit).
+	//! Custom volume mode dispatches @c on_volume_changed callbacks on change, though the passed value is meaningless; \n
+	//! the components should query the current value from @c playback_control_v3. \n
+	//! Note that custom volume mode makes @c set_volume() / @c get_volume() meaningless, \n
+	//! but @c volume_up() / @c volume_down() / @c volume_mute_toggle() still work like they should (increment/decrement by one unit).
 	//! @returns whether custom volume mode is active.
 	virtual bool custom_volume_is_active() = 0;
 	//! Retrieves the current volume value for the custom volume mode. \n
-	//! The volume units are arbitrary and specified by the device maker; see also: custom_volume_min(), custom_volume_max().
-	virtual int custom_volume_get() = 0;	
+	//! The volume units are arbitrary and specified by the device maker; see also: @c custom_volume_min(), @c custom_volume_max().
+	virtual int custom_volume_get() = 0;
 	//! Sets the current volume value for the custom volume mode. \n
-	//! The volume units are arbitrary and specified by the device maker; see also: custom_volume_min(), custom_volume_max().
+	//! The volume units are arbitrary and specified by the device maker; see also: @c custom_volume_min(), @c custom_volume_max().
 	//! CAUTION: you should NOT allow the user to easily go immediately to any value, it might blow their speakers out!
 	virtual void custom_volume_set(int val) = 0;
 	//! Returns the minimum custom volume value for the current output device.
@@ -189,7 +189,19 @@ public:
 	//! Returns the maximum custom volume value for the current output device.
 	virtual int custom_volume_max() = 0;
 
+    //! Restart current playback with as little interruption as possible, resuming where we left. \n
+    //! Intended for use when applying configuration changes.
 	virtual void restart() = 0;
+};
+
+//! \since 2.25
+class playback_control_v4 : public playback_control_v3 {
+    FB2K_MAKE_SERVICE_COREAPI_EXTENSION(playback_control_v4, playback_control_v3);
+public:
+    //! Retrieves currently active @c volume_control object. \n
+    //! Returns null if not supported by current output device. \n
+    //! Do not retain the object - it's for the specific output deivce, no longer valid if user changes output mode.
+    virtual service_ptr_t< class volume_control > get_volume_interface() = 0;
 };
 
 //for compatibility with old code

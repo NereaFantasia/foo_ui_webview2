@@ -2,9 +2,12 @@
 #include "pch.h"
 #include "api/TaskbarApi.h"
 #include "api/BridgeCore.h"
+#include "api/EventEmit.h"
+#include "api/TypedApi.h"
+#include "api/generated/TaskbarSchema.h"
 #include "window/TaskbarIntegration.h"
 #include "utils/IconLoader.h"
-#include "core/UserInterface.h"
+#include "ui/UserInterface.h"
 #include "window/MainWindow.h"
 #include "core/WebViewContext.h"
 
@@ -14,170 +17,143 @@ static bool IsPanelMode() {
     return WebViewContext::GetInstance().GetInstanceCount() > 0;
 }
 
-static json PanelModeResponse() {
-    return {{"success", false}, {"panelMode", true}};
-}
-
-// ============================================================
-// Parse frontend-provided icon strings. Empty/null means default icon.
-// ============================================================
-static std::string ParseIconParam(const json& params, const char* key = "icon") {
-    if (!params.contains(key) || params[key].is_null()) return {};
-    return params[key].get<std::string>();
-}
-
 // ============================================================
 // taskbar.setThumbnailButtons
 // ============================================================
-static json TaskbarSetThumbnailButtons(const json& params) {
-    if (IsPanelMode()) return PanelModeResponse();
-    if (!params.contains("buttons") || !params["buttons"].is_array())
-        return {{"success", false}, {"error", "buttons array required"}};
+static api::Result<void> TaskbarSetThumbnailButtons(const api::taskbar::SetThumbnailButtonsParams& p) {
+    if (IsPanelMode()) return api::PanelModeUnsupported("taskbar.setThumbnailButtons");
 
-    // Diagnostic gates: previously SetThumbnailButtons failures were surfaced as
-    // a bare {success:false} with no reason, which made the frontend probe unable
-    // to tell "not initialised yet" from "too many buttons" from "ThumbBar call
-    // failed". Report each distinct cause explicitly.
+    // Each distinct cause gets its own message, so the frontend can tell "not initialised
+    // yet" from "too many buttons" from "ThumbBar call failed".
     if (!TaskbarIntegration::GetInstance().IsInitialized()) {
-        return {{"success", false},
-                {"error", "taskbar not initialized yet; ITaskbarList3 is created on "
-                          "the TaskbarButtonCreated message after the window is shown "
-                          "on the taskbar. Retry once the main window is visible."}};
+        return api::Fail("taskbar not initialized yet; ITaskbarList3 is created on "
+                         "the TaskbarButtonCreated message after the window is shown "
+                         "on the taskbar. Retry once the main window is visible.",
+                         ApiErrorCode::OPERATION_FAILED);
     }
-    if (params["buttons"].size() > 7) {
-        return {{"success", false},
-                {"error", "too many thumbnail buttons; Windows allows at most 7"}};
+    if (p.buttons.size() > 7) {
+        return api::Fail("too many thumbnail buttons; Windows allows at most 7", ApiErrorCode::INVALID_PARAMS);
     }
 
     std::vector<ThumbnailButton> buttons;
-    for (const auto& b : params["buttons"]) {
+    for (const api::taskbar::ThumbnailButton& b : p.buttons) {
         ThumbnailButton btn;
-        btn.id = b.value("id", "");
-        btn.icon = b.contains("icon") && !b["icon"].is_null() ? b.value("icon", "") : "";
-        std::string tip = b.value("tooltip", "");
-        btn.tooltip = std::wstring(tip.begin(), tip.end()); // ASCII fast path; full UTF-8 below
-        if (!tip.empty()) {
-            int len = MultiByteToWideChar(CP_UTF8, 0, tip.c_str(), -1, nullptr, 0);
-            if (len > 0) { btn.tooltip.resize(len - 1); MultiByteToWideChar(CP_UTF8, 0, tip.c_str(), -1, btn.tooltip.data(), len); }
-        }
-        btn.enabled = b.value("enabled", true);
-        btn.visible = b.value("visible", true);
-        btn.dismissOnClick = b.value("dismissOnClick", false);
+        btn.id = b.id;
+        btn.icon = b.icon.value_or("");
+        btn.tooltip = Utf8ToWide(b.tooltip);
+        btn.enabled = b.enabled;
+        btn.visible = b.visible;
+        btn.dismissOnClick = b.dismissOnClick;
         buttons.push_back(std::move(btn));
     }
 
     bool ok = TaskbarIntegration::GetInstance().SetThumbnailButtons(buttons);
     if (!ok) {
-        return {{"success", false},
-                {"error", "ThumbBar install failed; ITaskbarList3 "
-                          "ThumbBarAddButtons/ThumbBarUpdateButtons returned an error "
-                          "(image list build or COM call failure)"}};
+        return api::Fail("ThumbBar install failed; ITaskbarList3 "
+                         "ThumbBarAddButtons/ThumbBarUpdateButtons returned an error "
+                         "(image list build or COM call failure)",
+                         ApiErrorCode::OPERATION_FAILED);
     }
-    return {{"success", true}};
+    return api::Ok();
 }
 
 // ============================================================
 // taskbar.updateButton
 // ============================================================
-static json TaskbarUpdateButton(const json& params) {
-    if (IsPanelMode()) return PanelModeResponse();
-    std::string id = params.value("id", "");
-    if (id.empty()) return {{"success", false}, {"error", "id required"}};
+static api::Result<void> TaskbarUpdateButton(const api::taskbar::UpdateButtonParams& p) {
+    if (IsPanelMode()) return api::PanelModeUnsupported("taskbar.updateButton");
 
-    std::optional<bool> enabled;
-    std::optional<bool> visible;
-    if (params.contains("enabled") && params["enabled"].is_boolean()) enabled = params["enabled"].get<bool>();
-    if (params.contains("visible") && params["visible"].is_boolean()) visible = params["visible"].get<bool>();
-    std::string icon = ParseIconParam(params);
-    std::wstring tooltip;
-    if (params.contains("tooltip") && params["tooltip"].is_string()) {
-        std::string tip = params["tooltip"].get<std::string>();
-        int len = MultiByteToWideChar(CP_UTF8, 0, tip.c_str(), -1, nullptr, 0);
-        if (len > 0) { tooltip.resize(len - 1); MultiByteToWideChar(CP_UTF8, 0, tip.c_str(), -1, tooltip.data(), len); }
+    bool ok = TaskbarIntegration::GetInstance().UpdateButton(
+        p.id, p.enabled, p.visible, p.icon.value_or(""), Utf8ToWide(p.tooltip));
+    if (!ok) {
+        return api::Fail("taskbar.updateButton failed: no installed thumbnail button has this id, "
+                         "the toolbar is not installed yet, or ITaskbarList3 rejected the update",
+                         ApiErrorCode::OPERATION_FAILED);
     }
-
-    bool ok = TaskbarIntegration::GetInstance().UpdateButton(id, enabled, visible, icon, tooltip);
-    return {{"success", ok}};
+    return api::Ok();
 }
 
 // ============================================================
 // taskbar.setProgress
 // ============================================================
-static json TaskbarSetProgress(const json& params) {
-    if (IsPanelMode()) return PanelModeResponse();
+static api::Result<void> TaskbarSetProgress(const api::taskbar::SetProgressParams& p) {
+    if (IsPanelMode()) return api::PanelModeUnsupported("taskbar.setProgress");
 
-    std::string stateStr = params.value("state", "none");
     TBPFLAG flag = TBPF_NOPROGRESS;
-    if (stateStr == "indeterminate") flag = TBPF_INDETERMINATE;
-    else if (stateStr == "normal")   flag = TBPF_NORMAL;
-    else if (stateStr == "error")    flag = TBPF_ERROR;
-    else if (stateStr == "paused")   flag = TBPF_PAUSED;
+    if (p.state == "indeterminate") flag = TBPF_INDETERMINATE;
+    else if (p.state == "normal")   flag = TBPF_NORMAL;
+    else if (p.state == "error")    flag = TBPF_ERROR;
+    else if (p.state == "paused")   flag = TBPF_PAUSED;
 
     auto& tb = TaskbarIntegration::GetInstance();
     // 主题写了进度条就由主题接管，偏好驱动的播放进度到下次播放状态变化前不再覆盖它。
     tb.NoteThemeProgressOverride();
     bool ok = tb.SetProgressState(flag);
-    if (ok && params.contains("value") && params["value"].is_number()) {
-        double v = params["value"].get<double>();
-        if (v >= 0.0 && v <= 1.0) {
-            constexpr ULONGLONG kTotal = 1000;
-            ok = tb.SetProgressValue(static_cast<ULONGLONG>(v * kTotal), kTotal);
-        }
+    if (ok && p.value) {
+        constexpr ULONGLONG kTotal = 1000;  // 解析器已保证 0 <= value <= 1
+        ok = tb.SetProgressValue(static_cast<ULONGLONG>(*p.value * kTotal), kTotal);
     }
-    return {{"success", ok}};
+    if (!ok) {
+        return api::Fail("taskbar.setProgress failed: the taskbar button does not exist yet "
+                         "or ITaskbarList3 rejected the call",
+                         ApiErrorCode::OPERATION_FAILED);
+    }
+    return api::Ok();
 }
 
 // ============================================================
 // taskbar.setOverlayIcon
 // ============================================================
-static json TaskbarSetOverlayIcon(const json& params) {
-    if (IsPanelMode()) return PanelModeResponse();
+static api::Result<void> TaskbarSetOverlayIcon(const api::taskbar::SetOverlayIconParams& p) {
+    if (IsPanelMode()) return api::PanelModeUnsupported("taskbar.setOverlayIcon");
 
     HICON hIcon = nullptr;
-    std::string icon = ParseIconParam(params);
-    if (!icon.empty()) {
-        hIcon = IconLoader::FromBase64(icon);
+    if (p.icon && !p.icon->empty()) {
+        hIcon = IconLoader::FromBase64(*p.icon);
     }
 
-    std::wstring desc;
-    if (params.contains("description") && params["description"].is_string()) {
-        std::string d = params["description"].get<std::string>();
-        int len = MultiByteToWideChar(CP_UTF8, 0, d.c_str(), -1, nullptr, 0);
-        if (len > 0) { desc.resize(len - 1); MultiByteToWideChar(CP_UTF8, 0, d.c_str(), -1, desc.data(), len); }
-    }
-
+    std::wstring desc = Utf8ToWide(p.description);
     bool ok = TaskbarIntegration::GetInstance().SetOverlayIcon(hIcon, desc.empty() ? nullptr : desc.c_str());
-    return {{"success", ok}};
+    if (!ok) {
+        return api::Fail("taskbar.setOverlayIcon failed: the taskbar button does not exist yet "
+                         "or ITaskbarList3 rejected the call",
+                         ApiErrorCode::OPERATION_FAILED);
+    }
+    return api::Ok();
 }
 
 // ============================================================
 // taskbar.flash
 // ============================================================
-static json TaskbarFlash(const json& params) {
-    if (IsPanelMode()) return PanelModeResponse();
-    UINT count = static_cast<UINT>(params.value("count", 3));
-    DWORD interval = static_cast<DWORD>(params.value("interval", 0));
-    bool ok = TaskbarIntegration::GetInstance().Flash(count, interval);
-    return {{"success", ok}};
+static api::Result<void> TaskbarFlash(const api::taskbar::FlashParams& p) {
+    if (IsPanelMode()) return api::PanelModeUnsupported("taskbar.flash");
+    bool ok = TaskbarIntegration::GetInstance().Flash(static_cast<UINT>(p.count), static_cast<DWORD>(p.interval));
+    if (!ok) {
+        return api::Fail("taskbar.flash failed: the main window's taskbar button has not been "
+                         "created yet, or the main window no longer exists",
+                         ApiErrorCode::OPERATION_FAILED);
+    }
+    return api::Ok();
 }
 
 // ============================================================
 // Registration
 // ============================================================
+// Parameters come from src/api/schema/taskbar.ts through the generated types.
 void RegisterTaskbarApi() {
-    auto& bridge = BridgeCore::GetInstance();
-
     // Register taskbar:buttonClicked event callback.
     TaskbarIntegration::GetInstance().SetButtonClickCallback([](const std::string& id) {
         // Broadcast: thumbnail buttons are app-global; the singleton EmitEvent would
         // only reach the "main" window (last SetWebView), dropping the event for any
         // popup/secondary window holding the handler. Mirrors playback:* delivery.
-        WebViewContext::GetInstance().BroadcastEvent("taskbar:buttonClicked", {{"id", id}});
+        api::taskbar::ButtonClickedPayload payload;
+        payload.id = id;
+        api::emit::Broadcast<api::taskbar::events::ButtonClicked>(payload);
     });
 
-    bridge.RegisterApi("taskbar.setThumbnailButtons", TaskbarSetThumbnailButtons);
-    bridge.RegisterApi("taskbar.updateButton",        TaskbarUpdateButton);
-    bridge.RegisterApi("taskbar.setProgress",         TaskbarSetProgress);
-    bridge.RegisterApi("taskbar.setOverlayIcon",      TaskbarSetOverlayIcon);
-    bridge.RegisterApi("taskbar.flash",               TaskbarFlash);
+    api::RegisterApi("taskbar.setThumbnailButtons", TaskbarSetThumbnailButtons);
+    api::RegisterApi("taskbar.updateButton",        TaskbarUpdateButton);
+    api::RegisterApi("taskbar.setProgress",         TaskbarSetProgress);
+    api::RegisterApi("taskbar.setOverlayIcon",      TaskbarSetOverlayIcon);
+    api::RegisterApi("taskbar.flash",               TaskbarFlash);
 }

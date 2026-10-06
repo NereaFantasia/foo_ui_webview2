@@ -66,3 +66,10 @@ bool _standard_api_try_get_internal(service_ptr & out, const GUID & classID) {
 void _standard_api_get_internal(service_ptr & out, const GUID & classID) {
 	if (!_standard_api_try_get_internal(out, classID) ) uBugCheck();
 }
+
+[[maybe_unused]] static void static_self_test() {
+	service_ptr ptr;
+	ptr = nullptr;
+	ptr = NULL;
+	if (ptr) {};
+}

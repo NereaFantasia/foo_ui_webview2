@@ -10,7 +10,7 @@
 
 template<typename dialog_t>
 void dsp_dialog_v2(const dsp_preset& p_data, HWND p_parent, dsp_preset_edit_callback& p_callback) {
-	core_api::ensure_main_thread();
+	PFC_ASSERT(core_api::is_main_thread());
 
 	class mycallback : public dsp_preset_edit_callback_v2 {
 	public:
@@ -64,13 +64,17 @@ service_ptr dsp_dialog_v3(HWND parent, dsp_preset_edit_callback_v2::ptr callback
 }
 #endif
 
-template<typename dsp_t, typename dialog_t>
-class dsp_impl_with_ui : public dsp_entry_common_t<dsp_t, dsp_entry_v3> {
+template<typename dsp_t, typename dialog_t, typename interface_t = dsp_entry_v3>
+class dsp_impl_with_ui : public dsp_entry_common_t<dsp_t, interface_t> {
 public:
 	void get_display_name(const dsp_preset& arg, pfc::string_base& out) override {
 		dsp_t::g_get_display_name(arg, out);
 	}
 #ifdef _WIN32
+	// If interface_t is multi inherit with resampler_entry, resampler_entry's show_config_popup isn't overridden by dsp_entry_v2!
+	bool show_config_popup(dsp_preset& p_data, fb2k::hwnd_t p_parent) override {
+		return dsp_entry_v2::show_config_popup(p_data, p_parent);
+	}
 	void show_config_popup_v2(const dsp_preset& p_data, fb2k::hwnd_t p_parent, dsp_preset_edit_callback& p_callback) override {
 		dsp_dialog_v2<dialog_t>(p_data, p_parent, p_callback);
 	}

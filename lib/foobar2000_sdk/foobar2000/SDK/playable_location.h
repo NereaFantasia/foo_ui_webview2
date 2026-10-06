@@ -65,12 +65,12 @@ public:
 
 	const playable_location_impl & operator=(const playable_location & src);
 
-	playable_location_impl();
+    playable_location_impl() {}
 	playable_location_impl(const char * p_path,t_uint32 p_subsong);
 	playable_location_impl(const playable_location & src);
 private:
 	pfc::string_simple m_path;
-	t_uint32 m_subsong;
+	t_uint32 m_subsong = 0;
 };
 
 // usage: somefunction( make_playable_location("file://c:\blah.ogg",0) );
@@ -90,3 +90,9 @@ public:
 };
 
 pfc::string_base & operator<<(pfc::string_base & p_fmt,const playable_location & p_location);
+
+namespace fb2k {
+    using ::playable_location;
+    using ::playable_location_impl;
+    using ::make_playable_location;
+}

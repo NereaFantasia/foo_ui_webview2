@@ -147,7 +147,7 @@ static t_filetimestamp filetimestamp_from_string_internal(const char* date, bool
             auto ret = ParseDateElem(date + walk, n);
             walk += n;
             if (ret > UINT16_MAX) throw exception_time_error();
-            return (WORD)ret;;
+            return (WORD)ret;
         };
         
         auto skip = [&](char c) {

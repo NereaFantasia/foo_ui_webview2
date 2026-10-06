@@ -1,5 +1,6 @@
 ﻿#pragma once
 #include "pch.h"
+#include "utils/Encoding.h"
 #include <nlohmann/json.hpp>
 #include <atomic>
 #include <functional>
@@ -12,6 +13,10 @@ using json = nlohmann::json;
 
 class WebViewHost;
 class BridgeCore;
+
+namespace api::detail {
+struct Registrar;
+}
 
 // API handler function type
 using ApiHandler = std::function<json(const json& params)>;
@@ -35,13 +40,16 @@ struct PathSecuritySpec {
     bool isArray = false;          // 参数是否为数组 (e.g. "paths": [...])
     std::string nestedKey;         // 嵌套 key (e.g. items[].path → nestedKey = "path")
     bool skipInvalid = false;      // 数组模式: 跳过无效路径而非 fail-fast (逐条校验用)
+    // 嵌套模式: 元素也可以直接是路径字符串（handles[] 收 "path" 或 { path, subsong }）；
+    // 既不是字符串、也不带字符串 nestedKey 的元素不带路径，不校验，交给 handler 计入无效项
+    bool stringElements = false;
 };
 
 // 路径校验结果
 struct ValidationResult {
     bool success = true;
     std::string errorMsg;
-    size_t skippedCount = 0;       // skipInvalid 模式: 被跳过的路径数量
+    std::vector<size_t> skippedIndices;  // skipInvalid 模式: 被跳过的数组下标（升序），wrapper 据此从参数里去掉
     bool shapeError = false;       // true 表示参数形状/类型失败而非路径安全拒绝，wrapper 据此选错误码
 };
 
@@ -60,7 +68,7 @@ ValidationResult ValidatePathParam(const json& params,
 // 收下一个可拷贝的轻句柄，在任意线程、任意时刻回包一次。
 //
 // 不变量 —— 每请求恰好一次响应：
-//   · 漏响应 = 页面侧落到 30s 超时兜底（WebViewHost.cpp 的 Request timeout），表现为
+//   · 漏响应 = 页面侧落到 30s 超时兜底（webview/BridgeBootstrapScript.inl 的 Request timeout），表现为
 //     假死并掩盖真因；worker 段的未捕获异常会被线程池静默吞掉，故 handler 的 worker
 //     段必须自带顶层 try/catch。
 //   · 重复响应 = 第二包带同一 id 回到已 resolve 的 Promise，静默丢失。
@@ -90,6 +98,7 @@ private:
         BridgeCore* bridge = nullptr;   // 分发本请求的 bridge（生命周期见 .cpp 注释）
         std::string id;                 // 空串 = 通知型调用，三条通道一律静默丢弃
         WebViewHost* target = nullptr;  // nullptr = 走 bridge 默认 webView_
+        std::function<bool()> isCurrentDocument;
         std::atomic<bool> responded{false};
     };
 
@@ -98,11 +107,13 @@ private:
     // 三条通道共用的投递骨架：主线程执行点上过 PassGate，通过才执行 dispatch。
     void PostGated(std::function<void(const State&)> dispatch) const;
 
-    // 主线程执行点上的三关判定「通知型丢弃 → 恰好一次闸门 → target 存活守卫」；
-    // 返回 false = 本次回包丢弃。
+    // 主线程先复查原文档，再依次执行通知型丢弃、恰好一次闸门和 target 存活守卫；
+    // 返回 false 表示丢弃本次回包。
     static bool PassGate(State& state);
 
     std::shared_ptr<State> state_;
+    // 进入业务 handler 前设定，之后不再改动，随句柄副本传到回包线程。
+    std::size_t skippedPaths_ = 0;
 };
 
 // Deferred API handler：不返回结果，通过 responder 回包（可跨线程、可延迟）
@@ -128,17 +139,11 @@ public:
     // Set WebView for sending messages
     void SetWebView(WebViewHost* webView);
     
-    // Register API handler
-    void RegisterApi(const std::string& method, ApiHandler handler);
-    
-    // Register API handler with path security specs (decorator pattern)
-    void RegisterApi(const std::string& method, ApiHandler handler,
-                     std::vector<PathSecuritySpec> specs);
-
-    // 注册延迟响应 API：handler 收 responder 而非返回 json，回包时机由 handler 决定。
-    // 与 RegisterApi 分表存放（互不覆盖），但在 HasApi / GetRegisteredApiNames /
-    // UnregisterApi 三个查询面与同步注册等价可见 —— 见实现处注释。
-    void RegisterApiDeferred(const std::string& method, DeferredApiHandler handler);
+    // 注册没有声明的方法：菜单浮层页的 menu.__*、test.echo / test.ping，以及插件在运行时起名的方法。
+    // 声明过的方法只能经 api::RegisterApi / api::RegisterApiDeferred（TypedApi.h）注册，它们是下面
+    // 私有 RegisterApi 的唯一调用方；scripts/api-schema/registrations.mjs 核对这里的字面量名字都在
+    // UNDECLARED_RAW 里。
+    void RegisterUndeclaredApi(const std::string& method, ApiHandler handler);
 
     // Unregister API handler
     void UnregisterApi(const std::string& method);
@@ -181,6 +186,20 @@ public:
                    const std::string& method = "");
 
 private:
+    friend struct api::detail::Registrar;
+
+    void RegisterApi(const std::string& method, ApiHandler handler);
+
+    // 带路径安全规格的注册（装饰器模式）
+    void RegisterApi(const std::string& method, ApiHandler handler,
+                     std::vector<PathSecuritySpec> specs);
+
+    // 注册延迟响应 API：handler 收 responder 而非返回 json，回包时机由 handler 决定。
+    // 与 RegisterApi 分表存放（互不覆盖），但在 HasApi / GetRegisteredApiNames /
+    // UnregisterApi 三个查询面与同步注册等价可见 —— 见实现处注释。
+    void RegisterApiDeferred(const std::string& method, DeferredApiHandler handler,
+                             std::vector<PathSecuritySpec> specs);
+
     WebViewHost* webView_ = nullptr;
     std::unordered_map<std::string, ApiHandler, std::hash<std::string>, std::equal_to<>> handlers_;
     std::unordered_map<std::string, DeferredApiHandler, std::hash<std::string>, std::equal_to<>> deferredHandlers_;
@@ -204,7 +223,3 @@ private:
     void SendToWeb(const json& message);
     void SendRawToWeb(const std::string& messageUtf8);
 };
-
-// Utility functions for string conversion
-std::string WideToUtf8(const std::wstring& wide);
-std::wstring Utf8ToWide(const std::string& utf8);

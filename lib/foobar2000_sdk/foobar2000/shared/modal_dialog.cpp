@@ -7,6 +7,7 @@ static t_modal_dialog_entry g_status = {0,false};
 static bool TestMainThread()
 {
 	if (GetCurrentThreadId() == g_main_thread) return true;
+	PFC_ASSERT(!"Should not get here");
 	OutputDebugString(TEXT("This function can be called only from main thread.\n"));
 	return false;
 }
@@ -18,6 +19,7 @@ HWND SHARED_EXPORT FindOwningPopup(HWND p_wnd)
 
 void SHARED_EXPORT PokeWindow(HWND p_wnd)
 {
+	PFC_ASSERT(IsWindow(p_wnd));
 	p_wnd = FindOwningPopup(p_wnd);
 	if (IsWindowEnabled(p_wnd))
 	{

@@ -53,8 +53,13 @@ namespace foobar2000_io
 			attr_folder = 1 << 1,
 			attr_hidden = 1 << 2,
 			attr_system = 1 << 3,
+            // Internet resource with slow seeking, see file::is_remote()
 			attr_remote = 1 << 4,
+            // I network resource or local file; separated from attr_remote. attr_network without attr_remote means local network rather than internet.
+            // New in 2.25, legacy implementations may not set it, always check together with attr_remote
+            attr_network = 1 << 5,
 		};
+        bool attrib_valid( uint32_t attr ) const { return (m_attribsValid & attr ) == attr; }
 		bool is_set(uint32_t attr) const {
 			PFC_ASSERT(m_attribsValid & attr);
 			return (m_attribs & attr) != 0;
@@ -66,6 +71,7 @@ namespace foobar2000_io
 		bool can_write() const { return !is_readonly(); }
 		bool is_system() const { return is_set(attr_system); }
 		bool is_remote() const { return is_set(attr_remote); }
+        bool is_network() const { return ( m_attribsValid & attr_network ) ? is_set(attr_network) : is_remote(); }
 
 		void set_attrib(uint32_t f, bool v) {
 			if (v) m_attribs |= f;
@@ -74,10 +80,14 @@ namespace foobar2000_io
 		}
 		void set_file(bool v = true) { set_folder(!v); }
 		void set_folder(bool v = true) { set_attrib(attr_folder, v); }
-		void set_readonly(bool v) { set_attrib(attr_readonly, v); }
+		void set_readonly(bool v = true) { set_attrib(attr_readonly, v); }
 		void set_hidden(bool v) { set_attrib(attr_hidden, v); }
 		void set_system(bool v) { set_attrib(attr_system, v); }
-		void set_remote(bool v = true) { set_attrib(attr_remote, v); }
+		void set_remote(bool v) { set_attrib(attr_remote, v); }
+        void set_network(bool v = true) { set_attrib(attr_network, v); }
+        void set_remote() { set_attrib(attr_remote, true); set_attrib(attr_network, true); }
+        void set_local() { set_attrib(attr_remote, false); set_attrib(attr_network, false); }
+        void set_local_network() { set_attrib(attr_remote, false); set_attrib(attr_network, true); }
 
 		static pfc::string8 format_attribs(uint32_t flags, const char* delim = ", ");
 		pfc::string8 format_attribs(const char* delim = ", ") const { return format_attribs(m_attribs, delim); }
@@ -94,6 +104,14 @@ namespace foobar2000_io
 		bool haveSize() const { return m_size != filesize_invalid; }
 		bool haveTimestamp() const { return m_timestamp != filetimestamp_invalid; }
 		bool haveTimestampCreate() const { return m_timestampCreate != filetimestamp_invalid; }
+        
+        //! Tests whether this object is a subset of / equal to other object.
+        bool isSubsetOf( t_filestats2 const & superset ) const;
+        
+        //! Returns whether this object holds all info requred for passed stats2_* flags
+        bool test_s2flags( uint32_t s2flags ) const;
+        
+        void overwriteAttribs( t_filestats2 const & other );
 	};
 	static constexpr uint32_t
 		stats2_size = 1 << 0,
@@ -103,7 +121,7 @@ namespace foobar2000_io
 		stats2_readOnly = 1 << 4,
 		stats2_canWrite = stats2_readOnly,
 		stats2_hidden = 1 << 5,
-		stats2_remote = 1 << 6,
+		stats2_remote = 1 << 6, // both network/remote flags
 		stats2_flags = (stats2_fileOrFolder | stats2_readOnly | stats2_hidden | stats2_remote),
 		stats2_legacy = (stats2_size | stats2_timestamp),
 		stats2_all = 0xFFFFFFFF;
@@ -266,7 +284,8 @@ namespace foobar2000_io
 		//! @returns Read/write cursor position
 		virtual t_filesize get_position(abort_callback& p_abort) = 0;
 
-		//! Resizes file to the specified size in bytes.
+		//! Resizes file to the specified size in bytes. \n
+		//! This method should NOT change the read/write cursor, unless shrinking and the cursor points at bytes being removed; then it will become set to end-of-file.
 		//! @param p_abort abort_callback object signaling user aborting the operation.
 		virtual void resize(t_filesize p_size, abort_callback& p_abort) = 0;
 
@@ -308,7 +327,8 @@ namespace foobar2000_io
 		//! @param p_abort abort_callback object signaling user aborting the operation.
 		virtual void reopen(abort_callback& p_abort) = 0;
 
-		//! Indicates whether the file is a remote resource and non-sequential access may be slowed down by lag. This is typically returns to true on non-seekable sources but may also return true on seekable sources indicating that seeking is supported but will be relatively slow.
+		//! Indicates whether the file is a remote resource and non-sequential access may be slowed down by lag. This is typically returns to true on non-seekable sources but may also return true on seekable sources indicating that seeking is supported but will be relatively slow. \n
+        //! Note that is_remote() may return false for local network shares mounted using various means.
 		virtual bool is_remote() = 0;
 
 		//! Retrieves file stats structure. Uses get_size() and get_timestamp().
@@ -337,12 +357,16 @@ namespace foobar2000_io
 		//! Helper; throws exception_io_object_not_seekable if file is not seekable.
 		void ensure_seekable();
 
-		//! Helper; throws exception_io_object_is_remote if the file is remote.
+		//! Helper; throws exception_io_object_is_remote if the file is remote; see is_remote()
 		void ensure_local();
+        
+        //! Helper, see t_filestats2::attr_network
+        bool is_network();
 
 		//! Helper; transfers specified number of bytes between streams.
 		//! @returns number of bytes actually transferred. May be less than requested if e.g. EOF is reached.
 		static t_filesize g_transfer(stream_reader* src, stream_writer* dst, t_filesize bytes, abort_callback& p_abort);
+		static t_filesize g_transfer_threaded(stream_reader* src, stream_writer* dst, t_filesize bytes, abort_callback& p_abort);
 		//! Helper; transfers specified number of bytes between streams. Throws exception if requested number of bytes could not be read (EOF).
 		static void g_transfer_object(stream_reader* src, stream_writer* dst, t_filesize bytes, abort_callback& p_abort);
 		//! Helper; transfers entire file content from one file to another, erasing previous content.
@@ -400,11 +424,14 @@ namespace foobar2000_io
 		FB2K_MAKE_SERVICE_INTERFACE(file_dynamicinfo, file);
 	public:
 		//! Retrieves "static" info that doesn't change in the middle of stream, such as station names etc. Returns true on success; false when static info is not available.
-		virtual bool get_static_info(class file_info& p_out) = 0;
+		virtual bool get_static_info(file_info& p_out) = 0;
 		//! Returns whether dynamic info is available on this stream or not.
 		virtual bool is_dynamic_info_enabled() = 0;
-		//! Retrieves dynamic stream info (e.g. online stream track titles). Returns true on success, false when info has not changed since last call.
-		virtual bool get_dynamic_info(class file_info& p_out) = 0;
+		//! Retrieves dynamic stream info (e.g. online stream track titles). Returns true on success, false when info has not changed since last call. \n
+        //! The function can be either handed a blank object to fill, or used to supplement file_info from another source, clearing & overwriting prior metadata but supplementing tech info fields. \n
+        //! Repeated calls without clearing file_info inbetween should produce same final result.
+        //! @param p_out Track info object to fill.
+		virtual bool get_dynamic_info(file_info& p_out) = 0;
 	};
 
 	//! \since 1.4.1
@@ -412,10 +439,16 @@ namespace foobar2000_io
 	class file_dynamicinfo_v2 : public file_dynamicinfo {
 		FB2K_MAKE_SERVICE_INTERFACE(file_dynamicinfo_v2, file_dynamicinfo);
 	public:
-		virtual bool get_dynamic_info_v2(class file_info& out, t_filesize& outOffset) = 0;
+        //! Extended version of file_dynamicinfo::get_dynamic_info()
+        //! Returns new metadata and offset at which the metadata change occurred.
+        //! There could be multiple metadata changes that ocurred with last read pass, with different offsets - call repeatedly to retrieve all (new behavior in 2.25 - old versions would only return last change).
+        //! @param outInfo See: file_readonly::get_dynamic_info().
+        //! @param outOffset File offset at which returned info change ocurred.
+        //! @returns true if new metadata was returned (there could be more than one, call again), false if no more data is available at this time.
+		virtual bool get_dynamic_info_v2(file_info& outInfo, t_filesize& outOffset) = 0;
 	protected:
-		// Obsolete
-		bool get_dynamic_info(class file_info& p_out);
+		//! Wraps file_dynamicinfo method to new.
+		bool get_dynamic_info(file_info& outInfo) override;
 	};
 
 	//! Extension for cached file access - allows callers to know that they're dealing with a cache layer, to prevent cache duplication.
@@ -429,6 +462,8 @@ namespace foobar2000_io
 		static void g_create(service_ptr_t<file>& p_out, service_ptr_t<file> p_base, abort_callback& p_abort, t_size blockSize);
 
 		static void g_decodeInitCache(file::ptr& theFile, abort_callback& abort, size_t blockSize);
+
+		static void selftest();
 	};
 
 	//! \since 1.5
@@ -462,8 +497,8 @@ namespace foobar2000_io
 	//! Implementation helper - contains dummy implementations of methods that modify the file
 	template<typename t_base> class file_readonly_t : public t_base {
 	public:
-		void resize(t_filesize p_size, abort_callback& p_abort) override { throw exception_io_denied(); }
-		void write(const void* p_buffer, t_size p_bytes, abort_callback& p_abort) override { throw exception_io_denied(); }
+		void resize(t_filesize, abort_callback&) override { throw exception_io_denied(); }
+		void write(const void*, t_size, abort_callback&) override { throw exception_io_denied(); }
 	};
 	typedef file_readonly_t<file> file_readonly;
 

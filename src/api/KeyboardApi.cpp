@@ -5,12 +5,16 @@
 #include "api/KeyboardApi.h"
 #include "api/BridgeCore.h"
 #include "api/CallerContext.h"
+#include "api/EventEmit.h"
+#include "api/TypedApi.h"
+#include "api/generated/KeyboardSchema.h"
 #include "core/WebViewContext.h"
 #include <map>
 #include <mutex>
 
 namespace {
     using json = nlohmann::json;
+    namespace keyboard = api::keyboard;
     
     // Get main window handle
     HWND GetMainWindowHandle() {
@@ -138,199 +142,150 @@ namespace {
         
         return false;
     }
-    
+
     //==========================================================================
     // keyboard.registerHotkey - Register global hotkey
     //==========================================================================
-    json KeyboardRegisterHotkey(const json& params) {
-        std::string key = params.value("key", "");
-        std::string action = params.value("action", "");
-        bool isGlobal = params.value("global", true);
-        
-        if (key.empty()) {
-            return {{"success", false}, {"error", "key is required"}};
-        }
-        
-        if (action.empty()) {
-            return {{"success", false}, {"error", "action is required"}};
-        }
-        
+    api::Result<keyboard::RegisterHotkeyResult> KeyboardRegisterHotkey(const keyboard::RegisterHotkeyParams& p, const CallerContext& caller) {
         UINT modifiers, vk;
-        if (!ParseKeyString(key, modifiers, vk)) {
-            return {{"success", false}, {"error", "Invalid key string: " + key}};
+        if (!ParseKeyString(p.key, modifiers, vk) || vk == 0) {
+            return api::Fail("Invalid key string: " + p.key, ApiErrorCode::INVALID_PARAMS);
         }
-        
-        if (vk == 0) {
-            return {{"success", false}, {"error", "Could not determine virtual key from: " + key}};
-        }
-        
+
         HWND hwnd = GetMainWindowHandle();
         if (!hwnd) {
-            return {{"success", false}, {"error", "Window not available"}};
+            return api::Fail("Window not available", ApiErrorCode::OPERATION_FAILED);
         }
-        
+
         std::lock_guard<std::mutex> lock(g_hotkeyMutex);
-        
+
         int id = g_nextHotkeyId++;
-        
+
         // Register with Windows
         // Note: Add MOD_NOREPEAT to prevent repeated WM_HOTKEY when key is held
         if (!RegisterHotKey(hwnd, id, modifiers | MOD_NOREPEAT, vk)) {
             DWORD error = GetLastError();
-            return {
-                {"success", false}, 
-                {"error", "Failed to register hotkey (error " + std::to_string(error) + "). Key may already be registered."}
-            };
+            return api::Fail(
+                "Failed to register hotkey (error " + std::to_string(error) + "). Key may already be registered.",
+                ApiErrorCode::OPERATION_FAILED);
         }
-        
+
         // Store hotkey info (capture caller identity for panel-mode routing)
         HotkeyInfo info;
         info.id = id;
-        info.key = key;
-        info.action = action;
-        info.isGlobal = isGlobal;
+        info.key = p.key;
+        info.action = p.action;
+        info.isGlobal = p.global;
         info.modifiers = modifiers;
         info.vk = vk;
-        
-        auto caller = CallerContext::FromParams(params);
         info.callerHwnd = caller.callerHwnd;
         info.callerWindowId = caller.windowId;
-        
+
         g_hotkeys[id] = info;
-        
-        return {
-            {"success", true},
-            {"id", id}
-        };
+
+        keyboard::RegisterHotkeyResult result;
+        result.id = id;
+        return result;
     }
-    
+
     //==========================================================================
     // keyboard.registerShortcut - Register WebView shortcut (non-global)
     //==========================================================================
-    json KeyboardRegisterShortcut(const json& params) {
-        std::string key = params.value("key", "");
-        std::string action = params.value("action", "");
-        
-        if (key.empty()) {
-            return {{"success", false}, {"error", "key is required"}};
-        }
-        
-        if (action.empty()) {
-            return {{"success", false}, {"error", "action is required"}};
-        }
-        
+    api::Result<void> KeyboardRegisterShortcut(const keyboard::RegisterShortcutParams& p) {
         UINT modifiers, vk;
-        if (!ParseKeyString(key, modifiers, vk)) {
-            return {{"success", false}, {"error", "Invalid key string: " + key}};
+        if (!ParseKeyString(p.key, modifiers, vk)) {
+            return api::Fail("Invalid key string: " + p.key, ApiErrorCode::INVALID_PARAMS);
         }
-        
+
         std::lock_guard<std::mutex> lock(g_hotkeyMutex);
-        
+
         HotkeyInfo info;
         info.id = 0;  // Not a Windows hotkey
-        info.key = key;
-        info.action = action;
+        info.key = p.key;
+        info.action = p.action;
         info.isGlobal = false;
         info.modifiers = modifiers;
         info.vk = vk;
-        
-        g_shortcuts[key] = info;
-        
-        return {{"success", true}};
+
+        g_shortcuts[p.key] = info;
+
+        return api::Ok();
     }
-    
+
     //==========================================================================
     // keyboard.unregisterHotkey - Unregister a hotkey
     //==========================================================================
-    json KeyboardUnregisterHotkey(const json& params) {
-        std::string key = params.value("key", "");
-        
-        // Handle id as either number or string
-        int id = -1;
-        if (params.contains("id")) {
-            if (params["id"].is_number()) {
-                id = params["id"].get<int>();
-            } else if (params["id"].is_string()) {
-                try {
-                    id = std::stoi(params["id"].get<std::string>());
-                } catch (...) {
-                    // If conversion fails, use the string as key
-                    if (key.empty()) {
-                        key = params["id"].get<std::string>();
-                    }
-                }
-            }
+    api::Result<void> KeyboardUnregisterHotkey(const keyboard::UnregisterHotkeyParams& p) {
+        if (!p.id && !p.key) {
+            return api::Fail("id or key is required", ApiErrorCode::INVALID_PARAMS);
         }
-        
+        if (p.id && p.key) {
+            return api::Fail("id and key cannot both be given", ApiErrorCode::INVALID_PARAMS);
+        }
+
         HWND hwnd = GetMainWindowHandle();
-        
+
         std::lock_guard<std::mutex> lock(g_hotkeyMutex);
-        
-        if (id > 0) {
+
+        if (p.id) {
             // Unregister by ID
-            auto it = g_hotkeys.find(id);
+            auto it = g_hotkeys.find(static_cast<int>(*p.id));
             if (it != g_hotkeys.end()) {
                 if (hwnd) {
-                    UnregisterHotKey(hwnd, id);
+                    UnregisterHotKey(hwnd, it->first);
                 }
                 g_hotkeys.erase(it);
-                return {{"success", true}};
+                return api::Ok();
             }
-        } else if (!key.empty()) {
+        } else {
             // Unregister by key string
             for (auto it = g_hotkeys.begin(); it != g_hotkeys.end(); ++it) {
-                if (it->second.key == key) {
+                if (it->second.key == *p.key) {
                     if (hwnd) {
                         UnregisterHotKey(hwnd, it->first);
                     }
                     g_hotkeys.erase(it);
-                    return {{"success", true}};
+                    return api::Ok();
                 }
             }
-            
+
             // Also check shortcuts
-            auto sit = g_shortcuts.find(key);
+            auto sit = g_shortcuts.find(*p.key);
             if (sit != g_shortcuts.end()) {
                 g_shortcuts.erase(sit);
-                return {{"success", true}};
+                return api::Ok();
             }
         }
-        
-        return {{"success", false}, {"error", "Hotkey not found"}};
+
+        return api::Fail("Hotkey not found", ApiErrorCode::NOT_FOUND);
     }
-    
+
     //==========================================================================
     // keyboard.getRegisteredHotkeys - List all registered hotkeys
     //==========================================================================
-    json KeyboardGetRegisteredHotkeys(const json& /*params*/) {
+    api::Result<keyboard::GetRegisteredHotkeysResult> KeyboardGetRegisteredHotkeys(const keyboard::GetRegisteredHotkeysParams&) {
         std::lock_guard<std::mutex> lock(g_hotkeyMutex);
-        
-        json hotkeys = json::array();
-        
+
+        keyboard::GetRegisteredHotkeysResult result;
         for (const auto& [id, info] : g_hotkeys) {
-            hotkeys.push_back({
-                {"id", id},
-                {"key", info.key},
-                {"action", info.action},
-                {"global", info.isGlobal}
-            });
+            keyboard::KeyboardHotkey row;
+            row.id = id;
+            row.key = info.key;
+            row.action = info.action;
+            row.global = info.isGlobal;
+            result.hotkeys.push_back(std::move(row));
         }
-        
         for (const auto& [key, info] : g_shortcuts) {
-            hotkeys.push_back({
-                {"id", 0},
-                {"key", info.key},
-                {"action", info.action},
-                {"global", false}
-            });
+            keyboard::KeyboardHotkey row;
+            row.id = 0;
+            row.key = info.key;
+            row.action = info.action;
+            row.global = false;
+            result.hotkeys.push_back(std::move(row));
         }
-        
-        return {
-            {"success", true},
-            {"hotkeys", hotkeys}
-        };
+        return result;
     }
-    
+
 } // anonymous namespace
 
 //==========================================================================
@@ -338,28 +293,29 @@ namespace {
 //==========================================================================
 void ProcessHotkeyMessage(int id) {
     std::lock_guard<std::mutex> lock(g_hotkeyMutex);
-    
+
     auto it = g_hotkeys.find(id);
     if (it != g_hotkeys.end()) {
-        json data = {
-            {"id", id},
-            {"key", it->second.key},
-            {"action", it->second.action}
-        };
-        // 路由到注册此 hotkey 的调用者实例
+        using Hotkey = keyboard::events::Hotkey;
+        keyboard::HotkeyPayload payload;
+        payload.id = id;
+        payload.key = it->second.key;
+        payload.action = it->second.action;
+        // 路由到注册此 hotkey 的调用者实例。注册窗口关闭时热键不会注销，
+        // 前两级都找不到该窗口，按键落到单例 bridge（主窗口的页面）。
         auto& wvc = WebViewContext::GetInstance();
         bool sent = false;
         if (!it->second.callerWindowId.empty()) {
-            sent = wvc.SendEventTo(it->second.callerWindowId, "keyboard:hotkey", data);
+            sent = api::emit::SendTo<Hotkey>(it->second.callerWindowId, payload);
         }
         if (!sent && it->second.callerHwnd) {
             if (auto* bridge = wvc.GetBridge(it->second.callerHwnd)) {
-                bridge->EmitEvent("keyboard:hotkey", data);
+                api::emit::Emit<Hotkey>(*bridge, payload);
                 sent = true;
             }
         }
         if (!sent) {
-            BridgeCore::GetInstance().EmitEvent("keyboard:hotkey", data);
+            api::emit::Emit<Hotkey>(BridgeCore::GetInstance(), payload);
         }
     }
 }
@@ -368,19 +324,17 @@ void ProcessHotkeyMessage(int id) {
 // Register Keyboard API
 //==========================================================================
 void RegisterKeyboardApi() {
-    auto& bridge = BridgeCore::GetInstance();
-    
     // keyboard.registerHotkey - Register global hotkey
-    bridge.RegisterApi("keyboard.registerHotkey", KeyboardRegisterHotkey);
-    
+    api::RegisterApi("keyboard.registerHotkey", KeyboardRegisterHotkey);
+
     // keyboard.registerShortcut - Register WebView shortcut
-    bridge.RegisterApi("keyboard.registerShortcut", KeyboardRegisterShortcut);
-    
+    api::RegisterApi("keyboard.registerShortcut", KeyboardRegisterShortcut);
+
     // keyboard.unregisterHotkey - Unregister hotkey
-    bridge.RegisterApi("keyboard.unregisterHotkey", KeyboardUnregisterHotkey);
-    
+    api::RegisterApi("keyboard.unregisterHotkey", KeyboardUnregisterHotkey);
+
     // keyboard.getRegisteredHotkeys - List registered hotkeys
-    bridge.RegisterApi("keyboard.getRegisteredHotkeys", KeyboardGetRegisteredHotkeys);
-    
+    api::RegisterApi("keyboard.getRegisteredHotkeys", KeyboardGetRegisteredHotkeys);
+
     LOG("Keyboard API registered (4 APIs)");
 }

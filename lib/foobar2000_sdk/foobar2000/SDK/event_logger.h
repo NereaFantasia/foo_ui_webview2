@@ -10,11 +10,10 @@
 class NOVTABLE event_logger : public service_base {
 	FB2K_MAKE_SERVICE_INTERFACE(event_logger, service_base);
 public:
-	enum {
-		severity_status,
-		severity_warning,
-		severity_error
-	};
+	static constexpr unsigned severity_status = 0,
+		severity_warning = 1,
+		severity_error = 2;
+
 	void log_status(const char * line) {log_entry(line, severity_status);}
 	void log_warning(const char * line) {log_entry(line, severity_warning);}
 	void log_error(const char * line) {log_entry(line, severity_error);}
@@ -22,10 +21,18 @@ public:
 	virtual void log_entry(const char * line, unsigned severity) = 0;
 };
 
-class event_logger_fallback : public event_logger {
-public:
-	void log_entry(const char * line, unsigned) {console::print(line);}
+class event_logger_console : public event_logger { public:
+	void log_entry(const char * line, unsigned) override {console::print(line);}
 };
+typedef event_logger_console event_logger_fallback;
+
+class event_logger_dummy : public event_logger { public:
+	void log_entry(const char*, unsigned) override {}
+};
+
+namespace fb2k {
+	extern service_impl_single_t<event_logger_dummy> noLogger;
+}
 
 class NOVTABLE event_logger_recorder : public event_logger {
 	FB2K_MAKE_SERVICE_INTERFACE( event_logger_recorder , event_logger );
@@ -43,8 +50,8 @@ public:
 
 #else
 
-#define FB2K_LOG_STATUS(X,Y) ((void)0)
-#define FB2K_LOG_WARNING(X,Y) ((void)0)
-#define FB2K_LOG_ERROR(X,Y) ((void)0)
+#define FB2K_LOG_STATUS(X,Y) PFC_NO_OP
+#define FB2K_LOG_WARNING(X,Y) PFC_NO_OP
+#define FB2K_LOG_ERROR(X,Y) PFC_NO_OP
 
 #endif

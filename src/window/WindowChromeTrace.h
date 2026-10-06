@@ -139,6 +139,9 @@ private:
         return false;
     }
 
-    inline static std::atomic<unsigned long long> sequence_ { 0 };
-    inline static std::atomic<unsigned long long> originTickMs_ { 0 };
+    // 显式写出 8 字节对齐：32 位下 v143 的 <atomic> 在不同翻译单元里给
+    // atomic<unsigned long long> 推出的对齐不一致，链接期报 C4744，而主工程开了
+    // /WX。8 字节也是 x86 上 cmpxchg8b 做无锁 64 位原子操作所需的对齐。
+    alignas(8) inline static std::atomic<unsigned long long> sequence_ { 0 };
+    alignas(8) inline static std::atomic<unsigned long long> originTickMs_ { 0 };
 };

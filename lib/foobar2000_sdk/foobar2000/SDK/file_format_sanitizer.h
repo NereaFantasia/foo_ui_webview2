@@ -25,11 +25,11 @@ public:
 	virtual void after_encode(const char* path, abort_callback& aborter) = 0;
 };
 
-//! Utility service to perform sanitization of generic ID3v2 tags. Called by format-specific implementations of file_format_sanitizer.
+//! Utility service to perform sanitization of generic ID3v2 tags. Called by format-specific implementations of @c file_format_sanitizer.
 class NOVTABLE file_format_sanitizer_stdtags : public service_base {
 	FB2K_MAKE_SERVICE_INTERFACE_ENTRYPOINT( file_format_sanitizer_stdtags );
 public:
-	//! Similar to file_format_sanitizer method of the same name. Performs sanitization of generic ID3v2 tags.
+	//! Similar to @c file_format_sanitizer method of the same name. Performs sanitization of generic ID3v2 tags.
 	virtual bool sanitize_file( const char * path, bool bMinimizeSize, abort_callback & aborter ) = 0;
 };
 

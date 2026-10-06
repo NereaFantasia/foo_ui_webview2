@@ -1,5 +1,7 @@
 ﻿#include "pch.h"
 #include "callbacks/QueueCallback.h"
+#include "api/EventEmit.h"
+#include "api/generated/PlaybackSchema.h"
 #include "core/WebViewContext.h"
 
 #include <cassert>
@@ -17,7 +19,7 @@ namespace {
 }  // namespace
 
 // 单一 emit helper：全库唯一的
-// BroadcastEvent("playback:queueChanged") 站点。count 现场读
+// playback:queueChanged 发射点。count 现场读
 // queue_get_count()，让订阅方免于逐次回查 queue.get。
 void EmitQueueChanged(const std::string& origin) {
     try {
@@ -26,10 +28,10 @@ void EmitQueueChanged(const std::string& origin) {
 
         LOG("QueueCallback: Queue changed, origin=", origin.c_str());
 
-        WebViewContext::GetInstance().BroadcastEvent("playback:queueChanged", {
-            {"origin", origin},
-            {"count", count}
-        });
+        api::playback::QueueChangedPayload payload;
+        payload.origin = origin;
+        payload.count = static_cast<std::int64_t>(count);
+        api::emit::Broadcast<api::playback::events::QueueChanged>(payload);
     } catch (...) {}
 }
 

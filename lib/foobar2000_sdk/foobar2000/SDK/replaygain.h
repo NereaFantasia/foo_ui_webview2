@@ -2,25 +2,23 @@
 //! Structure storing ReplayGain configuration: album/track source data modes, gain/peak processing modes and preamp values.
 struct t_replaygain_config
 {
-	enum /*t_source_mode*/ {
-		source_mode_none,
-		source_mode_track,
-		source_mode_album, 
+	typedef t_uint32 t_source_mode; typedef t_uint32 t_processing_mode;
+	static constexpr t_source_mode
+		source_mode_none = 0,
+		source_mode_track = 1,
+		source_mode_album = 2,
 		// New in 1.3.8
 		// SPECIAL MODE valid only for playback settings; if set, track gain will be used for random & shuffle-tracks modes, album for shuffle albums & ordered playback.
-		source_mode_byPlaybackOrder 
-	};
-	enum /*t_processing_mode*/ {processing_mode_none,processing_mode_gain,processing_mode_gain_and_peak,processing_mode_peak};
-	typedef t_uint32 t_source_mode; typedef t_uint32 t_processing_mode;
+		source_mode_byPlaybackOrder = 3;
+	static constexpr t_processing_mode 
+		processing_mode_none = 0,
+		processing_mode_gain = 1,
+		processing_mode_gain_and_peak = 2,
+		processing_mode_peak = 3;
 
-	t_replaygain_config() {reset();}
-	t_replaygain_config(t_source_mode p_source_mode,t_processing_mode p_processing_mode,float p_preamp_without_rg, float p_preamp_with_rg)
-		: m_source_mode(p_source_mode), m_processing_mode(p_processing_mode), m_preamp_without_rg(p_preamp_without_rg), m_preamp_with_rg(p_preamp_with_rg) {}
-
-	
-	t_source_mode m_source_mode;
-	t_processing_mode m_processing_mode;
-	float m_preamp_without_rg, m_preamp_with_rg;//preamp values in dB
+	t_source_mode m_source_mode = source_mode_none;
+	t_processing_mode m_processing_mode = processing_mode_none;
+	float m_preamp_without_rg = 0, m_preamp_with_rg = 0;//preamp values in dB
 
 	void reset();
 	audio_sample query_scale(const file_info & info) const;
@@ -28,6 +26,8 @@ struct t_replaygain_config
 	audio_sample query_scale(const replaygain_info & info) const;
 	
 	static void print_preamp(double val, pfc::string_base & out);
+	static pfc::string8 print_preamp(double val);
+	static double parse_preamp(const char*);
 
 	void format_name(pfc::string_base & p_out) const;
 	bool is_active() const;

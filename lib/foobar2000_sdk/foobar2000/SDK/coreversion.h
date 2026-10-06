@@ -20,7 +20,7 @@ public:
 	virtual const char * get_version_as_text() = 0;//"N.N.N.N"
 	virtual t_core_version_data get_version() = 0;
 
-	//! Determine whether running foobar2000 version is newer or equal to the specified version, eg. test_version(0,9,5,0) for 0.9.5.
+	//! Determine whether running foobar2000 version is newer or equal to the specified version, eg. @c test_version(0,9,5,0) for 0.9.5.
 	bool test_version(t_uint32 major, t_uint32 minor1, t_uint32 minor2, t_uint32 minor3) {
 		const t_core_version_data v = get_version();
 		if (v.m_major < major) return false;

@@ -19,6 +19,7 @@ public:
 
 	virtual size_t listGetItemCount( ctx_t ) = 0;
 	virtual pfc::string8 listGetSubItemText( ctx_t, size_t item, size_t subItem ) = 0;
+	virtual pfc::string8 listGetAccText(ctx_t ctx, size_t item) { return listGetSubItemText(ctx, item, 0); }
 	virtual bool listCanReorderItems( ctx_t ) { return false; }
 	virtual bool listReorderItems( ctx_t, const size_t*, size_t) {return false;}
 	virtual bool listRemoveItems( ctx_t, pfc::bit_array const & ) {return false;}
@@ -106,6 +107,10 @@ public:
 		out = m_host->listGetSubItemText( this, item, subItem );
 		return true;
 	}
+	void AccGetItemName(size_t index, pfc::string_base& out) const {
+		out = m_host->listGetAccText(this, index);
+	}
+
 	void OnSubItemClicked( size_t item, size_t subItem, CPoint pt ) override {
 		__super::OnSubItemClicked(item, subItem, pt); // needed to toggle checkboxes etc
 		m_host->listSubItemClicked( this, item, subItem );

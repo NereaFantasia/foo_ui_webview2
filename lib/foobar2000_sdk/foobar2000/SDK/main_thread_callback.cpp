@@ -31,13 +31,6 @@ void fb2k::inMainThread( std::function<void () > f ) {
     main_thread_callback_add( new service_impl_t<mtcallback_func>(f));
 }
 
-void fb2k::inMainThread(std::function<void() > f, abort_callback& a) {
-	auto abort = std::make_shared< abort_callback_clone >(a);
-	inMainThread([f, abort] {
-		if (!abort->is_set()) f();
-	});
-}
-
 void fb2k::inMainThread2( std::function<void () > f ) {
 	if ( core_api::is_main_thread() ) {
 		f();

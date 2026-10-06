@@ -3,6 +3,8 @@
 #include "window/MainWindow.h"
 #include "window/WindowShellBase.h"
 #include "core/WebViewContext.h"
+#include "api/EventEmit.h"
+#include "api/generated/WindowSchema.h"
 
 namespace {
 
@@ -373,25 +375,6 @@ std::vector<std::string> WindowManager::GetAllWindowIds() const {
     return ids;
 }
 
-json WindowManager::GetWindowInfo(const std::string& windowId) const {
-    std::lock_guard<std::mutex> lock(mutex_);
-    
-    if (windowId == "main") {
-        if (!mainWindow_ || !mainWindow_->GetHwnd()) {
-            return json::object();
-        }
-
-        return BuildMainWindowInfo(*mainWindow_);
-    }
-    
-    auto it = popups_.find(windowId);
-    if (it == popups_.end() || !it->second) {
-        return json::object();
-    }
-    
-    return BuildPopupWindowInfo(windowId, *it->second);
-}
-
 json WindowManager::GetAllWindowsInfo() const {
     std::lock_guard<std::mutex> lock(mutex_);
     
@@ -422,30 +405,25 @@ size_t WindowManager::GetPopupCount() const {
 // ============================================
 
 bool WindowManager::SendWindowMessage(const std::string& sourceId, const std::string& targetId, const json& message) {
-    auto& ctx = WebViewContext::GetInstance();
-    
-    json payload = {
-        {"sourceWindowId", sourceId},
-        {"message", message}
-    };
-    
-    return ctx.SendEventTo(targetId, "window:message", payload);
+    api::window::MessagePayload payload;
+    payload.sourceWindowId = sourceId;
+    payload.message = message;
+    return api::emit::SendTo<api::window::events::Message>(targetId, payload);
 }
 
 void WindowManager::BroadcastMessage(const std::string& sourceId, const json& message) {
     auto& ctx = WebViewContext::GetInstance();
     
-    json payload = {
-        {"sourceWindowId", sourceId},
-        {"message", message}
-    };
-    
+    api::window::MessagePayload payload;
+    payload.sourceWindowId = sourceId;
+    payload.message = message;
+
     HWND sourceHwnd = ctx.GetHwndByWindowId(sourceId);
     if (sourceHwnd) {
-        ctx.BroadcastEventExcept("window:message", payload, sourceHwnd);
+        api::emit::BroadcastExcept<api::window::events::Message>(payload, sourceHwnd);
     } else {
         // 找不到发送者 HWND，广播到所有窗口
-        ctx.BroadcastEvent("window:message", payload);
+        api::emit::Broadcast<api::window::events::Message>(payload);
     }
 }
 

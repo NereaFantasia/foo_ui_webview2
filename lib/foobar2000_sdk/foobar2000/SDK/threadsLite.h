@@ -22,9 +22,6 @@ namespace fb2k {
 	//! Call f synchronously if called from main thread, queue call if called from another.
 	void inMainThread2(std::function<void() > f);
 
-	//! Clone abort_callback, suppress call if original abort_callback becomes set prior to reaching main thread.
-	void inMainThread(std::function<void() > f, abort_callback&);
-
 	//! Synchronous / abortable version. May exit *before* f() finishes, if abort becomes set.
 	void inMainThreadSynchronous(std::function<void() > f, abort_callback& abort);
 

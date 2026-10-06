@@ -9,13 +9,22 @@
 #include "debug.h"
 #include "string-conv-lite.h"
 
-#include "pfc-fb2k-hooks.h"
-
 #include "sortstring.h"
 
 // StrCmpLogicalW()
 #include <Shlwapi.h>
 #pragma comment(lib, "Shlwapi.lib")
+
+namespace pfc {BOOL winFormatSystemErrorMessageImpl(pfc::string_base&, DWORD);}
+extern "C" BOOL pfc_winFormatSystemErrorMessageHook(pfc::string_base&, DWORD);
+extern "C" BOOL pfc_winFormatSystemErrorMessageHook_default(pfc::string_base& out, DWORD code) { return pfc::winFormatSystemErrorMessageImpl(out, code); }
+#ifdef _M_ARM64EC 
+#pragma comment(linker, "/alternatename:#pfc_winFormatSystemErrorMessageHook=#pfc_winFormatSystemErrorMessageHook_default")
+#elif defined(_M_IX86)
+#pragma comment(linker, "/alternatename:_pfc_winFormatSystemErrorMessageHook=_pfc_winFormatSystemErrorMessageHook_default")
+#else
+#pragma comment(linker, "/alternatename:pfc_winFormatSystemErrorMessageHook=pfc_winFormatSystemErrorMessageHook_default")
+#endif
 
 namespace pfc {
 
@@ -87,8 +96,9 @@ void winPrefixPath(pfc::string_base & out, const char * p_path) {
 	}
 };
 
-BOOL winFormatSystemErrorMessage(pfc::string_base & p_out, DWORD p_code) {
-	return winFormatSystemErrorMessageHook( p_out, p_code );
+BOOL winFormatSystemErrorMessage(pfc::string_base & out, DWORD code) {
+	// Use shared.dll if available
+	return pfc_winFormatSystemErrorMessageHook(out, code);
 }
 void winUnPrefixPath(pfc::string_base & out, const char * p_path) {
 	const char * prepend_header = "\\\\?\\";
@@ -395,11 +405,13 @@ void uSleepSeconds(double p_time,bool p_alertable) {
 
 #ifdef PFC_WINDOWS_DESKTOP_APP
 
-WORD GetWindowsVersionCode() throw() {
+#pragma warning(push)
+#pragma warning(disable: 4996) // silence GetVersion() deprecation
+WORD GetWindowsVersionCode() noexcept {
 	const DWORD ver = GetVersion();
 	return (WORD)HIBYTE(LOWORD(ver)) | ((WORD)LOBYTE(LOWORD(ver)) << 8);
 }
-
+#pragma warning(pop)
 
 namespace pfc {
     bool isShiftKeyPressed() {

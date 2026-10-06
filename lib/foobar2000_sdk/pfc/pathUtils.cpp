@@ -294,6 +294,12 @@ string validateFileName(string name, bool allowWC, bool preserveExt, charReplace
 	}
 #endif
 
+    
+    // 2026 note
+    // Attempted to perform unicodeNormalizeC / unicodeNormalizeD here to deal with macOS issues
+    // However it caused more bugs in other contexts, made FTP server deny creation of files even if underlying filesystem was OK with them
+    // Moved this stuff to a different level for now
+    
 	if (name.isEmpty()) name = "_";
 	return name;
 }

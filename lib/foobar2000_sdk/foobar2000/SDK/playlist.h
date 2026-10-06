@@ -6,7 +6,7 @@
 #include "callback_merit.h"
 
 //! This interface allows filtering of playlist modification operations.\n
-//! Implemented by components "locking" playlists; use playlist_manager::playlist_lock_install() etc to takeover specific playlist with your instance of playlist_lock.
+//! Implemented by components "locking" playlists; use @c playlist_manager::playlist_lock_install() etc to takeover specific playlist with your instance of @c playlist_lock.
 class NOVTABLE playlist_lock : public service_base {
 public:
 	enum {
@@ -27,7 +27,7 @@ public:
 	virtual bool query_items_add(t_size p_base, const pfc::list_base_const_t<metadb_handle_ptr> & p_data,const bit_array & p_selection) = 0;
 	//! Queries whether specified item reorder operation is allowed in the locked playlist.
 	//! @param p_order Pointer to array containing permutation defining requested reorder operation.
-	//! @param p_count Number of items in array pointed to by p_order. This should always be equal to number of items on the locked playlist.
+	//! @param p_count Number of items in array pointed to by @c p_order. This should always be equal to number of items on the locked playlist.
 	//! @returns True to allow the operation, false to block it.
 	virtual bool query_items_reorder(const t_size * p_order,t_size p_count) = 0;
 	//! Queries whether specified item removal operation is allowed in the locked playlist.
@@ -60,7 +60,7 @@ public:
 	virtual void get_lock_name(pfc::string_base & p_out) = 0;
 	//! Requests user interface of component controlling the playlist lock to be shown.
 	virtual void show_ui() = 0;
-	//! Queries which actions the lock filters. The return value must not change while the lock is registered with playlist_manager. The return value is a combination of one or more filter_* constants.
+	//! Queries which actions the lock filters. The return value must not change while the lock is registered with @c playlist_manager. The return value is a combination of one or more @c filter_* constants.
 	virtual t_uint32 get_filter_mask() = 0;
 
 	FB2K_MAKE_SERVICE_INTERFACE(playlist_lock,service_base);
@@ -76,8 +76,8 @@ struct t_playback_queue_item {
 
 
 //! This service provides methods for all sorts of playlist interaction.\n
-//! All playlist_manager methods are valid only from main app thread.\n
-//! Usage: playlist_manager::get() to obtain an instance.
+//! All @c playlist_manager methods are valid only from main app thread, unless documented otherwise.\n
+//! Usage: @c playlist_manager::get() to obtain an instance.
 class NOVTABLE playlist_manager : public service_base
 {
 public:
@@ -93,7 +93,9 @@ public:
 
 	//! Retrieves number of playlists.
 	virtual t_size get_playlist_count() = 0;
-	//! Retrieves index of active playlist; infinite if no playlist is active.
+	//! Retrieves index of active playlist; infinite if no playlist is active. \n
+	//! Since 2.26, @c get_active_playlist() can be called off-main-thread to allow playlist info to be read in multiple threads.
+	//! Main thread SHOULD be blocked while this is called in a worker thread. Any other off-main-thread use is unsafe.
 	virtual t_size get_active_playlist() = 0;
 	//! Sets active playlist (infinite to set no active playlist).
 	virtual void set_active_playlist(t_size p_index) = 0;
@@ -161,14 +163,16 @@ public:
 	//! Returns whether a redo restore point is available for specified playlist.
 	virtual bool playlist_is_redo_available(t_size p_playlist) = 0;
 
-	//! Renders information about specified playlist item, using specified titleformatting script parameters.
+	//! Renders information about specified playlist item, using specified titleformatting script parameters. \n
+	//! Since 2.26, @c playlist_item_format_title() can be called off-main-thread to allow playlist info to be read in multiple threads. \n
+	//! Main thread SHOULD be blocked while this is called in a worker thread. Any other off-main-thread use is unsafe.
 	//! @param p_playlist Index of playlist containing item being processed.
 	//! @param p_item Index of item being processed in the playlist containing it.
 	//! @param p_hook Titleformatting script hook to use; see titleformat_hook documentation for more info. Set to NULL when hook functionality is not needed.
 	//! @param p_out String object receiving results.
 	//! @param p_script Compiled titleformatting script to use; see titleformat_object cocumentation for more info.
-	//! @param p_filter Text filter to use; see titleformat_text_filter documentation for more info. Set to NULL when text filter functionality is not needed.
-	//! @param p_playback_info_level Level of playback related information requested. See playback_control::t_display_level documentation for more info.
+	//! @param p_filter Text filter to use; see @c titleformat_text_filter documentation for more info. Set to NULL when text filter functionality is not needed.
+	//! @param p_playback_info_level Level of playback related information requested. See @c playback_control::t_display_level documentation for more info.
 	virtual void playlist_item_format_title(t_size p_playlist,t_size p_item,titleformat_hook * p_hook,pfc::string_base & p_out,const service_ptr_t<titleformat_object> & p_script,titleformat_text_filter * p_filter,playback_control::t_display_level p_playback_info_level)=0;
 
 
@@ -185,9 +189,9 @@ public:
 	//! @returns True on success, false on failure (playlist locked etc).
 	virtual bool playlist_sort_by_format(t_size p_playlist,const char * p_pattern,bool p_sel_only) = 0;
 
-	//! For internal use only; p_items must be sorted by metadb::path_compare; use file_operation_callback static methods instead of calling this directly.
+	//! For internal use only; @c p_items must be sorted by @c metadb::path_compare; use @c file_operation_callback static methods instead of calling this directly.
 	virtual void on_files_deleted_sorted(const pfc::list_base_const_t<const char *> & p_items) = 0;
-	//! For internal use only; p_from must be sorted by metadb::path_compare; use file_operation_callback static methods instead of calling this directly.
+	//! For internal use only; @c p_from must be sorted by @c metadb::path_compare; use @c file_operation_callback static methods instead of calling this directly.
 	virtual void on_files_moved_sorted(const pfc::list_base_const_t<const char *> & p_from,const pfc::list_base_const_t<const char *> & p_to) = 0;
 
 	virtual bool playlist_lock_install(t_size p_playlist,const service_ptr_t<playlist_lock> & p_lock) = 0;//returns false when invalid playlist or already locked
@@ -201,11 +205,11 @@ public:
 	//! Retrieves number of available playback order modes.
 	virtual t_size playback_order_get_count() = 0;
 	//! Retrieves name of specified playback order move.
-	//! @param p_index Index of playback order mode to query, from 0 to playback_order_get_count() return value - 1.
+	//! @param p_index Index of playback order mode to query, from 0 to @c playback_order_get_count() return value - 1.
 	//! @returns Null-terminated UTF-8 encoded string containing name of the playback order mode. Returned pointer points to statically allocated string and can be safely stored without having to free it later.
 	virtual const char * playback_order_get_name(t_size p_index) = 0;
 	//! Retrieves GUID of specified playback order mode. Used for managing playback modes without relying on names.
-	//! @param p_index Index of playback order mode to query, from 0 to playback_order_get_count() return value - 1.
+	//! @param p_index Index of playback order mode to query, from 0 to @c playback_order_get_count() return value - 1.
 	virtual GUID playback_order_get_guid(t_size p_index) = 0;
 	//! Retrieves index of active playback order mode.
 	virtual t_size playback_order_get_active() = 0;
@@ -222,19 +226,19 @@ public:
 
 	//! Registers a playlist callback; registered object receives notifications about any modifications of any of loaded playlists.
 	//! @param p_callback Callback interface to register.
-	//! @param p_flags Flags indicating which callback methods are requested. See playlist_callback::flag_* constants for more info. The main purpose of flags parameter is working set optimization by not calling methods that do nothing.
+	//! @param p_flags Flags indicating which callback methods are requested. See @c playlist_callback::flag_* constants for more info. The main purpose of flags parameter is working set optimization by not calling methods that do nothing.
 	virtual void register_callback(class playlist_callback * p_callback,unsigned p_flags) = 0;
 	//! Registers a playlist callback; registered object receives notifications about any modifications of active playlist.
 	//! @param p_callback Callback interface to register.
-	//! @param p_flags Flags indicating which callback methods are requested. See playlist_callback_single::flag_* constants for more info. The main purpose of flags parameter is working set optimization by not calling methods that do nothing.
+	//! @param p_flags Flags indicating which callback methods are requested. See @c playlist_callback_single::flag_* constants for more info. The main purpose of flags parameter is working set optimization by not calling methods that do nothing.
 	virtual void register_callback(class playlist_callback_single * p_callback,unsigned p_flags) = 0;
-	//! Unregisters a playlist callback (playlist_callback version).
+	//! Unregisters a playlist callback (@c playlist_callback version).
 	virtual void unregister_callback(class playlist_callback * p_callback) = 0;
-	//! Unregisters a playlist callback (playlist_callback_single version).
+	//! Unregisters a playlist callback (@c playlist_callback_single version).
 	virtual void unregister_callback(class playlist_callback_single * p_callback) = 0;
-	//! Modifies flags indicating which calback methods are requested (playlist_callback version).
+	//! Modifies flags indicating which calback methods are requested (@c playlist_callback version).
 	virtual void modify_callback(class playlist_callback * p_callback,unsigned p_flags) = 0;
-	//! Modifies flags indicating which calback methods are requested (playlist_callback_single version).
+	//! Modifies flags indicating which calback methods are requested (@c playlist_callback_single version).
 	virtual void modify_callback(class playlist_callback_single * p_callback,unsigned p_flags) = 0;
 	
 	//! Executes default doubleclick/enter action for specified item on specified playlist (starts playing the item unless overridden by a lock to do something else).
@@ -260,9 +264,9 @@ public:
 
 	//! Helper; returns whether specified item on specified playlist is selected or not.
 	bool playlist_is_item_selected(t_size p_playlist,t_size p_item);
-	//! Helper; retrieves metadb_handle of the specified playlist item. Returns true on success, false on failure (invalid parameters).
+	//! Helper; retrieves @c metadb_handle of the specified playlist item. Returns true on success, false on failure (invalid parameters).
 	bool playlist_get_item_handle(metadb_handle_ptr & p_out,t_size p_playlist,t_size p_item);
-	//! Helper; retrieves metadb_handle of the specified playlist item; throws pfc::exception_invalid_params() on failure.
+	//! Helper; retrieves @c metadb_handle of the specified playlist item; throws pfc::exception_invalid_params() on failure.
 	metadb_handle_ptr playlist_get_item_handle(t_size playlist, t_size item);
 
 	//! Moves selected items up/down in the playlist by specified offset.
@@ -270,7 +274,7 @@ public:
 	//! @param p_delta Offset to move items by. Set it to a negative valuye to move up, or to a positive value to move down.
 	//! @returns True on success, false on failure (e.g. playlist locked).
 	bool playlist_move_selection(t_size p_playlist,int p_delta);
-	//! Retrieves selection map of specific playlist, using bit_array_var interface.
+	//! Retrieves selection map of specific playlist, using @c bit_array_var interface.
 	void playlist_get_selection_mask(t_size p_playlist,bit_array_var & out);
 	void playlist_get_items(t_size p_playlist,pfc::list_base_t<metadb_handle_ptr> & out,const bit_array & p_mask);
 	void playlist_get_all_items(t_size p_playlist,pfc::list_base_t<metadb_handle_ptr> & out);
@@ -323,9 +327,9 @@ public:
 	bool playlist_insert_items_filter(t_size p_playlist,t_size p_base,const pfc::list_base_const_t<metadb_handle_ptr> & p_data,bool p_select);
 	bool activeplaylist_insert_items_filter(t_size p_base,const pfc::list_base_const_t<metadb_handle_ptr> & p_data,bool p_select);
 
-	//! \deprecated (since 0.9.3) Use playlist_incoming_item_filter_v2::process_locations_async whenever possible
+	//! \deprecated (since 0.9.3) Use @c playlist_incoming_item_filter_v2::process_locations_async whenever possible
 	bool playlist_insert_locations(t_size p_playlist,t_size p_base,const pfc::list_base_const_t<const char*> & p_urls,bool p_select,fb2k::hwnd_t p_parentwnd);
-	//! \deprecated (since 0.9.3) Use playlist_incoming_item_filter_v2::process_locations_async whenever possible
+	//! \deprecated (since 0.9.3) Use @c playlist_incoming_item_filter_v2::process_locations_async whenever possible
 	bool activeplaylist_insert_locations(t_size p_base,const pfc::list_base_const_t<const char*> & p_urls,bool p_select,fb2k::hwnd_t p_parentwnd);
 
 	bool playlist_add_items_filter(t_size p_playlist,const pfc::list_base_const_t<metadb_handle_ptr> & p_data,bool p_select);
@@ -387,14 +391,14 @@ public:
 	static void g_make_selection_move_permutation(t_size * p_output,t_size p_count,const bit_array & p_selection,int p_delta);
 
 	//! Helper to update playlists after rechaptering a file. \n
-	//! You typically want to call metadb_io_v2::on_file_rechaptered() instead, as it will forcibly reload info first.
+	//! You typically want to call @c metadb_io_v2::on_file_rechaptered() instead, as it will forcibly reload info first.
 	void on_file_rechaptered(const char * path, metadb_handle_list_cref items);
 	void on_files_rechaptered( metadb_handle_list_cref newHandles );
 
 	FB2K_MAKE_SERVICE_COREAPI(playlist_manager);
 };
 
-//! Extension of the playlist_manager service that manages playlist properties.
+//! Extension of the @c playlist_manager service that manages playlist properties.
 //! Playlist properties come in two flavors: persistent and runtime.
 //! Persistent properties are blocks of binary that that will be preserved when the application is exited and restarted.
 //! Runtime properties are service pointers that will be lost when the application exits.
@@ -673,7 +677,7 @@ protected:
 	~playlist_callback_single() {}
 };
 
-//! playlist_callback implementation helper - registers itself on creation / unregisters on destruction. Must not be instantiated statically!
+//! @c playlist_callback implementation helper - registers itself on creation / unregisters on destruction. Must not be instantiated statically!
 class playlist_callback_impl_base : public playlist_callback {
 public:
 	playlist_callback_impl_base(t_uint32 p_flags = 0) {
@@ -756,8 +760,8 @@ public:
 };
 
 
-//! Class used for async processing of IDataObject. Content of IDataObject can be dumped into dropped_files_data without any time-consuming operations - won't block calling app when used inside drag&drop handler - and actual time-consuming processing (listing directories and reading infos) can be done later.\n
-//! \deprecated In 0.9.3 and up, instead of going thru dropped_files_data, you can use playlist_incoming_item_filter_v2::process_dropped_files_async().
+//! Class used for async processing of @c IDataObject. Content of @c IDataObject can be dumped into @c dropped_files_data without any time-consuming operations - won't block calling app when used inside drag&drop handler - and actual time-consuming processing (listing directories and reading infos) can be done later.\n
+//! \deprecated In 0.9.3 and up, instead of going thru @c dropped_files_data, you can use @c playlist_incoming_item_filter_v2::process_dropped_files_async() .
 class NOVTABLE dropped_files_data {
 public:
 	virtual void set_paths(pfc::string_list_const const & p_paths) = 0;
@@ -772,55 +776,54 @@ class NOVTABLE playlist_incoming_item_filter : public service_base {
 	FB2K_MAKE_SERVICE_COREAPI(playlist_incoming_item_filter);
 public:
 	//! Pre-sorts incoming items according to user-configured settings, removes duplicates. \n
-	//! As of 1.4, this is the same as sort_by_pointer_remove_duplicates() + sort_by_format( get_incoming_item_sorter() ), see playlist_incoming_item_filter_v4 \n
-	//! This method is valid in main thread only. However, using playlist_incoming_item_filter_v4::get_incoming_item_sorter() lets you do the same off main thread.
+	//! This method is valid in main thread only. However, using @c playlist_incoming_item_filter_v4::get_incoming_item_sorter() lets you do the same off main thread.
 	//! @param in Items to process.
 	//! @param out Receives processed item list. \n
 	//! @returns True when there's one or more item in the output list, false when the output list is empty.
 	virtual bool filter_items(metadb_handle_list_cref in,metadb_handle_list_ref out) = 0;
 	
-	//! Converts one or more paths to a list of metadb_handles; displays a progress dialog.\n
+	//! Converts one or more paths to a list of @c metadb_handles; displays a progress dialog.\n
 	//! Note that this function creates modal dialog and does not return until the operation has completed.
 	//! @returns True on success, false on user abort.
-	//! \deprecated Use playlist_incoming_item_filter_v2::process_locations_async() when possible.
+	//! \deprecated Use @c playlist_incoming_item_filter_v2::process_locations_async() when possible.
 	virtual bool process_locations(const pfc::list_base_const_t<const char*> & p_urls,pfc::list_base_t<metadb_handle_ptr> & p_out,bool p_filter,const char * p_restrict_mask_override, const char * p_exclude_mask_override,fb2k::hwnd_t p_parentwnd) = 0;
 	
 #ifdef _WIN32
-	//! Converts an IDataObject to a list of metadb_handles.
+	//! Converts an @c IDataObject to a list of `metadb_handle`s.
 	//! Using this function is strongly disrecommended as it implies blocking the drag&drop source app (as well as our app).\n
 	//! @returns True on success, false on user abort or unknown data format.
-	//! \deprecated Use playlist_incoming_item_filter_v2::process_dropped_files_async() when possible.
-	virtual bool process_dropped_files(interface IDataObject * pDataObject,pfc::list_base_t<metadb_handle_ptr> & p_out,bool p_filter,HWND p_parentwnd) = 0;
+	//! \deprecated Use @c playlist_incoming_item_filter_v2::process_dropped_files_async() when possible.
+	virtual bool process_dropped_files(struct IDataObject * pDataObject,pfc::list_base_t<metadb_handle_ptr> & p_out,bool p_filter,HWND p_parentwnd) = 0;
 
-	//! Checks whether IDataObject contains one of known data formats that can be translated to a list of metadb_handles.
-	virtual bool process_dropped_files_check(interface IDataObject * pDataObject) = 0;
+	//! Checks whether @c IDataObject contains one of known data formats that can be translated to a list of `metadb_handle`s.
+	virtual bool process_dropped_files_check(struct IDataObject * pDataObject) = 0;
 	
-	//! Checks whether IDataObject contains our own private data format (drag&drop within the app etc).
-	virtual bool process_dropped_files_check_if_native(interface IDataObject * pDataObject) = 0;
+	//! Checks whether @c IDataObject contains our own private data format (drag&drop within the app etc).
+	virtual bool process_dropped_files_check_if_native(struct IDataObject * pDataObject) = 0;
 	
-	//! Creates an IDataObject from specified metadb_handle list. The caller is responsible for releasing the returned object. It is recommended that you use create_dataobject_ex() to get an autopointer that ensures proper deletion.
-	virtual interface IDataObject * create_dataobject(const pfc::list_base_const_t<metadb_handle_ptr> & p_data) = 0;
+	//! Creates an @c IDataObject from specified @c metadb_handle list. The caller is responsible for releasing the returned object. It is recommended that you use @c create_dataobject_ex() to get an autopointer that ensures proper deletion.
+	virtual struct IDataObject * create_dataobject(const pfc::list_base_const_t<metadb_handle_ptr> & p_data) = 0;
 
-	//! Checks whether IDataObject contains one of known data formats that can be translated to a list of metadb_handles.\n
-	//! This function also returns drop effects to use (see: IDropTarget::DragEnter(), IDropTarget::DragOver() ). In certain cases, drag effects are necessary for drag&drop to work at all (such as dragging links from IE).\n
-	virtual bool process_dropped_files_check_ex(interface IDataObject * pDataObject, DWORD * p_effect) = 0;
+	//! Checks whether @c IDataObject contains one of known data formats that can be translated to a list of `metadb_handle`s.\n
+	//! This function also returns drop effects to use (see: `IDropTarget::DragEnter()`, `IDropTarget::DragOver()` ). In certain cases, drag effects are necessary for drag&drop to work at all (such as dragging links from IE).\n
+	virtual bool process_dropped_files_check_ex(struct IDataObject * pDataObject, DWORD * p_effect) = 0;
 
-	//! Dumps IDataObject content to specified dropped_files_data object, without any time-consuming processing.\n
-	//! Using this function instead of process_dropped_files() and processing dropped_files_data outside drop handler allows you to avoid blocking drop source app when processing large directories etc.\n
-	//! Note: since 0.9.3, it is recommended to use playlist_incoming_item_filter_v2::process_dropped_files_async() instead.
-	//! @returns True on success, false when IDataObject does not contain any of known data formats.
-	virtual bool process_dropped_files_delayed(dropped_files_data & p_out,interface IDataObject * pDataObject) = 0;
+	//! Dumps @c IDataObject content to specified @c dropped_files_data object, without any time-consuming processing.\n
+	//! Using this function instead of @c process_dropped_files() and processing @c dropped_files_data outside drop handler allows you to avoid blocking drop source app when processing large directories etc.\n
+	//! Note: since 0.9.3, it is recommended to use @c playlist_incoming_item_filter_v2::process_dropped_files_async() instead.
+	//! @returns True on success, false when @c IDataObject does not contain any of known data formats.
+	virtual bool process_dropped_files_delayed(dropped_files_data & p_out, struct IDataObject * pDataObject) = 0;
 #endif // _WIN32
-	//! Helper - calls process_locations() with a single URL. See process_locations() for more info.
+	//! Helper - calls @c process_locations() with a single URL. See @c process_locations() for more info.
 	bool process_location(const char * url,pfc::list_base_t<metadb_handle_ptr> & out,bool filter,const char * p_mask,const char * p_exclude,fb2k::hwnd_t p_parentwnd);
     
 #ifdef _WIN32
-	//! Helper - returns a pfc::com_ptr_t<> rather than a raw pointer.
-	pfc::com_ptr_t<interface IDataObject> create_dataobject_ex(metadb_handle_list_cref data);
+	//! Helper - returns a @c pfc::com_ptr_t<> rather than a raw pointer.
+	pfc::com_ptr_t<struct IDataObject> create_dataobject_ex(metadb_handle_list_cref data);
 #endif // _WIN32
 };
 
-//! For use with playlist_incoming_item_filter_v2::process_locations_async().
+//! For use with `playlist_incoming_item_filter_v2::process_locations_async()`.
 //! \since 0.9.3
 class NOVTABLE process_locations_notify : public service_base {
 	FB2K_MAKE_SERVICE_INTERFACE(process_locations_notify, service_base);
@@ -847,7 +850,7 @@ public:
 		op_flag_delay_ui		= 1 << 2,
 	};
 
-	//! Converts one or more paths to a list of metadb_handles. The function returns immediately; specified callback object receives results when the operation has completed.
+	//! Converts one or more paths to a list of @c metadb_handles. The function returns immediately; specified callback object receives results when the operation has completed.
 	//! @param p_urls List of paths to process.
 	//! @param p_op_flags Can be null, or one or more of op_flag_* enum values combined, altering behaviors of the operation.
 	//! @param p_restrict_mask_override Override of "restrict incoming items to" setting. Pass NULL to use the value from preferences.
@@ -857,12 +860,12 @@ public:
 	virtual void process_locations_async(const pfc::list_base_const_t<const char*> & p_urls,t_uint32 p_op_flags,const char * p_restrict_mask_override, const char * p_exclude_mask_override,fb2k::hwnd_t p_parentwnd,process_locations_notify_ptr p_notify) = 0;
 
 #ifdef _WIN32
-	//! Converts an IDataObject to a list of metadb_handles. The function returns immediately; specified callback object receives results when the operation has completed.
-	//! @param p_dataobject IDataObject to process.
+	//! Converts an @c IDataObject to a list of `metadb_handle`s. The function returns immediately; specified callback object receives results when the operation has completed.
+	//! @param p_dataobject @c IDataObject to process.
 	//! @param p_op_flags Can be null, or one or more of op_flag_* enum values combined, altering behaviors of the operation.
 	//! @param p_parentwnd Parent window for spawned progress dialogs.
 	//! @param p_notify Callback receiving notifications about success/abort of the operation as well as output item list.
-	virtual void process_dropped_files_async(interface IDataObject * p_dataobject,t_uint32 p_op_flags,HWND p_parentwnd,process_locations_notify_ptr p_notify) = 0;
+	virtual void process_dropped_files_async(struct IDataObject * p_dataobject,t_uint32 p_op_flags,HWND p_parentwnd,process_locations_notify_ptr p_notify) = 0;
 #endif // _WIN32
 };
 
@@ -881,12 +884,13 @@ public:
 	//! Valid from main thread only - however you can use the value for off-main-thread operations.
 	virtual void get_incoming_item_sort_pattern( pfc::string_base & out ) = 0;
 	//! Retrieves shared title formatting object for sorting incoming files. \n
-	//! This is the same as compiling the string returned from get_incoming_item_sort_pattern, except the returned object is shared with others using this API. \n
-	//! Valid from main thread only - however you can use the returned object for off-main-thread operations.
+	//! This is the same as compiling the string returned from `get_incoming_item_sort_pattern`, except the returned object is shared with others using this API. \n
+	//! Valid from main thread only - however you can use the returned object for off-main-thread operations. \n
+	//! For compatibility reasons, this never returns null, even if the object is a no-op / formats blank strings.
 	virtual titleformat_object::ptr get_incoming_item_sorter() = 0;
 };
 
-//! Implementation of dropped_files_data.
+//! Implementation of @c dropped_files_data.
 class dropped_files_data_impl : public dropped_files_data {
 public:
 	dropped_files_data_impl() : m_is_paths(false) {}

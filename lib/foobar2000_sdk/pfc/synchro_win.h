@@ -67,5 +67,5 @@ private:
 
 typedef ::_critical_section_base mutexBase_t;
 typedef ::critical_section mutex;
-
+typedef ::critical_section mutexRecur;
 }

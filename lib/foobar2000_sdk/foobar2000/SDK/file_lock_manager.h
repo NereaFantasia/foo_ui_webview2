@@ -36,9 +36,9 @@ typedef service_ptr_t<file_lock> file_lock_ptr;
 class NOVTABLE file_lock_interrupt : public service_base {
     FB2K_MAKE_SERVICE_INTERFACE(file_lock_interrupt, service_base);
 public:
-    //! Please note that interrupt() is called outside any sync scopes and may be called after lock reference has been released. \n
+    //! Please note that @c interrupt() is called outside any sync scopes and may be called after lock reference has been released. \n
     //! It is implementer's responsibility to safeguard against such. \n
-    //! The interrupt() function must *never* fail, unless aborted by calling context - which means that whoever asked for write access is aborting whatever they're doing. \n
+    //! The @c interrupt() function must *never* fail, unless aborted by calling context - which means that whoever asked for write access is aborting whatever they're doing. \n
     //! This function may block for as long as it takes to release the owned resources, but must be able to abort cleanly if doing so. \n
     //! If the function was aborted, it may be called again on the same object. \n
     //! If the function succeeded, it will not be called again on the same object; the object will be released immediately after.
@@ -57,12 +57,12 @@ public:
 	//! Acquires a read or write lock for this file path. \n
 	//! If asked for read access, waits until nobody else holds a write lock for this path (but others may read at the same time).
 	//! If asked for write access, access until nobody else holds a read or write lock for this path. \n
-	//! The semantics are similar to those of blocking POSIX flock().
+	//! The semantics are similar to those of blocking POSIX `flock()`.
 	virtual file_lock_ptr acquire(const char * p_path, t_mode p_mode, abort_callback & p_abort) = 0;
 
-	//! Helper, calls acquire() with mode_read.
+	//! Helper, calls @c acquire() with  `mode_read`.
 	file_lock_ptr acquire_read(const char * p_path, abort_callback & p_abort) { return acquire(p_path, mode_read, p_abort); }
-	//! Helper, calls acquire() with mode_write.
+	//! Helper, calls @c acquire() with `mode_write`.
 	file_lock_ptr acquire_write(const char * p_path, abort_callback & p_abort) { return acquire(p_path, mode_write, p_abort); }
 
 

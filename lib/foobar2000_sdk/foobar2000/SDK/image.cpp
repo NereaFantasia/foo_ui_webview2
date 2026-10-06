@@ -144,13 +144,15 @@ namespace fb2k {
 
 }
 
-pfc::string_base & operator<<(pfc::string_base & p_fmt,const fb2k::imageSize_t & imgSize) {
-	auto iw = pfc::rint32(imgSize.width);
-	auto ih = pfc::rint32(imgSize.height);
-	if (iw == imgSize.width && ih == imgSize.height) {
-        return p_fmt << "(" << iw << "x" << ih << ")";
-	} else {
-        return p_fmt << "(" << imgSize.width << "x" << imgSize.height << ")";
-	}
+pfc::string8 fb2k::imageSize_t::toString() const {
+    auto iw = pfc::rint32(width);
+    auto ih = pfc::rint32(height);
+    if (iw == width && ih ==height) {
+        return pfc::format("(", iw, "x", ih, ")");
+    } else {
+        return pfc::format("(", width, "x", height, ")");
+    }
 }
-
+pfc::string_base & operator<<(pfc::string_base & p_fmt,const fb2k::imageSize_t & imgSize) {
+    return p_fmt << imgSize.toString();
+}

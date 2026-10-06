@@ -6,6 +6,8 @@
 #include "titleformat.h"
 #include "library_manager.h"
 #include "genrand.h"
+#include <atomic>
+#include <optional>
 
 namespace {
 
@@ -286,7 +288,7 @@ double metadb_handle_list_helper::calc_total_duration_v2(metadb_handle_list_cref
 	pfc::array_t<double> sums; sums.resize(numThreads); sums.fill_null();
 
 	{
-		pfc::refcounter walk = 0, walkSums = 0;
+		std::atomic_size_t walk = 0, walkSums = 0;
 
 		auto worker = [&] {
 			double ret = 0;
@@ -362,10 +364,19 @@ void metadb_handle_list_helper::sort_by_format_get_order_v3(metadb_handle_list_c
 	for (size_t iSorter = 0; iSorter < nSorters; ++iSorter) {
 		auto& s = sorters[iSorter];
 		PFC_ASSERT(s.direction == -1 || s.direction == 1);
-		if (s.obj->requires_metadb_info_()) {
+		if (s.needMetadbInfo || (s.obj && s.obj->requires_metadb_info_())) {
 			need_info = true; break;
 		}
 	}
+	auto doFormat = [&](pfc::string_base& ret, size_t idx, metadb_v2_rec_t const& rec, titleformat_hook* pHook, sorter_t const & s) {
+		std::optional<titleformat_hook_impl_splitter> hookSplitter;
+		if (s.hook) pHook = &hookSplitter.emplace(pHook, s.hook);
+		if (s.formatter) {
+			s.formatter(ret, idx, rec, pHook);
+		} else {
+			p_list[idx]->formatTitle_v2_(rec, pHook, ret, s.obj, nullptr);
+		}
+	};
 	if (need_info) {
 		// FB2K_console_formatter() << "sorting with queryMultiParallelEx_<>";
 		struct qmpc_context {
@@ -380,24 +391,16 @@ void metadb_handle_list_helper::sort_by_format_get_order_v3(metadb_handle_list_c
 			auto& out = data[idx];
 			out.setup(nSorters);
 			out.index = order[idx];
-
-			auto h = p_list[idx];
-			
 			for (size_t iSorter = 0; iSorter < nSorters; ++iSorter) {
 				auto& s = sorters[iSorter];
-				if (s.hook) {
-					titleformat_hook_impl_splitter hookSplitter(&ctx.myHook, s.hook);
-					h->formatTitle_v2_(rec, &hookSplitter, ctx.temp, s.obj, nullptr);
-				} else {
-					h->formatTitle_v2_(rec, &ctx.myHook, ctx.temp, s.obj, nullptr);
-				}
+				doFormat(ctx.temp, idx, rec, &ctx.myHook, s);
 				out[iSorter] = fb2k::makeSortString(ctx.temp);
 			}
 		});
 	} else {
 		// FB2K_console_formatter() << "sorting with blank metadb info";
 		auto api = fb2k::cpuThreadPool::get();
-		pfc::counter walk = 0;
+		std::atomic_size_t walk = 0;
 		api->runMulti_([&] {
 			pfc::string8 temp;
 			const metadb_v2_rec_t rec = {};
@@ -413,13 +416,7 @@ void metadb_handle_list_helper::sort_by_format_get_order_v3(metadb_handle_list_c
 
 				for (size_t iSorter = 0; iSorter < nSorters; ++iSorter) {
 					auto& s = sorters[iSorter];
-					if (s.hook) {
-						titleformat_hook_impl_splitter hookSplitter(&myHook, s.hook);
-						p_list[idx]->formatTitle_v2_(rec, &hookSplitter, temp, s.obj, nullptr);
-					} else {
-						p_list[idx]->formatTitle_v2_(rec, &myHook, temp, s.obj, nullptr);
-					}
-					
+					doFormat(temp, idx, rec, &myHook, s);
 					out[iSorter] = fb2k::makeSortString(temp);
 				}
 			}
@@ -428,7 +425,7 @@ void metadb_handle_list_helper::sort_by_format_get_order_v3(metadb_handle_list_c
 	}
 #else
 	{
-		pfc::counter counter(0);
+		std::atomic_size_t counter = 0;
 
 		auto work = [&] {
 			tfhook_sort myHook;
@@ -444,6 +441,7 @@ void metadb_handle_list_helper::sort_by_format_get_order_v3(metadb_handle_list_c
 
 				for (size_t iSorter = 0; iSorter < nSorters; ++iSorter) {
 					auto& s = sorters[iSorter];
+					PFC_ASSERT(!s.formatter); // not supported
 					if (s.hook) {
 						titleformat_hook_impl_splitter hookSplitter(&myHook, s.hook);
 						p_list[index]->format_title(&hookSplitter, temp, s.obj, 0);

@@ -19,7 +19,7 @@ namespace InPlaceEdit {
 	protected:
 		HWND TableEdit_GetListView() const { return m_listview; }
 		//return false to abort
-		virtual bool TableEdit_OnEditCompleted(unsigned item, unsigned column, unsigned state) { return true; }
+		virtual bool TableEdit_OnEditCompleted(unsigned item, unsigned column, unsigned state) { (void)item; (void)column; (void)state; return true; }
 	private:
 		void _Start();
 		enum {

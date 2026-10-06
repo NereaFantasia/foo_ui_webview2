@@ -40,6 +40,3 @@ using json = nlohmann::json;
 /** @brief Register the library.* (media library) API handlers. */
 void RegisterLibraryApi();
 
-// Helper: Get track info from library as JSON
-json GetLibraryTrackInfo(metadb_handle_ptr track, size_t index);
-

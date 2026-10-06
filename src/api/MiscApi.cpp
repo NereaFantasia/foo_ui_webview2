@@ -3,14 +3,15 @@
 
 #include "pch.h"
 #include "api/MiscApi.h"
-#include "api/BridgeCore.h"
+#include "api/TypedApi.h"
+#include "api/generated/MiscSchema.h"
 #include <foobar2000/SDK/menu_helpers.h>
 #include <foobar2000/SDK/popup_message.h>
 #include <foobar2000/SDK/library_manager.h>
 #include <filesystem>
 
 namespace {
-    using json = nlohmann::json;
+    namespace misc = api::misc;
     namespace fs = std::filesystem;
 
     std::wstring GetComponentDirectoryW() {
@@ -34,20 +35,35 @@ namespace {
         return WideToUtf8Safe(GetComponentDirectoryW());
     }
 
+    // The directory of foobar2000.exe. The component's own directory is no guide to it: a
+    // profile install keeps components under the profile, not under the installation.
     std::string GetFoobarPathUtf8() {
-        std::wstring comp = GetComponentDirectoryW();
-        if (comp.empty()) return "";
-        fs::path p(comp);
-        if (p.has_parent_path()) {
-            return WideToUtf8Safe(p.parent_path().wstring());
-        }
-        return "";
+        wchar_t path[MAX_PATH];
+        if (GetModuleFileNameW(nullptr, path, MAX_PATH) == 0) return "";
+        fs::path p(path);
+        return p.has_parent_path() ? WideToUtf8Safe(p.parent_path().wstring()) : "";
     }
 
     std::string GetProfilePathUtf8() {
         pfc::string8 profilePath;
         filesystem::g_get_display_path(core_api::get_profile_path(), profilePath);
         return profilePath.get_ptr();
+    }
+
+    // The three path endpoints report the directory under both keys; `value` is the older name.
+    // Each method has its own generated result struct, so the helper is a template.
+    template <class R>
+    R PathResultOf(std::string path) {
+        R result;
+        result.value = path;
+        result.path = std::move(path);
+        return result;
+    }
+
+    // standard_commands::run_main reports whether the command ran.
+    api::Result<void> RunMainCommand(const GUID& command, const char* what) {
+        if (standard_commands::run_main(command)) return api::Ok();
+        return api::Fail(std::string("foobar2000 did not run the ") + what + " command", ApiErrorCode::OPERATION_FAILED);
     }
 }
 
@@ -59,75 +75,65 @@ namespace {
 
 
 // Path queries
-json MiscGetFoobarPath(const json& params) {
-    std::string path = GetFoobarPathUtf8();
-    return { {"path", path}, {"value", path} };
+api::Result<misc::GetFoobarPathResult> MiscGetFoobarPath(const misc::GetFoobarPathParams& /*params*/) {
+    return PathResultOf<misc::GetFoobarPathResult>(GetFoobarPathUtf8());
 }
 
 
-json MiscGetProfilePath(const json& params) {
-    std::string path = GetProfilePathUtf8();
-    return { {"path", path}, {"value", path} };
+api::Result<misc::GetProfilePathResult> MiscGetProfilePath(const misc::GetProfilePathParams& /*params*/) {
+    return PathResultOf<misc::GetProfilePathResult>(GetProfilePathUtf8());
 }
 
 
-json MiscGetComponentPath(const json& params) {
-    std::string path = GetComponentPathUtf8();
-    return { {"path", path}, {"value", path} };
+api::Result<misc::GetComponentPathResult> MiscGetComponentPath(const misc::GetComponentPathParams& /*params*/) {
+    return PathResultOf<misc::GetComponentPathResult>(GetComponentPathUtf8());
 }
 
 
 // UI helpers
-json MiscShowConsole(const json& params) {
-    bool ok = standard_commands::run_main(standard_commands::guid_main_show_console);
-    return { {"success", ok} };
+api::Result<void> MiscShowConsole(const misc::ShowConsoleParams& /*params*/) {
+    return RunMainCommand(standard_commands::guid_main_show_console, "show console");
 }
 
 
-json MiscShowPreferences(const json& params) {
-    bool ok = standard_commands::run_main(standard_commands::guid_main_preferences);
-    return { {"success", ok} };
+api::Result<void> MiscShowPreferences(const misc::ShowPreferencesParams& /*params*/) {
+    return RunMainCommand(standard_commands::guid_main_preferences, "preferences");
 }
 
 
-json MiscShowLibrarySearch(const json& params) {
-    std::string query = params.value("query", "");
-    library_search_ui::get()->show(query.c_str());
-    return { {"success", true}, {"query", query} };
+api::Result<misc::ShowLibrarySearchResult> MiscShowLibrarySearch(const misc::ShowLibrarySearchParams& params) {
+    library_search_ui::get()->show(params.query.c_str());
+    misc::ShowLibrarySearchResult result;
+    result.query = params.query;
+    return result;
 }
 
 
-json MiscShowPopupMessage(const json& params) {
-    std::string msg = params.value("message", params.value("msg", ""));
-    std::string title = params.value("title", "Message");
-    popup_message::g_show(msg.c_str(), title.c_str());
-    return { {"success", true} };
+api::Result<void> MiscShowPopupMessage(const misc::ShowPopupMessageParams& params) {
+    popup_message::g_show(params.message.c_str(), params.title.c_str());
+    return api::Ok();
 }
 
 
-json MiscRestart(const json& params) {
-    bool ok = standard_commands::run_main(standard_commands::guid_main_restart);
-    return { {"success", ok} };
+api::Result<void> MiscRestart(const misc::RestartParams& /*params*/) {
+    return RunMainCommand(standard_commands::guid_main_restart, "restart");
 }
 
 
-json MiscExit(const json& params) {
-    bool ok = standard_commands::run_main(standard_commands::guid_main_exit);
-    return { {"success", ok} };
+api::Result<void> MiscExit(const misc::ExitParams& /*params*/) {
+    return RunMainCommand(standard_commands::guid_main_exit, "exit");
 }
 
 } // namespace
 
 void RegisterMiscApi() {
-    auto& bridge = BridgeCore::GetInstance();
-
-    bridge.RegisterApi("misc.getFoobarPath", MiscGetFoobarPath);
-    bridge.RegisterApi("misc.getProfilePath", MiscGetProfilePath);
-    bridge.RegisterApi("misc.getComponentPath", MiscGetComponentPath);
-    bridge.RegisterApi("misc.showConsole", MiscShowConsole);
-    bridge.RegisterApi("misc.showPreferences", MiscShowPreferences);
-    bridge.RegisterApi("misc.showLibrarySearch", MiscShowLibrarySearch);
-    bridge.RegisterApi("misc.showPopupMessage", MiscShowPopupMessage);
-    bridge.RegisterApi("misc.restart", MiscRestart);
-    bridge.RegisterApi("misc.exit", MiscExit);
+    api::RegisterApi("misc.getFoobarPath", MiscGetFoobarPath);
+    api::RegisterApi("misc.getProfilePath", MiscGetProfilePath);
+    api::RegisterApi("misc.getComponentPath", MiscGetComponentPath);
+    api::RegisterApi("misc.showConsole", MiscShowConsole);
+    api::RegisterApi("misc.showPreferences", MiscShowPreferences);
+    api::RegisterApi("misc.showLibrarySearch", MiscShowLibrarySearch);
+    api::RegisterApi("misc.showPopupMessage", MiscShowPopupMessage);
+    api::RegisterApi("misc.restart", MiscRestart);
+    api::RegisterApi("misc.exit", MiscExit);
 }

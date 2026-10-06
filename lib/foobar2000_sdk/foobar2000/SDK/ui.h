@@ -77,6 +77,8 @@ class NOVTABLE user_interface_v4 : public user_interface_v3 {
 	FB2K_MAKE_SERVICE_INTERFACE(user_interface_v4, user_interface_v3);
 public:
 	static constexpr uint32_t flagHide = 1;
+	static constexpr uint32_t flagDisableDarkMode = 2;
+
 	virtual fb2k::hwnd_t init_v4(HookProc_t hook, uint32_t flags) = 0;
 };
 
@@ -138,15 +140,15 @@ public:
 class NOVTABLE ui_drop_item_callback : public service_base {
 public:
 	//! Called when an object was dropped; returns true if the object was processed and false if not.
-	virtual bool on_drop(interface IDataObject * pDataObject) = 0;
+	virtual bool on_drop(struct IDataObject * pDataObject) = 0;
 	//! Tests whether specified object type is supported by this ui_drop_item_callback implementation. Returns true and sets p_effect when it's supported; returns false otherwise. \n
 	//! See IDropTarget::DragEnter() documentation for more information about p_effect values.
-	virtual bool is_accepted_type(interface IDataObject * pDataObject, DWORD * p_effect)=0;
+	virtual bool is_accepted_type(struct IDataObject * pDataObject, DWORD * p_effect)=0;
 
 	//! Static helper, calls all existing implementations appropriately. See on_drop().
-	static bool g_on_drop(interface IDataObject * pDataObject);
+	static bool g_on_drop(struct IDataObject * pDataObject);
 	//! Static helper, calls all existing implementations appropriately. See is_accepted_type().
-	static bool g_is_accepted_type(interface IDataObject * pDataObject, DWORD * p_effect);
+	static bool g_is_accepted_type(struct IDataObject * pDataObject, DWORD * p_effect);
 
 	FB2K_MAKE_SERVICE_INTERFACE_ENTRYPOINT(ui_drop_item_callback);
 };

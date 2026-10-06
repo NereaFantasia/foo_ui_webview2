@@ -4,7 +4,7 @@
 #include "window/TaskbarProgressPolicy.h"
 #include "window/TaskbarTrayContracts.h"
 #include "window/TrayIcon.h"
-#include "core/PreferencesPage.h"
+#include "prefs/PreferencesPage.h"
 #include "utils/IconLoader.h"
 #include <foobar2000/SDK/ui.h>
 #include <foobar2000/SDK/playback_control.h>
@@ -283,14 +283,19 @@ bool TaskbarIntegration::SetOverlayIcon(HICON hIcon, const wchar_t* description)
 }
 
 bool TaskbarIntegration::Flash(UINT count, DWORD interval) {
-    if (!m_hwnd) return false;
+    // m_hwnd 只在 TaskbarButtonCreated 之后由 Initialize 写入，主窗口销毁后不清零，
+    // 所以除了判空还要确认它仍指向一个存在的窗口。
+    if (!m_hwnd || !IsWindow(m_hwnd)) return false;
     FLASHWINFO fi = {};
     fi.cbSize = sizeof(FLASHWINFO);
     fi.hwnd = m_hwnd;
     fi.dwFlags = FLASHW_ALL;
     fi.uCount = count;
     fi.dwTimeout = interval;
-    return FlashWindowEx(&fi) != FALSE;
+    // FlashWindowEx 的返回值是调用前标题栏是否处于激活状态，不表示成败，也不设置
+    // GetLastError。拿它当成败会让窗口不在前台时（恰恰是最需要闪烁的时候）恒报失败。
+    FlashWindowEx(&fi);
+    return true;
 }
 
 void TaskbarIntegration::HandleButtonClicked(int index) {

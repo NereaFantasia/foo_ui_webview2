@@ -45,7 +45,7 @@ WebViewPanel (core/)
 | Config popup | `notify` receives an edit request → `ShowConfigDialog()` | `have_config_popup()` + `show_config_popup()` |
 | Edit mode | Has DUI edit-mode placeholder drawing | None (CUI has no equivalent edit state) |
 | Size constraints | `get_min_max_info()` | Determined by the host's `window_position_t` |
-| SDK dependency | foobar2000 SDK | Columns UI SDK (`ui_extension.h`, a git submodule) |
+| SDK dependency | foobar2000 SDK | Columns UI SDK (`ui_extension.h`, not in the repo; `build.ps1` clones it into `lib/columns_ui-sdk`) |
 
 Both ultimately land on the same `PanelConfig` and the same `WebViewPanel` base class; the differences are confined to the thin layer of "protocol adaptation + serialization format".
 

@@ -1,8 +1,12 @@
 ﻿#pragma once
+#include <map>
 #include <string>
 #include <vector>
 #include <functional>
+#include <guiddef.h>
 #include <nlohmann/json.hpp>
+
+#include "api/generated/PlaylistSchema.h"
 
 // fields 投影的解析结果（TrackWireSnapshot.h）。接口签名只按引用传递，
 // 前向声明让本头不把 ErrorEnvelope 链带进每个消费方；要读成员的定义方
@@ -42,6 +46,15 @@ public:
     /** @brief Write the playlist's name to out; false if the index is invalid. */
     virtual bool playlist_get_name(size_t index, std::string& out) const = 0;
 
+    // -- Identity -----------------------------------------------
+
+    /** @brief GUID of the playlist at the given index; it stays with the playlist when others
+        are added, removed or reordered. */
+    virtual GUID get_playlist_guid(size_t index) const = 0;
+    /** @brief Current index of the playlist with this GUID. An index not below
+        get_playlist_count() means no playlist has it. */
+    virtual size_t find_playlist_by_guid(const GUID& guid) const = 0;
+
     // -- Lock queries -------------------------------------------
 
     /** @brief Whether the playlist currently has an editing lock. */
@@ -65,6 +78,7 @@ public:
         bool isPlaying = false;
         bool isLocked = false;
         bool isAutoplaylist = false;
+        GUID guid{};
     };
     /** @brief Summary (name, counts, flags) of every playlist. */
     virtual std::vector<PlaylistInfo> get_all_playlists() const = 0;
@@ -79,6 +93,7 @@ public:
         bool isPlaying = false;
         bool isLocked = false;
         double duration = 0.0;
+        GUID guid{};
     };
     /** @brief Detailed info for one playlist (optionally including total duration). */
     virtual PlaylistDetail get_playlist_detail(size_t index, bool includeDuration) const = 0;
@@ -130,12 +145,20 @@ public:
 
     // -- Track info retrieval (involves metadb + titleformat) --
 
-    /** @brief Titleformat-evaluated metadata for a track range, as JSON.
-        `fields` 是已解析的投影选择（SPEC docs/playlist-windowing/SPEC.md §4.1）：
-        projected=false 时与缺省形状逐键相同。 */
-    virtual nlohmann::json get_tracks_json(size_t playlist, size_t start, size_t count, const nlohmann::json& formats, const TrackFieldSelection& fields) const = 0;
-    /** @brief Metadata for the selected tracks, as JSON. */
-    virtual nlohmann::json get_selected_tracks_json(size_t playlist) const = 0;
+    /** @brief A page of playlist rows, in the declared shape of playlist.getTracks.
+        `fields` is the parsed projection; projected=false gives whole rows with the play
+        statistics. `formats` maps column names to Title Formatting patterns. */
+    virtual api::playlist::GetTracksResult get_tracks(size_t playlist, size_t start, size_t count,
+                                                      const std::map<std::string, std::string>& formats,
+                                                      const TrackFieldSelection& fields) const = 0;
+    /** @brief The given rows, in the declared shape of playlist.getTracksAt: in the order given,
+        rows past the last one skipped, a row given twice returned twice. `formats` and `fields` as
+        in get_tracks. */
+    virtual api::playlist::GetTracksAtResult get_tracks_at(size_t playlist, const std::vector<size_t>& rows,
+                                                          const std::map<std::string, std::string>& formats,
+                                                          const TrackFieldSelection& fields) const = 0;
+    /** @brief The selected rows, in the declared shape of playlist.getSelectedTracks. */
+    virtual api::playlist::GetSelectedTracksResult get_selected_tracks(size_t playlist) const = 0;
 
     // -- Playlist duplication -----------------------------------
 
@@ -188,11 +211,23 @@ public:
 
     // -- Path-based insertion -----------------------------------
 
+    // foobar2000 resolves the paths before anything is inserted. process_locations runs a modal
+    // progress dialog with its own message loop and the async add expands in the background, so
+    // playlists can be reordered, removed or locked in between. The methods that resolve paths
+    // look the target up again by its GUID before inserting and report the outcome here.
+    enum class PathInsertOutcome {
+        Ok,               // inserted, or nothing resolved and no insert was tried
+        PlaylistRemoved,  // the target playlist was removed while the paths were resolved
+        Refused,          // playlist_insert_items refused the whole batch, as a lock does
+    };
+
     struct AddPathsResult {
         size_t addedCount = 0;
         size_t invalidCount = 0;
         size_t countBefore = 0;
         size_t totalCount = 0;
+        PathInsertOutcome outcome = PathInsertOutcome::Ok;
+        size_t playlist = 0;  // index of the target when the tracks went in
     };
 
     /** @brief Resolve paths via incoming_item_filter and append to the playlist. */
@@ -205,6 +240,8 @@ public:
     struct AddPathsSequentialResult {
         size_t addedCount = 0;
         nlohmann::json order;  // array of insertion positions
+        PathInsertOutcome outcome = PathInsertOutcome::Ok;
+        size_t playlist = 0;  // index of the target when the tracks went in
     };
     /** @brief Resolve and append paths one by one, preserving insertion order. */
     virtual AddPathsSequentialResult add_paths_sequential(size_t playlist, const nlohmann::json& paths) = 0;
@@ -214,7 +251,8 @@ public:
         size_t validPathCount = 0;
         size_t invalidCount = 0;
     };
-    /** @brief Resolve paths in the background; invoke onComplete when finished. */
+    /** @brief Resolve paths in the background; invoke onComplete when finished. Tracks expanded
+        after the target was removed or locked are not inserted and not counted in addedCount. */
     virtual AsyncAddPathsInfo start_add_paths_async(
         size_t playlist, const nlohmann::json& paths,
         const std::string& operationId,
@@ -226,6 +264,8 @@ public:
         size_t addedCount = 0;
         size_t invalidCount = 0;
         size_t totalCount = 0;
+        PathInsertOutcome outcome = PathInsertOutcome::Ok;
+        size_t playlist = 0;  // index of the target when the tracks went in
     };
     /** @brief Clear the playlist and re-add tracks from the given paths. */
     virtual ReplaceAllResult replace_all(size_t playlist, const nlohmann::json& paths) = 0;

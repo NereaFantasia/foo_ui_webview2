@@ -103,25 +103,25 @@ namespace {
 		}
 		void on_title(const char * p_title,t_size p_title_length)
 		{
-			on_meta("title",pfc_infinite,p_title,p_title_length);
+			on_meta("title",SIZE_MAX,p_title,p_title_length);
 		}
 		void on_songwriter(const char * p_songwriter,t_size p_songwriter_length) {
-			on_meta("songwriter",pfc_infinite,p_songwriter,p_songwriter_length);
+			on_meta("songwriter",SIZE_MAX,p_songwriter,p_songwriter_length);
 		}
 		void on_performer(const char * p_performer,t_size p_performer_length)
 		{
-			on_meta("artist",pfc_infinite,p_performer,p_performer_length);
+			on_meta("artist",SIZE_MAX,p_performer,p_performer_length);
 		}
 
 		void on_isrc(const char * p_isrc,t_size p_isrc_length)
 		{
-			on_meta("isrc",pfc_infinite,p_isrc,p_isrc_length);
+			on_meta("isrc",SIZE_MAX,p_isrc,p_isrc_length);
 		}
 		void on_catalog(const char * p_catalog,t_size p_catalog_length)
 		{
-			on_meta("catalog",pfc_infinite,p_catalog,p_catalog_length);
+			on_meta("catalog", SIZE_MAX,p_catalog,p_catalog_length);
 		}
-		void on_flags(const char * p_flags,t_size p_flags_length) {}
+		void on_flags(const char* p_flags, t_size p_flags_length) { (void)p_flags; (void)p_flags_length; }
 	};
 
 
@@ -130,27 +130,27 @@ namespace {
 	public:
 		cue_parser_callback_retrievelist(cue_parser::t_cue_entry_list& p_out) : m_out(p_out) {}
 		
-		void on_file(const char * p_file,t_size p_file_length,const char * p_type,t_size p_type_length)
+		void on_file(const char * p_file,t_size p_file_length,const char * p_type,t_size p_type_length) override
 		{
 			validate_file_type(p_type,p_type_length);
 			m_file.set_string(p_file,p_file_length);
 			m_fileType.set_string(p_type, p_type_length);
 		}
 		
-		void on_track(unsigned p_index,const char * p_type,t_size p_type_length)
+		void on_track(unsigned p_index,const char * p_type,t_size p_type_length) override
 		{
 			finalize_track(); // finalize previous track
 
-			m_trackIsAudio = stricmp_utf8_ex(p_type,p_type_length,"audio",pfc_infinite) == 0;
+			m_trackIsAudio = stricmp_utf8_ex(p_type,p_type_length,"audio",SIZE_MAX) == 0;
 			if (m_file.is_empty()) pfc::throw_exception_with_message<exception_cue>("declaring a track with no file set");
 			m_trackfile = m_file;
 			m_trackFileType = m_fileType;
 			m_track = p_index;
 		}
 
-		void on_pregap(unsigned p_value) {m_pregap = (double) p_value / 75.0;}
+		void on_pregap(unsigned p_value) override {m_pregap = (double) p_value / 75.0;}
 
-		void on_index(unsigned p_index,unsigned p_value)
+		void on_index(unsigned p_index,unsigned p_value) override
 		{
 			if (p_index < t_cuesheet_index_list::count)
 			{
@@ -163,13 +163,13 @@ namespace {
 			}
 		}
 
-		void on_title(const char * p_title,t_size p_title_length) {}
-		void on_performer(const char * p_performer,t_size p_performer_length) {}
-		void on_songwriter(const char * p_songwriter,t_size p_songwriter_length) {}
-		void on_isrc(const char * p_isrc,t_size p_isrc_length) {}
-		void on_catalog(const char * p_catalog,t_size p_catalog_length) {}
-		void on_comment(const char * p_comment,t_size p_comment_length) {}
-		void on_flags(const char * p_flags,t_size p_flags_length) {}
+		void on_title(const char *,t_size) override {}
+		void on_performer(const char *,t_size) override {}
+		void on_songwriter(const char *,t_size) override {}
+		void on_isrc(const char *,t_size) override {}
+		void on_catalog(const char *,t_size) override {}
+		void on_comment(const char *,t_size) override {}
+		void on_flags(const char *,t_size) override {}
 
 		void finalize()
 		{
@@ -224,22 +224,22 @@ namespace {
 	public:
 		cue_parser_callback_retrieveinfo(file_info & p_out,unsigned p_wanted_track) : m_out(p_out), m_wanted_track(p_wanted_track), m_track(0), m_is_va(false), m_index0_set(false), m_index1_set(false), m_pregap(0), m_totaltracks(0) {}
 
-		void on_file(const char * p_file,t_size p_file_length,const char * p_type,t_size p_type_length) {}
+		void on_file(const char *,t_size,const char *,t_size) override {}
 
-		void on_track(unsigned p_index,const char * p_type,t_size p_type_length)
+		void on_track(unsigned p_index,const char * p_type,t_size p_type_length) override
 		{
 			if (p_index == 0) cue_fail("invalid TRACK index");
 			if (p_index == m_wanted_track)
 			{
-				if (stricmp_utf8_ex(p_type,p_type_length,"audio",pfc_infinite)) throw exception_cue_tracktype();
+				if (stricmp_utf8_ex(p_type,p_type_length,"audio",SIZE_MAX)) throw exception_cue_tracktype();
 			}
 			m_track = p_index;
 			m_totaltracks++;
 		}
 
-		void on_pregap(unsigned p_value) {if (m_track == m_wanted_track) m_pregap = (double) p_value / 75.0;}
+		void on_pregap(unsigned p_value) override {if (m_track == m_wanted_track) m_pregap = (double) p_value / 75.0;}
 
-		void on_index(unsigned p_index,unsigned p_value)
+		void on_index(unsigned p_index,unsigned p_value) override
 		{
 			if (m_track == m_wanted_track && p_index < t_cuesheet_index_list::count)
 			{
@@ -253,18 +253,18 @@ namespace {
 		}
 
 		
-		void on_meta(const char * p_name,t_size p_name_length,const char * p_value,t_size p_value_length)
+		void on_meta(const char * p_name,t_size p_name_length,const char * p_value,t_size p_value_length) override
 		{
 			t_meta_list::iterator iter;
 			if (m_track == 0) //globals
 			{
 				//convert global title to album
-				if (!stricmp_utf8_ex(p_name,p_name_length,"title",pfc_infinite))
+				if (!stricmp_utf8_ex(p_name,p_name_length,"title", SIZE_MAX))
 				{
 					p_name = "album";
 					p_name_length = 5;
 				}
-				else if (!stricmp_utf8_ex(p_name,p_name_length,"artist",pfc_infinite))
+				else if (!stricmp_utf8_ex(p_name,p_name_length,"artist",SIZE_MAX))
 				{
 					m_album_artist.set_string(p_value,p_value_length);
 				}
@@ -275,7 +275,7 @@ namespace {
 			{
 				if (!m_is_va)
 				{
-					if (!stricmp_utf8_ex(p_name,p_name_length,"artist",pfc_infinite))
+					if (!stricmp_utf8_ex(p_name,p_name_length,"artist",SIZE_MAX))
 					{
 						if (!m_album_artist.is_empty())
 						{
@@ -416,7 +416,7 @@ static void g_parse_cue_line(const char * p_line,t_size p_line_length,cue_parser
 {
 	t_size ptr = 0;
 	while(ptr < p_line_length && !is_spacing(p_line[ptr])) ptr++;
-	if (!stricmp_utf8_ex(p_line,ptr,"file",pfc_infinite))
+	if (!stricmp_utf8_ex(p_line,ptr,"file",SIZE_MAX))
 	{
 		while(ptr < p_line_length && is_spacing(p_line[ptr])) ptr++;
 		t_size file_base,file_length, type_base,type_length;
@@ -448,7 +448,7 @@ static void g_parse_cue_line(const char * p_line,t_size p_line_length,cue_parser
 
 		p_callback.on_file(p_line + file_base, file_length, p_line + type_base, type_length);
 	}
-	else if (!stricmp_utf8_ex(p_line,ptr,"track",pfc_infinite))
+	else if (!stricmp_utf8_ex(p_line,ptr,"track",SIZE_MAX))
 	{
 		while(ptr < p_line_length && is_spacing(p_line[ptr])) ptr++;
 
@@ -472,7 +472,7 @@ static void g_parse_cue_line(const char * p_line,t_size p_line_length,cue_parser
 
 		p_callback.on_track(track,p_line + type_base, type_length);
 	}
-	else if (!stricmp_utf8_ex(p_line,ptr,"index",pfc_infinite))
+	else if (!stricmp_utf8_ex(p_line,ptr,"index",SIZE_MAX))
 	{
 		while(ptr < p_line_length && is_spacing(p_line[ptr])) ptr++;
 
@@ -506,7 +506,7 @@ static void g_parse_cue_line(const char * p_line,t_size p_line_length,cue_parser
 		
 		p_callback.on_index(index,time);
 	}
-	else if (!stricmp_utf8_ex(p_line,ptr,"pregap",pfc_infinite))
+	else if (!stricmp_utf8_ex(p_line,ptr,"pregap",SIZE_MAX))
 	{
 		while(ptr < p_line_length && is_spacing(p_line[ptr])) ptr++;
 
@@ -529,51 +529,51 @@ static void g_parse_cue_line(const char * p_line,t_size p_line_length,cue_parser
 		
 		p_callback.on_pregap(time);
 	}
-	else if (!stricmp_utf8_ex(p_line,ptr,"title",pfc_infinite))
+	else if (!stricmp_utf8_ex(p_line,ptr,"title",SIZE_MAX))
 	{
 		auto arg = cue_line_argument(p_line+ptr, p_line_length-ptr);
 		if ( arg.m_len > 0 ) p_callback.on_title( arg.m_ptr, arg.m_len );
 	}
-	else if (!stricmp_utf8_ex(p_line,ptr,"performer",pfc_infinite))
+	else if (!stricmp_utf8_ex(p_line,ptr,"performer",SIZE_MAX))
 	{
 		auto arg = cue_line_argument(p_line + ptr, p_line_length - ptr);
 		// 2021-01 fix: allow blank performer
 		/*if (arg.m_len > 0)*/ p_callback.on_performer(arg.m_ptr, arg.m_len);
 	}
-	else if (!stricmp_utf8_ex(p_line,ptr,"songwriter",pfc_infinite))
+	else if (!stricmp_utf8_ex(p_line,ptr,"songwriter",SIZE_MAX))
 	{
 		auto arg = cue_line_argument(p_line + ptr, p_line_length - ptr);
 		if (arg.m_len > 0) p_callback.on_songwriter(arg.m_ptr, arg.m_len);
 	}
-	else if (!stricmp_utf8_ex(p_line,ptr,"isrc",pfc_infinite))
+	else if (!stricmp_utf8_ex(p_line,ptr,"isrc",SIZE_MAX))
 	{
 		while(ptr < p_line_length && is_spacing(p_line[ptr])) ptr++;
 		t_size length = p_line_length - ptr;
 		if (length == 0) pfc::throw_exception_with_message< exception_cue > ("invalid ISRC syntax");
 		p_callback.on_isrc(p_line+ptr,length);
 	}
-	else if (!stricmp_utf8_ex(p_line,ptr,"catalog",pfc_infinite))
+	else if (!stricmp_utf8_ex(p_line,ptr,"catalog",SIZE_MAX))
 	{
 		while(ptr < p_line_length && is_spacing(p_line[ptr])) ptr++;
 		t_size length = p_line_length - ptr;
 		if (length == 0) pfc::throw_exception_with_message< exception_cue > ("invalid CATALOG syntax");
 		p_callback.on_catalog(p_line+ptr,length);
 	}
-	else if (!stricmp_utf8_ex(p_line,ptr,"flags",pfc_infinite))
+	else if (!stricmp_utf8_ex(p_line,ptr,"flags",SIZE_MAX))
 	{
 		while(ptr < p_line_length && is_spacing(p_line[ptr])) ptr++;
 		if (ptr < p_line_length)
 			p_callback.on_flags(p_line + ptr, p_line_length - ptr);
 	}
-	else if (!stricmp_utf8_ex(p_line,ptr,"rem",pfc_infinite))
+	else if (!stricmp_utf8_ex(p_line,ptr,"rem",SIZE_MAX))
 	{
 		while(ptr < p_line_length && is_spacing(p_line[ptr])) ptr++;
 		if (ptr < p_line_length)
 			p_callback.on_comment(p_line + ptr, p_line_length - ptr);
 	}
-	else if (!stricmp_utf8_ex(p_line,ptr,"postgap",pfc_infinite)) {
+	else if (!stricmp_utf8_ex(p_line,ptr,"postgap",SIZE_MAX)) {
 		pfc::throw_exception_with_message< exception_cue > ("POSTGAP is not supported");
-	} else if (!stricmp_utf8_ex(p_line,ptr,"cdtextfile",pfc_infinite)) {
+	} else if (!stricmp_utf8_ex(p_line,ptr,"cdtextfile",SIZE_MAX)) {
 		//do nothing
 	}
 	else pfc::throw_exception_with_message< exception_cue > ("unknown cuesheet item");
@@ -630,20 +630,20 @@ namespace {
 	class cue_parser_callback_retrievecount : public cue_parser_callback
 	{
 	public:
-		cue_parser_callback_retrievecount() : m_count(0) {}
+		cue_parser_callback_retrievecount() {}
 		unsigned get_count() const {return m_count;}
-		void on_file(const char * p_file,t_size p_file_length,const char * p_type,t_size p_type_length) {}
-		void on_track(unsigned p_index,const char * p_type,t_size p_type_length) {m_count++;}
-		void on_pregap(unsigned p_value) {}
-		void on_index(unsigned p_index,unsigned p_value) {}
-		void on_title(const char * p_title,t_size p_title_length) {}
-		void on_performer(const char * p_performer,t_size p_performer_length) {}
-		void on_isrc(const char * p_isrc,t_size p_isrc_length) {}
-		void on_catalog(const char * p_catalog,t_size p_catalog_length) {}
-		void on_comment(const char * p_comment,t_size p_comment_length) {}
-		void on_flags(const char * p_flags,t_size p_flags_length) {}
+		void on_file(const char *,t_size,const char *,t_size) override {}
+		void on_track(unsigned,const char *,t_size) override {m_count++;}
+		void on_pregap(unsigned) override {}
+		void on_index(unsigned,unsigned) override {}
+		void on_title(const char *,t_size) override {}
+		void on_performer(const char *,t_size) override {}
+		void on_isrc(const char *,t_size) override {}
+		void on_catalog(const char *,t_size) override {}
+		void on_comment(const char *,t_size) override {}
+		void on_flags(const char *,t_size) override {}
 	private:
-		unsigned m_count;
+		unsigned m_count = 0;
 	};
 
 	class cue_parser_callback_retrievecreatorentries : public cue_parser_callback
@@ -651,13 +651,13 @@ namespace {
 	public:
 		cue_parser_callback_retrievecreatorentries(cue_creator::t_entry_list & p_out) : m_out(p_out), m_track(0), m_pregap(0), m_index0_set(false), m_index1_set(false) {}
 
-		void on_file(const char * p_file,t_size p_file_length,const char * p_type,t_size p_type_length) {
+		void on_file(const char * p_file,t_size p_file_length,const char * p_type,t_size p_type_length) override {
 			validate_file_type(p_type,p_type_length);
 			m_file.set_string(p_file,p_file_length);
 			m_fileType.set_string(p_type, p_type_length);
 		}
 		
-		void on_track(unsigned p_index,const char * p_type,t_size p_type_length)
+		void on_track(unsigned p_index,const char * p_type,t_size p_type_length) override
 		{
 			finalize_track();
 
@@ -671,12 +671,12 @@ namespace {
 			m_track = p_index;
 		}
 		
-		void on_pregap(unsigned p_value)
+		void on_pregap(unsigned p_value) override
 		{
 			m_pregap = (double) p_value / 75.0;
 		}
 
-		void on_index(unsigned p_index,unsigned p_value)
+		void on_index(unsigned p_index,unsigned p_value) override
 		{
 			if (p_index < t_cuesheet_index_list::count)
 			{
@@ -688,17 +688,17 @@ namespace {
 				m_indexes.m_positions[p_index] = (double) p_value / 75.0;
 			}
 		}
-		void on_title(const char * p_title,t_size p_title_length) {}
-		void on_performer(const char * p_performer,t_size p_performer_length) {}
-		void on_songwriter(const char * p_performer,t_size p_performer_length) {}
-		void on_isrc(const char * p_isrc,t_size p_isrc_length) {}
-		void on_catalog(const char * p_catalog,t_size p_catalog_length) {}
-		void on_comment(const char * p_comment,t_size p_comment_length) {}		
+		void on_title(const char *,t_size) override {}
+		void on_performer(const char *,t_size) override {}
+		void on_songwriter(const char *,t_size) override {}
+		void on_isrc(const char *,t_size) override {}
+		void on_catalog(const char *,t_size) override {}
+		void on_comment(const char *,t_size) override {}
 		void finalize()
 		{
 			finalize_track(); 
 		}
-		void on_flags(const char * p_flags,t_size p_flags_length) {
+		void on_flags(const char * p_flags,t_size p_flags_length) override {
 			m_flags.set_string(p_flags,p_flags_length);
 		}
 	private:
@@ -772,7 +772,7 @@ namespace file_info_record_helper {
 		public:
 			__file_info_record__meta__enumerator(file_info & p_out) : m_out(p_out) {}
 			template<typename t_value> void operator() (const char * p_name, const t_value & p_value) {
-				t_size index = ~0;
+				t_size index = SIZE_MAX;
 				for (typename t_value::const_iterator iter = p_value.first(); iter.is_valid(); ++iter) {
 					if (index == ~0) index = m_out.__meta_add_unsafe(p_name, *iter);
 					else m_out.meta_add_value(index, *iter);

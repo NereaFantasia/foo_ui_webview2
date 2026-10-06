@@ -7,7 +7,7 @@ namespace pfc {
     class CFObject {
     public:
         typedef CFObject<type_t> self_t;
-        type_t p = NULL;
+        type_t p = nullptr;
         
         ~CFObject() {
             if ( p ) CFRelease(p);
@@ -56,4 +56,10 @@ namespace pfc {
             reset();
         }
     };
+
+    // Turn any CFTypeRef into our wrapper, transferring ownership
+    auto wrapCFObject(auto arg) {
+        CFObject<decltype(arg)> ret; ret.p = arg;
+        return ret;
+    }
 }

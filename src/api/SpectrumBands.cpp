@@ -216,4 +216,86 @@ template void ComputeDbBands<float>(const float*, size_t, unsigned, unsigned, in
 template void ComputeDbBands<double>(const double*, size_t, unsigned, unsigned, int, int,
                                      std::vector<float>&, double, double);
 
+// 选点规则逐项照搬 ComputeDbBands：同一个频率公式、同样的左闭右开比较，
+// bins 与 'db' 档对同一个频点的归属才不会因浮点边界而不同。
+DbBinSpan FindDbBinSpan(size_t binCount, unsigned sampleRate, int fftSize,
+                        double minFrequency, double maxFrequency) {
+    if (sampleRate == 0) sampleRate = 44100;
+
+    DbBinSpan span;
+    const size_t binEnd = std::min(binCount, static_cast<size_t>(std::max(0, fftSize / 2)));
+    const double nyquist = sampleRate / 2.0;
+    const double maxFreq = (maxFrequency > 0.0 && maxFrequency < nyquist) ? maxFrequency : nyquist;
+    if (fftSize <= 0 || binEnd < 2 || !(maxFreq > minFrequency)) return span;
+
+    const double binWidth = static_cast<double>(sampleRate) / fftSize;
+    for (size_t k = 1; k < binEnd; ++k) {
+        const double freq = static_cast<double>(k) * binWidth;
+        if (freq < minFrequency) continue;
+        if (freq >= maxFreq) break;
+        if (span.count == 0) span.first = k;
+        ++span.count;
+    }
+    return span;
+}
+
+namespace {
+
+// 功率换成 dB：先加标定、压到下限，再按 kDbBinsStepsPerDb 取整。取整用除法：
+// round(x * 100) / 100 得到的是离两位小数最近的 double，JSON 写出来就是两位小数；
+// 乘 0.01 得不到这个保证。
+double DbBinValue(double power) {
+    if (!(power > 0.0)) return static_cast<double>(kDbBandsFloor);
+    const double db = std::max(10.0 * std::log10(power) + kDbBandsCalibration,
+                               static_cast<double>(kDbBandsFloor));
+    return std::round(db * kDbBinsStepsPerDb) / kDbBinsStepsPerDb;
+}
+
+}  // namespace
+
+template <typename Sample>
+void ComputeDbBins(const Sample* data, size_t binCount, unsigned channels,
+                   unsigned sampleRate, int fftSize, SpectrumChannels mode, DbBins& out,
+                   double minFrequency, double maxFrequency) {
+    out.firstBin = 0;
+    out.mix.clear();
+    out.left.clear();
+    out.right.clear();
+    if (channels == 0 || data == nullptr) return;
+
+    const DbBinSpan span = FindDbBinSpan(binCount, sampleRate, fftSize, minFrequency, maxFrequency);
+    if (span.count == 0) return;
+    out.firstBin = span.first;
+    const size_t end = span.first + span.count;
+
+    if (mode == SpectrumChannels::Mix) {
+        out.mix.reserve(span.count);
+        for (size_t k = span.first; k < end; ++k) {
+            double sum = 0.0;
+            for (unsigned ch = 0; ch < channels; ++ch) {
+                const double m = static_cast<double>(data[k * channels + ch]);
+                sum += m * m;
+            }
+            out.mix.push_back(DbBinValue(sum / channels));
+        }
+        return;
+    }
+
+    // 单声道时右路读同一路，与 getWaveform 的 'stereo' 一致
+    const unsigned rightChannel = channels >= 2 ? 1 : 0;
+    out.left.reserve(span.count);
+    out.right.reserve(span.count);
+    for (size_t k = span.first; k < end; ++k) {
+        const double l = static_cast<double>(data[k * channels]);
+        const double r = static_cast<double>(data[k * channels + rightChannel]);
+        out.left.push_back(DbBinValue(l * l));
+        out.right.push_back(DbBinValue(r * r));
+    }
+}
+
+template void ComputeDbBins<float>(const float*, size_t, unsigned, unsigned, int, SpectrumChannels,
+                                   DbBins&, double, double);
+template void ComputeDbBins<double>(const double*, size_t, unsigned, unsigned, int, SpectrumChannels,
+                                    DbBins&, double, double);
+
 }  // namespace fb2k_spectrum

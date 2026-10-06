@@ -4,6 +4,9 @@
 #include "pch.h"
 #include "api/PlaycountApi.h"
 #include "api/BridgeCore.h"
+#include "api/TypedApi.h"
+#include "api/generated/PlaycountSchema.h"
+#include "utils/SubsongUtils.h"
 
 namespace {
     using json = nlohmann::json;
@@ -13,14 +16,14 @@ namespace {
         std::vector<std::string> parts;
         size_t start = 0;
         size_t end = str.find(delimiter);
-        
+
         while (end != std::string::npos) {
             parts.push_back(str.substr(start, end - start));
             start = end + delimiter.length();
             end = str.find(delimiter, start);
         }
         parts.push_back(str.substr(start));
-        
+
         return parts;
     }
 
@@ -35,17 +38,14 @@ namespace {
     }
 
     //==========================================================================
-    // playcount.get - Get playback statistics for files
+    // playcount.get / playcount.getBatch - Get playback statistics for files
+    // Both methods have the same params and result shape; R is their own
+    // generated result type.
     //==========================================================================
-    json PlaycountGet(const json& params) {
-        if (!params.contains("paths") || !params["paths"].is_array()) {
-            return {{"success", false}, {"error", "paths array is required"}};
-        }
-
+    template <class R>
+    api::Result<R> ReadPlaycounts(const std::vector<std::string>& paths) {
         try {
-            const auto& paths = params["paths"];
-            json results = json::array();
-            auto mdb = metadb::get();
+            R out;
 
             // 缓存编译后的 titleformat 脚本，避免每次调用重复编译
             static titleformat_object::ptr tf;
@@ -57,37 +57,16 @@ namespace {
             // 移到循环外，避免 N 次重复服务查找
             auto libMgr = library_manager::get();
 
-            for (const auto& pathItem : paths) {
-                if (!pathItem.is_string()) continue;
+            for (const std::string& requested : paths) {
+                // 拆 |subsong:N、规范化、建 handle 走共享函数；读不出序号时截断、按 0 并记一行控制台。
+                metadb_handle_ptr handle = SubsongUtils::CreateTrackHandle(requested);
 
-                std::string path = pathItem.get<std::string>();
-                std::string originalPath = path;  // 保存原始路径用于返回
-                
-                // 解析 CUE subsong index (|subsong:N 格式)
-                int subsongIndex = 0;
-                size_t pipePos = path.find("|subsong:");
-                if (pipePos != std::string::npos) {
-                    std::string indexStr = path.substr(pipePos + 9);
-                    try {
-                        subsongIndex = std::stoi(indexStr);
-                        path = path.substr(0, pipePos);  // 移除 |subsong:N 部分
-                    } catch (...) {
-                        subsongIndex = 0;
-                    }
-                }
-                
-                pfc::string8 canonicalPath;
-                filesystem::g_get_canonical_path(path.c_str(), canonicalPath);
-
-                // O(log n) handle creation (uses canonical path + subsong index)
-                metadb_handle_ptr handle = mdb->handle_create(canonicalPath.c_str(), subsongIndex);
-
+                api::playcount::PlaycountRow row;
+                // 成功行与失败行都回请求原样的路径，调用方按 path 对行。
+                row.path = requested;
                 if (!handle.is_valid()) {
-                    results.push_back({
-                        {"path", path},
-                        {"success", false},
-                        {"error", "Failed to open file"}
-                    });
+                    row.error = "Failed to open file";
+                    out.results.push_back(std::move(row));
                     continue;
                 }
 
@@ -101,84 +80,66 @@ namespace {
                 // Parse the result: play_count|||first_played|||last_played|||added|||rating
                 std::vector<std::string> parts = SplitString(formatted.c_str(), "|||");
 
-                json item = {
-                    {"path", originalPath},  // 返回原始路径（含 |subsong:N）
-                    {"success", true}
-                };
+                row.success = true;
 
                 // Parse each field
                 if (parts.size() >= 1) {
-                    int playCount = ParseInt(parts[0]);
-                    item["playCount"] = playCount;
+                    row.playCount = ParseInt(parts[0]);
                 }
 
                 if (parts.size() >= 2 && !parts[1].empty() && parts[1] != "?") {
-                    item["firstPlayed"] = parts[1];
+                    row.firstPlayed = parts[1];
                 }
 
                 if (parts.size() >= 3 && !parts[2].empty() && parts[2] != "?") {
-                    item["lastPlayed"] = parts[2];
+                    row.lastPlayed = parts[2];
                 }
 
                 if (parts.size() >= 4 && !parts[3].empty() && parts[3] != "?") {
-                    item["added"] = parts[3];
+                    row.added = parts[3];
                 }
 
                 if (parts.size() >= 5) {
                     int rating = ParseInt(parts[4]);
                     if (rating > 0) {
-                        item["rating"] = rating;
+                        row.rating = rating;
                     }
                 }
 
                 // Add flag to indicate if data is from library
-                item["inLibrary"] = foundInLibrary;
+                row.inLibrary = foundInLibrary;
 
-                results.push_back(item);
+                out.results.push_back(std::move(row));
             }
 
-            return {
-                {"success", true},
-                {"count", results.size()},
-                {"results", results}
-            };
+            out.count = static_cast<std::int64_t>(out.results.size());
+            return out;
         } catch (const std::exception& e) {
-            return {{"success", false}, {"error", e.what()}};
+            return api::Fail(e.what(), ApiErrorCode::OPERATION_FAILED);
         }
     }
 
-    //==========================================================================
-    // playcount.getBatch - Get playback statistics for multiple files efficiently
-    //==========================================================================
-    json PlaycountGetBatch(const json& params) {
-        // Same as get, but optimized for batch operations
-        return PlaycountGet(params);
+    api::Result<api::playcount::GetResult> PlaycountGet(const api::playcount::GetParams& p) {
+        return ReadPlaycounts<api::playcount::GetResult>(p.paths);
+    }
+
+    api::Result<api::playcount::GetBatchResult> PlaycountGetBatch(const api::playcount::GetBatchParams& p) {
+        return ReadPlaycounts<api::playcount::GetBatchResult>(p.paths);
     }
 
     //==========================================================================
-    // playcount.set - Set playcount/rating (if supported)
+    // playcount.set - Placeholder: foo_playcount has no API to change values
+    // Rating can be set via context menu or the rating API we already have.
     //==========================================================================
-    json PlaycountSet(const json& params) {
-        if (!params.contains("path") || !params["path"].is_string()) {
-            return {{"success", false}, {"error", "path is required"}};
-        }
-
-        std::string path = params["path"].get<std::string>();
-        
-        // Note: foo_playcount doesn't have a direct API to set values.
-        // Rating can be set via context menu or the rating API we already have.
-        // This is a placeholder for future implementation if foo_playcount exposes API.
-        
-        return {
-            {"success", false},
-            {"error", "Direct playcount modification not supported. Use rating.set for ratings."}
-        };
+    api::Result<void> PlaycountSet(const api::playcount::SetParams& /*params*/) {
+        return api::Fail("Direct playcount modification not supported. Use rating.set for ratings.",
+                         ApiErrorCode::NOT_SUPPORTED);
     }
 
     //==========================================================================
     // playcount.getStats - Get overall library statistics
     //==========================================================================
-    json PlaycountGetStats(const json& /*params*/) {
+    api::Result<api::playcount::GetStatsResult> PlaycountGetStats(const api::playcount::GetStatsParams& /*params*/) {
         try {
             auto libMgr = library_manager::get();
             metadb_handle_list allItems;
@@ -202,7 +163,7 @@ namespace {
 
                 pfc::string8 formatted;
                 allItems[i]->format_title(nullptr, formatted, tfMerged, nullptr);
-                
+
                 // Parse: "play_count|||rating"
                 std::vector<std::string> parts = SplitString(formatted.c_str(), "|||");
                 int playCount = parts.size() >= 1 ? ParseInt(parts[0]) : 0;
@@ -223,41 +184,29 @@ namespace {
                 }
             }
 
-            double avgRating = ratedTracks > 0 ? (double)ratingSum / ratedTracks : 0.0;
-            double avgPlayCount = playedTracks > 0 ? (double)totalPlayCount / playedTracks : 0.0;
-
-            return {
-                {"success", true},
-                {"totalTracks", totalTracks},
-                {"playedTracks", playedTracks},
-                {"unplayedTracks", totalTracks - playedTracks},
-                {"ratedTracks", ratedTracks},
-                {"totalPlayCount", totalPlayCount},
-                {"maxPlayCount", maxPlayCount},
-                {"averagePlayCount", avgPlayCount},
-                {"averageRating", avgRating}
-            };
+            api::playcount::GetStatsResult out;
+            out.totalTracks = totalTracks;
+            out.playedTracks = playedTracks;
+            out.unplayedTracks = totalTracks - playedTracks;
+            out.ratedTracks = ratedTracks;
+            out.totalPlayCount = totalPlayCount;
+            out.maxPlayCount = maxPlayCount;
+            out.averagePlayCount = playedTracks > 0 ? (double)totalPlayCount / playedTracks : 0.0;
+            out.averageRating = ratedTracks > 0 ? (double)ratingSum / ratedTracks : 0.0;
+            return out;
         } catch (const std::exception& e) {
-            return {{"success", false}, {"error", e.what()}};
+            return api::Fail(e.what(), ApiErrorCode::OPERATION_FAILED);
         }
     }
 
 } // namespace
 
+// Parameters, results and path security levels come from src/api/schema/playcount.ts through the generated types.
 void RegisterPlaycountApi() {
-    auto& bridge = BridgeCore::GetInstance();
-
-    // playcount.get - Get playback statistics for files
-    bridge.RegisterApi("playcount.get", PlaycountGet, {{"paths", SecurityLevel::MediaRead, true}});
-
-    // playcount.getBatch - Batch get (same as get, for API consistency)
-    bridge.RegisterApi("playcount.getBatch", PlaycountGetBatch, {{"paths", SecurityLevel::MediaRead, true}});
-
-    // playcount.set - Placeholder for future implementation
-    bridge.RegisterApi("playcount.set", PlaycountSet, {{"path", SecurityLevel::MediaWrite}});
-
-    // playcount.getStats - Get overall library statistics
-    bridge.RegisterApi("playcount.getStats", PlaycountGetStats);
+    api::RegisterApi("playcount.get", PlaycountGet);
+    api::RegisterApi("playcount.getBatch", PlaycountGetBatch);
+    api::RegisterApi("playcount.set", PlaycountSet);
+    api::RegisterApi("playcount.getStats", PlaycountGetStats);
 
     console::print("[WebView2 UI] Playcount API registered (4 APIs)");
 }

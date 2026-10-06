@@ -5,9 +5,12 @@
 #include "file_list_helper.h"
 #include "fileReadAhead.h"
 #include <SDK/file_info_impl.h>
+#include <SDK/file_info_const_impl.h>
+#include <SDK/file_info_filter.h>
 #include "readers_lite.h"
+#include "file_info_delta.h"
 
-#define LOCAL_DEBUG_PRINT(...) // PFC_DEBUG_PRINT(__VA_ARGS__)
+#define LOCAL_DEBUG_PRINT(...) PFC_NO_OP// PFC_DEBUG_PRINT(__VA_ARGS__)
 
 #define FILE_DECODEDAUDIO_PRINT(...) LOCAL_DEBUG_PRINT("file_decodeaudio(", pfc::format_ptr(this), "): ", __VA_ARGS__)
 
@@ -55,13 +58,14 @@ static input_helper::ioFilter_t makeReadAhead(size_t arg, bool bRemote) {
 	if (arg == 0) return nullptr;
 
 	return [arg, bRemote](file_ptr & p_file, const char * p_path, abort_callback & p_abort) {
+        // 2025-06: Now testing NETWORK not remote flag
 		if (p_file.is_empty()) {
-			filesystem::ptr fs;
-			if (!filesystem::g_get_interface(fs, p_path)) return false;
-			if (bRemote != fs->is_remote(p_path)) return false;
+			filesystem::ptr fs = filesystem::tryGet(p_path);
+            if (!fs) return false;
+			if (bRemote != fs->is_network_(p_path)) return false;
 			if (looksLikePlaylist(fs, p_path)) return false;
 			fs->open(p_file, p_path, filesystem::open_mode_read, p_abort);
-		} else if (bRemote != p_file->is_remote()) return false;
+		} else if (bRemote != p_file->is_network()) return false;
 		if (p_file->is_in_memory()) return false;
 		p_file = fileCreateReadAhead(p_file, (size_t)arg, p_abort);
 		return true;
@@ -85,7 +89,7 @@ void input_helper::open(service_ptr_t<file> p_filehint,trackRef p_location,unsig
 	open(p_filehint,trackGetLocation( p_location ),p_flags,p_abort,p_from_redirect,p_skip_hints);
 }
 
-bool input_helper::test_if_lockless(abort_callback& a) {
+bool input_helper::test_if_lockless([[maybe_unused]] abort_callback& a) {
 	if (m_file_in_memory || extended_param(input_params::is_tag_write_safe) != 0) return true;
 	
 #if 0
@@ -126,7 +130,7 @@ bool input_helper::open_path(const char * path, abort_callback & abort, decodeOp
 		}
 		return false;
 	}
-	m_input.release();
+	m_input.release(); m_inputGuid = {};
 
 	service_ptr_t<file> l_file = other.m_hint;
 	fileOpenTools(l_file, path, other.m_ioFilters, abort);
@@ -134,26 +138,24 @@ bool input_helper::open_path(const char * path, abort_callback & abort, decodeOp
 	m_file_in_memory = l_file.is_valid() && l_file->is_in_memory();
 
 	TRACK_CODE("input_entry::g_open_for_decoding",
-		m_input ^= input_entry::g_open(input_decoder::class_guid, l_file, path, m_logger, abort, other.m_from_redirect );
+		m_input ^= input_entry::g_open(input_decoder::class_guid, l_file, path, m_logger, abort, other.m_from_redirect, &m_inputGuid );
 	);
 
-	if (!other.m_skip_hints) {
-		try {
-            if ( other.m_infoHook ) {
-                other.m_infoHook( m_input, path, abort );
-            }
+	try {
+        if ( other.m_infoHook ) {
+            other.m_infoHook( m_input, path, abort );
+		} else {
 #ifdef FOOBAR2000_HAVE_METADB
 			metadb_io::get()->hint_reader(m_input.get_ptr(), path, abort);
 #endif
 		}
-		catch (exception_io_data const &) {
-			//Don't fail to decode when this barfs, might be barfing when reading info from another subsong than the one we're trying to decode etc.
-			m_input.release();
-			if (l_file.is_valid()) l_file->reopen(abort);
-			TRACK_CODE("input_entry::g_open_for_decoding",
-				m_input ^= input_entry::g_open(input_decoder::class_guid, l_file, path, m_logger, abort, other.m_from_redirect);
-			);
-		}
+	} catch (exception_io_data const &) {
+		//Don't fail to decode when this barfs, might be barfing when reading info from another subsong than the one we're trying to decode etc.
+		m_input.release();
+		if (l_file.is_valid()) l_file->reopen(abort);
+		TRACK_CODE("input_entry::g_open_for_decoding",
+			m_input ^= input_entry::g_open(input_decoder::class_guid, l_file, path, m_logger, abort, other.m_from_redirect);
+		);
 	}
 
 	if (other.m_shim) m_input = other.m_shim(m_input, path, abort);
@@ -163,6 +165,12 @@ bool input_helper::open_path(const char * path, abort_callback & abort, decodeOp
 }
 
 void input_helper::open_decoding(t_uint32 subsong, t_uint32 flags, abort_callback & p_abort) {
+	if (flags & input_flag_playback) {
+		m_playback.reset();
+		m_playback.emplace();
+		m_input->get_info(subsong, m_playback->m_infoStatic, p_abort);
+		m_playback->m_infoDyn = m_playback->m_infoDynTrk = m_playback->m_infoStatic;
+	}
 	TRACK_CODE("input_decoder::initialize", m_input->initialize(subsong, flags, p_abort));
 }
 
@@ -177,7 +185,7 @@ void input_helper::open(const playable_location & location, abort_callback & abo
 }
 
 void input_helper::attach(input_decoder::ptr dec, const char * path) {
-	m_input = dec;
+	m_input = dec; m_inputGuid = {};
 	m_path = path;
 }
 
@@ -186,13 +194,14 @@ void input_helper::open(service_ptr_t<file> p_filehint, const playable_location 
 	o.m_hint = p_filehint;
 	o.m_flags = p_flags;
 	o.m_from_redirect = p_from_redirect;
-	o.m_skip_hints = p_skip_hints;
+    if ( p_skip_hints ) o.m_infoHook = [] (input_decoder::ptr, const char*, abort_callback&) {};
 	this->open(p_location, p_abort, o);
 }
 
 
 void input_helper::close() {
 	m_input.release();
+	m_playback.reset();
 }
 
 bool input_helper::is_open() {
@@ -261,6 +270,7 @@ size_t input_helper::extended_param(const GUID & type, size_t arg1, void * arg2,
 	}
 	return 0;
 }
+
 input_helper::decodeInfo_t input_helper::decode_info() {
 	decodeInfo_t ret = {};
 	if (m_input.is_valid()) {
@@ -295,6 +305,70 @@ const char * input_helper::get_path() const {
 	return m_path;
 }
 
+#include "once.h"
+#include <SDK/album_art_helpers.h>
+namespace {
+    class aa_cover_url : public album_art_extractor_instance_v2 {
+        const pfc::string8 m_path;
+        album_art_data_ptr m_data;
+        fb2k::once m_once;
+    public:
+        aa_cover_url( const char * arg ) : m_path(arg) {}
+        album_art_data_ptr query(const GUID & p_what,abort_callback & p_abort) override {
+            if ( p_what != album_art_ids::cover_front ) throw exception_album_art_not_found();
+            m_once.call([&] {
+                m_data = filesystem::g_readWholeFile(m_path, 16 * 1024 * 1024, p_abort);
+            }, p_abort);
+            return m_data;
+        }
+        album_art_path_list::ptr query_paths(const GUID & p_what, abort_callback &) override {
+            if ( p_what != album_art_ids::cover_front ) throw exception_album_art_not_found();
+            return fb2k::service_new<album_art_path_list_impl>(m_path.c_str());
+        }
+    };
+	class filter_delta : public file_info_filter {
+		const file_info_delta m_delta;
+	public:
+		filter_delta(const file_info& from, const file_info& to) : m_delta(from, to) {}
+		bool apply_filter(trackRef, t_filestats, file_info& p_info) override {
+			m_delta.apply(p_info); return true;
+		}
+	};
+}
+void input_helper::poll_live_info(recvLiveInfo_t const & recv, abort_callback& a) {
+	if (!m_input || !m_playback) return;
+    input_decoder_v5::ptr v5;
+    if (v5 &= m_input) {
+		pfc::list_t<input_live_info_t> lst;
+		v5->poll_live_info(lst, a);
+		for (auto& walk : lst) recv(std::move(walk));
+    }
+	
+    {
+        double delta = 0;
+        if ( this->get_dynamic_info_track(m_playback->m_infoDynTrk, delta) ) {
+            auto cover_url = m_playback->m_infoDynTrk.info_get("cover_url");
+            if ( cover_url ) {
+                recv( {.payload = fb2k::service_new<aa_cover_url>(cover_url), .scope = input_live_info_t::scope_track, .deltaTime = delta} );
+				// Keep cover_url, people use it in title formatting
+				// m_playback->m_infoDynTrk.info_remove("cover_url");
+#ifdef FOOBAR2000_FILE_INFO_PICTURES
+				m_playback->m_infoDynTrk.info_set_pictures( {album_art_ids::cover_front} );
+#endif
+            }
+
+			m_playback->m_infoDyn = m_playback->m_infoDynTrk;
+
+            recv( {.payload = fb2k::service_base_new<filter_delta>(m_playback->m_infoStatic, m_playback->m_infoDynTrk), .scope = input_live_info_t::scope_track, .deltaTime = delta} );
+        }
+    }
+    {
+        double delta = 0;
+        if ( this->get_dynamic_info(m_playback->m_infoDyn, delta) ) {
+            recv( {.payload = fb2k::service_base_new<filter_delta>(m_playback->m_infoDynTrk, m_playback->m_infoDyn), .scope = input_live_info_t::scope_info, .deltaTime = delta} );
+        }
+    }
+}
 
 input_helper::input_helper()
 {
@@ -303,13 +377,13 @@ input_helper::input_helper()
 
 void input_helper::g_get_info(const playable_location & p_location,file_info & p_info,abort_callback & p_abort,bool p_from_redirect) {
 	service_ptr_t<input_info_reader> instance;
-	input_entry::g_open_for_info_read(instance,0,p_location.get_path(),p_abort,p_from_redirect);
+	input_entry::g_open_for_info_read(instance,nullptr,p_location.get_path(),p_abort,p_from_redirect);
 	instance->get_info(p_location.get_subsong_index(),p_info,p_abort);
 }
 
 void input_helper::g_set_info(const playable_location & p_location,file_info & p_info,abort_callback & p_abort,bool p_from_redirect) {
 	service_ptr_t<input_info_writer> instance;
-	input_entry::g_open_for_info_write(instance,0,p_location.get_path(),p_abort,p_from_redirect);
+	input_entry::g_open_for_info_write(instance,nullptr,p_location.get_path(),p_abort,p_from_redirect);
 	instance->set_info(p_location.get_subsong_index(),p_info,p_abort);
 	instance->commit(p_abort);
 }
@@ -335,7 +409,7 @@ bool dead_item_filter::run(const pfc::list_base_const_t<metadb_handle_ptr> & p_l
 			try {
 				service_ptr_t<input_info_reader> reader;
 				
-				input_entry::g_open_for_info_read(reader,0,path,*this);
+				input_entry::g_open_for_info_read(reader,nullptr,path,*this);
 				t_uint32 count = reader->get_subsong_count();
 				for(t_uint32 n=0;n<count && !is_aborting();n++) {
 					metadb_handle_ptr ptr;
@@ -364,9 +438,9 @@ class dead_item_filter_impl_simple : public dead_item_filter
 {
 public:
 	inline dead_item_filter_impl_simple(abort_callback & p_abort) : m_abort(p_abort) {}
-	bool is_aborting() const {return m_abort.is_aborting();}
-	abort_callback_event get_abort_event() const {return m_abort.get_abort_event();}
-	void on_progress(t_size p_position,t_size p_total) {}
+	bool is_aborting() const override {return m_abort.is_aborting();}
+	abort_callback_event get_abort_event() const override {return m_abort.get_abort_event();}
+	void on_progress(t_size,t_size) override {}
 private:
 	abort_callback & m_abort;
 };
@@ -384,7 +458,7 @@ bool input_helper::g_mark_dead(const pfc::list_base_const_t<metadb_handle_ptr> &
 void input_info_read_helper::open(const char * p_path,abort_callback & p_abort) {
 	if (m_input.is_empty() || playable_location::path_compare(m_path,p_path) != 0)
 	{
-		TRACK_CODE("input_entry::g_open_for_info_read",input_entry::g_open_for_info_read(m_input,0,p_path,p_abort));
+		TRACK_CODE("input_entry::g_open_for_info_read",input_entry::g_open_for_info_read(m_input,nullptr,p_path,p_abort));
 
 		m_path = p_path;
 	}
@@ -465,7 +539,7 @@ namespace {
 		void on_idle(abort_callback & p_abort) override {
 			m_decoder->on_idle(p_abort);
 		}
-		bool get_content_type(pfc::string_base & p_out) override {
+		bool get_content_type(pfc::string_base &) override {
 			return false;
 		}
 		bool can_seek() override {
@@ -525,7 +599,7 @@ namespace {
 			if (l <= 0) return filesize_invalid;
 			return audio_math::time_to_samples(l, m_spec.sampleRate) * m_spec.chanCount * sampleBytes();
 		}
-		t_filesize get_position(abort_callback & p_abort) override {
+		t_filesize get_position(abort_callback &) override {
 			return m_currentPosition;
 		}
 		t_size read(void * p_buffer, t_size p_bytes, abort_callback & p_abort) override {
@@ -636,7 +710,7 @@ namespace {
 }
 
 openAudioData_t openAudioData3(playable_location const& loc, input_helper::decodeOpen_t const& openArg, openAudioDataFormat format, abort_callback& aborter) {
-	service_ptr_t<file_decodedaudio> f; f = new service_impl_t < file_decodedaudio >;
+	service_ptr_t f = new service_impl_t < file_decodedaudio >;
 	f->init(loc, openArg, format, aborter);
 
 	openAudioData_t oad = {};
@@ -650,7 +724,7 @@ openAudioData_t openAudioData2(playable_location const & loc, input_helper::deco
 }
 
 openAudioData_t openAudioData(playable_location const & loc, bool bSeekable, file::ptr fileHint, abort_callback & aborter) {
-	service_ptr_t<file_decodedaudio> f; f = new service_impl_t < file_decodedaudio > ;
+	service_ptr_t f = new service_impl_t < file_decodedaudio > ;
 	f->init(loc, bSeekable, fileHint, aborter);
 
 	openAudioData_t oad = {};

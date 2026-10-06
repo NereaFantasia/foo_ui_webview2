@@ -1,6 +1,7 @@
 #pragma once
 
 #include "ref_counter.h"
+#include "com_ptr_t.h"
 
 namespace pfc {
 	BOOL winFormatSystemErrorMessage(pfc::string_base & p_out,DWORD p_code);
@@ -228,28 +229,23 @@ private:
 // With large values, this OffsetWindowOrgEx behaves erratically
 class OffsetWindowOrgScope {
 public:
-	OffsetWindowOrgScope(HDC dc, const POINT & pt) throw() : m_dc(dc), m_pt(pt) {
+	OffsetWindowOrgScope(HDC dc, const POINT & pt) noexcept : m_dc(dc), m_pt(pt) {
 		OffsetWindowOrgEx(m_dc, m_pt.x, m_pt.y, NULL);
 	}
-	~OffsetWindowOrgScope() throw() {
+	~OffsetWindowOrgScope() noexcept {
 		OffsetWindowOrgEx(m_dc, -m_pt.x, -m_pt.y, NULL);
 	}
-
 private:
 	const HDC m_dc;
 	const POINT m_pt;
 };
 class DCStateScope {
 public:
-	DCStateScope(HDC p_dc) throw() : m_dc(p_dc) {
-		m_state = SaveDC(m_dc);
-	}
-	~DCStateScope() throw() {
-		RestoreDC(m_dc,m_state);
-	}
+	DCStateScope(HDC p_dc) noexcept : m_dc(p_dc), m_state(SaveDC(p_dc)) {}
+	~DCStateScope() noexcept { RestoreDC(m_dc,m_state); }
 private:
 	const HDC m_dc;
-	int m_state;
+	const int m_state;
 };
 #endif // #ifdef PFC_WINDOWS_DESKTOP_APP
 
@@ -265,7 +261,7 @@ private:
 #ifdef PFC_WINDOWS_DESKTOP_APP
 
 // Same format as _WIN32_WINNT macro.
-WORD GetWindowsVersionCode() throw();
+WORD GetWindowsVersionCode() noexcept;
 
 #endif
 
@@ -287,6 +283,13 @@ protected:
 private:
 	pfc::refcounter m_refcounter;
 };
+
+namespace pfc {
+	template<class class_t, typename ... arg_t>
+	pfc::com_ptr_t<class_t> comNew(arg_t && ... arg) {
+		return new ::ImplementCOMRefCounter<class_t>(std::forward<arg_t>(arg) ...);
+	}
+}
 
 
 

@@ -64,6 +64,19 @@ public:
 	static void convert_from_int32(const t_int32 * p_source,t_size p_count,audio_sample * p_output,audio_sample p_scale) {
 		audio_math_shareddll::convert_from_int32(p_source,p_count,p_output,p_scale);
 	}
+
+	// Do not hide PFC methods for alternate float
+#if audio_sample_size == 64
+	static void convert_to_int16(const float* p_source, t_size p_count, t_int16* p_output, float p_scale) { audio_math_pfc::convert_to_int16(p_source, p_count, p_output, p_scale); }
+	static void convert_to_int32(const float* p_source, t_size p_count, t_int32* p_output, float p_scale) { audio_math_pfc::convert_to_int32(p_source, p_count, p_output, p_scale); }
+	static void convert_from_int16(const t_int16* p_source, t_size p_count, float* p_output, float p_scale) { audio_math_pfc::convert_from_int16(p_source, p_count, p_output, p_scale); }
+	static void convert_from_int32(const t_int32* p_source, t_size p_count, float* p_output, float p_scale) { audio_math_pfc::convert_from_int32(p_source, p_count, p_output, p_scale); }
+#else
+	static void convert_to_int16(const double* p_source, t_size p_count, t_int16* p_output, double p_scale) { audio_math_pfc::convert_to_int16(p_source, p_count, p_output, p_scale); }
+	static void convert_to_int32(const double* p_source, t_size p_count, t_int32* p_output, double p_scale) { audio_math_pfc::convert_to_int32(p_source, p_count, p_output, p_scale); }
+	static void convert_from_int16(const t_int16* p_source, t_size p_count, double* p_output, double p_scale) { audio_math_pfc::convert_from_int16(p_source, p_count, p_output, p_scale); }
+	static void convert_from_int32(const t_int32* p_source, t_size p_count, double* p_output, double p_scale) { audio_math_pfc::convert_from_int32(p_source, p_count, p_output, p_scale); }
+#endif
 	static audio_sample convert_to_int32_calculate_peak(const audio_sample * p_source,t_size p_count,t_int32 * p_output,audio_sample p_scale) {
 		return audio_math_shareddll::convert_to_int32_calculate_peak(p_source,p_count,p_output,p_scale);
 	}

@@ -8,6 +8,7 @@
 #include <string>
 #include <unordered_set>
 #include <list>
+#include "commonOptions.h"
 
 constexpr unsigned allowRecurseBase = 2; // max. 2 archive levels - mitigate droste.zip stack overflow
 static void process_path_internal(const char * p_path,const service_ptr_t<file> & p_reader,playlist_loader_callback::ptr callback, abort_callback & abort,playlist_loader_callback::t_entry_type type,const t_filestats & p_stats, unsigned allowRecurse );
@@ -20,7 +21,7 @@ static bool g_try_load_playlist(file::ptr & fileHint,const char * p_path,playlis
 	
 	pfc::string8 extension = filesystem::g_get_extension(filepath);
 
-	if (fileHint.is_empty()) {
+	if (!fileHint) {
 		filesystem::ptr fs;
 		if (filesystem::g_get_interface(fs,filepath)) {
 			if (fs->supports_content_types()) {
@@ -33,7 +34,7 @@ static bool g_try_load_playlist(file::ptr & fileHint,const char * p_path,playlis
 
 	service_enum_t<playlist_loader> e;
 
-	if (fileHint.is_valid()) {
+	if (fileHint) {
 
 		// Important: in case of remote HTTP files, use actual connected path for matching file extensions, following any redirects.
 		// At least one internet radio station has been known to present .pls links that are 302 redirects to real streams, so they don't parse as playlists.
@@ -64,7 +65,7 @@ static bool g_try_load_playlist(file::ptr & fileHint,const char * p_path,playlis
 	if (extension.length()>0) {
 		for (auto l : e) {
 			if (stricmp_utf8(l->get_extension(),extension) == 0) {
-                if (fileHint.is_empty()) filesystem::g_open_read(fileHint,filepath,p_abort);
+                if (!fileHint) filesystem::g_open_read(fileHint,filepath,p_abort);
 				try {
 					TRACK_CODE("playlist_loader::open",l->open(filepath,fileHint,p_callback,p_abort));
 					return true;
@@ -125,40 +126,43 @@ static void index_tracks_helper(const char * p_path,const service_ptr_t<file> & 
 
 		const auto stats = instance->get_stats2_(p_path, stats2_all, p_abort);
 	
-		t_uint32 subsong,subsong_count = instance->get_subsong_count();
 		bool bInfoGetError = false;
-		for(subsong=0;subsong<subsong_count;subsong++)
-		{
+		auto handle_subsong = [&](uint32_t subsong_id) {
 			TRACK_CALL_TEXT("subsong-loop");
 			p_abort.check();
 			metadb_handle_ptr handle;
-			t_uint32 index = instance->get_subsong(subsong);
-			p_callback->handle_create(handle,make_playable_location(p_path,index));
+			p_callback->handle_create(handle, make_playable_location(p_path, subsong_id));
 
 			p_got_input = true;
-			if (! bInfoGetError && p_callback->want_info(handle,p_type,stats.as_legacy(),true) )
+			if (!bInfoGetError && p_callback->want_info(handle, p_type, stats.as_legacy(), true))
 			{
 				auto mic = fb2k::service_new<MIC_impl>();
 				mic->m_stats = stats;
 				try {
-					TRACK_CODE("get_info",instance->get_info(index,mic->m_info,p_abort));
-				} catch(...) {
+					TRACK_CODE("get_info", instance->get_info(subsong_id, mic->m_info, p_abort));
+				} catch (...) {
 					bInfoGetError = true;
 				}
-				if (! bInfoGetError ) {
+				if (!bInfoGetError) {
 					playlist_loader_callback_v2::ptr v2;
 					if (v2 &= p_callback) {
 						v2->on_entry_info_v2(handle, p_type, mic, true);
 					} else {
 						p_callback->on_entry_info(handle, p_type, stats.as_legacy(), mic->m_info, true);
 					}
-					
+				} else {
+					p_callback->on_entry(handle, p_type, stats.as_legacy(), true);
 				}
-			}
-			else
+			} else
 			{
-				p_callback->on_entry(handle,p_type,stats.as_legacy(),true);
+				p_callback->on_entry(handle, p_type, stats.as_legacy(), true);
 			}
+		};
+		if (fb2k::useSubsongs()) {
+			const auto total = instance->get_subsong_count();
+			for (uint32_t walk = 0; walk < total; ++walk) handle_subsong(instance->get_subsong(walk));
+		} else {
+			handle_subsong(0);
 		}
 	}
 }
@@ -270,6 +274,12 @@ namespace {
 	};
 }
 
+static bool reader_may_be_folder( file::ptr const & r ) {
+    // PROBLEM: we still want to try list_directory on something that we opened as a file, HTTP folders work like that
+    if (r.is_empty()) return true;
+    pfc::string8 ct;
+    return r->get_content_type(ct) && matchContentType(ct, "text/html");
+}
 
 static void process_path_internal(const char * p_path,const service_ptr_t<file> & p_reader,playlist_loader_callback::ptr callback, abort_callback & abort,playlist_loader_callback::t_entry_type type,const t_filestats & p_stats, unsigned allowRecurse)
 {
@@ -278,11 +288,13 @@ static void process_path_internal(const char * p_path,const service_ptr_t<file> 
 
 	abort.check();
 
+	if (foobar2000_io::isNonMediaFileName(fb2k::filename_ext(p_path))) return;
+
 	callback->on_progress(p_path);
 
 	
 	{
-		if (p_reader.is_empty() && type != playlist_loader_callback::entry_directory_enumerated) {
+		if (reader_may_be_folder(p_reader) && type != playlist_loader_callback::entry_directory_enumerated) {
 			try {
 				directory_callback_myimpl results;
 				results.main( p_path, abort );
@@ -322,7 +334,7 @@ static void process_path_internal(const char * p_path,const service_ptr_t<file> 
 						archive::list_func_t archive_results = [callback, &abort, allowRecurse](const char* p_path, const t_filestats& p_stats, file::ptr p_reader) {
 							process_path_internal(p_path,p_reader,callback,abort,playlist_loader_callback::entry_directory_enumerated,p_stats,allowRecurse - 1);
 						};
-						TRACK_CODE("archive::archive_list",arch->archive_list(p_path,p_reader,archive_results,/*want readers*/true, abort));
+						TRACK_CODE("archive::archive_list",arch->archive_list_(p_path,p_reader,archive_results,/*want readers*/true, abort));
 						return;
 					} catch(exception_aborted const &) {throw;} 
 					catch(...) {

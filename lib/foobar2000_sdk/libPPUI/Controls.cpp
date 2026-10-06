@@ -8,7 +8,7 @@ void CStaticSeparator::OnPaint(CDCHandle) {
 	PaintUtils::PaintSeparatorControl(*this);
 }
 
-void CSeparator::OnPaint(CDCHandle dc) {
+void CSeparator::OnPaint(CDCHandle) {
 	PaintUtils::PaintSeparatorControl(*this);
 }
 

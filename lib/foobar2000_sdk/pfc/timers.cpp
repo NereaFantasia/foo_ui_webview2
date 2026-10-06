@@ -114,8 +114,8 @@ profiler_static::~profiler_static()
 		return ret;
 #else // not _WIN32
         timespec ts = {};
-        auto status = clock_gettime( CLOCK_REALTIME, &ts);
-        PFC_ASSERT( status == 0 ); (void) status;
+        [[maybe_unused]] auto status = clock_gettime( CLOCK_REALTIME, &ts);
+        PFC_ASSERT( status == 0 );
         return fileTimeUtoW(ts);
 #endif // _WIN32 or not
 	}

@@ -7,6 +7,8 @@
 namespace file_win32_helpers {
 	t_filesize get_size(HANDLE p_handle);
 	void seek(HANDLE p_handle,t_sfilesize p_position,file::t_seek_mode p_mode);
+	void seek(HANDLE p_handle, t_filesize p_position);
+	t_filesize getPosition(HANDLE p_handle);
 	void fillOverlapped(OVERLAPPED & ol, HANDLE myEvent, t_filesize s);
 	void writeOverlappedPass(HANDLE handle, HANDLE myEvent, t_filesize position, const void * in,DWORD inBytes, abort_callback & abort);
 	void writeOverlapped(HANDLE handle, HANDLE myEvent, t_filesize & position, const void * in, size_t inBytes, abort_callback & abort);
@@ -38,6 +40,9 @@ namespace file_win32_helpers {
 		return ret;
 	}
 
+	
+	t_filestats2 common_stats();
+	t_filestats2 common_stats_file();
 	void attribs_from_win32(t_filestats2& out, DWORD in);
 	template<typename t_info>
 	static t_filestats2 translate_stats2(const t_info& p_info) {
@@ -56,10 +61,11 @@ namespace file_win32_helpers {
 template<bool p_seekable,bool p_writeable>
 class file_win32_wrapper_t : public service_multi_inherit<file_v2, file_lowLevelIO> {
 	typedef file_win32_wrapper_t<p_seekable, p_writeable> self_t;
+	const t_filestats2 m_baseStats;
 public:
-	file_win32_wrapper_t(HANDLE handle, pfc::wstringLite && path) : m_handle(handle), m_path(std::move(path)) {}
+	file_win32_wrapper_t(HANDLE handle, pfc::wstringLite && path, t_filestats2 const & baseStats = file_win32_helpers::common_stats()) : m_handle(handle), m_path(std::move(path)), m_baseStats(baseStats) {}
 
-	static file::ptr g_CreateFile(const char * p_path,DWORD p_access,DWORD p_sharemode,LPSECURITY_ATTRIBUTES p_security_attributes,DWORD p_createmode,DWORD p_flags,HANDLE p_template) {
+	static file::ptr g_CreateFile(const char * p_path,DWORD p_access,DWORD p_sharemode,LPSECURITY_ATTRIBUTES p_security_attributes,DWORD p_createmode,DWORD p_flags,HANDLE p_template, t_filestats2 const & baseStats = file_win32_helpers::common_stats_file()) {
 		auto pathW = pfc::wideFromUTF8(p_path);
 		SetLastError(NO_ERROR);
 		HANDLE handle = CreateFile(pathW,p_access,p_sharemode,p_security_attributes,p_createmode,p_flags,p_template);
@@ -69,12 +75,12 @@ public:
 			else exception_io_from_win32(code);
 		}
 		try {
-			return g_create_from_handle(handle, std::move(pathW));
+			return g_create_from_handle(handle, std::move(pathW), baseStats);
 		} catch(...) {CloseHandle(handle); throw;}
 	}
 
-	static service_ptr_t<file> g_create_from_handle(HANDLE handle, pfc::wstringLite && path) {
-		return new service_impl_t<self_t>(handle, std::move(path));
+	static service_ptr_t<file> g_create_from_handle(HANDLE handle, pfc::wstringLite && path, t_filestats2 const & baseStats = file_win32_helpers::common_stats_file()) {
+		return new service_impl_t<self_t>(handle, std::move(path), baseStats);
 	}
 	static service_ptr_t<file> g_create_from_handle(HANDLE handle) {
 		pfc::wstringLite blank;
@@ -82,9 +88,9 @@ public:
 	}
 
 
-	void reopen(abort_callback & p_abort) {seek(0,p_abort);}
+	void reopen(abort_callback & p_abort) override {seek(0,p_abort);}
 
-	void write(const void * p_buffer,t_size p_bytes,abort_callback & p_abort) {
+	void write(const void * p_buffer,t_size p_bytes,abort_callback & p_abort) override {
 		if (!p_writeable) throw exception_io_denied();
 
 		PFC_STATIC_ASSERT(sizeof(t_size) >= sizeof(DWORD));
@@ -113,7 +119,7 @@ public:
 		}
 	}
 	
-	t_size read(void * p_buffer,t_size p_bytes,abort_callback & p_abort) {
+	t_size read(void * p_buffer,t_size p_bytes,abort_callback & p_abort) override {
 		PFC_STATIC_ASSERT(sizeof(t_size) >= sizeof(DWORD));
 		
 		t_size bytes_read_total = 0;
@@ -140,34 +146,44 @@ public:
 	}
 
 
-	t_filesize get_size(abort_callback & p_abort) {
+	t_filesize get_size(abort_callback & p_abort) override {
 		p_abort.check_e();
 		return file_win32_helpers::get_size(m_handle);
 	}
 
-	t_filesize get_position(abort_callback & p_abort) {
+	t_filesize get_position(abort_callback & p_abort) override {
 		p_abort.check_e();
 		return m_position;
 	}
 	
-	void resize(t_filesize p_size,abort_callback & p_abort) {
+	void resize(t_filesize p_size,abort_callback & p_abort) override {
 		if (!p_writeable) throw exception_io_denied();
 		p_abort.check_e();
 		if (m_position != p_size) {
-			file_win32_helpers::seek(m_handle,p_size,file::seek_from_beginning);
+			file_win32_helpers::seek(m_handle,p_size);
 		}
-		SetLastError(ERROR_SUCCESS);
-		if (!SetEndOfFile(m_handle)) {
-			DWORD code = GetLastError();
-			if (m_position != p_size) try {file_win32_helpers::seek(m_handle,m_position,file::seek_from_beginning);} catch(...) {}
-			exception_io_from_win32(code);
+		try {
+			SetLastError(ERROR_SUCCESS);
+			if (!SetEndOfFile(m_handle)) {
+				DWORD code = GetLastError();
+				if (code == 380 && p_size > this->get_size(p_abort)) {
+					// Mitigate 2026-01 Windows bug - try alternate way of extending file
+					file_win32_helpers::seek(m_handle, p_size - 1);
+					uint8_t dummy = 0; this->write(&dummy, 1, p_abort);
+				} else {
+					exception_io_from_win32(code);
+				}
+			}
+		} catch (...) {
+			try { file_win32_helpers::seek(m_handle, m_position); } catch (...) {}
+			throw;
 		}
 		if (m_position > p_size) m_position = p_size;
-		if (m_position != p_size) file_win32_helpers::seek(m_handle,m_position,file::seek_from_beginning);
+		if (m_position != p_size) file_win32_helpers::seek(m_handle,m_position);
 	}
 
 
-	void seek(t_filesize p_position,abort_callback & p_abort) {
+	void seek(t_filesize p_position,abort_callback & p_abort) override {
 		if (!p_seekable) throw exception_io_object_not_seekable();
 		p_abort.check_e();
 		if (p_position > file_win32_helpers::get_size(m_handle)) throw exception_io_seek_out_of_range();
@@ -175,17 +191,20 @@ public:
 		m_position = p_position;
 	}
 
-	bool can_seek() {return p_seekable;}
-	bool get_content_type(pfc::string_base & out) {return false;}
-	bool is_in_memory() {return false;}
-	void on_idle(abort_callback & p_abort) {p_abort.check_e();}
+	bool can_seek() override {return p_seekable;}
+	bool get_content_type(pfc::string_base & out) override {return false;}
+	bool is_in_memory() override {return false;}
+	void on_idle(abort_callback & p_abort) override {p_abort.check_e();}
 	
-	t_filestats2 get_stats2(uint32_t f, abort_callback& a) {
+	t_filestats2 get_stats2(uint32_t f, abort_callback& a) override {
 		a.check();
+		if (m_baseStats.test_s2flags(f)) return m_baseStats;
 		if (p_writeable) FlushFileBuffers(m_handle);
-		return file_win32_helpers::stats2_from_handle(m_handle, m_path, f, a);
+		auto ret = file_win32_helpers::stats2_from_handle(m_handle, m_path, f, a);
+		ret.overwriteAttribs(m_baseStats);
+		return ret;
 	}
-	t_filetimestamp get_timestamp(abort_callback & p_abort) {
+	t_filetimestamp get_timestamp(abort_callback & p_abort) override {
 		p_abort.check_e();
 		if (p_writeable) FlushFileBuffers(m_handle);
 		SetLastError(ERROR_SUCCESS);
@@ -193,8 +212,8 @@ public:
 		if (!GetFileTime(m_handle,0,0,&temp)) exception_io_from_win32(GetLastError());
 		return file_win32_helpers::make_uint64(temp);
 	}
+	bool is_remote() override { return m_baseStats.is_remote(); }
 
-	bool is_remote() {return false;}
 	~file_win32_wrapper_t() {CloseHandle(m_handle);}
 
 	size_t lowLevelIO(const GUID & guid, size_t arg1, void * arg2, size_t arg2size, abort_callback & abort) override {
@@ -209,65 +228,75 @@ protected:
 template<bool p_writeable>
 class file_win32_wrapper_overlapped_t : public service_multi_inherit< file_v2, file_lowLevelIO > {
 	typedef file_win32_wrapper_overlapped_t<p_writeable> self_t;
+	const t_filestats2 m_baseStats;
 public:
-	file_win32_wrapper_overlapped_t(HANDLE file, pfc::wstringLite && path) : m_handle(file), m_path(std::move(path))  {
+	file_win32_wrapper_overlapped_t(HANDLE file, pfc::wstringLite && path, t_filestats2 const & baseStats = file_win32_helpers::common_stats_file()) : m_handle(file), m_path(std::move(path)), m_baseStats(baseStats)  {
 		WIN32_OP( (m_event = CreateEvent(NULL, TRUE, FALSE, NULL)) != NULL );
 	}
 	~file_win32_wrapper_overlapped_t() {CloseHandle(m_event); CloseHandle(m_handle);}
-	void write(const void * p_buffer,t_size p_bytes,abort_callback & p_abort) {
+	void write(const void * p_buffer,t_size p_bytes,abort_callback & p_abort) override {
 		if (!p_writeable) throw exception_io_denied();
 		return file_win32_helpers::writeOverlapped(m_handle, m_event, m_position, p_buffer, p_bytes, p_abort);
 	}
-	t_size read(void * p_buffer,t_size p_bytes,abort_callback & p_abort) {
+	t_size read(void * p_buffer,t_size p_bytes,abort_callback & p_abort) override {
 		return file_win32_helpers::readOverlapped(m_handle, m_event, m_position, p_buffer, p_bytes, p_abort);
 	}
 
-	void reopen(abort_callback & p_abort) {seek(0,p_abort);}
+	void reopen(abort_callback & p_abort) override {seek(0,p_abort);}
 
 
-	t_filesize get_size(abort_callback & p_abort) {
+	t_filesize get_size(abort_callback & p_abort) override {
 		p_abort.check_e();
 		return file_win32_helpers::get_size(m_handle);
 	}
 
-	t_filesize get_position(abort_callback & p_abort) {
+	t_filesize get_position(abort_callback & p_abort) override {
 		p_abort.check_e();
 		return m_position;
 	}
 	
-	void resize(t_filesize p_size,abort_callback & p_abort) {
+	void resize(t_filesize p_size,abort_callback & p_abort) override {
 		if (!p_writeable) throw exception_io_denied();
 		p_abort.check_e();
-		file_win32_helpers::seek(m_handle,p_size,file::seek_from_beginning);
+		file_win32_helpers::seek(m_handle,p_size);
 		SetLastError(ERROR_SUCCESS);
 		if (!SetEndOfFile(m_handle)) {
 			DWORD code = GetLastError();
-			exception_io_from_win32(code);
+			if (code == 380 && p_size > this->get_size(p_abort)) {
+				// Mitigate 2026-01 Windows bug - try alternate way of extending file
+				file_win32_helpers::seek(m_handle, p_size - 1);
+				uint8_t dummy = 0; this->write(&dummy, 1, p_abort);
+			} else {
+				exception_io_from_win32(code);
+			}
 		}
 		if (m_position > p_size) m_position = p_size;
 	}
 
 
-	void seek(t_filesize p_position,abort_callback & p_abort) {
+	void seek(t_filesize p_position,abort_callback & p_abort) override {
 		p_abort.check_e();
 		if (p_position > file_win32_helpers::get_size(m_handle)) throw exception_io_seek_out_of_range();
 		// file_win32_helpers::seek(m_handle,p_position,file::seek_from_beginning);
 		m_position = p_position;
 	}
 
-	bool can_seek() {return true;}
-	bool get_content_type(pfc::string_base & out) {return false;}
-	bool is_in_memory() {return false;}
-	void on_idle(abort_callback & p_abort) {p_abort.check_e();}
+	bool can_seek() override {return true;}
+	bool get_content_type(pfc::string_base & out) override {return false;}
+	bool is_in_memory() override {return false;}
+	void on_idle(abort_callback & p_abort) override {p_abort.check_e();}
 	
 
-	t_filestats2 get_stats2(uint32_t f, abort_callback& a) {
+	t_filestats2 get_stats2(uint32_t f, abort_callback& a) override {
 		a.check();
+		if (m_baseStats.test_s2flags(f)) return m_baseStats;
 		if (p_writeable) FlushFileBuffers(m_handle);
-		return file_win32_helpers::stats2_from_handle(m_handle, m_path, f, a);
+		auto ret = file_win32_helpers::stats2_from_handle(m_handle, m_path, f, a);
+		ret.overwriteAttribs(m_baseStats);
+		return ret;
 	}
 
-	t_filetimestamp get_timestamp(abort_callback & p_abort) {
+	t_filetimestamp get_timestamp(abort_callback & p_abort) override {
 		p_abort.check_e();
 		if (p_writeable) FlushFileBuffers(m_handle);
 		SetLastError(ERROR_SUCCESS);
@@ -276,10 +305,10 @@ public:
 		return file_win32_helpers::make_uint64(temp);
 	}
 
-	bool is_remote() {return false;}
+	bool is_remote() override {return m_baseStats.is_remote();}
 	
 
-	static file::ptr g_CreateFile(const char * p_path,DWORD p_access,DWORD p_sharemode,LPSECURITY_ATTRIBUTES p_security_attributes,DWORD p_createmode,DWORD p_flags,HANDLE p_template) {
+	static file::ptr g_CreateFile(const char * p_path,DWORD p_access,DWORD p_sharemode,LPSECURITY_ATTRIBUTES p_security_attributes,DWORD p_createmode,DWORD p_flags,HANDLE p_template, const t_filestats2 & baseStats = file_win32_helpers::common_stats_file()) {
 		auto pathW = pfc::wideFromUTF8(p_path);
 		p_flags |= FILE_FLAG_OVERLAPPED;
 		SetLastError(NO_ERROR);
@@ -290,12 +319,12 @@ public:
 			else exception_io_from_win32(code);
 		}
 		try {
-			return g_create_from_handle(handle, std::move(pathW));
+			return g_create_from_handle(handle, std::move(pathW), baseStats);
 		} catch(...) {CloseHandle(handle); throw;}
 	}
 
-	static file::ptr g_create_from_handle(HANDLE p_handle, pfc::wstringLite && path) {
-		return new service_impl_t<self_t>(p_handle, std::move(path));
+	static file::ptr g_create_from_handle(HANDLE p_handle, pfc::wstringLite && path, t_filestats2 const & baseStats = file_win32_helpers::common_stats_file()) {
+		return new service_impl_t<self_t>(p_handle, std::move(path), baseStats);
 	}
 	static file::ptr g_create_from_handle(HANDLE p_handle) {
 		pfc::wstringLite blank;

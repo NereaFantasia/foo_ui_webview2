@@ -56,8 +56,8 @@ namespace pfc {
 	template<> class _splitStringSimple_check<char> {
 	public:
 		_splitStringSimple_check(char c) : m_char(c) {}
-		t_size operator()(const char* str, t_size len) const {
-			PFC_ASSERT(len > 0); (void)len;
+		t_size operator()(const char* str, [[maybe_unused]] t_size len) const {
+			PFC_ASSERT(len > 0);
 			if (*str == m_char) return 1;
 			else return 0;
 		}

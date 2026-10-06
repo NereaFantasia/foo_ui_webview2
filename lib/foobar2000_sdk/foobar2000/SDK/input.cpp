@@ -184,6 +184,13 @@ static GUID input_get_guid( input_entry::ptr e ) {
 }
 
 service_ptr input_entry::g_open_from_list(input_entry_list_t const & p_list, const GUID & whatFor, service_ptr_t<file> p_filehint, const char * p_path, event_logger::ptr logger, abort_callback & p_abort, GUID * outGUID) {
+#if 0
+	PFC_DEBUG_PRINT("input_entry opening ", p_path, " for ", pfc::print_guid(whatFor));
+	PFC_DEBUG_PRINT(" decoders (", p_list.get_count(), ")");
+	for (auto walk : p_list) {
+		PFC_DEBUG_PRINT( walk->get_name_() );
+	}
+#endif
 	const t_size count = p_list.get_count();
 	if ( count == 0 ) {
 		// sanity
@@ -240,24 +247,22 @@ service_ptr input_manager::open_v2(const GUID & whatFor, file::ptr hint, const c
 }
 #endif
 
-service_ptr input_entry::g_open(const GUID & whatFor, file::ptr p_filehint, const char * p_path, event_logger::ptr logger, abort_callback & p_abort, bool p_from_redirect) {
+service_ptr input_entry::g_open(const GUID & whatFor, file::ptr p_filehint, const char * p_path, event_logger::ptr logger, abort_callback & p_abort, bool p_from_redirect, GUID * outGUID) {
 
 #ifdef FOOBAR2000_DESKTOP
-	return input_manager_v2::get()->open_v2(whatFor, p_filehint, p_path, p_from_redirect, logger, p_abort);
+	return input_manager_v2::get()->open_v2(whatFor, p_filehint, p_path, p_from_redirect, logger, p_abort, outGUID);
 #else // FOOBAR2000_DESKTOP or not
 	const bool needWriteAcecss = !!(whatFor == input_info_writer::class_guid);
 
-	service_ptr_t<file> l_file = p_filehint;
-	if (l_file.is_empty()) {
-		service_ptr_t<filesystem> fs;
-		if (filesystem::g_get_interface(fs, p_path)) {
-			if (fs->supports_content_types()) {
+	auto l_file = p_filehint;
+	if (!l_file) {
+		auto fs = filesystem::tryGet(p_path);
+        if (fs && fs->supports_content_types()) {
 				fs->open(l_file, p_path, needWriteAcecss ? filesystem::open_mode_write_existing : filesystem::open_mode_read, p_abort);
-			}
 		}
 	}
 
-	if (l_file.is_valid()) {
+	if (l_file) {
 		pfc::string8 content_type;
 		if (l_file->get_content_type(content_type)) {
 			pfc::list_t< input_entry::ptr > list;
@@ -266,7 +271,7 @@ service_ptr input_entry::g_open(const GUID & whatFor, file::ptr p_filehint, cons
 #endif
 			if (g_find_inputs_by_content_type(list, content_type, p_from_redirect)) {
 				try {
-					return g_open_from_list(list, whatFor, l_file, p_path, logger, p_abort);
+					return g_open_from_list(list, whatFor, l_file, p_path, logger, p_abort, outGUID);
 				} catch (exception_io_unsupported_format const &) {
 #if PFC_DEBUG
 					FB2K_DebugLog() << "Failed to open by content type, using fallback";
@@ -282,10 +287,35 @@ service_ptr input_entry::g_open(const GUID & whatFor, file::ptr p_filehint, cons
 	{
 		pfc::list_t< input_entry::ptr > list;
 		if (g_find_inputs_by_path(list, p_path, p_from_redirect)) {
-			return g_open_from_list(list, whatFor, l_file, p_path, logger, p_abort);
+			return g_open_from_list(list, whatFor, l_file, p_path, logger, p_abort, outGUID);
 		}
 	}
 
+    if (!needWriteAcecss) {
+        // v2.26: added fallback_is_our_payload() support in mobile (no input_manager) to mitigate Linn serving FLAC with no content type
+        if (! l_file ) {
+            auto fs = filesystem::tryGet(p_path);
+            if (fs) fs->open(l_file, p_path, filesystem::open_mode_read, p_abort);
+        }
+        if ( l_file ) {
+            pfc::mem_block probe; probe.resize( 64 * 1024 );
+            l_file->reopen(p_abort);
+            const auto wholeBytes = l_file->get_size(p_abort);
+            const auto probeBytes = l_file->read(probe.ptr(), probe.size(), p_abort);
+            l_file->reopen(p_abort);
+            pfc::list_t< input_entry::ptr > list;
+            for( auto input : input_entry::enumerate() ) {
+                input_entry_v4::ptr v4;
+                if ( v4 &= input ) {
+                    if ( v4->fallback_is_our_payload(probe.ptr(), probeBytes, wholeBytes) ) list += input;
+                }
+            }
+            if ( list.size() > 0 ) {
+                return g_open_from_list(list, whatFor, l_file, p_path, logger, p_abort, outGUID);
+            }
+        }
+    }
+    
 	throw exception_io_unsupported_format();
 #endif // not FOOBAR2000_DESKTOP
 }
@@ -364,7 +394,7 @@ uint32_t input_entry::g_flags_for_path( const char * path, uint32_t mask ) {
 	auto ext = pfc::string_extension(path);
 	while(e.next(p)) {
 		uint32_t f = p->get_flags() & mask;
-		if ( f != 0 && p->is_our_path( path, ext ) ) ret |= f;;
+		if ( f != 0 && p->is_our_path( path, ext ) ) ret |= f;
 	}
 	return ret;
 #endif

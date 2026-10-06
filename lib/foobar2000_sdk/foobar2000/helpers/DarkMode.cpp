@@ -3,6 +3,15 @@
 
 bool fb2k::isDarkMode() {
 	auto api = ui_config_manager::tryGet();
-	if (api.is_valid()) return api->is_dark_mode();
-	else return false;
+	return api && api->is_dark_mode();
+}
+
+DarkMode::param_t fb2k::darkParams() {
+	return readDarkModeParam(ui_config_manager::tryGet());
+}
+
+DarkMode::param_t fb2k::darkParams(bool v) {
+	auto def = darkParams();
+	if (def.bDark == v) return def;
+	return { .bDark = v };
 }

@@ -3,20 +3,25 @@
 
 #include "pch.h"
 #include "api/ReplayGainApi.h"
-#include "api/BridgeCore.h"
+#include "api/TypedApi.h"
+#include "api/generated/ReplaygainSchema.h"
+#include "utils/SubsongUtils.h"
 #include <foobar2000/SDK/replaygain.h>
 
 namespace {
-    using json = nlohmann::json;
+    namespace rg = api::replaygain;
 
-    // Mode strings for API
+    // Mode strings for API. t_replaygain_config defines exactly the four source modes and the
+    // four processing modes below; the declaration's enums list the same four, so anything else
+    // (impossible through the foobar2000 UI) is reported as "none" rather than as a value the
+    // declaration does not know.
     const char* GetModeString(t_uint32 mode) {
         switch (mode) {
             case t_replaygain_config::source_mode_none: return "none";
             case t_replaygain_config::source_mode_track: return "track";
             case t_replaygain_config::source_mode_album: return "album";
             case t_replaygain_config::source_mode_byPlaybackOrder: return "auto";
-            default: return "unknown";
+            default: return "none";
         }
     }
 
@@ -35,7 +40,7 @@ namespace {
             case t_replaygain_config::processing_mode_gain: return "gain";
             case t_replaygain_config::processing_mode_gain_and_peak: return "gain_and_peak";
             case t_replaygain_config::processing_mode_peak: return "peak";
-            default: return "unknown";
+            default: return "none";
         }
     }
 
@@ -50,44 +55,44 @@ namespace {
     //==========================================================================
     // replaygain.getSettings - Get all ReplayGain settings
     //==========================================================================
-    json ReplayGainGetSettings(const json& /*params*/) {
+    api::Result<rg::GetSettingsResult> ReplayGainGetSettings(const rg::GetSettingsParams& /*params*/) {
         try {
             auto rg_mgr = replaygain_manager::get();
             t_replaygain_config config = rg_mgr->get_core_settings();
 
-            return {
-                {"sourceMode", GetModeString(config.m_source_mode)},
-                {"processingMode", GetProcessingString(config.m_processing_mode)},
-                {"preampWithRg", config.m_preamp_with_rg},
-                {"preampWithoutRg", config.m_preamp_without_rg},
-                {"active", config.is_active()}
-            };
+            rg::GetSettingsResult result;
+            result.sourceMode = GetModeString(config.m_source_mode);
+            result.processingMode = GetProcessingString(config.m_processing_mode);
+            result.preampWithRg = config.m_preamp_with_rg;
+            result.preampWithoutRg = config.m_preamp_without_rg;
+            result.active = config.is_active();
+            return result;
         } catch (const std::exception& e) {
-            return {{"success", false}, {"error", e.what()}};
+            return api::Fail(e.what(), ApiErrorCode::OPERATION_FAILED);
         }
     }
 
     //==========================================================================
     // replaygain.getMode - Get current ReplayGain mode
     //==========================================================================
-    json ReplayGainGetMode(const json& /*params*/) {
+    api::Result<rg::GetModeResult> ReplayGainGetMode(const rg::GetModeParams& /*params*/) {
         try {
             auto rg_mgr = replaygain_manager::get();
             t_replaygain_config config = rg_mgr->get_core_settings();
 
-            return {
-                {"sourceMode", GetModeString(config.m_source_mode)},
-                {"processingMode", GetProcessingString(config.m_processing_mode)}
-            };
+            rg::GetModeResult result;
+            result.sourceMode = GetModeString(config.m_source_mode);
+            result.processingMode = GetProcessingString(config.m_processing_mode);
+            return result;
         } catch (const std::exception& e) {
-            return {{"success", false}, {"error", e.what()}};
+            return api::Fail(e.what(), ApiErrorCode::OPERATION_FAILED);
         }
     }
 
     //==========================================================================
     // replaygain.setMode - Set ReplayGain mode
     //==========================================================================
-    json ReplayGainSetMode(const json& params) {
+    api::Result<rg::SetModeResult> ReplayGainSetMode(const rg::SetModeParams& params) {
         try {
             auto rg_mgr = replaygain_manager::get();
             t_replaygain_config config = rg_mgr->get_core_settings();
@@ -95,9 +100,8 @@ namespace {
             bool changed = false;
 
             // Set source mode
-            if (params.contains("sourceMode") && params["sourceMode"].is_string()) {
-                std::string mode = params["sourceMode"].get<std::string>();
-                t_uint32 newMode = ParseModeString(mode);
+            if (params.sourceMode) {
+                t_uint32 newMode = ParseModeString(*params.sourceMode);
                 if (config.m_source_mode != newMode) {
                     config.m_source_mode = newMode;
                     changed = true;
@@ -105,9 +109,8 @@ namespace {
             }
 
             // Set processing mode
-            if (params.contains("processingMode") && params["processingMode"].is_string()) {
-                std::string mode = params["processingMode"].get<std::string>();
-                t_uint32 newMode = ParseProcessingString(mode);
+            if (params.processingMode) {
+                t_uint32 newMode = ParseProcessingString(*params.processingMode);
                 if (config.m_processing_mode != newMode) {
                     config.m_processing_mode = newMode;
                     changed = true;
@@ -118,59 +121,54 @@ namespace {
                 rg_mgr->set_core_settings(config);
             }
 
-            return {
-                {"success", true},
-                {"sourceMode", GetModeString(config.m_source_mode)},
-                {"processingMode", GetProcessingString(config.m_processing_mode)},
-                {"changed", changed}
-            };
+            rg::SetModeResult result;
+            result.sourceMode = GetModeString(config.m_source_mode);
+            result.processingMode = GetProcessingString(config.m_processing_mode);
+            result.changed = changed;
+            return result;
         } catch (const std::exception& e) {
-            return {{"success", false}, {"error", e.what()}};
+            return api::Fail(e.what(), ApiErrorCode::OPERATION_FAILED);
         }
     }
 
     //==========================================================================
     // replaygain.getPreamp - Get preamp values
     //==========================================================================
-    json ReplayGainGetPreamp(const json& /*params*/) {
+    api::Result<rg::GetPreampResult> ReplayGainGetPreamp(const rg::GetPreampParams& /*params*/) {
         try {
             auto rg_mgr = replaygain_manager::get();
             t_replaygain_config config = rg_mgr->get_core_settings();
 
-            return {
-                {"withRg", config.m_preamp_with_rg},
-                {"withoutRg", config.m_preamp_without_rg}
-            };
+            rg::GetPreampResult result;
+            result.withRg = config.m_preamp_with_rg;
+            result.withoutRg = config.m_preamp_without_rg;
+            return result;
         } catch (const std::exception& e) {
-            return {{"success", false}, {"error", e.what()}};
+            return api::Fail(e.what(), ApiErrorCode::OPERATION_FAILED);
         }
     }
 
     //==========================================================================
     // replaygain.setPreamp - Set preamp values
+    // The declaration limits both values to -24..+24 dB; the parser refuses anything outside.
     //==========================================================================
-    json ReplayGainSetPreamp(const json& params) {
+    api::Result<rg::SetPreampResult> ReplayGainSetPreamp(const rg::SetPreampParams& params) {
         try {
             auto rg_mgr = replaygain_manager::get();
             t_replaygain_config config = rg_mgr->get_core_settings();
 
             bool changed = false;
 
-            // Set preamp with RG
-            if (params.contains("withRg") && params["withRg"].is_number()) {
-                float value = params["withRg"].get<float>();
-                // Clamp to reasonable range (-24 to +24 dB)
-                value = std::max(-24.0f, std::min(24.0f, value));
+            if (params.withRg) {
+                const float value = static_cast<float>(*params.withRg);
                 if (config.m_preamp_with_rg != value) {
                     config.m_preamp_with_rg = value;
                     changed = true;
                 }
             }
 
-            // Set preamp without RG
-            if (params.contains("withoutRg") && params["withoutRg"].is_number()) {
-                float value = params["withoutRg"].get<float>();
-                value = std::max(-24.0f, std::min(24.0f, value));
+            if (params.withoutRg) {
+                const float value = static_cast<float>(*params.withoutRg);
                 if (config.m_preamp_without_rg != value) {
                     config.m_preamp_without_rg = value;
                     changed = true;
@@ -181,35 +179,30 @@ namespace {
                 rg_mgr->set_core_settings(config);
             }
 
-            return {
-                {"success", true},
-                {"withRg", config.m_preamp_with_rg},
-                {"withoutRg", config.m_preamp_without_rg},
-                {"changed", changed}
-            };
+            rg::SetPreampResult result;
+            result.withRg = config.m_preamp_with_rg;
+            result.withoutRg = config.m_preamp_without_rg;
+            result.changed = changed;
+            return result;
         } catch (const std::exception& e) {
-            return {{"success", false}, {"error", e.what()}};
+            return api::Fail(e.what(), ApiErrorCode::OPERATION_FAILED);
         }
     }
 
     //==========================================================================
     // replaygain.get - Get ReplayGain info from specific files
     //==========================================================================
-    json ReplayGainGet(const json& params) {
-        if (!params.contains("paths") || !params["paths"].is_array()) {
-            return {{"success", false}, {"error", "paths array is required"}};
-        }
-
+    api::Result<rg::GetResult> ReplayGainGet(const rg::GetParams& params) {
         try {
-            const auto& paths = params["paths"];
-            json results = json::array();
+            rg::GetResult result;
+            result.results.reserve(params.paths.size());
 
-            for (const auto& pathItem : paths) {
-                if (!pathItem.is_string()) continue;
-                
-                std::string path = pathItem.get<std::string>();
-                pfc::string8 canonicalPath;
-                filesystem::g_get_canonical_path(path.c_str(), canonicalPath);
+            for (const std::string& path : params.paths) {
+                // 直读与回退读同一首：拆出的序号既交给 get_info，也随 handle 进缓存查询。
+                const fb2k_paths::SubsongPath parts = SubsongUtils::SplitSubsongPath(path);
+                std::string canonicalPath;
+                const metadb_handle_ptr handle =
+                    SubsongUtils::CreateCanonicalHandle(parts.path.c_str(), parts.subsong, canonicalPath);
 
                 file_info_impl info;
                 bool gotInfo = false;
@@ -219,75 +212,61 @@ namespace {
                     input_info_reader::ptr reader;
                     input_entry::g_open_for_info_read(reader, nullptr, canonicalPath.c_str(), fb2k::noAbort);
                     if (reader.is_valid()) {
-                        reader->get_info(0, info, fb2k::noAbort);
+                        reader->get_info(parts.subsong, info, fb2k::noAbort);
                         gotInfo = true;
                     }
                 } catch (...) {
                     // Fallback to cached info
-                    auto mdb = metadb::get();
-                    metadb_handle_ptr handle = mdb->handle_create(canonicalPath.c_str(), 0);
                     if (handle.is_valid()) {
                         gotInfo = handle->get_info(info);
                     }
                 }
 
+                rg::ReplayGainTrackInfo row;
+                row.path = path;
                 if (!gotInfo) {
-                    results.push_back({
-                        {"path", path},
-                        {"success", false},
-                        {"error", "Failed to get track info"}
-                    });
+                    row.success = false;
+                    row.error = "Failed to get track info";
+                    result.results.push_back(std::move(row));
                     continue;
                 }
 
-                replaygain_info rg = info.get_replaygain();
-                json rgResult = {
-                    {"path", path},
-                    {"success", true}
-                };
+                replaygain_info rgInfo = info.get_replaygain();
+                row.success = true;
 
-                // Debug: log what we found
-                console::printf("replaygain.get: %s - track_gain_present=%d, album_gain_present=%d",
-                    path.c_str(), rg.is_track_gain_present(), rg.is_album_gain_present());
-
-                if (rg.is_track_gain_present()) {
+                if (rgInfo.is_track_gain_present()) {
                     char buf[32];
-                    snprintf(buf, sizeof(buf), "%.2f dB", rg.m_track_gain);
-                    rgResult["trackGain"] = buf;
-                    rgResult["trackGainRaw"] = rg.m_track_gain;
+                    snprintf(buf, sizeof(buf), "%.2f dB", rgInfo.m_track_gain);
+                    row.trackGain = buf;
+                    row.trackGainRaw = rgInfo.m_track_gain;
                 }
-                if (rg.is_track_peak_present()) {
+                if (rgInfo.is_track_peak_present()) {
                     char buf[32];
-                    snprintf(buf, sizeof(buf), "%.6f", rg.m_track_peak);
-                    rgResult["trackPeak"] = buf;
-                    rgResult["trackPeakRaw"] = rg.m_track_peak;
+                    snprintf(buf, sizeof(buf), "%.6f", rgInfo.m_track_peak);
+                    row.trackPeak = buf;
+                    row.trackPeakRaw = rgInfo.m_track_peak;
                 }
-                if (rg.is_album_gain_present()) {
+                if (rgInfo.is_album_gain_present()) {
                     char buf[32];
-                    snprintf(buf, sizeof(buf), "%.2f dB", rg.m_album_gain);
-                    rgResult["albumGain"] = buf;
-                    rgResult["albumGainRaw"] = rg.m_album_gain;
+                    snprintf(buf, sizeof(buf), "%.2f dB", rgInfo.m_album_gain);
+                    row.albumGain = buf;
+                    row.albumGainRaw = rgInfo.m_album_gain;
                 }
-                if (rg.is_album_peak_present()) {
+                if (rgInfo.is_album_peak_present()) {
                     char buf[32];
-                    snprintf(buf, sizeof(buf), "%.6f", rg.m_album_peak);
-                    rgResult["albumPeak"] = buf;
-                    rgResult["albumPeakRaw"] = rg.m_album_peak;
+                    snprintf(buf, sizeof(buf), "%.6f", rgInfo.m_album_peak);
+                    row.albumPeak = buf;
+                    row.albumPeakRaw = rgInfo.m_album_peak;
                 }
 
-                // Add "hasReplayGain" flag
-                rgResult["hasReplayGain"] = rg.is_track_gain_present() || rg.is_album_gain_present();
-
-                results.push_back(rgResult);
+                row.hasReplayGain = rgInfo.is_track_gain_present() || rgInfo.is_album_gain_present();
+                result.results.push_back(std::move(row));
             }
 
-            return {
-                {"success", true},
-                {"count", results.size()},
-                {"results", results}
-            };
+            result.count = static_cast<std::int64_t>(result.results.size());
+            return result;
         } catch (const std::exception& e) {
-            return {{"success", false}, {"error", e.what()}};
+            return api::Fail(e.what(), ApiErrorCode::OPERATION_FAILED);
         }
     }
 
@@ -298,32 +277,20 @@ namespace {
     public:
         bool apply_filter(metadb_handle_ptr p_location, t_filestats p_stats,
                           file_info& p_info) override {
-            replaygain_info rg;
-            rg.reset();  // Reset to default (no RG info)
-            p_info.set_replaygain(rg);
+            replaygain_info rgInfo;
+            rgInfo.reset();  // Reset to default (no RG info)
+            p_info.set_replaygain(rgInfo);
             return true;
         }
     };
 
-    json ReplayGainClear(const json& params) {
-        if (!params.contains("paths") || !params["paths"].is_array()) {
-            return {{"success", false}, {"error", "paths array is required"}};
-        }
-
+    api::Result<rg::ClearResult> ReplayGainClear(const rg::ClearParams& params) {
         try {
-            const auto& paths = params["paths"];
             metadb_handle_list handles;
-            auto mdb = metadb::get();
             int foundCount = 0;
 
-            for (const auto& pathItem : paths) {
-                if (!pathItem.is_string()) continue;
-                
-                std::string path = pathItem.get<std::string>();
-                pfc::string8 canonicalPath;
-                filesystem::g_get_canonical_path(path.c_str(), canonicalPath);
-
-                metadb_handle_ptr handle = mdb->handle_create(canonicalPath.c_str(), 0);
+            for (const std::string& path : params.paths) {
+                const metadb_handle_ptr handle = SubsongUtils::CreateTrackHandle(path);
                 if (handle.is_valid()) {
                     handles.add_item(handle);
                     foundCount++;
@@ -331,13 +298,13 @@ namespace {
             }
 
             if (handles.get_count() == 0) {
-                return {{"success", false}, {"error", "No valid files found"}};
+                return api::Fail("No valid files found", ApiErrorCode::NOT_FOUND);
             }
 
             // Apply the clear filter
-            service_ptr_t<file_info_filter> filter = 
+            service_ptr_t<file_info_filter> filter =
                 fb2k::service_new<RGClearFilter>();
-            
+
             auto io = metadb_io_v2::get();
             // 静默：op_flag_silent (fb2k 2.0+) + op_flag_delay_ui (fb2k 1.x fallback) +
             // op_flag_no_errors,完全抑制进度/错误对话框。
@@ -347,12 +314,11 @@ namespace {
                                       metadb_io_v2::op_flag_silent,
                                   nullptr);
 
-            return {
-                {"success", true},
-                {"clearedCount", foundCount}
-            };
+            rg::ClearResult result;
+            result.clearedCount = foundCount;
+            return result;
         } catch (const std::exception& e) {
-            return {{"success", false}, {"error", e.what()}};
+            return api::Fail(e.what(), ApiErrorCode::OPERATION_FAILED);
         }
     }
 
@@ -360,17 +326,11 @@ namespace {
     // replaygain.scan - Scan ReplayGain using context menu
     // Note: Uses context menu approach as direct scanner API is complex
     //==========================================================================
-    json ReplayGainScan(const json& params) {
-        if (!params.contains("paths") || !params["paths"].is_array()) {
-            return {{"success", false}, {"error", "paths array is required"}};
-        }
+    api::Result<rg::ScanResult> ReplayGainScan(const rg::ScanParams& params) {
+        const std::string& mode = params.mode;
 
-        std::string mode = params.value("mode", "track");
-        
         try {
-            const auto& paths = params["paths"];
             metadb_handle_list handles;
-            auto mdb = metadb::get();
 
             // Try to find handles from library first (more reliable for Unicode)
             auto lib = library_manager::get();
@@ -379,26 +339,27 @@ namespace {
                 lib->get_all_items(libItems);
             }
 
-            for (const auto& pathItem : paths) {
-                if (!pathItem.is_string()) continue;
-                
-                std::string path = pathItem.get<std::string>();
-                pfc::string8 canonicalPath;
-                filesystem::g_get_canonical_path(path.c_str(), canonicalPath);
+            for (const std::string& path : params.paths) {
+                const fb2k_paths::SubsongPath parts = SubsongUtils::SplitSubsongPath(path);
+                std::string canonicalPath;
+                const metadb_handle_ptr created =
+                    SubsongUtils::CreateCanonicalHandle(parts.path.c_str(), parts.subsong, canonicalPath);
 
                 metadb_handle_ptr handle;
 
-                // Try library first
+                // Try library first. 同一文件的多首子曲目共用一个路径，还要比序号，
+                // 否则 CUE 里的哪一首都会落到媒体库里最先列出的那首。
                 for (t_size i = 0; i < libItems.get_count(); i++) {
-                    if (metadb::path_compare(libItems[i]->get_path(), canonicalPath.c_str()) == 0) {
+                    if (libItems[i]->get_subsong_index() == parts.subsong &&
+                        metadb::path_compare(libItems[i]->get_path(), canonicalPath.c_str()) == 0) {
                         handle = libItems[i];
                         break;
                     }
                 }
 
-                // Fallback to handle_create
+                // Fallback to the handle built from the canonical path
                 if (!handle.is_valid()) {
-                    handle = mdb->handle_create(canonicalPath.c_str(), 0);
+                    handle = created;
                 }
 
                 if (handle.is_valid()) {
@@ -407,7 +368,7 @@ namespace {
             }
 
             if (handles.get_count() == 0) {
-                return {{"success", false}, {"error", "No valid files found"}};
+                return api::Fail("No valid files found", ApiErrorCode::NOT_FOUND);
             }
 
             // Use context menu to trigger ReplayGain scan
@@ -415,14 +376,14 @@ namespace {
             service_ptr_t<contextmenu_manager> cmm;
             contextmenu_manager::g_create(cmm);
             if (!cmm.is_valid()) {
-                return {{"success", false}, {"error", "Failed to create context menu manager"}};
+                return api::Fail("Failed to create context menu manager", ApiErrorCode::OPERATION_FAILED);
             }
 
             cmm->init_context(handles, 0);
             contextmenu_node* root = cmm->get_root();
-            
+
             if (!root || root->get_type() != contextmenu_item_node::TYPE_POPUP) {
-                return {{"success", false}, {"error", "Failed to get context menu"}};
+                return api::Fail("Failed to get context menu", ApiErrorCode::OPERATION_FAILED);
             }
 
             // Search for ReplayGain / 播放增益 menu
@@ -431,7 +392,7 @@ namespace {
             for (t_size i = 0; i < childCount; i++) {
                 contextmenu_node* child = root->get_child(i);
                 if (!child || !child->get_name()) continue;
-                
+
                 std::string name = child->get_name();
                 // Match "ReplayGain" or "播放增益"
                 if (name == "ReplayGain" || name.find("播放增益") != std::string::npos ||
@@ -442,7 +403,7 @@ namespace {
             }
 
             if (!rgMenu || rgMenu->get_type() != contextmenu_item_node::TYPE_POPUP) {
-                return {{"success", false}, {"error", "ReplayGain menu not found"}};
+                return api::Fail("ReplayGain menu not found", ApiErrorCode::NOT_SUPPORTED);
             }
 
             // Search for scan command
@@ -451,9 +412,9 @@ namespace {
             for (t_size i = 0; i < rgChildCount; i++) {
                 contextmenu_node* child = rgMenu->get_child(i);
                 if (!child || !child->get_name()) continue;
-                
+
                 std::string name = child->get_name();
-                
+
                 if (mode == "album") {
                     // "Scan selection as a single album" / "扫描选定内容作为专辑"
                     if (name.find("album") != std::string::npos ||
@@ -491,20 +452,19 @@ namespace {
             }
 
             if (!scanCmd) {
-                return {{"success", false}, {"error", "Scan command not found in ReplayGain menu"}};
+                return api::Fail("Scan command not found in ReplayGain menu", ApiErrorCode::NOT_SUPPORTED);
             }
 
             // Execute scan command
             scanCmd->execute();
 
-            return {
-                {"success", true},
-                {"scannedCount", static_cast<int>(handles.get_count())},
-                {"mode", mode},
-                {"note", "Scan started. Results will be written to files automatically."}
-            };
+            rg::ScanResult result;
+            result.scannedCount = static_cast<std::int64_t>(handles.get_count());
+            result.mode = mode;
+            result.note = "Scan started. Results will be written to files automatically.";
+            return result;
         } catch (const std::exception& e) {
-            return {{"success", false}, {"error", e.what()}};
+            return api::Fail(e.what(), ApiErrorCode::OPERATION_FAILED);
         }
     }
 
@@ -514,31 +474,16 @@ namespace {
 // Register ReplayGain API
 //==========================================================================
 void RegisterReplayGainApi() {
-    auto& bridge = BridgeCore::GetInstance();
-
-    // replaygain.getSettings - Get all ReplayGain settings
-    bridge.RegisterApi("replaygain.getSettings", ReplayGainGetSettings);
-
-    // replaygain.getMode - Get current mode
-    bridge.RegisterApi("replaygain.getMode", ReplayGainGetMode);
-
-    // replaygain.setMode - Set processing mode
-    bridge.RegisterApi("replaygain.setMode", ReplayGainSetMode);
-
-    // replaygain.getPreamp - Get preamp values
-    bridge.RegisterApi("replaygain.getPreamp", ReplayGainGetPreamp);
-
-    // replaygain.setPreamp - Set preamp values
-    bridge.RegisterApi("replaygain.setPreamp", ReplayGainSetPreamp);
-
-    // replaygain.get - Get ReplayGain info from files
-    bridge.RegisterApi("replaygain.get", ReplayGainGet, {{"paths", SecurityLevel::MediaRead, true}});
-
-    // replaygain.clear - Clear ReplayGain info from files
-    bridge.RegisterApi("replaygain.clear", ReplayGainClear, {{"paths", SecurityLevel::MediaWrite, true}});
-
-    // replaygain.scan - Scan ReplayGain for files
-    bridge.RegisterApi("replaygain.scan", ReplayGainScan, {{"paths", SecurityLevel::MediaRead, true}});
+    // The path security levels of get / scan (MediaRead) and clear (MediaWrite) come from the
+    // declaration's @security tags.
+    api::RegisterApi("replaygain.getSettings", ReplayGainGetSettings);
+    api::RegisterApi("replaygain.getMode", ReplayGainGetMode);
+    api::RegisterApi("replaygain.setMode", ReplayGainSetMode);
+    api::RegisterApi("replaygain.getPreamp", ReplayGainGetPreamp);
+    api::RegisterApi("replaygain.setPreamp", ReplayGainSetPreamp);
+    api::RegisterApi("replaygain.get", ReplayGainGet);
+    api::RegisterApi("replaygain.clear", ReplayGainClear);
+    api::RegisterApi("replaygain.scan", ReplayGainScan);
 
     LOG("ReplayGain API registered (8 APIs)");
 }

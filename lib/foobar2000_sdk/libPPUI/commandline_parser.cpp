@@ -27,7 +27,11 @@ void commandline_parser::init(const char * cmd)
 	}
 	pfc::list_to_array(m_data,out);
 }
-
+const char* commandline_parser::operator[](const char* key) const {
+	auto idx = find_param(key);
+	if (idx == SIZE_MAX || idx + 1 >= get_count()) return nullptr;
+	return get_item(idx + 1);
+}
 size_t commandline_parser::find_param(const char * ptr) const {
 	for(size_t n=1;n<m_data.get_size();n++)
 	{

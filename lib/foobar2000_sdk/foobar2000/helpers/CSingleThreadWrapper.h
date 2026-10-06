@@ -62,8 +62,8 @@ namespace ThreadUtils {
 		void invokeCommand(command_ptr cmd, abort_callback & abort) {
 			abort.check();
 			m_completionEvent.set_state(false);
-			pfc::vartoggle_t<abort_callback*> abortToggle(cmd->m_abort, &abort);
-			pfc::vartoggle_t<HANDLE> eventToggle(cmd->m_completionEvent, m_completionEvent.get() );
+			pfc::vartoggle_t abortToggle(cmd->m_abort, &abort);
+			pfc::vartoggle_t eventToggle(cmd->m_completionEvent, m_completionEvent.get() );
 			m_commands.Add(cmd);
 			m_completionEvent.wait_for(-1);
 			//WaitAbortable(m_completionEvent.get(), abort);

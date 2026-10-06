@@ -42,13 +42,13 @@ public:
 	//! No longer used.
     FB2K_DEPRECATED virtual void highlight_running_process() = 0;
 	//! Loads tags from multiple items. Use the async version in metadb_io_v2 instead if possible.
-    FB2K_DEPRECATED virtual t_load_info_state load_info_multi(metadb_handle_list_cref p_list,t_load_info_type p_type,fb2k::hwnd_t p_parent_window,bool p_show_errors) = 0;
+    virtual t_load_info_state load_info_multi(metadb_handle_list_cref p_list,t_load_info_type p_type,fb2k::hwnd_t p_parent_window,bool p_show_errors) = 0;
 	//! Updates tags on multiple items. Use the async version in metadb_io_v2 instead if possible.
-    FB2K_DEPRECATED virtual t_update_info_state update_info_multi(metadb_handle_list_cref p_list,const pfc::list_base_const_t<file_info*> & p_new_info,fb2k::hwnd_t p_parent_window,bool p_show_errors) = 0;
+    virtual t_update_info_state update_info_multi(metadb_handle_list_cref p_list,const pfc::list_base_const_t<file_info*> & p_new_info,fb2k::hwnd_t p_parent_window,bool p_show_errors) = 0;
 	//! Rewrites tags on multiple items. Use the async version in metadb_io_v2 instead if possible.
-    FB2K_DEPRECATED virtual t_update_info_state rewrite_info_multi(metadb_handle_list_cref p_list,fb2k::hwnd_t p_parent_window,bool p_show_errors) = 0;
+    virtual t_update_info_state rewrite_info_multi(metadb_handle_list_cref p_list,fb2k::hwnd_t p_parent_window,bool p_show_errors) = 0;
 	//! Removes tags from multiple items. Use the async version in metadb_io_v2 instead if possible.
-    FB2K_DEPRECATED virtual t_update_info_state remove_info_multi(metadb_handle_list_cref p_list,fb2k::hwnd_t p_parent_window,bool p_show_errors) = 0;
+    virtual t_update_info_state remove_info_multi(metadb_handle_list_cref p_list,fb2k::hwnd_t p_parent_window,bool p_show_errors) = 0;
 
 	virtual void hint_multi(metadb_handle_list_cref p_list,const pfc::list_base_const_t<const file_info*> & p_infos,const pfc::list_base_const_t<t_filestats> & p_stats,const bit_array & p_fresh_mask) = 0;
 
@@ -66,8 +66,8 @@ public:
 
 	void hint_async(metadb_handle_ptr p_item,const file_info & p_info,const t_filestats & p_stats,bool p_fresh);
 
-    FB2K_DEPRECATED t_load_info_state load_info(metadb_handle_ptr p_item,t_load_info_type p_type,fb2k::hwnd_t p_parent_window,bool p_show_errors);
-    FB2K_DEPRECATED t_update_info_state update_info(metadb_handle_ptr p_item,file_info & p_info,fb2k::hwnd_t p_parent_window,bool p_show_errors);
+    t_load_info_state load_info(metadb_handle_ptr p_item,t_load_info_type p_type,fb2k::hwnd_t p_parent_window,bool p_show_errors);
+    t_update_info_state update_info(metadb_handle_ptr p_item,file_info & p_info,fb2k::hwnd_t p_parent_window,bool p_show_errors);
 	
 	FB2K_MAKE_SERVICE_COREAPI(metadb_io);
 };
@@ -167,9 +167,9 @@ public:
 		op_flag_delay_ui		= 1 << 2,
 
 		//! \since 1.3
-		//! Indicates that the caller is aware of the metadb partial info feature introduced at v1.3.
-		//! When not specified, affected info will be quietly preserved when updating tags.
-		//! Obsolete in 2.0
+		//! Indicates that the caller is aware of the metadb partial info feature introduced at v1.3. \n
+		//! When not specified, affected info will be quietly preserved when updating tags. \n
+		//! Unused in 2.0..2.25, restored in 2.26 \n
 		op_flag_partial_info_aware = 1 << 3,
 
 		//! \since 2.0
@@ -256,17 +256,17 @@ public:
 	//! Creates an update-info task, that can be either fed to threaded_process API, or invoked by yourself respecting threaded_process semantics. \n
 	//! May return null pointer if the operation has been refused (by user settings or such). \n
 	//! Useful for performing the operation with your own in-dialog progress display instead of the generic progress popup. \n
-	//! Main thread only.
+    //! Main thread only before 2.26, can be used from any thread since 2.26 - on_init and on_done calls must STILL be in main thread, on_init is optional.
 	virtual service_ptr_t<threaded_process_callback> spawn_update_info( metadb_handle_list_cref items, service_ptr_t<file_info_filter> p_filter, uint32_t opFlags, completion_notify_ptr reply ) = 0;
 	//! Creates an remove-info task, that can be either fed to threaded_process API, or invoked by yourself respecting threaded_process semantics. \n
 	//! May return null pointer if the operation has been refused (by user settings or such). \n
 	//! Useful for performing the operation with your own in-dialog progress display instead of the generic progress popup. \n
-	//! Main thread only.
+    //! Main thread only before 2.26, can be used from any thread since 2.26 - on_init and on_done calls must STILL be in main thread, on_init is optional.
 	virtual service_ptr_t<threaded_process_callback> spawn_remove_info( metadb_handle_list_cref items, uint32_t opFlags, completion_notify_ptr reply) = 0;
 	//! Creates an load-info task, that can be either fed to threaded_process API, or invoked by yourself respecting threaded_process semantics. \n
 	//! May return null pointer if the operation has been refused (for an example no loading is needed for these items). \n
 	//! Useful for performing the operation with your own in-dialog progress display instead of the generic progress popup. \n
-	//! Main thread only.
+	//! Main thread only before 2.26, can be used from any thread since 2.26 - on_init and on_done calls must STILL be in main thread, on_init is optional.
 	virtual service_ptr_t<threaded_process_callback> spawn_load_info( metadb_handle_list_cref items, t_load_info_type opType, uint32_t opFlags, completion_notify_ptr reply) = 0;
 };
 

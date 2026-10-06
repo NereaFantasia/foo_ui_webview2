@@ -18,6 +18,7 @@
 
 
 class CListControlSimple : public CListControlReadOnly {
+	typedef CListControlReadOnly parent_t;
 public:
 	// Events
 	std::function<void()> onReordered; // if not set, list reordering is disabled
@@ -25,6 +26,7 @@ public:
 	std::function<void(size_t)> onItemAction; // optional, handle item double click or enter key 
 	std::function<void()> onSelChange; // optional, handle selectionchange
 	std::function<void(size_t)> onColumnHeaderClick; // optional, handle column header click, if not set sorting will happen
+	std::function<void(CPoint)> onContextMenu;
 
 	size_t GetItemCount() const override {
 		return m_lines.size();
@@ -141,7 +143,7 @@ public:
 		this->SetSortIndicator(column, descending);
 	}
 	void SortBy(size_t column) {
-		HDITEM item = { HDI_FORMAT };
+		HDITEM item = {.mask = HDI_FORMAT };
 		if (this->GetHeaderCtrl().GetItem((int)column, &item)) {
 			bool bDescending = (item.fmt & HDF_SORTDOWN) != 0;
 			this->SortBy(column, bDescending);
@@ -162,7 +164,16 @@ protected:
 		this->OnItemsReordered(order, count);
 		if (onReordered) onReordered();
 	}
+	BEGIN_MSG_MAP_EX(CListControlSimple)
+		CHAIN_MSG_MAP(parent_t)
+		MSG_WM_CONTEXTMENU(OnContextMenu)
+	END_MSG_MAP()
 private:
+	void OnContextMenu(CWindow wnd, CPoint point) {
+		if (!onContextMenu || wnd != m_hWnd) { SetMsgHandled(FALSE); return; }
+		point = GetContextMenuPoint(point);
+		onContextMenu(point);
+	}
 	struct line_t {
 		std::map<size_t, std::string> text;
 		size_t user = 0;

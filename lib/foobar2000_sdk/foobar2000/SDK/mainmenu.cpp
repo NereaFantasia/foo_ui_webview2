@@ -9,7 +9,7 @@ bool mainmenu_commands::g_execute_dynamic(const GUID & p_guid, const GUID & p_su
 	if (!v2->is_command_dynamic(index)) return false;
     bool rv = false;
     fb2k::crashOnException([&] {
-        rv = v2->dynamic_execute(index, p_subGuid, p_callback);;
+        rv = v2->dynamic_execute(index, p_subGuid, p_callback);
     }, "mainmenu_commands::dynamic_execute");
     return rv;
 }

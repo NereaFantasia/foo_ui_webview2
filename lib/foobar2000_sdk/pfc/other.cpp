@@ -26,8 +26,19 @@
 #include "platform-objects.h"
 #include "synchro.h"
 
-#include "pfc-fb2k-hooks.h"
+namespace pfc { [[noreturn]] void crashImpl(); }
 
+#ifdef _WIN32
+extern "C" [[noreturn]] void pfc_crashHook();
+extern "C" [[noreturn]] void pfc_crashHook_default() {pfc::crashImpl();}
+#ifdef _M_ARM64EC 
+#pragma comment(linker, "/alternatename:#pfc_crashHook=#pfc_crashHook_default")
+#elif defined(_M_IX86)
+#pragma comment(linker, "/alternatename:_pfc_crashHook=_pfc_crashHook_default")
+#else
+#pragma comment(linker, "/alternatename:pfc_crashHook=pfc_crashHook_default")
+#endif
+#endif
 
 namespace pfc {
 	bool permutation_is_valid(t_size const * order, t_size count) {
@@ -158,6 +169,11 @@ namespace pfc {
         }
         return true;
     }
+    pfc::array_t<size_t> identity(size_t num) {
+        pfc::array_t<size_t> ret; ret.resize(num);
+        for (size_t walk = 0; walk < num; ++walk) ret[walk] = walk;
+        return ret;
+    }
 }
 
 void order_helper::g_swap(t_size * data,t_size ptr1,t_size ptr2)
@@ -205,7 +221,11 @@ void order_helper::g_reverse(t_size * order,t_size base,t_size count)
 }
 
 [[noreturn]] void pfc::crash() {
-	crashHook();
+#ifdef _WIN32
+    pfc_crashHook();
+#else
+    crashImpl();
+#endif
 }
 
 
@@ -231,17 +251,21 @@ namespace pfc {
     void appleDebugLog( const char * str );
 }
 
-void pfc::outputDebugLine(const char * msg) {
-	debugLineReceiver::dispatch( msg );
+void pfc::outputDebugLineBase(const char * msg) {
 #ifdef _WIN32
-	OutputDebugString(pfc::stringcvt::string_os_from_utf8(PFC_string_formatter() << msg << "\n") );
+    OutputDebugString(pfc::stringcvt::string_os_from_utf8(PFC_string_formatter() << msg << "\n") );
 #elif defined(__ANDROID__)
-	__android_log_write(ANDROID_LOG_INFO, "Debug", msg);
+    __android_log_write(ANDROID_LOG_INFO, "Debug", msg);
 #elif defined(__APPLE__)
     appleDebugLog( msg );
 #else
-	printf("%s\n", msg);
+    printf("%s\n", msg);
 #endif
+}
+
+void pfc::outputDebugLine(const char * msg) {
+	debugLineReceiver::dispatch( msg );
+    outputDebugLineBase(msg);
 }
 
 void pfc::debugBreak() {
@@ -257,15 +281,15 @@ void pfc::debugBreak() {
 #ifdef _WIN32
 void pfc::myassert_win32(const wchar_t * _Message, const wchar_t *_File, unsigned _Line) {
     if (IsDebuggerPresent()) debugBreak();
-	PFC_DEBUGLOG << "PFC_ASSERT failure: " << _Message;
-	PFC_DEBUGLOG << "PFC_ASSERT location: " << _File << " : " << _Line;
+    outputDebugLineBase(format("PFC_ASSERT failure ", _Message));
+    outputDebugLineBase(format("PFC_ASSERT location: ", _File, " : ", _Line));
 	_wassert(_Message,_File,_Line);
 }
 #else
 
 void pfc::myassert(const char * _Message, const char *_File, unsigned _Line)
 {
-	PFC_DEBUGLOG << "Assert failure: \"" << _Message << "\" in: " << _File << " line " << _Line;
+    outputDebugLineBase(format("Assert failure: \"", _Message, "\" in: ", _File, " line ", _Line));
     debugBreak();
 }
 #endif
@@ -503,7 +527,7 @@ namespace pfc {
 #endif
 
 #ifdef PFC_WINDOWS_DESKTOP_APP
-        winSetThreadDescription(GetCurrentThread(), pfc::stringcvt::string_wide_from_utf8( msg ) );;
+        winSetThreadDescription(GetCurrentThread(), pfc::stringcvt::string_wide_from_utf8( msg ) );
 #endif
 #ifdef PFC_SET_THREAD_DESCRIPTION_EXTERNAL
         if (g_setCurrentThreadDescription) g_setCurrentThreadDescription(msg);

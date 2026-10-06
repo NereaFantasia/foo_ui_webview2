@@ -2,7 +2,7 @@
 #include "window/MainWindow.h"
 #include "window/MainWindowInternal.h"
 #include "webview/WebViewHost.h"
-#include "core/PreferencesPage.h"
+#include "prefs/PreferencesPage.h"
 #include "utils/I18n.h"
 #include <foobar2000/SDK/menu_helpers.h>
 #include <shellapi.h>
@@ -220,18 +220,7 @@ void MainWindow::ReloadFrontendForTemplateChange() {
     }
 
     console::printf("[WebView2 UI] Reloading frontend due to template change...");
-    std::wstring resourcesDir = GetFrontendResourcesDir();
-    if (resourcesDir.empty()) {
-        return;
-    }
-
-    HRESULT hr = webView_->SetVirtualHostMapping(GetVirtualHostName(), resourcesDir);
-    if (FAILED(hr)) {
-        return;
-    }
-
-    std::wstring url = std::wstring(L"https://") + GetVirtualHostName() + L"/index.html";
-    webView_->Navigate(url);
+    NavigateToLocalFrontend();
 }
 
 bool MainWindow::HandleStandardMenuCommand(WORD cmdId) {

@@ -43,7 +43,7 @@ namespace PaintUtils {
 	t_uint32 TextOutColors_CalcWidth(HDC dc, const TCHAR * src);
 	CSize TextOutColors_CalcSize(HDC dc, const TCHAR * src);
 
-	pfc::string TextOutColors_ImportScript(pfc::string script);
+	pfc::string TextOutColors_ImportScript(const char *script);
 	void TextOutColors_ImportScript(pfc::string_base & out, const char * in);
 
 	bool TextContainsCodes(const TCHAR * src);

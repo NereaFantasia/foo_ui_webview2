@@ -1,6 +1,8 @@
 #pragma once
 #include <functional>
 #include <list>
+#include <optional>
+#include "DarkModeParam.h"
 
 namespace DarkMode {
 	// Is dark mode supported on this system or not?
@@ -14,7 +16,7 @@ namespace DarkMode {
 	void UpdateTitleBar(HWND wnd, bool bDark );
 	void ApplyDarkThemeCtrl(HWND ctrl, bool bDark, const wchar_t * ThemeID = L"Explorer");
 	void ApplyDarkThemeCtrl2(HWND ctrl, bool bDark, const wchar_t* ThemeID_light = L"Explorer", const wchar_t* ThemeID_dark = L"DarkMode_Explorer");
-	void AllowDarkModeForWindow(HWND wnd, bool bDark);
+	void ApplyRetroTheme(HWND);
 
 	// One-shot version of darkening function for editboxes
 	void DarkenEditLite(HWND ctrl);
@@ -29,24 +31,24 @@ namespace DarkMode {
 	// Returns if these colors (text, background) look like dark theme
 	bool IsThemeDark(COLORREF text, COLORREF background);
 
-	COLORREF GetSysColor(int, bool bDark = true);
-
-	LRESULT CustomDrawToolbar(NMHDR*);
-	// Custom draw handler that paints registered darkened controls.
-	// Can be used with NOTIFY_CODE_HANDLER() directly
-	LRESULT OnCustomDraw(int, NMHDR*, BOOL & bHandled);
-
-	// Handle WM_NCPAINT drawing dark frame
-	void NCPaintDarkFrame(HWND ctrl, HRGN rgn);
-
 	bool IsHighContrast();
 
-	// msgSetDarkMode
-	// return 1 if understood, 0 otherwise
-	// WPARAM = 0, DISABLE dark mode
-	// WPARAM = 1, ENABLE dark mode
-	// WPARAM = -1, query if supported
-	UINT msgSetDarkMode();
+
+	// Handle WM_NCPAINT drawing dark frame
+	void NCPaintDarkFrame(HWND wnd, HRGN rgn, param_t const&);
+	void NCPaintDarkFrame(HWND wnd, HRGN rgn);
+
+	COLORREF GetSysColor(int, param_t const &);
+	COLORREF GetSysColor(int, bool bDark = true);
+
+	LRESULT CustomDrawToolbar(NMHDR*, param_t const &);
+	LRESULT CustomDrawHeader(NMHDR*, param_t const &);
+
+	// Custom draw handler that paints registered darkened controls.
+	std::optional<LRESULT> OnCustomDraw(NMHDR*, param_t const & p);
+
+
+	static constexpr COLORREF colorUndefined = 0xFFFFFFFF;
 
 	//! CHooks class: entrypoint class for all Dark Mode hacks. \n
 	//! Usage: Keep CHooks m_dark = detectDarkMode(); as a member of your window class, replacing detectDarkMode() with your own function returning dark mode on/off state. \n
@@ -54,11 +56,12 @@ namespace DarkMode {
 	//! AddDialogWithControls() walks all child windows of your window; call other individual methods to finetune handling of Dark Mode if that's not acceptable in your case.
 	class CHooks {
 	public:
-		CHooks(bool enabled = false) : m_dark(enabled) {}
+		CHooks(param_t const& p) : m_param(p) {}
+		CHooks(bool enabled = false) : CHooks(param_t{ /*.bDark = */ enabled}) {}
 		CHooks(const CHooks&) = delete;
 		void operator=(const CHooks&) = delete;
 
-		void AddDialog(HWND);
+		void AddDialog(HWND,COLORREF bkgnd=colorUndefined);
 		void AddTabCtrl(HWND);
 		void AddComboBox(HWND);
 		void AddComboBoxEx(HWND);
@@ -74,6 +77,7 @@ namespace DarkMode {
 		void AddListBox(HWND);
 		void AddListView(HWND);
 		void AddTreeView(HWND);
+		void AddHeader(HWND);
 		void AddPPListControl(HWND);
 
 
@@ -88,21 +92,25 @@ namespace DarkMode {
 		void AddDialogWithControls(HWND);
 		void AddControls(HWND wndParent);
 
-		void SetDark(bool v = true);
-		bool IsDark() const { return m_dark; }
-		operator bool() const { return m_dark; }
+		void SetDark(bool v = true) { SetParam({ /*.bDark = */ v}); }
+		bool SetParam(param_t const& p);
+		const param_t& Param() const { return m_param; }
+		bool IsDark() const { return m_param.IsDark(); }
+		operator bool() const { return IsDark(); }
 
 		~CHooks() { clear(); }
 		void clear();
 
 		void AddApp();
+
 	private:
 		template<typename obj_t> void addObj(obj_t* arg) { 
-			m_apply.push_back([arg, this] { arg->SetDark(m_dark); });
+			m_apply.push_back([arg, this] { arg->SetDark(m_param); });
 			m_cleanup.push_back([arg] { delete arg; });
 		}
 		void addOp(std::function<void()> f) { f(); m_apply.push_back(f); }
-		bool m_dark = false;
+		param_t m_param;
+		
 		std::list<std::function<void()> > m_apply;
 		std::list<std::function<void()> > m_cleanup;
 

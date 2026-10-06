@@ -48,6 +48,22 @@ void file_info::meta_remove_value(t_size p_index,t_size p_value)
 	meta_remove_values(p_index, pfc::bit_array_one(p_value));
 }
 
+size_t file_info::meta_remove_if(std::function<bool(const char* key)> const& fn) {
+	const auto total = this->meta_get_count();
+	if (total == 0) return 0;
+	pfc::bit_array_bittable mask(total);
+	size_t num = 0;
+	for (size_t walk = 0; walk < total; ++walk) {
+		bool bRemove = fn(meta_enum_name(walk));
+		mask.set(walk, bRemove);
+		if (bRemove) ++num;
+	}
+	if (num) {
+		this->meta_remove_mask(mask);
+	}
+	return num;
+}
+
 t_size file_info::meta_get_count_by_name_ex(const char * p_name,t_size p_name_length) const
 {
 	auto index = meta_find_ex(p_name,p_name_length);
@@ -90,6 +106,38 @@ bool file_info::info_remove_ex(const char * p_name,t_size p_name_length)
 	else return false;
 }
 
+size_t file_info::info_remove_if2(std::function<bool(const char* key, const char* value)> const& fn) {
+	const auto total = this->info_get_count();
+	if (total == 0) return 0;
+	pfc::bit_array_bittable mask(total);
+	size_t num = 0;
+	for (size_t walk = 0; walk < total; ++walk) {
+		bool bRemove = fn(info_enum_name(walk), info_enum_value(walk));
+		mask.set(walk, bRemove);
+		if (bRemove) ++num;
+	}
+	if (num) {
+		this->info_remove_mask(mask);
+	}
+	return num;
+}
+
+size_t file_info::info_remove_if(std::function<bool(const char* key)> const& fn) {
+	const auto total = this->info_get_count();
+	if (total == 0) return 0;
+	pfc::bit_array_bittable mask(total);
+	size_t num = 0;
+	for (size_t walk = 0; walk < total; ++walk) {
+		bool bRemove = fn(info_enum_name(walk));
+		mask.set(walk, bRemove);
+		if (bRemove) ++num;
+	}
+	if (num) {
+		this->info_remove_mask(mask);
+	}
+	return num;
+}
+
 void file_info::overwrite_meta(const file_info & p_source) {
 	const t_size total = p_source.meta_get_count();
 	for(t_size walk = 0; walk < total; ++walk) {
@@ -111,6 +159,10 @@ bool file_info::overwrite_meta_if_changed( const file_info & source ) {
 		changed = true;
 	}
 	return changed;
+}
+
+void file_info::overwrite_replaygain(const file_info& source) {
+	auto rg = get_replaygain(); rg.overwrite(source.get_replaygain()); set_replaygain(rg);
 }
 
 void file_info::copy_meta_single(const file_info & p_source,t_size p_index)
@@ -433,6 +485,16 @@ bool file_info::are_meta_fields_identical(t_size p_index1,t_size p_index2) const
 }
 
 
+pfc::array_t<pfc::string8> file_info::meta_values(size_t index) const {
+	pfc::array_t<pfc::string8> arr;
+	const auto total = meta_enum_value_count(index);
+	arr.resize(total);
+	for (size_t walk = 0; walk < total; ++walk) {
+		arr[walk] = meta_enum_value(index, walk);
+	}
+	return arr;
+}
+
 void file_info::meta_format_entry(t_size index, pfc::string_base & out, const char * separator) const {
 	out.reset();
 	t_size val, count = meta_enum_value_count(index);
@@ -612,7 +674,7 @@ bool file_info::g_is_meta_subset_debug(const file_info& superset, const file_inf
 }
 
 static bool is_valid_field_name_char(char p_char) {
-	return p_char >= 32 && p_char < 127 && p_char != '=' && p_char != '%' && p_char != '<' && p_char != '>';
+	return p_char >= 32 && p_char < 127 && p_char != '%' && p_char != '<' && p_char != '>';
 }
 
 bool file_info::g_is_valid_field_name(const char * p_name,t_size p_length) {
@@ -945,6 +1007,13 @@ void file_info::meta_enumerate(meta_enumerate_t cb) const {
 	}
 }
 
+void file_info::info_enumerate(meta_enumerate_t cb) const {
+	const size_t nInfo = this->info_get_count();
+	for (size_t infoWalk = 0; infoWalk < nInfo; ++infoWalk) {
+		cb(this->info_enum_name(infoWalk), this->info_enum_value(infoWalk));
+	}
+}
+
 bool file_info::meta_value_exists( const char * name, const char * findValue, bool insensitive ) const {
 	const auto idx = this->meta_find(name);
 	if ( idx != SIZE_MAX ) {
@@ -972,6 +1041,10 @@ const char * file_info::meta_get_title( const char * fallback) const {
 
 void file_info::info_set_pictures( const GUID * guids, size_t size ) {
     this->info_set("pictures", album_art_ids::ids_to_string(guids, size) );
+}
+
+void file_info::info_set_pictures( std::initializer_list<GUID> const & arg ) {
+    info_set_pictures( arg.begin(), arg.size() );
 }
 
 pfc::array_t<GUID> file_info::info_get_pictures( ) const {

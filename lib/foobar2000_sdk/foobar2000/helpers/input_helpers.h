@@ -4,10 +4,14 @@
 #include <list>
 #include <SDK/input.h>
 #include <SDK/tracks.h>
+#include <optional>
+#include <SDK/file_info_impl.h>
 
 class input_helper {
 public:
 	input_helper();
+    
+    typedef std::function<void (input_live_info_t&&)> recvLiveInfo_t;
 
 	typedef std::function<input_decoder::ptr (input_decoder::ptr, const char*, abort_callback&) > shim_t;
     typedef std::function<void (input_decoder::ptr, const char*, abort_callback&) > infoHook_t;
@@ -19,11 +23,11 @@ public:
 		bool m_flush_on_pause;
 		bool m_can_seek;
 		bool m_seeking_expensive;
+		bool isRadio() const noexcept { return !m_can_seek && m_flush_on_pause; }
 	};
 
 	struct decodeOpen_t {
 		bool m_from_redirect = false;
-		bool m_skip_hints = false;
 		unsigned m_flags = 0;
 		file::ptr m_hint;
 		unsigned m_setSampleRate = 0;
@@ -52,6 +56,7 @@ public:
 	bool need_file_reopen(const char * newPath) const;
 	
 	decodeInfo_t decode_info();
+	GUID used_decoder() const { return m_inputGuid; }
 
 	void close();
 	bool is_open();
@@ -106,11 +111,18 @@ public:
 
 	uint32_t get_subsong_count() const { return m_input->get_subsong_count(); }
 	uint32_t get_subsong(uint32_t i) const { return m_input->get_subsong(i); }
+    
+    void poll_live_info( recvLiveInfo_t const & recv, abort_callback&);
 private:
 	bool m_file_in_memory = false;
 	service_ptr_t<input_decoder> m_input;
 	pfc::string8 m_path;
 	event_logger::ptr m_logger;
+	struct playback_t {
+		file_info_impl m_infoStatic, m_infoDynTrk, m_infoDyn;
+	};
+	std::optional<playback_t> m_playback;
+	GUID m_inputGuid = {};
 };
 
 #ifdef FOOBAR2000_HAVE_METADB

@@ -3,6 +3,11 @@
 #include <functional>
 #include <memory>
 
+#include <atlbase.h>
+#include <atlapp.h>
+#include <atltypes.h>
+#include <atluser.h>
+
 #include "win32_op.h"
 #include "win32_utility.h"
 
@@ -37,8 +42,12 @@ struct GdiplusIconArg_t {
 	GdiplusBitmapTransform_t transform = nullptr;
 };
 
+CSize AdjustSizeToFit(CSize sizeFit, CSize sizeFitIn);
+CSize GdiplusImageSize(Gdiplus::Image*);
+
 HBITMAP GdiplusLoadBitmap(UINT id, const TCHAR* resType, CSize size);
-std::unique_ptr<Gdiplus::Image> GdiplusImageFromMem(const void* ptr, size_t bytes);
+std::unique_ptr<Gdiplus::Image> GdiplusImageFromMem(const void* ptr, size_t bytes, BOOL useEmbeddedColorManagement = FALSE);
+std::unique_ptr<Gdiplus::Bitmap> GdiplusBitmapFromMem(const void* ptr, size_t bytes, BOOL useEmbeddedColorManagement = FALSE);
 std::unique_ptr<Gdiplus::Bitmap> GdiplusResizeImage(Gdiplus::Image* source, CSize size, Gdiplus::PixelFormat pf = PixelFormat32bppARGB);
 HICON GdiplusLoadIconFromMem(const void* ptr, size_t bytes, CSize size);
 HICON GdiplusLoadIcon(UINT id, const TCHAR* resType, CSize size);
@@ -51,3 +60,8 @@ std::unique_ptr<Gdiplus::Bitmap> GdiplusLoadResource(UINT id, const TCHAR* resTy
 std::unique_ptr<Gdiplus::Bitmap> GdiplusLoadResourceAsSize(UINT id, const TCHAR* resType, CSize size);
 void GdiplusDimImage(Gdiplus::Bitmap* bmp);
 void GdiplusInvertImage(Gdiplus::Bitmap* bmp);
+
+int GdiplusOrientation(Gdiplus::Image* image);
+void GdiplusFixRotation(Gdiplus::Image* image);
+
+bool GdiplusImageHasAlpha(Gdiplus::Image*);

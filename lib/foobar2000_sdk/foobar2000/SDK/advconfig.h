@@ -1,8 +1,8 @@
 #pragma once
 
 //! Entrypoint class for adding items to Advanced Preferences page. \n
-//! Implementations must derive from one of subclasses: advconfig_branch, advconfig_entry_checkbox, advconfig_entry_string. \n
-//! Implementations are typically registered using static service_factory_single_t<myclass>, or using provided helper classes in case of standard implementations declared in this header.
+//! Implementations must derive from one of subclasses: @c advconfig_branch, @c advconfig_entry_checkbox, @c advconfig_entry_string. \n
+//! Implementations are typically registered using static @c service_factory_single_t<myclass>, or using provided helper classes in case of standard implementations declared in this header.
 class NOVTABLE advconfig_entry : public service_base {
 public:
 	virtual void get_name(pfc::string_base & p_out) = 0;
@@ -33,7 +33,7 @@ public:
 };
 
 //! Declares a new branch in Advanced Preferences. \n
-//! Implementation: see advconfig_branch_impl / advconfig_branch_factory.
+//! Implementation: see @c advconfig_branch_impl / @c advconfig_branch_factory.
 class NOVTABLE advconfig_branch : public advconfig_entry {
 public:
 	FB2K_MAKE_SERVICE_INTERFACE(advconfig_branch,advconfig_entry);
@@ -41,7 +41,7 @@ public:
 
 //! Declares a checkbox/radiocheckbox entry in Advanced Preferences. \n
 //! The difference between checkboxes and radiocheckboxes is different icon (obviously) and that checking a radiocheckbox unchecks all other radiocheckboxes in the same branch. \n
-//! Implementation: see advconfig_entry_checkbox_impl / advconfig_checkbox_factory_t.
+//! Implementation: see @c advconfig_entry_checkbox_impl / @c advconfig_checkbox_factory_t.
 class NOVTABLE advconfig_entry_checkbox : public advconfig_entry {
 public:
 	virtual bool get_state() = 0;
@@ -53,7 +53,7 @@ public:
 	FB2K_MAKE_SERVICE_INTERFACE(advconfig_entry_checkbox,advconfig_entry);
 };
 
-//! Extension to advconfig_entry_checkbox, adds default state and preferences flags.
+//! Extension to @c advconfig_entry_checkbox, adds default state and preferences flags.
 class NOVTABLE advconfig_entry_checkbox_v2 : public advconfig_entry_checkbox {
 	FB2K_MAKE_SERVICE_INTERFACE(advconfig_entry_checkbox_v2, advconfig_entry_checkbox)
 public:
@@ -62,7 +62,7 @@ public:
 };
 
 //! Declares a string/integer editbox entry in Advanced Preferences.\n
-//! Implementation: see advconfig_entry_string_impl / advconfig_string_factory.
+//! Implementation: see @c advconfig_entry_string_impl / @c advconfig_string_factory.
 class NOVTABLE advconfig_entry_string : public advconfig_entry {
 public:
 	virtual void get_state(pfc::string_base & p_out) = 0;
@@ -83,11 +83,11 @@ public:
 	FB2K_MAKE_SERVICE_INTERFACE(advconfig_entry_string,advconfig_entry);
 };
 
-//! Extension to advconfig_entry_string, adds default state, validation and preferences flags.
+//! Extension to @c advconfig_entry_string, adds default state, validation and preferences flags.
 class NOVTABLE advconfig_entry_string_v2 : public advconfig_entry_string {
 	FB2K_MAKE_SERVICE_INTERFACE(advconfig_entry_string_v2, advconfig_entry_string)
 public:
 	virtual void get_default_state(pfc::string_base & out) = 0;
-	virtual void validate(pfc::string_base& val) { (void)val; }
+	virtual void validate(pfc::string_base& val) { std::ignore = val; }
 	virtual t_uint32 get_preferences_flags() {return 0;} //signals whether changing this setting should trigger playback restart or app restart; see: preferences_state::* constants
 };

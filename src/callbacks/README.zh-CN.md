@@ -2,7 +2,7 @@
 
 # src/callbacks/ — foobar2000 事件 → 前端事件桥
 
-`callbacks/` 是「事件回流」的源头：它监听 foobar2000 SDK 的各类回调（播放、播放列表、媒体库、元数据、队列、统计、DSP、配置、音频设备），把它们翻译成 colon 格式的桥接事件，经 `WebViewContext::BroadcastEvent` 广播给所有 WebView 实例，让前端实时感知 foobar2000 的状态变化。
+`callbacks/` 是「事件回流」的源头：它监听 foobar2000 SDK 的各类回调（播放、播放列表、媒体库、元数据、队列、统计、DSP、配置、音频设备），把它们翻译成 colon 格式的桥接事件，经 `api::emit::Broadcast` 广播给所有 WebView 实例，让前端实时感知 foobar2000 的状态变化。
 
 ---
 
@@ -12,8 +12,8 @@
 
 ```
 foobar2000 SDK 回调 (on_playback_new_track / on_items_added / ...)
-      └─ 构造 JSON 数据
-            └─ WebViewContext::GetInstance().BroadcastEvent("namespace:event", data)
+      └─ 填写声明生成的载荷结构体
+            └─ api::emit::Broadcast<api::<ns>::events::<Event>>(payload)
                   └─ 各实例 postMessage → fb2k.on("namespace:event", cb)
 ```
 
@@ -57,8 +57,8 @@ foobar2000 SDK 回调 (on_playback_new_track / on_items_added / ...)
 用户点下一首 / 自动续播
    └─ playback_control 切换曲目
         └─ on_playback_new_track(metadb_handle_ptr)        (PlaybackCallback)
-              ├─ 构造 trackInfo JSON
-              ├─ WebViewContext::BroadcastEvent("playback:trackChanged", trackInfo)
+              ├─ BuildTrackRow(track) 构造共享的 Track 行
+              ├─ api::emit::Broadcast<…::TrackChanged>(row)
               └─ QueueManager::OnPlaybackNewTrack(track)     (推进 JIT 状态机)
 ```
 
@@ -70,7 +70,7 @@ foobar2000 SDK 回调 (on_playback_new_track / on_items_added / ...)
 
 ## 依赖关系
 
-- **依赖**：foobar2000 SDK 回调接口（`play_callback` / `playlist_callback` / `library_callback` / `config_object_notify` 等）、`core/WebViewContext`（广播通道）、`core/QueueManager`、`window/TaskbarIntegration`（播放状态联动任务栏按钮）。
+- **依赖**：foobar2000 SDK 回调接口（`play_callback` / `playlist_callback` / `library_callback` / `config_object_notify` 等）、`api/EventEmit.h`（经 `core/WebViewContext` 广播）、`core/QueueManager`、`window/TaskbarIntegration`（播放状态联动任务栏按钮）。
 - **被依赖**：`core/WebViewPanel::InitializeCallbacks()` 负责拉起手动注册的回调；前端通过 `fb2k.on()` / SDK 的 `fb.on()` 消费这些事件。
 
 ---
@@ -79,10 +79,10 @@ foobar2000 SDK 回调 (on_playback_new_track / on_items_added / ...)
 
 新增一个事件（如 `playback:fooChanged`）：
 
-1. **三点验证**：确认 SDK 有对应回调、JSON 字段命名稳定、事件名用 colon 格式（与任何 invoke 的 dot 名区分）。
+1. **先写声明**：在 `api/schema/<ns>.ts` 的 `Events` 接口里声明事件与载荷，事件名用 colon 格式；然后按 [api/schema/README.md](../api/schema/README.md) 重新生成。确认 SDK 确实有对应回调。
 2. **选注册方式**：能用 `service_factory_single_t` 自注册就自注册；需要随面板生命周期初始化的，放进 `InitXxxCallbacks()` 并在 `WebViewPanel::InitializeCallbacks()` 调用。
-3. **广播**：在回调实现里 `WebViewContext::GetInstance().BroadcastEvent("playback:fooChanged", data)`；只发给单个实例时改用 `api/CallerContext` 路由。
-4. **同步**：在 `sdk/`（事件类型）与 `docs/`（事件清单）登记新事件，保持文档与代码一致。
+3. **发送**：在回调实现里用 `api/EventEmit.h` 的助手发出，例如 `api::emit::Broadcast<api::playback::events::FooChanged>(payload)`；只发给单个页面时用 `Emit` / `EmitTo` / `SendTo`，与声明里的 `@delivery` 一致。
+4. **同步**：SDK 的事件类型与文档站的事件区块由声明生成；声明里的说明就是对外文档。
 5. **节流**：高频事件务必在源头去重/节流，避免前端被刷爆。
 
 ---

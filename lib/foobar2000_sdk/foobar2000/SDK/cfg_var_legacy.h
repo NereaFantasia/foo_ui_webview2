@@ -194,7 +194,7 @@ namespace cfg_var_legacy {
 	protected:
 
 		void get_data_raw(stream_writer* p_stream, abort_callback& p_abort) { p_stream->write_object(&m_val, sizeof(m_val), p_abort); }
-		void set_data_raw(stream_reader* p_stream, t_size p_sizehint, abort_callback& p_abort) {
+		void set_data_raw(stream_reader* p_stream, t_size, abort_callback& p_abort) {
 			t_struct temp;
 			p_stream->read_object(&temp, sizeof(temp), p_abort);
 			m_val = temp;
@@ -237,7 +237,7 @@ namespace cfg_var_legacy {
 			out << pfc::downcast_guarded<t_uint32>(this->get_size());
 			for (t_size walk = 0; walk < this->get_size(); ++walk) out << (*this)[walk];
 		}
-		void set_data_raw(stream_reader* p_stream, t_size p_sizehint, abort_callback& p_abort) {
+		void set_data_raw(stream_reader* p_stream, t_size, abort_callback& p_abort) {
 			try {
 				stream_reader_formatter<> in(*p_stream, p_abort);
 				t_uint32 count; in >> count;

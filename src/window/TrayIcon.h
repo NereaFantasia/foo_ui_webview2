@@ -9,6 +9,8 @@
 #include <utility>
 #include <functional>
 #include <optional>
+#include <array>
+#include <algorithm>
 
 // One segment of a "segmented" rich item (webview backend only): an inline
 // single-select control. Each segment shows its inline SVG icon when present,
@@ -554,33 +556,57 @@ struct TrayMenuStorage {
     TrayMenuConfig config;
 };
 
+// New rows per zone, indexed by TrayMenuPosition; std::nullopt keeps the
+// stored zone, an empty vector clears it.
+using TrayZoneReplacement = std::array<std::optional<std::vector<TrayMenuItem>>, 3>;
+static_assert(std::tuple_size_v<TrayZoneReplacement> == std::extent_v<decltype(TrayMenuStorage::zones)>,
+              "one replacement slot per stored zone");
+
 // Strip oversized single SVGs, validate the post-change composed snapshot
-// (other zones + built-in injection + css), and only then mutate storage.
+// (untouched zones + built-in injection + css), and only then mutate storage.
 // On breach the previous zones/config are left untouched (DESIGN 8.5).
-inline menu_limits::CheckResult TryReplaceContextMenuZone(
+inline menu_limits::CheckResult TryReplaceTrayZones(
     TrayMenuStorage& storage,
-    std::vector<TrayMenuItem> items,
+    TrayZoneReplacement zones,
     const std::optional<TrayMenuConfig>& newConfig) {
     TrayMenuConfig conf = newConfig.has_value() ? *newConfig : storage.config;
-    StripOversizedSvgInTree(items);
-    // Shared recursive slider normalization before storage / backends share
-    // the same min/max/value/orientation.
-    NormalizeSliderMenuItems(items);
 
     std::vector<TrayMenuItem> preview[3] = {
         storage.zones[0], storage.zones[1], storage.zones[2]
     };
-    int target = static_cast<int>(conf.customPosition);
-    if (target < 0 || target > 2) target = 0;
-    preview[target] = items;
+    // zones, preview and storage.zones all hold three zones (static_assert above).
+    for (size_t i = 0; i < std::size(preview); ++i) {
+        if (!zones[i]) continue;
+        StripOversizedSvgInTree(*zones[i]);
+        // Shared recursive slider normalization before storage / backends share
+        // the same min/max/value/orientation.
+        NormalizeSliderMenuItems(*zones[i]);
+        preview[i] = std::move(*zones[i]);
+    }
 
     auto composed = ComposeTrayMenuSnapshot(preview[0], preview[1], preview[2], conf);
     auto breach = ValidateTrayMenuResources(composed, conf.css);
     if (!breach.ok) return breach;
 
     storage.config = conf;
-    storage.zones[target] = std::move(items);
+    for (size_t i = 0; i < std::size(preview); ++i) {
+        storage.zones[i] = std::move(preview[i]);
+    }
     return menu_limits::CheckResult::Ok();
+}
+
+// tray.setContextMenu: replace the zone named by the resulting config's
+// customPosition and keep the other two.
+inline menu_limits::CheckResult TryReplaceContextMenuZone(
+    TrayMenuStorage& storage,
+    std::vector<TrayMenuItem> items,
+    const std::optional<TrayMenuConfig>& newConfig) {
+    const TrayMenuConfig& conf = newConfig.has_value() ? *newConfig : storage.config;
+    auto target = static_cast<int>(conf.customPosition);
+    if (target < 0 || target > 2) target = 0;
+    TrayZoneReplacement zones;
+    zones[static_cast<size_t>(target)] = std::move(items);
+    return TryReplaceTrayZones(storage, std::move(zones), newConfig);
 }
 
 inline menu_limits::CheckResult TryAppendMenuItemsToStorage(
@@ -604,6 +630,21 @@ inline menu_limits::CheckResult TryAppendMenuItemsToStorage(
 
     storage.zones[zone].insert(storage.zones[zone].end(), items.begin(), items.end());
     return menu_limits::CheckResult::Ok();
+}
+
+// tray.removeMenuItems: drop every row whose id is listed, at any depth, and return how many
+// rows went. Submenus are handled before their parent row, so a listed row inside a listed
+// submenu is counted as well. A submenu left without rows is degraded to a leaf when the zones
+// are composed (NormalizeVisibleMenuItems).
+inline int RemoveTrayMenuItemsById(std::vector<TrayMenuItem>& items, const std::vector<std::string>& ids) {
+    int removed = 0;
+    for (auto& it : items) {
+        if (!it.submenu.empty()) removed += RemoveTrayMenuItemsById(it.submenu, ids);
+    }
+    const size_t erased = std::erase_if(items, [&ids](const TrayMenuItem& it) {
+        return std::find(ids.begin(), ids.end(), it.id) != ids.end();
+    });
+    return removed + static_cast<int>(erased);
 }
 
 inline std::vector<TrayMenuItem> FlatZoneItems(const TrayMenuStorage& storage) {
@@ -642,12 +683,15 @@ public:
     const TrayMenuConfig& GetContextMenuConfig() const { return m_menuConfig; }
     const std::vector<TrayMenuItem>& GetZoneItems(TrayMenuPosition position) const;
 
-    // Transactional writers used by tray.setContextMenu / tray.appendMenuItems:
-    // strip oversized single SVGs, validate the post-change composed snapshot
-    // (other zones + built-in injection + css), and only then mutate storage.
-    // On breach the previous zones/config are left untouched (DESIGN 8.5).
+    // Transactional writers used by tray.setContextMenu / tray.setMenuZones /
+    // tray.appendMenuItems: strip oversized single SVGs, validate the
+    // post-change composed snapshot (other zones + built-in injection + css),
+    // and only then mutate storage. On breach the previous zones/config are
+    // left untouched (DESIGN 8.5).
     menu_limits::CheckResult TrySetContextMenu(std::vector<TrayMenuItem> items,
                                                const std::optional<TrayMenuConfig>& config);
+    menu_limits::CheckResult TryReplaceMenuZones(TrayZoneReplacement zones,
+                                                 const std::optional<TrayMenuConfig>& config);
     menu_limits::CheckResult TryAppendMenuItems(std::vector<TrayMenuItem> items,
                                                 TrayMenuPosition position);
 
@@ -715,6 +759,9 @@ private:
     // Three menu zones: top, playback, bottom.
     std::vector<TrayMenuItem> m_zones[3];
     TrayMenuConfig m_menuConfig;
+    // Copy out / write back the zones and config around a transactional writer.
+    TrayMenuStorage SnapshotMenuStorage() const;
+    void CommitMenuStorage(TrayMenuStorage&& storage);
     // Native-backend command id -> resolved action (public id + trusted origin +
     // built-in). Routing keys off the stored origin, never the id prefix.
     std::map<int, menu_action::ResolvedAction> m_menuIdMap;

@@ -10,6 +10,8 @@
 
 #include <memory>
 #include <vector>
+#include <initializer_list>
+#include <pfc/iterators2.h>
 
 class dsp_preset; class dsp_chain_config; // forward declaration
 
@@ -32,11 +34,25 @@ public:
 
 	void remove_all();
 
-	double get_duration();
+	double get_duration() const;
 
+    //! Helper; appends the chunk to this list - does not take ownership, copies content.
 	void add_chunk(const audio_chunk * chunk);
 
 	void remove_bad_chunks();
+	void assert_all_valid();
+    
+    void add_from( dsp_chunk_list const & );
+    
+    size_t size() const { return get_count(); }
+    audio_chunk & operator[] (size_t n) { return * get_item(n); }
+    const audio_chunk & operator[] (size_t n) const { return * get_item(n); }
+
+    
+    auto begin() const { return pfc::iterator_array(this, 0); }
+    auto begin() { return pfc::iterator_array(this, 0); }
+    auto end() const { return pfc::iterator_array(this, this->get_count()); }
+    auto end() { return pfc::iterator_array(this, get_count()); }
 protected:
 	dsp_chunk_list() {}
 	~dsp_chunk_list() {}
@@ -57,23 +73,26 @@ public:
 	audio_chunk * insert_item(t_size idx,t_size hint_size=0);
 
 	audio_chunk_impl* get_item_(size_t n) const { return m_data[n].get(); }
+    
+    void add_from( dsp_chunk_list const & );
+    void add_from( dsp_chunk_list_impl && );
 };
 
 //! Instance of a DSP.\n
-//! Implementation: Derive from dsp_impl_base instead of deriving from dsp directly.\n
-//! Instantiation: Use dsp_entry static helper methods to instantiate DSPs, or dsp_chain_config / dsp_manager to deal with entire DSP chains.
+//! Implementation: Derive from @c dsp_impl_base instead of deriving from dsp directly.\n
+//! Instantiation: Use @c dsp_entry static helper methods to instantiate DSPs, or @c dsp_chain_config / @c dsp_manager to deal with entire DSP chains.
 class NOVTABLE dsp : public service_base {
 public:
-	enum {
-		//! Flush whatever you need to when tracks change.
+	static constexpr int
+		//! End of an audio track. Setting this triggers crossfade etc effects. \n
+		//! See also: @c need_track_change_mark()
 		END_OF_TRACK = 1,
-		//! Flush everything.
-		FLUSH = 2	
-	};
+		//! End of a logical stream. If a DSP buffers audio and introduces latency, FLUSH will signal it to output any buffered audio immediately.
+		FLUSH = 2;
 
 	//! @param p_chunk_list List of chunks to process. The implementation may alter the list in any way, inserting chunks of different sample rate / channel configuration etc.
 	//! @param p_cur_file Optional, location of currently decoded file. May be null.
-	//! @param p_flags Flags. Can be null, or a combination of END_OF_TRACK and FLUSH constants.
+	//! @param p_flags Flags. Can be null, or a combination of @c END_OF_TRACK and @c FLUSH constants.
 	virtual void run(dsp_chunk_list * p_chunk_list,const dsp_track_t & p_cur_file,int p_flags)=0;
 
 	//! Flushes the DSP (reinitializes / drops any buffered data). Called after seeking, etc.
@@ -83,8 +102,8 @@ public:
 	//! @returns Amount of buffered audio data, in seconds.
 	virtual double get_latency() = 0;
 	//! Returns true if DSP needs to know exact track change point (eg. for crossfading, removing silence).\n
-	//! Signaling this will force-flush any DSPs placed before this DSP so when it gets END_OF_TRACK, relevant chunks contain last samples of the track.\n
-	//! Signaling this will often break regular gapless playback so don't use it unless you have reasons to.
+	//! Signaling this will force-flush any DSPs placed before this DSP so when it gets @c END_OF_TRACK, relevant chunks contain last samples of the track.\n
+	//! Because DSPs before this one all get @c FLUSH on each track change, track changes may not be gapless anymore. Do not use without a real reason (mainly crossfading tracks).
 	virtual bool need_track_change_mark() = 0;
 
 	void run_abortable(dsp_chunk_list * p_chunk_list,const dsp_track_t & p_cur_file,int p_flags,abort_callback & p_abort);
@@ -99,10 +118,10 @@ public:
 //! Backwards-compatible extension to dsp interface, allows abortable operation. Introduced in 0.9.2.
 class NOVTABLE dsp_v2 : public dsp {
 public:
-	//! Abortable version of dsp::run(). See dsp::run() for descriptions of parameters.
+	//! Abortable version of @c dsp::run(). See @c dsp::run() for descriptions of parameters.
 	virtual void run_v2(dsp_chunk_list * p_chunk_list,const dsp_track_t & p_cur_file,int p_flags,abort_callback & p_abort) = 0;
 private:
-	void run(dsp_chunk_list * p_chunk_list,const dsp_track_t & p_cur_file,int p_flags) {
+	void run(dsp_chunk_list * p_chunk_list,const dsp_track_t & p_cur_file,int p_flags) override final {
 		run_v2(p_chunk_list,p_cur_file,p_flags,fb2k::noAbort);
 	}
 
@@ -117,16 +136,16 @@ public:
 	virtual bool apply_preset(const dsp_preset&) = 0;
 };
 
-//! Helper class for implementing dsps. You should derive from dsp_impl_base instead of from dsp directly.\n
-//! The dsp_impl_base_t template allows you to use a custom interface class as a base class for your implementation, in case you provide extended functionality.\n
-//! Use dsp_factory_t<> template to register your dsp implementation.
-//! The implementation - as required by dsp_factory_t<> template - must also provide following methods:\n
-//! A constructor taking const dsp_preset&, initializing the DSP with specified preset data.\n
-//! static void g_get_name(pfc::string_base &); - retrieving human-readable name of the DSP to display.\n
-//! static bool g_get_default_preset(dsp_preset &); - retrieving default preset for this DSP. Return value is reserved for future use and should always be true.\n
-//! static GUID g_get_guid(); - retrieving GUID of your DSP implementation, to be used to identify it when storing DSP chain configuration.\n
-//! static bool g_have_config_popup(); - retrieving whether your DSP implementation supplies a popup dialog for configuring it.\n
-//! static void g_show_config_popup(const dsp_preset & p_data,HWND p_parent, dsp_preset_edit_callback & p_callback); - displaying your DSP's settings dialog; called only when g_have_config_popup() returns true; call p_callback.on_preset_changed() whenever user has made adjustments to the preset data.\n
+//! Helper class for implementing dsps. You should derive from @c dsp_impl_base instead of from dsp directly.\n
+//! The @c dsp_impl_base_t template allows you to use a custom interface class as a base class for your implementation, in case you provide extended functionality.\n
+//! Use @c dsp_factory_t<> template to register your dsp implementation.
+//! The implementation - as required by @c dsp_factory_t<> template - must also provide following methods:\n
+//! A constructor taking `const dsp_preset&`, initializing the DSP with specified preset data.\n
+//! `static void g_get_name(pfc::string_base &);` - retrieving human-readable name of the DSP to display.\n
+//! `static bool g_get_default_preset(dsp_preset &);` - retrieving default preset for this DSP. Return value is reserved for future use and should always be true.\n
+//! `static GUID g_get_guid();` - retrieving GUID of your DSP implementation, to be used to identify it when storing DSP chain configuration.\n
+//! `static bool g_have_config_popup();` - retrieving whether your DSP implementation supplies a popup dialog for configuring it.\n
+//! `static void g_show_config_popup(const dsp_preset & p_data,HWND p_parent, dsp_preset_edit_callback & p_callback);` - displaying your DSP's settings dialog; called only when @c g_have_config_popup() returns true; call @c p_callback.on_preset_changed() whenever user has made adjustments to the preset data.\n
 template<class t_baseclass>
 class dsp_impl_base_t : public t_baseclass {
 private:
@@ -136,15 +155,15 @@ private:
 	dsp_track_t m_cur_file = nullptr;
 	void run_v2(dsp_chunk_list * p_list,const dsp_track_t & p_cur_file,int p_flags,abort_callback & p_abort) override;
 protected:
-	//! Call only from on_chunk / on_endoftrack (on_endoftrack will give info on track being finished).\n
-	//! May return false when there's no known track and the metadb_handle ptr will be empty/null.
+	//! Call only from @c on_chunk / @c on_endoftrack (@c on_endoftrack will give info on track being finished).\n
+	//! May return false when there's no known track and the @c metadb_handle ptr will be empty/null.
 	bool get_cur_file(dsp_track_t & p_out) const {p_out = m_cur_file; return p_out.is_valid();}
     dsp_track_t get_cur_file() const { return m_cur_file; }
 	
 	dsp_impl_base_t() {}
 	
 	//! Inserts a new chunk of audio data. \n
-	//! You can call this only from on_chunk(), on_endofplayback() and on_endoftrack(). You're NOT allowed to call this from flush() which should just drop any queued data.
+	//! You can call this only from @c on_chunk(), @c on_endofplayback() and @c on_endoftrack(). You're NOT allowed to call this from @c flush() which should just drop any queued data.
 	//! @param p_hint_size Optional, amount of buffer space that you require (in audio_samples). This is just a hint for memory allocation logic and will not cause the framework to allocate the chunk for you.
 	//! @returns A pointer to the newly allocated chunk. Pass the audio data you want to insert to this chunk object. The chunk is owned by the framework, you can't delete it etc.
 	audio_chunk * insert_chunk(t_size p_hint_size = 0) {
@@ -159,20 +178,20 @@ protected:
 
 
 	//! To be overridden by a DSP implementation.\n
-	//! Called on track change. You can use insert_chunk() to dump any data you have to flush. \n
-	//! Note that you must implement need_track_change_mark() to return true if you need this method called.
+	//! Called on track change. You can use @c insert_chunk() to dump any data you have to flush. \n
+	//! Note that you must implement @c need_track_change_mark() to return true if you need this method called.
 	virtual void on_endoftrack(abort_callback & p_abort) = 0;
 	//! To be overridden by a DSP implementation.\n
 	//! Called at the end of played stream, typically at the end of last played track, to allow the DSP to return all data it has buffered-ahead.\n
-	//! Use insert_chunk() to return any data you have buffered.\n
+	//! Use @c insert_chunk() to return any data you have buffered.\n
 	//! Note that this call does not imply that the DSP will be destroyed next. \n
 	//! This is also called on track changes if some DSP placed after your DSP requests track change marks.
 	virtual void on_endofplayback(abort_callback & p_abort) = 0;
 	//! To be overridden by a DSP implementation.\n
 	//! Processes a chunk of audio data.\n
-	//! You can call insert_chunk() from inside on_chunk() to insert any audio data before currently processed chunk.\n
+	//! You can call @c insert_chunk() from inside @c on_chunk() to insert any audio data before currently processed chunk.\n
 	//! @param p_chunk Current chunk being processed. You can alter it in any way you like.
-	//! @returns True to keep p_chunk (with alterations made inside on_chunk()) in the stream, false to remove it.
+	//! @returns True to keep @c p_chunk (with alterations made inside `on_chunk()`) in the stream, false to remove it.
 	virtual bool on_chunk(audio_chunk * p_chunk,abort_callback & p_abort) = 0;
 
 public:
@@ -186,7 +205,7 @@ public:
 	virtual double get_latency() override = 0;
 	//! To be overridden by a DSP implementation.\n
 	//! Returns true if DSP needs to know exact track change point (eg. for crossfading, removing silence).\n
-	//! Signaling this will force-flush any DSPs placed before this DSP so when it gets on_endoftrack(), relevant chunks contain last samples of the track.\n
+	//! Signaling this will force-flush any DSPs placed before this DSP so when it gets @c on_endoftrack(), relevant chunks contain last samples of the track.\n
 	//! Signaling this may interfere with gapless playback in certain scenarios (forces flush of DSPs placed before you) so don't use it unless you have reasons to.
 	virtual bool need_track_change_mark() override = 0;
 private:
@@ -196,7 +215,7 @@ private:
 
 template<class t_baseclass>
 void dsp_impl_base_t<t_baseclass>::run_v2(dsp_chunk_list * p_list,const dsp_track_t & p_cur_file,int p_flags,abort_callback & p_abort) {
-	pfc::vartoggle_t<dsp_chunk_list*> l_list_toggle(m_list,p_list);
+	pfc::vartoggle_t l_list_toggle(m_list,p_list);
     auto track_toggle = pfc::autoToggle(m_cur_file, p_cur_file);
 	
 	for(m_chunk_ptr = 0;m_chunk_ptr<m_list->get_count();m_chunk_ptr++) {
@@ -210,6 +229,7 @@ void dsp_impl_base_t<t_baseclass>::run_v2(dsp_chunk_list * p_list,const dsp_trac
 	} else if (p_flags & dsp::END_OF_TRACK) {
 		if (need_track_change_mark()) on_endoftrack(p_abort);
 	}
+	p_list->assert_all_valid();
 }
 
 
@@ -335,6 +355,7 @@ public:
     virtual void set_preset( const dsp_preset & inPreset ) = 0;
     virtual void dsp_dialog_done( bool bOK ) = 0;
     void reset();
+    dsp_preset_impl get_preset();
 };
 
 
@@ -354,11 +375,11 @@ public:
 #ifdef _WIN32
 	//! Shows configuration popup. Call from main thread only! \n
 	//! Blocks until done. Returns true if preset has been altered, false otherwise.
-	//! Legacy method, replaced in dsp_entry_v2 and newer.
+	//! Legacy method, replaced in @c dsp_entry_v2 and newer.
 	virtual bool show_config_popup(dsp_preset& p_data, fb2k::hwnd_t p_parent) { (void)p_data; (void)p_parent; return false; }
 #else // non-Windows desktop
 	//! Shows configuration popup. Main thread only! \n
-    //! Mac: returns NSObjectWrapper holding NSViewController
+    //! Mac: returns @c NSObjectWrapper holding @c NSViewController
 	virtual service_ptr show_config_popup(fb2k::hwnd_t parent, dsp_preset_edit_callback_v2::ptr callback) { (void)parent; (void)callback; throw pfc::exception_not_implemented(); }
 #endif
 #endif // FOOBAR2000_DESKTOP
@@ -388,13 +409,13 @@ public:
 
 	//! Shows configuration popup. Main thread only! \n
 	//! Blocks until done. Uses callback to notify host about preset change. \n
-	//! Implements a fallback using legacy methods if show_config_popup_v2() is not available. \n
+	//! Implements a fallback using legacy methods if @c show_config_popup_v2() is not available. \n
 	//! @returns OK/cancel status (true/false), if the dialog supports it; otherwise always true.
 	bool show_config_popup_v2_(const dsp_preset& p_preset, fb2k::hwnd_t p_parent, dsp_preset_edit_callback& p_callback);
 
 	//! Shows configuration popup. Main thread only! \n
 	//! May either block until done and return null, or run asynchronously and return an object to release to cancel the dialog. \n
-	//! Implements a fallback using legacy methods if show_config_popup_v3() is not available.
+	//! Implements a fallback using legacy methods if @c show_config_popup_v3() is not available.
 	service_ptr show_config_popup_v3_(fb2k::hwnd_t parent, dsp_preset_edit_callback_v2::ptr callback);
 #endif
 
@@ -406,6 +427,8 @@ public:
 	void get_display_name_(const dsp_preset& arg, pfc::string_base& out);
 	bool enumerate_default_presets_(dsp_chain_config& ret);
 	bool match_preset_subclass_(dsp_preset const& x, dsp_preset const& y);
+	pfc::string8 get_name();
+
 
 	FB2K_MAKE_SERVICE_INTERFACE_ENTRYPOINT(dsp_entry);
 };
@@ -415,7 +438,7 @@ public:
 #ifdef _WIN32
 	//! Shows configuration popup. Main thread only!
 	virtual void show_config_popup_v2(const dsp_preset & p_data,fb2k::hwnd_t p_parent,dsp_preset_edit_callback & p_callback) = 0;
-	// Obsolete method, redirected to show_config_popup_v2() by default, no need to implement.
+	//! Obsolete method, redirected to @c show_config_popup_v2() by default, no need to implement.
 	bool show_config_popup(dsp_preset& p_data, fb2k::hwnd_t p_parent) override;
 #endif
 private:
@@ -432,8 +455,8 @@ public:
 
 #ifdef _WIN32
 	//! Shows configuration popup, asynchronous version - creates dialog then returns immediately. \n
-	//! Since not every DSP implements this, caller must be prepared to call legacy blocking show_config_popup methods instead. \n
-	//! show_config_popup_v3() may throw pfc::exception_not_implemented() to signal host that this DSP doesn't support this method yet. \n
+	//! Since not every DSP implements this, caller must be prepared to call legacy blocking @c show_config_popup methods instead. \n
+	//! @c show_config_popup_v3() may throw @c pfc::exception_not_implemented() to signal host that this DSP doesn't support this method yet. \n
 	//! Main thread only! \n
 	//! @returns Object to retain by host, to be released to request the dialog to be closed.
 	virtual service_ptr show_config_popup_v3(fb2k::hwnd_t parent, dsp_preset_edit_callback_v2::ptr callback) = 0;
@@ -646,6 +669,10 @@ public:
 
 	bool operator==(const dsp_chain_config & other) const {return equals(*this, other);}
 	bool operator!=(const dsp_chain_config & other) const {return !equals(*this, other);}
+    
+    const dsp_preset & operator[](size_t n) const { return get_item(n); }
+    auto begin() const { return pfc::iterator_array(this, 0); }
+    auto end() const { return pfc::iterator_array(this, get_count()); }
 };
 
 FB2K_STREAM_READER_OVERLOAD(dsp_chain_config) {
@@ -658,42 +685,47 @@ FB2K_STREAM_WRITER_OVERLOAD(dsp_chain_config) {
 
 class dsp_chain_config_impl : public dsp_chain_config
 {
+    typedef dsp_chain_config_impl self_t;
 public:
 	dsp_chain_config_impl() {}
 	dsp_chain_config_impl(const dsp_chain_config & p_source) {copy(p_source);}
-	dsp_chain_config_impl(const dsp_chain_config_impl & p_source) { copy_v2(p_source);}
-	dsp_chain_config_impl(dsp_chain_config_impl&& p_source) noexcept : m_data(std::move(p_source.m_data)) {}
-	t_size get_count() const override;
-	const dsp_preset & get_item(t_size p_index) const override;
-	void replace_item(const dsp_preset & p_data,t_size p_index) override;
-	void insert_item(const dsp_preset & p_data,t_size p_index) override;
-	void remove_mask(const bit_array & p_mask) override;
+	dsp_chain_config_impl(const dsp_preset& single) { m_data.emplace_back(single); }
+	dsp_chain_config_impl(dsp_preset&& single) { m_data.emplace_back(std::move(single)); }
+	dsp_chain_config_impl(std::initializer_list<dsp_preset_impl> arg) : m_data(arg) {}
+	dsp_chain_config_impl(std::vector<dsp_preset_impl>&& arg) : m_data(std::move(arg)) {}
+    
+    dsp_chain_config_impl( const self_t & arg ) : m_data(arg.m_data) {}
+    dsp_chain_config_impl( self_t && arg ) noexcept : m_data(std::move(arg.m_data)) {}
+    
+	t_size get_count() const override { return m_data.size(); }
+	const dsp_preset& get_item(t_size p_index) const override { return m_data[p_index]; }
+	void replace_item(const dsp_preset& p_data, t_size p_index) override { m_data[p_index] = p_data; }
+	void insert_item(const dsp_preset& p_data, t_size p_index) override {
+		if (p_index < m_data.size()) m_data.emplace(m_data.begin() + p_index, p_data);
+		else m_data.emplace_back(p_data);
+	}
+	void remove_mask(const bit_array& p_mask) override {pfc::remove_mask_t(m_data, p_mask);}
 	
-	const char* get_dsp_name(size_t idx) const;
-	void insert_item_v2(const dsp_preset& data, const char* dspName, size_t index);
-	void add_item_v2(const dsp_preset& data, const char* dspName);
-	void copy_v2(dsp_chain_config_impl const&);
 	pfc::string8 debug() const;
 
-	const dsp_chain_config_impl & operator=(const dsp_chain_config & p_source) {copy(p_source); return *this;}
-	const dsp_chain_config_impl & operator=(const dsp_chain_config_impl & p_source) {copy_v2(p_source); return *this;}
-	const dsp_chain_config_impl & operator=(dsp_chain_config_impl&& p_source) noexcept { m_data = std::move(p_source.m_data); p_source.m_data.remove_all(); return *this; }
+	const self_t & operator=(const dsp_chain_config & p_source) {copy(p_source); return *this;}
+    const self_t & operator=(const self_t & arg) { m_data = arg.m_data; return *this;}
+    const self_t & operator=(self_t && arg) noexcept { m_data = std::move(arg.m_data); return *this;}
+    
+	void reorder(const size_t* order, size_t count) { pfc::reorder_t(m_data, order, count); }
 
-	~dsp_chain_config_impl();
-
-	void reorder( const size_t * order, size_t count );
-
-	void supply_name(size_t idx, pfc::string8 && name) { m_data[idx]->dspName = std::move(name); }
-	const char* find_dsp_name(const GUID& guid) const;
+	void add_item(const dsp_preset& p_data) { m_data.emplace_back(p_data); }
+	void add_item(dsp_preset_impl&& p_data) { m_data.emplace_back(std::move(p_data)); }
+	void add_items(const dsp_chain_config& p_source) {
+		m_data.reserve(m_data.size() + p_source.get_count());
+		for (auto& walk : p_source) m_data.emplace_back(walk);
+	}
+	void add_items(dsp_chain_config_impl&& p_source) {
+		m_data.insert(m_data.end(), std::make_move_iterator(p_source.m_data.begin()), std::make_move_iterator(p_source.m_data.end()));
+		p_source.m_data.clear();
+	}
 private:
-
-	struct entry_t {
-		dsp_preset_impl data;
-		pfc::string8 dspName;
-	};
-
-
-	pfc::ptr_list_t<entry_t> m_data;
+	std::vector<dsp_preset_impl> m_data;
 };
 
 //! Helper.

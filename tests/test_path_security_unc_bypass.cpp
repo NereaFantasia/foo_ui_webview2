@@ -34,7 +34,7 @@
 // rewrite. Cases using RunGuardChain / RunFullChain rely on their default
 // classifier, which treats every share as remote.
 //
-// Mirrored production code (src/utils/PathSecurity.h and
+// Mirrored production code (src/domain/PathSecurity.cpp and
 // src/utils/NetworkShareResolver.h): PassBasicPathSafetyChecks (the guard
 // section and the re-classification section), ClassifyAndRewriteUnc,
 // SplitUncShareRoot, JoinLocalRoot, and ResolveToCanonicalForm (stood in for

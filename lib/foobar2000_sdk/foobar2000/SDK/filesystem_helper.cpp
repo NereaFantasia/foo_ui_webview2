@@ -273,12 +273,23 @@ pfc::string8 file_path_canonical(const char* src) {
 	return ret;
 }
 
+pfc::string8 folder_path_display(const char* src) {
+	// ugly
+	if (matchProtocol(src, "file-relative")) return afterProtocol(src);
+	
+	return file_path_display(src);
+}
 pfc::string8 file_path_display(const char* src) {
 	pfc::string8 ret;
 	filesystem::g_get_display_path(src, ret);
 	return ret;
 }
-
+pfc::string8 file_path_native(const char* src, abort_callback & a) {
+	pfc::string8 ret;
+	bool status = filesystem::g_get_native_path(src,ret,a);
+	PFC_ASSERT(status); (void)status;
+	return ret;
+}
 pfc::string8 fb2k::filename_ext( const char * path, filesystem::ptr & fs) {
     if ( fs.is_empty() || ! fs->is_our_path( path ) ) {
         fs = filesystem::tryGet( path );

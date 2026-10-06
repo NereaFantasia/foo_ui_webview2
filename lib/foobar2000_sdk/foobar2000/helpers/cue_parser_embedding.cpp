@@ -35,7 +35,7 @@ static bool is_reserved_meta_entry(const char * p_name) {
 
 static bool is_global_meta_entry(const char * p_name) {
 	static const char header[] = "cue_track";
-	return pfc::stricmp_ascii_ex(p_name,strlen(header),header,~0) != 0;
+	return pfc::stricmp_ascii_ex(p_name,strlen(header),header,SIZE_MAX) != 0;
 }
 static bool is_allowed_field(const char * p_name) {
 	return !is_reserved_meta_entry(p_name) && is_global_meta_entry(p_name);
@@ -44,13 +44,14 @@ namespace {
 
 	typedef pfc::avltree_t<pfc::string8,file_info::field_name_comparator> field_name_list;
 
-	class __get_tag__enum_fields_enumerator {
+	class get_tag__enum_fields_enumerator {
 	public:
-		__get_tag__enum_fields_enumerator(field_name_list & p_out) : m_out(p_out) {}
+		get_tag__enum_fields_enumerator(field_name_list & p_out) : m_out(p_out) {}
 		void operator() (unsigned p_trackno,const track_record & p_record) {
 			if (p_trackno > 0) p_record.m_info.enumerate_meta(*this);
 		}
 		template<typename t_value> void operator() (const char * p_name,const t_value & p_value) {
+			(void)p_value;
 			m_out.add(p_name);
 		}
 	private:
@@ -58,11 +59,11 @@ namespace {
 	};
 
 
-	class __get_tag__is_field_global_check {
+	class get_tag__is_field_global_check {
 	private:
 		typedef file_info_record::t_meta_value t_value;
 	public:
-		__get_tag__is_field_global_check(const char * p_field) : m_field(p_field), m_value(NULL), m_state(true) {}
+		get_tag__is_field_global_check(const char * p_field) : m_field(p_field), m_value(NULL), m_state(true) {}
 		
 		void operator() (unsigned p_trackno,const track_record & p_record) {
 			if (p_trackno > 0 && m_state) {
@@ -88,13 +89,13 @@ namespace {
 		bool m_state;
 	};
 
-	class __get_tag__filter_globals {
+	class get_tag__filter_globals {
 	public:
-		__get_tag__filter_globals(track_record_list const & p_tracks,file_info_record::t_meta_map & p_globals) : m_tracks(p_tracks), m_globals(p_globals) {}
+		get_tag__filter_globals(track_record_list const & p_tracks,file_info_record::t_meta_map & p_globals) : m_tracks(p_tracks), m_globals(p_globals) {}
 
 		void operator() (const char * p_field) {
 			if (is_allowed_field(p_field)) {
-				__get_tag__is_field_global_check wrapper(p_field);
+				get_tag__is_field_global_check wrapper(p_field);
 				m_tracks.enumerate(wrapper);
 				wrapper.finalize(m_globals);
 			}
@@ -104,9 +105,9 @@ namespace {
 		file_info_record::t_meta_map & m_globals;
 	};
 
-	class __get_tag__local_field_filter {
+	class get_tag__local_field_filter {
 	public:
-		__get_tag__local_field_filter(const file_info_record::t_meta_map & p_globals,file_info_record::t_meta_map & p_output) : m_globals(p_globals), m_output(p_output), m_currenttrack(0) {}
+		get_tag__local_field_filter(const file_info_record::t_meta_map & p_globals,file_info_record::t_meta_map & p_output) : m_globals(p_globals), m_output(p_output), m_currenttrack(0) {}
 		void operator() (unsigned p_trackno,const track_record & p_track) {
 			if (p_trackno > 0) {
 				m_currenttrack = p_trackno;
@@ -145,7 +146,7 @@ static void strip_redundant_track_meta(unsigned p_tracknumber,const file_info & 
 	{
 		const file_info_record::t_meta_value * val = p_meta.query_ptr(namelocal);
 		if (val == NULL) return;
-		file_info_record::t_meta_value::const_iterator iter = val->first();
+		auto iter = val->first();
 		for(t_size valwalk = 0, valcount = p_cueinfo.meta_enum_value_count(metaindex); valwalk < valcount; ++valwalk) {
 			if (iter.is_empty()) return;
 
@@ -170,7 +171,7 @@ void embeddedcue_metadata_manager::get_tag(file_info & p_info) const {
 	cue_creator::t_entry_list entries;
     m_content.enumerate([&entries] (unsigned p_trackno,const track_record & p_record) {
 		if (p_trackno > 0) {
-			cue_creator::t_entry_list::iterator iter = entries.insert_last();
+			auto iter = entries.insert_last();
 			iter->m_trackType = "AUDIO";
 			iter->m_file = p_record.m_file;
 			iter->m_flags = p_record.m_flags;
@@ -191,22 +192,22 @@ void embeddedcue_metadata_manager::get_tag(file_info & p_info) const {
 		//1. find global infos and forward them
 		{
 			field_name_list fields;
-			{ __get_tag__enum_fields_enumerator e(fields); m_content.enumerate(e);}
-            { __get_tag__filter_globals e(m_content,globals); fields.enumerate(e); }
+			m_content.enumerate(get_tag__enum_fields_enumerator(fields));
+            fields.enumerate(get_tag__filter_globals(m_content, globals));
 		}
 			
 		output.overwrite_meta(globals);
 
 		//2. find local infos
-        {__get_tag__local_field_filter e(globals,output.m_meta); m_content.enumerate(e);}
+        m_content.enumerate(get_tag__local_field_filter(globals, output.m_meta));
 	}
 		
 
 	//strip redundant titles, artists and tracknumbers that the cuesheet already contains
-	for(cue_creator::t_entry_list::const_iterator iter = entries.first(); iter.is_valid(); ++iter) {
-		strip_redundant_track_meta(iter->m_track_number,iter->m_infos,output.m_meta,"tracknumber", true);
-		strip_redundant_track_meta(iter->m_track_number,iter->m_infos,output.m_meta,"title", false);
-		strip_redundant_track_meta(iter->m_track_number,iter->m_infos,output.m_meta,"artist", false);
+	for(auto & iter : entries) {
+		strip_redundant_track_meta(iter.m_track_number,iter.m_infos,output.m_meta,"tracknumber", true);
+		strip_redundant_track_meta(iter.m_track_number,iter.m_infos,output.m_meta,"title", false);
+		strip_redundant_track_meta(iter.m_track_number,iter.m_infos,output.m_meta,"artist", false);
 	}
 
 
@@ -229,7 +230,7 @@ void embeddedcue_metadata_manager::get_tag(file_info & p_info) const {
 static bool resolve_cue_meta_name(const char * p_name,pfc::string_base & p_outname,unsigned & p_tracknumber) {
 	//"cue_trackNN_fieldname"
 	static const char header[] = "cue_track";
-	if (pfc::stricmp_ascii_ex(p_name,strlen(header),header,~0) != 0) return false;
+	if (pfc::stricmp_ascii_ex(p_name,strlen(header),header,SIZE_MAX) != 0) return false;
 	p_name += strlen(header);
 	if (!pfc::char_is_numeric(p_name[0]) || !pfc::char_is_numeric(p_name[1]) || p_name[2] != '_') return false;
 	unsigned tracknumber = pfc::atoui_ex(p_name,2);
@@ -283,9 +284,8 @@ void embeddedcue_metadata_manager::set_tag(file_info const & p_info) {
 			}
 		}
 
-		for(cue_creator::t_entry_list::const_iterator iter = entries.first(); iter.is_valid(); ) {
-			cue_creator::t_entry_list::const_iterator next = iter;
-			++next;
+		for(auto iter = entries.cfirst(); iter.is_valid(); ) {
+			auto next = iter; ++next;
 			track_record & entry = m_content.find_or_add(iter->m_track_number);
 			entry.m_file = iter->m_file;
 			entry.m_flags = iter->m_flags;
@@ -368,9 +368,9 @@ bool embeddedcue_metadata_manager::have_cuesheet() const {
 }
 
 namespace {
-	class _remap_trackno_enumerator {
+	class remap_trackno_enumerator {
 	public:
-		_remap_trackno_enumerator(unsigned p_index) : m_countdown(p_index), m_result(0) {}
+		remap_trackno_enumerator(unsigned p_index) : m_countdown(p_index), m_result(0) {}
 		template<typename t_blah> void operator() (unsigned p_trackno,const t_blah&) {
 			if (p_trackno > 0 && m_result == 0) {
 				if (m_countdown == 0) {
@@ -389,7 +389,7 @@ namespace {
 
 unsigned embeddedcue_metadata_manager::remap_trackno(unsigned p_index) const {
 	if (have_cuesheet()) {
-		_remap_trackno_enumerator wrapper(p_index);
+		remap_trackno_enumerator wrapper(p_index);
 		m_content.enumerate(wrapper);
 		return wrapper.result();
 	} else {
@@ -405,7 +405,7 @@ pfc::string8 embeddedcue_metadata_manager::build_minimal_cuesheet() const {
 	cue_creator::t_entry_list entries;
 	m_content.enumerate([&entries](unsigned p_trackno, const track_record& p_record) {
 		if (p_trackno > 0) {
-			cue_creator::t_entry_list::iterator iter = entries.insert_last();
+			auto iter = entries.insert_last();
 			iter->m_trackType = "AUDIO";
 			iter->m_file = "Image.wav";
 			iter->m_flags = p_record.m_flags;

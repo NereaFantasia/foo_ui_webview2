@@ -6,19 +6,20 @@
 // service_impl_* are top level ("sealed" in C# terms) classes; they derive from your classes but you should never derive from them.
 
 #include <utility>
+#include <atomic>
 
 namespace service_impl_helper {
 	//! Helper function to defer destruction of a service object. \n
-	//! Enqueues a main_thread_callback to release the object at a later time, escaping the current scope. \n
-	//! Important: this takes a raw service_base* - not an autoptr - to ensure that the last reference can be released in main thread. \n
+	//! Enqueues a @c main_thread_callback to release the object at a later time, escaping the current scope. \n
+	//! Important: this takes a raw @c service_base* - not an autoptr - to ensure that the last reference can be released in main thread. \n
     void release_object_delayed(service_base* obj);
 };
 
 //! Multi inheritance helper. \n
 //! Please note that use of multi inheritance is not recommended. Most components will never need this. \n
-//! This class handles multi inherited service_query() for you. \n
-//! Usage: class myclass : public service_multi_inherit<interface1, interface2> {...}; \n
-//! It's also legal to chain it: service_multi_inherit<interface1, service_multi_inherit<interface2, interface3> > and so on.
+//! This class handles multi inherited @c service_query() for you. \n
+//! Usage: `class myclass : public service_multi_inherit<interface1, interface2> {...};` \n
+//! It's also legal to chain it: `service_multi_inherit<interface1, service_multi_inherit<interface2, interface3> >` and so on.
 template<typename class1_t, typename class2_t>
 class service_multi_inherit : public class1_t, public class2_t {
 	typedef service_multi_inherit<class1_t, class2_t> self_t;
@@ -54,9 +55,9 @@ public:
 	}
 };
 
-//! Template implementing service_query walking the inheritance chain. \n
-//! Do not use directly. Each service_impl_* template utilizes it implicitly.
-template<typename class_t> class implement_service_query : public class_t 
+//! Template implementing @c service_query walking the inheritance chain. \n
+//! Do not use directly. Each @c service_impl_* template utilizes it implicitly.
+template<typename class_t> class implement_service_query : public class_t
 {
 	typedef class_t base_t;
 public:
@@ -67,8 +68,8 @@ public:
 	}
 };
 
-//! Template implementing reference-counting features of service_base. Intended for dynamic instantiation: "new service_impl_t<someclass>(param1,param2);"; should not be instantiated otherwise (no local/static/member objects) because it does a "delete this;" when reference count reaches zero. \n
-//! Note that there's no more need to use this direclty, see fb2k::service_new<>().
+//! Template implementing reference-counting features of @c service_base. Intended for dynamic instantiation: `new service_impl_t<someclass>(param1,param2);`; should not be instantiated otherwise (no local/static/member objects) because it does a `delete this;` when reference count reaches zero. \n
+//! Note that there's no more need to use this direclty, see @c fb2k::service_new<>().
 template<typename class_t>
 class service_impl_t : public implement_service_query<class_t>
 {
@@ -90,10 +91,10 @@ public:
 
 	template<typename ... arg_t> service_impl_t( arg_t && ... arg ) : base_t( std::forward<arg_t>(arg) ... ) {}
 private:
-	pfc::refcounter m_counter;
+	std::atomic_int m_counter = 0;
 };
 
-//! Alternate version of service_impl_t<> - calls this->service_shutdown() instead of delete this. \n
+//! Alternate version of @c service_impl_t<> - calls @c this->service_shutdown() instead of delete this. \n
 //! For special cases where selfdestruct on zero refcount is undesired.
 template<typename class_t>
 class service_impl_explicitshutdown_t : public implement_service_query<class_t> 
@@ -112,10 +113,10 @@ public:
 
 	template<typename ... arg_t> service_impl_explicitshutdown_t(arg_t && ... arg) : base_t(std::forward<arg_t>(arg) ...) {}
 private:
-	pfc::refcounter m_counter;
+	std::atomic_int m_counter = 0;
 };
 
-//! Template implementing dummy version of reference-counting features of service_base. Intended for static/local/member instantiation: "static service_impl_single_t<someclass> myvar(params);". Because reference counting features are disabled (dummy reference counter), code instantiating it is responsible for deleting it as well as ensuring that no references are active when the object gets deleted.\n
+//! Template implementing dummy version of reference-counting features of @c service_base. Intended for static/local/member instantiation: `static service_impl_single_t<someclass> myvar(params);`. Because reference counting features are disabled (dummy reference counter), code instantiating it is responsible for deleting it as well as ensuring that no references are active when the object gets deleted.\n
 template<typename class_t>
 class service_impl_single_t : public implement_service_query<class_t>
 {
@@ -128,13 +129,25 @@ public:
 };
 
 namespace fb2k {
-	//! The new recommended way of spawning service objects, automatically implementing reference counting and service_query on top of your class. \n
-	//! Usage: auto myObj = fb2k::service_new<myClass>(args); \n
-	//! Returned type is a service_ptr_t<myClass>
-	template<typename obj_t, typename ... arg_t> 
+	//! The new recommended way of spawning service objects, automatically implementing reference counting and @c service_query on top of your class. \n
+	//! Usage: `auto myObj = fb2k::service_new<myClass>(args);` \n
+	//! Returned type is a @C service_ptr_t<myClass>
+	template<typename obj_t, typename ... arg_t>
 	service_ptr_t<obj_t> service_new(arg_t && ... arg) {
 		return new service_impl_t< obj_t > ( std::forward<arg_t> (arg) ... );
 	}
+
+	//! Multi-inheritance-safe version of @c service_new that returns a service_base.
+	template<typename obj_t, typename ... arg_t>
+	service_ptr service_base_new(arg_t && ... arg) {
+		return (new service_impl_t< obj_t >(std::forward<arg_t>(arg) ...))->as_service_base();
+	}
+
+    template<typename class_t>
+    class _wrap_service_singleton {
+    public:
+        service_ptr_t<class_t> obj = fb2k::service_new<class_t>();
+    };
 }
 
-#define FB2K_SERVICE_SINGLETON(class_t) PFC_SINGLETON( service_impl_single_t< class_t> )
+#define FB2K_SERVICE_SINGLETON(class_t) (*PFC_SINGLETON( ::fb2k::_wrap_service_singleton<class_t> ).obj)

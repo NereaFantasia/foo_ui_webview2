@@ -1,8 +1,9 @@
 ﻿#include "pch.h"
 #include "selection/SelectionWatcher.h"
-#include "core/WebViewContext.h"
 #include "core/WebViewPanel.h"
-#include "api/PlaybackApi.h"  // for GetTrackInfo()
+#include "api/EventEmit.h"
+#include "api/TrackRow.h"
+#include "api/generated/SelectionSchema.h"
 
 // ============================================
 // SelectionWatcher Implementation
@@ -129,8 +130,12 @@ void SelectionWatcher::EmitSelectionChanged(metadb_handle_list_cref selection) {
     
     size_t count = selection.get_count();
     
+    api::selection::ChangedPayload payload;
+    payload.count = static_cast<std::int64_t>(count);
+    payload.type = typeStr;
+    payload.truncated = count > 100;
+
     // Build handles array (cap at 100 to avoid excessive payload)
-    json handles = json::array();
     size_t maxHandles = std::min(count, static_cast<size_t>(100));
     
     for (size_t i = 0; i < maxHandles; i++) {
@@ -142,33 +147,24 @@ void SelectionWatcher::EmitSelectionChanged(metadb_handle_list_cref selection) {
         if (subsong > 0) {
             handlePath += "|subsong:" + std::to_string(subsong);
         }
-        handles.push_back(handlePath);
+        payload.handles.push_back(std::move(handlePath));
     }
-    
-    // Build event data
-    json data = {
-        {"count", count},
-        {"type", typeStr},
-        {"handles", handles},
-        {"truncated", count > 100}
-    };
     
     // If only one track is selected, include full track info
     if (count == 1) {
-        data["track"] = GetTrackInfo(selection[0]);
+        payload.track = BuildTrackRow(selection[0]);
     }
-    
-    // Broadcast to all WebView instances
 
     // Add currently playing track info
     metadb_handle_ptr nowPlaying;
     if (playback_control::get()->get_now_playing(nowPlaying) && nowPlaying.is_valid()) {
-        data["nowPlaying"] = GetTrackInfo(nowPlaying);
+        payload.nowPlaying = BuildTrackRow(nowPlaying);
     }
 
-    WebViewContext::GetInstance().BroadcastEvent("selection:changed", data);
+    // Broadcast to all WebView instances
+    api::emit::Broadcast<api::selection::events::Changed>(payload);
     
-    LOG("SelectionWatcher: Broadcast selection:changed, count=", count, ", type=", typeStr.c_str());
+    LOG("SelectionWatcher: Broadcast ", api::selection::events::Changed::kName, ", count=", count, ", type=", typeStr.c_str());
 }
 
 // ============================================

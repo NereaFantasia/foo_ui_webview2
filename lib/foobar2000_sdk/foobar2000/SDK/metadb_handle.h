@@ -225,10 +225,20 @@ namespace metadb_handle_list_helper {
 	void sort_by_format_get_order_v2( metadb_handle_list_cref p_list, size_t * order, const service_ptr_t<titleformat_object> & script, titleformat_hook * hook,  int direction, abort_callback & aborter );
 	void sort_by_format_v2(metadb_handle_list_ref p_list, const service_ptr_t<titleformat_object> & script, titleformat_hook * hook, int direction, abort_callback & aborter);
 
+	typedef std::function<void(pfc::string_base& ret, size_t idx, metadb_v2_rec_t const & rec, titleformat_hook* pHook)> sortFormatter_t;
 	struct sorter_t {
-		service_ptr_t < titleformat_object > obj;
+		service_ptr_t<titleformat_object> obj;
 		int direction = 1;
 		titleformat_hook* hook = nullptr;
+
+		// 2025-12 additions
+
+		//! Optional, allows something else than plain metadb_handle methods to be called for formatting.\n
+		//! Must be thread-safe - may be called from worker threads spawned by sort_by_format() while caller is blocked.\n
+		//! If formatter is supplied, .obj member is optional and can be null.
+		sortFormatter_t formatter; 
+		//! Relevant if .obj member is null. Set to indicate that metadb info is required (lighter codepath is used if not).
+		bool needMetadbInfo = false; // relevant if obj is null
 	};
 
 	//! Late-2023 addition (new fb2k not required) \n
@@ -287,6 +297,7 @@ public:
 
 	t_self & operator+=(const t_interface & source) { this->add_items(source); return *this;}
 	t_self & operator+=(const metadb_handle_ptr & source) { this->add_item(source); return *this;}
+	t_self & operator+=(metadb_handle_ptr&& source) { this->add_item(std::move(source)); return *this; }
 
 	bool extract_single_path(const char * &path) const {return metadb_handle_list_helper::extract_single_path(*this, path);}
 };
@@ -311,5 +322,10 @@ namespace fb2k {
 	pfc::string_formatter formatTrackList( metadb_handle_list_cref );
 	pfc::string_formatter formatTrackTitle(metadb_handle_ptr item, const char * script = "%title%" );
 	pfc::string_formatter formatTrackTitle(metadb_handle_ptr item,service_ptr_t<class titleformat_object> script);
+
+    using ::metadb_handle;
+    using ::metadb_handle_ptr;
+    using ::metadb_handle_list_cref;
+    using ::metadb_handle_list_ref;
 }
 

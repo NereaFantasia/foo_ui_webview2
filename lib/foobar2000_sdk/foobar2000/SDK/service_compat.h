@@ -33,6 +33,9 @@ public:
 
 	//nonconst version to allow sorting/bsearching; do not abuse
 	t_ptr & operator[](t_size p_index) {return m_data[p_index];}
+
+	auto begin() const { return m_data.begin(); }
+	auto end() const { return m_data.end(); }
 private:
 	pfc::array_t<t_ptr> m_data;
 };

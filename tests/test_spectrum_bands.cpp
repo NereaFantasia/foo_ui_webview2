@@ -535,3 +535,189 @@ TEST(SpectrumBandsRange, RangeAboveNyquistYieldsSilence) {
     for (float v : w) EXPECT_EQ(v, 0.0f);
     for (float v : d) EXPECT_EQ(v, kDbBandsFloor);
 }
+
+// ---- 原始频点（docs/audio-visualization/SPECTRUM_BINS_SPEC.md B2 / B3 / B5 / B6、§8 A-B1–A-B4） ----
+
+using fb2k_spectrum::ComputeDbBins;
+using fb2k_spectrum::DbBins;
+using fb2k_spectrum::DbBinSpan;
+using fb2k_spectrum::FindDbBinSpan;
+using fb2k_spectrum::SpectrumChannels;
+
+namespace {
+
+// 取整后的值乘 100 应是整数；按 double 容差比，避开 -63.84 * 100 的浮点尾数。
+bool IsOnDbStep(double v) {
+    const double scaled = v * 100.0;
+    return std::fabs(scaled - std::round(scaled)) < 1e-6;
+}
+
+}  // namespace
+
+// A-B1：48 kHz、8192 点，频点宽 5.859375 Hz。缺省区间从频点 4（23.4 Hz）到最高的 4095；
+// [500, 2000) 从 86（503.9 Hz）到 341（1998.0 Hz）；整个高于 Nyquist 的区间没有频点。
+TEST(SpectrumDbBins, SpanFollowsTheRange) {
+    const DbBinSpan full = FindDbBinSpan(4096, 48000, 8192);
+    EXPECT_EQ(full.first, 4u);
+    EXPECT_EQ(full.count, 4092u);
+    EXPECT_EQ(full.first + full.count - 1, 4095u);
+
+    const DbBinSpan narrow = FindDbBinSpan(4096, 48000, 8192, 500.0, 2000.0);
+    EXPECT_EQ(narrow.first, 86u);
+    EXPECT_EQ(narrow.count, 256u);
+
+    const DbBinSpan above = FindDbBinSpan(4096, 48000, 8192, 30000.0, 40000.0);
+    EXPECT_EQ(above.first, 0u);
+    EXPECT_EQ(above.count, 0u);
+
+    // 65536 点：频点 28（20.5 Hz）起到 32767
+    const DbBinSpan large = FindDbBinSpan(32768, 48000, 65536);
+    EXPECT_EQ(large.first, 28u);
+    EXPECT_EQ(large.count, 32740u);
+
+    // 采样率 0 按 44100 处理，与两个分带函数一致
+    const DbBinSpan zero = FindDbBinSpan(4096, 0, 8192);
+    const DbBinSpan fallback = FindDbBinSpan(4096, 44100, 8192);
+    EXPECT_EQ(zero.first, fallback.first);
+    EXPECT_EQ(zero.count, fallback.count);
+}
+
+// 输出数组与选点一致：长度等于频点数，firstBin 是第一个频点；没有频点时数组为空。
+TEST(SpectrumDbBins, ArraysFollowTheSpan) {
+    const auto data = MakeMagnitudes(4096, 2);
+    DbBins out;
+    ComputeDbBins(data.data(), 4096, 2, 48000, 8192, SpectrumChannels::Mix, out, 500.0, 2000.0);
+    EXPECT_EQ(out.firstBin, 86u);
+    EXPECT_EQ(out.mix.size(), 256u);
+    EXPECT_TRUE(out.left.empty());
+    EXPECT_TRUE(out.right.empty());
+
+    ComputeDbBins(data.data(), 4096, 2, 48000, 8192, SpectrumChannels::Stereo, out, 500.0, 2000.0);
+    EXPECT_EQ(out.firstBin, 86u);
+    EXPECT_TRUE(out.mix.empty());
+    EXPECT_EQ(out.left.size(), 256u);
+    EXPECT_EQ(out.right.size(), 256u);
+
+    ComputeDbBins(data.data(), 4096, 2, 48000, 8192, SpectrumChannels::Mix, out, 30000.0, 40000.0);
+    EXPECT_EQ(out.firstBin, 0u);
+    EXPECT_TRUE(out.mix.empty());
+
+    ComputeDbBins(data.data(), 4096, 0, 48000, 8192, SpectrumChannels::Mix, out);
+    EXPECT_EQ(out.firstBin, 0u);
+    EXPECT_TRUE(out.mix.empty());
+}
+
+// A-B2：同一份频谱，任一有频点落入的频带，把带内频点按功率相加，等于 'db' 档该带的读数。
+// 每个频点取整误差不超过 0.005 dB，求和后仍不超过它；'db' 档写成 float 另有约 1e-5 dB。
+TEST(SpectrumDbBins, BinPowersSumToDbBands) {
+    const unsigned sampleRate = 48000;
+    const int fftSize = 8192;
+    const size_t bins = fftSize / 2;
+    const int bands = 256;
+    const double binWidth = static_cast<double>(sampleRate) / fftSize;
+    const auto data = MakeMagnitudes(bins, 2);
+
+    std::vector<float> bandDb;
+    ComputeDbBands(data.data(), bins, 2, sampleRate, fftSize, bands, bandDb);
+    DbBins binDb;
+    ComputeDbBins(data.data(), bins, 2, sampleRate, fftSize, SpectrumChannels::Mix, binDb);
+    ASSERT_FALSE(binDb.mix.empty());
+
+    std::vector<double> power(bands, 0.0);
+    std::vector<int> count(bands, 0);
+    for (size_t i = 0; i < binDb.mix.size(); ++i) {
+        const double freq = static_cast<double>(binDb.firstBin + i) * binWidth;
+        const int b = DbBandOf(sampleRate, bands, freq);
+        power[b] += DbToPower(static_cast<float>(binDb.mix[i]));
+        ++count[b];
+    }
+    int compared = 0;
+    for (int b = 0; b < bands; ++b) {
+        if (count[b] == 0) continue;  // 空带靠插值，不守恒
+        EXPECT_NEAR(PowerToDb(power[b]), bandDb[b], 0.006) << "band " << b;
+        ++compared;
+    }
+    EXPECT_GT(compared, 150);
+}
+
+// A-B3：'stereo' 左右各取一路，只有左声道有信号时右路全是下限；'mix' 取两路功率的平均。
+TEST(SpectrumDbBins, StereoSplitsChannels) {
+    const size_t bins = 4096;
+    const size_t k = 171;  // 1001.95 Hz
+    std::vector<double> data(bins * 2, 0.0);
+    data[k * 2] = 0.5;
+
+    DbBins stereo;
+    ComputeDbBins(data.data(), bins, 2, 48000, 8192, SpectrumChannels::Stereo, stereo);
+    ASSERT_GT(k, stereo.firstBin);
+    const size_t i = k - stereo.firstBin;
+    EXPECT_NEAR(stereo.left[i], PowerToDb(0.25), 0.005);
+    for (double v : stereo.right) EXPECT_EQ(v, static_cast<double>(kDbBandsFloor));
+
+    DbBins mix;
+    ComputeDbBins(data.data(), bins, 2, 48000, 8192, SpectrumChannels::Mix, mix);
+    EXPECT_NEAR(mix.mix[i], PowerToDb(0.125), 0.005);
+}
+
+// A-B3：单声道频谱配 'stereo' 时右路就是左路。
+TEST(SpectrumDbBins, MonoStereoDuplicatesLeft) {
+    const auto data = MakeMagnitudes(4096, 1);
+    DbBins out;
+    ComputeDbBins(data.data(), 4096, 1, 48000, 8192, SpectrumChannels::Stereo, out);
+    ASSERT_FALSE(out.left.empty());
+    EXPECT_EQ(out.left, out.right);
+}
+
+// A-B3：三声道时 'stereo' 只用前两路，'mix' 平均全部三路。
+TEST(SpectrumDbBins, ExtraChannelsOnlyEnterTheMix) {
+    const size_t bins = 4096;
+    const size_t k = 400;
+    std::vector<double> data(bins * 3, 0.0);
+    data[k * 3 + 2] = 0.6;  // 只有第三路有信号
+
+    DbBins stereo, mix;
+    ComputeDbBins(data.data(), bins, 3, 48000, 8192, SpectrumChannels::Stereo, stereo);
+    ComputeDbBins(data.data(), bins, 3, 48000, 8192, SpectrumChannels::Mix, mix);
+    for (double v : stereo.left) EXPECT_EQ(v, static_cast<double>(kDbBandsFloor));
+    for (double v : stereo.right) EXPECT_EQ(v, static_cast<double>(kDbBandsFloor));
+    EXPECT_NEAR(mix.mix[k - mix.firstBin], PowerToDb(0.36 / 3.0), 0.005);
+}
+
+// A-B4：每个值都落在 0.01 dB 的格点上，零功率频点恰为下限。
+TEST(SpectrumDbBins, ValuesAreRoundedAndFloored) {
+    auto data = MakeMagnitudes(4096, 2);
+    for (size_t k = 1000; k < 1010; ++k) {
+        data[k * 2] = 0.0;
+        data[k * 2 + 1] = 0.0;
+    }
+    DbBins out;
+    ComputeDbBins(data.data(), 4096, 2, 48000, 8192, SpectrumChannels::Mix, out);
+    ASSERT_FALSE(out.mix.empty());
+    for (double v : out.mix) {
+        EXPECT_TRUE(IsOnDbStep(v)) << v;
+        EXPECT_GE(v, static_cast<double>(kDbBandsFloor));
+    }
+    for (size_t k = 1000; k < 1010; ++k) {
+        EXPECT_EQ(out.mix[k - out.firstBin], static_cast<double>(kDbBandsFloor));
+    }
+}
+
+// float 与 double 两个实例：样本先转成 double 再算，同样的样本值给出逐位相同的结果。
+TEST(SpectrumDbBins, FloatAndDoubleSamplesAgree) {
+    const auto wide = MakeMagnitudes(4096, 2);
+    std::vector<float> narrow(wide.size());
+    std::vector<double> roundTripped(wide.size());
+    for (size_t i = 0; i < wide.size(); ++i) {
+        narrow[i] = static_cast<float>(wide[i]);
+        roundTripped[i] = narrow[i];
+    }
+    for (SpectrumChannels mode : {SpectrumChannels::Mix, SpectrumChannels::Stereo}) {
+        DbBins f, d;
+        ComputeDbBins(narrow.data(), 4096, 2, 44100, 8192, mode, f);
+        ComputeDbBins(roundTripped.data(), 4096, 2, 44100, 8192, mode, d);
+        EXPECT_EQ(f.firstBin, d.firstBin);
+        EXPECT_EQ(f.mix, d.mix);
+        EXPECT_EQ(f.left, d.left);
+        EXPECT_EQ(f.right, d.right);
+    }
+}

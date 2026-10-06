@@ -31,10 +31,8 @@ namespace pfc {
 		return u.v;
 	}
 
-	float audio_math::decodeFloat16(uint16_t source) {
-		const unsigned fractionBits = 10;
-		const unsigned widthBits = 16;
-		typedef uint16_t source_t;
+	template<typename source_t>
+	static float decodeAnyFloat(source_t source, unsigned fractionBits, unsigned widthBits) {
 
 		/*	typedef uint64_t out_t; typedef double retval_t;
 			enum {
@@ -44,11 +42,10 @@ namespace pfc {
 			};*/
 
 		typedef uint32_t out_t; typedef float retval_t;
-		enum {
+		constexpr unsigned
 			outExponent = 8,
 			outFraction = 23,
-			outExponentShift = (1 << (outExponent - 1)) - 1
-		};
+			outExponentShift = (1 << (outExponent - 1)) - 1;
 
 		const unsigned exponentBits = widthBits - fractionBits - 1;
 		// 1 bit sign | exponent | fraction
@@ -66,7 +63,20 @@ namespace pfc {
 		int shift = (int)outFraction - (int)fractionBits;
 		if (shift < 0) output |= (out_t)(fraction >> -shift);
 		else output |= (out_t)(fraction << shift);
-		return *(retval_t*)&output / pfc::audio_math::float16scale;
+		return *(retval_t*)&output;
+
+	}
+
+	float audio_math::decodeFloat16(uint16_t source) {
+		const unsigned fractionBits = 10;
+		const unsigned widthBits = 16;
+		return decodeAnyFloat(source, fractionBits, widthBits) / pfc::audio_math::float16scale;
+	}
+
+	float audio_math::decodeFloat8(uint8_t source) {
+		const unsigned fractionBits = 3;
+		const unsigned widthBits = 8;
+		return decodeAnyFloat(source, fractionBits, widthBits) / pfc::audio_math::float8scale;
 	}
 
 	unsigned audio_math::bitrate_kbps(uint64_t fileSize, double duration) {

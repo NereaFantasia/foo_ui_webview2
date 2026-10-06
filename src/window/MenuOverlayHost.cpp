@@ -3,6 +3,8 @@
 #include "window/WindowManager.h"
 #include "core/WebViewContext.h"
 #include "api/BridgeCore.h"
+#include "api/EventEmit.h"
+#include "api/generated/MenuSchema.h"
 #include "webview/WebViewHost.h"
 #include "utils/GuidUtils.h"
 #include "utils/I18n.h"
@@ -147,7 +149,8 @@ bool MenuOverlayHost::EnsureCreated() {
 
 std::string MenuOverlayHost::Show(const json& items, int screenX, int screenY,
                                   SelectSink onSelect, DismissSink onDismiss,
-                                  const MenuShowOptions& opts, ValueSink onValue) {
+                                  const MenuShowOptions& opts, ValueSink onValue,
+                                  const MenuCaller& caller) {
     PFC_ASSERT(core_api::is_main_thread());
     if (!EnsureCreated()) {
         return std::string();
@@ -165,6 +168,8 @@ std::string MenuOverlayHost::Show(const json& items, int screenX, int screenY,
     valueSink_ = std::move(onValue);
     ownerMode_ = static_cast<bool>(selectSink_) || static_cast<bool>(dismissSink_)
               || static_cast<bool>(valueSink_);
+    // 旧菜单的 dismiss 已在上面的 ForceHideImmediate 里按旧 caller 发出，这里才换成新的。
+    caller_ = caller;
     windowModel_ = opts.windowModel;  // 窗口几何模型（与 ownerMode_ 正交）
     overlayModel_ = opts.overlayModel;  // DOM 输入模型（与 windowModel_ / ownerMode_ 正交）
     currentCss_ = opts.css;            // 前端样式接管（S-CSS）：本次 show 的前端 CSS（每次 show 覆盖即复位）
@@ -219,6 +224,7 @@ std::string MenuOverlayHost::Show(const json& items, int screenX, int screenY,
         dismissSink_ = nullptr;
         valueSink_ = nullptr;
         ownerMode_ = false;
+        caller_ = {};
         console::print("[MenuOverlayHost] Show aborted: opaque token assignment failed");
         return std::string();
     }
@@ -423,14 +429,16 @@ void MenuOverlayHost::FinalizeHide(const std::string& reason) {
     currentCssReplace_ = false;
 
     // owner-mode：dismiss 改走 sink（tray 默认无 sink = 原生菜单关闭不发事件），
-    // 不发公共 menu:dismiss；menu.* 普通模式维持现状。
-    // sink 生命周期：本次 show 结束即释放（避免泄漏到下次 menu.show）。
+    // 不发公共 menu:dismiss；menu.* 普通模式把 menu:dismiss 发给本次菜单的 caller。
+    // sink 与 caller 的生命周期：本次 show 结束即释放（避免泄漏到下次 menu.show）。
     const bool wasOwnerMode = ownerMode_;
     DismissSink dismissSink = dismissSink_;
+    const MenuCaller caller = caller_;
     selectSink_ = nullptr;
     dismissSink_ = nullptr;
     valueSink_ = nullptr;
     ownerMode_ = false;
+    caller_ = {};
 
     KillWatchdog();
     KillMeasureTimer();
@@ -460,10 +468,10 @@ void MenuOverlayHost::FinalizeHide(const std::string& reason) {
             try { dismissSink(reason); } catch (...) {}
         }
     } else {
-        BridgeCore::GetInstance().EmitEvent("menu:dismiss", {
-            {"menuId", closedId},
-            {"reason", reason}
-        });
+        api::menu::DismissPayload payload;
+        payload.menuId = closedId;
+        payload.reason = reason;
+        api::emit::ToCaller<api::menu::events::Dismiss>(caller.windowId, caller.hwnd, payload);
     }
     console::printf("[MenuOverlayHost] FinalizeHide id=%s reason=%s owner=%d",
                     closedId.c_str(), reason.c_str(), (int)wasOwnerMode);
@@ -501,11 +509,11 @@ void MenuOverlayHost::OnSelect(const std::string& token) {
             try { selectSink_(*action); } catch (...) {}
         }
     } else {
-        // 公共 menu.show：仅发索引里的 publicId（永不回 token）
-        BridgeCore::GetInstance().EmitEvent("menu:select", {
-            {"menuId", menuId},
-            {"itemId", action->publicId}
-        });
+        // 公共 menu.show：仅发索引里的 publicId（永不回 token），发回打开菜单的页面
+        api::menu::SelectPayload payload;
+        payload.menuId = menuId;
+        payload.itemId = action->publicId;
+        api::emit::ToCaller<api::menu::events::Select>(caller_.windowId, caller_.hwnd, payload);
     }
     console::printf("[MenuOverlayHost] Select id=%s item=%s owner=%d",
                     menuId.c_str(), action->publicId.c_str(), (int)ownerMode_);
@@ -530,11 +538,11 @@ void MenuOverlayHost::OnValueChanged(const std::string& token, int value) {
     } else {
         // 公共 menu.show：与 menu:select 同口径，仅发索引里的 publicId（永不回 token）。
         // 值变更不关闭菜单，故此处不调 Hide。
-        BridgeCore::GetInstance().EmitEvent("menu:valueChanged", {
-            {"menuId", currentMenuId_},
-            {"itemId", *publicId},
-            {"value", value}
-        });
+        api::menu::ValueChangedPayload payload;
+        payload.menuId = currentMenuId_;
+        payload.itemId = *publicId;
+        payload.value = value;
+        api::emit::ToCaller<api::menu::events::ValueChanged>(caller_.windowId, caller_.hwnd, payload);
     }
     console::printf("[MenuOverlayHost] ValueChanged item=%s value=%d owner=%d",
                     publicId->c_str(), value, (int)ownerMode_);

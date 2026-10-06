@@ -57,40 +57,8 @@ inline t_size MulDiv_Size(t_size x,t_size y,t_size z) {return (t_size) ( ((t_uin
 #define pfc_infinite (~0)
 
 namespace pfc {
-	const t_uint16 infinite16 = (t_uint16)(~0);
-	const t_uint32 infinite32 = (t_uint32)(~0);
-	const t_uint64 infinite64 = (t_uint64)(~0);
-	const t_size infinite_size = (t_size)(~0);
-
-	template<typename T> class int_specs_t;
-
-	template<typename T>
-	class int_specs_signed_t {
-	public:
-		inline static T get_min() {return ((T)1<<(sizeof(T)*8-1));}
-		inline static T get_max() {return ~((T)1<<(sizeof(T)*8-1));}
-		enum {is_signed = true};
-	};
-
-	template<typename T>
-	class int_specs_unsigned_t {
-	public:
-		inline static T get_min() {return (T)0;}
-		inline static T get_max() {return (T)~0;}
-		enum {is_signed = false};
-	};
-
-	template<> class int_specs_t<char> : public int_specs_signed_t<char> {};
-	template<> class int_specs_t<unsigned char> : public int_specs_unsigned_t<unsigned char> {};
-	template<> class int_specs_t<short> : public int_specs_signed_t<short> {};
-	template<> class int_specs_t<unsigned short> : public int_specs_unsigned_t<unsigned short> {};
-	template<> class int_specs_t<int> : public int_specs_signed_t<int> {};
-	template<> class int_specs_t<unsigned int> : public int_specs_unsigned_t<unsigned int> {};
-	template<> class int_specs_t<long> : public int_specs_signed_t<long> {};
-	template<> class int_specs_t<unsigned long> : public int_specs_unsigned_t<unsigned long> {};
-	template<> class int_specs_t<long long> : public int_specs_signed_t<long long> {};
-	template<> class int_specs_t<unsigned long long> : public int_specs_unsigned_t<unsigned long long> {};
-	
-	template<> class int_specs_t<wchar_t> : public int_specs_unsigned_t<wchar_t> {};
-
+	constexpr t_uint16 infinite16 = UINT16_MAX;
+    constexpr t_uint32 infinite32 = UINT32_MAX;
+    constexpr t_uint64 infinite64 = UINT64_MAX;
+	constexpr t_size infinite_size = SIZE_MAX;
 };

@@ -301,7 +301,10 @@ namespace {
 				WIN32_OP(edit.Create(*this, rcClient, NULL, style, 0, ID_MYEDIT) != NULL);
 				edit.SetFont(parent.GetFont());
 
-				if ((m_flags & KFlagDark) != 0) DarkMode::DarkenEditLite(edit);
+				{
+					DarkMode::CHooks h(m_dark);
+					h.AddEditBox(edit);
+				}
 
 				if (m_ACData.is_valid()) InitializeSimpleAC(edit, m_ACData.get_ptr(), m_ACOpts);
 				m_edit.SubclassWindow(edit);
@@ -324,10 +327,10 @@ namespace {
 			return m_hWnd;
 		}
 
-		InPlaceEditContainer(const RECT & p_rect, t_uint32 p_flags, pfc::rcptr_t<pfc::string_base> p_content, reply_t p_notify, IUnknown * ACData, DWORD ACOpts)
+		InPlaceEditContainer(const RECT & p_rect, t_uint32 p_flags, pfc::rcptr_t<pfc::string_base> p_content, reply_t p_notify, IUnknown * ACData, DWORD ACOpts, DarkMode::param_t const & dark)
 			: m_content(p_content), m_notify(p_notify), m_initRect(p_rect), 
 			m_flags(p_flags), m_ACData(ACData), m_ACOpts(ACOpts),
-			m_edit(p_flags)
+			m_edit(p_flags), m_dark(dark)
 		{
 		}
 
@@ -407,6 +410,7 @@ namespace {
 
 		const pfc::com_ptr_t<IUnknown> m_ACData;
 		const DWORD m_ACOpts;
+		const DarkMode::param_t m_dark;
 	};
 
 }
@@ -493,17 +497,17 @@ bool InPlaceEdit::TableEditAdvance(unsigned & p_item, unsigned & p_column, unsig
 	return true;
 }
 
-HWND InPlaceEdit::StartEx(HWND p_parentwnd, const RECT & p_rect, unsigned p_flags, pfc::rcptr_t<pfc::string_base> p_content, reply_t p_notify, IUnknown * ACData, DWORD ACOpts) {
+HWND InPlaceEdit::StartEx(HWND p_parentwnd, const RECT & p_rect, unsigned p_flags, pfc::rcptr_t<pfc::string_base> p_content, reply_t p_notify, IUnknown * ACData, DWORD ACOpts, DarkMode::param_t const & dark) {
 	try {
 		PFC_ASSERT((CWindow(p_parentwnd).GetWindowLong(GWL_STYLE) & WS_CLIPCHILDREN) != 0);
-		return (new CWindowCreateAndDelete<InPlaceEditContainer>(p_parentwnd, p_rect, p_flags, p_content, p_notify, ACData, ACOpts))->GetEditBox();
+		return (new CWindowCreateAndDelete<InPlaceEditContainer>(p_parentwnd, p_rect, p_flags, p_content, p_notify, ACData, ACOpts, dark))->GetEditBox();
 	} catch (...) {
 		fail(p_notify);
 		return NULL;
 	}
 }
 
-void InPlaceEdit::Start_FromListViewEx(HWND p_listview, unsigned p_item, unsigned p_subitem, unsigned p_linecount, unsigned p_flags, pfc::rcptr_t<pfc::string_base> p_content, reply_t p_notify) {
+void InPlaceEdit::Start_FromListViewEx(HWND p_listview, unsigned p_item, unsigned p_subitem, unsigned p_linecount, unsigned p_flags, pfc::rcptr_t<pfc::string_base> p_content, reply_t p_notify, DarkMode::param_t const & dark) {
 	try {
 		ListView_EnsureVisible(p_listview, p_item, FALSE);
 		RECT itemrect;
@@ -514,7 +518,7 @@ void InPlaceEdit::Start_FromListViewEx(HWND p_listview, unsigned p_item, unsigne
 			itemrect.bottom = itemrect.top + (itemrect.bottom - itemrect.top) * p_linecount;
 		}
 
-		StartEx(p_listview, itemrect, p_flags | (multiline ? KFlagMultiLine : 0), p_content, p_notify);
+		StartEx(p_listview, itemrect, p_flags | (multiline ? KFlagMultiLine : 0), p_content, p_notify, nullptr, 0, dark);
 	} catch (...) {
 		fail(p_notify);
 	}

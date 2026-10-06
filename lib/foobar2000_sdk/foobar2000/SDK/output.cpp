@@ -42,9 +42,15 @@ bool output_entry::g_find( const GUID & outputID, output_entry::ptr & outObj ) {
 	return false;
 }
 
+output_entry::ptr output_entry::g_try_find(const GUID& outputID) {
+	for (auto obj : enumerate()) {
+		if (obj->get_guid() == outputID) return obj;
+	}
+	return nullptr;
+}
 output_entry::ptr output_entry::g_find( const GUID & outputID ) {
-	output_entry::ptr ret;
-	if (!g_find( outputID, ret ) ) throw exception_output_module_not_found();
+	auto ret = g_try_find(outputID);
+	if ( ret.is_empty() ) throw exception_output_module_not_found();
 	return ret;
 }
 
@@ -74,6 +80,43 @@ size_t output::process_samples_v2_(const audio_chunk& c) {
 	if (v6 &= this) return v6->process_samples_v2(c);
 	this->process_samples(c);
 	return c.get_sample_count();
+}
+
+void output::hint_source_(fb2k::objRef arg) {
+	output_v7::ptr v7;
+	if (v7 &= this) v7->hint_source(arg);
+}
+
+void output::flush_changing_track_() {
+	output_v2::ptr v2;
+	if (v2 &= this) v2->flush_changing_track();
+	else this->flush();
+}
+unsigned output::get_forced_sample_rate_() {
+	output_v3::ptr v3;
+	if (v3 &= this) return v3->get_forced_sample_rate();
+	else return 0;
+}
+unsigned output::get_forced_channel_mask_() {
+	output_v5::ptr v5;
+	if (v5 &= this) return v5->get_forced_channel_mask();
+	else return 0;
+}
+
+audio_chunk::spec_t output::get_forced_spec() {
+	audio_chunk::spec_t spec;
+	spec.sampleRate = this->get_forced_sample_rate_();
+	spec.chanMask = this->get_forced_channel_mask_();
+	if (spec.chanMask) spec.chanCount = audio_chunk::g_count_channels(spec.chanMask);
+	return spec;
+}
+
+output::latencyInfo_t output::get_latency_info_() {
+	output_v8::ptr v8;
+	if (v8 &= this) return v8->get_latency_info();
+	double l = this->get_latency();
+	if (this->is_progressing_()) return { l,l };
+	else return { l,0 };
 }
 
 void output_impl::on_flush_internal() {
@@ -141,13 +184,31 @@ size_t output_impl::update_v2() {
     return m_can_write;
 }
 
+output_impl::latencySamples_t output_impl::get_latency_samples_v2() {
+	auto s = this->get_latency_samples();
+	return { .soft = s, .hard = is_progressing() ? s : 0 };
+}
+
+output_v8::latencyInfo_t output_impl::get_latency_info() {
+	latencyInfo_t ret = {};
+	if (m_incoming_spec.is_valid()) {
+		ret.latency += audio_math::samples_to_time((m_incoming.get_size() - m_incoming_ptr) / m_incoming_spec.chanCount, m_incoming_spec.sampleRate);
+	}
+	if (m_active_spec.is_valid()) {
+		auto s = this->get_latency_samples_v2();
+		ret.latency += audio_math::samples_to_time(s.soft, m_active_spec.sampleRate);
+		ret.hardQueued += audio_math::samples_to_time(s.hard, m_active_spec.sampleRate);
+	}
+	return ret;
+}
+
 double output_impl::get_latency() {
 	double ret = 0;
 	if (m_incoming_spec.is_valid()) {
 		ret += audio_math::samples_to_time( (m_incoming.get_size() - m_incoming_ptr) / m_incoming_spec.chanCount, m_incoming_spec.sampleRate );
 	}
 	if (m_active_spec.is_valid()) {
-		ret += audio_math::samples_to_time( get_latency_samples() , m_active_spec.sampleRate );
+		ret += audio_math::samples_to_time( get_latency_samples(), m_active_spec.sampleRate );
 	}
 	return ret;
 }
@@ -240,8 +301,10 @@ const GUID output_id_null =
 { 0xeeeb07de, 0xc2c8, 0x44c2, { 0x98, 0x5c, 0xc8, 0x58, 0x56, 0xd9, 0x6d, 0xa1 } };
 
 // {D41D2423-FBB0-4635-B233-7054F79814AB}
-const GUID output_id_default = 
+const GUID output_id_default =
 { 0xd41d2423, 0xfbb0, 0x4635, { 0xb2, 0x33, 0x70, 0x54, 0xf7, 0x98, 0x14, 0xab } };
+
+#ifdef FOOBAR2000_DESKTOP
 
 outputCoreConfig_t outputCoreConfig_t::defaults() {
 	outputCoreConfig_t cfg = {};
@@ -277,8 +340,7 @@ service_ptr output_manager_v2::addCallback( std::function<void() > f ) {
 	output_config_change_callback_impl * obj = new output_config_change_callback_impl();
 	obj->f = f;
  	this->addCallback( obj ); 
-	service_ptr_t<output_manager_v2> selfRef ( this );
-	return fb2k::callOnRelease( [obj, selfRef] {
+	return fb2k::callOnRelease( [obj, selfRef = fb2k::wrap_service_ptr(this)] {
 		selfRef->removeCallback( obj ); delete obj;
 	} );
 }
@@ -295,4 +357,42 @@ void output_manager::getCoreConfig(outputCoreConfig_t& out) {
 
 outputCoreConfig_t output_manager::getCoreConfig() { 
 	outputCoreConfig_t ret; getCoreConfig(ret); return ret; 
+}
+#endif // FOOBAR2000_DESKTOP
+
+bool output_entry::supports_user_bit_depth(const GUID& deviceID) {
+    // Can't use device_property_() wrapper, we handle this differently if interface not implemented
+	output_entry_v4::ptr v4;
+	if (v4 &= this) return v4->device_property(deviceID, output_props::user_bit_depth, 0, nullptr, 0) != 0;
+	return (this->get_config_flags() & flag_needs_bitdepth_config) != 0;
+}
+
+size_t output_entry::device_property_(const GUID& device, const GUID& prop, size_t arg1, void* arg2, size_t arg2size) {
+    output_entry_v4::ptr v4;
+    size_t ret = 0;
+    if (v4 &= this) {
+        ret = v4->device_property(device, prop, arg1, arg2, arg2size);
+    }
+    return ret;
+}
+
+uint32_t output_entry::default_bit_depth(const GUID& deviceID) {
+    uint32_t ret = (uint32_t) this->device_property_(deviceID, output_props::default_bit_depth, 0, nullptr, 0);
+    if ( ret == 0 ) ret = 16;
+	return ret;
+}
+
+size_t output_v6::process_samples_v2(const audio_chunk& arg) {
+	this->process_samples(arg); return arg.get_sample_count();
+
+}
+
+void output_devices_notify::toggle_notify(bool bNotify) {
+    for( auto walk : output_entry::enumerate() ) {
+        output_entry_v3::ptr v3;
+        if ( v3 &= walk ) {
+            if (bNotify) v3->add_notify(this);
+            else v3->remove_notify(this);
+        }
+    }
 }

@@ -57,17 +57,22 @@ namespace pfc {
 		PFC_NORETURN static void couldNotCreateThread();
 
 		thread();
-		~thread() {PFC_ASSERT(!isActive()); waitTillDone();}
+		~thread() noexcept {PFC_ASSERT(!isActive()); waitTillDone();}
         void start( arg_t const & arg = argCurrentThread() );
-        //! Valid thread object (created and not joined)?
-		bool isActive() const;
+        //! Valid thread object (created and not yet joined)?
+		bool isActive() const noexcept;
+		operator bool() const noexcept { return isActive(); }
         //! Joins the thread: blocks until complete, releases resources. \n
         //! After waitTillDone() returns, isActive() becomes false. \n
 		//! No-op if thread not started.
 		void waitTillDone() {close();}
+		void join() { close(); }
 #ifdef _WIN32
 		void winStart(int priority, DWORD * outThreadID); 
 		HANDLE winThreadHandle() { return m_thread; }
+		void winClose() noexcept;
+		bool winWait(DWORD timeout);
+		bool winIsFinished() { return winWait(0); }
 #else
 		pthread_t posixThreadHandle() { return m_thread; }
 #endif
@@ -98,7 +103,7 @@ namespace pfc {
 	//! Thread class using lambda entrypoint rather than function override
 	class thread2 : public thread {
 	public:
-		~thread2() { waitTillDone(); }
+		~thread2() noexcept { waitTillDone(); }
 		void startHere(std::function<void()> e);
 		void startHere(arg_t const& arg, std::function<void()> e);
 		void setEntry(std::function<void()> e);

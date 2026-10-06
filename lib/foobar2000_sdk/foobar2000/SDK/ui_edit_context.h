@@ -40,7 +40,6 @@ public:
 
 	// available if flag_linearlist is set
 	virtual void get_selection_mask(pfc::bit_array_var & out);
-
 	virtual void update_selection(const pfc::bit_array & mask, const pfc::bit_array & newVals) = 0;
 	virtual t_size get_item_count(t_size max = ~0) = 0;
 	virtual metadb_handle_ptr get_item(t_size index) = 0;
@@ -49,6 +48,8 @@ public:
 	virtual void remove_items(pfc::bit_array const & mask) = 0;
 	virtual void reorder_items(const t_size * order, t_size count) = 0;
 	virtual t_size get_selection_count(t_size max = ~0);
+	void sort_by_format(const char* spec, bool onlySelection); // helper
+	// end flag_linearlist
 
 	virtual void search() = 0;
 
@@ -56,11 +57,11 @@ public:
 	virtual void undo_restore() = 0;
 	virtual void redo_restore() = 0;
 	
+	// available if flag_linearlist and flag_insertable
 	virtual void insert_items(t_size at, metadb_handle_list_cref items, pfc::bit_array const & selection) = 0;
-
 	virtual t_size query_insert_mark() = 0;
+	// end flag_linearlist and flag_insertable
 
-	void sort_by_format(const char * spec, bool onlySelection);
 
 	//! Safely prevent destruction from worker threads (some components attempt that).
 	static bool serviceRequiresMainThreadDestructor() { return true; }

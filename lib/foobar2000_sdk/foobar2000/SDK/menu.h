@@ -58,8 +58,8 @@ public:
 	//! Executes the command. p_callback parameter is reserved for future use and should be ignored / set to null pointer.
 	virtual void execute(t_uint32 p_index,ctx_t p_callback) = 0;
 
-	static bool g_execute(const GUID & p_guid,service_ptr_t<service_base> p_callback = NULL);
-	static bool g_execute_dynamic(const GUID & p_guid, const GUID & p_subGuid,service_ptr_t<service_base> p_callback = NULL);
+	static bool g_execute(const GUID & p_guid,service_ptr_t<service_base> p_callback = nullptr);
+	static bool g_execute_dynamic(const GUID & p_guid, const GUID & p_subGuid,service_ptr_t<service_base> p_callback = nullptr);
 	static bool g_find_by_name(const char * p_name,GUID & p_guid);
 
 	FB2K_MAKE_SERVICE_INTERFACE_ENTRYPOINT(mainmenu_commands);

@@ -10,25 +10,25 @@ public:
 	//! Returns number of chapters.
 	virtual t_size get_chapter_count() const = 0;
 	//! Queries description of specified chapter.
-	//! @param p_chapter Index of chapter to query, greater or equal zero and less than get_chapter_count() value. If p_chapter value is out of valid range, results are undefined (e.g. crash).
-	//! @returns reference to file_info object describing specified chapter (length part of file_info indicates distance between beginning of this chapter and next chapter mark). Returned reference value for temporary use only, becomes invalid after any non-const operation on the chapter_list object.
+	//! @param p_chapter Index of chapter to query, greater or equal zero and less than @c get_chapter_count() value. If p_chapter value is out of valid range, results are undefined (e.g. crash).
+	//! @returns reference to @c file_info object describing specified chapter (length part of @c file_info indicates distance between beginning of this chapter and next chapter mark). Returned reference value for temporary use only, becomes invalid after any non-const operation on the @c chapter_list object.
 	virtual const file_info & get_info(t_size p_chapter) const = 0;
 	
 	//! Sets number of chapters.
 	virtual void set_chapter_count(t_size p_count) = 0;
 	//! Modifies description of specified chapter.
-	//! @param p_chapter Index of chapter to modify, greater or equal zero and less than get_chapter_count() value. If p_chapter value is out of valid range, results are undefined (e.g. crash).
-	//! @param p_info New chapter description. Note that length part of file_info is used to calculate chapter marks.
+	//! @param p_chapter Index of chapter to modify, greater or equal zero and less than @c get_chapter_count() value. If p_chapter value is out of valid range, results are undefined (e.g. crash).
+	//! @param p_info New chapter description. Note that length part of @c file_info is used to calculate chapter marks.
 	virtual void set_info(t_size p_chapter,const file_info & p_info) = 0;
 
     //! Gets first track pregap - offset into audio at which first track begins.
-    //! Not every chapterizer supports this, see chapterizer::supports_pregaps()
+    //! Not every chapterizer supports this, see @c chapterizer::supports_pregaps()
 	virtual double get_pregap() const = 0;
     //! Sets first track pregap - offset into audio at which first track begins.
-    //! Not every chapterizer supports this, see chapterizer::supports_pregaps()
+    //! Not every chapterizer supports this, see @c chapterizer::supports_pregaps()
 	virtual void set_pregap(double val) = 0;
 
-	//! Copies contents of specified chapter_list object to this object.
+	//! Copies contents of specified @c chapter_list object to this object.
 	void copy(const chapter_list & p_source);
 	
 	inline const chapter_list & operator=(const chapter_list & p_source) {copy(p_source); return *this;}
@@ -83,11 +83,12 @@ public:
 	//! @param p_abort abort_callback object signaling user aborting the operation.
 	virtual void get_chapters(const char * p_path,chapter_list & p_list,abort_callback & p_abort) = 0;
 
-    //! @returns Whether this chapterizer supports altering pregap before first track, see chapter_list::get_pregap() & set_pregap()
+    //! @returns Whether this chapterizer supports altering pregap before first track, see @c chapter_list::get_pregap() & @c set_pregap()
 	virtual bool supports_pregaps() = 0;
 
 	//! Static helper, tries to find chapterizer interface that supports specified file.
 	static bool g_find(service_ptr_t<chapterizer> & p_out,const char * p_path);
+	static chapterizer::ptr g_find(const char* p_path);
 
 	static bool g_is_pregap_capable(const char * p_path);
 };

@@ -1,4 +1,5 @@
 #pragma once
+#include "event_logger.h"
 
 PFC_DECLARE_EXCEPTION(exception_tag_not_found,exception_io_data,"Tag not found");
 
@@ -23,7 +24,7 @@ public:
 	bool open_temp_file(service_ptr_t<file>& p_out, abort_callback& p_abort) override { (void)p_out; (void)p_abort; return false; }
 };
 
-//! For internal use - call tag_processor namespace methods instead.
+//! For internal use - call @c tag_processor namespace methods instead.
 class NOVTABLE tag_processor_id3v2 : public service_base
 {
 public:
@@ -40,19 +41,27 @@ public:
 	static uint32_t g_tagsize(const void* pHeader10bytes);
 
 	bool read_v2_(file::ptr const& file, file_info& outInfo, abort_callback& abort);
+	bool read_v3_(file::ptr const& file, file_info& outInfo, event_logger::ptr const & logger, abort_callback& abort);
 
 	FB2K_MAKE_SERVICE_COREAPI(tag_processor_id3v2);
 };
 
-//! \since 2.2
+//! \since 2.24
 class NOVTABLE tag_processor_id3v2_v2 : public tag_processor_id3v2 {
 	FB2K_MAKE_SERVICE_COREAPI_EXTENSION(tag_processor_id3v2_v2, tag_processor_id3v2);
 public:
-	//! Returns bool (valid tag found or not) instead of throwing exception_tag_not_found.
+	//! Returns bool (valid tag found or not) instead of throwing @c exception_tag_not_found.
 	virtual bool read_v2(file::ptr const& file, file_info& outInfo, abort_callback& abort) = 0;
 };
 
-//! For internal use - call tag_processor namespace methods instead.
+class NOVTABLE tag_processor_id3v2_v3 : public tag_processor_id3v2_v2 {
+	FB2K_MAKE_SERVICE_COREAPI_EXTENSION(tag_processor_id3v2_v3, tag_processor_id3v2_v2);
+public:
+	//! Further extension to @c read_v2(), allows reporting of errors found within tags.
+	virtual bool read_v3(file::ptr const& file, file_info& outInfo, event_logger::ptr const& logger, abort_callback& abort) = 0;
+};
+
+//! For internal use - call @c tag_processor namespace methods instead.
 class NOVTABLE tag_processor_trailing : public service_base
 {
 public:
@@ -73,16 +82,25 @@ public:
 	void write_apev2_id3v1(const service_ptr_t<file> & p_file,const file_info & p_info,abort_callback & p_abort);
 
 	t_filesize read_v2_(const file::ptr & file, file_info& outInfo, abort_callback& abort);
+	t_filesize read_v3_(const file::ptr& file, file_info& outInfo, event_logger::ptr const & logger, abort_callback& abort);
 
 	FB2K_MAKE_SERVICE_COREAPI(tag_processor_trailing);
 };
 
-//! \since 2.2
+//! \since 2.24
 class NOVTABLE tag_processor_trailing_v2 : public tag_processor_trailing {
 	FB2K_MAKE_SERVICE_COREAPI_EXTENSION(tag_processor_trailing_v2, tag_processor_trailing);
 public:
 	//! Returns tag offset, filesize_invalid if not found - does not throw exception_tag_not_found.
 	virtual t_filesize read_v2(const file::ptr & file, file_info& outInfo, abort_callback& abort) = 0;
+};
+
+//! \since 2.26
+class NOVTABLE tag_processor_trailing_v3 : public tag_processor_trailing_v2 {
+	FB2K_MAKE_SERVICE_COREAPI_EXTENSION(tag_processor_trailing_v3, tag_processor_trailing_v2);
+public:
+	//! Further extension to `read_v2()`, allows reporting of errors found within tags.
+	virtual t_filesize read_v3(const file::ptr& file, file_info& outInfo, event_logger::ptr const& logger, abort_callback& abort) = 0;
 };
 
 namespace tag_processor {
@@ -106,19 +124,19 @@ namespace tag_processor {
 	bool remove_id3v2(const service_ptr_t<file> & p_file,abort_callback & p_abort);
 	//! Removes ID3v2 and trailing tags from specified file (not to be confused with trailing ID3v2 which are not supported).
 	void remove_id3v2_trailing(const service_ptr_t<file> & p_file,abort_callback & p_abort);
-	//! Reads trailing tags from the file. Throws exception_tag_not_found if no tag was found.
+	//! Reads trailing tags from the file. Throws @c exception_tag_not_found if no tag was found.
 	void read_trailing(const service_ptr_t<file> & p_file,file_info & p_info,abort_callback & p_abort);
-	//! Reads trailing tags from the file. Extended version, returns offset at which parsed tags start. Throws exception_tag_not_found if no tag was found.
-	//! p_tagoffset set to offset of found tags on success.
+	//! Reads trailing tags from the file. Extended version, returns offset at which parsed tags start. Throws @c exception_tag_not_found if no tag was found.
+	//! @param p_tagoffset set to offset of found tags on success.
 	void read_trailing_ex(const service_ptr_t<file> & p_file,file_info & p_info,t_filesize & p_tagoffset,abort_callback & p_abort);
-	//! Non-throwing version of read_trailing, returns offset at which tags begin, filesize_invalid if no tags found instead of throwing exception_tag_not_found.
+	//! Non-throwing version of @c read_trailing, returns offset at which tags begin, @c filesize_invalid if no tags found instead of throwing @c exception_tag_not_found.
 	t_filesize read_trailing_nothrow(const service_ptr_t<file>& p_file, file_info& p_info, abort_callback& p_abort);
-	//! Reads ID3v2 tags from specified file. Throws exception_tag_not_found if no tag was found.
+	//! Reads ID3v2 tags from specified file. Throws @c exception_tag_not_found if no tag was found.
 	void read_id3v2(const service_ptr_t<file> & p_file,file_info & p_info,abort_callback & p_abort);
-	//! Reads ID3v2 and trailing tags from specified file (not to be confused with trailing ID3v2 which are not supported). Throws exception_tag_not_found if neither tag type was found.
+	//! Reads ID3v2 and trailing tags from specified file (not to be confused with trailing ID3v2 which are not supported). Throws @c exception_tag_not_found if neither tag type was found.
 	void read_id3v2_trailing(const service_ptr_t<file> & p_file,file_info & p_info,abort_callback & p_abort);
-	//! Non-throwing version of read_id3v2_trailing, returns bool indicating whether any tag was read instead of throwing exception_tag_not_found.
-	bool read_id3v2_trailing_nothrow(const service_ptr_t<file>& p_file, file_info& p_info, abort_callback& p_abort);
+	//! Non-throwing version of @c read_id3v2_trailing, returns bool indicating whether any tag was read instead of throwing @c exception_tag_not_found.
+	bool read_id3v2_trailing_nothrow(const service_ptr_t<file>& p_file, file_info& p_info, abort_callback& p_abort, event_logger::ptr const & logger = nullptr);
 
 	void skip_id3v2(const service_ptr_t<file> & p_file,t_filesize & p_size_skipped,abort_callback & p_abort);
     t_filesize skip_id3v2(file::ptr const & f, abort_callback & a);

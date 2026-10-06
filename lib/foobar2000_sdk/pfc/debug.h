@@ -10,7 +10,8 @@ namespace pfc {
     void debugBreak();
     [[noreturn]] void crash();
     [[noreturn]] void crashWithMessageOnStack( const char * msg );
-    void outputDebugLine(const char * msg);
+    void outputDebugLine(const char * msg); // regular, calls debugLineReceivers
+    void outputDebugLineBase(const char * msg);// INTERNAL
     
 #ifdef __APPLE__
     [[noreturn]] void appleThrowException( const char * name, const char * reason );
@@ -52,6 +53,8 @@ namespace pfc {
 
 #if PFC_DEBUG
 #define PFC_DEBUG_PRINT(...) PFC_DEBUG_PRINT_FORCED(pfc::format(__VA_ARGS__))
+#define PFC_SET_THREAD_DESCRIPTION_DEBUG(X) PFC_SET_THREAD_DESCRIPTION(X)
 #else
-#define PFC_DEBUG_PRINT(...)
+#define PFC_DEBUG_PRINT(...) PFC_NO_OP
+#define PFC_SET_THREAD_DESCRIPTION_DEBUG(X) PFC_NO_OP
 #endif

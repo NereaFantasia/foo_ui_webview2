@@ -41,6 +41,18 @@ namespace pfc {
             if ( rv ) m_state = false;
             return rv;
         }
+        void notify_abort() { m_condition.notify_all(); }
+        bool wait_abortable(std::function<bool()> fnAbort) {
+            std::unique_lock lock(m_mutex);
+            m_condition.wait(lock, [&] { return this->m_state || fnAbort(); });
+            return m_state;
+        }
+        bool wait_for_abortable(double timeout, std::function<bool()> fnAbort) {
+            if ( timeout < 0 ) return wait_abortable(fnAbort);
+            std::unique_lock lock(m_mutex);
+            m_condition.wait_for(lock, std::chrono::duration<double>(timeout), [&] { return this->m_state || fnAbort(); });
+            return m_state;
+        }
     private:
         volatile bool m_state = false;
         std::condition_variable m_condition;

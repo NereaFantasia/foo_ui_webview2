@@ -4,72 +4,22 @@
 #include "pch.h"
 #include "core/WebViewPanel.h"
 #include "core/WebViewContext.h"
-#include "core/SecurityConfig.h"
-#include "core/PreferencesPage.h"
+#include "settings/SecurityConfig.h"
+#include "prefs/PreferencesPage.h"
 #include "webview/WebViewHost.h"
 #include "webview/dnd/DndRegistrar.h"
 #include "api/BridgeCore.h"
+#include "api/EventEmit.h"
+#include "api/PortHub.h"
+#include "api/generated/PanelSchema.h"
+#include "api/generated/WebviewSchema.h"
 #include "window/WindowChromeTrace.h"
-
-// API 注册函数声明
-#include "api/PlaybackApi.h"
-#include "api/ConfigApi.h"
-#include "api/PlaylistApi.h"
-#include "api/LibraryApi.h"
-#include "api/WindowApi.h"
-#include "api/ArtworkApi.h"
-#include "api/FileApi.h"
-#include "api/DialogApi.h"
-#include "api/ClipboardApi.h"
-#include "api/ShellApi.h"
-#include "api/HttpApi.h"
-#include "api/KeyboardApi.h"
-#include "api/UiApi.h"
-#include "api/CursorApi.h"
-#include "api/LyricsApi.h"
-#include "api/MetadataApi.h"
-#include "api/AudioApi.h"
-#include "api/DspApi.h"
-#include "api/OutputApi.h"
-#include "api/ConsoleApi.h"
-#include "api/MiscApi.h"
-#include "api/MenuApi.h"
-#include "api/DndApi.h"
-#include "api/QueueApi.h"
-#include "api/DiscoveryApi.h"
-#include "api/ReplayGainApi.h"
-#include "api/PlaycountApi.h"
-#include "api/TitleformatApi.h"
-#include "api/SelectionApi.h"
-#include "api/TrayApi.h"
-#include "api/TaskbarApi.h"
-#include "api/PortApi.h"
-#include "api/PluginRegistry.h"
-// 回调Initializing函数声明
-#include "callbacks/PlaybackCallback.h"
-#include "callbacks/PlaylistCallback.h"
-#include "callbacks/LibraryCallback.h"
-#include "callbacks/MetadbCallback.h"
+#include "core/PanelCrashDiagnostics.h"
+#include "core/FrontendDirectoryResolver.h"
 
 // Selection Watcher
 #include "selection/SelectionWatcher.h"
 #include "selection/SelectionHolder.h"
-
-// ============================================
-// 辅助函数：获取组件所在目录
-// ============================================
-static std::wstring GetComponentDirectory() {
-    wchar_t path[MAX_PATH];
-    HMODULE hModule = core_api::get_my_instance();
-    if (GetModuleFileNameW(hModule, path, MAX_PATH) > 0) {
-        std::wstring fullPath(path);
-        size_t lastSlash = fullPath.find_last_of(L"\\/");
-        if (lastSlash != std::wstring::npos) {
-            return fullPath.substr(0, lastSlash);
-        }
-    }
-    return L"";
-}
 
 // ============================================
 // WebViewPanel 实现
@@ -127,6 +77,15 @@ bool WebViewPanel::InitializeWebView(HWND hwnd, WebViewPanelMode mode) {
         if (weakAlive.expired()) return;
         if (myGeneration != webViewGeneration_) return;
         HandleNavigationCompleted(success);
+    });
+
+    // 页面开始顶层导航时，旧页面打开的端口随它关闭。回调在新文档存在之前、UI 线程上
+    // 运行，新页面的消息同样在 UI 线程上分发且只能晚于它，所以新页面重新打开的端口不会被清掉。
+    webView_->SetNavigationStartingCallback([this, myGeneration, weakAlive]() {
+        if (weakAlive.expired()) return;
+        if (myGeneration != webViewGeneration_) return;
+        PortHub::Instance().CleanupPagePorts(hwnd_);
+        OnTopLevelNavigationStarting();
     });
 
     // 进程崩溃回调（Visual Hosting 模式下进程崩溃只剩空窗口的诊断/恢复入口）
@@ -207,6 +166,7 @@ void WebViewPanel::DestroyWebView() {
         // 在销毁窗口前先断开宿主回调，避免启动隐藏阶段的延迟消息回灌到已关闭窗口。
         webView_->SetMessageHandler({});
         webView_->SetNavigationCompletedCallback({});
+        webView_->SetNavigationStartingCallback({});
         webView_->SetFocusChangedCallback({});
         webView_->SetProcessFailedCallback({});
     }
@@ -214,6 +174,9 @@ void WebViewPanel::DestroyWebView() {
     if (hwnd_ && webViewReady_) {
         // Unregister from WebViewContext
         WebViewContext::GetInstance().UnregisterInstance(hwnd_);
+        // 页面随 WebView 一起消失，它打开的端口也关闭；先注销再清理，
+        // port:disconnected 不再投给这个正在销毁的页面。
+        PortHub::Instance().CleanupPagePorts(hwnd_);
     }
     
     webView_.reset();
@@ -237,10 +200,14 @@ void WebViewPanel::ResizeWebView() {
     webView_->Resize(clientRect);
 }
 
+// 宿主提交的每次导航都取代尚未结束的开发服务器导航：被取代的那次以失败结束时不该触发回退。
+// NavigateToString 取消旧导航时，旧导航的完成事件先于新导航的开始事件到达，按导航 ID 判断不出来，
+// 所以在这里直接清掉。经开发服务器的导航由调用方在提交之后重新置位。
 bool WebViewPanel::Navigate(const std::wstring& url) {
     if (!IsWebViewOperable()) {
         return false;
     }
+    devServerNavPending_ = false;
     return SUCCEEDED(webView_->Navigate(url));
 }
 
@@ -248,11 +215,13 @@ bool WebViewPanel::NavigateToString(const std::wstring& html) {
     if (!IsWebViewOperable()) {
         return false;
     }
+    devServerNavPending_ = false;
     return SUCCEEDED(webView_->NavigateToString(html));
 }
 
 void WebViewPanel::Reload() {
     if (IsWebViewOperable()) {
+        devServerNavPending_ = false;
         webView_->Reload();
     }
 }
@@ -374,8 +343,7 @@ void WebViewPanel::OnSetFocus() {
     
     // Broadcasting panel:focus 事件
     if (IsWebViewReady() && bridge_) {
-        json data = json::object();
-        bridge_->EmitEvent("panel:focus", data);
+        api::emit::Emit<api::panel::events::Focus>(*bridge_, {});
     }
 }
 
@@ -395,50 +363,13 @@ void WebViewPanel::OnKillFocus() {
     
     // Broadcasting panel:blur 事件
     if (IsWebViewReady() && bridge_) {
-        json data = json::object();
-        bridge_->EmitEvent("panel:blur", data);
+        api::emit::Emit<api::panel::events::Blur>(*bridge_, {});
     }
 }
 
 void WebViewPanel::OnNavigationCompleted(bool /*success*/) {
     // 默认空实现；Standalone 窗口重写用于启动可见性收敛
 }
-
-namespace {
-    // Map COREWEBVIEW2_PROCESS_FAILED_KIND -> JS-friendly camelCase string.
-    // Used as the `kind` field of the `webview:processFailed` event payload.
-    const char* FailedKindToString(COREWEBVIEW2_PROCESS_FAILED_KIND kind) {
-        switch (kind) {
-            case COREWEBVIEW2_PROCESS_FAILED_KIND_BROWSER_PROCESS_EXITED:        return "browserProcessExited";
-            case COREWEBVIEW2_PROCESS_FAILED_KIND_RENDER_PROCESS_EXITED:         return "renderProcessExited";
-            case COREWEBVIEW2_PROCESS_FAILED_KIND_RENDER_PROCESS_UNRESPONSIVE:   return "renderProcessUnresponsive";
-            case COREWEBVIEW2_PROCESS_FAILED_KIND_FRAME_RENDER_PROCESS_EXITED:   return "frameRenderProcessExited";
-            case COREWEBVIEW2_PROCESS_FAILED_KIND_UTILITY_PROCESS_EXITED:        return "utilityProcessExited";
-            case COREWEBVIEW2_PROCESS_FAILED_KIND_SANDBOX_HELPER_PROCESS_EXITED: return "sandboxHelperProcessExited";
-            case COREWEBVIEW2_PROCESS_FAILED_KIND_GPU_PROCESS_EXITED:            return "gpuProcessExited";
-            case COREWEBVIEW2_PROCESS_FAILED_KIND_PPAPI_PLUGIN_PROCESS_EXITED:   return "ppapiPluginProcessExited";
-            case COREWEBVIEW2_PROCESS_FAILED_KIND_PPAPI_BROKER_PROCESS_EXITED:   return "ppapiBrokerProcessExited";
-            default: return "unknownProcessExited";
-        }
-    }
-
-    // Mirror the tiered handling in WebViewHost::SetupProcessFailedHandling:
-    //   render-process kinds  -> "reload"       (Reload() was attempted, see `recovered`)
-    //   browser-process exit  -> "needRebuild"  (entire WebView is dead, host must rebuild)
-    //   others (GPU/utility)  -> "none"         (runtime self-heals, just observe)
-    const char* RecoveryActionFor(COREWEBVIEW2_PROCESS_FAILED_KIND kind) {
-        switch (kind) {
-            case COREWEBVIEW2_PROCESS_FAILED_KIND_RENDER_PROCESS_EXITED:
-            case COREWEBVIEW2_PROCESS_FAILED_KIND_RENDER_PROCESS_UNRESPONSIVE:
-            case COREWEBVIEW2_PROCESS_FAILED_KIND_FRAME_RENDER_PROCESS_EXITED:
-                return "reload";
-            case COREWEBVIEW2_PROCESS_FAILED_KIND_BROWSER_PROCESS_EXITED:
-                return "needRebuild";
-            default:
-                return "none";
-        }
-    }
-}  // namespace
 
 void WebViewPanel::OnWebViewProcessFailed(COREWEBVIEW2_PROCESS_FAILED_KIND failedKind, bool recovered) {
     // A crash the host could not self-heal leaves every COM pointer non-null
@@ -456,6 +387,8 @@ void WebViewPanel::OnWebViewProcessFailed(COREWEBVIEW2_PROCESS_FAILED_KIND faile
         webViewProcessDead_ = true;
         if (hwnd_) {
             WebViewContext::GetInstance().UnregisterInstance(hwnd_);
+            // 页面已不可用，它打开的端口不再有人接收。
+            PortHub::Instance().CleanupPagePorts(hwnd_);
         }
     }
 
@@ -466,13 +399,12 @@ void WebViewPanel::OnWebViewProcessFailed(COREWEBVIEW2_PROCESS_FAILED_KIND faile
     // failures must not block crash handling -- detailed diagnostics are
     // already written to profile://webview_crash.log by WriteCrashLog().
     try {
-        json payload = {
-            {"kind", FailedKindToString(failedKind)},
-            {"kindRaw", static_cast<int>(failedKind)},
-            {"recovered", recovered},
-            {"recoveryAction", RecoveryActionFor(failedKind)}
-        };
-        WebViewContext::GetInstance().BroadcastEvent("webview:processFailed", payload);
+        api::webview::ProcessFailedPayload payload;
+        payload.kind = panel_crash::FailedKindToString(failedKind);
+        payload.kindRaw = static_cast<int>(failedKind);
+        payload.recovered = recovered;
+        payload.recoveryAction = panel_crash::RecoveryActionFor(failedKind);
+        api::emit::Broadcast<api::webview::events::ProcessFailed>(payload);
     } catch (...) {}
 }
 
@@ -490,58 +422,24 @@ void WebViewPanel::OnVisualReadySignal(const std::string& source) {
     (void)source;
 }
 
-std::wstring WebViewPanel::GetFrontendResourcesDir() const {
-    // 0. 面板级别模板覆盖：优先使用面板自己的 templateName
-    if (!panelConfig_.templateName.empty()) {
-        std::wstring baseDir = webview_prefs::GetWebResourcesBaseDir();
-        std::wstring panelDir = baseDir + L"\\" + 
-            pfc::stringcvt::string_wide_from_utf8(panelConfig_.templateName.c_str()).get_ptr();
-        std::wstring indexPath = panelDir + L"\\index.html";
-        DWORD attrs = GetFileAttributesW(indexPath.c_str());
-        if (attrs != INVALID_FILE_ATTRIBUTES && !(attrs & FILE_ATTRIBUTE_DIRECTORY)) {
-            return panelDir;
-        }
-        LOG("WebViewPanel::GetFrontendResourcesDir - Panel template '", panelConfig_.templateName.c_str(), "' not found, falling back to global");
+frontend_directory_policy::Resolution WebViewPanel::ResolveFrontendDirectory() const {
+    auto resolution = frontend_directory::Resolve(panelConfig_.templateName);
+    if (!panelConfig_.templateName.empty() &&
+        resolution.source != frontend_directory_policy::Source::PanelTemplate) {
+        LOG("WebViewPanel::ResolveFrontendDirectory - Panel template '", panelConfig_.templateName.c_str(),
+            "' has no index.html, falling back");
     }
-    
-    // 1. 尝试从新的 profile 目录加载活动模板
-    std::wstring profileDir = webview_prefs::GetActiveWebResourcesDir();
-    if (!profileDir.empty()) {
-        std::wstring indexPath = profileDir + L"\\index.html";
-        DWORD attrs = GetFileAttributesW(indexPath.c_str());
-        if (attrs != INVALID_FILE_ATTRIBUTES && !(attrs & FILE_ATTRIBUTE_DIRECTORY)) {
-            return profileDir;
-        }
-    }
-    
-    // 2. 回退到旧的组件目录
-    std::wstring componentDir = GetComponentDirectory();
-    if (!componentDir.empty()) {
-        std::wstring resourcesDir = componentDir + L"\\foo_ui_webview2_resources\\dist";
-        DWORD attrs = GetFileAttributesW(resourcesDir.c_str());
-        if (attrs != INVALID_FILE_ATTRIBUTES && (attrs & FILE_ATTRIBUTE_DIRECTORY)) {
-            return resourcesDir;
-        }
-    }
-    
-    // 3. 最后的兜底：直接使用 profile/webview-ui/default
-    try {
-        pfc::string8 profilePath = core_api::get_profile_path();
-        if (profilePath.startsWith("file://")) {
-            profilePath = profilePath.subString(7);
-        }
-        std::wstring basePath = pfc::stringcvt::string_wide_from_utf8(profilePath.c_str()).get_ptr();
-        std::wstring defaultDir = basePath + L"\\webview-ui\\default";
-        std::wstring indexPath = defaultDir + L"\\index.html";
-        DWORD attrs = GetFileAttributesW(indexPath.c_str());
-        if (attrs != INVALID_FILE_ATTRIBUTES && !(attrs & FILE_ATTRIBUTE_DIRECTORY)) {
-            return defaultDir;
-        }
-    } catch (...) {
-        // ignore
-    }
+    return resolution;
+}
 
-    return L"";
+WebViewPanel::FrontendOrigin WebViewPanel::LocalFrontendOrigin(
+    const frontend_directory_policy::Resolution& resolution) const {
+    FrontendOrigin origin;
+    origin.kind = FrontendOrigin::Kind::Directory;
+    origin.directorySource = resolution.source;
+    origin.directory = resolution.directory;
+    origin.templateName = frontend_directory::TemplateNameOf(resolution.source, panelConfig_.templateName);
+    return origin;
 }
 
 std::wstring WebViewPanel::GetTestPageHtml() const {
@@ -583,77 +481,6 @@ std::wstring WebViewPanel::GetTestPageHtml() const {
 // 辅助方法实现
 // ============================================
 
-void WebViewPanel::RegisterAllApis() {
-    LOG("Registering all APIs...");
-    
-    RegisterPlaybackApi();
-    RegisterConfigApi();
-    RegisterPlaylistApi();
-    RegisterLibraryApi();
-    RegisterWindowApi();
-    RegisterArtworkApi();
-    RegisterFileApi();
-    RegisterDialogApi();
-    RegisterClipboardApi();
-    RegisterShellApi();
-    RegisterHttpApi();
-    RegisterKeyboardApi();
-    RegisterUiApi();
-    RegisterCursorApi();
-    RegisterLyricsApi();
-    RegisterMetadataApi();
-    RegisterAudioApi();
-    RegisterDspApi();
-    RegisterOutputApi();
-    RegisterConsoleApi();
-    RegisterMiscApi();
-    RegisterMenuApi();
-    RegisterDndApi();
-    RegisterQueueApi();
-    
-    // JIT Queue API
-    InitializeJitQueue();
-    RegisterJitQueueApi();
-    
-    // Plugin Registry
-    PluginRegistry::GetInstance().Initialize();
-    
-    // Discovery API
-    discovery_api::RegisterApis();
-    
-    // ReplayGain API
-    RegisterReplayGainApi();
-    
-    // Playcount API
-    RegisterPlaycountApi();
-    
-    // Titleformat API
-    RegisterTitleformatApi();
-    
-    // Selection API
-    RegisterSelectionApi();
-    
-    // Port/Event/State API (PortHub)
-    RegisterPortApi();
-    
-    // Tray & Taskbar APIs
-    RegisterTrayApi();
-    RegisterTaskbarApi();
-
-    LOG("All APIs registered");
-}
-
-void WebViewPanel::InitializeCallbacks() {
-    LOG("Initializing callbacks...");
-    
-    InitPlaybackCallbacks();
-    InitPlaylistCallbacks();
-    InitLibraryCallbacks();
-    InitMetadbCallbacks();
-    
-    LOG("Callbacks initialized");
-}
-
 void WebViewPanel::ReloadFrontend() {
     if (!webViewReady_ || !IsWebViewOperable()) {
         LOG("WebViewPanel::ReloadFrontend - WebView not ready, skipping");
@@ -663,7 +490,7 @@ void WebViewPanel::ReloadFrontend() {
     LOG("WebViewPanel::ReloadFrontend - Reloading with template: ", 
         panelConfig_.templateName.empty() ? "(global)" : panelConfig_.templateName.c_str());
     
-    // 重新执行前端加载流程（会使用新的 GetFrontendResourcesDir 结果）
+    // 重新执行前端加载流程，按当前配置重新解析前端目录
     LoadFrontendPage();
 }
 
@@ -740,17 +567,9 @@ void WebViewPanel::ApplyConfig(const PanelConfig& oldCfg, const PanelConfig& new
     
     // 8. 通知前端配置变更
     if (bridge_) {
-        json data = {
-            {"panelName", newCfg.panelName},
-            {"templateName", newCfg.templateName},
-            {"edgeStyle", newCfg.edgeStyle},
-            {"transparentBackground", newCfg.transparentBackground},
-            {"grabFocus", newCfg.grabFocus},
-            {"enableDragDrop", newCfg.enableDragDrop},
-            {"enableDevTools", newCfg.enableDevTools},
-            {"urlOverride", newCfg.urlOverride}
-        };
-        bridge_->EmitEvent("panel:configChanged", data);
+        api::panel::ConfigChangedPayload config;
+        FillPanelConfig(newCfg, config);
+        api::emit::Emit<api::panel::events::ConfigChanged>(*bridge_, config);
     }
     
     LOG("WebViewPanel::ApplyConfig completed");
@@ -767,8 +586,16 @@ void WebViewPanel::LoadFrontendPage() {
         if (devServerUrl && devServerUrl[0]) {
             std::wstring wDevUrl = pfc::stringcvt::string_wide_from_utf8(devServerUrl).get_ptr();
             LOG("Navigating to dev server: ", devServerUrl);
-            
+            // 宿主自己导航过去的来源才可信；登记在导航之前，页面第一条消息就能通过。
+            if (webView_) {
+                webView_->AddTrustedOrigin(wDevUrl);
+            }
+
             if (Navigate(wDevUrl)) {
+                // 连不上时 HandleNavigationCompleted 回退到本地页面，那次提交会改写这份记录
+                frontendOrigin_ = FrontendOrigin{};
+                frontendOrigin_.kind = FrontendOrigin::Kind::DevServer;
+                frontendOrigin_.url = wDevUrl;
                 // 独立窗口模式下自动打开 DevTools
                 if (mode_ == WebViewPanelMode::Standalone && webView_) {
                     webView_->OpenDevTools();
@@ -789,8 +616,13 @@ void WebViewPanel::LoadFrontendPage() {
 void WebViewPanel::HandleNavigationCompleted(bool success) {
     // 开发服务器导航失败在此回退。回退成功后本函数会被再触发一次，由那一次
     // 决定启动可见性；回退连提交都失败才继续往下宣告导航结束。
+    // 被后来的导航取消不算连不上：页面自己跳转或换成内联页面时不能回退把它冲掉，
+    // 取消它的那次导航会自己报完成。
     if (!success && devServerNavPending_) {
         devServerNavPending_ = false;
+        if (webView_ && webView_->LastNavigationSuperseded()) {
+            return;
+        }
         LOG("Dev server navigation failed; falling back to local frontend");
         if (LoadFallbackFrontendPage()) {
             return;
@@ -822,23 +654,37 @@ bool WebViewPanel::LoadFallbackFrontendPage() {
             webView_->AddTrustedOrigin(wUrl);
         }
         if (Navigate(wUrl)) {
+            frontendOrigin_ = FrontendOrigin{};
+            frontendOrigin_.kind = FrontendOrigin::Kind::Url;
+            frontendOrigin_.url = wUrl;
             LOG("Frontend page load initiated (URL override)");
             return true;
         }
     }
 
-    std::wstring resourcesDir = GetFrontendResourcesDir();
-    if (!resourcesDir.empty() && SetupVirtualHostMapping(resourcesDir)) {
-        std::wstring url = std::wstring(L"https://") + GetVirtualHostName() + L"/index.html";
-        if (Navigate(url)) {
-            LOG("Frontend page load initiated (local resources)");
-            return true;
-        }
+    if (NavigateToLocalFrontend()) {
+        LOG("Frontend page load initiated (local resources)");
+        return true;
     }
 
     // 加载内嵌测试页面
     LOG("Loading embedded test page");
-    return NavigateToString(GetTestPageHtml());
+    if (!NavigateToString(GetTestPageHtml())) return false;
+    frontendOrigin_ = FrontendOrigin{};
+    frontendOrigin_.kind = FrontendOrigin::Kind::BuiltInPage;
+    return true;
+}
+
+bool WebViewPanel::NavigateToLocalFrontend() {
+    const auto resolution = ResolveFrontendDirectory();
+    if (resolution.source == frontend_directory_policy::Source::None ||
+        !SetupVirtualHostMapping(resolution.directory)) {
+        return false;
+    }
+    const std::wstring url = std::wstring(L"https://") + GetVirtualHostName() + L"/index.html";
+    if (!Navigate(url)) return false;
+    frontendOrigin_ = LocalFrontendOrigin(resolution);
+    return true;
 }
 
 bool WebViewPanel::SetupVirtualHostMapping(const std::wstring& resourcesDir) {

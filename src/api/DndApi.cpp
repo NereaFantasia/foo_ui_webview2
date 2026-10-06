@@ -10,12 +10,18 @@
 // IDropTarget and the resulting session is kept in host memory. Pages query it
 // instead of relying on a snapshot pushed to them, because a fast drag can
 // deliver the page's drop event before any push completes.
+//
+// Shapes are declared in src/api/schema/dnd.ts; the structs and the parameter
+// reader come from the generated DndSchema.h.
 
 #include "pch.h"
 #include "api/DndApi.h"
 #include "api/BridgeCore.h"
+#include "api/CallerContext.h"
 #include "api/ErrorEnvelope.h"
-#include "core/SecurityConfig.h"
+#include "api/TypedApi.h"
+#include "api/generated/DndSchema.h"
+#include "settings/SecurityConfig.h"
 #include "core/WebViewContext.h"
 #include "core/WebViewPanel.h"
 #include "utils/PathExpansion.h"
@@ -24,12 +30,14 @@
 #include "webview/dnd/DndRegistrar.h"
 #include "webview/dnd/DragOutPathPolicy.h"
 #include "webview/dnd/DragOutTokens.h"
+#include "webview/dnd/DragSourceMarker.h"
 #include "window/WindowManager.h"
 #include "window/MainWindow.h"
 #include "window/PopupWindow.h"
 
 namespace {
     using json = nlohmann::json;
+    namespace dnd = api::dnd;
 
     int64_t NowMs() {
         using namespace std::chrono;
@@ -41,7 +49,9 @@ namespace {
     // Every lookup below compares HWNDs for exact equality and never promotes to
     // GA_ROOT. Promotion would collapse all DUI panels sharing the foobar2000
     // frame into one window and hand a panel another panel's paths. For the same
-    // reason there is no fallback to "some other window" when nothing matches.
+    // reason there is no fallback to "some other window" when nothing matches,
+    // and only the caller's own HWND is used: CallerContext's bridge and windowId
+    // resolve through the top-level window and would reintroduce that collapse.
     //
     // Two lookups are needed because the two registration paths differ:
     //
@@ -55,11 +65,7 @@ namespace {
     // here, but WebViewContext's panel pointer is also what marks a caller as a
     // DUI/CUI panel elsewhere; filling it in for every window would silently
     // change window.getMode, panel.getConfig and panel.setConfig.
-    fb2k_dnd::DndRegistrar* ResolveCallerRegistrar(const json& params) {
-        if (!params.contains("_callerHwnd") || !params["_callerHwnd"].is_number_integer()) {
-            return nullptr;
-        }
-        auto hwnd = reinterpret_cast<HWND>(params["_callerHwnd"].get<intptr_t>());
+    fb2k_dnd::DndRegistrar* ResolveCallerRegistrar(HWND hwnd) {
         if (!hwnd || !::IsWindow(hwnd)) {
             return nullptr;
         }
@@ -82,12 +88,12 @@ namespace {
         return nullptr;
     }
 
+    api::Failure NoRegistration() {
+        return api::Fail("Caller window has no drag-drop registration.", ApiErrorCode::NOT_FOUND);
+    }
+
     //==========================================================================
     // dnd.getPathsAsync - Query the host for a drag session's real paths
-    //
-    // Params:
-    //   sessionId (string, optional) - omit to query the session that is active
-    //                                  or most recently ended for this window.
     //
     // Reliable source of paths for a page: it reads host memory, so it does not
     // depend on the delivery order of dnd:* messages, and it stays usable after
@@ -99,25 +105,19 @@ namespace {
     // by the drop target and stored with the session, so a page may query this
     // as often as it likes without touching the filesystem.
     //==========================================================================
-    json DndGetPathsAsync(const json& params) {
-        auto* registrar = ResolveCallerRegistrar(params);
-        if (!registrar) {
-            return ApiEnvelope::MakeError(
-                "Caller window has no drag-drop registration.",
-                ApiErrorCode::NOT_FOUND);
-        }
+    api::Result<dnd::GetPathsAsyncResult> DndGetPathsAsync(const dnd::GetPathsAsyncParams& p,
+                                                           const CallerContext& caller) {
+        auto* registrar = ResolveCallerRegistrar(caller.callerHwnd);
+        if (!registrar) return NoRegistration();
 
         auto* bridge = registrar->Bridge();
-        const std::string requested = params.value("sessionId", std::string());
+        const std::string requested = p.sessionId.value_or("");
         const fb2k_dnd::SessionData* session =
             bridge ? bridge->Sessions().Query(requested, NowMs()) : nullptr;
+
+        dnd::GetPathsAsyncResult result;
         if (!session) {
-            return {
-                {"success", true},
-                {"sessionId", std::string()},
-                {"paths", json::array()},
-                {"resolvedPaths", json::array()}
-            };
+            return result;
         }
 
         // Same gate as the event payloads: when the document origin is not
@@ -125,29 +125,23 @@ namespace {
         // since it reveals nothing, but the paths are withheld. A shortcut
         // target is a real path, so it is withheld by the same test, and both
         // arrays stay empty together rather than one turning into nulls.
-        json paths = json::array();
-        json resolvedPaths = json::array();
+        result.sessionId = session->sessionId;
+        result.source = fb2k_dnd::DragSourceToWire(session->source);
         if (bridge->PathsAllowed()) {
             // Indexed off paths so the two arrays match in length whatever the
             // session holds, which is what lets a page pair them by index.
             for (size_t i = 0; i < session->paths.size(); ++i) {
-                paths.push_back(WideToUtf8(session->paths[i]));
+                result.paths.push_back(WideToUtf8(session->paths[i]));
                 const bool known = i < session->resolvedPaths.size() &&
                                    session->resolvedPaths[i].has_value();
                 if (known) {
-                    resolvedPaths.push_back(WideToUtf8(*session->resolvedPaths[i]));
+                    result.resolvedPaths.emplace_back(WideToUtf8(*session->resolvedPaths[i]));
                 } else {
-                    resolvedPaths.push_back(json(nullptr));
+                    result.resolvedPaths.emplace_back(std::nullopt);
                 }
             }
         }
-
-        return {
-            {"success", true},
-            {"sessionId", session->sessionId},
-            {"paths", paths},
-            {"resolvedPaths", resolvedPaths}
-        };
+        return result;
     }
 
     //==========================================================================
@@ -159,34 +153,15 @@ namespace {
     // feature, so it can be missing on a host where paths work fine. Each
     // *UnavailableReason key is present only when its own capability is false.
     //==========================================================================
-    json DndGetCapabilities(const json& params) {
-        auto* registrar = ResolveCallerRegistrar(params);
-        if (!registrar) {
-            return ApiEnvelope::MakeError(
-                "Caller window has no drag-drop registration.",
-                ApiErrorCode::NOT_FOUND);
-        }
+    api::Result<dnd::GetCapabilitiesResult> DndGetCapabilities(const dnd::GetCapabilitiesParams&,
+                                                               const CallerContext& caller) {
+        auto* registrar = ResolveCallerRegistrar(caller.callerHwnd);
+        if (!registrar) return NoRegistration();
 
-        const fb2k_dnd::DndCapabilities caps = registrar->Capabilities();
-        const char* hosting = caps.visualHosting ? "visual" : "standard";
-        const char* reason = fb2k_dnd::ReasonToWire(caps.reason);
-        const char* dragOutReason = fb2k_dnd::DragOutReasonToWire(caps.dragOutReason);
-
-        json result = {
-            {"success", true},
-            {"html5", caps.html5},
-            {"paths", caps.paths},
-            {"hosting", hosting},
-            {"dragOut", caps.dragOut}
-        };
-        // Each reason appears only when its capability is unavailable, so a page
-        // can test for the key rather than compare it against a "none" value.
-        if (reason) {
-            result["pathsUnavailableReason"] = reason;
-        }
-        if (dragOutReason) {
-            result["dragOutUnavailableReason"] = dragOutReason;
-        }
+        // The same filling as the dnd:capabilitiesChanged payload, so the two
+        // cannot drift apart.
+        dnd::GetCapabilitiesResult result;
+        fb2k_dnd::FillCapabilities(registrar->Capabilities(), result);
         return result;
     }
 
@@ -256,9 +231,6 @@ namespace {
     //==========================================================================
     // dnd.prepareDrag - Exchange validated paths for a one-shot drag token
     //
-    // Params:
-    //   paths (string[], required) - locations the page wants to drag out.
-    //
     // Returns { success: true, token } on success. The page puts that token in
     // dataTransfer during dragstart; the host redeems it for these paths when the
     // drag actually starts, so no path ever travels through the page at drag
@@ -273,18 +245,16 @@ namespace {
     // and an archive:// or unpack:// entry drags the whole archive, so several
     // requested entries can collapse into one file.
     //==========================================================================
-    json DndPrepareDrag(const json& params) {
-        // The order of the four checks below is deliberate and load-bearing; the
-        // note at the registration site explains why this method is registered
-        // without a declarative PathSecuritySpec. In short: the origin decision
-        // must happen before any path is looked at, and the declarative wrapper
-        // runs path validation first.
-        auto* registrar = ResolveCallerRegistrar(params);
-        if (!registrar) {
-            return ApiEnvelope::MakeError(
-                "Caller window has no drag-drop registration.",
-                ApiErrorCode::NOT_FOUND);
-        }
+    api::Result<dnd::PrepareDragResult> DndPrepareDrag(const dnd::PrepareDragParams& p,
+                                                       const CallerContext& caller) {
+        // The order of the checks below is deliberate and load-bearing; the note
+        // at the registration site explains why the declaration gives `paths` no
+        // @security. In short: the generated reader has only checked the shape
+        // of the caller's own JSON by now, and the origin decision must happen
+        // before any path is resolved or validated, which the declarative
+        // wrapper would do first.
+        auto* registrar = ResolveCallerRegistrar(caller.callerHwnd);
+        if (!registrar) return NoRegistration();
 
         // 1. Origin, decided live rather than read from the per-window cached
         //    flag, which only refreshes on registration and NavigationCompleted:
@@ -292,65 +262,49 @@ namespace {
         //    before that refresh lands. The registrar does not hold the host, so
         //    the host is resolved from the caller window again.
         //
-        //    Nothing below has touched the paths parameter yet, and nothing must
-        //    until this passes: MediaRead falls back to a media-library
-        //    membership test, so validating first would turn the endpoint into a
-        //    probe for what is in the user's library.
-        const auto callerHwnd =
-            reinterpret_cast<HWND>(params["_callerHwnd"].get<intptr_t>());
+        //    Nothing below has resolved a path yet, and nothing must until this
+        //    passes: MediaRead falls back to a media-library membership test, so
+        //    validating first would turn the endpoint into a probe for what is
+        //    in the user's library.
+        const HWND callerHwnd = caller.callerHwnd;
         WebViewHost* host = WebViewContext::GetInstance().GetWebViewHost(callerHwnd);
         const std::wstring origin =
             host ? host->GetCurrentOriginNormalized() : std::wstring();
-        if (!fb2k_dnd::AllowsPaths(origin, security_config::UseDevServer())) {
-            return ApiEnvelope::MakeError(
-                "Document origin is not trusted for dragging files out.",
-                ApiErrorCode::ORIGIN_DENIED);
+        if (!fb2k_dnd::AllowsPaths(origin, WebViewHost::CurrentDevServerOrigin())) {
+            return api::Fail("Document origin is not trusted for dragging files out.",
+                             ApiErrorCode::ORIGIN_DENIED);
         }
 
         // 2. Capability, so a page on a runtime without the drag-start event is
         //    told now instead of after a drag that does nothing.
         if (!registrar->Capabilities().dragOut) {
-            return ApiEnvelope::MakeError(
-                "Dragging out is not available for this window.",
-                ApiErrorCode::NOT_SUPPORTED);
+            return api::Fail("Dragging out is not available for this window.",
+                             ApiErrorCode::NOT_SUPPORTED);
         }
 
-        // 3. Shape. Checked here because ValidatePathParam treats a missing key
-        //    as success, being built for optional parameters.
-        if (!params.contains("paths") || !params["paths"].is_array()) {
-            return ApiEnvelope::MakeError(
-                "dnd.prepareDrag: param 'paths' must be an array of strings.",
-                ApiErrorCode::INVALID_PARAMS);
-        }
-        std::vector<std::wstring> requested;
-        requested.reserve(params["paths"].size());
-        for (const auto& entry : params["paths"]) {
-            if (!entry.is_string()) {
-                return ApiEnvelope::MakeError(
-                    "dnd.prepareDrag: every element of 'paths' must be a string.",
-                    ApiErrorCode::INVALID_PARAMS);
-            }
-            requested.push_back(Utf8ToWide(entry.get<std::string>()));
-        }
-
-        // 4. Normalise first, then validate the normalised result. Doing it the
+        // 3. Normalise first, then validate the normalised result. Doing it the
         //    other way round lets the validated string and the string that ends
         //    up in CF_HDROP be different things: MediaRead lets any unknown
         //    protocol through untouched, and it validates an archive entry by its
         //    container while the original archive:// string would have been the
         //    one dragged.
+        std::vector<std::wstring> requested;
+        requested.reserve(p.paths.size());
+        for (const auto& entry : p.paths) {
+            requested.push_back(Utf8ToWide(entry));
+        }
         const fb2k_dnd::DragOutPlan plan =
             fb2k_dnd::BuildDragOutPlan(requested, ResolveNativePath);
         if (!plan.ok) {
             if (plan.reason == fb2k_dnd::DragOutReject::EmptyList) {
-                return ApiEnvelope::MakeError(
-                    "dnd.prepareDrag: 'paths' must contain at least one entry.",
-                    ApiErrorCode::INVALID_PARAMS);
+                // Unreachable from a page: the reader enforces @minItems 1.
+                return api::Fail("dnd.prepareDrag: 'paths' must contain at least one entry.",
+                                 ApiErrorCode::INVALID_PARAMS);
             }
             // Position and cause only. The path itself must never appear in an
             // error payload, because a page that cannot be trusted with paths
             // must not learn them from a rejection either.
-            return ApiEnvelope::MakeError(
+            return api::Fail(
                 "dnd.prepareDrag: paths[" + std::to_string(plan.rejectedIndex) +
                     "] has no local file that can be dragged out.",
                 ApiErrorCode::INVALID_PATH);
@@ -368,26 +322,22 @@ namespace {
         const PathSecuritySpec spec{"paths", SecurityLevel::MediaRead, true};
         const auto validation = ValidatePathParam(normalized, spec, "dnd.prepareDrag");
         if (!validation.success) {
-            return ApiEnvelope::MakeError(
-                validation.errorMsg,
-                validation.shapeError ? ApiErrorCode::INVALID_PARAMS
-                                      : ApiErrorCode::PERMISSION_DENIED);
+            return api::Fail(validation.errorMsg,
+                             validation.shapeError ? ApiErrorCode::INVALID_PARAMS
+                                                   : ApiErrorCode::PERMISSION_DENIED);
         }
 
-        // 5. Only now does a token exist, bound to this window and to this
+        // 4. Only now does a token exist, bound to this window and to this
         //    snapshot of already-validated paths.
         const std::string token = fb2k_dnd::DragOutTokenStore().Mint(
             reinterpret_cast<intptr_t>(callerHwnd), plan.nativePaths);
         if (token.empty()) {
-            return ApiEnvelope::MakeError(
-                "Could not mint a drag token.",
-                ApiErrorCode::OPERATION_FAILED);
+            return api::Fail("Could not mint a drag token.", ApiErrorCode::OPERATION_FAILED);
         }
 
-        return {
-            {"success", true},
-            {"token", token}
-        };
+        dnd::PrepareDragResult result;
+        result.token = token;
+        return result;
     }
 
     //==========================================================================
@@ -397,8 +347,8 @@ namespace {
     // and a host-produced data object; neither exists. Reported as an explicit
     // failure so callers cannot build on a fake success response.
     //==========================================================================
-    json DndStartDrag(const json& /*params*/) {
-        return ApiEnvelope::MakeError(
+    api::Result<void> DndStartDrag(const dnd::StartDragParams&) {
+        return api::Fail(
             "Dragging out of the window is not implemented; it requires an "
             "IDropSource implementation.",
             ApiErrorCode::NOT_SUPPORTED);
@@ -410,18 +360,16 @@ namespace {
 // Register Drag-and-Drop API
 //==========================================================================
 void RegisterDndApi() {
-    auto& bridge = BridgeCore::GetInstance();
-
     // dnd.getPathsAsync - Real paths of a drag session, queried from the host
-    bridge.RegisterApi("dnd.getPathsAsync", DndGetPathsAsync);
+    api::RegisterApi("dnd.getPathsAsync", DndGetPathsAsync);
 
     // dnd.getCapabilities - Host drag-drop capability for the calling window
-    bridge.RegisterApi("dnd.getCapabilities", DndGetCapabilities);
+    api::RegisterApi("dnd.getCapabilities", DndGetCapabilities);
 
     // dnd.prepareDrag - Validated paths in, one-shot drag token out.
     //
-    // Registered with the two-argument overload on purpose, even though it takes
-    // a path parameter. The declarative three-argument form runs
+    // The declaration deliberately gives `paths` no @security, even though it is
+    // a path parameter. A declared security level would make the wrapper run
     // ValidatePathParam before the handler is entered, and this endpoint needs
     // the opposite order: the origin decision has to come first, because
     // MediaRead falls back to a media-library membership test, so validating
@@ -429,13 +377,16 @@ void RegisterDndApi() {
     // library" one path at a time.
     //
     // The handler therefore calls the very same ValidatePathParam itself, with a
-    // spec written to match the declarative form exactly. The order is spelled
-    // out again at the top of DndPrepareDrag, and the two notes point at each
-    // other so neither can be removed on its own.
-    bridge.RegisterApi("dnd.prepareDrag", DndPrepareDrag);
+    // spec written to match the declarative form exactly, and the assertion below
+    // keeps the declaration honest. The order is spelled out again at the top of
+    // DndPrepareDrag and in src/api/schema/dnd.ts, so none of the three notes can
+    // be removed on its own.
+    static_assert(api::dnd::PrepareDragParams::kPathParams.empty(),
+                  "dnd.prepareDrag validates its paths itself, after the origin check");
+    api::RegisterApi("dnd.prepareDrag", DndPrepareDrag);
 
     // dnd.startDrag - Always reports NOT_SUPPORTED
-    bridge.RegisterApi("dnd.startDrag", DndStartDrag);
+    api::RegisterApi("dnd.startDrag", DndStartDrag);
 
     LOG("Drag-and-Drop API registered (4 APIs)");
 }

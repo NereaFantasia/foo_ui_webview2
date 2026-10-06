@@ -177,9 +177,9 @@ namespace fb2k {
         const uint8_t * begin() const { return (const uint8_t*) data(); }
         const uint8_t * end() const { return begin() + size(); }
         
-        //! Album_art_data compatibility
+        //! @c album_art_data compatibility
         size_t get_size() { return size(); }
-        //! Album_art_data compatibility
+        //! @c album_art_data compatibility
         const void * get_ptr() { return data(); }
         
         memBlock::ptr copy() const;
@@ -206,8 +206,10 @@ namespace fb2k {
             return memcmp(v1.data(), v2.data(),s) == 0;
         }
         static bool equals(ptr const& v1, ptr const& v2) {
-            if (v1.is_valid() != v2.is_valid()) return false;
-            if (v1.is_empty() && v2.is_empty()) return true;
+            if (v1 == v2) return true;
+            if (v1.is_empty() || v2.is_empty()) {
+                return v1.is_empty() && v2.is_empty();
+            }
             return equals(*v1, *v2);
         }
 

@@ -2,6 +2,7 @@
 #include "pch.h"
 #include "core/WebViewPanel.h"
 #include "window/BackgroundSuspendPolicy.h"
+#include "window/MaximizeButtonRegion.h"
 #include "window/StartupPresentationCoordinator.h"
 #include "window/WindowChromeApplier.h"
 #include "window/WindowChromeState.h"
@@ -62,6 +63,10 @@ public:
     void SetDragRegions(const std::vector<TitlebarDragRegion>& regions);
     void ClearDragRegions();
     
+    // 页面自绘最大化键的矩形（客户区物理像素）；nullopt 表示没有。
+    // 条件满足时该矩形在 WM_NCHITTEST 答 HTMAXBUTTON，见 MainWindowMaximizeButton.cpp。
+    void SetMaximizeButtonRegion(const std::optional<maximize_button_region::Rect>& region);
+
     // 设置非拖拽区域（按钮等交互元素）
     void SetNoDragRegions(const std::vector<TitlebarDragRegion>& regions);
     void AddNoDragRegion(const TitlebarDragRegion& region);
@@ -170,6 +175,7 @@ protected:
     // ========== 重写基类虚函数 ==========
     void OnWebViewReady() override;
     void OnNavigationCompleted(bool success) override;
+    void OnTopLevelNavigationStarting() override;
     void OnWindowReadySignal(const std::string& source) override;
     void OnVisualReadySignal(const std::string& source) override;
     void OnSetFocus() override;
@@ -194,6 +200,7 @@ private:
     // 可拖拽区域（由 JS 设置）
     std::vector<TitlebarDragRegion> dragRegions_;
     std::vector<TitlebarDragRegion> noDragRegions_;
+    std::optional<maximize_button_region::Rect> maximizeButtonRegion_;  // 同受 regionsMutex_ 保护
     mutable std::mutex regionsMutex_;
     
     // 窗口状态
@@ -481,6 +488,11 @@ private:
     // 辅助方法
     bool IsPointInDragRegion(int clientX, int clientY) const;
     bool IsPointInNoDragRegion(int clientX, int clientY) const;
+    // 该客户区点此刻是否答 HTMAXBUTTON：在页面登记的矩形内，且窗口状态允许。
+    bool IsPointInMaximizeButton(int clientX, int clientY) const;
+    // 处理落在页面自绘最大化键上的非客户区鼠标消息，把它们转给页面。返回 true 时
+    // result 即本消息的返回值；必须在 DwmDefWindowProc 路由之前调用。
+    bool HandleMaximizeButtonMessage(UINT msg, WPARAM wParam, LPARAM lParam, LRESULT& result);
     RECT GetCaptionButtonsRect() const;
     void ShowSystemMenu(int screenX, int screenY);
     bool HandleWebViewMenuCommand(WORD cmdId);

@@ -28,10 +28,10 @@
  *      2. 粘贴本文件全部内容并回车
  *      3. 结果存于 window.__fb2kMenuBaseline; 控制台打印摘要
  *
- *   B) MCP fb2k_evaluate (需设置 FB2K_ENABLE_EVAL=1)
+ *   B) MCP fb2k_page_evaluate (需设置 FB2K_ENABLE_EVAL=1)
  *      1. 读取本文件内容为字符串
- *      2. fb2k_evaluate({ expression: <文件内容> }) — IIFE 直接返回结果对象
- *      3. 复读: fb2k_evaluate({ expression: "JSON.stringify(window.__fb2kMenuBaseline)" })
+ *      2. fb2k_page_evaluate({ expression: <文件内容> }) — IIFE 直接返回结果对象
+ *      3. 复读: fb2k_page_evaluate({ expression: "JSON.stringify(window.__fb2kMenuBaseline)" })
  *
  * 安全性:
  *   - 默认 **只读**。T4 需要真正执行命令才能判定寻址是否可用, 因此默认跳过。

@@ -2,7 +2,7 @@
 
 
 #include <set>
-#include <map>
+#include <unordered_map>
 #include <string>
 #include <vector>
 #include "fixed_map.h"
@@ -77,7 +77,7 @@ private:
 
 class SmartStrFilter {
 public:
-	typedef std::map<std::string, t_size> t_stringlist;
+	typedef std::unordered_map<std::string, t_size> t_stringlist;
 	SmartStrFilter() { }
 	SmartStrFilter(t_stringlist const& arg) : m_items(arg) {}
 	SmartStrFilter(t_stringlist&& arg) : m_items(std::move(arg)) {}
@@ -97,6 +97,8 @@ public:
 	bool empty() const { return m_items.empty(); }
 
 	SmartStrStr & _SmartStrStr() const { return *dc; }
+	static std::string unquote(std::string && arg);
+	static t_stringlist parse(const char* p, size_t l);
 private:
 	t_stringlist m_items;
 	SmartStrStr * dc = &SmartStrStr::global();

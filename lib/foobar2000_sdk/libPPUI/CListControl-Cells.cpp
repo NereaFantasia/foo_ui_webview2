@@ -111,7 +111,7 @@ void CListCell_Text::DrawContent( DrawContentArg_t const & arg ) {
 	const auto fgWas = arg.dc.GetTextColor();
 	CDCHandle dc = arg.dc;
 	if ((arg.cellState & cellState_disabled) != 0 && arg.allowColors) {
-		dc.SetTextColor(DarkMode::GetSysColor(COLOR_GRAYTEXT, arg.darkMode));
+		dc.SetTextColor(arg.darkMode.GetSysColor(COLOR_GRAYTEXT));
 	}
 	
 	CRect clip = arg.rcText;
@@ -304,14 +304,17 @@ void CListCell_Combo::DrawContent(DrawContentArg_t const & arg) {
 
 	const int w = MulDiv(16, GetDeviceCaps(dc, LOGPIXELSX), 96);
 	CRect rcText = arg.rcText;
+	bool hotFrame = false;
 	if (theme != NULL && IsThemePartDefined(theme, part, 0)) {
 		int state = CBXSR_NORMAL;
 		if (bDisabled) {
 			state = CBXSR_DISABLED;
 		} else if (bPressed) {
-			state = CBXSR_PRESSED;
+			if (arg.darkMode.IsDark()) hotFrame = true;
+			else state = CBXSR_PRESSED;
 		} else if (bHot) {
-			state = CBXSR_HOT;
+			if (arg.darkMode.IsDark()) hotFrame = true;
+			else state = CBXSR_HOT;
 		}
 
 		CSize size;
@@ -338,6 +341,12 @@ void CListCell_Combo::DrawContent(DrawContentArg_t const & arg) {
 	DrawContentArg_t arg2 = arg;
 	arg2.rcText = rcText;
 	PFC_SINGLETON(CListCell_Text).DrawContent(arg2);
+
+	if (hotFrame) {
+		auto color = arg.darkMode.GetSysColor(COLOR_HIGHLIGHT);
+		dc.SetDCBrushColor(color);
+		dc.FrameRect(arg.rcHot, (HBRUSH)GetStockObject(DC_BRUSH));
+	}
 }
 
 LONG CListCell_Combo::AccRole() {

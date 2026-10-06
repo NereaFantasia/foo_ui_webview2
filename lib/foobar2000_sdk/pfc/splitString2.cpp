@@ -7,7 +7,7 @@ namespace {
 	class counter_t {
 	public:
 		size_t count = 0;
-		inline void operator+=(pfc::string_part_ref const& p) { (void)p; ++count; }
+		inline void operator+=(pfc::string_part_ref const&) { ++count; }
 	};
 	template<typename ret_t>
 	class wrapper_t {

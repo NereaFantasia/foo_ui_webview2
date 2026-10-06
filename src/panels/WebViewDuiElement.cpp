@@ -9,6 +9,10 @@
 #include <windowsx.h>  // GET_X_LPARAM, GET_Y_LPARAM
 #include "webview/WebViewHost.h"
 #include "api/BridgeCore.h"
+#include "api/EventEmit.h"
+#include "api/generated/PanelSchema.h"
+#include "api/generated/SystemSchema.h"
+#include "api/generated/UiSchema.h"
 #include "window/WindowManager.h"
 
 // ============================================
@@ -286,24 +290,26 @@ void WebViewDuiElementInstance::notify(const GUID& p_what, t_size p_param1,
     if (p_what == ui_element_notify_colors_changed) {
         // Colors changed notification
         if (IsWebViewReady() && GetBridge()) {
-            bool isDark = m_callback->is_dark_mode();
-            json data = {{"darkMode", isDark}};
-            GetBridge()->EmitEvent("system:themeChanged", data);
+            api::system::ThemeChangedPayload theme;
+            // 与 PaintEditModePlaceholder 同一判法：回调无效时按浅色处理，不解引用空指针。
+            theme.darkMode = m_callback.is_valid() && m_callback->is_dark_mode();
+            api::emit::Emit<api::system::events::ThemeChanged>(*GetBridge(), theme);
             // Also emit ui:coloursChanged for SMP compatibility
-            GetBridge()->EmitEvent("ui:coloursChanged", json::object());
+            api::emit::Emit<api::ui::events::ColoursChanged>(*GetBridge(), {});
         }
     }
     else if (p_what == ui_element_notify_font_changed) {
         // Font changed notification
         if (IsWebViewReady() && GetBridge()) {
-            GetBridge()->EmitEvent("ui:fontChanged", json::object());
+            api::emit::Emit<api::ui::events::FontChanged>(*GetBridge(), {});
         }
     }
     else if (p_what == ui_element_notify_visibility_changed) {
         bool visible = (p_param1 != 0);
         if (IsWebViewReady() && GetBridge()) {
-            json data = {{"visible", visible}};
-            GetBridge()->EmitEvent("panel:visibilityChanged", data);
+            api::panel::VisibilityChangedPayload payload;
+            payload.visible = visible;
+            api::emit::Emit<api::panel::events::VisibilityChanged>(*GetBridge(), payload);
         }
     }
     else if (p_what == ui_element_notify_edit_mode_changed) {
@@ -448,12 +454,11 @@ void WebViewDuiElementInstance::OnWebViewReady() {
     
     // 通知前端当前是面板模式
     if (GetBridge()) {
-        json data = {
-            {"mode", "dui"},
-            {"panelMode", true},
-            {"windowId", panelId}
-        };
-        GetBridge()->EmitEvent("panel:initialized", data);
+        api::panel::InitializedPayload initialized;
+        initialized.mode = "dui";
+        initialized.panelMode = true;
+        initialized.windowId = panelId;
+        api::emit::Emit<api::panel::events::Initialized>(*GetBridge(), initialized);
     }
 }
 

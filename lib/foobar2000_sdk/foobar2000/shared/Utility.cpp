@@ -1,14 +1,7 @@
 #include "shared.h"
 
-#include <mutex>
-
-static std::once_flag g_infinitWaitInit;
-static HANDLE g_infinitWaitEvent = NULL;
-
 HANDLE SHARED_EXPORT GetInfiniteWaitEvent() {
-	std::call_once(g_infinitWaitInit, [] {
-		g_infinitWaitEvent = CreateEvent(NULL, TRUE, FALSE, NULL);
-	} );
+	static HANDLE g_infinitWaitEvent = CreateEvent(NULL, TRUE, FALSE, NULL);
 	return g_infinitWaitEvent;
 }
 
@@ -117,15 +110,4 @@ HANDLE SHARED_EXPORT CreateFileAbortable(    __in     LPCWSTR lpFileName,
 	CloseHandle(hThread);
 	SetLastError(dwErrorCode);
 	return hRetVal;
-}
-
-namespace pfc {
-	BOOL winFormatSystemErrorMessageImpl(pfc::string_base & p_out, DWORD p_code);
-	BOOL winFormatSystemErrorMessageHook(pfc::string_base & p_out, DWORD p_code) {
-		return winFormatSystemErrorMessageImpl(p_out, p_code);
-	}
-
-	void crashHook() {
-		uBugCheck(); 
-	}
 }

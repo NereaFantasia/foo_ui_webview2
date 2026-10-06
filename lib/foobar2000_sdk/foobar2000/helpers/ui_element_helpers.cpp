@@ -41,11 +41,11 @@ namespace ui_element_helpers {
 
 	ui_element_children_enumerator_ptr enumerate_children(ui_element_config::ptr cfg) {
 		service_ptr_t<ui_element> ptr;
-		if (!find(ptr,cfg->get_guid())) return NULL;
+		if (!find(ptr,cfg->get_guid())) return nullptr;
 		try {
 			return ptr->enumerate_children(cfg);
 		} catch(exception_io_data const &) {
-			return NULL;
+			return nullptr;
 		}
 	}
 };
@@ -148,7 +148,7 @@ void ui_element_helpers::ui_element_edit_tools::standard_edit_context_menu(LPARA
 	WIN32_OP_D( menu.AppendMenu(MF_STRING | (api->is_paste_available() ? 0 : (MF_DISABLED|MF_GRAYED)),ID_PASTE,TEXT(PasteUIElementCommand)) );
 
 	unsigned custom_walk = ID_CUSTOM_BASE;
-	unsigned custom_base_host = ~0, custom_base_client = ~0;
+	unsigned custom_base_host = UINT_MAX, custom_base_client = UINT_MAX;
 
 	if (host_edit_mode_context_menu_test(p_id,pt,fromkeyboard)) {
 		menu.AppendMenu(MF_SEPARATOR,(UINT_PTR)0,TEXT(""));
@@ -316,7 +316,7 @@ bool ui_element_helpers::recurse_for_elem_config(ui_element_config::ptr root, ui
 bool ui_element_helpers::ui_element_instance_host_base::grabTopPriorityVisibleChild(ui_element_instance_ptr & out, t_size & outWhich, double & outPriority) {
 	double bestPriority = 0;
 	ui_element_instance_ptr best;
-	t_size bestWhich = ~0;
+	t_size bestWhich = SIZE_MAX;
 	const t_size count = host_get_children_count();
 	for (t_size walk = 0; walk < count; ++walk) if (this->host_is_child_visible(walk) ) {
 		ui_element_instance_ptr item = host_get_child(walk);
@@ -333,7 +333,7 @@ bool ui_element_helpers::ui_element_instance_host_base::grabTopPriorityVisibleCh
 bool ui_element_helpers::ui_element_instance_host_base::grabTopPriorityChild(ui_element_instance_ptr & out, t_size & outWhich, double & outPriority, const GUID & subclass) {
 	double bestPriority = 0;
 	ui_element_instance_ptr best;
-	t_size bestWhich = ~0;
+	t_size bestWhich = SIZE_MAX;
 	const t_size count = host_get_children_count();
 	for (t_size walk = 0; walk < count; ++walk) {
 		ui_element_instance_ptr item = host_get_child(walk);

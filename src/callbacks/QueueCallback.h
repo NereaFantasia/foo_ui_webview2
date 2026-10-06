@@ -53,7 +53,7 @@ private:
     std::string overrideOrigin_;
 };
 
-// 全库唯一的 BroadcastEvent("playback:queueChanged") 站点（单一
+// 全库唯一的 playback:queueChanged 发射点（单一
 // emit helper）。payload 固定为 {origin, count}，count 现场读
 // playlist_manager::get()->queue_get_count()，供订阅方免于逐次回查
 // queue.get。

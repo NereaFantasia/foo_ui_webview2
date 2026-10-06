@@ -34,9 +34,6 @@
     <ClCompile Include="other.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="pfc-fb2k-hooks.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
     <ClCompile Include="printf.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -109,9 +106,6 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="audio_sample.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="autoref.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="avltree.h">
@@ -196,9 +190,6 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="pfc.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="pfc-fb2k-hooks.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="pocket_char_ops.h">
@@ -361,6 +352,9 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="event_std.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="iterators2.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>

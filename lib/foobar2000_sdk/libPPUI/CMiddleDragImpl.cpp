@@ -92,7 +92,7 @@ void CMiddleDragOverlay::Paint(CDCHandle dc) {
 namespace {
 	class CMiddleDragLiteBase : public CWindowImpl<CMiddleDragLiteBase, CWindow > {
 	public:
-		BOOL ProcessWindowMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam, LRESULT& lResult, DWORD dwMsgMapID = 0) { return FALSE; }
+		BOOL ProcessWindowMessage(HWND, UINT, WPARAM, LPARAM, LRESULT&, DWORD = 0) { return FALSE; }
 	};
 }
 void PP::addMiddleDragToCtrl(HWND wndCtrl) {

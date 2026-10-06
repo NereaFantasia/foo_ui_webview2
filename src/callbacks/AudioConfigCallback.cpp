@@ -1,5 +1,7 @@
 ﻿#include "pch.h"
 #include "callbacks/AudioConfigCallback.h"
+#include "api/EventEmit.h"
+#include "api/generated/AudioSchema.h"
 #include "core/WebViewContext.h"
 
 // ============================================
@@ -13,7 +15,7 @@ public:
     void outputConfigChanged() override {
         try {
             LOG("AudioConfig: Output device changed");
-            WebViewContext::GetInstance().BroadcastEvent("audio:outputDeviceChanged", json::object());
+            api::emit::Broadcast<api::audio::events::OutputDeviceChanged>({});
         } catch (...) {}
     }
 };
@@ -24,9 +26,9 @@ public:
     void on_changed(t_replaygain_config const& cfg) override {
         try {
             LOG("AudioConfig: ReplayGain mode changed");
-            WebViewContext::GetInstance().BroadcastEvent("audio:replaygainModeChanged", {
-                {"mode", static_cast<int>(cfg.m_source_mode)}
-            });
+            api::audio::ReplaygainModeChangedPayload payload;
+            payload.mode = static_cast<std::int64_t>(cfg.m_source_mode);
+            api::emit::Broadcast<api::audio::events::ReplaygainModeChanged>(payload);
         } catch (...) {}
     }
 };

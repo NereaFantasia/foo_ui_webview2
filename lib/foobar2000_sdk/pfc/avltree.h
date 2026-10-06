@@ -19,33 +19,33 @@ namespace pfc {
 
 		t_size m_depth = 0;
 
-		void link_left(t_self* ptr) throw() {
+		void link_left(t_self* ptr) noexcept {
 			m_left = ptr;
 			if (ptr != NULL) ptr->m_parent = this;
 		}
-		void link_right(t_self* ptr) throw() {
+		void link_right(t_self* ptr) noexcept {
 			m_right = ptr;
 			if (ptr != NULL) ptr->m_parent = this;
 		}
 
-		void link_child(bool which,t_self* ptr) throw() {
+		void link_child(bool which,t_self* ptr) noexcept {
 			(which ? m_right : m_left) = ptr;
 			if (ptr != NULL) ptr->m_parent = this;
 		}
 
-		void unlink() throw() {
+		void unlink() noexcept {
 			m_left.release(); m_right.release(); m_parent = NULL; m_depth = 0;
 		}
 
-		inline void add_ref() throw() {this->refcount_add_ref();}
-		inline void release() throw() {this->refcount_release();}
+		inline void add_ref() noexcept {this->refcount_add_ref();}
+		inline void release() noexcept {this->refcount_release();}
 
-		inline t_rawptr child(bool which) const throw() {return which ? m_right.get_ptr() : m_left.get_ptr();}
-		inline bool which_child(const t_self* ptr) const throw() {return ptr == m_right.get_ptr();}
+		inline t_rawptr child(bool which) const noexcept {return which ? m_right.get_ptr() : m_left.get_ptr();}
+		inline bool which_child(const t_self* ptr) const noexcept {return ptr == m_right.get_ptr();}
 
 		
 
-		t_rawptr step(bool direction) throw() {
+		t_rawptr step(bool direction) noexcept {
 			t_self* walk = this;
 			for(;;) {
 				t_self* t = walk->child(direction);
@@ -58,7 +58,7 @@ namespace pfc {
 				}
 			}
 		}
-		t_rawptr peakchild(bool direction) throw() {
+		t_rawptr peakchild(bool direction) noexcept {
 			t_self* walk = this;
 			for(;;) {
 				t_rawptr next = walk->child(direction);
@@ -66,10 +66,10 @@ namespace pfc {
 				walk = next;
 			}
 		}
-		t_node * prev() throw() {return step(false);}
-		t_node * next() throw() {return step(true);}
+		t_node * prev() noexcept {return step(false);}
+		t_node * next() noexcept {return step(true);}
 	private:
-		~_avltree_node() throw() {}
+		~_avltree_node() noexcept {}
 	};
 
 	
@@ -92,8 +92,8 @@ namespace pfc {
 		typedef typename t_node::t_rawptr t_noderawptr;
 #endif
 
-        static bool is_ptr_valid(t_nodeptr const & p) { return p.is_valid(); }
-        static bool is_ptr_valid(t_node const * p) { return p != NULL; }
+        static bool is_ptr_valid(t_nodeptr const & p) noexcept { return p.is_valid(); }
+        static bool is_ptr_valid(t_node const * p) noexcept { return p != nullptr; }
 
 		template<typename t_item1,typename t_item2>
 		inline static int compare(const t_item1 & p_item1, const t_item2 & p_item2) {
@@ -290,7 +290,7 @@ namespace pfc {
 		}
 
 		static void selftest(t_nodeptr const& p_node) {
-			(void)p_node;
+            std::ignore = p_node;
 	#if 0 //def _DEBUG//SLOW!
 			if (is_ptr_valid(p_node)) {
 				selftest(p_node->m_left);
@@ -314,7 +314,7 @@ namespace pfc {
 		}
 
 
-		static t_size calc_count(const t_node * p_node) throw() {
+		static t_size calc_count(const t_node * p_node) noexcept {
 			if (is_ptr_valid(p_node)) {
 				return 1 + calc_count(p_node->m_left.get_ptr()) + calc_count(p_node->m_right.get_ptr());
 			} else {
@@ -453,11 +453,11 @@ namespace pfc {
 		template<typename t_param>
 		bool have_item(const t_param & p_item) const {return contains(p_item);}
 
-		void remove_all() throw() {
+		void remove_all() noexcept {
 			_unlink_recur(m_root);
 			m_root.release();
 		}
-		void clear() throw() { remove_all(); }
+		void clear() noexcept { remove_all(); }
 
 		bool remove(const_iterator const& iter) {
 			PFC_ASSERT(iter.is_valid());
@@ -472,8 +472,9 @@ namespace pfc {
 			return ret;
 		}
 
-		t_size get_count() const throw() { return calc_count(m_root.get_ptr()); }
-		size_t size() const throw() { return get_count(); }
+		t_size get_count() const noexcept { return calc_count(m_root.get_ptr()); }
+		size_t size() const noexcept { return get_count(); }
+		bool empty() const noexcept { return size() == 0; }
 
 		template<typename t_callback>
 		void enumerate(t_callback && p_callback) const {
@@ -516,13 +517,13 @@ namespace pfc {
 		forward_const_iterator begin() const noexcept { return first(); }
 		forward_const_iterator end() const noexcept { return forward_const_iterator(); }
 
-		template<typename t_param> bool get_first(t_param & p_item) const throw() {
+		template<typename t_param> bool get_first(t_param & p_item) const {
 			const_iterator iter = first();
 			if (!iter.is_valid()) return false;
 			p_item = *iter;
 			return true;
 		}
-		template<typename t_param> bool get_last(t_param & p_item) const throw() {
+		template<typename t_param> bool get_last(t_param & p_item) const {
 			const_iterator iter = last();
 			if (!iter.is_valid()) return false;
 			p_item = *iter;
@@ -575,4 +576,7 @@ namespace pfc {
 
 	template<typename t_storage,typename t_comparator>
 	class traits_t<avltree_t<t_storage,t_comparator> > : public traits_default_movable {};
+
+	template<typename elem_t, typename comparator_t = comparator_default>
+	using set_t = avltree_t<elem_t, comparator_t>;
 }

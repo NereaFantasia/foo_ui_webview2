@@ -3,6 +3,8 @@
 #include "win32_op.h"
 #include <list>
 
+#pragma warning(disable: 4996) // silence GetVersionEx() deprecation
+
 SIZE QueryContextDPI(HDC dc) {
 	return {GetDeviceCaps(dc,LOGPIXELSX), GetDeviceCaps(dc,LOGPIXELSY)};
 }
@@ -132,6 +134,7 @@ static LRESULT CALLBACK EraseHandlerProc(
 	UINT_PTR uIdSubclass,
 	DWORD_PTR dwRefData
 ) {
+	(void)uIdSubclass;
 	if (uMsg == WM_ERASEBKGND) {
 		HWND wndTarget = reinterpret_cast<HWND>(dwRefData);
 		PFC_ASSERT(wndTarget != NULL);
@@ -148,6 +151,7 @@ static LRESULT CALLBACK CtlColorProc(
 	UINT_PTR uIdSubclass,
 	DWORD_PTR dwRefData
 ) {
+	(void)uIdSubclass; (void)dwRefData;
 	switch (uMsg) {
 	case WM_CTLCOLORMSGBOX:
 	case WM_CTLCOLOREDIT:
@@ -174,6 +178,7 @@ void InjectParentCtlColorHandler(HWND wnd) {
 	WIN32_OP_D(SetWindowSubclass(wnd, CtlColorProc, 0, 0));
 }
 static LRESULT CALLBACK BounceNextDlgCtlProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam, UINT_PTR uIdSubclass, DWORD_PTR dwRefData) {
+	(void)uIdSubclass;
 	if (uMsg == WM_NEXTDLGCTL) {
 		return ::SendMessage((HWND)dwRefData, uMsg, wParam, lParam);
 	}
@@ -222,14 +227,10 @@ void SetDefaultMenuItem(HMENU p_menu, unsigned p_id) {
 }
 
 static bool FetchWineInfoAppend(pfc::string_base & out) {
-	typedef const char *(__cdecl *t_wine_get_build_id)(void);
-	typedef void(__cdecl *t_wine_get_host_version)(const char **sysname, const char **release);
 	const HMODULE ntdll = GetModuleHandle(_T("ntdll.dll"));
 	if (ntdll == NULL) return false;
-	t_wine_get_build_id wine_get_build_id;
-	t_wine_get_host_version wine_get_host_version;
-	wine_get_build_id = (t_wine_get_build_id)GetProcAddress(ntdll, "wine_get_build_id");
-	wine_get_host_version = (t_wine_get_host_version)GetProcAddress(ntdll, "wine_get_host_version");
+	const auto wine_get_build_id = (const char* (__cdecl *)(void))GetProcAddress(ntdll, "wine_get_build_id");
+	const auto wine_get_host_version = (void(__cdecl *)(const char**, const char**))GetProcAddress(ntdll, "wine_get_host_version");
 	if (wine_get_build_id == NULL || wine_get_host_version == NULL) {
 		if (GetProcAddress(ntdll, "wine_server_call") != NULL) {
 			out << "wine (unknown version)";
@@ -242,7 +243,36 @@ static bool FetchWineInfoAppend(pfc::string_base & out) {
 	out << wine_get_build_id() << ", on: " << sysname << " / " << release;
 	return true;
 }
+static const char* nativeMachineType(const SYSTEM_INFO& info) {
+	using fnIsWow64Process2 = BOOL(WINAPI*)(HANDLE hProcess, USHORT* pProcessMachine, USHORT* pNativeMachine);
+	auto proc = (fnIsWow64Process2)GetProcAddress(GetModuleHandle(L"kernel32.dll"), "IsWow64Process2");
+	if (proc) {
+		USHORT processMachine = 0, nativeMachine = 0;
+		if (proc(GetCurrentProcess(), &processMachine, &nativeMachine)) {
+			switch (nativeMachine) {
+			case IMAGE_FILE_MACHINE_IA64:
+				return "IA64";
+			case IMAGE_FILE_MACHINE_AMD64:
+				return "x64";
+			case IMAGE_FILE_MACHINE_ARM64:
+				return "ARM64";
+			}
+		}
+	}
+	switch (info.wProcessorArchitecture) {
+	case PROCESSOR_ARCHITECTURE_AMD64:
+		return "x64";
+	case PROCESSOR_ARCHITECTURE_IA64:
+		return "IA64";
+	case PROCESSOR_ARCHITECTURE_INTEL:
+		return "x86";
+	case PROCESSOR_ARCHITECTURE_ARM64:
+		return "ARM64";
+	default:
+		return nullptr;
+	}
 
+}
 static void GetOSVersionStringAppend(pfc::string_base & out) {
 
 	if (FetchWineInfoAppend(out)) return;
@@ -255,16 +285,8 @@ static void GetOSVersionStringAppend(pfc::string_base & out) {
 	out << "Windows " << (int)ver.dwMajorVersion << "." << (int)ver.dwMinorVersion << "." << (int)ver.dwBuildNumber;
 	if (ver.szCSDVersion[0] != 0) out << " " << pfc::stringcvt::string_utf8_from_os(ver.szCSDVersion, PFC_TABSIZE(ver.szCSDVersion));
 
-	switch (info.wProcessorArchitecture) {
-	case PROCESSOR_ARCHITECTURE_AMD64:
-		out << " x64"; break;
-	case PROCESSOR_ARCHITECTURE_IA64:
-		out << " IA64"; break;
-	case PROCESSOR_ARCHITECTURE_INTEL:
-		out << " x86"; break;
-	case PROCESSOR_ARCHITECTURE_ARM64:
-		out << " ARM64"; break;
-	}
+	auto t = nativeMachineType(info);
+	if (t) out << " " << t;
 }
 
 void GetOSVersionString(pfc::string_base & out) {
@@ -274,10 +296,57 @@ WORD GetOSVersionCode() {
 	OSVERSIONINFO ver = {sizeof(ver)};
 	WIN32_OP_D(GetVersionEx(&ver));
 	
-	DWORD ret = ver.dwMinorVersion;
-	ret += ver.dwMajorVersion << 8;
+	DWORD ret = pfc::min_t<DWORD>(ver.dwMinorVersion, 0xFF);
+	ret += pfc::min_t<DWORD>(ver.dwMajorVersion, 0xFF) << 8;
 
 	return (WORD)ret;
+}
+
+static const char* WineVersionStr_() {
+	const HMODULE ntdll = GetModuleHandle(_T("ntdll.dll"));
+	if (ntdll) {
+		const auto wine_get_build_id = (const char* (__cdecl*)(void))GetProcAddress(ntdll, "wine_get_version");
+		if (wine_get_build_id) return wine_get_build_id();
+	}
+	return nullptr;
+}
+
+const char* WineVersionStr() {
+	static auto ret = WineVersionStr_();
+	return ret;
+}
+
+unsigned WineMajorVersion() {
+	auto str = WineVersionStr();
+	if (str) {
+		int i = atoi(str);
+		if (i > 0) return (unsigned)i;
+	}
+	return 0;
+}
+
+static uint32_t GetWineVersionCode_() {
+	auto str = WineVersionStr();
+	if (str == nullptr) return UINT32_MAX; // not Wine
+	auto major = atoi(str);
+	if (major > 0) {
+		int ret = major * 100;
+		auto dot = strchr(str, '.');
+		if (dot) {
+			auto minor = atoi(dot + 1);
+			if (minor > 0) {
+				if (minor > 99) minor = 99;
+				ret += minor;
+			}
+		}
+		return ret;
+	}
+	return 0; // Wine but with bad version info
+}
+
+uint32_t GetWineVersionCode() {
+	static auto ret = GetWineVersionCode_();
+	return ret;
 }
 
 bool IsWine() {
@@ -305,12 +374,18 @@ void EnumChildWindowsHere(HWND parent, std::function<void(HWND)> f) {
 static DWORD Win10BuildNumber_() {
 	OSVERSIONINFO ver = { sizeof(ver) };
 	WIN32_OP_D(GetVersionEx(&ver));
-	return ver.dwMajorVersion == 10 ? ver.dwBuildNumber : 0;
+	if ( ver.dwMajorVersion < 10 ) return 0;
+	else if ( ver.dwMajorVersion == 10 ) return ver.dwBuildNumber;
+	else return 0xFFFFFFFF;
 }
 DWORD Win10BuildNumber() {
 	static DWORD b = Win10BuildNumber_();
 	return b;
 }
+bool IsWindows11OrNewer() {
+	return Win10BuildNumber() >= 22000;
+}
+
 
 #include "hookWindowMessages.h"
 #include <algorithm>

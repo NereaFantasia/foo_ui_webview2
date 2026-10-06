@@ -1,7 +1,8 @@
 ﻿#include "pch.h"
 #include "callbacks/PlaybackStatsCallback.h"
-#include "core/WebViewContext.h"
-#include "api/PlaybackApi.h"  // For GetTrackInfo()
+#include "api/EventEmit.h"
+#include "api/TrackRow.h"
+#include "api/generated/PlaybackSchema.h"
 
 // ============================================
 // 播放统计回调实现
@@ -14,10 +15,8 @@ public:
         try {
             if (!item.is_valid()) return;
             
-            json trackInfo = GetTrackInfo(item);
-            
             LOG("PlaybackStats: Item played");
-            WebViewContext::GetInstance().BroadcastEvent("playback:itemPlayed", trackInfo);
+            api::emit::Broadcast<api::playback::events::ItemPlayed>(BuildTrackRow(item));
         } catch (...) {}
     }
 };

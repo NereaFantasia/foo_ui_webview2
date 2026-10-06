@@ -5,7 +5,49 @@
 #include "pch.h"
 #include "api/PluginRegistry.h"
 #include "api/BridgeCore.h"
+#include "api/EventEmit.h"
+#include "api/TypedApi.h"
+#include "api/generated/ApiSchema.h"
+#include "api/generated/PluginSchema.h"
+#include "api/generated/SystemSchema.h"
 #include "core/WebViewContext.h"
+
+// ============================================
+// 声明的共享形状：system.* 的结果与 plugin:* / api:* 事件都用它们
+// ============================================
+
+namespace {
+    api::common::SystemApiInfo ToDeclared(const ApiInfo& info) {
+        api::common::SystemApiInfo out;
+        out.fullName = info.fullName;
+        out.plugin = info.pluginName;
+        out.namespace_ = info.pluginNamespace;
+        out.method = info.methodName;
+        out.description = info.description;
+        out.version = info.version;
+        out.isExternal = info.isExternal;
+        return out;
+    }
+
+    api::common::SystemPluginInfo ToDeclared(const PluginInfo& plugin) {
+        api::common::SystemPluginInfo out;
+        out.name = plugin.name;
+        out.namespace_ = plugin.pluginNamespace;
+        out.version = plugin.version;
+        out.author = plugin.author;
+        out.description = plugin.description;
+        out.apiCount = static_cast<int64_t>(plugin.apis.size());
+        out.apis = plugin.apis;
+        return out;
+    }
+
+    std::vector<api::common::SystemApiInfo> ToDeclared(const std::vector<ApiInfo>& infos) {
+        std::vector<api::common::SystemApiInfo> out;
+        out.reserve(infos.size());
+        for (const auto& info : infos) out.push_back(ToDeclared(info));
+        return out;
+    }
+} // anonymous namespace
 
 // ============================================
 // 保留命名空间（内部使用）
@@ -93,7 +135,7 @@ bool PluginRegistry::RegisterPlugin(
         name.c_str(), pluginNamespace.c_str(), version.c_str());
     
     // 发送插件注册事件
-    EmitPluginEvent("plugin:registered", info);
+    api::emit::Broadcast<api::plugin::events::Registered>(ToDeclared(info));
     
     return true;
 }
@@ -129,7 +171,7 @@ void PluginRegistry::UnregisterPlugin(const std::string& pluginNamespace) {
     console::printf("[PluginRegistry] Plugin unregistered: %s", pluginNamespace.c_str());
     
     // 发送插件注销事件
-    EmitPluginEvent("plugin:unregistered", info);
+    api::emit::Broadcast<api::plugin::events::Unregistered>(ToDeclared(info));
 }
 
 std::vector<PluginInfo> PluginRegistry::GetRegisteredPlugins() const {
@@ -206,7 +248,7 @@ bool PluginRegistry::RegisterExternalApi(
     }
     
     // 注册到 BridgeCore（桥接转发）
-    BridgeCore::GetInstance().RegisterApi(fullName, [this, fullName](const json& params) -> json {
+    BridgeCore::GetInstance().RegisterUndeclaredApi(fullName, [this, fullName](const json& params) -> json {
         std::lock_guard innerLock(mutex_);
         
         auto it = externalHandlers_.find(fullName);
@@ -224,7 +266,7 @@ bool PluginRegistry::RegisterExternalApi(
     console::printf("[PluginRegistry] API registered: %s", fullName.c_str());
     
     // 发送 API 注册事件
-    EmitApiEvent("api:registered", apiInfo);
+    api::emit::Broadcast<api::api_::events::Registered>(ToDeclared(apiInfo));
     
     return true;
 }
@@ -266,7 +308,7 @@ void PluginRegistry::UnregisterExternalApi(
     console::printf("[PluginRegistry] API unregistered: %s", fullName.c_str());
     
     // 发送 API 注销事件
-    EmitApiEvent("api:unregistered", apiInfo);
+    api::emit::Broadcast<api::api_::events::Unregistered>(ToDeclared(apiInfo));
 }
 
 void PluginRegistry::RegisterInternalApi(
@@ -424,6 +466,60 @@ json PluginRegistry::GetApiStats() const {
 }
 
 // ============================================
+// system.* handlers：形状由 src/api/schema/system.ts 声明
+// ============================================
+
+namespace {
+    namespace sys = api::system;
+
+    api::Result<sys::ListAvailableApisResult> SystemListAvailableApis(const sys::ListAvailableApisParams& p) {
+        sys::ListAvailableApisResult result;
+        result.apis = ToDeclared(PluginRegistry::GetInstance().ListAvailableApis(p.includeInternal, p.includeExternal));
+        return result;
+    }
+
+    api::Result<sys::GetApisByNamespaceResult> SystemGetApisByNamespace(const sys::GetApisByNamespaceParams& p) {
+        sys::GetApisByNamespaceResult result;
+        result.apis = ToDeclared(PluginRegistry::GetInstance().GetApisByNamespace(p.namespace_));
+        return result;
+    }
+
+    api::Result<sys::SearchApisResult> SystemSearchApis(const sys::SearchApisParams& p) {
+        sys::SearchApisResult result;
+        result.apis = ToDeclared(PluginRegistry::GetInstance().SearchApis(p.query));
+        return result;
+    }
+
+    api::Result<sys::GetApiStatsResult> SystemGetApiStats(const sys::GetApiStatsParams&) {
+        // GetApiStats 仍产出 json（也供事件与日志用），这里只搬到声明的形状。
+        const json stats = PluginRegistry::GetInstance().GetApiStats();
+        sys::GetApiStatsResult result;
+        result.totalApis = stats.at("totalApis").get<int64_t>();
+        result.internalApis = stats.at("internalApis").get<int64_t>();
+        result.externalApis = stats.at("externalApis").get<int64_t>();
+        result.pluginCount = stats.at("pluginCount").get<int64_t>();
+        for (const auto& [ns, count] : stats.at("byNamespace").items()) {
+            result.byNamespace[ns] = count.get<int64_t>();
+        }
+        return result;
+    }
+
+    api::Result<sys::GetRegisteredPluginsResult> SystemGetRegisteredPlugins(const sys::GetRegisteredPluginsParams&) {
+        sys::GetRegisteredPluginsResult result;
+        for (const auto& plugin : PluginRegistry::GetInstance().GetRegisteredPlugins()) {
+            result.plugins.push_back(ToDeclared(plugin));
+        }
+        return result;
+    }
+
+    api::Result<sys::IsPluginRegisteredResult> SystemIsPluginRegistered(const sys::IsPluginRegisteredParams& p) {
+        sys::IsPluginRegisteredResult result;
+        result.registered = PluginRegistry::GetInstance().IsPluginRegistered(p.namespace_);
+        return result;
+    }
+} // anonymous namespace
+
+// ============================================
 // 初始化
 // ============================================
 
@@ -433,103 +529,24 @@ void PluginRegistry::Initialize() {
 }
 
 void PluginRegistry::RegisterDiscoveryApis() {
-    auto& bridge = BridgeCore::GetInstance();
-    
-    // system.listAvailableApis - 列出所有可用 API
-    bridge.RegisterApi("system.listAvailableApis", [this](const json& params) -> json {
-        bool includeInternal = params.value("includeInternal", true);
-        bool includeExternal = params.value("includeExternal", true);
-        
-        auto apis = ListAvailableApis(includeInternal, includeExternal);
-        
-        json result = json::array();
-        for (const auto& api : apis) {
-            result.push_back(api.toJson());
-        }
-        
-        return result;
-    });
+    // handler 都是单例上的自由函数，见文件上方的匿名命名空间。
+    api::RegisterApi("system.listAvailableApis", SystemListAvailableApis);
     RegisterInternalApi("system.listAvailableApis", "List all available APIs");
-    
-    // system.getApisByNamespace - 获取指定命名空间的 API
-    bridge.RegisterApi("system.getApisByNamespace", [this](const json& params) -> json {
-        std::string ns = params.value("namespace", "");
-        if (ns.empty()) {
-            throw std::runtime_error("namespace is required");
-        }
-        
-        auto apis = GetApisByNamespace(ns);
-        
-        json result = json::array();
-        for (const auto& api : apis) {
-            result.push_back(api.toJson());
-        }
-        
-        return result;
-    });
+
+    api::RegisterApi("system.getApisByNamespace", SystemGetApisByNamespace);
     RegisterInternalApi("system.getApisByNamespace", "Get APIs by namespace");
-    
-    // system.searchApis - 搜索 API
-    bridge.RegisterApi("system.searchApis", [this](const json& params) -> json {
-        std::string query = params.value("query", "");
-        if (query.empty()) {
-            throw std::runtime_error("query is required");
-        }
-        
-        auto apis = SearchApis(query);
-        
-        json result = json::array();
-        for (const auto& api : apis) {
-            result.push_back(api.toJson());
-        }
-        
-        return result;
-    });
+
+    api::RegisterApi("system.searchApis", SystemSearchApis);
     RegisterInternalApi("system.searchApis", "Search APIs by name or description");
-    
-    // system.getApiStats - 获取 API 统计
-    bridge.RegisterApi("system.getApiStats", [this](const json& /*params*/) -> json {
-        return GetApiStats();
-    });
+
+    api::RegisterApi("system.getApiStats", SystemGetApiStats);
     RegisterInternalApi("system.getApiStats", "Get API statistics");
-    
-    // system.getRegisteredPlugins - 获取已注册的插件列表
-    bridge.RegisterApi("system.getRegisteredPlugins", [this](const json& /*params*/) -> json {
-        auto plugins = GetRegisteredPlugins();
-        
-        json result = json::array();
-        for (const auto& plugin : plugins) {
-            result.push_back(plugin.toJson());
-        }
-        
-        return result;
-    });
+
+    api::RegisterApi("system.getRegisteredPlugins", SystemGetRegisteredPlugins);
     RegisterInternalApi("system.getRegisteredPlugins", "Get list of registered external plugins");
-    
-    // system.isPluginRegistered - 检查插件是否已注册
-    bridge.RegisterApi("system.isPluginRegistered", [this](const json& params) -> json {
-        std::string ns = params.value("namespace", "");
-        if (ns.empty()) {
-            throw std::runtime_error("namespace is required");
-        }
-        
-        return {{"success", true}, {"registered", IsPluginRegistered(ns)}};
-    });
+
+    api::RegisterApi("system.isPluginRegistered", SystemIsPluginRegistered);
     RegisterInternalApi("system.isPluginRegistered", "Check if a plugin is registered");
-    
+
     console::print("[PluginRegistry] Discovery APIs registered");
-}
-
-// ============================================
-// 事件发送
-// ============================================
-
-void PluginRegistry::EmitPluginEvent(const std::string& eventType, const PluginInfo& plugin) {
-    // Plugin lifecycle events are system-wide notifications — broadcast to all instances
-    WebViewContext::GetInstance().BroadcastEvent(eventType, plugin.toJson());
-}
-
-void PluginRegistry::EmitApiEvent(const std::string& eventType, const ApiInfo& api) {
-    // API lifecycle events are system-wide notifications — broadcast to all instances
-    WebViewContext::GetInstance().BroadcastEvent(eventType, api.toJson());
 }

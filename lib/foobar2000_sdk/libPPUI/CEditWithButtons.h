@@ -32,6 +32,7 @@ public:
 		MESSAGE_HANDLER_EX(WM_CUT, CheckConditionsTrigger)
 		MESSAGE_HANDLER_EX(WM_PASTE, CheckConditionsTrigger)
 		MESSAGE_HANDLER_EX(MSG_CHECKCONDITIONS, OnCheckConditions)
+		MESSAGE_HANDLER_EX(DarkMode::msgSetDarkMode(), OnSetDarkMode)
 		CHAIN_MSG_MAP(CEditPPHooks)
 	END_MSG_MAP()
 
@@ -80,7 +81,25 @@ public:
 	}
 	void RefreshConditions(const wchar_t * newText = nullptr);
 private:
-	int OnCreate(LPCREATESTRUCT lpCreateStruct) {
+	DarkMode::param_t m_dark;
+	LRESULT OnSetDarkMode(UINT msg, WPARAM wp, LPARAM lp) {
+		auto p = DarkMode::param_t::importMsgParams({ wp,lp });
+		if (p && m_hWnd) {
+			m_dark = *p;
+			if (p->bRetro) {
+				DarkMode::ApplyRetroTheme(m_hWnd);
+			} else {
+				DarkMode::ApplyDarkThemeCtrl(m_hWnd, p->IsDark());
+			}
+			for (auto& b : m_buttons) {
+				if (b.wnd.m_hWnd) {
+					b.wnd.SendMessage(msg, wp, lp);
+				}
+			}
+		}
+		return 1;
+	}
+	int OnCreate(LPCREATESTRUCT) {
 		m_initialParent = GetParent();
 		SetMsgHandled(FALSE);
 		return 0;

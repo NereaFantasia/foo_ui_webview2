@@ -266,3 +266,29 @@ TEST(WaveformTaskQueue, FinishIgnoresUnknownAndQueuedJobs) {
     EXPECT_TRUE(q.HasJob(queued));
     EXPECT_TRUE(q.Finish(9999, JobOutcome::Succeeded).notify.empty());
 }
+
+// PCM 离线解码用并发 1 的实例（docs/audio-pcm/SPEC.md D7）：不同曲目严格一个接一个按提交顺序开始，
+// 中止中的任务仍占着唯一的槽，后面的要等它的 worker 返回。
+TEST(WaveformTaskQueue, WithOneSlotJobsRunStrictlyOneAfterAnother) {
+    WaveformTaskQueue q(1);
+    const auto a = q.Submit("a", MakeWaiter("t1"));
+    const auto b = q.Submit("b", MakeWaiter("t2"));
+    const auto c = q.Submit("c", MakeWaiter("t3"));
+    EXPECT_EQ(a.start, std::vector<std::uint64_t>{a.jobId});
+    EXPECT_TRUE(b.start.empty());
+    EXPECT_TRUE(c.start.empty());
+    EXPECT_EQ(q.ActiveCount(), 1u);
+    EXPECT_EQ(q.QueuedCount(), 2u);
+
+    auto r = q.Finish(a.jobId, JobOutcome::Succeeded);
+    EXPECT_EQ(r.start, std::vector<std::uint64_t>{b.jobId});
+
+    const auto cancel = q.Cancel("t2", kPageA);
+    EXPECT_EQ(cancel.abort, std::vector<std::uint64_t>{b.jobId});
+    EXPECT_EQ(q.StateOf(c.jobId), JobState::Queued) << "the aborting job still holds the only slot";
+
+    r = q.Finish(b.jobId, JobOutcome::Aborted);
+    EXPECT_EQ(r.start, std::vector<std::uint64_t>{c.jobId});
+    EXPECT_EQ(q.ActiveCount(), 1u);
+    EXPECT_EQ(q.QueuedCount(), 0u);
+}

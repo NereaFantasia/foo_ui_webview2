@@ -203,6 +203,18 @@
     <ClInclude Include="HyperLinkCtrl.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="DarkModeParam.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="DarkMode-Config.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="WindowsImaging.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="WindowsImagingVsGdiplus.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="stdafx.cpp">

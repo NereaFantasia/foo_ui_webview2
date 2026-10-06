@@ -1,9 +1,15 @@
 ﻿#include "pch.h"
 #include "callbacks/PlaybackCallback.h"
+#include "api/EventEmit.h"
+#include "api/generated/PlaybackSchema.h"
 #include "core/WebViewContext.h"
 #include "api/MetaAccess.h"
 #include "api/PlaybackApi.h"
+#include "api/TrackRow.h"
+#include "api/VolumeScale.h"
 #include "core/QueueManager.h"
+#include "utils/HostTime.h"
+#include "utils/StringUtils.h"
 #include "window/TaskbarIntegration.h"
 
 // ============================================
@@ -12,8 +18,10 @@
 // Handles foobar2000 playback events and sends them to JavaScript via Bridge
 // Also integrates with JIT Queue Manager for streaming media support
 
+namespace pb = api::playback;
+
 // Use play_callback_static for static registration with service factory
-class PlaybackCallbackImpl : public play_callback_static {
+class PlaybackCallbackImpl: public play_callback_static {
 public:
     PlaybackCallbackImpl() {
         // Single instance via service_factory_single_t; route timer ticks here.
@@ -38,17 +46,19 @@ public:
             // Reset time throttle for immediate update on new track
             ResetTimeThrottle();
             
-            json trackInfo = GetTrackInfo(track);
-            WebViewContext::GetInstance().BroadcastEvent("playback:trackChanged", trackInfo);
+            api::emit::Broadcast<pb::events::TrackChanged>(BuildTrackRow(track));
             
-            // Also emit stateChanged with "playing" state
-            EmitStateChanged("playing");
+            // This also runs when playback starts paused, so the state is read
+            // rather than assumed; "playing" here would overwrite the "paused"
+            // that on_playback_starting has just sent.
+            const bool paused = playback_control::get()->is_paused();
+            EmitStateChanged(paused ? "paused" : "playing");
             
             // Drive high-resolution position updates via the independent ~100ms
             // timer, and push one immediate accurate sample so the frontend
             // interpolation does not start ~1s late (on_playback_time is ~1Hz).
             // If playback starts paused, on_playback_starting handles the timer.
-            if (!playback_control::get()->is_paused()) {
+            if (!paused) {
                 StartHighResTimer();
             }
             OnHighResTick();
@@ -85,9 +95,9 @@ public:
             // Stop high-resolution position polling; playback is no longer active.
             StopHighResTimer();
             
-            WebViewContext::GetInstance().BroadcastEvent("playback:stopped", {
-                {"reason", reasonStr},
-            });
+            pb::StoppedPayload stopped;
+            stopped.reason = reasonStr;
+            api::emit::Broadcast<pb::events::Stopped>(stopped);
             
             // Emit stateChanged for user stop and EOF (not for starting_another)
             if (reason == play_control::stop_reason_user || reason == play_control::stop_reason_eof) {
@@ -112,9 +122,9 @@ public:
                 OnHighResTick();  // immediate accurate sample on resume
             }
             
-            WebViewContext::GetInstance().BroadcastEvent("playback:paused", {
-                {"paused", state},
-            });
+            pb::PausedPayload paused;
+            paused.paused = state;
+            api::emit::Broadcast<pb::events::Paused>(paused);
             
             // Emit stateChanged
             EmitStateChanged(state ? "paused" : "playing");
@@ -127,9 +137,10 @@ public:
             // Reset time throttle for immediate update after seek
             ResetTimeThrottle();
             
-            WebViewContext::GetInstance().BroadcastEvent("playback:seeked", {
-                {"position", time},
-            });
+            pb::SeekedPayload seeked;
+            seeked.position = time;  // 跳转目标，不是读出来的位置
+            seeked.hostTime = host_time::NowUnixMs();
+            api::emit::Broadcast<pb::events::Seeked>(seeked);
             
             // Push an immediate high-res sample so the progress bar / lyrics
             // snap to the seek target without waiting for the next tick.
@@ -140,22 +151,15 @@ public:
     // Called when volume changes
     void on_volume_change(float newVal) override {
         try {
-            // dB → 0-100 线性百分比（对数逆转换，与 PlaybackApi.cpp getVolume 一致）
-            float volume;
-            if (newVal <= -100.0f) {
-                volume = 0.0f;
-            } else {
-                volume = 100.0f * std::pow(10.0f, newVal / 20.0f);
-                volume = std::max(0.0f, std::min(100.0f, volume));
-            }
+            const float volume = volume_scale::PercentFromDb(newVal);
             bool muted = playback_control::get()->is_muted();
             
-            WebViewContext::GetInstance().BroadcastEvent("playback:volumeChanged", {
-                {"volume", volume},
-                {"volumeDb", newVal},
-                {"muted", muted},
-                {"isMuted", muted},  // alias: match playback.getVolume response
-            });
+            pb::VolumeChangedPayload changed;
+            changed.volume = volume;
+            changed.volumeDb = newVal;
+            changed.muted = muted;
+            changed.isMuted = muted;  // alias: match playback.getVolume response
+            api::emit::Broadcast<pb::events::VolumeChanged>(changed);
         } catch (...) {}
     }
     
@@ -186,9 +190,9 @@ public:
                 // 属直通类事件）。节流记账 m_lastTime 也必须无条件推进，
                 // 否则恢复后节流状态与真实时间脱节。
                 if (WebViewContext::GetInstance().HasVisibleInstance()) {
-                    WebViewContext::GetInstance().BroadcastEvent("playback:time", {
-                        {"position", time},
-                    });
+                    pb::TimePayload tick;
+                    tick.position = time;
+                    api::emit::Broadcast<pb::events::Time>(tick);
                 }
                 m_lastTime = time;
                 
@@ -209,18 +213,19 @@ public:
     void on_playback_dynamic_info(const file_info& info) override {
         try {
             // Extract dynamic info like bitrate, streaming title, etc.
-            json dynamicInfo;
-            
+            pb::DynamicInfoPayload dynamicInfo;
+
             // Get bitrate
-            dynamicInfo["bitrate"] = static_cast<int>(info.info_get_bitrate());
-            
-            // Get streaming title if available
+            dynamicInfo.bitrate = static_cast<std::int64_t>(info.info_get_bitrate());
+
+            // Get streaming title if available. 流媒体标题来自电台推送的元数据，编码不受控；
+            // 非法 UTF-8 会让 EmitEvent 的 dump 抛异常、整条事件发不出去，所以先过 SafeUtf8。
             const char* streamTitle = info.meta_get("TITLE", 0);
             if (streamTitle) {
-                dynamicInfo["streamTitle"] = std::string(streamTitle);
+                dynamicInfo.streamTitle = StringUtils::SafeUtf8(streamTitle);
             }
-            
-            WebViewContext::GetInstance().BroadcastEvent("playback:dynamicInfo", dynamicInfo);
+
+            api::emit::Broadcast<pb::events::DynamicInfo>(dynamicInfo);
         } catch (...) {}
     }
     
@@ -228,20 +233,22 @@ public:
     void on_playback_dynamic_info_track(const file_info& info) override {
         try {
             // Similar to on_playback_dynamic_info but for track-level changes
-            json dynamicInfo;
-            
+            pb::DynamicInfoTrackPayload dynamicInfo;
+
             const char* title = info.meta_get("TITLE", 0);
 
-            if (MetaPresent(info, "ARTIST")) dynamicInfo["artist"] = MetaJoined(info, "ARTIST");
-            if (title) dynamicInfo["title"] = std::string(title);
-            
-            if (!dynamicInfo.empty()) {
-                WebViewContext::GetInstance().BroadcastEvent("playback:dynamicInfoTrack", dynamicInfo);
+            // artist 经 MetaJoined 已是合法 UTF-8，title 同理要先过 SafeUtf8。
+            if (MetaPresent(info, "ARTIST")) dynamicInfo.artist = MetaJoined(info, "ARTIST");
+            if (title) dynamicInfo.title = StringUtils::SafeUtf8(title);
+
+            if (dynamicInfo.artist || dynamicInfo.title) {
+                api::emit::Broadcast<pb::events::DynamicInfoTrack>(dynamicInfo);
             }
         } catch (...) {}
     }
     
-    // Called when playback is starting (after on_playback_new_track)
+    // Called when playback is being initialized, before the track is opened;
+    // on_playback_new_track follows once the first track opens for decoding.
     void on_playback_starting(play_control::t_track_command cmd, bool paused) override {
         try {
             std::string command;
@@ -263,12 +270,14 @@ public:
                     break;
             }
             
-            WebViewContext::GetInstance().BroadcastEvent("playback:starting", {
-                {"command", command},
-                {"paused", paused},
-            });
+            pb::StartingPayload starting;
+            starting.command = command;
+            starting.paused = paused;
+            api::emit::Broadcast<pb::events::Starting>(starting);
             
-            // Emit stateChanged - playing or paused depending on initial state
+            // Emit stateChanged - playing or paused depending on initial state.
+            // No track is open yet, so its canSeek can be false; the event sent
+            // from on_playback_new_track carries the opened track's value.
             EmitStateChanged(paused ? "paused" : "playing");
             
             // Start high-res polling only when actually playing.
@@ -341,10 +350,10 @@ private:
             if (!WebViewContext::GetInstance().HasVisibleInstance()) {
                 return;
             }
-            double position = pc->playback_get_position();
-            WebViewContext::GetInstance().BroadcastEvent("playback:timeHighRes", {
-                {"position", position},
-            });
+            pb::TimeHighResPayload tick;
+            tick.position = pc->playback_get_position();
+            tick.hostTime = host_time::NowUnixMs();
+            api::emit::Broadcast<pb::events::TimeHighRes>(tick);
         } catch (...) {}
     }
     
@@ -353,15 +362,21 @@ private:
         try {
             auto pc = playback_control::get();
             double position = pc->playback_get_position();
+            const double positionHostTime = host_time::NowUnixMs();
             double duration = pc->playback_get_length();
             
-            FB2K_console_print("[Playback] Emitting playback:stateChanged, state: ", state);
+            FB2K_console_print("[Playback] Emitting ", pb::events::StateChanged::kName, ", state: ", state);
             
-            WebViewContext::GetInstance().BroadcastEvent("playback:stateChanged", {
-                {"state", state},
-                {"position", position},
-                {"duration", duration}
-            });
+            pb::StateChangedPayload changed;
+            changed.state = state;
+            changed.position = position;
+            changed.hostTime = positionHostTime;
+            changed.duration = duration;
+            // Same source as playback.getState. "stopped" is pinned to false:
+            // the SDK does not say whether the track is already closed when
+            // on_playback_stop runs.
+            changed.canSeek = std::string_view(state) != "stopped" && pc->playback_can_seek();
+            api::emit::Broadcast<pb::events::StateChanged>(changed);
             TaskbarIntegration::GetInstance().OnPlaybackStateChanged(state);
             TaskbarIntegration::GetInstance().OnPlaybackProgress(state, position, duration);
         } catch (...) {}
@@ -371,8 +386,7 @@ private:
     void on_playback_edited(metadb_handle_ptr track) override {
         try {
             // Track metadata was edited during playback
-            json trackInfo = GetTrackInfo(track);
-            WebViewContext::GetInstance().BroadcastEvent("playback:edited", trackInfo);
+            api::emit::Broadcast<pb::events::Edited>(BuildTrackRow(track));
         } catch (...) {}
     }
 };

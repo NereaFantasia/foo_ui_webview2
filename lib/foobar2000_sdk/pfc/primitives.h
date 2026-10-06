@@ -8,20 +8,6 @@
 #define tabsize(x) ((size_t)(sizeof(x)/sizeof(*x)))
 #define PFC_TABSIZE(x) ((size_t)(sizeof(x)/sizeof(*x)))
 
-// Retained for compatibility. Do not use. Use C++11 template<typename ... arg_t> instead.
-#define TEMPLATE_CONSTRUCTOR_FORWARD_FLOOD_WITH_INITIALIZER(THISCLASS,MEMBER,INITIALIZER)	\
-																																				THISCLASS() :																																														MEMBER() INITIALIZER	\
-	template<typename t_param1>																													THISCLASS(const t_param1 & p_param1) :																																								MEMBER(p_param1) INITIALIZER	\
-	template<typename t_param1,typename t_param2>																								THISCLASS(const t_param1 & p_param1,const t_param2 & p_param2) :																																	MEMBER(p_param1,p_param2) INITIALIZER	\
-	template<typename t_param1,typename t_param2,typename t_param3>																				THISCLASS(const t_param1 & p_param1,const t_param2 & p_param2,const t_param3 & p_param3) :																											MEMBER(p_param1,p_param2,p_param3) INITIALIZER	\
-	template<typename t_param1,typename t_param2,typename t_param3,typename t_param4>															THISCLASS(const t_param1 & p_param1,const t_param2 & p_param2,const t_param3 & p_param3,const t_param4 & p_param4) :																				MEMBER(p_param1,p_param2,p_param3,p_param4) INITIALIZER	\
-	template<typename t_param1,typename t_param2,typename t_param3,typename t_param4,typename t_param5>											THISCLASS(const t_param1 & p_param1,const t_param2 & p_param2,const t_param3 & p_param3,const t_param4 & p_param4,const t_param5 & p_param5) :														MEMBER(p_param1,p_param2,p_param3,p_param4,p_param5) INITIALIZER	\
-	template<typename t_param1,typename t_param2,typename t_param3,typename t_param4,typename t_param5,typename t_param6>						THISCLASS(const t_param1 & p_param1,const t_param2 & p_param2,const t_param3 & p_param3,const t_param4 & p_param4,const t_param5 & p_param5,const t_param6 & p_param6) :							MEMBER(p_param1,p_param2,p_param3,p_param4,p_param5,p_param6) INITIALIZER	\
-	template<typename t_param1,typename t_param2,typename t_param3,typename t_param4,typename t_param5,typename t_param6, typename t_param7>	THISCLASS(const t_param1 & p_param1,const t_param2 & p_param2,const t_param3 & p_param3,const t_param4 & p_param4,const t_param5 & p_param5,const t_param6 & p_param6,const t_param7 & p_param7) :	MEMBER(p_param1,p_param2,p_param3,p_param4,p_param5,p_param6,p_param7) INITIALIZER	\
-	template<typename t_param1,typename t_param2,typename t_param3,typename t_param4,typename t_param5,typename t_param6, typename t_param7, typename t_param8>	THISCLASS(const t_param1 & p_param1,const t_param2 & p_param2,const t_param3 & p_param3,const t_param4 & p_param4,const t_param5 & p_param5,const t_param6 & p_param6,const t_param7 & p_param7, const t_param8 & p_param8) :	MEMBER(p_param1,p_param2,p_param3,p_param4,p_param5,p_param6,p_param7, p_param8) INITIALIZER
-
-#define TEMPLATE_CONSTRUCTOR_FORWARD_FLOOD(THISCLASS,MEMBER) TEMPLATE_CONSTRUCTOR_FORWARD_FLOOD_WITH_INITIALIZER(THISCLASS,MEMBER,{})
-
 
 #ifdef _WIN32
 
@@ -31,6 +17,9 @@
 
 // MSVC specific - part of fb2k ABI - cannot ever change on MSVC/Windows
 
+#ifdef PFC_DECLARE_EXCEPTION
+#undef PFC_DECLARE_EXCEPTION
+#endif
 #define PFC_DECLARE_EXCEPTION(NAME,BASECLASS,DEFAULTMSG)	\
 class NAME : public BASECLASS {	\
 public:	\
@@ -101,7 +90,9 @@ namespace pfc {
 	template<bool val> class static_assert_t;
 	template<> class static_assert_t<true> {};
 
+#ifndef PFC_STATIC_ASSERT
 #define PFC_STATIC_ASSERT(X) { ::pfc::static_assert_t<(X)>(); }
+#endif
 
 	template<typename t_type>
 	void assert_raw_type() {static_assert_t< !traits_t<t_type>::needs_constructor && !traits_t<t_type>::needs_destructor >();}
@@ -122,9 +113,8 @@ namespace pfc {
 	
 	template<typename t_type> void __unsafe__in_place_constructor_t(t_type & p_item) {
 		if constexpr (traits_t<t_type>::needs_constructor) {
-			t_type * ret = new(&p_item) t_type;
+            [[maybe_unused]] auto ret = new(&p_item) t_type;
 			PFC_ASSERT(ret == &p_item);
-            (void) ret; // suppress warning
 		}
 	}
 
@@ -156,9 +146,8 @@ namespace pfc {
 
 	template<typename t_type,typename t_copy> void __unsafe__in_place_constructor_copy_t(t_type & p_item,const t_copy & p_copyfrom) {
 		if constexpr (traits_t<t_type>::needs_constructor) {
-			t_type * ret = new(&p_item) t_type(p_copyfrom);
+            [[maybe_unused]] auto ret = new(&p_item) t_type(p_copyfrom);
 			PFC_ASSERT(ret == &p_item);
-            (void) ret; // suppress warning
 		} else {
 			p_item = p_copyfrom;
 		}
@@ -572,11 +561,9 @@ namespace pfc {
 
 
 
-	template<typename T>
-	inline void delete_t(T* ptr) {delete ptr;}
+	inline void delete_t(auto* ptr) {delete ptr;}
 
-	template<typename T>
-	inline void delete_array_t(T* ptr) {delete[] ptr;}
+	inline void delete_array_t(auto* ptr) {delete[] ptr;}
 
 	template<typename T>
 	inline T* clone_t(T* ptr) {return new T(*ptr);}
@@ -607,40 +594,33 @@ namespace pfc {
 		v1 = add_unsigned_clipped(v1, v2);
 	}
 
-	template<typename t_src,typename t_dst>
-	void memcpy_t(t_dst* p_dst,const t_src* p_src,t_size p_count) {
+	void memcpy_t(auto* p_dst,const auto* p_src,t_size p_count) {
 		for(t_size n=0;n<p_count;n++) p_dst[n] = p_src[n];
 	}
 
-	template<typename t_dst,typename t_src>
-	void copy_array_loop_t(t_dst & p_dst,const t_src & p_src,t_size p_count) {
+	void copy_array_loop_t(auto & p_dst,const auto & p_src,t_size p_count) {
 		for(t_size n=0;n<p_count;n++) p_dst[n] = p_src[n];
 	}
 
-	template<typename t_src,typename t_dst>
-	void memcpy_backwards_t(t_dst * p_dst,const t_src * p_src,t_size p_count) {
+	void memcpy_backwards_t(auto * p_dst,const auto * p_src,t_size p_count) {
 		p_dst += p_count; p_src += p_count;
 		for(t_size n=0;n<p_count;n++) *(--p_dst) = *(--p_src);
 	}
 
-	template<typename T,typename t_val>
-	void memset_t(T * p_buffer,const t_val & p_val,t_size p_count) {
+	void memset_t(auto * p_buffer,const auto & p_val,t_size p_count) {
 		for(t_size n=0;n<p_count;n++) p_buffer[n] = p_val;
 	}
 
-	template<typename T,typename t_val>
-	void memset_t(T &p_buffer,const t_val & p_val) {
+	void memset_t(auto &p_buffer,const auto & p_val) {
 		const t_size width = pfc::array_size_t(p_buffer);
 		for(t_size n=0;n<width;n++) p_buffer[n] = p_val;
 	}
 
-	template<typename T>
-	void memset_null_t(T * p_buffer,t_size p_count) {
+	void memset_null_t(auto * p_buffer,t_size p_count) {
 		for(t_size n=0;n<p_count;n++) p_buffer[n] = 0;
 	}
 
-	template<typename T>
-	void memset_null_t(T &p_buffer) {
+	void memset_null_t(auto &p_buffer) {
 		const t_size width = pfc::array_size_t(p_buffer);
 		for(t_size n=0;n<width;n++) p_buffer[n] = 0;
 	}
@@ -652,21 +632,19 @@ namespace pfc {
 		else memcpy_t<T>(p_dst,p_src,p_count);
 	}
 
-	template<typename TVal> void memxor_t(TVal * out, const TVal * s1, const TVal * s2, t_size count) {
+	template<typename val_t> void memxor_t(val_t * out, const val_t * s1, const val_t * s2, t_size count) {
 		for(t_size walk = 0; walk < count; ++walk) out[walk] = s1[walk] ^ s2[walk];
 	}
 	inline static void memxor(void * target, const void * source1, const void * source2, t_size size) {
 		memxor_t( reinterpret_cast<t_uint8*>(target), reinterpret_cast<const t_uint8*>(source1), reinterpret_cast<const t_uint8*>(source2), size);
 	}
 
-	template<typename T>
-	T* new_ptr_check_t(T* p_ptr) {
-		if (p_ptr == NULL) throw std::bad_alloc();
+	auto new_ptr_check_t(auto p_ptr) {
+		if (p_ptr == nullptr) throw std::bad_alloc();
 		return p_ptr;
 	}
 
-	template<typename T>
-	int sgn_t(const T & p_val) {
+	int sgn_t(const auto & p_val) {
 		if (p_val < 0) return -1;
 		else if (p_val > 0) return 1;
 		else return 0;
@@ -685,9 +663,8 @@ namespace pfc {
 		return oldval;
 	}
 
-	template<typename t_type>
-	t_type replace_null_t(t_type & p_var) {
-		t_type ret = std::move(p_var);
+	auto replace_null_t(auto & p_var) {
+		auto ret = std::move(p_var);
 		p_var = 0;
 		return ret;
 	}
@@ -699,13 +676,11 @@ namespace pfc {
 	}
 
 
-	template<typename t_array>
-	void array_rangecheck_t(const t_array & p_array,t_size p_index) {
+	void array_rangecheck_t(const auto & p_array,t_size p_index) {
 		if (p_index >= pfc::array_size_t(p_array)) throw pfc::exception_overflow();
 	}
 
-	template<typename t_array>
-	void array_rangecheck_t(const t_array & p_array,t_size p_from,t_size p_to) {
+	void array_rangecheck_t(const auto & p_array,t_size p_from,t_size p_to) {
 		if (p_from > p_to) throw pfc::exception_overflow();
 		array_rangecheck_t(p_array,p_from); array_rangecheck_t(p_array,p_to);
 	}
@@ -714,8 +689,7 @@ namespace pfc {
 	t_int64 rint64(double p_val);
 
 	//! Returns amount of items left.
-	template<typename array_t, typename pred_t>
-	inline size_t remove_if_t( array_t & arr, pred_t pred ) {
+	inline size_t remove_if_t( auto & arr, auto pred ) {
 		const size_t inCount = arr.size();
 		size_t walk = 0;
 
@@ -740,8 +714,7 @@ namespace pfc {
 	}
 
 	//! Returns amount of items left.
-	template<typename t_array>
-	inline t_size remove_mask_t(t_array & p_array,const bit_array & p_mask)
+	inline t_size remove_mask_t(auto & p_array,const bit_array & p_mask)
 	{
 		t_size n,count = p_array.size(), total = 0;
 
@@ -792,37 +765,19 @@ namespace pfc {
 		return ret;
 	}
 
-	template<typename t_char>
-	t_size strlen_t(const t_char * p_string,t_size p_length = ~0) {
+	t_size strlen_t(const auto * p_string,t_size p_length = SIZE_MAX) {
 		for(t_size walk = 0;;walk++) {
 			if (walk >= p_length || p_string[walk] == 0) return walk;
 		}
 	}
 
-
-	template<typename t_array>
-	class __list_to_array_enumerator {
-	public:
-		__list_to_array_enumerator(t_array & p_array) : m_walk(), m_array(p_array) {}
-		template<typename t_item>
-		void operator() (const t_item & p_item) {
-			PFC_ASSERT(m_walk < m_array.get_size());
-			m_array[m_walk++] = p_item;
-		}
-		void finalize() {
-			PFC_ASSERT(m_walk == m_array.get_size());
-		}
-	private:
-		t_size m_walk;
-		t_array & m_array;
-	};
-
-	template<typename t_list,typename t_array>
-	void list_to_array(t_array & p_array,const t_list & p_list) {
+	void list_to_array(auto & p_array,const auto & p_list) {
 		p_array.set_size(p_list.get_count());
-		__list_to_array_enumerator<t_array> enumerator(p_array);
-		p_list.enumerate(enumerator);
-		enumerator.finalize();
+        size_t walk = 0;
+        using elem_t = decltype(*p_list.begin());
+        auto cb = [&] ( const elem_t & elem ) { p_array[walk++] = elem; } ;
+        p_list.enumerate( cb );
+        PFC_ASSERT( walk == p_list.get_count() );
 	}
 
 	template<typename t_receiver>
@@ -840,8 +795,7 @@ namespace pfc {
 		p_giver.enumerate(wrapper);
 	}
 
-	template<typename t_receiver,typename t_giver>
-	void copy_list_enumerated(t_receiver & p_receiver,const t_giver & p_giver) {
+	void copy_list_enumerated(auto & p_receiver,const auto & p_giver) {
 		p_receiver.remove_all();
 		overwrite_list_enumerated(p_receiver,p_giver);
 	}
@@ -897,8 +851,7 @@ namespace pfc {
     template<typename t_to,typename t_from>
 	void copy_array_t(t_to & p_to,const t_from & p_from);
 
-	template<typename t_array,typename t_value>
-	void fill_array_t(t_array & p_array,const t_value & p_value);
+	void fill_array_t(auto& p_array, const auto& p_value);
 
 	// Generic no-op for breakpointing stuff
 	inline void nop() {}
@@ -948,16 +901,16 @@ namespace pfc {
 #define PFC_SINGLETON(X) ::pfc::singleton<X>::instance
 
 
+#ifndef PFC_CLASS_NOT_COPYABLE
 #define PFC_CLASS_NOT_COPYABLE(THISCLASSNAME,THISTYPE) \
 	THISCLASSNAME(const THISTYPE&) = delete; \
 	const THISTYPE & operator=(const THISTYPE &) = delete;
 
 #define PFC_CLASS_NOT_COPYABLE_EX(THISTYPE) PFC_CLASS_NOT_COPYABLE(THISTYPE,THISTYPE)
-
+#endif
 
 namespace pfc {
-	template<typename t_char>
-	t_size strlen_max_t(const t_char* ptr, t_size max) noexcept {
+	t_size strlen_max_t(const auto* ptr, t_size max) noexcept {
 		PFC_ASSERT(ptr != NULL || max == 0);
 		t_size n = 0;
 		while (n < max && ptr[n] != 0) n++;
@@ -978,7 +931,7 @@ namespace pfc {
 		autoScope() {}
 		autoScope(std::function<void()>&& f) : m_cleanup(std::move(f)) {}
 
-		template<typename what_t> void increment(what_t& obj) {
+		void increment(auto& obj) {
 			reset();
 			++obj;
 			m_cleanup = [&obj] { --obj; };
@@ -991,9 +944,8 @@ namespace pfc {
 				obj = std::move(v);
 			};
 		}
-		void operator() (std::function<void()>&& f) {
-			reset(); m_cleanup = std::move(f);
-		}
+		void operator=(std::function<void()>&& f) { reset(); m_cleanup = std::move(f); }
+		void operator() (std::function<void()>&& f) {reset(); m_cleanup = std::move(f); }
 
 		~autoScope() {
 			if (m_cleanup) m_cleanup();
@@ -1003,7 +955,7 @@ namespace pfc {
 			m_cleanup = nullptr;
 		}
 
-		void reset() {
+		void reset() noexcept {
 			if (m_cleanup) {
 				m_cleanup();
 				m_cleanup = nullptr;
@@ -1018,4 +970,11 @@ namespace pfc {
 		std::function<void()> m_cleanup;
 	};
 	typedef autoScope onLeaving;
+
+    bool array_contains( const auto & array, const auto & arg ) {
+        for( auto & walk : array ) {
+            if ( walk == arg ) return true;
+        }
+        return false;
+    }
 }

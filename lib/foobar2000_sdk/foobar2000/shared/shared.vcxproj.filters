@@ -71,5 +71,8 @@
     <ClInclude Include="fb2kdebug.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="wrap_pfc_hooks.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
 </Project>

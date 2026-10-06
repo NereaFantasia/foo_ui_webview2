@@ -25,19 +25,28 @@ static bool testDrawLineBelowHeader() {
 
 void CListControlHeaderImpl::OnThemeChangedPT() {
 	if (m_header) {
-		auto dark = GetDarkMode();
+		auto dark = GetDarkModeParam();
 		if (dark != m_headerDark) {
 			m_headerDark = dark;
-			DarkMode::ApplyDarkThemeCtrl(m_header, dark, L"ItemsView");
+			if (dark.IsRetroLight()) {
+				DarkMode::ApplyRetroTheme(m_header);
+			} else {
+				DarkMode::ApplyDarkThemeCtrl(m_header, dark.IsDark(), L"ItemsView");
+			}
+			UpdateHeaderLayout();
 		}
 	}
 	this->SetMsgHandled(FALSE);
 }
 
+void CListControlHeaderImpl::InitializeNoHeader() {
+	m_noHeader = true;
+	UpdateHeaderLayout();
+}
 void CListControlHeaderImpl::InitializeHeaderCtrl(DWORD flags) {
 	PFC_ASSERT(IsWindow());
 	PFC_ASSERT(!IsHeaderEnabled());
-	m_headerDark = false;
+	m_headerDark = {};
 	WIN32_OP_D( m_header.Create(*this,NULL,NULL,WS_CHILD | flags) != NULL );
 	m_header.SetFont( GetFont() );
 
@@ -45,15 +54,21 @@ void CListControlHeaderImpl::InitializeHeaderCtrl(DWORD flags) {
 
 	this->OnThemeChangedPT();
 
-	if (testDrawLineBelowHeader()) {
-		WIN32_OP_D( m_headerLine.Create( *this, NULL, NULL, WS_CHILD ) != NULL );
-		InjectParentEraseHandler(m_headerLine);
-	}
-
 	UpdateHeaderLayout();
 }
 
 void CListControlHeaderImpl::UpdateHeaderLayout() {
+
+	const bool useHeaderLine = IsHeaderEnabled() && testDrawLineBelowHeader() && !m_headerDark.bRetro;
+	if (useHeaderLine) {
+		if (!m_headerLine) {
+			WIN32_OP_D(m_headerLine.Create(*this, NULL, NULL, WS_CHILD) != NULL);
+			InjectParentEraseHandler(m_headerLine);
+		}
+	} else {
+		if (m_headerLine) m_headerLine.DestroyWindow();
+	}
+
 	CRect client; WIN32_OP_D( GetClientRect(client) );
 	int cw_old = m_clientWidth;
 	m_clientWidth = client.Width();
@@ -62,7 +77,7 @@ void CListControlHeaderImpl::UpdateHeaderLayout() {
 		rc.left -= GetViewOffset().x;
 		WINDOWPOS wPos = {};
 		HDLAYOUT layout = {&rc, &wPos};
-		if (m_header.Layout(&layout)) {
+		if (!m_noHeader && m_header.Layout(&layout)) {
 			m_header.SetWindowPos(wPos.hwndInsertAfter,wPos.x,wPos.y,wPos.cx,wPos.cy,wPos.flags | SWP_SHOWWINDOW);
 			if (m_headerLine != NULL) m_headerLine.SetWindowPos(m_header, wPos.x, wPos.y + wPos.cy, wPos.cx, lineBelowHeaderCY, wPos.flags | SWP_SHOWWINDOW);
 		} else {
@@ -79,13 +94,10 @@ int CListControlHeaderImpl::GetItemWidth() const {
 	else return m_clientWidth;
 }
 
-LRESULT CListControlHeaderImpl::OnSizePassThru(UINT,WPARAM,LPARAM) {
+void CListControlHeaderImpl::ListHandleResize() noexcept {
 	UpdateHeaderLayout();
-
 	ProcessAutoWidth();
-	
-	SetMsgHandled(FALSE);
-	return 0;
+	__super::ListHandleResize();
 }
 
 void CListControlHeaderImpl::OnViewOriginChange(CPoint p_delta) {
@@ -102,18 +114,7 @@ void CListControlHeaderImpl::SetHeaderFont(HFONT font) {
 LRESULT CListControlHeaderImpl::OnHeaderCustomDraw(LPNMHDR hdr) {
 	LPNMCUSTOMDRAW nmcd = reinterpret_cast<LPNMCUSTOMDRAW>(hdr);
 	if ( m_header != NULL && this->GetDarkMode() && nmcd->hdr.hwndFrom == m_header) {
-		switch (nmcd->dwDrawStage)
-		{
-		case CDDS_PREPAINT:
-			return CDRF_NOTIFYITEMDRAW;
-		case CDDS_ITEMPREPAINT:
-			{
-				CDCHandle dc(nmcd->hdc);
-				dc.SetTextColor(0xdedede); 
-				dc.SetBkColor(0x191919); // disregarded anyway
-			}
-			return CDRF_DODEFAULT;
-		}
+		return DarkMode::CustomDrawHeader(hdr, GetDarkModeParam());
 	}
 	SetMsgHandled(FALSE); return 0;
 }
@@ -423,7 +424,7 @@ void CListControlHeaderImpl::ResizeColumn(t_size index, t_uint32 userWidth, bool
 		HDITEM item = {};
 		item.mask = HDI_WIDTH;
 		item.cxy = widthPixels;
-		{ pfc::vartoggle_t<bool> scope(m_ownColumnsChange, true); m_header.SetItem((int)index, &item); }
+		{ pfc::vartoggle_t scope(m_ownColumnsChange, true); m_header.SetItem((int)index, &item); }
 		RecalcItemWidth();
 		if (updateView) OnColumnsChanged();
 	}
@@ -666,7 +667,7 @@ void CListControlHeaderImpl::RenderSubItemText(t_size item, t_size subItem,const
 
 	pfc::stringcvt::string_os_from_utf8_fast labelOS ( label );
 	CListCell::DrawContentArg_t arg;
-	arg.darkMode = this->GetDarkMode();
+	arg.darkMode = this->GetDarkModeParam();
 	arg.hdrFormat = GetColumnFormat( subItem );
 	arg.subItemRect = subItemRect;
 	arg.dc = dc;
@@ -1131,7 +1132,7 @@ void CListControlHeaderImpl::OnDestroy() {
 	m_colRuntime.clear();
 	m_header = NULL;
 	m_headerLine = NULL;
-	m_headerDark = false;
+	m_headerDark = {};
 	SetMsgHandled(FALSE);
 }
 

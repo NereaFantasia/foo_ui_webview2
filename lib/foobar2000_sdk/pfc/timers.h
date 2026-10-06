@@ -122,6 +122,7 @@ private:
 	t_uint64 m_start = 0;
 };
 
+#include <timeapi.h>
 class media_timer {
 	typedef DWORD val_t;
 	static val_t _now() { return timeGetTime(); }

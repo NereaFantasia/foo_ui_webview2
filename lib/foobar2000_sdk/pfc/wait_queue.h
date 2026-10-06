@@ -8,7 +8,7 @@ namespace pfc {
 	template<typename obj_t>
 	class waitQueue {
 	public:
-		waitQueue() : m_eof() {}
+		waitQueue() {}
 		
 		template<typename arg_t>
 		void put( arg_t && obj ) {
@@ -29,7 +29,7 @@ namespace pfc {
             return m_canRead.get_handle();
         }
 
-		bool get( obj_t & out ) {
+		bool get( obj_t & ret ) {
 			for ( ;; ) {
 				m_canRead.wait_for(-1);
 				mutexScope guard(m_mutex);
@@ -38,14 +38,14 @@ namespace pfc {
 					if (m_eof) return false;
 					continue;
 				}
-				out = std::move(*i);
+				ret = std::move(*i);
 				m_list.erase( i );
 				didGet();
 				return true;
 			}
 		}
 
-		bool get( obj_t & out, pfc::eventHandle_t hAbort, bool * didAbort = nullptr ) {
+		bool get( obj_t & ret, pfc::eventHandle_t hAbort, bool * didAbort = nullptr ) {
 			if (didAbort != nullptr) * didAbort = false;
 			for ( ;; ) {
 				if (pfc::event::g_twoEventWait( hAbort, m_canRead.get_handle(), -1) == 1) {
@@ -58,7 +58,7 @@ namespace pfc {
 					if (m_eof) return false;
 					continue;
 				}
-				out = std::move(*i);
+				ret = std::move(*i);
 				m_list.erase( i );
 				didGet();
 				return true;
@@ -74,7 +74,7 @@ namespace pfc {
 		void didGet() {
 			if (!m_eof && m_list.size() == 0) m_canRead.set_state(false);
 		}
-		bool m_eof;
+		bool m_eof = false;
 		std::list<obj_t> m_list;
 		mutex m_mutex;
 		event m_canRead;
@@ -86,6 +86,12 @@ namespace pfc {
 		typedef obj_t_ obj_t;
 		typedef std::list<obj_t_> list_t;
 		virtual bool canWriteCheck(list_t const &) { return true; }
+        virtual void didPutObj( obj_t const & ) {}
+        virtual void didGetObj( obj_t const & ) {}
+        virtual void didPutEOF() {}
+        virtual void didClear() {}
+        
+        bool atEOF() const { return m_eof; }
 
 	public:
 		void waitWrite() {
@@ -106,6 +112,7 @@ namespace pfc {
 		void put(arg_t && obj) {
 			mutexScope guard(m_mutex);
 			m_list.push_back(std::forward<arg_t>(obj));
+            didPutObj( m_list.back() );
 			if (m_list.size() == 1) m_canRead.set_state(true);
 			refreshCanWrite();
 		}
@@ -115,9 +122,10 @@ namespace pfc {
 			m_eof = true;
 			m_canRead.set_state(true);
 			m_canWrite.set_state(false);
+            didPutEOF();
 		}
 
-		bool get(obj_t & out) {
+		bool get(obj_t & ret) {
 			for (;; ) {
 				m_canRead.wait_for(-1);
 				mutexScope guard(m_mutex);
@@ -126,8 +134,9 @@ namespace pfc {
 					if (m_eof) return false;
 					continue;
 				}
-				out = std::move(*i);
+                ret = std::move(*i);
 				m_list.erase(i);
+                didGetObj( ret );
 				didGet();
 				return true;
 			}
@@ -156,6 +165,7 @@ namespace pfc {
 					if (peek && !peek(*i)) break;
 					auto n = i; ++n;
 					ret.splice(ret.end(), m_list, i);
+                    didGetObj( ret.back() );
 					i = std::move(n);
 					bDidGet = true;
 				} while (i != m_list.end());
@@ -165,7 +175,7 @@ namespace pfc {
 			return ret;
 		}
 
-		bool get(obj_t & out, pfc::eventHandle_t hAbort, bool * didAbort = nullptr) {
+		bool get(obj_t & ret, pfc::eventHandle_t hAbort, bool * didAbort = nullptr) {
 			if (didAbort != nullptr) * didAbort = false;
 			for (;; ) {
 				if (pfc::event::g_twoEventWait(hAbort, m_canRead.get_handle(), -1) == 1) {
@@ -178,8 +188,9 @@ namespace pfc {
 					if (m_eof) return false;
 					continue;
 				}
-				out = std::move(*i);
+				ret = std::move(*i);
 				m_list.erase(i);
+                didGetObj(ret);
 				didGet();
 				return true;
 			}
@@ -191,6 +202,7 @@ namespace pfc {
 			m_eof = false;
 			m_canRead.set_state(false);
 			m_canWrite.set_state(true);
+            didClear();
 		}
 	private:
 		void didGet() {
@@ -209,7 +221,8 @@ namespace pfc {
 		}
 		bool m_eof = false;
 		std::list<obj_t> m_list;
-		mutex m_mutex;
 		event m_canRead, m_canWrite;
+    protected:
+        mutex m_mutex;
 	};
 }

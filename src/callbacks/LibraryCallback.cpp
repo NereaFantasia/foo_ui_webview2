@@ -6,13 +6,32 @@
 
 #include "pch.h"
 #include "callbacks/LibraryCallback.h"
-#include "core/LibraryCache.h"
-#include "core/LibraryTreeIndex.h"
-#include "core/WebViewContext.h"
+#include "domain/library/LibraryCache.h"
+#include "domain/library/LibraryTreeIndex.h"
+#include "api/EventEmit.h"
+#include "api/generated/LibrarySchema.h"
 
 // ============================================
 // LibraryCallback Implementation
 // ============================================
+
+namespace {
+
+std::int64_t NowMs() {
+    return std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::system_clock::now().time_since_epoch()).count();
+}
+
+// The three item events share the { count, timestamp } payload.
+template <class E>
+void AnnounceItems(metadb_handle_list_cref items) {
+    typename E::Payload payload;
+    payload.count = static_cast<std::int64_t>(items.get_count());
+    payload.timestamp = NowMs();
+    api::emit::Broadcast<E>(payload);
+}
+
+}  // namespace
 
 class LibraryCallbackImpl : public library_callback_v2 {
 public:
@@ -22,12 +41,7 @@ public:
             g_LibraryCache.Invalidate();
             g_LibraryTreeIndex.Invalidate();
             
-            WebViewContext::GetInstance().BroadcastEvent("library:itemsAdded", {
-                {"count", p_data.get_count()},
-                {"timestamp", std::chrono::duration_cast<std::chrono::milliseconds>(
-                    std::chrono::system_clock::now().time_since_epoch()
-                ).count()},
-            });
+            AnnounceItems<api::library::events::ItemsAdded>(p_data);
             
             FB2K_console_print("[LibraryCallback] Items added: ", p_data.get_count());
         } catch (...) {}
@@ -39,12 +53,7 @@ public:
             g_LibraryCache.Invalidate();
             g_LibraryTreeIndex.Invalidate();
             
-            WebViewContext::GetInstance().BroadcastEvent("library:itemsRemoved", {
-                {"count", p_data.get_count()},
-                {"timestamp", std::chrono::duration_cast<std::chrono::milliseconds>(
-                    std::chrono::system_clock::now().time_since_epoch()
-                ).count()},
-            });
+            AnnounceItems<api::library::events::ItemsRemoved>(p_data);
             
             FB2K_console_print("[LibraryCallback] Items removed: ", p_data.get_count());
         } catch (...) {}
@@ -56,12 +65,7 @@ public:
             g_LibraryCache.Invalidate();
             g_LibraryTreeIndex.Invalidate();
             
-            WebViewContext::GetInstance().BroadcastEvent("library:itemsModified", {
-                {"count", p_data.get_count()},
-                {"timestamp", std::chrono::duration_cast<std::chrono::milliseconds>(
-                    std::chrono::system_clock::now().time_since_epoch()
-                ).count()},
-            });
+            AnnounceItems<api::library::events::ItemsModified>(p_data);
             
             FB2K_console_print("[LibraryCallback] Items modified: ", p_data.get_count());
         } catch (...) {}
@@ -79,11 +83,9 @@ public:
             g_LibraryCache.Invalidate();
             g_LibraryTreeIndex.Invalidate();
             
-            WebViewContext::GetInstance().BroadcastEvent("library:initialized", {
-                {"timestamp", std::chrono::duration_cast<std::chrono::milliseconds>(
-                    std::chrono::system_clock::now().time_since_epoch()
-                ).count()},
-            });
+            api::library::events::Initialized::Payload payload;
+            payload.timestamp = NowMs();
+            api::emit::Broadcast<api::library::events::Initialized>(payload);
             
             FB2K_console_print("[LibraryCallback] Library initialized");
         } catch (...) {}

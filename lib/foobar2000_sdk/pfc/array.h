@@ -54,8 +54,7 @@ namespace pfc {
 				m_size = p_size;
 			}
 		}
-		template<typename t_source>
-		void set_data_fromptr(const t_source * p_buffer,t_size p_count) {
+		void set_data_fromptr(const auto * p_buffer,t_size p_count) {
             if (p_count == m_size) {
                 pfc::copy_array_loop_t(*this,p_buffer,p_count);
             } else {
@@ -69,8 +68,7 @@ namespace pfc {
             }
 		}
         
-        template<typename t_source>
-        void assign(t_source const * items, size_t count) {
+        void assign(auto const * items, size_t count) {
             set_data_fromptr( items, count );
         }
 
@@ -123,8 +121,7 @@ namespace pfc {
 		}
 	}
 
-	template<typename t_array,typename t_value>
-	void fill_array_t(t_array & p_array,const t_value & p_value) {
+	void fill_array_t(auto & p_array,const auto & p_value) {
 		const t_size size = array_size_t(p_array);
 		for(t_size n=0;n<size;n++) p_array[n] = p_value;
 	}
@@ -178,14 +175,12 @@ namespace pfc {
 		t_item & operator[](t_size p_index) {PFC_ASSERT(p_index < get_size());return m_alloc[p_index];}
 
 		//! Warning: buffer pointer must not point to buffer allocated by this array (fixme).
-		template<typename t_source>
-		void set_data_fromptr(const t_source * p_buffer,t_size p_count) {
+		void set_data_fromptr(const auto * p_buffer,t_size p_count) {
 			set_size(p_count);
 			pfc::copy_array_loop_t(*this,p_buffer,p_count);
 		}
 
-		template<typename t_array>
-		void append(const t_array & p_source) {
+		void append(const auto & p_source) {
 			if (has_owned_items(p_source)) append(array_t<t_item>(p_source));
 			else {
 				const t_size source_size = array_size_t(p_source);
@@ -195,19 +190,17 @@ namespace pfc {
 			}
 		}
 
-		template<typename t_insert>
-		void insert_multi(const t_insert & value, t_size base, t_size count) {
+		void insert_multi(const auto & value, t_size base, t_size count) {
 			const t_size oldSize = get_size();
 			if (base > oldSize) base = oldSize;
 			increase_size(count);
 			pfc::memmove_t(get_ptr() + base + count, get_ptr() + base, oldSize - base);
 			pfc::fill_ptr_t(get_ptr() + base, count, value);
 		}
-		template<typename t_append> void append_multi(const t_append & value, t_size count) {insert_multi(value,~0,count);}
+		void append_multi(const auto & value, t_size count) {insert_multi(value,SIZE_MAX,count);}
 
 		//! Warning: buffer pointer must not point to buffer allocated by this array (fixme).
-		template<typename t_append>
-		void append_fromptr(const t_append * p_buffer,t_size p_count) {
+		void append_fromptr(const auto * p_buffer,t_size p_count) {
 			PFC_ASSERT( !is_owned(&p_buffer[0]) );
 			t_size base = get_size();
 			increase_size(p_count);
@@ -243,8 +236,7 @@ namespace pfc {
 			}
 		}
 
-		template<typename t_filler>
-		void fill(const t_filler & p_filler) {
+		void fill(const auto & p_filler) {
 			const t_size max = get_size();
 			for(t_size n=0;n<max;n++) m_alloc[n] = p_filler;
 		}
@@ -264,8 +256,7 @@ namespace pfc {
 
 		void prealloc(t_size p_size) {m_alloc.prealloc(p_size);}
 
-		template<typename t_array>
-		bool has_owned_items(const t_array & p_source) {
+		bool has_owned_items(const auto & p_source) {
 			if (array_size_t(p_source) == 0) return false;
 
 			//how the hell would we properly check if any of source items is owned by us, in case source array implements some weird mixing of references of items from different sources?
@@ -275,18 +266,17 @@ namespace pfc {
 			return is_owned(p_source[0]);
 		}
 
-		template<typename t_source>
-		bool is_owned(const t_source & p_item) {
+		bool is_owned(const auto & p_item) {
 			return m_alloc.is_ptr_owned(&p_item);
 		}
 
 		template<typename t_item>
-		void set_single(const t_item & p_item) {
+		void set_single(t_item && p_item) {
 			set_size(1);
-			(*this)[0] = p_item;
+			(*this)[0] = std::forward<t_item>( p_item );
 		}
 
-		template<typename t_callback> void enumerate(t_callback & p_callback) const { for(t_size n = 0; n < get_size(); n++ ) { p_callback((*this)[n]); } }
+		void enumerate(auto && p_callback) const { for(t_size n = 0; n < get_size(); n++ ) { p_callback((*this)[n]); } }
 
 		void move_from(t_self & other) {
 			m_alloc.move_from(other.m_alloc);
@@ -297,6 +287,9 @@ namespace pfc {
 		t_item* end() { return get_ptr() + get_size(); }
 		const t_item* begin() const { return get_ptr(); }
 		const t_item* end() const { return get_ptr() + get_size(); }
+
+		void clear() { set_size(0); }
+		bool empty() const { return size() == 0; }
 	private:
 		t_alloc<t_item> m_alloc;
 	};
@@ -313,8 +306,7 @@ namespace pfc {
 	template<typename t_comparator = comparator_default>
 	class comparator_array {
 	public:
-		template<typename t_array1, typename t_array2>
-		static int compare(const t_array1 & p_array1, const t_array2 & p_array2) {
+		static int compare(const auto & p_array1, const auto & p_array2) {
 			t_size walk = 0;
 			for(;;) {
 				if (walk >= p_array1.get_size() && walk >= p_array2.get_size()) return 0;
@@ -329,8 +321,7 @@ namespace pfc {
 		}
 	};
 
-	template<typename t_a1, typename t_a2>
-	static bool array_equals(const t_a1 & arr1, const t_a2 & arr2) {
+	static bool array_equals(const auto & arr1, const auto & arr2) {
 		const t_size s = array_size_t(arr1);
 		if (s != array_size_t(arr2)) return false;
 		for(t_size walk = 0; walk < s; ++walk) {
@@ -357,7 +348,7 @@ namespace pfc {
 		const t_item & at(t_size i1, t_size i2) const {
 			return * _transformPtr(m_content.get_ptr(), i1, i2);
 		}
-		template<typename t_filler> void fill(const t_filler & p_filler) {m_content.fill(p_filler);}
+		void fill(const auto & p_filler) {m_content.fill(p_filler);}
 		void fill_null() {m_content.fill_null();}
 
 		t_item * rowPtr(t_size i1) {return _transformPtr(m_content.get_ptr(), i1, 0);}

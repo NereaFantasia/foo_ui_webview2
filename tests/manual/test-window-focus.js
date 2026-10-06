@@ -1,26 +1,34 @@
 /**
- * window.focus 鑷姩鍖栧洖褰掕剼鏈? *
- * 鍏宠仈鎻愪氦: c216a59  鈥?fix: window.focus 缁曡繃鍓嶅彴閿佽秴鏃讹紝AttachThreadInput 绉掑垏寮圭獥
+ * window.focus 自动化回归脚本
  *
- * 瑕嗙洊鐩爣:
- *   1. 鍔熻兘姝ｇ‘鎬?鈥?浠庝富绐楀彛 focus(popupId) 绋冲畾杩斿洖 success锛屼笖 invoke 璋冪敤涓嶆姤閿? *   2. 寤惰繜绋冲畾鎬?鈥?蹇€熻繛缁皟鐢?20 娆★紝p50/p95/p99/max 鍧囧湪鍚堢悊闃堝€煎唴
- *   3. 杈圭晫澶勭悊   鈥?focus 涓嶅瓨鍦ㄧ殑 windowId 蹇呴』杩斿洖 success=false
- *   4. 澶氱獥鍙ｅ垏鎹?鈥?3 涓?popup 杞 focus锛宮ax 寤惰繜蹇呴』 < 500ms
- *   5. 鍥炲埌涓荤獥鍙?鈥?focus({windowId: "main"}) 鍙敤
+ * 关联提交: c216a59  — fix: window.focus 绕过前台锁超时，AttachThreadInput 秒切弹窗
  *
- * 杩愯鏂瑰紡:
- *   A) DevTools 鎺у埗鍙? *      1. 鍦?foobar2000 涓荤獥鍙ｆ寜 F12 鎵撳紑 DevTools
- *      2. 鍒囧埌 Console
- *      3. 绮樿创鏈枃浠跺叏閮ㄥ唴瀹瑰苟鍥炶溅
- *      4. 鏌ョ湅鎺у埗鍙拌緭鍑猴紱瀹屾暣缁撴灉瀛樹簬 window.__fb2kFocusTest
+ * 覆盖目标:
+ *   1. 功能正确性 — 从主窗口 focus(popupId) 稳定返回 success，且 invoke 调用不报错
+ *   2. 延迟稳定性 — 快速连续调用 20 次，p50/p95/p99/max 均在合理阈值内
+ *   3. 边界处理   — focus 不存在的 windowId 必须返回 success=false
+ *   4. 多窗口切换 — 3 个 popup 轮询 focus，max 延迟必须 < 500ms
+ *   5. 回到主窗口 — focus({windowId: "main"}) 可用
  *
- *   B) MCP fb2k_evaluate锛堥渶鍚姩 MCP 鏈嶅姟鏃惰缃?FB2K_ENABLE_EVAL=1锛? *      1. 璇诲彇鏈枃浠跺唴瀹逛负瀛楃涓? *      2. 璋冪敤 fb2k_evaluate({ expression: <鏈枃浠跺唴瀹? })
- *      3. 杩斿洖鍊煎嵆涓烘祴璇曠粨鏋滃璞?(IIFE 杩斿洖 out)
- *      4. 鍙﹁璋冪敤 fb2k_evaluate({ expression: "JSON.stringify(window.__fb2kFocusTest)" })
- *         鍙噸澶嶈鍙栦笂娆＄粨鏋? *
- * 娉ㄦ剰:
- *   - 鑴氭湰鏈韩鍙兘楠岃瘉"鍔熻兘 + 杩涚▼鍐呭欢杩?锛涜澶嶇幇 Windows ForegroundLockTimeout
- *     瀵艰嚧鐨勫墠鍙伴攣鍦烘櫙锛岄渶鎸?test-window-focus.md 鐨?鎵嬪伐澶嶇幇娴佺▼"鎿嶄綔銆? *   - 杩愯鏃朵細鍒涘缓/閿€姣佸涓?popup锛屼細鐭殏鎶㈠崰鍓嶅彴銆傝鍦ㄧ┖闂茬姸鎬佷笅鎵ц銆? */
+ * 运行方式:
+ *   A) DevTools 控制台
+ *      1. 在 foobar2000 主窗口按 F12 打开 DevTools
+ *      2. 切到 Console
+ *      3. 粘贴本文件全部内容并回车
+ *      4. 查看控制台输出；完整结果存于 window.__fb2kFocusTest
+ *
+ *   B) MCP fb2k_page_evaluate（需启动 MCP 服务时设置 FB2K_ENABLE_EVAL=1）
+ *      1. 读取本文件内容为字符串
+ *      2. 调用 fb2k_page_evaluate({ expression: <本文件内容> })
+ *      3. 返回值即为测试结果对象 (IIFE 返回 out)
+ *      4. 另行调用 fb2k_page_evaluate({ expression: "JSON.stringify(window.__fb2kFocusTest)" })
+ *         可重复读取上次结果
+ *
+ * 注意:
+ *   - 脚本本身只能验证"功能 + 进程内延迟"；要复现 Windows ForegroundLockTimeout
+ *     导致的前台锁场景，需按 test-window-focus.md 的"手工复现流程"操作。
+ *   - 运行时会创建/销毁多个 popup，会短暂抢占前台。请在空闲状态下执行。
+ */
 
 (async () => {
     'use strict';
@@ -48,7 +56,7 @@
 
     const hasBridge = typeof fb2k === 'object' && fb2k !== null && typeof fb2k.invoke === 'function';
     if (!hasBridge) {
-        log('preflight', 'fail', 'fb2k.invoke 涓嶅彲鐢紙蹇呴』鍦?foobar2000 涓荤獥鍙?WebView2 DevTools 鎴?MCP 涓墽琛岋級');
+        log('preflight', 'fail', 'fb2k.invoke 不可用（必须在 foobar2000 主窗口 WebView2 DevTools 或 MCP 中执行）');
         window.__fb2kFocusTest = out;
         return out;
     }
@@ -68,15 +76,16 @@
         try { await invoke('window.closeAllPopups'); } catch (_) { /* ignore */ }
     };
 
-    // 棰勬竻鐞?    await cleanup();
+    // 预清理
+    await cleanup();
     await sleep(150);
 
     let popupSmall = null;
     let popupLarge = null;
 
-    // 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
-    // T1: 鍩虹娴佺▼ 鈥?鍒涘缓灏忓脊绐楀苟浠庝富绐楀彛 focus
-    // 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
+    // ────────────────────────────────────────────────────
+    // T1: 基础流程 — 创建小弹窗并从主窗口 focus
+    // ────────────────────────────────────────────────────
     try {
         const r = await invoke('window.createPopup', {
             url: 'about:blank',
@@ -85,7 +94,8 @@
         });
         if (!r || !r.success) throw new Error((r && r.error) || 'createPopup failed');
         popupSmall = r.windowId;
-        await sleep(250); // 绛夊緟 WebView2 棣栧抚锛岄伩鍏嶅共鎵板悗缁鏃?
+        await sleep(250); // 等待 WebView2 首帧，避免干扰后续计时
+
         const focusRes = await timedInvoke('window.focus', { windowId: popupSmall });
         out.timings.push({ case: 'T1', windowId: popupSmall, ms: focusRes.ms });
         if (focusRes.result && focusRes.result.success) {
@@ -99,8 +109,9 @@
         log('T1-basic-focus', 'fail', e && e.message ? e.message : String(e));
     }
 
-    // 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
-    // T3: 澶у昂瀵稿脊绐?鈥?楠岃瘉 SetForegroundWindow 涓嶅洜绐楀彛澶у皬閫€鍖?    // 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
+    // ────────────────────────────────────────────────────
+    // T3: 大尺寸弹窗 — 验证 SetForegroundWindow 不因窗口大小退化
+    // ────────────────────────────────────────────────────
     try {
         const r = await invoke('window.createPopup', {
             url: 'about:blank',
@@ -109,37 +120,40 @@
         });
         if (!r || !r.success) throw new Error((r && r.error) || 'createPopup failed');
         popupLarge = r.windowId;
-        await sleep(500); // 澶х獥鍙ｉ甯ф洿鎱?
+        await sleep(500); // 大窗口首帧更慢
+
         const focusRes = await timedInvoke('window.focus', { windowId: popupLarge });
         out.timings.push({ case: 'T3', windowId: popupLarge, ms: focusRes.ms });
         const threshold = 500;
         const pass = !!(focusRes.result && focusRes.result.success) && focusRes.ms < threshold;
         log('T3-large-popup', pass ? 'pass' : 'fail',
-            `large focus in ${focusRes.ms.toFixed(1)}ms (闃堝€?< ${threshold}ms)`);
+            `large focus in ${focusRes.ms.toFixed(1)}ms (阈值 < ${threshold}ms)`);
     } catch (e) {
         log('T3-large-popup', 'fail', e && e.message ? e.message : String(e));
     }
 
-    // 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
-    // T4: 涓嶅瓨鍦ㄧ殑 windowId 鈥?蹇呴』 success=false + 鏄庣‘閿欒
-    // 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
+    // ────────────────────────────────────────────────────
+    // T4: 不存在的 windowId — 必须 success=false + 明确错误
+    // ────────────────────────────────────────────────────
     try {
         const r = await invoke('window.focus', { windowId: 'popup_does_not_exist_xyz' });
         const looksCorrect = r && r.success === false && /not found/i.test(r.error || '');
         log('T4-invalid-id', looksCorrect ? 'pass' : 'fail',
             looksCorrect
-                ? `姝ｇ‘鎷掔粷: ${r.error}`
-                : `寮傚父杩斿洖: ${JSON.stringify(r)}`);
+                ? `正确拒绝: ${r.error}`
+                : `异常返回: ${JSON.stringify(r)}`);
     } catch (e) {
         log('T4-invalid-id', 'fail', e && e.message ? e.message : String(e));
     }
 
-    // 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
-    // T6: 蹇€熻繛缁?focus 鈥?绋冲畾鎬?+ 寤惰繜鐩存柟鍥?    //     娉? 棣栨璋冪敤鍙兘璺ㄨ繘绋嬶紙DevTools 鍓嶅彴锛夛紝鍚庣画鍚岃繘绋嬶紱
-    //     AttachThreadInput 淇搴斾繚璇佹墍鏈夐噰鏍峰潎 < 200ms銆?    // 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
+    // ────────────────────────────────────────────────────
+    // T6: 快速连续 focus — 稳定性 + 延迟直方图
+    //     注: 首次调用可能跨进程（DevTools 前台），后续同进程；
+    //     AttachThreadInput 修复应保证所有采样均 < 200ms。
+    // ────────────────────────────────────────────────────
     try {
         const targets = [popupSmall, popupLarge].filter(Boolean);
-        if (targets.length === 0) throw new Error('鍓嶇疆鐢ㄤ緥鏈垱寤轰换浣?popup');
+        if (targets.length === 0) throw new Error('前置用例未创建任何 popup');
 
         const N = 20;
         const samples = [];
@@ -151,14 +165,14 @@
             }
             samples.push(r.ms);
             out.timings.push({ case: 'T6', windowId: target, iter: i, ms: r.ms });
-            await sleep(15); // 缁?UI 绾跨▼涓€涓秷鎭车 tick
+            await sleep(15); // 给 UI 线程一个消息泵 tick
         }
         samples.sort((a, b) => a - b);
         const pick = (p) => samples[Math.min(samples.length - 1, Math.floor(samples.length * p))];
         const p50 = pick(0.5), p95 = pick(0.95), p99 = pick(0.99);
         const max = samples[samples.length - 1];
         const mean = samples.reduce((a, b) => a + b, 0) / samples.length;
-        // 闃堝€硷細p95 < 200ms锛堣繘绋嬪唴 fast path锛夛紝鎵€鏈夐噰鏍?< 1000ms
+        // 阈值：p95 < 200ms（进程内 fast path），所有采样 < 1000ms
         const pass = samples.every((ms) => ms < 1000) && p95 < 200;
         log('T6-rapid-succession', pass ? 'pass' : 'fail',
             `n=${N} mean=${mean.toFixed(1)} p50=${p50.toFixed(1)} p95=${p95.toFixed(1)} p99=${p99.toFixed(1)} max=${max.toFixed(1)} (ms)`,
@@ -167,8 +181,9 @@
         log('T6-rapid-succession', 'fail', e && e.message ? e.message : String(e));
     }
 
-    // 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
-    // T8: 澶氬脊绐楄疆璇㈠垏鎹?鈥?3 涓?popup 鍏?9 娆″垏鎹?    // 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
+    // ────────────────────────────────────────────────────
+    // T8: 多弹窗轮询切换 — 3 个 popup 共 9 次切换
+    // ────────────────────────────────────────────────────
     const t8Popups = [];
     try {
         for (let i = 0; i < 3; i++) {
@@ -179,7 +194,7 @@
             });
             if (r && r.success) t8Popups.push(r.windowId);
         }
-        if (t8Popups.length !== 3) throw new Error(`浠呭垱寤?${t8Popups.length}/3 涓?popup`);
+        if (t8Popups.length !== 3) throw new Error(`仅创建 ${t8Popups.length}/3 个 popup`);
         await sleep(400);
 
         const cycleSamples = [];
@@ -196,13 +211,14 @@
         const maxCycle = Math.max.apply(null, cycleSamples);
         const pass = maxCycle < 500;
         log('T8-multi-cycle', pass ? 'pass' : 'fail',
-            `n=${cycleSamples.length} max=${maxCycle.toFixed(1)}ms (闃堝€?< 500ms)`);
+            `n=${cycleSamples.length} max=${maxCycle.toFixed(1)}ms (阈值 < 500ms)`);
     } catch (e) {
         log('T8-multi-cycle', 'fail', e && e.message ? e.message : String(e));
     }
 
-    // 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
-    // T9: focus("main") 鈥?鍥炲埌涓荤獥鍙?    // 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
+    // ────────────────────────────────────────────────────
+    // T9: focus("main") — 回到主窗口
+    // ────────────────────────────────────────────────────
     try {
         const r = await timedInvoke('window.focus', { windowId: 'main' });
         out.timings.push({ case: 'T9', windowId: 'main', ms: r.ms });
@@ -215,27 +231,30 @@
         log('T9-focus-main', 'fail', e && e.message ? e.message : String(e));
     }
 
-    // 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
-    // T5: 鏈€灏忓寲鍚?focus 鎭㈠ 鈥?鏍囪涓?skip锛堥渶浜哄伐锛?    //     window.minimize 鍩轰簬 caller hwnd锛屼笉鎺ュ彈 windowId锛?    //     鏃犳硶浠庝富绐楀彛绋嬪簭鍖栨渶灏忓寲鎸囧畾 popup锛岀粺涓€鏀惧叆鎵嬪伐娴佺▼銆?    // 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
+    // ────────────────────────────────────────────────────
+    // T5: 最小化后 focus 恢复 — 标记为 skip（需人工）
+    //     window.minimize 基于 caller hwnd，不接受 windowId，
+    //     无法从主窗口程序化最小化指定 popup，统一放入手工流程。
+    // ────────────────────────────────────────────────────
     log('T5-minimized-restore', 'skip',
-        '绋嬪簭鍖栦笉鍙锛坵indow.minimize 浠呭 caller 鐢熸晥锛夛紝瑙?test-window-focus.md 鎵嬪伐娴佺▼');
+        '程序化不可行（window.minimize 仅对 caller 生效），见 test-window-focus.md 手工流程');
 
-    // 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
-    // T2, T7, T10: 璺ㄩ〉闈?璺ㄨ繘绋嬪満鏅?鈥?鏍囪涓?skip
-    // 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
+    // ────────────────────────────────────────────────────
+    // T2, T7, T10: 跨页面/跨进程场景 — 标记为 skip
+    // ────────────────────────────────────────────────────
     log('T2-self-focus', 'skip',
-        '闇€鍦ㄥ脊绐楅〉闈㈠唴鎵ц fb2k.invoke("window.focus") 鈥?瑙?test-window-focus.md');
+        '需在弹窗页面内执行 fb2k.invoke("window.focus") — 见 test-window-focus.md');
     log('T7-foreground-lock-bypass', 'skip',
-        'Windows ForegroundLockTimeout 澶嶇幇闇€浜哄伐鍒囧埌 Notepad 鈥?瑙?test-window-focus.md');
+        'Windows ForegroundLockTimeout 复现需人工切到 Notepad — 见 test-window-focus.md');
     log('T10-popup-self-focus', 'skip',
-        '闇€鍦ㄥ脊绐?DevTools 鍐呮墽琛?鈥?瑙?test-window-focus.md');
+        '需在弹窗 DevTools 内执行 — 见 test-window-focus.md');
 
-    // 娓呯悊
+    // 清理
     await cleanup();
 
-    // 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
+    // ────────────────────────────────────────────────────
     // Summary
-    // 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
+    // ────────────────────────────────────────────────────
     out.finishedAt = new Date().toISOString();
     const total = out.passed + out.failed;
     const pct = total ? ((out.passed / total) * 100).toFixed(1) : '0';

@@ -6,11 +6,10 @@ void CEditWithButtons::AddMoreButton(std::function<void()> f) {
 	AddButton(L"more", f, nullptr, L"\x2026");
 }
 void CEditWithButtons::AddClearButton(const wchar_t * clearVal, bool bHandleEsc) {
-	std::wstring clearValCopy(clearVal);
-	auto handler = [this, clearValCopy] {
+	auto handler = [this, clearValCopy = std::wstring(clearVal)] {
 		this->SetWindowText(clearValCopy.c_str());
 	};
-	auto condition = [clearValCopy](const wchar_t * txt) -> bool {
+	auto condition = [clearValCopy = std::wstring(clearVal)](const wchar_t * txt) -> bool {
 		return clearValCopy != txt;
 	};
 	// Present "clear" to accessibility APIs but actually draw a multiplication x sign
@@ -132,7 +131,8 @@ void CEditWithButtons::Layout(CSize size, CFontHandle fontSetMe) {
 
 		if (iter->wnd == NULL) {
 			auto* b = &iter->wnd;
-			b->Create(*this, NULL, iter->title.c_str());
+			WIN32_OP_D(b->Create(*this, NULL, iter->title.c_str()));
+			m_dark.sendMessage(b->m_hWnd);
 			if (iter->titleDraw.length() > 0) b->DrawAlternateText(iter->titleDraw.c_str());
 			CFontHandle font = fontSetMe;
 			if (font == NULL) font = GetFont();

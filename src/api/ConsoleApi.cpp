@@ -4,6 +4,9 @@
 #include "pch.h"
 #include "api/ConsoleApi.h"
 #include "api/BridgeCore.h"
+#include "api/TypedApi.h"
+#include "api/generated/ConsoleSchema.h"
+#include "api/generated/LogSchema.h"
 #include "utils/PathTraversalSegments.h"
 #include <fstream>
 #include <chrono>
@@ -13,11 +16,11 @@
 
 namespace {
     using json = nlohmann::json;
-    
+
     // Log file mutex and path
     static std::mutex g_logMutex;
     static std::wstring g_logFilePath;
-    
+
     //==========================================================================
     // Helper: Get current timestamp string
     //==========================================================================
@@ -26,33 +29,33 @@ namespace {
         auto time = std::chrono::system_clock::to_time_t(now);
         auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(
             now.time_since_epoch()) % 1000;
-        
+
         std::tm tm_buf;
         localtime_s(&tm_buf, &time);
-        
+
         std::ostringstream oss;
         oss << std::put_time(&tm_buf, "%Y-%m-%d %H:%M:%S")
             << '.' << std::setfill('0') << std::setw(3) << ms.count();
         return oss.str();
     }
-    
+
     //==========================================================================
-    // Helper: Format log message from params
+    // Helper: Format log message from the declared message / args
+    // message wins over args; a string is written as it is, any other JSON
+    // value as its JSON text. An empty result means "no message".
     //==========================================================================
-    std::string FormatLogMessage(const json& params) {
-        if (params.contains("message")) {
-            if (params["message"].is_string()) {
-                return params["message"].get<std::string>();
-            } else {
-                return params["message"].dump();
-            }
-        } else if (params.contains("args") && params["args"].is_array()) {
+    std::string FormatLogMessage(const std::optional<json>& message,
+                                 const std::optional<std::vector<json>>& args) {
+        if (message) {
+            return message->is_string() ? message->get<std::string>() : message->dump();
+        }
+        if (args) {
             std::ostringstream oss;
             bool first = true;
-            for (const auto& arg : params["args"]) {
+            for (const auto& arg : *args) {
                 if (!first) oss << " ";
                 first = false;
-                
+
                 if (arg.is_string()) {
                     oss << arg.get<std::string>();
                 } else {
@@ -63,7 +66,7 @@ namespace {
         }
         return "";
     }
-    
+
     //==========================================================================
     // Helper: Write to foobar2000 console
     //==========================================================================
@@ -72,11 +75,22 @@ namespace {
         if (!level.empty() && level != "log") {
             prefix += "[" + level + "]";
         }
-        
+
         std::string fullMessage = prefix + " " + message;
         console::print(fullMessage.c_str());
     }
-    
+
+    // console.log / warn / error share this: the three params types are the same shape.
+    template <class P>
+    api::Result<void> ConsoleWrite(const char* level, const P& p) {
+        std::string message = FormatLogMessage(p.message, p.args);
+        if (message.empty()) {
+            return api::Fail("message is required", ApiErrorCode::INVALID_PARAMS);
+        }
+        WriteToConsole(level, message);
+        return api::Ok();
+    }
+
     //==========================================================================
     // Helper: Get log file path
     //==========================================================================
@@ -88,7 +102,7 @@ namespace {
             // 同一仓库的 WebViewHost::GetProfileLogPath 是这条的正确写法。
             pfc::string8 profilePath;
             filesystem::g_get_display_path(core_api::get_profile_path(), profilePath);
-            
+
             // Use proper UTF-8 → UTF-16 conversion (profilePath is UTF-8)
             std::wstring widePath = Utf8ToWide(std::string(profilePath.get_ptr(), profilePath.get_length()));
             widePath += L"\\webview_ui.log";
@@ -96,80 +110,53 @@ namespace {
         }
         return g_logFilePath;
     }
-    
+
     //==========================================================================
-    // console.log - Log message to foobar2000 console
+    // console.log / console.warn / console.error - Log to foobar2000 console
     //==========================================================================
-    json ConsoleLog(const json& params) {
-        std::string message = FormatLogMessage(params);
-        
-        if (message.empty()) {
-            return {{"success", false}, {"error", "message is required"}};
-        }
-        
-        WriteToConsole("", message);
-        return {{"success", true}};
+    api::Result<void> ConsoleLog(const api::console::LogParams& p) {
+        return ConsoleWrite("", p);
     }
-    
-    //==========================================================================
-    // console.warn - Log warning to foobar2000 console
-    //==========================================================================
-    json ConsoleWarn(const json& params) {
-        std::string message = FormatLogMessage(params);
-        
-        if (message.empty()) {
-            return {{"success", false}, {"error", "message is required"}};
-        }
-        
-        WriteToConsole("WARN", message);
-        return {{"success", true}};
+
+    api::Result<void> ConsoleWarn(const api::console::WarnParams& p) {
+        return ConsoleWrite("WARN", p);
     }
-    
-    //==========================================================================
-    // console.error - Log error to foobar2000 console
-    //==========================================================================
-    json ConsoleError(const json& params) {
-        std::string message = FormatLogMessage(params);
-        
-        if (message.empty()) {
-            return {{"success", false}, {"error", "message is required"}};
-        }
-        
-        WriteToConsole("ERROR", message);
-        return {{"success", true}};
+
+    api::Result<void> ConsoleError(const api::console::ErrorParams& p) {
+        return ConsoleWrite("ERROR", p);
     }
-    
+
     //==========================================================================
     // log.write - Write to log file
     //==========================================================================
-    json LogWrite(const json& params) {
-        std::string message = FormatLogMessage(params);
-        std::string level = params.value("level", "info");
-        bool append = params.value("append", true);
-        bool timestamp = params.value("timestamp", true);
-        
+    api::Result<api::log::WriteResult> LogWrite(const api::log::WriteParams& p) {
+        std::string message = FormatLogMessage(p.message, p.args);
+        const std::string& level = p.level;
+        bool append = p.append;
+        bool timestamp = p.timestamp;
+
         if (message.empty()) {
-            return {{"success", false}, {"error", "message is required"}};
+            return api::Fail("message is required", ApiErrorCode::INVALID_PARAMS);
         }
-        
+
         try {
             std::lock_guard<std::mutex> lock(g_logMutex);
-            
+
             std::wstring logPath = GetLogFilePath();
-            
+
             // Custom file path support
-            if (params.contains("file") && params["file"].is_string()) {
-                std::string customFile = params["file"].get<std::string>();
+            if (p.file) {
+                const std::string& customFile = *p.file;
                 // Validate it's in profile directory
                 // 与 GetLogFilePath 同一约束：必须用 core_api::get_profile_path()，
                 // 字面量 "profile://" 解不出 profile 目录。
                 pfc::string8 profilePath;
                 filesystem::g_get_display_path(core_api::get_profile_path(), profilePath);
-                
+
                 // Use proper UTF-8 → UTF-16 conversion (profilePath is UTF-8)
                 std::wstring widePath = Utf8ToWide(std::string(profilePath.get_ptr(), profilePath.get_length()));
                 std::wstring customFileW = Utf8ToWide(customFile);
-                
+
                 // 安全校验: 禁止路径遍历 + 仅允许 .log/.txt 扩展名 + 过滤 Windows 保留设备名
                 bool hasValidExtension = false;
                 if (customFile.size() >= 4) {
@@ -197,56 +184,51 @@ namespace {
                     logPath = widePath + L"\\" + customFileW;
                 }
             }
-            
+
             std::ofstream file(logPath, append ? std::ios::app : std::ios::trunc);
             if (!file.is_open()) {
-                return {{"success", false}, {"error", "Failed to open log file"}};
+                return api::Fail("Failed to open log file", ApiErrorCode::OPERATION_FAILED);
             }
-            
+
             if (timestamp) {
                 file << "[" << GetTimestamp() << "]";
             }
-            
+
             // Level prefix
             std::string upperLevel = level;
             std::transform(upperLevel.begin(), upperLevel.end(), upperLevel.begin(), ::toupper);
             file << "[" << upperLevel << "] ";
-            
+
             file << message << '\n';
             file.close();
-            
-            return {
-                {"success", true},
-                {"path", pfc::stringcvt::string_utf8_from_wide(logPath.c_str()).get_ptr()}
-            };
+
+            api::log::WriteResult out;
+            out.path = pfc::stringcvt::string_utf8_from_wide(logPath.c_str()).get_ptr();
+            return out;
         } catch (const std::exception& e) {
-            return {{"success", false}, {"error", e.what()}};
+            return api::Fail(e.what(), ApiErrorCode::OPERATION_FAILED);
         }
     }
-    
+
     //==========================================================================
     // log.read - Read log file contents
+    // The generated parser has already rejected a negative line count.
     //==========================================================================
-    json LogRead(const json& params) {
-        int lines = params.value("lines", 100);  // Last N lines
-        if (lines < 0) {
-            return {{"success", false}, {"error", "lines must be non-negative"}};
-        }
-        
+    api::Result<api::log::ReadResult> LogRead(const api::log::ReadParams& p) {
+        const std::int64_t lines = p.lines;  // Last N lines
+
         try {
             std::lock_guard<std::mutex> lock(g_logMutex);
-            
+
             std::wstring logPath = GetLogFilePath();
-            
+
+            api::log::ReadResult out;
             std::ifstream file(logPath);
             if (!file.is_open()) {
-                return {
-                    {"success", true},
-                    {"content", ""},
-                    {"lineCount", 0}
-                };
+                // A missing file reads as empty, without lines / totalLines.
+                return out;
             }
-            
+
             // Read all lines
             std::vector<std::string> allLines;
             std::string line;
@@ -254,71 +236,58 @@ namespace {
                 allLines.push_back(line);
             }
             file.close();
-            
+
             // Get last N lines
-            int startIdx = std::max(0, (int)allLines.size() - lines);
+            const std::int64_t total = static_cast<std::int64_t>(allLines.size());
+            const std::int64_t startIdx = std::max<std::int64_t>(0, total - lines);
             std::ostringstream oss;
-            json linesArray = json::array();
-            for (int i = startIdx; i < allLines.size(); i++) {
+            std::vector<std::string> tail;
+            for (std::int64_t i = startIdx; i < total; i++) {
                 if (i > startIdx) oss << "\n";
-                oss << allLines[i];
-                linesArray.push_back(allLines[i]);
+                oss << allLines[static_cast<size_t>(i)];
+                tail.push_back(allLines[static_cast<size_t>(i)]);
             }
-            
-            return {
-                {"success", true},
-                {"content", oss.str()},
-                {"lines", linesArray},
-                {"lineCount", (int)(allLines.size() - startIdx)},
-                {"totalLines", (int)allLines.size()}
-            };
+
+            out.content = oss.str();
+            out.lineCount = total - startIdx;
+            out.lines = std::move(tail);
+            out.totalLines = total;
+            return out;
         } catch (const std::exception& e) {
-            return {{"success", false}, {"error", e.what()}};
+            return api::Fail(e.what(), ApiErrorCode::OPERATION_FAILED);
         }
     }
-    
+
     //==========================================================================
     // log.clear - Clear log file
     //==========================================================================
-    json LogClear(const json& /*params*/) {
+    api::Result<void> LogClear(const api::log::ClearParams& /*params*/) {
         try {
             std::lock_guard<std::mutex> lock(g_logMutex);
-            
+
             std::wstring logPath = GetLogFilePath();
             std::ofstream file(logPath, std::ios::trunc);
             file.close();
-            
-            return {{"success", true}};
+
+            return api::Ok();
         } catch (const std::exception& e) {
-            return {{"success", false}, {"error", e.what()}};
+            return api::Fail(e.what(), ApiErrorCode::OPERATION_FAILED);
         }
     }
-    
+
 } // anonymous namespace
 
 //==========================================================================
 // Register Console/Logging API
 //==========================================================================
+// Parameters and results come from src/api/schema/console.ts and log.ts through the generated types.
 void RegisterConsoleApi() {
-    auto& bridge = BridgeCore::GetInstance();
-    
-    // console.log - Standard log
-    bridge.RegisterApi("console.log", ConsoleLog);
-    
-    // console.warn - Warning log
-    bridge.RegisterApi("console.warn", ConsoleWarn);
-    
-    // console.error - Error log
-    bridge.RegisterApi("console.error", ConsoleError);
-    
-    // log.write - Write to file
-    bridge.RegisterApi("log.write", LogWrite);
-    
-    // log.read - Read log file
-    bridge.RegisterApi("log.read", LogRead);
-    
-    // log.clear - Clear log file
-    bridge.RegisterApi("log.clear", LogClear);
-    
+    api::RegisterApi("console.log", ConsoleLog);
+    api::RegisterApi("console.warn", ConsoleWarn);
+    api::RegisterApi("console.error", ConsoleError);
+    api::RegisterApi("log.write", LogWrite);
+    api::RegisterApi("log.read", LogRead);
+    api::RegisterApi("log.clear", LogClear);
+
     LOG("Console API registered (6 APIs)");
 }

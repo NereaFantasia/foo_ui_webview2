@@ -40,7 +40,7 @@
 // test_path_prefix_boundary.cpp, the admission chain is reimplemented with
 // injectable predicates so both the outcome and the deciding step are pinned.
 //
-// Mirrored production code (src/utils/PathSecurity.h): ValidateMediaWriteAccess,
+// Mirrored production code (src/domain/PathSecurity.cpp): ValidateMediaWriteAccess,
 // ValidateFileWriteAccess, ValidateMediaAccess, LandingSafeForWrite,
 // LandingSafeForRead and IsOnNonSystemVolume. Whenever the step order of any
 // of these changes, this file must be updated in the same change.

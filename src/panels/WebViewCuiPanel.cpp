@@ -6,8 +6,10 @@
 #include "WebViewCuiPanel.h"
 #include "panels/PanelConfigDialog.h"
 #include "core/WebViewContext.h"
-#include "core/SecurityConfig.h"
+#include "settings/SecurityConfig.h"
 #include "api/BridgeCore.h"
+#include "api/EventEmit.h"
+#include "api/generated/PanelSchema.h"
 #include "webview/WebViewHost.h"
 #include "window/WindowManager.h"
 
@@ -165,12 +167,11 @@ void WebViewCuiPanel::OnWebViewReady() {
     
     // Notify frontend about CUI panel mode
     if (GetBridge()) {
-        json data = {
-            {"mode", "cui"},
-            {"panelMode", true},
-            {"windowId", panelId}
-        };
-        GetBridge()->EmitEvent("panel:initialized", data);
+        api::panel::InitializedPayload initialized;
+        initialized.mode = "cui";
+        initialized.panelMode = true;
+        initialized.windowId = panelId;
+        api::emit::Emit<api::panel::events::Initialized>(*GetBridge(), initialized);
     }
 }
 

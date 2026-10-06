@@ -52,12 +52,18 @@ namespace foobar2000_io
 	PFC_DECLARE_EXCEPTION(exception_io_net, exception_io, "Network error");
 	//! A network security error
 	PFC_DECLARE_EXCEPTION(exception_io_net_security, exception_io_net, "Network security error");
+    //! A network operation did not finish within an acceptable timeframe.
+    PFC_DECLARE_EXCEPTION(exception_io_net_timeout, exception_io_net, "Network operation timed out");
+    //! A network credentials error
+    PFC_DECLARE_EXCEPTION(exception_io_net_credentials, exception_io_denied, "Invalid network credentials");
 	//! A network connectivity error, specifically a DNS query failure
 	PFC_DECLARE_EXCEPTION(exception_io_dns, exception_io_net, "DNS error");
 	//! The path does not point to a directory.
 	PFC_DECLARE_EXCEPTION(exception_io_not_directory, exception_io, "Not a directory");
 	//! Functionality not supported by this device or file system.
 	PFC_DECLARE_EXCEPTION(exception_io_unsupported_feature, exception_io, "Unsupported feature");
+    //! The operation did not finish within an acceptable timeframe.
+    PFC_DECLARE_EXCEPTION(exception_io_timeout, exception_io, "Operation timed out");
 
 #ifdef _WIN32
 	PFC_NORETURN void exception_io_from_win32(DWORD p_code);
@@ -70,7 +76,7 @@ namespace foobar2000_io
     PFC_NORETURN void exception_io_from_nix(int code);
     PFC_NORETURN void nix_io_op_fail();
     void nix_pre_io_op();
-#define NIX_IO_OP(X) { if (!(X)) nix_io_op_fail();}
+#define NIX_IO_OP(X) { nix_pre_io_op(); if (!(X)) nix_io_op_fail();}
 
 #endif
 

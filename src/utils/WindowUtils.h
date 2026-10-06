@@ -2,7 +2,7 @@
 #include <string>
 #include <string_view>
 #include <nlohmann/json.hpp>
-#include "core/PreferencesPage.h"
+#include "prefs/PreferencesPage.h"
 // 零 foobar2000 SDK 依赖的 helper（ToLower / TryGetBool /
 // IsPluginManagedBackdropEffect）已拆到 WindowUtilsCore.h，位于同一
 // namespace，故本头文件的既有消费者无需任何改动。

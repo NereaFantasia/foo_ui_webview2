@@ -49,7 +49,7 @@ public:
 //! New in 0.9.5.
 class keyboard_shortcut_manager_v2 : public keyboard_shortcut_manager {
 public:
-	//! Deprecates old keyboard_shortcut_manager methods. If the action requires selected items, they're obtained from ui_selection_manager API automatically.
+	//! Deprecates old @c keyboard_shortcut_manager methods. If the action requires selected items, they're obtained from @c ui_selection_manager API automatically.
 	virtual bool process_keydown_simple(t_uint32 keycode) = 0;
 
 #ifdef _WIN32
@@ -88,10 +88,10 @@ public:
 		flag_show_shortcuts = 1 << 0,
 		flag_show_shortcuts_global = 1 << 1,
 		//! \since 1.0
-		//! To control which commands are shown, you should specify either flag_view_reduced or flag_view_full. If neither is specified, the implementation will decide automatically based on shift key being pressed, for backwards compatibility.
+		//! To control which commands are shown, you should specify either @c flag_view_reduced or @c flag_view_full. If neither is specified, the implementation will decide automatically based on shift key being pressed, for backwards compatibility.
 		flag_view_reduced = 1 << 2,
 		//! \since 1.0
-		//! To control which commands are shown, you should specify either flag_view_reduced or flag_view_full. If neither is specified, the implementation will decide automatically based on shift key being pressed, for backwards compatibility.
+		//! To control which commands are shown, you should specify either @c flag_view_reduced or @c flag_view_full. If neither is specified, the implementation will decide automatically based on shift key being pressed, for backwards compatibility.
 		flag_view_full = 1 << 3,
 
 		//for compatibility

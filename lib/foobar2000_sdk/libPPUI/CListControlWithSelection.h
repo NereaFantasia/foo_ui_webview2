@@ -44,8 +44,8 @@ public:
 	virtual void RequestReorder( size_t const * order, size_t count ) = 0;
 	virtual void RequestRemoveSelection() = 0;
 	virtual void ExecuteDefaultAction(t_size index) = 0;
-	virtual void ExecuteDefaultActionGroup(t_size base, t_size count) { (void)base; (void)count; }
-	virtual bool ExecuteCanvasDefaultAction(CPoint pt) { (void)pt; return false; }
+	virtual void ExecuteDefaultActionGroup(t_size base, t_size count) { std::ignore = base; std::ignore = count; }
+	virtual bool ExecuteCanvasDefaultAction(CPoint pt) { std::ignore = pt; return false; }
 
 	virtual t_size GetSelectionStart() const = 0;
 	virtual void SetSelectionStart(t_size val) = 0;
@@ -57,13 +57,13 @@ public:
 
 	//! Notification, mandatory to call by SetFocusItem() implementation. \n
 	//! If overridden by subclass, must call parent.
-	virtual void OnFocusChanged(size_t oldFocus, size_t newFocus) { (void)oldFocus; (void)newFocus; }
-	virtual void OnFocusChangedGroup2(size_t baseItem) { (void)baseItem; }
+	virtual void OnFocusChanged(size_t oldFocus, size_t newFocus) { std::ignore = oldFocus; std::ignore = newFocus; }
+	virtual void OnFocusChangedGroup2(size_t baseItem) { std::ignore = baseItem; }
 	//! Notification, mandatory to call by SetSelection() implementation. \n
 	//! If overridden by subclass, must call parent. \n
 	//! Affected: Mask indicating what items ACTUALLY CHANGED, old state to be assumed opposite of new. \n
 	//! During this call, IsSelected() already returns new state.
-	virtual void OnSelectionChanged(pfc::bit_array const& affected, pfc::bit_array const& status) { (void)affected; (void)status; }
+	virtual void OnSelectionChanged(pfc::bit_array const& affected, pfc::bit_array const& status) { std::ignore = affected; std::ignore = status; }
 
 	enum {
 		dragDrop_reorder = 1 << 0,
@@ -85,11 +85,11 @@ public:
 	virtual pfc::com_ptr_t<IDataObject> MakeDataObject();
 	//! Called upon drop
 	//! @param pt Drop point in screen coordinates.
-	virtual void OnDrop(IDataObject* obj, CPoint pt) { (void)obj; (void)pt; }
+	virtual void OnDrop(IDataObject* obj, CPoint pt) { std::ignore = obj; std::ignore = pt; }
 	virtual DWORD DragDropSourceEffects() { return DROPEFFECT_MOVE | DROPEFFECT_COPY;}
-	virtual void DragDropSourceSucceeded(DWORD effect) { (void)effect; }
+	virtual void DragDropSourceSucceeded(DWORD effect) { std::ignore = effect; }
 
-	virtual void AdjustSelectionRect(size_t item, CRect& rc) { (void)item; (void)rc; }
+	virtual void AdjustSelectionRect(size_t item, CRect& rc) { std::ignore = item; std::ignore = rc; }
 
 	bool GroupFocusActive() const {return GetGroupFocus2() != SIZE_MAX;}
 	
@@ -249,7 +249,7 @@ public:
 	size_t GetGroupFocus2() const override;
 	bool IsItemSelected(t_size index) const {return index < m_selection.get_size() ? m_selection[index] : false;}
 	void SetSelection(pfc::bit_array const & affected,pfc::bit_array const & status);
-	virtual bool CanSelectItem(size_t index) const { (void)index; return true; }
+	virtual bool CanSelectItem(size_t index) const { std::ignore = index; return true; }
 	t_size GetSelectionStart() const {return m_selectionStart;}
 	void SetSelectionStart(t_size val) {m_selectionStart = val;}
 

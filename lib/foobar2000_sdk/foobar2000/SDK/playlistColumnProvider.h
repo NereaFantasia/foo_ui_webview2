@@ -17,7 +17,7 @@ namespace fb2k {
 		//! Name of the column shown to the user.
 		virtual fb2k::stringRef columnName(size_t col) = 0;
 		//! Display flags (alignment). \n
-		//! See flag_* constants.
+		//! See @c flag_* constants.
 		virtual unsigned columnFlags(size_t col) = 0;
 
 		static constexpr unsigned

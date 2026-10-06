@@ -491,6 +491,9 @@ inline static void convert_to_16bit_sse2(const double* p_source, t_size p_count,
     noopt_convert_to_16bit(p_source, rem, p_output, p_scale);
 }
 #if allowAVX
+#if defined (__clang__) || defined (__llvm__)
+__attribute__((__target__("avx")))
+#endif
 inline static void avx_convert_to_16bit(const double* p_source, size_t p_count, int16_t* p_output, double p_scale) {
     size_t num = p_count / 8;
     size_t rem = p_count % 8;
@@ -683,6 +686,9 @@ inline void sse_convert_from_int32(const int32_t* source, size_t count, double* 
     }
 }
 #if allowAVX
+#if defined (__clang__) || defined (__llvm__)
+__attribute__((__target__("avx")))
+#endif
 inline void convert_from_int16_avx(const t_int16* p_source, t_size p_count, double* p_output, double p_scale) {
     while (!pfc::is_ptr_aligned_t<32>(p_output) && p_count) {
         *(p_output++) = (double)*(p_source++) * p_scale;
@@ -999,6 +1005,9 @@ namespace pfc {
     }
 #ifdef AUDIO_MATH_SSE
 #if allowAVX
+    #if defined (__clang__) || defined (__llvm__)
+    __attribute__((__target__("avx")))
+    #endif
     static void f64_to_i24_avx(double const* in, size_t n, uint8_t* out, double scale) {
         const __m128i pi0 = _mm_set_epi8(-128, -128, -128, -128, 14, 13, 12, 10, 9, 8, 6, 5, 4, 2, 1, 0);
         const __m128i pi1 = _mm_set_epi8(4, 2, 1, 0, -128, -128, -128, -128, 14, 13, 12, 10, 9, 8, 6, 5);
@@ -1048,6 +1057,9 @@ namespace pfc {
         convert_to_int24_noopt(in, n, out, scale);
     }
 #endif // allowAVX
+    #if defined (__clang__) || defined (__llvm__)
+    __attribute__((__target__("sse4.1")))
+    #endif
     static void f64_to_i24_sse41(double const* in, size_t n, uint8_t* out, double scale) {
         const __m128i pi0 = _mm_set_epi8(-128, -128, -128, -128, 14, 13, 12, 10, 9, 8, 6, 5, 4, 2, 1, 0);
         const __m128i pi1 = _mm_set_epi8(4, 2, 1, 0, -128, -128, -128, -128, 14, 13, 12, 10, 9, 8, 6, 5);
@@ -1107,6 +1119,10 @@ namespace pfc {
 
         convert_to_int24_noopt(in, n, out, scale);
     }
+
+    #if defined (__clang__) || defined (__llvm__)
+    __attribute__((__target__("sse4.1")))
+    #endif
     static void f32_to_i24_sse41(float const* in, size_t n, uint8_t* out, float scale) {
         const __m128i pi0 = _mm_set_epi8(-128, -128, -128, -128, 14, 13, 12, 10, 9, 8, 6, 5, 4, 2, 1, 0);
         const __m128i pi1 = _mm_set_epi8(4, 2, 1, 0, -128, -128, -128, -128, 14, 13, 12, 10, 9, 8, 6, 5);
@@ -1181,6 +1197,51 @@ namespace pfc {
         }
 #endif // AUDIO_MATH_SSE
         convert_to_int24_noopt(in, count, out, scale);
+    }
+
+    template<typename float_t>
+    inline float_t _import24s(uint32_t i, float_t scale) {
+        i ^= 0x800000; // to unsigned
+        i -= 0x800000; // and back to signed / fill MSBs proper
+        return (float_t)(int32_t)i * scale;
+    }
+
+    template<typename float_t>
+    static void _import24(const void* in_, size_t count, float_t* out, float_t scale_) {
+        const float_t scale = scale_ / (float_t)0x800000;
+        const uint8_t* in = (const uint8_t*)in_;
+        while (count > 0 && !pfc::is_ptr_aligned_t<4>(in)) {
+            uint32_t i = *(in++);
+            i |= (uint32_t) * (in++) << 8;
+            i |= (uint32_t) * (in++) << 16;
+            *(out++) = _import24s(i, scale);
+            --count;
+        }
+        {
+            for (size_t loop = count >> 2; loop; --loop) {
+                uint32_t i1 = *(uint32_t*)in; in += 4;
+                uint32_t i2 = *(uint32_t*)in; in += 4;
+                uint32_t i3 = *(uint32_t*)in; in += 4;
+                *out++ = _import24s(i1 & 0xFFFFFF, scale);
+                *out++ = _import24s((i1 >> 24) | ((i2 & 0xFFFF) << 8), scale);
+                *out++ = _import24s((i2 >> 16) | ((i3 & 0xFF) << 16), scale);
+                *out++ = _import24s(i3 >> 8, scale);
+            }
+            count &= 3;
+        }
+        for (; count; --count) {
+            uint32_t i = *(in++);
+            i |= (uint32_t) * (in++) << 8;
+            i |= (uint32_t) * (in++) << 16;
+            *(out++) = _import24s(i, scale);
+        }
+    }
+
+    void audio_math::convert_from_int24(const void* in, size_t count, float* out, float scale) {
+        _import24(in, count, out, scale);
+    }
+    void audio_math::convert_from_int24(const void* in, size_t count, double* out, double scale) {
+        _import24(in, count, out, scale);
     }
 
 }

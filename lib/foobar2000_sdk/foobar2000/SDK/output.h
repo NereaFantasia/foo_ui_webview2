@@ -50,7 +50,7 @@ struct t_pcmspec
 class NOVTABLE output_device_enum_callback
 {
 public:
-	virtual void on_device(const GUID & p_guid,const char * p_name,unsigned p_name_length) = 0;
+	virtual void on_device(const GUID & p_guid,const char * p_name,unsigned p_name_length = UINT_MAX) = 0;
 };
 
 class NOVTABLE output : public service_base {
@@ -85,10 +85,26 @@ public:
     pfc::eventHandle_t get_trigger_event_();
 	//! Helper, see output_v6::process_samples_v2()
 	size_t process_samples_v2_(const audio_chunk&);
+	//! Helper, see output_v7::hint_source()
+	void hint_source_(fb2k::objRef);
 
     //! Helper for output_entry implementation.
     static uint32_t g_extra_flags() { return 0; }
 
+	void flush_changing_track_();
+
+	unsigned get_forced_sample_rate_();
+	unsigned get_forced_channel_mask_();
+	audio_chunk::spec_t get_forced_spec();
+
+	struct latencyInfo_t {
+		//! Exact latency between queued data and heard audio.
+		double latency;
+		//! Amount of audio actually primed for playback - usually same as latency, or 0 if !is_progressing() - or some other value in special cases. \n
+		//! This can be used instead of is_progressing() to determine progresisng state with one latency query call.
+		double hardQueued;
+	};
+	latencyInfo_t get_latency_info_();
 };
 
 class NOVTABLE output_v2 : public output {
@@ -113,8 +129,8 @@ public:
 	//! Does this output require a specific sample rate? If yes, return the value, otherwise return zero. \n
 	//! Returning a nonzero will cause a resampler DSP to be injected.
 	virtual unsigned get_forced_sample_rate() { return 0; } 
-	//! Allows the output to inject specific DSPs at the end of the used chain. \n
-	//! Default implementation queries get_forced_sample_rate() and injects a resampler.
+	//! < 2.26: obsolete, do not use. \n
+	//! >= 2.26: reinstanted, can be used to add your own resamplers overriding core injected resamplers etc.
 	virtual void get_injected_dsps( dsp_chain_config & );
 };
 
@@ -145,17 +161,16 @@ public:
 	virtual unsigned get_forced_channel_mask() { return 0; }
 };
 
-//! \since 2.2
+//! \since 2.24
 class output_v6 : public output_v5 {
 	FB2K_MAKE_SERVICE_INTERFACE(output_v6, output_v5);
 public:
 	//! Extended process_samples(), allowed to read only part of the chunk if out of buffer space to take whole.
 	//! @returns Number of samples actually taken.
-	virtual size_t process_samples_v2(const audio_chunk&) = 0;
+	virtual size_t process_samples_v2(const audio_chunk&);
 };
 
 //! \since 2.25
-//! foobar2000 v2.25 functionality draft, use only for testing live info delivery in v2.25 beta.
 class output_v7 : public output_v6 {
 	FB2K_MAKE_SERVICE_INTERFACE(output_v7, output_v6);
 public:
@@ -163,6 +178,19 @@ public:
 	//! @param audioSource can be any type (metadb_handle, metadb_info_container, possibly other), use operator &= to determine type.
 	virtual void hint_source(fb2k::objRef audioSource) { (void)audioSource; }
 };
+
+//! \since 2.25.2
+class output_v8 : public output_v7 {
+	FB2K_MAKE_SERVICE_INTERFACE(output_v8, output_v7);
+public:
+	//! Returns latency info.
+	virtual latencyInfo_t get_latency_info() = 0;
+
+	// output_v8 removes the need for these two methods
+	double get_latency() override { return get_latency_info().latency; }
+	bool is_progressing() override { return get_latency_info().hardQueued > 0; }
+};
+
 
 class NOVTABLE output_entry : public service_base {
 	FB2K_MAKE_SERVICE_INTERFACE_ENTRYPOINT(output_entry);
@@ -210,7 +238,17 @@ public:
 	bool get_device_name( const GUID & deviceID, pfc::string_base & out );
 
 	static bool g_find( const GUID & outputID, output_entry::ptr & outObj );
+	//! Helper, finds output of specified GUID - never returns null, throws exceptions on failure.
 	static output_entry::ptr g_find(const GUID & outputID );
+	//! Helper, finds output of specified GUID, returns null if not found.
+	static output_entry::ptr g_try_find(const GUID&);
+
+	//! Helper, uses available methods to determine if *this* device supports user bit depths.
+	bool supports_user_bit_depth(const GUID& deviceID);
+	//! Helper, uses available methods to determine this device's default bit depth.
+	uint32_t default_bit_depth(const GUID& deviceID);
+    
+    size_t device_property_(const GUID& device, const GUID& prop, size_t arg1, void* arg2, size_t arg2size);
 };
 
 //! Helper; implements output_entry for specific output class implementation. output_entry methods are forwarded to static methods of your output class. Use output_factory_t<myoutputclass> instead of using this class directly.
@@ -247,7 +285,7 @@ class output_factory_t : public service_factory_single_t<output_entry_impl_t<T> 
 //! Helper base class for output implementations. \n
 //! This is the preferred way of implementing output. \n
 //! This is NOT a public interface and its layout changes between foobar2000 SDK versions, do not assume other outputs to implement it.
-class output_impl : public output_v7 {
+class output_impl : public output_v8 {
 protected:
 	output_impl() {}
     
@@ -262,6 +300,8 @@ protected:
 	virtual t_size can_write_samples() = 0;
     //! @returns Current latency, delay between last written sample and currently heard audio.
 	virtual t_size get_latency_samples() = 0;
+	struct latencySamples_t { size_t soft, hard; };
+	virtual latencySamples_t get_latency_samples_v2();
     //! Flush output, after seek etc.
 	virtual void on_flush() = 0;
     //! Flush output due to manual track change in progress. \n
@@ -288,6 +328,7 @@ private:
 	void update(bool & p_ready) override final;
     size_t update_v2() override final;
 	double get_latency() override final;
+	latencyInfo_t get_latency_info() override final;
 	void process_samples(const audio_chunk & p_chunk) override final;
 	size_t process_samples_v2(const audio_chunk&) override final;
 	void force_play() override final;
@@ -318,7 +359,8 @@ public:
 	
 	enum style_t {
 		styleScale,
-		styleArbitrary
+		styleArbitrary,
+        styleNone
 	};
 
 	virtual style_t getStyle() = 0;
@@ -339,6 +381,8 @@ class NOVTABLE output_entry_v2 : public output_entry {
 	FB2K_MAKE_SERVICE_INTERFACE(output_entry_v2, output_entry)
 public:
 	virtual bool get_volume_control(const GUID & id, volume_control::ptr & out) = 0;
+	//! Output provides timing info usable for visualization or not?
+	//! Obsolete in 2.25: better jumpy vis than none, visualization always shown
 	virtual bool hasVisualisation() = 0;
 };
 
@@ -348,6 +392,9 @@ public:
     virtual void output_devices_changed() = 0;
 protected:
     output_devices_notify() {}
+    void toggle_notify( bool );
+    void register_notify( ) {toggle_notify(true);}
+    void unregister_notify( ) {toggle_notify(false);}
 private:
 	output_devices_notify(const output_devices_notify &) = delete;
 	void operator=(const output_devices_notify &) = delete;
@@ -367,6 +414,32 @@ public:
 	virtual void set_pinned_device(const GUID & guid) = 0;
 };
 
+namespace output_props {
+	//! Arguments ignored, returns default bit depth (bits) for this device.
+	// {39FBF29B-B095-41D7-8969-58B2B64555CF}
+	static constexpr GUID default_bit_depth = { 0x39fbf29b, 0xb095, 0x41d7, { 0x89, 0x69, 0x58, 0xb2, 0xb6, 0x45, 0x55, 0xcf } };
+	// {56B5F87D-CDFD-4F36-BEF5-F7D187FC1B69}
+	//! Arguments ignored, returns maximum bit depth (bits) for this device.
+	static constexpr GUID max_bit_depth = { 0x56b5f87d, 0xcdfd, 0x4f36, { 0xbe, 0xf5, 0xf7, 0xd1, 0x87, 0xfc, 0x1b, 0x69 } };
+	//! Arguments ignored, returns 1 if device's bit depth can be set by user, false otherwise.
+	// {A4A263B8-12E9-4A20-AC4C-AEDA004D8053}
+	static constexpr GUID user_bit_depth = { 0xa4a263b8, 0x12e9, 0x4a20, { 0xac, 0x4c, 0xae, 0xda, 0x0, 0x4d, 0x80, 0x53 } };
+}
+
+//! \since 2.25
+class NOVTABLE output_entry_v4 : public output_entry_v3 {
+	FB2K_MAKE_SERVICE_INTERFACE(output_entry_v4, output_entry_v3);
+public:
+	//! Accesses extensible device-level properties.
+	//! @param device GUID of the device being accessed.
+	//! @param prop Property GUID, see output_props namespace.
+	//! @param arg1 property-specific.
+	//! @param arg2 property-specific.
+	//! @param arg2size property-specific.
+	virtual size_t device_property(const GUID& device, const GUID& prop, size_t arg1, void* arg2, size_t arg2size) = 0;
+};
+
+#ifdef FOOBAR2000_DESKTOP
 #pragma pack(push, 1)
 //! \since 1.3.5
 struct outputCoreConfig_t {
@@ -424,6 +497,6 @@ public:
 	service_ptr addCallback( std::function<void()> f );
 	void addCallbackPermanent( std::function<void()> f );
 };
+#endif // FOOBAR2000_DESKTOP
 
-extern const GUID output_id_null;
-extern const GUID output_id_default;
+extern const GUID output_id_default, output_id_null;

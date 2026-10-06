@@ -24,9 +24,9 @@ namespace pfc {
 		void dispatch() {
 			// Safeguard against someone altering our state in mid-dispatch
 			auto temp = m_notify;
-			for( auto walk = temp.begin(); walk != temp.end(); ++ walk ) {
-				if ( m_notify.count( walk->first ) > 0 ) { // still there?
-					walk->second();
+			for( auto & walk : temp ) {
+				if ( m_notify.count( walk.first ) > 0 ) { // still there?
+					walk.second();
 				}
 			}
 		}

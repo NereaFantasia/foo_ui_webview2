@@ -2,7 +2,14 @@
 #include "api/WindowApi.h"
 #include "api/BridgeCore.h"
 #include "api/ApiConstants.h"
-#include "core/UserInterface.h"
+#include "api/CallerContext.h"
+#include "api/WindowCallerIdentity.h"
+#include "api/TypedApi.h"
+#include "api/generated/PanelSchema.h"
+#include "api/generated/SystemSchema.h"
+#include "api/generated/UiSchema.h"
+#include "api/generated/WindowSchema.h"
+#include "ui/UserInterface.h"
 #include "core/WebViewContext.h"
 #include "window/MainWindow.h"
 #include "window/PopupWindow.h"
@@ -11,8 +18,13 @@
 #include "window/WindowShellBase.h"
 #include "window/WindowGeometryMath.h"
 #include "webview/WebViewHost.h"
-#include "core/SecurityConfig.h"
+#include "settings/SecurityConfig.h"
+#include "settings/WindowStateConfig.h"
 #include "core/WebViewPanel.h"  // panel.getConfig/setConfig API
+
+#include <algorithm>
+#include <limits>
+#include <optional>
 
 // DWM wrappers
 static HRESULT S_DwmSetWindowAttribute(HWND h, DWORD a, LPCVOID d, DWORD s) {
@@ -29,11 +41,6 @@ static HRESULT S_DwmEnableBlurBehindWindow(HWND h, const DWM_BLURBEHIND* b) {
 }
 static HRESULT S_DwmGetColorizationColor(DWORD* c, BOOL* o) {
     return ::DwmGetColorizationColor(c, o);
-}
-
-// 从 main.cpp 导入窗口配置函数
-namespace window_config {
-    bool HasSavedPosition();
 }
 
 // ============================================
@@ -54,23 +61,6 @@ static bool IsPanelMode() {
     return WebViewContext::GetInstance().GetInstanceCount() > 0;
 }
 
-/**
- * 返回面板模式不支持的标准响应
- * @param apiName API 名称（用于错误消息）
- */
-static json PanelModeUnsupported(const char* apiName) {
-    return {
-        {"success", false},
-        {"supported", false},
-        {"panelMode", true},
-        {"error", std::string(apiName) + " is not supported in panel mode"}
-    };
-}
-
-// 宏：检查面板模式并返回不支持响应
-#define PANEL_MODE_UNSUPPORTED(api_name) \
-    if (IsPanelMode()) return PanelModeUnsupported(api_name)
-
 // ============================================
 // Helper function to get main window handle
 // ============================================
@@ -89,52 +79,28 @@ static MainWindow* GetMainWindow() {
 
 // ============================================
 // Helper: 获取调用者窗口句柄
-// 优先使用 params 中注入的 _callerHwnd，回退到主窗口
 // ============================================
 
-static HWND GetCallerHwnd(const json& params) {
-    if (params.contains("_callerHwnd")) {
-        auto hwnd = reinterpret_cast<HWND>(params["_callerHwnd"].get<intptr_t>());
-        if (hwnd && IsWindow(hwnd)) {
-            // WebViewPanel.hwnd_ 可能是子窗口，获取顶级窗口
-            HWND topLevel = ::GetAncestor(hwnd, GA_ROOT);
-            return topLevel ? topLevel : hwnd;
-        }
+// 面板的调用方：面板 HWND 可能是子窗口，取顶级窗口；没有调用方时回退到主窗口。
+static HWND CallerTopLevelHwnd(const CallerContext& caller) {
+    if (caller.callerHwnd && IsWindow(caller.callerHwnd)) {
+        HWND topLevel = ::GetAncestor(caller.callerHwnd, GA_ROOT);
+        return topLevel ? topLevel : caller.callerHwnd;
     }
-    return GetMainHwnd();  // 向后兼容
+    return GetMainHwnd();
 }
 
 // ============================================
 // Helper: 通过调用者 HWND 获取窗口 ID
 // ============================================
 
-static std::string GetCallerWindowId(const json& params) {
-    HWND callerHwnd = GetCallerHwnd(params);
-    auto& wm = WindowManager::GetInstance();
-    
-    // 检查主窗口
-    auto* mainWin = wm.GetMainWindow();
-    if (mainWin && mainWin->GetHwnd() == callerHwnd) return "main";
-    
-    // 检查弹出窗口
-    for (const auto& id : wm.GetAllWindowIds()) {
-        if (id == "main") continue;
-        auto* popup = wm.GetPopup(id);
-        if (popup && popup->GetHwnd() == callerHwnd) return id;
-    }
-    
-    // 面板模式: 通过 WebViewContext 反查 windowId
-    // panel HWND 是子窗口，callerHwnd 是其顶级窗口，需遍历匹配
-    auto& ctx = WebViewContext::GetInstance();
-    for (auto instanceHwnd : ctx.GetAllInstances()) {
-        if (instanceHwnd == callerHwnd ||
-            ::GetAncestor(instanceHwnd, GA_ROOT) == callerHwnd) {
-            std::string wid = ctx.GetWindowIdByHwnd(instanceHwnd);
-            if (!wid.empty()) return wid;
-        }
-    }
-    
-    return "main";  // 最终回退
+static window_caller::Identity GetCallerWindowIdentity(const CallerContext& caller) {
+    return window_caller::Resolve(caller.callerHwnd, WindowManager::GetInstance(),
+        WebViewContext::GetInstance(), IsPanelMode());
+}
+
+static std::string GetCallerWindowId(const CallerContext& caller) {
+    return GetCallerWindowIdentity(caller).CurrentWindowId();
 }
 
 static PopupWindow* FindPopupByCallerHwnd(HWND callerHwnd, std::string* outWindowId = nullptr) {
@@ -259,37 +225,6 @@ static void EnsureWebViewTransparent(HWND hwnd) {
     if (host) {
         host->SetBackgroundTransparent(true);
     }
-}
-
-// ============================================
-// Mica Effect Helper
-// ============================================
-
-static json SetMicaEffectImpl(const json& params) {
-    PANEL_MODE_UNSUPPORTED("window.setMica");
-    auto target = WindowTargetResolver::ResolveForMutation(params);
-    if (!target.Success()) return target.ErrorResponse();
-    
-    bool enabled = params.value("enabled", true);
-    std::string variant = params.value("variant", "mica");  // "mica" or "mica-alt"
-    if (variant != "mica-alt") {
-        variant = "mica";
-    }
-    
-    // darkMode 参数: true=深色, false=浅色, 不设置则不改变
-    // 这决定了 Mica 效果显示深色还是浅色背景
-    bool hasDarkModeParam = params.contains("darkMode");
-    bool darkMode = params.value("darkMode", true);
-    const bool success = target.shell->PatchCompatibilityBackdrop(
-        enabled ? std::optional<std::string>(variant) : std::optional<std::string>(),
-        hasDarkModeParam ? std::optional<bool>(darkMode) : std::optional<bool>(),
-        enabled);
-    
-    json result = {{"success", success}, {"enabled", enabled}, {"variant", variant}};
-    if (hasDarkModeParam) {
-        result["darkMode"] = darkMode;
-    }
-    return result;
 }
 
 // ============================================
@@ -482,192 +417,349 @@ bool ExitFullscreenIfActive(HWND hwnd) {
 // ==========================================================================
 namespace {
 
+namespace wn = api::window;
+
+// 像素参数声明为 number，按旧读法（value<int>）直接截掉小数；超出 int 的值钳到边界，
+// 免得 double 转 int 越界。
+int PixelArg(double value) {
+    return static_cast<int>(std::clamp(value, static_cast<double>(std::numeric_limits<int>::min()),
+                                       static_cast<double>(std::numeric_limits<int>::max())));
+}
+
+// 调用方没有可操作的窗口（既没有有效的调用方句柄，也没有主窗口）。
+api::Failure WindowNotFound(nlohmann::json::object_t extra = {}) {
+    return api::Fail(ApiError::WINDOW_NOT_FOUND, ApiErrorCode::NOT_FOUND, std::move(extra));
+}
+
+// 窗口目标解析失败：面板调用方按面板模式失败，其余是找不到窗口。
+api::Failure TargetFailure(const WindowTargetResult& target, std::string_view method) {
+    if (target.panelCaller) return api::PanelModeUnsupported(method);
+    return api::Fail(target.error, ApiErrorCode::NOT_FOUND);
+}
+
+// 调用方窗口自己没有 WebView（面板的顶级窗口是 foobar2000 主框架，也没有）。
+api::Failure WebViewNotAvailable() {
+    return api::Fail("WebView not available", ApiErrorCode::NOT_FOUND);
+}
+
+// 设置已写下、但这次没生效的失败：迁移前这些失败就带着回包字段，照旧放进失败信封。
+template <class R>
+api::Failure FailWithFields(std::string error, const R& fields) {
+    return api::Fail(std::move(error), ApiErrorCode::OPERATION_FAILED,
+                     ToJson(fields).template get<nlohmann::json::object_t>());
+}
+
+// DWM 类设置先存后画：窗口画不出来（例如启动时仍隐藏）时设置已保存，只是这次没生效。
+constexpr const char* kBackdropNotApplied = "The backdrop setting was stored but not applied";
+constexpr const char* kZoomNotApplied = "WebView2 did not accept the zoom factor";
+
+// 窗口层以 json 交出策略与窗口快照（GetBackdropPolicyInfo、GetAllWindowsInfo 按固定键构造），
+// 这里换成声明的结构体；缺键取默认值，不再校验。popup 行为的回包不经 json，由
+// PopupWindow::FillPopupBehavior 直接填。
+std::map<std::string, json> ToOverrides(const json& overrides) {
+    std::map<std::string, json> out;
+    if (!overrides.is_object()) return out;
+    for (auto it = overrides.begin(); it != overrides.end(); ++it) {
+        out[it.key()] = it.value();
+    }
+    return out;
+}
+
+json OverridesToJson(const std::map<std::string, json>& overrides) {
+    json out = json::object();
+    for (const auto& [key, value] : overrides) {
+        out[key] = value;
+    }
+    return out;
+}
+
+wn::WindowBackdropPolicyState ToBackdropState(const json& resolved) {
+    wn::WindowBackdropPolicyState state;
+    if (!resolved.is_object()) return state;
+    state.activeEffect = resolved.value("activeEffect", std::string());
+    state.inactiveEffect = resolved.value("inactiveEffect", std::string());
+    state.darkMode = resolved.value("darkMode", false);
+    state.reapplyOnActivate = resolved.value("reapplyOnActivate", false);
+    return state;
+}
+
+wn::WindowPopupBehaviorState ToBehaviorState(const json& resolved) {
+    wn::WindowPopupBehaviorState state;
+    if (!resolved.is_object()) return state;
+    state.showInTaskbar = resolved.value("showInTaskbar", false);
+    state.showInAltTab = resolved.value("showInAltTab", false);
+    state.keepVisibleOnShowDesktop = resolved.value("keepVisibleOnShowDesktop", false);
+    state.allowMinimize = resolved.value("allowMinimize", false);
+    state.owner = resolved.value("owner", std::string());
+    state.noActivate = resolved.value("noActivate", false);
+    return state;
+}
+
+wn::WindowInfo ToWindowInfo(const json& item) {
+    wn::WindowInfo info;
+    info.windowId = item.value("windowId", std::string());
+    info.isMain = item.value("isMain", false);
+    info.title = item.value("title", std::string());
+    if (!info.isMain) {
+        info.url = item.value("url", std::string());
+        info.profile = item.value("profile", std::string());
+        info.behavior = ToOverrides(item.value("behavior", json::object()));
+        info.resolvedBehavior = ToBehaviorState(item.value("resolvedBehavior", json::object()));
+    }
+    info.backdropPolicy = ToOverrides(item.value("backdropPolicy", json::object()));
+    info.resolvedBackdropPolicy = ToBackdropState(item.value("resolvedBackdropPolicy", json::object()));
+
+    const json caps = item.value("capabilities", json::object());
+    info.capabilities.supportsBackdropPolicy = caps.value("supportsBackdropPolicy", false);
+    info.capabilities.supportsFrameless = caps.value("supportsFrameless", false);
+    info.capabilities.supportsCornerPreference = caps.value("supportsCornerPreference", false);
+    info.capabilities.supportsPopupBehavior = caps.value("supportsPopupBehavior", false);
+    info.capabilities.supportsMicaAlt = caps.value("supportsMicaAlt", false);
+    info.capabilities.supportsFullscreen = caps.value("supportsFullscreen", false);
+    // 以下三项只有 popup 报
+    if (caps.contains("supportsOwnerPolicy")) {
+        info.capabilities.supportsOwnerPolicy = caps.value("supportsOwnerPolicy", false);
+    }
+    if (caps.contains("supportsNoActivate")) {
+        info.capabilities.supportsNoActivate = caps.value("supportsNoActivate", false);
+    }
+    if (caps.contains("supportsBeforeClose")) {
+        info.capabilities.supportsBeforeClose = caps.value("supportsBeforeClose", false);
+    }
+
+    const json bounds = item.value("bounds", json::object());
+    info.bounds.x = bounds.value("x", std::int64_t{0});
+    info.bounds.y = bounds.value("y", std::int64_t{0});
+    info.bounds.width = bounds.value("width", std::int64_t{0});
+    info.bounds.height = bounds.value("height", std::int64_t{0});
+
+    info.shell = item.value("shell", json::object());
+    return info;
+}
+
+// getPopupBehavior 与 setPopupBehavior 回包同形（各一份结构体）。
+template <class R>
+R PopupBehaviorResultOf(const PopupWindow& popup, const std::string& windowId) {
+    R result;
+    result.windowId = windowId;
+    popup.FillPopupBehavior(result);
+    return result;
+}
+
+// getBackdropPolicy 与 setBackdropPolicy 回包同形（各一份结构体）。
+template <class R>
+R BackdropPolicyResultOf(const WindowShellBase& shell, const std::string& windowId) {
+    const json info = shell.GetBackdropPolicyInfo();
+    R result;
+    result.windowId = windowId;
+    result.backdropPolicy = ToOverrides(info.value("backdropPolicy", json::object()));
+    result.resolvedBackdropPolicy = ToBackdropState(info.value("resolvedBackdropPolicy", json::object()));
+    return result;
+}
+
+// popup 行为的目标：显式 windowId 为 main 时不支持，其余按 id 找 popup；省略时取调用方 popup。
+// targetId 回填实际的 popup id。
+std::variant<PopupWindow*, api::Failure> FindBehaviorPopup(const std::optional<std::string>& windowId,
+                                                          const CallerContext& caller, std::string_view method,
+                                                          std::string& targetId) {
+    targetId = windowId.value_or("");
+    PopupWindow* popup = nullptr;
+    if (!targetId.empty()) {
+        if (targetId == "main") {
+            return api::Fail(std::string(method) + " does not support main window", ApiErrorCode::NOT_SUPPORTED);
+        }
+        popup = WindowManager::GetInstance().GetPopup(targetId);
+    } else {
+        popup = FindPopupByCallerHwnd(CallerTopLevelHwnd(caller), &targetId);
+    }
+    if (!popup) return WindowNotFound();
+    return popup;
+}
+
+// 鼠标穿透的目标：显式 windowId，省略时取调用方窗口；只有 popup 能穿透，其余返回 nullptr。
+PopupWindow* FindClickThroughPopup(const std::optional<std::string>& windowId, const CallerContext& caller,
+                                   std::string& targetId) {
+    targetId = windowId.value_or("");
+    if (targetId.empty()) {
+        targetId = GetCallerWindowId(caller);
+    }
+    return WindowManager::GetInstance().GetPopup(targetId);
+}
+
 
 // ========== Basic Window Controls ==========
 // 使用 WM_SYSCOMMAND 而不是 ShowWindow，以触发 Windows 原生动画效果
 
-json WindowMinimize(const json& params) {
-    PANEL_MODE_UNSUPPORTED("window.minimize");
-    HWND hwnd = GetCallerHwnd(params);
-    if (!hwnd) return { {"success", false}, {"error", "Window not found"} };
-    
+api::Result<void> WindowMinimize(const wn::MinimizeParams&, const CallerContext& caller) {
+    if (IsPanelMode()) return api::PanelModeUnsupported("window.minimize");
+    HWND hwnd = CallerTopLevelHwnd(caller);
+    if (!hwnd) return WindowNotFound();
+
     // 使用 WM_SYSCOMMAND 触发系统动画
     PostMessage(hwnd, WM_SYSCOMMAND, SC_MINIMIZE, 0);
-    return { {"success", true} };
+    return api::Ok();
 }
 
 
-json WindowMaximize(const json& params) {
-    PANEL_MODE_UNSUPPORTED("window.maximize");
-    HWND hwnd = GetCallerHwnd(params);
-    if (!hwnd) return { {"success", false}, {"error", "Window not found"} };
-    
+api::Result<void> WindowMaximize(const wn::MaximizeParams&, const CallerContext& caller) {
+    if (IsPanelMode()) return api::PanelModeUnsupported("window.maximize");
+    HWND hwnd = CallerTopLevelHwnd(caller);
+    if (!hwnd) return WindowNotFound();
+
     // 参考 Electron / Tauri Windows 行为：全屏时 maximize 应先退出全屏。
     // ExitFullscreenMode 会按 saved info 决定是否自动恢复 maximize；
     // 之后下面的 PostMessage SC_MAXIMIZE 在已 maximize 时是 no-op，未 maximize 时补 maximize。
     ExitFullscreenIfActive(hwnd);
-    
+
     // 使用 WM_SYSCOMMAND 触发系统动画
     PostMessage(hwnd, WM_SYSCOMMAND, SC_MAXIMIZE, 0);
-    return { {"success", true} };
+    return api::Ok();
 }
 
 
-json WindowRestore(const json& params) {
-    PANEL_MODE_UNSUPPORTED("window.restore");
-    HWND hwnd = GetCallerHwnd(params);
-    if (!hwnd) return { {"success", false}, {"error", "Window not found"} };
-    
+api::Result<void> WindowRestore(const wn::RestoreParams&, const CallerContext& caller) {
+    if (IsPanelMode()) return api::PanelModeUnsupported("window.restore");
+    HWND hwnd = CallerTopLevelHwnd(caller);
+    if (!hwnd) return WindowNotFound();
+
     // 参考 Electron / Tauri：全屏状态下 restore 语义为“回到正常状态”，
     // ExitFullscreenMode 会恢复全屏前的 saved info（normal 或 maximized）。
     if (ExitFullscreenIfActive(hwnd)) {
-        return { {"success", true} };
+        return api::Ok();
     }
-    
+
     // 使用 WM_SYSCOMMAND 触发系统动画
     PostMessage(hwnd, WM_SYSCOMMAND, SC_RESTORE, 0);
-    return { {"success", true} };
+    return api::Ok();
 }
 
 
-json WindowClose(const json& params) {
-    PANEL_MODE_UNSUPPORTED("window.close");
-    HWND hwnd = GetCallerHwnd(params);
+api::Result<void> WindowClose(const wn::CloseParams&, const CallerContext& caller) {
+    if (IsPanelMode()) return api::PanelModeUnsupported("window.close");
+    HWND hwnd = CallerTopLevelHwnd(caller);
     if (hwnd) {
         // 使用 WM_SYSCOMMAND 触发系统关闭动画
         PostMessage(hwnd, WM_SYSCOMMAND, SC_CLOSE, 0);
     }
-    return { {"success", true} };
+    return api::Ok();
 }
 
 
-json WindowToggleMaximize(const json& params) {
-    PANEL_MODE_UNSUPPORTED("window.toggleMaximize");
-    HWND hwnd = GetCallerHwnd(params);
-    if (!hwnd) return { {"success", false}, {"maximized", false} };
-    
+api::Result<wn::ToggleMaximizeResult> WindowToggleMaximize(const wn::ToggleMaximizeParams&,
+                                                           const CallerContext& caller) {
+    if (IsPanelMode()) return api::PanelModeUnsupported("window.toggleMaximize");
+    HWND hwnd = CallerTopLevelHwnd(caller);
+    if (!hwnd) return WindowNotFound({{"maximized", false}});
+
+    wn::ToggleMaximizeResult result;
     // 参考 Electron / Tauri：全屏状态下 toggle 优先退出全屏，
     // 不再进一步在 maximize 与 normal 之间切换。
     if (ExitFullscreenIfActive(hwnd)) {
-        return { {"success", true}, {"maximized", IsZoomed(hwnd) != FALSE} };
+        result.maximized = IsZoomed(hwnd) != FALSE;
+        return result;
     }
-    
+
     bool wasMaximized = IsZoomed(hwnd) != FALSE;
     // 使用 WM_SYSCOMMAND 触发系统动画
     PostMessage(hwnd, WM_SYSCOMMAND, wasMaximized ? SC_RESTORE : SC_MAXIMIZE, 0);
-    
-    return {
-        {"success", true},
-        {"maximized", !wasMaximized},
-    };
+
+    result.maximized = !wasMaximized;
+    return result;
 }
 
 
 // ========== State Query ==========
 
-json WindowIsMaximized(const json& params) {
-    HWND hwnd = GetCallerHwnd(params);
-    bool val = hwnd && IsZoomed(hwnd) != FALSE;
-    return { {"maximized", val}, {"isMaximized", val} };
+api::Result<wn::IsMaximizedResult> WindowIsMaximized(const wn::IsMaximizedParams&, const CallerContext& caller) {
+    HWND hwnd = CallerTopLevelHwnd(caller);
+    wn::IsMaximizedResult result;
+    result.maximized = hwnd && IsZoomed(hwnd) != FALSE;
+    result.isMaximized = result.maximized;
+    return result;
 }
 
 
-json WindowIsMinimized(const json& params) {
-    HWND hwnd = GetCallerHwnd(params);
-    return { {"minimized", hwnd && IsIconic(hwnd) != FALSE} };
+api::Result<wn::IsMinimizedResult> WindowIsMinimized(const wn::IsMinimizedParams&, const CallerContext& caller) {
+    HWND hwnd = CallerTopLevelHwnd(caller);
+    wn::IsMinimizedResult result;
+    result.minimized = hwnd && IsIconic(hwnd) != FALSE;
+    return result;
 }
 
 
-json WindowIsFullscreen(const json& params) {
-    auto target = WindowTargetResolver::ResolveForObservation(params);
+api::Result<wn::IsFullscreenResult> WindowIsFullscreen(const wn::IsFullscreenParams& p, const CallerContext& caller) {
+    auto target = WindowTargetResolver::ResolveForObservation(p.windowId, caller.callerHwnd);
     // 解析失败时返回错误信封，而不是 fullscreen:false。
     //
     // 旧实现把「解析失败」与「窗口确实不在全屏」压成同一个 false，调用方
     // 无从分辨——正是 Q7-1 要消灭的静默错值形态。取消 observation 的主窗口
     // 回退后，面板调用方与已销毁的 caller 都会走到这里，故必须显式失败。
-    if (!target.Success()) return target.ErrorResponse();
+    if (!target.Success()) return TargetFailure(target, "window.isFullscreen");
 
-    const bool fs = target.shell->IsFullscreen();
-    return {
-        {"success", true},
-        {"fullscreen", fs},
-        {"isFullscreen", fs},
-        {"windowId", target.windowId}
-    };
+    wn::IsFullscreenResult result;
+    result.fullscreen = target.shell->IsFullscreen();
+    result.isFullscreen = result.fullscreen;
+    result.windowId = target.windowId;
+    return result;
 }
 
 
-json WindowGetState(const json& params) {
-    HWND hwnd = GetCallerHwnd(params);
-    if (!hwnd) {
-        return {
-            {"maximized", false},
-            {"minimized", false},
-            {"fullscreen", false},
-            {"alwaysOnTop", false},
-            {"focused", false},
-            {"width", 0},
-            {"height", 0},
-            {"x", 0},
-            {"y", 0},
-        };
-    }
-    
+api::Result<wn::GetStateResult> WindowGetState(const wn::GetStateParams&, const CallerContext& caller) {
+    wn::GetStateResult result;  // 没有窗口时标志全为 false、矩形全为 0
+    HWND hwnd = CallerTopLevelHwnd(caller);
+    if (!hwnd) return result;
+
     DWORD exStyle = GetWindowLongW(hwnd, GWL_EXSTYLE);
     bool alwaysOnTop = (exStyle & WS_EX_TOPMOST) != 0;
-    
+
     bool isMax = IsZoomed(hwnd) != FALSE;
     bool isMin = IsIconic(hwnd) != FALSE;
     auto shellTarget = WindowTargetResolver::ResolveByCallerHwnd(hwnd);
     bool isFull = shellTarget.Success() ? shellTarget.shell->IsFullscreen() : false;
     bool isFocus = GetForegroundWindow() == hwnd;
-    
-    RECT rc;
+
+    RECT rc{};
     GetWindowRect(hwnd, &rc);
-    int width = rc.right - rc.left;
-    int height = rc.bottom - rc.top;
-    
-    return {
-        {"maximized", isMax},
-        {"minimized", isMin},
-        {"fullscreen", isFull},
-        {"alwaysOnTop", alwaysOnTop},
-        {"focused", isFocus},
-        {"isMaximized", isMax},
-        {"isMinimized", isMin},
-        {"isFullscreen", isFull},
-        {"isAlwaysOnTop", alwaysOnTop},
-        {"isFocused", isFocus},
-        {"width", width},
-        {"height", height},
-        {"x", rc.left},
-        {"y", rc.top},
-    };
+
+    result.maximized = isMax;
+    result.minimized = isMin;
+    result.fullscreen = isFull;
+    result.alwaysOnTop = alwaysOnTop;
+    result.focused = isFocus;
+    result.isMaximized = isMax;
+    result.isMinimized = isMin;
+    result.isFullscreen = isFull;
+    result.isAlwaysOnTop = alwaysOnTop;
+    result.isFocused = isFocus;
+    result.width = rc.right - rc.left;
+    result.height = rc.bottom - rc.top;
+    result.x = rc.left;
+    result.y = rc.top;
+    return result;
 }
 
 
 // ========== Drag ==========
 
-json WindowStartDrag(const json& params) {
-    PANEL_MODE_UNSUPPORTED("window.startDrag");
-    HWND hwnd = GetCallerHwnd(params);
-    if (!hwnd) return { {"success", false}, {"error", "Window not found"} };
-    
+api::Result<void> WindowStartDrag(const wn::StartDragParams&, const CallerContext& caller) {
+    if (IsPanelMode()) return api::PanelModeUnsupported("window.startDrag");
+    HWND hwnd = CallerTopLevelHwnd(caller);
+    if (!hwnd) return WindowNotFound();
+
     // Release mouse capture and send drag message
     ReleaseCapture();
     SendMessage(hwnd, WM_NCLBUTTONDOWN, HTCAPTION, 0);
-    
-    return { {"success", true} };
+    return api::Ok();
 }
 
 
-json WindowStartResize(const json& params) {
-    PANEL_MODE_UNSUPPORTED("window.startResize");
-    HWND hwnd = GetCallerHwnd(params);
-    if (!hwnd) return { {"success", false}, {"error", "Window not found"} };
-    
-    std::string edge = params.value("edge", "bottomright");
-    
+api::Result<void> WindowStartResize(const wn::StartResizeParams& p, const CallerContext& caller) {
+    if (IsPanelMode()) return api::PanelModeUnsupported("window.startResize");
+    HWND hwnd = CallerTopLevelHwnd(caller);
+    if (!hwnd) return WindowNotFound();
+
+    // 认不出的取值按右下角处理。
+    const std::string& edge = p.edge;
     WPARAM hitTest = HTBOTTOMRIGHT;
     if (edge == "left") hitTest = HTLEFT;
     else if (edge == "right") hitTest = HTRIGHT;
@@ -677,22 +769,21 @@ json WindowStartResize(const json& params) {
     else if (edge == "topright") hitTest = HTTOPRIGHT;
     else if (edge == "bottomleft") hitTest = HTBOTTOMLEFT;
     else if (edge == "bottomright") hitTest = HTBOTTOMRIGHT;
-    
+
     ReleaseCapture();
     SendMessage(hwnd, WM_NCLBUTTONDOWN, hitTest, 0);
-    
-    return { {"success", true} };
+    return api::Ok();
 }
 
 
 // ========== Always On Top ==========
 
-json WindowSetAlwaysOnTop(const json& params) {
-    PANEL_MODE_UNSUPPORTED("window.setAlwaysOnTop");
-    HWND hwnd = GetCallerHwnd(params);
-    if (!hwnd) return { {"success", false}, {"error", "Window not found"} };
-    
-    bool enabled = params.value("enabled", true);
+api::Result<void> WindowSetAlwaysOnTop(const wn::SetAlwaysOnTopParams& p, const CallerContext& caller) {
+    if (IsPanelMode()) return api::PanelModeUnsupported("window.setAlwaysOnTop");
+    HWND hwnd = CallerTopLevelHwnd(caller);
+    if (!hwnd) return WindowNotFound();
+
+    const bool enabled = p.enabled;
 
     // 主窗口期望置顶状态登记：用户显式 alwaysOnTop 意图是该状态的唯一改写来源，
     // 供 MainWindow 的 WM_WINDOWPOSCHANGED 守护矫正参照（popup 不参与守护）。
@@ -712,26 +803,29 @@ json WindowSetAlwaysOnTop(const json& params) {
         0, 0, 0, 0,
         SWP_NOMOVE | SWP_NOSIZE
     );
-    
-    return { {"success", true} };
+    return api::Ok();
 }
 
 
-json WindowIsAlwaysOnTop(const json& params) {
-    HWND hwnd = GetCallerHwnd(params);
-    if (!hwnd) return { {"enabled", false}, {"isAlwaysOnTop", false} };
-    
-    DWORD exStyle = GetWindowLongW(hwnd, GWL_EXSTYLE);
-    bool val = (exStyle & WS_EX_TOPMOST) != 0;
-    return { {"enabled", val}, {"isAlwaysOnTop", val} };
+api::Result<wn::IsAlwaysOnTopResult> WindowIsAlwaysOnTop(const wn::IsAlwaysOnTopParams&,
+                                                         const CallerContext& caller) {
+    wn::IsAlwaysOnTopResult result;  // 没有窗口时为 false
+    HWND hwnd = CallerTopLevelHwnd(caller);
+    if (hwnd) {
+        DWORD exStyle = GetWindowLongW(hwnd, GWL_EXSTYLE);
+        result.enabled = (exStyle & WS_EX_TOPMOST) != 0;
+        result.isAlwaysOnTop = result.enabled;
+    }
+    return result;
 }
 
 
-json WindowToggleAlwaysOnTop(const json& params) {
-    PANEL_MODE_UNSUPPORTED("window.toggleAlwaysOnTop");
-    HWND hwnd = GetCallerHwnd(params);
-    if (!hwnd) return { {"success", false}, {"enabled", false} };
-    
+api::Result<wn::ToggleAlwaysOnTopResult> WindowToggleAlwaysOnTop(const wn::ToggleAlwaysOnTopParams&,
+                                                                 const CallerContext& caller) {
+    if (IsPanelMode()) return api::PanelModeUnsupported("window.toggleAlwaysOnTop");
+    HWND hwnd = CallerTopLevelHwnd(caller);
+    if (!hwnd) return WindowNotFound({{"enabled", false}});
+
     DWORD exStyle = GetWindowLongW(hwnd, GWL_EXSTYLE);
     bool wasOnTop = (exStyle & WS_EX_TOPMOST) != 0;
 
@@ -750,82 +844,72 @@ json WindowToggleAlwaysOnTop(const json& params) {
         0, 0, 0, 0,
         SWP_NOMOVE | SWP_NOSIZE
     );
-    
-    return {
-        {"success", true},
-        {"enabled", !wasOnTop},
-    };
+
+    wn::ToggleAlwaysOnTopResult result;
+    result.enabled = !wasOnTop;
+    return result;
 }
 
 
 // ========== Bounds ==========
 
-json WindowGetBounds(const json& params) {
-    HWND hwnd = GetCallerHwnd(params);
-    if (!hwnd) {
-        return { {"x", 0}, {"y", 0}, {"width", 0}, {"height", 0} };
-    }
-    
-    RECT rc;
+api::Result<wn::GetBoundsResult> WindowGetBounds(const wn::GetBoundsParams&, const CallerContext& caller) {
+    wn::GetBoundsResult result;  // 没有窗口时矩形全为 0
+    HWND hwnd = CallerTopLevelHwnd(caller);
+    if (!hwnd) return result;
+
+    RECT rc{};
     GetWindowRect(hwnd, &rc);
-    
-    return {
-        {"x", rc.left},
-        {"y", rc.top},
-        {"width", rc.right - rc.left},
-        {"height", rc.bottom - rc.top},
-    };
+    result.x = rc.left;
+    result.y = rc.top;
+    result.width = rc.right - rc.left;
+    result.height = rc.bottom - rc.top;
+    return result;
 }
 
 
-json WindowSetBounds(const json& params) {
-    PANEL_MODE_UNSUPPORTED("window.setBounds");
-    HWND hwnd = GetCallerHwnd(params);
-    if (!hwnd) return { {"success", false}, {"error", "Window not found"} };
-    
-    bool hasX = params.contains("x");
-    bool hasY = params.contains("y");
-    bool hasWidth = params.contains("width");
-    bool hasHeight = params.contains("height");
-    
-    RECT currentRect;
+api::Result<void> WindowSetBounds(const wn::SetBoundsParams& p, const CallerContext& caller) {
+    if (IsPanelMode()) return api::PanelModeUnsupported("window.setBounds");
+    HWND hwnd = CallerTopLevelHwnd(caller);
+    if (!hwnd) return WindowNotFound();
+
+    RECT currentRect{};
     GetWindowRect(hwnd, &currentRect);
-    
-    int x = hasX ? params["x"].get<int>() : currentRect.left;
-    int y = hasY ? params["y"].get<int>() : currentRect.top;
-    int width = hasWidth ? params["width"].get<int>() : (currentRect.right - currentRect.left);
-    int height = hasHeight ? params["height"].get<int>() : (currentRect.bottom - currentRect.top);
-    
+
+    // 省略的键保持当前值
+    int x = p.x ? PixelArg(*p.x) : currentRect.left;
+    int y = p.y ? PixelArg(*p.y) : currentRect.top;
+    int width = p.width ? PixelArg(*p.width) : (currentRect.right - currentRect.left);
+    int height = p.height ? PixelArg(*p.height) : (currentRect.bottom - currentRect.top);
+
     UINT flags = SWP_NOZORDER;
-    if (!hasX && !hasY) flags |= SWP_NOMOVE;
-    if (!hasWidth && !hasHeight) flags |= SWP_NOSIZE;
-    
+    if (!p.x && !p.y) flags |= SWP_NOMOVE;
+    if (!p.width && !p.height) flags |= SWP_NOSIZE;
+
     SetWindowPos(hwnd, nullptr, x, y, width, height, flags);
-    
-    return { {"success", true} };
+    return api::Ok();
 }
 
 
-json WindowCenter(const json& params) {
-    PANEL_MODE_UNSUPPORTED("window.center");
-    HWND hwnd = GetCallerHwnd(params);
-    if (!hwnd) return { {"success", false}, {"error", "Window not found"} };
-    
-    RECT windowRect;
+api::Result<void> WindowCenter(const wn::CenterParams&, const CallerContext& caller) {
+    if (IsPanelMode()) return api::PanelModeUnsupported("window.center");
+    HWND hwnd = CallerTopLevelHwnd(caller);
+    if (!hwnd) return WindowNotFound();
+
+    RECT windowRect{};
     GetWindowRect(hwnd, &windowRect);
     int width = windowRect.right - windowRect.left;
     int height = windowRect.bottom - windowRect.top;
-    
+
     // Get monitor info
     MONITORINFO mi = { sizeof(MONITORINFO) };
     GetMonitorInfo(MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST), &mi);
-    
+
     int x = mi.rcWork.left + (mi.rcWork.right - mi.rcWork.left - width) / 2;
     int y = mi.rcWork.top + (mi.rcWork.bottom - mi.rcWork.top - height) / 2;
-    
+
     SetWindowPos(hwnd, nullptr, x, y, 0, 0, SWP_NOZORDER | SWP_NOSIZE);
-    
-    return { {"success", true} };
+    return api::Ok();
 }
 
 
@@ -844,162 +928,158 @@ static int GetShellDpi(WindowShellBase* shell) {
     return GetDpiForWindow(hwnd);
 }
 
-json WindowSetMinSize(const json& params) {
-    PANEL_MODE_UNSUPPORTED("window.setMinSize");
-    auto target = WindowTargetResolver::ResolveForMutation(params);
-    if (!target.Success()) return target.ErrorResponse();
-
-    int width = params.value("width", 0);
-    int height = params.value("height", 0);
+api::Result<wn::SetMinSizeResult> WindowSetMinSize(const wn::SetMinSizeParams& p, const CallerContext& caller) {
+    if (IsPanelMode()) return api::PanelModeUnsupported("window.setMinSize");
+    auto target = WindowTargetResolver::ResolveForMutation(p.windowId, caller.callerHwnd);
+    if (!target.Success()) return TargetFailure(target, "window.setMinSize");
 
     const int dpi = GetShellDpi(target.shell);
     target.shell->SetMinSizeDip(
-        window_geometry::PhysicalToDip(width, dpi),
-        window_geometry::PhysicalToDip(height, dpi));
+        window_geometry::PhysicalToDip(PixelArg(p.width), dpi),
+        window_geometry::PhysicalToDip(PixelArg(p.height), dpi));
 
-    return { {"success", true}, {"windowId", target.windowId} };
+    wn::SetMinSizeResult result;
+    result.windowId = target.windowId;
+    return result;
 }
 
 
-json WindowGetMinSize(const json& params) {
-    auto target = WindowTargetResolver::ResolveForObservation(params);
-    if (!target.Success()) return target.ErrorResponse();
+api::Result<wn::GetMinSizeResult> WindowGetMinSize(const wn::GetMinSizeParams& p, const CallerContext& caller) {
+    auto target = WindowTargetResolver::ResolveForObservation(p.windowId, caller.callerHwnd);
+    if (!target.Success()) return TargetFailure(target, "window.getMinSize");
 
     int widthDip = 0;
     int heightDip = 0;
     target.shell->GetMinSizeDip(widthDip, heightDip);
 
     // 返回**请求值**（换算回 wire 单位）而非生效值，保证 set 后 get 的往返
-    // 语义稳定（Q9-b）。生效值/钳制信息由 setSize 的响应承载。
+    // 语义稳定（Q9-b）。setSize 的响应并不带生效值或钳制信息。
     const int dpi = GetShellDpi(target.shell);
-    return {
-        {"width", window_geometry::DipToPhysical(widthDip, dpi)},
-        {"height", window_geometry::DipToPhysical(heightDip, dpi)},
-        {"windowId", target.windowId}
-    };
+    wn::GetMinSizeResult result;
+    result.width = window_geometry::DipToPhysical(widthDip, dpi);
+    result.height = window_geometry::DipToPhysical(heightDip, dpi);
+    result.windowId = target.windowId;
+    return result;
 }
 
 
-json WindowSetMaxSize(const json& params) {
-    PANEL_MODE_UNSUPPORTED("window.setMaxSize");
-    auto target = WindowTargetResolver::ResolveForMutation(params);
-    if (!target.Success()) return target.ErrorResponse();
-
-    int width = params.value("width", 0);
-    int height = params.value("height", 0);
+api::Result<wn::SetMaxSizeResult> WindowSetMaxSize(const wn::SetMaxSizeParams& p, const CallerContext& caller) {
+    if (IsPanelMode()) return api::PanelModeUnsupported("window.setMaxSize");
+    auto target = WindowTargetResolver::ResolveForMutation(p.windowId, caller.callerHwnd);
+    if (!target.Success()) return TargetFailure(target, "window.setMaxSize");
 
     const int dpi = GetShellDpi(target.shell);
     target.shell->SetMaxSizeDip(
-        window_geometry::PhysicalToDip(width, dpi),
-        window_geometry::PhysicalToDip(height, dpi));
+        window_geometry::PhysicalToDip(PixelArg(p.width), dpi),
+        window_geometry::PhysicalToDip(PixelArg(p.height), dpi));
 
-    return { {"success", true}, {"windowId", target.windowId} };
+    wn::SetMaxSizeResult result;
+    result.windowId = target.windowId;
+    return result;
 }
 
 
-json WindowGetMaxSize(const json& params) {
-    auto target = WindowTargetResolver::ResolveForObservation(params);
-    if (!target.Success()) return target.ErrorResponse();
+api::Result<wn::GetMaxSizeResult> WindowGetMaxSize(const wn::GetMaxSizeParams& p, const CallerContext& caller) {
+    auto target = WindowTargetResolver::ResolveForObservation(p.windowId, caller.callerHwnd);
+    if (!target.Success()) return TargetFailure(target, "window.getMaxSize");
 
     int widthDip = 0;
     int heightDip = 0;
     target.shell->GetMaxSizeDip(widthDip, heightDip);
 
     const int dpi = GetShellDpi(target.shell);
-    return {
-        {"width", window_geometry::DipToPhysical(widthDip, dpi)},
-        {"height", window_geometry::DipToPhysical(heightDip, dpi)},
-        {"windowId", target.windowId}
-    };
+    wn::GetMaxSizeResult result;
+    result.width = window_geometry::DipToPhysical(widthDip, dpi);
+    result.height = window_geometry::DipToPhysical(heightDip, dpi);
+    result.windowId = target.windowId;
+    return result;
 }
 
 
-json WindowSetResizable(const json& params) {
-    PANEL_MODE_UNSUPPORTED("window.setResizable");
-    auto target = WindowTargetResolver::ResolveForMutation(params);
-    if (!target.Success()) return target.ErrorResponse();
-
-    bool resizable = params.value("resizable", true);
+api::Result<wn::SetResizableResult> WindowSetResizable(const wn::SetResizableParams& p, const CallerContext& caller) {
+    if (IsPanelMode()) return api::PanelModeUnsupported("window.setResizable");
+    auto target = WindowTargetResolver::ResolveForMutation(p.windowId, caller.callerHwnd);
+    if (!target.Success()) return TargetFailure(target, "window.setResizable");
 
     // SetResizableShell 只在 Win32 调用**真实失败**时返回 false（样式写入或
     // 帧刷新失败）。幂等设值返回 true——Q10 约束①：「无变化」不得报失败。
     // 所有 shell 形态都支持运行时切换，故不存在「能力不支持」这一失败类别。
-    if (!target.shell->SetResizableShell(resizable)) {
-        return {
-            {"success", false},
-            {"windowId", target.windowId},
-            {"error", "Failed to apply the resizable window style"}
-        };
+    if (!target.shell->SetResizableShell(p.resizable)) {
+        return api::Fail("Failed to apply the resizable window style", ApiErrorCode::OPERATION_FAILED,
+                         {{"windowId", target.windowId}});
     }
 
-    return { {"success", true}, {"windowId", target.windowId} };
+    wn::SetResizableResult result;
+    result.windowId = target.windowId;
+    return result;
 }
 
 
-json WindowIsResizable(const json& params) {
-    auto target = WindowTargetResolver::ResolveForObservation(params);
-    if (!target.Success()) return target.ErrorResponse();
+api::Result<wn::IsResizableResult> WindowIsResizable(const wn::IsResizableParams& p, const CallerContext& caller) {
+    auto target = WindowTargetResolver::ResolveForObservation(p.windowId, caller.callerHwnd);
+    if (!target.Success()) return TargetFailure(target, "window.isResizable");
 
-    return {
-        {"resizable", target.shell->IsResizableShell()},
-        {"windowId", target.windowId}
-    };
+    wn::IsResizableResult result;
+    result.resizable = target.shell->IsResizableShell();
+    result.windowId = target.windowId;
+    return result;
 }
 
 
 // ========== Fullscreen ==========
 
-json WindowSetFullscreen(const json& params) {
-    PANEL_MODE_UNSUPPORTED("window.setFullscreen");
-    auto target = WindowTargetResolver::ResolveForMutation(params);
-    if (!target.Success()) return target.ErrorResponse();
+api::Result<wn::SetFullscreenResult> WindowSetFullscreen(const wn::SetFullscreenParams& p,
+                                                         const CallerContext& caller) {
+    if (IsPanelMode()) return api::PanelModeUnsupported("window.setFullscreen");
+    auto target = WindowTargetResolver::ResolveForMutation(p.windowId, caller.callerHwnd);
+    if (!target.Success()) return TargetFailure(target, "window.setFullscreen");
     if (!target.shell->GetCapabilities().supportsFullscreen) {
-        return {{"success", false}, {"fullscreen", target.shell->IsFullscreen()},
-            {"error", "this window does not support fullscreen"}};
+        return api::Fail("this window does not support fullscreen", ApiErrorCode::NOT_SUPPORTED,
+                         {{"fullscreen", target.shell->IsFullscreen()}});
     }
-    
-    bool enabled = params.value("enabled", true);
+
     bool currentlyFull = target.shell->IsFullscreen();
-    
-    if (enabled && !currentlyFull) {
+    if (p.enabled && !currentlyFull) {
         EnterFullscreenMode(target.shell->GetShellHwnd(), target.shell);
     }
-    else if (!enabled && currentlyFull) {
+    else if (!p.enabled && currentlyFull) {
         ExitFullscreenMode(target.shell->GetShellHwnd(), target.shell);
     }
-    
-    return { {"success", true}, {"fullscreen", target.shell->IsFullscreen()} };
+
+    wn::SetFullscreenResult result;
+    result.fullscreen = target.shell->IsFullscreen();
+    return result;
 }
 
 
-json WindowToggleFullscreen(const json& params) {
-    PANEL_MODE_UNSUPPORTED("window.toggleFullscreen");
-    auto target = WindowTargetResolver::ResolveForMutation(params);
-    if (!target.Success()) return target.ErrorResponse();
+api::Result<wn::ToggleFullscreenResult> WindowToggleFullscreen(const wn::ToggleFullscreenParams& p,
+                                                               const CallerContext& caller) {
+    if (IsPanelMode()) return api::PanelModeUnsupported("window.toggleFullscreen");
+    auto target = WindowTargetResolver::ResolveForMutation(p.windowId, caller.callerHwnd);
+    if (!target.Success()) return TargetFailure(target, "window.toggleFullscreen");
     if (!target.shell->GetCapabilities().supportsFullscreen) {
-        return {{"success", false}, {"fullscreen", target.shell->IsFullscreen()},
-            {"error", "this window does not support fullscreen"}};
+        return api::Fail("this window does not support fullscreen", ApiErrorCode::NOT_SUPPORTED,
+                         {{"fullscreen", target.shell->IsFullscreen()}});
     }
-    
+
     bool currentlyFull = target.shell->IsFullscreen();
     if (!currentlyFull) {
         EnterFullscreenMode(target.shell->GetShellHwnd(), target.shell);
     } else {
         ExitFullscreenMode(target.shell->GetShellHwnd(), target.shell);
     }
-    
-    return {
-        {"success", true},
-        {"fullscreen", target.shell->IsFullscreen()},
-    };
+
+    wn::ToggleFullscreenResult result;
+    result.fullscreen = target.shell->IsFullscreen();
+    return result;
 }
 
 
 // ========== Focus ==========
 
-json WindowFocus(const json& params) {
-    // 支持可选 windowId 参数，用于从主窗口聚焦指定弹窗
-    std::string targetId = params.value("windowId", "");
+api::Result<void> WindowFocus(const wn::FocusParams& p, const CallerContext& caller) {
+    // 支持可选 windowId 参数，用于从主窗口聚焦指定弹窗；空串与省略等价
+    const std::string targetId = p.windowId.value_or("");
     HWND hwnd = nullptr;
     MainWindow* targetMainWin = nullptr;
 
@@ -1013,7 +1093,7 @@ json WindowFocus(const json& params) {
             if (popup) hwnd = popup->GetShellHwnd();
         }
     } else {
-        hwnd = GetCallerHwnd(params);
+        hwnd = CallerTopLevelHwnd(caller);
         if (hwnd) {
             auto* candidate = WindowManager::GetInstance().GetMainWindow();
             if (candidate && candidate->GetShellHwnd() == hwnd) {
@@ -1022,18 +1102,18 @@ json WindowFocus(const json& params) {
         }
     }
 
-    if (!hwnd) return { {"success", false}, {"error", "Window not found"} };
+    if (!hwnd) return WindowNotFound();
 
     // SWP_SHOWWINDOW will reveal a hidden window, so snapshot the hidden state
     // up front and reuse RestoreSurfaceAfterHidden to converge the WebView
     // surface, matching WebViewUI::activate / background_service::ShowWindow.
     const bool wasHidden = !IsWindowVisible(hwnd);
-    
+
     // 先恢复最小化窗口
     if (IsIconic(hwnd)) {
         ShowWindow(hwnd, SW_RESTORE);
     }
-    
+
     // 绕过 Windows 前台锁超时 (ForegroundLockTimeout)
     // 当 fb2k 不是前台进程时，SetForegroundWindow 会被系统延迟 200ms~5s，
     // 导致 window.focus 偶发慢响应。AttachThreadInput 临时将当前线程附着到
@@ -1042,12 +1122,12 @@ json WindowFocus(const json& params) {
     DWORD currentTid = GetCurrentThreadId();
     bool attached = (foregroundTid != 0 && foregroundTid != currentTid)
         ? (AttachThreadInput(currentTid, foregroundTid, TRUE) != 0) : false;
-    
+
     // 使用 SetWindowPos 确保窗口在 Z 序最前，然后激活
     SetWindowPos(hwnd, HWND_TOP, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW);
     SetForegroundWindow(hwnd);
     BringWindowToTop(hwnd);
-    
+
     if (attached) {
         AttachThreadInput(currentTid, foregroundTid, FALSE);
     }
@@ -1056,71 +1136,63 @@ json WindowFocus(const json& params) {
         targetMainWin->RestoreSurfaceAfterHidden("window-focus");
     }
 
-    return { {"success", true} };
+    return api::Ok();
 }
 
 
-json WindowBlur(const json& params) {
-    // Can't reliably blur, just minimize
-    HWND hwnd = GetCallerHwnd(params);
-    if (!hwnd) return { {"success", false}, {"error", "Window not found"} };
-    
-    // Find next window and activate it
+api::Result<void> WindowBlur(const wn::BlurParams&, const CallerContext& caller) {
+    // 没法可靠地让窗口失焦，改为激活 Z 序里的下一个窗口
+    HWND hwnd = CallerTopLevelHwnd(caller);
+    if (!hwnd) return WindowNotFound();
+
     HWND nextWindow = GetNextWindow(hwnd, GW_HWNDNEXT);
     if (nextWindow) {
         SetForegroundWindow(nextWindow);
     }
-    
-    return { {"success", true} };
+    return api::Ok();
 }
 
 
 // ========== Title ==========
 
-json WindowSetTitle(const json& params) {
-    PANEL_MODE_UNSUPPORTED("window.setTitle");
-    HWND hwnd = GetCallerHwnd(params);
-    if (!hwnd) return { {"success", false}, {"error", "Window not found"} };
-    
-    std::string title = params.value("title", "foobar2000");
-    std::wstring wideTitle = Utf8ToWide(title);
-    
+api::Result<void> WindowSetTitle(const wn::SetTitleParams& p, const CallerContext& caller) {
+    if (IsPanelMode()) return api::PanelModeUnsupported("window.setTitle");
+    HWND hwnd = CallerTopLevelHwnd(caller);
+    if (!hwnd) return WindowNotFound();
+
+    std::wstring wideTitle = Utf8ToWide(p.title);
     SetWindowTextW(hwnd, wideTitle.c_str());
-    return { {"success", true} };
+    return api::Ok();
 }
 
 
-json WindowGetTitle(const json& params) {
-    HWND hwnd = GetCallerHwnd(params);
-    if (!hwnd) return { {"title", ""} };
-    
+api::Result<wn::GetTitleResult> WindowGetTitle(const wn::GetTitleParams&, const CallerContext& caller) {
+    wn::GetTitleResult result;  // 没有窗口时为空串
+    HWND hwnd = CallerTopLevelHwnd(caller);
+    if (!hwnd) return result;
+
     wchar_t title[256];
     GetWindowTextW(hwnd, title, 256);
-    std::string utf8Title = WideToUtf8(title);
-    
-    return { {"title", utf8Title} };
+    result.title = WideToUtf8(title);
+    return result;
 }
 
 
 // ========== Flash ==========
 
-json WindowFlash(const json& params) {
-    PANEL_MODE_UNSUPPORTED("window.flash");
-    HWND hwnd = GetCallerHwnd(params);
-    if (!hwnd) return { {"success", false}, {"error", "Window not found"} };
-    
-    bool enabled = params.value("enabled", true);
-    int count = params.value("count", 3);
-    
+api::Result<void> WindowFlash(const wn::FlashParams& p, const CallerContext& caller) {
+    if (IsPanelMode()) return api::PanelModeUnsupported("window.flash");
+    HWND hwnd = CallerTopLevelHwnd(caller);
+    if (!hwnd) return WindowNotFound();
+
     FLASHWINFO fi = { sizeof(FLASHWINFO) };
     fi.hwnd = hwnd;
-    fi.dwFlags = enabled ? (FLASHW_ALL | FLASHW_TIMERNOFG) : FLASHW_STOP;
-    fi.uCount = count;
+    fi.dwFlags = p.enabled ? (FLASHW_ALL | FLASHW_TIMERNOFG) : FLASHW_STOP;
+    fi.uCount = static_cast<UINT>(p.count);
     fi.dwTimeout = 0;
-    
+
     FlashWindowEx(&fi);
-    
-    return { {"success", true} };
+    return api::Ok();
 }
 
 
@@ -1128,21 +1200,21 @@ json WindowFlash(const json& params) {
 // 显示系统菜单（最小化/最大化/关闭等）
 // 支持传入触发元素的矩形区域，避免菜单遮挡按钮
 
-json WindowShowSystemMenu(const json& params) {
-    PANEL_MODE_UNSUPPORTED("window.showSystemMenu");
-    HWND hwnd = GetCallerHwnd(params);
-    if (!hwnd) return { {"success", false}, {"error", "Window not found"} };
-    
-    int x = params.value("x", 0);
-    int y = params.value("y", 0);
-    int w = params.value("w", 0);
-    int h = params.value("h", 0);
-    
+api::Result<void> WindowShowSystemMenu(const wn::ShowSystemMenuParams& p, const CallerContext& caller) {
+    if (IsPanelMode()) return api::PanelModeUnsupported("window.showSystemMenu");
+    HWND hwnd = CallerTopLevelHwnd(caller);
+    if (!hwnd) return WindowNotFound();
+
+    const int x = PixelArg(p.x);
+    const int y = PixelArg(p.y);
+    const int w = PixelArg(p.w);
+    const int h = PixelArg(p.h);
+
     HMENU sysMenu = GetSystemMenu(hwnd, FALSE);
     if (!sysMenu) {
-        return { {"success", false}, {"error", "System menu not available"} };
+        return api::Fail("System menu not available", ApiErrorCode::OPERATION_FAILED);
     }
-    
+
     UINT cmd = 0;
     if (w > 0 && h > 0) {
         // 使用 TrackPopupMenuEx 支持排除区域
@@ -1152,7 +1224,7 @@ json WindowShowSystemMenu(const json& params) {
         tpm.rcExclude.top = y;
         tpm.rcExclude.right = x + w;
         tpm.rcExclude.bottom = y + h;
-        
+
         // TPM_VERTICAL: 优先垂直定位（上下弹出）
         cmd = TrackPopupMenuEx(
             sysMenu,
@@ -1168,12 +1240,11 @@ json WindowShowSystemMenu(const json& params) {
             0, hwnd, nullptr
         );
     }
-    
+
     if (cmd) {
         PostMessage(hwnd, WM_SYSCOMMAND, cmd, 0);
     }
-    
-    return { {"success", true} };
+    return api::Ok();
 }
 
 
@@ -1181,205 +1252,237 @@ json WindowShowSystemMenu(const json& params) {
 // 标题栏相关 API (客户区扩展支持)
 // ============================================
 
-json WindowGetTitlebarHeight(const json& params) {
-    HWND callerHwnd = GetCallerHwnd(params);
+api::Result<wn::GetTitlebarHeightResult> WindowGetTitlebarHeight(const wn::GetTitlebarHeightParams&,
+                                                                 const CallerContext& caller) {
+    HWND callerHwnd = CallerTopLevelHwnd(caller);
+    wn::GetTitlebarHeightResult result;
     if (auto* mainWnd = FindMainByCallerHwnd(callerHwnd)) {
-        return { {"height", mainWnd->GetTitlebarHeight()} };
+        result.height = mainWnd->GetTitlebarHeight();
+    } else if (auto* popupWnd = FindPopupByCallerHwnd(callerHwnd)) {
+        result.height = popupWnd->GetTitlebarHeight();
+    } else {
+        result.height = MainWindow::DEFAULT_TITLEBAR_HEIGHT;
     }
-    if (auto* popupWnd = FindPopupByCallerHwnd(callerHwnd)) {
-        return { {"height", popupWnd->GetTitlebarHeight()} };
-    }
-    return { {"height", MainWindow::DEFAULT_TITLEBAR_HEIGHT} };
+    return result;
 }
 
 
-json WindowSetTitlebarHeight(const json& params) {
-    PANEL_MODE_UNSUPPORTED("window.setTitlebarHeight");
-    int height = params.value("height", 32);
+api::Result<wn::SetTitlebarHeightResult> WindowSetTitlebarHeight(const wn::SetTitlebarHeightParams& p,
+                                                                 const CallerContext& caller) {
+    if (IsPanelMode()) return api::PanelModeUnsupported("window.setTitlebarHeight");
+    // 范围按截掉小数之后的整数判，与迁移前 value<int> 的读法一致
+    const int height = PixelArg(p.height);
     if (height < 24 || height > 100) {
-        return { {"success", false}, {"error", "Height must be between 24 and 100"} };
+        return api::Fail("Height must be between 24 and 100", ApiErrorCode::INVALID_PARAMS);
     }
 
-    HWND callerHwnd = GetCallerHwnd(params);
+    HWND callerHwnd = CallerTopLevelHwnd(caller);
+    wn::SetTitlebarHeightResult result;
+    result.height = height;
     if (auto* mainWnd = FindMainByCallerHwnd(callerHwnd)) {
         mainWnd->SetTitlebarHeight(height);
-        return { {"success", true}, {"height", height} };
+        return result;
     }
     if (auto* popupWnd = FindPopupByCallerHwnd(callerHwnd)) {
         popupWnd->SetTitlebarHeight(height);
-        return { {"success", true}, {"height", height} };
+        return result;
     }
 
-    return { {"success", false}, {"error", "Window not found"} };
+    return WindowNotFound();
 }
 
 
-json WindowGetCaptionButtonsWidth(const json& params) {
+api::Result<wn::GetCaptionButtonsWidthResult> WindowGetCaptionButtonsWidth(const wn::GetCaptionButtonsWidthParams&) {
+    wn::GetCaptionButtonsWidthResult result;
     auto* ui = WebViewUI::GetInstance();
     if (!ui || !ui->GetMainWindow()) {
-        return { {"width", 138}, {"buttonWidth", 46} };
+        result.width = 138;
+        result.buttonWidth = 46;
+        return result;
     }
 
     auto* mainWnd = ui->GetMainWindow();
-    return {
-        {"width", mainWnd->GetCaptionButtonsWidth()},
-        {"buttonWidth", mainWnd->GetCaptionButtonWidth()}
-    };
+    result.width = mainWnd->GetCaptionButtonsWidth();
+    result.buttonWidth = mainWnd->GetCaptionButtonWidth();
+    return result;
 }
 
 
-json WindowSetDragRegions(const json& params) {
-    PANEL_MODE_UNSUPPORTED("window.setDragRegions");
-    HWND callerHwnd = GetCallerHwnd(params);
-    if (!callerHwnd) {
-        return { {"success", false}, {"error", "Window not found"} };
-    }
-    
-    // 获取 DPI 缩放比例 (CSS 像素 -> 物理像素)
-    HWND hwnd = callerHwnd;
-    double dpiScale = 1.0;
-    if (hwnd) {
-        int dpi = GetDpiForWindow(hwnd);
-        dpiScale = dpi / 96.0;
-    }
-    
-    std::vector<TitlebarDragRegion> regions;
-    
-    const auto& regionsArr = params.contains("regions") && params["regions"].is_array()
-        ? params["regions"] : json::array();
-    for (const auto& r : regionsArr) {
+// 页面给的 CSS 像素矩形换成物理像素；宽或高不为正的矩形丢掉。先截小数再乘缩放，与迁移前一致。
+std::vector<TitlebarDragRegion> ToPhysicalRegions(const std::optional<std::vector<wn::WindowRegion>>& regions,
+                                                   double dpiScale) {
+    std::vector<TitlebarDragRegion> physical;
+    if (!regions) return physical;
+    for (const auto& r : *regions) {
         TitlebarDragRegion region;
-        // 将 CSS 像素转换为物理像素
-        region.x = static_cast<int>(r.value("x", 0) * dpiScale);
-        region.y = static_cast<int>(r.value("y", 0) * dpiScale);
-        region.width = static_cast<int>(r.value("width", 0) * dpiScale);
-        region.height = static_cast<int>(r.value("height", 0) * dpiScale);
-        
+        region.x = static_cast<int>(PixelArg(r.x) * dpiScale);
+        region.y = static_cast<int>(PixelArg(r.y) * dpiScale);
+        region.width = static_cast<int>(PixelArg(r.width) * dpiScale);
+        region.height = static_cast<int>(PixelArg(r.height) * dpiScale);
+
         if (region.width <= 0 || region.height <= 0)
             continue;
-        regions.push_back(region);
+        physical.push_back(region);
     }
+    return physical;
+}
+
+
+api::Result<wn::SetDragRegionsResult> WindowSetDragRegions(const wn::SetDragRegionsParams& p,
+                                                           const CallerContext& caller) {
+    if (IsPanelMode()) return api::PanelModeUnsupported("window.setDragRegions");
+    HWND callerHwnd = CallerTopLevelHwnd(caller);
+    if (!callerHwnd) return WindowNotFound();
+
+    // 获取 DPI 缩放比例 (CSS 像素 -> 物理像素)
+    const double dpiScale = GetDpiForWindow(callerHwnd) / 96.0;
+    std::vector<TitlebarDragRegion> regions = ToPhysicalRegions(p.regions, dpiScale);
 
     if (auto* mainWnd = FindMainByCallerHwnd(callerHwnd)) {
         mainWnd->SetDragRegions(regions);
     } else if (auto* popupWnd = FindPopupByCallerHwnd(callerHwnd)) {
         popupWnd->SetDragRegions(ConvertDragRegionsForPopup(regions));
     } else {
-        return { {"success", false}, {"error", "Window not found"} };
+        return WindowNotFound();
     }
 
-    return { {"success", true}, {"count", regions.size()}, {"dpiScale", dpiScale} };
+    wn::SetDragRegionsResult result;
+    result.count = static_cast<std::int64_t>(regions.size());
+    result.dpiScale = dpiScale;
+    return result;
 }
 
 
-json WindowClearDragRegions(const json& params) {
-    PANEL_MODE_UNSUPPORTED("window.clearDragRegions");
-    HWND callerHwnd = GetCallerHwnd(params);
+api::Result<void> WindowClearDragRegions(const wn::ClearDragRegionsParams&, const CallerContext& caller) {
+    if (IsPanelMode()) return api::PanelModeUnsupported("window.clearDragRegions");
+    HWND callerHwnd = CallerTopLevelHwnd(caller);
     if (auto* mainWnd = FindMainByCallerHwnd(callerHwnd)) {
         mainWnd->ClearDragRegions();
-        return { {"success", true} };
+        return api::Ok();
     }
     if (auto* popupWnd = FindPopupByCallerHwnd(callerHwnd)) {
         popupWnd->ClearDragRegions();
-        return { {"success", true} };
+        return api::Ok();
     }
-    return { {"success", false}, {"error", "Window not found"} };
+    return WindowNotFound();
 }
 
 
-json WindowSetNoDragRegions(const json& params) {
-    PANEL_MODE_UNSUPPORTED("window.setNoDragRegions");
-    HWND callerHwnd = GetCallerHwnd(params);
-    if (!callerHwnd) {
-        return { {"success", false}, {"error", "Window not found"} };
-    }
-    
+api::Result<wn::SetNoDragRegionsResult> WindowSetNoDragRegions(const wn::SetNoDragRegionsParams& p,
+                                                               const CallerContext& caller) {
+    if (IsPanelMode()) return api::PanelModeUnsupported("window.setNoDragRegions");
+    HWND callerHwnd = CallerTopLevelHwnd(caller);
+    if (!callerHwnd) return WindowNotFound();
+
     // 获取 DPI 缩放比例 (CSS 像素 -> 物理像素)
-    HWND hwnd = callerHwnd;
-    double dpiScale = 1.0;
-    if (hwnd) {
-        int dpi = GetDpiForWindow(hwnd);
-        dpiScale = dpi / 96.0;
-    }
-    
-    std::vector<TitlebarDragRegion> regions;
-    
-    const auto& noDragArr = params.contains("regions") && params["regions"].is_array()
-        ? params["regions"] : json::array();
-    for (const auto& r : noDragArr) {
-        TitlebarDragRegion region;
-        // 将 CSS 像素转换为物理像素
-        region.x = static_cast<int>(r.value("x", 0) * dpiScale);
-        region.y = static_cast<int>(r.value("y", 0) * dpiScale);
-        region.width = static_cast<int>(r.value("width", 0) * dpiScale);
-        region.height = static_cast<int>(r.value("height", 0) * dpiScale);
-        
-        if (region.width <= 0 || region.height <= 0)
-            continue;
-        regions.push_back(region);
-    }
+    const double dpiScale = GetDpiForWindow(callerHwnd) / 96.0;
+    std::vector<TitlebarDragRegion> regions = ToPhysicalRegions(p.regions, dpiScale);
 
     if (auto* mainWnd = FindMainByCallerHwnd(callerHwnd)) {
         mainWnd->SetNoDragRegions(regions);
     } else if (auto* popupWnd = FindPopupByCallerHwnd(callerHwnd)) {
         popupWnd->SetNoDragRegions(ConvertDragRegionsForPopup(regions));
     } else {
-        return { {"success", false}, {"error", "Window not found"} };
+        return WindowNotFound();
     }
 
-    return { {"success", true}, {"count", regions.size()}, {"dpiScale", dpiScale} };
+    wn::SetNoDragRegionsResult result;
+    result.count = static_cast<std::int64_t>(regions.size());
+    result.dpiScale = dpiScale;
+    return result;
 }
 
 
-json WindowClearNoDragRegions(const json& params) {
-    PANEL_MODE_UNSUPPORTED("window.clearNoDragRegions");
-    HWND callerHwnd = GetCallerHwnd(params);
+api::Result<void> WindowClearNoDragRegions(const wn::ClearNoDragRegionsParams&, const CallerContext& caller) {
+    if (IsPanelMode()) return api::PanelModeUnsupported("window.clearNoDragRegions");
+    HWND callerHwnd = CallerTopLevelHwnd(caller);
     if (auto* mainWnd = FindMainByCallerHwnd(callerHwnd)) {
         mainWnd->ClearNoDragRegions();
-        return { {"success", true} };
+        return api::Ok();
     }
     if (auto* popupWnd = FindPopupByCallerHwnd(callerHwnd)) {
         popupWnd->ClearNoDragRegions();
-        return { {"success", true} };
+        return api::Ok();
     }
-    return { {"success", false}, {"error", "Window not found"} };
+    return WindowNotFound();
 }
 
 
-json WindowGetTitlebarInfo(const json& params) {
+// 页面自绘的最大化键。只收主窗口：popup 的命中测试从不答非客户区码，
+// 贴靠布局也只对主窗口有意义。
+api::Result<wn::SetMaximizeButtonRegionResult> WindowSetMaximizeButtonRegion(
+    const wn::SetMaximizeButtonRegionParams& p, const CallerContext& caller) {
+    if (IsPanelMode()) return api::PanelModeUnsupported("window.setMaximizeButtonRegion");
+    HWND callerHwnd = CallerTopLevelHwnd(caller);
+    if (!callerHwnd) return WindowNotFound();
+
+    auto* mainWnd = FindMainByCallerHwnd(callerHwnd);
+    if (!mainWnd) {
+        if (FindPopupByCallerHwnd(callerHwnd)) {
+            return api::Fail("Only the main window answers a maximize button region.",
+                             ApiErrorCode::NOT_SUPPORTED);
+        }
+        return WindowNotFound();
+    }
+
+    // 与页面的 devicePixelRatio 同一个系数：拖动矩形只乘 DPI，但最大化键的位置
+    // 错一点贴靠浮层就不出，页面缩放不能漏。
+    double zoom = 1.0;
+    if (WebViewHost* host = WebViewContext::GetInstance().GetWebViewHost(callerHwnd)) {
+        const double factor = host->GetZoomFactor();
+        if (factor > 0.0) zoom = factor;
+    }
+    const double scale = GetDpiForWindow(callerHwnd) / 96.0 * zoom;
+
+    std::optional<maximize_button_region::Rect> region;
+    if (p.region) {
+        region = maximize_button_region::ToPhysical(PixelArg(p.region->x), PixelArg(p.region->y),
+                                                    PixelArg(p.region->width),
+                                                    PixelArg(p.region->height), scale);
+    }
+    mainWnd->SetMaximizeButtonRegion(region);
+
+    wn::SetMaximizeButtonRegionResult result;
+    result.hasRegion = region.has_value();
+    result.snapLayouts = maximize_button_region::SnapLayoutsSupported();
+    result.scale = scale;
+    return result;
+}
+
+
+api::Result<wn::GetTitlebarInfoResult> WindowGetTitlebarInfo(const wn::GetTitlebarInfoParams&) {
+    wn::GetTitlebarInfoResult result;
     auto* ui = WebViewUI::GetInstance();
     if (!ui || !ui->GetMainWindow()) {
-        return {
-            {"height", 32},
-            {"captionButtonsWidth", 138},
-            {"captionButtonWidth", 46},
-            {"isMaximized", false}
-        };
+        result.height = 32;
+        result.captionButtonsWidth = 138;
+        result.captionButtonWidth = 46;
+        result.isMaximized = false;
+        return result;
     }
-    
+
     auto* mainWnd = ui->GetMainWindow();
     HWND hwnd = mainWnd->GetHwnd();
-    
-    return {
-        {"height", mainWnd->GetTitlebarHeight()},
-        {"captionButtonsWidth", mainWnd->GetCaptionButtonsWidth()},
-        {"captionButtonWidth", mainWnd->GetCaptionButtonWidth()},
-        {"isMaximized", IsZoomed(hwnd) != FALSE}
-    };
+
+    result.height = mainWnd->GetTitlebarHeight();
+    result.captionButtonsWidth = mainWnd->GetCaptionButtonsWidth();
+    result.captionButtonWidth = mainWnd->GetCaptionButtonWidth();
+    result.isMaximized = IsZoomed(hwnd) != FALSE;
+    return result;
 }
 
 
 // ========== UI Context Menu ==========
 // 显示 foobar2000 风格的上下文菜单
 
-json UiShowContextMenu(const json& params) {
+api::Result<void> UiShowContextMenu(const api::ui::ShowContextMenuParams& p) {
     auto* ui = WebViewUI::GetInstance();
     if (!ui || !ui->GetMainWindow()) {
-        return { {"success", false}, {"error", "Window not found"} };
+        return api::Fail("Window not found", ApiErrorCode::OPERATION_FAILED);
     }
     
-    int x = params.value("x", -1);
-    int y = params.value("y", -1);
+    int x = static_cast<int>(p.x);
+    int y = static_cast<int>(p.y);
     
     // 如果没有传递有效坐标，使用当前鼠标位置
     // DPI 校正：对比实际鼠标位置与 JS 传递的坐标
@@ -1397,14 +1500,14 @@ json UiShowContextMenu(const json& params) {
     // 调用 MainWindow 的上下文菜单
     ui->GetMainWindow()->ShowContextMenu(x, y);
     
-    return { {"success", true} };
+    return api::Ok();
 }
 
 
 // ========== System Theme API ==========
 
 // system.getTheme - Get system theme information
-json SystemGetTheme(const json& params) {
+api::Result<api::system::GetThemeResult> SystemGetTheme(const api::system::GetThemeParams&) {
     bool darkMode = false;
     std::string accentColor = "#0078D4";  // Default Windows blue
     bool transparency = true;
@@ -1445,18 +1548,18 @@ json SystemGetTheme(const json& params) {
         accentColor = hex;
     }
     
-    return {
-        {"darkMode", darkMode},
-        {"isDark", darkMode},  // alias for tests
-        {"accentColor", accentColor},
-        {"transparency", transparency}
-    };
+    api::system::GetThemeResult result;
+    result.darkMode = darkMode;
+    result.isDark = darkMode;
+    result.accentColor = accentColor;
+    result.transparency = transparency;
+    return result;
 }
 
 
 // system.getDPI - Get DPI scaling information
-json SystemGetDPI(const json& params) {
-    HWND hwnd = GetCallerHwnd(params);
+api::Result<api::system::GetDPIResult> SystemGetDPI(const api::system::GetDPIParams&, const CallerContext& caller) {
+    HWND hwnd = CallerTopLevelHwnd(caller);
     UINT dpi = 96;  // Default DPI
     
     if (hwnd) {
@@ -1477,40 +1580,37 @@ json SystemGetDPI(const json& params) {
         }
     }
     
-    double scale = static_cast<double>(dpi) / 96.0;
-    
-    return {
-        {"dpi", dpi},
-        {"scale", scale}
-    };
+    api::system::GetDPIResult result;
+    result.dpi = dpi;
+    result.scale = static_cast<double>(dpi) / 96.0;
+    return result;
 }
 
 
 // ========== Corner Preference (Windows 11+) ==========
 
-json WindowSetCornerPreference(const json& params) {
-    PANEL_MODE_UNSUPPORTED("window.setCornerPreference");
+api::Result<void> WindowSetCornerPreference(const wn::SetCornerPreferenceParams& p) {
+    if (IsPanelMode()) return api::PanelModeUnsupported("window.setCornerPreference");
     MainWindow* mainWindow = GetMainWindow();
-    if (!mainWindow) return { {"success", false}, {"error", "Window not found"} };
-    
-    std::string mode = params.value("mode", "default");
-    mainWindow->SetCornerPreference(mode);
-    
-    return { {"success", true} };
+    if (!mainWindow) return WindowNotFound();
+
+    mainWindow->SetCornerPreference(p.mode);
+    return api::Ok();
 }
 
 
-json WindowGetCornerPreference(const json& params) {
+api::Result<wn::GetCornerPreferenceResult> WindowGetCornerPreference(const wn::GetCornerPreferenceParams&) {
+    wn::GetCornerPreferenceResult result;
     MainWindow* mainWindow = GetMainWindow();
-    if (!mainWindow) return { {"mode", "default"}, {"preference", "default"} };
-    
-    std::string pref = mainWindow->GetCornerPreference();
-    return { {"mode", pref}, {"preference", pref} };
+    const std::string pref = mainWindow ? mainWindow->GetCornerPreference() : "default";
+    result.mode = pref;
+    result.preference = pref;
+    return result;
 }
 
 
 // system.getLocale - Get system locale information
-json SystemGetLocale(const json& params) {
+api::Result<api::system::GetLocaleResult> SystemGetLocale(const api::system::GetLocaleParams&) {
     wchar_t localeName[LOCALE_NAME_MAX_LENGTH];
     std::string locale = "en-US";  // Default
     
@@ -1520,52 +1620,48 @@ json SystemGetLocale(const json& params) {
     
     // Get language name
     wchar_t langName[256];
-    std::string language = "";
+    std::string language;
     if (GetLocaleInfoEx(localeName, LOCALE_SLOCALIZEDLANGUAGENAME, langName, 256)) {
         language = WideToUtf8(langName);
     }
     
     // Get country name
     wchar_t countryName[256];
-    std::string country = "";
+    std::string country;
     if (GetLocaleInfoEx(localeName, LOCALE_SLOCALIZEDCOUNTRYNAME, countryName, 256)) {
         country = WideToUtf8(countryName);
     }
     
-    return {
-        {"locale", locale},
-        {"language", language},
-        {"country", country}
-    };
+    api::system::GetLocaleResult result;
+    result.locale = locale;
+    result.language = language;
+    result.country = country;
+    return result;
 }
 
 
 // ========== Additional Window APIs ==========
 
-json WindowSetPosition(const json& params) {
-    PANEL_MODE_UNSUPPORTED("window.setPosition");
-    HWND hwnd = GetCallerHwnd(params);
-    if (!hwnd) return {{"success", false}};
-    int x = params.value("x", 0);
-    int y = params.value("y", 0);
-    SetWindowPos(hwnd, nullptr, x, y, 0, 0, SWP_NOSIZE | SWP_NOZORDER);
-    return {{"success", true}};
+api::Result<void> WindowSetPosition(const wn::SetPositionParams& p, const CallerContext& caller) {
+    if (IsPanelMode()) return api::PanelModeUnsupported("window.setPosition");
+    HWND hwnd = CallerTopLevelHwnd(caller);
+    if (!hwnd) return WindowNotFound();
+    SetWindowPos(hwnd, nullptr, PixelArg(p.x), PixelArg(p.y), 0, 0, SWP_NOSIZE | SWP_NOZORDER);
+    return api::Ok();
 }
 
 
-json WindowSetSize(const json& params) {
-    PANEL_MODE_UNSUPPORTED("window.setSize");
-    HWND hwnd = GetCallerHwnd(params);
-    if (!hwnd) return {{"success", false}};
-    int width = params.value("width", 800);
-    int height = params.value("height", 600);
-    SetWindowPos(hwnd, nullptr, 0, 0, width, height, SWP_NOMOVE | SWP_NOZORDER);
-    return {{"success", true}};
+api::Result<void> WindowSetSize(const wn::SetSizeParams& p, const CallerContext& caller) {
+    if (IsPanelMode()) return api::PanelModeUnsupported("window.setSize");
+    HWND hwnd = CallerTopLevelHwnd(caller);
+    if (!hwnd) return WindowNotFound();
+    SetWindowPos(hwnd, nullptr, 0, 0, PixelArg(p.width), PixelArg(p.height), SWP_NOMOVE | SWP_NOZORDER);
+    return api::Ok();
 }
 
 
-json WindowGetDpiScale(const json& params) {
-    HWND hwnd = GetCallerHwnd(params);
+api::Result<wn::GetDpiScaleResult> WindowGetDpiScale(const wn::GetDpiScaleParams&, const CallerContext& caller) {
+    HWND hwnd = CallerTopLevelHwnd(caller);
     int dpi = 96;
     if (hwnd) {
         HDC hdc = GetDC(hwnd);
@@ -1574,107 +1670,144 @@ json WindowGetDpiScale(const json& params) {
             ReleaseDC(hwnd, hdc);
         }
     }
-    return {{"success", true}, {"dpi", dpi}, {"scale", dpi / 96.0}};
-}
-
-
-json WindowFlashTaskbar(const json& params) {
-    PANEL_MODE_UNSUPPORTED("window.flashTaskbar");
-    HWND hwnd = GetCallerHwnd(params);
-    if (!hwnd) return {{"success", false}};
-    int count = params.value("count", 3);
-    FLASHWINFO fi = {sizeof(FLASHWINFO), hwnd, FLASHW_ALL, (UINT)count, 0};
-    FlashWindowEx(&fi);
-    return {{"success", true}};
-}
-
-
-json WindowEnterFullscreen(const json& params) {
-    PANEL_MODE_UNSUPPORTED("window.enterFullscreen");
-    auto target = WindowTargetResolver::ResolveForMutation(params);
-    if (!target.Success()) return target.ErrorResponse();
-    if (!target.shell->GetCapabilities().supportsFullscreen) {
-        return {{"success", false}, {"isFullscreen", target.shell->IsFullscreen()},
-            {"error", "this window does not support fullscreen"}};
-    }
-    if (target.shell->IsFullscreen()) return {{"success", false}};
-    
-    // fullscreen implementation still in WindowApi.cpp (stealth DWM)
-    EnterFullscreenMode(target.shell->GetShellHwnd(), target.shell);
-    return {{"success", true}, {"isFullscreen", true}};
-}
-
-
-json WindowExitFullscreen(const json& params) {
-    PANEL_MODE_UNSUPPORTED("window.exitFullscreen");
-    auto target = WindowTargetResolver::ResolveForMutation(params);
-    if (!target.Success()) return target.ErrorResponse();
-    if (!target.shell->GetCapabilities().supportsFullscreen) {
-        return {{"success", false}, {"isFullscreen", target.shell->IsFullscreen()},
-            {"error", "this window does not support fullscreen"}};
-    }
-    if (!target.shell->IsFullscreen()) return {{"success", false}};
-    
-    // fullscreen implementation still in WindowApi.cpp (stealth DWM)
-    ExitFullscreenMode(target.shell->GetShellHwnd(), target.shell);
-    return {{"success", true}, {"isFullscreen", false}};
-}
-
-
-// Mica 效果 - 使用公共实现
-json WindowSetMica(const json& params) {
-    return SetMicaEffectImpl(params);
-}
-
-
-// 别名: window.setMicaEffect -> window.setMica (兼容性)
-json WindowSetMicaEffect(const json& params) {
-    return SetMicaEffectImpl(params);
-}
-
-
-json WindowSetBlur(const json& params) {
-    PANEL_MODE_UNSUPPORTED("window.setBlur");
-    auto target = WindowTargetResolver::ResolveForMutation(params);
-    if (!target.Success()) return target.ErrorResponse();
-    bool enabled = params.value("enabled", true);
-
-    const bool success = target.shell->PatchCompatibilityBlur(enabled);
-    return {{"success", success}, {"enabled", enabled}};
-}
-
-
-json WindowSetAcrylic(const json& params) {
-    PANEL_MODE_UNSUPPORTED("window.setAcrylic");
-    auto target = WindowTargetResolver::ResolveForMutation(params);
-    if (!target.Success()) return target.ErrorResponse();
-    
-    bool enabled = params.value("enabled", true);
-    
-    // darkMode 参数: true=深色, false=浅色
-    bool hasDarkModeParam = params.contains("darkMode");
-    bool darkMode = params.value("darkMode", true);
-
-    const bool success = target.shell->PatchCompatibilityBackdrop(
-        enabled ? std::optional<std::string>("acrylic") : std::optional<std::string>(),
-        hasDarkModeParam ? std::optional<bool>(darkMode) : std::optional<bool>(),
-        enabled);
-
-    json result = {{"success", success}, {"enabled", enabled}};
-    if (hasDarkModeParam) {
-        result["darkMode"] = darkMode;
-    }
+    wn::GetDpiScaleResult result;
+    result.dpi = dpi;
+    result.scale = dpi / 96.0;
     return result;
 }
 
 
-json WindowSetDarkMode(const json& params) {
-    PANEL_MODE_UNSUPPORTED("window.setDarkMode");
-    auto target = WindowTargetResolver::ResolveForMutation(params);
-    if (!target.Success()) return target.ErrorResponse();
-    bool enabled = params.value("enabled", true);
-    bool success = target.shell->PatchCompatibilityDarkMode(enabled);
-    return {{"success", success}, {"enabled", enabled}};
+api::Result<void> WindowFlashTaskbar(const wn::FlashTaskbarParams& p, const CallerContext& caller) {
+    if (IsPanelMode()) return api::PanelModeUnsupported("window.flashTaskbar");
+    HWND hwnd = CallerTopLevelHwnd(caller);
+    if (!hwnd) return WindowNotFound();
+    FLASHWINFO fi = {sizeof(FLASHWINFO), hwnd, FLASHW_ALL, static_cast<UINT>(p.count), 0};
+    FlashWindowEx(&fi);
+    return api::Ok();
+}
+
+
+api::Result<wn::EnterFullscreenResult> WindowEnterFullscreen(const wn::EnterFullscreenParams& p,
+                                                             const CallerContext& caller) {
+    if (IsPanelMode()) return api::PanelModeUnsupported("window.enterFullscreen");
+    auto target = WindowTargetResolver::ResolveForMutation(p.windowId, caller.callerHwnd);
+    if (!target.Success()) return TargetFailure(target, "window.enterFullscreen");
+    if (!target.shell->GetCapabilities().supportsFullscreen) {
+        return api::Fail("this window does not support fullscreen", ApiErrorCode::NOT_SUPPORTED,
+                         {{"isFullscreen", target.shell->IsFullscreen()}});
+    }
+    if (target.shell->IsFullscreen()) {
+        return api::Fail("Window is already fullscreen", ApiErrorCode::OPERATION_FAILED);
+    }
+
+    // fullscreen implementation still in WindowApi.cpp (stealth DWM)
+    EnterFullscreenMode(target.shell->GetShellHwnd(), target.shell);
+    wn::EnterFullscreenResult result;
+    result.isFullscreen = true;
+    return result;
+}
+
+
+api::Result<wn::ExitFullscreenResult> WindowExitFullscreen(const wn::ExitFullscreenParams& p,
+                                                           const CallerContext& caller) {
+    if (IsPanelMode()) return api::PanelModeUnsupported("window.exitFullscreen");
+    auto target = WindowTargetResolver::ResolveForMutation(p.windowId, caller.callerHwnd);
+    if (!target.Success()) return TargetFailure(target, "window.exitFullscreen");
+    if (!target.shell->GetCapabilities().supportsFullscreen) {
+        return api::Fail("this window does not support fullscreen", ApiErrorCode::NOT_SUPPORTED,
+                         {{"isFullscreen", target.shell->IsFullscreen()}});
+    }
+    if (!target.shell->IsFullscreen()) {
+        return api::Fail("Window is not fullscreen", ApiErrorCode::OPERATION_FAILED);
+    }
+
+    // fullscreen implementation still in WindowApi.cpp (stealth DWM)
+    ExitFullscreenMode(target.shell->GetShellHwnd(), target.shell);
+    wn::ExitFullscreenResult result;
+    result.isFullscreen = false;
+    return result;
+}
+
+
+// setMica 与 setMicaEffect 同形；两个方法各有一份参数与结果结构体（kMethod 不同）。
+template <class R, class P>
+api::Result<R> SetMicaEffectImpl(const P& p, const CallerContext& caller, std::string_view method) {
+    if (IsPanelMode()) return api::PanelModeUnsupported(method);
+    auto target = WindowTargetResolver::ResolveForMutation(p.windowId, caller.callerHwnd);
+    if (!target.Success()) return TargetFailure(target, method);
+
+    // "mica" or "mica-alt"
+    const std::string variant = p.variant == "mica-alt" ? "mica-alt" : "mica";
+
+    // darkMode 参数: true=深色, false=浅色, 不设置则不改变
+    // 这决定了 Mica 效果显示深色还是浅色背景
+    const bool success = target.shell->PatchCompatibilityBackdrop(
+        p.enabled ? std::optional<std::string>(variant) : std::optional<std::string>(),
+        p.darkMode,
+        p.enabled);
+
+    R result;
+    result.enabled = p.enabled;
+    result.variant = variant;
+    result.darkMode = p.darkMode;
+    if (!success) return FailWithFields(kBackdropNotApplied, result);
+    return result;
+}
+
+
+api::Result<wn::SetMicaResult> WindowSetMica(const wn::SetMicaParams& p, const CallerContext& caller) {
+    return SetMicaEffectImpl<wn::SetMicaResult>(p, caller, "window.setMica");
+}
+
+
+// 别名: window.setMicaEffect -> window.setMica (兼容性)
+api::Result<wn::SetMicaEffectResult> WindowSetMicaEffect(const wn::SetMicaEffectParams& p, const CallerContext& caller) {
+    return SetMicaEffectImpl<wn::SetMicaEffectResult>(p, caller, "window.setMicaEffect");
+}
+
+
+api::Result<wn::SetBlurResult> WindowSetBlur(const wn::SetBlurParams& p, const CallerContext& caller) {
+    if (IsPanelMode()) return api::PanelModeUnsupported("window.setBlur");
+    auto target = WindowTargetResolver::ResolveForMutation(p.windowId, caller.callerHwnd);
+    if (!target.Success()) return TargetFailure(target, "window.setBlur");
+
+    const bool success = target.shell->PatchCompatibilityBlur(p.enabled);
+    wn::SetBlurResult result;
+    result.enabled = p.enabled;
+    if (!success) return FailWithFields(kBackdropNotApplied, result);
+    return result;
+}
+
+
+api::Result<wn::SetAcrylicResult> WindowSetAcrylic(const wn::SetAcrylicParams& p, const CallerContext& caller) {
+    if (IsPanelMode()) return api::PanelModeUnsupported("window.setAcrylic");
+    auto target = WindowTargetResolver::ResolveForMutation(p.windowId, caller.callerHwnd);
+    if (!target.Success()) return TargetFailure(target, "window.setAcrylic");
+
+    // darkMode 参数: true=深色, false=浅色
+    const bool success = target.shell->PatchCompatibilityBackdrop(
+        p.enabled ? std::optional<std::string>("acrylic") : std::optional<std::string>(),
+        p.darkMode,
+        p.enabled);
+
+    wn::SetAcrylicResult result;
+    result.enabled = p.enabled;
+    result.darkMode = p.darkMode;
+    if (!success) return FailWithFields(kBackdropNotApplied, result);
+    return result;
+}
+
+
+api::Result<wn::SetDarkModeResult> WindowSetDarkMode(const wn::SetDarkModeParams& p, const CallerContext& caller) {
+    if (IsPanelMode()) return api::PanelModeUnsupported("window.setDarkMode");
+    auto target = WindowTargetResolver::ResolveForMutation(p.windowId, caller.callerHwnd);
+    if (!target.Success()) return TargetFailure(target, "window.setDarkMode");
+
+    const bool success = target.shell->PatchCompatibilityDarkMode(p.enabled);
+    wn::SetDarkModeResult result;
+    result.enabled = p.enabled;
+    if (!success) return FailWithFields(kBackdropNotApplied, result);
+    return result;
 }
 
 
@@ -1682,13 +1815,14 @@ json WindowSetDarkMode(const json& params) {
 // WebView 背景透明度控制 - 用于 DWM 效果穿透
 // ============================================
 
-json WindowSetBackgroundTransparency(const json& params) {
-    bool transparent = params.value("transparent", true);
-    auto target = WindowTargetResolver::ResolveForMutation(params);
-    if (!target.Success()) return target.ErrorResponse();
-    
+api::Result<wn::SetBackgroundTransparencyResult> WindowSetBackgroundTransparency(
+    const wn::SetBackgroundTransparencyParams& p, const CallerContext& caller) {
+    auto target = WindowTargetResolver::ResolveForMutation(p.windowId, caller.callerHwnd);
+    if (!target.Success()) return TargetFailure(target, "window.setBackgroundTransparency");
+
+    const bool transparent = p.transparent;
     bool compatibilitySuccess = target.shell->PatchCompatibilityTransparency(transparent);
-    
+
     // WebView host 透明度也需要同步设置
     auto* host = WebViewContext::GetInstance().GetHostByHwnd(target.shell->GetShellHwnd());
     HRESULT hr = E_FAIL;
@@ -1696,42 +1830,41 @@ json WindowSetBackgroundTransparency(const json& params) {
         hr = host->SetBackgroundTransparent(transparent);
     }
     if (!host && !compatibilitySuccess) {
-        return {{"success", false}, {"error", "WebView not available"}};
+        return api::Fail("WebView not available and the window did not apply the change",
+                         ApiErrorCode::OPERATION_FAILED);
     }
-    
-    return {
-        {"success", SUCCEEDED(hr) || compatibilitySuccess},
-        {"transparent", transparent},
-        {"description", transparent 
-            ? "WebView background is now transparent - DWM effects will show through" 
-            : "WebView background is now opaque"}
-    };
+
+    wn::SetBackgroundTransparencyResult result;
+    result.transparent = transparent;
+    result.description = transparent
+        ? "WebView background is now transparent - DWM effects will show through"
+        : "WebView background is now opaque";
+    if (FAILED(hr) && !compatibilitySuccess) {
+        return FailWithFields("Neither the window nor its WebView applied the change", result);
+    }
+    return result;
 }
 
 
 // 刷新 WebView 渲染（DWM 效果后调用）
-json WindowRefreshWebView(const json& params) {
-    HWND callerHwnd = GetCallerHwnd(params);
+api::Result<void> WindowRefreshWebView(const wn::RefreshWebViewParams&, const CallerContext& caller) {
+    HWND callerHwnd = CallerTopLevelHwnd(caller);
     auto* host = WebViewContext::GetInstance().GetHostByHwnd(callerHwnd);
-    if (!host) {
-        return {{"success", false}, {"error", "WebView not available"}};
-    }
-    
+    if (!host) return WebViewNotAvailable();
+
     host->RefreshForDwmEffect();
-    return {{"success", true}};
+    return api::Ok();
 }
 
 
 // 重新加载 WebView 页面（开发调试用）
-json WindowReload(const json& params) {
-    HWND callerHwnd = GetCallerHwnd(params);
+api::Result<void> WindowReload(const wn::ReloadParams&, const CallerContext& caller) {
+    HWND callerHwnd = CallerTopLevelHwnd(caller);
     auto* host = WebViewContext::GetInstance().GetHostByHwnd(callerHwnd);
-    if (!host) {
-        return {{"success", false}, {"error", "WebView not available"}};
-    }
-    
+    if (!host) return WebViewNotAvailable();
+
     host->Reload();
-    return {{"success", true}};
+    return api::Ok();
 }
 
 
@@ -1739,31 +1872,29 @@ json WindowReload(const json& params) {
 // HMR 开发服务器配置 API
 // ============================================
 
-json WindowGetDevServerConfig(const json& params) {
-    return {
-        {"success", true},
-        {"useDevServer", security_config::UseDevServer()},
-        {"devServerUrl", security_config::GetDevServerUrl()}
-    };
+api::Result<wn::GetDevServerConfigResult> WindowGetDevServerConfig(const wn::GetDevServerConfigParams&) {
+    wn::GetDevServerConfigResult result;
+    result.useDevServer = security_config::UseDevServer();
+    result.devServerUrl = security_config::GetDevServerUrl();
+    return result;
 }
 
 
-json WindowSetDevServerConfig(const json& params) {
+api::Result<wn::SetDevServerConfigResult> WindowSetDevServerConfig(const wn::SetDevServerConfigParams& p) {
     // 两个字段各自独立写入: 省略 devServerUrl 曾经会把已存的地址擦成空串,
     // 于是「只想打开开关」的调用把下次启动要用的地址一起丢掉了.
-    if (params.contains("useDevServer")) {
-        security_config::SetUseDevServer(params.value("useDevServer", false));
+    if (p.useDevServer) {
+        security_config::SetUseDevServer(*p.useDevServer);
     }
-    if (params.contains("devServerUrl")) {
-        security_config::SetDevServerUrl(params.value("devServerUrl", "").c_str());
+    if (p.devServerUrl) {
+        security_config::SetDevServerUrl(p.devServerUrl->c_str());
     }
 
     // 回读而非回显请求值: 部分更新时未给的那个字段仍要报出真实的当前值.
-    return {
-        {"success", true},
-        {"useDevServer", security_config::UseDevServer()},
-        {"devServerUrl", security_config::GetDevServerUrl()}
-    };
+    wn::SetDevServerConfigResult result;
+    result.useDevServer = security_config::UseDevServer();
+    result.devServerUrl = security_config::GetDevServerUrl();
+    return result;
 }
 
 
@@ -1771,14 +1902,13 @@ json WindowSetDevServerConfig(const json& params) {
 // 检查是否有保存的窗口位置
 // 前端可以使用此 API 来决定是否设置默认窗口大小
 // ============================================
-json WindowHasSavedBounds(const json& params) {
-    bool hasSaved = window_config::HasSavedPosition();
-    return {
-        {"hasSavedBounds", hasSaved},
-        {"description", hasSaved 
-            ? "Window has saved position from previous session" 
-            : "No saved window position, this may be first launch"}
-    };
+api::Result<wn::HasSavedBoundsResult> WindowHasSavedBounds(const wn::HasSavedBoundsParams&) {
+    wn::HasSavedBoundsResult result;
+    result.hasSavedBounds = window_config::HasSavedPosition();
+    result.description = result.hasSavedBounds
+        ? "Window has saved position from previous session"
+        : "No saved window position, this may be first launch";
+    return result;
 }
 
 
@@ -1788,93 +1918,86 @@ json WindowHasSavedBounds(const json& params) {
 // ============================================
 
 // 设置缩放比例
-json WindowSetZoom(const json& params) {
-    HWND callerHwnd = GetCallerHwnd(params);
+api::Result<wn::SetZoomResult> WindowSetZoom(const wn::SetZoomParams& p, const CallerContext& caller) {
+    HWND callerHwnd = CallerTopLevelHwnd(caller);
     auto* host = WebViewContext::GetInstance().GetHostByHwnd(callerHwnd);
-    if (!host) {
-        return {{"success", false}, {"error", "WebView not available"}};
-    }
-    
-    double zoomFactor = params.value("zoom", 1.0);
+    if (!host) return WebViewNotAvailable();
+
     // 主题接管了这个 WebView 的缩放：偏好页的默认缩放此后不再覆盖它（本进程内有效）。
     host->MarkZoomOverriddenByTheme();
-    HRESULT hr = host->SetZoomFactor(zoomFactor);
-    
-    return {
-        {"success", SUCCEEDED(hr)},
-        {"zoom", host->GetZoomFactor()}
-    };
+    HRESULT hr = host->SetZoomFactor(p.zoom);
+
+    wn::SetZoomResult result;
+    result.zoom = host->GetZoomFactor();
+    if (FAILED(hr)) return FailWithFields(kZoomNotApplied, result);
+    return result;
 }
 
 
 // 获取当前缩放比例
-json WindowGetZoom(const json& params) {
-    HWND callerHwnd = GetCallerHwnd(params);
+api::Result<wn::GetZoomResult> WindowGetZoom(const wn::GetZoomParams&, const CallerContext& caller) {
+    HWND callerHwnd = CallerTopLevelHwnd(caller);
     auto* host = WebViewContext::GetInstance().GetHostByHwnd(callerHwnd);
+    wn::GetZoomResult result;
     if (!host) {
-        return {{"success", true}, {"zoom", 1.0}};
+        // 没有 WebView 时只报默认倍数，不带 DPI
+        result.zoom = 1.0;
+        return result;
     }
-    
-    double zoomFactor = host->GetZoomFactor();
-    
+
+    result.zoom = host->GetZoomFactor();
+
     // 获取当前 DPI 信息
     int dpi = 96;
     if (callerHwnd) {
         dpi = GetDpiForWindow(callerHwnd);
     }
-    
-    return {
-        {"success", true},
-        {"zoom", zoomFactor},
-        {"dpi", dpi},
-        {"dpiScale", dpi / 96.0}
-    };
+    result.dpi = dpi;
+    result.dpiScale = dpi / 96.0;
+    return result;
 }
 
 
 // 重置缩放为默认
-json WindowResetZoom(const json& params) {
-    HWND callerHwnd = GetCallerHwnd(params);
+api::Result<wn::ResetZoomResult> WindowResetZoom(const wn::ResetZoomParams&, const CallerContext& caller) {
+    HWND callerHwnd = CallerTopLevelHwnd(caller);
     auto* host = WebViewContext::GetInstance().GetHostByHwnd(callerHwnd);
-    if (!host) {
-        return {{"success", false}, {"error", "WebView not available"}};
-    }
-    
+    if (!host) return WebViewNotAvailable();
+
     // 主题显式要 1.0，同样算接管：偏好里的默认缩放不再推给这个 WebView。
     host->MarkZoomOverriddenByTheme();
     HRESULT hr = host->SetZoomFactor(1.0);
-    
-    return {
-        {"success", SUCCEEDED(hr)},
-        {"zoom", 1.0}
-    };
+
+    wn::ResetZoomResult result;
+    result.zoom = 1.0;
+    if (FAILED(hr)) return FailWithFields(kZoomNotApplied, result);
+    return result;
 }
 
 
 // 根据 DPI 自动设置缩放
-json WindowSetZoomForDpi(const json& params) {
-    HWND callerHwnd = GetCallerHwnd(params);
+api::Result<wn::SetZoomForDpiResult> WindowSetZoomForDpi(const wn::SetZoomForDpiParams& p, const CallerContext& caller) {
+    HWND callerHwnd = CallerTopLevelHwnd(caller);
     auto* host = WebViewContext::GetInstance().GetHostByHwnd(callerHwnd);
-    if (!host) {
-        return {{"success", false}, {"error", "WebView not available"}};
-    }
-    
-    int dpi = params.value("dpi", 0);
-    
+    if (!host) return WebViewNotAvailable();
+
+    int dpi = static_cast<int>(std::clamp<std::int64_t>(p.dpi, std::numeric_limits<int>::min(),
+                                                        std::numeric_limits<int>::max()));
+
     // 如果未指定 DPI，使用当前窗口 DPI
     if (dpi <= 0 && callerHwnd) {
         dpi = GetDpiForWindow(callerHwnd);
     }
     if (dpi <= 0) dpi = 96;
-    
+
     host->MarkZoomOverriddenByTheme();
     HRESULT hr = host->SetZoomForDpi(dpi);
-    
-    return {
-        {"success", SUCCEEDED(hr)},
-        {"dpi", dpi},
-        {"zoom", host->GetZoomFactor()}
-    };
+
+    wn::SetZoomForDpiResult result;
+    result.dpi = dpi;
+    result.zoom = host->GetZoomFactor();
+    if (FAILED(hr)) return FailWithFields(kZoomNotApplied, result);
+    return result;
 }
 
 
@@ -1883,332 +2006,229 @@ json WindowSetZoomForDpi(const json& params) {
 // ============================================
 
 // 创建弹出窗口
-json WindowCreatePopup(const json& params) {
+api::Result<wn::CreatePopupResult> WindowCreatePopup(const wn::CreatePopupParams& p, const CallerContext& caller) {
     // 惰性初始化：面板模式下自动初始化 WindowManager
     auto& wm = WindowManager::GetInstance();
     if (!wm.IsInitialized()) {
         wm.InitializeForPanel();
     }
-    
+
     PopupWindow::CreateParams cp;
-    cp.url = params.value("url", "");
-    cp.width = params.value("width", 400);
-    cp.height = params.value("height", 300);
-    cp.x = params.value("x", (int)CW_USEDEFAULT);
-    cp.y = params.value("y", (int)CW_USEDEFAULT);
-    cp.title = params.value("title", "");
-    cp.resizable = params.value("resizable", true);
-    cp.alwaysOnTop = params.value("alwaysOnTop", false);
-    cp.showInTaskbar = params.value("showInTaskbar", false);
-    cp.hasShowInTaskbar = params.contains("showInTaskbar");
-    cp.minWidth = params.value("minWidth", 200);
-    cp.minHeight = params.value("minHeight", 150);
-    cp.maxWidth = params.value("maxWidth", 0);
-    cp.maxHeight = params.value("maxHeight", 0);
-    cp.frame = params.value("frame", true);
-    cp.transparent = params.value("transparent", false);
-    cp.beforeClose = params.value("beforeClose", false);
-    cp.clickThrough = params.value("clickThrough", false);
-    cp.profile = params.value("profile", "");
-    cp.hasProfile = params.contains("profile");
-    if (params.contains("behavior") && !params["behavior"].is_object()) {
-        return {{"success", false}, {"error", "behavior must be an object"}};
+    cp.url = p.url;
+    // 规则：弹窗只继承打开者已有的信任。远程网站可以打开，但拿不到桥。
+    if (WebViewHost* opener = WebViewContext::GetInstance().GetWebViewHost(caller.callerHwnd)) {
+        cp.trustAbsoluteUrl = opener->IsTrustedOrigin(Utf8ToWide(p.url));
     }
-    if (params.contains("behavior") && params["behavior"].is_object()) {
-        cp.behavior = params["behavior"];
+    cp.width = PixelArg(p.width);
+    cp.height = PixelArg(p.height);
+    cp.x = p.x ? PixelArg(*p.x) : static_cast<int>(CW_USEDEFAULT);
+    cp.y = p.y ? PixelArg(*p.y) : static_cast<int>(CW_USEDEFAULT);
+    cp.title = p.title;
+    cp.resizable = p.resizable;
+    cp.alwaysOnTop = p.alwaysOnTop;
+    cp.showInTaskbar = p.showInTaskbar.value_or(false);
+    cp.hasShowInTaskbar = p.showInTaskbar.has_value();
+    cp.minWidth = PixelArg(p.minWidth);
+    cp.minHeight = PixelArg(p.minHeight);
+    cp.maxWidth = PixelArg(p.maxWidth);
+    cp.maxHeight = PixelArg(p.maxHeight);
+    cp.frame = p.frame;
+    cp.transparent = p.transparent;
+    cp.beforeClose = p.beforeClose;
+    cp.clickThrough = p.clickThrough;
+    cp.profile = p.profile.value_or("");
+    cp.hasProfile = p.profile.has_value();
+    if (p.behavior) {
+        cp.behavior = OverridesToJson(*p.behavior);
         cp.hasBehavior = true;
     }
-    if (params.contains("backdropPolicy") && !params["backdropPolicy"].is_object()) {
-        return {{"success", false}, {"error", "backdropPolicy must be an object"}};
-    }
-    if (params.contains("backdropPolicy") && params["backdropPolicy"].is_object()) {
-        cp.backdropPolicy = params["backdropPolicy"];
+    if (p.backdropPolicy) {
+        cp.backdropPolicy = OverridesToJson(*p.backdropPolicy);
         cp.hasBackdropPolicy = true;
     }
-    
+
     if (static_cast<int>(wm.GetPopupCount()) >= WindowManager::MAX_POPUPS) {
-        return {{"success", false}, {"error", ApiError::MAX_POPUPS_REACHED}};
+        return api::Fail(ApiError::MAX_POPUPS_REACHED, ApiErrorCode::OPERATION_FAILED);
     }
-    
+
     std::string windowId = wm.CreatePopup(cp);
     if (windowId.empty()) {
-        return {{"success", false}, {"error", ApiError::POPUP_CREATE_FAILED}};
+        return api::Fail(ApiError::POPUP_CREATE_FAILED, ApiErrorCode::OPERATION_FAILED);
     }
-    
-    return {{"success", true}, {"windowId", windowId}};
+
+    wn::CreatePopupResult result;
+    result.windowId = std::move(windowId);
+    return result;
 }
 
 
 // 关闭弹出窗口
-json WindowClosePopup(const json& params) {
-    
-    std::string windowId = params.value("windowId", "");
-    if (windowId.empty()) {
-        return {{"success", false}, {"error", ApiError::WINDOW_ID_REQUIRED}};
+api::Result<void> WindowClosePopup(const wn::ClosePopupParams& p) {
+    if (p.windowId == "main") {
+        return api::Fail(ApiError::CANNOT_CLOSE_MAIN, ApiErrorCode::INVALID_PARAMS);
     }
-    if (windowId == "main") {
-        return {{"success", false}, {"error", ApiError::CANNOT_CLOSE_MAIN}};
+
+    if (!WindowManager::GetInstance().ClosePopup(p.windowId)) {
+        return WindowNotFound();
     }
-    
-    bool ok = WindowManager::GetInstance().ClosePopup(windowId);
-    if (!ok) {
-        return {{"success", false}, {"error", ApiError::WINDOW_NOT_FOUND}};
-    }
-    return {{"success", true}};
+    return api::Ok();
 }
 
 
 // 关闭所有弹出窗口
-json WindowCloseAllPopups(const json& params) {
+api::Result<void> WindowCloseAllPopups(const wn::CloseAllPopupsParams&) {
     WindowManager::GetInstance().CloseAllPopups();
-    return {{"success", true}};
+    return api::Ok();
 }
 
 
 // 获取所有窗口信息
-json WindowGetAllWindows(const json& params) {
-    return {{"success", true}, {"items", WindowManager::GetInstance().GetAllWindowsInfo()}};
+api::Result<wn::GetAllWindowsResult> WindowGetAllWindows(const wn::GetAllWindowsParams&) {
+    wn::GetAllWindowsResult result;
+    for (const auto& item : WindowManager::GetInstance().GetAllWindowsInfo()) {
+        result.items.push_back(ToWindowInfo(item));
+    }
+    return result;
 }
 
 
 // 获取当前窗口 ID
-json WindowGetCurrentWindowId(const json& params) {
-    HWND callerHwnd = GetCallerHwnd(params);
-    auto& wm = WindowManager::GetInstance();
-    
-    // 检查主窗口
-    auto* mainWin = wm.GetMainWindow();
-    if (mainWin && mainWin->GetHwnd() == callerHwnd) {
-        return {{"success", true}, {"windowId", "main"}};
-    }
-    
-    // 检查弹出窗口
-    auto ids = wm.GetAllWindowIds();
-    for (const auto& id : ids) {
-        if (id == "main") continue;
-        auto* popup = wm.GetPopup(id);
-        if (popup && popup->GetHwnd() == callerHwnd) {
-            return {{"success", true}, {"windowId", id}};
-        }
-    }
-    
-    // 面板模式: 通过 WebViewContext 反查 windowId
-    auto& ctx = WebViewContext::GetInstance();
-    for (auto instanceHwnd : ctx.GetAllInstances()) {
-        if (instanceHwnd == callerHwnd ||
-            ::GetAncestor(instanceHwnd, GA_ROOT) == callerHwnd) {
-            std::string wid = ctx.GetWindowIdByHwnd(instanceHwnd);
-            if (!wid.empty()) {
-                return {{"success", true}, {"windowId", wid}};
-            }
-        }
-    }
-    
-    // 最终回退
-    return {{"success", true}, {"windowId", "main"}};
+api::Result<wn::GetCurrentWindowIdResult> WindowGetCurrentWindowId(const wn::GetCurrentWindowIdParams&,
+                                                                   const CallerContext& caller) {
+    // 主窗口 → popup → 面板实例，都对不上时回退 main
+    wn::GetCurrentWindowIdResult result;
+    result.windowId = GetCallerWindowId(caller);
+    return result;
 }
 
 
 // 获取弹出窗口行为策略
-json WindowGetPopupBehavior(const json& params) {
-    std::string targetId = params.value("windowId", "");
-    PopupWindow* popup = nullptr;
+api::Result<wn::GetPopupBehaviorResult> WindowGetPopupBehavior(const wn::GetPopupBehaviorParams& p,
+                                                               const CallerContext& caller) {
+    std::string targetId;
+    auto found = FindBehaviorPopup(p.windowId, caller, "window.getPopupBehavior", targetId);
+    if (auto* failure = std::get_if<api::Failure>(&found)) return std::move(*failure);
 
-    if (!targetId.empty()) {
-        if (targetId == "main") {
-            return {{"success", false}, {"error", "window.getPopupBehavior does not support main window"}};
-        }
-        popup = WindowManager::GetInstance().GetPopup(targetId);
-    } else {
-        HWND callerHwnd = GetCallerHwnd(params);
-        popup = FindPopupByCallerHwnd(callerHwnd, &targetId);
-    }
-
-    if (!popup) {
-        return {{"success", false}, {"error", ApiError::WINDOW_NOT_FOUND}};
-    }
-
-    json info = popup->GetPopupBehaviorInfo();
-    info["success"] = true;
-    info["windowId"] = targetId;
-    return info;
+    return PopupBehaviorResultOf<wn::GetPopupBehaviorResult>(*std::get<PopupWindow*>(found), targetId);
 }
 
 
 // 运行时更新弹出窗口行为策略
-json WindowSetPopupBehavior(const json& params) {
-    std::string targetId = params.value("windowId", "");
-    PopupWindow* popup = nullptr;
+api::Result<wn::SetPopupBehaviorResult> WindowSetPopupBehavior(const wn::SetPopupBehaviorParams& p,
+                                                               const CallerContext& caller) {
+    std::string targetId;
+    auto found = FindBehaviorPopup(p.windowId, caller, "window.setPopupBehavior", targetId);
+    if (auto* failure = std::get_if<api::Failure>(&found)) return std::move(*failure);
+    PopupWindow* popup = std::get<PopupWindow*>(found);
 
-    if (!targetId.empty()) {
-        if (targetId == "main") {
-            return {{"success", false}, {"error", "window.setPopupBehavior does not support main window"}};
-        }
-        popup = WindowManager::GetInstance().GetPopup(targetId);
-    } else {
-        HWND callerHwnd = GetCallerHwnd(params);
-        popup = FindPopupByCallerHwnd(callerHwnd, &targetId);
-    }
-
-    if (!popup) {
-        return {{"success", false}, {"error", ApiError::WINDOW_NOT_FOUND}};
-    }
-
-    bool hasProfile = params.contains("profile");
-    bool hasBehavior = params.contains("behavior");
-    std::string profile = params.value("profile", "");
-    json behaviorPatch = hasBehavior ? params["behavior"] : json::object();
-
+    // profile 与 behavior 各自独立：只传一个不动另一个
+    const json behaviorPatch = p.behavior ? OverridesToJson(*p.behavior) : json::object();
     std::string error;
-    if (!popup->UpdatePopupBehavior(profile, hasProfile, behaviorPatch, hasBehavior, error)) {
-        return {{"success", false}, {"error", error.empty() ? "failed to update popup behavior" : error}};
+    if (!popup->UpdatePopupBehavior(p.profile.value_or(""), p.profile.has_value(), behaviorPatch,
+                                    p.behavior.has_value(), error)) {
+        return api::Fail(error.empty() ? "failed to update popup behavior" : error, ApiErrorCode::INVALID_PARAMS);
     }
 
-    json info = popup->GetPopupBehaviorInfo();
-    info["success"] = true;
-    info["windowId"] = targetId;
-    return info;
+    return PopupBehaviorResultOf<wn::SetPopupBehaviorResult>(*popup, targetId);
 }
 
 
 // 获取 DWM 背景策略
-json WindowGetBackdropPolicy(const json& params) {
-    auto target = WindowTargetResolver::ResolveForObservation(params);
-    if (!target.Success()) return target.ErrorResponse();
+api::Result<wn::GetBackdropPolicyResult> WindowGetBackdropPolicy(const wn::GetBackdropPolicyParams& p,
+                                                                 const CallerContext& caller) {
+    auto target = WindowTargetResolver::ResolveForObservation(p.windowId, caller.callerHwnd);
+    if (!target.Success()) return TargetFailure(target, "window.getBackdropPolicy");
 
-    json info = target.shell->GetBackdropPolicyInfo();
-    info["success"] = true;
-    info["windowId"] = target.windowId;
-    return info;
+    return BackdropPolicyResultOf<wn::GetBackdropPolicyResult>(*target.shell, target.windowId);
 }
 
 
 // 运行时更新 DWM 背景策略
-json WindowSetBackdropPolicy(const json& params) {
-    if (!params.contains("backdropPolicy")) {
-        return {{"success", false}, {"error", "backdropPolicy is required"}};
-    }
-    if (!params["backdropPolicy"].is_object()) {
-        return {{"success", false}, {"error", "backdropPolicy must be an object"}};
-    }
+api::Result<wn::SetBackdropPolicyResult> WindowSetBackdropPolicy(const wn::SetBackdropPolicyParams& p,
+                                                                 const CallerContext& caller) {
+    auto target = WindowTargetResolver::ResolveForMutation(p.windowId, caller.callerHwnd);
+    if (!target.Success()) return TargetFailure(target, "window.setBackdropPolicy");
 
-    auto target = WindowTargetResolver::ResolveForMutation(params);
-    if (!target.Success()) return target.ErrorResponse();
-
+    // 覆盖在应用之前就已合并；返回 false 多是窗口暂时画不出来（例如启动时仍隐藏）
     std::string error;
-    if (!target.shell->PatchBackdropPolicy(params["backdropPolicy"], error)) {
-        return {{"success", false}, {"error", error.empty() ? "failed to update backdrop policy" : error}};
+    if (!target.shell->PatchBackdropPolicy(OverridesToJson(p.backdropPolicy), error)) {
+        return api::Fail(error.empty() ? kBackdropNotApplied : error, ApiErrorCode::OPERATION_FAILED);
     }
 
-    json info = target.shell->GetBackdropPolicyInfo();
-    info["success"] = true;
-    info["windowId"] = target.windowId;
-    return info;
+    return BackdropPolicyResultOf<wn::SetBackdropPolicyResult>(*target.shell, target.windowId);
 }
 
 
 // 取消关闭（前端调用）
-json WindowCancelClose(const json& params) {
-    HWND callerHwnd = GetCallerHwnd(params);
-    
+api::Result<void> WindowCancelClose(const wn::CancelCloseParams&, const CallerContext& caller) {
     // 查找对应的 PopupWindow
-    auto ids = WindowManager::GetInstance().GetAllWindowIds();
-    for (const auto& id : ids) {
-        if (id == "main") continue;
-        auto* popup = WindowManager::GetInstance().GetPopup(id);
-        if (popup && popup->GetHwnd() == callerHwnd) {
-            popup->CancelClose();
-            return {{"success", true}};
-        }
+    if (auto* popup = FindPopupByCallerHwnd(CallerTopLevelHwnd(caller))) {
+        popup->CancelClose();
+        return api::Ok();
     }
-    
-    return {{"success", false}, {"error", ApiError::WINDOW_NOT_FOUND}};
+    return WindowNotFound();
 }
 
 
 // 确认关闭（前端调用）
-json WindowConfirmClose(const json& params) {
-    HWND callerHwnd = GetCallerHwnd(params);
-    
+api::Result<void> WindowConfirmClose(const wn::ConfirmCloseParams&, const CallerContext& caller) {
     // 查找对应的 PopupWindow
-    auto ids = WindowManager::GetInstance().GetAllWindowIds();
-    for (const auto& id : ids) {
-        if (id == "main") continue;
-        auto* popup = WindowManager::GetInstance().GetPopup(id);
-        if (popup && popup->GetHwnd() == callerHwnd) {
-            popup->ConfirmClose();
-            return {{"success", true}};
-        }
+    if (auto* popup = FindPopupByCallerHwnd(CallerTopLevelHwnd(caller))) {
+        popup->ConfirmClose();
+        return api::Ok();
     }
-    
-    return {{"success", false}, {"error", ApiError::WINDOW_NOT_FOUND}};
+    return WindowNotFound();
 }
 
 
 // 动态切换窗口标题栏（插件端自动判断窗口类型，开发者无需关心）
-json WindowSetFrameless(const json& params) {
-    bool frameless = params.value("frameless", true);
-    auto target = WindowTargetResolver::ResolveForMutation(params);
+api::Result<wn::SetFramelessResult> WindowSetFrameless(const wn::SetFramelessParams& p, const CallerContext& caller) {
+    auto target = WindowTargetResolver::ResolveForMutation(p.windowId, caller.callerHwnd);
     if (!target.Success()) {
-        if (IsPanelMode()) {
-            return {{"success", false}, {"error", "not supported in panel mode"}};
-        }
-        return target.ErrorResponse();
+        if (IsPanelMode()) return api::PanelModeUnsupported("window.setFrameless");
+        return TargetFailure(target, "window.setFrameless");
     }
-    
-    target.shell->PatchFrameless(frameless);
-    return {{"success", true}, {"frameless", target.shell->IsFrameless()}};
+
+    target.shell->PatchFrameless(p.frameless);
+    wn::SetFramelessResult result;
+    result.frameless = target.shell->IsFrameless();
+    return result;
 }
 
 
 // 设置弹出窗口鼠标穿透
-json WindowSetClickThrough(const json& params) {
-    bool enabled = params.value("enabled", true);
-    std::string windowId = params.value("windowId", "");
-    if (windowId.empty()) {
-        windowId = GetCallerWindowId(params);
-    }
-    
-    auto& wm = WindowManager::GetInstance();
-    auto* popup = wm.GetPopup(windowId);
-    if (!popup) {
-        return {{"success", false}, {"error", ApiError::WINDOW_NOT_FOUND}};
-    }
-    
-    popup->SetClickThrough(enabled);
-    return {{"success", true}, {"clickThrough", popup->IsClickThrough()}};
+api::Result<wn::SetClickThroughResult> WindowSetClickThrough(const wn::SetClickThroughParams& p,
+                                                             const CallerContext& caller) {
+    std::string windowId;
+    auto* popup = FindClickThroughPopup(p.windowId, caller, windowId);
+    if (!popup) return WindowNotFound();
+
+    popup->SetClickThrough(p.enabled);
+    wn::SetClickThroughResult result;
+    result.clickThrough = popup->IsClickThrough();
+    return result;
 }
 
 
 // 查询弹出窗口鼠标穿透状态
-json WindowIsClickThrough(const json& params) {
-    std::string windowId = params.value("windowId", "");
-    if (windowId.empty()) {
-        windowId = GetCallerWindowId(params);
-    }
-    
-    auto& wm = WindowManager::GetInstance();
-    auto* popup = wm.GetPopup(windowId);
-    if (!popup) {
-        return {{"success", false}, {"error", ApiError::WINDOW_NOT_FOUND}};
-    }
-    
-    return {{"success", true}, {"clickThrough", popup->IsClickThrough()}};
+api::Result<wn::IsClickThroughResult> WindowIsClickThrough(const wn::IsClickThroughParams& p,
+                                                           const CallerContext& caller) {
+    std::string windowId;
+    auto* popup = FindClickThroughPopup(p.windowId, caller, windowId);
+    if (!popup) return WindowNotFound();
+
+    wn::IsClickThroughResult result;
+    result.clickThrough = popup->IsClickThrough();
+    return result;
 }
 
 
 // 设置弹出窗口 click-through 交互热区
-json WindowSetClickThroughExcludeRegions(const json& params) {
-    std::string windowId = params.value("windowId", "");
-    if (windowId.empty()) {
-        windowId = GetCallerWindowId(params);
-    }
-
-    auto& wm = WindowManager::GetInstance();
-    auto* popup = wm.GetPopup(windowId);
-    if (!popup) {
-        return {{"success", false}, {"error", ApiError::WINDOW_NOT_FOUND}};
-    }
+api::Result<wn::SetClickThroughExcludeRegionsResult> WindowSetClickThroughExcludeRegions(
+    const wn::SetClickThroughExcludeRegionsParams& p, const CallerContext& caller) {
+    std::string windowId;
+    auto* popup = FindClickThroughPopup(p.windowId, caller, windowId);
+    if (!popup) return WindowNotFound();
 
     // 获取 DPI 缩放比例（CSS 像素 → 物理像素）
     double dpiScale = 1.0;
@@ -2218,61 +2238,54 @@ json WindowSetClickThroughExcludeRegions(const json& params) {
         dpiScale = dpi / 96.0;
     }
 
-    const auto& regionsArr = params.contains("regions") && params["regions"].is_array()
-        ? params["regions"] : json::array();
+    const std::vector<wn::WindowRegion> none;
+    const auto& regions = p.regions ? *p.regions : none;
 
     constexpr size_t MAX_REGIONS = 32;
-    bool truncated = regionsArr.size() > MAX_REGIONS;
+    bool truncated = regions.size() > MAX_REGIONS;
 
     std::vector<RECT> physicalRects;
-    physicalRects.reserve(std::min(regionsArr.size(), MAX_REGIONS));
+    physicalRects.reserve(std::min(regions.size(), MAX_REGIONS));
 
-    size_t count = 0;
-    for (const auto& r : regionsArr) {
-        if (count >= MAX_REGIONS) break;
-        int w = static_cast<int>(r.value("width", 0) * dpiScale);
-        int h = static_cast<int>(r.value("height", 0) * dpiScale);
+    // 先截小数再乘缩放，与迁移前一致；只数保留下来的矩形
+    for (const auto& r : regions) {
+        if (physicalRects.size() >= MAX_REGIONS) break;
+        int w = static_cast<int>(PixelArg(r.width) * dpiScale);
+        int h = static_cast<int>(PixelArg(r.height) * dpiScale);
         if (w <= 0 || h <= 0) continue;
 
         RECT rc;
-        rc.left   = static_cast<int>(r.value("x", 0) * dpiScale);
-        rc.top    = static_cast<int>(r.value("y", 0) * dpiScale);
+        rc.left   = static_cast<int>(PixelArg(r.x) * dpiScale);
+        rc.top    = static_cast<int>(PixelArg(r.y) * dpiScale);
         rc.right  = rc.left + w;
         rc.bottom = rc.top + h;
         physicalRects.push_back(rc);
-        ++count;
     }
 
     popup->SetClickThroughExcludeRegions(physicalRects);
 
-    json result = {
-        {"success", true},
-        {"windowId", windowId},
-        {"count", physicalRects.size()},
-        {"dpiScale", dpiScale}
-    };
+    wn::SetClickThroughExcludeRegionsResult result;
+    result.windowId = windowId;
+    result.count = static_cast<std::int64_t>(physicalRects.size());
+    result.dpiScale = dpiScale;
     if (truncated) {
-        result["warning"] = "regions truncated to 32";
+        result.warning = "regions truncated to 32";
     }
     return result;
 }
 
 
 // 清除弹出窗口 click-through 交互热区
-json WindowClearClickThroughExcludeRegions(const json& params) {
-    std::string windowId = params.value("windowId", "");
-    if (windowId.empty()) {
-        windowId = GetCallerWindowId(params);
-    }
-
-    auto& wm = WindowManager::GetInstance();
-    auto* popup = wm.GetPopup(windowId);
-    if (!popup) {
-        return {{"success", false}, {"error", ApiError::WINDOW_NOT_FOUND}};
-    }
+api::Result<wn::ClearClickThroughExcludeRegionsResult> WindowClearClickThroughExcludeRegions(
+    const wn::ClearClickThroughExcludeRegionsParams& p, const CallerContext& caller) {
+    std::string windowId;
+    auto* popup = FindClickThroughPopup(p.windowId, caller, windowId);
+    if (!popup) return WindowNotFound();
 
     popup->ClearClickThroughExcludeRegions();
-    return {{"success", true}, {"windowId", windowId}};
+    wn::ClearClickThroughExcludeRegionsResult result;
+    result.windowId = windowId;
+    return result;
 }
 
 
@@ -2281,38 +2294,19 @@ json WindowClearClickThroughExcludeRegions(const json& params) {
 // ============================================
 
 // 定向发送消息到指定窗口
-json WindowSendMessage(const json& params) {
-    std::string targetId = params.value("targetWindowId", "");
-    if (targetId.empty()) {
-        return {{"success", false}, {"error", ApiError::WINDOW_ID_REQUIRED}};
+api::Result<void> WindowSendMessage(const wn::SendMessageParams& p, const CallerContext& caller) {
+    const std::string sourceId = GetCallerWindowId(caller);
+    if (!WindowManager::GetInstance().SendWindowMessage(sourceId, p.targetWindowId, p.message)) {
+        return api::Fail(ApiError::TARGET_WINDOW_NOT_FOUND, ApiErrorCode::NOT_FOUND);
     }
-    
-    if (!params.contains("message")) {
-        return {{"success", false}, {"error", ApiError::REQUIRED_PARAM_MISSING}};
-    }
-    
-    std::string sourceId = GetCallerWindowId(params);
-    const auto& message = params["message"];
-    
-    bool ok = WindowManager::GetInstance().SendWindowMessage(sourceId, targetId, message);
-    if (!ok) {
-        return {{"success", false}, {"error", ApiError::TARGET_WINDOW_NOT_FOUND}};
-    }
-    return {{"success", true}};
+    return api::Ok();
 }
 
 
 // 广播消息到除发送者外的所有窗口
-json WindowBroadcast(const json& params) {
-    if (!params.contains("message")) {
-        return {{"success", false}, {"error", ApiError::REQUIRED_PARAM_MISSING}};
-    }
-    
-    std::string sourceId = GetCallerWindowId(params);
-    const auto& message = params["message"];
-    
-    WindowManager::GetInstance().BroadcastMessage(sourceId, message);
-    return {{"success", true}};
+api::Result<void> WindowBroadcast(const wn::BroadcastParams& p, const CallerContext& caller) {
+    WindowManager::GetInstance().BroadcastMessage(GetCallerWindowId(caller), p.message);
+    return api::Ok();
 }
 
 
@@ -2321,212 +2315,149 @@ json WindowBroadcast(const json& params) {
 // ============================================
 
 // window.getMode - 获取当前面板模式
-json WindowGetMode(const json& params) {
-    HWND callerHwnd = GetCallerHwnd(params);
-    auto& ctx = WebViewContext::GetInstance();
-    
-    // 遍历查找匹配的实例
-    for (auto instHwnd : ctx.GetAllInstances()) {
-        if (instHwnd != callerHwnd &&
-            ::GetAncestor(instHwnd, GA_ROOT) != callerHwnd)
-            continue;
-        auto* panel = ctx.GetPanelByHwnd(instHwnd);
-        if (!panel)
-            continue;
-
-        std::string mode;
-        switch (panel->GetMode()) {
-            case WebViewPanelMode::Standalone: mode = "standalone"; break;
-            case WebViewPanelMode::DuiPanel:   mode = "dui"; break;
-            case WebViewPanelMode::CuiPanel:   mode = "cui"; break;
-            default: mode = "unknown"; break;
-        }
-        std::string windowId = ctx.GetWindowIdByHwnd(instHwnd);
-        return {
-            {"mode", mode},
-            {"panelMode", panel->IsPanelMode()},
-            {"windowId", windowId.empty() ? "panel" : windowId}
-        };
-    }
-    
-    // 回退：无面板实例，可能是独立窗口
-    return {
-        {"mode", IsPanelMode() ? "panel" : "standalone"},
-        {"panelMode", IsPanelMode()},
-        {"windowId", "main"}
-    };
+api::Result<wn::GetModeResult> WindowGetMode(const wn::GetModeParams&, const CallerContext& caller) {
+    const auto identity = GetCallerWindowIdentity(caller);
+    wn::GetModeResult result;
+    result.mode = identity.mode;
+    result.panelMode = identity.panelMode;
+    result.windowId = identity.ModeWindowId();
+    return result;
 }
 
 
 // panel.getConfig - 获取面板配置
-json PanelGetConfig(const json& params) {
-    HWND callerHwnd = GetCallerHwnd(params);
-    auto& ctx = WebViewContext::GetInstance();
-    
-    // 查找面板实例
-    for (auto instHwnd : ctx.GetAllInstances()) {
-        if (instHwnd != callerHwnd &&
-            ::GetAncestor(instHwnd, GA_ROOT) != callerHwnd)
-            continue;
-        auto* panel = ctx.GetPanelByHwnd(instHwnd);
-        if (!panel)
-            continue;
-
+api::Result<api::panel::GetConfigResult> PanelGetConfig(const api::panel::GetConfigParams&, const CallerContext& caller) {
+    const auto identity = GetCallerWindowIdentity(caller);
+    auto* panel = identity.panelHwnd ? WebViewContext::GetInstance().GetPanelByHwnd(identity.panelHwnd) : nullptr;
+    if (panel) {
         const PanelConfig& cfg = panel->GetConfig();
-        return {
-            {"success", true},
-            {"config", {
-                {"panelName", cfg.panelName},
-                {"templateName", cfg.templateName},
-                {"edgeStyle", cfg.edgeStyle},
-                {"urlOverride", cfg.urlOverride},
-                {"transparentBackground", cfg.transparentBackground},
-                {"grabFocus", cfg.grabFocus},
-                {"enableDragDrop", cfg.enableDragDrop},
-                {"enableDevTools", cfg.enableDevTools}
-            }}
-        };
+        api::panel::GetConfigResult result;
+        FillPanelConfig(cfg, result.config);
+        return result;
     }
     
-    return {{"success", false}, {"error", "Panel not found"}};
+    return api::Fail("Panel not found", ApiErrorCode::NOT_FOUND);
 }
 
 
 // panel.setConfig - 设置面板配置（安全字段白名单）
-json PanelSetConfig(const json& params) {
-    HWND callerHwnd = GetCallerHwnd(params);
-    auto& ctx = WebViewContext::GetInstance();
-    
-    // 查找面板实例
-    for (auto instHwnd : ctx.GetAllInstances()) {
-        if (instHwnd != callerHwnd &&
-            ::GetAncestor(instHwnd, GA_ROOT) != callerHwnd)
-            continue;
-        auto* panel = ctx.GetPanelByHwnd(instHwnd);
-        if (!panel)
-            continue;
-
+api::Result<api::panel::SetConfigResult> PanelSetConfig(const api::panel::SetConfigParams& p, const CallerContext& caller) {
+    const auto identity = GetCallerWindowIdentity(caller);
+    auto* panel = identity.panelHwnd ? WebViewContext::GetInstance().GetPanelByHwnd(identity.panelHwnd) : nullptr;
+    if (panel) {
         PanelConfig oldConfig = panel->GetConfig();
         PanelConfig newConfig = oldConfig;
         
-        // 安全白名单：只允许修改这些字段
-        if (params.contains("panelName")) {
-            newConfig.panelName = params["panelName"].get<std::string>();
-        }
-        if (params.contains("transparentBackground")) {
-            newConfig.transparentBackground = params["transparentBackground"].get<bool>();
-        }
-        if (params.contains("grabFocus")) {
-            newConfig.grabFocus = params["grabFocus"].get<bool>();
-        }
-        if (params.contains("enableDragDrop")) {
-            newConfig.enableDragDrop = params["enableDragDrop"].get<bool>();
-        }
+        // 安全白名单：声明里只有这四个键
+        if (p.panelName) newConfig.panelName = *p.panelName;
+        if (p.transparentBackground) newConfig.transparentBackground = *p.transparentBackground;
+        if (p.grabFocus) newConfig.grabFocus = *p.grabFocus;
+        if (p.enableDragDrop) newConfig.enableDragDrop = *p.enableDragDrop;
         
         // 禁止从 JS 修改的字段：enableDevTools, urlOverride, templateName
         // 这些字段只能通过配置对话框修改
         
-        if (newConfig.HasChanged(oldConfig)) {
+        api::panel::SetConfigResult result;
+        result.changed = newConfig.HasChanged(oldConfig);
+        if (result.changed) {
             panel->ApplyConfig(oldConfig, newConfig);
-            return {{"success", true}, {"changed", true}};
         }
-        
-        return {{"success", true}, {"changed", false}};
+        return result;
     }
     
-    return {{"success", false}, {"error", "Panel not found"}};
+    return api::Fail("Panel not found", ApiErrorCode::NOT_FOUND);
 }
 
 } // namespace
 
 void RegisterWindowApi() {
-    auto& bridge = BridgeCore::GetInstance();
-
-    bridge.RegisterApi("window.minimize", WindowMinimize);
-    bridge.RegisterApi("window.maximize", WindowMaximize);
-    bridge.RegisterApi("window.restore", WindowRestore);
-    bridge.RegisterApi("window.close", WindowClose);
-    bridge.RegisterApi("window.toggleMaximize", WindowToggleMaximize);
-    bridge.RegisterApi("window.isMaximized", WindowIsMaximized);
-    bridge.RegisterApi("window.isMinimized", WindowIsMinimized);
-    bridge.RegisterApi("window.isFullscreen", WindowIsFullscreen);
-    bridge.RegisterApi("window.getState", WindowGetState);
-    bridge.RegisterApi("window.startDrag", WindowStartDrag);
-    bridge.RegisterApi("window.startResize", WindowStartResize);
-    bridge.RegisterApi("window.setAlwaysOnTop", WindowSetAlwaysOnTop);
-    bridge.RegisterApi("window.isAlwaysOnTop", WindowIsAlwaysOnTop);
-    bridge.RegisterApi("window.toggleAlwaysOnTop", WindowToggleAlwaysOnTop);
-    bridge.RegisterApi("window.getBounds", WindowGetBounds);
-    bridge.RegisterApi("window.setBounds", WindowSetBounds);
-    bridge.RegisterApi("window.center", WindowCenter);
-    bridge.RegisterApi("window.setMinSize", WindowSetMinSize);
-    bridge.RegisterApi("window.getMinSize", WindowGetMinSize);
-    bridge.RegisterApi("window.setMaxSize", WindowSetMaxSize);
-    bridge.RegisterApi("window.getMaxSize", WindowGetMaxSize);
-    bridge.RegisterApi("window.setResizable", WindowSetResizable);
-    bridge.RegisterApi("window.isResizable", WindowIsResizable);
-    bridge.RegisterApi("window.setFullscreen", WindowSetFullscreen);
-    bridge.RegisterApi("window.toggleFullscreen", WindowToggleFullscreen);
-    bridge.RegisterApi("window.focus", WindowFocus);
-    bridge.RegisterApi("window.blur", WindowBlur);
-    bridge.RegisterApi("window.setTitle", WindowSetTitle);
-    bridge.RegisterApi("window.getTitle", WindowGetTitle);
-    bridge.RegisterApi("window.flash", WindowFlash);
-    bridge.RegisterApi("window.showSystemMenu", WindowShowSystemMenu);
-    bridge.RegisterApi("window.getTitlebarHeight", WindowGetTitlebarHeight);
-    bridge.RegisterApi("window.setTitlebarHeight", WindowSetTitlebarHeight);
-    bridge.RegisterApi("window.getCaptionButtonsWidth", WindowGetCaptionButtonsWidth);
-    bridge.RegisterApi("window.setDragRegions", WindowSetDragRegions);
-    bridge.RegisterApi("window.clearDragRegions", WindowClearDragRegions);
-    bridge.RegisterApi("window.setNoDragRegions", WindowSetNoDragRegions);
-    bridge.RegisterApi("window.clearNoDragRegions", WindowClearNoDragRegions);
-    bridge.RegisterApi("window.getTitlebarInfo", WindowGetTitlebarInfo);
-    bridge.RegisterApi("ui.showContextMenu", UiShowContextMenu);
-    bridge.RegisterApi("system.getTheme", SystemGetTheme);
-    bridge.RegisterApi("system.getDPI", SystemGetDPI);
-    bridge.RegisterApi("window.setCornerPreference", WindowSetCornerPreference);
-    bridge.RegisterApi("window.getCornerPreference", WindowGetCornerPreference);
-    bridge.RegisterApi("system.getLocale", SystemGetLocale);
-    bridge.RegisterApi("window.setPosition", WindowSetPosition);
-    bridge.RegisterApi("window.setSize", WindowSetSize);
-    bridge.RegisterApi("window.getDpiScale", WindowGetDpiScale);
-    bridge.RegisterApi("window.flashTaskbar", WindowFlashTaskbar);
-    bridge.RegisterApi("window.enterFullscreen", WindowEnterFullscreen);
-    bridge.RegisterApi("window.exitFullscreen", WindowExitFullscreen);
-    bridge.RegisterApi("window.setMica", WindowSetMica);
-    bridge.RegisterApi("window.setMicaEffect", WindowSetMicaEffect);
-    bridge.RegisterApi("window.setBlur", WindowSetBlur);
-    bridge.RegisterApi("window.setAcrylic", WindowSetAcrylic);
-    bridge.RegisterApi("window.setDarkMode", WindowSetDarkMode);
-    bridge.RegisterApi("window.setBackgroundTransparency", WindowSetBackgroundTransparency);
-    bridge.RegisterApi("window.refreshWebView", WindowRefreshWebView);
-    bridge.RegisterApi("window.reload", WindowReload);
-    bridge.RegisterApi("window.getDevServerConfig", WindowGetDevServerConfig);
-    bridge.RegisterApi("window.setDevServerConfig", WindowSetDevServerConfig);
-    bridge.RegisterApi("window.hasSavedBounds", WindowHasSavedBounds);
-    bridge.RegisterApi("window.setZoom", WindowSetZoom);
-    bridge.RegisterApi("window.getZoom", WindowGetZoom);
-    bridge.RegisterApi("window.resetZoom", WindowResetZoom);
-    bridge.RegisterApi("window.setZoomForDpi", WindowSetZoomForDpi);
-    bridge.RegisterApi("window.createPopup", WindowCreatePopup);
-    bridge.RegisterApi("window.closePopup", WindowClosePopup);
-    bridge.RegisterApi("window.closeAllPopups", WindowCloseAllPopups);
-    bridge.RegisterApi("window.getAllWindows", WindowGetAllWindows);
-    bridge.RegisterApi("window.getCurrentWindowId", WindowGetCurrentWindowId);
-    bridge.RegisterApi("window.getPopupBehavior", WindowGetPopupBehavior);
-    bridge.RegisterApi("window.setPopupBehavior", WindowSetPopupBehavior);
-    bridge.RegisterApi("window.getBackdropPolicy", WindowGetBackdropPolicy);
-    bridge.RegisterApi("window.setBackdropPolicy", WindowSetBackdropPolicy);
-    bridge.RegisterApi("window.cancelClose", WindowCancelClose);
-    bridge.RegisterApi("window.confirmClose", WindowConfirmClose);
-    bridge.RegisterApi("window.setFrameless", WindowSetFrameless);
-    bridge.RegisterApi("window.setClickThrough", WindowSetClickThrough);
-    bridge.RegisterApi("window.isClickThrough", WindowIsClickThrough);
-    bridge.RegisterApi("window.setClickThroughExcludeRegions", WindowSetClickThroughExcludeRegions);
-    bridge.RegisterApi("window.clearClickThroughExcludeRegions", WindowClearClickThroughExcludeRegions);
-    bridge.RegisterApi("window.sendMessage", WindowSendMessage);
-    bridge.RegisterApi("window.broadcast", WindowBroadcast);
-    bridge.RegisterApi("window.getMode", WindowGetMode);
-    bridge.RegisterApi("panel.getConfig", PanelGetConfig);
-    bridge.RegisterApi("panel.setConfig", PanelSetConfig);
+    // Parameters and results come from src/api/schema/window.ts through the generated types.
+    api::RegisterApi("window.minimize", WindowMinimize);
+    api::RegisterApi("window.maximize", WindowMaximize);
+    api::RegisterApi("window.restore", WindowRestore);
+    api::RegisterApi("window.close", WindowClose);
+    api::RegisterApi("window.toggleMaximize", WindowToggleMaximize);
+    api::RegisterApi("window.isMaximized", WindowIsMaximized);
+    api::RegisterApi("window.isMinimized", WindowIsMinimized);
+    api::RegisterApi("window.isFullscreen", WindowIsFullscreen);
+    api::RegisterApi("window.getState", WindowGetState);
+    api::RegisterApi("window.startDrag", WindowStartDrag);
+    api::RegisterApi("window.startResize", WindowStartResize);
+    api::RegisterApi("window.setAlwaysOnTop", WindowSetAlwaysOnTop);
+    api::RegisterApi("window.isAlwaysOnTop", WindowIsAlwaysOnTop);
+    api::RegisterApi("window.toggleAlwaysOnTop", WindowToggleAlwaysOnTop);
+    api::RegisterApi("window.getBounds", WindowGetBounds);
+    api::RegisterApi("window.setBounds", WindowSetBounds);
+    api::RegisterApi("window.center", WindowCenter);
+    api::RegisterApi("window.setMinSize", WindowSetMinSize);
+    api::RegisterApi("window.getMinSize", WindowGetMinSize);
+    api::RegisterApi("window.setMaxSize", WindowSetMaxSize);
+    api::RegisterApi("window.getMaxSize", WindowGetMaxSize);
+    api::RegisterApi("window.setResizable", WindowSetResizable);
+    api::RegisterApi("window.isResizable", WindowIsResizable);
+    api::RegisterApi("window.setFullscreen", WindowSetFullscreen);
+    api::RegisterApi("window.toggleFullscreen", WindowToggleFullscreen);
+    api::RegisterApi("window.focus", WindowFocus);
+    api::RegisterApi("window.blur", WindowBlur);
+    api::RegisterApi("window.setTitle", WindowSetTitle);
+    api::RegisterApi("window.getTitle", WindowGetTitle);
+    api::RegisterApi("window.flash", WindowFlash);
+    api::RegisterApi("window.showSystemMenu", WindowShowSystemMenu);
+    api::RegisterApi("window.getTitlebarHeight", WindowGetTitlebarHeight);
+    api::RegisterApi("window.setTitlebarHeight", WindowSetTitlebarHeight);
+    api::RegisterApi("window.getCaptionButtonsWidth", WindowGetCaptionButtonsWidth);
+    api::RegisterApi("window.setDragRegions", WindowSetDragRegions);
+    api::RegisterApi("window.clearDragRegions", WindowClearDragRegions);
+    api::RegisterApi("window.setNoDragRegions", WindowSetNoDragRegions);
+    api::RegisterApi("window.clearNoDragRegions", WindowClearNoDragRegions);
+    api::RegisterApi("window.setMaximizeButtonRegion", WindowSetMaximizeButtonRegion);
+    api::RegisterApi("window.getTitlebarInfo", WindowGetTitlebarInfo);
+    api::RegisterApi("ui.showContextMenu", UiShowContextMenu);
+    api::RegisterApi("system.getTheme", SystemGetTheme);
+    api::RegisterApi("system.getDPI", SystemGetDPI);
+    api::RegisterApi("window.setCornerPreference", WindowSetCornerPreference);
+    api::RegisterApi("window.getCornerPreference", WindowGetCornerPreference);
+    api::RegisterApi("system.getLocale", SystemGetLocale);
+    api::RegisterApi("window.setPosition", WindowSetPosition);
+    api::RegisterApi("window.setSize", WindowSetSize);
+    api::RegisterApi("window.getDpiScale", WindowGetDpiScale);
+    api::RegisterApi("window.flashTaskbar", WindowFlashTaskbar);
+    api::RegisterApi("window.enterFullscreen", WindowEnterFullscreen);
+    api::RegisterApi("window.exitFullscreen", WindowExitFullscreen);
+    api::RegisterApi("window.setMica", WindowSetMica);
+    api::RegisterApi("window.setMicaEffect", WindowSetMicaEffect);
+    api::RegisterApi("window.setBlur", WindowSetBlur);
+    api::RegisterApi("window.setAcrylic", WindowSetAcrylic);
+    api::RegisterApi("window.setDarkMode", WindowSetDarkMode);
+    api::RegisterApi("window.setBackgroundTransparency", WindowSetBackgroundTransparency);
+    api::RegisterApi("window.refreshWebView", WindowRefreshWebView);
+    api::RegisterApi("window.reload", WindowReload);
+    api::RegisterApi("window.getDevServerConfig", WindowGetDevServerConfig);
+    api::RegisterApi("window.setDevServerConfig", WindowSetDevServerConfig);
+    api::RegisterApi("window.hasSavedBounds", WindowHasSavedBounds);
+    api::RegisterApi("window.setZoom", WindowSetZoom);
+    api::RegisterApi("window.getZoom", WindowGetZoom);
+    api::RegisterApi("window.resetZoom", WindowResetZoom);
+    api::RegisterApi("window.setZoomForDpi", WindowSetZoomForDpi);
+    api::RegisterApi("window.createPopup", WindowCreatePopup);
+    api::RegisterApi("window.closePopup", WindowClosePopup);
+    api::RegisterApi("window.closeAllPopups", WindowCloseAllPopups);
+    api::RegisterApi("window.getAllWindows", WindowGetAllWindows);
+    api::RegisterApi("window.getCurrentWindowId", WindowGetCurrentWindowId);
+    api::RegisterApi("window.getPopupBehavior", WindowGetPopupBehavior);
+    api::RegisterApi("window.setPopupBehavior", WindowSetPopupBehavior);
+    api::RegisterApi("window.getBackdropPolicy", WindowGetBackdropPolicy);
+    api::RegisterApi("window.setBackdropPolicy", WindowSetBackdropPolicy);
+    api::RegisterApi("window.cancelClose", WindowCancelClose);
+    api::RegisterApi("window.confirmClose", WindowConfirmClose);
+    api::RegisterApi("window.setFrameless", WindowSetFrameless);
+    api::RegisterApi("window.setClickThrough", WindowSetClickThrough);
+    api::RegisterApi("window.isClickThrough", WindowIsClickThrough);
+    api::RegisterApi("window.setClickThroughExcludeRegions", WindowSetClickThroughExcludeRegions);
+    api::RegisterApi("window.clearClickThroughExcludeRegions", WindowClearClickThroughExcludeRegions);
+    api::RegisterApi("window.sendMessage", WindowSendMessage);
+    api::RegisterApi("window.broadcast", WindowBroadcast);
+    api::RegisterApi("window.getMode", WindowGetMode);
+    api::RegisterApi("panel.getConfig", PanelGetConfig);
+    api::RegisterApi("panel.setConfig", PanelSetConfig);
 }

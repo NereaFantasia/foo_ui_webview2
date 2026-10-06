@@ -4,6 +4,9 @@
 #include "pch.h"
 #include "api/DialogApi.h"
 #include "api/BridgeCore.h"
+#include "api/ErrorEnvelope.h"
+#include "api/TypedApi.h"
+#include "api/generated/DialogSchema.h"
 #include "utils/I18n.h"
 #include <ShObjIdl.h>
 #include <ShlObj.h>
@@ -27,18 +30,17 @@ namespace {
         std::vector<COMDLG_FILTERSPEC> specs;
     };
 
-    DialogFilterData ParseFilterSpecs(const json& params) {
+    DialogFilterData ParseFilterSpecs(const std::optional<std::vector<api::dialog::FileFilter>>& filters) {
         DialogFilterData data;
-        if (params.contains("filters") && params["filters"].is_array()) {
-            for (const auto& filter : params["filters"]) {
-                std::string name = filter.value("name", TRU("Files", "文件"));
-                data.names.push_back(Utf8ToWide(name));
+        if (filters) {
+            for (const auto& filter : *filters) {
+                data.names.push_back(Utf8ToWide(filter.name.value_or(TRU("Files", "文件"))));
 
                 std::wstring pattern;
-                if (filter.contains("extensions") && filter["extensions"].is_array()) {
-                    for (size_t i = 0; i < filter["extensions"].size(); i++) {
+                if (filter.extensions) {
+                    for (size_t i = 0; i < filter.extensions->size(); i++) {
                         if (i > 0) pattern += L";";
-                        std::string ext = filter["extensions"][i];
+                        const std::string& ext = (*filter.extensions)[i];
                         pattern += (ext == "*") ? L"*.*" : (L"*." + Utf8ToWide(ext));
                     }
                 }
@@ -96,16 +98,15 @@ namespace {
     //==========================================================================
     // dialog.openFile - Open file selection dialog
     //==========================================================================
-    json DialogOpenFile(const json& params) {
-        std::string title = params.value("title", TRU("Open File", "打开文件"));
-        bool multiple = params.value("multiple", false);
-        std::string defaultPath = params.value("defaultPath", "");
+    api::Result<api::dialog::OpenFileResult> DialogOpenFile(const api::dialog::OpenFileParams& p) {
+        std::string title = p.title.value_or(TRU("Open File", "打开文件"));
+        bool multiple = p.multiple;
+        const std::string& defaultPath = p.defaultPath;
 
-        auto filterData = ParseFilterSpecs(params);
+        auto filterData = ParseFilterSpecs(p.filters);
         
-        json result;
-        result["canceled"] = true;
-        result["filePaths"] = json::array();
+        api::dialog::OpenFileResult result;
+        result.canceled = true;
         
         // Create file dialog
         IFileOpenDialog* pFileOpen = nullptr;
@@ -113,7 +114,7 @@ namespace {
             IID_IFileOpenDialog, reinterpret_cast<void**>(&pFileOpen));
         
         if (FAILED(hr)) {
-            return {{"canceled", false}, {"filePaths", json::array()}, {"error", "Failed to initialize file dialog"}};
+            return api::Fail("Failed to initialize file dialog", ApiErrorCode::OPERATION_FAILED);
         }
         
         // Set options
@@ -140,12 +141,12 @@ namespace {
         if (FAILED(hr)) {
             pFileOpen->Release();
             if (hr != HRESULT_FROM_WIN32(ERROR_CANCELLED)) {
-                result["error"] = "Dialog failed";
+                return api::Fail("Dialog failed", ApiErrorCode::OPERATION_FAILED);
             }
             return result;
         }
         
-        result["canceled"] = false;
+        result.canceled = false;
         
         if (multiple) {
             IShellItemArray* pItems = nullptr;
@@ -158,7 +159,7 @@ namespace {
                     if (FAILED(pItems->GetItemAt(i, &pItem))) continue;
                     PWSTR pszFilePath = nullptr;
                     if (SUCCEEDED(pItem->GetDisplayName(SIGDN_FILESYSPATH, &pszFilePath))) {
-                        result["filePaths"].push_back(WideToUtf8(pszFilePath));
+                        result.filePaths.push_back(WideToUtf8(pszFilePath));
                         CoTaskMemFree(pszFilePath);
                     }
                     pItem->Release();
@@ -171,7 +172,7 @@ namespace {
             if (SUCCEEDED(hr)) {
                 PWSTR pszFilePath = nullptr;
                 if (SUCCEEDED(pItem->GetDisplayName(SIGDN_FILESYSPATH, &pszFilePath))) {
-                    result["filePaths"].push_back(WideToUtf8(pszFilePath));
+                    result.filePaths.push_back(WideToUtf8(pszFilePath));
                     CoTaskMemFree(pszFilePath);
                 }
                 pItem->Release();
@@ -185,22 +186,21 @@ namespace {
     //==========================================================================
     // dialog.saveFile - Save file dialog
     //==========================================================================
-    json DialogSaveFile(const json& params) {
-        std::string title = params.value("title", TRU("Save File", "保存文件"));
-        std::string defaultName = params.value("defaultName", "");
+    api::Result<api::dialog::SaveFileResult> DialogSaveFile(const api::dialog::SaveFileParams& p) {
+        std::string title = p.title.value_or(TRU("Save File", "保存文件"));
+        const std::string& defaultName = p.defaultName;
 
-        auto filterData = ParseFilterSpecs(params);
+        auto filterData = ParseFilterSpecs(p.filters);
         
-        json result;
-        result["canceled"] = true;
-        result["filePath"] = "";
+        api::dialog::SaveFileResult result;
+        result.canceled = true;
         
         IFileSaveDialog* pFileSave = nullptr;
         HRESULT hr = CoCreateInstance(CLSID_FileSaveDialog, nullptr, CLSCTX_ALL,
             IID_IFileSaveDialog, reinterpret_cast<void**>(&pFileSave));
         
         if (FAILED(hr)) {
-            return {{"canceled", false}, {"filePath", ""}, {"error", "Failed to initialize save dialog"}};
+            return api::Fail("Failed to initialize save dialog", ApiErrorCode::OPERATION_FAILED);
         }
         
         DWORD dwFlags;
@@ -222,13 +222,13 @@ namespace {
         hr = pFileSave->Show(hwnd);
         
         if (FAILED(hr)) {
-            if (hr != HRESULT_FROM_WIN32(ERROR_CANCELLED)) {
-                result["error"] = "Dialog failed";
-            }
             pFileSave->Release();
+            if (hr != HRESULT_FROM_WIN32(ERROR_CANCELLED)) {
+                return api::Fail("Dialog failed", ApiErrorCode::OPERATION_FAILED);
+            }
             return result;
         }
-        result["canceled"] = false;
+        result.canceled = false;
         
         IShellItem* pItem = nullptr;
         hr = pFileSave->GetResult(&pItem);
@@ -236,7 +236,7 @@ namespace {
             PWSTR pszFilePath = nullptr;
             hr = pItem->GetDisplayName(SIGDN_FILESYSPATH, &pszFilePath);
             if (SUCCEEDED(hr)) {
-                result["filePath"] = WideToUtf8(pszFilePath);
+                result.filePath = WideToUtf8(pszFilePath);
                 CoTaskMemFree(pszFilePath);
             }
             pItem->Release();
@@ -249,20 +249,19 @@ namespace {
     //==========================================================================
     // dialog.openFolder - Folder selection dialog
     //==========================================================================
-    json DialogOpenFolder(const json& params) {
-        std::string title = params.value("title", TRU("Select Folder", "选择文件夹"));
-        std::string defaultPath = params.value("defaultPath", "");
+    api::Result<api::dialog::OpenFolderResult> DialogOpenFolder(const api::dialog::OpenFolderParams& p) {
+        std::string title = p.title.value_or(TRU("Select Folder", "选择文件夹"));
+        const std::string& defaultPath = p.defaultPath;
         
-        json result;
-        result["canceled"] = true;
-        result["folderPath"] = "";
+        api::dialog::OpenFolderResult result;
+        result.canceled = true;
         
         IFileOpenDialog* pFileOpen = nullptr;
         HRESULT hr = CoCreateInstance(CLSID_FileOpenDialog, nullptr, CLSCTX_ALL,
             IID_IFileOpenDialog, reinterpret_cast<void**>(&pFileOpen));
         
         if (FAILED(hr)) {
-            return {{"canceled", false}, {"folderPath", ""}, {"error", "Failed to initialize folder dialog"}};
+            return api::Fail("Failed to initialize folder dialog", ApiErrorCode::OPERATION_FAILED);
         }
         
         DWORD dwFlags;
@@ -278,14 +277,14 @@ namespace {
         hr = pFileOpen->Show(hwnd);
         
         if (FAILED(hr)) {
-            if (hr != HRESULT_FROM_WIN32(ERROR_CANCELLED)) {
-                result["error"] = "Dialog failed";
-            }
             pFileOpen->Release();
+            if (hr != HRESULT_FROM_WIN32(ERROR_CANCELLED)) {
+                return api::Fail("Dialog failed", ApiErrorCode::OPERATION_FAILED);
+            }
             return result;
         }
         
-        result["canceled"] = false;
+        result.canceled = false;
         
         IShellItem* pItem = nullptr;
         hr = pFileOpen->GetResult(&pItem);
@@ -293,7 +292,7 @@ namespace {
             PWSTR pszFolderPath = nullptr;
             hr = pItem->GetDisplayName(SIGDN_FILESYSPATH, &pszFolderPath);
             if (SUCCEEDED(hr)) {
-                result["folderPath"] = WideToUtf8(pszFolderPath);
+                result.folderPath = WideToUtf8(pszFolderPath);
                 CoTaskMemFree(pszFolderPath);
             }
             pItem->Release();
@@ -306,17 +305,17 @@ namespace {
     //==========================================================================
     // dialog.confirm - Confirmation dialog with custom buttons
     //==========================================================================
-    json DialogConfirm(const json& params) {
-        std::string title = params.value("title", TRU("Confirm", "确认"));
-        std::string message = params.value("message", "");
-        std::string type = params.value("type", "question");  // info, warning, error, question
-        int defaultButton = params.value("defaultButton", 0);
+    api::Result<api::dialog::ConfirmResult> DialogConfirm(const api::dialog::ConfirmParams& p) {
+        std::string title = p.title.value_or(TRU("Confirm", "确认"));
+        const std::string& message = p.message;
+        const std::string& type = p.type;
+        int defaultButton = static_cast<int>(p.defaultButton);
         
         // Get button labels
         std::vector<std::wstring> buttons;
-        if (params.contains("buttons") && params["buttons"].is_array()) {
-            for (const auto& btn : params["buttons"]) {
-                buttons.push_back(Utf8ToWide(btn.get<std::string>()));
+        if (p.buttons) {
+            for (const std::string& btn : *p.buttons) {
+                buttons.push_back(Utf8ToWide(btn));
             }
         }
         
@@ -363,9 +362,9 @@ namespace {
         int nClickedButton = 0;
         HRESULT hr = TaskDialogIndirect(&config, &nClickedButton, nullptr, nullptr);
         
-        json result;
+        api::dialog::ConfirmResult result;
         if (SUCCEEDED(hr)) {
-            result["response"] = nClickedButton - 100;
+            result.response = nClickedButton - 100;
         } else {
             // Fallback to MessageBox
             UINT mbType = MB_OKCANCEL;
@@ -389,16 +388,16 @@ namespace {
             switch (mbResult) {
                 case IDOK:
                 case IDYES:
-                    result["response"] = 0;
+                    result.response = 0;
                     break;
                 case IDNO:
-                    result["response"] = 1;
+                    result.response = 1;
                     break;
                 case IDCANCEL:
-                    result["response"] = buttons.size() - 1;
+                    result.response = static_cast<std::int64_t>(buttons.size()) - 1;
                     break;
                 default:
-                    result["response"] = -1;
+                    result.response = -1;
             }
         }
         
@@ -410,20 +409,19 @@ namespace {
 //==========================================================================
 // Register Dialog API
 //==========================================================================
+// Parameters come from src/api/schema/dialog.ts through the generated types.
 void RegisterDialogApi() {
-    auto& bridge = BridgeCore::GetInstance();
-    
     // dialog.openFile - Open file selection dialog
-    bridge.RegisterApi("dialog.openFile", DialogOpenFile);
-    
+    api::RegisterApi("dialog.openFile", DialogOpenFile);
+
     // dialog.saveFile - Save file dialog
-    bridge.RegisterApi("dialog.saveFile", DialogSaveFile);
-    
+    api::RegisterApi("dialog.saveFile", DialogSaveFile);
+
     // dialog.openFolder - Folder selection dialog
-    bridge.RegisterApi("dialog.openFolder", DialogOpenFolder);
-    
+    api::RegisterApi("dialog.openFolder", DialogOpenFolder);
+
     // dialog.confirm - Confirmation dialog
-    bridge.RegisterApi("dialog.confirm", DialogConfirm);
+    api::RegisterApi("dialog.confirm", DialogConfirm);
     
     LOG("Dialog API registered (4 APIs)");
 }

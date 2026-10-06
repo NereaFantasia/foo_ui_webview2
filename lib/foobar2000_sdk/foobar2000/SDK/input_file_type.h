@@ -2,7 +2,7 @@
 #include <functional>
 
 //! Entrypoint interface for registering media file types that can be opened through "open file" dialogs or associated with foobar2000 application in Windows shell. \n
-//! Instead of implementing this directly, use DECLARE_FILE_TYPE() / DECLARE_FILE_TYPE_EX() macros.
+//! Instead of implementing this directly, use @c DECLARE_FILE_TYPE() / @c DECLARE_FILE_TYPE_EX() macros.
 class input_file_type : public service_base {
 public:
 	virtual unsigned get_count()=0;
@@ -22,7 +22,7 @@ public:
 };
 
 //! Extended interface for registering media file types that can be associated with foobar2000 application in Windows shell. \n
-//! Instead of implementing this directly, use DECLARE_FILE_TYPE() / DECLARE_FILE_TYPE_EX() macros.
+//! Instead of implementing this directly, use @c DECLARE_FILE_TYPE() / @c DECLARE_FILE_TYPE_EX() macros.
 class input_file_type_v2 : public input_file_type {
 public:
 	virtual void get_format_name(unsigned idx, pfc::string_base & out, bool isPlural) = 0;
@@ -55,19 +55,19 @@ class input_file_type_impl : public input_file_type
 public:
 	input_file_type_impl(const char * p_name, const char * p_mask,bool p_associatable) : name(p_name), mask(p_mask), m_associatable(p_associatable) {}
 	unsigned get_count() override {return 1;}
-	bool get_name(unsigned idx,pfc::string_base & out) override {if (idx==0) {out = name; return true;} else return false;}
-	bool get_mask(unsigned idx,pfc::string_base & out) override {if (idx==0) {out = mask; return true;} else return false;}
-	bool is_associatable(unsigned idx) override { (void)idx; return m_associatable; }
+	bool get_name(unsigned,pfc::string_base & out) override {out = name; return true;}
+	bool get_mask(unsigned,pfc::string_base & out) override {out = mask; return true;}
+	bool is_associatable(unsigned) override { return m_associatable; }
 };
 
 
 //! Helper macro for registering our media file types.
-//! Usage: DECLARE_FILE_TYPE("Blah files","*.blah;*.bleh");
+//! Usage: @c DECLARE_FILE_TYPE("Blah files","*.blah;*.bleh");
 #define DECLARE_FILE_TYPE(NAME,MASK) FB2K_SERVICE_FACTORY_PARAMS(input_file_type_impl, NAME, MASK, true)
 
 
 //! Implementation helper.
-//! Usage: static input_file_type_factory mytype("blah type","*.bla;*.meh",true);
+//! Usage: `static input_file_type_factory mytype("blah type","*.bla;*.meh",true);`
 class input_file_type_factory : private service_factory_single_transparent_t<input_file_type_impl>
 {
 public:
@@ -81,22 +81,16 @@ class input_file_type_v2_impl : public input_file_type_v2 {
 public:
 	input_file_type_v2_impl(const char * extensions,const char * name, const char * namePlural) : m_name(name), m_namePlural(namePlural), m_extensions(extensions) {}
 	unsigned get_count() override {return 1;}
-	bool is_associatable(unsigned idx) override { (void)idx; return true; }
-	void get_format_name(unsigned idx, pfc::string_base & out, bool isPlural) override {
-		(void)idx;
-		out = isPlural ? m_namePlural : m_name;
-	}
-	void get_extensions(unsigned idx, pfc::string_base & out) override {
-		(void)idx;
-		out = m_extensions;
-	}
+	bool is_associatable(unsigned) override { return true; }
+    void get_format_name(unsigned, pfc::string_base & out, bool isPlural) override {out = isPlural ? m_namePlural : m_name; }
+	void get_extensions(unsigned, pfc::string_base & out) override { out = m_extensions; }
 
 private:
 	const pfc::string8 m_name, m_namePlural, m_extensions;
 };
 
 //! Helper macro for registering our media file types, extended version providing separate singular/plural type names.
-//! Usage: DECLARE_FILE_TYPE_EX("mp1;mp2;mp3","MPEG file","MPEG files")
+//! Usage: `DECLARE_FILE_TYPE_EX("mp1;mp2;mp3","MPEG file","MPEG files")`
 #define DECLARE_FILE_TYPE_EX(extensions, name, namePlural) FB2K_SERVICE_FACTORY_PARAMS(input_file_type_v2_impl, extensions, name, namePlural)
 
 //! Service for registering protocol types that can be associated with foobar2000.

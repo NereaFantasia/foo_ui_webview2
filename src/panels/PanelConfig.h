@@ -119,3 +119,17 @@ struct PanelConfig {
      */
     static PanelConfig Read(stream_reader* reader, t_size size, abort_callback& abort);
 };
+
+// 填 panel.getConfig 的 config 或 panel:configChanged 的载荷。两者由同一份声明生成、字段相同，
+// 方法与事件共用这一处，才不会对同一个面板说出两样话。
+template <class Out>
+void FillPanelConfig(const PanelConfig& cfg, Out& out) {
+    out.panelName = cfg.panelName;
+    out.templateName = cfg.templateName;
+    out.edgeStyle = cfg.edgeStyle;
+    out.urlOverride = cfg.urlOverride;
+    out.transparentBackground = cfg.transparentBackground;
+    out.grabFocus = cfg.grabFocus;
+    out.enableDragDrop = cfg.enableDragDrop;
+    out.enableDevTools = cfg.enableDevTools;
+}

@@ -8,13 +8,6 @@ void dsp_manager::close() {
 	m_config_changed = true;
 }
 
-void dsp_manager::set_config( const dsp_chain_config & p_data )
-{
-	//dsp_chain_config::g_instantiate(m_dsp_list,p_data);
-	m_config.copy(p_data);
-	m_config_changed = true;
-}
-
 bool dsp_manager::need_track_change_mark() const {
 	for ( auto i = this->m_chain.first(); i.is_valid(); ++ i ) {
 		if ( i->m_dsp->need_track_change_mark() ) return true;

@@ -11,12 +11,11 @@
 		0F1FDDBB2AA0ADDF00DE8967 /* main.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 0F1FDDB72AA0ADDF00DE8967 /* main.cpp */; };
 		0F1FDDC02AA0AE1E00DE8967 /* libfoobar2000_SDK.a in Frameworks */ = {isa = PBXBuildFile; fileRef = 0F1FDDBD2AA0AE1E00DE8967 /* libfoobar2000_SDK.a */; };
 		0F1FDDC12AA0AE1E00DE8967 /* libfoobar2000_SDK_helpers.a in Frameworks */ = {isa = PBXBuildFile; fileRef = 0F1FDDBE2AA0AE1E00DE8967 /* libfoobar2000_SDK_helpers.a */; };
-		0F1FDDC22AA0AE1E00DE8967 /* libpfc-Mac.a in Frameworks */ = {isa = PBXBuildFile; fileRef = 0F1FDDBF2AA0AE1E00DE8967 /* libpfc-Mac.a */; };
+		0F1FDDC22AA0AE1E00DE8967 /* libpfc.a in Frameworks */ = {isa = PBXBuildFile; fileRef = 0F1FDDBF2AA0AE1E00DE8967 /* libpfc.a */; };
 		0F1FDDC82AA0B1F800DE8967 /* libshared.a in Frameworks */ = {isa = PBXBuildFile; fileRef = 0F1FDDC72AA0B1F800DE8967 /* libshared.a */; };
 		0F1FDDCA2AA0B1FE00DE8967 /* Cocoa.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 0F1FDDC92AA0B1FE00DE8967 /* Cocoa.framework */; };
 		0F1FDDDE2AA0B34200DE8967 /* libfoobar2000_component_client.a in Frameworks */ = {isa = PBXBuildFile; fileRef = 0F1FDDDD2AA0B34200DE8967 /* libfoobar2000_component_client.a */; };
 		0F62440A2AA1E59E004FEC96 /* preferences.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 0F6244072AA1E4F4004FEC96 /* preferences.cpp */; };
-		0F6D10F12AA3C35C00774EED /* fooDecibelFormatter.m in Sources */ = {isa = PBXBuildFile; fileRef = 0F6D10EF2AA3C35C00774EED /* fooDecibelFormatter.m */; };
 		0FBE14512AA1E85F00B1F71E /* NSView+embed.m in Sources */ = {isa = PBXBuildFile; fileRef = 0FBE14452AA1E85F00B1F71E /* NSView+embed.m */; };
 		0FBE14552AA1E8C800B1F71E /* fooSampleMacPreferences.mm in Sources */ = {isa = PBXBuildFile; fileRef = 0FBE14532AA1E8C800B1F71E /* fooSampleMacPreferences.mm */; };
 		0FBE14562AA1E8C800B1F71E /* fooSampleMacPreferences.xib in Resources */ = {isa = PBXBuildFile; fileRef = 0FBE14542AA1E8C800B1F71E /* fooSampleMacPreferences.xib */; };
@@ -41,7 +40,7 @@
 		0F1FDDB72AA0ADDF00DE8967 /* main.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; path = main.cpp; sourceTree = "<group>"; };
 		0F1FDDBD2AA0AE1E00DE8967 /* libfoobar2000_SDK.a */ = {isa = PBXFileReference; explicitFileType = archive.ar; path = libfoobar2000_SDK.a; sourceTree = BUILT_PRODUCTS_DIR; };
 		0F1FDDBE2AA0AE1E00DE8967 /* libfoobar2000_SDK_helpers.a */ = {isa = PBXFileReference; explicitFileType = archive.ar; path = libfoobar2000_SDK_helpers.a; sourceTree = BUILT_PRODUCTS_DIR; };
-		0F1FDDBF2AA0AE1E00DE8967 /* libpfc-Mac.a */ = {isa = PBXFileReference; explicitFileType = archive.ar; path = "libpfc-Mac.a"; sourceTree = BUILT_PRODUCTS_DIR; };
+		0F1FDDBF2AA0AE1E00DE8967 /* libpfc.a */ = {isa = PBXFileReference; explicitFileType = archive.ar; path = libpfc.a; sourceTree = BUILT_PRODUCTS_DIR; };
 		0F1FDDC62AA0AF8400DE8967 /* stdafx.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = stdafx.h; sourceTree = "<group>"; };
 		0F1FDDC72AA0B1F800DE8967 /* libshared.a */ = {isa = PBXFileReference; explicitFileType = archive.ar; path = libshared.a; sourceTree = BUILT_PRODUCTS_DIR; };
 		0F1FDDC92AA0B1FE00DE8967 /* Cocoa.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Cocoa.framework; path = System/Library/Frameworks/Cocoa.framework; sourceTree = SDKROOT; };
@@ -82,7 +81,7 @@
 				0F1FDDC82AA0B1F800DE8967 /* libshared.a in Frameworks */,
 				0F1FDDC02AA0AE1E00DE8967 /* libfoobar2000_SDK.a in Frameworks */,
 				0F1FDDC12AA0AE1E00DE8967 /* libfoobar2000_SDK_helpers.a in Frameworks */,
-				0F1FDDC22AA0AE1E00DE8967 /* libpfc-Mac.a in Frameworks */,
+				0F1FDDC22AA0AE1E00DE8967 /* libpfc.a in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -134,7 +133,7 @@
 				0F1FDDC72AA0B1F800DE8967 /* libshared.a */,
 				0F1FDDBD2AA0AE1E00DE8967 /* libfoobar2000_SDK.a */,
 				0F1FDDBE2AA0AE1E00DE8967 /* libfoobar2000_SDK_helpers.a */,
-				0F1FDDBF2AA0AE1E00DE8967 /* libpfc-Mac.a */,
+				0F1FDDBF2AA0AE1E00DE8967 /* libpfc.a */,
 			);
 			name = Frameworks;
 			sourceTree = "<group>";
@@ -240,7 +239,6 @@
 				0FBE14632AA1F74200B1F71E /* contextmenu.cpp in Sources */,
 				0FCA71142AA21F69001CB0F2 /* fooSampleDSPView.mm in Sources */,
 				0FBE14652AA1F74200B1F71E /* decode.cpp in Sources */,
-				0F6D10F12AA3C35C00774EED /* fooDecibelFormatter.m in Sources */,
 				0FBE146C2AA1FF1500B1F71E /* ui_and_threads.cpp in Sources */,
 				0FBE14662AA1F74200B1F71E /* dsp_sample.cpp in Sources */,
 				0F1FDDBB2AA0ADDF00DE8967 /* main.cpp in Sources */,

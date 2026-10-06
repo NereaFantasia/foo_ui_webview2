@@ -50,6 +50,7 @@ public:
         bool transparent = false;  // true = WebView 背景透明（DWM 效果穿透）
         bool clickThrough = false; // true = 鼠标穿透窗口（桌面歌词等场景）
         bool beforeClose = false;  // true = 关闭时走异步 beforeClose 流程，false = 立即关闭
+        bool trustAbsoluteUrl = false; // url 是 http(s) 绝对地址且打开它的页面已信任该来源时为 true，弹窗页面才能调用桥
 
         // 扩展策略（向后兼容）
         bool hasShowInTaskbar = false;
@@ -78,6 +79,25 @@ public:
 
     // 获取策略信息
     json GetPopupBehaviorInfo() const;
+    // 填 window.getPopupBehavior / setPopupBehavior 的回包或 window:behaviorChanged 的载荷里的
+    // 预设、覆盖项与生效行为。三者由同一份声明生成、字段相同，共用这一处，方法与事件才不会对同一个
+    // popup 说出两样话。windowId 由调用方填。
+    template <class Out>
+    void FillPopupBehavior(Out& out) const {
+        out.profile = profile_;
+        out.behavior.clear();
+        if (behaviorOverrides_.is_object()) {
+            for (auto it = behaviorOverrides_.begin(); it != behaviorOverrides_.end(); ++it) {
+                out.behavior[it.key()] = it.value();
+            }
+        }
+        out.resolvedBehavior.showInTaskbar = resolvedBehavior_.showInTaskbar;
+        out.resolvedBehavior.showInAltTab = resolvedBehavior_.showInAltTab;
+        out.resolvedBehavior.keepVisibleOnShowDesktop = resolvedBehavior_.keepVisibleOnShowDesktop;
+        out.resolvedBehavior.allowMinimize = resolvedBehavior_.allowMinimize;
+        out.resolvedBehavior.owner = resolvedBehavior_.owner;
+        out.resolvedBehavior.noActivate = resolvedBehavior_.noActivate;
+    }
     // GetBackdropPolicyInfo() — declared in WindowShellBase override section below
     json GetResolvedBehavior() const;
     json GetResolvedBackdropPolicy() const;
@@ -217,6 +237,7 @@ protected:
     void OnWebViewReady() override;
     void OnNavigationCompleted(bool success) override;
     void OnWindowReadySignal(const std::string& source) override;
+    bool LoadFallbackFrontendPage() override;
 
 private:
     CreateParams createParams_;
@@ -340,8 +361,11 @@ private:
     void OnSize(int width, int height);
     void OnActivate(WPARAM wParam);
     
-    // 构建导航 URL
-    std::wstring BuildNavigationUrl() const;
+    // 构建导航 URL；viaDevServer 为 false 时相对地址落到本地模板的虚拟主机下
+    std::wstring BuildNavigationUrl(bool viaDevServer) const;
+
+    // 按来源提交弹窗页面的导航，成功提交时记下页面来源
+    bool NavigateToPage(bool viaDevServer);
 
     // 策略处理
     void InitializePolicyState();

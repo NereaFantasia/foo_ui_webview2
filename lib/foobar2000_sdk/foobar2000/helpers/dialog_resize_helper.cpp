@@ -81,6 +81,7 @@ bool dialog_resize_helper::process_message(HWND wnd,UINT msg,WPARAM wp,LPARAM lp
 }
 
 BOOL dialog_resize_helper::ProcessWindowMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam, LRESULT& lResult) {
+	(void)wParam;
 	switch(uMsg) {
 	case WM_SIZE:
 		on_wm_size();

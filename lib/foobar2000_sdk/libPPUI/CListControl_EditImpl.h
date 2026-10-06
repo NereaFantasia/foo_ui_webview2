@@ -50,8 +50,8 @@ protected:
 	}
 
 	void TableEdit_OnColorsChanged() {}
-	bool TableEdit_GetDarkMode() const override {
-		return this->GetDarkMode();
+	DarkMode::param_t TableEdit_GetDarkMode() const override {
+		return this->GetDarkModeParam();
 	}
 	t_uint32 TableEdit_GetEditFlags(t_size item, t_size subItem) const override {
 		auto ret = __super::TableEdit_GetEditFlags(item, subItem);

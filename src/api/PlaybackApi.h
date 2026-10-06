@@ -53,4 +53,4 @@ void SetPlaybackService(IPlaybackService* service);
 IPlaybackService* GetPlaybackService();
 
 // Helper: Get track info as JSON
-json GetTrackInfo(metadb_handle_ptr track);
+json GetTrackInfo(const metadb_handle_ptr& track);

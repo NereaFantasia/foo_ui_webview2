@@ -1,4 +1,4 @@
-﻿<?xml version="1.0" encoding="utf-8"?>
+<?xml version="1.0" encoding="utf-8"?>
 <Project DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
 
   <ItemGroup Label="ProjectConfigurations">
@@ -78,6 +78,7 @@
       <AdditionalOptions>/utf-8 /Zc:preprocessor %(AdditionalOptions)</AdditionalOptions>
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
       <WarningLevel>Level3</WarningLevel>
+      <TreatWarningAsError>true</TreatWarningAsError>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
@@ -98,6 +99,7 @@
     <ClCompile Include="..\src\utils\ImageUtils.cpp" />
     <ClCompile Include="..\src\api\ArtworkRequestParser.cpp" />
     <ClCompile Include="..\src\window\WindowGeometryMath.cpp" />
+    <ClCompile Include="..\src\window\MaximizeButtonRegion.cpp" />
     <ClCompile Include="..\src\window\WindowTargetPolicy.cpp" />
     <ClCompile Include="..\src\webview\dnd\HdropReader.cpp" />
     <ClCompile Include="..\src\webview\dnd\ShortcutResolver.cpp" />
@@ -109,14 +111,21 @@
     <ClCompile Include="..\src\api\LiveWaveform.cpp" />
     <ClCompile Include="..\src\api\WaveformAccumulator.cpp" />
     <ClCompile Include="..\src\api\WaveformTaskQueue.cpp" />
+    <ClCompile Include="..\src\api\PcmPack.cpp" />
+    <ClCompile Include="..\src\api\PcmRing.cpp" />
     <ClCompile Include="..\src\webview\dnd\DropEffectPolicy.cpp" />
+    <ClCompile Include="..\src\webview\dnd\DragStartPolicy.cpp" />
+    <ClCompile Include="..\src\webview\dnd\DragSourceMarker.cpp" />
+    <ClCompile Include="..\src\webview\dnd\DragOverThrottle.cpp" />
     <ClCompile Include="..\src\webview\dnd\DragSession.cpp" />
     <ClCompile Include="..\src\webview\dnd\DndOriginPolicy.cpp" />
+    <ClCompile Include="..\src\webview\OriginPolicy.cpp" />
     <ClCompile Include="..\src\webview\dnd\DragOutPathPolicy.cpp" />
     <ClCompile Include="..\src\webview\dnd\HdropBuilder.cpp" />
     <ClCompile Include="..\src\webview\dnd\DragTokenStore.cpp" />
     <ClCompile Include="..\src\utils\MediaMembershipIndex.cpp" />
     <ClCompile Include="..\src\utils\PathCanonicalCache.cpp" />
+    <ClCompile Include="..\src\core\FrontendDirectoryPolicy.cpp" />
     <!-- src\utils\I18n.cpp needs the full SDK to probe fb2k's own strings;
          this project builds against compat\fb2k_types.h, so stub it instead. -->
     <ClCompile Include="compat\i18n_stub.cpp">
@@ -132,6 +141,8 @@
     <ClCompile Include="test_artwork_request_lifecycle.cpp" />
     <ClCompile Include="test_artwork_instrumentation.cpp" />
     <ClCompile Include="test_subsong_utils.cpp" />
+    <ClCompile Include="test_lyrics_file_policy.cpp" />
+    <ClCompile Include="test_subsong_path.cpp" />
     <ClCompile Include="test_canonical_handle.cpp" />
     <ClCompile Include="test_string_utils.cpp" />
     <ClCompile Include="test_api_constants.cpp" />
@@ -142,6 +153,7 @@
     <ClCompile Include="test_preferences_layout.cpp" />
     <ClCompile Include="test_preferences_draft.cpp" />
     <ClCompile Include="test_preferences_template_name.cpp" />
+    <ClCompile Include="test_frontend_directory_policy.cpp" />
     <ClCompile Include="test_preferences_dev_server_url.cpp" />
     <ClCompile Include="test_preferences_zoom.cpp" />
     <ClCompile Include="test_preferences_cdp_port.cpp" />
@@ -163,29 +175,47 @@
     <ClCompile Include="test_path_canonical_cache.cpp" />
     <ClCompile Include="test_caller_context.cpp" />
     <ClCompile Include="test_playback_handlers.cpp" />
-    <ClCompile Include="test_playlist_handlers.cpp" />
+    <ClCompile Include="test_playback_handlers_p1.cpp" />
+    <ClCompile Include="test_playback_handlers_p2.cpp" />
+    <ClCompile Include="test_playlist_handlers_p3.cpp" />
+    <ClCompile Include="test_playlist_handlers_p4.cpp" />
+    <ClCompile Include="test_playlist_handlers_p5.cpp" />
+    <ClCompile Include="test_playlist_handlers_p5b.cpp" />
+    <ClCompile Include="test_playlist_target.cpp" />
     <ClCompile Include="test_playlist_format_utils.cpp" />
     <ClCompile Include="test_image_utils.cpp" />
     <ClCompile Include="test_metadata_write_subsong.cpp" />
+    <ClCompile Include="test_metadata_tag_values.cpp" />
+    <ClCompile Include="test_background_suspend_policy.cpp" />
     <ClCompile Include="test_taskbar_tray_contracts.cpp" />
+    <ClCompile Include="test_tray_menu_contracts.cpp" />
     <ClCompile Include="test_menu_node_contract.cpp" />
     <ClCompile Include="test_menu_overlay_anchor.cpp" />
     <ClCompile Include="test_webview_crash_policy.cpp" />
     <ClCompile Include="test_window_geometry_math.cpp" />
+    <ClCompile Include="test_maximize_button_region.cpp" />
     <ClCompile Include="test_window_target_policy.cpp" />
+    <ClCompile Include="test_window_caller_identity.cpp" />
     <ClCompile Include="test_dnd_hdrop_parse.cpp" />
     <ClCompile Include="test_dnd_effect_policy.cpp" />
+    <ClCompile Include="test_dnd_drag_start_policy.cpp" />
+    <ClCompile Include="test_dnd_drag_source_marker.cpp" />
+    <ClCompile Include="test_dnd_drag_over_throttle.cpp" />
     <ClCompile Include="test_dnd_session.cpp" />
     <ClCompile Include="test_dnd_origin_policy.cpp" />
+    <ClCompile Include="test_origin_policy.cpp" />
     <ClCompile Include="test_dnd_dragout_path_policy.cpp" />
     <ClCompile Include="test_dnd_hdrop_builder.cpp" />
     <ClCompile Include="test_dnd_drag_token_store.cpp" />
+    <ClCompile Include="test_port_registry.cpp" />
     <ClCompile Include="test_dnd_shortcut_resolver.cpp" />
     <ClCompile Include="test_async_operation_registry.cpp" />
     <ClCompile Include="test_json_writer.cpp" />
     <ClCompile Include="test_bridge_deferred.cpp" />
     <ClCompile Include="test_track_wire_snapshot.cpp" />
     <ClCompile Include="test_meta_value_ops.cpp" />
+    <ClCompile Include="test_album_identity.cpp" />
+    <ClCompile Include="test_user_data_migration.cpp" />
     <ClCompile Include="test_rating_select.cpp" />
     <ClCompile Include="test_queue_rebuild_plan.cpp" />
     <ClCompile Include="test_group_run_plan.cpp" />
@@ -195,6 +225,27 @@
     <ClCompile Include="test_live_waveform.cpp" />
     <ClCompile Include="test_waveform_cache_key.cpp" />
     <ClCompile Include="test_spectrum_schedule.cpp" />
+    <ClCompile Include="test_vis_window_plan.cpp" />
+    <ClCompile Include="test_api_schema.cpp" />
+    <ClCompile Include="test_api_schema_results.cpp" />
+    <ClCompile Include="test_api_schema_common.cpp" />
+    <ClCompile Include="test_api_schema_events.cpp" />
+    <ClCompile Include="test_skipped_path_filter.cpp" />
+    <ClCompile Include="test_media_range.cpp" />
+    <ClCompile Include="test_media_tokens.cpp" />
+    <ClCompile Include="test_media_http.cpp" />
+    <ClCompile Include="test_media_file.cpp" />
+    <ClCompile Include="..\src\media\MediaFile.cpp" />
+    <ClCompile Include="..\src\media\ContainerInfo.cpp" />
+    <ClCompile Include="..\src\media\Mp4Container.cpp" />
+    <ClCompile Include="..\src\media\MatroskaContainer.cpp" />
+    <ClCompile Include="..\src\media\MediaCodecs.cpp" />
+    <ClCompile Include="test_media_containers.cpp" />
+    <ClCompile Include="test_media_fixtures.cpp" />
+    <ClCompile Include="test_path_validation_batch.cpp" />
+    <ClCompile Include="test_pcm_layout.cpp" />
+    <ClCompile Include="test_pcm_pack.cpp" />
+    <ClCompile Include="test_pcm_ring.cpp" />
   </ItemGroup>
 
   <!-- Headers -->
@@ -202,6 +253,9 @@
     <ClInclude Include="pch.h" />
     <ClInclude Include="compat\fb2k_types.h" />
     <ClInclude Include="harness\BridgeDispatchSimulator.h" />
+    <ClInclude Include="harness\PlaybackHandlerTestSupport.h" />
+    <ClInclude Include="harness\PlaylistHandlerTestSupport.h" />
+    <ClInclude Include="harness\TrayMenuTestSupport.h" />
     <ClInclude Include="..\src\window\BackgroundSuspendPolicy.h" />
     <ClInclude Include="..\src\utils\StringUtils.h" />
     <ClInclude Include="..\src\window\TaskbarTrayContracts.h" />
@@ -212,27 +266,34 @@
     <ClInclude Include="..\src\webview\WebViewCrashPolicy.h" />
     <ClInclude Include="..\src\webview\ScaledArtworkCache.h" />
     <ClInclude Include="..\src\window\WindowGeometryMath.h" />
+    <ClInclude Include="..\src\window\MaximizeButtonRegion.h" />
     <ClInclude Include="..\src\window\WindowTargetPolicy.h" />
+    <ClInclude Include="..\src\core\FrontendDirectoryPolicy.h" />
     <ClInclude Include="..\src\utils\WindowUtilsCore.h" />
     <ClInclude Include="..\src\webview\dnd\HdropReader.h" />
     <ClInclude Include="..\src\webview\dnd\ShortcutResolver.h" />
     <ClInclude Include="..\src\api\AsyncOperationRegistry.h" />
     <ClInclude Include="..\src\api\ProbeFailureClassifier.h" />
     <ClInclude Include="..\src\webview\dnd\DropEffectPolicy.h" />
+    <ClInclude Include="..\src\webview\dnd\DragStartPolicy.h" />
+    <ClInclude Include="..\src\webview\dnd\DragSourceMarker.h" />
+    <ClInclude Include="..\src\webview\dnd\DragOverThrottle.h" />
     <ClInclude Include="..\src\webview\dnd\DragSession.h" />
     <ClInclude Include="..\src\webview\dnd\DndOriginPolicy.h" />
+    <ClInclude Include="..\src\webview\OriginPolicy.h" />
     <ClInclude Include="..\src\webview\dnd\DragOutPathPolicy.h" />
     <ClInclude Include="..\src\webview\dnd\HdropBuilder.h" />
     <ClInclude Include="..\src\webview\dnd\DragTokenStore.h" />
     <ClInclude Include="..\src\utils\MediaMembershipIndex.h" />
     <ClInclude Include="..\src\utils\PathCanonicalCache.h" />
     <ClInclude Include="..\src\utils\PathTraversalSegments.h" />
+    <ClInclude Include="..\src\utils\SubsongPath.h" />
     <ClInclude Include="..\src\utils\PlaylistFormatUtils.h" />
-    <ClInclude Include="..\src\core\PreferencesLayout.h" />
-    <ClInclude Include="..\src\core\PreferencesLayoutBuilder.h" />
-    <ClInclude Include="..\src\core\PreferencesDraft.h" />
-    <ClInclude Include="..\src\core\PreferencesFields.h" />
-    <ClInclude Include="..\src\core\PreferencesDevServerUrl.h" />
+    <ClInclude Include="..\src\prefs\PreferencesLayout.h" />
+    <ClInclude Include="..\src\prefs\PreferencesLayoutBuilder.h" />
+    <ClInclude Include="..\src\prefs\PreferencesDraft.h" />
+    <ClInclude Include="..\src\prefs\PreferencesFields.h" />
+    <ClInclude Include="..\src\prefs\PreferencesDevServerUrl.h" />
     <ClInclude Include="..\src\window\TaskbarProgressPolicy.h" />
   </ItemGroup>
 
@@ -241,5 +302,8 @@
   <!-- GoogleTest NuGet -->
   <Import Project="$(ProjectDir)..\packages\Microsoft.googletest.v140.windesktop.msvcstl.static.rt-dyn.1.8.1.7\build\native\Microsoft.googletest.v140.windesktop.msvcstl.static.rt-dyn.targets"
           Condition="Exists('$(ProjectDir)..\packages\Microsoft.googletest.v140.windesktop.msvcstl.static.rt-dyn.1.8.1.7\build\native\Microsoft.googletest.v140.windesktop.msvcstl.static.rt-dyn.targets')" />
+
+  <!-- 测试也编译 src/api/generated 的参数头，编译前同样重新生成 -->
+  <Import Project="$(ProjectDir)..\scripts\api-schema\ApiSchema.targets" Condition="Exists('$(ProjectDir)..\scripts\api-schema\ApiSchema.targets')" />
 
 </Project>

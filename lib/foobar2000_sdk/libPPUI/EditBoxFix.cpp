@@ -16,4 +16,10 @@ namespace PP {
 			if ( info.hwndItem != NULL ) editBoxFix( info.hwndItem );
 		}
 	}
+	void editBoxFixLite(HWND wndEdit) {
+		CEdit edit(wndEdit);
+		if (edit.GetStyle() & ES_MULTILINE) {
+			CEditNoEscSteal::SubclassThisWindow(wndEdit);
+		}
+	}
 }

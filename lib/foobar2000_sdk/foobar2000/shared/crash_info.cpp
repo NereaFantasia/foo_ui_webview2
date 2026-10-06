@@ -39,8 +39,6 @@ void SHARED_EXPORT uRemovePanicHandler(fb2k::panicHandler* p) {
 }
 
 
-enum { EXCEPTION_BUG_CHECK = 0xaa67913c };
-
 #if FB2K_SUPPORT_CRASH_LOGS
 
 static const unsigned char utf8_header[3] = {0xEF,0xBB,0xBF};
@@ -323,7 +321,7 @@ static void writeFailureTxt(LPEXCEPTION_POINTERS param, HANDLE hFile, DWORD last
 		sprintf(temp, "Illegal operation:\nCode: %08Xh, flags: %08Xh, address: " PTRSPEC "\n", param->ExceptionRecord->ExceptionCode, param->ExceptionRecord->ExceptionFlags, address);
 		WriteFileString(hFile, temp);
 
-		if (param->ExceptionRecord->ExceptionCode == EXCEPTION_BUG_CHECK) {
+		if (param->ExceptionRecord->ExceptionCode == fb2k::EXCEPTION_BUG_CHECK) {
 			WriteFileString(hFile, "Bug check\n");
 		} else if (param->ExceptionRecord->ExceptionCode == EXCEPTION_ACCESS_VIOLATION && param->ExceptionRecord->NumberParameters >= 2) {
 			sprintf(temp, "Access violation, operation: %s, address: " PTRSPEC "\n", param->ExceptionRecord->ExceptionInformation[0] ? "write" : "read", param->ExceptionRecord->ExceptionInformation[1]);
@@ -454,7 +452,10 @@ static void writeFailureTxt(LPEXCEPTION_POINTERS param, HANDLE hFile, DWORD last
 
 static bool GrabOSVersion(char * out) {
 	OSVERSIONINFO ver = {}; ver.dwOSVersionInfoSize = sizeof(ver);
+#pragma warning(push)
+#pragma warning(disable: 4996) // silence GetVersionEx() deprecation
 	if (!GetVersionEx(&ver)) return false;
+#pragma warning(pop)
 	*out = 0;
 	char temp[16];
 	strcat(out,"Windows ");
@@ -648,5 +649,5 @@ extern "C" {
 #endif
 
 PFC_NORETURN void SHARED_EXPORT uBugCheck() {
-	fb2k_instacrash_scope(RaiseException(EXCEPTION_BUG_CHECK, EXCEPTION_NONCONTINUABLE, 0, NULL); );
+	fb2k_instacrash_scope(RaiseException(fb2k::EXCEPTION_BUG_CHECK, EXCEPTION_NONCONTINUABLE, 0, NULL); );
 }

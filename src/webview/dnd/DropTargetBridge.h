@@ -3,14 +3,23 @@
 
 #include <functional>
 #include <memory>
+#include <optional>
 #include <string>
 #include <vector>
 
 #include <oleidl.h>
 #include <nlohmann/json.hpp>
 
+#include "webview/dnd/DragOverThrottle.h"
 #include "webview/dnd/DragSession.h"
 #include "webview/dnd/IDropTargetDelegate.h"
+
+// Generated from src/api/schema/dnd.ts; declared here so this header does not pull the
+// generated one into every file that includes it.
+namespace api::dnd {
+struct CapabilitiesChangedPayload;
+struct DragEndedPayload;
+}  // namespace api::dnd
 
 namespace fb2k_dnd {
 
@@ -51,11 +60,11 @@ public:
     // Reports a capability change to this window. Exposed so the registrar can
     // reach the same point-to-point sink the drag events use instead of keeping
     // a second one. Silent once shutdown has begun.
-    void EmitCapabilitiesChanged(const nlohmann::json& payload) const;
+    void EmitCapabilitiesChanged(const api::dnd::CapabilitiesChangedPayload& payload) const;
 
     // Reports the end of a drag out of this window. Same sink and the same
     // shutdown rule as EmitCapabilitiesChanged.
-    void EmitDragEnded(const nlohmann::json& payload) const;
+    void EmitDragEnded(const api::dnd::DragEndedPayload& payload) const;
 
     DragSessionStore& Sessions() { return sessions_; }
 
@@ -82,17 +91,26 @@ private:
     // The paths array as the page is allowed to see it: the real list when the
     // origin gate is open, an empty array otherwise. Single choke point so no
     // event payload can bypass the gate.
-    nlohmann::json VisiblePaths(const std::vector<std::wstring>& paths) const;
+    std::vector<std::string> VisiblePaths(const std::vector<std::wstring>& paths) const;
 
     // The shortcut-target array as the page is allowed to see it. Passes the
     // same gate as VisiblePaths, and answers with the same length, so a page can
     // pair the two by index in every case including a closed gate.
-    nlohmann::json VisibleResolvedPaths(const std::vector<std::wstring>& paths,
-                                        const std::vector<ResolvedTarget>& resolved) const;
+    std::vector<std::optional<std::string>> VisibleResolvedPaths(
+        const std::vector<std::wstring>& paths,
+        const std::vector<ResolvedTarget>& resolved) const;
 
     // Emits through sink_ if one was supplied, swallowing sink failures so a
     // faulty listener cannot break the drag.
     void Emit(const char* event, const nlohmann::json& payload) const;
+
+    // Emits one declared dnd:* event through the overload above: the name comes
+    // from the generated descriptor api::dnd::events::<Event> and the payload is
+    // its generated struct. The sink is this window's own channel, which is why
+    // the api::emit helpers, all of which address a bridge or a window id, are
+    // not used here. Defined and instantiated in the .cpp only.
+    template <class E>
+    void Emit(const typename E::Payload& payload) const;
 
     // Ends this gesture locally and returns the session id it held. The flag and
     // the id must move together, or Query answers for a gesture already over.
@@ -107,6 +125,27 @@ private:
     bool enterForwarded_ = false;
     bool shuttingDown_ = false;
     bool pathsAllowed_ = false;
+
+    // Which DragOver calls reach the WebView (DragOverThrottle.h); reset by
+    // DragEnter.
+    DragOverForwardState overForward_;
+    // Whether the WebView has answered this drag with an effect at least once,
+    // for RendererHasAnswered; reset by DragEnter.
+    bool sawRendererEffect_ = false;
+
+    // DragOver statistics for the dnd trace (DndTrace.h), reset by DragEnter.
+    // A drag makes hundreds of DragOver calls, so the trace writes a line only
+    // when the answer changes or one call is slow, and sums up at leave or drop.
+    struct OverTrace {
+        uint32_t calls = 0;
+        uint32_t sent = 0;  // calls passed on to the WebView
+        int64_t maxCallMs = 0;
+        bool haveLast = false;
+        bool lastForwarded = false;
+        DWORD lastInner = 0;
+        DWORD lastOut = 0;
+    };
+    OverTrace overTrace_;
 };
 
 }  // namespace fb2k_dnd

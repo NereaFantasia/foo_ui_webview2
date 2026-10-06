@@ -78,6 +78,3 @@ IPlaybackService* GetPlaylistApiPlaybackService();
 // Helper: Get playlist info as JSON
 json GetPlaylistInfo(size_t index, bool includeDuration = false);
 
-// Helper: Get track info from playlist as JSON
-json GetPlaylistTrackInfo(const metadb_handle_ptr& track, size_t index);
-

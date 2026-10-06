@@ -13,7 +13,7 @@ namespace pfc {
 		virtual t_size find(bool val, t_size start, t_ssize count) const;
 		bool operator[](t_size n) const { return get(n); }
 
-		t_size calc_count(bool val, t_size start, t_size count, t_size count_max = ~0) const;//counts number of vals for start<=n<start+count
+		t_size calc_count(bool val, t_size start, t_size count, t_size count_max = SIZE_MAX) const;//counts number of vals for start<=n<start+count
 
 		t_size find_first(bool val, t_size start, t_size max) const;
 		t_size find_next(bool val, t_size previous, t_size max) const;

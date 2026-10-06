@@ -9,6 +9,8 @@
  */
 #pragma once
 
+#include "SpectrumBands.h"
+
 #include <atomic>
 #include <chrono>
 #include <string>
@@ -21,6 +23,10 @@ using Clock = std::chrono::steady_clock;
 enum class PlaybackState { Stopped, Paused, Playing };
 
 enum class SpectrumScale { Weighted, Db };
+
+// Bands: log-spaced bands in `scale`. Bins: linear FFT bins in dB
+// (ComputeDbBins); bands and scale take no part.
+enum class SpectrumOutput { Bands, Bins };
 
 // Per-subscription parameters as accepted by audio.subscribeSpectrum. fftSize
 // is the requested value; the size actually used follows EffectiveFftSize().
@@ -35,6 +41,9 @@ struct ScheduleParams {
     // sampleRate / 2. See SpectrumBands.h for how the upper edge is derived.
     double minFrequency = 20.0;
     double maxFrequency = 0.0;
+    SpectrumOutput output = SpectrumOutput::Bands;
+    // Stereo only occurs with SpectrumOutput::Bins; the host rejects it for bands.
+    SpectrumChannels channels = SpectrumChannels::Mix;
 };
 
 // Mutable per-subscription state owned by the host and advanced by PlanTick().
@@ -77,14 +86,18 @@ struct TickInput {
     Clock::duration halfBeat{};
 };
 
-// One FFT configuration to compute this tick. Subscriptions whose effective
-// fftSize, bands, scale and requested frequency range coincide share one group.
+// One FFT configuration to compute this tick. Subscriptions share a group when
+// their effective fftSize, output and requested frequency range coincide, and
+// then bands and scale for band output, or channels for bin output. A bin
+// group carries bands 0 and SpectrumScale::Db.
 struct ComputeGroup {
     int fftSize = 0;
     int bands = 0;
     SpectrumScale scale = SpectrumScale::Weighted;
     double minFrequency = 20.0;
     double maxFrequency = 0.0;
+    SpectrumOutput output = SpectrumOutput::Bands;
+    SpectrumChannels channels = SpectrumChannels::Mix;
 };
 
 struct FrameDecision {
@@ -106,12 +119,16 @@ struct TickPlan {
     std::vector<FrameDecision> frames;
 };
 
-// The FFT size actually used for a request: bands >= 64 need at least 8192
+// The FFT size actually used for a band request: bands >= 64 need at least 8192
 // points and bands >= 32 at least 4096 so that the low bands do not collapse
 // onto a handful of bins (the rule the host applied before scheduling existed);
 // the result never exceeds maxFftSize. `requested` is expected to be a power of
 // two already validated by the caller.
 int EffectiveFftSize(int requested, int bands, int maxFftSize);
+
+// The FFT size actually used for either output: bin output takes the requested
+// size, capped at maxFftSize only; band output follows the rule above.
+int EffectiveFftSize(int requested, int bands, SpectrumOutput output, int maxFftSize);
 
 // Advance every entry by one tick and decide the tick's work. Order is fixed:
 // the state machine moves first for every entry, independent of

@@ -2,7 +2,7 @@ English | [中文](./README.zh-CN.md)
 
 # src/core/ — WebView Lifecycle & Runtime Core
 
-`core/` is the runtime foundation of the component: it defines foobar2000's UI entry, the WebView2 base class shared by all windows/panels, the multi-instance routing table, and runtime services such as the library cache, directory-tree index, JIT streaming queue, background mode, and preferences page. Both `window/` and `panels/` are built on top of this module.
+`core/` is the runtime foundation of the component: it defines the WebView2 base class shared by all windows/panels, the multi-instance routing table, and the JIT streaming queue. Both `window/` and `panels/` are built on top of this module. foobar2000's UI entry and the background mode live in [`ui/`](../README.md#supporting-modules), the preferences pages in [`prefs/`](../README.md#supporting-modules), and the library cache and directory-tree index in [`domain/library/`](../README.md#supporting-modules).
 
 ---
 
@@ -10,11 +10,11 @@ English | [中文](./README.zh-CN.md)
 
 `core/` answers three questions:
 
-1. **Who is the UI entry?** `WebViewUI` (which implements foobar2000's `user_interface`) creates the main window when fb2k starts.
+1. **Who is the UI entry?** `WebViewUI` in `ui/` (which implements foobar2000's `user_interface`) creates the main window when fb2k starts; the window it creates is built on the base class and registry below.
 2. **Where do WebView2's common capabilities live?** `WebViewPanel` consolidates initialization, API registration, callback initialization, message handling, and config hot-reload into a base class, inherited by `MainWindow` / `WebViewDuiElement` / `WebViewCuiPanel`.
 3. **How do multiple WebView instances find each other?** `WebViewContext` registers all instances keyed by HWND, supporting cross-instance event broadcasting and directed routing by window ID.
 
-The remaining files are runtime services revolving around these three things (cache, queue, background, preferences, security config).
+Besides these three, `core/` holds one runtime service: the JIT streaming queue.
 
 ---
 
@@ -22,15 +22,16 @@ The remaining files are runtime services revolving around these three things (ca
 
 | File | Responsibility |
 |------|------|
-| `UserInterface.h/.cpp` | `WebViewUI : user_interface` — foobar2000's main UI entry (GUID, `init`/`shutdown`/`activate`/`hide`), creates and holds `MainWindow`, singleton `GetInstance()` |
 | `WebViewPanel.h/.cpp` | WebView panel base class: `InitializeWebView`, `RegisterAllApis`, `InitializeCallbacks`, navigation/reload, `ApplyConfig` config hot-reload, holds `PanelConfig`, holds `SelectionHolder`; the mode enum `Standalone/DuiPanel/CuiPanel`; defines overridable virtual functions (`OnWebViewReady`, etc.) |
+| `PanelBootstrap.cpp` | Defines `WebViewPanel::RegisterAllApis` / `InitializeCallbacks`; the only TU that includes every `api/` and `callbacks/` module header |
+| `PanelCrashDiagnostics.h/.cpp` | The `kind` and `recoveryAction` fields of the `webview:processFailed` payload |
 | `WebViewContext.h/.cpp` | Multi-instance manager (singleton): `RegisterInstance`/`UnregisterInstance` (by HWND), `GetBridge`/`GetWebViewHost`/`GetPanelByHwnd`, `BroadcastEvent`/`BroadcastEventExcept`, `SendEventTo` by windowId and reverse lookup |
-| `LibraryCache.h/.cpp` | In-memory library cache (singleton): multi-level cache for albums/tracks/artists/genres/stats/cover, `shared_mutex` read-write lock, tracks use `shared_ptr<const json>` to avoid deep copies, cover cache capped at 100MB, `Invalidate()` on library changes |
-| `LibraryTreeIndex.h/.cpp` | Media-root and directory-tree indexer (singleton): infers the real media roots using `library_manager::get_relative_path` + path-tail comparison, built lazily and thread-safe; serves `library.getRoots` / `library.browseTree` |
-| `QueueManager.h/.cpp` | JIT streaming queue (singleton): a frontend logical queue + a backend "shadow playlist" (only current+next), the state machine `Idle/Active/WaitingNext/Exhausted`, just-in-time URL resolution, auto-buffering, `jitQueue:needNext` prefetch, shadow-list lock protection |
-| `BackgroundService.h/.cpp` | Background mode: when another UI (Default UI, etc.) is in use, keeps WebView2 running in the background to preserve API access; the window can stay invisible throughout |
-| `PreferencesPage.h/.cpp` | Preferences page (Preferences → Display → WebView2 UI): template management, window settings, DWM background effects, developer options; exposes `webview_prefs::*` config accessor functions |
-| `SecurityConfig.h` | Security config access interface (`security_config::*`, implemented in `main.cpp`): toggles for DevTools, CDP remote debugging, local network, plaintext HTTP, self-signed TLS, background mode, and the HMR dev server |
+| `QueueManager.h/.cpp` | JIT streaming queue (singleton): a frontend logical queue + a backend "shadow playlist" (only current+next), the state machine `Idle/Active/WaitingNext/Exhausted`, just-in-time URL resolution, auto-buffering, `jitQueue:needNext` prefetch, shadow-list lock protection. `QueueManager.cpp` holds the singleton, the public commands, the state queries, and the playback callbacks |
+| `QueueShadowPlaylist.cpp` | `QueueManager` members for the shadow playlist: the `ShadowPlaylistLock` lock and its callbacks, finding or creating the playlist, detecting playback from it, cleaning up played tracks, removing a stale buffered next, and starting playback on it |
+| `QueueSources.cpp` | `QueueManager` members for track sources: local-path detection, `PreloadBatch`, subsong-suffix parsing, URL-to-handle conversion, and adding streams or local files to the shadow playlist asynchronously |
+| `QueueManagerInternal.h` | The `Announce` event helper shared by `QueueManager.cpp` and `QueueSources.cpp` |
+| `FrontendDirectoryResolver.h/.cpp` | Builds the candidate frontend directories from the current settings; the main window, popups, DUI/CUI panels and the panel settings dialog all resolve through it |
+| `FrontendDirectoryPolicy.h/.cpp` | Picks the first candidate that has an `index.html`, in the order panel template → active template → `foo_ui_webview2_resources\dist` under the component folder → the `default` template; independent of the foobar2000 SDK, so unit tests link it directly |
 
 ---
 
@@ -40,7 +41,7 @@ The remaining files are runtime services revolving around these three things (ca
 
 ```
 fb2k startup
-   └─ WebViewUI::init()                       (core/UserInterface)
+   └─ WebViewUI::init()                       (ui/UserInterface)
         └─ new MainWindow → Create()          (window/)
              └─ WebViewPanel::InitializeWebView(hwnd, Standalone)
                    ├─ WebViewHost::Initialize()         (webview/, shared warmed-up environment)
@@ -54,11 +55,7 @@ Panel modes (DUI/CUI) follow the same `WebViewPanel` path, only with a different
 
 ### Event Broadcasting & Directing
 
-Most events produced by `callbacks/` are pushed to all instances via `WebViewContext::BroadcastEvent(event, data)`; when the sender needs to be excluded, use `BroadcastEventExcept`; for point-to-point, use `SendEventTo(windowId, ...)`. `WebViewContext` also supports tracing back from a child-window HWND to the top-level window (`GetHostByHwnd`).
-
-### Library Cache & Index
-
-`LibraryApi` reads from `LibraryCache` first (on a hit it returns a `shared_ptr` handle with zero deep copies); directory-tree/root browsing goes through `LibraryTreeIndex` (built synchronously and cached on first access). When `callbacks/LibraryCallback` detects library changes, it calls `Invalidate()` to invalidate both, so they are rebuilt on the next access.
+Events produced by `callbacks/` go out through the helpers in `api/EventEmit.h`, which call into `WebViewContext`: most are pushed to all instances via `BroadcastEvent(event, data)`; when the sender needs to be excluded, use `BroadcastEventExcept`; for point-to-point, use `SendEventTo(windowId, ...)`. `WebViewContext` also supports tracing back from a child-window HWND to the top-level window (`GetHostByHwnd`).
 
 ### JIT Streaming Queue
 
@@ -68,16 +65,16 @@ The frontend maintains the full logical queue, while the backend `QueueManager` 
 
 ## Dependencies
 
-- **Depends on**: `webview/` (`WebViewHost`/`WebViewEnvironment`), `api/` (registration and bridging), `callbacks/` (event source), `selection/` (`SelectionHolder`), `panels/PanelConfig`, `utils/`, and the foobar2000 SDK.
-- **Depended on by**: `window/` (`MainWindow`/`PopupWindow` inherit `WebViewPanel`), `panels/` (DUI/CUI instances inherit `WebViewPanel`), `api/` (`LibraryApi`/`QueueApi` call the cache and queue, and handlers broadcast events through `WebViewContext`), and `main.cpp` (which registers `WebViewUI`, `PreferencesPage`, and `BackgroundService`).
+- **Depends on**: `webview/` (`WebViewHost`/`WebViewEnvironment`), `api/` (registration and bridging), `callbacks/` (event source), `selection/` (`SelectionHolder`), `panels/PanelConfig`, `prefs/` (`WebViewPanel` reads `webview_prefs::*`), `utils/`, and the foobar2000 SDK.
+- **Depended on by**: `window/` (`MainWindow`/`PopupWindow` inherit `WebViewPanel`), `panels/` (DUI/CUI instances inherit `WebViewPanel`), `api/` (`QueueApi` calls the queue, and handlers broadcast events through `WebViewContext`), `ui/` (the main-menu command counts instances through `WebViewContext`), and `prefs/` (reloads panels and applies the default zoom through `WebViewContext`/`WebViewPanel`).
 
 ---
 
 ## Extension Guide
 
-- **Add a runtime service**: prefer making it a singleton (see `LibraryCache`/`QueueManager`), use `mutex`/`shared_mutex` for thread safety, and clarify the invalidation/cleanup timing (trigger `Invalidate` in the corresponding `callbacks/`).
+- **Add a runtime service**: prefer making it a singleton (see `QueueManager`, or `domain/library/LibraryCache`), use `mutex`/`shared_mutex` for thread safety, and clarify the invalidation/cleanup timing (trigger `Invalidate` in the corresponding `callbacks/`). A service that needs nothing from `api/`, windows, or UI belongs in `domain/` instead.
 - **Add an overridable lifecycle hook**: add a virtual function (such as `OnXxx`) to `WebViewPanel` with an empty base implementation, and let `MainWindow`/panels override it as needed, keeping the three modes' behavior consistent.
-- **Add a preference**: add a cfg_var and UI control in `PreferencesPage`, and expose accessor functions through `webview_prefs::*` / `security_config::*`, avoiding reading global variables directly in the business layer.
+- **Add a preference**: add a cfg_var and UI control in `prefs/PreferencesPage` (or the matching sub-page), and expose accessor functions through `webview_prefs::*` / `security_config::*`, avoiding reading global variables directly in the business layer.
 
 ---
 

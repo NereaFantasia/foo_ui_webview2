@@ -181,7 +181,7 @@ struct browse_for_dir_struct
 static bool file_exists(const TCHAR * p_path)
 {
 	DWORD val = GetFileAttributes(p_path);
-	if (val == (-1) || (val & FILE_ATTRIBUTE_DIRECTORY)) return false;
+	if (val == INVALID_FILE_ATTRIBUTES || (val & FILE_ATTRIBUTE_DIRECTORY)) return false;
 	return true;
 }
 

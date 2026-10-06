@@ -3,53 +3,48 @@
 
 #include "pch.h"
 #include "api/DspApi.h"
-#include "api/BridgeCore.h"
+#include "api/TypedApi.h"
+#include "api/generated/DspSchema.h"
 
-#ifdef FOOBAR2000_HAVE_DSP
 #include <foobar2000/SDK/dsp.h>
 #include <foobar2000/SDK/dsp_manager.h>
-#endif
 #include "utils/GuidUtils.h"
 
 namespace {
-    using json = nlohmann::json;
+    namespace dsp = api::dsp;
     using GuidUtils::GuidToString;
     using GuidUtils::StringToGuid;
 
 
-#ifdef FOOBAR2000_HAVE_DSP
     //==========================================================================
     // dsp.getChain - Get current DSP chain configuration
     //==========================================================================
-    json DspGetChain(const json& /*params*/) {
+    api::Result<dsp::GetChainResult> DspGetChain(const dsp::GetChainParams& /*params*/) {
         try {
             auto dsp_mgr = dsp_config_manager::get();
             dsp_chain_config_impl chain;
             dsp_mgr->get_core_settings(chain);
 
-            json dsps = json::array();
+            dsp::GetChainResult result;
             for (size_t i = 0; i < chain.get_count(); i++) {
                 const dsp_preset& preset = chain.get_item(i);
                 GUID owner = preset.get_owner();
-                
+
                 pfc::string8 name;
                 dsp_entry::g_name_from_guid(name, owner);
-                
-                dsps.push_back({
-                    {"index", i},
-                    {"guid", GuidToString(owner)},
-                    {"name", name.get_ptr()}
-                });
+
+                dsp::DspChainEntry entry;
+                entry.index = static_cast<std::int64_t>(i);
+                entry.guid = GuidToString(owner);
+                entry.name = name.get_ptr();
+                result.dsps.push_back(std::move(entry));
             }
 
             // Both keys are always present so callers never have to probe for
             // them: null / -1 means "no preset selected" or "presets not
             // supported by this host".
-            json result = {
-                {"dsps", dsps},
-                {"activePreset", nullptr},
-                {"activePresetIndex", -1}
-            };
+            result.activePreset = std::nullopt;
+            result.activePresetIndex = -1;
 
             try {
                 auto dsp_mgr_v2 = dsp_config_manager_v2::get();
@@ -57,8 +52,8 @@ namespace {
                 if (selected != pfc::infinite_size && selected < dsp_mgr_v2->get_preset_count()) {
                     pfc::string8 presetName;
                     dsp_mgr_v2->get_preset_name(selected, presetName);
-                    result["activePreset"] = presetName.get_ptr();
-                    result["activePresetIndex"] = static_cast<int64_t>(selected);
+                    result.activePreset = std::string(presetName.get_ptr());
+                    result.activePresetIndex = static_cast<std::int64_t>(selected);
                 }
             } catch (...) {
                 // Host without dsp_config_manager_v2: keep the null / -1 defaults.
@@ -66,67 +61,62 @@ namespace {
 
             return result;
         } catch (const std::exception& e) {
-            return {{"success", false}, {"error", e.what()}};
+            return api::Fail(e.what(), ApiErrorCode::OPERATION_FAILED);
         }
     }
 
     //==========================================================================
     // dsp.getPresets - Get available DSP presets
     //==========================================================================
-    json DspGetPresets(const json& /*params*/) {
+    api::Result<dsp::GetPresetsResult> DspGetPresets(const dsp::GetPresetsParams& /*params*/) {
         try {
             auto dsp_mgr_v2 = dsp_config_manager_v2::get();
-            
+
             size_t count = dsp_mgr_v2->get_preset_count();
             size_t selected = dsp_mgr_v2->get_selected_preset();
-            
-            json presets = json::array();
+
+            dsp::GetPresetsResult result;
             for (size_t i = 0; i < count; i++) {
                 pfc::string8 name;
                 dsp_mgr_v2->get_preset_name(i, name);
-                presets.push_back({
-                    {"index", i},
-                    {"name", name.get_ptr()},
-                    {"active", i == selected}
-                });
+                dsp::DspPresetEntry entry;
+                entry.index = static_cast<std::int64_t>(i);
+                entry.name = name.get_ptr();
+                entry.active = (i == selected);
+                result.presets.push_back(std::move(entry));
             }
 
             // `get_selected_preset` reports pfc::infinite_size when nothing is
             // selected. That value is not representable as a JS number, so it is
             // normalized to -1 instead of overflowing into an unusable float.
-            const int64_t selectedIndex =
-                (selected == pfc::infinite_size || selected >= count)
-                    ? -1
-                    : static_cast<int64_t>(selected);
-
-            return {
-                {"presets", presets},
-                {"count", count},
-                {"selectedIndex", selectedIndex}
-            };
+            result.count = static_cast<std::int64_t>(count);
+            result.selectedIndex = (selected == pfc::infinite_size || selected >= count)
+                ? -1
+                : static_cast<std::int64_t>(selected);
+            return result;
         } catch (const std::exception& e) {
-            return {{"success", false}, {"error", e.what()}};
+            return api::Fail(e.what(), ApiErrorCode::OPERATION_FAILED);
         }
     }
 
     //==========================================================================
     // dsp.applyPreset - Apply a DSP preset by name or index
     //==========================================================================
-    json DspApplyPreset(const json& params) {
+    api::Result<dsp::ApplyPresetResult> DspApplyPreset(const dsp::ApplyPresetParams& params) {
         try {
             auto dsp_mgr_v2 = dsp_config_manager_v2::get();
-            
+
             size_t targetIndex = pfc::infinite_size;
-            
+
             // Find by index
-            if (params.contains("index") && params["index"].is_number()) {
-                targetIndex = params["index"].get<size_t>();
+            if (params.index) {
+                targetIndex = static_cast<size_t>(*params.index);
             }
             // Find by name
-            else if (params.contains("name") && params["name"].is_string()) {
-                std::string targetName = params["name"].get<std::string>();
+            else if (params.name) {
+                const std::string& targetName = *params.name;
                 size_t count = dsp_mgr_v2->get_preset_count();
-                
+
                 for (size_t i = 0; i < count; i++) {
                     pfc::string8 name;
                     dsp_mgr_v2->get_preset_name(i, name);
@@ -135,91 +125,77 @@ namespace {
                         break;
                     }
                 }
-                
+
                 if (targetIndex == pfc::infinite_size) {
-                    return {{"success", false}, {"error", "Preset not found: " + targetName}};
+                    return api::Fail("Preset not found: " + targetName, ApiErrorCode::NOT_FOUND);
                 }
             } else {
-                return {{"success", false}, {"error", "name or index parameter required"}};
+                return api::Fail("name or index parameter required", ApiErrorCode::INVALID_PARAMS);
             }
 
             if (targetIndex >= dsp_mgr_v2->get_preset_count()) {
-                return {{"success", false}, {"error", "Invalid preset index"}};
+                return api::Fail("Invalid preset index", ApiErrorCode::INVALID_INDEX);
             }
 
             // Apply preset
             dsp_mgr_v2->select_preset(targetIndex);
-            
+
             pfc::string8 appliedName;
             dsp_mgr_v2->get_preset_name(targetIndex, appliedName);
 
-            return {
-                {"success", true},
-                {"appliedPreset", appliedName.get_ptr()},
-                {"appliedIndex", targetIndex}
-            };
+            dsp::ApplyPresetResult result;
+            result.appliedPreset = appliedName.get_ptr();
+            result.appliedIndex = static_cast<std::int64_t>(targetIndex);
+            return result;
         } catch (const std::exception& e) {
-            return {{"success", false}, {"error", e.what()}};
+            return api::Fail(e.what(), ApiErrorCode::OPERATION_FAILED);
         }
     }
 
     //==========================================================================
     // dsp.getAvailable - Get list of available DSP processors
     //==========================================================================
-    json DspGetAvailable(const json& /*params*/) {
+    api::Result<dsp::GetAvailableResult> DspGetAvailable(const dsp::GetAvailableParams& /*params*/) {
         try {
-            json dsps = json::array();
-            
+            dsp::GetAvailableResult result;
+
             service_enum_t<dsp_entry> e;
             dsp_entry::ptr ptr;
-            
+
             while (e.next(ptr)) {
                 pfc::string8 name;
                 ptr->get_name(name);
-                
-                bool hasConfig = ptr->have_config_popup();
-                
-                // Try to get default preset
-                dsp_preset_impl defaultPreset;
-                bool hasDefault = ptr->get_default_preset(defaultPreset);
-                
-                dsps.push_back({
-                    {"guid", GuidToString(ptr->get_guid())},
-                    {"name", name.get_ptr()},
-                    {"hasConfig", hasConfig}
-                });
+
+                dsp::DspAvailableEntry entry;
+                entry.guid = GuidToString(ptr->get_guid());
+                entry.name = name.get_ptr();
+                entry.hasConfig = ptr->have_config_popup();
+                result.dsps.push_back(std::move(entry));
             }
 
-            return {
-                {"dsps", dsps},
-                {"count", dsps.size()}
-            };
+            result.count = static_cast<std::int64_t>(result.dsps.size());
+            return result;
         } catch (const std::exception& e) {
-            return {{"success", false}, {"error", e.what()}};
+            return api::Fail(e.what(), ApiErrorCode::OPERATION_FAILED);
         }
     }
 
     //==========================================================================
     // dsp.addDsp - Add a DSP to the chain
     //==========================================================================
-    json DspAddDsp(const json& params) {
-        std::string guidStr = params.value("guid", "");
-        int position = params.value("position", -1);
-
-        if (guidStr.empty()) {
-            return {{"success", false}, {"error", "guid is required"}};
-        }
+    api::Result<dsp::AddDspResult> DspAddDsp(const dsp::AddDspParams& params) {
+        const std::int64_t position = params.position;
 
         GUID guid;
-        if (!StringToGuid(guidStr, guid)) {
-            return {{"success", false}, {"error", "Invalid GUID format"}};
+        if (!StringToGuid(params.guid, guid)) {
+            return api::Fail("Invalid GUID format", ApiErrorCode::INVALID_PARAMS);
         }
 
         try {
             // Get default preset for this DSP
             dsp_preset_impl preset;
             if (!dsp_entry::g_get_default_preset(preset, guid)) {
-                return {{"success", false}, {"error", "DSP not found or no default preset"}};
+                return api::Fail("DSP not found or no default preset", ApiErrorCode::NOT_FOUND);
             }
 
             // Get current chain
@@ -227,11 +203,14 @@ namespace {
             dsp_chain_config_impl chain;
             dsp_mgr->get_core_settings(chain);
 
-            // Insert at position
-            if (position < 0 || position >= (int)chain.get_count()) {
+            // Insert at position; -1 or past the end appends.
+            std::int64_t landed;
+            if (position < 0 || position >= static_cast<std::int64_t>(chain.get_count())) {
+                landed = static_cast<std::int64_t>(chain.get_count());
                 chain.insert_item(preset, chain.get_count());
             } else {
-                chain.insert_item(preset, position);
+                landed = position;
+                chain.insert_item(preset, static_cast<size_t>(position));
             }
 
             // Apply new chain
@@ -240,25 +219,20 @@ namespace {
             pfc::string8 name;
             dsp_entry::g_name_from_guid(name, guid);
 
-            return {
-                {"success", true},
-                {"addedDsp", name.get_ptr()},
-                {"position", position < 0 ? (int)chain.get_count() - 1 : position}
-            };
+            dsp::AddDspResult result;
+            result.addedDsp = name.get_ptr();
+            result.position = landed;
+            return result;
         } catch (const std::exception& e) {
-            return {{"success", false}, {"error", e.what()}};
+            return api::Fail(e.what(), ApiErrorCode::OPERATION_FAILED);
         }
     }
 
     //==========================================================================
     // dsp.removeDsp - Remove a DSP from the chain
     //==========================================================================
-    json DspRemoveDsp(const json& params) {
-        if (!params.contains("index") || !params["index"].is_number()) {
-            return {{"success", false}, {"error", "index is required"}};
-        }
-
-        size_t index = params["index"].get<size_t>();
+    api::Result<dsp::RemoveDspResult> DspRemoveDsp(const dsp::RemoveDspParams& params) {
+        const size_t index = static_cast<size_t>(params.index);
 
         try {
             auto dsp_mgr = dsp_config_manager::get();
@@ -266,7 +240,7 @@ namespace {
             dsp_mgr->get_core_settings(chain);
 
             if (index >= chain.get_count()) {
-                return {{"success", false}, {"error", "Index out of range"}};
+                return api::Fail("Index out of range", ApiErrorCode::INVALID_INDEX);
             }
 
             // Get name before removing
@@ -280,29 +254,21 @@ namespace {
             // Apply
             dsp_mgr->set_core_settings(chain);
 
-            return {
-                {"success", true},
-                {"removedDsp", name.get_ptr()},
-                {"removedIndex", index}
-            };
+            dsp::RemoveDspResult result;
+            result.removedDsp = name.get_ptr();
+            result.removedIndex = static_cast<std::int64_t>(index);
+            return result;
         } catch (const std::exception& e) {
-            return {{"success", false}, {"error", e.what()}};
+            return api::Fail(e.what(), ApiErrorCode::OPERATION_FAILED);
         }
     }
 
     //==========================================================================
     // dsp.moveDsp - Move a DSP within the chain
     //==========================================================================
-    json DspMoveDsp(const json& params) {
-        if (!params.contains("from") || !params["from"].is_number()) {
-            return {{"success", false}, {"error", "from index is required"}};
-        }
-        if (!params.contains("to") || !params["to"].is_number()) {
-            return {{"success", false}, {"error", "to index is required"}};
-        }
-
-        size_t from = params["from"].get<size_t>();
-        size_t to = params["to"].get<size_t>();
+    api::Result<dsp::MoveDspResult> DspMoveDsp(const dsp::MoveDspParams& params) {
+        const size_t from = static_cast<size_t>(params.from);
+        const size_t to = static_cast<size_t>(params.to);
 
         try {
             auto dsp_mgr = dsp_config_manager::get();
@@ -310,11 +276,16 @@ namespace {
             dsp_mgr->get_core_settings(chain);
 
             if (from >= chain.get_count() || to >= chain.get_count()) {
-                return {{"success", false}, {"error", "Index out of range"}};
+                return api::Fail("Index out of range", ApiErrorCode::INVALID_INDEX);
             }
 
+            dsp::MoveDspResult result;
+            result.from = params.from;
+            result.to = params.to;
+
             if (from == to) {
-                return {{"success", true}, {"message", "No change needed"}};
+                result.message = "No change needed";
+                return result;
             }
 
             // Get the preset to move
@@ -333,66 +304,39 @@ namespace {
             // Apply
             dsp_mgr->set_core_settings(chain);
 
-            return {
-                {"success", true},
-                {"movedDsp", name.get_ptr()},
-                {"from", from},
-                {"to", to}
-            };
+            result.movedDsp = std::string(name.get_ptr());
+            return result;
         } catch (const std::exception& e) {
-            return {{"success", false}, {"error", e.what()}};
+            return api::Fail(e.what(), ApiErrorCode::OPERATION_FAILED);
         }
     }
 
     //==========================================================================
     // dsp.setChain - Set complete DSP chain (advanced)
     //==========================================================================
-    json DspSetChain(const json& params) {
-        if (!params.contains("dsps") || !params["dsps"].is_array()) {
-            return {{"success", false}, {"error", "dsps array is required"}};
-        }
-
+    api::Result<dsp::SetChainResult> DspSetChain(const dsp::SetChainParams& params) {
         try {
             dsp_chain_config_impl newChain;
 
             // Every entry must resolve to an installed DSP. Skipping bad entries
             // silently would apply a shorter chain than the caller asked for while
             // still reporting success, so each failure mode rejects the whole call
-            // with an index-tagged reason instead.
-            const json& items = params["dsps"];
-            for (size_t i = 0; i < items.size(); i++) {
-                const json& item = items[i];
+            // with an index-tagged reason instead. Shape and empty-guid errors are
+            // the generated parser's, under the same dsps[i] prefix.
+            for (size_t i = 0; i < params.dsps.size(); i++) {
+                const std::string& guidStr = params.dsps[i].guid;
                 const std::string at = "dsps[" + std::to_string(i) + "]";
-
-                if (!item.is_object()) {
-                    return {{"success", false},
-                            {"error", at + " must be an object"}};
-                }
-
-                const json::const_iterator guidIt = item.find("guid");
-                if (guidIt == item.end() || !guidIt->is_string()) {
-                    return {{"success", false},
-                            {"error", at + ": guid is required"}};
-                }
-
-                const std::string guidStr = guidIt->get<std::string>();
-                if (guidStr.empty()) {
-                    return {{"success", false},
-                            {"error", at + ": guid is required"}};
-                }
 
                 GUID guid;
                 if (!StringToGuid(guidStr, guid)) {
-                    return {{"success", false},
-                            {"error", at + ": Invalid GUID format: " + guidStr}};
+                    return api::Fail(at + ": Invalid GUID format: " + guidStr, ApiErrorCode::INVALID_PARAMS);
                 }
 
                 // A well-formed GUID for a DSP that is not installed (component
                 // removed, typo in a hand-built GUID) lands here.
                 dsp_preset_impl preset;
                 if (!dsp_entry::g_get_default_preset(preset, guid)) {
-                    return {{"success", false},
-                            {"error", at + ": DSP not found or no default preset: " + guidStr}};
+                    return api::Fail(at + ": DSP not found or no default preset: " + guidStr, ApiErrorCode::NOT_FOUND);
                 }
 
                 newChain.insert_item(preset, newChain.get_count());
@@ -401,21 +345,13 @@ namespace {
             auto dsp_mgr = dsp_config_manager::get();
             dsp_mgr->set_core_settings(newChain);
 
-            return {
-                {"success", true},
-                {"count", newChain.get_count()}
-            };
+            dsp::SetChainResult result;
+            result.count = static_cast<std::int64_t>(newChain.get_count());
+            return result;
         } catch (const std::exception& e) {
-            return {{"success", false}, {"error", e.what()}};
+            return api::Fail(e.what(), ApiErrorCode::OPERATION_FAILED);
         }
     }
-
-#else
-    // Fallback for non-DSP builds
-    json DspNotAvailable(const json& /*params*/) {
-        return {{"success", false}, {"error", "DSP API not available in this build"}};
-    }
-#endif
 
 } // anonymous namespace
 
@@ -423,44 +359,14 @@ namespace {
 // Register DSP API
 //==========================================================================
 void RegisterDspApi() {
-    auto& bridge = BridgeCore::GetInstance();
-
-#ifdef FOOBAR2000_HAVE_DSP
-    // dsp.getChain - Get current DSP chain configuration
-    bridge.RegisterApi("dsp.getChain", DspGetChain);
-
-    // dsp.getPresets - Get available DSP presets
-    bridge.RegisterApi("dsp.getPresets", DspGetPresets);
-
-    // dsp.applyPreset - Apply a DSP preset
-    bridge.RegisterApi("dsp.applyPreset", DspApplyPreset);
-
-    // dsp.getAvailable - Get list of available DSP processors
-    bridge.RegisterApi("dsp.getAvailable", DspGetAvailable);
-
-    // dsp.addDsp - Add a DSP to the chain
-    bridge.RegisterApi("dsp.addDsp", DspAddDsp);
-
-    // dsp.removeDsp - Remove a DSP from the chain
-    bridge.RegisterApi("dsp.removeDsp", DspRemoveDsp);
-
-    // dsp.moveDsp - Move a DSP within the chain
-    bridge.RegisterApi("dsp.moveDsp", DspMoveDsp);
-
-    // dsp.setChain - Set complete DSP chain
-    bridge.RegisterApi("dsp.setChain", DspSetChain);
+    api::RegisterApi("dsp.getChain", DspGetChain);
+    api::RegisterApi("dsp.getPresets", DspGetPresets);
+    api::RegisterApi("dsp.applyPreset", DspApplyPreset);
+    api::RegisterApi("dsp.getAvailable", DspGetAvailable);
+    api::RegisterApi("dsp.addDsp", DspAddDsp);
+    api::RegisterApi("dsp.removeDsp", DspRemoveDsp);
+    api::RegisterApi("dsp.moveDsp", DspMoveDsp);
+    api::RegisterApi("dsp.setChain", DspSetChain);
 
     LOG("DSP API registered (8 APIs)");
-#else
-    bridge.RegisterApi("dsp.getChain", DspNotAvailable);
-    bridge.RegisterApi("dsp.getPresets", DspNotAvailable);
-    bridge.RegisterApi("dsp.applyPreset", DspNotAvailable);
-    bridge.RegisterApi("dsp.getAvailable", DspNotAvailable);
-    bridge.RegisterApi("dsp.addDsp", DspNotAvailable);
-    bridge.RegisterApi("dsp.removeDsp", DspNotAvailable);
-    bridge.RegisterApi("dsp.moveDsp", DspNotAvailable);
-    bridge.RegisterApi("dsp.setChain", DspNotAvailable);
-
-    LOG("DSP API registered (stub - DSP not available)");
-#endif
 }

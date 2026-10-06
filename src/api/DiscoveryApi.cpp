@@ -1,19 +1,23 @@
 ﻿/**
  * DiscoveryApi.cpp - Proactive foobar2000 Service Discovery API
- * 
- * Enumerates various services in foobar2000 for frontend discovery
+ *
+ * Enumerates various services in foobar2000 for frontend discovery. Every
+ * shape here is declared in src/api/schema/discovery.ts; the structs and the
+ * parameter parsing come from the generated DiscoverySchema.h.
  */
 
 #include "pch.h"
 #include "api/DiscoveryApi.h"
-#include "api/BridgeCore.h"
 #include "api/MenuNodeContract.h"
+#include "api/TypedApi.h"
+#include "api/generated/DiscoverySchema.h"
 #include <foobar2000/SDK/menu_helpers.h>
 #include "utils/GuidUtils.h"
 #include "utils/StringUtils.h"
+#include "utils/SubsongUtils.h"
 
 namespace {
-    using json = nlohmann::json;
+    namespace discovery = api::discovery;
 
     using GuidUtils::GuidToString;
     using GuidUtils::StringToGuid;
@@ -21,6 +25,16 @@ namespace {
     // Thin alias: shared implementation lives in StringUtils.h
     inline std::string SafeUtf8String(const char* str) {
         return StringUtils::SafeUtf8(str);
+    }
+
+    // Copies the normalized display state onto the declared state members.
+    void AssignState(discovery::MenuNodeState& out, const menu_node::State& state) {
+        out.enabled = state.enabled;
+        out.checked = state.checked;
+        out.radioChecked = state.radioChecked;
+        out.hidden = state.hidden;
+        out.stateKnown = state.stateKnown;
+        out.flags = static_cast<std::int64_t>(state.flags);
     }
 
     //==========================================================================
@@ -47,7 +61,7 @@ namespace {
                                  const std::string& pathPrefix,
                                  const DynamicCommandOwner& owner,
                                  bool includeHidden,
-                                 json& out,
+                                 std::vector<discovery::DiscoveryMainMenuCommand>& out,
                                  int depth) {
         if (!node.is_valid() || depth > kMaxDynamicMenuDepth) return;
 
@@ -135,39 +149,31 @@ namespace {
                 menu_node::Kind::Command, /*isDynamicParent=*/false,
                 !label.empty(), !owner.guid.empty());
 
-        json item = {
-            {"name", label},
-            {"description", description},
-            {"guid", owner.guid},
-            {"parentGuid", owner.parentGuid},
-            {"index", owner.index},
-            {"path", path},
-            {"isDynamic", true},
-            {"isDynamicParent", false},
-            {"flags", flags},
-            {"enabled", state.enabled},
-            {"checked", state.checked},
-            {"radioChecked", state.radioChecked},
-            {"hidden", state.hidden},
-            {"stateKnown", state.stateKnown},
-            {"source", menu_node::ToString(menu_node::Source::MainMenuDynamic)},
-            {"executable", menu_node::IsExecutable(reason)},
-            {"unaddressableReason", menu_node::ToString(reason)}
-        };
-
+        discovery::DiscoveryMainMenuCommand item;
+        item.name = label;
+        item.description = description;
+        item.guid = owner.guid;
+        item.parentGuid = owner.parentGuid;
+        item.index = owner.index;
+        item.path = path;
+        item.isDynamic = true;
+        item.isDynamicParent = false;
+        AssignState(item, state);
+        item.source = menu_node::ToString(menu_node::Source::MainMenuDynamic);
+        item.executable = menu_node::IsExecutable(reason);
+        item.unaddressableReason = menu_node::ToString(reason);
         if (subGuid != pfc::guid_null) {
-            item["subGuid"] = GuidToString(subGuid);
+            item.subGuid = GuidToString(subGuid);
         }
-
-        out.push_back(item);
+        out.push_back(std::move(item));
     }
 
     // Enumerates every static command slot, optionally expanding v2 dynamic
     // subtrees. Static entries keep their historical shape; expansion is purely
     // additive so existing callers keep seeing the parent slot.
-    json CollectMainMenuCommands(bool expandDynamic, bool includeHidden,
-                                 int& dynamicCount) {
-        json commands = json::array();
+    std::vector<discovery::DiscoveryMainMenuCommand> CollectMainMenuCommands(
+        bool expandDynamic, bool includeHidden, int& dynamicCount) {
+        std::vector<discovery::DiscoveryMainMenuCommand> commands;
         dynamicCount = 0;
 
         service_enum_t<mainmenu_commands> e;
@@ -246,25 +252,20 @@ namespace {
                         menu_node::Kind::Command, isDynamic, !label.empty(),
                         cmdGuid != pfc::guid_null);
 
-                commands.push_back({
-                    {"name", label},
-                    {"description", SafeUtf8String(desc.get_ptr())},
-                    {"guid", cmdGuidStr},
-                    {"parentGuid", parentGuidStr},
-                    {"index", i},
-                    {"path", label},
-                    {"isDynamic", isDynamic},
-                    {"isDynamicParent", isDynamic},
-                    {"flags", flags},
-                    {"enabled", state.enabled},
-                    {"checked", state.checked},
-                    {"radioChecked", state.radioChecked},
-                    {"hidden", state.hidden},
-                    {"stateKnown", state.stateKnown},
-                    {"source", menu_node::ToString(menu_node::Source::MainMenuStatic)},
-                    {"executable", menu_node::IsExecutable(reason)},
-                    {"unaddressableReason", menu_node::ToString(reason)}
-                });
+                discovery::DiscoveryMainMenuCommand item;
+                item.name = label;
+                item.description = SafeUtf8String(desc.get_ptr());
+                item.guid = cmdGuidStr;
+                item.parentGuid = parentGuidStr;
+                item.index = i;
+                item.path = label;
+                item.isDynamic = isDynamic;
+                item.isDynamicParent = isDynamic;
+                AssignState(item, state);
+                item.source = menu_node::ToString(menu_node::Source::MainMenuStatic);
+                item.executable = menu_node::IsExecutable(reason);
+                item.unaddressableReason = menu_node::ToString(reason);
+                commands.push_back(std::move(item));
 
                 if (!isDynamic) continue;
 
@@ -290,83 +291,77 @@ namespace {
     //==========================================================================
     // discovery.getMainMenuCommands - Get all main menu commands
     //==========================================================================
-    json GetMainMenuCommands(const json& params) {
-        const bool expandDynamic = params.value("expandDynamic", true);
+    api::Result<discovery::GetMainMenuCommandsResult> GetMainMenuCommands(
+        const discovery::GetMainMenuCommandsParams& params) {
         // Hidden entries (get_display() == false, or flag_defaulthidden) are
         // filtered by default: they are not reachable from the real menu, so
         // listing them as invocable commands was misleading. Callers that want
         // the historical superset can opt back in.
-        const bool includeHidden = params.value("includeHidden", false);
-
         int dynamicCount = 0;
-        json commands =
-            CollectMainMenuCommands(expandDynamic, includeHidden, dynamicCount);
-
-        return {
-            {"success", true},
-            {"commands", commands},
-            {"count", commands.size()},
-            {"expandDynamic", expandDynamic},
-            {"includeHidden", includeHidden},
-            {"dynamicCount", dynamicCount}
-        };
+        discovery::GetMainMenuCommandsResult result;
+        result.commands = CollectMainMenuCommands(params.expandDynamic, params.includeHidden, dynamicCount);
+        result.count = static_cast<std::int64_t>(result.commands.size());
+        result.expandDynamic = params.expandDynamic;
+        result.includeHidden = params.includeHidden;
+        result.dynamicCount = dynamicCount;
+        return result;
     }
-    
+
     //==========================================================================
     // discovery.executeMainMenuCommand - Execute a main menu command
     //==========================================================================
-    json ExecuteMainMenuCommand(const json& params) {
-        std::string guidStr = params.value("guid", "");
-        if (guidStr.empty()) {
-            return {{"success", false}, {"error", "guid is required"}};
-        }
-        
+    api::Result<discovery::ExecuteMainMenuCommandResult> ExecuteMainMenuCommand(
+        const discovery::ExecuteMainMenuCommandParams& params) {
         GUID cmdGuid;
-        if (!StringToGuid(guidStr, cmdGuid)) {
-            return {{"success", false}, {"error", "Invalid GUID format"}};
+        if (!StringToGuid(params.guid, cmdGuid)) {
+            return api::Fail("Invalid GUID format", ApiErrorCode::INVALID_PARAMS);
         }
 
         // Dynamic children reported by getMainMenuCommands are addressed by the
         // owning command GUID plus the node subGuid; g_execute alone cannot
         // reach them.
-        std::string subGuidStr = params.value("subGuid", "");
-        if (!subGuidStr.empty()) {
+        if (params.subGuid.has_value() && !params.subGuid->empty()) {
             GUID subGuid;
-            if (!StringToGuid(subGuidStr, subGuid)) {
-                return {{"success", false}, {"error", "Invalid subGuid format"}};
+            if (!StringToGuid(*params.subGuid, subGuid)) {
+                return api::Fail("Invalid subGuid format", ApiErrorCode::INVALID_PARAMS);
             }
 
-            bool executedDynamic = mainmenu_commands::g_execute_dynamic(cmdGuid, subGuid);
-            return {
-                {"success", executedDynamic},
-                {"guid", guidStr},
-                {"subGuid", subGuidStr},
-                {"dynamic", true}
-            };
+            if (!mainmenu_commands::g_execute_dynamic(cmdGuid, subGuid)) {
+                return api::Fail("No dynamic main-menu command owns this guid and subGuid",
+                                 ApiErrorCode::NOT_FOUND,
+                                 {{"guid", params.guid}, {"subGuid", *params.subGuid}, {"dynamic", true}});
+            }
+            discovery::ExecuteMainMenuCommandResult result;
+            result.guid = params.guid;
+            result.subGuid = *params.subGuid;
+            result.dynamic = true;
+            return result;
         }
-        
-        bool executed = mainmenu_commands::g_execute(cmdGuid);
-        
-        return {
-            {"success", executed},
-            {"guid", guidStr},
-            {"dynamic", false}
-        };
+
+        if (!mainmenu_commands::g_execute(cmdGuid)) {
+            return api::Fail("No main-menu command owns this guid", ApiErrorCode::NOT_FOUND,
+                             {{"guid", params.guid}, {"dynamic", false}});
+        }
+        discovery::ExecuteMainMenuCommandResult result;
+        result.guid = params.guid;
+        result.dynamic = false;
+        return result;
     }
-    
+
     //==========================================================================
     // discovery.getMainMenuGroups - Get main menu groups
     //==========================================================================
-    json GetMainMenuGroups(const json& /*params*/) {
-        json groups = json::array();
-        
+    api::Result<discovery::GetMainMenuGroupsResult> GetMainMenuGroups(
+        const discovery::GetMainMenuGroupsParams& /*params*/) {
+        discovery::GetMainMenuGroupsResult result;
+
         service_enum_t<mainmenu_group> e;
         service_ptr_t<mainmenu_group> ptr;
-        
+
         while (e.next(ptr)) {
             GUID guid = ptr->get_guid();
             GUID parentGuid = ptr->get_parent();
-            
+
             // Try to get group name (if it's a popup type)
             std::string name;
             service_ptr_t<mainmenu_group_popup> popup;
@@ -375,167 +370,149 @@ namespace {
                 popup->get_display_string(popupName);
                 name = SafeUtf8String(popupName.get_ptr());
             }
-            
-            groups.push_back({
-                {"guid", GuidToString(guid)},
-                {"parentGuid", GuidToString(parentGuid)},
-                {"name", name},
-                {"sortPriority", ptr->get_sort_priority()}
-            });
+
+            discovery::DiscoveryMainMenuGroup group;
+            group.guid = GuidToString(guid);
+            group.parentGuid = GuidToString(parentGuid);
+            group.name = name;
+            group.sortPriority = ptr->get_sort_priority();
+            result.groups.push_back(std::move(group));
         }
-        
-        return {
-            {"success", true},
-            {"groups", groups},
-            {"count", groups.size()}
-        };
+
+        result.count = static_cast<std::int64_t>(result.groups.size());
+        return result;
     }
-    
+
     //==========================================================================
     // discovery.getInputFormats - Get supported input formats
     //==========================================================================
-    json GetInputFormats(const json& /*params*/) {
-        json fileTypes = json::array();
-        
+    api::Result<discovery::GetInputFormatsResult> GetInputFormats(
+        const discovery::GetInputFormatsParams& /*params*/) {
+        discovery::GetInputFormatsResult result;
+
         service_enum_t<input_file_type> eft;
         service_ptr_t<input_file_type> pft;
-        
+
         while (eft.next(pft)) {
             t_uint32 count = pft->get_count();
             for (t_uint32 i = 0; i < count; i++) {
                 pfc::string8 name, mask;
                 pft->get_name(i, name);
                 pft->get_mask(i, mask);
-                
-                fileTypes.push_back({
-                    {"name", name.get_ptr()},
-                    {"mask", mask.get_ptr()},
-                    {"index", i}
-                });
+
+                discovery::DiscoveryInputFormatType type;
+                type.name = SafeUtf8String(name.get_ptr());
+                type.mask = SafeUtf8String(mask.get_ptr());
+                type.index = i;
+                result.fileTypes.push_back(std::move(type));
             }
         }
-        
-        return {
-            {"success", true},
-            {"fileTypes", fileTypes},
-            {"count", fileTypes.size()}
-        };
+
+        result.count = static_cast<std::int64_t>(result.fileTypes.size());
+        return result;
     }
-    
+
     //==========================================================================
     // discovery.getComponents - Get installed components
     //==========================================================================
-    json GetComponents(const json& /*params*/) {
-        json components = json::array();
-        
+    api::Result<discovery::GetComponentsResult> GetComponents(
+        const discovery::GetComponentsParams& /*params*/) {
+        discovery::GetComponentsResult result;
+
         service_enum_t<componentversion> e;
         service_ptr_t<componentversion> ptr;
-        
+
         while (e.next(ptr)) {
             pfc::string8 filename, name, version, about;
             ptr->get_file_name(filename);
             ptr->get_component_name(name);
             ptr->get_component_version(version);
             ptr->get_about_message(about);
-            
-            components.push_back({
-                {"filename", filename.get_ptr()},
-                {"name", name.get_ptr()},
-                {"version", version.get_ptr()},
-                {"about", about.get_ptr()}
-            });
+
+            discovery::DiscoveryComponentInfo component;
+            component.filename = SafeUtf8String(filename.get_ptr());
+            component.name = SafeUtf8String(name.get_ptr());
+            component.version = SafeUtf8String(version.get_ptr());
+            component.about = SafeUtf8String(about.get_ptr());
+            result.components.push_back(std::move(component));
         }
-        
-        return {
-            {"success", true},
-            {"components", components},
-            {"count", components.size()}
-        };
+
+        result.count = static_cast<std::int64_t>(result.components.size());
+        return result;
     }
-    
+
     //==========================================================================
     // discovery.getUIElements - Get UI elements
     //==========================================================================
-    json GetUIElements(const json& /*params*/) {
-        json elements = json::array();
-        
+    api::Result<discovery::GetUIElementsResult> GetUIElements(
+        const discovery::GetUIElementsParams& /*params*/) {
+        discovery::GetUIElementsResult result;
+
         service_enum_t<ui_element> e;
         service_ptr_t<ui_element> ptr;
-        
+
         while (e.next(ptr)) {
             pfc::string8 name, desc;
             ptr->get_name(name);
             ptr->get_description(desc);
-            
-            GUID guid = ptr->get_guid();
-            GUID subclass = ptr->get_subclass();
-            
-            elements.push_back({
-                {"guid", GuidToString(guid)},
-                {"subclassGuid", GuidToString(subclass)},
-                {"name", name.get_ptr()},
-                {"description", desc.get_ptr()},
-                {"isUserAddable", ptr->is_user_addable()}
-            });
+
+            discovery::DiscoveryUIElementInfo element;
+            element.guid = GuidToString(ptr->get_guid());
+            element.subclassGuid = GuidToString(ptr->get_subclass());
+            element.name = SafeUtf8String(name.get_ptr());
+            element.description = SafeUtf8String(desc.get_ptr());
+            element.isUserAddable = ptr->is_user_addable();
+            result.elements.push_back(std::move(element));
         }
-        
-        return {
-            {"success", true},
-            {"elements", elements},
-            {"count", elements.size()}
-        };
+
+        result.count = static_cast<std::int64_t>(result.elements.size());
+        return result;
     }
-    
+
     //==========================================================================
     // discovery.getDspEntries - Get DSP entries
     //==========================================================================
-    json GetDspEntries(const json& /*params*/) {
-        json entries = json::array();
-        
+    api::Result<discovery::GetDspEntriesResult> GetDspEntries(
+        const discovery::GetDspEntriesParams& /*params*/) {
+        discovery::GetDspEntriesResult result;
+
         service_enum_t<dsp_entry> e;
         service_ptr_t<dsp_entry> ptr;
-        
+
         while (e.next(ptr)) {
             pfc::string8 name;
             ptr->get_name(name);
-            
-            entries.push_back({
-                {"guid", GuidToString(ptr->get_guid())},
-                {"name", name.get_ptr()}
-            });
+
+            discovery::DiscoveryDspEntryInfo entry;
+            entry.guid = GuidToString(ptr->get_guid());
+            entry.name = SafeUtf8String(name.get_ptr());
+            result.entries.push_back(std::move(entry));
         }
-        
-        return {
-            {"success", true},
-            {"entries", entries},
-            {"count", entries.size()}
-        };
+
+        result.count = static_cast<std::int64_t>(result.entries.size());
+        return result;
     }
-    
+
     //==========================================================================
     // discovery.getOutputDevices - Get output devices
     //==========================================================================
-    json GetOutputDevices(const json& /*params*/) {
-        json devices = json::array();
-        
+    api::Result<discovery::GetOutputDevicesResult> GetOutputDevices(
+        const discovery::GetOutputDevicesParams& /*params*/) {
+        discovery::GetOutputDevicesResult result;
+
         service_enum_t<output_entry> e;
         service_ptr_t<output_entry> ptr;
-        
+
         while (e.next(ptr)) {
-            GUID guid = ptr->get_guid();
-            
-            devices.push_back({
-                {"guid", GuidToString(guid)}
-            });
+            discovery::DiscoveryOutputDeviceEntry device;
+            device.guid = GuidToString(ptr->get_guid());
+            result.devices.push_back(std::move(device));
         }
-        
-        return {
-            {"success", true},
-            {"devices", devices},
-            {"count", devices.size()}
-        };
+
+        result.count = static_cast<std::int64_t>(result.devices.size());
+        return result;
     }
-    
+
     //==========================================================================
     // discovery.getContextMenuCommands - Get context menu commands (most plugins)
     //==========================================================================
@@ -589,7 +566,8 @@ namespace {
     // Shared context-menu enumeration. Extracted so search and the aggregate
     // summary see exactly the entries `discovery.getContextMenuCommands`
     // reports, instead of each endpoint growing its own partial walk.
-    json CollectContextMenuCommands(bool includeHidden, ContextMenuScan& scan) {
+    std::vector<discovery::DiscoveryContextMenuCommand> CollectContextMenuCommands(
+        bool includeHidden, ContextMenuScan& scan) {
         // `item_get_display_data_root()` takes a metadb_handle_list, so display
         // flags are only readable when something is selected or playing. Without
         // a selection the listing still works (it did before this change and
@@ -603,7 +581,7 @@ namespace {
         scan.selectionCount = selection.get_count();
         scan.hiddenFiltered = 0;
 
-        json commands = json::array();
+        std::vector<discovery::DiscoveryContextMenuCommand> commands;
 
         service_enum_t<contextmenu_item> e;
         service_ptr_t<contextmenu_item> ptr;
@@ -678,48 +656,39 @@ namespace {
                         menu_node::Kind::Command, /*isDynamicParent=*/false,
                         !label.empty(), cmdGuid != pfc::guid_null);
 
-                commands.push_back({
-                    {"name", label},
-                    {"description", haveDesc ? SafeUtf8String(desc.get_ptr()) : std::string()},
-                    {"guid", GuidToString(cmdGuid)},
-                    {"parentGuid", GuidToString(parentGuid)},
-                    {"index", i},
-                    {"enabled", state.enabled},
-                    {"checked", state.checked},
-                    {"radioChecked", state.radioChecked},
-                    {"hidden", state.hidden},
-                    {"stateKnown", state.stateKnown},
-                    {"flags", state.flags},
-                    {"source", menu_node::ToString(menu_node::Source::ContextMenuStatic)},
-                    {"executable", menu_node::IsExecutable(reason)},
-                    {"unaddressableReason", menu_node::ToString(reason)}
-                });
+                discovery::DiscoveryContextMenuCommand item;
+                item.name = label;
+                item.description = haveDesc ? SafeUtf8String(desc.get_ptr()) : std::string();
+                item.guid = GuidToString(cmdGuid);
+                item.parentGuid = GuidToString(parentGuid);
+                item.index = i;
+                AssignState(item, state);
+                item.source = menu_node::ToString(menu_node::Source::ContextMenuStatic);
+                item.executable = menu_node::IsExecutable(reason);
+                item.unaddressableReason = menu_node::ToString(reason);
+                commands.push_back(std::move(item));
             }
         }
 
         return commands;
     }
 
-    json GetContextMenuCommands(const json& params) {
+    api::Result<discovery::GetContextMenuCommandsResult> GetContextMenuCommands(
+        const discovery::GetContextMenuCommandsParams& params) {
         // Hidden entries are filtered by default for the same reason as the main
         // menu: FORCE_OFF items are shortcut-list-only per the SDK, so listing
         // them as invocable commands misleads callers.
-        const bool includeHidden = params.value("includeHidden", false);
-
         ContextMenuScan scan;
-        json commands = CollectContextMenuCommands(includeHidden, scan);
-
-        return {
-            {"success", true},
-            {"commands", commands},
-            {"count", commands.size()},
-            {"includeHidden", includeHidden},
-            {"hiddenFiltered", scan.hiddenFiltered},
-            {"stateKnown", scan.stateKnown},
-            {"selectionCount", scan.selectionCount}
-        };
+        discovery::GetContextMenuCommandsResult result;
+        result.commands = CollectContextMenuCommands(params.includeHidden, scan);
+        result.count = static_cast<std::int64_t>(result.commands.size());
+        result.includeHidden = params.includeHidden;
+        result.hiddenFiltered = scan.hiddenFiltered;
+        result.stateKnown = scan.stateKnown;
+        result.selectionCount = static_cast<std::int64_t>(scan.selectionCount);
+        return result;
     }
-    
+
     //==========================================================================
     // discovery.executeContextMenuCommand - Execute a context menu command
     //==========================================================================
@@ -763,40 +732,36 @@ namespace {
         return false;
     }
 
-    json ExecuteContextMenuCommand(const json& params) {
-        std::string guidStr = params.value("guid", "");
-        if (guidStr.empty()) {
-            return {{"success", false}, {"error", "guid is required"}};
-        }
-        
-        GUID cmdGuid;
-        if (!StringToGuid(guidStr, cmdGuid)) {
-            return {{"success", false}, {"error", "Invalid GUID format"}};
-        }
-        
-        // Get the currently playing track or first selected track
-        metadb_handle_list items;
-        
-        // Try to get playing item first
+    // The track set a context command runs against: the playing track, else the
+    // active playlist selection. Returns false when there is neither.
+    bool TryGetContextTarget(metadb_handle_list& items) {
+        items.remove_all();
         auto pc = playback_control::get();
         metadb_handle_ptr nowPlaying;
         if (pc->get_now_playing(nowPlaying)) {
             items.add_item(nowPlaying);
         } else {
-            // Get active playlist selection
-            auto pm = playlist_manager::get();
-            pm->activeplaylist_get_selected_items(items);
+            playlist_manager::get()->activeplaylist_get_selected_items(items);
         }
-        
-        if (items.get_count() == 0) {
-            return {{"success", false}, {"error", "No track selected or playing"}};
+        return items.get_count() != 0;
+    }
+
+    api::Result<discovery::ExecuteContextMenuCommandResult> ExecuteContextMenuCommand(
+        const discovery::ExecuteContextMenuCommandParams& params) {
+        GUID cmdGuid;
+        if (!StringToGuid(params.guid, cmdGuid)) {
+            return api::Fail("Invalid GUID format", ApiErrorCode::INVALID_PARAMS);
+        }
+
+        metadb_handle_list items;
+        if (!TryGetContextTarget(items)) {
+            return api::Fail("No track selected or playing", ApiErrorCode::NO_ACTIVE_ITEM);
         }
 
         // Pre-flight check before run_command_context: the SDK documents a
         // FORCE_OFF command as shortcut-list-only and never shown in the real
         // menu, so it is not dispatched like an ordinary entry. Callers can opt
         // out with `force`.
-        const bool force = params.value("force", false);
         menu_node::ContextEnabledState enabledState =
             menu_node::ContextEnabledState::DefaultOn;
         std::string resolvedName;
@@ -809,44 +774,47 @@ namespace {
             resolved && enabledState == menu_node::ContextEnabledState::ForceOff;
 
         if (resolved &&
-            menu_node::ShouldRefuseExecution(enabledState, force)) {
+            menu_node::ShouldRefuseExecution(enabledState, params.force)) {
             // FORCE_OFF is not an addressability problem — the command has a
             // perfectly good GUID — so this is reported as "hidden for the
             // current selection", not as an unaddressable node.
-            return {
-                {"success", false},
-                {"error", "Command is not available for the current selection"},
-                {"guid", guidStr},
-                {"name", resolvedName},
-                {"hidden", true},
-                {"resolved", resolved},
-                {"force", force}
-            };
+            return api::Fail("Command is not available for the current selection",
+                             ApiErrorCode::NOT_SUPPORTED,
+                             {{"guid", params.guid}, {"name", resolvedName}, {"hidden", true},
+                              {"resolved", resolved}, {"force", params.force}});
         }
-        
-        // Execute the context menu command
-        bool executed = menu_helpers::run_command_context(cmdGuid, pfc::guid_null, items);
-        
+
+        if (!menu_helpers::run_command_context(cmdGuid, pfc::guid_null, items)) {
+            if (!resolved) {
+                return api::Fail("No context-menu command owns this guid", ApiErrorCode::NOT_FOUND,
+                                 {{"guid", params.guid}, {"hidden", false}, {"resolved", false},
+                                  {"force", params.force}});
+            }
+            return api::Fail("foobar2000 did not run the command", ApiErrorCode::OPERATION_FAILED,
+                             {{"guid", params.guid}, {"name", resolvedName}, {"hidden", hidden},
+                              {"resolved", resolved}, {"force", params.force},
+                              {"itemCount", items.get_count()}});
+        }
+
         // `hidden` is reported on both paths on purpose: with it only on the
         // refusal branch, a caller could not tell "was not refused" apart from
         // "this build does not report the field".
-        return {
-            {"success", executed},
-            {"guid", guidStr},
-            {"name", resolvedName},
-            {"hidden", hidden},
-            {"resolved", resolved},
-            {"force", force},
-            {"itemCount", items.get_count()}
-        };
+        discovery::ExecuteContextMenuCommandResult result;
+        result.guid = params.guid;
+        result.name = resolvedName;
+        result.hidden = hidden;
+        result.resolved = resolved;
+        result.force = params.force;
+        result.itemCount = static_cast<std::int64_t>(items.get_count());
+        return result;
     }
-    
+
     //==========================================================================
     // discovery.executeContextMenuByPath - Execute context menu by path name
     // Supports dynamic sub-menus like "Playback Statistics/Rating/5"
     // Uses contextmenu_manager to traverse the full menu tree
     //==========================================================================
-    
+
     // Collects EVERY node whose path matches, rather than returning the first
     // hit. The previous matcher accepted a substring hit in either direction and
     // took the first winner, so "Rating/1" could resolve to "Rating/10" and
@@ -904,55 +872,37 @@ namespace {
         }
     }
 
-    json ExecuteContextMenuByPath(const json& params) {
-        std::string path = params.value("path", "");
-        std::string trackPath = params.value("trackPath", "");
-        
-        if (path.empty()) {
-            return {{"success", false}, {"error", "path is required (e.g. 'Playback Statistics/Rating/5')"}};
-        }
-        
+    api::Result<discovery::ExecuteContextMenuByPathResult> ExecuteContextMenuByPath(
+        const discovery::ExecuteContextMenuByPathParams& params) {
         // Get target track(s)
         metadb_handle_list items;
-        
-        if (!trackPath.empty()) {
-            pfc::string8 canonicalPath;
-            filesystem::g_get_canonical_path(trackPath.c_str(), canonicalPath);
-            auto mdb = metadb::get();
-            metadb_handle_ptr handle = mdb->handle_create(canonicalPath.c_str(), 0);
+
+        if (params.trackPath.has_value() && !params.trackPath->empty()) {
+            // 曲目路径可带 "|subsong:N"：拆掉后缀再规范化，CUE 子曲目按自身执行命令，
+            // 不带后缀时指第一首。
+            metadb_handle_ptr handle = SubsongUtils::CreateTrackHandle(*params.trackPath);
             if (handle.is_valid()) {
                 items.add_item(handle);
             }
         }
-        
-        if (items.get_count() == 0) {
-            auto pc = playback_control::get();
-            metadb_handle_ptr nowPlaying;
-            if (pc->get_now_playing(nowPlaying)) {
-                items.add_item(nowPlaying);
-            } else {
-                auto pm = playlist_manager::get();
-                pm->activeplaylist_get_selected_items(items);
-            }
+
+        if (items.get_count() == 0 && !TryGetContextTarget(items)) {
+            return api::Fail("No track selected or playing", ApiErrorCode::NO_ACTIVE_ITEM);
         }
-        
-        if (items.get_count() == 0) {
-            return {{"success", false}, {"error", "No track selected or playing"}};
-        }
-        
+
         // Create context menu manager and initialize
         auto mgr = contextmenu_manager::g_create();
         mgr->init_context(items, contextmenu_manager::flag_view_full);
-        
+
         contextmenu_node* root = mgr->get_root();
         if (!root) {
-            return {{"success", false}, {"error", "Failed to create context menu"}};
+            return api::Fail("Failed to create context menu", ApiErrorCode::OPERATION_FAILED);
         }
-        
+
         // Split path and search for matching node
-        const std::vector<std::string> pathParts = menu_node::SplitPath(path);
+        const std::vector<std::string> pathParts = menu_node::SplitPath(params.path);
         if (pathParts.empty()) {
-            return {{"success", false}, {"error", "path contains no valid segments"}};
+            return api::Fail("path contains no valid segments", ApiErrorCode::INVALID_PARAMS);
         }
 
         // Walk from the root's children, collecting every match so an ambiguous
@@ -1002,13 +952,9 @@ namespace {
             menu_node::ClassifyMatch(matches.size());
 
         if (matchKind == menu_node::MatchKind::NotFound) {
-            return {
-                {"success", false},
-                {"error", "Command not found in menu tree: " + path},
-                {"path", path},
-                {"match", menu_node::ToString(matchKind)},
-                {"candidateCount", 0}
-            };
+            return api::Fail("Command not found in menu tree: " + params.path, ApiErrorCode::NOT_FOUND,
+                             {{"path", params.path}, {"match", menu_node::ToString(matchKind)},
+                              {"candidateCount", 0}});
         }
 
         // Refusing to guess is deliberate: the live host has duplicated labels
@@ -1016,14 +962,10 @@ namespace {
         // one happened to be enumerated first is a correctness bug, not a
         // convenience.
         if (matchKind == menu_node::MatchKind::Ambiguous) {
-            return {
-                {"success", false},
-                {"error", "Path is ambiguous; refine it to address one command: " + path},
-                {"path", path},
-                {"match", menu_node::ToString(matchKind)},
-                {"candidateCount", matches.size()},
-                {"candidates", matchNames}
-            };
+            return api::Fail("Path is ambiguous; refine it to address one command: " + params.path,
+                             ApiErrorCode::INVALID_PARAMS,
+                             {{"path", params.path}, {"match", menu_node::ToString(matchKind)},
+                              {"candidateCount", matches.size()}, {"candidates", matchNames}});
         }
 
         contextmenu_node* targetNode = matches.front();
@@ -1031,46 +973,42 @@ namespace {
         // Execute the command
         try {
             targetNode->execute();
-            
+
             pfc::string8 fullName;
             targetNode->get_full_name(fullName);
-            
-            return {
-                {"success", true},
-                {"path", path},
-                {"foundName", SafeUtf8String(fullName.get_ptr())},
-                {"match", menu_node::ToString(matchKind)},
-                {"candidateCount", matches.size()},
-                {"itemCount", items.get_count()}
-            };
+
+            discovery::ExecuteContextMenuByPathResult result;
+            result.path = params.path;
+            result.foundName = SafeUtf8String(fullName.get_ptr());
+            result.match = menu_node::ToString(matchKind);
+            result.candidateCount = static_cast<std::int64_t>(matches.size());
+            result.itemCount = static_cast<std::int64_t>(items.get_count());
+            return result;
         } catch (...) {
-            return {{"success", false}, {"error", "Failed to execute command"}};
+            return api::Fail("Failed to execute command", ApiErrorCode::OPERATION_FAILED);
         }
     }
-    
+
     //==========================================================================
     // discovery.getContextMenuTree - Full context menu tree structure
     //==========================================================================
 
-    // Recursively dumps the menu tree. Both traversal limits now come from the
-    // shared contract and, more importantly, are REPORTED: the previous walk
-    // capped children at 50 and depth at 10 while still emitting the true
-    // childCount, so `children.length != childCount` with nothing explaining it.
-    json DumpMenuNode(contextmenu_node* node,
-                      int depth,
-                      menu_node::Truncation& truncation) {
-        if (!node) return nullptr;
-
-        json result;
+    // Recursively dumps the menu tree. Both traversal limits come from the
+    // shared contract and, more importantly, are REPORTED: a walk that clipped
+    // children or depth says so on the node, and the flags propagate upward.
+    discovery::DiscoveryContextMenuTreeNode DumpMenuNode(contextmenu_node* node,
+                                                         int depth,
+                                                         menu_node::Truncation& truncation) {
+        discovery::DiscoveryContextMenuTreeNode result;
 
         const char* name = node->get_name();
-        result["name"] = SafeUtf8String(name ? name : "(null)");
+        result.name = SafeUtf8String(name ? name : "(null)");
 
         auto type = node->get_type();
-        result["type"] = (type == contextmenu_item_node::TYPE_COMMAND) ? "command" :
-                         (type == contextmenu_item_node::TYPE_POPUP) ? "popup" :
-                         (type == contextmenu_item_node::TYPE_SEPARATOR) ? "separator" : "unknown";
-        result["depth"] = depth;
+        result.type = (type == contextmenu_item_node::TYPE_COMMAND) ? "command" :
+                      (type == contextmenu_item_node::TYPE_POPUP) ? "popup" :
+                      (type == contextmenu_item_node::TYPE_SEPARATOR) ? "separator" : "unknown";
+        result.depth = depth;
 
         // A separator carries no state and no identity, so only its kind is
         // meaningful; commands and popups both report display flags.
@@ -1087,12 +1025,12 @@ namespace {
             const menu_node::State state = menu_node::NormalizeContextMenu(
                 displayFlags, /*displayReturnedTrue=*/true,
                 menu_node::ContextEnabledState::DefaultOn);
-            result["enabled"] = state.enabled;
-            result["checked"] = state.checked;
-            result["radioChecked"] = state.radioChecked;
-            result["hidden"] = state.hidden;
-            result["stateKnown"] = state.stateKnown;
-            result["flags"] = state.flags;
+            result.enabled = state.enabled;
+            result.checked = state.checked;
+            result.radioChecked = state.radioChecked;
+            result.hidden = state.hidden;
+            result.stateKnown = state.stateKnown;
+            result.flags = static_cast<std::int64_t>(state.flags);
         }
 
         if (type == contextmenu_item_node::TYPE_COMMAND) {
@@ -1101,7 +1039,7 @@ namespace {
                 node->get_full_name(fullName);
             } catch (...) {
             }
-            result["fullName"] = SafeUtf8String(fullName.get_ptr());
+            result.fullName = SafeUtf8String(fullName.get_ptr());
         }
 
         menu_node::Truncation local;
@@ -1113,13 +1051,13 @@ namespace {
             } catch (...) {
                 childCount = 0;
             }
-            result["childCount"] = childCount;
+            result.childCount = static_cast<std::int64_t>(childCount);
 
             const menu_node::ChildWalkPlan plan =
                 menu_node::PlanChildWalk(depth, childCount);
             local.merge(plan.truncation);
 
-            json children = json::array();
+            std::vector<discovery::DiscoveryContextMenuTreeNode> children;
             for (t_size i = 0; i < plan.visitCount; i++) {
                 contextmenu_node* child = nullptr;
                 try {
@@ -1129,366 +1067,256 @@ namespace {
                 }
                 if (!child) continue;
 
-                json childJson = DumpMenuNode(child, depth + 1, local);
-                if (!childJson.is_null()) {
-                    children.push_back(childJson);
-                }
+                children.push_back(DumpMenuNode(child, depth + 1, local));
             }
             // Emitted so `childCount` can be reconciled with what was actually
             // returned without the caller having to count the array itself.
-            result["childrenReturned"] = children.size();
-            result["children"] = children;
+            result.childrenReturned = static_cast<std::int64_t>(children.size());
+            result.children = std::move(children);
         }
 
-        result["truncated"] = local.any();
-        result["depthExceeded"] = local.depthExceeded;
-        result["childrenExceeded"] = local.childrenExceeded;
+        result.truncated = local.any();
+        result.depthExceeded = local.depthExceeded;
+        result.childrenExceeded = local.childrenExceeded;
 
         truncation.merge(local);
         return result;
     }
 
-    json GetContextMenuTree(const json& /*params*/) {
-        // Get target track
+    api::Result<discovery::GetContextMenuTreeResult> GetContextMenuTree(
+        const discovery::GetContextMenuTreeParams& /*params*/) {
         metadb_handle_list items;
-        
-        auto pc = playback_control::get();
-        metadb_handle_ptr nowPlaying;
-        if (pc->get_now_playing(nowPlaying)) {
-            items.add_item(nowPlaying);
-        } else {
-            auto pm = playlist_manager::get();
-            pm->activeplaylist_get_selected_items(items);
+        if (!TryGetContextTarget(items)) {
+            return api::Fail("No track selected or playing", ApiErrorCode::NO_ACTIVE_ITEM);
         }
-        
-        if (items.get_count() == 0) {
-            return {{"success", false}, {"error", "No track selected or playing"}};
-        }
-        
+
         // Create context menu manager
         auto mgr = contextmenu_manager::g_create();
         mgr->init_context(items, contextmenu_manager::flag_view_full);
-        
+
         contextmenu_node* root = mgr->get_root();
         if (!root) {
-            return {{"success", false}, {"error", "Failed to create context menu"}};
+            return api::Fail("Failed to create context menu", ApiErrorCode::OPERATION_FAILED);
         }
-        
+
         // Dump the tree, carrying truncation up to the response so a caller can
         // tell a complete tree from a clipped one.
         menu_node::Truncation truncation;
-        json tree = DumpMenuNode(root, /*depth=*/0, truncation);
-        
-        return {
-            {"success", true},
-            {"tree", tree},
-            {"truncated", truncation.any()},
-            {"depthExceeded", truncation.depthExceeded},
-            {"childrenExceeded", truncation.childrenExceeded},
-            {"maxDepth", menu_node::kMaxMenuTreeDepth},
-            {"maxChildrenPerNode", menu_node::kMaxChildrenPerNode},
-            {"itemCount", items.get_count()}
-        };
+        discovery::GetContextMenuTreeResult result;
+        result.tree = DumpMenuNode(root, /*depth=*/0, truncation);
+        result.truncated = truncation.any();
+        result.depthExceeded = truncation.depthExceeded;
+        result.childrenExceeded = truncation.childrenExceeded;
+        result.maxDepth = menu_node::kMaxMenuTreeDepth;
+        result.maxChildrenPerNode = menu_node::kMaxChildrenPerNode;
+        result.itemCount = static_cast<std::int64_t>(items.get_count());
+        return result;
     }
+
+    //==========================================================================
     // discovery.getPreferencePages - Get preference pages
     //==========================================================================
-    json GetPreferencePages(const json& /*params*/) {
-        json pages = json::array();
-        
+    api::Result<discovery::GetPreferencePagesResult> GetPreferencePages(
+        const discovery::GetPreferencePagesParams& /*params*/) {
+        discovery::GetPreferencePagesResult result;
+
         service_enum_t<preferences_page> e;
         service_ptr_t<preferences_page> ptr;
-        
+
         while (e.next(ptr)) {
             const char* name = ptr->get_name();
-            
-            GUID guid = ptr->get_guid();
-            GUID parentGuid = ptr->get_parent_guid();
-            
-            pages.push_back({
-                {"guid", GuidToString(guid)},
-                {"parentGuid", GuidToString(parentGuid)},
-                {"name", name ? name : ""}
-            });
+
+            discovery::DiscoveryPreferencePageInfo page;
+            page.guid = GuidToString(ptr->get_guid());
+            page.parentGuid = GuidToString(ptr->get_parent_guid());
+            page.name = SafeUtf8String(name ? name : "");
+            result.pages.push_back(std::move(page));
         }
-        
-        return {
-            {"success", true},
-            {"pages", pages},
-            {"count", pages.size()}
-        };
+
+        result.count = static_cast<std::int64_t>(result.pages.size());
+        return result;
     }
-    
+
     //==========================================================================
     // discovery.getAllServices - Get all discoverable services summary
     //==========================================================================
-    json GetAllServices(const json& /*params*/) {
-        // Count each service type
-        int mainMenuCommands = 0;
-        int mainMenuGroups = 0;
-        int inputFormats = 0;
-        int uiElements = 0;
-        int dspEntries = 0;
-        int outputDevices = 0;
-        int preferencePages = 0;
-        int components = 0;
-        
+    // Number of registered services of one kind.
+    template <class Service>
+    std::int64_t CountServices() {
+        service_enum_t<Service> e;
+        service_ptr_t<Service> ptr;
+        std::int64_t n = 0;
+        while (e.next(ptr)) ++n;
+        return n;
+    }
+
+    api::Result<discovery::GetAllServicesResult> GetAllServices(
+        const discovery::GetAllServicesParams& /*params*/) {
+        discovery::DiscoveryServiceCounts counts;
+
         // Main menu commands (dynamic v2 subtrees included, mirroring
         // discovery.getMainMenuCommands so the summary matches the listing).
         // includeHidden tracks that endpoint's default, otherwise this count
         // would silently stop matching the list it claims to summarize.
         int mainMenuDynamicCommands = 0;
         {
-            json commands = CollectMainMenuCommands(
+            const auto commands = CollectMainMenuCommands(
                 /*expandDynamic=*/true, /*includeHidden=*/false,
                 mainMenuDynamicCommands);
-            mainMenuCommands = static_cast<int>(commands.size());
+            counts.mainMenuCommands = static_cast<std::int64_t>(commands.size());
+            counts.mainMenuDynamicCommands = mainMenuDynamicCommands;
         }
-        
+
         // Context-menu commands, counted through the same walk
         // discovery.getContextMenuCommands uses, so the summary covers both menu
         // families of the discoverable surface.
-        int contextMenuCommands = 0;
-        int contextMenuHiddenFiltered = 0;
-        bool contextMenuStateKnown = false;
+        ContextMenuScan scan;
         {
-            ContextMenuScan scan;
-            json commands = CollectContextMenuCommands(/*includeHidden=*/false, scan);
-            contextMenuCommands = static_cast<int>(commands.size());
-            contextMenuHiddenFiltered = scan.hiddenFiltered;
-            contextMenuStateKnown = scan.stateKnown;
+            const auto commands = CollectContextMenuCommands(/*includeHidden=*/false, scan);
+            counts.contextMenuCommands = static_cast<std::int64_t>(commands.size());
         }
-        
-        // Main menu groups
-        {
-            service_enum_t<mainmenu_group> e;
-            service_ptr_t<mainmenu_group> ptr;
-            while (e.next(ptr)) {
-                mainMenuGroups++;
-            }
-        }
-        
-        // Input formats
+
+        // The remaining families are plain service counts.
+        counts.mainMenuGroups = CountServices<mainmenu_group>();
+        counts.uiElements = CountServices<ui_element>();
+        counts.dspEntries = CountServices<dsp_entry>();
+        counts.outputDevices = CountServices<output_entry>();
+        counts.preferencePages = CountServices<preferences_page>();
+        counts.components = CountServices<componentversion>();
         {
             service_enum_t<input_file_type> e;
             service_ptr_t<input_file_type> ptr;
-            while (e.next(ptr)) {
-                inputFormats += ptr->get_count();
-            }
+            std::int64_t n = 0;
+            while (e.next(ptr)) n += ptr->get_count();
+            counts.inputFormats = n;
         }
-        
-        // UI elements
-        {
-            service_enum_t<ui_element> e;
-            service_ptr_t<ui_element> ptr;
-            while (e.next(ptr)) {
-                uiElements++;
-            }
-        }
-        
-        // DSP
-        {
-            service_enum_t<dsp_entry> e;
-            service_ptr_t<dsp_entry> ptr;
-            while (e.next(ptr)) {
-                dspEntries++;
-            }
-        }
-        
-        // Output devices
-        {
-            service_enum_t<output_entry> e;
-            service_ptr_t<output_entry> ptr;
-            while (e.next(ptr)) {
-                outputDevices++;
-            }
-        }
-        
-        // Preference pages
-        {
-            service_enum_t<preferences_page> e;
-            service_ptr_t<preferences_page> ptr;
-            while (e.next(ptr)) {
-                preferencePages++;
-            }
-        }
-        
-        // Components
-        {
-            service_enum_t<componentversion> e;
-            service_ptr_t<componentversion> ptr;
-            while (e.next(ptr)) {
-                components++;
-            }
-        }
-        
-        return {
-            {"success", true},
-            {"services", {
-                {"mainMenuCommands", mainMenuCommands},
-                {"mainMenuDynamicCommands", mainMenuDynamicCommands},
-                {"mainMenuGroups", mainMenuGroups},
-                {"contextMenuCommands", contextMenuCommands},
-                {"inputFormats", inputFormats},
-                {"uiElements", uiElements},
-                {"dspEntries", dspEntries},
-                {"outputDevices", outputDevices},
-                {"preferencePages", preferencePages},
-                {"components", components}
-            }},
-            // Both menu families are filtered to what the host would show, so the
-            // counts stay comparable with the listing endpoints. The number of
-            // entries that filtering removed is reported rather than lost.
-            {"contextMenuHiddenFiltered", contextMenuHiddenFiltered},
-            {"stateKnown", contextMenuStateKnown},
-            {"totalServices", mainMenuCommands + mainMenuGroups +
-                              contextMenuCommands + inputFormats +
-                              uiElements + dspEntries + 
-                              outputDevices + preferencePages + components}
-        };
+
+        discovery::GetAllServicesResult result;
+        // Both menu families are filtered to what the host would show, so the
+        // counts stay comparable with the listing endpoints. The number of
+        // entries that filtering removed is reported rather than lost.
+        result.contextMenuHiddenFiltered = scan.hiddenFiltered;
+        result.stateKnown = scan.stateKnown;
+        result.totalServices = counts.mainMenuCommands + counts.mainMenuGroups +
+                               counts.contextMenuCommands + counts.inputFormats +
+                               counts.uiElements + counts.dspEntries +
+                               counts.outputDevices + counts.preferencePages + counts.components;
+        result.services = std::move(counts);
+        return result;
     }
-    
+
     //==========================================================================
     // discovery.searchCommands - Search menu commands
     //==========================================================================
 
-    // Copies the state vocabulary from an enumerated entry onto a search hit,
-    // so a caller can tell whether a hit is invocable without re-enumerating.
-    void CopyCommandStateToHit(const json& command, json& hit) {
-        static const char* const kStateKeys[] = {
-            "enabled", "checked", "radioChecked", "hidden",
-            "stateKnown", "flags", "source", "executable",
-            "unaddressableReason"
-        };
-        for (const char* key : kStateKeys) {
-            if (command.contains(key)) hit[key] = command[key];
-        }
-    }
-
-    bool CommandMatchesQuery(const json& command, const std::string& query) {
+    bool CommandMatchesQuery(const std::string& name, const std::string& description,
+                             const std::string& path, const std::string& query) {
         // Path is included because a command's identity is often only
         // distinguishable through its parent labels.
-        return menu_node::ContainsFolded(command.value("name", ""), query) ||
-               menu_node::ContainsFolded(command.value("description", ""), query) ||
-               menu_node::ContainsFolded(command.value("path", ""), query);
+        return menu_node::ContainsFolded(name, query) ||
+               menu_node::ContainsFolded(description, query) ||
+               menu_node::ContainsFolded(path, query);
     }
 
-    json SearchCommands(const json& params) {
-        std::string query = params.value("query", "");
-        if (query.empty()) {
-            return {{"success", false}, {"error", "query is required"}};
-        }
+    api::Result<discovery::SearchCommandsResult> SearchCommands(
+        const discovery::SearchCommandsParams& params) {
+        // The generated parser has already limited `scope` to the three names.
+        const menu_node::SearchScope scope = menu_node::ParseSearchScope(params.scope);
 
-        const bool expandDynamic = params.value("expandDynamic", true);
-        // Both menu families are searched by default. Restricting search to the
-        // main menu while hard-coding `type: "mainmenu"` made every right-click
-        // command unfindable and left the field carrying no information.
-        const menu_node::SearchScope scope =
-            menu_node::ParseSearchScope(params.value("scope", std::string()));
-        // Search matches against what the host would actually show, mirroring the
-        // enumeration endpoints; the historical superset is still reachable.
-        const bool includeHidden = params.value("includeHidden", false);
-
-        json results = json::array();
+        discovery::SearchCommandsResult result;
         int mainMenuHits = 0;
         int contextMenuHits = 0;
         int dynamicCount = 0;
         ContextMenuScan contextScan;
 
         if (menu_node::ScopeIncludesMainMenu(scope)) {
-            json commands =
-                CollectMainMenuCommands(expandDynamic, includeHidden, dynamicCount);
+            const auto commands =
+                CollectMainMenuCommands(params.expandDynamic, params.includeHidden, dynamicCount);
 
             for (const auto& command : commands) {
                 // A dynamic parent slot is only a container; its expanded children
                 // carry the executable identity, so skip it to avoid duplicate hits.
-                if (command.value("isDynamicParent", false)) continue;
-                if (!CommandMatchesQuery(command, query)) continue;
+                if (command.isDynamicParent) continue;
+                if (!CommandMatchesQuery(command.name, command.description, command.path, params.query)) continue;
 
-                json hit = {
-                    {"name", command.value("name", "")},
-                    {"description", command.value("description", "")},
-                    {"guid", command.value("guid", "")},
-                    {"path", command.value("path", "")},
-                    {"isDynamic", command.value("isDynamic", false)},
-                    {"type", menu_node::ToString(menu_node::SearchScope::MainMenu)}
-                };
-                if (command.contains("subGuid")) {
-                    hit["subGuid"] = command["subGuid"];
-                }
-                CopyCommandStateToHit(command, hit);
-
-                results.push_back(hit);
+                discovery::DiscoverySearchResult hit;
+                static_cast<discovery::MenuNodeState&>(hit) = command;
+                hit.name = command.name;
+                hit.description = command.description;
+                hit.guid = command.guid;
+                hit.path = command.path;
+                hit.isDynamic = command.isDynamic;
+                hit.type = menu_node::ToString(menu_node::SearchScope::MainMenu);
+                hit.subGuid = command.subGuid;
+                hit.source = command.source;
+                hit.executable = command.executable;
+                hit.unaddressableReason = command.unaddressableReason;
+                result.results.push_back(std::move(hit));
                 ++mainMenuHits;
             }
         }
 
         if (menu_node::ScopeIncludesContextMenu(scope)) {
-            json commands =
-                CollectContextMenuCommands(includeHidden, contextScan);
+            const auto commands =
+                CollectContextMenuCommands(params.includeHidden, contextScan);
 
             for (const auto& command : commands) {
-                if (!CommandMatchesQuery(command, query)) continue;
-
                 // Context entries have no menu path of their own — they are
                 // registered flat and placed by the host — so `path` falls back to
                 // the label rather than being fabricated.
-                json hit = {
-                    {"name", command.value("name", "")},
-                    {"description", command.value("description", "")},
-                    {"guid", command.value("guid", "")},
-                    {"path", command.value("name", "")},
-                    {"isDynamic", false},
-                    {"type", menu_node::ToString(menu_node::SearchScope::ContextMenu)}
-                };
-                CopyCommandStateToHit(command, hit);
+                if (!CommandMatchesQuery(command.name, command.description, command.name, params.query)) continue;
 
-                results.push_back(hit);
+                discovery::DiscoverySearchResult hit;
+                static_cast<discovery::MenuNodeState&>(hit) = command;
+                hit.name = command.name;
+                hit.description = command.description;
+                hit.guid = command.guid;
+                hit.path = command.name;
+                hit.isDynamic = false;
+                hit.type = menu_node::ToString(menu_node::SearchScope::ContextMenu);
+                hit.source = command.source;
+                hit.executable = command.executable;
+                hit.unaddressableReason = command.unaddressableReason;
+                result.results.push_back(std::move(hit));
                 ++contextMenuHits;
             }
         }
 
-        return {
-            {"success", true},
-            {"query", query},
-            {"results", results},
-            {"count", results.size()},
-            {"expandDynamic", expandDynamic},
-            {"scope", menu_node::ToString(scope)},
-            {"includeHidden", includeHidden},
-            {"mainMenuHits", mainMenuHits},
-            {"contextMenuHits", contextMenuHits},
-            // False when the context-menu side was searched without a selection:
-            // its enabled/checked values are unobservable then, so a caller must
-            // not filter hits on them.
-            {"stateKnown", menu_node::ScopeIncludesContextMenu(scope)
-                               ? contextScan.stateKnown : true}
-        };
+        result.query = params.query;
+        result.count = static_cast<std::int64_t>(result.results.size());
+        result.expandDynamic = params.expandDynamic;
+        result.scope = menu_node::ToString(scope);
+        result.includeHidden = params.includeHidden;
+        result.mainMenuHits = mainMenuHits;
+        result.contextMenuHits = contextMenuHits;
+        // False when the context-menu side was searched without a selection:
+        // its enabled/checked values are unobservable then, so a caller must
+        // not filter hits on them.
+        result.stateKnown = menu_node::ScopeIncludesContextMenu(scope) ? contextScan.stateKnown : true;
+        return result;
     }
-    
+
 } // anonymous namespace
 
 namespace discovery_api {
 
 void RegisterApis() {
-    auto& bridge = BridgeCore::GetInstance();
-    
-    // Service discovery APIs
-    bridge.RegisterApi("discovery.getAllServices", GetAllServices);
-    bridge.RegisterApi("discovery.getMainMenuCommands", GetMainMenuCommands);
-    bridge.RegisterApi("discovery.getMainMenuGroups", GetMainMenuGroups);
-    bridge.RegisterApi("discovery.executeMainMenuCommand", ExecuteMainMenuCommand);
-    bridge.RegisterApi("discovery.getContextMenuCommands", GetContextMenuCommands);
-    bridge.RegisterApi("discovery.executeContextMenuCommand", ExecuteContextMenuCommand);
-    bridge.RegisterApi("discovery.executeContextMenuByPath", ExecuteContextMenuByPath, {{"trackPath", SecurityLevel::MediaRead}});
-    bridge.RegisterApi("discovery.getContextMenuTree", GetContextMenuTree);
-    bridge.RegisterApi("discovery.getInputFormats", GetInputFormats);
-    bridge.RegisterApi("discovery.getComponents", GetComponents);
-    bridge.RegisterApi("discovery.getUIElements", GetUIElements);
-    bridge.RegisterApi("discovery.getDspEntries", GetDspEntries);
-    bridge.RegisterApi("discovery.getOutputDevices", GetOutputDevices);
-    bridge.RegisterApi("discovery.getPreferencePages", GetPreferencePages);
-    bridge.RegisterApi("discovery.searchCommands", SearchCommands);
-    
+    api::RegisterApi("discovery.getAllServices", GetAllServices);
+    api::RegisterApi("discovery.getMainMenuCommands", GetMainMenuCommands);
+    api::RegisterApi("discovery.getMainMenuGroups", GetMainMenuGroups);
+    api::RegisterApi("discovery.executeMainMenuCommand", ExecuteMainMenuCommand);
+    api::RegisterApi("discovery.getContextMenuCommands", GetContextMenuCommands);
+    api::RegisterApi("discovery.executeContextMenuCommand", ExecuteContextMenuCommand);
+    api::RegisterApi("discovery.executeContextMenuByPath", ExecuteContextMenuByPath);
+    api::RegisterApi("discovery.getContextMenuTree", GetContextMenuTree);
+    api::RegisterApi("discovery.getInputFormats", GetInputFormats);
+    api::RegisterApi("discovery.getComponents", GetComponents);
+    api::RegisterApi("discovery.getUIElements", GetUIElements);
+    api::RegisterApi("discovery.getDspEntries", GetDspEntries);
+    api::RegisterApi("discovery.getOutputDevices", GetOutputDevices);
+    api::RegisterApi("discovery.getPreferencePages", GetPreferencePages);
+    api::RegisterApi("discovery.searchCommands", SearchCommands);
+
     console::print("[DiscoveryApi] Registered 15 discovery APIs");
 }
 

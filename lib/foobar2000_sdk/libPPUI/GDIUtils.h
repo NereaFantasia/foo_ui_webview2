@@ -189,3 +189,5 @@ private:
 
 CSize GetBitmapSize(HBITMAP bmp);
 CSize GetIconSize(HICON icon);
+
+void NCPaintFrame(HWND wnd_, HRGN rgn_, COLORREF colorLeft, COLORREF colorTop, COLORREF colorRight, COLORREF colorBottom);

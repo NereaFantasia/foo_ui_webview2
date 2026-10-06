@@ -75,7 +75,7 @@ popup_message_v3::query_t popup_message_v3::setupMessageBox(fb2k::hwnd_t parent,
 	q.msg = msg;
 	q.wndParent = parent;
 
-	switch (flags & 0xF) {
+	switch (flags & MB_TYPEMASK) {
 	default:
 	case MB_OK:
 		q.buttons = buttonOK;
@@ -106,7 +106,7 @@ popup_message_v3::query_t popup_message_v3::setupMessageBox(fb2k::hwnd_t parent,
 		q.defButton = (flags & MB_DEFBUTTON2) ? buttonCancel : buttonRetry;
 		break;
 	}
-	switch (flags & 0xF0) {
+	switch (flags & MB_ICONMASK) {
 	case MB_ICONHAND:
 		q.icon = iconError;
 		break;

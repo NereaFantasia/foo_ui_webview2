@@ -1,5 +1,6 @@
 #include "foobar2000-sdk-pch.h"
 #include "configStore.h"
+#include "commonOptions.h"
 #ifdef FOOBAR2000_MOBILE
 #include "appearance.h"
 #endif
@@ -27,7 +28,7 @@ objRef configStore::addNotify( const char * name, std::function<void () > f ) {
 }
 void configStore::addPermanentNotify( const char * name, std::function<void () > f ) {
 	auto obj = new configStoreNotifyImpl;
-	obj->f = f;
+	obj->f = std::move(f);
 	this->addNotify(name, obj );
 }
 
@@ -122,6 +123,36 @@ void configEventRef::setFunction(std::function<void ()> f) {
     clear();
     PFC_ASSERT( m_name.length() > 0 );
     m_handle = configEvent( m_name ) += f;
+}
+
+void configStore::watchString( const char * name, const char * def_, std::function<void (const char*) > fn) {
+    fb2k::stringRef def = def_ ? fb2k::makeString(def_) : nullptr;
+    configStore::ptr pThis = this;
+    auto update = [pThis, name, def, fn] {
+        fn ( pThis->getConfigString(name, def)->c_str() );
+    };
+    addPermanentNotify(name, update);
+    update();
+}
+void configStore::watchInt( const char * name, int64_t def, std::function<void (int64_t) > fn) {
+    configStore::ptr pThis = this;
+    auto update = [pThis, name, def, fn] {
+        fn( pThis->getConfigInt(name, def) );
+    };
+    addPermanentNotify(name, update);
+    update();
+}
+void configStore::watchGUID( const char * name, GUID def, std::function<void (const GUID&) > fn ) {
+    configStore::ptr pThis = this;
+    auto update = [pThis, name, def, fn] {
+        fn( pThis->getConfigGUID(name, def) );
+    };
+    addPermanentNotify(name, update);
+    update();
+}
+
+bool fb2k::useSubsongs() {
+    return configStore::get()->getConfigBool(optionUseSubsongs, defaultUseSubsongs);
 }
 
 #ifdef FOOBAR2000_MOBILE

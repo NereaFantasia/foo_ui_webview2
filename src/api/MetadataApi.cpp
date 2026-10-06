@@ -1,15 +1,24 @@
 ﻿// MetadataApi.cpp - Metadata Editing API
 // Provides tag editing capabilities for audio files
+//
+// Shapes are declared in src/api/schema/metadata.ts; the parameter structs, the
+// parameter reader and the result structs come from the generated
+// MetadataSchema.h, and the path security levels from its kPathParams.
 
 #include "pch.h"
 #include "api/MetadataApi.h"
+#include "api/MetadataTagValues.h"
 #include "api/AsyncOperationRegistry.h"
 #include "api/BridgeCore.h"
 #include "api/CallerContext.h"
 #include "api/ErrorEnvelope.h"
+#include "api/EventEmit.h"
 #include "api/ProbeFailureClassifier.h"
 #include "api/RatingResolve.h"
-#include "utils/PathSecurity.h"
+#include "api/TypedApi.h"
+#include "api/generated/MetadataSchema.h"
+#include "api/generated/RatingSchema.h"
+#include "domain/PathSecurity.h"
 #include "utils/PathTraversalSegments.h"
 #include "utils/SubsongUtils.h"
 #include <foobar2000/SDK/album_art.h>
@@ -22,11 +31,23 @@
 #include <random>
 #include <set>
 #include <type_traits>
+#include <variant>
 #include <vector>
 #include "core/WebViewContext.h"
 
 namespace {
 using json = nlohmann::json;
+namespace md = api::metadata;
+
+// Result<R> has no accessor, so the helpers that several handlers share hand
+// back this variant and each handler converts it at the end.
+template <class R>
+api::Result<R> ToResult(std::variant<R, api::Failure> outcome) {
+  if (auto *failure = std::get_if<api::Failure>(&outcome)) {
+    return std::move(*failure);
+  }
+  return std::move(std::get<R>(outcome));
+}
 
 //==========================================================================
 // Base64 Decoding Helper
@@ -83,7 +104,7 @@ static GUID StringToArtType(const std::string &type) {
     return album_art_ids::icon;
   if (type == "artist")
     return album_art_ids::artist;
-  return album_art_ids::cover_front; // Default
+  return album_art_ids::cover_front; // the declared type enum admits only the names above
 }
 
 //==========================================================================
@@ -172,21 +193,23 @@ static std::wstring ResolveArtworkOutputPath(const std::string& audioPath,
   return (dir / (base + ext)).wstring();
 }
 
+// One artwork target's outcome: what a single-target call returns, or its
+// failure. A call with both targets reports each one as its own envelope.
+using ArtworkOutcome = std::variant<md::EmbedArtworkResult, api::Failure>;
+
 // Embed decoded artwork bytes into the file via album_art_editor (legacy path).
 // For containers album_art_editor does not support (e.g. CUE referencing external audio),
-// returns a structured failure envelope without throwing.
-static json EmbedArtworkInternal(const std::string& path,
-                                 const std::vector<uint8_t>& bytes,
-                                 const std::string& type) {
+// returns a structured failure without throwing.
+static ArtworkOutcome EmbedArtworkInternal(const std::string& path,
+                                           const std::vector<uint8_t>& bytes,
+                                           const std::string& type) {
   try {
     pfc::string8 canonicalPath;
     filesystem::g_get_canonical_path(path.c_str(), canonicalPath);
 
     if (!album_art_editor::g_is_supported_path(canonicalPath.c_str())) {
-      return {{"success", false},
-              {"error", "Album art editing not supported for this file format"},
-              {"path", path},
-              {"type", type}};
+      return api::Fail("Album art editing not supported for this file format",
+                       ApiErrorCode::NOT_SUPPORTED, {{"path", path}, {"type", type}});
     }
 
     GUID artType = StringToArtType(type);
@@ -201,9 +224,8 @@ static json EmbedArtworkInternal(const std::string& path,
         album_art_editor::g_open(nullptr, canonicalPath.c_str(), abort);
 
     if (!instance.is_valid()) {
-      return {{"success", false},
-              {"error", "Failed to open album art editor for this file"},
-              {"path", path}};
+      return api::Fail("Failed to open album art editor for this file",
+                       ApiErrorCode::OPERATION_FAILED, {{"path", path}});
     }
 
     album_art_data_ptr artData =
@@ -216,16 +238,16 @@ static json EmbedArtworkInternal(const std::string& path,
     LOG("metadata.embedArtwork: Embedded %zu bytes of %s art into %s",
         bytes.size(), type.c_str(), path.c_str());
 
-    return {{"success", true},
-            {"path", path},
-            {"type", type},
-            {"size", bytes.size()}};
+    md::EmbedArtworkResult result;
+    result.path = path;
+    result.type = type;
+    result.size = static_cast<std::int64_t>(bytes.size());
+    return result;
   } catch (const pfc::exception &e) {
-    return {{"success", false}, {"error", e.what()}, {"path", path}};
+    return api::Fail(e.what(), ApiErrorCode::OPERATION_FAILED, {{"path", path}});
   } catch (...) {
-    return {{"success", false},
-            {"error", "Unknown error embedding artwork"},
-            {"path", path}};
+    return api::Fail("Unknown error embedding artwork", ApiErrorCode::OPERATION_FAILED,
+                     {{"path", path}});
   }
 }
 
@@ -234,18 +256,18 @@ static json EmbedArtworkInternal(const std::string& path,
 // ext is detected from magic bytes (".jpg"/".png"/".webp"/".gif"/".bmp").
 // CUE/subsong paths fall back to the underlying audio file's directory and share
 // a single sidecar — this matches fb2k's per-directory external artwork model.
-static json SaveArtworkToDirectory(const std::string& audioPath,
-                                   const std::vector<uint8_t>& bytes,
-                                   const std::string& type,
-                                   const std::string& filename) {
+static ArtworkOutcome SaveArtworkToDirectory(const std::string& audioPath,
+                                             const std::vector<uint8_t>& bytes,
+                                             const std::string& type,
+                                             const std::string& filename) {
   if (!filename.empty() && ContainsFilenameTraversal(filename)) {
-    return {{"success", false},
-            {"error", "Invalid filename: path separators and traversal sequences not allowed"}};
+    return api::Fail("Invalid filename: path separators and traversal sequences not allowed",
+                     ApiErrorCode::INVALID_PARAMS);
   }
 
   std::wstring outputPath = ResolveArtworkOutputPath(audioPath, filename, type, bytes);
   if (outputPath.empty()) {
-    return {{"success", false}, {"error", "Failed to resolve output path"}};
+    return api::Fail("Failed to resolve output path", ApiErrorCode::INVALID_PATH);
   }
 
   // The gate's same-directory trust rule takes the parent of this context path.
@@ -260,13 +282,14 @@ static json SaveArtworkToDirectory(const std::string& audioPath,
   std::wstring pathError;
   if (!PathSecurity::Instance().ValidateMediaWriteAccess(outputPath, pathError,
                                                          Utf8ToWide(nativeAudioPath))) {
-    return {{"success", false}, {"error", "Write access denied: " + WideToUtf8(pathError)}};
+    return api::Fail("Write access denied: " + WideToUtf8(pathError),
+                     ApiErrorCode::PERMISSION_DENIED);
   }
 
   try {
     std::ofstream out(outputPath, std::ios::out | std::ios::binary | std::ios::trunc);
     if (!out.is_open()) {
-      return {{"success", false}, {"error", "Failed to create artwork file"}};
+      return api::Fail("Failed to create artwork file", ApiErrorCode::OPERATION_FAILED);
     }
     out.write(reinterpret_cast<const char*>(bytes.data()),
               static_cast<std::streamsize>(bytes.size()));
@@ -275,15 +298,16 @@ static json SaveArtworkToDirectory(const std::string& audioPath,
     LOG("metadata.embedArtwork: Saved %zu bytes of %s art to %s",
         bytes.size(), type.c_str(), WideToUtf8(outputPath).c_str());
 
-    return {{"success", true},
-            {"path", audioPath},
-            {"type", type},
-            {"size", bytes.size()},
-            {"savedTo", WideToUtf8(outputPath)}};
+    md::EmbedArtworkResult result;
+    result.path = audioPath;
+    result.type = type;
+    result.size = static_cast<std::int64_t>(bytes.size());
+    result.savedTo = WideToUtf8(outputPath);
+    return result;
   } catch (const std::exception& e) {
-    return {{"success", false}, {"error", e.what()}};
+    return api::Fail(e.what(), ApiErrorCode::OPERATION_FAILED);
   } catch (...) {
-    return {{"success", false}, {"error", "Unknown error saving artwork file"}};
+    return api::Fail("Unknown error saving artwork file", ApiErrorCode::OPERATION_FAILED);
   }
 }
 
@@ -432,36 +456,36 @@ static SubsongParseResult ParseSubsongIndex(const std::string &path,
 }
 
 // 标签值类型分发 — 按 JSON 类型分类到 set/remove
-static void ClassifyTagValue(const std::string &upperKey, const json &value,
-                             std::map<std::string, std::string> &tagsToSet,
-                             std::vector<std::string> &tagsToRemove,
-                             json &appliedTags) {
-  if (value.is_null() ||
-      (value.is_string() && value.get<std::string>().empty())) {
+static std::optional<api::Failure> ClassifyTagValue(
+    const std::string &upperKey, const json &value,
+    std::map<std::string, std::vector<std::string>> &tagsToSet,
+    std::vector<std::string> &tagsToRemove,
+    std::map<std::string, json> &appliedTags) {
+  auto parsed = metadata_tags::ParseTagValue(value);
+  switch (parsed.action) {
+  case metadata_tags::Action::Invalid: {
+    const auto index = *parsed.invalidIndex;
+    return api::Fail("Invalid tags[" + json(upperKey).dump() + "][" +
+                         std::to_string(index) +
+                         "]: expected a non-empty string without NUL",
+                     ApiErrorCode::INVALID_PARAMS,
+                     {{"details", {{"field", upperKey}, {"index", index}}}});
+  }
+  case metadata_tags::Action::Remove:
     tagsToRemove.push_back(upperKey);
     appliedTags[upperKey] = nullptr;
     console::printf("metadata.write: Will remove [%s]", upperKey.c_str());
-    return;
+    break;
+  case metadata_tags::Action::Set:
+    console::printf("metadata.write: Will set [%s] (%u values)", upperKey.c_str(),
+                    static_cast<unsigned>(parsed.values.size()));
+    tagsToSet[upperKey] = std::move(parsed.values);
+    appliedTags[upperKey] = std::move(parsed.appliedValue);
+    break;
+  case metadata_tags::Action::Ignore:
+    break;
   }
-  if (value.is_string()) {
-    std::string strValue = value.get<std::string>();
-    tagsToSet[upperKey] = strValue;
-    appliedTags[upperKey] = strValue;
-    console::printf("metadata.write: Will set [%s] = [%s]", upperKey.c_str(),
-                    strValue.c_str());
-    return;
-  }
-  if (value.is_number_integer()) {
-    std::string strValue = std::to_string(value.get<int>());
-    tagsToSet[upperKey] = strValue;
-    appliedTags[upperKey] = value.get<int>();
-    return;
-  }
-  if (value.is_number_float()) {
-    std::string strValue = std::to_string(value.get<double>());
-    tagsToSet[upperKey] = strValue;
-    appliedTags[upperKey] = value.get<double>();
-  }
+  return std::nullopt;
 }
 
 static int ParseTrackNumberToken(const std::string &value) {
@@ -558,11 +582,13 @@ static contextmenu_node *FindNamedPopupChild(contextmenu_node *parent,
   return nullptr;
 }
 
-static std::optional<json> ExecuteRatingMenuNode(contextmenu_node *ratingMenu,
-                                                 const std::string &statsName,
-                                                 const std::string &ratingName,
-                                                 int rating,
-                                                 const std::string &displayPath) {
+// Runs the rating command under a foo_playcount "Rating" popup and reports the
+// menu path that ran; nullopt when the popup is missing, the entry is not a
+// command, or executing it threw.
+static std::optional<std::string> ExecuteRatingMenuNode(contextmenu_node *ratingMenu,
+                                                        const std::string &statsName,
+                                                        const std::string &ratingName,
+                                                        int rating) {
   if (!ratingMenu) {
     return std::nullopt;
   }
@@ -580,14 +606,9 @@ static std::optional<json> ExecuteRatingMenuNode(contextmenu_node *ratingMenu,
 
   try {
     targetItem->execute();
-    std::string foundPath = statsName + "/" + ratingName + "/" +
-                            (targetItem->get_name() ? targetItem->get_name()
-                                                    : std::to_string(rating));
-    return json{{"success", true},
-                {"path", displayPath},
-                {"rating", rating},
-                {"storage", "stats"},
-                {"menuPath", foundPath}};
+    return statsName + "/" + ratingName + "/" +
+           (targetItem->get_name() ? targetItem->get_name()
+                                   : std::to_string(rating));
   } catch (...) {
     return std::nullopt;
   }
@@ -595,8 +616,7 @@ static std::optional<json> ExecuteRatingMenuNode(contextmenu_node *ratingMenu,
 
 // 通过 UTF-8 字节模式直接搜索上下文菜单中的评级项
 // 绕过源码编码与运行时编码的错配问题
-static std::optional<json> TryRatingViaUtf8Fallback(
-    contextmenu_node *root, int rating, const std::string &displayPath) {
+static std::optional<std::string> TryRatingViaUtf8Fallback(contextmenu_node *root, int rating) {
   if (!root || root->get_type() != contextmenu_item_node::TYPE_POPUP) {
     return std::nullopt;
   }
@@ -617,8 +637,7 @@ static std::optional<json> TryRatingViaUtf8Fallback(
   std::string ratingName;
   contextmenu_node *ratingMenu =
       FindNamedPopupChild(statsMenu, utf8_rating_menu, "Rating", ratingName);
-  return ExecuteRatingMenuNode(ratingMenu, statsName, ratingName, rating,
-                               displayPath);
+  return ExecuteRatingMenuNode(ratingMenu, statsName, ratingName, rating);
 }
 
 //==========================================================================
@@ -629,7 +648,7 @@ static std::optional<json> TryRatingViaUtf8Fallback(
 // Custom file_info_filter for tag updates
 class TagUpdateFilter : public file_info_filter {
 public:
-  TagUpdateFilter(const std::map<std::string, std::string> &tags,
+  TagUpdateFilter(const std::map<std::string, std::vector<std::string>> &tags,
                   const std::vector<std::string> &tagsToRemove)
       : m_tags(tags), m_tagsToRemove(tagsToRemove) {}
 
@@ -641,9 +660,9 @@ public:
     }
 
     // Apply new tag values
-    for (const auto &[key, value] : m_tags) {
+    for (const auto &[key, values] : m_tags) {
       p_info.meta_remove_field(key.c_str());
-      if (!value.empty()) {
+      for (const auto &value : values) {
         p_info.meta_add(key.c_str(), value.c_str());
       }
     }
@@ -652,7 +671,7 @@ public:
   }
 
 private:
-  std::map<std::string, std::string> m_tags;
+  std::map<std::string, std::vector<std::string>> m_tags;
   std::vector<std::string> m_tagsToRemove;
 };
 
@@ -663,8 +682,8 @@ private:
 //   - Message pump: causes reentrant crashes (window activation, metadb indexing)
 //
 // Instead: fire-and-dispatch. The handler returns immediately with dispatched=true.
-// When update_info_async completes, on_completion fires a bridge event
-// "metadata:writeComplete" so JS can observe the outcome.
+// When update_info_async completes, on_completion broadcasts metadata:writeComplete
+// so JS can observe the outcome.
 class AsyncWriteNotify : public completion_notify {
 public:
   AsyncWriteNotify(std::string path, int subsong, std::string operation)
@@ -681,15 +700,14 @@ public:
 
     // Fire bridge event so JS can react
     try {
-      json eventData = {
-          {"operation", m_operation},
-          {"path", m_path},
-          {"subsong", m_subsong},
-          {"code", code},
-          {"success", code == 0},
-          {"status", status}};
-      WebViewContext::GetInstance().BroadcastEvent(
-          "metadata:writeComplete", eventData);
+      md::WriteCompletePayload payload;
+      payload.operation = m_operation;
+      payload.path = m_path;
+      payload.subsong = m_subsong;
+      payload.code = code;
+      payload.success = code == 0;
+      payload.status = status;
+      api::emit::Broadcast<md::events::WriteComplete>(payload);
     } catch (...) {
       // Best-effort event broadcast; don't crash on failure
     }
@@ -701,20 +719,15 @@ private:
   std::string m_operation;
 };
 
-json MetadataWrite(const json &params) {
-  std::string path = params.value("path", "");
-
-  if (path.empty()) {
-    return {{"success", false}, {"error", "path is required"}};
-  }
-
-  if (!params.contains("tags") || !params["tags"].is_object()) {
-    return {{"success", false}, {"error", "tags object is required"}};
-  }
+// All of metadata.write. The handler, every writeBatch entry, the rating.set
+// tag fallback and the embedded lyrics target (through MetadataWriteTags) run
+// it, so the four report success and failure the same way.
+static std::variant<md::WriteResult, api::Failure> WriteTagsCore(const md::WriteParams &p) {
+  const std::string &path = p.path;
 
   try {
     // Parse subsong from path before canonicalization
-    int explicitCueIndex = params.value("cueIndex", -1);
+    int explicitCueIndex = static_cast<int>(p.cueIndex);
     auto parsed = ParseSubsongIndex(path, explicitCueIndex);
 
     // Convert cleaned path to canonical form (essential for Unicode paths)
@@ -735,29 +748,32 @@ json MetadataWrite(const json &params) {
 
     if (!handle.is_valid()) {
       console::printf("metadata.write: Failed to get handle for %s", canonicalPath.c_str());
-      return {{"success", false}, 
-              {"error", "Failed to open file"}, 
-              {"path", path},
-              {"canonicalPath", canonicalPath.c_str()}};
+      return api::Fail("Failed to open file", ApiErrorCode::OPERATION_FAILED,
+                       {{"path", path}, {"canonicalPath", canonicalPath.c_str()}});
     }
     
     console::printf("metadata.write: Got valid handle, path = %s, subsong_index = %u",
                     handle->get_path(), handle->get_subsong_index());
 
     // Prepare tag updates
-    std::map<std::string, std::string> tagsToSet;
+    std::map<std::string, std::vector<std::string>> tagsToSet;
     std::vector<std::string> tagsToRemove;
-    json appliedTags = json::object();
+    std::map<std::string, json> appliedTags;
 
-    for (auto &[key, value] : params["tags"].items()) {
+    for (const auto &[key, value] : p.tags) {
       std::string upperKey = key;
       std::transform(upperKey.begin(), upperKey.end(), upperKey.begin(),
                      ::toupper);
-      ClassifyTagValue(upperKey, value, tagsToSet, tagsToRemove, appliedTags);
+      if (auto failure = ClassifyTagValue(upperKey, value, tagsToSet, tagsToRemove, appliedTags)) {
+        return std::move(*failure);
+      }
     }
 
     if (tagsToSet.empty() && tagsToRemove.empty()) {
-      return {{"success", true}, {"path", path}, {"note", "No tags to update"}};
+      md::WriteResult nothing;
+      nothing.path = path;
+      nothing.note = "No tags to update";
+      return nothing;
     }
 
     // Create filter and handle list
@@ -788,174 +804,179 @@ json MetadataWrite(const json &params) {
 
     console::printf("metadata.write: update_info_async dispatched");
 
-    return {
-        {"success", true},
-        {"dispatched", true},
-        {"path", path},
-        {"handlePath", handle->get_path()},
-        {"subsong", parsed.subsongIndex},
-        {"tagsApplied", appliedTags},
-        {"tagsSet", static_cast<int>(tagsToSet.size())},
-        {"tagsRemoved", static_cast<int>(tagsToRemove.size())},
-        {"note", "Write dispatched. Listen for metadata:writeComplete event for final result."},
-    };
+    md::WriteResult result;
+    result.path = path;
+    result.dispatched = true;
+    result.handlePath = handle->get_path();
+    result.subsong = parsed.subsongIndex;
+    result.tagsApplied = std::move(appliedTags);
+    result.tagsSet = static_cast<std::int64_t>(tagsToSet.size());
+    result.tagsRemoved = static_cast<std::int64_t>(tagsToRemove.size());
+    result.note = "Write dispatched. Listen for metadata:writeComplete event for final result.";
+    return result;
   } catch (const std::exception &e) {
     console::printf("metadata.write: Exception: %s", e.what());
-    return {{"success", false}, {"error", e.what()}};
+    return api::Fail(e.what(), ApiErrorCode::OPERATION_FAILED);
   } catch (...) {
     console::printf("metadata.write: Unknown exception");
-    return {{"success", false}, {"error", "Unknown error"}};
+    return api::Fail("Unknown error", ApiErrorCode::OPERATION_FAILED);
   }
+}
+
+api::Result<md::WriteResult> MetadataWrite(const md::WriteParams &p) {
+  return ToResult(WriteTagsCore(p));
 }
 
 //==========================================================================
 // metadata.writeBatch - Write metadata to multiple files
 //==========================================================================
-json MetadataWriteBatch(const json &params) {
-  if (!params.contains("items") || !params["items"].is_array()) {
-    return {{"success", false}, {"error", "items array is required"}};
-  }
+api::Result<md::WriteBatchResult> MetadataWriteBatch(const md::WriteBatchParams &p) {
+  std::int64_t successCount = 0;
+  std::vector<md::MetadataWriteBatchError> errors;
 
-  int successCount = 0;
-  int failCount = 0;
-  json errors = json::array();
-
-  for (const auto &item : params["items"]) {
-    std::string path = item.value("path", "");
-    if (path.empty()) {
-      failCount++;
-      errors.push_back({{"path", ""}, {"error", "Missing path"}});
-      continue;
-    }
-
-    if (!item.contains("tags") || !item["tags"].is_object()) {
-      failCount++;
-      errors.push_back({{"path", path}, {"error", "Missing tags"}});
-      continue;
-    }
-
-    // Create params for single write
-    json singleParams = {{"path", path}, {"tags", item["tags"]}};
-    json result = MetadataWrite(singleParams);
-
-    if (result.value("success", false)) {
-      successCount++;
+  for (const md::MetadataWriteBatchItem &item : p.items) {
+    // tags is declared as any JSON so that a missing or non-object value is
+    // this entry's own error instead of refusing the whole batch.
+    std::optional<std::string> error;
+    if (!item.tags || !item.tags->is_object()) {
+      error = "Missing tags";
     } else {
-      failCount++;
-      errors.push_back(
-          {{"path", path}, {"error", result.value("error", "Unknown error")}});
+      md::WriteParams single;
+      single.path = item.path;
+      single.tags = item.tags->get<std::map<std::string, json>>();
+      single.cueIndex = item.cueIndex;
+      const auto written = WriteTagsCore(single);
+      if (const auto *failure = std::get_if<api::Failure>(&written)) {
+        error = failure->error;
+      }
     }
+
+    if (!error) {
+      successCount++;
+      continue;
+    }
+    md::MetadataWriteBatchError failed;
+    failed.path = item.path;
+    failed.error = std::move(*error);
+    errors.push_back(std::move(failed));
   }
 
-  return {{"success", failCount == 0},
-          {"successCount", successCount},
-          {"failCount", failCount},
-          {"errors", errors}};
+  const auto failCount = static_cast<std::int64_t>(errors.size());
+  if (failCount > 0) {
+    // The entries that succeeded were dispatched all the same, so the failure
+    // still carries the counts and names every failed entry.
+    return api::Fail(std::to_string(failCount) + " of " + std::to_string(p.items.size()) +
+                         " items failed",
+                     ApiErrorCode::OPERATION_FAILED,
+                     {{"successCount", successCount},
+                      {"failCount", failCount},
+                      {"errors", api::results::Value(errors)}});
+  }
+
+  md::WriteBatchResult result;
+  result.successCount = successCount;
+  result.failCount = 0;
+  return result;
 }
 
 //==========================================================================
 // metadata.embedArtwork - Write artwork to a file or its sibling sidecar
 // Supports: front, back, disc, icon, artist
-// Targets:
-//   "embedded" (default) — write via album_art_editor (legacy behavior)
-//   "file"               — write a sidecar image next to the audio file
-//                          (cover.jpg / back.jpg / disc.jpg / ... — fb2k auto-recognized)
-//   "all"                — run both targets and collect results
-//   array of the above   — run the listed targets
+// Targets (an array; omitted means "embedded"):
+//   "embedded" — write via album_art_editor (legacy behavior)
+//   "file"     — write a sidecar image next to the audio file
+//                (cover.jpg / back.jpg / disc.jpg / ... — fb2k auto-recognized)
+//   "all"      — both of the above
 // CUE / subsong paths fall back to the underlying audio file's directory for the
 // sidecar; all subsongs in one container share the same external artwork (matches
 // fb2k's per-directory external artwork lookup model).
 //==========================================================================
-json MetadataEmbedArtwork(const json &params) {
-  std::string path = params.value("path", "");
-  std::string imageData = params.value("imageData", "");
-  std::string type = params.value("type", "front");
-  std::string filename = params.value("filename", "");
 
-  if (path.empty()) {
-    return {{"success", false}, {"error", "path is required"}};
+// A target's own envelope in the two-target result: the success fields a
+// single-target call returns, or its failure envelope.
+static json ArtworkOutcomeToEnvelope(const ArtworkOutcome &outcome) {
+  if (const auto *failure = std::get_if<api::Failure>(&outcome)) {
+    return api::results::FailureToJson(*failure);
   }
+  json envelope = api::results::Value(std::get<md::EmbedArtworkResult>(outcome));
+  envelope["success"] = true;
+  return envelope;
+}
 
-  if (imageData.empty()) {
-    return {{"success", false},
-            {"error", "imageData is required (Base64 encoded)"}};
-  }
+api::Result<md::EmbedArtworkResult> MetadataEmbedArtwork(const md::EmbedArtworkParams &p) {
+  const std::string &path = p.path;
+  const std::string &type = p.type;
+  const std::string filename = p.filename.value_or("");
 
   // Decode once — shared by every target branch below.
-  std::vector<uint8_t> decoded = Base64Decode(imageData);
+  std::vector<uint8_t> decoded = Base64Decode(p.imageData);
   if (decoded.empty()) {
-    return {{"success", false},
-            {"error", "Failed to decode Base64 image data"}};
+    return api::Fail("Failed to decode Base64 image data", ApiErrorCode::INVALID_PARAMS);
   }
 
-  // Parse target — accepts string, "all" alias, or string[] array.
+  // Parse target — "all" expands to both targets, duplicates collapse.
+  static const std::set<std::string> validTargets = {"embedded", "file"};
   std::set<std::string> targets;
-  if (params.contains("target") && params["target"].is_array()) {
-    for (const auto& t : params["target"]) {
-      if (t.is_string()) targets.insert(t.get<std::string>());
-    }
-  } else {
-    std::string t = params.value("target", "embedded");
+  for (const std::string &t : p.target.value_or(std::vector<std::string>{"embedded"})) {
     if (t == "all") {
-      targets = {"embedded", "file"};
-    } else {
-      targets.insert(t);
+      targets = validTargets;
+      continue;
     }
+    if (!validTargets.contains(t)) {
+      return api::Fail("Invalid target: " + t, ApiErrorCode::INVALID_PARAMS);
+    }
+    targets.insert(t);
   }
 
   if (targets.empty()) {
     targets.insert("embedded");
   }
 
-  static const std::set<std::string> validTargets = {"embedded", "file"};
-  for (const auto& t : targets) {
-    if (validTargets.find(t) == validTargets.end()) {
-      return {{"success", false}, {"error", "Invalid target: " + t}};
-    }
-  }
-
   // Single target: backward-compatible flat response envelope.
   if (targets.size() == 1) {
     const std::string& t = *targets.begin();
     if (t == "embedded") {
-      return EmbedArtworkInternal(path, decoded, type);
+      return ToResult(EmbedArtworkInternal(path, decoded, type));
     }
     // t == "file"
-    return SaveArtworkToDirectory(path, decoded, type, filename);
+    return ToResult(SaveArtworkToDirectory(path, decoded, type, filename));
   }
 
-  // Multiple targets: aggregate into a `results` map. Top-level success is true
-  // when any target succeeded — mirrors lyrics.save behavior for consistency.
-  json results = json::object();
+  // Multiple targets: aggregate into a `results` map. The call succeeds when
+  // any target succeeded — mirrors lyrics.save behavior for consistency.
+  std::map<std::string, json> results;
   bool anySuccess = false;
 
-  if (targets.count("embedded")) {
-    results["embedded"] = EmbedArtworkInternal(path, decoded, type);
-    if (results["embedded"].value("success", false)) anySuccess = true;
+  if (targets.contains("embedded")) {
+    const ArtworkOutcome outcome = EmbedArtworkInternal(path, decoded, type);
+    anySuccess = anySuccess || std::holds_alternative<md::EmbedArtworkResult>(outcome);
+    results["embedded"] = ArtworkOutcomeToEnvelope(outcome);
   }
 
-  if (targets.count("file")) {
-    results["file"] = SaveArtworkToDirectory(path, decoded, type, filename);
-    if (results["file"].value("success", false)) anySuccess = true;
+  if (targets.contains("file")) {
+    const ArtworkOutcome outcome = SaveArtworkToDirectory(path, decoded, type, filename);
+    anySuccess = anySuccess || std::holds_alternative<md::EmbedArtworkResult>(outcome);
+    results["file"] = ArtworkOutcomeToEnvelope(outcome);
   }
 
-  return {{"success", anySuccess},
-          {"path", path},
-          {"type", type},
-          {"results", results}};
+  if (!anySuccess) {
+    return api::Fail("No target could be written", ApiErrorCode::OPERATION_FAILED,
+                     {{"path", path}, {"type", type}, {"results", json(results)}});
+  }
+
+  md::EmbedArtworkResult result;
+  result.path = path;
+  result.type = type;
+  result.results = std::move(results);
+  return result;
 }
 
 //==========================================================================
 // metadata.removeEmbeddedArt - Remove embedded artwork from file
 //==========================================================================
-json MetadataRemoveEmbeddedArt(const json &params) {
-  std::string path = params.value("path", "");
-  std::string type = params.value("type", ""); // Empty = remove all
-  bool removeAll = params.value("removeAll", false);
-
-  if (path.empty()) {
-    return {{"success", false}, {"error", "path is required"}};
-  }
+api::Result<md::RemoveEmbeddedArtResult> MetadataRemoveEmbeddedArt(
+    const md::RemoveEmbeddedArtParams &p) {
+  const std::string &path = p.path;
 
   try {
     // Convert path to canonical form (essential for Unicode paths)
@@ -964,9 +985,8 @@ json MetadataRemoveEmbeddedArt(const json &params) {
 
     // Check if album_art_editor supports this file format
     if (!album_art_editor::g_is_supported_path(canonicalPath.c_str())) {
-      return {{"success", false},
-              {"error", "Album art editing not supported for this file format"},
-              {"path", path}};
+      return api::Fail("Album art editing not supported for this file format",
+                       ApiErrorCode::NOT_SUPPORTED, {{"path", path}});
     }
 
     // Acquire write lock before opening file (required for files in use, e.g. during playback)
@@ -979,19 +999,20 @@ json MetadataRemoveEmbeddedArt(const json &params) {
         album_art_editor::g_open(nullptr, canonicalPath.c_str(), abort);
 
     if (!instance.is_valid()) {
-      return {{"success", false},
-              {"error", "Failed to open album art editor for this file"},
-              {"path", path}};
+      return api::Fail("Failed to open album art editor for this file",
+                       ApiErrorCode::OPERATION_FAILED, {{"path", path}});
     }
 
-    json removedTypes = json::array();
+    md::RemoveEmbeddedArtResult result;
+    result.path = path;
 
-    if (removeAll || type.empty()) {
+    // An omitted type removes every picture, the same as removeAll.
+    if (p.removeAll || !p.type) {
       // Try to get v2 instance for remove_all()
       album_art_editor_instance_v2::ptr v2;
       if (instance->service_query_t(v2) && v2.is_valid()) {
         v2->remove_all();
-        removedTypes.push_back("all");
+        result.removedTypes.emplace_back("all");
       } else {
         // Fallback: remove common art types individually
         static const GUID artTypes[] = {
@@ -1003,7 +1024,7 @@ json MetadataRemoveEmbeddedArt(const json &params) {
         for (int i = 0; i < 5; i++) {
           try {
             instance->remove(artTypes[i]);
-            removedTypes.push_back(artNames[i]);
+            result.removedTypes.emplace_back(artNames[i]);
           } catch (...) {
             // Ignore if specific type doesn't exist
           }
@@ -1011,9 +1032,9 @@ json MetadataRemoveEmbeddedArt(const json &params) {
       }
     } else {
       // Remove specific art type
-      GUID artType = StringToArtType(type);
+      GUID artType = StringToArtType(*p.type);
       instance->remove(artType);
-      removedTypes.push_back(type);
+      result.removedTypes.push_back(*p.type);
     }
 
     // Commit changes
@@ -1021,33 +1042,26 @@ json MetadataRemoveEmbeddedArt(const json &params) {
 
     LOG("metadata.removeEmbeddedArt: Removed art from %s", path.c_str());
 
-    return {{"success", true}, {"path", path}, {"removedTypes", removedTypes}};
+    return result;
   } catch (const pfc::exception &e) {
-    return {{"success", false}, {"error", e.what()}, {"path", path}};
+    return api::Fail(e.what(), ApiErrorCode::OPERATION_FAILED, {{"path", path}});
   } catch (...) {
-    return {{"success", false},
-            {"error", "Unknown error removing artwork"},
-            {"path", path}};
+    return api::Fail("Unknown error removing artwork", ApiErrorCode::OPERATION_FAILED,
+                     {{"path", path}});
   }
 }
 
 //==========================================================================
-// metadata.removeTag - Remove specific tags from file
+// metadata.removeTag / metadata.removeField - Remove specific tags from file
+// One operation under two names. Each name has its own generated params and
+// result types, so the body is a template over the result type.
 //==========================================================================
-json MetadataRemoveTag(const json &params) {
-  std::string path = params.value("path", "");
-
-  if (path.empty()) {
-    return {{"success", false}, {"error", "path is required"}};
-  }
-
-  if (!params.contains("tags") || !params["tags"].is_array()) {
-    return {{"success", false}, {"error", "tags array is required"}};
-  }
-
+template <class R>
+api::Result<R> RemoveTags(const std::string &path, const std::vector<std::string> &tags,
+                          std::int64_t cueIndex) {
   try {
     // Parse subsong from path (same pattern as MetadataWrite)
-    int explicitCueIndex = params.value("cueIndex", -1);
+    int explicitCueIndex = static_cast<int>(cueIndex);
     auto parsed = ParseSubsongIndex(path, explicitCueIndex);
 
     pfc::string8 canonicalPath;
@@ -1061,33 +1075,28 @@ json MetadataRemoveTag(const json &params) {
     handle = mdb->handle_create(canonicalPath.c_str(), parsed.subsongIndex);
 
     if (!handle.is_valid()) {
-      return {
-          {"success", false}, {"error", "Failed to open file"}, {"path", path}};
+      return api::Fail("Failed to open file", ApiErrorCode::OPERATION_FAILED, {{"path", path}});
     }
 
     // Collect tags to remove
     std::vector<std::string> tagsToRemove;
-    json removedTags = json::array();
+    R result;
+    result.path = path;
 
-    for (const auto &tag : params["tags"]) {
-      if (tag.is_string()) {
-        std::string tagName = tag.get<std::string>();
-        std::transform(tagName.begin(), tagName.end(), tagName.begin(),
-                       ::toupper);
-        tagsToRemove.push_back(tagName);
-        removedTags.push_back(tagName);
-      }
+    for (std::string tagName : tags) {
+      std::transform(tagName.begin(), tagName.end(), tagName.begin(),
+                     ::toupper);
+      tagsToRemove.push_back(tagName);
+      result.removedTags.push_back(tagName);
     }
 
     if (tagsToRemove.empty()) {
-      return {{"success", true},
-              {"path", path},
-              {"removedTags", removedTags},
-              {"removedCount", 0}};
+      result.removedCount = 0;
+      return result;
     }
 
     // Use TagUpdateFilter to remove tags (empty tagsToSet, only tagsToRemove)
-    std::map<std::string, std::string> emptyTags;
+    std::map<std::string, std::vector<std::string>> emptyTags;
     service_ptr_t<file_info_filter> filter =
         fb2k::service_new<TagUpdateFilter>(emptyTags, tagsToRemove);
 
@@ -1108,34 +1117,34 @@ json MetadataRemoveTag(const json &params) {
 
     console::printf("metadata.removeTag: update_info_async dispatched");
 
-    return {
-        {"success", true},
-        {"dispatched", true},
-        {"path", path},
-        {"subsong", parsed.subsongIndex},
-        {"removedTags", removedTags},
-        {"removedCount", static_cast<int>(removedTags.size())},
-        {"note", "Remove dispatched. Listen for metadata:writeComplete event for final result."},
-    };
+    result.dispatched = true;
+    result.subsong = parsed.subsongIndex;
+    result.removedCount = static_cast<std::int64_t>(result.removedTags.size());
+    result.note = "Remove dispatched. Listen for metadata:writeComplete event for final result.";
+    return result;
   } catch (const std::exception &e) {
-    return {{"success", false}, {"error", e.what()}};
+    return api::Fail(e.what(), ApiErrorCode::OPERATION_FAILED);
   }
+}
+
+api::Result<md::RemoveTagResult> MetadataRemoveTag(const md::RemoveTagParams &p) {
+  return RemoveTags<md::RemoveTagResult>(p.path, p.tags, p.cueIndex);
+}
+
+api::Result<md::RemoveFieldResult> MetadataRemoveField(const md::RemoveFieldParams &p) {
+  return RemoveTags<md::RemoveFieldResult>(p.path, p.tags, p.cueIndex);
 }
 
 //==========================================================================
 // metadata.read - Read all metadata from a file
 //==========================================================================
-json MetadataRead(const json &params) {
-  std::string path = params.value("path", "");
-
-  if (path.empty()) {
-    return {{"success", false}, {"error", "path is required"}};
-  }
+api::Result<md::ReadResult> MetadataRead(const md::ReadParams &p) {
+  const std::string &path = p.path;
 
   try {
     // Resolve the subsong so multi-track containers (CUE sheets, ISO images)
     // report the requested track instead of always falling back to track 0.
-    int explicitCueIndex = params.value("cueIndex", -1);
+    int explicitCueIndex = static_cast<int>(p.cueIndex);
     auto parsed = ParseSubsongIndex(path, explicitCueIndex);
     const auto subsong = static_cast<t_uint32>(parsed.subsongIndex);
 
@@ -1148,17 +1157,17 @@ json MetadataRead(const json &params) {
     handle = mdb->handle_create(canonicalPath.c_str(), subsong);
 
     if (!handle.is_valid()) {
-      return {
-          {"success", false}, {"error", "Failed to open file"}, {"path", path}};
+      return api::Fail("Failed to open file", ApiErrorCode::OPERATION_FAILED, {{"path", path}});
     }
 
     file_info_impl info;
     if (!ReadMetadataInfoWithFallback(handle, canonicalPath.c_str(), subsong,
                                      info)) {
-      return {{"success", false}, {"error", "Failed to get track info"}};
+      return api::Fail("Failed to get track info", ApiErrorCode::OPERATION_FAILED);
     }
 
-    json tags = json::object();
+    md::ReadResult result;
+    result.path = path;
 
     // Read all metadata fields
     for (t_size i = 0; i < info.meta_get_count(); i++) {
@@ -1166,57 +1175,45 @@ json MetadataRead(const json &params) {
       t_size valueCount = info.meta_enum_value_count(i);
 
       if (valueCount == 1) {
-        tags[name] = info.meta_enum_value(i, 0);
+        result.tags[name] = info.meta_enum_value(i, 0);
       } else {
         json values = json::array();
         for (t_size j = 0; j < valueCount; j++) {
           values.push_back(info.meta_enum_value(i, j));
         }
-        tags[name] = values;
+        result.tags[name] = values;
       }
     }
 
     // Technical info
-    json techInfo = {
-        {"duration", info.get_length()},
-        {"bitrate", info.info_get_int("bitrate")},
-        {"sampleRate", info.info_get_int("samplerate")},
-        {"channels", info.info_get_int("channels")},
-        {"codec", info.info_get("codec") ? info.info_get("codec") : ""}};
+    result.info.duration = info.get_length();
+    result.info.bitrate = info.info_get_int("bitrate");
+    result.info.sampleRate = info.info_get_int("samplerate");
+    result.info.channels = info.info_get_int("channels");
+    result.info.codec = info.info_get("codec") ? info.info_get("codec") : "";
 
-    return {
-        {"success", true}, {"path", path}, {"tags", tags}, {"info", techInfo}};
+    return result;
   } catch (const std::exception &e) {
-    return {{"success", false}, {"error", e.what()}};
+    return api::Fail(e.what(), ApiErrorCode::OPERATION_FAILED);
   }
 }
 
 //==========================================================================
 // metadata.readBatch - Batch read metadata from multiple files
 // params: { paths: string[] }
-// Returns: { success: true, results: [ { path, success, tags?, error? }, ... ] }
+// Returns: { success: true, total, successCount, errorCount,
+//            results: [ { path, success, tags?, error? }, ... ] }
 //==========================================================================
-json MetadataReadBatch(const json &params) {
-  if (!params.contains("paths") || !params["paths"].is_array()) {
-    return {{"success", false}, {"error", "paths array is required"}};
-  }
-
-  const auto &paths = params["paths"];
-  json results = json::array();
-  int successCount = 0;
-  int errorCount = 0;
+api::Result<md::ReadBatchResult> MetadataReadBatch(const md::ReadBatchParams &p) {
+  md::ReadBatchResult result;
+  result.total = static_cast<std::int64_t>(p.paths.size());
 
   auto mdb = metadb::get();
 
-  for (const auto &pathItem : paths) {
-    if (!pathItem.is_string()) {
-      results.push_back({{"success", false}, {"error", "invalid path type"}});
-      errorCount++;
-      continue;
-    }
+  for (const std::string &path : p.paths) {
+    md::MetadataReadBatchItem row;
+    row.path = path;
 
-    std::string path = pathItem.get<std::string>();
-    
     try {
       // Per-entry subsong: batch paths may mix plain files and
       // "container|subsong:N" references.
@@ -1230,34 +1227,37 @@ json MetadataReadBatch(const json &params) {
       handle = mdb->handle_create(canonicalPath.c_str(), subsong);
 
       if (!handle.is_valid()) {
-        results.push_back({{"path", path}, {"success", false}, {"error", "Failed to open file"}});
-        errorCount++;
+        row.error = "Failed to open file";
+        result.results.push_back(std::move(row));
+        result.errorCount++;
         continue;
       }
 
       file_info_impl info;
       if (!ReadMetadataInfoWithFallback(handle, canonicalPath.c_str(), subsong,
                                        info)) {
-        results.push_back({{"path", path}, {"success", false}, {"error", "Failed to get track info"}});
-        errorCount++;
+        row.error = "Failed to get track info";
+        result.results.push_back(std::move(row));
+        result.errorCount++;
         continue;
       }
 
-      results.push_back({{"path", path}, {"success", true}, {"tags", CollectFlatMetadata(info, handle)}});
-      successCount++;
+      row.success = true;
+      row.tags = CollectFlatMetadata(info, handle).get<std::map<std::string, json>>();
+      result.results.push_back(std::move(row));
+      result.successCount++;
 
     } catch (const std::exception &e) {
-      results.push_back({{"path", path}, {"success", false}, {"error", e.what()}});
-      errorCount++;
+      // A fresh row: the one above may be half filled or already moved from.
+      md::MetadataReadBatchItem failed;
+      failed.path = path;
+      failed.error = e.what();
+      result.results.push_back(std::move(failed));
+      result.errorCount++;
     }
   }
 
-  return {
-      {"success", true},
-      {"total", paths.size()},
-      {"successCount", successCount},
-      {"errorCount", errorCount},
-      {"results", results}};
+  return result;
 }
 
 //==========================================================================
@@ -1265,15 +1265,11 @@ json MetadataReadBatch(const json &params) {
 // params: { path: string, cueIndex?: number }
 // Returns structured format identical to metadata.read + "source": "file"
 //==========================================================================
-json MetadataReadRaw(const json &params) {
-  std::string path = params.value("path", "");
-
-  if (path.empty()) {
-    return {{"success", false}, {"error", "path is required"}};
-  }
+api::Result<md::ReadRawResult> MetadataReadRaw(const md::ReadRawParams &p) {
+  const std::string &path = p.path;
 
   try {
-    int explicitCueIndex = params.value("cueIndex", -1);
+    int explicitCueIndex = static_cast<int>(p.cueIndex);
     auto parsed = ParseSubsongIndex(path, explicitCueIndex);
 
     pfc::string8 canonicalPath;
@@ -1282,42 +1278,39 @@ json MetadataReadRaw(const json &params) {
     file_info_impl info;
     if (!TryReadInfoDirect(canonicalPath.c_str(),
                            static_cast<t_uint32>(parsed.subsongIndex), info)) {
-      return {{"success", false},
-              {"error", "Failed to read file directly"},
-              {"path", path}};
+      return api::Fail("Failed to read file directly", ApiErrorCode::OPERATION_FAILED,
+                       {{"path", path}});
     }
 
+    md::ReadRawResult result;
+    result.path = path;
+
     // 收集 tags（保留原始 key 大小写，与 metadata.read 一致）
-    json tags = json::object();
     for (t_size i = 0; i < info.meta_get_count(); i++) {
       const char *name = info.meta_enum_name(i);
       t_size valueCount = info.meta_enum_value_count(i);
       if (valueCount == 1) {
-        tags[name] = info.meta_enum_value(i, 0);
+        result.tags[name] = info.meta_enum_value(i, 0);
       } else {
         json values = json::array();
         for (t_size j = 0; j < valueCount; j++) {
           values.push_back(info.meta_enum_value(i, j));
         }
-        tags[name] = values;
+        result.tags[name] = values;
       }
     }
 
     // 技术信息
-    json techInfo = {
-        {"duration", info.get_length()},
-        {"bitrate", info.info_get_int("bitrate")},
-        {"sampleRate", info.info_get_int("samplerate")},
-        {"channels", info.info_get_int("channels")},
-        {"codec", info.info_get("codec") ? info.info_get("codec") : ""}};
+    result.info.duration = info.get_length();
+    result.info.bitrate = info.info_get_int("bitrate");
+    result.info.sampleRate = info.info_get_int("samplerate");
+    result.info.channels = info.info_get_int("channels");
+    result.info.codec = info.info_get("codec") ? info.info_get("codec") : "";
+    result.source = "file";
 
-    return {{"success", true},
-            {"path", path},
-            {"tags", tags},
-            {"info", techInfo},
-            {"source", "file"}};
+    return result;
   } catch (const std::exception &e) {
-    return {{"success", false}, {"error", e.what()}};
+    return api::Fail(e.what(), ApiErrorCode::OPERATION_FAILED);
   }
 }
 
@@ -1325,19 +1318,15 @@ json MetadataReadRaw(const json &params) {
 // metadata.readByPath - Read all metadata from a file (flat format)
 // Returns all tags and technical info in a single flat object
 //==========================================================================
-json MetadataReadByPath(const json &params) {
-  std::string path = params.value("path", "");
-
-  if (path.empty()) {
-    return {{"success", false}, {"error", "path is required"}};
-  }
+api::Result<md::ReadByPathResult> MetadataReadByPath(const md::ReadByPathParams &p) {
+  const std::string &path = p.path;
 
   try {
     // Multi-subsong containers (CUE / ISO / multi-track files) address a single
     // track as `path|subsong:N`. The suffix must be stripped before the path is
     // canonicalized, and the index has to reach both handle_create() and the
     // direct-read fallback, otherwise track N reports track 0's tags.
-    int explicitCueIndex = params.value("cueIndex", -1);
+    int explicitCueIndex = static_cast<int>(p.cueIndex);
     auto parsed = ParseSubsongIndex(path, explicitCueIndex);
     const auto subsong = static_cast<t_uint32>(parsed.subsongIndex);
 
@@ -1350,24 +1339,20 @@ json MetadataReadByPath(const json &params) {
     handle = mdb->handle_create(canonicalPath.c_str(), subsong);
 
     if (!handle.is_valid()) {
-      return {{"success", false},
-              {"error", "Failed to open file"},
-              {"path", path},
-              {"canonicalPath", canonicalPath.c_str()}};
+      return api::Fail("Failed to open file", ApiErrorCode::OPERATION_FAILED,
+                       {{"path", path}, {"canonicalPath", canonicalPath.c_str()}});
     }
 
     file_info_impl info;
     if (!ReadMetadataInfoWithFallback(handle, canonicalPath.c_str(), subsong,
                                       info)) {
-      return {{"success", false}, {"error", "Failed to get track info"}};
+      return api::Fail("Failed to get track info", ApiErrorCode::OPERATION_FAILED);
     }
 
-    json result = CollectFlatMetadata(info, handle);
-    result["success"] = true;
-    result["path"] = path;
+    json flat = CollectFlatMetadata(info, handle);
 
     // Fallback: Extract TRACKNUMBER from filename if not present in tags
-    if (!result.contains("TRACKNUMBER")) {
+    if (!flat.contains("TRACKNUMBER")) {
       std::string filename = path;
       size_t lastSlash = filename.find_last_of("/\\");
       if (lastSlash != std::string::npos) {
@@ -1375,14 +1360,45 @@ json MetadataReadByPath(const json &params) {
       }
       int trackNum = ExtractTrackNumberFromFilename(filename);
       if (trackNum > 0 && trackNum <= 999) {
-        result["TRACKNUMBER"] = std::to_string(trackNum);
+        flat["TRACKNUMBER"] = std::to_string(trackNum);
       }
     }
 
+    md::ReadByPathResult result;
+    result.path = path;
+    // The flat keys are upper-cased, so none of them collides with path.
+    result.additional = flat.get<std::map<std::string, json>>();
     return result;
   } catch (const std::exception &e) {
-    return {{"success", false}, {"error", e.what()}};
+    return api::Fail(e.what(), ApiErrorCode::OPERATION_FAILED);
   }
+}
+
+// Fallback to the RATING file tag. The write targets the resolved handle, so
+// an omitted path and a subsong suffix both reach the right track; with
+// several selected tracks only the first is written.
+static api::Result<api::rating::SetResult> RatingWriteTag(const metadb_handle_ptr &target,
+                                                          int rating,
+                                                          const std::string &displayPath,
+                                                          const char *note) {
+  md::WriteParams writeParams;
+  writeParams.path = target->get_path();
+  writeParams.cueIndex = static_cast<int>(target->get_subsong_index());
+  if (rating == 0) {
+    writeParams.tags["RATING"] = nullptr;
+  } else {
+    writeParams.tags["RATING"] = std::to_string(rating);
+  }
+  auto written = WriteTagsCore(writeParams);
+  if (auto *failure = std::get_if<api::Failure>(&written)) {
+    return std::move(*failure);
+  }
+  api::rating::SetResult result;
+  result.path = displayPath;
+  result.rating = rating;
+  result.storage = "file";
+  result.note = note;
+  return result;
 }
 
 //==========================================================================
@@ -1395,27 +1411,19 @@ json MetadataReadByPath(const json &params) {
 //   - 后备: #N 格式 (向后兼容)
 //   - 参数: cueIndex 参数 (最高优先级)
 //==========================================================================
-json RatingSet(const json &params) {
-  std::string trackPath = params.value("path", "");
-  std::string originalPath = trackPath;  // 保存原始路径用于返回（含 |subsong:N）
-  int rating = params.value("rating", -1);
-  
-  // 支持显式指定 cueIndex 参数 (优先级最高)
-  int cueIndex = params.value("cueIndex", -1);
-
-  if (rating < 0 || rating > 5) {
-    return {{"success", false}, {"error", "rating must be 0-5 (0 = unrated)"}};
-  }
+api::Result<api::rating::SetResult> RatingSet(const api::rating::SetParams &p) {
+  const std::string originalPath = p.path.value_or("");  // 返回时回显原始路径（含 |subsong:N）
+  const int rating = static_cast<int>(p.rating);
+  const int cueIndex = static_cast<int>(p.cueIndex);
 
   // Get target track(s)
   metadb_handle_list items;
 
-  if (!trackPath.empty()) {
-    auto [cleanPath, subsongIndex] = ParseSubsongIndex(trackPath, cueIndex);
-    trackPath = cleanPath;
+  if (!originalPath.empty()) {
+    auto [cleanPath, subsongIndex] = ParseSubsongIndex(originalPath, cueIndex);
 
     pfc::string8 canonicalPath;
-    filesystem::g_get_canonical_path(trackPath.c_str(), canonicalPath);
+    filesystem::g_get_canonical_path(cleanPath.c_str(), canonicalPath);
     auto mdb = metadb::get();
     metadb_handle_ptr handle = mdb->handle_create(canonicalPath.c_str(), subsongIndex);
     if (handle.is_valid()) {
@@ -1435,12 +1443,23 @@ json RatingSet(const json &params) {
   }
 
   if (items.get_count() == 0) {
-    return {{"success", false}, {"error", "No track selected or playing"}};
+    return api::Fail("No track selected or playing", ApiErrorCode::NO_ACTIVE_ITEM);
   }
+
+  const std::string displayPath = originalPath.empty() ? "(current)" : originalPath;
+
+  auto statsResult = [&](const std::string &menuPath) {
+    api::rating::SetResult result;
+    result.path = displayPath;
+    result.rating = rating;
+    result.storage = "stats";
+    result.menuPath = menuPath;
+    return result;
+  };
 
   // Build rating menu path - supports multiple menu structures
   // foo_playcount may place Rating menu at different locations depending on version:
-  // - Direct: "等级/X" or "Rating/X" 
+  // - Direct: "等级/X" or "Rating/X"
   // - Nested: "播放统计信息/等级/X" or "Playback Statistics/Rating/X"
   std::vector<std::string> pathVariants;
   if (rating == 0) {
@@ -1474,23 +1493,7 @@ json RatingSet(const json &params) {
 
   contextmenu_node *root = mgr->get_root();
   if (!root) {
-    // Fallback to file tag
-    json tags;
-    if (rating == 0) {
-      tags["RATING"] = nullptr;
-    } else {
-      tags["RATING"] = std::to_string(rating);
-    }
-    json writeParams = {{"path", trackPath}, {"tags", tags}};
-    json result = MetadataWrite(writeParams);
-    if (result.value("success", false)) {
-      return {{"success", true},
-              {"path", originalPath},  // 返回原始路径（含 |subsong:N）
-              {"rating", rating},
-              {"storage", "file"},
-              {"note", "foo_playcount not available, written to file tag"}};
-    }
-    return result;
+    return RatingWriteTag(items[0], rating, displayPath, "foo_playcount not available, written to file tag");
   }
 
   // Helper lambda to split path
@@ -1579,11 +1582,7 @@ json RatingSet(const json &params) {
     if (targetNode) {
       try {
         targetNode->execute();
-        return {{"success", true},
-                {"path", originalPath.empty() ? "(current)" : originalPath},  // 返回原始路径
-                {"rating", rating},
-                {"storage", "stats"},
-                {"menuPath", menuPath}};
+        return statsResult(menuPath);
       } catch (...) {
         continue; // Try next variant
       }
@@ -1591,26 +1590,11 @@ json RatingSet(const json &params) {
   }
 
   // Fallback: directly search menu by UTF-8 byte patterns
-  auto utf8Result = TryRatingViaUtf8Fallback(
-      root, rating, originalPath.empty() ? "(current)" : originalPath);
-  if (utf8Result) return *utf8Result;
+  if (const auto menuPath = TryRatingViaUtf8Fallback(root, rating)) {
+    return statsResult(*menuPath);
+  }
 
-  json tags;
-  if (rating == 0) {
-    tags["RATING"] = nullptr;
-  } else {
-    tags["RATING"] = std::to_string(rating);
-  }
-  json writeParams = {{"path", trackPath}, {"tags", tags}};
-  json result = MetadataWrite(writeParams);
-  if (result.value("success", false)) {
-    return {{"success", true},
-            {"path", originalPath},  // 返回原始路径（含 |subsong:N）
-            {"rating", rating},
-            {"storage", "file"},
-            {"note", "foo_playcount menu not found, written to file tag"}};
-  }
-  return result;
+  return RatingWriteTag(items[0], rating, displayPath, "foo_playcount menu not found, written to file tag");
 }
 
 //==========================================================================
@@ -1620,56 +1604,42 @@ json RatingSet(const json &params) {
 //   - 后备: #N 格式 (向后兼容)
 //   - 参数: cueIndex 参数 (最高优先级)
 //==========================================================================
-json RatingGet(const json &params) {
-  std::string path = params.value("path", "");
-  std::string originalPath = path;  // 保存原始路径用于返回（含 |subsong:N）
-  int cueIndex = params.value("cueIndex", -1);
-
-  if (path.empty()) {
-    return {{"success", false}, {"error", "path is required"}};
-  }
+api::Result<api::rating::GetResult> RatingGet(const api::rating::GetParams &p) {
+  const std::string &originalPath = p.path;  // 返回时回显原始路径（含 |subsong:N）
+  const int cueIndex = static_cast<int>(p.cueIndex);
 
   try {
-    auto [cleanPath, subsongIndex] = ParseSubsongIndex(path, cueIndex);
-    path = cleanPath;
+    auto [cleanPath, subsongIndex] = ParseSubsongIndex(originalPath, cueIndex);
 
     pfc::string8 canonicalPath;
-    filesystem::g_get_canonical_path(path.c_str(), canonicalPath);
+    filesystem::g_get_canonical_path(cleanPath.c_str(), canonicalPath);
 
     auto mdb = metadb::get();
     metadb_handle_ptr handle = mdb->handle_create(canonicalPath.c_str(), subsongIndex);
 
     if (!handle.is_valid()) {
-      return {{"success", false}, {"error", "Failed to open file"}};
+      return api::Fail("Failed to open file", ApiErrorCode::OPERATION_FAILED);
     }
 
-    // 与播放列表行和 metadb:changed 共用取值规则。容器无效时只读取统计值，
+    // 与播放列表行和 metadb:changed 共用取值规则。读不出文件信息时只读取统计值，
     // 不因文件标签不可用而使整个请求失败。
-    metadb_info_container::ptr infoContainer = handle->get_info_ref();
+    metadb_info_container::ptr infoContainer;
+    try {
+      infoContainer = SubsongUtils::GetInfoOrReadFile(handle);
+    } catch (const std::exception&) {
+    }
     const TrackRating resolved = ResolveTrackRating(
         handle, infoContainer.is_valid() ? &infoContainer->info() : nullptr);
 
     // 两种来源均无评分时返回 rating=0、storage="file"；storage 不能用于区分
     // 标签不存在和标签中存了 0。
-    //
-    // 两个分支各自写出字面量而不是三元表达式：生成 SDK 类型的抽取器只认字面量，
-    // 合成一个三元会让 RatingGetResponse.storage 从 string 退化成 unknown。
-    if (resolved.source == RatingSource::kStats) {
-      return {
-          {"success", true},
-          {"path", originalPath},  // 返回原始路径（含 |subsong:N）
-          {"rating", resolved.value},
-          {"storage", "stats"},
-      };
-    }
-    return {
-        {"success", true},
-        {"path", originalPath},
-        {"rating", resolved.value},
-        {"storage", "file"},
-    };
+    api::rating::GetResult result;
+    result.path = originalPath;
+    result.rating = resolved.value;
+    result.storage = resolved.source == RatingSource::kStats ? "stats" : "file";
+    return result;
   } catch (const std::exception &e) {
-    return {{"success", false}, {"error", e.what()}};
+    return api::Fail(e.what(), ApiErrorCode::OPERATION_FAILED);
   }
 }
 
@@ -1696,8 +1666,7 @@ static ProbeAbortRegistry& GetProbeRegistry() {
 }
 
 // 关掉「已注册但还没派工」这段窗口的泄漏。Register 成功之后到
-// fb2k::inCpuWorkerThread 返回之前还有好几处会抛：params.value("includeTags",
-// true) 碰到非 bool 会抛 nlohmann type_error，callerSeed 赋值与 std::function
+// fb2k::inCpuWorkerThread 返回之前仍有几处会抛：callerSeed 的构造与 std::function
 // 的捕获拷贝会抛 bad_alloc，线程池在关停期派工本身也会失败。这些异常都会被
 // handler 末尾的 catch(const std::exception&) 接住并返回错误信封，但注册表条目
 // 会永久留下 —— abort token 不释放，而且此后每次 cancelProbe 对这个
@@ -1765,7 +1734,9 @@ struct ProbeItemOutcome {
   const char* infoSource = "none";  // cached | direct | none
   const char* failure = nullptr;    // nullptr = 成功
   bool aborted = false;
-  json info = json::object();
+  md::TrackTechnicalInfo info;
+  // json 而不是 std::map：MSVC 的 std::map 移动构造要分配头结点、可能抛出，
+  // 这个结构体要按值从 ProbeOneTrack 返回。
   json tags = json::object();
   bool hasTags = false;
 };
@@ -1846,13 +1817,11 @@ static void ProbeOneTrackBody(const metadb_handle_ptr& handle,
 
   const file_info& info = container->info();
   // 与 metadata.read 的 techInfo 同形（本文件 MetadataRead）。
-  json techInfo = {
-      {"duration", info.get_length()},
-      {"bitrate", info.info_get_int("bitrate")},
-      {"sampleRate", info.info_get_int("samplerate")},
-      {"channels", info.info_get_int("channels")},
-      {"codec", info.info_get("codec") ? info.info_get("codec") : ""}};
-  out.info = std::move(techInfo);
+  out.info.duration = info.get_length();
+  out.info.bitrate = info.info_get_int("bitrate");
+  out.info.sampleRate = info.info_get_int("samplerate");
+  out.info.channels = info.info_get_int("channels");
+  out.info.codec = info.info_get("codec") ? info.info_get("codec") : "";
 
   if (includeTags) {
     // stats() 取自同一个不可变快照，任意线程可读；
@@ -1879,27 +1848,28 @@ static ProbeItemOutcome ProbeOneTrack(const metadb_handle_ptr& handle,
   return out;
 }
 
-// 事件载荷由具名函数构造，而不是在 EmitEvent 调用点摊成 init-list。
-// 这样 Graph 的 cpp-parser 把 payload_schema 记为空（对照
-// playback:trackChanged 的 payload_pattern = local-var+helper-call），
-// 生成层由 sdk/src/types/overrides/events.ts 的 @codegen-override 供型，
-// results[] 的元素形状不是 extractor 能推出来的。
-static json BuildProbeProgressPayload(const std::string& operationId, size_t done,
-                                      size_t total, const json& results) {
-  return {{"operationId", operationId},
-          {"done", done},
-          {"total", total},
-          {"results", results}};
+// 事件载荷的形状由 src/api/schema/metadata.ts 的 Events 声明。
+static md::ProbeProgressPayload BuildProbeProgressPayload(
+    const std::string& operationId, size_t done, size_t total,
+    std::vector<md::MetadataProbeResultItem> results) {
+  md::ProbeProgressPayload payload;
+  payload.operationId = operationId;
+  payload.done = static_cast<std::int64_t>(done);
+  payload.total = static_cast<std::int64_t>(total);
+  payload.results = std::move(results);
+  return payload;
 }
 
-static json BuildProbeCompletePayload(const std::string& operationId, size_t total,
-                                      size_t successCount, size_t failureCount,
-                                      bool cancelled) {
-  return {{"operationId", operationId},
-          {"total", total},
-          {"successCount", successCount},
-          {"failureCount", failureCount},
-          {"cancelled", cancelled}};
+static md::ProbeCompletePayload BuildProbeCompletePayload(const std::string& operationId,
+                                                          size_t total, size_t successCount,
+                                                          size_t failureCount, bool cancelled) {
+  md::ProbeCompletePayload payload;
+  payload.operationId = operationId;
+  payload.total = static_cast<std::int64_t>(total);
+  payload.successCount = static_cast<std::int64_t>(successCount);
+  payload.failureCount = static_cast<std::int64_t>(failureCount);
+  payload.cancelled = cancelled;
+  return payload;
 }
 
 //==========================================================================
@@ -1908,37 +1878,36 @@ static json BuildProbeCompletePayload(const std::string& operationId, size_t tot
 // Returns: { success: true, operationId, totalCount }
 // Events: metadata:probeProgress / metadata:probeComplete
 //==========================================================================
-json MetadataProbeBatchAsync(const json &params) {
-  // paths 的逐项 MediaRead 校验由三参 RegisterApi 的 wrapper 在本函数之前
-  // 跑完。skipInvalid 保持默认 false，所以数组模式是 fail-fast 整批拒绝
-  // （ValidateArrayParam）：
-  // 任一条不过本函数就不执行，不产生 operationId。整批拒绝的 code 按失败
-  // 类型分派 —— paths 非数组、元素非字符串这类形状错误是 INVALID_PARAMS，
-  // 路径安全拒绝才是 PERMISSION_DENIED；两者都是整批 fail-fast，不逐项。
-  // 逐项 invalid-path 在这个校验架构下做不出来，是显式取舍。
-  // 形状错误按 ErrorEnvelope.h 的 {success, error, code} 契约带 code 返回，
-  // 否则页面只能去匹配 error 文案。文案本身不动：已被文档引用。
-  if (!params.contains("paths") || !params["paths"].is_array()) {
-    return ApiEnvelope::MakeError("paths array is required",
-                                  ApiErrorCode::INVALID_PARAMS);
-  }
 
-  const auto &paths = params["paths"];
-  if (paths.empty()) {
-    return ApiEnvelope::MakeError("paths array must not be empty",
-                                  ApiErrorCode::INVALID_PARAMS);
+// 探测 worker 带过线程的事件路由种子，发射前在主线程用 CallerContext::FromParams
+// 重新解析（为什么不直接带 CallerContext，见 MetadataProbeBatchAsync 取种子处）。
+// caller 由注册包装层用原始参数 FromParams 得到；那时 _callerHwnd 缺失、为 0 或
+// 已不是窗口都不设 callerHwnd，这里也就不写种子，发射时同样回落到单例桥。
+static json CallerSeed(const CallerContext &caller) {
+  json seed = json::object();
+  if (caller.callerHwnd) {
+    seed["_callerHwnd"] = reinterpret_cast<intptr_t>(caller.callerHwnd);
   }
+  return seed;
+}
 
+api::Result<md::ProbeBatchAsyncResult> MetadataProbeBatchAsync(
+    const md::ProbeBatchAsyncParams &p, const CallerContext &caller) {
+  // 进入本函数之前，路径层已按声明逐条做过 MediaRead 校验，生成的 Reader 也已
+  // 核对过参数形状。两者都是整批 fail-fast：paths 缺失、为空、不是数组或含非
+  // 字符串元素返回 INVALID_PARAMS，任一条路径被安全策略拒绝返回
+  // PERMISSION_DENIED，都不产生 operationId。声明没有 @skipInvalid，逐项
+  // invalid-path 在这个校验架构下做不出来，是显式取舍。
   try {
     // 分相：handle_create 是 metadb 服务调用，留在主线程；落盘读交给 worker。
     auto targets = std::make_shared<std::vector<ProbeTarget>>();
-    targets->reserve(paths.size());
+    targets->reserve(p.paths.size());
 
     auto mdb = metadb::get();
 
-    for (const auto &pathItem : paths) {
+    for (const std::string &path : p.paths) {
       ProbeTarget target;
-      target.path = pathItem.get<std::string>();
+      target.path = path;
 
       try {
         // 只识别 |subsong:，不用本文件的 ParseSubsongIndex。后者在
@@ -1979,25 +1948,22 @@ json MetadataProbeBatchAsync(const json &params) {
     // 见 AsyncOperationRegistry.h 的 Register 注释。主窗口发起的探测拿到的是
     // "main" 而不是空串，它不被窗口级取消触及的原因是 CancelAllForWindow 的
     // 唯一调用点只传 popup 的 windowId，而非因为归属为空。
-    const std::string callerWindowId = CallerContext::FromParams(params).windowId;
+    const std::string callerWindowId = caller.windowId;
     if (!GetProbeRegistry().Register(operationId, abortToken, callerWindowId)) {
       // operationId 撞了就不派工：拿不到取消能力的异步操作不该存在。
-      return {{"success", false}, {"error", "Failed to register probe operation"}};
+      return api::Fail("Failed to register probe operation", ApiErrorCode::OPERATION_FAILED);
     }
     // 注册已成立但 worker 还不存在。此刻起到派工成功之间的任何抛出都必须把条目
     // 摘掉，否则注册表泄漏 + cancelProbe 假信号，详见 ProbeRegistrationGuard。
     ProbeRegistrationGuard registration(operationId);
 
-    const bool includeTags = params.value("includeTags", true);
+    const bool includeTags = p.includeTags;
     const size_t totalCount = targets->size();
 
     // 事件路由上下文在主线程取，但只带 _callerHwnd 的值过去：
     // CallerContext 持的是裸 BridgeCore*，面板销毁后跨线程持有会悬垂，
     // 所以在发射前于主线程重新解析（同 AudioApi.cpp 中 ExecuteWaveformGeneration 的做法）。
-    json callerSeed = json::object();
-    if (params.contains("_callerHwnd")) {
-      callerSeed["_callerHwnd"] = params["_callerHwnd"];
-    }
+    json callerSeed = CallerSeed(caller);
 
     // 读盘在 worker，参考 AudioApi.cpp 中的 ExecuteWaveformGeneration。
     //
@@ -2016,27 +1982,21 @@ json MetadataProbeBatchAsync(const json &params) {
         // 每次发射都必须包 fb2k::inMainThread：EmitEvent 最终落到 WebView2
         // COM 对象（STA / UI 线程绑定），从 worker 直接调是跨 apartment 调用。
         // 范例：AudioApi.cpp 的 ExecuteWaveformGeneration、LibraryApi.cpp 的 LibraryGetAll。
-        //
-        // 两个事件各自写一个 lambda、事件名在 EmitEvent 调用点写成字面量，
-        // 不合并成「事件名当参数」的单个发射器：Graph 的 cpp-parser 按调用点
-        // 的 callee 名加字面量参数识别事件，事件名一变成变量就只能靠
-        // scripts/graph/data/event-emit-manifest.json 手工登记
-        // （http:response 正是这么进去的）。
-        auto emitProgress = [callerSeed](json payload) {
+        auto emitProgress = [callerSeed](md::ProbeProgressPayload payload) {
           fb2k::inMainThread([callerSeed, payload = std::move(payload)]() noexcept {
             try {
               auto caller = CallerContext::FromParams(callerSeed);
-              caller.EmitEvent("metadata:probeProgress", payload);
+              api::emit::EmitTo<md::events::ProbeProgress>(caller, payload);
             } catch (...) {
               // best-effort：抛进 main-thread callback runner 会 terminate
             }
           });
         };
-        auto emitComplete = [callerSeed](json payload) {
+        auto emitComplete = [callerSeed](md::ProbeCompletePayload payload) {
           fb2k::inMainThread([callerSeed, payload = std::move(payload)]() noexcept {
             try {
               auto caller = CallerContext::FromParams(callerSeed);
-              caller.EmitEvent("metadata:probeComplete", payload);
+              api::emit::EmitTo<md::events::ProbeComplete>(caller, payload);
             } catch (...) {
               // 同上
             }
@@ -2053,7 +2013,7 @@ json MetadataProbeBatchAsync(const json &params) {
           fb2k_api::BatchEmitScheduler scheduler;
           scheduler.Start(ProbeNowMillis());
 
-          json pending = json::array();
+          std::vector<md::MetadataProbeResultItem> pending;
 
           for (const auto &target : *targets) {
             if (abortToken->is_aborting()) {
@@ -2061,13 +2021,13 @@ json MetadataProbeBatchAsync(const json &params) {
               break;
             }
 
-            json item = json::object();
-            item["path"] = target.path;
+            md::MetadataProbeResultItem item;
+            item.path = target.path;
 
             if (target.earlyFailure) {
-              item["success"] = false;
-              item["infoSource"] = "none";
-              item["failure"] = target.earlyFailure;
+              item.success = false;
+              item.infoSource = "none";
+              item.failure = target.earlyFailure;
               ++failureCount;
             } else {
               ProbeItemOutcome outcome =
@@ -2078,15 +2038,15 @@ json MetadataProbeBatchAsync(const json &params) {
                 cancelled = true;
                 break;
               }
-              item["success"] = (outcome.failure == nullptr);
-              item["infoSource"] = outcome.infoSource;
+              item.success = (outcome.failure == nullptr);
+              item.infoSource = outcome.infoSource;
               if (outcome.failure) {
-                item["failure"] = outcome.failure;
+                item.failure = outcome.failure;
                 ++failureCount;
               } else {
-                item["info"] = std::move(outcome.info);
+                item.info = std::move(outcome.info);
                 if (outcome.hasTags) {
-                  item["tags"] = std::move(outcome.tags);
+                  item.tags = outcome.tags.get<std::map<std::string, json>>();
                 }
                 ++successCount;
               }
@@ -2098,8 +2058,8 @@ json MetadataProbeBatchAsync(const json &params) {
             const int64_t now = ProbeNowMillis();
             if (scheduler.ShouldFlush(pending.size(), now)) {
               emitProgress(
-                  BuildProbeProgressPayload(operationId, done, totalCount, pending));
-              pending = json::array();
+                  BuildProbeProgressPayload(operationId, done, totalCount, std::move(pending)));
+              pending.clear();
               scheduler.MarkFlushed(now);
             }
           }
@@ -2108,7 +2068,7 @@ json MetadataProbeBatchAsync(const json &params) {
           // 所以这一批一定排在 probeComplete 之前。
           if (!pending.empty()) {
             emitProgress(
-                BuildProbeProgressPayload(operationId, done, totalCount, pending));
+                BuildProbeProgressPayload(operationId, done, totalCount, std::move(pending)));
           }
         } catch (const std::exception &e) {
           // 探测循环失败：仍要发 probeComplete，否则页面永远等不到收尾。
@@ -2147,11 +2107,12 @@ json MetadataProbeBatchAsync(const json &params) {
     // 派工成立，worker 的最外层负责摘除，守卫不再需要动手。
     registration.Dismiss();
 
-    return {{"success", true},
-            {"operationId", operationId},
-            {"totalCount", totalCount}};
+    md::ProbeBatchAsyncResult result;
+    result.operationId = operationId;
+    result.totalCount = static_cast<std::int64_t>(totalCount);
+    return result;
   } catch (const std::exception &e) {
-    return {{"success", false}, {"error", e.what()}};
+    return api::Fail(e.what(), ApiErrorCode::OPERATION_FAILED);
   }
 }
 
@@ -2160,16 +2121,12 @@ json MetadataProbeBatchAsync(const json &params) {
 // params: { operationId: string }
 // Returns: { success: true, cancelled: boolean }
 //==========================================================================
-json MetadataCancelProbe(const json &params) {
-  std::string operationId = params.value("operationId", "");
-  if (operationId.empty()) {
-    return {{"success", false}, {"error", "operationId is required"}};
-  }
-
+api::Result<md::CancelProbeResult> MetadataCancelProbe(const md::CancelProbeParams &p) {
   // cancelled=false 表示该 operationId 已结束或不存在。两者对调用方故意
   // 不可区分：一个页面无法分辨自己是差了一微秒还是差了一分钟。
-  const bool cancelled = GetProbeRegistry().Cancel(operationId);
-  return {{"success", true}, {"cancelled", cancelled}};
+  md::CancelProbeResult result;
+  result.cancelled = GetProbeRegistry().Cancel(p.operationId);
+  return result;
 }
 
 //==========================================================================
@@ -2211,9 +2168,23 @@ static initquit_factory_t<ProbeShutdownInitQuit> g_probe_shutdown_initquit;
 
 } // anonymous namespace
 
-// Public wrapper for sibling APIs (e.g., LyricsApi embedded tag writing)
+// Public wrapper for sibling APIs (e.g., LyricsApi embedded tag writing). It
+// reads params with the generated reader and writes the result the way the
+// registration wrapper does, so a caller gets the JSON a page calling
+// metadata.write would get, minus the path check the caller has already made.
 nlohmann::json MetadataWriteTags(const nlohmann::json& params) {
-    return MetadataWrite(params);
+    md::WriteParams p;
+    std::string error;
+    if (!FromJson(params, p, error)) {
+        return ApiEnvelope::MakeError(error, ApiErrorCode::INVALID_PARAMS);
+    }
+    const auto written = WriteTagsCore(p);
+    if (const auto* failure = std::get_if<api::Failure>(&written)) {
+        return api::results::FailureToJson(*failure);
+    }
+    nlohmann::json j = api::results::Value(std::get<md::WriteResult>(written));
+    j["success"] = true;
+    return j;
 }
 
 //==========================================================================
@@ -2238,51 +2209,51 @@ void CancelAllProbesForWindow(const std::string& windowId) {
 // Register Metadata API
 //==========================================================================
 void RegisterMetadataApi() {
-  auto &bridge = BridgeCore::GetInstance();
+  // Parameters, results and path security levels come from
+  // src/api/schema/metadata.ts through the generated types.
 
   // metadata.read - Read all tags from a file (structured format)
-  bridge.RegisterApi("metadata.read", MetadataRead, {{"path", SecurityLevel::MediaRead}});
+  api::RegisterApi("metadata.read", MetadataRead);
 
   // metadata.readByPath - Read all tags from a file (flat format)
-  bridge.RegisterApi("metadata.readByPath", MetadataReadByPath, {{"path", SecurityLevel::MediaRead}});
+  api::RegisterApi("metadata.readByPath", MetadataReadByPath);
 
   // metadata.readRaw - Read tags directly from file, bypassing metadb cache
-  bridge.RegisterApi("metadata.readRaw", MetadataReadRaw, {{"path", SecurityLevel::MediaRead}});
+  api::RegisterApi("metadata.readRaw", MetadataReadRaw);
 
   // metadata.readBatch - Batch read metadata from multiple files
-  bridge.RegisterApi("metadata.readBatch", MetadataReadBatch, {{"paths", SecurityLevel::MediaRead, true}});
+  api::RegisterApi("metadata.readBatch", MetadataReadBatch);
 
   // metadata.probeBatchAsync - Cancellable async batch probe (worker-thread disk reads)
   // skipInvalid 保持默认 false → 数组模式 fail-fast 整批拒绝
-  bridge.RegisterApi("metadata.probeBatchAsync", MetadataProbeBatchAsync,
-                     {{"paths", SecurityLevel::MediaRead, true}});
+  api::RegisterApi("metadata.probeBatchAsync", MetadataProbeBatchAsync);
 
   // metadata.cancelProbe - Cancel an in-flight probe (no path params)
-  bridge.RegisterApi("metadata.cancelProbe", MetadataCancelProbe);
+  api::RegisterApi("metadata.cancelProbe", MetadataCancelProbe);
 
   // metadata.write - Write tags to a file
-  bridge.RegisterApi("metadata.write", MetadataWrite, {{"path", SecurityLevel::MediaWrite}});
+  api::RegisterApi("metadata.write", MetadataWrite);
 
   // metadata.writeBatch - Write tags to multiple files
-  bridge.RegisterApi("metadata.writeBatch", MetadataWriteBatch, {{"items", SecurityLevel::MediaWrite, true, "path"}});
+  api::RegisterApi("metadata.writeBatch", MetadataWriteBatch);
 
   // metadata.embedArtwork - Embed artwork into file
-  bridge.RegisterApi("metadata.embedArtwork", MetadataEmbedArtwork, {{"path", SecurityLevel::MediaWrite}});
+  api::RegisterApi("metadata.embedArtwork", MetadataEmbedArtwork);
 
   // metadata.removeEmbeddedArt - Remove embedded artwork from file
-  bridge.RegisterApi("metadata.removeEmbeddedArt", MetadataRemoveEmbeddedArt, {{"path", SecurityLevel::MediaWrite}});
+  api::RegisterApi("metadata.removeEmbeddedArt", MetadataRemoveEmbeddedArt);
 
   // metadata.removeTag - Remove tags from file
-  bridge.RegisterApi("metadata.removeTag", MetadataRemoveTag, {{"path", SecurityLevel::MediaWrite}});
-  
-  // metadata.removeField - Alias for removeTag (for compatibility)
-  bridge.RegisterApi("metadata.removeField", MetadataRemoveTag, {{"path", SecurityLevel::MediaWrite}});
+  api::RegisterApi("metadata.removeTag", MetadataRemoveTag);
 
-  // rating.set - Set track rating (0-5)
-  bridge.RegisterApi("rating.set", RatingSet, {{"path", SecurityLevel::MediaWrite}});
+  // metadata.removeField - Alias for removeTag (for compatibility)
+  api::RegisterApi("metadata.removeField", MetadataRemoveField);
+
+  // rating.set - Set track rating (0-5); path security comes from the declaration
+  api::RegisterApi("rating.set", RatingSet);
 
   // rating.get - Get track rating
-  bridge.RegisterApi("rating.get", RatingGet, {{"path", SecurityLevel::MediaRead}});
+  api::RegisterApi("rating.get", RatingGet);
 
   LOG("Metadata API registered (14 APIs)");
 }

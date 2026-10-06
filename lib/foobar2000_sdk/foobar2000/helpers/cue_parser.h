@@ -322,7 +322,7 @@ namespace cue_parser
 
 		void set_chapters(const char * p_path,chapter_list const & p_list,abort_callback & p_abort) {
 			input_wrapper_cue_t<I> instance;
-			instance.open(0,p_path,input_open_info_write,p_abort);
+			instance.open(nullptr,p_path,input_open_info_write,p_abort);
 
 			//stamp the cuesheet first
 			{
@@ -365,7 +365,7 @@ namespace cue_parser
 		void get_chapters(const char * p_path,chapter_list & p_list,abort_callback & p_abort) {
 
 			input_wrapper_cue_t<I> instance;
-			instance.open(0,p_path,input_open_info_read,p_abort);
+			instance.open(nullptr,p_path,input_open_info_read,p_abort);
 			const t_uint32 total = instance.get_subsong_count();
 
 			if (instance.expose_cuesheet()) {

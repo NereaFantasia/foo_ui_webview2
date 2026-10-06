@@ -92,6 +92,9 @@ namespace pfc {
 	void base64_encode(pfc::string_base & out, const void * in, t_size inSize) {
 		out.reset(); base64_encode_append(out, in, inSize);
 	}
+	pfc::string8 base64_encode(const void* in, t_size inSize) {
+		pfc::string8 ret; base64_encode_append(ret, in, inSize); return ret;
+	}
 	void base64_encode_append(pfc::string_base & out, const void * in, t_size inSize) {
 		int shift = 0;
 		int accum = 0;

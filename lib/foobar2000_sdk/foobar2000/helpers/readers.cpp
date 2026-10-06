@@ -42,7 +42,7 @@ file::ptr fullFileBuffer::open(const char * path, abort_callback & abort, file::
 		if (fs > sizeMax) return f;
 	}
 	try {
-		service_ptr_t<reader_bigmem_mirror> r = new service_impl_t<reader_bigmem_mirror>();
+		service_ptr_t r = new service_impl_t<reader_bigmem_mirror>();
 		r->init(f, abort);
 		f = r;
 	}
@@ -110,7 +110,7 @@ namespace {
 			m_position = chain->get_position( aborter );
 
 
-			auto i = std::make_shared<readAheadInstance_t>();;
+			auto i = std::make_shared<readAheadInstance_t>();
 			i->m_file = chain;
 			i->m_remote = chain->is_remote();
 			i->m_readAhead = readAhead;
@@ -246,25 +246,19 @@ namespace {
 			out.copy_meta(in);
 			out.overwrite_info(in);
 		}
-		bool get_dynamic_info_v2(class file_info & out, t_filesize & outOffset) override {
+		bool get_dynamic_info_v2(file_info & outInfo, t_filesize & outOffset) override {
 			auto & i = * m_instance;
 			if ( ! i.m_haveDynamicInfo ) return false;
 			
 			insync( i.m_guard );
-			auto ptr = i.m_dynamicInfo.begin();
-			for ( ;; ) {
-				if ( ptr == i.m_dynamicInfo.end() ) break;
-				if ( ptr->m_offset > m_position ) break;
-				++ ptr;
-			}
-
-			if ( ptr == i.m_dynamicInfo.begin() ) return false;
-
-			auto iter = ptr; --iter;
-			mergeInfo(out, iter->m_info);
-			outOffset = iter->m_offset;
-			i.m_dynamicInfo.erase( i.m_dynamicInfo.begin(), ptr );
-
+            auto & lst = i.m_dynamicInfo;
+            if ( lst.empty() ) return false;
+            {
+                auto & elem = lst.front();
+                mergeInfo(outInfo, elem.m_info);
+                outOffset = elem.m_offset;
+            }
+            lst.pop_front();
 			return true;
 		}
 	private:
@@ -319,8 +313,7 @@ namespace {
 						readHowMuch = readAtOnceLimit;
 					}
 
-					bool dynInfoGot = false;
-					dynInfoEntry_t dynInfo;
+                    std::list<dynInfoEntry_t> dynInfo;
 
 					if ( readHowMuch > 0 ) {
 						readHowMuch = i.m_file->receive( bufptr + readOffset, readHowMuch, i.m_abort );
@@ -332,12 +325,17 @@ namespace {
 							if ( dyn &= i.m_file ) {
 								file_dynamicinfo_v2::ptr dyn2;
 								if ( dyn2 &= dyn ) {
-									dynInfoGot = dyn2->get_dynamic_info_v2(dynInfo.m_info, dynInfo.m_offset);
+                                    for(;;) {
+                                        dynInfoEntry_t d;
+                                        if (!dyn2->get_dynamic_info_v2(d.m_info, d.m_offset)) break;
+                                        dynInfo.push_back( std::move(d) );
+                                    }
 								} else {
-									dynInfoGot = dyn->get_dynamic_info( dynInfo.m_info );
-									if (dynInfoGot) {
-										dynInfo.m_offset = dyn->get_position( i.m_abort );
-									}
+                                    dynInfoEntry_t d;
+                                    if (dyn->get_dynamic_info( d.m_info )) {
+                                        d.m_offset = dyn->get_position(i.m_abort);
+                                        dynInfo.push_back( std::move(d) );
+                                    }
 								}
 							}
 						}
@@ -356,9 +354,7 @@ namespace {
 						size_t got = i.m_bufferEnd - i.m_bufferBegin;
                         if ( atEOF || got >= i.m_readAhead ) i.m_canWrite.set_state(false);
 
-						if ( dynInfoGot ) {
-							i.m_dynamicInfo.push_back( std::move(dynInfo) );
-						}
+                        i.m_dynamicInfo.splice(i.m_dynamicInfo.end(), std::move(dynInfo));
 
 					}
 				}

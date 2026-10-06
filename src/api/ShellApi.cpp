@@ -3,15 +3,14 @@
 
 #include "pch.h"
 #include "api/ShellApi.h"
-#include "api/BridgeCore.h"
-#include "utils/PathSecurity.h"  // 安全: 统一路径验证
+#include "api/TypedApi.h"
+#include "api/generated/ShellSchema.h"
+#include "domain/PathSecurity.h"  // 安全: 统一路径验证
 #include <ShlObj.h>
 #include <shellapi.h>
-#include <filesystem>
 
 namespace {
-    using json = nlohmann::json;
-    namespace fs = std::filesystem;
+    namespace sh = api::shell;
 
     std::wstring TrimSpace(const std::wstring& text) {
         size_t start = 0;
@@ -47,57 +46,54 @@ namespace {
         }
         return L"\"" + escaped + L"\"";
     }
-    
+
+    std::vector<std::wstring> WideArgs(const std::optional<std::vector<std::string>>& args) {
+        std::vector<std::wstring> out;
+        if (args) {
+            out.reserve(args->size());
+            for (const auto& arg : *args) out.push_back(Utf8ToWide(arg));
+        }
+        return out;
+    }
+
     //==========================================================================
     // shell.showInExplorer - Show file in Windows Explorer
-    // 安全: 添加路径验证
+    // 安全: 路径校验由声明的 @security Read 完成
     //==========================================================================
-    json ShellShowInExplorer(const json& params) {
-        std::string pathStr = params.value("path", "");
-        
-        if (pathStr.empty()) {
-            return {{"success", false}, {"error", "path is required"}};
-        }
-        
-        std::wstring path = Utf8ToWide(pathStr);
-        
+    api::Result<void> ShellShowInExplorer(const sh::ShowInExplorerParams& params) {
+        std::wstring path = Utf8ToWide(params.path);
+
         // Use SHOpenFolderAndSelectItems for proper file selection
         PIDLIST_ABSOLUTE pidl = ILCreateFromPathW(path.c_str());
         if (pidl) {
             HRESULT hr = SHOpenFolderAndSelectItems(pidl, 0, nullptr, 0);
             ILFree(pidl);
-            
+
             if (SUCCEEDED(hr)) {
-                return {{"success", true}};
+                return api::Ok();
             }
         }
-        
-    // Fallback: use explorer /select,path
+
+        // Fallback: use explorer /select,path
         std::wstring cmd = L"/select,\"" + path + L"\"";
-        HINSTANCE result = ::ShellExecuteW(nullptr, L"open", L"explorer.exe", 
+        HINSTANCE result = ::ShellExecuteW(nullptr, L"open", L"explorer.exe",
             cmd.c_str(), nullptr, SW_SHOWNORMAL);
-        
+
         if (reinterpret_cast<intptr_t>(result) > 32) {
-            return {{"success", true}};
+            return api::Ok();
         }
-        
-        return {{"success", false}, {"error", "Failed to open Explorer"}};
+
+        return api::Fail("Failed to open Explorer", ApiErrorCode::OPERATION_FAILED);
     }
-    
+
     //==========================================================================
     // shell.openWith - Open file with default application
     // 安全: 黑名单模式 - 禁止可执行文件
-    // 安全: 添加路径验证
+    // 安全: 路径校验由声明的 @security Read 完成
     //==========================================================================
-    json ShellOpenWith(const json& params) {
-        std::string pathStr = params.value("path", "");
-        
-        if (pathStr.empty()) {
-            return {{"success", false}, {"error", "path is required"}};
-        }
-        
-        std::wstring path = Utf8ToWide(pathStr);
-        
+    api::Result<void> ShellOpenWith(const sh::OpenWithParams& params) {
+        std::wstring path = Utf8ToWide(params.path);
+
         // 安全: 可执行文件黑名单 (核心防线)
         static const std::vector<std::wstring> dangerousExtensions = {
             // 可执行程序
@@ -114,123 +110,99 @@ namespace {
             L".reg", L".inf",
             L".jar", L".application"
         };
-        
+
         // 转小写比较
         std::wstring lowerPath = path;
         std::transform(lowerPath.begin(), lowerPath.end(), lowerPath.begin(), ::towlower);
-        
+
         // 提取扩展名
         size_t dotPos = lowerPath.rfind(L'.');
         if (dotPos != std::wstring::npos) {
             std::wstring ext = lowerPath.substr(dotPos);
             for (const auto& dangerous : dangerousExtensions) {
                 if (ext == dangerous) {
-                    return {
-                        {"success", false}, 
-                        {"error", "Executable files cannot be opened for security reasons"}
-                    };
+                    return api::Fail("Executable files cannot be opened for security reasons",
+                                     ApiErrorCode::PERMISSION_DENIED);
                 }
             }
         }
-        
+
         // 通过黑名单检查，让 Windows 决定用什么程序打开
-        HINSTANCE result = ::ShellExecuteW(nullptr, L"open", path.c_str(), 
+        HINSTANCE result = ::ShellExecuteW(nullptr, L"open", path.c_str(),
             nullptr, nullptr, SW_SHOWNORMAL);
-        
+
         if (reinterpret_cast<intptr_t>(result) > 32) {
-            return {{"success", true}};
+            return api::Ok();
         }
-        
-        // Get error message
-        std::string shellErrorMsg;
+
+        // ShellExecute 的错误值分别对应找不到、拒绝访问与无关联程序，各给自己的 code。
         switch (reinterpret_cast<intptr_t>(result)) {
             case SE_ERR_FNF:
-                shellErrorMsg = "File not found";
-                break;
+                return api::Fail("File not found", ApiErrorCode::NOT_FOUND);
             case SE_ERR_PNF:
-                shellErrorMsg = "Path not found";
-                break;
+                return api::Fail("Path not found", ApiErrorCode::NOT_FOUND);
             case SE_ERR_ACCESSDENIED:
-                shellErrorMsg = "Access denied";
-                break;
+                return api::Fail("Access denied", ApiErrorCode::PERMISSION_DENIED);
             case SE_ERR_NOASSOC:
-                shellErrorMsg = "No application associated with this file type";
-                break;
+                return api::Fail("No application associated with this file type", ApiErrorCode::NOT_SUPPORTED);
             default:
-                shellErrorMsg = "ShellExecute failed with code " + std::to_string(reinterpret_cast<intptr_t>(result));
+                return api::Fail("ShellExecute failed with code " + std::to_string(reinterpret_cast<intptr_t>(result)),
+                                 ApiErrorCode::OPERATION_FAILED);
         }
-        
-        return {{"success", false}, {"error", shellErrorMsg}};
     }
-    
+
     //==========================================================================
     // shell.openExternal - Open URL in default browser
     //==========================================================================
-    json ShellOpenExternal(const json& params) {
-        std::string url = params.value("url", "");
-        
-        if (url.empty()) {
-            return {{"success", false}, {"error", "url is required"}};
-        }
-        
+    api::Result<void> ShellOpenExternal(const sh::OpenExternalParams& params) {
+        const std::string& url = params.url;
+
         // Security check: only allow http/https URLs
         if (!url.starts_with("http://") && !url.starts_with("https://") && !url.starts_with("mailto:")) {
-            return {{"success", false}, {"error", "Only http://, https://, and mailto: URLs are allowed"}};
+            return api::Fail("Only http://, https://, and mailto: URLs are allowed", ApiErrorCode::INVALID_PARAMS);
         }
-        
+
         std::wstring wurl = Utf8ToWide(url);
-        
-        HINSTANCE result = ::ShellExecuteW(nullptr, L"open", wurl.c_str(), 
+
+        HINSTANCE result = ::ShellExecuteW(nullptr, L"open", wurl.c_str(),
             nullptr, nullptr, SW_SHOWNORMAL);
-        
+
         if (reinterpret_cast<intptr_t>(result) > 32) {
-            return {{"success", true}};
+            return api::Ok();
         }
-        
-        return {{"success", false}, {"error", "Failed to open URL"}};
+
+        return api::Fail("Failed to open URL", ApiErrorCode::OPERATION_FAILED);
     }
-    
+
     //==========================================================================
     // shell.exec - Execute command (cwd 路径校验, 不限制命令)
     //==========================================================================
-    json ShellExec(const json& params) {
-        std::string command = params.value("command", "");
-        bool hidden = params.value("hidden", true);
-        std::string cwd = params.value("cwd", "");
-        
-        if (command.empty()) {
-            return {{"success", false}, {"error", "command is required"}};
-        }
-        
+    api::Result<sh::ExecResult> ShellExec(const sh::ExecParams& params) {
+        const bool hidden = params.hidden;
+        const std::string cwd = params.cwd.value_or("");
+
         // 不限制可执行命令: 主题来自用户自己或可信来源, 信任边界等同于安装一个
         // foobar2000 组件。命令名白名单 (cmd/powershell/node 等解释器) 既挡不住
         // 恶意主题 (可经 cmd /c、powershell -Command 任意执行), 又绊住正常主题的
         // 直接调用, 因此不作为安全边界。实际护栏是 cwd 的路径校验 (见下)
         // 与 FileApi 的 MediaWrite 路径黑名单。
-        
+
         // Build command line
-        std::vector<std::wstring> argStrings;
-        if (params.contains("args") && params["args"].is_array()) {
-            for (const auto& arg : params["args"]) {
-                argStrings.push_back(Utf8ToWide(arg.get<std::string>()));
-            }
-        }
-        
-        std::wstring cmdLine = Utf8ToWide(command);
-        for (const auto& arg : argStrings) {
+        std::wstring cmdLine = Utf8ToWide(params.command);
+        for (const auto& arg : WideArgs(params.args)) {
             cmdLine += L" " + QuoteArg(arg);
         }
-        
+
         std::wstring wcwd = cwd.empty() ? L"" : Utf8ToWide(cwd);
-        
+
         // 安全校验: cwd 路径必须通过 PathSecurity 验证
         if (!wcwd.empty()) {
             std::wstring cwdError;
             if (!PathSecurity::Instance().ValidatePath(wcwd, cwdError)) {
-                return {{"success", false}, {"error", "Invalid cwd: " + WideToUtf8(cwdError)}};
+                return api::Fail("Invalid cwd: " + WideToUtf8(cwdError), ApiErrorCode::INVALID_PATH);
             }
         }
-        
+
         // Create process
         STARTUPINFOW si = {};
         si.cb = sizeof(si);
@@ -238,13 +210,13 @@ namespace {
             si.dwFlags = STARTF_USESHOWWINDOW;
             si.wShowWindow = SW_HIDE;
         }
-        
+
         PROCESS_INFORMATION pi = {};
-        
+
         // Need a modifiable buffer for CreateProcess
         std::vector<wchar_t> cmdBuffer(cmdLine.begin(), cmdLine.end());
         cmdBuffer.push_back(L'\0');
-        
+
         BOOL success = CreateProcessW(
             nullptr,                    // Application name
             cmdBuffer.data(),           // Command line
@@ -257,26 +229,22 @@ namespace {
             &si,                        // Startup info
             &pi                         // Process info
         );
-        
+
         if (!success) {
             DWORD error = GetLastError();
-            return {
-                {"success", false}, 
-                {"error", "CreateProcess failed with error " + std::to_string(error)}
-            };
+            return api::Fail("CreateProcess failed with error " + std::to_string(error), ApiErrorCode::OPERATION_FAILED);
         }
-        
+
         // Don't wait for process - return immediately
         // For async execution, we just launch and forget
-        
+
         // Close handles
         CloseHandle(pi.hProcess);
         CloseHandle(pi.hThread);
-        
-        return {
-            {"success", true},
-            {"processId", pi.dwProcessId}
-        };
+
+        sh::ExecResult result;
+        result.processId = pi.dwProcessId;
+        return result;
     }
 
     //==========================================================================
@@ -284,20 +252,17 @@ namespace {
     // 设计目标: 避免 cmd /c start 的假成功，支持短等待拿到早退退出码
     // 安全: 不限制可执行文件, 绝对路径/cwd 走 PathSecurity 校验
     //==========================================================================
-    json ShellSpawn(const json& params) {
-        std::string executableUtf8 = params.value("executable", "");
-        bool hidden = params.value("hidden", true);
-        std::string cwdUtf8 = params.value("cwd", "");
-        int waitForExitMs = params.value("waitForExitMs", 0);
+    api::Result<sh::SpawnResult> ShellSpawn(const sh::SpawnParams& params) {
+        const bool hidden = params.hidden;
+        const std::string cwdUtf8 = params.cwd.value_or("");
+        // 声明限定 waitForExitMs >= 0；DWORD 能装下的等待时长封顶，避免溢出。
+        const DWORD waitForExitMs = params.waitForExitMs > static_cast<std::int64_t>(INFINITE - 1)
+            ? INFINITE - 1
+            : static_cast<DWORD>(params.waitForExitMs);
 
-        if (executableUtf8.empty()) {
-            return {{"success", false}, {"error", "executable is required"}};
-        }
-        if (waitForExitMs < 0) waitForExitMs = 0;
-
-        std::wstring executable = TrimOuterQuotes(TrimSpace(Utf8ToWide(executableUtf8)));
+        std::wstring executable = TrimOuterQuotes(TrimSpace(Utf8ToWide(params.executable)));
         if (executable.empty()) {
-            return {{"success", false}, {"error", "executable is empty after trim"}};
+            return api::Fail("executable is empty after trim", ApiErrorCode::INVALID_PARAMS);
         }
 
         // 不限制可执行文件: 见 ShellExec 说明。信任主题作者前提下, 可执行白名单
@@ -308,7 +273,7 @@ namespace {
         if (IsAbsolutePath(executable)) {
             std::wstring errorMsg;
             if (!PathSecurity::Instance().ValidatePath(executable, errorMsg)) {
-                return {{"success", false}, {"error", WideToUtf8(L"Access denied: " + errorMsg)}};
+                return api::Fail(WideToUtf8(L"Access denied: " + errorMsg), ApiErrorCode::PERMISSION_DENIED);
             }
         }
 
@@ -316,25 +281,18 @@ namespace {
         if (!cwd.empty()) {
             std::wstring errorMsg;
             if (!PathSecurity::Instance().ValidatePath(cwd, errorMsg)) {
-                return {{"success", false}, {"error", WideToUtf8(L"Invalid cwd: " + errorMsg)}};
+                return api::Fail(WideToUtf8(L"Invalid cwd: " + errorMsg), ApiErrorCode::INVALID_PATH);
             }
             // 检查 cwd 目录是否实际存在，避免 CreateProcess error 267
             DWORD attrs = GetFileAttributesW(cwd.c_str());
             if (attrs == INVALID_FILE_ATTRIBUTES || !(attrs & FILE_ATTRIBUTE_DIRECTORY)) {
-                return {{"success", false}, {"error", "cwd directory does not exist: " + cwdUtf8}};
-            }
-        }
-
-        std::vector<std::wstring> argStrings;
-        if (params.contains("args") && params["args"].is_array()) {
-            for (const auto& arg : params["args"]) {
-                argStrings.push_back(Utf8ToWide(arg.get<std::string>()));
+                return api::Fail("cwd directory does not exist: " + cwdUtf8, ApiErrorCode::NOT_FOUND);
             }
         }
 
         // 命令行格式: "exe" "arg1" "arg2"
         std::wstring cmdLine = QuoteArg(executable);
-        for (const auto& arg : argStrings) {
+        for (const auto& arg : WideArgs(params.args)) {
             cmdLine += L" ";
             cmdLine += QuoteArg(arg);
         }
@@ -370,64 +328,54 @@ namespace {
 
         if (!success) {
             DWORD error = GetLastError();
-            return {
-                {"success", false},
-                {"error", "CreateProcess failed with error " + std::to_string(error)}
-            };
+            return api::Fail("CreateProcess failed with error " + std::to_string(error), ApiErrorCode::OPERATION_FAILED);
         }
 
-        json result = {
-            {"success", true},
-            {"processId", pi.dwProcessId}
-        };
+        sh::SpawnResult result;
+        result.processId = pi.dwProcessId;
+        std::optional<api::Failure> failure;
 
         if (waitForExitMs > 0) {
-            DWORD waitRet = WaitForSingleObject(pi.hProcess, static_cast<DWORD>(waitForExitMs));
+            DWORD waitRet = WaitForSingleObject(pi.hProcess, waitForExitMs);
             if (waitRet == WAIT_OBJECT_0) {
                 DWORD exitCode = 0;
                 GetExitCodeProcess(pi.hProcess, &exitCode);
-                result["exited"] = true;
-                result["exitCode"] = static_cast<int>(exitCode);
+                result.exited = true;
+                result.exitCode = static_cast<int>(exitCode);
                 if (exitCode != 0) {
-                    result["success"] = false;
-                    result["error"] = "Process exited early with non-zero exit code";
+                    // 失败信封仍带上进程 id 与退出码，调用方据此判断是启动失败还是早退。
+                    failure = api::Fail("Process exited early with non-zero exit code", ApiErrorCode::OPERATION_FAILED,
+                                        {{"processId", pi.dwProcessId}, {"exited", true}, {"exitCode", static_cast<int>(exitCode)}});
                 }
             } else if (waitRet == WAIT_TIMEOUT) {
-                result["exited"] = false;
+                result.exited = false;
             } else {
-                result["success"] = false;
-                result["error"] = "WaitForSingleObject failed";
+                failure = api::Fail("WaitForSingleObject failed", ApiErrorCode::OPERATION_FAILED,
+                                    {{"processId", pi.dwProcessId}});
             }
         }
 
         CloseHandle(pi.hProcess);
         CloseHandle(pi.hThread);
 
+        if (failure) return *failure;
         return result;
     }
-    
+
 } // anonymous namespace
 
 //==========================================================================
 // Register Shell API
 //==========================================================================
 void RegisterShellApi() {
-    auto& bridge = BridgeCore::GetInstance();
-    
-    // shell.showInExplorer - Show file in Explorer
-    bridge.RegisterApi("shell.showInExplorer", ShellShowInExplorer, {{"path", SecurityLevel::Read}});
-    
-    // shell.openWith - Open with default application ( 黑名单模式)
-    bridge.RegisterApi("shell.openWith", ShellOpenWith, {{"path", SecurityLevel::Read}});
-    
-    // shell.openExternal - Open URL in browser
-    bridge.RegisterApi("shell.openExternal", ShellOpenExternal);
-    
-    // shell.exec - Execute command (无命令白名单, cwd 走 PathSecurity 校验)
-    bridge.RegisterApi("shell.exec", ShellExec);
+    // showInExplorer 与 openWith 的 path 安全级别（Read）来自声明的 @security 标签。
+    api::RegisterApi("shell.showInExplorer", ShellShowInExplorer);
+    api::RegisterApi("shell.openWith", ShellOpenWith);
+    api::RegisterApi("shell.openExternal", ShellOpenExternal);
+    // shell.exec - 无命令白名单, cwd 走 PathSecurity 校验
+    api::RegisterApi("shell.exec", ShellExec);
+    // shell.spawn - 无可执行白名单, 绝对路径/cwd 走 PathSecurity 校验
+    api::RegisterApi("shell.spawn", ShellSpawn);
 
-    // shell.spawn - Structured process launch (无可执行白名单, 绝对路径/cwd 走 PathSecurity 校验)
-    bridge.RegisterApi("shell.spawn", ShellSpawn);
-    
     LOG("Shell API registered (5 APIs)");
 }

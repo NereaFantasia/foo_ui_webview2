@@ -2,7 +2,11 @@
 // MockPlaybackService.h - Test mock for IPlaybackService
 // Phase 4: Enables offline testing of PlaybackApi handler logic.
 
+// The interface carries the shared track row, whose generated header reaches
+// ErrorEnvelope.h; the shim supplies the foobar2000 symbols that needs.
+#include "compat/fb2k_types.h"
 #include "../../src/interfaces/IPlaybackService.h"
+#include <optional>
 #include <string>
 #include <nlohmann/json.hpp>
 
@@ -44,19 +48,19 @@ public:
     mutable int getNowPlayingInfoCallCount = 0;
     NowPlayingInfo nowPlayingInfo;  // configurable by test
 
-    // P2: Current track JSON (configurable by test)
-    nlohmann::json currentTrackJson = nullptr;
-    mutable int getCurrentTrackJsonCallCount = 0;
+    // P2: Current track row (configurable by test)
+    std::optional<api::common::Track> currentTrack;
+    mutable int getCurrentTrackCallCount = 0;
 
     // P2: Playing item location (configurable by test)
     PlayingItemLocation playingItemLocation;
     mutable int getPlayingItemLocationCallCount = 0;
 
-    // P2: Track info at specific position (configurable by test)
-    nlohmann::json trackInfoAtResult = nullptr;
-    mutable int getTrackInfoAtCallCount = 0;
-    mutable size_t lastTrackInfoAtPlaylist = SIZE_MAX;
-    mutable size_t lastTrackInfoAtIndex = SIZE_MAX;
+    // P2: Track row at specific position (configurable by test)
+    std::optional<api::common::Track> trackAt;
+    mutable int getTrackAtCallCount = 0;
+    mutable size_t lastTrackAtPlaylist = SIZE_MAX;
+    mutable size_t lastTrackAtIndex = SIZE_MAX;
 
     // P2: Playing playlist (configurable by test)
     size_t playingPlaylist = SIZE_MAX;
@@ -107,14 +111,14 @@ public:
         setPlaybackOrderCallCount = 0;
         lastSetPlaybackOrder = -1;
         // P2
-        currentTrackJson = nullptr;
-        getCurrentTrackJsonCallCount = 0;
+        currentTrack.reset();
+        getCurrentTrackCallCount = 0;
         playingItemLocation = PlayingItemLocation{};
         getPlayingItemLocationCallCount = 0;
-        trackInfoAtResult = nullptr;
-        getTrackInfoAtCallCount = 0;
-        lastTrackInfoAtPlaylist = SIZE_MAX;
-        lastTrackInfoAtIndex = SIZE_MAX;
+        trackAt.reset();
+        getTrackAtCallCount = 0;
+        lastTrackAtPlaylist = SIZE_MAX;
+        lastTrackAtIndex = SIZE_MAX;
         playingPlaylist = SIZE_MAX;
         playingPlaylistName.clear();
         getPlayingPlaylistCallCount = 0;
@@ -249,10 +253,10 @@ public:
         return nowPlayingInfo;
     }
 
-    // P2: Current track JSON
-    nlohmann::json get_current_track_json() const override {
-        getCurrentTrackJsonCallCount++;
-        return currentTrackJson;
+    // P2: Current track row
+    std::optional<api::common::Track> get_current_track() const override {
+        getCurrentTrackCallCount++;
+        return currentTrack;
     }
 
     // P2: Playing item location
@@ -261,11 +265,11 @@ public:
         return playingItemLocation;
     }
 
-    nlohmann::json get_track_info_at(size_t playlist, size_t index) const override {
-        getTrackInfoAtCallCount++;
-        lastTrackInfoAtPlaylist = playlist;
-        lastTrackInfoAtIndex = index;
-        return trackInfoAtResult;
+    std::optional<api::common::Track> get_track_at(size_t playlist, size_t index) const override {
+        getTrackAtCallCount++;
+        lastTrackAtPlaylist = playlist;
+        lastTrackAtIndex = index;
+        return trackAt;
     }
 
     // P2: Playing playlist

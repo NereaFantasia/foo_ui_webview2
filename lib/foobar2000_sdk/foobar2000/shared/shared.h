@@ -284,6 +284,7 @@ void SHARED_EXPORT uPrintCrashInfo_StartLogging(const char * path);
 
 }//extern "C"
 
+inline pfc::string8 uGetTempFileName() { pfc::string8 path, ret; uGetTempPath(path); uGetTempFileName(path, "foo", 0, ret); return ret; }
 
 inline char * uCharNext(char * src) {return src+uCharLength(src);}
 inline const char * uCharNext(const char * src) {return src+uCharLength(src);}
@@ -554,12 +555,7 @@ private:
 #endif
 
 
-#ifdef _MSC_VER
-#define FB2K_DEPRECATED __declspec(deprecated)
-#else
-#define FB2K_DEPRECATED
-#endif
-
+#define FB2K_DEPRECATED [[deprecated]]
 
 namespace fb2k {
 #ifdef _WIN32

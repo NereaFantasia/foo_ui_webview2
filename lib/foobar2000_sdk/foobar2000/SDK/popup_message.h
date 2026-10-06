@@ -4,8 +4,8 @@
 #include <functional>
 #include "completion_notify.h"
 
-//! This interface allows you to show generic nonmodal noninteractive dialog with a text message. This should be used instead of MessageBox where possible.\n
-//! Usage: use popup_message::g_show / popup_message::g_show_ex static helpers, or popup_message::get() to obtain an instance.\n
+//! This interface allows you to show generic nonmodal noninteractive dialog with a text message. This should be used instead of @c MessageBox where possible.\n
+//! Usage: use @c popup_message::g_show / @c popup_message::g_show_ex static helpers, or @c popup_message::get() to obtain an instance.\n
 //! Thread safety: OK to call from worker threads (will delegate UI ops to main thread automatically). \n
 //! Note that all strings are UTF-8.
 class NOVTABLE popup_message : public service_base {
@@ -19,15 +19,15 @@ public:
 	//! @param p_icon Icon of the dialog - can be set to icon_information, icon_error or icon_query.
 	virtual void show_ex(const char * p_msg,size_t p_msg_length,const char * p_title,size_t p_title_length,t_icon p_icon = icon_information) = 0;
 
-	//! Activates the popup dialog; returns immediately (the dialog remains visible); helper function built around show_ex(), takes null terminated strings with no length limit parameters.
+	//! Activates the popup dialog; returns immediately (the dialog remains visible); helper function built around @c show_ex(), takes null terminated strings with no length limit parameters.
 	//! @param p_msg Message to show (UTF-8 encoded string).
 	//! @param p_title Title of dialog to show (UTF-8 encoded string).
-	//! @param p_icon Icon of the dialog - can be set to icon_information, icon_error or icon_query.
+	//! @param p_icon Icon of the dialog - can be set to @c icon_information, icon_error or icon_query.
 	inline void show(const char * p_msg,const char * p_title,t_icon p_icon = icon_information) {show_ex(p_msg,UINT_MAX,p_title,UINT_MAX,p_icon);}
 
-	//! Static helper function instantiating the service and activating the message dialog. See show_ex() for description of parameters.
+	//! Static helper function instantiating the service and activating the message dialog. See @c show_ex() for description of parameters.
 	static void g_show_ex(const char * p_msg,size_t p_msg_length,const char * p_title,size_t p_title_length,t_icon p_icon = icon_information);
-	//! Static helper function instantiating the service and activating the message dialog. See show() for description of parameters.
+	//! Static helper function instantiating the service and activating the message dialog. See @c show() for description of parameters.
 	static inline void g_show(const char * p_msg,const char * p_title,t_icon p_icon = icon_information) {g_show_ex(p_msg,UINT_MAX,p_title,UINT_MAX,p_icon);}
 
 	//! Shows generic box with a failure message
@@ -46,7 +46,7 @@ public:
 #define EXCEPTION_TO_POPUP_MESSAGE(CODE,LABEL) try { CODE; } catch(std::exception const & e) {popup_message::g_complain(LABEL,e);}
 
 //! \since 1.1
-//! Extendsion to popup_message API. \n
+//! Extendsion to @c popup_message API. \n
 //! Thread safety: OK to call from worker threads (will delegate UI ops to main thread automatically). \n
 //! Note that all strings are UTF-8.
 class NOVTABLE popup_message_v2 : public service_base {
@@ -89,13 +89,13 @@ namespace fb2k {
 
 //! \since 1.5
 //! MessageBox-like dialog, only non-blocking and with dark mode support under foobar2000 v2.0. \n
-//! Call from main thread only (contrary to popup_message / popup_message_v2) !!!
+//! Call from main thread only (contrary to `popup_message` / `popup_message_v2`) !!!
 class NOVTABLE popup_message_v3 : public service_base {
     FB2K_MAKE_SERVICE_COREAPI(popup_message_v3);
 public:
 
-    //! show_query button codes. \n
-    //! Combine one or more of these to create a button mask to pass to show_query().
+    //! @c show_query button codes. \n
+    //! Combine one or more of these to create a button mask to pass to @c show_query().
     enum {
         buttonOK = 1 << 0,
         buttonCancel = 1 << 1,
@@ -130,13 +130,16 @@ public:
     //! Shows an interactive query presenting the user with multiple actions to choose from.
     virtual void show_query(query_t const &) = 0;
 
-    //! Modal version of show_query. Reply part of the argument can be empty; the status code will be returned.
+    //! Modal version of @c show_query. Reply part of the argument can be empty; the status code will be returned.
     virtual uint32_t show_query_modal(query_t const &) = 0;
 
-	// Minimalist MessageBox() reimplementation wrapper
+	//! Minimalist @c MessageBox() reimplementation wrapper
 	int messageBox(fb2k::hwnd_t, const char*, const char*, unsigned);
+    //! Minimalist @c MessageBox() reimplementation wrapper, asynchronous version
 	void messageBoxAsync(fb2k::hwnd_t, const char*, const char*, unsigned, std::function<void (int)> reply = nullptr);
+    //! Helper to create @c query_t struct from @c MessageBox() style parameters
 	static query_t setupMessageBox(fb2k::hwnd_t parent, const char* msg, const char* title, unsigned flags);
+    //! Translates foobar2000 button code to @c MessageBox() return code, @c IDOK @c IDCANCEL and so on
 	static int messageBoxReply(uint32_t);
     
     //! Old method wrapper

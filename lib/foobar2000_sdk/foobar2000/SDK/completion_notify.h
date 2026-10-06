@@ -5,16 +5,16 @@
 //! Generic service for receiving notifications about async operation completion. Used by various other services.
 class completion_notify : public service_base {
 public:
-	//! Called when an async operation has been completed. Note that on_completion is always called from main thread. You can use on_completion_async() helper if you need to signal completion while your context is in another thread.\n
-	//! IMPLEMENTATION WARNING: If process being completed creates a window taking caller's window as parent, you must not destroy the parent window inside on_completion(). If you need to do so, use PostMessage() or main_thread_callback to delay the deletion.
-	//! IMPLEMENTATION NOTE: on_completion() couldn't be declared noexcept in base class for historical reasons, but it's recommended that your overrides of on_completion() are noexcept.
+	//! Called when an async operation has been completed. Note that @c on_completion is always called from main thread. You can use @c on_completion_async() helper if you need to signal completion while your context is in another thread.\n
+	//! IMPLEMENTATION WARNING: If process being completed creates a window taking caller's window as parent, you must not destroy the parent window inside @c on_completion(). If you need to do so, use @c PostMessage() or @c main_thread_callback to delay the deletion.
+	//! IMPLEMENTATION NOTE: @c on_completion() couldn't be declared noexcept in base class for historical reasons, but it's recommended that your overrides of @c on_completion() are noexcept.
 	//! @param p_code Context-specific status code. Possible values depend on the operation being performed.
 	virtual void on_completion(unsigned p_code) = 0;
 
-	//! Helper. Queues a notification, using main_thread_callback.
+	//! Helper. Queues a notification, using @c main_thread_callback.
 	void on_completion_async(unsigned p_code);
 
-	//! Helper. Checks for null ptr and calls on_completion_async when the ptr is not null.
+	//! Helper. Checks for null ptr and calls @c on_completion_async when the ptr is not null.
 	static void g_signal_completion_async(service_ptr_t<completion_notify> p_notify,unsigned p_code);
 
 	FB2K_MAKE_SERVICE_INTERFACE(completion_notify,service_base);
@@ -33,7 +33,7 @@ public:
 };
 
 //! Helper implementation.
-//! IMPLEMENTATION WARNING: If process being completed creates a window taking caller's window as parent, you must not destroy the parent window inside on_task_completion(). If you need to do so, use PostMessage() or main_thread_callback to delay the deletion.
+//! IMPLEMENTATION WARNING: If process being completed creates a window taking caller's window as parent, you must not destroy the parent window inside @c on_task_completion(). If you need to do so, use @c PostMessage() or @c main_thread_callback to delay the deletion.
 template<typename t_receiver>
 class completion_notify_impl : public completion_notify_orphanable {
 public:
@@ -50,18 +50,16 @@ private:
 };
 
 template<typename t_receiver>
-service_nnptr_t<completion_notify_orphanable> completion_notify_create(t_receiver * p_receiver,unsigned p_taskid) {
-	service_nnptr_t<completion_notify_impl<t_receiver> > instance = new service_impl_t<completion_notify_impl<t_receiver> >();
+service_ptr_t<completion_notify_orphanable> completion_notify_create(t_receiver * p_receiver,unsigned p_taskid) {
+	auto instance = fb2k::service_new<completion_notify_impl<t_receiver> >();
 	instance->setup(p_receiver,p_taskid);
 	return instance;
 }
 
 typedef service_ptr_t<completion_notify> completion_notify_ptr;
 typedef service_ptr_t<completion_notify_orphanable> completion_notify_orphanable_ptr;
-typedef service_nnptr_t<completion_notify> completion_notify_nnptr;
-typedef service_nnptr_t<completion_notify_orphanable> completion_notify_orphanable_nnptr;
 
-//! Helper base class for classes that manage nonblocking tasks and get notified back thru completion_notify interface.
+//! Helper base class for classes that manage nonblocking tasks and get notified back thru @c completion_notify interface.
 class completion_notify_receiver {
 public:
     completion_notify::ptr create_or_get_task(unsigned p_id);
@@ -73,14 +71,14 @@ public:
 
 	virtual void on_task_completion(unsigned p_id,unsigned p_status) {(void)p_id;(void)p_status;}
 private:
-	static void orphanfunc(unsigned,completion_notify_orphanable_nnptr p_item) {p_item->orphan();}
-	pfc::map_t<unsigned,completion_notify_orphanable_nnptr> m_tasks;
+	static void orphanfunc(unsigned,completion_notify_orphanable_ptr p_item) {p_item->orphan();}
+	pfc::map_t<unsigned,completion_notify_orphanable_ptr> m_tasks;
 };
 
 namespace fb2k {
     
     typedef std::function<void (unsigned)> completionNotifyFunc_t;
 
-    //! Modern completion_notify helper
+    //! Modern @c completion_notify helper
     completion_notify::ptr makeCompletionNotify( completionNotifyFunc_t );
 }

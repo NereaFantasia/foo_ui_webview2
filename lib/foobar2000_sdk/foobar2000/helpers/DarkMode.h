@@ -18,17 +18,39 @@
 
 namespace fb2k {
 	bool isDarkMode();
-
+	DarkMode::param_t darkParams();
+	DarkMode::param_t darkParams(bool v);
 #ifndef CDarkModeHooks
 	class CDarkModeHooks : public DarkMode::CHooks, private ui_config_callback_impl {
 	public:
-		CDarkModeHooks() : CHooks(isDarkMode()) {}
-
+		CDarkModeHooks() : CHooks(darkParams()) {}
+		
 	private:
 		void ui_fonts_changed() override {}
-		void ui_colors_changed() override { this->SetDark(isDarkMode()); }
+		void ui_colors_changed() override { this->SetParam(darkParams()); }
 	};
 #endif
+
+	template<typename api_t>
+	DarkMode::param_t readDarkModeParam(api_t api) {
+		DarkMode::param_t ret;
+		if (api) {
+			if (api->is_dark_mode()) {
+				ret.bDark = true;
+				t_ui_color tint = 0;
+				if (api->query_color(ui_color_darkmode_tint, tint)) {
+					ret.clrTint = tint & ret.clrTintMask;
+				}
+			} else {
+				t_ui_color test = 0;
+				if (api->query_color(ui_color_retromode, test)) {
+					if (test != 0) ret.bRetro = true;
+				}
+			}
+		}
+		return ret;
+	}
+
 }
 
 #endif

@@ -4,7 +4,7 @@
 // 断言依据是 docs/preferences/DESIGN.md 第 6 节：名字为空、含非法字符、
 // 与现有模板重名时在起名对话框内拒绝；重名按大小写不敏感判定。
 #include "pch.h"
-#include "../src/core/PreferencesTemplateName.h"
+#include "../src/prefs/PreferencesTemplateName.h"
 
 using namespace prefs_template;
 

@@ -1,6 +1,7 @@
 #pragma once
 #include <uxtheme.h> // HTHEME
 #include <functional>
+#include "DarkModeParam.h"
 
 class CListCell {
 public:
@@ -25,7 +26,7 @@ public:
 		uint32_t colorHighlight = 0;
 		CWindow thisWnd;
 		std::function<void(CDCHandle, const CRect&) > imageRenderer;
-		bool darkMode = false;
+		DarkMode::param_t darkMode;
 	};
 	virtual void DrawContent( DrawContentArg_t const & arg ) = 0;
 	virtual const char * Theme() { return nullptr; }

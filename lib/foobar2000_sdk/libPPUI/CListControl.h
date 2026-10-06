@@ -11,7 +11,7 @@
 #pragma comment(lib, "uxtheme.lib")
 
 #include <functional>
-#include <list>
+#include <deque>
 #include <vector>
 #include <set>
 #include <string>
@@ -20,6 +20,7 @@
 #include "wtl-pp.h"
 #include "gesture.h"
 #include "gdiplus_helpers.h"
+#include "DarkModeParam.h"
 
 #define CListControl_ScrollWindowFix
 
@@ -50,12 +51,10 @@ public:
 	HWND CreateInDialog(CWindow wndDialog, UINT replaceControlID, CWindow wndReplace);
 
 	enum {
-		MSG_SIZE_ASYNC = WM_USER + 13,
-		MSG_EXEC_DEFERRED,
+		MSG_EXEC_DEFERRED = WM_USER + 13,
 		UserMsgBase
 	};
-	static UINT msgSetDarkMode();
-	const UINT MSG_SET_DARK = msgSetDarkMode();
+	const UINT MSG_SET_DARK = DarkMode::msgSetDarkMode();
 
 	static void wndSetDarkMode(CWindow wndListControl, bool bDark);
 
@@ -65,7 +64,7 @@ public:
 		MSG_WM_PRINTCLIENT(OnPrintClient);
 		MESSAGE_HANDLER(WM_VSCROLL,OnVScroll);
 		MESSAGE_HANDLER(WM_HSCROLL,OnHScroll);
-		MESSAGE_HANDLER(WM_SIZE,OnSize);
+		MSG_WM_SIZE(OnSize)
 		MESSAGE_HANDLER(WM_MOUSEHWHEEL,OnHWheel);
 		MESSAGE_HANDLER(WM_MOUSEWHEEL,OnVWheel);
 		MESSAGE_HANDLER(WM_LBUTTONDOWN,SetFocusPassThru);
@@ -76,7 +75,6 @@ public:
 		MESSAGE_HANDLER(WM_MBUTTONDBLCLK,SetFocusPassThru);
 		MESSAGE_HANDLER(WM_CREATE,OnCreatePassThru);
 		MSG_WM_ERASEBKGND(OnEraseBkgnd)
-		MESSAGE_HANDLER(MSG_SIZE_ASYNC,OnSizeAsync);
 		MESSAGE_HANDLER(WM_GESTURE, OnGesture)
 		MSG_WM_THEMECHANGED(OnThemeChanged)
 		MESSAGE_HANDLER_EX( WM_GETDLGCODE, OnGetDlgCode )
@@ -243,7 +241,8 @@ public:
 	//! Made virtual so it can be specialized to allow only specific drop locations.
 	virtual t_size InsertIndexFromPointEx(const CPoint & pt, bool & bInside) const;
 
-	virtual void ListHandleResize();
+	virtual void ListHandleResize() noexcept;
+	unsigned ListHandlingResize() const noexcept { return m_handlingResize; }
 	
 	//! Can smooth-scroll *now* ? Used to suppress smooth scroll on temporary basis due to specific user operations in progress
 	virtual bool CanSmoothScroll() const { return true; }
@@ -265,6 +264,7 @@ public:
 	enum {
 		rowStyleGrid = 0,
 		rowStyleFlat,
+		rowStyleFlatDelimited,
 		rowStylePlaylist,
 		rowStylePlaylistDelimited,
 
@@ -275,15 +275,17 @@ public:
 	void SetRowStyle(unsigned v) { if (m_rowStyle == v) return; this->m_rowStyle = v; if (m_hWnd) Invalidate(); }
 	void SetFlatStyle() {SetRowStyle(rowStyleFlat);}
 	unsigned m_rowStyle = rowStyleDefault;
-	bool DelimitColumns() const { return m_rowStyle == rowStyleGrid || m_rowStyle == rowStylePlaylistDelimited; }
+	bool DelimitColumns() const { return m_rowStyle == rowStyleGrid || m_rowStyle == rowStylePlaylistDelimited || m_rowStyle == rowStyleFlatDelimited; }
 
 	static COLORREF BlendGridColor( COLORREF bk, COLORREF tx );
 	static COLORREF BlendGridColor( COLORREF bk );
 	COLORREF GridColor();
 
-	void SetDarkMode(bool bDark);
+	void SetDarkMode(bool bDark) { SetDarkMode( DarkMode::param_t { /*.bDark = */ bDark}); }
+	void SetDarkMode(DarkMode::param_t const & p);
 	virtual void RefreshDarkMode();
-	bool GetDarkMode() const { return m_darkMode; }
+	bool GetDarkMode() const { return m_darkMode.IsDark(); }
+	DarkMode::param_t GetDarkModeParam() const { return m_darkMode; }
 private:
 	void OnKeyDown(UINT nChar, UINT nRepCnt, UINT nFlags);
 	LRESULT OnSetDark(UINT, WPARAM, LPARAM);
@@ -294,8 +296,7 @@ private:
 	void OnPaint(CDCHandle);
 	LRESULT OnVScroll(UINT,WPARAM,LPARAM,BOOL&);
 	LRESULT OnHScroll(UINT,WPARAM,LPARAM,BOOL&);
-	LRESULT OnSize(UINT,WPARAM,LPARAM,BOOL&);
-	LRESULT OnSizeAsync(UINT,WPARAM,LPARAM,BOOL&) {ListHandleResize();return 0;}
+	void OnSize(UINT, CSize) noexcept;
 	LRESULT OnVWheel(UINT,WPARAM,LPARAM,BOOL&);
 	LRESULT OnHWheel(UINT,WPARAM,LPARAM,BOOL&);
 	LRESULT OnGesture(UINT,WPARAM,LPARAM,BOOL&);
@@ -306,17 +307,17 @@ private:
 
 	void OnThemeChanged();
 	int GetScrollThumbPos(int which);
-	void RefreshSliders();
-	void RefreshSlider(bool p_vertical);
+	void RefreshSliders() noexcept;
+	void RefreshSlidersUnchecked() noexcept;
+	void RefreshSlider(bool p_vertical) noexcept;
+	bool SliderVisible(bool vert) noexcept;
 
-	void OnSizeAsync_Trigger();
 	static LRESULT CALLBACK MouseHookProc(int nCode, WPARAM wParam, LPARAM lParam);
 	bool MouseWheelFromHook(UINT msg, LPARAM data);
 
 	bool m_suppressMouseWheel = false;
 	int m_wheelAccumX = 0, m_wheelAccumY = 0;
 	CPoint m_viewOrigin = CPoint(0,0);
-	bool m_sizeAsyncPending = false;
 	CPoint m_gesturePoint;
 	
 	// Prepares group header & variable height item data for view with the specified origin and current client size
@@ -336,6 +337,9 @@ protected:
 	// In special conditions when probing is expensive, greedy mode should be turned off
 	bool m_greedyGroupLayout = true;
 
+	unsigned m_handlingResize = 0; // ListHandleResize() pass number, 0 if not in progress
+	bool m_handlingResize2ndPassTrigger = false; // set on WM_SIZE while already in ListHandleResize() to trigger another pass
+
 	pfc::map_t<pfc::string8, CTheme, pfc::comparator_strcmp> m_themeCache;
 	CTheme & themeFor( const char * what );
 	CTheme & theme() { return themeFor("LISTVIEW");}
@@ -345,7 +349,7 @@ protected:
 	bool m_ensureVisibleUser = false;
 
 	void defer( std::function<void () > f );
-	LRESULT OnExecDeferred(UINT, WPARAM, LPARAM);
+	LRESULT OnExecDeferred(UINT, WPARAM, LPARAM) noexcept;
 
 	// Overlays our stuff on top of generic DoDragDrop call.
 	// Currently catches mouse wheel messages in mid-drag&drop and handles them in our view.
@@ -354,8 +358,8 @@ protected:
 	bool paintInProgress() const { return m_paintInProgress; }
 private:
 	bool m_defferredMsgPending = false;
-	std::list<std::function<void ()> > m_deferred;
-	bool m_darkMode = false;
+	std::deque<std::function<void ()> > m_deferred;
+	DarkMode::param_t m_darkMode;
 
 	bool m_paintInProgress = false;
 };

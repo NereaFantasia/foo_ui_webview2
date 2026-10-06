@@ -2,23 +2,15 @@
 // Uses compat shim instead of full foobar2000 SDK
 #include "pch.h"
 #include "compat/fb2k_types.h"
+#include "utils/SubsongPath.h"
 
-// Re-implement the parsing logic inline to avoid SDK header dependency.
-// This mirrors SubsongUtils::ParseSubsongPath exactly.
+// SubsongUtils.h pulls in the SDK, so the tests below go through the SDK-free
+// splitter it delegates to. SubsongUtils::ParseSubsongPath adds only a console
+// line for an unreadable index on top of this.
 namespace SubsongUtils_Test {
     inline std::pair<std::string, t_uint32> ParseSubsongPath(const std::string& path) {
-        std::string filePath = path;
-        t_uint32 subsongIndex = 0;
-        size_t pos = path.find("|subsong:");
-        if (pos != std::string::npos) {
-            filePath = path.substr(0, pos);
-            try {
-                subsongIndex = static_cast<t_uint32>(std::stoul(path.substr(pos + 9)));
-            } catch (...) {
-                subsongIndex = 0;
-            }
-        }
-        return { filePath, subsongIndex };
+        fb2k_paths::SubsongPath parts = fb2k_paths::SplitSubsongPath(path);
+        return { parts.path, parts.subsong };
     }
 }
 

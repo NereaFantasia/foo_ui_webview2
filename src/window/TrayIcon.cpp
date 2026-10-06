@@ -6,8 +6,8 @@
 #include "api/BridgeCore.h"
 // WebViewUI::activate() 是"隐藏/最小化 → 恢复主窗口"的既有权威，
 // 托盘内置 _sys_show 原生路由复用它（见 RestoreMainWindowNatively）。
-#include "core/UserInterface.h"
-#include "core/PreferencesPage.h"
+#include "ui/UserInterface.h"
+#include "prefs/PreferencesPage.h"
 #include <shellapi.h>
 #include <foobar2000/SDK/playback_control.h>
 #include <foobar2000/SDK/core_api.h>
@@ -322,34 +322,45 @@ const std::vector<TrayMenuItem>& TrayIcon::GetZoneItems(TrayMenuPosition positio
     return m_zones[zone];
 }
 
-menu_limits::CheckResult TrayIcon::TrySetContextMenu(
-    std::vector<TrayMenuItem> items, const std::optional<TrayMenuConfig>& config) {
+TrayMenuStorage TrayIcon::SnapshotMenuStorage() const {
     TrayMenuStorage storage;
     storage.zones[0] = m_zones[0];
     storage.zones[1] = m_zones[1];
     storage.zones[2] = m_zones[2];
     storage.config = m_menuConfig;
-    auto breach = TryReplaceContextMenuZone(storage, std::move(items), config);
-    if (!breach.ok) return breach;
-    m_menuConfig = storage.config;
+    return storage;
+}
+
+void TrayIcon::CommitMenuStorage(TrayMenuStorage&& storage) {
+    m_menuConfig = std::move(storage.config);
     m_zones[0] = std::move(storage.zones[0]);
     m_zones[1] = std::move(storage.zones[1]);
     m_zones[2] = std::move(storage.zones[2]);
+}
+
+menu_limits::CheckResult TrayIcon::TrySetContextMenu(
+    std::vector<TrayMenuItem> items, const std::optional<TrayMenuConfig>& config) {
+    TrayMenuStorage storage = SnapshotMenuStorage();
+    if (auto breach = TryReplaceContextMenuZone(storage, std::move(items), config); !breach.ok) return breach;
+    CommitMenuStorage(std::move(storage));
+    return menu_limits::CheckResult::Ok();
+}
+
+menu_limits::CheckResult TrayIcon::TryReplaceMenuZones(
+    TrayZoneReplacement zones, const std::optional<TrayMenuConfig>& config) {
+    TrayMenuStorage storage = SnapshotMenuStorage();
+    if (auto breach = TryReplaceTrayZones(storage, std::move(zones), config); !breach.ok) return breach;
+    CommitMenuStorage(std::move(storage));
     return menu_limits::CheckResult::Ok();
 }
 
 menu_limits::CheckResult TrayIcon::TryAppendMenuItems(
     std::vector<TrayMenuItem> items, TrayMenuPosition position) {
-    TrayMenuStorage storage;
-    storage.zones[0] = m_zones[0];
-    storage.zones[1] = m_zones[1];
-    storage.zones[2] = m_zones[2];
-    storage.config = m_menuConfig;
-    auto breach = TryAppendMenuItemsToStorage(storage, std::move(items), position);
-    if (!breach.ok) return breach;
-    m_zones[0] = std::move(storage.zones[0]);
-    m_zones[1] = std::move(storage.zones[1]);
-    m_zones[2] = std::move(storage.zones[2]);
+    TrayMenuStorage storage = SnapshotMenuStorage();
+    if (auto breach = TryAppendMenuItemsToStorage(storage, std::move(items), position); !breach.ok) {
+        return breach;
+    }
+    CommitMenuStorage(std::move(storage));
     return menu_limits::CheckResult::Ok();
 }
 
@@ -363,14 +374,7 @@ void TrayIcon::AppendMenuItems(const std::vector<TrayMenuItem>& items, TrayMenuP
 int TrayIcon::RemoveMenuItems(const std::vector<std::string>& ids) {
     if (ids.empty()) return 0;
     int removed = 0;
-    auto matchId = [&](const TrayMenuItem& it) {
-        return std::find(ids.begin(), ids.end(), it.id) != ids.end();
-    };
-    for (auto& z : m_zones) {
-        auto before = z.size();
-        z.erase(std::remove_if(z.begin(), z.end(), matchId), z.end());
-        removed += static_cast<int>(before - z.size());
-    }
+    for (auto& z : m_zones) removed += RemoveTrayMenuItemsById(z, ids);
     return removed;
 }
 

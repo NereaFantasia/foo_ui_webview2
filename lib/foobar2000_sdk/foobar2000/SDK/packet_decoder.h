@@ -51,7 +51,7 @@ public:
 	//! Static helper, creates a packet_decoder instance and initializes it with specific decoder setup data.
 	static void g_open(service_ptr_t<packet_decoder> & p_out,bool p_decode,const GUID & p_owner,t_size p_param1,const void * p_param2,t_size p_param2size,abort_callback & p_abort);
 
-    static const GUID owner_MP4,owner_matroska,owner_MP3,owner_MP2,owner_MP1,owner_MP4_ALAC,owner_ADTS,owner_ADIF, owner_Ogg, owner_MP4_AMR, owner_MP4_AMR_WB, owner_MP4_AC3, owner_MP4_EAC3, owner_MP4_FLAC, owner_MP4_Opus, owner_MP4_MPEGH;
+    static const GUID owner_MP4,owner_matroska,owner_MP3,owner_MP2,owner_MP1,owner_MP4_ALAC,owner_ADTS,owner_ADIF, owner_Ogg, owner_MP4_AMR, owner_MP4_AMR_WB, owner_MP4_AC3, owner_MP4_EAC3, owner_MP4_FLAC, owner_MP4_Opus, owner_MP4_MPEGH, owner_MP4_TrueHD;
 
 	struct matroska_setup
 	{
@@ -108,13 +108,11 @@ public:
 	FB2K_MAKE_SERVICE_INTERFACE(packet_decoder,service_base);
 };
 
-class NOVTABLE packet_decoder_streamparse : public packet_decoder
-{
+class NOVTABLE packet_decoder_rawoutput : public packet_decoder {
 public:
-	virtual void decode_ex(const void * p_buffer,t_size p_bytes,t_size & p_bytes_processed,audio_chunk & p_chunk,abort_callback & p_abort) = 0;
-	virtual void analyze_first_frame_ex(const void * p_buffer,t_size p_bytes,t_size & p_bytes_processed,abort_callback & p_abort) = 0;
+	virtual void decode_raw(const void * data, size_t size, audio_chunk & outChunk, mem_block_container & outBlock, abort_callback & abort) = 0;
 
-	FB2K_MAKE_SERVICE_INTERFACE(packet_decoder_streamparse,packet_decoder);
+	FB2K_MAKE_SERVICE_INTERFACE(packet_decoder_rawoutput, packet_decoder);
 };
 
 class NOVTABLE packet_decoder_entry : public service_base {
@@ -144,7 +142,7 @@ public:
 	}
 	void open(service_ptr_t<packet_decoder> & p_out,bool p_decode,const GUID & p_owner,t_size p_param1,const void * p_param2,t_size p_param2size,abort_callback & p_abort) override {
 		PFC_ASSERT(is_our_setup(p_owner,p_param1,p_param2,p_param2size));
-		service_ptr_t<T> instance = new service_impl_t<T>();
+		service_ptr_t instance = new service_impl_t<T>();
 		instance->open(p_owner,p_decode,p_param1,p_param2,p_param2size,p_abort);
 		p_out = instance.get_ptr();
 	}

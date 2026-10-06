@@ -2,6 +2,8 @@
 // Part of foo_ui_webview2 - foobar2000 WebView2 UI Plugin
 #include "pch.h"
 #include "PortHub.h"
+#include "ErrorEnvelope.h"
+#include "api/EventEmit.h"
 #include "../core/WebViewContext.h"
 #include <sstream>
 #include <iomanip>
@@ -27,17 +29,15 @@ std::string PortHub::GeneratePortId() {
 
 void PortHub::CleanupExpiredStates() {
     auto now = std::chrono::system_clock::now();
-    auto& ctx = WebViewContext::GetInstance();
-    
+
     for (auto it = m_states.begin(); it != m_states.end(); ) {
         if (it->second.expiresAt && *it->second.expiresAt <= now) {
             // Broadcast state:deleted event before removing (per design doc)
-            json payload = {
-                {"key", it->first},
-                {"sourceWindowId", ""},  // No source for TTL expiration
-                {"reason", "expired"}
-            };
-            ctx.BroadcastEvent("state:deleted", payload);
+            api::state::DeletedPayload payload;
+            payload.key = it->first;
+            payload.sourceWindowId = "";  // No source for TTL expiration
+            payload.reason = "expired";
+            api::emit::Broadcast<api::state::events::Deleted>(payload);
             it = m_states.erase(it);
         } else {
             ++it;
@@ -45,244 +45,183 @@ void PortHub::CleanupExpiredStates() {
     }
 }
 
+static void AnnounceDisconnected(const std::string& portId, const std::string& name,
+                                 const std::string& windowId) {
+    api::port::DisconnectedPayload payload;
+    payload.portId = portId;
+    payload.name = name;
+    payload.windowId = windowId;
+    api::emit::Broadcast<api::port::events::Disconnected>(payload);
+}
+
+static api::port::MessagePayload MessageTo(const std::string& targetPortId, const std::string& sourcePortId,
+                                           const std::string& sourceWindowId, const json& message) {
+    api::port::MessagePayload payload;
+    payload.portId = targetPortId;
+    payload.sourcePortId = sourcePortId;
+    payload.sourceWindowId = sourceWindowId;
+    payload.message = message;
+    return payload;
+}
+
+// Epoch milliseconds, the form expiry times are reported in.
+static std::int64_t EpochMs(std::chrono::system_clock::time_point time) {
+    return std::chrono::duration_cast<std::chrono::milliseconds>(time.time_since_epoch()).count();
+}
+
 // ============================================================================
 // Port API Implementation
 // ============================================================================
 
-json PortHub::CreatePort(const std::string& name, const std::string& windowId) {
+api::port::ConnectResult PortHub::CreatePort(const std::string& name, const std::string& windowId,
+                                             HWND page) {
     std::lock_guard<std::mutex> lock(m_mutex);
 
     std::string portId = GeneratePortId();
+    m_ports.Add({portId, name, windowId, page});
 
-    // Create port info
-    PortInfo info{portId, name, windowId};
-    m_ports[portId] = info;
+    api::port::ConnectedPayload event;
+    event.portId = portId;
+    event.name = name;
+    event.windowId = windowId;
+    api::emit::Broadcast<api::port::events::Connected>(event);
 
-    // Update indices
-    m_portsByName[name].insert(portId);
-    m_portsByWindow[windowId].insert(portId);
-
-    // Broadcast port:connected event to all windows
-    json eventPayload = {
-        {"portId", portId},
-        {"name", name},
-        {"windowId", windowId}
-    };
-    WebViewContext::GetInstance().BroadcastEvent("port:connected", eventPayload);
-
-    return {
-        {"portId", portId},
-        {"name", name},
-        {"windowId", windowId}
-    };
+    api::port::ConnectResult result;
+    result.portId = std::move(portId);
+    result.name = name;
+    result.windowId = windowId;
+    return result;
 }
 
-json PortHub::DestroyPort(const std::string& portId, const std::string& callerWindowId) {
+api::Result<void> PortHub::DestroyPort(const std::string& portId, const std::string& callerWindowId) {
     std::lock_guard<std::mutex> lock(m_mutex);
 
-    auto it = m_ports.find(portId);
-    if (it == m_ports.end()) {
-        return {{"success", false}, {"error", "Port not found"}, {"code", "PORT_NOT_FOUND"}};
+    const auto* info = m_ports.Find(portId);
+    if (!info) {
+        return api::Fail("Port not found", ApiErrorCode::PORT_NOT_FOUND);
     }
-
-    const auto& info = it->second;
 
     // Ownership check: only the window that created the port can disconnect it
-    if (!callerWindowId.empty() && info.windowId != callerWindowId) {
-        return {{"success", false}, {"error", "Permission denied: port belongs to another window"}, {"code", "PERMISSION_DENIED"}};
+    if (!callerWindowId.empty() && info->windowId != callerWindowId) {
+        return api::Fail("Permission denied: port belongs to another window", ApiErrorCode::PERMISSION_DENIED);
     }
 
-    std::string name = info.name;
-    std::string windowId = info.windowId;
-
-    // Remove from indices
-    m_portsByName[name].erase(portId);
-    if (m_portsByName[name].empty()) {
-        m_portsByName.erase(name);
+    if (const auto removed = m_ports.Remove(portId)) {
+        AnnounceDisconnected(removed->portId, removed->name, removed->windowId);
     }
 
-    m_portsByWindow[windowId].erase(portId);
-    if (m_portsByWindow[windowId].empty()) {
-        m_portsByWindow.erase(windowId);
-    }
-
-    // Remove port
-    m_ports.erase(it);
-
-    // Broadcast port:disconnected event
-    json eventPayload = {
-        {"portId", portId},
-        {"name", name},
-        {"windowId", windowId}
-    };
-    WebViewContext::GetInstance().BroadcastEvent("port:disconnected", eventPayload);
-
-    return {{"success", true}};
+    return api::Ok();
 }
 
-json PortHub::PostMessage(const std::string& portId, const json& message, const std::string& sourceWindowId) {
+api::Result<api::port::PostMessageResult> PortHub::PostMessage(const std::string& portId, const json& message,
+                                                               const std::string& sourceWindowId) {
     std::lock_guard<std::mutex> lock(m_mutex);
 
-    auto it = m_ports.find(portId);
-    if (it == m_ports.end()) {
-        return {{"success", false}, {"error", "Port not found"}, {"code", "PORT_NOT_FOUND"}};
+    const auto* senderInfo = m_ports.Find(portId);
+    if (!senderInfo) {
+        return api::Fail("Port not found", ApiErrorCode::PORT_NOT_FOUND);
     }
-
-    const auto& senderInfo = it->second;
 
     // Verify sender owns this port
-    if (!sourceWindowId.empty() && senderInfo.windowId != sourceWindowId) {
-        return {{"success", false}, {"error", "Port does not belong to caller window"}, {"code", "PERMISSION_DENIED"}};
-    }
-    const std::string& channelName = senderInfo.name;
-
-    // Find all ports with the same name
-    auto nameIt = m_portsByName.find(channelName);
-    if (nameIt == m_portsByName.end()) {
-        return {{"success", true}, {"recipients", 0}};
+    if (!sourceWindowId.empty() && senderInfo->windowId != sourceWindowId) {
+        return api::Fail("Port does not belong to caller window", ApiErrorCode::PERMISSION_DENIED);
     }
 
-    auto& ctx = WebViewContext::GetInstance();
-    int delivered = 0;
-    
-    for (const auto& targetPortId : nameIt->second) {
-        if (targetPortId == portId) continue; // Skip sender
+    api::port::PostMessageResult result;
 
-        auto targetIt = m_ports.find(targetPortId);
-        if (targetIt == m_ports.end()) continue;
+    // Every other port with the same name
+    for (const auto* target : m_ports.ChannelPorts(senderInfo->name)) {
+        if (target->portId == portId) continue; // Skip sender
 
-        const auto& targetInfo = targetIt->second;
-
-        // Send port:message event with correct structure per design doc
-        json eventPayload = {
-            {"portId", targetPortId},
-            {"sourcePortId", portId},
-            {"sourceWindowId", sourceWindowId},
-            {"message", message}
-        };
-        
-        if (ctx.SendEventTo(targetInfo.windowId, "port:message", eventPayload)) {
-            delivered++;
+        if (api::emit::SendTo<api::port::events::Message>(target->windowId,
+                                                          MessageTo(target->portId, portId, sourceWindowId, message))) {
+            result.recipients++;
         }
     }
 
-    return {{"success", true}, {"recipients", delivered}};
+    return result;
 }
 
-json PortHub::PostMessageTo(const std::string& portId, const std::string& targetPortId, 
-                            const json& message, const std::string& sourceWindowId) {
+api::Result<void> PortHub::PostMessageTo(const std::string& portId, const std::string& targetPortId,
+                                         const json& message, const std::string& sourceWindowId) {
     std::lock_guard<std::mutex> lock(m_mutex);
 
     // Verify sender port exists
-    auto senderIt = m_ports.find(portId);
-    if (senderIt == m_ports.end()) {
-        return {{"success", false}, {"error", "Sender port not found"}, {"code", "PORT_NOT_FOUND"}};
+    const auto* senderInfo = m_ports.Find(portId);
+    if (!senderInfo) {
+        return api::Fail("Sender port not found", ApiErrorCode::PORT_NOT_FOUND);
     }
 
     // Verify sender owns this port
-    if (!sourceWindowId.empty() && senderIt->second.windowId != sourceWindowId) {
-        return {{"success", false}, {"error", "Port does not belong to caller window"}, {"code", "PERMISSION_DENIED"}};
+    if (!sourceWindowId.empty() && senderInfo->windowId != sourceWindowId) {
+        return api::Fail("Port does not belong to caller window", ApiErrorCode::PERMISSION_DENIED);
     }
 
     // Verify target port exists
-    auto targetIt = m_ports.find(targetPortId);
-    if (targetIt == m_ports.end()) {
-        return {{"success", false}, {"error", "Target port not found"}, {"code", "TARGET_NOT_FOUND"}};
+    const auto* targetInfo = m_ports.Find(targetPortId);
+    if (!targetInfo) {
+        return api::Fail("Target port not found", ApiErrorCode::TARGET_NOT_FOUND);
     }
 
-    const auto& targetInfo = targetIt->second;
-
-    // Send port:message event with correct structure per design doc
-    json eventPayload = {
-        {"portId", targetPortId},
-        {"sourcePortId", portId},
-        {"sourceWindowId", sourceWindowId},
-        {"message", message}
-    };
-    
-    bool sent = WebViewContext::GetInstance().SendEventTo(targetInfo.windowId, "port:message", eventPayload);
-    return {{"success", sent}};
+    // The target port is known, so a failed send means its window is gone or
+    // did not take the event.
+    if (!api::emit::SendTo<api::port::events::Message>(targetInfo->windowId,
+                                                       MessageTo(targetPortId, portId, sourceWindowId, message))) {
+        return api::Fail("Target window did not receive the message", ApiErrorCode::OPERATION_FAILED,
+                         {{"targetPortId", targetPortId}});
+    }
+    return api::Ok();
 }
 
-json PortHub::GetPorts(const std::optional<std::string>& name) {
+api::port::GetPortsResult PortHub::GetPorts(const std::optional<std::string>& name) {
     std::lock_guard<std::mutex> lock(m_mutex);
 
-    json ports = json::array();
+    api::port::GetPortsResult result;
+    const auto add = [&result](const port_registry::Port& info) {
+        api::port::PortInfo row;
+        row.portId = info.portId;
+        row.windowId = info.windowId;
+        row.name = info.name;
+        result.ports.push_back(std::move(row));
+    };
 
     if (name) {
         // Filter by name
-        auto it = m_portsByName.find(*name);
-        if (it != m_portsByName.end()) {
-            for (const auto& portId : it->second) {
-                auto portIt = m_ports.find(portId);
-                if (portIt != m_ports.end()) {
-                    ports.push_back({
-                        {"portId", portIt->second.portId},
-                        {"name", portIt->second.name},
-                        {"windowId", portIt->second.windowId}
-                    });
-                }
-            }
+        for (const auto* info : m_ports.ChannelPorts(*name)) {
+            add(*info);
         }
     } else {
         // Return all ports
-        for (const auto& [portId, info] : m_ports) {
-            ports.push_back({
-                {"portId", info.portId},
-                {"name", info.name},
-                {"windowId", info.windowId}
-            });
+        for (const auto& [portId, info] : m_ports.All()) {
+            add(info);
         }
     }
 
-    return {{"success", true}, {"ports", ports}};
+    return result;
 }
 
 void PortHub::CleanupWindowPorts(const std::string& windowId) {
     std::lock_guard<std::mutex> lock(m_mutex);
 
-    auto it = m_portsByWindow.find(windowId);
-    if (it == m_portsByWindow.end()) return;
-
-    // Copy port IDs to avoid iterator invalidation
-    std::vector<std::string> portsToRemove(it->second.begin(), it->second.end());
-
-    auto& ctx = WebViewContext::GetInstance();
-    
-    for (const auto& portId : portsToRemove) {
-        auto portIt = m_ports.find(portId);
-        if (portIt == m_ports.end()) continue;
-
-        const auto& info = portIt->second;
-
-        // Remove from name index
-        m_portsByName[info.name].erase(portId);
-        if (m_portsByName[info.name].empty()) {
-            m_portsByName.erase(info.name);
-        }
-
-        // Broadcast port:disconnected event
-        json eventPayload = {
-            {"portId", portId},
-            {"name", info.name},
-            {"windowId", windowId}
-        };
-        ctx.BroadcastEvent("port:disconnected", eventPayload);
-
-        // Remove port
-        m_ports.erase(portIt);
+    for (const auto& port : m_ports.RemoveWindow(windowId)) {
+        AnnounceDisconnected(port.portId, port.name, port.windowId);
     }
+}
 
-    // Remove window from index
-    m_portsByWindow.erase(windowId);
+void PortHub::CleanupPagePorts(HWND page) {
+    std::lock_guard<std::mutex> lock(m_mutex);
+
+    for (const auto& port : m_ports.RemovePage(page)) {
+        AnnounceDisconnected(port.portId, port.name, port.windowId);
+    }
 }
 
 // ============================================================================
 // Event API Implementation
 // ============================================================================
 
-json PortHub::EmitEvent(const std::string& event, const json& payload, 
-                        const std::string& sourceWindowId, bool excludeSelf) {
+api::event::EmitResult PortHub::EmitEvent(const std::string& event, const json& payload,
+                                          const std::string& sourceWindowId, bool excludeSelf) {
     std::lock_guard<std::mutex> lock(m_mutex);
 
     // Build event envelope per design doc: { payload, sourceWindowId }
@@ -292,31 +231,31 @@ json PortHub::EmitEvent(const std::string& event, const json& payload,
     };
 
     auto& ctx = WebViewContext::GetInstance();
-    int delivered = 0;
-    
+    api::event::EmitResult result;
+
     if (excludeSelf && !sourceWindowId.empty()) {
         // Get HWND for source window to exclude
         HWND excludeHwnd = ctx.GetHwndByWindowId(sourceWindowId);
         if (excludeHwnd) {
             // Broadcast to caller's event name directly (not event:broadcast)
             ctx.BroadcastEventExcept(event, envelope, excludeHwnd);
-            delivered = static_cast<int>(ctx.GetInstanceCount()) - 1;
+            result.recipients = static_cast<std::int64_t>(ctx.GetInstanceCount()) - 1;
         } else {
             // Fallback to full broadcast if window not found
             ctx.BroadcastEvent(event, envelope);
-            delivered = static_cast<int>(ctx.GetInstanceCount());
+            result.recipients = static_cast<std::int64_t>(ctx.GetInstanceCount());
         }
     } else {
         // Broadcast to caller's event name directly
         ctx.BroadcastEvent(event, envelope);
-        delivered = static_cast<int>(ctx.GetInstanceCount());
+        result.recipients = static_cast<std::int64_t>(ctx.GetInstanceCount());
     }
 
-    return {{"success", true}, {"recipients", delivered}};
+    return result;
 }
 
-json PortHub::EmitEventTo(const std::string& event, const json& payload,
-                          const std::string& sourceWindowId, const std::string& targetWindowId) {
+api::Result<void> PortHub::EmitEventTo(const std::string& event, const json& payload,
+                                       const std::string& sourceWindowId, const std::string& targetWindowId) {
     std::lock_guard<std::mutex> lock(m_mutex);
 
     // Build event envelope per design doc: { payload, sourceWindowId }
@@ -325,41 +264,45 @@ json PortHub::EmitEventTo(const std::string& event, const json& payload,
         {"sourceWindowId", sourceWindowId}
     };
 
-    // Send to caller's event name directly (not event:broadcast)
-    bool sent = WebViewContext::GetInstance().SendEventTo(targetWindowId, event, envelope);
-    return {{"success", sent}};
+    // Send to caller's event name directly (not event:broadcast). SendEventTo
+    // fails when no open window has the id.
+    if (!WebViewContext::GetInstance().SendEventTo(targetWindowId, event, envelope)) {
+        return api::Fail("No window has this id", ApiErrorCode::NOT_FOUND, {{"targetWindowId", targetWindowId}});
+    }
+    return api::Ok();
 }
 
 // ============================================================================
 // State API Implementation
 // ============================================================================
 
-json PortHub::GetState(const std::string& key) {
+api::state::GetResult PortHub::GetState(const std::string& key) {
     std::lock_guard<std::mutex> lock(m_mutex);
 
     // Clean up expired entries first
     CleanupExpiredStates();
 
+    api::state::GetResult result;
     auto it = m_states.find(key);
     if (it == m_states.end()) {
-        return {{"success", true}, {"value", nullptr}, {"exists", false}};
+        result.exists = false;
+        return result;
     }
 
-    json result = {{"success", true}, {"key", key}, {"value", it->second.value}, {"exists", true}};
+    result.exists = true;
+    result.key = key;
+    result.value = it->second.value;
     if (it->second.expiresAt) {
-        auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(
-            it->second.expiresAt->time_since_epoch()
-        ).count();
-        result["expiresAt"] = ms;
+        result.expiresAt = EpochMs(*it->second.expiresAt);
     }
 
     return result;
 }
 
-json PortHub::SetState(const std::string& key, const json& value, 
-                       const std::string& sourceWindowId,
-                       bool silent,
-                       std::optional<int64_t> ttlMs) {
+api::state::SetResult PortHub::SetState(const std::string& key, const json& value,
+                                        const std::string& sourceWindowId,
+                                        bool silent,
+                                        std::optional<int64_t> ttlMs) {
     std::lock_guard<std::mutex> lock(m_mutex);
 
     // Get previous value for event
@@ -372,37 +315,30 @@ json PortHub::SetState(const std::string& key, const json& value,
     StateEntry entry;
     entry.value = value;
 
-    json result = {{"success", true}};
+    api::state::SetResult result;
 
     if (ttlMs && *ttlMs > 0) {
         entry.expiresAt = std::chrono::system_clock::now() + std::chrono::milliseconds(*ttlMs);
-        // Return expiresAt as epoch milliseconds
-        auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(
-            entry.expiresAt->time_since_epoch()
-        ).count();
-        result["expiresAt"] = ms;
+        result.expiresAt = EpochMs(*entry.expiresAt);
     }
 
     m_states[key] = std::move(entry);
 
     // Broadcast state:changed event (unless silent)
     if (!silent) {
-        json eventPayload = {
-            {"key", key}, 
-            {"value", value},
-            {"previousValue", previousValue},
-            {"sourceWindowId", sourceWindowId}
-        };
-        if (result.contains("expiresAt")) {
-            eventPayload["expiresAt"] = result["expiresAt"];
-        }
-        WebViewContext::GetInstance().BroadcastEvent("state:changed", eventPayload);
+        api::state::ChangedPayload payload;
+        payload.key = key;
+        payload.value = value;
+        payload.previousValue = previousValue;
+        payload.sourceWindowId = sourceWindowId;
+        payload.expiresAt = result.expiresAt;
+        api::emit::Broadcast<api::state::events::Changed>(payload);
     }
 
     return result;
 }
 
-json PortHub::DeleteState(const std::string& key, const std::string& sourceWindowId) {
+api::state::DeleteResult PortHub::DeleteState(const std::string& key, const std::string& sourceWindowId) {
     std::lock_guard<std::mutex> lock(m_mutex);
 
     auto it = m_states.find(key);
@@ -412,44 +348,44 @@ json PortHub::DeleteState(const std::string& key, const std::string& sourceWindo
         m_states.erase(it);
 
         // Broadcast state:deleted event
-        json eventPayload = {
-            {"key", key},
-            {"sourceWindowId", sourceWindowId},
-            {"reason", "deleted"}
-        };
-        WebViewContext::GetInstance().BroadcastEvent("state:deleted", eventPayload);
+        api::state::DeletedPayload payload;
+        payload.key = key;
+        payload.sourceWindowId = sourceWindowId;
+        payload.reason = "deleted";
+        api::emit::Broadcast<api::state::events::Deleted>(payload);
     }
 
-    // Always return success with existed flag per design doc
-    return {{"success", true}, {"existed", existed}};
+    // Always succeed, reporting whether the key was there
+    api::state::DeleteResult result;
+    result.existed = existed;
+    return result;
 }
 
 // Helper: Match key against pattern with * wildcard
 static bool MatchPattern(const std::string& key, const std::string& pattern) {
     if (pattern == "*") return true;
-    
+
     // Simple wildcard matching: only support trailing * (e.g., "lyrics:*")
-    if (pattern.back() == '*') {
-        std::string prefix = pattern.substr(0, pattern.length() - 1);
-        return key.compare(0, prefix.length(), prefix) == 0;
+    if (!pattern.empty() && pattern.back() == '*') {
+        return key.starts_with(std::string_view(pattern).substr(0, pattern.length() - 1));
     }
-    
+
     // Exact match
     return key == pattern;
 }
 
-json PortHub::GetStateKeys(const std::string& pattern) {
+api::state::KeysResult PortHub::GetStateKeys(const std::string& pattern) {
     std::lock_guard<std::mutex> lock(m_mutex);
 
     // Clean up expired entries first
     CleanupExpiredStates();
 
-    json keys = json::array();
+    api::state::KeysResult result;
     for (const auto& [key, _] : m_states) {
         if (MatchPattern(key, pattern)) {
-            keys.push_back(key);
+            result.keys.push_back(key);
         }
     }
 
-    return {{"success", true}, {"keys", keys}};
+    return result;
 }

@@ -6,12 +6,16 @@
 
 #include "api/BridgeCore.h"
 #include "api/ErrorEnvelope.h"
-#include "core/SecurityConfig.h"
+#include "api/generated/DndSchema.h"
+#include "settings/SecurityConfig.h"
 #include "webview/WebViewHost.h"
 #include "webview/dnd/ChainedDelegate.h"
 #include "webview/dnd/CompositionDelegate.h"
 #include "webview/dnd/DndOriginPolicy.h"
+#include "webview/dnd/DndTrace.h"
 #include "webview/dnd/DragOutTokens.h"
+#include "webview/dnd/DragSourceMarker.h"
+#include "webview/dnd/DragStartPolicy.h"
 #include "webview/dnd/DragTokenStore.h"
 #include "webview/dnd/DropEffectPolicy.h"
 #include "webview/dnd/HdropBuilder.h"
@@ -119,13 +123,34 @@ HRESULT SetGlobalFormat(IDataObject* data, CLIPFORMAT format, const void* bytes,
 
 // Replaces the text formats the page used to carry the token with empty
 // strings. Once the drag goes back to WebView2 the object travels as it is, and
-// a text target would otherwise paste the spent token. Best effort: the files
-// still go out if the object declines.
-void BlankTextCarrier(IDataObject* data) noexcept {
+// a text target would otherwise paste the token. Returns whether both formats
+// were overwritten; DecideDragStart decides what a failure costs.
+bool BlankTextCarrier(IDataObject* data) noexcept {
     static constexpr wchar_t kEmptyWide[] = L"";
     static constexpr char kEmptyNarrow[] = "";
-    SetGlobalFormat(data, CF_UNICODETEXT, kEmptyWide, sizeof(kEmptyWide));
-    SetGlobalFormat(data, CF_TEXT, kEmptyNarrow, sizeof(kEmptyNarrow));
+    const bool wide = SUCCEEDED(SetGlobalFormat(data, CF_UNICODETEXT, kEmptyWide, sizeof(kEmptyWide)));
+    const bool narrow = SUCCEEDED(SetGlobalFormat(data, CF_TEXT, kEmptyNarrow, sizeof(kEmptyNarrow)));
+    return wide && narrow;
+}
+
+// Marks the drag as started in window, so the drop target of whichever hosted
+// window it lands on can tell the page where it came from. Best effort: a drag
+// without the marker is reported as external, as every drag was before the
+// marker existed.
+void StampDragSource(IDataObject* data, HWND window) noexcept {
+    const CLIPFORMAT format = DragSourceClipboardFormat();
+    if (!data || format == 0) {
+        return;
+    }
+    try {
+        DragSourceMarker marker;
+        marker.processId = ::GetCurrentProcessId();
+        marker.window = static_cast<uint64_t>(reinterpret_cast<uintptr_t>(window));
+        const std::vector<unsigned char> bytes = EncodeDragSourceMarker(marker);
+        SetGlobalFormat(data, format, bytes.data(), bytes.size());
+    } catch (...) {
+        // Allocation failure: the drag goes on unmarked.
+    }
 }
 
 }  // namespace
@@ -423,11 +448,11 @@ bool DndRegistrar::ApplyOriginGate(WebViewHost* host) {
     // The live document origin, not the configured start URL: a popup may have
     // navigated to a third-party page since it was created.
     //
-    // Deliberately not WebViewHost::IsOriginAllowed. That is the invoke
-    // transport allow-list, and popups register arbitrary third-party URLs into
-    // it, so reusing it here would open real paths to every popup.
+    // Deliberately not WebViewHost::IsOriginAllowed. That invoke gate also trusts
+    // a panel's configured URL and the http(s) URLs popups were opened at, so
+    // reusing it here would open real paths to those pages too.
     const std::wstring origin = host ? host->GetCurrentOriginNormalized() : std::wstring();
-    const bool allowed = AllowsPaths(origin, security_config::UseDevServer());
+    const bool allowed = AllowsPaths(origin, WebViewHost::CurrentDevServerOrigin());
 
     const DndCapabilities before = caps_;
 
@@ -448,17 +473,8 @@ bool DndRegistrar::ApplyOriginGate(WebViewHost* host) {
                          before.dragOut != caps_.dragOut ||
                          before.dragOutReason != caps_.dragOutReason;
     if (capsPublished_ && changed) {
-        nlohmann::json payload;
-        payload["html5"] = caps_.html5;
-        payload["paths"] = caps_.paths;
-        payload["hosting"] = caps_.visualHosting ? "visual" : "standard";
-        if (const char* wire = ReasonToWire(caps_.reason)) {
-            payload["pathsUnavailableReason"] = wire;
-        }
-        payload["dragOut"] = caps_.dragOut;
-        if (const char* wire = DragOutReasonToWire(caps_.dragOutReason)) {
-            payload["dragOutUnavailableReason"] = wire;
-        }
+        api::dnd::CapabilitiesChangedPayload payload;
+        FillCapabilities(caps_, payload);
         bridge_->EmitCapabilitiesChanged(payload);
     }
     capsPublished_ = true;
@@ -475,9 +491,16 @@ HRESULT DndRegistrar::OnDragStarting(ICoreWebView2DragStartingEventArgs* args) n
         }
 
         wil::com_ptr<IDataObject> data;
-        const std::wstring carrier = SUCCEEDED(args->get_Data(&data))
-                                         ? ReadUnicodeText(data.get())
-                                         : std::wstring();
+        const bool hasData = SUCCEEDED(args->get_Data(&data)) && data;
+        const std::wstring carrier = hasData ? ReadUnicodeText(data.get()) : std::wstring();
+
+        // Every drag that starts here is marked, with or without a token, so a
+        // page can recognise its own drag when it lands back in this window.
+        // target_ is the window this registrar's drop target listens on, which
+        // is what DropTargetBridge compares the marker against.
+        if (hasData) {
+            StampDragSource(data.get(), target_);
+        }
 
         // Split on whether the carrier is present, not on whether the token is
         // any good. Every drag started inside the WebView raises this event,
@@ -485,14 +508,18 @@ HRESULT DndRegistrar::OnDragStarting(ICoreWebView2DragStartingEventArgs* args) n
         // another application; taking those over would swallow them and remove
         // drag support the page had before this feature existed.
         if (!carrier.starts_with(kDragTokenPrefix)) {
+            if (DndTraceEnabled()) {
+                DndTrace(std::string("[dnd] dragStarting carrier=0 data=") +
+                         (hasData ? "1" : "0"));
+            }
             args->put_Handled(FALSE);
             return S_OK;
         }
 
-        // From here the page asked for a takeover. Every exit below that does
-        // not hand the drag back deliberately must leave it handled: WebView2's
-        // default handling would otherwise drag the token text itself to
-        // wherever the user dropped it.
+        // From here the page asked for a takeover. The drag stays handled until
+        // the token text is gone: WebView2's default handling would otherwise
+        // drag the token text itself to wherever the user dropped it, and an
+        // exception thrown before the verdict must leave it cancelled.
         args->put_Handled(TRUE);
 
         // The store is keyed by the window that minted, which is the same HWND
@@ -501,41 +528,50 @@ HRESULT DndRegistrar::OnDragStarting(ICoreWebView2DragStartingEventArgs* args) n
         const std::string token =
             WideToUtf8(carrier.substr(std::size(kDragTokenPrefix) - 1));
         std::vector<std::wstring> paths;
+        DragOutStage stage = DragOutStage::FilesAttached;
         if (!DragOutTokenStore().Consume(token, reinterpret_cast<intptr_t>(target_),
                                         paths)) {
-            EmitDragFailed(ApiErrorCode::PERMISSION_DENIED, "Drag token was rejected.");
-            return S_OK;
+            stage = DragOutStage::TokenRejected;
+        } else {
+            // The token was good. WebView2 runs the drag itself: its data object
+            // takes the file list and the event goes back to the default
+            // handling, which draws the drag image and runs the OLE loop on this
+            // thread as it does for every page drag.
+            //
+            // The effects on offer come from the page's
+            // dataTransfer.effectAllowed and cannot be narrowed from here, so
+            // they are checked instead. With CF_HDROP on board a MOVE is carried
+            // out by the target, which relocates the user's files; attaching
+            // the list only to an exact COPY is the only place that can be
+            // prevented.
+            DWORD allowedEffects = 0;
+            if (FAILED(args->get_AllowedDropEffects(&allowedEffects)) ||
+                !DragOutMaskIsCopyOnly(allowedEffects)) {
+                stage = DragOutStage::EffectsNotCopy;
+            } else {
+                const std::vector<unsigned char> block = BuildDropFilesBlock(paths);
+                if (block.empty() || FAILED(SetGlobalFormat(data.get(), CF_HDROP,
+                                                            block.data(), block.size()))) {
+                    stage = DragOutStage::FilesNotAttached;
+                }
+            }
         }
 
-        // The token was good. WebView2 runs the drag itself: its data object
-        // takes the file list and the event goes back to the default handling,
-        // which draws the drag image and runs the OLE loop on this thread as it
-        // does for every page drag.
-        //
-        // The effects on offer come from the page's dataTransfer.effectAllowed
-        // and cannot be narrowed from here, so they are checked instead. With
-        // CF_HDROP on board a MOVE is carried out by the target, which relocates
-        // the user's files; refusing anything but an exact COPY is the only
-        // place that can be prevented.
-        DWORD allowedEffects = 0;
-        if (FAILED(args->get_AllowedDropEffects(&allowedEffects)) ||
-            !DragOutMaskIsCopyOnly(allowedEffects)) {
-            EmitDragFailed(ApiErrorCode::INVALID_PARAMS,
-                           "dataTransfer.effectAllowed must be 'copy' for a drag-out.");
-            return S_OK;
+        const bool carrierBlanked = BlankTextCarrier(data.get());
+        const DragStartVerdict verdict = DecideDragStart(stage, carrierBlanked);
+        if (DndTraceEnabled()) {
+            DndTrace(std::string("[dnd] dragStarting carrier=1 stage=") +
+                     std::to_string(static_cast<int>(stage)) +
+                     " blanked=" + (carrierBlanked ? "1" : "0") +
+                     " handBack=" + (verdict.handBack ? "1" : "0") +
+                     " code=" + (verdict.failureCode ? verdict.failureCode : "-"));
         }
-
-        const std::vector<unsigned char> block = BuildDropFilesBlock(paths);
-        if (block.empty() || FAILED(SetGlobalFormat(data.get(), CF_HDROP, block.data(),
-                                                    block.size()))) {
-            EmitDragFailed(ApiErrorCode::OPERATION_FAILED,
-                           "The drag's file list could not be prepared.");
-            return S_OK;
+        if (verdict.failureCode) {
+            EmitDragFailed(verdict.failureCode, verdict.error);
         }
-        BlankTextCarrier(data.get());
-
-        // Handed back on purpose, with the files in and the token text gone.
-        args->put_Handled(FALSE);
+        if (verdict.handBack) {
+            args->put_Handled(FALSE);
+        }
         return S_OK;
     } catch (...) {
         return S_OK;
@@ -546,10 +582,10 @@ void DndRegistrar::EmitDragFailed(const char* code, const char* error) const {
     if (!bridge_) {
         return;
     }
-    nlohmann::json payload;
-    payload["result"] = "failed";
-    payload["code"] = code;
-    payload["error"] = error;
+    api::dnd::DragEndedPayload payload;
+    payload.result = "failed";
+    payload.code = code;
+    payload.error = error;
     bridge_->EmitDragEnded(payload);
 }
 

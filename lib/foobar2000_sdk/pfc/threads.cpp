@@ -82,7 +82,7 @@ namespace pfc {
             CloseHandle(m_thread); m_thread = INVALID_HANDLE_VALUE;
         }
     }
-    bool thread::isActive() const {
+    bool thread::isActive() const noexcept {
         return m_thread != INVALID_HANDLE_VALUE;
     }
 
@@ -102,6 +102,14 @@ namespace pfc {
 		close();
 		m_thread = MyBeginThread(g_entry, reinterpret_cast<void*>(this), outThreadID, priority);
 	}
+    void thread::winClose() noexcept {
+        if (isActive()) {
+            CloseHandle(m_thread); m_thread = INVALID_HANDLE_VALUE;
+        }
+    }
+    bool thread::winWait(DWORD timeout) {
+        return WaitForSingleObject(m_thread, timeout) == WAIT_OBJECT_0;
+    }
     void thread::start(arg_t const & arg) {
         winStart(arg.winThreadPriority, nullptr);
     }
@@ -148,7 +156,7 @@ namespace pfc {
         }
     }
     
-    bool thread::isActive() const {
+    bool thread::isActive() const noexcept {
         return m_threadValid;
     }
 #endif

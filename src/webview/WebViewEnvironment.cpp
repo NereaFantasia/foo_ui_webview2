@@ -1,9 +1,13 @@
 ﻿#include "pch.h"
 #include "webview/WebViewEnvironment.h"
 #include "core/WebViewContext.h"
-#include "core/SecurityConfig.h"
-#include "core/PreferencesPage.h"   // webview_prefs::GetPreheatEnabled / GetCdpPort
+#include "settings/SecurityConfig.h"
+#include "prefs/PreferencesPage.h"   // webview_prefs::GetPreheatEnabled / GetCdpPort
+#include "utils/PathExpansion.h"
+#include "webview/UserDataMigration.h"
 #include <Shlobj.h>
+#include <chrono>
+#include <filesystem>
 #include <wrl/client.h>
 #include <wrl/event.h>
 #include <WebView2EnvironmentOptions.h>
@@ -19,19 +23,83 @@ WebViewEnvironment& WebViewEnvironment::GetInstance() {
     return instance;
 }
 
-std::wstring WebViewEnvironment::GetUserDataPath() {
+// 便携版的用户数据目录放在实例自己的 profile 下。同一个用户数据目录由同一组浏览器
+// 进程服务：几个实例共用一个目录时，后开的那个要么因为环境选项不同（比如启动参数里的
+// CDP 端口）创建环境失败，要么页面跑在先开的实例的浏览器进程里、随它退出一起没了。
+// 安装版仍用 %LOCALAPPDATA%：它的 profile 在漫游的 %APPDATA% 下，缓存不宜跟着漫游，
+// 而且一个 Windows 用户只有一份安装版 profile。
+namespace {
+
+// 安装版的用户数据目录，也是便携版以前共用的那个；取不到时为空串
+std::wstring SharedUserDataPath() {
     wchar_t path[MAX_PATH];
-    if (SUCCEEDED(SHGetFolderPathW(nullptr, CSIDL_LOCAL_APPDATA, nullptr, 0, path))) {
-        std::wstring userDataPath = std::wstring(path) + L"\\foobar2000\\foo_ui_webview2";
-        
-        // Ensure directory exists; both calls intentionally ignore the return
-        // value because ERROR_ALREADY_EXISTS is the normal steady-state result.
-        (void)CreateDirectoryW((std::wstring(path) + L"\\foobar2000").c_str(), nullptr);
-        (void)CreateDirectoryW(userDataPath.c_str(), nullptr);
-        
-        return userDataPath;
+    if (FAILED(SHGetFolderPathW(nullptr, CSIDL_LOCAL_APPDATA, nullptr, 0, path))) return L"";
+    return std::wstring(path) + L"\\foobar2000\\foo_ui_webview2";
+}
+
+// 便携版自己的用户数据目录；不是便携版或取不到 profile 时为空串
+std::wstring PortableUserDataPath() {
+    if (!core_api::is_portable_mode_enabled()) return L"";
+    // 带结尾反斜杠
+    const std::wstring profileDir = PathExpansion::GetProfileDirectory();
+    return profileDir.size() > 1 ? profileDir + L"foo_ui_webview2" : L"";
+}
+
+// 共用目录被占着时最多等这么久再放弃迁移。只在首次迁移时等，之后目标目录已存在。
+constexpr auto kSharedFolderReleaseWait = std::chrono::seconds(3);
+
+}  // namespace
+
+std::wstring WebViewEnvironment::GetUserDataPath() {
+    std::wstring userDataPath = PortableUserDataPath();
+    if (userDataPath.empty()) {
+        userDataPath = SharedUserDataPath();
+        if (userDataPath.empty()) return L"";
+        // 已存在是常态，返回值不看
+        (void)CreateDirectoryW(std::filesystem::path(userDataPath).parent_path().c_str(), nullptr);
     }
-    return L"";
+    (void)CreateDirectoryW(userDataPath.c_str(), nullptr);
+    return userDataPath;
+}
+
+// 便携版第一次用自己的目录时，把共用目录里的数据复制过来，见 UserDataMigration.h。
+// 自己的目录一旦存在就不再迁移；共用目录被占用时就不迁移，并在控制台写明手动做法。
+void WebViewEnvironment::MigrateSharedUserData() {
+    namespace fs = std::filesystem;
+    const fs::path target = PortableUserDataPath();
+    std::error_code ec;
+    if (target.empty() || fs::exists(target, ec)) return;
+    const fs::path source = SharedUserDataPath();
+    if (source.empty() || !fs::is_directory(source, ec)) return;
+
+    const auto utf8 = [](const fs::path& path) {
+        return std::string(pfc::stringcvt::string_utf8_from_wide(path.c_str()).get_ptr());
+    };
+    if (webview_udf::WaitWhileInUse(source, kSharedFolderReleaseWait)) {
+        FB2K_console_formatter()
+            << "[WebView2 UI] Web storage was not copied from " << utf8(source).c_str()
+            << ": another foobar2000 instance is using it. This instance starts with empty web"
+               " storage in " << utf8(target).c_str()
+            << ". To copy it later, close every foobar2000 instance, delete that folder and start"
+               " this instance again; whatever pages saved there meanwhile is lost.";
+        return;
+    }
+
+    const auto started = std::chrono::steady_clock::now();
+    std::wstring error;
+    const webview_udf::CopyOutcome outcome = webview_udf::CopyUserDataFolder(source, target, &error);
+    const auto elapsedMs = std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::steady_clock::now() - started).count();
+    if (outcome == webview_udf::CopyOutcome::Copied) {
+        FB2K_console_formatter()
+            << "[WebView2 UI] Copied web storage from " << utf8(source).c_str() << " to "
+            << utf8(target).c_str() << " in " << static_cast<int>(elapsedMs)
+            << " ms; the original folder is kept.";
+    } else if (outcome == webview_udf::CopyOutcome::Failed) {
+        FB2K_console_formatter()
+            << "[WebView2 UI] Could not copy web storage from " << utf8(source).c_str()
+            << " (" << utf8(error).c_str() << "); this instance starts with empty web storage.";
+    }
 }
 
 void WebViewEnvironment::Preheat() {
@@ -94,6 +162,8 @@ void WebViewEnvironment::GetEnvironment(const EnvironmentCallback& callback) {
 void WebViewEnvironment::CreateEnvironmentInternal() {
     // Note: creating_ flag should already be set by caller
     
+    // 必须在 GetUserDataPath 创建目录之前：迁移以目标目录不存在为前提
+    MigrateSharedUserData();
     auto userDataPath = GetUserDataPath();
     
     // Check WebView2 Runtime availability

@@ -4,7 +4,6 @@
 #include "archive.h"
 #include "hasher_md5.h"
 #include "mem_block_container.h"
-#include "filesystem_transacted.h"
 
 static constexpr char unpack_prefix[] = "unpack://";
 static constexpr unsigned unpack_prefix_len = 9;
@@ -60,6 +59,64 @@ static void makeBuffer(pfc::array_t<uint8_t> & buffer, size_t size) {
 	}
 }
 
+#if 0 // EXPERIMENTAL
+#include <semaphore>
+
+t_filesize file::g_transfer_threaded(stream_reader* src, stream_writer* dst, t_filesize bytes, abort_callback& p_abort) {
+	fb2k::thread writer;
+	
+	std::binary_semaphore canRead{ 1 }, canWrite{ 0 };
+	std::exception_ptr readError, writeError;
+	t_filesize done = 0;
+	constexpr size_t bufSize = 8 * 1024 * 1024;
+
+	struct buffer_t {
+		std::unique_ptr<uint8_t[]> data = std::make_unique<uint8_t[]>(bufSize);
+		size_t used = 0;
+	};
+	buffer_t buffers[2];
+	writer.startHere([&] {
+		size_t useBuffer = 0;
+		for (;;) {
+			canWrite.acquire();
+			auto& b = buffers[useBuffer];
+			if (b.used == 0) break; // END
+			if (!writeError) {
+				try { dst->write(b.data.get(), b.used, p_abort); } catch (...) {writeError = std::current_exception();}
+			}
+			canRead.release();
+			useBuffer = (useBuffer + 1) % std::size(buffers);
+		}
+	});
+
+	{
+		size_t useBuffer = 0;
+		for(;;) {
+			const auto left = bytes - done;
+			const auto pass = (left > bufSize) ? bufSize : (size_t)left;
+			canRead.acquire();
+			auto& b = buffers[useBuffer];
+			size_t didRead = 0;
+			if (pass > 0) {
+				try { didRead = src->read(b.data.get(), pass, p_abort); } catch (...) { readError = std::current_exception(); }
+			}
+			b.used = didRead;
+			done += pass;
+			canWrite.release();
+			useBuffer = (useBuffer + 1) % std::size(buffers);
+			if (pass == 0) break;
+		}
+	}
+
+
+	writer.waitTillDone();
+
+	if (readError) std::rethrow_exception(readError);
+	if (writeError) std::rethrow_exception(writeError);
+	return done;
+}
+#endif
+
 t_filesize file::g_transfer(stream_reader * p_src,stream_writer * p_dst,t_filesize p_bytes,abort_callback & p_abort) {
 	pfc::array_t<t_uint8> temp;
 	makeBuffer(temp, (t_size)pfc::min_t<t_filesize>(1024*1024*8,p_bytes));
@@ -84,6 +141,7 @@ void file::g_transfer_object(stream_reader * p_src,stream_writer * p_dst,t_files
 
 void filesystem::g_get_canonical_path(const char * path,pfc::string_base & out)
 {
+	PFC_ASSERT(path != nullptr);
 	// TRACK_CALL_TEXT("filesystem::g_get_canonical_path");
 	for (auto ptr : enumerate()) {
 		if (ptr->get_canonical_path(path, out)) return;
@@ -137,15 +195,13 @@ bool filesystem::g_get_native_path( const char * path, pfc::string_base & out, a
     // Is proper file:// path?
     if (foobar2000_io::extract_native_path( path, out ) ) return true;
 
-	{
+	try {
 		filesystem_v3::ptr fs;
 		if (fs &= tryGet(path)) {
 			auto n = fs->getNativePath(path, a);
-			if (n.is_valid()) {
-				out = n->c_str(); return true;
-			}
+			if (n) { out = n->c_str(); return true; }
 		}
-	}
+	} catch (...) {}
 
     // Set anyway
     out = path;
@@ -262,7 +318,16 @@ bool filesystem::g_get_interface(service_ptr_t<filesystem>& p_out, const char* p
 void filesystem::g_open(service_ptr_t<file> & p_out,const char * path,t_open_mode mode,abort_callback & p_abort)
 {
 	TRACK_CALL_TEXT("filesystem::g_open");
-	g_get_interface(path)->open(p_out,path,mode,p_abort);
+    auto api = get(path);
+    api->open(p_out,path,mode,p_abort);
+
+#if PFC_DEBUG
+    // Yell on network/remote, readonly, etc mismatch
+    auto stats1 = api->getStatsOpportunist_(path);
+    auto stats2 = p_out->get_stats2_(stats2_all, p_abort);
+    PFC_ASSERT( stats1.isSubsetOf(stats2) );
+    PFC_ASSERT( stats2.is_file() );
+#endif
 }
 
 
@@ -272,6 +337,7 @@ void filesystem::g_open_timeout(service_ptr_t<file> & p_out,const char * p_path,
 
 bool filesystem::g_exists(const char * p_path,abort_callback & p_abort)
 {
+    // Legacy method, accepts both directory/file, doesn't wrap to single filesystem_v2 call
 	t_filestats stats;
 	bool dummy;
 	try {
@@ -282,6 +348,7 @@ bool filesystem::g_exists(const char * p_path,abort_callback & p_abort)
 
 bool filesystem::g_exists_writeable(const char * p_path,abort_callback & p_abort)
 {
+    // Legacy method, accepts both directory/file, doesn't wrap to single filesystem_v2 call
 	t_filestats stats;
 	bool writeable;
 	try {
@@ -324,7 +391,7 @@ void filesystem::g_move(const char * src,const char * dst,abort_callback & p_abo
 void filesystem::g_link(const char * p_src,const char * p_dst,abort_callback & p_abort) {
 	p_abort.check();
     pfc::string8 srcN, dstN;
-    if (!extract_native_path(p_src, srcN) || !extract_native_path(p_dst, dstN)) throw exception_io_no_handler_for_path();
+    if (!g_get_native_path(p_src, srcN, p_abort) || !g_get_native_path(p_dst, dstN, p_abort)) throw exception_io_no_handler_for_path();
 #ifdef _WIN32
     WIN32_IO_OP( CreateHardLink( pfc::stringcvt::string_os_from_utf8( dstN ), pfc::stringcvt::string_os_from_utf8( srcN ), NULL) );
 #else
@@ -376,7 +443,7 @@ static int path_unpack_string(pfc::string_base & out,const char * src)
 
 
 void filesystem::g_open_precache(service_ptr_t<file> & p_out,const char * p_path,abort_callback & p_abort) {
-	service_ptr_t<filesystem> fs = g_get_interface(p_path);
+	auto fs = g_get_interface(p_path);
 	if (fs->is_remote(p_path)) throw exception_io_object_is_remote();
 	fs->open(p_out,p_path,open_mode_read,p_abort);
 }
@@ -418,6 +485,7 @@ bool filesystem::g_relative_path_parse(const char * relative_path,const char * p
 }
 
 namespace {
+#ifdef FOOBAR2000_DESKTOP
 	class archive_callback_lambda : public archive_callback {
 	private:
 		abort_callback& m_abort;
@@ -433,12 +501,33 @@ namespace {
 
 		archive::list_func_t f;
 	};
+#endif
+	class archive_v5_callback_lambda : public archive_v5::callback {
+	public:
+		bool on_entry(const char* url, const t_filestats2& stats, file::ptr reader) override {
+			f(url, stats.as_legacy(), reader); return true;
+		}
+		archive::list_func_t f;
+	};
 }
-
-void archive::archive_list(const char * path, file::ptr reader, list_func_t f, bool wantReaders, abort_callback& a ) {
-	archive_callback_lambda cb(a);
-	cb.f = f;
-	this->archive_list(path, reader, cb, wantReaders);
+void archive::archive_list_flags_(const char * path, file::ptr reader, list_func_t f, uint32_t flags, abort_callback& a) {
+	archive_v5::ptr v5;
+	if (v5 &= this) {
+		archive_v5_callback_lambda cb;
+		cb.f = f;
+		v5->archive_list_v5(path, reader, cb, flags, a);
+	} else {
+#ifdef FOOBAR2000_DESKTOP
+		archive_callback_lambda cb(a);
+		cb.f = f;
+		this->archive_list(path, reader, cb, (flags & archive_v5::flagReaders) != 0);
+#else
+		PFC_ASSERT(!"How did we get here?");
+#endif
+	}
+}
+void archive::archive_list_(const char * path, file::ptr reader, list_func_t f, bool wantReaders, abort_callback& a ) {
+	this->archive_list_flags_(path, reader, f, wantReaders ? archive_v5::flagReaders : 0, a);
 }
 
 bool archive::is_our_archive( const char * path ) {
@@ -537,6 +626,15 @@ bool archive_impl::is_remote(const char * src) {
 	else throw exception_io_not_found();
 }
 
+t_filestats2 archive_impl::getStatsOpportunist(const char * path) {
+    pfc::string8 archive,file;
+    if (!g_parse_unpack_path(path,archive,file)) throw exception_io_not_found();
+    auto s = filesystem::get(archive)->getStatsOpportunist_(path);
+    s.m_size = filesize_invalid; // should not be set anyway
+    s.set_readonly(); // archive contents are readonly
+    return s;
+}
+
 bool archive_impl::relative_path_create(const char * file_path,const char * playlist_path,pfc::string_base & out) {
 	pfc::string8 archive,file;
 	if (g_parse_unpack_path(file_path,archive,file))
@@ -609,7 +707,18 @@ void archive_impl::g_make_unpack_path(pfc::string_base & path,const char * archi
 
 void archive_impl::make_unpack_path(pfc::string_base & path,const char * archive,const char * file) {g_make_unpack_path(path,archive,file,get_archive_type());}
 
-fb2k::arrayRef archive_impl::archive_list_v4( fsItemFilePtr item, file::ptr readerOptional, abort_callback & a ) {
+t_filestats2 archive_impl::stats2_in_archive(t_filestats2 const& inArchive, t_filestats2 const& wholeArchiveStats) {
+	auto ret = inArchive;
+	ret.set_file(); ret.set_remote(wholeArchiveStats.is_remote()); ret.set_readonly(true);
+	ret.set_network(wholeArchiveStats.is_network());
+	return ret;
+}
+
+t_filestats2 archive_impl::stats2_in_archive(t_filestats const& inArchive, t_filestats2 const& wholeArchiveStats) {
+	return stats2_in_archive(t_filestats2::from_legacy(inArchive), wholeArchiveStats);
+}
+
+fb2k::arrayRef archive_v4::archive_list_v4( fsItemFilePtr item, file::ptr readerOptional, abort_callback & a ) {
     
     const auto baseStats = item->getStatsOpportunist();
     PFC_ASSERT( ! baseStats.is_folder() );
@@ -618,9 +727,8 @@ fb2k::arrayRef archive_impl::archive_list_v4( fsItemFilePtr item, file::ptr read
     auto reader = readerOptional;
     if ( reader.is_empty() ) reader = item->openRead(a);
     try {
-        this->archive_list( item->canonicalPath()->c_str(), reader, [&] ( const char * URL, t_filestats const & stats, file::ptr ) {
-            t_filestats2 stats2 = t_filestats2::from_legacy( stats );
-            stats2.set_file(); stats2.set_remote( baseStats.is_remote() ); stats2.set_readonly(true);
+        this->archive_list_( item->canonicalPath()->c_str(), reader, [&] ( const char * URL, t_filestats const & stats, file::ptr ) {
+            t_filestats2 stats2 = archive_impl::stats2_in_archive(stats, baseStats);
             archive * blah = this; // multi inheritance fix, more than one path to filesystem which has makeItemFileStd()
             ret->add(blah->makeItemFileStd(URL, stats2));
         }, false, a);
@@ -628,7 +736,26 @@ fb2k::arrayRef archive_impl::archive_list_v4( fsItemFilePtr item, file::ptr read
         if ( ret->count() == 0 ) throw;
     }
     return ret->makeConst();
+   
+}
+
+void archive_v5::archive_list(const char* path, const service_ptr_t<file>& reader, archive_callback& cb, bool wantReaders) {
     
+    // Legacy archive_list() doesn't expect caller to have checked is_our_archive(),
+    // because it was specced to be called with other formats, throwing exception_io_unsupported_format
+    // Archive implementations should no longer perform is_our_archive() checks by themselves
+    if (!this->is_our_archive(path)) throw exception_io_unsupported_format();
+    
+	class mycallback : public callback {
+	public:
+		bool on_entry(const char* url, const t_filestats2& stats, file::ptr reader) override { return cb->on_entry(owner, url, stats.as_legacy(), reader); }
+		archive_callback * cb = nullptr;
+		archive* owner = nullptr;
+	};
+	mycallback mycb; mycb.cb = &cb; mycb.owner = this;
+	uint32_t flags = 0;
+	if (wantReaders) flags |= flagReaders;
+	this->archive_list_v5(path, reader, mycb, flags, cb);
 }
 
 namespace {
@@ -678,7 +805,7 @@ bool directory_callback_impl::on_entry(filesystem * owner,abort_callback & p_abo
 			} catch(exception_io const &) {}
 		}
 	} else {
-		m_data.add_item(pfc::rcnew_t<t_entry>(url,p_stats));
+		m_data.add_item(t_entry{ url,p_stats });
 	}
 	return true;
 }
@@ -782,12 +909,76 @@ void filesystem::g_copy_directory(const char * src,const char * dst,abort_callba
 	g_list_directory(src,cb,p_abort);
 }
 
+#ifdef __APPLE__
+#include "apple-tools.h"
+#define sysCopyFile_enabled
+static void sysCopyFile(const char * src, const char * dst, bool bOverwrite, abort_callback & a) {
+    return fb2k::appleCopyFile(src, dst, bOverwrite, a);
+}
+#endif
+#ifdef __linux__
+#include <fcntl.h>
+#include <sys/sendfile.h>
+
+static void sysCopyBetweenFD(int fdFrom, int fdTo, off_t bytes, abort_callback& a) {
+	constexpr size_t atOnce = 1024*1024*128; // 128MB per pass, to provide some level of abort polling
+	off_t remaining = bytes;
+	while(remaining>0) {
+		a.check();
+		off_t pass = remaining;
+		if ( pass < atOnce ) pass = atOnce;
+		nix_pre_io_op();
+		auto status = sendfile(fdTo, fdFrom, NULL, (size_t) pass);
+		if ( status < 0 ) nix_io_op_fail();
+		if ( status == 0 ) throw std::runtime_error("unexpected sendfile() return value");
+		remaining -= status;
+	}
+}
+
+static void sysCopyFile(const char *src, const char * dst, bool bOverwrite, abort_callback & a) {
+	nix_pre_io_op();
+	int fdFrom = open(src, O_RDONLY);
+	if ( fdFrom < 0 ) nix_io_op_fail();
+	auto scope1 = pfc::onLeaving( [fdFrom] { close(fdFrom); } );
+
+	struct stat st = {};
+	NIX_IO_OP( fstat(fdFrom, &st) == 0 );
+	nix_pre_io_op();
+	int fdTo = open(dst, O_WRONLY | O_CREAT | O_TRUNC | (bOverwrite ? 0 : O_EXCL), st.st_mode & 0777);
+	if ( fdTo < 0 ) nix_io_op_fail();
+	auto scope2 = pfc::onLeaving( [fdTo] { close(fdTo); } );
+
+	try {
+		sysCopyBetweenFD(fdFrom, fdTo, st.st_size, a);
+	} catch(...) {
+		remove(dst); throw;
+	}
+
+	// ownership
+	fchown(fdTo, st.st_uid, st.st_gid);
+
+	// file times
+	struct timespec ts[2] = {st.st_atim,st.st_mtim };
+	futimens(fdTo, ts);
+}
+#define sysCopyFile_enabled
+#endif
 void filesystem::g_copy(const char * src,const char * dst,abort_callback & p_abort) {
+    const bool bOverwrite = true;
+#ifdef sysCopyFile_enabled
+    {
+        pfc::string8 n_src, n_dst;
+        if (g_get_native_path(src, n_src, p_abort) && g_get_native_path(dst, n_dst, p_abort)) {
+            sysCopyFile(n_src, n_dst, bOverwrite, p_abort); return;
+        }
+    }
+#endif
 	service_ptr_t<file> r_src,r_dst;
 	t_filesize size;
 
 	g_open(r_src,src,open_mode_read,p_abort);
 	size = r_src->get_size_ex(p_abort);
+    if (!bOverwrite && g_exists(dst, p_abort)) throw exception_io_already_exists();
 	g_open(r_dst,dst,open_mode_write_new,p_abort);
 	
 	if (size > 0) {
@@ -1018,7 +1209,7 @@ namespace {
 PFC_NORETURN void foobar2000_io::win32_file_write_failure(DWORD p_code, const char * path) {
 	if (p_code == ERROR_ACCESS_DENIED) {
 		const DWORD attr = uGetFileAttributes(path);
-		if (attr != ~0 && (attr & FILE_ATTRIBUTE_READONLY) != 0) throw exception_io_denied_readonly();
+		if (attr != INVALID_FILE_ATTRIBUTES && (attr & FILE_ATTRIBUTE_READONLY) != 0) throw exception_io_denied_readonly();
 	}
 	exception_io_from_win32(p_code);
 }
@@ -1108,6 +1299,8 @@ PFC_NORETURN void foobar2000_io::exception_io_from_win32(DWORD p_code) {
 	case ERROR_INVALID_FUNCTION:
 		// Happens when trying to link files on FAT32 etc
 		throw exception_io_unsupported_feature();
+	case ERROR_LOGON_FAILURE:
+		throw exception_io_net_credentials();
 #if 0
 	case ERROR_BAD_LENGTH:
 		FB2K_BugCheckEx("ERROR_BAD_LENGTH");
@@ -1145,11 +1338,14 @@ PFC_NORETURN void foobar2000_io::exception_io_from_nix(int code) {
             throw exception_io_not_directory();
         case ENAMETOOLONG:
             pfc::throw_exception_with_message<exception_io>("Name too long");
+		case EBADF:
+			PFC_ASSERT(!"???");
+			throw std::runtime_error("Bad file descriptor");
         default:
             pfc::throw_exception_with_message< exception_io>( PFC_string_formatter() << "Unknown I/O error (#" << code << ")");
     }
 }
-void nix_pre_io_op() {
+void foobar2000_io::nix_pre_io_op() {
     errno = 0;
 }
 PFC_NORETURN void foobar2000_io::nix_io_op_fail() {
@@ -1159,8 +1355,13 @@ PFC_NORETURN void foobar2000_io::nix_io_op_fail() {
 
 t_filesize file::get_size_ex(abort_callback & p_abort) {
 	t_filesize temp = get_size(p_abort);
-	if (temp == filesize_invalid) throw exception_io_no_length();
+	if (temp == filesize_invalid) 
+		throw exception_io_no_length();
 	return temp;
+}
+
+bool file::is_network() {
+    return this->get_stats2_(stats2_remote, fb2k::noAbort).is_network();
 }
 
 void file::ensure_local() {
@@ -1204,7 +1405,7 @@ void file::g_transfer_object(service_ptr_t<file> p_src,service_ptr_t<file> p_dst
 	if (p_bytes > 1024) /* don't bother on small objects */ 
 	{
 		t_filesize srcFileSize = p_src->get_size(p_abort); // detect truncation
-		if (srcFileSize != ~0) {
+		if (srcFileSize != filesize_invalid) {
 			t_filesize remaining = srcFileSize - p_src->get_position(p_abort);
 			if (p_bytes > remaining) throw exception_io_data_truncation();
 		}
@@ -1289,12 +1490,14 @@ bool foobar2000_io::extract_native_path(const char * p_fspath,pfc::string_base &
 
 bool foobar2000_io::extract_native_path_ex(const char * p_fspath, pfc::string_base & p_native) {
 	if (!_extract_native_path_ptr(p_fspath)) return false;
+#ifdef _WIN32
 	if (p_fspath[0] != '\\' || p_fspath[1] != '\\') {
 		p_native = "\\\\?\\";
 		p_native += p_fspath;
-	} else {
-		p_native = p_fspath;
+		return true;
 	}
+#endif
+	p_native = p_fspath;
 	return true;
 }
 
@@ -1388,24 +1591,20 @@ void filesystem::g_remove_object_recur(const char * path, abort_callback & abort
 }
 
 void foobar2000_io::purgeOldFiles(const char * directory, t_filetimestamp period, abort_callback & abort) {
-
-	class myCallback : public directory_callback {
-	public:
-		myCallback(t_filetimestamp period) : m_base(filetimestamp_from_system_timer() - period) {}
-		bool on_entry(filesystem *,abort_callback & p_abort,const char * p_url,bool p_is_subdirectory,const t_filestats & p_stats) {
-			if (!p_is_subdirectory && p_stats.m_timestamp < m_base) {
-				try {
-					filesystem::g_remove_timeout(p_url, 1, p_abort);
-				} catch(exception_io_not_found const &) {}
-			}
-			return true;
+	const auto base = filetimestamp_from_system_timer() - period;
+	const auto fs = filesystem::get(directory);
+	constexpr double timeout = 1.0;
+	auto cb = [&](const char* path, t_filestats2 const& stats) {
+		if (stats.is_file() && stats.m_timestamp != filetimestamp_invalid && stats.m_timestamp < base) {
+			try {
+				fs->remove_(path, abort, timeout);
+			} catch(exception_aborted const &) {
+				throw;
+			} catch (...) {}
 		}
-	private:
-		const t_filetimestamp m_base;
 	};
 
-	myCallback cb(period);
-	filesystem::g_list_directory(directory, cb, abort);
+	fs->list_directory_(directory, cb, listMode::files | listMode::hidden | listMode::notFoundAsBlank, abort);
 }
 
 void stream_reader::read_string_nullterm( pfc::string_base & out, abort_callback & abort ) {
@@ -1501,7 +1700,7 @@ bool foobar2000_io::matchContentType_Opus( const char * type) {
     return matchContentType(type, "audio/opus") || matchContentType(type, "audio/x-opus");
 }
 bool foobar2000_io::matchContentType_WAV( const char * type ) {
-    return matchContentType(type, "audio/vnd.wave" ) || matchContentType(type, "audio/wav") || matchContentType(type, "audio/wave") || matchContentType(type, "audio/x-wav") || matchContentType(type, "audio/x-wave");
+    return matchContentType(type, "audio/vnd.wave" ) || matchContentType(type, "audio/wav") || matchContentType(type, "audio/wave") || matchContentType(type, "audio/x-wav") || matchContentType(type, "audio/x-wave") || matchContentType(type, "audio/x-wave64");
 }
 bool foobar2000_io::matchContentType_FLAC( const char * type) {
     return matchContentType(type, "audio/flac") || matchContentType(type, "audio/x-flac") || matchContentType(type, "application/flac") || matchContentType(type, "application/x-flac");
@@ -1540,6 +1739,7 @@ bool foobar2000_io::testIfHasProtocol( const char * input ) {
 }
 
 bool foobar2000_io::matchProtocol(const char * fullString, const char * protocolName) {
+	PFC_ASSERT(fullString != nullptr && protocolName != nullptr);
     const t_size len = strlen(protocolName);
     if (!pfc::stringEqualsI_ascii_ex(fullString, len, protocolName, len)) return false;
     return fullString[len] == ':' && fullString[len+1] == '/' && fullString[len+2] == '/';
@@ -1879,8 +2079,7 @@ filesystem_transacted::ptr filesystem_transacted::create( const char * pathFor )
 }
 #endif
 
-bool filesystem::commit_if_transacted(abort_callback &abort) {
-	(void)abort;
+bool filesystem::commit_if_transacted([[maybe_unused]] abort_callback &abort) {
 	bool rv = false;
 #if FB2K_SUPPORT_TRANSACTED_FILESYSTEM
 	filesystem_transacted::ptr t;
@@ -1897,9 +2096,11 @@ t_filestats filesystem::get_stats(const char * path, abort_callback & abort) {
 	return s;
 }
 
-bool file_dynamicinfo_v2::get_dynamic_info(class file_info & p_out) {
-	t_filesize dummy = 0;
-	return this->get_dynamic_info_v2(p_out, dummy);
+bool file_dynamicinfo_v2::get_dynamic_info(file_info & p_out) {
+    bool rv = false;
+    t_filesize dummy = 0;
+    while(this->get_dynamic_info_v2(p_out, dummy)) rv = true;
+    return rv;
 }
 
 size_t file::lowLevelIO_(const GUID & guid, size_t arg1, void * arg2, size_t arg2size, abort_callback & abort) {
@@ -1990,6 +2191,29 @@ t_filestats2 filesystem::g_get_stats2(const char* p_path, uint32_t s2flags, abor
 	return get(p_path)->get_stats2_(p_path, s2flags, p_abort);
 }
 
+t_filestats2 filesystem::getStatsOpportunist_(const char * path) {
+    {
+        filesystem_v4::ptr api;
+        if ( api &= this ) return api->getStatsOpportunist(path);
+    }
+    t_filestats2 ret;
+    bool bRemote = this->is_remote(path);
+    ret.set_remote(bRemote); ret.set_network(bRemote);
+    return ret;
+}
+
+t_filestats2 filesystem::g_getStatsOpportunist(const char * path) {
+    return get(path)->getStatsOpportunist_(path);
+}
+
+bool filesystem::is_network_(const char * path) {
+    return getStatsOpportunist_(path).is_network();
+}
+
+bool filesystem_v4::is_remote(const char * p_src) {
+    return getStatsOpportunist(p_src).is_remote();
+}
+
 void filesystem_v3::get_stats(const char* p_path, t_filestats& p_stats, bool& p_is_writeable, abort_callback& p_abort) {
 	t_filestats2 s2 = this->get_stats2(p_path, stats2_canWrite | stats2_size | stats2_timestamp, p_abort);
 	p_stats = s2.to_legacy();
@@ -2019,12 +2243,12 @@ t_filestats2 file::get_stats2_(uint32_t f, abort_callback& a) {
 	file_v2::ptr v2;
 	if (v2 &= this) {
 		ret = v2->get_stats2(f, a);
-		PFC_ASSERT(ret.is_file());
 	} else {
 		if (f & stats2_size) ret.m_size = this->get_size(a);
 		if (f & stats2_timestamp) ret.m_timestamp = this->get_timestamp(a);
 		ret.set_file();
-		ret.set_remote(this->is_remote());
+		if (this->is_remote()) ret.set_remote();
+		else ret.set_local();
 		// we do not know if it's readonly or not, can_write() tells us if the file was open for writing, not if it can possibly be opened for writing
 	}
 	return ret;
@@ -2033,7 +2257,7 @@ t_filestats2 file::get_stats2_(uint32_t f, abort_callback& a) {
 pfc::string8 t_filestats2::format_attribs(uint32_t attr, const char * delim) {
 	pfc::string8 ret;
 	if (attr != 0) {
-		const char* arr[5] = {};
+		const char* arr[6] = {};
 		size_t w = 0;
 		ret.prealloc(64);
 		if (attr & attr_readonly) {
@@ -2051,6 +2275,10 @@ pfc::string8 t_filestats2::format_attribs(uint32_t attr, const char * delim) {
 		if (attr & attr_remote) {
 			arr[w++] = "remote";
 		}
+        if (attr & attr_network) {
+            arr[w++] = "network";
+        }
+        
 		PFC_ASSERT(w <= PFC_TABSIZE(arr));
 		for (size_t f = 0; f < w; ++f) {
 			if (f > 0) ret += delim;
@@ -2058,6 +2286,33 @@ pfc::string8 t_filestats2::format_attribs(uint32_t attr, const char * delim) {
 		}
 	}
 	return ret;
+}
+
+bool t_filestats2::isSubsetOf(const t_filestats2 &superset) const {
+    const auto & subset = *this;
+    if (subset.m_size != filesize_invalid && superset.m_size != subset.m_size) return false;
+    if (subset.m_timestamp != filetimestamp_invalid && superset.m_timestamp != subset.m_timestamp) return false;
+    if (subset.m_timestampCreate != filetimestamp_invalid && superset.m_timestampCreate != subset.m_timestampCreate) return false;
+    if ((subset.m_attribsValid & superset.m_attribsValid) != subset.m_attribsValid) return false;
+    if ((subset.m_attribs & subset.m_attribsValid) != (superset.m_attribs & subset.m_attribsValid)) return false;
+    return true;
+}
+
+bool t_filestats2::test_s2flags( uint32_t s2flags ) const {
+    // PROBLEM: can't really handle cases where file has no size/timestamp here
+    if (( s2flags & stats2_size ) && ! haveSize() ) return false;
+    if (( s2flags & stats2_timestamp ) && ! haveTimestamp() ) return false;
+    if (( s2flags & stats2_timestamp ) && ! haveTimestampCreate() ) return false;    
+    if (( s2flags & stats2_fileOrFolder ) && ! attrib_valid( attr_folder ) ) return false;
+    if (( s2flags & stats2_readOnly ) && ! attrib_valid( attr_readonly ) ) return false;
+    if (( s2flags & stats2_hidden ) && ! attrib_valid( attr_hidden ) ) return false;
+    if (( s2flags & stats2_remote ) && ! attrib_valid( attr_remote|attr_network ) ) return false;
+    return true;
+}
+
+void t_filestats2::overwriteAttribs( t_filestats2 const & other ) {
+    m_attribs = (m_attribs & ~other.m_attribsValid) | (other.m_attribs & other.m_attribsValid);
+    m_attribsValid |= other.m_attribsValid;
 }
 
 t_filetimestamp file::get_time_created(abort_callback& a) {
@@ -2149,8 +2404,8 @@ namespace {
 		bool m_enforceListMode = false;
 		unsigned m_listMode = 0;
 
-		bool on_entry(filesystem* p_owner, abort_callback& p_abort, const char* p_url, bool p_is_subdirectory, const t_filestats& p_stats) override {
-			(void)p_owner; p_abort.check();
+		bool on_entry(filesystem*, abort_callback& p_abort, const char* p_url, bool p_is_subdirectory, const t_filestats& p_stats) override {
+			p_abort.check();
 			if (m_enforceListMode) {
 				if (p_is_subdirectory) {
 					if ( (m_listMode & listMode::folders) == 0 ) return true;
@@ -2205,7 +2460,8 @@ fsItemBase::ptr filesystem_v3::findItem(const char* path, abort_callback& p_abor
 #endif
 		pfc::string8 canonical;
 		if (get_canonical_path(path, canonical)) {
-			auto stats = this->get_stats2(path, stats2_all, p_abort);
+			if (!is_our_path(canonical)) return filesystem::get(canonical)->findItem_(canonical, p_abort);
+			auto stats = this->get_stats2(canonical, stats2_all, p_abort);
 			if ( stats.is_folder() ) {
 				return makeItemFolderStd(canonical, stats);
 			} else {
@@ -2229,6 +2485,7 @@ fsItemFile::ptr filesystem_v3::findItemFile(const char* path, abort_callback& p_
 #endif
 		pfc::string8 canonical;
 		if (get_canonical_path(path, canonical)) {
+			if (!is_our_path(canonical)) return filesystem::get(canonical)->findItemFile_(canonical, p_abort);
 			auto stats = this->get_stats2( canonical, stats2_all, p_abort);
 			if ( stats.is_file() ) {
 				return makeItemFileStd(canonical, stats );
@@ -2251,6 +2508,7 @@ fsItemFolder::ptr filesystem_v3::findItemFolder(const char* path, abort_callback
 #endif
 		pfc::string8 canonical;
 		if (get_canonical_path(path, canonical)) {
+			if (!is_our_path(canonical)) return filesystem::get(canonical)->findItemFolder_(canonical, p_abort);
 			auto stats = this->get_stats2( canonical, stats2_all, p_abort);
 			if ( stats.is_folder() ) {
 				return makeItemFolderStd(canonical, stats );
@@ -2367,9 +2625,9 @@ t_filestats2 foobar2000_io::nixMakeFileStats2(const struct stat &st) {
 	ret.m_timestampCreate = pfc::fileTimeUtoW(st.st_ctim);
 #endif
     ret.set_readonly(nixQueryReadonly(st));
-    if ( st.st_mode & S_IFDIR ) ret.set_folder();
+    if ( st.st_mode & S_IFDIR ) {ret.set_folder();ret.m_size = filesize_invalid;}
     else if (st.st_mode & S_IFREG ) ret.set_file();
-	ret.set_remote(false);
+    ret.set_remote(false); ret.set_network(false);
     return ret;
 }
 
@@ -2512,10 +2770,60 @@ size_t stream_receive::read_using_receive(void* ptr_, size_t bytes, abort_callba
     auto ptr = reinterpret_cast<uint8_t*>(ptr_);
     while(walk < bytes) {
         size_t want = bytes-walk;
-        size_t delta = this->receive(ptr+walk, want, a);
+        size_t delta = this->receive(ptr?ptr+walk:nullptr, want, a);
         PFC_ASSERT( delta <= want );
         if ( delta == 0 ) break;
         walk += delta;
     }
     return walk;
+}
+
+bool foobar2000_io::isNonMediaFileName(const char* fn) {
+	{
+		auto ext = pfc::extract_ext_v2(fn);
+		for (auto walk : { "tmp", "temp", "bak", "bk", "off" }) {
+			if (pfc::stringEqualsI_ascii(ext, walk)) return true;
+		}
+	}
+
+	for (auto walk : { "@Recycle","#recycle", "$RECYCLE.BIN", "@eaDir", ".git" }) {
+		if (pfc::stringEqualsI_ascii(fn, walk)) return true;
+	}
+	return false;
+}
+
+#include <pfc/splitString2.h>
+#include <unordered_set>
+#include <string>
+
+void archive::extract_to(const char * arc, file::ptr fileObjHint, const char *folderTo, abort_callback & a) {
+    auto fs = filesystem::get(folderTo);
+    const char delim[] = {this->pathSeparator(),0};
+    std::unordered_set<std::string> lstFolders;
+    auto fn = [&](const char* url, const t_filestats& stats, file::ptr reader) {
+        pfc::string8 fnArchive, fnFile;
+        bool status = archive_impl::g_parse_unpack_path(url, fnArchive, fnFile);
+        if (!status) throw std::runtime_error("Archive processing error");
+        pfc::string8 fnTarget = folderTo;
+        auto levels = pfc::splitString2(fnFile, delim);
+        for( auto & walk : levels ) {
+            if ( walk == "." || walk == ".." ) throw std::runtime_error("Malformed archive");
+            if (lstFolders.insert(fnTarget.c_str()).second) fs->filesystem::make_directory(fnTarget, a);
+            fnTarget.add_filename(walk);
+        }
+        file::ptr writer;
+        fs->open(writer, fnTarget, filesystem::open_mode_write_new, a);
+        file::g_transfer(reader, writer, reader->get_size(a), a);
+    };
+    this->archive_list_flags_(arc, fileObjHint, fn, archive_v5::flagReaders | archive_v5::flagReadersTemporary, a);
+}
+
+archive_v2::ptr archive_v2::tryGet(const char * path) {
+    for( auto fs : filesystem::enumerate() ) {
+        archive_v2::ptr v2;
+        if ( v2 &= fs ) {
+            if ( v2->is_our_archive(path) ) return v2;
+        }
+    }
+    return nullptr;
 }

@@ -7,8 +7,8 @@
 //   - 冲突只看已编辑字段，外部写成草稿要写的值不算冲突，未编辑字段不参与；
 //   - 影响重启的字段与本进程启动值不同即要求重启。
 #include "pch.h"
-#include "../src/core/PreferencesDraft.h"
-#include "../src/core/PreferencesFields.h"
+#include "../src/prefs/PreferencesDraft.h"
+#include "../src/prefs/PreferencesFields.h"
 
 using namespace prefs_draft;
 using prefs_fields::overview::Backdrop;

@@ -7,14 +7,11 @@
 #include "core/WebViewContext.h"
 #include "api/ApiConstants.h"
 
-HWND WindowTargetResolver::ExtractCallerHwnd(const json& params) {
-    if (params.contains("_callerHwnd") && params["_callerHwnd"].is_number_integer()) {
-        auto hwnd = reinterpret_cast<HWND>(params["_callerHwnd"].get<intptr_t>());
-        if (hwnd && IsWindow(hwnd)) {
-            // WebViewPanel.hwnd_ 可能是子窗口，获取顶级窗口
-            HWND topLevel = ::GetAncestor(hwnd, GA_ROOT);
-            return topLevel ? topLevel : hwnd;
-        }
+HWND WindowTargetResolver::TopLevelCallerHwnd(HWND callerHwnd) {
+    if (callerHwnd && IsWindow(callerHwnd)) {
+        // WebViewPanel.hwnd_ 可能是子窗口，获取顶级窗口
+        HWND topLevel = ::GetAncestor(callerHwnd, GA_ROOT);
+        return topLevel ? topLevel : callerHwnd;
     }
     return nullptr;
 }
@@ -51,7 +48,7 @@ WindowTargetResult WindowTargetResolver::ResolveById(const std::string& windowId
 
 WindowTargetResult WindowTargetResolver::ResolveByCallerHwnd(HWND callerHwnd) {
     WindowTargetResult result;
-    // 本方法是 public，调用方未必经过 ExtractCallerHwnd 的 IsWindow 校验，
+    // 本方法是 public，调用方未必经过 TopLevelCallerHwnd 的 IsWindow 校验，
     // 故在入口独立校验一次：陈旧句柄不得解析成 target。
     if (!callerHwnd || !IsWindow(callerHwnd)) {
         result.error = ApiError::WINDOW_NOT_FOUND;
@@ -101,7 +98,7 @@ bool WindowTargetResolver::IsPanelCallerHwnd(HWND callerHwnd) {
 
     auto& ctx = WebViewContext::GetInstance();
     for (auto instanceHwnd : ctx.GetAllInstances()) {
-        // callerHwnd 已被 ExtractCallerHwnd 提升到 GA_ROOT。面板实例本身是
+        // callerHwnd 已被 TopLevelCallerHwnd 提升到 GA_ROOT。面板实例本身是
         // 宿主框架内的子窗口，其 GA_ROOT 是 fb2k 主框架而非实例自身，因此
         // 两种匹配方向都要检查。
         //
@@ -122,21 +119,19 @@ bool WindowTargetResolver::IsPanelCallerHwnd(HWND callerHwnd) {
     return false;
 }
 
-// 把 params 归类为纯策略层的输入。
+// 把 windowId 与调用方句柄归类为纯策略层的输入。
 //
 // 归类需要 HWND 查找（IsWindow 校验、面板判定），而策略层不依赖 Win32，
 // 故分类在此完成、决策交给 window_target_policy::SelectTarget。
 WindowTargetResult WindowTargetResolver::ResolveWithIntent(
-    const json& params, window_target_policy::TargetIntent intent) {
+    const std::optional<std::string>& windowId, HWND rawCallerHwnd,
+    window_target_policy::TargetIntent intent) {
     using namespace window_target_policy;
 
     TargetRequest request;
-    if (params.contains("windowId") && params["windowId"].is_string()) {
-        std::string wid = params["windowId"].get<std::string>();
-        if (!wid.empty()) {
-            request.hasExplicitWindowId = true;
-            request.explicitWindowId = std::move(wid);
-        }
+    if (windowId && !windowId->empty()) {
+        request.hasExplicitWindowId = true;
+        request.explicitWindowId = *windowId;
     }
 
     // 只有在没有显式 windowId 时才需要检查 caller —— 显式 id 无条件优先，
@@ -150,7 +145,7 @@ WindowTargetResult WindowTargetResolver::ResolveWithIntent(
     HWND callerHwnd = nullptr;
     std::optional<WindowTargetResult> callerResult;
     if (!request.hasExplicitWindowId) {
-        callerHwnd = ExtractCallerHwnd(params);
+        callerHwnd = TopLevelCallerHwnd(rawCallerHwnd);
         if (callerHwnd) {
             request.hasCallerHwnd = true;
             callerResult = ResolveByCallerHwnd(callerHwnd);
@@ -186,17 +181,19 @@ WindowTargetResult WindowTargetResolver::ResolveWithIntent(
     }
 }
 
-WindowTargetResult WindowTargetResolver::ResolveForMutation(const json& params) {
+WindowTargetResult WindowTargetResolver::ResolveForMutation(
+    const std::optional<std::string>& windowId, HWND callerHwnd) {
     // 决策表由 window_target_policy 持有并被单测固定，此处不再复制分支逻辑。
     // 对 mutating shell API：找不到 target 必须失败，禁止静默回退 main。
-    return ResolveWithIntent(params, window_target_policy::TargetIntent::Mutation);
+    return ResolveWithIntent(windowId, callerHwnd, window_target_policy::TargetIntent::Mutation);
 }
 
-WindowTargetResult WindowTargetResolver::ResolveForObservation(const json& params) {
+WindowTargetResult WindowTargetResolver::ResolveForObservation(
+    const std::optional<std::string>& windowId, HWND callerHwnd) {
     // 与 Mutation 共用同一决策表。
     //
     // Q7-1 取消了 observation 的主窗口回退：回退会向非主窗口的调用方返回
     // 属于另一个窗口的几何/状态值，调用方无从分辨——这正是本项目要消灭的
     // 静默错值形态，比返回错误更有害。故两种意图行为一致。
-    return ResolveWithIntent(params, window_target_policy::TargetIntent::Observation);
+    return ResolveWithIntent(windowId, callerHwnd, window_target_policy::TargetIntent::Observation);
 }

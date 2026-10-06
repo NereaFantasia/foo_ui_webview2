@@ -115,8 +115,6 @@ namespace InPlaceEdit {
 
 		m_editFlags = TableEdit_GetEditFlags(m_editItem, m_editSubItem);
 
-		if (this->TableEdit_GetDarkMode()) m_editFlags |= KFlagDark;
-
 		m_editData.release();
 		m_editDataCombo.reset();
 
@@ -133,7 +131,7 @@ namespace InPlaceEdit {
 				task(status);
 			};
 
-			return InPlaceEdit::StartCombo(TableEdit_GetParentWnd(), rc, m_editFlags, combo.strings, combo.iDefault, comboTask );
+			return InPlaceEdit::StartCombo(TableEdit_GetParentWnd(), rc, m_editFlags, combo.strings, combo.iDefault, comboTask, this->TableEdit_GetDarkMode() );
 		}
 
 		m_editData.new_t();
@@ -146,7 +144,7 @@ namespace InPlaceEdit {
 			m_editFlags |= KFlagMultiLine;
 		}
 		auto ac = this->TableEdit_GetAutoCompleteEx(m_editItem, m_editSubItem );
-		return InPlaceEdit::StartEx(TableEdit_GetParentWnd(), rc, m_editFlags, m_editData, tableEdit_create_task(), ac.data.get_ptr(), ac.options);
+		return InPlaceEdit::StartEx(TableEdit_GetParentWnd(), rc, m_editFlags, m_editData, tableEdit_create_task(), ac.data.get_ptr(), ac.options, this->TableEdit_GetDarkMode());
 	}
 
 	CTableEditHelperV2::combo_t CTableEditHelperV2::TableEdit_GetCombo(size_t, size_t) {

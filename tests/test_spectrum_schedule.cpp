@@ -441,3 +441,69 @@ TEST(SpectrumSchedule, BeatGateCoalescesAndSurvivesThreadRestart) {
     EXPECT_TRUE(gate.TryArm());
     EXPECT_FALSE(gate.TryArm());
 }
+
+// ---- 原始频点（docs/audio-visualization/SPECTRUM_BINS_SPEC.md B4 / B7、§8 A-B5） ----
+
+using fb2k_spectrum::SpectrumChannels;
+using fb2k_spectrum::SpectrumOutput;
+
+namespace {
+
+Sub MakeBinsSub(const char* id, int fftSize, int bands = 48,
+                SpectrumChannels channels = SpectrumChannels::Mix) {
+    Sub sub = MakeSub(id, 30, bands, fftSize);
+    sub.params.output = SpectrumOutput::Bins;
+    sub.params.scale = SpectrumScale::Db;
+    sub.params.channels = channels;
+    return sub;
+}
+
+}  // namespace
+
+// bins 按请求的点数算，带数再多也不提升；上限照样截。频带输出的规则不变。
+TEST(SpectrumSchedule, BinsKeepTheRequestedFftSize) {
+    EXPECT_EQ(EffectiveFftSize(1024, 256, SpectrumOutput::Bins, 65536), 1024);
+    EXPECT_EQ(EffectiveFftSize(4096, 1024, SpectrumOutput::Bins, 65536), 4096);
+    EXPECT_EQ(EffectiveFftSize(65536, 8, SpectrumOutput::Bins, 16384), 16384);
+    EXPECT_EQ(EffectiveFftSize(4096, 1024, SpectrumOutput::Bands, 65536), 8192);
+    EXPECT_EQ(EffectiveFftSize(1024, 32, SpectrumOutput::Bands, 65536), 4096);
+
+    Sub bins = MakeBinsSub("bins", 4096, 1024);
+    const TickPlan plan = PlanTick(Tick(0), {bins.Entry()});
+    ASSERT_EQ(plan.groups.size(), 1u);
+    EXPECT_EQ(plan.groups[0].fftSize, 4096);
+    EXPECT_EQ(plan.groups[0].output, SpectrumOutput::Bins);
+    EXPECT_EQ(plan.groups[0].bands, 0);
+    EXPECT_EQ(plan.groups[0].scale, SpectrumScale::Db);
+}
+
+// 只差 bands 的两个 bins 订阅算一组：bands 不参与 bins 的计算。
+TEST(SpectrumSchedule, BinsGroupIgnoresBands) {
+    Sub a = MakeBinsSub("a", 8192, 48);
+    Sub b = MakeBinsSub("b", 8192, 1024);
+    const TickPlan plan = PlanTick(Tick(0), {a.Entry(), b.Entry()});
+    ASSERT_EQ(plan.groups.size(), 1u);
+    const FrameDecision* fa = FindFrame(plan, "a");
+    const FrameDecision* fb = FindFrame(plan, "b");
+    ASSERT_TRUE(fa && fb);
+    EXPECT_EQ(fa->group, fb->group);
+}
+
+// 点数相同的 bins 与频带订阅分两组；只差 channels 的 bins 订阅也分两组。
+TEST(SpectrumSchedule, BinsSplitFromBandsAndByChannels) {
+    Sub bands = MakeSub("bands", 30, 48, 8192);
+    bands.params.scale = SpectrumScale::Db;
+    Sub mix = MakeBinsSub("mix", 8192);
+    Sub stereo = MakeBinsSub("stereo", 8192, 48, SpectrumChannels::Stereo);
+    const TickPlan plan = PlanTick(Tick(0), {bands.Entry(), mix.Entry(), stereo.Entry()});
+
+    ASSERT_EQ(plan.groups.size(), 3u);
+    const FrameDecision* fBands = FindFrame(plan, "bands");
+    const FrameDecision* fMix = FindFrame(plan, "mix");
+    const FrameDecision* fStereo = FindFrame(plan, "stereo");
+    ASSERT_TRUE(fBands && fMix && fStereo);
+    EXPECT_EQ(plan.groups[fBands->group].output, SpectrumOutput::Bands);
+    EXPECT_EQ(plan.groups[fBands->group].fftSize, 8192);
+    EXPECT_EQ(plan.groups[fMix->group].channels, SpectrumChannels::Mix);
+    EXPECT_EQ(plan.groups[fStereo->group].channels, SpectrumChannels::Stereo);
+}

@@ -87,6 +87,10 @@ constexpr GUID ui_color_highlight = { 0xd2f98042, 0x3e6a, 0x423a, { 0xb8, 0x66, 
 constexpr GUID ui_color_selection = { 0xebe1a36b, 0x7e0a, 0x469a, { 0x8e, 0xc5, 0xcf, 0x3, 0x12, 0x90, 0x40, 0xb5 } };
 // Special pseudo-color - black or white depending on dark mode state, undefined in fb2k versions that don't recognize dark mode.
 constexpr GUID ui_color_darkmode = { 0x9050bca9, 0x4ed, 0x40e9, { 0xb0, 0xfc, 0x9c, 0x67, 0x9c, 0xc2, 0x28, 0x6d } };
+// Valid only if dark mode is on, specifies dark mode tint.
+constexpr GUID ui_color_darkmode_tint = { 0xab614919, 0x7273, 0x4c88, { 0x8a, 0x69, 0x91, 0xb6, 0xc2, 0x52, 0x83, 0xeb } };
+// Retro mode switch, non-zero/black if retro mode is active.
+constexpr GUID ui_color_retromode = { 0x42a283c1, 0x6c30, 0x4319, { 0x9f, 0xd3, 0x5, 0xd9, 0xb9, 0x7a, 0xd, 0x5a } };
 
 
 constexpr GUID ui_font_default = { 0x9ef02cef, 0xe58a, 0x4f99, { 0x9f, 0xe3, 0x85, 0x39, 0xb, 0xed, 0xc5, 0xe0 } };
@@ -160,6 +164,7 @@ public:
 	bool is_border_needed(ui_element_instance * source);
 
 	bool is_dark_mode();
+	bool is_retro_mode();
 };
 
 
@@ -231,9 +236,9 @@ public:
 	virtual bool query_color(const GUID& p_what, t_ui_color& p_out) { (void)p_what; (void)p_out; return false; }
 	virtual bool request_activation(service_ptr_t<class ui_element_instance> p_item) { (void)p_item; return false; }
 	virtual bool is_edit_mode_enabled() {return false;}
-	virtual void request_replace(service_ptr_t<class ui_element_instance> p_item) {}
+	virtual void request_replace(service_ptr_t<class ui_element_instance>) {}
 	virtual t_ui_font query_font_ex(const GUID&) {return NULL;}
-	virtual bool is_elem_visible(service_ptr_t<ui_element_instance> elem) {return true;}
+	virtual bool is_elem_visible(service_ptr_t<ui_element_instance>) {return true;}
 	virtual t_size host_notify(ui_element_instance* source, const GUID& what, t_size param1, const void* param2, t_size param2size) { (void)source; (void)what; (void)param1; (void)param2; (void)param2size; return 0; }
 	ui_element_instance_callback_ptr ui_element_instance_callback_get_ptr() {
 		if (m_callback.is_empty()) m_callback = new service_impl_t<t_callback>(this);
@@ -373,7 +378,7 @@ public:
 	//! In certain cases, an UI element can import settings of another UI element (eg. vertical<=>horizontal splitter, tabs<=>splitters) when user directly replaces one of such elements with another. Overriding this function allows special handling of such cases. \n
 	//! Implementation hint: when implementing a multi-child container, you probably want to takeover child elements replacing another container element; use enumerate_children() on the element the configuration belongs to to grab those.
 	//! @returns A new ui_element_config on success, a null pointer when the input data could not be parsed / is in an unknown format.
-	virtual ui_element_config::ptr import(ui_element_config::ptr cfg) {return NULL;}
+	virtual ui_element_config::ptr import(ui_element_config::ptr cfg) { (void)cfg;return nullptr; }
 
 	//! Override this to return false when your element is for internal use only and should not be user-addable.
 	virtual bool is_user_addable() {return true;}
@@ -396,19 +401,19 @@ public:
 //! Extended interface for a UI element implementation.
 class NOVTABLE ui_element_v2 : public ui_element {
 public:
-	enum {
-		//! Indicates that bump() method is supported.
-		KFlagSupportsBump		= 1 << 0,
+	static constexpr uint32_t
+		//! Indicates that `bump()` method is supported.
+		KFlagSupportsBump = 1 << 0,
 		//! Tells UI backend to auto-generate a menu command activating your element - bumping an existing instance if possible, spawning a popup otherwise.
-		//! Currently menu commands are generated for ui_element_subclass_playback_visualisation, ui_element_subclass_media_library_viewers and ui_element_subclass_utility subclasses, in relevant menus.
-		KFlagHavePopupCommand	= 1 << 1,
+		//! Currently menu commands are generated for `ui_element_subclass_playback_visualisation`, `ui_element_subclass_playback_information`, `ui_element_subclass_media_library_viewers` and `ui_element_subclass_utility` subclasses, in relevant menus.
+		KFlagHavePopupCommand = 1 << 1,
 		//! Tells backend that your element supports fullscreen mode (typically set only for visualisations).
-		KFlagHaveFullscreen		= 1 << 2,
-
+		KFlagHaveFullscreen = 1 << 2,
+		//! Hide the menu command unless shift is pressed.
 		KFlagPopupCommandHidden = 1 << 3,
 
-		KFlagsVisualisation = KFlagHavePopupCommand | KFlagHaveFullscreen,
-	};
+		KFlagsVisualisation = KFlagHavePopupCommand | KFlagHaveFullscreen;
+
 	virtual t_uint32 get_flags() = 0;
 	//! Called only when get_flags() return value has KFlagSupportsBump bit set. 
 	//! Returns true when an existing instance of this element has been "bumped" - brought to user's attention in some way, false when there's no instance to bump or none of existing instances could be bumped for whatever reason.
@@ -483,7 +488,7 @@ public:
     
 	virtual fb2k::hwnd_t spawn_scratchbox(fb2k::hwnd_t parent,ui_element_config::ptr cfg) = 0;
 
-	virtual ui_element_popup_host::ptr spawn_host(fb2k::hwnd_t parent, ui_element_config::ptr cfg, ui_element_popup_host_callback::ptr callback, ui_element::ptr elem = NULL
+	virtual ui_element_popup_host::ptr spawn_host(fb2k::hwnd_t parent, ui_element_config::ptr cfg, ui_element_popup_host_callback::ptr callback, ui_element::ptr elem = nullptr
 #ifdef _WIN32
     ,DWORD style = WS_POPUPWINDOW|WS_CAPTION|WS_THICKFRAME, DWORD styleEx = WS_EX_CONTROLPARENT
 #endif

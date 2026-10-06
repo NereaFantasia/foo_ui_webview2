@@ -16,9 +16,9 @@ typedef void * configStoreNotifyHandle_t;
 
 //! \since 2.0
 //! Interface to access foobar2000's configuration store, backed by SQLite database. \n
-//! get* methods can be called at any time. set*/delete* \n
-//! set*/delete* methods will trigger immediate commit when invoked without a transaction scope. \n
-//! Use commitBlocking() to commit synchronously to be sure that the data has been flushed before continuing execution.
+//! @c get* methods can be called at any time. @c set*/delete* \n
+//! @c set*/delete* methods will trigger immediate commit when invoked without a transaction scope. \n
+//! Use @c commitBlocking() to commit synchronously to be sure that the data has been flushed before continuing execution.
 class configStore : public service_base {
 	FB2K_MAKE_SERVICE_COREAPI( configStore );
 public:
@@ -52,7 +52,7 @@ public:
 	virtual void removeNotify(const char * name, configStoreNotify * notify) = 0;
 
     //! Lists values of any type in the specified domain.
-    //! For an example, calling with domain "foo" will return all foo.* keys, such as: foo.bar, foo.bar.2000, foo.asdf. Will not return "foobar".
+    //! For an example, calling with domain "foo" will return all @c foo.* keys, such as: foo.bar, foo.bar.2000, foo.asdf. Will not return "foobar".
     virtual fb2k::arrayRef listDomainValues(const char* domain, bool withSubdomains) = 0;
 
 	objRef addNotify( const char * name, std::function<void () > f );
@@ -79,6 +79,10 @@ public:
 
     fb2k::stringRef getConfigString( const char * name, const char * defVal ) { return getConfigString(name, defVal ? fb2k::makeString(defVal) : nullptr); }
     fb2k::stringRef getConfigString( const char * name, std::nullptr_t ) { return getConfigString(name, fb2k::stringRef ( nullptr ) ); }
+    
+    void watchString( const char * name, const char * def, std::function<void (const char*) > fn);
+    void watchInt( const char * name, int64_t def, std::function<void (int64_t) > fn);
+    void watchGUID( const char * name, GUID def, std::function<void (const GUID&) > fn );
 };
 
 struct configEventHandle_;

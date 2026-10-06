@@ -4,6 +4,9 @@
     <Filter Include="src">
       <UniqueIdentifier>{4FC737F1-C7A5-4376-A066-2A32D752A2FF}</UniqueIdentifier>
     </Filter>
+    <Filter Include="src\media">
+      <UniqueIdentifier>{F27A920D-4AD5-49EA-A35F-6A0BC958BE57}</UniqueIdentifier>
+    </Filter>
     <Filter Include="src\core">
       <UniqueIdentifier>{93995380-89BD-4b04-88EB-625FBE52EBFB}</UniqueIdentifier>
     </Filter>
@@ -31,6 +34,21 @@
     <Filter Include="src\utils">
       <UniqueIdentifier>{E5F6A7B8-C9D0-1234-EF01-345678901234}</UniqueIdentifier>
     </Filter>
+    <Filter Include="src\settings">
+      <UniqueIdentifier>{3C8E1F52-7A94-4D06-B1E3-9F5A2C7D4B18}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="src\prefs">
+      <UniqueIdentifier>{718BD47F-EEA3-4A25-BA1E-D8E6CBB536D5}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="src\ui">
+      <UniqueIdentifier>{0E092E68-17C9-48A9-8CB9-1654D59BABE3}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="src\domain">
+      <UniqueIdentifier>{DC5E94F7-169F-465C-B126-B4EA8E7E8CD4}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="src\domain\library">
+      <UniqueIdentifier>{88BC20CC-4980-403F-91F0-4057EA7A7384}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="src\pch.cpp">
@@ -39,13 +57,112 @@
     <ClCompile Include="src\main.cpp">
       <Filter>src</Filter>
     </ClCompile>
-    <ClCompile Include="src\core\UserInterface.cpp">
+    <ClCompile Include="src\settings\WindowStateConfig.cpp">
+      <Filter>src\settings</Filter>
+    </ClCompile>
+    <ClCompile Include="src\settings\AdvancedConfig.cpp">
+      <Filter>src\settings</Filter>
+    </ClCompile>
+    <ClCompile Include="src\prefs\PreferencesPage.cpp">
+      <Filter>src\prefs</Filter>
+    </ClCompile>
+    <ClCompile Include="src\prefs\PreferencesTemplateActions.cpp">
+      <Filter>src\prefs</Filter>
+    </ClCompile>
+    <ClCompile Include="src\prefs\ApiInventoryWindow.cpp">
+      <Filter>src\prefs</Filter>
+    </ClCompile>
+    <ClCompile Include="src\prefs\PreferencesPageBase.cpp">
+      <Filter>src\prefs</Filter>
+    </ClCompile>
+    <ClCompile Include="src\prefs\PreferencesDeveloperPage.cpp">
+      <Filter>src\prefs</Filter>
+    </ClCompile>
+    <ClCompile Include="src\prefs\PreferencesWindowPage.cpp">
+      <Filter>src\prefs</Filter>
+    </ClCompile>
+    <ClCompile Include="src\prefs\PreferencesPerformancePage.cpp">
+      <Filter>src\prefs</Filter>
+    </ClCompile>
+    <ClCompile Include="src\ui\UserInterface.cpp">
+      <Filter>src\ui</Filter>
+    </ClCompile>
+    <ClCompile Include="src\ui\AppQuit.cpp">
+      <Filter>src\ui</Filter>
+    </ClCompile>
+    <ClCompile Include="src\ui\BackgroundService.cpp">
+      <Filter>src\ui</Filter>
+    </ClCompile>
+    <ClCompile Include="src\ui\WebViewMainMenu.cpp">
+      <Filter>src\ui</Filter>
+    </ClCompile>
+    <ClCompile Include="src\core\PanelBootstrap.cpp">
       <Filter>src\core</Filter>
+    </ClCompile>
+    <ClCompile Include="src\core\PanelCrashDiagnostics.cpp">
+      <Filter>src\core</Filter>
+    </ClCompile>
+    <ClCompile Include="src\core\FrontendDirectoryPolicy.cpp">
+      <Filter>src\core</Filter>
+    </ClCompile>
+    <ClCompile Include="src\core\FrontendDirectoryResolver.cpp">
+      <Filter>src\core</Filter>
+    </ClCompile>
+    <ClCompile Include="src\core\QueueShadowPlaylist.cpp">
+      <Filter>src\core</Filter>
+    </ClCompile>
+    <ClCompile Include="src\core\QueueSources.cpp">
+      <Filter>src\core</Filter>
+    </ClCompile>
+    <ClCompile Include="src\domain\PathSecurity.cpp">
+      <Filter>src\domain</Filter>
+    </ClCompile>
+    <ClCompile Include="src\domain\library\LibraryCache.cpp">
+      <Filter>src\domain\library</Filter>
+    </ClCompile>
+    <ClCompile Include="src\domain\library\LibraryPathAlgebra.cpp">
+      <Filter>src\domain\library</Filter>
+    </ClCompile>
+    <ClCompile Include="src\domain\library\LibraryTreeBuilder.cpp">
+      <Filter>src\domain\library</Filter>
+    </ClCompile>
+    <ClCompile Include="src\domain\library\LibraryTreeIndex.cpp">
+      <Filter>src\domain\library</Filter>
+    </ClCompile>
+    <ClCompile Include="src\utils\Encoding.cpp">
+      <Filter>src\utils</Filter>
     </ClCompile>
     <ClCompile Include="src\window\MainWindow.cpp">
       <Filter>src\window</Filter>
     </ClCompile>
+    <ClCompile Include="src\window\MainWindowActivation.cpp">
+      <Filter>src\window</Filter>
+    </ClCompile>
+    <ClCompile Include="src\window\MainWindowBackground.cpp">
+      <Filter>src\window</Filter>
+    </ClCompile>
+    <ClCompile Include="src\window\MainWindowCaption.cpp">
+      <Filter>src\window</Filter>
+    </ClCompile>
+    <ClCompile Include="src\window\MainWindowDiagnostics.cpp">
+      <Filter>src\window</Filter>
+    </ClCompile>
     <ClCompile Include="src\window\MainWindowDwm.cpp">
+      <Filter>src\window</Filter>
+    </ClCompile>
+    <ClCompile Include="src\window\MainWindowInternal.cpp">
+      <Filter>src\window</Filter>
+    </ClCompile>
+    <ClCompile Include="src\window\MainWindowPlacement.cpp">
+      <Filter>src\window</Filter>
+    </ClCompile>
+    <ClCompile Include="src\window\MainWindowShell.cpp">
+      <Filter>src\window</Filter>
+    </ClCompile>
+    <ClCompile Include="src\window\MainWindowMaximizeButton.cpp">
+      <Filter>src\window</Filter>
+    </ClCompile>
+    <ClCompile Include="src\window\MaximizeButtonRegion.cpp">
       <Filter>src\window</Filter>
     </ClCompile>
     <ClCompile Include="src\window\MainWindowMenu.cpp">
@@ -69,7 +186,52 @@
     <ClCompile Include="src\window\WindowChromeApplier.cpp">
       <Filter>src\window</Filter>
     </ClCompile>
+    <ClCompile Include="src\window\WindowBehaviorTrace.cpp">
+      <Filter>src\window</Filter>
+    </ClCompile>
     <ClCompile Include="src\webview\WebViewHost.cpp">
+      <Filter>src\webview</Filter>
+    </ClCompile>
+    <ClCompile Include="src\webview\WebViewHostMessaging.cpp">
+      <Filter>src\webview</Filter>
+    </ClCompile>
+    <ClCompile Include="src\webview\WebViewHostScripts.cpp">
+      <Filter>src\webview</Filter>
+    </ClCompile>
+    <ClCompile Include="src\webview\WebViewHostDiagnostics.cpp">
+      <Filter>src\webview</Filter>
+    </ClCompile>
+    <ClCompile Include="src\webview\WebViewHostCrashRecovery.cpp">
+      <Filter>src\webview</Filter>
+    </ClCompile>
+    <ClCompile Include="src\webview\WebViewHostFocus.cpp">
+      <Filter>src\webview</Filter>
+    </ClCompile>
+    <ClCompile Include="src\webview\WebViewHostSettings.cpp">
+      <Filter>src\webview</Filter>
+    </ClCompile>
+    <ClCompile Include="src\webview\WebViewHostOrigin.cpp">
+      <Filter>src\webview</Filter>
+    </ClCompile>
+    <ClCompile Include="src\webview\OriginPolicy.cpp">
+      <Filter>src\webview</Filter>
+    </ClCompile>
+    <ClCompile Include="src\webview\WebViewHostVisibility.cpp">
+      <Filter>src\webview</Filter>
+    </ClCompile>
+    <ClCompile Include="src\webview\WebViewHostVirtualHost.cpp">
+      <Filter>src\webview</Filter>
+    </ClCompile>
+    <ClCompile Include="src\webview\WebViewHostComposition.cpp">
+      <Filter>src\webview</Filter>
+    </ClCompile>
+    <ClCompile Include="src\webview\WebViewHostInput.cpp">
+      <Filter>src\webview</Filter>
+    </ClCompile>
+    <ClCompile Include="src\webview\WebViewHostArtwork.cpp">
+      <Filter>src\webview</Filter>
+    </ClCompile>
+    <ClCompile Include="src\webview\SharedPcmBuffer.cpp">
       <Filter>src\webview</Filter>
     </ClCompile>
     <ClCompile Include="src\webview\dnd\HdropReader.cpp">
@@ -102,7 +264,25 @@
     <ClCompile Include="src\api\WaveformTaskQueue.cpp">
       <Filter>src\api</Filter>
     </ClCompile>
+    <ClCompile Include="src\api\PcmPack.cpp">
+      <Filter>src\api</Filter>
+    </ClCompile>
+    <ClCompile Include="src\api\PcmRing.cpp">
+      <Filter>src\api</Filter>
+    </ClCompile>
     <ClCompile Include="src\webview\dnd\DropEffectPolicy.cpp">
+      <Filter>src\webview\dnd</Filter>
+    </ClCompile>
+    <ClCompile Include="src\webview\dnd\DragStartPolicy.cpp">
+      <Filter>src\webview\dnd</Filter>
+    </ClCompile>
+    <ClCompile Include="src\webview\dnd\DragSourceMarker.cpp">
+      <Filter>src\webview\dnd</Filter>
+    </ClCompile>
+    <ClCompile Include="src\webview\dnd\DndTrace.cpp">
+      <Filter>src\webview\dnd</Filter>
+    </ClCompile>
+    <ClCompile Include="src\webview\dnd\DragOverThrottle.cpp">
       <Filter>src\webview\dnd</Filter>
     </ClCompile>
     <ClCompile Include="src\webview\dnd\DragSession.cpp">
@@ -146,8 +326,80 @@
     <ClInclude Include="src\pch.h">
       <Filter>src</Filter>
     </ClInclude>
-    <ClInclude Include="src\core\UserInterface.h">
+    <ClInclude Include="src\api\LyricsFilePolicy.h">
+      <Filter>src\api</Filter>
+    </ClInclude>
+    <ClInclude Include="src\ui\UserInterface.h">
+      <Filter>src\ui</Filter>
+    </ClInclude>
+    <ClInclude Include="src\ui\AppQuit.h">
+      <Filter>src\ui</Filter>
+    </ClInclude>
+    <ClInclude Include="src\ui\BackgroundService.h">
+      <Filter>src\ui</Filter>
+    </ClInclude>
+    <ClInclude Include="src\core\QueueManagerInternal.h">
       <Filter>src\core</Filter>
+    </ClInclude>
+    <ClInclude Include="src\core\FrontendDirectoryPolicy.h">
+      <Filter>src\core</Filter>
+    </ClInclude>
+    <ClInclude Include="src\core\FrontendDirectoryResolver.h">
+      <Filter>src\core</Filter>
+    </ClInclude>
+    <ClInclude Include="src\domain\PathSecurity.h">
+      <Filter>src\domain</Filter>
+    </ClInclude>
+    <ClInclude Include="src\domain\library\LibraryCache.h">
+      <Filter>src\domain\library</Filter>
+    </ClInclude>
+    <ClInclude Include="src\domain\library\LibraryPathAlgebra.h">
+      <Filter>src\domain\library</Filter>
+    </ClInclude>
+    <ClInclude Include="src\domain\library\LibraryTreeIndex.h">
+      <Filter>src\domain\library</Filter>
+    </ClInclude>
+    <ClInclude Include="src\prefs\PreferencesPage.h">
+      <Filter>src\prefs</Filter>
+    </ClInclude>
+    <ClInclude Include="src\prefs\PreferencesPageInternal.h">
+      <Filter>src\prefs</Filter>
+    </ClInclude>
+    <ClInclude Include="src\prefs\PreferencesPageBase.h">
+      <Filter>src\prefs</Filter>
+    </ClInclude>
+    <ClInclude Include="src\prefs\PreferencesLayout.h">
+      <Filter>src\prefs</Filter>
+    </ClInclude>
+    <ClInclude Include="src\prefs\PreferencesLayoutBuilder.h">
+      <Filter>src\prefs</Filter>
+    </ClInclude>
+    <ClInclude Include="src\prefs\PreferencesDraft.h">
+      <Filter>src\prefs</Filter>
+    </ClInclude>
+    <ClInclude Include="src\prefs\PreferencesFields.h">
+      <Filter>src\prefs</Filter>
+    </ClInclude>
+    <ClInclude Include="src\prefs\PreferencesDevServerUrl.h">
+      <Filter>src\prefs</Filter>
+    </ClInclude>
+    <ClInclude Include="src\prefs\PreferencesCdpPort.h">
+      <Filter>src\prefs</Filter>
+    </ClInclude>
+    <ClInclude Include="src\prefs\PreferencesDeveloperPage.h">
+      <Filter>src\prefs</Filter>
+    </ClInclude>
+    <ClInclude Include="src\prefs\PreferencesWindowPage.h">
+      <Filter>src\prefs</Filter>
+    </ClInclude>
+    <ClInclude Include="src\prefs\PreferencesPerformancePage.h">
+      <Filter>src\prefs</Filter>
+    </ClInclude>
+    <ClInclude Include="src\prefs\PreferencesZoom.h">
+      <Filter>src\prefs</Filter>
+    </ClInclude>
+    <ClInclude Include="src\prefs\PreferencesTemplateName.h">
+      <Filter>src\prefs</Filter>
     </ClInclude>
     <ClInclude Include="src\window\BackgroundSuspendPolicy.h">
       <Filter>src\window</Filter>
@@ -176,7 +428,13 @@
     <ClInclude Include="src\utils\CanonicalHandle.h">
       <Filter>src\utils</Filter>
     </ClInclude>
+    <ClInclude Include="src\utils\SubsongPath.h">
+      <Filter>src\utils</Filter>
+    </ClInclude>
     <ClInclude Include="src\utils\WaveformCacheKey.h">
+      <Filter>src\utils</Filter>
+    </ClInclude>
+    <ClInclude Include="src\utils\VisWindowPlan.h">
       <Filter>src\utils</Filter>
     </ClInclude>
     <ClInclude Include="src\window\PopupWindow.h">
@@ -197,10 +455,25 @@
     <ClInclude Include="src\window\WindowChromeApplier.h">
       <Filter>src\window</Filter>
     </ClInclude>
+    <ClInclude Include="src\window\WindowBehaviorTrace.h">
+      <Filter>src\window</Filter>
+    </ClInclude>
     <ClInclude Include="src\window\WindowChromeState.h">
       <Filter>src\window</Filter>
     </ClInclude>
+    <ClInclude Include="src\webview\OriginPolicy.h">
+      <Filter>src\webview</Filter>
+    </ClInclude>
     <ClInclude Include="src\webview\WebViewHost.h">
+      <Filter>src\webview</Filter>
+    </ClInclude>
+    <ClInclude Include="src\webview\BridgeBootstrapScript.inl">
+      <Filter>src\webview</Filter>
+    </ClInclude>
+    <ClInclude Include="src\webview\StartupProbeScript.inl">
+      <Filter>src\webview</Filter>
+    </ClInclude>
+    <ClInclude Include="src\webview\SharedPcmBuffer.h">
       <Filter>src\webview</Filter>
     </ClInclude>
     <ClInclude Include="src\webview\dnd\HdropReader.h">
@@ -210,6 +483,9 @@
       <Filter>src\webview\dnd</Filter>
     </ClInclude>
     <ClInclude Include="src\api\AsyncOperationRegistry.h">
+      <Filter>src\api</Filter>
+    </ClInclude>
+    <ClInclude Include="src\api\MetadataTagValues.h">
       <Filter>src\api</Filter>
     </ClInclude>
     <ClInclude Include="src\api\ProbeFailureClassifier.h">
@@ -236,7 +512,28 @@
     <ClInclude Include="src\api\WaveformTaskQueue.h">
       <Filter>src\api</Filter>
     </ClInclude>
+    <ClInclude Include="src\api\PcmLayout.h">
+      <Filter>src\api</Filter>
+    </ClInclude>
+    <ClInclude Include="src\api\PcmPack.h">
+      <Filter>src\api</Filter>
+    </ClInclude>
+    <ClInclude Include="src\api\PcmRing.h">
+      <Filter>src\api</Filter>
+    </ClInclude>
     <ClInclude Include="src\webview\dnd\DropEffectPolicy.h">
+      <Filter>src\webview\dnd</Filter>
+    </ClInclude>
+    <ClInclude Include="src\webview\dnd\DragStartPolicy.h">
+      <Filter>src\webview\dnd</Filter>
+    </ClInclude>
+    <ClInclude Include="src\webview\dnd\DragSourceMarker.h">
+      <Filter>src\webview\dnd</Filter>
+    </ClInclude>
+    <ClInclude Include="src\webview\dnd\DndTrace.h">
+      <Filter>src\webview\dnd</Filter>
+    </ClInclude>
+    <ClInclude Include="src\webview\dnd\DragOverThrottle.h">
       <Filter>src\webview\dnd</Filter>
     </ClInclude>
     <ClInclude Include="src\webview\dnd\DragSession.h">
@@ -287,5 +584,70 @@
     <ClInclude Include="src\webview\ScaledArtworkCache.h">
       <Filter>src\webview</Filter>
     </ClInclude>
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="src\media\ChapterSubsongs.h">
+      <Filter>src\media</Filter>
+    </ClInclude>
+    <ClInclude Include="src\media\ContainerInfo.h">
+      <Filter>src\media</Filter>
+    </ClInclude>
+    <ClInclude Include="src\media\ContainerReader.h">
+      <Filter>src\media</Filter>
+    </ClInclude>
+    <ClInclude Include="src\media\MediaCodecs.h">
+      <Filter>src\media</Filter>
+    </ClInclude>
+    <ClInclude Include="src\media\MediaFile.h">
+      <Filter>src\media</Filter>
+    </ClInclude>
+    <ClInclude Include="src\media\MediaHttp.h">
+      <Filter>src\media</Filter>
+    </ClInclude>
+    <ClInclude Include="src\media\MediaRange.h">
+      <Filter>src\media</Filter>
+    </ClInclude>
+    <ClInclude Include="src\media\MediaService.h">
+      <Filter>src\media</Filter>
+    </ClInclude>
+    <ClInclude Include="src\media\MediaTokens.h">
+      <Filter>src\media</Filter>
+    </ClInclude>
+    <ClInclude Include="src\api\MediaApi.h">
+      <Filter>src\api</Filter>
+    </ClInclude>
+    <ClInclude Include="src\api\PathValidationBatch.h">
+      <Filter>src\api</Filter>
+    </ClInclude>
+    <ClInclude Include="src\api\WindowCallerIdentity.h">
+      <Filter>src\api</Filter>
+    </ClInclude>
+    <ClCompile Include="src\media\ContainerInfo.cpp">
+      <Filter>src\media</Filter>
+    </ClCompile>
+    <ClCompile Include="src\media\MatroskaContainer.cpp">
+      <Filter>src\media</Filter>
+    </ClCompile>
+    <ClCompile Include="src\media\MediaCodecs.cpp">
+      <Filter>src\media</Filter>
+    </ClCompile>
+    <ClCompile Include="src\media\MediaFile.cpp">
+      <Filter>src\media</Filter>
+    </ClCompile>
+    <ClCompile Include="src\media\MediaIoQueue.cpp">
+      <Filter>src\media</Filter>
+    </ClCompile>
+    <ClCompile Include="src\media\MediaService.cpp">
+      <Filter>src\media</Filter>
+    </ClCompile>
+    <ClCompile Include="src\media\Mp4Container.cpp">
+      <Filter>src\media</Filter>
+    </ClCompile>
+    <ClCompile Include="src\api\MediaApi.cpp">
+      <Filter>src\api</Filter>
+    </ClCompile>
+    <ClCompile Include="src\webview\WebViewHostMedia.cpp">
+      <Filter>src\webview</Filter>
+    </ClCompile>
   </ItemGroup>
 </Project>

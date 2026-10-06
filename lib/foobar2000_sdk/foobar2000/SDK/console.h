@@ -16,9 +16,9 @@ namespace console
     void printf(const char*,...);
 	void printfv(const char*,va_list p_arglist);
 
-	//! New console print method, based on pfc::print(). \n
-	//! Example: console::print("foo", "bar", 2000) \ n
-	//! See also: FB2K_console_print(...)
+	//! New console print method, based on @c pfc::print(). \n
+	//! Example: `console::print("foo", "bar", 2000)`  \ n
+	//! See also: @c FB2K_console_print(...)
 	template<typename ... args_t> void print(args_t && ... args) {print(pfc::format(std::forward<args_t>(args) ... ).c_str()); }
 
 	class lineWriter {
@@ -26,7 +26,7 @@ namespace console
 		const lineWriter & operator<<( const char * msg ) const {print(msg);return *this;}
 	};
 
-	//! Usage: console::formatter() << "blah " << somenumber << " asdf" << somestring;
+	//! Usage: `console::formatter() << "blah " << somenumber << " asdf" << somestring;`
 	class formatter : public pfc::string_formatter {
 	public:
 		~formatter() {if (!is_empty()) console::print(get_ptr());}
@@ -35,9 +35,9 @@ namespace console
 #define FB2K_console_formatter1() ::console::lineWriter()
 
 //! New console print macro, based on pfc::print(). \n
-//! Example: FB2K_console_print("foo", "bar", 2000) \n
+//! Example: `FB2K_console_print("foo", "bar", 2000)` \n
 //! Note that this macro is convenient for conditionally enabling logging in specific modules - \n
-//! instead of putting console formatter lines on #ifdef, #define MY_CONSOLE_LOG(...) FB2K_console_print(__VA_ARGS__) if enabled, or #define to blank if not.
+//! instead of putting console formatter lines on #ifdef, `#define MY_CONSOLE_LOG(...) FB2K_console_print(__VA_ARGS__)` if enabled, or #define to blank if not.
 #define FB2K_console_print(...) ::console::print(__VA_ARGS__)
     
 	void complain(const char * what, const char * msg);

@@ -1,5 +1,6 @@
 #pragma once
 
+#ifdef _WIN32
 //! Service for handling commandline arguments passed to foobar2000.exe
 class NOVTABLE commandline_handler : public service_base
 {
@@ -18,7 +19,7 @@ public:
 	FB2K_MAKE_SERVICE_INTERFACE_ENTRYPOINT(commandline_handler);
 };
 
-//! Helper automatically turning passed file locations into metadb_handle objects (audio track references)
+//! Helper automatically turning passed file locations into @c metadb_handle objects (audio track references)
 class commandline_handler_metadb_handle : public commandline_handler {
 protected:
 	void on_file(const char * url) override final;
@@ -32,6 +33,15 @@ public:
 	virtual void on_file(const metadb_handle_ptr & ptr) = 0;
 };
 
+#else
+
+class NOVTABLE commandline_handler : public service_base {
+    FB2K_MAKE_SERVICE_INTERFACE_ENTRYPOINT(commandline_handler);
+public:
+    virtual bool on_token( const char * key, const char * value ) = 0;
+};
+
+#endif
 /*
 
 how commandline_handler is used:

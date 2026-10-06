@@ -45,14 +45,13 @@ namespace create_directory_helper
 		return true;
 	}
 
-	void create_path(const char * p_path,abort_callback & p_abort) {
+	void create_path(const char * p_path_,abort_callback & p_abort) {
+		auto p_path = filesystem::g_get_native_path(p_path_, p_abort);
 		if (test_localpath(p_path)) {
 			t_size walk = 0;
-			if (pfc::strcmp_partial(p_path,"file://") == 0) walk += strlen("file://");
 			create_path_internal(p_path,walk + 3,p_abort);
 		} else if (test_netpath(p_path)) {
 			t_size walk = 0;
-			if (pfc::strcmp_partial(p_path,"file://") == 0) walk += strlen("file://");
 			while(p_path[walk] == '\\') walk++;
 			while(p_path[walk] != 0 && p_path[walk] != '\\') walk++;
 			while(p_path[walk] == '\\') walk++;

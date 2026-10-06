@@ -2,6 +2,15 @@
 
 #include <functional>
 
+namespace fb2k {
+	static constexpr uint32_t
+		EXCEPTION_BUG_CHECK = 0xaa67913c,
+		EXCEPTION_SQLITE_CORRUPTED = 0x3b833183,
+		EXCEPTION_CRT_ABORT = 0x6F8E1DC8,
+		EXCEPTION_PURE_CALL = 0xf6538887,
+		EXCEPTION_INVALID_PARAMETER = 0xd142b808;
+}
+
 class uDebugLog_ : public pfc::string_formatter {
 public:
     ~uDebugLog_() {*this << "\n"; uOutputDebugString(get_ptr());}
@@ -128,11 +137,11 @@ inline void fb2kWaitForThreadCompletion2(HANDLE hWaitFor, HANDLE hThread, DWORD 
 
 inline void __cdecl _OverrideCrtAbort_handler(int signal) {
 	const ULONG_PTR args[] = {(ULONG_PTR)signal};
-	RaiseException(0x6F8E1DC8 /* random GUID */, EXCEPTION_NONCONTINUABLE, _countof(args), args);
+	RaiseException(fb2k::EXCEPTION_CRT_ABORT, EXCEPTION_NONCONTINUABLE, _countof(args), args);
 }
 
 static void __cdecl _PureCallHandler() {
-	RaiseException(0xf6538887 /* random GUID */, EXCEPTION_NONCONTINUABLE, 0, 0);
+	RaiseException(fb2k::EXCEPTION_PURE_CALL, EXCEPTION_NONCONTINUABLE, 0, 0);
 }
 
 static void _InvalidParameter(
@@ -143,7 +152,7 @@ static void _InvalidParameter(
    uintptr_t pReserved
 ) {
 	(void)pReserved; (void) line; (void) file; (void) function; (void) expression;
-	RaiseException(0xd142b808 /* random GUID */, EXCEPTION_NONCONTINUABLE, 0, 0);
+	RaiseException(fb2k::EXCEPTION_INVALID_PARAMETER, EXCEPTION_NONCONTINUABLE, 0, 0);
 }
 
 inline void OverrideCrtAbort() {
@@ -158,7 +167,7 @@ inline void OverrideCrtAbort() {
 
 namespace fb2k {
 #ifdef _WIN32
-	PFC_NORETURN inline void crashWithMessage(const char * msg) {
+	inline void crashWithMessage [[noreturn]] (const char * msg) {
 		uAddDebugEvent(msg);
 		uBugCheck();
 	}
@@ -170,7 +179,15 @@ namespace fb2k {
     void crashWithMessage [[noreturn]] (const char*);
 	void crashOnException(std::function<void()>, const char* context = nullptr);
 #endif
-	
+
+	inline void handleSqliteCorrupted [[noreturn]] () {
+#ifdef _WIN32
+		RaiseException(fb2k::EXCEPTION_SQLITE_CORRUPTED, EXCEPTION_NONCONTINUABLE, 0, 0);
+#else
+		crashWithMessage("SQLite error");
+#endif
+	}
+
 }
 
 #define FB2K_CrashOnException( ... ) ::fb2k::crashWithMessage(__VA_ARGS__)

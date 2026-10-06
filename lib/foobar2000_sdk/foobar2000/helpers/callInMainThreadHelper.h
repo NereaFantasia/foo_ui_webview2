@@ -38,7 +38,7 @@ private:
 template<typename myservice_t, typename param_t> 
 static void callInMainThreadSvc(myservice_t * host, param_t const & param) {
     typedef _callInMainThreadSvc_t<myservice_t, param_t> impl_t;
-    service_ptr_t<impl_t> obj = new service_impl_t<impl_t>(host, param);
+    service_ptr_t obj = new service_impl_t<impl_t>(host, param);
     main_thread_callback_manager::get()->add_callback( obj );
 }
 

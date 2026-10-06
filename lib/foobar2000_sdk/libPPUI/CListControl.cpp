@@ -11,7 +11,7 @@
 #if Scroll_Debug
 #define Scroll_Debug_Print(...) PFC_DEBUG_PRINT_FORCED(__VA_ARGS__)
 #else
-#define Scroll_Debug_Print(...)
+#define Scroll_Debug_Print(...) PFC_NO_OP
 #endif
 
 CListControlUserOptions * CListControlUserOptions::instance = nullptr;
@@ -50,7 +50,6 @@ void CListControlImpl::EnsureVisibleRectAbs(const CRect & p_rect) {
 			} else {
 				if (rcItem.bottom > rcView.bottom) deltaY = rcItem.bottom - rcView.bottom;
 				else deltaY = rcItem.top - rcView.top;
-				
 			}
 		}
 	}
@@ -85,13 +84,19 @@ void CListControlImpl::EnsureHeaderVisible2(size_t atItem) {
 	if (GetGroupHeaderRectAbs2(atItem,rect)) EnsureVisibleRectAbs(rect);
 }
 
-void CListControlImpl::RefreshSlider(bool p_vertical) {
+bool CListControlImpl::SliderVisible(bool vert) noexcept {
+	SCROLLBARINFO sbi = { .cbSize = sizeof(sbi) };
+	if (!GetScrollBarInfo(m_hWnd, vert ? OBJID_VSCROLL : OBJID_HSCROLL, &sbi)) return false;
+	return (sbi.rgstate[0] & STATE_SYSTEM_INVISIBLE) == 0;
+}
+
+void CListControlImpl::RefreshSlider(bool p_vertical) noexcept {
 	const CRect viewArea = GetViewAreaRectAbs();
 	const CRect rcVisible = GetVisibleRectAbs();
-	SCROLLINFO si = {};
-	si.cbSize = sizeof(si);
-	si.fMask = SIF_PAGE|SIF_RANGE|SIF_POS;
-
+	SCROLLINFO si = {
+		.cbSize = sizeof(si),
+		.fMask = SIF_PAGE | SIF_RANGE | SIF_POS
+	};
 
 	if (AllowScrollbar(p_vertical)) {
 		if (p_vertical) {
@@ -112,15 +117,19 @@ void CListControlImpl::RefreshSlider(bool p_vertical) {
 	SetScrollInfo(p_vertical ? SB_VERT : SB_HORZ, &si);
 }
 
-void CListControlImpl::RefreshSliders() {
+void CListControlImpl::RefreshSliders() noexcept {
+	if (this->ListHandlingResize()) return;
+	this->RefreshSlidersUnchecked();
+}
+
+void CListControlImpl::RefreshSlidersUnchecked() noexcept {
 	//PROBLEM: while lots of data can be reused across those, it has to be recalculated inbetween because view area etc may change when scroll info changes
-	RefreshSlider(false); RefreshSlider(true);
+	RefreshSlider(false); // horizontal
+	RefreshSlider(true); // vertical
 }
 
 int CListControlImpl::GetScrollThumbPos(int which) {
-	SCROLLINFO si = {};
-	si.cbSize = sizeof(si);
-	si.fMask = SIF_TRACKPOS;
+	SCROLLINFO si = { .cbSize = sizeof(si), .fMask = SIF_TRACKPOS };
 	WIN32_OP_D( GetScrollInfo(which,&si) );
 	return si.nTrackPos;
 }
@@ -194,7 +203,7 @@ void CListControlImpl::MoveViewOriginNoClip(CPoint p_target) {
 				flags |= SW_SMOOTHSCROLL | (smoothScrollMS << 16);
 			}
 
-			ScrollWindowEx(delta.x,delta.y,GetClientRectHook(),NULL,0,0,flags );
+			ScrollWindowEx(delta.x,delta.y,NULL,GetClientRectHook(),0,0,flags );
 		}
 
 		OnViewOriginChange(m_viewOrigin - old);
@@ -355,11 +364,22 @@ LRESULT CListControlImpl::OnGesture(UINT,WPARAM,LPARAM lParam,BOOL& bHandled) {
 	return 0;
 }
 
-LRESULT CListControlImpl::OnSize(UINT,WPARAM,LPARAM,BOOL&) {
-	this->PrepLayoutCache(m_viewOrigin);
-	OnSizeAsync_Trigger();
-	RefreshSliders();
-	return 0;
+void CListControlImpl::OnSize(UINT, CSize) noexcept {
+	if (m_handlingResize) {
+		m_handlingResize2ndPassTrigger = true;
+		return;
+	}
+
+	m_handlingResize = 1;
+	m_handlingResize2ndPassTrigger = false;
+	ListHandleResize();
+	RefreshSlidersUnchecked();
+	if (m_handlingResize2ndPassTrigger) {
+		m_handlingResize = 2;
+		ListHandleResize();
+	}
+	m_handlingResize = 0;
+	m_handlingResize2ndPassTrigger = false;
 }
 
 
@@ -831,9 +851,18 @@ void CListControlImpl::UpdateGroupHeader2(size_t atItem) {
 		InvalidateRect(rect);
 	}
 }
-static void AddUpdateRect(HRGN p_rgn,CRect const & p_rect) {
-	CRgn temp; temp.CreateRectRgnIndirect(p_rect);
-	CRgnHandle(p_rgn).CombineRgn(temp,RGN_OR);
+static void AddUpdateRect(HRGN p_rgn, CRect const& p_rect) {
+	PFC_ASSERT(p_rgn != NULL);
+	CRgn temp; WIN32_OP_D(temp.CreateRectRgnIndirect(p_rect));
+	CRgnHandle(p_rgn).CombineRgn(temp, RGN_OR);
+}
+
+static void AddUpdateRect(CRgn & p_rgn,CRect const & p_rect) {
+	if (!p_rgn) {
+		WIN32_OP_D(p_rgn.CreateRectRgnIndirect(p_rect));
+	} else {
+		AddUpdateRect((HRGN)p_rgn, p_rect);
+	}
 }
 
 void CListControlImpl::OnItemsReordered( const size_t * order, size_t count ) {
@@ -844,13 +873,11 @@ void CListControlImpl::UpdateItems(const pfc::bit_array & p_mask) {
 	t_size base,count;
 	if (GetItemRangeAbs(GetVisibleRectAbs(),base,count)) {
 		const t_size max = base+count;
-		CRgn updateRgn; updateRgn.CreateRectRgn(0,0,0,0);
-		bool found = false;
+		CRgn updateRgn;
 		for(t_size walk = p_mask.find_first(true,base,max); walk < max; walk = p_mask.find_next(true,walk,max)) {
-			found = true;
-			AddUpdateRect(updateRgn,GetItemRect(walk));
+			AddUpdateRect(updateRgn, GetItemRect(walk));
 		}
-		if (found) {
+		if (updateRgn) {
 			InvalidateRgn(updateRgn, FALSE /*NO erasebackground*/);
 		}
 	}
@@ -879,10 +906,8 @@ void CListControlImpl::UpdateItemsAndHeaders(const pfc::bit_array & p_mask) {
 	groupID_t groupWalk = 0;
 	if (GetItemRangeAbsInclHeaders(GetVisibleRectAbs(),base,count)) {
 		const t_size max = base+count;
-		CRgn updateRgn; updateRgn.CreateRectRgn(0,0,0,0);
-		bool found = false;
+		CRgn updateRgn;
 		for(t_size walk = p_mask.find_first(true,base,max); walk < max; walk = p_mask.find_next(true,walk,max)) {
-			found = true;
 			const groupID_t groupId = GetItemGroup(walk);
 			if (groupId != groupWalk) {
 				CRect rect;
@@ -893,7 +918,7 @@ void CListControlImpl::UpdateItemsAndHeaders(const pfc::bit_array & p_mask) {
 			}
 			AddUpdateRect(updateRgn,GetItemRect(walk));
 		}
-		if (found) {
+		if (updateRgn) {
 			InvalidateRgn(updateRgn, FALSE /*NO erasebackground*/);
 		}
 	}
@@ -995,7 +1020,7 @@ CTheme & CListControlImpl::themeFor(const char * what) {
 	return ret;
 }
 
-void CListControlImpl::SetDarkMode(bool v) {
+void CListControlImpl::SetDarkMode(DarkMode::param_t const & v) {
 	if (m_darkMode != v) {
 		m_darkMode = v;
 		RefreshDarkMode();
@@ -1006,12 +1031,19 @@ void CListControlImpl::RefreshDarkMode() {
 	if (m_hWnd != NULL) {
 		Invalidate();
 
-		// GOD DAMNIT: Should use ItemsView, but only Explorer fixes scrollbars
-		DarkMode::ApplyDarkThemeCtrl(m_hWnd, m_darkMode, L"Explorer");
+		if (m_darkMode.IsRetroLight()) {
+			SetWindowTheme(m_hWnd, L"", L"");
+		} else {
+			// Should use ItemsView, but only Explorer fixes scrollbars
+			DarkMode::ApplyDarkThemeCtrl(m_hWnd, m_darkMode.IsDark(), L"Explorer");
+		}
 	}
 }
 
 LRESULT CListControlImpl::OnCreatePassThru(UINT,WPARAM,LPARAM,BOOL& bHandled) {
+
+	// did get defer() prior to Create() ?
+	if (!m_deferred.empty()) defer(nullptr);
 
 	RefreshDarkMode();
 	
@@ -1045,21 +1077,10 @@ bool CListControlImpl::IsSameItemOrHeaderAbs(const CPoint & p_point1, const CPoi
 	return false;
 }
 
-void CListControlImpl::OnSizeAsync_Trigger() {
-	if (!m_sizeAsyncPending) {
-		if (PostMessage(MSG_SIZE_ASYNC,0,0)) {
-			m_sizeAsyncPending = true;
-		} else {
-			PFC_ASSERT(!"Shouldn't get here!");
-			//should not happen
-			ListHandleResize();
-		}
-	}
-}
 
-void CListControlImpl::ListHandleResize() {
+void CListControlImpl::ListHandleResize() noexcept {
+	this->PrepLayoutCache(m_viewOrigin);
 	MoveViewOriginDelta(CPoint(0,0));
-	m_sizeAsyncPending = false;
 }
 
 void CListControlImpl::AddGroupHeaderToUpdateRgn2(HRGN p_rgn, size_t atItem) const {
@@ -1073,11 +1094,7 @@ void CListControlImpl::AddItemToUpdateRgn(HRGN p_rgn, t_size p_index) const {
 }
 
 COLORREF CListControlImpl::GetSysColorHook(int colorIndex) const {
-	if (m_darkMode) {
-		return DarkMode::GetSysColor(colorIndex);
-	} else {
-		return GetSysColor(colorIndex);
-	}
+	return DarkMode::GetSysColor(colorIndex, m_darkMode);
 }
 
 BOOL CListControlImpl::OnEraseBkgnd(CDCHandle dc) {
@@ -1135,33 +1152,26 @@ COLORREF CListControlImpl::GridColor() {
 }
 
 void CListControlImpl::RenderItemBackground(CDCHandle p_dc,const CRect & p_itemRect,size_t p_item, uint32_t bkColor) {
-	switch( this->m_rowStyle ) {
-	case rowStylePlaylistDelimited:
-		PaintUtils::RenderItemBackground(p_dc,p_itemRect,p_item,bkColor);
-		{
-			auto blend = BlendGridColor(bkColor);
-			CDCPen pen(p_dc, blend);
-			SelectObjectScope scope(p_dc, pen);
 
-			p_dc.MoveTo( p_itemRect.right-1, p_itemRect.top );
-			p_dc.LineTo( p_itemRect.right-1, p_itemRect.bottom );
-		}
-		break;
-	case rowStylePlaylist:
-		PaintUtils::RenderItemBackground(p_dc,p_itemRect,p_item,bkColor);
-		break;
-	case rowStyleGrid:
-		PaintUtils::FillRectSimple(p_dc, p_itemRect, bkColor );
-		{
-			auto blend = BlendGridColor(bkColor);
-			CDCBrush brush(p_dc, blend);
-			p_dc.FrameRect(&p_itemRect, brush);
+	if (m_rowStyle == rowStylePlaylist || m_rowStyle == rowStylePlaylistDelimited) {
+		// alternating
+		PaintUtils::RenderItemBackground(p_dc, p_itemRect, p_item, bkColor);
+	} else {
+		// flat
+		PaintUtils::FillRectSimple(p_dc, p_itemRect, bkColor);
+	}
 
-		}
-		break;
-	case rowStyleFlat:
-		PaintUtils::FillRectSimple(p_dc, p_itemRect, bkColor );
-		break;
+	if (m_rowStyle == rowStyleGrid) {
+		// grid
+		CDCBrush brush(p_dc, BlendGridColor(bkColor));
+		p_dc.FrameRect(&p_itemRect, brush);
+	} else if (m_rowStyle == rowStylePlaylistDelimited || m_rowStyle == rowStyleFlatDelimited) {
+		// delimited
+		CDCPen pen(p_dc, BlendGridColor(bkColor));
+		SelectObjectScope scope(p_dc, pen);
+
+		p_dc.MoveTo(p_itemRect.right - 1, p_itemRect.top);
+		p_dc.LineTo(p_itemRect.right - 1, p_itemRect.bottom);
 	}
 }
 
@@ -1278,19 +1288,18 @@ HWND CListControlImpl::CreateInDialog(CWindow wndDialog, UINT replaceControlID )
 
 
 void CListControlImpl::defer(std::function<void() > f) {
-	m_deferred.push_back( f );
-	if (!m_defferredMsgPending) {
+	if (f) m_deferred.push_back( std::move(f) );
+	if (!m_defferredMsgPending && m_hWnd != NULL) {
 		if ( PostMessage(MSG_EXEC_DEFERRED) ) m_defferredMsgPending = true;
 	}
 }
 
-LRESULT CListControlImpl::OnExecDeferred(UINT, WPARAM, LPARAM) {
+LRESULT CListControlImpl::OnExecDeferred(UINT, WPARAM, LPARAM) noexcept {
 	
-	for ( ;; ) { 
-		auto i = m_deferred.begin();
-		if ( i == m_deferred.end() ) break;
-		auto op = std::move(*i);
-		m_deferred.erase(i); // erase first, execute later - avoid erratic behavior if op alters the list
+	while(!m_deferred.empty()) {
+		auto op = std::move(m_deferred.front());
+		m_deferred.pop_front();
+		// erase first, execute later - avoid erratic behavior if op alters the list
 		op();
 	}
 
@@ -1323,7 +1332,7 @@ bool CListControlImpl::MouseWheelFromHook(UINT msg, LPARAM data) {
 	WPARAM wp = mhs->mouseData;
 	LPARAM lp = MAKELPARAM( mhs->pt.x, mhs->pt.y );
 	// If we get here, m_suppressMouseWheel should be true per our DoDragDrop()
-	pfc::vartoggle_t<bool> scope(m_suppressMouseWheel, false);
+	pfc::vartoggle_t scope(m_suppressMouseWheel, false);
 	this->ProcessWindowMessage( m_hWnd, msg, wp, lp, dummyResult );
 	return true;
 }
@@ -1334,7 +1343,7 @@ HRESULT CListControlImpl::DoDragDrop(LPDATAOBJECT pDataObj, LPDROPSOURCE pDropSo
 	PFC_ASSERT(g_dragDropInstance == nullptr);
 	if ( g_dragDropInstance == nullptr ) {
 		// futureproofing: kill mouse wheel message processing if we get them delivered the regular way while this is in progress
-		pfc::vartoggle_t<bool> scope(m_suppressMouseWheel, true);
+		pfc::vartoggle_t scope(m_suppressMouseWheel, true);
 		g_dragDropInstance = this;
 		g_hook = SetWindowsHookEx(WH_MOUSE, MouseHookProc, NULL, GetCurrentThreadId());
 		try {
@@ -1472,15 +1481,9 @@ void CListControlImpl::wndSetDarkMode(CWindow wndListControl, bool bDark) {
 	wndListControl.SendMessage(DarkMode::msgSetDarkMode(), bDark ? 1 : 0);
 }
 
-LRESULT CListControlImpl::OnSetDark(UINT, WPARAM wp, LPARAM) {
-	switch (wp) {
-	case 0:
-		this->SetDarkMode(false);
-		break;
-	case 1:
-		this->SetDarkMode(true);
-		break;
-	}
+LRESULT CListControlImpl::OnSetDark(UINT, WPARAM wp, LPARAM lp) {
+	auto p = DarkMode::param_t::importMsgParams({ wp, lp });
+	if (p) this->SetDarkMode(*p);
 	return 1;
 }
 
@@ -1488,10 +1491,6 @@ void CListControlImpl::OnItemRemoved(size_t which) {
 	this->OnItemsRemoved(pfc::bit_array_one(which), GetItemCount() + 1);
 }
 
-
-UINT CListControlImpl::msgSetDarkMode() {
-	return DarkMode::msgSetDarkMode();
-}
 
 void CListControlImpl::OnKeyDown(UINT nChar, UINT nRepCnt, UINT nFlags) {
 	(void)nRepCnt; (void)nFlags;

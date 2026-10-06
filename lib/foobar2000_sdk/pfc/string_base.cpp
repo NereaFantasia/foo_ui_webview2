@@ -998,12 +998,13 @@ pfc::string8 format_mask(pfc::bit_array const& mask, size_t n) {
 	return ret;
 }
 
+static bool is_eol(char c) { return c == 10 || c == 13; }
 bool string_base::truncate_eol(t_size start)
 {
 	const char * ptr = get_ptr() + start;
 	for(t_size n=start;*ptr;n++)
 	{
-		if (*ptr==10 || *ptr==13)
+		if (is_eol(*ptr))
 		{
 			truncate(n);
 			return true;
@@ -1018,6 +1019,22 @@ bool string_base::fix_eol(const char * append,t_size start)
 	const bool rv = truncate_eol(start);
 	if (rv) add_string(append);
 	return rv;
+}
+
+
+bool string_base::sanitize_to_single_line(size_t maxLen, const char* suffix) {
+	auto remaining = maxLen;
+	const char* base = get_ptr(), * ptr = base;
+	for (;;) {
+		if (*ptr == 0) return false;
+		if (is_eol(*ptr) || remaining == 0) {
+			truncate(ptr - base);
+			add_string(suffix);
+			return true;
+		}
+		--remaining;
+		if (!utf8_advance(ptr)) return false;
+	}
 }
 
 bool string_base::limit_length(t_size length_in_chars,const char * append)
@@ -1366,7 +1383,21 @@ void string_base::fix_dir_separator(char c) {
 		}
 		return ret;
 	}
-
+	pfc::string8 setLineBreaks(const char* str, const char* setEOL) {
+		pfc::string8 ret; ret.prealloc(strlen(str));
+		for (;;) {
+			const char* next = strchr(str, '\n');
+			if (next == NULL) {
+				ret += string_part(str, strlen(str)); break;
+			}
+			const char* walk = next;
+			while (walk > str && walk[-1] == '\r') --walk;
+			ret += string_part(str, walk - str);
+			ret += setEOL;
+			str = next + 1;
+		}
+		return ret;
+	}
 	pfc::string8 recover_invalid_utf8(const char* in, const char* subst) {
 		pfc::string8 ret; ret.prealloc(strlen(in));
 		for (;;) {
@@ -1381,6 +1412,22 @@ void string_base::fix_dir_separator(char c) {
 		}
 		return ret;
 	}
+    pfc::string8 recover_invalid_utf8_v2(const char* in, const char* subst) {
+        pfc::string8 ret; ret.prealloc(strlen(in));
+        for (;;) {
+            if ( *in == 0 ) break;
+            unsigned c = 0;
+            auto delta = utf8_decode_char(in, c);
+            if ( delta == 0 ) {
+                ret.add_string( subst );
+                ++in;
+            } else {
+                ret.add_char(c);
+                in += delta;
+            }
+        }
+        return ret;
+    }
 	static bool is_spacing(char c) {
 		switch (c) {
 		case ' ': case '\n': case '\r': case '\t': return true;

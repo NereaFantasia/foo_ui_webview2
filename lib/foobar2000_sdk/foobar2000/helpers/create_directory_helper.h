@@ -3,6 +3,10 @@
 #include <functional>
 #include <SDK/titleformat.h>
 
+#ifdef FOOBAR2000_MOBILE
+#include "metadb_compat.h"
+#endif
+
 namespace create_directory_helper {
 	typedef std::function<const char* (char)> charReplace_t;
 

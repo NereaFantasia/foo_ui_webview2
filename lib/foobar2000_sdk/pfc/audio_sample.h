@@ -23,6 +23,8 @@ namespace pfc {
 		static void convert_from_int32(const int32_t* p_source, size_t p_count, double* p_output, double p_scale);
 		static void convert_to_int24(const float* in, size_t count, void* out, float scale);
 		static void convert_to_int24(const double* in, size_t count, void* out, double scale);
+		static void convert_from_int24(const void* in, size_t count, float* out, float scale);
+		static void convert_from_int24(const void* in, size_t count, double* out, double scale);
 
 		static float calculate_peak(const float * p_source, size_t p_count);
 		static double calculate_peak(const double * p_source, size_t p_count);
@@ -66,10 +68,12 @@ namespace pfc {
 		static unsigned bitrate_kbps( uint64_t fileSize, double duration );
 
 		static constexpr float float16scale = 65536.f;
+		static constexpr float float8scale = 240.f;
 
 		static float decodeFloat24ptr(const void* sourcePtr);
 		static float decodeFloat24ptrbs(const void* sourcePtr);
-		static float decodeFloat16(uint16_t source);
+		static float decodeFloat16(uint16_t);
+		static float decodeFloat8(uint8_t);
 	}; // class audio_math
 
 } // namespace pfc

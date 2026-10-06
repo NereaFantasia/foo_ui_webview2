@@ -12,6 +12,9 @@
     覆盖 .clang-tidy 中的 Checks 设置
 .PARAMETER GitDiff
     仅扫描 git diff 中已修改的 src/*.cpp 文件（增量模式）
+.PARAMETER Since
+    与 -GitDiff 相同，但比较基准是给定的提交或分支，而不是 HEAD：
+    扫描自那以后提交过的与尚未提交的改动。例如 -Since dev 扫描当前分支相对 dev 改过的文件。
 .PARAMETER Fast
     快速模式：跳过 clang-analyzer-*（最耗时的检查类），单文件提速 2~5 倍
 .PARAMETER Deep
@@ -26,6 +29,7 @@
     .\scripts\run-clang-tidy.ps1              # 全量扫描（自动并行）
     .\scripts\run-clang-tidy.ps1 -Fast        # 快速模式（跳过 analyzer）
     .\scripts\run-clang-tidy.ps1 -GitDiff     # 增量扫描
+    .\scripts\run-clang-tidy.ps1 -Since dev   # 当前分支相对 dev 的全部改动
     .\scripts\run-clang-tidy.ps1 -NoCache     # 跳过缓存
     .\scripts\run-clang-tidy.ps1 -Jobs 8      # 指定线程数
 #>
@@ -34,6 +38,7 @@ param(
     [switch]$Fix,
     [string]$Checks,
     [switch]$GitDiff,
+    [string]$Since,
     [switch]$Fast,
     [switch]$Deep,
     [switch]$NoCache,
@@ -43,6 +48,7 @@ param(
 
 $ErrorActionPreference = "Stop"
 $projectRoot = Split-Path $PSScriptRoot -Parent
+$headerExtensions = @('.h', '.hpp', '.hh', '.hxx', '.inl', '.inc', '.ipp', '.tpp')
 
 # ── 自动检测线程数 ──
 if ($Jobs -le 0) {
@@ -66,6 +72,11 @@ if ($Fast -and -not $Checks) {
 $cacheDir = Join-Path $projectRoot '.clang-tidy-cache'
 $cacheFile = Join-Path $cacheDir 'file-hashes.json'
 $cacheEnabled = -not $NoCache
+if ($cacheEnabled -and $PSVersionTable.PSVersion.Major -lt 6) {
+    # 旧版目录枚举不能跟随链接；保留扫描，避免复用缺少依赖信息的结果。
+    $cacheEnabled = $false
+    Write-Host "[CACHE] PowerShell 5 does not support linked dependency traversal; scanning without cache." -ForegroundColor Yellow
+}
 $cacheHits = 0
 $cacheData = @{}
 
@@ -94,6 +105,35 @@ function Get-FileCacheKey {
     param([string]$FilePath)
     $hash = (Get-FileHash $FilePath -Algorithm MD5).Hash
     return "$hash|$checksFingerprint"
+}
+
+function Get-ScanInputsFingerprint {
+    param([string]$Root, [string]$ToolPath)
+    # 未维护逐 TU 的依赖图，保守地让所有包含文件共同参与缓存键。
+    # 路径也计入摘要，使文件新增、删除和同内容改名都能使旧结果失效。
+    $inputs = [System.Collections.Generic.List[string]]::new()
+    $inputs.Add($ToolPath)
+    $inputs.Add((Join-Path $Root 'scripts/run-clang-tidy.ps1'))
+    $inputs.Add((Join-Path $Root 'foo_ui_webview2.vcxproj'))
+    foreach ($directory in @('src', 'lib', 'packages')) {
+        $dependencyRoot = Join-Path $Root $directory
+        if (Test-Path -LiteralPath $dependencyRoot) {
+            Get-ChildItem -LiteralPath $dependencyRoot -Recurse -File -FollowSymlink |
+                Where-Object { $_.Extension -in $headerExtensions } |
+                ForEach-Object { $inputs.Add($_.FullName) }
+        }
+    }
+    $records = foreach ($inputFile in ($inputs | Sort-Object -Unique)) {
+        $contentHash = (Get-FileHash -LiteralPath $inputFile -Algorithm SHA256).Hash
+        "$inputFile|$contentHash"
+    }
+    $hasher = [System.Security.Cryptography.SHA256]::Create()
+    try {
+        $bytes = [System.Text.Encoding]::UTF8.GetBytes(($records -join "`n"))
+        return [System.BitConverter]::ToString($hasher.ComputeHash($bytes))
+    } finally {
+        $hasher.Dispose()
+    }
 }
 
 # ── 查找 clang-tidy（三层 fallback）──
@@ -166,6 +206,13 @@ if (-not $clangTidy) {
 Write-Host "Using clang-tidy: $clangTidy" -ForegroundColor Cyan
 & $clangTidy --version
 
+$analysisInputsChanged = $false
+if ($cacheEnabled) {
+    $inputsFingerprint = Get-ScanInputsFingerprint -Root $projectRoot -ToolPath $clangTidy
+    $checksFingerprint += "|inputs:$inputsFingerprint"
+    $analysisInputsChanged = $cacheData['@inputs'] -ne $checksFingerprint
+}
+
 # ── 从 vcxproj 提取项目真实编译单元 ──
 function Get-ProjectTUs {
     $vcxprojPath = Join-Path $projectRoot "foo_ui_webview2.vcxproj"
@@ -185,22 +232,37 @@ function Get-ProjectTUs {
 }
 
 # ── 收集文件 ──
-if ($GitDiff) {
-    # 收集 .cpp 和 .h 差异
-    $diffCpp = git diff --name-only --diff-filter=d HEAD -- 'src/*.cpp' 'src/**/*.cpp'
-    $diffH   = git diff --name-only --diff-filter=d HEAD -- 'src/*.h' 'src/**/*.h'
+if ($GitDiff -or $Since) {
+    # 收集 .cpp 和 .h 差异。git diff <基准> 比较基准与工作区，已提交与未提交的改动都在内。
+    $base = 'HEAD'
+    if ($Since) {
+        git -C $projectRoot rev-parse --verify --quiet "$Since^{commit}" | Out-Null
+        if ($LASTEXITCODE -ne 0) {
+            Write-Host "[ERROR] -Since: '$Since' is not a commit or branch" -ForegroundColor Red
+            exit 2
+        }
+        $base = $Since
+    }
+    $diffCpp = git -C $projectRoot diff --name-only --diff-filter=d $base -- 'src/*.cpp' 'src/**/*.cpp'
+    $diffInputs = @(git -C $projectRoot diff --name-only $base -- src lib packages .clang-tidy foo_ui_webview2.vcxproj scripts/run-clang-tidy.ps1)
+    $diffInputs += @(git -C $projectRoot ls-files --others --exclude-standard -- src lib packages)
+    $diffH = @($diffInputs | Where-Object { $_ -and [System.IO.Path]::GetExtension($_) -in $headerExtensions } | Sort-Object -Unique)
+    $diffConfiguration = @($diffInputs | Where-Object {
+        $_ -in @('.clang-tidy', 'foo_ui_webview2.vcxproj', 'scripts/run-clang-tidy.ps1') -or $_ -match '^(lib|packages)/'
+    })
     $diffCpp = @($diffCpp | Where-Object { $_ -and $_ -ne "src/pch.cpp" })
     $diffH   = @($diffH   | Where-Object { $_ })
 
-    if ($diffCpp.Count -eq 0 -and $diffH.Count -eq 0) {
-        Write-Host "No changed .cpp/.h files in src/." -ForegroundColor Green
+    if ($diffCpp.Count -eq 0 -and $diffH.Count -eq 0 -and $diffConfiguration.Count -eq 0 -and -not $analysisInputsChanged) {
+        Write-Host "No changed source, header or analysis configuration files." -ForegroundColor Green
         exit 0
     }
 
-    if ($diffH.Count -gt 0) {
-        # 头文件变更 → 全量扫描项目 TU（因为头文件可能被多个 TU 引用）
-        Write-Host "Detected $($diffH.Count) changed header(s) — expanding to full project scan" -ForegroundColor Yellow
-        $diffH | ForEach-Object { Write-Host "  [.h] $_" -ForegroundColor Yellow }
+    if ($diffH.Count -gt 0 -or $diffConfiguration.Count -gt 0 -or $analysisInputsChanged) {
+        # 包含文件删除后仍须检查使用方，不能仅按当前存在的文件收集差异。
+        # Git 可能信任未变的时间戳和大小，因此也核对缓存中的内容摘要。
+        Write-Host "Detected changed headers or analysis inputs — expanding to full project scan" -ForegroundColor Yellow
+        $diffH | ForEach-Object { Write-Host "  [header] $_" -ForegroundColor Yellow }
         $Files = @(Get-ProjectTUs)
     } else {
         # 纯 .cpp 变更 → 只扫改动文件（必须在项目 TU 中）
@@ -218,7 +280,7 @@ if ($GitDiff) {
         Write-Host "No project TU files to scan." -ForegroundColor Green
         exit 0
     }
-    Write-Host "Git diff mode: $($Files.Count) files to scan" -ForegroundColor Cyan
+    Write-Host "Git diff mode (base $base): $($Files.Count) files to scan" -ForegroundColor Cyan
 }
 elseif (-not $Files) {
     $Files = @(Get-ProjectTUs)
@@ -256,11 +318,13 @@ else {
 
 # ── 哈希缓存过滤 ──
 $totalFilesBeforeCache = $Files.Count
+$scanCacheKeys = @{}
 if ($cacheEnabled -and $Files.Count -gt 0) {
     $uncachedFiles = @()
     foreach ($f in $Files) {
         $key = Get-FileCacheKey -FilePath $f
         $relPath = $f.Replace("$projectRoot\", "")
+        $scanCacheKeys[$relPath] = $key
         if ($cacheData.ContainsKey($relPath) -and $cacheData[$relPath] -eq $key) {
             $cacheHits++
         } else {
@@ -290,7 +354,6 @@ $compileArgs = @(
     "/DWIN32",
     "/D_WINDOWS",
     "/D_USRDLL",
-    "/DFOOBAR2000_TARGET_VERSION=82",
     "/DFOO_UI_WEBVIEW2_EXPORTS",
     "/D_UNICODE",
     "/DUNICODE",
@@ -486,21 +549,22 @@ if ($results.Count -gt 0) {
     Write-Host "详细报告: $reportPath" -ForegroundColor Cyan
 }
 
-# ── 保存缓存（只缓存无错误的文件） ──
+# 有诊断的文件继续复扫，避免缓存命中把既有告警显示成零告警。
 if ($cacheEnabled) {
     foreach ($file in $Files) {
         $relPath = $file.Replace("$projectRoot\", "")
-        $fileHasIssue = $results | Where-Object { $_.File -eq $relPath -and $_.Errors -gt 0 }
+        $fileHasIssue = $results | Where-Object { $_.File -eq $relPath -and ($_.Errors -gt 0 -or $_.Warnings -gt 0) }
         if (-not $fileHasIssue) {
-            $key = Get-FileCacheKey -FilePath $file
-            $cacheData[$relPath] = $key
+            # 保存扫描前的输入；检查期间的改动留到下一次识别，不能替它背书。
+            $cacheData[$relPath] = $scanCacheKeys[$relPath]
         } else {
-            # 有错误的文件从缓存中移除，确保下次重新扫描
+            # 清除旧的成功记录，确保下次重新扫描。
             $cacheData.Remove($relPath) | Out-Null
         }
     }
+    $cacheData['@inputs'] = $checksFingerprint
     $cacheData | ConvertTo-Json -Depth 3 | Set-Content $cacheFile -Encoding UTF8
-    Write-Host "[CACHE] 已更新缓存 ($($cacheData.Count) 条目)" -ForegroundColor Gray
+    Write-Host "[CACHE] 已更新缓存 ($($cacheData.Count - 1) 条目)" -ForegroundColor Gray
 }
 
 if ($cacheHits -gt 0) {

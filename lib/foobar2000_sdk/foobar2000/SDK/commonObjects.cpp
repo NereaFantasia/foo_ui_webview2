@@ -356,7 +356,7 @@ namespace {
     class objReceiverImpl : public objReceiver {
     public:
         objReceiverImpl( const objReceiverFunc_t & f ) : m_func(f) {}
-        void receiveObj(objRef obj) {
+        void receiveObj(objRef obj) override {
             m_func(obj);
         }
         
@@ -368,7 +368,7 @@ namespace {
         callOnReleaseImpl( std::function<void () > f_) : f(f_) {}
         std::function<void ()> f;
         
-        ~callOnReleaseImpl () {
+        ~callOnReleaseImpl () noexcept {
             try {
                 f();
             } catch(...) {}
@@ -441,7 +441,7 @@ namespace fb2k {
     
     array::ptr array::subset( pfc::bit_array const & mask ) const {
         auto out = arrayMutable::empty();
-        mask.walk( this->size(), [=] ( size_t w ) {
+        mask.walk( this->size(), [this, &out] ( size_t w ) {
             out->add( this->itemAt( w ) );
         } );
         return out->makeConst();

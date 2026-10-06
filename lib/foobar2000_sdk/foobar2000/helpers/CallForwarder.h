@@ -1,4 +1,8 @@
 #pragma once
+
+// Old weak reference helper meant for safe calls to parent object from a child object that might in some scenario outlive the parent.
+// Use pfc::weakRef instead in new code.
+
 #include "callInMainThreadHelper.h"
 namespace CF {
 	template<typename obj_t, typename arg_t> class _inMainThread : public main_thread_callback {

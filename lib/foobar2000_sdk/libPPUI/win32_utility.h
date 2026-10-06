@@ -50,9 +50,20 @@ bool IsMenuNonEmpty(HMENU menu);
 void SetDefaultMenuItem(HMENU p_menu, unsigned p_id);
 
 void GetOSVersionString(pfc::string_base & out);
-WORD GetOSVersionCode();
-bool IsWine();
+WORD GetOSVersionCode(); // per WINVER macro semantics, 0x601 for Windows 7, 0xA00 for Windows 10
 DWORD Win10BuildNumber(); // See https://en.wikipedia.org/wiki/Windows_10_version_history for build number reference
+bool IsWindows11OrNewer();
 
 void EnumChildWindows(HWND, std::function<void(HWND)>); // Recursive
 void EnumChildWindowsHere(HWND, std::function<void(HWND)>); // Non-recursive
+
+// Wine detection helpers
+bool IsWine();
+const char* WineVersionStr();
+unsigned WineMajorVersion();
+
+// GetWineVersionCode()
+// 1100 for 11.0, 1103 for 11.3, UINT32_MAX if not Wine
+// meant for easy detection of old Wine builds with known bugs:
+// if (GetWineVersionCode() < 1103) { workaround bugs in versions prior to 11.3 here }
+uint32_t GetWineVersionCode();

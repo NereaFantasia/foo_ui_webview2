@@ -1,7 +1,7 @@
 #pragma once
 #include "album_art.h"
 
-//! Implements album_art_data.
+//! Implements @c album_art_data.
 class album_art_data_impl : public album_art_data {
 public:
 	const void * data() const override {return m_content.get_ptr();}
@@ -20,14 +20,14 @@ public:
 
 	//! Creates an album_art_data object from picture data contained in a memory buffer.
 	static album_art_data_ptr g_create(const void * p_buffer,t_size p_bytes) {
-		service_ptr_t<album_art_data_impl> instance = new service_impl_t<album_art_data_impl>();
+		service_ptr_t instance = new service_impl_t<album_art_data_impl>();
 		instance->set_size(p_bytes);
 		memcpy(instance->get_ptr(),p_buffer,p_bytes);
 		return instance;
 	}
 	//! Creates an album_art_data object from picture data contained in a stream.
 	static album_art_data_ptr g_create(stream_reader * p_stream,t_size p_bytes,abort_callback & p_abort) {
-		service_ptr_t<album_art_data_impl> instance = new service_impl_t<album_art_data_impl>();
+		service_ptr_t instance = new service_impl_t<album_art_data_impl>();
 		instance->from_stream(p_stream,p_bytes,p_abort);
 		return instance;
 	}
@@ -37,7 +37,7 @@ private:
 };
 
 
-//! Helper - simple implementation of album_art_extractor_instance.
+//! Helper - simple implementation of @c album_art_extractor_instance.
 class album_art_extractor_instance_simple : public album_art_extractor_instance {
 public:
 	void set(const GUID & p_what,album_art_data_ptr p_content) {m_content.set(p_what,p_content);}
@@ -59,7 +59,7 @@ private:
 	pfc::map_t<GUID,album_art_data_ptr> m_content;
 };
 
-//! Helper implementation of album_art_extractor - reads album art from arbitrary file formats that comply with APEv2 tagging specification.
+//! Helper implementation of @c album_art_extractor - reads album art from arbitrary file formats that comply with APEv2 tagging specification.
 class album_art_extractor_impl_stdtags : public album_art_extractor_v2 {
 public:
 	//! @param exts Semicolon-separated list of file format extensions to support.
@@ -87,7 +87,7 @@ private:
 	const GUID m_guid;
 };
 
-//! Helper implementation of album_art_editor - edits album art from arbitrary file formats that comply with APEv2 tagging specification.
+//! Helper implementation of @c album_art_editor - edits album art from arbitrary file formats that comply with APEv2 tagging specification.
 class album_art_editor_impl_stdtags : public album_art_editor_v2 {
 public:
 	//! @param exts Semicolon-separated list of file format extensions to support.
@@ -115,7 +115,7 @@ private:
 
 };
 
-//! Helper - a more advanced implementation of album_art_extractor_instance.
+//! Helper - a more advanced implementation of @c album_art_extractor_instance.
 class album_art_extractor_instance_fileref : public album_art_extractor_instance {
 public:
 	album_art_extractor_instance_fileref(file::ptr f) : m_file(f) {}
@@ -150,7 +150,7 @@ private:
 	pfc::map_t<GUID, album_art_data::ptr> m_cache;
 };
 
-//! album_art_path_list implementation helper
+//! @c album_art_path_list implementation helper
 class album_art_path_list_impl : public album_art_path_list {
 public:
 	album_art_path_list_impl(const char* single) { m_data.set_size(1); m_data[0] = single; }
@@ -161,9 +161,38 @@ private:
 	pfc::array_t<pfc::string8> m_data;
 };
 
-//! album_art_path_list implementation helper
+//! @c album_art_path_list implementation helper
 class album_art_path_list_dummy : public album_art_path_list {
 public:
 	const char * get_path(t_size) const override {FB2K_BugCheck();}
 	t_size get_count() const override {return 0;}
+};
+
+
+//! stdtags album art extractor - automatically take GUID+extensions from an input class
+template<typename input_t> class album_art_extractor_stdtags_companion : public album_art_extractor_v2 {
+public:
+	bool is_our_path(const char* p_path, const char* p_extension) override { return input_t::g_is_our_path(p_path, p_extension); }
+	GUID get_guid() override { return input_t::g_get_guid(); }
+
+	album_art_extractor_instance_ptr open(file_ptr p_filehint, const char* p_path, abort_callback& p_abort) override {
+		PFC_ASSERT(is_our_path(p_path, pfc::string_extension(p_path)));
+		file_ptr l_file(p_filehint);
+		if (l_file.is_empty()) filesystem::g_open_read(l_file, p_path, p_abort);
+		return tag_processor_album_art_utils::get()->open(l_file, p_abort);
+	}
+};
+
+//! stdtags album art editor - automatically take GUID+extensions from an input class
+template<typename input_t> class album_art_editor_stdtags_companion : public album_art_editor_v2 {
+public:
+	GUID get_guid() override { return input_t::g_get_guid(); }
+	bool is_our_path(const char* p_path, const char* p_extension) override { return input_t::g_is_our_path(p_path, p_extension); }
+
+	album_art_editor_instance_ptr open(file_ptr p_filehint, const char* p_path, abort_callback& p_abort) override {
+		PFC_ASSERT(is_our_path(p_path, pfc::string_extension(p_path)));
+		file_ptr l_file(p_filehint);
+		if (l_file.is_empty()) filesystem::g_open(l_file, p_path, filesystem::open_mode_write_existing, p_abort);
+		return tag_processor_album_art_utils::get()->edit(l_file, p_abort);
+	}
 };

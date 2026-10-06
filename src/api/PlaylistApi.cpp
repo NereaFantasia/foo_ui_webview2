@@ -4,13 +4,20 @@
 #include "api/AsyncOperationRegistry.h"
 #include "api/BridgeCore.h"
 #include "api/ErrorEnvelope.h"
+#include "api/EventEmit.h"
 #include "api/GroupRunPlan.h"
 #include "api/MetaAccess.h"
+#include "api/PlaylistLock.h"
+#include "api/PlaylistTarget.h"
 #include "api/RatingResolve.h"
+#include "api/TrackRow.h"
 #include "api/TrackWireSnapshot.h"
+#include "api/TypedApi.h"
+#include "api/generated/PlaylistSchema.h"
 #include "core/WebViewContext.h"
-#include "interfaces/Fb2kPlaylistService.h"
-#include "interfaces/Fb2kPlaybackService.h"
+#include "api/adapters/Fb2kPlaylistService.h"
+#include "api/adapters/Fb2kPlaybackService.h"
+#include "utils/GuidUtils.h"
 #include "utils/PlaylistFormatUtils.h"
 #include "utils/SubsongUtils.h"
 #include <atomic>
@@ -196,13 +203,6 @@ static AutoplaylistDetection DetectAutoplaylist(size_t playlistIndex) {
     return result;
 }
 
-static json MakePlaylistLockedError(size_t playlistIndex) {
-    FailureHook::LogSync("playlist.*", ApiErrorCode::LOCKED,
-                         "Playlist is locked", true);
-    return ApiEnvelope::MakeError("Playlist is locked", ApiErrorCode::LOCKED,
-                                  {{"playlist", playlistIndex}, {"isLocked", true}});
-}
-
 // 生成唯一操作 ID
 //
 // 走共享的 FormatAsyncOperationId（AsyncOperationRegistry.cpp），与
@@ -256,168 +256,6 @@ json GetPlaylistInfo(size_t index, bool includeDuration) {
     return result;
 }
 
-// Helper: Get playlist index from params (supports both 'index' and 'playlist' parameter names)
-static size_t GetPlaylistIndexFromParams(const json& params) {
-    if (params.contains("playlist")) {
-        return params.value("playlist", pfc::infinite_size);
-    }
-    return params.value("index", pfc::infinite_size);
-}
-
-json GetPlaylistTrackInfo(const metadb_handle_ptr& track, size_t index) {
-    if (!track.is_valid()) return nullptr;
-    
-    // Get native filesystem path
-    pfc::string8 nativePath;
-    filesystem::g_get_native_path(track->get_path(), nativePath);
-    std::string absolutePath = nativePath.get_ptr();
-    
-    // 使用 get_info_ref() 替代已弃用的 get_info()，避免 file_info_impl 值拷贝开销
-    metadb_info_container::ptr infoContainer = track->get_info_ref();
-    const file_info& info = infoContainer->info();
-    
-    auto getMeta = [&](const char* name) -> std::string {
-        const char* value = info.meta_get(name, 0);
-        return value ? value : "";
-    };
-    
-    auto getMetaInt = [&](const char* name) -> int {
-        const char* value = info.meta_get(name, 0);
-        return value ? atoi(value) : 0;
-    };
-    
-    // 取值顺序与来源判定归 RatingResolve.h，rating.get 走的是同一处
-    const int rating = ResolveTrackRating(track, &info).value;
-
-    // Get audio technical info
-    std::string codec;
-    int bitrate = 0;
-    int sampleRate = 0;
-    int channels = 0;
-    
-    // Try to get codec from info_get
-    const char* codecVal = info.info_get("codec");
-    if (codecVal) codec = codecVal;
-    
-    // Try to get bitrate
-    const char* bitrateVal = info.info_get("bitrate");
-    if (bitrateVal) bitrate = atoi(bitrateVal);
-    
-    // Get sample rate and channels from info
-    sampleRate = static_cast<int>(info.info_get_int("samplerate"));
-    channels = static_cast<int>(info.info_get_int("channels"));
-    
-    return {
-        {"index", index},
-        {"title", getMeta("title")},
-        {"artist", MetaJoined(info, "artist")},
-        {"album", getMeta("album")},
-        {"albumArtist", MetaJoined(info, "album artist")},
-        {"genre", MetaJoined(info, "genre")},
-        {"date", getMeta("date")},
-        {"trackNumber", getMetaInt("tracknumber")},
-        {"discNumber", getMetaInt("discnumber")},
-        {"duration", info.get_length()},
-        {"path", std::string(track->get_path())},
-        {"absolutePath", absolutePath},
-        {"fileSize", static_cast<int64_t>(track->get_filesize())},
-        {"subsong", track->get_subsong_index()},
-        {"rating", rating},
-        {"codec", codec},
-        {"bitrate", bitrate},
-        {"sampleRate", sampleRate},
-        {"channels", channels},
-        {"composer", MetaJoined(info, "composer")},
-        {"comment", getMeta("comment")},
-    };
-}
-
-// ============================================
-// 投影分支（playlist.getTracks 的 fields 参数）
-// ============================================
-// 与全字段路径同名键的取值表达式逐条相同，但只算掩码选中的字段——未选
-// absolutePath 不调 g_get_native_path、未选 rating 不走 %rating% 回退，这是
-// 投影的性能收益所在。
-// artists 是投影态独有的键（全字段路径没有）：使用 MetaValuesRaw
-// （注意源标签名是 artist 不是 artists），类型是字符串数组。
-// 无效句柄同样出全部请求键、值取类型默认：消费方的行校验器
-// 不用为损坏行分叉。composer / comment 不在投影白名单里，不会传入这里。
-json GetPlaylistTrackInfoProjected(const metadb_handle_ptr& track, size_t index,
-                                   uint32_t mask) {
-    json row;
-    row["index"] = index;
-
-    if (!track.is_valid()) {
-        if (mask & TrackField::kTitle) row["title"] = "";
-        if (mask & TrackField::kArtist) row["artist"] = "";
-        if (mask & TrackField::kArtists) row["artists"] = json::array();
-        if (mask & TrackField::kAlbum) row["album"] = "";
-        if (mask & TrackField::kAlbumArtist) row["albumArtist"] = "";
-        if (mask & TrackField::kGenre) row["genre"] = "";
-        if (mask & TrackField::kDate) row["date"] = "";
-        if (mask & TrackField::kTrackNumber) row["trackNumber"] = 0;
-        if (mask & TrackField::kDiscNumber) row["discNumber"] = 0;
-        if (mask & TrackField::kDuration) row["duration"] = 0.0;
-        if (mask & TrackField::kPath) row["path"] = "";
-        if (mask & TrackField::kAbsolutePath) row["absolutePath"] = "";
-        if (mask & TrackField::kFileSize) row["fileSize"] = 0;
-        if (mask & TrackField::kBitrate) row["bitrate"] = 0;
-        if (mask & TrackField::kSampleRate) row["sampleRate"] = 0;
-        if (mask & TrackField::kChannels) row["channels"] = 0;
-        if (mask & TrackField::kCodec) row["codec"] = "";
-        if (mask & TrackField::kSubsong) row["subsong"] = 0;
-        if (mask & TrackField::kRating) row["rating"] = 0;
-        return row;
-    }
-
-    // 使用 get_info_ref() 替代已弃用的 get_info()，与全字段路径同一口径
-    metadb_info_container::ptr infoContainer = track->get_info_ref();
-    const file_info& info = infoContainer->info();
-
-    auto getMeta = [&](const char* name) -> std::string {
-        const char* value = info.meta_get(name, 0);
-        return value ? value : "";
-    };
-    auto getMetaInt = [&](const char* name) -> int {
-        const char* value = info.meta_get(name, 0);
-        return value ? atoi(value) : 0;
-    };
-
-    if (mask & TrackField::kTitle) row["title"] = getMeta("title");
-    if (mask & TrackField::kArtist) row["artist"] = MetaJoined(info, "artist");
-    if (mask & TrackField::kArtists) row["artists"] = MetaValuesRaw(info, "artist");
-    if (mask & TrackField::kAlbum) row["album"] = getMeta("album");
-    if (mask & TrackField::kAlbumArtist) row["albumArtist"] = MetaJoined(info, "album artist");
-    if (mask & TrackField::kGenre) row["genre"] = MetaJoined(info, "genre");
-    if (mask & TrackField::kDate) row["date"] = getMeta("date");
-    if (mask & TrackField::kTrackNumber) row["trackNumber"] = getMetaInt("tracknumber");
-    if (mask & TrackField::kDiscNumber) row["discNumber"] = getMetaInt("discnumber");
-    if (mask & TrackField::kDuration) row["duration"] = info.get_length();
-    if (mask & TrackField::kPath) row["path"] = std::string(track->get_path());
-    if (mask & TrackField::kAbsolutePath) {
-        pfc::string8 nativePath;
-        filesystem::g_get_native_path(track->get_path(), nativePath);
-        row["absolutePath"] = std::string(nativePath.get_ptr());
-    }
-    if (mask & TrackField::kFileSize)
-        row["fileSize"] = static_cast<int64_t>(track->get_filesize());
-    if (mask & TrackField::kSubsong) row["subsong"] = track->get_subsong_index();
-    if (mask & TrackField::kRating) row["rating"] = ResolveTrackRating(track, &info).value;
-    if (mask & TrackField::kCodec) {
-        const char* value = info.info_get("codec");
-        row["codec"] = value ? value : "";
-    }
-    if (mask & TrackField::kBitrate) {
-        const char* value = info.info_get("bitrate");
-        row["bitrate"] = value ? atoi(value) : 0;
-    }
-    if (mask & TrackField::kSampleRate)
-        row["sampleRate"] = static_cast<int>(info.info_get_int("samplerate"));
-    if (mask & TrackField::kChannels)
-        row["channels"] = static_cast<int>(info.info_get_int("channels"));
-    return row;
-}
-
 // ============================================
 // Fb2kPlaylistService — out-of-line definitions
 // (These methods depend on static helpers defined above)
@@ -444,34 +282,104 @@ IPlaylistService::InsertTracksResult Fb2kPlaylistService::insert_tracks(
     return { true, "", items.get_count(), invalidCount, countBefore, countAfter };
 }
 
-json Fb2kPlaylistService::get_tracks_json(
-    size_t playlist, size_t start, size_t count, const json& formats,
-    const TrackFieldSelection& fields) const {
-    auto plm = playlist_manager::get();
-    size_t totalCount = plm->playlist_get_item_count(playlist);
+namespace {
 
-    if (start >= totalCount) {
-        return {
-            {"playlist", playlist}, {"start", start},
-            {"count", 0}, {"total", totalCount}, {"tracks", json::array()}
-        };
+namespace plrow = api::playlist;
+
+// The fields that come from the file's tags and technical info, as opposed to the handle.
+constexpr uint32_t kInfoFieldMask =
+    TrackField::kTitle | TrackField::kArtist | TrackField::kArtists | TrackField::kAlbum |
+    TrackField::kAlbumArtist | TrackField::kAlbumArtists | TrackField::kGenre | TrackField::kDate |
+    TrackField::kTrackNumber | TrackField::kDiscNumber | TrackField::kDuration |
+    TrackField::kBitrate | TrackField::kSampleRate | TrackField::kChannels | TrackField::kCodec;
+
+// composer and comment, which a playlist row carries beyond the shared track fields.
+void FillPlaylistTags(std::string& composer, std::string& comment, const file_info* info) {
+    if (info == nullptr) return;
+    composer = MetaJoined(*info, "composer");
+    const char* value = info->meta_get("comment", 0);
+    comment = value ? StringUtils::SafeUtf8(value) : std::string();
+}
+
+// A playlist row narrowed to `mask`, `index` always included. The values come from the builders
+// of the shared track row (TrackRow.h), so a row with every field equals BuildTrackRow plus
+// index. What costs is only computed when asked for: handle and absolutePath go through
+// g_get_native_path, rating through %rating%; path, subsong and fileSize alone are read straight
+// off the handle, as library.query does. An invalid handle gives the requested keys with type
+// defaults.
+plrow::PlaylistTrackPartial PlaylistRowOf(const metadb_handle_ptr& track, size_t index,
+                                          uint32_t mask, const file_info* info) {
+    plrow::PlaylistTrackPartial row;
+    row.index = static_cast<std::int64_t>(index);
+
+    api::common::Track full;
+    if (track.is_valid()) {
+        if (mask & (TrackField::kHandle | TrackField::kAbsolutePath)) {
+            FillTrackIdentity(full, track);
+        } else {
+            if (mask & TrackField::kPath) full.path = StringUtils::SafeUtf8(track->get_path());
+            if (mask & TrackField::kSubsong) full.subsong = track->get_subsong_index();
+            if (mask & TrackField::kFileSize) {
+                full.fileSize = static_cast<std::int64_t>(track->get_filesize());
+            }
+        }
+        // Same split as BuildTrackRow: no info, no rating and the duration from the handle
+        if (info != nullptr) {
+            if (mask & kInfoFieldMask) FillTrackMetadata(full, *info);
+            if (mask & TrackField::kRating) full.rating = ResolveTrackRating(track, info).value;
+        } else if (mask & TrackField::kDuration) {
+            full.duration = track->get_length();
+        }
     }
 
-    size_t actualCount = std::min(count, totalCount - start);
-    metadb_handle_list items;
-    pfc::bit_array_range range(start, actualCount);
-    plm->playlist_get_items(playlist, items, range);
+    if (mask & TrackField::kHandle) row.handle = std::move(full.handle);
+    if (mask & TrackField::kPath) row.path = std::move(full.path);
+    if (mask & TrackField::kAbsolutePath) row.absolutePath = std::move(full.absolutePath);
+    if (mask & TrackField::kSubsong) row.subsong = full.subsong;
+    if (mask & TrackField::kTitle) row.title = std::move(full.title);
+    if (mask & TrackField::kArtist) row.artist = std::move(full.artist);
+    if (mask & TrackField::kArtists) row.artists = std::move(full.artists);
+    if (mask & TrackField::kAlbum) row.album = std::move(full.album);
+    if (mask & TrackField::kAlbumArtist) row.albumArtist = std::move(full.albumArtist);
+    if (mask & TrackField::kAlbumArtists) row.albumArtists = std::move(full.albumArtists);
+    if (mask & TrackField::kGenre) row.genre = std::move(full.genre);
+    if (mask & TrackField::kDate) row.date = std::move(full.date);
+    if (mask & TrackField::kTrackNumber) row.trackNumber = full.trackNumber;
+    if (mask & TrackField::kDiscNumber) row.discNumber = full.discNumber;
+    if (mask & TrackField::kDuration) row.duration = full.duration;
+    if (mask & TrackField::kFileSize) row.fileSize = full.fileSize;
+    if (mask & TrackField::kBitrate) row.bitrate = full.bitrate;
+    if (mask & TrackField::kSampleRate) row.sampleRate = full.sampleRate;
+    if (mask & TrackField::kChannels) row.channels = full.channels;
+    if (mask & TrackField::kCodec) row.codec = std::move(full.codec);
+    if (mask & TrackField::kRating) row.rating = full.rating;
+    return row;
+}
+
+// %play_count% as an integer; nothing when the text is not one (no foo_playcount gives "?").
+std::optional<std::int64_t> PlayCountOf(const std::string& text) {
+    if (text.empty()) return std::nullopt;
+    char* end = nullptr;
+    const long long value = std::strtoll(text.c_str(), &end, 10);
+    if (end == text.c_str() || *end != '\0') return std::nullopt;
+    return static_cast<std::int64_t>(value);
+}
+
+// playlist.getTracks 与 playlist.getTracksAt 共用的行构造：items[i] 是第 rows[i] 行的句柄，
+// 两者等长。两个方法的行因此逐键相同，只是挑哪些行不同。
+std::vector<plrow::PlaylistTrackPartial> BuildPlaylistRows(
+    const metadb_handle_list& items, const std::vector<size_t>& rows,
+    const std::map<std::string, std::string>& formats, const TrackFieldSelection& fields) {
+    std::vector<plrow::PlaylistTrackPartial> out;
 
     // Compile optional title format columns (foo_playcount virtual fields etc.)
     std::vector<std::pair<std::string, titleformat_object::ptr>> compiledFormats;
-    if (!formats.empty() && formats.is_object()) {
+    if (!formats.empty()) {
         auto compiler = titleformat_compiler::get();
-        for (auto& [key, val] : formats.items()) {
-            if (val.is_string()) {
-                titleformat_object::ptr script;
-                compiler->compile_safe(script, val.get<std::string>().c_str());
-                compiledFormats.emplace_back(key, script);
-            }
+        for (const auto& [key, pattern] : formats) {
+            titleformat_object::ptr script;
+            compiler->compile_safe(script, pattern.c_str());
+            compiledFormats.emplace_back(key, script);
         }
     }
 
@@ -497,47 +405,112 @@ json Fb2kPlaylistService::get_tracks_json(
         v2recs = mdb2->queryMultiSimple(items);
     }
 
-    json tracks = json::array();
+    const uint32_t mask = fields.projected ? fields.mask : TrackField::kAll;
+    out.reserve(items.get_count());
     for (size_t i = 0; i < items.get_count(); i++) {
-        if (fields.projected) {
-            json trackInfo = GetPlaylistTrackInfoProjected(items[i], start + i, fields.mask);
-            for (auto& [key, script] : compiledFormats) {
-                pfc::string8 result;
-                mdb2->formatTitle_v2(items[i], v2recs[i], nullptr, result, script, nullptr);
-                trackInfo[key] = std::string(result.get_ptr());
-            }
-            tracks.push_back(std::move(trackInfo));
-            continue;
+        const metadb_handle_ptr& track = items[i];
+        metadb_info_container::ptr container;
+        if (track.is_valid() && (!fields.projected || (mask & (kInfoFieldMask | TrackField::kRating)))) {
+            container = track->get_info_ref();
         }
+        const file_info* info = container.is_valid() ? &container->info() : nullptr;
 
-        json trackInfo = GetPlaylistTrackInfo(items[i], start + i);
+        plrow::PlaylistTrackPartial row = PlaylistRowOf(track, rows[i], mask, info);
 
         auto evalV2 = [&](const titleformat_object::ptr& script) -> std::string {
             pfc::string8 buf;
-            mdb2->formatTitle_v2(items[i], v2recs[i], nullptr, buf, script, nullptr);
+            mdb2->formatTitle_v2(track, v2recs[i], nullptr, buf, script, nullptr);
             if (buf.get_length() == 0 || (buf.get_length() == 1 && buf[0] == '?')) return "";
             return std::string(buf.get_ptr());
         };
-        trackInfo["playCount"]   = evalV2(s_playCount);
-        trackInfo["firstPlayed"] = evalV2(s_firstPlayed);
-        trackInfo["lastPlayed"]  = evalV2(s_lastPlayed);
-        trackInfo["added"]       = evalV2(s_added);
 
-        for (auto& [key, script] : compiledFormats) {
-            pfc::string8 result;
-            mdb2->formatTitle_v2(items[i], v2recs[i], nullptr, result, script, nullptr);
-            trackInfo[key] = std::string(result.get_ptr());
+        if (!fields.projected) {
+            std::string composer;
+            std::string comment;
+            FillPlaylistTags(composer, comment, info);
+            row.composer = std::move(composer);
+            row.comment = std::move(comment);
+            if (track.is_valid()) {
+                row.playCount = PlayCountOf(evalV2(s_playCount));
+                if (std::string value = evalV2(s_firstPlayed); !value.empty()) row.firstPlayed = std::move(value);
+                if (std::string value = evalV2(s_lastPlayed); !value.empty()) row.lastPlayed = std::move(value);
+                if (std::string value = evalV2(s_added); !value.empty()) row.added = std::move(value);
+            }
         }
-        tracks.push_back(std::move(trackInfo));
-    }
 
-    return {
-        {"playlist", playlist}, {"start", start},
-        {"count", tracks.size()}, {"total", totalCount}, {"tracks", tracks}
-    };
+        if (!compiledFormats.empty()) {
+            std::map<std::string, std::string> values;
+            for (const auto& [key, script] : compiledFormats) {
+                pfc::string8 text;
+                if (track.is_valid()) {
+                    mdb2->formatTitle_v2(track, v2recs[i], nullptr, text, script, nullptr);
+                }
+                values[key] = StringUtils::SafeUtf8(text.get_ptr());
+            }
+            row.formats = std::move(values);
+        }
+        out.push_back(std::move(row));
+    }
+    return out;
 }
 
-json Fb2kPlaylistService::get_selected_tracks_json(size_t playlist) const {
+}  // namespace
+
+plrow::GetTracksResult Fb2kPlaylistService::get_tracks(
+    size_t playlist, size_t start, size_t count, const std::map<std::string, std::string>& formats,
+    const TrackFieldSelection& fields) const {
+    auto plm = playlist_manager::get();
+    const size_t totalCount = plm->playlist_get_item_count(playlist);
+
+    plrow::GetTracksResult result;
+    result.playlist = static_cast<std::int64_t>(playlist);
+    result.playlistGuid = api::PlaylistGuidOf(*this, playlist);
+    result.start = static_cast<std::int64_t>(start);
+    result.total = static_cast<std::int64_t>(totalCount);
+    if (start >= totalCount) {
+        return result;
+    }
+
+    const size_t actualCount = std::min(count, totalCount - start);
+    metadb_handle_list items;
+    pfc::bit_array_range range(start, actualCount);
+    plm->playlist_get_items(playlist, items, range);
+
+    std::vector<size_t> rows(items.get_count());
+    for (size_t i = 0; i < rows.size(); i++) rows[i] = start + i;
+    result.tracks = BuildPlaylistRows(items, rows, formats, fields);
+    result.count = static_cast<std::int64_t>(result.tracks.size());
+    return result;
+}
+
+// 行号任意、可重复、可乱序，所以逐行取句柄，而不是按掩码取：playlist_get_items 按列表顺序
+// 回答并把重复的行并成一行。
+plrow::GetTracksAtResult Fb2kPlaylistService::get_tracks_at(
+    size_t playlist, const std::vector<size_t>& rows, const std::map<std::string, std::string>& formats,
+    const TrackFieldSelection& fields) const {
+    auto plm = playlist_manager::get();
+    const size_t totalCount = plm->playlist_get_item_count(playlist);
+
+    plrow::GetTracksAtResult result;
+    result.playlist = static_cast<std::int64_t>(playlist);
+    result.playlistGuid = api::PlaylistGuidOf(*this, playlist);
+    result.total = static_cast<std::int64_t>(totalCount);
+
+    metadb_handle_list items;
+    std::vector<size_t> kept;
+    kept.reserve(rows.size());
+    for (const size_t row : rows) {
+        metadb_handle_ptr track;
+        if (row >= totalCount || !plm->playlist_get_item_handle(track, playlist, row)) continue;
+        items.add_item(track);
+        kept.push_back(row);
+    }
+    result.tracks = BuildPlaylistRows(items, kept, formats, fields);
+    result.count = static_cast<std::int64_t>(result.tracks.size());
+    return result;
+}
+
+plrow::GetSelectedTracksResult Fb2kPlaylistService::get_selected_tracks(size_t playlist) const {
     auto plm = playlist_manager::get();
     size_t itemCount = plm->playlist_get_item_count(playlist);
 
@@ -547,19 +520,27 @@ json Fb2kPlaylistService::get_selected_tracks_json(size_t playlist) const {
     metadb_handle_list items;
     plm->playlist_get_selected_items(playlist, items);
 
-    json tracks = json::array();
+    plrow::GetSelectedTracksResult result;
+    result.playlist = static_cast<std::int64_t>(playlist);
+    result.playlistGuid = api::PlaylistGuidOf(*this, playlist);
     size_t trackIdx = 0;
     for (size_t i = 0; i < itemCount; i++) {
-        if (selection.get(i) && trackIdx < items.get_count()) {
-            tracks.push_back(GetPlaylistTrackInfo(items[trackIdx], i));
-            trackIdx++;
-        }
+        if (!selection.get(i) || trackIdx >= items.get_count()) continue;
+        const metadb_handle_ptr& track = items[trackIdx++];
+        // 无效句柄没有可写的身份，跳过
+        if (!track.is_valid()) continue;
+
+        metadb_info_container::ptr container = track->get_info_ref();
+        const file_info* info = container.is_valid() ? &container->info() : nullptr;
+        plrow::PlaylistTrack row;
+        static_cast<api::common::Track&>(row) = BuildTrackRow(track, info);
+        row.index = static_cast<std::int64_t>(i);
+        FillPlaylistTags(row.composer, row.comment, info);
+        result.tracks.push_back(std::move(row));
     }
 
-    return {
-        {"success", true}, {"playlist", playlist},
-        {"tracks", tracks}, {"count", tracks.size()}
-    };
+    result.count = static_cast<std::int64_t>(result.tracks.size());
+    return result;
 }
 
 // -- Path-based service methods (out-of-line) -----------------
@@ -567,24 +548,39 @@ json Fb2kPlaylistService::get_selected_tracks_json(size_t playlist) const {
 IPlaylistService::AddPathsResult Fb2kPlaylistService::add_paths(
     size_t playlist, const json& paths) {
     auto plm = playlist_manager::get();
-    size_t countBefore = plm->playlist_get_item_count(playlist);
+    const api::PinnedPlaylist target(*this, playlist);
+
+    AddPathsResult r;
+    r.playlist = playlist;
+    r.countBefore = plm->playlist_get_item_count(playlist);
+    r.totalCount = r.countBefore;
 
     metadb_handle_list items;
-    size_t invalidCount = 0;
-    ResolvePathsToHandles(paths, items, invalidCount);
+    ResolvePathsToHandles(paths, items, r.invalidCount);
 
-    if (items.get_count() == 0) {
-        return { 0, invalidCount, countBefore, countBefore };
+    // 解析时开过模态进度框，列表可能已被拖动、删掉或上锁。一首都没解析出来也先找回：
+    // 失败信封里的序号与曲目数要是这张列表现在的，被删掉时报删掉而不是报没有曲目。
+    const auto located = target.Locate(*this);
+    if (!located.has_value()) {
+        r.outcome = PathInsertOutcome::PlaylistRemoved;
+        return r;
     }
+    r.playlist = *located;
+    r.countBefore = plm->playlist_get_item_count(r.playlist);
+    r.totalCount = r.countBefore;
+    if (items.get_count() == 0) return r;
 
-    plm->playlist_undo_backup(playlist);
-    size_t insertPos = plm->playlist_get_item_count(playlist);
-    plm->playlist_insert_items(playlist, insertPos, items, bit_array_false());
-    size_t countAfter = plm->playlist_get_item_count(playlist);
-
-    return { items.get_count(), invalidCount, countBefore, countAfter };
+    plm->playlist_undo_backup(r.playlist);
+    if (plm->playlist_insert_items(r.playlist, r.countBefore, items, bit_array_false()) == SIZE_MAX) {
+        r.outcome = PathInsertOutcome::Refused;
+        return r;
+    }
+    r.addedCount = items.get_count();
+    r.totalCount = plm->playlist_get_item_count(r.playlist);
+    return r;
 }
 
+// 句柄直接由路径建出，不经 process_locations，写入前没有让出消息循环，无需重新定位目标。
 IPlaylistService::AddPathsResult Fb2kPlaylistService::add_handles(
     size_t playlist, const json& handles) {
     auto plm = playlist_manager::get();
@@ -595,7 +591,7 @@ IPlaylistService::AddPathsResult Fb2kPlaylistService::add_handles(
     ParseJsonHandlesToList(handles, items, invalidCount);
 
     if (items.get_count() == 0) {
-        return { 0, invalidCount, countBefore, countBefore };
+        return { 0, invalidCount, countBefore, countBefore, PathInsertOutcome::Ok, playlist };
     }
 
     plm->playlist_undo_backup(playlist);
@@ -603,7 +599,7 @@ IPlaylistService::AddPathsResult Fb2kPlaylistService::add_handles(
     plm->playlist_insert_items(playlist, insertPos, items, bit_array_false());
     size_t countAfter = plm->playlist_get_item_count(playlist);
 
-    return { items.get_count(), invalidCount, countBefore, countAfter };
+    return { items.get_count(), invalidCount, countBefore, countAfter, PathInsertOutcome::Ok, playlist };
 }
 
 // playlist.addPathsSequential 的契约是"按给定顺序逐条追加"（SDK JSDoc: one-by-one），
@@ -617,6 +613,7 @@ IPlaylistService::AddPathsSequentialResult Fb2kPlaylistService::add_paths_sequen
     size_t playlist, const json& paths) {
     auto plm = playlist_manager::get();
     auto piif = playlist_incoming_item_filter::get();
+    const api::PinnedPlaylist target(*this, playlist);
 
     metadb_handle_list ordered;
     pfc::string_list_impl runBatch;
@@ -647,19 +644,31 @@ IPlaylistService::AddPathsSequentialResult Fb2kPlaylistService::add_paths_sequen
     }
     flushRun();
 
-    json resultIndices = json::array();
-    if (ordered.get_count() == 0) {
-        return { 0, resultIndices };
-    }
+    AddPathsSequentialResult r;
+    r.order = json::array();
+    r.playlist = playlist;
 
-    plm->playlist_undo_backup(playlist);
-    size_t insertPos = plm->playlist_get_item_count(playlist);
-    plm->playlist_insert_items(playlist, insertPos, ordered, bit_array_false());
+    // 解析时开过模态进度框，列表可能已被拖动、删掉或上锁。一首都没解析出来也先找回：
+    // 成功应答里的序号要是这张列表现在的，被删掉时照 addPaths 报删掉。
+    const auto located = target.Locate(*this);
+    if (!located.has_value()) {
+        r.outcome = PathInsertOutcome::PlaylistRemoved;
+        return r;
+    }
+    r.playlist = *located;
+    if (ordered.get_count() == 0) return r;
+
+    plm->playlist_undo_backup(r.playlist);
+    const size_t insertPos = plm->playlist_get_item_count(r.playlist);
+    if (plm->playlist_insert_items(r.playlist, insertPos, ordered, bit_array_false()) == SIZE_MAX) {
+        r.outcome = PathInsertOutcome::Refused;
+        return r;
+    }
+    r.addedCount = ordered.get_count();
     for (size_t j = 0; j < ordered.get_count(); j++) {
-        resultIndices.push_back(insertPos + j);
+        r.order.push_back(insertPos + j);
     }
-
-    return { ordered.get_count(), resultIndices };
+    return r;
 }
 
 IPlaylistService::AsyncAddPathsInfo Fb2kPlaylistService::start_add_paths_async(
@@ -704,13 +713,16 @@ IPlaylistService::AsyncAddPathsInfo Fb2kPlaylistService::start_add_paths_async(
         slowList.add_item(slowStrings[i].get_ptr());
     }
 
+    // playlist_insert_items 整批插入或整批拒绝（锁的 query_items_add 对整批只答一次），
+    // 拒绝时返回 SIZE_MAX；只把真插进去的计入 addedCount。
     auto plm = playlist_manager::get();
     size_t fastAdded = 0;
     if (fastHandles.get_count() > 0 && playlist < plm->get_playlist_count()) {
         plm->playlist_undo_backup(playlist);
         size_t insertPos = plm->playlist_get_item_count(playlist);
-        plm->playlist_insert_items(playlist, insertPos, fastHandles, bit_array_false());
-        fastAdded = fastHandles.get_count();
+        if (plm->playlist_insert_items(playlist, insertPos, fastHandles, bit_array_false()) != SIZE_MAX) {
+            fastAdded = fastHandles.get_count();
+        }
     }
 
     if (slowList.get_count() == 0) {
@@ -720,15 +732,21 @@ IPlaylistService::AsyncAddPathsInfo Fb2kPlaylistService::start_add_paths_async(
     }
 
     // 还有 wrapper 路径,异步展开 (op_flag_delay_ui+background 短操作不弹)。
+    const api::PinnedPlaylist target(*this, playlist);
     auto filter = playlist_incoming_item_filter_v2::get();
     auto notify = process_locations_notify::create(
-        [playlist, operationId, totalCount, fastAdded, onComplete](metadb_handle_list_cref items) {
-            size_t slowAdded = items.get_count();
+        [target, totalCount, fastAdded, onComplete](metadb_handle_list_cref items) {
+            // 展开期间列表可能被拖动、删掉或上锁：按 GUID 找回目标，删掉了就不插；
+            // 按插入的返回值计数，而不是按展开出的条数。
+            size_t slowAdded = 0;
             auto plm = playlist_manager::get();
-            if (slowAdded > 0 && playlist < plm->get_playlist_count()) {
-                plm->playlist_undo_backup(playlist);
-                size_t insertPos = plm->playlist_get_item_count(playlist);
-                plm->playlist_insert_items(playlist, insertPos, items, bit_array_false());
+            if (const auto located = target.Locate(Fb2kPlaylistService{});
+                items.get_count() > 0 && located.has_value()) {
+                plm->playlist_undo_backup(*located);
+                size_t insertPos = plm->playlist_get_item_count(*located);
+                if (plm->playlist_insert_items(*located, insertPos, items, bit_array_false()) != SIZE_MAX) {
+                    slowAdded = items.get_count();
+                }
             }
             if (onComplete) onComplete(fastAdded + slowAdded, totalCount);
         }
@@ -743,23 +761,35 @@ IPlaylistService::AsyncAddPathsInfo Fb2kPlaylistService::start_add_paths_async(
 IPlaylistService::ReplaceAllResult Fb2kPlaylistService::replace_all(
     size_t playlist, const json& paths) {
     auto plm = playlist_manager::get();
+    const api::PinnedPlaylist target(*this, playlist);
 
+    ReplaceAllResult r;
+    r.playlist = playlist;
     plm->playlist_undo_backup(playlist);
-    size_t clearedCount = plm->playlist_get_item_count(playlist);
+    r.clearedCount = plm->playlist_get_item_count(playlist);
     plm->playlist_clear(playlist);
 
     metadb_handle_list items;
-    size_t invalidCount = 0;
-    ResolvePathsToHandles(paths, items, invalidCount);
+    ResolvePathsToHandles(paths, items, r.invalidCount);
 
-    if (items.get_count() == 0) {
-        return { clearedCount, 0, invalidCount, 0 };
+    // 清空之后才解析，解析时开过模态进度框，列表可能已被拖动、删掉或上锁。一首都没解析
+    // 出来也先找回，被删掉时报删掉而不是报没有曲目。
+    const auto located = target.Locate(*this);
+    if (!located.has_value()) {
+        r.outcome = PathInsertOutcome::PlaylistRemoved;
+        return r;
     }
+    r.playlist = *located;
+    if (items.get_count() == 0) return r;
 
-    plm->playlist_insert_items(playlist, 0, items, bit_array_false());
-    size_t totalCount = plm->playlist_get_item_count(playlist);
-
-    return { clearedCount, items.get_count(), invalidCount, totalCount };
+    if (plm->playlist_insert_items(r.playlist, 0, items, bit_array_false()) == SIZE_MAX) {
+        r.outcome = PathInsertOutcome::Refused;
+        r.totalCount = plm->playlist_get_item_count(r.playlist);
+        return r;
+    }
+    r.addedCount = items.get_count();
+    r.totalCount = plm->playlist_get_item_count(r.playlist);
+    return r;
 }
 
 // ============================================
@@ -798,248 +828,406 @@ IPlaybackService* GetPlaylistApiPlaybackService() {
 // ==========================================================================
 namespace {
 
+namespace pl = api::playlist;
+
+// 目标播放列表：p 的 playlist 与 playlistGuid 二选一，省略时取活动列表；失败码见 PlaylistTarget.h。
+template <class P>
+std::optional<api::Failure> ResolvePlaylist(IPlaylistService* svc, const P& p, size_t& index,
+                                            const char* invalidMessage = "Invalid playlist index") {
+    return api::ResolvePlaylistTarget(*svc, p.playlist, p.playlistGuid, index,
+                                      api::PlaylistOmitted::UseActive, invalidMessage);
+}
+
+// 按路径加曲目时，路径解析期间目标被删掉或被加锁造成的失败；Ok 时返回 std::nullopt。
+// 被删掉时不报序号，原序号现在可能是另一张列表。
+std::optional<api::Failure> PathInsertFailure(const IPlaylistService* svc,
+                                              IPlaylistService::PathInsertOutcome outcome,
+                                              size_t playlist) {
+    using enum IPlaylistService::PathInsertOutcome;
+    switch (outcome) {
+    case Ok:
+        return std::nullopt;
+    case PlaylistRemoved:
+        return api::Fail("The playlist was removed while the paths were being resolved",
+                         ApiErrorCode::OPERATION_FAILED);
+    case Refused:
+        if (svc->playlist_lock_is_present(playlist)) return PlaylistLocked(playlist);
+        return api::Fail("Failed to add tracks to the playlist", ApiErrorCode::OPERATION_FAILED);
+    }
+    return std::nullopt;
+}
+
+// 列表不存在时回空结果的查询端，只把参数本身的错误当失败：两者都给、GUID 格式不对。
+bool IsParamsFailure(const api::Failure& failure) {
+    return failure.code == ApiErrorCode::INVALID_PARAMS;
+}
+
+// 失败信封里保留成功时的字段（迁移前这些回包以 success:false 带着同样的键）。
+template <class R>
+api::Failure FailWithFields(std::string error, const R& fields) {
+    return api::Fail(std::move(error), ApiErrorCode::OPERATION_FAILED,
+                     ToJson(fields).template get<nlohmann::json::object_t>());
+}
+
+// playlist.reorder 与 playlist.reorderPlaylists 的 newOrder：长度必须等于条目数，每项在范围内，
+// 每项只出现一次（SDK 的 reorder 要的是排列，重复项的行为没有定义）。长度与越界的报错文字
+// 与附带的字段沿用迁移前。
+std::optional<api::Failure> ToOrder(const std::vector<std::int64_t>& newOrder, size_t count,
+                                    std::vector<size_t>& order) {
+    if (newOrder.size() != count) {
+        return api::Fail("newOrder length mismatch", ApiErrorCode::INVALID_PARAMS,
+                         {{"expected", count}, {"got", newOrder.size()}});
+    }
+    order.resize(count);
+    std::vector<bool> seen(count, false);
+    for (size_t i = 0; i < count; i++) {
+        if (newOrder[i] < 0 || static_cast<std::uint64_t>(newOrder[i]) >= count) {
+            return api::Fail("Index out of range", ApiErrorCode::INVALID_INDEX, {{"index", newOrder[i]}});
+        }
+        order[i] = static_cast<size_t>(newOrder[i]);
+        if (seen[order[i]]) {
+            return api::Fail("newOrder lists an entry twice", ApiErrorCode::INVALID_PARAMS,
+                             {{"index", newOrder[i]}});
+        }
+        seen[order[i]] = true;
+    }
+    return std::nullopt;
+}
+
+std::vector<size_t> ReversedOrder(size_t count) {
+    std::vector<size_t> order(count);
+    for (size_t i = 0; i < count; i++) order[i] = count - 1 - i;
+    return order;
+}
+
+// SDK：undo / redo 返回 false，是列表上锁或没有还原点。
+api::Failure UndoFailure(IPlaylistService* svc, size_t index, const char* nothingMessage) {
+    if (svc->playlist_lock_is_present(index)) return PlaylistLocked(index);
+    return api::Fail(nothingMessage, ApiErrorCode::NOT_FOUND);
+}
+
+// 选中、移除用的行号：负数已由生成的解析器拒绝，这里仍丢掉负数，免得转成 size_t 时回绕；
+// 超出末尾的由服务层按行数丢掉。
+std::vector<size_t> RowsOf(const std::vector<std::int64_t>& rows) {
+    std::vector<size_t> out;
+    out.reserve(rows.size());
+    for (const std::int64_t row : rows) {
+        if (row >= 0) out.push_back(static_cast<size_t>(row));
+    }
+    return out;
+}
+
+// 焦点行号：省略或为负时是 infinite，SDK 约定这表示没有焦点。
+size_t FocusRowOf(const std::optional<std::int64_t>& row) {
+    return row && *row >= 0 ? static_cast<size_t>(*row) : pfc::infinite_size;
+}
+
+std::int64_t FocusRowToJson(size_t focus) {
+    return focus == SIZE_MAX ? -1 : static_cast<std::int64_t>(focus);
+}
+
+// focusTrack 与 setFocusedTrack 共用。invalidMessage 沿用两者迁移前各自的报错文字。
+template <class P>
+api::Result<void> SetFocus(const P& p, const std::optional<std::int64_t>& row, const char* invalidMessage) {
+    auto* svc = s_playlistService;
+    size_t playlistIndex = 0;
+    if (auto failure = ResolvePlaylist(svc, p, playlistIndex, invalidMessage)) return std::move(*failure);
+
+    const size_t focus = FocusRowOf(row);
+    if (focus != pfc::infinite_size && focus >= svc->playlist_get_item_count(playlistIndex)) {
+        return api::Fail("Invalid track index", ApiErrorCode::INVALID_INDEX);
+    }
+    svc->set_focus_item(playlistIndex, focus);
+    return api::Ok();
+}
+
+// getActive 与 getPlaying 共用：index 为 SIZE_MAX（没有这样的列表）时 found 为 false。
+template <class R>
+R DescribePlaylist(size_t index) {
+    R result;
+    if (index == SIZE_MAX) return result;
+    const auto d = s_playlistService->get_playlist_detail(index, true);
+    if (!d.found) return result;
+    result.found = true;
+    result.index = static_cast<std::int64_t>(d.index);
+    result.guid = GuidUtils::GuidToString(d.guid);
+    result.name = d.name;
+    result.trackCount = static_cast<std::int64_t>(d.trackCount);
+    result.isActive = d.isActive;
+    result.isPlaying = d.isPlaying;
+    result.isLocked = d.isLocked;
+    result.duration = d.duration;
+    return result;
+}
+
+// getAutoplaylistInfo 与 getAutoplaylistQuery 共用的自动播放列表状态。
+template <class R>
+R AutoplaylistStateOf(IPlaylistService* svc, size_t index) {
+    R result;
+    result.playlist = static_cast<std::int64_t>(index);
+    result.playlistGuid = api::PlaylistGuidOf(*svc, index);
+    const auto det = svc->detect_autoplaylist(index);
+    result.isAutoplaylist = det.isAutoplaylist;
+    if (!det.isAutoplaylist) return result;
+
+    const uint32_t flags = det.isDuiAutoplaylist ? 0 : svc->get_autoplaylist_flags(index);
+    result.keepSorted = (flags & autoplaylist_flag_sort) != 0;
+    result.source = det.isDuiAutoplaylist ? "dui" : "sdk";
+    if (!det.lockName.empty()) result.lockName = det.lockName;
+    return result;
+}
+
 
 // ========== Playlist Management ==========
 
-json PlaylistGetCount(const json& params) {
-    return { {"count", s_playlistService->get_playlist_count()} };
+api::Result<pl::GetCountResult> PlaylistGetCount(const pl::GetCountParams&) {
+    pl::GetCountResult result;
+    result.count = static_cast<std::int64_t>(s_playlistService->get_playlist_count());
+    return result;
 }
 
 
-json PlaylistGetAll(const json& params) {
-    auto allPlaylists = s_playlistService->get_all_playlists();
+api::Result<pl::GetAllResult> PlaylistGetAll(const pl::GetAllParams&) {
+    const auto allPlaylists = s_playlistService->get_all_playlists();
 
-    json playlists = json::array();
-    playlists.get_ref<json::array_t&>().reserve(allPlaylists.size());
-
-    for (const auto& pl : allPlaylists) {
-        playlists.push_back({
-            {"index", pl.index},
-            {"name", pl.name},
-            {"trackCount", pl.trackCount},
-            {"isActive", pl.isActive},
-            {"isPlaying", pl.isPlaying},
-            {"isLocked", pl.isLocked},
-            {"isAutoplaylist", pl.isAutoplaylist},
-        });
+    pl::GetAllResult result;
+    result.playlists.reserve(allPlaylists.size());
+    for (const auto& info : allPlaylists) {
+        pl::PlaylistInfo item;
+        item.index = static_cast<std::int64_t>(info.index);
+        item.guid = GuidUtils::GuidToString(info.guid);
+        item.name = info.name;
+        item.trackCount = static_cast<std::int64_t>(info.trackCount);
+        item.isActive = info.isActive;
+        item.isPlaying = info.isPlaying;
+        item.isLocked = info.isLocked;
+        item.isAutoplaylist = info.isAutoplaylist;
+        result.playlists.push_back(std::move(item));
     }
-
-    return playlists;
+    result.count = static_cast<std::int64_t>(result.playlists.size());
+    return result;
 }
 
 
-json PlaylistGetActive(const json& params) {
-    size_t active = s_playlistService->get_active_playlist();
-
-    if (active == SIZE_MAX) {
-        return { {"success", true}, {"found", false} };
-    }
-
-    auto d = s_playlistService->get_playlist_detail(active, true);
-    if (!d.found) {
-        return { {"success", true}, {"found", false} };
-    }
-
-    return {
-        {"index", d.index},
-        {"name", d.name},
-        {"trackCount", d.trackCount},
-        {"isActive", d.isActive},
-        {"isPlaying", d.isPlaying},
-        {"isLocked", d.isLocked},
-        {"duration", d.duration},
-    };
+api::Result<pl::GetActiveResult> PlaylistGetActive(const pl::GetActiveParams&) {
+    return DescribePlaylist<pl::GetActiveResult>(s_playlistService->get_active_playlist());
 }
 
 
-json PlaylistSetActive(const json& params) {
-    size_t playlist = params.value("playlist", SIZE_MAX);
-
-    if (playlist >= s_playlistService->get_playlist_count()) {
-        return { {"success", false}, {"error", "Invalid playlist index"} };
-    }
-
-    s_playlistService->set_active_playlist(playlist);
-    return { {"success", true} };
-}
-
-
-json PlaylistGetPlaying(const json& params) {
-    size_t playing = s_playlistService->get_playing_playlist();
-
-    if (playing == SIZE_MAX) {
-        return { {"success", true}, {"found", false} };
-    }
-
-    auto d = s_playlistService->get_playlist_detail(playing, true);
-    if (!d.found) {
-        return { {"success", true}, {"found", false} };
-    }
-
-    return {
-        {"index", d.index},
-        {"name", d.name},
-        {"trackCount", d.trackCount},
-        {"isActive", d.isActive},
-        {"isPlaying", d.isPlaying},
-        {"isLocked", d.isLocked},
-        {"duration", d.duration},
-    };
-}
-
-
-json PlaylistCreate(const json& params) {
-    std::string name = params.value("name", "New Playlist");
-    size_t insertAt = params.value("position", SIZE_MAX);
-
-    size_t newIndex = s_playlistService->create_playlist(name, insertAt);
-
-    return {
-        {"success", true},
-        {"index", newIndex},
-    };
-}
-
-
-json PlaylistRemove(const json& params) {
+api::Result<void> PlaylistSetActive(const pl::SetActiveParams& p) {
     auto* svc = s_playlistService;
-    size_t playlist = params.value("playlist", SIZE_MAX);
-
-    if (playlist == SIZE_MAX) {
-        playlist = svc->get_active_playlist();
+    size_t index = 0;
+    if (auto failure = api::ResolvePlaylistTarget(*svc, p.playlist, p.playlistGuid, index,
+                                                  api::PlaylistOmitted::Refuse)) {
+        return std::move(*failure);
     }
 
-    if (playlist >= svc->get_playlist_count()) {
-        return { {"success", false}, {"error", "Invalid playlist index"} };
-    }
-
-    bool hasLock = svc->playlist_lock_is_present(playlist);
-
-    bool result = svc->remove_playlist(playlist);
-    if (!result && hasLock) {
-        return MakePlaylistLockedError(playlist);
-    }
-    return { {"success", result} };
+    svc->set_active_playlist(index);
+    return api::Ok();
 }
 
 
-json PlaylistRename(const json& params) {
-    size_t playlist = params.value("playlist", SIZE_MAX);
-    std::string name = params.value("name", "");
-
-    if (playlist >= s_playlistService->get_playlist_count()) {
-        return { {"success", false}, {"error", "Invalid playlist index"} };
-    }
-
-    bool result = s_playlistService->playlist_rename(playlist, name);
-    return { {"success", result} };
+api::Result<pl::GetPlayingResult> PlaylistGetPlaying(const pl::GetPlayingParams&) {
+    return DescribePlaylist<pl::GetPlayingResult>(s_playlistService->get_playing_playlist());
 }
 
 
-json PlaylistClear(const json& params) {
+api::Result<pl::CreateResult> PlaylistCreate(const pl::CreateParams& p) {
+    // 省略 position 时传 infinite：SDK 约定放到末尾
+    const size_t position = p.position ? static_cast<size_t>(*p.position) : SIZE_MAX;
+    const size_t newIndex = s_playlistService->create_playlist(p.name, position);
+    // SDK：返回 infinite 表示创建失败（在不允许的上下文里调用）
+    if (newIndex == SIZE_MAX) return api::Fail("Failed to create playlist", ApiErrorCode::OPERATION_FAILED);
+
+    pl::CreateResult result;
+    result.index = static_cast<std::int64_t>(newIndex);
+    result.guid = api::PlaylistGuidOf(*s_playlistService, newIndex);
+    return result;
+}
+
+
+api::Result<void> PlaylistRemove(const pl::RemoveParams& p) {
     auto* svc = s_playlistService;
-    size_t playlist = params.value("playlist", SIZE_MAX);
+    size_t index = 0;
+    if (auto failure = ResolvePlaylist(svc, p, index)) return std::move(*failure);
 
-    if (playlist == SIZE_MAX) {
-        playlist = svc->get_active_playlist();
+    const bool hasLock = svc->playlist_lock_is_present(index);
+    if (!svc->remove_playlist(index)) {
+        if (hasLock) return PlaylistLocked(index);
+        return api::Fail("Failed to remove playlist", ApiErrorCode::OPERATION_FAILED);
+    }
+    return api::Ok();
+}
+
+
+api::Result<void> PlaylistRename(const pl::RenameParams& p) {
+    auto* svc = s_playlistService;
+    size_t index = 0;
+    if (auto failure = api::ResolvePlaylistTarget(*svc, p.playlist, p.playlistGuid, index,
+                                                  api::PlaylistOmitted::Refuse)) {
+        return std::move(*failure);
     }
 
-    if (playlist >= svc->get_playlist_count()) {
-        return { {"success", false}, {"error", "Invalid playlist index"} };
+    // SDK：playlist_rename 返回 false 是因为列表上的锁拒绝了新名字
+    if (!svc->playlist_rename(index, p.name)) {
+        if (svc->playlist_lock_is_present(index)) return PlaylistLocked(index);
+        return api::Fail("Failed to rename playlist", ApiErrorCode::OPERATION_FAILED);
     }
+    return api::Ok();
+}
 
-    if (svc->playlist_lock_is_present(playlist)) {
-        return MakePlaylistLockedError(playlist);
-    }
 
-    size_t countBefore = svc->playlist_get_item_count(playlist);
-    svc->playlist_undo_backup(playlist);
-    svc->playlist_clear(playlist);
-    size_t countAfter = svc->playlist_get_item_count(playlist);
+api::Result<pl::ClearResult> PlaylistClear(const pl::ClearParams& p) {
+    auto* svc = s_playlistService;
+    size_t index = 0;
+    if (auto failure = ResolvePlaylist(svc, p, index)) return std::move(*failure);
+    if (svc->playlist_lock_is_present(index)) return PlaylistLocked(index);
 
-    return {
-        {"success", countAfter == 0},
-        {"playlist", playlist},
-        {"clearedCount", countBefore},
-        {"remainingCount", countAfter}
-    };
+    pl::ClearResult result;
+    result.playlist = static_cast<std::int64_t>(index);
+    result.playlistGuid = api::PlaylistGuidOf(*svc, index);
+    result.clearedCount = static_cast<std::int64_t>(svc->playlist_get_item_count(index));
+    svc->playlist_undo_backup(index);
+    svc->playlist_clear(index);
+    result.remainingCount = static_cast<std::int64_t>(svc->playlist_get_item_count(index));
+    if (result.remainingCount != 0) return FailWithFields("Playlist was not cleared", result);
+    return result;
 }
 
 
 // ========== Track Operations ==========
 
-json PlaylistInsertTracks(const json& params) {
+api::Result<pl::InsertTracksResult> PlaylistInsertTracks(const pl::InsertTracksParams& p) {
     auto* svc = s_playlistService;
-    size_t playlistIndex = params.value("playlist", SIZE_MAX);
-    size_t insertIndex = params.value("position", params.value("index", static_cast<size_t>(0)));
-    auto handles = params.value("handles", json::array());
+    size_t index = 0;
+    if (auto failure = ResolvePlaylist(svc, p, index)) return std::move(*failure);
+    if (svc->playlist_lock_is_present(index)) return PlaylistLocked(index);
 
-    if (playlistIndex == SIZE_MAX) {
-        playlistIndex = svc->get_active_playlist();
-    }
-    if (playlistIndex >= svc->get_playlist_count()) {
-        return {{"success", false}, {"error", "Invalid playlist index"}};
-    }
-    if (svc->playlist_lock_is_present(playlistIndex)) {
-        return MakePlaylistLockedError(playlistIndex);
-    }
-    if (handles.empty()) {
-        return {{"success", false}, {"error", "No handles specified"}};
-    }
-
-    auto r = svc->insert_tracks(playlistIndex, insertIndex, handles);
+    const json handles = p.handles;
+    const auto r = svc->insert_tracks(index, static_cast<size_t>(p.position), handles);
     if (!r.success) {
-        return {
-            {"success", false}, {"error", r.error},
-            {"playlist", playlistIndex}, {"requestedCount", handles.size()},
-            {"invalidCount", r.invalidCount}
-        };
+        return api::Fail(r.error, ApiErrorCode::NOT_FOUND,
+                         {{"playlist", index}, {"requestedCount", p.handles.size()}, {"invalidCount", r.invalidCount}});
     }
-    return {
-        {"success", true}, {"playlist", playlistIndex},
-        {"insertIndex", insertIndex}, {"requestedCount", handles.size()},
-        {"addedCount", r.addedCount}, {"invalidCount", r.invalidCount},
-        {"countBefore", r.countBefore}, {"totalCount", r.totalCount}
-    };
+
+    // insertIndex 回显请求的位置，不是截到列表末尾之后的位置
+    pl::InsertTracksResult result;
+    result.playlist = static_cast<std::int64_t>(index);
+    result.playlistGuid = api::PlaylistGuidOf(*svc, index);
+    result.insertIndex = p.position;
+    result.requestedCount = static_cast<std::int64_t>(p.handles.size());
+    result.addedCount = static_cast<std::int64_t>(r.addedCount);
+    result.invalidCount = static_cast<std::int64_t>(r.invalidCount);
+    result.countBefore = static_cast<std::int64_t>(r.countBefore);
+    result.totalCount = static_cast<std::int64_t>(r.totalCount);
+    return result;
 }
 
 
-json PlaylistGetTrackCount(const json& params) {
+api::Result<pl::GetTrackCountResult> PlaylistGetTrackCount(const pl::GetTrackCountParams& p) {
     auto* svc = s_playlistService;
-    size_t index = GetPlaylistIndexFromParams(params);
-    if (index == SIZE_MAX) {
-        index = svc->get_active_playlist();
+    pl::GetTrackCountResult result;
+    // 查询端：没有这个播放列表时照旧报 0，不算失败
+    size_t index = 0;
+    if (auto failure = ResolvePlaylist(svc, p, index)) {
+        if (IsParamsFailure(*failure)) return std::move(*failure);
+        return result;
     }
-    if (index >= svc->get_playlist_count()) {
-        return { {"count", 0} };
-    }
-    return { {"count", svc->playlist_get_item_count(index)} };
+    result.count = static_cast<std::int64_t>(svc->playlist_get_item_count(index));
+    return result;
 }
 
 
-json PlaylistGetTracks(const json& params) {
+api::Result<pl::GetTracksResult> PlaylistGetTracks(const pl::GetTracksParams& p) {
     auto* svc = s_playlistService;
     // fields 校验排在越界检查之前：插在后面会让
     // {playlist: 99, fields: ["bogus"]} 静默出空页而不是报 INVALID_PARAMS。
-    const TrackFieldSelection fields = ParseTrackFieldSelection(params);
+    const TrackFieldSelection fields = ParseTrackFieldSelection(p.fields);
     if (!fields.valid) {
-        return MakeTrackFieldsErrorBody(fields);
+        return TrackFieldsFailure(fields);
     }
-    size_t playlistIndex = GetPlaylistIndexFromParams(params);
-    size_t start = params.value("start", static_cast<size_t>(0));
-    size_t count = params.value("count", static_cast<size_t>(100));
-    auto extraFormats = params.value("formats", json::object());
 
-    if (playlistIndex == SIZE_MAX) {
-        playlistIndex = svc->get_active_playlist();
+    size_t index = 0;
+    if (auto failure = ResolvePlaylist(svc, p, index)) {
+        if (IsParamsFailure(*failure)) return std::move(*failure);
+        // 查询端：没有这个播放列表时回空页，不当失败
+        pl::GetTracksResult empty;
+        empty.playlist = p.playlist.value_or(-1);
+        empty.start = p.start;
+        return empty;
     }
-    if (playlistIndex >= svc->get_playlist_count()) {
-        return {
-            {"playlist", playlistIndex}, {"start", start},
-            {"count", 0}, {"total", 0}, {"tracks", json::array()}
-        };
+    return svc->get_tracks(index, static_cast<size_t>(p.start), static_cast<size_t>(p.count),
+                           p.formats.value_or(std::map<std::string, std::string>{}), fields);
+}
+
+
+// 与 getTracks 同一个查询端：fields 先查，列表不存在回空结果，行形状由同一个构造单元给出。
+api::Result<pl::GetTracksAtResult> PlaylistGetTracksAt(const pl::GetTracksAtParams& p) {
+    auto* svc = s_playlistService;
+    const TrackFieldSelection fields = ParseTrackFieldSelection(p.fields);
+    if (!fields.valid) {
+        return TrackFieldsFailure(fields);
     }
-    return svc->get_tracks_json(playlistIndex, start, count, extraFormats, fields);
+
+    size_t index = 0;
+    if (auto failure = ResolvePlaylist(svc, p, index)) {
+        if (IsParamsFailure(*failure)) return std::move(*failure);
+        pl::GetTracksAtResult empty;
+        empty.playlist = p.playlist.value_or(-1);
+        return empty;
+    }
+    return svc->get_tracks_at(index, RowsOf(p.rows),
+                              p.formats.value_or(std::map<std::string, std::string>{}), fields);
+}
+
+
+// 解析器拒收的查询串：与 library.search / library.query 同一个判据，details.param 让页面把它
+// 与别的 INVALID_PARAMS（两者都给、GUID 格式不对）分开。报错文字是宿主语言的原文，不能拿来判断。
+api::Failure QuerySyntaxFailure(const char* message) {
+    return api::Fail(message && *message ? message : "Invalid query syntax", ApiErrorCode::INVALID_PARAMS,
+                     {{"details", json{{"param", "query"}}}});
+}
+
+
+// 在主线程上对整张列表求值，与 library.search 同路：search_filter 没有线程安全说明。
+// 不带 KFlagAllowSort，带 SORT BY 的串与语法错一样被 create_ex 拒掉。
+api::Result<pl::GetMatchingRowsResult> PlaylistGetMatchingRows(const pl::GetMatchingRowsParams& p) {
+    auto* svc = s_playlistService;
+    size_t index = 0;
+    if (auto failure = ResolvePlaylist(svc, p, index)) return std::move(*failure);
+
+    search_filter_v2::ptr filter;
+    try {
+        filter = search_filter_manager_v2::get()->create_ex(
+            p.query.c_str(), fb2k::service_new<completion_notify_dummy>(),
+            search_filter_manager_v2::KFlagSuppressNotify);
+    } catch (const std::exception& e) {
+        return QuerySyntaxFailure(e.what());
+    } catch (...) {
+        return QuerySyntaxFailure(nullptr);
+    }
+
+    metadb_handle_list items;
+    playlist_manager::get()->playlist_get_all_items(index, items);
+
+    pl::GetMatchingRowsResult result;
+    result.playlist = static_cast<std::int64_t>(index);
+    result.playlistGuid = api::PlaylistGuidOf(*svc, index);
+    result.total = static_cast<std::int64_t>(items.get_count());
+    if (items.get_count() > 0) {
+        pfc::array_t<bool> mask;
+        mask.set_size(items.get_count());
+        try {
+            filter->test_multi(items, mask.get_ptr());
+        } catch (const std::exception& e) {
+            return api::Fail(e.what(), ApiErrorCode::OPERATION_FAILED);
+        }
+        for (size_t i = 0; i < items.get_count(); i++) {
+            if (mask[i]) result.items.push_back(static_cast<std::int64_t>(i));
+        }
+    }
+    result.count = static_cast<std::int64_t>(result.items.size());
+    return result;
 }
 
 
@@ -1058,6 +1246,7 @@ constexpr size_t kGroupRunBatch = 2000;
 
 struct GroupRunsRequest {
     size_t playlist = 0;
+    std::string playlistGuid;
     size_t total = 0;
     bool twoLevel = false;
     metadb_handle_list items;
@@ -1161,7 +1350,7 @@ void RunGroupRunsWorker(const std::shared_ptr<GroupRunsRequest>& req,
         // 只有最后一批结束才回包（恰好一次回包要在每一跳上都成立）
         req->acc.Finish();
         std::string out;
-        fb2k_group_runs::WriteGroupRunsJson(out, req->playlist, req->total, req->acc);
+        fb2k_group_runs::WriteGroupRunsJson(out, req->playlist, req->playlistGuid, req->total, req->acc);
         responder.SendRaw(std::move(out));
     } catch (const std::exception& e) {
         responder.SendJson(MakeGroupRunsErrorBody(e.what()));
@@ -1170,12 +1359,14 @@ void RunGroupRunsWorker(const std::shared_ptr<GroupRunsRequest>& req,
     }
 }
 
-void PlaylistGetGroupRuns(const json& params, const DeferredResponder& responder) {
+void PlaylistGetGroupRuns(const pl::GetGroupRunsParams& p, const DeferredResponder& responder) {
     try {
         auto* svc = s_playlistService;
 
+        // 形状已由声明的读取器查过；个数与空串的判定、消息与 details.pattern 仍归
+        // ParseGroupRunPatterns。
         const fb2k_group_runs::PatternSelection selection =
-            fb2k_group_runs::ParseGroupRunPatterns(params);
+            fb2k_group_runs::ParseGroupRunPatterns(json{{"patterns", p.patterns}});
         if (!selection.valid) {
             if (selection.errorIndex == fb2k_group_runs::kNoPatternIndex) {
                 responder.SendJson(
@@ -1188,16 +1379,11 @@ void PlaylistGetGroupRuns(const json& params, const DeferredResponder& responder
             return;
         }
 
-        size_t playlistIndex = GetPlaylistIndexFromParams(params);
-        if (playlistIndex == SIZE_MAX) {
-            playlistIndex = svc->get_active_playlist();
-        }
-        // 越界只对 >= count 的正值报错：JSON 的 -1 转 size_t 回绕成 SIZE_MAX，与「缺省」
-        // 哨兵同值，因此选择活动列表；不能将 -1 描述为越界错误。
-        if (playlistIndex >= svc->get_playlist_count()) {
-            responder.SendJson(ApiEnvelope::MakeError("Invalid playlist index",
-                                                      ApiErrorCode::INVALID_PARAMS,
-                                                      {{"playlist", playlistIndex}}));
+        size_t playlistIndex = 0;
+        if (auto failure = ResolvePlaylist(svc, p, playlistIndex)) {
+            // 越界时照旧在 details.playlist 带回请求的索引
+            if (p.playlist) failure->extra["details"] = json{{"playlist", *p.playlist}};
+            responder.SendJson(api::results::FailureToJson(*failure));
             return;
         }
 
@@ -1219,6 +1405,8 @@ void PlaylistGetGroupRuns(const json& params, const DeferredResponder& responder
         }
 
         req->playlist = playlistIndex;
+        // 在主线程上取：回包在 worker 上写出，那时序号可能已指向别的列表，GUID 不会。
+        req->playlistGuid = api::PlaylistGuidOf(*svc, playlistIndex);
         req->twoLevel = selection.patterns.size() == fb2k_group_runs::kMaxPatterns;
         req->acc = fb2k_group_runs::GroupRunAccumulator(req->twoLevel);
         playlist_manager::get()->playlist_get_all_items(playlistIndex, req->items);
@@ -1226,10 +1414,10 @@ void PlaylistGetGroupRuns(const json& params, const DeferredResponder& responder
 
         // 空列表就地回包，不为零行付线程跳变的税
         if (req->total == 0) {
-            responder.SendJson({{"success", true},
-                                {"playlist", playlistIndex},
-                                {"total", 0},
-                                {"runs", json::array()}});
+            pl::GetGroupRunsResult empty;
+            empty.playlist = static_cast<std::int64_t>(playlistIndex);
+            empty.playlistGuid = req->playlistGuid;
+            api::Send(responder, api::Result<pl::GetGroupRunsResult>(std::move(empty)));
             return;
         }
 
@@ -1242,227 +1430,159 @@ void PlaylistGetGroupRuns(const json& params, const DeferredResponder& responder
 }
 
 
-json PlaylistGetSelectedTracks(const json& params) {
+api::Result<pl::GetSelectedTracksResult> PlaylistGetSelectedTracks(
+    const pl::GetSelectedTracksParams& p) {
     auto* svc = s_playlistService;
-    size_t playlistIndex = GetPlaylistIndexFromParams(params);
-
-    if (playlistIndex == SIZE_MAX) {
-        playlistIndex = svc->get_active_playlist();
+    size_t index = 0;
+    if (auto failure = ResolvePlaylist(svc, p, index)) {
+        // 失败照旧带空的 tracks
+        failure->extra["tracks"] = json::array();
+        return std::move(*failure);
     }
-    if (playlistIndex >= svc->get_playlist_count()) {
-        return { {"success", false}, {"error", "Invalid playlist index"}, {"tracks", json::array()} };
-    }
-    return svc->get_selected_tracks_json(playlistIndex);
+    return svc->get_selected_tracks(index);
 }
 
 
-json PlaylistSetSelection(const json& params) {
+api::Result<void> PlaylistSetSelection(const pl::SetSelectionParams& p) {
     auto* svc = s_playlistService;
-    size_t playlistIndex = GetPlaylistIndexFromParams(params);
-    auto indices = params.value("indices", json::array());
-    bool clearOthers = params.value("clearOthers", true);
+    size_t index = 0;
+    if (auto failure = ResolvePlaylist(svc, p, index)) return std::move(*failure);
 
-    if (playlistIndex == SIZE_MAX) {
-        playlistIndex = svc->get_active_playlist();
-    }
-    if (playlistIndex >= svc->get_playlist_count()) {
-        return { {"success", false}, {"error", "Invalid playlist index"} };
-    }
-
-    std::vector<size_t> idxVec;
-    for (const auto& idx : indices) {
-        idxVec.push_back(idx.get<size_t>());
-    }
-    svc->set_selection(playlistIndex, idxVec, clearOthers);
-    return { {"success", true} };
+    svc->set_selection(index, RowsOf(p.indices), p.clearOthers);
+    return api::Ok();
 }
 
 
-json PlaylistRemoveTracks(const json& params) {
+api::Result<void> PlaylistRemoveTracks(const pl::RemoveTracksParams& p) {
     auto* svc = s_playlistService;
-    size_t playlistIndex = GetPlaylistIndexFromParams(params);
-    auto items = params.value("items", json::array());
+    size_t index = 0;
+    if (auto failure = ResolvePlaylist(svc, p, index)) return std::move(*failure);
+    if (svc->playlist_lock_is_present(index)) return PlaylistLocked(index);
 
-    if (playlistIndex == SIZE_MAX) {
-        playlistIndex = svc->get_active_playlist();
-    }
-    if (playlistIndex >= svc->get_playlist_count()) {
-        return { {"success", false}, {"error", "Invalid playlist index"} };
-    }
-    if (svc->playlist_lock_is_present(playlistIndex)) {
-        return MakePlaylistLockedError(playlistIndex);
-    }
-
-    std::vector<size_t> indices;
-    for (const auto& item : items) {
-        indices.push_back(item.get<size_t>());
-    }
-    svc->remove_tracks(playlistIndex, indices);
-    return { {"success", true} };
+    svc->remove_tracks(index, RowsOf(p.items));
+    return api::Ok();
 }
 
 
-json PlaylistRemoveSelectedTracks(const json& params) {
+api::Result<void> PlaylistRemoveSelectedTracks(const pl::RemoveSelectedTracksParams& p) {
     auto* svc = s_playlistService;
-    size_t playlistIndex = GetPlaylistIndexFromParams(params);
+    size_t index = 0;
+    if (auto failure = ResolvePlaylist(svc, p, index)) return std::move(*failure);
+    if (svc->playlist_lock_is_present(index)) return PlaylistLocked(index);
 
-    if (playlistIndex == SIZE_MAX) {
-        playlistIndex = svc->get_active_playlist();
-    }
-    if (playlistIndex >= svc->get_playlist_count()) {
-        return { {"success", false}, {"error", "Invalid playlist index"} };
-    }
-    if (svc->playlist_lock_is_present(playlistIndex)) {
-        return MakePlaylistLockedError(playlistIndex);
-    }
-    svc->remove_selection(playlistIndex);
-    return { {"success", true} };
+    svc->remove_selection(index);
+    return api::Ok();
 }
 
 
-json PlaylistMoveTracks(const json& params) {
+api::Result<void> PlaylistMoveTracks(const pl::MoveTracksParams& p) {
     auto* svc = s_playlistService;
-    size_t playlistIndex = GetPlaylistIndexFromParams(params);
-    auto items = params.value("items", json::array());
-    int delta = params.value("delta", 0);
+    size_t index = 0;
+    if (auto failure = ResolvePlaylist(svc, p, index)) return std::move(*failure);
+    if (svc->playlist_lock_is_present(index)) return PlaylistLocked(index);
 
-    if (playlistIndex == SIZE_MAX) {
-        playlistIndex = svc->get_active_playlist();
-    }
-    if (playlistIndex >= svc->get_playlist_count()) {
-        return { {"success", false}, {"error", "Invalid playlist index"} };
-    }
-    if (svc->playlist_lock_is_present(playlistIndex)) {
-        return MakePlaylistLockedError(playlistIndex);
-    }
+    svc->playlist_undo_backup(index);
 
-    svc->playlist_undo_backup(playlistIndex);
-
-    if (!items.empty()) {
-        std::vector<size_t> idxVec;
-        for (const auto& item : items) {
-            idxVec.push_back(item.get<size_t>());
-        }
-        svc->set_selection(playlistIndex, idxVec, true);
+    // 移动的是选中：给了 items 就先把选中换成它们
+    if (p.items && !p.items->empty()) {
+        svc->set_selection(index, RowsOf(*p.items), true);
     }
-    svc->move_selection(playlistIndex, delta);
-    return { {"success", true} };
+    const auto delta = std::clamp<std::int64_t>(p.delta, std::numeric_limits<int>::min(),
+                                                std::numeric_limits<int>::max());
+    svc->move_selection(index, static_cast<int>(delta));
+    return api::Ok();
 }
 
 
-json PlaylistPlayTrack(const json& params) {
+api::Result<void> PlaylistPlayTrack(const pl::PlayTrackParams& p) {
     auto* svc = s_playlistService;
-    size_t playlistIndex = params.value("playlist", SIZE_MAX);
-    // 支持两种参数名：index（新）和 track（旧），优先使用 index
-    size_t trackIndex = params.value("index", params.value("track", static_cast<size_t>(0)));
-    bool deferred = params.value("deferred", false);  // 新增：延迟执行选项
-    
-    if (playlistIndex == SIZE_MAX) {
-        playlistIndex = svc->get_active_playlist();
+    size_t playlistIndex = 0;
+    if (auto failure = ResolvePlaylist(svc, p, playlistIndex)) return std::move(*failure);
+
+    const auto trackIndex = static_cast<size_t>(p.index);
+    if (trackIndex >= svc->playlist_get_item_count(playlistIndex)) {
+        return api::Fail("Invalid track index", ApiErrorCode::INVALID_INDEX);
     }
-    
-    if (playlistIndex >= svc->get_playlist_count()) {
-        return { {"success", false}, {"error", "Invalid playlist index"} };
-    }
-    
-    size_t trackCount = svc->playlist_get_item_count(playlistIndex);
-    if (trackIndex >= trackCount) {
-        return { {"success", false}, {"error", "Invalid track index"} };
-    }
-    
+
     // 可选：播放前先静音，消除两次 IPC round-trip 之间的音频缓冲间隙
     // muted 依赖 playback_control SDK，不可通过 playlist service 抽象
-    bool muted = params.value("muted", false);
-    if (muted) {
+    if (p.muted) {
         auto pc = playback_control::get();
         if (!pc->is_muted()) pc->volume_mute_toggle();
     }
 
-    if (deferred) {
-        // 延迟执行：让当前消息循环完成后再播放
-        // deferred 路径依赖 fb2k::inMainThread SDK，不可通过 service 抽象
-        size_t pIdx = playlistIndex;
-        size_t tIdx = trackIndex;
-        fb2k::inMainThread([pIdx, tIdx]() {
-            playlist_manager::get()->playlist_execute_default_action(pIdx, tIdx);
+    if (p.deferred) {
+        // 延迟执行：让当前消息循环完成后再播放。deferred 路径依赖 fb2k::inMainThread SDK，
+        // 不可通过 service 抽象。排队期间别的消息可能增删、挪动列表，捕获的序号那时可能已是
+        // 另一张列表：钉住 GUID，执行时找回；列表没了或行数不够就不播。
+        const api::PinnedPlaylist target(*svc, playlistIndex);
+        fb2k::inMainThread([target, trackIndex]() {
+            auto* live = s_playlistService;
+            const auto located = target.Locate(*live);
+            if (!located.has_value() || trackIndex >= live->playlist_get_item_count(*located)) {
+                console::print("[Playlist] playTrack (deferred): the playlist was removed or "
+                               "shortened before playback started; nothing played");
+                return;
+            }
+            playlist_manager::get()->playlist_execute_default_action(*located, trackIndex);
         });
     } else {
         // 立即执行 — 走 service 接口
         svc->execute_default_action(playlistIndex, trackIndex);
     }
-    
-    return { {"success", true} };
+    return api::Ok();
 }
 
 
 // [DEPRECATED] 改用 playlist.setFocusedTrack；保留仅为兼容旧调用。
-json PlaylistFocusTrack(const json& params) {
+api::Result<void> PlaylistFocusTrack(const pl::FocusTrackParams& p) {
     FB2K_console_print("[DEPRECATED] playlist.focusTrack is deprecated, use playlist.setFocusedTrack");
-    auto* svc = s_playlistService;
-    size_t playlistIndex = params.value("playlist", SIZE_MAX);
-    size_t trackIndex = params.value("index", params.value("track", SIZE_MAX));
-    if (playlistIndex == SIZE_MAX) playlistIndex = svc->get_active_playlist();
-    if (playlistIndex >= svc->get_playlist_count()) return {{"success", false}, {"error", "Invalid playlist"}};
-    size_t trackCount = svc->playlist_get_item_count(playlistIndex);
-    if (trackIndex != pfc::infinite_size && trackIndex >= trackCount) {
-        return {{"success", false}, {"error", "Invalid track index"}};
-    }
-    svc->set_focus_item(playlistIndex, trackIndex);
-    return {{"success", true}};
+    return SetFocus(p, p.index, "Invalid playlist");
 }
 
 
 // [DEPRECATED] 改用 playlist.getFocusedTrack；保留仅为兼容旧调用。
-json PlaylistGetFocusTrack(const json& params) {
+api::Result<pl::GetFocusTrackResult> PlaylistGetFocusTrack(const pl::GetFocusTrackParams& p) {
     FB2K_console_print("[DEPRECATED] playlist.getFocusTrack is deprecated, use playlist.getFocusedTrack");
     auto* svc = s_playlistService;
-    size_t playlistIndex = params.value("playlist", SIZE_MAX);
-    if (playlistIndex == SIZE_MAX) playlistIndex = svc->get_active_playlist();
-    if (playlistIndex >= svc->get_playlist_count()) return {{"success", false}, {"error", "Invalid playlist"}};
-    size_t focus = svc->get_focus_item(playlistIndex);
-    return {{"success", true}, {"playlist", playlistIndex}, {"index", focus == SIZE_MAX ? -1 : (int64_t)focus}};
+    size_t index = 0;
+    if (auto failure = ResolvePlaylist(svc, p, index, "Invalid playlist")) return std::move(*failure);
+
+    pl::GetFocusTrackResult result;
+    result.playlist = static_cast<std::int64_t>(index);
+    result.playlistGuid = api::PlaylistGuidOf(*svc, index);
+    result.index = FocusRowToJson(svc->get_focus_item(index));
+    return result;
 }
 
 
-json PlaylistSort(const json& params) {
+api::Result<void> PlaylistSort(const pl::SortParams& p) {
     auto* svc = s_playlistService;
-    size_t playlistIndex = GetPlaylistIndexFromParams(params);
-    std::string pattern = params.value("pattern", "%title%");
-    bool descending = params.value("descending", false);
-    bool selectedOnly = params.value("selectedOnly", false);
+    size_t index = 0;
+    if (auto failure = ResolvePlaylist(svc, p, index)) return std::move(*failure);
+    if (svc->playlist_lock_is_present(index)) return PlaylistLocked(index);
 
-    if (playlistIndex == SIZE_MAX) playlistIndex = svc->get_active_playlist();
-    if (playlistIndex >= svc->get_playlist_count())
-        return { {"success", false}, {"error", "Invalid playlist index"} };
-    if (svc->playlist_lock_is_present(playlistIndex))
-        return MakePlaylistLockedError(playlistIndex);
+    svc->playlist_undo_backup(index);
+    svc->sort_by_format(index, p.pattern.c_str(), p.selectedOnly);
 
-    svc->playlist_undo_backup(playlistIndex);
-    svc->sort_by_format(playlistIndex, pattern.c_str(), selectedOnly);
-
-    if (descending) {
-        size_t count = svc->playlist_get_item_count(playlistIndex);
-        std::vector<size_t> order(count);
-        for (size_t i = 0; i < count; i++) order[i] = count - 1 - i;
-        svc->reorder_items(playlistIndex, order.data(), count);
+    // descending 把整张表倒过来，selectedOnly 时未选中的曲目也在内
+    if (p.descending) {
+        const size_t count = svc->playlist_get_item_count(index);
+        const auto order = ReversedOrder(count);
+        svc->reorder_items(index, order.data(), count);
     }
-
-    return { {"success", true} };
+    return api::Ok();
 }
 
 
-json PlaylistShuffle(const json& params) {
+api::Result<void> PlaylistShuffle(const pl::ShuffleParams& p) {
     auto* svc = s_playlistService;
-    size_t playlistIndex = GetPlaylistIndexFromParams(params);
+    size_t index = 0;
+    if (auto failure = ResolvePlaylist(svc, p, index)) return std::move(*failure);
+    if (svc->playlist_lock_is_present(index)) return PlaylistLocked(index);
 
-    if (playlistIndex == SIZE_MAX) playlistIndex = svc->get_active_playlist();
-    if (playlistIndex >= svc->get_playlist_count())
-        return { {"success", false}, {"error", "Invalid playlist index"} };
-    if (svc->playlist_lock_is_present(playlistIndex))
-        return MakePlaylistLockedError(playlistIndex);
-
-    size_t count = svc->playlist_get_item_count(playlistIndex);
-    if (count <= 1) return { {"success", true} };
+    const size_t count = svc->playlist_get_item_count(index);
+    if (count <= 1) return api::Ok();
 
     std::vector<size_t> order(count);
     for (size_t i = 0; i < count; i++) order[i] = i;
@@ -1477,689 +1597,578 @@ json PlaylistShuffle(const json& params) {
         }
     }
 
-    svc->playlist_undo_backup(playlistIndex);
-    svc->reorder_items(playlistIndex, order.data(), count);
-
-    return { {"success", true} };
+    svc->playlist_undo_backup(index);
+    svc->reorder_items(index, order.data(), count);
+    return api::Ok();
 }
 
 
-json PlaylistUndo(const json& params) {
+api::Result<void> PlaylistUndo(const pl::UndoParams& p) {
     auto* svc = s_playlistService;
-    size_t playlistIndex = params.value("playlist", SIZE_MAX);
-    if (playlistIndex == SIZE_MAX) playlistIndex = svc->get_active_playlist();
-    if (playlistIndex >= svc->get_playlist_count())
-        return { {"success", false}, {"error", "Invalid playlist index"} };
-    bool result = svc->undo_restore(playlistIndex);
-    return { {"success", result} };
+    size_t index = 0;
+    if (auto failure = ResolvePlaylist(svc, p, index)) return std::move(*failure);
+
+    if (!svc->undo_restore(index)) return UndoFailure(svc, index, "Nothing to undo");
+    return api::Ok();
 }
 
 
-json PlaylistRedo(const json& params) {
+api::Result<void> PlaylistRedo(const pl::RedoParams& p) {
     auto* svc = s_playlistService;
-    size_t playlistIndex = params.value("playlist", SIZE_MAX);
-    if (playlistIndex == SIZE_MAX) playlistIndex = svc->get_active_playlist();
-    if (playlistIndex >= svc->get_playlist_count())
-        return { {"success", false}, {"error", "Invalid playlist index"} };
-    bool result = svc->redo_restore(playlistIndex);
-    return { {"success", result} };
+    size_t index = 0;
+    if (auto failure = ResolvePlaylist(svc, p, index)) return std::move(*failure);
+
+    if (!svc->redo_restore(index)) return UndoFailure(svc, index, "Nothing to redo");
+    return api::Ok();
 }
 
 
 // ========== Autoplaylist (Smart Playlist) APIs ==========
 
 // Check if a playlist is an autoplaylist
-json PlaylistIsAutoplaylist(const json& params) {
+api::Result<pl::IsAutoplaylistResult> PlaylistIsAutoplaylist(const pl::IsAutoplaylistParams& p) {
     auto* svc = s_playlistService;
-    size_t playlistIndex = params.value("playlist", SIZE_MAX);
-    if (playlistIndex == SIZE_MAX) playlistIndex = svc->get_active_playlist();
-    if (playlistIndex >= svc->get_playlist_count())
-        return { {"success", false}, {"error", "Invalid playlist index"} };
+    size_t index = 0;
+    if (auto failure = ResolvePlaylist(svc, p, index)) return std::move(*failure);
 
-    auto det = svc->detect_autoplaylist(playlistIndex);
-    json result = { {"playlist", playlistIndex}, {"isAutoplaylist", det.isAutoplaylist} };
-    if (!det.lockName.empty()) result["lockName"] = det.lockName;
+    const auto det = svc->detect_autoplaylist(index);
+    pl::IsAutoplaylistResult result;
+    result.playlist = static_cast<std::int64_t>(index);
+    result.playlistGuid = api::PlaylistGuidOf(*svc, index);
+    result.isAutoplaylist = det.isAutoplaylist;
+    if (!det.lockName.empty()) result.lockName = det.lockName;
     return result;
 }
 
 
 // Create a simple autoplaylist (smart playlist)
-json PlaylistCreateAutoplaylist(const json& params) {
+api::Result<pl::CreateAutoplaylistResult> PlaylistCreateAutoplaylist(const pl::CreateAutoplaylistParams& p) {
     auto* svc = s_playlistService;
-    std::string name = params.value("name", "New Autoplaylist");
-    std::string query = params.value("query", "");
-    std::string sort = params.value("sort", "");
-    bool keepSorted = params.value("keepSorted", false);
+    const size_t newIndex = svc->create_playlist(p.name, SIZE_MAX);
+    if (newIndex == SIZE_MAX) return api::Fail("Failed to create playlist", ApiErrorCode::OPERATION_FAILED);
 
-    if (query.empty())
-        return { {"success", false}, {"error", "Query is required"} };
-
-    size_t newIndex = svc->create_playlist(name, SIZE_MAX);
-    if (newIndex == SIZE_MAX)
-        return { {"success", false}, {"error", "Failed to create playlist"} };
-
+    // SDK：add_client_simple 失败时抛 exception_autoplaylist；建好的空列表随之删掉
     try {
-        uint32_t flags = keepSorted ? autoplaylist_flag_sort : 0;
-        svc->add_autoplaylist_client(newIndex, query.c_str(), sort.c_str(), flags);
-        return {
-            {"success", true}, {"index", newIndex}, {"playlist", newIndex},
-            {"name", name}, {"query", query}
-        };
+        const uint32_t flags = p.keepSorted ? autoplaylist_flag_sort : 0;
+        svc->add_autoplaylist_client(newIndex, p.query.c_str(), p.sort.c_str(), flags);
     } catch (const std::exception& e) {
         svc->remove_playlist(newIndex);
-        return { {"success", false}, {"error", std::string("Failed to create autoplaylist: ") + e.what()} };
-    }
-}
-
-
-// Convert an existing playlist to autoplaylist
-json PlaylistConvertToAutoplaylist(const json& params) {
-    auto* svc = s_playlistService;
-    size_t playlistIndex = params.value("playlist", SIZE_MAX);
-    std::string query = params.value("query", "");
-    std::string sort = params.value("sort", "");
-    bool keepSorted = params.value("keepSorted", false);
-
-    if (playlistIndex == SIZE_MAX) playlistIndex = svc->get_active_playlist();
-    if (query.empty())
-        return { {"success", false}, {"error", "Query is required"} };
-    if (playlistIndex >= svc->get_playlist_count())
-        return { {"success", false}, {"error", "Invalid playlist index"} };
-
-    try {
-        uint32_t flags = keepSorted ? autoplaylist_flag_sort : 0;
-        svc->add_autoplaylist_client(playlistIndex, query.c_str(), sort.c_str(), flags);
-        return { {"success", true}, {"playlist", playlistIndex} };
-    } catch (const std::exception& e) {
-        return { {"success", false}, {"error", std::string("Failed to convert: ") + e.what()} };
-    }
-}
-
-
-// Remove autoplaylist status (convert back to normal playlist)
-json PlaylistRemoveAutoplaylist(const json& params) {
-    auto* svc = s_playlistService;
-    size_t playlistIndex = params.value("playlist", SIZE_MAX);
-    if (playlistIndex == SIZE_MAX) playlistIndex = svc->get_active_playlist();
-    if (playlistIndex >= svc->get_playlist_count())
-        return { {"success", false}, {"error", "Invalid playlist index"} };
-
-    if (svc->autoplaylist_is_client_present(playlistIndex)) {
-        svc->remove_autoplaylist_client(playlistIndex);
-        return { {"success", true}, {"playlist", playlistIndex}, {"source", "sdk"} };
+        return api::Fail(std::string("Failed to create autoplaylist: ") + e.what(), ApiErrorCode::OPERATION_FAILED);
     }
 
-    // Fallback: DUI autoplaylist lock
-    auto det = svc->detect_autoplaylist(playlistIndex);
-    if (det.isDuiAutoplaylist) {
-        return {
-            {"success", true}, {"playlist", playlistIndex}, {"source", "dui"},
-            {"note", "DUI autoplaylist lock detected; proceed with playlist.remove to delete playlist"}
-        };
-    }
-
-    return { {"success", false}, {"error", "Not an autoplaylist"} };
-}
-
-
-// Get autoplaylist info (flags, query if available)
-json PlaylistGetAutoplaylistInfo(const json& params) {
-    auto* svc = s_playlistService;
-    size_t playlistIndex = params.value("playlist", SIZE_MAX);
-    if (playlistIndex == SIZE_MAX) playlistIndex = svc->get_active_playlist();
-    if (playlistIndex >= svc->get_playlist_count())
-        return { {"success", false}, {"error", "Invalid playlist index"} };
-
-    auto det = svc->detect_autoplaylist(playlistIndex);
-    if (!det.isAutoplaylist)
-        return { {"isAutoplaylist", false}, {"playlist", playlistIndex} };
-
-    uint32_t flags = 0;
-    if (!det.isDuiAutoplaylist)
-        flags = svc->get_autoplaylist_flags(playlistIndex);
-
-    json result = {
-        {"isAutoplaylist", true},
-        {"playlist", playlistIndex},
-        {"keepSorted", (flags & autoplaylist_flag_sort) != 0},
-        {"source", det.isDuiAutoplaylist ? "dui" : "sdk"}
-    };
-    if (!det.lockName.empty())
-        result["lockName"] = det.lockName;
+    pl::CreateAutoplaylistResult result;
+    result.index = static_cast<std::int64_t>(newIndex);
+    result.playlist = result.index;
+    result.guid = api::PlaylistGuidOf(*svc, newIndex);
+    result.name = p.name;
+    result.query = p.query;
     return result;
 }
 
 
-// Get autoplaylist query string
-json PlaylistGetAutoplaylistQuery(const json& params) {
+// Convert an existing playlist to autoplaylist
+api::Result<pl::ConvertToAutoplaylistResult> PlaylistConvertToAutoplaylist(const pl::ConvertToAutoplaylistParams& p) {
     auto* svc = s_playlistService;
-    size_t playlistIndex = params.value("playlist", SIZE_MAX);
-    if (playlistIndex == SIZE_MAX) playlistIndex = svc->get_active_playlist();
-    if (playlistIndex >= svc->get_playlist_count())
-        return { {"success", false}, {"error", "Invalid playlist index"} };
+    size_t index = 0;
+    if (auto failure = ResolvePlaylist(svc, p, index)) return std::move(*failure);
 
-    auto det = svc->detect_autoplaylist(playlistIndex);
-    if (!det.isAutoplaylist)
-        return { {"isAutoplaylist", false}, {"playlist", playlistIndex}, {"query", nullptr} };
+    // SDK：已是自动播放列表、上锁失败等都以 exception_autoplaylist 抛出
+    try {
+        const uint32_t flags = p.keepSorted ? autoplaylist_flag_sort : 0;
+        svc->add_autoplaylist_client(index, p.query.c_str(), p.sort.c_str(), flags);
+    } catch (const std::exception& e) {
+        return api::Fail(std::string("Failed to convert: ") + e.what(), ApiErrorCode::OPERATION_FAILED);
+    }
 
-    uint32_t flags = 0;
-    if (!det.isDuiAutoplaylist)
-        flags = svc->get_autoplaylist_flags(playlistIndex);
+    pl::ConvertToAutoplaylistResult result;
+    result.playlist = static_cast<std::int64_t>(index);
+    result.playlistGuid = api::PlaylistGuidOf(*svc, index);
+    return result;
+}
 
-    json result = {
-        {"isAutoplaylist", true},
-        {"playlist", playlistIndex},
-        {"query", nullptr},
-        {"keepSorted", (flags & autoplaylist_flag_sort) != 0},
-        {"source", det.isDuiAutoplaylist ? "dui" : "sdk"},
-        {"note", "Query string not exposed by SDK"}
-    };
-    if (!det.lockName.empty())
-        result["lockName"] = det.lockName;
+
+// Remove autoplaylist status (convert back to normal playlist)
+api::Result<pl::RemoveAutoplaylistResult> PlaylistRemoveAutoplaylist(const pl::RemoveAutoplaylistParams& p) {
+    auto* svc = s_playlistService;
+    size_t index = 0;
+    if (auto failure = ResolvePlaylist(svc, p, index)) return std::move(*failure);
+
+    pl::RemoveAutoplaylistResult result;
+    result.playlist = static_cast<std::int64_t>(index);
+    result.playlistGuid = api::PlaylistGuidOf(*svc, index);
+
+    if (svc->autoplaylist_is_client_present(index)) {
+        try {
+            svc->remove_autoplaylist_client(index);
+        } catch (const std::exception& e) {
+            return api::Fail(std::string("Failed to remove autoplaylist: ") + e.what(), ApiErrorCode::OPERATION_FAILED);
+        }
+        result.source = "sdk";
+        return result;
+    }
+
+    // 其他组件管理的自动播放列表只有它的锁，这里解不开，只如实报告
+    const auto det = svc->detect_autoplaylist(index);
+    if (det.isDuiAutoplaylist) {
+        result.source = "dui";
+        result.note = "DUI autoplaylist lock detected; proceed with playlist.remove to delete playlist";
+        return result;
+    }
+
+    return api::Fail("Not an autoplaylist", ApiErrorCode::NOT_FOUND);
+}
+
+
+// Get autoplaylist info (flags, query if available)
+api::Result<pl::GetAutoplaylistInfoResult> PlaylistGetAutoplaylistInfo(const pl::GetAutoplaylistInfoParams& p) {
+    auto* svc = s_playlistService;
+    size_t index = 0;
+    if (auto failure = ResolvePlaylist(svc, p, index)) return std::move(*failure);
+
+    return AutoplaylistStateOf<pl::GetAutoplaylistInfoResult>(svc, index);
+}
+
+
+// Get autoplaylist query string
+api::Result<pl::GetAutoplaylistQueryResult> PlaylistGetAutoplaylistQuery(const pl::GetAutoplaylistQueryParams& p) {
+    auto* svc = s_playlistService;
+    size_t index = 0;
+    if (auto failure = ResolvePlaylist(svc, p, index)) return std::move(*failure);
+
+    // query 恒为 null：SDK 不公开自动播放列表的查询语句
+    auto result = AutoplaylistStateOf<pl::GetAutoplaylistQueryResult>(svc, index);
+    if (result.isAutoplaylist) result.note = "Query string not exposed by SDK";
     return result;
 }
 
 
 // Duplicate playlist
-json PlaylistDuplicate(const json& params) {
+api::Result<pl::DuplicateResult> PlaylistDuplicate(const pl::DuplicateParams& p) {
     auto* svc = s_playlistService;
-    size_t playlistIndex = params.value("playlist", SIZE_MAX);
-    std::string newName = params.value("name", "");
-
-    if (playlistIndex == SIZE_MAX) {
-        playlistIndex = svc->get_active_playlist();
-    }
-
-    if (playlistIndex >= svc->get_playlist_count()) {
-        return { {"success", false}, {"error", "Invalid playlist index"} };
-    }
+    size_t index = 0;
+    if (auto failure = ResolvePlaylist(svc, p, index)) return std::move(*failure);
 
     // Default name: "Original (Copy)"
+    std::string newName = p.name.value_or("");
     if (newName.empty()) {
         std::string origName;
-        svc->playlist_get_name(playlistIndex, origName);
+        svc->playlist_get_name(index, origName);
         newName = origName + " (Copy)";
     }
 
-    auto result = svc->duplicate_playlist(playlistIndex, newName);
-    if (!result.success) {
-        return { {"success", false}, {"error", result.error} };
-    }
+    const auto dup = svc->duplicate_playlist(index, newName);
+    if (!dup.success) return api::Fail(dup.error, ApiErrorCode::OPERATION_FAILED);
 
-    return {
-        {"success", true},
-        {"index", result.newIndex},
-        {"sourcePlaylist", result.sourceIndex},
-        {"newPlaylist", result.newIndex},
-        {"name", result.name},
-        {"trackCount", result.trackCount}
-    };
+    pl::DuplicateResult result;
+    result.index = static_cast<std::int64_t>(dup.newIndex);
+    result.sourcePlaylist = static_cast<std::int64_t>(dup.sourceIndex);
+    result.sourcePlaylistGuid = api::PlaylistGuidOf(*svc, dup.sourceIndex);
+    result.newPlaylist = result.index;
+    result.guid = api::PlaylistGuidOf(*svc, dup.newIndex);
+    result.name = dup.name;
+    result.trackCount = static_cast<std::int64_t>(dup.trackCount);
+    return result;
 }
 
 
 // Add tracks from file/folder paths
-json PlaylistAddPaths(const json& params) {
-    auto svc = s_playlistService;
-    size_t playlistIndex = params.value("playlist", SIZE_MAX);
-    auto paths = params.value("paths", json::array());
+api::Result<pl::AddPathsResult> PlaylistAddPaths(const pl::AddPathsParams& p) {
+    auto* svc = s_playlistService;
+    size_t index = 0;
+    if (auto failure = ResolvePlaylist(svc, p, index)) return std::move(*failure);
+    if (svc->playlist_lock_is_present(index)) return PlaylistLocked(index);
 
-    if (playlistIndex == SIZE_MAX) {
-        playlistIndex = svc->get_active_playlist();
-    }
-    if (playlistIndex >= svc->get_playlist_count()) {
-        return { {"success", false}, {"error", "Invalid playlist index"} };
-    }
-    if (svc->playlist_lock_is_present(playlistIndex)) {
-        return MakePlaylistLockedError(playlistIndex);
-    }
-    if (paths.empty()) {
-        return { {"success", false}, {"error", "No paths specified"} };
+    const auto r = svc->add_paths(index, json(p.paths));
+    if (auto failure = PathInsertFailure(svc, r.outcome, r.playlist)) return std::move(*failure);
+    if (r.addedCount == 0) {
+        return api::Fail("No valid tracks found", ApiErrorCode::NOT_FOUND,
+                         {{"playlist", r.playlist},
+                          {"requestedPaths", p.paths.size()},
+                          {"invalidCount", r.invalidCount},
+                          {"countBefore", r.countBefore}});
     }
 
-    auto result = svc->add_paths(playlistIndex, paths);
-
-    if (result.addedCount == 0) {
-        return {
-            {"success", false}, {"error", "No valid tracks found"},
-            {"playlist", playlistIndex}, {"requestedPaths", paths.size()},
-            {"invalidCount", result.invalidCount}, {"countBefore", result.countBefore}
-        };
-    }
-
-    return {
-        {"success", true}, {"playlist", playlistIndex},
-        {"requestedPaths", paths.size()}, {"addedCount", result.addedCount},
-        {"invalidCount", result.invalidCount}, {"countBefore", result.countBefore},
-        {"totalCount", result.totalCount}
-    };
+    pl::AddPathsResult result;
+    result.playlist = static_cast<std::int64_t>(r.playlist);
+    result.playlistGuid = api::PlaylistGuidOf(*svc, r.playlist);
+    result.requestedPaths = static_cast<std::int64_t>(p.paths.size());
+    result.addedCount = static_cast<std::int64_t>(r.addedCount);
+    result.invalidCount = static_cast<std::int64_t>(r.invalidCount);
+    result.countBefore = static_cast<std::int64_t>(r.countBefore);
+    result.totalCount = static_cast<std::int64_t>(r.totalCount);
+    return result;
 }
 
 
 // Add tracks with explicit control (no automatic CUE expansion)
 // Each handle specifies path and optional subsong index
-json PlaylistAddHandles(const json& params) {
-    auto svc = s_playlistService;
-    size_t playlistIndex = params.value("playlist", SIZE_MAX);
-    auto handles = params.value("handles", json::array());
+api::Result<pl::AddHandlesResult> PlaylistAddHandles(const pl::AddHandlesParams& p) {
+    auto* svc = s_playlistService;
+    size_t index = 0;
+    if (auto failure = ResolvePlaylist(svc, p, index)) return std::move(*failure);
+    if (svc->playlist_lock_is_present(index)) return PlaylistLocked(index);
 
-    if (playlistIndex == SIZE_MAX) {
-        playlistIndex = svc->get_active_playlist();
-    }
-    if (playlistIndex >= svc->get_playlist_count()) {
-        return { {"success", false}, {"error", "Invalid playlist index"} };
-    }
-    if (svc->playlist_lock_is_present(playlistIndex)) {
-        return MakePlaylistLockedError(playlistIndex);
-    }
-    if (handles.empty()) {
-        return { {"success", false}, {"error", "No handles specified"} };
+    const auto r = svc->add_handles(index, json(p.handles));
+    if (r.addedCount == 0) {
+        return api::Fail("No valid handles created", ApiErrorCode::NOT_FOUND,
+                         {{"playlist", index}, {"requestedCount", p.handles.size()}, {"invalidCount", r.invalidCount}});
     }
 
-    auto result = svc->add_handles(playlistIndex, handles);
-
-    if (result.addedCount == 0) {
-        return {
-            {"success", false}, {"error", "No valid handles created"},
-            {"playlist", playlistIndex}, {"requestedCount", handles.size()},
-            {"invalidCount", result.invalidCount}
-        };
-    }
-
-    return {
-        {"success", true}, {"playlist", playlistIndex},
-        {"requestedCount", handles.size()}, {"addedCount", result.addedCount},
-        {"invalidCount", result.invalidCount}, {"countBefore", result.countBefore},
-        {"totalCount", result.totalCount}
-    };
+    pl::AddHandlesResult result;
+    result.playlist = static_cast<std::int64_t>(index);
+    result.playlistGuid = api::PlaylistGuidOf(*svc, index);
+    result.requestedCount = static_cast<std::int64_t>(p.handles.size());
+    result.addedCount = static_cast<std::int64_t>(r.addedCount);
+    result.invalidCount = static_cast<std::int64_t>(r.invalidCount);
+    result.countBefore = static_cast<std::int64_t>(r.countBefore);
+    result.totalCount = static_cast<std::int64_t>(r.totalCount);
+    return result;
 }
 
 
 // Get playlist lock info
-json PlaylistGetLockInfo(const json& params) {
+api::Result<pl::GetLockInfoResult> PlaylistGetLockInfo(const pl::GetLockInfoParams& p) {
     auto* svc = s_playlistService;
-    size_t playlistIndex = params.value("playlist", SIZE_MAX);
-    if (playlistIndex == SIZE_MAX) playlistIndex = svc->get_active_playlist();
-    if (playlistIndex >= svc->get_playlist_count())
-        return { {"success", false}, {"error", "Invalid playlist index"} };
-    bool isLocked = svc->playlist_lock_is_present(playlistIndex);
-    return { {"playlist", playlistIndex}, {"isLocked", isLocked} };
+    size_t index = 0;
+    if (auto failure = ResolvePlaylist(svc, p, index)) return std::move(*failure);
+
+    pl::GetLockInfoResult result;
+    result.playlist = static_cast<std::int64_t>(index);
+    result.playlistGuid = api::PlaylistGuidOf(*svc, index);
+    result.isLocked = svc->playlist_lock_is_present(index);
+    return result;
 }
 
 
 // Alias: isLocked (returns just the boolean)
-json PlaylistIsLocked(const json& params) {
+api::Result<pl::IsLockedResult> PlaylistIsLocked(const pl::IsLockedParams& p) {
     auto* svc = s_playlistService;
-    size_t playlistIndex = params.value("playlist", SIZE_MAX);
-    if (playlistIndex == SIZE_MAX) playlistIndex = svc->get_active_playlist();
-    if (playlistIndex >= svc->get_playlist_count()) return {{"success", false}, {"isLocked", false}, {"error", "Invalid playlist"}};
-    return {{"success", true}, {"isLocked", svc->playlist_lock_is_present(playlistIndex)}};
+    size_t index = 0;
+    // 失败也带 isLocked:false，迁移前就是这样
+    if (auto failure = ResolvePlaylist(svc, p, index, "Invalid playlist")) {
+        failure->extra["isLocked"] = false;
+        return std::move(*failure);
+    }
+
+    pl::IsLockedResult result;
+    result.isLocked = svc->playlist_lock_is_present(index);
+    return result;
 }
 
 
 // Selection APIs
-json PlaylistGetSelection(const json& params) {
+api::Result<pl::GetSelectionResult> PlaylistGetSelection(const pl::GetSelectionParams& p) {
     auto* svc = s_playlistService;
-    size_t playlistIndex = params.value("playlist", SIZE_MAX);
-    if (playlistIndex == SIZE_MAX) playlistIndex = svc->get_active_playlist();
-    if (playlistIndex >= svc->get_playlist_count()) return {{"success", false}, {"error", "Invalid playlist"}};
+    size_t index = 0;
+    if (auto failure = ResolvePlaylist(svc, p, index, "Invalid playlist")) return std::move(*failure);
 
-    auto indices = svc->get_selection_indices(playlistIndex);
-    json items = json::array();
-    for (size_t i : indices) items.push_back(i);
-    return {
-        {"success", true}, {"items", items},
-        {"count", items.size()}, {"playlist", playlistIndex}
-    };
-}
-
-
-json PlaylistSelectAll(const json& params) {
-    auto* svc = s_playlistService;
-    size_t playlistIndex = params.value("playlist", SIZE_MAX);
-    if (playlistIndex == SIZE_MAX) playlistIndex = svc->get_active_playlist();
-    if (playlistIndex >= svc->get_playlist_count()) return {{"success", false}};
-    svc->select_all(playlistIndex);
-    return {{"success", true}};
-}
-
-
-json PlaylistDeselectAll(const json& params) {
-    auto* svc = s_playlistService;
-    size_t playlistIndex = params.value("playlist", SIZE_MAX);
-    if (playlistIndex == SIZE_MAX) playlistIndex = svc->get_active_playlist();
-    if (playlistIndex >= svc->get_playlist_count()) return {{"success", false}};
-    svc->deselect_all(playlistIndex);
-    return {{"success", true}};
-}
-
-
-json PlaylistGetFocusedTrack(const json& params) {
-    auto* svc = s_playlistService;
-    size_t playlistIndex = params.value("playlist", SIZE_MAX);
-    if (playlistIndex == SIZE_MAX) playlistIndex = svc->get_active_playlist();
-    if (playlistIndex >= svc->get_playlist_count()) return {{"success", true}, {"index", -1}};
-    size_t focus = svc->get_focus_item(playlistIndex);
-    return {{"success", true}, {"playlist", playlistIndex}, {"index", focus == SIZE_MAX ? -1 : (int64_t)focus}};
-}
-
-
-json PlaylistSetFocusedTrack(const json& params) {
-    auto* svc = s_playlistService;
-    size_t playlistIndex = params.value("playlist", SIZE_MAX);
-    size_t trackIndex = params.value("index", SIZE_MAX);
-    if (playlistIndex == SIZE_MAX) playlistIndex = svc->get_active_playlist();
-    if (playlistIndex >= svc->get_playlist_count()) return {{"success", false}, {"error", "Invalid playlist index"}};
-    size_t trackCount = svc->playlist_get_item_count(playlistIndex);
-    if (trackIndex != pfc::infinite_size && trackIndex >= trackCount) {
-        return {{"success", false}, {"error", "Invalid track index"}};
+    pl::GetSelectionResult result;
+    for (const size_t row : svc->get_selection_indices(index)) {
+        result.items.push_back(static_cast<std::int64_t>(row));
     }
-    svc->set_focus_item(playlistIndex, trackIndex);
-    return {{"success", true}};
+    result.count = static_cast<std::int64_t>(result.items.size());
+    result.playlist = static_cast<std::int64_t>(index);
+    result.playlistGuid = api::PlaylistGuidOf(*svc, index);
+    return result;
 }
 
 
-json PlaylistReverse(const json& params) {
+api::Result<void> PlaylistSelectAll(const pl::SelectAllParams& p) {
     auto* svc = s_playlistService;
-    size_t playlistIndex = params.value("playlist", SIZE_MAX);
-    if (playlistIndex == SIZE_MAX) playlistIndex = svc->get_active_playlist();
-    if (playlistIndex >= svc->get_playlist_count()) return {{"success", false}};
-    if (svc->playlist_lock_is_present(playlistIndex)) return MakePlaylistLockedError(playlistIndex);
+    size_t index = 0;
+    if (auto failure = ResolvePlaylist(svc, p, index)) return std::move(*failure);
 
-    size_t count = svc->playlist_get_item_count(playlistIndex);
-    if (count < 2) return {{"success", true}};
+    svc->select_all(index);
+    return api::Ok();
+}
 
-    std::vector<size_t> order(count);
-    for (size_t i = 0; i < count; i++) order[i] = count - 1 - i;
-    svc->playlist_undo_backup(playlistIndex);
-    svc->reorder_items(playlistIndex, order.data(), count);
-    return {{"success", true}};
+
+api::Result<void> PlaylistDeselectAll(const pl::DeselectAllParams& p) {
+    auto* svc = s_playlistService;
+    size_t index = 0;
+    if (auto failure = ResolvePlaylist(svc, p, index)) return std::move(*failure);
+
+    svc->deselect_all(index);
+    return api::Ok();
+}
+
+
+api::Result<pl::GetFocusedTrackResult> PlaylistGetFocusedTrack(const pl::GetFocusedTrackParams& p) {
+    auto* svc = s_playlistService;
+    pl::GetFocusedTrackResult result;
+    result.index = -1;
+    // 查询端：没有这个播放列表时照旧报 index -1、不带 playlist，不算失败
+    size_t index = 0;
+    if (auto failure = ResolvePlaylist(svc, p, index)) {
+        if (IsParamsFailure(*failure)) return std::move(*failure);
+        return result;
+    }
+
+    result.playlist = static_cast<std::int64_t>(index);
+    result.playlistGuid = api::PlaylistGuidOf(*svc, index);
+    result.index = FocusRowToJson(svc->get_focus_item(index));
+    return result;
+}
+
+
+api::Result<void> PlaylistSetFocusedTrack(const pl::SetFocusedTrackParams& p) {
+    return SetFocus(p, p.index, "Invalid playlist index");
+}
+
+
+api::Result<void> PlaylistReverse(const pl::ReverseParams& p) {
+    auto* svc = s_playlistService;
+    size_t index = 0;
+    if (auto failure = ResolvePlaylist(svc, p, index)) return std::move(*failure);
+    if (svc->playlist_lock_is_present(index)) return PlaylistLocked(index);
+
+    const size_t count = svc->playlist_get_item_count(index);
+    if (count < 2) return api::Ok();
+
+    const auto order = ReversedOrder(count);
+    svc->playlist_undo_backup(index);
+    svc->reorder_items(index, order.data(), count);
+    return api::Ok();
 }
 
 
 // ========== playlist.reorder
-json PlaylistReorder(const json& params) {
+api::Result<pl::ReorderResult> PlaylistReorder(const pl::ReorderParams& p) {
     auto* svc = s_playlistService;
-    size_t playlistIndex = params.value("playlist", SIZE_MAX);
-    auto newOrder = params.value("newOrder", json::array());
+    size_t index = 0;
+    if (auto failure = ResolvePlaylist(svc, p, index)) return std::move(*failure);
+    if (svc->playlist_lock_is_present(index)) return PlaylistLocked(index);
 
-    if (playlistIndex == SIZE_MAX) playlistIndex = svc->get_active_playlist();
-    if (playlistIndex >= svc->get_playlist_count())
-        return {{"success", false}, {"error", "Invalid playlist index"}};
-    if (svc->playlist_lock_is_present(playlistIndex))
-        return MakePlaylistLockedError(playlistIndex);
+    const size_t count = svc->playlist_get_item_count(index);
+    std::vector<size_t> order;
+    if (auto failure = ToOrder(p.newOrder, count, order)) return std::move(*failure);
 
-    size_t count = svc->playlist_get_item_count(playlistIndex);
-    if (newOrder.size() != count)
-        return {{"success", false}, {"error", "newOrder length mismatch"}, {"expected", count}, {"got", newOrder.size()}};
+    svc->playlist_undo_backup(index);
+    svc->reorder_items(index, order.data(), count);
 
-    std::vector<size_t> order(count);
-    for (size_t i = 0; i < count; i++) {
-        if (!newOrder[i].is_number())
-            return {{"success", false}, {"error", "newOrder must contain numbers"}};
-        size_t idx = newOrder[i].get<size_t>();
-        if (idx >= count)
-            return {{"success", false}, {"error", "Index out of range"}, {"index", idx}};
-        order[i] = idx;
-    }
-
-    svc->playlist_undo_backup(playlistIndex);
-    svc->reorder_items(playlistIndex, order.data(), count);
-    return {{"success", true}, {"playlist", playlistIndex}, {"itemCount", count}};
+    pl::ReorderResult result;
+    result.playlist = static_cast<std::int64_t>(index);
+    result.playlistGuid = api::PlaylistGuidOf(*svc, index);
+    result.itemCount = static_cast<std::int64_t>(count);
+    return result;
 }
 
 
 // ========== playlist.addPathsSequential - sequential path add ==========
-json PlaylistAddPathsSequential(const json& params) {
-    auto svc = s_playlistService;
-    size_t playlistIndex = params.value("playlist", SIZE_MAX);
-    auto paths = params.value("paths", json::array());
+api::Result<pl::AddPathsSequentialResult> PlaylistAddPathsSequential(const pl::AddPathsSequentialParams& p) {
+    auto* svc = s_playlistService;
+    size_t index = 0;
+    if (auto failure = ResolvePlaylist(svc, p, index)) return std::move(*failure);
+    if (svc->playlist_lock_is_present(index)) return PlaylistLocked(index);
 
-    if (playlistIndex == SIZE_MAX) {
-        playlistIndex = svc->get_active_playlist();
-    }
-    if (playlistIndex >= svc->get_playlist_count()) {
-        return {{"success", false}, {"error", "Invalid playlist index"}};
-    }
-    if (svc->playlist_lock_is_present(playlistIndex)) {
-        return MakePlaylistLockedError(playlistIndex);
-    }
-    if (paths.empty()) {
-        return {{"success", false}, {"error", "No paths specified"}};
-    }
+    const auto r = svc->add_paths_sequential(index, json(p.paths));
+    if (auto failure = PathInsertFailure(svc, r.outcome, r.playlist)) return std::move(*failure);
 
-    auto result = svc->add_paths_sequential(playlistIndex, paths);
-
-    return {
-        {"success", true}, {"playlist", playlistIndex},
-        {"addedCount", result.addedCount}, {"order", result.order}
-    };
+    pl::AddPathsSequentialResult result;
+    result.playlist = static_cast<std::int64_t>(r.playlist);
+    result.playlistGuid = api::PlaylistGuidOf(*svc, r.playlist);
+    result.addedCount = static_cast<std::int64_t>(r.addedCount);
+    for (const auto& row : r.order) {
+        result.order.push_back(row.get<std::int64_t>());
+    }
+    return result;
 }
 
 
 // ========== playlist.addPathsAsync - async path add ==========
-json PlaylistAddPathsAsync(const json& params) {
-    auto svc = s_playlistService;
-    size_t playlistIndex = params.value("playlist", SIZE_MAX);
-    auto paths = params.value("paths", json::array());
-
-    if (playlistIndex == SIZE_MAX) {
-        playlistIndex = svc->get_active_playlist();
-    }
-    if (playlistIndex >= svc->get_playlist_count()) {
-        return {{"success", false}, {"error", "Invalid playlist index"}};
-    }
-    if (svc->playlist_lock_is_present(playlistIndex)) {
-        return MakePlaylistLockedError(playlistIndex);
-    }
-    if (paths.empty()) {
-        return {{"success", false}, {"error", "No paths specified"}};
-    }
+api::Result<pl::AddPathsAsyncResult> PlaylistAddPathsAsync(const pl::AddPathsAsyncParams& p) {
+    auto* svc = s_playlistService;
+    size_t index = 0;
+    if (auto failure = ResolvePlaylist(svc, p, index)) return std::move(*failure);
+    if (svc->playlist_lock_is_present(index)) return PlaylistLocked(index);
 
     std::string operationId = GenerateOperationId();
+    // 在解析出目标的这一刻取 GUID：完成事件可能在列表挪动或删掉之后才发，那时序号已不可信。
+    std::string playlistGuid = api::PlaylistGuidOf(*svc, index);
 
-    auto info = svc->start_add_paths_async(playlistIndex, paths, operationId,
-        [operationId](size_t addedCount, size_t totalCount) {
-            fb2k::inMainThread([opId = operationId, addedCount, totalCount]() {
-                WebViewContext::GetInstance().BroadcastEvent("playlist:addComplete", {
-                    {"operationId", opId}, {"success", true},
-                    {"addedCount", addedCount}, {"totalCount", totalCount}
-                });
+    auto info = svc->start_add_paths_async(index, json(p.paths), operationId,
+        [operationId, playlistGuid](size_t addedCount, size_t totalCount) {
+            fb2k::inMainThread([opId = operationId, guid = playlistGuid, addedCount, totalCount]() {
+                pl::AddCompletePayload payload;
+                payload.operationId = opId;
+                payload.playlistGuid = guid;
+                payload.success = true;
+                payload.addedCount = static_cast<std::int64_t>(addedCount);
+                payload.totalCount = static_cast<std::int64_t>(totalCount);
+                api::emit::Broadcast<pl::events::AddComplete>(payload);
             });
         }
     );
 
+    // 一条可用的都没有时服务层直接返回，不调 onComplete，也就没有完成事件
     if (info.validPathCount == 0) {
-        return {
-            {"success", false}, {"error", "No valid paths specified"},
-            {"invalidCount", info.invalidCount}
-        };
+        return api::Fail("No valid paths specified", ApiErrorCode::INVALID_PARAMS,
+                         {{"invalidCount", info.invalidCount}});
     }
 
-    return {
-        {"success", true}, {"operationId", operationId},
-        {"status", "pending"}, {"totalCount", info.validPathCount},
-        {"invalidCount", info.invalidCount}
-    };
+    pl::AddPathsAsyncResult result;
+    result.operationId = std::move(operationId);
+    result.playlistGuid = std::move(playlistGuid);
+    result.status = "pending";
+    result.totalCount = static_cast<std::int64_t>(info.validPathCount);
+    result.invalidCount = static_cast<std::int64_t>(info.invalidCount);
+    return result;
 }
 
 
 // ========== playlist.replaceAllAndPlay - atomic clear+add+play ==========
-json PlaylistReplaceAllAndPlay(const json& params) {
-    auto svc = s_playlistService;
-    auto pbSvc = s_playbackServiceLocal;
-    size_t playlistIndex = params.value("playlist", SIZE_MAX);
-    auto paths = params.value("paths", json::array());
-    size_t playIndex = params.value("playIndex", static_cast<size_t>(0));
-    bool stopFirst = params.value("stopFirst", true);
-    bool autoPlay = params.value("autoPlay", true);
-
-    if (playlistIndex == SIZE_MAX) {
-        playlistIndex = svc->get_active_playlist();
-    }
-    if (playlistIndex >= svc->get_playlist_count()) {
-        return { {"success", false}, {"error", "Invalid playlist index"} };
-    }
-    if (svc->playlist_lock_is_present(playlistIndex)) {
-        return MakePlaylistLockedError(playlistIndex);
-    }
-    if (paths.empty()) {
-        return { {"success", false}, {"error", "No paths specified"} };
-    }
+api::Result<pl::ReplaceAllAndPlayResult> PlaylistReplaceAllAndPlay(const pl::ReplaceAllAndPlayParams& p) {
+    auto* svc = s_playlistService;
+    auto* pbSvc = s_playbackServiceLocal;
+    size_t playlistIndex = 0;
+    if (auto failure = ResolvePlaylist(svc, p, playlistIndex)) return std::move(*failure);
+    if (svc->playlist_lock_is_present(playlistIndex)) return PlaylistLocked(playlistIndex);
 
     // Step 1: stop playback
-    if (stopFirst && pbSvc->is_playing()) {
+    if (p.stopFirst && pbSvc->is_playing()) {
         pbSvc->stop();
     }
 
-    // Step 2-4: clear + add
-    auto result = svc->replace_all(playlistIndex, paths);
-
-    if (result.addedCount == 0) {
-        return {
-            {"success", false}, {"error", "No valid tracks found"},
-            {"clearedCount", result.clearedCount}, {"invalidCount", result.invalidCount}
-        };
+    // Step 2-4: clear + add；一首都没加上时列表已经清空
+    const auto r = svc->replace_all(playlistIndex, json(p.paths));
+    if (auto failure = PathInsertFailure(svc, r.outcome, r.playlist)) return std::move(*failure);
+    if (r.addedCount == 0) {
+        return api::Fail("No valid tracks found", ApiErrorCode::NOT_FOUND,
+                         {{"clearedCount", r.clearedCount}, {"invalidCount", r.invalidCount}});
     }
 
-    // Step 5: activate + play
+    // Step 5: activate + play；路径解析期间列表可能被拖动，之后都用写入时的序号
+    playlistIndex = r.playlist;
     svc->set_active_playlist(playlistIndex);
-    if (playIndex >= result.totalCount) {
+    size_t playIndex = static_cast<size_t>(p.playIndex);
+    if (playIndex >= r.totalCount) {
         playIndex = 0;
     }
-    if (autoPlay) {
+    if (p.autoPlay) {
         svc->execute_default_action(playlistIndex, playIndex);
     } else {
         svc->set_focus_item(playlistIndex, playIndex);
     }
 
-    return {
-        {"success", true}, {"playlist", playlistIndex},
-        {"clearedCount", result.clearedCount}, {"addedCount", result.addedCount},
-        {"totalCount", result.totalCount}, {"playIndex", playIndex}
-    };
+    pl::ReplaceAllAndPlayResult result;
+    result.playlist = static_cast<std::int64_t>(playlistIndex);
+    result.playlistGuid = api::PlaylistGuidOf(*svc, playlistIndex);
+    result.clearedCount = static_cast<std::int64_t>(r.clearedCount);
+    result.addedCount = static_cast<std::int64_t>(r.addedCount);
+    result.totalCount = static_cast<std::int64_t>(r.totalCount);
+    result.playIndex = static_cast<std::int64_t>(playIndex);
+    return result;
 }
 
 
 // ========== playlist.reorderPlaylists — 重排播放列表顺序 ==========
-json PlaylistReorderPlaylists(const json& params) {
+api::Result<pl::ReorderPlaylistsResult> PlaylistReorderPlaylists(const pl::ReorderPlaylistsParams& p) {
     auto* svc = s_playlistService;
-    auto newOrder = params.value("newOrder", json::array());
-    size_t count = svc->get_playlist_count();
-
-    if (newOrder.size() != count) {
-        return {
-            {"success", false},
-            {"error", "newOrder length mismatch"},
-            {"expected", count},
-            {"got", newOrder.size()}
-        };
+    const size_t count = svc->get_playlist_count();
+    if (p.newOrder.has_value() == p.newOrderGuids.has_value()) {
+        return api::Fail(p.newOrder ? "Give newOrder or newOrderGuids, not both"
+                                    : "newOrder or newOrderGuids is required",
+                         ApiErrorCode::INVALID_PARAMS);
+    }
+    std::vector<size_t> order;
+    if (p.newOrder) {
+        if (auto failure = ToOrder(*p.newOrder, count, order)) return std::move(*failure);
+    } else if (auto failure = api::ResolvePlaylistGuidOrder(*svc, *p.newOrderGuids, order)) {
+        return std::move(*failure);
     }
 
-    pfc::array_t<size_t> order;
-    order.set_size(count);
-
-    for (size_t i = 0; i < count; i++) {
-        if (!newOrder[i].is_number()) {
-            return {{"success", false}, {"error", "newOrder must contain numbers"}};
-        }
-        size_t idx = newOrder[i].get<size_t>();
-        if (idx >= count) {
-            return {{"success", false}, {"error", "Index out of range"}, {"index", idx}};
-        }
-        order[i] = idx;
-    }
-
-    bool ok = svc->reorder_playlists(order.get_ptr(), count);
-    return {{"success", ok}, {"count", count}};
+    pl::ReorderPlaylistsResult result;
+    result.count = static_cast<std::int64_t>(count);
+    // SDK：返回 false 表示在不允许的上下文里调用
+    if (!svc->reorder_playlists(order.data(), count)) return FailWithFields("Failed to reorder playlists", result);
+    return result;
 }
 
 
 // ========== playlist.getAvailableColumns — 获取 DUI 可用列定义 ==========
-json PlaylistGetAvailableColumns(const json& params) {
-    json columns = json::array();
-    
+api::Result<pl::GetAvailableColumnsResult> PlaylistGetAvailableColumns(const pl::GetAvailableColumnsParams&) {
+    pl::GetAvailableColumnsResult result;
+
     for (auto provider : fb2k::playlistColumnProvider::enumerate()) {
         size_t numCols = provider->numColumns();
         for (size_t i = 0; i < numCols; i++) {
             auto id = provider->columnID(i);
             auto flags = provider->columnFlags(i);
-            
-            std::string align = "left";
-            if (flags & fb2k::playlistColumnProvider::flag_alignRight) align = "right";
-            else if (flags & fb2k::playlistColumnProvider::flag_alignCenter) align = "center";
-            
-            json col = {
-                {"id", pfc::print_guid(id).c_str()},
-                {"name", provider->columnName(i)->c_str()},
-                {"pattern", provider->columnFormatSpec(i)->c_str()},
-                {"alignment", align},
-                {"numeric", (flags & fb2k::playlistColumnProvider::flag_numeric) != 0}
-            };
-            
+
+            pl::PlaylistColumnDefinition col;
+            col.id = pfc::print_guid(id).c_str();
+            col.name = provider->columnName(i)->c_str();
+            col.pattern = provider->columnFormatSpec(i)->c_str();
+            col.alignment = "left";
+            if (flags & fb2k::playlistColumnProvider::flag_alignRight) col.alignment = "right";
+            else if (flags & fb2k::playlistColumnProvider::flag_alignCenter) col.alignment = "center";
+            col.numeric = (flags & fb2k::playlistColumnProvider::flag_numeric) != 0;
+
             auto sortScript = provider->columnSortScript(i);
             if (sortScript.is_valid() && sortScript->length() > 0) {
-                col["sortPattern"] = sortScript->c_str();
+                col.sortPattern = sortScript->c_str();
             }
-            
-            columns.push_back(col);
+
+            result.columns.push_back(std::move(col));
         }
     }
-    
-    return columns;
+
+    result.count = static_cast<std::int64_t>(result.columns.size());
+    return result;
 }
 
 } // namespace
 
 void RegisterPlaylistApi() {
-    auto& bridge = BridgeCore::GetInstance();
-
-    bridge.RegisterApi("playlist.getCount", PlaylistGetCount);
-    bridge.RegisterApi("playlist.getAll", PlaylistGetAll);
-    bridge.RegisterApi("playlist.getActive", PlaylistGetActive);
-    bridge.RegisterApi("playlist.setActive", PlaylistSetActive);
-    bridge.RegisterApi("playlist.getPlaying", PlaylistGetPlaying);
-    bridge.RegisterApi("playlist.create", PlaylistCreate);
-    bridge.RegisterApi("playlist.remove", PlaylistRemove);
-    bridge.RegisterApi("playlist.rename", PlaylistRename);
-    bridge.RegisterApi("playlist.clear", PlaylistClear);
-    bridge.RegisterApi("playlist.insertTracks", PlaylistInsertTracks);
-    bridge.RegisterApi("playlist.getTrackCount", PlaylistGetTrackCount);
-    bridge.RegisterApi("playlist.getTracks", PlaylistGetTracks);
-    bridge.RegisterApi("playlist.getSelectedTracks", PlaylistGetSelectedTracks);
-    bridge.RegisterApi("playlist.setSelection", PlaylistSetSelection);
-    bridge.RegisterApi("playlist.removeTracks", PlaylistRemoveTracks);
-    bridge.RegisterApi("playlist.removeSelectedTracks", PlaylistRemoveSelectedTracks);
-    bridge.RegisterApi("playlist.moveTracks", PlaylistMoveTracks);
-    bridge.RegisterApi("playlist.playTrack", PlaylistPlayTrack);
-    bridge.RegisterApi("playlist.focusTrack", PlaylistFocusTrack);
-    bridge.RegisterApi("playlist.getFocusTrack", PlaylistGetFocusTrack);
-    bridge.RegisterApi("playlist.sort", PlaylistSort);
-    bridge.RegisterApi("playlist.shuffle", PlaylistShuffle);
-    bridge.RegisterApi("playlist.undo", PlaylistUndo);
-    bridge.RegisterApi("playlist.redo", PlaylistRedo);
-    bridge.RegisterApi("playlist.isAutoplaylist", PlaylistIsAutoplaylist);
-    bridge.RegisterApi("playlist.createAutoplaylist", PlaylistCreateAutoplaylist);
-    bridge.RegisterApi("playlist.convertToAutoplaylist", PlaylistConvertToAutoplaylist);
-    bridge.RegisterApi("playlist.removeAutoplaylist", PlaylistRemoveAutoplaylist);
-    bridge.RegisterApi("playlist.getAutoplaylistInfo", PlaylistGetAutoplaylistInfo);
-    bridge.RegisterApi("playlist.getAutoplaylistQuery", PlaylistGetAutoplaylistQuery);
-    bridge.RegisterApi("playlist.duplicate", PlaylistDuplicate);
-    bridge.RegisterApi("playlist.addPaths", PlaylistAddPaths, {{"paths", SecurityLevel::MediaRead, true}});
-    bridge.RegisterApi("playlist.addHandles", PlaylistAddHandles);
-    bridge.RegisterApi("playlist.getLockInfo", PlaylistGetLockInfo);
-    bridge.RegisterApi("playlist.isLocked", PlaylistIsLocked);
-    bridge.RegisterApi("playlist.getSelection", PlaylistGetSelection);
-    bridge.RegisterApi("playlist.selectAll", PlaylistSelectAll);
-    bridge.RegisterApi("playlist.deselectAll", PlaylistDeselectAll);
-    bridge.RegisterApi("playlist.getFocusedTrack", PlaylistGetFocusedTrack);
-    bridge.RegisterApi("playlist.setFocusedTrack", PlaylistSetFocusedTrack);
-    bridge.RegisterApi("playlist.reverse", PlaylistReverse);
-    bridge.RegisterApi("playlist.reorder", PlaylistReorder);
-    bridge.RegisterApi("playlist.addPathsSequential", PlaylistAddPathsSequential, {{"paths", SecurityLevel::MediaRead, true}});
-    bridge.RegisterApi("playlist.addPathsAsync", PlaylistAddPathsAsync, {{"paths", SecurityLevel::MediaRead, true}});
-    bridge.RegisterApi("playlist.replaceAllAndPlay", PlaylistReplaceAllAndPlay, {{"paths", SecurityLevel::MediaRead, true}});
-    bridge.RegisterApi("playlist.reorderPlaylists", PlaylistReorderPlaylists);
-    bridge.RegisterApi("playlist.getAvailableColumns", PlaylistGetAvailableColumns);
+    api::RegisterApi("playlist.getCount", PlaylistGetCount);
+    api::RegisterApi("playlist.getAll", PlaylistGetAll);
+    api::RegisterApi("playlist.getActive", PlaylistGetActive);
+    api::RegisterApi("playlist.setActive", PlaylistSetActive);
+    api::RegisterApi("playlist.getPlaying", PlaylistGetPlaying);
+    api::RegisterApi("playlist.create", PlaylistCreate);
+    api::RegisterApi("playlist.remove", PlaylistRemove);
+    api::RegisterApi("playlist.rename", PlaylistRename);
+    api::RegisterApi("playlist.clear", PlaylistClear);
+    api::RegisterApi("playlist.insertTracks", PlaylistInsertTracks);
+    api::RegisterApi("playlist.getTrackCount", PlaylistGetTrackCount);
+    api::RegisterApi("playlist.getTracks", PlaylistGetTracks);
+    api::RegisterApi("playlist.getTracksAt", PlaylistGetTracksAt);
+    api::RegisterApi("playlist.getMatchingRows", PlaylistGetMatchingRows);
+    api::RegisterApi("playlist.getSelectedTracks", PlaylistGetSelectedTracks);
+    api::RegisterApi("playlist.setSelection", PlaylistSetSelection);
+    api::RegisterApi("playlist.removeTracks", PlaylistRemoveTracks);
+    api::RegisterApi("playlist.removeSelectedTracks", PlaylistRemoveSelectedTracks);
+    api::RegisterApi("playlist.moveTracks", PlaylistMoveTracks);
+    api::RegisterApi("playlist.playTrack", PlaylistPlayTrack);
+    api::RegisterApi("playlist.focusTrack", PlaylistFocusTrack);
+    api::RegisterApi("playlist.getFocusTrack", PlaylistGetFocusTrack);
+    api::RegisterApi("playlist.sort", PlaylistSort);
+    api::RegisterApi("playlist.shuffle", PlaylistShuffle);
+    api::RegisterApi("playlist.undo", PlaylistUndo);
+    api::RegisterApi("playlist.redo", PlaylistRedo);
+    api::RegisterApi("playlist.isAutoplaylist", PlaylistIsAutoplaylist);
+    api::RegisterApi("playlist.createAutoplaylist", PlaylistCreateAutoplaylist);
+    api::RegisterApi("playlist.convertToAutoplaylist", PlaylistConvertToAutoplaylist);
+    api::RegisterApi("playlist.removeAutoplaylist", PlaylistRemoveAutoplaylist);
+    api::RegisterApi("playlist.getAutoplaylistInfo", PlaylistGetAutoplaylistInfo);
+    api::RegisterApi("playlist.getAutoplaylistQuery", PlaylistGetAutoplaylistQuery);
+    api::RegisterApi("playlist.duplicate", PlaylistDuplicate);
+    api::RegisterApi("playlist.addPaths", PlaylistAddPaths);
+    api::RegisterApi("playlist.addHandles", PlaylistAddHandles);
+    api::RegisterApi("playlist.getLockInfo", PlaylistGetLockInfo);
+    api::RegisterApi("playlist.isLocked", PlaylistIsLocked);
+    api::RegisterApi("playlist.getSelection", PlaylistGetSelection);
+    api::RegisterApi("playlist.selectAll", PlaylistSelectAll);
+    api::RegisterApi("playlist.deselectAll", PlaylistDeselectAll);
+    api::RegisterApi("playlist.getFocusedTrack", PlaylistGetFocusedTrack);
+    api::RegisterApi("playlist.setFocusedTrack", PlaylistSetFocusedTrack);
+    api::RegisterApi("playlist.reverse", PlaylistReverse);
+    api::RegisterApi("playlist.reorder", PlaylistReorder);
+    api::RegisterApi("playlist.addPathsSequential", PlaylistAddPathsSequential);
+    api::RegisterApi("playlist.addPathsAsync", PlaylistAddPathsAsync);
+    api::RegisterApi("playlist.replaceAllAndPlay", PlaylistReplaceAllAndPlay);
+    api::RegisterApi("playlist.reorderPlaylists", PlaylistReorderPlaylists);
+    api::RegisterApi("playlist.getAvailableColumns", PlaylistGetAvailableColumns);
     // deferred：全表求键与序列化在 CPU worker 上跑
-    bridge.RegisterApiDeferred("playlist.getGroupRuns", PlaylistGetGroupRuns);
+    api::RegisterApiDeferred("playlist.getGroupRuns", PlaylistGetGroupRuns);
 }

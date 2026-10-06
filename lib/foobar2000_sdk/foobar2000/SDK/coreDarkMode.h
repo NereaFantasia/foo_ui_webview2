@@ -10,7 +10,6 @@ This allows implementing Dark Mode without size bloat - however, it also means t
 If you use this, you should make sure that your UI works properly with the oldest supported foobar2000 release with Dark Mode, such as early v2.0 builds.
 */
 
-
 namespace fb2k {
 	class coreDarkModeObj : public service_base {
 		FB2K_MAKE_SERVICE_INTERFACE(coreDarkModeObj, service_base);
@@ -20,6 +19,15 @@ namespace fb2k {
 		virtual void addControls(HWND) = 0;
 		virtual void setDarkMode(bool) = 0; // valid ONLY if create(bool) was used
 		virtual bool isDark() = 0;
+		//! @returns True if dark specification changed, false if not.
+		bool setFromCallback_(service_ptr);
+	};
+	//! \since 2.25
+	class coreDarkModeObj2 : public coreDarkModeObj {
+		FB2K_MAKE_SERVICE_INTERFACE(coreDarkModeObj2, coreDarkModeObj);
+	public:
+		//! @returns True if dark specification changed, false if not.
+		virtual bool setFromCallback(service_ptr) = 0;
 	};
 
 	class coreDarkMode : public service_base {
@@ -29,10 +37,15 @@ namespace fb2k {
 		virtual coreDarkModeObj::ptr createAuto() = 0; // auto updates with fb2k config, disregards setDarkMode()
 	};
 
-	FOOGUIDDECL const GUID coreDarkMode::class_guid = { 0xe34839b0, 0xd899, 0x43c5, { 0x94, 0x71, 0x14, 0xff, 0x48, 0x1d, 0x5e, 0xe8 } };
-	FOOGUIDDECL const GUID coreDarkModeObj::class_guid =  { 0xdf2e7682, 0x4b52, 0x42d8, { 0x80, 0xc8, 0x2e, 0x46, 0xf9, 0x41, 0x55, 0xd2 } };
+	//! \since 2.25
+	class coreDarkMode2 : public coreDarkMode {
+		FB2K_MAKE_SERVICE_COREAPI_EXTENSION(coreDarkMode2, coreDarkMode);
+	public:
+		virtual coreDarkModeObj2::ptr create2(service_ptr) = 0;
+	};
 
-	//! Intended as drop-in replacement of fb2k::CDarkModeHooks (see helpers/DarkMode.h), only using fb2k::coreDarkMode instead of locally-linked libPPUI. \n
+
+	//! Intended as drop-in replacement of @c fb2k::CDarkModeHooks (see helpers/DarkMode.h), only using @c fb2k::coreDarkMode instead of locally-linked libPPUI. \n
 	//! Does nothing under pre-v2.0 foobar2000.
 	class CCoreDarkModeHooks {
 	public:
@@ -47,6 +60,10 @@ namespace fb2k {
 		}
 		void AddDialogWithControls(HWND wnd) {
 			AddDialog(wnd); AddControls(wnd);
+		}
+
+		bool SetDark2(service_ptr cb) {
+			return m_obj && m_obj->setFromCallback_(cb);
 		}
 
 		void SetDark(bool v) {

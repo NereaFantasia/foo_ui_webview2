@@ -1,5 +1,5 @@
 // Auto-generated SDK injection script - do NOT manually maintain
-// Note: This file is #include'd by WebViewHost.cpp and injected into all pages
+// Note: This file is #include'd by WebViewHostScripts.cpp and injected into all pages
 
 #pragma once
 

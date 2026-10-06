@@ -7,7 +7,8 @@
 
 #include "pch.h"
 #include "panels/PanelConfigDialog.h"
-#include "core/PreferencesPage.h"
+#include "core/FrontendDirectoryResolver.h"
+#include "prefs/PreferencesPage.h"
 #include "utils/I18n.h"
 #include <foobar2000/SDK/coreDarkMode.h>
 #include <CommCtrl.h>
@@ -92,29 +93,16 @@ static void UpdatePathDisplay(HWND hwnd, const std::string& templateName, const 
     // URL 覆盖优先
     if (!urlOverride.empty()) {
         path = pfc::stringcvt::string_wide_from_utf8(urlOverride.c_str()).get_ptr();
-    }
-    else if (templateName.empty()) {
-        // 跟随全局
-        path = webview_prefs::GetActiveWebResourcesDir();
-        if (path.empty()) {
-            path = TR("(global template not found)", "(未找到全局模板)");
-        }
     } else {
-        // 复用运行时模板查找逻辑 — 检查 index.html 是否存在
-        std::wstring baseDir = webview_prefs::GetWebResourcesBaseDir();
-        std::wstring panelDir = baseDir + L"\\" + 
-            pfc::stringcvt::string_wide_from_utf8(templateName.c_str()).get_ptr();
-        std::wstring indexPath = panelDir + L"\\index.html";
-        DWORD attrs = GetFileAttributesW(indexPath.c_str());
-        if (attrs != INVALID_FILE_ATTRIBUTES && !(attrs & FILE_ATTRIBUTE_DIRECTORY)) {
-            path = panelDir;
+        // 与面板加载时用同一个解析器，显示的就是面板实际会加载的目录
+        const auto resolution = frontend_directory::Resolve(templateName);
+        if (resolution.source == frontend_directory_policy::Source::None) {
+            path = TR("(no template with an index.html was found)", "(未找到含 index.html 的模板)");
         } else {
-            // 模板目录缺失或不完整，显示回退后的全局路径
-            path = webview_prefs::GetActiveWebResourcesDir();
-            if (path.empty()) {
-                path = panelDir + L" " + TR("(not found, will use global)", "(未找到，将使用全局模板)");
-            } else {
-                path = path + L" " + TR("(fallback from: ", "(回退自: ") + 
+            path = resolution.directory;
+            if (!templateName.empty() &&
+                resolution.source != frontend_directory_policy::Source::PanelTemplate) {
+                path = path + L" " + TR("(fallback from: ", "(回退自: ") +
                     pfc::stringcvt::string_wide_from_utf8(templateName.c_str()).get_ptr() + L")";
             }
         }

@@ -19,9 +19,10 @@ namespace {
 	public:
 		input_dec_binary( file::ptr f ) : m_file(f) {}
 		t_uint32 get_subsong_count() override {return 0;}
-		t_uint32 get_subsong(t_uint32 p_index) override {return 0;}
+		t_uint32 get_subsong(t_uint32 p_index) override { (void)p_index; return 0; }
 	
 		void get_info(t_uint32 p_subsong,file_info & p_info,abort_callback & p_abort) override {
+			(void)p_subsong;
 			p_info.reset();
 			p_info.info_set_int("samplerate", m_rate);
 			p_info.info_set_int("channels", m_channels);
@@ -43,6 +44,7 @@ namespace {
 			return m_file->get_stats(p_abort);
 		}
 		void initialize(t_uint32 p_subsong,unsigned p_flags,abort_callback & p_abort) override {
+			(void)p_flags; (void)p_subsong;
 			m_file->reopen( p_abort );
 		}
 		bool run(audio_chunk & p_chunk,abort_callback & p_abort) override {
@@ -65,10 +67,10 @@ namespace {
 		bool can_seek() override {
 			return m_file->can_seek();
 		}
-		bool get_dynamic_info(file_info & p_out, double & p_timestamp_delta) override {return false;}
-		bool get_dynamic_info_track(file_info & p_out, double & p_timestamp_delta) override {return false;}
-		void on_idle(abort_callback & p_abort) override {}
-		void set_logger(event_logger::ptr ptr) override {}
+		bool get_dynamic_info(file_info &, double &) override {return false;}
+		bool get_dynamic_info_track(file_info &, double &) override {return false;}
+		void on_idle(abort_callback &) override {}
+		void set_logger(event_logger::ptr) override {}
 	private:
 		const file::ptr m_file;
 	};

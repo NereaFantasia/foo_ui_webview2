@@ -78,7 +78,7 @@ namespace pfc {
     class nix_event {
     public:
         nix_event(bool state = false);
-        ~nix_event();
+        ~nix_event() noexcept {_clear();}
         
         void set_state( bool state );
 
@@ -101,9 +101,10 @@ namespace pfc {
         static size_t g_multiWait(std::initializer_list<eventHandle_t> const & arg, double timeout);
 
     private:
+        void _clear() noexcept;
         nix_event(nix_event const&) = delete;
         void operator=(nix_event const&) = delete;
-        int m_fd[2];
+        int m_fd[2] = {-1,-1};
     };
 
     typedef nix_event event;

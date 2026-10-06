@@ -24,13 +24,23 @@ WebViewPanel (core/)
 
 | File | Responsibility |
 |------|------|
-| `MainWindow.h/.cpp` | Main window: client-area extended title bar (`WM_NCCALCSIZE`/`WM_NCHITTEST`), drag regions, min/max size, rounded corners, startup reveal state machine, background suspension to save memory, overlay mis-activation defense, expected always-on-top guarding |
+| `MainWindow.h/.cpp` | Main window: creation and teardown, the message procedure (`WndProc`/`HandleMessage`), resizing, WebView callbacks, and the startup reveal state machine |
+| `MainWindowCaption.cpp` | Client-area extended title bar (`WM_NCCALCSIZE`/`WM_NCHITTEST`), drag and no-drag regions, caption button geometry, system menu, DPI changes, min/max size |
+| `MainWindowActivation.cpp` | `WM_ACTIVATE`/`WM_ACTIVATEAPP` handling, overlay mis-activation defense, expected always-on-top guarding |
+| `MainWindowBackground.cpp` | Background suspension to save memory: occlusion detection, WebView suspend and restore, page health probe after restore, rebuild after the render process dies |
+| `MainWindowPlacement.cpp` | Saving and restoring the window position, and default size constraints from the initial DPI |
+| `MainWindowMaximizeButton.cpp` / `MaximizeButtonRegion.h/.cpp` | The page-drawn maximize button: answers hit tests over the rectangle the page reports with `HTMAXBUTTON`, so Windows 11 offers Snap layouts, and passes the mouse input on the button back to the page |
+| `MainWindowShell.cpp` | `WindowShellBase` implementation: capabilities, shell snapshot, chrome patch commands, full-screen flag |
 | `MainWindowDwm.cpp` | DWM-related implementation of the main window (a split unit for Mica/frame extension, etc.) |
 | `MainWindowMenu.cpp` | Main window menu commands (open file, preferences, DevTools, main-menu lookup, etc.) |
-| `MainWindowInternal.h` | Shared internal declarations for the main window |
+| `MainWindowDiagnostics.cpp` | Diagnostic evidence: interactive resize, surface and WebView lifecycle logs, runtime DOM probes |
+| `MainWindowInternal.h/.cpp` | Non-member helpers shared by the `MainWindow*.cpp` units: DWM call wrappers, dark mode, evidence logging, formatting |
 | `PopupWindow.h/.cpp` | Popup window: `CreateParams` creation parameters, profiles (standard/miniPlayer/desktopLyrics), `beforeClose` async close, mouse pass-through + interactive hot zones, overlay custom dragging and activation-chain elimination |
 | `WindowManager.h/.cpp` | Singleton: popup creation/destruction/query, cross-window directed/broadcast messaging, activation-handoff sink, panel-mode reference counting, `MAX_POPUPS=8` limit |
 | `WindowShellBase.h/.cpp` | Unified window-shell abstraction: capability descriptor `WindowShellCapabilities`, observation snapshot `WindowShellSnapshot`, Chrome commands, and full-screen lifecycle interface |
+| `WindowTargetPolicy.h/.cpp` | Input classification for `WindowTargetResolver`; pure logic, unit-testable |
+| `WindowGeometryMath.h/.cpp` / `WindowDpiProbe.h/.cpp` | Pure DPI conversion and size-constraint logic; probes the target monitor's DPI before `CreateWindowExW` |
+| `BackgroundSuspendPolicy.h` | The background-suspend decision: combinations of locked, covered, minimized and similar conditions |
 | `WindowTargetResolver.h/.cpp` | Unified target resolution: `ResolveForMutation` (must fail if not found) / `ResolveForObservation` (may fall back to main), replacing scattered caller-HWND lookups |
 | `StartupPresentationCoordinator.h/.cpp` | Startup presentation decision-maker: based on navigation completion / ready signal / chrome readiness / fallback timer, decides when to commit reveal (to avoid white-screen flicker) |
 
@@ -45,6 +55,7 @@ Chrome's "resolve" and "apply" are strictly layered; there is only one schema, a
 | `WindowChromeApplier.h/.cpp` | Apply | Applies the resolved state to the native window through `WindowChromeApplyHooks` (a set of callbacks provided by the window); `RefreshNativeFrame` refreshes the native frame |
 | `ChromeController.h/.cpp` | Entry | Wraps Resolver + Applier, providing the unified entry points `Resolve` / `Apply` / `ResolveAndApply` / `RefreshNativeFrame` |
 | `WindowChromeTrace.h` | Diagnostics | `[WindowChromeTrace]` diagnostic logging (off by default, enabled by setting the environment variable `FOO_UI_WEBVIEW2_WINDOW_TRACE=1`) |
+| `WindowBehaviorTrace.h/.cpp` | Diagnostics | Records the window, DWM and WebView side effects of this module so two builds can be compared; off by default. Unlike `FOO_UI_WEBVIEW2_WINDOW_TRACE` it only records and turns on no probes that change behavior. Enabled by `webview_behavior_trace.on` in the profile directory or `FOO_UI_WEBVIEW2_BEHAVIOR_TRACE=1` |
 
 ### Tray / Taskbar / Menu Overlay Surface
 
@@ -53,9 +64,13 @@ Chrome's "resolve" and "apply" are strictly layered; there is only one schema, a
 | `TrayIcon.h/.cpp` | System tray singleton: icon/balloon, three-zone context menu (top/playback/bottom), dual backends Native (`TrackPopupMenu`) and WebView (self-drawn), rich menu items (nowplaying/rating/slider/segmented), minimize/close to tray, re-registration after Explorer restarts |
 | `TaskbarIntegration.h/.cpp` | Taskbar singleton (`ITaskbarList3`): thumbnail toolbar buttons, progress indication, overlay icons, flashing; updates default buttons with playback state |
 | `TaskbarTrayContracts.h` | Shared contract definitions for tray/taskbar |
+| `TaskbarProgressPolicy.h` | Mapping from playback state to the taskbar progress bar (pure logic) |
 | `MenuOverlayHost.h/.cpp` | Self-drawn menu overlay-surface host (singleton): holds its own `PopupWindow` (not entered into `WindowManager`, not counted toward `MAX_POPUPS`), pools and reuses WebView, supports owner-mode event routing, content-sized window, and exit animation |
 
-> `TestPageHtml.inl` is the embedded test-page HTML.
+| `MenuActionContract.h` / `MenuTokenTable.h` / `MenuResourceLimits.h` / `MenuOverlayGeometry.h` | Header-only pieces shared by the tray and self-drawn menus: the internal routing identity of menu actions, the per-show opaque token table, resource caps and overlay geometry; unit tests include them directly |
+| `menu-overlay/` and `MenuOverlayPage.inl` | HTML/CSS/JS sources of the self-drawn menu page; `MenuOverlayPage.inl` is generated from them and not edited by hand |
+
+> `TestPageHtml.inl` is the embedded test-page HTML, shown when no template can be loaded.
 
 ---
 
@@ -99,7 +114,7 @@ To avoid "black/white screen first, then content", the main window starts hidden
 ## Dependencies
 
 - **Depends on**: `core/WebViewPanel` (base class), `core/WebViewContext` (event broadcasting / instance lookup), `api/` (window/tray/taskbar-related APIs are exposed to the frontend through it), `utils/`.
-- **Depended on by**: `core/UserInterface` creates and holds `MainWindow`; `window/`, `api/WindowApi`, `api/TrayApi`, `api/TaskbarApi`, and `api/MenuApi` realize native window behavior through this module; `callbacks/PlaybackCallback` updates taskbar buttons through `TaskbarIntegration`.
+- **Depended on by**: `ui/UserInterface` creates and holds `MainWindow`; `window/`, `api/WindowApi`, `api/TrayApi`, `api/TaskbarApi`, and `api/MenuApi` realize native window behavior through this module; `callbacks/PlaybackCallback` updates taskbar buttons through `TaskbarIntegration`.
 
 ---
 

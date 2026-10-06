@@ -16,6 +16,7 @@ static BOOL CALLBACK __MonitorEnumProc(
   LPRECT lprcMonitor, // monitor intersection rectangle
   LPARAM dwData       // data
   ) {
+	(void)hMonitor; (void)hdcMonitor;
 	RECT * clip = (RECT*)dwData;
 	RECT newclip;
 	if (UnionRect(&newclip,clip,lprcMonitor)) {
@@ -102,7 +103,7 @@ bool cfg_window_placement::apply_to_window(HWND window, bool allowHidden) {
 	return ret;
 }
 
-void cfg_window_placement::on_window_creation_silent(HWND window) {
+void cfg_window_placement::on_window_creation_silent(HWND) {
 }
 bool cfg_window_placement::on_window_creation(HWND window, bool allowHidden) {
 	

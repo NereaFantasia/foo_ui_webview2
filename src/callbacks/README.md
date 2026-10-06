@@ -2,7 +2,7 @@ English | [中文](./README.zh-CN.md)
 
 # src/callbacks/ — foobar2000 Events → Frontend Event Bridge
 
-`callbacks/` is the source of "event return": it listens for the various foobar2000 SDK callbacks (playback, playlist, library, metadata, queue, statistics, DSP, config, audio devices), translates them into colon-format bridge events, and broadcasts them to all WebView instances via `WebViewContext::BroadcastEvent`, letting the frontend perceive foobar2000's state changes in real time.
+`callbacks/` is the source of "event return": it listens for the various foobar2000 SDK callbacks (playback, playlist, library, metadata, queue, statistics, DSP, config, audio devices), translates them into colon-format bridge events, and broadcasts them to all WebView instances via `api::emit::Broadcast`, letting the frontend perceive foobar2000's state changes in real time.
 
 ---
 
@@ -12,8 +12,8 @@ This is "③ Event return" in the three-stage bridge. In contrast to `api/` (whe
 
 ```
 foobar2000 SDK callback (on_playback_new_track / on_items_added / ...)
-      └─ build JSON data
-            └─ WebViewContext::GetInstance().BroadcastEvent("namespace:event", data)
+      └─ fill in the payload struct generated from the declaration
+            └─ api::emit::Broadcast<api::<ns>::events::<Event>>(payload)
                   └─ each instance postMessage → fb2k.on("namespace:event", cb)
 ```
 
@@ -57,8 +57,8 @@ Using a track change as an example:
 user clicks next / auto-continue
    └─ playback_control switches track
         └─ on_playback_new_track(metadb_handle_ptr)        (PlaybackCallback)
-              ├─ build trackInfo JSON
-              ├─ WebViewContext::BroadcastEvent("playback:trackChanged", trackInfo)
+              ├─ BuildTrackRow(track) builds the shared Track row
+              ├─ api::emit::Broadcast<…::TrackChanged>(row)
               └─ QueueManager::OnPlaybackNewTrack(track)     (advance the JIT state machine)
 ```
 
@@ -70,7 +70,7 @@ Some high-frequency events (such as selection changes and progress) are throttle
 
 ## Dependencies
 
-- **Depends on**: the foobar2000 SDK callback interfaces (`play_callback` / `playlist_callback` / `library_callback` / `config_object_notify`, etc.), `core/WebViewContext` (the broadcast channel), `core/QueueManager`, and `window/TaskbarIntegration` (playback state driving taskbar buttons).
+- **Depends on**: the foobar2000 SDK callback interfaces (`play_callback` / `playlist_callback` / `library_callback` / `config_object_notify`, etc.), `api/EventEmit.h` (broadcasting through `core/WebViewContext`), `core/QueueManager`, and `window/TaskbarIntegration` (playback state driving taskbar buttons).
 - **Depended on by**: `core/WebViewPanel::InitializeCallbacks()` brings up the manually registered callbacks; the frontend consumes these events through `fb2k.on()` / the SDK's `fb.on()`.
 
 ---
@@ -79,10 +79,10 @@ Some high-frequency events (such as selection changes and progress) are throttle
 
 To add a new event (e.g., `playback:fooChanged`):
 
-1. **Three-point verification**: confirm the SDK has the corresponding callback, that JSON field naming is stable, and that the event name uses the colon format (distinguished from any invoke's dot name).
+1. **Declare it first**: declare the event and its payload in the `Events` interface of `api/schema/<ns>.ts`, with a colon-format name, then regenerate as [api/schema/README.md](../api/schema/README.md) describes. Confirm the SDK really has the corresponding callback.
 2. **Choose a registration method**: self-register via `service_factory_single_t` whenever possible; for those that need to initialize with the panel lifecycle, put them in `InitXxxCallbacks()` and call it from `WebViewPanel::InitializeCallbacks()`.
-3. **Broadcast**: in the callback implementation, call `WebViewContext::GetInstance().BroadcastEvent("playback:fooChanged", data)`; to send to a single instance, route via `api/CallerContext` instead.
-4. **Sync**: register the new event in `sdk/` (event types) and `docs/` (event inventory), keeping the documentation consistent with the code.
+3. **Send**: in the callback implementation, emit through a helper in `api/EventEmit.h`, for example `api::emit::Broadcast<api::playback::events::FooChanged>(payload)`; to reach a single page use `Emit` / `EmitTo` / `SendTo`, matching the `@delivery` in the declaration.
+4. **Sync**: the SDK event types and the documentation site's event blocks are generated from the declaration; its description is the public documentation.
 5. **Throttle**: high-frequency events must be deduplicated/throttled at the source to avoid flooding the frontend.
 
 ---

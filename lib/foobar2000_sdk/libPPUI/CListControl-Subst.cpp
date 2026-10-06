@@ -6,8 +6,17 @@
 #include "ImplementOnFinalMessage.h"
 #include "CListControl-Cells.h"
 #include "windowLifetime.h"
+#include <pfc/sort2.h>
 
-#define I_IMAGEREALLYNONE (-3)
+// =============================================================
+// ListView / CListControl substition code for dark mode support
+// =============================================================
+
+#ifdef _MSC_VER
+#pragma warning(disable:4996) // wcscpy warning
+#endif
+
+static constexpr int I_IMAGEREALLYNONE = -3;
 
 namespace {
 
@@ -36,6 +45,7 @@ namespace {
 			MSG_WM_CREATE(OnCreate)
 			MESSAGE_HANDLER_EX(LVM_INSERTCOLUMN, OnInsertColumn)
 			MESSAGE_HANDLER_EX(LVM_DELETECOLUMN, OnDeleteColumn)
+			MESSAGE_HANDLER_EX(LVM_GETCOLUMN, OnGetColumn)
 			MESSAGE_HANDLER_EX(LVM_SETCOLUMN, OnSetColumn)
 			MESSAGE_HANDLER_EX(LVM_SETCOLUMNWIDTH, OnSetColumnWidth)
 			MESSAGE_HANDLER_EX(LVM_GETCOLUMNWIDTH, OnGetColumnWidth)
@@ -62,15 +72,20 @@ namespace {
 			MESSAGE_HANDLER_EX(LVM_ENABLEGROUPVIEW, OnEnableGroupView)
 			MESSAGE_HANDLER_EX(LVM_SCROLL, OnScroll)
 			MESSAGE_HANDLER_EX(LVM_REDRAWITEMS, OnRedrawItems)
+			MESSAGE_HANDLER_EX(LVM_GETTEXTBKCOLOR, OnGetColor)
+			MESSAGE_HANDLER_EX(LVM_GETBKCOLOR, OnGetColor)
+			MESSAGE_HANDLER_EX(LVM_GETTEXTCOLOR, OnGetColor)
+			MESSAGE_HANDLER_EX(LVM_GETSELECTIONMARK, OnGetSelectionMark)
 			MSG_WM_KEYDOWN(OnKeyDown)
 			MSG_WM_SYSKEYDOWN(OnKeyDown)
 			CHAIN_MSG_MAP(CListControlComplete)
 		END_MSG_MAP()
 
 		void OnKeyDown(UINT nChar, UINT nRepCnt, UINT nFlags) {
+			(void)nRepCnt; (void)nFlags;
 			NMLVKEYDOWN arg = {};
 			arg.hdr = this->setupHdr(LVN_KEYDOWN);
-			arg.wVKey = nChar;
+			arg.wVKey = (WORD)nChar;
 			sendNotify(&arg);
 			SetMsgHandled(FALSE);
 		}
@@ -165,6 +180,12 @@ namespace {
 
 			PFC_ASSERT(this->GetHeaderCtrl().GetItemCount() == (int)this->GetColumnCount());
 
+			if (col->mask & LVCF_IMAGE) {
+				HDITEM item = {HDI_IMAGE};
+				item.iImage = col->iImage;
+				GetHeaderCtrl().SetItem((int)idx, &item);
+			}
+
 			return idx;
 		}
 		LRESULT OnDeleteColumn(UINT, WPARAM wp, LPARAM) {
@@ -173,6 +194,29 @@ namespace {
 				PFC_ASSERT(!"???"); return FALSE;
 			}
 			this->DeleteColumn(idx);
+			return TRUE;
+		}
+		LRESULT OnGetColumn(UINT, WPARAM wp, LPARAM lp) {
+			const size_t iColumn = wp;
+			const auto col = reinterpret_cast<LVCOLUMN*>(lp);
+			if (col->mask & LVCF_TEXT) {
+				pfc::string8 temp; this->GetColumnText(iColumn, temp);
+				safeFillText(col->pszText, col->cchTextMax, pfc::wideFromUTF8(temp));
+			}
+			if (col->mask & (LVCF_FMT| LVCF_IMAGE)) {
+				auto hdr = this->GetHeaderCtrl();
+				if (hdr) {
+					HDITEM hditem = { };
+					if (col->mask & LVCF_FMT) hditem.mask |= HDI_FORMAT;
+					if (col->mask & LVCF_IMAGE) hditem.mask |= HDI_IMAGE;
+					hdr.GetItem((int)iColumn, &hditem);
+					if (col->mask & LVCF_FMT) col->fmt = hditem.fmt & LVCFMT_JUSTIFYMASK;
+					if (col->mask & LVCF_IMAGE) col->iImage = hditem.iImage;
+				}
+			}
+			if (col->mask & LVCF_WIDTH) {
+				col->cx = this->GetSubItemWidth(iColumn);
+			}
 			return TRUE;
 		}
 		LRESULT OnSetColumn(UINT, WPARAM wp, LPARAM lp) {
@@ -198,7 +242,21 @@ namespace {
 			if (col->mask & LVCF_WIDTH) {
 				this->ResizeColumn(idx, col->cx);
 			}
+			if (col->mask & (LVCF_IMAGE |LVCF_ORDER)) {
+				HDITEM item = {};
+				if (col->mask & LVCF_IMAGE) {
+					item.mask |= HDI_IMAGE;
+					item.iImage = col->iImage;
+				}
+				if (col->mask & LVCF_ORDER) {
+					item.mask |= HDI_ORDER;
+					item.iOrder = col->iOrder;
+				}
+				
+				GetHeaderCtrl().SetItem((int)idx, &item);
 
+				if (col->mask & LVCF_ORDER) this->OnColumnsChanged();
+			}
 			return TRUE;
 		}
 		LRESULT OnGetItemCount(UINT, WPARAM, LPARAM) {
@@ -232,7 +290,6 @@ namespace {
 			auto info = (LVHITTESTINFO*)lp;
 			CPoint pt = this->PointClientToAbs(info->pt);
 			size_t item = this->ItemFromPointAbs(pt);
-			size_t subItem = SIZE_MAX;
 			if (item != SIZE_MAX) {
 				info->iItem = (int)item;
 				size_t subItem = this->SubItemFromPointAbs(pt);
@@ -250,7 +307,9 @@ namespace {
 				subItem = this->SubItemFromPointAbs(pt);
 				info->iSubItem = (subItem != SIZE_MAX) ? (int)subItem : -1;
 			}
-			return subItem != SIZE_MAX ? (LRESULT)subItem : (LRESULT)-1;
+			// Docs: returns index of item or subitem (WTF?)
+			// Reality: returns index of item
+			return item != SIZE_MAX ? (LRESULT)item : (LRESULT)-1;
 		}
 
 		virtual void SetItemState(size_t idx, DWORD mask, DWORD state) {
@@ -370,7 +429,7 @@ namespace {
 			if (mask == 0) mask = 0xFFFFFFFF;
 			m_listViewExStyle = (m_listViewExStyle & ~mask) | (set & mask);
 
-			this->SetRowStyle((m_listViewExStyle & LVS_EX_GRIDLINES) ? rowStyleGrid : rowStyleDefault);
+			this->SetRowStyle((m_listViewExStyle & LVS_EX_GRIDLINES) ? rowStyleGrid : rowStyleFlatDelimited);
 
 			if (m_listViewExStyle != ret) ReloadData();
 			return ret;
@@ -398,6 +457,7 @@ namespace {
 			return ret;
 		}
 		LRESULT OnGetImageList(UINT, WPARAM wp, LPARAM lp) {
+			(void)lp;
 			size_t idx = (size_t)wp;
 			LRESULT ret = 0;
 			if (idx < std::size(m_imageLists)) {
@@ -543,7 +603,7 @@ namespace {
 				this->sendNotify(&info);
 			});
 		}
-		void RequestReorder(size_t const* order, size_t count) override {}
+		void RequestReorder(size_t const*, size_t) override {}
 		void RequestRemoveSelection() override {}
 
 		void OnColumnHeaderClick(t_size index) override {
@@ -622,9 +682,10 @@ namespace {
 			}
 		}
 
-		virtual void SetSubItemText(size_t item, size_t subItem, const char* text) {}
+		virtual void SetSubItemText(size_t item, size_t subItem, const char* text) { (void)item; (void)subItem; (void)text; }
 
 		virtual int GetItemImage(size_t item, size_t subItem) const {
+			(void)item; (void)subItem;
 			return I_IMAGEREALLYNONE;
 		}
 		CImageList GetImageList() const {
@@ -681,24 +742,42 @@ namespace {
 			sendNotify(&cd);
 		}
 		void RenderItem(t_size item, const CRect& itemRect, const CRect& updateRect, CDCHandle dc) override {
-			NMCUSTOMDRAW cd = {};
+			NMLVCUSTOMDRAW cd = {};
 			if (m_notifyItemDraw) {
-				cd = { setupHdr(NM_CUSTOMDRAW) };
-				cd.dwDrawStage = CDDS_ITEMPREPAINT;
-				cd.hdc = dc;
-				cd.rc = itemRect;
-				cd.dwItemSpec = (DWORD)item;
-				cd.uItemState = GetItemCDState(item);
-				cd.lItemlParam = GetItemParam(item);
+				cd.nmcd = { setupHdr(NM_CUSTOMDRAW) };
+				cd.nmcd.dwDrawStage = CDDS_ITEMPREPAINT;
+				cd.nmcd.hdc = dc;
+				cd.nmcd.rc = itemRect;
+				cd.nmcd.dwItemSpec = (DWORD)item;
+				cd.nmcd.uItemState = GetItemCDState(item);
+				cd.nmcd.lItemlParam = GetItemParam(item);
+				cd.clrFace = cd.clrText = this->GetSysColorHook(colorText);
+				cd.clrTextBk = this->GetSysColorHook(colorBackground);
+				cd.rcText = this->GetItemTextRectHook(item, 0, itemRect);
 				LRESULT status = sendNotify(&cd);
 				if (status & CDRF_SKIPDEFAULT) return;
 			}
-			
-			__super::RenderItem(item, itemRect, updateRect, dc);
 
+			if (m_style & LVS_OWNERDRAWFIXED) {
+
+				DRAWITEMSTRUCT ds = { };
+				ds.CtlType = ODT_LISTVIEW;
+				ds.CtlID = (UINT)GetDlgCtrlID();
+				ds.itemID = (UINT)item;
+				ds.itemAction = ODA_DRAWENTIRE;
+				ds.itemState = (this->IsItemSelected(item) ? ODS_SELECTED : 0) | (item == this->GetFocusItem() ? ODS_FOCUS : 0);
+				ds.hwndItem = m_hWnd;
+				ds.hDC = dc;
+				ds.rcItem = itemRect;
+				ds.itemData = this->GetItemParam(item);
+				
+				GetParent().SendMessage(WM_DRAWITEM, ds.CtlID, (LPARAM)&ds);
+			} else {
+				__super::RenderItem(item, itemRect, updateRect, dc);
+			}
 
 			if (m_notifyItemDraw) {
-				cd.dwDrawStage = CDDS_ITEMPOSTPAINT;
+				cd.nmcd.dwDrawStage = CDDS_ITEMPOSTPAINT;
 				sendNotify(&cd);
 			}
 		}
@@ -709,6 +788,13 @@ namespace {
 		}
 #endif
 
+		LRESULT OnGetColor(UINT msg, WPARAM, LPARAM) {
+			return (LRESULT)this->GetSysColorHook(msg == LVM_GETTEXTCOLOR ? colorText : colorBackground);
+		}
+		LRESULT OnGetSelectionMark(UINT, WPARAM, LPARAM) {
+			auto ret = this->GetSelectionStart();
+			return ret == SIZE_MAX ? (LRESULT)-1 : (LRESULT)ret;
+		}
 	};
 
 	class CListControl_ListViewOwnerData : public CListControl_ListViewBase {
@@ -777,6 +863,9 @@ namespace {
 			MESSAGE_HANDLER_EX(LVM_REMOVEALLGROUPS, OnRemoveAllGroups)
 			MESSAGE_HANDLER_EX(LVM_DELETEITEM, OnDeleteItem)
 			MESSAGE_HANDLER_EX(LVM_DELETEALLITEMS, OnDeleteAllItems)
+			MESSAGE_HANDLER_EX(LVM_SORTITEMS, OnSortItems)
+			MESSAGE_HANDLER_EX(LVM_SORTITEMSEX, OnSortItemsEx)
+			MESSAGE_HANDLER_EX(LVM_DELETECOLUMN, OnDeleteColumn)
 			CHAIN_MSG_MAP(CListControl_ListViewBase)
 		END_MSG_MAP()
 	private:
@@ -866,6 +955,20 @@ namespace {
 			}
 			return text;
 		}
+
+		LRESULT OnDeleteColumn(UINT, WPARAM wp, LPARAM) {
+			// OVERRIDES CListControl_ListViewBase, have to update our content with column deletion!
+			size_t idx = (size_t)wp;
+			if (idx >= this->GetColumnCount()) {
+				PFC_ASSERT(!"???"); return FALSE;
+			}
+			this->DeleteColumn(idx);
+			for (auto& walk : m_content) {
+				if (idx < walk.text.size()) walk.text.erase(walk.text.begin() + idx);
+			}
+			return TRUE;
+		}
+
 		LRESULT OnSetItem(UINT, WPARAM, LPARAM lp) {
 			auto pItem = reinterpret_cast<LVITEM*>(lp);
 			size_t item = (size_t)pItem->iItem;
@@ -1141,6 +1244,37 @@ namespace {
 			}
 			return false;
 		}
+		BOOL lvRequestReorder(size_t const* order, size_t count) {
+			if (!m_groups.empty()) return FALSE;
+			PFC_ASSERT(count == m_content.size());
+			pfc::reorder_t(m_content, order, count);
+			this->OnItemsReordered(order, count);
+			return TRUE;
+		}
+		LRESULT OnSortItems(UINT, WPARAM wp, LPARAM lp) {
+			const auto total = this->GetItemCount();
+			if (total == 0) return FALSE;
+			auto pSort = reinterpret_cast<PFNLVCOMPARE>(lp);
+			auto order = pfc::make_identitiy(total);
+			auto compare = [&](size_t i1, size_t i2) {
+				auto p1 = this->GetItemParam(i1);
+				auto p2 = this->GetItemParam(i2);
+				return (*pSort)(p1, p2, wp);
+				};
+			pfc::sort_t(order, compare, total);
+			return this->lvRequestReorder(order.get_ptr(), total);
+		}
+		LRESULT OnSortItemsEx(UINT, WPARAM wp, LPARAM lp) {
+			const auto total = this->GetItemCount();
+			if (total == 0) return FALSE;
+			auto pSort = reinterpret_cast<PFNLVCOMPARE>(lp);
+			auto order = pfc::make_identitiy(total);
+			auto compare = [&](size_t i1, size_t i2) {
+				return (*pSort)((LPARAM)i1, (LPARAM)i2, wp);
+				};
+			pfc::sort_t(order, compare, total);
+			return this->lvRequestReorder(order.get_ptr(), total);
+		}
 	};
 }
 
@@ -1163,7 +1297,7 @@ HWND CListControl_ReplaceListView(HWND wndReplace) {
 			ret = obj->CreateInDialog(parent, ctrlID, src);
 			PFC_ASSERT(ret != NULL);
 			if (headerStyle != 0 && obj->GetHeaderCtrl() == NULL) {
-				obj->InitializeHeaderCtrl((headerStyle&(HDS_FULLDRAG | HDS_BUTTONS)));
+				obj->InitializeHeaderCtrl((headerStyle&(HDS_DRAGDROP | HDS_FULLDRAG | HDS_BUTTONS)));
 			}
 		} else {
 			PFC_ASSERT(src.GetItemCount() == 0); // transferring of items not yet implemented
@@ -1171,16 +1305,19 @@ HWND CListControl_ReplaceListView(HWND wndReplace) {
 			ret = obj->CreateInDialog(parent, ctrlID, src);
 			PFC_ASSERT(ret != NULL);
 			if (headerStyle != 0 && obj->GetHeaderCtrl() == NULL) {
-				obj->InitializeHeaderCtrl((headerStyle & (HDS_FULLDRAG | HDS_BUTTONS)));
+				obj->InitializeHeaderCtrl((headerStyle & (HDS_DRAGDROP | HDS_FULLDRAG | HDS_BUTTONS)));
 			}
 		}
 	}
 	return ret;
 }
 
-namespace {
-	// FIX ME WM_DELETEITEM
 
+// =============================================================
+// ListBox substitution code
+// Incomplete and currently unused, as standard listbox has properly working dark mode
+// =============================================================
+namespace {
 	class CListControl_ListBoxBase : public CListControlReadOnly {
 	protected:
 		const DWORD m_style;
@@ -1319,10 +1456,11 @@ namespace {
 			notifyParent(LBN_SELCHANGE);
 		}
 		void ExecuteDefaultAction(size_t idx) override {
+			(void)idx;
 			notifyParent(LBN_DBLCLK);
 		}
 
-		void RequestReorder(size_t const* order, size_t count) override {}
+		void RequestReorder(size_t const*, size_t) override {}
 		void RequestRemoveSelection() override {}
 	};
 	class CListControl_ListBox : public CListControl_ListBoxBase {
@@ -1383,6 +1521,7 @@ namespace {
 			return at;
 		}
 		LRESULT OnAddString(UINT, WPARAM wp, LPARAM lp) {
+			(void)wp;
 			auto str = importString(lp);
 			if (isForceSorted()) return AddStringSorted(std::move(str));
 			size_t ret = m_content.size();
@@ -1399,6 +1538,8 @@ namespace {
 			return LB_OKAY;
 		}
 		LRESULT OnDeleteString(UINT, WPARAM wp, LPARAM) {
+			// FIX ME WM_DELETEITEM
+			// FIX ME WM_DELETEITEM also needed on destroy?
 			size_t idx = (size_t) wp;
 			if (idx < m_content.size()) {
 				m_content.erase(m_content.begin() + idx);
@@ -1419,6 +1560,7 @@ namespace {
 			}
 		}
 		LRESULT OnGetItemData(UINT, WPARAM wp, LPARAM lp) {
+			(void)lp;
 			size_t idx = (size_t)wp;
 			if (idx < m_content.size()) {
 				return (LRESULT)m_content[idx].data;

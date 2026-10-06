@@ -10,6 +10,7 @@
 
 #include <cstddef>
 #include <string>
+#include <string_view>
 #include <vector>
 
 namespace fb2k_group_runs {
@@ -145,7 +146,9 @@ private:
 // caller's buffer is not cleared. Written directly rather than built as a DOM:
 // in the worst case runs is as long as total, and a DOM would cost one full
 // intermediate copy before dump(). `sub` is emitted only in two-level mode.
-void WriteGroupRunsJson(std::string& out, size_t playlist, size_t total,
+// playlistGuid is the GUID of the playlist grouped, taken on the main thread when
+// the request was resolved, as the declared result carries it.
+void WriteGroupRunsJson(std::string& out, size_t playlist, std::string_view playlistGuid, size_t total,
                         const GroupRunAccumulator& acc);
 
 }  // namespace fb2k_group_runs

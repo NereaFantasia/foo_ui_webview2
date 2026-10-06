@@ -2,6 +2,12 @@
 
 #include "commonObjects.h"
 
+// 2025 addendum
+// fb2k::imageLoaderLite was originally introduced to interop with bundled image libraries (namely libwebp) to handle non-natively-supported formats.
+// It is deprecated and should not be used in new code.
+// Use Windows Imaging Component & Direct2D instead, or NSImage on macOS.
+// Only still useful part is getInfo(), which provides a lightweight way to query image description.
+
 #ifdef _WIN32
 namespace Gdiplus {
 	class Image;

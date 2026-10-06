@@ -4,8 +4,8 @@
 // 断言依据是 docs/preferences/DESIGN.md 第 11.4 节：百分比 50–200、步进 25、默认 100，
 // WebView2 因子 = 百分比 / 100；只有预热开关影响重启。
 #include "pch.h"
-#include "../src/core/PreferencesFields.h"
-#include "../src/core/PreferencesZoom.h"
+#include "../src/prefs/PreferencesFields.h"
+#include "../src/prefs/PreferencesZoom.h"
 
 using namespace prefs_zoom;
 

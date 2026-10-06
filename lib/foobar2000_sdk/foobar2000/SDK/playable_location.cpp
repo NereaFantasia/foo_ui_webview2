@@ -61,7 +61,6 @@ const playable_location_impl & playable_location_impl::operator=(const playable_
 	copy(src);return *this;
 }
 
-playable_location_impl::playable_location_impl() : m_subsong(0) {}
 playable_location_impl::playable_location_impl(const char * p_path,t_uint32 p_subsong) : m_path(p_path), m_subsong(p_subsong) {}
 playable_location_impl::playable_location_impl(const playable_location & src) {copy(src);}
 

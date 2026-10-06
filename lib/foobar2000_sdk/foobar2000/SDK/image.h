@@ -24,6 +24,8 @@ namespace fb2k {
         static bool greater(imageSize_t const & v1, imageSize_t const & v2);
         bool operator>(const imageSize_t & other) const { return greater(*this, other); }
         bool operator<(const imageSize_t & other) const { return greater(other, *this); }
+        
+        pfc::string8 toString() const;
     };
 	inline imageSize_t imageSizeMake(double w, double h) { imageSize_t s = { w, h }; return s; }
 
@@ -60,7 +62,7 @@ namespace fb2k {
 		//! Detaches platform-specific native data from this image object. The caller becomes the owner of the native data and is responsible for its deletion.
 		virtual nativeImage_t detachNative() = 0;
 
-		static image::ptr empty() { return NULL; }
+		static image::ptr empty() { return nullptr; }
 	};
 
 	struct imageCreatorArg_t {
@@ -131,13 +133,13 @@ namespace fb2k {
     public:
         
         struct arg_t {
-            arg_t() { wantSize = imageSize_t::empty(); }
+            arg_t() {}
             arg_t( imageSize_t const & size ) : wantSize(size) {}
-            imageSize_t wantSize;
+            imageSize_t wantSize = {};
             imageRef bigImageHint; // optional, provide if you have big non resized version available
         };
         
-        static arg_t defArg() { arg_t r; return r; }
+        static arg_t defArg() { return {}; }
         
         virtual imageRef tryLoadFromCache( imageLocation_t const & loc, arg_t const & arg ) = 0;
         virtual imageRef loadSynchronously( imageLocation_t const & loc, arg_t const & arg, abort_callback & aborter ) = 0;

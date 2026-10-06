@@ -24,13 +24,23 @@ WebViewPanel (core/)
 
 | 文件 | 职责 |
 |------|------|
-| `MainWindow.h/.cpp` | 主窗口：客户区扩展标题栏（`WM_NCCALCSIZE`/`WM_NCHITTEST`）、拖拽区、最小/最大尺寸、圆角、启动 reveal 状态机、后台挂起省内存、overlay 误激活防御、期望置顶守护 |
+| `MainWindow.h/.cpp` | 主窗口：创建与销毁、消息处理（`WndProc`/`HandleMessage`）、尺寸变化、WebView 回调、启动 reveal 状态机 |
+| `MainWindowCaption.cpp` | 客户区扩展标题栏（`WM_NCCALCSIZE`/`WM_NCHITTEST`）、拖拽区与非拖拽区、标题栏按钮几何、系统菜单、DPI 变化、最小/最大尺寸 |
+| `MainWindowActivation.cpp` | `WM_ACTIVATE`/`WM_ACTIVATEAPP` 处理、overlay 误激活防御、期望置顶守护 |
+| `MainWindowBackground.cpp` | 后台挂起省内存：遮挡检测、WebView 挂起与恢复、恢复后的页面健康探测、渲染进程死亡后重建 |
+| `MainWindowPlacement.cpp` | 窗口位置的保存与恢复、按初始 DPI 设定默认尺寸约束 |
+| `MainWindowMaximizeButton.cpp` / `MaximizeButtonRegion.h/.cpp` | 页面自绘的最大化键：按页面上报的矩形以 `HTMAXBUTTON` 回答命中测试，让 Windows 11 弹出贴靠布局，并把按钮上的鼠标输入转回页面 |
+| `MainWindowShell.cpp` | `WindowShellBase` 实现：能力描述、壳快照、Chrome 修补命令、全屏标志 |
 | `MainWindowDwm.cpp` | 主窗口 DWM 相关实现（Mica/帧扩展等拆分单元） |
 | `MainWindowMenu.cpp` | 主窗口菜单命令（打开文件、偏好、DevTools、主菜单查找等） |
-| `MainWindowInternal.h` | 主窗口内部共享声明 |
+| `MainWindowDiagnostics.cpp` | 诊断取证：交互式缩放、surface 与 WebView 生命周期日志、运行时 DOM 探针 |
+| `MainWindowInternal.h/.cpp` | `MainWindow*.cpp` 共用的非成员辅助函数：DWM 调用包装、暗色模式、取证日志、格式化 |
 | `PopupWindow.h/.cpp` | 弹窗：`CreateParams` 创建参数、profile（standard/miniPlayer/desktopLyrics）、`beforeClose` 异步关闭、鼠标穿透 + 交互热区、overlay 自定义拖拽与激活链根除 |
 | `WindowManager.h/.cpp` | 单例：弹窗创建/销毁/查询、跨窗口定向/广播消息、激活承接 sink、面板模式引用计数、`MAX_POPUPS=8` 限制 |
 | `WindowShellBase.h/.cpp` | 统一窗口壳抽象：能力描述 `WindowShellCapabilities`、观测快照 `WindowShellSnapshot`、Chrome 命令与全屏生命周期接口 |
+| `WindowTargetPolicy.h/.cpp` | `WindowTargetResolver` 的输入分类，纯逻辑，可单测 |
+| `WindowGeometryMath.h/.cpp` / `WindowDpiProbe.h/.cpp` | DPI 换算与尺寸约束的纯逻辑；在 `CreateWindowExW` 之前探测目标显示器的 DPI |
+| `BackgroundSuspendPolicy.h` | 后台挂起的判定：锁屏、被遮挡、最小化等条件的组合 |
 | `WindowTargetResolver.h/.cpp` | 统一 target 解析：`ResolveForMutation`（找不到必须失败）/ `ResolveForObservation`（可回退 main），替代散落的 caller HWND 查找 |
 | `StartupPresentationCoordinator.h/.cpp` | 启动呈现决策机：根据导航完成 / ready 信号 / chrome 就绪 / 兜底定时器，决定何时 commit reveal（避免白屏闪烁） |
 
@@ -45,6 +55,7 @@ Chrome 的「解析」与「应用」严格分层，只有一套 schema，禁止
 | `WindowChromeApplier.h/.cpp` | 应用 | 通过 `WindowChromeApplyHooks`（窗口提供的回调集）把 resolved 状态落到原生窗口；`RefreshNativeFrame` 刷新原生帧 |
 | `ChromeController.h/.cpp` | 入口 | 包装 Resolver + Applier，提供 `Resolve` / `Apply` / `ResolveAndApply` / `RefreshNativeFrame` 统一入口 |
 | `WindowChromeTrace.h` | 诊断 | `[WindowChromeTrace]` 诊断日志（默认关闭，置环境变量 `FOO_UI_WEBVIEW2_WINDOW_TRACE=1` 开启） |
+| `WindowBehaviorTrace.h/.cpp` | 诊断 | 记录本模块的窗口、DWM 与 WebView 副作用，供两个构建对照；默认关闭。与 `FOO_UI_WEBVIEW2_WINDOW_TRACE` 不同，它只记录，不开启会改变行为的探针。在 profile 目录放 `webview_behavior_trace.on` 或置 `FOO_UI_WEBVIEW2_BEHAVIOR_TRACE=1` 开启 |
 
 ### 托盘 / 任务栏 / 菜单覆盖面
 
@@ -53,9 +64,13 @@ Chrome 的「解析」与「应用」严格分层，只有一套 schema，禁止
 | `TrayIcon.h/.cpp` | 系统托盘单例：图标/气泡、三区上下文菜单（top/playback/bottom）、Native（`TrackPopupMenu`）与 WebView（自绘）双后端、富菜单项（nowplaying/rating/slider/segmented）、最小化/关闭到托盘、Explorer 重启后重注册 |
 | `TaskbarIntegration.h/.cpp` | 任务栏单例（`ITaskbarList3`）：缩略图工具栏按钮、进度指示、叠加图标、闪烁；随播放状态更新默认按钮 |
 | `TaskbarTrayContracts.h` | 托盘/任务栏共享契约定义 |
+| `TaskbarProgressPolicy.h` | 播放状态到任务栏进度条的映射（纯逻辑） |
 | `MenuOverlayHost.h/.cpp` | 自绘菜单覆盖面宿主（单例）：内持独立 `PopupWindow`（不进 `WindowManager`、不计 `MAX_POPUPS`），池化复用 WebView，支持 owner-mode 事件路由、内容尺寸窗、退场动画 |
 
-> `TestPageHtml.inl` 是内嵌测试页 HTML。
+| `MenuActionContract.h` / `MenuTokenTable.h` / `MenuResourceLimits.h` / `MenuOverlayGeometry.h` | 托盘与自绘菜单共用的纯头文件：菜单动作的内部路由身份、每次弹出的不透明令牌表、资源上限、覆盖面几何；单测直接 include |
+| `menu-overlay/` 与 `MenuOverlayPage.inl` | 自绘菜单页面的 HTML/CSS/JS 源文件；`MenuOverlayPage.inl` 由它们生成，不手改 |
+
+> `TestPageHtml.inl` 是内嵌测试页 HTML，没有可加载的模板时显示。
 
 ---
 
@@ -99,7 +114,7 @@ ChromeController::ResolveAndApply
 ## 依赖关系
 
 - **依赖**：`core/WebViewPanel`（基类）、`core/WebViewContext`（事件广播/实例查询）、`api/`（窗口/托盘/任务栏相关 API 经此暴露给前端）、`utils/`。
-- **被依赖**：`core/UserInterface` 创建并持有 `MainWindow`；`window/`、`api/WindowApi`、`api/TrayApi`、`api/TaskbarApi`、`api/MenuApi` 通过本模块落地原生窗口行为；`callbacks/PlaybackCallback` 通过 `TaskbarIntegration` 更新任务栏按钮。
+- **被依赖**：`ui/UserInterface` 创建并持有 `MainWindow`；`window/`、`api/WindowApi`、`api/TrayApi`、`api/TaskbarApi`、`api/MenuApi` 通过本模块落地原生窗口行为；`callbacks/PlaybackCallback` 通过 `TaskbarIntegration` 更新任务栏按钮。
 
 ---
 

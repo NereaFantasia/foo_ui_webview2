@@ -27,6 +27,7 @@ public:
 		MSG_WM_SETFONT(OnSetFont)
 		MSG_WM_GETFONT(OnGetFont)
 		MSG_WM_CREATE(OnCreate)
+		MESSAGE_HANDLER_EX(DarkMode::msgSetDarkMode(), OnSetDarkMode)
 	END_MSG_MAP()
 	std::function<void () > ClickHandler;
 
@@ -62,8 +63,23 @@ public:
 	void DrawAlternateText( const wchar_t * textDrawMe ) {
 		m_textDrawMe = textDrawMe;
 	}
-
+	void ApplyDark(DarkMode::param_t const &p) {
+		if (m_hWnd) {
+			if (p.bRetro) {
+				DarkMode::ApplyRetroTheme(m_hWnd);
+			} else {
+				DarkMode::ApplyDarkThemeCtrl(m_hWnd, p.IsDark());
+			}
+			
+			Invalidate();
+		}
+	}
 protected:
+	LRESULT OnSetDarkMode(UINT, WPARAM wp, LPARAM lp) {
+		auto p = DarkMode::param_t::importMsgParams({ wp, lp });
+		if (p) ApplyDark(*p);
+		return 1;
+	}
 	LRESULT MousePassThru(UINT cMsg, WPARAM cFlags, LPARAM lParam) {
 		SetMsgHandled(FALSE);
 		CPoint cPoint(lParam);
@@ -192,9 +208,9 @@ protected:
 
 		pdc.SetBkMode( TRANSPARENT );
 		if ( !IsWindowEnabled() ) {
-			pdc.SetTextColor( DarkMode::GetSysColor(COLOR_GRAYTEXT) );
+			pdc.SetTextColor( GetSysColor(COLOR_GRAYTEXT) );
 		} else if ( m_focused ) {
-			pdc.SetTextColor( DarkMode::GetSysColor(COLOR_HIGHLIGHT) );
+			pdc.SetTextColor( GetSysColor(COLOR_HIGHLIGHT) );
 		}
 		pdc.DrawText( m_textDrawMe, m_textDrawMe.GetLength(), &rcClient, DT_VCENTER | DT_CENTER | DT_SINGLELINE | DT_NOPREFIX );
 
@@ -210,7 +226,6 @@ protected:
 	bool IsPressed() {return m_pressed; }
 private:
 	int OnCreate(LPCREATESTRUCT lpCreateStruct) {
-		DarkMode::ApplyDarkThemeCtrl(*this, DarkMode::IsDialogDark(GetCtlColorTarget(), WM_CTLCOLORBTN));
 		if ( lpCreateStruct->lpszName != nullptr ) this->m_textDrawMe = lpCreateStruct->lpszName;
 		SetMsgHandled(FALSE); return 0;
 	}

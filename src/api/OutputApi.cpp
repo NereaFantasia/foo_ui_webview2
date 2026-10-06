@@ -4,6 +4,8 @@
 #include "pch.h"
 #include "api/OutputApi.h"
 #include "api/BridgeCore.h"
+#include "api/TypedApi.h"
+#include "api/generated/OutputSchema.h"
 #include <foobar2000/SDK/output.h>
 
 namespace {
@@ -22,7 +24,7 @@ namespace {
     // Device enumeration callback
     class DeviceEnumCallback : public output_device_enum_callback {
     public:
-        json devices = json::array();
+        std::vector<api::output::OutputDevice> devices;
         GUID currentEntryGuid;
         std::string currentEntryName;
 
@@ -35,19 +37,19 @@ namespace {
             pfc::string8 name;
             name.set_string(p_name, p_name_length);
 
-            devices.push_back({
-                {"guid", GuidToString(p_guid)},
-                {"name", name.get_ptr()},
-                {"entry", currentEntryName},
-                {"entryGuid", GuidToString(currentEntryGuid)}
-            });
+            api::output::OutputDevice device;
+            device.guid = GuidToString(p_guid);
+            device.name = name.get_ptr();
+            device.entry = currentEntryName;
+            device.entryGuid = GuidToString(currentEntryGuid);
+            devices.push_back(std::move(device));
         }
     };
 
     //==========================================================================
     // output.getDevices - Get available output devices
     //==========================================================================
-    json OutputGetDevices(const json& /*params*/) {
+    api::Result<api::output::GetDevicesResult> OutputGetDevices(const api::output::GetDevicesParams& /*params*/) {
         try {
             DeviceEnumCallback callback;
             
@@ -64,48 +66,46 @@ namespace {
                 entry->enum_devices(callback);
             }
 
-            return {
-                {"devices", callback.devices},
-                {"count", callback.devices.size()}
-            };
+            api::output::GetDevicesResult out;
+            out.count = static_cast<std::int64_t>(callback.devices.size());
+            out.devices = std::move(callback.devices);
+            return out;
         } catch (const std::exception& e) {
-            return {{"success", false}, {"error", e.what()}};
+            return api::Fail(e.what(), ApiErrorCode::OPERATION_FAILED);
         }
     }
 
     //==========================================================================
     // output.getEntries - Get available output modules (entries)
     //==========================================================================
-    json OutputGetEntries(const json& /*params*/) {
+    api::Result<api::output::GetEntriesResult> OutputGetEntries(const api::output::GetEntriesParams& /*params*/) {
         try {
-            json entries = json::array();
-            
+            api::output::GetEntriesResult out;
+
             service_enum_t<output_entry> e;
             output_entry::ptr entry;
-            
+
             while (e.next(entry)) {
                 pfc::string8 name;
                 name = entry->get_name();
-                
+
                 t_uint32 flags = entry->get_config_flags_compat();
-                
-                entries.push_back({
-                    {"guid", GuidToString(entry->get_guid())},
-                    {"name", name.get_ptr()},
-                    {"needsBitdepthConfig", (flags & output_entry::flag_needs_bitdepth_config) != 0},
-                    {"needsDitherConfig", (flags & output_entry::flag_needs_dither_config) != 0},
-                    {"supportsMultipleStreams", (flags & output_entry::flag_supports_multiple_streams) != 0},
-                    {"isHighLatency", (flags & output_entry::flag_high_latency) != 0},
-                    {"isLowLatency", (flags & output_entry::flag_low_latency) != 0}
-                });
+
+                api::output::OutputEntry row;
+                row.guid = GuidToString(entry->get_guid());
+                row.name = name.get_ptr();
+                row.needsBitdepthConfig = (flags & output_entry::flag_needs_bitdepth_config) != 0;
+                row.needsDitherConfig = (flags & output_entry::flag_needs_dither_config) != 0;
+                row.supportsMultipleStreams = (flags & output_entry::flag_supports_multiple_streams) != 0;
+                row.isHighLatency = (flags & output_entry::flag_high_latency) != 0;
+                row.isLowLatency = (flags & output_entry::flag_low_latency) != 0;
+                out.entries.push_back(std::move(row));
             }
 
-            return {
-                {"entries", entries},
-                {"count", entries.size()}
-            };
+            out.count = static_cast<std::int64_t>(out.entries.size());
+            return out;
         } catch (const std::exception& e) {
-            return {{"success", false}, {"error", e.what()}};
+            return api::Fail(e.what(), ApiErrorCode::OPERATION_FAILED);
         }
     }
 
@@ -117,32 +117,29 @@ namespace {
     // backend reporting an empty name shows up as "". Prefer
     // `output.getEntries`, which pairs every name with its GUID.
     //==========================================================================
-    json OutputGetSettings(const json& /*params*/) {
+    api::Result<api::output::GetSettingsResult> OutputGetSettings(const api::output::GetSettingsParams& /*params*/) {
         try {
             // These settings are stored in foobar2000's config
             // We can only report what's available to configure
             
-            json settings;
-            settings["note"] = "Output settings are managed through foobar2000 Preferences > Playback > Output. "
+            api::output::GetSettingsResult settings;
+            settings.note = "Output settings are managed through foobar2000 Preferences > Playback > Output. "
                                "availableOutputs lists display names only and cannot disambiguate backends that "
                                "share a name; use output.getEntries for name + GUID pairs.";
             
             // Enumerate to show available options
-            json entries = json::array();
             service_enum_t<output_entry> e;
             output_entry::ptr entry;
-            
+
             while (e.next(entry)) {
                 pfc::string8 name;
                 name = entry->get_name();
-                entries.push_back(name.get_ptr());
+                settings.availableOutputs.emplace_back(name.get_ptr());
             }
-            
-            settings["availableOutputs"] = entries;
-            
+
             return settings;
         } catch (const std::exception& e) {
-            return {{"success", false}, {"error", e.what()}};
+            return api::Fail(e.what(), ApiErrorCode::OPERATION_FAILED);
         }
     }
 
@@ -152,16 +149,10 @@ namespace {
 // Register Output API
 //==========================================================================
 void RegisterOutputApi() {
-    auto& bridge = BridgeCore::GetInstance();
-
-    // output.getDevices - Get available output devices
-    bridge.RegisterApi("output.getDevices", OutputGetDevices);
-
-    // output.getEntries - Get available output modules
-    bridge.RegisterApi("output.getEntries", OutputGetEntries);
-
-    // output.getSettings - Get output settings info
-    bridge.RegisterApi("output.getSettings", OutputGetSettings);
+    // Parameters and results come from src/api/schema/output.ts through the generated types.
+    api::RegisterApi("output.getDevices", OutputGetDevices);
+    api::RegisterApi("output.getEntries", OutputGetEntries);
+    api::RegisterApi("output.getSettings", OutputGetSettings);
 
     LOG("Output API registered (3 APIs)");
 }

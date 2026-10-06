@@ -16,6 +16,8 @@ namespace pfc {
 		const void * ptr() const {return m_ptr;}
 		void * get_ptr() {return m_ptr;}
 		const void * get_ptr() const {return m_ptr;}
+		void* data() { return m_ptr; }
+		const void* data() const { return m_ptr; }
 		size_t size() const {return m_size;}
 		size_t get_size() const {return m_size;}
 

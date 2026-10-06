@@ -2,6 +2,7 @@
 #include "foosort.h"
 #include "threadPool.h"
 #include "genrand.h"
+#include <atomic>
 
 #define FOOSORT_PROFILING 0
 
@@ -117,7 +118,7 @@ namespace {
 				FB2K_console_formatter() << "foosort pass: " << p_base << "+" << p_count << "(" << concurrency << ") took " << t.queryString();
 				FB2K_console_formatter() << "foosort forking: " << base1 << "+" << count1 << "(" << con1 << ") + " << base2 << "+" << count2 << "(" << con2 << ")";
 #endif
-				pfc::counter cnt;
+				std::atomic_size_t cnt = 0;
 				fb2k::cpuThreadPool::runMultiHelper([&] {
 					try {
 						switch (cnt++) {

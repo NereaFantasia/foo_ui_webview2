@@ -34,7 +34,8 @@ void NormalizeResolved(std::vector<ResolvedTarget>& resolved, size_t pathCount) 
 
 std::string DragSessionStore::BeginSession(std::vector<std::wstring> paths,
                                           bool hasFiles, int64_t nowMs,
-                                          std::vector<ResolvedTarget> resolvedPaths) {
+                                          std::vector<ResolvedTarget> resolvedPaths,
+                                          DragSource source) {
     // A new drag always supersedes the previous one: a source can re-enter
     // without a matching leave, and keeping both would make Query ambiguous.
     current_ = SessionData{};
@@ -43,6 +44,7 @@ std::string DragSessionStore::BeginSession(std::vector<std::wstring> paths,
     current_.paths = std::move(paths);
     current_.resolvedPaths = std::move(resolvedPaths);
     current_.hasFiles = hasFiles;
+    current_.source = source;
     current_.startedAtMs = nowMs;
     valid_ = true;
     return current_.sessionId;

@@ -365,14 +365,23 @@ SmartStrStr& SmartStrStr::global() {
 	return g;
 }
 
+std::string SmartStrFilter::unquote(std::string&& arg) {
+	constexpr auto q = '\"';
+	if (strchr(arg.c_str(), q)) return std::move(arg);
+	std::string ret;
+	ret.reserve(arg.size());
+	for (auto c : arg) if (c != q) ret.push_back(c);
+	return ret;
+}
 
-void SmartStrFilter::init(const char* ptr, size_t len) {
+SmartStrFilter::t_stringlist SmartStrFilter::parse(const char* ptr, size_t len) {
+	t_stringlist ret;
 	pfc::string_formatter current, temp;
 	bool inQuotation = false;
 
 	auto addCurrent = [&] {
 		if (!current.is_empty()) {
-			++m_items[current.get_ptr()]; current.reset();
+			++ret[current.get_ptr()]; current.reset();
 		}
 	};
 
@@ -387,11 +396,15 @@ void SmartStrFilter::init(const char* ptr, size_t len) {
 	}
 	if (inQuotation) {
 		// Allow unbalanced quotes, take the whole string *with* quotation marks
-		m_items.clear();
+		ret.clear();
 		current.set_string_nc(ptr, len);
 	}
 
 	addCurrent();
+	return ret;
+}
+void SmartStrFilter::init(const char* ptr, size_t len) {
+	m_items = parse(ptr, len);
 }
 
 

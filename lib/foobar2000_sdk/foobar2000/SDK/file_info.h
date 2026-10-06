@@ -33,7 +33,10 @@ struct replaygain_info
 	void set_album_peak_text(const char * p_text,t_size p_text_len = SIZE_MAX);
 	void set_track_peak_text(const char * p_text,t_size p_text_len = SIZE_MAX);
 
+	static constexpr unsigned nMetaFields = 4;
+	static const char* const metaFields[nMetaFields];
 	static bool g_is_meta_replaygain(const char * p_name,t_size p_name_len = SIZE_MAX);
+	
 	bool set_from_meta_ex(const char * p_name,t_size p_name_len,const char * p_value,t_size p_value_len);
 	inline bool set_from_meta(const char * p_name,const char * p_value) {return set_from_meta_ex(p_name,SIZE_MAX,p_value,SIZE_MAX);}
 
@@ -41,6 +44,10 @@ struct replaygain_info
 	inline bool is_track_gain_present() const {return m_track_gain != gain_invalid;}
 	inline bool is_album_peak_present() const {return m_album_peak != peak_invalid;}
 	inline bool is_track_peak_present() const {return m_track_peak != peak_invalid;}
+	inline bool have_album_gain() const { return m_album_gain != gain_invalid; }
+	inline bool have_track_gain() const { return m_track_gain != gain_invalid; }
+	inline bool have_album_peak() const { return m_album_peak != peak_invalid; }
+	inline bool have_track_peak() const { return m_track_peak != peak_invalid; }
 	
 	inline void remove_album_gain() {m_album_gain = gain_invalid;}
 	inline void remove_track_gain() {m_track_gain = gain_invalid;}
@@ -49,7 +56,8 @@ struct replaygain_info
 
 	float anyGain(bool bPreferAlbum = false) const;
 
-	t_size	get_value_count();
+	t_size	get_value_count() const;
+	bool empty() const { return get_value_count() == 0; }
 
 	static replaygain_info g_merge(replaygain_info r1,replaygain_info r2);
 
@@ -63,6 +71,10 @@ struct replaygain_info
 
 	// Alter gain/peak info, if available, by <delta> dB - after file gain has been altered by other means
 	void adjust(double deltaDB);
+
+	void overwrite(const replaygain_info& other);
+	replaygain_info extract_common(const replaygain_info& other) const;
+	replaygain_info extract_delta(const replaygain_info& other) const;
 };
 
 class format_rg_gain {
@@ -160,6 +172,7 @@ public:
 	void			meta_remove_index(t_size p_index);
 	void			meta_remove_all();
 	void			meta_remove_value(t_size p_index,t_size p_value);
+	size_t			meta_remove_if(std::function<bool(const char* key)> const&);
 	const char *	meta_get_ex(const char * p_name,t_size p_name_length,t_size p_index) const;
 	t_size			meta_get_count_by_name_ex(const char * p_name,t_size p_name_length) const;
 	void			meta_add_value_ex(t_size p_index,const char * p_value,t_size p_value_length);
@@ -167,6 +180,7 @@ public:
 	t_size			meta_calc_total_value_count() const;
 	bool			meta_format(const char * p_name,pfc::string_base & p_out, const char * separator = ", ") const;
 	void			meta_format_entry(t_size index, pfc::string_base & p_out, const char * separator = ", ") const;//same as meta_format but takes index instead of meta name.
+	pfc::array_t<pfc::string8> meta_values(size_t index) const;
 	
 	typedef std::function<void(const char*, const char*)> meta_enumerate_t;
 	void			meta_enumerate(meta_enumerate_t) const;
@@ -175,6 +189,8 @@ public:
 	void			info_remove_index(t_size p_index);
 	void			info_remove_all();
 	bool			info_remove_ex(const char * p_name,t_size p_name_length);
+	size_t			info_remove_if2(std::function<bool(const char* key, const char* value)> const&);
+	size_t			info_remove_if(std::function<bool(const char* key)> const&);
 	const char *	info_get_ex(const char * p_name,t_size p_name_length) const;
 
 	inline t_size		meta_find(const char* p_name) const { PFC_ASSERT(p_name != nullptr); return meta_find_ex(p_name, SIZE_MAX); }
@@ -202,7 +218,7 @@ public:
 	void				info_set_replaygain_auto_ex(const char * p_name,t_size p_name_len,const char * p_value,t_size p_value_len);
 	inline void			info_set_replaygain_auto(const char * p_name,const char * p_value) {info_set_replaygain_auto_ex(p_name,SIZE_MAX,p_value,SIZE_MAX);}
 
-	
+	void				info_enumerate(meta_enumerate_t) const;
 
 	void		copy_meta_single(const file_info & p_source,t_size p_index);
 	void		copy_info_single(const file_info & p_source,t_size p_index);
@@ -217,6 +233,8 @@ public:
 	void		overwrite_info(const file_info & p_source);
 	void		overwrite_meta(const file_info & p_source);
 	bool		overwrite_meta_if_changed( const file_info & source );
+    void        overwrite(const file_info&);
+	void		overwrite_replaygain(const file_info&);
 
 	t_int64 info_get_int(const char * name) const;
 	t_int64 info_get_length_samples() const;
@@ -330,6 +348,7 @@ public:
     
 #ifdef FOOBAR2000_MOBILE
     void info_set_pictures( const GUID * guids, size_t size );
+    void info_set_pictures( std::initializer_list<GUID> const & );
     pfc::array_t<GUID> info_get_pictures( ) const;
     bool info_have_picture(const GUID&) const;
     uint64_t makeMetaHash() const;
@@ -349,3 +368,9 @@ protected:
 	inline t_size	meta_set_nocheck(const char * p_name,const char * p_value) {return meta_set_nocheck_ex(p_name,SIZE_MAX,p_value,SIZE_MAX);}
 	inline t_size	info_set_nocheck(const char * p_name,const char * p_value) {return info_set_nocheck_ex(p_name,SIZE_MAX,p_value,SIZE_MAX);}
 };
+
+namespace fb2k {
+    using ::replaygain_info;
+    using ::replaygain_info_invalid;
+    using ::file_info;
+}

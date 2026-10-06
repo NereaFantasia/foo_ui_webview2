@@ -156,16 +156,21 @@ template<typename source_t> static void enumerateTrackProperties_(track_property
 		return;
 	}
 
-	std::list<std::shared_ptr<pfc::event> > lstWaitFor;
+    struct countdown_t {
+        std::atomic_uint n = 1;
+        pfc::event trigger;
+        void release() { if ( --n == 0 ) trigger.set_state(true); }
+    };
+    auto countdown = std::make_shared<countdown_t>();
 	std::list<std::shared_ptr< track_property_callback_impl > > lstMerge;
 	for (auto ptr : track_property_provider::enumerate()) {
-		auto evt = std::make_shared<pfc::event>();
+        ++ countdown->n;
 		auto cb = std::make_shared< track_property_callback_impl >(callback); // clone watched group info
-		auto work = [ptr, itemsSource, evt, cb, infoSource, abortSource] {
+        auto work = [ptr, itemsSource, countdown, cb, infoSource, abortSource] () noexcept {
 			try {
 				ptr->enumerate_properties_helper(itemsSource(), infoSource(), *cb, abortSource());
 			} catch (...) {}
-			evt->set_state(true);
+            countdown->release();
 		};
 
 		track_property_provider_v4::ptr v4;
@@ -177,18 +182,17 @@ template<typename source_t> static void enumerateTrackProperties_(track_property
 			fb2k::inMainThread(work);
 		}
 
-		lstWaitFor.push_back(std::move(evt));
 		lstMerge.push_back(std::move(cb));
 	}
+    countdown->release(); // default counter is 1, to prevent race condition / premature event setting
 
 	if (callback.is_group_wanted(strGroupOther)) {
 		enumOther(callback, itemsSource(), infoSource());
 	}
 
-	for (auto& i : lstWaitFor) {
-		abortSource().waitForEvent(*i, -1);
-	}
-	for (auto& i : lstMerge) {
+    abortSource().waitForEvent( countdown->trigger, -1);
+
+    for (auto& i : lstMerge) {
 		callback.merge(*i);
 	}
 }

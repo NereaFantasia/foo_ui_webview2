@@ -2,15 +2,15 @@
 
 #import <SDK/foobar2000.h>
 #import <Cocoa/Cocoa.h>
+#import <SDK/apple-tools.h>
 
 namespace fb2k {
-    // May return null on bad input.
+    // 2.25.1 semantic change: strToPlatform() family of function never returns null as it's used all over the place without retval checks.
+    // Attempts to recover if passed string contains bad UTF-8
+    // If you want null on bad UTF-8, use NSString methods directly, or version with returnIfError arg.
     NSString * strToPlatform( const char * );
-    // May return null on bad input.
     NSString * strToPlatform( const char * , size_t );
-    // May return null on bad input.
     NSString * strToPlatform( stringRef );
-    // Never returns null - returns passed string in case of failure
     NSString * strToPlatform( const char *, NSString * returnIfError );
 
     stringRef strFromPlatform( NSString * );
@@ -32,7 +32,15 @@ namespace fb2k {
     BOOL testFontParams(NSDictionary<NSString*, NSString*> *);
     CGFloat tableViewRowHeightForFont( NSFont * );
     void tableViewPrepareForFont( NSTableView * tableView, NSFont * font );
-    
+
+    NSWindow * mainWindow();
+    void showWindow(NSWindow*);
+
+    void popupMessage(id parent, const char * msg, const char * title = "Information");
+
+    NSData * wrapData( memBlockRef const & arg );
+
+    imageRef wrapNSImage(NSImage*);
 }
 
 namespace pfc {

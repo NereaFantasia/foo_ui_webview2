@@ -66,7 +66,7 @@ bool _cfg_dropdown_history_base::add_item(const char * item)
 	pfc::string8 meh;
 	if (strchr(item,separator))
 	{
-		uReplaceChar(meh,item,-1,separator,'|',false);
+		uReplaceChar(meh,item,SIZE_MAX,separator,'|',false);
 		item = meh;
 	}
 	pfc::ptr_list_t<char> list;
@@ -86,7 +86,7 @@ bool _cfg_dropdown_history_base::add_item(const char * item)
 	if (!found)
 	{
 		while(list.get_count() > m_max) list.delete_by_idx(list.get_count()-1);
-		list.insert_item(strdup(item),0);
+		list.insert_item(pfc::strDup(item),0);
 	}
 	parse_list(list);
 	list.free_all();

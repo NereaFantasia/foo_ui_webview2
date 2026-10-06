@@ -7,10 +7,10 @@
 #ifdef _WIN32
 #include <MMReg.h>
 #endif
-//! Thrown when audio_chunk sample rate or channel mapping changes in mid-stream and the code receiving audio_chunks can't deal with that scenario.
+//! Thrown when @c audio_chunk sample rate or channel mapping changes in mid-stream and the code receiving @c audio_chunks can't deal with that scenario.
 PFC_DECLARE_EXCEPTION(exception_unexpected_audio_format_change, exception_io_data, "Unexpected audio format change" );
 
-//! Interface to container of a chunk of audio data. See audio_chunk_impl for an implementation.
+//! Interface to container of a chunk of audio data. See @c audio_chunk_impl for an implementation.
 class NOVTABLE audio_chunk {
 public:
 	struct spec_t; // forward decl
@@ -53,6 +53,7 @@ public:
 		channel_config_4point0_side = channel_config_stereo | channels_side_left_right,
 		channel_config_4point1 = channel_config_4point0 | channel_lfe,
 		channel_config_5point0 = channel_config_4point0 | channel_front_center,
+		channel_config_5point0_side = channel_config_4point0_side | channel_front_center,
 		channel_config_6point0 = channel_config_4point0 | channels_side_left_right,
 		channel_config_5point1 = channel_config_4point0 | channel_front_center | channel_lfe,
 		channel_config_5point1_side = channel_config_4point0_side | channel_front_center | channel_lfe,
@@ -67,16 +68,16 @@ public:
 	//! Helper function; determines channel map for the specified channel count according to Xiph specs. Throws exception_io_data on failure.
 	static unsigned g_guess_channel_config_xiph(unsigned count);
 
-	//! Helper function; translates audio_chunk channel map to WAVEFORMATEXTENSIBLE channel map.
+	//! Helper function; translates @c audio_chunk channel map to WAVEFORMATEXTENSIBLE channel map.
 	static constexpr uint32_t g_channel_config_to_wfx(unsigned p_config) { return p_config;}
-	//! Helper function; translates WAVEFORMATEXTENSIBLE channel map to audio_chunk channel map.
+	//! Helper function; translates WAVEFORMATEXTENSIBLE channel map to @c audio_chunk channel map.
 	static constexpr unsigned g_channel_config_from_wfx(uint32_t p_wfx) { return p_wfx;}
 
 	//! Extracts flag describing Nth channel from specified map. Usable to figure what specific channel in a stream means.
 	static unsigned g_extract_channel_flag(unsigned p_config,unsigned p_index);
 	//! Counts channels specified by channel map.
 	static constexpr unsigned g_count_channels(unsigned p_config) { return pfc::countBits32(p_config); }
-	//! Calculates index of a channel specified by p_flag in a stream where channel map is described by p_config.
+	//! Calculates index of a channel specified by @c p_flag in a stream where channel map is described by @c p_config.
 	static unsigned g_channel_index_from_flag(unsigned p_config,unsigned p_flag);
 
 	static const char * g_channel_name(unsigned p_flag);
@@ -88,17 +89,17 @@ public:
 
 	
 
-	//! Retrieves audio data buffer pointer (non-const version). Returned pointer is for temporary use only; it is valid until next set_data_size call, or until the object is destroyed. \n
-	//! Size of returned buffer is equal to get_data_size() return value (in audio_samples). Amount of actual data may be smaller, depending on sample count and channel count. Conditions where sample count * channel count are greater than data size should not be possible.
+	//! Retrieves audio data buffer pointer (non-const version). Returned pointer is for temporary use only; it is valid until next @c set_data_size call, or until the object is destroyed. \n
+	//! Size of returned buffer is equal to @c get_data_size() return value (in `audio_sample`s). Amount of actual data may be smaller, depending on sample count and channel count. Conditions where sample count * channel count are greater than data size should not be possible.
 	virtual audio_sample * get_data() = 0;
-	//! Retrieves audio data buffer pointer (const version). Returned pointer is for temporary use only; it is valid until next set_data_size call, or until the object is destroyed. \n
-	//! Size of returned buffer is equal to get_data_size() return value (in audio_samples). Amount of actual data may be smaller, depending on sample count and channel count. Conditions where sample count * channel count are greater than data size should not be possible.
+	//! Retrieves audio data buffer pointer (const version). Returned pointer is for temporary use only; it is valid until next @c set_data_size call, or until the object is destroyed. \n
+	//! Size of returned buffer is equal to @c get_data_size() return value (in `audio_sample`s). Amount of actual data may be smaller, depending on sample count and channel count. Conditions where sample count * channel count are greater than data size should not be possible.
 	virtual const audio_sample * get_data() const = 0;
-	//! Retrieves size of allocated buffer space, in audio_samples.
+	//! Retrieves size of allocated buffer space, in `audio_sample`s.
 	virtual t_size get_data_size() const = 0;
-	//! Resizes audio data buffer to specified size. Throws std::bad_alloc on failure.
+	//! Resizes audio data buffer to specified size. Throws @c std::bad_alloc on failure.
 	virtual void set_data_size(t_size p_new_size) = 0;
-	//! Sanity helper, same as set_data_size.
+	//! Sanity helper, same as @c set_data_size.
 	//! @param bQuicker Avoid memory allocation, permit up to 2x memory used
 	void allocate(size_t size, bool bQuicker = false);
 	
@@ -110,7 +111,7 @@ public:
 	virtual unsigned get_channels() const = 0;
 	//! Helper - for consistency - same as get_channels().
 	inline unsigned get_channel_count() const {return get_channels();}
-	//! Retrieves channel map of contained audio data. Conditions where number of channels specified by channel map don't match get_channels() return value should not be possible.
+	//! Retrieves channel map of contained audio data. Conditions where number of channels specified by channel map don't match @c get_channels() return value should not be possible.
 	virtual unsigned get_channel_config() const = 0;
 	//! Sets channel count / channel map.
 	virtual void set_channels(unsigned p_count,unsigned p_config) = 0;
@@ -120,12 +121,12 @@ public:
 	//! For an example, duration of contained audio data is equal to sample count / sample rate, while actual size of contained data is equal to sample count * channel count.
 	virtual t_size get_sample_count() const = 0;
 	
-	//! Sets number of valid samples in the buffer. WARNING: sample count * channel count should never be above allocated buffer size.
+	//! Sets number of valid samples in the buffer. WARNING: `sample count * channel count` should never be above allocated buffer size.
 	virtual void set_sample_count(t_size val) = 0;
 
-	//! Helper, same as get_srate().
+	//! Helper, same as @c get_srate().
 	inline unsigned get_sample_rate() const {return get_srate();}
-	//! Helper, same as set_srate().
+	//! Helper, same as @c set_srate().
 	inline void set_sample_rate(unsigned val) {set_srate(val);}
 
 	//! Helper; sets channel count to specified value and uses default channel map for this channel count.
@@ -156,16 +157,16 @@ public:
 #if PFC_DEBUG
 	void assert_valid(const char * ctx) const;
 #else
-	void assert_valid(const char* ctx) const { (void)ctx; }
+	inline void assert_valid(const char*) const {}
 #endif
 	
     
     //! Returns whether the chunk contains valid sample rate & channel info (but allows an empty chunk).
     bool is_spec_valid() const;
 
-	//! Returns actual amount of audio data contained in the buffer (sample count * channel count). Must not be greater than data size (see get_data_size()).
+	//! Returns actual amount of audio data contained in the buffer (`sample count * channel count`). Must not be greater than data size (see `get_data_size()`).
 	size_t get_used_size() const {return get_sample_count() * get_channels();}
-	//! Same as get_used_size(); old confusingly named version.
+	//! Same as `get_used_size()`; old confusingly named version.
 	size_t get_data_length() const {return get_sample_count() * get_channels();}
 
 	//! Resets all audio_chunk data.
@@ -207,7 +208,7 @@ public:
 	void set_data_fixedpoint_ms(const void * ptr, size_t bytes, unsigned sampleRate, unsigned channels, unsigned bps, unsigned channelConfig);
 
 	void set_data_floatingpoint_ex(const void * ptr,t_size bytes,unsigned p_sample_rate,unsigned p_channels,unsigned p_bits_per_sample,unsigned p_flags,unsigned p_channel_config);//signed/unsigned flags dont apply
-	static bool is_supported_floatingpoint(unsigned bps) { return bps == 32 || bps == 64 || bps == 16 || bps == 24; }
+	static bool is_supported_floatingpoint(unsigned bps) { return bps == 32 || bps == 64 || bps == 16 || bps == 24 || bps == 8; }
 
 	void set_data_32(const float* src, t_size samples, unsigned nch, unsigned srate);
 	void set_data_32(const float* src, t_size samples, spec_t const & spec );
@@ -234,13 +235,13 @@ public:
 	//! Produces a chunk of silence, with the specified duration. \n
 	//! Any existing audio sdata will be discarded. \n
 	//! Expects sample rate and channel count to be set first. \n
-	//! Also allocates memory for the requested amount of data see: set_data_size().
+	//! Also allocates memory for the requested amount of data see: @c set_data_size().
 	//! @param samples Desired number of samples.
 	void set_silence(t_size samples);
 	//! Produces a chunk of silence, with the specified duration. \n
 	//! Any existing audio sdata will be discarded. \n
 	//! Expects sample rate and channel count to be set first. \n
-	//! Also allocates memory for the requested amount of data see: set_data_size().
+	//! Also allocates memory for the requested amount of data see: @c set_data_size().
 	//! @param seconds Desired duration in seconds.
 	void set_silence_seconds( double seconds );
 
@@ -253,11 +254,11 @@ public:
 	//! @returns false when the conversion could not be performed because of unsupported bit depth etc.
 	bool to_raw_data(class mem_block_container & out, t_uint32 bps, bool useUpperBits = true, audio_sample scale = 1.0) const;
 
-	//! Convert audio_chunk contents to fixed-point PCM format.
+	//! Convert @c audio_chunk contents to fixed-point PCM format.
 	//! @param useUpperBits relevant if bps != bpsValid, signals whether upper or lower bits of each sample should be used.
 	bool toFixedPoint(class mem_block_container & out, uint32_t bps, uint32_t bpsValid, bool useUpperBits = true, audio_sample scale = 1.0) const;
 
-	//! Convert a buffer of audio_samples to fixed-point PCM format.
+	//! Convert a buffer of @c audio_samples to fixed-point PCM format.
 	//! @param useUpperBits relevant if bps != bpsValid, signals whether upper or lower bits of each sample should be used.
 	static bool g_toFixedPoint(const audio_sample * in, void * out, size_t count, uint32_t bps, uint32_t bpsValid, bool useUpperBits = true, audio_sample scale = 1.0);
 
@@ -306,17 +307,20 @@ public:
 	static spec_t makeSpec(uint32_t rate, uint32_t channels);
 	static spec_t makeSpec(uint32_t rate, uint32_t channels, uint32_t chanMask);
 	static spec_t emptySpec() { return makeSpec(0, 0, 0); }
+	//! Throw @c exception_unexpected_audio_format_change with a nice message on mismatch
+	static void expectSpec(spec_t const& expected, spec_t const& got);
 
 	spec_t get_spec() const;
 	void set_spec(const spec_t &);
 
 	void append(const audio_chunk& other);
+	void append_samples(const audio_sample * data, size_t count);
 protected:
 	audio_chunk() {}
 	~audio_chunk() {}	
 };
 
-//! Implementation of audio_chunk. Takes pfc allocator template as template parameter.
+//! Implementation of @c audio_chunk. Takes pfc allocator template as template parameter.
 template<typename container_t = pfc::mem_block_aligned_t<audio_sample, 16> >
 class audio_chunk_impl_t : public audio_chunk {
 	typedef audio_chunk_impl_t<container_t> t_self;
@@ -351,9 +355,11 @@ public:
 typedef audio_chunk_impl_t<> audio_chunk_impl;
 typedef audio_chunk_impl_t<pfc::mem_block_aligned_incremental_t<audio_sample, 16> > audio_chunk_fast_impl;
 
-//! Implements const methods of audio_chunk only, referring to an external buffer. For temporary use only (does not maintain own storage), e.g.: somefunc( audio_chunk_temp_impl(mybuffer,....) );
+//! Implements const methods of @c audio_chunk only, referring to an external buffer. For temporary use only (does not maintain own storage), e.g.: `somefunc( audio_chunk_temp_impl(mybuffer,....) );`
 class audio_chunk_memref_impl : public audio_chunk {
 public:
+    audio_chunk_memref_impl( const audio_sample * ptr, size_t n, spec_t const & spec) :
+    m_data(ptr), m_samples(n), m_sample_rate(spec.sampleRate), m_channels(spec.chanCount), m_channel_config(spec.chanMask) {}
 	audio_chunk_memref_impl(const audio_sample * p_data,t_size p_samples,t_uint32 p_sample_rate,t_uint32 p_channels,t_uint32 p_channel_config) :
 	m_samples(p_samples), m_sample_rate(p_sample_rate), m_channels(p_channels), m_channel_config(p_channel_config), m_data(p_data)
 	{
@@ -393,3 +399,9 @@ class audio_chunk_partial_ref : public audio_chunk_temp_impl {
 public:
 	audio_chunk_partial_ref(const audio_chunk & chunk, t_size base, t_size count) : audio_chunk_temp_impl(chunk.get_data() + base * chunk.get_channels(), count, chunk.get_sample_rate(), chunk.get_channels(), chunk.get_channel_config()) {}
 };
+
+namespace fb2k {
+    using ::audio_chunk;
+    using ::audio_chunk_impl;
+    using ::audio_chunk_fast_impl;
+}

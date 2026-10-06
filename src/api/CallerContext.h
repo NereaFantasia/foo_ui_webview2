@@ -24,7 +24,7 @@ class BridgeCore;
 //
 // Usage:
 //   auto caller = CallerContext::FromParams(params);
-//   caller.EmitEvent("audio:spectrum", data);
+//   api::emit::EmitTo<E>(caller, payload);  // see api/EventEmit.h
 // ============================================
 struct CallerContext {
     HWND callerHwnd = nullptr;
@@ -33,6 +33,13 @@ struct CallerContext {
 
     // Build CallerContext from API params
     static CallerContext FromParams(const json& params);
+
+    // Resolve a caller window: its own instance, else an instance under the same top-level
+    // window (a panel page), else the main window's bridge. Main thread only.
+    static CallerContext FromHwnd(HWND hwnd);
+
+    // A registered instance with a bridge under the same top-level window as `hwnd`, or nullptr.
+    static HWND FindInstanceUnderRoot(HWND hwnd);
 
     // Whether the caller has a routable bridge
     bool IsValid() const { return bridge != nullptr; }

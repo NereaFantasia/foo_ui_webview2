@@ -12,7 +12,9 @@ class NOVTABLE resampler_entry : public dsp_entry
 public:
 	virtual bool is_conversion_supported(unsigned p_srate_from,unsigned p_srate_to) = 0;
 	virtual bool create_preset(dsp_preset & p_out,unsigned p_target_srate,float p_qualityscale) = 0;//p_qualityscale is 0...1
-	virtual float get_priority() = 0;//value is 0...1, where high-quality (SSRC etc) has 1
+    
+    //! Deprecated, do not use
+    virtual float get_priority() {return 0;}
 
 	static bool g_get_interface(service_ptr_t<resampler_entry> & p_out,unsigned p_srate_from,unsigned p_srate_to);
 	static bool g_create(service_ptr_t<dsp> & p_out,unsigned p_srate_from,unsigned p_srate_to,float p_qualityscale);
@@ -26,7 +28,6 @@ class implement_resampler_entry : public base_t {
 public:
 	bool is_conversion_supported(unsigned p_srate_from, unsigned p_srate_to) override { return impl_t::g_is_conversion_supported(p_srate_from, p_srate_to); }
 	bool create_preset(dsp_preset& p_out, unsigned p_target_srate, float p_qualityscale) override { return impl_t::g_create_preset(p_out, p_target_srate, p_qualityscale); }
-	float get_priority() override { return impl_t::g_get_priority(); }
 };
 
 template<typename T>

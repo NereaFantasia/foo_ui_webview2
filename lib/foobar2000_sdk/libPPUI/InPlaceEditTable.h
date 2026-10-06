@@ -2,6 +2,7 @@
 
 #include <memory>
 #include "InPlaceEdit.h"
+#include "DarkMode.h"
 
 namespace InPlaceEdit {
 	class NOVTABLE CTableEditHelperV2 {
@@ -19,7 +20,7 @@ namespace InPlaceEdit {
 		virtual bool TableEdit_IsColumnEditable(t_size subItem) const { (void)subItem; return true; }
 		virtual void TableEdit_GetColumnOrder(t_size * out, t_size count) const { order_helper::g_fill(out, count); }
 		virtual t_uint32 TableEdit_GetEditFlags(t_size item, t_size subItem) const { (void)item; (void)subItem; return 0; }
-		virtual bool TableEdit_GetDarkMode() const { return false; }
+		virtual DarkMode::param_t TableEdit_GetDarkMode() const { return {}; };
 		virtual bool TableEdit_GetAutoComplete(t_size item, t_size subItem, pfc::com_ptr_t<IUnknown>& out) { (void)item; (void)subItem; (void)out; return false; }
 
 		struct autoComplete_t {

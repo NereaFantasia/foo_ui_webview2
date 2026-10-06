@@ -19,46 +19,46 @@ namespace ui_element_helpers {
 	template<typename t_receiver> class ui_element_instance_callback_multi_impl : public ui_element_instance_callback_v3 {
 	public:
 		ui_element_instance_callback_multi_impl(t_size id, t_receiver * p_receiver) : m_receiver(p_receiver), m_id(id) {}
-		void on_min_max_info_change() {
+		void on_min_max_info_change() override {
 			if (m_receiver != NULL) m_receiver->on_min_max_info_change();
 		}
-		bool query_color(const GUID & p_what,t_ui_color & p_out) {
+		bool query_color(const GUID & p_what,t_ui_color & p_out) override {
 			if (m_receiver != NULL) return m_receiver->query_color(p_what,p_out);
 			else return false;
 		}
 
-		bool request_activation(service_ptr_t<class ui_element_instance> p_item) {
+		bool request_activation(service_ptr_t<class ui_element_instance>) override {
 			if (m_receiver) return m_receiver->request_activation(m_id);
 			else return false;
 		}
 
-		bool is_edit_mode_enabled() {
+		bool is_edit_mode_enabled() override {
 			if (m_receiver) return m_receiver->is_edit_mode_enabled();
 			else return false;
 		}
-		void request_replace(service_ptr_t<class ui_element_instance> p_item) {
+		void request_replace(service_ptr_t<class ui_element_instance>) override {
 			if (m_receiver) m_receiver->request_replace(m_id);
 		}
 
-		t_ui_font query_font_ex(const GUID & p_what) {
+		t_ui_font query_font_ex(const GUID & p_what) override {
 			if (m_receiver) return m_receiver->query_font_ex(p_what);
 			else return NULL;
 		}
 
-		t_size notify(ui_element_instance * source, const GUID & what, t_size param1, const void * param2, t_size param2size) {
+		t_size notify(ui_element_instance * source, const GUID & what, t_size param1, const void * param2, t_size param2size) override {
 			if (m_receiver) return m_receiver->host_notify(source, what, param1, param2, param2size);
 			else return 0;
 		}
 		void orphan() {m_receiver = NULL;}
 
-		bool is_elem_visible(service_ptr_t<class ui_element_instance> elem) {
+		bool is_elem_visible(service_ptr_t<class ui_element_instance>) override {
 			if (m_receiver) return m_receiver->is_elem_visible(m_id);
 			else return false;
 		}
 		
 		void override_id(t_size id) {m_id = id;}
 
-		void on_alt_pressed(bool) {}
+		void on_alt_pressed(bool) override {}
 	private:
 		t_size m_id;
 		t_receiver * m_receiver;
@@ -66,13 +66,13 @@ namespace ui_element_helpers {
 	class ui_element_instance_callback_receiver_multi {
 	public:
 		virtual void on_min_max_info_change() {}
-		virtual bool query_color(const GUID & p_what,t_ui_color & p_out) {return false;}
-		virtual bool request_activation(t_size which) {return false;}
+		virtual bool query_color(const GUID& p_what, t_ui_color& p_out) { (void)p_what; (void)p_out; return false; }
+		virtual bool request_activation(t_size which) { (void)which;  return false; }
 		virtual bool is_edit_mode_enabled() {return false;}
-		virtual void request_replace(t_size which) {}
+		virtual void request_replace(t_size which) { (void)which; }
 		virtual t_ui_font query_font_ex(const GUID&) {return NULL;}
-		virtual bool is_elem_visible(t_size which) {return true;}
-		virtual t_size host_notify(ui_element_instance * source, const GUID & what, t_size param1, const void * param2, t_size param2size) {return 0;}
+		virtual bool is_elem_visible(t_size which) { (void)which; return true; }
+		virtual t_size host_notify(ui_element_instance* source, const GUID& what, t_size param1, const void* param2, t_size param2size) { (void)source; (void)what; (void)param1; (void)param2; (void)param2size; return 0; }
 
 		void ui_element_instance_callback_handle_remove(bit_array const & mask, t_size const oldCount) {
 			t_callback_list newCallbacks;
@@ -187,18 +187,18 @@ namespace ui_element_helpers {
 	class ui_element_edit_tools {
 	public:
 		//! Override me
-		virtual void host_replace_element(unsigned p_id, ui_element_config::ptr cfg) {}
+		virtual void host_replace_element(unsigned p_id, ui_element_config::ptr cfg) { (void)p_id; (void)cfg; }
 		//! Override me
-		virtual void host_replace_element(unsigned p_id,const GUID & p_newguid) {}
+		virtual void host_replace_element(unsigned p_id, const GUID& p_newguid) { (void)p_id; (void)p_newguid; }
 
 		//! Override me optionally if you customize edit mode context menu
-		virtual bool host_edit_mode_context_menu_test(unsigned p_childid,const POINT & p_point,bool p_fromkeyboard) {return false;}
+		virtual bool host_edit_mode_context_menu_test(unsigned p_childid, const POINT& p_point, bool p_fromkeyboard) { (void)p_childid; (void)p_point; (void)p_fromkeyboard; return false; }
 		//! Override me optionally if you customize edit mode context menu
-		virtual void host_edit_mode_context_menu_build(unsigned p_childid,const POINT & p_point,bool p_fromkeyboard,HMENU p_menu,unsigned & p_id_base) {}
+		virtual void host_edit_mode_context_menu_build(unsigned p_childid, const POINT& p_point, bool p_fromkeyboard, HMENU p_menu, unsigned& p_id_base) { (void)p_childid; (void)p_point; (void)p_fromkeyboard; (void)p_menu; (void)p_id_base; }
 		//! Override me optionally if you customize edit mode context menu
-		virtual void host_edit_mode_context_menu_command(unsigned p_childid,const POINT & p_point,bool p_fromkeyboard,unsigned p_id,unsigned p_id_base) {}
+		virtual void host_edit_mode_context_menu_command(unsigned p_childid, const POINT& p_point, bool p_fromkeyboard, unsigned p_id, unsigned p_id_base) { (void)p_childid; (void)p_point; (void)p_fromkeyboard; (void)p_id; (void)p_id_base; }
 		//! Override me optionally if you customize edit mode context menu
-		virtual bool host_edit_mode_context_menu_get_description(unsigned p_childid,unsigned p_id,unsigned p_id_base,pfc::string_base & p_out) {return false;}
+		virtual bool host_edit_mode_context_menu_get_description(unsigned p_childid, unsigned p_id, unsigned p_id_base, pfc::string_base& p_out) { (void)p_childid; (void)p_id; (void)p_id_base; (void)p_out; return false; }
 
 		//! Initiates "Replace UI Element" dialog for one of your sub-elements.
 		void replace_dialog(HWND p_parent,unsigned p_id,const GUID & p_current);
@@ -241,13 +241,13 @@ namespace ui_element_helpers {
 		//override me
 		virtual t_size host_get_children_count() = 0;
 		//override me (tabs)
-		virtual void host_bring_to_front(t_size which) {}
+		virtual void host_bring_to_front(t_size which) { (void)which; }
 		//override me
 		virtual void on_min_max_info_change() {m_callback->on_min_max_info_change();}
 		//override me
 		virtual void host_replace_child(t_size which) = 0;
 
-		virtual bool host_is_child_visible(t_size which) {return true;}
+		virtual bool host_is_child_visible(t_size which) { (void)which; return true; }
 
 		void host_child_visibility_changed(t_size which, bool state) {
 			if (m_callback->is_elem_visible_(this)) {
@@ -355,7 +355,7 @@ namespace ui_element_helpers {
 			for(t_size walk = 0; walk < count; ++walk) {
 				if (child == host_get_child(walk)) return walk;
 			}
-			return ~0;
+			return SIZE_MAX;
 		}
 		bool childPriorityCompare(t_size which, double priority, double bestPriority) {
 			if (host_is_child_visible(which)) return priority >= bestPriority;

@@ -195,7 +195,7 @@ t_size CListControlWithSelectionBase::GetSelectedCount(pfc::bit_array const & ma
 	return found;
 }
 LRESULT CListControlWithSelectionBase::OnButtonDown(UINT p_msg,WPARAM p_wp,LPARAM p_lp,BOOL&) {
-	pfc::vartoggle_t<bool> l_noEnsureVisible(m_noEnsureVisible,true);
+	pfc::vartoggle_t l_noEnsureVisible(m_noEnsureVisible,true);
 	if (m_selectDragMode) {
 		AbortSelectDragMode();
 		return 0;
@@ -314,7 +314,7 @@ LRESULT CListControlWithSelectionBase::OnMouseMove(UINT,WPARAM,LPARAM p_lp,BOOL&
 		if (ShouldBeginDrag(m_prepareDragDropOrigin, CPoint(p_lp))) {
 			AbortPrepareDragDropMode();
 			if (!m_ownDDActive) {
-				pfc::vartoggle_t<bool> ownDD(m_ownDDActive,true);
+				pfc::vartoggle_t ownDD(m_ownDDActive,true);
 				RunDragDrop( PointClientToAbs( m_prepareDragDropOrigin ),m_prepareDragDropModeRightClick);
 			}
 		}
@@ -734,7 +734,7 @@ void CListControlWithSelectionBase::RenderItem(t_size p_item,const CRect & p_ite
 		p_dc.SetBkMode(TRANSPARENT);
 		p_dc.SetBkColor(bkColorUsed);
 		p_dc.SetTextColor(alternateTextColor ? PaintUtils::DetermineTextColor(bkColorUsed) : this->GetSysColorHook(colorText));
-		pfc::vartoggle_t<bool> toggle(m_drawThemeText, dtt);
+		pfc::vartoggle_t toggle(m_drawThemeText, dtt);
 		RenderItemText(p_item,p_itemRect,p_updateRect,p_dc, !alternateTextColor);
 	}
 
@@ -988,6 +988,7 @@ static void UpdateIndexOnRemoval(t_size & index, const pfc::bit_array & mask, t_
 }
 
 static void UpdateIndexOnInsert(size_t& index, pfc::bit_array const& mask, size_t newCount) {
+	(void)newCount;
 	if (index == SIZE_MAX) return;
 	for (size_t walk = 0; walk < index; ) {
 		size_t delta = mask.calc_count(true, walk, index - walk);

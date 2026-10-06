@@ -2,6 +2,10 @@
 #include "win-systemtime.h"
 #include <ctime>
 
+#ifdef _MSC_VER
+#pragma warning(disable:4996) // silence gmtime etc warnings
+#endif
+
 #ifdef _WIN32
 static void theSelfTest(); // has to be outside namespace
 #endif

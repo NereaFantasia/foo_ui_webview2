@@ -141,3 +141,7 @@ protected:
 
 	replaygain_info m_replaygain;
 };
+
+namespace fb2k {
+    using ::file_info_impl;
+}

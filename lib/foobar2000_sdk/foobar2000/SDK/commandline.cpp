@@ -3,7 +3,7 @@
 #include "commandline.h"
 #include "metadb.h"
 #include "console.h"
-
+#ifdef _WIN32
 void commandline_handler_metadb_handle::on_file(const char * url) {
 	metadb_handle_list handles;
 	try {
@@ -14,3 +14,4 @@ void commandline_handler_metadb_handle::on_file(const char * url) {
 	}
 	for(t_size walk = 0; walk < handles.get_size(); ++walk) on_file(handles[walk]);
 }
+#endif

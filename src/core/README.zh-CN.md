@@ -2,7 +2,7 @@
 
 # src/core/ — WebView 生命周期与运行时核心
 
-`core/` 是组件的运行时地基：它定义了 foobar2000 的 UI 入口、所有窗口/面板共享的 WebView2 基类、多实例路由表，以及媒体库缓存、目录树索引、JIT 流媒体队列、后台模式、偏好页等运行时服务。`window/` 和 `panels/` 都建立在本模块之上。
+`core/` 是组件的运行时地基：它定义了所有窗口/面板共享的 WebView2 基类、多实例路由表，以及 JIT 流媒体队列。`window/` 和 `panels/` 都建立在本模块之上。foobar2000 的 UI 入口与后台模式在 [`ui/`](../README.zh-CN.md#支撑模块)，偏好设置页在 [`prefs/`](../README.zh-CN.md#支撑模块)，媒体库缓存与目录树索引在 [`domain/library/`](../README.zh-CN.md#支撑模块)。
 
 ---
 
@@ -10,11 +10,11 @@
 
 `core/` 回答三个问题：
 
-1. **谁是 UI 入口？** `WebViewUI`（实现 foobar2000 `user_interface`）在 fb2k 启动时创建主窗口。
+1. **谁是 UI 入口？** `ui/` 里的 `WebViewUI`（实现 foobar2000 `user_interface`）在 fb2k 启动时创建主窗口，这个窗口建在下面的基类与路由表之上。
 2. **WebView2 的通用能力放在哪？** `WebViewPanel` 把初始化、API 注册、回调初始化、消息处理、配置热重载等收敛为基类，供 `MainWindow` / `WebViewDuiElement` / `WebViewCuiPanel` 继承。
 3. **多个 WebView 实例如何互相找到？** `WebViewContext` 以 HWND 为键登记所有实例，支撑跨实例事件广播与按窗口 ID 的定向路由。
 
-其余文件是围绕这三件事的运行时服务（缓存、队列、后台、偏好、安全配置）。
+除这三件事外，`core/` 还放着一个运行时服务：JIT 流媒体队列。
 
 ---
 
@@ -22,15 +22,16 @@
 
 | 文件 | 职责 |
 |------|------|
-| `UserInterface.h/.cpp` | `WebViewUI : user_interface`——foobar2000 主 UI 入口（GUID、`init`/`shutdown`/`activate`/`hide`），创建并持有 `MainWindow`，单例 `GetInstance()` |
 | `WebViewPanel.h/.cpp` | WebView 面板基类：`InitializeWebView`、`RegisterAllApis`、`InitializeCallbacks`、导航/重载、`ApplyConfig` 配置热重载、`PanelConfig` 持有、`SelectionHolder` 持有；模式枚举 `Standalone/DuiPanel/CuiPanel`；定义可重写虚函数（`OnWebViewReady` 等） |
+| `PanelBootstrap.cpp` | `WebViewPanel::RegisterAllApis` / `InitializeCallbacks` 的定义；全部 `api/` 与 `callbacks/` 模块头只在这个 TU 里 include |
+| `PanelCrashDiagnostics.h/.cpp` | `webview:processFailed` 载荷的 `kind` 与 `recoveryAction` 两个字段 |
 | `WebViewContext.h/.cpp` | 多实例管理器（单例）：`RegisterInstance`/`UnregisterInstance`（按 HWND）、`GetBridge`/`GetWebViewHost`/`GetPanelByHwnd`、`BroadcastEvent`/`BroadcastEventExcept`、按 windowId 的 `SendEventTo` 与反查 |
-| `LibraryCache.h/.cpp` | 媒体库内存缓存（单例）：albums/tracks/artists/genres/stats/cover 多级缓存，`shared_mutex` 读写锁，tracks 用 `shared_ptr<const json>` 避免深拷贝，封面缓存 100MB 上限，库变化时 `Invalidate()` |
-| `LibraryTreeIndex.h/.cpp` | 媒体根与目录树索引器（单例）：用 `library_manager::get_relative_path` + 路径尾比对推断真实媒体根，惰性构建、线程安全；服务 `library.getRoots` / `library.browseTree` |
-| `QueueManager.h/.cpp` | JIT 流媒体队列（单例）：前端逻辑队列 + 后端「影子播放列表」（仅 current+next），状态机 `Idle/Active/WaitingNext/Exhausted`，即时 URL 解析、自动缓冲、`jitQueue:needNext` 预取、影子列表锁保护 |
-| `BackgroundService.h/.cpp` | 后台模式：当使用其它 UI（Default UI 等）时让 WebView2 在后台运行以保留 API 访问；窗口可全程不可见 |
-| `PreferencesPage.h/.cpp` | 偏好页（Preferences → Display → WebView2 UI）：模板管理、窗口设置、DWM 背景效果、开发者选项；暴露 `webview_prefs::*` 配置访问函数 |
-| `SecurityConfig.h` | 安全配置访问接口（`security_config::*`，实现在 `main.cpp`）：DevTools、CDP 远程调试、本地网络、明文 HTTP、自签 TLS、后台模式、HMR 开发服务器开关 |
+| `QueueManager.h/.cpp` | JIT 流媒体队列（单例）：前端逻辑队列 + 后端「影子播放列表」（仅 current+next），状态机 `Idle/Active/WaitingNext/Exhausted`，即时 URL 解析、自动缓冲、`jitQueue:needNext` 预取、影子列表锁保护。`QueueManager.cpp` 放单例、公开命令、状态查询与播放回调 |
+| `QueueShadowPlaylist.cpp` | `QueueManager` 管影子列表的成员：`ShadowPlaylistLock` 锁与锁回调、查找或创建影子列表、判断是否正从影子列表播放、清理已播曲目、移除过期的缓冲下一首、在影子列表上启动播放 |
+| `QueueSources.cpp` | `QueueManager` 管曲目来源的成员：判断本地路径、`PreloadBatch`、拆解子曲目后缀、地址转 handle，以及把流媒体地址或本地文件异步加入影子列表 |
+| `QueueManagerInternal.h` | `QueueManager.cpp` 与 `QueueSources.cpp` 共用的事件辅助 `Announce` |
+| `FrontendDirectoryResolver.h/.cpp` | 按当前配置拼出前端目录的各级候选；主窗口、弹窗、DUI/CUI 面板与面板配置对话框都经这里解析 |
+| `FrontendDirectoryPolicy.h/.cpp` | 从候选里选出第一个有 `index.html` 的目录，顺序为面板模板 → 活动模板 → 组件目录下的 `foo_ui_webview2_resources\dist` → `default` 模板；不依赖 foobar2000 SDK，单测直接链接 |
 
 ---
 
@@ -40,7 +41,7 @@
 
 ```
 fb2k 启动
-   └─ WebViewUI::init()                       (core/UserInterface)
+   └─ WebViewUI::init()                       (ui/UserInterface)
         └─ new MainWindow → Create()          (window/)
              └─ WebViewPanel::InitializeWebView(hwnd, Standalone)
                    ├─ WebViewHost::Initialize()         (webview/, 共享预热环境)
@@ -54,11 +55,7 @@ fb2k 启动
 
 ### 事件广播与定向
 
-`callbacks/` 产生的事件大多通过 `WebViewContext::BroadcastEvent(event, data)` 推给所有实例；需要排除发送者时用 `BroadcastEventExcept`；需要点对点时用 `SendEventTo(windowId, ...)`。`WebViewContext` 还支持子窗口 HWND → 顶层窗口的回溯查找（`GetHostByHwnd`）。
-
-### 媒体库缓存与索引
-
-`LibraryApi` 优先读 `LibraryCache`（命中即返回 `shared_ptr` 句柄，零深拷贝）；目录树/根浏览走 `LibraryTreeIndex`（首次访问同步构建并缓存）。`callbacks/LibraryCallback` 监听库变化时调用 `Invalidate()` 让两者失效，下次访问重建。
+`callbacks/` 产生的事件经 `api/EventEmit.h` 的助手发出，助手再调用 `WebViewContext`：大多数用 `BroadcastEvent(event, data)` 推给所有实例；需要排除发送者时用 `BroadcastEventExcept`；需要点对点时用 `SendEventTo(windowId, ...)`。`WebViewContext` 还支持子窗口 HWND → 顶层窗口的回溯查找（`GetHostByHwnd`）。
 
 ### JIT 流媒体队列
 
@@ -68,16 +65,16 @@ fb2k 启动
 
 ## 依赖关系
 
-- **依赖**：`webview/`（`WebViewHost`/`WebViewEnvironment`）、`api/`（注册与桥接）、`callbacks/`（事件源）、`selection/`（`SelectionHolder`）、`panels/PanelConfig`、`utils/`、foobar2000 SDK。
-- **被依赖**：`window/`（`MainWindow`/`PopupWindow` 继承 `WebViewPanel`）、`panels/`（DUI/CUI 实例继承 `WebViewPanel`）、`api/`（`LibraryApi`/`QueueApi` 调用缓存与队列、各 handler 经 `WebViewContext` 广播事件）、`main.cpp`（注册 `WebViewUI`、`PreferencesPage`、`BackgroundService`）。
+- **依赖**：`webview/`（`WebViewHost`/`WebViewEnvironment`）、`api/`（注册与桥接）、`callbacks/`（事件源）、`selection/`（`SelectionHolder`）、`panels/PanelConfig`、`prefs/`（`WebViewPanel` 读 `webview_prefs::*`）、`utils/`、foobar2000 SDK。
+- **被依赖**：`window/`（`MainWindow`/`PopupWindow` 继承 `WebViewPanel`）、`panels/`（DUI/CUI 实例继承 `WebViewPanel`）、`api/`（`QueueApi` 调用队列、各 handler 经 `WebViewContext` 广播事件）、`ui/`（主菜单命令经 `WebViewContext` 数实例）、`prefs/`（经 `WebViewContext`/`WebViewPanel` 重载面板与应用默认缩放）。
 
 ---
 
 ## 扩展指南
 
-- **新增运行时服务**：优先做成单例（参考 `LibraryCache`/`QueueManager`），线程安全用 `mutex`/`shared_mutex`，并明确失效/清理时机（在对应 `callbacks/` 里触发 `Invalidate`）。
+- **新增运行时服务**：优先做成单例（参考 `QueueManager` 或 `domain/library/LibraryCache`），线程安全用 `mutex`/`shared_mutex`，并明确失效/清理时机（在对应 `callbacks/` 里触发 `Invalidate`）。不依赖 `api/`、窗口与 UI 的服务放进 `domain/`。
 - **新增可重写生命周期钩子**：在 `WebViewPanel` 增虚函数（如 `OnXxx`），基类给空实现，`MainWindow`/面板按需重写，保持三种模式行为一致。
-- **新增偏好项**：在 `PreferencesPage` 增 cfg_var 与 UI 控件，并通过 `webview_prefs::*` / `security_config::*` 暴露访问函数，避免在业务层直接读全局变量。
+- **新增偏好项**：在 `prefs/PreferencesPage`（或对应子页）增 cfg_var 与 UI 控件，并通过 `webview_prefs::*` / `security_config::*` 暴露访问函数，避免在业务层直接读全局变量。
 
 ---
 

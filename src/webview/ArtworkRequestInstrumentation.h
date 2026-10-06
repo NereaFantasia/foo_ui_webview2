@@ -207,7 +207,9 @@ private:
         records_.push_back(std::move(record));
     }
 
-    inline static std::atomic<uint64_t> nextRequestId_{1};
+    // 对齐理由同 WindowChromeTrace.h：头文件里的 64 位 atomic 必须显式写出 8 字节
+    // 对齐，否则 32 位 v143 下各翻译单元推出的对齐可能不一致，链接期报 C4744。
+    alignas(8) inline static std::atomic<uint64_t> nextRequestId_{1};
 
     const size_t retainedRecordLimit_;
     std::atomic<bool> enabled_{false};

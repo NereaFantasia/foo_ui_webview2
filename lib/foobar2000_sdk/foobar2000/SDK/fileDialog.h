@@ -61,6 +61,17 @@ namespace fb2k {
         void runSimple (fileDialogGetPath_t reply);
 	};
 
+	//! \since 2.25
+	class NOVTABLE fileDialogSetup2 : public fileDialogSetup {
+		FB2K_MAKE_SERVICE_INTERFACE(fileDialogSetup2, fileDialogSetup);
+	public:
+		//! Reserved for future use, returns true if understood, false if not available.
+		virtual bool setParam(const char* key, const char* value) = 0;
+		//! Runs a blocking modal loop, returns result conforming to fileDialogNotify::dialogOK2() semantics. \n
+		//! Use only when necessary. May not be implemented for specific dialogs, throwing pfc::exception_not_implemented.
+		virtual arrayRef runModal() = 0;
+	};
+
 	class NOVTABLE fileDialog : public service_base {
 		FB2K_MAKE_SERVICE_COREAPI( fileDialog );
 	public:
@@ -69,5 +80,15 @@ namespace fb2k {
 		virtual fileDialogSetup::ptr setupOpenFolder() = 0;
 		virtual fileDialogSetup::ptr setupOpenURL() = 0;
 		virtual fileDialogSetup::ptr setupChoosePlaylistFormat() = 0;
+
+		static fb2k::stringRef resultPath(fb2k::objRef);
+		static pfc::string resultNativePath(fb2k::objRef);
 	};
+
+#ifdef _WIN32
+	//! Drop-in replacement for shared.dll uBrowseForFolder()
+	bool browseForFolder(HWND parent, const char * title, pfc::string_base & inOut);
+	//! Drop-in replacement for shared.dll uGetOpenFileName()
+	bool getOpenFileName(HWND parent, const char* p_ext_mask, unsigned def_ext_mask, const char* p_def_ext, const char* p_title, const char* p_directory, pfc::string_base& p_filename, BOOL b_save);
+#endif // _WIN32
 };

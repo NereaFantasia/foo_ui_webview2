@@ -4,9 +4,9 @@
 // 断言依据是 docs/preferences/DESIGN.md 第 11.5 节：URL 须 http(s):// 起头且带主机名，否则拒绝；
 // 空串表示不使用开发服务器，放行。CDP 端口的解析与校验在 test_preferences_cdp_port.cpp。
 #include "pch.h"
-#include "../src/core/PreferencesCdpPort.h"
-#include "../src/core/PreferencesDevServerUrl.h"
-#include "../src/core/PreferencesFields.h"
+#include "../src/prefs/PreferencesCdpPort.h"
+#include "../src/prefs/PreferencesDevServerUrl.h"
+#include "../src/prefs/PreferencesFields.h"
 
 using namespace prefs_devserver;
 

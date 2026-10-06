@@ -88,9 +88,13 @@ inline int SliderNativeStopCount() {
     return 5;
 }
 
-// tray:menuItemClicked carries `value` for rich controls. Integral values
-// (rating 0-5, rounded slider volume) broadcast as integers; non-integral
-// values keep their fractional part. Returns true when `value` is integral.
+// Returns true when `value` is a whole number. Nothing on the tray path calls
+// this; only the contract test does. The `value` of tray:menuItemClicked is an
+// int from end to end: the menu.__valueChanged handler (MenuValueChanged) reads
+// it as an int, truncating any fractional part the overlay page sent, and
+// MenuOverlayHost::ValueSink and TrayIcon::MenuItemValueCallback both take an
+// int. The event therefore never carries a fraction, and the declaration types
+// the field as Int.
 inline bool TrayMenuValueIsIntegral(double value) {
     return value == static_cast<double>(static_cast<long long>(value));
 }

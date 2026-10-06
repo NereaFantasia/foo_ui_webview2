@@ -41,7 +41,7 @@ public:
     // Overlay icon
     bool SetOverlayIcon(HICON hIcon, const wchar_t* description);
 
-    // Taskbar flash
+    // Taskbar flash. 只在主窗口句柄未知（任务栏按钮尚未创建）或已失效时返回 false。
     bool Flash(UINT count, DWORD interval);
 
     // Button click handler called from MainWindow WM_COMMAND/THBN_CLICKED.

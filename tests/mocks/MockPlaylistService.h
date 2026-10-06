@@ -1,7 +1,7 @@
 #pragma once
 #include "../compat/fb2k_types.h"  // console:: stub：TrackWireSnapshot.h 链上的 FailureHook 引用它
 #include "../src/interfaces/IPlaylistService.h"
-#include "../src/api/TrackWireSnapshot.h"  // get_tracks_json 的 TrackFieldSelection 形参要读成员
+#include "../src/api/TrackWireSnapshot.h"  // get_tracks 的 TrackFieldSelection 形参要读成员
 #include <string>
 #include <vector>
 #include <nlohmann/json.hpp>
@@ -18,6 +18,8 @@ public:
         bool isLocked = false;
         bool isAutoplaylist = false;
         std::string lockName;
+        // Null unless a test assigns one; find_playlist_by_guid never matches the null GUID.
+        GUID guid{};
     };
     std::vector<MockPlaylist> playlists;
     size_t activePlaylist = 0;
@@ -48,9 +50,10 @@ public:
     // For insert_tracks
     InsertTracksResult insertTracksResult;
 
-    // For get_tracks_json / get_selected_tracks_json
-    nlohmann::json tracksJsonResult = nlohmann::json::array();
-    nlohmann::json selectedTracksJsonResult = nlohmann::json::object();
+    // For get_tracks / get_selected_tracks
+    api::playlist::GetTracksResult tracksResult;
+    api::playlist::GetTracksAtResult tracksAtResult;
+    api::playlist::GetSelectedTracksResult selectedTracksResult;
 
     // -- Call counters ------------------------------------------------
 
@@ -113,13 +116,16 @@ public:
     int insertTracksCallCount = 0;
     size_t lastInsertTracksPlaylist = SIZE_MAX;
     size_t lastInsertPosition = 0;
-    mutable int getTracksJsonCallCount = 0;
+    mutable int getTracksCallCount = 0;
     mutable size_t lastGetTracksPlaylist = SIZE_MAX;
     mutable size_t lastGetTracksStart = 0;
     mutable size_t lastGetTracksCount = 0;
-    /** 最近一次 get_tracks_json 是否走了投影分支（fields 显式给出）。 */
+    /** 最近一次 get_tracks 是否走了投影分支（fields 显式给出）。 */
     mutable bool lastGetTracksProjected = false;
-    mutable int getSelectedTracksJsonCallCount = 0;
+    mutable int getTracksAtCallCount = 0;
+    mutable size_t lastGetTracksAtPlaylist = SIZE_MAX;
+    mutable std::vector<size_t> lastGetTracksAtRows;
+    mutable int getSelectedTracksCallCount = 0;
     mutable size_t lastGetSelectedTracksPlaylist = SIZE_MAX;
 
     // P5 counters
@@ -227,8 +233,8 @@ public:
         selectionIndices.clear();
         focusItems.clear();
         insertTracksResult = {};
-        tracksJsonResult = nlohmann::json::array();
-        selectedTracksJsonResult = nlohmann::json::object();
+        tracksResult = {};
+        selectedTracksResult = {};
 
         // P4 counters
         getSelectionIndicesCallCount = 0;
@@ -259,12 +265,12 @@ public:
         insertTracksCallCount = 0;
         lastInsertTracksPlaylist = SIZE_MAX;
         lastInsertPosition = 0;
-        getTracksJsonCallCount = 0;
+        getTracksCallCount = 0;
         lastGetTracksPlaylist = SIZE_MAX;
         lastGetTracksStart = 0;
         lastGetTracksCount = 0;
         lastGetTracksProjected = false;
-        getSelectedTracksJsonCallCount = 0;
+        getSelectedTracksCallCount = 0;
         lastGetSelectedTracksPlaylist = SIZE_MAX;
 
         // P5 counters
@@ -399,6 +405,18 @@ public:
         return false;
     }
 
+    GUID get_playlist_guid(size_t index) const override {
+        return index < playlists.size() ? playlists[index].guid : GUID{};
+    }
+
+    size_t find_playlist_by_guid(const GUID& guid) const override {
+        if (guid == GUID{}) return SIZE_MAX;
+        for (size_t i = 0; i < playlists.size(); i++) {
+            if (playlists[i].guid == guid) return i;
+        }
+        return SIZE_MAX;
+    }
+
     bool playlist_lock_is_present(size_t index) const override {
         lockIsPresentCallCount++;
         if (index < playlists.size()) return playlists[index].isLocked;
@@ -432,7 +450,8 @@ public:
                 (i == activePlaylist),
                 (i == playingPlaylist),
                 playlists[i].isLocked,
-                playlists[i].isAutoplaylist
+                playlists[i].isAutoplaylist,
+                playlists[i].guid
             });
         }
         return result;
@@ -453,6 +472,7 @@ public:
         d.isActive = (index == activePlaylist);
         d.isPlaying = (index == playingPlaylist);
         d.isLocked = playlists[index].isLocked;
+        d.guid = playlists[index].guid;
         d.duration = includeDuration ? detailDuration : 0.0;
         return d;
     }
@@ -561,19 +581,30 @@ public:
 
     // -- P4b: Track info retrieval ------------------------------------
 
-    nlohmann::json get_tracks_json(size_t playlist, size_t start, size_t count, const nlohmann::json& formats, const TrackFieldSelection& fields) const override {
-        getTracksJsonCallCount++;
+    api::playlist::GetTracksResult get_tracks(size_t playlist, size_t start, size_t count,
+                                              const std::map<std::string, std::string>& /*formats*/,
+                                              const TrackFieldSelection& fields) const override {
+        getTracksCallCount++;
         lastGetTracksPlaylist = playlist;
         lastGetTracksStart = start;
         lastGetTracksCount = count;
         lastGetTracksProjected = fields.projected;
-        return tracksJsonResult;
+        return tracksResult;
     }
 
-    nlohmann::json get_selected_tracks_json(size_t playlist) const override {
-        getSelectedTracksJsonCallCount++;
+    api::playlist::GetTracksAtResult get_tracks_at(size_t playlist, const std::vector<size_t>& rows,
+                                                   const std::map<std::string, std::string>& /*formats*/,
+                                                   const TrackFieldSelection& /*fields*/) const override {
+        getTracksAtCallCount++;
+        lastGetTracksAtPlaylist = playlist;
+        lastGetTracksAtRows = rows;
+        return tracksAtResult;
+    }
+
+    api::playlist::GetSelectedTracksResult get_selected_tracks(size_t playlist) const override {
+        getSelectedTracksCallCount++;
         lastGetSelectedTracksPlaylist = playlist;
-        return selectedTracksJsonResult;
+        return selectedTracksResult;
     }
 
     // -- P5: Undo / Redo ----------------------------------------------
@@ -646,21 +677,28 @@ public:
         addPathsCallCount++;
         lastAddPathsPlaylist = playlist;
         lastAddPathsPaths = paths;
-        return addPathsResult;
+        // The mock's target never moves while paths resolve.
+        AddPathsResult r = addPathsResult;
+        r.playlist = playlist;
+        return r;
     }
 
     AddPathsResult add_handles(size_t playlist, const nlohmann::json& handles) override {
         addHandlesCallCount++;
         lastAddHandlesPlaylist = playlist;
         lastAddHandlesHandles = handles;
-        return addPathsResult;   // reuse same result struct
+        AddPathsResult r = addPathsResult;   // reuse same result struct
+        r.playlist = playlist;
+        return r;
     }
 
     AddPathsSequentialResult add_paths_sequential(size_t playlist, const nlohmann::json& paths) override {
         addPathsSeqCallCount++;
         lastAddPathsSeqPlaylist = playlist;
         lastAddPathsSeqPaths = paths;
-        return addPathsSeqResult;
+        AddPathsSequentialResult r = addPathsSeqResult;
+        r.playlist = playlist;
+        return r;
     }
 
     AsyncAddPathsInfo start_add_paths_async(size_t playlist, const nlohmann::json& paths,
@@ -680,6 +718,8 @@ public:
         replaceAllCallCount++;
         lastReplaceAllPlaylist = playlist;
         lastReplaceAllPaths = paths;
-        return replaceAllResult;
+        ReplaceAllResult r = replaceAllResult;
+        r.playlist = playlist;
+        return r;
     }
 };

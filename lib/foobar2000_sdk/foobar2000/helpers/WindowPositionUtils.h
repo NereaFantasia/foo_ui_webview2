@@ -5,45 +5,11 @@
 #include "win32_misc.h"
 #include "../SDK/cfg_var.h"
 
-static BOOL AdjustWindowRectHelper(CWindow wnd, CRect & rc) {
-	const DWORD style = wnd.GetWindowLong(GWL_STYLE), exstyle = wnd.GetWindowLong(GWL_EXSTYLE);
-	return AdjustWindowRectEx(&rc,style,(style & WS_POPUP) ? wnd.GetMenu() != NULL : FALSE, exstyle);
-}
+BOOL AdjustWindowRectHelper(CWindow wnd, CRect& rc);
+void AdjustRectToScreenArea(CRect& rc, CRect rcParent, CWindow wndFor = NULL);
 
-static void AdjustRectToScreenArea(CRect & rc, CRect rcParent) {
-	HMONITOR monitor = MonitorFromRect(rcParent,MONITOR_DEFAULTTONEAREST);
-	MONITORINFO mi = {sizeof(MONITORINFO)};
-	if (GetMonitorInfo(monitor,&mi)) {
-		const CRect clip = mi.rcWork;
-		if (rc.right > clip.right) rc.OffsetRect(clip.right - rc.right, 0);
-		if (rc.bottom > clip.bottom) rc.OffsetRect(0, clip.bottom - rc.bottom);
-		if (rc.left < clip.left) rc.OffsetRect(clip.left - rc.left, 0);
-		if (rc.top < clip.top) rc.OffsetRect(0, clip.top - rc.top);
-	}
-}
-
-static BOOL GetClientRectAsSC(CWindow wnd, CRect & rc) {
-	CRect temp;
-	if (!wnd.GetClientRect(temp)) return FALSE;
-	if (temp.IsRectNull()) return FALSE;
-	if (!wnd.ClientToScreen(temp)) return FALSE;
-	rc = temp;
-	return TRUE;
-}
-
-
-static BOOL CenterWindowGetRect(CWindow wnd, CWindow wndParent, CRect & out) {
-	CRect parent, child;
-	if (!wndParent.GetWindowRect(&parent) || !wnd.GetWindowRect(&child)) return FALSE;
-	{
-		CPoint origin = parent.CenterPoint();
-		origin.Offset( - child.Width() / 2, - child.Height() / 2);
-		child.OffsetRect( origin - child.TopLeft() );
-	}
-	AdjustRectToScreenArea(child, parent);
-	out = child;
-	return TRUE;
-}
+BOOL GetClientRectAsSC(CWindow wnd, CRect& rc);
+BOOL CenterWindowGetRect(CWindow wnd, CWindow wndParent, CRect& out);
 
 static BOOL CenterWindowAbove(CWindow wnd, CWindow wndParent) {
 	CRect rc;
@@ -79,6 +45,7 @@ public:
 	}
 
 	BOOL ProcessWindowMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam, LRESULT & lResult) {
+		(void)hWnd; (void)wParam; (void)lResult;
 		if (uMsg == WM_SIZE && m_applied) {
 			if (lParam != 0) {
 				m_var.set({ (short)LOWORD(lParam), (short)HIWORD(lParam) });
@@ -125,6 +92,7 @@ struct cfgWindowPositionData {
 	WINDOWPLACEMENT m_wp = {};
 	SIZE m_dpi = {};
 
+	pfc::string8 debug() const;
 	bool grabFrom(CWindow wnd);
 	bool applyTo(CWindow wnd, bool allowHidden = false) const;
 };
@@ -174,6 +142,7 @@ public:
 	~cfgDialogPositionTracker() {Cleanup();}
 
 	BOOL ProcessWindowMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam, LRESULT & lResult) {
+		(void)wParam; (void)lParam; (void)lResult;
 		if (uMsg == WM_CREATE || uMsg == WM_INITDIALOG) {
 			Cleanup();
 			m_wnd = hWnd;
@@ -250,7 +219,7 @@ public:
 	}
 
 private:
-	void OnSize(UINT nType, CSize size) {
+	void OnSize(UINT, CSize size) {
 		if ( m_applied && size.cx > 0 && size.cy > 0 ) {
 			m_var.set( { size, m_DPI } );
 		}

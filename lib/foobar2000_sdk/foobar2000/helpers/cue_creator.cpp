@@ -6,9 +6,24 @@ static pfc::string8 format_meta(const file_info& p_source, const char* p_name, b
 	pfc::string8 temp, ret;
 	p_source.meta_format(p_name, temp);
 	temp.replace_byte('\"', '\'');
-	uReplaceString(ret, temp, pfc_infinite, "\x0d\x0a", 2, "\\", 1, false);
+	uReplaceString(ret, temp, SIZE_MAX, "\x0d\x0a", 2, "\\", 1, false);
 	if (!p_allow_space) ret.replace_byte(' ', '_');
 	ret.replace_nontext_chars();
+	return ret;
+}
+
+static replaygain_info get_global_rg(const cue_creator::t_entry_list& p_list) {
+	replaygain_info ret;
+	bool first = true;
+	for (auto& iter : p_list) {
+		if (!iter.isTrackAudio()) continue;
+		auto rg = iter.m_infos.get_replaygain();
+		if (first) {
+			ret = rg; first = false;
+		} else {
+			ret = ret.extract_common(rg);
+		}
+	}
 	return ret;
 }
 
@@ -51,6 +66,8 @@ namespace cue_creator
 			comment_global =		is_meta_same_everywhere(p_data,"comment"),
 			catalog_global =		is_meta_same_everywhere(p_data,"catalog"),
 			songwriter_global =		is_meta_same_everywhere(p_data,"songwriter");
+
+		const replaygain_info rg_global = get_global_rg( p_data );
 
 		{
 			auto firstTrack = p_data.first();
@@ -95,15 +112,9 @@ namespace cue_creator
 					p_out << "TITLE \"" << format_meta(firstTrack->m_infos,"album") << "\"" << g_eol;
 				}
 
-				{
-					replaygain_info::t_text_buffer rgbuffer;
-					replaygain_info rg = firstTrack->m_infos.get_replaygain();
-					if (rg.format_album_gain(rgbuffer))
-						p_out << "REM REPLAYGAIN_ALBUM_GAIN " << rgbuffer << g_eol;
-					if (rg.format_album_peak(rgbuffer))
-						p_out << "REM REPLAYGAIN_ALBUM_PEAK " << rgbuffer << g_eol;			
-				}
-
+				rg_global.for_each([&](const char* key, const char* value) {
+					p_out << "REM " << pfc::stringToUpper(key) << " " << value << g_eol;
+				});
 			}
 		}
 
@@ -155,12 +166,10 @@ namespace cue_creator
 
 
 			{
-				replaygain_info::t_text_buffer rgbuffer;
-				replaygain_info rg = iter->m_infos.get_replaygain();
-				if (rg.format_track_gain(rgbuffer))
-					p_out << "    REM REPLAYGAIN_TRACK_GAIN " << rgbuffer << g_eol;
-				if (rg.format_track_peak(rgbuffer))
-					p_out << "    REM REPLAYGAIN_TRACK_PEAK " << rgbuffer << g_eol;			
+				const auto rg = iter->m_infos.get_replaygain().extract_delta(rg_global);
+				rg.for_each([&](const char* key, const char* value) {
+					p_out << "    REM " << pfc::stringToUpper(key) << " " << value << g_eol;
+				});
 			}
 
 			if (!iter->m_flags.is_empty()) {

@@ -212,3 +212,28 @@ if ($LASTEXITCODE -eq 0) {
     
     exit $LASTEXITCODE
 }
+
+# ============================================================================
+# 6. 单元测试 (googletest)
+# ============================================================================
+# dev 不推送、local-ci 只在手动运行时跑测试，所以日常构建在这里跑一遍，测试失败即构建失败。
+# GitHub Actions 的 ci.yml 已单独运行同一个可执行文件并产出 XML 报告，那里跳过以免重复。
+# 测试工程只有 x64 配置（解决方案里 Win32 不构建它），Win32 构建没有可跑的测试。
+if ($env:GITHUB_ACTIONS) {
+    Write-Host "`n⏭ Skipping gtest: ci.yml runs it separately." -ForegroundColor Gray
+} elseif ($Platform -ne 'x64') {
+    Write-Host "`n⏭ Skipping gtest: the test project only builds for x64." -ForegroundColor Gray
+} else {
+    $testExe = Join-Path $PSScriptRoot "bin\tests\${Config}_x64\foo_ui_webview2_tests.exe"
+    if (-not (Test-Path $testExe)) {
+        Write-Host "`n❌ Test executable not found: $testExe" -ForegroundColor Red
+        exit 1
+    }
+    Write-Host "`n🧪 Running gtest: $testExe" -ForegroundColor Cyan
+    & $testExe
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host "`n❌ gtest failed! Error code: $LASTEXITCODE" -ForegroundColor Red
+        exit $LASTEXITCODE
+    }
+    Write-Host "✅ gtest passed" -ForegroundColor Green
+}

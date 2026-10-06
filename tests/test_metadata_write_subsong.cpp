@@ -1,9 +1,12 @@
 ﻿// test_metadata_write_subsong.cpp — MetadataWrite/MetadataRemoveTag subsong parsing
-// Validates ParseSubsongIndex logic used by MetadataWrite and MetadataRemoveTag.
+// Validates the ParseSubsongIndex logic used by MetadataWrite and MetadataRemoveTag.
 #include "pch.h"
 #include "compat/fb2k_types.h"
+#include "utils/SubsongPath.h"
 
-// Re-implement ParseSubsongIndex inline (mirrors MetadataApi.cpp anonymous namespace)
+// MetadataApi.cpp's ParseSubsongIndex forwards to fb2k_paths::SplitLegacyTrackPath
+// and narrows the index to int; this adapter does the same, so the cases below
+// exercise the product function.
 namespace MetadataTest {
 
 struct SubsongParseResult {
@@ -12,44 +15,8 @@ struct SubsongParseResult {
 };
 
 static SubsongParseResult ParseSubsongIndex(const std::string& path, int explicitCueIndex) {
-    // Always strip |subsong:N from cleanPath, even when explicitCueIndex overrides
-    std::string cleanPath = path;
-    int pathSubsong = 0;
-
-    size_t pipePos = path.find("|subsong:");
-    if (pipePos != std::string::npos) {
-        cleanPath = path.substr(0, pipePos);
-        try {
-            pathSubsong = std::stoi(path.substr(pipePos + 9));
-        } catch (...) {
-            pathSubsong = 0;
-        }
-    }
-
-    if (explicitCueIndex >= 0) {
-        return {cleanPath, explicitCueIndex};
-    }
-
-    if (pipePos != std::string::npos) {
-        return {cleanPath, pathSubsong};
-    }
-
-    // #N format (backward compat)
-    size_t hashPos = path.rfind('#');
-    if (hashPos == std::string::npos || hashPos >= path.length() - 1) {
-        return {path, 0};
-    }
-
-    std::string indexStr = path.substr(hashPos + 1);
-    if (indexStr.empty() || !std::all_of(indexStr.begin(), indexStr.end(), ::isdigit)) {
-        return {path, 0};
-    }
-
-    try {
-        return {path.substr(0, hashPos), std::stoi(indexStr)};
-    } catch (...) {
-        return {path, 0};
-    }
+    fb2k_paths::LegacyTrackPath r = fb2k_paths::SplitLegacyTrackPath(path, explicitCueIndex);
+    return {r.path, static_cast<int>(r.subsong)};
 }
 
 } // namespace MetadataTest

@@ -3,9 +3,14 @@
 #include "webview/dnd/DropTargetBridge.h"
 
 #include "api/BridgeCore.h"
+#include "api/generated/DndSchema.h"
+#include "webview/dnd/DndTrace.h"
+#include "webview/dnd/DragSourceMarker.h"
 #include "webview/dnd/DropEffectPolicy.h"
 #include "webview/dnd/HdropReader.h"
 #include "webview/dnd/ShortcutResolver.h"
+
+#include <sstream>
 
 namespace fb2k_dnd {
 namespace {
@@ -15,8 +20,9 @@ int64_t NowMs() {
     return duration_cast<milliseconds>(steady_clock::now().time_since_epoch()).count();
 }
 
-nlohmann::json PathsToJson(const std::vector<std::wstring>& paths) {
-    nlohmann::json out = nlohmann::json::array();
+std::vector<std::string> PathsToUtf8(const std::vector<std::wstring>& paths) {
+    std::vector<std::string> out;
+    out.reserve(paths.size());
     for (const std::wstring& path : paths) {
         out.push_back(WideToUtf8(path));
     }
@@ -27,21 +33,72 @@ nlohmann::json PathsToJson(const std::vector<std::wstring>& paths) {
 //
 // Driven by the paths list rather than by resolved, so the equal-length part of
 // the contract holds by construction: a resolver that returned a short array,
-// or none at all, still yields one JSON element per path. An unknown target
-// becomes null, never an empty string, since "" would read as a real path of
-// zero length to a page that only checks for truthiness.
-nlohmann::json ResolvedPathsToJson(const std::vector<std::wstring>& paths,
-                                   const std::vector<ResolvedTarget>& resolved) {
-    nlohmann::json out = nlohmann::json::array();
+// or none at all, still yields one element per path. An unknown target is left
+// empty and goes out as null, never as an empty string, since "" would read as
+// a real path of zero length to a page that only checks for truthiness.
+std::vector<std::optional<std::string>> ResolvedPathsToUtf8(
+    const std::vector<std::wstring>& paths,
+    const std::vector<ResolvedTarget>& resolved) {
+    std::vector<std::optional<std::string>> out;
+    out.reserve(paths.size());
     for (size_t i = 0; i < paths.size(); ++i) {
         if (i < resolved.size() && resolved[i].has_value()) {
-            out.push_back(WideToUtf8(*resolved[i]));
+            out.emplace_back(WideToUtf8(*resolved[i]));
         } else {
-            out.push_back(nlohmann::json(nullptr));
+            out.emplace_back(std::nullopt);
         }
     }
     return out;
 }
+
+// One line of the dnd trace (DndTrace.h) for a drag callback. It records what
+// the WebView answered (inner) and what went back to the drag source (out), to
+// measure how soon and how reliably the renderer's answer reaches DragOver, and
+// how long each forwarded call took, to find a callback that holds up the drag
+// source. sinceEnter is -1 when no session of ours is active; inner means
+// nothing when forwarded is false.
+struct EffectTrace {
+    const char* phase = "";
+    HWND target = nullptr;
+    int64_t sinceEnterMs = -1;
+    bool hasFiles = false;
+    bool forwarded = false;
+    DWORD allowed = 0;
+    DWORD inner = 0;
+    DWORD out = 0;
+    int64_t forwardMs = -1;  // time spent in the WebView call, -1 when not made
+    std::string extra;       // phase-specific fields, already formatted
+};
+
+std::string HwndText(HWND hwnd) {
+    std::ostringstream text;
+    text << "0x" << std::hex << reinterpret_cast<uintptr_t>(hwnd);
+    return text.str();
+}
+
+void TraceEffect(const EffectTrace& t) noexcept {
+    if (!DndTraceEnabled()) {
+        return;
+    }
+    try {
+        std::ostringstream line;
+        line << "[dnd] " << t.phase << " target=" << HwndText(t.target)
+             << " t=" << t.sinceEnterMs << "ms files=" << (t.hasFiles ? 1 : 0)
+             << " forwarded=" << (t.forwarded ? 1 : 0) << std::hex
+             << " allowed=0x" << t.allowed << " inner=0x" << t.inner << " out=0x" << t.out
+             << std::dec << " forwardMs=" << t.forwardMs;
+        if (!t.extra.empty()) {
+            line << ' ' << t.extra;
+        }
+        DndTrace(line.str());
+    } catch (...) {
+        // Diagnostics must never disturb the drag.
+    }
+}
+
+// A single DragOver that took this long is written out even when its answer
+// did not change: the drag source is blocked for the whole call.
+constexpr int64_t kSlowOverMs = 100;
 
 }  // namespace
 
@@ -79,38 +136,24 @@ DragPoint DropTargetBridge::MakePoint(POINTL screen) const {
     return point;
 }
 
-nlohmann::json DropTargetBridge::VisiblePaths(
+std::vector<std::string> DropTargetBridge::VisiblePaths(
     const std::vector<std::wstring>& paths) const {
     if (!pathsAllowed_) {
-        return nlohmann::json::array();
+        return {};
     }
-    return PathsToJson(paths);
+    return PathsToUtf8(paths);
 }
 
-nlohmann::json DropTargetBridge::VisibleResolvedPaths(
+std::vector<std::optional<std::string>> DropTargetBridge::VisibleResolvedPaths(
     const std::vector<std::wstring>& paths,
     const std::vector<ResolvedTarget>& resolved) const {
     if (!pathsAllowed_) {
         // Empty, not a list of nulls: VisiblePaths withholds the whole array in
         // this case, and the two must stay the same length. A null-filled array
         // would also leak the file count, which the empty one does not.
-        return nlohmann::json::array();
+        return {};
     }
-    return ResolvedPathsToJson(paths, resolved);
-}
-
-void DropTargetBridge::EmitCapabilitiesChanged(const nlohmann::json& payload) const {
-    if (shuttingDown_) {
-        return;
-    }
-    Emit("dnd:capabilitiesChanged", payload);
-}
-
-void DropTargetBridge::EmitDragEnded(const nlohmann::json& payload) const {
-    if (shuttingDown_) {
-        return;
-    }
-    Emit("dnd:dragEnded", payload);
+    return ResolvedPathsToUtf8(paths, resolved);
 }
 
 void DropTargetBridge::Emit(const char* event, const nlohmann::json& payload) const {
@@ -122,6 +165,26 @@ void DropTargetBridge::Emit(const char* event, const nlohmann::json& payload) co
     } catch (...) {
         // A faulty listener must not abort the drag.
     }
+}
+
+template <class E>
+void DropTargetBridge::Emit(const typename E::Payload& payload) const {
+    Emit(E::kName, ToJson(payload));
+}
+
+void DropTargetBridge::EmitCapabilitiesChanged(
+    const api::dnd::CapabilitiesChangedPayload& payload) const {
+    if (shuttingDown_) {
+        return;
+    }
+    Emit<api::dnd::events::CapabilitiesChanged>(payload);
+}
+
+void DropTargetBridge::EmitDragEnded(const api::dnd::DragEndedPayload& payload) const {
+    if (shuttingDown_) {
+        return;
+    }
+    Emit<api::dnd::events::DragEnded>(payload);
 }
 
 std::string DropTargetBridge::ClearActiveDrag() noexcept {
@@ -189,11 +252,16 @@ HRESULT STDMETHODCALLTYPE DropTargetBridge::DragEnter(IDataObject* data, DWORD k
     }
 
     try {
+        overTrace_ = OverTrace{};
+        overForward_ = DragOverForwardState{};
+        sawRendererEffect_ = false;
+        const int64_t readStartMs = DndTraceNowMs();
         // A source may re-enter without a matching leave, and BeginSession
         // supersedes the previous session so no stale one survives into this drag.
         bool hadHdrop = false;
         std::vector<std::wstring> paths = ReadHdropPaths(data, &hadHdrop);
         const bool hasFiles = hadHdrop && !paths.empty();
+        const int64_t readMs = DndTraceNowMs() - readStartMs;
         // Derived from the list ReadHdropPaths actually returned, so its
         // catch-all path (which clears paths) cannot leave a parallel array
         // behind: an empty list resolves to an empty array.
@@ -205,12 +273,22 @@ HRESULT STDMETHODCALLTYPE DropTargetBridge::DragEnter(IDataObject* data, DWORD k
         // on. Not a leak, just a cost an untrusted document must not be able to
         // impose. BeginSession pads the empty vector to the length of paths, so
         // the length invariant holds without a resolution pass.
+        const int64_t resolveStartMs = DndTraceNowMs();
         std::vector<ResolvedTarget> resolved;
         if (pathsAllowed_) {
             resolved = ResolveShortcutTargets(paths);
         }
+        const int64_t resolveMs = DndTraceNowMs() - resolveStartMs;
+        // Compared against target_, the window a hosted drag stamps as its own:
+        // in Visual Hosting both are the host window, and in a chained panel the
+        // Chromium child never matches, since panels do not stamp their drags.
+        const int64_t markerStartMs = DndTraceNowMs();
+        const DragSource source =
+            ClassifyDragSource(ReadDragSourceMarker(data), ::GetCurrentProcessId(),
+                               static_cast<uint64_t>(reinterpret_cast<uintptr_t>(target_)));
+        const int64_t markerMs = DndTraceNowMs() - markerStartMs;
         const int64_t now = NowMs();
-        activeSessionId_ = sessions_.BeginSession(paths, hasFiles, now, resolved);
+        activeSessionId_ = sessions_.BeginSession(paths, hasFiles, now, resolved, source);
 
         if (shuttingDown_) {
             *effect = DROPEFFECT_NONE;
@@ -219,26 +297,55 @@ HRESULT STDMETHODCALLTYPE DropTargetBridge::DragEnter(IDataObject* data, DWORD k
 
         const DragPoint point = MakePoint(pt);
         DWORD downstream = allowedMask;
+        int64_t forwardMs = -1;
         if (delegate_ && delegate_->IsValid()) {
+            // Written before the call, so a call that never returns still shows.
+            if (DndTraceEnabled()) {
+                DndTrace("[dnd] enter.forward target=" + HwndText(target_));
+            }
+            const int64_t forwardStartMs = DndTraceNowMs();
             if (SUCCEEDED(delegate_->Enter(data, keyState, point, &downstream))) {
                 enterForwarded_ = true;
+                RecordForwardedDragOver(overForward_, pt, keyState, NowMs(), downstream);
             } else {
                 downstream = DROPEFFECT_NONE;
             }
+            forwardMs = DndTraceNowMs() - forwardStartMs;
         } else {
             downstream = DROPEFFECT_NONE;
         }
 
-        *effect = ChooseDropEffect(downstream, allowedMask, hasFiles);
+        sawRendererEffect_ = downstream != DROPEFFECT_NONE;
+        *effect = ChooseDropEffect(downstream, allowedMask, hasFiles,
+                                   RendererHasAnswered(sawRendererEffect_, 0));
+        if (DndTraceEnabled()) {
+            EffectTrace trace;
+            trace.phase = "enter";
+            trace.target = target_;
+            trace.sinceEnterMs = 0;
+            trace.hasFiles = hasFiles;
+            trace.forwarded = enterForwarded_;
+            trace.allowed = allowedMask;
+            trace.inner = downstream;
+            trace.out = *effect;
+            trace.forwardMs = forwardMs;
+            trace.extra = "paths=" + std::to_string(paths.size()) +
+                          " source=" + DragSourceToWire(source) +
+                          " readMs=" + std::to_string(readMs) +
+                          " resolveMs=" + std::to_string(resolveMs) +
+                          " markerMs=" + std::to_string(markerMs);
+            TraceEffect(trace);
+        }
 
-        nlohmann::json payload;
-        payload["sessionId"] = activeSessionId_;
-        payload["paths"] = VisiblePaths(paths);
-        payload["resolvedPaths"] = VisibleResolvedPaths(paths, resolved);
-        payload["hasFiles"] = hasFiles;
-        payload["x"] = point.client.x;
-        payload["y"] = point.client.y;
-        Emit("dnd:enter", payload);
+        api::dnd::EnterPayload payload;
+        payload.sessionId = activeSessionId_;
+        payload.paths = VisiblePaths(paths);
+        payload.resolvedPaths = VisibleResolvedPaths(paths, resolved);
+        payload.hasFiles = hasFiles;
+        payload.source = DragSourceToWire(source);
+        payload.x = point.client.x;
+        payload.y = point.client.y;
+        Emit<api::dnd::events::Enter>(payload);
         return S_OK;
     } catch (...) {
         // Returning a failure HRESULT would make the shell show an error dialog,
@@ -264,24 +371,67 @@ HRESULT STDMETHODCALLTYPE DropTargetBridge::DragOver(DWORD keyState, POINTL pt,
         // Only a gesture still in progress may answer this. An empty id means the
         // last one already left or dropped, and Query treats an empty id as "most
         // recently ended", which would report that gesture's files as ours.
-        bool hasFiles = false;
-        if (!activeSessionId_.empty()) {
-            if (const SessionData* session = sessions_.Query(activeSessionId_, NowMs())) {
-                hasFiles = session->hasFiles;
-            }
-        }
+        const int64_t now = NowMs();
+        const SessionData* session =
+            activeSessionId_.empty() ? nullptr : sessions_.Query(activeSessionId_, now);
+        const bool hasFiles = session && session->hasFiles;
 
         DWORD downstream = allowedMask;
-        if (enterForwarded_ && delegate_ && delegate_->IsValid()) {
-            const DragPoint point = MakePoint(pt);
-            if (FAILED(delegate_->Over(keyState, point, &downstream))) {
-                downstream = DROPEFFECT_NONE;
+        const bool forwarded = enterForwarded_ && delegate_ && delegate_->IsValid();
+        int64_t forwardMs = -1;
+        if (forwarded) {
+            if (ShouldForwardDragOver(overForward_, pt, keyState, now)) {
+                const DragPoint point = MakePoint(pt);
+                const int64_t forwardStartMs = DndTraceNowMs();
+                if (FAILED(delegate_->Over(keyState, point, &downstream))) {
+                    downstream = DROPEFFECT_NONE;
+                }
+                forwardMs = DndTraceNowMs() - forwardStartMs;
+                RecordForwardedDragOver(overForward_, pt, keyState, now, downstream);
+                ++overTrace_.sent;
+            } else {
+                // The WebView still has the drag; its last answer stands.
+                downstream = overForward_.lastAnswer;
             }
         } else {
             downstream = DROPEFFECT_NONE;
         }
 
-        *effect = ChooseDropEffect(downstream, allowedMask, hasFiles);
+        if (downstream != DROPEFFECT_NONE) {
+            sawRendererEffect_ = true;
+        }
+        const bool answered = RendererHasAnswered(
+            sawRendererEffect_, session ? now - session->startedAtMs : 0);
+        *effect = ChooseDropEffect(downstream, allowedMask, hasFiles, answered);
+        if (DndTraceEnabled()) {
+            OverTrace& stats = overTrace_;
+            ++stats.calls;
+            stats.maxCallMs = (std::max)(stats.maxCallMs, forwardMs);
+            // A change of the answer to the drag source covers the grace period
+            // running out, which turns a pending NONE into a refusal.
+            const bool changed = !stats.haveLast || stats.lastForwarded != forwarded ||
+                                 stats.lastInner != downstream || stats.lastOut != *effect;
+            if (changed || forwardMs >= kSlowOverMs) {
+                EffectTrace trace;
+                trace.phase = changed ? "over" : "over.slow";
+                trace.target = target_;
+                trace.sinceEnterMs = session ? now - session->startedAtMs : -1;
+                trace.hasFiles = hasFiles;
+                trace.forwarded = forwarded;
+                trace.allowed = allowedMask;
+                trace.inner = downstream;
+                trace.out = *effect;
+                trace.forwardMs = forwardMs;
+                trace.extra = "call=" + std::to_string(stats.calls) +
+                              " sent=" + std::to_string(stats.sent) +
+                              " answered=" + (answered ? "1" : "0");
+                TraceEffect(trace);
+            }
+            stats.haveLast = true;
+            stats.lastForwarded = forwarded;
+            stats.lastInner = downstream;
+            stats.lastOut = *effect;
+        }
         // No dnd:over event: one drag produces tens to hundreds of DragOver
         // calls, so emitting per call would flood the bridge. Pages that need
         // cursor tracking use the HTML5 dragover event instead.
@@ -301,8 +451,26 @@ HRESULT STDMETHODCALLTYPE DropTargetBridge::DragLeave() noexcept {
     const std::string sessionId = ClearActiveDrag();
 
     try {
+        int64_t forwardMs = -1;
         if (wasForwarded && !shuttingDown_ && delegate_ && delegate_->IsValid()) {
+            const int64_t forwardStartMs = DndTraceNowMs();
             delegate_->Leave();
+            forwardMs = DndTraceNowMs() - forwardStartMs;
+        }
+        if (DndTraceEnabled()) {
+            const SessionData* session =
+                sessionId.empty() ? nullptr : sessions_.Query(sessionId, NowMs());
+            EffectTrace trace;
+            trace.phase = "leave";
+            trace.target = target_;
+            trace.sinceEnterMs = session ? NowMs() - session->startedAtMs : -1;
+            trace.hasFiles = session && session->hasFiles;
+            trace.forwarded = wasForwarded;
+            trace.forwardMs = forwardMs;
+            trace.extra = "overCalls=" + std::to_string(overTrace_.calls) +
+                          " overSent=" + std::to_string(overTrace_.sent) +
+                          " overMaxMs=" + std::to_string(overTrace_.maxCallMs);
+            TraceEffect(trace);
         }
 
         if (sessionId.empty()) {
@@ -310,9 +478,9 @@ HRESULT STDMETHODCALLTYPE DropTargetBridge::DragLeave() noexcept {
         }
         sessions_.EndSession(sessionId, NowMs());
         if (!shuttingDown_) {
-            nlohmann::json payload;
-            payload["sessionId"] = sessionId;
-            Emit("dnd:leave", payload);
+            api::dnd::LeavePayload payload;
+            payload.sessionId = sessionId;
+            Emit<api::dnd::events::Leave>(payload);
         }
         return S_OK;
     } catch (...) {
@@ -343,9 +511,11 @@ HRESULT STDMETHODCALLTYPE DropTargetBridge::Drop(IDataObject* data, DWORD keySta
 
         // Drop carries the authoritative list: the source may have changed it
         // since DragEnter.
+        const int64_t readStartMs = DndTraceNowMs();
         bool hadHdrop = false;
         std::vector<std::wstring> paths = ReadHdropPaths(data, &hadHdrop);
         const bool hasFiles = hadHdrop && !paths.empty();
+        const int64_t readMs = DndTraceNowMs() - readStartMs;
 
         // Resolving shortcuts is the one step here that can block on the
         // filesystem, so it is done only when its result can be used: an empty
@@ -362,6 +532,7 @@ HRESULT STDMETHODCALLTYPE DropTargetBridge::Drop(IDataObject* data, DWORD keySta
         // Gated on the origin verdict for the same reason DragEnter is: with
         // paths withheld the whole array is dropped on the way out, so the work
         // buys nothing and an untrusted document should not be able to order it.
+        const int64_t resolveStartMs = DndTraceNowMs();
         std::vector<ResolvedTarget> resolved;
         if (!sessionId.empty() && pathsAllowed_) {
             const SessionData* previous = sessions_.Query(sessionId, NowMs());
@@ -371,22 +542,40 @@ HRESULT STDMETHODCALLTYPE DropTargetBridge::Drop(IDataObject* data, DWORD keySta
                 resolved = ResolveShortcutTargets(paths);
             }
         }
+        const int64_t resolveMs = DndTraceNowMs() - resolveStartMs;
         sessions_.UpdatePaths(sessionId, paths, hasFiles, resolved);
 
         const DragPoint point = MakePoint(pt);
         DWORD downstream = allowedMask;
+        int64_t forwardMs = -1;
         if (wasForwarded && delegate_ && delegate_->IsValid()) {
+            // Written before the call, so a drop that never returns still shows.
+            if (DndTraceEnabled()) {
+                DndTrace("[dnd] drop.forward target=" + HwndText(target_));
+            }
+            const int64_t forwardStartMs = DndTraceNowMs();
             if (FAILED(delegate_->Drop(data, keyState, point, &downstream))) {
                 downstream = DROPEFFECT_NONE;
             }
+            forwardMs = DndTraceNowMs() - forwardStartMs;
         } else {
             downstream = DROPEFFECT_NONE;
         }
 
-        *effect = ChooseDropEffect(downstream, allowedMask, hasFiles);
-
         const int64_t now = NowMs();
+        if (downstream != DROPEFFECT_NONE) {
+            sawRendererEffect_ = true;
+        }
+        const SessionData* dropped = sessionId.empty() ? nullptr : sessions_.Query(sessionId, now);
+        // A drop released before the page answered keeps the optimistic COPY: the
+        // page may still take it, and dnd:drop below reports it either way.
+        *effect = ChooseDropEffect(
+            downstream, allowedMask, hasFiles,
+            RendererHasAnswered(sawRendererEffect_, dropped ? now - dropped->startedAtMs : 0));
+
         sessions_.EndSession(sessionId, now);
+        const SessionData* ended = sessionId.empty() ? nullptr : sessions_.Query(sessionId, now);
+        const DragSource source = ended ? ended->source : DragSource::External;
 
         // A drop with no session of ours means no matching DragEnter arrived. An
         // empty sessionId is falsy in the page's staleness check, so emitting it
@@ -395,17 +584,45 @@ HRESULT STDMETHODCALLTYPE DropTargetBridge::Drop(IDataObject* data, DWORD keySta
             // Nothing of ours handled this drop, so the source must not be told
             // its files were copied.
             *effect = DROPEFFECT_NONE;
+        }
+        if (DndTraceEnabled()) {
+            EffectTrace trace;
+            trace.phase = "drop";
+            trace.target = target_;
+            trace.sinceEnterMs = ended ? now - ended->startedAtMs : -1;
+            trace.hasFiles = hasFiles;
+            trace.forwarded = wasForwarded;
+            trace.allowed = allowedMask;
+            trace.inner = downstream;
+            trace.out = *effect;
+            trace.forwardMs = forwardMs;
+            trace.extra = "paths=" + std::to_string(paths.size()) +
+                          " source=" + DragSourceToWire(source) +
+                          " readMs=" + std::to_string(readMs) +
+                          " resolveMs=" + std::to_string(resolveMs) +
+                          " overCalls=" + std::to_string(overTrace_.calls) +
+                          " overSent=" + std::to_string(overTrace_.sent) +
+                          " overMaxMs=" + std::to_string(overTrace_.maxCallMs);
+            TraceEffect(trace);
+        }
+        if (sessionId.empty()) {
             return S_OK;
         }
 
-        nlohmann::json payload;
-        payload["sessionId"] = sessionId;
-        payload["paths"] = VisiblePaths(paths);
-        payload["resolvedPaths"] = VisibleResolvedPaths(paths, resolved);
-        payload["x"] = point.client.x;
-        payload["y"] = point.client.y;
-        payload["keyState"] = static_cast<uint32_t>(keyState);
-        Emit("dnd:drop", payload);
+        api::dnd::DropPayload payload;
+        payload.sessionId = sessionId;
+        payload.paths = VisiblePaths(paths);
+        payload.resolvedPaths = VisibleResolvedPaths(paths, resolved);
+        payload.x = point.client.x;
+        payload.y = point.client.y;
+        payload.keyState = static_cast<std::int64_t>(keyState);
+        payload.source = DragSourceToWire(source);
+        const int64_t emitStartMs = DndTraceNowMs();
+        Emit<api::dnd::events::Drop>(payload);
+        if (DndTraceEnabled()) {
+            DndTrace("[dnd] drop.emitted target=" + HwndText(target_) +
+                     " emitMs=" + std::to_string(DndTraceNowMs() - emitStartMs));
+        }
         return S_OK;
     } catch (...) {
         *effect = DROPEFFECT_NONE;

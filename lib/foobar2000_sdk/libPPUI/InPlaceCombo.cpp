@@ -192,6 +192,7 @@ namespace {
 
 		const pfc::string_list_const * m_initData;
 		const unsigned m_iDefault;
+		const DarkMode::param_t m_dark;
 
 		HWND Create(CWindow parent) {
 
@@ -223,7 +224,10 @@ namespace {
 				WIN32_OP(edit.Create(*this, rcClient, NULL, style, 0, ID_MYEDIT) != NULL);
 				edit.SetFont(parent.GetFont());
 
-				if ((m_flags & KFlagDark) != 0) DarkMode::DarkenComboLite(edit);
+				{
+					DarkMode::CHooks dark(m_dark);
+					dark.AddComboBox(edit);
+				}
 
 				m_edit.SubclassWindow(edit);
 				m_edit.OnCreation();
@@ -267,13 +271,12 @@ namespace {
 			return m_hWnd;
 		}
 
-		InPlaceComboContainer(const RECT & p_rect, unsigned p_flags, pfc::string_list_const * initData, unsigned iDefault, comboReply_t p_notify) : m_notify(p_notify), m_initData(initData), m_iDefault(iDefault), m_initRect(p_rect), m_flags(p_flags) { }
+		InPlaceComboContainer(const RECT & p_rect, unsigned p_flags, pfc::string_list_const * initData, unsigned iDefault, comboReply_t p_notify, DarkMode::param_t const & dark) : m_notify(p_notify), m_initData(initData), m_iDefault(iDefault), m_initRect(p_rect), m_flags(p_flags), m_dark(dark) { }
 
 		enum { ID_MYEDIT = 666 };
 
 		BEGIN_MSG_MAP_EX(InPlaceEditContainer)
-			MESSAGE_HANDLER_EX(WM_CTLCOLOREDIT, MsgForwardToParent)
-			MESSAGE_HANDLER_EX(WM_CTLCOLORSTATIC, MsgForwardToParent)
+			MSG_WM_CTLCOLORLISTBOX(OnCtlColorListBox)
 			MESSAGE_HANDLER_EX(WM_MOUSEWHEEL, MsgLostFocus)
 			MESSAGE_HANDLER_EX(WM_MOUSEHWHEEL, MsgLostFocus)
 			MESSAGE_HANDLER_SIMPLE(MSG_DISABLE_EDITING, OnMsgDisableEditing)
@@ -286,9 +289,15 @@ namespace {
 
 	private:
 		void OnDestroy() { m_selfDestruct = true; }
-
-		LRESULT MsgForwardToParent(UINT msg, WPARAM wParam, LPARAM lParam) {
-			return GetParent().SendMessage(msg, wParam, lParam);
+		HBRUSH OnCtlColorListBox(CDCHandle dc, CListBox) {
+			if (!m_dark.IsDark()) {
+				SetMsgHandled(FALSE); return NULL;
+			}
+			const auto tx = m_dark.GetSysColor(COLOR_WINDOWTEXT), bk = m_dark.GetSysColor(COLOR_WINDOW);
+			dc.SetTextColor(tx);
+			dc.SetBkColor(bk);
+			dc.SetDCBrushColor(bk);
+			return (HBRUSH)GetStockObject(DC_BRUSH);
 		}
 		LRESULT MsgLostFocus(UINT, WPARAM, LPARAM) {
 			PostMessage(MSG_COMPLETION, InPlaceEdit::KEditLostFocus, 0);
@@ -340,10 +349,10 @@ static void fail(comboReply_t p_notify) {
 	p_notify(KEditAborted, UINT_MAX);
 }
 
-HWND InPlaceEdit::StartCombo(HWND p_parentwnd, const RECT & p_rect, unsigned p_flags, pfc::string_list_const & data, unsigned iDefault, comboReply_t p_notify) {
+HWND InPlaceEdit::StartCombo(HWND p_parentwnd, const RECT & p_rect, unsigned p_flags, pfc::string_list_const & data, unsigned iDefault, comboReply_t p_notify, DarkMode::param_t const & dark) {
 	try {
 		PFC_ASSERT((CWindow(p_parentwnd).GetWindowLong(GWL_STYLE) & WS_CLIPCHILDREN) != 0);
-		return (new CWindowCreateAndDelete<InPlaceComboContainer>(p_parentwnd, p_rect, p_flags, &data, iDefault, p_notify))->GetEditBox();
+		return (new CWindowCreateAndDelete<InPlaceComboContainer>(p_parentwnd, p_rect, p_flags, &data, iDefault, p_notify, dark))->GetEditBox();
 	} catch (...) {
 		fail(p_notify);
 		return NULL;

@@ -1,3 +1,7 @@
 #pragma once
-// Redirect to foobar2000.h
 #include "foobar2000.h"
+
+#include "coreDarkMode.h"
+#include "skipTrack.h"
+#include "playOn.h"
+#include "converter.h"

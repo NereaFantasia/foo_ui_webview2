@@ -37,7 +37,8 @@ namespace ApiErrorCode {
     // --- State/resource errors ---
     constexpr const char* NOT_FOUND         = "NOT_FOUND";          // resource not found
     constexpr const char* LOCKED            = "LOCKED";             // playlist locked etc.
-    constexpr const char* NOT_SUPPORTED     = "NOT_SUPPORTED";      // panel mode unsupported etc.
+    constexpr const char* NOT_SUPPORTED     = "NOT_SUPPORTED";      // operation unsupported by this environment or data
+    constexpr const char* PANEL_MODE_UNSUPPORTED = "PANEL_MODE_UNSUPPORTED"; // called from a DUI/CUI panel, needs the standalone window
     constexpr const char* LIBRARY_DISABLED  = "LIBRARY_DISABLED";   // library not enabled
     constexpr const char* NO_ACTIVE_ITEM    = "NO_ACTIVE_ITEM";     // no active playlist/track
 
@@ -58,6 +59,13 @@ namespace ApiErrorCode {
     constexpr const char* DECODE_FAILED     = "DECODE_FAILED";
     constexpr const char* UNKNOWN_ERROR     = "UNKNOWN_ERROR";
     constexpr const char* EXCEPTION         = "EXCEPTION";
+
+    // --- Menu and port codes, published before the shared codes above and kept as they are ---
+    constexpr const char* MENU_ITEM_DISABLED     = "MENU_ITEM_DISABLED";      // menu command exists but is disabled
+    constexpr const char* MENU_MATCH_AMBIGUOUS   = "MENU_MATCH_AMBIGUOUS";    // a menu command name matched several commands
+    constexpr const char* MENU_COMMAND_NOT_FOUND = "MENU_COMMAND_NOT_FOUND";  // no menu command has the name or path
+    constexpr const char* PORT_NOT_FOUND         = "PORT_NOT_FOUND";          // no open port has the id
+    constexpr const char* TARGET_NOT_FOUND       = "TARGET_NOT_FOUND";        // port.postMessageTo target port does not exist
 }
 
 // ============================================

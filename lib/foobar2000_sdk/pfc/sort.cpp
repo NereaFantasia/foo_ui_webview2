@@ -138,7 +138,7 @@ static void squaresort(pfc::sort_callback & p_callback,t_size const p_base,t_siz
 }
 
 
-inline static void __sort_2elem_helper(pfc::sort_callback & p_callback,t_size & p_elem1,t_size & p_elem2) {
+inline static void _sort_2elem_helper(pfc::sort_callback & p_callback,t_size & p_elem1,t_size & p_elem2) {
 	if (p_callback.compare(p_elem1,p_elem2) > 0) pfc::swap_t(p_elem1,p_elem2);
 }
 
@@ -165,7 +165,7 @@ static t_size myrand(t_size count) {
 	return (t_size)(v % count);
 }
 
-inline static t_size __pivot_helper(pfc::sort_callback & p_callback,t_size const p_base,t_size const p_count) {
+inline static t_size _pivot_helper(pfc::sort_callback & p_callback,t_size const p_base,t_size const p_count) {
 	PFC_ASSERT(p_count > 2);
 	
 	//t_size val1 = p_base, val2 = p_base + (p_count / 2), val3 = p_base + (p_count - 1);
@@ -177,9 +177,9 @@ inline static t_size __pivot_helper(pfc::sort_callback & p_callback,t_size const
 
 	val1 += p_base; val2 += p_base; val3 += p_base;
 	
-	__sort_2elem_helper(p_callback,val1,val2);
-	__sort_2elem_helper(p_callback,val1,val3);
-	__sort_2elem_helper(p_callback,val2,val3);
+    _sort_2elem_helper(p_callback,val1,val2);
+    _sort_2elem_helper(p_callback,val1,val3);
+    _sort_2elem_helper(p_callback,val2,val3);
 
 	return val2;
 }
@@ -190,7 +190,7 @@ static void newsort(pfc::sort_callback & p_callback,t_size const p_base,t_size c
 		return;
 	}
 
-	t_size pivot = __pivot_helper(p_callback,p_base,p_count);
+	t_size pivot = _pivot_helper(p_callback,p_base,p_count);
 
 	{
 		const t_size target = p_base + p_count - 1;

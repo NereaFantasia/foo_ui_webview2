@@ -77,11 +77,11 @@ void wavWriterSetup_t::initialize(const audio_chunk & p_chunk, unsigned p_bps, b
 void wavWriterSetup_t::setup_wfx(WAVEFORMATEX & p_wfx)
 {
 	p_wfx.wFormatTag = m_float ? WAVE_FORMAT_IEEE_FLOAT : WAVE_FORMAT_PCM;
-	p_wfx.nChannels = m_channels;
+	p_wfx.nChannels = (WORD) m_channels;
 	p_wfx.nSamplesPerSec = m_samplerate;
 	p_wfx.nAvgBytesPerSec = (m_bps >> 3) * m_channels * m_samplerate;
-	p_wfx.nBlockAlign = (m_bps>>3) * m_channels;
-	p_wfx.wBitsPerSample = m_bps;
+	p_wfx.nBlockAlign = (WORD)( (m_bps>>3) * m_channels );
+	p_wfx.wBitsPerSample = (WORD) m_bps;
 	p_wfx.cbSize = 0;
 }
 
@@ -90,7 +90,7 @@ void wavWriterSetup_t::setup_wfxe(WAVEFORMATEXTENSIBLE & p_wfxe)
 	setup_wfx(p_wfxe.Format);
 	p_wfxe.Format.wFormatTag=WAVE_FORMAT_EXTENSIBLE;
 	p_wfxe.Format.cbSize=22;
-	p_wfxe.Samples.wValidBitsPerSample = this->m_bpsValid;
+	p_wfxe.Samples.wValidBitsPerSample = (WORD) this->m_bpsValid;
 	p_wfxe.dwChannelMask = audio_chunk::g_channel_config_to_wfx(m_channel_mask);
 	p_wfxe.SubFormat = m_float ? KSDATAFORMAT_SUBTYPE_IEEE_FLOAT : KSDATAFORMAT_SUBTYPE_PCM;	
 	
@@ -122,7 +122,10 @@ void CWavWriter::writeSize(t_uint64 size, abort_callback & abort) {
 }
 
 size_t CWavWriter::align(abort_callback & abort) {
-	t_uint8 dummy[8] = {};
+	// Align to word boundary for relevant format, in case we wrote edd count on bytes
+	// Mainly needed for odd-length 24bit or 8bit streams.
+	if (!m_file->can_seek()) return 0; // NOT for pipes, FLAC encoding will fail if we do this
+	static const t_uint8 dummy[8] = {};
 	const t_uint32 val = is64() ? 8 : 2;
 	t_filesize pos = m_file->get_position(abort);
 	t_size delta = (val - (pos%val)) % val;
@@ -216,29 +219,62 @@ void CWavWriter::open(service_ptr_t<file> p_file, const wavWriterSetup_t & p_set
 	}
 }
 
-void CWavWriter::write_raw( const void * raw, size_t rawSize, abort_callback & p_abort ) {
+void CWavWriter::_write_raw( const void * raw, size_t rawSize, abort_callback & p_abort ) {
 	m_file->write_object(raw,rawSize,p_abort);
 	m_bytes_written += rawSize;
+}
+void CWavWriter::_flush(abort_callback& a) {
+	if (m_workUsed > 0) {
+		_write_raw(m_work.ptr(), m_workUsed, a);
+		m_workUsed = 0;
+	}
 }
 
 void CWavWriter::write(const audio_chunk & p_chunk, abort_callback & p_abort)
 {
-	if (p_chunk.get_channels() != m_setup.m_channels 
-		|| p_chunk.get_channel_config() != m_setup.m_channel_mask
-		|| p_chunk.get_srate() != m_setup.m_samplerate
-		) throw exception_unexpected_audio_format_change();
+	if (p_chunk.get_sample_count() == 0) return;
 
+	audio_chunk::expectSpec(m_setup.spec(), p_chunk.get_spec());
 	
-	if (m_setup.m_float)
-	{
-		const size_t count = p_chunk.get_channels() * p_chunk.get_sample_count();
-		const void* data = render_float_by_bps(m_setup.m_bps, m_postprocessor_output, p_chunk.get_data(), count);
-		write_raw(data, count * m_setup.m_bps / 8, p_abort);
-	}
-	else
-	{
-		m_postprocessor->run(p_chunk,m_postprocessor_output,m_setup.m_bpsValid,m_setup.m_bps,m_setup.m_dither,1.0f);
-		write_raw( m_postprocessor_output.get_ptr(),m_postprocessor_output.get_size(), p_abort );
+	const size_t count = p_chunk.get_channels() * p_chunk.get_sample_count();
+	const size_t addBytes = count * m_setup.m_bps / 8;
+
+	const size_t write_pass = this->m_write_bytes;
+
+	if (write_pass > 0) {
+		const size_t need = m_workUsed + addBytes;
+
+		if (need > m_work.size()) {
+			size_t alloc = write_pass / 4 * 5;
+			if (alloc < need) alloc = need;
+			m_work.resize(need);
+		}
+		mem_block_container_temp_impl output((uint8_t*)m_work.ptr() + m_workUsed, m_work.size() - m_workUsed);
+		if (m_setup.m_float) {
+			auto ptr = render_float_by_bps(m_setup.m_bps, output, p_chunk.get_data(), count);
+			if (output.size() == 0) {
+				// no conversion
+				output.resize(addBytes);
+				memcpy(output.get_ptr(), ptr, addBytes);
+			}
+		} else {
+			m_postprocessor->run(p_chunk, output, m_setup.m_bpsValid, m_setup.m_bps, m_setup.m_dither, 1.0f);
+		}
+		PFC_ASSERT(output.get_size() == addBytes);
+		m_workUsed = need;
+		if (m_workUsed >= write_pass) _flush(p_abort);
+	} else {
+		_flush(p_abort);
+		const size_t need = addBytes;
+		if (need > m_work.size()) m_work.resize(need);
+		mem_block_container_temp_impl output((uint8_t*)m_work.ptr(), need);
+		if (m_setup.m_float) {
+			auto ptr = render_float_by_bps(m_setup.m_bps, output, p_chunk.get_data(), count);
+			_write_raw(ptr, need, p_abort);
+		} else {
+			m_postprocessor->run(p_chunk, output, m_setup.m_bpsValid, m_setup.m_bps, m_setup.m_dither, 1.0f);
+			_write_raw(output.get_ptr(), output.get_size(), p_abort);
+		}
 	}
 }
 
@@ -246,6 +282,7 @@ void CWavWriter::finalize(abort_callback & p_abort)
 {
 	if (m_file.is_valid())
 	{
+		_flush(p_abort);
 		const size_t alignG = align(p_abort);
 
 		if (m_file->can_seek()) {
@@ -316,7 +353,7 @@ public:
 		}
 		return ret;
 	}
-	void write( const void * buffer, size_t bytes, abort_callback & aborter ) override {
+	void write( const void *, size_t, abort_callback & ) override {
 		throw exception_io_denied();
 	}
 	fileWav( std::vector<uint8_t> const & header, file::ptr data) {
@@ -334,10 +371,10 @@ public:
 		if (s != filesize_invalid) s += m_header.size();
 		return s;
 	}
-	t_filesize get_position(abort_callback & p_abort) override {
+	t_filesize get_position(abort_callback &) override {
 		return m_position;
 	}
-	void resize(t_filesize p_size,abort_callback & p_abort) override {
+	void resize(t_filesize,abort_callback &) override {
 		throw exception_io_denied();
 	}
 	void seek(t_filesize p_position,abort_callback & p_abort) override {
@@ -345,7 +382,7 @@ public:
 		m_position = p_position;
 	}
 	bool can_seek() override {return true; }
-	bool get_content_type(pfc::string_base & p_out) override { return false; }
+	bool get_content_type(pfc::string_base &) override { return false; }
 	void reopen(abort_callback & p_abort) override { seek(0, p_abort); }
 	bool is_remote() override { return m_data->is_remote(); }
 private:
@@ -356,6 +393,7 @@ private:
 }
 
 static std::vector<uint8_t> makeWavHeader( const wavWriterSetup_t & setup, t_filesize dataSize, abort_callback & aborter ) {
+    std::ignore = dataSize; // FIX ME dataSize not respected
 	std::vector<uint8_t> ret;
 	file::ptr temp; filesystem::g_open_tempmem( temp, aborter );
 	{

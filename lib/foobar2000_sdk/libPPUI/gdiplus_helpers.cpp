@@ -26,6 +26,18 @@ void GdiplusErrorHandler::Handle(Gdiplus::Status p_code) {
 	}
 }
 
+CSize AdjustSizeToFit(CSize sizeFit, CSize sizeFitIn) {
+	if (sizeFit.cx == 0 || sizeFit.cy == 0 || sizeFitIn.cx == 0 || sizeFitIn.cy == 0) return sizeFit;
+	const double ratioX = (double)sizeFitIn.cx / (double)sizeFit.cx,
+		ratioY = (double)sizeFitIn.cy / (double)sizeFit.cy;
+	double ratio = pfc::min_t(ratioX, ratioY);
+	return CSize(pfc::rint32(sizeFit.cx * ratio), pfc::rint32(sizeFit.cy * ratio));
+}
+
+CSize GdiplusImageSize(Gdiplus::Image* img) {
+	return { (int)img->GetWidth(), (int)img->GetHeight() };
+}
+
 HBITMAP GdiplusLoadBitmap(UINT id, const TCHAR* resType, CSize size) {
 	using namespace Gdiplus;
 	try {
@@ -47,7 +59,7 @@ HBITMAP GdiplusLoadBitmap(UINT id, const TCHAR* resType, CSize size) {
 		}
 
 		HBITMAP bmp = NULL;
-		EH << resized.GetHBITMAP(Gdiplus::Color::White, &bmp);
+		EH << resized.GetHBITMAP( (Gdiplus::ARGB) Gdiplus::Color::White, &bmp);
 		return bmp;
 	} catch (...) {
 		PFC_ASSERT(!"Should not get here");
@@ -55,16 +67,27 @@ HBITMAP GdiplusLoadBitmap(UINT id, const TCHAR* resType, CSize size) {
 	}
 }
 
-std::unique_ptr<Gdiplus::Image> GdiplusImageFromMem(const void* ptr, size_t bytes) {
+std::unique_ptr<Gdiplus::Image> GdiplusImageFromMem(const void* ptr, size_t bytes, BOOL useEmbeddedColorManagement) {
 	using namespace Gdiplus;
 	GdiplusErrorHandler EH;
 
 	CComPtr<IStream> stream;
 	stream.p = SHCreateMemStream((const BYTE*)ptr, pfc::downcast_guarded<UINT>(bytes));
 	if (!stream) throw std::bad_alloc();
-	std::unique_ptr<Image> source ( new Image(stream.p) );
-	EH << source->GetLastStatus();
-	return source;
+	std::unique_ptr<Image> ret ( new Image(stream, useEmbeddedColorManagement) );
+	EH << ret->GetLastStatus();
+	return ret;
+}
+std::unique_ptr<Gdiplus::Bitmap> GdiplusBitmapFromMem(const void* ptr, size_t bytes, BOOL useEmbeddedColorManagement) {
+	using namespace Gdiplus;
+	GdiplusErrorHandler EH;
+
+	CComPtr<IStream> stream;
+	stream.p = SHCreateMemStream((const BYTE*)ptr, pfc::downcast_guarded<UINT>(bytes));
+	if (!stream) throw std::bad_alloc();
+	std::unique_ptr<Bitmap> ret(new Bitmap(stream, useEmbeddedColorManagement));
+	EH << ret->GetLastStatus();
+	return ret;
 }
 
 std::unique_ptr< Gdiplus::Bitmap > GdiplusResizeImage(Gdiplus::Image* source, CSize size, Gdiplus::PixelFormat pf) {
@@ -221,4 +244,41 @@ void GdiplusInvertImage(Gdiplus::Bitmap* bmp) {
 	EH << bmp->UnlockBits(&data);
 }
 
+int GdiplusOrientation(Gdiplus::Image * image) {
+	UINT size = image->GetPropertyItemSize(PropertyTagOrientation);
+	if (image->GetLastStatus() == Gdiplus::Ok) {
+		pfc::mem_block block(size);
+		Gdiplus::PropertyItem* pItem = (Gdiplus::PropertyItem*)block.data();
+		if (image->GetPropertyItem(PropertyTagOrientation, size, pItem) == Gdiplus::Ok) {
+			return *(short*)pItem->value;
+		}
+	}
+	return 1;
+}
+void GdiplusFixRotation(Gdiplus::Image * image) {
+	switch (GdiplusOrientation(image)) {
+	case 2: image->RotateFlip(Gdiplus::RotateNoneFlipX); break;
+	case 3: image->RotateFlip(Gdiplus::Rotate180FlipNone); break;
+	case 4: image->RotateFlip(Gdiplus::Rotate180FlipX); break;
+	case 5: image->RotateFlip(Gdiplus::Rotate90FlipX); break;
+	case 6: image->RotateFlip(Gdiplus::Rotate90FlipNone); break;
+	case 7: image->RotateFlip(Gdiplus::Rotate270FlipX); break;
+	case 8: image->RotateFlip(Gdiplus::Rotate270FlipNone); break;
+	}
+}
+
+bool GdiplusImageHasAlpha(Gdiplus::Image* image) {
+	using namespace Gdiplus;
+	auto pf = image->GetPixelFormat();
+	if (IsAlphaPixelFormat(pf)) return true;
+	if (IsIndexedPixelFormat(pf)) {
+		const auto paletteSize = image->GetPaletteSize();
+		pfc::mem_block buffer(paletteSize);
+		auto palette = reinterpret_cast<ColorPalette*>(buffer.data());
+		if (image->GetPalette(palette, paletteSize) == Ok) {
+			return (palette->Flags & PaletteFlagsHasAlpha) != 0;
+		}
+	}
+	return false;
+}
 #pragma comment(lib, "gdiplus.lib")

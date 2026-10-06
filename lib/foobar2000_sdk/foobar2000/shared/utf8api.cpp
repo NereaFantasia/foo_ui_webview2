@@ -1163,8 +1163,12 @@ BOOL SHARED_EXPORT uSetDlgItemText(HWND wnd,UINT id,const char * p_text)
 BOOL SHARED_EXPORT uFileExists(const char * fn)
 {
 	DWORD attrib = uGetFileAttributes(fn);
-	if (attrib == 0xFFFFFFFF || (attrib & FILE_ATTRIBUTE_DIRECTORY)) return FALSE;
-	return TRUE;
+	if (attrib == INVALID_FILE_ATTRIBUTES) {
+		// Existing but locked file is known to fail with ERROR_SHARING_VIOLATION
+		// Example: pagefile.sys
+		return GetLastError() == ERROR_SHARING_VIOLATION;
+	}
+	return (attrib & FILE_ATTRIBUTE_DIRECTORY) == 0;
 }
 
 BOOL SHARED_EXPORT uFormatSystemErrorMessage(string_base & p_out,DWORD p_code) {

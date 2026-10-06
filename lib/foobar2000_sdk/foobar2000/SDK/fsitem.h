@@ -36,6 +36,10 @@ namespace foobar2000_io {
 			hidden = 4,
 			//! Do not hand over filestats unless they come for free with folder enumeration
 			suppressStats = 8,
+			//! \since 2.26
+			//! Fail quietly if directory not found, suppress exceptions
+			//! Meant to be used as a hint to reduce amount of C++ exceptions thrown - caller should still catch exception_io_not_found
+			notFoundAsBlank = 16,
 		};
 	}
 

@@ -5,12 +5,15 @@ namespace pfc {
 	class mem_block {
 	public:
 		mem_block( ) noexcept { _clear(); }
+		mem_block(size_t size) { _clear(); resize(size); }
 		~mem_block() noexcept { clear(); }
 		void resize(size_t);
 		void clear() noexcept;
 		size_t size() const noexcept { return m_size;}
 		void * ptr() noexcept { return m_ptr; }
+		void * data() noexcept { return m_ptr; }
 		const void * ptr() const noexcept { return m_ptr; }
+		const void * data() const noexcept { return m_ptr; }
 		void move( mem_block & other ) noexcept;
 		void copy( mem_block const & other );
 		mem_block(const mem_block & other) { _clear(); copy(other); }
@@ -45,6 +48,9 @@ namespace pfc {
 			mem_block ret(noinit{});
 			ret.m_ptr = ptr; ret.m_size = size;
 			return ret;
+		}
+		static mem_block withData(const void* ptr, size_t size) {
+			mem_block ret; ret.set(ptr, size); return ret;
 		}
 	private:
 		struct noinit {}; mem_block(noinit) {}

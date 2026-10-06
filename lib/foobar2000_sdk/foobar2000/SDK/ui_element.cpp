@@ -161,6 +161,11 @@ bool ui_element_instance_callback::is_dark_mode() {
 	return false;
 }
 
+bool ui_element_instance_callback::is_retro_mode() {
+	t_ui_color clr = 0;
+	return this->query_color(ui_color_retromode, clr) && clr != 0;
+}
+
 t_size ui_element_instance_callback::notify_(ui_element_instance * source, const GUID & what, t_size param1, const void * param2, t_size param2size) {
 	ui_element_instance_callback_v3::ptr v3;
 	if (!this->service_query_t(v3)) { PFC_ASSERT(!"Outdated UI Element host implementation"); return 0; }

@@ -16,7 +16,6 @@ public:
 		MSG_WM_CTLCOLORSTATIC(OnCtlColorStatic);
 		MESSAGE_HANDLER(WM_KEYDOWN,OnKeyDown);
 		MESSAGE_HANDLER(WM_SYSKEYDOWN,OnKeyDown);
-		MESSAGE_HANDLER_EX(WM_SIZE,OnSizePassThru);
 		NOTIFY_CODE_HANDLER(HDN_ITEMCHANGED,OnHeaderItemChanged);
 		NOTIFY_CODE_HANDLER(HDN_ENDDRAG,OnHeaderEndDrag);
 		NOTIFY_CODE_HANDLER(HDN_ITEMCLICK,OnHeaderItemClick);
@@ -36,8 +35,10 @@ public:
 
 	int GetHeaderItemWidth( int which );
 	void InitializeHeaderCtrl(DWORD flags = HDS_FULLDRAG);
+	void InitializeNoHeader();
 	void InitializeHeaderCtrlSortable() {InitializeHeaderCtrl(HDS_FULLDRAG | HDS_BUTTONS);}
 	CHeaderCtrl GetHeaderCtrl() const {return m_header;}
+	bool IsNoHeader() const { return m_noHeader; }
 	void SetSortIndicator( size_t whichColumn, bool isUp );
 	void ClearSortIndicator();
 
@@ -187,13 +188,13 @@ protected:
 	size_t HotSubItem() const { return m_hotSubItem; }
 
 	virtual void RequestEditItem(size_t item, size_t subItem);
+	void ListHandleResize() noexcept override;
 private:
 	void OnLButtonDblClk(UINT nFlags, CPoint point);
 	void OnThemeChangedPT();
 	void OnEnable(BOOL) { Invalidate(); }
 	HBRUSH OnCtlColorStatic(CDCHandle dc, CStatic wndStatic);
 	void ProcessColumnsChange() { OnColumnsChanged();}
-	LRESULT OnSizePassThru(UINT,WPARAM,LPARAM);
 	LRESULT OnHeaderItemClick(int,LPNMHDR,BOOL&);
 	LRESULT OnHeaderCustomDraw(LPNMHDR);
 	LRESULT OnDividerDoubleClick(int,LPNMHDR,BOOL&);
@@ -212,7 +213,8 @@ private:
 	int m_itemWidth = 0;
 	int m_clientWidth = 0;
 	CHeaderCtrl m_header;
-	bool m_headerDark = false;
+	bool m_noHeader = false;
+	DarkMode::param_t m_headerDark;
 	CStatic m_headerLine;
 
 	bool HaveAutoWidthColumns() const;

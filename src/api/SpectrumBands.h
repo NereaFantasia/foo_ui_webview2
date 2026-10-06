@@ -78,4 +78,55 @@ void ComputeDbBands(const Sample* data, size_t binCount, unsigned channels,
                     std::vector<float>& out,
                     double minFrequency = kDefaultMinFrequency, double maxFrequency = 0.0);
 
+// Channel layout of ComputeDbBins' output.
+enum class SpectrumChannels { Mix, Stereo };
+
+// Bin values are rounded to 1 / kDbBinsStepsPerDb dB. A frame carries thousands
+// of bins; at 0.01 dB each value prints as a short JSON number, and the step
+// stays far below any display resolution.
+constexpr int kDbBinsStepsPerDb = 100;
+
+// The FFT bins ComputeDbBins outputs: bins first .. first + count - 1.
+// count 0 means none, and first is then 0.
+struct DbBinSpan {
+    size_t first = 0;
+    size_t count = 0;
+};
+
+// Which bins fall into [minFrequency, upper edge) for this stream and FFT size,
+// without looking at a spectrum; the upper edge follows ComputeDbBands. Bin k
+// (k >= 1) is centred at k * sampleRate / fftSize; the DC bin never counts.
+// `binCount` is the spectrum's bin count, fftSize / 2 for a full spectrum.
+// sampleRate 0 is treated as 44100.
+DbBinSpan FindDbBinSpan(size_t binCount, unsigned sampleRate, int fftSize,
+                        double minFrequency = kDefaultMinFrequency, double maxFrequency = 0.0);
+
+// Linear FFT bins as power in dB. Element i of an array is bin firstBin + i.
+struct DbBins {
+    // Bin index of element 0; 0 when no bin is in range.
+    size_t firstBin = 0;
+    // SpectrumChannels::Mix fills `mix`; Stereo fills `left` and `right`.
+    std::vector<double> mix;
+    std::vector<double> left;
+    std::vector<double> right;
+};
+
+// Linear bins as power in dB: value = 10 * log10(p) + kDbBandsCalibration,
+// floored at kDbBandsFloor, then rounded to 1 / kDbBinsStepsPerDb dB and kept
+// as double, so that a value such as -63.84 serialises as -63.84. The power
+// definition matches ComputeDbBands: in every band that is not empty, the bins
+// of the band summed as powers give the band's 'db' reading, up to rounding.
+//
+// The bins are those of FindDbBinSpan. Mix: p is the mean over all channels of
+// the squared magnitude. Stereo: `left` is channel 0 and `right` channel 1, or
+// channel 0 again for a mono spectrum; further channels are ignored.
+//
+// Data layout, the fftSize precondition and the sampleRate fallback follow
+// ComputeDbBands. No bin in range or channels == 0 yields empty arrays and
+// firstBin 0; the arrays the mode does not use are left empty.
+template <typename Sample>
+void ComputeDbBins(const Sample* data, size_t binCount, unsigned channels,
+                   unsigned sampleRate, int fftSize, SpectrumChannels mode, DbBins& out,
+                   double minFrequency = kDefaultMinFrequency, double maxFrequency = 0.0);
+
 }  // namespace fb2k_spectrum

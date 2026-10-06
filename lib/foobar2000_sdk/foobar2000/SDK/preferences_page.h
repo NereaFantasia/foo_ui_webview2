@@ -22,8 +22,8 @@ public:
     };
 };
 
-//! Implementing this service will generate a page in preferences dialog. Use preferences_page_factory_t template to register. \n
-//! In 1.0 and newer you should always derive from preferences_page_v3 rather than from preferences_page directly.
+//! Implementing this service will generate a page in preferences dialog. Use @c preferences_page_factory_t template to register. \n
+//! In 1.0 and newer you should always derive from @c preferences_page_v3 rather than from preferences_page directly.
 class NOVTABLE preferences_page : public service_base {
 public:
 #ifdef _WIN32
@@ -32,7 +32,7 @@ public:
 #endif
     
 #ifdef __APPLE__
-    //! Returns fb2k::NSObjectWrapper holding your NSViewController
+    //! Returns @c fb2k::NSObjectWrapper holding your @c NSViewController
     virtual service_ptr instantiate( ) = 0;
 #endif
     
@@ -40,7 +40,7 @@ public:
 	virtual const char * get_name() = 0;
 	//! Retrieves GUID of the page.
 	virtual GUID get_guid() = 0;
-	//! Retrieves GUID of parent page/branch of this page. See preferences_page::guid_* constants for list of standard parent GUIDs. Can also be a GUID of another page or a branch (see: preferences_branch).
+	//! Retrieves GUID of parent page/branch of this page. See @c preferences_page::guid_* constants for list of standard parent GUIDs. Can also be a GUID of another page or a branch (see: `preferences_branch`).
 	virtual GUID get_parent_guid() = 0;
 #ifdef _WIN32
 	//! Obsolete.
@@ -52,8 +52,9 @@ public:
 	virtual bool get_help_url(pfc::string_base & p_out);
 
 	static void get_help_url_helper(pfc::string_base & out, const char * category, const GUID & id, const char * name);
+	static const char* help_url_base();
 	
-	static const GUID guid_root, guid_hidden, guid_tools,guid_core,guid_display,guid_playback,guid_visualisations,guid_input,guid_tag_writing,guid_media_library, guid_tagging, guid_output, guid_advanced, guid_components, guid_dsp, guid_shell, guid_keyboard_shortcuts;
+	static const GUID guid_root, guid_hidden, guid_tools,guid_core,guid_display,guid_playback,guid_visualisations,guid_input,guid_tag_writing,guid_media_library, guid_tagging, guid_output, guid_advanced, guid_components, guid_dsp, guid_shell, guid_keyboard_shortcuts, guid_networking, guid_network_credentials;
 	//! \since 1.5
 	static const GUID guid_input_info_filter;
     
@@ -73,14 +74,14 @@ public:
 template<class T>
 class preferences_page_factory_t : public service_factory_single_t<T> {};
 
-//! Creates a preferences branch - an empty page that only serves as a parent for other pages and is hidden when no child pages exist. Instead of implementing this, simply use preferences_branch_factory class to declare a preferences branch with specified parameters.
+//! Creates a preferences branch - an empty page that only serves as a parent for other pages and is hidden when no child pages exist. Instead of implementing this, simply use @c preferences_branch_factory class to declare a preferences branch with specified parameters.
 class NOVTABLE preferences_branch : public service_base {
 public:
 	//! Retrieves name of the preferences branch.
 	virtual const char * get_name() = 0;
 	//! Retrieves GUID of the preferences branch. Use this GUID as parent GUID for pages/branches nested in this branch.
 	virtual GUID get_guid() = 0;
-	//! Retrieves GUID of parent page/branch of this branch. See preferences_page::guid_* constants for list of standard parent GUIDs. Can also be a GUID of another branch or a page.
+	//! Retrieves GUID of parent page/branch of this branch. See @c preferences_page::guid_* constants for list of standard parent GUIDs. Can also be a GUID of another branch or a page.
 	virtual GUID get_parent_guid() = 0;
 	
 
@@ -111,7 +112,7 @@ private:
 typedef service_factory_single_t<preferences_branch_impl> _preferences_branch_factory;
 
 //! Instantiating this class declares a preferences branch with specified parameters.\n
-//! Usage: static preferences_branch_factory g_mybranch(mybranchguid,parentbranchguid,"name of my preferences branch goes here");
+//! Usage: `static preferences_branch_factory g_mybranch(mybranchguid,parentbranchguid,"name of my preferences branch goes here");`
 class preferences_branch_factory : public _preferences_branch_factory {
 public:
 	preferences_branch_factory(const GUID & p_guid,const GUID & p_parent,const char * p_name,double p_sort_priority = 0) : _preferences_branch_factory(p_guid,p_parent,p_name,p_sort_priority) {}
@@ -127,10 +128,10 @@ public:
 
 //! \since 1.0
 //! Implements a preferences page instance. \n
-//! Instantiated through preferences_page_v3::instantiate(). \n
-//! Note that the window will be destroyed by the caller before the last reference to the preferences_page_instance is released. \n
+//! Instantiated through @c preferences_page_v3::instantiate(). \n
+//! Note that the window will be destroyed by the caller before the last reference to the @c preferences_page_instance is released. \n
 //! WARNING: misguided use of modal dialogs - or ANY windows APIs that might spawn such dialogs - may result in conditions when the owner dialog (along with your page) is destroyed somewhere inside your message handler, also releasing references to your object. \n
-//! It is recommended to use window_service_impl_t<> from ATLHelpers to instantiate preferences_page_instances, or preferences_page_impl<> framework for your preferences_page code to cleanly workaround such cases.
+//! It is recommended to use @c window_service_impl_t<> from ATLHelpers to instantiate preferences_page_instances, or preferences_page_impl<> framework for your preferences_page code to cleanly workaround such cases.
 class preferences_page_instance : public service_base {
 	FB2K_MAKE_SERVICE_INTERFACE(preferences_page_instance, service_base)
 public:

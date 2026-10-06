@@ -41,7 +41,7 @@ namespace fb2k {
                         // release lambdas early, synchronously from same context as they're executed
                         { auto f = std::move(work->work); if (f) f(); }
                         a->check();
-                        fb2k::inMainThread( [work, pThis, a] {
+                        fb2k::inMainThread( [work, pThis, a] () noexcept {
                             if ( ! a->is_set() ) {
                                 // release lambdas early, synchronously from same context as they're executed
                                 { auto f = std::move(work->done); if (f) f(); }

@@ -1,6 +1,9 @@
 ﻿#include "pch.h"
 #include "callbacks/ConfigCallback.h"
 #include "core/WebViewContext.h"
+#include "api/EventEmit.h"
+#include "api/generated/PlaybackSchema.h"
+#include "api/generated/WindowSchema.h"
 
 // ============================================
 // 配置变化回调实现
@@ -29,25 +32,26 @@ public:
             bool value = false;
             obj->get_data_bool(value);
             
-            std::string eventName;
             if (guid == standard_config_objects::bool_ui_always_on_top) {
-                eventName = "window:alwaysOnTopChanged";
+                Announce<api::window::events::AlwaysOnTopChanged>(value);
             } else if (guid == standard_config_objects::bool_playlist_stop_after_current) {
-                eventName = "playback:stopAfterCurrentChanged";
+                Announce<api::playback::events::StopAfterCurrentChanged>(value);
             } else if (guid == standard_config_objects::bool_playback_follows_cursor) {
-                eventName = "playback:followCursorChanged";
+                Announce<api::playback::events::FollowCursorChanged>(value);
             } else if (guid == standard_config_objects::bool_cursor_follows_playback) {
-                eventName = "playback:cursorFollowChanged";
-            }
-            
-            if (!eventName.empty()) {
-                LOG("ConfigCallback:", eventName.c_str(), "=", value ? "true" : "false");
-                
-                WebViewContext::GetInstance().BroadcastEvent(eventName, {
-                    {"enabled", value}
-                });
+                Announce<api::playback::events::CursorFollowChanged>(value);
             }
         } catch (...) {}
+    }
+
+private:
+    // 监听的四个选项都以 { enabled } 通告新值。
+    template <class E>
+    static void Announce(bool value) {
+        LOG("ConfigCallback:", E::kName, "=", value ? "true" : "false");
+        typename E::Payload payload;
+        payload.enabled = value;
+        api::emit::Broadcast<E>(payload);
     }
 };
 

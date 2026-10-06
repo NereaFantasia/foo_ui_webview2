@@ -2,6 +2,21 @@
 #include "WindowPositionUtils.h"
 
 #define FB2K_WPU_DEBUG 0
+#define FB2K_WPU_DEBUG_DIALOG 0
+#define FB2K_WPU_RELATIVE_TO_PARENT 1
+
+#if FB2K_WPU_DEBUG
+#define WPU_PRINT(...) FB2K_console_print("[WPU] ", __VA_ARGS__)
+#else
+#define WPU_PRINT(...) PFC_NO_OP
+#endif
+
+#if FB2K_WPU_DEBUG_DIALOG
+#define WPU_PRINT_DLG(...) FB2K_console_print("[WPU] ", __VA_ARGS__)
+#else
+#define WPU_PRINT_DLG(...) PFC_NO_OP
+#endif
+
 namespace {
 	static BOOL GetParentWndRect(CWindow wndParent, CRect& rc) {
 		if (!wndParent.IsIconic()) {
@@ -57,7 +72,7 @@ bool cfgDialogPositionData::grabFrom(CWindow wnd) {
 	m_dpiX = DPI.cx; m_dpiY = DPI.cy;
 	m_width = rc.Width(); m_height = rc.Height();
 	m_posX = m_posY = posInvalid;
-	CWindow parent = wnd.GetParent();
+	CWindow parent = FB2K_WPU_RELATIVE_TO_PARENT ? wnd.GetParent() : NULL;
 	if (parent != NULL) {
 		CRect rcParent;
 		if (GetParentWndRect(parent, rcParent)) {
@@ -77,7 +92,7 @@ pfc::string8 cfgDialogPositionData::debug() const {
 	if (m_posX != posInvalid) ret << "X: " << m_posX << "\n";
 	if (m_posY != posInvalid) ret << "Y: " << m_posY << "\n";
 	if (m_dpiX != dpiInvalid) ret << "DPI-X: " << m_dpiX << "\n";
-	if (m_dpiY != dpiInvalid) ret << "DPI-Y: " << m_dpiY << "\n";	
+	if (m_dpiY != dpiInvalid) ret << "DPI-Y: " << m_dpiY << "\n";
 	return ret;
 }
 
@@ -87,16 +102,16 @@ cfgDialogPositionData cfgDialogPositionData::reDPI( CSize screenDPI ) const {
 		PFC_ASSERT(!"Should not get here - something seriously wrong with the OS");
 		return v;
 	}
-	if (v.m_dpiX != dpiInvalid && v.m_dpiX != screenDPI.cx) {
+	if (v.m_dpiX != dpiInvalid && v.m_dpiX != (uint32_t) screenDPI.cx) {
 		if (v.m_width != sizeInvalid) v.m_width = MulDiv(v.m_width, screenDPI.cx, v.m_dpiX);
 		if (v.m_posX != posInvalid) v.m_posX = MulDiv(v.m_posX, screenDPI.cx, v.m_dpiX);
 	}
-	if (v.m_dpiY != dpiInvalid && v.m_dpiY != screenDPI.cy) {
+	if (v.m_dpiY != dpiInvalid && v.m_dpiY != (uint32_t) screenDPI.cy) {
 		if (v.m_height != sizeInvalid) v.m_height = MulDiv(v.m_height, screenDPI.cy, v.m_dpiY);
 		if (v.m_posY != posInvalid) v.m_posY = MulDiv(v.m_posY, screenDPI.cy, v.m_dpiY);
 	}
-	v.m_dpiX = screenDPI.cx;
-	v.m_dpiY = screenDPI.cy;
+	v.m_dpiX = (uint32_t)screenDPI.cx;
+	v.m_dpiY = (uint32_t)screenDPI.cy;
 	return v;
 }
 
@@ -112,15 +127,11 @@ bool cfgDialogPositionData::overrideDefaultSize(t_uint32 width, t_uint32 height)
 }
 
 bool cfgDialogPositionData::applyTo(CWindow wnd) const {
-#if FB2K_WPU_DEBUG
-	FB2K_console_formatter() << "cfgDialogPositionData::applyTo(0x" << pfc::format_window( wnd ) << ")";
-	FB2K_console_formatter() << "data:\n" << this->debug();
-#endif
+	WPU_PRINT_DLG("cfgDialogPositionData::applyTo(", pfc::format_window( wnd ), ")");
+	WPU_PRINT_DLG("data:\n", this->debug());
 	const auto v = reDPI(QueryScreenDPIEx(wnd));
-#if FB2K_WPU_DEBUG
-	FB2K_console_formatter() << "after reDPI:\n" << v.debug();
-#endif
-	CWindow wndParent = wnd.GetParent();
+	WPU_PRINT_DLG("after reDPI:\n", v.debug());
+	CWindow wndParent = FB2K_WPU_RELATIVE_TO_PARENT ? wnd.GetParent() : NULL;
 	UINT flags = SWP_NOACTIVATE | SWP_NOZORDER;
 	CRect rc;
 	if (!GetClientRectAsSC(wnd, rc)) return false;
@@ -155,7 +166,7 @@ bool cfgDialogPositionData::applyTo(CWindow wnd) const {
 			CRect temp;
 			if (wndParent.GetWindowRect(temp)) rcAdjust = temp;
 		}
-		AdjustRectToScreenArea(rc, rcAdjust);
+		AdjustRectToScreenArea(rc, rcAdjust, wnd);
 	}
 
 
@@ -164,7 +175,11 @@ bool cfgDialogPositionData::applyTo(CWindow wnd) const {
 
 void cfgDialogPosition::read_from_window(HWND wnd) {
 	cfgDialogPositionData data;
-	if (data.grabFrom(wnd)) this->set(data);
+	if (data.grabFrom(wnd)) {
+		WPU_PRINT_DLG("cfgDialogPositionData::grabFrom(", pfc::format_window(wnd), ")");
+		WPU_PRINT_DLG("data:\n", data.debug());
+		this->set(data);
+	}
 }
 
 bool cfgDialogPosition::apply_to_window(HWND wnd) {
@@ -182,6 +197,10 @@ bool cfgWindowPositionData::grabFrom(CWindow wnd) {
 		PFC_ASSERT( m_dpi.cx > 0 && m_dpi.cy > 0 );
 	}
 	return rv;
+}
+
+pfc::string8 cfgWindowPositionData::debug() const {
+	return pfc::format( "(", m_wp.rcNormalPosition.left, ",", m_wp.rcNormalPosition.top, ",", m_wp.rcNormalPosition.right, ",", m_wp.rcNormalPosition.bottom, ")");
 }
 
 static void reDPI(WINDOWPLACEMENT& wp, SIZE from, SIZE to) {
@@ -206,11 +225,15 @@ bool cfgWindowPositionData::applyTo(CWindow wnd, bool allowHidden) const {
 void cfgWindowPosition::read_from_window(HWND wnd) {
 	// grabFrom might work partially, fail to obtain size due to window being hidden, use last values
 	cfgWindowPositionData data = get();
-	if ( data.grabFrom( wnd ) ) set(data);
+	if (data.grabFrom(wnd)) {
+		WPU_PRINT("read from ", pfc::format_window(wnd), ":\n", data.debug() );
+		set(data);
+	}
 }
 
 bool cfgWindowPosition::apply_to_window(HWND wnd, bool allowHidden) {
 	auto data = get();
+	WPU_PRINT("applying to ", pfc::format_window(wnd), ":\n", data.debug());
 	return data.applyTo( wnd, allowHidden );
 }
 
@@ -225,4 +248,53 @@ void cfgWindowPosition::windowCreated(HWND wnd, bool allowHidden, DWORD showHow)
 	if (!data.applyTo(wnd, allowHidden)) {
 		::ShowWindow( wnd, showHow);
 	}
+}
+
+
+BOOL AdjustWindowRectHelper(CWindow wnd, CRect& rc) {
+	const DWORD style = wnd.GetWindowLong(GWL_STYLE), exstyle = wnd.GetWindowLong(GWL_EXSTYLE);
+	return AdjustWindowRectEx(&rc, style, (style & WS_POPUP) ? wnd.GetMenu() != NULL : FALSE, exstyle);
+}
+
+void AdjustRectToScreenArea(CRect& rc, CRect rcParent, CWindow wndFor) {
+	CRect tolerance;
+	if (wndFor != NULL) { // probe nonclient area border sizes, allow them offscreen, or else we never respawn windows exactly on screen edge
+		CRect in(0, 0, 100, 100), out = in;
+		AdjustWindowRectEx(&out, wndFor.GetStyle(), FALSE, wndFor.GetExStyle());
+		if ( in.left > out.left ) tolerance.left = in.left - out.left;
+		if ( in.right < out.right ) tolerance.right = out.right - in.right;
+		if ( in.bottom < out.bottom ) tolerance.top = tolerance.bottom = out.bottom - in.bottom;
+	}
+	HMONITOR monitor = MonitorFromRect(rcParent, MONITOR_DEFAULTTONEAREST);
+	MONITORINFO mi = { sizeof(MONITORINFO) };
+	if (GetMonitorInfo(monitor, &mi)) {
+		CRect clip = mi.rcWork;
+		clip.InflateRect(tolerance);
+		if (rc.right > clip.right) rc.OffsetRect(clip.right - rc.right, 0);
+		if (rc.bottom > clip.bottom) rc.OffsetRect(0, clip.bottom - rc.bottom);
+		if (rc.left < clip.left) rc.OffsetRect(clip.left - rc.left, 0);
+		if (rc.top < clip.top) rc.OffsetRect(0, clip.top - rc.top);
+	}
+}
+
+BOOL GetClientRectAsSC(CWindow wnd, CRect& rc) {
+	CRect temp;
+	if (!wnd.GetClientRect(temp)) return FALSE;
+	if (temp.IsRectNull()) return FALSE;
+	if (!wnd.ClientToScreen(temp)) return FALSE;
+	rc = temp;
+	return TRUE;
+}
+
+BOOL CenterWindowGetRect(CWindow wnd, CWindow wndParent, CRect& out) {
+	CRect parent, child;
+	if (!wndParent.GetWindowRect(&parent) || !wnd.GetWindowRect(&child)) return FALSE;
+	{
+		CPoint origin = parent.CenterPoint();
+		origin.Offset(-child.Width() / 2, -child.Height() / 2);
+		child.OffsetRect(origin - child.TopLeft());
+	}
+	AdjustRectToScreenArea(child, parent, wnd);
+	out = child;
+	return TRUE;
 }

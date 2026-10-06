@@ -8,6 +8,7 @@
  */
 
 #pragma once
+#include "core/FrontendDirectoryPolicy.h"
 #include "panels/PanelConfig.h"
 
 // 前向声明
@@ -138,6 +139,22 @@ public:
      * 重新设置虚拟主机映射并导航到新模板
      */
     void ReloadFrontend();
+
+    /**
+     * 宿主最近一次让本实例导航到的页面来源，在提交导航时记下。
+     * 页面之后自己导航到别处不会更新它。
+     */
+    struct FrontendOrigin {
+        enum class Kind { None, DevServer, Url, Directory, BuiltInPage };
+        Kind kind = Kind::None;
+        // kind 为 Directory 时：命中的候选级别、映射的目录与模板名（组件目录这一级没有模板名）
+        frontend_directory_policy::Source directorySource = frontend_directory_policy::Source::None;
+        std::wstring directory;
+        std::string templateName;
+        // kind 为 DevServer 或 Url 时：提交导航的地址
+        std::wstring url;
+    };
+    const FrontendOrigin& GetFrontendOrigin() const { return frontendOrigin_; }
     
 protected:
     // ========== 可重写的虚函数 ==========
@@ -156,6 +173,12 @@ protected:
      * 初始导航完成回调（Standalone 窗口重写用于启动可见性收敛）
      */
     virtual void OnNavigationCompleted(bool success);
+
+    /**
+     * 页面开始顶层导航（含重载），旧文档即将离开时在 UI 线程调用。同文档导航
+     * （锚点、history.pushState）不触发。子类用它丢掉只属于旧页面的登记。
+     */
+    virtual void OnTopLevelNavigationStarting() {}
     
     /**
      * 页面 ready handshake 信号（Standalone 窗口重写用于启动可见性收敛）
@@ -190,9 +213,20 @@ protected:
     virtual void OnWebViewInitFailed();
     
     /**
-     * 获取前端资源目录（子类可重写以自定义路径）
+     * 按本实例的面板模板与全局配置解析本地前端目录；查找顺序见 core/FrontendDirectoryResolver.h。
      */
-    virtual std::wstring GetFrontendResourcesDir() const;
+    frontend_directory_policy::Resolution ResolveFrontendDirectory() const;
+
+    /**
+     * 解析结果对应的页面来源记录（kind 为 Directory），供提交导航后写入 frontendOrigin_。
+     */
+    FrontendOrigin LocalFrontendOrigin(const frontend_directory_policy::Resolution& resolution) const;
+
+    /**
+     * 解析本地前端目录、建虚拟主机映射并导航到 index.html，成功提交时记下页面来源。
+     * 没有可加载的目录、映射或导航提交失败时返回 false，当前页面不动。
+     */
+    bool NavigateToLocalFrontend();
     
     /**
      * 获取内嵌测试页面 HTML
@@ -230,8 +264,9 @@ protected:
      * 既是首次加载的常规路径，也是开发服务器导航失败后的回退路径。
      * 返回是否成功提交了某一次导航；全部失败时调用方要自行宣告导航结束，
      * 否则不会再有 NavigationCompleted 回调，窗口会卡在不可见状态。
+     * PopupWindow 覆盖它：弹窗的本地地址要带 windowId 与 route。
      */
-    bool LoadFallbackFrontendPage();
+    virtual bool LoadFallbackFrontendPage();
     
     /**
      * 设置虚拟主机映射
@@ -305,6 +340,9 @@ protected:
     
     // 面板配置（包含模板名、边框样式、透明背景等 v2 字段）
     PanelConfig panelConfig_;
+
+    // 宿主最近一次提交导航时的页面来源，见 GetFrontendOrigin。
+    FrontendOrigin frontendOrigin_;
     
     // 虚拟主机名（编译时加密，运行时解密）
     static std::wstring GetVirtualHostName();

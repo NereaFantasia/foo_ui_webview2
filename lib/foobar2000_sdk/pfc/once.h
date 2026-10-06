@@ -5,10 +5,6 @@
 #include <memory>
 #include "lockless.h"
 
-#ifdef __ANDROID__
-#define PFC_CUSTOM_ONCE_FLAG 1
-#endif
-
 #ifndef PFC_CUSTOM_ONCE_FLAG
 #define PFC_CUSTOM_ONCE_FLAG 0
 #endif

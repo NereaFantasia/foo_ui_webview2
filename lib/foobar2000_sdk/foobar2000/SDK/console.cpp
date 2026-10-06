@@ -84,8 +84,9 @@ event_logger_recorder::ptr event_logger_recorder::create() {
 	return new service_impl_t<event_logger_recorder_impl>();
 }
 
-
-
+namespace fb2k {
+	service_impl_single_t<event_logger_dummy> noLogger;
+}
 
 namespace console {
 	void addNotify(fb2k::console_notify* n) {

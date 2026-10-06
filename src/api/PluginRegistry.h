@@ -43,7 +43,7 @@ struct ApiInfo {
     std::string methodName;     // method name (no namespace prefix)
     std::string description;    // API description
     std::string version;        // API version
-    bool isExternal;            // registered by an external plugin
+    bool isExternal = false;    // registered by an external plugin
     
     json toJson() const {
         return {
@@ -263,10 +263,6 @@ private:
     
     // 内置命名空间（不允许外部插件使用）
     static const std::unordered_set<std::string> RESERVED_NAMESPACES;
-    
-    // 发送插件注册/注销事件
-    void EmitPluginEvent(const std::string& eventType, const PluginInfo& plugin);
-    void EmitApiEvent(const std::string& eventType, const ApiInfo& api);
     
     // 注册发现 API
     void RegisterDiscoveryApis();

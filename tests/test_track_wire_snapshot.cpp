@@ -1,15 +1,17 @@
 // test_track_wire_snapshot.cpp — 曲目直写序列化的纯函数层对拍
 //
 // WriteTrackJson 是 library.query / library.search 热路径唯一产出 tracks 元素的
-// 地方，字段名或取值类型写错就是静默的契约破口。判据（spec §8.3 单测层）：
-// json::parse(writer 产物) == 用同名同值字段手搭的 nlohmann 对象 —— 与 DOM 版
-// BuildTrackJsonFromSnapshot 的输出逐字段对齐。键序不比（nlohmann 对象按键名
-// 排序输出，直写按声明序），键**集**与每个键的值必须全等。
+// 地方，字段名或取值类型写错就是静默的契约破口。判据：json::parse(writer 产物) ==
+// 用同名同值字段手搭的 nlohmann 对象，全字段的键集另与声明的 LibraryTrack（生成的
+// kFields）核对。键序不比（nlohmann 对象按键名排序输出，直写按表序），键**集**与每个
+// 键的值必须全等。
 #include "pch.h"
 #include "compat/fb2k_types.h"  // console:: stub：ErrorEnvelope.h 的 FailureHook 引用它
 #include "api/TrackWireSnapshot.h"
+#include "api/generated/LibrarySchema.h"
 
 #include <initializer_list>
+#include <set>
 #include <iterator>
 #include <limits>
 
@@ -21,13 +23,16 @@ namespace track_wire_test {
 TrackWireSnapshot MakeFullSnapshot() {
     TrackWireSnapshot snap;
     snap.index = 42;
+    snap.handle = "C:\\music\\a.flac|subsong:3";
     snap.title = "Track Title";
     // 多值曲目：artist 恒等于 artists 按 ", " 拼接的结果（对外契约），取值侧由
     // MetaValuesRaw + JoinMetaValues 保证，此处的夹具按同一口径构造
     snap.artist = "Artist Name, Second Artist";
     snap.artists = {"Artist Name", "Second Artist"};
     snap.album = "Album Name";
-    snap.albumArtist = "Album Artist";
+    // albumArtists 与 albumArtist 同一口径；第一个值自身含 ", "，拼接串拆不回它
+    snap.albumArtist = "Crosby, Stills, Nash & Young, Neil Young";
+    snap.albumArtists = {"Crosby, Stills, Nash & Young", "Neil Young"};
     snap.genre = "Post-Rock";
     snap.date = "2019-04-05";
     snap.trackNumber = 7;
@@ -42,19 +47,20 @@ TrackWireSnapshot MakeFullSnapshot() {
     snap.codec = "FLAC";
     snap.subsong = 3;
     snap.rating = 5;
-    snap.hasInfo = true;
     return snap;
 }
 
-// DOM 侧的等价对象 —— 字段名与取值类型照 BuildTrackJsonFromSnapshot 的全字段分支
+// 声明的 LibraryTrack 行的等价对象
 json ExpectedFullDom(const TrackWireSnapshot& snap) {
     return {
         {"index", snap.index},
+        {"handle", snap.handle},
         {"title", snap.title},
         {"artist", snap.artist},
         {"artists", snap.artists},
         {"album", snap.album},
         {"albumArtist", snap.albumArtist},
+        {"albumArtists", snap.albumArtists},
         {"genre", snap.genre},
         {"date", snap.date},
         {"trackNumber", snap.trackNumber},
@@ -68,20 +74,6 @@ json ExpectedFullDom(const TrackWireSnapshot& snap) {
         {"channels", snap.channels},
         {"codec", snap.codec},
         {"subsong", snap.subsong},
-        {"rating", snap.rating},
-    };
-}
-
-// DOM 侧 fallback 分支（info 容器无效）：只有 8 键
-json ExpectedFallbackDom(const TrackWireSnapshot& snap) {
-    return {
-        {"index", snap.index},
-        {"title", snap.title},
-        {"artist", snap.artist},
-        {"album", snap.album},
-        {"duration", snap.duration},
-        {"path", snap.path},
-        {"absolutePath", snap.absolutePath},
         {"rating", snap.rating},
     };
 }
@@ -111,11 +103,9 @@ uint32_t MaskOf(std::initializer_list<const char*> names) {
     return mask;
 }
 
-// 把 fields 的值挂进一份典型 params 再解析（其余键存在与否不影响判定）
-TrackFieldSelection SelectFields(json fieldsValue) {
-    json params = {{"query", "genre IS Rock"}, {"limit", 100}};
-    params["fields"] = std::move(fieldsValue);
-    return ParseTrackFieldSelection(params);
+// 解析形状已由声明的读取器查过的 fields（字符串数组），这里只剩名字的判定
+TrackFieldSelection SelectFields(std::vector<std::string> names) {
+    return ParseTrackFieldSelection(std::optional<std::vector<std::string>>(std::move(names)));
 }
 
 }  // namespace track_wire_test
@@ -132,18 +122,18 @@ TEST(TrackWireSnapshot, FullFieldSetMatchesDomSemantics) {
     EXPECT_EQ(parsed, track_wire_test::ExpectedFullDom(snap));
 }
 
-TEST(TrackWireSnapshot, FullFieldSetHasExactlyTwentyKeys) {
+TEST(TrackWireSnapshot, FullFieldSetHasExactlyTwentyTwoKeys) {
     const auto snap = track_wire_test::MakeFullSnapshot();
     const json parsed = track_wire_test::WriteAndParse(snap);
 
     ASSERT_TRUE(parsed.is_object());
-    EXPECT_EQ(parsed.size(), 20u);
+    EXPECT_EQ(parsed.size(), 22u);
 
     // 键名逐个钉住：拼错一个字符 = 主题侧字段凭空消失
-    for (const char* key : {"index", "title", "artist", "artists", "album", "albumArtist",
-                            "genre", "date", "trackNumber", "discNumber", "duration", "path",
-                            "absolutePath", "fileSize", "bitrate", "sampleRate",
-                            "channels", "codec", "subsong", "rating"}) {
+    for (const char* key : {"index", "handle", "title", "artist", "artists", "album",
+                            "albumArtist", "albumArtists", "genre", "date", "trackNumber",
+                            "discNumber", "duration", "path", "absolutePath", "fileSize",
+                            "bitrate", "sampleRate", "channels", "codec", "subsong", "rating"}) {
         EXPECT_TRUE(parsed.contains(key)) << "missing key: " << key;
     }
 
@@ -151,6 +141,22 @@ TEST(TrackWireSnapshot, FullFieldSetHasExactlyTwentyKeys) {
     ASSERT_TRUE(parsed["artists"].is_array());
     EXPECT_EQ(parsed["artists"].get<std::vector<std::string>>(), snap.artists);
     EXPECT_EQ(parsed["artist"].get<std::string>(), "Artist Name, Second Artist");
+
+    // albumArtists 保住每个值的边界：第一个值含 ", " 也原样是第一个元素
+    ASSERT_TRUE(parsed["albumArtists"].is_array());
+    EXPECT_EQ(parsed["albumArtists"].get<std::vector<std::string>>(), snap.albumArtists);
+    EXPECT_EQ(parsed["albumArtists"][0], "Crosby, Stills, Nash & Young");
+}
+
+TEST(TrackWireSnapshot, FullFieldSetEqualsDeclaredLibraryTrackKeys) {
+    // 直写器绕过生成的 ToJson，键集只能靠这里对着声明核对：声明加了键而直写器没跟上
+    // （或反之）在这里断。
+    const json parsed = track_wire_test::WriteAndParse(track_wire_test::MakeFullSnapshot());
+    std::set<std::string> written;
+    for (const auto& [key, value] : parsed.items()) written.insert(key);
+    std::set<std::string> declared;
+    for (std::string_view key : api::library::LibraryTrack::kFields) declared.emplace(key);
+    EXPECT_EQ(written, declared);
 }
 
 TEST(TrackWireSnapshot, DefaultSnapshotMatchesDomSemantics) {
@@ -165,37 +171,49 @@ TEST(TrackWireSnapshot, DefaultSnapshotMatchesDomSemantics) {
 }
 
 // ============================================
-// fallback 分支（info 容器无效）
+// info 容器无效的行
 // ============================================
 
-TEST(TrackWireSnapshot, FallbackEmitsEightKeysOnly) {
+TEST(TrackWireSnapshot, RowWithoutInfoEmitsEveryKeyWithInfoFieldsDefaulted) {
+    // 取不到 info 的行照样出全部键：取自句柄的字段是真值，取自 info 的归零
     auto snap = track_wire_test::MakeFullSnapshot();
-    snap.hasInfo = false;
+    ResetInfoFields(snap);
+    snap.rating = 0;
 
     const json parsed = track_wire_test::WriteAndParse(snap);
     ASSERT_TRUE(parsed.is_object());
-    EXPECT_EQ(parsed.size(), 8u);
-    EXPECT_EQ(parsed, track_wire_test::ExpectedFallbackDom(snap));
+    EXPECT_EQ(parsed.size(), 22u);
+    EXPECT_EQ(parsed, track_wire_test::ExpectedFullDom(snap));
 
-    // 全字段专属的键一个都不能漏出来。artists 在此列：fallback 分支任何标签都取不到，
-    // artist 恒为 ""，再出一个恒空数组是纯噪声，键集因此仍是既有的 8 键
-    for (const char* key : {"artists", "albumArtist", "genre", "date", "trackNumber",
-                            "discNumber", "fileSize", "bitrate", "sampleRate", "channels",
-                            "codec", "subsong"}) {
-        EXPECT_FALSE(parsed.contains(key)) << "unexpected key: " << key;
+    EXPECT_EQ(parsed["index"], 42);
+    EXPECT_EQ(parsed["handle"], "C:\\music\\a.flac|subsong:3");
+    EXPECT_EQ(parsed["path"], "file://C:\\music\\a.flac");
+    EXPECT_EQ(parsed["absolutePath"], "C:\\music\\a.flac");
+    EXPECT_EQ(parsed["fileSize"], 41231234);
+    EXPECT_EQ(parsed["subsong"], 3);
+    EXPECT_EQ(parsed["artists"], json::array());
+    EXPECT_EQ(parsed["albumArtists"], json::array());
+    for (const char* key : {"title", "artist", "album", "albumArtist", "genre", "date", "codec"}) {
+        EXPECT_EQ(parsed[key], "") << "not defaulted: " << key;
     }
+    for (const char* key : {"trackNumber", "discNumber", "bitrate", "sampleRate", "channels",
+                            "rating"}) {
+        EXPECT_EQ(parsed[key], 0) << "not defaulted: " << key;
+    }
+    EXPECT_EQ(parsed["duration"], json(0.0));
 }
 
-TEST(TrackWireSnapshot, FallbackKeepsIndexPathAndRating) {
-    // 实际调用方在此分支只填这几项，其余留默认
+TEST(TrackWireSnapshot, RowWithoutInfoKeepsHandleAndPaths) {
+    // 实际调用方在此分支只填取自句柄的几项，其余留默认
     TrackWireSnapshot snap;
-    snap.hasInfo = false;
     snap.index = 9;
+    snap.handle = "D:\\音乐\\损坏.flac";
     snap.path = "file://D:\\音乐\\损坏.flac";
     snap.absolutePath = "D:\\音乐\\损坏.flac";
 
     const json parsed = track_wire_test::WriteAndParse(snap);
     EXPECT_EQ(parsed["index"], 9);
+    EXPECT_EQ(parsed["handle"], "D:\\音乐\\损坏.flac");
     EXPECT_EQ(parsed["path"], "file://D:\\音乐\\损坏.flac");
     EXPECT_EQ(parsed["absolutePath"], "D:\\音乐\\损坏.flac");
     EXPECT_EQ(parsed["title"], "");
@@ -353,49 +371,47 @@ TEST(TrackWireSnapshot, WriteAppendsWithoutClearingBuffer) {
 }
 
 TEST(TrackWireSnapshot, ArrayOfMixedRowsMatchesDom) {
-    // 热路径的实际形态：正常行 + fallback 行 + null 行（handle 无效）混在一个数组里
+    // 热路径的实际形态：正常行与取不到 info 的行混在一个数组里（handle 无效的行由
+    // 序列化侧跳过，不进数组）
     TrackWireSnapshot full = track_wire_test::MakeFullSnapshot();
     full.index = 0;
 
     TrackWireSnapshot broken;
-    broken.hasInfo = false;
     broken.index = 1;
+    broken.handle = "C:\\music\\损坏.mp3";
     broken.path = "file://C:\\music\\损坏.mp3";
     broken.absolutePath = "C:\\music\\损坏.mp3";
 
     std::string out = "[";
     WriteTrackJson(out, full);
-    out += ",null,";
+    out += ",";
     WriteTrackJson(out, broken);
     out.push_back(']');
 
     json parsed;
     ASSERT_NO_THROW(parsed = json::parse(out));
-    ASSERT_EQ(parsed.size(), 3u);
+    ASSERT_EQ(parsed.size(), 2u);
     EXPECT_EQ(parsed[0], track_wire_test::ExpectedFullDom(full));
-    EXPECT_TRUE(parsed[1].is_null());
-    EXPECT_EQ(parsed[2], track_wire_test::ExpectedFallbackDom(broken));
-    EXPECT_EQ(parsed[2].size(), 8u);
+    EXPECT_EQ(parsed[1], track_wire_test::ExpectedFullDom(broken));
+    EXPECT_EQ(parsed[1].size(), 22u);
 }
 
 TEST(TrackWireSnapshot, SnapshotReuseAcrossRowsLeavesNoResidue) {
-    // 序列化侧循环外复用同一个 snapshot 对象（省分配），fallback 行不得把上一行的
-    // 全字段值带出来，全字段行也不得残留上一行的 fallback 状态
+    // 序列化侧循环外复用同一个 snapshot 对象（省分配），取不到 info 的行不得把上一行的
+    // 标签值带出来
     TrackWireSnapshot snap = track_wire_test::MakeFullSnapshot();
 
     std::string first;
     WriteTrackJson(first, snap);
 
-    snap.hasInfo = false;
-    snap.title.clear();
-    snap.artist.clear();
-    snap.album.clear();
-    snap.duration = 0.0;
+    ResetInfoFields(snap);
     snap.rating = 0;
     std::string second;
     WriteTrackJson(second, snap);
-    EXPECT_EQ(json::parse(second).size(), 8u);
+    EXPECT_EQ(json::parse(second).size(), 22u);
     EXPECT_EQ(json::parse(second)["title"], "");
+    EXPECT_EQ(json::parse(second)["genre"], "");
+    EXPECT_EQ(json::parse(second)["albumArtists"], json::array());
 
     snap = track_wire_test::MakeFullSnapshot();
     std::string third;
@@ -430,61 +446,37 @@ TEST(TrackFieldSelection, EachWhitelistNameMapsToDistinctBit) {
     EXPECT_EQ(seen, TrackField::kAll);
 }
 
-TEST(TrackFieldSelection, OmittedFieldsKeepsFullFieldBehaviour) {
-    const json params = {{"query", "genre IS Rock"}, {"limit", 100}};
-    const TrackFieldSelection selection = ParseTrackFieldSelection(params);
+TEST(TrackFieldSelection, DeclaredFieldsNulloptKeepsFullFieldBehaviour) {
+    // 按声明读入的重载：省略与 null 都是 nullopt，等于要全部键
+    const TrackFieldSelection selection =
+        ParseTrackFieldSelection(std::optional<std::vector<std::string>>{});
 
     EXPECT_TRUE(selection.valid);
-    EXPECT_FALSE(selection.projected);  // 走全字段 writer，形状不变
+    EXPECT_FALSE(selection.projected);
     EXPECT_EQ(selection.mask, TrackField::kAll);
-    EXPECT_TRUE(selection.errorMessage.empty());
-    EXPECT_TRUE(selection.unknownFields.empty());
 }
 
-TEST(TrackFieldSelection, ExplicitNullIsRejected) {
-    // 显式 null 与"缺键"不同：前者是调用方写错，不能当成"要全字段"
-    const TrackFieldSelection selection = track_wire_test::SelectFields(json(nullptr));
+TEST(TrackFieldSelection, DeclaredFieldsReportEveryUnknownNameOnce) {
+    const TrackFieldSelection selection = ParseTrackFieldSelection(
+        std::optional<std::vector<std::string>>({"handle", "bogus", "title", "bogus", "Title"}));
 
     EXPECT_FALSE(selection.valid);
-    EXPECT_FALSE(selection.errorMessage.empty());
-    EXPECT_TRUE(selection.unknownFields.empty());
+    EXPECT_EQ(selection.errorMessage, "fields contains unknown field names");
+    EXPECT_EQ(selection.unknownFields, (std::vector<std::string>{"bogus", "Title"}));
 }
 
-TEST(TrackFieldSelection, NonArrayShapesAreRejected) {
-    for (const json& value : {json("absolutePath"), json(42), json(true),
-                              json{{"absolutePath", true}}}) {
-        const TrackFieldSelection selection = track_wire_test::SelectFields(value);
-        EXPECT_FALSE(selection.valid) << "accepted non-array: " << value.dump();
-        EXPECT_FALSE(selection.errorMessage.empty());
-    }
-}
+TEST(TrackFieldSelection, DeclaredFieldsProjectTheNamedKeys) {
+    const TrackFieldSelection selection = ParseTrackFieldSelection(
+        std::optional<std::vector<std::string>>({"handle", "album", "handle"}));
 
-TEST(TrackFieldSelection, EmptyArrayIsRejected) {
-    // 空数组不等于"全字段"：那个语义由"缺键"表达，空数组只能是调用方算错了
-    const TrackFieldSelection selection = track_wire_test::SelectFields(json::array());
-
-    EXPECT_FALSE(selection.valid);
-    EXPECT_FALSE(selection.errorMessage.empty());
-    EXPECT_TRUE(selection.unknownFields.empty());
-}
-
-TEST(TrackFieldSelection, NonStringElementIsRejected) {
-    for (const json& element : {json(1), json(nullptr), json(true), json::array({"title"}),
-                               json{{"name", "title"}}}) {
-        json fields = json::array({"title"});
-        fields.push_back(element);
-        const TrackFieldSelection selection = track_wire_test::SelectFields(fields);
-
-        EXPECT_FALSE(selection.valid) << "accepted element: " << element.dump();
-        EXPECT_FALSE(selection.errorMessage.empty());
-        // 元素类型错时不报未知名：那会把"类型错"说成"拼写错"
-        EXPECT_TRUE(selection.unknownFields.empty());
-    }
+    EXPECT_TRUE(selection.valid);
+    EXPECT_TRUE(selection.projected);
+    EXPECT_EQ(selection.mask, TrackField::kHandle | TrackField::kAlbum);
 }
 
 TEST(TrackFieldSelection, UnknownNameIsRejectedAndReported) {
     const TrackFieldSelection selection =
-        track_wire_test::SelectFields(json::array({"absolutePath", "nosuchfield"}));
+        track_wire_test::SelectFields({"absolutePath", "nosuchfield"});
 
     EXPECT_FALSE(selection.valid);
     EXPECT_FALSE(selection.errorMessage.empty());
@@ -495,7 +487,7 @@ TEST(TrackFieldSelection, UnknownNameIsRejectedAndReported) {
 TEST(TrackFieldSelection, AllUnknownNamesAreReportedOnceEach) {
     // 一次报全：调用方改一遍就能对，不用逐个试
     const TrackFieldSelection selection = track_wire_test::SelectFields(
-        json::array({"bogus", "title", "alsoBogus", "bogus"}));
+        {"bogus", "title", "alsoBogus", "bogus"});
 
     EXPECT_FALSE(selection.valid);
     ASSERT_EQ(selection.unknownFields.size(), 2u);
@@ -506,7 +498,7 @@ TEST(TrackFieldSelection, AllUnknownNamesAreReportedOnceEach) {
 TEST(TrackFieldSelection, NameMatchingIsCaseSensitive) {
     // 大小写不符按未知名处理（静默接受等于让拼写错悄悄少一个字段）
     for (const char* name : {"Title", "TITLE", "absolutepath", "AbsolutePath", "Rating"}) {
-        const TrackFieldSelection selection = track_wire_test::SelectFields(json::array({name}));
+        const TrackFieldSelection selection = track_wire_test::SelectFields({name});
         EXPECT_FALSE(selection.valid) << "accepted case mismatch: " << name;
         ASSERT_EQ(selection.unknownFields.size(), 1u);
         EXPECT_EQ(selection.unknownFields[0], name);
@@ -515,7 +507,7 @@ TEST(TrackFieldSelection, NameMatchingIsCaseSensitive) {
 
 TEST(TrackFieldSelection, DuplicateNamesAreDeduplicated) {
     const TrackFieldSelection selection = track_wire_test::SelectFields(
-        json::array({"absolutePath", "album", "absolutePath", "album", "absolutePath"}));
+        {"absolutePath", "album", "absolutePath", "album", "absolutePath"});
 
     EXPECT_TRUE(selection.valid);
     EXPECT_TRUE(selection.projected);
@@ -523,15 +515,15 @@ TEST(TrackFieldSelection, DuplicateNamesAreDeduplicated) {
     EXPECT_EQ(TrackField::Count(selection.mask), 2u);
 }
 
-TEST(TrackFieldSelection, AllNineteenNamesParseToFullMask) {
-    json fields = json::array();
+TEST(TrackFieldSelection, AllWhitelistNamesParseToFullMask) {
+    std::vector<std::string> fields;
     for (const auto& entry : TrackField::kTable) {
-        fields.push_back(entry.name);
+        fields.emplace_back(entry.name);
     }
     const TrackFieldSelection selection = track_wire_test::SelectFields(fields);
 
     EXPECT_TRUE(selection.valid);
-    EXPECT_TRUE(selection.projected);  // 显式全字段仍是投影模式（损坏条目形状不同）
+    EXPECT_TRUE(selection.projected);  // 显式列全仍记作投影，产物与省略 fields 相同
     EXPECT_EQ(selection.mask, TrackField::kAll);
 }
 
@@ -578,7 +570,7 @@ TEST(TrackWireProjection, FullMaskMatchesFullFieldWriter) {
 
     const json projected = track_wire_test::WriteProjectedAndParse(snap, TrackField::kAll);
     EXPECT_EQ(projected, track_wire_test::ExpectedFullDom(snap));  // 语义等价（判据）
-    EXPECT_EQ(projected.size(), 20u);
+    EXPECT_EQ(projected.size(), 22u);
 
     // 字节相同不是对外契约，但两支同序同原语时它成立 —— 拿它当"两支没漂移"的哨兵
     std::string full;
@@ -615,7 +607,7 @@ TEST(TrackWireProjection, KeyOrderFollowsTableOrderNotRequestOrder) {
 TEST(TrackWireProjection, DuplicateRequestYieldsSameOutputAsDeduplicated) {
     const auto snap = track_wire_test::MakeFullSnapshot();
     const TrackFieldSelection duplicated =
-        track_wire_test::SelectFields(json::array({"album", "album", "index", "album"}));
+        track_wire_test::SelectFields({"album", "album", "index", "album"});
     ASSERT_TRUE(duplicated.valid);
 
     EXPECT_EQ(track_wire_test::WriteProjected(snap, duplicated.mask),
@@ -624,31 +616,29 @@ TEST(TrackWireProjection, DuplicateRequestYieldsSameOutputAsDeduplicated) {
 }
 
 TEST(TrackWireProjection, BrokenRowStillEmitsEveryRequestedKey) {
-    // 投影下损坏条目（info 容器无效）出全部请求键，fallback 不产出的字段取类型默认。
-    // 与全字段模式的 8 键 fallback 不同：那里键会直接消失。
+    // 投影下取不到 info 的行同样出全部请求键，取自 info 的字段取类型默认
     TrackWireSnapshot snap = track_wire_test::MakeFullSnapshot();
-    snap.hasInfo = false;
-    snap.title.clear();
-    snap.artist.clear();
-    snap.album.clear();
-    snap.duration = 0.0;
+    ResetInfoFields(snap);
     snap.rating = 0;
-    ResetFieldsAbsentFromFallback(snap);
 
     const json parsed = track_wire_test::WriteProjectedAndParse(snap, TrackField::kAll);
-    ASSERT_EQ(parsed.size(), 20u);
+    ASSERT_EQ(parsed.size(), 22u);
 
-    // fallback 自己产出的真值
+    // 取自句柄的真值
     EXPECT_EQ(parsed["index"], snap.index);
+    EXPECT_EQ(parsed["handle"].get<std::string>(), snap.handle);
     EXPECT_EQ(parsed["path"].get<std::string>(), snap.path);
     EXPECT_EQ(parsed["absolutePath"].get<std::string>(), snap.absolutePath);
-    // 其余按类型默认填充；artists 的类型默认是空数组，不是空串
+    EXPECT_EQ(parsed["fileSize"], snap.fileSize);
+    EXPECT_EQ(parsed["subsong"], snap.subsong);
+    // 其余按类型默认填充；artists、albumArtists 的类型默认是空数组，不是空串
     EXPECT_EQ(parsed["artists"], json::array());
+    EXPECT_EQ(parsed["albumArtists"], json::array());
     for (const char* key : {"title", "artist", "album", "albumArtist", "genre", "date", "codec"}) {
         EXPECT_EQ(parsed[key], "") << "not defaulted: " << key;
     }
-    for (const char* key : {"trackNumber", "discNumber", "fileSize", "bitrate", "sampleRate",
-                            "channels", "subsong", "rating"}) {
+    for (const char* key : {"trackNumber", "discNumber", "bitrate", "sampleRate", "channels",
+                            "rating"}) {
         EXPECT_EQ(parsed[key], 0) << "not defaulted: " << key;
     }
     EXPECT_EQ(parsed["duration"], json(0.0));
@@ -657,11 +647,10 @@ TEST(TrackWireProjection, BrokenRowStillEmitsEveryRequestedKey) {
 
 TEST(TrackWireProjection, BrokenRowEmitsRequestedSubsetOnly) {
     TrackWireSnapshot snap;
-    snap.hasInfo = false;
     snap.index = 7;
     snap.path = "file://D:\\音乐\\损坏.flac";
     snap.absolutePath = "D:\\音乐\\损坏.flac";
-    ResetFieldsAbsentFromFallback(snap);
+    ResetInfoFields(snap);
 
     const uint32_t mask = track_wire_test::MaskOf({"absolutePath", "genre", "bitrate"});
     const json parsed = track_wire_test::WriteProjectedAndParse(snap, mask);
@@ -672,50 +661,44 @@ TEST(TrackWireProjection, BrokenRowEmitsRequestedSubsetOnly) {
     EXPECT_EQ(parsed["bitrate"], 0);
 }
 
-TEST(TrackWireProjection, ProjectionIgnoresHasInfoFlag) {
-    // 投影写法不看 hasInfo：键集只由掩码决定，归零由调用方负责
-    auto snap = track_wire_test::MakeFullSnapshot();
-    const uint32_t mask = track_wire_test::MaskOf({"codec", "bitrate"});
-    const std::string withInfo = track_wire_test::WriteProjected(snap, mask);
-
-    snap.hasInfo = false;
-    EXPECT_EQ(track_wire_test::WriteProjected(snap, mask), withInfo);
-}
-
 TEST(TrackWireProjection, ResetLeavesNoResidueFromPreviousRow) {
-    // 序列化侧的快照对象在行循环外复用：损坏行必须先归零，否则上一行的
-    // genre/codec/fileSize 会原样出现在这一行，成为无法从输出反查的串值
+    // 序列化侧的快照对象在行循环外复用：取不到 info 的行必须先归零，否则上一行的
+    // genre、codec 等会原样出现在这一行，成为无法从输出反查的串值
     TrackWireSnapshot snap = track_wire_test::MakeFullSnapshot();
     const uint32_t mask = track_wire_test::MaskOf(
-        {"artists", "genre", "codec", "fileSize", "subsong", "trackNumber"});
+        {"artists", "albumArtists", "genre", "codec", "bitrate", "duration", "trackNumber"});
 
     const json previous = track_wire_test::WriteProjectedAndParse(snap, mask);
     ASSERT_EQ(previous["genre"], "Post-Rock");
     ASSERT_EQ(previous["artists"].size(), 2u);
+    ASSERT_EQ(previous["albumArtists"].size(), 2u);
 
-    snap.hasInfo = false;
-    ResetFieldsAbsentFromFallback(snap);
+    ResetInfoFields(snap);
     const json current = track_wire_test::WriteProjectedAndParse(snap, mask);
 
     EXPECT_EQ(current["artists"], json::array());
+    EXPECT_EQ(current["albumArtists"], json::array());
     EXPECT_EQ(current["genre"], "");
     EXPECT_EQ(current["codec"], "");
-    EXPECT_EQ(current["fileSize"], 0);
-    EXPECT_EQ(current["subsong"], 0);
+    EXPECT_EQ(current["bitrate"], 0);
+    EXPECT_EQ(current["duration"], json(0.0));
     EXPECT_EQ(current["trackNumber"], 0);
 }
 
-TEST(TrackWireProjection, ResetKeepsFallbackOwnFields) {
-    // 归零只碰 fallback 不产出的 12 键，index/path/absolutePath/rating 是真值
+TEST(TrackWireProjection, ResetKeepsFieldsTakenFromTheHandle) {
+    // 归零只碰取自 info 的字段；取自句柄的字段与调用方给的 rating 是真值
     TrackWireSnapshot snap = track_wire_test::MakeFullSnapshot();
-    ResetFieldsAbsentFromFallback(snap);
+    ResetInfoFields(snap);
 
     EXPECT_EQ(snap.index, 42u);
+    EXPECT_EQ(snap.handle, "C:\\music\\a.flac|subsong:3");
     EXPECT_EQ(snap.path, "file://C:\\music\\a.flac");
     EXPECT_EQ(snap.absolutePath, "C:\\music\\a.flac");
+    EXPECT_EQ(snap.fileSize, 41231234);
+    EXPECT_EQ(snap.subsong, 3u);
     EXPECT_EQ(snap.rating, 5);
-    EXPECT_EQ(snap.title, "Track Title");  // fallback 侧由调用方自己清
-    EXPECT_DOUBLE_EQ(snap.duration, 253.093);
+    EXPECT_EQ(snap.title, "");
+    EXPECT_DOUBLE_EQ(snap.duration, 0.0);
 }
 
 TEST(TrackWireProjection, EscapingAndNonFiniteHoldUnderProjection) {
@@ -757,24 +740,10 @@ TEST(TrackWireProjection, AppendsWithoutClearingBuffer) {
 // 直接验证 TrackWireSnapshot.h 的共享实现：错误码、details 条件与未知字段顺序。
 // ==========================================================================
 
-TEST(TrackFieldsErrorBody, InvalidShapesYieldInvalidParamsWithoutDetails) {
-    // null / 非数组 / 空数组 / 含非字符串：四类都不带 unknownFields
-    for (const json fields : {json(nullptr), json("title"), json::array(),
-                              json::array({"title", 123})}) {
-        const TrackFieldSelection selection = ParseTrackFieldSelection(json{{"fields", fields}});
-        ASSERT_FALSE(selection.valid) << fields.dump();
-        const json body = MakeTrackFieldsErrorBody(selection);
-        EXPECT_FALSE(body.at("success").get<bool>());
-        EXPECT_EQ(body.at("code").get<std::string>(), "INVALID_PARAMS");
-        EXPECT_FALSE(body.at("error").get<std::string>().empty());
-        EXPECT_FALSE(body.contains("details")) << fields.dump();
-    }
-}
-
 TEST(TrackFieldsErrorBody, UnknownNamesAreAllListedInDetails) {
     // 扫完再报：调用方一次就能改对，不用逐个试
     const TrackFieldSelection selection =
-        ParseTrackFieldSelection(json{{"fields", {"title", "bogus", "bogus2", "bogus"}}});
+        track_wire_test::SelectFields({"title", "bogus", "bogus2", "bogus"});
     ASSERT_FALSE(selection.valid);
     const json body = MakeTrackFieldsErrorBody(selection);
     EXPECT_EQ(body.at("code").get<std::string>(), "INVALID_PARAMS");
@@ -785,15 +754,8 @@ TEST(TrackFieldsErrorBody, UnknownNamesAreAllListedInDetails) {
 
 TEST(TrackFieldsErrorBody, ValidSelectionIsProjectedWithRequestedBits) {
     const TrackFieldSelection selection =
-        ParseTrackFieldSelection(json{{"fields", {"title", "album"}}});
+        track_wire_test::SelectFields({"title", "album"});
     ASSERT_TRUE(selection.valid);
     EXPECT_TRUE(selection.projected);
     EXPECT_EQ(selection.mask, TrackField::kTitle | TrackField::kAlbum);
-}
-
-TEST(TrackFieldsErrorBody, AbsentFieldsKeyKeepsCurrentBehavior) {
-    const TrackFieldSelection selection = ParseTrackFieldSelection(json::object());
-    EXPECT_TRUE(selection.valid);
-    EXPECT_FALSE(selection.projected);
-    EXPECT_EQ(selection.mask, TrackField::kAll);
 }

@@ -7,6 +7,8 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		0F0F1A902CE6181F00F00F9D /* with_timeout.h in Headers */ = {isa = PBXBuildFile; fileRef = 0F0F1A8F2CE6181F00F00F9D /* with_timeout.h */; };
+		0F218CF52D707851006946E0 /* ui_edit_context_common.h in Headers */ = {isa = PBXBuildFile; fileRef = 0F218CF42D70784E006946E0 /* ui_edit_context_common.h */; };
 		0F75F5EA2A6B1DB200A45078 /* dialog_resize_helper.h in Headers */ = {isa = PBXBuildFile; fileRef = 0F75F5622A6B1DAE00A45078 /* dialog_resize_helper.h */; };
 		0F75F5EB2A6B1DB200A45078 /* input_logging.h in Headers */ = {isa = PBXBuildFile; fileRef = 0F75F5632A6B1DAE00A45078 /* input_logging.h */; };
 		0F75F5EC2A6B1DB200A45078 /* cfg_var_import.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 0F75F5642A6B1DAE00A45078 /* cfg_var_import.cpp */; };
@@ -134,9 +136,14 @@
 		0F75F66E2A6B1DB200A45078 /* file_cached.h in Headers */ = {isa = PBXBuildFile; fileRef = 0F75F5E62A6B1DB200A45078 /* file_cached.h */; };
 		0F75F66F2A6B1DB200A45078 /* input_stream_info_reader.h in Headers */ = {isa = PBXBuildFile; fileRef = 0F75F5E72A6B1DB200A45078 /* input_stream_info_reader.h */; };
 		0F75F6712A6B1DB200A45078 /* dropdown_helper.h in Headers */ = {isa = PBXBuildFile; fileRef = 0F75F5E92A6B1DB200A45078 /* dropdown_helper.h */; };
+		0F9B27EE2E5C706400E63863 /* dsp_chain_config_extra.h in Headers */ = {isa = PBXBuildFile; fileRef = 0F9B27ED2E5C701600E63863 /* dsp_chain_config_extra.h */; };
+		0FAB0E2F2D48B1F10060877D /* once.h in Headers */ = {isa = PBXBuildFile; fileRef = 0FAB0E2E2D48B1F10060877D /* once.h */; };
+		0FAE90112F3CC44400194242 /* CPUFIFO.h in Headers */ = {isa = PBXBuildFile; fileRef = 0FAE90102F3CC44400194242 /* CPUFIFO.h */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+		0F0F1A8F2CE6181F00F00F9D /* with_timeout.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = with_timeout.h; sourceTree = "<group>"; };
+		0F218CF42D70784E006946E0 /* ui_edit_context_common.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = ui_edit_context_common.h; sourceTree = "<group>"; };
 		0F75F5622A6B1DAE00A45078 /* dialog_resize_helper.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = dialog_resize_helper.h; sourceTree = "<group>"; };
 		0F75F5632A6B1DAE00A45078 /* input_logging.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = input_logging.h; sourceTree = "<group>"; };
 		0F75F5642A6B1DAE00A45078 /* cfg_var_import.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; path = cfg_var_import.cpp; sourceTree = "<group>"; };
@@ -273,10 +280,10 @@
 		0F75F5E72A6B1DB200A45078 /* input_stream_info_reader.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = input_stream_info_reader.h; sourceTree = "<group>"; };
 		0F75F5E82A6B1DB200A45078 /* DarkMode.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; path = DarkMode.cpp; sourceTree = "<group>"; };
 		0F75F5E92A6B1DB200A45078 /* dropdown_helper.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = dropdown_helper.h; sourceTree = "<group>"; };
+		0F9B27ED2E5C701600E63863 /* dsp_chain_config_extra.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = dsp_chain_config_extra.h; sourceTree = "<group>"; };
+		0FAB0E2E2D48B1F10060877D /* once.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = once.h; sourceTree = "<group>"; };
+		0FAE90102F3CC44400194242 /* CPUFIFO.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = CPUFIFO.h; sourceTree = "<group>"; };
 		B12D1DB11991061A0087CEF3 /* libfoobar2000_SDK_helpers.a */ = {isa = PBXFileReference; explicitFileType = archive.ar; includeInIndex = 0; path = libfoobar2000_SDK_helpers.a; sourceTree = BUILT_PRODUCTS_DIR; };
-		B166964A19ACC1560001728F /* Foundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Foundation.framework; path = System/Library/Frameworks/Foundation.framework; sourceTree = SDKROOT; };
-		B166965819ACC1560001728F /* XCTest.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = XCTest.framework; path = Library/Frameworks/XCTest.framework; sourceTree = DEVELOPER_DIR; };
-		B166965B19ACC1560001728F /* UIKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = UIKit.framework; path = Library/Frameworks/UIKit.framework; sourceTree = DEVELOPER_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -294,7 +301,6 @@
 			isa = PBXGroup;
 			children = (
 				B12D1DBE1991063D0087CEF3 /* Source */,
-				B166964919ACC1560001728F /* Frameworks */,
 				B12D1DB21991061A0087CEF3 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -310,15 +316,19 @@
 		B12D1DBE1991063D0087CEF3 /* Source */ = {
 			isa = PBXGroup;
 			children = (
+				0FAE90102F3CC44400194242 /* CPUFIFO.h */,
+				0F9B27ED2E5C701600E63863 /* dsp_chain_config_extra.h */,
+				0F218CF42D70784E006946E0 /* ui_edit_context_common.h */,
+				0FAB0E2E2D48B1F10060877D /* once.h */,
 				0F75F5CC2A6B1DB100A45078 /* advconfig_impl.h */,
 				0F75F5872A6B1DAF00A45078 /* advconfig_runtime.h */,
-				0F75F57C2A6B1DAF00A45078 /* album_art_helpers.cpp */,
 				0F75F5922A6B1DB000A45078 /* album_art_helpers.h */,
+				0F75F57C2A6B1DAF00A45078 /* album_art_helpers.cpp */,
 				0F75F58F2A6B1DAF00A45078 /* albumArtCache.h */,
 				0F75F5722A6B1DAE00A45078 /* atl-misc.h */,
 				0F75F5CA2A6B1DB100A45078 /* audio_render_float.h */,
-				0F75F5D92A6B1DB200A45078 /* AutoComplete.cpp */,
 				0F75F57D2A6B1DAF00A45078 /* AutoComplete.h */,
+				0F75F5D92A6B1DB200A45078 /* AutoComplete.cpp */,
 				0F75F5B32A6B1DB100A45078 /* bitreader_helper.h */,
 				0F75F5D12A6B1DB100A45078 /* BumpableElem.h */,
 				0F75F5A22A6B1DB000A45078 /* callback_merit.h */,
@@ -326,67 +336,67 @@
 				0F75F5C82A6B1DB100A45078 /* callInMainThreadHelper.h */,
 				0F75F58C2A6B1DAF00A45078 /* CDialogResizeHelper.h */,
 				0F75F5802A6B1DAF00A45078 /* cfg_dsp_chain_config.h */,
-				0F75F5A02A6B1DB000A45078 /* cfg_guidlist.cpp */,
 				0F75F5E32A6B1DB200A45078 /* cfg_guidlist.h */,
+				0F75F5A02A6B1DB000A45078 /* cfg_guidlist.cpp */,
 				0F75F5D22A6B1DB100A45078 /* cfg_obj.h */,
 				0F75F58B2A6B1DAF00A45078 /* cfg_objList.h */,
-				0F75F5642A6B1DAE00A45078 /* cfg_var_import.cpp */,
 				0F75F5912A6B1DAF00A45078 /* cfg_var_import.h */,
+				0F75F5642A6B1DAE00A45078 /* cfg_var_import.cpp */,
 				0F75F5852A6B1DAF00A45078 /* CListControlFb2kColors.h */,
 				0F75F5B62A6B1DB100A45078 /* CmdThread.h */,
 				0F75F56D2A6B1DAE00A45078 /* COM_utils.h */,
 				0F75F5A42A6B1DB000A45078 /* CPropVariant.h */,
-				0F75F56A2A6B1DAE00A45078 /* create_directory_helper.cpp */,
 				0F75F5932A6B1DB000A45078 /* create_directory_helper.h */,
+				0F75F56A2A6B1DAE00A45078 /* create_directory_helper.cpp */,
 				0F75F5732A6B1DAE00A45078 /* CSingleThreadWrapper.h */,
-				0F75F5C02A6B1DB100A45078 /* CTableEditHelper-Legacy.cpp */,
 				0F75F5AD2A6B1DB100A45078 /* CTableEditHelper-Legacy.h */,
-				0F75F5A32A6B1DB000A45078 /* cue_creator.cpp */,
+				0F75F5C02A6B1DB100A45078 /* CTableEditHelper-Legacy.cpp */,
 				0F75F5B92A6B1DB100A45078 /* cue_creator.h */,
-				0F75F5D52A6B1DB200A45078 /* cue_parser_embedding.cpp */,
-				0F75F5822A6B1DAF00A45078 /* cue_parser.cpp */,
+				0F75F5A32A6B1DB000A45078 /* cue_creator.cpp */,
 				0F75F5C22A6B1DB100A45078 /* cue_parser.h */,
-				0F75F5B02A6B1DB100A45078 /* cuesheet_index_list.cpp */,
+				0F75F5822A6B1DAF00A45078 /* cue_parser.cpp */,
+				0F75F5D52A6B1DB200A45078 /* cue_parser_embedding.cpp */,
 				0F75F5C72A6B1DB100A45078 /* cuesheet_index_list.h */,
-				0F75F5E82A6B1DB200A45078 /* DarkMode.cpp */,
+				0F75F5B02A6B1DB100A45078 /* cuesheet_index_list.cpp */,
 				0F75F5DB2A6B1DB200A45078 /* DarkMode.h */,
-				0F75F5C32A6B1DB100A45078 /* dialog_resize_helper.cpp */,
+				0F75F5E82A6B1DB200A45078 /* DarkMode.cpp */,
 				0F75F5622A6B1DAE00A45078 /* dialog_resize_helper.h */,
-				0F75F5A12A6B1DB000A45078 /* dropdown_helper.cpp */,
+				0F75F5C32A6B1DB100A45078 /* dialog_resize_helper.cpp */,
 				0F75F5E92A6B1DB200A45078 /* dropdown_helper.h */,
+				0F75F5A12A6B1DB000A45078 /* dropdown_helper.cpp */,
 				0F75F5D02A6B1DB100A45078 /* dsp_dialog.h */,
 				0F75F5C12A6B1DB100A45078 /* duration_counter.h */,
-				0F75F5B22A6B1DB100A45078 /* dynamic_bitrate_helper.cpp */,
 				0F75F5A82A6B1DB000A45078 /* dynamic_bitrate_helper.h */,
+				0F75F5B22A6B1DB100A45078 /* dynamic_bitrate_helper.cpp */,
 				0F75F5782A6B1DAF00A45078 /* fb2k_threads.h */,
 				0F75F5DA2A6B1DB200A45078 /* fb2k_wfx.h */,
 				0F75F58A2A6B1DAF00A45078 /* fb2kWorkerTool.h */,
 				0F75F5E62A6B1DB200A45078 /* file_cached.h */,
 				0F75F58D2A6B1DAF00A45078 /* file_info_const_impl.h */,
-				0F75F58E2A6B1DAF00A45078 /* file_list_helper.cpp */,
 				0F75F57A2A6B1DAF00A45078 /* file_list_helper.h */,
-				0F75F5E22A6B1DB200A45078 /* file_move_helper.cpp */,
+				0F75F58E2A6B1DAF00A45078 /* file_list_helper.cpp */,
 				0F75F5682A6B1DAE00A45078 /* file_move_helper.h */,
+				0F75F5E22A6B1DB200A45078 /* file_move_helper.cpp */,
 				0F75F5BB2A6B1DB100A45078 /* file_streamstub.h */,
-				0F75F5E02A6B1DB200A45078 /* file_win32_wrapper.cpp */,
 				0F75F56F2A6B1DAE00A45078 /* file_win32_wrapper.h */,
+				0F75F5E02A6B1DB200A45078 /* file_win32_wrapper.cpp */,
 				0F75F57F2A6B1DAF00A45078 /* fileReadAhead.h */,
-				0F75F59C2A6B1DB000A45078 /* filetimetools.cpp */,
 				0F75F5692A6B1DAE00A45078 /* filetimetools.h */,
+				0F75F59C2A6B1DB000A45078 /* filetimetools.cpp */,
 				0F75F5702A6B1DAE00A45078 /* foobar2000-lite+atl.h */,
 				0F75F5AA2A6B1DB000A45078 /* foobar2000+atl.h */,
 				0F75F5C52A6B1DB100A45078 /* fullFileBuffer.h */,
 				0F75F5A62A6B1DB000A45078 /* helpers.h */,
 				0F75F5C92A6B1DB100A45078 /* icon_remapping_wildcard.h */,
-				0F75F5972A6B1DB000A45078 /* image_load_save.cpp */,
 				0F75F5742A6B1DAE00A45078 /* image_load_save.h */,
-				0F75F5962A6B1DB000A45078 /* inplace_edit.cpp */,
+				0F75F5972A6B1DB000A45078 /* image_load_save.cpp */,
 				0F75F57B2A6B1DAF00A45078 /* inplace_edit.h */,
+				0F75F5962A6B1DB000A45078 /* inplace_edit.cpp */,
 				0F75F5CD2A6B1DB100A45078 /* input_fix_seeking.h */,
-				0F75F5E42A6B1DB200A45078 /* input_helper_cue.cpp */,
 				0F75F5AF2A6B1DB100A45078 /* input_helper_cue.h */,
-				0F75F5D62A6B1DB200A45078 /* input_helpers.cpp */,
+				0F75F5E42A6B1DB200A45078 /* input_helper_cue.cpp */,
 				0F75F5942A6B1DB000A45078 /* input_helpers.h */,
+				0F75F5D62A6B1DB200A45078 /* input_helpers.cpp */,
 				0F75F5632A6B1DAE00A45078 /* input_logging.h */,
 				0F75F5E72A6B1DB200A45078 /* input_stream_info_reader.h */,
 				0F75F5772A6B1DAF00A45078 /* meta_table_builder.h */,
@@ -395,69 +405,60 @@
 				0F75F5992A6B1DB000A45078 /* metadb_info_container_impl.h */,
 				0F75F5812A6B1DAF00A45078 /* metadb_io_callback_v2_data.h */,
 				0F75F59A2A6B1DB000A45078 /* metadb_io_hintlist.h */,
-				0F75F5DF2A6B1DB200A45078 /* mp3_utils.cpp */,
 				0F75F5D42A6B1DB200A45078 /* mp3_utils.h */,
+				0F75F5DF2A6B1DB200A45078 /* mp3_utils.cpp */,
 				0F75F5952A6B1DB000A45078 /* notifyList.h */,
-				0F75F5D32A6B1DB200A45078 /* packet_decoder_aac_common.cpp */,
 				0F75F5B52A6B1DB100A45078 /* packet_decoder_aac_common.h */,
-				0F75F5BF2A6B1DB100A45078 /* packet_decoder_mp3_common.cpp */,
+				0F75F5D32A6B1DB200A45078 /* packet_decoder_aac_common.cpp */,
 				0F75F5A92A6B1DB000A45078 /* packet_decoder_mp3_common.h */,
+				0F75F5BF2A6B1DB100A45078 /* packet_decoder_mp3_common.cpp */,
 				0F75F5792A6B1DAF00A45078 /* playlist_position_reference_tracker.h */,
 				0F75F59D2A6B1DB000A45078 /* ProcessUtils.h */,
 				0F75F57E2A6B1DAF00A45078 /* ProfileCache.h */,
 				0F75F5752A6B1DAF00A45078 /* reader_pretend_nonseekable.h */,
-				0F75F5B72A6B1DB100A45078 /* readers_lite.h */,
-				0F75F5652A6B1DAE00A45078 /* readers.cpp */,
 				0F75F59E2A6B1DB000A45078 /* readers.h */,
+				0F75F5652A6B1DAE00A45078 /* readers.cpp */,
+				0F75F5B72A6B1DB100A45078 /* readers_lite.h */,
 				0F75F5882A6B1DAF00A45078 /* readWriteLock.h */,
 				0F75F5902A6B1DAF00A45078 /* rethrow.h */,
-				0F75F5C42A6B1DB100A45078 /* seekabilizer.cpp */,
 				0F75F5E12A6B1DB200A45078 /* seekabilizer.h */,
-				0F75F5AC2A6B1DB000A45078 /* StdAfx.cpp */,
+				0F75F5C42A6B1DB100A45078 /* seekabilizer.cpp */,
 				0F75F5B42A6B1DB100A45078 /* StdAfx.h */,
-				0F75F5CF2A6B1DB100A45078 /* stream_buffer_helper.cpp */,
+				0F75F5AC2A6B1DB000A45078 /* StdAfx.cpp */,
 				0F75F5862A6B1DAF00A45078 /* stream_buffer_helper.h */,
+				0F75F5CF2A6B1DB100A45078 /* stream_buffer_helper.cpp */,
 				0F75F5BC2A6B1DB100A45078 /* tag_write_callback_impl.h */,
-				0F75F5662A6B1DAE00A45078 /* text_file_loader_v2.cpp */,
-				0F75F5A52A6B1DB000A45078 /* text_file_loader_v2.h */,
-				0F75F5B82A6B1DB100A45078 /* text_file_loader.cpp */,
 				0F75F5E52A6B1DB200A45078 /* text_file_loader.h */,
-				0F75F5BA2A6B1DB100A45078 /* ThreadUtils.cpp */,
+				0F75F5B82A6B1DB100A45078 /* text_file_loader.cpp */,
+				0F75F5A52A6B1DB000A45078 /* text_file_loader_v2.h */,
+				0F75F5662A6B1DAE00A45078 /* text_file_loader_v2.cpp */,
 				0F75F5D72A6B1DB200A45078 /* ThreadUtils.h */,
-				0F75F5D82A6B1DB200A45078 /* track_property_callback_impl.cpp */,
+				0F75F5BA2A6B1DB100A45078 /* ThreadUtils.cpp */,
 				0F75F59B2A6B1DB000A45078 /* track_property_callback_impl.h */,
-				0F75F5832A6B1DAF00A45078 /* ui_element_helpers.cpp */,
+				0F75F5D82A6B1DB200A45078 /* track_property_callback_impl.cpp */,
 				0F75F5842A6B1DAF00A45078 /* ui_element_helpers.h */,
-				0F75F56C2A6B1DAE00A45078 /* VisUtils.cpp */,
+				0F75F5832A6B1DAF00A45078 /* ui_element_helpers.cpp */,
 				0F75F5672A6B1DAE00A45078 /* VisUtils.h */,
-				0F75F59F2A6B1DB000A45078 /* VolumeMap.cpp */,
+				0F75F56C2A6B1DAE00A45078 /* VisUtils.cpp */,
 				0F75F56E2A6B1DAE00A45078 /* VolumeMap.h */,
+				0F75F59F2A6B1DB000A45078 /* VolumeMap.cpp */,
 				0F75F5982A6B1DB000A45078 /* win-MulDiv.h */,
-				0F75F5B12A6B1DB100A45078 /* win-systemtime.cpp */,
 				0F75F5CE2A6B1DB100A45078 /* win-systemtime.h */,
-				0F75F5CB2A6B1DB100A45078 /* win32_dialog.cpp */,
+				0F75F5B12A6B1DB100A45078 /* win-systemtime.cpp */,
 				0F75F5C62A6B1DB100A45078 /* win32_dialog.h */,
-				0F75F5BD2A6B1DB100A45078 /* win32_misc.cpp */,
+				0F75F5CB2A6B1DB100A45078 /* win32_dialog.cpp */,
 				0F75F5DC2A6B1DB200A45078 /* win32_misc.h */,
-				0F75F5762A6B1DAF00A45078 /* window_placement_helper.cpp */,
+				0F75F5BD2A6B1DB100A45078 /* win32_misc.cpp */,
 				0F75F5AE2A6B1DB100A45078 /* window_placement_helper.h */,
-				0F75F5A72A6B1DB000A45078 /* WindowPositionUtils.cpp */,
+				0F75F5762A6B1DAF00A45078 /* window_placement_helper.cpp */,
 				0F75F5BE2A6B1DB100A45078 /* WindowPositionUtils.h */,
+				0F75F5A72A6B1DB000A45078 /* WindowPositionUtils.cpp */,
 				0F75F5DD2A6B1DB200A45078 /* winmm-types.h */,
-				0F75F5892A6B1DAF00A45078 /* writer_wav.cpp */,
+				0F0F1A8F2CE6181F00F00F9D /* with_timeout.h */,
 				0F75F56B2A6B1DAE00A45078 /* writer_wav.h */,
+				0F75F5892A6B1DAF00A45078 /* writer_wav.cpp */,
 			);
 			name = Source;
-			sourceTree = "<group>";
-		};
-		B166964919ACC1560001728F /* Frameworks */ = {
-			isa = PBXGroup;
-			children = (
-				B166964A19ACC1560001728F /* Foundation.framework */,
-				B166965819ACC1560001728F /* XCTest.framework */,
-				B166965B19ACC1560001728F /* UIKit.framework */,
-			);
-			name = Frameworks;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -468,9 +469,11 @@
 			buildActionMask = 2147483647;
 			files = (
 				0F75F6092A6B1DB200A45078 /* metadb_io_callback_v2_data.h in Headers */,
+				0FAB0E2F2D48B1F10060877D /* once.h in Headers */,
 				0F75F62E2A6B1DB200A45078 /* helpers.h in Headers */,
 				0F75F5F52A6B1DB200A45078 /* COM_utils.h in Headers */,
 				0F75F6122A6B1DB200A45078 /* fb2kWorkerTool.h in Headers */,
+				0FAE90112F3CC44400194242 /* CPUFIFO.h in Headers */,
 				0F75F6082A6B1DB200A45078 /* cfg_dsp_chain_config.h in Headers */,
 				0F75F6362A6B1DB200A45078 /* window_placement_helper.h in Headers */,
 				0F75F61B2A6B1DB200A45078 /* create_directory_helper.h in Headers */,
@@ -493,6 +496,7 @@
 				0F75F6132A6B1DB200A45078 /* cfg_objList.h in Headers */,
 				0F75F6692A6B1DB200A45078 /* seekabilizer.h in Headers */,
 				0F75F6562A6B1DB200A45078 /* win-systemtime.h in Headers */,
+				0F9B27EE2E5C706400E63863 /* dsp_chain_config_extra.h in Headers */,
 				0F75F6312A6B1DB200A45078 /* packet_decoder_mp3_common.h in Headers */,
 				0F75F64A2A6B1DB200A45078 /* cue_parser.h in Headers */,
 				0F75F6502A6B1DB200A45078 /* callInMainThreadHelper.h in Headers */,
@@ -500,6 +504,7 @@
 				0F75F6662A6B1DB200A45078 /* metadb_handle_set.h in Headers */,
 				0F75F6522A6B1DB200A45078 /* audio_render_float.h in Headers */,
 				0F75F65A2A6B1DB200A45078 /* cfg_obj.h in Headers */,
+				0F0F1A902CE6181F00F00F9D /* with_timeout.h in Headers */,
 				0F75F6182A6B1DB200A45078 /* rethrow.h in Headers */,
 				0F75F5EA2A6B1DB200A45078 /* dialog_resize_helper.h in Headers */,
 				0F75F6232A6B1DB200A45078 /* track_property_callback_impl.h in Headers */,
@@ -541,6 +546,7 @@
 				0F75F62A2A6B1DB200A45078 /* callback_merit.h in Headers */,
 				0F75F6212A6B1DB200A45078 /* metadb_info_container_impl.h in Headers */,
 				0F75F6172A6B1DB200A45078 /* albumArtCache.h in Headers */,
+				0F218CF52D707851006946E0 /* ui_edit_context_common.h in Headers */,
 				0F75F66E2A6B1DB200A45078 /* file_cached.h in Headers */,
 				0F75F6712A6B1DB200A45078 /* dropdown_helper.h in Headers */,
 				0F75F5F92A6B1DB200A45078 /* metadb_handle_array.h in Headers */,
@@ -660,8 +666,7 @@
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
 				CLANG_ANALYZER_LOCALIZABILITY_NONLOCALIZED = YES;
-				CLANG_CXX_LANGUAGE_STANDARD = "gnu++17";
-				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
 				CLANG_ENABLE_MODULES = YES;
 				CLANG_ENABLE_OBJC_ARC = YES;
 				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
@@ -709,7 +714,6 @@
 					../..,
 					..,
 				);
-				IPHONEOS_DEPLOYMENT_TARGET = 12.1;
 				MACOSX_DEPLOYMENT_TARGET = 11.0;
 				ONLY_ACTIVE_ARCH = YES;
 				SDKROOT = macosx;
@@ -722,8 +726,7 @@
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
 				CLANG_ANALYZER_LOCALIZABILITY_NONLOCALIZED = YES;
-				CLANG_CXX_LANGUAGE_STANDARD = "gnu++17";
-				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
 				CLANG_ENABLE_MODULES = YES;
 				CLANG_ENABLE_OBJC_ARC = YES;
 				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
@@ -767,7 +770,6 @@
 					../..,
 					..,
 				);
-				IPHONEOS_DEPLOYMENT_TARGET = 12.1;
 				MACOSX_DEPLOYMENT_TARGET = 11.0;
 				SDKROOT = macosx;
 				SKIP_INSTALL = YES;

@@ -15,6 +15,14 @@ void chapter_list::copy(const chapter_list & p_source)
 FOOGUIDDECL const GUID chapterizer::class_guid=
 { 0x3f489088, 0x6179, 0x434e, { 0xa9, 0xdb, 0x3a, 0x14, 0xa1, 0xb0, 0x81, 0xac } };
 
+chapterizer::ptr chapterizer::g_find(const char* p_path) {
+	for (auto ptr : enumerate()) {
+		if (ptr->is_our_path(p_path)) {
+			return ptr;
+		}
+	}
+	return nullptr;
+}
 bool chapterizer::g_find(service_ptr_t<chapterizer> & p_out,const char * p_path)
 {
 	for (auto ptr : enumerate()) {

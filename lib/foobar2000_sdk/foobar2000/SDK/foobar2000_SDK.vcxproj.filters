@@ -263,9 +263,6 @@
     <ClInclude Include="foobar2000-pfc.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="filesystem_transacted.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
     <ClInclude Include="foosort.h">
       <Filter>Header Files</Filter>
     </ClInclude>
@@ -324,9 +321,6 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="exception_io.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="library_index.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="foosortstring.h">
@@ -408,6 +402,24 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="titleformat_object.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="dsp-tests.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="skipTrack.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="commonOptions.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="playOn.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="converter.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="abort_callback_impl.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>

@@ -2,12 +2,12 @@
 
 
 #ifdef _MSC_VER // MSVC sucks, doesn't set __cplusplus properly by default
-#if _MSVC_LANG < 201703L
-#error C++17 please
+#if _MSVC_LANG < 202002L
+#error C++20 please
 #endif
 #else // not MSVC
-#if __cplusplus < 201703L
-#error C++17 please
+#if __cplusplus < 202002L
+#error C++20 please
 #endif
 #endif
 
@@ -57,17 +57,17 @@
 #endif // #if !defined(PFC_WINDOWS_STORE_APP) && !defined(PFC_WINDOWS_DESKTOP_APP)
 
 #ifndef _SYS_GUID_OPERATOR_EQ_
-__inline bool __InlineIsEqualGUID(REFGUID rguid1, REFGUID rguid2)
+constexpr __inline bool __InlineIsEqualGUID(REFGUID v1, REFGUID v2)
 {
-    return (
-        ((unsigned long*)&rguid1)[0] == ((unsigned long*)&rguid2)[0] &&
-        ((unsigned long*)&rguid1)[1] == ((unsigned long*)&rguid2)[1] &&
-        ((unsigned long*)&rguid1)[2] == ((unsigned long*)&rguid2)[2] &&
-        ((unsigned long*)&rguid1)[3] == ((unsigned long*)&rguid2)[3]);
+    if (v1.Data1 != v2.Data1 || v1.Data2 != v2.Data2 || v1.Data3 != v2.Data3) return false;
+    for (unsigned i = 0; i < 8; ++i) {
+        if (v1.Data4[i] != v2.Data4[i]) return false;
+    }
+    return true;
 }
 
-inline bool operator==(REFGUID guidOne, REFGUID guidOther) { return __InlineIsEqualGUID(guidOne, guidOther); }
-inline bool operator!=(REFGUID guidOne, REFGUID guidOther) { return !__InlineIsEqualGUID(guidOne, guidOther); }
+constexpr inline bool operator==(REFGUID guidOne, REFGUID guidOther) { return __InlineIsEqualGUID(guidOne, guidOther); }
+constexpr inline bool operator!=(REFGUID guidOne, REFGUID guidOther) { return !__InlineIsEqualGUID(guidOne, guidOther); }
 #endif
 
 #include <tchar.h>
@@ -90,13 +90,27 @@ struct GUID {
     uint8_t  Data4[ 8 ];
 } __attribute__((packed));
 
-inline bool operator==(const GUID & p_item1,const GUID & p_item2) {
-    return memcmp(&p_item1,&p_item2,sizeof(GUID)) == 0;
+constexpr inline bool _GUID_equals(GUID const & v1, GUID const & v2) {
+    if (v1.Data1 != v2.Data1 || v1.Data2 != v2.Data2 || v1.Data3 != v2.Data3) return false;
+    for( unsigned i = 0; i < 8; ++ i) {
+        if (v1.Data4[i] != v2.Data4[i]) return false;
+    }
+    return true;
 }
 
-inline bool operator!=(const GUID & p_item1,const GUID & p_item2) {
-    return memcmp(&p_item1,&p_item2,sizeof(GUID)) != 0;
+constexpr inline bool operator==(const GUID & v1,const GUID & v2) {
+    return _GUID_equals(v1,v2);
 }
+
+constexpr inline bool operator!=(const GUID & v1,const GUID & v2) {
+    return !_GUID_equals(v1,v2);
+}
+
+typedef const GUID & REFGUID;
+typedef GUID CLSID;
+
+typedef REFGUID REFCLSID;
+typedef REFGUID REFIID;
 
 #endif // GUID_DEFINED
 
@@ -119,31 +133,33 @@ inline bool operator!=(const GUID & p_item1,const GUID & p_item2) {
 #define PFC_DEBUG 1
 #else
 #define PFC_DEBUG 0
-#endif
-
-#if ! PFC_DEBUG
-
 #ifndef NDEBUG
 #pragma message("WARNING: release build without NDEBUG")
 #endif
+#endif // _DEBUG || DEBUG
 
+
+#ifdef PFC_ASSERT
+// already defined
+#elif ! PFC_DEBUG
 #define PFC_ASSERT(_Expression)     ((void)0)
-#define PFC_ASSERT_SUCCESS(_Expression) (void)( (_Expression), 0)
 #define PFC_ASSERT_NO_EXCEPTION(_Expression) { _Expression; }
-#else
+#else // PFC_DEBUG
 
 #ifdef _WIN32
 namespace pfc { void myassert_win32(const wchar_t* _Message, const wchar_t* _File, unsigned _Line); }
 #define PFC_ASSERT(_Expression) (void)( (!!(_Expression)) || (pfc::myassert_win32(PFC_WIDESTRING(#_Expression), PFC_WIDESTRING(__FILE__), __LINE__), 0) )
-#define PFC_ASSERT_SUCCESS(_Expression) PFC_ASSERT(_Expression)
-#else
+#else // _WIN32 or not
 namespace pfc { void myassert(const char* _Message, const char* _File, unsigned _Line); }
 #define PFC_ASSERT(_Expression) (void)( (!!(_Expression)) || (pfc::myassert(#_Expression, __FILE__, __LINE__), 0) )
-#define PFC_ASSERT_SUCCESS(_Expression) PFC_ASSERT( _Expression )
-#endif
+#endif // _WIN32 or not
 
+#endif // PFC_DEBUG
+
+#ifndef PFC_ASSERT_NO_EXCEPTION
 #define PFC_ASSERT_NO_EXCEPTION(_Expression) { try { _Expression; } catch(...) { PFC_ASSERT(!"Should not get here - unexpected exception"); } }
 #endif
+#define PFC_ASSERT_SUCCESS(_Expression) { bool _Expression_Val = !! (_Expression); PFC_ASSERT(_Expression_Val); }
 
 #ifdef _MSC_VER
 
@@ -171,6 +187,8 @@ namespace pfc { void myassert(const char* _Message, const char* _File, unsigned 
 #define PFC_NOINLINE
 
 #endif // end not MSVC
+
+#define PFC_NO_OP ((void)0)
 
 #include "int_types.h"
 #include "string-interface.h"

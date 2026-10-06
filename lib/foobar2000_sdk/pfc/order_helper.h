@@ -16,6 +16,8 @@ namespace pfc {
     bool create_drop_permutation(size_t * out, size_t itemCount, pfc::bit_array const & maskSelected, size_t insertMark );
 
 	bool is_identity(size_t const* order, size_t count);
+
+	pfc::array_t<size_t> identity(size_t);
 }
 
 class order_helper
@@ -35,19 +37,17 @@ public:
 		}
 		return true;
 	}
-	template<typename t_array> static bool g_is_identity(const t_array & p_array) {
+	static bool g_is_identity(const auto & p_array) {
 		const t_size count = pfc::array_size_t(p_array);
 		for(t_size walk = 0; walk < count; ++walk) if (p_array[walk] != walk) return false;
 		return true;
 	}
 
-	template<typename t_int>
-	static void g_fill(t_int * p_order,const t_size p_count) {
+	static void g_fill(auto * p_order,const t_size p_count) {
 		t_size n; for(n=0;n<p_count;n++) p_order[n] = (t_int)n;
 	}
 
-	template<typename t_array>
-	static void g_fill(t_array & p_array) {
+	static void g_fill(auto & p_array) {
 		t_size n; const t_size max = pfc::array_size_t(p_array);
 		for(n=0;n<max;n++) p_array[n] = n;
 	}

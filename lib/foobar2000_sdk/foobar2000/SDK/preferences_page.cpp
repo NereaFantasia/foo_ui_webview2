@@ -2,8 +2,11 @@
 #include "preferences_page.h"
 #include "coreversion.h"
 
+const char* preferences_page::help_url_base() {
+    return "https://help.foobar2000.org/";
+}
 void preferences_page::get_help_url_helper(pfc::string_base & out, const char * category, const GUID & id, const char * name) {
-    out = "https://help.foobar2000.org/";
+    out = help_url_base();
     pfc::urlEncodeAppend(out, core_version_info::g_get_version_string());
     out << "/";
     pfc::urlEncodeAppend(out, category);

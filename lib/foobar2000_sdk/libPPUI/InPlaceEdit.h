@@ -1,6 +1,7 @@
 #pragma once
 
 #include <functional>
+#include "DarkMode.h"
 
 namespace InPlaceEdit {
 
@@ -22,7 +23,6 @@ namespace InPlaceEdit {
 		KFlagNumberSigned = 1 << 5,
 		
 		KFlagCombo = 1 << 8, // FOR INTERNAL USE
-		KFlagDark = 1 << 9
 	};
 	
 	typedef std::function< void (unsigned) > reply_t;
@@ -31,13 +31,11 @@ namespace InPlaceEdit {
 
 	HWND Start(HWND p_parentwnd, const RECT & p_rect, bool p_multiline, pfc::rcptr_t<pfc::string_base> p_content, reply_t p_notify);
 
-	HWND StartEx(HWND p_parentwnd, const RECT & p_rect, unsigned p_flags, pfc::rcptr_t<pfc::string_base> p_content, reply_t p_notify, IUnknown * ACData = NULL, DWORD ACOpts = 0);
-
-
-	HWND StartCombo(HWND p_parentwnd, const RECT & p_rect, unsigned p_flags, pfc::string_list_const & data, unsigned iDefault, comboReply_t p_notify);
+	HWND StartEx(HWND p_parentwnd, const RECT& p_rect, unsigned p_flags, pfc::rcptr_t<pfc::string_base> p_content, reply_t p_notify, IUnknown* ACData = NULL, DWORD ACOpts = 0, DarkMode::param_t const & dark = {});
+	HWND StartCombo(HWND p_parentwnd, const RECT& p_rect, unsigned p_flags, pfc::string_list_const& data, unsigned iDefault, comboReply_t p_notify, DarkMode::param_t const & dark = {});
 
 	void Start_FromListView(HWND p_listview, unsigned p_item, unsigned p_subitem, unsigned p_linecount,  pfc::rcptr_t<pfc::string_base> p_content, reply_t p_notify);
-	void Start_FromListViewEx(HWND p_listview, unsigned p_item, unsigned p_subitem, unsigned p_linecount, unsigned p_flags, pfc::rcptr_t<pfc::string_base> p_content, reply_t p_notify);
+	void Start_FromListViewEx(HWND p_listview, unsigned p_item, unsigned p_subitem, unsigned p_linecount, unsigned p_flags, pfc::rcptr_t<pfc::string_base> p_content, reply_t p_notify, DarkMode::param_t const& dark = {});
 
 	bool TableEditAdvance(unsigned & p_item, unsigned & p_column, unsigned p_item_count, unsigned p_column_count, unsigned p_whathappened);
 	bool TableEditAdvance_ListView(HWND p_listview, unsigned p_column_base, unsigned & p_item, unsigned & p_column, unsigned p_item_count, unsigned p_column_count, unsigned p_whathappened);

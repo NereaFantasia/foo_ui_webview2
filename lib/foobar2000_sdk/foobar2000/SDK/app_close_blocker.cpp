@@ -20,19 +20,17 @@ service_ptr async_task_manager::g_acquire() {
 }
 
 void fb2k::splitTask( std::function<void ()> f) {
-	auto taskref = async_task_manager::g_acquire();
-	pfc::splitThread( [f,taskref] {
+	pfc::splitThread( [f = std::move(f), taskref = async_task_manager::g_acquire()] {
 		f();
 		(void)taskref; // retain until here
-		} );
+	} );
 }
 
 void fb2k::splitTask( pfc::thread::arg_t const & arg, std::function<void ()> f) {
-    auto taskref = async_task_manager::g_acquire();
-    pfc::splitThread( arg, [f,taskref] {
+    pfc::splitThread( arg, [f = std::move(f), taskref = async_task_manager::g_acquire()] {
         f();
         (void)taskref; // retain until here
-        } );
+	} );
 }
 
 abort_callback& fb2k::mainAborter() {
@@ -58,8 +56,8 @@ void app_close_blocking_task_impl::query_task_name(pfc::string_base & out) {
 }
 
 void app_close_blocking_task_impl_dynamic::toggle_blocking(bool state) {
-	PFC_ASSERT( core_api::is_main_thread() );
 	if (state != m_taskActive) {
+		PFC_ASSERT(core_api::is_main_thread());
 		auto api = app_close_blocking_task_manager::get();
 		if (state) api->register_task(this);
 		else api->unregister_task(this);

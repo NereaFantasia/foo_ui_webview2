@@ -1,22 +1,9 @@
 #include "foobar2000-sdk-pch.h"
 #include "foosort.h"
 #include <functional>
+#include <optional>
 
-namespace pfc {
-	/*
-	Redirect PFC methods to shared.dll
-	If you're getting linker multiple-definition errors on these, change build configuration of PFC from "Debug" / "Release" to "Debug FB2K" / "Release FB2K"
-	*/
-#ifdef _WIN32
-	BOOL winFormatSystemErrorMessageHook(pfc::string_base & p_out, DWORD p_code) {
-		return uFormatSystemErrorMessage(p_out, p_code);
-	}
-#endif
-	void crashHook() {
-		uBugCheck();
-	}
-}
-
+#include <shared/wrap_pfc_hooks.h>
 
 // file_lock_manager.h functionality
 #include "file_lock_manager.h"
@@ -29,13 +16,14 @@ namespace {
 }
 
 file_lock_interrupt::ptr file_lock_interrupt::create( std::function< void (abort_callback&)> f ) {
-    service_ptr_t<file_lock_interrupt_impl> i = new service_impl_t<file_lock_interrupt_impl>();
-    i->f = f;
+	auto i = fb2k::service_new<file_lock_interrupt_impl>();
+    i->f = std::move(f);
     return i;
 }
 
 // file_info_filter.h functionality
 #include "file_info_filter.h"
+#include "file_info_const_impl.h"
 namespace {
     class file_info_filter_lambda : public file_info_filter {
     public:
@@ -44,6 +32,14 @@ namespace {
         }
         func_t f;
     };
+class file_info_overwriter : public file_info_filter {
+public:
+    bool apply_filter(trackRef,t_filestats,file_info & p_info) override {
+        p_info.overwrite( m_info );
+        return true;
+    }
+    file_info_const_impl m_info;
+};
 }
 
 file_info_filter::ptr file_info_filter::create(func_t f) {
@@ -52,14 +48,26 @@ file_info_filter::ptr file_info_filter::create(func_t f) {
     return o;
 }
 
+file_info_filter::ptr file_info_filter::create_overwriter( const file_info & arg) {
+    auto o = fb2k::service_new<file_info_overwriter>();
+    o->m_info = arg;
+    return o;
+}
+
 // threadPool.h functionality
 #include "threadPool.h"
 namespace fb2k {
 	void inWorkerThread(std::function<void()> f) {
-		fb2k::splitTask(f);
+		fb2k::splitTask(std::move(f));
 	}
 	void inCpuWorkerThread(std::function<void()> f) {
-		cpuThreadPool::get()->runSingle(threadEntry::make(f));
+#if FOOBAR2000_TARGET_VERSION < 81
+		auto api = cpuThreadPool::tryGet();
+		if (api) api->runSingle(threadEntry::make(std::move(f)));
+		else inWorkerThread(std::move(f));
+#else
+		cpuThreadPool::get()->runSingle(threadEntry::make(std::move(f)));
+#endif
 	}
 }
 namespace {
@@ -72,18 +80,18 @@ namespace {
 namespace fb2k {
 	threadEntry::ptr threadEntry::make(std::function<void()> f) {
 		auto ret = fb2k::service_new<threadEntryImpl>();
-		ret->f = f;
+		ret->f = std::move(f);
 		return ret;
 	}
 
 	void cpuThreadPool::runMulti_(std::function<void()> f, size_t numRuns) {
-		this->runMulti(threadEntry::make(f), numRuns, true);
+		this->runMulti(threadEntry::make(std::move(f)), numRuns, true);
 	}
 
 	void cpuThreadPool::runMultiHelper(std::function<void()> f, size_t numRuns) {
 		if (numRuns == 0) return;
 #if FOOBAR2000_TARGET_VERSION >= 81
-		get()->runMulti_(f, numRuns);
+		get()->runMulti_(std::move(f), numRuns);
 #else
 		if (numRuns == 1) {
 			f();
@@ -277,8 +285,8 @@ namespace {
 }
 
 fb2k::fileDialogNotify::ptr fb2k::fileDialogNotify::create( std::function<void (arrayRef) > recv ) {
-    service_ptr_t<fileDialogNotifyImpl> obj = new service_impl_t< fileDialogNotifyImpl >();
-    obj->recv = recv;
+    service_ptr_t obj = new service_impl_t< fileDialogNotifyImpl >();
+    obj->recv = std::move(recv);
     return obj;
 }
 
@@ -302,6 +310,77 @@ void fb2k::fileDialogSetup::runSimple(fileDialogGetPath_t reply) {
     };
     this->run(wrapper);
 }
+
+fb2k::stringRef fb2k::fileDialog::resultPath(fb2k::objRef arg) {
+	fb2k::stringRef str;
+	if (str &= arg) return str;
+	fsItemPtr item;
+	if (item &= arg) {
+		return item->canonicalPath();
+	}
+	PFC_ASSERT(!"???");
+	return nullptr;
+}
+
+pfc::string fb2k::fileDialog::resultNativePath(fb2k::objRef arg) {
+	pfc::string ret;
+	auto work = resultPath(arg);
+	if (work) {
+		pfc::string temp;
+		if (filesystem::g_get_native_path(work->c_str(), temp)) ret = std::move(temp);
+	}
+	return ret;
+}
+
+#ifdef _WIN32
+bool fb2k::browseForFolder(HWND parent, const char* title, pfc::string_base& inOut) {
+	auto api = fb2k::fileDialog::tryGet();
+	if (api) {
+		fb2k::fileDialogSetup2::ptr dlg;
+		if (dlg &= api->setupOpenFolder()) {
+			try {
+				dlg->setTitle(title); dlg->setParent(parent);
+				if (inOut.length() > 0) dlg->setInitialValue(inOut);
+				auto result = dlg->runModal();
+				if (result && result->count() == 1) {
+					auto n = fileDialog::resultNativePath(result->itemAt(0));
+					if (n.length() > 0) {
+						inOut = n; return true;
+					}
+				}
+				return false;
+			} catch (pfc::exception_not_implemented const&) {}
+		}
+	}
+	return uBrowseForFolder(parent, title, inOut);
+}
+
+bool fb2k::getOpenFileName(HWND parent, const char* p_ext_mask, unsigned def_ext_mask, const char* p_def_ext, const char* p_title, const char* p_directory, pfc::string_base& p_filename, BOOL b_save) {
+	auto api = fb2k::fileDialog::tryGet();
+	if (api) {
+		auto dlg1 = b_save ? api->setupSave() : api->setupOpen();
+		fb2k::fileDialogSetup2::ptr dlg;
+		if (dlg &= dlg1) {
+			try {
+				dlg->setParent(parent); dlg->setFileTypes(p_ext_mask); dlg->setDefaultType(def_ext_mask);
+				if (p_def_ext) dlg->setDefaultExtension(p_def_ext);
+				if (p_title) dlg->setTitle(p_title);
+				if (p_directory) dlg->setInitialDirectory(p_directory);
+				if (p_filename.length() > 0) dlg->setInitialValue(p_filename);
+				auto result = dlg->runModal();
+				if (result && result->count() == 1) {
+					auto n = fileDialog::resultNativePath(result->itemAt(0));
+					if (n.length() > 0) {
+						p_filename = n; return true;
+					}
+				}
+				return false;
+			} catch (pfc::exception_not_implemented const&) {}
+		}
+	}
+	return uGetOpenFileName(parent, p_ext_mask, def_ext_mask, p_def_ext, p_title, p_directory, p_filename, b_save);
+}
+#endif // _WIN32
 
 #include "input_file_type.h"
 
@@ -402,4 +481,31 @@ bool message_filter_remap_f1::pretranslate_message(MSG * p_msg) {
 	return false;
 }
 
+#endif
+
+#ifdef _WIN32
+#include "coreDarkMode.h"
+#include "ui_element.h"
+
+bool fb2k::coreDarkModeObj::setFromCallback_(service_ptr cb) {
+	coreDarkModeObj2::ptr v2;
+	if (v2 &= this) return v2->setFromCallback(cb);
+	
+	std::optional<bool> v;
+	ui_element_instance_callback::ptr test1;
+	if (test1 &= cb) {
+		v = test1->is_dark_mode();
+	}
+	ui_config_manager::ptr test2;
+	if (test2 &= cb) {
+		v = test2->is_dark_mode();
+	}
+	if (!v.has_value()) {
+		PFC_ASSERT(!"???");
+		return false;
+	}
+	if (*v == this->isDark()) return false;
+	setDarkMode(*v);
+	return true;
+}
 #endif

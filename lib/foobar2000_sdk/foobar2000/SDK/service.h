@@ -1,6 +1,7 @@
 #pragma once
 
 #include <utility> // std::forward
+#include <vector>
 
 typedef const void* service_class_ref;
 
@@ -19,43 +20,16 @@ PFC_DECLARE_EXCEPTION(exception_service_duplicated,pfc::exception,"Service dupli
 #define DECLARE_CLASS_GUID(NAME,A,S,D,F,G,H,J,K,L,Z,X) FOOGUIDDECL const GUID NAME::class_guid = {A,S,D,{F,G,H,J,K,L,Z,X}};
 
 //Must be templated instead of taking service_base* because of multiple inheritance issues.
-template<typename T> static void service_release_safe(T * p_ptr) throw() {
-	if (p_ptr != NULL) PFC_ASSERT_NO_EXCEPTION( p_ptr->service_release() );
+template<typename T> static void service_release_safe(T * p_ptr) noexcept {
+	if (p_ptr != NULL) p_ptr->service_release();
 }
 
 //Must be templated instead of taking service_base* because of multiple inheritance issues.
-template<typename T> static void service_add_ref_safe(T * p_ptr) throw() {
-	if (p_ptr != NULL) PFC_ASSERT_NO_EXCEPTION( p_ptr->service_add_ref() );
+template<typename T> static void service_add_ref_safe(T * p_ptr) noexcept {
+	if (p_ptr != NULL) p_ptr->service_add_ref();
 }
 
 class service_base;
-
-template<typename T>
-class service_ptr_base_t {
-    typedef service_ptr_base_t<T> self_t;
-public:
-	inline T* get_ptr() const throw() {return m_ptr;}
-	typedef T obj_t;
-    
-    
-    inline bool operator==(const self_t & other) const noexcept {return this->m_ptr == other.m_ptr;}
-    inline bool operator!=(const self_t & other) const noexcept {return this->m_ptr != other.m_ptr;}
-
-    inline bool operator>(const self_t & other) const noexcept {return this->m_ptr > other.m_ptr;}
-    inline bool operator<(const self_t & other) const noexcept {return this->m_ptr < other.m_ptr;}
-
-    inline bool operator==(T * other) const noexcept {return this->m_ptr == other;}
-    inline bool operator!=(T * other) const noexcept {return this->m_ptr != other;}
-
-    inline bool operator>(T * other) const noexcept {return this->m_ptr > other;}
-    inline bool operator<(T * other) const noexcept {return this->m_ptr < other;}
-
-protected:
-	T * m_ptr;
-};
-
-// forward declaration
-template<typename T> class service_nnptr_t;
 
 template<typename T> struct forced_cast_t {
 	T* ptr;
@@ -63,68 +37,81 @@ template<typename T> struct forced_cast_t {
 
 //! Autopointer class to be used with all services. Manages reference counter calls behind-the-scenes.
 template<typename T>
-class service_ptr_t : public service_ptr_base_t<T> {
+class service_ptr_t {
+protected:
+	T* m_ptr;
 private:
 	typedef service_ptr_t<T> t_self;
+	typedef service_ptr_t<T> self_t;
 
-	template<typename t_source> void _init(t_source * in) throw() {
+	template<typename t_source> void _init(t_source * in) noexcept {
 		this->m_ptr = in;
 		if (this->m_ptr) this->m_ptr->service_add_ref();
 	}
-	template<typename t_source> void _init(t_source && in) throw() {
+	template<typename t_source> void _init(t_source && in) noexcept {
 		this->m_ptr = in.detach();
 	}
 public:
-	service_ptr_t() throw() {this->m_ptr = NULL;}
-	service_ptr_t(T * p_ptr) throw() {_init(p_ptr);}
-	service_ptr_t(const t_self & p_source) throw() {_init(p_source.get_ptr());}
-	service_ptr_t(t_self && p_source) throw() {_init(std::move(p_source));}
-	template<typename t_source> service_ptr_t(t_source * p_ptr) throw() {_init(p_ptr);}
-	template<typename t_source> service_ptr_t(const service_ptr_base_t<t_source> & p_source) throw() {_init(p_source.get_ptr());}
-	template<typename t_source> service_ptr_t(const service_nnptr_t<t_source> & p_source) throw() { this->m_ptr = p_source.get_ptr(); this->m_ptr->service_add_ref(); }
-	template<typename t_source> service_ptr_t(service_ptr_t<t_source> && p_source) throw() { _init(std::move(p_source)); }
+	typedef T obj_t;
+
+	service_ptr_t() noexcept {this->m_ptr = NULL;}
+	service_ptr_t(T * p_ptr) noexcept {_init(p_ptr);}
+	service_ptr_t(const t_self & p_source) noexcept {_init(p_source.get_ptr());}
+	service_ptr_t(t_self && p_source) noexcept {_init(std::move(p_source));}
+	template<typename t_source> service_ptr_t(t_source * p_ptr) noexcept {_init(p_ptr);}
+	template<typename t_source> service_ptr_t(const service_ptr_t<t_source> & p_source) noexcept {_init(p_source.get_ptr());}
+	template<typename t_source> service_ptr_t(service_ptr_t<t_source> && p_source) noexcept { _init(std::move(p_source)); }
 	
-	~service_ptr_t() throw() {service_release_safe(this->m_ptr);}
+	~service_ptr_t() noexcept {service_release_safe(this->m_ptr);}
+
+	inline T* get_ptr() const noexcept { return m_ptr; }
+	inline T* get() const noexcept { return m_ptr; }
 	
-	template<typename t_source>
-	void copy(t_source * p_ptr) throw() {
+
+	inline bool operator==(const self_t& other) const noexcept { return this->m_ptr == other.m_ptr; }
+	inline bool operator!=(const self_t& other) const noexcept { return this->m_ptr != other.m_ptr; }
+
+	inline bool operator>(const self_t& other) const noexcept { return this->m_ptr > other.m_ptr; }
+	inline bool operator<(const self_t& other) const noexcept { return this->m_ptr < other.m_ptr; }
+
+	inline bool operator==(T* other) const noexcept { return this->m_ptr == other; }
+	inline bool operator!=(T* other) const noexcept { return this->m_ptr != other; }
+
+	inline bool operator>(T* other) const noexcept { return this->m_ptr > other; }
+	inline bool operator<(T* other) const noexcept { return this->m_ptr < other; }
+
+	void copy(auto * p_ptr) noexcept {
 		service_add_ref_safe(p_ptr);
 		service_release_safe(this->m_ptr);
 		this->m_ptr = pfc::safe_ptr_cast<T>(p_ptr);
 	}
 
 	template<typename t_source>
-	void copy(const service_ptr_base_t<t_source> & p_source) throw() {copy(p_source.get_ptr());}
+	void copy(const service_ptr_t<t_source> & p_source) noexcept {copy(p_source.get_ptr());}
 
 	template<typename t_source>
-	void copy(service_ptr_t<t_source> && p_source) throw() {attach(p_source.detach());}
+	void copy(service_ptr_t<t_source> && p_source) noexcept {attach(p_source.detach());}
 
 
-	inline const t_self & operator=(const t_self & p_source) throw() {copy(p_source); return *this;}
-	inline const t_self & operator=(t_self && p_source) throw() {copy(std::move(p_source)); return *this;}
-	inline const t_self & operator=(T * p_ptr) throw() {copy(p_ptr); return *this;}
+	inline const t_self & operator=(const t_self & p_source) noexcept {copy(p_source); return *this;}
+	inline const t_self & operator=(t_self && p_source) noexcept {copy(std::move(p_source)); return *this;}
+	inline const t_self & operator=(T * p_ptr) noexcept {copy(p_ptr); return *this;}
 
-	template<typename t_source> inline t_self & operator=(const service_ptr_base_t<t_source> & p_source) throw() {copy(p_source); return *this;}
-	template<typename t_source> inline t_self & operator=(service_ptr_t<t_source> && p_source) throw() {copy(std::move(p_source)); return *this;}
-	template<typename t_source> inline t_self & operator=(t_source * p_ptr) throw() {copy(p_ptr); return *this;}
+	template<typename t_source> inline t_self & operator=(const service_ptr_t<t_source> & p_source) noexcept {copy(p_source); return *this;}
+	template<typename t_source> inline t_self & operator=(service_ptr_t<t_source> && p_source) noexcept {copy(std::move(p_source)); return *this;}
+	template<typename t_source> inline t_self & operator=(t_source * p_ptr) noexcept {copy(p_ptr); return *this;}
 
-	template<typename t_source> inline t_self & operator=(const service_nnptr_t<t_source> & p_ptr) throw() {
-		service_release_safe(this->m_ptr);
-		t_source * ptr = p_ptr.get_ptr();
-		ptr->service_add_ref();
-		this->m_ptr = ptr;
-		return *this;
-	}
-
-    inline void reset() throw() { release(); }
+    inline void reset() noexcept { release(); }
 	
-	inline void release() throw() {
+	// Contrary to std library auto pointer method, this acts same as reset() !
+	// Use detach() if unsafe ownership release is intended !
+	inline void release() noexcept {
 		service_release_safe(this->m_ptr);
 		this->m_ptr = NULL;
 	}
 
 
-	inline T* operator->() const throw() {
+	inline T* operator->() const noexcept {
 #if PFC_DEBUG
 		if (this->m_ptr == NULL) {
 			FB2K_DebugLog() << "service_ptr operator-> on a null pointer, type: " << T::debugServiceName();
@@ -134,33 +121,32 @@ public:
 		return this->m_ptr;
 	}
 
-	inline T* get_ptr() const throw() {return this->m_ptr;}
-	
-	inline bool is_valid() const throw() {return this->m_ptr != NULL;}
-	inline bool is_empty() const throw() {return this->m_ptr == NULL;}
+	inline bool is_valid() const noexcept {return this->m_ptr != nullptr;}
+	inline bool is_empty() const noexcept {return this->m_ptr == nullptr;}
+	inline operator bool() const noexcept {return this->m_ptr != nullptr;}
 
 	template<typename t_other>
-	inline t_self & operator<<(service_ptr_t<t_other> & p_source) throw() {attach(p_source.detach());return *this;}
+	inline t_self & operator<<(service_ptr_t<t_other> & p_source) noexcept {attach(p_source.detach());return *this;}
 	template<typename t_other>
-	inline t_self & operator>>(service_ptr_t<t_other> & p_dest) throw() {p_dest.attach(detach());return *this;}
+	inline t_self & operator>>(service_ptr_t<t_other> & p_dest) noexcept {p_dest.attach(detach());return *this;}
 
 
-	inline T* _duplicate_ptr() const throw() {//should not be used ! temporary !
+	inline T* _duplicate_ptr() const noexcept {//should not be used ! temporary !
 		service_add_ref_safe(this->m_ptr);
 		return this->m_ptr;
 	}
 
-	inline T* detach() throw() {
+	inline T* detach() noexcept {
 		return pfc::replace_null_t(this->m_ptr);
 	}
 
 	template<typename t_source>
-	inline void attach(t_source * p_ptr) throw() {
+	inline void attach(t_source * p_ptr) noexcept {
 		service_release_safe(this->m_ptr);
 		this->m_ptr = pfc::safe_ptr_cast<T>(p_ptr);
 	}
 
-	T & operator*() const throw() {return *this->m_ptr;}
+	T & operator*() const noexcept {return *this->m_ptr;}
 
 	service_ptr_t<service_base> & _as_base_ptr() {
 		PFC_ASSERT( _as_base_ptr_check() );
@@ -172,7 +158,7 @@ public:
         
     //! Forced cast operator - obtains a valid service pointer to the expected class or crashes the app if such pointer cannot be obtained.
     template<typename otherPtr_t>
-    void operator ^= ( otherPtr_t other ) {
+    void operator ^= ( otherPtr_t const & other ) {
 		if (other.is_empty()) release();
 		else forcedCastFrom(other);
     }
@@ -189,7 +175,7 @@ public:
 	}
 	//! Conditional cast operator - attempts to obtain a vaild service pointer to the expected class; returns true on success, false on failure.
     template<typename otherPtr_t>
-    bool operator &= ( otherPtr_t other ) {
+    bool operator &= ( otherPtr_t const & other ) {
 		if (other.is_empty()) return false;
         return other->cast(*this);
     }
@@ -205,11 +191,10 @@ public:
 		else forcedCastFrom(other.ptr);
 	}
 
-	//! Alternate forcedCast syntax, for contexts where operator^= fails to compile. \n
-	//! Usage: target = source.forcedCast();
+	//! Alternate forcedCast syntax, for contexts where @c operator^= fails to compile. \n
+	//! Usage: `target = source.forcedCast()`;
 	forced_cast_t<T> forcedCast() const {
-		forced_cast_t<T> r = { this->m_ptr };
-		return r;
+		return { this->m_ptr };
 	}
 
 	template<typename source_t>
@@ -220,76 +205,6 @@ public:
 	}
 };
 
-//! Autopointer class to be used with all services. Manages reference counter calls behind-the-scenes. \n
-//! This assumes that the pointers are valid all the time (can't point to null). Mainly intended to be used for scenarios where null pointers are not valid and relevant code should crash ASAP if somebody passes invalid pointers around. \n
-//! You want to use service_ptr_t<> rather than service_nnptr_t<> most of the time.
-template<typename T>
-class service_nnptr_t : public service_ptr_base_t<T> {
-private:
-	typedef service_nnptr_t<T> t_self;
-
-	template<typename t_source> void _init(t_source * in) {
-		this->m_ptr = in;
-		this->m_ptr->service_add_ref();
-	}
-	service_nnptr_t() throw() {pfc::crash();}
-public:
-	service_nnptr_t(T * p_ptr) throw() {_init(p_ptr);}
-	service_nnptr_t(const t_self & p_source) throw() {_init(p_source.get_ptr());}
-	template<typename t_source> service_nnptr_t(t_source * p_ptr) throw() {_init(p_ptr);}
-	template<typename t_source> service_nnptr_t(const service_ptr_base_t<t_source> & p_source) throw() {_init(p_source.get_ptr());}
-
-	template<typename t_source> service_nnptr_t(service_ptr_t<t_source> && p_source) throw() {this->m_ptr = p_source.detach();}
-
-	~service_nnptr_t() throw() {this->m_ptr->service_release();}
-	
-	template<typename t_source>
-	void copy(t_source * p_ptr) throw() {
-		p_ptr->service_add_ref();
-		this->m_ptr->service_release();
-		this->m_ptr = pfc::safe_ptr_cast<T>(p_ptr);
-	}
-
-	template<typename t_source>
-	void copy(const service_ptr_base_t<t_source> & p_source) throw() {copy(p_source.get_ptr());}
-
-
-	inline const t_self & operator=(const t_self & p_source) throw() {copy(p_source); return *this;}
-	inline const t_self & operator=(T * p_ptr) throw() {copy(p_ptr); return *this;}
-
-	template<typename t_source> inline t_self & operator=(const service_ptr_base_t<t_source> & p_source) throw() {copy(p_source); return *this;}
-	template<typename t_source> inline t_self & operator=(t_source * p_ptr) throw() {copy(p_ptr); return *this;}
-	template<typename t_source> inline t_self & operator=(service_ptr_t<t_source> && p_source) throw() {this->m_ptr->service_release(); this->m_ptr = p_source.detach();}
-
-
-	inline T* operator->() const throw() {PFC_ASSERT(this->m_ptr != NULL);return this->m_ptr;}
-
-	inline T* get_ptr() const throw() {return this->m_ptr;}
-	
-	inline bool is_valid() const throw() {return true;}
-	inline bool is_empty() const throw() {return false;}
-
-	inline T* _duplicate_ptr() const throw() {//should not be used ! temporary !
-		service_add_ref_safe(this->m_ptr);
-		return this->m_ptr;
-	}
-
-	T & operator*() const throw() {return *this->m_ptr;}
-
-	service_ptr_t<service_base> & _as_base_ptr() {
-		PFC_ASSERT( _as_base_ptr_check() );
-		return *reinterpret_cast<service_ptr_t<service_base>*>(this);
-	}
-	static bool _as_base_ptr_check() {
-		return static_cast<service_base*>((T*)NULL) == reinterpret_cast<service_base*>((T*)NULL);
-	}
-
-	forced_cast_t<T> forcedCast() const {
-		forced_cast_t<T> r = { this->m_ptr };
-		return r;
-	}
-};
-
 namespace pfc {
 	class traits_service_ptr : public traits_default {
 	public:
@@ -297,11 +212,10 @@ namespace pfc {
 	};
 
 	template<typename T> class traits_t<service_ptr_t<T> > : public traits_service_ptr {};
-	template<typename T> class traits_t<service_nnptr_t<T> > : public traits_service_ptr {};
 }
 
 
-//! For internal use, see FB2K_MAKE_SERVICE_INTERFACE
+//! For internal use, see @c FB2K_MAKE_SERVICE_INTERFACE
 #define FB2K_MAKE_SERVICE_INTERFACE_EX(THISCLASS,PARENTCLASS,IS_CORE_API) \
 	public:	\
 		typedef THISCLASS t_interface;	\
@@ -310,9 +224,7 @@ namespace pfc {
 		static const GUID class_guid;	\
 			\
 		typedef service_ptr_t<t_interface> ptr;	\
-		typedef service_nnptr_t<t_interface> nnptr;	\
 		typedef ptr ref; \
-		typedef nnptr nnref; \
 		static const char * debugServiceName() { return #THISCLASS; } \
 		enum { _is_core_api = IS_CORE_API }; \
 	protected:	\
@@ -336,16 +248,16 @@ namespace pfc {
 		static service_enum_t<THISCLASS> enumerate() { return service_enum_t<THISCLASS>(); } \
 	FB2K_MAKE_SERVICE_INTERFACE_EX(THISCLASS,service_base, IS_CORE_API)
 
-//! Helper macro for use when defining a service class. Generates standard features of a service, without ability to register using service_factory / enumerate using service_enum_t. \n
-//! This is used for declaring services that are meant to be instantiated by means other than service_enum_t (or non-entrypoint services), or extensions of services (including extension of entrypoint services).	\n
-//! Sample non-entrypoint declaration: class myclass : public service_base {...; FB2K_MAKE_SERVICE_INTERFACE(myclass, service_base); };	\n
-//! Sample extension declaration: class myclass : public myotherclass {...; FB2K_MAKE_SERVICE_INTERFACE(myclass, myotherclass); };	\n
+//! Helper macro for use when defining a service class. Generates standard features of a service, without ability to register using @c service_factory / enumerate using @c service_enum_t . \n
+//! This is used for declaring services that are meant to be instantiated by means other than @c service_enum_t (or non-entrypoint services), or extensions of services (including extension of entrypoint services).	\n
+//! Sample non-entrypoint declaration: `class myclass : public service_base {...; FB2K_MAKE_SERVICE_INTERFACE(myclass, service_base); };`	\n
+//! Sample extension declaration: `class myclass : public myotherclass {...; FB2K_MAKE_SERVICE_INTERFACE(myclass, myotherclass); };`	\n
 //! This macro is intended for use ONLY WITH INTERFACE CLASSES, not with implementation classes.
 #define FB2K_MAKE_SERVICE_INTERFACE(THISCLASS, PARENTCLASS) FB2K_MAKE_SERVICE_INTERFACE_EX(THISCLASS, PARENTCLASS, false)
 
-//! Helper macro for use when defining an entrypoint service class. Generates standard features of a service, including ability to register using service_factory and enumerate using service_enum.	\n
-//! Sample declaration: class myclass : public service_base {...; FB2K_MAKE_SERVICE_INTERFACE_ENTRYPOINT(myclass); };	\n
-//! Note that entrypoint service classes must directly derive from service_base, and not from another service class.
+//! Helper macro for use when defining an entrypoint service class. Generates standard features of a service, including ability to register using @c service_factory and enumerate using @c service_enum.	\n
+//! Sample declaration: `class myclass : public service_base {...; FB2K_MAKE_SERVICE_INTERFACE_ENTRYPOINT(myclass); };`	\n
+//! Note that entrypoint service classes must directly derive from @c service_base, and not from another service class.
 //! This macro is intended for use ONLY WITH INTERFACE CLASSES, not with implementation classes.
 #define FB2K_MAKE_SERVICE_INTERFACE_ENTRYPOINT(THISCLASS) FB2K_MAKE_SERVICE_INTERFACE_ENTRYPOINT_EX(THISCLASS, false)
 
@@ -384,25 +296,24 @@ public:	\
 
 class service_base;
 typedef service_ptr_t<service_base> service_ptr;
-typedef service_nnptr_t<service_base> service_nnptr;
 		
 //! Base class for all service classes.\n
 //! Provides interfaces for reference counter and querying for different interfaces supported by the object.\n
 class NOVTABLE service_base
 {
 public:	
-	//! Decrements reference count; deletes the object if reference count reaches zero. This is normally not called directly but managed by service_ptr_t<> template. \n
-	//! Implemented by service_impl_* classes.
+	//! Decrements reference count; deletes the object if reference count reaches zero. This is normally not called directly but managed by @c service_ptr_t<> template. \n
+	//! Implemented by @c service_impl_* classes.
 	//! @returns New reference count. For debug purposes only, in certain conditions return values may be unreliable.
 	virtual int service_release() noexcept = 0;
-	//! Increments reference count. This is normally not called directly but managed by service_ptr_t<> template. \n
-	//! Implemented by service_impl_* classes.
+	//! Increments reference count. This is normally not called directly but managed by @c service_ptr_t<> template. \n
+	//! Implemented by @c service_impl_* classes.
 	//! @returns New reference count. For debug purposes only, in certain conditions return values may be unreliable.
 	virtual int service_add_ref() noexcept = 0;
-	//! Queries whether the object supports specific interface and retrieves a pointer to that interface. This is normally not called directly but managed by service_query_t<> function template. \n
-	//! Checks the parameter against GUIDs of interfaces supported by this object, if the GUID is one of supported interfaces, p_out is set to service_base pointer that can be static_cast<>'ed to queried interface and the method returns true; otherwise the method returns false. \n
-	//! Implemented by service_impl_* classes. \n
-	//! Note that service_query() implementation semantics (but not usage semantics) changed in SDK for foobar2000 1.4; they used to be auto-implemented by each service interface (via FB2K_MAKE_SERVICE_INTERFACE macro); they're now implemented in service_impl_* instead. See SDK readme for more details. \n
+	//! Queries whether the object supports specific interface and retrieves a pointer to that interface. This is normally not called directly but managed by @c service_query_t<> function template. \n
+	//! Checks the parameter against GUIDs of interfaces supported by this object, if the GUID is one of supported interfaces, @c p_out is set to @c service_base pointer that can be @c static_cast<>'ed to queried interface and the method returns true; otherwise the method returns false. \n
+	//! Implemented by @c service_impl_* classes. \n
+	//! Note that @c service_query() implementation semantics (but not usage semantics) changed in SDK for foobar2000 1.4; they used to be auto-implemented by each service interface (via @c FB2K_MAKE_SERVICE_INTERFACE macro); they're now implemented in @c service_impl_* instead. See SDK readme for more details. \n
 	virtual bool service_query(service_ptr & p_out,const GUID & p_guid) = 0;
 
 	//! Queries whether the object supports specific interface and retrieves a pointer to that interface.
@@ -414,8 +325,8 @@ public:
 		pfc::assert_same_type<T,typename T::t_interface>();
 		return service_query( *reinterpret_cast<service_ptr_t<service_base>*>(&p_out),T::class_guid);
 	}
-	//! New shortened version, same as service_query_t.
-	template<typename outPtr_t> 
+	//! New shortened version, same as @c service_query_t.
+	template<typename outPtr_t>
 	bool cast( outPtr_t & outPtr ) { return service_query_t( outPtr ); }
 
 	typedef service_base t_interface;
@@ -473,7 +384,7 @@ public:
 
 	inline static bool is_service_present(const GUID & g) {return enum_get_count(enum_find_class(g))>0;}
 
-	//! Throws std::bad_alloc or another exception on failure.
+	//! Throws @c std::bad_alloc or another exception on failure.
 	virtual void instance_create(service_ptr_t<service_base> & p_out) = 0;
 
 	//! FOR INTERNAL USE ONLY
@@ -623,10 +534,10 @@ inline bool static_api_test_t() {
 #define FB2K_API_AVAILABLE(API) static_api_test_t<API>()
 
 //! Helper template used to easily access core services. \n
-//! Usage: static_api_ptr_t<myclass> api; api->dosomething(); \n
-//! Can be used at any point of code, WITH EXCEPTION of static objects that are initialized during the DLL loading process before the service system is initialized; such as static static_api_ptr_t objects or having static_api_ptr_t instances as members of statically created objects. \n
-//! Throws exception_service_not_found if service could not be reached (which can be ignored for core APIs that are always present unless there is some kind of bug in the code). \n
-//! This class is provided for backwards compatibility. The recommended way to do this stuff is now someclass::get() / someclass::tryGet().
+//! Usage: `static_api_ptr_t<myclass> api; api->dosomething();` \n
+//! Can be used at any point of code, WITH EXCEPTION of static objects that are initialized during the DLL loading process before the service system is initialized; such as `static static_api_ptr_t` objects or having @c static_api_ptr_t instances as members of statically created objects. \n
+//! Throws @c exception_service_not_found if service could not be reached (which can be ignored for core APIs that are always present unless there is some kind of bug in the code). \n
+//! This class is provided for backwards compatibility. The recommended way to do this stuff is now @c someclass::get() / @c someclass::tryGet().
 template<typename t_interface>
 class static_api_ptr_t {
 private:
@@ -726,7 +637,7 @@ private:
 namespace fb2k {
 	//! Modern get-std-api helper. \n
 	//! Does not throw exceptions, crashes on failure. \n
-	//! If failure is possible, use std_api_try_get() instead and handle false return value.
+	//! If failure is possible, use @c std_api_try_get() instead and handle false return value.
 	template<typename api_t>
 	service_ptr_t<api_t> std_api_get() {
 		typedef typename api_t::t_interface_entrypoint entrypoint_t;
@@ -790,7 +701,7 @@ public:
 	inline const T& get_static_instance() const { return g_instance; }
 };
 
-//! Alternate service_factory_single, shared instance created on first access and never deallocated. \n
+//! Alternate @c service_factory_single, shared instance created on first access and never deallocated. \n
 //! Addresses the problem of dangling references to our object getting invoked or plainly de-refcounted during late shutdown.
 template<typename T>
 class service_factory_single_v2_t : public service_factory_base_t<typename T::t_interface_entrypoint> {
@@ -852,3 +763,17 @@ public:
 
 
 #define FB2K_FOR_EACH_SERVICE(type, call) for( auto obj : type::enumerate() ) { obj->call; }
+
+namespace fb2k {
+	template<typename t_interface>
+	std::vector<service_ptr_t<t_interface>> all_of() {
+		std::vector<service_ptr_t<t_interface>> ret;
+		service_class_helper_t<t_interface> obj;
+		const auto total = obj.get_count();
+		ret.resize(total);
+		for (size_t walk = 0; walk < total; ++walk) ret[walk] = obj.create(walk);
+		return ret;
+	}
+
+    inline auto wrap_service_ptr(auto * arg) { return service_ptr_t(arg); }
+}

@@ -2,9 +2,11 @@
 // MainWindowInternal.h — 拆分 TU 共享的非成员辅助函数声明
 // 仅供 MainWindow*.cpp 内部使用，请勿从 src/window/ 外部包含
 
+#include <cstdint>
 #include <string>
 #include <windows.h>
 #include <dwmapi.h>
+#include <nlohmann/json.hpp>
 
 namespace mainwindow_detail {
 
@@ -35,8 +37,16 @@ void S_EmitEvidenceLine(const std::string& line);
 bool        S_IsPluginManagedBackdropEffect(const std::string& effect);
 std::string S_GetUserBackdropEffectString();
 
-// -- Resource paths --
-std::wstring GetComponentDirectory();
-std::wstring GetFrontendResourcesDir();
+// -- Diagnostics formatting --
+std::string S_FormatNativeRect(const RECT& rect);
+const char* S_GetSizingEdgeName(WPARAM edge);
+std::string S_FormatWindowPosFlags(UINT flags);
+std::string S_FormatHex32(uint32_t value);
+std::string S_FormatDomRect(const nlohmann::json& rect);
+std::string S_TruncateUtf8(const std::string& value, size_t maxLength);
+bool        S_ParseExecuteScriptPayload(const std::wstring& resultJson, nlohmann::json& out);
+
+// -- Startup probe --
+void S_LogStartupProbeIdentity(const char* phase, HWND hwnd);
 
 } // namespace mainwindow_detail

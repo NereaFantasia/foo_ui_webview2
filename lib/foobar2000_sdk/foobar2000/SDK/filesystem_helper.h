@@ -42,6 +42,11 @@ namespace foobar2000_io {
 
 pfc::string8 file_path_canonical(const char* src);
 pfc::string8 file_path_display(const char* src);
+pfc::string8 file_path_native(const char* src, abort_callback & = fb2k::noAbort);
+
+// Alternate display path formatting for library/search folders
+// Shows relative paths as such
+pfc::string8 folder_path_display(const char* src);
 
 namespace fb2k {
     //! Sane replacement for pfc::string_filename_ext(), which isn't safe to use in cross-platform code.
@@ -269,6 +274,10 @@ public:
 		else m_stream.read_lendian_t(p_out,m_abort);
 	}
 
+	bool try_read_raw(void* ptr, size_t bytes) {
+		return m_stream.read(ptr, bytes, m_abort) == bytes;
+	}
+
 	void read_raw(void * p_buffer,t_size p_bytes) {
 		m_stream.read_object(p_buffer,p_bytes,m_abort);
 	}
@@ -284,8 +293,10 @@ public:
 		t_uint32 size; read_int(size); data.set_size(size);
 		read_raw(data);
 	}
-	template<typename TArray> void read_array(TArray & data) {
-		t_uint32 size; *this >> size; data.set_size(size);
+	template<typename TArray> void read_array(TArray & data, uint32_t sanity = UINT32_MAX) {
+		t_uint32 size; *this >> size; 
+		if (size > sanity) throw exception_io_data();
+		data.set_size(size);
 		for(t_uint32 walk = 0; walk < size; ++walk) *this >> data[walk];
 	}
 	void read_string_nullterm( pfc::string_base & ret ) {

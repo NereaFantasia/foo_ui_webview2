@@ -169,6 +169,7 @@ namespace PaintUtils {
 			}
 		}
 		void DrawTrack2(HDC p_dc, const CRect& rcTrack, const CRect& rcUpdate, COLORREF clrHighlight, COLORREF clrShadow) {
+			(void)rcUpdate;
 			CRect rc(*rcTrack);
 #if 1
 			CDCHandle dc(p_dc);
@@ -196,14 +197,15 @@ namespace PaintUtils {
 				eh << graphics.DrawLine(&penHL, points[1], points[2]);
 				eh << graphics.DrawLine(&penSH, points[2], points[3]);
 				eh << graphics.DrawLine(&penSH, points[3], points[0]);
-			} catch (std::exception const& e) {
-				(void)e;
+			} catch ([[maybe_unused]] std::exception const& e) {
+
 				PFC_ASSERT(!"???");
 				// console::print(e.what());
 			}
 #endif
 		}
 		void DrawTrackVolume2(HDC p_dc, const CRect& rcTrack, const CRect& rcUpdate, COLORREF clrHighlight, COLORREF clrShadow) {
+			(void)rcUpdate;
 			CRect rc(rcTrack);
 
 			try {
@@ -222,8 +224,7 @@ namespace PaintUtils {
 				eh << graphics.DrawLine(&penHL, points[0], points[1]);
 				eh << graphics.DrawLine(&penHL, points[1], points[2]);
 				eh << graphics.DrawLine(&penSH, points[2], points[0] + Gdiplus::Point(0, -1));
-			} catch (std::exception const& e) {
-				(void)e;
+			} catch ([[maybe_unused]] std::exception const& e) {
 				PFC_ASSERT(!"???");
 				// console::print(e.what());
 			}
@@ -413,21 +414,25 @@ namespace PaintUtils {
 		}
 	}
 	
-	pfc::string TextOutColors_ImportScript(pfc::string script) {
-		pfc::string_formatter temp; TextOutColors_ImportScript(temp, script.ptr()); return temp.get_ptr();
+	pfc::string TextOutColors_ImportScript(const char *script) {
+		pfc::string_formatter temp; TextOutColors_ImportScript(temp, script); return temp.get_ptr();
 	}
 	void TextOutColors_ImportScript(pfc::string_base & out, const char * in) {
 		out.reset();
+		bool inQuote = false;
 		for(;;) {
 			t_size delta; t_uint32 c;
 			delta = pfc::utf8_decode_char(in, c);
 			if (delta == 0) break;
 			switch(c) {
 				case '>':
-					c = PaintUtils::TextOutColors_Highlight;
+					if(!inQuote) c = PaintUtils::TextOutColors_Highlight;
 					break;
 				case '<':
-					c = PaintUtils::TextOutColors_Dim;
+					if (!inQuote) c = PaintUtils::TextOutColors_Dim;
+					break;
+				case '\'':
+					inQuote = !inQuote; // NOTE no need for special handling of double quotation mark here
 					break;
 			}
 			out.add_char(c);

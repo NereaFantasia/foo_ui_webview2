@@ -25,15 +25,27 @@ void AdvanceDeadline(ScheduleState& state, Clock::time_point now, Clock::duratio
     }
 }
 
+// bins 不看 bands 与 scale：SDK 与旧调用方照样会带 bands，拿它分组会让同一配置白算几遍
+ComputeGroup MakeGroup(int fftSize, const ScheduleParams& params) {
+    if (params.output == SpectrumOutput::Bins) {
+        return {fftSize, 0, SpectrumScale::Db, params.minFrequency, params.maxFrequency,
+                SpectrumOutput::Bins, params.channels};
+    }
+    return {fftSize, params.bands, params.scale, params.minFrequency, params.maxFrequency,
+            SpectrumOutput::Bands, SpectrumChannels::Mix};
+}
+
 int FindOrAddGroup(std::vector<ComputeGroup>& groups, int fftSize, const ScheduleParams& params) {
+    const ComputeGroup wanted = MakeGroup(fftSize, params);
     for (size_t i = 0; i < groups.size(); ++i) {
         const ComputeGroup& g = groups[i];
-        if (g.fftSize == fftSize && g.bands == params.bands && g.scale == params.scale &&
-            g.minFrequency == params.minFrequency && g.maxFrequency == params.maxFrequency) {
+        if (g.fftSize == wanted.fftSize && g.bands == wanted.bands && g.scale == wanted.scale &&
+            g.minFrequency == wanted.minFrequency && g.maxFrequency == wanted.maxFrequency &&
+            g.output == wanted.output && g.channels == wanted.channels) {
             return static_cast<int>(i);
         }
     }
-    groups.push_back({fftSize, params.bands, params.scale, params.minFrequency, params.maxFrequency});
+    groups.push_back(wanted);
     return static_cast<int>(groups.size() - 1);
 }
 
@@ -54,6 +66,11 @@ int EffectiveFftSize(int requested, int bands, int maxFftSize) {
         minFft = 4096;
     }
     return std::min(std::max(requested, minFft), maxFftSize);
+}
+
+int EffectiveFftSize(int requested, int bands, SpectrumOutput output, int maxFftSize) {
+    if (output == SpectrumOutput::Bins) return std::min(requested, maxFftSize);
+    return EffectiveFftSize(requested, bands, maxFftSize);
 }
 
 TickPlan PlanTick(const TickInput& in, const std::vector<ScheduleEntry>& entries) {
@@ -94,7 +111,7 @@ TickPlan PlanTick(const TickInput& in, const std::vector<ScheduleEntry>& entries
             continue;
         }
 
-        const int fftSize = EffectiveFftSize(params.fftSize, params.bands, in.maxFftSize);
+        const int fftSize = EffectiveFftSize(params.fftSize, params.bands, params.output, in.maxFftSize);
         const int group = FindOrAddGroup(plan.groups, fftSize, params);
         plan.frames.push_back({params.subscriptionId, false, group, in.playback, true});
     }

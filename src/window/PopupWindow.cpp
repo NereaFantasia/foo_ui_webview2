@@ -1,15 +1,18 @@
 ﻿#include "pch.h"
 #include "window/PopupWindow.h"
 #include "window/MenuOverlayHost.h"
+#include "window/WindowBehaviorTrace.h"
 #include "window/WindowChromeResolver.h"
 #include "window/WindowChromeTrace.h"
 #include "window/WindowManager.h"
 #include "core/WebViewContext.h"
-#include "core/PreferencesPage.h"
-#include "core/SecurityConfig.h"
+#include "prefs/PreferencesPage.h"
+#include "settings/SecurityConfig.h"
 #include "webview/WebViewHost.h"
 #include "api/AudioApi.h"
 #include "api/BridgeCore.h"
+#include "api/EventEmit.h"
+#include "api/generated/WindowSchema.h"
 #include "api/FileApi.h"
 #include "api/HttpApi.h"
 #include "api/MetadataApi.h"
@@ -455,11 +458,10 @@ LRESULT CALLBACK PopupWindow::WindowProc(HWND hwnd, UINT msg, WPARAM wParam, LPA
 
 LRESULT PopupWindow::HandleMessage(UINT msg, WPARAM wParam, LPARAM lParam) {
     if (msg == WM_SYSCOMMAND && resolvedBehavior_.keepVisibleOnShowDesktop && (wParam & 0xFFF0) == SC_MINIMIZE) {
-        json data = {
-            {"windowId", GetWindowId()},
-            {"reason", "policy.keepVisibleOnShowDesktop"}
-        };
-        WebViewContext::GetInstance().BroadcastEvent("window:minimizeSuppressed", data);
+        api::window::MinimizeSuppressedPayload payload;
+        payload.windowId = GetWindowId();
+        payload.reason = "policy.keepVisibleOnShowDesktop";
+        api::emit::Broadcast<api::window::events::MinimizeSuppressed>(payload);
         return 0;
     }
 
@@ -847,6 +849,7 @@ LRESULT PopupWindow::HandleMessage(UINT msg, WPARAM wParam, LPARAM lParam) {
             // WebView2 Composition 模式要求: 父窗口位置变化时通知控制器，
             // 否则 WebView2 内部输入窗口不跟随移动，产生「幽灵窗口」阻断桌面交互。
             if (webView_ && webView_->GetController()) {
+                window_behavior_trace::Com(hwnd_, "controller.NotifyParentWindowPositionChanged");
                 webView_->GetController()->NotifyParentWindowPositionChanged();
             }
             break;
@@ -997,11 +1000,10 @@ LRESULT PopupWindow::HandleMessage(UINT msg, WPARAM wParam, LPARAM lParam) {
                     bool hovering = PtInRect(&rc, cursor) != FALSE;
                     if (hovering != wasHovering_) {
                         wasHovering_ = hovering;
-                        json data = {
-                            {"windowId", GetWindowId()},
-                            {"hovering", hovering}
-                        };
-                        WebViewContext::GetInstance().BroadcastEvent("window:hoverStateChanged", data);
+                        api::window::HoverStateChangedPayload payload;
+                        payload.windowId = GetWindowId();
+                        payload.hovering = hovering;
+                        api::emit::Broadcast<api::window::events::HoverStateChanged>(payload);
                     }
                     // 刷新 exclude region 有效穿透
                     UpdateClickThroughEffective();
@@ -1373,8 +1375,9 @@ void PopupWindow::OnClose() {
     
     // 通知前端窗口即将关闭
     if (bridge_) {
-        json data = {{"windowId", GetWindowId()}};
-        bridge_->EmitEvent("window:beforeClose", data);
+        api::window::BeforeClosePayload payload;
+        payload.windowId = GetWindowId();
+        api::emit::Emit<api::window::events::BeforeClose>(*bridge_, payload);
     }
     
     // 启动超时计时器
@@ -1575,20 +1578,22 @@ void PopupWindow::OnDestroy() {
     // 取消该窗口所有未完成的异步 HTTP 请求，释放并发槽位
     CancelAllHttpRequestsForWindow(GetWindowId());
 
-    // 同理取消该窗口发起的未完成文件操作、元数据探测与整轨波形请求：worker 每条之间
+    // 同理取消该窗口发起的未完成文件操作、元数据探测、整轨波形与 PCM 解码请求：worker 每条之间
     // 查一次 token，不取消就会把整个队列跑完，还把结果发往这个正在销毁的窗口。
     CancelAllFileOpsForWindow(GetWindowId());
     CancelAllProbesForWindow(GetWindowId());
     CancelAllWaveformTasksForWindow(GetWindowId());
+    CancelAllPcmForWindow(GetWindowId());
 
     // 销毁 WebView（基类方法）
     chromeBackdropBroadcastReady_ = false;
     DestroyWebView();
     
     // 广播关闭事件
-    json data = {{"windowId", GetWindowId()}};
     if (!suppressLifecycleBroadcast_) {
-        WebViewContext::GetInstance().BroadcastEvent("window:popupClosed", data);
+        api::window::PopupClosedPayload payload;
+        payload.windowId = GetWindowId();
+        api::emit::Broadcast<api::window::events::PopupClosed>(payload);
     }
     
     // 从 WindowManager 注销（异步，避免在 WndProc 中锁死）
@@ -1731,11 +1736,10 @@ void PopupWindow::SetClickThrough(bool enabled) {
             // 停止计时器，通知前端 hover 结束
             wasHovering_ = false;
             KillTimer(hwnd_, HOVER_TIMER_ID);
-            json data = {
-                {"windowId", GetWindowId()},
-                {"hovering", false}
-            };
-            WebViewContext::GetInstance().BroadcastEvent("window:hoverStateChanged", data);
+            api::window::HoverStateChangedPayload payload;
+            payload.windowId = GetWindowId();
+            payload.hovering = false;
+            api::emit::Broadcast<api::window::events::HoverStateChanged>(payload);
         }
     }
 }
@@ -1891,6 +1895,23 @@ void PopupWindow::ApplyFramelessState(bool frameless) {
     RedrawWindow(hwnd_, nullptr, nullptr, RDW_INVALIDATE | RDW_UPDATENOW | RDW_FRAME);
 }
 
+// createParams_.url 是否按原样直通（http、https、file、data），不拼到模板或开发服务器下面。
+static bool IsAbsolutePageUrl(const std::string& url) {
+    const auto startsWithCI = [&url](const char* prefix) {
+        const size_t len = std::strlen(prefix);
+        return url.size() >= len && _strnicmp(url.c_str(), prefix, len) == 0;
+    };
+    return startsWithCI("http://") || startsWithCI("https://") || startsWithCI("file:///") ||
+           startsWithCI("data:");
+}
+
+// 开发服务器开着且填了地址；只开不填时与主窗口一样按本地模板加载。
+static bool HasDevServerUrl() {
+    if (!security_config::UseDevServer()) return false;
+    const char* devServerUrl = security_config::GetDevServerUrl();
+    return devServerUrl && devServerUrl[0];
+}
+
 // ============================================
 // WebView 就绪回调
 // ============================================
@@ -1927,30 +1948,13 @@ void PopupWindow::OnWebViewReady() {
     chromeBackdropBroadcastReady_ = true;
     ApplyResolvedChrome(true);
     
-    // 导航到带 windowId/route 参数的目标 URL（仅一次导航）
-    std::wstring url = BuildNavigationUrl();
-    if (!url.empty()) {
-        // 生产模式需要设置虚拟主机映射
-        if (!security_config::UseDevServer()) {
-            std::wstring resourcesDir = GetFrontendResourcesDir();
-            if (!resourcesDir.empty()) {
-                SetupVirtualHostMapping(resourcesDir);
-            }
-        }
-        // 当 popup 直接指向第三方 http(s) URL 时, 必须把该 origin 登记进
-        // WebViewHost 的可信集合, 否则 IsOriginAllowed 会静默 block 来自
-        // 该页面的所有 invoke 请求, 表现为 30s 超时.
-        // BuildNavigationUrl 已对 createParams_.url 做了协议识别和参数拼接,
-        // 这里直接用最终 URL 抽取 origin 即可 (NormalizeToOrigin 内部会丢
-        // path/query/fragment, 重复登记会去重).
-        if (webView_) {
-            webView_->AddTrustedOrigin(url);
-        }
-        console::printf("[PopupWindow] Navigating to: %s",
-                       pfc::stringcvt::string_utf8_from_wide(url.c_str()).get_ptr());
-        Navigate(url);
+    // 导航到带 windowId/route 参数的目标 URL（仅一次导航）。开发服务器连不上时，
+    // HandleNavigationCompleted 经 LoadFallbackFrontendPage 改由本地模板提供同一个页面，与主窗口一致。
+    const bool viaDevServer = !IsAbsolutePageUrl(createParams_.url) && HasDevServerUrl();
+    if (NavigateToPage(viaDevServer) && viaDevServer) {
+        devServerNavPending_ = true;
     }
-    
+
     // 注册 SelectionWatcher
     SelectionWatcher::GetInstance().RegisterPanel(this);
     
@@ -1960,13 +1964,12 @@ void PopupWindow::OnWebViewReady() {
     OnSize(rect.right, rect.bottom);
     
     // 广播弹出窗口已创建事件
-    json data = {
-        {"windowId", GetWindowId()},
-        {"title", createParams_.title},
-        {"url", createParams_.url}
-    };
     if (!suppressLifecycleBroadcast_) {
-        WebViewContext::GetInstance().BroadcastEvent("window:popupOpened", data);
+        api::window::PopupOpenedPayload payload;
+        payload.windowId = GetWindowId();
+        payload.title = createParams_.title;
+        payload.url = createParams_.url;
+        api::emit::Broadcast<api::window::events::PopupOpened>(payload);
     }
 }
 
@@ -2688,24 +2691,20 @@ void PopupWindow::EmitActivationEvidence(const char* phase, const std::string& e
 }
 
 void PopupWindow::BroadcastBehaviorChanged() const {
-    json data = {
-        {"windowId", GetWindowId()},
-        {"profile", profile_},
-        {"behavior", behaviorOverrides_},
-        {"resolvedBehavior", BuildResolvedBehaviorJson()}
-    };
-    WebViewContext::GetInstance().BroadcastEvent("window:behaviorChanged", data);
+    api::window::BehaviorChangedPayload payload;
+    payload.windowId = GetWindowId();
+    FillPopupBehavior(payload);
+    api::emit::Broadcast<api::window::events::BehaviorChanged>(payload);
 }
 
 void PopupWindow::BroadcastBackdropStateChanged(bool active, const std::string& mode,
                                                 const std::string& effect) const {
-    json data = {
-        {"windowId", GetWindowId()},
-        {"active", active},
-        {"mode", mode},
-        {"effect", effect}
-    };
-    WebViewContext::GetInstance().BroadcastEvent("window:backdropStateChanged", data);
+    api::window::BackdropStateChangedPayload payload;
+    payload.windowId = GetWindowId();
+    payload.active = active;
+    payload.mode = mode;
+    payload.effect = effect;
+    api::emit::Broadcast<api::window::events::BackdropStateChanged>(payload);
 }
 
 json PopupWindow::BuildResolvedBehaviorJson() const {
@@ -2757,7 +2756,7 @@ bool PopupWindow::UpdatePopupBehavior(const std::string& profile, bool hasProfil
     if (hasProfile) {
         std::string normalized = NormalizeProfile(profile);
         if (normalized.empty()) {
-            error = "Invalid profile, expected 'standard' or 'miniPlayer'";
+            error = "Invalid profile, expected 'standard', 'miniPlayer' or 'desktopLyrics'";
             return false;
         }
         hasProfile_ = true;
@@ -2806,19 +2805,54 @@ bool PopupWindow::UpdateBackdropPolicy(const json& backdropPolicyPatch, std::str
 // URL 构建
 // ============================================
 
-std::wstring PopupWindow::BuildNavigationUrl() const {
+bool PopupWindow::NavigateToPage(bool viaDevServer) {
+    FrontendOrigin origin;
+    if (IsAbsolutePageUrl(createParams_.url)) {
+        origin.kind = FrontendOrigin::Kind::Url;
+    } else if (viaDevServer) {
+        origin.kind = FrontendOrigin::Kind::DevServer;
+    } else {
+        // 没有可加载的模板目录时显示内置页面，与 WebViewPanel::LoadFallbackFrontendPage 的末级一致。
+        const auto resolution = ResolveFrontendDirectory();
+        if (resolution.source == frontend_directory_policy::Source::None ||
+            !SetupVirtualHostMapping(resolution.directory)) {
+            if (!NavigateToString(GetTestPageHtml())) return false;
+            frontendOrigin_ = FrontendOrigin{};
+            frontendOrigin_.kind = FrontendOrigin::Kind::BuiltInPage;
+            return true;
+        }
+        origin = LocalFrontendOrigin(resolution);
+    }
+
+    const std::wstring url = BuildNavigationUrl(viaDevServer);
+    if (origin.kind != FrontendOrigin::Kind::Directory) origin.url = url;
+    // 开发服务器总是登记；绝对地址只在打开者已信任它的来源时登记，否则页面照常显示但调用不了桥。
+    // 本地模板走内置虚拟主机，不用登记。
+    const bool trust = origin.kind == FrontendOrigin::Kind::DevServer ||
+                       (origin.kind == FrontendOrigin::Kind::Url && createParams_.trustAbsoluteUrl);
+    if (trust && webView_) {
+        webView_->AddTrustedOrigin(url);
+    }
+    console::printf("[PopupWindow] Navigating to: %s",
+                   pfc::stringcvt::string_utf8_from_wide(url.c_str()).get_ptr());
+    if (!Navigate(url)) return false;
+    frontendOrigin_ = std::move(origin);
+    return true;
+}
+
+// 开发服务器导航失败后的回退：同一个弹窗页面改由本地模板提供，保留 windowId 与 route。
+bool PopupWindow::LoadFallbackFrontendPage() {
+    return NavigateToPage(false);
+}
+
+std::wstring PopupWindow::BuildNavigationUrl(bool viaDevServer) const {
     std::string windowId = GetWindowId();
     std::string urlParam = createParams_.url;
 
     // 绝对 URL 直通（http/https/file/data）— 只追加 windowId query param
-    auto startsWithCI = [](const std::string& s, const char* prefix) {
-        size_t len = std::strlen(prefix);
-        return s.size() >= len && _strnicmp(s.c_str(), prefix, len) == 0;
-    };
-    if (startsWithCI(urlParam, "http://") || startsWithCI(urlParam, "https://") ||
-        startsWithCI(urlParam, "file:///") || startsWithCI(urlParam, "data:")) {
+    if (IsAbsolutePageUrl(urlParam)) {
         // data: URI 不追加 query param（格式不支持）
-        if (startsWithCI(urlParam, "data:")) {
+        if (urlParam.size() >= 5 && _strnicmp(urlParam.c_str(), "data:", 5) == 0) {
             return pfc::stringcvt::string_wide_from_utf8(urlParam.c_str()).get_ptr();
         }
         char separator = (urlParam.find('?') != std::string::npos) ? '&' : '?';
@@ -2826,9 +2860,7 @@ std::wstring PopupWindow::BuildNavigationUrl() const {
         return pfc::stringcvt::string_wide_from_utf8(url.c_str()).get_ptr();
     }
 
-    // 合并开发模式两层判断为一层 guard
-    const char* devServerUrl = security_config::UseDevServer()
-        ? security_config::GetDevServerUrl() : nullptr;
+    const char* devServerUrl = viaDevServer ? security_config::GetDevServerUrl() : nullptr;
 
     if (devServerUrl && devServerUrl[0]) {
         std::string url(devServerUrl);
@@ -2956,18 +2988,15 @@ void PopupWindow::NotifyFullscreenChanged(bool isFullscreen) {
     // 重新解析 chrome state 并应用（fullscreen 状态影响 WindowChromeResolver 路径选择）
     ApplyResolvedChrome(true);
     // 广播 window:stateChanged 事件通知前端
-    json stateData = {
-        {"isMaximized",  isMaximized_},
-        {"isMinimized",  isMinimized_},
-        {"maximized",    isMaximized_},
-        {"minimized",    isMinimized_},
-        {"isActive",     isActive_},
-        {"active",       isActive_},
-        {"isFullscreen", isFullscreen},
-        {"fullscreen",   isFullscreen}
-    };
     if (bridge_) {
-        WebViewContext::GetInstance().BroadcastEvent("window:stateChanged", stateData);
+        api::window::StateChangedPayload state;
+        // 带上本 popup 的 windowId，别的窗口的页面据此忽略它
+        state.windowId = GetWindowId();
+        state.isMaximized = state.maximized = isMaximized_;
+        state.isMinimized = state.minimized = isMinimized_;
+        state.isActive = state.active = isActive_;
+        state.isFullscreen = state.fullscreen = isFullscreen;
+        api::emit::Broadcast<api::window::events::StateChanged>(state);
     }
 }
 

@@ -155,10 +155,12 @@ void AppendRunBody(std::string& out, size_t start, size_t count, const std::stri
 
 }  // namespace
 
-void WriteGroupRunsJson(std::string& out, size_t playlist, size_t total,
+void WriteGroupRunsJson(std::string& out, size_t playlist, std::string_view playlistGuid, size_t total,
                         const GroupRunAccumulator& acc) {
     out.append("{\"success\":true,\"playlist\":");
     JsonWriter::AppendJsonInt(out, static_cast<int64_t>(playlist));
+    out.append(",\"playlistGuid\":");
+    JsonWriter::AppendJsonString(out, playlistGuid);
     out.append(",\"total\":");
     JsonWriter::AppendJsonInt(out, static_cast<int64_t>(total));
     out.append(",\"runs\":[");

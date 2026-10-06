@@ -45,7 +45,7 @@ WebViewPanel (core/)
 | 配置弹窗 | `notify` 收到编辑请求 → `ShowConfigDialog()` | `have_config_popup()` + `show_config_popup()` |
 | 编辑模式 | 有 DUI 编辑模式占位绘制 | 无（CUI 无等价编辑态） |
 | 尺寸约束 | `get_min_max_info()` | 由宿主 `window_position_t` 决定 |
-| 依赖 SDK | foobar2000 SDK | Columns UI SDK（`ui_extension.h`，git submodule） |
+| 依赖 SDK | foobar2000 SDK | Columns UI SDK（`ui_extension.h`，不入库，`build.ps1` 克隆到 `lib/columns_ui-sdk`） |
 
 两者最终都落到同一个 `PanelConfig` 与同一个 `WebViewPanel` 基类，差异被收敛在「协议适配 + 序列化格式」这一薄层。
 

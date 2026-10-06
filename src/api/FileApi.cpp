@@ -1,5 +1,9 @@
 ﻿// FileApi.cpp - File System API
 // Provides safe file read/write operations within allowed directories
+//
+// Shapes are declared in src/api/schema/file.ts; the parameter structs, the
+// parameter reader and the result structs come from the generated
+// FileSchema.h, and the path security levels from its kPathParams.
 
 #include "pch.h"
 #include "api/FileApi.h"
@@ -7,23 +11,34 @@
 #include "api/BridgeCore.h"
 #include "api/CallerContext.h"
 #include "api/ErrorEnvelope.h"
+#include "api/EventEmit.h"
+#include "api/TypedApi.h"
+#include "api/generated/FileSchema.h"
 #include "utils/PathExpansion.h"
 // PathSecurity validation is now handled by BridgeCore decorator
 #include <atomic>
 #include <condition_variable>
 #include <cstddef>
 #include <cstdint>
+#include <cstdlib>
 #include <fstream>
+#include <optional>
 #include <random>
 #include <sstream>
 #include <filesystem>
+#include <format>
+#include <string_view>
 #include <system_error>
+#include <variant>
 #include <ShlObj.h>
 
 namespace fs = std::filesystem;
 
 namespace {
     using json = nlohmann::json;
+    // 别名不叫 file / fs：foobar2000 SDK 的 foobar2000_io::file 经 using 进了全局，
+    // fs 已是 std::filesystem。
+    namespace fileapi = api::file;
     
     //==========================================================================
     // Path helpers — 委托给共享 PathExpansion 模块
@@ -46,39 +61,63 @@ namespace {
         return {{"value", e.code().value()}};
     }
 
+    // foobar2000.exe 没有声明长路径支持，本进程的 Win32 文件调用受 MAX_PATH 限制，完整路径
+    // 最多 259 个字符。超出时系统报 ERROR_PATH_NOT_FOUND，与真的不存在分不开，fs::exists
+    // 还会把存在的文件答成不存在，所以先按完整路径的长度拦下，明细给 ERROR_FILENAME_EXCED_RANGE。
+    // 新建文件夹的上限是 247 个字符，那里系统自己就报 ERROR_FILENAME_EXCED_RANGE，不另拦。
+    constexpr size_t kMaxPathChars = MAX_PATH - 1;
+
+    bool ExceedsMaxPath(const fs::path& path) {
+        std::error_code ec;
+        const fs::path full = fs::absolute(path, ec);
+        return (ec ? path : full).native().size() > kMaxPathChars;
+    }
+
+    std::optional<api::Failure> PathTooLong(const fs::path& path, std::string_view what = "path") {
+        if (!ExceedsMaxPath(path)) return std::nullopt;
+        return api::Fail(std::format("{} is longer than {} characters", what, kMaxPathChars),
+                         ApiErrorCode::OPERATION_FAILED,
+                         {{"details", json{{"value", static_cast<int>(ERROR_FILENAME_EXCED_RANGE)}}}});
+    }
+
+    // 文件流打不开时，CRT 把 CreateFileW 的错误号留在 _doserrno。调用方打开前清零、失败后
+    // 读出；非零才放进明细，与 FsErrorDetails 同形。
+    api::Failure OpenFailure(const char* message, unsigned long osError) {
+        if (osError == 0) return api::Fail(message, ApiErrorCode::OPERATION_FAILED);
+        return api::Fail(message, ApiErrorCode::OPERATION_FAILED,
+                         {{"details", json{{"value", static_cast<int>(osError)}}}});
+    }
+
     //==========================================================================
     // file.read - Read file content
     // 安全: 使用统一 PathSecurity 验证
     //==========================================================================
-    json FileRead(const json& params) {
-        std::string pathStr = params.value("path", "");
-        std::string encoding = params.value("encoding", "utf-8");
-        
-        if (pathStr.empty()) {
-            return ApiEnvelope::MakeError("path is required", ApiErrorCode::REQUIRED_PARAM);
-        }
+    api::Result<fileapi::ReadResult> FileRead(const fileapi::ReadParams& p) {
+        const std::string& encoding = p.encoding;
 
         try {
-            std::wstring path = ExpandPathVariables(pathStr);
+            std::wstring path = ExpandPathVariables(p.path);
+            if (auto tooLong = PathTooLong(path)) return std::move(*tooLong);
 
             if (!fs::exists(path)) {
-                return ApiEnvelope::MakeError("File not found", ApiErrorCode::NOT_FOUND);
+                return api::Fail("File not found", ApiErrorCode::NOT_FOUND);
             }
 
             if (!fs::is_regular_file(path)) {
-                return ApiEnvelope::MakeError("Path is not a file", ApiErrorCode::INVALID_PATH);
+                return api::Fail("Path is not a file", ApiErrorCode::INVALID_PATH);
             }
 
             // Read file
             std::ifstream file;
+            _doserrno = 0;
             if (encoding == "binary") {
                 file.open(path, std::ios::binary);
             } else {
                 file.open(path, std::ios::in);
             }
-            
+
             if (!file.is_open()) {
-                return ApiEnvelope::MakeError("Failed to open file", ApiErrorCode::OPERATION_FAILED);
+                return OpenFailure("Failed to open file", _doserrno);
             }
 
             std::stringstream buffer;
@@ -88,6 +127,9 @@ namespace {
             
             // Get file size
             auto fileSize = fs::file_size(path);
+
+            fileapi::ReadResult result;
+            result.size = static_cast<std::int64_t>(fileSize);
             
             if (encoding == "binary") {
                 // Return base64 encoded for binary
@@ -126,24 +168,18 @@ namespace {
                         base64 += '=';
                 }
                 
-                return {
-                    {"success", true},
-                    {"content", base64},
-                    {"size", fileSize},
-                    {"encoding", "base64"}
-                };
+                result.content = std::move(base64);
+                result.encoding = "base64";
+                return result;
             }
             
-            return {
-                {"success", true},
-                {"content", content},
-                {"size", fileSize}
-            };
+            result.content = std::move(content);
+            return result;
         } catch (const fs::filesystem_error& e) {
-            return ApiEnvelope::MakeError("read failed", ApiErrorCode::OPERATION_FAILED,
-                                          FsErrorDetails(e));
+            return api::Fail("read failed", ApiErrorCode::OPERATION_FAILED,
+                             {{"details", FsErrorDetails(e)}});
         } catch (const std::exception&) {
-            return ApiEnvelope::MakeError("read failed", ApiErrorCode::OPERATION_FAILED);
+            return api::Fail("read failed", ApiErrorCode::OPERATION_FAILED);
         }
     }
 
@@ -151,18 +187,128 @@ namespace {
     // file.write - Write content to file
     // 安全: 使用更严格的写入权限验证
     //==========================================================================
-    json FileWrite(const json& params) {
-        std::string pathStr = params.value("path", "");
-        std::string content = params.value("content", "");
-        std::string encoding = params.value("encoding", "utf-8");
-        bool append = params.value("append", false);
+
+    // 解码 file.write 的 `base64:` 载荷：字母表以外的字符跳过，遇到第一个 `=` 停止。
+    std::string DecodeWireBase64(const std::string& base64) {
+        static const std::string base64_chars = 
+            "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
         
-        if (pathStr.empty()) {
-            return ApiEnvelope::MakeError("path is required", ApiErrorCode::REQUIRED_PARAM);
+        auto is_base64 = [](unsigned char c) -> bool {
+            return (isalnum(c) || (c == '+') || (c == '/'));
+        };
+        
+        std::string decoded;
+        int i = 0;
+        unsigned char char_array_4[4], char_array_3[3];
+        
+        for (char c : base64) {
+            if (c == '=') break;
+            if (!is_base64(c)) continue;
+            
+            char_array_4[i++] = c;
+            if (i == 4) {
+                for (i = 0; i < 4; i++)
+                    char_array_4[i] = static_cast<unsigned char>(base64_chars.find(char_array_4[i]));
+                char_array_3[0] = (char_array_4[0] << 2) + ((char_array_4[1] & 0x30) >> 4);
+                char_array_3[1] = ((char_array_4[1] & 0xf) << 4) + ((char_array_4[2] & 0x3c) >> 2);
+                char_array_3[2] = ((char_array_4[2] & 0x3) << 6) + char_array_4[3];
+                for (i = 0; i < 3; i++)
+                    decoded += char_array_3[i];
+                i = 0;
+            }
+        }
+        
+        if (i) {
+            for (int j = i; j < 4; j++)
+                char_array_4[j] = 0;
+            for (int j = 0; j < 4; j++)
+                char_array_4[j] = static_cast<unsigned char>(base64_chars.find(char_array_4[j]));
+            char_array_3[0] = (char_array_4[0] << 2) + ((char_array_4[1] & 0x30) >> 4);
+            char_array_3[1] = ((char_array_4[1] & 0xf) << 4) + ((char_array_4[2] & 0x3c) >> 2);
+            for (int j = 0; j < i - 1; j++)
+                decoded += char_array_3[j];
+        }
+        return decoded;
+    }
+
+    // 普通写入与原子写入共用：两者写出的字节必须一致，原子写入只改变落盘方式。
+    void WriteContent(std::ofstream& file, const std::string& content, const std::string& encoding) {
+        if (encoding == "binary" && content.starts_with("base64:")) {
+            const std::string decoded = DecodeWireBase64(content.substr(7));
+            file.write(decoded.data(), static_cast<std::streamsize>(decoded.size()));
+        } else {
+            file << content;
+        }
+    }
+
+    // 原子写入的临时文件与目标同目录，替换才是同一卷上的一次改名。名字只由进程号与序号
+    // 组成，不带目标文件名：进程没有声明长路径支持，整条路径受 MAX_PATH 限制，临时名
+    // 不随目标文件名变长，目标路径能写的，临时路径通常也写得下。
+    fs::path AtomicTempPathFor(const fs::path& target) {
+        static std::atomic<std::uint32_t> sequence{0};
+        const std::wstring name = L".~" + std::to_wstring(GetCurrentProcessId()) + L"-" +
+                                  std::to_wstring(sequence.fetch_add(1, std::memory_order_relaxed)) + L".tmp";
+        return target.parent_path() / name;
+    }
+
+    // ofstream 关闭只把数据交给系统缓存。替换前不先落盘的话，断电后可能留下
+    // 已经改了名、内容却不完整的目标。返回 Win32 错误号，成功时为 ERROR_SUCCESS。
+    DWORD FlushToDisk(const fs::path& file) {
+        HANDLE handle = CreateFileW(file.c_str(), GENERIC_WRITE, FILE_SHARE_READ, nullptr,
+                                    OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+        if (handle == INVALID_HANDLE_VALUE) return GetLastError();
+        const DWORD error = FlushFileBuffers(handle) ? ERROR_SUCCESS : GetLastError();
+        CloseHandle(handle);
+        return error;
+    }
+
+    // 写临时文件、落盘、一次改名替换 target。任何一步失败都删掉临时文件，
+    // target 保持原样；失败明细与 FsErrorDetails 同形，只给 Win32 错误号。
+    std::optional<api::Failure> WriteAtomically(const fs::path& target, std::ios_base::openmode mode,
+                                                const std::string& content, const std::string& encoding) {
+        // target 是解析掉链接之后的位置，可能比页面传来的路径长，两条都要量。
+        if (auto tooLong = PathTooLong(target)) return tooLong;
+        const fs::path temp = AtomicTempPathFor(target);
+        if (auto tooLong = PathTooLong(temp, "temporary file path")) return tooLong;
+        const auto failWith = [&temp](DWORD error) {
+            DeleteFileW(temp.c_str());
+            return api::Fail("write failed", ApiErrorCode::OPERATION_FAILED,
+                             {{"details", json{{"value", static_cast<int>(error)}}}});
+        };
+
+        {
+            _doserrno = 0;
+            std::ofstream file(temp, mode);
+            if (!file.is_open()) {
+                return OpenFailure("Failed to open file for writing", _doserrno);
+            }
+            WriteContent(file, content, encoding);
+            file.close();
+            if (file.fail()) {
+                DeleteFileW(temp.c_str());
+                return api::Fail("write failed", ApiErrorCode::OPERATION_FAILED);
+            }
+        }
+
+        if (const DWORD error = FlushToDisk(temp); error != ERROR_SUCCESS) return failWith(error);
+        if (!MoveFileExW(temp.c_str(), target.c_str(), MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH)) {
+            return failWith(GetLastError());
+        }
+        return std::nullopt;
+    }
+
+    api::Result<fileapi::WriteResult> FileWrite(const fileapi::WriteParams& p) {
+        const std::string& content = p.content;
+        const std::string& encoding = p.encoding;
+        const bool append = p.append;
+
+        if (p.atomic && append) {
+            return api::Fail("atomic cannot be combined with append", ApiErrorCode::INVALID_PARAMS);
         }
 
         try {
-            std::wstring path = ExpandPathVariables(pathStr);
+            std::wstring path = ExpandPathVariables(p.path);
+            if (auto tooLong = PathTooLong(path)) return std::move(*tooLong);
 
             // Ensure parent directory exists
             fs::path filePath(path);
@@ -182,212 +328,152 @@ namespace {
                 mode |= std::ios::trunc;
             }
             
-            std::ofstream file(path, mode);
-            if (!file.is_open()) {
-                return ApiEnvelope::MakeError("Failed to open file for writing",
-                                              ApiErrorCode::OPERATION_FAILED);
-            }
-            
-            // Write content
-            if (encoding == "binary" && content.starts_with("base64:")) {
-                // Decode base64
-                std::string base64 = content.substr(7);
-                static const std::string base64_chars = 
-                    "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-                
-                auto is_base64 = [](unsigned char c) -> bool {
-                    return (isalnum(c) || (c == '+') || (c == '/'));
-                };
-                
-                std::string decoded;
-                int i = 0;
-                unsigned char char_array_4[4], char_array_3[3];
-                
-                for (char c : base64) {
-                    if (c == '=') break;
-                    if (!is_base64(c)) continue;
-                    
-                    char_array_4[i++] = c;
-                    if (i == 4) {
-                        for (i = 0; i < 4; i++)
-                            char_array_4[i] = static_cast<unsigned char>(base64_chars.find(char_array_4[i]));
-                        char_array_3[0] = (char_array_4[0] << 2) + ((char_array_4[1] & 0x30) >> 4);
-                        char_array_3[1] = ((char_array_4[1] & 0xf) << 4) + ((char_array_4[2] & 0x3c) >> 2);
-                        char_array_3[2] = ((char_array_4[2] & 0x3) << 6) + char_array_4[3];
-                        for (i = 0; i < 3; i++)
-                            decoded += char_array_3[i];
-                        i = 0;
-                    }
-                }
-                
-                if (i) {
-                    for (int j = i; j < 4; j++)
-                        char_array_4[j] = 0;
-                    for (int j = 0; j < 4; j++)
-                        char_array_4[j] = static_cast<unsigned char>(base64_chars.find(char_array_4[j]));
-                    char_array_3[0] = (char_array_4[0] << 2) + ((char_array_4[1] & 0x30) >> 4);
-                    char_array_3[1] = ((char_array_4[1] & 0xf) << 4) + ((char_array_4[2] & 0x3c) >> 2);
-                    for (int j = 0; j < i - 1; j++)
-                        decoded += char_array_3[j];
-                }
-                
-                file.write(decoded.data(), decoded.size());
+            if (p.atomic) {
+                // 路径校验（PathSecurity::ValidateFileWriteAccess）按解析掉符号链接与目录联接之后的
+                // 位置放行，临时文件和替换也要落在那里，不能落在链接所在的目录。
+                const fs::path target = fs::weakly_canonical(filePath);
+                if (auto failure = WriteAtomically(target, mode, content, encoding)) return std::move(*failure);
             } else {
-                file << content;
+                _doserrno = 0;
+                std::ofstream file(path, mode);
+                if (!file.is_open()) {
+                    return OpenFailure("Failed to open file for writing", _doserrno);
+                }
+                WriteContent(file, content, encoding);
+                file.close();
             }
-            
-            file.close();
             
             // Get written size
             auto writtenSize = fs::file_size(path);
             
-            return {
-                {"success", true},
-                {"bytesWritten", writtenSize}
-            };
+            fileapi::WriteResult result;
+            result.bytesWritten = static_cast<std::int64_t>(writtenSize);
+            return result;
         } catch (const fs::filesystem_error& e) {
-            return ApiEnvelope::MakeError("write failed", ApiErrorCode::OPERATION_FAILED,
-                                          FsErrorDetails(e));
+            return api::Fail("write failed", ApiErrorCode::OPERATION_FAILED,
+                             {{"details", FsErrorDetails(e)}});
         } catch (const std::exception&) {
-            return ApiEnvelope::MakeError("write failed", ApiErrorCode::OPERATION_FAILED);
+            return api::Fail("write failed", ApiErrorCode::OPERATION_FAILED);
         }
     }
 
     //==========================================================================
     // file.exists - Check if file or directory exists
     //==========================================================================
-    json FileExists(const json& params) {
-        std::string pathStr = params.value("path", "");
-
-        if (pathStr.empty()) {
-            return ApiEnvelope::MakeError("path is required", ApiErrorCode::REQUIRED_PARAM);
-        }
-
+    api::Result<fileapi::ExistsResult> FileExists(const fileapi::ExistsParams& p) {
         try {
-            std::wstring path = ExpandPathVariables(pathStr);
+            std::wstring path = ExpandPathVariables(p.path);
+            if (auto tooLong = PathTooLong(path)) return std::move(*tooLong);
 
             bool exists = fs::exists(path);
             bool isFile = exists && fs::is_regular_file(path);
             bool isDirectory = exists && fs::is_directory(path);
 
-            return {
-                {"exists", exists},
-                {"isFile", isFile},
-                {"isDirectory", isDirectory}
-            };
+            fileapi::ExistsResult result;
+            result.exists = exists;
+            result.isFile = isFile;
+            result.isDirectory = isDirectory;
+            return result;
         } catch (const fs::filesystem_error& e) {
-            return ApiEnvelope::MakeError("exists check failed", ApiErrorCode::OPERATION_FAILED,
-                                          FsErrorDetails(e));
+            return api::Fail("exists check failed", ApiErrorCode::OPERATION_FAILED,
+                             {{"details", FsErrorDetails(e)}});
         } catch (const std::exception&) {
-            return ApiEnvelope::MakeError("exists check failed", ApiErrorCode::OPERATION_FAILED);
+            return api::Fail("exists check failed", ApiErrorCode::OPERATION_FAILED);
         }
     }
     
+    // Simple wildcard matching for file.list. `*` and `*.*` match everything,
+    // `*.ext` compares extensions case-insensitively (no match without a dot),
+    // and every other pattern matches everything too; that last rule is a
+    // pinned behaviour (e2e A-09), not an oversight to tighten here.
+    bool MatchListPattern(const std::wstring& wpattern, const std::wstring& name) {
+        if (wpattern == L"*" || wpattern == L"*.*") return true;
+
+        // Simple extension matching like *.txt
+        if (wpattern.length() > 2 && wpattern[0] == L'*' && wpattern[1] == L'.') {
+            std::wstring ext = wpattern.substr(1);
+            size_t dotPos = name.rfind(L'.');
+            if (dotPos != std::wstring::npos) {
+                std::wstring nameExt = name.substr(dotPos);
+                // Case-insensitive comparison
+                std::wstring lowerExt = ext;
+                std::wstring lowerNameExt = nameExt;
+                std::transform(lowerExt.begin(), lowerExt.end(), lowerExt.begin(), ::towlower);
+                std::transform(lowerNameExt.begin(), lowerNameExt.end(), lowerNameExt.begin(), ::towlower);
+                return lowerExt == lowerNameExt;
+            }
+            return false;
+        }
+
+        return true;
+    }
+
     //==========================================================================
     // file.list - List directory contents
     //==========================================================================
-    json FileList(const json& params) {
-        std::string pathStr = params.value("path", "");
-        std::string pattern = params.value("pattern", "*");
-        bool recursive = params.value("recursive", false);
-        
-        if (pathStr.empty()) {
-            return ApiEnvelope::MakeError("path is required", ApiErrorCode::REQUIRED_PARAM);
-        }
-
+    api::Result<fileapi::ListResult> FileList(const fileapi::ListParams& p) {
         try {
-            std::wstring path = ExpandPathVariables(pathStr);
+            std::wstring path = ExpandPathVariables(p.path);
+            if (auto tooLong = PathTooLong(path)) return std::move(*tooLong);
 
             if (!fs::exists(path)) {
-                return ApiEnvelope::MakeError("Directory not found", ApiErrorCode::NOT_FOUND);
+                return api::Fail("Directory not found", ApiErrorCode::NOT_FOUND);
             }
 
             if (!fs::is_directory(path)) {
-                return ApiEnvelope::MakeError("Path is not a directory", ApiErrorCode::INVALID_PATH);
+                return api::Fail("Path is not a directory", ApiErrorCode::INVALID_PATH);
             }
 
-            json files = json::array();
-            json directories = json::array();
+            fileapi::ListResult result;
             
             // Convert pattern to wstring for matching
-            std::wstring wpattern = Utf8ToWide(pattern);
-            
-            // Simple wildcard matching
-            auto matchPattern = [&wpattern](const std::wstring& name) -> bool {
-                if (wpattern == L"*" || wpattern == L"*.*") return true;
-                
-                // Simple extension matching like *.txt
-                if (wpattern.length() > 2 && wpattern[0] == L'*' && wpattern[1] == L'.') {
-                    std::wstring ext = wpattern.substr(1);
-                    size_t dotPos = name.rfind(L'.');
-                    if (dotPos != std::wstring::npos) {
-                        std::wstring nameExt = name.substr(dotPos);
-                        // Case-insensitive comparison
-                        std::wstring lowerExt = ext;
-                        std::wstring lowerNameExt = nameExt;
-                        std::transform(lowerExt.begin(), lowerExt.end(), lowerExt.begin(), ::towlower);
-                        std::transform(lowerNameExt.begin(), lowerNameExt.end(), lowerNameExt.begin(), ::towlower);
-                        return lowerExt == lowerNameExt;
-                    }
-                    return false;
-                }
-                
-                return true;
-            };
-            
-            if (recursive) {
+            const std::wstring wpattern = Utf8ToWide(p.pattern);
+
+            if (p.recursive) {
                 for (const auto& entry : fs::recursive_directory_iterator(path)) {
                     std::wstring name = entry.path().filename().wstring();
-                    if (entry.is_regular_file() && matchPattern(name)) {
-                        files.push_back(WideToUtf8(entry.path().wstring()));
+                    if (entry.is_regular_file() && MatchListPattern(wpattern, name)) {
+                        result.files.push_back(WideToUtf8(entry.path().wstring()));
                     } else if (entry.is_directory()) {
-                        directories.push_back(WideToUtf8(entry.path().wstring()));
+                        result.directories.push_back(WideToUtf8(entry.path().wstring()));
                     }
                 }
             } else {
                 for (const auto& entry : fs::directory_iterator(path)) {
                     std::wstring name = entry.path().filename().wstring();
-                    if (entry.is_regular_file() && matchPattern(name)) {
-                        files.push_back(WideToUtf8(name));
+                    if (entry.is_regular_file() && MatchListPattern(wpattern, name)) {
+                        result.files.push_back(WideToUtf8(name));
                     } else if (entry.is_directory()) {
-                        directories.push_back(WideToUtf8(name));
+                        result.directories.push_back(WideToUtf8(name));
                     }
                 }
             }
             
-            return {
-                {"success", true},
-                {"files", files},
-                {"directories", directories},
-                {"items", files}  // alias for test compatibility
-            };
+            // items is kept as an alias of files: the SMP compatibility layer
+            // (Glob / ListFiles) reads it.
+            result.items = result.files;
+            return result;
         } catch (const fs::filesystem_error& e) {
-            return ApiEnvelope::MakeError("list failed", ApiErrorCode::OPERATION_FAILED,
-                                          FsErrorDetails(e));
+            return api::Fail("list failed", ApiErrorCode::OPERATION_FAILED,
+                             {{"details", FsErrorDetails(e)}});
         } catch (const std::exception&) {
-            return ApiEnvelope::MakeError("list failed", ApiErrorCode::OPERATION_FAILED);
+            return api::Fail("list failed", ApiErrorCode::OPERATION_FAILED);
         }
     }
 
     //==========================================================================
     // file.delete - Delete a file
     //==========================================================================
-    json FileDelete(const json& params) {
-        std::string pathStr = params.value("path", "");
-        bool moveToTrash = params.value("moveToTrash", true);
-
-        if (pathStr.empty()) {
-            return ApiEnvelope::MakeError("path is required", ApiErrorCode::REQUIRED_PARAM);
-        }
-
+    api::Result<void> FileDelete(const fileapi::DeleteParams& p) {
         try {
-            std::wstring path = ExpandPathVariables(pathStr);
+            std::wstring path = ExpandPathVariables(p.path);
+            if (auto tooLong = PathTooLong(path)) return std::move(*tooLong);
 
             if (!fs::exists(path)) {
-                return ApiEnvelope::MakeError("File not found", ApiErrorCode::NOT_FOUND);
+                return api::Fail("File not found", ApiErrorCode::NOT_FOUND);
             }
 
-            if (moveToTrash) {
+            if (p.moveToTrash) {
                 // Use SHFileOperation to move to recycle bin
                 std::wstring pathDoubleNull = path + L'\0';  // Double null terminated
                 SHFILEOPSTRUCTW fileOp = {};
@@ -397,83 +483,66 @@ namespace {
                 
                 int result = SHFileOperationW(&fileOp);
                 if (result != 0) {
-                    return ApiEnvelope::MakeError("Failed to move to recycle bin",
-                                                  ApiErrorCode::OPERATION_FAILED);
+                    return api::Fail("Failed to move to recycle bin", ApiErrorCode::OPERATION_FAILED);
                 }
             } else {
                 fs::remove(path);
             }
 
-            return {{"success", true}};
+            return api::Ok();
         } catch (const fs::filesystem_error& e) {
-            return ApiEnvelope::MakeError("delete failed", ApiErrorCode::OPERATION_FAILED,
-                                          FsErrorDetails(e));
+            return api::Fail("delete failed", ApiErrorCode::OPERATION_FAILED,
+                             {{"details", FsErrorDetails(e)}});
         } catch (const std::exception&) {
-            return ApiEnvelope::MakeError("delete failed", ApiErrorCode::OPERATION_FAILED);
+            return api::Fail("delete failed", ApiErrorCode::OPERATION_FAILED);
         }
     }
 
     //==========================================================================
     // file.mkdir - Create directory
     //==========================================================================
-    json FileMkdir(const json& params) {
-        std::string pathStr = params.value("path", "");
-
-        if (pathStr.empty()) {
-            return ApiEnvelope::MakeError("path is required", ApiErrorCode::REQUIRED_PARAM);
-        }
-
+    api::Result<fileapi::MkdirResult> FileMkdir(const fileapi::MkdirParams& p) {
         try {
-            std::wstring path = ExpandPathVariables(pathStr);
+            std::wstring path = ExpandPathVariables(p.path);
+            if (auto tooLong = PathTooLong(path)) return std::move(*tooLong);
 
+            fileapi::MkdirResult result;
             if (fs::exists(path)) {
                 if (fs::is_directory(path)) {
-                    return {{"success", true}, {"created", false}, {"message", "Directory already exists"}};
+                    result.created = false;
+                    result.message = "Directory already exists";
+                    return result;
                 } else {
-                    return ApiEnvelope::MakeError("Path exists but is not a directory",
-                                                  ApiErrorCode::INVALID_PATH);
+                    return api::Fail("Path exists but is not a directory", ApiErrorCode::INVALID_PATH);
                 }
             }
 
-            bool created = fs::create_directories(path);
-
-            return {
-                {"success", true},
-                {"created", created}
-            };
+            result.created = fs::create_directories(path);
+            return result;
         } catch (const fs::filesystem_error& e) {
-            return ApiEnvelope::MakeError("mkdir failed", ApiErrorCode::OPERATION_FAILED,
-                                          FsErrorDetails(e));
+            return api::Fail("mkdir failed", ApiErrorCode::OPERATION_FAILED,
+                             {{"details", FsErrorDetails(e)}});
         } catch (const std::exception&) {
-            return ApiEnvelope::MakeError("mkdir failed", ApiErrorCode::OPERATION_FAILED);
+            return api::Fail("mkdir failed", ApiErrorCode::OPERATION_FAILED);
         }
     }
 
     //==========================================================================
     // file.copy - Copy file or directory
     //==========================================================================
-    json FileCopy(const json& params) {
-        std::string srcStr = params.value("source", "");
-        std::string destStr = params.value("destination", "");
-        bool overwrite = params.value("overwrite", false);
-
-        if (srcStr.empty()) {
-            return ApiEnvelope::MakeError("source is required", ApiErrorCode::REQUIRED_PARAM);
-        }
-        if (destStr.empty()) {
-            return ApiEnvelope::MakeError("destination is required", ApiErrorCode::REQUIRED_PARAM);
-        }
-
+    api::Result<fileapi::CopyResult> FileCopy(const fileapi::CopyParams& p) {
         try {
-            std::wstring srcPath = ExpandPathVariables(srcStr);
-            std::wstring destPath = ExpandPathVariables(destStr);
+            std::wstring srcPath = ExpandPathVariables(p.source);
+            std::wstring destPath = ExpandPathVariables(p.destination);
+            if (auto tooLong = PathTooLong(srcPath)) return std::move(*tooLong);
+            if (auto tooLong = PathTooLong(destPath)) return std::move(*tooLong);
 
             if (!fs::exists(srcPath)) {
-                return ApiEnvelope::MakeError("Source does not exist", ApiErrorCode::NOT_FOUND);
+                return api::Fail("Source does not exist", ApiErrorCode::NOT_FOUND);
             }
 
             auto copyOptions = fs::copy_options::recursive;
-            if (overwrite) {
+            if (p.overwrite) {
                 copyOptions |= fs::copy_options::overwrite_existing;
             } else {
                 copyOptions |= fs::copy_options::skip_existing;
@@ -481,134 +550,110 @@ namespace {
 
             fs::copy(srcPath, destPath, copyOptions);
 
-            return {
-                {"success", true},
-                {"source", srcStr},
-                {"destination", destStr}
-            };
+            fileapi::CopyResult result;
+            result.source = p.source;
+            result.destination = p.destination;
+            return result;
         } catch (const fs::filesystem_error& e) {
-            return ApiEnvelope::MakeError("copy failed", ApiErrorCode::OPERATION_FAILED,
-                                          FsErrorDetails(e));
+            return api::Fail("copy failed", ApiErrorCode::OPERATION_FAILED,
+                             {{"details", FsErrorDetails(e)}});
         } catch (const std::exception&) {
-            return ApiEnvelope::MakeError("copy failed", ApiErrorCode::OPERATION_FAILED);
+            return api::Fail("copy failed", ApiErrorCode::OPERATION_FAILED);
         }
     }
 
     //==========================================================================
     // file.move - Move file or directory
     //==========================================================================
-    json FileMove(const json& params) {
-        std::string srcStr = params.value("source", "");
-        std::string destStr = params.value("destination", "");
-
-        if (srcStr.empty()) {
-            return ApiEnvelope::MakeError("source is required", ApiErrorCode::REQUIRED_PARAM);
-        }
-        if (destStr.empty()) {
-            return ApiEnvelope::MakeError("destination is required", ApiErrorCode::REQUIRED_PARAM);
-        }
-
+    api::Result<fileapi::MoveResult> FileMove(const fileapi::MoveParams& p) {
         try {
-            std::wstring srcPath = ExpandPathVariables(srcStr);
-            std::wstring destPath = ExpandPathVariables(destStr);
+            std::wstring srcPath = ExpandPathVariables(p.source);
+            std::wstring destPath = ExpandPathVariables(p.destination);
+            if (auto tooLong = PathTooLong(srcPath)) return std::move(*tooLong);
+            if (auto tooLong = PathTooLong(destPath)) return std::move(*tooLong);
 
             if (!fs::exists(srcPath)) {
-                return ApiEnvelope::MakeError("Source does not exist", ApiErrorCode::NOT_FOUND);
+                return api::Fail("Source does not exist", ApiErrorCode::NOT_FOUND);
             }
 
             fs::rename(srcPath, destPath);
 
-            return {
-                {"success", true},
-                {"source", srcStr},
-                {"destination", destStr}
-            };
+            fileapi::MoveResult result;
+            result.source = p.source;
+            result.destination = p.destination;
+            return result;
         } catch (const fs::filesystem_error& e) {
             // Windows 的 ERROR_NOT_SAME_DEVICE 经 MSVC STL 的 _Winerror_map 映射为
             // cross_device_link；跨卷回退（复制后删除）由异步族另行立项。
             // 文件跨卷由 fs::rename 底层的 MOVEFILE_COPY_ALLOWED 静默降级为复制，
             // 不进此分支，所以这里能拿到的必然是目录。
             if (e.code() == std::errc::cross_device_link) {
-                return ApiEnvelope::MakeError(
-                    "move failed: cross-volume directory move is not supported",
-                    ApiErrorCode::NOT_SUPPORTED,
-                    {{"reason", "cross-volume"}});
+                return api::Fail("move failed: cross-volume directory move is not supported",
+                                 ApiErrorCode::NOT_SUPPORTED,
+                                 {{"details", json{{"reason", "cross-volume"}}}});
             }
-            return ApiEnvelope::MakeError("move failed", ApiErrorCode::OPERATION_FAILED,
-                                          FsErrorDetails(e));
+            return api::Fail("move failed", ApiErrorCode::OPERATION_FAILED,
+                             {{"details", FsErrorDetails(e)}});
         } catch (const std::exception&) {
-            return ApiEnvelope::MakeError("move failed", ApiErrorCode::OPERATION_FAILED);
+            return api::Fail("move failed", ApiErrorCode::OPERATION_FAILED);
         }
     }
 
     //==========================================================================
     // file.rename - Rename a file or directory
     //==========================================================================
-    json FileRename(const json& params) {
-        std::string pathStr = params.value("path", "");
-        std::string newName = params.value("newName", "");
-
-        if (pathStr.empty()) {
-            return ApiEnvelope::MakeError("path is required", ApiErrorCode::REQUIRED_PARAM);
-        }
-        if (newName.empty()) {
-            return ApiEnvelope::MakeError("newName is required", ApiErrorCode::REQUIRED_PARAM);
-        }
+    api::Result<fileapi::RenameResult> FileRename(const fileapi::RenameParams& p) {
+        const std::string& newName = p.newName;
 
         // Validate newName doesn't contain path separators
         if (newName.find('/') != std::string::npos || newName.find('\\') != std::string::npos) {
-            return ApiEnvelope::MakeError("newName cannot contain path separators",
-                                          ApiErrorCode::INVALID_PARAMS);
+            return api::Fail("newName cannot contain path separators", ApiErrorCode::INVALID_PARAMS);
         }
 
         try {
-            std::wstring srcPath = ExpandPathVariables(pathStr);
+            std::wstring srcPath = ExpandPathVariables(p.path);
+            if (auto tooLong = PathTooLong(srcPath)) return std::move(*tooLong);
 
             if (!fs::exists(srcPath)) {
-                return ApiEnvelope::MakeError("Path does not exist", ApiErrorCode::NOT_FOUND);
+                return api::Fail("Path does not exist", ApiErrorCode::NOT_FOUND);
             }
 
             fs::path src(srcPath);
             fs::path dest = src.parent_path() / Utf8ToWide(newName);
+            if (auto tooLong = PathTooLong(dest)) return std::move(*tooLong);
 
             if (fs::exists(dest)) {
-                return ApiEnvelope::MakeError("A file with the new name already exists",
-                                              ApiErrorCode::OPERATION_FAILED);
+                return api::Fail("A file with the new name already exists", ApiErrorCode::OPERATION_FAILED);
             }
 
             fs::rename(src, dest);
 
-            return {
-                {"success", true},
-                {"oldPath", pathStr},
-                {"newPath", WideToUtf8(dest.wstring())}
-            };
+            fileapi::RenameResult result;
+            result.oldPath = p.path;
+            result.newPath = WideToUtf8(dest.wstring());
+            return result;
         } catch (const fs::filesystem_error& e) {
-            return ApiEnvelope::MakeError("rename failed", ApiErrorCode::OPERATION_FAILED,
-                                          FsErrorDetails(e));
+            return api::Fail("rename failed", ApiErrorCode::OPERATION_FAILED,
+                             {{"details", FsErrorDetails(e)}});
         } catch (const std::exception&) {
-            return ApiEnvelope::MakeError("rename failed", ApiErrorCode::OPERATION_FAILED);
+            return api::Fail("rename failed", ApiErrorCode::OPERATION_FAILED);
         }
     }
 
     //==========================================================================
     // file.getInfo - Get file information
     //==========================================================================
-    json FileGetInfo(const json& params) {
-        std::string pathStr = params.value("path", "");
-
-        if (pathStr.empty()) {
-            return ApiEnvelope::MakeError("path is required", ApiErrorCode::REQUIRED_PARAM);
-        }
-
+    api::Result<fileapi::GetInfoResult> FileGetInfo(const fileapi::GetInfoParams& p) {
         try {
-            std::wstring path = ExpandPathVariables(pathStr);
+            std::wstring path = ExpandPathVariables(p.path);
+            if (auto tooLong = PathTooLong(path)) return std::move(*tooLong);
 
+            // A missing path answers { success, exists: false } and nothing
+            // else: every other field of the result stays unset.
+            fileapi::GetInfoResult result;
             if (!fs::exists(path)) {
-                return {
-                    {"success", true},
-                    {"exists", false}
-                };
+                result.exists = false;
+                return result;
             }
 
             bool isDir = fs::is_directory(path);
@@ -621,24 +666,22 @@ namespace {
             );
             auto time_t_val = std::chrono::system_clock::to_time_t(sctp);
 
-            fs::path p(path);
+            fs::path target(path);
 
-            return {
-                {"success", true},
-                {"exists", true},
-                {"isDirectory", isDir},
-                {"isFile", fs::is_regular_file(path)},
-                {"size", size},
-                {"modified", time_t_val * 1000}, // JavaScript timestamp (ms)
-                {"name", WideToUtf8(p.filename().wstring())},
-                {"extension", WideToUtf8(p.extension().wstring())},
-                {"parent", WideToUtf8(p.parent_path().wstring())}
-            };
+            result.exists = true;
+            result.isDirectory = isDir;
+            result.isFile = fs::is_regular_file(path);
+            result.size = static_cast<std::int64_t>(size);
+            result.modified = static_cast<std::int64_t>(time_t_val) * 1000; // JavaScript timestamp (ms)
+            result.name = WideToUtf8(target.filename().wstring());
+            result.extension = WideToUtf8(target.extension().wstring());
+            result.parent = WideToUtf8(target.parent_path().wstring());
+            return result;
         } catch (const fs::filesystem_error& e) {
-            return ApiEnvelope::MakeError("getInfo failed", ApiErrorCode::OPERATION_FAILED,
-                                          FsErrorDetails(e));
+            return api::Fail("getInfo failed", ApiErrorCode::OPERATION_FAILED,
+                             {{"details", FsErrorDetails(e)}});
         } catch (const std::exception&) {
-            return ApiEnvelope::MakeError("getInfo failed", ApiErrorCode::OPERATION_FAILED);
+            return api::Fail("getInfo failed", ApiErrorCode::OPERATION_FAILED);
         }
     }
 
@@ -663,13 +706,14 @@ namespace {
     // 回收站删除每批的条数上限。见 RunTrashItems 的说明。
     constexpr size_t kTrashBatchSize = 16;
 
-    // 逐条 result 的 reason 取值全集, 事件契约定死六个, 不得新增字面量。
+    // 逐条 result 的 reason 取值全集, 与 schema/file.ts 声明的七个一一对应, 不得新增字面量。
     // 下面所有比较都是指针比较: reason 只允许从这六个常量赋值, 每个常量都是
     // 同一个对象, 所以比较的是"来自哪一个常量"而不是字符串内容。
     constexpr const char* kReasonAlreadyExists = "already-exists";
     constexpr const char* kReasonNotFound      = "not-found";
     constexpr const char* kReasonPermission    = "permission";
     constexpr const char* kReasonCrossVolume   = "cross-volume";
+    constexpr const char* kReasonPathTooLong   = "path-too-long";
     constexpr const char* kReasonIoError       = "io-error";
     constexpr const char* kReasonCancelled     = "cancelled";
 
@@ -759,9 +803,19 @@ namespace {
                 return kReasonCancelled;
             case ERROR_NOT_SAME_DEVICE:
                 return kReasonCrossVolume;
+            // 新建超过 247 个字符的文件夹时系统报这个码；超过 259 个字符的文件路径报的是
+            // ERROR_PATH_NOT_FOUND，那一种由各原语事先量长度拦下。
+            case ERROR_FILENAME_EXCED_RANGE:
+                return kReasonPathTooLong;
             default:
                 return kReasonIoError;
         }
+    }
+
+    // 条目本身或展开出来的路径超过 MAX_PATH 时记 path-too-long。系统对这种路径报
+    // ERROR_PATH_NOT_FOUND，fs::exists 也答不存在，不先量就会被归成 not-found。
+    const char* PathLengthReason(const std::wstring& path) {
+        return ExceedsMaxPath(path) ? kReasonPathTooLong : nullptr;
     }
 
     // std::filesystem 给出的 error_code 分两种来源: Windows 上多数是
@@ -827,45 +881,48 @@ namespace {
     // 事件载荷
     //==========================================================================
 
-    // 载荷由具名函数构造, 不在 EmitEvent 调用点摊成 init-list: Graph 的
-    // cpp-parser 对这种形状把 payload_schema 记空, 由 sdk/src/types/overrides/
-    // events.ts 的 @codegen-override 供型 —— results[] 的元素形状不是
-    // extractor 能推出来的。同 MetadataApi.cpp 的 BuildProbeProgressPayload。
+    // 载荷形状由 src/api/schema/file.ts 的 Events 声明。
     //
     // results 里带路径是允许的: 它是功能数据, 且经 CallerContext 单窗口投递。
     // 错误信封与 console 日志里仍然一个路径都不许出现。
-    json FileOpResultToJson(const FileOpItemResult& result) {
-        json item = {{"source", result.source},
-                     {"status", FileOpStatusName(result.status)}};
+    fileapi::FileOpResultItem FileOpResultItemOf(const FileOpItemResult& result) {
+        fileapi::FileOpResultItem item;
+        item.source = result.source;
+        item.status = FileOpStatusName(result.status);
         if (!result.destination.empty()) {
-            item["destination"] = result.destination;
+            item.destination = result.destination;
         }
         if (result.reason) {
-            item["reason"] = result.reason;
+            item.reason = result.reason;
         }
         return item;
     }
 
-    json BuildFileOpProgressPayload(const std::string& operationId, const char* op,
-                                    size_t done, size_t total, const json& results) {
-        return {{"operationId", operationId},
-                {"op", op},
-                {"done", done},
-                {"total", total},
-                {"results", results}};
+    fileapi::OpProgressPayload BuildFileOpProgressPayload(const std::string& operationId, const char* op,
+                                                          size_t done, size_t total,
+                                                          std::vector<fileapi::FileOpResultItem> results) {
+        fileapi::OpProgressPayload payload;
+        payload.operationId = operationId;
+        payload.op = op;
+        payload.done = static_cast<std::int64_t>(done);
+        payload.total = static_cast<std::int64_t>(total);
+        payload.results = std::move(results);
+        return payload;
     }
 
-    json BuildFileOpCompletePayload(const std::string& operationId, const char* op,
-                                    size_t total, size_t successCount,
-                                    size_t skippedCount, size_t failureCount,
-                                    bool cancelled) {
-        return {{"operationId", operationId},
-                {"op", op},
-                {"total", total},
-                {"successCount", successCount},
-                {"skippedCount", skippedCount},
-                {"failureCount", failureCount},
-                {"cancelled", cancelled}};
+    fileapi::OpCompletePayload BuildFileOpCompletePayload(const std::string& operationId, const char* op,
+                                                          size_t total, size_t successCount,
+                                                          size_t skippedCount, size_t failureCount,
+                                                          bool cancelled) {
+        fileapi::OpCompletePayload payload;
+        payload.operationId = operationId;
+        payload.op = op;
+        payload.total = static_cast<std::int64_t>(total);
+        payload.successCount = static_cast<std::int64_t>(successCount);
+        payload.skippedCount = static_cast<std::int64_t>(skippedCount);
+        payload.failureCount = static_cast<std::int64_t>(failureCount);
+        payload.cancelled = cancelled;
+        return payload;
     }
 
     //==========================================================================
@@ -910,10 +967,7 @@ namespace {
 
     // 每次发射都必须包 fb2k::inMainThread: EmitEvent 最终落到 WebView2 COM
     // 对象 (STA / UI 线程绑定), 从 worker 直接调是跨 apartment 调用。
-    // 两个事件各写一个函数、事件名在 EmitEvent 调用点写字面量, 不合并成
-    // "事件名当参数"的单个发射器: Graph 的 cpp-parser 按调用点的字面量参数
-    // 识别事件, 名字一变成变量就只能靠 event-emit-manifest.json 手工登记。
-    void EmitFileOpProgress(const json& callerSeed, json payload) noexcept {
+    void EmitFileOpProgress(const json& callerSeed, fileapi::OpProgressPayload payload) noexcept {
         if (FileOpShuttingDown()) {
             return;
         }
@@ -921,7 +975,7 @@ namespace {
             fb2k::inMainThread([callerSeed, payload = std::move(payload)]() noexcept {
                 try {
                     auto caller = CallerContext::FromParams(callerSeed);
-                    caller.EmitEvent("file:opProgress", payload);
+                    api::emit::EmitTo<fileapi::events::OpProgress>(caller, payload);
                 } catch (...) {
                     // best-effort: 抛进 main-thread callback runner 会 terminate
                 }
@@ -930,7 +984,7 @@ namespace {
         }
     }
 
-    void EmitFileOpComplete(const json& callerSeed, json payload) noexcept {
+    void EmitFileOpComplete(const json& callerSeed, fileapi::OpCompletePayload payload) noexcept {
         if (FileOpShuttingDown()) {
             return;
         }
@@ -938,7 +992,7 @@ namespace {
             fb2k::inMainThread([callerSeed, payload = std::move(payload)]() noexcept {
                 try {
                     auto caller = CallerContext::FromParams(callerSeed);
-                    caller.EmitEvent("file:opComplete", payload);
+                    api::emit::EmitTo<fileapi::events::OpComplete>(caller, payload);
                 } catch (...) {
                     // 同上
                 }
@@ -965,17 +1019,22 @@ namespace {
     // 目标文件的父目录不存在时先建出来, 与同文件 FileWrite 建父目录的行为
     // 一致。父目录必然位于已通过 FileWrite 校验的 destination 之上同一分支,
     // 不构成越权写。
-    void EnsureParentDirectory(const std::wstring& target) {
+    // 建不出来时只报 path-too-long：其他失败留给随后的复制或移动报出真实原因，而文件夹
+    // 超长时随后的调用只会报 ERROR_PATH_NOT_FOUND。
+    const char* EnsureParentDirectory(const std::wstring& target) {
         std::error_code ec;
         const fs::path parent = fs::path(target).parent_path();
         if (!parent.empty()) {
             fs::create_directories(parent, ec);
         }
+        return (ec && ReasonFromErrorCode(ec) == kReasonPathTooLong) ? kReasonPathTooLong : nullptr;
     }
 
     // 复制一个文件。返回该条的 reason, nullptr 表示成功。
     const char* CopyOneFile(const std::wstring& from, const std::wstring& to,
                             bool overwrite, FileOpAbortToken& token) {
+        if (const char* reason = PathLengthReason(from)) return reason;
+        if (const char* reason = PathLengthReason(to)) return reason;
         const DWORD flags = overwrite ? 0u : static_cast<DWORD>(COPY_FILE_FAIL_IF_EXISTS);
         if (CopyFileExW(from.c_str(), to.c_str(), &FileOpCopyProgress, &token,
                         nullptr, flags)) {
@@ -1024,6 +1083,9 @@ namespace {
                 const fs::path target = fs::path(to) / entry.path().lexically_relative(from);
                 if (entry.is_directory(ec)) {
                     fs::create_directories(target, ec);
+                    if (ec && ReasonFromErrorCode(ec) == kReasonPathTooLong && !firstFailure) {
+                        firstFailure = kReasonPathTooLong;
+                    }
                     continue;
                 }
                 const char* reason =
@@ -1060,7 +1122,10 @@ namespace {
             ApplyReason(out, kReasonAlreadyExists);
             return out;
         }
-        EnsureParentDirectory(target);
+        if (const char* reason = EnsureParentDirectory(target)) {
+            ApplyReason(out, reason);
+            return out;
+        }
         ApplyReason(out, CopyOneFile(item.source, target, overwrite, token));
         return out;
     }
@@ -1105,11 +1170,18 @@ namespace {
         const bool sourceIsDir = fs::is_directory(item.source, ec);
         const std::wstring target =
             sourceIsDir ? item.destination : ResolveFileTarget(item.source, item.destination);
+        if (const char* reason = PathLengthReason(target)) {
+            ApplyReason(out, reason);
+            return out;
+        }
         if (!overwrite && fs::exists(target, ec)) {
             ApplyReason(out, kReasonAlreadyExists);
             return out;
         }
-        EnsureParentDirectory(target);
+        if (const char* reason = EnsureParentDirectory(target)) {
+            ApplyReason(out, reason);
+            return out;
+        }
         const DWORD flags = overwrite ? static_cast<DWORD>(MOVEFILE_REPLACE_EXISTING) : 0u;
         if (MoveFileExW(item.source.c_str(), target.c_str(), flags)) {
             ApplyReason(out, nullptr);
@@ -1185,8 +1257,13 @@ namespace {
             results.reserve(batch.size());
             for (const auto& item : batch) {
                 FileOpItemResult out{item.sourceEcho, std::string()};
-                ApplyReason(out, token->is_aborting() ? kReasonCancelled
-                                                      : DeleteOneToRecycleBin(item.source));
+                if (token->is_aborting()) {
+                    ApplyReason(out, kReasonCancelled);
+                } else if (const char* tooLong = PathLengthReason(item.source)) {
+                    ApplyReason(out, tooLong);
+                } else {
+                    ApplyReason(out, DeleteOneToRecycleBin(item.source));
+                }
                 results.push_back(std::move(out));
             }
         } catch (...) {
@@ -1269,7 +1346,7 @@ namespace {
         }
 
         void Add(const FileOpItemResult& result) {
-            pending_.push_back(FileOpResultToJson(result));
+            pending_.push_back(FileOpResultItemOf(result));
             ++done_;
             const int64_t now = FileOpNowMillis();
             if (scheduler_.ShouldFlush(pending_.size(), now)) {
@@ -1287,14 +1364,14 @@ namespace {
             EmitFileOpProgress(request_.callerSeed,
                                BuildFileOpProgressPayload(request_.operationId,
                                                           FileOpKindName(request_.kind), done_,
-                                                          request_.items.size(), pending_));
-            pending_ = json::array();
+                                                          request_.items.size(), std::move(pending_)));
+            pending_.clear();
         }
 
     private:
         const FileOpRequest& request_;
         fb2k_api::BatchEmitScheduler scheduler_;
-        json pending_ = json::array();
+        std::vector<fileapi::FileOpResultItem> pending_;
         size_t done_ = 0;
     };
 
@@ -1304,6 +1381,14 @@ namespace {
 
     FileOpItemResult RunOneItem(const FileOpRequest& request, const FileOpItem& item,
                                 FileOpAbortToken& token) {
+        const bool hasDestination = (request.kind != FileOpKind::Delete);
+        const char* tooLong = PathLengthReason(item.source);
+        if (!tooLong && hasDestination) tooLong = PathLengthReason(item.destination);
+        if (tooLong) {
+            FileOpItemResult out{item.sourceEcho, hasDestination ? item.destEcho : std::string()};
+            ApplyReason(out, tooLong);
+            return out;
+        }
         switch (request.kind) {
             case FileOpKind::Copy:   return RunCopyItem(item, request.overwrite, token);
             case FileOpKind::Move:   return RunMoveItem(item, request.overwrite, token);
@@ -1459,88 +1544,56 @@ namespace {
         bool armed_ = true;
     };
 
-    // 可选 bool 参数: key 缺省时取 fallback, key 在但类型不对时返回 nullopt。
-    // 不直接用 params.value("overwrite", false) 是因为它在类型不符时抛
-    // json type_error, 那会被 handler 的兜底 catch 变成 OPERATION_FAILED,
-    // 而形状错该回 INVALID_PARAMS。
-    std::optional<bool> ReadBoolFlag(const json& params, const char* key, bool fallback) {
-        if (!params.contains(key)) {
-            return fallback;
-        }
-        if (!params[key].is_boolean()) {
-            return std::nullopt;
-        }
-        return params[key].get<bool>();
-    }
-
-    // items 的逐条路径校验由三参 RegisterApi 的 wrapper 在 handler 之前跑完。
-    // copyAsync 在同一个 paramKey 上挂了两条 spec, wrapper 的 spec 循环对每条
-    // 各调一次 ValidatePathParam, 各自完整走一遍 items 数组
-    // (ValidateNestedArrayParam), 互不干扰: 缺 source 与缺 destination 各由
-    // 自己那条 spec 判成形状错。这里只补校验器故意跳过的一类 —— 数组元素
-    // 本身不是对象 (ValidateNestedArrayParam 遇到非对象元素直接 continue)。
-    //
-    // 返回值非空即为应当直接回给页面的错误信封。
-    std::optional<json> CollectCopyMoveItems(const json& params, std::vector<FileOpItem>& out) {
-        if (!params.contains("items") || !params["items"].is_array()) {
-            return ApiEnvelope::MakeError("items array is required", ApiErrorCode::INVALID_PARAMS);
-        }
-        const auto& items = params["items"];
-        if (items.empty()) {
-            return ApiEnvelope::MakeError("items array must not be empty",
-                                          ApiErrorCode::INVALID_PARAMS);
-        }
-        out.reserve(items.size());
-        for (const auto& entry : items) {
-            if (!entry.is_object() || !entry.contains("source") || !entry.contains("destination") ||
-                !entry["source"].is_string() || !entry["destination"].is_string()) {
-                return ApiEnvelope::MakeError("items[] requires string source and destination",
-                                              ApiErrorCode::INVALID_PARAMS);
-            }
+    // 条目形状 (items 是非空数组、每条是对象、带非空字符串 source / destination、
+    // 没有多余键; overwrite / moveToTrash 是布尔) 由生成的参数读取器在进入
+    // handler 之前查完。逐条路径校验更早, 由桥接层按声明里的 @pathKey 跑:
+    // source 那条在前、destination 那条在后, 各自完整走一遍 items
+    // (ValidateNestedArrayParam), 缺哪个成员就由哪条判成形状错; 空串在那里
+    // 就被判成 PERMISSION_DENIED。这里只做展开, 并把原值留作回显。
+    std::vector<FileOpItem> CollectCopyMoveItems(const std::vector<fileapi::FileOpEntry>& entries) {
+        std::vector<FileOpItem> out;
+        out.reserve(entries.size());
+        for (const auto& entry : entries) {
             FileOpItem item;
-            item.sourceEcho = entry["source"].get<std::string>();
-            item.destEcho = entry["destination"].get<std::string>();
-            if (item.sourceEcho.empty() || item.destEcho.empty()) {
-                return ApiEnvelope::MakeError("items[] source and destination must not be empty",
-                                              ApiErrorCode::INVALID_PARAMS);
-            }
+            item.sourceEcho = entry.source;
+            item.destEcho = entry.destination;
             item.source = ExpandPathVariables(item.sourceEcho);
             item.destination = ExpandPathVariables(item.destEcho);
             out.push_back(std::move(item));
         }
-        return std::nullopt;
+        return out;
     }
 
-    std::optional<json> CollectDeletePaths(const json& params, std::vector<FileOpItem>& out) {
-        if (!params.contains("paths") || !params["paths"].is_array()) {
-            return ApiEnvelope::MakeError("paths array is required", ApiErrorCode::INVALID_PARAMS);
-        }
-        const auto& paths = params["paths"];
-        if (paths.empty()) {
-            return ApiEnvelope::MakeError("paths array must not be empty",
-                                          ApiErrorCode::INVALID_PARAMS);
-        }
+    // paths 同理: 数组非空由读取器查, 元素是字符串与路径安全由桥接层的
+    // ValidateArrayParam 查。
+    std::vector<FileOpItem> CollectDeletePaths(const std::vector<std::string>& paths) {
+        std::vector<FileOpItem> out;
         out.reserve(paths.size());
         for (const auto& entry : paths) {
-            if (!entry.is_string() || entry.get<std::string>().empty()) {
-                return ApiEnvelope::MakeError("paths[] must be non-empty strings",
-                                              ApiErrorCode::INVALID_PARAMS);
-            }
             FileOpItem item;
-            item.sourceEcho = entry.get<std::string>();
+            item.sourceEcho = entry;
             item.source = ExpandPathVariables(item.sourceEcho);
             out.push_back(std::move(item));
         }
-        return std::nullopt;
+        return out;
     }
 
+    // 派工成功的收据。三个方法各有自己的 <Method>Result 类型 (声明里各自一个
+    // 接口), 所以 DispatchFileOp 只交出这份中间值, 由 ToReceipt 转成各自的结果。
+    struct DispatchOutcome {
+        std::string operationId;
+        size_t totalCount = 0;
+    };
+
+    using DispatchResult = std::variant<DispatchOutcome, api::Failure>;
+
     // 三个方法共同的尾段: 起 id、注册、派线程、回收据。
-    json DispatchFileOp(FileOpKind kind, const json& params, std::vector<FileOpItem> items,
-                        bool overwrite, bool moveToTrash) {
+    DispatchResult DispatchFileOp(FileOpKind kind, const CallerContext& caller,
+                                  std::vector<FileOpItem> items, bool overwrite,
+                                  bool moveToTrash) {
         // 页面可以无限次调这三个方法, 没有闸门就是"一次点击起一条线程"。
         if (GetFileOpRegistry().Size() >= kMaxConcurrentFileOps) {
-            return ApiEnvelope::MakeError("too many concurrent file operations",
-                                          ApiErrorCode::OPERATION_FAILED);
+            return api::Fail("too many concurrent file operations", ApiErrorCode::OPERATION_FAILED);
         }
         try {
             FileOpRequest request;
@@ -1548,12 +1601,14 @@ namespace {
             request.items = std::move(items);
             request.overwrite = overwrite;
             request.moveToTrash = moveToTrash;
-            // 事件路由上下文在主线程取, 但只把 _callerHwnd 的值带过去:
-            // CallerContext 持的是裸 BridgeCore*, 面板销毁后跨线程持有会悬垂,
-            // 所以发射前在主线程重新解析 (同 MetadataApi.cpp 的
-            // MetadataProbeBatchAsync 取 callerSeed 的做法)。
-            if (params.contains("_callerHwnd")) {
-                request.callerSeed["_callerHwnd"] = params["_callerHwnd"];
+            // 事件路由上下文在主线程取, 但只把 hwnd 的值带过去: CallerContext 持的
+            // 是裸 BridgeCore*, 面板销毁后跨线程持有会悬垂, 所以不把 caller 存进
+            // 线程, 发射前在主线程用这份 seed 重新 FromParams (同 MetadataApi.cpp
+            // 的 MetadataProbeBatchAsync 取 callerSeed 的做法)。caller 由注册包装层
+            // 用原始参数 FromParams 得到; 那时 _callerHwnd 缺失、为 0 或已不是窗口
+            // 都不设 callerHwnd, 这里也就不写 seed, 发射时同样回落到单例桥。
+            if (caller.callerHwnd) {
+                request.callerSeed["_callerHwnd"] = reinterpret_cast<intptr_t>(caller.callerHwnd);
             }
 
             const std::string operationId = NextFileOpOperationId();
@@ -1563,22 +1618,34 @@ namespace {
             auto token = std::make_shared<FileOpAbortToken>();
             // 窗口维度也在主线程解析: popup 关闭时按 windowId 一次取消它发起
             // 的全部未完成操作, 否则 worker 会把整队跑完, 事件发往已销毁的窗口。
-            const std::string windowId = CallerContext::FromParams(params).windowId;
+            const std::string windowId = caller.windowId;
             if (!GetFileOpRegistry().Register(operationId, token, windowId)) {
                 // id 撞了就不派工: 拿不到取消能力的异步操作不该存在。
-                return ApiEnvelope::MakeError("failed to register file operation",
-                                              ApiErrorCode::OPERATION_FAILED);
+                return api::Fail("failed to register file operation", ApiErrorCode::OPERATION_FAILED);
             }
             FileOpRegistrationGuard registration(operationId);
 
             std::thread(RunFileOpWorker, std::move(request), token).detach();
             registration.Dismiss();
 
-            return {{"success", true}, {"operationId", operationId}, {"totalCount", totalCount}};
+            return DispatchOutcome{operationId, totalCount};
         } catch (const std::exception&) {
-            return ApiEnvelope::MakeError("failed to start file operation",
-                                          ApiErrorCode::OPERATION_FAILED);
+            return api::Fail("failed to start file operation", ApiErrorCode::OPERATION_FAILED);
         }
+    }
+
+    // 把派工结果转成某个方法自己的结果类型 (CopyAsyncResult / MoveAsyncResult /
+    // DeleteAsyncResult, 三者字段相同)。
+    template <class R>
+    api::Result<R> ToReceipt(DispatchResult dispatched) {
+        if (auto* failure = std::get_if<api::Failure>(&dispatched)) {
+            return std::move(*failure);
+        }
+        const DispatchOutcome& outcome = std::get<DispatchOutcome>(dispatched);
+        R result;
+        result.operationId = outcome.operationId;
+        result.totalCount = static_cast<std::int64_t>(outcome.totalCount);
+        return result;
     }
 
     //==========================================================================
@@ -1587,17 +1654,10 @@ namespace {
     // Returns: { success: true, operationId, totalCount }
     // Events: file:opProgress / file:opComplete
     //==========================================================================
-    json FileCopyAsync(const json& params) {
-        std::vector<FileOpItem> items;
-        if (auto error = CollectCopyMoveItems(params, items)) {
-            return *error;
-        }
-        const std::optional<bool> overwrite = ReadBoolFlag(params, "overwrite", false);
-        if (!overwrite.has_value()) {
-            return ApiEnvelope::MakeError("overwrite must be a boolean",
-                                          ApiErrorCode::INVALID_PARAMS);
-        }
-        return DispatchFileOp(FileOpKind::Copy, params, std::move(items), *overwrite, true);
+    api::Result<fileapi::CopyAsyncResult> FileCopyAsync(const fileapi::CopyAsyncParams& p,
+                                                        const CallerContext& caller) {
+        return ToReceipt<fileapi::CopyAsyncResult>(DispatchFileOp(
+            FileOpKind::Copy, caller, CollectCopyMoveItems(p.items), p.overwrite, true));
     }
 
     //==========================================================================
@@ -1606,17 +1666,10 @@ namespace {
     // Returns: { success: true, operationId, totalCount }
     // Events: file:opProgress / file:opComplete
     //==========================================================================
-    json FileMoveAsync(const json& params) {
-        std::vector<FileOpItem> items;
-        if (auto error = CollectCopyMoveItems(params, items)) {
-            return *error;
-        }
-        const std::optional<bool> overwrite = ReadBoolFlag(params, "overwrite", false);
-        if (!overwrite.has_value()) {
-            return ApiEnvelope::MakeError("overwrite must be a boolean",
-                                          ApiErrorCode::INVALID_PARAMS);
-        }
-        return DispatchFileOp(FileOpKind::Move, params, std::move(items), *overwrite, true);
+    api::Result<fileapi::MoveAsyncResult> FileMoveAsync(const fileapi::MoveAsyncParams& p,
+                                                        const CallerContext& caller) {
+        return ToReceipt<fileapi::MoveAsyncResult>(DispatchFileOp(
+            FileOpKind::Move, caller, CollectCopyMoveItems(p.items), p.overwrite, true));
     }
 
     //==========================================================================
@@ -1625,17 +1678,10 @@ namespace {
     // Returns: { success: true, operationId, totalCount }
     // Events: file:opProgress / file:opComplete
     //==========================================================================
-    json FileDeleteAsync(const json& params) {
-        std::vector<FileOpItem> items;
-        if (auto error = CollectDeletePaths(params, items)) {
-            return *error;
-        }
-        const std::optional<bool> moveToTrash = ReadBoolFlag(params, "moveToTrash", true);
-        if (!moveToTrash.has_value()) {
-            return ApiEnvelope::MakeError("moveToTrash must be a boolean",
-                                          ApiErrorCode::INVALID_PARAMS);
-        }
-        return DispatchFileOp(FileOpKind::Delete, params, std::move(items), false, *moveToTrash);
+    api::Result<fileapi::DeleteAsyncResult> FileDeleteAsync(const fileapi::DeleteAsyncParams& p,
+                                                            const CallerContext& caller) {
+        return ToReceipt<fileapi::DeleteAsyncResult>(DispatchFileOp(
+            FileOpKind::Delete, caller, CollectDeletePaths(p.paths), false, p.moveToTrash));
     }
 
     //==========================================================================
@@ -1643,17 +1689,12 @@ namespace {
     // params: { operationId: string }
     // Returns: { success: true, cancelled: boolean }
     //==========================================================================
-    json FileCancelOp(const json& params) {
-        if (!params.contains("operationId") || !params["operationId"].is_string()) {
-            return ApiEnvelope::MakeError("operationId is required", ApiErrorCode::INVALID_PARAMS);
-        }
-        const std::string operationId = params["operationId"].get<std::string>();
-        if (operationId.empty()) {
-            return ApiEnvelope::MakeError("operationId is required", ApiErrorCode::INVALID_PARAMS);
-        }
+    api::Result<fileapi::CancelOpResult> FileCancelOp(const fileapi::CancelOpParams& p) {
         // cancelled=false 表示该 operationId 已结束或不存在。两者对调用方故意
         // 不可区分: 一个页面无法分辨自己是差了一微秒还是差了一分钟。
-        return {{"success", true}, {"cancelled", GetFileOpRegistry().Cancel(operationId)}};
+        fileapi::CancelOpResult result;
+        result.cancelled = GetFileOpRegistry().Cancel(p.operationId);
+        return result;
     }
 
     //==========================================================================
@@ -1688,6 +1729,15 @@ namespace {
 
     static initquit_factory_t<FileOpShutdownInitQuit> g_fileop_shutdown_initquit;
 
+    // items 上由 @pathKey 生成的一条路径规格是否为 items[].<member>、按 access 校验。
+    // RegisterFileApi 用它把校验顺序与档位钉在编译期。
+    constexpr bool IsItemsPathParam(const api::params::PathParam& param, std::string_view member,
+                                    api::params::PathAccess access) {
+        return std::string_view(param.key) == "items" && param.isArray && !param.skipInvalid &&
+               param.nestedKey != nullptr && std::string_view(param.nestedKey) == member &&
+               param.access == access;
+    }
+
 } // anonymous namespace
 
 //==========================================================================
@@ -1709,73 +1759,75 @@ void CancelAllFileOpsForWindow(const std::string& windowId) {
 // Register File API
 //==========================================================================
 void RegisterFileApi() {
-    auto& bridge = BridgeCore::GetInstance();
+    // 路径参数的安全级别来自声明 (生成头里的 kPathParams), 不再在这里登记。
     
     // file.read - Read file content
-    bridge.RegisterApi("file.read", FileRead, {{"path", SecurityLevel::Read}});
+    api::RegisterApi("file.read", FileRead);
     
     // file.write - Write content to file
     //
-    // 以下六个写端点使用 FileWrite 而非 MediaWrite: 它们操作的是任意文件,
+    // 以下六个写端点在声明里用 FileWrite 而非 MediaWrite: 它们操作的是任意文件,
     // 不是媒体上下文中的文件, "非系统盘直通"这一通用文件写策略不应混进媒体写入语义。
     // 目标态是归入 Write (profile/temp) 严格写白名单; 那会拒绝非系统盘任意路径的写入,
     // 属破坏性变更, 须单独决策。
-    bridge.RegisterApi("file.write", FileWrite, {{"path", SecurityLevel::FileWrite}});
+    api::RegisterApi("file.write", FileWrite);
     
     // file.exists - Check if file/directory exists
-    bridge.RegisterApi("file.exists", FileExists, {{"path", SecurityLevel::Read}});
+    api::RegisterApi("file.exists", FileExists);
     
     // file.list - List directory contents
-    bridge.RegisterApi("file.list", FileList, {{"path", SecurityLevel::Read}});
+    api::RegisterApi("file.list", FileList);
     
     // file.delete - Delete a file
-    bridge.RegisterApi("file.delete", FileDelete, {{"path", SecurityLevel::FileWrite}});
+    api::RegisterApi("file.delete", FileDelete);
     
     // file.mkdir - Create directory
-    bridge.RegisterApi("file.mkdir", FileMkdir, {{"path", SecurityLevel::FileWrite}});
+    api::RegisterApi("file.mkdir", FileMkdir);
 
-    // file.copy - Copy file or directory
-    bridge.RegisterApi("file.copy", FileCopy, {
-        {"source", SecurityLevel::Read},
-        {"destination", SecurityLevel::FileWrite}
-    });
+    // file.copy - Copy file or directory (source Read, destination FileWrite)
+    api::RegisterApi("file.copy", FileCopy);
 
-    // file.move - Move file or directory
-    bridge.RegisterApi("file.move", FileMove, {
-        {"source", SecurityLevel::FileWrite},
-        {"destination", SecurityLevel::FileWrite}
-    });
+    // file.move - Move file or directory (both ends FileWrite)
+    api::RegisterApi("file.move", FileMove);
 
     // file.rename - Rename a file or directory
-    bridge.RegisterApi("file.rename", FileRename, {{"path", SecurityLevel::FileWrite}});
+    api::RegisterApi("file.rename", FileRename);
 
     // file.getInfo - Get file information
-    bridge.RegisterApi("file.getInfo", FileGetInfo, {{"path", SecurityLevel::Read}});
+    api::RegisterApi("file.getInfo", FileGetInfo);
 
     // file.copyAsync - 异步批量复制 (worker 线程, 可取消)
     //
-    // 同一个 paramKey 上挂两条 spec: wrapper 的 spec 循环对每条各调一次
-    // ValidatePathParam, 每次完整走一遍 items 数组并
-    // 只看自己那个 nestedKey, 两条互不干扰。档位与同步版 file.copy 一致 ——
-    // source 读、destination 写。
-    bridge.RegisterApi("file.copyAsync", FileCopyAsync, {
-        {"items", SecurityLevel::Read, true, "source"},
-        {"items", SecurityLevel::FileWrite, true, "destination"}
-    });
+    // 声明在 items 上写 @pathKey source=Read destination=FileWrite, 同一个
+    // paramKey 生成两条规格: 包装层的循环对每条各调一次 ValidatePathParam, 每次
+    // 完整走一遍 items 数组并只看自己那个成员, 两条互不干扰。档位与同步版
+    // file.copy 一致 —— source 读、destination 写。顺序也要紧: 缺成员与空串都
+    // 报第一条失败的规格, e2e FO-15 按「source 先报」断言。
+    static_assert(fileapi::CopyAsyncParams::kPathParams.size() == 2 &&
+                      IsItemsPathParam(fileapi::CopyAsyncParams::kPathParams[0], "source",
+                                       api::params::PathAccess::Read) &&
+                      IsItemsPathParam(fileapi::CopyAsyncParams::kPathParams[1], "destination",
+                                       api::params::PathAccess::FileWrite),
+                  "file.copyAsync checks items[].source as Read, then items[].destination as FileWrite");
+    api::RegisterApi("file.copyAsync", FileCopyAsync);
 
     // file.moveAsync - 异步批量移动 (跨卷自动回退成复制加删源, 可取消)
-    // 两端都是写: 移动会删掉 source。与同步版 file.move 同档。
-    bridge.RegisterApi("file.moveAsync", FileMoveAsync, {
-        {"items", SecurityLevel::FileWrite, true, "source"},
-        {"items", SecurityLevel::FileWrite, true, "destination"}
-    });
+    // 两端都是写: 移动会删掉 source。与同步版 file.move 同档。source 这条若被
+    // 写丢, 被删的一端就不再过 FileWrite 校验, 而没有一条 e2e 能发现, 所以同样
+    // 在编译期钉住。
+    static_assert(fileapi::MoveAsyncParams::kPathParams.size() == 2 &&
+                      IsItemsPathParam(fileapi::MoveAsyncParams::kPathParams[0], "source",
+                                       api::params::PathAccess::FileWrite) &&
+                      IsItemsPathParam(fileapi::MoveAsyncParams::kPathParams[1], "destination",
+                                       api::params::PathAccess::FileWrite),
+                  "file.moveAsync checks items[].source, then items[].destination, both as FileWrite");
+    api::RegisterApi("file.moveAsync", FileMoveAsync);
 
     // file.deleteAsync - 异步批量删除 (可取消)
-    bridge.RegisterApi("file.deleteAsync", FileDeleteAsync,
-                       {{"paths", SecurityLevel::FileWrite, true}});
+    api::RegisterApi("file.deleteAsync", FileDeleteAsync);
 
     // file.cancelOp - 取消一个进行中的异步文件操作 (无路径参数)
-    bridge.RegisterApi("file.cancelOp", FileCancelOp);
+    api::RegisterApi("file.cancelOp", FileCancelOp);
 
     LOG("File API registered (14 APIs)");
 }

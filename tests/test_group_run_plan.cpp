@@ -6,6 +6,10 @@
 // ASCII 折叠、两级嵌套的绝对索引、批边界的快照/回滚，以及 patterns 的错误矩阵。
 #include "pch.h"
 #include "../src/api/GroupRunPlan.h"
+#include "compat/fb2k_types.h"  // console:: stub：生成的头经 ErrorEnvelope.h 引用它
+#include "api/generated/PlaylistSchema.h"
+
+#include <set>
 
 using fb2k_group_runs::FoldAscii;
 using fb2k_group_runs::GroupRunAccumulator;
@@ -342,14 +346,18 @@ TEST(GroupRunSnapshot, CaptureOnFreshAccumulatorRollsBackToEmpty) {
 
 // ============ 直写序列化（SPEC §4.2 的形状） ============
 
+// 主线程段取来交给直写器的列表 GUID，形状同 playlistGuid 接受的写法。
+constexpr const char* kGuid = "{12345678-1111-2222-3031-323334353637}";
+
 TEST(GroupRunJson, SingleLevelShapeHasNoSubKey) {
     const auto acc = RunSingleLevel({"A", "A", "B"});
     std::string out;
-    fb2k_group_runs::WriteGroupRunsJson(out, 2, 3, acc);
+    fb2k_group_runs::WriteGroupRunsJson(out, 2, kGuid, 3, acc);
 
     const nlohmann::json parsed = nlohmann::json::parse(out);
     EXPECT_EQ(parsed["success"], true);
     EXPECT_EQ(parsed["playlist"], 2);
+    EXPECT_EQ(parsed["playlistGuid"], kGuid);
     EXPECT_EQ(parsed["total"], 3);
     ASSERT_EQ(parsed["runs"].size(), 2u);
     EXPECT_EQ(parsed["runs"][0]["start"], 0);
@@ -361,7 +369,7 @@ TEST(GroupRunJson, SingleLevelShapeHasNoSubKey) {
 TEST(GroupRunJson, TwoLevelShapeCarriesAbsoluteSubStarts) {
     const auto acc = RunTwoLevel({"A", "A", "B"}, {"d1", "d2", "d1"});
     std::string out;
-    fb2k_group_runs::WriteGroupRunsJson(out, 0, 3, acc);
+    fb2k_group_runs::WriteGroupRunsJson(out, 0, kGuid, 3, acc);
 
     const nlohmann::json parsed = nlohmann::json::parse(out);
     ASSERT_EQ(parsed["runs"].size(), 2u);
@@ -374,7 +382,7 @@ TEST(GroupRunJson, TwoLevelShapeCarriesAbsoluteSubStarts) {
 TEST(GroupRunJson, EmptyRunsSerializeAsEmptyArray) {
     const auto acc = RunSingleLevel({});
     std::string out;
-    fb2k_group_runs::WriteGroupRunsJson(out, 0, 0, acc);
+    fb2k_group_runs::WriteGroupRunsJson(out, 0, kGuid, 0, acc);
 
     const nlohmann::json parsed = nlohmann::json::parse(out);
     EXPECT_EQ(parsed["total"], 0);
@@ -386,9 +394,34 @@ TEST(GroupRunJson, EscapesKeysThatNeedIt) {
     // 键是用户模式产出的任意文本，直写必须走同一份转义。
     const auto acc = RunSingleLevel({"say \"hi\"\\", "say \"hi\"\\"});
     std::string out;
-    fb2k_group_runs::WriteGroupRunsJson(out, 0, 2, acc);
+    fb2k_group_runs::WriteGroupRunsJson(out, 0, kGuid, 2, acc);
 
     const nlohmann::json parsed = nlohmann::json::parse(out);
     ASSERT_EQ(parsed["runs"].size(), 1u);
     EXPECT_EQ(parsed["runs"][0]["key"], "say \"hi\"\\");
+}
+
+TEST(GroupRunJson, KeysEqualTheDeclaredResult) {
+    // 直写绕过生成的 ToJson，键集只能靠这里对着 src/api/schema/playlist.ts 的声明核对。
+    const auto acc = RunTwoLevel({"A", "A", "B"}, {"d1", "d2", "d1"});
+    std::string out;
+    fb2k_group_runs::WriteGroupRunsJson(out, 0, kGuid, 3, acc);
+    const nlohmann::json parsed = nlohmann::json::parse(out);
+
+    auto keysOf = [](const nlohmann::json& object) {
+        std::set<std::string> keys;
+        for (const auto& [key, value] : object.items()) keys.insert(key);
+        return keys;
+    };
+    auto declared = [](const auto& fields) {
+        std::set<std::string> keys;
+        for (std::string_view key : fields) keys.emplace(key);
+        return keys;
+    };
+
+    std::set<std::string> envelope = declared(api::playlist::GetGroupRunsResult::kFields);
+    envelope.insert("success");
+    EXPECT_EQ(keysOf(parsed), envelope);
+    EXPECT_EQ(keysOf(parsed["runs"][0]), declared(api::playlist::PlaylistGroupRun::kFields));
+    EXPECT_EQ(keysOf(parsed["runs"][0]["sub"][0]), declared(api::playlist::PlaylistGroupSubRun::kFields));
 }

@@ -286,6 +286,7 @@ bool menu_item_resolver::g_resolve_main_command(const GUID & id, mainmenu_comman
 	return menu_item_resolver::get()->resolve_main_command(id, out, out_index);
 }
 
+#if FB2K_MENU_CAPS == FB2K_MENU_CAPS_TITLE
 static bool char_is_separator(char x)
 {
     for( auto s : {' ', ',', '/', '-'}) {
@@ -300,7 +301,7 @@ static bool capitalize_exception( const char * ptr, size_t len ) {
     }
     return false;
 }
-#if FB2K_MENU_CAPS == FB2K_MENU_CAPS_TITLE
+
 static pfc::string8 capitalizeThis( const char * arg ) {
     pfc::string8 work; work.prealloc( 256 );
     auto base = arg;

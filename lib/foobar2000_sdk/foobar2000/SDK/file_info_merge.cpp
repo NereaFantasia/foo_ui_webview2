@@ -131,6 +131,13 @@ void file_info::overwrite_info(const file_info & p_source) {
 	}
 }
 
+void file_info::overwrite(const file_info& arg) {
+    overwrite_meta(arg);
+    overwrite_info(arg);
+    double l = arg.get_length();
+    if ( l > 0 ) set_length(l);
+	overwrite_replaygain(arg);
+}
 
 void file_info::merge_fallback(const file_info & source) {
 	set_replaygain( replaygain_info::g_merge(get_replaygain(), source.get_replaygain() ) );

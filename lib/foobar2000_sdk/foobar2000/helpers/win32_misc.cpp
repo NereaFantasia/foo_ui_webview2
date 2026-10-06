@@ -25,7 +25,7 @@ mutexScope::~mutexScope() {
 }
 
 CMutex::CMutex(const TCHAR * name) {
-	WIN32_OP_CRITICAL("CreateMutex", m_hMutex = CreateMutex(NULL, FALSE, name));
+	WIN32_OP_CRITICAL("CreateMutex", (m_hMutex = CreateMutex(NULL, FALSE, name)) != NULL);
 }
 CMutex::~CMutex() {
 	CloseHandle(m_hMutex);

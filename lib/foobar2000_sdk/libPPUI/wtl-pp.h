@@ -177,7 +177,7 @@ public:
 
 class CEditPPHooks : public CWindowImpl<CEditPPHooks, CEdit> {
 public:
-	bool HandleCtrlA = true, NoEscSteal = false, NoEnterSteal = false, WantAllKeys = false;
+	bool HandleCtrlA = true, NoEscSteal = true, NoEnterSteal = false, WantAllKeys = false;
 
 	std::function<void ()> onEnterKey;
 	std::function<void ()> onEscKey;

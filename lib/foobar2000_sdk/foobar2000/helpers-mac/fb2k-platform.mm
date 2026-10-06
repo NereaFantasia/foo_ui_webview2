@@ -14,7 +14,15 @@ namespace fb2k {
         return returnIfError;
     }
     NSString * strToPlatform( const char * s ) {
-        return [NSString stringWithUTF8String: s];
+        @try {
+            NSString * ret = [NSString stringWithUTF8String: s];
+            if ( ret ) return ret;
+        } @catch(NSException *) {}
+        @try {
+            NSString * ret = [NSString stringWithUTF8String: pfc::recover_invalid_utf8_v2(s)];
+            if ( ret ) return ret;
+        } @catch(NSException *) {}
+        return @"";
     }
     NSString * strToPlatform( stringRef s ) {
         if ( s.is_empty( ) ) return nil;
@@ -64,26 +72,29 @@ namespace fb2k {
         return nil;
     }
     BOOL testFontParams(NSDictionary<NSString*, NSString*> * arg) {
-        return arg[@"font-name"] || arg[@"font-size"];
+        return arg[@"font-name"] || arg[@"font-size"] || arg[@"font-mono"];
     }
     NSFont * fontFromParams(NSDictionary<NSString*, NSString*> * arg, NSFont * base) {
         NSString * fontName = arg[@"font-name"];
         NSString * fontSize = arg[@"font-size"];
-        NSFont * font = nil;
-        if ( fontName && fontSize ) {
-            font = [NSFont fontWithName: fontName size: fontSize.floatValue];
-        } else if ( fontName ) {
-            font = [NSFont fontWithName: fontName size: base ? base.pointSize : NSFont.systemFontSize];
-        } else if ( fontSize ) {
-            if ( base ) {
-                font = [ base fontWithSize: fontSize.floatValue ];
-            } else {
-                font = [NSFont monospacedDigitSystemFontOfSize: fontSize.floatValue weight: NSFontWeightRegular];
-            }
+        BOOL fontMono = arg[@"font-mono"] != nil;
+        CGFloat size;
+        if ( fontSize ) size = fontSize.floatValue;
+        else if ( base ) size = base.pointSize;
+        else size = NSFont.systemFontSize;
+        if ( fontName ) {
+            return [NSFont fontWithName: fontName size: size];
         }
-        if ( font ) return font;
+        if ( fontMono ) {
+            return [NSFont monospacedSystemFontOfSize: size weight: NSFontWeightRegular];
+        }
+        if ( fontSize && base ) {
+            return [base fontWithSize: fontSize.floatValue ];
+        }
+        if ( fontSize ) {
+            return [NSFont monospacedDigitSystemFontOfSize: size weight: NSFontWeightRegular];
+        }
         if ( base ) return base;
-        // Reuse shared font object
         return [NSFont pp_monospacedDigitFont];
     }
     void tableViewPrepareForFont( NSTableView * tableView, NSFont * font ) {
@@ -97,6 +108,18 @@ namespace fb2k {
     }
     CGFloat tableViewRowHeightForFont( NSFont * f ) {
         return (CGFloat) round( f.pointSize * 1.5 );
+    }
+    NSData * wrapData( memBlockRef const & arg ) {
+        // Do not copy data, reference in place
+        auto ref = arg;
+        
+        NSData * ret = [[NSData alloc] initWithBytesNoCopy: const_cast<void*>(ref->data()) length:ref->size() deallocator:^(void * _Nonnull bytes, NSUInteger length) {
+            PFC_ASSERT( bytes == ref->data() );
+            PFC_ASSERT( length == ref->size() );
+            (void) ref;
+        }];
+        if ( ret == nil ) throw std::bad_alloc();
+        return ret;
     }
 }
 

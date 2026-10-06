@@ -40,11 +40,11 @@ PFC_DECLARE_EXCEPTION(exception_album_art_unsupported_entry,exception_io_data,"U
 
 PFC_DECLARE_EXCEPTION(exception_album_art_unsupported_format,exception_io_data,"Attached picture operations not supported for this file format");
 
-//! Class encapsulating access to album art stored in a media file. Use album_art_extractor class obtain album_art_extractor_instance referring to specified media file.
+//! Class encapsulating access to album art stored in a media file. Use @c album_art_extractor class obtain @c album_art_extractor_instance referring to specified media file.
 class NOVTABLE album_art_extractor_instance : public service_base {
 	FB2K_MAKE_SERVICE_INTERFACE(album_art_extractor_instance,service_base);
 public:
-	//! Throws exception_album_art_not_found when the requested album art entry could not be found in the referenced media file.
+	//! Throws @c exception_album_art_not_found when the requested album art entry could not be found in the referenced media file.
 	virtual album_art_data_ptr query(const GUID & p_what,abort_callback & p_abort) = 0;
 
 	bool have_entry( const GUID & what, abort_callback & abort );
@@ -55,11 +55,11 @@ public:
     service_ptr_t<fb2k::image> query_image_(const GUID &, abort_callback&);
 };
 
-//! Class encapsulating access to album art stored in a media file. Use album_art_editor class to obtain album_art_editor_instance referring to specified media file.
+//! Class encapsulating access to album art stored in a media file. Use @c album_art_editor class to obtain @c album_art_editor_instance referring to specified media file.
 class NOVTABLE album_art_editor_instance : public album_art_extractor_instance {
 	FB2K_MAKE_SERVICE_INTERFACE(album_art_editor_instance,album_art_extractor_instance);
 public:
-	//! Throws exception_album_art_unsupported_entry when the file format we're dealing with does not support specific entry.
+	//! Throws @c exception_album_art_unsupported_entry when the file format we're dealing with does not support specific entry.
 	virtual void set(const GUID & p_what,album_art_data_ptr p_data,abort_callback & p_abort) = 0;
 
 	//! Removes the requested entry. Fails silently when the entry doesn't exist.
@@ -72,7 +72,7 @@ public:
 	void remove_all_();
 };
 
-//! Extension to album_art_editor_instance, adds remove_all().
+//! Extension to @c album_art_editor_instance, adds `remove_all()`.
 class NOVTABLE album_art_editor_instance_v2 : public album_art_editor_instance {
 	FB2K_MAKE_SERVICE_INTERFACE(album_art_editor_instance_v2, album_art_editor_instance);
 public:
@@ -84,17 +84,17 @@ typedef service_ptr_t<album_art_extractor_instance> album_art_extractor_instance
 typedef service_ptr_t<album_art_editor_instance> album_art_editor_instance_ptr;
 
 //! Entrypoint class for accessing album art extraction functionality. Register your own implementation to allow album art extraction from your media file format. \n
-//! If you want to extract album art from a media file, it's recommended that you use album_art_manager API instead of calling album_art_extractor directly.
+//! If you want to extract album art from a media file, it's recommended that you use @c album_art_manager API instead of calling @c album_art_extractor directly.
 class NOVTABLE album_art_extractor : public service_base {
 	FB2K_MAKE_SERVICE_INTERFACE_ENTRYPOINT(album_art_extractor);
 public:
-	//! Returns whether the specified file is one of formats supported by our album_art_extractor implementation.
+	//! Returns whether the specified file is one of formats supported by our @c album_art_extractor implementation.
 	//! @param p_path Path to file being queried.
 	//! @param p_extension Extension of file being queried (also present in p_path parameter) - provided as a separate parameter for performance reasons.
 	virtual bool is_our_path(const char * p_path,const char * p_extension) = 0;
 	
-	//! Instantiates album_art_extractor_instance providing access to album art stored in a specified media file. \n
-	//! Throws one of I/O exceptions on failure; exception_album_art_not_found when the file has no album art record at all.
+	//! Instantiates @c album_art_extractor_instance providing access to album art stored in a specified media file. \n
+	//! Throws one of I/O exceptions on failure; @c exception_album_art_not_found when the file has no album art record at all.
 	//! @param p_filehint Optional; specifies a file interface to use for accessing the specified file; can be null - in that case, the implementation will open and close the file internally.
 	virtual album_art_extractor_instance_ptr open(file_ptr p_filehint,const char * p_path,abort_callback & p_abort) = 0;
 
@@ -119,19 +119,19 @@ public:
 class NOVTABLE album_art_editor : public service_base {
 	FB2K_MAKE_SERVICE_INTERFACE_ENTRYPOINT(album_art_editor);
 public:
-	//! Returns whether the specified file is one of formats supported by our album_art_editor implementation.
+	//! Returns whether the specified file is one of formats supported by our @c album_art_editor implementation.
 	//! @param p_path Path to file being queried.
 	//! @param p_extension Extension of file being queried (also present in p_path parameter) - provided as a separate parameter for performance reasons.
 	virtual bool is_our_path(const char * p_path,const char * p_extension) = 0;
 
-	//! Instantiates album_art_editor_instance providing access to album art stored in a specified media file. \n
+	//! Instantiates @c album_art_editor_instance providing access to album art stored in a specified media file. \n
 	//! @param p_filehint Optional; specifies a file interface to use for accessing the specified file; can be null - in that case, the implementation will open and close the file internally.
 	virtual album_art_editor_instance_ptr open(file_ptr p_filehint,const char * p_path,abort_callback & p_abort) = 0;
 
-	//! Helper; attempts to retrieve an album_art_editor service pointer that supports the specified file.
-	//! @returns True on success, false on failure (no registered album_art_editor supports this file type).
+	//! Helper; attempts to retrieve an @c album_art_editor service pointer that supports the specified file.
+	//! @returns True on success, false on failure (no registered @c album_art_editor supports this file type).
 	static bool g_get_interface(service_ptr_t<album_art_editor> & out,const char * path);
-	//! Helper; returns whether one of registered album_art_editor implementations is capable of opening the specified file.
+	//! Helper; returns whether one of registered @c album_art_editor implementations is capable of opening the specified file.
 	static bool g_is_supported_path(const char * path);
 
 	static album_art_editor_instance_ptr g_open(file_ptr p_filehint,const char * p_path,abort_callback & p_abort);
@@ -163,7 +163,7 @@ public:
 };
 
 
-//! Album art path list - see album_art_extractor_instance_v2
+//! Album art path list - see @c album_art_extractor_instance_v2
 class NOVTABLE album_art_path_list : public service_base {
 	FB2K_MAKE_SERVICE_INTERFACE(album_art_path_list, service_base)
 public:
@@ -174,7 +174,7 @@ public:
 	static bool equals(ptr const& v1, ptr const& v2);
 };
 
-//! album_art_extractor_instance extension; lets the frontend query referenced file paths (eg. when using external album art).
+//! @c album_art_extractor_instance extension; lets the frontend query referenced file paths (eg. when using external album art).
 class NOVTABLE album_art_extractor_instance_v2 : public album_art_extractor_instance {
 	FB2K_MAKE_SERVICE_INTERFACE(album_art_extractor_instance_v2, album_art_extractor_instance)
 public:
@@ -224,17 +224,17 @@ public:
 
 //! \since 1.4
 //! A notification about a newly loaded album art being ready to display. \n
-//! See: now_playing_album_art_notify_manager.
+//! See: @c now_playing_album_art_notify_manager.
 class NOVTABLE now_playing_album_art_notify {
 public:
 	//! Called when album art has finished loading for the now playing track.
-	//! @param data The newly loaded album art. Never a null object - the callbacks are simply not called when there is nothing to show.
+	//! @param data The newly loaded album art. Possibly null if there's nothing to show.
 	virtual void on_album_art( album_art_data::ptr data ) = 0;
 };
 
 //! \since 1.4
 //! Since various components require the album art of the now-playing track, a centralized loader has been provided, so the file isn't hammered independently by different components. \n
-//! Use this in conjunction with play_callback notifications to render now-playing track information.
+//! Use this in conjunction with @c play_callback notifications to render now-playing track information.
 class NOVTABLE now_playing_album_art_notify_manager : public service_base {
 	FB2K_MAKE_SERVICE_COREAPI(now_playing_album_art_notify_manager)
 public:

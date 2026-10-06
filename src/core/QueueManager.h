@@ -20,6 +20,13 @@
 #include <chrono>
 #include <optional>
 
+// The page that started the current JIT session. The jitQueue:* events go back to it through
+// api::emit::ToCaller: by windowId, then by handle, and else to the main window's page.
+struct JitSessionCaller {
+    std::string windowId;
+    HWND hwnd = nullptr;
+};
+
 class QueueManager {
 public:
     static QueueManager& GetInstance();
@@ -74,9 +81,11 @@ public:
      * @param trackId   Frontend's unique track identifier
      * @param title     Track title for display
      * @param url       Resolved streaming URL
+     * @param caller    Page that called jitQueue.playNow; once accepted it owns the session
      * @return true if operation was accepted
      */
-    bool PlayNow(const std::string& trackId, const std::string& title, const std::string& url);
+    bool PlayNow(const std::string& trackId, const std::string& title, const std::string& url,
+                 const JitSessionCaller& caller);
     
     /**
      * EnqueueNext - Preload the next track
@@ -96,6 +105,8 @@ public:
      * @param urls        List of resolved URLs (HTTP or local)
      * @param startIndex  Which track to start playback from (0-based)
      * @param replace     If true, clear existing shadow playlist first
+     * @param caller      Page that called jitQueue.preloadBatch; it owns the session when the
+     *                    batch starts playback, not when it is appended to a playing session
      * @return {success, tracksAdded}
      */
     struct PreloadResult {
@@ -103,7 +114,8 @@ public:
         size_t tracksAdded = 0;
         std::string error;
     };
-    PreloadResult PreloadBatch(const std::vector<std::string>& urls, size_t startIndex, bool replace);
+    PreloadResult PreloadBatch(const std::vector<std::string>& urls, size_t startIndex, bool replace,
+                               const JitSessionCaller& caller);
     
     /**
      * Skip - Skip to next track in buffer
@@ -208,6 +220,10 @@ private:
     std::chrono::steady_clock::time_point m_pendingStartTime{};  // deadlock timeout
     static constexpr int PENDING_TIMEOUT_SECONDS = 30;
     std::atomic<bool> m_needNextRequested{false};
+
+    // Where the jitQueue:* events go. Kept after stop and clear, so a shadow playlist the user
+    // plays again still reports to the page that filled it; replaced when a session starts.
+    JitSessionCaller m_sessionCaller;
     
     // Thread safety
     mutable std::mutex m_mutex;
@@ -216,6 +232,9 @@ private:
     // Internal Methods
     //==========================================================================
     
+    // Copy of m_sessionCaller taken under m_mutex; call without holding it
+    JitSessionCaller GetSessionCaller() const;
+
     // Get or create the shadow playlist
     size_t GetOrCreateShadowPlaylist();
     

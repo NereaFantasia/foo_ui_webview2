@@ -4,14 +4,29 @@
 #include "core/WebViewContext.h"
 
 CallerContext CallerContext::FromParams(const json& params) {
-    CallerContext ctx;
-
     if (!params.contains("_callerHwnd")) {
+        CallerContext ctx;
         ctx.bridge = &BridgeCore::GetInstance();
         return ctx;
     }
+    return FromHwnd(reinterpret_cast<HWND>(params["_callerHwnd"].get<intptr_t>()));
+}
 
-    auto hwnd = reinterpret_cast<HWND>(params["_callerHwnd"].get<intptr_t>());
+HWND CallerContext::FindInstanceUnderRoot(HWND hwnd) {
+    HWND topLevel = ::GetAncestor(hwnd, GA_ROOT);
+    if (!topLevel) return nullptr;
+    auto& wvc = WebViewContext::GetInstance();
+    for (auto instanceHwnd : wvc.GetAllInstances()) {
+        if (::GetAncestor(instanceHwnd, GA_ROOT) == topLevel && wvc.GetBridge(instanceHwnd)) {
+            return instanceHwnd;
+        }
+    }
+    return nullptr;
+}
+
+CallerContext CallerContext::FromHwnd(HWND hwnd) {
+    CallerContext ctx;
+
     if (!hwnd || !IsWindow(hwnd)) {
         ctx.bridge = &BridgeCore::GetInstance();
         return ctx;
@@ -31,19 +46,10 @@ CallerContext CallerContext::FromParams(const json& params) {
 
     // 2. 弹窗模式 fallback：_callerHwnd 可能已被 GetAncestor 归为顶层窗口，
     //    需在所有 instance hwnd 中找与 callerHwnd 同属一个顶层窗口的实例
-    HWND topLevel = ::GetAncestor(hwnd, GA_ROOT);
-    if (topLevel) {
-        for (auto instanceHwnd : wvc.GetAllInstances()) {
-            if (instanceHwnd == hwnd) continue; // ->-> step 1 ->?
-            if (::GetAncestor(instanceHwnd, GA_ROOT) == topLevel) {
-                BridgeCore* b = wvc.GetBridge(instanceHwnd);
-                if (b) {
-                    ctx.bridge = b;
-                    ctx.windowId = wvc.GetWindowIdByHwnd(instanceHwnd);
-                    return ctx;
-                }
-            }
-        }
+    if (HWND instanceHwnd = FindInstanceUnderRoot(hwnd)) {
+        ctx.bridge = wvc.GetBridge(instanceHwnd);
+        ctx.windowId = wvc.GetWindowIdByHwnd(instanceHwnd);
+        return ctx;
     }
 
     // 3. 最终 fallback → BridgeCore 单例

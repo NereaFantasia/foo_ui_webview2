@@ -1,6 +1,7 @@
 ﻿#include "pch.h"
 #include "callbacks/DspCallback.h"
-#include "core/WebViewContext.h"
+#include "api/EventEmit.h"
+#include "api/generated/AudioSchema.h"
 
 // ============================================
 // DSP 配置回调实现
@@ -13,7 +14,7 @@ public:
         try {
             LOG("DspCallback: DSP preset changed");
             
-            WebViewContext::GetInstance().BroadcastEvent("audio:dspPresetChanged", {});
+            api::emit::Broadcast<api::audio::events::DspPresetChanged>({});
         } catch (...) {}
     }
 };

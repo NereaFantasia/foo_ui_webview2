@@ -1,9 +1,11 @@
 #pragma once
 
+// InPlaceEdit code moved from helpers to libPPUI and made work without fb2k specific classes
+// This helpers module implements old method signatures and calls libPPUI implementation
+
 #include <libPPUI/InPlaceEdit.h>
 
 namespace InPlaceEdit {
-
 	HWND Start(HWND p_parentwnd,const RECT & p_rect,bool p_multiline,pfc::rcptr_t<pfc::string_base> p_content,completion_notify_ptr p_notify);
 
 	HWND StartEx(HWND p_parentwnd,const RECT & p_rect,unsigned p_flags,pfc::rcptr_t<pfc::string_base> p_content,completion_notify_ptr p_notify, IUnknown * ACData = NULL, DWORD ACOpts = 0);

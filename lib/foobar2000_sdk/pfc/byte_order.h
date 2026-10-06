@@ -124,13 +124,13 @@ namespace byte_order {
 
 #if PFC_BYTE_ORDER_IS_BIG_ENDIAN//big endian
 	template<typename T> inline void order_native_to_le_t(T& param) {param = pfc::byteswap_t(param);}
-	template<typename T> inline void order_native_to_be_t(T& param) { (void)param; }
+	template<typename T> inline void order_native_to_be_t(T& param) { std::ignore = param; }
 	template<typename T> inline void order_le_to_native_t(T& param) {param = pfc::byteswap_t(param);}
-	template<typename T> inline void order_be_to_native_t(T& param) { (void)param; }
+	template<typename T> inline void order_be_to_native_t(T& param) { std::ignore = param; }
 #else//little endian
-	template<typename T> inline void order_native_to_le_t(T& param) { (void)param; }
+	template<typename T> inline void order_native_to_le_t(T& param) { std::ignore = param; }
 	template<typename T> inline void order_native_to_be_t(T& param) {param = pfc::byteswap_t(param);}
-	template<typename T> inline void order_le_to_native_t(T& param) { (void)param; }
+	template<typename T> inline void order_le_to_native_t(T& param) { std::ignore = param; }
 	template<typename T> inline void order_be_to_native_t(T& param) {param = pfc::byteswap_t(param);}
 #endif
 };

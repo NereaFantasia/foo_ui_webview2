@@ -64,21 +64,21 @@ protected:
 
 	virtual unsigned ThreadProc(abort_callback & p_abort) = 0;
 	//! Called when the thread has completed normally, with p_code equal to ThreadProc retval. Not called when AbortThread() or WaitTillThreadDone() was used to abort the thread / wait for the thread to finish.
-	virtual void ThreadDone(unsigned p_code) {};
+	virtual void ThreadDone(unsigned p_code) { std::ignore = p_code; };
 private:
 	void CloseThread() {
 		this->pfc::thread::waitTillDone();
 		orphan_all_tasks();
 	}
 
-	void on_task_completion(unsigned p_id,unsigned p_status) {
+	void on_task_completion(unsigned,unsigned p_status) {
 		if (IsThreadActive()) {
 			CloseThread();
 			ThreadDone(p_status);
 		}
 	}
 	void threadProc() {
-		unsigned code = ~0;
+		unsigned code = UINT_MAX;
 		try {
 			code = ThreadProc(m_abort);
 		} catch(...) {}

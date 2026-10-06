@@ -3,8 +3,8 @@
 // 直接链接生产头 prefs_cdp::* 与 prefs_fields::developer::Table()，不在测试内重写被测逻辑。
 // 断言依据是 docs/preferences/DESIGN.md 第 11.5 节：端口 1024–65535、默认 9222、改动后重启生效。
 #include "pch.h"
-#include "../src/core/PreferencesCdpPort.h"
-#include "../src/core/PreferencesFields.h"
+#include "../src/prefs/PreferencesCdpPort.h"
+#include "../src/prefs/PreferencesFields.h"
 
 using namespace prefs_cdp;
 

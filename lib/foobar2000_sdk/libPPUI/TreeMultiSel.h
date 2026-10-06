@@ -2,22 +2,35 @@
 
 // ================================================================================
 // CTreeMultiSel
-// Implementation of multi-selection in a tree view ctrl
-// Instantiate with dialog ID of your treeview,
-// plug into your dialog's message map.
-// Doesn't work correctly with explorer-themed tree controls (glitches happen).
+// Implementation of multi-selection in a tree view.
+// Usage: 
+// Method 1 : CTreeMultiSel 
+//  Forward messages from both your dialog and tree control, to msgMapDialog / msgMapTreeView slots
+// Method 2: CTreeMultiSelShim
+//  Shims your dialog and control automatically, no message forwarding necessary
+// In both cases, use .Setup(tree) to initialize
+// Control ID of the tree MUST be valid for receiving TVN_* notifications
 // ================================================================================
 
-#include <set>
+#include <unordered_set>
 #include <vector>
+#include <optional>
 
 class CTreeMultiSel : public CMessageMap {
 public:
-	typedef std::set<HTREEITEM> selection_t;
+	static constexpr UINT msgMapDialog = 0, msgMapTreeView = 1;
+
+	void Setup(CWindow tree) {
+		m_ID = GetDlgCtrlID(tree);
+		assert(m_ID != 0);
+		m_tree = tree;
+	}
+	
+	CTreeMultiSel() {}
+
+	typedef std::unordered_set<HTREEITEM> selection_t;
 	typedef std::vector<HTREEITEM> selectionOrdered_t;
 
-	CTreeMultiSel(unsigned ID) : m_ID(ID) {}
-	
 	BEGIN_MSG_MAP_EX(CTreeMultiSel)
 		NOTIFY_HANDLER_EX(m_ID, TVN_ITEMEXPANDED, OnItemExpanded)
 		NOTIFY_HANDLER_EX(m_ID, NM_CLICK, OnClick)
@@ -27,16 +40,18 @@ public:
 		NOTIFY_HANDLER_EX(m_ID, NM_SETFOCUS, OnFocus)
 		NOTIFY_HANDLER_EX(m_ID, NM_KILLFOCUS, OnFocus)
 		NOTIFY_HANDLER_EX(m_ID, NM_CUSTOMDRAW, OnCustomDraw)
+	ALT_MSG_MAP(msgMapTreeView)
+		MSG_WM_LBUTTONDOWN(OnLButtonDown)
+		MSG_WM_KEYDOWN(OnKeyDown)
+		MSG_WM_CHAR(OnChar)
 	END_MSG_MAP()
-
-	const unsigned m_ID;
 
 	// Retrieves selected items - on order of appearance in the view
 	selectionOrdered_t GetSelectionOrdered(CTreeViewCtrl tree) const {
 		HTREEITEM first = tree.GetRootItem();
 		selectionOrdered_t ret; ret.reserve( m_selection.size() );
 		for(HTREEITEM walk = first; walk != NULL; walk = tree.GetNextVisibleItem(walk)) {
-			if (m_selection.count(walk) > 0) ret.push_back( walk );
+			if (m_selection.contains(walk)) ret.push_back( walk );
 		}
 		return ret;
 	}
@@ -52,28 +67,29 @@ public:
 		return *m_selection.begin();
 	}
 
-	void OnContextMenu_FixSelection(CTreeViewCtrl tree, CPoint pt) {
+	void OnContextMenu_FixSelection(CPoint pt) {
 		if (pt != CPoint(-1, -1)) {
-			WIN32_OP_D(tree.ScreenToClient(&pt));
+			WIN32_OP_D(m_tree.ScreenToClient(&pt));
 			UINT flags = 0;
-			const HTREEITEM item = tree.HitTest(pt, &flags);
+			const HTREEITEM item = m_tree.HitTest(pt, &flags);
 			if (item != NULL && (flags & TVHT_ONITEM) != 0) {
 				if (!IsItemSelected(item)) {					
-					SelectSingleItem(tree, item);
+					SelectSingleItem(item);
 				}
-				CallSelectItem(tree, item);
+				CallSelectItem(item);
 			}
 		}
 	}
 
-	void OnLButtonDown(CTreeViewCtrl tree, WPARAM wp, LPARAM lp) {
+	void OnLButtonDown(UINT nFlags, CPoint point) {
 		if (!IsKeyPressed(VK_CONTROL)) {
 			UINT flags = 0;
-			HTREEITEM item = tree.HitTest(CPoint(lp), &flags);
+			HTREEITEM item = m_tree.HitTest(point, &flags);
 			if (item != NULL && (flags & TVHT_ONITEM) != 0) {
-				if (!IsItemSelected(item)) tree.SelectItem(item);
+				if (!IsItemSelected(item)) m_tree.SelectItem(item);
 			}
 		}
+		SetMsgHandled(FALSE);
 	}
 	static bool IsNavKey(UINT vk) {
 		switch(vk) {
@@ -90,52 +106,53 @@ public:
 				return false;
 		}
 	}
-	BOOL OnChar(CTreeViewCtrl tree, WPARAM code) {
-		switch(code) {
+	void OnChar(TCHAR chChar, UINT nRepCnt, UINT nFlags) {
+		switch(chChar) {
 			case ' ':
 				if (IsKeyPressed(VK_CONTROL) || !IsTypingInProgress()) {
-					HTREEITEM item = tree.GetSelectedItem();
-					if (item != NULL) SelectToggleItem(tree, item);
-					return TRUE;
+					HTREEITEM item = m_tree.GetSelectedItem();
+					if (item != NULL) SelectToggleItem(item);
+					return;
 				}
 				break;
 		}
-		m_lastTypingTime = GetTickCount(); m_lastTypingTimeValid = true;
-		return FALSE;
+		m_lastTypingTime = GetTickCount64();
+		SetMsgHandled(FALSE);
 	}
-	BOOL OnKeyDown(CTreeViewCtrl tree, UINT vKey) {
-		if (IsNavKey(vKey)) m_lastTypingTimeValid = false;
+	void OnKeyDown(UINT nChar, UINT nRepCnt, UINT nFlags) {
+		UINT vKey = nChar;
+		if (IsNavKey(vKey)) m_lastTypingTime.reset();
 		switch(vKey) {
 			case VK_UP:
 				if (IsKeyPressed(VK_CONTROL)) {
-					HTREEITEM item = tree.GetSelectedItem();
+					HTREEITEM item = m_tree.GetSelectedItem();
 					if (item != NULL) {
-						HTREEITEM prev = tree.GetPrevVisibleItem(item);
+						HTREEITEM prev = m_tree.GetPrevVisibleItem(item);
 						if (prev != NULL) {
-							CallSelectItem(tree, prev);
+							CallSelectItem(prev);
 							if (IsKeyPressed(VK_SHIFT)) {
 								if (m_selStart == NULL) m_selStart = item;
-								SelectItemRange(tree, prev);
+								SelectItemRange(prev);
 							}
 						}
 					}
-					return TRUE;
+					return;
 				}
 				break;
 			case VK_DOWN:
 				if (IsKeyPressed(VK_CONTROL)) {
-					HTREEITEM item = tree.GetSelectedItem();
+					HTREEITEM item = m_tree.GetSelectedItem();
 					if (item != NULL) {
-						HTREEITEM next = tree.GetNextVisibleItem(item);
+						HTREEITEM next = m_tree.GetNextVisibleItem(item);
 						if (next != NULL) {
-							CallSelectItem(tree, next);
+							CallSelectItem(next);
 							if (IsKeyPressed(VK_SHIFT)) {
 								if (m_selStart == NULL) m_selStart = item;
-								SelectItemRange(tree, next);
+								SelectItemRange(next);
 							}
 						}
 					}
-					return TRUE;
+					return;
 				}
 				break;
 			/*case VK_LEFT:
@@ -149,7 +166,7 @@ public:
 				}
 				break;*/
 		}
-		return FALSE;
+		SetMsgHandled(FALSE);
 	}
 private:
 	LRESULT OnFocus(LPNMHDR hdr) {
@@ -159,21 +176,15 @@ private:
 		} else if (m_selection.size() > 0) {
 			CTreeViewCtrl tree(hdr->hwndFrom);
 			CRgn rgn; rgn.CreateRectRgn(0,0,0,0);
-			for(auto walk : m_selection) {
-				CRect rc;
-				if (tree.GetItemRect(walk, rc, TRUE)) {
-					CRgn temp; temp.CreateRectRgnIndirect(rc);
-					rgn.CombineRgn(temp, RGN_OR);
-				}				
-			}
+			for(auto walk : m_selection) AddToUpdateRgn(walk, rgn);
 			tree.RedrawWindow(NULL, rgn, RDW_INVALIDATE | RDW_ERASE);
 		}
 		SetMsgHandled(FALSE);
 		return 0;
 	}
-	void CallSelectItem(CTreeViewCtrl tree, HTREEITEM item) {
+	void CallSelectItem(HTREEITEM item) {
 		const bool was = m_ownSelChange; m_ownSelChange = true;
-		tree.SelectItem(item);
+		m_tree.SelectItem(item);
 		m_ownSelChange = was;
 	}
 	LRESULT OnSelChangedFilter(LPNMHDR) {
@@ -191,47 +202,47 @@ private:
 		NMTREEVIEW * info = reinterpret_cast<NMTREEVIEW *>(pnmh);
 		CTreeViewCtrl tree ( pnmh->hwndFrom );
 		if ((info->itemNew.state & TVIS_EXPANDED) == 0) {
-			if (DeselectChildren( tree, info->itemNew.hItem )) {
-				SendOnSelChanged(tree);
+			if (DeselectChildren(info->itemNew.hItem )) {
+				SendOnSelChanged();
 			}
 		}
 		SetMsgHandled(FALSE);
 		return 0;
 	}
 	
-	void FixFocusItem(CTreeViewCtrl tree, HTREEITEM item) {
-		if (this->IsItemSelected(item) || tree.GetSelectedItem() != item) return;
+	void FixFocusItem(HTREEITEM item) {
+		if (this->IsItemSelected(item) || m_tree.GetSelectedItem() != item) return;
 
 		auto scope = pfc::autoToggle(m_ownSelChange, true);
 		
 		for(;;) {
 			if (item == TVI_ROOT || item == NULL || this->IsItemSelected(item)) {
-				tree.SelectItem(item); return;
+				m_tree.SelectItem(item); return;
 			}
-			for (auto walk = tree.GetPrevSiblingItem(item); walk != NULL; walk = tree.GetPrevSiblingItem(walk)) {
+			for (auto walk = m_tree.GetPrevSiblingItem(item); walk != NULL; walk = m_tree.GetPrevSiblingItem(walk)) {
 				if (this->IsItemSelected(walk)) {
-					tree.SelectItem(walk); return;
+					m_tree.SelectItem(walk); return;
 				}
 			}
-			for (auto walk = tree.GetNextSiblingItem(item); walk != NULL; walk = tree.GetNextSiblingItem(walk)) {
+			for (auto walk = m_tree.GetNextSiblingItem(item); walk != NULL; walk = m_tree.GetNextSiblingItem(walk)) {
 				if (this->IsItemSelected(walk)) {
-					tree.SelectItem(walk); return;
+					m_tree.SelectItem(walk); return;
 				}
 			}
-			item = tree.GetParentItem(item);
+			item = m_tree.GetParentItem(item);
 		}
 	}
 
-	BOOL HandleClick(CTreeViewCtrl tree, CPoint pt) {
+	BOOL HandleClick(CPoint pt) {
 		UINT htFlags = 0;
-		HTREEITEM item = tree.HitTest(pt, &htFlags);
+		HTREEITEM item = m_tree.HitTest(pt, &htFlags);
 		if (item != NULL && (htFlags & TVHT_ONITEM) != 0) {
 			if (IsKeyPressed(VK_CONTROL)) {
-				SelectToggleItem(tree, item);
-				FixFocusItem(tree, item);
+				SelectToggleItem(item);
+				FixFocusItem(item);
 				return TRUE;
-			} else if (item == tree.GetSelectedItem() && !IsItemSelected(item)) {
-				SelectToggleItem(tree, item);
+			} else if (item == m_tree.GetSelectedItem() && !IsItemSelected(item)) {
+				SelectToggleItem(item);
 				return TRUE;
 			} else {
 				//tree.SelectItem(item);
@@ -244,41 +255,38 @@ private:
 
 	LRESULT OnClick(LPNMHDR pnmh) {
 		CPoint pt(GetMessagePos());
-		CTreeViewCtrl tree ( pnmh->hwndFrom );
-		WIN32_OP_D ( tree.ScreenToClient( &pt ) );
-		return HandleClick(tree, pt) ? 1 : 0;
+		WIN32_OP_D ( m_tree.ScreenToClient( &pt ) );
+		return HandleClick(pt) ? 1 : 0;
 	}
 
 	LRESULT OnSelChanging(LPNMHDR pnmh) {
 		if (!m_ownSelChange) {
-			//console::formatter() << "OnSelChanging";
-			NMTREEVIEW * info = reinterpret_cast<NMTREEVIEW *>(pnmh);
-			CTreeViewCtrl tree ( pnmh->hwndFrom );
-			const HTREEITEM item = info->itemNew.hItem;
+			const auto info = reinterpret_cast<NMTREEVIEW *>(pnmh);
+			const auto item = info->itemNew.hItem;
 
 			if (IsTypingInProgress()) {
-				SelectSingleItem(tree, item);
+				SelectSingleItem(item);
 			} else if (IsKeyPressed(VK_SHIFT)) {
-				SelectItemRange(tree, item);
+				SelectItemRange(item);
 			} else if (IsKeyPressed(VK_CONTROL)) {
-				SelectToggleItem(tree, item);
+				SelectToggleItem(item);
 			} else {
-				SelectSingleItem(tree, item);
+				SelectSingleItem(item);
 			}
 		}
 		return 0;
 	}
 
-	void SelectItemRange(CTreeViewCtrl tree, HTREEITEM item) {
+	void SelectItemRange(HTREEITEM item) {
 		if (m_selStart == NULL || m_selStart == item) {
-			SelectSingleItem(tree, item);
+			SelectSingleItem(item);
 			return;
 		}
 
-		selection_t newSel = GrabRange(tree, m_selStart, item );
-		ApplySelection(tree, std::move(newSel));
+		selection_t newSel = GrabRange(m_selStart, item );
+		ApplySelection(std::move(newSel));
 	}
-	static selection_t GrabRange(CTreeViewCtrl tree, HTREEITEM item1, HTREEITEM item2) {
+	selection_t GrabRange(HTREEITEM item1, HTREEITEM item2) {
 		selection_t range1, range2;
 		HTREEITEM walk1 = item1, walk2 = item2;
 		for(;;) {
@@ -287,14 +295,14 @@ private:
 				if (walk1 == item2) {
 					return range1;
 				}
-				walk1 = tree.GetNextVisibleItem(walk1);
+				walk1 = m_tree.GetNextVisibleItem(walk1);
 			}
 			if (walk2 != NULL) {
 				range2.insert( walk2 );
 				if (walk2 == item1) {
 					return range2;
 				}
-				walk2 = tree.GetNextVisibleItem(walk2);
+				walk2 = m_tree.GetNextVisibleItem(walk2);
 			}
 			if (walk1 == NULL && walk2 == NULL) {
 				// should not get here
@@ -302,14 +310,14 @@ private:
 			}
 		}		
 	}
-	void SelectToggleItem(CTreeViewCtrl tree, HTREEITEM item) {
+	void SelectToggleItem(HTREEITEM item) {
 		m_selStart = item;
 		if ( IsItemSelected( item ) ) {
 			m_selection.erase( item );
 		} else {
 			m_selection.insert( item );
 		}
-		UpdateItem(tree, item);
+		UpdateItem(item);
 	}
 
 	LRESULT OnCustomDraw(LPNMHDR hdr) {
@@ -330,13 +338,13 @@ private:
 		}
 	}
 public:
-	void SelectSingleItem(CTreeViewCtrl tree, HTREEITEM item) {
+	void SelectSingleItem(HTREEITEM item) {
 		m_selStart = item;
 		if (m_selection.size() == 1 && *m_selection.begin() == item) return;
-		DeselectAll(tree); SelectItem(tree, item);
+		DeselectAll(); SelectItem(item);
 	}
 
-	void ApplySelection(CTreeViewCtrl tree, selection_t && newSel) {
+	void ApplySelection(selection_t && newSel) {
 		CRgn updateRgn;
 		bool changed = false;
 		if (newSel.size() != m_selection.size() && newSel.size() + m_selection.size() > 100) {
@@ -347,94 +355,104 @@ public:
 			for (auto walk : m_selection) {
 				if (newSel.count(walk) == 0) {
 					changed = true;
-					CRect rc;
-					if (tree.GetItemRect(walk, rc, TRUE)) {
-						CRgn temp; WIN32_OP_D(temp.CreateRectRgnIndirect(rc));
-						WIN32_OP_D(updateRgn.CombineRgn(temp, RGN_OR) != ERROR);
-					}
+					AddToUpdateRgn(walk, updateRgn);
 				}
 			}
 			for (auto walk : newSel) {
 				if (m_selection.count(walk) == 0) {
 					changed = true;
-					CRect rc;
-					if (tree.GetItemRect(walk, rc, TRUE)) {
-						CRgn temp; WIN32_OP_D(temp.CreateRectRgnIndirect(rc));
-						WIN32_OP_D(updateRgn.CombineRgn(temp, RGN_OR) != ERROR);
-					}
+					AddToUpdateRgn(walk, updateRgn);
 				}
 			}
 		}
 		if (changed) {
 			m_selection = std::move(newSel);
-			tree.RedrawWindow(NULL, updateRgn);
-			SendOnSelChanged(tree);
+			m_tree.RedrawWindow(NULL, updateRgn);
+			SendOnSelChanged();
 		}
 	}
 
-	void DeselectItem(CTreeViewCtrl tree, HTREEITEM item) {
+	void DeselectItem(HTREEITEM item) {
 		if (IsItemSelected(item)) {
-			m_selection.erase(item); UpdateItem(tree, item);
+			m_selection.erase(item); UpdateItem(item);
 		}
 	}
-	void SelectItem(CTreeViewCtrl tree, HTREEITEM item) {
+	void SelectItem(HTREEITEM item) {
 		if (!IsItemSelected(item)) {
-			m_selection.insert(item); UpdateItem(tree, item);
+			m_selection.insert(item); UpdateItem(item);
 		}
 	}
 
-	void DeselectAll(CTreeViewCtrl tree) {
-		if (m_selection.size() == 0) return;
+	void DeselectAll() {
+		if (m_selection.empty()) return;
 		CRgn updateRgn; 
 		if (m_selection.size() <= 100) {
 			WIN32_OP_D(updateRgn.CreateRectRgn(0, 0, 0, 0) != NULL);
-			for (auto walk : m_selection) {
-				CRect rc;
-				if (tree.GetItemRect(walk, rc, TRUE)) {
-					CRgn temp; WIN32_OP_D(temp.CreateRectRgnIndirect(rc));
-					WIN32_OP_D(updateRgn.CombineRgn(temp, RGN_OR) != ERROR);
-				}
-			}
+			for (auto walk : m_selection) AddToUpdateRgn(walk, updateRgn);
 		}
 		m_selection.clear();
-		tree.RedrawWindow(NULL, updateRgn);
+		m_tree.RedrawWindow(NULL, updateRgn);
 	}
 private:
-	void UpdateItem(CTreeViewCtrl tree, HTREEITEM item) {
+	void AddToUpdateRgn(HTREEITEM item, CRgn& updateRgn) {
 		CRect rc;
-		if (tree.GetItemRect(item, rc, TRUE) ) {
-			tree.RedrawWindow(rc);
+		if (GetItemRect(item, rc)) {
+			CRgn temp; WIN32_OP_D(temp.CreateRectRgnIndirect(rc));
+			WIN32_OP_D(updateRgn.CombineRgn(temp, RGN_OR) != ERROR);
 		}
-		SendOnSelChanged(tree);
 	}
-	void SendOnSelChanged(CTreeViewCtrl tree) {
+	bool GetItemRect(HTREEITEM item, CRect & rc) {
+		return m_tree.GetItemRect(item, rc, FALSE);
+	}
+	void UpdateItem(HTREEITEM item) {
+		CRect rc;
+		if (GetItemRect(item, rc) ) {
+			m_tree.RedrawWindow(rc);
+		}
+		SendOnSelChanged();
+	}
+	void SendOnSelChanged() {
 		NMHDR hdr = {};
 		hdr.code = TVN_SELCHANGED;
-		hdr.hwndFrom = tree;
+		hdr.hwndFrom = m_tree;
 		hdr.idFrom = m_ID;
 		const bool was = m_ownSelChangeNotify; m_ownSelChangeNotify = true;
-		tree.GetParent().SendMessage(WM_NOTIFY, m_ID, (LPARAM) &hdr );
+		m_tree.GetParent().SendMessage(WM_NOTIFY, m_ID, (LPARAM) &hdr );
 		m_ownSelChangeNotify = was;
 	}
 
-	bool DeselectChildren( CTreeViewCtrl tree, HTREEITEM item ) {
+	bool DeselectChildren( HTREEITEM item ) {
 		bool state = false;
-		for(HTREEITEM walk = tree.GetChildItem( item ); walk != NULL; walk = tree.GetNextSiblingItem( walk ) ) {
+		for(HTREEITEM walk = m_tree.GetChildItem( item ); walk != NULL; walk = m_tree.GetNextSiblingItem( walk ) ) {
 			if (m_selection.erase(walk) > 0) state = true;
 			if (m_selStart == walk) m_selStart = NULL;
-			if (tree.GetItemState( walk, TVIS_EXPANDED ) ) {
-				if (DeselectChildren( tree, walk )) state = true;
+			if (m_tree.GetItemState( walk, TVIS_EXPANDED ) ) {
+				if (DeselectChildren( walk )) state = true;
 			}
 		}
 		return state;
 	}
 
 	bool IsTypingInProgress() const {
-		return m_lastTypingTimeValid && (GetTickCount() - m_lastTypingTime < 500);
+		return m_lastTypingTime.has_value()  && (GetTickCount64() - *m_lastTypingTime < 500);
 	}
 
+	UINT m_ID = 0;
+	CTreeViewCtrl m_tree;
 	selection_t m_selection;
 	HTREEITEM m_selStart = NULL;
 	bool m_ownSelChangeNotify = false, m_ownSelChange = false;
-	DWORD m_lastTypingTime = 0; bool m_lastTypingTimeValid = false;
+	std::optional<ULONGLONG> m_lastTypingTime;
+};
+
+class CTreeMultiSelShim : public CTreeMultiSel {
+public:
+	CTreeMultiSelShim() : m_treeShim(this, msgMapTreeView), m_dialogShim(this, msgMapDialog) {}
+	void Setup(CWindow tree) {
+		CTreeMultiSel::Setup(tree);
+		m_dialogShim.SubclassWindow(tree.GetParent());
+		m_treeShim.SubclassWindow(tree);
+	}
+private:
+	CContainedWindow m_treeShim, m_dialogShim;
 };

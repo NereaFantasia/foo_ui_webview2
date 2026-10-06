@@ -58,16 +58,29 @@ namespace foobar2000_io
             open_shareable = 0x100,
 		};
 
+		//! Retrieves canonical openable path for this object. \n
+		//! Some files are accessible using more than one path - returned canonical path should be exactly the same for different paths pointing to the same actual filesystem location. \n
+		//! Caller does not check if path is recognized by this filesystem object prior to calling get_canonical_path(); implementation should check if the path is recognized before processing. \n
+		//! In some scenarios, get_canonical_path() will hand over paths that require a different filesystem object to open!
 		virtual bool get_canonical_path(const char * p_path,pfc::string_base & p_out)=0;
+		//! Is this path recognized by this filesystem object? \n
+		//! Most methods, unless documented otherwise, expect paths that passed this check.
 		virtual bool is_our_path(const char * p_path)=0;
+		//! Retrieves display path for this object. \n
+		//! Display paths are only meant to be shown to the user. They do not have to be openable. \n
+		//! For an example, file:// filesystem strips file:// away from paths, while HTTP filesystem strips user:password component away if present.
 		virtual bool get_display_path(const char * p_path,pfc::string_base & p_out)=0;
 
+		//! Open a file.
 		virtual void open(service_ptr_t<file> & p_out,const char * p_path, t_open_mode p_mode,abort_callback & p_abort)=0;
+		//! Delete a file or an empty folder.
 		virtual void remove(const char * p_path,abort_callback & p_abort)=0;
 		//! Moves/renames a file. Will fail if the destination file already exists. \n
 		//! Note that this function may throw exception_io_denied instead of exception_io_sharing_violation when the file is momentarily in use, due to bugs in Windows MoveFile() API. There is no legitimate way for us to distinguish between the two scenarios.
 		virtual void move(const char * p_src,const char * p_dst,abort_callback & p_abort)=0;
-		//! Queries whether a file at specified path belonging to this filesystem is a remote object or not.
+
+        //! Indicates whether the file is a remote resource and non-sequential access may be slowed down by lag. This is typically returns to true on non-seekable sources but may also return true on seekable sources indicating that seeking is supported but will be relatively slow. \n
+        //! Note that is_remote() may return false for local network shares mounted using various means.
 		virtual bool is_remote(const char * p_src) = 0;
 
 		//! Retrieves stats of a file at specified path.
@@ -75,12 +88,25 @@ namespace foobar2000_io
 		//! Helper
 		t_filestats get_stats( const char * path, abort_callback & abort );
 		
+		//! Relative path manipulation: create relative path, for storing in a playlist file, from file path and playlist path.
+		//! @param file_path Media file path for which relative path is being requested.
+		//! @param playlist_path Path if playlist file being written to. Doesn't have to be same filesystem/protocol as this filesystem object, implementation should check input sanity before processing (return false for unrecognized/unsupported cases).
+		//! @param out Receives relative path string on success.
+		//! @returns true if relative path was written, false if not. Should not throw exceptions.
 		virtual bool relative_path_create(const char* file_path, const char* playlist_path, pfc::string_base& out) { (void)file_path; (void)playlist_path; (void)out; return false; }
+
+		//! Relative path manipulation: resolve relative path stored in a playlist file.
+		//! @param relative_path Relative path being resolved. Doesn't have to be same filesystem/protocol as this filesystem object, implementation should check inptu sanity before processing (return false for unrecognized/unsupported cases).
+		//! @param playlist_path Path if playlist file being written to. Doesn't have to be same filesystem/protocol as this filesystem object, implementation should check input sanity before processing (return false for unrecognized/unsupported cases).
+		//! @param out Receives absolute path string on success.
+		//! @returns true if successfully resolved, false if not. Should not throw exceptions.
 		virtual bool relative_path_parse(const char* relative_path, const char* playlist_path, pfc::string_base& out) { (void)relative_path; (void)playlist_path; (void)out; return false; }
 
 		//! Creates a directory.
 		virtual void create_directory(const char * p_path,abort_callback & p_abort) = 0;
 
+		//! Enumerates directory contents. \n
+		//! Extended versions of this method exist in filesystem_v2 and filesystem_v3, with additional arguments and more information returned.
 		virtual void list_directory(const char * p_path,directory_callback & p_out,abort_callback & p_abort)=0;
 
 		//! Hint; returns whether this filesystem supports mime types. \n 
@@ -95,6 +121,7 @@ namespace foobar2000_io
         //! Extracts the native filesystem path, sets out to the input path if native path cannot be extracted so the output is always set.
         //! @returns True if native path was extracted successfully, false otherwise (but output is set anyway).
         static bool g_get_native_path( const char * path, pfc::string_base & out, abort_callback & a = fb2k::noAbort);
+		//! Helper, returns passed path if native can't be resolved - test for :// delimiter in output to determine.
         static pfc::string8 g_get_native_path( const char * path, abort_callback & a = fb2k::noAbort );
 
 		static bool g_get_interface(service_ptr_t<filesystem> & p_out,const char * path);//path is AFTER get_canonical_path
@@ -222,6 +249,12 @@ namespace foobar2000_io
 
 		t_filestats2 get_stats2_(const char* p_path, uint32_t s2flags, abort_callback& p_abort);
 		static t_filestats2 g_get_stats2(const char* p_path, uint32_t s2flags, abort_callback& p_abort);
+        t_filestats2 getStatsOpportunist_(const char * path);
+        static t_filestats2 g_getStatsOpportunist(const char * path);
+        
+        //! Helper, uses getStatsOpportunist_() & attr_network
+        bool is_network_(const char * path);
+
 
 		bool get_display_name_short_(const char* path, pfc::string_base& out);
 
@@ -319,28 +352,36 @@ namespace foobar2000_io
 		bool file_exists(const char* path, abort_callback& abort) override;
 	};
 
+    class filesystem_v4 : public filesystem_v3 {
+        FB2K_MAKE_SERVICE_INTERFACE(filesystem_v4, filesystem_v3);
+    public:
+        //! Return all that is known about path WITHOUT actually performing any blocking network or filesystem access. \n
+        //! Guaranteed to return remote/network flags.
+        virtual t_filestats2 getStatsOpportunist(const char * path) = 0;
+        
+        bool is_remote(const char * p_src) override;
+    };
+
 	class directory_callback_impl : public directory_callback
 	{
-		struct t_entry
-		{
+		struct t_entry {
 			pfc::string_simple m_path;
 			t_filestats m_stats;
-			t_entry(const char * p_path, const t_filestats & p_stats) : m_path(p_path), m_stats(p_stats) {}
 		};
 
 
-		pfc::list_t<pfc::rcptr_t<t_entry> > m_data;
+		pfc::list_t<t_entry> m_data;
 		bool m_recur;
 
-		static int sortfunc(const pfc::rcptr_t<const t_entry> & p1, const pfc::rcptr_t<const t_entry> & p2) {return pfc::io::path::compare(p1->m_path,p2->m_path);}
+		static int sortfunc(const t_entry & p1, const t_entry & p2) {return pfc::io::path::compare(p1.m_path,p2.m_path);}
 	public:
 		bool on_entry(filesystem * owner,abort_callback & p_abort,const char * url,bool is_subdirectory,const t_filestats & p_stats);
 
 		directory_callback_impl(bool p_recur) : m_recur(p_recur) {}
 		t_size get_count() {return m_data.get_count();}
-		const char * operator[](t_size n) const {return m_data[n]->m_path;}
-		const char * get_item(t_size n) const {return m_data[n]->m_path;}
-		const t_filestats & get_item_stats(t_size n) const {return m_data[n]->m_stats;}
+		const char * operator[](t_size n) const {return m_data[n].m_path;}
+		const char * get_item(t_size n) const {return m_data[n].m_path;}
+		const t_filestats & get_item_stats(t_size n) const {return m_data[n].m_stats;}
 		void sort() {m_data.sort_t(sortfunc);}
 	};
 
@@ -359,16 +400,16 @@ namespace foobar2000_io
 	inline file_ptr fileOpen(const char * p_path,filesystem::t_open_mode p_mode,abort_callback & p_abort,double p_timeout) {
 		file_ptr temp; filesystem::g_open_timeout(temp,p_path,p_mode,p_timeout,p_abort); PFC_ASSERT(temp.is_valid()); return temp;
 	}
+	inline file_ptr fileOpen(const char* p_path, filesystem::t_open_mode p_mode, abort_callback& p_abort) {
+		file_ptr temp; filesystem::g_open(temp, p_path, p_mode, p_abort); PFC_ASSERT(temp.is_valid()); return temp;
+	}
 
-	inline file_ptr fileOpenReadExisting(const char * p_path,abort_callback & p_abort,double p_timeout = 0) {
-		return fileOpen(p_path,filesystem::open_mode_read,p_abort,p_timeout);
-	}
-	inline file_ptr fileOpenWriteExisting(const char * p_path,abort_callback & p_abort,double p_timeout = 0) {
-		return fileOpen(p_path,filesystem::open_mode_write_existing,p_abort,p_timeout);
-	}
-	inline file_ptr fileOpenWriteNew(const char * p_path,abort_callback & p_abort,double p_timeout = 0) {
-		return fileOpen(p_path,filesystem::open_mode_write_new,p_abort,p_timeout);
-	}
+	// These two are synonymous, shorter fileOpenRead() form added for consistency.
+	inline file_ptr fileOpenReadExisting(const char* p_path, abort_callback& p_abort, double p_timeout = 0) { return fileOpen(p_path, filesystem::open_mode_read, p_abort, p_timeout); }
+	inline file_ptr fileOpenRead(const char* p_path, abort_callback& p_abort, double p_timeout = 0) { return fileOpen(p_path, filesystem::open_mode_read, p_abort, p_timeout); }
+
+	inline file_ptr fileOpenWriteExisting(const char * p_path,abort_callback & p_abort,double p_timeout = 0) { return fileOpen(p_path,filesystem::open_mode_write_existing,p_abort,p_timeout); }
+	inline file_ptr fileOpenWriteNew(const char * p_path,abort_callback & p_abort,double p_timeout = 0) { return fileOpen(p_path,filesystem::open_mode_write_new,p_abort,p_timeout); }
 	
 	template<typename t_list>
 	class directory_callback_retrieveList : public directory_callback {
@@ -480,6 +521,10 @@ namespace foobar2000_io
     bool matchContentType_Musepack( const char * fullString);
     const char * extensionFromContentType( const char * contentType );
 	const char * contentTypeFromExtension( const char * ext );
+
+	//! Filter for files in media folders that foobar2000 should under no condition try to access such as temp files.
+	//! @param fn File name with extension (not full path)
+	bool isNonMediaFileName(const char* fn);
 
 	void purgeOldFiles(const char * directory, t_filetimestamp period, abort_callback & abort);
 

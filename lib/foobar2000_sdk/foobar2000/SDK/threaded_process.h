@@ -1,20 +1,20 @@
 #pragma once
 #include <functional>
 
-//! Callback class passed to your threaded_process client code; allows you to give various visual feedback to the user.
+//! Callback class passed to your @c threaded_process client code; allows you to give various visual feedback to the user.
 class threaded_process_status {
 public:
 	enum {progress_min = 0, progress_max = 5000};
 	
-	//! Sets the primary progress bar state; scale from progress_min to progress_max.
+	//! Sets the primary progress bar state; scale from @c progress_min to @c progress_max.
 	virtual void set_progress(t_size p_state) { (void)p_state; }
-	//! Sets the secondary progress bar state; scale from progress_min to progress_max.
+	//! Sets the secondary progress bar state; scale from @c progress_min to @c progress_max.
 	virtual void set_progress_secondary(t_size p_state) { (void)p_state; }
-	//! Sets the currently progressed item label. When working with files, you should use set_file_path() instead.
+	//! Sets the currently progressed item label. When working with files, you should use @c set_file_path() instead.
 	virtual void set_item(const char* p_item, t_size p_item_len = SIZE_MAX) { (void)p_item; (void)p_item_len; }
 	//! Sets the currently progressed item label; treats the label as a file path.
 	virtual void set_item_path(const char* p_item, t_size p_item_len = SIZE_MAX) { (void)p_item; (void)p_item_len; }
-	//! Sets the title of the dialog. You normally don't need this function unless you want to override the title you set when initializing the threaded_process.
+	//! Sets the title of the dialog. You normally don't need this function unless you want to override the title you set when initializing the @c threaded_process.
 	virtual void set_title(const char* p_title, t_size p_title_len = SIZE_MAX) { (void)p_title; (void)p_title_len; }
 	//! Should not be used.
 	virtual void force_update() {}
@@ -22,7 +22,7 @@ public:
 	virtual bool is_paused() {return false;}
 	
 	//! Checks if process is paused and sleeps if needed; returns false when process should be aborted, true on success. \n
-	//! You should use poll_pause() instead of calling this directly.
+	//! You should use @c poll_pause() instead of calling this directly.
 	virtual bool process_pause() {return true;}
 
 	//! Automatically sleeps if the process is paused.
@@ -47,13 +47,13 @@ public:
 	static fb2k::hwnd_t g_default() { return core_api::get_main_window(); }
 };
 
-//! Callback class for the threaded_process API. You must implement this to create your own threaded_process client.
+//! Callback class for the @c threaded_process API. You must implement this to create your own @c threaded_process client.
 class NOVTABLE threaded_process_callback : public service_base {
 public:
 	typedef fb2k::hwnd_t ctx_t;
 
 	//! Called from the main thread before spawning the worker thread. \n
-	//! Note that you should not access the window handle passed to on_init() in the worker thread later on.
+	//! Note that you should not access the window handle passed to @c on_init() in the worker thread later on.
 	virtual void on_init(ctx_t p_wnd) { (void)p_wnd; }
 	//! Called from the worker thread. Do all the hard work here.
 	virtual void run(threaded_process_status & p_status,abort_callback & p_abort) = 0;
@@ -67,7 +67,7 @@ public:
 };
 
 
-//! The threaded_process API allows you to easily put timeconsuming tasks in worker threads, with progress dialog giving nice feedback to the user. \n
+//! The @c threaded_process API allows you to easily put timeconsuming tasks in worker threads, with progress dialog giving nice feedback to the user. \n
 //! Thanks to this API you can perform such tasks with no user interface related programming at all.
 class NOVTABLE threaded_process : public service_base {
 public:
@@ -86,7 +86,7 @@ public:
 		flag_show_pause			= 1 << 5,
 		//! Obsolete, do not use.
 		flag_high_priority		= 1 << 6,
-		//! Make the dialog hidden by default and show it only if the operation could not be completed after 500ms. Implies flag_no_focus. Relevant only to modeless dialogs.
+		//! Make the dialog hidden by default and show it only if the operation could not be completed after 500ms. Implies @c flag_no_focus. Relevant only to modeless dialogs.
 		flag_show_delayed		= 1 << 7,
 		//! Do not focus the dialog by default.
 		flag_no_focus			= 1 << 8,
@@ -95,28 +95,28 @@ public:
 		flag_silent				= 1 << 9,
 	};
 
-	//! Runs a synchronous threaded_process operation - the function does not return until the operation has completed, though the app UI is not frozen and the operation is abortable. \n
-	//! This API is obsolete and should not be used. Please use run_modeless() instead if possible. \n
+	//! Runs a synchronous @c threaded_process operation - the function does not return until the operation has completed, though the app UI is not frozen and the operation is abortable. \n
+	//! This API is obsolete and should not be used. Please use @c run_modeless() instead if possible. \n
 	//! Call from main thread only.
-	//! @param p_callback Interface to your threaded_process client.
-	//! @param p_flags Flags describing requested dialog functionality. See threaded_process::flag_* constants.
-	//! @param p_parent Parent window for the progress dialog - typically core_api::get_main_window().
+	//! @param p_callback Interface to your @c threaded_process client.
+	//! @param p_flags Flags describing requested dialog functionality. See @c threaded_process::flag_* constants.
+	//! @param p_parent Parent window for the progress dialog - typically @c core_api::get_main_window().
 	//! @param p_title Initial title of the dialog.
 	//! @returns True if the operation has completed normally, false if the user has aborted the operation. In case of a catastrophic failure such as dialog creation failure, exceptions will be thrown.
 	virtual bool run_modal(service_ptr_t<threaded_process_callback> p_callback,unsigned p_flags,fb2k::hwnd_t p_parent,const char * p_title,t_size p_title_len = SIZE_MAX) = 0;
-	//! Runs an asynchronous threaded_process operation. \n
+	//! Runs an asynchronous @c threaded_process operation. \n
 	//! Call from main thread only.
-	//! @param p_callback Interface to your threaded_process client.
-	//! @param p_flags Flags describing requested dialog functionality. See threaded_process::flag_* constants.
-	//! @param p_parent Parent window for the progress dialog - typically core_api::get_main_window().
+	//! @param p_callback Interface to your @c threaded_process client.
+	//! @param p_flags Flags describing requested dialog functionality. See @c threaded_process::flag_* constants.
+	//! @param p_parent Parent window for the progress dialog - typically @c core_api::get_main_window().
 	//! @param p_title Initial title of the dialog.
 	//! @returns True, always; the return value should be ignored. In case of a catastrophic failure such as dialog creation failure, exceptions will be thrown.
 	virtual bool run_modeless(service_ptr_t<threaded_process_callback> p_callback,unsigned p_flags,fb2k::hwnd_t p_parent,const char * p_title,t_size p_title_len = SIZE_MAX) = 0;
 
 
-	//! Helper invoking run_modal().
+	//! Helper invoking @c run_modal().
 	static bool g_run_modal(service_ptr_t<threaded_process_callback> p_callback,unsigned p_flags,fb2k::hwnd_t p_parent,const char * p_title,t_size p_title_len = SIZE_MAX);
-	//! Helper invoking run_modeless().
+	//! Helper invoking @c run_modeless().
 	static bool g_run_modeless(service_ptr_t<threaded_process_callback> p_callback,unsigned p_flags,fb2k::hwnd_t p_parent,const char * p_title,t_size p_title_len = SIZE_MAX);
 
 	//! Queries user settings; returns whether various timeconsuming tasks should be blocking machine standby.
@@ -126,7 +126,7 @@ public:
 };
 
 
-//! Helper - forward threaded_process_callback calls to a service object that for whatever reason cannot publish threaded_process_callback API by itself.
+//! Helper - forward @c threaded_process_callback calls to a service object that for whatever reason cannot publish @c threaded_process_callback API by itself.
 template<typename TTarget> class threaded_process_callback_redir : public threaded_process_callback {
 public:
 	threaded_process_callback_redir(TTarget * target) : m_target(target) {}
@@ -137,7 +137,7 @@ private:
 	const service_ptr_t<TTarget> m_target;
 };
 
-//! Helper - lambda based threaded_process_callback implementation
+//! Helper - lambda based @c threaded_process_callback implementation
 class threaded_process_callback_lambda : public threaded_process_callback {
 public:
 	typedef std::function<void(ctx_t)> on_init_t;
@@ -152,7 +152,7 @@ public:
 	run_t m_run;
 	on_done_t m_on_done;
 
-	void on_init(ctx_t p_ctx);
-	void run(threaded_process_status & p_status, abort_callback & p_abort);
-	void on_done(ctx_t p_ctx, bool p_was_aborted);
+	void on_init(ctx_t p_ctx) override;
+	void run(threaded_process_status & p_status, abort_callback & p_abort) override;
+	void on_done(ctx_t p_ctx, bool p_was_aborted) override;
 };

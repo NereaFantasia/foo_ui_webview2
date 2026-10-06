@@ -116,7 +116,9 @@ namespace cfg_var_modern {
 				if (blob.is_valid()) try {
 					stream_reader_formatter_simple<> reader(blob->data(), blob->size());
 					std::vector<obj_t> data;
-					uint32_t count; reader >> count; data.resize(count);
+					uint32_t count; reader >> count; 
+					if (count > reader.get_remaining()) throw exception_io_data(); // assume at least one byte per elem
+					data.resize(count);
 					for (auto& v : data) reader >> v;
 					set_(std::move(data), false);
 					return;
@@ -138,7 +140,7 @@ namespace cfg_var_modern {
 			fb2k::configStore::get()->setConfigBlob(formatName(), out.m_buffer.get_ptr(), out.m_buffer.get_size());
 		}
 #ifdef FOOBAR2000_HAVE_CFG_VAR_LEGACY
-		void set_data_raw(stream_reader* p_stream, t_size p_sizehint, abort_callback& p_abort) override {
+		void set_data_raw(stream_reader* p_stream, t_size, abort_callback& p_abort) override {
 			stream_reader_formatter<> reader(*p_stream, p_abort);
 			std::vector<obj_t> data;
 			uint32_t count; reader >> count; data.resize(count);

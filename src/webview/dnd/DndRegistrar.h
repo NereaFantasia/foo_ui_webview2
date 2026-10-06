@@ -66,6 +66,25 @@ const char* ReasonToWire(PathsUnavailableReason reason);
 // reason as ReasonToWire above.
 const char* DragOutReasonToWire(DragOutUnavailableReason reason);
 
+// Fills a dnd.getCapabilities result or a dnd:capabilitiesChanged payload. Both
+// are generated from one declaration and have the same members, so the method
+// and the event cannot describe a window differently. Each reason is set only
+// when its capability is unavailable, so a page tests for the key rather than
+// comparing it against a "none" value.
+template <class Out>
+void FillCapabilities(const DndCapabilities& caps, Out& out) {
+    out.html5 = caps.html5;
+    out.paths = caps.paths;
+    out.hosting = caps.visualHosting ? "visual" : "standard";
+    out.dragOut = caps.dragOut;
+    if (const char* reason = ReasonToWire(caps.reason)) {
+        out.pathsUnavailableReason = reason;
+    }
+    if (const char* reason = DragOutReasonToWire(caps.dragOutReason)) {
+        out.dragOutUnavailableReason = reason;
+    }
+}
+
 // Owns the IDropTarget registered on a host window and the paired teardown.
 //
 // One instance per WebView host. Registration is all-or-nothing: on any failure
@@ -129,7 +148,7 @@ private:
     // WebView2 event callback.
     HRESULT OnDragStarting(ICoreWebView2DragStartingEventArgs* args) noexcept;
 
-    // Tells the page a drag out of this window ended without one happening.
+    // Tells the page the host attached no files to a drag out of this window.
     void EmitDragFailed(const char* code, const char* error) const;
 
     wil::com_ptr<DropTargetBridge> bridge_;

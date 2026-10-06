@@ -13,6 +13,7 @@ public:
 	inline size_t get_count() const {return m_data.get_size();}
 	inline const char * get_item(size_t n) const {return m_data[n];}
 	inline const char * operator[](size_t n) const {return m_data[n];}
+	const char* operator[](const char* key) const;
 	bool check_param(const char * p_ptr) const;
 	void build_string(pfc::string_base & p_out);
 	size_t find_param(const char * ptr) const;

@@ -69,6 +69,14 @@ struct MenuShowOptions {
     std::string anchorPolicy = "bottomUp";
 };
 
+// 公共 menu.show 的调用方页面。menu:select / menu:dismiss / menu:valueChanged 按
+// api::emit::ToCaller 发回它：先按 windowId，再按句柄，最后落到主窗口页面。
+// owner-mode（托盘）的结果走 sink，不用它。
+struct MenuCaller {
+    std::string windowId;
+    HWND hwnd = nullptr;
+};
+
 // 菜单覆盖面宿主（单例）。
 class MenuOverlayHost {
 public:
@@ -79,7 +87,7 @@ public:
 
     // owner-mode sink：tray 适配层发起 show 时提供。
     // 提供后 select/dismiss 改走 sink（→ tray:menuItemClicked），不向公共
-    // menu:select / menu:dismiss 泄漏；不提供 = menu.* 普通模式（维持现状）。
+    // menu:select / menu:dismiss 泄漏；不提供 = menu.* 普通模式，结果事件发回 caller。
     // select sink 收到 token 解析出的 ResolvedAction（public id + 可信 origin/builtin），
     // 不再是裸 public id 字符串：内置动作按 origin 路由，杜绝 public id 前缀伪造（DESIGN 8.3）。
     using SelectSink  = std::function<void(const menu_action::ResolvedAction& action)>;
@@ -94,9 +102,12 @@ public:
     // onValue 非空 = 富控件值变更路由（与 onSelect 正交；值变更不关闭菜单）。
     // opts.windowModel = 窗口几何模型（与 owner-mode 正交）：
     //   FullscreenOverlay（默认）= 铺工作区现状；ContentSized = 内容尺寸窗（测量回报后定位）。
+    // caller = 普通模式下结果事件的去处，记到本次菜单关闭为止；被下一次 Show 替换掉的
+    // 旧菜单，它的 dismiss 仍发给旧菜单的 caller。
     std::string Show(const json& items, int screenX, int screenY,
                      SelectSink onSelect = nullptr, DismissSink onDismiss = nullptr,
-                     const MenuShowOptions& opts = {}, ValueSink onValue = nullptr);
+                     const MenuShowOptions& opts = {}, ValueSink onValue = nullptr,
+                     const MenuCaller& caller = {});
 
     // 隐藏（池化保留 WebView）。reason 进入 menu:dismiss。
     void Hide(const std::string& reason);
@@ -252,6 +263,7 @@ private:
     DismissSink dismissSink_;             // owner-mode：dismiss 路由（可空）
     ValueSink   valueSink_;               // 富控件值变更路由（空=不回报，不关闭菜单）
     bool        ownerMode_ = false;       // 本次 show 是否 owner-mode
+    MenuCaller  caller_;                  // 普通模式的结果事件去处；与 sink 同样按次记录、按次清空
 
     // 窗口几何模型（与 ownerMode_ 正交）。
     MenuWindowModel windowModel_ = MenuWindowModel::FullscreenOverlay;

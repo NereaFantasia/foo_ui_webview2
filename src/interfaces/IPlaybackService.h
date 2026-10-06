@@ -6,9 +6,12 @@
 // the most common API handlers. Additional methods will be added in
 // subsequent batches as more handlers are interfaced.
 
+#include <optional>
 #include <string>
 #include <vector>
 #include <nlohmann/json.hpp>
+
+#include "api/generated/CommonSchema.h"
 
 class IPlaybackService {
 public:
@@ -86,8 +89,8 @@ public:
     /** @brief Lightweight now-playing summary (path, duration, subsong). */
     virtual NowPlayingInfo get_now_playing_info() const = 0;
 
-    /** @brief Full now-playing metadata as JSON; null when nothing is playing. */
-    virtual nlohmann::json get_current_track_json() const = 0;
+    /** @brief The now-playing track as the shared track row (api::common::Track); empty when nothing is playing. */
+    virtual std::optional<api::common::Track> get_current_track() const = 0;
 
     // Playing item location
     struct PlayingItemLocation {
@@ -97,8 +100,8 @@ public:
     };
     /** @brief Playlist/index location of the now-playing item. */
     virtual PlayingItemLocation get_playing_item_location() const = 0;
-    /** @brief Track metadata at the given playlist/index as JSON. */
-    virtual nlohmann::json get_track_info_at(size_t playlist, size_t index) const = 0;
+    /** @brief The track row at the given playlist/index; empty when that position holds no item. */
+    virtual std::optional<api::common::Track> get_track_at(size_t playlist, size_t index) const = 0;
 
     // Playing playlist info
     /** @brief Index of the playlist that owns the now-playing item (SIZE_MAX if none). */
@@ -112,6 +115,11 @@ public:
         std::string error;
         int tracksAdded = 0;
         int resolvedSubsong = 0;
+        // The path resolved to no playable content (as opposed to a failure while playing it).
+        bool unresolved = false;
+        // The active playlist carries a lock; nothing was added or played. `playlist` is its index.
+        bool locked = false;
+        size_t playlist = 0;
     };
     /** @brief Play a single file path, optionally a specific subsong. */
     virtual PathPlayResult play_single_path(const std::string& filePath, int subsongIndex, bool subsongRequested) = 0;
@@ -121,6 +129,11 @@ public:
         std::string error;
         size_t tracksAdded = 0;
         size_t startedAt = 0;
+        // None of the paths resolved to playable content.
+        bool unresolved = false;
+        // The active playlist carries a lock; nothing was cleared, added or played. `playlist` is its index.
+        bool locked = false;
+        size_t playlist = 0;
     };
     /** @brief Play multiple paths from startIndex, optionally replacing the active playlist. */
     virtual MultiPathPlayResult play_multiple_paths(const std::vector<std::string>& paths, size_t startIndex, bool replace = false) = 0;

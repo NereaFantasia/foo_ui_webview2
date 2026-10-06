@@ -3,37 +3,40 @@
 #include "pch.h"
 #include "PortApi.h"
 #include "PortHub.h"
-#include "BridgeCore.h"
+#include "TypedApi.h"
 #include "../core/WebViewContext.h"
 
-// Helper: Get caller HWND from params (injected by BridgeCore)
-static HWND GetCallerHwnd(const json& params) {
-    if (params.contains("_callerHwnd")) {
-        auto hwnd = reinterpret_cast<HWND>(params["_callerHwnd"].get<intptr_t>());
-        if (hwnd && IsWindow(hwnd)) {
-            // Get top-level window for panel mode
-            HWND topLevel = ::GetAncestor(hwnd, GA_ROOT);
-            return topLevel ? topLevel : hwnd;
-        }
+namespace {
+
+namespace pt = api::port;
+namespace ev = api::event;
+namespace st = api::state;
+
+// Top-level window of the caller (panel mode reports a child window).
+HWND GetCallerHwnd(HWND callerHwnd) {
+    if (callerHwnd && IsWindow(callerHwnd)) {
+        HWND topLevel = ::GetAncestor(callerHwnd, GA_ROOT);
+        return topLevel ? topLevel : callerHwnd;
     }
     return nullptr;
 }
 
-// Helper: Get caller window ID using _callerHwnd + WebViewContext
-static std::string GetCallerWindowId(const json& params) {
-    HWND callerHwnd = GetCallerHwnd(params);
+// Id of the caller's window; ports, events and state changes are attributed
+// to it. Falls back to "main" when the caller cannot be matched to a window.
+std::string GetCallerWindowId(const CallerContext& caller) {
+    HWND callerHwnd = GetCallerHwnd(caller.callerHwnd);
     if (!callerHwnd) {
         return "main";  // Fallback
     }
-    
+
     auto& ctx = WebViewContext::GetInstance();
-    
+
     // Try direct lookup
     std::string windowId = ctx.GetWindowIdByHwnd(callerHwnd);
     if (!windowId.empty()) {
         return windowId;
     }
-    
+
     // Panel mode: callerHwnd is top-level, need to find matching instance
     for (auto instanceHwnd : ctx.GetAllInstances()) {
         if (instanceHwnd == callerHwnd ||
@@ -42,151 +45,93 @@ static std::string GetCallerWindowId(const json& params) {
             if (!wid.empty()) return wid;
         }
     }
-    
+
     return "main";  // Final fallback
 }
 
+// A payload left out (or null) is delivered as an empty object.
+json PayloadOrEmpty(const std::optional<json>& payload) {
+    return payload ? *payload : json::object();
+}
+
+// ============================================================================
+// Port APIs
+// ============================================================================
+
+api::Result<pt::ConnectResult> PortConnect(const pt::ConnectParams& p, const CallerContext& caller) {
+    // callerHwnd is the calling page's own handle (WebViewPanel::hwnd_), so the
+    // port closes when that page navigates away or its WebView goes away.
+    return PortHub::Instance().CreatePort(p.name, GetCallerWindowId(caller), caller.callerHwnd);
+}
+
+// Only the window that opened a port may close it; PortHub checks the caller's
+// window id against the port's owner.
+api::Result<void> PortDisconnect(const pt::DisconnectParams& p, const CallerContext& caller) {
+    return PortHub::Instance().DestroyPort(p.portId, GetCallerWindowId(caller));
+}
+
+api::Result<pt::PostMessageResult> PortPostMessage(const pt::PostMessageParams& p, const CallerContext& caller) {
+    return PortHub::Instance().PostMessage(p.portId, p.message, GetCallerWindowId(caller));
+}
+
+api::Result<void> PortPostMessageTo(const pt::PostMessageToParams& p, const CallerContext& caller) {
+    return PortHub::Instance().PostMessageTo(p.portId, p.targetPortId, p.message, GetCallerWindowId(caller));
+}
+
+api::Result<pt::GetPortsResult> PortGetPorts(const pt::GetPortsParams& p) {
+    return PortHub::Instance().GetPorts(p.name);
+}
+
+// ============================================================================
+// Event APIs
+// ============================================================================
+
+api::Result<ev::EmitResult> EventEmit(const ev::EmitParams& p, const CallerContext& caller) {
+    return PortHub::Instance().EmitEvent(p.event, PayloadOrEmpty(p.payload), GetCallerWindowId(caller),
+                                         p.excludeSelf);
+}
+
+api::Result<void> EventEmitTo(const ev::EmitToParams& p, const CallerContext& caller) {
+    return PortHub::Instance().EmitEventTo(p.event, PayloadOrEmpty(p.payload), GetCallerWindowId(caller),
+                                           p.targetWindowId);
+}
+
+// ============================================================================
+// State APIs
+// ============================================================================
+
+api::Result<st::GetResult> StateGet(const st::GetParams& p) {
+    return PortHub::Instance().GetState(p.key);
+}
+
+api::Result<st::SetResult> StateSet(const st::SetParams& p, const CallerContext& caller) {
+    return PortHub::Instance().SetState(p.key, p.value, GetCallerWindowId(caller), p.silent, p.ttlMs);
+}
+
+api::Result<st::DeleteResult> StateDelete(const st::DeleteParams& p, const CallerContext& caller) {
+    return PortHub::Instance().DeleteState(p.key, GetCallerWindowId(caller));
+}
+
+api::Result<st::KeysResult> StateKeys(const st::KeysParams& p) {
+    return PortHub::Instance().GetStateKeys(p.pattern);
+}
+
+}  // namespace
+
 void RegisterPortApi() {
-    auto& bridge = BridgeCore::GetInstance();
-    auto& hub = PortHub::Instance();
+    // Parameters and results come from src/api/schema/{port,event,state}.ts
+    // through the generated types.
+    api::RegisterApi("port.connect", PortConnect);
+    api::RegisterApi("port.disconnect", PortDisconnect);
+    api::RegisterApi("port.postMessage", PortPostMessage);
+    api::RegisterApi("port.postMessageTo", PortPostMessageTo);
+    api::RegisterApi("port.getPorts", PortGetPorts);
 
-    // ========================================================================
-    // Port APIs
-    // ========================================================================
+    api::RegisterApi("event.emit", EventEmit);
+    api::RegisterApi("event.emitTo", EventEmitTo);
 
-    // port.connect - Create a named port
-    bridge.RegisterApi("port.connect", [&hub](const json& params) -> json {
-        std::string name = params.value("name", "");
-        if (name.empty()) {
-            return {{"error", "Port name is required"}, {"code", "INVALID_PARAMS"}};
-        }
-        std::string windowId = GetCallerWindowId(params);
-        return hub.CreatePort(name, windowId);
-    });
-
-    // port.disconnect - Destroy a port
-    bridge.RegisterApi("port.disconnect", [&hub](const json& params) -> json {
-        std::string portId = params.value("portId", "");
-        if (portId.empty()) {
-            return {{"error", "Port ID is required"}, {"code", "INVALID_PARAMS"}};
-        }
-        return hub.DestroyPort(portId);
-    });
-
-    // port.postMessage - Send message to all ports with same name
-    bridge.RegisterApi("port.postMessage", [&hub](const json& params) -> json {
-        std::string portId = params.value("portId", "");
-        if (portId.empty()) {
-            return {{"success", false}, {"error", "Port ID is required"}, {"code", "INVALID_PARAMS"}};
-        }
-        // message is required per design doc
-        if (!params.contains("message")) {
-            return {{"success", false}, {"error", "Message is required"}, {"code", "INVALID_PARAMS"}};
-        }
-        const auto& message = params["message"];
-        std::string sourceWindowId = GetCallerWindowId(params);
-        return hub.PostMessage(portId, message, sourceWindowId);
-    });
-
-    // port.postMessageTo - Send message to a specific port
-    bridge.RegisterApi("port.postMessageTo", [&hub](const json& params) -> json {
-        std::string portId = params.value("portId", "");
-        std::string targetPortId = params.value("targetPortId", "");
-        if (portId.empty() || targetPortId.empty()) {
-            return {{"success", false}, {"error", "Port ID and target port ID are required"}, {"code", "INVALID_PARAMS"}};
-        }
-        // message is required per design doc
-        if (!params.contains("message")) {
-            return {{"success", false}, {"error", "Message is required"}, {"code", "INVALID_PARAMS"}};
-        }
-        const auto& message = params["message"];
-        std::string sourceWindowId = GetCallerWindowId(params);
-        return hub.PostMessageTo(portId, targetPortId, message, sourceWindowId);
-    });
-
-    // port.getPorts - Get all ports (optionally filtered by name)
-    bridge.RegisterApi("port.getPorts", [&hub](const json& params) -> json {
-        std::optional<std::string> name;
-        if (params.contains("name") && !params["name"].is_null()) {
-            name = params["name"].get<std::string>();
-        }
-        return hub.GetPorts(name);
-    });
-
-    // ========================================================================
-    // Event APIs
-    // ========================================================================
-
-    // event.emit - Broadcast event to all windows
-    bridge.RegisterApi("event.emit", [&hub](const json& params) -> json {
-        std::string event = params.value("event", "");
-        if (event.empty()) {
-            return {{"success", false}, {"error", "Event name is required"}, {"code", "INVALID_PARAMS"}};
-        }
-        json payload = params.value("payload", json::object());
-        bool excludeSelf = params.value("excludeSelf", false);
-        std::string sourceWindowId = GetCallerWindowId(params);
-        return hub.EmitEvent(event, payload, sourceWindowId, excludeSelf);
-    });
-
-    // event.emitTo - Send event to a specific window
-    bridge.RegisterApi("event.emitTo", [&hub](const json& params) -> json {
-        std::string event = params.value("event", "");
-        std::string targetWindowId = params.value("targetWindowId", "");
-        if (event.empty() || targetWindowId.empty()) {
-            return {{"success", false}, {"error", "Event name and target window ID are required"}, {"code", "INVALID_PARAMS"}};
-        }
-        json payload = params.value("payload", json::object());
-        std::string sourceWindowId = GetCallerWindowId(params);
-        return hub.EmitEventTo(event, payload, sourceWindowId, targetWindowId);
-    });
-
-    // ========================================================================
-    // State APIs
-    // ========================================================================
-
-    // state.get - Get a value from shared state
-    bridge.RegisterApi("state.get", [&hub](const json& params) -> json {
-        std::string key = params.value("key", "");
-        if (key.empty()) {
-            return {{"error", "Key is required"}, {"code", "INVALID_PARAMS"}};
-        }
-        return hub.GetState(key);
-    });
-
-    // state.set - Set a value in shared state
-    bridge.RegisterApi("state.set", [&hub](const json& params) -> json {
-        std::string key = params.value("key", "");
-        if (key.empty()) {
-            return {{"success", false}, {"error", "Key is required"}, {"code", "INVALID_PARAMS"}};
-        }
-        // value is required per design doc
-        if (!params.contains("value")) {
-            return {{"success", false}, {"error", "Value is required"}, {"code", "INVALID_PARAMS"}};
-        }
-        const auto& value = params["value"];
-        std::string sourceWindowId = GetCallerWindowId(params);
-        bool silent = params.value("silent", false);
-        std::optional<int64_t> ttlMs;
-        if (params.contains("ttlMs") && !params["ttlMs"].is_null()) {
-            ttlMs = params["ttlMs"].get<int64_t>();
-        }
-        return hub.SetState(key, value, sourceWindowId, silent, ttlMs);
-    });
-
-    // state.delete - Delete a value from shared state
-    bridge.RegisterApi("state.delete", [&hub](const json& params) -> json {
-        std::string key = params.value("key", "");
-        if (key.empty()) {
-            return {{"success", false}, {"error", "Key is required"}, {"code", "INVALID_PARAMS"}};
-        }
-        std::string sourceWindowId = GetCallerWindowId(params);
-        return hub.DeleteState(key, sourceWindowId);
-    });
-
-    // state.keys - Get all keys in shared state (supports * wildcard pattern)
-    bridge.RegisterApi("state.keys", [&hub](const json& params) -> json {
-        std::string pattern = params.value("pattern", "*");
-        return hub.GetStateKeys(pattern);
-    });
+    api::RegisterApi("state.get", StateGet);
+    api::RegisterApi("state.set", StateSet);
+    api::RegisterApi("state.delete", StateDelete);
+    api::RegisterApi("state.keys", StateKeys);
 }

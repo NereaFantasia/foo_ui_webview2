@@ -23,7 +23,7 @@ class input_stream_info_reader_entry_impl : public input_stream_info_reader_entr
 public:
 	input_stream_info_reader::ptr open(const char * path, file::ptr fileHint, abort_callback & abort) {
 		typedef input_stream_info_reader_impl<input_t> obj_t;
-		service_ptr_t<obj_t> p = new service_impl_t<obj_t>();
+		service_ptr_t p = new service_impl_t<obj_t>();
 		p->theInput.open(fileHint, path, input_open_info_read, abort);
 		return p;
 	}

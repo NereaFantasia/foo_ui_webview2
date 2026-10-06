@@ -1,6 +1,7 @@
 #pragma once
 
 #include <libPPUI/CFlashWindow.h>
+#include <SDK/configStore.h>
 #include "atl-misc.h"
 
 #include <utility>
@@ -42,7 +43,10 @@ private:
 		if (m_selfDestruct || this->m_hWnd == NULL) return false;
 		//PROBLEM: This assumes we're implementing service_base methods at this point. Explodes if called during constructors/destructors.
 		if (!this->m_callback->request_activation(this)) return false;
-		m_flash.Activate(*this);
+		auto api = fb2k::configStore::tryGet();
+		if (!api || api->getConfigBool("UI.flashOnBumpElement", true)) {
+			m_flash.Activate(*this);
+		}
 		this->set_default_focus();
 		return true;
 	}

@@ -56,6 +56,9 @@ public:
 	bool decode_get_dynamic_info_track(file_info & p_out, double & p_timestamp_delta);
 	//! Obsolete, do not use, do not rely on.
 	void decode_on_idle(abort_callback & p_abort);
+    
+	//! See input_decoder_v5::poll_live_info().
+	void decode_poll_live_info(pfc::list_base_t<input_live_info_t>&, abort_callback&);
 
 	//! See: input_info_writer::set_info(). Valid after open() with input_open_info_write reason. \n
 	//! If your implementation does not support writing tags, throw exception_tagging_unsupported from open() and retag_* methods will never be called.
@@ -110,10 +113,10 @@ public:
 	bool decode_get_dynamic_info(file_info& p_out, double& p_timestamp_delta) { (void)p_out; (void)p_timestamp_delta; return false; }
 	bool decode_get_dynamic_info_track(file_info& p_out, double& p_timestamp_delta) { (void)p_out; (void)p_timestamp_delta; return false; }
 	void decode_on_idle(abort_callback& p_abort) { (void)p_abort; }
-
+    void decode_poll_live_info(pfc::list_base_t<input_live_info_t>&, abort_callback&) { }
 
 	//! These typedefs indicate which interfaces your class actually supports. You can override them to support non default input API interfaces without specifying input_factory parameters.
-	typedef input_decoder_v4 interface_decoder_t;
+	typedef input_decoder_v5 interface_decoder_t;
 	typedef input_info_reader_v2 interface_info_reader_t;
 	typedef input_info_writer_v2 interface_info_writer_t;
 };
@@ -170,6 +173,8 @@ public:
 	//! See: input_entry::is_our_path().
 	static bool g_is_our_path(const char * p_path,const char * p_extension);
 
+	//! See input_decoder_v5::poll_live_info().
+	void decode_poll_live_info(pfc::list_base_t<input_live_info_t>&, abort_callback&);
 protected:
 	input_singletrack_impl() {}
 	~input_singletrack_impl() {}
@@ -299,7 +304,9 @@ public:
 	void remove_tags(abort_callback & p_abort) {
 		m_instance.remove_tags(p_abort);
 	}
-
+    void poll_live_info(pfc::list_base_t<input_live_info_t>& ret, abort_callback&a) {
+        return m_instance.decode_poll_live_info(ret, a);
+    }
 private:
 	I m_instance;
 
@@ -392,6 +399,7 @@ public:
 	bool decode_get_dynamic_info(file_info & p_out, double & p_timestamp_delta) {return m_instance.decode_get_dynamic_info(p_out,p_timestamp_delta);}
 	bool decode_get_dynamic_info_track(file_info & p_out, double & p_timestamp_delta) {return m_instance.decode_get_dynamic_info_track(p_out,p_timestamp_delta);}
 	void decode_on_idle(abort_callback & p_abort) {m_instance.decode_on_idle(p_abort);}
+    void decode_poll_live_info(pfc::list_base_t<input_live_info_t>& ret, abort_callback&a) {return m_instance.decode_poll_live_info(ret, a);}
 
 	void retag_set_info(t_uint32 p_subsong,const file_info & p_info,abort_callback & p_abort) {
 		if (p_subsong != 0) throw exception_io_bad_subsong_index();

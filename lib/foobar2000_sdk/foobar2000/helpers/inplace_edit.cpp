@@ -1,7 +1,8 @@
 #include "stdafx.h"
 #include "inplace_edit.h"
 
-// Functionality moved to libPPUI
+// InPlaceEdit code moved from helpers to libPPUI and made work without fb2k specific classes
+// This helpers module implements old method signatures and calls libPPUI implementation
 
 namespace InPlaceEdit {
 	static reply_t wrapCN( completion_notify::ptr cn ) {

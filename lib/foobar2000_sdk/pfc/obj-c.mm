@@ -1,10 +1,3 @@
-//
-//  PFC-ObjC.m
-//  pfc-test
-//
-//  Created by PEPE on 28/07/14.
-//  Copyright (c) 2014 PEPE. All rights reserved.
-//
 #ifdef __APPLE__
 #import <Foundation/Foundation.h>
 
@@ -66,6 +59,7 @@ namespace pfc {
         @autoreleasepool {
             NSFileManager * manager = [NSFileManager defaultManager];
             NSURL * url = [NSURL fileURLWithPath: [NSString stringWithUTF8String: path] ];
+#if ! TARGET_OS_TV // no trashItemAtURL on TV
             if (@available(iOS 11.0, *)) {
                 NSError * error = nil;
                 if ([manager trashItemAtURL: url resultingItemURL: nil error: &error]) {
@@ -78,6 +72,7 @@ namespace pfc {
                     return false;
                 }
             }
+#endif
             return [manager removeItemAtURL: url error: nil];
         }
     }
@@ -130,6 +125,13 @@ namespace pfc {
     sortString_t makeSortString(const char* str) {
         sortString_t ret;
         ret.Attach( CFStringCreateWithCString(NULL, str, kCFStringEncodingUTF8) );
+        if ( ! ret.p ) {
+            auto temp = pfc::recover_invalid_utf8_v2(str);
+            ret.Attach( CFStringCreateWithCString(NULL, temp, kCFStringEncodingUTF8) );
+        }
+        if (! ret.p ) {
+            throw std::bad_alloc();
+        }
         return ret;
     }
     int sortStringCompare(sortString_t const& s1, sortString_t const& s2) {

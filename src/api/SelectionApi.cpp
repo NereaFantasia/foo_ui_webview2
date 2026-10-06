@@ -1,17 +1,21 @@
 ﻿#include "pch.h"
 #include "api/SelectionApi.h"
-#include "api/BridgeCore.h"
-#include "api/PlaybackApi.h"  // 用于 GetTrackInfo()
+#include "api/PlaylistApi.h"
+#include "api/PlaylistTarget.h"
+#include "api/TrackRow.h"
+#include "api/TypedApi.h"
+#include "api/generated/SelectionSchema.h"
 #include "utils/SubsongUtils.h"
 
 // ============================================
 // Selection API Implementation
 // ============================================
-// 
+//
 // 提供选择相关的 API：
 // - selection.getViewerMode    获取用户的 Selection Viewer 偏好
 // - selection.getViewingTrack  获取当前应该显示的曲目（带 Fallback 逻辑）
 // - selection.get              获取当前全局选择
+// 形状由 src/api/schema/selection.ts 声明，结构体与参数解析来自生成的 SelectionSchema.h。
 
 // ============================================
 // Helper Functions
@@ -19,12 +23,14 @@
 
 namespace {
 
+namespace selection = api::selection;
+
 // 获取 Selection Viewer 模式字符串
 // 基于 ui_selection_manager::get_selection_type() 的返回值
 std::string GetViewerModeString() {
     auto selMgr = ui_selection_manager::get();
     GUID type = selMgr->get_selection_type();
-    
+
     // 比较 contextmenu_item::caller_now_playing
     // 如果类型是 now_playing，则用户偏好是 "prefer_playing"
     // 否则是 "prefer_selection"
@@ -54,12 +60,19 @@ std::string GetSelectionTypeString(const GUID& type) {
     return "unknown";
 }
 
+// 队列与选择共用的 handle 串：原生路径，仅 subsong > 0 时附加 "|subsong:N"。
+std::string HandleStringOf(const metadb_handle_ptr& track) {
+    pfc::string8 nativePath;
+    filesystem::g_get_native_path(track->get_path(), nativePath);
+    std::string handlePath = nativePath.get_ptr();
+    t_uint32 subsong = track->get_subsong_index();
+    if (subsong > 0) {
+        handlePath += "|subsong:" + std::to_string(subsong);
+    }
+    return handlePath;
+}
+
 } // namespace
-
-// ============================================
-// API Registration
-// ============================================
-
 
 // ==========================================================================
 // Selection API handler functions
@@ -69,12 +82,10 @@ namespace {
 
 // ========== selection.getViewerMode ==========
 // 获取用户在 Preferences > Display > Selection Viewers 中的设置
-// 返回 "prefer_playing" 或 "prefer_selection"
-json SelectionGetViewerMode(const json& params) {
-    std::string mode = GetViewerModeString();
-    return {
-        {"mode", mode}
-    };
+api::Result<selection::GetViewerModeResult> SelectionGetViewerMode(const selection::GetViewerModeParams& /*params*/) {
+    selection::GetViewerModeResult result;
+    result.mode = GetViewerModeString();
+    return result;
 }
 
 
@@ -83,18 +94,18 @@ json SelectionGetViewerMode(const json& params) {
 // 1. 如果用户偏好是 prefer_playing 且有正在播放的曲目，返回 now_playing
 // 2. 否则返回当前选择的第一个曲目
 // 3. 如果都没有，fallback 到 now_playing
-json SelectionGetViewingTrack(const json& params) {
+api::Result<selection::GetViewingTrackResult> SelectionGetViewingTrack(const selection::GetViewingTrackParams& params) {
     auto selMgr = ui_selection_manager::get();
     auto pc = playback_control::get();
-    
+
     GUID type = selMgr->get_selection_type();
-    std::string mode = (type == contextmenu_item::caller_now_playing) 
-        ? "prefer_playing" 
+    const std::string mode = (type == contextmenu_item::caller_now_playing)
+        ? "prefer_playing"
         : "prefer_selection";
-    
+
     metadb_handle_ptr track;
     std::string source;
-    
+
     // Fallback 逻辑
     if (mode == "prefer_playing") {
         // 优先使用正在播放的曲目
@@ -102,19 +113,19 @@ json SelectionGetViewingTrack(const json& params) {
             source = "now_playing";
         } else {
             // 回退到选择
-            metadb_handle_list selection;
-            selMgr->get_selection(selection);
-            if (selection.get_count() > 0) {
-                track = selection[0];
+            metadb_handle_list selectionList;
+            selMgr->get_selection(selectionList);
+            if (selectionList.get_count() > 0) {
+                track = selectionList[0];
                 source = "selection";
             }
         }
     } else {
         // 优先使用选择
-        metadb_handle_list selection;
-        selMgr->get_selection(selection);
-        if (selection.get_count() > 0) {
-            track = selection[0];
+        metadb_handle_list selectionList;
+        selMgr->get_selection(selectionList);
+        if (selectionList.get_count() > 0) {
+            track = selectionList[0];
             source = "selection";
         } else {
             // 回退到正在播放
@@ -123,23 +134,26 @@ json SelectionGetViewingTrack(const json& params) {
             }
         }
     }
-    
+
+    selection::GetViewingTrackResult result;
+    result.mode = mode;
     if (!track.is_valid()) {
-        return {
-            {"success", true},
-            {"found", false},
-            {"mode", mode}
-        };
+        result.found = false;
+        return result;
     }
-    
+
     // 获取曲目在播放列表中的位置
     auto plm = playlist_manager::get();
     size_t playlistIndex = pfc::infinite_size;
     size_t itemIndex = pfc::infinite_size;
-    
+
     if (source == "now_playing") {
-        // 对于正在播放的曲目，使用 get_playing_item_location
-        plm->get_playing_item_location(&playlistIndex, &itemIndex);
+        // 对于正在播放的曲目，使用 get_playing_item_location。返回 false 时 SDK 没说出参写了什么，
+        // 两个都按未知处理。
+        if (!plm->get_playing_item_location(&playlistIndex, &itemIndex)) {
+            playlistIndex = pfc::infinite_size;
+            itemIndex = pfc::infinite_size;
+        }
     } else {
         // 对于选择，在活动播放列表中查找
         playlistIndex = plm->get_active_playlist();
@@ -154,112 +168,80 @@ json SelectionGetViewingTrack(const json& params) {
             }
         }
     }
-    
-    // 构建 handle 字符串
-    pfc::string8 nativePath;
-    filesystem::g_get_native_path(track->get_path(), nativePath);
-    std::string handlePath = nativePath.get_ptr();
-    t_uint32 subsong = track->get_subsong_index();
-    if (subsong > 0) {
-        handlePath += "|subsong:" + std::to_string(subsong);
+
+    result.found = true;
+    result.source = source;
+    result.handle = HandleStringOf(track);
+
+    // 列表与行成对报告：选中的曲目不在活动列表里时，只报列表会被当成「在这张列表里」。
+    if (playlistIndex != pfc::infinite_size && itemIndex != pfc::infinite_size
+        && playlistIndex < plm->get_playlist_count()) {
+        result.playlistIndex = static_cast<std::int64_t>(playlistIndex);
+        result.playlistGuid = api::PlaylistGuidOf(*GetPlaylistService(), playlistIndex);
+        result.itemIndex = static_cast<std::int64_t>(itemIndex);
     }
-    
-    json result = {
-        {"success", true},
-        {"found", true},
-        {"mode", mode},
-        {"source", source},
-        {"handle", handlePath}
-    };
-    
-    // 如果找到位置信息，添加到结果
-    if (playlistIndex != pfc::infinite_size) {
-        result["playlistIndex"] = playlistIndex;
-    }
-    if (itemIndex != pfc::infinite_size) {
-        result["itemIndex"] = itemIndex;
-    }
-    
+
     // 如果请求包含曲目信息
-    if (params.value("includeTrackInfo", false)) {
-        result["track"] = GetTrackInfo(track);
+    if (params.includeTrackInfo) {
+        result.track = BuildTrackRow(track);
     }
-    
+
     return result;
 }
 
 
 // ========== selection.get ==========
 // 获取当前全局选择的曲目列表
-json SelectionGet(const json& params) {
+api::Result<selection::GetResult> SelectionGet(const selection::GetParams& params) {
     auto selMgr = ui_selection_manager::get();
-    
-    metadb_handle_list selection;
-    selMgr->get_selection(selection);
-    
+
+    metadb_handle_list selectionList;
+    selMgr->get_selection(selectionList);
+
     GUID type = selMgr->get_selection_type();
-    std::string typeStr = GetSelectionTypeString(type);
-    
-    size_t count = selection.get_count();
-    
-    // 分页参数
-    size_t offset = params.value("offset", static_cast<size_t>(0));
-    size_t limit = params.value("limit", static_cast<size_t>(100));
-    
-    // 如果 limit 为 0，返回全部
+
+    const size_t count = selectionList.get_count();
+
+    // 分页参数：limit 省略时按 100 封顶并报告 truncated；limit 为 0 表示全部
+    const size_t offset = static_cast<size_t>(params.offset);
+    size_t limit = params.limit.has_value() ? static_cast<size_t>(*params.limit) : 100;
     if (limit == 0) {
         limit = count;
     }
-    
-    // 阈值优化：如果选择数量 > 100 且没有指定 limit，只返回 count
+
     bool truncated = false;
-    if (count > 100 && !params.contains("limit")) {
+    if (count > 100 && !params.limit.has_value()) {
         truncated = true;
         limit = 100;
     }
-    
-    json handles = json::array();
-    size_t end = std::min(offset + limit, count);
-    
+
+    selection::GetResult result;
+    const size_t end = std::min(offset + limit, count);
     for (size_t i = offset; i < end; i++) {
-        metadb_handle_ptr h = selection[i];
-        pfc::string8 nativePath;
-        filesystem::g_get_native_path(h->get_path(), nativePath);
-        std::string handlePath = nativePath.get_ptr();
-        t_uint32 subsong = h->get_subsong_index();
-        if (subsong > 0) {
-            handlePath += "|subsong:" + std::to_string(subsong);
-        }
-        handles.push_back(handlePath);
+        result.handles.push_back(HandleStringOf(selectionList[i]));
     }
-    
-    json result = {
-        {"count", count},
-        {"type", typeStr},
-        {"handles", handles},
-        {"offset", offset}
-    };
-    
+
+    result.count = static_cast<std::int64_t>(count);
+    result.type = GetSelectionTypeString(type);
+    result.offset = static_cast<std::int64_t>(offset);
     if (truncated) {
-        result["truncated"] = true;
-        result["hasMore"] = true;
+        result.truncated = true;
+        result.hasMore = true;
     } else {
-        result["hasMore"] = (end < count);
+        result.hasMore = (end < count);
     }
-    
     return result;
 }
 
 
 // ========== selection.getType ==========
 // 获取选择类型（SMP 兼容 API）
-// -- (0-6) ------------------------------------------------------------
-json SelectionGetType(const json& params) {
+api::Result<selection::GetTypeResult> SelectionGetType(const selection::GetTypeParams& /*params*/) {
     auto selMgr = ui_selection_manager::get();
     GUID type = selMgr->get_selection_type();
-    
+
     // 类型索引参考 SMP 文档
-    int typeIndex = 0;
+    std::int64_t typeIndex = 0;
     if (type == contextmenu_item::caller_now_playing) {
         typeIndex = 0;
     } else if (type == contextmenu_item::caller_active_playlist_selection) {
@@ -271,125 +253,83 @@ json SelectionGetType(const json& params) {
     } else if (type == contextmenu_item::caller_media_library_viewer) {
         typeIndex = 5;
     }
-    
-    return {
-        {"type", typeIndex},
-        {"typeName", GetSelectionTypeString(type)}
-    };
+
+    selection::GetTypeResult result;
+    result.type = typeIndex;
+    result.typeName = GetSelectionTypeString(type);
+    return result;
 }
 
 
 // ========== selection.set ==========
 // 设置当前选择
-// 参数: { handles: ["path|subsong:N", ...] }
-json SelectionSet(const json& params) {
-    // -- handles ------------------------------------------------------
-    if (!params.contains("handles") || !params["handles"].is_array()) {
-        return {
-            {"success", false},
-            {"error", "handles array is required"}
-        };
-    }
-    
-    const auto& handlesJson = params["handles"];
-    if (handlesJson.empty()) {
-        return {
-            {"success", false},
-            {"error", "handles array is empty"}
-        };
-    }
-    
+api::Result<selection::SetResult> SelectionSet(const selection::SetParams& params) {
     // 解析 handles：拆 path|subsong:N，规范化后建 handle，与 playlist 里的曲目同一身份
     metadb_handle_list items;
 
-    for (const auto& handleJson : handlesJson) {
-        if (!handleJson.is_string()) continue;
-
-        auto [filePath, subsongIndex] = SubsongUtils::ParseSubsongPath(handleJson.get<std::string>());
+    for (const std::string& handleString : params.handles) {
+        auto [filePath, subsongIndex] = SubsongUtils::ParseSubsongPath(handleString);
         metadb_handle_ptr handle = SubsongUtils::CreateCanonicalHandle(filePath, subsongIndex);
         if (handle.is_valid()) {
             items.add_item(handle);
         }
     }
-    
+
     if (items.get_count() == 0) {
-        return {
-            {"success", false},
-            {"error", "No valid handles found"}
-        };
+        return api::Fail("No valid handles found", ApiErrorCode::INVALID_PARAMS);
     }
-    
+
     // 获取 holder 并设置选择
     try {
         auto selMgr = ui_selection_manager::get();
         auto holder = selMgr->acquire();
-        if (holder.is_valid()) {
-            holder->set_selection(items);
-            return {
-                {"success", true},
-                {"count", items.get_count()}
-            };
-        } else {
-            return {
-                {"success", false},
-                {"error", "Failed to acquire selection holder"}
-            };
+        if (!holder.is_valid()) {
+            return api::Fail("Failed to acquire selection holder", ApiErrorCode::OPERATION_FAILED);
         }
+        holder->set_selection(items);
+        selection::SetResult result;
+        result.count = static_cast<std::int64_t>(items.get_count());
+        return result;
     } catch (...) {
-        return {
-            {"success", false},
-            {"error", "Exception while setting selection"}
-        };
+        return api::Fail("Exception while setting selection", ApiErrorCode::OPERATION_FAILED);
     }
 }
 
 
 // ========== selection.setPlaylistTracking ==========
-// 设置播放列表跟踪模式
-// 参数: { mode: "selection" | "playlist" }
-json SelectionSetPlaylistTracking(const json& params) {
-    std::string mode = params.value("mode", "selection");
-    
+// 设置播放列表跟踪模式；mode 的取值已由生成的解析器限定为 selection / playlist
+api::Result<selection::SetPlaylistTrackingResult> SelectionSetPlaylistTracking(const selection::SetPlaylistTrackingParams& params) {
     try {
         auto selMgr = ui_selection_manager::get();
         auto holder = selMgr->acquire();
-        
+
         if (!holder.is_valid()) {
-            return {
-                {"success", false},
-                {"error", "Failed to acquire selection holder"}
-            };
+            return api::Fail("Failed to acquire selection holder", ApiErrorCode::OPERATION_FAILED);
         }
-        
-        if (mode == "playlist") {
+
+        if (params.mode == "playlist") {
             holder->set_playlist_tracking();
         } else {
             holder->set_playlist_selection_tracking();
         }
-        
-        return {
-            {"success", true},
-            {"mode", mode}
-        };
+
+        selection::SetPlaylistTrackingResult result;
+        result.mode = params.mode;
+        return result;
     } catch (...) {
-        return {
-            {"success", false},
-            {"error", "Exception while setting tracking mode"}
-        };
+        return api::Fail("Exception while setting tracking mode", ApiErrorCode::OPERATION_FAILED);
     }
 }
 
 } // namespace
 
 void RegisterSelectionApi() {
-    auto& bridge = BridgeCore::GetInstance();
-
-    bridge.RegisterApi("selection.getViewerMode", SelectionGetViewerMode);
-    bridge.RegisterApi("selection.getViewingTrack", SelectionGetViewingTrack);
-    bridge.RegisterApi("selection.get", SelectionGet);
-    bridge.RegisterApi("selection.getType", SelectionGetType);
-    bridge.RegisterApi("selection.set", SelectionSet);
-    bridge.RegisterApi("selection.setPlaylistTracking", SelectionSetPlaylistTracking);
+    api::RegisterApi("selection.getViewerMode", SelectionGetViewerMode);
+    api::RegisterApi("selection.getViewingTrack", SelectionGetViewingTrack);
+    api::RegisterApi("selection.get", SelectionGet);
+    api::RegisterApi("selection.getType", SelectionGetType);
+    api::RegisterApi("selection.set", SelectionSet);
+    api::RegisterApi("selection.setPlaylistTracking", SelectionSetPlaylistTracking);
 
     LOG("Selection API registered");
 }

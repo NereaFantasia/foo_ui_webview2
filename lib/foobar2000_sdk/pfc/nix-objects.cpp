@@ -13,6 +13,10 @@
 #include <mach-o/dyld.h>
 #endif
 
+#ifdef __linux__
+#include <sys/eventfd.h>
+#endif
+
 #include "nix-objects.h"
 #include "string_base.h"
 #include "array.h"
@@ -89,16 +93,14 @@ namespace pfc {
         m_fds.erase(fd);
     }
     bool fdSet::operator[] (int fd ) {
-        return m_fds.find( fd ) != m_fds.end();
+        return m_fds.contains( fd );
     }
     void fdSet::clear() {
         m_fds.clear();
     }
     
     void fdSet::operator+=( fdSet const & other ) {
-        for(auto i = other.m_fds.begin(); i != other.m_fds.end(); ++ i ) {
-            (*this) += *i;
-        }
+        for(auto i : other.m_fds) m_fds.insert(i);
     }
 
     int fdSelect::Select() {
@@ -215,29 +217,50 @@ namespace pfc {
     }
     
     nix_event::nix_event(bool state) {
-        createPipe( m_fd );
-        setNonBlocking( m_fd[0] );
-        setNonBlocking( m_fd[1] );
-        if ( state ) set_state(true);
+        try {
+#ifdef __linux__
+            int fd = eventfd(state?1:0,EFD_NONBLOCK | EFD_CLOEXEC);
+            if ( fd < 0 ) throw exception_nix();
+            m_fd[0] = fd; m_fd[1] = fd;
+#else
+            createPipe( m_fd );
+            setNonBlocking( m_fd[0] );
+            setNonBlocking( m_fd[1] );
+            if ( state ) set_state(true);
+#endif
+        } catch(...) {
+            _clear(); throw;
+        }
     }
-    nix_event::~nix_event() {
-        close( m_fd[0] );
-        close( m_fd[1] );
+    void nix_event::_clear() noexcept {
+        if (m_fd[0] != -1) close(m_fd[0]);
+        if (m_fd[1] != -1 && m_fd[1] != m_fd[0]) close(m_fd[1]);
+        m_fd[0] = -1; m_fd[1] = -1;
     }
     
     void nix_event::set_state( bool state ) {
         if (state) {
+#ifdef __linux__
+            uint64_t  writeMe = 1;
+            write( m_fd[1], &writeMe, sizeof(writeMe));
+#else
             // Ensure that there is a byte in the pipe
-            if (!fdCanRead(m_fd[0] ) ) {
-                uint8_t dummy = 0;
-                write( m_fd[1], &dummy, 1);
+            if (!fdCanRead(m_fd[0])) {
+                uint8_t writeMe = 0;
+                write( m_fd[1], &writeMe, sizeof(writeMe));
             }
+#endif
         } else {
+#ifdef __linux__
+            uint64_t val;
+            read(m_fd[0], &val, sizeof(val));
+#else
             // Keep reading until clear
+            uint8_t dummy[16];
             for(;;) {
-                uint8_t dummy;
-                if (read(m_fd[0], &dummy, 1 ) != 1) break;
+                if (read(m_fd[0], dummy, sizeof(dummy) ) != sizeof(dummy)) break;
             }
+#endif
         }
     }
     
@@ -268,6 +291,8 @@ namespace pfc {
         return g_multiWait(arg.begin(), arg.size(), timeout);
     }
     int nix_event::g_twoEventWait( int h1, int h2, double timeout ) {
+        PFC_ASSERT( h1 != -1 );
+        PFC_ASSERT( h2 != -1 );
         fdSelect sel;
         sel.Reads += h1;
         sel.Reads += h2;

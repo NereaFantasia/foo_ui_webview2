@@ -5,7 +5,7 @@
 class NOVTABLE playback_stream_capture_callback {
 public:
 	//! Delivers a real-time chunk of audio data. \n
-	//! Audio is roughly synchronized with what can currently be heard. This API is provided for utility purposes such as streaming; if you want to implement a visualisation, use the visualisation_manager API instead. \n
+	//! Audio is roughly synchronized with what can currently be heard. This API is provided for utility purposes such as streaming; if you want to implement a visualisation, use the @c visualisation_manager API instead. \n
 	//! Contrary to visualisation methods, this guarantees that all played audio data is coming thru. \n
 	//! Called only from the main thread. \n
 	virtual void on_chunk(const audio_chunk &) = 0;
@@ -19,10 +19,10 @@ protected:
 class NOVTABLE playback_stream_capture : public service_base {
 	FB2K_MAKE_SERVICE_COREAPI(playback_stream_capture)
 public:
-	//! Register a playback_stream_capture_callback. \n
+	//! Register a @c playback_stream_capture_callback. \n
 	//! Possible to call only from the main thread.
 	virtual void add_callback(playback_stream_capture_callback * ) = 0;
-	//! Un-register a playback_stream_capture_callback. \n
+	//! Un-register a @c playback_stream_capture_callback. \n
 	//! Possible to call only from the main thread.
 	virtual void remove_callback(playback_stream_capture_callback * ) = 0;
 };
@@ -43,7 +43,7 @@ class playback_stream_capture_callback_impl : public playback_stream_capture_cal
 public:
 	void on_chunk(const audio_chunk&) override {}
 
-    //! @param interval requested update interval, see playback_stream_capture_v2::add_callback_v2()
+    //! @param interval requested update interval, see @c playback_stream_capture_v2::add_callback_v2()
 	playback_stream_capture_callback_impl(double interval = -1) {
 		PFC_ASSERT(core_api::is_main_thread());
 #if FOOBAR2020

@@ -20,7 +20,6 @@ public:
 	};
 
 	//! Returns whether the specified item is in the Media Library or not.
-	//! MAIN THREAD ONLY until foobar2000 v2.0; valid to call from anywhere since v2.0
 	virtual bool is_item_in_library(const metadb_handle_ptr & p_item) = 0;
 	//! Returns whether current user settings allow the specified item to be added to the Media Library or not.
 	//! MAIN THREAD ONLY until foobar2000 v2.0; valid to call from anywhere since v2.0
@@ -192,7 +191,7 @@ public:
 class NOVTABLE library_meta_autocomplete : public service_base {
 	FB2K_MAKE_SERVICE_COREAPI(library_meta_autocomplete)
 public:
-	virtual bool get_value_list(const char * metaName, pfc::com_ptr_t<IUnknown> & out) = 0;
+	virtual bool get_value_list(const char * metaName, pfc::com_ptr_t<struct IUnknown> & out) = 0;
 };
 
 //! \since 1.6.1
@@ -201,7 +200,7 @@ public:
 class NOVTABLE library_meta_autocomplete_v2 : public service_base {
 	FB2K_MAKE_SERVICE_COREAPI(library_meta_autocomplete_v2)
 public:
-	virtual bool get_value_list_async(const char* metaName, pfc::com_ptr_t<IUnknown>& out) = 0;
+	virtual bool get_value_list_async(const char* metaName, pfc::com_ptr_t<struct IUnknown>& out) = 0;
 };
 
 #endif // _WIN32

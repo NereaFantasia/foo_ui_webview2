@@ -16,11 +16,7 @@ void tag_processor_id3v2::g_remove_ex(tag_write_callback & p_callback,const serv
 {
 	p_file->ensure_seekable();
 
-	t_filesize len;
-	
-	len = p_file->get_size(p_abort);
-
-	if (len == filesize_invalid) throw exception_io_no_length();
+	t_filesize len = p_file->get_size_ex(p_abort);
 	
 	p_file->seek(0,p_abort);
 	
@@ -110,6 +106,12 @@ void tag_processor_id3v2::g_skip_at(const service_ptr_t<file> & p_file,t_filesiz
 	}
 
 	p_size_skipped = ret;
+}
+
+bool tag_processor_id3v2::read_v3_(file::ptr const& file, file_info& outInfo, event_logger::ptr const & logger, abort_callback& abort) {
+	tag_processor_id3v2_v3::ptr v3;
+	if (v3 &= this) return v3->read_v3(file, outInfo, logger, abort);
+	else return read_v2_(file, outInfo, abort);
 }
 
 bool tag_processor_id3v2::read_v2_(file::ptr const& file, file_info& outInfo, abort_callback& abort) {

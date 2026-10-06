@@ -6,8 +6,10 @@
 #include "window/WindowChromeTrace.h"
 #include "webview/WebViewHost.h"
 #include "core/WebViewContext.h"
-#include "core/PreferencesPage.h"
+#include "prefs/PreferencesPage.h"
 #include "api/WindowApi.h"
+#include "api/EventEmit.h"
+#include "api/generated/WindowSchema.h"
 
 using namespace mainwindow_detail;
 
@@ -393,13 +395,12 @@ bool MainWindow::CanBroadcastBackdropStateChanged() const {
 
 void MainWindow::BroadcastBackdropStateChanged(bool active, const std::string& mode,
                                                const std::string& effect) const {
-    json data = {
-        {"windowId", "main"},
-        {"active", active},
-        {"mode", mode},
-        {"effect", effect}
-    };
-    WebViewContext::GetInstance().BroadcastEvent("window:backdropStateChanged", data);
+    api::window::BackdropStateChangedPayload payload;
+    payload.windowId = "main";
+    payload.active = active;
+    payload.mode = mode;
+    payload.effect = effect;
+    api::emit::Broadcast<api::window::events::BackdropStateChanged>(payload);
 }
 
 std::string MainWindow::NormalizeBackdropEffect(const std::string& effect, bool allowSystem,

@@ -11,16 +11,14 @@
 #include "CListControl-Subst.h"
 #include "ReStyleWnd.h"
 #include <map>
+#include <shared_mutex>
+#include "DarkMode-Config.h"
 
-// Allow scary undocumented ordinal-dll-export functions?
-#define DARKMODE_ALLOW_HAX 1
-
-#define DARKMODE_DEBUG 0
 
 #if DARKMODE_DEBUG
 #define DARKMODE_DEBUG_PRINT(...) PFC_DEBUG_PRINT("DarkMode: ", __VA_ARGS__)
 #else
-#define DARKMODE_DEBUG_PRINT(...)
+#define DARKMODE_DEBUG_PRINT(...) PFC_NO_OP
 #endif
 
 
@@ -45,6 +43,7 @@ ApplyDarkThemeCtrl() with "Explorer"
 == Drop list combo ==
 Method #1: ::SetWindowTheme(wnd, L"DarkMode_CFD", nullptr);
 Method #2: ::SetWindowTheme(wnd, L"", L""); to obey WM_CTLCOLOR* but leaves oldstyle classic-colors button and breaks comboboxex
+Must explicitly darken listbox to get dark scrollbars in it, see list box
 
 == Button ==
 Use WM_CTLCOLORBTN, background of 0x383838
@@ -100,7 +99,7 @@ Other projects shim Windows functions to bypass the above.
 Avoid using List View, use libPPUI CListControl instead.
 
 == List Box ==
-Use WM_CTLCOLOR*
+Use WM_CTLCOLOR* or DarkMode_Explorer
 
 == Status Bar ==
 Full custom draw
@@ -174,10 +173,8 @@ namespace {
 		SIZE_T cbData;
 	};
 #if DARKMODE_ALLOW_HAX
-	using fnAllowDarkModeForWindow = bool (WINAPI*)(HWND hWnd, bool allow); // ordinal 133
 	using fnSetPreferredAppMode = PreferredAppMode(WINAPI*)(PreferredAppMode appMode); // ordinal 135, since 1809
 	using fnFlushMenuThemes = void (WINAPI*)(); // ordinal 136
-	fnAllowDarkModeForWindow _AllowDarkModeForWindow = nullptr;
 	fnSetPreferredAppMode _SetPreferredAppMode = nullptr;
 	fnFlushMenuThemes _FlushMenuThemes = nullptr;
 
@@ -188,7 +185,6 @@ namespace {
 		if (DarkMode::IsSupportedSystem()) {
 			HMODULE hUxtheme = LoadLibraryEx(L"uxtheme.dll", nullptr, LOAD_LIBRARY_SEARCH_SYSTEM32);
 			if (hUxtheme) {
-				_AllowDarkModeForWindow = reinterpret_cast<fnAllowDarkModeForWindow>(GetProcAddress(hUxtheme, MAKEINTRESOURCEA(133)));
 				_SetPreferredAppMode = reinterpret_cast<fnSetPreferredAppMode>(GetProcAddress(hUxtheme, MAKEINTRESOURCEA(135)));
 				_FlushMenuThemes = reinterpret_cast<fnFlushMenuThemes>(GetProcAddress(hUxtheme, MAKEINTRESOURCEA(136)));
 			}
@@ -210,9 +206,6 @@ namespace DarkMode {
 	bool IsSupportedSystem() {
 		return Win10BuildNumber() >= 17763 && !IsWine(); // require at least Win10 1809 / Server 2019
 	}
-	bool IsWindows11() {
-		return Win10BuildNumber() >= 22000;
-	}
 	bool QueryUserOption() {
 		DWORD v = 0;
 		DWORD cb = sizeof(v);
@@ -228,8 +221,8 @@ namespace DarkMode {
 		if (!IsSupportedSystem()) return;
 
 		CWindow wnd(hWnd);
-		DWORD style = wnd.GetStyle();
-		if ((style & WS_CAPTION) != WS_CAPTION) return;
+		const DWORD style = wnd.GetStyle();
+		if (style & WS_CHILD) return;
 
 #if 0
 		// Some apps do this - no idea why, doesn't work
@@ -238,7 +231,7 @@ namespace DarkMode {
 		SetProp(hWnd, L"UseImmersiveDarkModeColors", (HANDLE)(INT_PTR)(bDark ? TRUE : FALSE));
 #endif
 
-		if (IsWindows11()) {
+		if (IsWindows11OrNewer()) {
 			// DwmSetWindowAttribute()
 			// Windows 11 : works
 			// Windows 10 @ late 2021 : doesn't work
@@ -272,7 +265,6 @@ namespace DarkMode {
 
 	void ApplyDarkThemeCtrl2(HWND ctrl, bool bDark, const wchar_t* ThemeID_light, const wchar_t * ThemeID_dark) {
 		if (ctrl == NULL) return;
-		AllowDarkModeForWindow(ctrl, bDark);
 		if (bDark && IsSupportedSystem()) {
 			::SetWindowTheme(ctrl, ThemeID_dark, NULL);
 		} else {
@@ -280,9 +272,13 @@ namespace DarkMode {
 		}
 	}
 
+	void ApplyRetroTheme(HWND ctrl) {
+		if (ctrl == NULL) return;
+		SetWindowTheme(ctrl, L"", L"");
+	}
+
 	void ApplyDarkThemeCtrl(HWND ctrl, bool bDark, const wchar_t* ThemeID) {
 		if ( ctrl == NULL ) return;
-		AllowDarkModeForWindow(ctrl, bDark);
 		if (bDark && IsSupportedSystem()) {
 			std::wstring temp = L"DarkMode_"; temp += ThemeID;
 			::SetWindowTheme(ctrl, temp.c_str(), NULL);
@@ -300,6 +296,13 @@ namespace DarkMode {
 	void DarkenComboLite(HWND ctrl) {
 		if (IsSupportedSystem()) {
 			::SetWindowTheme(ctrl, L"DarkMode_CFD", NULL);
+			CComboBox combo = ctrl;
+			COMBOBOXINFO info = { sizeof(info) };
+			WIN32_OP_D(combo.GetComboBoxInfo(&info));
+			if (info.hwndList != NULL) { // fix droplist scrollbars
+				::SetWindowTheme(info.hwndList, L"DarkMode_Explorer", NULL);
+			}
+
 		}
 	}
 
@@ -316,7 +319,23 @@ namespace DarkMode {
 	}
 
 	COLORREF GetSysColor(int idx, bool bDark) {
-		if (!bDark) return ::GetSysColor(idx);
+		return GetSysColor(idx, param_t{ bDark });
+	}
+	COLORREF GetSysColor(int idx, param_t const & p) {
+		if (!p.IsDark()) {
+			if (p.bRetro) {
+				switch (idx) {
+				case COLOR_MENU:
+				case COLOR_BTNFACE:
+				case COLOR_MENUBAR:
+					// Win7: 0xD0D0C8
+					// Win98: 0xC0C0C0
+					// Win11: 0xF0F0F0
+					return 0xF0F0F0;
+				}
+			}
+			return ::GetSysColor(idx);
+		}
 		switch (idx) {
 		case COLOR_MENU:
 		case COLOR_BTNFACE:
@@ -324,6 +343,7 @@ namespace DarkMode {
 		case COLOR_MENUBAR:
 			// Explorer:
 			// return 0x383838;
+			// FIX ME apply tint here
 			return 0x202020;
 		case COLOR_BTNSHADOW:
 			return 0;
@@ -352,7 +372,7 @@ namespace DarkMode {
 #if DARKMODE_ALLOW_HAX
 	void SetAppDarkMode(bool bDark) {
 		InitImports();
-
+		#
 		if (_SetPreferredAppMode != nullptr) {
 			static PreferredAppMode lastMode = PreferredAppMode::Default;
 			PreferredAppMode wantMode = bDark ? PreferredAppMode::ForceDark : PreferredAppMode::ForceLight;
@@ -366,22 +386,13 @@ namespace DarkMode {
 #else
 	void SetAppDarkMode(bool) {}
 #endif
-#if DARKMODE_ALLOW_HAX
-	void AllowDarkModeForWindow(HWND wnd, bool bDark) {
-		InitImports();
-
-		if (_AllowDarkModeForWindow) _AllowDarkModeForWindow(wnd, bDark);
-	}
-#else
-	void AllowDarkModeForWindow(HWND, bool) {}
-#endif
 
 	bool IsThemeDark(COLORREF text, COLORREF background) {
 		if (!IsSupportedSystem() || IsHighContrast()) return false;
 		auto l_text = PaintUtils::Luminance(text);
 		auto l_bk = PaintUtils::Luminance(background);
 		if (l_text > l_bk) {
-			if (l_bk <= PaintUtils::Luminance(GetSysColor(COLOR_BTNFACE))) {
+			if (l_bk <= PaintUtils::Luminance(GetSysColor(COLOR_BTNFACE, { /*.bDark = */ true}))) {
 				return true;
 			}
 		}
@@ -395,7 +406,7 @@ namespace DarkMode {
 		return false;
 	}
 
-	static void DrawTab(CTabCtrl& tabs, CDCHandle dc, int iTab, bool selected, bool focused, const RECT * rcPaint) {
+	static void DrawTab(CTabCtrl& tabs, CDCHandle dc, int iTab, bool selected, bool focused, const RECT * rcPaint, param_t const & p) {
 		(void)focused;
 		PFC_ASSERT((tabs.GetStyle() & TCS_VERTICAL) == 0);
 
@@ -407,8 +418,8 @@ namespace DarkMode {
 			if (!foo.IntersectRect(rc, rcPaint)) return;
 		}
 		const int edgeCX = MulDiv(1, QueryScreenDPI_X(tabs), 120); // note: MulDiv() rounds up from +0.5, this will
-		const auto colorBackground = GetSysColor(selected ? COLOR_HIGHLIGHT : COLOR_BTNFACE);
-		const auto colorFrame = GetSysColor(COLOR_WINDOWFRAME);
+		const auto colorBackground = GetSysColor(selected ? COLOR_HIGHLIGHT : COLOR_BTNFACE, p);
+		const auto colorFrame = GetSysColor(COLOR_WINDOWFRAME, p);
 		dc.SetDCBrushColor(colorBackground);
 		dc.FillSolidRect(rc, colorBackground);
 
@@ -430,31 +441,31 @@ namespace DarkMode {
 		if (tabs.GetItem(iTab, &item)) {
 			SelectObjectScope fontScope(dc, tabs.GetFont());
 			dc.SetBkMode(TRANSPARENT);
-			dc.SetTextColor(GetSysColor(selected ? COLOR_HIGHLIGHTTEXT : COLOR_WINDOWTEXT));
+			dc.SetTextColor(GetSysColor(selected ? COLOR_HIGHLIGHTTEXT : COLOR_WINDOWTEXT, p));
 			dc.DrawText(text, (int)wcslen(text), rc, DT_SINGLELINE | DT_CENTER | DT_VCENTER);
 		}
 	}
 
-	void PaintTabs(CTabCtrl tabs, CDCHandle dc, const RECT * rcPaint) {
+	void PaintTabs(CTabCtrl tabs, CDCHandle dc, const RECT * rcPaint, param_t const & p) {
 		CRect rcClient; tabs.GetClientRect(rcClient); 
 		CRect rcArea = rcClient; tabs.AdjustRect(FALSE, rcArea);
 		int dx = rcClient.bottom - rcArea.bottom;
 		int dy = rcClient.right - rcArea.right;
 		CRect rcFrame = rcArea; rcFrame.InflateRect(dx/2, dy/2);
-		dc.SetDCBrushColor(GetSysColor(COLOR_WINDOWFRAME));
+		dc.SetDCBrushColor(GetSysColor(COLOR_WINDOWFRAME, p));
 		dc.FrameRect(rcFrame, (HBRUSH)GetStockObject(DC_BRUSH));
 		const int tabCount = tabs.GetItemCount();
 		const int tabSelected = tabs.GetCurSel();
 		const int tabFocused = tabs.GetCurFocus();
 		for (int iTab = 0; iTab < tabCount; ++iTab) {
-			if (iTab != tabSelected) DrawTab(tabs, dc, iTab, false, iTab == tabFocused, rcPaint);
+			if (iTab != tabSelected) DrawTab(tabs, dc, iTab, false, iTab == tabFocused, rcPaint, p);
 		}
-		if (tabSelected >= 0) DrawTab(tabs, dc, tabSelected, true, tabSelected == tabFocused, rcPaint);
+		if (tabSelected >= 0) DrawTab(tabs, dc, tabSelected, true, tabSelected == tabFocused, rcPaint, p);
 	}
 
-	void PaintTabsErase(CTabCtrl tabs, CDCHandle dc) {
+	void PaintTabsErase(CTabCtrl tabs, CDCHandle dc, param_t const & p) {
 		CRect rcClient; WIN32_OP_D(tabs.GetClientRect(rcClient));
-		dc.FillSolidRect(&rcClient, GetSysColor(COLOR_BTNFACE));
+		dc.FillSolidRect(&rcClient, GetSysColor(COLOR_BTNFACE, p));
 	}
 
 
@@ -466,136 +477,168 @@ namespace DarkMode {
 	// This way there's no need to subclass parent windows at random
 
 	enum class whichDark_t {
-		none, toolbar
+		none, toolbar, header
 	};
 
-	// readWriteLock used in case someone uses off-main-thread UI, though it should not really happen in real life
-	static pfc::readWriteLock lstDarkGuard;
+	// mutex used in case someone uses off-main-thread UI, though it should not really happen in real life
+	static std::shared_mutex lstDarkGuard;
 	static std::map<HWND, whichDark_t> lstDark;
 	static whichDark_t lstDark_query(HWND w) {
-		PFC_INSYNC_READ(lstDarkGuard);
+		std::shared_lock lock(lstDarkGuard);
 		auto iter = lstDark.find(w);
 		if (iter == lstDark.end()) return whichDark_t::none;
 		return iter->second;
 	}
 	static void lstDark_set(HWND w, whichDark_t which) {
-		PFC_INSYNC_WRITE(lstDarkGuard);
+		std::unique_lock lock(lstDarkGuard);
 		lstDark[w] = which;
 	}
 	static void lstDark_clear(HWND w) {
-		PFC_INSYNC_WRITE(lstDarkGuard);
+		std::unique_lock lock(lstDarkGuard);
 		lstDark.erase(w);
 	}
 
-	LRESULT CustomDrawToolbar(NMHDR* hdr) {
+	LRESULT CustomDrawToolbar(NMHDR* hdr, param_t const & p) {
+		if (!p.IsDark()) return CDRF_DODEFAULT;
 		LPNMTBCUSTOMDRAW cd = reinterpret_cast<LPNMTBCUSTOMDRAW>(hdr);
 		switch (cd->nmcd.dwDrawStage) {
 		case CDDS_PREPAINT: return CDRF_NOTIFYITEMDRAW;
 		case CDDS_ITEMPREPAINT:
-			cd->clrText = DarkMode::GetSysColor(COLOR_WINDOWTEXT);
-			cd->clrBtnFace = DarkMode::GetSysColor(COLOR_BTNFACE);
-			cd->clrBtnHighlight = DarkMode::GetSysColor(COLOR_BTNHIGHLIGHT);
+			cd->clrText = p.GetSysColor(COLOR_WINDOWTEXT);
+			cd->clrBtnFace = p.GetSysColor(COLOR_BTNFACE);
+			cd->clrBtnHighlight = p.GetSysColor(COLOR_BTNHIGHLIGHT);
 			return CDRF_DODEFAULT;
 		default:
 			return CDRF_DODEFAULT;
 		}
 	}
+	LRESULT CustomDrawHeader(NMHDR* hdr, param_t const & p) {
+		if (!p.IsDark()) return CDRF_DODEFAULT;
 
-	LRESULT OnCustomDraw(int,NMHDR* hdr, BOOL& bHandled) {
+		LPNMCUSTOMDRAW nmcd = reinterpret_cast<LPNMCUSTOMDRAW>(hdr);
+		switch (nmcd->dwDrawStage)
+		{
+		case CDDS_PREPAINT:
+			return CDRF_NOTIFYITEMDRAW;
+		case CDDS_ITEMPREPAINT:
+		{
+			// FIX ME tint
+			CDCHandle dc(nmcd->hdc);
+			dc.SetTextColor(0xdedede);
+			dc.SetBkColor(0x191919); // disregarded anyway
+		}
+		return CDRF_DODEFAULT;
+		default:
+			return CDRF_DODEFAULT;
+		}
+	}
+
+	std::optional<LRESULT> OnCustomDraw(NMHDR* hdr, param_t const & p) {
+		if (!p.IsDark()) return std::nullopt;
 		switch (lstDark_query(hdr->hwndFrom)) {
 		case whichDark_t::toolbar:
-			bHandled = TRUE;
-			return CustomDrawToolbar(hdr);
+			return CustomDrawToolbar(hdr, p);
+		case whichDark_t::header:
+			return CustomDrawHeader(hdr, p);
 		default:
-			bHandled = FALSE; return 0;
+			return std::nullopt;
 		}
 	}
 
 	namespace {
 
 		class CToolbarHook {
-			bool m_dark = false;
+			param_t m_param;
 			const bool m_explorerTheme;
 			CToolBarCtrl m_wnd;
 		public:
-			CToolbarHook(HWND wnd, bool initial, bool bExplorerTheme) : m_wnd(wnd), m_explorerTheme(bExplorerTheme) {
+			CToolbarHook(HWND wnd, param_t initial, bool bExplorerTheme) : m_wnd(wnd), m_explorerTheme(bExplorerTheme) {
 				SetDark(initial);
+				lstDark_set(m_wnd, whichDark_t::toolbar);
 			}
 			
-			void SetDark(bool v) {
-				if (m_dark == v) return;
-				m_dark = v;
-				if (v) {
-					lstDark_set(m_wnd, whichDark_t::toolbar);
+			void SetDark(param_t v) {
+				if (m_param == v) return;
+				m_param = v;
+				if (v.bDark || v.bRetro) {
 					if (m_explorerTheme) ::SetWindowTheme(m_wnd, L"", L""); // if we don't do this, NM_CUSTOMDRAW color overrides get disregarded
 				} else {
-					lstDark_clear(m_wnd);
 					if (m_explorerTheme) ::SetWindowTheme(m_wnd, L"Explorer", NULL);
 				}
 				m_wnd.Invalidate();
-
-				ApplyDarkThemeCtrl(m_wnd.GetToolTips(), v);
+				ApplyDarkThemeCtrl(m_wnd.GetToolTips(), v.IsDark());
 			}
 			~CToolbarHook() {
-				if (m_dark) lstDark_clear(m_wnd);
 			}
-
 		};
 
 		class CTabsHook : public CWindowImpl<CTabsHook, CTabCtrl> {
 		public:
-			CTabsHook(bool bDark = false) : m_dark(bDark) {}
+			CTabsHook(param_t const & p) : m_param(p) {}
 			BEGIN_MSG_MAP_EX(CTabsHook)
 				MSG_WM_PAINT(OnPaint)
 				MSG_WM_ERASEBKGND(OnEraseBkgnd)
 				MESSAGE_HANDLER_EX(msgSetDarkMode(), OnSetDarkMode)
 			END_MSG_MAP()
 
-			void SetDark(bool v = false);
+			void SetParam(param_t const &);
+			void SubclassWindow(HWND);
 		private:
 			void OnPaint(CDCHandle);
 			BOOL OnEraseBkgnd(CDCHandle);
+			void ApplyDark();
 
-			LRESULT OnSetDarkMode(UINT, WPARAM wp, LPARAM) {
-				switch (wp) {
-				case 0: SetDark(false); break;
-				case 1: SetDark(true); break;
-				}
+			LRESULT OnSetDarkMode(UINT, WPARAM wp, LPARAM lp) {
+				auto p = param_t::importMsgParams({ wp,lp });
+				if (p) SetParam(*p);
 				return 1;
 			}
 
-			bool m_dark = false;
+			param_t m_param;
 		};
+		void CTabsHook::SubclassWindow(HWND wnd) {
+			WIN32_OP_D(__super::SubclassWindow(wnd));
+			this->ApplyDark();
+		}
 
 		void CTabsHook::OnPaint(CDCHandle target) {
-			if (!m_dark) { SetMsgHandled(FALSE); return; }
+			if (!m_param.IsDark()) { SetMsgHandled(FALSE); return; }
 			if (target) {
-				PaintTabs(m_hWnd, target);
+				PaintTabs(m_hWnd, target, nullptr, m_param);
 			} else {
 				CPaintDC dc(*this);
-				PaintTabs(m_hWnd, dc.m_hDC, &dc.m_ps.rcPaint);
+				PaintTabs(m_hWnd, dc.m_hDC, &dc.m_ps.rcPaint, m_param);
 			}
 		}
 		BOOL CTabsHook::OnEraseBkgnd(CDCHandle dc) {
-			if (m_dark) {
-				PaintTabsErase(*this, dc);
+			if (m_param.IsDark()) {
+				PaintTabsErase(*this, dc, m_param);
 				return TRUE;
 			}
 			SetMsgHandled(FALSE);
 			return FALSE;
 		}
+		void CTabsHook::ApplyDark() {
+			if (m_hWnd == NULL) return;
+			Invalidate();
+			if (m_param.IsRetroLight()) {
+				SetWindowTheme(m_hWnd, L"", L"");
+			} else {
+				SetWindowTheme(m_hWnd, L"explorer", nullptr);
+			}
+			ApplyDarkThemeCtrl(GetToolTips(), m_param.IsDark());
+		}
 
-		void CTabsHook::SetDark(bool v) {
-			m_dark = v;
-			if (m_hWnd != NULL) Invalidate();
-
-			ApplyDarkThemeCtrl(GetToolTips(), v);
+		void CTabsHook::SetParam(param_t const & v) {
+			if (m_param == v) return;
+			m_param = v;
+			ApplyDark();
 		}
 
 		class CTreeViewHook : public CWindowImpl<CTreeViewHook, CTreeViewCtrl> {
-			bool m_dark;
+			param_t m_param;
 		public:
-			CTreeViewHook(bool v) : m_dark(v) {}
+			CTreeViewHook(param_t const & v) : m_param(v) {}
 
 			BEGIN_MSG_MAP_EX(CTreeViewHook)
 				MESSAGE_RANGE_HANDLER_EX(WM_CTLCOLORMSGBOX, WM_CTLCOLORSTATIC, OnCtlColor)
@@ -611,23 +654,28 @@ namespace DarkMode {
 				if (ret != 0) {
 					HWND edit = (HWND) ret;
 					PFC_ASSERT( ::IsWindow(edit) );
-					ApplyDarkThemeCtrl( edit, m_dark );
+					ApplyDarkThemeCtrl( edit, m_param.IsDark() );
 				}
 				return ret;
 			}
-			void SetDark(bool v) { 
-				if (m_dark == v) return;
-				m_dark = v;
+			void SetParam(param_t const & v) { 
+				if (m_param == v) return;
+				m_param = v;
 				ApplyDark();
 			}
 			void ApplyDark() {
-				ApplyDarkThemeCtrl(m_hWnd, m_dark);
-				COLORREF bk = m_dark ? GetSysColor(COLOR_WINDOW) : (COLORREF)(-1);
-				COLORREF tx = m_dark ? GetSysColor(COLOR_WINDOWTEXT) : (COLORREF)(-1);
+				if (m_param.IsRetroLight()) {
+					ApplyRetroTheme(m_hWnd);
+				} else {
+					ApplyDarkThemeCtrl(m_hWnd, m_param.IsDark());
+				}
+				
+				COLORREF bk = m_param.IsDark() ? GetSysColor(COLOR_WINDOW, m_param) : (COLORREF)(-1);
+				COLORREF tx = m_param.IsDark() ? GetSysColor(COLOR_WINDOWTEXT, m_param) : (COLORREF)(-1);
 				this->SetTextColor(tx); this->SetLineColor(tx);
 				this->SetBkColor(bk);
 
-				ApplyDarkThemeCtrl(GetToolTips(), m_dark);
+				ApplyDarkThemeCtrl(GetToolTips(), m_param.IsDark());
 			}
 
 			void SubclassWindow(HWND wnd) {
@@ -635,27 +683,26 @@ namespace DarkMode {
 				this->ApplyDark();
 			}
 
-			LRESULT OnSetDarkMode(UINT, WPARAM wp, LPARAM) {
-				switch (wp) {
-				case 0: SetDark(false); break;
-				case 1: SetDark(true); break;
-				}
+			LRESULT OnSetDarkMode(UINT, WPARAM wp, LPARAM lp) {
+				auto p = param_t::importMsgParams({ wp,lp });
+				if (p) SetParam(*p);
 				return 1;
 			}
 		};
 
 		class CDialogHook : public CWindowImpl<CDialogHook> {
-			bool m_enabled;
+			param_t m_param;
+			COLORREF m_customDarkBackground = colorUndefined;
 		public:
-			CDialogHook(bool v) : m_enabled(v) {}
-
-			void SetDark(bool v) { 
-				if (m_enabled == v) return;
+			CDialogHook(param_t const & v) : m_param(v) {}
+			void SetDarkDialogBackground(COLORREF arg) { m_customDarkBackground = arg; }
+			void SetParam(param_t const & v) { 
+				if (m_param == v) return;
 
 				// Important: PostMessage()'ing this caused bugs
 				SendMessage(WM_THEMECHANGED); 
 				
-				m_enabled = v; 
+				m_param = v; 
 				
 				// Ensure menu bar redraw with RDW_FRAME
 				RedrawWindow(NULL, NULL, RDW_ERASE | RDW_INVALIDATE | RDW_FRAME);
@@ -706,34 +753,32 @@ namespace DarkMode {
 				UAHMENUITEM umi;
 			} UAHDRAWMENUITEM;
 
+			LRESULT OnCustomDraw(NMHDR* arg) {
+				auto ret = ::DarkMode::OnCustomDraw(arg, m_param);
+				if (ret) return *ret;
+				SetMsgHandled(FALSE); return 0;
+			}
 
 			BEGIN_MSG_MAP_EX(CDialogHook)
-				MSG_WM_CTLCOLORDLG(ctlColorCommon)
-				MSG_WM_CTLCOLORSTATIC(ctlColorCommon)
-				MSG_WM_CTLCOLOREDIT(ctlColorCommon)
-				MSG_WM_CTLCOLORBTN(ctlColorCommon)
-				MSG_WM_CTLCOLORLISTBOX(ctlColorCommon)
-				MSG_WM_CTLCOLORSCROLLBAR(ctlColorCommon)
-				NOTIFY_CODE_HANDLER(NM_CUSTOMDRAW, DarkMode::OnCustomDraw)
+				MESSAGE_RANGE_HANDLER_EX(WM_CTLCOLORMSGBOX, WM_CTLCOLORSTATIC, OnCtlColor)
+				NOTIFY_CODE_HANDLER_EX(NM_CUSTOMDRAW, OnCustomDraw)
 				MESSAGE_HANDLER_EX(WM_UAHDRAWMENU, Handle_WM_UAHDRAWMENU)
 				MESSAGE_HANDLER_EX(WM_UAHDRAWMENUITEM, Handle_WM_UAHDRAWMENUITEM)
 				MESSAGE_HANDLER_EX(msgSetDarkMode(), OnSetDarkMode)
 			END_MSG_MAP()
 
-			LRESULT OnSetDarkMode(UINT, WPARAM wp, LPARAM) {
-				switch (wp) {
-				case 0: SetDark(false); break;
-				case 1: SetDark(true); break;
-				}
+			LRESULT OnSetDarkMode(UINT, WPARAM wp, LPARAM lp) {
+				auto p = param_t::importMsgParams({ wp,lp });
+				if (p) SetParam(*p);
 				return 1;
 			}
 
-			static COLORREF GetBkColor() { return DarkMode::GetSysColor(COLOR_WINDOW); }
-			static COLORREF GetTextColor() { return DarkMode::GetSysColor(COLOR_WINDOWTEXT); }
+			COLORREF GetBkColor() { return m_param.GetSysColor(COLOR_WINDOW); }
+			COLORREF GetTextColor() { return m_param.GetSysColor(COLOR_WINDOWTEXT); }
 
 			HBRUSH ctlColorDlg(CDCHandle dc, CWindow wnd) {
-				if (m_enabled && ::IsThemeDialogTextureEnabled(*this)) {
-					auto bkColor = DarkMode::GetSysColor(COLOR_HIGHLIGHT);
+				if (m_param.bRetro || (m_param.IsDark() && ::IsThemeDialogTextureEnabled(*this))) {
+					auto bkColor = m_param.GetSysColor(COLOR_HIGHLIGHT);
 					auto txColor = GetTextColor();
 
 					dc.SetTextColor(txColor);
@@ -743,23 +788,57 @@ namespace DarkMode {
 				}
 				return ctlColorCommon(dc, wnd);
 			}
+			static bool isStdTextColor(COLORREF arg) {
+				for (int id : {COLOR_WINDOWTEXT, COLOR_MENUTEXT, COLOR_BTNTEXT, COLOR_CAPTIONTEXT}) {
+					auto match = ::GetSysColor(id);
+					if (match == arg) return true;
+				}
+				return false;
+			}
+			static int msgToSysColor(UINT msg) {
+				switch (msg) {
+				case WM_CTLCOLORBTN:
+				case WM_CTLCOLORMSGBOX:
+				case WM_CTLCOLORSCROLLBAR:
+				case WM_CTLCOLORDLG:
+				case WM_CTLCOLORSTATIC:
+					return COLOR_BTNFACE;
+				default:
+					return COLOR_WINDOW;
+				}
+			}
+			LRESULT OnCtlColor(UINT msg, WPARAM wp, LPARAM) {
+				if (m_param.IsDark() || m_param.bRetro) {
+					CDCHandle dc = (HDC)wp;
+					COLORREF txColor, bkColor;
+					txColor = this->GetTextColor();
+					bkColor = (m_customDarkBackground!=colorUndefined) ? m_customDarkBackground : m_param.GetSysColor(msgToSysColor(msg));
 
-			HBRUSH ctlColorCommon(CDCHandle dc, CWindow wnd) {
-				(void)wnd;
-				if (m_enabled) {
-					auto bkColor = GetBkColor();
-					auto txColor = GetTextColor();
+					if (msg == WM_CTLCOLORSTATIC) { 
+						// warning: below code caused bugs for checkboxes, hence only done for static controls where dialog might override colors
+						DefWindowProc();
+						// Does default proc appear to alter text color? If it does, keep
+						auto defTxColor = dc.GetTextColor();
+						if (!isStdTextColor(defTxColor)) txColor = defTxColor;
+					}
 
 					dc.SetTextColor(txColor);
 					dc.SetBkColor(bkColor);
 					dc.SetDCBrushColor(bkColor);
-					return (HBRUSH)GetStockObject(DC_BRUSH);
+					dc.SetBkMode(OPAQUE); // checkboxes have been known to repaint just text in some scenarios, causing glitches
+					return (LPARAM)GetStockObject(DC_BRUSH);
 				}
 				SetMsgHandled(FALSE);
+
+				return 0;
+			}
+			HBRUSH ctlColorCommon(CDCHandle, CWindow wnd) {
+				(void)wnd;
 				return NULL;
 			}
 			LRESULT Handle_WM_UAHDRAWMENU(UINT, WPARAM wParam, LPARAM lParam) {
-				if (!m_enabled) {
+				(void)wParam;
+				if (!m_param.IsDark()) {
 					SetMsgHandled(FALSE);
 					return 0;
 				}
@@ -778,11 +857,12 @@ namespace DarkMode {
 				rc.top -= 1;
 
 				CDCHandle dc(pUDM->hdc);
-				dc.FillSolidRect(rc, DarkMode::GetSysColor(COLOR_MENUBAR));
+				dc.FillSolidRect(rc, m_param.GetSysColor(COLOR_MENUBAR));
 				return 0;
 			}
 			LRESULT Handle_WM_UAHDRAWMENUITEM(UINT, WPARAM wParam, LPARAM lParam) {
-				if (!m_enabled) {
+				(void)wParam;
+				if (!m_param.IsDark()) {
 					SetMsgHandled(FALSE);
 					return 0;
 				}
@@ -821,11 +901,11 @@ namespace DarkMode {
 				switch (iBackgroundStateID) {
 				case MPI_NORMAL:
 				case MPI_DISABLED:
-					dc.FillSolidRect(&pUDMI->dis.rcItem, DarkMode::GetSysColor(COLOR_MENUBAR));
+					dc.FillSolidRect(&pUDMI->dis.rcItem, m_param.GetSysColor(COLOR_MENUBAR));
 					break;
 				case MPI_HOT:
 				case MPI_DISABLEDHOT:
-					dc.FillSolidRect(&pUDMI->dis.rcItem, DarkMode::GetSysColor(COLOR_MENUHILIGHT));
+					dc.FillSolidRect(&pUDMI->dis.rcItem, m_param.GetSysColor(COLOR_MENUHILIGHT));
 					break;
 				default:
 					DrawThemeBackground(m_menuTheme, pUDMI->um.hdc, MENU_POPUPITEM, iBackgroundStateID, &pUDMI->dis.rcItem, nullptr);
@@ -835,7 +915,7 @@ namespace DarkMode {
 				if (iTextStateID == MPI_NORMAL || iTextStateID == MPI_HOT)
 				{
 					dttopts.dwFlags |= DTT_TEXTCOLOR;
-					dttopts.crText = DarkMode::GetSysColor(COLOR_WINDOWTEXT);
+					dttopts.crText = m_param.GetSysColor(COLOR_WINDOWTEXT);
 				}
 				DrawThemeTextEx(m_menuTheme, dc, MENU_POPUPITEM, iTextStateID, menuString, menuString.GetLength(), drawTextFlags, &pUDMI->dis.rcItem, &dttopts);
 
@@ -846,8 +926,9 @@ namespace DarkMode {
 
 
 		class CStatusBarHook : public CWindowImpl<CStatusBarHook, CStatusBarCtrl> {
+			param_t m_param;
 		public:
-			CStatusBarHook(bool v = false) : m_dark(v) {}
+			CStatusBarHook(param_t const & v) : m_param(v) {}
 
 			BEGIN_MSG_MAP_EX(CStatusBarHook)
 				MSG_WM_ERASEBKGND(OnEraseBkgnd)
@@ -857,26 +938,24 @@ namespace DarkMode {
 				MESSAGE_HANDLER_EX(msgSetDarkMode(), OnSetDarkMode)
 			END_MSG_MAP()
 
-			LRESULT OnSetDarkMode(UINT, WPARAM wp, LPARAM) {
-				switch (wp) {
-				case 0: SetDark(false); break;
-				case 1: SetDark(true); break;
-				}
+			LRESULT OnSetDarkMode(UINT, WPARAM wp, LPARAM lp) {
+				auto p = param_t::importMsgParams({ wp,lp });
+				if (p) SetParam(*p);
 				return 1;
 			}
 
-			void SetDark(bool v = true) {
-				if (m_dark != v) {
-					m_dark = v;
+			void SetParam(param_t const & v) {
+				if (m_param != v) {
+					m_param = v;
 					Invalidate();
-					ApplyDarkThemeCtrl(m_hWnd, v);
+					ApplyDarkThemeCtrl(m_hWnd, v.IsDark());
 				}
 			}
 
 			void SubclassWindow(HWND wnd) {
 				WIN32_OP_D(__super::SubclassWindow(wnd));
 				Invalidate();
-				ApplyDarkThemeCtrl(m_hWnd, m_dark);
+				ApplyDarkThemeCtrl(m_hWnd, m_param.IsDark());
 			}
 			LRESULT OnSetIcon(UINT, WPARAM wp, LPARAM lp) {
 				unsigned idx = (unsigned)wp;
@@ -907,12 +986,12 @@ namespace DarkMode {
 
 			void Paint(CDCHandle dc) {
 				CRect rcClient; WIN32_OP_D(GetClientRect(rcClient));
-				dc.FillSolidRect(rcClient, GetSysColor(COLOR_BTNFACE)); // Wine seems to not call our WM_ERASEBKGND handler, fill the background here too
+				dc.FillSolidRect(rcClient, m_param.GetSysColor(COLOR_BTNFACE)); // Wine seems to not call our WM_ERASEBKGND handler, fill the background here too
 
 				dc.SelectFont(GetFont());
 				dc.SetBkMode(TRANSPARENT);
-				dc.SetTextColor(GetSysColor(COLOR_WINDOWTEXT));
-				CPen pen; pen.CreatePen(PS_SOLID, 1, GetSysColor(COLOR_BTNHIGHLIGHT));
+				dc.SetTextColor(m_param.GetSysColor(COLOR_WINDOWTEXT));
+				CPen pen; pen.CreatePen(PS_SOLID, 1, m_param.GetSysColor(COLOR_BTNHIGHLIGHT));
 				dc.SelectPen(pen);
 				int count = this->GetParts(0, nullptr);
 				for (int iPart = 0; iPart < count; ++iPart) {
@@ -971,7 +1050,7 @@ namespace DarkMode {
 			}
 
 			void OnPaint(CDCHandle target) {
-				if (!m_dark) { SetMsgHandled(FALSE); return; }
+				if (!m_param.IsDark() && !m_param.bRetro) { SetMsgHandled(FALSE); return; }
 				if (target) {
 					Paint(target);
 				} else {
@@ -981,21 +1060,20 @@ namespace DarkMode {
 			}
 
 			BOOL OnEraseBkgnd(CDCHandle dc) {
-				if (m_dark) {
-					CRect rc; WIN32_OP_D(GetClientRect(rc)); dc.FillSolidRect(rc, DarkMode::GetSysColor(COLOR_BTNFACE)); return TRUE;
+				if (m_param.IsDark()) {
+					CRect rc; WIN32_OP_D(GetClientRect(rc)); dc.FillSolidRect(rc, m_param.GetSysColor(COLOR_BTNFACE)); return TRUE;
 				}
 				SetMsgHandled(FALSE); return FALSE;			
 			}
-
-			bool m_dark = false;
 
 			uint32_t m_ownerDrawMask = 0;
 			CSize m_iconSizeCache[32];
 		};
 
 		class CCheckBoxHook : public CWindowImpl<CCheckBoxHook, CButton> {
+			param_t m_param;
 		public:
-			CCheckBoxHook(bool v = false) : m_dark(v) {}
+			CCheckBoxHook(const param_t & v) : m_param(v) {}
 
 			BEGIN_MSG_MAP_EX(CCheckBoxHook)
 				MSG_WM_PAINT(OnPaint)
@@ -1014,16 +1092,14 @@ namespace DarkMode {
 				MESSAGE_HANDLER_EX(msgSetDarkMode(), OnSetDarkMode)
 			END_MSG_MAP()
 
-			LRESULT OnSetDarkMode(UINT, WPARAM wp, LPARAM) {
-				switch (wp) {
-				case 0: SetDark(false); break;
-				case 1: SetDark(true); break;
-				}
+			LRESULT OnSetDarkMode(UINT, WPARAM wp, LPARAM lp) {
+				auto p = param_t::importMsgParams({ wp,lp });
+				if (p) SetParam(*p);
 				return 1;
 			}
 
 			LRESULT OnMsgRedraw(UINT, WPARAM, LPARAM) {
-				if ( m_dark ) {
+				if ( m_param.IsDark() ) {
 					// PROBLEM: 
 					// Can't invalidate prior to their handling of the message
 					// Causes bugs with specific chains of events - EnableWindow() followed immediately SetWindowText()
@@ -1036,7 +1112,7 @@ namespace DarkMode {
 
 			void OnUpdateUIState(WORD nAction, WORD nState) {
 				(void)nAction;
-				if ( m_dark && (nState & (UISF_HIDEACCEL | UISF_HIDEFOCUS)) != 0) {
+				if (m_param.IsDark() && (nState & (UISF_HIDEACCEL | UISF_HIDEFOCUS)) != 0) {
 					// PROBLEM: 
 					// Can't invalidate prior to their handling of the message
 					// Causes bugs with specific chains of events - EnableWindow() followed immediately SetWindowText()
@@ -1051,12 +1127,12 @@ namespace DarkMode {
 
 				const bool bDisabled = !this->IsWindowEnabled();
 
-				dc.SetTextColor(DarkMode::GetSysColor(COLOR_BTNTEXT));
-				dc.SetBkColor(DarkMode::GetSysColor(COLOR_BTNFACE));
+				dc.SetTextColor(m_param.GetSysColor(COLOR_BTNTEXT));
+				dc.SetBkColor(m_param.GetSysColor(COLOR_BTNFACE));
 				dc.SetBkMode(OPAQUE);
 				dc.SelectFont(GetFont());
 				GetParent().SendMessage(WM_CTLCOLORBTN, (WPARAM)dc.m_hDC, (LPARAM)m_hWnd);
-				if (bDisabled) dc.SetTextColor(DarkMode::GetSysColor(COLOR_GRAYTEXT)); // override WM_CTLCOLORBTN
+				if (bDisabled) dc.SetTextColor(m_param.GetSysColor(COLOR_GRAYTEXT)); // override WM_CTLCOLORBTN
 
 				const DWORD btnStyle = GetStyle();
 				const DWORD btnType = btnStyle & BS_TYPEMASK;
@@ -1095,13 +1171,14 @@ namespace DarkMode {
 
 					CSize size;
 					if (SUCCEEDED(GetThemePartSize(theme, dc, part, state, rcCheckBox, TS_TRUE, &size))) {
-						if (size.cx <= rcCheckBox.Width() && size.cy <= rcCheckBox.Height()) {
+						if (size.cx <= rcCheckBox.Width()) {
 							CRect rc = rcCheckBox;
 							margin = MulDiv(size.cx, 5, 4);
-							// rc.left += (rc.Width() - size.cx) / 2;
-							rc.top += (rc.Height() - size.cy) / 2;
 							rc.right = rc.left + size.cx;
-							rc.bottom = rc.top + size.cy;
+							if (size.cy < rcCheckBox.Height()) {
+								rc.top += (rc.Height() - size.cy) / 2;
+								rc.bottom = rc.top + size.cy;
+							}
 							DrawThemeBackground(theme, dc, part, state, rc, &rc);
 							bDrawn = true;
 						}
@@ -1147,7 +1224,7 @@ namespace DarkMode {
 			}
 			void OnPaint(CDCHandle userDC, UINT flags = 0) {
 				(void)flags;
-				if (!m_dark) { SetMsgHandled(FALSE); return; }
+				if (!m_param.IsDark()) { SetMsgHandled(FALSE); return; }
 				if (userDC) {
 					PaintHandler(userDC);
 				} else {
@@ -1156,25 +1233,25 @@ namespace DarkMode {
 				}
 			}
 			BOOL OnEraseBkgnd(CDCHandle dc) {
-				if (m_dark) {
+				if (m_param.IsDark()) {
 					CRect rc; WIN32_OP_D(GetClientRect(rc));
 
-					dc.SetTextColor(DarkMode::GetSysColor(COLOR_BTNTEXT));
-					dc.SetBkColor(DarkMode::GetSysColor(COLOR_BTNFACE));
+					dc.SetTextColor(m_param.GetSysColor(COLOR_BTNTEXT));
+					dc.SetBkColor(m_param.GetSysColor(COLOR_BTNFACE));
 					auto br = (HBRUSH)GetParent().SendMessage(WM_CTLCOLORSTATIC, (WPARAM)dc.m_hDC, (LPARAM)m_hWnd);
 					if (br != NULL) {
 						dc.FillRect(rc, br);
 					} else {
-						dc.FillSolidRect(rc, DarkMode::GetSysColor(COLOR_BTNFACE));
+						dc.FillSolidRect(rc, m_param.GetSysColor(COLOR_BTNFACE));
 					}
 					return TRUE;
 				}
 				SetMsgHandled(FALSE); return FALSE;
 			}
 
-			void SetDark(bool v = true) {
-				if (v != m_dark) {
-					m_dark = v;
+			void SetParam(param_t const & v) {
+				if (v != m_param) {
+					m_param = v;
 					Invalidate();
 					applyDark();
 				}
@@ -1186,18 +1263,20 @@ namespace DarkMode {
 			}
 
 			void applyDark() {
-				// 2025-02 fix: disabled "Explorer" theming for checkboxes
-				// it caused bugs with specific custom themes, missing checkbox marks in light mode
-				// See: https://hydrogenaud.io/index.php/topic,127426.0.html
-				ApplyDarkThemeCtrl2(m_hWnd, m_dark, NULL);
+				if (m_param.IsRetroLight()) {
+					ApplyRetroTheme(m_hWnd);
+				} else {
+					// 2025-02 fix: disabled "Explorer" theming for checkboxes
+					// it caused bugs with specific custom themes, missing checkbox marks in light mode
+					// See: https://hydrogenaud.io/index.php/topic,127426.0.html
+					ApplyDarkThemeCtrl2(m_hWnd, m_param.IsDark(), NULL);
+				}
 			}
-
-			bool m_dark = false;
 		};
 
 		class CGripperHook : public CWindowImpl<CGripperHook> {
 		public:
-			CGripperHook(bool v) : m_dark(v) {}
+			CGripperHook(param_t const & v) : m_param(v) {}
 
 			BEGIN_MSG_MAP_EX(CGRipperHook)
 				MSG_WM_ERASEBKGND(OnEraseBkgnd)
@@ -1205,24 +1284,22 @@ namespace DarkMode {
 				MESSAGE_HANDLER_EX(msgSetDarkMode(), OnSetDarkMode)
 			END_MSG_MAP()
 
-			LRESULT OnSetDarkMode(UINT, WPARAM wp, LPARAM) {
-				switch (wp) {
-				case 0: SetDark(false); break;
-				case 1: SetDark(true); break;
-				}
+			LRESULT OnSetDarkMode(UINT, WPARAM wp, LPARAM lp) {
+				auto p = param_t::importMsgParams({ wp,lp });
+				if (p) SetParam(*p);
 				return 1;
 			}
 
-			void SetDark(bool v) {
-				if (v != m_dark) {
-					m_dark = v;
-					ApplyDarkThemeCtrl(*this, m_dark);
+			void SetParam(param_t const & v) {
+				if (v != m_param) {
+					m_param = v;
+					ApplyDarkThemeCtrl(*this, v.IsDark());
 				}
 			}
 
 			void SubclassWindow(HWND wnd) {
 				WIN32_OP_D(__super::SubclassWindow(wnd));
-				ApplyDarkThemeCtrl(m_hWnd, m_dark);
+				ApplyDarkThemeCtrl(m_hWnd, m_param.IsDark());
 			}
 
 			void PaintGripper(CDCHandle dc) {
@@ -1239,45 +1316,49 @@ namespace DarkMode {
 			}
 
 			void OnPaint(CDCHandle dc) {
-				if (!m_dark) { SetMsgHandled(FALSE); return; }
+				if (!m_param.IsDark()) { SetMsgHandled(FALSE); return; }
 				if (dc) PaintGripper(dc);
 				else {CPaintDC pdc(*this); PaintGripper(pdc.m_hDC);}
 			}
 
 			BOOL OnEraseBkgnd(CDCHandle dc) {
-				if (m_dark) {
+				if (m_param.IsDark()) {
 					CRect rc; GetClientRect(rc);
-					dc.FillSolidRect(rc, GetSysColor(COLOR_WINDOW));
+					dc.FillSolidRect(rc, m_param.GetSysColor(COLOR_WINDOW));
 					return TRUE;
 				}
 				SetMsgHandled(FALSE); return FALSE;
 			}
-			bool m_dark = false;
+			param_t m_param;
 		};
 
 		class CReBarHook : public CWindowImpl<CReBarHook, CReBarCtrl> {
-			bool m_dark;
+			param_t m_param;
 		public:
-			CReBarHook(bool v) : m_dark(v) {}
+			CReBarHook(param_t v) : m_param(v) {}
 			BEGIN_MSG_MAP_EX(CReBarHook)
 				MSG_WM_ERASEBKGND(OnEraseBkgnd)
 				MSG_WM_DESTROY(OnDestroy)
 				MSG_WM_PAINT(OnPaint)
 				MSG_WM_PRINTCLIENT(OnPaint)
-				NOTIFY_CODE_HANDLER(NM_CUSTOMDRAW, DarkMode::OnCustomDraw)
+				NOTIFY_CODE_HANDLER_EX(NM_CUSTOMDRAW, OnCustomDraw)
 				MESSAGE_HANDLER_EX(msgSetDarkMode(), OnSetDarkMode)
 			END_MSG_MAP()
 
-			LRESULT OnSetDarkMode(UINT, WPARAM wp, LPARAM) {
-				switch (wp) {
-				case 0: SetDark(false); break;
-				case 1: SetDark(true); break;
-				}
+			LRESULT OnCustomDraw(NMHDR* arg) {
+				auto ret = ::DarkMode::OnCustomDraw(arg, m_param);
+				if (ret) return *ret;
+				SetMsgHandled(FALSE); return 0;
+			}
+
+			LRESULT OnSetDarkMode(UINT, WPARAM wp, LPARAM lp) {
+				auto p = param_t::importMsgParams({ wp,lp });
+				if (p) SetParam(*p);
 				return 1;
 			}
 
 			void OnPaint(CDCHandle target, unsigned flags = 0) {
-				if (!m_dark) { SetMsgHandled(FALSE); return; }
+				if (!m_param.IsDark()) { SetMsgHandled(FALSE); return; }
 				(void)flags;
 				if (target) {
 					HandlePaint(target);
@@ -1305,12 +1386,12 @@ namespace DarkMode {
 					// useFont = this->GetFont();
 					useFont = (HFONT)GetStockObject(DEFAULT_GUI_FONT);
 					SelectObjectScope fontScope(dc, useFont);
-					dc.SetTextColor(DarkMode::GetSysColor(COLOR_BTNTEXT));
+					dc.SetTextColor(m_param.GetSysColor(COLOR_BTNTEXT));
 					dc.SetBkMode(TRANSPARENT);
 
 					CRect rcText = rc;
 					if ((info.fStyle & RBBS_NOGRIPPER) == 0) {
-						auto color = PaintUtils::BlendColor(DarkMode::GetSysColor(COLOR_WINDOWFRAME), DarkMode::GetSysColor(COLOR_BTNFACE));
+						auto color = PaintUtils::BlendColor(m_param.GetSysColor(COLOR_WINDOWFRAME), m_param.GetSysColor(COLOR_BTNFACE));
 						dc.SetDCPenColor(color);
 						SelectObjectScope penScope(dc, GetStockObject(DC_PEN));
 						dc.MoveTo(rcText.TopLeft());
@@ -1328,23 +1409,23 @@ namespace DarkMode {
 				SetMsgHandled(FALSE);
 			}
 			BOOL OnEraseBkgnd(CDCHandle dc) {
-				if (m_dark) {
+				if (m_param.bDark || m_param.bRetro) {
 					CRect rc;
 					WIN32_OP_D(GetClientRect(rc));
-					dc.FillSolidRect(rc, DarkMode::GetSysColor(COLOR_BTNFACE));
+					dc.FillSolidRect(rc, m_param.GetSysColor(COLOR_BTNFACE));
 					return TRUE;
 				}
 				SetMsgHandled(FALSE); return FALSE;
 			}
-			void SetDark(bool v) {
-				if (v != m_dark) {
-					m_dark = v; Apply();
+			void SetParam(param_t v) {
+				if (v != m_param) {
+					m_param = v; Apply();
 				}
 			}
 			void Apply() {
-				if (m_dark) {
-					this->SetTextColor(DarkMode::GetSysColor(COLOR_WINDOWTEXT));
-					this->SetBkColor(DarkMode::GetSysColor(COLOR_BTNFACE));
+				if (m_param.bDark || m_param.bRetro) {
+					this->SetTextColor(m_param.GetSysColor(COLOR_WINDOWTEXT));
+					this->SetBkColor(m_param.GetSysColor(COLOR_BTNFACE));
 				} else {
 					this->SetTextColor((COLORREF)-1);
 					this->SetBkColor((COLORREF)-1);
@@ -1358,9 +1439,9 @@ namespace DarkMode {
 		};
 
 		class CStaticHook : public CWindowImpl<CStaticHook, CStatic> {
-			bool m_dark;
+			param_t m_param;
 		public:
-			CStaticHook(bool v) : m_dark(v) {}
+			CStaticHook(param_t const & v) : m_param(v) {}
 
 			BEGIN_MSG_MAP_EX(CStaticHook)
 				MSG_WM_PAINT(OnPaint)
@@ -1368,30 +1449,28 @@ namespace DarkMode {
 				MESSAGE_HANDLER_EX(msgSetDarkMode(), OnSetDarkMode)
 			END_MSG_MAP()
 
-			LRESULT OnSetDarkMode(UINT, WPARAM wp, LPARAM) {
-				switch (wp) {
-				case 0: SetDark(false); break;
-				case 1: SetDark(true); break;
-				}
+			LRESULT OnSetDarkMode(UINT, WPARAM wp, LPARAM lp) {
+				auto p = param_t::importMsgParams({ wp,lp });
+				if (p) SetParam(*p);
 				return 1;
 			}
-			
+
 			LRESULT OnMsgRedraw(UINT, WPARAM, LPARAM) {
 				Invalidate();
 				SetMsgHandled(FALSE);
 				return 0;
 			}
 
-			void SetDark(bool v) {
-				if (m_dark != v) {
-					m_dark = v;
+			void SetParam(param_t const & v) {
+				if (m_param != v) {
+					m_param = v;
 					Invalidate();
 				}
 			}
 
 			void OnPaint(CDCHandle dc) {
 				// ONLY override the dark+disabled or dark+icon behavior
-				if (!m_dark || (this->IsWindowEnabled() && this->GetIcon() == NULL) ) {
+				if (!m_param.IsDark() || (this->IsWindowEnabled() && this->GetIcon() == NULL)) {
 					SetMsgHandled(FALSE); return;
 				}
 
@@ -1412,7 +1491,7 @@ namespace DarkMode {
 				
 				HBRUSH br = (HBRUSH) GetParent().SendMessage(WM_CTLCOLORSTATIC, (WPARAM)dc.m_hDC, (LPARAM)m_hWnd);
 				if (br == NULL) {
-					dc.FillSolidRect(rcClient, DarkMode::GetSysColor(COLOR_WINDOW));
+					dc.FillSolidRect(rcClient, m_param.GetSysColor(COLOR_WINDOW));
 				} else {
 					WIN32_OP_D(dc.FillRect(rcClient, br));
 				}
@@ -1429,7 +1508,7 @@ namespace DarkMode {
 					else if (style & SS_CENTER) flags |= DT_CENTER;
 
 					dc.SelectFont(GetFont());
-					dc.SetTextColor(DarkMode::GetSysColor(COLOR_GRAYTEXT));
+					dc.SetTextColor(m_param.GetSysColor(COLOR_GRAYTEXT));
 					dc.SetBkMode(TRANSPARENT);
 					dc.DrawText(str, str.GetLength(), rcClient, flags);
 				}
@@ -1437,13 +1516,13 @@ namespace DarkMode {
 		};
 
 		class CUpDownHook : public CWindowImpl<CUpDownHook, CUpDownCtrl> {
-			bool m_dark;
+			param_t m_param;
 		public:
-			CUpDownHook(bool v) : m_dark(v) {}
+			CUpDownHook(param_t const & v) : m_param(v) {}
 
-			void SetDark(bool v) {
-				if (v != m_dark) {
-					m_dark = v; Invalidate();
+			void SetParam(param_t const & v) {
+				if (v != m_param) {
+					m_param = v; Invalidate();
 				}
 			}
 
@@ -1458,11 +1537,9 @@ namespace DarkMode {
 			END_MSG_MAP()
 
 		private:
-			LRESULT OnSetDarkMode(UINT, WPARAM wp, LPARAM) {
-				switch (wp) {
-				case 0: SetDark(false); break;
-				case 1: SetDark(true); break;
-				}
+			LRESULT OnSetDarkMode(UINT, WPARAM wp, LPARAM lp) {
+				auto p = param_t::importMsgParams({ wp,lp });
+				if (p) SetParam(*p);
 				return 1;
 			}
 
@@ -1516,7 +1593,7 @@ namespace DarkMode {
 				SetMsgHandled(FALSE);
 			}
 			void OnPaint(CDCHandle target, unsigned flags = 0) {
-				if (!m_dark) { SetMsgHandled(FALSE); return; }
+				if (!m_param.IsDark()) { SetMsgHandled(FALSE); return; }
 				(void)flags;
 				if (target) {
 					HandlePaint(target);
@@ -1575,16 +1652,16 @@ namespace DarkMode {
 
 		class CNCFrameHook : public CWindowImpl<CNCFrameHook, CWindow> { 
 		public:
-			CNCFrameHook(bool dark) : m_dark(dark) {}
+			CNCFrameHook(param_t const & p) : m_param(p) {}
 
 			BEGIN_MSG_MAP_EX(CNCFrameHook)
 				MESSAGE_HANDLER_EX(msgSetDarkMode(), OnSetDarkMode)
 				MSG_WM_NCPAINT(OnNCPaint)
 			END_MSG_MAP()
 
-			void SetDark(bool v) {
-				if (v != m_dark) {
-					m_dark = v; ApplyDark();
+			void SetParam(param_t v) {
+				if (v != m_param) {
+					m_param = v; ApplyDark();
 				}
 			}
 			BOOL SubclassWindow(HWND wnd) {
@@ -1596,31 +1673,85 @@ namespace DarkMode {
 			}
 		private:
 			void OnNCPaint(HRGN rgn) {
-				if (m_dark) {
-					NCPaintDarkFrame(m_hWnd, rgn);
+				if (m_param.IsDark()) {
+					NCPaintDarkFrame(m_hWnd, rgn, m_param);
 					return;
 				}
 				SetMsgHandled(FALSE);
 			}
 			void ApplyDark() {
-				ApplyDarkThemeCtrl(m_hWnd, m_dark);
+				ApplyDarkThemeCtrl(m_hWnd, m_param.IsDark());
 				Invalidate();
 			}
-			LRESULT OnSetDarkMode(UINT, WPARAM wp, LPARAM) {
-				switch (wp) {
-				case 0: SetDark(false); break;
-				case 1: SetDark(true); break;
-				}
+			LRESULT OnSetDarkMode(UINT, WPARAM wp, LPARAM lp) {
+				auto p = param_t::importMsgParams({ wp,lp });
+				if (p) SetParam(*p);
 				return 1;
 			}
 
-			bool m_dark;
+			param_t m_param;
+		};
+
+		class CListViewHook : public CWindowImpl<CListViewHook, CListViewCtrl> {
+			param_t m_param;
+			void ApplyDark() {
+				ApplyDarkThemeCtrl(m_hWnd, m_param.IsDark());
+				const auto tx = m_param.GetSysColor(COLOR_WINDOWTEXT), bk = m_param.GetSysColor(COLOR_WINDOW);
+				this->SetTextColor(tx);
+				this->SetBkColor(bk);
+				this->SetTextBkColor(bk);
+			}
+			LRESULT OnSetDarkMode(UINT, WPARAM wp, LPARAM lp) {
+				auto p = param_t::importMsgParams({ wp,lp });
+				if (p) SetParam(*p);
+				return 1;
+			}
+			LRESULT OnCustomDraw(NMHDR* arg) {
+				auto ret = DarkMode::OnCustomDraw(arg, m_param);
+				if (ret) return *ret;
+				SetMsgHandled(FALSE); return 0;
+			}
+			LRESULT OnEditLabel(UINT, WPARAM, LPARAM) {
+				LRESULT ret = DefWindowProc();
+				if (ret != 0) {
+					HWND edit = (HWND)ret;
+					PFC_ASSERT(::IsWindow(edit));
+					ApplyDarkThemeCtrl(edit, m_param.IsDark());
+				}
+				return ret;
+			}
+			LRESULT OnCtlColor(UINT uMsg, WPARAM wParam, LPARAM lParam) {
+				return GetParent().SendMessage(uMsg, wParam, lParam);
+			}
+		public:
+			CListViewHook(param_t const & p) : m_param(p) {}
+
+			BEGIN_MSG_MAP_EX(CListViewHook)
+				MESSAGE_RANGE_HANDLER_EX(WM_CTLCOLORMSGBOX, WM_CTLCOLORSTATIC, OnCtlColor)
+				MESSAGE_HANDLER_EX(msgSetDarkMode(), OnSetDarkMode)
+				NOTIFY_CODE_HANDLER_EX(NM_CUSTOMDRAW, OnCustomDraw)
+				MESSAGE_HANDLER_EX(LVM_EDITLABEL, OnEditLabel)
+			END_MSG_MAP()
+
+			BOOL SubclassWindow(HWND wnd) {
+				auto rv = __super::SubclassWindow(wnd);
+				if (rv) {
+					ApplyDark();
+				}
+				return rv;
+			}
+
+			void SetParam(param_t const &v) {
+				if (v != m_param) {
+					m_param = v; ApplyDark();
+				}
+			}
 		};
 	}
 
 	void CHooks::AddPopup(HWND wnd) {
 		addOp( [wnd, this] {
-			UpdateTitleBar(wnd, m_dark);
+			UpdateTitleBar(wnd, IsDark());
 		} );
 	}
 
@@ -1628,7 +1759,7 @@ namespace DarkMode {
 		AddDialog(wnd); AddControls(wnd);
 	}
 
-	void CHooks::AddDialog(HWND wnd) {
+	void CHooks::AddDialog(HWND wnd, COLORREF bkgnd) {
 
 		{
 			CWindow w(wnd);
@@ -1637,17 +1768,18 @@ namespace DarkMode {
 			}
 		}
 
-		auto hook = new ImplementOnFinalMessage< CDialogHook > (m_dark);
+		auto hook = new ImplementOnFinalMessage< CDialogHook > (m_param);
 		hook->SubclassWindow(wnd);
+		if (bkgnd != colorUndefined) hook->SetDarkDialogBackground(bkgnd);
 		AddCtrlMsg(wnd);
 	}
 	void CHooks::AddTabCtrl(HWND wnd) {
-		auto hook = new ImplementOnFinalMessage<CTabsHook>(m_dark);
+		auto hook = new ImplementOnFinalMessage<CTabsHook>(m_param);
 		hook->SubclassWindow(wnd);
 		AddCtrlMsg(wnd);
 	}
 	void CHooks::AddComboBox(HWND wnd) {
-		{
+		{ // fix droplist scrollbars
 			CComboBox combo = wnd;
 			COMBOBOXINFO info = {sizeof(info)};
 			WIN32_OP_D( combo.GetComboBoxInfo(&info) );
@@ -1657,7 +1789,11 @@ namespace DarkMode {
 		}
 
 		addOp([wnd, this] { 
-			SetWindowTheme(wnd, m_dark ? L"DarkMode_CFD" : L"Explorer", NULL);
+			if (m_param.IsRetroLight()) {
+				SetWindowTheme(wnd, L"", L"");
+			} else {
+				SetWindowTheme(wnd, IsDark() ? L"DarkMode_CFD" : L"Explorer", NULL);
+			}			
 		});
 	}
 	void CHooks::AddComboBoxEx(HWND wnd) {
@@ -1680,7 +1816,7 @@ namespace DarkMode {
 			// MS checkbox implementation is terminally retarded and won't draw text in correct color
 			// Subclass it and draw our own content
 			// Other button types seem OK
-			auto hook = new ImplementOnFinalMessage<CCheckBoxHook>(m_dark);
+			auto hook = new ImplementOnFinalMessage<CCheckBoxHook>(m_param);
 			hook->SubclassWindow(wnd);
 			AddCtrlMsg(wnd);
 		} else if (type == BS_GROUPBOX) {
@@ -1695,23 +1831,29 @@ namespace DarkMode {
 		
 	}
 	void CHooks::AddGeneric(HWND wnd, const wchar_t * name) {
-		this->addOp([wnd, this, name] {ApplyDarkThemeCtrl(wnd, m_dark, name); });
+		this->addOp([wnd, this, name] {
+			if (m_param.IsRetroLight()) {
+				ApplyRetroTheme(wnd);
+			} else {
+				ApplyDarkThemeCtrl(wnd, IsDark(), name);
+			}
+		});
 	}
 	void CHooks::AddClassic(HWND wnd, const wchar_t* normalTheme) {
 		this->addOp([wnd, this, normalTheme] {
-			if (m_dark) ::SetWindowTheme(wnd, L"", L"");
+			if (m_param.bDark || m_param.bRetro) ::SetWindowTheme(wnd, L"", L"");
 			else ::SetWindowTheme(wnd, normalTheme, nullptr);
 		});
 	}
 	void CHooks::AddStatusBar(HWND wnd) {
-		auto hook = new ImplementOnFinalMessage<CStatusBarHook>(m_dark);
+		auto hook = new ImplementOnFinalMessage<CStatusBarHook>(m_param);
 		hook->SubclassWindow(wnd);
 		this->AddCtrlMsg(wnd);
 	}
 	void CHooks::AddScrollBar(HWND wnd) {
 		CWindow w(wnd);
 		if (w.GetStyle() & SBS_SIZEGRIP) {
-			auto hook = new ImplementOnFinalMessage<CGripperHook>(m_dark);
+			auto hook = new ImplementOnFinalMessage<CGripperHook>(m_param);
 			hook->SubclassWindow(wnd);
 			this->AddCtrlMsg(wnd);
 		} else {
@@ -1720,30 +1862,30 @@ namespace DarkMode {
 	}
 
 	void CHooks::AddReBar(HWND wnd) {
-		auto hook = new ImplementOnFinalMessage<CReBarHook>(m_dark);
+		auto hook = new ImplementOnFinalMessage<CReBarHook>(m_param);
 		hook->SubclassWindow(wnd);
 		this->AddCtrlMsg(wnd);
 	}
 
 	void CHooks::AddToolBar(HWND wnd, bool bExplorerTheme) {
 		// Not a subclass
-		addObj(new CToolbarHook(wnd, m_dark, bExplorerTheme));
+		addObj(new CToolbarHook(wnd, m_param, bExplorerTheme));
 	}
 
 	void CHooks::AddStatic(HWND wnd) {
-		auto hook = new ImplementOnFinalMessage<CStaticHook>(m_dark);
+		auto hook = new ImplementOnFinalMessage<CStaticHook>(m_param);
 		hook->SubclassWindow(wnd);
 		this->AddCtrlMsg(wnd);
 	}
 
 	void CHooks::AddUpDown(HWND wnd) {
-		auto hook = new ImplementOnFinalMessage<CUpDownHook>(m_dark);
+		auto hook = new ImplementOnFinalMessage<CUpDownHook>(m_param);
 		hook->SubclassWindow(wnd);
 		this->AddCtrlMsg(wnd);
 	}
 
 	void CHooks::AddTreeView(HWND wnd) {
-		auto hook = new ImplementOnFinalMessage<CTreeViewHook>(m_dark);
+		auto hook = new ImplementOnFinalMessage<CTreeViewHook>(m_param);
 		hook->SubclassWindow(wnd);
 		this->AddCtrlMsg(wnd);
 	}
@@ -1755,9 +1897,26 @@ namespace DarkMode {
 #endif
 	}
 
+	void CHooks::AddHeader(HWND wnd) {
+		lstDark_set(wnd, whichDark_t::header);
+		this->AddGeneric(wnd, L"ItemsView");
+	}
 	void CHooks::AddListView(HWND wnd) {
+#if DARKMODE_LISTVIEW_SUBST
 		auto subst = CListControl_ReplaceListView(wnd);
-		if (subst) AddPPListControl(subst);
+		if (subst) {
+			AddPPListControl(subst); 
+			return;
+		}
+#endif //vDARKMODE_LISTVIEW_SUBST
+
+		auto hook = new ImplementOnFinalMessage<CListViewHook>(m_param);
+		hook->SubclassWindow(wnd);
+		AddCtrlMsg(wnd);
+
+		CListViewCtrl v = wnd;
+		auto h = v.GetHeader();
+		if (h) AddHeader(h);
 	}
 
 	void CHooks::AddPPListControl(HWND wnd) {
@@ -1765,12 +1924,12 @@ namespace DarkMode {
 		// this->addOp([this, wnd] { CListControl::wndSetDarkMode(wnd, m_dark); });
 	}
 
-	void CHooks::SetDark(bool v) {
+	bool CHooks::SetParam(param_t const & v) {
 		// Important: some handlers to ugly things if told to apply when no state change occurred - UpdateTitleBar() stuff in particular
-		if (m_dark != v) {
-			m_dark = v;
-			for (auto& f : m_apply) f();
-		}
+		if (m_param == v) return false;
+		m_param = v;
+		for (auto& f : m_apply) f();
+		return true;
 	}
 	void CHooks::flushMoveToBack() {
 		for (auto w : m_lstMoveToBack) {
@@ -1790,13 +1949,14 @@ namespace DarkMode {
 
 	void CHooks::AddCtrlMsg(HWND w) {
 		this->addOp([this, w] {
-			::SendMessage(w, msgSetDarkMode(), this->m_dark ? 1 : 0, 0);
+			auto m = m_param.msgParams();
+			::SendMessage(w, msgSetDarkMode(), m.wp, m.lp);
 		});
 	}
 
 	void CHooks::AddCtrlAuto(HWND wnd) {
 
-		if (::SendMessage(wnd, msgSetDarkMode(), -1, -1)) {
+		if (::SendMessage(wnd, msgSetDarkMode(), (WPARAM)-1, (LPARAM)-1)) {
 			AddCtrlMsg(wnd); return;
 		}
 
@@ -1837,11 +1997,11 @@ namespace DarkMode {
 		} else if (_wcsicmp(cls, CListBox::GetWndClassName()) == 0) {
 			AddListBox(wnd);
 		} else if (_wcsicmp(cls, CReBarCtrl::GetWndClassName()) == 0) {
-			 AddReBar(wnd);
+			AddReBar(wnd);
+		} else if (_wcsicmp(cls, CHeaderCtrl::GetWndClassName()) == 0 ) {
+			AddHeader(wnd);
 		} else {
-#if PFC_DEBUG
-			pfc::outputDebugLine(pfc::format("DarkMode: unknown class - ", buffer));
-#endif
+			PFC_DEBUG_PRINT("unknown class - ", buffer);
 		}
 	}
 
@@ -1853,87 +2013,39 @@ namespace DarkMode {
 
 	void CHooks::AddApp() {
 		addOp([this] {
-			SetAppDarkMode(this->m_dark);
+			SetAppDarkMode(this->IsDark());
 		});
 	}
 
-	void NCPaintDarkFrame(HWND wnd_, HRGN rgn_) {
-		// rgn is in SCREEN COORDINATES, possibly (HRGN)1 to indicate no clipping / whole nonclient area redraw
-		// we're working with SCREEN COORDINATES until actual DC painting
-		CWindow wnd = wnd_;
+	void NCPaintDarkFrame(HWND wnd, HRGN rgn) {
+		NCPaintDarkFrame(wnd, rgn, param_t { true });
+	}
+	void NCPaintDarkFrame(HWND wnd, HRGN rgn, param_t const & p) {
+		const auto colorLight = p.GetSysColor(COLOR_BTNHIGHLIGHT);
+		const auto colorDark = p.GetSysColor(COLOR_BTNSHADOW);
 
-		CRect rcWindow, rcClient;
-		WIN32_OP_D( wnd.GetWindowRect(rcWindow) );
-		WIN32_OP_D( wnd.GetClientRect(rcClient) );
-		WIN32_OP_D( wnd.ClientToScreen( rcClient ) ); // transform all to same coordinate system
+		NCPaintFrame(wnd, rgn, colorDark, colorDark, colorLight, colorLight);
+	}
 
-		CRgn rgnClip;
-		WIN32_OP_D( rgnClip.CreateRectRgnIndirect(rcWindow) != NULL );
-		if (rgn_ != NULL && rgn_ != (HRGN)1) {
-			// we have a valid HRGN from caller?
-			if (rgnClip.CombineRgn(rgn_, RGN_AND) == NULLREGION) return; // nothing to draw, exit early
-		}
+	void param_t::sendMessage(HWND to) const {
+		auto m = msgParams();
+		::SendMessage(to, msgSetDarkMode(), m.wp, m.lp);
+	}
+	msgParams_t param_t::msgParams() const {
+		LPARAM lp = ((LPARAM) clrTint) & clrTintMask;
+		if (bRetro) lp |= flagRetro;
+		return { IsDark() ? 1u : 0u, lp };
+	}
+	std::optional<param_t> param_t::importMsgParams(msgParams_t const & arg) {
+		if (arg.wp == msgSetDarkMode_wParam_query) return std::nullopt;
+		param_t ret;
+		ret.bDark = (arg.wp == 1);
+		ret.clrTint = (COLORREF)(arg.lp & clrTintMask);
+		ret.bRetro = (arg.lp & flagRetro) != 0;
+		return ret;
+	}
 
-		{
-			// Have scroll bars? Have DefWindowProc() them then exclude from our rgnClip.
-			SCROLLBARINFO si = { sizeof(si) };
-			if (::GetScrollBarInfo(wnd, OBJID_VSCROLL, &si) && (si.rgstate[0] & STATE_SYSTEM_INVISIBLE) == 0 && si.rcScrollBar.left < si.rcScrollBar.right) {
-				CRect rc = si.rcScrollBar;
-				// rcClient.right = rc.right;
-				CRgn rgn; WIN32_OP_D( rgn.CreateRectRgnIndirect(rc) );
-				int status = SIMPLEREGION;
-				if (rgnClip) {
-					status = rgn.CombineRgn(rgn, rgnClip, RGN_AND);
-				}
-				if (status != NULLREGION) {
-					DefWindowProc(wnd, WM_NCPAINT, (WPARAM)rgn.m_hRgn, 0);
-					rgnClip.CombineRgn(rgn, RGN_DIFF); // exclude from further drawing
-				}
-			}
-			if (::GetScrollBarInfo(wnd, OBJID_HSCROLL, &si) && (si.rgstate[0] & STATE_SYSTEM_INVISIBLE) == 0 && si.rcScrollBar.top < si.rcScrollBar.bottom) {
-				CRect rc = si.rcScrollBar;
-				// rcClient.bottom = rc.bottom;
-				CRgn rgn; WIN32_OP_D(rgn.CreateRectRgnIndirect(rc));
-				int status = SIMPLEREGION;
-				if (rgnClip) {
-					status = rgn.CombineRgn(rgn, rgnClip, RGN_AND);
-				}
-				if (status != NULLREGION) {
-					DefWindowProc(wnd, WM_NCPAINT, (WPARAM)rgn.m_hRgn, 0);
-					rgnClip.CombineRgn(rgn, RGN_DIFF); // exclude from further drawing
-				}
-			}
-		}
-
-		const auto colorLight = DarkMode::GetSysColor(COLOR_BTNHIGHLIGHT);
-		const auto colorDark = DarkMode::GetSysColor(COLOR_BTNSHADOW);
-
-		CWindowDC dc( wnd );
-		if (dc.IsNull()) {
-			PFC_ASSERT(!"???");
-			return;
-		}
-
-
-		// Window DC has (0,0) in upper-left corner of our window (not screen, not client)
-		// Turn rcWindow to (0,0), (winWidth, winHeight)
-		CPoint origin = rcWindow.TopLeft();
-		rcWindow.OffsetRect(-origin);
-		rcClient.OffsetRect(-origin);
-
-		if (!rgnClip.IsNull()) {
-			// rgnClip is still in screen coordinates, fix this here
-			rgnClip.OffsetRgn(-origin);
-			dc.SelectClipRgn(rgnClip);
-		}
-
-		// bottom
-		dc.FillSolidRect(CRect(rcClient.left, rcClient.bottom, rcWindow.right, rcWindow.bottom), colorLight);
-		// right
-		dc.FillSolidRect(CRect(rcClient.right, rcWindow.top, rcWindow.right, rcClient.bottom), colorLight);
-		// top
-		dc.FillSolidRect(CRect(rcWindow.left, rcWindow.top, rcWindow.right, rcClient.top), colorDark);
-		// left
-		dc.FillSolidRect(CRect(rcWindow.left, rcClient.top, rcClient.left, rcWindow.bottom), colorDark);
+	COLORREF param_t::GetSysColor(int idx) const {
+		return ::DarkMode::GetSysColor(idx, *this);
 	}
 }

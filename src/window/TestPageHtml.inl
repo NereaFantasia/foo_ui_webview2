@@ -366,7 +366,7 @@ std::wstring MainWindow::GetTestPageHtml() const {
         
         // File System
         L"function fileExists(){fb2k.invoke('file.exists',{path:'C:/Windows/notepad.exe'}).then(log).catch(err);}"
-        L"function fileList(){fb2k.invoke('file.list',{path:'C:/Windows',pattern:'*.exe',limit:10}).then(log).catch(err);}"
+        L"function fileList(){fb2k.invoke('file.list',{path:'C:/Windows',pattern:'*.exe'}).then(log).catch(err);}"
         L"function fileRead(){fb2k.invoke('file.read',{path:'C:/Windows/System32/drivers/etc/hosts'}).then(log).catch(err);}"
         L"function fileWrite(){fb2k.invoke('file.write',{path:'C:/temp/fb2k_test.txt',content:'Hello from fb2k!'}).then(log).catch(err);}"
         L"function fileMkdir(){fb2k.invoke('file.mkdir',{path:'C:/temp/fb2k_test_dir'}).then(log).catch(err);}"
@@ -390,7 +390,7 @@ std::wstring MainWindow::GetTestPageHtml() const {
         
         // HTTP
         L"function httpGet(){fb2k.invoke('http.get',{url:'https://httpbin.org/get'}).then(log).catch(err);}"
-        L"function httpPost(){fb2k.invoke('http.post',{url:'https://httpbin.org/post',body:JSON.stringify({test:1}),contentType:'application/json'}).then(log).catch(err);}"
+        L"function httpPost(){fb2k.invoke('http.post',{url:'https://httpbin.org/post',body:JSON.stringify({test:1}),headers:{'Content-Type':'application/json'}}).then(log).catch(err);}"
         L"function httpHead(){fb2k.invoke('http.head',{url:'https://www.foobar2000.org'}).then(log).catch(err);}"
         
         // UI

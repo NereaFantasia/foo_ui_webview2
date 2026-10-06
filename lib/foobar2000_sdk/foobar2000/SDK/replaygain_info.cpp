@@ -59,13 +59,16 @@ void replaygain_info::reset()
 #define meta_track_gain "replaygain_track_gain"
 #define meta_track_peak "replaygain_track_peak"
 
+const char* const replaygain_info::metaFields[nMetaFields] = {
+	meta_album_gain, meta_album_peak, meta_track_gain, meta_track_peak
+};
+
 bool replaygain_info::g_is_meta_replaygain(const char * p_name,t_size p_name_len)
 {
-	return 
-		stricmp_utf8_ex(p_name,p_name_len,meta_album_gain,SIZE_MAX) == 0 ||
-		stricmp_utf8_ex(p_name,p_name_len,meta_album_peak,SIZE_MAX) == 0 ||
-		stricmp_utf8_ex(p_name,p_name_len,meta_track_gain,SIZE_MAX) == 0 ||
-		stricmp_utf8_ex(p_name,p_name_len,meta_track_peak,SIZE_MAX) == 0;
+	for (auto walk : metaFields) {
+		if (pfc::stringEqualsI_ascii_ex(p_name, p_name_len, walk, SIZE_MAX)) return true;
+	}
+	return false;
 }
 
 bool replaygain_info::set_from_meta_ex(const char * p_name,t_size p_name_len,const char * p_value,t_size p_value_len)
@@ -97,7 +100,7 @@ bool replaygain_info::set_from_meta_ex(const char * p_name,t_size p_name_len,con
 }
 
 
-t_size replaygain_info::get_value_count()
+t_size replaygain_info::get_value_count() const
 {
 	t_size ret = 0;
 	if (is_album_gain_present()) ret++;
@@ -154,12 +157,7 @@ void replaygain_info::set_track_peak_text(const char * p_text,t_size p_text_len)
 
 replaygain_info replaygain_info::g_merge(replaygain_info r1,replaygain_info r2)
 {
-	replaygain_info ret = r1;
-	if (!ret.is_album_gain_present()) ret.m_album_gain = r2.m_album_gain;
-	if (!ret.is_album_peak_present()) ret.m_album_peak = r2.m_album_peak;
-	if (!ret.is_track_gain_present()) ret.m_track_gain = r2.m_track_gain;
-	if (!ret.is_track_peak_present()) ret.m_track_peak = r2.m_track_peak;
-	return ret;
+	replaygain_info ret = r2; ret.overwrite(r1); return ret;
 }
 
 
@@ -169,4 +167,29 @@ void replaygain_info::for_each(for_each_t f) const {
 	if (format_track_peak(buffer)) f(meta_track_peak, buffer);
 	if (format_album_gain(buffer)) f(meta_album_gain, buffer);
 	if (format_album_peak(buffer)) f(meta_album_peak, buffer);
+}
+
+void replaygain_info::overwrite(const replaygain_info& other) {
+	if (other.have_track_gain()) m_track_gain = other.m_track_gain;
+	if (other.have_track_peak()) m_track_peak = other.m_track_peak;
+	if (other.have_album_gain()) m_album_gain = other.m_album_gain;
+	if (other.have_album_peak()) m_album_peak = other.m_album_peak;
+}
+
+replaygain_info replaygain_info::extract_common(const replaygain_info& other) const {
+	replaygain_info ret;
+	if (m_track_gain == other.m_track_gain) ret.m_track_gain = m_track_gain;
+	if (m_album_gain == other.m_album_gain) ret.m_album_gain = m_album_gain;
+	if (m_track_peak == other.m_track_peak) ret.m_track_peak = m_track_peak;
+	if (m_album_peak == other.m_album_peak) ret.m_album_peak = m_album_peak;
+	return ret;
+}
+
+replaygain_info replaygain_info::extract_delta(const replaygain_info& other) const {
+	replaygain_info ret;
+	if (m_track_gain != other.m_track_gain) ret.m_track_gain = m_track_gain;
+	if (m_album_gain != other.m_album_gain) ret.m_album_gain = m_album_gain;
+	if (m_track_peak != other.m_track_peak) ret.m_track_peak = m_track_peak;
+	if (m_album_peak != other.m_album_peak) ret.m_album_peak = m_album_peak;
+	return ret;
 }

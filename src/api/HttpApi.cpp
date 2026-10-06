@@ -6,7 +6,11 @@
 #include "api/BridgeCore.h"
 #include "api/CallerContext.h"
 #include "api/ErrorEnvelope.h"
+#include "api/EventEmit.h"
+#include "api/TypedApi.h"
+#include "api/generated/HttpSchema.h"
 #include "core/WebViewContext.h"
+#include "settings/SecurityConfig.h"
 #include "utils/PathExpansion.h"
 #include <winhttp.h>
 #include <ws2tcpip.h>
@@ -18,6 +22,7 @@
 #include <mutex>
 #include <random>
 #include <unordered_map>
+#include <variant>
 #include "utils/Base64.h"
 
 #pragma comment(lib, "winhttp.lib")
@@ -25,47 +30,118 @@
 
 namespace fs = std::filesystem;
 
-// 安全: 引入安全配置
-namespace security_config {
-    extern bool IsLocalNetworkAccessAllowed();
-    extern bool IsInsecureTlsAllowed();
-}
-
 namespace {
     using json = nlohmann::json;
+    namespace ht = api::http;
 
-    // noexcept dispatcher used by every async lambda below to deliver
-    // an HTTP response/event JSON back to the calling window. Any exception
-    // raised by SendEventTo / EmitEvent / BridgeCore::EmitEvent (json copy,
-    // std::bad_alloc, etc.) is swallowed and logged instead of propagating
-    // into the fb2k main-thread callback runner or std::thread context,
-    // where it would trigger std::terminate. Resolves bugprone-exception-escape.
-    inline void DispatchHttpEventSafely(HWND callerHwnd,
-                                        const std::string& callerWindowId,
-                                        const char* eventName,
-                                        const json& payload) noexcept {
+    // What one request produced. The synchronous call turns it into its
+    // declared result, the async path into the http:response payload, so the
+    // two report the same failures with the same codes.
+    // Moving the headers map can throw std::bad_alloc under MSVC's STL, the same
+    // as moving api::Failure; nothing here needs the move to be noexcept.
+    // NOLINTNEXTLINE(bugprone-exception-escape)
+    struct HttpResponseData {
+        DWORD status = 0;
+        std::map<std::string, std::string> headers;
+        std::string body;
+        std::string responseType;  // "text" | "base64"
+    };
+    using HttpOutcome = std::variant<HttpResponseData, api::Failure>;
+
+    // The same for one download.
+    struct DownloadData {
+        DWORD status = 0;
+        size_t bytesWritten = 0;
+        std::string path;
+    };
+    using DownloadOutcome = std::variant<DownloadData, api::Failure>;
+
+    // A numeric Content-Length header, for HEAD responses.
+    std::optional<std::int64_t> ContentLength(const std::map<std::string, std::string>& headers) {
+        const auto it = headers.find("Content-Length");
+        if (it == headers.end()) return std::nullopt;
         try {
-            auto& wvc = WebViewContext::GetInstance();
-            bool sent = false;
-            if (!callerWindowId.empty()) {
-                sent = wvc.SendEventTo(callerWindowId, eventName, payload);
-            }
-            if (!sent && callerHwnd) {
-                if (auto* bridge = wvc.GetBridge(callerHwnd)) {
-                    bridge->EmitEvent(eventName, payload);
-                    sent = true;
-                }
-            }
-            if (!sent) {
-                BridgeCore::GetInstance().EmitEvent(eventName, payload);
-            }
-        } catch (const std::exception& e) {
-            console::printf("[HTTP] DispatchHttpEventSafely(%s) failed: %s", eventName, e.what());
+            return std::stoll(it->second);
         } catch (...) {
-            console::printf("[HTTP] DispatchHttpEventSafely(%s) failed: unknown exception", eventName);
+            return std::nullopt;
         }
     }
-    
+
+    // A failed request or download as its event reports it. Of a failure's extra
+    // keys only the two the declarations carry are passed on: the status of a
+    // refused redirect and the cancelled flag set by http.abort.
+    template <class P>
+    P FailurePayload(const std::string& requestId, const api::Failure& failure) {
+        P payload;
+        payload.requestId = requestId;
+        payload.success = false;
+        payload.error = failure.error;
+        payload.code = failure.code;
+        if (const auto it = failure.extra.find("status");
+            it != failure.extra.end() && it->second.is_number_integer()) {
+            payload.status = it->second.get<std::int64_t>();
+        }
+        if (const auto it = failure.extra.find("cancelled");
+            it != failure.extra.end() && it->second.is_boolean()) {
+            payload.cancelled = it->second.get<bool>();
+        }
+        return payload;
+    }
+
+    ht::ResponsePayload ResponseEventPayload(const std::string& requestId, const HttpOutcome& outcome,
+                                             bool head) {
+        if (const auto* failure = std::get_if<api::Failure>(&outcome)) {
+            return FailurePayload<ht::ResponsePayload>(requestId, *failure);
+        }
+        const auto& data = std::get<HttpResponseData>(outcome);
+        ht::ResponsePayload payload;
+        payload.requestId = requestId;
+        payload.success = true;
+        payload.status = data.status;
+        payload.headers = data.headers;
+        payload.body = data.body;
+        payload.responseType = data.responseType;
+        if (head) payload.contentLength = ContentLength(data.headers);
+        return payload;
+    }
+
+    ht::DownloadCompletePayload DownloadEventPayload(const std::string& requestId,
+                                                     const DownloadOutcome& outcome) {
+        if (const auto* failure = std::get_if<api::Failure>(&outcome)) {
+            return FailurePayload<ht::DownloadCompletePayload>(requestId, *failure);
+        }
+        const auto& data = std::get<DownloadData>(outcome);
+        ht::DownloadCompletePayload payload;
+        payload.requestId = requestId;
+        payload.success = true;
+        payload.status = data.status;
+        payload.bytesWritten = static_cast<std::int64_t>(data.bytesWritten);
+        payload.path = data.path;
+        return payload;
+    }
+
+    // noexcept dispatcher used by every async lambda below to deliver an HTTP
+    // event back to the calling window. Any exception raised on the way (json
+    // copy, std::bad_alloc, etc.) is swallowed and logged instead of propagating
+    // into the fb2k main-thread callback runner or std::thread context, where it
+    // would trigger std::terminate. Resolves bugprone-exception-escape.
+    // `payload` is E::Payload or api::emit::Prepared<E>.
+    template <class E, class P>
+    void DispatchHttpEventSafely(HWND callerHwnd, const std::string& callerWindowId,
+                                 const P& payload) noexcept {
+        try {
+            api::emit::ToCaller<E>(callerWindowId, callerHwnd, payload);
+        } catch (const std::exception& e) {
+            console::printf("[HTTP] DispatchHttpEventSafely(%s) failed: %s", E::kName, e.what());
+        } catch (...) {
+            console::printf("[HTTP] DispatchHttpEventSafely(%s) failed: unknown exception", E::kName);
+        }
+    }
+
+    // http:response bodies go up to 100 MB, so the payload is turned into JSON on
+    // the request thread rather than on the main thread.
+    using PreparedResponse = api::emit::Prepared<ht::events::Response>;
+
     // User agent string
     constexpr const wchar_t* USER_AGENT = L"foo_ui_webview2/1.0 (WinHTTP)";
     
@@ -121,14 +197,10 @@ namespace {
         ) {
             // GAP_702: 并发请求数检查
             if (activeRequests_.load() >= MAX_CONCURRENT_REQUESTS) {
-                json errorResult = {
-                    {"requestId", requestId},
-                    {"success", false},
-                    {"error", "Too many concurrent requests"},
-                    {"code", ApiErrorCode::OPERATION_FAILED}
-                };
+                const auto errorResult = FailurePayload<ht::ResponsePayload>(
+                    requestId, api::Fail("Too many concurrent requests", ApiErrorCode::OPERATION_FAILED));
                 fb2k::inMainThread([errorResult, callerHwnd, callerWindowId]() noexcept {
-                    DispatchHttpEventSafely(callerHwnd, callerWindowId, "http:response", errorResult);
+                    DispatchHttpEventSafely<ht::events::Response>(callerHwnd, callerWindowId, errorResult);
                 });
                 return;
             }
@@ -156,37 +228,24 @@ namespace {
                 try {
                 console::printf("[HTTP Async] Background thread started for %s", requestId.c_str());
                 try {
-                    json result = PerformHttpRequestInternal(method, url, headers, body, timeout, options);
-                    result["requestId"] = requestId;
+                    PreparedResponse result(ResponseEventPayload(
+                        requestId, PerformHttpRequestInternal(method, url, headers, body, timeout, options),
+                        method == "HEAD"));
 
-                    // B-8: 异步 HEAD 补充 contentLength
-                    if (method == "HEAD" && result.value("success", false) && result.contains("headers")) {
-                        auto& respHeaders = result["headers"];
-                        if (respHeaders.contains("Content-Length")) {
-                            try {
-                                result["contentLength"] = std::stoll(respHeaders["Content-Length"].get<std::string>());
-                            } catch (...) {}
-                        }
-                    }
-                    
                     console::printf("[HTTP Async] Request %s completed, emitting event", requestId.c_str());
-                    
+
                     // 通过事件发送结果，路由到调用者实例
-                    fb2k::inMainThread([result, callerHwnd, callerWindowId]() noexcept {
-                        DispatchHttpEventSafely(callerHwnd, callerWindowId, "http:response", result);
+                    fb2k::inMainThread([result = std::move(result), callerHwnd, callerWindowId]() noexcept {
+                        DispatchHttpEventSafely<ht::events::Response>(callerHwnd, callerWindowId, result);
                     });
                 } catch (const std::exception& e) {
                     console::printf("[HTTP Async] Request %s failed: %s", requestId.c_str(), e.what());
-                    json errorResult = {
-                        {"requestId", requestId},
-                        {"success", false},
-                        {"error", e.what()},
-                        {"code", ApiErrorCode::OPERATION_FAILED}
-                    };
-                    FailureHook::LogAsync("http:response", ApiErrorCode::OPERATION_FAILED,
+                    const auto errorResult = FailurePayload<ht::ResponsePayload>(
+                        requestId, api::Fail(e.what(), ApiErrorCode::OPERATION_FAILED));
+                    FailureHook::LogAsync(ht::events::Response::kName, ApiErrorCode::OPERATION_FAILED,
                                           e.what(), requestId.c_str());
                     fb2k::inMainThread([errorResult, callerHwnd, callerWindowId]() noexcept {
-                        DispatchHttpEventSafely(callerHwnd, callerWindowId, "http:response", errorResult);
+                        DispatchHttpEventSafely<ht::events::Response>(callerHwnd, callerWindowId, errorResult);
                     });
                 }
                 } catch (...) {
@@ -209,7 +268,7 @@ namespace {
         }
         
         // 同步执行 HTTP 请求 (用于内部调用或下载)
-        static json PerformHttpRequestInternal(
+        static HttpOutcome PerformHttpRequestInternal(
             const std::string& method,
             const std::string& url,
             const std::map<std::string, std::string>& headers,
@@ -498,7 +557,7 @@ namespace {
     // Helper: Perform HTTP request (同步内部实现)
     // 安全: 添加 SSRF 检查
     //==========================================================================
-    json AsyncRequestManager::PerformHttpRequestInternal(
+    HttpOutcome AsyncRequestManager::PerformHttpRequestInternal(
         const std::string& method,
         const std::string& url,
         const std::map<std::string, std::string>& headers,
@@ -516,7 +575,7 @@ namespace {
             WINHTTP_NO_PROXY_BYPASS, 0);
         
         if (!hSession) {
-            return {{"success", false}, {"error", "Failed to open HTTP session"}};
+            return api::Fail("Failed to open HTTP session", ApiErrorCode::OPERATION_FAILED);
         }
         
         // 启用 gzip/deflate 自动解压 (Win 8.1+)
@@ -542,33 +601,31 @@ namespace {
             if (IsLocalNetworkUrl(currentUrl)) {
                 if (!security_config::IsLocalNetworkAccessAllowed()) {
                     WinHttpCloseHandle(hSession);
-                    return {
-                        {"success", false},
-                        {"error", redirectCount > 0
-                            ? "Redirect target is a local network address"
-                            : "Access to local network is disabled. Enable in Advanced Settings if needed."}
-                    };
+                    return api::Fail(redirectCount > 0
+                                         ? "Redirect target is a local network address"
+                                         : "Access to local network is disabled. Enable in Advanced Settings if needed.",
+                                     ApiErrorCode::PERMISSION_DENIED);
                 }
             }
 
             UrlComponents urlComp;
             if (!ParseUrl(currentUrl, urlComp)) {
                 WinHttpCloseHandle(hSession);
-                return {{"success", false}, {"error", "Invalid URL"}};
+                return api::Fail("Invalid URL", ApiErrorCode::INVALID_PARAMS);
             }
 
             // FIX-1: 协议白名单 — 只允许 http/https
             if (_wcsicmp(urlComp.scheme.c_str(), L"http") != 0 &&
                 _wcsicmp(urlComp.scheme.c_str(), L"https") != 0) {
                 WinHttpCloseHandle(hSession);
-                return {{"success", false}, {"error", "Only http and https protocols are allowed"}};
+                return api::Fail("Only http and https protocols are allowed", ApiErrorCode::INVALID_PARAMS);
             }
 
             // SSRF 增强: DNS 解析后验证目标 IP 不是私有地址
             if (!security_config::IsLocalNetworkAccessAllowed() &&
                 IsResolvedAddressPrivate(urlComp.host)) {
                 WinHttpCloseHandle(hSession);
-                return {{"success", false}, {"error", "Target host resolves to a private/local network address"}};
+                return api::Fail("Target host resolves to a private/local network address", ApiErrorCode::PERMISSION_DENIED);
             }
 
             // Connect
@@ -577,7 +634,7 @@ namespace {
 
             if (!hConnect) {
                 WinHttpCloseHandle(hSession);
-                return {{"success", false}, {"error", "Failed to connect"}};
+                return api::Fail("Failed to connect", ApiErrorCode::OPERATION_FAILED);
             }
 
             // Create request
@@ -595,7 +652,7 @@ namespace {
             if (!hRequest) {
                 WinHttpCloseHandle(hConnect);
                 WinHttpCloseHandle(hSession);
-                return {{"success", false}, {"error", "Failed to create request"}};
+                return api::Fail("Failed to create request", ApiErrorCode::OPERATION_FAILED);
             }
 
             // TLS 证书校验双层门禁：仅全局开关 ON 且请求显式 opt-in 时跳过。
@@ -640,7 +697,7 @@ namespace {
                 WinHttpCloseHandle(hRequest);
                 WinHttpCloseHandle(hConnect);
                 WinHttpCloseHandle(hSession);
-                return {{"success", false}, {"error", errMsg}};
+                return api::Fail(errMsg, ApiErrorCode::OPERATION_FAILED);
             }
 
             // Receive response
@@ -652,7 +709,7 @@ namespace {
                 WinHttpCloseHandle(hRequest);
                 WinHttpCloseHandle(hConnect);
                 WinHttpCloseHandle(hSession);
-                return {{"success", false}, {"error", errMsg}};
+                return api::Fail(errMsg, ApiErrorCode::OPERATION_FAILED);
             }
 
             // Get status code
@@ -671,7 +728,7 @@ namespace {
                     WinHttpCloseHandle(hRequest);
                     WinHttpCloseHandle(hConnect);
                     WinHttpCloseHandle(hSession);
-                    return {{"success", false}, {"error", "Too many redirects (limit: 10)"}};
+                    return api::Fail("Too many redirects (limit: 10)", ApiErrorCode::OPERATION_FAILED);
                 }
 
                 // 提取 Location header
@@ -683,7 +740,7 @@ namespace {
                     WinHttpCloseHandle(hRequest);
                     WinHttpCloseHandle(hConnect);
                     WinHttpCloseHandle(hSession);
-                    return {{"success", false}, {"error", "Redirect without Location header"}};
+                    return api::Fail("Redirect without Location header", ApiErrorCode::OPERATION_FAILED);
                 }
 
                 std::vector<wchar_t> locBuf(locSize / sizeof(wchar_t) + 1);
@@ -692,7 +749,7 @@ namespace {
                     WinHttpCloseHandle(hRequest);
                     WinHttpCloseHandle(hConnect);
                     WinHttpCloseHandle(hSession);
-                    return {{"success", false}, {"error", "Failed to read Location header"}};
+                    return api::Fail("Failed to read Location header", ApiErrorCode::OPERATION_FAILED);
                 }
 
                 currentUrl = WideToUtf8(std::wstring(locBuf.data()));
@@ -715,7 +772,7 @@ namespace {
                 WinHttpCloseHandle(hRequest);
                 WinHttpCloseHandle(hConnect);
                 WinHttpCloseHandle(hSession);
-                return {{"success", false}, {"error", "Redirect not allowed"}, {"status", statusCode}};
+                return api::Fail("Redirect not allowed", ApiErrorCode::OPERATION_FAILED, {{"status", statusCode}});
             }
 
             // 非重定向 或 redirect=="manual" — 退出循环，正常读取响应
@@ -723,7 +780,7 @@ namespace {
         }
 
         // Get response headers
-        json responseHeaders = json::object();
+        std::map<std::string, std::string> responseHeaders;
         
         // Get all headers
         DWORD size = 0;
@@ -764,7 +821,7 @@ namespace {
                 WinHttpCloseHandle(hRequest);
                 WinHttpCloseHandle(hConnect);
                 WinHttpCloseHandle(hSession);
-                return {{"success", false}, {"error", "Request cancelled"}, {"cancelled", true}};
+                return api::Fail("Request cancelled", ApiErrorCode::CANCELLED, {{"cancelled", true}});
             }
             
             // FIX-2: 检查响应体大小限制
@@ -772,8 +829,7 @@ namespace {
                 WinHttpCloseHandle(hRequest);
                 WinHttpCloseHandle(hConnect);
                 WinHttpCloseHandle(hSession);
-                return {{"success", false}, {"error", "Response too large (exceeds 100MB limit)"},
-                        {"code", ApiErrorCode::OPERATION_FAILED}};
+                return api::Fail("Response too large (exceeds 100MB limit)", ApiErrorCode::OPERATION_FAILED);
             }
             
             bytesAvailable = 0;
@@ -799,171 +855,117 @@ namespace {
         const bool wantBase64 = (options.responseType == "base64" ||
                                  options.responseType == "arraybuffer" ||
                                  options.responseType == "binary");
-        json bodyValue;
-        std::string actualResponseType;
+        HttpResponseData data;
+        data.status = statusCode;
+        data.headers = std::move(responseHeaders);
         if (wantBase64) {
-            bodyValue = utils::Base64Encode(reinterpret_cast<const uint8_t*>(responseBody.data()), responseBody.size());
-            actualResponseType = "base64";
+            data.body = utils::Base64Encode(reinterpret_cast<const uint8_t*>(responseBody.data()), responseBody.size());
+            data.responseType = "base64";
         } else {
-            bodyValue = responseBody;
-            actualResponseType = "text";
+            data.body = std::move(responseBody);
+            data.responseType = "text";
         }
-        
-        return {
-            {"success", true},
-            {"status", statusCode},
-            {"headers", responseHeaders},
-            {"body", bodyValue},
-            {"responseType", actualResponseType}
-        };
+        return data;
     }
     
-    // FIX-5: body 为 object/array 时自动序列化
-    static std::string ExtractBody(const json& params) {
-        if (!params.contains("body")) return "";
-        const auto& b = params["body"];
-        if (b.is_string()) return b.get<std::string>();
-        if (b.is_object() || b.is_array()) return b.dump();
+    // 字符串原样发送，对象与数组发送其 JSON 文本，其余值按空请求体发送
+    std::string RequestBody(const std::optional<json>& body) {
+        if (!body) return "";
+        if (body->is_string()) return body->get<std::string>();
+        if (body->is_object() || body->is_array()) return body->dump();
         return "";
     }
-    
-    //==========================================================================
-    // http.get - HTTP GET request (异步版本)
-    // 返回 { requestId: "xxx" }，结果通过 http:response 事件返回
-    //==========================================================================
-    json HttpGet(const json& params) {
-        std::string url = params.value("url", "");
-        int timeout = params.value("timeout", 30000);
-        bool async = params.value("async", true);
-        std::string redirect = params.value("redirect", "follow");
-        std::string responseType = params.value("responseType", "text");
-        bool insecureTls = params.value("insecureTls", false);
-        
-        console::printf("[HTTP] http.get called, async=%s, url=%s", async ? "true" : "false", url.c_str());
-        
-        if (url.empty()) {
-            return {{"success", false}, {"error", "url is required"}};
-        }
-        
-        // Parse headers
-        std::map<std::string, std::string> headers;
-        if (params.contains("headers") && params["headers"].is_object()) {
-            for (auto& [key, value] : params["headers"].items()) {
-                headers[key] = value.get<std::string>();
-            }
-        }
-        
-        RequestOptions options;
-        options.redirect = redirect;
-        options.responseType = responseType;
-        options.insecureTls = insecureTls;
-        
-        if (async) {
-            console::print("[HTTP] Using ASYNC mode - returning immediately");
-            auto caller = CallerContext::FromParams(params);
-            auto& manager = AsyncRequestManager::GetInstance();
-            std::string requestId = manager.GenerateRequestId();
-            manager.ExecuteAsync(requestId, "GET", url, headers, "", timeout,
-                                 caller.callerHwnd, caller.windowId, options);
-            return {{"success", true}, {"requestId", requestId}, {"async", true}};
-        } else {
-            console::print("[HTTP] Using SYNC mode - will block until complete");
-            return AsyncRequestManager::PerformHttpRequestInternal("GET", url, headers, "", timeout, options);
-        }
+
+    // WinHTTP takes int milliseconds; a declared timeout beyond that range
+    // saturates instead of wrapping.
+    int TimeoutMs(std::int64_t timeout) {
+        return static_cast<int>(std::clamp<std::int64_t>(
+            timeout, std::numeric_limits<int>::min(), std::numeric_limits<int>::max()));
     }
-    
-    //==========================================================================
-    // http.post - HTTP POST request (异步版本)
-    //==========================================================================
-    json HttpPost(const json& params) {
-        std::string url = params.value("url", "");
-        std::string body = ExtractBody(params);  // FIX-5: 支持 object/array 自动序列化
-        int timeout = params.value("timeout", 30000);
-        bool async = params.value("async", true);
-        std::string redirect = params.value("redirect", "follow");
-        std::string responseType = params.value("responseType", "text");
-        bool insecureTls = params.value("insecureTls", false);
-        
-        if (url.empty()) {
-            return {{"success", false}, {"error", "url is required"}};
+
+    template <class R>
+    api::Result<R> ToRequestResult(HttpOutcome outcome) {
+        if (auto* failure = std::get_if<api::Failure>(&outcome)) {
+            return std::move(*failure);
         }
-        
-        std::map<std::string, std::string> headers;
-        if (params.contains("headers") && params["headers"].is_object()) {
-            for (auto& [key, value] : params["headers"].items()) {
-                headers[key] = value.get<std::string>();
-            }
+        auto& data = std::get<HttpResponseData>(outcome);
+        R result;
+        result.status = static_cast<std::int64_t>(data.status);
+        if constexpr (requires(const R& r) { r.contentLength; }) {
+            if (const auto length = ContentLength(data.headers)) result.contentLength = *length;
         }
-        
-        RequestOptions options;
-        options.redirect = redirect;
-        options.responseType = responseType;
-        options.insecureTls = insecureTls;
-        
-        if (async) {
-            auto caller = CallerContext::FromParams(params);
-            auto& manager = AsyncRequestManager::GetInstance();
-            std::string requestId = manager.GenerateRequestId();
-            manager.ExecuteAsync(requestId, "POST", url, headers, body, timeout,
-                                 caller.callerHwnd, caller.windowId, options);
-            return {{"success", true}, {"requestId", requestId}, {"async", true}};
-        } else {
-            return AsyncRequestManager::PerformHttpRequestInternal("POST", url, headers, body, timeout, options);
-        }
+        result.headers = std::move(data.headers);
+        result.body = std::move(data.body);
+        result.responseType = std::move(data.responseType);
+        return result;
     }
-    
+
     //==========================================================================
-    // http.head - HTTP HEAD request (异步版本)
+    // http.get / head / post / put / delete / patch
+    // The six differ only in the method name, whether a body is sent and
+    // whether responseType applies (HEAD answers with no body).
+    // async (the default) returns { requestId, async } at once and delivers
+    // the response as http:response; otherwise the call blocks.
     //==========================================================================
-    json HttpHead(const json& params) {
-        std::string url = params.value("url", "");
-        int timeout = params.value("timeout", 30000);
-        bool async = params.value("async", true);
-        std::string redirect = params.value("redirect", "follow");
-        bool insecureTls = params.value("insecureTls", false);
-        
-        if (url.empty()) {
-            return {{"success", false}, {"error", "url is required"}};
+    template <class P>
+    api::Result<typename P::Result> RunRequest(const char* method, const P& p, const CallerContext& caller) {
+        using R = typename P::Result;
+        std::string body;
+        if constexpr (requires(const P& q) { q.body; }) {
+            body = RequestBody(p.body);
         }
-        
-        std::map<std::string, std::string> headers;
-        if (params.contains("headers") && params["headers"].is_object()) {
-            for (auto& [key, value] : params["headers"].items()) {
-                headers[key] = value.get<std::string>();
-            }
-        }
-        
+        const std::map<std::string, std::string> headers = p.headers.value_or(std::map<std::string, std::string>{});
+        const int timeout = TimeoutMs(p.timeout);
+
         RequestOptions options;
-        options.redirect = redirect;
-        options.insecureTls = insecureTls;
-        
-        if (async) {
-            auto caller = CallerContext::FromParams(params);
+        options.redirect = p.redirect;
+        if constexpr (requires(const P& q) { q.responseType; }) {
+            options.responseType = p.responseType;
+        }
+        options.insecureTls = p.insecureTls;
+
+        if (p.async) {
             auto& manager = AsyncRequestManager::GetInstance();
             std::string requestId = manager.GenerateRequestId();
-            manager.ExecuteAsync(requestId, "HEAD", url, headers, "", timeout,
+            manager.ExecuteAsync(requestId, method, p.url, headers, body, timeout,
                                  caller.callerHwnd, caller.windowId, options);
-            return {{"success", true}, {"requestId", requestId}, {"async", true}};
-        } else {
-            json result = AsyncRequestManager::PerformHttpRequestInternal("HEAD", url, headers, "", timeout, options);
-            
-            // For HEAD request, also extract content-length if available
-            if (result.value("success", false) && result.contains("headers")) {
-                auto& respHeaders = result["headers"];
-                if (respHeaders.contains("Content-Length")) {
-                    try {
-                        result["contentLength"] = std::stoll(respHeaders["Content-Length"].get<std::string>());
-                    } catch (...) {}
-                }
-            }
-            return result;
+            R receipt;
+            receipt.requestId = std::move(requestId);
+            receipt.async = true;
+            return receipt;
         }
+        return ToRequestResult<R>(
+            AsyncRequestManager::PerformHttpRequestInternal(method, p.url, headers, body, timeout, options));
+    }
+
+    api::Result<ht::GetResult> HttpGet(const ht::GetParams& p, const CallerContext& caller) {
+        return RunRequest("GET", p, caller);
+    }
+
+    api::Result<ht::PostResult> HttpPost(const ht::PostParams& p, const CallerContext& caller) {
+        return RunRequest("POST", p, caller);
+    }
+
+    api::Result<ht::HeadResult> HttpHead(const ht::HeadParams& p, const CallerContext& caller) {
+        return RunRequest("HEAD", p, caller);
+    }
+
+    api::Result<ht::PutResult> HttpPut(const ht::PutParams& p, const CallerContext& caller) {
+        return RunRequest("PUT", p, caller);
+    }
+
+    api::Result<ht::DeleteResult> HttpDelete(const ht::DeleteParams& p, const CallerContext& caller) {
+        return RunRequest("DELETE", p, caller);
+    }
+
+    api::Result<ht::PatchResult> HttpPatch(const ht::PatchParams& p, const CallerContext& caller) {
+        return RunRequest("PATCH", p, caller);
     }
     
     //==========================================================================
     // http.download 内部实现 (GAP_701: 支持取消 + 每跳 SSRF 校验)
     //==========================================================================
-    static json HttpDownloadInternal(
+    static DownloadOutcome HttpDownloadInternal(
         const std::string& url,
         const std::wstring& wsaveTo,
         int timeout,
@@ -982,7 +984,7 @@ namespace {
             WINHTTP_NO_PROXY_BYPASS, 0);
         
         if (!hSession) {
-            return {{"success", false}, {"error", "Failed to open HTTP session"}};
+            return api::Fail("Failed to open HTTP session", ApiErrorCode::OPERATION_FAILED);
         }
         
         // 启用 gzip/deflate 自动解压
@@ -1004,40 +1006,38 @@ namespace {
             // GAP_701: 取消检查
             if (cancelToken && cancelToken->load()) {
                 WinHttpCloseHandle(hSession);
-                return {{"success", false}, {"error", "Download cancelled"}, {"cancelled", true}};
+                return api::Fail("Download cancelled", ApiErrorCode::CANCELLED, {{"cancelled", true}});
             }
 
             // SSRF 防护 (每跳都检查)
             if (IsLocalNetworkUrl(currentUrl)) {
                 if (!security_config::IsLocalNetworkAccessAllowed()) {
                     WinHttpCloseHandle(hSession);
-                    return {
-                        {"success", false},
-                        {"error", redirectCount > 0
-                            ? "Redirect target is a local network address"
-                            : "Access to local network is disabled. Enable in Advanced Settings if needed."}
-                    };
+                    return api::Fail(redirectCount > 0
+                                         ? "Redirect target is a local network address"
+                                         : "Access to local network is disabled. Enable in Advanced Settings if needed.",
+                                     ApiErrorCode::PERMISSION_DENIED);
                 }
             }
 
             UrlComponents urlComp;
             if (!ParseUrl(currentUrl, urlComp)) {
                 WinHttpCloseHandle(hSession);
-                return {{"success", false}, {"error", "Invalid URL"}};
+                return api::Fail("Invalid URL", ApiErrorCode::INVALID_PARAMS);
             }
 
             // FIX-1: 协议白名单
             if (_wcsicmp(urlComp.scheme.c_str(), L"http") != 0 &&
                 _wcsicmp(urlComp.scheme.c_str(), L"https") != 0) {
                 WinHttpCloseHandle(hSession);
-                return {{"success", false}, {"error", "Only http and https protocols are allowed"}};
+                return api::Fail("Only http and https protocols are allowed", ApiErrorCode::INVALID_PARAMS);
             }
 
             // SSRF 增强: DNS 解析后验证目标 IP 不是私有地址
             if (!security_config::IsLocalNetworkAccessAllowed() &&
                 IsResolvedAddressPrivate(urlComp.host)) {
                 WinHttpCloseHandle(hSession);
-                return {{"success", false}, {"error", "Target host resolves to a private/local network address"}};
+                return api::Fail("Target host resolves to a private/local network address", ApiErrorCode::PERMISSION_DENIED);
             }
 
             // 连接
@@ -1046,7 +1046,7 @@ namespace {
 
             if (!hConnect) {
                 WinHttpCloseHandle(hSession);
-                return {{"success", false}, {"error", "Failed to connect"}};
+                return api::Fail("Failed to connect", ApiErrorCode::OPERATION_FAILED);
             }
 
             // 创建请求 (download 始终 GET)
@@ -1062,7 +1062,7 @@ namespace {
             if (!hRequest) {
                 WinHttpCloseHandle(hConnect);
                 WinHttpCloseHandle(hSession);
-                return {{"success", false}, {"error", "Failed to create request"}};
+                return api::Fail("Failed to create request", ApiErrorCode::OPERATION_FAILED);
             }
 
             // TLS 证书校验双层门禁：仅全局开关 ON 且调用者 opt-in 时跳过。
@@ -1104,7 +1104,7 @@ namespace {
                 WinHttpCloseHandle(hRequest);
                 WinHttpCloseHandle(hConnect);
                 WinHttpCloseHandle(hSession);
-                return {{"success", false}, {"error", errMsg}};
+                return api::Fail(errMsg, ApiErrorCode::OPERATION_FAILED);
             }
 
             // 接收响应
@@ -1115,7 +1115,7 @@ namespace {
                 WinHttpCloseHandle(hRequest);
                 WinHttpCloseHandle(hConnect);
                 WinHttpCloseHandle(hSession);
-                return {{"success", false}, {"error", errMsg}};
+                return api::Fail(errMsg, ApiErrorCode::OPERATION_FAILED);
             }
 
             // 获取状态码
@@ -1134,7 +1134,7 @@ namespace {
                     WinHttpCloseHandle(hRequest);
                     WinHttpCloseHandle(hConnect);
                     WinHttpCloseHandle(hSession);
-                    return {{"success", false}, {"error", "Too many redirects (limit: 10)"}};
+                    return api::Fail("Too many redirects (limit: 10)", ApiErrorCode::OPERATION_FAILED);
                 }
 
                 // 提取 Location header
@@ -1146,7 +1146,7 @@ namespace {
                     WinHttpCloseHandle(hRequest);
                     WinHttpCloseHandle(hConnect);
                     WinHttpCloseHandle(hSession);
-                    return {{"success", false}, {"error", "Redirect without Location header"}};
+                    return api::Fail("Redirect without Location header", ApiErrorCode::OPERATION_FAILED);
                 }
 
                 std::vector<wchar_t> locBuf(locSize / sizeof(wchar_t) + 1);
@@ -1155,7 +1155,7 @@ namespace {
                     WinHttpCloseHandle(hRequest);
                     WinHttpCloseHandle(hConnect);
                     WinHttpCloseHandle(hSession);
-                    return {{"success", false}, {"error", "Failed to read Location header"}};
+                    return api::Fail("Failed to read Location header", ApiErrorCode::OPERATION_FAILED);
                 }
 
                 currentUrl = WideToUtf8(std::wstring(locBuf.data()));
@@ -1172,7 +1172,7 @@ namespace {
                 WinHttpCloseHandle(hRequest);
                 WinHttpCloseHandle(hConnect);
                 WinHttpCloseHandle(hSession);
-                return {{"success", false}, {"error", "Redirect not allowed"}, {"status", statusCode}};
+                return api::Fail("Redirect not allowed", ApiErrorCode::OPERATION_FAILED, {{"status", statusCode}});
             }
 
             // 非重定向 或 redirect=="manual" — 退出循环
@@ -1185,7 +1185,7 @@ namespace {
             WinHttpCloseHandle(hRequest);
             WinHttpCloseHandle(hConnect);
             WinHttpCloseHandle(hSession);
-            return {{"success", false}, {"error", "Failed to create output file"}};
+            return api::Fail("Failed to create output file", ApiErrorCode::OPERATION_FAILED);
         }
         
         // FIX-4: 流式读取并直接写入文件，不在内存中积累完整 body
@@ -1200,7 +1200,7 @@ namespace {
                 WinHttpCloseHandle(hRequest);
                 WinHttpCloseHandle(hConnect);
                 WinHttpCloseHandle(hSession);
-                return {{"success", false}, {"error", "Download cancelled"}, {"cancelled", true}};
+                return api::Fail("Download cancelled", ApiErrorCode::CANCELLED, {{"cancelled", true}});
             }
 
             bytesAvailable = 0;
@@ -1220,9 +1220,7 @@ namespace {
                         WinHttpCloseHandle(hRequest);
                         WinHttpCloseHandle(hConnect);
                         WinHttpCloseHandle(hSession);
-                        return {{"success", false},
-                                {"error", "Download too large (exceeds 500MB limit)"},
-                                {"code", ApiErrorCode::OPERATION_FAILED}};
+                        return api::Fail("Download too large (exceeds 500MB limit)", ApiErrorCode::OPERATION_FAILED);
                     }
                 }
             }
@@ -1235,40 +1233,27 @@ namespace {
         WinHttpCloseHandle(hConnect);
         WinHttpCloseHandle(hSession);
         
-        return {
-            {"success", true},
-            {"status", statusCode},
-            {"bytesWritten", totalBytesWritten},
-            {"path", WideToUtf8(wsaveTo)}
-        };
+        DownloadData data;
+        data.status = statusCode;
+        data.bytesWritten = totalBytesWritten;
+        data.path = WideToUtf8(wsaveTo);
+        return data;
     }
 
     //==========================================================================
     // http.download - Download file (GAP_701: 异步取消 + 每跳 SSRF 校验)
     //==========================================================================
-    json HttpDownload(const json& params) {
-        std::string url = params.value("url", "");
-        std::string saveTo = params.value("saveTo", "");
-        int timeout = params.value("timeout", 60000);
-        std::string redirect = params.value("redirect", "follow");
-        bool async = params.value("async", false);  // GAP_701: download 默认同步
-        bool insecureTls = params.value("insecureTls", false);
-        
-        if (url.empty()) {
-            return {{"success", false}, {"error", "url is required"}};
-        }
-        
-        if (saveTo.empty()) {
-            return {{"success", false}, {"error", "saveTo is required"}};
-        }
-        
+    api::Result<ht::DownloadResult> HttpDownload(const ht::DownloadParams& p, const CallerContext& caller) {
+        const std::string& url = p.url;
+        const int timeout = TimeoutMs(p.timeout);
+        const std::string& redirect = p.redirect;
+        const bool insecureTls = p.insecureTls;
+
         // SSRF 防护 (初始 URL 快速检查)
         if (IsLocalNetworkUrl(url)) {
             if (!security_config::IsLocalNetworkAccessAllowed()) {
-                return {
-                    {"success", false},
-                    {"error", "Access to local network is disabled. Enable in Advanced Settings if needed."}
-                };
+                return api::Fail("Access to local network is disabled. Enable in Advanced Settings if needed.",
+                                 ApiErrorCode::PERMISSION_DENIED);
             }
         }
         
@@ -1276,20 +1261,14 @@ namespace {
         if (!security_config::IsLocalNetworkAccessAllowed()) {
             UrlComponents preCheck;
             if (ParseUrl(url, preCheck) && IsResolvedAddressPrivate(preCheck.host)) {
-                return {{"success", false}, {"error", "Target host resolves to a private/local network address"}};
+                return api::Fail("Target host resolves to a private/local network address", ApiErrorCode::PERMISSION_DENIED);
             }
         }
         
-        // FIX-3: 从 params 解析 headers
-        std::map<std::string, std::string> headers;
-        if (params.contains("headers") && params["headers"].is_object()) {
-            for (auto& [key, value] : params["headers"].items()) {
-                headers[key] = value.get<std::string>();
-            }
-        }
-        
+        const std::map<std::string, std::string> headers = p.headers.value_or(std::map<std::string, std::string>{});
+
         // 展开路径变量 — 使用共享 PathExpansion 模块，与框架层装饰器一致
-        std::wstring wsaveTo = PathExpansion::Expand(saveTo);
+        std::wstring wsaveTo = PathExpansion::Expand(p.saveTo);
         
         // 确保父目录存在
         try {
@@ -1299,21 +1278,16 @@ namespace {
                 fs::create_directories(parentDir);
             }
         } catch (const std::exception& e) {
-            return {{"success", false}, {"error", std::string("Failed to create directory: ") + e.what()}};
+            return api::Fail(std::string("Failed to create directory: ") + e.what(), ApiErrorCode::OPERATION_FAILED);
         }
         
-        if (async) {
+        if (p.async) {
             // GAP_701: 异步下载模式
-            auto caller = CallerContext::FromParams(params);
             auto& mgr = AsyncRequestManager::GetInstance();
-            
+
             // GAP_702: 并发请求数检查
             if (mgr.GetActiveCount() >= AsyncRequestManager::MAX_CONCURRENT_REQUESTS) {
-                return {
-                    {"success", false},
-                    {"error", "Too many concurrent requests"},
-                    {"code", ApiErrorCode::OPERATION_FAILED}
-                };
+                return api::Fail("Too many concurrent requests", ApiErrorCode::OPERATION_FAILED);
             }
             
             std::string requestId = mgr.GenerateRequestId();
@@ -1326,26 +1300,23 @@ namespace {
             
             console::printf("[HTTP Download] Starting async download %s for: %s", requestId.c_str(), url.c_str());
             
-            std::thread([url, wsaveTo, timeout, redirect, headers, cancelToken, insecureTls,
-                         requestId, callerHwnd, callerWindowId]() noexcept {
+            std::thread([url = std::string(url), wsaveTo, timeout, redirect = std::string(redirect), headers,
+                         cancelToken, insecureTls, requestId, callerHwnd, callerWindowId]() noexcept {
                 // 最外层守卫，结构与 ExecuteAsync 完全相同：handler 体内的日志
                 // 单独兜住，清理与计数放在守卫之后无条件执行。
                 try {
-                json result;
+                ht::DownloadCompletePayload result;
                 try {
-                    result = HttpDownloadInternal(url, wsaveTo, timeout, redirect, headers, cancelToken, insecureTls);
-                    result["requestId"] = requestId;
+                    result = DownloadEventPayload(
+                        requestId,
+                        HttpDownloadInternal(url, wsaveTo, timeout, redirect, headers, cancelToken, insecureTls));
                 } catch (const std::exception& e) {
-                    result = {
-                        {"requestId", requestId},
-                        {"success", false},
-                        {"error", e.what()},
-                        {"code", ApiErrorCode::OPERATION_FAILED}
-                    };
+                    result = FailurePayload<ht::DownloadCompletePayload>(
+                        requestId, api::Fail(e.what(), ApiErrorCode::OPERATION_FAILED));
                 }
-                
+
                 fb2k::inMainThread([result, callerHwnd, callerWindowId]() noexcept {
-                    DispatchHttpEventSafely(callerHwnd, callerWindowId, "http:downloadComplete", result);
+                    DispatchHttpEventSafely<ht::events::DownloadComplete>(callerHwnd, callerWindowId, result);
                 });
                 } catch (...) {
                     try {
@@ -1361,151 +1332,34 @@ namespace {
                 AsyncRequestManager::GetInstance().DecrementActive();
             }).detach();
             
-            return {{"success", true}, {"requestId", requestId}, {"async", true}, {"message", "Download started"}};
-        } else {
-            // 同步下载
-            return HttpDownloadInternal(url, wsaveTo, timeout, redirect, headers, nullptr, insecureTls);
+            ht::DownloadResult receipt;
+            receipt.requestId = requestId;
+            receipt.async = true;
+            receipt.message = "Download started";
+            return receipt;
         }
-    }
-    
-    //==========================================================================
-    // http.put - HTTP PUT request
-    //==========================================================================
-    json HttpPut(const json& params) {
-        std::string url = params.value("url", "");
-        std::string body = ExtractBody(params);  // FIX-5: 支持 object/array 自动序列化
-        int timeout = params.value("timeout", 30000);
-        bool async = params.value("async", true);
-        std::string redirect = params.value("redirect", "follow");
-        std::string responseType = params.value("responseType", "text");
-        bool insecureTls = params.value("insecureTls", false);
-        
-        if (url.empty()) {
-            return {{"success", false}, {"error", "url is required"}};
+
+        // 同步下载
+        DownloadOutcome outcome = HttpDownloadInternal(url, wsaveTo, timeout, redirect, headers, nullptr, insecureTls);
+        if (auto* failure = std::get_if<api::Failure>(&outcome)) {
+            return std::move(*failure);
         }
-        
-        std::map<std::string, std::string> headers;
-        if (params.contains("headers") && params["headers"].is_object()) {
-            for (auto& [key, value] : params["headers"].items()) {
-                headers[key] = value.get<std::string>();
-            }
-        }
-        
-        RequestOptions options;
-        options.redirect = redirect;
-        options.responseType = responseType;
-        options.insecureTls = insecureTls;
-        
-        if (async) {
-            auto caller = CallerContext::FromParams(params);
-            auto& manager = AsyncRequestManager::GetInstance();
-            std::string requestId = manager.GenerateRequestId();
-            manager.ExecuteAsync(requestId, "PUT", url, headers, body, timeout,
-                                 caller.callerHwnd, caller.windowId, options);
-            return {{"success", true}, {"requestId", requestId}, {"async", true}};
-        } else {
-            return AsyncRequestManager::PerformHttpRequestInternal("PUT", url, headers, body, timeout, options);
-        }
-    }
-    
-    //==========================================================================
-    // http.delete - HTTP DELETE request
-    //==========================================================================
-    json HttpDelete(const json& params) {
-        std::string url = params.value("url", "");
-        std::string body = ExtractBody(params);  // FIX-5: 支持 object/array 自动序列化
-        int timeout = params.value("timeout", 30000);
-        bool async = params.value("async", true);
-        std::string redirect = params.value("redirect", "follow");
-        std::string responseType = params.value("responseType", "text");
-        bool insecureTls = params.value("insecureTls", false);
-        
-        if (url.empty()) {
-            return {{"success", false}, {"error", "url is required"}};
-        }
-        
-        std::map<std::string, std::string> headers;
-        if (params.contains("headers") && params["headers"].is_object()) {
-            for (auto& [key, value] : params["headers"].items()) {
-                headers[key] = value.get<std::string>();
-            }
-        }
-        
-        RequestOptions options;
-        options.redirect = redirect;
-        options.responseType = responseType;
-        options.insecureTls = insecureTls;
-        
-        if (async) {
-            auto caller = CallerContext::FromParams(params);
-            auto& manager = AsyncRequestManager::GetInstance();
-            std::string requestId = manager.GenerateRequestId();
-            manager.ExecuteAsync(requestId, "DELETE", url, headers, body, timeout,
-                                 caller.callerHwnd, caller.windowId, options);
-            return {{"success", true}, {"requestId", requestId}, {"async", true}};
-        } else {
-            return AsyncRequestManager::PerformHttpRequestInternal("DELETE", url, headers, body, timeout, options);
-        }
-    }
-    
-    //==========================================================================
-    // http.patch - HTTP PATCH request
-    //==========================================================================
-    json HttpPatch(const json& params) {
-        std::string url = params.value("url", "");
-        std::string body = ExtractBody(params);  // FIX-5: 支持 object/array 自动序列化
-        int timeout = params.value("timeout", 30000);
-        bool async = params.value("async", true);
-        std::string redirect = params.value("redirect", "follow");
-        std::string responseType = params.value("responseType", "text");
-        bool insecureTls = params.value("insecureTls", false);
-        
-        if (url.empty()) {
-            return {{"success", false}, {"error", "url is required"}};
-        }
-        
-        std::map<std::string, std::string> headers;
-        if (params.contains("headers") && params["headers"].is_object()) {
-            for (auto& [key, value] : params["headers"].items()) {
-                headers[key] = value.get<std::string>();
-            }
-        }
-        
-        RequestOptions options;
-        options.redirect = redirect;
-        options.responseType = responseType;
-        options.insecureTls = insecureTls;
-        
-        if (async) {
-            auto caller = CallerContext::FromParams(params);
-            auto& manager = AsyncRequestManager::GetInstance();
-            std::string requestId = manager.GenerateRequestId();
-            manager.ExecuteAsync(requestId, "PATCH", url, headers, body, timeout,
-                                 caller.callerHwnd, caller.windowId, options);
-            return {{"success", true}, {"requestId", requestId}, {"async", true}};
-        } else {
-            return AsyncRequestManager::PerformHttpRequestInternal("PATCH", url, headers, body, timeout, options);
-        }
+        auto& data = std::get<DownloadData>(outcome);
+        ht::DownloadResult result;
+        result.status = static_cast<std::int64_t>(data.status);
+        result.bytesWritten = static_cast<std::int64_t>(data.bytesWritten);
+        result.path = std::move(data.path);
+        return result;
     }
     
     //==========================================================================
     // http.abort - Cancel an async HTTP request
     //==========================================================================
-    json HttpAbort(const json& params) {
-        std::string requestId = params.value("requestId", "");
-        
-        if (requestId.empty()) {
-            return {{"success", false}, {"error", "requestId is required"}};
-        }
-        
-        auto& manager = AsyncRequestManager::GetInstance();
-        bool cancelled = manager.CancelRequest(requestId);
-        
-        return {
-            {"success", true},
-            {"requestId", requestId},
-            {"cancelled", cancelled}
-        };
+    api::Result<ht::AbortResult> HttpAbort(const ht::AbortParams& p) {
+        ht::AbortResult result;
+        result.requestId = p.requestId;
+        result.cancelled = AsyncRequestManager::GetInstance().CancelRequest(p.requestId);
+        return result;
     }
     
 } // anonymous namespace
@@ -1521,31 +1375,16 @@ void CancelAllHttpRequestsForWindow(const std::string& windowId) {
 // Register HTTP API
 //==========================================================================
 void RegisterHttpApi() {
-    auto& bridge = BridgeCore::GetInstance();
-    
-    // http.get - HTTP GET request
-    bridge.RegisterApi("http.get", HttpGet);
-    
-    // http.post - HTTP POST request
-    bridge.RegisterApi("http.post", HttpPost);
-    
-    // http.head - HTTP HEAD request
-    bridge.RegisterApi("http.head", HttpHead);
-    
-    // http.download - Download file
-    bridge.RegisterApi("http.download", HttpDownload, {{"saveTo", SecurityLevel::Write}});
-    
-    // http.put - HTTP PUT request
-    bridge.RegisterApi("http.put", HttpPut);
-    
-    // http.delete - HTTP DELETE request
-    bridge.RegisterApi("http.delete", HttpDelete);
-    
-    // http.patch - HTTP PATCH request
-    bridge.RegisterApi("http.patch", HttpPatch);
-    
-    // http.abort - Cancel async request
-    bridge.RegisterApi("http.abort", HttpAbort);
-    
+    // Parameters, results and the saveTo security level come from
+    // src/api/schema/http.ts through the generated types.
+    api::RegisterApi("http.get", HttpGet);
+    api::RegisterApi("http.post", HttpPost);
+    api::RegisterApi("http.head", HttpHead);
+    api::RegisterApi("http.download", HttpDownload);
+    api::RegisterApi("http.put", HttpPut);
+    api::RegisterApi("http.delete", HttpDelete);
+    api::RegisterApi("http.patch", HttpPatch);
+    api::RegisterApi("http.abort", HttpAbort);
+
     LOG("HTTP API registered (8 APIs)");
 }

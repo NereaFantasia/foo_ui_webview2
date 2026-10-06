@@ -1,11 +1,14 @@
-// test_canonical_handle.cpp - fb2k_paths::CreateCanonicalHandleWith 调用契约
+// test_canonical_handle.cpp - fb2k_paths::CreateCanonicalHandleWith 与
+// CreateTrackHandleWith 调用契约
 //
-// 生产版 SubsongUtils::CreateCanonicalHandle 注入的是 filesystem::g_get_canonical_path
-// 与 metadb::handle_create，二者在单测里都不可用；这里用 fake 验证调用顺序、
-// 规范化结果的传递及 subsong 原样透传。测试直接调用共享模板，但不验证
-// 各生产调用点是否使用该模板，也不验证 SDK 的实际路径规范化行为。
+// 生产版 SubsongUtils::CreateCanonicalHandle、CreateTrackHandle 注入的是
+// filesystem::g_get_canonical_path 与 metadb::handle_create，二者在单测里都不可用；
+// 这里用 fake 验证调用顺序、规范化结果的传递、subsong 原样透传，以及曲目路径的
+// "|subsong:N" 后缀先拆掉再规范化。测试直接调用共享模板，但不验证各生产调用点
+// 是否使用该模板，也不验证 SDK 的实际路径规范化行为。
 #include "pch.h"
 #include <string>
+#include <string_view>
 #include <vector>
 
 #include "utils/CanonicalHandle.h"
@@ -86,4 +89,115 @@ TEST(CanonicalHandle, RawAndCanonicalSpellingsCollapseToOneIdentity) {
 TEST(CanonicalHandle, DifferentSubsongsOfOneFileStayDistinct) {
     CallLog log;
     EXPECT_NE(CreateVia(log, "D:\\Music\\album.cue", 0), CreateVia(log, "D:\\Music\\album.cue", 1));
+}
+
+// 带输出参数的重载：调用方拿到的规范化结果就是交给建 handle 函数的那一个，
+// 规范化只做一次。
+TEST(CanonicalHandle, CanonicalOutIsWhatHandleCreateReceived) {
+    CallLog log;
+    std::string canonical;
+    const std::string identity = fb2k_paths::CreateCanonicalHandleWith(
+        "D:\\Music\\album.cue", 4,
+        [&log](const char* in) { return FakeCanonicalize(log, in); },
+        [&log](const char* c, uint32_t s) { return FakeHandleCreate(log, c, s); },
+        canonical);
+    EXPECT_EQ(canonical, "file://D:\\Music\\album.cue");
+    ASSERT_EQ(log.handleCreatePaths.size(), 1u);
+    EXPECT_EQ(log.handleCreatePaths[0], canonical);
+    EXPECT_EQ(log.canonicalizeInputs.size(), 1u);
+    EXPECT_EQ(identity, "file://D:\\Music\\album.cue#4");
+}
+
+namespace {
+
+std::string CreateTrackVia(CallLog& log, std::string_view trackPath, fb2k_paths::SubsongPath& parts) {
+    return fb2k_paths::CreateTrackHandleWith(
+        trackPath,
+        [&log](const char* in) { return FakeCanonicalize(log, in); },
+        [&log](const char* canonical, uint32_t s) { return FakeHandleCreate(log, canonical, s); },
+        parts);
+}
+
+std::string CreateTrackVia(CallLog& log, std::string_view trackPath) {
+    fb2k_paths::SubsongPath parts;
+    return CreateTrackVia(log, trackPath, parts);
+}
+
+} // namespace
+
+// 后缀留给规范化会被当成文件名的一部分；规范化只能看到标记之前的路径，
+// 序号交给建 handle 的函数。
+TEST(CanonicalHandle, TrackPathSuffixIsStrippedBeforeCanonicalize) {
+    CallLog log;
+    fb2k_paths::SubsongPath parts;
+    const std::string identity = CreateTrackVia(log, "D:\\Music\\album.cue|subsong:3", parts);
+    ASSERT_EQ(log.canonicalizeInputs.size(), 1u);
+    EXPECT_EQ(log.canonicalizeInputs[0], "D:\\Music\\album.cue");
+    ASSERT_EQ(log.handleCreateSubsongs.size(), 1u);
+    EXPECT_EQ(log.handleCreateSubsongs[0], 3u);
+    EXPECT_EQ(identity, "file://D:\\Music\\album.cue#3");
+    EXPECT_TRUE(parts.hasSuffix);
+    EXPECT_TRUE(parts.suffixValid);
+}
+
+TEST(CanonicalHandle, TrackPathWithoutSuffixUsesSubsongZero) {
+    CallLog log;
+    fb2k_paths::SubsongPath parts;
+    EXPECT_EQ(CreateTrackVia(log, "D:\\Music\\a.flac", parts), "file://D:\\Music\\a.flac#0");
+    ASSERT_EQ(log.canonicalizeInputs.size(), 1u);
+    EXPECT_EQ(log.canonicalizeInputs[0], "D:\\Music\\a.flac");
+    EXPECT_FALSE(parts.hasSuffix);
+}
+
+// 读不出序号时路径照样截断、序号为 0；parts 报出这种情况，供生产包装记日志。
+TEST(CanonicalHandle, UnreadableTrackSuffixStillStripsPathAndUsesZero) {
+    CallLog log;
+    fb2k_paths::SubsongPath parts;
+    EXPECT_EQ(CreateTrackVia(log, "D:\\Music\\album.cue|subsong:abc", parts),
+              "file://D:\\Music\\album.cue#0");
+    ASSERT_EQ(log.canonicalizeInputs.size(), 1u);
+    EXPECT_EQ(log.canonicalizeInputs[0], "D:\\Music\\album.cue");
+    EXPECT_TRUE(parts.hasSuffix);
+    EXPECT_FALSE(parts.suffixValid);
+}
+
+TEST(CanonicalHandle, TrackPathKeepsItsProtocolPrefix) {
+    CallLog log;
+    EXPECT_EQ(CreateTrackVia(log, "file://D:\\Music\\album.cue|subsong:2"),
+              "file://D:\\Music\\album.cue#2");
+    ASSERT_EQ(log.canonicalizeInputs.size(), 1u);
+    EXPECT_EQ(log.canonicalizeInputs[0], "file://D:\\Music\\album.cue");
+}
+
+// 同一张 CUE 的各首曲目得到各自的 handle；显式的 "|subsong:0" 与不带后缀是同一首。
+TEST(CanonicalHandle, TracksOfOneSheetGetTheirOwnHandles) {
+    CallLog log;
+    EXPECT_NE(CreateTrackVia(log, "D:\\Music\\album.cue|subsong:1"),
+              CreateTrackVia(log, "D:\\Music\\album.cue|subsong:2"));
+    EXPECT_EQ(CreateTrackVia(log, "D:\\Music\\album.cue|subsong:0"),
+              CreateTrackVia(log, "D:\\Music\\album.cue"));
+}
+
+// 序号按 unsigned 读：超出 int 但在 32 位无符号范围内的序号照样交给建 handle 的函数，
+// 不因 int 溢出被当成读不出。
+TEST(CanonicalHandle, TrackIndexBeyondIntRangeReachesHandleCreate) {
+    CallLog log;
+    fb2k_paths::SubsongPath parts;
+    EXPECT_EQ(CreateTrackVia(log, "D:\\Music\\album.cue|subsong:3000000000", parts),
+              "file://D:\\Music\\album.cue#3000000000");
+    ASSERT_EQ(log.canonicalizeInputs.size(), 1u);
+    EXPECT_EQ(log.canonicalizeInputs[0], "D:\\Music\\album.cue");
+    EXPECT_TRUE(parts.suffixValid);
+}
+
+// 连 32 位无符号也放不下的序号算读不出：后缀仍不进规范化，序号为 0。
+TEST(CanonicalHandle, OverflowingTrackIndexStillStripsPathAndUsesZero) {
+    CallLog log;
+    fb2k_paths::SubsongPath parts;
+    EXPECT_EQ(CreateTrackVia(log, "D:\\Music\\album.cue|subsong:99999999999", parts),
+              "file://D:\\Music\\album.cue#0");
+    ASSERT_EQ(log.canonicalizeInputs.size(), 1u);
+    EXPECT_EQ(log.canonicalizeInputs[0], "D:\\Music\\album.cue");
+    EXPECT_TRUE(parts.hasSuffix);
+    EXPECT_FALSE(parts.suffixValid);
 }

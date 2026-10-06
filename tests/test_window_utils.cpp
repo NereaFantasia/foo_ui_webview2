@@ -5,7 +5,7 @@
 // WindowUtilsCore.h 并测试真实符号 WindowUtils::*。
 //
 // 之所以能直接包含：GetUserBackdropEffectString() 所需的 fb2k SDK 依赖
-// （core/PreferencesPage.h）已留在 WindowUtils.h，WindowUtilsCore.h 零 SDK 依赖。
+// （prefs/PreferencesPage.h）已留在 WindowUtils.h，WindowUtilsCore.h 零 SDK 依赖。
 #include "pch.h"
 #include "../src/utils/WindowUtilsCore.h"
 

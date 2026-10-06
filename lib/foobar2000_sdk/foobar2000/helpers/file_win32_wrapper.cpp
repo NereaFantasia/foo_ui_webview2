@@ -8,7 +8,16 @@ namespace file_win32_helpers {
 	t_filesize get_size(HANDLE p_handle) {
 		LARGE_INTEGER v = {};
 		WIN32_IO_OP(GetFileSizeEx(p_handle, &v));
-		return make_uint64(v);
+		return (t_filesize)v.QuadPart;
+	}
+	t_filesize getPosition(HANDLE p_handle) {
+		LARGE_INTEGER i = {}, ret = {};
+		SetLastError(NO_ERROR);
+		if (!SetFilePointerEx(p_handle, i, &ret, SEEK_CUR)) exception_io_from_win32(GetLastError());
+		return (t_filesize)ret.QuadPart;
+	}
+	void seek(HANDLE p_handle, t_filesize p_position) {
+		seek(p_handle, (t_sfilesize)p_position, file::seek_from_beginning);
 	}
 	void seek(HANDLE p_handle,t_sfilesize p_position,file::t_seek_mode p_mode) {
 		union  {
@@ -159,21 +168,6 @@ namespace file_win32_helpers {
 		return done;
 	}
 
-	typedef BOOL (WINAPI * pCancelSynchronousIo_t)(HANDLE hThread);
-
-
-	struct createFileData_t {
-		LPCTSTR lpFileName;
-		DWORD dwDesiredAccess;
-		DWORD dwShareMode;
-		LPSECURITY_ATTRIBUTES lpSecurityAttributes;
-		DWORD dwCreationDisposition;
-		DWORD dwFlagsAndAttributes;
-		HANDLE hTemplateFile;
-		HANDLE hResult;
-		DWORD dwErrorCode;
-	};
-
 	HANDLE createFile(LPCTSTR lpFileName, DWORD dwDesiredAccess, DWORD dwShareMode, LPSECURITY_ATTRIBUTES lpSecurityAttributes, DWORD dwCreationDisposition, DWORD dwFlagsAndAttributes, HANDLE hTemplateFile, abort_callback & abort) {
 		abort.check();
 		
@@ -181,6 +175,8 @@ namespace file_win32_helpers {
 	}
 
 	size_t lowLevelIO(HANDLE hFile, const GUID & guid, size_t arg1, void * arg2, size_t arg2size, bool canWrite, abort_callback & abort) {
+		(void)arg1;
+		abort.check();
 		if ( guid == file_lowLevelIO::guid_flushFileBuffers ) {
 			if (!canWrite) {
 				PFC_ASSERT(!"File opened for reading, not writing");
@@ -255,7 +251,7 @@ namespace file_win32_helpers {
 		out.set_folder((in & FILE_ATTRIBUTE_DIRECTORY) != 0);
 		out.set_hidden((in & FILE_ATTRIBUTE_HIDDEN) != 0);
 		out.set_system((in & FILE_ATTRIBUTE_SYSTEM) != 0);
-		out.set_remote(false);
+		out.set_local();
 	}
 
 
@@ -276,11 +272,18 @@ namespace file_win32_helpers {
 	}
 
 	static HANDLE GetVolumeHandleForFile(PCWSTR filePath) {
+		// 2025-04 fix:
+		// used to WIN32_OP_D() on GetVolumePathName() & GetVolumeNameForVolumeMountPoint()
+		// GetVolumeNameForVolumeMountPoint() fails hard on subst'd volumes with ERROR_NOT_A_REPARSE_POINT
+		// so we just fail gracefully for such
 		wchar_t volumePath[MAX_PATH] = {};
-		WIN32_OP_D(GetVolumePathName(filePath, volumePath, ARRAYSIZE(volumePath)));
+		if (!GetVolumePathName(filePath, volumePath, ARRAYSIZE(volumePath))) {
+			PFC_ASSERT(!"???");
+			return NULL;
+		}
 
 		wchar_t volumeName[MAX_PATH] = {};
-		WIN32_OP_D(GetVolumeNameForVolumeMountPoint(volumePath, volumeName, ARRAYSIZE(volumeName)));
+		if (!GetVolumeNameForVolumeMountPoint(volumePath, volumeName, ARRAYSIZE(volumeName))) return NULL;
 
 		auto length = wcslen(volumeName);
 		if ( length == 0 ) {
@@ -291,8 +294,8 @@ namespace file_win32_helpers {
 			volumeName[length - 1] = L'\0';
 		}
 
-		HANDLE ret;
-		WIN32_OP_D( ret = CreateFile(volumeName, 0, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, nullptr) );
+		auto ret = CreateFile(volumeName, 0, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, nullptr);
+		if (ret == INVALID_HANDLE_VALUE) return NULL;
 		return ret;
 	}
 	bool querySeekPenalty(const wchar_t* nativePath, bool& out) {
@@ -305,6 +308,15 @@ namespace file_win32_helpers {
 		const char * path = fb2k_path;
 		if ( matchProtocol(path, "file")) path = afterProtocol(path);
 		return querySeekPenalty(pfc::wideFromUTF8(path), out);
+	}
+
+	t_filestats2 common_stats() {
+		t_filestats2 ret;
+		ret.set_local();
+		return ret;
+	}
+	t_filestats2 common_stats_file() {
+		auto ret = common_stats(); ret.set_file(); return ret;
 	}
 }
 

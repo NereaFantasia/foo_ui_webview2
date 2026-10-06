@@ -24,6 +24,8 @@ struct wavWriterSetup_t
 	void setup_wfxe(WAVEFORMATEXTENSIBLE & p_wfx);
 #endif
 	bool needWFXE() const;
+
+	audio_chunk::spec_t spec() const { return { .sampleRate = m_samplerate, .chanCount = m_channels, .chanMask = m_channel_mask }; };
 };
 
 class CWavWriter
@@ -32,12 +34,15 @@ public:
 	void open(const char * p_path, const wavWriterSetup_t & p_setup, abort_callback & p_abort);
 	void open(service_ptr_t<file> p_file, const wavWriterSetup_t & p_setup, abort_callback & p_abort);
 	void write(const audio_chunk & p_chunk,abort_callback & p_abort);
-	void write_raw( const void * raw, size_t rawSize, abort_callback & p_abort );
 	void finalize(abort_callback & p_abort);
 	void close();
 	bool is_open() const { return m_file.is_valid(); }
 	audio_chunk::spec_t get_spec() const;
+	void set_write_bytes(size_t arg = 512 * 1024) { m_write_bytes = arg; } // sets number of bytes written at once, to throttle WriteFile() calls
 private:
+	size_t m_write_bytes = 0;
+	void _write_raw(const void* raw, size_t rawSize, abort_callback& p_abort);
+	void _flush(abort_callback&);
 	size_t align(abort_callback & abort);
 	void writeSize(t_uint64 size, abort_callback & abort);
 	bool is64() const {return m_setup.m_wave64;}
@@ -49,7 +54,8 @@ private:
 	bool m_wfxe = false;
 	t_uint64 m_offset_fix1 = 0,m_offset_fix2 = 0,m_offset_fix1_delta = 0,m_bytes_written = 0;
 	uint64_t m_ds64_at = 0;
-	mem_block_container_aligned_incremental_impl<16> m_postprocessor_output;
+	pfc::mem_block_aligned<> m_work;
+	size_t m_workUsed = 0;
 };
 
 file::ptr makeLiveWAVFile( const wavWriterSetup_t & setup, file::ptr data );

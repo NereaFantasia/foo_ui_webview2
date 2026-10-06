@@ -5,6 +5,9 @@
 
 #include <exception>
 
+#include "with_timeout.h"
+#include <semaphore>
+
 namespace ThreadUtils {
 	bool CRethrow::exec( std::function<void () > f ) throw() {
 		m_exception = nullptr;
@@ -23,6 +26,32 @@ namespace ThreadUtils {
 		if (m_exception) std::rethrow_exception(m_exception);
 	}
 }
+
+#if 0
+namespace fb2k {
+	bool with_timeout(with_timeout_t op, double timeout) {
+		std::exception_ptr error;
+		abort_callback_impl aborter;
+		pfc::thread2 work;
+		std::binary_semaphore completed(0);
+		work.startHere(pfc::thread::argCurrentThread(), [&] {
+			try {
+				op(aborter);
+			} catch (...) {
+				error = std::current_exception();
+			}
+			completed.release();
+		});
+
+		bool ret = completed.try_acquire_for( std::chrono::duration<double>( timeout ) );
+		aborter.set();
+		work.waitTillDone();
+		if (ret && error) std::rethrow_exception(error);
+		return ret;
+	}
+}
+#endif
+
 #ifdef _WIN32
 
 #include "win32_misc.h"

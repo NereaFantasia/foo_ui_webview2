@@ -3,6 +3,9 @@
 // PFC weakRef class
 // Create weak references to objects that automatically become invalidated upon destruction of the object
 // Note that this is NOT thread safe and meant for single thread usage. If you require thread safety, provide your own means, such as mutexlocking of weakRef::get() and the destruction of your objects.
+// Usage:
+// Target class, myClass must derive from weakRefTarget<myClass>
+// Pass weakRef<myClass> around, created by myClassObj->weakRef()
 
 #include <memory> // std::shared_ptr
 
@@ -21,9 +24,8 @@ namespace pfc {
 		}
 
 
-		bool isValid() const {
-			return m_ks && !*m_ks;
-		}
+		operator bool() const { return isValid(); }
+		bool isValid() const { return m_ks && !*m_ks; }
 
 		target_t * get() const {
 			if (!isValid()) return nullptr;
@@ -31,6 +33,13 @@ namespace pfc {
 		}
 		target_t * operator() () const {
 			return get();
+		}
+		target_t& operator*() const {
+			PFC_ASSERT(isValid()); return *m_target;
+		}
+		target_t* operator->() const {
+			PFC_ASSERT(isValid());
+			return m_target;
 		}
 	private:
 		target_t * m_target = nullptr;

@@ -5,6 +5,8 @@
 #include "api/MenuApi.h"
 #include "api/BridgeCore.h"
 #include "api/ErrorEnvelope.h"
+#include "api/TypedApi.h"
+#include "api/generated/MenuSchema.h"
 #include "api/MenuNodeContract.h"
 #include "api/PluginRegistry.h"
 #include <foobar2000/SDK/menu_helpers.h>
@@ -16,7 +18,7 @@
 #include <sstream>
 #include <unordered_map>
 #include "utils/GuidUtils.h"
-#include "utils/PathSecurity.h"
+#include "domain/PathSecurity.h"
 #include "utils/StringUtils.h"
 #include "utils/SubsongUtils.h"
 #include "window/MenuOverlayHost.h"
@@ -24,6 +26,8 @@
 
 namespace {
     using json = nlohmann::json;
+    namespace mnu = api::menu;
+    using MenuNodes = std::vector<mnu::MenuTreeNode>;
 
     // 延迟弹菜单所需的待执行状态（TIMERPROC 回调无法捕获，必须文件级持有）
     struct PendingContextMenu {
@@ -458,6 +462,22 @@ namespace {
         }
     }
 
+    mnu::MenuTreeNode SeparatorNode() {
+        mnu::MenuTreeNode node;
+        node.type = "separator";
+        return node;
+    }
+
+    // Shared by the v1 top-level menus and every v2 submenu.
+    mnu::MenuAvailability AvailabilityOf(int total, int available) {
+        mnu::MenuAvailability counts;
+        counts.totalCommands = total;
+        counts.availableCommands = available;
+        counts.disabledCommands = total - available;
+        counts.allAvailable = total > 0 ? (available == total) : true;
+        return counts;
+    }
+
     // Last-resort tier: a flat command list with no hierarchy at all.
     //
     // Built from the shared index so availability is READ from get_display()
@@ -465,9 +485,9 @@ namespace {
     // every entry, which meant the one tier that always produces a usable GUID
     // also reported state that was outright fabricated — disabled commands were
     // indistinguishable from enabled ones.
-    json BuildMainMenuFlatFallback(const std::string& locale, bool enableI18n,
-                                   const std::vector<MainMenuIndexEntry>& index) {
-        json items = json::array();
+    MenuNodes BuildMainMenuFlatFallback(const std::string& locale, bool enableI18n,
+                                        const std::vector<MainMenuIndexEntry>& index) {
+        MenuNodes items;
 
         for (const auto& entry : index) {
             // A dynamic container slot is not invokable; executing one is
@@ -484,29 +504,28 @@ namespace {
 
             const std::string path = entry.path.empty() ? label : entry.path;
 
-            json item = {
-                { "type", "command" },
-                { "label", label },
-                { "displayLabel", displayLabel },
-                { "path", path },
-                { "displayPath", path },
-                { "guid", GuidToString(entry.guid) },
-                { "available", entry.state.enabled },
-                { "enabled", entry.state.enabled },
-                { "checked", entry.state.checked },
-                { "radioChecked", entry.state.radioChecked },
-                { "hidden", entry.state.hidden },
-                { "flags", entry.state.flags },
-                { "source", menu_node::ToString(entry.subGuid != pfc::guid_null
-                                                    ? menu_node::Source::MainMenuDynamic
-                                                    : menu_node::Source::MainMenuStatic) },
-                { "executable", true },
-                { "fallback", true }
-            };
+            mnu::MenuTreeNode item;
+            item.type = "command";
+            item.label = label;
+            item.displayLabel = displayLabel;
+            item.path = path;
+            item.displayPath = path;
+            item.guid = GuidToString(entry.guid);
+            item.available = entry.state.enabled;
+            item.enabled = entry.state.enabled;
+            item.checked = entry.state.checked;
+            item.radioChecked = entry.state.radioChecked;
+            item.hidden = entry.state.hidden;
+            item.flags = entry.state.flags;
+            item.source = menu_node::ToString(entry.subGuid != pfc::guid_null
+                                                  ? menu_node::Source::MainMenuDynamic
+                                                  : menu_node::Source::MainMenuStatic);
+            item.executable = true;
+            item.fallback = true;
             if (entry.subGuid != pfc::guid_null) {
-                item["subGuid"] = GuidToString(entry.subGuid);
+                item.subGuid = GuidToString(entry.subGuid);
             }
-            items.push_back(item);
+            items.push_back(std::move(item));
         }
 
         return items;
@@ -519,10 +538,10 @@ namespace {
     // 兼容所有 foobar2000 版本（含中文汉化版）
     // ================================================================
 
-    json WalkHMenu(HMENU hmenu, const std::string& pathPrefix, const std::string& displayPathPrefix,
-                   const std::string& locale, bool enableI18n,
-                   const std::vector<MainMenuIndexEntry>* index) {
-        json items = json::array();
+    MenuNodes WalkHMenu(HMENU hmenu, const std::string& pathPrefix, const std::string& displayPathPrefix,
+                        const std::string& locale, bool enableI18n,
+                        const std::vector<MainMenuIndexEntry>* index) {
+        MenuNodes items;
         int count = GetMenuItemCount(hmenu);
         if (count <= 0) return items;
 
@@ -538,7 +557,7 @@ namespace {
                 if (!GetMenuItemInfoW(hmenu, i, TRUE, &mii)) continue;
 
                 if (mii.fType & MFT_SEPARATOR) {
-                    items.push_back({ {"type", "separator"} });
+                    items.push_back(SeparatorNode());
                     continue;
                 }
 
@@ -565,35 +584,32 @@ namespace {
                 }
 
                 if (mii.hSubMenu) {
-                    json children = WalkHMenu(mii.hSubMenu, path, displayPath, locale, enableI18n, index);
-                    json submenu = {
-                        { "type", "submenu" },
-                        { "label", cleanLabel },
-                        { "displayLabel", displayLabel },
-                        { "path", path },
-                        { "displayPath", displayPath },
-                        { "children", children }
-                    };
-                    items.push_back(submenu);
+                    mnu::MenuTreeNode submenu;
+                    submenu.type = "submenu";
+                    submenu.label = cleanLabel;
+                    submenu.displayLabel = displayLabel;
+                    submenu.path = path;
+                    submenu.displayPath = displayPath;
+                    submenu.children = WalkHMenu(mii.hSubMenu, path, displayPath, locale, enableI18n, index);
+                    items.push_back(std::move(submenu));
                 } else {
                     const menu_node::State state =
                         menu_node::NormalizeHmenu(static_cast<std::uint32_t>(mii.fState));
 
-                    json item = {
-                        { "type", "command" },
-                        { "label", cleanLabel },
-                        { "displayLabel", displayLabel },
-                        { "path", path },
-                        { "displayPath", displayPath },
-                        { "available", state.enabled },
-                        { "enabled", state.enabled },
-                        { "checked", state.checked },
-                        { "radioChecked", state.radioChecked },
-                        { "hidden", state.hidden },
-                        { "flags", state.flags },
-                        { "source", menu_node::ToString(menu_node::Source::HmenuFallback) },
-                        { "commandId", (int)mii.wID }
-                    };
+                    mnu::MenuTreeNode item;
+                    item.type = "command";
+                    item.label = cleanLabel;
+                    item.displayLabel = displayLabel;
+                    item.path = path;
+                    item.displayPath = displayPath;
+                    item.available = state.enabled;
+                    item.enabled = state.enabled;
+                    item.checked = state.checked;
+                    item.radioChecked = state.radioChecked;
+                    item.hidden = state.hidden;
+                    item.flags = state.flags;
+                    item.source = menu_node::ToString(menu_node::Source::HmenuFallback);
+                    item.commandId = static_cast<int>(mii.wID);
 
                     // Backfill the GUID this tier cannot produce on its own: a
                     // Win32 HMENU carries only wID, and that id dies with the
@@ -608,17 +624,17 @@ namespace {
                     const MainMenuIndexEntry* hit =
                         index ? FindUniqueIndexEntry(*index, cleanLabel) : nullptr;
                     if (hit) {
-                        item["guid"] = GuidToString(hit->guid);
+                        item.guid = GuidToString(hit->guid);
                         if (hit->subGuid != pfc::guid_null) {
-                            item["subGuid"] = GuidToString(hit->subGuid);
+                            item.subGuid = GuidToString(hit->subGuid);
                         }
-                        item["executable"] = true;
+                        item.executable = true;
                     } else {
-                        item["executable"] = false;
-                        item["unaddressableReason"] =
+                        item.executable = false;
+                        item.unaddressableReason =
                             menu_node::ToString(menu_node::Unaddressable::NoStableIdentifier);
                     }
-                    items.push_back(item);
+                    items.push_back(std::move(item));
                 }
             } catch (...) {
                 // 跳过有问题的菜单项
@@ -628,28 +644,27 @@ namespace {
         return items;
     }
 
-    json BuildMainMenuV1Tree(const std::string& locale, bool enableI18n, bool withAvailability) {
+    MenuNodes BuildMainMenuV1Tree(const std::string& locale, bool enableI18n, bool withAvailability) {
         struct TopMenu {
             GUID guid;
             const char* enName;
         };
 
-        auto countAvailableCommands = [](const json& items,
+        auto countAvailableCommands = [](const MenuNodes& items,
                                          int& total,
                                          int& available,
                                          const auto& self) -> void {
             for (const auto& item : items) {
-                std::string type = item.value("type", "");
-                if (type == "command") {
+                if (item.type == "command") {
                     total++;
-                    if (item.value("available", true)) {
+                    if (item.available.value_or(true)) {
                         available++;
                     }
                     continue;
                 }
 
-                if (type == "submenu" && item.contains("children")) {
-                    self(item["children"], total, available, self);
+                if (item.type == "submenu" && item.children) {
+                    self(*item.children, total, available, self);
                 }
             }
         };
@@ -663,7 +678,7 @@ namespace {
             { mainmenu_groups::help,     "Help" },
         };
 
-        json items = json::array();
+        MenuNodes items;
 
         // Built once per request and shared by every top-level menu: the index
         // enumerates all mainmenu_commands services, so rebuilding it per menu
@@ -684,33 +699,27 @@ namespace {
 
                 std::string label = top.enName;
                 std::string displayLabel = TranslateMenuLabel(label, locale, enableI18n);
-                json children = WalkHMenu(hmenu, label, displayLabel, locale, enableI18n, &index);
+                MenuNodes children = WalkHMenu(hmenu, label, displayLabel, locale, enableI18n, &index);
 
                 DestroyMenu(hmenu);
 
                 if (children.empty()) continue;
 
-                json submenu = {
-                    { "type", "submenu" },
-                    { "label", label },
-                    { "displayLabel", displayLabel },
-                    { "path", label },
-                    { "displayPath", displayLabel },
-                    { "children", children }
-                };
+                mnu::MenuTreeNode submenu;
+                submenu.type = "submenu";
+                submenu.label = label;
+                submenu.displayLabel = displayLabel;
+                submenu.path = label;
+                submenu.displayPath = displayLabel;
 
                 if (withAvailability) {
                     int total = 0, available = 0;
                     countAvailableCommands(children, total, available, countAvailableCommands);
-                    submenu["availability"] = {
-                        { "totalCommands", total },
-                        { "availableCommands", available },
-                        { "disabledCommands", total - available },
-                        { "allAvailable", total > 0 ? (available == total) : true }
-                    };
+                    submenu.availability = AvailabilityOf(total, available);
                 }
+                submenu.children = std::move(children);
 
-                items.push_back(submenu);
+                items.push_back(std::move(submenu));
             } catch (const std::exception& ex) {
                 console::printf("[MenuApi] BuildMainMenuV1Tree: error for %s: %s", top.enName, ex.what());
             } catch (...) {
@@ -816,14 +825,13 @@ namespace {
         return items;
     }
 
-    bool ParseHandleList(const json& handlesJson, metadb_handle_list& out) {
-        if (!handlesJson.is_array()) return false;
+    bool ParseHandleList(const std::vector<json>& handles, metadb_handle_list& out) {
 
         // subsong 在校验前已从 path 剥离，故一张 CUE 的 N 个 subsong 会对同一裸路径
         // 各校验一次。缓存结论（含拒绝）以消除该冗余；handle 仍需逐个创建。
         std::unordered_map<std::string, bool> pathVerdicts;
 
-        for (const auto& h : handlesJson) {
+        for (const auto& h : handles) {
             std::string path;
             t_uint32 subsong = 0;
 
@@ -873,75 +881,67 @@ namespace {
         return out.get_count() > 0;
     }
 
-    // 上下文菜单初始化 — getContextMenu / runContextCommandById 共享逻辑
-    struct ContextMenuInitResult {
-        bool inited = false;
-        std::string effectiveMode;
-        std::string error;
-    };
-
-    static ContextMenuInitResult InitContextMenu(
+    // 上下文菜单初始化 — getContextMenu / runContextCommandById / showNativePopup 共享逻辑。
+    // 成功时返回实际使用的模式：auto 会落到其余某一个。
+    static std::variant<std::string, api::Failure> InitContextMenu(
         service_ptr_t<contextmenu_manager>& mgr,
         const std::string& mode,
-        const json& params,
+        const std::optional<std::vector<json>>& handlesParam,
         unsigned flags = contextmenu_manager::flag_view_full) {
-        ContextMenuInitResult result;
-        result.effectiveMode = mode;
-
         metadb_handle_list handles;
-        bool hasHandles = ParseHandleList(params.value("handles", json::array()), handles);
+        const bool hasHandles = handlesParam && ParseHandleList(*handlesParam, handles);
 
         if (mode == "handles") {
             if (!hasHandles) {
-                result.error = "handles required for mode=handles";
-                return result;
+                return api::Fail("handles required for mode=handles", ApiErrorCode::INVALID_PARAMS);
             }
             mgr->init_context(handles, flags);
-            result.inited = true;
-        } else if (mode == "playlist") {
+            return mode;
+        }
+        if (mode == "playlist") {
             mgr->init_context_playlist(flags);
-            result.inited = true;
-        } else if (mode == "nowPlaying") {
-            result.inited = mgr->init_context_now_playing(flags);
-            if (!result.inited) {
-                result.error = "No now playing item";
+            return mode;
+        }
+        if (mode == "nowPlaying") {
+            if (!mgr->init_context_now_playing(flags)) {
+                return api::Fail("No now playing item", ApiErrorCode::NO_ACTIVE_ITEM);
             }
-        } else if (mode == "selection") {
+            return mode;
+        }
+        if (mode == "selection") {
             metadb_handle_list selection = GetSelectedContextItems();
             if (selection.get_count() == 0) {
-                result.error = "No playlist items selected";
-                return result;
+                return api::Fail("No playlist items selected", ApiErrorCode::NO_ACTIVE_ITEM);
             }
             mgr->init_context(selection, flags);
-            result.inited = true;
-        } else {
-            // auto mode: handles → nowPlaying → selection → playlist
-            if (hasHandles) {
-                mgr->init_context(handles, flags);
-                result.inited = true;
-                result.effectiveMode = "handles";
-            } else if (mgr->init_context_now_playing(flags)) {
-                result.inited = true;
-                result.effectiveMode = "nowPlaying";
-            } else {
-                metadb_handle_list selection = GetSelectedContextItems();
-                if (selection.get_count() > 0) {
-                    mgr->init_context(selection, flags);
-                    result.inited = true;
-                    result.effectiveMode = "selection";
-                } else {
-                    mgr->init_context_playlist(flags);
-                    result.inited = true;
-                    result.effectiveMode = "playlist";
-                }
-            }
+            return mode;
         }
-        return result;
+
+        // auto mode (and any other value): handles → nowPlaying → selection → playlist
+        if (hasHandles) {
+            mgr->init_context(handles, flags);
+            return std::string("handles");
+        }
+        // 给了 handles 却一条都用不了（路径被拒、形状不对、建不出 handle）时不往下回退：
+        // 回退会把命令落到页面没点名的曲目上，删除类命令就删错了东西。
+        if (handlesParam && !handlesParam->empty()) {
+            return api::Fail("none of the given handles is usable", ApiErrorCode::INVALID_PARAMS);
+        }
+        if (mgr->init_context_now_playing(flags)) {
+            return std::string("nowPlaying");
+        }
+        metadb_handle_list selection = GetSelectedContextItems();
+        if (selection.get_count() > 0) {
+            mgr->init_context(selection, flags);
+            return std::string("selection");
+        }
+        mgr->init_context_playlist(flags);
+        return std::string("playlist");
     }
 
     // 主菜单 v2 与上下文菜单共用。`source` 是本次遍历所属族（调用方都传静态值）；
     // 命令叶节点的 `source` 要等拿到子命令 GUID 后再解析，避免把动态子项标成静态槽。
-    json BuildMenuTreeJson(
+    std::optional<mnu::MenuTreeNode> BuildMenuTreeNode(
         const menu_tree_item::ptr& node,
         const std::string& pathPrefix,
         const std::string& displayPathPrefix,
@@ -950,10 +950,10 @@ namespace {
         bool withAvailability,
         menu_node::Source source
     ) {
-        if (!node.is_valid()) return json();
+        if (!node.is_valid()) return std::nullopt;
 
         if (node->isSeparator()) {
-            return { { "type", "separator" } };
+            return SeparatorNode();
         }
 
         // menu_tree_item::name() may return truncated/invalid UTF-8 from plugins
@@ -965,31 +965,30 @@ namespace {
         std::string displayPath = displayPathPrefix.empty() ? displayLabel : (displayPathPrefix + "/" + displayLabel);
 
         if (node->isSubmenu()) {
-            json children = json::array();
+            MenuNodes children;
             const size_t count = node->childCount();
             for (size_t i = 0; i < count; i++) {
                 try {
                     auto child = node->childAt(i);
                     if (!child.is_valid()) continue;
-                    auto item = BuildMenuTreeJson(child, path, displayPath, locale, enableI18n, withAvailability, source);
-                    if (!item.is_null()) children.push_back(item);
+                    auto item = BuildMenuTreeNode(child, path, displayPath, locale, enableI18n, withAvailability, source);
+                    if (item) children.push_back(std::move(*item));
                 } catch (const std::exception& ex) {
                     // 跳过有问题的子项（中文版 SDK 可能对某些项抛异常）
-                    console::printf("[MenuApi] BuildMenuTreeJson: skipping submenu child %u: %s", (unsigned)i, ex.what());
+                    console::printf("[MenuApi] BuildMenuTreeNode: skipping submenu child %u: %s", (unsigned)i, ex.what());
                 } catch (...) {
                     // Non-std exception — skip this child silently
                 }
             }
 
-            json result = {
-                { "type", "submenu" },
-                { "label", label },
-                { "displayLabel", displayLabel },
-                { "path", path },
-                { "displayPath", displayPath },
-                { "flags", node->flags() },
-                { "children", children }
-            };
+            mnu::MenuTreeNode result;
+            result.type = "submenu";
+            result.label = label;
+            result.displayLabel = displayLabel;
+            result.path = path;
+            result.displayPath = displayPath;
+            result.flags = node->flags();
+            result.children = std::move(children);
 
             if (withAvailability) {
                 int total = 0;
@@ -999,12 +998,7 @@ namespace {
                 } catch (...) {
                     // Silently ignore — totals stay 0
                 }
-                result["availability"] = {
-                    { "totalCommands", total },
-                    { "availableCommands", available },
-                    { "disabledCommands", total - available },
-                    { "allAvailable", total > 0 ? (available == total) : true }
-                };
+                result.availability = AvailabilityOf(total, available);
             }
 
             return result;
@@ -1026,29 +1020,28 @@ namespace {
             const menu_node::State state =
                 menu_node::NormalizeMainMenu(rawFlags, /*displayReturnedTrue=*/true);
 
-            json item = {
-                { "type", "command" },
-                { "label", label },
-                { "displayLabel", displayLabel },
-                { "path", path },
-                { "displayPath", displayPath },
-                { "flags", rawFlags },
-                { "enabled", state.enabled },
-                { "checked", state.checked },
-                { "radioChecked", state.radioChecked },
-                { "hidden", state.hidden }
-            };
+            mnu::MenuTreeNode item;
+            item.type = "command";
+            item.label = label;
+            item.displayLabel = displayLabel;
+            item.path = path;
+            item.displayPath = displayPath;
+            item.flags = rawFlags;
+            item.enabled = state.enabled;
+            item.checked = state.checked;
+            item.radioChecked = state.radioChecked;
+            item.hidden = state.hidden;
 
             // commandID / commandGuid / subCommandGuid 在中文版 SDK 可能抛异常
             try {
-                item["commandId"] = node->commandID();
+                item.commandId = node->commandID();
             } catch (...) {
-                item["commandId"] = 0;
+                item.commandId = 0;
             }
             try {
-                item["available"] = IsMenuItemAvailable(node);
+                item.available = IsMenuItemAvailable(node);
             } catch (...) {
-                item["available"] = true;
+                item.available = true;
             }
             // A throwing commandGuid() is why a v2 leaf can come back with no
             // address at all. Swallowing it silently is what made the whole
@@ -1057,47 +1050,47 @@ namespace {
             try {
                 GUID guid = node->commandGuid();
                 if (guid != pfc::guid_null) {
-                    item["guid"] = GuidToString(guid);
+                    item.guid = GuidToString(guid);
                     haveGuid = true;
                 }
             } catch (const std::exception& ex) {
-                console::printf("[MenuApi] BuildMenuTreeJson: commandGuid() failed for '%s': %s",
+                console::printf("[MenuApi] BuildMenuTreeNode: commandGuid() failed for '%s': %s",
                                 label.c_str(), ex.what());
             } catch (...) {
-                console::printf("[MenuApi] BuildMenuTreeJson: commandGuid() failed for '%s' (unknown)",
+                console::printf("[MenuApi] BuildMenuTreeNode: commandGuid() failed for '%s' (unknown)",
                                 label.c_str());
             }
             bool haveSubGuid = false;
             try {
                 GUID subGuid = node->subCommandGuid();
                 if (subGuid != pfc::guid_null) {
-                    item["subGuid"] = GuidToString(subGuid);
+                    item.subGuid = GuidToString(subGuid);
                     haveSubGuid = true;
                 }
             } catch (const std::exception& ex) {
-                console::printf("[MenuApi] BuildMenuTreeJson: subCommandGuid() failed for '%s': %s",
+                console::printf("[MenuApi] BuildMenuTreeNode: subCommandGuid() failed for '%s': %s",
                                 label.c_str(), ex.what());
             } catch (...) {
-                console::printf("[MenuApi] BuildMenuTreeJson: subCommandGuid() failed for '%s' (unknown)",
+                console::printf("[MenuApi] BuildMenuTreeNode: subCommandGuid() failed for '%s' (unknown)",
                                 label.c_str());
             }
 
             // 调用方传入的是族，不是叶节点来源；有子命令 GUID 才标成动态。
-            item["source"] = menu_node::ToString(
+            item.source = menu_node::ToString(
                 menu_node::ResolveLeafSource(source, haveSubGuid));
 
             // State a missing address explicitly rather than emitting a listed
             // entry the caller cannot act on and cannot explain.
-            item["executable"] = haveGuid;
+            item.executable = haveGuid;
             if (!haveGuid) {
-                item["unaddressableReason"] =
+                item.unaddressableReason =
                     menu_node::ToString(menu_node::Unaddressable::NoStableIdentifier);
             }
 
             return item;
         }
 
-        return json();
+        return std::nullopt;
     }
 }
 
@@ -1108,21 +1101,18 @@ namespace {
 namespace {
 
 
-json MenuRunMainMenuCommand(const json& params) {
-    std::string command = params.value("command", "");
-    if (command.empty()) {
-        return { {"success", false}, {"error", "command is required"} };
-    }
+api::Result<mnu::RunMainMenuCommandResult> MenuRunMainMenuCommand(const mnu::RunMainMenuCommandParams& p) {
+    const std::string& command = p.command;
 
     // GUID form
     GUID guid;
     if (StringToGuid(command, guid)) {
         // A dynamic child is addressed by owning GUID + subGuid; g_execute alone
-        // cannot reach it.
+        // cannot reach it. An empty subGuid is the same as none.
         GUID subGuid = pfc::guid_null;
-        std::string subGuidStr = params.value("subGuid", "");
+        const std::string subGuidStr = p.subGuid.value_or("");
         if (!subGuidStr.empty() && !StringToGuid(subGuidStr, subGuid)) {
-            return { {"success", false}, {"error", "Invalid subGuid format"} };
+            return api::Fail("Invalid subGuid format", ApiErrorCode::INVALID_PARAMS);
         }
         const bool dynamic = !subGuidStr.empty();
 
@@ -1137,31 +1127,26 @@ json MenuRunMainMenuCommand(const json& params) {
         const auto index = BuildMainMenuIndex();
         const MainMenuIndexEntry* known = FindIndexEntryByAddress(index, guid, subGuid);
         if (known && !known->state.enabled) {
-            return {
-                {"success", false},
-                {"error", "Command is currently disabled: " + command},
-                {"code", "MENU_ITEM_DISABLED"},
-                {"guid", command}
-            };
+            return api::Fail("Command is currently disabled: " + command, ApiErrorCode::MENU_ITEM_DISABLED,
+                             {{"guid", command}});
         }
 
         const bool ok = dynamic
             ? mainmenu_commands::g_execute_dynamic(guid, subGuid)
             : mainmenu_commands::g_execute(guid);
-
-        // Both arms are spelled as braced literals on purpose: the response
-        // schema extractor enumerates keys statically, so building one object and
-        // conditionally inserting a key downgrades this endpoint's inferred
-        // response to a partial guess.
-        if (dynamic) {
-            return {
-                {"success", ok},
-                {"guid", command},
-                {"dynamic", true},
-                {"subGuid", subGuidStr}
-            };
+        if (!ok) {
+            json::object_t extra{{"guid", command}, {"dynamic", dynamic}};
+            if (dynamic) extra["subGuid"] = subGuidStr;
+            return api::Fail(dynamic ? "No dynamic main-menu command owns this guid and subGuid"
+                                     : "No main-menu command owns this guid",
+                             ApiErrorCode::NOT_FOUND, std::move(extra));
         }
-        return { {"success", ok}, {"guid", command}, {"dynamic", false} };
+
+        mnu::RunMainMenuCommandResult result;
+        result.guid = command;
+        result.dynamic = dynamic;
+        if (dynamic) result.subGuid = subGuidStr;
+        return result;
     }
 
     // Path/name form.
@@ -1187,14 +1172,12 @@ json MenuRunMainMenuCommand(const json& params) {
                     // Refuse a disabled command instead of reporting a success
                     // the user would never observe.
                     if (!IsMenuItemAvailable(item)) {
-                        return {
-                            {"success", false},
-                            {"error", "Command is currently disabled: " + command},
-                            {"code", "MENU_ITEM_DISABLED"}
-                        };
+                        return api::Fail("Command is currently disabled: " + command, ApiErrorCode::MENU_ITEM_DISABLED);
                     }
                     item->execute(service_ptr_t<service_base>());
-                    return { {"success", true}, {"source", "v2-tree"} };
+                    mnu::RunMainMenuCommandResult result;
+                    result.source = "v2-tree";
+                    return result;
                 }
             }
         }
@@ -1223,24 +1206,16 @@ json MenuRunMainMenuCommand(const json& params) {
                 {"guid", GuidToString(entry->guid)}
             });
         }
-        return {
-            {"success", false},
-            {"error", "Command is ambiguous; address it by GUID instead: " + command},
-            {"code", "MENU_MATCH_AMBIGUOUS"},
-            {"match", menu_node::ToString(matchKind)},
-            {"candidateCount", matches.size()},
-            {"candidates", candidates}
-        };
+        return api::Fail("Command is ambiguous; address it by GUID instead: " + command, ApiErrorCode::MENU_MATCH_AMBIGUOUS,
+                         {{"match", menu_node::ToString(matchKind)},
+                          {"candidateCount", matches.size()},
+                          {"candidates", std::move(candidates)}});
     }
 
     if (matchKind == menu_node::MatchKind::Unique) {
         const MainMenuIndexEntry* entry = matches.front();
         if (!entry->state.enabled) {
-            return {
-                {"success", false},
-                {"error", "Command is currently disabled: " + command},
-                {"code", "MENU_ITEM_DISABLED"}
-            };
+            return api::Fail("Command is currently disabled: " + command, ApiErrorCode::MENU_ITEM_DISABLED);
         }
 
         const bool dynamic = entry->subGuid != pfc::guid_null;
@@ -1248,64 +1223,66 @@ json MenuRunMainMenuCommand(const json& params) {
             ? mainmenu_commands::g_execute_dynamic(entry->guid, entry->subGuid)
             : mainmenu_commands::g_execute(entry->guid);
 
-        if (dynamic) {
-            return {
-                {"success", ok},
-                {"guid", GuidToString(entry->guid)},
-                {"dynamic", true},
-                {"subGuid", GuidToString(entry->subGuid)},
-                {"source", "index"}
-            };
+        mnu::RunMainMenuCommandResult result;
+        result.guid = GuidToString(entry->guid);
+        result.dynamic = dynamic;
+        if (dynamic) result.subGuid = GuidToString(entry->subGuid);
+        result.source = "index";
+        if (!ok) {
+            json::object_t extra{{"guid", *result.guid}, {"dynamic", dynamic}, {"source", "index"}};
+            if (dynamic) extra["subGuid"] = *result.subGuid;
+            return api::Fail("No main-menu command owns this guid", ApiErrorCode::NOT_FOUND, std::move(extra));
         }
-        return {
-            {"success", ok},
-            {"guid", GuidToString(entry->guid)},
-            {"dynamic", false},
-            {"source", "index"}
-        };
+        return result;
     }
 
-    return {
-        {"success", false},
-        {"error", "Command not found: " + command},
-        {"code", "MENU_COMMAND_NOT_FOUND"},
-        {"match", menu_node::ToString(matchKind)},
-        {"candidateCount", 0}
-    };
+    return api::Fail("Command not found: " + command, ApiErrorCode::MENU_COMMAND_NOT_FOUND,
+                     {{"match", menu_node::ToString(matchKind)}, {"candidateCount", 0}});
 }
 
 
-json MenuRunContextCommand(const json& params) {
-    std::string command = params.value("command", "");
-    if (command.empty()) {
-        return { {"success", false}, {"error", "command is required"} };
+// run_command_context_ex fails only when no context-menu command owns the GUID;
+// the caller has already made sure there are tracks. `guidText` is echoed back
+// as the caller spelled it for the GUID form.
+api::Result<mnu::RunContextCommandResult> RunContextCommandByGuid(const GUID& commandGuid,
+                                                                  const std::string& guidText,
+                                                                  const GUID& subGuid,
+                                                                  const metadb_handle_list& items,
+                                                                  const GUID& caller) {
+    const auto itemCount = static_cast<std::int64_t>(items.get_count());
+    if (!menu_helpers::run_command_context_ex(commandGuid, subGuid, items, caller)) {
+        return api::Fail("No context-menu command owns this guid", ApiErrorCode::NOT_FOUND,
+                         {{"guid", guidText}, {"itemCount", itemCount}, {"executionConfirmed", true}});
     }
+    mnu::RunContextCommandResult result;
+    result.guid = guidText;
+    result.itemCount = itemCount;
+    result.executionConfirmed = true;
+    return result;
+}
+
+api::Result<mnu::RunContextCommandResult> MenuRunContextCommand(const mnu::RunContextCommandParams& p) {
+    const std::string& command = p.command;
 
     // A dynamic context child is addressed by the owning command GUID plus its
     // own node GUID. Passing guid_null unconditionally, as this handler used
     // to, reaches the owner instead — for a container that is a silent no-op
     // reported as success.
     GUID subGuid = pfc::guid_null;
-    const std::string subGuidStr = params.value("subGuid", "");
+    const std::string subGuidStr = p.subGuid.value_or("");
     if (!subGuidStr.empty() && !StringToGuid(subGuidStr, subGuid)) {
-        return { {"success", false}, {"error", "Invalid subGuid format"} };
+        return api::Fail("Invalid subGuid format", ApiErrorCode::INVALID_PARAMS);
     }
 
     GUID caller = contextmenu_item::caller_active_playlist_selection;
     metadb_handle_list items = GetDefaultContextItems(&caller);
     if (items.get_count() == 0) {
-        return { {"success", false}, {"error", "No track selected or playing"} };
+        return api::Fail("No track selected or playing", ApiErrorCode::NO_ACTIVE_ITEM);
     }
 
     GUID guid;
     if (StringToGuid(command, guid)) {
-        bool ok = menu_helpers::run_command_context_ex(guid, subGuid, items, caller);
-        return {
-            {"success", ok},
-            {"guid", command},
-            {"itemCount", items.get_count()},
-            {"executionConfirmed", true}
-        };
+        return RunContextCommandByGuid(guid, command, subGuid, items, caller);
     }
 
     service_ptr_t<contextmenu_item> item;
@@ -1323,13 +1300,7 @@ json MenuRunContextCommand(const json& params) {
         }
 
         if (itemGuid != pfc::guid_null) {
-            bool ok = menu_helpers::run_command_context_ex(itemGuid, subGuid, items, caller);
-            return {
-                {"success", ok},
-                {"guid", GuidToString(itemGuid)},
-                {"itemCount", items.get_count()},
-                {"executionConfirmed", true}
-            };
+            return RunContextCommandByGuid(itemGuid, GuidToString(itemGuid), subGuid, items, caller);
         }
 
         // Degenerate registration: no stable GUID, so the void entry point is
@@ -1337,56 +1308,47 @@ json MenuRunContextCommand(const json& params) {
         // true because the command was dispatched, but `executionConfirmed`
         // marks the difference between "ran" and "was handed to the host".
         item->item_execute_simple(index, subGuid, items, caller);
-        return {
-            {"success", true},
-            {"itemCount", items.get_count()},
-            {"executionConfirmed", false}
-        };
+        mnu::RunContextCommandResult result;
+        result.itemCount = static_cast<std::int64_t>(items.get_count());
+        result.executionConfirmed = false;
+        return result;
     }
 
     if (menu_helpers::guid_from_name(command.c_str(), (unsigned)command.size(), guid)) {
-        bool ok = menu_helpers::run_command_context_ex(guid, subGuid, items, caller);
-        return {
-            {"success", ok},
-            {"guid", GuidToString(guid)},
-            {"itemCount", items.get_count()},
-            {"executionConfirmed", true}
-        };
+        return RunContextCommandByGuid(guid, GuidToString(guid), subGuid, items, caller);
     }
 
-    return { {"success", false}, {"error", "Command not found"} };
+    return api::Fail("Command not found", ApiErrorCode::MENU_COMMAND_NOT_FOUND);
 }
 
-static json BuildMainMenuResponse(const std::string& root,
-                                  const std::string& requestedRoot,
-                                  bool rootMatched,
-                                  const std::string& locale,
-                                  bool enableI18n,
-                                  bool withAvailability,
-                                  const json& items,
-                                  const char* source = nullptr) {
-    json result = {
-        {"success", true},
-        {"root", root},
-        {"requestedRoot", requestedRoot},
-        {"rootMatched", rootMatched},
-        {"locale", locale},
-        {"i18n", enableI18n},
-        {"withAvailability", withAvailability},
-        {"items", items}
-    };
+static mnu::GetMainMenuResult BuildMainMenuResponse(const std::string& root,
+                                                    const std::string& requestedRoot,
+                                                    bool rootMatched,
+                                                    const std::string& locale,
+                                                    bool enableI18n,
+                                                    bool withAvailability,
+                                                    MenuNodes items,
+                                                    const char* source = nullptr) {
+    mnu::GetMainMenuResult result;
+    result.root = root;
+    result.requestedRoot = requestedRoot;
+    result.rootMatched = rootMatched;
+    result.locale = locale;
+    result.i18n = enableI18n;
+    result.withAvailability = withAvailability;
+    result.items = std::move(items);
 
     if (source && *source) {
-        result["source"] = source;
+        result.source = source;
     }
 
     return result;
 }
 
-static std::optional<json> TryGetMainMenuFromV2(const std::string& rootName,
-                                                const std::string& locale,
-                                                bool enableI18n,
-                                                bool withAvailability) {
+static std::optional<mnu::GetMainMenuResult> TryGetMainMenuFromV2(const std::string& rootName,
+                                                                  const std::string& locale,
+                                                                  bool enableI18n,
+                                                                  bool withAvailability) {
     auto mgr = mainmenu_manager_v2::tryGet();
     if (!mgr.is_valid()) {
         return std::nullopt;
@@ -1413,7 +1375,7 @@ static std::optional<json> TryGetMainMenuFromV2(const std::string& rootName,
         }
     }
 
-    json items = json::array();
+    MenuNodes items;
     for (size_t index = 0; index < base->childCount(); index++) {
         try {
             auto child = base->childAt(index);
@@ -1422,12 +1384,12 @@ static std::optional<json> TryGetMainMenuFromV2(const std::string& rootName,
             }
 
             // 这里传族（静态）。动态判定在叶节点按 subGuid 解析，不改这个参数。
-            auto item = BuildMenuTreeJson(child, baseLabel, baseLabel,
+            auto item = BuildMenuTreeNode(child, baseLabel, baseLabel,
                                           locale, enableI18n,
                                           withAvailability,
                                           menu_node::Source::MainMenuStatic);
-            if (!item.is_null()) {
-                items.push_back(item);
+            if (item) {
+                items.push_back(std::move(*item));
             }
         } catch (const std::exception& itemEx) {
             console::printf("[MenuApi] v2 tree: skip item %u: %s",
@@ -1444,14 +1406,14 @@ static std::optional<json> TryGetMainMenuFromV2(const std::string& rootName,
     // NOLINTNEXTLINE(readability-suspicious-call-argument)
     return BuildMainMenuResponse(baseLabel, rootName,
                                  rootName.empty() ? true : !baseLabel.empty(),
-                                 locale, enableI18n, withAvailability, items);
+                                 locale, enableI18n, withAvailability, std::move(items));
 }
 
-static std::optional<json> TryGetMainMenuFromV1(const std::string& rootName,
-                                                const std::string& locale,
-                                                bool enableI18n,
-                                                bool withAvailability) {
-    json v1Items = BuildMainMenuV1Tree(locale, enableI18n, withAvailability);
+static std::optional<mnu::GetMainMenuResult> TryGetMainMenuFromV1(const std::string& rootName,
+                                                                  const std::string& locale,
+                                                                  bool enableI18n,
+                                                                  bool withAvailability) {
+    MenuNodes v1Items = BuildMainMenuV1Tree(locale, enableI18n, withAvailability);
     if (v1Items.empty()) {
         return std::nullopt;
     }
@@ -1461,30 +1423,30 @@ static std::optional<json> TryGetMainMenuFromV1(const std::string& rootName,
 
     if (rootName.empty()) {
         return BuildMainMenuResponse("", rootName, true, locale, enableI18n,
-                                     withAvailability, v1Items, "v1-hmenu");
+                                     withAvailability, std::move(v1Items), "v1-hmenu");
     }
 
-    for (const auto& topMenu : v1Items) {
-        if (NamesMatchI18n(topMenu.value("label", ""), rootName) ||
-            NamesMatchI18n(topMenu.value("displayLabel", ""), rootName)) {
-            return BuildMainMenuResponse(topMenu.value("label", ""), rootName,
+    for (auto& topMenu : v1Items) {
+        if (NamesMatchI18n(topMenu.label.value_or(""), rootName) ||
+            NamesMatchI18n(topMenu.displayLabel.value_or(""), rootName)) {
+            return BuildMainMenuResponse(topMenu.label.value_or(""), rootName,
                                          true, locale, enableI18n,
                                          withAvailability,
-                                         topMenu.value("children", json::array()),
+                                         std::move(topMenu.children).value_or(MenuNodes{}),
                                          "v1-hmenu");
         }
     }
 
     return BuildMainMenuResponse("", rootName, false, locale, enableI18n,
-                                 withAvailability, v1Items, "v1-hmenu");
+                                 withAvailability, std::move(v1Items), "v1-hmenu");
 }
 
 
-json MenuGetMainMenu(const json& params) {
-    std::string rootName = params.value("root", "");
-    std::string locale = params.value("locale", "auto");
-    bool enableI18n = params.value("i18n", true);
-    bool withAvailability = params.value("withAvailability", true);
+api::Result<mnu::GetMainMenuResult> MenuGetMainMenu(const mnu::GetMainMenuParams& p) {
+    const std::string& rootName = p.root;
+    const std::string& locale = p.locale;
+    const bool enableI18n = p.i18n;
+    const bool withAvailability = p.withAvailability;
 
     // ================================================================
     // 策略: v2 menu_tree → v1 HMENU → flat fallback
@@ -1495,7 +1457,7 @@ json MenuGetMainMenu(const json& params) {
     try {
         auto v2Result = TryGetMainMenuFromV2(rootName, locale, enableI18n,
                                              withAvailability);
-        if (v2Result) return *v2Result;
+        if (v2Result) return std::move(*v2Result);
     } catch (const std::exception& ex) {
         console::printf("[MenuApi] getMainMenu: v2 failed (%s), trying v1 HMENU...", ex.what());
     } catch (...) {
@@ -1506,7 +1468,7 @@ json MenuGetMainMenu(const json& params) {
     try {
         auto v1Result = TryGetMainMenuFromV1(rootName, locale, enableI18n,
                                              withAvailability);
-        if (v1Result) return *v1Result;
+        if (v1Result) return std::move(*v1Result);
     } catch (const std::exception& ex) {
         console::printf("[MenuApi] getMainMenu: v1 HMENU also failed: %s", ex.what());
     } catch (...) {
@@ -1516,192 +1478,173 @@ json MenuGetMainMenu(const json& params) {
     // — 最终回退: flat 命令列表 —
     console::printf("[MenuApi] getMainMenu: all tree methods failed, using flat fallback");
     try {
-        json result = BuildMainMenuResponse("", rootName, false, locale,
-                                            enableI18n, withAvailability,
-                                            BuildMainMenuFlatFallback(locale, enableI18n,
-                                                                      BuildMainMenuIndex()));
-        result["fallback"] = "flat-mainmenu-commands";
+        mnu::GetMainMenuResult result = BuildMainMenuResponse("", rootName, false, locale,
+                                                              enableI18n, withAvailability,
+                                                              BuildMainMenuFlatFallback(locale, enableI18n,
+                                                                                        BuildMainMenuIndex()));
+        result.fallback = "flat-mainmenu-commands";
         return result;
     } catch (...) {
-        return {
-            {"success", false},
-            {"error", "All menu tree methods failed"},
-            {"items", json::array()}
-        };
+        return api::Fail("All menu tree methods failed", ApiErrorCode::OPERATION_FAILED,
+                         {{"items", json::array()}});
     }
 }
 
 
-json MenuGetContextMenu(const json& params) {
-    std::string mode = params.value("mode", "auto");
-    std::string locale = params.value("locale", "auto");
-    bool enableI18n = params.value("i18n", true);
-    bool withAvailability = params.value("withAvailability", true);
-
+api::Result<mnu::GetContextMenuResult> MenuGetContextMenu(const mnu::GetContextMenuParams& p) {
     service_ptr_t<contextmenu_manager> mgr;
     contextmenu_manager::g_create(mgr);
 
-    auto initResult = InitContextMenu(mgr, mode, params);
-    if (!initResult.inited) {
-        return { {"success", false}, {"error", initResult.error.empty() ? "Failed to initialize context menu" : initResult.error} };
+    auto init = InitContextMenu(mgr, p.mode, p.handles);
+    if (auto* failure = std::get_if<api::Failure>(&init)) {
+        return std::move(*failure);
     }
 
     service_ptr_t<contextmenu_manager_v2> mgr2;
     if (!mgr->service_query_t(mgr2)) {
-        return { {"success", false}, {"error", "contextmenu_manager_v2 not available"} };
+        return api::Fail("contextmenu_manager_v2 not available", ApiErrorCode::NOT_SUPPORTED);
     }
 
     auto root = mgr2->build_menu();
     if (!root.is_valid()) {
-        return { {"success", false}, {"error", "Failed to build context menu"} };
+        return api::Fail("Failed to build context menu", ApiErrorCode::OPERATION_FAILED);
     }
 
-    json items = json::array();
+    mnu::GetContextMenuResult result;
     const size_t count = root->childCount();
     for (size_t i = 0; i < count; i++) {
         auto child = root->childAt(i);
         if (!child.is_valid()) continue;
         // 这里传族（静态）。动态判定在叶节点按 subGuid 解析，不改这个参数。
-        auto item = BuildMenuTreeJson(child, "", "", locale, enableI18n, withAvailability,
+        auto item = BuildMenuTreeNode(child, "", "", p.locale, p.i18n, p.withAvailability,
                                       menu_node::Source::ContextMenuStatic);
-        if (!item.is_null()) items.push_back(item);
+        if (item) result.items.push_back(std::move(*item));
     }
 
-    return {
-        {"success", true},
-        {"mode", initResult.effectiveMode},
-        {"locale", locale},
-        {"i18n", enableI18n},
-        {"withAvailability", withAvailability},
-        {"items", items}
-    };
+    result.mode = std::get<std::string>(init);
+    result.locale = p.locale;
+    result.i18n = p.i18n;
+    result.withAvailability = p.withAvailability;
+    return result;
 }
 
 
-json MenuRunContextCommandById(const json& params) {
-    int id = params.value("id", -1);
-    if (id < 0) {
-        return { {"success", false}, {"error", "id is required"} };
-    }
-
-    std::string mode = params.value("mode", "auto");
-
+api::Result<void> MenuRunContextCommandById(const mnu::RunContextCommandByIdParams& p) {
     service_ptr_t<contextmenu_manager> mgr;
     contextmenu_manager::g_create(mgr);
 
-    auto initResult = InitContextMenu(mgr, mode, params);
-    if (!initResult.inited) {
-        return { {"success", false}, {"error", initResult.error.empty() ? "Failed to initialize context menu" : initResult.error} };
+    auto init = InitContextMenu(mgr, p.mode, p.handles);
+    if (auto* failure = std::get_if<api::Failure>(&init)) {
+        return std::move(*failure);
     }
 
-    bool ok = mgr->execute_by_id(static_cast<unsigned>(id));
-    return { {"success", ok} };
+    // The declared range keeps the id within unsigned.
+    if (!mgr->execute_by_id(static_cast<unsigned>(p.id))) {
+        return api::Fail("No context menu item has this id", ApiErrorCode::NOT_FOUND, {{"id", p.id}});
+    }
+    return api::Ok();
 }
 
 
-json MenuShowNativePopup(const json& params) {
-    std::string mode = params.value("mode", "auto");
+api::Result<void> MenuShowNativePopup(const mnu::ShowNativePopupParams& p, const CallerContext& caller) {
     unsigned flags = contextmenu_manager::flag_show_shortcuts | contextmenu_manager::flag_view_full;
-    
+
     // 获取面板 HWND 用于坐标转换
-    HWND panelHwnd = nullptr;
-    if (params.contains("_callerHwnd")) {
-        auto h = reinterpret_cast<HWND>(params["_callerHwnd"].get<intptr_t>());
-        if (h && IsWindow(h)) panelHwnd = h;
-    }
+    HWND panelHwnd = (caller.callerHwnd && IsWindow(caller.callerHwnd)) ? caller.callerHwnd : nullptr;
     HWND parentHwnd = panelHwnd ? panelHwnd : core_api::get_main_window();
     if (!parentHwnd) {
-        return {{"success", false}, {"error", "No parent window"}};
+        return api::Fail("No parent window", ApiErrorCode::OPERATION_FAILED);
     }
-    
-    // 直接使用系统光标位置（最可靠，不受 DPI/CSS 像素差异影响）
+
+    // 直接使用系统光标位置（最可靠，不受 DPI/CSS 像素差异影响）；x / y 只为兼容而接受。
     POINT pt;
     GetCursorPos(&pt);
-    
+
     // 创建并初始化 contextmenu_manager
     service_ptr_t<contextmenu_manager> mgr;
     contextmenu_manager::g_create(mgr);
-    
-    auto initResult = InitContextMenu(mgr, mode, params, flags);
-    if (!initResult.inited) {
-        return {{"success", false},
-                {"error", initResult.error.empty()
-                    ? "Failed to init context for mode: " + mode
-                    : initResult.error}};
+
+    auto init = InitContextMenu(mgr, p.mode, p.handles, flags);
+    if (auto* failure = std::get_if<api::Failure>(&init)) {
+        return std::move(*failure);
     }
 
     console::printf("[MenuApi] showNativePopup: requestedMode=%s effectiveMode=%s",
-                    mode.c_str(), initResult.effectiveMode.c_str());
-    
+                    p.mode.c_str(), std::get<std::string>(init).c_str());
+
     // 保存状态，通过 SetTimer 延迟执行 TrackPopupMenu
     // 让桥接回调先返回，WebView2 待处理消息先完成，然后再弹菜单
     auto& pending = GetPendingContextMenu();
     pending.mgr = mgr;
     pending.pt = pt;
     pending.parent = parentHwnd;
-    
+
     SetTimer(parentHwnd, PendingContextMenu::TIMER_ID, 1,
         [](HWND hwnd, UINT, UINT_PTR id, DWORD) {
             KillTimer(hwnd, id);
-            auto& p = GetPendingContextMenu();
-            if (p.mgr.is_valid()) {
+            auto& queued = GetPendingContextMenu();
+            if (queued.mgr.is_valid()) {
                 HWND top = ::GetAncestor(hwnd, GA_ROOT);
                 if (top) SetForegroundWindow(top);
-                p.mgr->win32_run_menu_popup(hwnd, &p.pt);
-                p.mgr.release();
+                queued.mgr->win32_run_menu_popup(hwnd, &queued.pt);
+                queued.mgr.release();
             }
         });
-    
-    return {{"success", true}};
+
+    return api::Ok();
+}
+
+// Screen coordinates arrive as 64-bit declared integers; the overlay takes int.
+int ScreenCoordinate(const std::optional<std::int64_t>& value) {
+    if (!value) return -1;
+    return static_cast<int>(std::clamp<std::int64_t>(*value, std::numeric_limits<int>::min(),
+                                                      std::numeric_limits<int>::max()));
 }
 
 // ---- Self-Drawn Menu APIs (自绘菜单引擎) ----
 // menu.show {items, x?, y?, windowModel?, css?, cssReplace?, backdrop?,
 //            backdropDarkMode?, closeAnimationMs?}:
 // 在屏幕坐标(缺省取光标)显示自绘菜单，返回 menuId。全部可选参数缺省即现状行为。
-json MenuShow(const json& params) {
-    json items = (params.contains("items") && params["items"].is_array()) ? params["items"] : json::array();
+api::Result<mnu::ShowResult> MenuShow(const mnu::ShowParams& p, const CallerContext& caller) {
+    json items = p.items ? json(*p.items) : json::array();
     // Resource preflight before opening the overlay (DESIGN 8.5): strip single
     // SVGs over 32 KiB, then fail the whole call on item/depth/segment/svgTotal
     // breaches. Do not open the overlay on failure.
     menu_limits::StripOversizedSvgInJsonItems(items);
     auto breach = menu_limits::ValidateShowMenuResources(items);
     if (!breach.ok) {
-        return ApiEnvelope::MakeError("menu resource limit exceeded",
-                                      ApiErrorCode::INVALID_PARAMS,
-                                      menu_limits::DetailsJson(breach));
+        return api::Fail("menu resource limit exceeded", ApiErrorCode::INVALID_PARAMS,
+                         {{"details", menu_limits::DetailsJson(breach)}});
     }
 
-    // 引擎选项透传：逐键类型检查，类型不符即忽略该键并保留默认值（默认值 = 现状行为）。
+    // 引擎选项：没传的键保留默认值（默认值 = 现状行为）。
     MenuShowOptions opts{};
-    if (params.contains("windowModel") && params["windowModel"].is_string()) {
+    if (p.windowModel) {
         // 只有精确 "contentSized" 才切换到内容尺寸窗；未知串回落全屏覆盖面。
-        opts.windowModel = (params["windowModel"].get<std::string>() == "contentSized")
+        opts.windowModel = (*p.windowModel == "contentSized")
             ? MenuWindowModel::ContentSized : MenuWindowModel::FullscreenOverlay;
     }
-    if (params.contains("css") && params["css"].is_string()) {
-        opts.css = params["css"].get<std::string>();
+    if (p.css) {
+        opts.css = *p.css;
     }
-    if (params.contains("cssReplace") && params["cssReplace"].is_boolean()) {
-        opts.cssReplace = params["cssReplace"].get<bool>();
+    if (p.cssReplace) {
+        opts.cssReplace = *p.cssReplace;
     }
-    if (params.contains("backdrop") && params["backdrop"].is_string()) {
-        auto b = params["backdrop"].get<std::string>();
+    if (p.backdrop) {
+        const std::string& b = *p.backdrop;
         if (b == "acrylic" || b == "mica" || b == "mica-alt" || b == "none") opts.backdrop = b;
     }
-    if (params.contains("backdropDarkMode") && params["backdropDarkMode"].is_boolean()) {
-        opts.backdropDarkMode = params["backdropDarkMode"].get<bool>();
+    if (p.backdropDarkMode) {
+        opts.backdropDarkMode = *p.backdropDarkMode;
     }
-    if (params.contains("closeAnimationMs") && params["closeAnimationMs"].is_number_integer()) {
-        int v = params["closeAnimationMs"].get<int>();
-        opts.closeAnimationMs = v < 0 ? 0 : (v > 1000 ? 1000 : v);
+    if (p.closeAnimationMs) {
+        opts.closeAnimationMs = static_cast<int>(std::clamp<std::int64_t>(*p.closeAnimationMs, 0, 1000));
     }
     // css 与 items 同属渲染器资源，同样必须在打开 overlay 之前预检（与 tray 共用帮助函数）。
     auto cssBreach = menu_limits::ValidateCssBytes(opts.css);
     if (!cssBreach.ok) {
-        return ApiEnvelope::MakeError("menu resource limit exceeded",
-                                      ApiErrorCode::INVALID_PARAMS,
-                                      menu_limits::DetailsJson(cssBreach));
+        return api::Fail("menu resource limit exceeded", ApiErrorCode::INVALID_PARAMS,
+                         {{"details", menu_limits::DetailsJson(cssBreach)}});
     }
     // 锚定策略由窗口模型推导，不作为公共参数：内容尺寸窗是标准右键菜单语义（贴光标向下
     // 展开），全屏覆盖面保持 bottomUp 默认（其定位由渲染器在客户区内完成，此值不参与）。
@@ -1709,27 +1652,30 @@ json MenuShow(const json& params) {
         opts.anchorPolicy = "cursor";
     }
 
-    int x = params.value("x", -1);
-    int y = params.value("y", -1);
+    int x = ScreenCoordinate(p.x);
+    int y = ScreenCoordinate(p.y);
     if (x < 0 || y < 0) {
         POINT pt{};
         GetCursorPos(&pt);
         if (x < 0) x = pt.x;
         if (y < 0) y = pt.y;
     }
-    // 不传 sink = 非 owner-mode：select / dismiss / valueChanged 走公共 menu:* 事件。
-    std::string menuId = MenuOverlayHost::GetInstance().Show(items, x, y, nullptr, nullptr, opts);
+    // 不传 sink = 非 owner-mode：select / dismiss / valueChanged 走公共 menu:* 事件，
+    // 发回调用 menu.show 的页面（popup 与面板页面也能等到结果）。
+    std::string menuId = MenuOverlayHost::GetInstance().Show(
+        items, x, y, nullptr, nullptr, opts, nullptr, MenuCaller{caller.windowId, caller.callerHwnd});
     if (menuId.empty()) {
-        return {{"success", false}, {"error", "failed to show menu overlay"}};
+        return api::Fail("failed to show menu overlay", ApiErrorCode::OPERATION_FAILED);
     }
-    return {{"success", true}, {"menuId", menuId}};
+    mnu::ShowResult result;
+    result.menuId = std::move(menuId);
+    return result;
 }
 
 // menu.close {reason?}: 关闭当前自绘菜单。
-json MenuClose(const json& params) {
-    const std::string reason = params.value("reason", std::string("api"));
-    MenuOverlayHost::GetInstance().Hide(reason);
-    return {{"success", true}};
+api::Result<void> MenuClose(const mnu::CloseParams& p) {
+    MenuOverlayHost::GetInstance().Hide(p.reason);
+    return api::Ok();
 }
 
 // ---- Internal overlay IPC (menu.__*) --------------------------------------
@@ -1897,20 +1843,22 @@ json MenuValueChanged(const json& params) {
 } // namespace
 
 void RegisterMenuApi() {
-    auto& bridge = BridgeCore::GetInstance();
+    // The public methods take their parameters and results from
+    // src/api/schema/menu.ts; the overlay's private menu.__* calls stay undeclared.
+    api::RegisterApi("menu.runMainMenuCommand", MenuRunMainMenuCommand);
+    api::RegisterApi("menu.runContextCommand", MenuRunContextCommand);
+    api::RegisterApi("menu.getMainMenu", MenuGetMainMenu);
+    api::RegisterApi("menu.getContextMenu", MenuGetContextMenu);
+    api::RegisterApi("menu.runContextCommandById", MenuRunContextCommandById);
+    api::RegisterApi("menu.showNativePopup", MenuShowNativePopup);
+    api::RegisterApi("menu.show", MenuShow);
+    api::RegisterApi("menu.close", MenuClose);
 
-    bridge.RegisterApi("menu.runMainMenuCommand", MenuRunMainMenuCommand);
-    bridge.RegisterApi("menu.runContextCommand", MenuRunContextCommand);
-    bridge.RegisterApi("menu.getMainMenu", MenuGetMainMenu);
-    bridge.RegisterApi("menu.getContextMenu", MenuGetContextMenu);
-    bridge.RegisterApi("menu.runContextCommandById", MenuRunContextCommandById);
-    bridge.RegisterApi("menu.showNativePopup", MenuShowNativePopup);
-    bridge.RegisterApi("menu.show", MenuShow);
-    bridge.RegisterApi("menu.close", MenuClose);
-    bridge.RegisterApi("menu.__getMenuState", MenuGetMenuState);
-    bridge.RegisterApi("menu.__select", MenuSelect);
-    bridge.RegisterApi("menu.__dismiss", MenuDismiss);
-    bridge.RegisterApi("menu.__ready", MenuReady);
-    bridge.RegisterApi("menu.__submenuPanel", MenuSubmenuPanel);
-    bridge.RegisterApi("menu.__valueChanged", MenuValueChanged);
+    auto& bridge = BridgeCore::GetInstance();
+    bridge.RegisterUndeclaredApi("menu.__getMenuState", MenuGetMenuState);
+    bridge.RegisterUndeclaredApi("menu.__select", MenuSelect);
+    bridge.RegisterUndeclaredApi("menu.__dismiss", MenuDismiss);
+    bridge.RegisterUndeclaredApi("menu.__ready", MenuReady);
+    bridge.RegisterUndeclaredApi("menu.__submenuPanel", MenuSubmenuPanel);
+    bridge.RegisterUndeclaredApi("menu.__valueChanged", MenuValueChanged);
 }

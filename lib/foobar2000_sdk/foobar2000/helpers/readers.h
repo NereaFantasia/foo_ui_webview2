@@ -1,21 +1,21 @@
 #pragma once
 
-class NOVTABLE reader_membuffer_base : public file_readonly {
+class NOVTABLE reader_membuffer_base : public file_readonly_t<file_v2> {
 public:
-	reader_membuffer_base() : m_offset(0) {}
+    reader_membuffer_base() {}
 
 	t_size read(void * p_buffer, t_size p_bytes, abort_callback & p_abort) override;
 
-	void write(const void * p_buffer, t_size p_bytes, abort_callback & p_abort) override { throw exception_io_denied(); }
+	void write(const void *, t_size, abort_callback &) override { throw exception_io_denied(); }
 
-	t_filesize get_size(abort_callback & p_abort) override { return get_buffer_size(); }
-	t_filesize get_position(abort_callback & p_abort) override { return m_offset; }
+	t_filesize get_size(abort_callback & ) override { return get_buffer_size(); }
+	t_filesize get_position(abort_callback & ) override { return m_offset; }
 	void seek(t_filesize position, abort_callback & p_abort) override;
 	void reopen(abort_callback & p_abort) override { seek(0, p_abort); }
 
 	bool can_seek() override { return true; }
 	bool is_in_memory() override { return true; }
-
+    t_filestats2 get_stats2(uint32_t, abort_callback& a) override {t_filestats2 ret; ret.m_size = get_size(a); ret.m_timestamp = this->get_timestamp(a); ret.set_file(); ret.set_local(); return ret;}
 protected:
 	virtual const void * get_buffer() = 0;
 	virtual t_size get_buffer_size() = 0;
@@ -23,7 +23,7 @@ protected:
 	bool get_content_type(pfc::string_base &) override { return false; }
 	inline void seek_internal(t_size p_offset) { if (p_offset > get_buffer_size()) throw exception_io_seek_out_of_range(); m_offset = p_offset; }
 private:
-	t_size m_offset;
+	t_size m_offset = 0;
 };
 
 class reader_membuffer_simple : public reader_membuffer_base {
@@ -36,7 +36,7 @@ public:
 	const void * get_buffer() { return m_data.get_ptr(); }
 	void* _get_write_buffer() { return m_data.get_ptr(); }
 	t_size get_buffer_size() { return m_data.get_size(); }
-	t_filetimestamp get_timestamp(abort_callback & p_abort) { return m_ts; }
+	t_filetimestamp get_timestamp(abort_callback &) { return m_ts; }
 	bool is_remote() { return m_isRemote; }
 
 private:
@@ -48,12 +48,12 @@ private:
 class reader_membuffer_mirror : public reader_membuffer_base
 {
 public:
-	t_filetimestamp get_timestamp(abort_callback & p_abort) { return m_timestamp; }
+	t_filetimestamp get_timestamp(abort_callback &) { return m_timestamp; }
 	bool is_remote() { return m_remote; }
 
 	//! Returns false when the object could not be mirrored (too big) or did not need mirroring.
 	static bool g_create(service_ptr_t<file> & p_out, const service_ptr_t<file> & p_src, abort_callback & p_abort) {
-		service_ptr_t<reader_membuffer_mirror> ptr = new service_impl_t<reader_membuffer_mirror>();
+		service_ptr_t ptr = new service_impl_t<reader_membuffer_mirror>();
 		if (!ptr->init(p_src, p_abort)) return false;
 		p_out = ptr.get_ptr();
 		return true;
@@ -99,7 +99,7 @@ class reader_limited : public file_readonly_t<file_v2> {
 
 public:
 	static file::ptr g_create(file::ptr base, t_filesize offset, t_filesize size, abort_callback & abort) {
-		service_ptr_t<reader_limited> r = new service_impl_t<reader_limited>();
+		service_ptr_t r = new service_impl_t<reader_limited>();
 		if (offset + size < offset) throw pfc::exception_overflow();
 		r->init(base, offset, offset + size, abort);
 		return r;
@@ -128,13 +128,14 @@ public:
 	t_filetimestamp get_timestamp(abort_callback & p_abort) override { return r->get_timestamp(p_abort); }
 
 	t_size read(void *p_buffer, t_size p_bytes, abort_callback & p_abort) override {
+		p_abort.check();
 		t_filesize pos;
 		pos = r->get_position(p_abort);
 		if (p_bytes > end - pos) p_bytes = (t_size)(end - pos);
 		return r->read(p_buffer, p_bytes, p_abort);
 	}
 
-	t_filesize get_size(abort_callback & p_abort) override { return end - begin; }
+	t_filesize get_size(abort_callback &) override { return end - begin; }
 
 	t_filesize get_position(abort_callback & p_abort) override {
 		return r->get_position(p_abort) - begin;
@@ -181,22 +182,26 @@ class reader_bigmem : public file_readonly_t<file_v2> {
 public:
 	reader_bigmem() : m_offset() {}
 	t_size read(void * p_buffer, t_size p_bytes, abort_callback & p_abort) override {
+		p_abort.check();
 		pfc::min_acc(p_bytes, remaining());
 		m_mem.read(p_buffer, p_bytes, m_offset);
 		m_offset += p_bytes;
 		return p_bytes;
 	}
 	void read_object(void * p_buffer, t_size p_bytes, abort_callback & p_abort) override {
+		p_abort.check();
 		if (p_bytes > remaining()) throw exception_io_data_truncation();
 		m_mem.read(p_buffer, p_bytes, m_offset);
 		m_offset += p_bytes;
 	}
 	t_filesize skip(t_filesize p_bytes, abort_callback & p_abort) override {
+		p_abort.check();
 		pfc::min_acc(p_bytes, (t_filesize)remaining());
 		m_offset += (size_t)p_bytes;
 		return p_bytes;
 	}
 	void skip_object(t_filesize p_bytes, abort_callback & p_abort) override {
+		p_abort.check();
 		if (p_bytes > remaining()) throw exception_io_data_truncation();
 		m_offset += (size_t)p_bytes;
 	}
@@ -204,6 +209,7 @@ public:
 	t_filesize get_size(abort_callback & p_abort) override { p_abort.check(); return m_mem.size(); }
 	t_filesize get_position(abort_callback & p_abort) override { p_abort.check(); return m_offset; }
 	void seek(t_filesize p_position, abort_callback & p_abort) override {
+		p_abort.check();
 		if (p_position > m_mem.size()) throw exception_io_seek_out_of_range();
 		m_offset = (size_t)p_position;
 	}
@@ -212,7 +218,7 @@ public:
 	void reopen(abort_callback & p_abort) override { seek(0, p_abort); }
 
 	// To be overridden by individual derived classes
-	bool get_content_type(pfc::string_base & p_out) override { return false; }
+	bool get_content_type(pfc::string_base &) override { return false; }
 	bool is_remote() override { return false; }
 	service_ptr get_metadata(abort_callback&) override { return nullptr; }
 
@@ -259,11 +265,11 @@ public:
 		if (m_contentType.is_empty()) return false;
 		p_out = m_contentType; return true;
 	}
-	t_filetimestamp get_timestamp(abort_callback & p_abort) override { return m_stats2.m_timestamp; }
+	t_filetimestamp get_timestamp(abort_callback & p_abort) override { p_abort.check(); return m_stats2.m_timestamp; }
 	bool is_remote() override { return m_isRemote; }
 	service_ptr get_metadata(abort_callback&) override { return m_metadata; }
-	t_filestats2 get_stats2(uint32_t f, abort_callback& a) override {
-		a.check(); (void)f; return m_stats2;
+	t_filestats2 get_stats2(uint32_t, abort_callback& a) override {
+		a.check(); return m_stats2;
 	}
 private:
 	service_ptr m_metadata;
@@ -331,8 +337,8 @@ private:
 
 class file_chain_readonly : public file_chain {
 public:
-	void write(const void * p_buffer, t_size p_bytes, abort_callback & p_abort) override { throw exception_io_denied(); }
-	void resize(t_filesize p_size, abort_callback & p_abort) override { throw exception_io_denied(); }
+	void write(const void *, t_size, abort_callback &) override { throw exception_io_denied(); }
+	void resize(t_filesize, abort_callback &) override { throw exception_io_denied(); }
 	file_chain_readonly(file::ptr chain) : file_chain(chain) {}
 	static file::ptr create(file::ptr chain) { return new service_impl_t< file_chain_readonly >(chain); }
 };

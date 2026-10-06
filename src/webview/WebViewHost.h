@@ -7,6 +7,8 @@
 #include <dcomp.h>
 #include <atomic>
 
+struct MediaRouteState;
+
 // ============================================
 // WebView2 宿主类
 // 负责 WebView2 的创建和管理
@@ -55,7 +57,8 @@ public:
     // 执行 JavaScript
     HRESULT ExecuteScript(const std::wstring& script, ScriptCallback callback = nullptr);
     
-    // 发送消息到 JavaScript (JSON 格式)
+    // 发送消息到 JavaScript (JSON 格式)。当前文档不可信时不发、返回 S_FALSE：页面
+    // 导航到外部网站后，事件和迟到的应答都不能送到那里。
     HRESULT PostMessage(const std::wstring& json);
 
     // 发送事件消息。投递可靠且无条件：事件语义只有生产者知道，宿主不得按
@@ -91,6 +94,14 @@ public:
     // Navigation completed callback (启动可见性收敛)
     using NavigationCompletedCallback = std::function<void(bool success)>;
     void SetNavigationCompletedCallback(NavigationCompletedCallback callback);
+    // 刚结束的导航是被另一次导航取消的（页面自己跳转、换成内联页面），不是加载失败；
+    // 只在导航完成回调里读才有意义。
+    bool LastNavigationSuperseded() const { return lastNavigationSuperseded_; }
+
+    // 顶层导航开始（重载或跳到别的地址）时调用，在新文档存在之前、UI 线程上。
+    // 同文档导航（锚点、history.pushState）与 iframe 导航不触发。
+    using NavigationStartingCallback = std::function<void()>;
+    void SetNavigationStartingCallback(NavigationStartingCallback callback);
 
     // WebView2 进程崩溃回调（Visual Hosting 模式下进程崩溃只剩空窗口的诊断/恢复入口）
     // recovered=true 表示 WebViewHost 已自行尝试恢复（如渲染进程崩溃后 Reload）；
@@ -156,6 +167,9 @@ public:
     // DevTools/page target 均不可用的现场取证。
     void LogLifecycle(const char* event, const std::string& detail = {}) const;
     static void WriteLifecycleLog(const std::string& line);
+    // 往 profile 目录下的 fileName 追加一行，行首加 UTC 时间戳，规则同上（立即 flush、
+    // 达到上限轮转为 .1）。供其他默认关闭的取证日志复用。
+    static void WriteProfileLog(const wchar_t* fileName, const std::string& line);
 
     // ============================================
     // 获取接口
@@ -164,6 +178,30 @@ public:
     ICoreWebView2* GetWebView() const { return webview_.get(); }
     ICoreWebView2Controller* GetController() const { return controller_.get(); }
     ICoreWebView2Environment* GetEnvironment() const { return environment_.get(); }
+
+    // ============================================
+    // 异步结果投递前的文档校验（docs/audio-pcm/SPEC.md D5）
+    // 请求时记下文档戳，结果回到主线程时再比一次：页面导航、WebView 重建或
+    // host 换了一个，都说明发起请求的文档已经不在了。
+    // ============================================
+
+    struct DocumentStamp {
+        // WebViewHost 构造时从进程级计数器领的序号：host 销毁重建后换号，不会撞上旧值。
+        std::uint64_t hostSerial = 0;
+        std::uint64_t navigationGeneration = 0;
+        std::uint64_t hostGeneration = 0;
+    };
+    DocumentStamp CaptureDocument() const;
+    // 序号与两个代数都没变，且生命周期未关闭。
+    bool IsCurrentDocument(const DocumentStamp& stamp) const;
+    // 当前文档的来源仍可信；与消息入口共用判定，但不打「Blocked message」日志。
+    bool IsCurrentDocumentTrusted();
+    // 与 Bridge 消息入口共用判定；参数为页面 URL 或已规范化的 origin，规则见 origin_policy::IsTrustedPage。
+    bool IsTrustedOrigin(const std::wstring& url);
+    // 设置里开发服务器的 origin；没开或地址取不出 origin 时为空。
+    static std::wstring CurrentDevServerOrigin();
+    std::string GetMediaOrigin();
+    bool CanServeMedia() const { return mediaRequestedRegistered_; }
 
     // 设置虚拟主机映射（解决 file:// CORS 问题）
     HRESULT SetVirtualHostMapping(const std::wstring& hostName, const std::wstring& folderPath);
@@ -205,6 +243,18 @@ public:
     
     // 处理鼠标消息，返回 true 表示已处理，false 表示应交给 DefWindowProc
     bool HandleMouseMessage(UINT message, WPARAM wParam, LPARAM lParam);
+
+    // 把宿主窗口以非客户区消息收到的鼠标输入转给页面，clientPt 为宿主客户区坐标。
+    // 用于宿主答了 HTMAXBUTTON 的页面自绘按钮：页面照常收到 hover、按下与点击。
+    // 修饰键与按键状态取自当前键盘状态，因为非客户区消息的 wParam 是命中码。
+    // beginCapture 像客户区按下那样抓住鼠标，松开时的 WM_LBUTTONUP 经
+    // HandleMouseMessage 转给页面并释放捕获。
+    bool SendNonClientMouseInput(COREWEBVIEW2_MOUSE_EVENT_KIND kind, POINT clientPt,
+                                 bool beginCapture);
+    // 光标从客户区移到宿主自己转发的非客户区部件上时调用：丢掉客户区的离开跟踪，
+    // 不向页面发 LEAVE，下一次客户区 WM_MOUSEMOVE 重新挂上跟踪。
+    void ResetClientMouseTracking() { isTrackingMouse_ = false; }
+    bool IsCapturingMouse() const { return isCapturingMouse_; }
 
     // ============================================
     // Cursor 控制 (CompositionController 模式)
@@ -316,15 +366,25 @@ private:
     // pageHidden 由 SetVisible 维护，供生产侧可见性判定（IsPageHidden）使用。
     // 异步 TrySuspend 回调只捕获此共享状态和 COM 引用，不捕获 WebViewHost
     // 裸指针；析构先置 alive=false，使迟到回调安全退出。
+    // 创建期的三个异步回调（环境就绪、两种 controller 创建完成）也靠它判断宿主
+    // 是否还在：它们捕获了 this，进入回调先查 alive，宿主已析构就直接返回。
     std::shared_ptr<SuspendState> suspendState_ = std::make_shared<SuspendState>();
 
     MessageHandler messageHandler_;
     FocusChangedCallback focusChangedCallback_;
     NavigationCompletedCallback navigationCompletedCallback_;
+    bool lastNavigationSuperseded_ = false;
+    UINT64 latestNavigationId_ = 0;  // 最近一次 NavigationStarting 的导航 ID
+    NavigationStartingCallback navigationStartingCallback_;
     ProcessFailedCallback processFailedCallback_;
     EventRegistrationToken gotFocusToken_ = {};
     EventRegistrationToken lostFocusToken_ = {};
     EventRegistrationToken processFailedToken_ = {};
+    EventRegistrationToken acceleratorKeyPressedToken_ = {};
+    EventRegistrationToken webMessageReceivedToken_ = {};
+    // 虚拟主机 .js/.css 的 charset 修复（SetupCharsetFixForVirtualHost），与 artwork 协议的
+    // WebResourceRequested 各用各的 token。
+    EventRegistrationToken charsetResourceRequestedToken_ = {};
 
     // Artwork request lifecycle is independent from suspendState_. The three
     // WebView2 tokens are removed before controller close; navigation starting
@@ -333,6 +393,9 @@ private:
     EventRegistrationToken artworkNavigationStartingToken_ = {};
     EventRegistrationToken navigationCompletedToken_ = {};
     artwork_request::ArtworkRequestLifecycle artworkLifecycle_;
+    // DocumentStamp::hostSerial 的来源，构造时领取、之后不变。
+    const std::uint64_t instanceSerial_ = NextInstanceSerial();
+    static std::uint64_t NextInstanceSerial();
     artwork_instrumentation::ArtworkRequestInstrumentation artworkInstrumentation_;
     DWORD ownerThreadId_ = 0;
     void RemoveArtworkEventHandlers() noexcept;
@@ -355,6 +418,8 @@ private:
     void SetupWebView();
     void SetupSettings();
     void RegisterMessageHandler();
+    // 不可信页面发来的调用立即以 ORIGIN_DENIED 应答，免得页面干等超时；不带 id 的消息直接丢弃。
+    void RejectUntrustedMessage(ICoreWebView2WebMessageReceivedEventArgs* args);
     void InjectBridgeScript();
     void InjectSdkBridgeScript();
     
@@ -368,31 +433,29 @@ private:
     // 将崩溃诊断写入 profile 目录下的 webview_crash.log（不污染 fb2k console）
     static void WriteCrashLog(const std::string& line);
     
-    // 安全: Origin 验证
+    // 安全: Origin 验证。IsOriginAllowed 给消息入口用，判不过时打日志；
+    // IsSourceTrusted 只判定，origin 带回取到的来源（取不到时为空）。
     bool IsOriginAllowed(ICoreWebView2* webview);
+    bool IsSourceTrusted(ICoreWebView2* webview, std::wstring& origin);
 
-    // 注册一条额外的可信 origin（在静态白名单之外补充）。
-    // 用途: 当 panel/window 配置了 urlOverride（指向例如 staging URL）
-    //       或 popup 直接指向第三方 URL 时，调用此方法让该来源能调用 invoke。
-    // 接受完整 URL 或仅 origin（scheme://host[:port]）；内部会规范化为 origin。
+    // 登记一条宿主自己把这个 WebView 导航过去的来源：开发服务器、面板配置的 URL，
+    // 以及打开者已信任的弹窗地址。页面自己跳到别处不经这里，所以不会获得信任。
+    // 接受完整 URL 或 origin；取不出 http(s) origin 的输入被忽略。
 public:
     void AddTrustedOrigin(const std::wstring& urlOrOrigin);
 
 private:
-    static std::wstring NormalizeToOrigin(const std::wstring& urlOrOrigin);
-    static bool OriginPrefixMatch(const std::wstring& origin, const std::wstring& prefix);
-
     std::vector<std::wstring> extraTrustedOrigins_;
     std::mutex extraTrustedOriginsMutex_;
     
-    // 修复: UTF-8 编码
-    void InjectCharsetFixScript();
-    
     // fb2k:// 协议支持 - 高性能封面加载
     void SetupCustomProtocol();
-    
-    // 获取用户数据目录
-    static std::wstring GetUserDataPath();
+    void SetupMediaProtocol();
+    void ClearMediaRequests(bool removeHandler = false);
+    void HandleMediaRequest(ICoreWebView2WebResourceRequestedEventArgs* args);
+    std::shared_ptr<MediaRouteState> mediaRoute_;
+    EventRegistrationToken mediaRequestedToken_{};
+    bool mediaRequestedRegistered_ = false;
     
     // 使用预热环境创建 Controller
     void CreateControllerWithEnvironment(

@@ -270,9 +270,9 @@ namespace pfc {
 
 	string8 format_char(char c);
 
-	string8 format_pad_left(t_size p_chars, t_uint32 p_padding /* = ' ' */, const char * p_string, t_size p_string_length = ~0);
+	string8 format_pad_left(t_size p_chars, t_uint32 p_padding /* = ' ' */, const char * p_string, t_size p_string_length = SIZE_MAX);
 
-	string8 format_pad_right(t_size p_chars, t_uint32 p_padding /* = ' ' */, const char * p_string, t_size p_string_length = ~0);
+	string8 format_pad_right(t_size p_chars, t_uint32 p_padding /* = ' ' */, const char * p_string, t_size p_string_length = SIZE_MAX);
 
 	string8 format_file_size_short(uint64_t size, uint64_t * outScaleUsed = nullptr);
 
@@ -418,9 +418,8 @@ namespace pfc {
 
 
 	inline void formatHere(pfc::string_base&) {}
-	template<typename first_t, typename ... args_t> void formatHere(pfc::string_base& out, first_t && first, args_t && ... args) {
-		out << std::forward<first_t>(first);
-		formatHere(out, std::forward<args_t>(args) ...);
+	template<typename ... args_t> void formatHere(pfc::string_base& out, args_t && ... args) {
+		((out << std::forward<args_t>(args)), ...); // C++17 fold expression
 	}
 	
 
@@ -430,9 +429,13 @@ namespace pfc {
 	}
 
 	pfc::string8 prefixLines(const char* str, const char* prefix, const char * setEOL = "\n");
+	pfc::string8 setLineBreaks(const char* str, const char* setEOL = "\n");
 
 
+    // Legacy function, replaces EVERYTHING that doesn't look like valid ASCII, use ONLY for strings detected as corrupted!
 	pfc::string8 recover_invalid_utf8(const char* in, const char* subst = "_");
+    // New function, decodes as UTF-8 and encodes back, replaces apparent malformed bytes.
+    pfc::string8 recover_invalid_utf8_v2(const char* in, const char* subst = "_");
 
 	pfc::string8 string_trim_spacing(const char* in);
 }

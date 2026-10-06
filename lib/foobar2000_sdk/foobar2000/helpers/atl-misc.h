@@ -26,6 +26,7 @@ public:
 	END_MSG_MAP()
 protected:
 	virtual bool QueryHint(unsigned p_id,pfc::string_base & p_out) {
+		(void)p_id; (void)p_out;
 		return false;
 	}
 private:
@@ -207,7 +208,7 @@ public:
 				PFC_ASSERT_NO_EXCEPTION( service_impl_helper::release_object_delayed(this); );
 			} else if (this->m_hWnd != NULL) {
 				if (!InterlockedExchange(&m_destroyWindowInProgress, 1)) {// don't double-destroy in weird scenarios
-					service_ptr_t<service_base> bump(this); // prevent delete this from occurring in mid-DestroyWindow
+					service_ptr_t bump(this); // prevent delete this from occurring in mid-DestroyWindow
 					PFC_ASSERT_NO_EXCEPTION(::DestroyWindow(this->m_hWnd));
 					// We don't know what else happened inside DestroyWindow() due to message queue flush
 					// Safely retry destruction by bump object destructor
@@ -233,7 +234,7 @@ private:
 	}
 	void OnFinalMessage(HWND p_wnd) override {
 		t_base::OnFinalMessage(p_wnd);
-		service_ptr_t<service_base> bump(this);
+		service_ptr_t bump(this);
 	}
 	volatile LONG m_destroyWindowInProgress = 0;
 	volatile LONG m_delayedDestroyInProgress = 0;
@@ -256,7 +257,9 @@ static void AppendMenuPopup(HMENU menu, UINT flags, CMenu & popup, const TCHAR *
 class CMessageMapDummy : public CMessageMap { 
 public:
 	BOOL ProcessWindowMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam,
-		LRESULT& lResult, DWORD dwMsgMapID) {return FALSE;}
+		LRESULT& lResult, DWORD dwMsgMapID) {
+		(void)hWnd; (void)uMsg; (void)wParam; (void)lParam; (void)lResult; (void)dwMsgMapID; return FALSE;
+	}
 };
 
 
@@ -273,7 +276,7 @@ public:
 		// complain early if what we created isn't a child window
 		PFC_ASSERT( (this->GetStyle() & (WS_POPUP|WS_CHILD)) == WS_CHILD );
 	}
-	HWND get_wnd() {return this->m_hWnd;}
+	HWND get_wnd() override {return this->m_hWnd;}
 };
 static bool window_service_trait_defer_destruction(const preferences_page_instance *) {return false;}
 template<typename TDialog> class preferences_page_impl : public preferences_page_v3 {
@@ -336,7 +339,7 @@ public:
 		return instantiate_helper(parent, cfg, callback);
 	}
 	ui_element_config::ptr get_default_configuration() { return TImpl::g_get_default_configuration(); }
-	ui_element_children_enumerator_ptr enumerate_children(ui_element_config::ptr cfg) { return NULL; }
+	ui_element_children_enumerator_ptr enumerate_children(ui_element_config::ptr cfg) { return nullptr; }
 	bool get_description(pfc::string_base & out) { out = TImpl::g_get_description(); return true; }
 };
 

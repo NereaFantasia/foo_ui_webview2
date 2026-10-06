@@ -45,11 +45,16 @@ public:
     // 环境是否已就绪
     bool IsReady() const { return ready_; }
     
-    // 获取用户数据路径
+    // WebView2 用户数据目录，不存在时创建：便携版是 <profile>\foo_ui_webview2，
+    // 安装版是 %LOCALAPPDATA%\foobar2000\foo_ui_webview2。都取不到时为空串，
+    // 由 WebView2 用它的缺省位置。
     static std::wstring GetUserDataPath();
 
 private:
     WebViewEnvironment() = default;
+
+    // 便携版首次使用自己的目录时从共用目录复制网页数据；在主线程、创建环境之前调用
+    static void MigrateSharedUserData();
     
     // Internal method - assumes creating_ flag is already set
     void CreateEnvironmentInternal();

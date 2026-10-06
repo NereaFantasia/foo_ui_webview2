@@ -30,7 +30,7 @@
 
 
 // Use this to determine what foobar2000 SDK version is in use, undefined for releases older than 2018
-#define FOOBAR2000_SDK_VERSION 20250307
+#define FOOBAR2000_SDK_VERSION 20261001
 
 // cfg_var downgrade support, experimental, intended for specific components only.
 // Allows new style configStore data to be imported back to old foobar2000 friendly cfg_vars.
@@ -39,3 +39,8 @@
 // Place FOOBAR2000_IMPLEMENT_CFG_VAR_DOWNGRADE somewhere in your code to declare init calls for cfg_var downgrade. Or, if you wish to call manually, call cfg_var_reader::downgrade_main() before accessing your cfg_vars.
 // Spurious calls to cfg_var_reader::downgrade_main() will be ignored, only first one will take effect.
 #define FOOBAR2000_SUPPORT_CFG_VAR_DOWNGRADE 0
+
+// Since 1.5, transacted filesystem is no longer supported
+// as it adds extra complexity without actually solving any problems.
+// Even Microsoft recommends not to use this API.
+#define FB2K_SUPPORT_TRANSACTED_FILESYSTEM 0

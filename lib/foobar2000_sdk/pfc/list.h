@@ -113,6 +113,12 @@ public:
 	void sort_stable_get_permutation_t(t_compare p_compare,t_permutation const & p_permutation) const {
 		::pfc::sort_stable_get_permutation_t<list_base_const_t<T>,t_compare,t_permutation>(*this,p_compare,get_count(),p_permutation);
 	}
+	template<typename t_compare> pfc::array_t<size_t> sort_get_permutation_t(t_compare p_compare) const {
+		auto ret = pfc::identity(get_count()); sort_get_permutation_t(p_compare, ret.get_ptr()); return ret;
+	}
+	template<typename t_compare> pfc::array_t<size_t> sort_stable_get_permutation_t(t_compare p_compare) const {
+		auto ret = pfc::identity(get_count()); sort_stable_get_permutation_t(p_compare, ret.get_ptr()); return ret;
+	}
 
 	template<typename t_callback>
 	void enumerate(t_callback & p_callback) const {
@@ -151,7 +157,7 @@ class list_single_ref_t : public list_base_const_t<T>
 public:
 	list_single_ref_t(const T & p_item,t_size p_count = 1) : m_item(p_item), m_count(p_count) {}
 	t_size get_count() const {return m_count;}
-	void get_item_ex(T& p_out, t_size n) const { PFC_ASSERT(n < m_count); (void)n;  p_out = m_item; }
+	void get_item_ex(T& p_out, [[maybe_unused]] t_size n) const { PFC_ASSERT(n < m_count); p_out = m_item; }
 private:
 	const T & m_item;
 	t_size m_count;

@@ -108,9 +108,9 @@ metadb_info_container::ptr metadb_handle::get_full_info_ref( abort_callback & ab
 
 
 	input_info_reader::ptr reader;
-	input_entry::g_open_for_info_read( reader, NULL, this->get_path(), aborter );
+	input_entry::g_open_for_info_read( reader, nullptr, this->get_path(), aborter );
 	
-	service_ptr_t< metadb_info_container_impl > obj = new service_impl_t<metadb_info_container_impl>();
+	auto obj = fb2k::service_new<metadb_info_container_impl>();
 	obj->m_stats = reader->get_file_stats( aborter );
 	reader->get_info( this->get_subsong_index(), obj->m_info, aborter );
 	return obj;

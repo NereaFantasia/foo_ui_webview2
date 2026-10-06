@@ -4,7 +4,14 @@ namespace {
 
 #define FILE_CACHED_DEBUG_LOG 0
 
-class file_cached_impl_v2 : public service_multi_inherit< file_v2, service_multi_inherit< file_cached, file_lowLevelIO > > {
+#if FILE_CACHED_DEBUG_LOG
+#define LOCAL_DEBUG(...) PFC_DEBUG_PRINT("file_cached: ", __VA_ARGS__)
+#else
+#define LOCAL_DEBUG(...) ((void)0)
+#endif
+
+
+class file_cached_impl_v2 : public service_multi_inherit< stream_receive, service_multi_inherit< file_v2, service_multi_inherit< file_cached, file_lowLevelIO > > > {
 public:
 	enum {minBlockSize = 4096};
 	enum {maxSkipSize = 128*1024};
@@ -50,6 +57,11 @@ private:
 	}
 public:
 
+	t_filesize skip_(t_filesize n, abort_callback& a) {
+		PFC_ASSERT( n <= SIZE_MAX );
+		return this->read(nullptr, (size_t)n, a);
+	}
+
 	t_filesize skip(t_filesize p_bytes,abort_callback & p_abort) override {
 		if (p_bytes > maxSkipSize) {
 			const t_filesize size = get_size(p_abort);
@@ -60,75 +72,52 @@ public:
 				return toskip;
 			}
 		}
-		return skip_( p_bytes, p_abort );
+		return skip_(p_bytes, p_abort);
 	}
-	t_filesize skip_(t_filesize p_bytes,abort_callback & p_abort) {
-#if FILE_CACHED_DEBUG_LOG
-		FB2K_DebugLog() << "Skipping bytes: " << p_bytes;
-#endif
-		t_filesize todo = p_bytes;
-		for(;;) {
-			size_t inBuffer = this->bufferRemaining();
-			size_t delta = (size_t) pfc::min_t<t_filesize>(inBuffer, todo);
-			m_bufferReadPtr += delta;
-			m_position += delta;
-			todo -= delta;
-			if (todo == 0) break;
-			p_abort.check();
-			this->m_bufferState = 0; // null it early to leave in a consistent state if base read fails
-			this->m_bufferReadPtr = 0;
-			baseSeek(m_position,p_abort);
+	size_t receive(void* p, size_t n, abort_callback& a) override {
+		LOCAL_DEBUG("Receiving bytes: ", n);
+		if (n == 0) return 0;
+		for (;;) {
+			a.check();
+
+			{
+				const auto inBuffer = this->bufferRemaining();
+				if (inBuffer > 0) {
+					const auto delta = pfc::min_t<size_t>(inBuffer, n);
+					if (p) memcpy(p, this->m_buffer.get_ptr() + m_bufferReadPtr, delta);
+					m_bufferReadPtr += delta;
+					m_position += delta;
+					return delta;
+				}
+			}
+
+			m_bufferState = m_bufferReadPtr = 0;
+
+			baseSeek(m_position, a);
+
 			m_readSize = pfc::min_t<size_t>(m_readSize << 1, this->m_maxBlockSize);
 			if (m_readSize < minBlockSize) m_readSize = minBlockSize;
-#if FILE_CACHED_DEBUG_LOG
-			FB2K_DebugLog() << "Growing read size: " << m_readSize;
-#endif
+			if (p && n >= m_readSize) {
+				LOCAL_DEBUG("Pass through receive: ", n);
+				auto didRead = m_base->receive(p, n, a);
+				LOCAL_DEBUG("Pass through received: ", didRead);
+				m_position_base += didRead; m_position += didRead;
+				return didRead;
+			}
 			m_buffer.grow_size(m_readSize);
-			m_bufferState = m_base->read(m_buffer.get_ptr(), m_readSize, p_abort);
-			if (m_bufferState == 0) break;
+			LOCAL_DEBUG("Buffer receive: ", n);
+			m_bufferState = m_base->receive(m_buffer.get_ptr(), m_readSize, a);
+			LOCAL_DEBUG("Buffer received: ", m_bufferState);
+			if (m_bufferState == 0) return 0;
 			m_position_base += m_bufferState;
 		}
-
-		return p_bytes - todo;
 	}
-
-	t_size read(void * p_buffer,t_size p_bytes,abort_callback & p_abort) override {
-#if FILE_CACHED_DEBUG_LOG
-		FB2K_DebugLog() << "Reading bytes: " << p_bytes;
-#endif
-		t_uint8 * outptr = (t_uint8*)p_buffer;
-		size_t todo = p_bytes;
-		for(;;) {
-			size_t inBuffer = this->bufferRemaining();
-			size_t delta = pfc::min_t<size_t>(inBuffer, todo);
-			memcpy(outptr, this->m_buffer.get_ptr() + m_bufferReadPtr, delta);
-			m_bufferReadPtr += delta;
-			m_position += delta;
-			todo -= delta;
-			if (todo == 0) break;
-			p_abort.check();
-			outptr += delta;
-			this->m_bufferState = 0; // null it early to leave in a consistent state if base read fails
-			this->m_bufferReadPtr = 0;
-			baseSeek(m_position,p_abort);
-			m_readSize = pfc::min_t<size_t>(m_readSize << 1, this->m_maxBlockSize);
-			if (m_readSize < minBlockSize) m_readSize = minBlockSize;
-#if FILE_CACHED_DEBUG_LOG
-			FB2K_DebugLog() << "Growing read size: " << m_readSize;
-#endif
-			m_buffer.grow_size(m_readSize);
-			m_bufferState = m_base->read(m_buffer.get_ptr(), m_readSize, p_abort);
-			if (m_bufferState == 0) break;
-			m_position_base += m_bufferState;
-		}
-
-		return p_bytes - todo;
+	size_t read(void* p,size_t n,abort_callback& a) override {
+		return this->read_using_receive(p,n,a);
 	}
 
 	void write(const void * p_buffer,t_size p_bytes,abort_callback & p_abort) override {
-#if FILE_CACHED_DEBUG_LOG
-		FB2K_DebugLog() << "Writing bytes: " << p_bytes;
-#endif
+		LOCAL_DEBUG("Writing bytes: ", p_bytes);
 		p_abort.check();
 		baseSeek(m_position,p_abort);
 		m_base->write(p_buffer,p_bytes,p_abort);
@@ -153,9 +142,7 @@ public:
 		flush_buffer();
 	}
 	void seek(t_filesize p_position,abort_callback & p_abort) override {
-#if FILE_CACHED_DEBUG_LOG
-		FB2K_DebugLog() << "Seeking: " << p_position;
-#endif
+		LOCAL_DEBUG("Seeking: ", p_position);
 		p_abort.check();
 		if (!m_can_seek) throw exception_io_object_not_seekable();
 		if (p_position > m_size) throw exception_io_seek_out_of_range();
@@ -163,11 +150,9 @@ public:
 
 		// special case
 		if (delta >= 0 && delta <= this->minBlockSize) {
-#if FILE_CACHED_DEBUG_LOG
-			FB2K_DebugLog() << "Skip-seeking: " << p_position;
-#endif
-			t_filesize skipped = this->skip_( delta, p_abort );
-			PFC_ASSERT( skipped == (t_filesize)delta ); (void) skipped;
+			LOCAL_DEBUG("Skip-seeking: ", p_position);
+			[[maybe_unused]] t_filesize skipped = this->skip_( delta, p_abort );
+			PFC_ASSERT( skipped == (t_filesize)delta );
 			return;
 		}
 
@@ -228,144 +213,7 @@ private:
 	size_t m_readSize;
 };
 
-class file_cached_impl : public service_multi_inherit< file_v2, service_multi_inherit< file_cached, file_lowLevelIO > > {
-public:
-	file_cached_impl(t_size blocksize) {
-		m_buffer.set_size(blocksize);
-	}
-	size_t get_cache_block_size() override {return m_buffer.get_size();}
-	void suggest_grow_cache(size_t) override {}
-	void initialize(service_ptr_t<file> p_base,abort_callback & p_abort) {
-		m_base = p_base;
-		m_can_seek = m_base->can_seek();
-		_reinit(p_abort);
-	}
-private:
-	void _reinit(abort_callback & p_abort) {
-		m_position = 0;
-		
-		if (m_can_seek) {
-			m_position_base = m_base->get_position(p_abort);
-		} else {
-			m_position_base = 0;
-		}
-
-		m_size = m_base->get_size(p_abort);
-
-		flush_buffer();
-	}
-public:
-	t_filestats2 get_stats2(uint32_t f, abort_callback& a) override {
-		flush_buffer();
-		return m_base->get_stats2_(f, a);
-	}
-	size_t lowLevelIO(const GUID & guid, size_t arg1, void * arg2, size_t arg2size, abort_callback & abort) override {
-		abort.check();
-		file_lowLevelIO::ptr ll;
-		if ( ll &= m_base ) {
-			flush_buffer();
-			return ll->lowLevelIO(guid, arg1, arg2, arg2size, abort);
-		}
-		return 0;
-	}
-	t_size read(void * p_buffer,t_size p_bytes,abort_callback & p_abort) override {
-		t_uint8 * outptr = (t_uint8*)p_buffer;
-		t_size done = 0;
-		while(done < p_bytes && m_position < m_size) {
-			p_abort.check();
-
-			if (m_position >= m_buffer_position && m_position < m_buffer_position + m_buffer_status) {				
-				t_size delta = pfc::min_t<t_size>((t_size)(m_buffer_position + m_buffer_status - m_position),p_bytes - done);
-				t_size bufptr = (t_size)(m_position - m_buffer_position);
-				memcpy(outptr+done,m_buffer.get_ptr()+bufptr,delta);
-				done += delta;
-				m_position += delta;
-				if (m_buffer_status != m_buffer.get_size() && done < p_bytes) break;//EOF before m_size is hit
-			} else {
-				m_buffer_position = m_position - m_position % m_buffer.get_size();
-				baseSeek(m_buffer_position,p_abort);
-
-				m_buffer_status = m_base->read(m_buffer.get_ptr(),m_buffer.get_size(),p_abort);
-				m_position_base += m_buffer_status;
-
-				if (m_buffer_status <= (t_size)(m_position - m_buffer_position)) break;
-			}
-		}
-
-		return done;
-	}
-
-	void write(const void * p_buffer,t_size p_bytes,abort_callback & p_abort) override {
-		p_abort.check();
-		baseSeek(m_position,p_abort);
-		m_base->write(p_buffer,p_bytes,p_abort);
-		m_position_base = m_position = m_position + p_bytes;
-		if (m_size < m_position) m_size = m_position;
-		flush_buffer();
-	}
-
-	t_filesize get_size(abort_callback & p_abort) override {
-		p_abort.check();
-		return m_size;
-	}
-	t_filesize get_position(abort_callback & p_abort) override {
-		p_abort.check();
-		return m_position;
-	}
-	void set_eof(abort_callback & p_abort) {
-		p_abort.check();
-		baseSeek(m_position,p_abort);
-		m_base->set_eof(p_abort);
-		flush_buffer();
-	}
-	void seek(t_filesize p_position,abort_callback & p_abort) override {
-		p_abort.check();
-		if (!m_can_seek) throw exception_io_object_not_seekable();
-		if (p_position > m_size) throw exception_io_seek_out_of_range();
-		m_position = p_position;
-	}
-	void reopen(abort_callback & p_abort) override {
-		if (this->m_can_seek) {
-			seek(0,p_abort);
-		} else {
-			this->m_base->reopen( p_abort );
-			this->_reinit( p_abort );
-		}
-	}
-	bool can_seek() override {return m_can_seek;}
-	bool get_content_type(pfc::string_base & out) override {return m_base->get_content_type(out);}
-	void on_idle(abort_callback & p_abort) override {p_abort.check();m_base->on_idle(p_abort);}
-	t_filetimestamp get_timestamp(abort_callback & p_abort) override {p_abort.check(); return m_base->get_timestamp(p_abort);}
-	bool is_remote() override {return m_base->is_remote();}
-	void resize(t_filesize p_size,abort_callback & p_abort) override {
-		flush_buffer();
-		m_base->resize(p_size,p_abort);
-		m_size = p_size;
-		if (m_position > m_size) m_position = m_size;
-		if (m_position_base > m_size) m_position_base = m_size;
-	}
-private:
-	void baseSeek(t_filesize p_target,abort_callback & p_abort) {
-		if (p_target != m_position_base) {
-			m_base->seek(p_target,p_abort);
-			m_position_base = p_target;
-		}
-	}
-
-	void flush_buffer() {
-		m_buffer_status = 0;
-		m_buffer_position = 0;
-	}
-
-	service_ptr_t<file> m_base;
-	t_filesize m_position,m_position_base,m_size;
-	bool m_can_seek;
-	t_filesize m_buffer_position;
-	t_size m_buffer_status;
-	pfc::array_t<t_uint8> m_buffer;
-};
-
-}
+} // namespace
 
 file::ptr file_cached::g_create(service_ptr_t<file> p_base,abort_callback & p_abort, t_size blockSize) {
 
@@ -395,4 +243,54 @@ void file_cached::g_decodeInitCache(file::ptr & theFile, abort_callback & abort,
 	if (theFile->is_remote() || !theFile->can_seek()) return;
 
 	g_create(theFile, theFile, abort, blockSize);
+}
+
+void file_cached::selftest() {
+	auto & a = fb2k::noAbort;
+	auto content = filesystem::g_open_tempmem();
+	constexpr size_t contentSize = 1024*1024, chunkSize = 256, nChunks = contentSize/chunkSize;
+	constexpr size_t cacheSize = 16 * 1024;
+	
+	std::vector<uint8_t> contentBuffer(contentSize), readBuffer(contentSize+1);
+	for (size_t walk = 0; walk < contentSize; ++walk) {
+		contentBuffer[walk] = (walk&0xFF)^((walk>>8)&0xFF)^((walk>>16)&0xFF)^((walk>>24)&0xFF);
+	}
+
+	content->write(contentBuffer.data(), contentSize, a);
+	
+
+	content->seek(0, a);
+
+	auto cached = fb2k::service_new<file_cached_impl_v2>(cacheSize);
+	cached->initialize(content, a);
+
+	
+	// read first N
+	auto verify_read = [&](size_t at, size_t count) {
+		if (at == SIZE_MAX) {
+			at = (size_t) cached->get_position(a);
+		} else {
+			cached->seek(at, a);
+		}
+		const auto nCanRead = pfc::min_t(contentSize-at, count);
+		const auto nRead = cached->read(readBuffer.data(), count, a);
+		if (nRead != nCanRead) throw std::runtime_error("wrong size read");
+		if (nRead > 0 && memcmp(readBuffer.data(), contentBuffer.data() + at, nRead) != 0) throw std::runtime_error("wrong content read");
+	};
+
+	verify_read(0, 1);
+	verify_read(0, 2);
+	verify_read(0, 3);
+	verify_read(contentSize, 1);
+	verify_read(0, contentSize/2);
+	verify_read(SIZE_MAX, contentSize / 2 + 1);
+	verify_read(0, contentSize + 1);
+	verify_read(0, cacheSize);
+	verify_read(SIZE_MAX, cacheSize/2);
+	verify_read(SIZE_MAX, cacheSize*2);
+	
+	verify_read(0, 100);
+	for (size_t walk = 0; walk < 100; ++walk) {
+		verify_read(SIZE_MAX, 100);
+	}
 }

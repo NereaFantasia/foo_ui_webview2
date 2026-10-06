@@ -7,7 +7,7 @@
 
 //! \since 1.1
 //! This service is essentially a special workaround to easily decode DTS/HDCD content stored in files pretending to contain plain PCM data. \n
-//! Callers: Instead of calling this directly, you probably want to use input_postprocessed template. \n
+//! Callers: Instead of calling this directly, you probably want to use @c input_postprocessed template. \n
 //! Implementers: This service is called only by specific decoders, not by all of them! Implementing your own to provide additional functionality is not recommended!
 class decode_postprocessor_instance : public service_base {
 	FB2K_MAKE_SERVICE_INTERFACE(decode_postprocessor_instance, service_base);
@@ -24,14 +24,14 @@ public:
 	virtual bool get_dynamic_info(file_info & p_out) = 0;
 	//! Called after seek.
 	virtual void flush() = 0;
-	//! Return >0 to signal that, after each flush(), you require <amount> of audio before your output becomes valid. \n
+	//! Return >0 to signal that, after each @c flush(), you require <amount> of audio before your output becomes valid. \n
 	//! This causes decoder to seek to position-<amount> instead of <position> then discard first <amount> of your output.
 	virtual double get_buffer_ahead() = 0;
 };
 
 //! \since 1.1
-//! Entrypoint class for instantiating decode_postprocessor_instance. See decode_postprocessor_instance documentation for more information. \n
-//! Instead of calling this directly, you probably want to use input_postprocessed template.
+//! Entrypoint class for instantiating @c decode_postprocessor_instance. See @c decode_postprocessor_instance documentation for more information. \n
+//! Instead of calling this directly, you probably want to use @c input_postprocessed template.
 class decode_postprocessor_entry : public service_base {
 	FB2K_MAKE_SERVICE_INTERFACE_ENTRYPOINT(decode_postprocessor_entry)
 public:
@@ -39,7 +39,7 @@ public:
 };
 
 
-//! Helper class for managing decode_postprocessor_instance objects. See also: input_postprocessed.
+//! Helper class for managing @c decode_postprocessor_instance objects. See also: @c input_postprocessed.
 class decode_postprocessor {
 public:
 	typedef decode_postprocessor_instance::ptr item;
@@ -86,7 +86,7 @@ private:
 	pfc::list_t<item> m_items;
 };
 
-//! Generic template to add decode_postprocessor support to your input class. Works with both single-track and multi-track inputs.
+//! Generic template to add @c decode_postprocessor support to your input class. Works with both single-track and multi-track inputs.
 template<typename baseclass> class input_postprocessed : public baseclass {
 public:
 	void decode_initialize(t_uint32 p_subsong,unsigned p_flags,abort_callback & p_abort) {

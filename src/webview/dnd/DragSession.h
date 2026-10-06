@@ -6,6 +6,7 @@
 #include <string>
 #include <vector>
 
+#include "webview/dnd/DragSourceMarker.h"
 #include "webview/dnd/ShortcutResolver.h"
 
 namespace fb2k_dnd {
@@ -36,6 +37,9 @@ struct SessionData {
     // with a paths index without a bounds check of its own.
     std::vector<ResolvedTarget> resolvedPaths;
     bool hasFiles = false;
+    // Read once when the drag enters; the data object, and with it the marker,
+    // stays the same until the drop.
+    DragSource source = DragSource::External;
     SessionPhase phase = SessionPhase::Active;
     int64_t startedAtMs = 0;
     int64_t endedAtMs = 0;
@@ -52,7 +56,8 @@ public:
     // or omits it. Omitting it means "no shortcut targets known".
     std::string BeginSession(std::vector<std::wstring> paths, bool hasFiles,
                              int64_t nowMs,
-                             std::vector<ResolvedTarget> resolvedPaths = {});
+                             std::vector<ResolvedTarget> resolvedPaths = {},
+                             DragSource source = DragSource::External);
 
     // Marks the session ended. Ignored when sessionId does not match.
     void EndSession(const std::string& sessionId, int64_t nowMs);

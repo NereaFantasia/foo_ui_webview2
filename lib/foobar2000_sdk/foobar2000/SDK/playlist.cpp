@@ -1,5 +1,7 @@
 #include "foobar2000-sdk-pch.h"
 #include "playlist.h"
+#include "commonOptions.h"
+#include <unordered_set>
 
 namespace {
 	class enum_items_callback_func : public playlist_manager::enum_items_callback {
@@ -11,7 +13,6 @@ namespace {
 	{
 		metadb_handle_ptr m_item;
 	public:
-		enum_items_callback_retrieve_item() : m_item(0) {}
 		bool on_item(t_size p_index,const metadb_handle_ptr & p_location,bool b_selected)
 		{
 			(void)p_index; (void)b_selected;
@@ -316,23 +317,24 @@ bool playlist_manager::playlist_update_content(t_size playlist, metadb_handle_li
 		playlist_add_items(playlist, content, pfc::bit_array_false());
 		return true;
 	}
-	pfc::avltree_t<metadb_handle::nnptr> itemsOld, itemsNew;
-
-	for(t_size walk = 0; walk < old.get_size(); ++walk) itemsOld += old[walk];
-	for(t_size walk = 0; walk < content.get_size(); ++walk) itemsNew += content[walk];
 	pfc::bit_array_bittable removeMask(old.get_size());
 	pfc::bit_array_bittable filterMask(content.get_size());
 	bool gotNew = false, filterNew = false, gotRemove = false;
-	for(t_size walk = 0; walk < content.get_size(); ++walk) {
-		const bool state = !itemsOld.have_item(content[walk]);
-		if (state) gotNew = true;
-		else filterNew = true;
-		filterMask.set(walk, state);
-	}
-	for(t_size walk = 0; walk < old.get_size(); ++walk) {
-		const bool state = !itemsNew.have_item(old[walk]);
-		if (state) gotRemove = true;
-		removeMask.set(walk, state);
+	{
+		std::unordered_set<metadb_handle*> itemsOld, itemsNew;
+		for (auto& walk : old) itemsOld.insert(walk.get());
+		for (auto walk : content) itemsNew.insert(walk.get());
+		for (t_size walk = 0; walk < content.get_size(); ++walk) {
+			const bool state = !itemsOld.contains(content[walk].get());
+			if (state) gotNew = true;
+			else filterNew = true;
+			filterMask.set(walk, state);
+		}
+		for (t_size walk = 0; walk < old.get_size(); ++walk) {
+			const bool state = !itemsNew.contains(old[walk].get());
+			if (state) gotRemove = true;
+			removeMask.set(walk, state);
+		}
 	}
 	if (!gotNew && !gotRemove) return false;
 	if (bUndoBackup) playlist_undo_backup(playlist);
@@ -352,7 +354,7 @@ bool playlist_manager::playlist_update_content(t_size playlist, metadb_handle_li
 	{
 		playlist_get_all_items(playlist, old);
 		pfc::array_t<t_size> order;
-		if (pfc::guess_reorder_pattern<pfc::list_base_const_t<metadb_handle_ptr> >(order, old, content)) {
+		if (pfc::guess_reorder_pattern(order, old, content)) {
 			playlist_reorder_items(playlist, order.get_ptr(), order.get_size());
 		}
 	}
@@ -972,6 +974,7 @@ static void rechapter_worker(playlist_manager* api, byPath_t const& byPath) {
 }
 
 void playlist_manager::on_files_rechaptered( metadb_handle_list_cref newHandles ) {
+	if (!fb2k::useSubsongs()) return;
 	pfc::map_t< const char*, metadb_handle_list, metadb::path_comparator > byPath;
 
 	const size_t total = newHandles.get_count();

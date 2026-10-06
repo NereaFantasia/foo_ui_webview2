@@ -6,8 +6,8 @@
 //   - 标签列取同组最宽标签，复选框独占内容宽度；
 //   - 变窄时先折按钮、再把标签移到控件上方，不缩字体不裁文字。
 #include "pch.h"
-#include "../src/core/PreferencesLayout.h"
-#include "../src/core/PreferencesLayoutBuilder.h"
+#include "../src/prefs/PreferencesLayout.h"
+#include "../src/prefs/PreferencesLayoutBuilder.h"
 #include <map>
 
 using namespace prefs_layout;

@@ -21,6 +21,12 @@ public:
 		if (rv) p->service_release();
 		return rv;
 	}
+    auto insert_( metadb_handle * p ) {
+        auto rv = m_content.insert(p);
+        if ( rv.second ) p->service_add_ref();
+        return rv;
+    }
+    template<typename ptr_t> auto insert( ptr_t const & item ) { return insert_(&*item); }
 	size_t size() const {return m_content.size();}
 	size_t get_count() const {return m_content.size(); }
 	template<typename ptr_t>

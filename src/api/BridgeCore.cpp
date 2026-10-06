@@ -2,10 +2,13 @@
 #include "core/WebViewContext.h"
 #include "api/BridgeCore.h"
 #include "api/ErrorEnvelope.h"
+#include "api/SkippedPathFilter.h"
+#include "api/PathValidationBatch.h"
 #include "utils/JsonWriter.h"
-#include "utils/PathSecurity.h"
+#include "domain/PathSecurity.h"
 #include "utils/PathExpansion.h"
 #include "webview/WebViewHost.h"
+#include "window/WindowBehaviorTrace.h"
 #include <chrono>
 
 // ============================================
@@ -61,29 +64,34 @@ void BridgeCore::RegisterApi(const std::string& method, ApiHandler handler) {
     handlers_[method] = std::move(handler);
 }
 
+void BridgeCore::RegisterUndeclaredApi(const std::string& method, ApiHandler handler) {
+    RegisterApi(method, std::move(handler));
+}
+
+// 先按声明的路径规格逐个校验，再调 handler。skipInvalid 跳过的条目从交给 handler 的参数里
+// 去掉，被拒绝的路径因此到不了 handler；跳过的条数照旧写进成功响应的 skippedPaths。
+static json PathValidationError(const api::PathValidationBatch::Failure& failure) {
+    return ApiEnvelope::MakeError(failure.message,
+        failure.shapeError ? ApiErrorCode::INVALID_PARAMS : ApiErrorCode::PERMISSION_DENIED);
+}
+
+static json InvokeWithPathSecurity(const ApiHandler& handler, const std::vector<PathSecuritySpec>& specs,
+                                   const std::string& methodName, const json& params) {
+    auto checked = api::CheckPathSpecs(params, specs, [&methodName](const json& raw, const PathSecuritySpec& spec) {
+        return ValidatePathParam(raw, spec, methodName);
+    });
+    if (checked.error) return PathValidationError(*checked.error);
+    json result = checked.skipped.empty() ? handler(params) : handler(api::WithoutSkippedEntries(params, checked.skipped));
+    api::AddSkippedPathCount(result, checked.skippedCount);
+    return result;
+}
+
 void BridgeCore::RegisterApi(const std::string& method, ApiHandler handler,
                              std::vector<PathSecuritySpec> specs) {
     auto wrapped = [innerHandler = std::move(handler),
                     innerSpecs = specs,
                     methodName = method](const json& params) -> json {
-        size_t totalSkipped = 0;
-        for (const auto& spec : innerSpecs) {
-            auto r = ValidatePathParam(params, spec, methodName);
-            if (!r.success) {
-                // 参数形状/类型错与路径安全拒绝分派到不同 code：前者是调用方写错了
-                // 参数，后者才是权限层级不足，页面据此分支处理。
-                return ApiEnvelope::MakeError(
-                    r.errorMsg.c_str(),
-                    r.shapeError ? ApiErrorCode::INVALID_PARAMS : ApiErrorCode::PERMISSION_DENIED);
-            }
-            totalSkipped += r.skippedCount;
-        }
-        json result = innerHandler(params);
-        // 若有路径被跳过，在成功响应中附加 skippedPaths 警告
-        if (totalSkipped > 0 && result.is_object() && result.value("success", false)) {
-            result["skippedPaths"] = totalSkipped;
-        }
-        return result;
+        return InvokeWithPathSecurity(innerHandler, innerSpecs, methodName, params);
     };
 
     std::lock_guard lock(mutex_);
@@ -94,13 +102,27 @@ void BridgeCore::RegisterApi(const std::string& method, ApiHandler handler,
 // deferred 注册表与同步表分开存放：RegisterApi 的行为、签名与 handlers_ 的形状全不
 // 变动，分发侧只多一次查表。两表同名时同步表优先（见 HandleMessage 查表顺序），此处
 // 只记警告不覆盖 —— 静默择一会让某个 API 实际走哪条路取决于注册顺序。
-void BridgeCore::RegisterApiDeferred(const std::string& method, DeferredApiHandler handler) {
+void BridgeCore::RegisterApiDeferred(const std::string& method, DeferredApiHandler handler,
+                                     std::vector<PathSecuritySpec> specs) {
+    auto wrapped = [handler = std::move(handler), specs, methodName = method](const json& params, DeferredResponder responder) {
+        auto checked = api::CheckPathSpecs(params, specs, [&methodName](const json& raw, const PathSecuritySpec& spec) {
+            return ValidatePathParam(raw, spec, methodName);
+        });
+        if (checked.error) {
+            responder.SendJson(PathValidationError(*checked.error));
+            return;
+        }
+        responder.skippedPaths_ = checked.skippedCount;
+        if (checked.skipped.empty()) handler(params, responder);
+        else handler(api::WithoutSkippedEntries(params, checked.skipped), responder);
+    };
     std::lock_guard lock(mutex_);
     if (handlers_.contains(method)) {
         console::printf("[Bridge] RegisterApiDeferred: '%s' is already a synchronous API; "
                         "dispatch keeps using the synchronous handler", method.c_str());
     }
-    deferredHandlers_[method] = std::move(handler);
+    deferredHandlers_[method] = std::move(wrapped);
+    securitySpecs_[method] = std::move(specs);
 }
 
 void BridgeCore::UnregisterApi(const std::string& method) {
@@ -227,9 +249,10 @@ void BridgeCore::HandleMessage(const std::wstring& message, WebViewHost* respons
         // 延迟响应 API：handler 不返回 json、也不在此回包，回包时机交给 responder。
         if (deferredHandler) {
             // responder 在此构造（而非投递的 lambda 内）：句柄自带 bridge/id/target，
-            // lambda 因此无需捕获 this。句柄在被 Send 之前是惰性的，构造时机不影响语义。
+            // lambda 因此无需捕获 this，并在排队前绑定发起调用的文档。
             DeferredResponder responder(this, id, responseTarget);
             fb2k::inMainThread([method, deferredHandler, params, responder]() {
+                if (responder.state_->isCurrentDocument && !responder.state_->isCurrentDocument()) return;
                 DispatchDeferredApiCall(method, deferredHandler, params, responder);
             });
             return;
@@ -254,6 +277,7 @@ void BridgeCore::DispatchApiCall(const std::string& id, const std::string& metho
                                  WebViewHost* responseTarget) {
     try {
         ApiPerformanceTracker tracker(method);
+        const window_behavior_trace::InvokeScope traceScope(method, params);
         json result = handler(params);
         if (!id.empty()) {
             // move：大结果集响应体（数万曲 tracks 数组）不再多一次深拷贝
@@ -285,6 +309,7 @@ void BridgeCore::DispatchDeferredApiCall(const std::string& method,
                                          const DeferredResponder& responder) {
     try {
         ApiPerformanceTracker tracker(method);
+        const window_behavior_trace::InvokeScope traceScope(method, params);
         handler(params, responder);
     } catch (const std::exception& e) {
         console::printf("[Bridge] Handler error: %s", e.what());
@@ -297,7 +322,7 @@ void BridgeCore::DispatchDeferredApiCall(const std::string& method,
 
 // id 归一化 —— 响应通道（SendResponse / SendResponseRaw）共用单点。
 //
-// JS 侧 _callbacks 是以 ++_callId 数值为键的 Map（WebViewHost.cpp 注入的桥脚本），
+// JS 侧 _callbacks 是以 ++_callId 数值为键的 Map（webview/BridgeBootstrapScript.inl 注入的桥脚本），
 // 按值匹配：数值 id 必须以 JSON number 回传，写成 string 即 Map miss，页面落到
 // 30s 的 Request timeout 兜底，表现为假死。两条通道共用本函数即保证
 // 二态判定与取值逐字节同源，不会各写一份而漂移。
@@ -414,7 +439,7 @@ void BridgeCore::SendError(const std::string& id, int /*numericCode*/, const std
 // DeferredResponder — 延迟响应句柄的实现
 // ============================================
 //
-// 状态放共享块、句柄自己只是一个 shared_ptr：句柄要被 handler 拷进 worker lambda、
+// 响应状态放共享块：句柄要被 handler 拷进 worker lambda、
 // 再拷进回主线程的 lambda，闸门必须是这些副本共享的同一份 —— 各副本各自"只回一次"
 // 合起来就回了多次。
 //
@@ -428,9 +453,16 @@ DeferredResponder::DeferredResponder(BridgeCore* bridge, std::string id, WebView
     state_->bridge = bridge;
     state_->id = std::move(id);
     state_->target = target;
+    if (target) {
+        const auto stamp = target->CaptureDocument();
+        state_->isCurrentDocument = [target, stamp] {
+            return WebViewContext::GetInstance().IsLiveHost(target) && target->IsCurrentDocument(stamp);
+        };
+    }
 }
 
 bool DeferredResponder::PassGate(State& state) {
+    if (state.isCurrentDocument && !state.isCurrentDocument()) return false;
     if (state.id.empty()) {
         return false;  // 通知型调用：同步路径同样不回包（HandleMessage 的 id.empty 分支）
     }
@@ -483,12 +515,17 @@ void DeferredResponder::PostGated(std::function<void(const State&)> dispatch) co
 }
 
 void DeferredResponder::SendRaw(std::string resultJsonUtf8) const {
+    if (skippedPaths_ > 0) {
+        SendJson(json::parse(resultJsonUtf8));
+        return;
+    }
     PostGated([payload = std::move(resultJsonUtf8)](const State& s) {
         s.bridge->SendResponseRaw(s.id, payload, s.target);
     });
 }
 
 void DeferredResponder::SendJson(json result) const {
+    api::AddSkippedPathCount(result, skippedPaths_);
     // mutable：std::function 以非 const 方式调用目标，捕获的 payload 才能真的 move 出去。
     // 少了它，捕获项是 const，std::move 静默退化成整棵树的深拷贝且编译无警告。
     PostGated([payload = std::move(result)](const State& s) mutable {
@@ -566,30 +603,6 @@ void BridgeCore::SendRawToWeb(const std::string& messageUtf8) {
 }
 
 // ============================================
-// Utility functions
-// ============================================
-
-std::string WideToUtf8(const std::wstring& wide) {
-    if (wide.empty()) return "";
-    int size = WideCharToMultiByte(CP_UTF8, 0, wide.c_str(), -1, nullptr, 0, nullptr, nullptr);
-    if (size <= 0) return "";
-    std::string result(size, '\0');
-    WideCharToMultiByte(CP_UTF8, 0, wide.c_str(), -1, result.data(), size, nullptr, nullptr);
-    result.pop_back();
-    return result;
-}
-
-std::wstring Utf8ToWide(const std::string& utf8) {
-    if (utf8.empty()) return L"";
-    int size = MultiByteToWideChar(CP_UTF8, 0, utf8.c_str(), -1, nullptr, 0);
-    if (size <= 0) return L"";
-    std::wstring result(size, L'\0');
-    MultiByteToWideChar(CP_UTF8, 0, utf8.c_str(), -1, result.data(), size);
-    result.pop_back();
-    return result;
-}
-
-// ============================================
 // ValidatePathParam — 统一路径参数校验
 // ============================================
 
@@ -633,8 +646,21 @@ static ValidationResult ValidateNestedArrayParam(const json& val,
         return result;
     }
     for (size_t i = 0; i < val.size(); ++i) {
+        if (spec.stringElements && val[i].is_string()) {
+            std::wstring errorMsg;
+            if (!ValidateSinglePath(Utf8ToWide(val[i].get<std::string>()), spec.level, errorMsg)) {
+                result.success = false;
+                result.errorMsg = methodName + ": path security denied for " + spec.paramKey + "[" + std::to_string(i) + "]: " + WideToUtf8(errorMsg);
+                return result;
+            }
+            continue;
+        }
         if (!val[i].is_object()) {
             continue;  // 非对象元素跳过（由业务 handler 自行处理格式校验）
+        }
+        // stringElements 的对象元素可以不带路径，handler 把它计入无效项
+        if (spec.stringElements && (!val[i].contains(spec.nestedKey) || !val[i][spec.nestedKey].is_string())) {
+            continue;
         }
         if (!val[i].contains(spec.nestedKey)) {
             result.success = false;
@@ -660,7 +686,7 @@ static ValidationResult ValidateNestedArrayParam(const json& val,
 }
 
 // 校验简单数组参数: paths: ["a", "b"]
-// skipInvalid=true 时跳过无效路径（记录 skippedCount），而非 fail-fast
+// skipInvalid=true 时跳过无效路径（记下下标，由调用方从参数里去掉），而非 fail-fast
 static ValidationResult ValidateArrayParam(const json& val,
                                             const PathSecuritySpec& spec,
                                             const std::string& methodName) {
@@ -673,7 +699,7 @@ static ValidationResult ValidateArrayParam(const json& val,
     }
     for (size_t i = 0; i < val.size(); ++i) {
         if (!val[i].is_string()) {
-            if (spec.skipInvalid) { result.skippedCount++; continue; }
+            if (spec.skipInvalid) { result.skippedIndices.push_back(i); continue; }
             result.success = false;
             result.shapeError = true;
             result.errorMsg = methodName + ": " + spec.paramKey + "[" + std::to_string(i) + "] must be a string";
@@ -683,7 +709,7 @@ static ValidationResult ValidateArrayParam(const json& val,
         std::wstring wpath = Utf8ToWide(pathUtf8);
         std::wstring errorMsg;
         if (!ValidateSinglePath(wpath, spec.level, errorMsg)) {
-            if (spec.skipInvalid) { result.skippedCount++; continue; }
+            if (spec.skipInvalid) { result.skippedIndices.push_back(i); continue; }
             // 只回显参数位置与拒因，不含路径本体（路径不得写入错误 payload）
             result.success = false;
             result.errorMsg = methodName + ": path security denied for " + spec.paramKey

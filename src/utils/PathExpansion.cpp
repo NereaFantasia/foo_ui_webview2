@@ -3,7 +3,7 @@
 
 #include "pch.h"
 #include "utils/PathExpansion.h"
-#include "api/BridgeCore.h"   // Utf8ToWide
+#include "utils/Encoding.h"
 #include <ShlObj.h>
 
 namespace PathExpansion {

@@ -84,6 +84,8 @@ namespace pfc {
         //! Limits string length to the specified value in actual characters.
         //! That is, multi-byte UTF-8 characters will be counted as one and never broken apart.
 		bool limit_length(t_size length_in_chars, const char* append = " (...)");
+		//! Sanitizes for display in single line. Should be used in most cases instead of: fix_eol(), limit_length()
+		bool sanitize_to_single_line(size_t maxLength = 500, const char* suffix = " (...)");
 
 		void truncate_filename() { truncate(scan_filename()); }
 		void truncate_to_parent_path();

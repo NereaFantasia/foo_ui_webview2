@@ -46,7 +46,6 @@ public:
     
     PopupWindow* GetPopup(const std::string& windowId);
     std::vector<std::string> GetAllWindowIds() const;
-    json GetWindowInfo(const std::string& windowId) const;
     json GetAllWindowsInfo() const;
     size_t GetPopupCount() const;
     

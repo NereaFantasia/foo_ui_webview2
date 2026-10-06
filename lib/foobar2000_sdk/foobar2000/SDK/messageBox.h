@@ -32,6 +32,11 @@
 #define MB_ICONINFORMATION          MB_ICONASTERISK
 #define MB_ICONSTOP                 MB_ICONHAND
 
+#define MB_TYPEMASK                 0x0000000FL
+#define MB_ICONMASK                 0x000000F0L
+#define MB_DEFMASK                  0x00000F00L
+#define MB_MODEMASK                 0x00003000L
+#define MB_MISCMASK                 0x0000C000L
 #endif // ! _WIN32
 
 namespace fb2k {

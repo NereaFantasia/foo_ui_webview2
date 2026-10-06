@@ -17,8 +17,7 @@ namespace fb2k {
 namespace cfg_var_modern {
 
 #ifdef FOOBAR2000_HAVE_CFG_VAR_LEGACY
-	void cfg_string::set_data_raw(stream_reader* p_stream, t_size p_sizehint, abort_callback& p_abort) {
-		(void)p_sizehint;
+	void cfg_string::set_data_raw(stream_reader* p_stream, t_size, abort_callback& p_abort) {
 		pfc::string8_fastalloc temp;
 		p_stream->read_string_raw(temp, p_abort);
 		this->set(temp);
@@ -35,8 +34,7 @@ namespace cfg_var_modern {
 		}
 	}
 
-	void cfg_bool::set_data_raw(stream_reader* p_stream, t_size p_sizehint, abort_callback& p_abort) {
-		(void)p_sizehint;
+	void cfg_bool::set_data_raw(stream_reader* p_stream, t_size, abort_callback& p_abort) {
 		uint8_t b;
 		if (p_stream->read(&b, 1, p_abort) == 1) {
 			this->set(b != 0);
