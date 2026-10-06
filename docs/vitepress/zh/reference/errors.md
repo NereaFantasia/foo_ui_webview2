@@ -71,7 +71,7 @@ foo_ui_webview2 的所有 API 在失败时遵循统一的错误信封结构。
 
 | Code | 说明 |
 | --- | --- |
-| REQUIRED_PARAM | 必填参数缺失 |
+| REQUIRED_PARAM | 必填参数缺失。只有 `audio.cancelFullWaveform` 返回它；其他端点缺参一律返回 `INVALID_PARAMS`，消息为 `<参数名> is required` |
 | INVALID_PARAMS | 参数值非法 |
 | INVALID_INDEX | 索引越界（播放列表、曲目等） |
 
@@ -81,7 +81,8 @@ foo_ui_webview2 的所有 API 在失败时遵循统一的错误信封结构。
 | --- | --- |
 | NOT_FOUND | 资源不存在 |
 | LOCKED | 播放列表处于锁定状态 |
-| NOT_SUPPORTED | 当前模式不支持此操作（如面板模式） |
+| NOT_SUPPORTED | 当前环境或数据不支持这个操作 |
+| PANEL_MODE_UNSUPPORTED | 从 DUI/CUI 面板调用了需要独立主窗口的方法。要预先知道运行模式，用 `window.getMode` |
 | LIBRARY_DISABLED | 媒体库未启用 |
 | NO_ACTIVE_ITEM | 无活动播放列表或当前无播放曲目 |
 
@@ -97,6 +98,7 @@ foo_ui_webview2 的所有 API 在失败时遵循统一的错误信封结构。
 | Code | 说明 |
 | --- | --- |
 | PERMISSION_DENIED | PathSecuritySpec 路径校验拒绝访问；参数形状或类型不对而非路径策略拒绝时返回 INVALID_PARAMS |
+| ORIGIN_DENIED | 页面来源不受信任，不能使用这项能力。宿主不信任的页面发来的每个调用都以它失败（见[安全限制](./security.md#哪些页面能调用-api)）；拿不到文件路径的页面调用 `dnd.prepareDrag` 时返回它；`audio.decodePcm` 进行中页面转到了不受信任的来源时，`audio:pcmFailed` 带这个码 |
 
 ### 媒体/路径相关
 
@@ -111,10 +113,22 @@ foo_ui_webview2 的所有 API 在失败时遵循统一的错误信封结构。
 | UNKNOWN_ERROR | 未知错误 |
 | EXCEPTION | 捕获到未归类异常时返回 |
 
+### 菜单与端口
+
+这些 code 在上面的通用 code 之前就已发布，保持原样。
+
+| Code | 说明 |
+| --- | --- |
+| MENU_ITEM_DISABLED | 菜单命令存在但被禁用（`menu.runMainMenuCommand`） |
+| MENU_MATCH_AMBIGUOUS | 命令名或路径匹配到多条命令，失败里的 `candidates` 列出它们（`menu.runMainMenuCommand`） |
+| MENU_COMMAND_NOT_FOUND | 没有菜单命令是这个名称或路径（`menu.runMainMenuCommand`、`menu.runContextCommand`） |
+| PORT_NOT_FOUND | 没有打开的端口是这个 id（`port.disconnect`、`port.postMessage`、`port.postMessageTo`） |
+| TARGET_NOT_FOUND | `port.postMessageTo` 的目标端口不存在 |
+
 ## TypeScript 类型
 
 ```typescript
-import type { ErrorEnvelope, FailureEventPayload, ApiErrorCode } from 'sdk/index.d.ts';
+import type { ErrorEnvelope, FailureEventPayload, ApiErrorCode, BaseResponse } from 'foo-webview-sdk';
 ```
 
 - `ErrorEnvelope` — 同步 API 失败的最小结构
@@ -127,7 +141,7 @@ import type { ErrorEnvelope, FailureEventPayload, ApiErrorCode } from 'sdk/index
 ```javascript
 // 同步 API 错误处理
 const result = await fb2k.invoke('library.browseTree', { rootId: 'invalid' });
-if (!result.success) {
+if (result.success === false) {
     console.error(`错误 [${result.code}]: ${result.error}`);
     // 错误 [NOT_FOUND]: Unknown rootId
 }

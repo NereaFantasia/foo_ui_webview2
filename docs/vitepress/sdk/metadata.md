@@ -2,31 +2,29 @@
 
 `fb.metadata` reads and writes track tags, performs raw file reads, and manages embedded or sidecar artwork. Tag-write methods dispatch asynchronously and report final completion through `metadata:writeComplete`.
 
-<!-- BEGIN AUTO-GENERATED SDK STUBS -->
+## read(path, opts?)
 
-## Additional methods
-
-> This block maintains SDK-facing method coverage and may be expanded with complete examples and best practices.
-
-### read()
-
-Signature: `fb.metadata.read(path: string, opts?: { cueIndex?: number }): Promise<MetadataReadResponse>`
+Signature: `fb.metadata.read(path: string, opts?: Omit<MetadataReadParams, 'path'>): Promise<MetadataReadResponse>`
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `path` | `string` | Yes | Track path. |
 | `opts.cueIndex` | `number` | No | 1-based track index inside a CUE sheet or image. Equivalent to a `\|subsong:<n>` path suffix; the option wins when both are given. |
 
-Returns `{ success, path?, tags?, info? }`. `tags` preserves upstream key casing and each value is a `string` or `string[]`.
+Returns `{ success, path, tags, info }`. `tags` preserves upstream key casing and each value is a `string` or `string[]`. `info` carries `duration`, `bitrate`, `sampleRate`, `channels`, and `codec`.
+
+The host reads its cached info first and reads the file itself when that info is missing or has no title tag. A track that cannot be opened or read fails with `OPERATION_FAILED`.
 
 ```javascript
 const result = await fb.metadata.read('E:\\Music\\song.flac');
+if (result.success === false) throw new Error(result.error);
+console.log(result.tags, result.info.sampleRate);
 
 // Track 3 of a CUE sheet
 const track3 = await fb.metadata.read('E:\\Music\\album.cue', { cueIndex: 3 });
 ```
 
-### readBatch()
+## readBatch(paths)
 
 Signature: `fb.metadata.readBatch(paths: string[]): Promise<MetadataReadBatchResponse>`
 
@@ -34,7 +32,9 @@ Signature: `fb.metadata.readBatch(paths: string[]): Promise<MetadataReadBatchRes
 | --- | --- | --- | --- |
 | `paths` | `string[]` | Yes | Track paths to read. |
 
-Returns `results`, one envelope per requested path, plus optional aggregate counters.
+Returns `results`, one envelope per requested path, plus the aggregate counters `total`, `successCount`, and `errorCount`.
+
+Each path is resolved on its own and may carry its own `|subsong:N` suffix; there is no batch-wide `cueIndex`. A successful row holds the flat, upper-cased field map in `tags`, as `readByPath()` returns it but without `path` and without a track number taken from the file name. A path that cannot be read gets a row with `success: false` and its own `error` instead of failing the call. The reads run on the host's main thread; for many files use `probeBatchAsync()`.
 
 ```javascript
 const result = await fb.metadata.readBatch([
@@ -43,9 +43,9 @@ const result = await fb.metadata.readBatch([
 ]);
 ```
 
-### readByPath()
+## readByPath(path, opts?)
 
-Signature: `fb.metadata.readByPath(path: string, opts?: { cueIndex?: number }): Promise<MetadataReadByPathResponse & JsonObject>`
+Signature: `fb.metadata.readByPath(path: string, opts?: Omit<MetadataReadByPathParams, 'path'>): Promise<MetadataReadByPathResponse>`
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
@@ -54,13 +54,17 @@ Signature: `fb.metadata.readByPath(path: string, opts?: { cueIndex?: number }): 
 
 Returns the flat `metadata.readByPath` object. Tag keys become top-level fields alongside host status and path fields. This method does not invoke `metadata.readRaw`.
 
+Every tag and technical-info field is keyed by its upper-case name, such as `TITLE` or `SAMPLERATE`. A tag with several values is a `string[]`; technical-info fields are strings. `DURATION` is always present, in seconds with three decimals (`215.400`). `FILESIZE` appears only when the host knows the size, so a file the library has not indexed has none. When the file has no `TRACKNUMBER` tag, it is taken from a leading number of up to three digits in the file name (`07 - Song.flac`), and is absent when there is none. The track is read as by `read()`, with the same failures; `canonicalPath` appears only on the file-open failure envelope.
+
 ```javascript
 const fields = await fb.metadata.readByPath('E:\\Music\\song.flac');
+if (fields.success === false) throw new Error(fields.error);
+console.log(fields.TITLE, fields.DURATION);
 ```
 
-### removeField()
+## removeField(path, field, opts?)
 
-Signature: `fb.metadata.removeField(path: string, field: string, opts?: Omit<MetadataRemoveFieldParams, 'path' | 'tags'>): Promise<BaseResponse>`
+Signature: `fb.metadata.removeField(path: string, field: string, opts?: Omit<MetadataRemoveFieldParams, 'path' | 'tags'>): Promise<MetadataRemoveFieldResponse>`
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
@@ -68,7 +72,7 @@ Signature: `fb.metadata.removeField(path: string, field: string, opts?: Omit<Met
 | `field` | `string` | Yes | Single tag name to remove. |
 | `opts.cueIndex` | `number` | No | 1-based track index inside a CUE sheet or image; targets a single contained track instead of the container. |
 
-Dispatches `metadata.removeField` with `tags: [field]`. The receipt can contain `dispatched`, `subsong`, `removedTags`, `removedCount`, and `note`; final completion is reported by `metadata:writeComplete`.
+Dispatches `metadata.removeField` with `tags: [field]`. The receipt can contain `dispatched`, `subsong`, `removedTags`, `removedCount`, and `note`; final completion is reported by `metadata:writeComplete` with `operation: 'removeTag'`.
 
 ```javascript
 const receipt = await fb.metadata.removeField(
@@ -77,9 +81,9 @@ const receipt = await fb.metadata.removeField(
 );
 ```
 
-### removeTag()
+## removeTag(path, tags, opts?)
 
-Signature: `fb.metadata.removeTag(path: string, tags: string[], opts?: Omit<MetadataRemoveTagParams, 'path' | 'tags'>): Promise<BaseResponse>`
+Signature: `fb.metadata.removeTag(path: string, tags: string[], opts?: Omit<MetadataRemoveTagParams, 'path' | 'tags'>): Promise<MetadataRemoveTagResponse>`
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
@@ -87,7 +91,7 @@ Signature: `fb.metadata.removeTag(path: string, tags: string[], opts?: Omit<Meta
 | `tags` | `string[]` | Yes | Tag names to remove. |
 | `opts.cueIndex` | `number` | No | 1-based track index inside a CUE sheet or image; targets a single contained track instead of the container. |
 
-Dispatches an asynchronous removal and returns its receipt. Observe `metadata:writeComplete` for the final outcome.
+Dispatches an asynchronous removal and returns its receipt. Tag names are upper-cased, and `removedTags` lists them in the order given; an empty `tags` removes nothing and succeeds without dispatching. Observe `metadata:writeComplete` for the final outcome.
 
 `removeField()` and `removeTag()` share one host handler, so both accept the same `cueIndex` option.
 
@@ -100,22 +104,30 @@ await fb.metadata.removeTag('E:\\Music\\album.cue', ['COMMENT'], {
 });
 ```
 
-### write()
+## write(path, tags, opts?)
 
-Signature: `fb.metadata.write(path: string, tags: JsonObject, opts?: Omit<MetadataWriteParams, 'path' | 'tags'>): Promise<BaseResponse>`
+Signature: `fb.metadata.write(path: string, tags: JsonObject, opts?: Omit<MetadataWriteParams, 'path' | 'tags'>): Promise<MetadataWriteResponse>`
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `path` | `string` | Yes | Track path. |
-| `tags` | `JsonObject` | Yes | Tag updates; a `null` or empty value removes the corresponding tag. |
+| `tags` | `JsonObject` | Yes | Tag updates; `null`, an empty string or an empty array removes the corresponding tag. |
 | `opts.cueIndex` | `number` | No | 1-based track index inside a CUE sheet or image; writes tags to that single contained track instead of the container. |
 
-Dispatches the write and returns a receipt that can include `canonicalPath`, `handlePath`, `subsong`, and tag counters. The receipt is not the final write result.
+Tag names are upper-cased, so keys that differ only in case name the same tag. A string is written as it is, an integer or a fraction as its decimal text (`2.5` becomes `2.500000`), and a boolean or object is ignored.
+
+A non-empty string array replaces all values of a tag. Order, duplicates and whitespace are preserved; commas and semicolons inside a value are not separators. An empty array removes the tag. A non-string, empty or NUL-containing array element fails the track with `INVALID_PARAMS` before any of its tags are queued; the error identifies the tag and zero-based element index.
+
+For array writes, `tagsApplied` contains the array; removals, including empty arrays, are reported as `null`. `tagsSet` and `tagsRemoved` count fields, not values. A file format or tag writer may limit multivalue support; check the completion event for the final write result.
+
+Dispatches the write and returns a receipt with `dispatched`, `handlePath`, `subsong`, `tagsApplied`, and the tag counters, or only `note: "No tags to update"` when nothing was left to write. `canonicalPath` appears only on the file-open failure envelope. The receipt is not the final write result.
 
 ```javascript
 await fb.metadata.write('E:\\Music\\song.flac', {
 	TITLE: 'New title',
+	ARTIST: ['First artist', 'Second artist'],
 	COMMENT: null,
+	GENRE: [],
 });
 
 // Tag track 3 of a CUE sheet
@@ -124,28 +136,37 @@ await fb.metadata.write('E:\\Music\\album.cue', { TITLE: 'Track three' }, {
 });
 ```
 
-### writeBatch()
+## writeBatch(items)
 
-Signature: `fb.metadata.writeBatch(items: Array<{ path: string; tags: JsonObject }>): Promise<BaseResponse>`
+Signature: `fb.metadata.writeBatch(items: MetadataWriteBatchItem[]): Promise<MetadataWriteBatchResponse>`
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `items` | `Array<{ path: string; tags: JsonObject }>` | Yes | Per-track tag updates. |
+| `items` | `MetadataWriteBatchItem[]` | Yes | Per-track tag updates: `path`, `tags`, and an optional `cueIndex`. |
 
-Invokes `metadata.writeBatch` and can return `successCount`, `failCount`, and per-path `errors`. It does not call either artwork endpoint.
+Invokes `metadata.writeBatch` and returns `successCount`, `failCount`, and per-path `errors`. When any entry fails, the call resolves as a failure envelope that still carries all three, and the other entries are dispatched all the same. It does not call either artwork endpoint.
+
+Tag values follow the same rules as `write()`. An invalid array prevents all tag changes for that entry, while valid entries are still queued; the batch failure uses `OPERATION_FAILED` and lists the affected paths in `errors`.
 
 ```javascript
 const result = await fb.metadata.writeBatch([
-	{ path: 'E:\\Music\\one.flac', tags: { GENRE: 'Ambient' } },
+	{ path: 'E:\\Music\\one.flac', tags: { GENRE: ['Ambient', 'Electronic'] } },
 	{ path: 'E:\\Music\\two.flac', tags: { GENRE: 'Ambient' } },
 ]);
 ```
 
-<!-- END AUTO-GENERATED SDK STUBS -->
-
 ## Raw File Read
 
-`fb.metadata.readRaw(path, options?)` bypasses the metadb cache and reads the file directly. `options` is `Omit<MetadataReadRawParams, 'path'>` and may contain `cueIndex`. The typed result is `MetadataReadRawResponse`, whose `source` is `'file'` when present.
+### readRaw(path, opts?)
+
+Signature: `fb.metadata.readRaw(path: string, opts?: Omit<MetadataReadRawParams, 'path'>): Promise<MetadataReadRawResponse>`
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `path` | `string` | Yes | Track path. |
+| `opts.cueIndex` | `number` | No | 1-based track index inside a CUE sheet or image, as in `read()`. |
+
+`fb.metadata.readRaw(path, options?)` bypasses the metadb cache and reads the file directly. `options` is `Omit<MetadataReadRawParams, 'path'>` and may contain `cueIndex`. The typed result is `MetadataReadRawResponse`: the fields of `read()` plus `source`, which is always `'file'`. A file that cannot be read fails with `OPERATION_FAILED`.
 
 ```javascript
 const raw = await fb.metadata.readRaw('E:\\Music\\album.flac', {
@@ -157,7 +178,7 @@ const raw = await fb.metadata.readRaw('E:\\Music\\album.flac', {
 
 `readBatch()` reads every path on the host's main thread, so a few hundred files that are not in the library will freeze the UI until it finishes, and there is no way to stop it. `probeBatchAsync()` covers the same ground without either problem: reads run on a worker thread, the call can be cancelled, and each failure is classified instead of collapsing into one generic message.
 
-It is an addition, not a replacement — `read()`, `readBatch()`, `readRaw()` and `readByPath()` are unchanged, and all four already return real `duration` / `bitrate` / `sampleRate` for files the library has never seen.
+`read()`, `readBatch()`, `readRaw()` and `readByPath()` also return real `duration` / `bitrate` / `sampleRate` for files the library has never seen; `probeBatchAsync()` is for batches large enough that blocking the main thread matters.
 
 ### probeBatchAsync(paths, options?)
 
@@ -204,7 +225,9 @@ const receipt = await fb.metadata.probeBatchAsync(droppedPaths, {
 ### cancelProbe(operationId)
 
 ```javascript
-const { cancelled } = await fb.metadata.cancelProbe(receipt.operationId);
+const res = await fb.metadata.cancelProbe(receipt.operationId);
+if (res.success === false) throw new Error(res.error);
+const { cancelled } = res;
 ```
 
 Cancellation interrupts the disk read in progress rather than waiting for it. `metadata:probeComplete` still arrives, carrying `cancelled: true`; paths not yet reached are never reported, and the interrupted path is reported as neither a success nor a failure. `cancelled` is `false` when the operation had already finished or never existed — the two cases are deliberately indistinguishable.
@@ -253,16 +276,19 @@ await fb.metadata.embedArtworkFromDataUrl(
 
 ### embedArtwork(path, options?)
 
-`fb.metadata.embedArtwork()` writes an image into the file, to a sibling image file, or to both destinations. `MetadataEmbedArtworkParams` includes `imageData`, `type`, `filename`, and `target`.
+`fb.metadata.embedArtwork()` writes an image into the file, to a sibling image file, or to both destinations. `MetadataEmbedArtworkParams` includes `imageData`, `type`, `filename`, and `target`. `target` also accepts a single string, which the SDK sends as a one-element array.
 
 `imageData` is the raw Base64 payload only. It must not contain a
 `data:image/...;base64,` header, the `file.write`-specific `base64:` marker, or
 an `fb2k://` URL.
 
+- Omitting `target` writes the embedded picture only.
 - `'embedded'` writes through the host's tag container and may fail for formats such as CUE.
-- `'file'` writes a sidecar such as `cover.<ext>`; the extension is inferred from the image bytes.
-- `['embedded', 'file']` runs both targets through the declared SDK type.
+- `'file'` writes a sidecar such as `cover.<ext>`; the extension is inferred from the image bytes. A `|subsong:N` suffix is dropped, so every track of a CUE sheet shares one image.
+- `['embedded', 'file']` or `'all'` runs both targets. The result then carries each target's own outcome under `results.embedded` and `results.file`, and the call fails with `OPERATION_FAILED` only when both failed.
 - `filename` applies only to file output; path separators and `..` are rejected.
+
+`type` defaults to `'front'`. Image data that decodes to no bytes fails with `INVALID_PARAMS`.
 
 ```javascript
 const comma = coverDataUrl.indexOf(',');
@@ -279,7 +305,7 @@ const result = await fb.metadata.embedArtwork(
 
 ### removeEmbeddedArt(path, options?)
 
-`fb.metadata.removeEmbeddedArt()` accepts `type` and `removeAll` through `MetadataRemoveEmbeddedArtParams`. The response may include `removedTypes`.
+`fb.metadata.removeEmbeddedArt()` accepts `type` and `removeAll` through `MetadataRemoveEmbeddedArtParams`. Omitting `type`, or setting `removeAll: true`, removes every picture. The response may include `removedTypes`: `['all']` when every picture went in one step, otherwise the types removed. A format the album art editor does not support fails with `NOT_SUPPORTED`.
 
 ```javascript
 await fb.metadata.removeEmbeddedArt('E:\\Music\\song.flac', {
@@ -289,7 +315,13 @@ await fb.metadata.removeEmbeddedArt('E:\\Music\\song.flac', {
 
 ## Asynchronous Completion and Default Logging
 
-`metadata.write`, `metadata.removeField`, `metadata.removeTag`, and batch variants dispatch work before the file operation finishes. Subscribe to `metadata:writeComplete` for the final `MetadataWriteCompletePayload`: `operation`, `path`, `subsong`, `code`, `success`, and `status`.
+`metadata.write`, `metadata.writeBatch`, `metadata.removeField`, and `metadata.removeTag` dispatch work before the file operation finishes. Subscribe to `metadata:writeComplete` for the final `MetadataWriteCompletePayload`: `operation`, `path`, `subsong`, `code`, `success`, and `status`.
+
+`operation` is `'write'` for `write()` and `writeBatch()`, and `'removeTag'` for `removeTag()` and `removeField()`. `code` is foobar2000's completion code (`0` success, `1` aborted, `2` errors), `status` spells it as `'success'`, `'aborted'`, or `'error'`, and `success` is `true` when `code` is `0`. The event is broadcast to every window.
+
+### disableDefaultLogger()
+
+Signature: `fb.metadata.disableDefaultLogger(): void`
 
 The SDK installs a default listener that logs failed completions to the JavaScript console. Call `fb.metadata.disableDefaultLogger()` to detach it before installing custom UI handling; the operation is idempotent.
 

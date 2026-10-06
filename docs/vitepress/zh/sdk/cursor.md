@@ -2,27 +2,27 @@
 
 `fb.cursor` 用于显式控制调用窗口客户区内的光标。状态与 `cursor:hiddenChanged` 事件都限定在发起调用的窗口，因此各弹窗可以独立管理光标可见性。
 
-<!-- BEGIN AUTO-GENERATED SDK STUBS -->
+## isHidden()
 
-## 其余方法
+签名：`fb.cursor.isHidden(): Promise<CursorIsHiddenResponse>`
 
-### isHidden()
-
-封装 `cursor.isHidden`。参数与返回类型以 `foo-webview-sdk` 的 TypeScript 声明为准（IDE 悬浮提示或包内 `bridge.d.ts`），行为契约见 API 文档对应条目。
+返回调用窗口的 `{ hidden }`。宿主找不到调用窗口时返回 `{ hidden: false }`。
 
 ```javascript
-await fb.cursor.isHidden(/* 参数见 TypeScript 声明 */);
+const res = await fb.cursor.isHidden();
+if (res.success === false) throw new Error(res.error);
+const { hidden } = res;
 ```
 
-### setHidden()
+## setHidden(hidden)
 
-封装 `cursor.setHidden`。参数与返回类型以 `foo-webview-sdk` 的 TypeScript 声明为准（IDE 悬浮提示或包内 `bridge.d.ts`），行为契约见 API 文档对应条目。
+签名：`fb.cursor.setHidden(hidden: boolean): Promise<CursorSetHiddenResponse>`
+
+`hidden` 为 `true` 时隐藏光标，为 `false` 时恢复。重复设置当前状态会以 `success: true`、`changed: false` 返回；只有状态真正改变时才发出 `cursor:hiddenChanged`。宿主找不到调用窗口时以 `OPERATION_FAILED` 失败。
 
 ```javascript
-await fb.cursor.setHidden(/* 参数见 TypeScript 声明 */);
+await fb.cursor.setHidden(true);
 ```
-
-<!-- END AUTO-GENERATED SDK STUBS -->
 
 ## 事件
 

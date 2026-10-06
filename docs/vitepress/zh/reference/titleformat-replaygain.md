@@ -3,7 +3,7 @@
 通用标题格式化与 ReplayGain 交叉参考。详见：
 
 - [Titleformat API](/zh/api/titleformat)
-- [Audio / ReplayGain API](/zh/api/audio)
+- [ReplayGain API](/zh/api/replaygain)
 
 ## titleformat.eval
 

@@ -15,12 +15,17 @@
 
 # Win32 构建
 .\build.ps1 -Platform Win32
+
+# 用 v143 工具集构建（VS 2022，或与 CI 对齐）
+.\build.ps1 -PlatformToolset v143
 ```
+
+构建成功后会接着编译并运行 `tests/` 下的 GoogleTest 单元测试。
 
 ## 构建要求
 
 ### 必需软件
-- Visual Studio 2022 (推荐) 或 2019
+- Visual Studio 2026（默认 v145 工具集），或 Visual Studio 2022 配合 `-PlatformToolset v143`，需安装「使用 C++ 的桌面开发」工作负载
 - Windows SDK 10.0 或更高
 - PowerShell 5.1+ (Windows 自带)
 
@@ -42,13 +47,14 @@ git clone --depth=1 https://github.com/reupen/columns_ui-sdk.git lib/columns_ui-
 
 ## 预编译头配置
 
-**?? 重要：不要修改预编译头配置！**
+**重要：不要修改预编译头配置。**
 
 当前配置：
 - 头文件：`src/pch.h`
 - 源文件：`src/pch.cpp`
-- 所有 .cpp 文件使用 `Use` 模式
-- 只有 pch.cpp 使用 `Create` 模式
+- `src/pch.cpp` 使用 `Create` 模式
+- 第三方的 `lib/columns_ui-sdk/ui_extension.cpp` 使用 `NotUsing` 模式
+- 其余 .cpp 文件使用 `Use` 模式
 
 ## 构建配置
 
@@ -80,10 +86,8 @@ Remove-Item -Recurse -Force .\obj\
 Get-Content build_log.txt -Tail 50
 ```
 
-### 编码警告 C4819
-非致命警告，可以安全忽略。源文件包含中文注释使用GBK编码。
-
-如需消除，将源文件转换为UTF-8 with BOM。
+### 编码警告 C4819 或大量语法错误
+源文件是 UTF-8 编码并含中文注释。中文 Windows 上的 MSVC 默认按 GBK 读取无 BOM 的文件，所以项目在 `<ClCompile>` 里加了 `/utf-8` 编译选项。出现 C4819 或级联的语法错误，先检查 `foo_ui_webview2.vcxproj` 里 `/utf-8` 是否还在。项目开启了 `/WX`，警告会让构建失败。
 
 ### MSBuild 未找到
 不要直接调用 `msbuild` 命令，使用 `build.ps1` 脚本会自动查找正确路径。
@@ -111,8 +115,9 @@ $msbuild = "$vsPath\MSBuild\Current\Bin\MSBuild.exe"
 3. 复制到 foobar2000 的 `components` 文件夹
 4. 重启 foobar2000
 
+要生成可以分发的 `.fb2k-component`（同时包含 x86 与 x64），运行 `.\build-package.ps1`。
+
 ## 参考文档
 
-- [AGENTS.md](AGENTS.md) - AI智能体注意事项
 - [README.md](README.md) - 项目总览与快速上手
-- [docs/vitepress/guide/installation.md](docs/vitepress/guide/installation.md) - 安装与部署
+- [安装指南](https://nereafantasia.github.io/foo_ui_webview2/zh/how-to/install) - 安装与部署

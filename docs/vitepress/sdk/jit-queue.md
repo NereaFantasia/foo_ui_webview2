@@ -1,26 +1,24 @@
 # fb.jitQueue Just-in-Time Queue
 
-`fb.jitQueue` controls the streaming preload queue used for adaptive playback. It is separate from `fb.queue`, which represents the foobar2000 playback queue.
+`fb.jitQueue` controls the streaming preload queue used for adaptive playback. It is separate from `fb.queue`, which represents the foobar2000 playback queue. Tracks are identified by a caller-assigned `trackId` together with a `title` and a `url`, not by playlist indices.
 
-<!-- BEGIN AUTO-GENERATED SDK STUBS -->
+## getState()
 
-## Additional methods
+Signature: `fb.jitQueue.getState(): Promise<JitQueueGetStateResponse>`
 
-### getState()
-
-Signature: `fb.jitQueue.getState(): Promise<JitQueueStateInfo>`
-
-Returns the current queue state, including `isActive`, `state`, `currentTrackId`, `nextTrackId`, `bufferSize`, and `shadowPlaylist`.
+Returns the current queue state, including `isActive`, `state`, `currentTrackId`, `nextTrackId`, `bufferSize`, and `shadowPlaylist`. `state` is one of `Idle`, `Active`, `WaitingNext`, `Exhausted`, and `Unknown`; `shadowPlaylist` is `-1` until the shadow playlist has been created.
 
 ```javascript
 const state = await fb.jitQueue.getState();
 ```
 
-### enqueueNext(opts)
+## enqueueNext(opts)
 
-Signature: `fb.jitQueue.enqueueNext(opts: JitQueueEnqueueNextParams): Promise<BaseResponse & { bufferSize?: number }>`
+Signature: `fb.jitQueue.enqueueNext(opts: JitQueueEnqueueNextParams): Promise<JitQueueEnqueueNextResponse>`
 
-Queues the next adaptive-playback item. `opts` accepts `trackId`, `title`, and `url`. URLs longer than 2048 characters resolve with `success: false`.
+Queues the next adaptive-playback item, usually in answer to `jitQueue:needNext`. `opts` accepts `trackId`, `title`, and `url`. URLs longer than 2048 characters resolve with `success: false` and the code `INVALID_PARAMS`. The call is refused with `NO_ACTIVE_ITEM` unless a session is playing or waiting for its next track.
+
+The response carries the `trackId` given and `bufferSize`, the number of tracks buffered afterwards. The track is added after the call has returned, so a track that cannot be added is reported only through `jitQueue:error`.
 
 ```javascript
 await fb.jitQueue.enqueueNext({
@@ -30,11 +28,13 @@ await fb.jitQueue.enqueueNext({
 });
 ```
 
-### playNow(opts)
+## playNow(opts)
 
-Signature: `fb.jitQueue.playNow(opts: JitQueuePlayNowParams): Promise<BaseResponse & { shadowPlaylist?: number }>`
+Signature: `fb.jitQueue.playNow(opts: JitQueuePlayNowParams): Promise<JitQueuePlayNowResponse>`
 
 Starts the supplied item immediately. It accepts the same `trackId`, `title`, and `url` fields as `enqueueNext()`, including the 2048-character URL limit.
+
+Each call starts a new session: the buffer is cleared and playback begins. The host detects the kind of `url` itself: `http(s)://` addresses are streams, Windows and UNC paths are local files. The response carries the `trackId` given and `shadowPlaylist`, the shadow playlist's index. As with `enqueueNext()`, a track that cannot be added is reported through `jitQueue:error`.
 
 ```javascript
 await fb.jitQueue.playNow({
@@ -44,37 +44,39 @@ await fb.jitQueue.playNow({
 });
 ```
 
-### clear()
+## clear()
 
-Signature: `fb.jitQueue.clear(): Promise<BaseResponse>`
+Signature: `fb.jitQueue.clear(): Promise<JitQueueClearResponse>`
 
-Clears the buffered just-in-time queue.
+Clears the buffered just-in-time queue and returns the session to idle.
 
 ```javascript
 await fb.jitQueue.clear();
 ```
 
-### notifyEmpty()
+## notifyEmpty()
 
-Signature: `fb.jitQueue.notifyEmpty(): Promise<BaseResponse>`
+Signature: `fb.jitQueue.notifyEmpty(): Promise<JitQueueNotifyEmptyResponse>`
 
-Notifies the host that the producer has no more items to enqueue.
+Notifies the host that the producer has no more items to enqueue. The session moves to `Exhausted` and the host emits `jitQueue:listExhausted`, even when no session is active.
 
 ```javascript
 await fb.jitQueue.notifyEmpty();
 ```
 
-### preloadBatch(opts)
+## preloadBatch(opts)
 
-Signature: `fb.jitQueue.preloadBatch(opts: JitQueuePreloadBatchParams): Promise<BaseResponse & { tracksAdded?: number; invalidCount?: number }>`
+Signature: `fb.jitQueue.preloadBatch(opts: JitQueuePreloadBatchParams): Promise<JitQueuePreloadBatchResponse>`
 
 | Field | Type | Description |
 | --- | --- | --- |
-| `urls` | `string[]` | URLs to preload |
-| `startIndex` | `number` | Optional starting index |
-| `replace` | `boolean` | Whether to replace the existing preload list; defaults to `true` |
+| `urls` | `string[]` | Track URLs or `path\|subsong:N` values to insert |
+| `startIndex` | `number` | Optional entry to start playback from when the session is not already playing; defaults to `0` |
+| `replace` | `boolean` | Whether to replace the existing preload list; `false` appends. Defaults to `true` |
 
-Each URL is limited to 2048 characters. Invalid entries are skipped and included in `invalidCount`.
+Inserts a batch of tracks into the shadow playlist. Each URL is limited to 2048 characters; longer entries are skipped and included in `invalidCount`, and at most 10000 entries may remain.
+
+The response carries `tracksAdded` and `invalidCount`. `jitQueue:preloadComplete` is sent before the call returns; a failed call sends nothing.
 
 ```javascript
 const result = await fb.jitQueue.preloadBatch({
@@ -84,24 +86,25 @@ const result = await fb.jitQueue.preloadBatch({
 });
 ```
 
-### skip()
+## skip()
 
-Signature: `fb.jitQueue.skip(): Promise<BaseResponse & { currentTrackId?: string }>`
+Signature: `fb.jitQueue.skip(): Promise<JitQueueSkipResponse>`
 
-Skips to the next buffered item.
+Skips to the next buffered item. The response carries `currentTrackId`, the track playing after the skip. The call is refused with `NO_ACTIVE_ITEM` while no session is active.
 
 ```javascript
 const result = await fb.jitQueue.skip();
 ```
 
-### stop()
+## stop(opts?)
 
-Signature: `fb.jitQueue.stop(): Promise<BaseResponse>`
+Signature: `fb.jitQueue.stop(opts?: JitQueueStopParams): Promise<JitQueueStopResponse>`
 
-Stops just-in-time playback. The SDK facade does not expose the host's optional `clearBuffer` argument, so the host default applies.
+Stops just-in-time playback. `opts.clearBuffer` also empties the buffer and defaults to `true`; pass `{ clearBuffer: false }` to keep the buffered tracks.
 
 ```javascript
 await fb.jitQueue.stop();
+await fb.jitQueue.stop({ clearBuffer: false });
 ```
 
 ## Events
@@ -114,4 +117,12 @@ Subscribe through `fb.on()` using colon-separated event names:
 - `jitQueue:preloadComplete` — `{ count, startIndex, replace }`
 - `jitQueue:error` — `{ trackId, error, url? }` or `{ trackId, error, path? }`
 
-<!-- END AUTO-GENERATED SDK STUBS -->
+The payload types (`JitQueueNeedNextPayload`, `JitQueueTrackChangedPayload`, `JitQueueListExhaustedPayload`, `JitQueuePreloadCompletePayload`, `JitQueueErrorPayload`) are exported from the package root.
+
+The events go to the page that started the session, with `playNow()` or with a `preloadBatch()` that started playback. `jitQueue:needNext` fires when no next track is buffered and no earlier request is still waiting for an answer; answer it with `enqueueNext()`, or with `notifyEmpty()` when there are no more tracks.
+
+```javascript
+const off = fb.on('jitQueue:needNext', ({ currentTrackId, reason }) => {
+	console.log(currentTrackId, reason);
+});
+```

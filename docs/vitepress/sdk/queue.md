@@ -34,6 +34,7 @@ The response separates `insertedCount` (new tracks) and `movedCount` (relocated 
 
 ```javascript
 const result = await fb.queue.insertNext(['C:\\Music\\a.flac'], 0);
+if (result.success === false) throw new Error(result.error);
 console.log(result.insertedCount, result.movedCount);
 // Play playlist 0, item 12 next; the cursor follows it
 await fb.queue.insertNext([{ playlist: 0, item: 12 }]);
@@ -54,39 +55,132 @@ await fb.queue.playNow(); // play the current queue head
 await fb.queue.playNow(2); // promote and play the 3rd entry
 ```
 
-<!-- BEGIN AUTO-GENERATED SDK STUBS -->
+## remove(target)
 
-## Additional methods
+Removes queue entries: one position, sent as the host's `index`, or an array of positions, sent as `indices` and removed in one call.
 
-> This block records SDK method coverage and may later be expanded with complete examples and best practices.
+| Parameter | Type | Description |
+| --- | --- | --- |
+| `target` | `number \| number[]` | A queue position, or an array of queue positions |
 
-### flush()
+With an array, duplicate and out-of-range positions are skipped and the response reports `removedCount`; with a single position it reports `removedIndex`. Both report `queueCount`, the queue length afterwards. The call fails with `INVALID_INDEX` when no given position is in range. Removing an array in one call avoids the index shift that removing the same positions one by one would cause.
 
-Signature: `fb.queue.flush(): Promise<BaseResponse & { clearedCount?: number }>`
+```javascript
+const one = await fb.queue.remove(0);
+if (one.success === false) throw new Error(one.error);
+console.log(one.removedIndex, one.queueCount);
+
+const many = await fb.queue.remove([4, 1, 2]);
+if (many.success === false) throw new Error(many.error);
+console.log(many.removedCount, many.queueCount);
+```
+
+## add(opts)
+
+Signature: `fb.queue.add(opts: QueueAddParams): Promise<QueueAddResponse>`
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| - | - | - | No parameters |
+| `opts.playlist` | `number` | No | Playlist the rows belong to; the active playlist when omitted |
+| `opts.playlistGuid` | `string` | No | The playlist's `guid` from `playlist.getAll`, in place of `playlist` |
+| `opts.tracks` | `number[]` | No | Rows to queue, in order; takes precedence over `track` |
+| `opts.track` | `number` | No | A single row to queue; read only when `tracks` is absent |
 
-Clears the playback queue. `flush()` is the SDK wrapper for the `queue.flush` alias; `clear()` provides the equivalent clear operation through `queue.clear`.
+Queues one or more playlist rows by position. Rows past the last one are skipped; when none is in range the call fails with `INVALID_INDEX`, and a negative row fails with `INVALID_PARAMS`. A `playlist` index past the last playlist fails with `INVALID_INDEX`; with `playlist` omitted and no active playlist the call fails with `NO_ACTIVE_ITEM`. Giving both `playlist` and `playlistGuid`, or a malformed GUID, fails with `INVALID_PARAMS`, and a playlist that no longer exists fails with `NOT_FOUND`.
+
+The response carries `addedCount`, the number of rows queued, and `queueCount`, the queue length afterwards.
+
+```javascript
+const result = await fb.queue.add({ playlist: 0, tracks: [3, 5] });
+if (result.success === false) throw new Error(result.error);
+console.log(result.addedCount, result.queueCount);
+```
+
+## addPaths(paths, opts?)
+
+Signature: `fb.queue.addPaths(paths: string[], opts?: Omit<QueueAddPathsParams, 'paths'>): Promise<QueueAddPathsResponse>`
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `paths` | `string[]` | Yes | File paths or URLs, each optionally with a `\|subsong:N` suffix; at least one |
+| `opts.useQueuePlaylist` | `boolean` | No | Append to the dedicated `[WebView Queue]` playlist, created when missing; defaults to `true` |
+| `opts.playlist` | `number` | No | Target playlist, read only when `useQueuePlaylist` is `false`; the active playlist when omitted |
+| `opts.playlistGuid` | `string` | No | The target playlist's `guid` from `playlist.getAll`, in place of `playlist`; read only when `useQueuePlaylist` is `false` |
+
+Queues tracks by path or URL. A queue entry needs playlist membership, so the paths are appended to a playlist first: by default the dedicated `[WebView Queue]` playlist. Each path or URL is limited to 2048 characters; longer entries are skipped and counted in `invalidCount`.
+
+A locked target playlist fails with `LOCKED`, and nothing is added or queued. Giving both `playlist` and `playlistGuid`, or a malformed GUID, fails with `INVALID_PARAMS`; a playlist that no longer exists fails with `NOT_FOUND`. The target is looked up again after the paths are resolved: if it moved in the meantime it still gets the tracks and `playlist` in the response is its new index; if it was removed, the call fails with `OPERATION_FAILED` and nothing is queued.
+
+The response carries `addedCount` (tracks appended and queued), `invalidCount` (entries of `paths` that produced no track, over-length ones included), `playlist` (the playlist the tracks went to), and `queueCount`.
+
+```javascript
+const result = await fb.queue.addPaths(['E:\\Music\\song.flac'], { useQueuePlaylist: true });
+if (result.success === false) throw new Error(result.error);
+console.log(result.addedCount, result.invalidCount, result.queueCount);
+```
+
+## clear()
+
+Signature: `fb.queue.clear(): Promise<QueueClearResponse>`
+
+Empties the playback queue. The response carries `clearedCount`, the number of entries the queue held. `flush()` performs the same operation under its older name.
+
+```javascript
+const result = await fb.queue.clear();
+if (result.success === false) throw new Error(result.error);
+console.log(result.clearedCount);
+```
+
+## flush()
+
+Signature: `fb.queue.flush(): Promise<QueueFlushResponse>`
+
+Clears the playback queue. `flush()` is the SDK wrapper for the `queue.flush` alias; `clear()` provides the equivalent clear operation through `queue.clear`. The response carries `clearedCount`, the number of entries the queue held.
 
 ```javascript
 const result = await fb.queue.flush();
 ```
 
-### getCount()
+## get()
 
-Signature: `fb.queue.getCount(): Promise<{ count: number }>`
+Signature: `fb.queue.get(): Promise<QueueGetResponse>`
 
-| Parameter | Type | Required | Description |
-| --- | --- | --- | --- |
-| - | - | - | No parameters |
+Reads the whole queue in play order, without paging, and returns `{ items, count }`. Each `QueueItem` is the shared `Track` row plus `queueIndex`, its position in the queue from `0`, and `playlist`, `playlistGuid` and `playlistItem`, the playlist position the entry was queued from. All three are `null` when the entry has no recorded position that still holds its track: it was queued by path, or rows or the playlist were removed or moved since.
 
-Returns the current queue length as `{ count }`.
+```javascript
+const queue = await fb.queue.get();
+if (queue.success === false) throw new Error(queue.error);
+for (const item of queue.items) {
+	console.log(item.queueIndex, item.path, item.playlist, item.playlistItem);
+}
+```
+
+## getCount()
+
+Signature: `fb.queue.getCount(): Promise<QueueGetCountResponse>`
+
+Returns the current queue length as `{ count, hasItems }`; `hasItems` is the same as `count > 0`.
 
 ```javascript
 const result = await fb.queue.getCount();
+if (result.success === false) throw new Error(result.error);
 console.log(result.count);
 ```
 
-<!-- END AUTO-GENERATED SDK STUBS -->
+## moveToTop(index)
+
+Signature: `fb.queue.moveToTop(index: number): Promise<QueueMoveToTopResponse>`
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `index` | `number` | Yes | Queue position of the entry to move; `0` is refused |
+
+Moves a queued entry to the front so it plays next. Only the queue order changes, and the other entries keep their relative order. An `index` of `0`, which is already the front, or one past the end of the queue fails with `INVALID_INDEX`.
+
+The response carries `movedIndex`, the position the entry came from, and `queueCount`.
+
+```javascript
+const result = await fb.queue.moveToTop(3);
+if (result.success === false) throw new Error(result.error);
+console.log(result.movedIndex, result.queueCount);
+```

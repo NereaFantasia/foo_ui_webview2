@@ -17,6 +17,7 @@
 
 ```javascript
 const results = await fb.library.search('artist HAS Beatles', 100);
+if (results.success === false) throw new Error(results.error);
 console.log(`找到 ${results.total} 首`);
 if (results.hasMore) console.log('还有更多结果');
 
@@ -54,7 +55,9 @@ const albums = await fb.library.getAlbums(50);
 const artists = await fb.library.getArtists(100);
 
 // 给浏览器的「艺术家」分节一次拿到映射
-const { items } = await fb.library.getArtists(100000, { includeAlbums: true });
+const res = await fb.library.getArtists(100000, { includeAlbums: true });
+if (res.success === false) throw new Error(res.error);
+const { items } = res;
 const albumsByArtist = new Map(items.map((a) => [a.name, a.albums]));
 ```
 
@@ -66,6 +69,7 @@ const albumsByArtist = new Map(items.map((a) => [a.name, a.albums]));
 
 ```javascript
 const stats = await fb.library.getStats();
+if (stats.success === false) throw new Error(stats.error);
 console.log(`${stats.totalTracks} 首，总时长 ${stats.totalDuration} 秒`);
 ```
 
@@ -86,6 +90,7 @@ const r = await fb.library.getGenres();
 
 ```javascript
 const s = await fb.library.getStatus();
+if (s.success === false) throw new Error(s.error);
 if (s.initialized) console.log('媒体库已初始化');
 ```
 
@@ -94,27 +99,42 @@ if (s.initialized) console.log('媒体库已初始化');
 获取媒体库曲目总数。返回 `{count}`。
 
 ```javascript
-const { count } = await fb.library.getCount();
+const res = await fb.library.getCount();
+if (res.success === false) throw new Error(res.error);
+const { count } = res;
 ```
 
-## getAll(start, count)
+## getAll(start, count, opts?)
 
-获取所有曲目（支持分页），返回 `LibraryPagedTracksResponse`。当宿主把全库请求交给后台工作线程时，wrapper 会等待匹配的 `library:getAllResult` 事件，并仍解析为相同最终结构。
+获取所有曲目（支持分页），返回 `LibraryPagedTracksResponse`，行是 `LibraryTrack`：共用的曲目字段加 `index`（在媒体库中的位置）；调用失败时返回失败信封。当宿主把全库请求交给后台工作线程时，wrapper 会等待匹配的 `library:getAllResult` 事件，并仍解析为相同最终结构。宿主构建列表失败与超时都 resolve 为 `OPERATION_FAILED`，不再 reject；`details.requestId` 指明是哪一次请求，超时还带 `details.timeoutMs`。
 
 | 参数 | 类型 | 说明 |
 | --- | --- | --- |
-| start | number | 起始偏移 |
-| count | number | 获取数量 |
-| opts.timeout | number | 客户端超时毫秒数，默认 `60000`；设为 `0` 可禁用 |
+| start | number | 第一首的位置，作为宿主的 `offset` 发送；宿主默认 `0` |
+| count | number | 最多返回的曲目数，作为宿主的 `limit` 发送；宿主默认 `100` |
+| opts.useCache | boolean | 从 `start` 0 开始时，用宿主保留的列表回答（之前一次从 0 开始且覆盖全部曲目的请求留下的）。只在给出时发送；宿主默认 `true`。从 0 开始且覆盖全部曲目的请求无论如何都会保留 |
+| opts.asyncResult | boolean | 让宿主在主线程之外构建从 0 开始且覆盖全部曲目的请求；SDK 默认 `true`（宿主自身默认 `false`）。只在带 `useCache` 时生效，由保留的列表回答时也不生效。设为 `false` 则在主线程构建 |
+| opts.timeout | number | 等待 `library:getAllResult` 事件的客户端超时毫秒数，默认 `60000`；设为 `0` 可禁用 |
+
+宿主在主线程之外构建时，会立即回答 `{ pending: true, requestId }`，这一页随后以 `library:getAllResult` 事件送达。wrapper 在发出调用之前就开始监听，因此在 pending 应答处理之前到达的页面不会漏掉；页面到达、调用失败或 reject、超时后都会停止监听。调用方不需要自己订阅。调用返回的失败信封原样解析；带 `error` 的事件与超时按上文 resolve 为 `OPERATION_FAILED`。只有调用本身 reject 时，返回的 Promise 才会 reject。
 
 ```javascript
 const r = await fb.library.getAll(0, 100);
+if (r.success === false) throw new Error(r.error);
 console.log(`媒体库共 ${r.total} 首，本次返回 ${r.tracks.length} 首`);
+
+// 跳过保留的副本，重建整个媒体库列表
+const all = await fb.library.getAll(0, 1_000_000, { useCache: false, asyncResult: false });
+if (all.success === false) {
+    console.warn('library.getAll 失败或超时：', all.error, all.details);
+} else {
+    console.log(all.fromCache, all.tracks.length);
+}
 ```
 
 > `tracks` 与 `items` 内容相同，`items` 为兼容别名。
 
-> `artists` 是 `artist` 的原子值数组：`artists.join(', ')` 恰好等于 `artist`，多值标签只能从 `artists` 精确还原，从 `artist` 还原不了。该字段由媒体库侧返回曲目对象的 API 提供（`getAll()` / `query()` / `search()` / `getByPath()` 等）；`fb.playlist.getTracks` / `fb.player.getCurrentTrack` / `fb.queue.get`、artwork 载荷与事件载荷里的 track 对象不含此字段。
+> `artists` 是 `artist` 的原子值数组：`artists.join(', ')` 恰好等于 `artist`，多值标签只能从 `artists` 精确还原，从 `artist` 还原不了。每个共享的 `Track` 行都带它（媒体库的曲目行、`fb.playlist.getTracks`、`fb.player.getCurrentTrack`、`fb.queue.get` 与曲目事件），`getByPath()` 的扁平结果也带；artwork 载荷不带。凡返回 `Track` 行的地方，`albumArtists` 对 `albumArtist` 同理：它的第一个值（为空时取 `artists[0]`）就是 `getAlbums()` 给这首曲目归组用的专辑艺术家。
 
 ## enumerateTracks(options?)
 
@@ -128,7 +148,13 @@ for await (const page of fb.library.enumerateTracks({ pageSize: 500 })) {
 
 ## refresh()
 
-刷新媒体库。返回 `{success}`。
+签名：`fb.library.refresh(): Promise<LibraryRefreshResponse>`
+
+与 `rescan()` 是同一个操作：经一个 foobar2000 已标为过时的 SDK 调用请求重新扫描媒体库文件夹。媒体库本身会跟踪文件变化。
+
+```javascript
+await fb.library.refresh();
+```
 
 ## getByPath(path)
 
@@ -136,6 +162,7 @@ for await (const page of fb.library.enumerateTracks({ pageSize: 500 })) {
 
 ```javascript
 const r = await fb.library.getByPath('E:\\Music\\song.flac');
+if (r.success === false) throw new Error(r.error);
 if (r.found) console.log(r.title, r.artist);
 ```
 
@@ -146,7 +173,9 @@ if (r.found) console.log(r.title, r.artist);
 获取真实媒体库根目录列表。使用 `library_manager::get_relative_path()` 按段比较推导。
 
 ```javascript
-const { roots, total, indexedTracks } = await fb.library.getRoots();
+const res = await fb.library.getRoots();
+if (res.success === false) throw new Error(res.error);
+const { roots, total, indexedTracks } = res;
 for (const root of roots) {
   console.log(root.displayName, root.absolutePath, root.trackCount);
 }
@@ -176,8 +205,11 @@ for (const root of roots) {
 按 `rootId` + `pathId` 浏览 typed 目录树。先调用 `getRoots()` 获取可用的 `rootId`。
 
 ```javascript
-const { roots } = await fb.library.getRoots();
+const res = await fb.library.getRoots();
+if (res.success === false) throw new Error(res.error);
+const { roots } = res;
 const tree = await fb.library.browseTree({ rootId: roots[0].id });
+if (tree.success === false) throw new Error(tree.error);
 for (const dir of tree.directories) {
   console.log(dir.name, dir.trackCount, dir.hasChildren);
 }
@@ -202,10 +234,10 @@ const sub = await fb.library.browseTree({
 | pathId | string | 请求的 pathId |
 | absolutePath | string | 当前目录绝对路径 |
 | directories | LibraryDirectoryNodeInfo[] | 直接子目录，按 displayName 排序 |
-| files | TrackInfo[] | 文件列表（includeFiles=false 时为空数组） |
+| files | LibraryTrack[] | 文件列表（includeFiles=false 时为空数组） |
 | fromCache | boolean | 是否来自缓存 |
 
-**错误**: `rootId` 缺失返回 `"rootId is required"`；不存在返回 `"Unknown rootId"`；`pathId` 不存在返回 `"Path not found"`。
+**错误**: `rootId` 为空以 `INVALID_PARAMS` 失败；`rootId` 不存在（`"Unknown rootId"`）或 `pathId` 不存在（`"Path not found"`）以 `NOT_FOUND` 失败。
 
 ## enumerateTree(options)
 
@@ -269,12 +301,16 @@ for await (const node of fb.library.enumerateDirectories({ rootPath: '', strateg
 }
 ```
 
-## getAlbumTracks(album, artist?)
+## getAlbumTracks(album, albumArtist)
 
-获取指定专辑的所有曲目。`album` 与 `artist` 都逐字节比较、区分大小写。只按专辑名分组，同名不同专辑艺术家的几张会合成一份列表——要区分就传 `artist`。
+取 `getAlbums` 里一张专辑的曲目，先按碟号、再按曲号、再按媒体库顺序排序。两个参数原样传该行的 `name` 与 `albumArtist`：都逐字节比较，`total` 就等于该行的 `trackCount`。该行的 `artist` 不是同一个键；`albumArtist` 为 `""` 时也要传 `""`。宿主保留归组结果到媒体库变化为止，重复调用不会重扫媒体库。
 
 ```javascript
-const tracks = await fb.library.getAlbumTracks('Abbey Road', 'The Beatles');
+const page = await fb.library.getAlbums({ limit: 1 });
+const album = page.success ? page.albums[0] : undefined;
+if (album) {
+    const res = await fb.library.getAlbumTracks(album.name, album.albumArtist);
+}
 ```
 
 ## getFieldValues(field, limit?, separator?)
@@ -308,21 +344,21 @@ const paths = await fb.library.query('%codec% IS FLAC', undefined, 100000, [
 
 ## 字段投影 {#field-projection}
 
-`query(..., fields)` 与 `search(query, limit, { fields })` 支持可选的曲目字段名列表。省略即现状行为：每行输出全部 20 键。
+`query(..., fields)` 与 `search(query, limit, { fields })` 支持可选的曲目字段名列表。省略时每行输出媒体库曲目行的全部键。
 
-传了列表时，每行**恰好**包含请求的那几个键，不附带任何未请求字段——因此运行时 `TrackInfo` 是部分视图，而声明的类型仍为完整形状。元数据容器读取失败的损坏条目同样输出全部请求键，缺失值以类型默认值填充（空串、0）。响应信封不受影响。
+传了列表时，每行**恰好**包含请求的那几个键，不附带任何未请求字段，所以行的类型是 `LibraryTrackPartial`。元数据容器读取失败的损坏条目同样输出全部请求键，缺失值以类型默认值填充（空串、0）。响应信封不受影响。
 
 **可用字段名**（精确匹配、大小写敏感）：
 
-`index`、`title`、`artist`、`artists`、`album`、`albumArtist`、`genre`、`date`、`trackNumber`、`discNumber`、`duration`、`path`、`absolutePath`、`fileSize`、`bitrate`、`sampleRate`、`channels`、`codec`、`subsong`、`rating`
+`index`、`handle`、`title`、`artist`、`artists`、`album`、`albumArtist`、`albumArtists`、`genre`、`date`、`trackNumber`、`discNumber`、`duration`、`path`、`absolutePath`、`fileSize`、`bitrate`、`sampleRate`、`channels`、`codec`、`subsong`、`rating`
 
 > `artist` / `albumArtist` / `genre` / `composer`（仅指该 API 实际返回的字段）的多值标签按 `, ` 原序拼接，不去重。
 
-> `artists` 是 `artist` 的原子值数组：`artists.join(', ')` 恰好等于 `artist`。该字段由媒体库侧返回曲目对象的 API 提供（`getAll()` / `query()` / `search()` / `getByPath()` 等）；`fb.playlist.getTracks` / `fb.player.getCurrentTrack` / `fb.queue.get`、artwork 载荷与事件载荷里的 track 对象不含此字段。`artists` 与 `artist` 可单独投影其一，两者同源于一次取值；元数据容器读取失败的损坏条目上，被请求的 `artists` 返回 `[]`。
+> `artists` 是 `artist` 的原子值数组：`artists.join(', ')` 恰好等于 `artist`。每个共享的 `Track` 行都带它（媒体库的曲目行、`fb.playlist.getTracks`、`fb.player.getCurrentTrack`、`fb.queue.get` 与曲目事件），`getByPath()` 的扁平结果也带；artwork 载荷不带。凡返回 `Track` 行的地方，`albumArtists` 对 `albumArtist` 同理：它的第一个值（为空时取 `artists[0]`）就是 `getAlbums()` 给这首曲目归组用的专辑艺术家。数组与对应的拼接串可单独投影其一，每一对都同源于一次取值；元数据容器读取失败的损坏条目上，被请求的 `artists` 或 `albumArtists` 返回 `[]`。
 
 重复字段名会去重。`rating` 仅在被请求（或省略列表）时才计算。
 
-**校验**为 fail-closed，且一律 resolve，不会 reject Promise。非数组（含显式 `null`）、空数组、含非字符串元素、或任何白名单外的名字都会得到：
+**校验**一律 resolve，不会 reject Promise。未知的名字得到：
 
 ```javascript
 const bad = await fb.library.query('artist HAS Beatles', undefined, 100, [
@@ -361,25 +397,24 @@ const bad = await fb.library.query('artist HAS Beatles', undefined, 100, [
 峰值是按解析模型推算的上界，不是实测工作集——请当作使用指引，而不是预算。
 :::
 
-## 其余方法
+## addToPlaylist(paths, playlistIndex?)
 
-### addToPlaylist(paths, playlist?)
-
-签名：`fb.library.addToPlaylist(paths: string[], playlist?: number): Promise<LibraryAddToPlaylistResponse>`
+签名：`fb.library.addToPlaylist(paths: string[], playlistIndex?: PlaylistRef): Promise<LibraryAddToPlaylistResponse>`
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
-| paths | string[] | 是 | 要添加的文件路径数组 |
-| playlist | number | 否 | 目标播放列表索引；省略时使用活动播放列表 |
+| paths | string[] | 是 | 要追加的曲目路径，按此顺序；`\|subsong:N` 后缀选子曲目 |
+| playlistIndex | number \| string | 否 | 目标播放列表：序号，或 `fb.playlist.getAll()` 给出的 `guid`；省略时使用活动播放列表。从选定目标到调用之间列表清单可能变化时（比如菜单开着），传 `guid` |
+
+按路径把曲目追加到播放列表。路径不必在媒体库里，不存在的文件也照样添加。响应里的 `added` 是添加的曲目数。已上锁的列表以 `LOCKED` 失败，不添加任何曲目；超出最后一个播放列表的序号以 `INVALID_INDEX` 失败，省略 `playlistIndex` 且没有活动播放列表时以 `NO_ACTIVE_ITEM` 失败。
 
 ```javascript
-const { tracks } = await fb.library.search('artist HAS Beatles');
-await fb.library.addToPlaylist(tracks.map(t => t.path), 0);
+await fb.library.addToPlaylist(['E:\\Music\\song.flac'], 0);
 ```
 
-### getArtistAlbums(artist, limit?, options?)
+## getArtistAlbums(artist, limit?, options?)
 
-签名：`fb.library.getArtistAlbums(artist: string, limit?: number, options?: { sort?: string; match?: 'exact' | 'substring' }): Promise<LibraryArtistAlbumsResponse>`
+签名：`fb.library.getArtistAlbums(artist: string, limit?: number, options?: Omit<LibraryGetArtistAlbumsParams, 'artist' | 'limit'>): Promise<LibraryGetArtistAlbumsResponse>`
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
@@ -393,7 +428,9 @@ await fb.library.addToPlaylist(tracks.map(t => t.path), 0);
 `trackCount`、`duration` 与 `discCount` 只统计该艺术家参与的曲目、不是整张专辑，因此只要该艺术家只参与了一部分，就与 `getAlbums` 给的数字不一致。该差异与分组规则见 [`library.getArtistAlbums`](../api/library.md#library-getartistalbums)。
 
 ```javascript
-const { albums } = await fb.library.getArtistAlbums('The Beatles', 50);
+const res = await fb.library.getArtistAlbums('The Beatles', 50);
+if (res.success === false) throw new Error(res.error);
+const { albums } = res;
 
 // 按年份从新到旧
 const recent = await fb.library.getArtistAlbums('The Beatles', 20, {
@@ -401,88 +438,95 @@ const recent = await fb.library.getArtistAlbums('The Beatles', 20, {
 });
 ```
 
-### getArtistTracks(artist, limit?)
+## getArtistTracks(artist, limit?)
 
-签名：`fb.library.getArtistTracks(artist: string, limit?: number): Promise<LibraryTracksResponse>`
+签名：`fb.library.getArtistTracks(artist: string, limit?: number): Promise<LibraryGetArtistTracksResponse>`
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
-| artist | string | 是 | 艺术家名称 |
-| limit | number | 否 | 最大返回数量 |
+| artist | string | 是 | 艺术家名，匹配方式与 `getArtistAlbums()` 在 `match: 'exact'` 下相同 |
+| limit | number | 否 | 最多返回的曲目数，保留按媒体库顺序的前若干首（默认 `500`） |
+
+某位艺术家署名的曲目，按媒体库顺序放在 `tracks` 里（`items` 是同一个列表）。`count` 是返回的曲目数，`total` 与它相同：没有 `limit` 之前的总数，满页即表示可能还有更多。`artist` 为空与媒体库未启用时都成功返回空列表。
 
 ```javascript
-const tracks = await fb.library.getArtistTracks('The Beatles', 100);
+const res = await fb.library.getArtistTracks('The Beatles', 100);
+if (res.success === false) throw new Error(res.error);
+const { tracks } = res;
 ```
 
-### getCacheStats()
+## getCacheStats()
 
-签名：`fb.library.getCacheStats(): Promise<LibraryCacheStatsResponse>`
+签名：`fb.library.getCacheStats(): Promise<LibraryGetCacheStatsResponse>`
 
-无参数。
+宿主媒体库缓存与目录树索引的计数，供诊断用：是否保留了结果（`valid`、`tracksCached`、`artistsCached`、`statsCached`、`albumsCacheEntries`），宿主启动以来的 `cacheHits` 与 `cacheMisses`，以及目录树索引的状态（`treeIndexValid`、`rootsCached`、`treeIndexedTracks`、`treeSkippedTracks`、`treeLastBuilt`）。时间是自 Unix 纪元起的毫秒数。流派与封面从不保留，所以 `genresCached` 恒为 `false`，封面相关的计数恒为 `0`。
 
 ```javascript
 const cache = await fb.library.getCacheStats();
+if (cache.success === false) throw new Error(cache.error);
+console.log(cache.cacheHits, cache.cacheMisses);
 ```
 
-### getRandomTracks(count?)
+## getRandomTracks(count?)
 
-签名：`fb.library.getRandomTracks(count?: number): Promise<LibraryTracksResponse>`
+签名：`fb.library.getRandomTracks(count?: number): Promise<LibraryGetRandomTracksResponse>`
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
-| count | number | 否 | 随机曲目数量 |
+| count | number | 否 | 抽取的曲目数（默认 `10`）；最多返回媒体库的曲目总数 |
+
+从整个媒体库随机抽取、互不重复的曲目，每次调用重新抽取，结果放在 `tracks` 里，`count` 是抽到的数量。媒体库未启用或为空时成功返回空列表。
 
 ```javascript
-const random = await fb.library.getRandomTracks(25);
+const res = await fb.library.getRandomTracks(25);
+if (res.success === false) throw new Error(res.error);
+const { tracks } = res;
 ```
 
-### getRecentlyAdded(limit?)
+## getRecentlyAdded(limit?, sortBy?)
 
-签名：`fb.library.getRecentlyAdded(limit?: number): Promise<LibraryTracksResponse>`
+签名：`fb.library.getRecentlyAdded(limit?: number, sortBy?: LibraryGetRecentlyAddedParams['sortBy']): Promise<LibraryGetRecentlyAddedResponse>`
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
-| limit | number | 否 | 最大返回数量 |
+| limit | number | 否 | 最多返回的曲目数（默认 `50`） |
+| sortBy | `'added' \| 'modified'` | 否 | `added`（默认）按 foo_playcount 的 `%added%` 排序，没有该值的曲目排在最后；`modified` 按文件修改时间排序 |
+
+媒体库里最新的曲目，从新到旧。请求 `added` 而没有任何曲目带 `%added%` 时改按修改时间排序，此时响应的 `sortBy` 为 `modified`、`fallback` 为 `true`。`total` 是媒体库的曲目数，不是返回的曲目数。每次调用都会遍历整个媒体库。
 
 ```javascript
-const recent = await fb.library.getRecentlyAdded(50);
+const res = await fb.library.getRecentlyAdded(50);
+if (res.success === false) throw new Error(res.error);
+const { tracks, fallback } = res;
 ```
 
-### invalidateCache()
+## invalidateCache()
 
-签名：`fb.library.invalidateCache(): Promise<BaseResponse>`
+签名：`fb.library.invalidateCache(): Promise<LibraryInvalidateCacheResponse>`
 
-无参数。
+丢弃宿主缓存的媒体库结果与目录树索引，下次调用用到它们的端点时重建。媒体库发生变化时宿主也会自动丢弃。响应里的 `timestamp` 是丢弃的时间，自 Unix 纪元起的毫秒数。
 
 ```javascript
 await fb.library.invalidateCache();
 ```
 
-### isEnabled()
+## isEnabled()
 
-签名：`fb.library.isEnabled(): Promise<{ enabled: boolean }>`
+签名：`fb.library.isEnabled(): Promise<LibraryIsEnabledResponse>`
 
-无参数。
-
-```javascript
-const { enabled } = await fb.library.isEnabled();
-```
-
-### refresh()
-
-签名：`fb.library.refresh(): Promise<BaseResponse>`
-
-无参数。
+foobar2000 媒体库是否启用，即是否配置了媒体库文件夹。
 
 ```javascript
-await fb.library.refresh();
+const res = await fb.library.isEnabled();
+if (res.success === false) throw new Error(res.error);
+const { enabled } = res;
 ```
 
-### rescan()
+## rescan()
 
-签名：`fb.library.rescan(): Promise<BaseResponse>`
+签名：`fb.library.rescan(): Promise<LibraryRescanResponse>`
 
-无参数，触发宿主对媒体库监视目录的重新扫描。
+调用 `library_manager::rescan()` 请求 foobar2000 重新扫描媒体库文件夹；foobar2000 SDK 已把该方法标为过时、不应调用。媒体库本身会跟踪文件变化，主题很少需要它。`refresh()` 是同一个操作。
 
 ```javascript
 await fb.library.rescan();

@@ -1,12 +1,44 @@
 // .vitepress/theme/index.ts
 import DefaultTheme from 'vitepress/theme'
+import { useData, useRoute } from 'vitepress'
 import type { Theme, Router } from 'vitepress'
+import { onMounted, watch } from 'vue'
 import './custom.css'
 import {
   isCorrespondingLocalePath,
   localeSeoUrls,
   rewriteHrefWithPendingHash,
 } from './locale-hash.mjs'
+import redirects from '../redirects.json'
+import { locationUrl, pageFromPathname, resolveMoved } from '../redirects.mjs'
+
+/**
+ * Forward a fragment whose section moved off a page that still exists, as the "anchors" of
+ * that page's entry in redirects.json record. An element that still carries the id wins, so
+ * nothing happens while the old heading is there. Pages that moved as a whole are handled by
+ * the redirect pages the build writes, not here.
+ */
+function forwardMovedAnchor(base: string) {
+  const raw = window.location.hash.slice(1)
+  if (!raw) return
+  let id: string
+  try {
+    id = decodeURIComponent(raw)
+  } catch {
+    return
+  }
+  if (document.getElementById(id)) return
+  const page = pageFromPathname(window.location.pathname, base)
+  let moved: { page: string; id: string } | null
+  try {
+    moved = resolveMoved(redirects, page, id)
+  } catch {
+    return
+  }
+  if (moved && (moved.page !== page || moved.id !== id)) {
+    window.location.replace(locationUrl(moved, base))
+  }
+}
 
 function syncLocaleSeoHead(pathname: string) {
   const urls = localeSeoUrls(pathname)
@@ -124,6 +156,17 @@ export default {
   extends: DefaultTheme,
   enhanceApp({ router }) {
     installLocaleHashPreservation(router)
+  },
+  setup() {
+    const route = useRoute()
+    const { site } = useData()
+    const forward = () => forwardMovedAnchor(site.value.base)
+    onMounted(() => {
+      forward()
+      window.addEventListener('hashchange', forward)
+    })
+    // flush: 'post' runs after the new page is in the DOM, so a heading it has is found.
+    watch(() => route.path, forward, { flush: 'post' })
   },
 } satisfies Theme
 

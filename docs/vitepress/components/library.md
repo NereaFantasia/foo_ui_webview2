@@ -51,6 +51,8 @@ el.addEventListener('fb-library-added', e => {
 - **album**: album groups expand to tracks (`track` child nodes)
 - **genre**: genre groups expand to matching tracks
 
+Event details carry `artist`, read from the row's `data-artist`. On an `album` child in the artist view it is the parent artist, and the row stands for that artist's tracks on the album. On a group in the album view it is the album artist: `key` alone can name several albums, and `library.getAlbumTracks(key, artist)` names exactly one.
+
 ## `<fb-library-filesystem-tree>` {#fb-library-filesystem-tree}
 
 Filesystem-style media-library browser. It starts with `library.getRoots()` and lazily expands directories through `library.browseTree()`. Selection supports Ctrl/Cmd toggling and Shift ranges.

@@ -95,20 +95,22 @@ fb.off('playback:time', handler);
 
 | 事件名 | 触发时机 | 数据 |
 | --- | --- | --- |
-| audio:spectrum | 频谱数据更新（需订阅） | {spectrum, fftSize?, bands?} |
-| audio:stream | 音频流数据更新（需调用 subscribeStream 订阅） | 目前类型为空对象 |
+| audio:spectrum | 频谱数据更新（需订阅）：频带，或 `output: 'bins'` 时的线性频点 | {spectrum?, left?, right?, output?, firstBin?, fftSize?, bands?} |
+| audio:stream | `audio.subscribeStream` 的缓冲因音频格式变化被换掉；样本本身不经事件传递 | `{ subscriptionId, type: 'ended', epoch, reason: 'format-change' }` |
 | audio:dspPresetChanged | DSP 预设变化 | - |
 | audio:outputDeviceChanged | 输出设备变化 | - |
 | audio:replaygainModeChanged | ReplayGain 模式变化 | {mode} |
 | audio:fullWaveformReady | 完整波形生成完成 | {taskId, path, waveform, duration, ...} |
 | audio:fullWaveformFailed | 完整波形生成失败或被取消（`code` 为 `"CANCELLED"`） | {taskId, path, error, code} |
+| audio:pcmReady | `audio.decodePcm` 任务完成，样本随同一 `taskId` 的共享缓冲到达 | {taskId, path, sampleRate, channels, frames, ...} |
+| audio:pcmFailed | `audio.decodePcm` 任务失败或被取消（`code` 为 `"CANCELLED"`） | {taskId, path, error, code} |
 
 ## 窗口 / 面板 / UI 事件
 
 | 事件名 | 触发时机 | 数据 |
 | --- | --- | --- |
 | window:alwaysOnTopChanged | 置顶状态变化 | {enabled} |
-| window:stateChanged | 窗口状态变化 | 规范字段 {isMaximized, isMinimized, isActive, isFullscreen}，另带兼容别名 maximized / minimized / active / fullscreen |
+| window:stateChanged | 主窗口或 popup 状态变化，发给所有窗口 | 状态变了的窗口的 windowId，规范字段 {isMaximized, isMinimized, isActive, isFullscreen}，另带兼容别名 maximized / minimized / active / fullscreen |
 | window:popupOpened | 弹出窗口打开 | {windowId, title, url} |
 | window:popupClosed | 弹出窗口关闭 | {windowId} |
 | window:beforeClose | 窗口关闭前确认 | {windowId} |
@@ -116,20 +118,20 @@ fb.off('playback:time', handler);
 | window:behaviorChanged | 弹窗行为策略变更 | {windowId, profile, behavior, resolvedBehavior} |
 | window:minimizeSuppressed | 抑制最小化（Win+D 策略） | {windowId, reason} |
 | window:backdropStateChanged | 主窗口 / popup 的 DWM 激活/失焦策略生效 | {windowId, active, mode, effect} |
-| window:hoverStateChanged | 窗口悬停状态变化 | {windowId, reason?, hovering?} |
+| window:hoverStateChanged | 窗口悬停状态变化 | {windowId, hovering} |
 | panel:initialized | 面板初始化完成 | {mode, panelMode, windowId} |
 | panel:focus | 面板获得焦点 | - |
 | panel:blur | 面板失去焦点 | - |
 | panel:visibilityChanged | DUI 面板可见性变化 | {visible} |
 | panel:configChanged | 面板配置变化 | {panelName, templateName, edgeStyle, transparentBackground, grabFocus, enableDragDrop, enableDevTools, urlOverride} |
-| ui:coloursChanged | 颜色主题变化 | - |
-| ui:fontChanged | 字体变化 | - |
+| ui:coloursChanged | Default UI 配色变化；仅 Default UI 面板 | - |
+| ui:fontChanged | Default UI 字体变化；仅 Default UI 面板 | - |
 | ui:menuItemClicked | 菜单项点击 | {id, label} |
 | ui:toast | 通知消息 | {message, duration, type, position} |
-| system:themeChanged | 系统主题变化 | {darkMode} |
+| system:themeChanged | Default UI 配色变化，含深浅色切换；仅 Default UI 面板。`darkMode` 是 Default UI 的状态，可能与 `system.getTheme()` 不同 | {darkMode} |
 | cursor:hiddenChanged | 光标隐藏状态变化 | CursorHiddenChangedPayload |
 | taskbar:buttonClicked | 任务栏按钮被点击 | {id} |
-| webview:processFailed | WebView 进程失败或恢复 | {kind, kindRaw, recovered, recoveryAction} |
+| webview:processFailed | WebView2 进程出故障；`recovered` 表示 WebView 是否已恢复可用 | {kind, kindRaw, recovered, recoveryAction} |
 
 ## Tray 事件
 
@@ -142,13 +144,13 @@ fb.off('playback:time', handler);
 | tray:beforeContextMenu | 右键菜单弹出前（异步；处理器内修改仅影响下一次右键） | {x, y} |
 | tray:menuItemClicked | 普通用户托盘项点击 / 富控件值变更 | {id, value?} |
 
-`tray:menuItemClicked` 的 `value` 语义：普通用户项与 now-playing 卡片回报 `{id}` 并**关闭**菜单；富**值控件**回报 `{id, value}` 并**保持菜单打开**——`rating` 为 `0..5`，`slider` 为 `[min, max]` 内的整数，`segmented` 为被选中分段的从 0 起索引。忽略 `value` 的前端保持既有 `{id}` 行为。内置 `showPlaybackControls` / `showSystemItems` 注入项，以及声明了 `playbackAction` 的项，由插件原生执行且**不发**此事件。
+`tray:menuItemClicked` 的 `value` 语义：普通用户项与 now-playing 卡片回报 `{id}`；富**值控件**回报 `{id, value}`——`rating` 为 `0..5`，`slider` 为 `[min, max]` 内的整数，`segmented` 为被选中分段的从 0 起索引。`render: 'webview'` 时改值期间菜单保持打开；默认的原生菜单每次选择后都会关闭，滑块只提供五档，分段行按普通行显示、上报时不带 `value`。忽略 `value` 的前端保持既有 `{id}` 行为。内置 `showPlaybackControls` / `showSystemItems` 注入项，以及声明了 `playbackAction` 的项，由插件原生执行且**不发**此事件。
 
 ## 应用 / 键盘 / 菜单事件
 
 | 事件名 | 触发时机 | 数据 |
 | --- | --- | --- |
-| app:beforeQuit | foobar2000 即将退出 | - |
+| app:beforeQuit | foobar2000 即将退出；不论界面是哪个，都给包括面板在内的每个页面发一次；尽力而为，宿主不等处理函数 | - |
 | keyboard:hotkey | 已注册快捷键触发 | {id, key, action} |
 | menu:show | 自定义菜单打开 | {menuId} |
 | menu:select | 选中自定义菜单项 | {menuId, itemId} |
@@ -172,24 +174,24 @@ fb.off('playback:time', handler);
 | file:opProgress | 异步 `file.copyAsync` / `moveAsync` / `deleteAsync` 的一批结果就绪 | FileOpProgressPayload |
 | file:opComplete | 异步文件操作收尾（完成 / 取消） | FileOpCompletePayload |
 
-两者都投递给发起该操作的那个窗口，这是 `results` 里可以带真实路径的前提。该窗口一旦销毁就解析不到，事件会回退投递到主实例，主实例未挂 WebView 时则被静默丢弃；什么情况下还会收到收尾事件见 [`cancelOp()`](/zh/sdk/file-io#cancelop-operationid)。进度按 64 条或 100 ms 先到者分批，最后的残余批必定排在 `file:opComplete` 之前。
+两者都投递给发起该操作的那个窗口，这是 `results` 里可以带真实路径的前提。该窗口一旦销毁就解析不到，事件会回退投递到主实例，主实例未挂 WebView 时则被静默丢弃；什么情况下还会收到收尾事件见 [`cancelOp()`](/zh/sdk/file#cancelop-operationid)。进度按 64 条或 100 ms 先到者分批，最后的残余批必定排在 `file:opComplete` 之前。
 
 ## 插件事件
 
 | 事件名 | 触发时机 | 数据 |
 | --- | --- | --- |
-| plugin:registered | 外部插件注册 | {namespace, name, version} |
-| plugin:unregistered | 外部插件注销 | {namespace} |
-| api:registered | 外部 API 注册 | {namespace, method} |
-| api:unregistered | 外部 API 注销 | {namespace, method} |
+| plugin:registered | 外部插件注册 | PluginRegisteredPayload |
+| plugin:unregistered | 外部插件注销 | PluginUnregisteredPayload |
+| api:registered | 外部 API 注册 | ApiRegisteredPayload |
+| api:unregistered | 外部 API 注销 | ApiUnregisteredPayload |
 | http:response | 异步 HTTP 请求完成 | {requestId, success, status, body, headers} |
 | http:downloadComplete | 下载完成 | HttpDownloadCompletePayload |
-| jitQueue:needNext | 后端请求下一首 | {currentTrackId, reason} (reason: "trackChange" / "prefetch") |
+| jitQueue:needNext | 后端请求下一首 | {currentTrackId, reason} (reason 恒为 "trackChange") |
 | jitQueue:trackChanged | 播放曲目变化 | {trackId, title} |
 | jitQueue:listExhausted | 缓冲区耗尽 | {lastTrackId} |
 | jitQueue:preloadComplete | JIT 预加载完成 | JitQueuePreloadCompletePayload |
-| jitQueue:error | 错误 | {trackId, error, url} |
+| jitQueue:error | 错误 | {trackId, error, url 或 path} |
 
 所有事件同时派发为 `fb2k:*` DOM 事件（CustomEvent）。
 
-完整事件参考及字段说明见 [事件系统参考](/zh/reference/events)。 SMP 事件名映射见 [SMP 兼容层](/zh/reference/smp-compat#smp-events)。
+每个事件及其载荷字段见[事件 API](/zh/api/events)。 SMP 事件名映射见 [SMP 兼容层](/zh/reference/smp-compat#smp-events)。

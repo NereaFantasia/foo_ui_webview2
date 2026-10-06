@@ -94,10 +94,13 @@ Add the same server configuration under **MCP Servers** in Cursor settings.
 | `FB2K_CDP_PORT` | `9222` | WebView2 CDP debugging port used by the MCP client |
 | `FB2K_CDP_HOST` | `localhost` | WebView2 CDP host address |
 | `FB2K_CDP_TARGET_URL` | unset | URL substring that pins the CDP page target when several WebViews (popups, panels, tray menu overlay) share the port, e.g. `foo-ui-webview2.local`. When set and nothing matches, connecting fails and lists the candidates instead of guessing. |
-| `FB2K_ENABLE_EVAL` | unset | Set to `1` or `true` to register `fb2k_evaluate` |
+| `FB2K_READ_ONLY` | unset | Set to `1` or `true` to register only the read-only tools |
+| `FB2K_ENABLE_EVAL` | unset | Set to `1` or `true` to register `fb2k_page_evaluate`; ignored in read-only mode |
+| `FB2K_MAX_RESPONSE_CHARS` | `100000` | Longest text result, in characters; a longer one is cut and marked |
+| `FB2K_MAX_IMAGE_BYTES` | `3932160` | Largest cover sent as an image, in bytes (3.75 MiB); a larger one is left out and the result says so |
 
 ::: warning `FB2K_ENABLE_EVAL`
-`fb2k_evaluate` can execute an arbitrary JavaScript expression in the WebView2 page. Keep it disabled outside a trusted development or debugging session.
+`fb2k_page_evaluate` can execute an arbitrary JavaScript expression in the WebView2 page, with every Bridge method the page can call. Keep it disabled outside a trusted development or debugging session.
 :::
 
 ## CDP connection
@@ -139,7 +142,7 @@ When **Enable CDP remote debugging** is on, the companion option **Keep WebView 
 
 | Symptom | Likely cause | Fix |
 | --- | --- | --- |
-| `fb2k_screenshot` times out while the window is minimized / in the tray | Page suspended (keep-alive disabled) | Restore the window, or enable the keep-alive option |
+| A `fb2k_page_inspect` screenshot times out while the window is minimized / in the tray |keep-alive disabled) | Restore the window, or enable the keep-alive option |
 | Calls stall after ~5 minutes in the background | Background timer throttling on an older component version | Update the component; CDP mode now disables throttling |
 | Tools act on the wrong window (for example the tray menu overlay) | Several page targets share port 9222 | Set `FB2K_CDP_TARGET_URL` (for example `foo-ui-webview2.local`) |
 

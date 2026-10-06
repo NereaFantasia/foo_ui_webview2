@@ -1,137 +1,34 @@
 # Queue API
 
-English API reference for the `jitQueue`, `queue`, `selection` family.
-
-This page is the primary owner for the namespaces listed below. Method names, parameter keys, and return fields follow the C++ `RegisterApi` handlers.
-
-## jitQueue
-
-### jitQueue.clear
-
-
-_No parameters._
-
-**Returns**: `{"success":true}`
-
-```js
-const result = await fb2k.invoke('jitQueue.clear');
-```
-
-### jitQueue.enqueueNext
-
-
-| Parameter | Type | Required | Description |
-| --- | --- | --- | --- |
-| `trackId` | `string` | Yes | Caller-assigned track identifier. An empty value fails with `trackId is required`. |
-| `url` | `string` | Yes | Stream or file URL. An empty value fails with `url is required`. |
-| `title` | `string` | No | Optional display title. |
-
-**Returns**: `{"bufferSize":"...","error":"...","success":true,"trackId":"..."}`
-
-```js
-await fb2k.invoke('jitQueue.enqueueNext', { trackId: 'track-2', url: 'https://example.com/next.mp3' });
-```
-
-### jitQueue.getState
-
-
-_No parameters._
-
-**Returns**: `{"bufferSize":"...","currentTrackId":"...","isActive":"...","nextTrackId":"...","shadowPlaylist":"...","state":"..."}`
-
-```js
-const result = await fb2k.invoke('jitQueue.getState');
-```
-
-### jitQueue.notifyEmpty
-
-
-_No parameters._
-
-**Returns**: `{"success":true}`
-
-```js
-const result = await fb2k.invoke('jitQueue.notifyEmpty');
-```
-
-### jitQueue.playNow
-
-
-| Parameter | Type | Required | Description |
-| --- | --- | --- | --- |
-| `trackId` | `string` | Yes | Caller-assigned track identifier. An empty value fails with `trackId is required`. |
-| `url` | `string` | Yes | Stream or file URL. An empty value fails with `url is required`. |
-| `title` | `string` | No | Optional display title. |
-
-**Returns**: `{"error":"...","shadowPlaylist":"...","success":true,"trackId":"..."}`
-
-```js
-await fb2k.invoke('jitQueue.playNow', { trackId: 'track-1', url: 'https://example.com/stream.mp3' });
-```
-
-### jitQueue.preloadBatch
-
-Preloads a batch of tracks into the JIT shadow playlist.
-
-| Parameter | Type | Required | Description |
-| --- | --- | --- | --- |
-| `urls` | `array<string>` | Yes | Track URLs or `path\|subsong:N` values. At most 10000 valid entries per call. |
-| `startIndex` | `integer` | No | Starting playback position. Default `0`. |
-| `replace` | `boolean` | No | Default `true`, which **clears the shadow playlist first**. Pass `false` to append. |
-
-**Returns**: `{ "success": true, "tracksAdded": 2 }`, plus `invalidCount` only when one or more entries were rejected.
-
-`replace: true` is the default and empties the shadow playlist before inserting, so pass `false` to add tracks without disturbing what is already queued. Entries that are not strings, or longer than 2048 characters, are dropped and counted in `invalidCount` rather than failing the call.
-
-The 10000 limit is applied *after* those invalid entries are dropped, so it counts valid entries only. Exceeding it fails the whole batch — the list is never truncated — and that particular failure returns `{ "success": false, "error": "Batch exceeds maximum size (10000)" }` with no `tracksAdded`. Other failures, such as an empty `urls` array or an out-of-range `startIndex`, return `{ "success": false, "tracksAdded": 0, "error": "..." }`.
-
-```js
-// replace the shadow playlist
-await fb2k.invoke('jitQueue.preloadBatch', { urls, startIndex: 0 });
-// append without disturbing playback
-await fb2k.invoke('jitQueue.preloadBatch', { urls: moreUrls, replace: false });
-```
-
-### jitQueue.skip
-
-
-_No parameters._
-
-**Returns**: `{"currentTrackId":"...","success":true}`
-
-```js
-const result = await fb2k.invoke('jitQueue.skip');
-```
-
-### jitQueue.stop
-
-
-| Parameter | Type | Required | Default | Description |
-| --- | --- | --- | --- | --- |
-| `clearBuffer` | `boolean` | No | `true` | Also clears the buffer when stopping. |
-
-**Returns**: `{"success":true}`
-
-```js
-// stop and keep the preloaded buffer
-await fb2k.invoke('jitQueue.stop', { clearBuffer: false });
-```
+Methods of the `queue` namespace.
 
 ## queue
 
 ### queue.add
 
+<!-- api-schema:begin queue.add -->
+Queue one or more tracks by their position in a playlist. Positions past the last row are skipped; when none is in range the call fails with `INVALID_INDEX`. A negative position fails with `INVALID_PARAMS`.
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `playlist` | `integer` | No | Playlist the positions refer to; the active playlist when omitted. An index past the last playlist fails with `INVALID_INDEX`; with this omitted and no active playlist the call fails with `NO_ACTIVE_ITEM`. At least `0`. |
+| `playlistGuid` | `string` | No | A playlist's GUID instead of its index, written with braces as `playlist.getAll` and every result or event that names a playlist report it; either hex case is accepted. It keeps naming the same playlist while other playlists are added, removed or reordered, which an index does not. Giving both this and the index, or a malformed GUID, fails with `INVALID_PARAMS`. A playlist that no longer exists fails with `NOT_FOUND`; the call never falls back to another playlist. A malformed GUID and a missing playlist carry the GUID given as `details.playlistGuid`. |
+| `tracks` | `integer[]` | No | Rows to queue, in order. Takes precedence over `track`. Each item: at least `0`. |
+| `track` | `integer` | No | A single row to queue; read only when `tracks` is absent. At least `0`. |
+
+**Returns**
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `addedCount` | `integer` | How many rows were queued. |
+| `queueCount` | `integer` | Queue length afterwards. |
+
+`success` is `true` on success. On failure the response is `{ success: false, error, code }`; see [Error codes](../reference/errors.md) for `code`.
+<!-- api-schema:end -->
+
 Queues one or more tracks by their position in a playlist.
 
-| Parameter | Type | Required | Default | Description |
-| --- | --- | --- | --- | --- |
-| `playlist` | `integer` | No | active playlist |  |
-| `tracks` | `array<integer>` | No | — | Track indices. Takes precedence over `track`. |
-| `track` | `integer` | No | — | A single track index. Used only when `tracks` is absent. |
-
-**Returns**: `{ "success": true, "addedCount": 2, "queueCount": 5 }`
-
-Supply either `tracks` or `track`, not both — when `tracks` is an array it wins and `track` is ignored. `success` is simply `addedCount > 0`. Out-of-range track indices are skipped silently, so a call that matches nothing returns `success: false` with `addedCount: 0` and **no** `error` field; the same is true for an empty `tracks` array. An invalid `playlist` returns `{ "success": false, "error": "Invalid playlist index" }`. Entries in `tracks` must be numbers — a non-numeric element is a parameter type error rather than a skipped entry.
+Supply either `tracks` or `track`, not both — when `tracks` is an array it wins and `track` is ignored. Out-of-range track indices are skipped, so a call that matches nothing fails with `INVALID_INDEX` and carries `addedCount: 0`; the same is true for an empty `tracks` array. An invalid `playlist` fails with `INVALID_INDEX` (`Invalid playlist index`), and neither field with `INVALID_PARAMS`. Entries in `tracks` must be integers — a non-numeric element is refused by parameter validation rather than skipped.
 
 ```js
 // queue several tracks from the active playlist
@@ -142,19 +39,34 @@ await fb2k.invoke('queue.add', { track: 0 });
 
 ### queue.addPaths
 
-Queues tracks by file path, adding them to a playlist first.
+<!-- api-schema:begin queue.addPaths -->
+Queue tracks by path. Queueing needs playlist membership, so the paths are appended to a playlist first: by default a dedicated `[WebView Queue]` playlist, created when missing. A locked target playlist fails with `LOCKED`, and nothing is added or queued. The target is looked up again after the paths are resolved, as in `playlist.addPaths`: moved meanwhile, it still gets the tracks and `playlist` in the result is its new index; removed meanwhile, the call fails with `OPERATION_FAILED` and nothing is queued. A path the media-root check refuses fails the whole call with `PERMISSION_DENIED`. Paths that resolve to nothing are dropped; when none resolves the call fails with `NOT_FOUND`, the failure carrying `invalidCount`.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `paths` | `array<string>` | Yes | File paths, optionally with a `\|subsong:N` suffix. |
-| `useQueuePlaylist` | `boolean` | No | Default `true`, which targets a dedicated `[WebView Queue]` playlist, creating it if needed. |
-| `playlist` | `integer` | No | Target playlist index. Read only when `useQueuePlaylist` is `false`. |
+| `paths` | `string[]` | Yes | File paths or URLs, each optionally with a `\|subsong:N` suffix. Entries longer than 2048 characters are dropped and counted in `invalidCount`. Must not be empty. |
+| `useQueuePlaylist` | `boolean` | No | Append to the dedicated `[WebView Queue]` playlist, creating it when missing. `false` uses `playlist`, or the active playlist when that is omitted too. Default: `true`. |
+| `playlist` | `integer` | No | Target playlist; read only when `useQueuePlaylist` is `false`. An index past the last playlist fails with `INVALID_INDEX`; with this and `playlistGuid` omitted and no active playlist the call fails with `NO_ACTIVE_ITEM`. At least `0`. |
+| `playlistGuid` | `string` | No | The target playlist's `guid`, instead of `playlist`; like `playlist` it is read only when `useQueuePlaylist` is `false`, and not checked at all otherwise. |
 
-**Returns**: `{ "success": true, "addedCount": 2, "invalidCount": 0, "playlist": 3, "queueCount": 5 }`
+**Returns**
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `addedCount` | `integer` | How many tracks were appended and queued. |
+| `invalidCount` | `integer` | Entries of `paths` dropped: empty ones, ones longer than 2048 characters, a `\|subsong:N` no track could be made for, and the plain paths when none of them resolved. A plain path that resolves to nothing while another plain path of the call resolves is not counted, so a call that succeeds can have dropped more than this. |
+| `playlist` | `integer` | The playlist the tracks were appended to. |
+| `playlistGuid` | `string` | The playlist's GUID, written as `{XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX}`. Pass it as `playlistGuid` to address this playlist even after the playlist list has changed. |
+| `queueCount` | `integer` | Queue length afterwards. |
+
+`success` is `true` on success. On failure the response is `{ success: false, error, code }`; see [Error codes](../reference/errors.md) for `code`.
+<!-- api-schema:end -->
+
+Queues tracks by file path, adding them to a playlist first.
 
 Because queueing requires playlist membership, this method appends the paths to a playlist and then queues them. By default that target is a dedicated `[WebView Queue]` playlist rather than your active one. Setting `useQueuePlaylist: false` targets `playlist` instead, or the active playlist when `playlist` is also omitted — which fails with `No active playlist` if there is none.
 
-A locked target playlist is rejected with `{ "success": false, "error": "Playlist is locked", "isLocked": true, "playlist": N }`. When nothing resolves, the response carries `invalidCount` alongside the error. Other failures return `{ "success": false, "error": "..." }`: an empty `paths` array or an invalid `playlist`.
+A locked target playlist fails with `LOCKED` (`Playlist is locked`), with `details` carrying `playlist` and `isLocked: true`. When nothing resolves, the `NOT_FOUND` failure carries `invalidCount`. An empty `paths` array is refused with `INVALID_PARAMS`, an invalid `playlist` with `INVALID_INDEX`, and no active playlist with `NO_ACTIVE_ITEM`.
 
 ```js
 await fb2k.invoke('queue.addPaths', { paths: ['C:\\Music\\a.flac'] });
@@ -162,10 +74,19 @@ await fb2k.invoke('queue.addPaths', { paths: ['C:\\Music\\a.flac'] });
 
 ### queue.clear
 
+<!-- api-schema:begin queue.clear -->
+Empty the queue.
 
-_No parameters._
+This method takes no parameters.
 
-**Returns**: `{"clearedCount":"...","success":true}`
+**Returns**
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `clearedCount` | `integer` | How many entries the queue held. |
+
+`success` is `true` on success. On failure the response is `{ success: false, error, code }`; see [Error codes](../reference/errors.md) for `code`.
+<!-- api-schema:end -->
 
 ```js
 const result = await fb2k.invoke('queue.clear');
@@ -173,10 +94,19 @@ const result = await fb2k.invoke('queue.clear');
 
 ### queue.flush
 
+<!-- api-schema:begin queue.flush -->
+Empty the queue; the same operation as `queue.clear` under its older name.
 
-_No parameters._
+This method takes no parameters.
 
-**Returns**: `{"clearedCount":"...","success":true}`
+**Returns**
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `clearedCount` | `integer` | How many entries the queue held. |
+
+`success` is `true` on success. On failure the response is `{ success: false, error, code }`; see [Error codes](../reference/errors.md) for `code`.
+<!-- api-schema:end -->
 
 ```js
 const result = await fb2k.invoke('queue.flush');
@@ -184,43 +114,85 @@ const result = await fb2k.invoke('queue.flush');
 
 ### queue.get
 
+<!-- api-schema:begin queue.get -->
+Read the whole playback queue, in play order. No paging: every entry comes back.
+
+This method takes no parameters.
+
+**Returns**
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `items` | `QueueItem[]` | The entries, in play order. |
+| `items[].…` | [Track](../reference/types.md#track) | Every field of [Track](../reference/types.md#track). |
+| `items[].queueIndex` | `integer` | Position in the queue, from `0`. |
+| `items[].playlist` | `integer \| null` | Playlist the entry was queued from; `null` when it carries no playlist position: queued by path, or the position foobar2000 keeps for it no longer holds this track (the row or the playlist was removed, or the rows moved). |
+| `items[].playlistGuid` | `string \| null` | GUID of that playlist, as `playlistGuid` takes it; `null` exactly when `playlist` is `null`. |
+| `items[].playlistItem` | `integer \| null` | Row in that playlist; `null` exactly when `playlist` is `null`. |
+| `count` | `integer` | Number of entries. |
+
+`success` is `true` on success. On failure the response is `{ success: false, error, code }`; see [Error codes](../reference/errors.md) for `code`.
+<!-- api-schema:end -->
+
 Returns the entire playback queue.
 
-_No parameters._
-
-**Returns**: `{ "items": [...], "count": 5 }`
-
-There is no paging and no `success` field; the whole queue is always returned. Each entry carries `queueIndex`, `path`, `absolutePath`, `subsong`, `fileSize`, the usual metadata fields, and the originating `playlist` and `playlistItem`. Both position fields are always present: exact integers for an entry that has a playlist position, and both `null` for an entry that has none — one queued through the `paths` of `queue.insertNext`, or one whose referenced playlist item has since been removed. `item.playlist == null` is the whole test.
+There is no paging; the whole queue is always returned. Each entry is the shared [Track](../reference/types.md#track) row plus `queueIndex` and the originating `playlist`, `playlistGuid` and `playlistItem`. All three position fields are always present. An entry whose recorded position still holds its track reports it; the others report all three as `null`: one queued through the `paths` of `queue.insertNext`, or one whose recorded position no longer holds its track after rows or the playlist were removed or moved. A reported position therefore never points at a different track. `item.playlist == null` is the whole test.
 
 ```js
-const { items, count } = await fb2k.invoke('queue.get');
+const res = await fb2k.invoke('queue.get');
+if (res.success === false) throw new Error(res.error);
+const { items, count } = res;
 ```
 
 ### queue.getCount
 
+<!-- api-schema:begin queue.getCount -->
+Report how many entries the queue holds.
+
+This method takes no parameters.
+
+**Returns**
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `count` | `integer` | Number of entries. |
+| `hasItems` | `boolean` | Whether the queue holds anything; the same as `count > 0`. |
+
+`success` is `true` on success. On failure the response is `{ success: false, error, code }`; see [Error codes](../reference/errors.md) for `code`.
+<!-- api-schema:end -->
+
 Returns the queue length.
 
-_No parameters._
-
-**Returns**: `{ "count": 5, "hasItems": true }`
-
-No `success` field. `hasItems` is exactly `count > 0`, provided as a convenience.
+`hasItems` is exactly `count > 0`, provided as a convenience.
 
 ```js
-const { count } = await fb2k.invoke('queue.getCount');
+const res = await fb2k.invoke('queue.getCount');
+if (res.success === false) throw new Error(res.error);
+const { count } = res;
 ```
 
 ### queue.moveToTop
 
-Moves a queued entry to the front of the queue.
+<!-- api-schema:begin queue.moveToTop -->
+Move a queued entry to the front so it plays next. Only queue order changes; the relative order of the other entries is kept. An `index` of `0`, one past the end, and any index while the queue is empty fail with `INVALID_INDEX`. When the queue cannot be rebuilt the call fails with `OPERATION_FAILED`, the failure carrying `queueCount`.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `index` | `integer` | Yes | Queue index to promote. Must not already be `0`. |
+| `index` | `integer` | Yes | Position of the entry to promote; `0` is already the front and is refused. At least `0`. |
 
-**Returns**: `{ "success": true, "movedIndex": 3, "queueCount": 5 }`
+**Returns**
 
-Only queue order changes — playlist membership is untouched. The relative order of the remaining entries is preserved. A missing `index`, an out-of-range value, an entry already at the top, or an empty queue all return `{ "success": false, "error": "Invalid index or already at top" }`.
+| Field | Type | Description |
+| --- | --- | --- |
+| `movedIndex` | `integer` | The position the entry came from. |
+| `queueCount` | `integer` | Queue length afterwards. |
+
+`success` is `true` on success. On failure the response is `{ success: false, error, code }`; see [Error codes](../reference/errors.md) for `code`.
+<!-- api-schema:end -->
+
+Moves a queued entry to the front of the queue.
+
+Only queue order changes — playlist membership is untouched. The relative order of the remaining entries is preserved. A missing `index` is refused with `INVALID_PARAMS`; an out-of-range value, an entry already at the top, or an empty queue all fail with `INVALID_INDEX` (`Invalid index or already at top`).
 
 ```js
 await fb2k.invoke('queue.moveToTop', { index: 3 });
@@ -228,16 +200,28 @@ await fb2k.invoke('queue.moveToTop', { index: 3 });
 
 ### queue.remove
 
-Removes one or more entries from the queue.
+<!-- api-schema:begin queue.remove -->
+Remove one entry by `index`, or several by `indices`. An empty queue fails with `NOT_FOUND` whatever is given. An `index` past the end fails with `INVALID_INDEX`. In a batch, duplicate indices and those past the end of the queue are skipped; when none is in range the call fails with `INVALID_INDEX`, the failure carrying `removedCount` `0` and `queueCount`. Giving neither key, or a negative index, fails with `INVALID_PARAMS`.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `index` | `integer` | No | A single queue index. Takes precedence over `indices`. |
-| `indices` | `array<integer>` | No | Multiple queue indices. Used only when `index` is absent. |
+| `index` | `integer` | No | One queue position to remove. Takes precedence over `indices`. At least `0`. |
+| `indices` | `integer[]` | No | Queue positions to remove; read only when `index` is absent. Each item: at least `0`. |
 
-**Returns** — single: `{ "success": true, "removedIndex": 2, "queueCount": 4 }`. Batch: `{ "success": true, "removedCount": 3, "queueCount": 2 }`.
+**Returns**
 
-Supply either `index` or `indices`, not both — `index` wins when present. Duplicate and out-of-range values in `indices` are skipped, and a batch that matches nothing returns `success: false` with **no** `error`. An empty queue, an out-of-range `index`, or neither field returns `{ "success": false, "error": "..." }`.
+| Field | Type | Description |
+| --- | --- | --- |
+| `removedIndex` | `integer` | The position removed; only when `index` was given. |
+| `removedCount` | `integer` | How many entries were removed; only when `indices` was given. |
+| `queueCount` | `integer` | Queue length afterwards. |
+
+`success` is `true` on success. On failure the response is `{ success: false, error, code }`; see [Error codes](../reference/errors.md) for `code`.
+<!-- api-schema:end -->
+
+Removes one or more entries from the queue.
+
+Supply either `index` or `indices`, not both — `index` wins when present. Duplicate and out-of-range values in `indices` are skipped, and a batch that matches nothing fails with `INVALID_INDEX` carrying `removedCount: 0`. An empty queue fails with `NOT_FOUND`, an out-of-range `index` with `INVALID_INDEX`, and neither field with `INVALID_PARAMS`.
 
 ```js
 await fb2k.invoke('queue.remove', { indices: [0, 2] });
@@ -245,13 +229,27 @@ await fb2k.invoke('queue.remove', { indices: [0, 2] });
 
 ### queue.setContents
 
-Replaces the entire queue with an ordered list of references.
+<!-- api-schema:begin queue.setContents -->
+Replace the whole queue with an ordered list of references. One unusable reference fails the whole call before anything is written. An empty list clears the queue. A playlist index is read as the call arrives, so one taken before the playlist list changed queues a row of another playlist; `playlistGuid` keeps naming the playlist it was read from. An entry giving both `playlist` and `playlistGuid`, or a malformed GUID, fails with `INVALID_PARAMS`, a GUID no playlist has with `NOT_FOUND`.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `items` | `array<{ queueIndex: number } \| { playlist: number, item: number }>` | Yes | Ordered references — `{ queueIndex }` keeps/reorders an existing queue slot, `{ playlist, item }` adds a playlist track. |
+| `items` | `QueueContentRef[]` | Yes | The new queue, in order. At most `max(256, current queue length)` entries; more fail with `INVALID_PARAMS`. |
+| `items[].queueIndex` | `integer` | No | Position of an entry already in the queue. At least `0`. |
+| `items[].playlist` | `integer` | No | Playlist of the row to add; needs `item` as well. At least `0`. |
+| `items[].playlistGuid` | `string` | No | The playlist of the row to add by its `guid`, instead of `playlist`; needs `item` as well. |
+| `items[].item` | `integer` | No | Row in that playlist; needs `playlist` or `playlistGuid` as well. At least `0`. |
 
-**Returns**: `{ "success": true, "queueCount": 5 }`
+**Returns**
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `queueCount` | `integer` | Queue length afterwards. |
+
+`success` is `true` on success. On failure the response is `{ success: false, error, code }`; see [Error codes](../reference/errors.md) for `code`.
+<!-- api-schema:end -->
+
+Replaces the entire queue with an ordered list of references.
 
 An entry that matches neither shape fails the whole call before anything is written — unlike `queue.add`, which skips bad entries individually, any single invalid reference here rejects the entire call and leaves the queue untouched. `queueCount` is present on every response, success or failure. Passing an empty array clears the queue, equivalent to `queue.clear`. `items.length` is capped at `max(256, current queue length)`; exceeding it fails without changing the queue.
 
@@ -270,23 +268,39 @@ await fb2k.invoke('queue.setContents', { items: [] });
 
 ### queue.insertNext
 
-Inserts tracks so they play next, ahead of everything already queued. Entries are given as file paths, as playlist positions, or both.
+<!-- api-schema:begin queue.insertNext -->
+Insert tracks so they play next, ahead of everything already queued. A track that is already queued is moved instead of queued twice. `items` land before `paths`; each block keeps its own order. A call with neither `paths` nor `items` fails with `INVALID_PARAMS`. Every entry of `items` is checked before any path is resolved, and one bad entry fails the whole call with nothing written: an entry naming its playlist by neither or both of `playlist` and `playlistGuid`, or by a malformed GUID, fails with `INVALID_PARAMS`, a GUID no playlist has with `NOT_FOUND`, a playlist index or row out of range with `INVALID_INDEX`. A path the media-root check refuses fails the whole call with `PERMISSION_DENIED`; a path that resolves to nothing is dropped and counted in `invalidCount`, and when nothing at all is left to insert the call fails with `NOT_FOUND`. A playlist row that changed while the paths were resolved fails the call with `OPERATION_FAILED`, and so does a queue that cannot be rebuilt.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `paths` | `array<string>` | No¹ | File paths or URLs, optionally with a `\|subsong:N` suffix. The resulting entries carry no playlist position. |
-| `items` | `array<{ playlist, item }>` | No¹ | Playlist positions, in the shape `queue.setContents` accepts. The resulting entries carry that position, so the playback cursor follows them. |
-| `position` | `integer` | No | Insertion index within the queue *after* any moved entries are removed. Defaults to `0` (the front). |
+| `paths` | `string[]` | No | File paths or URLs, each optionally with a `\|subsong:N` suffix. The entries they produce carry no playlist position. |
+| `items` | `QueueListRef[]` | No | Playlist rows; the entries they produce carry that position, so the playback cursor follows them. At most `max(256, current queue length)` entries; more fail with `INVALID_PARAMS`. |
+| `items[].playlist` | `integer` | No | Playlist index; give this or `playlistGuid`. At least `0`. |
+| `items[].playlistGuid` | `string` | No | The playlist's `guid`, instead of `playlist`. |
+| `items[].item` | `integer` | Yes | Row in that playlist. At least `0`. |
+| `position` | `integer` | No | Where to insert, counted after any moved entries are taken out; `0` is the front. At least `0`. Default: `0`. |
+
+**Returns**
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `insertedCount` | `integer` | Tracks newly queued. |
+| `movedCount` | `integer` | Entries that were already queued and moved. |
+| `queueCount` | `integer` | Queue length afterwards. |
+| `invalidCount` | `integer` | Input path count minus the tracks resolved from paths, floored at zero. A folder or playlist file resolves to several tracks, so this is not a count of the paths that failed. |
+
+`success` is `true` on success. On failure the response is `{ success: false, error, code }`; see [Error codes](../reference/errors.md) for `code`.
+<!-- api-schema:end -->
+
+Inserts tracks so they play next, ahead of everything already queued. Entries are given as file paths, as playlist positions, or both.
 
 ¹ At least one of `paths` and `items` must be non-empty.
-
-**Returns**: `{ "success": true, "insertedCount": 1, "movedCount": 1, "queueCount": 5, "invalidCount": 0 }`
 
 A track already present in the queue is moved to `position` instead of being queued a second time; only one occurrence moves, selected by the coordinate rules below. Within one call the `items` block lands first and the `paths` block after it; each block keeps its own order. `insertedCount` counts newly queued tracks and `movedCount` counts relocated entries. `invalidCount` is the input path count minus the number of tracks resolved from paths, floored at zero. It is not an exact count of failed paths: folder or container expansion can offset failures. `items` never counts toward `invalidCount`: one bad entry, such as a non-object, missing `playlist` or `item`, or an out-of-range position, fails the whole call with an `error` naming `items[i]`. Nothing is written, and the `paths` of the same call are not queued either.
 
 All input entries are deduplicated by track, not by position. For duplicate `items`, the first supplied coordinate already present in the queue is retained; if none matches, the first supplied coordinate is used. The track keeps its first-occurrence order within the input block. An existing entry at that coordinate moves first; otherwise the first queued entry for the track moves and takes the supplied coordinate. A path-only move preserves the existing entry's usable coordinate; only a newly inserted path lacks one. `queue.add` and `queue.setContents` preserve duplicate references. A lower `insertedCount + movedCount` can reflect deduplication or invalid paths; folders and containers can also expand to multiple tracks.
 
-Both arrays empty or absent fails with `{ "success": false, "error": "No paths or items specified" }`; `items` that is not an array fails with `"items must be an array"`; `paths` resolving to zero valid tracks with no `items` fails with `{ "success": false, "error": "No valid tracks found", "invalidCount": ... }`.
+Both arrays empty or absent fails with `INVALID_PARAMS` (`No paths or items specified`); `items` that is not an array fails with `items must be an array`; `paths` resolving to zero valid tracks with no `items` fails with `NOT_FOUND` (`No valid tracks found`) carrying `invalidCount`. A coordinate out of range is `INVALID_INDEX`, a playlist item that cannot be fetched `NOT_FOUND`, and a playlist that changed while the paths were being resolved `OPERATION_FAILED`, each naming `items[i]`.
 
 ::: warning Known limitation: legacy `|subsong:N` matching
 A track that entered the queue through the `path|subsong:N` suffix accepted by `queue.addPaths` may fail to match as "already in the queue" when passed to `insertNext` again — it may be queued a second time instead of moved. This only affects tracks queued before upgrading; new calls are unaffected. A bare path to a multi-subsong file and that same path with an explicit `|subsong:0` suffix are also treated as distinct identities rather than equivalent — do not assume they deduplicate against each other.
@@ -307,15 +321,26 @@ await fb2k.invoke('queue.insertNext', { items: [{ playlist: 0, item: 12 }] });
 
 ### queue.playNow
 
-Plays the queue entry at `index` immediately, promoting it to the front of the queue first if it is not already there.
+<!-- api-schema:begin queue.playNow -->
+Play the queue entry at `index` now, moving it to the front first when it is not already there. An empty queue fails with `NOT_FOUND`, an `index` past the end with `INVALID_INDEX`. When the entry has to be moved and the queue cannot be rebuilt, the call fails with `OPERATION_FAILED` and playback is not started.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `index` | `integer` | No | Queue index to play. Defaults to `0` (the current queue head). |
+| `index` | `integer` | No | Queue position to play. At least `0`. Default: `0`. |
 
-**Returns**: `{ "success": true, "playedIndex": 0, "queueCount": 4 }`
+**Returns**
 
-Fails with `{ "success": false, "error": "Queue is empty" }` when nothing is queued, or `{ "success": false, "error": "Invalid queue index" }` for a negative, non-integer, or out-of-range `index`.
+| Field | Type | Description |
+| --- | --- | --- |
+| `playedIndex` | `integer` | The position that was played. |
+| `queueCount` | `integer` | Queue length read right after playback started; the host may consume the played entry before or after that read. |
+
+`success` is `true` on success. On failure the response is `{ success: false, error, code }`; see [Error codes](../reference/errors.md) for `code`.
+<!-- api-schema:end -->
+
+Plays the queue entry at `index` immediately, promoting it to the front of the queue first if it is not already there.
+
+Fails with `NOT_FOUND` (`Queue is empty`) when nothing is queued, or `INVALID_INDEX` (`Invalid queue index`) for an out-of-range `index`; a negative or non-integer value is refused by parameter validation.
 
 ::: warning `queueCount` timing is not guaranteed
 `queueCount` is read immediately after playback starts. The host does not guarantee that its consumption of the queue head happens synchronously with that read, so the value may reflect the queue either just before or just after the played entry is removed. Call `queue.getCount` afterward if the exact post-play length matters.
@@ -335,7 +360,9 @@ await fb2k.invoke('queue.playNow', { index: 2 });
 **Play a playlist item while keeping the queue.** Put the target at the head with `setContents`, then consume it with `playNow`:
 
 ```js
-const { count } = await fb2k.invoke('queue.getCount');
+const res = await fb2k.invoke('queue.getCount');
+if (res.success === false) throw new Error(res.error);
+const { count } = res;
 await fb2k.invoke('queue.setContents', {
   items: [
     { playlist, item },                                            // the track to play now
@@ -348,105 +375,3 @@ await fb2k.invoke('queue.playNow'); // consumes the head, leaves the rest queued
 After the count query, this uses two calls and one queue rebuild. The played track enters the queue with a playlist position, so the cursor follows it and the "cursor does not follow" limitation above does not apply.
 
 **Restore a queue that was cleared.** The host keeps no record of flushed entries, so snapshot `queue.get` *before* the call that starts playback. Entries whose `playlist` is not `null` can be added through `setContents` or `insertNext({ items })`; entries with `playlist: null` need `insertNext({ paths })`. Both forms can share one `insertNext` call, but it groups coordinates before paths and deduplicates by track. Use `setContents` afterwards to restore ordering and duplicate counts, not necessarily the original coordinate forms: if one track originally had both a coordinate entry and a coordinate-less entry, copying its remaining `queueIndex` also copies that entry's coordinate. Recreating every entry by path loses playlist coordinates and may collapse duplicates.
-
-## selection
-
-### selection.get
-
-Reads the current selection. This method observes state only and never modifies a playlist.
-
-| Parameter | Type | Required | Description |
-| --- | --- | --- | --- |
-| `offset` | `integer` | No | Starting index. Default `0`. |
-| `limit` | `integer` | No | Maximum entries to return. Defaults to `100`; pass `0` for all. |
-
-**Returns**: `{ "count": 250, "type": "...", "handles": [...], "offset": 0, "hasMore": true }`, plus `truncated: true` when the result was auto-capped.
-
-This method returns **no** `success` field and has no failure branch. The `100` cap applies only when `limit` is omitted — an explicit `limit` is honored as given, and `limit: 0` means "no limit", returning every entry from `offset` onward.
-
-`truncated: true` appears only when the automatic cap was actually applied, that is when the selection exceeds 100 **and** `limit` was omitted. Asking for `limit: 10` out of a 250-item selection is not truncation and reports nothing. The field is never present with a `false` value, so test for its presence rather than its value, and use `hasMore` to decide whether to page further. `count` is the total size of the selection, not the number of entries returned.
-
-```js
-const { handles, count, hasMore } = await fb2k.invoke('selection.get', { limit: 0 });
-```
-
-### selection.getType
-
-
-_No parameters._
-
-**Returns**: `{"type":"...","typeName":"..."}`
-
-```js
-const result = await fb2k.invoke('selection.getType');
-```
-
-### selection.getViewerMode
-
-
-_No parameters._
-
-**Returns**: `{"mode":"..."}`
-
-```js
-const result = await fb2k.invoke('selection.getViewerMode');
-```
-
-### selection.getViewingTrack
-
-
-| Parameter | Type | Required | Default | Description |
-| --- | --- | --- | --- | --- |
-| `includeTrackInfo` | `boolean` | No | `false` | Includes the full `track` info object. |
-
-**Returns**: `{"found":true,"handle":"...","itemIndex":"...","mode":"...","playlistIndex":"...","source":"...","success":true,"track":{}}`
-
-```js
-const { found, track } = await fb2k.invoke('selection.getViewingTrack', { includeTrackInfo: true });
-```
-
-### selection.set
-
-
-| Parameter | Type | Required | Description |
-| --- | --- | --- | --- |
-| `handles` | `array<string>` | Yes | Non-empty array of paths, optionally with a `\|subsong:N` suffix. |
-
-**Returns**: `{ "success": true, "count": 2 }`
-
-Entries that are not strings are skipped silently, and a malformed `|subsong:` suffix falls back to subsong `0`. Failures return `{ "success": false, "error": "..." }` — a missing or non-array `handles`, an empty array, no resolvable entries, or a failure to acquire the selection holder.
-
-```js
-await fb2k.invoke('selection.set', { handles: ['C:\\Music\\a.flac'] });
-```
-
-### selection.setPlaylistTracking
-
-
-| Parameter | Type | Required | Description |
-| --- | --- | --- | --- |
-| `mode` | `string` | No | `'playlist'` or `'selection'`. Any other value is treated as `'selection'`, which is also the default. |
-
-**Returns**: `{"error":"...","mode":"...","success":true}`
-
-```js
-await fb2k.invoke('selection.setPlaylistTracking', { mode: 'playlist' });
-```
-
-## Selection behavior
-
-`selection.getViewerMode` returns either `prefer_playing` or `prefer_selection`, derived from the live selection type rather than a stored setting. `selection.getViewingTrack` applies that preference and falls back to the other source when the preferred one has no track; it always reports `success: true`, so test `found` instead. `selection:changed` is broadcast to every WebView after a selection update and is throttled to 50 ms; its payload is documented in the event reference.
-
-Queue and selection handles share one string form: a native path with `|subsong:N` appended only when the subsong is greater than `0`. Paths supplied to `queue.addPaths` or the JIT Queue operations accept the same suffix. Individual paths and URLs are capped at 2048 characters.
-
-## JIT Queue events
-
-These events are emitted while the JIT shadow playlist is maintained. Subscribe before issuing operations when the frontend needs to refill or observe that buffer.
-
-| Event | Meaning | Payload keys |
-| --- | --- | --- |
-| `jitQueue:needNext` | The manager needs the next logical track. | `{ currentTrackId, reason }` |
-| `jitQueue:trackChanged` | The JIT current track changed. | `{ trackId, title }` |
-| `jitQueue:listExhausted` | No further tracks are available — emitted on end of playback with an empty buffer, or after `jitQueue.notifyEmpty`. | `{ lastTrackId }` |
-| `jitQueue:preloadComplete` | A batch preload completed. | `{ count, startIndex, replace }` |
-| `jitQueue:error` | A JIT operation failed for a track. | `{ trackId, error }` plus **exactly one** of `url` (streaming source) or `path` (local file) |

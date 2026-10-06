@@ -2,16 +2,18 @@
 
 Path-bearing Bridge endpoints are validated by BridgeCore path-security specs before the handler body runs. Rejected requests never reach the filesystem or foobar2000 SDK path side effects. A path the policy refuses returns `PERMISSION_DENIED`; a parameter of the wrong shape or type returns `INVALID_PARAMS`.
 
-Authority counts are taken from current `RegisterApi` path-security specs of the form `{ param, SecurityLevel::... }` in `src/api/**`:
+Counts are taken from the `@security` and `@pathKey` declarations in `src/api/schema/*.ts`, which generate the path-security specs every registration uses:
 
+<!-- api-schema:begin permissions:counts -->
 | Level | Spec count | Meaning |
 | --- | ---: | --- |
 | `Read` | 10 | Ordinary filesystem read checks |
 | `Write` | 1 | Strict write destinations (config/temp style policy) |
-| `MediaRead` | 41 | Media-context read checks |
+| `MediaRead` | 47 | Media-context read checks |
 | `MediaWrite` | 10 | Media-context write checks |
 | `FileWrite` | 11 | General file writes (`file.*`) |
-| **Total** | **73** | **68 unique APIs** |
+| **Total** | **79** | **74 unique APIs** |
+<!-- api-schema:end -->
 
 ## Six-level model
 
@@ -56,7 +58,7 @@ The rejected path is never echoed back. The message names the method, the offend
 
 ```javascript
 const result = await fb2k.invoke('file.read', { path: somePath });
-if (!result.success) {
+if (result.success === false) {
   if (result.code === 'PERMISSION_DENIED') {
     console.warn('Path rejected by security policy:', result.error);
   } else if (result.code === 'INVALID_PARAMS') {
@@ -67,107 +69,123 @@ if (!result.success) {
 
 ## API permission matrix
 
+<!-- api-schema:begin permissions:Read -->
 ### Read — filesystem read (10 specs)
 
-| API | Parameter | Array | Nested key | Notes |
-| --- | --- | --- | --- | --- |
-| `artwork.getFolderImages` | `directory` | — | — | Runtime authority: `ArtworkApi.cpp` |
-| `clipboard.writeFiles` | `paths` | yes | — | Runtime authority: `ClipboardApi.cpp` |
-| `file.copy` | `source` | — | — | Runtime authority: `FileApi.cpp` |
-| `file.copyAsync` | `items` | yes | `source` | Runtime authority: `FileApi.cpp` |
-| `file.exists` | `path` | — | — | Runtime authority: `FileApi.cpp` |
-| `file.getInfo` | `path` | — | — | Runtime authority: `FileApi.cpp` |
-| `file.list` | `path` | — | — | Runtime authority: `FileApi.cpp` |
-| `file.read` | `path` | — | — | Runtime authority: `FileApi.cpp` |
-| `shell.openWith` | `path` | — | — | Runtime authority: `ShellApi.cpp` |
-| `shell.showInExplorer` | `path` | — | — | Runtime authority: `ShellApi.cpp` |
+| API | Parameter | Array | Nested key |
+| --- | --- | --- | --- |
+| `artwork.getFolderImages` | `directory` | — | — |
+| `clipboard.writeFiles` | `paths` | yes | — |
+| `file.copy` | `source` | — | — |
+| `file.copyAsync` | `items` | yes | `source` |
+| `file.exists` | `path` | — | — |
+| `file.getInfo` | `path` | — | — |
+| `file.list` | `path` | — | — |
+| `file.read` | `path` | — | — |
+| `shell.openWith` | `path` | — | — |
+| `shell.showInExplorer` | `path` | — | — |
+<!-- api-schema:end -->
 
-### Write — strict write destinations (1 specs)
+<!-- api-schema:begin permissions:Write -->
+### Write — strict write destinations (1 spec)
 
-| API | Parameter | Array | Nested key | Notes |
-| --- | --- | --- | --- | --- |
-| `http.download` | `saveTo` | — | — | Runtime authority: `HttpApi.cpp` |
+| API | Parameter | Array | Nested key |
+| --- | --- | --- | --- |
+| `http.download` | `saveTo` | — | — |
+<!-- api-schema:end -->
 
-### MediaRead — media reads (41 specs)
+<!-- api-schema:begin permissions:MediaRead -->
+### MediaRead — media reads (47 specs)
 
-| API | Parameter | Array | Nested key | Notes |
-| --- | --- | --- | --- | --- |
-| `artwork.getAvailableArtwork` | `path` | — | — | Runtime authority: `ArtworkApi.cpp` |
-| `artwork.getAvailableTypes` | `path` | — | — | Runtime authority: `ArtworkApi.cpp` |
-| `artwork.getBatch` | `paths` | yes | — | Runtime authority: `ArtworkApi.cpp` |
-| `artwork.getByPath` | `path` | — | — | Runtime authority: `ArtworkApi.cpp` |
-| `artwork.getFb2kUrlByPath` | `path` | — | — | Runtime authority: `ArtworkApi.cpp` |
-| `artwork.getFb2kUrlByPathBatch` | `items` | yes | `path` | Runtime authority: `ArtworkApi.cpp` |
-| `artwork.getFb2kUrlByPathBatch` | `paths` | yes | — | Runtime authority: `ArtworkApi.cpp` |
-| `artwork.getForTrack` | `path` | — | — | Runtime authority: `ArtworkApi.cpp` |
-| `artwork.getLyrics` | `path` | — | — | Runtime authority: `ArtworkApi.cpp` |
-| `artwork.getMetadata` | `path` | — | — | Runtime authority: `ArtworkApi.cpp` |
-| `audio.analyzeBPM` | `path` | — | — | Runtime authority: `AudioApi.cpp` |
-| `audio.generateFullWaveform` | `path` | — | — | Runtime authority: `AudioApi.cpp` |
-| `audio.generateWaveform` | `path` | — | — | Runtime authority: `AudioApi.cpp` |
-| `discovery.executeContextMenuByPath` | `trackPath` | — | — | Runtime authority: `DiscoveryApi.cpp` |
-| `jitQueue.enqueueNext` | `url` | — | — | Runtime authority: `QueueApi.cpp` |
-| `jitQueue.playNow` | `url` | — | — | Runtime authority: `QueueApi.cpp` |
-| `jitQueue.preloadBatch` | `urls` | yes | — | Runtime authority: `QueueApi.cpp` |
-| `library.getByPath` | `path` | — | — | Runtime authority: `LibraryApi.cpp` |
-| `lyrics.exists` | `path` | — | — | Runtime authority: `LyricsApi.cpp` |
-| `lyrics.get` | `path` | — | — | Runtime authority: `LyricsApi.cpp` |
-| `metadata.probeBatchAsync` | `paths` | yes | — | Runtime authority: `MetadataApi.cpp` |
-| `metadata.read` | `path` | — | — | Runtime authority: `MetadataApi.cpp` |
-| `metadata.readBatch` | `paths` | yes | — | Runtime authority: `MetadataApi.cpp` |
-| `metadata.readByPath` | `path` | — | — | Runtime authority: `MetadataApi.cpp` |
-| `metadata.readRaw` | `path` | — | — | Runtime authority: `MetadataApi.cpp` |
-| `playback.playPath` | `path` | — | — | Runtime authority: `PlaybackApi.cpp` |
-| `playback.playPaths` | `paths` | yes | — | Runtime authority: `PlaybackApi.cpp` |
-| `playcount.get` | `paths` | yes | — | Runtime authority: `PlaycountApi.cpp` |
-| `playcount.getBatch` | `paths` | yes | — | Runtime authority: `PlaycountApi.cpp` |
-| `playlist.addPaths` | `paths` | yes | — | Runtime authority: `PlaylistApi.cpp` |
-| `playlist.addPathsAsync` | `paths` | yes | — | Runtime authority: `PlaylistApi.cpp` |
-| `playlist.addPathsSequential` | `paths` | yes | — | Runtime authority: `PlaylistApi.cpp` |
-| `playlist.replaceAllAndPlay` | `paths` | yes | — | Runtime authority: `PlaylistApi.cpp` |
-| `queue.addPaths` | `paths` | yes | — | Runtime authority: `QueueApi.cpp` |
-| `rating.get` | `path` | — | — | Runtime authority: `MetadataApi.cpp` |
-| `replaygain.get` | `paths` | yes | — | Runtime authority: `ReplayGainApi.cpp` |
-| `replaygain.scan` | `paths` | yes | — | Runtime authority: `ReplayGainApi.cpp` |
-| `titleformat.eval` | `path` | — | — | Runtime authority: `TitleformatApi.cpp` |
-| `titleformat.evalBatch` | `paths` | yes | — | Runtime authority: `TitleformatApi.cpp` |
-| `titleformat.evalFields` | `path` | — | — | Runtime authority: `TitleformatApi.cpp` |
-| `titleformat.evalFieldsBatch` | `paths` | yes | — | Runtime authority: `TitleformatApi.cpp` |
+| API | Parameter | Array | Nested key |
+| --- | --- | --- | --- |
+| `artwork.getAvailableArtwork` | `path` | — | — |
+| `artwork.getAvailableTypes` | `path` | — | — |
+| `artwork.getBatch` | `paths` | yes | — |
+| `artwork.getByPath` | `path` | — | — |
+| `artwork.getFb2kUrlByPath` | `path` | — | — |
+| `artwork.getFb2kUrlByPathBatch` | `items` | yes | `path` |
+| `artwork.getFb2kUrlByPathBatch` | `paths` | yes | — |
+| `artwork.getForTrack` | `path` | — | — |
+| `artwork.getLyrics` | `path` | — | — |
+| `artwork.getMetadata` | `path` | — | — |
+| `audio.analyzeBPM` | `path` | — | — |
+| `audio.decodePcm` | `path` | — | — |
+| `audio.generateFullWaveform` | `path` | — | — |
+| `discovery.executeContextMenuByPath` | `trackPath` | — | — |
+| `jitQueue.enqueueNext` | `url` | — | — |
+| `jitQueue.playNow` | `url` | — | — |
+| `jitQueue.preloadBatch` | `urls` | yes | — |
+| `library.addToPlaylist` | `paths` | yes | — |
+| `library.getByPath` | `path` | — | — |
+| `lyrics.exists` | `path` | — | — |
+| `lyrics.get` | `path` | — | — |
+| `media.getContainerInfo` | `path` | — | — |
+| `media.getStreamUrl` | `path` | — | — |
+| `metadata.probeBatchAsync` | `paths` | yes | — |
+| `metadata.read` | `path` | — | — |
+| `metadata.readBatch` | `paths` | yes | — |
+| `metadata.readByPath` | `path` | — | — |
+| `metadata.readRaw` | `path` | — | — |
+| `playback.playPath` | `path` | — | — |
+| `playback.playPaths` | `paths` | yes | — |
+| `playcount.get` | `paths` | yes | — |
+| `playcount.getBatch` | `paths` | yes | — |
+| `playlist.addHandles` | `handles` | yes | `path` |
+| `playlist.addPaths` | `paths` | yes | — |
+| `playlist.addPathsAsync` | `paths` | yes | — |
+| `playlist.addPathsSequential` | `paths` | yes | — |
+| `playlist.insertTracks` | `handles` | yes | `path` |
+| `playlist.replaceAllAndPlay` | `paths` | yes | — |
+| `queue.addPaths` | `paths` | yes | — |
+| `queue.insertNext` | `paths` | yes | — |
+| `rating.get` | `path` | — | — |
+| `replaygain.get` | `paths` | yes | — |
+| `replaygain.scan` | `paths` | yes | — |
+| `titleformat.eval` | `path` | — | — |
+| `titleformat.evalBatch` | `paths` | yes | — |
+| `titleformat.evalFields` | `path` | — | — |
+| `titleformat.evalFieldsBatch` | `paths` | yes | — |
+<!-- api-schema:end -->
 
+<!-- api-schema:begin permissions:MediaWrite -->
 ### MediaWrite — media mutation (10 specs)
 
-| API | Parameter | Array | Nested key | Notes |
-| --- | --- | --- | --- | --- |
-| `lyrics.save` | `path` | — | — | Runtime authority: `LyricsApi.cpp` |
-| `metadata.embedArtwork` | `path` | — | — | Runtime authority: `MetadataApi.cpp` |
-| `metadata.removeEmbeddedArt` | `path` | — | — | Runtime authority: `MetadataApi.cpp` |
-| `metadata.removeField` | `path` | — | — | Runtime authority: `MetadataApi.cpp` |
-| `metadata.removeTag` | `path` | — | — | Runtime authority: `MetadataApi.cpp` |
-| `metadata.write` | `path` | — | — | Runtime authority: `MetadataApi.cpp` |
-| `metadata.writeBatch` | `items` | yes | `path` | Runtime authority: `MetadataApi.cpp` |
-| `playcount.set` | `path` | — | — | Runtime authority: `PlaycountApi.cpp` |
-| `rating.set` | `path` | — | — | Runtime authority: `MetadataApi.cpp` |
-| `replaygain.clear` | `paths` | yes | — | Runtime authority: `ReplayGainApi.cpp` |
+| API | Parameter | Array | Nested key |
+| --- | --- | --- | --- |
+| `lyrics.save` | `path` | — | — |
+| `metadata.embedArtwork` | `path` | — | — |
+| `metadata.removeEmbeddedArt` | `path` | — | — |
+| `metadata.removeField` | `path` | — | — |
+| `metadata.removeTag` | `path` | — | — |
+| `metadata.write` | `path` | — | — |
+| `metadata.writeBatch` | `items` | yes | `path` |
+| `playcount.set` | `path` | — | — |
+| `rating.set` | `path` | — | — |
+| `replaygain.clear` | `paths` | yes | — |
+<!-- api-schema:end -->
 
 ::: info Nested array validation
 `metadata.writeBatch` validates each object in `items` by reading the nested `path` key.
 :::
 
+<!-- api-schema:begin permissions:FileWrite -->
 ### FileWrite — general file writes (11 specs)
 
-| API | Parameter | Array | Nested key | Notes |
-| --- | --- | --- | --- | --- |
-| `file.copy` | `destination` | — | — | Runtime authority: `FileApi.cpp` |
-| `file.copyAsync` | `items` | yes | `destination` | Runtime authority: `FileApi.cpp` |
-| `file.delete` | `path` | — | — | Runtime authority: `FileApi.cpp` |
-| `file.deleteAsync` | `paths` | yes | — | Runtime authority: `FileApi.cpp` |
-| `file.mkdir` | `path` | — | — | Runtime authority: `FileApi.cpp` |
-| `file.move` | `destination` | — | — | Runtime authority: `FileApi.cpp` |
-| `file.move` | `source` | — | — | Runtime authority: `FileApi.cpp` |
-| `file.moveAsync` | `items` | yes | `destination` | Runtime authority: `FileApi.cpp` |
-| `file.moveAsync` | `items` | yes | `source` | Runtime authority: `FileApi.cpp` |
-| `file.rename` | `path` | — | — | Runtime authority: `FileApi.cpp` |
-| `file.write` | `path` | — | — | Runtime authority: `FileApi.cpp` |
+| API | Parameter | Array | Nested key |
+| --- | --- | --- | --- |
+| `file.copy` | `destination` | — | — |
+| `file.copyAsync` | `items` | yes | `destination` |
+| `file.delete` | `path` | — | — |
+| `file.deleteAsync` | `paths` | yes | — |
+| `file.mkdir` | `path` | — | — |
+| `file.move` | `destination` | — | — |
+| `file.move` | `source` | — | — |
+| `file.moveAsync` | `items` | yes | `destination` |
+| `file.moveAsync` | `items` | yes | `source` |
+| `file.rename` | `path` | — | — |
+| `file.write` | `path` | — | — |
+<!-- api-schema:end -->
 
 `file.copy` validates `source` as `Read` and `destination` as `FileWrite`; `file.move` validates both endpoints as `FileWrite`. The asynchronous family follows the same split: `file.copyAsync` checks every `items[].source` as `Read` and every `items[].destination` as `FileWrite`, `file.moveAsync` checks both nested keys as `FileWrite`, and `file.deleteAsync` checks every entry of `paths` as `FileWrite`. Validation is fail-fast per call: one rejected entry fails the whole batch with `PERMISSION_DENIED` and no operation is dispatched.
 
@@ -180,7 +198,6 @@ These endpoints manage their own policy outside ordinary decorator specs:
 | `shell.exec` | No executable whitelist; optional `cwd` still goes through PathSecurity |
 | `shell.spawn` | No executable whitelist; absolute executable path and `cwd` are path-checked |
 | `console.log` | Log directory restriction, reserved device names, and `.log` / `.txt` extension allowlist |
-| `playlist.insertTracks` | Operates on playlist handles rather than raw filesystem paths |
 
 ## Path security details
 
@@ -272,4 +289,4 @@ on the literal drive letter; check how the target machine actually redirects
 these directories.
 :::
 
-The spec counts at the top of this page are maintained by hand; the `RegisterApi` path-security specs in the component source are the authority.
+The counts and the per-level tables on this page are generated from the `@security` and `@pathKey` declarations in `src/api/schema/*.ts`.

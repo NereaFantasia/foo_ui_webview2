@@ -17,6 +17,7 @@ Searches the media library and returns a `LibrarySearchResponse`.
 
 ```javascript
 const results = await fb.library.search('artist HAS Beatles', 100);
+if (results.success === false) throw new Error(results.error);
 console.log(`Found ${results.total} tracks`);
 if (results.hasMore) console.log('More results are available');
 
@@ -54,7 +55,9 @@ Resolves to `LibraryArtistsResponse`; each `items` row is an `ArtistInfo` — `{
 const artists = await fb.library.getArtists(100);
 
 // Artist -> albums mapping for a browser section
-const { items } = await fb.library.getArtists(100000, { includeAlbums: true });
+const res = await fb.library.getArtists(100000, { includeAlbums: true });
+if (res.success === false) throw new Error(res.error);
+const { items } = res;
 const albumsByArtist = new Map(items.map((a) => [a.name, a.albums]));
 ```
 
@@ -66,6 +69,7 @@ Returns aggregate statistics such as `totalTracks`, `totalAlbums`, `totalArtists
 
 ```javascript
 const stats = await fb.library.getStats();
+if (stats.success === false) throw new Error(stats.error);
 console.log(`${stats.totalTracks} tracks, ${stats.totalDuration} seconds`);
 ```
 
@@ -86,6 +90,7 @@ Returns media-library state, including `initialized` and optional `enabled`, `sc
 
 ```javascript
 const s = await fb.library.getStatus();
+if (s.success === false) throw new Error(s.error);
 if (s.initialized) console.log('The library is initialized');
 ```
 
@@ -94,27 +99,42 @@ if (s.initialized) console.log('The library is initialized');
 Returns the media-library item count as `{ count }`.
 
 ```javascript
-const { count } = await fb.library.getCount();
+const res = await fb.library.getCount();
+if (res.success === false) throw new Error(res.error);
+const { count } = res;
 ```
 
-## getAll(start, count) 
+## getAll(start, count, opts?) 
 
-Returns paged tracks as `LibraryPagedTracksResponse`. When the host offloads a full-library request to a background worker, the wrapper waits for the matching `library:getAllResult` event and still resolves to the same final shape.
+Resolves with paged tracks as `LibraryPagedTracksResponse`, whose rows are `LibraryTrack`: the shared track fields plus `index`, the position in the library; a failed call resolves with a failure envelope. When the host offloads a full-library request to a background worker, the wrapper waits for the matching `library:getAllResult` event and still resolves to the same final shape. A list the host failed to build and a timeout both resolve with `OPERATION_FAILED` rather than rejecting; `details.requestId` names the request, and a timeout also carries `details.timeoutMs`.
 
 | Parameter | Type | Description |
 | --- | --- | --- |
-| `start` | `number?` | Start offset |
-| `count` | `number?` | Maximum result count |
-| `opts.timeout` | `number?` | Client-side timeout in milliseconds; defaults to `60000`, and `0` disables it |
+| `start` | `number?` | Position of the first track, sent as the host's `offset`; the host defaults to `0` |
+| `count` | `number?` | Most tracks to return, sent as the host's `limit`; the host defaults to `100` |
+| `opts.useCache` | `boolean?` | From `start` 0, answer from the list the host kept after an earlier request from 0 that covered every track. Sent only when given; the host defaults to `true`. A request from 0 covering every track is kept either way |
+| `opts.asyncResult` | `boolean?` | Let the host build a request from 0 that covers every track off the main thread; defaults to `true` in the SDK (the host's own default is `false`). Takes effect only with `useCache` and not when the kept list answers. `false` builds the page on the main thread |
+| `opts.timeout` | `number?` | Client-side timeout in milliseconds for the `library:getAllResult` event; defaults to `60000`, and `0` disables it |
+
+When the host builds off the main thread it answers `{ pending: true, requestId }` at once and delivers the page as the `library:getAllResult` event. The wrapper listens for that event before it sends the call, so a page that arrives before the pending answer is handled is not missed, and it stops listening once the page arrives, the call fails or rejects, or the timeout fires. Callers do not need to subscribe themselves. A failure envelope from the call resolves as it is; an event carrying `error` and a timeout resolve with `OPERATION_FAILED` as described above. The promise rejects only when the call itself rejects.
 
 ```javascript
 const r = await fb.library.getAll(0, 100);
+if (r.success === false) throw new Error(r.error);
 console.log(`${r.total} total tracks; received ${r.tracks.length}`);
+
+// Rebuild the whole library list, skipping the kept copy.
+const all = await fb.library.getAll(0, 1_000_000, { useCache: false, asyncResult: false });
+if (all.success === false) {
+    console.warn('library.getAll failed or timed out:', all.error, all.details);
+} else {
+    console.log(all.fromCache, all.tracks.length);
+}
 ```
 
 `items` is a compatibility alias that normally contains the same rows as `tracks`.
 
-> `artists` holds the atomic values behind `artist`: `artists.join(', ')` is exactly `artist`, so a multi-value tag can be recovered from `artists` and not from `artist`. It is returned by the media-library track APIs — `getAll()`, `query()`, `search()` and `getByPath()` among them; the track objects returned by other namespaces (`fb.playlist.getTracks`, `fb.player.getCurrentTrack`, `fb.queue.get`, artwork payloads, event payloads) do not carry it.
+> `artists` holds the atomic values behind `artist`: `artists.join(', ')` is exactly `artist`, so a multi-value tag can be recovered from `artists` and not from `artist`. It is on every shared `Track` row — the library track rows, `fb.playlist.getTracks`, `fb.player.getCurrentTrack`, `fb.queue.get` and the track events — and on the flat answer of `getByPath()`; artwork payloads do not carry it. `albumArtists` does the same for `albumArtist` wherever a `Track` row is returned: its first value, or `artists[0]` when it is empty, is the album artist `getAlbums()` groups the track under.
 
 ## enumerateTracks(options?)
 
@@ -126,9 +146,15 @@ for await (const page of fb.library.enumerateTracks({ pageSize: 500 })) {
 }
 ```
 
-## refresh() 
+## refresh()
 
-Requests a library refresh and returns a `BaseResponse`.
+Signature: `fb.library.refresh(): Promise<LibraryRefreshResponse>`
+
+The same operation as `rescan()`: asks foobar2000 to rescan the library folders through an SDK call that foobar2000 marks as obsolete. The library follows file changes on its own.
+
+```javascript
+await fb.library.refresh();
+```
 
 ## getByPath(path) 
 
@@ -136,6 +162,7 @@ Looks up a library item by path. Metadata fields are returned at the top level w
 
 ```javascript
 const r = await fb.library.getByPath('E:\\Music\\song.flac');
+if (r.success === false) throw new Error(r.error);
 if (r.found) console.log(r.title, r.artist);
 ```
 
@@ -146,7 +173,9 @@ if (r.found) console.log(r.title, r.artist);
 Returns resolved media-library roots.
 
 ```javascript
-const { roots, total, indexedTracks } = await fb.library.getRoots();
+const res = await fb.library.getRoots();
+if (res.success === false) throw new Error(res.error);
+const { roots, total, indexedTracks } = res;
 for (const root of roots) {
   console.log(root.displayName, root.absolutePath, root.trackCount);
 }
@@ -176,8 +205,11 @@ Only items that resolve to stable local absolute paths contribute roots. Protoco
 Browses the typed directory tree using `rootId` and optional `pathId`. Call `getRoots()` first to obtain a valid root ID.
 
 ```javascript
-const { roots } = await fb.library.getRoots();
+const res = await fb.library.getRoots();
+if (res.success === false) throw new Error(res.error);
+const { roots } = res;
 const tree = await fb.library.browseTree({ rootId: roots[0].id });
+if (tree.success === false) throw new Error(tree.error);
 for (const dir of tree.directories) {
   console.log(dir.name, dir.trackCount, dir.hasChildren);
 }
@@ -202,10 +234,10 @@ const sub = await fb.library.browseTree({
 | `pathId` | `string` | Requested path ID |
 | `absolutePath` | `string` | Current absolute directory path |
 | `directories` | `LibraryDirectoryNodeInfo[]` | Immediate child directories |
-| `files` | `TrackInfo[]` | Files; empty when `includeFiles` is false |
+| `files` | `LibraryTrack[]` | Files; empty when `includeFiles` is false |
 | `fromCache` | `boolean` | Whether the result came from cache |
 
-The host reports `"rootId is required"`, `"Unknown rootId"`, or `"Path not found"` for the corresponding invalid requests.
+An empty `rootId` fails with `INVALID_PARAMS`; an unknown `rootId` (`"Unknown rootId"`) or `pathId` (`"Path not found"`) fails with `NOT_FOUND`.
 
 ## enumerateTree(options)
 
@@ -269,12 +301,16 @@ for await (const node of fb.library.enumerateDirectories({ rootPath: '', strateg
 }
 ```
 
-## getAlbumTracks(album, artist?)
+## getAlbumTracks(album, albumArtist)
 
-Returns matching album tracks. Both `album` and `artist` are compared byte for byte, so they are case-sensitive. Grouping is by album name alone, so identically titled albums by different artists come back as one list — pass `artist` to tell them apart.
+Returns the tracks of one album from `getAlbums`, sorted by disc number, then track number, then library order. Pass the row's `name` and `albumArtist` as they are: both are compared byte for byte, and `total` then equals the row's `trackCount`. The row's `artist` is not the same key, and an `albumArtist` of `""` is passed as `""`. The host keeps the grouping until the library changes, so repeated calls do not rescan the library.
 
 ```javascript
-const tracks = await fb.library.getAlbumTracks('Abbey Road', 'The Beatles');
+const page = await fb.library.getAlbums({ limit: 1 });
+const album = page.success ? page.albums[0] : undefined;
+if (album) {
+    const res = await fb.library.getAlbumTracks(album.name, album.albumArtist);
+}
 ```
 
 ## getFieldValues(field, limit?, separator?)
@@ -308,21 +344,21 @@ const paths = await fb.library.query('%codec% IS FLAC', undefined, 100000, [
 
 ## Field projection
 
-`query(..., fields)` and `search(query, limit, { fields })` accept an optional list of track keys. Omitting it keeps the current behaviour: every row carries all 20 keys.
+`query(..., fields)` and `search(query, limit, { fields })` accept an optional list of track keys. Omitting it returns every key of a library track row.
 
-When the list is present each row holds **exactly** the requested keys and nothing else, so the declared `TrackInfo` type becomes a partial view at runtime. Rows whose metadata container could not be read still carry every requested key, filled with type defaults (empty string, zero). Response envelopes are unchanged.
+When the list is present each row holds **exactly** the requested keys and nothing else, which is why rows are typed as `LibraryTrackPartial`. Rows whose metadata container could not be read still carry every requested key, filled with type defaults (empty string, zero). Response envelopes are unchanged.
 
 **Accepted key names** (exact match, case-sensitive):
 
-`index`, `title`, `artist`, `artists`, `album`, `albumArtist`, `genre`, `date`, `trackNumber`, `discNumber`, `duration`, `path`, `absolutePath`, `fileSize`, `bitrate`, `sampleRate`, `channels`, `codec`, `subsong`, `rating`
+`index`, `handle`, `title`, `artist`, `artists`, `album`, `albumArtist`, `albumArtists`, `genre`, `date`, `trackNumber`, `discNumber`, `duration`, `path`, `absolutePath`, `fileSize`, `bitrate`, `sampleRate`, `channels`, `codec`, `subsong`, `rating`
 
 > Multi-value tags in `artist` / `albumArtist` / `genre` / `composer` (only the fields this API actually returns) are joined with `, ` in their original order, without de-duplication.
 
-> `artists` holds the atomic values behind `artist`: `artists.join(', ')` is exactly `artist`. It is returned by the media-library track APIs — `getAll()`, `query()`, `search()` and `getByPath()` among them; the track objects returned by other namespaces (`fb.playlist.getTracks`, `fb.player.getCurrentTrack`, `fb.queue.get`, artwork payloads, event payloads) do not carry it. Either key may be projected without the other; both are read in one pass. On a row whose metadata container could not be read, a requested `artists` comes back as `[]`.
+> `artists` holds the atomic values behind `artist`: `artists.join(', ')` is exactly `artist`. It is on every shared `Track` row — the library track rows, `fb.playlist.getTracks`, `fb.player.getCurrentTrack`, `fb.queue.get` and the track events — and on the flat answer of `getByPath()`; artwork payloads do not carry it. `albumArtists` does the same for `albumArtist` wherever a `Track` row is returned: its first value, or `artists[0]` when it is empty, is the album artist `getAlbums()` groups the track under. An array may be projected without its joined string or the other way round; each pair is read in one pass. On a row whose metadata container could not be read, a requested `artists` or `albumArtists` comes back as `[]`.
 
 Duplicates are de-duplicated. `rating` is only computed when requested (or when the list is omitted).
 
-**Validation** is fail-closed and always resolves — the promise is never rejected. A non-array (including an explicit `null`), an empty array, a non-string element, or an unknown name produces:
+**Validation** always resolves — the promise is never rejected. An unknown name produces:
 
 ```javascript
 const bad = await fb.library.query('artist HAS Beatles', undefined, 100, [
@@ -361,26 +397,24 @@ A 32-bit process has roughly 2–4 GB of user address space, and a whole-library
 The peaks are analytic upper bounds from the parse model, not measured working sets — guidance, not a budget.
 :::
 
-## Supplemental method reference
+## addToPlaylist(paths, playlistIndex?)
 
-### addToPlaylist(paths, playlistIndex?)
-
-Signature: `fb.library.addToPlaylist(paths: string[], playlistIndex?: number): Promise<LibraryAddToPlaylistResponse>`
+Signature: `fb.library.addToPlaylist(paths: string[], playlistIndex?: PlaylistRef): Promise<LibraryAddToPlaylistResponse>`
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `paths` | `string[]` | Yes | Track paths to append |
-| `playlistIndex` | `number` | No | Target playlist; omitted for the host default |
+| `paths` | `string[]` | Yes | Track paths to append, in this order; a `\|subsong:N` suffix selects a subsong |
+| `playlistIndex` | `number \| string` | No | Target playlist: its index, or its `guid` from `fb.playlist.getAll()`; omitted, the active playlist. Pass the `guid` when the playlist list may change between choosing the target and the call, as while a menu is open. |
 
-Returns the append result, including optional `added` metadata.
+Appends tracks to a playlist by path. A path does not have to be in the library, and a file that does not exist is added all the same. The response's `added` is the number of tracks added. A locked playlist fails with `LOCKED` and nothing is added; an index past the last playlist fails with `INVALID_INDEX`, and with `playlistIndex` omitted and no active playlist the call fails with `NO_ACTIVE_ITEM`.
 
 ```javascript
 await fb.library.addToPlaylist(['E:\\Music\\song.flac'], 0);
 ```
 
-### getArtistAlbums(artist, limit?, options?)
+## getArtistAlbums(artist, limit?, options?)
 
-Signature: `fb.library.getArtistAlbums(artist: string, limit?: number, options?: { sort?: string; match?: 'exact' | 'substring' }): Promise<LibraryArtistAlbumsResponse>`
+Signature: `fb.library.getArtistAlbums(artist: string, limit?: number, options?: Omit<LibraryGetArtistAlbumsParams, 'artist' | 'limit'>): Promise<LibraryGetArtistAlbumsResponse>`
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
@@ -394,7 +428,9 @@ Albums the artist appears on. Rows carry the same keys as `getAlbums` except `co
 `trackCount`, `duration` and `discCount` count only the tracks this artist appears on, not the whole album, so they disagree with `getAlbums` for any album the artist appears on only partly. See [`library.getArtistAlbums`](../api/library.md#library-getartistalbums) for that and for the grouping rules.
 
 ```javascript
-const { albums } = await fb.library.getArtistAlbums('The Beatles', 50);
+const res = await fb.library.getArtistAlbums('The Beatles', 50);
+if (res.success === false) throw new Error(res.error);
+const { albums } = res;
 
 // Newest first
 const recent = await fb.library.getArtistAlbums('The Beatles', 20, {
@@ -402,115 +438,95 @@ const recent = await fb.library.getArtistAlbums('The Beatles', 20, {
 });
 ```
 
-### getArtistTracks(artist, limit?)
+## getArtistTracks(artist, limit?)
 
-Signature: `fb.library.getArtistTracks(artist: string, limit?: number): Promise<LibraryArtistTracksResponse>`
+Signature: `fb.library.getArtistTracks(artist: string, limit?: number): Promise<LibraryGetArtistTracksResponse>`
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `artist` | `string` | Yes | Artist name |
-| `limit` | `number` | No | Maximum result count |
+| `artist` | `string` | Yes | Artist name, matched as `getArtistAlbums()` matches it under `match: 'exact'` |
+| `limit` | `number` | No | Most tracks to return, the first ones in library order (default `500`) |
 
-Returns matching tracks plus artist and count metadata.
+Tracks the artist is credited on, in library order, as `tracks` (`items` is the same list). `count` is the number returned and `total` equals it: there is no count before `limit`, so a full page means there may be more. An empty `artist` and a disabled library both succeed with no tracks.
 
 ```javascript
-const tracks = await fb.library.getArtistTracks('The Beatles', 100);
+const res = await fb.library.getArtistTracks('The Beatles', 100);
+if (res.success === false) throw new Error(res.error);
+const { tracks } = res;
 ```
 
-### getCacheStats()
+## getCacheStats()
 
-Signature: `fb.library.getCacheStats(): Promise<LibraryCacheStatsResponse>`
+Signature: `fb.library.getCacheStats(): Promise<LibraryGetCacheStatsResponse>`
 
-| Parameter | Type | Required | Description |
-| --- | --- | --- | --- |
-| - | - | - | No parameters |
-
-Returns the extensible library-cache statistics envelope.
+Counts of the host's library cache and directory tree index, for diagnostics: whether results are kept (`valid`, `tracksCached`, `artistsCached`, `statsCached`, `albumsCacheEntries`), `cacheHits` and `cacheMisses` since the host started, and the tree index state (`treeIndexValid`, `rootsCached`, `treeIndexedTracks`, `treeSkippedTracks`, `treeLastBuilt`). Times are milliseconds since the Unix epoch. Genres and covers are never kept, so `genresCached` is always `false` and the cover counts are always `0`.
 
 ```javascript
 const cache = await fb.library.getCacheStats();
+if (cache.success === false) throw new Error(cache.error);
+console.log(cache.cacheHits, cache.cacheMisses);
 ```
 
-### getRandomTracks(count?)
+## getRandomTracks(count?)
 
-Signature: `fb.library.getRandomTracks(count?: number): Promise<LibraryRandomTracksResponse>`
+Signature: `fb.library.getRandomTracks(count?: number): Promise<LibraryGetRandomTracksResponse>`
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `count` | `number` | No | Number of random tracks |
+| `count` | `number` | No | Tracks to draw (default `10`); at most the library size is returned |
 
-Returns `{ tracks, count }` plus the base response fields.
+Tracks drawn at random from the whole library without repeats, a new draw on every call, as `tracks` with their `count`. A disabled or empty library succeeds with no tracks.
 
 ```javascript
-const random = await fb.library.getRandomTracks(25);
+const res = await fb.library.getRandomTracks(25);
+if (res.success === false) throw new Error(res.error);
+const { tracks } = res;
 ```
 
-### getRecentlyAdded(limit?)
+## getRecentlyAdded(limit?, sortBy?)
 
-Signature: `fb.library.getRecentlyAdded(limit?: number, sortBy?: string): Promise<LibraryRecentlyAddedResponse>`
+Signature: `fb.library.getRecentlyAdded(limit?: number, sortBy?: LibraryGetRecentlyAddedParams['sortBy']): Promise<LibraryGetRecentlyAddedResponse>`
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `limit` | `number` | No | Maximum result count |
-| `sortBy` | `string` | No | Host sort selector |
+| `limit` | `number` | No | Most tracks to return (default `50`) |
+| `sortBy` | `'added' \| 'modified'` | No | `added` (the default) orders by foo_playcount's `%added%`, with tracks that lack it last; `modified` orders by file modification time |
 
-Returns recently added tracks plus `total`, `limit`, `sortBy`, and `fallback` metadata.
+The newest tracks of the library, newest first. When `added` is asked for and no track has `%added%`, the call orders by modification time instead: the response's `sortBy` is then `modified` and `fallback` is `true`. `total` is the number of tracks in the library, not the number returned. The library is walked on every call.
 
 ```javascript
-const recent = await fb.library.getRecentlyAdded(50);
+const res = await fb.library.getRecentlyAdded(50);
+if (res.success === false) throw new Error(res.error);
+const { tracks, fallback } = res;
 ```
 
-### invalidateCache()
+## invalidateCache()
 
 Signature: `fb.library.invalidateCache(): Promise<LibraryInvalidateCacheResponse>`
 
-| Parameter | Type | Required | Description |
-| --- | --- | --- | --- |
-| - | - | - | No parameters |
-
-Returns the invalidation result and optional timestamp.
+Drops the host's cached library results and the directory tree index; the next call to an endpoint that uses them rebuilds them. The host also drops them whenever the library changes. The response's `timestamp` is when the cache was dropped, in milliseconds since the Unix epoch.
 
 ```javascript
 await fb.library.invalidateCache();
 ```
 
-### isEnabled()
+## isEnabled()
 
-Signature: `fb.library.isEnabled(): Promise<{ enabled: boolean }>`
+Signature: `fb.library.isEnabled(): Promise<LibraryIsEnabledResponse>`
 
-| Parameter | Type | Required | Description |
-| --- | --- | --- | --- |
-| - | - | - | No parameters |
-
-Returns whether the media library is enabled.
+Whether the foobar2000 media library is enabled, that is, whether any library folder is configured.
 
 ```javascript
-const { enabled } = await fb.library.isEnabled();
+const res = await fb.library.isEnabled();
+if (res.success === false) throw new Error(res.error);
+const { enabled } = res;
 ```
 
-### refresh()
+## rescan()
 
-Signature: `fb.library.refresh(): Promise<BaseResponse>`
+Signature: `fb.library.rescan(): Promise<LibraryRescanResponse>`
 
-| Parameter | Type | Required | Description |
-| --- | --- | --- | --- |
-| - | - | - | No parameters |
-
-Returns the refresh operation result.
-
-```javascript
-await fb.library.refresh();
-```
-
-### rescan()
-
-Signature: `fb.library.rescan(): Promise<BaseResponse>`
-
-| Parameter | Type | Required | Description |
-| --- | --- | --- | --- |
-| - | - | - | No parameters |
-
-Returns the host rescan operation result.
+Asks foobar2000 to rescan the library folders by calling `library_manager::rescan()`, which the foobar2000 SDK marks as obsolete and not to be called. The library follows file changes on its own, so a theme rarely needs this. `refresh()` is the same operation.
 
 ```javascript
 await fb.library.rescan();

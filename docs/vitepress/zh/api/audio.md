@@ -1,66 +1,95 @@
-# Audio & DSP & Output API
+# Audio 音频 API
 
-音频分析、频谱可视化、DSP 效果器管理、音频输出、ReplayGain。
+`audio` 命名空间的方法：音频分析、频谱、波形与 PCM 数据。
 
 ## Audio API - 音频分析
 
 ### audio.subscribeSpectrum
 
-订阅实时频谱数据。
+<!-- api-schema:begin audio.subscribeSpectrum -->
+订阅正在播放的音频的频谱帧。每个订阅保留自己的参数；帧只发给调用方窗口，事件名为 `event`，播放时每秒最多 `fps` 帧，暂停或停止时再发一帧静音帧。
 
-| 参数 | 类型 | 必填 | 默认值 | 说明 |
-| --- | --- | --- | --- | --- |
-| `subscriptionId` | `string` | 否 | — | 省略时复用按窗口派生的 legacy 标识。用同一个 id 再订阅会替换原订阅。 |
-| `fftSize` | `integer` | 否 | `1024` | 须为 256–65536 之间的 2 的幂。 |
-| `bands` | `integer` | 否 | `48` | 截断到 8–`fftSize / 2`。 |
-| `fps` | `integer` | 否 | `30` | 截断到 1–60。 |
-| `scale` | `string` | 否 | `weighted` | `weighted`：显示用曲线，取值 `[0, 1]`。`db`：频带功率 dB，把频带内各 FFT 频点的功率相加，满幅正弦读 0 dB。 |
-| `backgroundThrottle` | `boolean` | 否 | `true` | 为 `true` 时，别的程序在前台期间这个订阅每秒至多 12 帧，通常在 10 到 12 帧之间；为 `false` 时保持原帧率。 |
-| `minFrequency` | `number` | 否 | `20` | 频带范围的下限（Hz），频带按对数等分这段范围。须为不小于 1 的有限数。 |
-| `maxFrequency` | `number` | 否 | `sampleRate / 2` | 上限（Hz），须大于 `minFrequency`。出帧时按流采样率的一半截；不给时就取它。整段范围都高于这个频率时，出的是静音帧。 |
-| `event` | `string` | 否 | `audio:spectrum` | 频谱数据的事件名。 |
+| 参数 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `subscriptionId` | `string` | 否 | 订阅的键；用同一 id 再订阅会替换该订阅。缺省时由调用方窗口与 `event` 推出。不能为空。 |
+| `fftSize` | `integer` | 否 | FFT 点数，须为 2 的幂，否则返回 `INVALID_PARAMS`。频带输出在 32 个频带及以上时会提升它；频点输出按给定值用。65536 是本组件自定的上限，不是 foobar2000 的限制，每帧要约 1.5 s 的 PCM。取值 `256` 到 `65536`（含端点）。默认 `1024`。 |
+| `bands` | `integer` | 否 | 仅频带输出：频带数，夹到 8 到 `fftSize / 2`。默认 `48`。 |
+| `fps` | `integer` | 否 | 每秒帧数，夹到 1 到 60。默认 `30`。 |
+| `scale` | `"weighted" \| "db"` | 否 | 频带刻度，缺省为 `weighted`。`output: 'bins'` 时不传或传 `db`，其他值返回 `INVALID_PARAMS`。 |
+| `output` | `"bands" \| "bins"` | 否 | 帧里给什么；频点输出时忽略 `bands`。默认 `"bands"`。 |
+| `channels` | `"mix" \| "stereo"` | 否 | 仅频点输出；频带输出配 `stereo` 返回 `INVALID_PARAMS`。默认 `"mix"`。 |
+| `backgroundThrottle` | `boolean` | 否 | 为 `true` 时，别的应用在前台期间本订阅每秒最多 12 帧，通常 10 到 12；`false` 保持全速。默认 `true`。 |
+| `minFrequency` | `number` | 否 | 频率范围下限，Hz；频带在范围内按对数划分。不小于 `1`。默认 `20`。 |
+| `maxFrequency` | `number` | 否 | 上限，Hz，须大于 `minFrequency`。出帧时截到流采样率的一半，缺省时就取它。整个范围都高于它时出静音帧。 |
+| `event` | `string` | 否 | 帧所用的事件名。不能为空。默认 `"audio:spectrum"`。 |
 
-**返回值**:
+**返回值**
 
-```json
-{
-    "success": true,
-    "subscriptionId": "spectrum_main",
-    "fftSize": 1024,
-    "bands": 48,
-    "fps": 30,
-    "scale": "weighted",
-    "backgroundThrottle": true,
-    "minFrequency": 20,
-    "maxFrequency": null,
-    "event": "audio:spectrum",
-    "streamReady": true
-}
-```
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `subscriptionId` | `string` | 订阅的键，调用方给的或推出的。 |
+| `fftSize` | `integer` | 请求的 FFT 点数；帧里报实际用的点数。 |
+| `bands` | `integer` | 夹取后的频带数。 |
+| `fps` | `integer` | 夹取后的帧率。 |
+| `scale` | `"weighted" \| "db"` | 使用的刻度；频点输出恒为 `db`。 |
+| `backgroundThrottle` | `boolean` | 同请求。 |
+| `minFrequency` | `number` | 范围下限，Hz，同请求。 |
+| `maxFrequency` | `number \| null` | 请求的上限，Hz；范围跟随流采样率一半时为 `null`。 |
+| `output` | `"bands" \| "bins"` | 登记的输出。 |
+| `channels` | `"mix" \| "stereo"` | 登记的声道布局。 |
+| `event` | `string` | 帧所用的事件名。 |
+| `streamReady` | `boolean` | 可视化流建好后为 `true`，停止态也算；有没有音频看帧的 `state`。 |
 
-每个订阅各用自己的参数：别的订阅请求了更大的 FFT、更多的频带或更高的帧率，不会改变这个订阅收到的帧。登记成功恒回 `success: true`；`streamReady` 表示可视化流已建立，停止状态下也为 `true`。`fftSize` 不是范围内的 2 的幂、`scale` 不是 `weighted` / `db`、`backgroundThrottle` 不是布尔值、`minFrequency` 小于 1、`maxFrequency` 不大于 `minFrequency` 时，不登记任何订阅，回 `success: false`、`code: "INVALID_PARAMS"` 与 `details: { param, value }`。
+成功时 `success` 为 `true`；失败时返回 `{ success: false, error, code }`，`code` 见[错误码](../reference/errors.md)。
+<!-- api-schema:end -->
+
+别的订阅请求了更大的 FFT、更多的频带或更高的帧率，不会改变这个订阅收到的帧。登记成功恒回 `success: true`；`streamReady` 表示可视化流已建立，停止状态下也为 `true`。参数不合法时不登记任何订阅，回 `INVALID_PARAMS`；其中 `fftSize` 不是 2 的幂、`maxFrequency` 不大于 `minFrequency`、频带输出配 `channels: 'stereo'`、频点输出配 `db` 以外的 `scale` 这几种还带 `details: { param, value }`。
 
 每帧只发给发起订阅的窗口，事件名是订阅的 `event`：
 
 | 字段 | 说明 |
 | --- | --- |
 | `subscriptionId` | 帧所属的订阅。同一事件名上有多个订阅时各收各的帧，按这个字段过滤。 |
-| `spectrum` | 每个频带一个值，按订阅的 `scale` 给出。`weighted` 取值 `[0, 1]`；`db` 下限为 `-160`。 |
-| `bands` | `spectrum` 的长度。 |
-| `fftSize` | 实际使用的 FFT 大小。频带数达到 32、64 时分别至少提升到 4096、8192。 |
-| `scale` | `weighted` 或 `db`。 |
+| `output` | `bands` 或 `bins`。旧版宿主不带这个字段，发的是频带帧。 |
+| `spectrum` | 频带帧：每个频带一个值，按订阅的 `scale` 给出，`weighted` 取值 `[0, 1]`，`db` 下限为 `-160`。`channels: 'mix'` 的频点帧：每个频点一个 dB 功率值。 |
+| `left`、`right` | `channels: 'stereo'` 的频点帧用它们代替 `spectrum`：可视化流的前两路；单声道流时 `right` 等于 `left`。 |
+| `bands` | 频带帧：`spectrum` 的长度。频点帧不带。 |
+| `firstBin` | 频点帧：第一个值的 FFT 频点序号；第 `i` 个值的中心频率是 `(firstBin + i) * sampleRate / fftSize` Hz。区间里没有频点时为 `0`，数组为空。 |
+| `fftSize` | 实际使用的 FFT 大小。频带输出在频带数达到 32、64 时分别至少提升到 4096、8192；频点输出按请求值。 |
+| `scale` | `weighted` 或 `db`；频点帧恒为 `db`。 |
+| `channels`、`channelCount` | 频点帧：订阅的 `channels` 与可视化流的声道数，未知时为 `0`。 |
 | `sampleRate` | 可视化流的采样率（Hz）；未知时为 `0`。 |
-| `minFrequency`、`maxFrequency` | 频带按对数等分的频率范围：从订阅的 `minFrequency`（缺省 20 Hz）到它的 `maxFrequency` 截到 `sampleRate / 2` 之后的值；没给上限时就是 `sampleRate / 2`。订阅应答回的是请求值，没给上限时 `maxFrequency` 为 `null`。 |
+| `minFrequency`、`maxFrequency` | 频率范围，频带按对数等分它，频点的中心频率须落在其中：从订阅的 `minFrequency`（缺省 20 Hz）到它的 `maxFrequency` 截到 `sampleRate / 2` 之后的值；没给上限时就是 `sampleRate / 2`。订阅应答回的是请求值，没给上限时 `maxFrequency` 为 `null`。 |
 | `state` | `playing`、`paused` 或 `stopped`。播放暂停或停止时，每个订阅收到一帧带新状态的静音帧，之后到恢复播放前不再发帧。 |
-| `streamTime` | 可视化流自上一次起播以来的秒数。起播、seek、手动换曲都会让它从 `0` 重新开始，并在 `0` 上停约 200 ms，这期间的帧是同一段音频；自然换曲不重置。 |
+| `streamTime` | 可视化流自上一次起播以来的秒数；这一帧由截至这一时刻的最近 `fftSize` 个样本算出。起播、seek、手动换曲都会让它从 `0` 重新开始，并在 `0` 上停约 200 ms，这期间是静音帧；走满 `fftSize / sampleRate` 秒之前，窗口里早于重新计时的部分按静音算。自然换曲不重置。可视化流比听到的声音晚十几毫秒（本机实测 13 ms）。 |
 | `hostTime` | 宿主算出这一帧时的系统时间，Unix 纪元毫秒。`Date.now() - frame.hostTime` 就是投递延迟。 |
+
+#### 频点输出
+
+`output: 'bins'` 时每帧给出 FFT 的线性频点，不经过频带那一套处理：不对窄的低频带插值，不加权，也不提升 `fftSize`。怎么分组、插值、平滑都由页面决定。
+
+- 每个值是 `10 · log10(p) − 2.75` dB，`p` 是该频点幅度的平方（`stereo`）或它在各声道上的平均（`mix`），按 0.01 dB 取整，下限 `-160`。满幅正弦主瓣所落各频点的功率之和是 0 dB，所以把频点按功率相加，即 `10 · log10(Σ 10^(v / 10))`，就得到同一区间的 `db` 频带值。单看峰值频点会低一些，因为 foobar2000 的 FFT 用高斯窗，正弦的能量会分到相邻频点上：48 kHz、8192 点下，0 dBFS 的 1 kHz 正弦在峰值频点读 -3.18 dB，距峰值 40 dB 以内的有 6 个频点。
+- 频点 `k`（从 1 起，直流频点不发）的中心频率 `k · sampleRate / fftSize` 落在 `[minFrequency, maxFrequency)` 内时才出。要 20 Hz 以下的频点，把 `minFrequency` 设得更低。
+- 静音帧沿用该订阅上一帧的长度与 `firstBin`，值全为 `-160`；之前没有帧时为空。
+- 要自选窗函数、补零或换别的变换，就用 `audio.subscribeStream` 的 PCM 自己算，见[自己算频谱](../sdk/audio.md#自己算频谱)。
+
+帧走 JSON，每个值约 7 字节。下表是 48 kHz、缺省区间下的体积与拉取往返时间，按同样大小的 JSON 应答在一台机器上实测后估算：
+
+| `fftSize` | `channels` | 值个数 | 体积 | 往返 |
+| --- | --- | --- | --- | --- |
+| 4096 | `mix` | 2046 | 14 KB | 0.5 ms |
+| 16384 | `mix` | 8185 | 56 KB | 1.1 ms |
+| 16384 | `stereo` | 16370 | 112 KB | 1.9 ms |
+| 65536 | `stereo` | 65480 | 448 KB | 6.6 ms |
+
+这些时间大多花在 foobar2000 的主线程上，帧率要按体积选。推送的一拍耗时超过帧间隔时，所有订阅都会跳过下一拍。
 
 ::: warning
 `fftSize` 必须是 2 的幂（256 到 65536），否则返回错误。65536 是组件自己的封顶，不是 foobar2000 的限制；这一档每帧要处理约 1.5 秒的 PCM，只在需要原始 bin 分辨率时使用。
 :::
 
-::: tip 低频分辨率
-C++ 层会根据请求的频段数自动提升 FFT 大小（≥64 bands → 8192，≥32 bands → 4096），以确保低频区域有足够的 bin 分辨率。频谱处理流水线包括：对数频率映射、sub-bin 线性插值、三角滤波器 RMS 平滑、频率倾斜补偿（+1.5 dB/octave）、dB 归一化和 gamma 校正（0.8）。
+::: tip 频带输出
+频带输出（`output: 'bands'`）为兼容保留，数值不变。它把频点映射到对数等分的频带，比一个频点还窄的频带用相邻频点插值，32 带、64 带以上把 `fftSize` 至少提升到 4096、8192；`weighted` 另加倾斜补偿、200 Hz 以下的低频衰减与显示曲线。新代码请用频点输出。
 :::
 
 ::: tip 订阅与事件语义
@@ -87,17 +116,35 @@ fb2k.on('audio:spectrum', (data) => {
 });
 
 await fb2k.invoke('audio.unsubscribeSpectrum', { subscriptionId });
+
+// 左右两路的线性频点，单位 dB
+await fb2k.invoke('audio.subscribeSpectrum', {
+    subscriptionId: 'spectrum_bins',
+    output: 'bins',
+    channels: 'stereo',
+    fftSize: 16384,
+    fps: 60
+});
 ```
 
 ### audio.unsubscribeSpectrum
 
-取消订阅频谱数据，释放可视化流资源。
+<!-- api-schema:begin audio.unsubscribeSpectrum -->
+移除本页面的频谱订阅。
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
-| `subscriptionId` | `string` | 否 | 省略时取消当前调用方的全部频谱订阅；调用方不带窗口时会取消所有调用方的全部订阅。 |
+| `subscriptionId` | `string` | 否 | 要移除的订阅；缺省移除本页面的全部频谱订阅。不能为空。 |
 
-**返回值**: `{ "success": true, "removed": 1, "subscriptionId": "spectrum_main" }`
+**返回值**
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `removed` | `integer` | 移除的订阅数：带 `subscriptionId` 时为 0 或 1，不带时为本页面的全部。别的页面的订阅不计也不动。 |
+| `subscriptionId` | `string` | 请求里的 id；没给时为空串。 |
+
+成功时 `success` 为 `true`；失败时返回 `{ success: false, error, code }`，`code` 见[错误码](../reference/errors.md)。
+<!-- api-schema:end -->
 
 **示例**:
 
@@ -113,36 +160,45 @@ await fb2k.invoke('audio.unsubscribeSpectrum');
 
 ### audio.getSpectrum
 
-按需算一帧频谱（轮询模式）。至少要有一个频谱订阅。
+<!-- api-schema:begin audio.getSpectrum -->
+按需计算一帧频谱。至少要有一个频谱订阅。
 
-| 参数 | 类型 | 必填 | 默认值 | 说明 |
-| --- | --- | --- | --- | --- |
-| `subscriptionId` | `string` | 否 | — | 按这个订阅的参数算这一帧，此时忽略 `bands`、`scale` 与频率范围。id 不存在时回 `NOT_FOUND`。 |
-| `bands` | `integer` | 否 | `0` | 不给 `subscriptionId` 时生效。`0` 取所有订阅中最大的频带数；最多为 `fftSize / 2`。 |
-| `scale` | `string` | 否 | `weighted` | 不给 `subscriptionId` 时生效。`weighted` 或 `db`，含义同 `audio.subscribeSpectrum`。 |
-| `minFrequency` | `number` | 否 | `20` | 不给 `subscriptionId` 时生效。频带范围，规则同 `audio.subscribeSpectrum`。 |
-| `maxFrequency` | `number` | 否 | `sampleRate / 2` | 不给 `subscriptionId` 时生效。频带范围，规则同 `audio.subscribeSpectrum`。 |
+| 参数 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `subscriptionId` | `string` | 否 | 用这个订阅的参数出帧，含频点输出；此时其余参数不起作用。未知 id 返回 `NOT_FOUND`。不能为空。 |
+| `bands` | `integer` | 否 | 不带 `subscriptionId` 时用。`0` 取所有订阅里最大的频带数；不超过 `fftSize / 2`。不小于 `0`。默认 `0`。 |
+| `scale` | `"weighted" \| "db"` | 否 | 不带 `subscriptionId` 时用，同 subscribeSpectrum。默认 `"weighted"`。 |
+| `minFrequency` | `number` | 否 | 不带 `subscriptionId` 时用，同 subscribeSpectrum。不小于 `1`。默认 `20`。 |
+| `maxFrequency` | `number` | 否 | 不带 `subscriptionId` 时用，同 subscribeSpectrum。 |
+| `output` | `"bands" \| "bins"` | 否 | 不带 `subscriptionId` 时只接受 `bands`：这时 FFT 点数跟随其他订阅，频点输出要有自己的订阅。默认 `"bands"`。 |
+| `channels` | `"mix" \| "stereo"` | 否 | 不带 `subscriptionId` 时只接受 `mix`。默认 `"mix"`。 |
 
-**返回值**:
+**返回值**
 
-```json
-{
-    "success": true,
-    "subscriptionId": "spectrum_main",
-    "spectrum": [0.1, 0.3, 0.5, ...],
-    "bands": 96,
-    "fftSize": 8192,
-    "scale": "weighted",
-    "sampleRate": 44100,
-    "minFrequency": 20,
-    "maxFrequency": 22050,
-    "state": "playing",
-    "streamTime": 12.34,
-    "hostTime": 1790194482588.4
-}
-```
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `subscriptionId` | `string` | 帧所属的订阅；请求没指定订阅时不带此键。 |
+| `output` | `"bands" \| "bins"` | 帧里给的是什么。 |
+| `spectrum` | `number[]` | 频带帧：每个频带一个值，刻度为帧的 `scale`；`weighted` 在 `[0, 1]` 内，`db` 下限 `-160`。`channels: 'mix'` 的频点帧：每个频点一个功率值，dB。 |
+| `left` | `number[]` | `channels: 'stereo'` 的频点帧：第一个声道，每个频点一个 dB 值。 |
+| `right` | `number[]` | `channels: 'stereo'` 的频点帧：第二个声道，单声道流时重复第一个。 |
+| `bands` | `integer` | 频带帧：`spectrum` 的长度。 |
+| `firstBin` | `integer` | 频点帧：第一个值的 FFT 频点序号；第 `i` 个值的中心频率为 `(firstBin + i) * sampleRate / fftSize` Hz。范围内没有频点时为 `0`，数组为空。 |
+| `fftSize` | `integer` | 实际用的 FFT 点数。 |
+| `scale` | `"weighted" \| "db"` | 值的刻度；频点帧恒为 `db`。 |
+| `channels` | `"mix" \| "stereo"` | 频点帧：订阅的声道布局。 |
+| `channelCount` | `integer` | 频点帧：可视化流的声道数；未知时为 `0`。 |
+| `sampleRate` | `integer` | 可视化流的采样率，Hz；未知时为 `0`。 |
+| `minFrequency` | `number` | 频率范围下限，Hz。 |
+| `maxFrequency` | `number` | 上限，Hz：请求的上限截到 `sampleRate / 2`，没给时就是 `sampleRate / 2`。 |
+| `state` | `"playing" \| "paused" \| "stopped"` | 暂停或停止时的帧是静音帧。 |
+| `streamTime` | `number` | 可视化流上次起播以来的秒数；帧由截至此刻的 `fftSize` 个样本算出。 |
+| `hostTime` | `number` | 宿主算出这一帧时的系统时间，Unix 纪元毫秒。 |
 
-应答是一帧，字段同 [`audio.subscribeSpectrum`](#audio-subscribespectrum) 的帧，外加 `success`；`fftSize` 是实际使用的 FFT 大小。暂停或停止时回一帧静音帧，`state` 标明是哪种。没有任何订阅，或新建的流还没出数据（首个订阅后约 0.7 秒内），回 `success: false` 与 `error`；参数错误另带 `code` 与 `details`。
+成功时 `success` 为 `true`；失败时返回 `{ success: false, error, code }`，`code` 见[错误码](../reference/errors.md)。
+<!-- api-schema:end -->
+
+应答是一帧，字段同 [`audio.subscribeSpectrum`](#audio-subscribespectrum) 的帧。暂停或停止时回一帧静音帧，`state` 标明是哪种。没有任何订阅，或新建的流还没出数据（首个订阅后约 0.7 秒内），回 `OPERATION_FAILED`。
 
 ::: tip 拉取还是推送
 两种方式拿到的是同一种帧。画面要跟显示器逐帧对齐、或每秒要 60 帧以上时用拉取：订阅时 `fps` 给 1 保活，在 `requestAnimationFrame` 里带 `subscriptionId` 调 `audio.getSpectrum`，上一次返回之后才发下一次，`streamTime` 没变的帧跳过。每次调用都在宿主主线程上算一次 FFT，开销与推送一帧相当，所以按需要的帧率限频，不要跟着显示器刷新率走。每秒 60 帧以内时，用推送同样可以。
@@ -152,7 +208,9 @@ await fb2k.invoke('audio.unsubscribeSpectrum');
 
 ```javascript
 // 在 requestAnimationFrame 里拉取：同时只发一个请求，每秒至多约 60 次
-const { subscriptionId } = await fb2k.invoke('audio.subscribeSpectrum', { fps: 1 });
+const res = await fb2k.invoke('audio.subscribeSpectrum', { fps: 1 });
+if (res.success === false) throw new Error(res.error);
+const { subscriptionId } = res;
 let pending = false;
 let lastCall = 0;
 let lastStreamTime;
@@ -177,43 +235,39 @@ requestAnimationFrame(tick);
 
 ### audio.getWaveform
 
-获取当前播放流的短波形片段。需要先调用 `subscribeSpectrum` 启动可视化流。
+<!-- api-schema:begin audio.getWaveform -->
+返回可视化流最近 `duration` 秒的波形，终点是它的当前时刻（即频谱帧的 `streamTime`）。需要有频谱订阅。
+
+| 参数 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `duration` | `number` | 否 | 窗口长度，秒，须大于 0。不大于 `1`。默认 `0.05`。 |
+| `signed` | `boolean` | 否 | 为 `true` 时保留 PCM 正负，夹到 `[-1, 1]`；为 `false` 时把 -70 到 0 dB 的幅度映射到 `[0, 1]`。默认 `false`。 |
+| `channels` | `"mix" \| "stereo"` | 否 | `mix` 把各声道平均成 `waveform`；`stereo` 把前两个声道分别给成 `left` 与 `right`。默认 `"mix"`。 |
+| `points` | `integer` | 否 | 把窗口抽成这么多个等距样本，不做平均；缺省返回全部样本。取值 `2` 到 `65536`（含端点）。 |
+
+**返回值**
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `waveform` | `number[]` | `mix` 应答：每个样本一个值。 |
+| `left` | `number[]` | `stereo` 应答：第一个声道。 |
+| `right` | `number[]` | `stereo` 应答：第二个声道；流只有一个声道时与 `left` 相同。 |
+| `duration` | `number` | 窗口长度，秒，同请求。 |
+| `signed` | `boolean` | 同请求。 |
+| `channels` | `"mix" \| "stereo"` | 同请求。 |
+| `sampleRate` | `integer` | 可视化流的采样率，Hz。 |
+| `channelCount` | `integer` | 可视化流的声道数；setChannelMode 设为 `mono` 后为 `1`。 |
+
+成功时 `success` 为 `true`；失败时返回 `{ success: false, error, code }`，`code` 见[错误码](../reference/errors.md)。
+<!-- api-schema:end -->
 
 ::: warning 注意
 此 API 用于获取**当前播放流**的实时波形片段，不是离线文件波形。如需生成完整文件波形，请使用 `audio.generateFullWaveform`。
 :::
 
-| 参数 | 类型 | 必填 | 默认值 | 说明 |
-| --- | --- | --- | --- | --- |
-| `duration` | `number` | 否 | `0.05` | 窗口时长（秒），大于 0 且不超过 1。窗口从当前播放位置开始，取的是已进输出缓冲的音频。 |
-| `signed` | `boolean` | 否 | `false` | 为 `true` 时保留 PCM 极性，夹到 `[-1, 1]`；为 `false` 时取幅度，把 −70…0 dB 映射到 `[0, 1]`。 |
-| `channels` | `string` | 否 | `'mix'` | `'mix'` 把各声道平均成一路放进 `waveform`；`'stereo'` 把前两路分别放进 `left` 与 `right`。 |
-| `points` | `integer` | 否 | — | 等距取这么多个样本，不做平均。取 `[2, 65536]` 内的整数；不给时返回全部样本。 |
-
-**返回值**:
-
-```json
-{ "success": true, "waveform": [0.01, 0.18, ...], "duration": 0.05, "signed": false,
-  "channels": "mix", "sampleRate": 48000, "channelCount": 2 }
-```
-
-`channels: 'stereo'` 时没有 `waveform`，换成 `left` 与 `right`：
-
-```json
-{ "success": true, "left": [0.12, -0.08, ...], "right": [0.11, -0.07, ...], "duration": 0.05,
-  "signed": true, "channels": "stereo", "sampleRate": 48000, "channelCount": 2 }
-```
-
-::: tip 返回值范围
-
-- `signed: false`（默认）：各值是 dB 映射后的幅度，范围 `0..1`
-- `signed: true`：各值保留 PCM 极性，夹到 `[-1, 1]`，适合绘制对称波形
-
-:::
-
 - 只有一路时 `right` 等于 `left`；多于两路时只取前两路，其余声道不混进来。`audio.setChannelMode` 设成 `'mono'` 之后可视化流只有一路。
-- `sampleRate` 与 `channelCount` 是可视化流的采样率与声道数。
-- `duration`、`channels`、`points` 不合法时回 `INVALID_PARAMS`。窗口长过输出缓冲里已有的音频时回 `No waveform data available`，没有频谱订阅时也是这一条。
+- 起播、seek、手动换曲之后的头 `duration` 秒里，窗口中早于重新计时的部分是零。
+- 没有频谱订阅、或可视化流给不出这段窗口时回 `OPERATION_FAILED`。
 
 **示例**:
 
@@ -233,23 +287,33 @@ const signed = await fb2k.invoke('audio.getWaveform', { duration: 0.1, signed: t
 // signed.waveform 范围 [-1, 1]
 
 // 两路分开、各等距取 256 个样本（声场图用）
-const { left, right } = await fb2k.invoke('audio.getWaveform', {
+const res = await fb2k.invoke('audio.getWaveform', {
     duration: 0.05,
     signed: true,
     channels: 'stereo',
     points: 256,
 });
+if (res.success === false) throw new Error(res.error);
+const { left, right } = res;
 ```
 
 ### audio.setChannelMode
 
-设置频谱分析的声道模式。无效的 `mode` 值会自动规范化为 `"default"`，返回值中的 `mode` 反映规范化后的结果。
+<!-- api-schema:begin audio.setChannelMode -->
+选择可视化流带哪些声道。作用于频谱帧与 getWaveform，不影响播放出来的声音。
 
-| 参数 | 类型 | 必填 | 默认值 | 说明 |
-| --- | --- | --- | --- | --- |
-| `mode` | `string` | 否 | `default` | 可取 `default` / `mono` / `front` / `back`，其他值归一为 `default`。 |
+| 参数 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `mode` | `"default" \| "mono" \| "front" \| "back"` | 否 | 可视化流带的声道。默认 `"default"`。 |
 
-- **返回值**: `{ "success": true, "mode": "mono" }`
+**返回值**
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `mode` | `"default" \| "mono" \| "front" \| "back"` | 现在生效的模式。 |
+
+成功时 `success` 为 `true`；失败时返回 `{ success: false, error, code }`，`code` 见[错误码](../reference/errors.md)。
+<!-- api-schema:end -->
 
 **示例**:
 
@@ -260,77 +324,82 @@ await fb2k.invoke('audio.setChannelMode', { mode: 'mono' });
 // 设置为前置声道
 await fb2k.invoke('audio.setChannelMode', { mode: 'front' });
 
-// 非法模式自动回退为 default
-const result = await fb2k.invoke('audio.setChannelMode', { mode: 'invalid' });
-// result.mode === "default"
+// 恢复全部声道
+await fb2k.invoke('audio.setChannelMode', { mode: 'default' });
 ```
 
 ### audio.analyzeBPM
 
-分析曲目的 BPM。首先从元数据 `BPM` 标签读取，若不存在则尝试流派估算。
+<!-- api-schema:begin audio.analyzeBPM -->
+读曲目的 `BPM` 标签，宿主不做节拍检测。foobar2000 缓存的信息齐全时用缓存，否则读文件本身，所以不在任何播放列表或媒体库里的曲目也行。
 
-| 参数 | 类型 | 必填 | 默认值 | 说明 |
-| --- | --- | --- | --- | --- |
-| `path` | `string` | 是 | — |  |
-| `forceAnalysis` | `boolean` | 否 | `false` | 跳过既有 `BPM` 标签，直接进入流派估算。 |
+| 参数 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `path` | `string` | 是 | 曲目路径；带 `\|subsong:N` 后缀时选子曲目。不能为空。 |
 
-**返回值**:
+**返回值**
 
-```json
-{ "success": true, "bpm": 128, "source": "metadata", "confidence": 1.0 }
-```
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `bpm` | `number` | `BPM` 标签的值，在 0 与 500 之间（不含两端）；超出这个范围返回 `NOT_FOUND`。 |
+| `confidence` | `number` | 恒为 `1`。 |
+| `source` | `"metadata"` | 恒为 `metadata`。 |
 
-| source 值 | 含义 |
-| --- | --- |
-| "metadata" | 来自文件 BPM 标签 |
-| "estimate" | 来自流派估算（confidence 较低） |
+成功时 `success` 为 `true`；失败时返回 `{ success: false, error, code }`，`code` 见[错误码](../reference/errors.md)。
+<!-- api-schema:end -->
+
+曲目没有 `BPM` 标签或标签值超出范围时回 `NOT_FOUND`；打不开文件或读不到文件信息（例如文件不存在）时回 `INVALID_HANDLE` 或 `NO_INFO`；其他错误回 `OPERATION_FAILED`。
 
 **示例**:
 
 ```javascript
-// 从元数据读取 BPM
 const result = await fb2k.invoke('audio.analyzeBPM', {
     path: 'E:\\Music\\song.flac'
 });
-console.log(`BPM: ${result.bpm}, 来源: ${result.source}`);
-
-// 强制重新分析
-const result2 = await fb2k.invoke('audio.analyzeBPM', {
-    path: 'E:\\Music\\song.flac',
-    forceAnalysis: true
-});
+if (result.success === true) {
+    console.log(`BPM: ${result.bpm}`);
+} else if (result.code === 'NOT_FOUND') {
+    console.log('没有 BPM 标签');
+}
 ```
-
-### audio.generateWaveform
-
-::: danger 已废弃
-此 API 为历史遗留接口，当前仅返回文件基本信息（duration、sampleRate、channels），不包含实际波形数据。**请使用 `audio.generateFullWaveform` 代替**，它提供完整的后台解码、缓存和事件通知功能。
-:::
-
-| 参数 | 类型 | 必填 | 默认值 | 说明 |
-| --- | --- | --- | --- | --- |
-| `path` | `string` | 是 | — |  |
-| `resolution` | `integer` | 否 | `800` | 截断到 50–4000。 |
-
-**返回值**: `{"channels":"...","duration":"...","error":"...","requestedResolution":"...","sampleRate":"...","success":true}`
-
 
 ### audio.generateFullWaveform
 
-生成完整文件波形数据，支持后台解码、缓存和异步事件通知。适用于进度条概览、波形卡片和章节预览。
+<!-- api-schema:begin audio.generateFullWaveform -->
+计算整首曲目的波形。命中缓存时直接回 `ready` 与波形；否则回 `pending` 与任务 id，结果随 `audio:fullWaveformReady` 或 `audio:fullWaveformFailed` 到达。
 
-| 参数 | 类型 | 必填 | 默认值 | 说明 |
-| --- | --- | --- | --- | --- |
-| `path` | `string` | 是 | — | 支持 `路径\|subsong:N`。 |
-| `cueIndex` | `integer` | 否 | `-1` | 显式指定容器内曲目序号，优先级高于路径后缀。 |
-| `resolution` | `integer` | 否 | `256` | 截断到 64–4096。 |
-| `method` | `string` | 否 | `rms` | `rms` 或 `peak`。 |
-| `scale` | `string` | 否 | `linear` | `linear` 或 `db`；`signed` 模式下被忽略。 |
-| `signed` | `boolean` | 否 | `false` | 保留 PCM 极性，输出 `[-1, 1]`。 |
-| `preferCache` | `boolean` | 否 | `true` | 优先返回缓存结果。 |
+| 参数 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `path` | `string` | 是 | 曲目路径；带 `\|subsong:N` 后缀时选子曲目。不能为空。 |
+| `cueIndex` | `integer` | 否 | 子曲目序号，从 0 起；优先于路径里的子曲目。不小于 `0`。 |
+| `resolution` | `integer` | 否 | 点数，夹到 64 到 4096。每个点数只解码一次，其余选项从缓存算。默认 `256`。 |
+| `method` | `"rms" \| "peak"` | 否 | 每个点的取值方式。默认 `"rms"`。 |
+| `scale` | `"linear" \| "db"` | 否 | 点的刻度：`linear`，或 `db`（比曲目自身最大值低 60 dB 处映射为 0）；`signed` 时忽略。默认 `"linear"`。 |
+| `signed` | `boolean` | 否 | 保留 PCM 正负；点在 `[-1, 1]` 内。默认 `false`。 |
+| `preferCache` | `boolean` | 否 | 能用缓存时直接用缓存回答。默认 `true`。 |
 
+**返回值**
 
-**返回值**: `{"cached":"...","channels":"...","duration":"...","maxAmplitude":"...","method":"...","path":"...","resolution":"...","sampleRate":"...","scale":"...","signed":"...","status":"...","success":true,"taskId":"...","waveform":{}}`
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `status` | `"ready" \| "pending"` | `ready`：波形在本应答里。`pending`：它随 `taskId` 的事件到达。 |
+| `cached` | `boolean` | 应答来自缓存。 |
+| `taskId` | `string` | 在事件与 cancelFullWaveform 里标识任务；只有 `pending` 应答带。 |
+| `waveform` | `number[]` | `ready` 应答：各点，按 `maxAmplitude` 归一化。 |
+| `maxAmplitude` | `number` | `ready` 应答：归一化前所选序列的最大值，线性满幅单位。`linear` 刻度下 `waveform[i] * maxAmplitude` 还原电平；`db` 刻度下 dBFS 为 `(v * 60 - 60) + 20 * log10(maxAmplitude)`。 |
+| `duration` | `number` | `ready` 应答：曲目长度，秒。 |
+| `sampleRate` | `integer` | `ready` 应答：采样率，Hz。 |
+| `channels` | `integer` | `ready` 应答：声道数。 |
+| `resolution` | `integer` | 使用的点数。 |
+| `method` | `"rms" \| "peak"` | 同请求。 |
+| `scale` | `"linear" \| "db"` | 同请求。 |
+| `signed` | `boolean` | 同请求。 |
+| `path` | `string` | 请求里的路径。 |
+
+成功时 `success` 为 `true`；失败时返回 `{ success: false, error, code }`，`code` 见[错误码](../reference/errors.md)。
+<!-- api-schema:end -->
+
+请求时能判定的错误在应答里回：`INVALID_PARAMS`、`INVALID_PATH`（找不到或读不了文件）与 `OPERATION_FAILED`（foobar2000 正在退出，或其他错误）；之后解码失败的以 `audio:fullWaveformFailed` 结束。
 
 ::: tip 路径与 fallback 语义
 
@@ -347,6 +416,7 @@ const result = await fb2k.invoke('audio.generateFullWaveform', {
     path: 'E:\\Music\\song.flac',
     resolution: 256
 });
+if (result.success === false) throw new Error(result.error);
 
 if (result.taskId) {
     fb2k.on('audio:fullWaveformReady', (e) => {
@@ -421,67 +491,172 @@ const result5 = await fb2k.invoke('audio.generateFullWaveform', {
 
 ### audio.cancelFullWaveform
 
-| 参数 | 类型 | 必填 | 默认值 | 说明 |
-| --- | --- | --- | --- | --- |
-| `taskId` | `string` | 是 | — | `audio.generateFullWaveform` 的 `pending` 应答里的 `taskId`。 |
+<!-- api-schema:begin audio.cancelFullWaveform -->
+取消本页面发起、尚未结束的 generateFullWaveform 请求。
 
-**返回值**: `{"cancelled":"...","success":true}`
+| 参数 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `taskId` | `string` | 是 | generateFullWaveform 的 `pending` 应答里的任务 id。不能为空。 |
 
-- 只认发起请求的调用方。`cancelled: false` 表示该任务已结束、不存在，或不归本调用方，三者故意不区分
+**返回值**
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `cancelled` | `boolean` | 为 `false` 表示任务已结束、不存在或属于别的页面，三者不区分。被取消的任务收到一次 `code: 'CANCELLED'` 的 `audio:fullWaveformFailed`。 |
+
+成功时 `success` 为 `true`；失败时返回 `{ success: false, error, code }`，`code` 见[错误码](../reference/errors.md)。
+<!-- api-schema:end -->
+
 - 取消成功时该 `taskId` 恰好收到一次 `audio:fullWaveformFailed`（`code: "CANCELLED"`），此后不再有它的事件；这条事件可能先于本应答到达
 - 同一曲目还有别的请求在等时解码照常进行；没人等了，排队中的移出队列，解码中的被中止
-- 缺 `taskId` 回 `REQUIRED_PARAM`；非字符串或空串回 `INVALID_PARAMS`
 
 ```javascript
 const pending = await fb2k.invoke('audio.generateFullWaveform', { path: 'E:\\Music\\song.flac' });
+if (pending.success === false) throw new Error(pending.error);
 if (pending.status === 'pending') {
     await fb2k.invoke('audio.cancelFullWaveform', { taskId: pending.taskId });
 }
 ```
 
+### audio.decodePcm
+
+<!-- api-schema:begin audio.decodePcm -->
+实验性 API，后续版本可能发生变化。
+
+把曲目或其中一段解成 float32 平面 PCM，经共享缓冲交给页面。先回任务 id；样本随 `chrome.webview` 的 `sharedbufferreceived` 事件与 `audio:pcmReady` 一起到达，失败时收到 `audio:pcmFailed`。
+
+| 参数 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `path` | `string` | 是 | 要解码的曲目路径；带 `\|subsong:N` 后缀时选子曲目。不能为空。 |
+| `cueIndex` | `integer` | 否 | cue 子曲目序号，从 0 起；优先于路径里的子曲目。不小于 `0`。 |
+| `start` | `number` | 否 | 起点，秒。不小于 `0`。 |
+| `end` | `number` | 否 | 终点，秒；缺省到曲目末尾，超过曲目长度时按末尾截。必须大于 start。不小于 `0`。 |
+| `sampleRate` | `integer` | 否 | 用 foobar2000 的重采样器转换到的采样率；缺省用源采样率。取值 `8000` 到 `192000`（含端点）。 |
+| `mono` | `boolean` | 否 | 各声道等权平均成单声道。 |
+
+**返回值**
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `taskId` | `string` | 在事件、共享缓冲附带数据与 cancelDecodePcm 里标识这个任务，形如 `pcm_N`。 |
+| `status` | `"pending"` | 恒为 `pending`：解码结果不缓存。 |
+
+成功时 `success` 为 `true`；失败时返回 `{ success: false, error, code }`，`code` 见[错误码](../reference/errors.md)。
+<!-- api-schema:end -->
+
+样本不走 JSON 通道。解码完成后，页面针对这个 `taskId` 收到两条消息，先后不定：
+
+- `window.chrome.webview` 上的 `sharedbufferreceived` 事件：`e.getBuffer()` 是样本，`e.additionalData` 为 `{ purpose: 'audio.decodePcm', taskId, sampleRate, channels, frames, headerBytes: 64 }`；
+- `audio:pcmReady` 事件：`{ taskId, path, sampleRate, channels, frames, start, end, duration, truncated, resampled }`，其中 `start`、`end` 是实际解出的区间，单位秒。
+
+任务失败时改为收到一次 `audio:pcmFailed`（`{ taskId, path, code, error }`）。SDK 的 `fb.audio.decodePcm` 会替你配对两条消息并返回 `PcmBuffer`；用了它的页面不要再自己处理这些缓冲。
+
+缓冲开头是 64 字节的小端头部，其后是 float32 样本，每个声道占连续的 `capacityFrames` 个：声道 `c` 的第 `i` 个样本在字节 `64 + (c × capacityFrames + i) × 4`。`capacityFrames` 是头部字节 24 处的 u32；每段只有前 `frames` 个样本是音频（`frames` 也是头部字节 32 处的 u32）。
+
+- 缓冲是**只读共享内存**。写入会让页面的渲染进程崩溃，整个 foobar2000 窗口随之失效。要改样本，先拷出来，例如拷进 `AudioBuffer`。
+- 同一个 `sharedbufferreceived` 事件的所有监听者拿到的是同一个 `ArrayBuffer`。最后一处用完后调用一次 `chrome.webview.releaseBuffer(buffer)`，之后再访问会抛 `TypeError`。
+- 单块缓冲上限：64 位 foobar2000 为 256 MiB，32 位为 64 MiB。宿主在解码前按曲目长度加一秒余量估算大小，超出上限时回 `INVALID_PARAMS`，并在 `details.estimatedBytes`、`details.limitBytes` 给出估算值与上限。五分钟 44.1 kHz 立体声约 106 MB；降低 `sampleRate`、设 `mono` 或分段解码可以压到上限以内。
+- `truncated` 为 `true` 表示音频超出了上述估算（文件比它报出的时长长），或中途换了格式（如链式 Ogg）；缓冲里是截断处之前的部分。
+- 同一时间只解一个任务，其余按提交顺序排队。相同的请求（同一文件、区间、`sampleRate` 与 `mono`）在已有任务解码期间到达时共用那次解码，各自仍有自己的 `taskId`、缓冲与事件。
+- 请求时就能判定的错误在应答里返回：`INVALID_PARAMS`、`INVALID_PATH`、`INVALID_HANDLE`、`NO_INFO`、`NOT_SUPPORTED`（WebView2 运行时不支持共享缓冲，或找不到发起调用的页面）、`OPERATION_FAILED`（foobar2000 正在退出）。之后的错误经 `audio:pcmFailed` 到达：`CANCELLED`、`INVALID_PARAMS`（`start` 不小于曲目长度）、`NOT_SUPPORTED`（没有重采样器支持这次转换）、`DECODER_FAILED`、`DECODE_FAILED`、`ORIGIN_DENIED`（页面来源不再可信）、`OPERATION_FAILED`（缓冲分配或投递失败）与 `UNKNOWN_ERROR`。
+- 结果就绪前页面已导航走、所在窗口或面板已关闭，或 foobar2000 退出时，不发任何消息。
+
+```js
+const pending = await fb2k.invoke('audio.decodePcm', {
+    path: 'C:\\Music\\song.flac',
+    start: 30,
+    end: 60,
+    sampleRate: 22050,
+});
+if (pending.success === false) throw new Error(pending.error);
+window.chrome.webview.addEventListener('sharedbufferreceived', (e) => {
+    const info = e.additionalData;
+    if (info?.purpose !== 'audio.decodePcm' || info.taskId !== pending.taskId) return;
+    const buffer = e.getBuffer();
+    const capacityFrames = new DataView(buffer).getUint32(24, true);
+    const channel = (c) => new Float32Array(buffer, 64 + c * capacityFrames * 4, info.frames);
+    console.log(info.sampleRate, channel(0).length);
+    window.chrome.webview.releaseBuffer(buffer);
+});
+```
+
+### audio.cancelDecodePcm
+
+<!-- api-schema:begin audio.cancelDecodePcm -->
+实验性 API，后续版本可能发生变化。
+
+取消本页面发起、尚未结束的 decodePcm 任务。
+
+| 参数 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `taskId` | `string` | 是 | decodePcm 应答里的任务 id。不能为空。 |
+
+**返回值**
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `cancelled` | `boolean` | 为 `false` 表示任务已结束、不存在或属于别的页面，三者不区分。被取消的任务收到一次 `code: 'CANCELLED'` 的 `audio:pcmFailed`。 |
+
+成功时 `success` 为 `true`；失败时返回 `{ success: false, error, code }`，`code` 见[错误码](../reference/errors.md)。
+<!-- api-schema:end -->
+
+取消成功时该 `taskId` 恰好收到一次 `audio:pcmFailed`（`code: "CANCELLED"`），此后不再有它的消息；这条事件可能先于本应答到达。还有相同的请求在等时解码照常进行；没人等了，排队中的任务移出队列，解码中的被中止。
+
+```js
+const pending = await fb2k.invoke('audio.decodePcm', { path: 'C:\\Music\\song.flac' });
+if (pending.success === false) throw new Error(pending.error);
+await fb2k.invoke('audio.cancelDecodePcm', { taskId: pending.taskId });
+```
+
 ### audio.getOutputInfo
 
-获取音频输出信息（当前音量）。
+<!-- api-schema:begin audio.getOutputInfo -->
+报告 foobar2000 的音量。
 
-- **参数**: 无
+无参数。
 
-**返回值**:
+**返回值**
 
-```json
-{ "success": true, "volume": -5.0, "volumePercent": 56.2 }
-```
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `volume` | `number` | 音量，dB，`-100`（静音）到 `0`（最大）。 |
+| `volumePercent` | `number` | 同一音量的线性百分比，`100 * 10^(volume / 20)`。 |
+
+成功时 `success` 为 `true`；失败时返回 `{ success: false, error, code }`，`code` 见[错误码](../reference/errors.md)。
+<!-- api-schema:end -->
 
 **示例**:
 
 ```javascript
 const info = await fb2k.invoke('audio.getOutputInfo');
+if (info.success === false) throw new Error(info.error);
 console.log(`音量: ${info.volume} dB (${info.volumePercent}%)`);
 ```
 
 ### audio.getStreamInfo
 
-获取当前播放流信息（采样率、声道、编码等）。
+<!-- api-schema:begin audio.getStreamInfo -->
+报告正在播放的曲目的格式。
 
-- **参数**: 无
+无参数。
 
-**返回值**:
+**返回值**
 
-```json
-{
-    "success": true,
-    "playing": true,
-    "sampleRate": 44100,
-    "channels": 2,
-    "bitrate": 1411,
-    "codec": "FLAC",
-    "duration": 234.5
-}
-```
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `playing` | `boolean` | 有曲目在播放或暂停；只有这时才带其余字段。 |
+| `sampleRate` | `integer` | 采样率，Hz。 |
+| `channels` | `integer` | 声道数。 |
+| `bitrate` | `integer` | 码率，kbps。 |
+| `codec` | `string` | foobar2000 报的编码名，没有时为 `unknown`。 |
+| `duration` | `number` | 曲目长度，秒。 |
 
-> 未播放时返回 `{ "success": true, "playing": false }`。
+成功时 `success` 为 `true`；失败时返回 `{ success: false, error, code }`，`code` 见[错误码](../reference/errors.md)。
+<!-- api-schema:end -->
 
 ```javascript
 const info = await fb2k.invoke('audio.getStreamInfo');
+if (info.success === false) throw new Error(info.error);
 if (info.playing) {
     console.log(`${info.codec} ${info.sampleRate}Hz ${info.channels}ch`);
 }
@@ -489,15 +664,25 @@ if (info.playing) {
 
 ### audio.isVisualizationAvailable
 
-检查可视化功能是否可用。
+<!-- api-schema:begin audio.isVisualizationAvailable -->
+报告 foobar2000 是否提供可视化流。频谱帧与 getWaveform 都要靠它。
 
-- **参数**: 无
-- **返回值**: `{ "success": true, "available": true }`
+无参数。
+
+**返回值**
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `available` | `boolean` | foobar2000 提供可视化流。 |
+
+成功时 `success` 为 `true`；失败时返回 `{ success: false, error, code }`，`code` 见[错误码](../reference/errors.md)。
+<!-- api-schema:end -->
 
 **示例**:
 
 ```javascript
 const result = await fb2k.invoke('audio.isVisualizationAvailable');
+if (result.success === false) throw new Error(result.error);
 if (result.available) {
     console.log('可视化功能可用');
     // 可以安全地调用 subscribeSpectrum
@@ -507,452 +692,187 @@ if (result.available) {
 
 ### audio.subscribeStream
 
-订阅音频流捕获（用于录音/流媒体）。
+<!-- api-schema:begin audio.subscribeStream -->
+实验性 API，后续版本可能发生变化。
 
-| 参数 | 类型 | 必填 | 默认值 | 说明 |
-| --- | --- | --- | --- | --- |
-| `event` | `string` | 否 | `audio:stream` | 流数据的事件名。 |
-| `interval` | `number` | 否 | `0.05` | 采样间隔（秒）。 |
+订阅 foobar2000 正在播放的音频：核心播出的每一块都写进与页面共享的环形缓冲，一个订阅一块。缓冲随第一块音频以 `chrome.webview` 的 `sharedbufferreceived` 事件到达；采样率或声道数变化时再投一块新的（`epoch` 加一），并以 `audio:stream` 通知旧的一代结束。停止或暂停期间没有任何投递。
 
+| 参数 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `subscriptionId` | `string` | 否 | 调用方给的订阅 id；缺省时宿主生成（`pcmstream_N`）。同一页面用同一 id 再订阅会替换先前的订阅。不能为空。 |
+| `interval` | `number` | 否 | 向 foobar2000 请求的回调间隔，秒。核心按自己约 16 ms 的节拍取整，最长 200 ms；一个订阅要短间隔，全组件的流订阅都会跟着变短。缺省用核心的 200 ms。取值 `0.01` 到 `0.2`（含端点）。 |
+| `bufferSeconds` | `number` | 否 | 环形缓冲长度，秒。整块缓冲超过 64 MiB 时按 64 MiB 折算。取值 `0.1` 到 `10`（含端点）。默认 `1`。 |
 
-**返回值**: `{"error":"...","event":"...","interval":"...","success":true}`
+**返回值**
 
-::: warning
-此功能需要 `playback_stream_capture` 集成，当前未完整实现。
-:::
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `subscriptionId` | `string` | 订阅 id，调用方给的或宿主生成的。 |
+| `interval` | `number` | 实际请求核心的间隔；交给核心缺省时不带此键。 |
+| `bufferSeconds` | `number` | 登记的环形缓冲长度，秒。 |
+
+成功时 `success` 为 `true`；失败时返回 `{ success: false, error, code }`，`code` 见[错误码](../reference/errors.md)。
+<!-- api-schema:end -->
+
+样本不走 JSON 通道。播放一开始，页面就会在 `window.chrome.webview` 上收到 `sharedbufferreceived` 事件：`e.getBuffer()` 是环形缓冲，`e.additionalData` 是 `{ purpose: 'audio.subscribeStream', subscriptionId, epoch, sampleRate, channels, capacityFrames, headerBytes: 64 }`。采样率或声道数变化时（换到别的格式的曲目，或加了改声道数的 DSP）同一事件再来一次、`epoch` 加一；随后一条 `audio:stream` 事件 `{ subscriptionId, type: 'ended', epoch, reason: 'format-change' }` 指出结束的那一代，它的缓冲头也置了 `ended` 位。
+
+缓冲开头是与 `audio.decodePcm` 相同的 64 字节头，其后是**交错**的 float32 帧：槽位 `s` 的帧、声道 `c` 在字节 `64 + (s × channels + c) × 4`。头部里 `capacityFrames`（字节 24 的 u32）是槽位数，`writeFrames`（字节 32）是累计写入帧数、2^32 回绕，`writeSlot`（字节 60）是下一帧要写的槽位，`seq`（字节 28）在宿主写入期间为奇数，`flags`（字节 36）的 bit 0 在宿主停止写入后置位。读法：先读 `seq`，是奇数就稍后再来；拷出要读的帧，最新一帧在 `writeSlot` 之前；再读一次 `seq`，变了就重来。落后超过 `capacityFrames` 帧就丢了最旧的帧：`dropped = writeFrames − readFrames − capacityFrames`（取正）。SDK 的 `fb.audio.subscribeStream` 把这些都做了，返回按声道分开的 `Float32Array`；用它的页面不要再自己处理这些缓冲。
+
+- 样本取自 DSP 链之后、ReplayGain 与音量之前：是 DSP 链的输出、满幅电平。与 `audio:spectrum` 不同，不含 ReplayGain。
+- 缓冲是**只读共享内存**，写入会让页面的渲染进程崩溃，整个 foobar2000 窗口随之一起。用完一代就调 `chrome.webview.releaseBuffer(buffer)`：`audio:stream` 报告结束的那一代，以及退订后的最后一代。
+- 块缺省约每 200 ms 到一次，最短约 16 ms（`interval`）。起播或续播后的首块最多带 0.8 s 音频，`bufferSeconds` 小于它就会在每次起播时丢帧。
+- 停止或暂停期间什么都不来，`writeFrames` 不再增长。同一格式下 seek 与换曲不会重置缓冲。
+- 每个页面最多 8 个流订阅，第 9 个回 `OPERATION_FAILED`。用同一 `subscriptionId` 再订阅会替换先前的订阅：旧缓冲置 `ended` 位、不发事件，下一代接着数。
+- 请求时能判定的错误在应答里回：越界或未知键回 `INVALID_PARAMS`，WebView2 运行时不支持共享缓冲或定位不到调用方页面回 `NOT_SUPPORTED`，foobar2000 正在退出或本页面已有 8 个订阅回 `OPERATION_FAILED`。
+- 页面导航、窗口或面板关闭、foobar2000 退出时订阅直接结束，不发事件。
+
+```js
+const sub = await fb2k.invoke('audio.subscribeStream', { subscriptionId: 'meter', bufferSeconds: 0.5 });
+if (sub.success === false) throw new Error(sub.error);
+window.chrome.webview.addEventListener('sharedbufferreceived', (e) => {
+    const info = e.additionalData;
+    if (info?.purpose !== 'audio.subscribeStream' || info.subscriptionId !== sub.subscriptionId) return;
+    const buffer = e.getBuffer();
+    const header = new DataView(buffer);
+    console.log(info.epoch, header.getUint32(16, true), header.getUint32(20, true)); // epoch、sampleRate、channels
+});
+```
 
 ### audio.unsubscribeStream
 
-取消音频流捕获。
+<!-- api-schema:begin audio.unsubscribeStream -->
+实验性 API，后续版本可能发生变化。
 
-- **参数**: 无
-- **返回值**: `{ "success": true }`
+移除本页面的流订阅。它们的缓冲置 `ended` 位并在宿主侧关闭；不发事件。
+
+| 参数 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `subscriptionId` | `string` | 否 | 要移除的订阅；缺省移除本页面的全部流订阅。不能为空。 |
+
+**返回值**
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `removed` | `integer` | 移除的订阅数：带 `subscriptionId` 时为 0 或 1，不带时为本页面的全部。别的页面的订阅不计也不动。 |
+
+成功时 `success` 为 `true`；失败时返回 `{ success: false, error, code }`，`code` 见[错误码](../reference/errors.md)。
+<!-- api-schema:end -->
+
+被移除订阅的缓冲先置 `ended` 位（字节 36 的 u32 的 bit 0），宿主再关掉自己这一侧；页面的视图在自己释放之前仍可读。移除组件里最后一个流订阅时，同时向 foobar2000 注销捕获回调。
+
+```js
+await fb2k.invoke('audio.unsubscribeStream', { subscriptionId: 'meter' });
+```
 
 ### audio.getSpectrumDebugState
 
-获取频谱系统内部调试状态，包含当前订阅列表、分发目标、推帧计时线程的状态等。主要用于诊断频谱订阅问题。
+<!-- api-schema:begin audio.getSpectrumDebugState -->
+报告宿主眼中的频谱运行状态，供测试与排查用。形状不保证稳定。
 
-- **参数**: 无
-**返回值**: `{"active":true,"beatIntervalMs":"...","beatSource":"...","beatsCoalesced":"...","callerHwnd":"...","callerOwnsSubscription":"...","callerWindowId":"...","dispatchTargetCount":"...","dispatchTargets":[],"effectiveBands":"...","effectiveFftSize":"...","effectiveFps":"...","foregroundHwnd":"...","foregroundIsExternal":"...","foregroundPid":"...","foregroundTitle":"...","framesComputed":"...","instanceCount":"...","skipFrames":"...","streamReady":"...","subscriptionCount":"...","subscriptions":[],"success":true,"timerHwnd":"...","timerRunning":"..."}`
+无参数。
 
-| 字段 | 类型 | 描述 |
+**返回值**
+
+| 字段 | 类型 | 说明 |
 | --- | --- | --- |
-| `active` | boolean | 频谱系统是否活动 |
-| `timerRunning` | boolean | 推帧的计时线程是否在运行 |
-| `beatSource` | string \| null | 计时线程用的定时器：`high-resolution`，Windows 10 1803 之前的系统上为 `standard`；线程没在运行时为 `null` |
-| `beatIntervalMs` | number \| null | 当前拍长（毫秒），即 1000 / `effectiveFps`；线程没在运行时为 `null` |
-| `beatsCoalesced` | number | 上一拍还没到宿主主线程、因而被丢掉的拍数，累计值 |
-| `timerHwnd` | number | 已废弃，恒为 `0` |
-| `effectiveFftSize` | number | 所有订阅请求的 FFT 大小中的最大值；每个订阅仍按自己的参数计算 |
-| `effectiveFps` | number | 所有订阅请求的帧率中的最大值，也是计时线程的节拍 |
-| `effectiveBands` | number | 所有订阅请求的频带数中的最大值 |
-| `framesComputed` | number | 宿主启动以来算过的 FFT 次数；暂停、停止期间不增加 |
-| `streamReady` | boolean | 可视化流是否已建立（停止状态下也为 `true`） |
-| `subscriptionCount` | number | 当前订阅数量 |
-| `subscriptions` | array | 订阅详情列表，每项带 `scale`、`backgroundThrottle`、`minFrequency` 与 `maxFrequency`（跟随 `sampleRate / 2` 时为 `null`） |
-| `callerOwnsSubscription` | boolean | 调用者是否拥有订阅 |
-| `foregroundIsExternal` | boolean | 前台是否是别的程序，即 `backgroundThrottle: true` 的订阅此刻是否限帧 |
+| `active` | `boolean` | 至少登记了一个频谱订阅。 |
+| `timerRunning` | `boolean` | 推送帧的计时线程在运行。 |
+| `timerHwnd` | `integer` | 已废弃，恒为 `0`。 |
+| `beatSource` | `"high-resolution" \| "standard" \| null` | 计时线程用的定时器；线程没在运行时为 `null`。 |
+| `beatIntervalMs` | `number \| null` | 当前拍长，毫秒，即 1000 / `effectiveFps`；计时线程没在运行时为 `null`。 |
+| `beatsCoalesced` | `integer` | 因上一拍还没到主线程而丢掉的拍数，累计值。 |
+| `effectiveFftSize` | `integer` | 所有订阅请求的最大 FFT 点数；各订阅仍按自己的算。 |
+| `effectiveFps` | `integer` | 所有订阅请求的最大帧率。 |
+| `effectiveBands` | `integer` | 所有订阅请求的最大频带数。 |
+| `skipFrames` | `integer` | 因上一拍超时而要跳过的推送拍数。 |
+| `framesComputed` | `integer` | 宿主启动以来算过的 FFT 次数；暂停或停止时不增长。 |
+| `streamReady` | `boolean` | 可视化流已建好。 |
+| `subscriptionCount` | `integer` | `subscriptions` 的长度。 |
+| `dispatchTargetCount` | `integer` | `dispatchTargets` 的长度。 |
+| `subscriptions` | `SpectrumDebugSubscription[]` | 所有页面的全部频谱订阅。 |
+| `subscriptions[].token` | `string` | 订阅的键。 |
+| `subscriptions[].windowId` | `string` | 订阅页面的窗口 id。 |
+| `subscriptions[].ownerHwnd` | `integer` | 拥有该订阅的窗口句柄，数值。 |
+| `subscriptions[].event` | `string` | 帧的事件名。 |
+| `subscriptions[].fftSize` | `integer` | 请求的 FFT 点数。 |
+| `subscriptions[].fps` | `integer` | 夹取后的帧率。 |
+| `subscriptions[].bands` | `integer` | 夹取后的频带数。 |
+| `subscriptions[].scale` | `"weighted" \| "db"` | 使用的刻度。 |
+| `subscriptions[].backgroundThrottle` | `boolean` | 同请求。 |
+| `subscriptions[].minFrequency` | `number` | 范围下限，Hz。 |
+| `subscriptions[].maxFrequency` | `number \| null` | 请求的上限，Hz；跟随流采样率一半时为 `null`。 |
+| `subscriptions[].output` | `"bands" \| "bins"` | 使用的输出。 |
+| `subscriptions[].channels` | `"mix" \| "stereo"` | 使用的声道布局。 |
+| `dispatchTargets` | `SpectrumDebugTarget[]` | 推送帧的投递目标窗口。 |
+| `dispatchTargets[].windowId` | `string` | 帧投递到的窗口 id。 |
+| `dispatchTargets[].ownerHwnd` | `integer` | 该窗口的句柄，数值。 |
+| `dispatchTargets[].event` | `string` | 帧的事件名。 |
+| `instanceCount` | `integer` | 组件里的 WebView2 实例数。 |
+| `callerHwnd` | `integer` | 调用方页面的窗口句柄，数值；未知时为 `0`。 |
+| `callerWindowId` | `string` | 调用方页面的窗口 id；未知时为空串。 |
+| `callerOwnsSubscription` | `boolean` | 调用方页面至少拥有一个订阅。 |
+| `foregroundHwnd` | `integer` | 前台窗口的句柄，数值。 |
+| `foregroundPid` | `integer` | 前台窗口所属进程的 id。 |
+| `foregroundIsExternal` | `boolean` | 前台窗口属于别的进程，后台限帧此时生效。 |
+| `foregroundTitle` | `string` | 前台窗口的标题。 |
+
+成功时 `success` 为 `true`；失败时返回 `{ success: false, error, code }`，`code` 见[错误码](../reference/errors.md)。
+<!-- api-schema:end -->
 
 ```javascript
 const debug = await fb2k.invoke('audio.getSpectrumDebugState');
+if (debug.success === false) throw new Error(debug.error);
 console.log(debug.subscriptions);
 ```
 
-## DSP API - 效果器管理
+### audio.getPcmDebugState
 
-> 注意: `dsp.getActivePreset` / `dsp.setActivePreset` 未在 C++ 层注册，请改用 `config.getActiveDspPreset` / `config.setActiveDspPreset`。
+<!-- api-schema:begin audio.getPcmDebugState -->
+实验性 API，后续版本可能发生变化。
 
-### dsp.getChain
+报告调用方页面的共享缓冲支持情况、解码任务队列与流订阅，供测试与排查用。
 
-获取当前 DSP 效果器链配置。
+无参数。
 
-- **参数**: 无
+**返回值**
 
-**返回值**:
-
-```json
-{
-    "dsps": [
-        { "index": 0, "guid": "{...}", "name": "Equalizer" }
-    ],
-    "activePreset": "My Preset",
-    "activePresetIndex": 0
-}
-```
-
-> `activePreset` 与 `activePresetIndex` 始终存在，无需判断键是否缺失：当前链不对应任何预设（或宿主不支持预设）时分别为 `null` 和 `-1`。手工改链的操作（`addDsp` / `removeDsp` / `moveDsp` / `setChain`）会使活动链脱离预设，此后这两个字段即为 `null` / `-1`。
-
-### dsp.getPresets
-
-获取所有 DSP 预设列表。
-
-- **参数**: 无
-
-**返回值**:
-
-```json
-{
-    "presets": [
-        { "index": 0, "name": "Default", "active": true }
-    ],
-    "count": 3,
-    "selectedIndex": 0
-}
-```
-
-> 未选中任何预设时 `selectedIndex` 为 `-1`。预设本身持久化在 profile 的 `dsp-presets\<名称>.fb2k-dsp`。
-
-### dsp.applyPreset
-
-应用指定的 DSP 预设。通过名称或索引指定。
-
-| 参数 | 类型 | 必填 | 说明 |
-| --- | --- | --- | --- |
-| `index` | `integer` | 否 | 预设索引，来自 `dsp.getPresets`；与 `name` 同时提供时优先。 |
-| `name` | `string` | 否 | 预设名称，来自 `dsp.getPresets`。 |
-
-> `name` 和 `index` 至少提供一个；同时提供时 `index` 优先。
-
-**返回值**: `{ "success": true, "appliedPreset": "My Preset", "appliedIndex": 0 }`
-
-```javascript
-// 按名称
-await fb2k.invoke('dsp.applyPreset', { name: 'My Preset' });
-// 按索引
-await fb2k.invoke('dsp.applyPreset', { index: 0 });
-```
-
-> 应用预设会整条替换当前活动链（含各 DSP 的参数），因此它也是把链恢复到某个已知状态的最可靠方式。预设文件本身不会被改写——本接口只写活动链。
-
-### dsp.getAvailable
-
-获取所有可用的 DSP 处理器列表（已安装的 DSP 组件）。
-
-- **参数**: 无
-
-**返回值**:
-
-```json
-{
-    "dsps": [
-        { "guid": "{...}", "name": "Equalizer", "hasConfig": true }
-    ],
-    "count": 18
-}
-```
-
-### dsp.addDsp
-
-添加 DSP 效果器到链中。
-
-| 参数 | 类型 | 必填 | 默认值 | 说明 |
-| --- | --- | --- | --- | --- |
-| `guid` | `string` | 是 | — | 已安装 DSP 的 GUID，来自 `dsp.getAvailable`。 |
-| `position` | `integer` | 否 | `-1` | `-1` 表示追加到链尾。 |
-
-**返回值**: `{ "success": true, "addedDsp": "Equalizer", "position": 2 }`
-
-```javascript
-// 获取可用 DSP 列表，然后添加
-const available = await fb2k.invoke('dsp.getAvailable');
-const eq = available.dsps.find(d => d.name === 'Equalizer');
-if (eq) {
-    await fb2k.invoke('dsp.addDsp', { guid: eq.guid });
-}
-```
-
-### dsp.removeDsp
-
-从链中移除 DSP 效果器。
-
-| 参数 | 类型 | 必填 | 说明 |
-| --- | --- | --- | --- |
-| `index` | `integer` | 是 | 要移除的链内下标。 |
-
-**返回值**: `{ "success": true, "removedDsp": "Equalizer", "removedIndex": 2 }`
-
-### dsp.moveDsp
-
-移动 DSP 效果器在链中的位置。
-
-| 参数 | 类型 | 必填 | 说明 |
-| --- | --- | --- | --- |
-| `from` | `integer` | 是 | 移动前的下标。 |
-| `to` | `integer` | 是 | 移动后的最终下标。 |
-
-**返回值**: `{"from":"...","message":"...","movedDsp":"...","success":true,"to":"..."}`
-
-> `from` 是移动**前**的下标；`to` 是该项移动后的最终下标，升序、降序都与传入值一致，返回的 `to` 即为该值。`from === to` 时不做改动，返回 `message: "No change needed"`。需要重排链请用本接口，不要用 `setChain`（后者只接受 `guid`，不承诺保留参数）。
-
-### dsp.setChain
-
-设置完整的 DSP 效果器链（高级用法，替换整个链）。
-
-| 参数 | 类型 | 必填 | 说明 |
-| --- | --- | --- | --- |
-| `dsps` | `array` | 是 | 有序链条目，每项为含 `guid` 的对象。 |
-
-`dsps` 的每一项必须是含 `guid` 的对象。任意一项无法解析时整次调用被拒绝且**活动链保持不变**，错误信息带出错下标：
-
-| 情况 | `error` |
-| --- | --- |
-| `dsps` 缺失或不是数组 | `dsps array is required` |
-| 元素不是对象 | `dsps[0] must be an object` |
-| 缺 `guid`、为空串，或不是字符串 | `dsps[0]: guid is required` |
-| GUID 格式非法 | `dsps[0]: Invalid GUID format: <值>` |
-| GUID 合法但该 DSP 未安装 | `dsps[0]: DSP not found or no default preset: <值>` |
-
-传入空数组是合法的，表示清空整条链，返回 `count: 0`。
-
-**返回值**: `{ "success": true, "count": 3 }`
-
-```javascript
-await fb2k.invoke('dsp.setChain', {
-    dsps: [
-        { guid: '{EQ-GUID-HERE}' },
-        { guid: '{LIMITER-GUID-HERE}' }
-    ]
-});
-```
-
-> 传空数组会清空整条链。本接口只接受 `guid`，因此每个 DSP 都按其默认预设加入——参数是否得以保留**取决于该 DSP 的实现**：多数 foobar2000 内置 DSP 把设置存在全局配置里，参数会保留；而按预设实例存参的 DSP（VST 包装器、部分第三方 DSP）会回到默认值。不要依赖此行为，也不要把 `getChain` 的输出直接回灌 `setChain` 来做重排序，重排请用 `dsp.moveDsp`。
-
-## Output API - 音频输出
-
-### output.getDevices
-
-获取所有可用的音频输出设备。
-
-- **参数**: 无
-
-**返回值**:
-
-```json
-{
-    "devices": [
-        {
-            "guid": "{...}",
-            "name": "Speakers (Realtek)",
-            "entry": "WASAPI (event)",
-            "entryGuid": "{...}"
-        }
-    ],
-    "count": 5
-}
-```
-
-> **`guid` 在本端点内不唯一。** foobar2000 用全零 GUID
-> `{00000000-0000-0000-0000-000000000000}` 表示某个输出模块的「默认设备」，因此多个模块下会各出现一次全零 GUID。
-> 请用 `(entryGuid, guid)` 组合作为设备的唯一键，不要只用 `guid`。
-
-### output.getEntries
-
-获取输出模块列表（WASAPI, DirectSound 等）。
-
-- **参数**: 无
-
-**返回值**:
-
-```json
-{
-    "entries": [
-        {
-            "guid": "{...}",
-            "name": "WASAPI (event)",
-            "needsBitdepthConfig": false,
-            "needsDitherConfig": false,
-            "supportsMultipleStreams": false,
-            "isHighLatency": false,
-            "isLowLatency": true
-        }
-    ],
-    "count": 4
-}
-```
-
-### output.getSettings
-
-获取当前输出设置信息（只读）。
-
-- **参数**: 无
-
-**返回值**:
-
-```json
-{
-    "note": "Output settings are managed through foobar2000 Preferences > Playback > Output. availableOutputs lists display names only and cannot disambiguate backends that share a name; use output.getEntries for name + GUID pairs.",
-    "availableOutputs": ["WASAPI (event)", "WASAPI (push)", "DirectSound", "Primary Sound Driver"]
-}
-```
-
-> 实际输出设置通过 foobar2000 首选项管理。如需切换输出设备，请使用 `config.setOutputDevice`。
-
-> **不建议在新代码中使用 `availableOutputs`。** 它只是一个显示名数组，存在两个已实测的问题：
-> 同名模块无法区分（多个后端都叫「默认」），以及某些模块的名称为空字符串。
-> 此外该数组的顺序来自服务枚举，**多次调用之间并不稳定**，因此不能依赖数组下标定位模块。
-> 需要可编程地识别输出模块时请改用 `output.getEntries`，它为每个名称附带 GUID。
-
-## ReplayGain API
-
-ReplayGain 音量标准化设置。
-
-### replaygain.getSettings
-
-获取所有 ReplayGain 设置。
-
-- **参数**: 无
-
-**返回值**:
-
-```json
-{
-    "sourceMode": "track",
-    "processingMode": "gain",
-    "preampWithRg": 0.0,
-    "preampWithoutRg": 0.0,
-    "active": true
-}
-```
-
-| 字段 | 类型 | 描述 |
+| 字段 | 类型 | 说明 |
 | --- | --- | --- |
-| `sourceMode` | string | 音源模式 |
-| `processingMode` | string | "none" / "gain" / "gain_and_peak" / "peak" |
-| `preampWithRg` | number | 有 RG 时的预增益 (dB) |
-| `preampWithoutRg` | number | 无 RG 信息时的预增益 (dB) |
-| `active` | boolean | RG 是否激活 |
+| `runtime` | `PcmRuntimeState` | 调用方页面的共享缓冲支持情况；找不到页面时两个标志都为 `false`。 |
+| `runtime.version` | `string` | 本机安装的 WebView2 运行时版本，如 `153.0.4234.48`；读不到时为空串。 |
+| `runtime.environment12` | `boolean` | 页面所在环境能建共享缓冲（`ICoreWebView2Environment12`）。 |
+| `runtime.webview17` | `boolean` | 页面的 webview 能接收共享缓冲（`ICoreWebView2_17`）。 |
+| `decode` | `PcmDecodeState` | decodePcm 任务队列。 |
+| `decode.active` | `integer` | 解码中的任务数，含已发中止、worker 还没返回的。 |
+| `decode.queued` | `integer` | 排队等空位的任务数。 |
+| `decode.openBufferBytes` | `integer` | 宿主侧还没关闭的解码缓冲字节数合计。 |
+| `stream` | `PcmStreamState` | 流捕获回调与所有页面的全部流订阅。 |
+| `stream.callbackRegistered` | `boolean` | 组件在核心登记了捕获回调；没有订阅时为 `false`。 |
+| `stream.interval` | `number` | 当前向核心请求的间隔，秒；交给核心缺省时不带此键。 |
+| `stream.chunkCount` | `integer` | 组件加载以来回调收到的块数。 |
+| `stream.chunkCycles` | `integer` | 回调累计消耗的 CPU 周期，按 `QueryThreadCycleTime` 计。 |
+| `stream.subscriptions` | `PcmStreamDebugEntry[]` | 全部在途的流订阅。 |
+| `stream.subscriptions[].subscriptionId` | `string` | 订阅 id。 |
+| `stream.subscriptions[].windowId` | `string` | 订阅页面的窗口 id。 |
+| `stream.subscriptions[].epoch` | `integer` | 缓冲代数，首块音频到达前为 `0`。 |
+| `stream.subscriptions[].capacityFrames` | `integer` | 当前环的容量（帧）；首块前为 `0`。 |
+| `stream.subscriptions[].writeFrames` | `integer` | 当前环累计写入的帧数，2^32 回绕。 |
 
-### replaygain.getMode
+成功时 `success` 为 `true`；失败时返回 `{ success: false, error, code }`，`code` 见[错误码](../reference/errors.md)。
+<!-- api-schema:end -->
 
-获取当前 ReplayGain 模式。
+已完成的任务交付完毕、宿主侧关闭缓冲后，`decode.openBufferBytes` 回到 `0`；页面手里的视图在页面释放前一直有效。
 
-- **参数**: 无
-- **返回值**: `{ "sourceMode": "track", "processingMode": "gain" }`
-
-### replaygain.setMode
-
-设置 ReplayGain 模式。
-
-| 参数 | 类型 | 必填 | 说明 |
-| --- | --- | --- | --- |
-| `sourceMode` | `string` | 否 | 可取 `none` / `track` / `album` / `auto`（别名 `byPlaybackOrder`）。 |
-| `processingMode` | `string` | 否 | 可取 `none` / `gain` / `gain_and_peak` / `peak`。 |
-
-**返回值**: `{ "success": true, "sourceMode": "track", "processingMode": "gain", "changed": true }`
-
-```javascript
-await fb2k.invoke('replaygain.setMode', { sourceMode: 'album', processingMode: 'gain' });
-```
-
-### replaygain.getPreamp
-
-获取预增益设置。
-
-- **参数**: 无
-
-**返回值**:
-
-```json
-{ "withRg": 0.0, "withoutRg": 0.0 }
-```
-
-| 字段 | 类型 | 描述 |
-| --- | --- | --- |
-| `withRg` | number | 有 RG 时的预增益 (dB) |
-| `withoutRg` | number | 无 RG 信息时的预增益 (dB) |
-
-### replaygain.setPreamp
-
-设置预增益值。
-
-| 参数 | 类型 | 必填 | 说明 |
-| --- | --- | --- | --- |
-| `withRg` | `number` | 否 | 有 RG 信息时的预增益（dB），截断到 -24..+24。 |
-| `withoutRg` | `number` | 否 | 无 RG 信息时的预增益（dB），截断到 -24..+24。 |
-
-**返回值**: `{ "success": true, "withRg": 3.0, "withoutRg": 0.0, "changed": true }`
-
-```javascript
-await fb2k.invoke('replaygain.setPreamp', { withRg: 3.0, withoutRg: -3.0 });
-```
-
-### replaygain.get
-
-获取指定文件的 ReplayGain 信息。
-
-| 参数 | 类型 | 必填 | 说明 |
-| --- | --- | --- | --- |
-| `paths` | `array` | 是 | 文件路径数组。 |
-
-**返回值**:
-
-```json
-{
-    "success": true,
-    "count": 1,
-    "results": [
-        {
-            "path": "C:\\Music\\song.flac",
-            "success": true,
-            "trackGain": "-5.20 dB",
-            "trackGainRaw": -5.2,
-            "trackPeak": "0.987654",
-            "trackPeakRaw": 0.987654,
-            "albumGain": "-4.80 dB",
-            "albumGainRaw": -4.8,
-            "albumPeak": "1.000000",
-            "albumPeakRaw": 1.0,
-            "hasReplayGain": true
-        }
-    ]
-}
-```
-
-> 缺少 RG 信息的字段不会出现在结果中。`hasReplayGain` 表示是否有任何 track 或 album gain 数据。
-
-### replaygain.clear
-
-移除文件中的 ReplayGain 信息。
-
-| 参数 | 类型 | 必填 | 说明 |
-| --- | --- | --- | --- |
-| `paths` | `array` | 是 | 文件路径数组。 |
-
-**返回值**: `{ "success": true, "clearedCount": 5 }`
-
-### replaygain.scan
-
-扫描文件的 ReplayGain（通过右键菜单触发，扫描结果自动写入文件）。
-
-| 参数 | 类型 | 必填 | 默认值 | 说明 |
-| --- | --- | --- | --- | --- |
-| `paths` | `array` | 是 | — | 要扫描的文件路径数组。 |
-| `mode` | `string` | 否 | `track` | `track` 或 `album`。 |
-
-**返回值**: `{ "success": true, "scannedCount": 10, "mode": "track", "note": "Scan started. Results will be written to files automatically." }`
-
-```javascript
-// 扫描单曲 track gain
-await fb2k.invoke('replaygain.scan', {
-    paths: ['C:\\Music\\song.flac'],
-    mode: 'track'
-});
-// 扫描整张专辑
-await fb2k.invoke('replaygain.scan', {
-    paths: ['C:\\Music\\01.flac', 'C:\\Music\\02.flac'],
-    mode: 'album'
-});
+```js
+const res = await fb2k.invoke('audio.getPcmDebugState');
+if (res.success === false) throw new Error(res.error);
+const { runtime, decode } = res;
 ```
 
 ## 运行时行为说明
 
-- `audio.subscribeSpectrum` 会创建或更新由调用方拥有的订阅。省略 `subscriptionId` 时，运行时按调用方生成一个旧式标识；监听配置的 `event`，默认值为 `audio:spectrum`。
+- `audio.subscribeSpectrum` 为调用方窗口创建订阅，`subscriptionId` 相同时替换原有的那个。不给 `subscriptionId` 时，键由调用方窗口与 `event` 推出；帧以 `event` 为事件名送达，默认 `audio:spectrum`。SDK 的 `fb.audio.subscribeSpectrum()` 建立的是同一种订阅。
 - 频谱订阅之间不共享参数。宿主的计时线程用高精度定时器，按请求中最高的 `fps` 走拍，每个订阅到了自己的间隔才出帧，所以推送的实际帧率接近请求值；实际 FFT 大小、频带数、`scale` 与频率范围都相同的订阅每拍共用一次 FFT。宿主主线程的开销随帧数增加，每帧约 0.5 ms。
 - `db` 档反映 ReplayGain 与 DSP 处理之后、音量控制之前的信号，调节音量不改变读数。
-- `audio.getSpectrum` 与 `audio.getWaveform` 读取可视化流。在存在频谱订阅且有可用音频数据前，它们会返回错误。
-- `audio.generateWaveform` 当前会返回文件元数据以及“尚未实现基于解码器的波形生成”的失败结果。异步且带缓存的流程应使用 `audio.generateFullWaveform`。
-- `audio.generateFullWaveform` 命中缓存时返回带数据的 `status: "ready"`，否则返回带 `taskId` 的 `status: "pending"`。调用方会收到 `audio:fullWaveformReady` 或 `audio:fullWaveformFailed`；非负的 `cueIndex` 优先于 `path|subsong:N` 后缀。
-- `audio.subscribeStream` 是能力 stub：在集成 `playback_stream_capture` 前始终返回 `success: false`。调用 `audio.unsubscribeStream` 仍然安全。
-- 每个构建都会注册 DSP 方法。若 foobar2000 未提供 DSP SDK 接口，全部 `dsp.*` 方法都会返回 runtime 的 "DSP API not available in this build" 失败，不会模拟 DSP 链。
-- `output.getSettings` 仅提供只读发现信息。输出配置由 foobar2000 Preferences 管理，而非本 API。
-- `replaygain.get` 读取每个传入媒体路径；`replaygain.clear` 通过 foobar2000 异步写入 ReplayGain 元数据。`replaygain.scan` 只是请求宿主扫描器开工，不同步返回分析结果。
+- `audio.getSpectrum` 与 `audio.getWaveform` 读取可视化流。没有任何频谱订阅时两者都以 `OPERATION_FAILED` 失败；`audio.getSpectrum` 在播放中但流还没有数据时同样失败，暂停或停止时回一帧静音帧。
+- `audio.generateFullWaveform` 命中缓存时返回带数据的 `status: "ready"`，否则返回带 `taskId` 的 `status: "pending"`。调用方会收到 `audio:fullWaveformReady` 或 `audio:fullWaveformFailed`；`cueIndex` 优先于 `path|subsong:N` 后缀。

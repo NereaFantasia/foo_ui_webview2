@@ -1,6 +1,6 @@
 # Cursor API
 
-显式控制客户区光标的可见性。共 2 个 API + 1 个事件。
+显式控制客户区光标的可见性。
 
 > 此 API 命名空间为 `cursor.*`，不支持别名。
 
@@ -23,23 +23,21 @@
 
 ### cursor.setHidden
 
-显式设置当前窗口客户区光标的隐藏状态。
+<!-- api-schema:begin cursor.setHidden -->
+隐藏或恢复调用窗口客户区的光标。只有真正改变了状态的调用才向该窗口发 `cursor:hiddenChanged`；重复同一个值报 `changed: false`。每个窗口各自维护状态。
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
-| `hidden` | `boolean` | 是 | `true` 隐藏客户区光标，`false` 恢复。 |
+| `hidden` | `boolean` | 是 | `true` 隐藏光标，`false` 恢复。 |
 
-**返回值**：
+**返回值**
 
-```json
-{ "success": true, "changed": true }
-```
-
-| 字段 | 类型 | 描述 |
+| 字段 | 类型 | 说明 |
 | --- | --- | --- |
-| `success` | boolean | success |
-| `changed` | boolean | 状态是否真实发生变化（仅 `success: true` 时有效） |
-| `error` | string | 失败时的人类可读描述（如 caller window not found） |
+| `changed` | `boolean` | 状态是否改变；已经是请求的状态时为 `false`。 |
+
+成功时 `success` 为 `true`；失败时返回 `{ success: false, error, code }`，`code` 见[错误码](../reference/errors.md)。
+<!-- api-schema:end -->
 
 ::: tip 幂等行为
 连续多次以同一 `hidden` 值调用，host 只会在第一次实际翻转标志位的调用上触发 `cursor:hiddenChanged` 事件，后续调用返回 `success: true, changed: false`。主题层因此可以用引用计数或 `Set` 协调多个独立的隐藏请求。
@@ -63,20 +61,24 @@ scheduleHide();
 
 ### cursor.isHidden
 
-查询当前窗口光标是否处于隐藏状态。
+<!-- api-schema:begin cursor.isHidden -->
+报告调用窗口的光标是否隐藏；解析不到调用窗口时为 `false`。
 
-- **参数**: 无
+无参数。
 
-**返回值**：
+**返回值**
 
-```json
-{ "hidden": false }
-```
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `hidden` | `boolean` | 光标是否隐藏。 |
 
-调用窗口无法解析（极少出现）时返回 `{ "hidden": false }`。
+成功时 `success` 为 `true`；失败时返回 `{ success: false, error, code }`，`code` 见[错误码](../reference/errors.md)。
+<!-- api-schema:end -->
 
 ```javascript
-const { hidden } = await fb2k.invoke('cursor.isHidden');
+const res = await fb2k.invoke('cursor.isHidden');
+if (res.success === false) throw new Error(res.error);
+const { hidden } = res;
 if (hidden) restoreCursor();
 ```
 
@@ -106,7 +108,9 @@ await fb.cursor.setHidden(true);
 await fb.cursor.setHidden(false);
 
 // 查询
-const { hidden } = await fb.cursor.isHidden();
+const res = await fb.cursor.isHidden();
+if (res.success === false) throw new Error(res.error);
+const { hidden } = res;
 
 // 监听变化
 const off = fb.on('cursor:hiddenChanged', ({ hidden }) => {
@@ -136,7 +140,9 @@ off();
 import { fb } from 'foo-webview-sdk/bridge';
 
 await fb.cursor.setHidden(true);
-const { hidden } = await fb.cursor.isHidden();
+const res = await fb.cursor.isHidden();
+if (res.success === false) throw new Error(res.error);
+const { hidden } = res;
 fb.on('cursor:hiddenChanged', ({ hidden: next }) => {
     document.documentElement.classList.toggle('cursor-hidden', next);
 });

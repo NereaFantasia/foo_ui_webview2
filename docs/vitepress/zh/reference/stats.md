@@ -1,6 +1,6 @@
 # Playcount & Rating
 
-> 底层 API 完整参考：[Playcount API](/zh/api/playcount) · [Metadata / Rating API](/zh/api/metadata) · [Titleformat API](/zh/api/titleformat)（可用 `%play_count%`、`%rating%` 等字段）
+> 底层 API 完整参考：[Playcount API](/zh/api/playcount) · [Rating API](/zh/api/rating) · [Titleformat API](/zh/api/titleformat)（可用 `%play_count%`、`%rating%` 等字段）
 
 ## rating.set
 

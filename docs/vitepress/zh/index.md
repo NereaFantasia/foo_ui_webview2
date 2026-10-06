@@ -6,14 +6,17 @@ hero:
   tagline: "使用 HTML/CSS/JavaScript 构建自定义 foobar2000 界面"
   actions:
     - theme: brand
-      text: "快速开始"
-      link: /zh/guide/quickstart
+      text: "构建第一个主题"
+      link: /zh/tutorials/first-theme
     - theme: alt
-      text: "SDK API"
-      link: /zh/sdk/overview
+      text: "安装"
+      link: /zh/how-to/install
     - theme: alt
-      text: "底层 API"
-      link: /zh/api/playback
+      text: "工作原理"
+      link: /zh/concepts/architecture
+    - theme: alt
+      text: "SDK 参考"
+      link: /zh/sdk/namespaces
 features:
   - icon:
       src: /icons/globe.svg

@@ -1,119 +1,61 @@
 # File API
 
-English API reference for the `dialog`, `file`, `shell` family.
+Methods of the `file` namespace.
 
-This page is the primary owner for the namespaces listed below. Method names, parameter keys, and return fields follow the C++ `RegisterApi` handlers.
+## Path length
 
-## dialog
-
-### dialog.confirm
-
-
-| Parameter | Type | Required | Default | Description |
-| --- | --- | --- | --- | --- |
-| `title` | `string` | No | `Confirm` | Localized to the UI language. |
-| `message` | `string` | No | — | Body text. |
-| `type` | `string` | No | `question` | Icon type, e.g. `warning`. |
-| `buttons` | `array` | No | — | Custom button labels; `response` is the clicked index. |
-| `defaultButton` | `integer` | No | `0` | Index of the initially focused button. |
-
-**Returns**: `{"response":"..."}`
-
-```js
-const { response } = await fb2k.invoke('dialog.confirm', {
-	title: 'Remove Track',
-	message: 'Remove this track from the playlist?',
-});
-```
-
-### dialog.openFile
-
-
-| Parameter | Type | Required | Default | Description |
-| --- | --- | --- | --- | --- |
-| `title` | `string` | No | `Open File` | Localized to the UI language. |
-| `defaultPath` | `string` | No | — | Folder the dialog opens in, every time it is shown; silently ignored when the path does not resolve to a folder. Supports `%music%`. |
-| `filters` | `array` | No | — | Filter specs `{ name, extensions[] }`. |
-| `multiple` | `boolean` | No | `false` | Allow selecting multiple files. |
-
-**Returns**: `{"canceled":"...","error":"...","filePaths":"..."}`
-
-```js
-const { canceled, filePaths } = await fb2k.invoke('dialog.openFile', {
-	title: 'Add Audio Files',
-	multiple: true,
-	filters: [{ name: 'Audio', extensions: ['flac', 'mp3', 'm4a'] }],
-});
-```
-
-### dialog.openFolder
-
-
-| Parameter | Type | Required | Default | Description |
-| --- | --- | --- | --- | --- |
-| `title` | `string` | No | `Select Folder` | Localized to the UI language. |
-| `defaultPath` | `string` | No | — | Folder the dialog opens in, every time it is shown; silently ignored when the path does not resolve to a folder. Supports `%music%`. |
-
-**Returns**: `{"canceled":"...","error":"...","folderPath":"..."}`
-
-`folderPath` is whatever the user confirmed, which need not be `defaultPath`.
-
-```js
-const { canceled, folderPath } = await fb2k.invoke('dialog.openFolder', {
-	title: 'Choose Music Folder',
-	defaultPath: 'D:\\Music',
-});
-```
-
-### dialog.saveFile
-
-
-| Parameter | Type | Required | Default | Description |
-| --- | --- | --- | --- | --- |
-| `title` | `string` | No | `Save File` | Localized to the UI language. |
-| `defaultName` | `string` | No | — | Pre-filled file name. |
-| `filters` | `array` | No | — | Filter specs `{ name, extensions[] }`. |
-
-**Returns**: `{"canceled":"...","error":"...","filePath":"..."}`
-
-```js
-const { canceled, filePath } = await fb2k.invoke('dialog.saveFile', {
-	defaultName: 'export.m3u8',
-	filters: [{ name: 'Playlist', extensions: ['m3u8'] }],
-});
-```
+foobar2000 does not opt in to long paths, so the host is held to the classic Windows limit: a path, with its variables expanded, can have at most 259 characters, and a folder the host creates at most 247. The synchronous methods fail a longer path with `OPERATION_FAILED` and `details.value` 206, the Windows error for a name that is too long, instead of reporting an existing file as missing. An atomic `file.write` also needs room for its temporary file, `.~<process id>-<sequence>.tmp`, in the target's folder. `file.copyAsync`, `file.moveAsync` and `file.deleteAsync` report such an entry as `failed` with reason `path-too-long`, including when a path inside a copied folder goes past the limit.
 
 ## file
 
 ### file.cancelOp
 
-
-Cancels an in-flight `file.copyAsync` / `file.moveAsync` / `file.deleteAsync` operation.
+<!-- api-schema:begin file.cancelOp -->
+Stop an operation started by `file.copyAsync`, `file.moveAsync` or `file.deleteAsync`. The entries it has not reached are reported as `skipped` / `cancelled`, and the run still ends with `file:opComplete`.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `operationId` | `string` | Yes | Id from the dispatch receipt. A missing, non-string, or empty value fails with `INVALID_PARAMS`. |
+| `operationId` | `string` | Yes | Id from the receipt of `file.copyAsync`, `file.moveAsync` or `file.deleteAsync`. Must not be empty. |
 
-**Returns**: `{"cancelled":true,"success":true}`
+**Returns**
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `cancelled` | `boolean` | `true` when the operation was still running and has been told to stop; `false` when it had already finished or never existed, which are deliberately indistinguishable. |
+
+`success` is `true` on success. On failure the response is `{ success: false, error, code }`; see [Error codes](../reference/errors.md) for `code`.
+<!-- api-schema:end -->
 
 `cancelled: false` means the operation already finished or never existed; the two are intentionally indistinguishable. A copy or move stops within one file (the file in flight is aborted and its partial copy removed), a delete stops at the next entry. Entries already processed keep their results, the remainder is reported as `skipped` / `cancelled`, and the run still ends with a `file:opComplete` carrying `cancelled: true`.
 
 Closing a **popup** that started an operation cancels it the same way, and so does quitting foobar2000. A panel host has no such hook: its operations run to the end unless this method stops them, and their events then take the fallback route described above.
 
 ```js
-const { cancelled } = await fb2k.invoke('file.cancelOp', { operationId });
+const res = await fb2k.invoke('file.cancelOp', { operationId });
+if (res.success === false) throw new Error(res.error);
+const { cancelled } = res;
 ```
 
 ### file.copy
 
+<!-- api-schema:begin file.copy -->
+Copy a file or a whole directory tree, blocking until the copy is done. A source that does not exist fails with `NOT_FOUND`. Prefer `file.copyAsync` for anything large.
 
-| Parameter | Type | Required | Default | Description |
-| --- | --- | --- | --- | --- |
-| `source` | `string` | Yes | — | Source file or directory path. |
-| `destination` | `string` | Yes | — | Destination path. Its parent directory must already exist. |
-| `overwrite` | `boolean` | No | `false` | Existing destinations are skipped when false. |
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `source` | `string` | Yes | File or directory to copy; a directory is copied with everything below it. Must not be empty. |
+| `destination` | `string` | Yes | Target path. Its parent directory has to exist already. Must not be empty. |
+| `overwrite` | `boolean` | No | Replace files that already exist at the target. Otherwise they are left as they are and the call still succeeds. Default: `false`. |
 
-**Returns**: `{"destination":"...","error":"...","source":"...","success":true}`
+**Returns**
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `source` | `string` | The source as given. |
+| `destination` | `string` | The destination as given. |
+
+`success` is `true` on success. On failure the response is `{ success: false, error, code }`; see [Error codes](../reference/errors.md) for `code`.
+<!-- api-schema:end -->
 
 ```js
 await fb2k.invoke('file.copy', {
@@ -124,15 +66,25 @@ await fb2k.invoke('file.copy', {
 
 ### file.copyAsync
 
+<!-- api-schema:begin file.copyAsync -->
+Start a cancellable batch copy on a worker thread and return a receipt at once. The results arrive in batches on `file:opProgress`, followed by one `file:opComplete`. At most 8 batch operations run at a time across the process; beyond that the call fails with `OPERATION_FAILED`.
 
-Cancellable batch copy; the work runs on a worker thread instead of blocking the UI.
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `items` | `FileOpEntry[]` | Yes | Entries to copy, reported one result each, in this order. An entry that is not an object holding exactly the string members `source` and `destination` fails the call with `INVALID_PARAMS`. Every path is checked before anything starts, `source` for reading and `destination` for writing; one refused path, an empty string included, fails the whole call with `PERMISSION_DENIED` and no `operationId`. Must not be empty. |
+| `items[].source` | `string` | Yes | File or directory to copy or move. Echoed back verbatim, `%variable%` placeholders unexpanded, in the `file:opProgress` results. Must not be empty. |
+| `items[].destination` | `string` | Yes | Target path; a missing parent directory is created. When it names an existing directory and `source` is a file, the file is placed inside it under its own name. Echoed back verbatim like `source`. Must not be empty. |
+| `overwrite` | `boolean` | No | Replace an existing file destination instead of reporting the entry as `skipped` / `already-exists`. A directory copied onto an existing directory is merged into it either way; the files already inside are skipped, without being reported, unless this is set. Default: `false`. |
 
-| Parameter | Type | Required | Default | Description |
-| --- | --- | --- | --- | --- |
-| `items` | `array<object>` | Yes | — | `{ source, destination }` pairs. A missing or empty array fails with `INVALID_PARAMS`, as does an entry that is not an object or whose `source` / `destination` is missing or not a string. Path validation is fail-fast: `source` is checked as `Read` and `destination` as `FileWrite`, and one rejected path fails the whole batch with `PERMISSION_DENIED` and no `operationId`. An empty string lands there as well, since the path check runs before the handler. |
-| `overwrite` | `boolean` | No | `false` | Replace existing destinations instead of skipping them. A non-boolean value fails with `INVALID_PARAMS`. |
+**Returns**
 
-**Returns**: `{"operationId":"fileop_...","success":true,"totalCount":2}`
+| Field | Type | Description |
+| --- | --- | --- |
+| `operationId` | `string` | Id of the operation, starting with `fileop_`. The events of the operation carry it, and `file.cancelOp` takes it. |
+| `totalCount` | `integer` | Number of entries accepted; the events report it as `total`. |
+
+`success` is `true` on success. On failure the response is `{ success: false, error, code }`; see [Error codes](../reference/errors.md) for `code`.
+<!-- api-schema:end -->
 
 The return value is only a dispatch receipt; results arrive via `file:opProgress` (batched) and a final `file:opComplete`. One result is reported per entry, never per file: a directory entry is reported once its whole tree has been walked. At most 8 operations may be in flight process-wide; beyond that the call fails with `OPERATION_FAILED`.
 
@@ -146,13 +98,18 @@ const receipt = await fb2k.invoke('file.copyAsync', {
 
 ### file.delete
 
+<!-- api-schema:begin file.delete -->
+Delete a file or directory, to the Recycle Bin unless `moveToTrash` is `false`. A path that does not exist fails with `NOT_FOUND`.
 
-| Parameter | Type | Required | Default | Description |
-| --- | --- | --- | --- | --- |
-| `path` | `string` | Yes | — | Path of the file to delete. |
-| `moveToTrash` | `boolean` | No | `true` | Set false for a permanent delete. |
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `path` | `string` | Yes | File or directory to delete. Must not be empty. |
+| `moveToTrash` | `boolean` | No | Send it to the Recycle Bin. `false` deletes it permanently, which fails on a directory that is not empty. Default: `true`. |
 
-**Returns**: `{"error":"...","success":true}`
+**Returns**
+
+`success` is `true` on success. On failure the response is `{ success: false, error, code }`; see [Error codes](../reference/errors.md) for `code`.
+<!-- api-schema:end -->
 
 ```js
 await fb2k.invoke('file.delete', { path: '%profile%\\cache\\stale.json' });
@@ -160,15 +117,23 @@ await fb2k.invoke('file.delete', { path: '%profile%\\cache\\stale.json' });
 
 ### file.deleteAsync
 
+<!-- api-schema:begin file.deleteAsync -->
+Start a cancellable batch delete, with the same receipt and events as `file.copyAsync`; its results carry no `destination`. Recycle Bin deletes run on the main thread in batches of 16, permanent deletes on a worker thread.
 
-Cancellable batch delete; results carry no `destination`.
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `paths` | `string[]` | Yes | Paths to delete, reported one result each, in this order. An entry that is not a string fails the call with `INVALID_PARAMS`. Every path is checked for writing before anything starts; one refused path, an empty string included, fails the whole call with `PERMISSION_DENIED` and no `operationId`. Must not be empty. |
+| `moveToTrash` | `boolean` | No | Send each entry to the Recycle Bin. `false` deletes permanently and removes directories that are not empty, which the synchronous `file.delete` refuses to do. Default: `true`. |
 
-| Parameter | Type | Required | Default | Description |
-| --- | --- | --- | --- | --- |
-| `paths` | `array<string>` | Yes | — | Paths to delete. A missing or empty array fails with `INVALID_PARAMS`, as does a non-string entry. Per-item `FileWrite` validation is fail-fast: one rejected path fails the whole batch with `PERMISSION_DENIED` and no `operationId`; an empty string lands there too, since the path check runs before the handler. |
-| `moveToTrash` | `boolean` | No | `true` | Set false for a permanent delete. A non-boolean value fails with `INVALID_PARAMS`. |
+**Returns**
 
-**Returns**: `{"operationId":"fileop_...","success":true,"totalCount":2}`
+| Field | Type | Description |
+| --- | --- | --- |
+| `operationId` | `string` | Id of the operation, starting with `fileop_`. The events of the operation carry it, and `file.cancelOp` takes it. |
+| `totalCount` | `integer` | Number of entries accepted; the events report it as `total`. |
+
+`success` is `true` on success. On failure the response is `{ success: false, error, code }`; see [Error codes](../reference/errors.md) for `code`.
+<!-- api-schema:end -->
 
 Dispatch receipt only; results arrive via `file:opProgress` and `file:opComplete`. Recycle Bin deletes run on the host main thread in batches of 16 because the shell API requires it; permanent deletes run on a worker thread and remove non-empty directories, which the synchronous `file.delete` refuses to do with `moveToTrash: false`.
 
@@ -181,29 +146,56 @@ const receipt = await fb2k.invoke('file.deleteAsync', {
 
 ### file.exists
 
+<!-- api-schema:begin file.exists -->
+Check whether a path exists and whether it is a file or a directory.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `path` | `string` | Yes | Path to test. |
+| `path` | `string` | Yes | Path to check. Must not be empty. |
 
-**Returns**: `{"exists":true,"isFile":true,"isDirectory":false}`
+**Returns**
 
-A successful check carries no `success` field; a failure returns the ordinary `{ success: false, error, code }` envelope.
+| Field | Type | Description |
+| --- | --- | --- |
+| `exists` | `boolean` | Whether the path exists. |
+| `isFile` | `boolean` | Whether the path is a regular file. |
+| `isDirectory` | `boolean` | Whether the path is a directory. |
+
+`success` is `true` on success. On failure the response is `{ success: false, error, code }`; see [Error codes](../reference/errors.md) for `code`.
+<!-- api-schema:end -->
 
 ```js
-const { exists, isFile } = await fb2k.invoke('file.exists', {
+const res = await fb2k.invoke('file.exists', {
 	path: 'C:\\Music\\song.flac',
 });
+if (res.success === false) throw new Error(res.error);
+const { exists, isFile } = res;
 ```
 
 ### file.getInfo
 
+<!-- api-schema:begin file.getInfo -->
+Describe a file or directory. A path that does not exist is a success with `exists: false` and no other field.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `path` | `string` | Yes | Path to inspect. |
+| `path` | `string` | Yes | File or directory to describe. Must not be empty. |
 
-**Returns**: `{"error":"...","exists":"...","extension":"...","isDirectory":"...","isFile":"...","modified":"...","name":"...","parent":"...","size":"...","success":true}`
+**Returns**
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `exists` | `boolean` | Whether the path exists; when `false`, no other field is present. |
+| `isDirectory` | `boolean` | Whether the path is a directory. |
+| `isFile` | `boolean` | Whether the path is a regular file. |
+| `size` | `integer` | Size in bytes; `0` for a directory. |
+| `modified` | `integer` | Last write time as a JavaScript timestamp in milliseconds, truncated to whole seconds. |
+| `name` | `string` | File name with its extension. |
+| `extension` | `string` | Extension with its leading dot, such as `.flac`; empty when there is none. |
+| `parent` | `string` | Parent directory of the path after `%variable%` expansion. The path is not normalized, so a doubled separator left by the expansion stays. |
+
+`success` is `true` on success. On failure the response is `{ success: false, error, code }`; see [Error codes](../reference/errors.md) for `code`.
+<!-- api-schema:end -->
 
 ```js
 const info = await fb2k.invoke('file.getInfo', {
@@ -213,30 +205,53 @@ const info = await fb2k.invoke('file.getInfo', {
 
 ### file.list
 
+<!-- api-schema:begin file.list -->
+List the files and subdirectories of a directory. A path that does not exist fails with `NOT_FOUND`, and one that is not a directory with `INVALID_PATH`.
 
-| Parameter | Type | Required | Default | Description |
-| --- | --- | --- | --- | --- |
-| `path` | `string` | Yes | — | Directory to enumerate. |
-| `pattern` | `string` | No | `*` | Only `*`, `*.*` and a single extension glob such as `*.flac` are interpreted, and nothing is ever rejected. A pattern that does **not** start with `*.` (`song*`, `?.txt`, `data`) silently matches every file. A pattern that **does** start with `*.` is compared literally against the text from the file's last dot onwards, so a compound form such as `*.{flac,mp3}` usually matches nothing at all - as does any `*.ext` against a file with no extension. |
-| `recursive` | `boolean` | No | `false` | Returns full paths instead of names. |
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `path` | `string` | Yes | Directory to list. Must not be empty. |
+| `pattern` | `string` | No | Filter for files; directories are always listed. Only `*`, `*.*` and a single extension such as `*.flac` are understood, and nothing is refused: a pattern that does not start with `*.` (`song*`, `?.txt`) matches every file, while a `*.ext` pattern is compared, ignoring case, with the text from the file name's last dot on, so `*.{flac,mp3}` matches nothing and no `*.ext` matches a file without an extension. Default: `"*"`. |
+| `recursive` | `boolean` | No | Walk the subdirectories as well; the entries are then full paths instead of names. A subdirectory that cannot be read makes the call fail with `OPERATION_FAILED`. Default: `false`. |
 
-**Returns**: `{"directories":"...","error":"...","files":"...","items":"...","success":true}`
+**Returns**
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `files` | `string[]` | Files that match `pattern`: names, or full paths when `recursive` is set. |
+| `directories` | `string[]` | Subdirectories, whatever `pattern` says: names, or full paths when `recursive` is set. |
+| `items` | `string[]` | The same list as `files`; kept for callers that read this name. |
+
+`success` is `true` on success. On failure the response is `{ success: false, error, code }`; see [Error codes](../reference/errors.md) for `code`.
+<!-- api-schema:end -->
 
 ```js
-const { files } = await fb2k.invoke('file.list', {
+const res = await fb2k.invoke('file.list', {
 	path: 'C:\\Music',
 	pattern: '*.flac',
 });
+if (res.success === false) throw new Error(res.error);
+const { files } = res;
 ```
 
 ### file.mkdir
 
+<!-- api-schema:begin file.mkdir -->
+Create a directory together with any missing parents. A directory that already exists is a success with `created: false`; a file at the path fails with `INVALID_PATH`.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `path` | `string` | Yes | Directory to create. Intermediate directories are created as needed. |
+| `path` | `string` | Yes | Directory to create. Must not be empty. |
 
-**Returns**: `{"created":"...","error":"...","message":"...","success":true}`
+**Returns**
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `created` | `boolean` | Whether this call created the directory; `false` when it already existed. |
+| `message` | `string` | `Directory already exists` when the directory was already there; absent otherwise. |
+
+`success` is `true` on success. On failure the response is `{ success: false, error, code }`; see [Error codes](../reference/errors.md) for `code`.
+<!-- api-schema:end -->
 
 ```js
 await fb2k.invoke('file.mkdir', { path: '%profile%\\my-panel\\cache' });
@@ -244,13 +259,23 @@ await fb2k.invoke('file.mkdir', { path: '%profile%\\my-panel\\cache' });
 
 ### file.move
 
+<!-- api-schema:begin file.move -->
+Move a file or directory, blocking until the move is done. A file can move to another volume; a directory cannot, and that fails with `NOT_SUPPORTED` and `details.reason: "cross-volume"`. A source that does not exist fails with `NOT_FOUND`.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `destination` | `string` | Yes | Destination path. |
-| `source` | `string` | Yes | Source file or directory path. |
+| `source` | `string` | Yes | File or directory to move. Must not be empty. |
+| `destination` | `string` | Yes | Target path. An existing file there is replaced; moving a file onto an existing directory, or under a parent directory that does not exist, fails. Must not be empty. |
 
-**Returns**: `{"destination":"...","error":"...","source":"...","success":true}`
+**Returns**
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `source` | `string` | The source as given. |
+| `destination` | `string` | The destination as given. |
+
+`success` is `true` on success. On failure the response is `{ success: false, error, code }`; see [Error codes](../reference/errors.md) for `code`.
+<!-- api-schema:end -->
 
 Moving a *file* across volumes succeeds — Windows copies and deletes it. Moving a *directory* across volumes fails with `code: "NOT_SUPPORTED"` and `details.reason: "cross-volume"`.
 
@@ -263,15 +288,25 @@ await fb2k.invoke('file.move', {
 
 ### file.moveAsync
 
+<!-- api-schema:begin file.moveAsync -->
+Start a cancellable batch move on a worker thread, with the same receipt and events as `file.copyAsync`. Within one volume a move is a rename; across volumes an entry is copied and its source then deleted.
 
-Cancellable batch move with a built-in cross-volume fallback.
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `items` | `FileOpEntry[]` | Yes | Entries to move, reported one result each, in this order. An entry that is not an object holding exactly the string members `source` and `destination` fails the call with `INVALID_PARAMS`. Every path is checked for writing before anything starts, `source` included, since a move deletes it; one refused path, an empty string included, fails the whole call with `PERMISSION_DENIED` and no `operationId`. Must not be empty. |
+| `items[].source` | `string` | Yes | File or directory to copy or move. Echoed back verbatim, `%variable%` placeholders unexpanded, in the `file:opProgress` results. Must not be empty. |
+| `items[].destination` | `string` | Yes | Target path; a missing parent directory is created. When it names an existing directory and `source` is a file, the file is placed inside it under its own name. Echoed back verbatim like `source`. Must not be empty. |
+| `overwrite` | `boolean` | No | Replace an existing file destination instead of reporting the entry as `skipped` / `already-exists`; the synchronous `file.move` always replaces one. An existing directory destination is never replaced: Windows cannot swap a directory in place, so on the same volume such an entry ends as `skipped` or `failed`. Default: `false`. |
 
-| Parameter | Type | Required | Default | Description |
-| --- | --- | --- | --- | --- |
-| `items` | `array<object>` | Yes | — | `{ source, destination }` pairs, validated exactly as for `file.copyAsync` except that both ends are checked as `FileWrite`, since a move deletes the source. |
-| `overwrite` | `boolean` | No | `false` | Replace an existing **file** destination; the synchronous `file.move` always replaces one, this default does not. An existing **directory** destination is never replaced - Windows cannot swap a directory in place, so on the same volume such an entry ends as `skipped` or `failed` rather than overwriting. |
+**Returns**
 
-**Returns**: `{"operationId":"fileop_...","success":true,"totalCount":2}`
+| Field | Type | Description |
+| --- | --- | --- |
+| `operationId` | `string` | Id of the operation, starting with `fileop_`. The events of the operation carry it, and `file.cancelOp` takes it. |
+| `totalCount` | `integer` | Number of entries accepted; the events report it as `total`. |
+
+`success` is `true` on success. On failure the response is `{ success: false, error, code }`; see [Error codes](../reference/errors.md) for `code`.
+<!-- api-schema:end -->
 
 Dispatch receipt only; results arrive via `file:opProgress` and `file:opComplete`. Within one volume a move is a rename regardless of size. Across volumes the host copies and then deletes the source; that entry still reports `status: "ok"` but carries `reason: "cross-volume"`, so the extra cost is visible. Directories cross volumes the same way, which the synchronous `file.move` cannot do.
 
@@ -285,18 +320,31 @@ const receipt = await fb2k.invoke('file.moveAsync', {
 
 ### file.read
 
+<!-- api-schema:begin file.read -->
+Read a file as text, or as Base64 with `encoding: "binary"`. A path that does not exist fails with `NOT_FOUND`, and one that is not a regular file with `INVALID_PATH`.
 
-| Parameter | Type | Required | Default | Description |
-| --- | --- | --- | --- | --- |
-| `path` | `string` | Yes | — | Path of the file to read. |
-| `encoding` | `string` | No | `utf-8` | Pass `binary` for a Base64 payload. |
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `path` | `string` | Yes | File to read. Must not be empty. |
+| `encoding` | `string` | No | Only exactly `binary` reads the raw bytes and returns them as Base64; any other value reads the file as text. Default: `"utf-8"`. |
 
-**Returns**: `{"content":"...","encoding":"...","error":"...","size":"...","success":true}`
+**Returns**
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `content` | `string` | The file's text; for a binary read, its bytes as plain Base64 without a `base64:` prefix. |
+| `size` | `integer` | Size of the file on disk in bytes; for a text read it can differ from the length of `content`. |
+| `encoding` | `string` | Present only for a binary read, and then always `base64`. |
+
+`success` is `true` on success. On failure the response is `{ success: false, error, code }`; see [Error codes](../reference/errors.md) for `code`.
+<!-- api-schema:end -->
 
 ```js
-const { content } = await fb2k.invoke('file.read', {
+const res = await fb2k.invoke('file.read', {
 	path: '%profile%\\my-panel\\settings.json',
 });
+if (res.success === false) throw new Error(res.error);
+const { content } = res;
 ```
 
 When `encoding: 'binary'`, `content` is a **raw Base64 payload** without a
@@ -307,13 +355,23 @@ back, add the `base64:` prefix required by `file.write` and keep
 
 ### file.rename
 
+<!-- api-schema:begin file.rename -->
+Rename a file or directory within its parent directory. A path that does not exist fails with `NOT_FOUND`, and a name that is already taken with `OPERATION_FAILED`.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `path` | `string` | Yes | Path of the existing file or directory. |
-| `newName` | `string` | Yes | New file name only; path separators are rejected. |
+| `path` | `string` | Yes | File or directory to rename. Must not be empty. |
+| `newName` | `string` | Yes | New name, kept in the same directory. A name containing `/` or `\` fails with `INVALID_PARAMS`. Must not be empty. |
 
-**Returns**: `{"error":"...","newPath":"...","oldPath":"...","success":true}`
+**Returns**
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `oldPath` | `string` | The path as given. |
+| `newPath` | `string` | The parent directory of the expanded `path`, joined with `newName`. |
+
+`success` is `true` on success. On failure the response is `{ success: false, error, code }`; see [Error codes](../reference/errors.md) for `code`.
+<!-- api-schema:end -->
 
 ```js
 await fb2k.invoke('file.rename', {
@@ -324,15 +382,25 @@ await fb2k.invoke('file.rename', {
 
 ### file.write
 
+<!-- api-schema:begin file.write -->
+Write text, or bytes decoded from Base64, to a file. Missing parent directories are created first.
 
-| Parameter | Type | Required | Default | Description |
-| --- | --- | --- | --- | --- |
-| `path` | `string` | Yes | — | Destination path. Missing parent directories are created. |
-| `content` | `string` | No | `""` | An empty string truncates the file. |
-| `encoding` | `string` | No | `utf-8` | Pass `binary` together with a `base64:` prefixed `content`. |
-| `append` | `boolean` | No | `false` | When false the file is truncated. |
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `path` | `string` | Yes | File to write; missing parent directories are created. Must not be empty. |
+| `content` | `string` | No | What to write. With `encoding: "binary"` a value starting with `base64:` is decoded and the bytes are written: characters outside the Base64 alphabet are skipped and decoding stops at the first `=`. Any other value, plain Base64 or a Data URL included, is written as it is. An empty string empties the file unless `append` is set. Default: `""`. |
+| `encoding` | `string` | No | Only exactly `binary` changes anything: the file is written in binary mode and a `content` starting with `base64:` is decoded. Any other value writes text. Default: `"utf-8"`. |
+| `append` | `boolean` | No | Add to the end of the file instead of replacing its content. Default: `false`. |
+| `atomic` | `boolean` | No | Write a temporary file next to the target, flush it to disk, then replace the target with one rename: readers see the old content or the new content, never a partly written file. If the replacement fails, for example because another program has the target open, the call fails and the target keeps its old content. The temporary file is named `.~<process id>-<sequence>.tmp`, and its path has to fit in 259 characters as well. Cannot be combined with `append`; passing both fails with `INVALID_PARAMS`. Default: `false`. |
 
-**Returns**: `{"bytesWritten":"...","error":"...","success":true}`
+**Returns**
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `bytesWritten` | `integer` | Size of the file after the write, in bytes; with `append` it is the whole file, not just the part added. |
+
+`success` is `true` on success. On failure the response is `{ success: false, error, code }`; see [Error codes](../reference/errors.md) for `code`.
+<!-- api-schema:end -->
 
 ```js
 await fb2k.invoke('file.write', {
@@ -353,6 +421,7 @@ const binary = await fb2k.invoke('file.read', {
 	path: '%profile%\\data.bin',
 	encoding: 'binary',
 });
+if (binary.success === false) throw new Error(binary.error);
 
 await fb2k.invoke('file.write', {
 	path: '%profile%\\data-copy.bin',
@@ -386,7 +455,7 @@ Each `results` entry:
 | `source` | `string` | Requested source path, echoed verbatim with `%variable%` placeholders unexpanded. |
 | `destination` | `string` | Requested destination, echoed verbatim. Absent for `file.deleteAsync`. |
 | `status` | `string` | `ok` / `skipped` / `failed`. |
-| `reason` | `string` | Absent when the entry succeeded outright; otherwise `already-exists` / `not-found` / `permission` / `cross-volume` / `io-error` / `cancelled`. |
+| `reason` | `string` | Absent when the entry succeeded outright; otherwise `already-exists` / `not-found` / `permission` / `cross-volume` / `path-too-long` / `io-error` / `cancelled`. |
 
 `skipped` means the entry was deliberately not carried out - it already existed, or the run was cancelled before reaching it - so it is not an error. `cross-volume` is the one reason that accompanies `status: "ok"`: the move succeeded through the copy-then-delete fallback.
 
@@ -415,95 +484,9 @@ fb2k.on('file:opComplete', ({ operationId, successCount, cancelled }) => {
 });
 ```
 
-## shell
-
-### shell.exec
-
-
-| Parameter | Type | Required | Default | Description |
-| --- | --- | --- | --- | --- |
-| `command` | `string` | Yes | — | Command or executable to run. |
-| `args` | `array` | No | — | Extra arguments passed to the process. |
-| `cwd` | `string` | No | — | Working directory; validated when present. |
-| `hidden` | `boolean` | No | `true` | Hide the process window. |
-
-**Returns**: `{"error":"...","processId":"...","success":true}`
-
-```js
-await fb2k.invoke('shell.exec', {
-	command: 'ffprobe',
-	args: ['-hide_banner', 'C:\\Music\\song.flac'],
-});
-```
-
-### shell.openExternal
-
-
-| Parameter | Type | Required | Description |
-| --- | --- | --- | --- |
-| `url` | `string` | Yes | Must use the `http://`, `https://`, or `mailto:` scheme. |
-
-**Returns**: `{"error":"...","success":true}`
-
-```js
-await fb2k.invoke('shell.openExternal', {
-	url: 'https://www.foobar2000.org/',
-});
-```
-
-### shell.openWith
-
-
-| Parameter | Type | Required | Description |
-| --- | --- | --- | --- |
-| `path` | `string` | Yes | File to hand to the shell's default handler. |
-
-**Returns**: `{"error":"...","success":true}`
-
-```js
-await fb2k.invoke('shell.openWith', { path: 'C:\\Music\\cover.jpg' });
-```
-
-### shell.showInExplorer
-
-
-| Parameter | Type | Required | Description |
-| --- | --- | --- | --- |
-| `path` | `string` | Yes | File or folder to reveal in Explorer. |
-
-**Returns**: `{"error":"...","success":true}`
-
-```js
-await fb2k.invoke('shell.showInExplorer', { path: 'C:\\Music\\song.flac' });
-```
-
-### shell.spawn
-
-
-| Parameter | Type | Required | Default | Description |
-| --- | --- | --- | --- | --- |
-| `executable` | `string` | Yes | — | Executable to launch. Absolute paths are validated. |
-| `args` | `array` | No | — | Argument vector passed to the process. |
-| `cwd` | `string` | No | — | Working directory; validated when present. |
-| `hidden` | `boolean` | No | `true` | Hide the process window. |
-| `waitForExitMs` | `integer` | No | `0` | Wait up to this many ms to report early exit (`exited` / `exitCode`); 0 does not wait. |
-
-**Returns**: `{"error":"...","exitCode":"...","exited":"...","processId":"...","success":true}`
-
-```js
-const { exited, exitCode } = await fb2k.invoke('shell.spawn', {
-	executable: 'ffprobe.exe',
-	args: ['C:\\Music\\song.flac'],
-	waitForExitMs: 5000,
-});
-```
-
-## Files, dialogs, and shell boundaries
+## File boundaries
 
 - File APIs expand `%profile%`, `%component%`, `%music%`, `%APPDATA%` and `%TEMP%` before access. Each endpoint is validated at its registered `SecurityLevel` - `Read` for the read endpoints, `FileWrite` for every `file.*` write endpoint - and the full per-endpoint table is in the [permissions reference](/reference/permissions). `file.write` creates missing parent directories, while `file.delete` defaults to the Recycle Bin.
 - Every `file.*` failure carries a `code` alongside `error`. A failure raised by the filesystem itself also carries `details.value`, the raw Win32 error number. Neither `error` nor `details` ever contains a path.
 - `file.list` returns names in non-recursive mode and full paths in recursive mode. `file.getInfo` returns `exists: false` as a successful absence result.
 - The async family (`copyAsync` / `moveAsync` / `deleteAsync`) returns only a dispatch receipt; per-entry outcomes appear solely in the `file:opProgress` / `file:opComplete` payloads. Those events are delivered to a single window, which is why their `results` carry paths while error envelopes and logs still do not. The synchronous `file.copy` / `file.move` / `file.delete` are unchanged by this family.
-- Native dialog cancellation returns `canceled: true` with an empty result path/list. Dialog initialization failures add `error` and set `canceled: false`.
-- `shell.openExternal` accepts only `http://`, `https://`, or `mailto:` URLs. `shell.openWith` rejects executable, script, installer, shortcut, library, and related dangerous extensions.
-- `shell.exec` and `shell.spawn` intentionally do not impose a command allowlist. Their `cwd` and any absolute executable path are validated; `shell.spawn.waitForExitMs` optionally reports early process exit.

@@ -1,64 +1,48 @@
 # Port API
 
-English API reference for the `event`, `port`, `state` family.
-
-This page is the primary owner for the namespaces listed below. Method names, parameter keys, and return fields follow the C++ `RegisterApi` handlers.
-
-## event
-
-### event.emit
-
-
-| Parameter | Type | Required | Default | Description |
-| --- | --- | --- | --- | --- |
-| `event` | `string` | Yes | — | Event name to broadcast; a missing or empty value returns `INVALID_PARAMS`. |
-| `payload` | `object` | No | `{}` |  |
-| `excludeSelf` | `boolean` | No | `false` | Skips the calling window. |
-
-**Returns**: `{"code":"...","error":"...","success":true}`
-
-```js
-await fb2k.invoke('event.emit', { event: 'ui:themeChanged', payload: { theme: 'dark' } });
-```
-
-### event.emitTo
-
-
-| Parameter | Type | Required | Default | Description |
-| --- | --- | --- | --- | --- |
-| `event` | `string` | Yes | — | Event name to deliver; a missing or empty value returns `INVALID_PARAMS`. |
-| `targetWindowId` | `string` | Yes | — | Receiving window id; a missing or empty value returns `INVALID_PARAMS`. |
-| `payload` | `object` | No | `{}` |  |
-
-**Returns**: `{"code":"...","error":"...","success":true}`
-
-```js
-await fb2k.invoke('event.emitTo', { event: 'lyrics:update', targetWindowId: 'popup_01', payload: { line: 5 } });
-```
+Methods of the `port` namespace.
 
 ## port
 
 ### port.connect
 
+<!-- api-schema:begin port.connect -->
+Open a port on a named channel for the calling window and announce it with `port:connected`. Any number of ports, from one window or several, can share a channel. A port belongs to the page that opened it and stays open until `port.disconnect`, until that page starts a top-level navigation (a reload or another address; same-document navigation such as a hash change does not count, and a navigation that ends in a download still does), or until its WebView goes away: the popup closes, the panel is removed, or the WebView is rebuilt or crashes beyond recovery. Each of these closes the port with `port:disconnected` before the next page can open ports.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `name` | `string` | Yes | Channel name to bind; a missing or empty value returns `INVALID_PARAMS`. |
+| `name` | `string` | Yes | Channel name; ports with the same name exchange messages. Must not be empty. |
 
-**Returns**: `{"code":"...","error":"..."}`
+**Returns**
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `portId` | `string` | Id of the new port; the other port methods take it. |
+| `name` | `string` | The channel name. |
+| `windowId` | `string` | Id of the calling window, which the port belongs to. |
+
+`success` is `true` on success. On failure the response is `{ success: false, error, code }`; see [Error codes](../reference/errors.md) for `code`.
+<!-- api-schema:end -->
 
 ```js
-const { portId } = await fb2k.invoke('port.connect', { name: 'lyrics' });
+const res = await fb2k.invoke('port.connect', { name: 'lyrics' });
+if (res.success === false) throw new Error(res.error);
+const { portId } = res;
 ```
 
 ### port.disconnect
 
+<!-- api-schema:begin port.disconnect -->
+Close a port and announce it with `port:disconnected`. Only the window that opened the port may close it; another window fails with `PERMISSION_DENIED`, and an id no open port has with `PORT_NOT_FOUND`.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `portId` | `string` | Yes | Port to destroy; a missing or empty value returns `INVALID_PARAMS`. |
+| `portId` | `string` | Yes | Id of the port to close. Must not be empty. |
 
-**Returns**: `{"code":"...","error":"..."}`
+**Returns**
+
+`success` is `true` on success. On failure the response is `{ success: false, error, code }`; see [Error codes](../reference/errors.md) for `code`.
+<!-- api-schema:end -->
 
 ```js
 await fb2k.invoke('port.disconnect', { portId: 'port_00000001' });
@@ -66,26 +50,49 @@ await fb2k.invoke('port.disconnect', { portId: 'port_00000001' });
 
 ### port.getPorts
 
+<!-- api-schema:begin port.getPorts -->
+List the open ports, of every channel or of one.
 
-| Parameter | Type | Required | Default | Description |
-| --- | --- | --- | --- | --- |
-| `name` | `string` | No | omitted | Optional channel-name filter; omit to list all ports. |
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `name` | `string` | No | List only the ports of this channel. |
 
-**Returns**: `{"success":true,"ports":[{"portId":"...","name":"...","windowId":"..."}]}`
+**Returns**
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `ports` | `PortInfo[]` | The ports, in no particular order. |
+| `ports[].portId` | `string` | Id of the port; the other port methods take it. |
+| `ports[].windowId` | `string` | Id of the window the port belongs to, such as `main`. |
+| `ports[].name` | `string` | The channel name. |
+
+`success` is `true` on success. On failure the response is `{ success: false, error, code }`; see [Error codes](../reference/errors.md) for `code`.
+<!-- api-schema:end -->
 
 ```js
-const { ports } = await fb2k.invoke('port.getPorts', { name: 'lyrics' });
+const res = await fb2k.invoke('port.getPorts', { name: 'lyrics' });
+if (res.success === false) throw new Error(res.error);
+const { ports } = res;
 ```
 
 ### port.postMessage
 
+<!-- api-schema:begin port.postMessage -->
+Send a message to every other port on the sender's channel, as a `port:message` event to each port's window. The sending port must belong to the calling window, otherwise the call fails with `PERMISSION_DENIED`; an unknown sending port fails with `PORT_NOT_FOUND`.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `message` | `json` | Yes | Message body. |
-| `portId` | `string` | Yes | Sending port; a missing or empty value returns `INVALID_PARAMS`. |
+| `portId` | `string` | Yes | Id of the sending port. Must not be empty. |
+| `message` | `any` | Yes | The message, delivered as `message` of the event. `null` counts as missing. |
 
-**Returns**: `{"code":"...","error":"...","success":true}`
+**Returns**
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `recipients` | `integer` | How many of the other ports' windows took the event. |
+
+`success` is `true` on success. On failure the response is `{ success: false, error, code }`; see [Error codes](../reference/errors.md) for `code`.
+<!-- api-schema:end -->
 
 ```js
 await fb2k.invoke('port.postMessage', { portId: 'port_00000001', message: { text: 'hello' } });
@@ -93,82 +100,25 @@ await fb2k.invoke('port.postMessage', { portId: 'port_00000001', message: { text
 
 ### port.postMessageTo
 
+<!-- api-schema:begin port.postMessageTo -->
+Send a message to one port, as a `port:message` event to that port's window. An unknown sending port fails with `PORT_NOT_FOUND`, a sending port of another window with `PERMISSION_DENIED`, an unknown target port with `TARGET_NOT_FOUND`, and a target window that did not take the event with `OPERATION_FAILED`.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `message` | `json` | Yes | Message body. |
-| `portId` | `string` | Yes | Sending port; a missing or empty value returns `INVALID_PARAMS`. |
-| `targetPortId` | `string` | Yes | Receiving port; a missing or empty value returns `INVALID_PARAMS`. |
+| `portId` | `string` | Yes | Id of the sending port. Must not be empty. |
+| `targetPortId` | `string` | Yes | Id of the port to deliver to. Must not be empty. |
+| `message` | `any` | Yes | The message, delivered as `message` of the event. `null` counts as missing. |
 
-**Returns**: `{"code":"...","error":"...","success":true}`
+**Returns**
+
+`success` is `true` on success. On failure the response is `{ success: false, error, code }`; see [Error codes](../reference/errors.md) for `code`.
+<!-- api-schema:end -->
 
 ```js
 await fb2k.invoke('port.postMessageTo', { portId: 'port_00000001', targetPortId: 'port_00000002', message: { text: 'sync' } });
 ```
 
-## state
-
-### state.delete
-
-
-| Parameter | Type | Required | Description |
-| --- | --- | --- | --- |
-| `key` | `string` | Yes | State key to delete; a missing or empty value returns `INVALID_PARAMS`. |
-
-**Returns**: `{"code":"...","error":"...","success":true}`
-
-```js
-await fb2k.invoke('state.delete', { key: 'lyrics:offset' });
-```
-
-### state.get
-
-
-| Parameter | Type | Required | Description |
-| --- | --- | --- | --- |
-| `key` | `string` | Yes | State key to read; a missing or empty value returns `INVALID_PARAMS`. |
-
-**Returns**: `{"code":"...","error":"..."}`
-
-```js
-const { value, exists } = await fb2k.invoke('state.get', { key: 'lyrics:offset' });
-```
-
-### state.keys
-
-
-| Parameter | Type | Required | Default | Description |
-| --- | --- | --- | --- | --- |
-| `pattern` | `string` | No | `*` | Glob-like filter; `*` matches all, trailing `*` is a prefix match. |
-
-**Returns**: `{"success":true,"keys":["..."]}`
-
-```js
-const { keys } = await fb2k.invoke('state.keys', { pattern: 'lyrics:*' });
-```
-
-### state.set
-
-
-| Parameter | Type | Required | Default | Description |
-| --- | --- | --- | --- | --- |
-| `key` | `string` | Yes | — | State key to write; a missing or empty value returns `INVALID_PARAMS`. |
-| `value` | `json` | Yes | — | Any JSON value. |
-| `ttlMs` | `integer` | No | — | Positive values create an expiration timestamp (ms). |
-| `silent` | `boolean` | No | `false` | Suppresses `state:changed`. |
-
-**Returns**: `{"code":"...","error":"...","success":true}`
-
-```js
-await fb2k.invoke('state.set', { key: 'lyrics:offset', value: 120 });
-```
-
-## Routing, state, and event envelopes
+## Routing and PortHub events
 
 - `port.connect` binds the new port to the invoking window. Only that owner may disconnect it or send through it; `port.postMessage` excludes the sending port and routes `port:message` to peer ports on the same name.
-- `event.emit` broadcasts the requested event name and `event.emitTo` targets one window. Receivers get the envelope `{ payload, sourceWindowId }`; `excludeSelf` affects only `event.emit`. Use the `namespace:eventName` convention for application-defined event names, such as `ui:themeChanged` or `lyrics:update`.
-- State keys are opaque strings; `lyrics:offset` and `lyrics:theme` are ordinary application key examples, not reserved runtime state names.
-- `state.*` is an in-memory store owned by the process-wide `PortHub` singleton. It is shared across this component's WebView windows in the current foobar2000 process, but it is not written to disk, does not survive process restart, and is not a cross-process or SMP/global persistence mechanism. It is distinct from the SDK `fb.state` playback-state mirror.
-- `state.get` returns `exists: false` and `value: null` when a key is absent. `state.set` requires both `key` and `value`; positive `ttlMs` creates an expiration timestamp, and `silent: true` suppresses `state:changed`.
-- `state.delete` returns `existed`. Explicit deletion emits `state:deleted` with `reason: "deleted"`; expiration emits the same event with `reason: "expired"` and an empty `sourceWindowId`.
 - Public PortHub events are `port:connected`, `port:disconnected`, `port:message`, `state:changed`, and `state:deleted`.

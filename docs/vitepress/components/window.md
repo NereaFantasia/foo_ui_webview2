@@ -99,6 +99,6 @@ el.addEventListener('fb-popup-close', e => {
   console.log('Popup closed:', e.detail.windowId);
 });
 el.addEventListener('fb-popup-message', e => {
-  console.log('Popup message:', e.detail.sourceWindowId, e.detail.targetWindowId, e.detail.message);
+  console.log('Popup message:', e.detail.sourceWindowId, e.detail.message);
 });
 ```

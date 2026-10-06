@@ -2,22 +2,42 @@
 
 `fb.menu` queries and executes main or context menu commands and provides WebView-rendered popup menus.
 
-<!-- BEGIN AUTO-GENERATED SDK STUBS -->
+## Standard command GUIDs {#standard-command-guids}
 
-## Additional methods
+Use command identifiers when recognizing a host command; translated labels and menu positions are not identifiers. The following values are defined by foobar2000 SDK's `standard_commands` in `menu_helpers.h` and `guids.cpp`. They identify commands, not a promise that every host configuration exposes or enables them.
 
-> This block maintains SDK-facing method coverage and may be expanded with complete examples and best practices.
+| Command | SDK identifier | GUID | Execute with |
+| --- | --- | --- | --- |
+| Track properties | `guid_context_file_properties` | `{6F441057-1D18-4A58-9AC4-8F409CDA7DFD}` | `runContextCommand` |
+| Open containing directory | `guid_context_file_open_directory` | `{EFC1E9C8-EEEF-427A-8F42-E5781605846D}` | `runContextCommand` |
+| Copy names | `guid_context_copy_names` | `{FFE18008-BCA2-4B29-AB88-8816B492C434}` | `runContextCommand` |
+| Send to playlist | `guid_context_send_to_playlist` | `{44B8F02B-5408-4361-8240-18DEC881B95E}` | `runContextCommand` |
+| Reload file information | `guid_context_reload_info` | `{8C3BA2CB-BC4D-4752-8282-C6F9AED75A78}` | `runContextCommand` |
+| Reload changed file information | `guid_context_reload_info_if_changed` | `{BD045EA4-E5E9-4206-8FF9-12AD9F5DCDE1}` | `runContextCommand` |
+| Preferences | `guid_main_preferences` | `{11213A01-9F36-4E69-A1BB-7A72F418DE3A}` | `runMainMenuCommand` |
+| About | `guid_main_about` | `{EDA23441-5D38-4499-A22C-FE0CE0A987D9}` | `runMainMenuCommand` |
 
-### getContextMenu()
+The send-to-playlist GUID identifies the SDK command. It does not identify a particular destination playlist or one of another component's dynamic children; the command itself determines its destination behavior.
+
+Match the menu family as well as the GUID, and compare GUID text without regard to letter case. A dynamic leaf needs both its `guid` and `subGuid`; matching the parent GUID alone does not identify a rating value, converter preset or destination. Preserve the enumerated `enabled` and `hidden` state in a self-drawn menu. `executable: false` / `noStableIdentifier` describes the lack of a GUID address; it does not make a positional `commandId` stable or mean that every execution route is unavailable.
+
+This table does not assign universal addresses to queue commands or third-party rating levels. For those operations, prefer the dedicated [queue](queue.md) and [rating](rating.md) APIs. When retaining host menu entries, do not infer their meaning from a translated name, child position or a shared parent GUID. A custom control replaces a menu action only when command identity, targets, parameters and effects agree.
+
+### Targets and completion {#command-targets}
+
+- `runContextCommand` resolves its target when called: the playing track wins; only when nothing is playing does it use the active playlist selection. It accepts neither `handles` nor `mode`. Building a menu for explicit handles does not bind a later GUID call to those handles.
+- `runContextCommandById` accepts a target mode and handles, but rebuilds the menu. Even with the same inputs, dynamic entries can change and the same position can execute a different command. Refreshing the tree narrows the interval but does not provide an atomic identity check.
+- To let the host show a native menu for supplied tracks, use `showNativePopup({ mode: 'handles', handles })`. This is distinct from executing a self-drawn selection by a stable address and explicit target in one call, which the current API does not provide.
+- A successful command call, including `executionConfirmed: true`, is not a final result for a dialog or asynchronous third-party operation. It does not report whether the user cancelled a dialog, nor which objects eventually changed. A timeout is not proof that nothing executed, so do not automatically replay a command that can write or delete data.
+
+## getContextMenu(options?)
 
 Signature: `fb.menu.getContextMenu(options?: MenuGetContextMenuParams): Promise<MenuGetContextMenuResponse>`
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `options.mode` | `string` | No | Context mode: `'auto'`, `'selection'`, `'playlist'`, `'nowPlaying'`, or `'handles'`. |
-| `options.handles` | `unknown[]` | No | Handles used by handle-based context. |
-| `options.path` | `string` | No | Optional track path. |
-| `options.subsong` | `number` | No | Optional subsong index. |
+| `options.handles` | `JsonValue[]` | No | Tracks for `'handles'` and `'auto'`: paths, optionally ending in `\|subsong:N`, or `{ path, subsong }` objects. |
 | `options.locale` | `string` | No | Locale selector; defaults to `'auto'`. |
 | `options.i18n` | `boolean` | No | Enables localized labels. |
 | `options.withAvailability` | `boolean` | No | Includes availability metadata. |
@@ -35,21 +55,24 @@ the playlist-level context and may contain only playlist-wide commands.
 const result = await fb.menu.getContextMenu({ mode: 'selection' });
 ```
 
-### getMainMenu()
+## getMainMenu(root?, options?)
 
-Signature: `fb.menu.getMainMenu(root?: string): Promise<MenuGetMainMenuResponse>`
+Signature: `fb.menu.getMainMenu(root?: string, options?: Omit<MenuGetMainMenuParams, 'root'>): Promise<MenuGetMainMenuResponse>`
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `root` | `string` | No | Limits the returned tree, for example `'Main'` or `'View'`. |
+| `options.locale` | `string` | No | Locale selector; defaults to `'auto'`. |
+| `options.i18n` | `boolean` | No | Enables localized labels. |
+| `options.withAvailability` | `boolean` | No | Includes availability metadata. |
 
-Returns a `MenuGetMainMenuResponse`. The optional `items` field is a recursive `MenuItem[]` tree. A command leaf's `source` follows its own address: `mainmenu_dynamic` when it carries `subGuid`, `mainmenu_static` otherwise. When the response reports `source: 'v1-hmenu'`, every leaf is `hmenu_fallback`. The flat fallback (`fallback: true`) keeps `flags` and has no `commandId`.
+Returns a `MenuGetMainMenuResponse`. Its `items` field is a recursive `MenuItem[]` tree. A command leaf's `source` follows its own address: `mainmenu_dynamic` when it carries `subGuid`, `mainmenu_static` otherwise. When the response reports `source: 'v1-hmenu'`, every leaf is `hmenu_fallback`. The flat fallback (`fallback: 'flat-mainmenu-commands'`, each item with `fallback: true`) keeps `flags` and has no `commandId`.
 
 ```javascript
 const result = await fb.menu.getMainMenu('View');
 ```
 
-### runContextCommand()
+## runContextCommand(command, options?)
 
 Signature: `fb.menu.runContextCommand(command: string, options?: Omit<MenuRunContextCommandParams, 'command'>): Promise<MenuRunContextCommandResponse>`
 
@@ -58,13 +81,47 @@ Signature: `fb.menu.runContextCommand(command: string, options?: Omit<MenuRunCon
 | `command` | `string` | Yes | Context-menu command path, name, or GUID. |
 | `options.subGuid` | `string` | No | Node GUID of a dynamically generated child. Without it the owning container is targeted, which runs nothing. |
 
-Invokes only `menu.runContextCommand`. The response may include the command `guid`, the affected `itemCount`, and `executionConfirmed` — `false` there means the command reached an entry point that returns nothing, so completion could not be observed.
+Invokes only `menu.runContextCommand`. The command runs on the playing track, or on the active playlist selection when nothing is playing; with neither it fails with `NO_ACTIVE_ITEM`. A name that matches no command fails with `MENU_COMMAND_NOT_FOUND`, and a GUID that no command owns fails with `NOT_FOUND`.
+
+The response may include the command `guid`, the affected `itemCount`, and `executionConfirmed` — `false` there means the command reached an entry point that returns nothing, so completion could not be observed.
 
 ```javascript
-const result = await fb.menu.runContextCommand('Properties');
+// Properties of the playing track, or the active playlist selection when stopped.
+const result = await fb.menu.runContextCommand('{6F441057-1D18-4A58-9AC4-8F409CDA7DFD}');
+
+// Pass only the dynamic leaf the user selected from getContextMenu().items.
+async function runChosenDynamicContextCommand(node) {
+    if (node.type !== 'command' || !node.guid || !node.subGuid) return;
+    return fb.menu.runContextCommand(node.guid, { subGuid: node.subGuid });
+}
 ```
 
-### runMainMenuCommand()
+## runContextCommandById(id, options?)
+
+Signature: `fb.menu.runContextCommandById(id: number, options?: Omit<MenuRunContextCommandByIdParams, 'id'>): Promise<MenuRunContextCommandByIdResponse>`
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `id` | `number` | Yes | The `commandId` of a context-menu node, as `getContextMenu()` reported it. |
+| `options.mode` | `string` | No | The `mode` the menu was built with; defaults to `'auto'`. |
+| `options.handles` | `JsonValue[]` | No | The `handles` the menu was built with. |
+
+Runs the context-menu item whose `commandId` a `getContextMenu()` call reported. The host rebuilds the menu from `options.mode` and `options.handles`, so pass the values that call used. An id is valid only for the menu it came from, so do not store it; an id the rebuilt menu does not contain fails with `NOT_FOUND`.
+
+A changed menu can also have a different command at that same id and execute it without failing. See [Targets and completion](#command-targets) before using this route for destructive actions.
+
+```javascript
+const opts = { mode: 'selection' };
+const menu = await fb.menu.getContextMenu(opts);
+if (menu.success === false) throw new Error(menu.error);
+const node = menu.items.find((item) => item.type === 'command');
+if (node && node.type === 'command' && node.commandId !== undefined) {
+    const res = await fb.menu.runContextCommandById(node.commandId, opts);
+    if (res.success === false) console.warn(res.code, res.error);
+}
+```
+
+## runMainMenuCommand(command, options?)
 
 Signature: `fb.menu.runMainMenuCommand(command: string, options?: Omit<MenuRunMainMenuCommandParams, 'command'>): Promise<MenuRunMainMenuCommandResponse>`
 
@@ -73,7 +130,7 @@ Signature: `fb.menu.runMainMenuCommand(command: string, options?: Omit<MenuRunMa
 | `command` | `string` | Yes | Command GUID, leaf name, or slash-separated path. |
 | `options.subGuid` | `string` | No | Sub-command GUID of a dynamic child. |
 
-Returns the `menu.runMainMenuCommand` response envelope and may include the resolved `guid`.
+On success the response carries `guid`, the GUID of the command that ran; it is absent when the menu tree ran the command by name or path.
 
 Prefer the GUID form: it is the only address that is stable across hosts. A
 localized foobar2000 build reports localized command labels, so an English name
@@ -82,38 +139,37 @@ or path will not resolve there. Obtain a GUID from
 leaf.
 
 Failure is reported as `success: false` with a `code` — `MENU_ITEM_DISABLED`,
-`MENU_MATCH_AMBIGUOUS` (see `candidates`), or `MENU_COMMAND_NOT_FOUND`.
+`MENU_MATCH_AMBIGUOUS` (see `candidates`), `MENU_COMMAND_NOT_FOUND`, or `NOT_FOUND`
+when no command owns the GUID.
 
 ```javascript
-// Preferred: address by GUID.
+// Preferences: this SDK-defined GUID does not depend on the host's language.
 const result = await fb.menu.runMainMenuCommand(
     '{11213A01-9F36-4E69-A1BB-7A72F418DE3A}',
 );
 
-// A dynamic child command needs its owning GUID plus subGuid.
-await fb.menu.runMainMenuCommand('{41D98AF1-8C4F-4F0E-8B7A-1A4B0F7B1234}', {
-    subGuid: '{A222D5A9-2903-AA8C-EEAE-4B9230558B55}',
-});
+// Pass only the dynamic leaf the user selected from getMainMenu().items.
+async function runChosenDynamicMainCommand(node) {
+    if (node.type !== 'command' || !node.guid || !node.subGuid) return;
+    return fb.menu.runMainMenuCommand(node.guid, { subGuid: node.subGuid });
+}
 ```
 
-### showNativePopup()
+## showNativePopup(options?)
 
 Signature: `fb.menu.showNativePopup(options?: MenuShowNativePopupParams): Promise<MenuShowNativePopupResponse>`
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `options.mode` | `string` | No | Context mode; defaults to `'auto'`. Auto tries handles, now playing, playlist selection, then playlist context. |
-| `options.handles` | `unknown[]` | No | Optional handle list. |
-| `options.path` | `string` | No | Optional track path. |
-| `options.subsong` | `number` | No | Optional subsong index. |
+| `options.handles` | `JsonValue[]` | No | Tracks for `'handles'` and `'auto'`, as for `getContextMenu()`. |
+| `options.x`, `options.y` | `number` | No | Accepted for compatibility and ignored: the menu opens at the mouse pointer. |
 
-Returns the `menu.showNativePopup` response envelope. Native rendering is scheduled by the host.
+The host opens the menu at the mouse pointer just after the call returns.
 
 ```javascript
 const result = await fb.menu.showNativePopup({ mode: 'selection' });
 ```
-
-<!-- END AUTO-GENERATED SDK STUBS -->
 
 ## Self-drawn Popup Menus
 
@@ -150,7 +206,9 @@ A rich control reports through `menu:valueChanged` without closing the menu, so 
 Low-level API. It shows the menu and resolves with `MenuShowResponse`, including `{ success, menuId }` on success. User interaction arrives asynchronously through `menu:select` and `menu:dismiss`.
 
 ```javascript
-const { menuId } = await fb.menu.show([{ id: 'a', label: 'A' }]);
+const res = await fb.menu.show([{ id: 'a', label: 'A' }]);
+if (res.success === false) throw new Error(res.error);
+const { menuId } = res;
 fb.on('menu:select', (e) => { if (e.menuId === menuId) console.log(e.itemId); });
 fb.on('menu:dismiss', (e) => { if (e.menuId === menuId) console.log('dismissed', e.reason); });
 ```
@@ -268,10 +326,11 @@ An `iconSvg` is parsed with `DOMParser` and only an allowlisted set of shape ele
 
 | Event | Payload | Timing |
 | --- | --- | --- |
-| `menu:show` | `MenuShowPayload` with `{ menuId }` | The menu becomes visible. |
 | `menu:select` | `MenuSelectPayload` with `{ menuId, itemId }` | An item is selected; the menu then closes. |
 | `menu:valueChanged` | `{ menuId, itemId, value }` | A rating, slider, or segmented control changes value. The menu stays open. |
 | `menu:dismiss` | `MenuDismissPayload` with `{ menuId, reason }` | The menu closes. Host reasons include `outside`, `escape`, `select`, `api`, `timeout`, and `blur`. |
+
+These events go to the page that called `menu.show`, so `fb.menu.popup()` resolves in a popup or panel page as it does in the main window. When that page is gone by the time the menu reports, they go to a page under the same top-level window, and then to the main window's page. A menu closed by another page's `menu.show` or `menu.close` still reports its `menu:dismiss` to the page that opened it.
 
 ## Main and Context Menu Query/Execution
 
@@ -284,4 +343,4 @@ await fb.menu.runContextCommandById(3, { mode: 'selection' });
 await fb.menu.showNativePopup({ mode: 'selection' });
 ```
 
-`runContextCommandById(id, options?)` is a separate facade method even though it is not listed in the generated stub block. `options` is `Omit<MenuRunContextCommandByIdParams, 'id'>`.
+`runContextCommandById(id, options?)` runs the context-menu item whose `commandId` `getContextMenu` reported; see [runContextCommandById()](#runcontextcommandbyid-id-options) for the parameters and failure code.

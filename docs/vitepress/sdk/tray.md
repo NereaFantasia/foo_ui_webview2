@@ -2,15 +2,9 @@
 
 `fb.tray` controls the application-scoped tray icon, notifications, tray visibility behavior, and native or WebView-rendered context menus.
 
-<!-- BEGIN AUTO-GENERATED SDK STUBS -->
+## appendMenuItems(items, position?)
 
-## Additional methods
-
-> This block completes SDK method coverage and may later be expanded with richer examples and guidance.
-
-### appendMenuItems()
-
-Signature: `fb.tray.appendMenuItems(items: TrayMenuItem[], position: TrayMenuPosition = 'top'): Promise<BaseResponse>`
+Signature: `fb.tray.appendMenuItems(items: TrayMenuItem[], position?: TrayMenuPosition): Promise<TrayAppendMenuItemsResponse>`
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
@@ -23,9 +17,9 @@ Returns the `tray.appendMenuItems` result.
 const result = await fb.tray.appendMenuItems([{ id: 'settings', label: 'Settings' }]);
 ```
 
-### clearMenuItems()
+## clearMenuItems(position?)
 
-Signature: `fb.tray.clearMenuItems(position?: TrayMenuPosition): Promise<BaseResponse>`
+Signature: `fb.tray.clearMenuItems(position?: TrayMenuPosition): Promise<TrayClearMenuItemsResponse>`
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
@@ -37,9 +31,9 @@ Returns the `tray.clearMenuItems` result.
 const result = await fb.tray.clearMenuItems();
 ```
 
-### create()
+## create(opts?)
 
-Signature: `fb.tray.create(opts?: { icon?: string | null; tooltip?: string }): Promise<BaseResponse>`
+Signature: `fb.tray.create(opts?: { icon?: string | null; tooltip?: string }): Promise<TrayCreateResponse>`
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
@@ -51,13 +45,9 @@ Creates the tray icon. Call this before other `tray.*` methods.
 const result = await fb.tray.create();
 ```
 
-### destroy()
+## destroy()
 
-Signature: `fb.tray.destroy(): Promise<BaseResponse>`
-
-| Parameter | Type | Required | Description |
-| --- | --- | --- | --- |
-| - | - | - | No parameters |
+Signature: `fb.tray.destroy(): Promise<TrayDestroyResponse>`
 
 Removes the tray icon.
 
@@ -65,13 +55,9 @@ Removes the tray icon.
 const result = await fb.tray.destroy();
 ```
 
-### getMenuItems()
+## getMenuItems()
 
-Signature: `fb.tray.getMenuItems(): Promise<{ success: boolean; items: TrayMenuItem[] }>`
-
-| Parameter | Type | Required | Description |
-| --- | --- | --- | --- |
-| - | - | - | No parameters |
+Signature: `fb.tray.getMenuItems(): Promise<TrayGetMenuItemsResponse>`
 
 Returns user-defined items flattened in `top -> playback -> bottom` order. Runtime-injected playback/system items are excluded.
 
@@ -79,13 +65,9 @@ Returns user-defined items flattened in `top -> playback -> bottom` order. Runti
 const result = await fb.tray.getMenuItems();
 ```
 
-### isVisible()
+## isVisible()
 
-Signature: `fb.tray.isVisible(): Promise<{ success: boolean; visible: boolean }>`
-
-| Parameter | Type | Required | Description |
-| --- | --- | --- | --- |
-| - | - | - | No parameters |
+Signature: `fb.tray.isVisible(): Promise<TrayIsVisibleResponse>`
 
 Returns whether the tray icon currently exists.
 
@@ -93,9 +75,9 @@ Returns whether the tray icon currently exists.
 const result = await fb.tray.isVisible();
 ```
 
-### removeMenuItems()
+## removeMenuItems(ids)
 
-Signature: `fb.tray.removeMenuItems(ids: string[]): Promise<BaseResponse & { removed: number }>`
+Signature: `fb.tray.removeMenuItems(ids: string[]): Promise<TrayRemoveMenuItemsResponse>`
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
@@ -107,9 +89,9 @@ Returns the operation result and number of removed items.
 const result = await fb.tray.removeMenuItems(['settings']);
 ```
 
-### setCloseToTray()
+## setCloseToTray(enabled)
 
-Signature: `fb.tray.setCloseToTray(enabled: boolean): Promise<BaseResponse>`
+Signature: `fb.tray.setCloseToTray(enabled: boolean): Promise<TraySetCloseToTrayResponse>`
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
@@ -121,9 +103,9 @@ Returns the `tray.setCloseToTray` result.
 const result = await fb.tray.setCloseToTray(true);
 ```
 
-### setContextMenu()
+## setContextMenu(items, config?)
 
-Signature: `fb.tray.setContextMenu(items: TrayMenuItem[], config?: TrayMenuConfig): Promise<BaseResponse>`
+Signature: `fb.tray.setContextMenu(items: TrayMenuItem[], config?: TrayMenuConfig): Promise<TraySetContextMenuResponse>`
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
@@ -136,9 +118,9 @@ Replaces items in the configured zone; the other zones remain intact.
 const result = await fb.tray.setContextMenu([{ id: 'settings', label: 'Settings' }]);
 ```
 
-### setIcon()
+## setIcon(icon?)
 
-Signature: `fb.tray.setIcon(icon?: string | null): Promise<BaseResponse>`
+Signature: `fb.tray.setIcon(icon?: string | null): Promise<TraySetIconResponse>`
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
@@ -155,24 +137,45 @@ backend; use `iconSvg` for WebView-rendered menu-item icons.
 const result = await fb.tray.setIcon();
 ```
 
-### setMenuItemState()
+## setMenuItemState(id, state)
 
-Signature: `fb.tray.setMenuItemState(id: string, state: { checked?: boolean; enabled?: boolean }): Promise<BaseResponse & { found: boolean }>`
+Signature: `fb.tray.setMenuItemState(id: string, state: { checked?: boolean; enabled?: boolean }): Promise<TraySetMenuItemStateResponse>`
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `id` | `string` | Yes | Item ID searched recursively across all zones |
 | `state` | `{ checked?: boolean; enabled?: boolean }` | Yes | At least one field must be supplied |
 
-Returns whether a matching item was found. The native menu reflects changes on the next open.
+`found` is `true` on success; an id no row has fails with `code: 'NOT_FOUND'`. The native menu reflects changes on the next open.
 
 ```javascript
 const result = await fb.tray.setMenuItemState('settings', { enabled: false });
 ```
 
-### setMinimizeToTray()
+## setMenuZones(zones, config?)
 
-Signature: `fb.tray.setMinimizeToTray(enabled: boolean): Promise<BaseResponse>`
+Signature: `fb.tray.setMenuZones(zones: Omit<TraySetMenuZonesParams, 'config'>, config?: TrayMenuConfig): Promise<TraySetMenuZonesResponse>`
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `zones` | `{ top?, playback?, bottom? }` | Yes | Items of each zone; a zone left out is cleared |
+| `config` | `TrayMenuConfig` | No | Renderer, layout, styling, and behavior options; `customPosition` does not apply to this call |
+
+Replaces all three zones in one step, so a menu opened meanwhile never shows a
+partial update and the later of two quick calls is what remains. When an item
+is rejected or a resource limit is exceeded, nothing changes, `config`
+included.
+
+```javascript
+const result = await fb.tray.setMenuZones({
+    top: [{ id: 'settings', label: 'Settings' }],
+    bottom: [{ id: 'about', label: 'About' }],
+});
+```
+
+## setMinimizeToTray(enabled)
+
+Signature: `fb.tray.setMinimizeToTray(enabled: boolean): Promise<TraySetMinimizeToTrayResponse>`
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
@@ -184,9 +187,9 @@ Returns the `tray.setMinimizeToTray` result.
 const result = await fb.tray.setMinimizeToTray(true);
 ```
 
-### setTooltip()
+## setTooltip(tooltip)
 
-Signature: `fb.tray.setTooltip(tooltip: string): Promise<BaseResponse>`
+Signature: `fb.tray.setTooltip(tooltip: string): Promise<TraySetTooltipResponse>`
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
@@ -198,9 +201,9 @@ Returns the `tray.setTooltip` result.
 const result = await fb.tray.setTooltip('foobar2000');
 ```
 
-### showBalloon()
+## showBalloon(opts)
 
-Signature: `fb.tray.showBalloon(opts: { title: string; message: string; icon?: string }): Promise<BaseResponse>`
+Signature: `fb.tray.showBalloon(opts: { title: string; message: string; icon?: TrayShowBalloonParams['icon'] }): Promise<TrayShowBalloonResponse>`
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
@@ -215,8 +218,6 @@ await fb.tray.showBalloon({
   icon: 'info',
 });
 ```
-
-<!-- END AUTO-GENERATED SDK STUBS -->
 
 ## Layout guide (`layoutMode`)
 
@@ -239,6 +240,7 @@ await fb.tray.setContextMenu(items, {
 
 ```javascript
 const ver = await fb.config.getVersionInfo();
+if (ver.success === false) throw new Error(ver.error);
 const plugin = ver?.plugin?.version; // probe before opting into zones
 // Zones ship from 1.10.0; probe the runtime version if you must support older hosts.
 await fb.tray.setContextMenu(items, {
@@ -275,7 +277,9 @@ await fb.tray.setContextMenu([
 ], { render: 'webview' });
 
 // Vertical — probe plugin version first; do not hard-code a fake minimum version.
-const { plugin } = await fb.config.getVersionInfo();
+const res = await fb.config.getVersionInfo();
+if (res.success === false) throw new Error(res.error);
+const { plugin } = res;
 await fb.tray.setContextMenu([
   {
     id: 'vol',

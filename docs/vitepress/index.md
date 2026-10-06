@@ -6,14 +6,17 @@ hero:
   tagline: "Build custom foobar2000 interfaces with HTML, CSS, and JavaScript"
   actions:
     - theme: brand
-      text: "Quick Start"
-      link: /guide/quickstart
+      text: "Build your first theme"
+      link: /tutorials/first-theme
     - theme: alt
-      text: "SDK API"
-      link: /sdk/overview
+      text: "Install"
+      link: /how-to/install
     - theme: alt
-      text: "Low-level API"
-      link: /api/playback
+      text: "How it works"
+      link: /concepts/architecture
+    - theme: alt
+      text: "SDK reference"
+      link: /sdk/namespaces
 features:
   - icon:
       src: /icons/globe.svg

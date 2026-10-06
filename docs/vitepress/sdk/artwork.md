@@ -21,6 +21,7 @@ Resolves an `fb2k://` artwork URL for the current track.
 
 ```javascript
 const res = await fb.artwork.getFb2kUrl('front', { maxSize: 300 });
+if (res.success === false) throw new Error(res.error);
 if (res.available && res.dataUrl) {
     document.getElementById('cover').src = res.dataUrl;
 }
@@ -53,6 +54,7 @@ requires `base64:<payload>` together with `{ encoding: 'binary' }`, while
 
 ```javascript
 const cover = await fb.artwork.getCurrent('front');
+if (cover.success === false) throw new Error(cover.error);
 if (cover.available && cover.dataUrl) {
     const comma = cover.dataUrl.indexOf(',');
     const payload = cover.dataUrl.slice(comma + 1);
@@ -84,6 +86,7 @@ Returns an `ArtworkResponse` for the current track.
 
 ```javascript
 const res = await fb.artwork.getCurrent('front');
+if (res.success === false) throw new Error(res.error);
 if (res.available) img.src = res.dataUrl;
 ```
 
@@ -139,69 +142,67 @@ const batch = await fb.artwork.getFb2kUrlByPathBatch(
 );
 ```
 
-## Supplemental method reference
+## getAvailableArtwork(path)
 
-### getAvailableArtwork(path?)
-
-Signature: `fb.artwork.getAvailableArtwork(path?: string): Promise<ArtworkAvailableArtworkResponse>`
+Signature: `fb.artwork.getAvailableArtwork(path: string): Promise<ArtworkGetAvailableArtworkResponse>`
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `path` | `string` | No | Audio path; omitted for the host's current-track behavior |
+| `path` | `string` | Yes | Audio path; a `\|subsong:N` suffix is dropped |
 
-Returns available-artwork status.
+Reports which picture types the file embeds and which cover files sit next to it. `artworks` lists the embedded pictures in probe order and `available` tells whether there is at least one. `sources` holds `embedded` once when any picture is embedded, then `folder:<name>` for each `cover`, `folder`, `front` or `album` file (`.jpg` or `.png`) found beside the file.
 
 ```javascript
 const available = await fb.artwork.getAvailableArtwork('E:\\Music\\song.flac');
 ```
 
-### getAvailableTypes()
+## getAvailableTypes(path?)
 
-Signature: `fb.artwork.getAvailableTypes(): Promise<AlbumArtType[]>`
+Signature: `fb.artwork.getAvailableTypes(path?: string): Promise<ArtworkGetAvailableTypesResponse>`
 
-Returns the artwork types available for the current host context.
+Returns the embedded artwork types of the file at `path`, or of the playing track when `path` is omitted, as the `types` array of the response.
 
 ```javascript
 const types = await fb.artwork.getAvailableTypes();
 ```
 
-### getFolderImages(directory)
+## getFolderImages(directory)
 
-Signature: `fb.artwork.getFolderImages(directory: string): Promise<{ images: string[] }>`
+Signature: `fb.artwork.getFolderImages(directory: string): Promise<ArtworkGetFolderImagesResponse>`
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `directory` | `string` | Yes | Directory path |
 
-Returns recognized image paths in the directory.
+Returns the recognized image files in the directory as `images` rows of `{ name, path, size }`.
 
 ```javascript
 const images = await fb.artwork.getFolderImages('E:\\Music\\Album');
 ```
 
-### getLyrics(path)
+## getLyrics(path?)
 
-Signature: `fb.artwork.getLyrics(path: string): Promise<ArtworkLyricsResult>`
+Signature: `fb.artwork.getLyrics(path?: string): Promise<ArtworkGetLyricsResponse>`
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `path` | `string` | Yes | Audio path |
+| `path` | `string` | No | Audio path; omitted for the playing track |
 
-Returns lyrics data for the path.
+Reads the lyrics tag of the track. `LYRICS`, `UNSYNCED LYRICS`, `UNSYNCEDLYRICS`, `SYNCEDLYRICS` and `SYNCED LYRICS` are probed in that order and the first non-empty one wins: `available` tells whether one was found, `tag` names it, `lyrics` holds the text, and `synced` is `true` when the tag name marks the lyrics as synced. The host's cached track info is used when complete; a local file it has not read is read from disk. With `path` omitted and nothing playing the call fails with `NO_ACTIVE_ITEM`; a path no track can be made for fails with `NOT_FOUND`, and a local file that cannot be read with `OPERATION_FAILED`.
 
 ```javascript
 const lyrics = await fb.artwork.getLyrics('E:\\Music\\song.flac');
 ```
 
-### getMetadata(path)
+## getMetadata(path?)
 
-Signature: `fb.artwork.getMetadata(path: string): Promise<ArtworkMetadataResponse>`
+Signature: `fb.artwork.getMetadata(path?: string): Promise<ArtworkGetMetadataResponse>`
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `path` | `string` | Yes | Audio path |
+| `path` | `string` | No | Audio path; omitted for the playing track |
 
-Returns artwork-related metadata.
+Reads the album-level tags of the track: `album`, `artist`, `albumArtist`, `title`, `year`, `genre`, `trackNumber` and `discNumber`, each empty when absent, with multi-value tags joined by `, `. `hasEmbedded` tells whether the file embeds any picture and `hasLyrics` whether it carries a lyrics tag, even an empty one. A remote or unrecognised path keeps whatever the host's cache has, which can be blank. Failures are those of `getLyrics()`.
 
 ```javascript
 const metadata = await fb.artwork.getMetadata('E:\\Music\\song.flac');

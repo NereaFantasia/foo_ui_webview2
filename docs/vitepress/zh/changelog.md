@@ -1,5 +1,100 @@
 # 更新日志
 
+## v2.0.0 (2026-10-06)
+
+自本版本起，foo_ui_webview2 遵循语义化版本，2.x 系列内不再包含破坏性变更。详见[版本与兼容性](/zh/reference/versioning)。
+
+::: warning 本版的破坏性变更
+- 传入未声明的参数键（`_` 开头的除外）、值类型错误或缺少必填项时，调用以 `INVALID_PARAMS` 失败，`error` 指明出错的参数。此前多余的键会被忽略。
+- 仅宿主信任的页面可以调用 API。打开者不信任的 `http(s)` 弹出窗口、从受信任来源跳走的页面、`file://` 页面，以及开发模式下不在所配置开发服务器上的页面，调用立即以 `ORIGIN_DENIED` 失败，且收不到事件。详见[哪些页面能调用 API](/zh/reference/security#哪些页面能调用-api)。
+- SDK 的列表方法改为返回宿主的信封，失败时不再抛错，涉及 `playlist.getAll`、`getTracks`、`getSelectedTracks`、`getAvailableColumns`，`output.getDevices`，`system` 与 `config` 的列表方法，以及 `playcount.get`。请从对应字段读取列表，或使用 `unwrap`。
+- SDK 生成的 `XxxResponse` 改为 `XxxSuccess | ApiFailure`，须先判断 `success` 才能读取字段。部分事件载荷类型收窄，`artwork.getAvailableArtwork` 须传 `path`，`metadata.embedArtwork` 须传 `opts`，`FbBaseElement._sub` 只接受 `FBEventName` 中的事件名。以上仅影响 TypeScript 编译。
+- 无宿主环境下，SDK 调用返回 `{ success: false, code: 'NOT_SUPPORTED', error, details: { method } }`，不再返回 `{ mock: true, method }`。如需在假数据上运行，请将替身赋给 `window.fb2k`。
+- 曲目事件改发共享的 `Track`，移除 `id` 与 `fullPath`，请改为读取 `handle`。涉及 `playback:trackChanged`、`playback:edited`、`playback:itemPlayed`，以及 `selection:changed` 的 `track` 与 `nowPlaying`。
+- `library.getAlbumTracks` 改为接收 `library.getAlbums` 返回行的 `name`（传给 `album`）与 `albumArtist`，两者必填，不再接受 `artist`；结果以 `albumArtist` 代替 `artist`。
+- 以下调用的失败方式有变：
+  - 播放列表锁定时，`library.addToPlaylist`、`playback.playPath` 与 `playback.playPaths` 以 `LOCKED` 失败（此前报成功）；`queue.addPaths` 以 `LOCKED` 失败（此前为 `OPERATION_FAILED`），`playlist` 与 `isLocked` 移入 `details`。
+  - 无活动播放列表时，`queue.add` 以 `NO_ACTIVE_ITEM` 失败（此前为 `INVALID_INDEX`）。
+  - `artwork.getByPlaylistItem` 的播放列表序号越界时以 `INVALID_INDEX` 失败（此前为 `NOT_FOUND`）。
+  - 负数行号与队列位置以 `INVALID_PARAMS` 失败（此前被丢弃，`playlist.reorder` 与 `reorderPlaylists` 则为 `INVALID_INDEX`）。
+  - 右键菜单给出的 `handles` 全部不可用时以 `INVALID_PARAMS` 失败，不再改用正在播放的曲目、选中项或播放列表。
+- 仅在页面的 `dragover` 处理中调用了 `preventDefault()` 的位置接受文件放下；其他位置显示禁止光标，不发 `dnd:drop`。
+- `lyrics.save` 不再接受 `config`，`all` 只写 `file` 与 `embedded`；子曲目不再自动读取编号或整张镜像共用的歌词文件，请通过 `filename` 指定。已有歌词不会被删除，详见[迁移说明](/zh/api/lyrics#从旧版本迁移)。
+:::
+
+### 新功能
+
+- 支持按 GUID 指定播放列表。`playlist.getAll`、`getActive`、`getPlaying`、`create`、`duplicate`、`createAutoplaylist` 返回 `guid`；作用于单个播放列表的方法（含 `library.addToPlaylist`、`queue.add`、`queue.addPaths`、`artwork.getByPlaylistItem`）接受 `playlistGuid`，列表已删除时以 `NOT_FOUND` 失败。
+- 以序号报告播放列表的应答同时提供 `playlistGuid`；`playlist:*` 事件同样带 GUID（`playlistGuid`、`guid`、`newGuid`、`guids`）。
+- `playlist.setActive`、`playlist.rename` 接受 `playlistGuid`；`playlist.reorderPlaylists` 新增 `newOrderGuids`；`queue.setContents` 与 `queue.insertNext` 的条目接受 `playlistGuid`。
+- 新增 `playlist.getMatchingRows`（返回符合查询的行）与 `playlist.getTracksAt`（按行号读取曲目）。
+- SDK：接受播放列表的方法支持 `PlaylistRef`（序号或 GUID）；`<fb-playlist-view>` 与 `<fb-playlist-tabs>` 按 GUID 定位播放列表。
+- 播放位置新增 `hostTime`（Unix 毫秒，与 `Date.now()` 同一时钟），见于 `playback.getPosition`、`playback.setPosition`、`playback:seeked`、`playback:timeHighRes` 与 `playback:stateChanged`；SDK 新增 `PlaybackClock`，用于推算两次更新之间的播放位置。
+- `playback:stateChanged` 新增 `canSeek`。
+- 本地媒体（实验性，后续版本可能变化）：新增 `media.getStreamUrl` 与 `media.getContainerInfo`，SDK 新增 `MediaElementFollower` 与 `canPlay`。见 [Media 媒体 API](/zh/api/media) 与 [本地媒体](/zh/sdk/media)。
+- PCM（实验性，后续版本可能变化）：新增 `audio.decodePcm`，把曲目或其中一段解码为 float32 PCM；新增 `audio.subscribeStream`，订阅 foobar2000 正在播放的音频。样本经共享缓冲送达，SDK 以 `PcmBuffer` 与 `PcmStream` 读取。
+- `audio.subscribeSpectrum` 新增 `output: 'bins'`，输出原始 FFT 频点；`channels: 'stereo'` 时分 `left` 与 `right` 输出。SDK 回调接收 `SpectrumBinsFrame`。
+- `metadata.write` 与 `metadata.writeBatch` 支持以字符串数组写入多值标签，空数组删除该标签。
+- 曲目行新增 `albumArtists`，`library.query`、`library.search` 与 `playlist.getTracks` 的 `fields` 均可选用。
+- `lyrics.get` 与 `lyrics.exists` 新增 `filename`，可指定歌词文件。
+- 新增 `webview.getSource`，返回页面的加载来源。
+- 新增 `window.setMaximizeButtonRegion`，使页面自绘的最大化按钮在 Windows 11 上支持贴靠布局。
+- `window:stateChanged` 新增 `windowId`。
+- `file.write`、`fb.file.writeBinary` 与 `fb.file.writeDataUrl` 新增 `atomic: true`，不可与 `append` 同用。
+- 新增 `tray.setMenuZones`，一次替换整个托盘菜单。
+- `dnd:enter`、`dnd:drop` 与 `dnd.getPathsAsync` 新增 `source`，区分本页面（`'self'`）、同一 foobar2000 的其他窗口（`'other-window'`）与外部（`'external'`）的拖动。
+- 便携版改为使用各自 profile 目录下的 WebView2 数据，支持多个实例同时运行。首次启动时复制共用目录中的网页数据；共用目录仍被其他 foobar2000 占用时，改为以空数据启动，控制台会写明两个目录的位置。`config.set` 保存的设置不受影响。
+- 文档站的 API 参考按命名空间分页，新增 SDK 类型参考、入门教程，以及从实时 PCM 流计算频谱的示例。
+
+### 变更
+
+- `library.getAlbums` 与 `library.getAlbumTracks` 共用同一份分组结果，再次打开同一张专辑不再扫描媒体库。
+- `library.getAlbumTracks` 的结果新增 `row`，曲目按碟号、曲号、媒体库顺序排列。
+- `library.addToPlaylist`、`playlist.addHandles` 与 `playlist.insertTracks` 改为按媒体读取校验路径，有路径被拒时整次调用以 `PERMISSION_DENIED` 失败。
+- `playlist.reorder` 与 `playlist.reorderPlaylists` 的 `newOrder` 含重复项时以 `INVALID_PARAMS` 失败。
+- 曲目事件载荷新增 `artists` 与 `rating`，所有字段始终存在。
+- `audio:dspPresetChanged` 与 `playlist:defaultFormatChanged` 改为发送空对象（此前为 `null`）。
+- 解析器拒绝的查询以 `INVALID_PARAMS` 失败并带 `details.param: 'query'`，适用于 `playlist.getMatchingRows`、`library.search` 与 `library.query`。
+- 超过 259 个字符的路径以 `OPERATION_FAILED` 失败，`details.value` 为 206；`file.copyAsync`、`file.moveAsync` 与 `file.deleteAsync` 报告原因 `path-too-long`。详见[路径长度](/zh/api/file#路径长度)。
+- `file.read` 与 `file.write` 无法打开文件时，在 `details.value` 中提供 Windows 错误码。
+- 歌词的 `filename` 按 Windows 文件名规则校验：允许名称内部的句点，拒绝末尾的句点或空格。
+- 保存歌词会使读取缓存失效。
+- 频谱的频带输出保留以兼容，数值不变，文档将其列为旧接口。
+- 宿主拒绝 `fb2k.invoke` 请求时，`Error` 带 `code` 属性（如 `METHOD_NOT_FOUND`、`INTERNAL_ERROR`）。
+- SDK 的 `library.getAll` 失败或超时时返回 `OPERATION_FAILED`，不再 reject；`playlist.getTracksPage` 已弃用，`getTracks` 返回相同的分页响应。
+- 读不出序号的 `|subsong:N` 后缀会被去掉，路径指向第一首。
+- 移除 `audio.generateWaveform`（此前每次调用都以未实现失败），请改用 `audio.generateFullWaveform`。
+
+### 修复
+
+- 修复弹出窗口与面板收不到 `menu:select`、`menu:dismiss`、`menu:valueChanged` 的问题，这些事件现在发给打开菜单的页面。
+- 修复弹出窗口与面板开启 JIT 会话后收不到 `jitQueue:*` 事件、播完第一首即停止的问题。
+- 修复面板页面收不到 `http:response` 与 `http:downloadComplete` 的问题。
+- 修复以 Default UI 或 Columns UI 为界面时，面板页面收不到 `app:beforeQuit` 的问题。
+- 修复同一 foobar2000 窗口中有多个面板时，各面板被识别为同一个的问题。
+- 修复弹出窗口中 `window.getMode` 的 `windowId` 恒为 `main` 的问题。
+- 修复弹出窗口中的 `<fb-titlebar>` 与 `<fb-window-controls>` 跟随主窗口最大化状态的问题。
+- 修复连不上开发服务器时，弹出窗口停留在浏览器错误页的问题。
+- 修复带用户名或密码的地址可冒充受信任来源的问题。
+- 修复 `LYRICIST` 标签被当作歌词读取的问题。
+- 修复 `playback.playPaths` 仍播放已报告为跳过的路径的问题。
+- 修复播放列表锁定时，`playlist:addComplete` 的 `addedCount` 计入被拒曲目的问题。
+- 修复以暂停状态开始播放时，`playback:stateChanged` 报告 `playing` 的问题。
+- 修复事件文本含非法 UTF-8（如网络电台的流标题）时事件无法发出的问题，非法字节现在替换为 U+FFFD。
+- 修复 `metadb:changed` 对无元数据的曲目缺少播放统计评分的问题。
+- 修复行或播放列表删除、移动后，`queue.get` 报告错误播放列表位置的问题。
+- 修复选择不在活动播放列表中时，`selection.getViewingTrack` 报告活动列表却没有行号的问题。
+- 修复 `playlist.playTrack`（`deferred: true`）在起播前有列表增删时播放错误行的问题。
+- 修复 SMP 兼容层的 `RemovePlaylistSelection` 带 `crop` 且读不出选择时清空整个列表的问题。
+- 修复 `discovery.executeContextMenuByPath`、`titleformat.eval` 系列方法与 `replaygain.get`、`clear`、`scan` 无法作用于多曲目文件中第一首以外曲目（`|subsong:N`）的问题。
+- 修复 `playcount.get` 与 `getBatch` 的失败行未回显请求路径的问题。
+- 修复主窗口不在前台时 `taskbar.flash` 报告失败的问题。
+- 修复页面重载或跳转后，其打开的端口仍然保留的问题，端口现在随页面关闭并发出 `port:disconnected`。
+- 修复 `fb2k.on` 返回 `undefined` 的问题，现在返回移除该监听的函数。
+- 修复宿主拒绝拖出时，页面内的拖动也被取消的问题。
+- 修复从资源管理器长时间拖动后拖影残留、页面无响应的问题。
+- 修复文件放到页面未处理的位置时，在另一个窗口中打开的问题。
+
 ## v1.14.0 (2026-10-06)
 
 ::: warning 本版的破坏性变更

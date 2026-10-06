@@ -1,26 +1,36 @@
 # Library API
 
-English API reference for the `library` family.
-
-This page is the primary owner for the namespaces listed below. Method names, parameter keys, and return fields follow the C++ `RegisterApi` handlers.
+Methods of the `library` namespace.
 
 ## library
 
 ### library.addToPlaylist
 
+<!-- api-schema:begin library.addToPlaylist -->
+Append tracks to a playlist by path. A path does not have to be in the library, and a file that does not exist is added all the same. A locked playlist fails with `LOCKED` and nothing is added.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `paths` | `array` | Yes | File path list to insert. An empty array is rejected with `No paths specified`. |
-| `playlist` | `integer` | No | Target playlist index; defaults to the active playlist. |
+| `paths` | `string[]` | Yes | Paths to add, in this order; a `\|subsong:N` suffix selects a subsong. Must not be empty. |
+| `playlist` | `integer` | No | Index of the target playlist; omitted, the active playlist. An index past the last playlist fails with `INVALID_INDEX`; with this omitted and no active playlist the call fails with `NO_ACTIVE_ITEM`. At least `0`. |
+| `playlistGuid` | `string` | No | A playlist's GUID instead of its index, written with braces as `playlist.getAll` and every result or event that names a playlist report it; either hex case is accepted. It keeps naming the same playlist while other playlists are added, removed or reordered, which an index does not. Giving both this and the index, or a malformed GUID, fails with `INVALID_PARAMS`. A playlist that no longer exists fails with `NOT_FOUND`; the call never falls back to another playlist. A malformed GUID and a missing playlist carry the GUID given as `details.playlistGuid`. |
 
-**Returns**: `{"added":"...","error":"...","success":true}`
+**Returns**
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `added` | `integer` | Tracks added. |
+
+`success` is `true` on success. On failure the response is `{ success: false, error, code }`; see [Error codes](../reference/errors.md) for `code`.
+<!-- api-schema:end -->
 
 ```js
 // Minimal call: append to the active playlist
-const { added } = await fb2k.invoke('library.addToPlaylist', {
+const res = await fb2k.invoke('library.addToPlaylist', {
     paths: ['C:\\Music\\song.flac', 'C:\\Music\\other.mp3']
 });
+if (res.success === false) throw new Error(res.error);
+const { added } = res;
 
 // Target a specific playlist by index
 await fb2k.invoke('library.addToPlaylist', {
@@ -31,19 +41,34 @@ await fb2k.invoke('library.addToPlaylist', {
 
 ### library.browseDirectory
 
+<!-- api-schema:begin library.browseDirectory -->
+List the library by path prefix: the folders one level below `path` and, with `includeFiles`, every track under it at any depth. The prefix is matched against the paths as foobar2000 stores them, so a local folder has to be written as `file://` followed by its path; a plain absolute path matches nothing and succeeds with empty lists. `library.browseTree` walks the real library roots instead. Fails with `LIBRARY_DISABLED` when the library is disabled.
 
-| Parameter | Type | Required | Default | Description |
-| --- | --- | --- | --- | --- |
-| `path` | `string` | No | — | Case-insensitive path prefix. Omit to list top-level directories. |
-| `includeFiles` | `boolean` | No | `true` | Set false to return directories only. |
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `path` | `string` | No | Path prefix, compared with ASCII letters case-insensitive; empty matches every track. Default: `""`. |
+| `includeFiles` | `boolean` | No | Add every track under `path` as `files`. On by default, so an empty `path` returns the whole library. Default: `true`. |
 
-**Returns**: `{"directories":"...","error":"...","files":"...","items":"...","success":true}`
+**Returns**
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `directories` | `string[]` | Folders one level below `path`, as stored paths, in byte order. |
+| `items` | `string[]` | The same list as `directories`. |
+| `files` | `LibraryTrack[]` | Tracks under `path` in library order; `index` is the position in the library. Empty without `includeFiles`. |
+| `files[].…` | [Track](../reference/types.md#track) | Every field of [Track](../reference/types.md#track). |
+| `files[].index` | `integer` | Row number; the list the row is in says what it counts. |
+
+`success` is `true` on success. On failure the response is `{ success: false, error, code }`; see [Error codes](../reference/errors.md) for `code`.
+<!-- api-schema:end -->
 
 ```js
 // Top-level directories only
-const { directories } = await fb2k.invoke('library.browseDirectory', {
+const res = await fb2k.invoke('library.browseDirectory', {
     includeFiles: false
 });
+if (res.success === false) throw new Error(res.error);
+const { directories } = res;
 
 // Descend into one directory, including its tracks
 const result = await fb2k.invoke('library.browseDirectory', {
@@ -53,23 +78,60 @@ const result = await fb2k.invoke('library.browseDirectory', {
 
 ### library.browseTree
 
+<!-- api-schema:begin library.browseTree -->
+One folder under a library root: its subfolders and, with `includeFiles`, its tracks. Reads the directory tree index `library.getRoots` uses, building it first when needed. An unknown `rootId` or `pathId` fails with `NOT_FOUND`; a failed index build fails with `OPERATION_FAILED`.
 
-| Parameter | Type | Required | Default | Description |
-| --- | --- | --- | --- | --- |
-| `rootId` | `string` | Yes | — | Root id from `library.getRoots`. |
-| `pathId` | `string` | No | — | Directory id relative to the root. Omit for the root directory. |
-| `includeFiles` | `boolean` | No | `false` | When false, `recursiveFiles` is ignored. |
-| `recursiveFiles` | `boolean` | No | `false` | Requires `includeFiles: true`. |
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `rootId` | `string` | Yes | `id` of a root from `library.getRoots`, compared case-insensitively. Must not be empty. |
+| `pathId` | `string` | No | `pathId` of the folder to open, as a `directories` entry reports it; empty opens the root. Folder names are separated by `/`, so a path written with `\` is not found. Default: `""`. |
+| `includeFiles` | `boolean` | No | Add the folder's tracks as `files`. Default: `false`. |
+| `recursiveFiles` | `boolean` | No | With `includeFiles`, add the tracks of every folder below as well. Default: `false`. |
 
-**Returns**: `{ "success": true, "root": { ... }, "pathId": "...", "absolutePath": "...", "directories": [...], "files": [...], "fromCache": true }`. Each `directories` entry carries `id`, `rootId`, `pathId`, `parentPathId`, `name`, `displayName`, `rawPath`, `absolutePath`, `relativePath`, `depth`, `trackCount`, `childDirectoryCount`, `hasChildren`. `files` holds standard track objects (same shape as `library.getAll`) when `includeFiles` is set. Failure branches: `rootId is required`, `Unknown rootId`, `Path not found`.
+**Returns**
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `root` | `LibraryRootInfo` | The root. |
+| `root.id` | `string` | Stable identifier of the root, currently its `absolutePath`; `library.browseTree` takes it. |
+| `root.displayName` | `string` | The folder name, or the full path when two roots share a name. |
+| `root.rawPath` | `string` | Currently the same as `absolutePath`. |
+| `root.absolutePath` | `string` | Canonical local path of the folder. |
+| `root.trackCount` | `integer` | Library tracks under the folder. |
+| `pathId` | `string` | The `pathId` opened. |
+| `absolutePath` | `string` | Local path of the folder. |
+| `directories` | `LibraryDirectoryNodeInfo[]` | Subfolders directly inside, ordered by `displayName` and then `absolutePath`, ignoring case. |
+| `directories[].id` | `string` | `rootId`, then `::`, then `pathId`. |
+| `directories[].rootId` | `string` | The root the folder is under. |
+| `directories[].pathId` | `string` | Path below the root with `/` between folder names; pass it to `library.browseTree` to open the folder. |
+| `directories[].parentPathId` | `string` | `pathId` of the parent folder; `""` directly under the root. |
+| `directories[].name` | `string` | Folder name. |
+| `directories[].displayName` | `string` | Currently the same as `name`. |
+| `directories[].rawPath` | `string` | Currently the same as `absolutePath`. |
+| `directories[].absolutePath` | `string` | Local path of the folder. |
+| `directories[].relativePath` | `string` | Currently the same as `pathId`. |
+| `directories[].depth` | `integer` | Folder names in `pathId`: `1` directly under the root. |
+| `directories[].trackCount` | `integer` | Library tracks in the folder and every folder below it. |
+| `directories[].childDirectoryCount` | `integer` | Subfolders directly inside. |
+| `directories[].hasChildren` | `boolean` | Whether `childDirectoryCount` is above `0`. |
+| `files` | `LibraryTrack[]` | The folder's tracks in library order, followed with `recursiveFiles` by those of the folders below in no fixed order; empty without `includeFiles`. `index` is the position in the library when the tree index was built. |
+| `files[].…` | [Track](../reference/types.md#track) | Every field of [Track](../reference/types.md#track). |
+| `files[].index` | `integer` | Row number; the list the row is in says what it counts. |
+| `fromCache` | `boolean` | `true` when the tree index already existed before this call. |
+
+`success` is `true` on success. On failure the response is `{ success: false, error, code }`; see [Error codes](../reference/errors.md) for `code`.
+<!-- api-schema:end -->
 
 ```js
-const { roots } = await fb2k.invoke('library.getRoots');
+const res = await fb2k.invoke('library.getRoots');
+if (res.success === false) throw new Error(res.error);
+const { roots } = res;
 
 // Minimal call: directory structure of a root, no files
 const tree = await fb2k.invoke('library.browseTree', {
     rootId: roots[0].id
 });
+if (tree.success === false) throw new Error(tree.error);
 
 // Descend into a subdirectory and include its tracks
 const withFiles = await fb2k.invoke('library.browseTree', {
@@ -81,50 +143,119 @@ const withFiles = await fb2k.invoke('library.browseTree', {
 
 ### library.getAlbumTracks
 
+<!-- api-schema:begin library.getAlbumTracks -->
+The tracks of one `library.getAlbums` row, named by the row's `name` and `albumArtist`. Tracks are grouped exactly as `library.getAlbums` groups them, so `total` equals the row's `trackCount`. They are sorted by disc number, then track number, then library order. The grouping is kept until the library changes and `library.getAlbums` builds and reads the same one, so a call after it, or after an earlier call, does not read the library again. A name and album artist that no row has, and a disabled library, succeed with no tracks and no `row`.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `album` | `string` | No | Album name, compared byte for byte, so it is case-sensitive. Omitting it returns an empty result set. |
-| `artist` | `string` | No | Narrows the match to this album artist or track artist, compared the same way. |
+| `album` | `string` | Yes | The row's `name`: the first `album` value of its tracks, compared byte for byte. |
+| `albumArtist` | `string` | Yes | The row's `albumArtist`: the first `album artist` value of its tracks, or their first `artist` value when they have no `album artist`, or `""` when they have neither. Compared byte for byte, so the row's `artist` is not a substitute. |
 
-**Returns**: `{"album":"...","artist":"...","items":"...","success":true,"total":"...","tracks":"..."}`
+**Returns**
 
-> Grouping is by album name alone, without the album artist, so identically titled albums by different artists come back as one track list whose length is the sum of the matching `library.getAlbums` rows. Pass `artist` to tell them apart.
+| Field | Type | Description |
+| --- | --- | --- |
+| `album` | `string` | The album name, as given. |
+| `albumArtist` | `string` | The album artist, as given. |
+| `row` | `AlbumInfo` | The album's row as `library.getAlbums` returns it, without `coverDataUrl` and `tracks`; absent when no row has this name and album artist. |
+| `row.name` | `string` | Album name. |
+| `row.artist` | `string` | `albumArtist` when it is set, otherwise the first `artist` value found among the tracks. |
+| `row.albumArtist` | `string` | The first `album artist` value found among the tracks, falling back to the track's `artist`; empty when neither exists. |
+| `row.trackCount` | `integer` | Tracks counted into the row. |
+| `row.discCount` | `integer` | Distinct disc numbers among those tracks; `1` when none carries one. |
+| `row.duration` | `number` | Summed length of those tracks, in seconds. |
+| `row.year` | `string` | The first `date` value found among the tracks; empty when none has one. |
+| `row.genre` | `string` | The first `genre` value found among the tracks; empty when none has one. |
+| `row.label` | `string` | The first `publisher` value found among the tracks, or else the first `label` value; empty when none has either. |
+| `row.firstTrackPath` | `string` | Path of the first track counted, as foobar2000 stores it; it can be a `file-relative://` URI. |
+| `row.firstTrackAbsolutePath` | `string` | `firstTrackPath` as a native file path, the form to pass to `artwork.getForTrack`; absent when there is no first track path. |
+| `row.coverDataUrl` | `string` | Front cover as a `data:image/...` URL; only `library.getAlbums` with `includeCover` fills it, and only when a cover exists. |
+| `row.tracks` | `AlbumTrackRef[]` | The album's tracks in track-number order; only `library.getAlbums` with `includeTracks` fills it. |
+| `row.tracks[].trackNumber` | `integer` | Track number; `0` when the track has none. |
+| `row.tracks[].path` | `string` | Track path, as foobar2000 stores it. |
+| `row.tracks[].absolutePath` | `string` | `path` as a native file path. |
+| `tracks` | `LibraryTrack[]` | The tracks, sorted by disc number, then track number, then library order; `index` is the position in this list. |
+| `tracks[].…` | [Track](../reference/types.md#track) | Every field of [Track](../reference/types.md#track). |
+| `tracks[].index` | `integer` | Row number; the list the row is in says what it counts. |
+| `items` | `LibraryTrack[]` | The same list as `tracks`. |
+| `items[].…` | [Track](../reference/types.md#track) | Every field of [Track](../reference/types.md#track). |
+| `items[].index` | `integer` | Row number; the list the row is in says what it counts. |
+| `total` | `integer` | Number of tracks. |
+
+`success` is `true` on success. On failure the response is `{ success: false, error, code }`; see [Error codes](../reference/errors.md) for `code`.
+<!-- api-schema:end -->
 
 ```js
-// Tracks are returned sorted by track number
-const { items } = await fb2k.invoke('library.getAlbumTracks', {
-    album: 'Abbey Road'
-});
-
-// Disambiguate same-named albums by artist
-const scoped = await fb2k.invoke('library.getAlbumTracks', {
-    album: 'Greatest Hits',
-    artist: 'Queen'
-});
+// Name the album by a library.getAlbums row
+const page = await fb2k.invoke('library.getAlbums', { query: 'Abbey Road', limit: 1 });
+if (page.success === false) throw new Error(page.error);
+const album = page.albums[0];
+if (album) {
+    const res = await fb2k.invoke('library.getAlbumTracks', {
+        album: album.name,
+        albumArtist: album.albumArtist
+    });
+    if (res.success === false) throw new Error(res.error);
+    console.log(res.total === album.trackCount); // true
+}
 ```
+
+A compilation without `album artist` tags is several rows in `library.getAlbums`, one per first `artist` value, and each row gets only its own tracks here. To get the tracks of one artist across albums, use `library.getArtistTracks`.
 
 ### library.getAlbums
 
+<!-- api-schema:begin library.getAlbums -->
+Albums of the whole library, grouped by album name plus album artist; tracks without an `album` tag are skipped. A complete list (`offset` 0, no `includeTracks`, every album within `limit`) is kept until the library changes, and a later call with the same `query`, `sort` and `includeCover` from `offset` 0 without `includeTracks` is answered from it. The grouping behind the list is kept the same way and shared with `library.getAlbumTracks`, so other calls do not read the library again either until it changes. With the library disabled it succeeds with no albums.
 
-| Parameter | Type | Required | Default | Description |
-| --- | --- | --- | --- | --- |
-| `query` | `string` | No | — | Case-insensitive substring matched against album name and album artist. |
-| `sort` | `string` | No | `name` | Accepts `name`, `artist`, `year`, `trackCount`. |
-| `offset` | `integer` | No | `0` | Page offset. |
-| `limit` | `integer` | No | `100` | Page size. |
-| `includeTracks` | `boolean` | No | `false` | Adds a per-album `tracks` array and bypasses the cache. |
-| `includeCover` | `boolean` | No | `false` | Adds `coverDataUrl` when a cover exists. |
-| `coverMaxSize` | `integer` | No | `500` | Cover size cap in KB; larger covers omit `coverDataUrl`. Only used with `includeCover`. |
-| `useCache` | `boolean` | No | `true` | Serves cached results until the library changes. |
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `sort` | `string` | No | `name`, `artist` (the album artist), `year` or `trackCount`; any other value sorts by name. Default: `"name"`. |
+| `query` | `string` | No | Keep only albums whose name or artist contains this text, compared case-insensitively for ASCII letters; empty keeps every album. Default: `""`. |
+| `offset` | `integer` | No | Albums to skip. At least `0`. Default: `0`. |
+| `limit` | `integer` | No | Most albums to return. At least `0`. Default: `100`. |
+| `includeTracks` | `boolean` | No | Add each album's tracks as `tracks`. Default: `false`. |
+| `includeCover` | `boolean` | No | Add each album's front cover as `coverDataUrl`, read from its first track. Default: `false`. |
+| `coverMaxSize` | `integer` | No | Largest cover to inline, in KiB; a larger cover is left out. `0` or less inlines any size. Default: `500`. |
+| `useCache` | `boolean` | No | Answer from the kept list when there is one; `false` always scans the library, and the result is still kept. Default: `true`. |
 
-**Returns**: `{"albums":[],"fromCache":"...","hasMore":true,"includeCover":"...","limit":"...","offset":"...","success":true,"total":"..."}`
+**Returns**
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `albums` | `AlbumInfo[]` | The albums of this page, sorted by `sort`. |
+| `albums[].name` | `string` | Album name. |
+| `albums[].artist` | `string` | `albumArtist` when it is set, otherwise the first `artist` value found among the tracks. |
+| `albums[].albumArtist` | `string` | The first `album artist` value found among the tracks, falling back to the track's `artist`; empty when neither exists. |
+| `albums[].trackCount` | `integer` | Tracks counted into the row. |
+| `albums[].discCount` | `integer` | Distinct disc numbers among those tracks; `1` when none carries one. |
+| `albums[].duration` | `number` | Summed length of those tracks, in seconds. |
+| `albums[].year` | `string` | The first `date` value found among the tracks; empty when none has one. |
+| `albums[].genre` | `string` | The first `genre` value found among the tracks; empty when none has one. |
+| `albums[].label` | `string` | The first `publisher` value found among the tracks, or else the first `label` value; empty when none has either. |
+| `albums[].firstTrackPath` | `string` | Path of the first track counted, as foobar2000 stores it; it can be a `file-relative://` URI. |
+| `albums[].firstTrackAbsolutePath` | `string` | `firstTrackPath` as a native file path, the form to pass to `artwork.getForTrack`; absent when there is no first track path. |
+| `albums[].coverDataUrl` | `string` | Front cover as a `data:image/...` URL; only `library.getAlbums` with `includeCover` fills it, and only when a cover exists. |
+| `albums[].tracks` | `AlbumTrackRef[]` | The album's tracks in track-number order; only `library.getAlbums` with `includeTracks` fills it. |
+| `albums[].tracks[].trackNumber` | `integer` | Track number; `0` when the track has none. |
+| `albums[].tracks[].path` | `string` | Track path, as foobar2000 stores it. |
+| `albums[].tracks[].absolutePath` | `string` | `path` as a native file path. |
+| `total` | `integer` | Albums matching `query`, before `offset` and `limit`. |
+| `offset` | `integer` | The `offset` applied. |
+| `limit` | `integer` | The `limit` applied. |
+| `hasMore` | `boolean` | Whether albums remain after this page. |
+| `includeCover` | `boolean` | The `includeCover` applied. |
+| `fromCache` | `boolean` | `true` when the answer came from the kept list. |
+
+`success` is `true` on success. On failure the response is `{ success: false, error, code }`; see [Error codes](../reference/errors.md) for `code`.
+<!-- api-schema:end -->
 
 > Albums are grouped by album name plus the first value of `album artist`, falling back to the first value of `artist` when that tag is absent. A row's `artist` and `albumArtist` both carry whichever of the two the host resolved, so on an album with no `album artist` tag both report the first credited artist of the first track seen. Neither key is a per-track credit, and a multi-value `album artist` contributes only its first value. To list the albums one artist appears on, use `library.getArtistAlbums`.
 
 ```js
 // Minimal call: first 100 albums sorted by name
-const { albums, total, hasMore } = await fb2k.invoke('library.getAlbums');
+const res = await fb2k.invoke('library.getAlbums');
+if (res.success === false) throw new Error(res.error);
+const { albums, total, hasMore } = res;
 
 // Second page, newest first, with cover thumbnails
 const page2 = await fb2k.invoke('library.getAlbums', {
@@ -141,23 +272,43 @@ const filtered = await fb2k.invoke('library.getAlbums', { query: 'Beatles' });
 
 ### library.getAll
 
+<!-- api-schema:begin library.getAll -->
+Tracks of the whole library in library order, one page at a time. A request from `offset` 0 that covers every track is kept until the library changes, and a later call from `offset` 0 with `useCache` is answered from it. With `asyncResult`, such a request, when it is not answered from the kept list, is built off the main thread: the call answers `{ pending: true, requestId }` at once and the page arrives as the `library:getAllResult` event on the calling window.
 
-| Parameter | Type | Required | Default | Description |
-| --- | --- | --- | --- | --- |
-| `offset` | `integer` | No | `0` | Page offset. |
-| `limit` | `integer` | No | `100` | Page size. |
-| `start` | `integer` | No | `0` | Legacy alias of `offset`; takes precedence when both are present. |
-| `count` | `integer` | No | `100` | Legacy alias of `limit`; takes precedence when both are present. |
-| `useCache` | `boolean` | No | `true` | Serves cached results until the library changes. |
-| `asyncResult` | `boolean` | No | `false` | Full-library requests return `{ pending, requestId }` and deliver the result via `library:getAllResult`. |
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `offset` | `integer` | No | Tracks to skip. At least `0`. Default: `0`. |
+| `limit` | `integer` | No | Most tracks to return. At least `0`. Default: `100`. |
+| `useCache` | `boolean` | No | From `offset` 0, answer from the kept list when there is one. A request from `offset` 0 that covers every track is kept either way. Default: `true`. |
+| `asyncResult` | `boolean` | No | Build a request from `offset` 0 that covers every track off the main thread and deliver it as the `library:getAllResult` event; takes effect only with `useCache`, and not when the kept list answers. Default: `false`. |
 
-**Returns**: `{"error":"...","fromCache":"...","items":[],"limit":"...","offset":"...","pending":"...","requestId":"...","total":"...","tracks":[]}`
+**Returns**
 
-> `artists` holds the atomic values behind `artist`: `artists.join(', ')` is exactly `artist`, so a multi-value tag can be recovered from `artists` and not from `artist`. It is returned by the media-library track APIs — `library.getAll`, `library.query`, `library.search` and `library.getByPath` among them; the track objects returned by other namespaces (`playlist.getTracks`, `playback.getCurrentTrack`, `queue.get`, artwork payloads, event payloads) do not carry it.
+| Field | Type | Description |
+| --- | --- | --- |
+| `pending` | `boolean` | `true` when the page will arrive as the `library:getAllResult` event; the page fields are then absent. |
+| `requestId` | `string` | Id the `library:getAllResult` event carries; present with `pending`. |
+| `tracks` | `LibraryTrack[]` | The page in library order; `index` is the position in the library. |
+| `tracks[].…` | [Track](../reference/types.md#track) | Every field of [Track](../reference/types.md#track). |
+| `tracks[].index` | `integer` | Row number; the list the row is in says what it counts. |
+| `items` | `LibraryTrack[]` | The same list as `tracks`. |
+| `items[].…` | [Track](../reference/types.md#track) | Every field of [Track](../reference/types.md#track). |
+| `items[].index` | `integer` | Row number; the list the row is in says what it counts. |
+| `total` | `integer` | Tracks in the library. |
+| `offset` | `integer` | The `offset` applied. |
+| `limit` | `integer` | The `limit` applied. |
+| `fromCache` | `boolean` | `true` when the page came from the kept list. |
+
+`success` is `true` on success. On failure the response is `{ success: false, error, code }`; see [Error codes](../reference/errors.md) for `code`.
+<!-- api-schema:end -->
+
+> `artists` holds the atomic values behind `artist`: `artists.join(', ')` is exactly `artist`, so a multi-value tag can be recovered from `artists` and not from `artist`. It is on every shared `Track` row — the media-library track APIs, `playlist.getTracks`, `playback.getCurrentTrack`, `queue.get` and the track events — and on the flat answer of `library.getByPath`; artwork payloads do not carry it. `albumArtists` does the same for `albumArtist` wherever a `Track` row is returned: its first value, or `artists[0]` when it is empty, is the album artist `library.getAlbums` groups the track under.
 
 ```js
 // Minimal call: first 100 tracks
-const { items, total } = await fb2k.invoke('library.getAll');
+const res = await fb2k.invoke('library.getAll');
+if (res.success === false) throw new Error(res.error);
+const { items, total } = res;
 
 // Explicit page
 const page2 = await fb2k.invoke('library.getAll', { limit: 50, offset: 100 });
@@ -165,17 +316,45 @@ const page2 = await fb2k.invoke('library.getAll', { limit: 50, offset: 100 });
 
 ### library.getArtistAlbums
 
+<!-- api-schema:begin library.getArtistAlbums -->
+The albums an artist appears on. `trackCount`, `duration` and `discCount` count only the tracks of this artist, so an album the artist appears on only partly reports smaller figures than in `library.getAlbums`. Rows are grouped by album name alone; tracks without an `album` tag fall under `(Unknown Album)`. Fails with `LIBRARY_DISABLED` when the library is disabled.
 
-| Parameter | Type | Required | Default | Description |
-| --- | --- | --- | --- | --- |
-| `artist` | `string` | Yes | — | Artist name. Compared byte for byte against each atomic tag value on a track, so it is case-sensitive; pass a name straight from `library.getArtists`. |
-| `limit` | `integer` | No | `100` | Album cap, applied after grouping. There is no `offset`. |
-| `sort` | `string` | No | `name` | Accepts `name`, `artist`, `year`, `trackCount`, as in `library.getAlbums`. An unrecognised value falls back to `name`. `artist` sorts on the album artist, which is often one value for every row here. |
-| `match` | `string` | No | `exact` | `exact` requires the whole atomic value to be byte-identical; `substring` matches on containment and is looser about case (see below). Any other value is refused — unlike `sort`, which falls back. |
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `artist` | `string` | Yes | Artist name, compared byte for byte against each value of the `artist` tag, so a name from `library.getArtists` matches even when it is not the first of several credited artists. Must not be empty. |
+| `limit` | `integer` | No | Most albums to return, applied after grouping; there is no offset. At least `0`. Default: `100`. |
+| `sort` | `string` | No | `name`, `artist`, `year` or `trackCount`, as in `library.getAlbums`; any other value sorts by name. Default: `"name"`. |
+| `match` | `"exact" \| "substring"` | No | `exact` needs a whole tag value to equal `artist`; `substring` matches a tag value that contains it, and then a lowercase letter in `artist` matches either case while an uppercase one matches only uppercase. Default: `"exact"`. |
 
-**Returns**: `{"albums":[],"artist":"...","error":"...","hasMore":true,"success":true,"total":"..."}`
+**Returns**
 
-> A row carries the same keys as a `library.getAlbums` row except `coverDataUrl` and `tracks`: `name`, `artist`, `albumArtist`, `trackCount`, `discCount`, `duration`, `year`, `genre`, `label`, `firstTrackPath` and `firstTrackAbsolutePath`. For cover art, pass `firstTrackAbsolutePath` to `artwork.getForTrack` — `firstTrackPath` can be a `file-relative://` URI, which that endpoint refuses. Every response carries `albums`, including the failures.
+| Field | Type | Description |
+| --- | --- | --- |
+| `artist` | `string` | The artist, as given. |
+| `albums` | `AlbumInfo[]` | The albums, sorted by `sort`. Rows never carry `coverDataUrl` or `tracks`. |
+| `albums[].name` | `string` | Album name. |
+| `albums[].artist` | `string` | `albumArtist` when it is set, otherwise the first `artist` value found among the tracks. |
+| `albums[].albumArtist` | `string` | The first `album artist` value found among the tracks, falling back to the track's `artist`; empty when neither exists. |
+| `albums[].trackCount` | `integer` | Tracks counted into the row. |
+| `albums[].discCount` | `integer` | Distinct disc numbers among those tracks; `1` when none carries one. |
+| `albums[].duration` | `number` | Summed length of those tracks, in seconds. |
+| `albums[].year` | `string` | The first `date` value found among the tracks; empty when none has one. |
+| `albums[].genre` | `string` | The first `genre` value found among the tracks; empty when none has one. |
+| `albums[].label` | `string` | The first `publisher` value found among the tracks, or else the first `label` value; empty when none has either. |
+| `albums[].firstTrackPath` | `string` | Path of the first track counted, as foobar2000 stores it; it can be a `file-relative://` URI. |
+| `albums[].firstTrackAbsolutePath` | `string` | `firstTrackPath` as a native file path, the form to pass to `artwork.getForTrack`; absent when there is no first track path. |
+| `albums[].coverDataUrl` | `string` | Front cover as a `data:image/...` URL; only `library.getAlbums` with `includeCover` fills it, and only when a cover exists. |
+| `albums[].tracks` | `AlbumTrackRef[]` | The album's tracks in track-number order; only `library.getAlbums` with `includeTracks` fills it. |
+| `albums[].tracks[].trackNumber` | `integer` | Track number; `0` when the track has none. |
+| `albums[].tracks[].path` | `string` | Track path, as foobar2000 stores it. |
+| `albums[].tracks[].absolutePath` | `string` | `path` as a native file path. |
+| `total` | `integer` | Albums found, before `limit`. |
+| `hasMore` | `boolean` | Whether `limit` cut the list short. |
+
+`success` is `true` on success. On failure the response is `{ success: false, error, code }`; see [Error codes](../reference/errors.md) for `code`.
+<!-- api-schema:end -->
+
+> A row carries the same keys as a `library.getAlbums` row except `coverDataUrl` and `tracks`: `name`, `artist`, `albumArtist`, `trackCount`, `discCount`, `duration`, `year`, `genre`, `label`, `firstTrackPath` and `firstTrackAbsolutePath`. For cover art, pass `firstTrackAbsolutePath` to `artwork.getForTrack` — `firstTrackPath` can be a `file-relative://` URI, which that endpoint refuses. A failure raised by the endpoint itself (library disabled, a failed search) still carries an empty `albums`; a parameter error does not.
 
 > **`trackCount`, `duration` and `discCount` count only the tracks this artist appears on**, not the whole album. `library.getAlbums` returns the album-wide figures for the same album, so the two disagree on any album the artist appears on only partly — a one-track guest spot on a 20-track compilation reports `trackCount: 1`. Rendering a row here as an album card will understate it.
 
@@ -186,9 +365,11 @@ const page2 = await fb2k.invoke('library.getAll', { limit: 50, offset: 100 });
 > Rows are grouped by album name alone, so identically titled albums by different artists collapse into one row. Tracks whose `album` tag is missing are grouped under `(Unknown Album)`; a tag present but empty forms its own group with an empty name. `library.getAlbums` differs on both counts: it keys on album plus album artist, and skips a track whose album is missing or empty.
 
 ```js
-const { albums } = await fb2k.invoke('library.getArtistAlbums', {
+const res = await fb2k.invoke('library.getArtistAlbums', {
     artist: 'The Beatles'
 });
+if (res.success === false) throw new Error(res.error);
+const { albums } = res;
 
 // Discography newest first, capped at 20 albums
 const recent = await fb2k.invoke('library.getArtistAlbums', {
@@ -200,32 +381,66 @@ const recent = await fb2k.invoke('library.getArtistAlbums', {
 
 ### library.getArtistTracks
 
+<!-- api-schema:begin library.getArtistTracks -->
+Tracks an artist is credited on, in library order. `artist` is matched as `library.getArtistAlbums` matches it under `match: 'exact'`. An empty `artist` and a disabled library both succeed with no tracks.
 
-| Parameter | Type | Required | Default | Description |
-| --- | --- | --- | --- | --- |
-| `artist` | `string` | No | — | Artist name. Compared byte for byte against each atomic tag value on a track, so it is case-sensitive. Omitting it returns an empty result set. |
-| `limit` | `integer` | No | `500` | Result cap. |
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `artist` | `string` | No | Artist name, compared byte for byte against each value of the `artist` tag; empty, the call succeeds with no tracks. Default: `""`. |
+| `limit` | `integer` | No | Most tracks to return; the first ones in library order are kept. At least `0`. Default: `500`. |
 
-**Returns**: `{"artist":"...","count":"...","items":"...","success":true,"total":"...","tracks":"..."}`
+**Returns**
 
-> Matching works exactly as `library.getArtistAlbums` does under `match: 'exact'`: a name from `library.getArtists` matches even when it is not the first of several credited artists, and an artist differing only in case is not pulled in.
+| Field | Type | Description |
+| --- | --- | --- |
+| `artist` | `string` | The artist, as given. |
+| `tracks` | `LibraryTrack[]` | The tracks in library order; `index` is the position in this list. |
+| `tracks[].…` | [Track](../reference/types.md#track) | Every field of [Track](../reference/types.md#track). |
+| `tracks[].index` | `integer` | Row number; the list the row is in says what it counts. |
+| `items` | `LibraryTrack[]` | The same list as `tracks`. |
+| `items[].…` | [Track](../reference/types.md#track) | Every field of [Track](../reference/types.md#track). |
+| `items[].index` | `integer` | Row number; the list the row is in says what it counts. |
+| `total` | `integer` | The same as `count`; there is no count before `limit`, so a full page means there may be more. |
+| `count` | `integer` | Tracks returned. |
+
+`success` is `true` on success. On failure the response is `{ success: false, error, code }`; see [Error codes](../reference/errors.md) for `code`.
+<!-- api-schema:end -->
 
 ```js
-const { items } = await fb2k.invoke('library.getArtistTracks', {
+const res = await fb2k.invoke('library.getArtistTracks', {
     artist: 'The Beatles'
 });
+if (res.success === false) throw new Error(res.error);
+const { items } = res;
 ```
 
 ### library.getArtists
 
+<!-- api-schema:begin library.getArtists -->
+Every credited artist with participation counts: each value of a multi-value `artist` gets its own row. The scan is kept until the library changes. Fails with `LIBRARY_DISABLED` when the library is disabled.
 
-| Parameter | Type | Required | Default | Description |
-| --- | --- | --- | --- | --- |
-| `sort` | `string` | No | `name` | Accepts `name`, `trackCount`, `albumCount`. |
-| `limit` | `integer` | No | `1000` | Result cap. Caps the artist entries only, never the `albums` inside them. |
-| `includeAlbums` | `boolean` | No | `false` | When `true`, every entry carries an `albums` array listing the albums the artist is credited on. |
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `sort` | `string` | No | `name`, `trackCount` or `albumCount` (both largest first); any other value keeps name order. Default: `"name"`. |
+| `limit` | `integer` | No | Most artists to return. At least `0`. Default: `1000`. |
+| `includeAlbums` | `boolean` | No | Add each artist's albums as `albums`. Default: `false`. |
 
-**Returns**: `{"count":"...","error":"...","items":"...","success":true}`
+**Returns**
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `items` | `ArtistInfo[]` | The artists, sorted by `sort`. |
+| `items[].name` | `string` | The artist. |
+| `items[].albumCount` | `integer` | Distinct album names among the artist's tracks. |
+| `items[].trackCount` | `integer` | Tracks the artist is credited on. |
+| `items[].totalDuration` | `number` | Summed length of those tracks, in seconds. |
+| `items[].albums` | `ArtistAlbumRef[]` | The albums the artist is credited on, sorted by name and then artist; present only with `includeAlbums`, and never cut by `limit`. |
+| `items[].albums[].name` | `string` | Album name. |
+| `items[].albums[].artist` | `string` | The first `album artist` value, or the first `artist` value when there is none. |
+| `count` | `integer` | Rows returned, after `limit`; there is no total, so a full page means there may be more. |
+
+`success` is `true` on success. On failure the response is `{ success: false, error, code }`; see [Error codes](../reference/errors.md) for `code`.
+<!-- api-schema:end -->
 
 Each `items` entry is `{ name, albumCount, trackCount, totalDuration }`, plus `albums: [{ name, artist }]` when `includeAlbums` is `true`.
 
@@ -237,7 +452,9 @@ Each `items` entry is `{ name, albumCount, trackCount, totalDuration }`, plus `a
 
 ```js
 // Minimal call: up to 1000 artists sorted by name
-const { items } = await fb2k.invoke('library.getArtists');
+const res = await fb2k.invoke('library.getArtists');
+if (res.success === false) throw new Error(res.error);
+const { items } = res;
 
 // Top 50 artists by track count
 const top = await fb2k.invoke('library.getArtists', {
@@ -246,10 +463,12 @@ const top = await fb2k.invoke('library.getArtists', {
 });
 
 // Artist -> albums mapping in one call (raise limit above the artist count)
-const { items: credited } = await fb2k.invoke('library.getArtists', {
+const res2 = await fb2k.invoke('library.getArtists', {
     includeAlbums: true,
     limit: 100000
 });
+if (res2.success === false) throw new Error(res2.error);
+const { items: credited } = res2;
 for (const artist of credited) {
     for (const album of artist.albums) {
         // album.name / album.artist pair up with a library.getAlbums row
@@ -259,29 +478,75 @@ for (const artist of credited) {
 
 ### library.getByPath
 
+<!-- api-schema:begin library.getByPath -->
+Look up one file in the library and return its main fields as a flat object. A file that is not in the library succeeds with `found: false`.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `path` | `string` | Yes | File path to look up. Returns `found: false` when the track is not in the library. |
+| `path` | `string` | Yes | File path. It is looked up as the file's first subsong; a `\|subsong:N` suffix is not recognized. Must not be empty. |
 
-**Returns**: `{"absolutePath":"...","album":"...","artist":"...","artists":[],"date":"...","duration":"...","error":"...","found":"...","genre":"...","path":"...","success":true,"title":"...","trackNumber":"..."}`
+**Returns**
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `found` | `boolean` | Whether the file is in the library; the other fields besides `path` are present only when it is. |
+| `path` | `string` | The track path as foobar2000 stores it when found; otherwise the path as given. |
+| `absolutePath` | `string` | The track path as a native file path. |
+| `title` | `string` | The first `title` value; empty when absent. |
+| `artist` | `string` | Every `artist` value joined with `, ` in their original order. |
+| `artists` | `string[]` | Every `artist` value; `artists.join(', ')` equals `artist`. |
+| `album` | `string` | The first `album` value; empty when absent. |
+| `duration` | `number` | Length in seconds. |
+| `trackNumber` | `string` | The first `tracknumber` value as written in the tag, such as `2` or `02/12`; empty when absent. |
+| `genre` | `string` | Every `genre` value joined with `, `. |
+| `date` | `string` | The first `date` value; empty when absent. |
+
+`success` is `true` on success. On failure the response is `{ success: false, error, code }`; see [Error codes](../reference/errors.md) for `code`.
+<!-- api-schema:end -->
 
 > Multi-value tags in `artist` / `albumArtist` / `genre` / `composer` (only the fields this API actually returns) are joined with `, ` in their original order, without de-duplication.
 
-> `artists` holds the atomic values behind `artist`: `artists.join(', ')` is exactly `artist`, so a multi-value tag can be recovered from `artists` and not from `artist`. It is returned by the media-library track APIs — `library.getAll`, `library.query`, `library.search` and `library.getByPath` among them; the track objects returned by other namespaces (`playlist.getTracks`, `playback.getCurrentTrack`, `queue.get`, artwork payloads, event payloads) do not carry it. This API is a flat object, so `artists` is the only array key it gains.
+> `artists` holds the atomic values behind `artist`: `artists.join(', ')` is exactly `artist`, so a multi-value tag can be recovered from `artists` and not from `artist`. It is on every shared `Track` row — the media-library track APIs, `playlist.getTracks`, `playback.getCurrentTrack`, `queue.get` and the track events — and on the flat answer of `library.getByPath`; artwork payloads do not carry it. `albumArtists` does the same for `albumArtist` wherever a `Track` row is returned: its first value, or `artists[0]` when it is empty, is the album artist `library.getAlbums` groups the track under. This API is a flat object, so `artists` is the only array key it gains.
 
 ```js
-const { found, title } = await fb2k.invoke('library.getByPath', {
+const res = await fb2k.invoke('library.getByPath', {
     path: 'C:\\Music\\song.flac'
 });
+if (res.success === false) throw new Error(res.error);
+const { found, title } = res;
 ```
 
 ### library.getCacheStats
 
+<!-- api-schema:begin library.getCacheStats -->
+Counters of the host's library caches and of the directory tree index, for diagnostics.
 
-_No parameters._
+This method takes no parameters.
 
-**Returns**: cache/tree stats object with keys `valid`, `lastModified`, `albumsCacheEntries`, `tracksCached`, `artistsCached`, `genresCached`, `statsCached`, `coversCached`, `coverCacheBytes`, `coverCacheMB`, `cacheHits`, `cacheMisses`, `treeIndexValid`, `rootsCached`, `treeIndexedTracks`, `treeSkippedTracks`, `treeLastBuilt`.
+**Returns**
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `valid` | `boolean` | Whether any library result was kept since the cache was last dropped. |
+| `lastModified` | `integer` | When the cache was last dropped, in milliseconds since the Unix epoch. |
+| `albumsCacheEntries` | `integer` | Kept `library.getAlbums` lists, one per `query`, `sort` and `includeCover`. |
+| `tracksCached` | `boolean` | Whether a full `library.getAll` result is kept. |
+| `artistsCached` | `boolean` | Whether the `library.getArtists` scan is kept. |
+| `genresCached` | `boolean` | Always `false`; genres are not kept. |
+| `statsCached` | `boolean` | Whether the `library.getStatus` answer is kept. |
+| `coversCached` | `integer` | Always `0`; covers are not kept. |
+| `coverCacheBytes` | `integer` | Always `0`; covers are not kept. |
+| `coverCacheMB` | `number` | Always `0`; covers are not kept. |
+| `cacheHits` | `integer` | Lookups answered from a kept result since the host started. |
+| `cacheMisses` | `integer` | Lookups that found nothing kept since the host started. |
+| `treeIndexValid` | `boolean` | Whether the directory tree index is built. |
+| `rootsCached` | `integer` | Roots in the tree index; `0` when it is not built. |
+| `treeIndexedTracks` | `integer` | Tracks placed in the tree index at its last build. |
+| `treeSkippedTracks` | `integer` | Tracks left out of the tree index at its last build. |
+| `treeLastBuilt` | `integer` | When the tree index was last built, in milliseconds since the Unix epoch; `0` before the first build. |
+
+`success` is `true` on success. On failure the response is `{ success: false, error, code }`; see [Error codes](../reference/errors.md) for `code`.
+<!-- api-schema:end -->
 
 ```js
 const result = await fb2k.invoke('library.getCacheStats');
@@ -289,10 +554,19 @@ const result = await fb2k.invoke('library.getCacheStats');
 
 ### library.getCount
 
+<!-- api-schema:begin library.getCount -->
+Number of tracks in the library.
 
-_No parameters._
+This method takes no parameters.
 
-**Returns**: `{"count":"...","success":true}`
+**Returns**
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `count` | `integer` | Tracks in the library. |
+
+`success` is `true` on success. On failure the response is `{ success: false, error, code }`; see [Error codes](../reference/errors.md) for `code`.
+<!-- api-schema:end -->
 
 ```js
 const result = await fb2k.invoke('library.getCount');
@@ -300,18 +574,33 @@ const result = await fb2k.invoke('library.getCount');
 
 ### library.getFieldValues
 
+<!-- api-schema:begin library.getFieldValues -->
+Every distinct value of one tag across the library with its track count, most used first. Fails with `LIBRARY_DISABLED` when the library is disabled.
 
-| Parameter | Type | Required | Default | Description |
-| --- | --- | --- | --- | --- |
-| `field` | `string` | Yes | — | Metadata field name to enumerate, for example `genre`. |
-| `separator` | `string` | No | — | Splits a single field value into multiple values, for example `;`. |
-| `limit` | `integer` | No | `5000` | Result cap. |
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `field` | `string` | Yes | Tag name, such as `genre`. Must not be empty. |
+| `separator` | `string` | No | Splits each tag value into several values at this string, trimming spaces and tabs around each; empty, values are taken whole. Default: `""`. |
+| `limit` | `integer` | No | Most values to return. At least `0`. Default: `5000`. |
 
-**Returns**: `{"error":"...","field":"...","success":true,"total":"...","values":"..."}`
+**Returns**
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `values` | `LibraryValueCount[]` | The values, most tracks first. |
+| `values[].name` | `string` | The value. |
+| `values[].trackCount` | `integer` | Tracks carrying the value. |
+| `total` | `integer` | Distinct values found, before `limit`. |
+| `field` | `string` | The tag name, as given. |
+
+`success` is `true` on success. On failure the response is `{ success: false, error, code }`; see [Error codes](../reference/errors.md) for `code`.
+<!-- api-schema:end -->
 
 ```js
 // Values are returned sorted by descending trackCount
-const { values } = await fb2k.invoke('library.getFieldValues', { field: 'genre' });
+const res = await fb2k.invoke('library.getFieldValues', { field: 'genre' });
+if (res.success === false) throw new Error(res.error);
+const { values } = res;
 
 // Split multi-value fields and cap the result
 const artists = await fb2k.invoke('library.getFieldValues', {
@@ -323,12 +612,21 @@ const artists = await fb2k.invoke('library.getFieldValues', {
 
 ### library.getGenres
 
+<!-- api-schema:begin library.getGenres -->
+Every genre in the library with its track count, ordered by name. Every value of a multi-value `genre` gets its own entry, and a track tagged with several genres is counted under each. Fails with `LIBRARY_DISABLED` when the library is disabled.
 
-_No parameters._
+This method takes no parameters.
 
-**Returns**: `{"error":"...","genres":"...","success":true}`
+**Returns**
 
-> Every value of a multi-value `genre` gets its own entry, and `trackCount` is a participation count: a track tagged with several genres is counted under each of them.
+| Field | Type | Description |
+| --- | --- | --- |
+| `genres` | `LibraryValueCount[]` | Every genre with its track count. |
+| `genres[].name` | `string` | The value. |
+| `genres[].trackCount` | `integer` | Tracks carrying the value. |
+
+`success` is `true` on success. On failure the response is `{ success: false, error, code }`; see [Error codes](../reference/errors.md) for `code`.
+<!-- api-schema:end -->
 
 ```js
 const result = await fb2k.invoke('library.getGenres');
@@ -336,30 +634,63 @@ const result = await fb2k.invoke('library.getGenres');
 
 ### library.getRandomTracks
 
+<!-- api-schema:begin library.getRandomTracks -->
+Tracks drawn at random from the whole library without repeats, a new draw on every call. A disabled or empty library succeeds with no tracks.
 
-| Parameter | Type | Required | Default | Description |
-| --- | --- | --- | --- | --- |
-| `count` | `integer` | No | `10` | Capped at the library size. |
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `count` | `integer` | No | Tracks to draw; at most the library size is returned. At least `0`. Default: `10`. |
 
-**Returns**: `{"count":"...","success":true,"tracks":"..."}`
+**Returns**
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `tracks` | `LibraryTrack[]` | The drawn tracks; `index` is the position in this list. |
+| `tracks[].…` | [Track](../reference/types.md#track) | Every field of [Track](../reference/types.md#track). |
+| `tracks[].index` | `integer` | Row number; the list the row is in says what it counts. |
+| `count` | `integer` | Tracks returned. |
+
+`success` is `true` on success. On failure the response is `{ success: false, error, code }`; see [Error codes](../reference/errors.md) for `code`.
+<!-- api-schema:end -->
 
 ```js
-const { tracks } = await fb2k.invoke('library.getRandomTracks', { count: 50 });
+const res = await fb2k.invoke('library.getRandomTracks', { count: 50 });
+if (res.success === false) throw new Error(res.error);
+const { tracks } = res;
 ```
 
 ### library.getRecentlyAdded
 
+<!-- api-schema:begin library.getRecentlyAdded -->
+The newest tracks of the library. `added` orders by the `%added%` field of foo_playcount; when no track has it, the call orders by file modification time instead and says so in `fallback`. The library is walked on every call.
 
-| Parameter | Type | Required | Default | Description |
-| --- | --- | --- | --- | --- |
-| `limit` | `integer` | No | `50` | Result cap. |
-| `sortBy` | `string` | No | `added` | Accepts `added` (requires foo_playcount, falls back to `modified`) or `modified`. |
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `limit` | `integer` | No | Most tracks to return. At least `0`. Default: `50`. |
+| `sortBy` | `"added" \| "modified"` | No | `added` orders by `%added%`, newest first, with tracks that lack it last; `modified` orders by file modification time, newest first. Default: `"added"`. |
 
-**Returns**: `{"fallback":"...","limit":"...","sortBy":"...","success":true,"total":"...","tracks":"..."}`
+**Returns**
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `tracks` | `RecentLibraryTrack[]` | The tracks, newest first; `index` is the position in the library. |
+| `tracks[].…` | [Track](../reference/types.md#track) | Every field of [Track](../reference/types.md#track). |
+| `tracks[].index` | `integer` | Row number; the list the row is in says what it counts. |
+| `tracks[].added` | `string` | The `%added%` value as foo_playcount formats it, such as `2024-05-01 12:34:56`; present only when the list is ordered by it and the track has one. |
+| `tracks[].modified` | `integer` | File modification time, in seconds since the Unix epoch; present only when the list is ordered by it and the time is known. |
+| `total` | `integer` | Tracks in the library, not the number returned. |
+| `limit` | `integer` | The `limit` applied. |
+| `sortBy` | `"added" \| "modified"` | The order used: `modified` when `added` was asked for and no track has `%added%`. |
+| `fallback` | `boolean` | Whether the call fell back from `added` to `modified`. |
+
+`success` is `true` on success. On failure the response is `{ success: false, error, code }`; see [Error codes](../reference/errors.md) for `code`.
+<!-- api-schema:end -->
 
 ```js
 // Minimal call: 50 most recently added tracks
-const { tracks, fallback } = await fb2k.invoke('library.getRecentlyAdded');
+const res = await fb2k.invoke('library.getRecentlyAdded');
+if (res.success === false) throw new Error(res.error);
+const { tracks, fallback } = res;
 
 // Sort by file modification time instead
 const byMtime = await fb2k.invoke('library.getRecentlyAdded', {
@@ -370,10 +701,29 @@ const byMtime = await fb2k.invoke('library.getRecentlyAdded', {
 
 ### library.getRoots
 
+<!-- api-schema:begin library.getRoots -->
+The library's root folders. Only tracks that resolve to a stable local path count toward the roots; `http://`, `file-relative://`, `unpack://`, `archive://` and similar ones are counted in `skippedTracks`. The first call builds the index synchronously and later calls reuse it until the library changes or `library.invalidateCache` is called. With the library disabled it succeeds with `enabled: false` and no roots; a failed build fails with `OPERATION_FAILED`.
 
-_No parameters._
+This method takes no parameters.
 
-**Returns**: `{ "success": true, "enabled": true, "roots": [{ "id": "...", "displayName": "...", "rawPath": "...", "absolutePath": "...", "trackCount": 0 }], "total": 3, "indexedTracks": 14930, "skippedTracks": 12, "fromCache": false }`
+**Returns**
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `enabled` | `boolean` | Whether the media library is enabled. |
+| `roots` | `LibraryRootInfo[]` | The root folders. |
+| `roots[].id` | `string` | Stable identifier of the root, currently its `absolutePath`; `library.browseTree` takes it. |
+| `roots[].displayName` | `string` | The folder name, or the full path when two roots share a name. |
+| `roots[].rawPath` | `string` | Currently the same as `absolutePath`. |
+| `roots[].absolutePath` | `string` | Canonical local path of the folder. |
+| `roots[].trackCount` | `integer` | Library tracks under the folder. |
+| `total` | `integer` | Number of roots. |
+| `indexedTracks` | `integer` | Tracks placed under a root. |
+| `skippedTracks` | `integer` | Tracks left out because they have no stable local path. |
+| `fromCache` | `boolean` | `true` when the index already existed before this call. |
+
+`success` is `true` on success. On failure the response is `{ success: false, error, code }`; see [Error codes](../reference/errors.md) for `code`.
+<!-- api-schema:end -->
 
 ```js
 const result = await fb2k.invoke('library.getRoots');
@@ -381,10 +731,25 @@ const result = await fb2k.invoke('library.getRoots');
 
 ### library.getStats
 
+<!-- api-schema:begin library.getStats -->
+Aggregate counts over the whole library. With the library disabled every count is `0`. The library is walked on every call.
 
-_No parameters._
+This method takes no parameters.
 
-**Returns**: `{"cacheValid":"...","lastModified":"...","totalAlbums":"...","totalArtists":"...","totalDuration":"...","totalSize":"...","totalTracks":"..."}`
+**Returns**
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `totalTracks` | `integer` | Tracks in the library. |
+| `totalAlbums` | `integer` | Albums, counted by album name plus album artist, as `library.getAlbums` groups them. |
+| `totalArtists` | `integer` | Credited artists: every value of a multi-value `artist` counts, matching the entry count of `library.getArtists`. |
+| `totalDuration` | `number` | Summed length of all tracks, in seconds. |
+| `totalSize` | `integer` | Summed file size, in bytes. |
+| `cacheValid` | `boolean` | Whether the host holds cached library results written since the cache was last dropped. |
+| `lastModified` | `integer` | When the cache was last dropped, in milliseconds since the Unix epoch. |
+
+`success` is `true` on success. On failure the response is `{ success: false, error, code }`; see [Error codes](../reference/errors.md) for `code`.
+<!-- api-schema:end -->
 
 > `totalArtists` counts credited artists — a track tagged with several artists contributes to each of them — so it matches the entry count of `library.getArtists`.
 
@@ -394,10 +759,23 @@ const result = await fb2k.invoke('library.getStats');
 
 ### library.getStatus
 
+<!-- api-schema:begin library.getStatus -->
+Whether the library is enabled and how many tracks it holds. The answer is kept until the library changes; with the library disabled nothing is kept.
 
-_No parameters._
+This method takes no parameters.
 
-**Returns**: `{"count":0,"enabled":true,"initialized":"...","itemCount":"...","scanning":"..."}`
+**Returns**
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `enabled` | `boolean` | Whether the media library is enabled. |
+| `initialized` | `boolean` | Always the same as `enabled`. |
+| `scanning` | `boolean` | Always `false`; the host does not report scanning. |
+| `itemCount` | `integer` | Tracks in the library; `0` when it is disabled. |
+| `count` | `integer` | The same as `itemCount`. |
+
+`success` is `true` on success. On failure the response is `{ success: false, error, code }`; see [Error codes](../reference/errors.md) for `code`.
+<!-- api-schema:end -->
 
 ```js
 const result = await fb2k.invoke('library.getStatus');
@@ -405,10 +783,19 @@ const result = await fb2k.invoke('library.getStatus');
 
 ### library.invalidateCache
 
+<!-- api-schema:begin library.invalidateCache -->
+Drop the host's cached library results and the directory tree index; the next call to an endpoint that uses them rebuilds them. They are also dropped whenever the library changes.
 
-_No parameters._
+This method takes no parameters.
 
-**Returns**: `{"success":true,"timestamp":"..."}`
+**Returns**
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `timestamp` | `integer` | When the cache was dropped, in milliseconds since the Unix epoch. |
+
+`success` is `true` on success. On failure the response is `{ success: false, error, code }`; see [Error codes](../reference/errors.md) for `code`.
+<!-- api-schema:end -->
 
 ```js
 const result = await fb2k.invoke('library.invalidateCache');
@@ -416,10 +803,19 @@ const result = await fb2k.invoke('library.invalidateCache');
 
 ### library.isEnabled
 
+<!-- api-schema:begin library.isEnabled -->
+Whether the foobar2000 media library is enabled, that is, whether any library folder is configured.
 
-_No parameters._
+This method takes no parameters.
 
-**Returns**: `{"enabled":"...","success":true}`
+**Returns**
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `enabled` | `boolean` | Whether the media library is enabled. |
+
+`success` is `true` on success. On failure the response is `{ success: false, error, code }`; see [Error codes](../reference/errors.md) for `code`.
+<!-- api-schema:end -->
 
 ```js
 const result = await fb2k.invoke('library.isEnabled');
@@ -427,21 +823,55 @@ const result = await fb2k.invoke('library.isEnabled');
 
 ### library.query
 
+<!-- api-schema:begin library.query -->
+Tracks matching a foobar2000 query, optionally sorted by `sort`, up to `limit`. A query the parser rejects fails with `INVALID_PARAMS` and `details.param` `query`, and so does one carrying `SORT BY`; many malformed queries are not rejected but simply match nothing. The rows are written off the main thread. Fails with `LIBRARY_DISABLED` when the library is disabled.
 
-| Parameter | Type | Required | Default | Description |
-| --- | --- | --- | --- | --- |
-| `query` | `string` | Yes | — | foobar2000 query expression. |
-| `sort` | `string` | No | — | Titleformat pattern used to sort the matches. |
-| `limit` | `integer` | No | `100` | Result cap. |
-| `fields` | `string[]` | No | all 20 keys | Track keys to project. See [Field projection](#field-projection). |
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `query` | `string` | Yes | foobar2000 query expression. Must not be empty. |
+| `sort` | `string` | No | Title Formatting expression to sort the matches by before `limit` applies; empty keeps library order, and an expression that fails to compile is ignored. Default: `""`. |
+| `limit` | `integer` | No | Most rows to return; `total` still counts every match. At least `0`. Default: `100`. |
+| `fields` | `string[]` | No | Keys each row carries; omitted, every key of a library track row. Names are matched case-sensitively against those keys: `index`, `handle`, `title`, `artist`, `artists`, `album`, `albumArtist`, `albumArtists`, `genre`, `date`, `trackNumber`, `discNumber`, `duration`, `path`, `absolutePath`, `fileSize`, `bitrate`, `sampleRate`, `channels`, `codec`, `subsong` and `rating`. An unknown name fails with `INVALID_PARAMS` and is listed in `details.unknownFields`. Must not be empty. |
 
-**Returns**: `{"error":"...","success":true,"total":"...","tracks":"..."}`
+**Returns**
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `tracks` | `LibraryTrackPartial[]` | The matches, sorted by `sort` or in library order; `index` is the position in this list. Each row carries exactly the `fields` asked for. |
+| `tracks[].handle` | `string` | The key that identifies the track across endpoints: `absolutePath`, with a `\|subsong:N` suffix when `subsong` is not `0`. The same track yields the same handle from every such method; because of the suffix it is not a plain file path, and a method that takes a path documents whether it accepts one. |
+| `tracks[].path` | `string` | Path as foobar2000 stores it: `file://` for a local file, `file-relative://` for a path stored relative to the foobar2000 folder (a portable install), or a remote URL. No subsong suffix. |
+| `tracks[].absolutePath` | `string` | Native filesystem path without the subsong suffix; the same as `path` for a remote URL. |
+| `tracks[].subsong` | `integer` | Subsong identifier the decoder assigns inside the file, not necessarily a sequence number; `0` for a whole file and for a remote stream. |
+| `tracks[].title` | `string` | First TITLE value; empty when untagged. |
+| `tracks[].artist` | `string` | Every ARTIST value joined with `", "`; empty when untagged. |
+| `tracks[].artists` | `string[]` | Every ARTIST value in tag order; empty when untagged. |
+| `tracks[].album` | `string` | First ALBUM value; empty when untagged. |
+| `tracks[].albumArtist` | `string` | Every ALBUM ARTIST value joined with `", "`; empty when untagged. |
+| `tracks[].albumArtists` | `string[]` | Every ALBUM ARTIST value in tag order, so `albumArtists.join(", ")` equals `albumArtist`; empty when untagged. `library.getAlbums` files a track that has an `album` under the name `album` and the album artist `albumArtists[0]`, or `artists[0]` when this array is empty (`""` when both are); those are the `name` and `albumArtist` of that album's row. |
+| `tracks[].genre` | `string` | Every GENRE value joined with `", "`; empty when untagged. |
+| `tracks[].date` | `string` | First DATE value as tagged, such as `2019` or `2019-05-01`; empty when untagged. |
+| `tracks[].trackNumber` | `integer` | TRACKNUMBER read as an integer; `0` when absent or not a number. |
+| `tracks[].discNumber` | `integer` | DISCNUMBER read as an integer; `0` when absent or not a number. |
+| `tracks[].duration` | `number` | Length in seconds; `0` when unknown. |
+| `tracks[].fileSize` | `integer` | File size in bytes; `-1` when unknown, as for a remote stream. |
+| `tracks[].bitrate` | `integer` | Average bitrate in kbit/s; `0` when unknown. |
+| `tracks[].sampleRate` | `integer` | Sample rate in Hz; `0` when unknown. |
+| `tracks[].channels` | `integer` | Channel count; `0` when unknown. |
+| `tracks[].codec` | `string` | Codec name as the decoder reports it, such as `FLAC` or `MP3`; empty when unknown. |
+| `tracks[].rating` | `integer` | Rating from 0 to 5: the `%rating%` statistic (foo_playcount) when it is 1 to 5, otherwise the RATING tag clamped to that range; `0` when neither rates the track. |
+| `tracks[].index` | `integer` | Row number; the list the row is in says what it counts. |
+| `total` | `integer` | Matches, before `limit`. |
+
+`success` is `true` on success. On failure the response is `{ success: false, error, code }`; see [Error codes](../reference/errors.md) for `code`.
+<!-- api-schema:end -->
 
 ```js
 // Minimal call
-const { tracks } = await fb2k.invoke('library.query', {
+const res = await fb2k.invoke('library.query', {
     query: '%rating% GREATER 3'
 });
+if (res.success === false) throw new Error(res.error);
+const { tracks } = res;
 
 // Sort matches with a titleformat pattern
 const sorted = await fb2k.invoke('library.query', {
@@ -460,10 +890,15 @@ const paths = await fb2k.invoke('library.query', {
 
 ### library.refresh
 
+<!-- api-schema:begin library.refresh -->
+Same as `library.rescan`.
 
-_No parameters._
+This method takes no parameters.
 
-**Returns**: `{"success":true}`
+**Returns**
+
+`success` is `true` on success. On failure the response is `{ success: false, error, code }`; see [Error codes](../reference/errors.md) for `code`.
+<!-- api-schema:end -->
 
 ```js
 const result = await fb2k.invoke('library.refresh');
@@ -471,10 +906,15 @@ const result = await fb2k.invoke('library.refresh');
 
 ### library.rescan
 
+<!-- api-schema:begin library.rescan -->
+Ask foobar2000 to rescan the library folders by calling `library_manager::rescan()`, which the foobar2000 SDK marks as obsolete and not to be called. The library follows file changes on its own.
 
-_No parameters._
+This method takes no parameters.
 
-**Returns**: `{"success":true}`
+**Returns**
+
+`success` is `true` on success. On failure the response is `{ success: false, error, code }`; see [Error codes](../reference/errors.md) for `code`.
+<!-- api-schema:end -->
 
 ```js
 const result = await fb2k.invoke('library.rescan');
@@ -482,21 +922,58 @@ const result = await fb2k.invoke('library.rescan');
 
 ### library.search
 
+<!-- api-schema:begin library.search -->
+One page of the tracks matching a foobar2000 query, in library order: a `SORT BY` clause is accepted but not applied. A query the parser rejects fails with `INVALID_PARAMS` and `details.param` `query`. An empty `query` and a disabled library both succeed with no tracks. The rows are written off the main thread.
 
-| Parameter | Type | Required | Default | Description |
-| --- | --- | --- | --- | --- |
-| `query` | `string` | No | — | foobar2000 query expression. An empty query returns an empty result set with `success: true`. |
-| `offset` | `integer` | No | `0` | Page offset. |
-| `limit` | `integer` | No | `100` | Page size. |
-| `fields` | `string[]` | No | all 20 keys | Track keys to project. See [Field projection](#field-projection). |
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `query` | `string` | No | foobar2000 query expression; empty, the call succeeds with no tracks. Default: `""`. |
+| `offset` | `integer` | No | Matches to skip. At least `0`. Default: `0`. |
+| `limit` | `integer` | No | Most rows to return. At least `0`. Default: `100`. |
+| `fields` | `string[]` | No | Keys each row carries, as for `library.query`. Must not be empty. |
 
-**Returns**: `{"error":"...","hasMore":"...","limit":"...","offset":"...","success":true,"total":"...","tracks":"..."}`
+**Returns**
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `tracks` | `LibraryTrackPartial[]` | This page of the matches in library order; `index` is the position among all matches. Each row carries exactly the `fields` asked for. |
+| `tracks[].handle` | `string` | The key that identifies the track across endpoints: `absolutePath`, with a `\|subsong:N` suffix when `subsong` is not `0`. The same track yields the same handle from every such method; because of the suffix it is not a plain file path, and a method that takes a path documents whether it accepts one. |
+| `tracks[].path` | `string` | Path as foobar2000 stores it: `file://` for a local file, `file-relative://` for a path stored relative to the foobar2000 folder (a portable install), or a remote URL. No subsong suffix. |
+| `tracks[].absolutePath` | `string` | Native filesystem path without the subsong suffix; the same as `path` for a remote URL. |
+| `tracks[].subsong` | `integer` | Subsong identifier the decoder assigns inside the file, not necessarily a sequence number; `0` for a whole file and for a remote stream. |
+| `tracks[].title` | `string` | First TITLE value; empty when untagged. |
+| `tracks[].artist` | `string` | Every ARTIST value joined with `", "`; empty when untagged. |
+| `tracks[].artists` | `string[]` | Every ARTIST value in tag order; empty when untagged. |
+| `tracks[].album` | `string` | First ALBUM value; empty when untagged. |
+| `tracks[].albumArtist` | `string` | Every ALBUM ARTIST value joined with `", "`; empty when untagged. |
+| `tracks[].albumArtists` | `string[]` | Every ALBUM ARTIST value in tag order, so `albumArtists.join(", ")` equals `albumArtist`; empty when untagged. `library.getAlbums` files a track that has an `album` under the name `album` and the album artist `albumArtists[0]`, or `artists[0]` when this array is empty (`""` when both are); those are the `name` and `albumArtist` of that album's row. |
+| `tracks[].genre` | `string` | Every GENRE value joined with `", "`; empty when untagged. |
+| `tracks[].date` | `string` | First DATE value as tagged, such as `2019` or `2019-05-01`; empty when untagged. |
+| `tracks[].trackNumber` | `integer` | TRACKNUMBER read as an integer; `0` when absent or not a number. |
+| `tracks[].discNumber` | `integer` | DISCNUMBER read as an integer; `0` when absent or not a number. |
+| `tracks[].duration` | `number` | Length in seconds; `0` when unknown. |
+| `tracks[].fileSize` | `integer` | File size in bytes; `-1` when unknown, as for a remote stream. |
+| `tracks[].bitrate` | `integer` | Average bitrate in kbit/s; `0` when unknown. |
+| `tracks[].sampleRate` | `integer` | Sample rate in Hz; `0` when unknown. |
+| `tracks[].channels` | `integer` | Channel count; `0` when unknown. |
+| `tracks[].codec` | `string` | Codec name as the decoder reports it, such as `FLAC` or `MP3`; empty when unknown. |
+| `tracks[].rating` | `integer` | Rating from 0 to 5: the `%rating%` statistic (foo_playcount) when it is 1 to 5, otherwise the RATING tag clamped to that range; `0` when neither rates the track. |
+| `tracks[].index` | `integer` | Row number; the list the row is in says what it counts. |
+| `total` | `integer` | Matches, before `offset` and `limit`. |
+| `offset` | `integer` | The `offset` applied. |
+| `limit` | `integer` | The `limit` applied. |
+| `hasMore` | `boolean` | Whether matches remain after this page. |
+
+`success` is `true` on success. On failure the response is `{ success: false, error, code }`; see [Error codes](../reference/errors.md) for `code`.
+<!-- api-schema:end -->
 
 ```js
 // Minimal call
-const { tracks, total, hasMore } = await fb2k.invoke('library.search', {
+const res = await fb2k.invoke('library.search', {
     query: 'artist HAS Beatles'
 });
+if (res.success === false) throw new Error(res.error);
+const { tracks, total, hasMore } = res;
 
 // Second page
 const page2 = await fb2k.invoke('library.search', {
@@ -516,8 +993,8 @@ const albums = await fb2k.invoke('library.search', {
 ## Field projection
 
 `library.query` and `library.search` accept an optional `fields` array that
-restricts which track keys each returned row carries. Omitting `fields` keeps
-the current behaviour: every row carries all 20 keys.
+restricts which track keys each returned row carries. Omitting `fields`, or
+passing `null`, returns every key of a library track row.
 
 When `fields` is present, each row holds **exactly** the requested keys and no
 others — including rows whose metadata container could not be read, where the
@@ -529,21 +1006,20 @@ requested key is never missing. The response envelope itself is unchanged:
 
 **Accepted key names** (exact match, case-sensitive):
 
-`index`, `title`, `artist`, `artists`, `album`, `albumArtist`, `genre`, `date`,
-`trackNumber`, `discNumber`, `duration`, `path`, `absolutePath`, `fileSize`,
+`index`, `handle`, `title`, `artist`, `artists`, `album`, `albumArtist`, `albumArtists`,
+`genre`, `date`, `trackNumber`, `discNumber`, `duration`, `path`, `absolutePath`, `fileSize`,
 `bitrate`, `sampleRate`, `channels`, `codec`, `subsong`, `rating`
 
 > Multi-value tags in `artist` / `albumArtist` / `genre` / `composer` (only the fields this API actually returns) are joined with `, ` in their original order, without de-duplication.
 
-> `artists` holds the atomic values behind `artist`: `artists.join(', ')` is exactly `artist`, so a multi-value tag can be recovered from `artists` and not from `artist`. It is returned by the media-library track APIs — `library.getAll`, `library.query`, `library.search` and `library.getByPath` among them; the track objects returned by other namespaces (`playlist.getTracks`, `playback.getCurrentTrack`, `queue.get`, artwork payloads, event payloads) do not carry it. Projecting `artists` without `artist` (or the other way round) is allowed; both are read in one pass. On a row whose metadata container could not be read, a requested `artists` comes back as `[]`.
+> `artists` holds the atomic values behind `artist`: `artists.join(', ')` is exactly `artist`, so a multi-value tag can be recovered from `artists` and not from `artist`. It is on every shared `Track` row — the media-library track APIs, `playlist.getTracks`, `playback.getCurrentTrack`, `queue.get` and the track events — and on the flat answer of `library.getByPath`; artwork payloads do not carry it. `albumArtists` does the same for `albumArtist` wherever a `Track` row is returned: its first value, or `artists[0]` when it is empty, is the album artist `library.getAlbums` groups the track under. Projecting an array without its joined string (or the other way round) is allowed; each pair is read in one pass. On a row whose metadata container could not be read, a requested `artists` or `albumArtists` comes back as `[]`.
 
 Duplicate names are de-duplicated. `rating` is only computed when it is
 requested (or when `fields` is omitted), which is where most of the saving on
 tag-free projections comes from.
 
-**Validation** is fail-closed and always *resolves* — it never rejects the
-promise. A non-array (including an explicit `null`), an empty array, a
-non-string element, or any name outside the whitelist produces:
+**Validation** always *resolves* — it never rejects the promise. A name
+outside the list produces:
 
 ```js
 const bad = await fb2k.invoke('library.query', {
@@ -558,8 +1034,8 @@ const bad = await fb2k.invoke('library.query', {
 // }
 ```
 
-`details.unknownFields` is only present for the unknown-name case; the other
-malformed shapes resolve with `success` / `error` / `code` alone.
+A value that is not an array, an empty array or a non-string element fails
+like any other malformed parameter: `INVALID_PARAMS`, with no `details`.
 
 **When to use it**
 
@@ -612,7 +1088,6 @@ sets — treat them as guidance, not a budget.
 
 ## Usage notes
 
-- `library.getAll` accepts either `start` or `offset`, and either `count` or `limit`; when both members of a pair are present, `start` and `count` take precedence. The defaults are `0`, `0`, `100`, and `100` respectively. `useCache` defaults to `true`.
 - `asyncResult` defaults to `false`. When it is `true` for a full-library request, the immediate result is `{ pending, requestId }`; the completed `{ requestId, tracks, items, total, offset, limit, fromCache }` payload is delivered to the calling WebView through `library:getAllResult`.
 - `library.getRoots` and `library.browseTree` are the typed library-navigation APIs. `library.browseDirectory` is the legacy path-prefix projection and does not represent the real root set.
 - `library.getAlbums` adds `coverDataUrl` only when `includeCover` is enabled and artwork is available. It is a `data:image/...` URL, not an `fb2k://` URL.

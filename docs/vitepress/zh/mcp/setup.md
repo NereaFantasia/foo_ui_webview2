@@ -94,10 +94,13 @@ npm start
 | FB2K_CDP_PORT | 9222 | WebView2 CDP 调试端口 |
 | FB2K_CDP_HOST | localhost | WebView2 CDP 主机地址 |
 | FB2K_CDP_TARGET_URL | — | 固定 CDP page target 的 URL 子串（弹窗/面板/托盘 overlay 多 WebView 共享端口时用），示例 `foo-ui-webview2.local`；设置后无匹配会报错并列出全部候选，不会乱绑 |
-| FB2K_ENABLE_EVAL | — | 设为 1 启用 fb2k_evaluate 工具（安全风险） |
+| FB2K_READ_ONLY | — | 设为 `1` 或 `true` 时只注册只读工具 |
+| FB2K_ENABLE_EVAL | — | 设为 `1` 或 `true` 时注册 `fb2k_page_evaluate`（安全风险）；只读模式下不生效 |
+| FB2K_MAX_RESPONSE_CHARS | 100000 | 文本结果的最大字符数；超出部分被截断并附说明 |
+| FB2K_MAX_IMAGE_BYTES | 3932160 | 以图片返回的封面最多多少字节（3.75 MiB）；更大的封面不附上，结果里会说明 |
 
 ::: warning 关于 FB2K_ENABLE_EVAL
-`fb2k_evaluate` 允许执行任意 JavaScript 表达式，仅建议在开发环境使用。生产环境应保持关闭。
+`fb2k_page_evaluate` 允许在 WebView2 页面里执行任意 JavaScript 表达式，能调用页面可以调用的全部 Bridge 方法，仅建议在可信的开发或调试会话里使用。
 :::
 
 ## CDP 连接 
@@ -141,7 +144,7 @@ MCP Server 启动
 
 | 症状 | 可能原因 | 处理 |
 | --- | --- | --- |
-| 窗口最小化/托盘期间 `fb2k_screenshot` 超时 | 页面被挂起（keep-alive 已关闭） | 恢复窗口，或开启 keep-alive 子开关 |
+| 窗口最小化/托盘期间 `fb2k_page_inspect` 的 `screenshot` 超时 | 页面被挂起（keep-alive 已关闭） | 恢复窗口，或开启 keep-alive 子开关 |
 | 后台约 5 分钟后调用开始卡顿 | 旧版本组件的后台定时器节流 | 更新组件；CDP 模式现已禁用节流 |
 | 工具作用在错误窗口（如托盘菜单 overlay） | 多个 page target 共享 9222 端口 | 设置 `FB2K_CDP_TARGET_URL`（如 `foo-ui-webview2.local`） |
 

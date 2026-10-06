@@ -2,16 +2,18 @@
 
 涉及文件路径的 Bridge API 会先由 BridgeCore 的路径安全 spec 校验，被拒的请求不会触及文件系统，也不会触发 foobar2000 SDK 的路径副作用。路径被安全策略拒绝返回 `PERMISSION_DENIED`；参数形状或类型不对返回 `INVALID_PARAMS`。
 
-权威计数来自当前 `src/api/**` 中 `RegisterApi` 路径安全 spec（形态为 `{ param, SecurityLevel::... }`）：
+计数来自 `src/api/schema/*.ts` 里的 `@security` 与 `@pathKey` 声明，各注册点的路径安全 spec 都由它们生成：
 
+<!-- api-schema:begin permissions:counts -->
 | 级别 | spec 条数 | 含义 |
 | --- | ---: | --- |
 | `Read` | 10 | 普通文件系统只读校验 |
 | `Write` | 1 | 严格写入目标（配置/临时目录策略） |
-| `MediaRead` | 41 | 媒体上下文只读校验 |
+| `MediaRead` | 47 | 媒体上下文只读校验 |
 | `MediaWrite` | 10 | 媒体上下文写校验 |
 | `FileWrite` | 11 | 通用文件写入（`file.*`） |
-| **合计** | **73** | **68 个唯一 API** |
+| **合计** | **79** | **74 个唯一 API** |
+<!-- api-schema:end -->
 
 ## 六级权限模型
 
@@ -56,7 +58,7 @@
 
 ```javascript
 const result = await fb2k.invoke('file.read', { path: somePath });
-if (!result.success) {
+if (result.success === false) {
   if (result.code === 'PERMISSION_DENIED') {
     console.warn('路径被安全策略拒绝:', result.error);
   } else if (result.code === 'INVALID_PARAMS') {
@@ -67,107 +69,123 @@ if (!result.success) {
 
 ## API 权限对照表
 
+<!-- api-schema:begin permissions:Read -->
 ### Read — 只读文件系统（10 条）
 
-| API | 参数 | 数组 | 嵌套键 | 说明 |
-| --- | --- | --- | --- | --- |
-| `artwork.getFolderImages` | `directory` | — | — | 权威源：`ArtworkApi.cpp` |
-| `clipboard.writeFiles` | `paths` | 是 | — | 权威源：`ClipboardApi.cpp` |
-| `file.copy` | `source` | — | — | 权威源：`FileApi.cpp` |
-| `file.copyAsync` | `items` | 是 | `source` | 权威源：`FileApi.cpp` |
-| `file.exists` | `path` | — | — | 权威源：`FileApi.cpp` |
-| `file.getInfo` | `path` | — | — | 权威源：`FileApi.cpp` |
-| `file.list` | `path` | — | — | 权威源：`FileApi.cpp` |
-| `file.read` | `path` | — | — | 权威源：`FileApi.cpp` |
-| `shell.openWith` | `path` | — | — | 权威源：`ShellApi.cpp` |
-| `shell.showInExplorer` | `path` | — | — | 权威源：`ShellApi.cpp` |
+| API | 参数 | 数组 | 嵌套键 |
+| --- | --- | --- | --- |
+| `artwork.getFolderImages` | `directory` | — | — |
+| `clipboard.writeFiles` | `paths` | 是 | — |
+| `file.copy` | `source` | — | — |
+| `file.copyAsync` | `items` | 是 | `source` |
+| `file.exists` | `path` | — | — |
+| `file.getInfo` | `path` | — | — |
+| `file.list` | `path` | — | — |
+| `file.read` | `path` | — | — |
+| `shell.openWith` | `path` | — | — |
+| `shell.showInExplorer` | `path` | — | — |
+<!-- api-schema:end -->
 
+<!-- api-schema:begin permissions:Write -->
 ### Write — 严格写入目标（1 条）
 
-| API | 参数 | 数组 | 嵌套键 | 说明 |
-| --- | --- | --- | --- | --- |
-| `http.download` | `saveTo` | — | — | 权威源：`HttpApi.cpp` |
+| API | 参数 | 数组 | 嵌套键 |
+| --- | --- | --- | --- |
+| `http.download` | `saveTo` | — | — |
+<!-- api-schema:end -->
 
-### MediaRead — 读取媒体文件（41 条）
+<!-- api-schema:begin permissions:MediaRead -->
+### MediaRead — 读取媒体文件（47 条）
 
-| API | 参数 | 数组 | 嵌套键 | 说明 |
-| --- | --- | --- | --- | --- |
-| `artwork.getAvailableArtwork` | `path` | — | — | 权威源：`ArtworkApi.cpp` |
-| `artwork.getAvailableTypes` | `path` | — | — | 权威源：`ArtworkApi.cpp` |
-| `artwork.getBatch` | `paths` | 是 | — | 权威源：`ArtworkApi.cpp` |
-| `artwork.getByPath` | `path` | — | — | 权威源：`ArtworkApi.cpp` |
-| `artwork.getFb2kUrlByPath` | `path` | — | — | 权威源：`ArtworkApi.cpp` |
-| `artwork.getFb2kUrlByPathBatch` | `paths` | 是 | — | 权威源：`ArtworkApi.cpp` |
-| `artwork.getFb2kUrlByPathBatch` | `items` | 是 | `path` | 权威源：`ArtworkApi.cpp` |
-| `artwork.getForTrack` | `path` | — | — | 权威源：`ArtworkApi.cpp` |
-| `artwork.getLyrics` | `path` | — | — | 权威源：`ArtworkApi.cpp` |
-| `artwork.getMetadata` | `path` | — | — | 权威源：`ArtworkApi.cpp` |
-| `audio.analyzeBPM` | `path` | — | — | 权威源：`AudioApi.cpp` |
-| `audio.generateFullWaveform` | `path` | — | — | 权威源：`AudioApi.cpp` |
-| `audio.generateWaveform` | `path` | — | — | 权威源：`AudioApi.cpp` |
-| `discovery.executeContextMenuByPath` | `trackPath` | — | — | 权威源：`DiscoveryApi.cpp` |
-| `jitQueue.enqueueNext` | `url` | — | — | 权威源：`QueueApi.cpp` |
-| `jitQueue.playNow` | `url` | — | — | 权威源：`QueueApi.cpp` |
-| `jitQueue.preloadBatch` | `urls` | 是 | — | 权威源：`QueueApi.cpp` |
-| `library.getByPath` | `path` | — | — | 权威源：`LibraryApi.cpp` |
-| `lyrics.exists` | `path` | — | — | 权威源：`LyricsApi.cpp` |
-| `lyrics.get` | `path` | — | — | 权威源：`LyricsApi.cpp` |
-| `metadata.probeBatchAsync` | `paths` | 是 | — | 权威源：`MetadataApi.cpp` |
-| `metadata.read` | `path` | — | — | 权威源：`MetadataApi.cpp` |
-| `metadata.readBatch` | `paths` | 是 | — | 权威源：`MetadataApi.cpp` |
-| `metadata.readByPath` | `path` | — | — | 权威源：`MetadataApi.cpp` |
-| `metadata.readRaw` | `path` | — | — | 权威源：`MetadataApi.cpp` |
-| `playback.playPath` | `path` | — | — | 权威源：`PlaybackApi.cpp` |
-| `playback.playPaths` | `paths` | 是 | — | 权威源：`PlaybackApi.cpp` |
-| `playcount.get` | `paths` | 是 | — | 权威源：`PlaycountApi.cpp` |
-| `playcount.getBatch` | `paths` | 是 | — | 权威源：`PlaycountApi.cpp` |
-| `playlist.addPaths` | `paths` | 是 | — | 权威源：`PlaylistApi.cpp` |
-| `playlist.addPathsAsync` | `paths` | 是 | — | 权威源：`PlaylistApi.cpp` |
-| `playlist.addPathsSequential` | `paths` | 是 | — | 权威源：`PlaylistApi.cpp` |
-| `playlist.replaceAllAndPlay` | `paths` | 是 | — | 权威源：`PlaylistApi.cpp` |
-| `queue.addPaths` | `paths` | 是 | — | 权威源：`QueueApi.cpp` |
-| `rating.get` | `path` | — | — | 权威源：`MetadataApi.cpp` |
-| `replaygain.get` | `paths` | 是 | — | 权威源：`ReplayGainApi.cpp` |
-| `replaygain.scan` | `paths` | 是 | — | 权威源：`ReplayGainApi.cpp` |
-| `titleformat.eval` | `path` | — | — | 权威源：`TitleformatApi.cpp` |
-| `titleformat.evalBatch` | `paths` | 是 | — | 权威源：`TitleformatApi.cpp` |
-| `titleformat.evalFields` | `path` | — | — | 权威源：`TitleformatApi.cpp` |
-| `titleformat.evalFieldsBatch` | `paths` | 是 | — | 权威源：`TitleformatApi.cpp` |
+| API | 参数 | 数组 | 嵌套键 |
+| --- | --- | --- | --- |
+| `artwork.getAvailableArtwork` | `path` | — | — |
+| `artwork.getAvailableTypes` | `path` | — | — |
+| `artwork.getBatch` | `paths` | 是 | — |
+| `artwork.getByPath` | `path` | — | — |
+| `artwork.getFb2kUrlByPath` | `path` | — | — |
+| `artwork.getFb2kUrlByPathBatch` | `items` | 是 | `path` |
+| `artwork.getFb2kUrlByPathBatch` | `paths` | 是 | — |
+| `artwork.getForTrack` | `path` | — | — |
+| `artwork.getLyrics` | `path` | — | — |
+| `artwork.getMetadata` | `path` | — | — |
+| `audio.analyzeBPM` | `path` | — | — |
+| `audio.decodePcm` | `path` | — | — |
+| `audio.generateFullWaveform` | `path` | — | — |
+| `discovery.executeContextMenuByPath` | `trackPath` | — | — |
+| `jitQueue.enqueueNext` | `url` | — | — |
+| `jitQueue.playNow` | `url` | — | — |
+| `jitQueue.preloadBatch` | `urls` | 是 | — |
+| `library.addToPlaylist` | `paths` | 是 | — |
+| `library.getByPath` | `path` | — | — |
+| `lyrics.exists` | `path` | — | — |
+| `lyrics.get` | `path` | — | — |
+| `media.getContainerInfo` | `path` | — | — |
+| `media.getStreamUrl` | `path` | — | — |
+| `metadata.probeBatchAsync` | `paths` | 是 | — |
+| `metadata.read` | `path` | — | — |
+| `metadata.readBatch` | `paths` | 是 | — |
+| `metadata.readByPath` | `path` | — | — |
+| `metadata.readRaw` | `path` | — | — |
+| `playback.playPath` | `path` | — | — |
+| `playback.playPaths` | `paths` | 是 | — |
+| `playcount.get` | `paths` | 是 | — |
+| `playcount.getBatch` | `paths` | 是 | — |
+| `playlist.addHandles` | `handles` | 是 | `path` |
+| `playlist.addPaths` | `paths` | 是 | — |
+| `playlist.addPathsAsync` | `paths` | 是 | — |
+| `playlist.addPathsSequential` | `paths` | 是 | — |
+| `playlist.insertTracks` | `handles` | 是 | `path` |
+| `playlist.replaceAllAndPlay` | `paths` | 是 | — |
+| `queue.addPaths` | `paths` | 是 | — |
+| `queue.insertNext` | `paths` | 是 | — |
+| `rating.get` | `path` | — | — |
+| `replaygain.get` | `paths` | 是 | — |
+| `replaygain.scan` | `paths` | 是 | — |
+| `titleformat.eval` | `path` | — | — |
+| `titleformat.evalBatch` | `paths` | 是 | — |
+| `titleformat.evalFields` | `path` | — | — |
+| `titleformat.evalFieldsBatch` | `paths` | 是 | — |
+<!-- api-schema:end -->
 
+<!-- api-schema:begin permissions:MediaWrite -->
 ### MediaWrite — 修改媒体文件（10 条）
 
-| API | 参数 | 数组 | 嵌套键 | 说明 |
-| --- | --- | --- | --- | --- |
-| `lyrics.save` | `path` | — | — | 权威源：`LyricsApi.cpp` |
-| `metadata.embedArtwork` | `path` | — | — | 权威源：`MetadataApi.cpp` |
-| `metadata.removeEmbeddedArt` | `path` | — | — | 权威源：`MetadataApi.cpp` |
-| `metadata.removeField` | `path` | — | — | 权威源：`MetadataApi.cpp` |
-| `metadata.removeTag` | `path` | — | — | 权威源：`MetadataApi.cpp` |
-| `metadata.write` | `path` | — | — | 权威源：`MetadataApi.cpp` |
-| `metadata.writeBatch` | `items` | 是 | `path` | 权威源：`MetadataApi.cpp` |
-| `playcount.set` | `path` | — | — | 权威源：`PlaycountApi.cpp` |
-| `rating.set` | `path` | — | — | 权威源：`MetadataApi.cpp` |
-| `replaygain.clear` | `paths` | 是 | — | 权威源：`ReplayGainApi.cpp` |
+| API | 参数 | 数组 | 嵌套键 |
+| --- | --- | --- | --- |
+| `lyrics.save` | `path` | — | — |
+| `metadata.embedArtwork` | `path` | — | — |
+| `metadata.removeEmbeddedArt` | `path` | — | — |
+| `metadata.removeField` | `path` | — | — |
+| `metadata.removeTag` | `path` | — | — |
+| `metadata.write` | `path` | — | — |
+| `metadata.writeBatch` | `items` | 是 | `path` |
+| `playcount.set` | `path` | — | — |
+| `rating.set` | `path` | — | — |
+| `replaygain.clear` | `paths` | 是 | — |
+<!-- api-schema:end -->
 
 ::: info 嵌套数组校验
 `metadata.writeBatch` 的 `items` 是对象数组，系统会提取每个元素的 `path` 字段进行校验。
 :::
 
+<!-- api-schema:begin permissions:FileWrite -->
 ### FileWrite — 通用文件写入（11 条）
 
-| API | 参数 | 数组 | 嵌套键 | 说明 |
-| --- | --- | --- | --- | --- |
-| `file.copy` | `destination` | — | — | 权威源：`FileApi.cpp` |
-| `file.copyAsync` | `items` | 是 | `destination` | 权威源：`FileApi.cpp` |
-| `file.delete` | `path` | — | — | 权威源：`FileApi.cpp` |
-| `file.deleteAsync` | `paths` | 是 | — | 权威源：`FileApi.cpp` |
-| `file.mkdir` | `path` | — | — | 权威源：`FileApi.cpp` |
-| `file.move` | `destination` | — | — | 权威源：`FileApi.cpp` |
-| `file.move` | `source` | — | — | 权威源：`FileApi.cpp` |
-| `file.moveAsync` | `items` | 是 | `destination` | 权威源：`FileApi.cpp` |
-| `file.moveAsync` | `items` | 是 | `source` | 权威源：`FileApi.cpp` |
-| `file.rename` | `path` | — | — | 权威源：`FileApi.cpp` |
-| `file.write` | `path` | — | — | 权威源：`FileApi.cpp` |
+| API | 参数 | 数组 | 嵌套键 |
+| --- | --- | --- | --- |
+| `file.copy` | `destination` | — | — |
+| `file.copyAsync` | `items` | 是 | `destination` |
+| `file.delete` | `path` | — | — |
+| `file.deleteAsync` | `paths` | 是 | — |
+| `file.mkdir` | `path` | — | — |
+| `file.move` | `destination` | — | — |
+| `file.move` | `source` | — | — |
+| `file.moveAsync` | `items` | 是 | `destination` |
+| `file.moveAsync` | `items` | 是 | `source` |
+| `file.rename` | `path` | — | — |
+| `file.write` | `path` | — | — |
+<!-- api-schema:end -->
 
 `file.copy` 的 `source` 走 `Read`、`destination` 走 `FileWrite`；`file.move` 两端均走 `FileWrite`。异步族沿用同一套分档：`file.copyAsync` 逐条校验 `items[].source`（`Read`）与 `items[].destination`（`FileWrite`），`file.moveAsync` 两个嵌套键都走 `FileWrite`，`file.deleteAsync` 的 `paths` 逐条走 `FileWrite`。逐条校验是 fail-fast：任一条被拒即整批失败返回 `PERMISSION_DENIED`，不派工。
 
@@ -178,7 +196,6 @@ if (!result.success) {
 | `shell.exec` | 无命令白名单；可选 `cwd` 仍走 PathSecurity |
 | `shell.spawn` | 无可执行白名单；绝对可执行路径与 `cwd` 做路径校验 |
 | `console.log` | 日志目录限制 + 保留设备名过滤 + `.log` / `.txt` 扩展名白名单 |
-| `playlist.insertTracks` | 参数为 playlist handle，不是原始文件路径 |
 
 ## 路径安全规则详解
 
@@ -256,4 +273,4 @@ junction / 符号链接重定向到非系统盘（例如 `C:\Users\<user>` → `
 面盘符，需按目标机器的实际重定向情况判断。
 :::
 
-本页顶部的 spec 计数为人工维护，以组件源码中的 C++ `RegisterApi` 路径安全 spec 为准。
+本页的计数与各级别的表格由 `src/api/schema/*.ts` 里的 `@security` 与 `@pathKey` 声明生成。

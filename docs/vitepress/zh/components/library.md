@@ -51,6 +51,8 @@ el.addEventListener('fb-library-added', e => {
 - **album**: 专辑列表 → 展开显示曲目（子节点类型 `track`）
 - **genre**: 流派列表 → 展开显示匹配曲目
 
+事件 detail 里的 `artist` 取自该行的 `data-artist`。艺术家视图的 `album` 子节点上是它的上级艺术家，这一行代表这位艺术家在该专辑上的曲目。专辑视图的分组上是专辑艺术家：只凭 `key` 可能对应好几张专辑，`library.getAlbumTracks(key, artist)` 才能确定是哪一张。
+
 ## `<fb-library-filesystem-tree>` {#fb-library-filesystem-tree}
 
 基于文件系统根树的媒体库浏览组件，通过 `getRoots` + `browseTree` API 按目录结构懒加载。支持 Ctrl/Shift 多选。

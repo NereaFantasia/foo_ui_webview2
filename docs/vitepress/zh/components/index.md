@@ -2,72 +2,9 @@
 
 foo_ui_webview2 提供 **36 个无样式 Web Components** — 不预设任何视觉样式的功能积木，通过 CSS Parts、Slots 和自定义事件实现完全可定制的 UI。
 
-## 快速开始 
+通过 SDK 加载它们：使用打包工具时调用 `registerComponents()`，不用打包工具时加载 `components.global.js`，见[在主题里加载 SDK](/zh/how-to/load-sdk)。怎样给它们加外观，见[给组件加样式](/zh/how-to/style-components)；它们怎样找到 SDK、怎样报告用户操作、为什么把样式留给主题，见[组件的工作方式](/zh/concepts/components)。
 
-```html
-<!doctype html>
-<html>
-  <head>
-    <meta charset="utf-8" />
-    <link rel="stylesheet" href="./theme.css" />
-  </head>
-  <body>
-    <!-- 加载 SDK 与组件 -->
-    <script src="./sdk/bridge.js"></script>
-    <script src="./sdk/components.js"></script>
-
-    <!-- 直接使用 Web Components -->
-    <fb-play-button></fb-play-button>
-    <fb-seek-bar></fb-seek-bar>
-    <fb-volume-control></fb-volume-control>
-    <fb-track-text format="%title% — %artist%"></fb-track-text>
-  </body>
-</html>
-```
-
-## 设计原则 
-
-- **零样式** — 组件不包含 color、background、font-family 等视觉属性，全部通过 CSS Parts 由外部样式化
-- **CSS Parts** — 每个可样式化元素都暴露 `part` 属性，使用 `::part()` 选择器自定义
-- **Slots** — 图标、占位内容等通过 `<slot>` 允许替换
-- **事件驱动** — 所有用户交互通过 `CustomEvent`（bubbles + composed）向外传递
-
-### 样式化示例 
-
-所有组件都通过 `::part()` 选择器自定义外观：
-
-```css
-/* 播放按钮 — 圆形绿色风格 */
-fb-play-button::part(button) {
-    background: #1db954;
-    border: none;
-    border-radius: 50%;
-    color: white;
-    width: 48px;
-    height: 48px;
-    cursor: pointer;
-}
-fb-play-button::part(button):hover {
-    background: #1ed760;
-}
-
-/* 进度条 — 自定义颜色 */
-fb-seek-bar {
-    --track-color: #333;
-    --progress-color: #1db954;
-    --thumb-color: #fff;
-}
-
-/* 星级评分 — 金色星星 */
-fb-rating::part(star) {
-    color: #888;
-    font-size: 20px;
-    cursor: pointer;
-}
-fb-rating::part(star)[data-filled] {
-    color: #ffc107;
-}
-```
+下表每一项都链接到该标签的参考：属性、CSS part、slot 与事件。
 
 ## 组件速查表 
 

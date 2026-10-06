@@ -18,23 +18,26 @@
 
 **CSS Parts:** `tabs-container`, `tab`, `tab-name`, `tab-count`, `drop-indicator`, `add-button`
 
-tab 上 `locked` 属性标识锁定的播放列表。
+tab 上 `locked` 属性标识锁定的播放列表，`data-guid` 是该列表的 GUID。
+
+标签栏按 GUID 指定列表：标签画出来之后别的列表再增删，点击激活的仍是这个标签的列表；列表已被删掉的标签什么也不激活。`fb-playlist-select` 与 `fb-playlist-reorder` 在宿主做完之后才派发。
 
 **事件：**
 
 ```js
 el.addEventListener('fb-playlist-select', e => {
-  console.log('选中播放列表:', e.detail.index);
+  console.log('选中播放列表:', e.detail.index, e.detail.guid);
 });
 el.addEventListener('fb-playlist-context', e => {
-  console.log('右键菜单:', e.detail.index, e.detail.x, e.detail.y);
+  // 菜单关闭后按 e.detail.guid 操作；到那时序号可能已指向别的列表。
+  console.log('右键菜单:', e.detail.guid, e.detail.x, e.detail.y);
 });
 el.addEventListener('fb-playlist-add', e => {
   console.log('点击新建');
 });
 el.addEventListener('fb-playlist-reorder', e => {
   console.log('拖拽重排:', e.detail.fromIndex, '→', e.detail.toIndex);
-  console.log('新顺序:', e.detail.newOrder);
+  console.log('新顺序:', e.detail.newOrderGuids);
 });
 ```
 
@@ -98,7 +101,7 @@ el.addEventListener('fb-header-context', e => {
 
 | 属性 | 类型 | 默认值 | 说明 |
 | --- | --- | --- | --- |
-| playlist | string | — | 播放列表索引，默认活动列表（observed） |
+| playlist | string | — | 播放列表的 `guid`（以 `{` 开头的值）或序号；省略时跟随活动列表（observed），见下文 |
 | columns | string | 'index,title,artist,album,duration' | 逗号分隔的列名（observed） |
 | row-height | string | '32' | 行高像素（observed） |
 | grid-template | string | — | CSS grid-template-columns 值，用于同步 fb-resizable-header 的列宽（observed） |
@@ -110,17 +113,19 @@ el.addEventListener('fb-header-context', e => {
 
 `row` 上的状态属性（可用于 CSS 选择器）：`selected`、`focused`、`playing`
 
+`playlist` 给 GUID 时，别的列表增删或重排，视图仍显示这个列表；它被删掉后视图变空。给序号时显示位于该位置的列表，列表增删或重排后重新查一次。不给时跟随活动列表，没有活动列表就什么也不显示。视图知道自己显示哪个列表之后，每次调用宿主都按 GUID 指定它，下面各事件的 detail 也以 `playlistGuid` 带上这个 GUID。
+
 **事件：**
 
 ```js
 el.addEventListener('fb-track-select', e => {
-  console.log('选中:', e.detail.index, e.detail.indices);
+  console.log('选中:', e.detail.index, e.detail.indices, e.detail.playlistGuid);
 });
 el.addEventListener('fb-track-play', e => {
-  console.log('双击播放:', e.detail.index);
+  console.log('双击播放:', e.detail.index, e.detail.playlistGuid);
 });
 el.addEventListener('fb-track-context', e => {
-  console.log('右键菜单:', e.detail.indices, e.detail.x, e.detail.y);
+  console.log('右键菜单:', e.detail.indices, e.detail.playlistGuid, e.detail.x, e.detail.y);
 });
 ```
 
@@ -173,6 +178,6 @@ el.addEventListener('fb-queue-remove', e => {
 
 ```js
 el.addEventListener('fb-playlist-pick', e => {
-  console.log('选择:', e.detail.index, e.detail.name);
+  console.log('选择:', e.detail.index, e.detail.guid, e.detail.name);
 });
 ```

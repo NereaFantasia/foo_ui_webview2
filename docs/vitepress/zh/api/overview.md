@@ -1,57 +1,58 @@
 # API 概述
 
-本节记录组件当前公开注册的 Bridge API。
+页面经 `fb2k.invoke('namespace.method', params)` 调用的全部方法，按命名空间列出。事件见[事件 API](./events.md)。SDK 把这些方法封装为 `fb.*`，见 [SDK 命名空间](../sdk/namespaces.md)。
 
-当前共注册 **427** 个公开方法，覆盖 **40** 个命名空间；已排除 **6** 个内部 `*.__*` 端点。
+<!-- api-schema:begin index:namespaces -->
+共 446 个方法，分属 41 个命名空间。
 
-## 公开命名空间
+| 命名空间 | 方法数 | 所在页面 |
+| --- | ---: | --- |
+| `artwork` | 13 | [Artwork API](./artwork.md) |
+| `audio` | 17 | [Audio 音频 API](./audio.md) |
+| `clipboard` | 4 | [Clipboard 剪贴板 API](./clipboard.md) |
+| `config` | 29 | [Config API](./config.md) |
+| `console` | 3 | [Console 控制台 API](./console.md) |
+| `cursor` | 2 | [Cursor API](./cursor.md) |
+| `dialog` | 4 | [Dialog 对话框 API](./dialog.md) |
+| `discovery` | 15 | [Discovery 服务发现](./discovery.md) |
+| `dnd` | 4 | [DnD 拖放 API](./dnd.md) |
+| `dsp` | 8 | [DSP 音效处理 API](./dsp.md) |
+| `event` | 2 | [Event 自定义事件 API](./event.md) |
+| `file` | 14 | [File 文件 API](./file.md) |
+| `http` | 8 | [HTTP API](./http.md) |
+| `jitQueue` | 8 | [JIT Queue 即时队列 API](./jit-queue.md) |
+| `keyboard` | 4 | [Keyboard 键盘 API](./keyboard.md) |
+| `library` | 25 | [Library API](./library.md) |
+| `log` | 3 | [Log 日志文件 API](./log.md) |
+| `lyrics` | 3 | [Lyrics 歌词 API](./lyrics.md) |
+| `media` | 2 | [Media 媒体 API](./media.md) |
+| `menu` | 8 | [Menu 菜单 API](./menu.md) |
+| `metadata` | 12 | [Metadata 元数据 API](./metadata.md) |
+| `misc` | 9 | [Misc 杂项 API](./misc.md) |
+| `output` | 3 | [Output 输出设备 API](./output.md) |
+| `panel` | 2 | [Panel 面板 API](./panel.md) |
+| `playback` | 27 | [Playback API](./playback.md) |
+| `playcount` | 4 | [Playcount API](./playcount.md) |
+| `playlist` | 50 | [Playlist API](./playlist.md) |
+| `port` | 5 | [Port 跨窗口端口 API](./port.md) |
+| `queue` | 11 | [Queue 播放队列 API](./queue.md) |
+| `rating` | 2 | [Rating 评分 API](./rating.md) |
+| `replaygain` | 8 | [ReplayGain 回放增益 API](./replaygain.md) |
+| `selection` | 6 | [Selection 选择 API](./selection.md) |
+| `shell` | 5 | [Shell 系统外壳 API](./shell.md) |
+| `state` | 4 | [State 共享状态 API](./state.md) |
+| `system` | 9 | [System 系统 API](./system.md) |
+| `taskbar` | 5 | [Taskbar 任务栏 API](./taskbar.md) |
+| `titleformat` | 5 | [Titleformat API](./titleformat.md) |
+| `tray` | 15 | [Tray 托盘 API](./tray.md) |
+| `ui` | 5 | [UI 界面 API](./ui.md) |
+| `webview` | 1 | [WebView API](./webview.md) |
+| `window` | 82 | [Window 窗口](./window.md) |
+<!-- api-schema:end -->
 
-- `artwork`（13 个方法）
-- `audio`（14 个方法）
-- `clipboard`（4 个方法）
-- `config`（29 个方法）
-- `console`（3 个方法）
-- `cursor`（2 个方法）
-- `dialog`（4 个方法）
-- `discovery`（15 个方法）
-- `dnd`（3 个方法）
-- `dsp`（8 个方法）
-- `event`（2 个方法）
-- `file`（10 个方法）
-- `http`（8 个方法）
-- `jitQueue`（8 个方法）
-- `keyboard`（4 个方法）
-- `library`（25 个方法）
-- `log`（3 个方法）
-- `lyrics`（3 个方法）
-- `menu`（8 个方法）
-- `metadata`（10 个方法）
-- `misc`（9 个方法）
-- `output`（3 个方法）
-- `panel`（2 个方法）
-- `playback`（27 个方法）
-- `playcount`（4 个方法）
-- `playlist`（47 个方法）
-- `port`（5 个方法）
-- `queue`（8 个方法）
-- `rating`（2 个方法）
-- `replaygain`（8 个方法）
-- `selection`（6 个方法）
-- `shell`（5 个方法）
-- `state`（4 个方法）
-- `system`（9 个方法）
-- `taskbar`（5 个方法）
-- `test`（2 个方法）
-- `titleformat`（5 个方法）
-- `tray`（14 个方法）
-- `ui`（5 个方法）
-- `window`（81 个方法）
+另有 `test.echo` 与 `test.ping` 两个方法，用来测试 Bridge 本身，见[Test 测试 API](./test.md#test-api)。
 
 ## 调用约定
 
-- 调用方法：`fb2k.invoke('namespace.method', params)`
-- 监听事件：`fb2k.on('namespace:eventName', handler)`
-- 高层 SDK 可以提供 `fb.player.play()` 一类的辅助方法；需要精确的 Bridge 请求或返回结构时，请使用对应的命名空间页面。
-- 例如，`playback:trackChanged` 是事件订阅名，不是可调用的方法。
-- 符合 `*.__*` 的内部端点不属于公开 API。
-- 每个 family 页面覆盖一个或多个命名空间。
+- 方法名用点号（`playback.play`），事件名用冒号（`playback:trackChanged`）；事件名不能拿来调用。
+- 形如 `namespace.__method` 的名字属于组件自带的页面（例如托盘菜单），不是公开 API。

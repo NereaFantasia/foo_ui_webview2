@@ -1,5 +1,100 @@
 # Changelog
 
+## v2.0.0 (2026-10-06)
+
+Starting with this release, foo_ui_webview2 follows semantic versioning: the 2.x series will contain no further breaking changes. See [Versioning and compatibility](/reference/versioning).
+
+::: warning Breaking changes in this release
+- Calls with an undeclared parameter key (other than one starting with `_`), a value of the wrong type or a missing required value fail with `INVALID_PARAMS`, and `error` names the parameter. Previously, extra keys were ignored.
+- Only pages the host trusts can call the API. Calls from a popup at an `http(s)` URL its opener does not trust, a page that navigated away from a trusted origin, a `file://` page or, in development mode, a page not on the configured server fail at once with `ORIGIN_DENIED`, and such pages receive no events. See [Which pages can call the API](/reference/security#which-pages-can-call-the-api).
+- SDK list methods now resolve with the host's envelope and no longer throw on failure: `playlist.getAll`, `getTracks`, `getSelectedTracks` and `getAvailableColumns`, `output.getDevices`, the `system` and `config` lists, and `playcount.get`. Read lists from the corresponding field, or use `unwrap`.
+- Generated SDK `XxxResponse` types are now `XxxSuccess | ApiFailure`; check `success` before reading fields. Several event payload types are narrower, `artwork.getAvailableArtwork` requires `path`, `metadata.embedArtwork` requires `opts`, and `FbBaseElement._sub` accepts only names listed in `FBEventName`. These affect TypeScript builds only.
+- Without a host, SDK calls resolve with `{ success: false, code: 'NOT_SUPPORTED', error, details: { method } }` instead of `{ mock: true, method }`. To run a page against fake data, assign a stand-in to `window.fb2k`.
+- Track events carry the shared `Track` and no longer include `id` or `fullPath`; read `handle` instead. This affects `playback:trackChanged`, `playback:edited`, `playback:itemPlayed`, and the `track` and `nowPlaying` of `selection:changed`.
+- `library.getAlbumTracks` now takes the `name` (as `album`) and `albumArtist` of a `library.getAlbums` row; both are required, and `artist` is no longer accepted. The result reports `albumArtist` instead of `artist`.
+- Some calls now fail differently:
+  - On a locked playlist, `library.addToPlaylist`, `playback.playPath` and `playback.playPaths` fail with `LOCKED` (previously they reported success), and `queue.addPaths` fails with `LOCKED` (previously `OPERATION_FAILED`), with `playlist` and `isLocked` moved into `details`.
+  - Without an active playlist, `queue.add` fails with `NO_ACTIVE_ITEM` (previously `INVALID_INDEX`).
+  - `artwork.getByPlaylistItem` with a playlist index past the last playlist fails with `INVALID_INDEX` (previously `NOT_FOUND`).
+  - Negative rows and queue positions fail with `INVALID_PARAMS` (previously they were dropped, or failed with `INVALID_INDEX` in `playlist.reorder` and `reorderPlaylists`).
+  - A context menu whose `handles` are all unusable fails with `INVALID_PARAMS` instead of acting on the playing track, the selection or the playlist.
+- File drops are accepted only where the page calls `preventDefault()` in its `dragover` handler; elsewhere the cursor shows the forbidden sign and no `dnd:drop` is sent.
+- `lyrics.save` no longer accepts `config`, and `all` writes only `file` and `embedded`. Subsongs no longer read numbered or shared album lyrics files automatically; specify the file with `filename`. Existing lyrics are not deleted; see the [migration notes](/api/lyrics#migrating-older-callers).
+:::
+
+### New features
+
+- Playlists can be specified by GUID. `playlist.getAll`, `getActive`, `getPlaying`, `create`, `duplicate` and `createAutoplaylist` report `guid`, and every method that acts on one playlist, including `library.addToPlaylist`, `queue.add`, `queue.addPaths` and `artwork.getByPlaylistItem`, accepts `playlistGuid`. A playlist that has been removed fails with `NOT_FOUND`.
+- Responses that report a playlist by index also include its `playlistGuid`, and the `playlist:*` events carry GUIDs (`playlistGuid`, `guid`, `newGuid`, `guids`).
+- `playlist.setActive` and `playlist.rename` accept `playlistGuid`, `playlist.reorderPlaylists` accepts `newOrderGuids`, and the entries of `queue.setContents` and `queue.insertNext` accept `playlistGuid`.
+- New `playlist.getMatchingRows` (rows that match a query) and `playlist.getTracksAt` (tracks by row number).
+- SDK: methods that take a playlist accept a `PlaylistRef` (index or GUID); `<fb-playlist-view>` and `<fb-playlist-tabs>` identify playlists by GUID.
+- Position readings include `hostTime` (Unix milliseconds, on the same clock as `Date.now()`) in `playback.getPosition`, `playback.setPosition`, `playback:seeked`, `playback:timeHighRes` and `playback:stateChanged`. The SDK adds `PlaybackClock` to estimate the position between updates.
+- `playback:stateChanged` includes `canSeek`.
+- Local media (experimental; may change in later releases): new `media.getStreamUrl` and `media.getContainerInfo`; the SDK adds `MediaElementFollower` and `canPlay`. See [Media API](/api/media) and [Local media](/sdk/media).
+- PCM (experimental; may change in later releases): new `audio.decodePcm` decodes a track, or a range of it, into float32 PCM, and new `audio.subscribeStream` subscribes to the audio foobar2000 is playing. Samples arrive through shared buffers, which the SDK reads with `PcmBuffer` and `PcmStream`.
+- `audio.subscribeSpectrum` accepts `output: 'bins'` to deliver raw FFT bins, split into `left` and `right` with `channels: 'stereo'`. The SDK callback receives `SpectrumBinsFrame`.
+- `metadata.write` and `metadata.writeBatch` write multivalue tags from a string array; an empty array removes the tag.
+- Track rows include `albumArtists`, which the `fields` of `library.query`, `library.search` and `playlist.getTracks` can select.
+- `lyrics.get` and `lyrics.exists` accept `filename` to specify the lyrics file.
+- New `webview.getSource` reports where the page was loaded from.
+- New `window.setMaximizeButtonRegion` gives a page-drawn maximize button Snap layouts on Windows 11.
+- `window:stateChanged` includes `windowId`.
+- `file.write`, `fb.file.writeBinary` and `fb.file.writeDataUrl` accept `atomic: true`, which cannot be combined with `append`.
+- New `tray.setMenuZones` replaces the whole tray menu in one call.
+- `dnd:enter`, `dnd:drop` and `dnd.getPathsAsync` include `source`, which distinguishes drags from the page itself (`'self'`), from another window of the same foobar2000 (`'other-window'`) and from elsewhere (`'external'`).
+- Portable installations now keep their WebView2 data under their own profile folder, so multiple instances can run at the same time. The first start copies the web data from the shared folder; if another foobar2000 is still using that folder, the instance starts with empty web storage and the console shows both folders. Settings saved with `config.set` are not affected.
+- The documentation site splits the API reference into one page per namespace and adds an SDK type reference, a getting-started tutorial and an example of computing a spectrum from the live PCM stream.
+
+### Changes
+
+- `library.getAlbums` and `library.getAlbumTracks` share one grouping of the library, so opening the same album again no longer scans the library.
+- `library.getAlbumTracks` results include the album's `row`, and tracks are sorted by disc number, track number and library order.
+- `library.addToPlaylist`, `playlist.addHandles` and `playlist.insertTracks` check their paths as media reads; if any path is denied, the whole call fails with `PERMISSION_DENIED`.
+- `newOrder` in `playlist.reorder` and `playlist.reorderPlaylists` fails with `INVALID_PARAMS` if it lists an entry twice.
+- Track event payloads include `artists` and `rating`, and every field is always present.
+- `audio:dspPresetChanged` and `playlist:defaultFormatChanged` deliver an empty object instead of `null`.
+- A query the parser rejects fails with `INVALID_PARAMS` and `details.param: 'query'` in `playlist.getMatchingRows`, `library.search` and `library.query`.
+- Paths longer than 259 characters fail with `OPERATION_FAILED` and `details.value` 206; `file.copyAsync`, `file.moveAsync` and `file.deleteAsync` report the reason `path-too-long`. See [Path length](/api/file#path-length).
+- `file.read` and `file.write` include the Windows error code in `details.value` when the file cannot be opened.
+- Lyrics `filename` values follow Windows file name rules: periods inside a name are allowed, and a trailing period or space is refused.
+- Saving lyrics invalidates cached reads.
+- Band spectrum output is kept for compatibility with unchanged values, and the documentation lists it as legacy.
+- When the host rejects an `fb2k.invoke` request itself, the `Error` carries a `code` property (such as `METHOD_NOT_FOUND` or `INTERNAL_ERROR`).
+- In the SDK, `library.getAll` resolves with `OPERATION_FAILED` on failure or timeout instead of rejecting; `playlist.getTracksPage` is deprecated, as `getTracks` returns the same page.
+- A `|subsong:N` suffix whose index cannot be read is dropped, and the path refers to the first track.
+- `audio.generateWaveform` is removed (every call used to fail as not implemented); use `audio.generateFullWaveform`.
+
+### Fixes
+
+- Fixed an issue where popups and panels did not receive `menu:select`, `menu:dismiss` and `menu:valueChanged`; these events now go to the page that opened the menu.
+- Fixed an issue where a popup or panel that started a JIT session did not receive `jitQueue:*` events, so playback stopped after the first track.
+- Fixed an issue where panel pages did not receive `http:response` and `http:downloadComplete`.
+- Fixed an issue where panel pages did not receive `app:beforeQuit` with Default UI or Columns UI as the interface.
+- Fixed an issue where several panels in the same foobar2000 window were identified as the same panel.
+- Fixed an issue where `window.getMode` reported `windowId` as `main` in popups.
+- Fixed an issue where `<fb-titlebar>` and `<fb-window-controls>` in a popup followed the main window's maximize state.
+- Fixed an issue where a popup stayed on the browser's error page when the development server could not be reached.
+- Fixed an issue where a URL with a user name or password could pass for a trusted origin.
+- Fixed an issue where `LYRICIST` tags were read as lyrics.
+- Fixed an issue where `playback.playPaths` played paths it reported as skipped.
+- Fixed an issue where `playlist:addComplete` counted tracks refused by a locked playlist in `addedCount`.
+- Fixed an issue where `playback:stateChanged` reported `playing` when playback started paused.
+- Fixed an issue where text that is not valid UTF-8, such as an internet radio stream title, stopped an event from being sent; invalid bytes are now replaced with U+FFFD.
+- Fixed an issue where `metadb:changed` omitted the playback statistics rating for tracks without metadata.
+- Fixed an issue where `queue.get` reported a wrong playlist position after rows or playlists were removed or moved.
+- Fixed an issue where `selection.getViewingTrack` reported the active playlist without a row for a selection made outside it.
+- Fixed an issue where `playlist.playTrack` with `deferred: true` played the wrong row if playlists were added or removed before playback started.
+- Fixed an issue where the SMP layer's `RemovePlaylistSelection` with `crop` cleared the whole playlist when the selection could not be read.
+- Fixed an issue where `discovery.executeContextMenuByPath`, the `titleformat.eval` methods and `replaygain.get`, `clear` and `scan` could not target tracks after the first in a multi-track file (`|subsong:N`).
+- Fixed an issue where failed rows of `playcount.get` and `getBatch` did not echo the requested path.
+- Fixed an issue where `taskbar.flash` reported failure when the main window was in the background.
+- Fixed an issue where ports opened by a page stayed open after the page reloaded or navigated away; they now close with `port:disconnected`.
+- Fixed an issue where `fb2k.on` returned `undefined`; it now returns a function that removes the listener.
+- Fixed an issue where a drag-out refused by the host also cancelled the drag inside the page.
+- Fixed an issue where a long drag from Explorer could leave the drag image stuck and pages unresponsive.
+- Fixed an issue where a file dropped where the page did not handle it opened in a separate window.
+
 ## v1.14.0 (2026-10-06)
 
 ::: warning Breaking changes in this release

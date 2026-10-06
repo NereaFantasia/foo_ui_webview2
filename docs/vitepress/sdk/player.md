@@ -36,7 +36,7 @@
 
 ## play() 
 
-Starts playback. If playback is paused, it resumes. Returns a `BaseResponse`.
+Starts playback. If playback is paused, it resumes. Resolves with `{ success: true }` on success.
 
 ```javascript
 await fb.player.play();
@@ -44,7 +44,7 @@ await fb.player.play();
 
 ## pause() 
 
-Pauses playback. Returns a `BaseResponse`.
+Pauses playback. Resolves with `{ success: true }` on success.
 
 ```javascript
 await fb.player.pause();
@@ -52,7 +52,7 @@ await fb.player.pause();
 
 ## stop() 
 
-Stops playback. Returns a `BaseResponse`.
+Stops playback. Resolves with `{ success: true }` on success.
 
 ```javascript
 await fb.player.stop();
@@ -60,7 +60,7 @@ await fb.player.stop();
 
 ## next() / prev() 
 
-Starts the next or previous track. Both methods return a `BaseResponse`.
+Starts the next or previous track. Both resolve with `{ success: true }` on success.
 
 ```javascript
 await fb.player.next();
@@ -85,6 +85,7 @@ Returns the current linear volume, decibel volume, and mute state. `volume` is i
 
 ```javascript
 const info = await fb.player.getVolume();
+if (info.success === false) throw new Error(info.error);
 console.log(info.volume);   // 0-100
 console.log(info.volumeDb); // -100..0 dB
 console.log(info.muted);    // boolean
@@ -105,7 +106,7 @@ await fb.player.setVolume(0);  // Minimum linear volume
 
 ## mute() 
 
-Mutes playback. Use `fb.player.toggleMute()` when the desired operation is a toggle.
+Sets the mute state. The `muted` argument defaults to `true`; pass `false` to unmute. Use `fb.player.toggleMute()` to flip between the two.
 
 ```javascript
 await fb.player.mute();
@@ -117,12 +118,13 @@ Toggles play/pause through `playback.playOrPause`. The response includes the pos
 
 ```javascript
 const r = await fb.player.toggle();
+if (r.success === false) throw new Error(r.error);
 console.log(r.isPlaying ? 'Playing' : 'Paused');
 ```
 
 ## random() 
 
-Starts a random track. Returns a `BaseResponse`.
+Starts a random track. Resolves with `{ success: true }` on success.
 
 ```javascript
 await fb.player.random();
@@ -137,43 +139,30 @@ const state = await fb.player.getState();
 // state.state: 'playing' | 'paused' | 'stopped'
 ```
 
-## getCurrentTrack() 
+## getCurrentTrack()
 
-Returns the current `TrackInfo`. When nothing is loaded the host answers `{ success: true, found: false, playing: false }` (`PlaybackNoTrackResponse`) rather than `null`. `TrackInfo` never carries a `found` key, so `'found' in track` tells the two shapes apart.
+Returns `PlaybackGetCurrentTrackResponse`: `found` says whether a track is loaded, and `track`, the shared [Track](../reference/types.md#track) row, is present only then. The host never answers `null`.
 
-| Field | Type | Description |
-| --- | --- | --- |
-| `title`, `artist`, `album` | `string` | Core metadata |
-| `duration` | `number` | Duration in seconds |
-| `path` | `string` | Original foobar2000 path |
-| `absolutePath` | `string?` | Native absolute path when available |
-| `id` | `string?` | Canonical track identifier when available |
-| `subsong` | `number?` | Subsong index |
-| `albumArtist`, `genre`, `date` | `string?` | Optional metadata |
-| `trackNumber`, `discNumber` | `number?` | Optional track/disc numbers |
-| `fileSize` | `number?` | File size in bytes |
-| `bitrate` | `number?` | Bitrate in kbps |
-| `sampleRate` | `number?` | Sample rate in Hz |
-| `channels` | `number?` | Channel count |
-| `codec` | `string?` | Codec identifier |
-
-> Multi-value tags in `artist` / `albumArtist` / `genre` / `composer` (only the fields this API actually returns) are joined with `, ` in their original order, without de-duplication.
+> `artist`, `albumArtist` and `genre` join multi-value tags with `, ` in tag order; `artists` and `albumArtists` carry the atomic values behind `artist` and `albumArtist`.
 
 ```javascript
-const track = await fb.player.getCurrentTrack();
-if ('found' in track) {
+const result = await fb.player.getCurrentTrack();
+if (result.success === false) throw new Error(result.error);
+if (!result.found) {
     console.log('nothing is playing');
 } else {
-    console.log(`${track.artist} - ${track.title} [${track.codec} ${track.bitrate}kbps]`);
+    const t = result.track;
+    console.log(`${t.artist} - ${t.title} [${t.codec} ${t.bitrate}kbps]`);
 }
 ```
 
 ## getPosition() 
 
-Returns the current position and duration in seconds, plus path/subsong information when exposed by the host.
+Returns the current position and duration in seconds, plus path/subsong information when exposed by the host. `hostTime` is the system time the host read the position at, in Unix milliseconds on the clock `Date.now()` reads: while playing, `pos.position + (Date.now() - pos.hostTime) / 1000` is where playback is now. [`PlaybackClock`](#playbackclock) keeps that estimate up to date.
 
 ```javascript
 const pos = await fb.player.getPosition();
+if (pos.success === false) throw new Error(pos.error);
 console.log(`${pos.position} / ${pos.duration}`);
 // pos.subsong — subsong index
 // pos.path — current source path
@@ -181,7 +170,7 @@ console.log(`${pos.position} / ${pos.duration}`);
 
 ## getOrder() / setOrder(order) 
 
-Gets or sets the playback order. `setOrder()` accepts either a numeric host order or a canonical `PlaybackOrder` string.
+Gets or sets the playback order. `setOrder()` accepts either the numeric host order or a canonical `PlaybackOrder` name; the host refuses anything else and reports the order in effect (`order`, `orderName`).
 
 | Value | Name |
 | --- | --- |
@@ -195,7 +184,8 @@ Gets or sets the playback order. `setOrder()` accepts either a numeric host orde
 
 ```javascript
 const r = await fb.player.getOrder();
-console.log(r.order, r.name); // 0, 'Default'
+if (r.success === false) throw new Error(r.error);
+console.log(r.order, r.orderName); // 0, 'default'
 await fb.player.setOrder(2);  // Repeat track
 await fb.player.setOrder('shuffle-albums');
 ```
@@ -206,16 +196,18 @@ Gets or sets stop-after-current.
 
 ```javascript
 const r = await fb.player.getStopAfterCurrent();
+if (r.success === false) throw new Error(r.error);
 console.log(r.enabled); // false
 await fb.player.setStopAfterCurrent(true);
 ```
 
 ## getCurrentTrackIndex(includeTrackInfo?)
 
-Returns `{ index, track? }`. Pass `true` to request the optional `track` snapshot.
+Returns `{ found, playlist, index, track? }`; `playlist` and `index` are `null` when the playing track has no playlist location. Pass `true` to add the `track` row.
 
 ```javascript
 const r = await fb.player.getCurrentTrackIndex();
+if (r.success === false) throw new Error(r.error);
 console.log(`Current item index: ${r.index}`);
 ```
 
@@ -249,66 +241,79 @@ await fb.player.volumeUp();
 await fb.player.volumeDown();
 ```
 
-<!-- BEGIN AUTO-GENERATED SDK STUBS -->
+## getPlayingPlaylist()
 
-## Additional methods
+Signature: `fb.player.getPlayingPlaylist(): Promise<PlaybackGetPlayingPlaylistResponse>`
 
-> This block completes SDK method coverage and may later be expanded with richer examples and guidance.
-
-### getPlayingPlaylist()
-
-Signature: `fb.player.getPlayingPlaylist(): Promise<{ playlist: number }>`
-
-| Parameter | Type | Required | Description |
-| --- | --- | --- | --- |
-| - | - | - | No parameters |
-
-Returns the result of `playback.getPlayingPlaylist`.
+Reports the playlist playback was last started from: `found`, `playlist` (its index), `playlistGuid` and `name`. When none is known, `found` is `false`, `playlist` and `playlistGuid` are `null` and `name` is absent. foobar2000 keeps the pointer after playback stops, so a stopped instance that has played before still reports one.
 
 ```javascript
-const result = await fb.player.getPlayingPlaylist();
+const res = await fb.player.getPlayingPlaylist();
+if (res.success && res.found) console.log(`Playing from ${res.name}`);
 ```
 
-### playPause()
+## playPause()
 
-Signature: `fb.player.playPause(): Promise<PlaybackToggleResponse>`
+Signature: `fb.player.playPause(): Promise<PlaybackPlayPauseResponse>`
 
-| Parameter | Type | Required | Description |
-| --- | --- | --- | --- |
-| - | - | - | No parameters |
-
-Returns the result of `playback.playPause`.
+Toggles between playing and paused, and starts playback when stopped. It is the same operation as `toggle()` under another host name (`playback.playPause`). Resolves with `{ isPlaying }`, whether playback runs after the toggle.
 
 ```javascript
-const result = await fb.player.playPause();
+const res = await fb.player.playPause();
+if (res.success) console.log(res.isPlaying ? 'Playing' : 'Paused');
 ```
 
-### toggleMute()
+## toggleMute()
 
 Signature: `fb.player.toggleMute(): Promise<PlaybackToggleMuteResponse>`
 
-| Parameter | Type | Required | Description |
-| --- | --- | --- | --- |
-| - | - | - | No parameters |
-
-Returns the result of `playback.toggleMute`.
+Flips the mute state and resolves with `{ muted }`, whether output is muted afterwards. `playback:volumeChanged` follows, its payload carrying `muted`.
 
 ```javascript
-const result = await fb.player.toggleMute();
+const res = await fb.player.toggleMute();
+if (res.success) console.log(res.muted ? 'Muted' : 'Unmuted');
 ```
 
-### toggleStopAfterCurrent()
+## toggleStopAfterCurrent()
 
-Signature: `fb.player.toggleStopAfterCurrent(): Promise<PlaybackStopAfterCurrentState>`
+Signature: `fb.player.toggleStopAfterCurrent(): Promise<PlaybackToggleStopAfterCurrentResponse>`
 
-| Parameter | Type | Required | Description |
-| --- | --- | --- | --- |
-| - | - | - | No parameters |
-
-Returns the result of `playback.toggleStopAfterCurrent`.
+Flips "stop after current" and resolves with `{ enabled }`, the value afterwards. The change broadcasts `playback:stopAfterCurrentChanged` with `{ enabled }`.
 
 ```javascript
-const result = await fb.player.toggleStopAfterCurrent();
+const res = await fb.player.toggleStopAfterCurrent();
+if (res.success) console.log(res.enabled ? 'Stops after this track' : 'Keeps playing');
 ```
 
-<!-- END AUTO-GENERATED SDK STUBS -->
+## PlaybackClock
+
+`import { PlaybackClock } from 'foo-webview-sdk/bridge'`, or `new fb.PlaybackClock()` with the `<script>` bundle.
+
+Estimates where foobar2000 is in the playing track at any moment, for things that move with the audio between position updates: a progress bar, word-timed lyrics, a muted `<video>` that follows playback. The host stamps every position with `hostTime`, the system time it read the position at, so the clock knows how old a position is when it arrives and moves on from there with `performance.now()`.
+
+- It follows `playback:timeHighRes`, `playback:seeked`, `playback:stateChanged` and `playback:trackChanged`, and reads `playback.getState` and `playback.getPosition` when created, when the page becomes visible again, and on `resync()`. `ready` resolves once the first read settled and never rejects.
+- `resync()` ignores read failures by default. Use `resync({ rejectOnFailure: true })` when playback must wait for a fresh snapshot: both calls must succeed before either answer is applied. A host failure rejects with `ApiCallError`, preserving its `code`; bridge failures also reject. An overlapping read that prevents a complete fresh snapshot can reject the strict request, so handle failure before resuming media.
+- `position(at?)` is the estimate in seconds at `at` on the `performance.now()` scale, now when omitted, kept within `duration` when the length is known. It does not move while `state` is `paused`, and is `0` while `stopped`.
+- An update that disagrees with the estimate by a little moves it by a quarter of the difference, so the position does not stutter on the host's reading jitter. A difference above `resyncThresholdSeconds` (0.25 by default) replaces the estimate. Right after a seek, updates that still carry the old position are ignored.
+- `onChange(listener)` reports every jump: `start` for the first read, `seek`, `state`, `track`, and `resync` for a replaced estimate or a `resync()` read. A muted video that follows playback seeks on these and otherwise only adjusts its rate.
+- Updates older than `maxDeliveryDelayMs` (1000 by default), or that look older or newer than possible because the system time was changed in between, are ignored. With a host that does not send `hostTime`, updates count as read when they arrive, so the estimate trails the audio by the delivery delay.
+- Call `dispose()` when done.
+
+```javascript
+import { PlaybackClock } from 'foo-webview-sdk/bridge';
+
+const clock = new PlaybackClock();
+await clock.ready;
+const bar = document.querySelector('#progress');
+const draw = () => {
+    if (bar instanceof HTMLElement && clock.duration > 0) {
+        bar.style.width = `${(clock.position() / clock.duration) * 100}%`;
+    }
+    requestAnimationFrame(draw);
+};
+requestAnimationFrame(draw);
+const off = clock.onChange((change) => console.log(change.reason, change.position));
+// later
+off();
+clock.dispose();
+```

@@ -5,12 +5,13 @@ Spider Monkey Panel (SMP) compatibility layer for running SMP-style scripts insi
 ## Quick start
 
 ```html
-<!-- 1. bridge.js must load first -->
-<script src="bridge.js"></script>
-<!-- 2. smp-compat.js loads the wrappers -->
-<script src="smp-compat.js"></script>
+<!-- 1. The bridge bundle loads first and sets window.fb -->
+<script src="bridge.global.js"></script>
+<!-- 2. The SMP layer bootstraps on top of window.fb -->
+<script src="smp-compat.global.js"></script>
 
-<script>
+<!-- A module script, so it can await at the top level -->
+<script type="module">
   await window.smp.ready;
   console.log('IsPlaying:', fb.IsPlaying);
   console.log('ActivePlaylist:', plman.ActivePlaylist);
@@ -298,8 +299,8 @@ smp.dispose();
 | `fb.GetFocusItem(force)` | `force=true` fallback not implemented | Returns `null` when no focus item exists |
 | `plman.FindOrCreatePlaylist(name, unlocked)` | `unlocked` ignored | Does not auto-unlock after create |
 | `plman.CreateAutoPlaylist(idx, ...)` | position arg ignored | Always appends |
-| `plman.AddItemToPlaybackQueue(handle)` | path-based enqueue | Subsong fidelity may be lost |
-| `fb.RunContextCommandWithMetadb(cmd, handle)` | `handles` ignored | Backend uses default context |
+| `plman.AddItemToPlaybackQueue(handle)` | path-based enqueue | Enqueues through `queue.addPaths`; the path keeps its `\|subsong:N` suffix, so the queued entry is the same subsong |
+| `fb.RunContextCommandWithMetadb(cmd, handle)` | full menu path required, no fallback | The menu is built for the given tracks; `cmd` is matched case-insensitively against the full slash-separated path from the menu root, and the first match runs. Returns `false` when nothing matches or the menu cannot be built or run; it never falls back to the selection or the playing track |
 | `window.NotifyOthers(name, info)` | no automatic `on_notify_data` | Receivers should use `fb2k.on('window:message', ...)` |
 | `utils.ColourPicker()` | no native picker | Returns the provided default |
 | All methods | Promise-based where C++ is async | Unlike original SMP sync APIs |
@@ -328,5 +329,5 @@ fb.onSMP('on_playback_new_track', async (track) => {
 ## Related pages
 
 - [SDK overview](/sdk/overview)
-- [Event reference](/reference/events)
+- [Events API](/api/events)
 - [API events](/api/events)

@@ -1,40 +1,66 @@
-# fb.keyboard keyboard
+# fb.keyboard 热键与快捷键
 
-本页是 `fb.keyboard` 的 SDK 视角文档入口。
+`fb.keyboard` 注册热键和快捷键，并列出当前已注册的条目。热键是全局注册的，按下时通过 `keyboard:hotkey` 报告；快捷键是登记在 WebView 内、挂在某个动作名下的按键组合。
 
-<!-- BEGIN AUTO-GENERATED SDK STUBS -->
+## getRegisteredHotkeys()
 
-## 其余方法
+签名：`fb.keyboard.getRegisteredHotkeys(): Promise<KeyboardGetRegisteredHotkeysResponse>`
 
-### getRegisteredHotkeys()
-
-封装 `keyboard.getRegisteredHotkeys`。参数与返回类型以 `foo-webview-sdk` 的 TypeScript 声明为准（IDE 悬浮提示或包内 `bridge.d.ts`），行为契约见 API 文档对应条目。
+返回 `{ success, hotkeys }`。每个 `HotkeyInfo` 包含 `id`、`key`、`action` 与 `global`。先列热键，后列快捷键；快捷键的 `id` 为 `0`，`global` 为 `false`。
 
 ```javascript
-await fb.keyboard.getRegisteredHotkeys(/* 参数见 TypeScript 声明 */);
+const res = await fb.keyboard.getRegisteredHotkeys();
+if (res.success === false) throw new Error(res.error);
+const { hotkeys } = res;
 ```
 
-### registerShortcut()
+## registerShortcut(key, action)
 
-封装 `keyboard.registerShortcut`。参数与返回类型以 `foo-webview-sdk` 的 TypeScript 声明为准（IDE 悬浮提示或包内 `bridge.d.ts`），行为契约见 API 文档对应条目。
+签名：`fb.keyboard.registerShortcut(key: string, action: string): Promise<KeyboardRegisterShortcutResponse>`
+
+| 参数 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `key` | `string` | 是 | 快捷键的按键组合 |
+| `action` | `string` | 是 | 随快捷键存储的动作名 |
+
+把按键组合登记为 WebView 内的快捷键，挂在给定的动作名下。和 `registerHotkey()` 不同，它不接受选项对象，也不做全局注册。`getRegisteredHotkeys()` 以 `id` 为 `0` 列出它，`unregisterHotkey({ key })` 移除它。
 
 ```javascript
-await fb.keyboard.registerShortcut(/* 参数见 TypeScript 声明 */);
+const result = await fb.keyboard.registerShortcut('Space', 'toggle');
 ```
 
-### unregisterHotkey()
+## unregisterHotkey(options)
 
-封装 `keyboard.unregisterHotkey`。参数与返回类型以 `foo-webview-sdk` 的 TypeScript 声明为准（IDE 悬浮提示或包内 `bridge.d.ts`），行为契约见 API 文档对应条目。
+签名：`fb.keyboard.unregisterHotkey(options: KeyboardUnregisterHotkeyParams): Promise<KeyboardUnregisterHotkeyResponse>`
+
+| 参数 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `options.key` | `string` | 否 | 注册时用的按键组合 |
+| `options.id` | `number` | 否 | 注册时返回的数字 id |
+
+移除热键或快捷键。`id` 和 `key` 必须恰好给一个：`id` 按 `registerHotkey()` 返回的数字移除热键，`key` 按注册时用的字符串移除热键或快捷键。
 
 ```javascript
-await fb.keyboard.unregisterHotkey(/* 参数见 TypeScript 声明 */);
+const result = await fb.keyboard.unregisterHotkey({
+	key: 'Ctrl+Shift+P',
+});
 ```
-
-<!-- END AUTO-GENERATED SDK STUBS -->
 
 ## 注册热键
 
-`fb.keyboard.registerHotkey(key, action, options?)` 调用 `keyboard.registerHotkey`。`options` 的类型是 `Omit<KeyboardRegisterHotkeyParams, 'key' | 'action'>`，可设置 `global`。当前 facade 将可选响应字段 `id` 标为 `string`，而 `getRegisteredHotkeys()` 中每个 `HotkeyInfo.id` 的类型是 `number`。
+签名：`fb.keyboard.registerHotkey(key: string, action: string, options?: Omit<KeyboardRegisterHotkeyParams, 'key' | 'action'>): Promise<KeyboardRegisterHotkeyResponse>`
+
+| 参数 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `key` | `string` | 是 | 要注册的按键组合 |
+| `action` | `string` | 是 | 随 `keyboard:hotkey` 载荷报回的动作名 |
+| `options.global` | `boolean` | 否 | 记录在条目上，由 `getRegisteredHotkeys()` 报出；默认 `true` |
+
+`fb.keyboard.registerHotkey(key, action, options?)` 调用 `keyboard.registerHotkey` 注册全局热键。`options` 的类型是 `Omit<KeyboardRegisterHotkeyParams, 'key' | 'action'>`，可设置 `global`。成功时响应带 `id`，是从 `1` 起的数字；`unregisterHotkey({ id })` 接收它，`getRegisteredHotkeys()` 里的 `HotkeyInfo.id` 就是它。
+
+热键注册在主窗口上，不管 `global` 取什么值都是全局的。别的程序已占用的组合 Windows 会拒绝。
+
+按键组合由修饰键 `Ctrl`（或 `Control`）、`Alt`、`Shift`、`Win` 用 `+` 连到键名组成。键名可以是字母、数字、`F1` 到 `F12`、`Space`、`Enter`、`Tab`、`Escape`、`Backspace`、`Delete`、`Insert`、`Home`、`End`、`PageUp`、`PageDown`、方向键、媒体键 `PlayPause`、`MediaStop`、`NextTrack`、`PrevTrack`、`VolumeUp`、`VolumeDown`、`VolumeMute`，或标点键。不区分大小写。
 
 ```javascript
 const result = await fb.keyboard.registerHotkey(
@@ -47,6 +73,8 @@ const result = await fb.keyboard.registerHotkey(
 ## keyboard:hotkey
 
 已注册热键触发时，`keyboard:hotkey` 携带含 `id`、`key` 与 `action` 的 `KeyboardHotkeyPayload`。
+
+事件发给注册热键的窗口。该窗口关闭后热键仍然有效，之后的按键改发给主窗口的页面。
 
 ```javascript
 const off = fb.on('keyboard:hotkey', ({ id, key, action }) => {

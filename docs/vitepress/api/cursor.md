@@ -1,17 +1,24 @@
 # Cursor API
 
-English API reference for the `cursor` family.
-
-This page is the primary owner for the namespaces listed below. Method names, parameter keys, and return fields follow the C++ `RegisterApi` handlers.
+Methods of the `cursor` namespace.
 
 ## cursor
 
 ### cursor.isHidden
 
+<!-- api-schema:begin cursor.isHidden -->
+Report whether the calling window's cursor is hidden; `false` when the calling window cannot be resolved.
 
-_No parameters._
+This method takes no parameters.
 
-**Returns**: `{"hidden":"..."}`
+**Returns**
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `hidden` | `boolean` | Whether the cursor is hidden. |
+
+`success` is `true` on success. On failure the response is `{ success: false, error, code }`; see [Error codes](../reference/errors.md) for `code`.
+<!-- api-schema:end -->
 
 ```js
 const result = await fb2k.invoke('cursor.isHidden');
@@ -19,12 +26,21 @@ const result = await fb2k.invoke('cursor.isHidden');
 
 ### cursor.setHidden
 
+<!-- api-schema:begin cursor.setHidden -->
+Hide or restore the client-area cursor of the calling window. Only a call that changes the state announces `cursor:hiddenChanged` to that window; repeating the same value reports `changed: false`. Each window keeps its own state.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `hidden` | `boolean` | Yes | `true` hides the client-area cursor, `false` restores it. |
+| `hidden` | `boolean` | Yes | `true` hides the cursor, `false` restores it. |
 
-**Returns**: `{"changed":"...","error":"...","success":true}`
+**Returns**
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `changed` | `boolean` | Whether the state changed; `false` when it was already as requested. |
+
+`success` is `true` on success. On failure the response is `{ success: false, error, code }`; see [Error codes](../reference/errors.md) for `code`.
+<!-- api-schema:end -->
 
 ```js
 await fb2k.invoke('cursor.setHidden', { hidden: true });
@@ -46,7 +62,9 @@ for the element-level visual rule and this API for idle-time behavior.
 import { fb } from 'foo-webview-sdk/bridge';
 
 await fb.cursor.setHidden(true);
-const { hidden } = await fb.cursor.isHidden();
+const res = await fb.cursor.isHidden();
+if (res.success === false) throw new Error(res.error);
+const { hidden } = res;
 fb.on('cursor:hiddenChanged', ({ hidden: next }) => {
 	document.documentElement.classList.toggle('cursor-hidden', next);
 });

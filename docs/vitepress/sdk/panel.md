@@ -2,29 +2,21 @@
 
 `fb.panel` reads and updates configuration for the current WebView panel.
 
-<!-- BEGIN AUTO-GENERATED SDK STUBS -->
-
-## Additional methods
-
-> This block maintains SDK-facing method coverage and may be expanded with complete examples and best practices.
-
-### getConfig()
+## getConfig()
 
 Signature: `fb.panel.getConfig(): Promise<PanelGetConfigResponse>`
 
-| Parameter | Type | Required | Description |
-| --- | --- | --- | --- |
-| None | — | — | This method takes no arguments. |
-
-Returns a response envelope whose optional `config` field is a `PanelConfigShape`. It can include `panelName`, `templateName`, `edgeStyle`, `urlOverride`, `transparentBackground`, `grabFocus`, `enableDragDrop`, and `enableDevTools`.
+The response's `config` field is a `PanelConfig` (also exported as `PanelConfigShape`) with `panelName`, `templateName`, `edgeStyle`, `urlOverride`, `transparentBackground`, `grabFocus`, `enableDragDrop`, and `enableDevTools`. On a standalone window, which has no panel, the call fails with `code: 'NOT_FOUND'`.
 
 ```javascript
-const { config } = await fb.panel.getConfig();
+const res = await fb.panel.getConfig();
+if (res.success === false) throw new Error(res.error);
+const { config } = res;
 ```
 
-### setConfig()
+## setConfig(options)
 
-Signature: `fb.panel.setConfig(options: PanelSetConfigParams): Promise<BaseResponse & { changed?: boolean }>`
+Signature: `fb.panel.setConfig(options: PanelSetConfigParams): Promise<PanelSetConfigResponse>`
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
@@ -33,7 +25,7 @@ Signature: `fb.panel.setConfig(options: PanelSetConfigParams): Promise<BaseRespo
 | `options.grabFocus` | `boolean` | No | Whether the panel takes focus. |
 | `options.enableDragDrop` | `boolean` | No | Whether drag-and-drop is enabled. |
 
-Returns the `panel.setConfig` response envelope. `changed` is present when reported by the host.
+Only these four keys can be set from a page; omitted keys keep their value, and the other `PanelConfig` fields change only through the panel's settings dialog. The response's `changed` tells whether any field actually changed.
 
 ```javascript
 const result = await fb.panel.setConfig({
@@ -42,8 +34,6 @@ const result = await fb.panel.setConfig({
 	enableDragDrop: true,
 });
 ```
-
-<!-- END AUTO-GENERATED SDK STUBS -->
 
 ## Events
 

@@ -2,18 +2,24 @@
 
 ## ping()
 
-Tests the bridge connection. Resolves to `{ pong: boolean }` from `test.ping`.
+Tests the bridge connection. Resolves to `{ pong, timestamp }` from `test.ping`; `timestamp` is the host's Unix time in seconds.
 
 ```javascript
-const r = await fb.utils.ping(); // { pong: true }
+const { pong } = await fb.utils.ping(); // pong === true
 ```
 
 ## echo(message)
 
-Echoes a message through `test.echo` and resolves to `{ message: string }`.
+Echoes a message through `test.echo`. The message comes back as `echo`; `input` holds the parameters the host received.
+
+Signature: `fb.utils.echo(message: string): Promise<TestEchoResponse>`
+
+| Parameter | Type | Description |
+| --- | --- | --- |
+| message | string | Message sent to `test.echo` as `{ message }` |
 
 ```javascript
-const { message } = await fb.utils.echo('Hello');
+const { echo } = await fb.utils.echo('Hello'); // echo === 'Hello'
 ```
 
 ## formatTitle(pattern, path?)
@@ -28,7 +34,9 @@ Evaluates a foobar2000 Title Formatting expression through `titleformat.eval`.
 The SDK preserves the host response envelope `{ result: string }`; it does not unwrap the string.
 
 ```javascript
-const { result } = await fb.utils.formatTitle('%artist% - %title%');
+const res = await fb.utils.formatTitle('%artist% - %title%');
+if (res.success === false) throw new Error(res.error);
+const { result } = res;
 console.log(result); // "The Beatles - Let It Be"
 
 // Evaluate against a specific track
@@ -47,25 +55,3 @@ Reads file metadata through `metadata.read` and returns its structured response.
 const info = await fb.utils.getFileInfo('E:\\Music\\song.flac');
 // {success, path, tags: {TITLE, ARTIST, ...}, info: {duration, bitrate, sampleRate, channels, codec}}
 ```
-
-<!-- BEGIN AUTO-GENERATED SDK STUBS -->
-
-## Additional methods
-
-> This block records SDK method coverage and may later be expanded with complete examples and best practices.
-
-### echo()
-
-Signature: `fb.utils.echo(message: string): Promise<{ message: string }>`
-
-| Parameter | Type | Required | Description |
-| --- | --- | --- | --- |
-| message | string | Yes | Message forwarded as `{ message }` to `test.echo` |
-
-Returns the result of the underlying `test.echo` call.
-
-```javascript
-const result = await fb.utils.echo('Hello');
-```
-
-<!-- END AUTO-GENERATED SDK STUBS -->

@@ -14,6 +14,25 @@ Windows 把拖入的文件列表交给原生窗口而非页面，浏览器引擎
 宿主把每次拖放记为一个带 id 的**会话**，并在任何 `dnd:*` 监听器运行之前将其
 发布到顶层文档的 `window.__fbDndSession`。
 
+## 接受放下
+
+页面按 HTML5 的方式接受放下：在接收放下的元素上，`dragover` 里调
+`preventDefault()`。没有处理函数这样做的地方，宿主替页面拒收：光标显示禁止，松手
+什么也不放下，也不发 `dnd:drop`，浏览器也不会自己打开拖进来的文件。文本框保留默认
+的文本放下。
+
+拖动进入窗口后的头半秒，页面还没答复，光标先显示复制，免得刚进来时闪成禁止；这段
+时间里松手的放下照常送达。之后光标随指针移动跟着页面的答复变。
+
+```javascript
+document.getElementById('playlist')?.addEventListener('dragover', (event) => {
+    if (fb.dnd.hasFiles()) {
+        event.preventDefault(); // 这里接受；其他地方都拒收
+        if (event.dataTransfer) event.dataTransfer.dropEffect = 'copy';
+    }
+});
+```
+
 ## 读取路径
 
 三种方式，可靠性递减。
@@ -42,9 +61,11 @@ Windows 把拖入的文件列表交给原生窗口而非页面，浏览器引擎
 ```javascript
 document.addEventListener('drop', async (event) => {
     event.preventDefault();
-    const { paths } = await fb.dnd.getPathsAsync();
+    const res = await fb.dnd.getPathsAsync();
+    if (res.success === false) throw new Error(res.error);
+    const { paths } = res;
     if (paths.length) {
-        await fb.playlist.addPaths(paths);
+        await fb2k.invoke('playlist.addPaths', { paths });
     }
 });
 ```
@@ -68,9 +89,32 @@ fb.on('dnd:drop', (data) => {
 | `resolvedPaths` | `(string \| null)[]` | 对应下标的快捷方式目标，或 `null`。长度与 `paths` 恒相等，详见「快捷方式目标」一节。 |
 | `x`、`y` | `number` | 光标位置，客户区物理像素——除以 `devicePixelRatio` 得 CSS 像素。 |
 | `keyState` | `number` | drop 时刻的 Win32 `MK_*` 修饰键 / 鼠标键掩码。 |
+| `source` | `'self' \| 'other-window' \| 'external'` | 拖动从哪里来，见「拖动的来源」一节。 |
 
-`dnd:enter` 携带 `sessionId`、`paths`、`resolvedPaths`、`hasFiles` 与同样的光标
-字段；`dnd:leave` 仅携带 `sessionId`。
+`dnd:enter` 携带 `sessionId`、`paths`、`resolvedPaths`、`hasFiles`、`source` 与同样
+的光标字段；`dnd:leave` 仅携带 `sessionId`。
+
+### 拖动的来源
+
+`dnd:enter`、`dnd:drop` 与 `getPathsAsync` 里的 `source` 区分「页面自己拖出去的」和
+「从外面拖进来的文件」。页面已经用 HTML5 事件处理了自己的拖动时，可以据此忽略宿主
+送来的同一批文件：
+
+| 值 | 拖动从哪里开始 |
+| --- | --- |
+| `'self'` | 本窗口的页面，带不带 drag token 都算 |
+| `'other-window'` | 同一个 foobar2000 的另一个窗口：主窗口或 popup |
+| `'external'` | 其余地方：资源管理器、别的程序、另一个 foobar2000 进程，或 Default UI / Columns UI 面板 |
+
+宿主给它承载的窗口里开始的每次拖动加一个标记，拖动进入窗口时再读回来。任何程序都能
+仿造这个标记，所以 `source` 只用来决定怎样处理放下，不要当作安全检查。
+
+```javascript
+fb.on('dnd:drop', ({ source, paths }) => {
+    if (source === 'self') return; // 页面自己的 drop 处理函数已经处理了
+    void fb.queue.addPaths(paths);
+});
+```
 
 ### getPaths()
 
@@ -142,7 +186,7 @@ const targets = fb.dnd.getResolvedPaths();
 
 // 快捷方式播放其目标，其他条目播放自身。
 const playable = paths.map((path, i) => targets[i] ?? path);
-await fb.playlist.addPaths(playable);
+await fb2k.invoke('playlist.addPaths', { paths: playable });
 ```
 
 同步读取快照，因此与 `getPaths()` 有同样的时序注意事项。可靠等价物是
@@ -162,7 +206,7 @@ await fb.playlist.addPaths(playable);
 
 ### getCapabilities()
 
-签名：`fb.dnd.getCapabilities(): Promise<DndCapabilities>`
+签名：`fb.dnd.getCapabilities(): Promise<DndGetCapabilitiesResponse>`
 
 本窗口的拖放集成当前能提供什么。它在窗口生命周期内并非恒定：导航到不同 origin
 会收回路径访问权，同时保留 HTML5 拖放事件。
@@ -178,6 +222,7 @@ await fb.playlist.addPaths(playable);
 
 ```javascript
 const caps = await fb.dnd.getCapabilities();
+if (caps.success === false) throw new Error(caps.error);
 if (!caps.paths) {
     console.warn('paths unavailable:', caps.pathsUnavailableReason);
 }
@@ -233,7 +278,7 @@ fb.on('dnd:capabilitiesChanged', (caps) => {
 
 ### prepareDrag(paths)
 
-签名：`fb.dnd.prepareDrag(paths: string[]): Promise<DndDragToken>`
+签名：`fb.dnd.prepareDrag(paths: string[]): Promise<DndPrepareDragResponse>`
 
 校验路径，返回供本窗口下一次拖出使用的 token。
 
@@ -259,7 +304,8 @@ token 规则：
 - 绑定请求它的**窗口**
 - 同一窗口下一次 `prepareDrag` 成功后，旧 token **失效**，即使尚未过期；只有最近一枚有效
 
-违反任一规则的 token 在拖放开始时被拒绝，`dnd:dragEnded` 报 `PERMISSION_DENIED`。
+违反任一规则的 token 在拖放开始时被拒绝，`dnd:dragEnded` 报 `PERMISSION_DENIED`，
+拖放本身作为不带文件的普通网页拖放继续进行。
 
 ::: tip 落到目标的永远是物理文件
 cue 或多曲目容器里的一条曲目拖走的是整个容器文件；`archive://` / `unpack://` 项
@@ -301,10 +347,10 @@ cue 或多曲目容器里的一条曲目拖走的是整个容器文件；`archiv
 
 ::: danger `effectAllowed` 必须恰为 `'copy'`
 文件列表挂上之后，**移动**是由放置目标执行的，不是页面或宿主：当目的地与源在同一
-分区时，资源管理器默认就是移动。因此宿主拒绝一切允许效果比 copy 更宽的拖放
-（`dnd:dragEnded` 报 `INVALID_PARAMS`），这次拖放什么都不会发生。不设
-`effectAllowed` 等于 `copy | move | link`，同样被拒。`applyDragToken` 之后不要再
-改它。
+分区时，资源管理器默认就是移动。因此允许效果比 copy 更宽的拖放，宿主一律不挂文件
+（`dnd:dragEnded` 报 `INVALID_PARAMS`），这次拖放只剩页面内的普通拖放。不设
+`effectAllowed` 等于 `copy | move | link`，同样挂不上文件。`applyDragToken` 之后
+不要再改它。
 :::
 
 拖出期间 `text/plain` 槽位不能再放页面文本。宿主在拖放离开之前把它置空，因此以
@@ -334,8 +380,9 @@ trackEl.addEventListener('dragend', (e) => {
 
 签名：`fb.dnd.onDragEnded(handler: (payload: DndDragEndedPayload) => void): () => void`
 
-订阅 `dnd:dragEnded`。该事件**只在宿主拒绝**一次拖出时触发，时机是拖放开始的
-那一刻。返回取消订阅函数。
+订阅 `dnd:dragEnded`。该事件**只在宿主拒绝**给一次拖出挂文件时触发，时机是拖放
+开始的那一刻。拖放本身不会因此取消，而是作为不带文件的普通网页拖放继续进行，页面内
+的放下照常有效；只有 token 文本抹不掉的极少数情况才会取消。返回取消订阅函数。
 
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
@@ -349,7 +396,7 @@ trackEl.addEventListener('dragend', (e) => {
 宿主接受 token 之后**没有事件**。拖放像任何网页拖放一样进行，结局在元素自己的
 `dragend` 里：`dataTransfer.dropEffect` 为 `'copy'` 表示目标接收了文件，为
 `'none'` 表示取消或目标拒收。收尾逻辑放在 `dragend`；`dnd:dragEnded` 用来告诉
-用户（或你自己）为什么一次拖动什么都没发生。
+用户（或你自己）为什么一次拖动没有带上文件。
 :::
 
 ```javascript
@@ -361,8 +408,9 @@ const off = fb.dnd.onDragEnded(({ code, error }) => {
 
 ### 拖出期间会发生什么
 
-- 带 token 的拖放要么被接手（文件已挂上），要么被拒绝并吞掉（无拖影，目标处什么
-  都不发生）。它**绝不会**退化成把 token 文本拖出去。
+- 带 token 的拖放要么被接手（文件已挂上），要么退回不带文件的普通网页拖放：页面内
+  的放下照常有效，拖到资源管理器既不产生文件，也不带出 token 文本。token 文本抹不掉
+  时这次拖放被取消。它**绝不会**把 token 文本拖出去。
 - **不带** token 的拖放——页面拖自己的文字、图片、链接——不受任何影响，也不会产生
   `dnd:dragEnded`。
 - 拖放进行期间，宿主窗口等待放置目标响应，与从 WebView 拖出的任何 HTML5 拖放完全
@@ -384,5 +432,5 @@ const off = fb.dnd.onDragEnded(({ code, error }) => {
 
 ```javascript
 const r = await fb.dnd.startDrag('files');
-console.log(r.success, r.code); // false 'NOT_SUPPORTED'
+if (r.success === false) console.log(r.code); // 'NOT_SUPPORTED'
 ```

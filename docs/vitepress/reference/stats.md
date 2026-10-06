@@ -3,7 +3,7 @@
 Cross-page reference for playcount and rating surfaces. Primary owners remain:
 
 - [Playcount API](/api/playcount)
-- [Metadata / Rating API](/api/metadata)
+- [Rating API](/api/rating)
 
 ## rating.set
 

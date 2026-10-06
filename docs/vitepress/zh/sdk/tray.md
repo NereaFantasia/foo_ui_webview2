@@ -1,123 +1,163 @@
 # fb.tray 系统托盘
 
-本页是 `fb.tray` 的 SDK 视角文档入口。
+`fb.tray` 控制整个应用共用的托盘图标、通知、托盘相关的窗口行为，以及原生或由 WebView 绘制的右键菜单。
 
 `create()` / `setIcon()` 的顶层 `icon` 只接受裸 Base64 编码的 `.ico`
 文件字节，不带 `data:` 或 `base64:` 前缀。PNG、JPEG、SVG、Data URL 或
 无效 Base64 会回退到 foobar2000 主图标。`TrayMenuItem.icon` 是当前不渲染
 的保留字段；WebView 菜单项图标请使用 `iconSvg`。
 
-<!-- BEGIN AUTO-GENERATED SDK STUBS -->
+## appendMenuItems(items, position?)
 
-## 其余方法
+签名：`fb.tray.appendMenuItems(items: TrayMenuItem[], position?: TrayMenuPosition): Promise<TrayAppendMenuItemsResponse>`
 
-### appendMenuItems()
-
-封装 `tray.appendMenuItems`。参数与返回类型以 `foo-webview-sdk` 的 TypeScript 声明为准（IDE 悬浮提示或包内 `bridge.d.ts`），行为契约见 API 文档对应条目。
+把 `items` 追加到 `position` 指定的分区，省略时为 `'top'`。
 
 ```javascript
-await fb.tray.appendMenuItems(/* 参数见 TypeScript 声明 */);
+const result = await fb.tray.appendMenuItems([{ id: 'settings', label: '设置' }]);
 ```
 
-### clearMenuItems()
+## clearMenuItems(position?)
 
-封装 `tray.clearMenuItems`。参数与返回类型以 `foo-webview-sdk` 的 TypeScript 声明为准（IDE 悬浮提示或包内 `bridge.d.ts`），行为契约见 API 文档对应条目。
+签名：`fb.tray.clearMenuItems(position?: TrayMenuPosition): Promise<TrayClearMenuItemsResponse>`
+
+清空 `position` 指定的分区；省略时清空全部分区。
 
 ```javascript
-await fb.tray.clearMenuItems(/* 参数见 TypeScript 声明 */);
+const result = await fb.tray.clearMenuItems();
 ```
 
-### create()
+## create(opts?)
 
-封装 `tray.create`。参数与返回类型以 `foo-webview-sdk` 的 TypeScript 声明为准（IDE 悬浮提示或包内 `bridge.d.ts`），行为契约见 API 文档对应条目。
+签名：`fb.tray.create(opts?: { icon?: string | null; tooltip?: string }): Promise<TrayCreateResponse>`
+
+创建托盘图标，须先于其他 `tray.*` 方法调用。`opts.icon` 是初始图标（格式见页首），`opts.tooltip` 是提示文字。
 
 ```javascript
-await fb.tray.create(/* 参数见 TypeScript 声明 */);
+const result = await fb.tray.create({ tooltip: 'foobar2000' });
 ```
 
-### destroy()
+## destroy()
 
-封装 `tray.destroy`。参数与返回类型以 `foo-webview-sdk` 的 TypeScript 声明为准（IDE 悬浮提示或包内 `bridge.d.ts`），行为契约见 API 文档对应条目。
+签名：`fb.tray.destroy(): Promise<TrayDestroyResponse>`
+
+移除托盘图标。
 
 ```javascript
-await fb.tray.destroy(/* 参数见 TypeScript 声明 */);
+const result = await fb.tray.destroy();
 ```
 
-### getMenuItems()
+## getMenuItems()
 
-封装 `tray.getMenuItems`。参数与返回类型以 `foo-webview-sdk` 的 TypeScript 声明为准（IDE 悬浮提示或包内 `bridge.d.ts`），行为契约见 API 文档对应条目。
+签名：`fb.tray.getMenuItems(): Promise<TrayGetMenuItemsResponse>`
+
+按 `top -> playback -> bottom` 顺序返回展平后的用户自定义菜单项，不含运行时注入的播放与系统项。
 
 ```javascript
-await fb.tray.getMenuItems(/* 参数见 TypeScript 声明 */);
+const result = await fb.tray.getMenuItems();
 ```
 
-### isVisible()
+## isVisible()
 
-封装 `tray.isVisible`。参数与返回类型以 `foo-webview-sdk` 的 TypeScript 声明为准（IDE 悬浮提示或包内 `bridge.d.ts`），行为契约见 API 文档对应条目。
+签名：`fb.tray.isVisible(): Promise<TrayIsVisibleResponse>`
+
+返回托盘图标当前是否存在。
 
 ```javascript
-await fb.tray.isVisible(/* 参数见 TypeScript 声明 */);
+const result = await fb.tray.isVisible();
 ```
 
-### removeMenuItems()
+## removeMenuItems(ids)
 
-封装 `tray.removeMenuItems`。参数与返回类型以 `foo-webview-sdk` 的 TypeScript 声明为准（IDE 悬浮提示或包内 `bridge.d.ts`），行为契约见 API 文档对应条目。
+签名：`fb.tray.removeMenuItems(ids: string[]): Promise<TrayRemoveMenuItemsResponse>`
+
+从全部分区移除 `ids` 列出的菜单项，`removed` 是实际移除的条数。
 
 ```javascript
-await fb.tray.removeMenuItems(/* 参数见 TypeScript 声明 */);
+const result = await fb.tray.removeMenuItems(['settings']);
 ```
 
-### setCloseToTray()
+## setCloseToTray(enabled)
 
-封装 `tray.setCloseToTray`。参数与返回类型以 `foo-webview-sdk` 的 TypeScript 声明为准（IDE 悬浮提示或包内 `bridge.d.ts`），行为契约见 API 文档对应条目。
+签名：`fb.tray.setCloseToTray(enabled: boolean): Promise<TraySetCloseToTrayResponse>`
+
+`enabled` 为 `true` 时，关闭窗口改为隐藏到托盘而不退出。
 
 ```javascript
-await fb.tray.setCloseToTray(/* 参数见 TypeScript 声明 */);
+const result = await fb.tray.setCloseToTray(true);
 ```
 
-### setContextMenu()
+## setContextMenu(items, config?)
 
-封装 `tray.setContextMenu`。参数与返回类型以 `foo-webview-sdk` 的 TypeScript 声明为准（IDE 悬浮提示或包内 `bridge.d.ts`），行为契约见 API 文档对应条目。
+签名：`fb.tray.setContextMenu(items: TrayMenuItem[], config?: TrayMenuConfig): Promise<TraySetContextMenuResponse>`
+
+替换 `config` 所指分区的菜单项，其他分区不变。`config` 另含渲染器、布局、样式与行为选项。
 
 ```javascript
-await fb.tray.setContextMenu(/* 参数见 TypeScript 声明 */);
+const result = await fb.tray.setContextMenu([{ id: 'settings', label: '设置' }]);
 ```
 
-### setIcon()
+## setIcon(icon?)
 
-封装 `tray.setIcon`。参数与返回类型以 `foo-webview-sdk` 的 TypeScript 声明为准（IDE 悬浮提示或包内 `bridge.d.ts`），行为契约见 API 文档对应条目。
+签名：`fb.tray.setIcon(icon?: string | null): Promise<TraySetIconResponse>`
+
+更换托盘图标，`icon` 的格式见页首；省略或传 `null` 时使用 foobar2000 主图标。
 
 ```javascript
-await fb.tray.setIcon(/* 参数见 TypeScript 声明 */);
+const result = await fb.tray.setIcon();
 ```
 
-### setMenuItemState()
+## setMenuItemState(id, state)
 
-封装 `tray.setMenuItemState`。参数与返回类型以 `foo-webview-sdk` 的 TypeScript 声明为准（IDE 悬浮提示或包内 `bridge.d.ts`），行为契约见 API 文档对应条目。
+签名：`fb.tray.setMenuItemState(id: string, state: { checked?: boolean; enabled?: boolean }): Promise<TraySetMenuItemStateResponse>`
+
+在全部分区里递归查找 `id`，`state` 至少给一个字段。成功时 `found` 为 `true`；找不到该 id 时失败，`code` 为 `'NOT_FOUND'`。原生菜单在下次打开时反映变化。
 
 ```javascript
-await fb.tray.setMenuItemState(/* 参数见 TypeScript 声明 */);
+const result = await fb.tray.setMenuItemState('settings', { enabled: false });
 ```
 
-### setMinimizeToTray()
+## setMenuZones(zones, config?)
 
-封装 `tray.setMinimizeToTray`。参数与返回类型以 `foo-webview-sdk` 的 TypeScript 声明为准（IDE 悬浮提示或包内 `bridge.d.ts`），行为契约见 API 文档对应条目。
+签名：`fb.tray.setMenuZones(zones: Omit<TraySetMenuZonesParams, 'config'>, config?: TrayMenuConfig): Promise<TraySetMenuZonesResponse>`
+
+| 参数 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `zones` | `{ top?, playback?, bottom? }` | 是 | 各区的菜单项；没给出的区清空 |
+| `config` | `TrayMenuConfig` | 否 | 渲染器、布局、样式与行为选项；其中的 `customPosition` 对这次调用无效 |
+
+一次替换三个区，所以中途打开的菜单不会只显示一半更新，快速连发两次时留下的是后一次。有菜单项被拒绝或超出资源上限时什么都不改，`config` 也不改。
 
 ```javascript
-await fb.tray.setMinimizeToTray(/* 参数见 TypeScript 声明 */);
+await fb.tray.setMenuZones({
+    top: [{ id: 'settings', label: '设置' }],
+    bottom: [{ id: 'about', label: '关于' }],
+});
 ```
 
-### setTooltip()
+## setMinimizeToTray(enabled)
 
-封装 `tray.setTooltip`。参数与返回类型以 `foo-webview-sdk` 的 TypeScript 声明为准（IDE 悬浮提示或包内 `bridge.d.ts`），行为契约见 API 文档对应条目。
+签名：`fb.tray.setMinimizeToTray(enabled: boolean): Promise<TraySetMinimizeToTrayResponse>`
+
+`enabled` 为 `true` 时，最小化改为隐藏到托盘而不留在任务栏。
 
 ```javascript
-await fb.tray.setTooltip(/* 参数见 TypeScript 声明 */);
+const result = await fb.tray.setMinimizeToTray(true);
 ```
 
-### showBalloon()
+## setTooltip(tooltip)
 
-签名：`fb.tray.showBalloon(opts: { title: string; message: string; icon?: string }): Promise<BaseResponse>`
+签名：`fb.tray.setTooltip(tooltip: string): Promise<TraySetTooltipResponse>`
+
+设置托盘提示文字，最多 128 个字符。
+
+```javascript
+const result = await fb.tray.setTooltip('foobar2000');
+```
+
+## showBalloon(opts)
+
+签名：`fb.tray.showBalloon(opts: { title: string; message: string; icon?: TrayShowBalloonParams['icon'] }): Promise<TrayShowBalloonResponse>`
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
@@ -132,8 +172,6 @@ await fb.tray.showBalloon({
   icon: 'info',
 });
 ```
-
-<!-- END AUTO-GENERATED SDK STUBS -->
 
 ## 布局模式（`layoutMode`）
 
@@ -156,6 +194,7 @@ await fb.tray.setContextMenu(items, {
 
 ```javascript
 const ver = await fb.config.getVersionInfo();
+if (ver.success === false) throw new Error(ver.error);
 const plugin = ver?.plugin?.version; // 启用 zones 前先探测版本
 // zones 自 1.10.0 起提供；需兼容旧版时先探测运行时版本。
 await fb.tray.setContextMenu(items, {
@@ -192,7 +231,9 @@ await fb.tray.setContextMenu([
 ], { render: 'webview' });
 
 // 纵向——先探测插件版本，不要硬编码一个假的最低版本号。
-const { plugin } = await fb.config.getVersionInfo();
+const res = await fb.config.getVersionInfo();
+if (res.success === false) throw new Error(res.error);
+const { plugin } = res;
 await fb.tray.setContextMenu([
   {
     id: 'vol',

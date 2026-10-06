@@ -18,22 +18,25 @@ Playlist tab strip with ArrowLeft/ArrowRight keyboard navigation, drag reorderin
 
 **CSS Parts:** `tabs-container`, `tab`, `tab-name`, `tab-count`, `drop-indicator`, `add-button`
 
-Each `tab` part receives a `locked` attribute when the playlist is locked.
+Each `tab` part receives a `locked` attribute when the playlist is locked, and carries its playlist's GUID as `data-guid`.
+
+The tabs address playlists by GUID: a click activates the tab's playlist even if others were added or removed since the tabs were drawn, and a tab whose playlist is gone activates nothing. `fb-playlist-select` and `fb-playlist-reorder` fire only once the host has done it.
 
 **Events:**
 
 ```js
 el.addEventListener('fb-playlist-select', e => {
-  console.log('Selected playlist:', e.detail.index);
+  console.log('Selected playlist:', e.detail.index, e.detail.guid);
 });
 el.addEventListener('fb-playlist-context', e => {
-  console.log('Context request:', e.detail.index, e.detail.x, e.detail.y);
+  // Act on e.detail.guid once the menu closes; the index may name another playlist by then.
+  console.log('Context request:', e.detail.guid, e.detail.x, e.detail.y);
 });
 el.addEventListener('fb-playlist-add', e => {
   console.log('New playlist created');
 });
 el.addEventListener('fb-playlist-reorder', e => {
-  console.log('Reordered:', e.detail.fromIndex, e.detail.toIndex, e.detail.newOrder);
+  console.log('Reordered:', e.detail.fromIndex, e.detail.toIndex, e.detail.newOrderGuids);
 });
 ```
 
@@ -97,7 +100,7 @@ Virtualized playlist view with an rAF-driven DOM pool. It supports Ctrl/Shift se
 
 | Attribute | Type | Default | Description |
 | --- | --- | --- | --- |
-| `playlist` | string | — | Playlist index; defaults to the active playlist (observed) |
+| `playlist` | string | — | The playlist's `guid` (a value starting with `{`) or its index; omitted, the active playlist (observed). See below |
 | `columns` | string | `'index,title,artist,album,duration'` | Comma-separated column IDs (observed) |
 | `row-height` | string | `'32'` | Row height in pixels (observed) |
 | `grid-template` | string | — | CSS `grid-template-columns` value, typically copied from `<fb-resizable-header>` (observed) |
@@ -109,17 +112,19 @@ Virtualized playlist view with an rAF-driven DOM pool. It supports Ctrl/Shift se
 
 Each `row` part may reflect the `selected`, `focused`, and `playing` states as attributes.
 
+A GUID in `playlist` keeps the view on that playlist while others are added, removed or reordered, and leaves it empty once the playlist is removed. An index shows whichever playlist is at that position and is looked up again after playlists are added, removed or reordered. Without the attribute the view follows the active playlist and shows nothing while there is none. Once it knows which playlist it shows, the view addresses it by GUID in every host call, and each event detail below carries that GUID as `playlistGuid`.
+
 **Events:**
 
 ```js
 el.addEventListener('fb-track-select', e => {
-  console.log('Selected:', e.detail.index, e.detail.indices);
+  console.log('Selected:', e.detail.index, e.detail.indices, e.detail.playlistGuid);
 });
 el.addEventListener('fb-track-play', e => {
-  console.log('Play:', e.detail.index);
+  console.log('Play:', e.detail.index, e.detail.playlistGuid);
 });
 el.addEventListener('fb-track-context', e => {
-  console.log('Context request:', e.detail.indices, e.detail.x, e.detail.y);
+  console.log('Context request:', e.detail.indices, e.detail.playlistGuid, e.detail.x, e.detail.y);
 });
 ```
 
@@ -172,6 +177,6 @@ Playlist dropdown selector.
 
 ```js
 el.addEventListener('fb-playlist-pick', e => {
-  console.log('Selected:', e.detail.index, e.detail.name);
+  console.log('Selected:', e.detail.index, e.detail.guid, e.detail.name);
 });
 ```

@@ -95,20 +95,22 @@ fb.off('playback:time', handler);
 
 | Event | Emitted when | Payload |
 | --- | --- | --- |
-| `audio:spectrum` | Subscribed spectrum data updates | `{ spectrum, fftSize?, bands? }` |
-| `audio:stream` | Subscribed audio-stream data updates | Currently typed as an empty object |
+| `audio:spectrum` | Subscribed spectrum data updates: bands, or linear bins with `output: 'bins'` | `{ spectrum?, left?, right?, output?, firstBin?, fftSize?, bands? }` |
+| `audio:stream` | An `audio.subscribeStream` buffer was replaced because the audio format changed; the samples themselves never travel through events | `{ subscriptionId, type: 'ended', epoch, reason: 'format-change' }` |
 | `audio:dspPresetChanged` | DSP preset changes | Empty object |
 | `audio:outputDeviceChanged` | Output device changes | Empty object |
 | `audio:replaygainModeChanged` | ReplayGain mode changes | `{ mode }` |
 | `audio:fullWaveformReady` | Full-waveform generation completes | `AudioFullWaveformReadyPayload` |
 | `audio:fullWaveformFailed` | Full-waveform generation fails or is cancelled (`code: "CANCELLED"`) | `{ taskId, path, error, code }` |
+| `audio:pcmReady` | An `audio.decodePcm` task finishes; its samples arrive as a shared buffer with the same `taskId` | `AudioPcmReadyPayload` |
+| `audio:pcmFailed` | An `audio.decodePcm` task fails or is cancelled (`code: "CANCELLED"`) | `{ taskId, path, error, code }` |
 
 ## Window, panel, UI, and desktop events
 
 | Event | Emitted when | Payload |
 | --- | --- | --- |
 | `window:alwaysOnTopChanged` | Always-on-top changes | `{ enabled }` |
-| `window:stateChanged` | Window state changes | Canonical `isMaximized`, `isMinimized`, `isActive`, and `isFullscreen` fields plus compatibility aliases |
+| `window:stateChanged` | The main window or a popup changes state; sent to every window | `windowId` of the window that changed, canonical `isMaximized`, `isMinimized`, `isActive`, and `isFullscreen` fields plus compatibility aliases |
 | `window:popupOpened` | A popup opens | `{ windowId, title, url }` |
 | `window:popupClosed` | A popup closes | `{ windowId }` |
 | `window:beforeClose` | Close confirmation is requested | `{ windowId }` |
@@ -116,18 +118,18 @@ fb.off('playback:time', handler);
 | `window:behaviorChanged` | Popup behavior changes | `{ windowId, profile, behavior, resolvedBehavior }` |
 | `window:minimizeSuppressed` | A minimize action is suppressed | `{ windowId, reason }` |
 | `window:backdropStateChanged` | A backdrop activation policy is applied | `{ windowId, active, mode, effect }` |
-| `window:hoverStateChanged` | Window hover state changes | `{ windowId, reason?, hovering? }` |
+| `window:hoverStateChanged` | Window hover state changes | `{ windowId, hovering }` |
 | `panel:initialized` | Panel initialization completes | `PanelInitializedPayload` |
 | `panel:focus` / `panel:blur` | Panel focus changes | Empty object |
 | `panel:visibilityChanged` | DUI panel visibility changes | `{ visible }` |
 | `panel:configChanged` | Panel configuration changes | `PanelConfigChangedPayload` |
-| `ui:coloursChanged` / `ui:fontChanged` | UI colors or fonts change | Unspecified object |
+| `ui:coloursChanged` / `ui:fontChanged` | Default UI colours or fonts change; Default UI panels only | Empty object |
 | `ui:menuItemClicked` | A UI menu item is clicked | `{ id, label }` |
 | `ui:toast` | A toast is requested | `{ message, duration, type, position }` |
-| `system:themeChanged` | System theme changes | `{ darkMode }` |
+| `system:themeChanged` | Default UI colours change, dark mode included; Default UI panels only. `darkMode` is Default UI's, which can differ from `system.getTheme()` | `{ darkMode }` |
 | `cursor:hiddenChanged` | Cursor hidden state changes | `CursorHiddenChangedPayload` |
 | `taskbar:buttonClicked` | A taskbar button is clicked | `{ id }` |
-| `webview:processFailed` | A WebView process fails or recovers | `{ kind, kindRaw, recovered, recoveryAction }` |
+| `webview:processFailed` | A WebView2 process fails; `recovered` tells whether the WebView is usable again | `{ kind, kindRaw, recovered, recoveryAction }` |
 
 ## Tray events
 
@@ -140,13 +142,13 @@ The tray icon is application-scoped and has no source window. Its events are bro
 | `tray:beforeContextMenu` | Before the context menu opens | `{ x, y }` |
 | `tray:menuItemClicked` | An ordinary tray item is selected or a rich value changes | `{ id, value? }` |
 
-Ordinary user items and now-playing cards report `{ id }` and close the menu. Rich value controls report `{ id, value }` and keep it open: ratings use `0..5`, sliders use an integer in `[min, max]`, and segmented controls use the selected zero-based index. Built-in `showPlaybackControls` / `showSystemItems` injections and items declaring `playbackAction` execute natively and do **not** fire this event.
+Ordinary user items and now-playing cards report `{ id }`. Rich value controls report `{ id, value }`: ratings use `0..5`, sliders use an integer in `[min, max]`, and segmented controls use the selected zero-based index. With `render: 'webview'` the menu stays open while a value changes; the default native menu closes on every pick, offers a slider as five stops, and shows a segmented row as an ordinary row that reports no `value`. Built-in `showPlaybackControls` / `showSystemItems` injections and items declaring `playbackAction` execute natively and do **not** fire this event.
 
 ## Application, keyboard, and menu events
 
 | Event | Emitted when | Payload |
 | --- | --- | --- |
-| `app:beforeQuit` | foobar2000 is about to quit | Empty object |
+| `app:beforeQuit` | foobar2000 is about to quit; sent once to every page, panels included, whatever the interface; best effort, the host does not wait for handlers | Empty object |
 | `keyboard:hotkey` | A registered hotkey fires | `{ id, key, action }` |
 | `menu:show` | A custom menu opens | `{ menuId }` |
 | `menu:select` | A custom-menu item is selected | `{ menuId, itemId }` |
@@ -170,7 +172,7 @@ Ordinary user items and now-playing cards report `{ id }` and close the menu. Ri
 | `file:opProgress` | A batch of `file.copyAsync` / `moveAsync` / `deleteAsync` results is ready | `FileOpProgressPayload` |
 | `file:opComplete` | An asynchronous file operation finishes or is cancelled | `FileOpCompletePayload` |
 
-Both go to the window that started the operation, so their `results` may carry real paths. Once that window is gone the host cannot resolve it any more and the event falls back to the main instance, or is dropped when that instance has no WebView attached; see [`cancelOp()`](/sdk/file-io#cancelop-operationid) for when trailing events can still appear. Progress is batched at 64 entries or 100 ms, whichever comes first, and the final partial batch always precedes `file:opComplete`.
+Both go to the window that started the operation, so their `results` may carry real paths. Once that window is gone the host cannot resolve it any more and the event falls back to the main instance, or is dropped when that instance has no WebView attached; see [`cancelOp()`](/sdk/file#cancelop-operationid) for when trailing events can still appear. Progress is batched at 64 entries or 100 ms, whichever comes first, and the final partial batch always precedes `file:opComplete`.
 
 ## Plugin, HTTP, and JIT queue events
 
@@ -188,4 +190,4 @@ Both go to the window that started the operation, so their `results` may carry r
 
 Host events are also dispatched as `fb2k:*` DOM `CustomEvent` instances.
 
-See the [event-system reference](/reference/events) for the complete payload reference. SMP event-name mappings are documented in the [SMP compatibility layer](/reference/smp-compat#smp-events).
+Every event and the fields of its payload are listed in [Events API](/api/events). SMP event-name mappings are documented in the [SMP compatibility layer](/reference/smp-compat#smp-events).

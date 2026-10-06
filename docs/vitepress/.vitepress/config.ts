@@ -1,4 +1,5 @@
 import { defineConfig, type DefaultTheme, type HeadConfig } from 'vitepress'
+import { writeRedirectPages } from './published-urls.mjs'
 
 // Public origin for GitHub Pages under /foo_ui_webview2/
 const SITE_URL = 'https://nereafantasia.github.io/foo_ui_webview2/'
@@ -19,6 +20,11 @@ const ZH_DESCRIPTION =
  * VitePress 1.6.4: i18nRouting is boolean only (not a callback).
  */
 
+// Static pages under public/ (TypeDoc output) are shared by both locales; they carry an
+// explicit `target` so the SPA router leaves them alone, and that also opts them out of the
+// locale prefix.
+const SDK_REFERENCE_LINK = { link: '/sdk-reference/index.html', target: '_self' }
+
 function prefixLinks<T>(items: T[], prefix: string): T[] {
   return items.map((item) => {
     if (item && typeof item === 'object') {
@@ -26,7 +32,8 @@ function prefixLinks<T>(items: T[], prefix: string): T[] {
       if (
         typeof next.link === 'string' &&
         next.link.startsWith('/') &&
-        !next.link.startsWith(prefix)
+        !next.link.startsWith(prefix) &&
+        !next.target
       ) {
         next.link = prefix.replace(/\/$/, '') + next.link
       }
@@ -51,42 +58,71 @@ function prefixSidebar(sidebar: DefaultTheme.Sidebar, prefix: string): DefaultTh
 }
 
 const englishNav: DefaultTheme.NavItem[] = [
-  { text: 'Guide', link: '/guide/overview' },
+  { text: 'Tutorial', link: '/tutorials/first-theme' },
+  { text: 'How-to', link: '/how-to/install' },
+  { text: 'Concepts', link: '/concepts/architecture' },
   { text: 'SDK', link: '/sdk/overview' },
   { text: 'Low-level API', link: '/api/overview' },
   { text: 'Components', link: '/components/' },
-  { text: 'Reference', link: '/reference/events' },
+  { text: 'Reference', link: '/reference/types' },
   { text: 'MCP', link: '/mcp/overview' },
   {
-    text: 'v1.14.0',
+    text: 'v2.0.0',
     items: [{ text: 'Changelog', link: '/changelog' }],
   },
 ]
 
 const chineseNav: DefaultTheme.NavItem[] = [
-  { text: '入门', link: '/guide/overview' },
+  { text: '教程', link: '/tutorials/first-theme' },
+  { text: '指南', link: '/how-to/install' },
+  { text: '概念', link: '/concepts/architecture' },
   { text: 'SDK', link: '/sdk/overview' },
   { text: '底层 API', link: '/api/overview' },
   { text: '组件', link: '/components/' },
-  { text: '参考', link: '/reference/events' },
+  { text: '参考', link: '/reference/types' },
   { text: 'MCP', link: '/mcp/overview' },
   {
-    text: 'v1.14.0',
+    text: 'v2.0.0',
     items: [{ text: '更新日志', link: '/changelog' }],
   },
 ]
 
 const englishSidebar: DefaultTheme.Sidebar = {
-  '/guide/': [
+  '/tutorials/': [
     {
-      text: 'Guide',
+      text: 'Tutorials',
+      items: [{ text: 'Build your first theme', link: '/tutorials/first-theme' }],
+    },
+  ],
+  '/how-to/': [
+    {
+      text: 'Set up',
       items: [
-        { text: 'Overview', link: '/guide/overview' },
-        { text: 'Installation', link: '/guide/installation' },
-        { text: 'Quick Start', link: '/guide/quickstart' },
-        { text: 'Panel Modes', link: '/guide/panel-modes' },
-        { text: 'Bridge Protocol', link: '/guide/bridge' },
-        { text: 'Use Cases', link: '/guide/use-cases' },
+        { text: 'Install the component', link: '/how-to/install' },
+        { text: 'Install a theme', link: '/how-to/install-theme' },
+        { text: 'Put a page in a panel', link: '/how-to/panels' },
+        { text: 'Run next to another interface', link: '/how-to/background-mode' },
+      ],
+    },
+    {
+      text: 'Build themes',
+      items: [
+        { text: 'Debug with the development server', link: '/how-to/dev-server' },
+        { text: 'Load the SDK', link: '/how-to/load-sdk' },
+        { text: 'Write a theme without a build step', link: '/how-to/plain-html' },
+        { text: 'Style the components', link: '/how-to/style-components' },
+        { text: 'Common tasks', link: '/how-to/common-tasks' },
+      ],
+    },
+  ],
+  '/concepts/': [
+    {
+      text: 'Concepts',
+      items: [
+        { text: 'How it works', link: '/concepts/architecture' },
+        { text: 'How a page is found', link: '/concepts/page-loading' },
+        { text: 'Run modes', link: '/concepts/run-modes' },
+        { text: 'How the components work', link: '/concepts/components' },
       ],
     },
   ],
@@ -94,39 +130,82 @@ const englishSidebar: DefaultTheme.Sidebar = {
     {
       text: 'SDK (recommended)',
       items: [
-        { text: 'SDK Overview & Install', link: '/sdk/overview' },
-        { text: 'Quick Start', link: '/sdk/quickstart' },
+        { text: 'SDK Overview', link: '/sdk/overview' },
         { text: 'Namespaces', link: '/sdk/namespaces' },
         { text: 'Events', link: '/sdk/events' },
-      ],
-    },
-    {
-      text: 'SDK API reference',
-      items: [
-        { text: 'fb.player Playback', link: '/sdk/player' },
-        { text: 'fb.playlist Playlists', link: '/sdk/playlist' },
-        { text: 'fb.library Media Library', link: '/sdk/library' },
-        { text: 'fb.artwork Artwork', link: '/sdk/artwork' },
-        { text: 'fb.config Config', link: '/sdk/config' },
-        { text: 'fb.ui Window', link: '/sdk/ui' },
-        { text: 'fb.system System', link: '/sdk/system' },
-        { text: 'fb.audio Audio', link: '/sdk/audio' },
-        { text: 'fb.shell Shell', link: '/sdk/shell' },
-        { text: 'fb.tray Tray', link: '/sdk/tray' },
-        { text: 'fb.menu Menu', link: '/sdk/menu' },
         { text: 'fb.state Reactive State', link: '/sdk/state' },
-        { text: 'fb.utils Utils', link: '/sdk/utils' },
+      ],
+    },
+    // One page per namespace, grouped as on the Namespaces page and sorted by name.
+    {
+      text: 'Core media and UI',
+      collapsed: false,
+      items: [
+        { text: 'fb.artwork Artwork', link: '/sdk/artwork' },
+        { text: 'fb.audio Audio Analysis', link: '/sdk/audio' },
+        { text: 'fb.config Config', link: '/sdk/config' },
+        { text: 'fb.dsp DSP Chain', link: '/sdk/dsp' },
+        { text: 'fb.jitQueue Just-in-time Queue', link: '/sdk/jit-queue' },
+        { text: 'fb.library Media Library', link: '/sdk/library' },
+        { text: 'fb.output Audio Output', link: '/sdk/output' },
+        { text: 'fb.player Playback', link: '/sdk/player' },
+        { text: 'fb.media Local Media', link: '/sdk/media' },
+        { text: 'fb.playlist Playlists', link: '/sdk/playlist' },
+        { text: 'fb.queue Playback Queue', link: '/sdk/queue' },
+        { text: 'fb.replaygain ReplayGain', link: '/sdk/replaygain' },
+        { text: 'fb.ui Window', link: '/sdk/ui' },
       ],
     },
     {
-      text: 'Extended API reference',
+      text: 'Metadata and data access',
+      collapsed: false,
       items: [
-        { text: 'File & Network', link: '/sdk/file-io' },
-        { text: 'Audio Extensions', link: '/sdk/audio-ext' },
-        { text: 'Queue & Discovery', link: '/sdk/navigation' },
-        { text: 'Data & Metadata', link: '/sdk/data' },
-        { text: 'Menu & Misc', link: '/sdk/misc' },
+        { text: 'fb.clipboard Clipboard', link: '/sdk/clipboard' },
+        { text: 'fb.dialog Dialogs', link: '/sdk/dialog' },
+        { text: 'fb.file File System', link: '/sdk/file' },
+        { text: 'fb.http HTTP', link: '/sdk/http' },
+        { text: 'fb.metadata Metadata', link: '/sdk/metadata' },
+        { text: 'fb.playcount Playback Statistics', link: '/sdk/playcount' },
+        { text: 'fb.rating Ratings', link: '/sdk/rating' },
+        { text: 'fb.selection Selection', link: '/sdk/selection' },
+        { text: 'fb.titleformat Title Formatting', link: '/sdk/titleformat' },
       ],
+    },
+    {
+      text: 'Cross-window and desktop integration',
+      collapsed: false,
+      items: [
+        { text: 'fb.cursor Cursor', link: '/sdk/cursor' },
+        { text: 'fb.discovery Service Discovery', link: '/sdk/discovery' },
+        { text: 'fb.event Cross-window Events', link: '/sdk/event' },
+        { text: 'fb.keyboard Hotkeys', link: '/sdk/keyboard' },
+        { text: 'fb.port Cross-window Ports', link: '/sdk/port' },
+        { text: 'fb.sharedState Shared State', link: '/sdk/shared-state' },
+        { text: 'fb.shell Shell', link: '/sdk/shell' },
+        { text: 'fb.taskbar Taskbar', link: '/sdk/taskbar' },
+        { text: 'fb.tray Tray', link: '/sdk/tray' },
+      ],
+    },
+    {
+      text: 'Utilities and host services',
+      collapsed: false,
+      items: [
+        { text: 'fb.console Console', link: '/sdk/console' },
+        { text: 'fb.dnd Drag and Drop', link: '/sdk/dnd' },
+        { text: 'fb.log Log File', link: '/sdk/log' },
+        { text: 'fb.lyrics Lyrics', link: '/sdk/lyrics' },
+        { text: 'fb.menu Menu', link: '/sdk/menu' },
+        { text: 'fb.misc Host Actions', link: '/sdk/misc' },
+        { text: 'fb.notification Notifications', link: '/sdk/notification' },
+        { text: 'fb.panel Panel Config', link: '/sdk/panel' },
+        { text: 'fb.system System', link: '/sdk/system' },
+        { text: 'fb.utils Utils', link: '/sdk/utils' },
+        { text: 'fb.webview WebView', link: '/sdk/webview' },
+      ],
+    },
+    {
+      text: 'Generated reference',
+      items: [{ text: 'SDK type reference (TypeDoc)', ...SDK_REFERENCE_LINK }],
     },
   ],
   '/api/': [
@@ -140,7 +219,8 @@ const englishSidebar: DefaultTheme.Sidebar = {
         { text: 'Artwork', link: '/api/artwork' },
         { text: 'Lyrics', link: '/api/lyrics' },
         { text: 'Window', link: '/api/window' },
-        { text: 'Taskbar & Tray', link: '/api/taskbar-tray' },
+        { text: 'Taskbar', link: '/api/taskbar' },
+        { text: 'Tray', link: '/api/tray' },
         { text: 'Config', link: '/api/config' },
         { text: 'Cursor', link: '/api/cursor' },
       ],
@@ -149,22 +229,43 @@ const englishSidebar: DefaultTheme.Sidebar = {
       text: 'Extended API',
       items: [
         { text: 'Metadata', link: '/api/metadata' },
+        { text: 'Rating', link: '/api/rating' },
         { text: 'Titleformat', link: '/api/titleformat' },
         { text: 'Playcount', link: '/api/playcount' },
-        { text: 'Audio & DSP & Output', link: '/api/audio' },
-        { text: 'Queue & Selection', link: '/api/queue' },
+        { text: 'Audio', link: '/api/audio' },
+        { text: 'Media', link: '/api/media' },
+        { text: 'DSP', link: '/api/dsp' },
+        { text: 'Output', link: '/api/output' },
+        { text: 'ReplayGain', link: '/api/replaygain' },
+        { text: 'Queue', link: '/api/queue' },
+        { text: 'JIT Queue', link: '/api/jit-queue' },
+        { text: 'Selection', link: '/api/selection' },
         { text: 'Discovery', link: '/api/discovery' },
-        { text: 'Port / Event / State', link: '/api/port' },
+        { text: 'Port', link: '/api/port' },
+        { text: 'Event', link: '/api/event' },
+        { text: 'State', link: '/api/state' },
         { text: 'Events', link: '/api/events' },
       ],
     },
     {
       text: 'Utility API',
       items: [
-        { text: 'File & Dialog & Shell', link: '/api/file' },
+        { text: 'File', link: '/api/file' },
+        { text: 'Dialog', link: '/api/dialog' },
+        { text: 'Shell', link: '/api/shell' },
         { text: 'HTTP', link: '/api/http' },
-        { text: 'UI & Keyboard & DnD', link: '/api/ui-interaction' },
-        { text: 'Misc (Clipboard/Console/...)', link: '/api/misc' },
+        { text: 'UI', link: '/api/ui' },
+        { text: 'Keyboard', link: '/api/keyboard' },
+        { text: 'Drag and Drop', link: '/api/dnd' },
+        { text: 'Clipboard', link: '/api/clipboard' },
+        { text: 'Console', link: '/api/console' },
+        { text: 'Log', link: '/api/log' },
+        { text: 'Menu', link: '/api/menu' },
+        { text: 'Panel', link: '/api/panel' },
+        { text: 'WebView', link: '/api/webview' },
+        { text: 'System', link: '/api/system' },
+        { text: 'Misc', link: '/api/misc' },
+        { text: 'Test', link: '/api/test' },
       ],
     },
   ],
@@ -191,25 +292,7 @@ const englishSidebar: DefaultTheme.Sidebar = {
       items: [
         { text: 'Overview', link: '/mcp/overview' },
         { text: 'Setup', link: '/mcp/setup' },
-      ],
-    },
-    {
-      text: 'Bridge tools',
-      items: [
-        { text: 'Playback', link: '/mcp/tools-playback' },
-        { text: 'Playback Ext', link: '/mcp/tools-playback-ext' },
-        { text: 'Playlist', link: '/mcp/tools-playlist' },
-        { text: 'Playlist Ext', link: '/mcp/tools-playlist-ext' },
-        { text: 'Library', link: '/mcp/tools-library' },
-        { text: 'Artwork', link: '/mcp/tools-artwork' },
-        { text: 'Queue', link: '/mcp/tools-queue' },
-        { text: 'Metadata', link: '/mcp/tools-metadata' },
-      ],
-    },
-    {
-      text: 'UI tools',
-      items: [
-        { text: 'Screenshot & Debug', link: '/mcp/tools-ui' },
+        { text: 'Tools', link: '/mcp/tools' },
       ],
     },
   ],
@@ -217,7 +300,10 @@ const englishSidebar: DefaultTheme.Sidebar = {
     {
       text: 'Reference',
       items: [
+        { text: 'Bridge Protocol', link: '/reference/bridge' },
+        { text: 'Preferences', link: '/reference/preferences' },
         { text: 'Events', link: '/reference/events' },
+        { text: 'Shared Types', link: '/reference/types' },
         { text: 'Error Handling', link: '/reference/errors' },
         { text: 'Security Limits', link: '/reference/security' },
         { text: 'Permissions', link: '/reference/permissions' },
@@ -225,22 +311,48 @@ const englishSidebar: DefaultTheme.Sidebar = {
         { text: 'Titleformat & ReplayGain', link: '/reference/titleformat-replaygain' },
         { text: 'SMP Compatibility', link: '/reference/smp-compat' },
         { text: 'Test API', link: '/reference/test' },
+        { text: 'Versioning & Compatibility', link: '/reference/versioning' },
       ],
     },
   ],
 }
 
 const chineseSidebar: DefaultTheme.Sidebar = {
-  '/guide/': [
+  '/tutorials/': [
     {
-      text: '入门',
+      text: '教程',
+      items: [{ text: '构建第一个主题', link: '/tutorials/first-theme' }],
+    },
+  ],
+  '/how-to/': [
+    {
+      text: '安装与设置',
       items: [
-        { text: '概述', link: '/guide/overview' },
-        { text: '安装配置', link: '/guide/installation' },
-        { text: '快速开始', link: '/guide/quickstart' },
-        { text: '运行模式', link: '/guide/panel-modes' },
-        { text: 'Bridge 协议', link: '/guide/bridge' },
-        { text: '常用场景', link: '/guide/use-cases' },
+        { text: '安装组件', link: '/how-to/install' },
+        { text: '安装主题', link: '/how-to/install-theme' },
+        { text: '把页面放进面板', link: '/how-to/panels' },
+        { text: '与其他界面同时运行', link: '/how-to/background-mode' },
+      ],
+    },
+    {
+      text: '开发主题',
+      items: [
+        { text: '用开发服务器调试', link: '/how-to/dev-server' },
+        { text: '加载 SDK', link: '/how-to/load-sdk' },
+        { text: '不用构建工具写主题', link: '/how-to/plain-html' },
+        { text: '给组件加样式', link: '/how-to/style-components' },
+        { text: '常见任务', link: '/how-to/common-tasks' },
+      ],
+    },
+  ],
+  '/concepts/': [
+    {
+      text: '概念',
+      items: [
+        { text: '工作原理', link: '/concepts/architecture' },
+        { text: '页面从哪里加载', link: '/concepts/page-loading' },
+        { text: '运行模式', link: '/concepts/run-modes' },
+        { text: '组件的工作方式', link: '/concepts/components' },
       ],
     },
   ],
@@ -248,39 +360,81 @@ const chineseSidebar: DefaultTheme.Sidebar = {
     {
       text: 'SDK（推荐）',
       items: [
-        { text: 'SDK 概述 & 安装', link: '/sdk/overview' },
-        { text: '快速入门', link: '/sdk/quickstart' },
+        { text: 'SDK 概述', link: '/sdk/overview' },
         { text: '命名空间', link: '/sdk/namespaces' },
         { text: '事件系统', link: '/sdk/events' },
-      ],
-    },
-    {
-      text: 'SDK API 参考',
-      items: [
-        { text: 'fb.player 播放控制', link: '/sdk/player' },
-        { text: 'fb.playlist 播放列表', link: '/sdk/playlist' },
-        { text: 'fb.library 媒体库', link: '/sdk/library' },
-        { text: 'fb.artwork 封面', link: '/sdk/artwork' },
-        { text: 'fb.config 配置', link: '/sdk/config' },
-        { text: 'fb.ui 窗口', link: '/sdk/ui' },
-        { text: 'fb.system 系统', link: '/sdk/system' },
-        { text: 'fb.audio 音频', link: '/sdk/audio' },
-        { text: 'fb.shell 系统集成', link: '/sdk/shell' },
-        { text: 'fb.tray 托盘', link: '/sdk/tray' },
-        { text: 'fb.menu 菜单', link: '/sdk/menu' },
         { text: 'fb.state 响应式状态', link: '/sdk/state' },
-        { text: 'fb.utils 工具', link: '/sdk/utils' },
       ],
     },
     {
-      text: '扩展 API 参考',
+      text: '核心命名空间',
+      collapsed: false,
       items: [
-        { text: '文件与网络', link: '/sdk/file-io' },
-        { text: '音频扩展', link: '/sdk/audio-ext' },
-        { text: '队列与发现', link: '/sdk/navigation' },
-        { text: '数据与元信息', link: '/sdk/data' },
-        { text: '菜单与杂项', link: '/sdk/misc' },
+        { text: 'fb.artwork 封面', link: '/sdk/artwork' },
+        { text: 'fb.audio 音频分析', link: '/sdk/audio' },
+        { text: 'fb.config 配置', link: '/sdk/config' },
+        { text: 'fb.dsp DSP 链', link: '/sdk/dsp' },
+        { text: 'fb.jitQueue JIT 即时队列', link: '/sdk/jit-queue' },
+        { text: 'fb.library 媒体库', link: '/sdk/library' },
+        { text: 'fb.output 音频输出', link: '/sdk/output' },
+        { text: 'fb.player 播放控制', link: '/sdk/player' },
+        { text: 'fb.media 本地媒体', link: '/sdk/media' },
+        { text: 'fb.playlist 播放列表', link: '/sdk/playlist' },
+        { text: 'fb.queue 播放队列', link: '/sdk/queue' },
+        { text: 'fb.replaygain ReplayGain', link: '/sdk/replaygain' },
+        { text: 'fb.ui 窗口', link: '/sdk/ui' },
       ],
+    },
+    {
+      text: '元数据与数据访问',
+      collapsed: false,
+      items: [
+        { text: 'fb.clipboard 剪贴板', link: '/sdk/clipboard' },
+        { text: 'fb.dialog 对话框', link: '/sdk/dialog' },
+        { text: 'fb.file 文件系统', link: '/sdk/file' },
+        { text: 'fb.http HTTP 请求', link: '/sdk/http' },
+        { text: 'fb.metadata 元数据', link: '/sdk/metadata' },
+        { text: 'fb.playcount 播放统计', link: '/sdk/playcount' },
+        { text: 'fb.rating 评分', link: '/sdk/rating' },
+        { text: 'fb.selection 选择同步', link: '/sdk/selection' },
+        { text: 'fb.titleformat 标题格式化', link: '/sdk/titleformat' },
+      ],
+    },
+    {
+      text: '跨窗口与桌面集成',
+      collapsed: false,
+      items: [
+        { text: 'fb.cursor 光标', link: '/sdk/cursor' },
+        { text: 'fb.discovery 服务发现', link: '/sdk/discovery' },
+        { text: 'fb.event 跨窗口事件', link: '/sdk/event' },
+        { text: 'fb.keyboard 热键', link: '/sdk/keyboard' },
+        { text: 'fb.port 跨窗口端口', link: '/sdk/port' },
+        { text: 'fb.sharedState 共享状态', link: '/sdk/shared-state' },
+        { text: 'fb.shell 系统集成', link: '/sdk/shell' },
+        { text: 'fb.taskbar 任务栏', link: '/sdk/taskbar' },
+        { text: 'fb.tray 托盘', link: '/sdk/tray' },
+      ],
+    },
+    {
+      text: '工具与宿主服务',
+      collapsed: false,
+      items: [
+        { text: 'fb.console 控制台', link: '/sdk/console' },
+        { text: 'fb.dnd 拖放', link: '/sdk/dnd' },
+        { text: 'fb.log 日志文件', link: '/sdk/log' },
+        { text: 'fb.lyrics 歌词', link: '/sdk/lyrics' },
+        { text: 'fb.menu 菜单', link: '/sdk/menu' },
+        { text: 'fb.misc 杂项工具', link: '/sdk/misc' },
+        { text: 'fb.notification 通知', link: '/sdk/notification' },
+        { text: 'fb.panel 面板配置', link: '/sdk/panel' },
+        { text: 'fb.system 系统', link: '/sdk/system' },
+        { text: 'fb.utils 工具', link: '/sdk/utils' },
+        { text: 'fb.webview WebView', link: '/sdk/webview' },
+      ],
+    },
+    {
+      text: '生成的参考',
+      items: [{ text: 'SDK 类型参考（英文，TypeDoc）', ...SDK_REFERENCE_LINK }],
     },
   ],
   '/api/': [
@@ -294,7 +448,8 @@ const chineseSidebar: DefaultTheme.Sidebar = {
         { text: 'Artwork 封面', link: '/api/artwork' },
         { text: 'Lyrics 歌词', link: '/api/lyrics' },
         { text: 'Window 窗口', link: '/api/window' },
-        { text: 'Taskbar & Tray', link: '/api/taskbar-tray' },
+        { text: 'Taskbar 任务栏', link: '/api/taskbar' },
+        { text: 'Tray 托盘', link: '/api/tray' },
         { text: 'Config 配置', link: '/api/config' },
         { text: 'Cursor 光标', link: '/api/cursor' },
       ],
@@ -303,22 +458,43 @@ const chineseSidebar: DefaultTheme.Sidebar = {
       text: '扩展 API',
       items: [
         { text: 'Metadata 元数据', link: '/api/metadata' },
+        { text: 'Rating 评分', link: '/api/rating' },
         { text: 'Titleformat 格式化', link: '/api/titleformat' },
         { text: 'Playcount 播放统计', link: '/api/playcount' },
-        { text: 'Audio & DSP & Output', link: '/api/audio' },
-        { text: 'Queue & Selection', link: '/api/queue' },
+        { text: 'Audio 音频', link: '/api/audio' },
+        { text: 'Media 媒体', link: '/api/media' },
+        { text: 'DSP 音效处理', link: '/api/dsp' },
+        { text: 'Output 输出设备', link: '/api/output' },
+        { text: 'ReplayGain 回放增益', link: '/api/replaygain' },
+        { text: 'Queue 播放队列', link: '/api/queue' },
+        { text: 'JIT Queue 即时队列', link: '/api/jit-queue' },
+        { text: 'Selection 选择', link: '/api/selection' },
         { text: 'Discovery 服务发现', link: '/api/discovery' },
-        { text: 'Port / Event / State', link: '/api/port' },
+        { text: 'Port 跨窗口端口', link: '/api/port' },
+        { text: 'Event 自定义事件', link: '/api/event' },
+        { text: 'State 共享状态', link: '/api/state' },
         { text: 'Events 事件系统', link: '/api/events' },
       ],
     },
     {
       text: '工具 API',
       items: [
-        { text: 'File & Dialog & Shell', link: '/api/file' },
+        { text: 'File 文件', link: '/api/file' },
+        { text: 'Dialog 对话框', link: '/api/dialog' },
+        { text: 'Shell 系统外壳', link: '/api/shell' },
         { text: 'HTTP 网络请求', link: '/api/http' },
-        { text: 'UI & Keyboard & DnD', link: '/api/ui-interaction' },
-        { text: '其他 (Clipboard/Console/...)', link: '/api/misc' },
+        { text: 'UI 界面', link: '/api/ui' },
+        { text: 'Keyboard 键盘', link: '/api/keyboard' },
+        { text: 'DnD 拖放', link: '/api/dnd' },
+        { text: 'Clipboard 剪贴板', link: '/api/clipboard' },
+        { text: 'Console 控制台', link: '/api/console' },
+        { text: 'Log 日志文件', link: '/api/log' },
+        { text: 'Menu 菜单', link: '/api/menu' },
+        { text: 'Panel 面板', link: '/api/panel' },
+        { text: 'WebView', link: '/api/webview' },
+        { text: 'System 系统', link: '/api/system' },
+        { text: 'Misc 杂项', link: '/api/misc' },
+        { text: 'Test 测试', link: '/api/test' },
       ],
     },
   ],
@@ -345,25 +521,7 @@ const chineseSidebar: DefaultTheme.Sidebar = {
       items: [
         { text: '概述', link: '/mcp/overview' },
         { text: '安装与配置', link: '/mcp/setup' },
-      ],
-    },
-    {
-      text: 'Bridge 工具',
-      items: [
-        { text: 'Playback', link: '/mcp/tools-playback' },
-        { text: 'Playback Ext', link: '/mcp/tools-playback-ext' },
-        { text: 'Playlist', link: '/mcp/tools-playlist' },
-        { text: 'Playlist Ext', link: '/mcp/tools-playlist-ext' },
-        { text: 'Library', link: '/mcp/tools-library' },
-        { text: 'Artwork', link: '/mcp/tools-artwork' },
-        { text: 'Queue', link: '/mcp/tools-queue' },
-        { text: 'Metadata', link: '/mcp/tools-metadata' },
-      ],
-    },
-    {
-      text: 'UI 工具',
-      items: [
-        { text: '截图与调试', link: '/mcp/tools-ui' },
+        { text: '工具', link: '/mcp/tools' },
       ],
     },
   ],
@@ -371,7 +529,10 @@ const chineseSidebar: DefaultTheme.Sidebar = {
     {
       text: '参考',
       items: [
+        { text: 'Bridge 协议', link: '/reference/bridge' },
+        { text: '偏好设置', link: '/reference/preferences' },
         { text: '事件系统', link: '/reference/events' },
+        { text: '共享类型', link: '/reference/types' },
         { text: '错误处理', link: '/reference/errors' },
         { text: '安全限制', link: '/reference/security' },
         { text: '权限系统', link: '/reference/permissions' },
@@ -379,6 +540,7 @@ const chineseSidebar: DefaultTheme.Sidebar = {
         { text: 'Titleformat & ReplayGain', link: '/reference/titleformat-replaygain' },
         { text: 'SMP 兼容层', link: '/reference/smp-compat' },
         { text: 'Test API', link: '/reference/test' },
+        { text: '版本与兼容性', link: '/reference/versioning' },
       ],
     },
   ],
@@ -618,5 +780,15 @@ export default defineConfig({
       ['meta', { property: 'og:url', content: selfUrl }],
     ]
     return tags
+  },
+
+  // Old URLs of moved pages get redirect pages; see published-urls.mjs.
+  buildEnd(siteConfig) {
+    writeRedirectPages({
+      docsRoot: siteConfig.srcDir,
+      outDir: siteConfig.outDir,
+      base: siteConfig.site.base,
+      origin: SITE_ORIGIN,
+    })
   },
 })

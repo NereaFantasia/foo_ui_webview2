@@ -7,67 +7,61 @@ It is shared by this component's WebView windows in the current foobar2000
 process, but it is not persisted to disk, does not survive restart, and is not
 shared with other processes or SMP runtimes.
 
-<!-- BEGIN AUTO-GENERATED SDK STUBS -->
+## delete(key)
 
-## Additional methods
-
-> This block maintains SDK-facing method coverage and may be expanded with complete examples and best practices.
-
-### delete()
-
-Signature: `fb.sharedState.delete(key: string): Promise<BaseResponse>`
+Signature: `fb.sharedState.delete(key: string): Promise<StateDeleteResponse>`
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `key` | `string` | Yes | Logical key to remove. |
 
-Returns the `state.delete` response envelope. A successful explicit removal emits `state:deleted` with `reason: 'deleted'`.
+The response's `existed` tells whether the key existed before the call. Removing a key that existed emits `state:deleted` with `reason: 'deleted'`.
 
 ```javascript
 const result = await fb.sharedState.delete('playlist:active-filter');
 ```
 
-### keys()
+## keys(pattern?)
 
-Signature: `fb.sharedState.keys(pattern = '*'): Promise<{ keys: string[] }>`
+Signature: `fb.sharedState.keys(pattern?: string): Promise<StateKeysResponse>`
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `pattern` | `string` | No | Key pattern; defaults to `'*'`. |
 
-Returns the matching keys in `{ keys }`.
+Resolves with the matching keys as `{ keys }`, in no particular order. `'*'` matches every key; a pattern ending in `*` matches by prefix, such as `'playlist:*'`; any other pattern matches one whole key, a `*` elsewhere being an ordinary character. Expired keys are swept first, and each one broadcasts `state:deleted` with `reason: 'expired'`.
 
 ```javascript
-const { keys } = await fb.sharedState.keys('playlist:*');
+const res = await fb.sharedState.keys('playlist:*');
+if (res.success === false) throw new Error(res.error);
+const { keys } = res;
 ```
 
-### set()
+## set(key, value, silent?, ttlMs?)
 
-Signature: `fb.sharedState.set(key: string, value: unknown, silent = false, ttlMs?: number): Promise<BaseResponse>`
+Signature: `fb.sharedState.set(key: string, value: JsonValue, silent?: boolean, ttlMs?: number): Promise<StateSetResponse>`
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `key` | `string` | Yes | Logical key to update. |
-| `value` | `unknown` | Yes | JSON-serializable value. |
+| `value` | `unknown` | Yes | JSON-serializable value. A top-level `null` is refused; remove a key with `delete()`. |
 | `silent` | `boolean` | No | Suppresses the change event when `true`; defaults to `false`. |
-| `ttlMs` | `number` | No | Time to live in milliseconds. |
+| `ttlMs` | `number` | No | Time to live in milliseconds; omitted, `0` or less, the value does not expire. |
 
-Returns the `state.set` response envelope.
+Broadcasts `state:changed` afterwards unless `silent` is `true`, with `key`, `value`, `previousValue` (`null` for a new key) and `sourceWindowId`. With a positive `ttlMs`, the result and the event both carry `expiresAt`, in milliseconds since the Unix epoch.
 
 ```javascript
 await fb.sharedState.set('playlist:active-filter', 'favorites', false, 60_000);
 ```
 
-<!-- END AUTO-GENERATED SDK STUBS -->
+## get()
 
-## Additional Methods
-
-### get()
-
-`fb.sharedState.get(key: string): Promise<{ value: unknown }>` reads one value.
+`fb.sharedState.get(key: string): Promise<StateGetResponse>` reads one value.
 
 ```javascript
-const { value } = await fb.sharedState.get('playlist:active-filter');
+const res = await fb.sharedState.get('playlist:active-filter');
+if (res.success === false) throw new Error(res.error);
+const { value } = res;
 ```
 
 ## Events

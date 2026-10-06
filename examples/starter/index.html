@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>My foobar2000 theme</title>
+  </head>
+  <body>
+    <main class="player">
+      <fb-cover-art class="cover"></fb-cover-art>
+
+      <div class="info">
+        <fb-track-text class="title" field="title" placeholder="Nothing playing"></fb-track-text>
+        <fb-track-text class="artist" field="artist"></fb-track-text>
+      </div>
+
+      <div class="time">
+        <fb-time-current></fb-time-current>
+        <fb-seek-bar class="seek"></fb-seek-bar>
+        <fb-time-total></fb-time-total>
+      </div>
+
+      <div class="controls">
+        <fb-prev-button></fb-prev-button>
+        <fb-play-button></fb-play-button>
+        <fb-next-button></fb-next-button>
+      </div>
+
+      <div class="extra">
+        <span id="status">Not connected to foobar2000</span>
+        <button id="random" type="button">Random track</button>
+      </div>
+    </main>
+
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>

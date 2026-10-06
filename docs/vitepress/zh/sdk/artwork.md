@@ -18,6 +18,7 @@
 
 ```javascript
 const res = await fb.artwork.getFb2kUrl('front', { maxSize: 300 });
+if (res.success === false) throw new Error(res.error);
 if (res.available && res.dataUrl) {
     document.getElementById('cover').src = res.dataUrl;
 }
@@ -46,6 +47,7 @@ const res = await fb.artwork.getFb2kUrlByPath('E:\\Music\\song.flac', 'front', {
 
 ```javascript
 const cover = await fb.artwork.getCurrent('front');
+if (cover.success === false) throw new Error(cover.error);
 if (cover.available && cover.dataUrl) {
     const comma = cover.dataUrl.indexOf(',');
     const payload = cover.dataUrl.slice(comma + 1);
@@ -73,17 +75,24 @@ const res = await fb.artwork.getForTrack('E:\\Music\\song.flac', 'front', { maxS
 
 ```javascript
 const res = await fb.artwork.getCurrent('front');
+if (res.success === false) throw new Error(res.error);
 if (res.available) img.src = res.dataUrl;
 ```
 
 ## getByPath(path, type?)
+
+签名：`fb.artwork.getByPath(path: string, type?: AlbumArtType): Promise<ArtworkGetByPathResponse>`
 
 根据文件路径获取封面内容。返回 `{available, dataUrl?, type, mimeType?, size?}`。纯展示建议用 `getFb2kUrlByPath()`。
 
 | 参数 | 类型 | 说明 |
 | --- | --- | --- |
 | path | string | 音频文件路径 |
-| type | string | 封面类型（默认 'front'） |
+| type | AlbumArtType | 封面类型（默认 'front'） |
+
+```javascript
+const cover = await fb.artwork.getByPath('E:\\Music\\song.flac', 'front');
+```
 
 ## withMaxSize(url, maxSize?)
 
@@ -124,77 +133,67 @@ const batch = await fb.artwork.getFb2kUrlByPathBatch(
 );
 ```
 
-## 其余方法
+## getAvailableArtwork(path)
 
-### getAvailableArtwork(path?)
-
-签名：`fb.artwork.getAvailableArtwork(path?: string): Promise<ArtworkAvailableResponse>`
+签名：`fb.artwork.getAvailableArtwork(path: string): Promise<ArtworkGetAvailableArtworkResponse>`
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
-| path | string | 否 | 音频文件路径；省略时检查当前播放曲目 |
+| path | string | 是 | 音频文件路径；`\|subsong:N` 后缀会被去掉 |
+
+报告文件嵌入了哪些图片类型，以及旁边有哪些封面文件。`artworks` 按探测顺序列出嵌入的图片，`available` 表示至少有一张。`sources` 在嵌有图片时先有一个 `embedded`，然后是文件旁每个 `cover`、`folder`、`front` 或 `album` 封面文件（`.jpg` 或 `.png`）对应的 `folder:<名字>`。
 
 ```javascript
 const available = await fb.artwork.getAvailableArtwork('E:\\Music\\song.flac');
 ```
 
-### getAvailableTypes(path?)
+## getAvailableTypes(path?)
 
-签名：`fb.artwork.getAvailableTypes(path?: string): Promise<ArtworkAvailableTypesResponse>`
+签名：`fb.artwork.getAvailableTypes(path?: string): Promise<ArtworkGetAvailableTypesResponse>`
 
-| 参数 | 类型 | 必填 | 说明 |
-| --- | --- | --- | --- |
-| path | string | 否 | 音频文件路径；省略时检查当前播放曲目 |
+以响应里的 `types` 数组返回 `path` 所指文件内嵌的封面类型；省略 `path` 时取当前播放曲目。
 
 ```javascript
 const types = await fb.artwork.getAvailableTypes();
 ```
 
-### getByPath(path, type?, options?)
+## getFolderImages(directory)
 
-签名：`fb.artwork.getByPath(path: string, type?: string, options?: object): Promise<ArtworkResponse>`
-
-| 参数 | 类型 | 必填 | 说明 |
-| --- | --- | --- | --- |
-| path | string | 是 | 音频文件路径 |
-| type | string | 否 | 封面类型，默认 `front` |
-| options | object | 否 | 缩略图或返回格式选项 |
-
-```javascript
-const cover = await fb.artwork.getByPath('E:\\Music\\song.flac', 'front');
-```
-
-### getFolderImages(path)
-
-签名：`fb.artwork.getFolderImages(path: string): Promise<ArtworkFolderImagesResponse>`
+签名：`fb.artwork.getFolderImages(directory: string): Promise<ArtworkGetFolderImagesResponse>`
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
-| path | string | 是 | 音频文件或目录路径 |
+| directory | string | 是 | 目录路径 |
+
+以 `images` 数组返回目录里能识别的图片文件，每行为 `{ name, path, size }`。
 
 ```javascript
-const images = await fb.artwork.getFolderImages('E:\\Music\\Album\\song.flac');
+const images = await fb.artwork.getFolderImages('E:\\Music\\Album');
 ```
 
-### getLyrics(path?)
+## getLyrics(path?)
 
-签名：`fb.artwork.getLyrics(path?: string): Promise<ArtworkLyricsResponse>`
+签名：`fb.artwork.getLyrics(path?: string): Promise<ArtworkGetLyricsResponse>`
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
 | path | string | 否 | 音频文件路径；省略时读取当前播放曲目 |
 
+读曲目的歌词标签。按 `LYRICS`、`UNSYNCED LYRICS`、`UNSYNCEDLYRICS`、`SYNCEDLYRICS`、`SYNCED LYRICS` 的顺序探测，第一个非空的胜出：`available` 表示是否找到，`tag` 是提供歌词的标签，`lyrics` 是歌词文本，标签名表明是同步歌词时 `synced` 为 `true`。宿主缓存的曲目信息齐全时用缓存，没读过的本地文件从磁盘读。省略 `path` 且没在播放时以 `NO_ACTIVE_ITEM` 失败；建不出曲目的路径以 `NOT_FOUND` 失败，读不了的本地文件以 `OPERATION_FAILED` 失败。
+
 ```javascript
 const lyrics = await fb.artwork.getLyrics('E:\\Music\\song.flac');
 ```
 
-### getMetadata(path)
+## getMetadata(path?)
 
-签名：`fb.artwork.getMetadata(path: string): Promise<ArtworkMetadataResponse>`
+签名：`fb.artwork.getMetadata(path?: string): Promise<ArtworkGetMetadataResponse>`
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
-| path | string | 是 | 音频文件路径 |
+| path | string | 否 | 音频文件路径；省略时读取当前播放曲目 |
+
+读曲目的专辑级标签：`album`、`artist`、`albumArtist`、`title`、`year`、`genre`、`trackNumber` 与 `discNumber`，没有时为空，多值标签以 `, ` 连接。`hasEmbedded` 表示文件是否嵌有图片，`hasLyrics` 表示是否带歌词标签（空的也算）。远程或未识别的路径只用宿主缓存里有的，可能是空的。失败情形同 `getLyrics()`。
 
 ```javascript
 const metadata = await fb.artwork.getMetadata('E:\\Music\\song.flac');

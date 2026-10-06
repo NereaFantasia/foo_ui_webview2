@@ -5,12 +5,13 @@ Spider Monkey Panel（SMP）兼容层，用于在 WebView2 UI 中运行 SMP 风�
 ## 快速开始
 
 ```html
-<!-- 1. bridge.js 必须先加载 -->
-<script src="bridge.js"></script>
-<!-- 2. smp-compat.js 自动加载所有包装器 -->
-<script src="smp-compat.js"></script>
+<!-- 1. 先加载 bridge 包，它会设置 window.fb -->
+<script src="bridge.global.js"></script>
+<!-- 2. SMP 兼容层在 window.fb 之上启动 -->
+<script src="smp-compat.global.js"></script>
 
-<script>
+<!-- 用模块脚本，才能在顶层 await -->
+<script type="module">
   await window.smp.ready;
   console.log('IsPlaying:', fb.IsPlaying);
   console.log('ActivePlaylist:', plman.ActivePlaylist);
@@ -84,8 +85,8 @@ plman.ActivePlaylist = 2;
 
 ### 缓存 + 事件机制
 
-1. **初始化时**：批量调用后端 API 填充 `_cache`（11~15 个并行请求，取决于 `includePaths` 选项）
-2. **运行时**：缓存层监听 22 个 bridge 事件实时更新，同时通过 `fb.onSMP()` 映射 35 个 SMP 事件名到对应的 bridge 事件
+1. **初始化时**：批量调用后端 API 填充 `_cache`
+2. **运行时**：缓存层监听 bridge 事件实时更新，同时通过 `fb.onSMP()` 把 SMP 事件名映射到对应的 bridge 事件
 3. **读取时**：属性从缓存同步返回，不经过 C++
 
 缓存字段：播放状态（isPlaying、isPaused、volumeDb、playbackTime）、播放列表（playlists、activePlaylist、playlistCount）、配置（cursorFollowPlayback、playbackFollowCursor、replaygainMode）、路径（componentPath、foobarPath、profilePath）等。
@@ -404,12 +405,12 @@ if (wasapi) await fb.SetOutputDevice(wasapi.outputId, wasapi.deviceId);
 | 方法/属性 | 类型 | 说明 |
 | --- | --- | --- |
 | fb.Version | string (只读) | foobar2000 版本字符串 |
-| fb.RunContextCommandWithMetadb(cmd, handle) | boolean | 对指定句柄执行上下文命令 ⚠️ |
+| fb.RunContextCommandWithMetadb(cmd, handle) | boolean | 对指定句柄执行上下文命令，匹配规则见下 |
 | fb.ClearPlaylist() | boolean | 清空活动播放列表 |
 | fb.GetLibraryRelativePath(handle) | string | 获取相对于 foobar 目录的路径 |
 
-::: warning RunContextCommandWithMetadb 已知限制
-后端 `menu.runContextCommand` 不读取 `handles` 参数，命令始终作用于默认上下文（当前选择/播放曲目）。
+::: warning RunContextCommandWithMetadb 的匹配规则
+按给定曲目建右键菜单，`cmd` 与从菜单根起、以斜杠分隔的完整路径比较，不分大小写，取第一个命中的命令执行。找不到命令、建菜单失败或执行失败都返回 `false`，不会回退到选中项或正在播放的曲目。
 :::
 
 | 方法 | 返回 | 说明 |
@@ -530,9 +531,9 @@ const [dir, name, ext] = utils.SplitFilePath('E:\\Music\\song.flac');
 | --- | --- |
 | plman.UndoBackup() | No-op — 后端自动创建 undo 备份点 |
 | fb.GetQueryItems(handles, query) | 忽略 handles — 直接对媒体库查询 |
-| plman.AddItemToPlaybackQueue(handle) | 路径匹配入队，subsong 可能丢失 |
+| plman.AddItemToPlaybackQueue(handle) | 经 `queue.addPaths` 按路径入队；路径保留 `\|subsong:N` 后缀，入队的是同一子曲目 |
 | fb.SetOutputDevice(guid, deviceId) | 内部映射 guid → outputId 传给后端 |
-| fb.RunContextCommandWithMetadb(cmd, h) | handles 被忽略 — 后端始终用默认上下文 |
+| fb.RunContextCommandWithMetadb(cmd, h) | 须给出从菜单根起的完整路径（不分大小写）；找不到或失败返回 false，不回退到选中项或正在播放 |
 | window.NotifyOthers(name, info) | payload 整体放入 message 字段（非 data） |
 | utils.ListFiles/Glob/ListFolders | 非递归模式也返回完整路径（与 SMP 一致） |
 | utils.ColourPicker() | 返回默认值 — WebView2 无原生颜色选择器 |
@@ -576,4 +577,4 @@ fb.onSMP('on_playback_new_track', async (track) => {
 ## 相关资源
 
 - [SDK 概述](/zh/sdk/overview)
-- [事件系统](/zh/reference/events)
+- [事件 API](/zh/api/events)

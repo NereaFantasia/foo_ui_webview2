@@ -1,6 +1,6 @@
 # HTTP API
 
-HTTP 请求功能，支持 GET/POST/PUT/DELETE/PATCH/HEAD/Download/Abort。共 8 个 API。
+HTTP 请求功能，支持 GET/POST/PUT/DELETE/PATCH/HEAD/Download/Abort。
 
 ::: warning 安全限制
 
@@ -15,19 +15,15 @@ HTTP 请求功能，支持 GET/POST/PUT/DELETE/PATCH/HEAD/Download/Abort。共 8
 
 :::
 
+## 自定义 User-Agent
+
+传入 `headers: { 'User-Agent': 'MyTheme/1.0' }` 即可标识自己的主题，适用于 GET、POST、PUT、DELETE、PATCH、HEAD 和下载。不指定时，宿主发送 `foo_ui_webview2/1.0 (WinHTTP)`。
+
+自定义请求头仅用于首次请求。重定向后不再携带，`User-Agent` 也恢复为宿主默认值。如果服务要求每次请求都使用你的 User-Agent，应直接请求最终 URL。
+
 ## 共享请求选项
 
-下表参数为所有 `http.*` verb（除 `http.abort`）通用：
-
-| 参数 | 类型 | 必填 | 描述 |
-| --- | --- | --- | --- |
-| url | string | ✓ | 请求 URL（仅允许 `http://` / `https://`） |
-| headers | object | ✗ | 自定义请求头 |
-| timeout | number | ✗ | 超时时间 ms（默认 30000；download 默认 60000） |
-| async | boolean | ✗ | 是否异步请求（除 `download` 默认 false 外，默认 true） |
-| redirect | string | ✗ | 重定向策略（`follow` / `error` / `manual`，默认 `follow`） |
-| responseType | string | ✗ | 响应类型，见下表（默认 `text`；`download` / `head` 不支持） |
-| insecureTls | boolean | ✗ | 跳过 TLS 证书校验（默认 `false`），见下方说明 |
+`http.get`、`http.post`、`http.put`、`http.delete`、`http.patch` 的参数相同，只是后四个多一个 `body`；`http.head` 没有 `responseType`，`http.download` 另有 `saveTo`，默认同步、超时 60000 毫秒。各方法的参数表见下文，下面两项需要额外说明。
 
 ### responseType 取值
 
@@ -72,126 +68,200 @@ const result = await fb2k.invoke('http.get', {
 
 ### http.get
 
-发送 HTTP GET 请求。
-
-| 参数 | 类型 | 必填 | 默认值 | 说明 |
-| --- | --- | --- | --- | --- |
-| `url` | `string` | 是 | — |  |
-| `headers` | `object` | 否 | — |  |
-| `timeout` | `integer` | 否 | `30000` |  |
-| `async` | `boolean` | 否 | `true` |  |
-| `redirect` | `string` | 否 | `follow` |  |
-| `responseType` | `string` | 否 | `text` |  |
-| `insecureTls` | `boolean` | 否 | `false` |  |
-
-**返回值**: `{"async":"...","requestId":"...","success":true}`
-
-
-### http.post
-
-发送 HTTP POST 请求。
-
-| 参数 | 类型 | 必填 | 默认值 | 说明 |
-| --- | --- | --- | --- | --- |
-| `url` | `string` | 是 | — |  |
-| `body` | `json` | 否 | — | 请求体。 |
-| `headers` | `object` | 否 | `{}` |  |
-| `timeout` | `integer` | 否 | `30000` |  |
-| `async` | `boolean` | 否 | `true` |  |
-| `redirect` | `string` | 否 | `follow` |  |
-| `responseType` | `string` | 否 | `text` |  |
-| `insecureTls` | `boolean` | 否 | `false` |  |
-
-**返回值**: 同 `http.get`。
-
-
-### http.head
-
-发送 HTTP HEAD 请求（仅获取响应头，不下载内容）。
-
-| 参数 | 类型 | 必填 | 默认值 | 说明 |
-| --- | --- | --- | --- | --- |
-| `url` | `string` | 是 | — |  |
-| `headers` | `object` | 否 | — |  |
-| `timeout` | `integer` | 否 | `30000` |  |
-| `async` | `boolean` | 否 | `true` |  |
-| `redirect` | `string` | 否 | `follow` |  |
-| `insecureTls` | `boolean` | 否 | `false` |  |
-
-**返回值**: `{"async":"...","contentLength":"...","requestId":"...","success":true}`
-
-
-### http.put
-
-发送 HTTP PUT 请求。默认为异步模式。
-
-| 参数 | 类型 | 必填 | 默认值 | 说明 |
-| --- | --- | --- | --- | --- |
-| `url` | `string` | 是 | — |  |
-| `body` | `json` | 否 | — | 请求体。 |
-| `headers` | `object` | 否 | `{}` |  |
-| `timeout` | `integer` | 否 | `30000` |  |
-| `async` | `boolean` | 否 | `true` |  |
-| `redirect` | `string` | 否 | `follow` |  |
-| `responseType` | `string` | 否 | `text` |  |
-| `insecureTls` | `boolean` | 否 | `false` |  |
-
-**返回值**: 同 `http.get`，异步结果通过 `http:response` 推送。
-
-
-### http.delete
-
-发送 HTTP DELETE 请求。默认为异步模式。
-
-| 参数 | 类型 | 必填 | 默认值 | 说明 |
-| --- | --- | --- | --- | --- |
-| `url` | `string` | 是 | — |  |
-| `body` | `json` | 否 | — | 请求体。 |
-| `headers` | `object` | 否 | `{}` |  |
-| `timeout` | `integer` | 否 | `30000` |  |
-| `async` | `boolean` | 否 | `true` |  |
-| `redirect` | `string` | 否 | `follow` |  |
-| `responseType` | `string` | 否 | `text` |  |
-| `insecureTls` | `boolean` | 否 | `false` |  |
-
-**返回值**: 同 `http.get`，异步结果通过 `http:response` 推送。
-
-
-### http.patch
-
-发送 HTTP PATCH 请求。默认为异步模式。
-
-| 参数 | 类型 | 必填 | 默认值 | 说明 |
-| --- | --- | --- | --- | --- |
-| `url` | `string` | 是 | — |  |
-| `body` | `json` | 否 | — | 请求体。 |
-| `headers` | `object` | 否 | `{}` |  |
-| `timeout` | `integer` | 否 | `30000` |  |
-| `async` | `boolean` | 否 | `true` |  |
-| `redirect` | `string` | 否 | `follow` |  |
-| `responseType` | `string` | 否 | `text` |  |
-| `insecureTls` | `boolean` | 否 | `false` |  |
-
-**返回值**: 同 `http.get`，异步结果通过 `http:response` 推送。
-
-
-### http.abort
-
-中止一个正在进行的异步 HTTP 请求。
+<!-- api-schema:begin http.get -->
+发送 GET 请求。缺省时立即返回回执，响应随后以带同一 `requestId` 的 `http:response` 事件到达；`async: false` 时宿主阻塞到收到响应再返回。请求本地或私有网络地址会以 `PERMISSION_DENIED` 失败，除非宿主设置允许，每次重定向都会重新检查。
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
-| `requestId` | `string` | 是 | 要中止的异步请求 id。 |
+| `url` | `string` | 是 | 请求 URL；只允许 `http` 与 `https`。不能为空。 |
+| `headers` | `Record<string, string>` | 否 | 自定义请求头。`User-Agent` 可覆盖首次请求的宿主默认值。名称或值含换行的请求头会被丢弃。重定向后不再携带自定义头，`User-Agent` 也恢复为宿主默认值。 |
+| `timeout` | `integer` | 否 | 解析、连接、发送、接收各自的超时，单位毫秒；`0` 或负数保留 WinHTTP 缺省值。默认 `30000`。 |
+| `async` | `boolean` | 否 | 立即返回回执、以 `http:response` 事件送达响应；为 `false` 时阻塞到收到响应。默认 `true`。 |
+| `redirect` | `"follow" \| "error" \| "manual"` | 否 | `follow` 最多跟随 10 次重定向；`error` 遇到重定向时以 `OPERATION_FAILED` 失败；`manual` 原样返回重定向响应。默认 `"follow"`。 |
+| `responseType` | `"text" \| "base64" \| "arraybuffer" \| "binary"` | 否 | `text` 以文本返回响应体；`base64` 及其别名 `arraybuffer`、`binary` 以 Base64 编码返回。默认 `"text"`。 |
+| `insecureTls` | `boolean` | 否 | 接受无效或自签名证书；只有宿主设置同时允许不安全 TLS 时才生效。默认 `false`。 |
 
-**返回值**：
+**返回值**
 
-```json
-{
-    "success": true,
-    "requestId": "http_1",
-    "cancelled": true
-}
-```
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `requestId` | `string` | 请求的 id；异步回执里出现。`http:response` 与 `http.abort` 用它。 |
+| `async` | `boolean` | 异步回执里为 `true`。 |
+| `status` | `integer` | HTTP 状态码；同步响应里出现。 |
+| `headers` | `Record<string, string>` | 响应头，以名称为键；重复的响应头取最后一个。同步响应里出现。 |
+| `body` | `string` | 响应体，按 `responseType` 为文本或 Base64；同步响应里出现。 |
+| `responseType` | `"text" \| "base64"` | `text` 或 `base64`，即 `body` 的编码；同步响应里出现。 |
+
+成功时 `success` 为 `true`；失败时返回 `{ success: false, error, code }`，`code` 见[错误码](../reference/errors.md)。
+<!-- api-schema:end -->
+
+### http.post
+
+<!-- api-schema:begin http.post -->
+发送 POST 请求；其余同 `http.get`。
+
+| 参数 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `url` | `string` | 是 | 请求 URL；只允许 `http` 与 `https`。不能为空。 |
+| `body` | `any` | 否 | 请求体：字符串原样发送，对象或数组发送其 JSON 文本，其他值按空请求体发送。 |
+| `headers` | `Record<string, string>` | 否 | 自定义请求头。`User-Agent` 可覆盖首次请求的宿主默认值。名称或值含换行的请求头会被丢弃。重定向后不再携带自定义头，`User-Agent` 也恢复为宿主默认值。 |
+| `timeout` | `integer` | 否 | 解析、连接、发送、接收各自的超时，单位毫秒；`0` 或负数保留 WinHTTP 缺省值。默认 `30000`。 |
+| `async` | `boolean` | 否 | 立即返回回执、以 `http:response` 事件送达响应；为 `false` 时阻塞到收到响应。默认 `true`。 |
+| `redirect` | `"follow" \| "error" \| "manual"` | 否 | `follow` 最多跟随 10 次重定向；`error` 遇到重定向时以 `OPERATION_FAILED` 失败；`manual` 原样返回重定向响应。默认 `"follow"`。 |
+| `responseType` | `"text" \| "base64" \| "arraybuffer" \| "binary"` | 否 | `text` 以文本返回响应体；`base64` 及其别名 `arraybuffer`、`binary` 以 Base64 编码返回。默认 `"text"`。 |
+| `insecureTls` | `boolean` | 否 | 接受无效或自签名证书；只有宿主设置同时允许不安全 TLS 时才生效。默认 `false`。 |
+
+**返回值**
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `requestId` | `string` | 请求的 id；异步回执里出现。`http:response` 与 `http.abort` 用它。 |
+| `async` | `boolean` | 异步回执里为 `true`。 |
+| `status` | `integer` | HTTP 状态码；同步响应里出现。 |
+| `headers` | `Record<string, string>` | 响应头，以名称为键；重复的响应头取最后一个。同步响应里出现。 |
+| `body` | `string` | 响应体，按 `responseType` 为文本或 Base64；同步响应里出现。 |
+| `responseType` | `"text" \| "base64"` | `text` 或 `base64`，即 `body` 的编码；同步响应里出现。 |
+
+成功时 `success` 为 `true`；失败时返回 `{ success: false, error, code }`，`code` 见[错误码](../reference/errors.md)。
+<!-- api-schema:end -->
+
+### http.head
+
+<!-- api-schema:begin http.head -->
+发送 HEAD 请求；其余同 `http.get`。响应体恒为空文本，服务器发来数字形式的 `Content-Length` 时另带 `contentLength`。
+
+| 参数 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `url` | `string` | 是 | 请求 URL；只允许 `http` 与 `https`。不能为空。 |
+| `headers` | `Record<string, string>` | 否 | 自定义请求头。`User-Agent` 可覆盖首次请求的宿主默认值。名称或值含换行的请求头会被丢弃。重定向后不再携带自定义头，`User-Agent` 也恢复为宿主默认值。 |
+| `timeout` | `integer` | 否 | 解析、连接、发送、接收各自的超时，单位毫秒；`0` 或负数保留 WinHTTP 缺省值。默认 `30000`。 |
+| `async` | `boolean` | 否 | 立即返回回执、以 `http:response` 事件送达响应；为 `false` 时阻塞到收到响应。默认 `true`。 |
+| `redirect` | `"follow" \| "error" \| "manual"` | 否 | `follow` 最多跟随 10 次重定向；`error` 遇到重定向时以 `OPERATION_FAILED` 失败；`manual` 原样返回重定向响应。默认 `"follow"`。 |
+| `insecureTls` | `boolean` | 否 | 接受无效或自签名证书；只有宿主设置同时允许不安全 TLS 时才生效。默认 `false`。 |
+
+**返回值**
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `requestId` | `string` | 请求的 id；异步回执里出现。`http:response` 与 `http.abort` 用它。 |
+| `async` | `boolean` | 异步回执里为 `true`。 |
+| `status` | `integer` | HTTP 状态码；同步响应里出现。 |
+| `headers` | `Record<string, string>` | 响应头，以名称为键；重复的响应头取最后一个。同步响应里出现。 |
+| `body` | `string` | 恒为空；同步响应里出现。 |
+| `responseType` | `"text" \| "base64"` | 恒为 `text`；同步响应里出现。 |
+| `contentLength` | `integer` | 数字形式的 `Content-Length` 响应头；同步响应里、服务器发来可解析的值时出现。 |
+
+成功时 `success` 为 `true`；失败时返回 `{ success: false, error, code }`，`code` 见[错误码](../reference/errors.md)。
+<!-- api-schema:end -->
+
+### http.put
+
+<!-- api-schema:begin http.put -->
+发送 PUT 请求；其余同 `http.get`。
+
+| 参数 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `url` | `string` | 是 | 请求 URL；只允许 `http` 与 `https`。不能为空。 |
+| `body` | `any` | 否 | 请求体：字符串原样发送，对象或数组发送其 JSON 文本，其他值按空请求体发送。 |
+| `headers` | `Record<string, string>` | 否 | 自定义请求头。`User-Agent` 可覆盖首次请求的宿主默认值。名称或值含换行的请求头会被丢弃。重定向后不再携带自定义头，`User-Agent` 也恢复为宿主默认值。 |
+| `timeout` | `integer` | 否 | 解析、连接、发送、接收各自的超时，单位毫秒；`0` 或负数保留 WinHTTP 缺省值。默认 `30000`。 |
+| `async` | `boolean` | 否 | 立即返回回执、以 `http:response` 事件送达响应；为 `false` 时阻塞到收到响应。默认 `true`。 |
+| `redirect` | `"follow" \| "error" \| "manual"` | 否 | `follow` 最多跟随 10 次重定向；`error` 遇到重定向时以 `OPERATION_FAILED` 失败；`manual` 原样返回重定向响应。默认 `"follow"`。 |
+| `responseType` | `"text" \| "base64" \| "arraybuffer" \| "binary"` | 否 | `text` 以文本返回响应体；`base64` 及其别名 `arraybuffer`、`binary` 以 Base64 编码返回。默认 `"text"`。 |
+| `insecureTls` | `boolean` | 否 | 接受无效或自签名证书；只有宿主设置同时允许不安全 TLS 时才生效。默认 `false`。 |
+
+**返回值**
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `requestId` | `string` | 请求的 id；异步回执里出现。`http:response` 与 `http.abort` 用它。 |
+| `async` | `boolean` | 异步回执里为 `true`。 |
+| `status` | `integer` | HTTP 状态码；同步响应里出现。 |
+| `headers` | `Record<string, string>` | 响应头，以名称为键；重复的响应头取最后一个。同步响应里出现。 |
+| `body` | `string` | 响应体，按 `responseType` 为文本或 Base64；同步响应里出现。 |
+| `responseType` | `"text" \| "base64"` | `text` 或 `base64`，即 `body` 的编码；同步响应里出现。 |
+
+成功时 `success` 为 `true`；失败时返回 `{ success: false, error, code }`，`code` 见[错误码](../reference/errors.md)。
+<!-- api-schema:end -->
+
+### http.delete
+
+<!-- api-schema:begin http.delete -->
+发送 DELETE 请求；其余同 `http.get`。
+
+| 参数 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `url` | `string` | 是 | 请求 URL；只允许 `http` 与 `https`。不能为空。 |
+| `body` | `any` | 否 | 请求体：字符串原样发送，对象或数组发送其 JSON 文本，其他值按空请求体发送。 |
+| `headers` | `Record<string, string>` | 否 | 自定义请求头。`User-Agent` 可覆盖首次请求的宿主默认值。名称或值含换行的请求头会被丢弃。重定向后不再携带自定义头，`User-Agent` 也恢复为宿主默认值。 |
+| `timeout` | `integer` | 否 | 解析、连接、发送、接收各自的超时，单位毫秒；`0` 或负数保留 WinHTTP 缺省值。默认 `30000`。 |
+| `async` | `boolean` | 否 | 立即返回回执、以 `http:response` 事件送达响应；为 `false` 时阻塞到收到响应。默认 `true`。 |
+| `redirect` | `"follow" \| "error" \| "manual"` | 否 | `follow` 最多跟随 10 次重定向；`error` 遇到重定向时以 `OPERATION_FAILED` 失败；`manual` 原样返回重定向响应。默认 `"follow"`。 |
+| `responseType` | `"text" \| "base64" \| "arraybuffer" \| "binary"` | 否 | `text` 以文本返回响应体；`base64` 及其别名 `arraybuffer`、`binary` 以 Base64 编码返回。默认 `"text"`。 |
+| `insecureTls` | `boolean` | 否 | 接受无效或自签名证书；只有宿主设置同时允许不安全 TLS 时才生效。默认 `false`。 |
+
+**返回值**
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `requestId` | `string` | 请求的 id；异步回执里出现。`http:response` 与 `http.abort` 用它。 |
+| `async` | `boolean` | 异步回执里为 `true`。 |
+| `status` | `integer` | HTTP 状态码；同步响应里出现。 |
+| `headers` | `Record<string, string>` | 响应头，以名称为键；重复的响应头取最后一个。同步响应里出现。 |
+| `body` | `string` | 响应体，按 `responseType` 为文本或 Base64；同步响应里出现。 |
+| `responseType` | `"text" \| "base64"` | `text` 或 `base64`，即 `body` 的编码；同步响应里出现。 |
+
+成功时 `success` 为 `true`；失败时返回 `{ success: false, error, code }`，`code` 见[错误码](../reference/errors.md)。
+<!-- api-schema:end -->
+
+### http.patch
+
+<!-- api-schema:begin http.patch -->
+发送 PATCH 请求；其余同 `http.get`。
+
+| 参数 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `url` | `string` | 是 | 请求 URL；只允许 `http` 与 `https`。不能为空。 |
+| `body` | `any` | 否 | 请求体：字符串原样发送，对象或数组发送其 JSON 文本，其他值按空请求体发送。 |
+| `headers` | `Record<string, string>` | 否 | 自定义请求头。`User-Agent` 可覆盖首次请求的宿主默认值。名称或值含换行的请求头会被丢弃。重定向后不再携带自定义头，`User-Agent` 也恢复为宿主默认值。 |
+| `timeout` | `integer` | 否 | 解析、连接、发送、接收各自的超时，单位毫秒；`0` 或负数保留 WinHTTP 缺省值。默认 `30000`。 |
+| `async` | `boolean` | 否 | 立即返回回执、以 `http:response` 事件送达响应；为 `false` 时阻塞到收到响应。默认 `true`。 |
+| `redirect` | `"follow" \| "error" \| "manual"` | 否 | `follow` 最多跟随 10 次重定向；`error` 遇到重定向时以 `OPERATION_FAILED` 失败；`manual` 原样返回重定向响应。默认 `"follow"`。 |
+| `responseType` | `"text" \| "base64" \| "arraybuffer" \| "binary"` | 否 | `text` 以文本返回响应体；`base64` 及其别名 `arraybuffer`、`binary` 以 Base64 编码返回。默认 `"text"`。 |
+| `insecureTls` | `boolean` | 否 | 接受无效或自签名证书；只有宿主设置同时允许不安全 TLS 时才生效。默认 `false`。 |
+
+**返回值**
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `requestId` | `string` | 请求的 id；异步回执里出现。`http:response` 与 `http.abort` 用它。 |
+| `async` | `boolean` | 异步回执里为 `true`。 |
+| `status` | `integer` | HTTP 状态码；同步响应里出现。 |
+| `headers` | `Record<string, string>` | 响应头，以名称为键；重复的响应头取最后一个。同步响应里出现。 |
+| `body` | `string` | 响应体，按 `responseType` 为文本或 Base64；同步响应里出现。 |
+| `responseType` | `"text" \| "base64"` | `text` 或 `base64`，即 `body` 的编码；同步响应里出现。 |
+
+成功时 `success` 为 `true`；失败时返回 `{ success: false, error, code }`，`code` 见[错误码](../reference/errors.md)。
+<!-- api-schema:end -->
+
+### http.abort
+
+<!-- api-schema:begin http.abort -->
+取消异步请求或下载。该请求随后以报告 `CANCELLED` 的事件结束。
+
+| 参数 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `requestId` | `string` | 是 | 请求或下载回执里的 id。不能为空。 |
+
+**返回值**
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `requestId` | `string` | 原样的 id。 |
+| `cancelled` | `boolean` | 请求仍在进行并已被通知停止时为 `true`；已结束或从未存在时为 `false`。 |
+
+成功时 `success` 为 `true`；失败时返回 `{ success: false, error, code }`，`code` 见[错误码](../reference/errors.md)。
+<!-- api-schema:end -->
 
 > 当 `requestId` 对应的请求已完成或不存在时，返回 `cancelled: false`。当 `requestId` 为空时，返回 `success: false`。
 
@@ -199,13 +269,16 @@ const result = await fb2k.invoke('http.get', {
 
 ```javascript
 // 发起异步请求
-const { requestId } = await fb2k.invoke('http.get', {
+const res = await fb2k.invoke('http.get', {
     url: 'https://api.example.com/large-data',
     async: true
 });
+if (res.success === false) throw new Error(res.error);
+const { requestId } = res;
 
 // 中止请求
 const result = await fb2k.invoke('http.abort', { requestId });
+if (result.success === false) throw new Error(result.error);
 if (result.cancelled) {
     console.log('请求已中止');
 } else {
@@ -215,19 +288,32 @@ if (result.cancelled) {
 
 ### http.download
 
-下载文件到本地。默认 **同步**（与其他 verb 不同），需显式 `async: true` 启用异步。
+<!-- api-schema:begin http.download -->
+把 URL 下载到文件，缺失的文件夹会被创建。缺省时阻塞到文件写完；`async: true` 时立即返回回执，结果随后以 `http:downloadComplete` 事件到达。超过 500 MB 的下载以 `OPERATION_FAILED` 失败。
 
-| 参数 | 类型 | 必填 | 默认值 | 说明 |
-| --- | --- | --- | --- | --- |
-| `url` | `string` | 是 | — |  |
-| `saveTo` | `string` | 是 | — | 保存路径，受 Bridge 安全策略保护。 |
-| `headers` | `object` | 否 | — |  |
-| `timeout` | `integer` | 否 | `60000` |  |
-| `async` | `boolean` | 否 | `false` | 与其他 verb 不同，默认同步。 |
-| `redirect` | `string` | 否 | `follow` |  |
-| `insecureTls` | `boolean` | 否 | `false` |  |
+| 参数 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `url` | `string` | 是 | 要下载的 URL；只允许 `http` 与 `https`。不能为空。 |
+| `saveTo` | `string` | 是 | 要写入的文件；会展开路径变量并创建缺失的文件夹。已有的文件会被覆盖。不能为空。 |
+| `headers` | `Record<string, string>` | 否 | 自定义请求头。`User-Agent` 可覆盖首次请求的宿主默认值。名称或值含换行的请求头会被丢弃。重定向后不再携带自定义头，`User-Agent` 也恢复为宿主默认值。 |
+| `timeout` | `integer` | 否 | 解析、连接、发送、接收各自的超时，单位毫秒；`0` 或负数保留 WinHTTP 缺省值。默认 `60000`。 |
+| `async` | `boolean` | 否 | 立即返回回执、以 `http:downloadComplete` 事件送达结果；为 `false` 时阻塞到文件写完。默认 `false`。 |
+| `redirect` | `"follow" \| "error" \| "manual"` | 否 | `follow` 最多跟随 10 次重定向；`error` 遇到重定向时以 `OPERATION_FAILED` 失败；`manual` 原样保存重定向响应。默认 `"follow"`。 |
+| `insecureTls` | `boolean` | 否 | 接受无效或自签名证书；只有宿主设置同时允许不安全 TLS 时才生效。默认 `false`。 |
 
-**返回值**: 同步返回 path/bytesWritten/status；异步返回 requestId。
+**返回值**
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `requestId` | `string` | 下载的 id；异步回执里出现。`http:downloadComplete` 与 `http.abort` 用它。 |
+| `async` | `boolean` | 异步回执里为 `true`。 |
+| `message` | `string` | 异步回执里为 `Download started`。 |
+| `status` | `integer` | HTTP 状态码；同步下载完成时出现。 |
+| `bytesWritten` | `integer` | 写入的字节数；同步下载完成时出现。 |
+| `path` | `string` | 写入的文件（已展开路径变量）；同步下载完成时出现。 |
+
+成功时 `success` 为 `true`；失败时返回 `{ success: false, error, code }`，`code` 见[错误码](../reference/errors.md)。
+<!-- api-schema:end -->
 
 ## 错误处理
 
@@ -289,5 +375,6 @@ Blocked Hosts: localhost, 127.0.0.1, 192.168.*
 - 若需同步执行，传入 `async: false`。成功的非下载响应包含 `status`、`headers`、`body` 和 `responseType`。当响应包含 `Content-Length` 时，成功的同步或异步 HEAD 结果还可能包含数值 `contentLength`。
 - `http.download` 默认同步。传入 `async: true` 后，最终结果会作为带 `requestId` 的 `http:downloadComplete` 发出；`http.abort` 用于请求取消活跃的异步请求。
 - 仅接受 `http` 与 `https` URL。除非 host 的 Advanced Settings 显式允许，否则私有或本地网络目标会被拒绝；每次重定向都会重新检查，最多允许 10 跳。
+- 失败带 `code`，直接返回的结果与 `http:response`、`http:downloadComplete` 事件一致：本地或私有网络目标被拒为 `PERMISSION_DENIED`；URL 无法解析或协议不是 `http`、`https` 为 `INVALID_PARAMS`；被 `http.abort` 取消为 `CANCELLED`，并带 `cancelled: true`；网络错误、`redirect: "error"` 遇到重定向（带 `status`）以及超过大小上限为 `OPERATION_FAILED`。
 - 只有调用方传入 `insecureTls: true` **且** host 的无效证书设置已启用时，才会跳过 TLS 校验。该绕过方式不适用于公网流量。
 - 响应体上限为 100 MB，下载上限为 500 MB。`http.download.saveTo` 是受 Bridge 安全策略保护的写入路径参数。

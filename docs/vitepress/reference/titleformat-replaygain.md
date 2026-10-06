@@ -3,7 +3,7 @@
 Cross-page reference for title formatting and ReplayGain helpers. Primary owners remain:
 
 - [Titleformat API](/api/titleformat)
-- [Audio / ReplayGain API](/api/audio)
+- [ReplayGain API](/api/replaygain)
 
 ## titleformat.eval
 

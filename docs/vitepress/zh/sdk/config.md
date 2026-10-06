@@ -1,19 +1,26 @@
 # fb.config 配置 
 
-## get(key) 
+## get(key, defaultValue?) 
 
 获取配置值。返回 `{success, key, value, found}`。
 
 | 参数 | 类型 | 说明 |
 | --- | --- | --- |
 | key | string | 配置键名 |
+| defaultValue | JsonValue（可选） | 键不存在时用来回答的值，作为宿主的 `default` 发出；为 `undefined` 时不发 |
 
-> 键不存在时 `found` 为 `false`，`value` 为 `null`。底层 API 支持 `default` 参数，但 SDK 封装未暴露。
+> 键不存在不算错误：`found` 为 `false`，`value` 为 `defaultValue`，没给默认值时为 `null`。`0`、`false`、`''` 这类假值默认值照样发出。
 
 ```javascript
 const result = await fb.config.get('theme');
+if (result.success === false) throw new Error(result.error);
 console.log(result.value);   // 'dark'
 console.log(result.found);   // true
+
+const layout = await fb.config.get('layout', { columns: 3 });
+if (layout.success === false) throw new Error(layout.error);
+console.log(layout.found);   // 键不存在时为 false
+console.log(layout.value);   // 键不存在时为 { columns: 3 }
 ```
 
 ## set(key, value) 
@@ -35,11 +42,23 @@ await fb.config.remove('theme');
 
 ## getAll() 
 
-获取所有配置项。
+读取整个存储。返回 `{ items, configs, count }`：`items` 是每个键及其值，`configs` 是同一个映射的旧名字，`count` 是键数。存储读不出来时以 `OPERATION_FAILED` 失败。
+
+```javascript
+const res = await fb.config.getAll();
+if (res.success === false) throw new Error(res.error);
+for (const [key, value] of Object.entries(res.items)) console.log(key, value);
+```
 
 ## export() 
 
-导出配置。
+读取整个存储，同时给出映射与 JSON 文本。返回 `{ data, json, count }`：`data` 与 `getAll()` 的 `items` 是同一个映射，`json` 是把 `data` 序列化成的一段紧凑 JSON 文本。存储读不出来时以 `OPERATION_FAILED` 失败。
+
+```javascript
+const res = await fb.config.export();
+if (res.success === false) throw new Error(res.error);
+await navigator.clipboard.writeText(res.json);
+```
 
 ## 系统信息 
 
@@ -49,26 +68,35 @@ await fb.config.remove('theme');
 
 ```javascript
 const ver = await fb.config.getVersionInfo();
+if (ver.success === false) throw new Error(ver.error);
 console.log(ver.versionFull, ver.is64bit ? 'x64' : 'x86');
 ```
 
 ### getComponents() 
 
-获取已加载的组件列表。返回 `[{name, version, fileName}, ...]`。
+获取已加载的组件列表。返回 `{ components, count }`，`components` 为 `[{name, version, fileName}, ...]`；失败时返回失败信封。
 
 ```javascript
-const comps = await fb.config.getComponents();
+const res = await fb.config.getComponents();
+if (res.success === false) throw new Error(res.error);
+console.log(res.components.length);
 ```
 
 ## 输出设备 
 
 ### getOutputDevices() 
 
-获取可用输出设备列表。返回数组 `[{name, outputId, deviceId, isCurrent}, ...]`。
+获取可用输出设备列表。返回 `{ devices, count }`，每个设备为 `{name, outputId, deviceId, isCurrent}`。
 
 ### getOutputConfig() 
 
-获取当前输出配置。返回 `{outputId, deviceId, bufferLength, ...}`。
+报告当前生效的输出设置 `OutputConfig`：`outputId` 与 `deviceId`（形如 `{...}` 的 GUID）、`bufferLength`（秒）、`bitDepth`（位）、`useDither`、`useFades`，以及可选的 `outputName`、`deviceName`。没有已安装的模块对应 `outputId` 时不带 `outputName`，模块不给设备命名时不带 `deviceName`。
+
+```javascript
+const out = await fb.config.getOutputConfig();
+if (out.success === false) throw new Error(out.error);
+console.log(out.deviceName ?? out.deviceId, `${out.bufferLength * 1000} ms`);
+```
 
 ### setOutputDevice(outputId, deviceId) 
 
@@ -79,9 +107,11 @@ const comps = await fb.config.getComponents();
 设置输出缓冲区大小。返回 `{success}`。
 
 ```javascript
-const devices = await fb.config.getOutputDevices();
-const current = devices.find(d => d.isCurrent);
-await fb.config.setOutputDevice(devices[0].outputId, devices[0].deviceId);
+const res = await fb.config.getOutputDevices();
+if (res.success === false) throw new Error(res.error);
+const current = res.devices.find(d => d.isCurrent);
+const first = res.devices[0];
+if (first) await fb.config.setOutputDevice(first.outputId, first.deviceId);
 await fb.config.setOutputBuffer(1000); // 毫秒
 ```
 
@@ -89,7 +119,7 @@ await fb.config.setOutputBuffer(1000); // 毫秒
 
 ### getAdvancedConfig() 
 
-获取所有高级配置项。返回数组 `[{guid, name, type, value, defaultValue?, children?}, ...]`。
+获取所有高级配置项。返回 `{ entries, count }`，`entries` 为 `[{guid, name, type, value, defaultValue?, children?}, ...]`。
 
 ### getAdvancedConfigValue(guid) 
 
@@ -114,53 +144,77 @@ await fb.config.resetAdvancedConfig('{some-guid}');
 
 ### getPreferencesPages() 
 
-获取偏好设置页面列表。返回数组 `[{guid, name, parentGuid, sortPriority}, ...]`。
+列出 foobar2000 的全部首选项页面与分支。返回 `{ pages, count }`，`pages` 是 `PreferencesPage[]`，先列所有页面、再列所有分支。每项有 `name`、`guid`、`parentGuid`（上级页面或分支的 GUID）与 `sortPriority`（越小越靠前，`0` 按名称排序）；分支另带 `isBranch: true`。
 
 ### getPreferencesStandardGuids() 
 
-获取标准偏好设置页面的 GUID 列表。返回 `{root, core, display, playback, output, mediaLibrary, advanced, ...}`。
+报告 foobar2000 标准首选项页面的 GUID，形如 `{...}`，共 17 个键，例如 `root`、`core`、`display`、`playback`、`output`、`mediaLibrary`、`advanced`、`tools`、`dsp`、`keyboardShortcuts`。顶层页面的 `parentGuid` 是其中之一。
+
+```javascript
+const [pagesRes, std] = await Promise.all([
+  fb.config.getPreferencesPages(),
+  fb.config.getPreferencesStandardGuids(),
+]);
+if (pagesRes.success === false || std.success === false) throw new Error('preferences unavailable');
+const displayPages = pagesRes.pages.filter((p) => p.parentGuid === std.display);
+```
 
 ## 媒体库配置 
 
 ### getLibraryStatus() 
 
-获取媒体库状态。返回 `{enabled, initialized, itemCount}`。
+报告媒体库状态 `LibraryStatus`：`enabled`（至少配置了一个媒体库文件夹）、`initialized`（是否已载入完成，宿主无法判断时为 `true`）与 `itemCount`。`itemCount` 在每次调用时遍历整个媒体库计数，大库上不宜频繁调用。
 
 ### getLibraryFilePatterns() 
 
-获取媒体库文件模式。返回 `{tracks: {directory, format}, images: {directory, format}}`。
+报告 foobar2000 把新编码、复制或移动的文件放到哪里。返回可选的 `tracks`（曲目）与 `images`（专辑图片），各为 `{ directory, format }`：`directory` 是目标文件夹，`format` 是其下子文件夹与文件名所用的标题格式化模式。没有配置的模式不出现，两者都没配置时结果只有 `success: true`。
 
 ### showLibraryPreferences() 
 
-打开媒体库偏好设置页。返回 `{success}`。
+打开 foobar2000 的媒体库首选项页面。
+
+```javascript
+const status = await fb.config.getLibraryStatus();
+if (status.success === false) throw new Error(status.error);
+if (!status.enabled) {
+  await fb.config.showLibraryPreferences();
+} else {
+  const patterns = await fb.config.getLibraryFilePatterns();
+  if (patterns.success && patterns.tracks) console.log(patterns.tracks.directory);
+}
+```
 
 ## DSP 预设 
 
 ### getDspPresets() 
 
-获取所有 DSP 预设列表。返回数组 `[{index, name}, ...]`。
+获取所有 DSP 预设列表。返回 `{ presets, count }`，`presets` 为 `[{index, name}, ...]`。
 
 ### getActiveDspPreset() 
 
-获取当前活动的 DSP 预设。返回 `{index, name}`。
+报告当前选中的 DSP 预设。返回 `{ index, name, isActive }`；没有选中或预设不可用时 `index` 与 `name` 为 `null`，`isActive` 为 `false`。
 
 ### setActiveDspPreset(index) 
 
-设置活动的 DSP 预设。返回 `{success}`。
+按索引选中一个 DSP 预设，用它整条替换当前 DSP 链。选中之后无法再回到「未选中」。
 
 ```javascript
-const presets = await fb.config.getDspPresets();
-console.log(presets.map(p => p.name));
+const res = await fb.config.getDspPresets();
+if (res.success === false) throw new Error(res.error);
+console.log(res.presets.map(p => p.name));
 await fb.config.setActiveDspPreset(0);
+
+const active = await fb.config.getActiveDspPreset();
+if (active.success && active.isActive) console.log(active.name);
 ```
 
 ### getCursorFollowPlayback() / setCursorFollowPlayback(enabled) 
 
-获取/设置"光标跟随播放"。
+读写 foobar2000 的「光标跟随播放」设置。getter 返回 `{ enabled, value }`，`value` 是 `enabled` 的旧名字；setter 返回写入的 `enabled`。设置改变时广播 `playback:cursorFollowChanged`，载荷为 `{ enabled }`。
 
 ### getPlaybackFollowCursor() / setPlaybackFollowCursor(enabled) 
 
-获取/设置"播放跟随光标"。
+读写 foobar2000 的「播放跟随光标」设置，返回形状同上。设置改变时广播 `playback:followCursorChanged`，载荷为 `{ enabled }`。
 
 ### getReplaygainMode() / setReplaygainMode(mode) 
 
@@ -175,103 +229,13 @@ await fb.config.setActiveDspPreset(0);
 
 ```javascript
 const r = await fb.config.getReplaygainMode();
+if (r.success === false) throw new Error(r.error);
 console.log(r.mode); // 0
 await fb.config.setReplaygainMode(2); // Album 模式
 
-await fb.config.setCursorFollowPlayback(true);
-await fb.config.setPlaybackFollowCursor(false);
+const cursor = await fb.config.getCursorFollowPlayback();
+if (cursor.success && !cursor.enabled) await fb.config.setCursorFollowPlayback(true);
+const follow = await fb.config.getPlaybackFollowCursor();
+if (follow.success && follow.enabled) await fb.config.setPlaybackFollowCursor(false);
 ```
 
-<!-- BEGIN AUTO-GENERATED SDK STUBS -->
-
-## 其余方法
-
-### export()
-
-封装 `config.export`。参数与返回类型以 `foo-webview-sdk` 的 TypeScript 声明为准（IDE 悬浮提示或包内 `bridge.d.ts`），行为契约见 API 文档对应条目。
-
-```javascript
-await fb.config.export(/* 参数见 TypeScript 声明 */);
-```
-
-### getActiveDspPreset()
-
-封装 `config.getActiveDspPreset`。参数与返回类型以 `foo-webview-sdk` 的 TypeScript 声明为准（IDE 悬浮提示或包内 `bridge.d.ts`），行为契约见 API 文档对应条目。
-
-```javascript
-await fb.config.getActiveDspPreset(/* 参数见 TypeScript 声明 */);
-```
-
-### getAll()
-
-封装 `config.getAll`。参数与返回类型以 `foo-webview-sdk` 的 TypeScript 声明为准（IDE 悬浮提示或包内 `bridge.d.ts`），行为契约见 API 文档对应条目。
-
-```javascript
-await fb.config.getAll(/* 参数见 TypeScript 声明 */);
-```
-
-### getCursorFollowPlayback()
-
-封装 `config.getCursorFollowPlayback`。参数与返回类型以 `foo-webview-sdk` 的 TypeScript 声明为准（IDE 悬浮提示或包内 `bridge.d.ts`），行为契约见 API 文档对应条目。
-
-```javascript
-await fb.config.getCursorFollowPlayback(/* 参数见 TypeScript 声明 */);
-```
-
-### getLibraryFilePatterns()
-
-封装 `config.getLibraryFilePatterns`。参数与返回类型以 `foo-webview-sdk` 的 TypeScript 声明为准（IDE 悬浮提示或包内 `bridge.d.ts`），行为契约见 API 文档对应条目。
-
-```javascript
-await fb.config.getLibraryFilePatterns(/* 参数见 TypeScript 声明 */);
-```
-
-### getLibraryStatus()
-
-封装 `config.getLibraryStatus`。参数与返回类型以 `foo-webview-sdk` 的 TypeScript 声明为准（IDE 悬浮提示或包内 `bridge.d.ts`），行为契约见 API 文档对应条目。
-
-```javascript
-await fb.config.getLibraryStatus(/* 参数见 TypeScript 声明 */);
-```
-
-### getOutputConfig()
-
-封装 `config.getOutputConfig`。参数与返回类型以 `foo-webview-sdk` 的 TypeScript 声明为准（IDE 悬浮提示或包内 `bridge.d.ts`），行为契约见 API 文档对应条目。
-
-```javascript
-await fb.config.getOutputConfig(/* 参数见 TypeScript 声明 */);
-```
-
-### getPlaybackFollowCursor()
-
-封装 `config.getPlaybackFollowCursor`。参数与返回类型以 `foo-webview-sdk` 的 TypeScript 声明为准（IDE 悬浮提示或包内 `bridge.d.ts`），行为契约见 API 文档对应条目。
-
-```javascript
-await fb.config.getPlaybackFollowCursor(/* 参数见 TypeScript 声明 */);
-```
-
-### getPreferencesPages()
-
-封装 `config.getPreferencesPages`。参数与返回类型以 `foo-webview-sdk` 的 TypeScript 声明为准（IDE 悬浮提示或包内 `bridge.d.ts`），行为契约见 API 文档对应条目。
-
-```javascript
-await fb.config.getPreferencesPages(/* 参数见 TypeScript 声明 */);
-```
-
-### getPreferencesStandardGuids()
-
-封装 `config.getPreferencesStandardGuids`。参数与返回类型以 `foo-webview-sdk` 的 TypeScript 声明为准（IDE 悬浮提示或包内 `bridge.d.ts`），行为契约见 API 文档对应条目。
-
-```javascript
-await fb.config.getPreferencesStandardGuids(/* 参数见 TypeScript 声明 */);
-```
-
-### showLibraryPreferences()
-
-封装 `config.showLibraryPreferences`。参数与返回类型以 `foo-webview-sdk` 的 TypeScript 声明为准（IDE 悬浮提示或包内 `bridge.d.ts`），行为契约见 API 文档对应条目。
-
-```javascript
-await fb.config.showLibraryPreferences(/* 参数见 TypeScript 声明 */);
-```
-
-<!-- END AUTO-GENERATED SDK STUBS -->

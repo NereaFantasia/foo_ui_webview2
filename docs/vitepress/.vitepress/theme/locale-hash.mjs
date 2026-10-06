@@ -172,7 +172,7 @@ export function resolveLocaleHashNavigation(input) {
       !url.pathname.includes(DOCS_BASE) &&
       !/^\/(zh\/?)?$/.test(url.pathname) &&
       !url.pathname.startsWith('/zh/') &&
-      !/^\/(guide|api|sdk|mcp|reference|components)(\/|$)/.test(url.pathname)
+      !/^\/(tutorials|how-to|concepts|guide|api|sdk|mcp|reference|components)(\/|$)/.test(url.pathname)
     ) {
       return { action: 'ignore' };
     }

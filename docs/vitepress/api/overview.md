@@ -1,57 +1,58 @@
 # API Overview
 
-This section documents the public Bridge APIs registered by the component.
+The methods a page calls with `fb2k.invoke('namespace.method', params)`, by namespace. Events are listed in [Events API](./events.md). The SDK wraps these methods as `fb.*`; see [SDK namespaces](../sdk/namespaces.md).
 
-Current dynamic inventory: **427** public methods across **40** namespaces (**6** internal `*.__*` endpoints excluded).
+<!-- api-schema:begin index:namespaces -->
+446 methods in 41 namespaces.
 
-## Public namespaces
+| Namespace | Methods | Documented on |
+| --- | ---: | --- |
+| `artwork` | 13 | [Artwork API](./artwork.md) |
+| `audio` | 17 | [Audio API](./audio.md) |
+| `clipboard` | 4 | [Clipboard API](./clipboard.md) |
+| `config` | 29 | [Config API](./config.md) |
+| `console` | 3 | [Console API](./console.md) |
+| `cursor` | 2 | [Cursor API](./cursor.md) |
+| `dialog` | 4 | [Dialog API](./dialog.md) |
+| `discovery` | 15 | [Discovery API](./discovery.md) |
+| `dnd` | 4 | [Drag and Drop API](./dnd.md) |
+| `dsp` | 8 | [DSP API](./dsp.md) |
+| `event` | 2 | [Event API](./event.md) |
+| `file` | 14 | [File API](./file.md) |
+| `http` | 8 | [Http API](./http.md) |
+| `jitQueue` | 8 | [JIT Queue API](./jit-queue.md) |
+| `keyboard` | 4 | [Keyboard API](./keyboard.md) |
+| `library` | 25 | [Library API](./library.md) |
+| `log` | 3 | [Log API](./log.md) |
+| `lyrics` | 3 | [Lyrics API](./lyrics.md) |
+| `media` | 2 | [Media API](./media.md) |
+| `menu` | 8 | [Menu API](./menu.md) |
+| `metadata` | 12 | [Metadata API](./metadata.md) |
+| `misc` | 9 | [Misc API](./misc.md) |
+| `output` | 3 | [Output API](./output.md) |
+| `panel` | 2 | [Panel API](./panel.md) |
+| `playback` | 27 | [Playback API](./playback.md) |
+| `playcount` | 4 | [Playcount API](./playcount.md) |
+| `playlist` | 50 | [Playlist API](./playlist.md) |
+| `port` | 5 | [Port API](./port.md) |
+| `queue` | 11 | [Queue API](./queue.md) |
+| `rating` | 2 | [Rating API](./rating.md) |
+| `replaygain` | 8 | [ReplayGain API](./replaygain.md) |
+| `selection` | 6 | [Selection API](./selection.md) |
+| `shell` | 5 | [Shell API](./shell.md) |
+| `state` | 4 | [State API](./state.md) |
+| `system` | 9 | [System API](./system.md) |
+| `taskbar` | 5 | [Taskbar API](./taskbar.md) |
+| `titleformat` | 5 | [Titleformat API](./titleformat.md) |
+| `tray` | 15 | [Tray API](./tray.md) |
+| `ui` | 5 | [UI API](./ui.md) |
+| `webview` | 1 | [WebView API](./webview.md) |
+| `window` | 82 | [Window API](./window.md) |
+<!-- api-schema:end -->
 
-- `artwork` (13 methods)
-- `audio` (14 methods)
-- `clipboard` (4 methods)
-- `config` (29 methods)
-- `console` (3 methods)
-- `cursor` (2 methods)
-- `dialog` (4 methods)
-- `discovery` (15 methods)
-- `dnd` (3 methods)
-- `dsp` (8 methods)
-- `event` (2 methods)
-- `file` (10 methods)
-- `http` (8 methods)
-- `jitQueue` (8 methods)
-- `keyboard` (4 methods)
-- `library` (25 methods)
-- `log` (3 methods)
-- `lyrics` (3 methods)
-- `menu` (8 methods)
-- `metadata` (10 methods)
-- `misc` (9 methods)
-- `output` (3 methods)
-- `panel` (2 methods)
-- `playback` (27 methods)
-- `playcount` (4 methods)
-- `playlist` (47 methods)
-- `port` (5 methods)
-- `queue` (8 methods)
-- `rating` (2 methods)
-- `replaygain` (8 methods)
-- `selection` (6 methods)
-- `shell` (5 methods)
-- `state` (4 methods)
-- `system` (9 methods)
-- `taskbar` (5 methods)
-- `test` (2 methods)
-- `titleformat` (5 methods)
-- `tray` (14 methods)
-- `ui` (5 methods)
-- `window` (81 methods)
+Two further methods, `test.echo` and `test.ping`, exist for testing the bridge itself and are described under [Test API](./test.md#test).
 
 ## Conventions
 
-- Invoke: `fb2k.invoke('namespace.method', params)`
-- Events: `fb2k.on('namespace:eventName', handler)`
-- The high-level SDK can expose helpers such as `fb.player.play()`; use the family pages when an application needs the precise Bridge request or response shape.
-- For example, `playback:trackChanged` is an event subscription, not an invoke method.
-- Internal endpoints matching `*.__*` are not part of the public API surface.
-- Each family page owns one or more namespaces via the page map.
+- Method names use dot format (`playback.play`); event names use colon format (`playback:trackChanged`). An event name cannot be invoked.
+- Names of the form `namespace.__method` belong to pages the component ships itself, such as the tray menu, and are not part of the API.

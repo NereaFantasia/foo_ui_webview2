@@ -1,33 +1,51 @@
-# fb.utils 工具函数 
+# fb.utils 工具函数
 
-## ping() 
+## ping()
 
-测试连接。
+测试连接。经 `test.ping` 返回 `{ pong, timestamp }`，`timestamp` 是宿主的 Unix 时间（秒）。
 
 ```javascript
-const r = await fb.utils.ping(); // {mock: true} 或实际响应
+const { pong } = await fb.utils.ping(); // pong === true
 ```
 
-## formatTitle(pattern, path?) 
+## echo(message)
 
-使用 foobar2000 Title Formatting 语法格式化字符串。
+经 `test.echo` 回显一条消息：消息原样放在 `echo` 里返回，`input` 是宿主收到的参数。
+
+签名：`fb.utils.echo(message: string): Promise<TestEchoResponse>`
 
 | 参数 | 类型 | 说明 |
 | --- | --- | --- |
-| pattern | string | Title Format 模式串 |
-| path | string | 可选，指定曲目路径（默认当前播放） |
+| message | string | 以 `{ message }` 发给 `test.echo` 的消息 |
 
 ```javascript
-const r = await fb.utils.formatTitle('%artist% - %title%');
-console.log(r); // "The Beatles - Let It Be"
+const { echo } = await fb.utils.echo('Hello'); // echo === 'Hello'
+```
 
-// 指定曲目
+## formatTitle(pattern, path?)
+
+经 `titleformat.eval` 求值一个 foobar2000 Title Formatting 表达式。
+
+| 参数 | 类型 | 说明 |
+| --- | --- | --- |
+| pattern | string | Title Formatting 模式串 |
+| path | string | 可选，曲目路径；省略时对当前曲目求值 |
+
+SDK 原样返回宿主的响应 `{ result: string }`，不会拆出字符串。
+
+```javascript
+const res = await fb.utils.formatTitle('%artist% - %title%');
+if (res.success === false) throw new Error(res.error);
+const { result } = res;
+console.log(result); // "The Beatles - Let It Be"
+
+// 对指定曲目求值
 const r2 = await fb.utils.formatTitle('%codec% %bitrate%kbps', 'E:\\Music\\song.flac');
 ```
 
-## getFileInfo(path) 
+## getFileInfo(path)
 
-读取文件元数据（结构化格式）。
+经 `metadata.read` 读取文件元数据，返回它的结构化响应。
 
 | 参数 | 类型 | 说明 |
 | --- | --- | --- |
@@ -37,17 +55,3 @@ const r2 = await fb.utils.formatTitle('%codec% %bitrate%kbps', 'E:\\Music\\song.
 const info = await fb.utils.getFileInfo('E:\\Music\\song.flac');
 // {success, path, tags: {TITLE, ARTIST, ...}, info: {duration, bitrate, sampleRate, channels, codec}}
 ```
-
-<!-- BEGIN AUTO-GENERATED SDK STUBS -->
-
-## 其余方法
-
-### echo()
-
-封装 `test.echo`。参数与返回类型以 `foo-webview-sdk` 的 TypeScript 声明为准（IDE 悬浮提示或包内 `bridge.d.ts`），行为契约见 API 文档对应条目。
-
-```javascript
-await fb.utils.echo(/* 参数见 TypeScript 声明 */);
-```
-
-<!-- END AUTO-GENERATED SDK STUBS -->

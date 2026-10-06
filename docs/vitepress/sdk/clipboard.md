@@ -2,23 +2,21 @@
 
 `fb.clipboard` reads and writes text, HTML, and file-list clipboard data through the host process.
 
-<!-- BEGIN AUTO-GENERATED SDK STUBS -->
+## read()
 
-## Additional methods
+Signature: `fb.clipboard.read(): Promise<ClipboardReadResponse>`
 
-### read()
-
-Signature: `fb.clipboard.read(): Promise<{ text: string }>`
-
-Reads clipboard text.
+Reads the clipboard: which of text, a file list and an image it holds, plus the text and the file paths.
 
 ```javascript
-const { text } = await fb.clipboard.read();
+const res = await fb.clipboard.read();
+if (res.success === false) throw new Error(res.error);
+const { text } = res;
 ```
 
-### write(text)
+## write(text)
 
-Signature: `fb.clipboard.write(text: string): Promise<BaseResponse>`
+Signature: `fb.clipboard.write(text: string): Promise<ClipboardWriteResponse>`
 
 Writes plain text to the clipboard.
 
@@ -26,9 +24,9 @@ Writes plain text to the clipboard.
 await fb.clipboard.write('Copied from the theme');
 ```
 
-### writeFiles(paths)
+## writeFiles(paths)
 
-Signature: `fb.clipboard.writeFiles(paths: string[]): Promise<BaseResponse & { fileCount?: number }>`
+Signature: `fb.clipboard.writeFiles(paths: string[]): Promise<ClipboardWriteFilesResponse>`
 
 Writes a list of file paths for pasting into file-aware applications.
 
@@ -39,14 +37,12 @@ const result = await fb.clipboard.writeFiles([
 ]);
 ```
 
-### writeHTML(html, plainText?)
+## writeHTML(html, plainText?)
 
-Signature: `fb.clipboard.writeHTML(html: string, plainText?: string): Promise<BaseResponse & { htmlWritten?: boolean; textWritten?: boolean }>`
+Signature: `fb.clipboard.writeHTML(html: string, plainText?: string): Promise<ClipboardWriteHTMLResponse>`
 
-Writes HTML and, when a non-empty `plainText` value is supplied, a plain-text fallback.
+Writes HTML to the clipboard as `HTML Format`, together with a plain-text fallback: `plainText` when it is non-empty, otherwise the HTML text itself.
 
 ```javascript
 await fb.clipboard.writeHTML('<strong>Now playing</strong>', 'Now playing');
 ```
-
-<!-- END AUTO-GENERATED SDK STUBS -->

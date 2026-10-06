@@ -6,17 +6,19 @@
 
 | 参数 | 类型 | 说明 |
 | --- | --- | --- |
-| callback | function | 只接收本订阅的帧，类型为 `AudioSpectrumPayload`：`spectrum` 加上 [`audio.subscribeSpectrum`](../api/audio.md#audio-subscribespectrum) 列出的帧字段（`subscriptionId`、`bands`、`fftSize`、`scale`、`sampleRate`、`state`、`streamTime`、`hostTime` 等）。旧版宿主只发 `spectrum` |
-| options.fftSize | number | FFT 大小，2 的幂（256–65536），默认 1024。65536 是组件自己的封顶，只在需要原始 bin 分辨率时才有意义 |
-| options.bands | number | 订阅时的输出频段数，默认 48 |
+| callback | function | 只接收本订阅的帧。频带输出时类型为 `AudioSpectrumPayload`：`spectrum` 加上 [`audio.subscribeSpectrum`](../api/audio.md#audio-subscribespectrum) 列出的帧字段（`subscriptionId`、`bands`、`fftSize`、`scale`、`sampleRate`、`state`、`streamTime`、`hostTime` 等），旧版宿主只发 `spectrum`。`output: 'bins'` 时类型为 `SpectrumBinsFrame`：`firstBin` 加上 `channels: 'mix'` 时的 `spectrum`，或 `'stereo'` 时的 `left` 与 `right` |
+| options.fftSize | number | FFT 大小，2 的幂（256–65536），默认 1024。65536 是组件自己的封顶，只在需要原始 bin 分辨率时才有意义。频点输出按给定值算；频带输出在 32 带以上会提升点数 |
+| options.bands | number | 频带输出的频段数，默认 48 |
 | options.fps | number | 刷新率 (1-60)，默认 30 |
-| options.scale | `'weighted' \| 'db'` | `'weighted'`（默认）是取值 `[0, 1]` 的显示用曲线；`'db'` 是频带功率 dB，满幅正弦读 0 dB |
+| options.scale | `'weighted' \| 'db'` | `'weighted'`（默认）是取值 `[0, 1]` 的显示用曲线；`'db'` 是频带功率 dB，满幅正弦读 0 dB。频点输出恒为 dB：不给或给 `'db'` |
+| options.output | `'bands' \| 'bins'` | `'bins'` 不出频带，改出 FFT 的线性频点，逐频点给 dB 功率，见[频点输出](../api/audio.md#频点输出)。`'bands'`（默认）为兼容保留 |
+| options.channels | `'mix' \| 'stereo'` | 只用于频点输出：`'mix'`（默认）把各声道平均进 `spectrum`，`'stereo'` 分出 `left` 与 `right` |
 | options.backgroundThrottle | boolean | 默认 `true`：别的程序在前台期间每秒至多 12 帧，通常在 10 到 12 帧之间。传 `false` 保持原帧率 |
 | options.minFrequency | number | 频带范围的下限（Hz），不小于 1，默认 20 |
 | options.maxFrequency | number | 上限（Hz），须大于 `minFrequency`；按流采样率的一半截，不给时也取这个值 |
 | options.event | string | 自定义事件名，默认 "audio:spectrum"。多面板场景可用不同事件名隔离数据 |
 
-返回的取消函数带一个 `ready` 属性：宿主答复后兑现的 Promise，永不 reject。登记成功时得到 `{ ok: true, subscriptionId, fftSize, bands, fps, scale, backgroundThrottle, minFrequency, maxFrequency, streamReady }`（范围跟随采样率一半时 `maxFrequency` 为 `null`），否则得到 `{ ok: false, code, error }`：参数被拒是 `INVALID_PARAMS`，没有宿主是 `NOT_SUPPORTED`，调用本身失败是 `UNKNOWN_ERROR`。
+返回的取消函数带一个 `ready` 属性：宿主答复后兑现的 Promise，永不 reject。登记成功时得到 `{ ok: true, subscriptionId, fftSize, bands, fps, scale, output, channels, backgroundThrottle, minFrequency, maxFrequency, streamReady }`（范围跟随采样率一半时 `maxFrequency` 为 `null`；不支持频点输出的宿主对频点请求报 `output: 'bands'`，这时回调收不到帧），否则得到 `{ ok: false, code, error }`：参数被拒是 `INVALID_PARAMS`，没有宿主是 `NOT_SUPPORTED`，调用本身失败是 `UNKNOWN_ERROR`。
 
 ```javascript
 // 基本用法
@@ -44,9 +46,20 @@ const meter = fb.audio.subscribeSpectrum(
 const outcome = await meter.ready;
 if (!outcome.ok) console.warn('spectrum subscription failed', outcome.code, outcome.error);
 
+// 左右两路的线性频点，单位 dB
+const bins = fb.audio.subscribeSpectrum(
+    (frame) => {
+        if (frame.channels === 'stereo') console.log(frame.firstBin, frame.left.length, frame.right.length);
+    },
+    { output: 'bins', channels: 'stereo', fftSize: 16384, backgroundThrottle: false }
+);
+const binsOutcome = await bins.ready;
+if (binsOutcome.ok && binsOutcome.output !== 'bins') console.warn('this host has no bin output');
+
 // 取消订阅（同时停止 C++ 采集，释放可视化资源）
 unsubscribe();
 unsubscribeCustom();
+bins();
 ```
 
 ::: warning 注意
@@ -63,10 +76,11 @@ SDK `fb.audio.subscribeSpectrum()` 自己生成并管理 `subscriptionId`，需�
 
 | 参数 | 类型 | 说明 |
 | --- | --- | --- |
-| options.subscriptionId | string | 按这个订阅的参数算这一帧（此时忽略 `bands`、`scale` 与频率范围） |
+| options.subscriptionId | string | 按这个订阅的参数算这一帧，包括频点输出（此时忽略 `bands`、`scale`、`output`、`channels` 与频率范围） |
 | options.bands | number | 本次轮询期望返回的频段数；未传或为 `0` 时取各订阅中最大的频段数 |
 | options.scale | `'weighted' \| 'db'` | 不给 `subscriptionId` 时本次轮询的档位，默认 `'weighted'` |
 | options.minFrequency / options.maxFrequency | number | 不给 `subscriptionId` 时本次轮询的频带范围，规则同 `subscribeSpectrum` |
+| options.output / options.channels | string | 不给 `subscriptionId` 时只接受 `'bands'` 与 `'mix'`；频点输出要有自己的订阅 |
 
 ```javascript
 // 先启动频谱流
@@ -74,6 +88,7 @@ const unsubscribe = fb.audio.subscribeSpectrum(() => {}, { bands: 96 });
 
 // 单次轮询当前频谱
 const result = await fb.audio.getSpectrum({ bands: 96 });
+if (result.success === false) throw new Error(result.error);
 console.log(result.spectrum);
 console.log(result.bands);
 
@@ -86,7 +101,7 @@ unsubscribe();
 
 | 参数 | 类型 | 说明 |
 | --- | --- | --- |
-| options.duration | number | 窗口时长（秒），大于 0 且不超过 1。默认 `0.05` |
+| options.duration | number | 窗口时长（秒），大于 0 且不超过 1，取截至可视化流当前时刻的最近 `duration` 秒。默认 `0.05` |
 | options.signed | boolean | 保留 PCM 极性，夹到 `[-1, 1]`。默认 `false` |
 | options.channels | `'mix' \| 'stereo'` | `'mix'`（默认）返回平均成一路的 `waveform`；`'stereo'` 把前两路分别放进 `left` 与 `right`，单声道流的 `right` 等于 `left` |
 | options.points | number | 等距取这么多个样本，不做平均；取 `[2, 65536]` 内的整数。不给时返回全部样本 |
@@ -103,15 +118,18 @@ fb.audio.subscribeSpectrum(() => {});
 
 // 获取 0.1 秒的波形数据
 const result = await fb.audio.getWaveform({ duration: 0.1 });
+if (result.success === false) throw new Error(result.error);
 console.log('波形数据:', result.waveform);
 
 // 两路分开，各取 256 个样本
-const { left, right } = await fb.audio.getWaveform({
+const res = await fb.audio.getWaveform({
     duration: 0.05,
     signed: true,
     channels: 'stereo',
     points: 256,
 });
+if (res.success === false) throw new Error(res.error);
+const { left, right } = res;
 ```
 
 ## generateFullWaveform(path, options?)
@@ -211,40 +229,201 @@ controller.abort();
 
 ```javascript
 const pending = await fb2k.invoke('audio.generateFullWaveform', { path: 'E:\\Music\\song.flac' });
+if (pending.success === false) throw new Error(pending.error);
 if (pending.status === 'pending') {
-    const { cancelled } = await fb.audio.cancelFullWaveform(pending.taskId);
+    const res = await fb.audio.cancelFullWaveform(pending.taskId);
+    if (res.success === false) throw new Error(res.error);
+    const { cancelled } = res;
 }
+```
+
+## decodePcm(path, options?)
+
+实验性 API，后续版本可能发生变化。
+
+把曲目或其中一段解成 float32 PCM，返回一个原地读取样本的 `PcmBuffer`，用法类似 Web Audio 的 `decodeAudioData` 交回 `AudioBuffer`。宿主经共享缓冲投递样本，SDK 负责把它与 `audio:pcmReady` 事件配对；用了这个方法的页面不要再自己处理 `audio.decodePcm` 的 `sharedbufferreceived`。
+
+| 参数 | 类型 | 说明 |
+| --- | --- | --- |
+| path | string | 曲目路径；带 `\|subsong:N` 后缀时选子曲目 |
+| options.cueIndex | number | cue 子曲目序号，从 0 起；优先于路径里的子曲目 |
+| options.start | number | 起点，秒；缺省为 `0` |
+| options.end | number | 终点，秒；缺省到曲目末尾，超过曲目长度时按末尾截 |
+| options.sampleRate | number | 要转换到的采样率，8000 至 192000；缺省用源采样率 |
+| options.mono | boolean | 各声道等权平均成单声道 |
+| options.signal | AbortSignal | 中止时取消宿主任务，并以名为 `AbortError` 的 `DOMException` reject |
+| options.timeoutMs | number | 等待上限，毫秒，含排队时间；缺省 `120000`，`0` 表示一直等 |
+
+**返回值：** `PcmBuffer` 的 Promise：
+
+| 成员 | 说明 |
+| --- | --- |
+| `sampleRate`、`channels`、`frames` | 样本格式；设了 `mono` 时 `channels` 为 1 |
+| `duration` | `frames / sampleRate`，秒 |
+| `start` | 第一帧对应的曲目时刻，秒 |
+| `truncated` | 音频超出了按曲目长度估算的大小，或中途换了格式；样本到截断处为止 |
+| `resampled` | 经 foobar2000 的重采样器转换到了 `sampleRate` |
+| `getChannelView(c)` | 声道 `c` 的零拷贝 `Float32Array`，长 `frames` |
+| `toAudioBuffer()` | 把样本拷进一个新的 `AudioBuffer` |
+| `transfer()` | 交出底层 `ArrayBuffer`，供 `worker.postMessage(buffer, [buffer])` |
+| `release()` | 释放共享内存；重复调用无妨 |
+| `available` | `release()` 或 `transfer()` 之后为 `false` |
+
+::: danger 只读内存
+`getChannelView()` 返回的是只读共享内存上的视图。写入会让渲染进程崩溃，整个 foobar2000 窗口随之失效。这个方法刻意不叫 `getChannelData`：Web Audio 的同名方法返回可以修改的数组。要可改的副本，用 `toAudioBuffer()`。
+:::
+
+用完调用 `release()`。`transfer()` 之后这个 `PcmBuffer` 不再给出视图，`release()` 也不起作用；此前取得的视图仍可读，直到缓冲真被 `postMessage` 转走，之后这些视图分离（`byteLength` 为 0）。Worker 里释放不了缓冲，想早点释放，就把它转回页面再交给 `chrome.webview.releaseBuffer`。缓冲开头仍是它的头部，可以用 SDK 的 `readPcmHeader()` 读。
+
+**失败**时以 `PcmDecodeError` reject，其 `code` 取宿主的错误码：`INVALID_PARAMS`（区间超出单块缓冲上限时也是它：64 位 foobar2000 为 256 MiB，32 位为 64 MiB）、`INVALID_PATH`、`NO_INFO`、`NOT_SUPPORTED`（不在 WebView2 宿主里、运行时不支持共享缓冲，或没有重采样器支持这次转换）、`CANCELLED`、`DECODE_FAILED`，以及 [`audio.decodePcm`](../api/audio.md#audio-decodepcm) 列出的其他错误码。超时以 `code: 'TIMEOUT'` reject。中止与超时都会取消宿主任务。
+
+同一时间只解一个任务，其余排队，排队时间计入 `timeoutMs`。相同的请求在途时共用一次解码。
+
+```javascript
+const pcm = await fb.audio.decodePcm('E:\\Music\\song.flac', {
+    start: 30,
+    end: 60,
+    sampleRate: 22050,
+    mono: true,
+});
+try {
+    const samples = pcm.getChannelView(0);
+    let sum = 0;
+    for (const s of samples) sum += s * s;
+    console.log('RMS', Math.sqrt(sum / pcm.frames));
+} finally {
+    pcm.release();
+}
+```
+
+## cancelDecodePcm(taskId)
+
+实验性 API，后续版本可能发生变化。
+
+按 `taskId` 取消尚未结束的 `audio.decodePcm` 任务。`decodePcm()` 在中止与超时时已经会调用它；只有用 `fb2k.invoke` 发起的任务才需要直接调用。`cancelled: false` 表示任务已结束、不存在或属于别的页面。被取消的任务收到一次 `code: 'CANCELLED'` 的 `audio:pcmFailed`。
+
+```javascript
+const pending = await fb2k.invoke('audio.decodePcm', { path: 'E:\\Music\\song.flac' });
+if (pending.success === false) throw new Error(pending.error);
+const res = await fb.audio.cancelDecodePcm(pending.taskId);
+if (res.success === false) throw new Error(res.error);
+const { cancelled } = res;
+```
+
+## subscribeStream(options?)
+
+实验性 API，后续版本可能发生变化。
+
+签名：`fb.audio.subscribeStream(options?: PcmStreamOptions): PcmStream`
+
+订阅 foobar2000 正在播放的音频，立即返回 `PcmStream` 句柄。宿主把播出的每一块写进与页面共享的环形缓冲；`read()` 把上次调用之后写入的帧拷出来，每个声道一个 `Float32Array`，并带 `dropped`——还没读就被环覆盖掉的帧数。在 `requestAnimationFrame` 或定时器里轮询它：宿主无法在帧到达时通知页面。
+
+- 样本是 DSP 链的输出，在 ReplayGain 与音量之前；与 `audio:spectrum` 不同，不含 ReplayGain。
+- `ready` 以宿主的应答 resolve，从不 reject：`{ ok: true, subscriptionId }`，或 `{ ok: false, code, error }`——不在 WebView2 宿主页面里或运行时不支持共享缓冲时 `NOT_SUPPORTED`，本页面已有 8 个流订阅时 `OPERATION_FAILED`，参数越界时 `INVALID_PARAMS`。
+- `format` 在首块音频到达前为 `null`，之后是 `{ sampleRate, channels, capacityFrames, epoch }`；`onFormat(listener)` 在首块缓冲到达时触发，采样率或声道数变化时再触发。换格式前还没读走的旧格式帧随旧缓冲一起丢弃，计入下一次返回帧的 `read()` 的 `dropped`。
+- 没有新写入（停止、暂停）、首块缓冲未到、流已结束时 `read()` 返回 `null`。
+- 结果里还有 `segments`：在媒体时间重新起算处（起播、seek、换曲）把帧切开，每段为 `{ offset, segment, startSeconds, reason, estimated }`，`offset` 是这一段在各声道数组里的起始下标。写版本 1 缓冲的宿主没有段表，恒为一段、`segment: null`。
+- `unsubscribe()` 之后、宿主拒绝订阅时、或宿主停止写入且一秒内没有新缓冲跟上时，`ended` 变为 `true`，`onEnded(listener)` 触发一次。
+- `options.interval` 向核心请求回调间隔，秒（0.01 至 0.2）。核心按约 16 ms 的步长取整，缺省 200 ms，并对全组件的流订阅采用其中最短的请求值。`options.bufferSeconds`（0.1 至 10，缺省 1）决定环的长度；起播后的首块最多带 0.8 s 音频。
+- 用完调 `unsubscribe()`：在宿主移除订阅，并释放页面对共享内存的视图。
+
+```javascript
+const stream = fb.audio.subscribeStream({ bufferSeconds: 0.5 });
+const outcome = await stream.ready;
+if (outcome.ok === false) throw new Error(outcome.code);
+const tick = () => {
+    const chunk = stream.read();
+    if (chunk) {
+        const left = chunk.planes[0];
+        let peak = 0;
+        for (const sample of left) peak = Math.max(peak, Math.abs(sample));
+        console.log(stream.format?.sampleRate, chunk.frames, chunk.dropped, peak);
+    }
+    if (!stream.ended) requestAnimationFrame(tick);
+};
+requestAnimationFrame(tick);
+// 之后
+stream.unsubscribe();
+```
+
+### 自己算频谱
+
+频点输出用的是 foobar2000 的 FFT，窗函数固定为高斯窗。要自选窗函数、补零、组合多种 FFT 点数或换别的变换，就从实时 PCM 自己算：
+
+- 请求最短的间隔 `interval: 0.016`；缺省 200 ms 时频谱每秒只变五次。这个间隔对全组件的流订阅生效。
+- 这时平均每 16 ms 来一块，但间隔不匀（实测 3 到 50 ms），有些显示帧拿不到新样本，重画上一帧频谱或做时间平滑即可。
+- 样本取在 ReplayGain 之前，电平与 `audio:spectrum` 差一个 ReplayGain 增益。它比听到的声音晚的时间与可视化流相当，实测十几毫秒，另加等下一块的时间。
+- `read()` 只返回上次调用之后写入的帧，最近 `N` 个样本要自己留着，FFT 库也要自带。seek 或换曲后 `segments` 标出媒体时间重新开始的位置；不想让一帧频谱跨过这里，就在这里清空历史。
+
+```javascript
+/**
+ * 左声道的 4096 点频谱，每个显示帧重画一次。
+ * @param {(samples: Float32Array) => Float32Array} fft 你的 FFT 库算出的幅度
+ * @param {(spectrum: Float32Array) => void} draw
+ */
+function startLiveSpectrum(fft, draw) {
+    const N = 4096;
+    const history = new Float32Array(N); // 最近 N 个样本，旧的在前
+    const hann = Float32Array.from({ length: N }, (_, i) => 0.5 - 0.5 * Math.cos((2 * Math.PI * i) / (N - 1)));
+    const live = fb.audio.subscribeStream({ interval: 0.016, bufferSeconds: 1 });
+    const tick = () => {
+        const chunk = live.read();
+        if (chunk) {
+            const fresh = chunk.planes[0];
+            const keep = Math.max(0, N - fresh.length);
+            history.copyWithin(0, N - keep); // 丢掉最旧的样本
+            history.set(fresh.subarray(Math.max(0, fresh.length - N)), keep);
+            draw(fft(history.map((s, i) => s * hann[i])));
+        }
+        if (!live.ended) requestAnimationFrame(tick);
+    };
+    requestAnimationFrame(tick);
+    return live;
+}
+```
+
+## unsubscribeStream(subscriptionId?)
+
+实验性 API，后续版本可能发生变化。
+
+签名：`fb.audio.unsubscribeStream(subscriptionId?: string): Promise<AudioUnsubscribeStreamResponse>`
+
+在宿主移除本页面的流订阅：给了 `subscriptionId` 就移除那一个，不给就全部移除。`PcmStream.unsubscribe()` 已经会为自己的订阅做这件事；只有用 `fb2k.invoke` 发起的订阅才需要直接调用。resolve 值里的 `removed` 是移除的订阅数；别的页面的订阅不计也不动。
+
+```javascript
+const res = await fb.audio.unsubscribeStream();
+if (res.success === false) throw new Error(res.error);
+const { removed } = res;
 ```
 
 ## analyzeBPM(path, options?)
 
-分析文件 BPM。返回 `{bpm}`。
+读取文件的 `BPM` 标签，宿主不做节拍检测。没有标签、或标签不是 0 到 500 之间（不含两端）的数字时，返回 `success: false` 与 `code: 'NOT_FOUND'`。
 
 | 参数 | 类型 | 说明 |
 | --- | --- | --- |
 | path | string | 音频文件路径 |
-| options.forceAnalysis | boolean | 强制重新分析（忽略已有的 BPM 标签） |
+| options.forceAnalysis | boolean | 已废弃，不起作用 |
 
 ```javascript
 const result = await fb.audio.analyzeBPM('E:\\Music\\song.flac');
-console.log(`BPM: ${result.bpm}`);
-
-// 强制重新分析
-const result2 = await fb.audio.analyzeBPM('E:\\Music\\song.flac', { forceAnalysis: true });
+if (result.success) {
+    console.log(`BPM: ${result.bpm}`);
+}
 ```
 
 ## setChannelMode(mode)
 
-设置声道模式。无效的 `mode` 值会自动规范化为 `"default"`。
+选择可视化流带哪些声道，作用于频谱帧与 `getWaveform`，不影响播放出来的声音。其他 `mode` 值以 `INVALID_PARAMS` 失败。
 
 | 参数 | 类型 | 说明 |
 | --- | --- | --- |
-| mode | string | "default", "mono", "front", "back" |
+| mode | `'default' \| 'mono' \| 'front' \| 'back'` | 可视化流带的声道 |
 
 ```javascript
-await fb.audio.setChannelMode('mono');
-// 无效值自动回退
-const result = await fb.audio.setChannelMode('invalid'); // result.mode === "default"
+const res = await fb.audio.setChannelMode('mono'); // mode === 'mono';
+if (res.success === false) throw new Error(res.error);
+const { mode } = res;
 ```
 
 ## getSpectrumDebugState()
@@ -253,76 +432,55 @@ const result = await fb.audio.setChannelMode('invalid'); // result.mode === "def
 
 ```javascript
 const debug = await fb.audio.getSpectrumDebugState();
+if (debug.success === false) throw new Error(debug.error);
 console.log(debug.subscriptions, debug.effectiveFps);
 ```
 
-## 其余方法
+## getPcmDebugState()
 
-### getOutputInfo()
+实验性 API，后续版本可能发生变化。
 
-签名：`fb.audio.getOutputInfo(): Promise<AudioOutputInfoResponse>`
+返回本页面能否接收共享缓冲（`runtime.environment12`、`runtime.webview17` 与本机安装的 WebView2 版本）以及解码队列的状态（`decode.active`、`decode.queued`、`decode.openBufferBytes`），供测试与排查用。
 
-无参数。
+```javascript
+const res = await fb.audio.getPcmDebugState();
+if (res.success === false) throw new Error(res.error);
+const { runtime, decode } = res;
+console.log(runtime.version, decode.active);
+```
+
+## getOutputInfo()
+
+签名：`fb.audio.getOutputInfo(): Promise<AudioGetOutputInfoResponse>`
+
+返回当前的原生音量（dB）与 0–100 的 `volumePercent`。
 
 ```javascript
 const output = await fb.audio.getOutputInfo();
-console.log(output.deviceName, output.sampleRate);
+if (output.success === false) throw new Error(output.error);
+console.log(output.volume, output.volumePercent);
 ```
 
-### getStreamInfo()
+## getStreamInfo()
 
-签名：`fb.audio.getStreamInfo(): Promise<AudioStreamInfoResponse>`
+签名：`fb.audio.getStreamInfo(): Promise<AudioGetStreamInfoResponse>`
 
-无参数。
+返回 `{ playing }`；正在播放时还带上能取到的 `sampleRate`、`channels`、`bitrate`、`codec` 与 `duration`。
 
 ```javascript
 const stream = await fb.audio.getStreamInfo();
+if (stream.success === false) throw new Error(stream.error);
 console.log(stream.channels, stream.sampleRate);
 ```
 
-### isVisualizationAvailable()
+## isVisualizationAvailable()
 
-签名：`fb.audio.isVisualizationAvailable(): Promise<{ available: boolean }>`
+签名：`fb.audio.isVisualizationAvailable(): Promise<AudioIsVisualizationAvailableResponse>`
 
-无参数。
-
-```javascript
-const { available } = await fb.audio.isVisualizationAvailable();
-```
-
-### subscribeStream(callback, options?)
-
-签名：`fb.audio.subscribeStream(callback: StreamCallback, options?: AudioSubscribeStreamParams): () => void`
-
-启动已弃用的 raw stream 订阅并返回取消订阅函数。当前宿主会拒绝 `audio.subscribeStream`，因此在宿主接入流捕获能力之前回调不会触发。
+以 `available` 报告 foobar2000 是否提供可视化流；频谱帧与 `getWaveform()` 都要靠它。
 
 ```javascript
-const unsubscribe = fb.audio.subscribeStream((chunk) => {
-    console.log(chunk);
-});
-unsubscribe();
-```
-
-### generateWaveform(path, options?)
-
-签名：`fb.audio.generateWaveform(path: string, options?: Omit<AudioGenerateWaveformParams, 'path'>): Promise<AudioGenerateWaveformResponse>`
-
-已弃用的旧 `audio.generateWaveform` 端点别名。完整曲目波形生成请使用 `fb.audio.generateFullWaveform()`。
-
-```javascript
-const result = await fb.audio.generateWaveform('C:\\Music\\song.flac');
-```
-
-### unsubscribeStream()
-
-签名：`fb.audio.unsubscribeStream(): Promise<BaseResponse>`
-
-无参数。
-
-::: warning 已弃用且宿主尚未实现
-`subscribeStream()` 与 `unsubscribeStream()` 已弃用。当前宿主的 `audio.subscribeStream` 返回 `success: false`，且不会发出 `audio:stream`，因此在宿主接入流捕获能力之前，订阅回调不会触发。
-:::
-
-```javascript
-await fb.audio.unsubscribeStream();
+const res = await fb.audio.isVisualizationAvailable();
+if (res.success === false) throw new Error(res.error);
+const { available } = res;
 ```

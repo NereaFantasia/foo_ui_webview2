@@ -2,88 +2,9 @@
 
 foo_ui_webview2 ships **36 unstyled Web Components**. They are functional building blocks with no visual opinion, designed to be customized through CSS Parts, slots, and custom events.
 
-## Quick Start
+Load them with the SDK, through `registerComponents()` with a bundler or `components.global.js` without one: see [Load the SDK in a theme](/how-to/load-sdk). [Style the components](/how-to/style-components) shows how to give them a look, and [How the components work](/concepts/components) explains how they find the SDK, report user actions and leave styling to the theme.
 
-Install the published SDK when using a bundler:
-
-```bash
-npm install foo-webview-sdk
-```
-
-Import the ESM component entry and register the elements explicitly:
-
-```js
-import { registerComponents } from 'foo-webview-sdk/components';
-
-registerComponents();
-```
-
-For a plain `<script>` setup, copy or otherwise serve the published global bundles and load the bridge before the component bundle. `components.global.js` registers every component automatically.
-
-```html
-<!doctype html>
-<html>
-  <head>
-    <meta charset="utf-8" />
-    <link rel="stylesheet" href="./theme.css" />
-  </head>
-  <body>
-    <!-- These paths are examples for locally served published bundles. -->
-    <script src="./sdk/dist/bridge.global.js"></script>
-    <script src="./sdk/dist/components.global.js"></script>
-
-    <!-- Components are registered when components.global.js loads. -->
-    <fb-play-button></fb-play-button>
-    <fb-seek-bar></fb-seek-bar>
-    <fb-volume-control></fb-volume-control>
-    <fb-track-text tf="%title% — %artist%"></fb-track-text>
-  </body>
-</html>
-```
-
-The component installer does not create an SDK directory. The example paths above assume that the published files have been copied into your theme's served tree.
-
-## Design Principles
-
-- **No visual opinion** — components avoid visual properties such as `color`, `background`, and `font-family`; the theme supplies their appearance through exposed hooks
-- **CSS Parts** — styleable internal elements expose `part` names for `::part()` selectors
-- **Slots** — icons, placeholders, and other replaceable content use `<slot>`
-- **Event driven** — component `CustomEvent` objects cross the Shadow DOM boundary with `bubbles: true` and `composed: true`
-
-### Styling Example
-
-Use the CSS hooks exposed by each component:
-
-```css
-/* Circular green play button */
-fb-play-button::part(button) {
-    background: #1db954;
-    border: none;
-    border-radius: 50%;
-    color: white;
-    width: 48px;
-    height: 48px;
-    cursor: pointer;
-}
-fb-play-button::part(button):hover {
-    background: #1ed760;
-}
-
-/* Seek bar */
-fb-seek-bar::part(track) { background: #333; height: 4px; }
-fb-seek-bar::part(fill) { background: #1db954; height: 4px; }
-fb-seek-bar::part(thumb) { background: #fff; width: 12px; height: 12px; }
-
-/* Rating stars */
-fb-rating::part(star) {
-    color: #888;
-    font-size: 20px;
-    cursor: pointer;
-}
-fb-rating::part(star)[data-filled] {
-    color: #ffc107;
-}
-```
+Each entry below links to the tag's reference: attributes, CSS parts, slots and events.
 
 ## Component Reference
 

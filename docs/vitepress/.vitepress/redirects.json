@@ -1,0 +1,1285 @@
+{
+  "api/audio.md": {
+    "anchors": {
+      "dsp": "api/dsp.md#dsp",
+      "dsp-adddsp": "api/dsp.md#dsp-adddsp",
+      "dsp-applypreset": "api/dsp.md#dsp-applypreset",
+      "dsp-getavailable": "api/dsp.md#dsp-getavailable",
+      "dsp-getchain": "api/dsp.md#dsp-getchain",
+      "dsp-getpresets": "api/dsp.md#dsp-getpresets",
+      "dsp-movedsp": "api/dsp.md#dsp-movedsp",
+      "dsp-removedsp": "api/dsp.md#dsp-removedsp",
+      "dsp-setchain": "api/dsp.md#dsp-setchain",
+      "output": "api/output.md#output",
+      "output-getdevices": "api/output.md#output-getdevices",
+      "output-getentries": "api/output.md#output-getentries",
+      "output-getsettings": "api/output.md#output-getsettings",
+      "replaygain": "api/replaygain.md#replaygain",
+      "replaygain-clear": "api/replaygain.md#replaygain-clear",
+      "replaygain-get": "api/replaygain.md#replaygain-get",
+      "replaygain-getmode": "api/replaygain.md#replaygain-getmode",
+      "replaygain-getpreamp": "api/replaygain.md#replaygain-getpreamp",
+      "replaygain-getsettings": "api/replaygain.md#replaygain-getsettings",
+      "replaygain-scan": "api/replaygain.md#replaygain-scan",
+      "replaygain-setmode": "api/replaygain.md#replaygain-setmode",
+      "replaygain-setpreamp": "api/replaygain.md#replaygain-setpreamp"
+    }
+  },
+  "api/file.md": {
+    "anchors": {
+      "dialog": "api/dialog.md#dialog",
+      "dialog-confirm": "api/dialog.md#dialog-confirm",
+      "dialog-openfile": "api/dialog.md#dialog-openfile",
+      "dialog-openfolder": "api/dialog.md#dialog-openfolder",
+      "dialog-savefile": "api/dialog.md#dialog-savefile",
+      "shell": "api/shell.md#shell",
+      "shell-exec": "api/shell.md#shell-exec",
+      "shell-openexternal": "api/shell.md#shell-openexternal",
+      "shell-openwith": "api/shell.md#shell-openwith",
+      "shell-showinexplorer": "api/shell.md#shell-showinexplorer",
+      "shell-spawn": "api/shell.md#shell-spawn",
+      "files-dialogs-and-shell-boundaries": "api/file.md#file-boundaries"
+    }
+  },
+  "api/metadata.md": {
+    "anchors": {
+      "rating": "api/rating.md#rating",
+      "rating-get": "api/rating.md#rating-get",
+      "rating-set": "api/rating.md#rating-set"
+    }
+  },
+  "api/misc.md": {
+    "anchors": {
+      "clipboard": "api/clipboard.md#clipboard",
+      "clipboard-read": "api/clipboard.md#clipboard-read",
+      "clipboard-write": "api/clipboard.md#clipboard-write",
+      "clipboard-writefiles": "api/clipboard.md#clipboard-writefiles",
+      "clipboard-writehtml": "api/clipboard.md#clipboard-writehtml",
+      "console": "api/console.md#console",
+      "console-error": "api/console.md#console-error",
+      "console-log": "api/console.md#console-log",
+      "console-warn": "api/console.md#console-warn",
+      "log": "api/log.md#log",
+      "log-clear": "api/log.md#log-clear",
+      "log-read": "api/log.md#log-read",
+      "log-write": "api/log.md#log-write",
+      "menu": "api/menu.md#menu",
+      "menu-close": "api/menu.md#menu-close",
+      "menu-getcontextmenu": "api/menu.md#menu-getcontextmenu",
+      "menu-getmainmenu": "api/menu.md#menu-getmainmenu",
+      "menu-runcontextcommand": "api/menu.md#menu-runcontextcommand",
+      "menu-runcontextcommandbyid": "api/menu.md#menu-runcontextcommandbyid",
+      "menu-runmainmenucommand": "api/menu.md#menu-runmainmenucommand",
+      "menu-show": "api/menu.md#menu-show",
+      "menu-shownativepopup": "api/menu.md#menu-shownativepopup",
+      "panel": "api/panel.md#panel",
+      "panel-getconfig": "api/panel.md#panel-getconfig",
+      "panel-setconfig": "api/panel.md#panel-setconfig",
+      "system": "api/system.md#system",
+      "system-getapistats": "api/system.md#system-getapistats",
+      "system-getapisbynamespace": "api/system.md#system-getapisbynamespace",
+      "system-getdpi": "api/system.md#system-getdpi",
+      "system-getlocale": "api/system.md#system-getlocale",
+      "system-getregisteredplugins": "api/system.md#system-getregisteredplugins",
+      "system-gettheme": "api/system.md#system-gettheme",
+      "system-ispluginregistered": "api/system.md#system-ispluginregistered",
+      "system-listavailableapis": "api/system.md#system-listavailableapis",
+      "system-searchapis": "api/system.md#system-searchapis",
+      "test": "api/test.md#test",
+      "test-echo": "api/test.md#test-echo",
+      "test-ping": "api/test.md#test-ping",
+      "contract-supplement-log-write": "api/log.md#contract-supplement-log-write",
+      "contract-supplement-menu-getcontextmenu": "api/menu.md#contract-supplement-menu-getcontextmenu",
+      "return-fields-1": "api/menu.md#return-fields",
+      "contract-supplement-menu-runcontextcommandbyid": "api/menu.md#contract-supplement-menu-runcontextcommandbyid",
+      "return-fields-2": "api/menu.md#return-fields-1",
+      "return-fields-3": "api/misc.md#return-fields"
+    }
+  },
+  "api/port.md": {
+    "anchors": {
+      "event": "api/event.md#event",
+      "event-emit": "api/event.md#event-emit",
+      "event-emitto": "api/event.md#event-emitto",
+      "state": "api/state.md#state",
+      "state-delete": "api/state.md#state-delete",
+      "state-get": "api/state.md#state-get",
+      "state-keys": "api/state.md#state-keys",
+      "state-set": "api/state.md#state-set",
+      "routing-state-and-event-envelopes": "api/state.md#state-behavior"
+    }
+  },
+  "api/queue.md": {
+    "anchors": {
+      "jitqueue": "api/jit-queue.md#jitqueue",
+      "jitqueue-clear": "api/jit-queue.md#jitqueue-clear",
+      "jitqueue-enqueuenext": "api/jit-queue.md#jitqueue-enqueuenext",
+      "jitqueue-getstate": "api/jit-queue.md#jitqueue-getstate",
+      "jitqueue-notifyempty": "api/jit-queue.md#jitqueue-notifyempty",
+      "jitqueue-playnow": "api/jit-queue.md#jitqueue-playnow",
+      "jitqueue-preloadbatch": "api/jit-queue.md#jitqueue-preloadbatch",
+      "jitqueue-skip": "api/jit-queue.md#jitqueue-skip",
+      "jitqueue-stop": "api/jit-queue.md#jitqueue-stop",
+      "selection": "api/selection.md#selection",
+      "selection-get": "api/selection.md#selection-get",
+      "selection-gettype": "api/selection.md#selection-gettype",
+      "selection-getviewermode": "api/selection.md#selection-getviewermode",
+      "selection-getviewingtrack": "api/selection.md#selection-getviewingtrack",
+      "selection-set": "api/selection.md#selection-set",
+      "selection-setplaylisttracking": "api/selection.md#selection-setplaylisttracking",
+      "selection-behavior": "api/selection.md#selection-behavior",
+      "jit-queue-events": "api/jit-queue.md#jit-queue-events"
+    }
+  },
+  "api/taskbar-tray.md": {
+    "to": "api/taskbar.md",
+    "anchors": {
+      "taskbar": "api/taskbar.md#taskbar",
+      "taskbar-flash": "api/taskbar.md#taskbar-flash",
+      "taskbar-setoverlayicon": "api/taskbar.md#taskbar-setoverlayicon",
+      "taskbar-setprogress": "api/taskbar.md#taskbar-setprogress",
+      "runtime-lifecycle-menu-data-and-events": "api/tray.md#runtime-lifecycle-menu-data-and-events",
+      "reserved-system-items": "api/tray.md#reserved-system-items",
+      "taskbar-setthumbnailbuttons": "api/taskbar.md#taskbar-setthumbnailbuttons",
+      "taskbar-updatebutton": "api/taskbar.md#taskbar-updatebutton",
+      "tray": "api/tray.md#tray",
+      "tray-appendmenuitems": "api/tray.md#tray-appendmenuitems",
+      "tray-clearmenuitems": "api/tray.md#tray-clearmenuitems",
+      "tray-create": "api/tray.md#tray-create",
+      "tray-destroy": "api/tray.md#tray-destroy",
+      "tray-getmenuitems": "api/tray.md#tray-getmenuitems",
+      "tray-isvisible": "api/tray.md#tray-isvisible",
+      "tray-removemenuitems": "api/tray.md#tray-removemenuitems",
+      "tray-setclosetotray": "api/tray.md#tray-setclosetotray",
+      "tray-setcontextmenu": "api/tray.md#tray-setcontextmenu",
+      "tray-seticon": "api/tray.md#tray-seticon",
+      "tray-setmenuitemstate": "api/tray.md#tray-setmenuitemstate",
+      "tray-setmenuzones": "api/tray.md#tray-setmenuzones",
+      "tray-setminimizetotray": "api/tray.md#tray-setminimizetotray",
+      "tray-settooltip": "api/tray.md#tray-settooltip",
+      "tray-showballoon": "api/tray.md#tray-showballoon",
+      "contract-supplements": "api/tray.md#contract-supplements",
+      "contract-supplement-taskbar-setprogress": "api/taskbar.md#contract-supplement-taskbar-setprogress",
+      "return-value": "api/taskbar.md#return-value",
+      "contract-supplement-items-playbackaction": "api/tray.md#contract-supplement-items-playbackaction"
+    }
+  },
+  "api/ui-interaction.md": {
+    "to": "api/ui.md",
+    "anchors": {
+      "dnd": "api/dnd.md#dnd",
+      "dnd-getcapabilities": "api/dnd.md#dnd-getcapabilities",
+      "dnd-getpathsasync": "api/dnd.md#dnd-getpathsasync",
+      "dnd-preparedrag": "api/dnd.md#dnd-preparedrag",
+      "dnd-startdrag": "api/dnd.md#dnd-startdrag",
+      "keyboard": "api/keyboard.md#keyboard",
+      "keyboard-getregisteredhotkeys": "api/keyboard.md#keyboard-getregisteredhotkeys",
+      "keyboard-registerhotkey": "api/keyboard.md#keyboard-registerhotkey",
+      "keyboard-registershortcut": "api/keyboard.md#keyboard-registershortcut",
+      "keyboard-unregisterhotkey": "api/keyboard.md#keyboard-unregisterhotkey",
+      "ui": "api/ui.md#ui",
+      "ui-hidenotification": "api/ui.md#ui-hidenotification",
+      "ui-showcontextmenu": "api/ui.md#ui-showcontextmenu",
+      "ui-showcustommenu": "api/ui.md#ui-showcustommenu",
+      "ui-shownotification": "api/ui.md#ui-shownotification",
+      "ui-showtoast": "api/ui.md#ui-showtoast",
+      "interaction-delivery-and-limitations": "api/dnd.md#interaction-delivery-and-limitations"
+    }
+  },
+  "components/index.md": {
+    "anchors": {
+      "quick-start": "how-to/load-sdk.md#load-the-sdk-in-a-theme",
+      "design-principles": "concepts/components.md#they-bring-behavior-not-looks",
+      "styling-example": "how-to/style-components.md#style-the-components"
+    }
+  },
+  "guide/bridge.md": {
+    "to": "reference/bridge.md"
+  },
+  "guide/installation.md": {
+    "to": "how-to/install.md",
+    "anchors": {
+      "verify-installation": "how-to/install.md#verify-the-installation",
+      "preferences-page": "reference/preferences.md#preferences",
+      "resource-root-and-templates": "concepts/page-loading.md#templates",
+      "obtaining-the-sdk": "how-to/load-sdk.md#load-the-sdk-in-a-theme",
+      "bundler-esm": "how-to/load-sdk.md#with-a-bundler",
+      "no-bundler-iife-globals": "how-to/load-sdk.md#without-a-bundler",
+      "background-mode": "how-to/background-mode.md#run-webview2-ui-next-to-another-interface"
+    }
+  },
+  "guide/overview.md": {
+    "to": "concepts/architecture.md",
+    "anchors": {
+      "api-distribution": "concepts/architecture.md#the-bridge-and-the-sdk",
+      "component-responsibilities-provided-by-foo-ui-webview2": "concepts/architecture.md#what-the-component-provides",
+      "application-responsibilities-implemented-by-you": "concepts/architecture.md#what-the-theme-implements"
+    }
+  },
+  "guide/panel-modes.md": {
+    "to": "concepts/run-modes.md",
+    "anchors": {
+      "dui-panel-mode-default-ui": "how-to/panels.md#add-a-panel-to-default-ui",
+      "cui-panel-mode-columns-ui": "how-to/panels.md#add-a-panel-to-columns-ui",
+      "mode-detection": "how-to/panels.md#adapt-the-page-to-the-panel",
+      "api-compatibility-matrix": "concepts/run-modes.md#what-changes-in-a-panel",
+      "best-practices": "how-to/panels.md#adapt-the-page-to-the-panel"
+    }
+  },
+  "guide/quickstart.md": {
+    "to": "how-to/plain-html.md",
+    "anchors": {
+      "minimal-example": "how-to/plain-html.md#write-the-page",
+      "bridge-object": "reference/bridge.md#bridge-object",
+      "basic-calls": "how-to/plain-html.md#call-the-host-from-the-page",
+      "full-player-example": "how-to/common-tasks.md#scenario-1-build-a-player-ui",
+      "helpers": "how-to/common-tasks.md#scenario-1-build-a-player-ui"
+    }
+  },
+  "guide/use-cases.md": {
+    "to": "how-to/common-tasks.md"
+  },
+  "mcp/tools-artwork.md": {
+    "to": "mcp/tools.md"
+  },
+  "mcp/tools-library.md": {
+    "to": "mcp/tools.md"
+  },
+  "mcp/tools-metadata.md": {
+    "to": "mcp/tools.md"
+  },
+  "mcp/tools-playback-ext.md": {
+    "to": "mcp/tools.md"
+  },
+  "mcp/tools-playback.md": {
+    "to": "mcp/tools.md"
+  },
+  "mcp/tools-playlist-ext.md": {
+    "to": "mcp/tools.md"
+  },
+  "mcp/tools-playlist.md": {
+    "to": "mcp/tools.md"
+  },
+  "mcp/tools-queue.md": {
+    "to": "mcp/tools.md"
+  },
+  "mcp/tools-ui.md": {
+    "to": "mcp/tools.md"
+  },
+  "sdk/artwork.md": {
+    "anchors": {
+      "getavailabletypes": "sdk/artwork.md#getavailabletypes-path"
+    }
+  },
+  "sdk/audio-ext.md": {
+    "to": "sdk/namespaces.md",
+    "anchors": {
+      "fb-dsp-dsp-management": "sdk/dsp.md#fb-dsp-dsp-chain",
+      "getchain": "sdk/dsp.md#getchain",
+      "setchain-dsps": "sdk/dsp.md#setchain-dsps",
+      "getpresets": "sdk/dsp.md#getpresets",
+      "applypreset-indexorname": "sdk/dsp.md#applypreset-indexorname",
+      "getavailable": "sdk/dsp.md#getavailable",
+      "adddsp-guid-position": "sdk/dsp.md#adddsp-guid-position",
+      "removedsp-index": "sdk/dsp.md#removedsp-index",
+      "movedsp-from-to": "sdk/dsp.md#movedsp-from-to",
+      "fb-output-output-devices": "sdk/output.md#fb-output-audio-output-discovery",
+      "getdevices": "sdk/output.md#getdevices",
+      "getentries": "sdk/output.md#getentries",
+      "getsettings": "sdk/output.md#getsettings",
+      "fb-replaygain-replaygain": "sdk/replaygain.md#fb-replaygain-replaygain",
+      "get-paths": "sdk/replaygain.md#get-paths",
+      "getmode": "sdk/replaygain.md#getmode",
+      "setmode-sourcemode-processingmode": "sdk/replaygain.md#setmode-sourcemode-processingmode",
+      "getpreamp": "sdk/replaygain.md#getpreamp",
+      "setpreamp-withrg-withoutrg": "sdk/replaygain.md#setpreamp-withrg-withoutrg",
+      "getsettings-1": "sdk/replaygain.md#getsettings",
+      "scan-paths": "sdk/replaygain.md#scan-paths-opts",
+      "clear-paths": "sdk/replaygain.md#clear-paths"
+    }
+  },
+  "sdk/data.md": {
+    "to": "sdk/namespaces.md",
+    "anchors": {
+      "fb-metadata-tag-reading-and-writing": "sdk/metadata.md#fb-metadata-metadata-and-artwork-writes",
+      "read-path": "sdk/metadata.md#read-path-opts",
+      "readbatch-paths": "sdk/metadata.md#readbatch-paths",
+      "readbypath-path": "sdk/metadata.md#readbypath-path-opts",
+      "readraw-path-options": "sdk/metadata.md#readraw-path-opts",
+      "write-path-tags": "sdk/metadata.md#write-path-tags-opts",
+      "writebatch-items": "sdk/metadata.md#writebatch-items",
+      "embedartwork-path-options": "sdk/metadata.md#embedartwork-path-options",
+      "removeembeddedart-path-options": "sdk/metadata.md#removeembeddedart-path-options",
+      "removefield-path-field": "sdk/metadata.md#removefield-path-field-opts",
+      "removetag-path-tags": "sdk/metadata.md#removetag-path-tags-opts",
+      "disabledefaultlogger": "sdk/metadata.md#disabledefaultlogger",
+      "metadata-writecomplete": "sdk/metadata.md#asynchronous-completion-and-default-logging",
+      "fb-titleformat-title-formatting": "sdk/titleformat.md#fb-titleformat-title-formatting",
+      "eval-pattern-path": "sdk/titleformat.md#eval-pattern-path",
+      "evalbatch-pattern-paths": "sdk/titleformat.md#evalbatch-pattern-paths",
+      "evalfields-path-fields": "sdk/titleformat.md#evalfields-path-fields",
+      "evalfieldsbatch-paths-fields": "sdk/titleformat.md#evalfieldsbatch-paths-fields",
+      "getbuiltinfields": "sdk/titleformat.md#getbuiltinfields",
+      "fb-playcount-playback-statistics": "sdk/playcount.md#fb-playcount-playback-statistics",
+      "get-path": "sdk/playcount.md#get-path",
+      "getbatch-paths": "sdk/playcount.md#getbatch-paths",
+      "set-path-count": "sdk/playcount.md#set-path-count",
+      "getstats": "sdk/playcount.md#getstats",
+      "fb-selection-selection-synchronization": "sdk/selection.md#fb-selection-selection",
+      "get-options": "sdk/selection.md#get-opts",
+      "gettype": "sdk/selection.md#gettype",
+      "set-handles": "sdk/selection.md#set-handles",
+      "setplaylisttracking-mode": "sdk/selection.md#setplaylisttracking-mode",
+      "getviewermode": "sdk/selection.md#getviewermode",
+      "getviewingtrack-options": "sdk/selection.md#getviewingtrack-opts",
+      "fb-rating-ratings": "sdk/rating.md#fb-rating-track-ratings",
+      "get-path-1": "sdk/rating.md#get-path-opts",
+      "set-path-rating-options": "sdk/rating.md#set-path-rating-opts"
+    }
+  },
+  "sdk/file-io.md": {
+    "to": "sdk/namespaces.md",
+    "anchors": {
+      "fb-file-file-system": "sdk/file.md#fb-file-file-system",
+      "read-path-options": "sdk/file.md#read-path-options",
+      "write-path-content-options": "sdk/file.md#write-path-content-options",
+      "exists-path": "sdk/file.md#exists-path",
+      "list-path-options": "sdk/file.md#list-path-options",
+      "delete-path-options": "sdk/file.md#delete-path-opts",
+      "mkdir-path": "sdk/file.md#mkdir-path",
+      "copy-source-destination-options": "sdk/file.md#copy-source-destination-opts",
+      "move-source-destination": "sdk/file.md#move-source-destination",
+      "rename-path-newname": "sdk/file.md#rename-path-newname",
+      "getinfo-path": "sdk/file.md#getinfo-path",
+      "copyasync-items-options": "sdk/file.md#copyasync-items-options",
+      "moveasync-items-options": "sdk/file.md#moveasync-items-options",
+      "deleteasync-paths-options": "sdk/file.md#deleteasync-paths-options",
+      "cancelop-operationid": "sdk/file.md#cancelop-operationid",
+      "consuming-the-progress-events": "sdk/file.md#events",
+      "fb-http-http-client": "sdk/http.md#fb-http-http-client",
+      "get-url-options": "sdk/http.md#get-url-options",
+      "post-url-body-options": "sdk/http.md#post-url-body-options",
+      "head-url-options": "sdk/http.md#head-url-options",
+      "download-url-saveto-options": "sdk/http.md#download-url-saveto-options",
+      "put-url-body-options": "sdk/http.md#put-url-body-options",
+      "delete-url-body-options": "sdk/http.md#delete-url-body-options",
+      "patch-url-body-options": "sdk/http.md#patch-url-body-options",
+      "request-url-options": "sdk/http.md#request-url-options",
+      "abort-requestid": "sdk/http.md#abort-requestid",
+      "fb-dialog-native-dialogs": "sdk/dialog.md#fb-dialog-native-dialogs",
+      "openfile-options": "sdk/dialog.md#openfile-options",
+      "savefile-options": "sdk/dialog.md#savefile-options",
+      "openfolder-options": "sdk/dialog.md#openfolder-options",
+      "confirm-options": "sdk/dialog.md#confirm-options",
+      "fb-clipboard-clipboard": "sdk/clipboard.md#fb-clipboard-clipboard",
+      "read": "sdk/clipboard.md#read",
+      "write-text": "sdk/clipboard.md#write-text",
+      "writehtml-html-plaintext": "sdk/clipboard.md#writehtml-html-plaintext",
+      "writefiles-paths": "sdk/clipboard.md#writefiles-paths"
+    }
+  },
+  "sdk/jit-queue.md": {
+    "anchors": {
+      "stop": "sdk/jit-queue.md#stop-opts"
+    }
+  },
+  "sdk/keyboard.md": {
+    "anchors": {
+      "registershortcut": "sdk/keyboard.md#registershortcut-key-action",
+      "unregisterhotkey": "sdk/keyboard.md#unregisterhotkey-options"
+    }
+  },
+  "sdk/library.md": {
+    "anchors": {
+      "getrecentlyadded-limit": "sdk/library.md#getrecentlyadded-limit-sortby",
+      "refresh-1": "sdk/library.md#refresh"
+    }
+  },
+  "sdk/log.md": {
+    "anchors": {
+      "read": "sdk/log.md#read-lines",
+      "write": "sdk/log.md#write-message-options"
+    }
+  },
+  "sdk/lyrics.md": {
+    "anchors": {
+      "exists": "sdk/lyrics.md#exists-path",
+      "get": "sdk/lyrics.md#get-path-options"
+    }
+  },
+  "sdk/menu.md": {
+    "anchors": {
+      "getcontextmenu": "sdk/menu.md#getcontextmenu-options",
+      "getmainmenu": "sdk/menu.md#getmainmenu-root-options",
+      "runcontextcommand": "sdk/menu.md#runcontextcommand-command-options",
+      "runcontextcommandbyid": "sdk/menu.md#runcontextcommandbyid-id-options",
+      "runmainmenucommand": "sdk/menu.md#runmainmenucommand-command-options",
+      "shownativepopup": "sdk/menu.md#shownativepopup-options"
+    }
+  },
+  "sdk/metadata.md": {
+    "anchors": {
+      "read": "sdk/metadata.md#read-path-opts",
+      "readbatch": "sdk/metadata.md#readbatch-paths",
+      "readbypath": "sdk/metadata.md#readbypath-path-opts",
+      "removefield": "sdk/metadata.md#removefield-path-field-opts",
+      "removetag": "sdk/metadata.md#removetag-path-tags-opts",
+      "write": "sdk/metadata.md#write-path-tags-opts",
+      "writebatch": "sdk/metadata.md#writebatch-items",
+      "readraw-path-options": "sdk/metadata.md#readraw-path-opts"
+    }
+  },
+  "sdk/misc.md": {
+    "anchors": {
+      "fb-menu-menu-commands": "sdk/menu.md#fb-menu-menu-apis",
+      "getmainmenu-root": "sdk/menu.md#getmainmenu-root-options",
+      "getcontextmenu-options": "sdk/menu.md#getcontextmenu-options",
+      "runmainmenucommand-command": "sdk/menu.md#runmainmenucommand-command-options",
+      "runcontextcommand-command-options": "sdk/menu.md#runcontextcommand-command-options",
+      "runcontextcommandbyid-id-options": "sdk/menu.md#runcontextcommandbyid-id-options",
+      "shownativepopup-options": "sdk/menu.md#shownativepopup-options",
+      "fb-console-console-output": "sdk/console.md#fb-console-host-console",
+      "log-message": "sdk/console.md#log-message-args",
+      "warn-message": "sdk/console.md#warn-message-args",
+      "error-message": "sdk/console.md#error-message-args",
+      "fb-log-log-file": "sdk/log.md#fb-log-log-file",
+      "write-message-options": "sdk/log.md#write-message-options",
+      "read-lines": "sdk/log.md#read-lines",
+      "clear": "sdk/log.md#clear",
+      "fb-lyrics-lyrics": "sdk/lyrics.md#fb-lyrics-lyrics",
+      "get-path-options": "sdk/lyrics.md#get-path-options",
+      "exists-path": "sdk/lyrics.md#exists-path",
+      "save-path-lyrics-options": "sdk/lyrics.md#save-lyrics",
+      "fb-notification-notifications": "sdk/notification.md#fb-notification-notifications",
+      "show-options": "sdk/notification.md#show-a-notification",
+      "hide": "sdk/notification.md#hide",
+      "showcustommenu-options": "sdk/notification.md#show-a-custom-menu",
+      "showtoast-options": "sdk/notification.md#show-a-toast",
+      "fb-panel-panel-configuration": "sdk/panel.md#fb-panel-panel-configuration",
+      "getconfig": "sdk/panel.md#getconfig",
+      "setconfig-options": "sdk/panel.md#setconfig-options",
+      "fb-dnd-drag-and-drop": "sdk/dnd.md#fb-dnd-drag-and-drop",
+      "exit-1": "sdk/misc.md#exit",
+      "getfoobarpath-1": "sdk/misc.md#getfoobarpath",
+      "getprofilepath-1": "sdk/misc.md#getprofilepath",
+      "showconsole-1": "sdk/misc.md#showconsole",
+      "showpreferences-1": "sdk/misc.md#showpreferences",
+      "showlibrarysearch": "sdk/misc.md#showlibrarysearch-query",
+      "showpopupmessage": "sdk/misc.md#showpopupmessage-message-title"
+    }
+  },
+  "sdk/namespaces.md": {
+    "anchors": {
+      "related-documentation": "sdk/namespaces.md#sdk-namespaces"
+    }
+  },
+  "sdk/navigation.md": {
+    "to": "sdk/namespaces.md",
+    "anchors": {
+      "fb-queue-play-queue": "sdk/queue.md#fb-queue-playback-queue",
+      "get": "sdk/queue.md#get",
+      "getcount": "sdk/queue.md#getcount",
+      "add-options": "sdk/queue.md#add-opts",
+      "addpaths-paths-options": "sdk/queue.md#addpaths-paths-opts",
+      "remove-index": "sdk/queue.md#remove-target",
+      "movetotop-index": "sdk/queue.md#movetotop-index",
+      "flush": "sdk/queue.md#flush",
+      "clear": "sdk/queue.md#clear",
+      "fb-jitqueue-just-in-time-queue": "sdk/jit-queue.md#fb-jitqueue-just-in-time-queue",
+      "getstate": "sdk/jit-queue.md#getstate",
+      "enqueuenext-options": "sdk/jit-queue.md#enqueuenext-opts",
+      "playnow-options": "sdk/jit-queue.md#playnow-opts",
+      "preloadbatch-options": "sdk/jit-queue.md#preloadbatch-opts",
+      "skip-stop-clear-and-notifyempty": "sdk/jit-queue.md#skip",
+      "jit-queue-events": "sdk/jit-queue.md#events",
+      "fb-discovery-service-discovery": "sdk/discovery.md#fb-discovery-service-discovery",
+      "menu-discovery-and-execution": "sdk/discovery.md#fb-discovery-service-discovery",
+      "service-inventories": "sdk/discovery.md#fb-discovery-service-discovery",
+      "fb-keyboard-hotkeys-and-shortcuts": "sdk/keyboard.md#fb-keyboard-hotkeys-and-shortcuts",
+      "registerhotkey-key-action-options": "sdk/keyboard.md#register-a-hotkey",
+      "registershortcut-key-action": "sdk/keyboard.md#registershortcut-key-action",
+      "unregisterhotkey-options": "sdk/keyboard.md#unregisterhotkey-options",
+      "getregisteredhotkeys": "sdk/keyboard.md#getregisteredhotkeys",
+      "keyboard-hotkey": "sdk/keyboard.md#keyboard-hotkey"
+    }
+  },
+  "sdk/overview.md": {
+    "anchors": {
+      "sdk-overview-and-installation": "sdk/overview.md#sdk-overview",
+      "installation": "how-to/load-sdk.md#load-the-sdk-in-a-theme",
+      "es-modules": "how-to/load-sdk.md#with-a-bundler",
+      "direct-script-loading": "how-to/load-sdk.md#without-a-bundler"
+    }
+  },
+  "sdk/panel.md": {
+    "anchors": {
+      "setconfig": "sdk/panel.md#setconfig-options"
+    }
+  },
+  "sdk/playcount.md": {
+    "anchors": {
+      "getbatch": "sdk/playcount.md#getbatch-paths",
+      "set": "sdk/playcount.md#set-path-count"
+    }
+  },
+  "sdk/playlist.md": {
+    "anchors": {
+      "getautoplaylistquery-index-1": "sdk/playlist.md#getautoplaylistquery-index",
+      "removeautoplaylist-index-1": "sdk/playlist.md#removeautoplaylist-index",
+      "removeselectedtracks-index-1": "sdk/playlist.md#removeselectedtracks-index"
+    }
+  },
+  "sdk/port.md": {
+    "anchors": {
+      "disconnect": "sdk/port.md#disconnect-portid",
+      "getports": "sdk/port.md#getports-name",
+      "postmessage": "sdk/port.md#postmessage-portid-message"
+    }
+  },
+  "sdk/quickstart.md": {
+    "to": "tutorials/first-theme.md",
+    "anchors": {
+      "minimal-script-tag-example": "how-to/plain-html.md#use-the-sdk-without-a-bundler",
+      "es-module-setup": "how-to/load-sdk.md#with-a-bundler",
+      "player-example": "tutorials/first-theme.md#show-the-playback-state"
+    }
+  },
+  "sdk/rating.md": {
+    "anchors": {
+      "get": "sdk/rating.md#get-path-opts",
+      "set": "sdk/rating.md#set-path-rating-opts"
+    }
+  },
+  "sdk/replaygain.md": {
+    "anchors": {
+      "clear": "sdk/replaygain.md#clear-paths",
+      "get": "sdk/replaygain.md#get-paths",
+      "scan": "sdk/replaygain.md#scan-paths-opts",
+      "setmode": "sdk/replaygain.md#setmode-sourcemode-processingmode",
+      "setpreamp": "sdk/replaygain.md#setpreamp-withrg-withoutrg"
+    }
+  },
+  "sdk/selection.md": {
+    "anchors": {
+      "get": "sdk/selection.md#get-opts",
+      "getviewingtrack": "sdk/selection.md#getviewingtrack-opts",
+      "set": "sdk/selection.md#set-handles",
+      "setplaylisttracking": "sdk/selection.md#setplaylisttracking-mode"
+    }
+  },
+  "sdk/shared-state.md": {
+    "anchors": {
+      "delete": "sdk/shared-state.md#delete-key",
+      "keys": "sdk/shared-state.md#keys-pattern",
+      "set": "sdk/shared-state.md#set-key-value-silent-ttlms"
+    }
+  },
+  "sdk/taskbar.md": {
+    "anchors": {
+      "flash": "sdk/taskbar.md#flash-options",
+      "setoverlayicon": "sdk/taskbar.md#setoverlayicon-options",
+      "setthumbnailbuttons": "sdk/taskbar.md#setthumbnailbuttons-buttons"
+    }
+  },
+  "sdk/titleformat.md": {
+    "anchors": {
+      "eval": "sdk/titleformat.md#eval-pattern-path",
+      "evalbatch": "sdk/titleformat.md#evalbatch-pattern-paths",
+      "evalfields": "sdk/titleformat.md#evalfields-path-fields",
+      "evalfieldsbatch": "sdk/titleformat.md#evalfieldsbatch-paths-fields"
+    }
+  },
+  "sdk/tray.md": {
+    "anchors": {
+      "appendmenuitems": "sdk/tray.md#appendmenuitems-items-position",
+      "clearmenuitems": "sdk/tray.md#clearmenuitems-position",
+      "create": "sdk/tray.md#create-opts",
+      "removemenuitems": "sdk/tray.md#removemenuitems-ids",
+      "setclosetotray": "sdk/tray.md#setclosetotray-enabled",
+      "setcontextmenu": "sdk/tray.md#setcontextmenu-items-config",
+      "seticon": "sdk/tray.md#seticon-icon",
+      "setmenuitemstate": "sdk/tray.md#setmenuitemstate-id-state",
+      "setmenuzones": "sdk/tray.md#setmenuzones-zones-config",
+      "setminimizetotray": "sdk/tray.md#setminimizetotray-enabled",
+      "settooltip": "sdk/tray.md#settooltip-tooltip",
+      "showballoon": "sdk/tray.md#showballoon-opts"
+    }
+  },
+  "sdk/ui.md": {
+    "anchors": {
+      "startdrag-startresize-edge": "sdk/ui.md#startdrag",
+      "position-size-and-constraints": "sdk/ui.md#position-and-size",
+      "always-on-top-and-fullscreen": "sdk/ui.md#always-on-top",
+      "focus-flashing-and-system-menus": "sdk/ui.md#focus-and-notifications",
+      "flash-opts-flashtaskbar-count": "sdk/ui.md#flash-opts",
+      "dwm-and-webview-effects": "sdk/ui.md#setmica-opts-setmicaeffect-opts",
+      "custom-titlebar": "sdk/ui.md#titlebar",
+      "popup-windows": "sdk/ui.md#multiple-windows",
+      "behavior-profiles": "sdk/ui.md#behavior-presets-profile",
+      "popup-lifecycle-and-policy-methods": "sdk/ui.md#closepopup-windowid-closeallpopups",
+      "click-through-regions": "sdk/ui.md#setclickthrough-opts-isclickthrough-windowid",
+      "cross-window-messaging": "sdk/ui.md#sendmessage-targetwindowid-message",
+      "sendmessage-targetwindowid-message-broadcast-message": "sdk/ui.md#sendmessage-targetwindowid-message",
+      "complete-wrapper-token-index": "sdk/ui.md#basic-window-controls"
+    }
+  },
+  "zh/api/audio.md": {
+    "anchors": {
+      "dsp-api-效果器管理": "zh/api/dsp.md#dsp-api-效果器管理",
+      "dsp-getchain": "zh/api/dsp.md#dsp-getchain",
+      "dsp-getpresets": "zh/api/dsp.md#dsp-getpresets",
+      "dsp-applypreset": "zh/api/dsp.md#dsp-applypreset",
+      "dsp-getavailable": "zh/api/dsp.md#dsp-getavailable",
+      "dsp-adddsp": "zh/api/dsp.md#dsp-adddsp",
+      "dsp-removedsp": "zh/api/dsp.md#dsp-removedsp",
+      "dsp-movedsp": "zh/api/dsp.md#dsp-movedsp",
+      "dsp-setchain": "zh/api/dsp.md#dsp-setchain",
+      "output-api-音频输出": "zh/api/output.md#output-api-音频输出",
+      "output-getdevices": "zh/api/output.md#output-getdevices",
+      "output-getentries": "zh/api/output.md#output-getentries",
+      "output-getsettings": "zh/api/output.md#output-getsettings",
+      "replaygain-api": "zh/api/replaygain.md#replaygain-api",
+      "replaygain-getsettings": "zh/api/replaygain.md#replaygain-getsettings",
+      "replaygain-getmode": "zh/api/replaygain.md#replaygain-getmode",
+      "replaygain-setmode": "zh/api/replaygain.md#replaygain-setmode",
+      "replaygain-getpreamp": "zh/api/replaygain.md#replaygain-getpreamp",
+      "replaygain-setpreamp": "zh/api/replaygain.md#replaygain-setpreamp",
+      "replaygain-get": "zh/api/replaygain.md#replaygain-get",
+      "replaygain-clear": "zh/api/replaygain.md#replaygain-clear",
+      "replaygain-scan": "zh/api/replaygain.md#replaygain-scan"
+    }
+  },
+  "zh/api/file.md": {
+    "anchors": {
+      "dialog-api-对话框": "zh/api/dialog.md#dialog-api-对话框",
+      "dialog-openfile": "zh/api/dialog.md#dialog-openfile",
+      "dialog-savefile": "zh/api/dialog.md#dialog-savefile",
+      "dialog-openfolder": "zh/api/dialog.md#dialog-openfolder",
+      "dialog-confirm": "zh/api/dialog.md#dialog-confirm",
+      "shell-api-系统集成": "zh/api/shell.md#shell-api-系统集成",
+      "shell-showinexplorer": "zh/api/shell.md#shell-showinexplorer",
+      "shell-openexternal": "zh/api/shell.md#shell-openexternal",
+      "shell-exec": "zh/api/shell.md#shell-exec",
+      "shell-spawn": "zh/api/shell.md#shell-spawn",
+      "shell-openwith": "zh/api/shell.md#shell-openwith",
+      "文件、对话框与-shell-边界": "zh/api/file.md#文件边界"
+    }
+  },
+  "zh/api/metadata.md": {
+    "anchors": {
+      "评分": "zh/api/rating.md#评分",
+      "rating-get": "zh/api/rating.md#rating-get",
+      "rating-set": "zh/api/rating.md#rating-set"
+    }
+  },
+  "zh/api/misc.md": {
+    "anchors": {
+      "menu-api-菜单": "zh/api/menu.md#menu-api-菜单",
+      "menu-runmainmenucommand": "zh/api/menu.md#menu-runmainmenucommand",
+      "menu-runcontextcommand": "zh/api/menu.md#menu-runcontextcommand",
+      "menu-getmainmenu": "zh/api/menu.md#menu-getmainmenu",
+      "menu-getcontextmenu": "zh/api/menu.md#menu-getcontextmenu",
+      "menu-runcontextcommandbyid": "zh/api/menu.md#menu-runcontextcommandbyid",
+      "menu-shownativepopup": "zh/api/menu.md#menu-shownativepopup",
+      "system-api": "zh/api/system.md#system-api",
+      "system-listavailableapis": "zh/api/system.md#system-listavailableapis",
+      "system-getapisbynamespace": "zh/api/system.md#system-getapisbynamespace",
+      "system-searchapis": "zh/api/system.md#system-searchapis",
+      "system-getapistats": "zh/api/system.md#system-getapistats",
+      "system-getregisteredplugins": "zh/api/system.md#system-getregisteredplugins",
+      "system-ispluginregistered": "zh/api/system.md#system-ispluginregistered",
+      "system-gettheme": "zh/api/system.md#system-gettheme",
+      "system-getdpi": "zh/api/system.md#system-getdpi",
+      "system-getlocale": "zh/api/system.md#system-getlocale",
+      "test-api": "zh/api/test.md#test-api",
+      "test-echo": "zh/api/test.md#test-echo",
+      "test-ping": "zh/api/test.md#test-ping",
+      "panel-api-面板配置": "zh/api/panel.md#panel-api-面板配置",
+      "panel-getconfig": "zh/api/panel.md#panel-getconfig",
+      "panel-setconfig": "zh/api/panel.md#panel-setconfig",
+      "clipboard-api-剪贴板-4-个-api": "zh/api/clipboard.md#clipboard-api-剪贴板-4-个-api",
+      "clipboard-read": "zh/api/clipboard.md#clipboard-read",
+      "clipboard-write": "zh/api/clipboard.md#clipboard-write",
+      "clipboard-writehtml": "zh/api/clipboard.md#clipboard-writehtml",
+      "clipboard-writefiles": "zh/api/clipboard.md#clipboard-writefiles",
+      "console-log-api-日志-6-个-api": "zh/api/log.md#log-api-日志文件-3-个-api",
+      "console-log": "zh/api/console.md#console-log",
+      "console-warn": "zh/api/console.md#console-warn",
+      "console-error": "zh/api/console.md#console-error",
+      "log-write": "zh/api/log.md#log-write",
+      "log-read": "zh/api/log.md#log-read",
+      "log-clear": "zh/api/log.md#log-clear",
+      "menu-close": "zh/api/menu.md#menu-close",
+      "menu-show": "zh/api/menu.md#menu-show",
+      "contract-补充-log-write": "zh/api/log.md#contract-补充-log-write",
+      "contract-补充-menu-getcontextmenu": "zh/api/menu.md#contract-补充-menu-getcontextmenu",
+      "返回字段-1": "zh/api/menu.md#返回字段",
+      "contract-补充-menu-runcontextcommandbyid": "zh/api/menu.md#contract-补充-menu-runcontextcommandbyid",
+      "返回字段-2": "zh/api/menu.md#返回字段-1",
+      "返回字段-3": "zh/api/misc.md#返回字段"
+    }
+  },
+  "zh/api/port.md": {
+    "anchors": {
+      "event-api": "zh/api/event.md#event-api",
+      "event-emit": "zh/api/event.md#event-emit",
+      "event-emitto": "zh/api/event.md#event-emitto",
+      "state-api": "zh/api/state.md#state-api",
+      "state-get": "zh/api/state.md#state-get",
+      "state-set": "zh/api/state.md#state-set",
+      "state-delete": "zh/api/state.md#state-delete",
+      "state-keys": "zh/api/state.md#state-keys",
+      "路由、状态与事件-envelope": "zh/api/state.md#状态行为"
+    }
+  },
+  "zh/api/queue.md": {
+    "anchors": {
+      "selection-api-选择同步": "zh/api/selection.md#selection-api-选择同步",
+      "selection-getviewermode": "zh/api/selection.md#selection-getviewermode",
+      "selection-getviewingtrack": "zh/api/selection.md#selection-getviewingtrack",
+      "selection-get": "zh/api/selection.md#selection-get",
+      "selection-gettype": "zh/api/selection.md#selection-gettype",
+      "selection-set": "zh/api/selection.md#selection-set",
+      "selection-setplaylisttracking": "zh/api/selection.md#selection-setplaylisttracking",
+      "jit-queue-api-流媒体即时队列": "zh/api/jit-queue.md#jit-queue-api-流媒体即时队列",
+      "架构说明": "zh/api/jit-queue.md#架构说明",
+      "jitqueue-playnow": "zh/api/jit-queue.md#jitqueue-playnow",
+      "jitqueue-enqueuenext": "zh/api/jit-queue.md#jitqueue-enqueuenext",
+      "jitqueue-skip": "zh/api/jit-queue.md#jitqueue-skip",
+      "jitqueue-stop": "zh/api/jit-queue.md#jitqueue-stop",
+      "jitqueue-clear": "zh/api/jit-queue.md#jitqueue-clear",
+      "jitqueue-getstate": "zh/api/jit-queue.md#jitqueue-getstate",
+      "jitqueue-notifyempty": "zh/api/jit-queue.md#jitqueue-notifyempty",
+      "jitqueue-preloadbatch": "zh/api/jit-queue.md#jitqueue-preloadbatch",
+      "选择行为": "zh/api/selection.md#选择行为",
+      "jit-queue-事件": "zh/api/jit-queue.md#jit-queue-事件"
+    }
+  },
+  "zh/api/taskbar-tray.md": {
+    "to": "zh/api/taskbar.md",
+    "anchors": {
+      "taskbar-api-—-任务栏缩略图-5-个-api": "zh/api/taskbar.md#taskbar-api-—-任务栏缩略图-5-个-api",
+      "taskbar-setthumbnailbuttons": "zh/api/taskbar.md#taskbar-setthumbnailbuttons",
+      "taskbar-updatebutton": "zh/api/taskbar.md#taskbar-updatebutton",
+      "taskbar-setprogress": "zh/api/taskbar.md#taskbar-setprogress",
+      "taskbar-setoverlayicon": "zh/api/taskbar.md#taskbar-setoverlayicon",
+      "taskbar-flash": "zh/api/taskbar.md#taskbar-flash",
+      "事件-taskbar": "zh/api/taskbar.md#事件-taskbar",
+      "tray-api-—-系统托盘-15-个-api": "zh/api/tray.md#tray-api-—-系统托盘-15-个-api",
+      "tray-create": "zh/api/tray.md#tray-create",
+      "tray-destroy": "zh/api/tray.md#tray-destroy",
+      "tray-seticon": "zh/api/tray.md#tray-seticon",
+      "tray-settooltip": "zh/api/tray.md#tray-settooltip",
+      "tray-showballoon": "zh/api/tray.md#tray-showballoon",
+      "tray-setcontextmenu": "zh/api/tray.md#tray-setcontextmenu",
+      "tray-setmenuzones": "zh/api/tray.md#tray-setmenuzones",
+      "tray-setminimizetotray": "zh/api/tray.md#tray-setminimizetotray",
+      "tray-setclosetotray": "zh/api/tray.md#tray-setclosetotray",
+      "tray-isvisible": "zh/api/tray.md#tray-isvisible",
+      "tray-appendmenuitems": "zh/api/tray.md#tray-appendmenuitems",
+      "tray-removemenuitems": "zh/api/tray.md#tray-removemenuitems",
+      "tray-clearmenuitems": "zh/api/tray.md#tray-clearmenuitems",
+      "tray-getmenuitems": "zh/api/tray.md#tray-getmenuitems",
+      "tray-setmenuitemstate": "zh/api/tray.md#tray-setmenuitemstate",
+      "事件-tray": "zh/api/tray.md#事件-tray",
+      "完整示例": "zh/api/tray.md#完整示例",
+      "动态菜单示例": "zh/api/tray.md#动态菜单示例",
+      "契约补充": "zh/api/tray.md#契约补充",
+      "contract-补充-taskbar-setprogress": "zh/api/taskbar.md#contract-补充-taskbar-setprogress",
+      "返回值": "zh/api/taskbar.md#返回值",
+      "contract-补充-items-playbackaction": "zh/api/tray.md#contract-补充-items-playbackaction",
+      "运行时生命周期、菜单数据与事件": "zh/api/tray.md#运行时生命周期、菜单数据与事件",
+      "保留系统项": "zh/api/tray.md#保留系统项"
+    }
+  },
+  "zh/api/ui-interaction.md": {
+    "to": "zh/api/ui.md",
+    "anchors": {
+      "ui-api-界面交互-5-个-api": "zh/api/ui.md#ui-api-界面交互-5-个-api",
+      "ui-showcustommenu": "zh/api/ui.md#ui-showcustommenu",
+      "ui-showtoast": "zh/api/ui.md#ui-showtoast",
+      "ui-shownotification": "zh/api/ui.md#ui-shownotification",
+      "ui-hidenotification": "zh/api/ui.md#ui-hidenotification",
+      "ui-showcontextmenu": "zh/api/ui.md#ui-showcontextmenu",
+      "keyboard-api-快捷键-4-个-api": "zh/api/keyboard.md#keyboard-api-快捷键-4-个-api",
+      "keyboard-registerhotkey": "zh/api/keyboard.md#keyboard-registerhotkey",
+      "keyboard-registershortcut": "zh/api/keyboard.md#keyboard-registershortcut",
+      "keyboard-unregisterhotkey": "zh/api/keyboard.md#keyboard-unregisterhotkey",
+      "keyboard-getregisteredhotkeys": "zh/api/keyboard.md#keyboard-getregisteredhotkeys",
+      "dnd-api-文件拖入与拖出-4-个-api": "zh/api/dnd.md#dnd-api-文件拖入与拖出-4-个-api",
+      "dnd-getcapabilities": "zh/api/dnd.md#dnd-getcapabilities",
+      "dnd-getpathsasync": "zh/api/dnd.md#dnd-getpathsasync",
+      "dnd-preparedrag": "zh/api/dnd.md#dnd-preparedrag",
+      "dnd-startdrag": "zh/api/dnd.md#dnd-startdrag",
+      "交互投递与限制": "zh/api/dnd.md#交互投递与限制"
+    }
+  },
+  "zh/components/index.md": {
+    "anchors": {
+      "快速开始": "zh/how-to/load-sdk.md#在主题里加载-sdk",
+      "设计原则": "zh/concepts/components.md#只带行为-不带外观",
+      "样式化示例": "zh/how-to/style-components.md#给组件加样式"
+    }
+  },
+  "zh/guide/bridge.md": {
+    "to": "zh/reference/bridge.md"
+  },
+  "zh/guide/installation.md": {
+    "to": "zh/how-to/install.md",
+    "anchors": {
+      "偏好设置页": "zh/reference/preferences.md#偏好设置",
+      "资源根目录与模板": "zh/concepts/page-loading.md#模板",
+      "获取-sdk": "zh/how-to/load-sdk.md#在主题里加载-sdk",
+      "bundler-esm": "zh/how-to/load-sdk.md#使用打包工具",
+      "无-bundler-iife-全局构建": "zh/how-to/load-sdk.md#不用打包工具",
+      "后台模式-background-mode": "zh/how-to/background-mode.md#与其他界面同时运行-webview2-ui"
+    }
+  },
+  "zh/guide/overview.md": {
+    "to": "zh/concepts/architecture.md",
+    "anchors": {
+      "api-分布": "zh/concepts/architecture.md#bridge-与-sdk",
+      "插件层职责-foo-ui-webview2-提供": "zh/concepts/architecture.md#组件提供什么",
+      "应用层职责-开发者实现": "zh/concepts/architecture.md#主题实现什么",
+      "示例-能力-vs-策略": "zh/concepts/architecture.md#示例-能力与策略"
+    }
+  },
+  "zh/guide/panel-modes.md": {
+    "to": "zh/concepts/run-modes.md",
+    "anchors": {
+      "dui-面板模式-default-ui": "zh/how-to/panels.md#往-default-ui-里加面板",
+      "cui-面板模式-columns-ui": "zh/how-to/panels.md#往-columns-ui-里加面板",
+      "模式检测": "zh/how-to/panels.md#让页面适应面板",
+      "api-兼容性矩阵": "zh/concepts/run-modes.md#面板里有什么不同",
+      "最佳实践": "zh/how-to/panels.md#让页面适应面板"
+    }
+  },
+  "zh/guide/quickstart.md": {
+    "to": "zh/how-to/plain-html.md",
+    "anchors": {
+      "最小示例": "zh/how-to/plain-html.md#写页面",
+      "bridge-对象": "zh/reference/bridge.md#bridge-对象",
+      "基础调用": "zh/how-to/plain-html.md#在页面里调用宿主",
+      "完整播放器示例": "zh/how-to/common-tasks.md#场景-1-构建播放器界面",
+      "辅助函数": "zh/how-to/common-tasks.md#场景-1-构建播放器界面"
+    }
+  },
+  "zh/guide/use-cases.md": {
+    "to": "zh/how-to/common-tasks.md"
+  },
+  "zh/mcp/tools-artwork.md": {
+    "to": "zh/mcp/tools.md"
+  },
+  "zh/mcp/tools-library.md": {
+    "to": "zh/mcp/tools.md"
+  },
+  "zh/mcp/tools-metadata.md": {
+    "to": "zh/mcp/tools.md"
+  },
+  "zh/mcp/tools-playback-ext.md": {
+    "to": "zh/mcp/tools.md"
+  },
+  "zh/mcp/tools-playback.md": {
+    "to": "zh/mcp/tools.md"
+  },
+  "zh/mcp/tools-playlist-ext.md": {
+    "to": "zh/mcp/tools.md"
+  },
+  "zh/mcp/tools-playlist.md": {
+    "to": "zh/mcp/tools.md"
+  },
+  "zh/mcp/tools-queue.md": {
+    "to": "zh/mcp/tools.md"
+  },
+  "zh/mcp/tools-ui.md": {
+    "to": "zh/mcp/tools.md"
+  },
+  "zh/sdk/artwork.md": {
+    "anchors": {
+      "getavailabletypes": "zh/sdk/artwork.md#getavailabletypes-path"
+    }
+  },
+  "zh/sdk/audio-ext.md": {
+    "to": "zh/sdk/namespaces.md",
+    "anchors": {
+      "fb-dsp-dsp-管理": "zh/sdk/dsp.md#fb-dsp-dsp-链",
+      "getchain": "zh/sdk/dsp.md#getchain",
+      "setchain-dsps": "zh/sdk/dsp.md#setchain-dsps",
+      "getpresets": "zh/sdk/dsp.md#getpresets",
+      "applypreset-indexorname": "zh/sdk/dsp.md#applypreset-indexorname",
+      "getavailable": "zh/sdk/dsp.md#getavailable",
+      "adddsp-guid-position": "zh/sdk/dsp.md#adddsp-guid-position",
+      "removedsp-index": "zh/sdk/dsp.md#removedsp-index",
+      "movedsp-from-to": "zh/sdk/dsp.md#movedsp-from-to",
+      "fb-output-输出设备": "zh/sdk/output.md#fb-output-音频输出",
+      "getdevices": "zh/sdk/output.md#getdevices",
+      "getentries": "zh/sdk/output.md#getentries",
+      "getsettings": "zh/sdk/output.md#getsettings",
+      "fb-replaygain-replaygain": "zh/sdk/replaygain.md#fb-replaygain-replaygain",
+      "get-paths": "zh/sdk/replaygain.md#get-paths",
+      "getmode": "zh/sdk/replaygain.md#getmode",
+      "setmode-sourcemode-processingmode": "zh/sdk/replaygain.md#setmode-sourcemode-processingmode",
+      "getpreamp": "zh/sdk/replaygain.md#getpreamp",
+      "setpreamp-withrg-withoutrg": "zh/sdk/replaygain.md#setpreamp-withrg-withoutrg",
+      "getsettings-1": "zh/sdk/replaygain.md#getsettings",
+      "scan-paths": "zh/sdk/replaygain.md#scan-paths-opts",
+      "clear-paths": "zh/sdk/replaygain.md#clear-paths"
+    }
+  },
+  "zh/sdk/data.md": {
+    "to": "zh/sdk/namespaces.md",
+    "anchors": {
+      "fb-metadata-元数据读写": "zh/sdk/metadata.md#fb-metadata-元数据与封面写入",
+      "read-path": "zh/sdk/metadata.md#read-path-opts",
+      "readbatch-paths": "zh/sdk/metadata.md#readbatch-paths",
+      "readbypath-path": "zh/sdk/metadata.md#readbypath-path-opts",
+      "write-path-tags": "zh/sdk/metadata.md#write-path-tags-opts",
+      "writebatch-items": "zh/sdk/metadata.md#writebatch-items",
+      "embedartwork-path-options": "zh/sdk/metadata.md#embedartwork-path-options",
+      "removeembeddedart-path-options": "zh/sdk/metadata.md#removeembeddedart-path-options",
+      "removefield-path-field": "zh/sdk/metadata.md#removefield-path-field-opts",
+      "readraw-path-options": "zh/sdk/metadata.md#readraw-path-opts",
+      "removetag-path-tags": "zh/sdk/metadata.md#removetag-path-tags-opts",
+      "fb-titleformat-titleformat-格式化": "zh/sdk/titleformat.md#fb-titleformat-标题格式化",
+      "eval-pattern-path": "zh/sdk/titleformat.md#eval-pattern-path",
+      "evalbatch-pattern-paths": "zh/sdk/titleformat.md#evalbatch-pattern-paths",
+      "evalfields-path-fields": "zh/sdk/titleformat.md#evalfields-path-fields",
+      "evalfieldsbatch-paths-fields": "zh/sdk/titleformat.md#evalfieldsbatch-paths-fields",
+      "getbuiltinfields": "zh/sdk/titleformat.md#getbuiltinfields",
+      "fb-playcount-播放统计": "zh/sdk/playcount.md#fb-playcount-播放统计",
+      "get-path": "zh/sdk/playcount.md#get-path",
+      "getbatch-paths": "zh/sdk/playcount.md#getbatch-paths",
+      "set-path-count": "zh/sdk/playcount.md#set-path-count",
+      "getstats": "zh/sdk/playcount.md#getstats",
+      "fb-selection-选择同步": "zh/sdk/selection.md#fb-selection-选择同步",
+      "get-options": "zh/sdk/selection.md#get-opts",
+      "gettype": "zh/sdk/selection.md#gettype",
+      "set-handles": "zh/sdk/selection.md#set-handles",
+      "setplaylisttracking-mode": "zh/sdk/selection.md#setplaylisttracking-mode",
+      "getviewermode": "zh/sdk/selection.md#getviewermode",
+      "getviewingtrack-options": "zh/sdk/selection.md#getviewingtrack-opts",
+      "fb-rating-评分": "zh/sdk/rating.md#fb-rating-曲目评分",
+      "get-path-1": "zh/sdk/rating.md#get-path-opts",
+      "set-path-rating-options": "zh/sdk/rating.md#set-path-rating-opts"
+    }
+  },
+  "zh/sdk/dialog.md": {
+    "anchors": {
+      "confirm": "zh/sdk/dialog.md#confirm-options",
+      "openfile": "zh/sdk/dialog.md#openfile-options",
+      "openfolder": "zh/sdk/dialog.md#openfolder-options",
+      "savefile": "zh/sdk/dialog.md#savefile-options"
+    }
+  },
+  "zh/sdk/discovery.md": {
+    "anchors": {
+      "getcontextmenucommands": "zh/sdk/discovery.md#getcontextmenucommands-options"
+    }
+  },
+  "zh/sdk/dsp.md": {
+    "anchors": {
+      "adddsp": "zh/sdk/dsp.md#adddsp-guid-position",
+      "applypreset": "zh/sdk/dsp.md#applypreset-indexorname",
+      "movedsp": "zh/sdk/dsp.md#movedsp-from-to",
+      "removedsp": "zh/sdk/dsp.md#removedsp-index",
+      "setchain": "zh/sdk/dsp.md#setchain-dsps"
+    }
+  },
+  "zh/sdk/file-io.md": {
+    "to": "zh/sdk/namespaces.md",
+    "anchors": {
+      "fb-file-文件系统": "zh/sdk/file.md#fb-file-文件系统",
+      "read-path-options": "zh/sdk/file.md#read-path-options",
+      "write-path-content-options": "zh/sdk/file.md#write-path-content-options",
+      "exists-path": "zh/sdk/file.md#exists-path",
+      "list-path-options": "zh/sdk/file.md#list-path-options",
+      "delete-path-options": "zh/sdk/file.md#delete-path-opts",
+      "mkdir-path": "zh/sdk/file.md#mkdir-path",
+      "copy-source-destination-options": "zh/sdk/file.md#copy-source-destination-opts",
+      "move-source-destination": "zh/sdk/file.md#move-source-destination",
+      "rename-path-newname": "zh/sdk/file.md#rename-path-newname",
+      "getinfo-path": "zh/sdk/file.md#getinfo-path",
+      "copyasync-items-options": "zh/sdk/file.md#copyasync-items-options",
+      "moveasync-items-options": "zh/sdk/file.md#moveasync-items-options",
+      "deleteasync-paths-options": "zh/sdk/file.md#deleteasync-paths-options",
+      "cancelop-operationid": "zh/sdk/file.md#cancelop-operationid",
+      "消费进度事件": "zh/sdk/file.md#事件",
+      "fb-http-http-请求": "zh/sdk/http.md#fb-http-http-请求",
+      "get-url-options": "zh/sdk/http.md#get-url-options",
+      "post-url-body-options": "zh/sdk/http.md#post-url-body-options",
+      "head-url-options": "zh/sdk/http.md#head-url-options",
+      "download-url-saveto-options": "zh/sdk/http.md#download-url-saveto-options",
+      "put-url-body-options": "zh/sdk/http.md#put-url-body-options",
+      "delete-url-body-options": "zh/sdk/http.md#delete-url-body-options",
+      "patch-url-body-options": "zh/sdk/http.md#patch-url-body-options",
+      "request-url-options": "zh/sdk/http.md#request-url-options",
+      "abort-requestid": "zh/sdk/http.md#abort-requestid",
+      "fb-dialog-对话框": "zh/sdk/dialog.md#fb-dialog-对话框",
+      "openfile-options": "zh/sdk/dialog.md#openfile-options",
+      "savefile-options": "zh/sdk/dialog.md#savefile-options",
+      "openfolder-options": "zh/sdk/dialog.md#openfolder-options",
+      "confirm-options": "zh/sdk/dialog.md#confirm-options",
+      "fb-clipboard-剪贴板": "zh/sdk/clipboard.md#fb-clipboard-剪贴板",
+      "read": "zh/sdk/clipboard.md#read",
+      "write-text": "zh/sdk/clipboard.md#write-text",
+      "writehtml-html-plaintext": "zh/sdk/clipboard.md#writehtml-html-plaintext",
+      "writefiles-paths": "zh/sdk/clipboard.md#writefiles-paths"
+    }
+  },
+  "zh/sdk/file.md": {
+    "anchors": {
+      "文本写入": "zh/sdk/file.md#write-path-content-options"
+    }
+  },
+  "zh/sdk/jit-queue.md": {
+    "anchors": {
+      "preloadbatch": "zh/sdk/jit-queue.md#preloadbatch-opts",
+      "stop": "zh/sdk/jit-queue.md#stop-opts"
+    }
+  },
+  "zh/sdk/keyboard.md": {
+    "anchors": {
+      "registershortcut": "zh/sdk/keyboard.md#registershortcut-key-action",
+      "unregisterhotkey": "zh/sdk/keyboard.md#unregisterhotkey-options"
+    }
+  },
+  "zh/sdk/library.md": {
+    "anchors": {
+      "getrecentlyadded-limit": "zh/sdk/library.md#getrecentlyadded-limit-sortby",
+      "refresh-1": "zh/sdk/library.md#refresh"
+    }
+  },
+  "zh/sdk/log.md": {
+    "anchors": {
+      "read": "zh/sdk/log.md#read-lines",
+      "write": "zh/sdk/log.md#write-message-options"
+    }
+  },
+  "zh/sdk/lyrics.md": {
+    "anchors": {
+      "exists": "zh/sdk/lyrics.md#exists-path",
+      "get": "zh/sdk/lyrics.md#get-path-options"
+    }
+  },
+  "zh/sdk/menu.md": {
+    "anchors": {
+      "getcontextmenu": "zh/sdk/menu.md#getcontextmenu-options",
+      "getmainmenu": "zh/sdk/menu.md#getmainmenu-root-options",
+      "runcontextcommand": "zh/sdk/menu.md#runcontextcommand-command-options",
+      "runcontextcommandbyid": "zh/sdk/menu.md#runcontextcommandbyid-id-options",
+      "runmainmenucommand": "zh/sdk/menu.md#runmainmenucommand-command-options",
+      "shownativepopup": "zh/sdk/menu.md#shownativepopup-options"
+    }
+  },
+  "zh/sdk/metadata.md": {
+    "anchors": {
+      "read": "zh/sdk/metadata.md#read-path-opts",
+      "readbatch": "zh/sdk/metadata.md#readbatch-paths",
+      "readbypath": "zh/sdk/metadata.md#readbypath-path-opts",
+      "removefield": "zh/sdk/metadata.md#removefield-path-field-opts",
+      "removetag": "zh/sdk/metadata.md#removetag-path-tags-opts",
+      "write": "zh/sdk/metadata.md#write-path-tags-opts",
+      "writebatch": "zh/sdk/metadata.md#writebatch-items",
+      "readraw-path-options": "zh/sdk/metadata.md#readraw-path-opts"
+    }
+  },
+  "zh/sdk/misc.md": {
+    "anchors": {
+      "fb-menu-菜单命令": "zh/sdk/menu.md#fb-menu-菜单",
+      "getmainmenu-root": "zh/sdk/menu.md#getmainmenu-root-options",
+      "getcontextmenu-options": "zh/sdk/menu.md#getcontextmenu-options",
+      "runmainmenucommand-command": "zh/sdk/menu.md#runmainmenucommand-command-options",
+      "runcontextcommand-command-options": "zh/sdk/menu.md#runcontextcommand-command-options",
+      "runcontextcommandbyid-id-options": "zh/sdk/menu.md#runcontextcommandbyid-id-options",
+      "shownativepopup-options": "zh/sdk/menu.md#shownativepopup-options",
+      "fb-console-控制台": "zh/sdk/console.md#fb-console-控制台",
+      "log-message": "zh/sdk/console.md#log-message-args",
+      "warn-message": "zh/sdk/console.md#warn-message-args",
+      "error-message": "zh/sdk/console.md#error-message-args",
+      "fb-log-日志文件": "zh/sdk/log.md#fb-log-日志文件",
+      "write-message-options": "zh/sdk/log.md#write-message-options",
+      "read-lines": "zh/sdk/log.md#read-lines",
+      "clear": "zh/sdk/log.md#clear",
+      "fb-lyrics-歌词": "zh/sdk/lyrics.md#fb-lyrics-歌词",
+      "get-path-options": "zh/sdk/lyrics.md#get-path-options",
+      "exists-path": "zh/sdk/lyrics.md#exists-path",
+      "save-path-lyrics-options": "zh/sdk/lyrics.md#保存歌词",
+      "fb-notification-通知": "zh/sdk/notification.md#fb-notification-通知",
+      "show-options": "zh/sdk/notification.md#显示系统通知",
+      "hide": "zh/sdk/notification.md#hide",
+      "showcustommenu-options": "zh/sdk/notification.md#显示自定义菜单",
+      "showtoast-options": "zh/sdk/notification.md#显示-toast",
+      "fb-panel-面板配置": "zh/sdk/panel.md#fb-panel-面板配置",
+      "getconfig": "zh/sdk/panel.md#getconfig",
+      "setconfig-options": "zh/sdk/panel.md#setconfig-options",
+      "fb-dnd-拖放": "zh/sdk/dnd.md#fb-dnd-拖放",
+      "exit-1": "zh/sdk/misc.md#exit",
+      "getfoobarpath-1": "zh/sdk/misc.md#getfoobarpath",
+      "getprofilepath-1": "zh/sdk/misc.md#getprofilepath",
+      "showconsole-1": "zh/sdk/misc.md#showconsole",
+      "showpreferences-1": "zh/sdk/misc.md#showpreferences",
+      "showlibrarysearch": "zh/sdk/misc.md#showlibrarysearch-query",
+      "showpopupmessage": "zh/sdk/misc.md#showpopupmessage-message-title"
+    }
+  },
+  "zh/sdk/navigation.md": {
+    "to": "zh/sdk/namespaces.md",
+    "anchors": {
+      "fb-queue-播放队列": "zh/sdk/queue.md#fb-queue-播放队列",
+      "get": "zh/sdk/queue.md#get",
+      "getcount": "zh/sdk/queue.md#getcount",
+      "add-options": "zh/sdk/queue.md#add-opts",
+      "addpaths-paths-options": "zh/sdk/queue.md#addpaths-paths-opts",
+      "remove-index": "zh/sdk/queue.md#remove-target",
+      "movetotop-index": "zh/sdk/queue.md#movetotop-index",
+      "flush": "zh/sdk/queue.md#flush",
+      "clear": "zh/sdk/queue.md#clear",
+      "fb-jitqueue-jit-即时队列": "zh/sdk/jit-queue.md#fb-jitqueue-jit-即时队列",
+      "getstate": "zh/sdk/jit-queue.md#getstate",
+      "enqueuenext-options": "zh/sdk/jit-queue.md#enqueuenext-opts",
+      "playnow-options": "zh/sdk/jit-queue.md#playnow-opts",
+      "preloadbatch-options": "zh/sdk/jit-queue.md#preloadbatch-opts",
+      "skip": "zh/sdk/jit-queue.md#skip",
+      "stop": "zh/sdk/jit-queue.md#stop-opts",
+      "clear-1": "zh/sdk/jit-queue.md#clear",
+      "notifyempty": "zh/sdk/jit-queue.md#notifyempty",
+      "jit-队列事件": "zh/sdk/jit-queue.md#事件",
+      "fb-discovery-服务发现": "zh/sdk/discovery.md#fb-discovery-服务发现",
+      "getallservices": "zh/sdk/discovery.md#getallservices",
+      "getmainmenucommands-options": "zh/sdk/discovery.md#getmainmenucommands-options",
+      "getmainmenugroups": "zh/sdk/discovery.md#getmainmenugroups",
+      "executemainmenucommand-guid-subguid": "zh/sdk/discovery.md#executemainmenucommand-guid-subguid",
+      "getcontextmenucommands": "zh/sdk/discovery.md#getcontextmenucommands-options",
+      "executecontextmenucommand-options": "zh/sdk/discovery.md#executecontextmenucommand-options",
+      "executecontextmenubypath-options": "zh/sdk/discovery.md#executecontextmenubypath-options",
+      "getcontextmenutree": "zh/sdk/discovery.md#getcontextmenutree",
+      "getinputformats": "zh/sdk/discovery.md#getinputformats",
+      "getcomponents": "zh/sdk/discovery.md#getcomponents",
+      "getuielements": "zh/sdk/discovery.md#getuielements",
+      "getdspentries": "zh/sdk/discovery.md#getdspentries",
+      "getoutputdevices": "zh/sdk/discovery.md#getoutputdevices",
+      "getpreferencepages": "zh/sdk/discovery.md#getpreferencepages",
+      "searchcommands-query": "zh/sdk/discovery.md#searchcommands-query-options",
+      "fb-keyboard-全局快捷键": "zh/sdk/keyboard.md#fb-keyboard-热键与快捷键",
+      "registerhotkey-key-action-options": "zh/sdk/keyboard.md#注册热键",
+      "registershortcut-key-action": "zh/sdk/keyboard.md#registershortcut-key-action",
+      "unregisterhotkey-options": "zh/sdk/keyboard.md#unregisterhotkey-options",
+      "getregisteredhotkeys": "zh/sdk/keyboard.md#getregisteredhotkeys",
+      "keyboard-hotkey": "zh/sdk/keyboard.md#keyboard-hotkey"
+    }
+  },
+  "zh/sdk/overview.md": {
+    "anchors": {
+      "sdk-概述-安装": "zh/sdk/overview.md#sdk-概述",
+      "简化对比": "zh/sdk/overview.md#原生-bridge-与-sdk",
+      "安装": "zh/how-to/load-sdk.md#在主题里加载-sdk",
+      "es-module": "zh/how-to/load-sdk.md#使用打包工具",
+      "直接加载脚本": "zh/how-to/load-sdk.md#不用打包工具",
+      "验证安装": "zh/sdk/overview.md#可用性"
+    }
+  },
+  "zh/sdk/panel.md": {
+    "anchors": {
+      "setconfig": "zh/sdk/panel.md#setconfig-options"
+    }
+  },
+  "zh/sdk/playcount.md": {
+    "anchors": {
+      "getbatch": "zh/sdk/playcount.md#getbatch-paths",
+      "set": "zh/sdk/playcount.md#set-path-count"
+    }
+  },
+  "zh/sdk/playlist.md": {
+    "anchors": {
+      "getautoplaylistquery-index-1": "zh/sdk/playlist.md#getautoplaylistquery-index",
+      "removeautoplaylist-index-1": "zh/sdk/playlist.md#removeautoplaylist-index",
+      "removeselectedtracks-index-1": "zh/sdk/playlist.md#removeselectedtracks-index"
+    }
+  },
+  "zh/sdk/port.md": {
+    "anchors": {
+      "getports": "zh/sdk/port.md#getports-name",
+      "disconnect": "zh/sdk/port.md#disconnect-portid",
+      "postmessage": "zh/sdk/port.md#postmessage-portid-message"
+    }
+  },
+  "zh/sdk/quickstart.md": {
+    "to": "zh/tutorials/first-theme.md",
+    "anchors": {
+      "最小示例": "zh/how-to/plain-html.md#不用打包工具也用-sdk",
+      "es-module-设置": "zh/how-to/load-sdk.md#使用打包工具",
+      "完整播放器示例": "zh/tutorials/first-theme.md#显示播放状态"
+    }
+  },
+  "zh/sdk/rating.md": {
+    "anchors": {
+      "get": "zh/sdk/rating.md#get-path-opts",
+      "set": "zh/sdk/rating.md#set-path-rating-opts"
+    }
+  },
+  "zh/sdk/replaygain.md": {
+    "anchors": {
+      "clear": "zh/sdk/replaygain.md#clear-paths",
+      "get": "zh/sdk/replaygain.md#get-paths",
+      "scan": "zh/sdk/replaygain.md#scan-paths-opts",
+      "setmode": "zh/sdk/replaygain.md#setmode-sourcemode-processingmode",
+      "setpreamp": "zh/sdk/replaygain.md#setpreamp-withrg-withoutrg"
+    }
+  },
+  "zh/sdk/selection.md": {
+    "anchors": {
+      "get": "zh/sdk/selection.md#get-opts",
+      "getviewingtrack": "zh/sdk/selection.md#getviewingtrack-opts",
+      "set": "zh/sdk/selection.md#set-handles",
+      "setplaylisttracking": "zh/sdk/selection.md#setplaylisttracking-mode"
+    }
+  },
+  "zh/sdk/shared-state.md": {
+    "anchors": {
+      "keys": "zh/sdk/shared-state.md#keys-pattern",
+      "set": "zh/sdk/shared-state.md#set-key-value-silent-ttlms",
+      "delete": "zh/sdk/shared-state.md#delete-key"
+    }
+  },
+  "zh/sdk/taskbar.md": {
+    "anchors": {
+      "flash": "zh/sdk/taskbar.md#flash-options",
+      "setoverlayicon": "zh/sdk/taskbar.md#setoverlayicon-options",
+      "setthumbnailbuttons": "zh/sdk/taskbar.md#setthumbnailbuttons-buttons"
+    }
+  },
+  "zh/sdk/titleformat.md": {
+    "anchors": {
+      "eval": "zh/sdk/titleformat.md#eval-pattern-path",
+      "evalbatch": "zh/sdk/titleformat.md#evalbatch-pattern-paths",
+      "evalfields": "zh/sdk/titleformat.md#evalfields-path-fields",
+      "evalfieldsbatch": "zh/sdk/titleformat.md#evalfieldsbatch-paths-fields"
+    }
+  },
+  "zh/sdk/tray.md": {
+    "anchors": {
+      "appendmenuitems": "zh/sdk/tray.md#appendmenuitems-items-position",
+      "clearmenuitems": "zh/sdk/tray.md#clearmenuitems-position",
+      "create": "zh/sdk/tray.md#create-opts",
+      "removemenuitems": "zh/sdk/tray.md#removemenuitems-ids",
+      "setclosetotray": "zh/sdk/tray.md#setclosetotray-enabled",
+      "setcontextmenu": "zh/sdk/tray.md#setcontextmenu-items-config",
+      "seticon": "zh/sdk/tray.md#seticon-icon",
+      "setmenuitemstate": "zh/sdk/tray.md#setmenuitemstate-id-state",
+      "setmenuzones": "zh/sdk/tray.md#setmenuzones-zones-config",
+      "setminimizetotray": "zh/sdk/tray.md#setminimizetotray-enabled",
+      "settooltip": "zh/sdk/tray.md#settooltip-tooltip",
+      "showballoon": "zh/sdk/tray.md#showballoon-opts"
+    }
+  },
+  "zh/sdk/ui.md": {
+    "anchors": {
+      "setmaxsize-width-height-getmaxsize": "zh/sdk/ui.md#setmaxsize-width-height-windowid-getmaxsize-windowid",
+      "setresizable-resizable": "zh/sdk/ui.md#setresizable-resizable-windowid",
+      "togglefullscreen": "zh/sdk/ui.md#togglefullscreen-windowid",
+      "enterfullscreen-exitfullscreen": "zh/sdk/ui.md#enterfullscreen-windowid-exitfullscreen-windowid",
+      "focus-blur": "zh/sdk/ui.md#focus-windowid-blur",
+      "setframeless-frameless": "zh/sdk/ui.md#setframeless-frameless-windowid"
+    }
+  }
+}

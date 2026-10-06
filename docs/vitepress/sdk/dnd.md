@@ -16,6 +16,28 @@ answers the one question HTML5 cannot — where the files actually live on disk.
 The host tracks each drag as a *session* with an id, and publishes it to the
 top-level document as `window.__fbDndSession` before any `dnd:*` listener runs.
 
+## Accepting a drop
+
+A page accepts a drop the HTML5 way: `dragover` calls `preventDefault()` over the
+element that takes it. Where no handler does, the host refuses the drop for the
+page. The cursor shows "forbidden", releasing there drops nothing and sends no
+`dnd:drop`, and the browser does not open the dropped file by itself. Text fields
+keep their default text drop.
+
+For the first half second after a drag enters the window the page has not answered
+yet, so the cursor shows "copy" rather than flickering to "forbidden" on the way in;
+a drop released in that time is still delivered. After that the cursor follows the
+page's answer as the pointer moves.
+
+```javascript
+document.getElementById('playlist')?.addEventListener('dragover', (event) => {
+    if (fb.dnd.hasFiles()) {
+        event.preventDefault(); // accept here; everywhere else is refused
+        if (event.dataTransfer) event.dataTransfer.dropEffect = 'copy';
+    }
+});
+```
+
 ## Reading paths
 
 Three ways, in decreasing reliability.
@@ -47,9 +69,11 @@ arrived, so calling this repeatedly costs no filesystem access.
 ```javascript
 document.addEventListener('drop', async (event) => {
     event.preventDefault();
-    const { paths } = await fb.dnd.getPathsAsync();
+    const res = await fb.dnd.getPathsAsync();
+    if (res.success === false) throw new Error(res.error);
+    const { paths } = res;
     if (paths.length) {
-        await fb.playlist.addPaths(paths);
+        await fb2k.invoke('playlist.addPaths', { paths });
     }
 });
 ```
@@ -74,9 +98,33 @@ fb.on('dnd:drop', (data) => {
 | `resolvedPaths` | `(string \| null)[]` | Shortcut target per index, or `null`. Always the same length as `paths`. See [Shortcut targets](#shortcut-targets). |
 | `x`, `y` | `number` | Cursor position in client-area physical pixels — divide by `devicePixelRatio` for CSS pixels. |
 | `keyState` | `number` | Win32 `MK_*` modifier / mouse-button mask at drop time. |
+| `source` | `'self' \| 'other-window' \| 'external'` | Where the drag came from. See [Where a drag came from](#where-a-drag-came-from). |
 
-`dnd:enter` carries `sessionId`, `paths`, `resolvedPaths`, `hasFiles` and the same
-cursor fields; `dnd:leave` carries only `sessionId`.
+`dnd:enter` carries `sessionId`, `paths`, `resolvedPaths`, `hasFiles`, `source` and
+the same cursor fields; `dnd:leave` carries only `sessionId`.
+
+### Where a drag came from
+
+`source` on `dnd:enter`, `dnd:drop` and `getPathsAsync` tells a drag the page
+started itself apart from files dragged in from outside, so a page that handles
+its own drag through HTML5 events can ignore the host's copy of the same files:
+
+| Value | The drag started in |
+| --- | --- |
+| `'self'` | this window's page, with or without a drag token |
+| `'other-window'` | another window of the same foobar2000: the main window or a popup |
+| `'external'` | anywhere else: Explorer, another application, another foobar2000 process, or a Default UI / Columns UI panel |
+
+The host marks every drag that starts in a window it hosts and reads the mark back
+when the drag enters a window. Any program can imitate the mark, so use `source` to
+decide how to handle a drop, not as a security check.
+
+```javascript
+fb.on('dnd:drop', ({ source, paths }) => {
+    if (source === 'self') return; // the page's own drop handler has it
+    void fb.queue.addPaths(paths);
+});
+```
 
 ### getPaths()
 
@@ -158,7 +206,7 @@ const targets = fb.dnd.getResolvedPaths();
 
 // A shortcut plays its target; anything else plays itself.
 const playable = paths.map((path, i) => targets[i] ?? path);
-await fb.playlist.addPaths(playable);
+await fb2k.invoke('playlist.addPaths', { paths: playable });
 ```
 
 Synchronous snapshot read, so it carries the same timing caveat as `getPaths()`.
@@ -180,7 +228,7 @@ than making the user wait. Ordinary files never consume any of that budget.
 
 ### getCapabilities()
 
-Signature: `fb.dnd.getCapabilities(): Promise<DndCapabilities>`
+Signature: `fb.dnd.getCapabilities(): Promise<DndGetCapabilitiesResponse>`
 
 What this window's integration can currently deliver. Not constant for the
 window's lifetime: navigating to a different origin can withdraw path access while
@@ -197,6 +245,7 @@ leaving HTML5 drag events intact.
 
 ```javascript
 const caps = await fb.dnd.getCapabilities();
+if (caps.success === false) throw new Error(caps.error);
 if (!caps.paths) {
     console.warn('paths unavailable:', caps.pathsUnavailableReason);
 }
@@ -258,7 +307,7 @@ gesture.
 
 ### prepareDrag(paths)
 
-Signature: `fb.dnd.prepareDrag(paths: string[]): Promise<DndDragToken>`
+Signature: `fb.dnd.prepareDrag(paths: string[]): Promise<DndPrepareDragResponse>`
 
 Validates the paths and returns a token for the next drag out of this window.
 
@@ -287,7 +336,8 @@ Token rules:
   not expired — only the most recent token is live
 
 A token that breaks any of these is refused when the drag starts, with a
-`dnd:dragEnded` of `PERMISSION_DENIED`.
+`dnd:dragEnded` of `PERMISSION_DENIED`, and the drag goes on as an ordinary page
+drag without files.
 
 ::: tip What arrives at the target is always a physical file
 A track inside a cue sheet or a multi-track container drags the whole container.
@@ -335,10 +385,10 @@ are required:
 ::: danger `effectAllowed` must be exactly `'copy'`
 Once the file list is attached, a *move* is carried out by the drop target, not by
 the page or the host: Explorer moves files by default when the destination is on
-the same drive as the source. The host therefore refuses any drag whose allowed
-effects are wider than copy (`INVALID_PARAMS` on `dnd:dragEnded`), and the drag
-does nothing. Leaving `effectAllowed` unset means `copy | move | link`, which is
-refused. Do not change it after `applyDragToken`.
+the same drive as the source. The host therefore attaches no files to a drag whose
+allowed effects are wider than copy (`INVALID_PARAMS` on `dnd:dragEnded`), and only
+the page's own drag is left. Leaving `effectAllowed` unset means
+`copy | move | link`, which gets no files. Do not change it after `applyDragToken`.
 :::
 
 The `text/plain` slot is not available for page text during a drag-out. The host
@@ -369,8 +419,11 @@ trackEl.addEventListener('dragend', (e) => {
 
 Signature: `fb.dnd.onDragEnded(handler: (payload: DndDragEndedPayload) => void): () => void`
 
-Subscribes to `dnd:dragEnded`, which fires **only when the host refuses** a
-drag-out at the moment the drag starts. Returns an unsubscribe function.
+Subscribes to `dnd:dragEnded`, which fires **only when the host refuses** to
+attach files to a drag-out, at the moment the drag starts. The drag is not
+cancelled: it goes on as an ordinary page drag without files, so a drop inside the
+page still works. Only in the rare case that the token text cannot be blanked is
+the drag cancelled. Returns an unsubscribe function.
 
 | Field | Type | Description |
 | --- | --- | --- |
@@ -385,7 +438,7 @@ When the host accepts the token there is **no event**. The drag proceeds like an
 page drag and the outcome is in the element's own `dragend`:
 `dataTransfer.dropEffect` is `'copy'` when a target took the files and `'none'`
 when the drag was cancelled or the target refused. Put your clean-up in `dragend`,
-and use `dnd:dragEnded` to tell the user (or yourself) why a drag did nothing.
+and use `dnd:dragEnded` to tell the user (or yourself) why a drag carried no files.
 :::
 
 ```javascript
@@ -398,8 +451,10 @@ const off = fb.dnd.onDragEnded(({ code, error }) => {
 ### What to expect during a drag-out
 
 - A drag that carries a token is either handed over with the files attached, or
-  refused and swallowed (no drag image, nothing happens at the target). It never
-  falls back to dragging the token text.
+  falls back to an ordinary page drag without files: a drop inside the page still
+  works, and a drop on Explorer produces no file and no token text. If the token
+  text cannot be blanked, the drag is cancelled instead. It never drags the token
+  text out.
 - Drags that do **not** carry a token — the page dragging its own text, an image
   or a link — are untouched and never produce `dnd:dragEnded`.
 - While the drag is in progress the host window waits for the drop target to
@@ -424,5 +479,5 @@ Test `success`; transport failures can still reject. Use
 
 ```javascript
 const r = await fb.dnd.startDrag('files');
-console.log(r.success, r.code); // false 'NOT_SUPPORTED'
+if (r.success === false) console.log(r.code); // 'NOT_SUPPORTED'
 ```

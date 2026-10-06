@@ -1,18 +1,25 @@
 # `fb.config` configuration
 
-## get(key) 
+## get(key, defaultValue?) 
 
-Returns the portable configuration value as `{ value }`.
+Returns the portable configuration value as `{ success, key, value, found }`.
 
 | Parameter | Type | Description |
 | --- | --- | --- |
 | `key` | `string` | Configuration key |
+| `defaultValue` | `JsonValue` (optional) | Value to answer with when the key is not stored; sent as the host's `default`. Omitted from the call when `undefined` |
 
-The SDK wrapper accepts only the key; it does not expose the native `default` parameter.
+A key that is not stored is not an error: `found` is `false` and `value` is `defaultValue`, or `null` when no default is given. Falsy defaults such as `0`, `false` and `''` are sent as given.
 
 ```javascript
 const result = await fb.config.get('theme');
+if (result.success === false) throw new Error(result.error);
 console.log(result.value);   // 'dark'
+
+const layout = await fb.config.get('layout', { columns: 3 });
+if (layout.success === false) throw new Error(layout.error);
+console.log(layout.found);   // false when the key is not stored
+console.log(layout.value);   // { columns: 3 } when the key is not stored
 ```
 
 ## set(key, value) 
@@ -34,11 +41,23 @@ await fb.config.remove('theme');
 
 ## getAll() 
 
-Returns `{ success, items, configs, count }`. `items` and `configs` are aliases for the same key-value snapshot.
+Reads the whole store. Resolves with `{ items, configs, count }`: `items` maps every key to its value, `configs` is the same map under its older name, and `count` is the number of keys. Fails with `OPERATION_FAILED` when the store cannot be read.
+
+```javascript
+const res = await fb.config.getAll();
+if (res.success === false) throw new Error(res.error);
+for (const [key, value] of Object.entries(res.items)) console.log(key, value);
+```
 
 ## export() 
 
-Returns `{ success, data, json, count }`, including the serialized JSON snapshot.
+Reads the whole store both as a map and as JSON text. Resolves with `{ data, json, count }`: `data` is the map `getAll()` reports as `items`, and `json` is `data` serialized as one compact JSON text. Fails with `OPERATION_FAILED` when the store cannot be read.
+
+```javascript
+const res = await fb.config.export();
+if (res.success === false) throw new Error(res.error);
+await navigator.clipboard.writeText(res.json);
+```
 
 ## Host information
 
@@ -48,26 +67,35 @@ Returns foobar2000 and plugin version information, architecture, portable-mode s
 
 ```javascript
 const ver = await fb.config.getVersionInfo();
+if (ver.success === false) throw new Error(ver.error);
 console.log(ver.versionFull, ver.is64bit ? 'x64' : 'x86');
 ```
 
 ### getComponents() 
 
-Returns loaded components as `ComponentInfo[]`. Each entry includes `name`, `version`, and optional `filename` / `fileName` aliases.
+Resolves with `{ components, count }`, the loaded components as `ComponentInfo[]`, or with a failure envelope. Each entry includes `name`, `version`, and optional `filename` / `fileName` aliases.
 
 ```javascript
-const comps = await fb.config.getComponents();
+const res = await fb.config.getComponents();
+if (res.success === false) throw new Error(res.error);
+console.log(res.components.length);
 ```
 
 ## Output devices
 
 ### getOutputDevices() 
 
-Returns `OutputDevice[]`, including `name`, `outputId`, `deviceId`, and `isCurrent`.
+Resolves with `{ devices, count }`; each device carries `name`, `outputId`, `deviceId`, and `isCurrent`.
 
 ### getOutputConfig() 
 
-Returns the current `OutputConfig`. `bufferLength` is expressed in seconds.
+Reports the output settings in effect as `OutputConfig`: `outputId` and `deviceId` (GUIDs rendered as `{...}`), `bufferLength` in seconds, `bitDepth` in bits, `useDither`, `useFades`, and the optional `outputName` and `deviceName`. `outputName` is absent when no installed module has the `outputId`; `deviceName` is absent when the module does not name the device.
+
+```javascript
+const out = await fb.config.getOutputConfig();
+if (out.success === false) throw new Error(out.error);
+console.log(out.deviceName ?? out.deviceId, `${out.bufferLength * 1000} ms`);
+```
 
 ### setOutputDevice(outputId, deviceId) 
 
@@ -78,9 +106,11 @@ Selects an output driver/device pair.
 Sets the output buffer. A numeric argument is interpreted as milliseconds. The object form accepts `milliseconds` or native `bufferLength` seconds; if both are present, the host prefers `milliseconds`. The resolved value must be in the range `0.05..2.0` seconds.
 
 ```javascript
-const devices = await fb.config.getOutputDevices();
-const current = devices.find(d => d.isCurrent);
-await fb.config.setOutputDevice(devices[0].outputId, devices[0].deviceId);
+const res = await fb.config.getOutputDevices();
+if (res.success === false) throw new Error(res.error);
+const current = res.devices.find(d => d.isCurrent);
+const first = res.devices[0];
+if (first) await fb.config.setOutputDevice(first.outputId, first.deviceId);
 await fb.config.setOutputBuffer(1000); // milliseconds
 await fb.config.setOutputBuffer({ bufferLength: 0.5 }); // seconds
 ```
@@ -89,7 +119,7 @@ await fb.config.setOutputBuffer({ bufferLength: 0.5 }); // seconds
 
 ### getAdvancedConfig() 
 
-Returns the top-level `AdvancedConfigItem[]`; branch entries expose nested `children`.
+Resolves with `{ entries, count }`, the top-level `AdvancedConfigItem[]`; branch entries expose nested `children`.
 
 ### getAdvancedConfigValue(guid) 
 
@@ -114,53 +144,77 @@ await fb.config.resetAdvancedConfig('{some-guid}');
 
 ### getPreferencesPages() 
 
-Returns flattened preferences pages and branch nodes as `PreferencesPage[]`.
+Lists every preferences page and branch of foobar2000. Resolves with `{ pages, count }`, where `pages` is a `PreferencesPage[]` with all pages first and all branches after them. Each entry has `name`, `guid`, `parentGuid` (the page or branch it sits under) and `sortPriority` (lower sorts first, `0` sorts by name); a branch also has `isBranch: true`.
 
 ### getPreferencesStandardGuids() 
 
-Returns standard preferences-page GUIDs such as `root`, `core`, `display`, `playback`, `output`, `mediaLibrary`, and `advanced`.
+Reports the GUIDs of foobar2000's standard preferences pages, rendered as `{...}`: 17 keys such as `root`, `core`, `display`, `playback`, `output`, `mediaLibrary`, `advanced`, `tools`, `dsp` and `keyboardShortcuts`. A top-level page has one of them as its `parentGuid`.
+
+```javascript
+const [pagesRes, std] = await Promise.all([
+  fb.config.getPreferencesPages(),
+  fb.config.getPreferencesStandardGuids(),
+]);
+if (pagesRes.success === false || std.success === false) throw new Error('preferences unavailable');
+const displayPages = pagesRes.pages.filter((p) => p.parentGuid === std.display);
+```
 
 ## Media-library configuration
 
 ### getLibraryStatus() 
 
-Returns `LibraryStatus`.
+Reports the media library's state as `LibraryStatus`: `enabled` (at least one library folder is configured), `initialized` (loading has finished; `true` when the host cannot tell) and `itemCount`. The count walks the whole library on every call, so avoid calling it often on a large library.
 
 ### getLibraryFilePatterns() 
 
-Returns optional `tracks` and `images` file-pattern descriptors.
+Reports where foobar2000 puts newly encoded, copied or moved files. Resolves with the optional `tracks` and `images`, each `{ directory, format }`: `directory` is the target folder and `format` the title formatting pattern for the subfolders and file name below it. A pattern that is not configured is absent, so with neither configured the result is `success: true` alone.
 
 ### showLibraryPreferences() 
 
-Opens the media-library preferences page.
+Opens foobar2000's Media Library preferences page.
+
+```javascript
+const status = await fb.config.getLibraryStatus();
+if (status.success === false) throw new Error(status.error);
+if (!status.enabled) {
+  await fb.config.showLibraryPreferences();
+} else {
+  const patterns = await fb.config.getLibraryFilePatterns();
+  if (patterns.success && patterns.tracks) console.log(patterns.tracks.directory);
+}
+```
 
 ## DSP presets
 
 ### getDspPresets() 
 
-Returns DSP presets as `{ index, name }[]`.
+Resolves with `{ presets, count }`, the DSP presets as `{ index, name }[]`.
 
 ### getActiveDspPreset() 
 
-Returns `{ index, name, isActive }`; `index` and `name` are `null` when no preset is active.
+Reports the selected DSP preset as `{ index, name, isActive }`. When none is selected or presets are unavailable, `index` and `name` are `null` and `isActive` is `false`.
 
 ### setActiveDspPreset(index) 
 
-Activates a DSP preset by index.
+Selects a DSP preset by index, which replaces the whole active DSP chain with the preset's. Nothing selects "no preset" again afterwards.
 
 ```javascript
-const presets = await fb.config.getDspPresets();
-console.log(presets.map(p => p.name));
+const res = await fb.config.getDspPresets();
+if (res.success === false) throw new Error(res.error);
+console.log(res.presets.map(p => p.name));
 await fb.config.setActiveDspPreset(0);
+
+const active = await fb.config.getActiveDspPreset();
+if (active.success && active.isActive) console.log(active.name);
 ```
 
 ### getCursorFollowPlayback() / setCursorFollowPlayback(enabled) 
 
-Gets or sets cursor-follow-playback.
+Reads or writes foobar2000's "cursor follows playback" setting. The getter resolves with `{ enabled, value }`, where `value` is the older name of `enabled`; the setter resolves with the `enabled` it wrote. A change of the setting broadcasts `playback:cursorFollowChanged` with `{ enabled }`.
 
 ### getPlaybackFollowCursor() / setPlaybackFollowCursor(enabled) 
 
-Gets or sets playback-follow-cursor.
+Reads or writes foobar2000's "playback follows cursor" setting, with the same result shapes. A change of the setting broadcasts `playback:followCursorChanged` with `{ enabled }`.
 
 ### getReplaygainMode() / setReplaygainMode(mode) 
 
@@ -175,171 +229,13 @@ Gets or sets the ReplayGain source mode. The getter returns numeric `mode` and c
 
 ```javascript
 const r = await fb.config.getReplaygainMode();
+if (r.success === false) throw new Error(r.error);
 console.log(r.mode); // 0
 await fb.config.setReplaygainMode(2); // Album mode
 
-await fb.config.setCursorFollowPlayback(true);
-await fb.config.setPlaybackFollowCursor(false);
+const cursor = await fb.config.getCursorFollowPlayback();
+if (cursor.success && !cursor.enabled) await fb.config.setCursorFollowPlayback(true);
+const follow = await fb.config.getPlaybackFollowCursor();
+if (follow.success && follow.enabled) await fb.config.setPlaybackFollowCursor(false);
 ```
 
-<!-- BEGIN AUTO-GENERATED SDK STUBS -->
-
-## Additional methods
-
-> This block completes SDK method coverage and may later be expanded with richer examples and guidance.
-
-### export()
-
-Signature: `fb.config.export(): Promise<ConfigExportResponse>`
-
-| Parameter | Type | Required | Description |
-| --- | --- | --- | --- |
-| - | - | - | No parameters |
-
-Returns the `config.export` result.
-
-```javascript
-const result = await fb.config.export();
-```
-
-### getActiveDspPreset()
-
-Signature: `fb.config.getActiveDspPreset(): Promise<ActiveDspPresetInfo>`
-
-| Parameter | Type | Required | Description |
-| --- | --- | --- | --- |
-| - | - | - | No parameters |
-
-Returns the `config.getActiveDspPreset` result.
-
-```javascript
-const result = await fb.config.getActiveDspPreset();
-```
-
-### getAll()
-
-Signature: `fb.config.getAll(): Promise<ConfigGetAllResponse>`
-
-| Parameter | Type | Required | Description |
-| --- | --- | --- | --- |
-| - | - | - | No parameters |
-
-Returns the `config.getAll` result.
-
-```javascript
-const result = await fb.config.getAll();
-```
-
-### getCursorFollowPlayback()
-
-Signature: `fb.config.getCursorFollowPlayback(): Promise<{ enabled: boolean }>`
-
-| Parameter | Type | Required | Description |
-| --- | --- | --- | --- |
-| - | - | - | No parameters |
-
-Returns the `config.getCursorFollowPlayback` result.
-
-```javascript
-const result = await fb.config.getCursorFollowPlayback();
-```
-
-### getLibraryFilePatterns()
-
-Signature: `fb.config.getLibraryFilePatterns(): Promise<LibraryFilePatternsResponse>`
-
-| Parameter | Type | Required | Description |
-| --- | --- | --- | --- |
-| - | - | - | No parameters |
-
-Returns the `config.getLibraryFilePatterns` result.
-
-```javascript
-const result = await fb.config.getLibraryFilePatterns();
-```
-
-### getLibraryStatus()
-
-Signature: `fb.config.getLibraryStatus(): Promise<LibraryStatus>`
-
-| Parameter | Type | Required | Description |
-| --- | --- | --- | --- |
-| - | - | - | No parameters |
-
-Returns the `config.getLibraryStatus` result.
-
-```javascript
-const result = await fb.config.getLibraryStatus();
-```
-
-### getOutputConfig()
-
-Signature: `fb.config.getOutputConfig(): Promise<OutputConfig>`
-
-| Parameter | Type | Required | Description |
-| --- | --- | --- | --- |
-| - | - | - | No parameters |
-
-Returns the `config.getOutputConfig` result.
-
-```javascript
-const result = await fb.config.getOutputConfig();
-```
-
-### getPlaybackFollowCursor()
-
-Signature: `fb.config.getPlaybackFollowCursor(): Promise<{ enabled: boolean }>`
-
-| Parameter | Type | Required | Description |
-| --- | --- | --- | --- |
-| - | - | - | No parameters |
-
-Returns the `config.getPlaybackFollowCursor` result.
-
-```javascript
-const result = await fb.config.getPlaybackFollowCursor();
-```
-
-### getPreferencesPages()
-
-Signature: `fb.config.getPreferencesPages(): Promise<PreferencesPagesResponse>`
-
-| Parameter | Type | Required | Description |
-| --- | --- | --- | --- |
-| - | - | - | No parameters |
-
-Returns the `config.getPreferencesPages` result.
-
-```javascript
-const result = await fb.config.getPreferencesPages();
-```
-
-### getPreferencesStandardGuids()
-
-Signature: `fb.config.getPreferencesStandardGuids(): Promise<PreferencesStandardGuids>`
-
-| Parameter | Type | Required | Description |
-| --- | --- | --- | --- |
-| - | - | - | No parameters |
-
-Returns the `config.getPreferencesStandardGuids` result.
-
-```javascript
-const result = await fb.config.getPreferencesStandardGuids();
-```
-
-### showLibraryPreferences()
-
-Signature: `fb.config.showLibraryPreferences(): Promise<BaseResponse>`
-
-| Parameter | Type | Required | Description |
-| --- | --- | --- | --- |
-| - | - | - | No parameters |
-
-Returns the `config.showLibraryPreferences` result.
-
-```javascript
-const result = await fb.config.showLibraryPreferences();
-```
-
-<!-- END AUTO-GENERATED SDK STUBS -->

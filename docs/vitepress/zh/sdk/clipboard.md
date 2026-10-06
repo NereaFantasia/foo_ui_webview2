@@ -1,41 +1,48 @@
 # fb.clipboard 剪贴板
 
-本页是 `fb.clipboard` 的 SDK 视角文档入口。
+`fb.clipboard` 经宿主进程读写剪贴板上的文本、HTML 和文件列表。
 
-<!-- BEGIN AUTO-GENERATED SDK STUBS -->
+## read()
 
-## 其余方法
+签名：`fb.clipboard.read(): Promise<ClipboardReadResponse>`
 
-### read()
-
-封装 `clipboard.read`。参数与返回类型以 `foo-webview-sdk` 的 TypeScript 声明为准（IDE 悬浮提示或包内 `bridge.d.ts`），行为契约见 API 文档对应条目。
+读取剪贴板：告知其中有没有文本、文件列表与图片，并给出文本与文件路径。
 
 ```javascript
-await fb.clipboard.read(/* 参数见 TypeScript 声明 */);
+const res = await fb.clipboard.read();
+if (res.success === false) throw new Error(res.error);
+const { text } = res;
 ```
 
-### write()
+## write(text)
 
-封装 `clipboard.write`。参数与返回类型以 `foo-webview-sdk` 的 TypeScript 声明为准（IDE 悬浮提示或包内 `bridge.d.ts`），行为契约见 API 文档对应条目。
+签名：`fb.clipboard.write(text: string): Promise<ClipboardWriteResponse>`
+
+把纯文本写入剪贴板。
 
 ```javascript
-await fb.clipboard.write(/* 参数见 TypeScript 声明 */);
+await fb.clipboard.write('来自主题的文本');
 ```
 
-### writeFiles()
+## writeFiles(paths)
 
-封装 `clipboard.writeFiles`。参数与返回类型以 `foo-webview-sdk` 的 TypeScript 声明为准（IDE 悬浮提示或包内 `bridge.d.ts`），行为契约见 API 文档对应条目。
+签名：`fb.clipboard.writeFiles(paths: string[]): Promise<ClipboardWriteFilesResponse>`
+
+写入文件路径列表，可粘贴到能接收文件的程序里。
 
 ```javascript
-await fb.clipboard.writeFiles(/* 参数见 TypeScript 声明 */);
+const result = await fb.clipboard.writeFiles([
+	'C:\\Music\\one.flac',
+	'C:\\Music\\two.flac'
+]);
 ```
 
-### writeHTML()
+## writeHTML(html, plainText?)
 
-封装 `clipboard.writeHTML`。参数与返回类型以 `foo-webview-sdk` 的 TypeScript 声明为准（IDE 悬浮提示或包内 `bridge.d.ts`），行为契约见 API 文档对应条目。
+签名：`fb.clipboard.writeHTML(html: string, plainText?: string): Promise<ClipboardWriteHTMLResponse>`
+
+以 `HTML Format` 把 HTML 写入剪贴板，同时写入纯文本回退：`plainText` 非空时用它，缺省或为空时用 HTML 文本本身。
 
 ```javascript
-await fb.clipboard.writeHTML(/* 参数见 TypeScript 声明 */);
+await fb.clipboard.writeHTML('<strong>正在播放</strong>', '正在播放');
 ```
-
-<!-- END AUTO-GENERATED SDK STUBS -->

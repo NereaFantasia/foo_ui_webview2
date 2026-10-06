@@ -1,33 +1,42 @@
 # fb.console 控制台
 
-本页是 `fb.console` 的 SDK 视角文档入口。
+`fb.console` 把消息写到 foobar2000 的控制台窗口，与浏览器的全局 `console` 无关。
 
-<!-- BEGIN AUTO-GENERATED SDK STUBS -->
+每个方法写一行。只传 `message` 时，这一行就是消息原文。`message` 之后的值依次接在同一行，用空格隔开：字符串照原样，其他 JSON 值（数字、布尔、`null`、数组、对象）写成 JSON 文本，与浏览器控制台一样。这时 SDK 把全部内容作为宿主的 `args` 发出，因为宿主只在没有 `message` 时才读 `args`。
 
-## 其余方法
+## error(message, ...args)
 
-### error()
+签名：`fb.console.error(message: string, ...args: NonNullable<ConsoleErrorParams['args']>): Promise<ConsoleErrorResponse>`
 
-封装 `console.error`。参数与返回类型以 `foo-webview-sdk` 的 TypeScript 声明为准（IDE 悬浮提示或包内 `bridge.d.ts`），行为契约见 API 文档对应条目。
-
-```javascript
-await fb.console.error(/* 参数见 TypeScript 声明 */);
-```
-
-### log()
-
-封装 `console.log`。参数与返回类型以 `foo-webview-sdk` 的 TypeScript 声明为准（IDE 悬浮提示或包内 `bridge.d.ts`），行为契约见 API 文档对应条目。
+写一行错误级消息，前缀 `[WebView][ERROR]`。
 
 ```javascript
-await fb.console.log(/* 参数见 TypeScript 声明 */);
+await fb.console.error('Artwork loading failed');
 ```
 
-### warn()
+## log(message, ...args)
 
-封装 `console.warn`。参数与返回类型以 `foo-webview-sdk` 的 TypeScript 声明为准（IDE 悬浮提示或包内 `bridge.d.ts`），行为契约见 API 文档对应条目。
+签名：`fb.console.log(message: string, ...args: NonNullable<ConsoleLogParams['args']>): Promise<ConsoleLogResponse>`
+
+写一行普通消息，前缀 `[WebView]`。
 
 ```javascript
-await fb.console.warn(/* 参数见 TypeScript 声明 */);
+await fb.console.log('Theme initialized');
+
+// 写出：[WebView] Loaded 42 tracks {"view":"albums"}
+const r = await fb.console.log('Loaded', 42, 'tracks', { view: 'albums' });
+if (r.success === false) {
+    console.warn('console.log failed:', r.error);
+}
 ```
 
-<!-- END AUTO-GENERATED SDK STUBS -->
+## warn(message, ...args)
+
+签名：`fb.console.warn(message: string, ...args: NonNullable<ConsoleWarnParams['args']>): Promise<ConsoleWarnResponse>`
+
+写一行警告级消息，前缀 `[WebView][WARN]`。
+
+```javascript
+await fb.console.warn('Using fallback artwork');
+await fb.console.warn('Cover missing for', 'C:\\Music\\a.flac');
+```
