@@ -19,7 +19,11 @@ env:
   PLATFORM: x64
 
 jobs:
-  # PR / push gate: compile the component and run the GoogleTest suite.
+  # PR / push gate: compile the component and run the GoogleTest suite. With the
+  # SDK's dependencies installed, the build regenerates the C++ API headers from
+  # src/api/schema first (scripts/api-schema/ApiSchema.targets), so a declaration
+  # that disagrees with its handler fails to compile, and a header that was not
+  # regenerated shows up in the final diff check.
   build:
     name: "Build (Release x64) + GoogleTest"
     runs-on: windows-latest
@@ -34,6 +38,16 @@ jobs:
             -replace '\.\./foobar2000/', '../foobar2000_sdk/foobar2000/' |
             Set-Content lib/columns_ui-sdk/ui_extension.h
 
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: 'npm'
+          cache-dependency-path: sdk/package-lock.json
+
+      - name: Install SDK dependencies (for the header generator)
+        working-directory: sdk
+        run: npm ci
+
       - name: Setup MSBuild
         uses: microsoft/setup-msbuild@v3
 
@@ -45,6 +59,9 @@ jobs:
 
       - name: Run GoogleTest unit tests
         run: .\bin\tests\Release_x64\foo_ui_webview2_tests.exe --gtest_output=xml:test-results.xml
+
+      - name: Check generated headers are committed
+        run: git diff --exit-code -- src
 
       - name: Upload test results
         if: always()
@@ -60,26 +77,135 @@ jobs:
           name: build-log
           path: build_log.txt
 
-  # PR / push gate: type-check the TypeScript SDK source.
-  sdk-typecheck:
-    name: "SDK Type Check"
-    runs-on: ubuntu-latest
+  # PR / push gate: the API declarations, everything generated from them, and
+  # the TypeScript SDK. Runs the same commands as CONTRIBUTING.md lists.
+  sdk:
+    name: "Generators + SDK"
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: bash
     steps:
       - uses: actions/checkout@v6
 
       - uses: actions/setup-node@v6
         with:
-          node-version: 20
+          node-version: 22
           cache: 'npm'
-          cache-dependency-path: sdk/package-lock.json
+          cache-dependency-path: |
+            sdk/package-lock.json
+            mcp/package-lock.json
 
       - name: Install SDK dependencies
         working-directory: sdk
         run: npm ci
 
-      - name: Type check (tsc --noEmit)
+      # The live-test helpers under test import the e2e harness, which needs MCP's
+      # chrome-remote-interface.
+      - name: Install MCP dependencies
+        working-directory: mcp
+        run: npm ci
+
+      - name: Generated files match the declarations
+        run: |
+          node scripts/api-schema/generate.mjs --check
+          node scripts/gen_sdk_types.mjs --all --diff
+          node scripts/gen_sdk_components_global.mjs --diff --quiet
+          node scripts/gen_menu_overlay_page.mjs --check
+
+      - name: SDK source checks
+        run: |
+          node scripts/audit_invoke_typing.mjs --strict
+          node scripts/audit_index_signature.mjs --strict
+
+      - name: Type check
         working-directory: sdk
-        run: npx tsc --noEmit -p tsconfig.json
+        run: npm run type-check
+
+      - name: Unit tests
+        working-directory: sdk
+        run: npm test
+
+      - name: Build (with dist checks)
+        working-directory: sdk
+        run: npm run build
+
+      - name: Tool self-tests
+        run: node --test scripts/__tests__/*.test.mjs
+
+      - name: Nothing regenerated
+        run: git diff --exit-code
+
+  # PR / push gate: the MCP server.
+  mcp:
+    name: "MCP"
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: 'npm'
+          cache-dependency-path: mcp/package-lock.json
+
+      - name: Install MCP dependencies
+        working-directory: mcp
+        run: npm ci
+
+      - name: Type check
+        working-directory: mcp
+        run: npm run type-check
+
+      - name: Tests
+        working-directory: mcp
+        run: npm test
+
+  # PR / push gate: the documentation site. The examples check type-checks the
+  # code blocks against the SDK, so the SDK is built first.
+  docs:
+    name: "Docs"
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: 'npm'
+          cache-dependency-path: sdk/package-lock.json
+
+      - name: Build the SDK
+        working-directory: sdk
+        run: npm ci && npm run build
+
+      # docs/vitepress keeps no lock file, so install as the deploy workflow does.
+      - name: Install docs dependencies
+        working-directory: docs/vitepress
+        run: npm install
+
+      - name: Code examples type-check
+        working-directory: docs/vitepress
+        run: npm run check:examples
+
+      - name: API reference and SDK coverage
+        working-directory: docs/vitepress
+        run: |
+          npm run check:api-reference-facts
+          npm run check:sdk:root
+          npm run check:sdk:zh
+
+      - name: Published URLs and SDK signatures
+        run: |
+          node docs/vitepress/.vitepress/published-urls.mjs --check
+          node scripts/gen_sdk_doc_signatures.mjs
+
+      - name: Build the site
+        working-directory: docs/vitepress
+        run: npm run build
 
   # Informational static analysis (non-blocking, release-only). The full scan is
   # slow (~20-30 min), so it runs on release rather than every push/PR. Requires
@@ -123,7 +249,7 @@ jobs:
     name: "Package (.fb2k-component)"
     if: github.event_name == 'release'
     runs-on: windows-latest
-    needs: [build, sdk-typecheck]
+    needs: [build, sdk]
     steps:
       - uses: actions/checkout@v6
 

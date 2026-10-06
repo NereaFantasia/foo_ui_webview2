@@ -1,0 +1,477 @@
+{
+  "api/audio.md": [
+    "TS18004: No value exists in scope for the shorthand property 'subscriptionId'. Either declare one or provide an initializer.",
+    "TS2304: Cannot find name 'draw'."
+  ],
+  "api/dnd.md": [
+    "TS2304: Cannot find name 'el'.",
+    "TS2304: Cannot find name 'el'.",
+    "TS2304: Cannot find name 'el'.",
+    "TS2304: Cannot find name 'trackPath'."
+  ],
+  "api/file.md": [
+    "TS18004: No value exists in scope for the shorthand property 'operationId'. Either declare one or provide an initializer."
+  ],
+  "api/jit-queue.md": [
+    "TS2304: Cannot find name 'moreUrls'.",
+    "TS2552: Cannot find name 'urls'. Did you mean 'URL'?"
+  ],
+  "api/metadata.md": [
+    "TS18004: No value exists in scope for the shorthand property 'operationId'. Either declare one or provide an initializer.",
+    "TS18004: No value exists in scope for the shorthand property 'paths'. Either declare one or provide an initializer.",
+    "TS2304: Cannot find name 'base64Jpeg'."
+  ],
+  "api/queue.md": [
+    "TS18004: No value exists in scope for the shorthand property 'item'. Either declare one or provide an initializer.",
+    "TS18004: No value exists in scope for the shorthand property 'playlist'. Either declare one or provide an initializer."
+  ],
+  "api/taskbar.md": [
+    "TS2304: Cannot find name 'icoBase64'."
+  ],
+  "api/tray.md": [
+    "TS2304: Cannot find name 'icoBase64'."
+  ],
+  "components/audio.md": [
+    "TS2304: Cannot find name 'el'.",
+    "TS2304: Cannot find name 'el'.",
+    "TS2304: Cannot find name 'el'.",
+    "TS2304: Cannot find name 'el'."
+  ],
+  "components/library.md": [
+    "TS2304: Cannot find name 'el'.",
+    "TS2304: Cannot find name 'el'.",
+    "TS2304: Cannot find name 'el'.",
+    "TS2304: Cannot find name 'el'.",
+    "TS2304: Cannot find name 'el'.",
+    "TS2304: Cannot find name 'el'.",
+    "TS2304: Cannot find name 'el'."
+  ],
+  "components/media.md": [
+    "TS2304: Cannot find name 'el'.",
+    "TS2304: Cannot find name 'el'.",
+    "TS2304: Cannot find name 'el'.",
+    "TS2304: Cannot find name 'el'.",
+    "TS2304: Cannot find name 'el'.",
+    "TS2304: Cannot find name 'el'."
+  ],
+  "components/metadata.md": [
+    "TS2304: Cannot find name 'el'.",
+    "TS2304: Cannot find name 'el'.",
+    "TS2304: Cannot find name 'el'."
+  ],
+  "components/play-controls.md": [
+    "TS2304: Cannot find name 'el'.",
+    "TS2304: Cannot find name 'el'.",
+    "TS2304: Cannot find name 'el'.",
+    "TS2304: Cannot find name 'el'.",
+    "TS2304: Cannot find name 'el'.",
+    "TS2304: Cannot find name 'el'.",
+    "TS2304: Cannot find name 'el'.",
+    "TS2304: Cannot find name 'el'."
+  ],
+  "components/playlist.md": [
+    "TS2304: Cannot find name 'el'.",
+    "TS2304: Cannot find name 'el'.",
+    "TS2304: Cannot find name 'el'.",
+    "TS2304: Cannot find name 'el'.",
+    "TS2304: Cannot find name 'el'.",
+    "TS2304: Cannot find name 'el'.",
+    "TS2304: Cannot find name 'el'.",
+    "TS2304: Cannot find name 'el'.",
+    "TS2304: Cannot find name 'el'.",
+    "TS2304: Cannot find name 'el'.",
+    "TS2304: Cannot find name 'el'.",
+    "TS2304: Cannot find name 'el'.",
+    "TS2304: Cannot find name 'el'.",
+    "TS2304: Cannot find name 'el'.",
+    "TS2304: Cannot find name 'playlistView'."
+  ],
+  "components/progress.md": [
+    "TS2304: Cannot find name 'el'.",
+    "TS2304: Cannot find name 'el'.",
+    "TS2304: Cannot find name 'el'.",
+    "TS2304: Cannot find name 'el'.",
+    "TS2304: Cannot find name 'el'."
+  ],
+  "components/track-info.md": [
+    "TS2304: Cannot find name 'el'.",
+    "TS2304: Cannot find name 'el'."
+  ],
+  "components/window.md": [
+    "TS2304: Cannot find name 'el'.",
+    "TS2304: Cannot find name 'el'.",
+    "TS2304: Cannot find name 'el'.",
+    "TS2304: Cannot find name 'el'.",
+    "TS2304: Cannot find name 'el'.",
+    "TS2304: Cannot find name 'el'.",
+    "TS2304: Cannot find name 'el'.",
+    "TS2304: Cannot find name 'el'.",
+    "TS2304: Cannot find name 'el'.",
+    "TS2304: Cannot find name 'el'."
+  ],
+  "how-to/common-tasks.md": [
+    "TS2304: Cannot find name 'currentPlaylistIndex'.",
+    "TS2304: Cannot find name 'currentPlaylistIndex'.",
+    "TS2304: Cannot find name 'getFileType'.",
+    "TS2304: Cannot find name 'isStaticLocalFile'.",
+    "TS2304: Cannot find name 'switchPlaylist'.",
+    "TS2304: Cannot find name 'updateMaximizeButton'.",
+    "TS2304: Cannot find name 'updatePlayButton'.",
+    "TS2304: Cannot find name 'updatePlayButton'.",
+    "TS2304: Cannot find name 'updateTrackInfo'.",
+    "TS2304: Cannot find name 'updateTrackInfo'.",
+    "TS2339: Property 'getBoundingClientRect' does not exist on type 'typeof progressBar'.",
+    "TS2339: Property 'src' does not exist on type 'HTMLElement'.",
+    "TS2339: Property 'src' does not exist on type 'HTMLElement'.",
+    "TS2339: Property 'value' does not exist on type 'typeof volumeSlider'.",
+    "TS2451: Cannot redeclare block-scoped variable 'artwork'.",
+    "TS2451: Cannot redeclare block-scoped variable 'artwork'.",
+    "TS2552: Cannot find name 'updateVolumeSlider'. Did you mean 'volumeSlider'?"
+  ],
+  "reference/bridge.md": [
+    "TS2304: Cannot find name 'callback'.",
+    "TS2304: Cannot find name 'callback'.",
+    "TS2304: Cannot find name 'callback'."
+  ],
+  "reference/permissions.md": [
+    "TS2304: Cannot find name 'somePath'."
+  ],
+  "reference/smp-compat.md": [
+    "TS2304: Cannot find name 'smp'.",
+    "TS2304: Cannot find name 'smp'.",
+    "TS2339: Property 'IsPlaying' does not exist on type '{...}'.",
+    "TS2339: Property 'onSMP' does not exist on type '{...}'.",
+    "TS2339: Property 'onSMP' does not exist on type '{...}'.",
+    "TS2339: Property 'smp' does not exist on type 'Window & typeof globalThis'.",
+    "TS2339: Property 'smp' does not exist on type 'Window & typeof globalThis'.",
+    "TS2551: Property 'TitleFormat' does not exist on type '{...}'. Did you mean 'titleformat'?"
+  ],
+  "sdk/artwork.md": [
+    "TS2304: Cannot find name 'img'.",
+    "TS2339: Property 'src' does not exist on type 'HTMLElement'."
+  ],
+  "sdk/audio.md": [
+    "TS2304: Cannot find name 'drawMeter'.",
+    "TS2304: Cannot find name 'renderVisualizer'.",
+    "TS2304: Cannot find name 'renderVisualizer'.",
+    "TS2304: Cannot find name 'renderVisualizer'.",
+    "TS2339: Property 'code' does not exist on type 'SpectrumSubscribeOutcome'.",
+    "TS2339: Property 'error' does not exist on type 'SpectrumSubscribeOutcome'."
+  ],
+  "sdk/dnd.md": [
+    "TS2304: Cannot find name 'dropZoneEl'.",
+    "TS2304: Cannot find name 'token'.",
+    "TS2304: Cannot find name 'trackEl'.",
+    "TS2304: Cannot find name 'trackEl'.",
+    "TS2304: Cannot find name 'trackEl'.",
+    "TS2304: Cannot find name 'trackPath'.",
+    "TS2552: Cannot find name 'element'. Did you mean 'Element'?"
+  ],
+  "sdk/event.md": [
+    "TS2304: Cannot find name 'targetWindowId'."
+  ],
+  "sdk/events.md": [
+    "TS2304: Cannot find name 'handler'.",
+    "TS2304: Cannot find name 'handler'.",
+    "TS2304: Cannot find name 'handler'."
+  ],
+  "sdk/file.md": [
+    "TS2304: Cannot find name 'coverDataUrl'."
+  ],
+  "sdk/library.md": [
+    "TS2304: Cannot find name 'roots'."
+  ],
+  "sdk/metadata.md": [
+    "TS2304: Cannot find name 'coverBytes'.",
+    "TS2304: Cannot find name 'coverDataUrl'.",
+    "TS2304: Cannot find name 'coverDataUrl'.",
+    "TS2304: Cannot find name 'coverDataUrl'.",
+    "TS2304: Cannot find name 'droppedPaths'.",
+    "TS2304: Cannot find name 'receipt'."
+  ],
+  "sdk/player.md": [
+    "TS2304: Cannot find name 'paths'."
+  ],
+  "sdk/playlist.md": [
+    "TS2304: Cannot find name 'handles'.",
+    "TS2304: Cannot find name 'paths'."
+  ],
+  "sdk/tray.md": [
+    "TS2304: Cannot find name 'items'.",
+    "TS2304: Cannot find name 'items'."
+  ],
+  "zh/api/artwork.md": [
+    "TS18004: No value exists in scope for the shorthand property 'paths'. Either declare one or provide an initializer.",
+    "TS18004: No value exists in scope for the shorthand property 'paths'. Either declare one or provide an initializer.",
+    "TS2304: Cannot find name 'trackPath'.",
+    "TS2339: Property 'src' does not exist on type 'HTMLElement'.",
+    "TS2451: Cannot redeclare block-scoped variable 'result'.",
+    "TS2451: Cannot redeclare block-scoped variable 'result'."
+  ],
+  "zh/api/audio.md": [
+    "TS2304: Cannot find name 'draw'.",
+    "TS2304: Cannot find name 'renderVisualizer'."
+  ],
+  "zh/api/console.md": [
+    "TS2304: Cannot find name 'userName'."
+  ],
+  "zh/api/cursor.md": [
+    "TS2304: Cannot find name 'restoreCursor'."
+  ],
+  "zh/api/dialog.md": [
+    "TS2304: Cannot find name 'data'."
+  ],
+  "zh/api/dnd.md": [
+    "TS2304: Cannot find name 'dropZoneEl'.",
+    "TS2304: Cannot find name 'el'.",
+    "TS2304: Cannot find name 'el'.",
+    "TS2304: Cannot find name 'el'.",
+    "TS2304: Cannot find name 'trackPath'."
+  ],
+  "zh/api/file.md": [
+    "TS18004: No value exists in scope for the shorthand property 'operationId'. Either declare one or provide an initializer."
+  ],
+  "zh/api/http.md": [
+    "TS1108: A 'return' statement can only be used within a function body.",
+    "TS1108: A 'return' statement can only be used within a function body."
+  ],
+  "zh/api/jit-queue.md": [
+    "TS2304: Cannot find name 'fetchRealUrl'.",
+    "TS2304: Cannot find name 'moreUrls'.",
+    "TS2304: Cannot find name 'track'."
+  ],
+  "zh/api/keyboard.md": [
+    "TS2304: Cannot find name 'result'."
+  ],
+  "zh/api/menu.md": [
+    "TS2304: Cannot find name 'item'."
+  ],
+  "zh/api/metadata.md": [
+    "TS18004: No value exists in scope for the shorthand property 'operationId'. Either declare one or provide an initializer.",
+    "TS2304: Cannot find name 'base64String'."
+  ],
+  "zh/api/queue.md": [
+    "TS18004: No value exists in scope for the shorthand property 'item'. Either declare one or provide an initializer.",
+    "TS18004: No value exists in scope for the shorthand property 'playlist'. Either declare one or provide an initializer."
+  ],
+  "zh/api/system.md": [
+    "TS2345: Argument of type '\"my_plugin.doSomething\"' is not assignable to parameter of type 'keyof ApiMethodMap | \"test.echo\" | \"test.ping\"'."
+  ],
+  "zh/api/titleformat.md": [
+    "TS2304: Cannot find name 'track'."
+  ],
+  "zh/api/ui.md": [
+    "TS2304: Cannot find name 'showRenameDialog'.",
+    "TS2304: Cannot find name 'showToast'.",
+    "TS2339: Property 'clientX' does not exist on type 'Event'.",
+    "TS2339: Property 'clientY' does not exist on type 'Event'."
+  ],
+  "zh/api/window.md": [
+    "TS2304: Cannot find name 'titlebar'."
+  ],
+  "zh/components/audio.md": [
+    "TS2304: Cannot find name 'el'.",
+    "TS2304: Cannot find name 'el'.",
+    "TS2304: Cannot find name 'el'.",
+    "TS2304: Cannot find name 'el'."
+  ],
+  "zh/components/library.md": [
+    "TS2304: Cannot find name 'el'.",
+    "TS2304: Cannot find name 'el'.",
+    "TS2304: Cannot find name 'el'.",
+    "TS2304: Cannot find name 'el'.",
+    "TS2304: Cannot find name 'el'.",
+    "TS2304: Cannot find name 'el'.",
+    "TS2304: Cannot find name 'el'."
+  ],
+  "zh/components/media.md": [
+    "TS2304: Cannot find name 'el'.",
+    "TS2304: Cannot find name 'el'.",
+    "TS2304: Cannot find name 'el'.",
+    "TS2304: Cannot find name 'el'.",
+    "TS2304: Cannot find name 'el'.",
+    "TS2304: Cannot find name 'el'."
+  ],
+  "zh/components/metadata.md": [
+    "TS2304: Cannot find name 'el'.",
+    "TS2304: Cannot find name 'el'.",
+    "TS2304: Cannot find name 'el'."
+  ],
+  "zh/components/play-controls.md": [
+    "TS2304: Cannot find name 'el'.",
+    "TS2304: Cannot find name 'el'.",
+    "TS2304: Cannot find name 'el'.",
+    "TS2304: Cannot find name 'el'.",
+    "TS2304: Cannot find name 'el'.",
+    "TS2304: Cannot find name 'el'.",
+    "TS2304: Cannot find name 'el'.",
+    "TS2304: Cannot find name 'el'."
+  ],
+  "zh/components/playlist.md": [
+    "TS2304: Cannot find name 'el'.",
+    "TS2304: Cannot find name 'el'.",
+    "TS2304: Cannot find name 'el'.",
+    "TS2304: Cannot find name 'el'.",
+    "TS2304: Cannot find name 'el'.",
+    "TS2304: Cannot find name 'el'.",
+    "TS2304: Cannot find name 'el'.",
+    "TS2304: Cannot find name 'el'.",
+    "TS2304: Cannot find name 'el'.",
+    "TS2304: Cannot find name 'el'.",
+    "TS2304: Cannot find name 'el'.",
+    "TS2304: Cannot find name 'el'.",
+    "TS2304: Cannot find name 'el'.",
+    "TS2304: Cannot find name 'el'.",
+    "TS2304: Cannot find name 'playlistView'."
+  ],
+  "zh/components/progress.md": [
+    "TS2304: Cannot find name 'el'.",
+    "TS2304: Cannot find name 'el'.",
+    "TS2304: Cannot find name 'el'.",
+    "TS2304: Cannot find name 'el'.",
+    "TS2304: Cannot find name 'el'."
+  ],
+  "zh/components/track-info.md": [
+    "TS2304: Cannot find name 'el'.",
+    "TS2304: Cannot find name 'el'."
+  ],
+  "zh/components/window.md": [
+    "TS2304: Cannot find name 'el'.",
+    "TS2304: Cannot find name 'el'.",
+    "TS2304: Cannot find name 'el'.",
+    "TS2304: Cannot find name 'el'.",
+    "TS2304: Cannot find name 'el'.",
+    "TS2304: Cannot find name 'el'.",
+    "TS2304: Cannot find name 'el'.",
+    "TS2304: Cannot find name 'el'.",
+    "TS2304: Cannot find name 'el'.",
+    "TS2304: Cannot find name 'el'."
+  ],
+  "zh/how-to/common-tasks.md": [
+    "TS2304: Cannot find name 'currentPlaylistIndex'.",
+    "TS2304: Cannot find name 'currentPlaylistIndex'.",
+    "TS2304: Cannot find name 'getFileType'.",
+    "TS2304: Cannot find name 'isStaticLocalFile'.",
+    "TS2304: Cannot find name 'switchPlaylist'.",
+    "TS2304: Cannot find name 'updateMaximizeButton'.",
+    "TS2304: Cannot find name 'updatePlayButton'.",
+    "TS2304: Cannot find name 'updatePlayButton'.",
+    "TS2304: Cannot find name 'updateTrackInfo'.",
+    "TS2304: Cannot find name 'updateTrackInfo'.",
+    "TS2339: Property 'getBoundingClientRect' does not exist on type 'typeof progressBar'.",
+    "TS2339: Property 'src' does not exist on type 'HTMLElement'.",
+    "TS2339: Property 'src' does not exist on type 'HTMLElement'.",
+    "TS2339: Property 'value' does not exist on type 'typeof volumeSlider'.",
+    "TS2451: Cannot redeclare block-scoped variable 'artwork'.",
+    "TS2451: Cannot redeclare block-scoped variable 'artwork'.",
+    "TS2552: Cannot find name 'updateVolumeSlider'. Did you mean 'volumeSlider'?"
+  ],
+  "zh/reference/bridge.md": [
+    "TS2304: Cannot find name 'callback'.",
+    "TS2304: Cannot find name 'callback'.",
+    "TS2304: Cannot find name 'callback'."
+  ],
+  "zh/reference/permissions.md": [
+    "TS2304: Cannot find name 'somePath'."
+  ],
+  "zh/reference/smp-compat.md": [
+    "TS2304: Cannot find name 'FbMetadbHandle'.",
+    "TS2304: Cannot find name 'handle'.",
+    "TS2304: Cannot find name 'handle'.",
+    "TS2304: Cannot find name 'handle'.",
+    "TS2304: Cannot find name 'handle'.",
+    "TS2304: Cannot find name 'handle'.",
+    "TS2304: Cannot find name 'myHandleList'.",
+    "TS2304: Cannot find name 'other'.",
+    "TS2304: Cannot find name 'otherList'.",
+    "TS2304: Cannot find name 'plman'.",
+    "TS2304: Cannot find name 'plman'.",
+    "TS2304: Cannot find name 'plman'.",
+    "TS2304: Cannot find name 'selectedId'.",
+    "TS2304: Cannot find name 'selectedId'.",
+    "TS2304: Cannot find name 'smp'.",
+    "TS2304: Cannot find name 'smp'.",
+    "TS2304: Cannot find name 'utils'.",
+    "TS2304: Cannot find name 'utils'.",
+    "TS2304: Cannot find name 'utils'.",
+    "TS2304: Cannot find name 'utils'.",
+    "TS2304: Cannot find name 'utils'.",
+    "TS2304: Cannot find name 'utils'.",
+    "TS2339: Property 'CheckClipboardContents' does not exist on type '{...}'.",
+    "TS2339: Property 'CopyHandleListToClipboard' does not exist on type '{...}'.",
+    "TS2339: Property 'CreateContextMenuManager' does not exist on type '{...}'.",
+    "TS2339: Property 'CreateHandleList' does not exist on type '{...}'.",
+    "TS2339: Property 'CreateMainMenuManager' does not exist on type '{...}'.",
+    "TS2339: Property 'CreateProfiler' does not exist on type '{...}'.",
+    "TS2339: Property 'GetClipboardContents' does not exist on type '{...}'.",
+    "TS2339: Property 'GetOutputDevices' does not exist on type '{...}'.",
+    "TS2339: Property 'GetProperty' does not exist on type 'Window & typeof globalThis'.",
+    "TS2339: Property 'IsPlaying' does not exist on type '{...}'.",
+    "TS2339: Property 'NotifyOthers' does not exist on type 'Window & typeof globalThis'.",
+    "TS2339: Property 'SetOutputDevice' does not exist on type '{...}'.",
+    "TS2339: Property 'SetProperty' does not exist on type 'Window & typeof globalThis'.",
+    "TS2339: Property 'SetProperty' does not exist on type 'Window & typeof globalThis'.",
+    "TS2339: Property 'onSMP' does not exist on type '{...}'.",
+    "TS2339: Property 'onSMP' does not exist on type '{...}'.",
+    "TS2339: Property 'smp' does not exist on type 'Window & typeof globalThis'.",
+    "TS2339: Property 'smp' does not exist on type 'Window & typeof globalThis'.",
+    "TS2551: Property 'TitleFormat' does not exist on type '{...}'. Did you mean 'titleformat'?",
+    "TS2551: Property 'TitleFormat' does not exist on type '{...}'. Did you mean 'titleformat'?",
+    "TS2551: Property 'TitleFormat' does not exist on type '{...}'. Did you mean 'titleformat'?",
+    "TS2552: Cannot find name 'handleList'. Did you mean 'NodeList'?"
+  ],
+  "zh/sdk/artwork.md": [
+    "TS2304: Cannot find name 'img'.",
+    "TS2339: Property 'src' does not exist on type 'HTMLElement'."
+  ],
+  "zh/sdk/audio.md": [
+    "TS2304: Cannot find name 'drawMeter'.",
+    "TS2304: Cannot find name 'renderVisualizer'.",
+    "TS2304: Cannot find name 'renderVisualizer'.",
+    "TS2304: Cannot find name 'renderVisualizer'.",
+    "TS2339: Property 'code' does not exist on type 'SpectrumSubscribeOutcome'.",
+    "TS2339: Property 'error' does not exist on type 'SpectrumSubscribeOutcome'."
+  ],
+  "zh/sdk/dnd.md": [
+    "TS2304: Cannot find name 'dropZoneEl'.",
+    "TS2304: Cannot find name 'token'.",
+    "TS2304: Cannot find name 'trackEl'.",
+    "TS2304: Cannot find name 'trackEl'.",
+    "TS2304: Cannot find name 'trackEl'.",
+    "TS2304: Cannot find name 'trackPath'.",
+    "TS2552: Cannot find name 'element'. Did you mean 'Element'?"
+  ],
+  "zh/sdk/event.md": [
+    "TS2304: Cannot find name 'targetWindowId'."
+  ],
+  "zh/sdk/events.md": [
+    "TS2304: Cannot find name 'handler'.",
+    "TS2304: Cannot find name 'handler'.",
+    "TS2304: Cannot find name 'handler'."
+  ],
+  "zh/sdk/file.md": [
+    "TS2304: Cannot find name 'coverDataUrl'."
+  ],
+  "zh/sdk/library.md": [
+    "TS2304: Cannot find name 'roots'."
+  ],
+  "zh/sdk/metadata.md": [
+    "TS2304: Cannot find name 'coverBytes'.",
+    "TS2304: Cannot find name 'coverDataUrl'.",
+    "TS2304: Cannot find name 'coverDataUrl'.",
+    "TS2304: Cannot find name 'coverDataUrl'.",
+    "TS2304: Cannot find name 'droppedPaths'.",
+    "TS2304: Cannot find name 'receipt'."
+  ],
+  "zh/sdk/player.md": [
+    "TS2304: Cannot find name 'paths'."
+  ],
+  "zh/sdk/playlist.md": [
+    "TS2304: Cannot find name 'handles'.",
+    "TS2304: Cannot find name 'paths'."
+  ],
+  "zh/sdk/tray.md": [
+    "TS2304: Cannot find name 'items'.",
+    "TS2304: Cannot find name 'items'."
+  ]
+}

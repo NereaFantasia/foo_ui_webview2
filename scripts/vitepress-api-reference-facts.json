@@ -1,0 +1,64 @@
+{
+  "schemaVersion": 1,
+  "phase": 3,
+  "facts": [
+    {
+      "id": "P3-CS01-stopAfterCurrent-no-value",
+      "op": "literal-forbids",
+      "files": ["api/playback.md"],
+      "locales": ["root", "zh"],
+      "literals": [
+        "{value}",
+        "不同于 API 返回值字段名 `enabled`",
+        "不同于 API",
+        "不同于 enabled",
+        "different from API return field `enabled`",
+        "unlike the API field `enabled`"
+      ],
+      "findingKind": "stopAfterCurrent-value-payload"
+    },
+    {
+      "id": "P3-CS01-stopAfterCurrent-requires-enabled",
+      "op": "literal-requires",
+      "files": ["api/playback.md"],
+      "locales": ["root", "zh"],
+      "literals": ["playback:stopAfterCurrentChanged", "enabled"],
+      "findingKind": "stopAfterCurrent-enabled-missing"
+    },
+    {
+      "id": "P3-error-codes",
+      "op": "error-codes-match-authority",
+      "files": ["reference/errors.md"],
+      "locales": ["root", "zh"],
+      "forbidExtra": false
+    },
+    {
+      "id": "P3-security-level-counts",
+      "op": "permissions-documentation-match-authority",
+      "files": ["reference/permissions.md"],
+      "locales": ["root", "zh"]
+    },
+    {
+      "id": "P3-smp-documentation-contract",
+      "op": "smp-compat-documentation-contract",
+      "files": ["reference/smp-compat.md"],
+      "locales": ["root", "zh"],
+      "localeLiterals": {
+        "root": ["sdk/src/smp/**", "bootstrapSmpCompat", "published dist output is generated and must not be hand-edited"],
+        "zh": ["sdk/src/smp/**", "bootstrapSmpCompat", "发布到 `dist` 的产物由构建生成，禁止手工编辑"]
+      },
+      "requirements": [
+        { "source": "sdk/src/smp/index.ts", "contains": "bootstrapSmpCompat" },
+        { "source": "sdk/src/smp/bootstrap.ts", "contains": "export function bootstrapSmpCompat" }
+      ]
+    },
+    {
+      "id": "P3-no-ghost-on-events-pages",
+      "op": "registerapi-token-exists",
+      "files": ["api/events.md", "api/playback.md", "api/playlist.md", "api/window.md"],
+      "locales": ["root", "zh"],
+      "tokens": [],
+      "scanDocs": true
+    }
+  ]
+}

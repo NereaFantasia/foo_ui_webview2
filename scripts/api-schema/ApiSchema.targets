@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 编译前按 src/api/schema 重新生成 src/api/generated 的参数头，让声明与 handler 的不一致在编译期报错。
+     每个编译这些头的工程都导入本文件；导入处带 Exists 条件，没有本文件时跳过这一步。
+     生成器只改写内容有变化的文件，不打乱增量编译；声明写错时它以退出码 2 结束，构建失败。
+     缺 typescript（sdk 没装依赖）时只警告，用已入库的头编译。 -->
+<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <PropertyGroup>
+    <ApiSchemaRepoRoot>$([System.IO.Path]::GetFullPath('$(MSBuildThisFileDirectory)..\..\'))</ApiSchemaRepoRoot>
+    <ApiSchemaGenerator>$(MSBuildThisFileDirectory)generate.mjs</ApiSchemaGenerator>
+    <ApiSchemaTypeScript>$(ApiSchemaRepoRoot)sdk\node_modules\typescript\package.json</ApiSchemaTypeScript>
+  </PropertyGroup>
+
+  <Target Name="GenerateApiSchemaHeaders" BeforeTargets="ClCompile">
+    <Warning Condition="!Exists('$(ApiSchemaTypeScript)')"
+             Text="api-schema: header generation skipped because sdk has no typescript installed (run npm ci in sdk); building with the committed headers." />
+    <Exec Condition="Exists('$(ApiSchemaTypeScript)')"
+          Command="node &quot;$(ApiSchemaGenerator)&quot; --write-cpp"
+          WorkingDirectory="$(ApiSchemaRepoRoot)"
+          StandardOutputImportance="Low"
+          StandardErrorImportance="High" />
+  </Target>
+</Project>

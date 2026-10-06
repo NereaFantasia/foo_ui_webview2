@@ -4,12 +4,25 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "typedoc": "typedoc",
+    "predev": "npm run typedoc",
     "dev": "vitepress dev",
+    "prebuild": "npm run typedoc",
     "build": "npx vitepress build",
-    "preview": "vitepress preview"
+    "preview": "vitepress preview",
+    "check:sdk:root": "node ../../scripts/audit_vitepress_sdk_coverage.mjs --docs-root docs/vitepress/sdk --strict --json",
+    "check:sdk:zh": "node ../../scripts/audit_vitepress_sdk_coverage.mjs --docs-root docs/vitepress/zh/sdk --strict --json",
+    "test:locale-hash": "node --test ../../scripts/__tests__/vitepress_locale_hash.test.mjs",
+    "test:api-reference-facts": "node --test ../../scripts/__tests__/check_vitepress_api_reference_facts.test.mjs",
+    "check:api-reference-facts": "node ../../scripts/check_vitepress_api_reference_facts.mjs --repo-root ../.. --docs-root docs/vitepress --locale-root docs/vitepress/zh --authority-root . --rules scripts/vitepress-api-reference-facts.json --strict --json",
+    "check:examples": "node .examples/check.mjs"
   },
   "devDependencies": {
-    "typescript": "^5.9.3",
+    "foo-webview-sdk": "file:../../sdk",
+    "markdown-it": "^14.3.2",
+    "twoslash": "^0.3.9",
+    "typedoc": "^0.28.20",
+    "typescript": "^6.0.3",
     "vitepress": "^1.6.3"
   }
 }
