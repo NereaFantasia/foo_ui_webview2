@@ -1,230 +1,61 @@
-import CDP from "chrome-remote-interface";
+/**
+ * Snapshots the implicit contracts of endpoints whose real behaviour differs
+ * from what a page would reasonably expect: writes that succeed while storing
+ * something else, lookups that report a miss as an empty success, responses
+ * that carry no success field.
+ *
+ * Each case records the observed shape rather than a wish, so an intentional
+ * change shows up as a failing snapshot to be updated, not as a silent drift.
+ *
+ * Fixtures are created under %TEMP% and removed afterwards. Whole-surface
+ * reachability is checked separately by e2e-api-surface.mjs.
+ */
 
-const port = Number.parseInt(process.env.FB2K_CDP_PORT || "9222", 10);
-const invokeTimeoutMs = Number.parseInt(
-    process.env.FB2K_SNAPSHOT_TIMEOUT_MS || "5000",
-    10,
-);
+import {
+    closeClient,
+    connectBridgePage,
+    createBridge,
+    createRecorder,
+    envInt,
+    report,
+    requireResponsiveBridge,
+    resolvePort,
+} from "./lib/e2e-harness.mjs";
+
+const invokeTimeoutMs = envInt("FB2K_SNAPSHOT_TIMEOUT_MS", 5000);
 
 const snapshotId = new Date().toISOString().replace(/[-:.TZ]/g, "");
 const root = `%TEMP%\\foo_ui_webview2_implicit_contract_${snapshotId}`;
 const createdPaths = [];
-const cases = [];
+const recorder = createRecorder();
+const { assertCase } = recorder;
 let bridgeResponsive = false;
 
-function addCase(name, passed, observed, expected) {
-    cases.push({ name, passed, observed, expected });
-    const marker = passed ? "PASS" : "FAIL";
-    console.log(`[${marker}] ${name}`);
-    if (!passed) {
-        console.log(`  expected: ${JSON.stringify(expected)}`);
-        console.log(`  observed: ${JSON.stringify(observed)}`);
-    }
+async function removePath(bridge, path) {
+    await bridge
+        .invokeRaw("file.delete", { path, moveToTrash: false }, 2000)
+        .catch(() => undefined);
 }
 
-function assertCase(name, condition, observed, expected) {
-    addCase(name, Boolean(condition), observed, expected);
-}
-
-async function connectToBridgePage() {
-    const targets = await CDP.List({ port });
-    const pages = targets.filter(
-        (target) => target.type === "page" && !target.url.startsWith("devtools://"),
-    );
-
-    for (const page of pages) {
-        const client = await CDP({ port, target: page });
-        const probe = await client.Runtime.evaluate({
-            expression: "typeof window.fb2k === 'object' && typeof window.fb2k.invoke === 'function'",
-            returnByValue: true,
-        });
-        if (probe.result.value === true) {
-            return { client, page };
-        }
-        await client.close();
-    }
-
-    throw new Error("No WebView2 page exposes window.fb2k.invoke");
-}
-
-function invokeExpression(method, params, timeoutMs = invokeTimeoutMs) {
-    const methodJson = JSON.stringify(method);
-    const paramsJson = params === undefined ? "undefined" : JSON.stringify(params);
-    return `Promise.race([
-        window.fb2k.invoke(${methodJson}, ${paramsJson}).then(
-            value => ({ kind: 'result', value }),
-            error => ({ kind: 'error', error: String(error && error.message ? error.message : error) })
-        ),
-        new Promise(resolve => setTimeout(
-            () => resolve({ kind: 'timeout', timeoutMs: ${timeoutMs} }),
-            ${timeoutMs}
-        ))
-    ])`;
-}
-
-async function evaluateValue(
-    Runtime,
-    expression,
-    awaitPromise = true,
-    timeoutMs = invokeTimeoutMs + 1000,
-) {
-    let timerId;
-    const evaluatePromise = Runtime.evaluate({
-        expression,
-        awaitPromise,
-        returnByValue: true,
-    });
-    const timeoutPromise = new Promise((_, reject) => {
-        timerId = setTimeout(() => {
-            const error = new Error(`CDP Runtime.evaluate timed out after ${timeoutMs} ms`);
-            error.code = "CDP_EVALUATE_TIMEOUT";
-            reject(error);
-        }, timeoutMs);
-    });
-
-    let response;
-    try {
-        response = await Promise.race([evaluatePromise, timeoutPromise]);
-    } finally {
-        clearTimeout(timerId);
-    }
-    if (response.exceptionDetails) {
-        throw new Error(
-            response.exceptionDetails.exception?.description ||
-                response.exceptionDetails.text ||
-                "Runtime.evaluate failed",
-        );
-    }
-    return response.result.value;
-}
-
-async function invokeRaw(Runtime, method, params, timeoutMs = invokeTimeoutMs) {
-    try {
-        return await evaluateValue(
-            Runtime,
-            invokeExpression(method, params, timeoutMs),
-            true,
-            timeoutMs + 1000,
-        );
-    } catch (error) {
-        if (error?.code === "CDP_EVALUATE_TIMEOUT") {
-            return { kind: "cdp-timeout", timeoutMs: timeoutMs + 1000 };
-        }
-        throw error;
-    }
-}
-
-async function invoke(Runtime, method, params) {
-    const outcome = await invokeRaw(Runtime, method, params);
-    if (outcome?.kind === "timeout") {
-        throw new Error(`${method} timed out after ${outcome.timeoutMs} ms`);
-    }
-    if (outcome?.kind === "error") {
-        throw new Error(`${method} rejected: ${outcome.error}`);
-    }
-    if (!outcome || outcome.kind !== "result") {
-        throw new Error(`${method} returned an invalid probe envelope`);
-    }
-    return outcome.value;
-}
-
-async function removePath(Runtime, path) {
-    await invokeRaw(Runtime, "file.delete", { path, moveToTrash: false }, 2000).catch(
-        () => undefined,
-    );
-}
-
-async function probeBridgeResponsiveness(Runtime) {
-    const probeKey = `__implicitContractProbe_${snapshotId}`;
-    const launchExpression = `(() => {
-        const key = ${JSON.stringify(probeKey)};
-        window[key] = { status: 'pending', startedAt: Date.now() };
-        window.fb2k.invoke('file.exists', { path: '%TEMP%' }).then(
-            value => { window[key] = { status: 'resolved', value, settledAt: Date.now() }; },
-            error => { window[key] = { status: 'rejected', error: String(error && error.message ? error.message : error), settledAt: Date.now() }; }
-        );
-        return {
-            launched: true,
-            callId: window.fb2k._callId,
-            callbacks: window.fb2k._callbacks?.size ?? null
-        };
-    })()`;
-
-    let launch;
-    try {
-        launch = await evaluateValue(
-            Runtime,
-            launchExpression,
-            false,
-            invokeTimeoutMs + 1000,
-        );
-    } catch (error) {
-        return {
-            responsive: false,
-            stage: "postMessage",
-            error: String(error?.message || error),
-        };
-    }
-
-    const deadline = Date.now() + invokeTimeoutMs;
-    let state;
-    do {
-        await new Promise((resolve) => setTimeout(resolve, 100));
-        state = await evaluateValue(
-            Runtime,
-            `(() => ({
-                probe: window[${JSON.stringify(probeKey)}] || null,
-                callId: window.fb2k?._callId ?? null,
-                callbacks: window.fb2k?._callbacks?.size ?? null
-            }))()`,
-            false,
-            1000,
-        );
-        if (state?.probe?.status !== "pending") break;
-    } while (Date.now() < deadline);
-
-    await evaluateValue(
-        Runtime,
-        `delete window[${JSON.stringify(probeKey)}]; true`,
-        false,
-        1000,
-    ).catch(() => undefined);
-
-    if (state?.probe?.status === "resolved") {
-        return { responsive: true, launch, state };
-    }
-    return {
-        responsive: false,
-        stage: "response",
-        launch,
-        state,
-    };
-}
-
-async function runSnapshots(Runtime) {
-    const probe = await probeBridgeResponsiveness(Runtime);
-    if (!probe.responsive) {
-        const error = new Error(
-            `file.exists preflight blocked at ${probe.stage}: ${JSON.stringify(probe)}`,
-        );
-        error.blocked = true;
-        throw error;
-    }
+async function runSnapshots(bridge) {
+    await requireResponsiveBridge(bridge, { probeId: snapshotId });
     bridgeResponsive = true;
 
-    await invoke(Runtime, "file.mkdir", { path: root });
+    const { invoke, invokeRaw } = bridge;
+
+    await invoke("file.mkdir", { path: root });
 
     const payload = "iVBORw0KGgo=";
     const dataUrl = `data:image/png;base64,${payload}`;
 
     const exactPath = `${root}\\exact.png`;
     createdPaths.push(exactPath);
-    const exactWrite = await invoke(Runtime, "file.write", {
+    const exactWrite = await invoke("file.write", {
         path: exactPath,
         encoding: "binary",
         content: `base64:${payload}`,
     });
-    const exactRead = await invoke(Runtime, "file.read", {
+    const exactRead = await invoke("file.read", {
         path: exactPath,
         encoding: "binary",
     });
@@ -239,12 +70,12 @@ async function runSnapshots(Runtime) {
 
     const rawPath = `${root}\\raw-base64.png`;
     createdPaths.push(rawPath);
-    const rawWrite = await invoke(Runtime, "file.write", {
+    const rawWrite = await invoke("file.write", {
         path: rawPath,
         encoding: "binary",
         content: payload,
     });
-    const rawRead = await invoke(Runtime, "file.read", { path: rawPath });
+    const rawRead = await invoke("file.read", { path: rawPath });
     assertCase(
         "A-02 binary plus raw Base64 writes text",
         rawWrite?.success === true && rawRead?.content === payload,
@@ -254,12 +85,12 @@ async function runSnapshots(Runtime) {
 
     const roundTripPath = `${root}\\naive-roundtrip.png`;
     createdPaths.push(roundTripPath);
-    const roundTripWrite = await invoke(Runtime, "file.write", {
+    const roundTripWrite = await invoke("file.write", {
         path: roundTripPath,
         encoding: exactRead.encoding,
         content: exactRead.content,
     });
-    const roundTripRead = await invoke(Runtime, "file.read", { path: roundTripPath });
+    const roundTripRead = await invoke("file.read", { path: roundTripPath });
     assertCase(
         "A-03 binary read response cannot be written back unchanged",
         roundTripWrite?.success === true && roundTripRead?.content === payload,
@@ -269,12 +100,12 @@ async function runSnapshots(Runtime) {
 
     const dataUrlPath = `${root}\\data-url.png`;
     createdPaths.push(dataUrlPath);
-    const dataUrlWrite = await invoke(Runtime, "file.write", {
+    const dataUrlWrite = await invoke("file.write", {
         path: dataUrlPath,
         encoding: "binary",
         content: dataUrl,
     });
-    const dataUrlRead = await invoke(Runtime, "file.read", { path: dataUrlPath });
+    const dataUrlRead = await invoke("file.read", { path: dataUrlPath });
     assertCase(
         "A-04 binary plus Data URL writes the URL text",
         dataUrlWrite?.success === true && dataUrlRead?.content === dataUrl,
@@ -284,12 +115,12 @@ async function runSnapshots(Runtime) {
 
     const malformedPath = `${root}\\malformed-base64.png`;
     createdPaths.push(malformedPath);
-    const malformedWrite = await invoke(Runtime, "file.write", {
+    const malformedWrite = await invoke("file.write", {
         path: malformedPath,
         encoding: "binary",
         content: "base64:iVBORw0KGg!o=",
     });
-    const malformedRead = await invoke(Runtime, "file.read", {
+    const malformedRead = await invoke("file.read", {
         path: malformedPath,
         encoding: "binary",
     });
@@ -302,12 +133,12 @@ async function runSnapshots(Runtime) {
 
     const emptyPath = `${root}\\empty.bin`;
     createdPaths.push(emptyPath);
-    const emptyWrite = await invoke(Runtime, "file.write", {
+    const emptyWrite = await invoke("file.write", {
         path: emptyPath,
         encoding: "binary",
         content: "base64:",
     });
-    const emptyRead = await invoke(Runtime, "file.read", {
+    const emptyRead = await invoke("file.read", {
         path: emptyPath,
         encoding: "binary",
     });
@@ -320,13 +151,13 @@ async function runSnapshots(Runtime) {
 
     const appendPath = `${root}\\append.txt`;
     createdPaths.push(appendPath);
-    await invoke(Runtime, "file.write", { path: appendPath, content: "abc" });
-    const appendWrite = await invoke(Runtime, "file.write", {
+    await invoke("file.write", { path: appendPath, content: "abc" });
+    const appendWrite = await invoke("file.write", {
         path: appendPath,
         content: "de",
         append: true,
     });
-    const appendRead = await invoke(Runtime, "file.read", { path: appendPath });
+    const appendRead = await invoke("file.read", { path: appendPath });
     assertCase(
         "A-07 append bytesWritten is final file size",
         appendWrite?.success === true &&
@@ -336,17 +167,58 @@ async function runSnapshots(Runtime) {
         { bytesWritten: 5, content: "abcde" },
     );
 
+    // atomic goes through a temporary file next to the target; neither a
+    // finished nor a refused write may leave that file behind.
+    const atomicDir = `${root}\\atomic`;
+    const atomicPath = `${atomicDir}\\current.json`;
+    const atomicContent = '{"version":"2.1.0"}';
+    createdPaths.push(atomicDir, atomicPath);
+    await invoke("file.write", { path: atomicPath, content: "old" });
+    const atomicWrite = await invoke("file.write", {
+        path: atomicPath,
+        content: atomicContent,
+        atomic: true,
+    });
+    const atomicRead = await invoke("file.read", { path: atomicPath });
+    const atomicWithAppend = await invoke("file.write", {
+        path: atomicPath,
+        content: "x",
+        atomic: true,
+        append: true,
+    });
+    const afterRefusal = await invoke("file.read", { path: atomicPath });
+    const atomicList = await invoke("file.list", { path: atomicDir });
+    const atomicFiles = Array.isArray(atomicList?.files) ? atomicList.files : [];
+    assertCase(
+        "A-07b atomic write replaces the file and leaves no temporary file",
+        atomicWrite?.success === true &&
+            atomicWrite?.bytesWritten === atomicContent.length &&
+            atomicRead?.content === atomicContent &&
+            atomicFiles.length === 1 &&
+            atomicFiles[0] === "current.json",
+        { atomicWrite, atomicRead, atomicFiles },
+        { bytesWritten: atomicContent.length, files: ["current.json"] },
+    );
+    assertCase(
+        "A-07c atomic with append fails with INVALID_PARAMS and keeps the file",
+        atomicWithAppend?.success === false &&
+            atomicWithAppend?.code === "INVALID_PARAMS" &&
+            afterRefusal?.content === atomicContent,
+        { atomicWithAppend, afterRefusal },
+        { success: false, code: "INVALID_PARAMS", content: atomicContent },
+    );
+
     const copySource = `${root}\\copy-source.txt`;
     const copyTarget = `${root}\\copy-target.txt`;
     createdPaths.push(copySource, copyTarget);
-    await invoke(Runtime, "file.write", { path: copySource, content: "new" });
-    await invoke(Runtime, "file.write", { path: copyTarget, content: "old" });
-    const copyResult = await invoke(Runtime, "file.copy", {
+    await invoke("file.write", { path: copySource, content: "new" });
+    await invoke("file.write", { path: copyTarget, content: "old" });
+    const copyResult = await invoke("file.copy", {
         source: copySource,
         destination: copyTarget,
         overwrite: false,
     });
-    const copyRead = await invoke(Runtime, "file.read", { path: copyTarget });
+    const copyRead = await invoke("file.read", { path: copyTarget });
     assertCase(
         "A-08 copy skip-existing is a zero-operation success",
         copyResult?.success === true && copyRead?.content === "old",
@@ -358,10 +230,10 @@ async function runSnapshots(Runtime) {
     const coverPath = `${listDir}\\cover-a.jpg`;
     const notePath = `${listDir}\\note.txt`;
     createdPaths.push(listDir, coverPath, notePath);
-    await invoke(Runtime, "file.mkdir", { path: listDir });
-    await invoke(Runtime, "file.write", { path: coverPath, content: "cover" });
-    await invoke(Runtime, "file.write", { path: notePath, content: "note" });
-    const listResult = await invoke(Runtime, "file.list", {
+    await invoke("file.mkdir", { path: listDir });
+    await invoke("file.write", { path: coverPath, content: "cover" });
+    await invoke("file.write", { path: notePath, content: "note" });
+    const listResult = await invoke("file.list", {
         path: listDir,
         pattern: "cover*.jpg",
     });
@@ -377,22 +249,33 @@ async function runSnapshots(Runtime) {
 
     // A session lookup miss is reported as success with an empty result, not as
     // an error, so a page cannot distinguish "expired" from "never existed".
-    const unknownSession = await invoke(Runtime, "dnd.getPathsAsync", {
+    //
+    // Whether that branch is reachable depends on the caller window having a
+    // drag-drop registration, which this script cannot arrange, so the
+    // precondition is read from a second endpoint behind the same gate instead
+    // of assumed. The two must agree.
+    const dndCaps = await invoke("dnd.getCapabilities", {});
+    const registered = dndCaps?.success === true;
+    const unknownSession = await invoke("dnd.getPathsAsync", {
         sessionId: `no-such-session-${snapshotId}`,
     });
     assertCase(
         "A-10 dnd.getPathsAsync reports an unknown session as empty success",
-        unknownSession?.success === true &&
-            unknownSession?.sessionId === "" &&
-            Array.isArray(unknownSession?.paths) &&
-            unknownSession.paths.length === 0,
-        unknownSession,
-        { success: true, sessionId: "", paths: [] },
+        registered
+            ? unknownSession?.success === true &&
+                  unknownSession?.sessionId === "" &&
+                  Array.isArray(unknownSession?.paths) &&
+                  unknownSession.paths.length === 0
+            : unknownSession?.success === false && unknownSession?.code === "NOT_FOUND",
+        { registered, unknownSession },
+        registered
+            ? { success: true, sessionId: "", paths: [] }
+            : { success: false, code: "NOT_FOUND" },
     );
 
     // The host delivers a handler-returned error envelope through SendResponse,
     // so the promise resolves with the envelope instead of rejecting.
-    const startDrag = await invokeRaw(Runtime, "dnd.startDrag", {});
+    const startDrag = await invokeRaw("dnd.startDrag", {});
     assertCase(
         "A-10b dnd.startDrag resolves a NOT_SUPPORTED envelope, not a fake success",
         startDrag?.kind === "result" &&
@@ -403,56 +286,85 @@ async function runSnapshots(Runtime) {
         { kind: "result", value: { success: false, code: "NOT_SUPPORTED" } },
     );
 
-    for (const method of ["dsp.getChain", "output.getDevices"]) {
-        const outcome = await invokeRaw(Runtime, method, {});
+    // webview.getSource answers from the record the host made when it
+    // submitted the navigation, not from where the page is now; only
+    // activeTemplateName is read at call time. A folder source carries the
+    // mapped directory, the others do not.
+    const pageSource = await invoke("webview.getSource", {});
+    const folderSources = ["panelTemplate", "activeTemplate", "componentDirectory", "defaultTemplate"];
+    const isFolderSource = folderSources.includes(pageSource?.source);
+    assertCase(
+        "A-12 webview.getSource reports the host's record of the calling page",
+        pageSource?.success === true &&
+            ["devServer", "url", "builtInPage", ...folderSources].includes(pageSource.source) &&
+            typeof pageSource.activeTemplateName === "string" &&
+            typeof pageSource.templatesDirectory === "string" &&
+            (isFolderSource
+                ? typeof pageSource.directory === "string" && pageSource.url === undefined
+                : pageSource.directory === undefined),
+        pageSource,
+        { success: true, source: "a declared source", directory: isFolderSource ? "string" : "absent" },
+    );
+
+    // dsp.getChain and output.getDevices used to answer bare; since their
+    // declarations under src/api/schema they answer inside the success envelope.
+    // Only output.getDevices declares a count next to its list, so the count is
+    // checked only there.
+    for (const [method, listKey, counted] of [
+        ["dsp.getChain", "dsps", false],
+        ["output.getDevices", "devices", true],
+    ]) {
+        const outcome = await invokeRaw(method, {});
+        const value = outcome?.kind === "result" ? outcome.value : undefined;
         assertCase(
-            `A-11 ${method} is not registered`,
-            outcome?.kind === "error" && /method not found/i.test(outcome.error || ""),
+            `A-11 ${method} answers inside the success envelope`,
+            outcome?.kind === "result" &&
+                value?.success === true &&
+                Array.isArray(value[listKey]) &&
+                (!counted || value.count === value[listKey].length),
             outcome,
-            { kind: "error", errorContains: "Method not found" },
+            {
+                kind: "result",
+                value: counted
+                    ? { success: true, [listKey]: "an array", count: "its length" }
+                    : { success: true, [listKey]: "an array" },
+            },
         );
     }
 }
 
 let client;
+let bridge;
 let blocked = false;
 let fatalError;
+let targets;
 
 try {
-    const connection = await connectToBridgePage();
+    const connection = await connectBridgePage();
     client = connection.client;
+    targets = connection.candidates;
     console.log(`Target: ${connection.page.title} ${connection.page.url}`);
-    await runSnapshots(client.Runtime);
+    bridge = createBridge(client.Runtime, { invokeTimeoutMs });
+    await runSnapshots(bridge);
 } catch (error) {
     fatalError = error;
     blocked = Boolean(error?.blocked);
     console.error(`${blocked ? "BLOCKED" : "ERROR"}: ${error?.message || error}`);
 } finally {
-    if (client) {
-        if (bridgeResponsive) {
-            for (const path of [...createdPaths].reverse()) {
-                await removePath(client.Runtime, path);
-            }
-            await removePath(client.Runtime, root);
+    if (bridge && bridgeResponsive) {
+        for (const path of [...createdPaths].reverse()) {
+            await removePath(bridge, path);
         }
-        await Promise.race([
-            client.close().catch(() => undefined),
-            new Promise((resolve) => setTimeout(resolve, 1000)),
-        ]);
+        await removePath(bridge, root);
     }
+    await closeClient(client);
 }
 
-const failed = cases.filter((item) => !item.passed);
-console.log(JSON.stringify({
-    snapshotId,
-    targetPort: port,
-    invokeTimeoutMs,
-    status: blocked ? "blocked" : fatalError ? "error" : failed.length ? "failed" : "passed",
-    passed: cases.length - failed.length,
-    failed: failed.length,
-    cases,
-    fatalError: fatalError ? String(fatalError.message || fatalError) : undefined,
-}, null, 2));
-
-const exitCode = blocked ? 2 : fatalError || failed.length > 0 ? 1 : 0;
-process.exit(exitCode);
+process.exit(
+    report({
+        recorder,
+        blocked,
+        fatalError,
+        extra: { snapshotId, targetPort: resolvePort(), invokeTimeoutMs, targets },
+    }),
+);

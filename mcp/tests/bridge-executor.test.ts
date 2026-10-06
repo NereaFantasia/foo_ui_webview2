@@ -14,6 +14,7 @@ import {
     BridgeExecutor,
     createBridgeToolHandler,
     formatBridgeFailure,
+    type BridgeResultOptions,
 } from "../src/bridge-executor.js";
 import type { CdpClient } from "../src/cdp-client.js";
 
@@ -60,10 +61,10 @@ describe("BridgeExecutor", () => {
         it("带参数调用正确传递 params", async () => {
             vi.mocked(cdp.invoke).mockResolvedValue({ success: true });
 
-            await bridge.call("playback.setPosition", { seconds: 42 });
+            await bridge.call("playback.setPosition", { position: 42 });
 
             expect(cdp.invoke).toHaveBeenCalledWith("playback.setPosition", {
-                seconds: 42,
+                position: 42,
             });
         });
 
@@ -314,7 +315,7 @@ describe("createBridgeToolHandler", () => {
         });
     });
 
-    it("将成功结果映射为 JSON 文本且不设置 isError", async () => {
+    it("将成功结果映射为紧凑 JSON 文本且不设置 isError", async () => {
         const call = vi.fn().mockResolvedValue({
             success: true,
             data: { playing: true },
@@ -326,8 +327,94 @@ describe("createBridgeToolHandler", () => {
         expect(result).toEqual({
             content: [{
                 type: "text",
-                text: JSON.stringify({ playing: true }, null, 2),
+                text: '{"playing":true}',
             }],
+        });
+    });
+
+    it("没有返回值时给出 null 而不是空文本", async () => {
+        const call = vi.fn().mockResolvedValue({ success: true, data: undefined });
+        const handler = createBridgeToolHandler({ call }, "playback.stop");
+
+        expect(await handler({})).toEqual({ content: [{ type: "text", text: "null" }] });
+    });
+
+    it("超过上限的结果被截断并附说明", async () => {
+        const call = vi.fn().mockResolvedValue({ success: true, data: "x".repeat(50) });
+        const handler = createBridgeToolHandler({ call }, "playback.getState", { maxResponseChars: 20 });
+
+        const result = await handler({});
+        const text = (result.content[0] as { text: string }).text;
+
+        expect(text.startsWith('"xxxxxxxxxxxxxxxxxxx')).toBe(true);
+        expect(text).toContain("[Truncated: the result has 52 characters and this server returns at most 20.");
+    });
+
+    describe("image 字段", () => {
+        // 8 字节的 PNG 签名，base64 为 12 个字符
+        const png = "iVBORw0KGgo=";
+        const picture = (data: unknown, options: Omit<BridgeResultOptions, "image"> = {}) =>
+            createBridgeToolHandler(
+                { call: vi.fn().mockResolvedValue({ success: true, data }) },
+                "artwork.getCurrent",
+                { image: "dataUrl", ...options }
+            )({});
+
+        it("data URL 拆成图片块，其余字段留在紧凑 JSON 里", async () => {
+            const result = await picture({ available: true, mimeType: "image/png", size: 8, dataUrl: `data:image/png;base64,${png}` });
+
+            expect(result).toEqual({
+                content: [
+                    { type: "text", text: '{"available":true,"mimeType":"image/png","size":8}' },
+                    { type: "image", data: png, mimeType: "image/png" },
+                ],
+            });
+        });
+
+        it("没有图片时照常只返回 JSON 文本", async () => {
+            const result = await picture({ available: false, type: "front", reason: "not_found" });
+
+            expect(result).toEqual({
+                content: [{ type: "text", text: '{"available":false,"type":"front","reason":"not_found"}' }],
+            });
+        });
+
+        it("客户端不显示的类型不附图片，也不把 base64 放进文本", async () => {
+            const result = await picture({ available: true, dataUrl: "data:image/bmp;base64,Qk0AAA==" });
+
+            expect(result.content).toHaveLength(1);
+            const text = (result.content[0] as { text: string }).text;
+            expect(text).toBe(
+                '{"available":true}\n[Picture not attached: it is image/bmp, and this server attaches only PNG, JPEG, GIF and WebP pictures.]'
+            );
+        });
+
+        it("超过字节上限的图片不附上，文本写明大小与上限", async () => {
+            const result = await picture({ available: true, dataUrl: `data:image/png;base64,${png}` }, { maxImageBytes: 7 });
+
+            expect(result.content).toEqual([{
+                type: "text",
+                text: '{"available":true}\n[Picture not attached: it has 8 bytes, more than the 7 this server attaches (FB2K_MAX_IMAGE_BYTES).]',
+            }]);
+            expect((await picture({ available: true, dataUrl: `data:image/png;base64,${png}` }, { maxImageBytes: 8 })).content)
+                .toHaveLength(2);
+        });
+
+        it("字段不是合法的 base64 data URL 时原样作为 JSON 返回", async () => {
+            for (const dataUrl of ["fb2k://artwork/?path=a.flac", "data:image/png;base64,not base64", "data:image/png;base64,abc"]) {
+                const result = await picture({ available: true, dataUrl });
+                expect(result.content, dataUrl).toEqual([{ type: "text", text: JSON.stringify({ available: true, dataUrl }) }]);
+            }
+        });
+
+        it("文本部分仍受字符上限约束，图片不受", async () => {
+            const result = await picture(
+                { note: "x".repeat(50), dataUrl: `data:image/png;base64,${png}` },
+                { maxResponseChars: 20 }
+            );
+
+            expect((result.content[0] as { text: string }).text).toContain("[Truncated:");
+            expect(result.content[1]).toEqual({ type: "image", data: png, mimeType: "image/png" });
         });
     });
 });

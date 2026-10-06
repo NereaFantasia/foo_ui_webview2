@@ -18,7 +18,6 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 const {
     mockRuntimeEnable,
     mockRuntimeEvaluate,
-    mockPageEnable,
     mockPageCaptureScreenshot,
     mockPageGetLayoutMetrics,
     mockEmulationSetDeviceMetricsOverride,
@@ -412,25 +411,67 @@ describe("CdpClient", () => {
             await client.connect();
         });
 
-        it("返回控制台消息数组", async () => {
-            const messages = [{ level: "log", text: "debug info" }];
-            mockRuntimeEvaluate.mockResolvedValue({
-                result: { value: messages },
-            });
+        /** The listener the client registered for a CDP event. */
+        function listener(event: string): (params: unknown) => void {
+            const found = mockOn.mock.calls.find(([name]) => name === event);
+            if (!found) throw new Error(`no listener for ${event}`);
+            return found[1] as (params: unknown) => void;
+        }
 
-            const result = await client.getConsoleMessages();
-
-            expect(result).toEqual(messages);
+        it("连接前后都没有消息时返回空数组", async () => {
+            expect(await client.getConsoleMessages()).toEqual([]);
         });
 
-        it("__fb2kMcpConsoleLogs 不存在时返回空数组", async () => {
-            mockRuntimeEvaluate.mockResolvedValue({
-                result: { value: null },
+        it("记录 console 调用：原始值按值、对象取描述，参数以空格连接", async () => {
+            listener("Runtime.consoleAPICalled")({
+                type: "log",
+                args: [
+                    { type: "string", value: "loaded" },
+                    { type: "number", value: 3 },
+                    { type: "object", description: "Object" },
+                    { type: "number", unserializableValue: "NaN" },
+                ],
             });
+            listener("Runtime.consoleAPICalled")({ type: "warning", args: [{ type: "string", value: "slow" }] });
 
-            const result = await client.getConsoleMessages();
+            expect(await client.getConsoleMessages()).toEqual([
+                { level: "log", text: "loaded 3 Object NaN" },
+                { level: "warning", text: "slow" },
+            ]);
+        });
 
-            expect(result).toEqual([]);
+        it("记录未捕获异常，优先取异常描述", async () => {
+            listener("Runtime.exceptionThrown")({
+                exceptionDetails: { text: "Uncaught", exception: { description: "TypeError: x is undefined" } },
+            });
+            listener("Runtime.exceptionThrown")({ exceptionDetails: { text: "Uncaught (in promise)" } });
+
+            expect(await client.getConsoleMessages()).toEqual([
+                { level: "exception", text: "TypeError: x is undefined" },
+                { level: "exception", text: "Uncaught (in promise)" },
+            ]);
+        });
+
+        it("畸形事件被忽略", async () => {
+            listener("Runtime.consoleAPICalled")(null);
+            listener("Runtime.consoleAPICalled")({ args: [] });
+            listener("Runtime.exceptionThrown")({});
+
+            expect(await client.getConsoleMessages()).toEqual([]);
+        });
+
+        it("只保留最近 200 条，limit 取最新的若干条", async () => {
+            const log = listener("Runtime.consoleAPICalled");
+            for (let i = 0; i < 250; i++) log({ type: "log", args: [{ type: "number", value: i }] });
+
+            const all = await client.getConsoleMessages(500);
+            expect(all).toHaveLength(200);
+            expect(all[0]).toEqual({ level: "log", text: "50" });
+            expect(await client.getConsoleMessages(2)).toEqual([
+                { level: "log", text: "248" },
+                { level: "log", text: "249" },
+            ]);
+            expect(await client.getConsoleMessages()).toHaveLength(100);
         });
     });
 

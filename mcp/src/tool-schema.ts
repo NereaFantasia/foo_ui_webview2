@@ -1,11 +1,11 @@
 import { z } from "zod";
 
 import type {
+    InputSchema,
     NumberSchemaProperty,
     ObjectSchemaProperty,
     SchemaProperty,
     StringSchemaProperty,
-    ToolDefinition,
     UnionSchemaProperty,
 } from "./types.js";
 
@@ -15,13 +15,13 @@ import type {
  * Defaults are validated and injected for optional properties. Malformed
  * declarations fail before the MCP server starts.
  *
- * @param inputSchema - Declarative input contract for one MCP tool.
+ * @param inputSchema - Declarative input contract for one MCP tool or action.
  * @returns A Zod raw shape suitable for `McpServer.registerTool()`.
  * @throws When required names, keyword/type combinations, defaults, bounds,
  * enums, arrays, or nested schemas are invalid.
  */
 export function buildToolInputShape(
-    inputSchema: ToolDefinition["inputSchema"]
+    inputSchema: InputSchema
 ): Record<string, z.ZodTypeAny> {
     validateInputSchemaDeclaration(inputSchema);
     return buildObjectShape(
@@ -33,20 +33,20 @@ export function buildToolInputShape(
 }
 
 /**
- * Build the complete top-level schema registered for an MCP bridge tool.
+ * Build the complete top-level schema of an MCP tool or of one of its actions.
  *
- * Undeclared top-level arguments are preserved because the bridge runtime is
- * the authority for optional and forward-compatible parameters.
+ * Undeclared top-level arguments are refused: every schema comes from a host
+ * method declaration, and the host refuses keys its declaration does not name.
  *
- * @param inputSchema - Declarative input contract for one MCP tool.
- * @returns A loose Zod object that validates declared arguments.
+ * @param inputSchema - Declarative input contract for one MCP tool or action.
+ * @returns A strict Zod object that validates the declared arguments.
  * @throws When the input declaration is malformed.
  */
 export function buildToolInputSchema(
-    inputSchema: ToolDefinition["inputSchema"]
+    inputSchema: InputSchema
 ): z.ZodObject<Record<string, z.ZodTypeAny>> {
     return addRuntimeObjectSafetyCheck(
-        z.looseObject(buildToolInputShape(inputSchema)),
+        z.strictObject(buildToolInputShape(inputSchema)),
         "root"
     );
 }
@@ -149,14 +149,21 @@ function buildPropertySchemaUnchecked(
         case "union":
             schema = buildUnionSchema(property, path, activePaths);
             break;
-        case "array":
+        case "array": {
             if (!property.items) {
                 throw new Error(`${path} array must declare items`);
             }
-            schema = z.array(buildPropertySchema(property.items, `${path}[]`, activePaths));
+            const array = z.array(buildPropertySchema(property.items, `${path}[]`, activePaths));
+            schema = property.minItems === undefined ? array : array.min(property.minItems);
             break;
+        }
         case "object":
             schema = buildObjectSchema(property, path, activePaths);
+            break;
+        case "json":
+            // Any JSON value; the shared safety check still refuses prototype-sensitive keys,
+            // cycles and non-JSON values anywhere inside it.
+            schema = addRawObjectSafetyCheck(z.unknown(), path);
             break;
     }
 
@@ -183,7 +190,7 @@ function buildStringSchema(
     path: string
 ): z.ZodTypeAny {
     if (property.enum === undefined) {
-        return z.string();
+        return property.minLength === undefined ? z.string() : z.string().min(property.minLength);
     }
     const values = [...new Set(property.enum)];
     if (values.length === 0) {
@@ -285,7 +292,7 @@ function validateNumericBounds(
     }
 }
 
-function validateInputSchemaDeclaration(inputSchema: unknown): asserts inputSchema is ToolDefinition["inputSchema"] {
+function validateInputSchemaDeclaration(inputSchema: unknown): asserts inputSchema is InputSchema {
     if (!isRecord(inputSchema)) {
         throw new Error("root must be an object schema");
     }
@@ -309,7 +316,8 @@ function isKnownPropertyType(type: unknown): type is SchemaProperty["type"] {
         || type === "boolean"
     || type === "union"
         || type === "array"
-        || type === "object";
+        || type === "object"
+        || type === "json";
 }
 
 function validatePropertyKeywords(property: SchemaProperty, path: string): void {
@@ -319,11 +327,11 @@ function validatePropertyKeywords(property: SchemaProperty, path: string): void 
         "description",
         "default",
         ...(property.type === "union" ? ["anyOf"] : []),
-        ...(property.type === "string" ? ["enum"] : []),
+        ...(property.type === "string" ? ["enum", "minLength"] : []),
         ...(property.type === "number" || property.type === "integer"
             ? ["minimum", "maximum"]
             : []),
-        ...(property.type === "array" ? ["items"] : []),
+        ...(property.type === "array" ? ["items", "minItems"] : []),
         ...(property.type === "object"
             ? ["properties", "required", "additionalProperties"]
             : []),
@@ -359,9 +367,15 @@ function validatePropertyKeywords(property: SchemaProperty, path: string): void 
             throw new Error(`${path}.maximum must be a number`);
         }
     }
+    if (property.type === "string" && property.minLength !== undefined) {
+        validateCount(property.minLength, `${path}.minLength`);
+    }
     if (property.type === "array") {
         if (!isRecord(property.items)) {
             throw new Error(`${path}.items must be a property schema`);
+        }
+        if (property.minItems !== undefined) {
+            validateCount(property.minItems, `${path}.minItems`);
         }
     }
     if (property.type === "object") {
@@ -376,6 +390,12 @@ function validatePropertyKeywords(property: SchemaProperty, path: string): void 
         ) {
             throw new Error(`${path}.additionalProperties must be a boolean or property schema`);
         }
+    }
+}
+
+function validateCount(value: unknown, path: string): void {
+    if (typeof value !== "number" || !Number.isInteger(value) || value < 0) {
+        throw new Error(`${path} must be a non-negative integer`);
     }
 }
 

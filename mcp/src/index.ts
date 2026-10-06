@@ -6,23 +6,31 @@
  * MCP tools. Transport: stdio.
  */
 
+import { createRequire } from "node:module";
+
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { z } from "zod";
 
 import { CdpClient } from "./cdp-client.js";
 import { BridgeExecutor } from "./bridge-executor.js";
 import { registerBridgeTools } from "./bridge-tools.js";
 import { GuardedStdioServerTransport } from "./guarded-stdio-transport.js";
 import { logger } from "./logger.js";
-import { playbackTools, playbackMethodMap } from "./tools/playback.js";
-import { playbackExtTools, playbackExtMethodMap } from "./tools/playback-ext.js";
-import { playlistTools, playlistMethodMap } from "./tools/playlist.js";
-import { playlistExtTools, playlistExtMethodMap } from "./tools/playlist-ext.js";
-import { libraryTools, libraryMethodMap } from "./tools/library.js";
-import { artworkTools, artworkMethodMap } from "./tools/artwork.js";
-import { queueTools, queueMethodMap } from "./tools/queue.js";
-import { metadataTools, metadataMethodMap } from "./tools/metadata.js";
-import type { ToolDefinition } from "./types.js";
+import { registerPageTools } from "./page-tools.js";
+import { CallRateLimiter } from "./rate-limit.js";
+import { DEFAULT_MAX_IMAGE_BYTES, DEFAULT_MAX_RESPONSE_CHARS } from "./tool-results.js";
+import { bridgeTools } from "./generated/bridge-tools.js";
+
+const flag = (name: string) => process.env[name] === "1" || process.env[name] === "true";
+
+/** A positive integer environment variable, or the fallback when it is unset or not one. */
+function positiveInt(name: string, fallback: number): number {
+    const raw = process.env[name];
+    if (raw === undefined || raw === "") return fallback;
+    const value = Number(raw);
+    if (Number.isInteger(value) && value > 0) return value;
+    logger.warn(`ignoring ${name}: expected a positive integer`, { value: raw });
+    return fallback;
+}
 
 // ── CDP connection parameters ──
 const CDP_PORT = parseInt(process.env.FB2K_CDP_PORT || "9222", 10);
@@ -31,6 +39,15 @@ const CDP_HOST = process.env.FB2K_CDP_HOST || "localhost";
 // (popups, panels, overlays) share the debugging port.
 const CDP_TARGET_URL = process.env.FB2K_CDP_TARGET_URL || "";
 
+// ── Tool options ──
+const READ_ONLY = flag("FB2K_READ_ONLY");
+const ENABLE_EVAL = flag("FB2K_ENABLE_EVAL");
+const MAX_RESPONSE_CHARS = positiveInt("FB2K_MAX_RESPONSE_CHARS", DEFAULT_MAX_RESPONSE_CHARS);
+const MAX_IMAGE_BYTES = positiveInt("FB2K_MAX_IMAGE_BYTES", DEFAULT_MAX_IMAGE_BYTES);
+
+// The server reports the version of the package it ships in.
+const { version } = createRequire(import.meta.url)("../package.json") as { version: string };
+
 // ── Initialization ──
 const cdp = new CdpClient({
     host: CDP_HOST,
@@ -38,191 +55,37 @@ const cdp = new CdpClient({
     ...(CDP_TARGET_URL ? { targetUrlFilter: CDP_TARGET_URL } : {}),
 });
 const bridge = new BridgeExecutor(cdp);
+const limiter = new CallRateLimiter();
 
-// Merge all bridge method maps.
-const allMethodMaps: Record<string, string> = {
-    ...playbackMethodMap,
-    ...playbackExtMethodMap,
-    ...playlistMethodMap,
-    ...playlistExtMethodMap,
-    ...libraryMethodMap,
-    ...artworkMethodMap,
-    ...queueMethodMap,
-    ...metadataMethodMap,
-};
+const server = new McpServer({ name: "foo-ui-webview2-mcp", version });
 
-// Merge all tool definitions.
-const allBridgeTools: ToolDefinition[] = [
-    ...playbackTools,
-    ...playbackExtTools,
-    ...playlistTools,
-    ...playlistExtTools,
-    ...libraryTools,
-    ...artworkTools,
-    ...queueTools,
-    ...metadataTools,
+const tools = [
+    ...registerBridgeTools(server, bridge, bridgeTools, {
+        readOnly: READ_ONLY,
+        maxResponseChars: MAX_RESPONSE_CHARS,
+        maxImageBytes: MAX_IMAGE_BYTES,
+        limiter,
+    }),
+    ...registerPageTools(server, bridge, {
+        readOnly: READ_ONLY,
+        enableEval: ENABLE_EVAL,
+        maxResponseChars: MAX_RESPONSE_CHARS,
+        limiter,
+    }),
 ];
-
-// ── MCP Server ──
-
-const server = new McpServer({
-    name: "foo-ui-webview2-mcp",
-    version: "0.1.0",
-});
-
-// Register bridge API tools through the shared production registration path.
-registerBridgeTools(server, bridge, allBridgeTools, allMethodMaps);
-
-// ── UI testing tools (special handlers) ─────────────────
-
-server.registerTool(
-    "fb2k_screenshot",
-    {
-        description: "Take a screenshot of the WebView2 page (returns base64 PNG)",
-        inputSchema: { fullPage: z.boolean().optional() },
-    },
-    async ({ fullPage }) => {
-        try {
-            const data = await bridge.screenshot({ fullPage });
-            return {
-                content: [{ type: "image" as const, data, mimeType: "image/png" }],
-            };
-        } catch (err) {
-            return {
-                content: [
-                    {
-                        type: "text" as const,
-                        text: `Screenshot failed: ${err instanceof Error ? err.message : err}`,
-                    },
-                ],
-                isError: true,
-            };
-        }
-    }
-);
-
-server.registerTool(
-    "fb2k_dom_snapshot",
-    {
-        description: "Get a DOM snapshot of the current page (simplified accessibility tree)",
-    },
-    async () => {
-        try {
-            const snapshot = await cdp.evaluate(`
-                (function() {
-                    function walk(el, depth) {
-                        const indent = '  '.repeat(depth);
-                        const tag = el.tagName?.toLowerCase() || '#text';
-                        const id = el.id ? '#' + el.id : '';
-                        const cls = el.className && typeof el.className === 'string'
-                            ? '.' + el.className.trim().split(/\\s+/).join('.')
-                            : '';
-                        const text = el.childNodes.length === 1 && el.childNodes[0].nodeType === 3
-                            ? ' "' + el.childNodes[0].textContent.trim().substring(0, 80) + '"'
-                            : '';
-                        let result = indent + tag + id + cls + text + '\\n';
-                        for (const child of el.children || []) {
-                            result += walk(child, depth + 1);
-                        }
-                        return result;
-                    }
-                    return walk(document.documentElement, 0);
-                })()
-            `);
-            return {
-                content: [{ type: "text" as const, text: snapshot as string }],
-            };
-        } catch (err) {
-            return {
-                content: [
-                    {
-                        type: "text" as const,
-                        text: `DOM snapshot failed: ${err instanceof Error ? err.message : err}`,
-                    },
-                ],
-                isError: true,
-            };
-        }
-    }
-);
-
-// ── Evaluate tool (opt-in) ──
-
-const ENABLE_EVAL = process.env.FB2K_ENABLE_EVAL === "1" || process.env.FB2K_ENABLE_EVAL === "true";
-
-if (ENABLE_EVAL) {
-    server.registerTool(
-        "fb2k_evaluate",
-        {
-            description: "Execute a JavaScript expression in the WebView2 page (dev/debug only, requires FB2K_ENABLE_EVAL=1)",
-            inputSchema: { expression: z.string() },
-        },
-        async ({ expression }) => {
-            try {
-                const result = await cdp.evaluate(expression);
-                return {
-                    content: [
-                        {
-                            type: "text" as const,
-                            text: JSON.stringify(result, null, 2),
-                        },
-                    ],
-                };
-            } catch (err) {
-                return {
-                    content: [
-                        {
-                            type: "text" as const,
-                            text: `Eval failed: ${err instanceof Error ? err.message : err}`,
-                        },
-                    ],
-                    isError: true,
-                };
-            }
-        }
-    );
-}
-
-server.registerTool(
-    "fb2k_console_messages",
-    {
-        description: "Get recent console log messages from the WebView2 page",
-    },
-    async () => {
-        try {
-            const messages = await bridge.getConsoleMessages();
-            return {
-                content: [
-                    {
-                        type: "text" as const,
-                        text: messages.length
-                            ? messages
-                                  .map((m) => `[${m.level}] ${m.text}`)
-                                  .join("\n")
-                            : "(no console messages captured)",
-                    },
-                ],
-            };
-        } catch (err) {
-            return {
-                content: [
-                    {
-                        type: "text" as const,
-                        text: `Console fetch failed: ${err instanceof Error ? err.message : err}`,
-                    },
-                ],
-                isError: true,
-            };
-        }
-    }
-);
 
 // ── Startup ──
 
 async function main() {
     const transport = new GuardedStdioServerTransport();
     await server.connect(transport);
-    logger.info("Server started", { cdpHost: CDP_HOST, cdpPort: CDP_PORT });
+    logger.info("Server started", {
+        version,
+        cdpHost: CDP_HOST,
+        cdpPort: CDP_PORT,
+        readOnly: READ_ONLY,
+        tools: tools.length,
+    });
 
     // Pre-connect CDP to remove cold-start latency on the first tool call.
     cdp.connect().then(() => {

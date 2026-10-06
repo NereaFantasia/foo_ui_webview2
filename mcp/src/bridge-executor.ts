@@ -1,11 +1,15 @@
 /**
  * Bridge executor.
  *
- * Translates MCP tool calls into `fb2k.invoke()` CDP calls, mapping
- * arguments and normalizing return values.
+ * Calls host methods through `fb2k.invoke()` over CDP and turns their
+ * results into MCP tool results. Arguments arrive already checked against
+ * the method's schema (see `bridge-tools.ts`).
  */
 
+import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
+
 import { CdpClient } from "./cdp-client.js";
+import { errorResult, jsonResult, pictureResult, type ResultLimits } from "./tool-results.js";
 
 /**
  * Executes bridge API calls over CDP and normalizes their results into
@@ -73,10 +77,12 @@ export class BridgeExecutor {
     }
 
     /**
-     * Retrieve buffered console messages from the page.
+     * Retrieve the page's most recent console messages, oldest first.
+     *
+     * @param limit - Most messages to return; omitted, the client's default.
      */
-    async getConsoleMessages(): Promise<Array<{ level: string; text: string }>> {
-        return this.cdp.getConsoleMessages();
+    async getConsoleMessages(limit?: number): Promise<Array<{ level: string; text: string }>> {
+        return this.cdp.getConsoleMessages(limit);
     }
 }
 
@@ -104,31 +110,31 @@ export function formatBridgeFailure(result: BridgeResult): string {
     return lines.join("\n");
 }
 
+/** How a bridge tool handler shapes a successful result. */
+export interface BridgeResultOptions extends ResultLimits {
+    /**
+     * The result field that holds a picture as a `data:<mime>;base64,` URL;
+     * the picture is sent as an image rather than inside the JSON text.
+     */
+    image?: string;
+}
+
 /**
- * Create the generic MCP handler used by bridge-backed tools.
+ * Create the handler that calls one bridge method with already validated
+ * arguments: the result as compact JSON text, with the picture of
+ * `options.image` as an image, or the host failure as a tool execution error.
  */
 export function createBridgeToolHandler(
     bridge: Pick<BridgeExecutor, "call">,
-    method: string
-) {
-    return async (params: Record<string, unknown>) => {
+    method: string,
+    options: BridgeResultOptions = {}
+): (params: Record<string, unknown>) => Promise<CallToolResult> {
+    return async (params) => {
         const result = await bridge.call(method, params);
-        if (!result.success) {
-            return {
-                content: [
-                    { type: "text" as const, text: formatBridgeFailure(result) },
-                ],
-                isError: true,
-            };
-        }
-        return {
-            content: [
-                {
-                    type: "text" as const,
-                    text: JSON.stringify(result.data, null, 2),
-                },
-            ],
-        };
+        if (!result.success) return errorResult(formatBridgeFailure(result));
+        return options.image
+            ? pictureResult(result.data, options.image, options)
+            : jsonResult(result.data, options.maxResponseChars);
     };
 }
 

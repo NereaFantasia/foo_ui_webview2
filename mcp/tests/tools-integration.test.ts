@@ -1,321 +1,251 @@
 /**
- * MCP 工具集成测试 — 错误路径与边界情况
+ * 生成的 Bridge 工具集成测试
  *
- * 使用 Mock CDP 验证 MCP Server 的完整工具调用链路：
- * - 工具定义完整性（每个工具有 name/description/schema）
- * - 工具名 → bridge 方法映射完整性
- * - 参数 schema 结构正确性
- * - 方法映射一致性
+ * 工具定义由 scripts/api-schema/generate.mjs 从宿主方法声明与 mcp/tool-table.json 生成，
+ * 生成器负责核对方法存在、参数对得上、注解由方法的 @effect 算出。这里核对生成物本身：
+ * - 工具面：哪些工具、各自的 action、注解，以及不再暴露的方法
+ * - 合并 schema 与逐 action schema 的关系
+ * - 覆盖表里比声明更严的限制（必填、数值范围）确实落在对应 action 上
  */
 
 import { describe, it, expect } from "vitest";
 
-import { playbackTools, playbackMethodMap } from "../src/tools/playback.js";
-import { playbackExtTools, playbackExtMethodMap } from "../src/tools/playback-ext.js";
-import { playlistTools, playlistMethodMap } from "../src/tools/playlist.js";
-import { playlistExtTools, playlistExtMethodMap } from "../src/tools/playlist-ext.js";
-import { libraryTools, libraryMethodMap } from "../src/tools/library.js";
-import { artworkTools, artworkMethodMap } from "../src/tools/artwork.js";
-import { queueTools, queueMethodMap } from "../src/tools/queue.js";
-import { metadataTools, metadataMethodMap } from "../src/tools/metadata.js";
+import { bridgeTools } from "../src/generated/bridge-tools.js";
 import { buildToolInputSchema } from "../src/tool-schema.js";
-import type { ToolDefinition } from "../src/types.js";
+import type { InputSchema, SchemaProperty, ToolDefinition } from "../src/types.js";
 
-const allTools: ToolDefinition[] = [
-    ...playbackTools,
-    ...playbackExtTools,
-    ...playlistTools,
-    ...playlistExtTools,
-    ...libraryTools,
-    ...artworkTools,
-    ...queueTools,
-    ...metadataTools,
-];
+function tool(name: string): ToolDefinition {
+    const found = bridgeTools.find((t) => t.name === name);
+    if (!found) throw new Error(`missing generated bridge tool ${name}`);
+    return found;
+}
 
-const allMethodMaps: Record<string, string> = {
-    ...playbackMethodMap,
-    ...playbackExtMethodMap,
-    ...playlistMethodMap,
-    ...playlistExtMethodMap,
-    ...libraryMethodMap,
-    ...artworkMethodMap,
-    ...queueMethodMap,
-    ...metadataMethodMap,
-};
+function action(api: string): InputSchema {
+    const owner = bridgeTools.find((t) => api in t.actions);
+    if (!owner) throw new Error(`no generated tool has the action ${api}`);
+    return owner.actions[api].inputSchema;
+}
 
-// ── 工具定义完整性 ──────────────────────────
+function property(api: string, key: string): SchemaProperty {
+    const found = action(api).properties[key];
+    if (!found) throw new Error(`${api} has no parameter ${key}`);
+    return found;
+}
 
-describe("工具定义完整性", () => {
-    for (const tool of allTools) {
-        describe(tool.name, () => {
-            it("有非空 description", () => {
-                expect(tool.description).toBeTruthy();
-                expect(tool.description.length).toBeGreaterThan(0);
+function bounds(prop: SchemaProperty): { minimum?: number; maximum?: number } {
+    if (prop.type !== "integer" && prop.type !== "number") {
+        throw new Error(`expected a numeric parameter, got ${prop.type}`);
+    }
+    return { minimum: prop.minimum, maximum: prop.maximum };
+}
+
+const keys = (api: string) => Object.keys(action(api).properties);
+
+// ── 工具面 ──────────────────────────────────
+
+describe("工具面", () => {
+    it("10 个工具，按命名空间与读写性质分组", () => {
+        expect(bridgeTools.map((t) => t.name)).toEqual([
+            "fb2k_playback_read",
+            "fb2k_playback_control",
+            "fb2k_playlist_read",
+            "fb2k_playlist_manage",
+            "fb2k_playlist_edit",
+            "fb2k_playlist_select",
+            "fb2k_library_read",
+            "fb2k_queue_edit",
+            "fb2k_track_read",
+            "fb2k_track_write",
+        ]);
+    });
+
+    it("共 90 个 action，每个宿主方法只属于一个工具", () => {
+        const all = bridgeTools.flatMap((t) => Object.keys(t.actions));
+        expect(all).toHaveLength(90);
+        expect(new Set(all).size).toBe(all.length);
+    });
+
+    it("废弃、别名与被覆盖的方法不再暴露", () => {
+        const all = new Set(bridgeTools.flatMap((t) => Object.keys(t.actions)));
+        for (const api of [
+            "playlist.focusTrack",
+            "playlist.getFocusTrack",
+            "queue.flush",
+            "metadata.removeField",
+            "playlist.getCount",
+            "playlist.getTrackCount",
+            "playlist.isLocked",
+            "playlist.isAutoplaylist",
+            "playlist.getAutoplaylistQuery",
+            "queue.getCount",
+            "metadata.readByPath",
+            "metadata.removeTag",
+            "playlist.addPathsAsync",
+        ]) {
+            expect(all.has(api), api).toBe(false);
+        }
+    });
+
+    it("注解由方法的 @effect 算出：读工具只读，删除或覆盖数据的工具标破坏性", () => {
+        const annotations = Object.fromEntries(bridgeTools.map((t) => [t.name, t.annotations]));
+        const read = { readOnlyHint: true, openWorldHint: false };
+        expect(annotations).toEqual({
+            fb2k_playback_read: read,
+            fb2k_playlist_read: read,
+            fb2k_library_read: read,
+            fb2k_track_read: read,
+            fb2k_playback_control: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
+            fb2k_playlist_select: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+            fb2k_playlist_manage: { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: false },
+            fb2k_playlist_edit: { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: false },
+            fb2k_queue_edit: { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: false },
+            fb2k_track_write: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false },
+        });
+    });
+});
+
+// ── 定义完整性 ──────────────────────────────
+
+describe("定义完整性", () => {
+    for (const t of bridgeTools) {
+        describe(t.name, () => {
+            it("描述列出每个 action", () => {
+                for (const api of Object.keys(t.actions)) {
+                    expect(t.description).toContain(`- ${api}`);
+                }
             });
 
-            it("inputSchema.type 是 'object'", () => {
-                expect(tool.inputSchema.type).toBe("object");
+            it("合并 schema 能建出，action 必填且枚举正好是全部 action", () => {
+                expect(() => buildToolInputSchema(t.inputSchema)).not.toThrow();
+                expect(t.inputSchema.required).toEqual(["action"]);
+                const actionProp = t.inputSchema.properties.action;
+                expect(actionProp.type === "string" ? actionProp.enum : undefined).toEqual(Object.keys(t.actions));
             });
 
-            it("inputSchema.properties 是对象", () => {
-                expect(tool.inputSchema.properties).toBeDefined();
-                expect(typeof tool.inputSchema.properties).toBe("object");
+            it("合并 schema 的参数正好是各 action 参数的并集，且都有说明", () => {
+                const union = new Set(Object.values(t.actions).flatMap((a) => Object.keys(a.inputSchema.properties)));
+                expect(new Set(Object.keys(t.inputSchema.properties))).toEqual(new Set(["action", ...union]));
+                for (const [key, prop] of Object.entries(t.inputSchema.properties)) {
+                    expect(prop.description, key).toBeTruthy();
+                }
             });
 
-            it("有对应的 bridge 方法映射", () => {
-                expect(allMethodMaps[tool.name]).toBeDefined();
-            });
-
-            // 检查 required 字段中的 key 都在 properties 中
-            if (tool.inputSchema.required) {
-                it("required 字段都在 properties 中", () => {
-                    for (const key of tool.inputSchema.required!) {
-                        expect(
-                            tool.inputSchema.properties[key],
-                            `required key '${key}' not in properties`
-                        ).toBeDefined();
+            it("每个 action 的 schema 能建出，required 都在 properties 里", () => {
+                for (const [api, a] of Object.entries(t.actions)) {
+                    expect(() => buildToolInputSchema(a.inputSchema), api).not.toThrow();
+                    for (const key of a.inputSchema.required ?? []) {
+                        expect(a.inputSchema.properties[key], `${api}.${key}`).toBeDefined();
                     }
-                });
-            }
-
-            // 检查每个 property 的 type 有效
-            for (const [key, prop] of Object.entries(tool.inputSchema.properties)) {
-                it(`属性 '${key}' 有有效的 type`, () => {
-                    expect([
-                        "string",
-                        "number",
-                        "integer",
-                        "boolean",
-                        "union",
-                        "array",
-                        "object",
-                    ]).toContain(prop.type);
-                });
-
-                it(`属性 '${key}' 有 description`, () => {
-                    expect(prop.description).toBeTruthy();
-                });
-            }
+                }
+            });
         });
     }
 });
 
-// ── 方法映射一致性 ──────────────────────────
+// ── 覆盖表里比声明更严的限制 ────────────────
 
-describe("方法映射一致性", () => {
-    it("每个工具都有且只有一个方法映射", () => {
-        const toolNames = allTools.map((t) => t.name);
-        const mapNames = Object.keys(allMethodMaps);
-
-        // 工具定义和映射表的 key 集合应该一致
-        expect(new Set(toolNames)).toEqual(new Set(mapNames));
+describe("覆盖表的限制", () => {
+    it("playback.setPosition 的 position 必填且不能为负", () => {
+        expect(bounds(property("playback.setPosition", "position")).minimum).toBe(0);
+        expect(action("playback.setPosition").required).toContain("position");
     });
 
-    it("方法映射格式正确（namespace.method）", () => {
-        for (const [, method] of Object.entries(allMethodMaps)) {
-            expect(method).toMatch(
-                /^[a-z]+\.[a-z][a-zA-Z]*$/,
-                `方法名 '${method}' 不符合 namespace.method 格式`
-            );
-        }
+    it("playback.setVolume 的 volume 是 0 到 100 的百分比", () => {
+        expect(bounds(property("playback.setVolume", "volume"))).toEqual({ minimum: 0, maximum: 100 });
     });
 
-    it("工具名格式正确（fb2k_namespace_method）", () => {
-        for (const tool of allTools) {
-            expect(tool.name).toMatch(
-                /^fb2k_[a-z]+_[a-z_]+$/,
-                `工具名 '${tool.name}' 不符合 fb2k_namespace_method 格式`
-            );
-        }
-    });
-});
-
-// ── 命名空间分组 ────────────────────────────
-
-describe("命名空间分组", () => {
-    it("playback 有 12 个工具", () => {
-        expect(playbackTools).toHaveLength(12);
+    it("playlist.getTracks、library.search 与 library.getAlbums 一页最多 500 行", () => {
+        expect(bounds(property("playlist.getTracks", "count")).maximum).toBe(500);
+        expect(bounds(property("library.search", "limit")).maximum).toBe(500);
+        expect(bounds(property("library.getAlbums", "limit")).maximum).toBe(500);
     });
 
-    it("playback-ext 有 13 个工具", () => {
-        expect(playbackExtTools).toHaveLength(13);
+    it("library.getAlbums 的 limit 仍可为 0，只取 total", () => {
+        const albums = buildToolInputSchema(action("library.getAlbums"));
+        expect(albums.parse({ limit: 0 })).toMatchObject({ limit: 0 });
+        expect(() => albums.parse({ limit: 501 })).toThrow();
     });
 
-    it("playlist 有 7 个工具", () => {
-        expect(playlistTools).toHaveLength(7);
+    it("library.getArtists 的 limit 上限取声明的默认值 1000，省略时照旧是 1000", () => {
+        expect(bounds(property("library.getArtists", "limit")).maximum).toBe(1000);
+        const artists = buildToolInputSchema(action("library.getArtists"));
+        expect(artists.parse({})).toMatchObject({ limit: 1000 });
+        expect(() => artists.parse({ limit: 1001 })).toThrow();
     });
 
-    it("playlist-ext 有 40 个工具", () => {
-        expect(playlistExtTools).toHaveLength(40);
+    it("library.search 必须给出 query，limit 的默认值取自声明", () => {
+        expect(action("library.search").required).toContain("query");
+        expect(buildToolInputSchema(action("library.search")).parse({ query: "artist IS Mili" }))
+            .toEqual({ query: "artist IS Mili", offset: 0, limit: 100 });
     });
 
-    it("library 有 4 个工具", () => {
-        expect(libraryTools).toHaveLength(4);
+    it("声明里的可选参数照常暴露，只有会内联封面的两个与 playlist.remove 的 playlistGuid 不暴露", () => {
+        expect(keys("library.getAlbums")).toEqual([
+            "sort",
+            "query",
+            "offset",
+            "limit",
+            "includeTracks",
+            "useCache",
+        ]);
+        expect(keys("library.getArtists")).toEqual(["sort", "limit", "includeAlbums"]);
+        expect(keys("library.search")).toContain("fields");
+        expect(keys("playlist.getTracks")).toEqual([
+            "playlist",
+            "playlistGuid",
+            "start",
+            "count",
+            "formats",
+            "fields",
+        ]);
+        expect(keys("playlist.playTrack")).toEqual([
+            "playlist",
+            "playlistGuid",
+            "index",
+            "deferred",
+            "muted",
+        ]);
+        // playlist 必填时再给 playlistGuid 就是两者都给，宿主以 INVALID_PARAMS 拒绝
+        expect(keys("playlist.remove")).toEqual(["playlist"]);
+        expect(keys("playlist.create")).toEqual(["name", "position"]);
+        expect(keys("metadata.write")).toEqual(["path", "tags", "cueIndex"]);
     });
 
-    it("artwork 有 2 个工具", () => {
-        expect(artworkTools).toHaveLength(2);
+    it("合并 schema 不暴露会内联封面的参数", () => {
+        const merged = Object.keys(tool("fb2k_library_read").inputSchema.properties);
+        expect(merged).not.toContain("includeCover");
+        expect(merged).not.toContain("coverMaxSize");
     });
 
-    it("queue 有 8 个工具", () => {
-        expect(queueTools).toHaveLength(8);
+    it("必须点名目标的 action", () => {
+        expect(action("playlist.playTrack").required).toEqual(["index"]);
+        expect(action("playlist.create").required).toEqual(["name"]);
+        expect(action("playlist.remove").required).toEqual(["playlist"]);
+        expect(action("playlist.setFocusedTrack").required).toEqual(["index"]);
     });
 
-    it("metadata 有 12 个工具", () => {
-        expect(metadataTools).toHaveLength(12);
+    it("只有返回 data URL 封面的两个 action 把 dataUrl 当图片返回，说明里也写明", () => {
+        const withImage = bridgeTools.flatMap((t) =>
+            Object.entries(t.actions).filter(([, a]) => a.image).map(([api, a]) => [api, a.image]));
+        expect(withImage).toEqual([
+            ["artwork.getForTrack", "dataUrl"],
+            ["artwork.getCurrent", "dataUrl"],
+        ]);
+        const description = tool("fb2k_track_read").description;
+        expect(description).toContain("- artwork.getCurrent(type?): Get the cover art of the currently playing track; the picture comes back as an image");
+        expect(description).not.toMatch(/base64/);
     });
 
-    it("总计 98 个 bridge 工具", () => {
-        expect(allTools).toHaveLength(98);
-    });
-});
-
-// ── 参数校验边界 ────────────────────────────
-
-describe("参数校验边界", () => {
-    it("playback.setPosition 的 seconds 有 minimum 约束", () => {
-        const tool = playbackTools.find(
-            (t) => t.name === "fb2k_playback_set_position"
-        )!;
-        expect(tool.inputSchema.properties.seconds.minimum).toBe(0);
-        expect(tool.inputSchema.required).toContain("seconds");
-    });
-
-    it("playback.setVolume 的 volume 有 min/max 约束", () => {
-        const tool = playbackTools.find(
-            (t) => t.name === "fb2k_playback_set_volume"
-        )!;
-        expect(tool.inputSchema.properties.volume.minimum).toBe(0);
-        expect(tool.inputSchema.properties.volume.maximum).toBe(100);
-        expect(tool.inputSchema.required).toContain("volume");
-    });
-
-    it("playlist.getTracks 的 count 有 max 约束", () => {
-        const tool = playlistTools.find(
-            (t) => t.name === "fb2k_playlist_get_tracks"
-        )!;
-        expect(tool.inputSchema.properties.count.maximum).toBe(500);
-    });
-
-    it("library.search 的 query 是必填", () => {
-        const tool = libraryTools.find(
-            (t) => t.name === "fb2k_library_search"
-        )!;
-        expect(tool.inputSchema.required).toContain("query");
-    });
-
-    it("library.search 与 Bridge 默认值 100 对齐且不注入 MCP default", () => {
-        const tool = libraryTools.find(
-            (t) => t.name === "fb2k_library_search"
-        )!;
-        const limit = tool.inputSchema.properties.limit;
-
-        expect(limit.description).toContain("default 100");
-        expect(limit.default).toBeUndefined();
-        expect(buildToolInputSchema(tool.inputSchema).parse({ query: "artist IS Mili" }))
-            .toEqual({ query: "artist IS Mili" });
-    });
-
-    it("artwork.getForTrack 的 path 是必填", () => {
-        const tool = artworkTools.find(
-            (t) => t.name === "fb2k_artwork_get_for_track"
-        )!;
-        expect(tool.inputSchema.required).toContain("path");
-    });
-
-    it("artwork 封面类型枚举完整", () => {
-        const tool = artworkTools.find(
-            (t) => t.name === "fb2k_artwork_get_current"
-        )!;
-        expect(tool.inputSchema.properties.type.enum).toEqual([
+    it("封面类型枚举取自声明", () => {
+        const type = property("artwork.getCurrent", "type");
+        expect(type.type === "string" ? type.enum : undefined).toEqual([
             "front",
+            "cover_front",
             "back",
+            "cover_back",
             "disc",
             "icon",
             "artist",
         ]);
-    });
-
-    it("playlist.create 的 name 是必填 string", () => {
-        const tool = playlistTools.find(
-            (t) => t.name === "fb2k_playlist_create"
-        )!;
-        expect(tool.inputSchema.required).toContain("name");
-        expect(tool.inputSchema.properties.name.type).toBe("string");
-    });
-
-    it("playlist.playTrack 的 index 是必填，playlist 是可选", () => {
-        const tool = playlistTools.find(
-            (t) => t.name === "fb2k_playlist_play_track"
-        )!;
-        expect(tool.inputSchema.required).toContain("index");
-        expect(tool.inputSchema.required).not.toContain("playlist");
-    });
-});
-
-// ── 无参数工具 ──────────────────────────────
-
-describe("无参数工具", () => {
-    const noParamTools = allTools.filter(
-        (t) => Object.keys(t.inputSchema.properties).length === 0
-    );
-
-    it("无参数工具的 properties 是空对象", () => {
-        for (const tool of noParamTools) {
-            expect(Object.keys(tool.inputSchema.properties)).toHaveLength(0);
-        }
-    });
-
-    it("无参数工具没有 required 字段或为空", () => {
-        for (const tool of noParamTools) {
-            if (tool.inputSchema.required) {
-                expect(tool.inputSchema.required).toHaveLength(0);
-            }
-        }
-    });
-
-    // 预期的无参工具列表
-    const expectedNoParam = [
-        // playback P0
-        "fb2k_playback_play",
-        "fb2k_playback_pause",
-        "fb2k_playback_stop",
-        "fb2k_playback_next",
-        "fb2k_playback_previous",
-        "fb2k_playback_play_pause",
-        "fb2k_playback_get_state",
-        "fb2k_playback_get_current_track",
-        "fb2k_playback_get_position",
-        "fb2k_playback_get_volume",
-        // playback-ext
-        "fb2k_playback_toggle_mute",
-        "fb2k_playback_volume_up",
-        "fb2k_playback_volume_down",
-        "fb2k_playback_get_playback_order",
-        "fb2k_playback_get_stop_after_current",
-        "fb2k_playback_toggle_stop_after_current",
-        "fb2k_playback_get_playing_playlist",
-        "fb2k_playback_random",
-        // playlist P0
-        "fb2k_playlist_get_all",
-        "fb2k_playlist_get_active",
-        // playlist-ext
-        "fb2k_playlist_get_count",
-        "fb2k_playlist_get_playing",
-        "fb2k_playlist_get_available_columns",
-        // library
-        "fb2k_library_get_albums",
-        "fb2k_library_get_artists",
-        "fb2k_library_get_stats",
-        // queue
-        "fb2k_queue_get",
-        "fb2k_queue_clear",
-        "fb2k_queue_get_count",
-        "fb2k_queue_flush",
-    ];
-
-    it(`有 ${expectedNoParam.length} 个无参数工具`, () => {
-        const names = noParamTools.map((t) => t.name);
-        expect(new Set(names)).toEqual(new Set(expectedNoParam));
     });
 });

@@ -61,7 +61,8 @@ declare module "chrome-remote-interface" {
             }): Promise<void>;
             clearDeviceMetricsOverride(): Promise<void>;
         };
-        on(event: string, callback: () => void): void;
+        /** Listens for `disconnect` or a protocol event such as `Runtime.consoleAPICalled`. */
+        on(event: string, callback: (params: unknown) => void): void;
         close(): Promise<void>;
     }
 

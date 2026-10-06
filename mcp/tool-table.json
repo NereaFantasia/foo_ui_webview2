@@ -1,0 +1,457 @@
+{
+  "tools": {
+    "fb2k_playback_read": {
+      "description": "Read what foobar2000 is playing: transport state, current track, position, volume, playback order, stop-after-current, where the playing track sits, and the playback queue. Changes nothing.",
+      "zh": "读取 foobar2000 的播放状态：播放、暂停或停止，当前曲目，位置，音量，播放顺序，播完当前曲目后是否停止，正在播放的曲目所在的位置，以及播放队列。不改动任何东西。",
+      "actions": {
+        "playback.getState": {
+          "description": "Get current playback state (stopped/paused/playing) and whether seeking/pausing is available"
+        },
+        "playback.getCurrentTrack": {
+          "description": "Get detailed info of the currently playing track (title, artist, album, duration, path, etc.)"
+        },
+        "playback.getPosition": {
+          "description": "Get current playback position and total duration in seconds"
+        },
+        "playback.getVolume": {
+          "description": "Get current volume (0-100 linear scale) and mute state"
+        },
+        "playback.getPlaybackOrder": {
+          "description": "Get current playback order (default/repeat-playlist/repeat-track/random/shuffle-tracks/shuffle-albums/shuffle-folders)"
+        },
+        "playback.getStopAfterCurrent": {
+          "description": "Get stop-after-current toggle state"
+        },
+        "playback.getCurrentTrackIndex": {
+          "description": "Get current playing track position (playlist index + item index)"
+        },
+        "playback.getPlayingPlaylist": {
+          "description": "Get the playing playlist index and name"
+        },
+        "queue.get": {
+          "description": "Get current playback queue contents"
+        }
+      }
+    },
+    "fb2k_playback_control": {
+      "description": "Control playback: start, pause, stop, skip, seek, set or step the volume, mute, pick the playback order, stop after the current track, and play a given file or playlist row.",
+      "zh": "控制播放：开始、暂停、停止、切歌、定位，设置或增减音量，静音，选择播放顺序，播完当前曲目后停止，以及播放指定的文件或播放列表里的某一行。",
+      "params": {
+        "playlist": "For `playlist.playTrack`: the playlist index; omitted, the active playlist.",
+        "playlistGuid": "For `playlist.playTrack`: the playlist's `guid` from `playlist.getAll`, in place of `playlist`; it keeps naming the same playlist when others are added, removed or moved. A GUID no playlist has fails with `NOT_FOUND`.",
+        "muted": "`playback.mute`: `true` to mute, `false` to unmute. `playlist.playTrack`: mute before starting; the mute stays afterwards."
+      },
+      "actions": {
+        "playback.play": {
+          "description": "Start playback of the current track"
+        },
+        "playback.pause": {
+          "description": "Pause playback"
+        },
+        "playback.stop": {
+          "description": "Stop playback"
+        },
+        "playback.next": {
+          "description": "Skip to the next track"
+        },
+        "playback.previous": {
+          "description": "Go to the previous track"
+        },
+        "playback.playPause": {
+          "description": "Toggle play/pause state"
+        },
+        "playback.random": {
+          "description": "Play a random track"
+        },
+        "playback.playPath": {
+          "description": "Play a single track by file path, supports subsong format (path|subsong:N)"
+        },
+        "playlist.playTrack": {
+          "description": "Play a specific track in a playlist",
+          "required": [
+            "index"
+          ],
+          "why": "The AI client names the target explicitly instead of relying on the host default."
+        },
+        "playback.setPosition": {
+          "description": "Seek to a specific playback position",
+          "bounds": {
+            "position": {
+              "minimum": 0
+            }
+          },
+          "why": "A negative `position` is refused before the call."
+        },
+        "playback.setVolume": {
+          "description": "Set the playback volume",
+          "bounds": {
+            "volume": {
+              "minimum": 0,
+              "maximum": 100
+            }
+          },
+          "why": "`volume` is a percentage."
+        },
+        "playback.volumeUp": {
+          "description": "Increase volume by one step"
+        },
+        "playback.volumeDown": {
+          "description": "Decrease volume by one step"
+        },
+        "playback.mute": {
+          "description": "Set mute state"
+        },
+        "playback.toggleMute": {
+          "description": "Toggle mute state"
+        },
+        "playback.setPlaybackOrder": {
+          "description": "Set playback order by index (order) or by name (name); give exactly one"
+        },
+        "playback.setStopAfterCurrent": {
+          "description": "Set stop-after-current toggle"
+        },
+        "playback.toggleStopAfterCurrent": {
+          "description": "Toggle stop-after-current"
+        }
+      }
+    },
+    "fb2k_playlist_read": {
+      "description": "Read playlists: the list of playlists (index, guid, name, track count, whether active, playing, locked or an autoplaylist), a page of one playlist's tracks or the rows picked by number, the rows whose tracks match a query, its selection and focus, its lock and autoplaylist details, and the columns the playlist view offers. Changes nothing.",
+      "zh": "读取播放列表：播放列表清单（每项带索引、guid、名称、曲目数，以及是否活动、正在播放、带锁或自动播放列表），某个播放列表的一页曲目或按行号挑出的行、曲目符合查询的行、选中项与焦点，锁与自动播放列表的详情，以及播放列表视图可用的列。不改动任何东西。",
+      "params": {
+        "playlist": "Playlist index; omitted, the active playlist.",
+        "playlistGuid": "The playlist's `guid` from `playlist.getAll`, in place of `playlist`; it keeps naming the same playlist when others are added, removed or moved, which an index does not. Give one of the two. A GUID no playlist has answers an empty result in `playlist.getTracks`, `playlist.getTracksAt` and `playlist.getFocusedTrack`, and fails with `NOT_FOUND` elsewhere.",
+        "formats": "Extra columns, each a Title Formatting pattern under a name of your choosing; every row carries their values under `formats`, in projected rows too.",
+        "fields": "Keys each row carries besides `index`; omitted, the whole row. The names are those `library.query` takes; an unknown name fails with `INVALID_PARAMS` and is listed in `details.unknownFields`."
+      },
+      "actions": {
+        "playlist.getAll": {
+          "description": "Get names, track counts, and active/playing status of all playlists"
+        },
+        "playlist.getActive": {
+          "description": "Get details of the currently active playlist"
+        },
+        "playlist.getPlaying": {
+          "description": "Get currently playing playlist details"
+        },
+        "playlist.getTracks": {
+          "description": "Get tracks from a playlist (supports pagination)",
+          "bounds": {
+            "count": {
+              "minimum": 1,
+              "maximum": 500
+            }
+          },
+          "why": "`count` is capped at 500 so one call cannot flood the client's context."
+        },
+        "playlist.getTracksAt": {
+          "description": "Get tracks of a playlist by row number, such as the rows playlist.getMatchingRows returns"
+        },
+        "playlist.getMatchingRows": {
+          "description": "Get the row numbers of a playlist whose tracks match a foobar2000 query (e.g. artist HAS beatles)"
+        },
+        "playlist.getSelectedTracks": {
+          "description": "Get info of all selected tracks in a playlist"
+        },
+        "playlist.getSelection": {
+          "description": "Get indices of selected tracks in a playlist"
+        },
+        "playlist.getFocusedTrack": {
+          "description": "Get focused track index in a playlist"
+        },
+        "playlist.getLockInfo": {
+          "description": "Get playlist lock information"
+        },
+        "playlist.getAutoplaylistInfo": {
+          "description": "Get autoplaylist details (flags, source, etc.)"
+        },
+        "playlist.getAvailableColumns": {
+          "description": "Get available DUI playlist column definitions (ID, name, format, sort pattern)"
+        }
+      }
+    },
+    "fb2k_playlist_manage": {
+      "description": "Manage the playlists themselves: create, remove, rename, duplicate and reorder them, and turn a playlist into an autoplaylist that a library query fills, or back into a normal one.",
+      "zh": "管理播放列表本身：新建、删除、改名、复制与重排，以及把播放列表转成由媒体库查询填充的自动播放列表，或转回普通播放列表。",
+      "params": {
+        "name": "`playlist.create` and `playlist.createAutoplaylist`: name of the new playlist. `playlist.rename`: the new name. `playlist.duplicate`: name of the copy; omitted, the original name followed by ` (Copy)`.",
+        "playlist": "Index of the playlist to act on; omitted, the active playlist, except that `playlist.rename` needs this or `playlistGuid`. An index past the last playlist fails with `INVALID_INDEX`.",
+        "playlistGuid": "The playlist's `guid` from `playlist.getAll`, in place of `playlist`; it keeps naming the same playlist when others are added, removed or moved, which an index does not. Give one of the two."
+      },
+      "actions": {
+        "playlist.create": {
+          "description": "Create a new empty playlist",
+          "required": [
+            "name"
+          ],
+          "why": "The AI client names the target explicitly instead of relying on the host default."
+        },
+        "playlist.duplicate": {
+          "description": "Duplicate a playlist (with all tracks)"
+        },
+        "playlist.rename": {
+          "description": "Rename a playlist"
+        },
+        "playlist.remove": {
+          "description": "Remove a playlist",
+          "params": [
+            "playlist"
+          ],
+          "required": [
+            "playlist"
+          ],
+          "why": "The AI client names the target explicitly instead of relying on the host default. `playlistGuid` is left out: with `playlist` required, a call giving it names both targets, which the host fails with `INVALID_PARAMS`, and the table cannot require one of the two."
+        },
+        "playlist.reorderPlaylists": {
+          "description": "Reorder all playlists"
+        },
+        "playlist.createAutoplaylist": {
+          "description": "Create an autoplaylist (smart playlist) that auto-populates based on a query"
+        },
+        "playlist.convertToAutoplaylist": {
+          "description": "Convert an existing playlist to an autoplaylist"
+        },
+        "playlist.removeAutoplaylist": {
+          "description": "Remove autoplaylist status (convert back to normal playlist)"
+        }
+      }
+    },
+    "fb2k_playlist_edit": {
+      "description": "Change the tracks of a playlist: add files, folders or tracks, insert, remove, move, reorder, sort, shuffle or reverse rows, clear it, replace everything and play, and undo or redo.",
+      "zh": "改动播放列表里的曲目：添加文件、文件夹或曲目，插入、删除、移动、重排、排序、打乱或倒序行，清空，整体替换后播放，以及撤销与重做。",
+      "params": {
+        "playlist": "Index of the playlist to change; omitted, the active playlist. An index past the last playlist fails with `INVALID_INDEX`.",
+        "playlistGuid": "The playlist's `guid` from `playlist.getAll`, in place of `playlist`; it keeps naming the same playlist when others are added, removed or moved, which an index does not. Give one of the two.",
+        "paths": "Files, folders or URLs; a `|subsong:N` suffix selects a subsong. For `playlist.replaceAllAndPlay` they are the new content; `playlist.addPathsSequential` adds them in this order.",
+        "handles": "Tracks to add: each a path with an optional `|subsong:N` suffix, or `{ path, subsong }`.",
+        "items": "Rows to remove (`playlist.removeTracks`) or to move (`playlist.moveTracks`; omitted or empty, the current selection moves)."
+      },
+      "actions": {
+        "playlist.addPaths": {
+          "description": "Add tracks by file/folder paths to a playlist"
+        },
+        "playlist.addPathsSequential": {
+          "description": "Add file paths to a playlist sequentially"
+        },
+        "playlist.addHandles": {
+          "description": "Add tracks by handle list (no auto CUE expansion)"
+        },
+        "playlist.insertTracks": {
+          "description": "Insert tracks into a playlist by handle"
+        },
+        "playlist.replaceAllAndPlay": {
+          "description": "Atomic operation: clear playlist, add new tracks and play"
+        },
+        "playlist.removeTracks": {
+          "description": "Remove tracks by index from a playlist"
+        },
+        "playlist.removeSelectedTracks": {
+          "description": "Remove all selected tracks from a playlist"
+        },
+        "playlist.clear": {
+          "description": "Clear all tracks from a playlist"
+        },
+        "playlist.moveTracks": {
+          "description": "Move selected tracks in a playlist (up/down)"
+        },
+        "playlist.reorder": {
+          "description": "Reorder tracks in a playlist by custom order"
+        },
+        "playlist.sort": {
+          "description": "Sort playlist by title format pattern"
+        },
+        "playlist.shuffle": {
+          "description": "Shuffle track order in a playlist"
+        },
+        "playlist.reverse": {
+          "description": "Reverse track order in a playlist"
+        },
+        "playlist.undo": {
+          "description": "Undo last playlist operation"
+        },
+        "playlist.redo": {
+          "description": "Redo last undone playlist operation"
+        }
+      }
+    },
+    "fb2k_playlist_select": {
+      "description": "Change which playlist is active and which of its rows are selected or focused. The tracks themselves are left alone.",
+      "zh": "改变哪个播放列表是活动的，以及其中哪些行被选中或获得焦点。曲目本身不动。",
+      "params": {
+        "playlist": "Playlist index; omitted, the active playlist, except that `playlist.setActive` needs this or `playlistGuid`.",
+        "playlistGuid": "The playlist's `guid` from `playlist.getAll`, in place of `playlist`; it keeps naming the same playlist when others are added, removed or moved, which an index does not. Give one of the two."
+      },
+      "actions": {
+        "playlist.setActive": {
+          "description": "Set the active playlist"
+        },
+        "playlist.setSelection": {
+          "description": "Set selected items in a playlist"
+        },
+        "playlist.selectAll": {
+          "description": "Select all tracks in a playlist"
+        },
+        "playlist.deselectAll": {
+          "description": "Deselect all tracks in a playlist"
+        },
+        "playlist.setFocusedTrack": {
+          "description": "Set focused track in a playlist",
+          "required": [
+            "index"
+          ],
+          "bounds": {
+            "index": {
+              "minimum": 0
+            }
+          },
+          "why": "The AI client names the target explicitly instead of relying on the host default. A negative `index` is refused before the call."
+        }
+      }
+    },
+    "fb2k_library_read": {
+      "description": "Read the media library: search it with foobar2000 query syntax (e.g. `artist IS Beatles`), list its albums or artists, and get its statistics. Results come in pages; ask for fewer `fields` to keep them short. Changes nothing.",
+      "zh": "读取媒体库：用 foobar2000 查询语法搜索（如 `artist IS Beatles`），列出专辑或艺术家，以及取统计数据。结果分页返回；少要几个 `fields` 可以让结果更短。不改动任何东西。",
+      "params": {
+        "query": "`library.search`: a foobar2000 query expression. `library.getAlbums`: keep only albums whose name or artist contains this text.",
+        "offset": "Results to skip.",
+        "limit": "Most results to return: up to 500 for `library.search` and `library.getAlbums`, 1000 for `library.getArtists`.",
+        "sort": "`library.getAlbums`: `name`, `artist`, `year` or `trackCount`. `library.getArtists`: `name`, `trackCount` or `albumCount` (both largest first)."
+      },
+      "actions": {
+        "library.search": {
+          "description": "Search tracks in the media library (supports foobar2000 query syntax, e.g. artist IS Beatles)",
+          "required": [
+            "query"
+          ],
+          "bounds": {
+            "limit": {
+              "minimum": 1,
+              "maximum": 500
+            }
+          },
+          "why": "The AI client names the target explicitly instead of relying on the host default. `limit` is capped at 500 so one call cannot flood the client's context."
+        },
+        "library.getAlbums": {
+          "description": "Get the list of all albums in the media library",
+          "params": [
+            "sort",
+            "query",
+            "offset",
+            "limit",
+            "includeTracks",
+            "useCache"
+          ],
+          "bounds": {
+            "limit": {
+              "maximum": 500
+            }
+          },
+          "why": "`includeCover` is left out: it inlines every album's cover as base64 into the client's context. `coverMaxSize` only limits those inlined covers, so it goes with it. `limit` is capped at 500 so one call cannot flood the client's context; `0` stays allowed, as it answers `total` alone."
+        },
+        "library.getArtists": {
+          "description": "Get the list of all artists in the media library",
+          "bounds": {
+            "limit": {
+              "maximum": 1000
+            }
+          },
+          "why": "`limit` is capped so one call cannot flood the client's context. The cap is the declared default of 1000, the lowest the table allows while `limit` stays optional; an artist row is a name and three numbers unless `includeAlbums` adds the album list."
+        },
+        "library.getStats": {
+          "description": "Get media library statistics (total track count, etc.)"
+        }
+      }
+    },
+    "fb2k_queue_edit": {
+      "description": "Change the playback queue: add playlist rows or files, insert tracks to play next, remove entries, move one to the front, replace or clear the whole queue, and play an entry now. Read the queue with `queue.get` on fb2k_playback_read.",
+      "zh": "改动播放队列：加入播放列表的行或文件，插播下一首，移除条目，把某一条移到最前，整体替换或清空队列，以及立即播放某一条。读取队列用 fb2k_playback_read 的 `queue.get`。",
+      "params": {
+        "playlist": "`queue.add`: the playlist the rows belong to; omitted, the active playlist. `queue.addPaths`: the playlist to append the tracks to, read only when `useQueuePlaylist` is `false`.",
+        "playlistGuid": "The same playlist named by its `guid` from `playlist.getAll`, in place of `playlist`. Give one of the two.",
+        "paths": "File paths or URLs, each optionally with a `|subsong:N` suffix.",
+        "items": "`queue.insertNext`: playlist rows to play next; the entries keep that position, so the playback cursor follows them. `queue.setContents`: the new queue, in order. At most `max(256, current queue length)` entries.",
+        "index": "Queue position of the entry to move to the front (`queue.moveToTop`; `0` is refused), to play (`queue.playNow`) or to remove (`queue.remove`, which prefers it over `indices`)."
+      },
+      "actions": {
+        "queue.add": {
+          "description": "Add playlist tracks to the playback queue"
+        },
+        "queue.addPaths": {
+          "description": "Add tracks by file path/URL to the playback queue"
+        },
+        "queue.insertNext": {
+          "description": "Insert tracks by path or by playlist item reference so they play next, ahead of everything already queued; at the target position the item references land first, then the paths, and a track already in the queue is moved rather than queued a second time."
+        },
+        "queue.setContents": {
+          "description": "Replace the entire playback queue with an ordered list of references, either existing queue slots or playlist items. An empty array clears the queue. Any entry with an unrecognized shape fails the whole call and leaves the queue unchanged."
+        },
+        "queue.moveToTop": {
+          "description": "Move a queue item to the top (play next)"
+        },
+        "queue.playNow": {
+          "description": "Play the queue entry at the given index immediately, moving it to the front of the queue first if it is not already there"
+        },
+        "queue.remove": {
+          "description": "Remove items from the playback queue"
+        },
+        "queue.clear": {
+          "description": "Clear the entire playback queue"
+        }
+      }
+    },
+    "fb2k_track_read": {
+      "description": "Read track files: tags and technical info from the library cache or straight from the file, the tags of several files at once, a track's rating, and its cover art. Changes nothing.",
+      "zh": "读取曲目文件：取自媒体库缓存或直接读文件的标签与技术信息，一次读取多个文件的标签，曲目的评分，以及封面。不改动任何东西。",
+      "params": {
+        "path": "Track path: native, `file://`, or with a `|subsong:N` suffix selecting a subsong; the metadata and rating actions also take a trailing `#N`."
+      },
+      "actions": {
+        "metadata.read": {
+          "description": "Read all metadata tags of a file (structured: tags + info separated)"
+        },
+        "metadata.readRaw": {
+          "description": "Read metadata directly from file, bypassing metadb cache (source: file)"
+        },
+        "metadata.readBatch": {
+          "description": "Batch read metadata tags of multiple files (flat format)"
+        },
+        "rating.get": {
+          "description": "Get track rating (reads foo_playcount stats first, falls back to RATING tag)"
+        },
+        "artwork.getForTrack": {
+          "description": "Get the cover art of a specific track file",
+          "image": "dataUrl"
+        },
+        "artwork.getCurrent": {
+          "description": "Get the cover art of the currently playing track",
+          "image": "dataUrl"
+        }
+      }
+    },
+    "fb2k_track_write": {
+      "description": "Change track files: write tags to one file or many (a `null` value removes a tag), set a rating, and embed or remove cover art.",
+      "zh": "改动曲目文件：给一个或多个文件写标签（值为 `null` 即删除该标签），设置评分，以及嵌入或移除封面。",
+      "params": {
+        "path": "Track path; a `|subsong:N` suffix or a trailing `#N` selects a subsong. `rating.set` without it rates the playing track, or else the active playlist's selection. Embedding or removing artwork in the file needs a format the album art editor supports.",
+        "type": "Picture type. For `metadata.removeEmbeddedArt`, omitted removes every picture."
+      },
+      "actions": {
+        "metadata.write": {
+          "description": "Write/update metadata tags of a file (null or empty string removes the tag)"
+        },
+        "metadata.writeBatch": {
+          "description": "Batch write metadata tags for multiple files"
+        },
+        "rating.set": {
+          "description": "Set track rating (0-5, 0=unrated). Uses foo_playcount context menu first, falls back to RATING tag"
+        },
+        "metadata.embedArtwork": {
+          "description": "Write artwork into an audio file's tag container or as a sidecar in its directory. Use target [\"file\"] to save a fb2k-recognized external image (e.g. cover.jpg) next to the audio — works for CUE / container formats where album_art_editor cannot embed. CUE / |subsong:N paths share one sidecar per directory."
+        },
+        "metadata.removeEmbeddedArt": {
+          "description": "Remove embedded artwork from an audio file"
+        }
+      }
+    }
+  }
+}

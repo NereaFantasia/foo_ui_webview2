@@ -78,6 +78,19 @@ const SUSPENDED_PAGE_HINT =
 /** Element type of `CDP.List()` results, derived from the library types. */
 type CdpTarget = Awaited<ReturnType<typeof CDP.List>>[number];
 
+/** Console messages kept, the newest ones. */
+export const CONSOLE_CAPACITY = 200;
+/** Console messages returned when the caller names no limit. */
+export const DEFAULT_CONSOLE_LIMIT = 100;
+
+/** One console message or uncaught exception of the page. */
+export interface ConsoleMessage {
+    /** The console method (`log`, `warning`, `error`, …), or `exception` for an uncaught one. */
+    level: string;
+    /** The message text, arguments joined by spaces. */
+    text: string;
+}
+
 /**
  * Manages a single CDP connection to a WebView2 page target and exposes
  * helpers to invoke bridge methods, evaluate JS, capture screenshots, and
@@ -90,6 +103,7 @@ export class CdpClient {
     private readonly options: ResolvedOptions;
     private reconnectCount = 0;
     private lastActivityMs = 0;
+    private readonly consoleLog: ConsoleMessage[] = [];
 
     constructor(options?: CdpClientOptions) {
         this.options = { ...DEFAULT_OPTIONS, ...options };
@@ -131,6 +145,15 @@ export class CdpClient {
                 host: this.options.host,
                 port: this.options.port,
                 target: pageTarget,
+            });
+
+            // Record the page's console. Enabling Runtime below also delivers the
+            // messages the page logged earlier and the browser still holds.
+            this.client.on("Runtime.consoleAPICalled", (event: unknown) => {
+                this.recordConsole(consoleCallMessage(event));
+            });
+            this.client.on("Runtime.exceptionThrown", (event: unknown) => {
+                this.recordConsole(exceptionMessage(event));
             });
 
             // Enable the Runtime and Page domains (Page is needed for
@@ -365,20 +388,24 @@ export class CdpClient {
     }
 
     /**
-     * Retrieve buffered console messages from the page (last 100).
+     * The page's most recent console messages and uncaught exceptions, oldest
+     * first. They are collected from the first connection on, together with the
+     * earlier ones the page still holds then; up to {@link CONSOLE_CAPACITY} are
+     * kept, across reconnects.
+     *
+     * @param limit - Most messages to return, the newest ones.
      */
-    async getConsoleMessages(): Promise<Array<{ level: string; text: string }>> {
+    async getConsoleMessages(limit = DEFAULT_CONSOLE_LIMIT): Promise<ConsoleMessage[]> {
         await this.ensureConnected();
+        return limit > 0 ? this.consoleLog.slice(-limit) : [];
+    }
 
-        const result = await this.withTimeout(
-            this.evaluateRaw(`
-            (window.__fb2kMcpConsoleLogs || []).slice(-100)
-        `),
-            this.options.invokeTimeoutMs,
-            "console message fetch"
-        );
-
-        return (result as Array<{ level: string; text: string }>) || [];
+    private recordConsole(message: ConsoleMessage | null): void {
+        if (!message) return;
+        this.consoleLog.push(message);
+        if (this.consoleLog.length > CONSOLE_CAPACITY) {
+            this.consoleLog.splice(0, this.consoleLog.length - CONSOLE_CAPACITY);
+        }
     }
 
     // ── Internal helpers ──
@@ -444,4 +471,39 @@ export class CdpClient {
             clearTimeout(timer);
         }
     }
+}
+
+// ── Console events ──
+
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+    value !== null && typeof value === "object" && !Array.isArray(value);
+
+/**
+ * One argument of a console call as text. Primitives arrive by value; objects
+ * arrive as remote references, of which only the description is printable.
+ */
+function remoteObjectText(arg: unknown): string {
+    if (!isRecord(arg)) return String(arg);
+    if ("value" in arg) {
+        return typeof arg.value === "string" ? arg.value : JSON.stringify(arg.value) ?? String(arg.value);
+    }
+    if (typeof arg.unserializableValue === "string") return arg.unserializableValue;
+    if (typeof arg.description === "string") return arg.description;
+    return typeof arg.type === "string" ? arg.type : "?";
+}
+
+/** A `Runtime.consoleAPICalled` event as a message, or null when it is malformed. */
+function consoleCallMessage(event: unknown): ConsoleMessage | null {
+    if (!isRecord(event) || typeof event.type !== "string") return null;
+    const args = Array.isArray(event.args) ? event.args : [];
+    return { level: event.type, text: args.map(remoteObjectText).join(" ") };
+}
+
+/** A `Runtime.exceptionThrown` event as a message, or null when it is malformed. */
+function exceptionMessage(event: unknown): ConsoleMessage | null {
+    if (!isRecord(event) || !isRecord(event.exceptionDetails)) return null;
+    const details = event.exceptionDetails;
+    const described = isRecord(details.exception) ? details.exception.description : undefined;
+    const text = typeof described === "string" ? described : typeof details.text === "string" ? details.text : "";
+    return { level: "exception", text };
 }
