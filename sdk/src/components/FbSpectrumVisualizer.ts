@@ -75,11 +75,15 @@ export class FbSpectrumVisualizer extends FbBaseElement {
         const fps = parseInt(this.getAttribute('fps') || '', 10) || 30;
         const mode = this.getAttribute('mode') || 'bars';
 
+        // Host rejects anything outside 256..65536 or not a power of two.
+        const kMinFftSize = 256;
+        const kMaxFftSize = 65536;
         let fftSize = parseInt(this.getAttribute('fft-size') || '', 10) || 0;
-        if (!fftSize || fftSize < 256) {
-            fftSize = Math.max(256, bands * 2);
+        if (!fftSize || fftSize < kMinFftSize) {
+            fftSize = Math.max(kMinFftSize, bands * 2);
         }
         fftSize = Math.pow(2, Math.ceil(Math.log2(fftSize)));
+        if (fftSize > kMaxFftSize) fftSize = kMaxFftSize;
 
         this._subscriptionId =
             globalThis.crypto &&
@@ -103,7 +107,17 @@ export class FbSpectrumVisualizer extends FbBaseElement {
             });
 
         this._sub('audio:spectrum', (data: SpectrumPayload) => {
-            const payload = data as { spectrum?: number[] } | number[];
+            const payload = data as { spectrum?: number[]; subscriptionId?: string } | number[];
+            // Every subscription on `audio:spectrum` gets its own frames;
+            // draw only this element's. Untagged frames come from hosts
+            // that merge subscriptions and are drawn as before.
+            if (
+                !Array.isArray(payload) &&
+                typeof payload?.subscriptionId === 'string' &&
+                payload.subscriptionId !== this._subscriptionId
+            ) {
+                return;
+            }
             const spectrum = Array.isArray(payload)
                 ? payload
                 : payload?.spectrum;

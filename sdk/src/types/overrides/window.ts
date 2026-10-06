@@ -28,7 +28,7 @@ export type WindowPopupProfile =
  * Parameters for `window.createPopup`.
  *
  * The `profile` / `behavior` / `backdropPolicy` slots are documented in
- * detail at `docs/vitepress/api/window.md`; this override simply re-shapes
+ * detail in the `window.createPopup` API reference; this override simply re-shapes
  * the auto-generated `unknown` placeholders so IDE consumers get
  * autocompletion and type-checking for the nested-object fields.
  *

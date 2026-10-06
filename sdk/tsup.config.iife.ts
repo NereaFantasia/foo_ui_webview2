@@ -2,10 +2,10 @@
  * tsup configuration — IIFE bundles for `<script>`-tag consumers.
  *
  * Each IIFE entry requires its own `globalName` so the bundles can be
- * loaded side-by-side without colliding. tsup processes the `array`
- * form of `defineConfig` as a series of independent builds;
- * `clean: false` is essential so each pass keeps the previous pass's
- * `dist/` artefacts.
+ * loaded side-by-side without colliding. tsup runs the `array` form of
+ * `defineConfig` as independent concurrent builds; `clean: false`
+ * preserves the ESM output and the other IIFE entries in `dist/`.
+ * The full `build` runs `clean:dist` once before either configuration.
  *
  * | globalName        | Entry                        | Window slot              |
  * |-------------------|------------------------------|--------------------------|

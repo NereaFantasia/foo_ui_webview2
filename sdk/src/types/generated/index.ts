@@ -37,6 +37,7 @@ import type {
     ArtworkGetLyricsParams,
     ArtworkGetMetadataParams,
     AudioAnalyzeBPMParams,
+    AudioCancelFullWaveformParams,
     AudioGenerateFullWaveformParams,
     AudioGenerateWaveformParams,
     AudioGetOutputInfoParams,
@@ -109,6 +110,7 @@ import type {
     DiscoverySearchCommandsParams,
     DndGetCapabilitiesParams,
     DndGetPathsAsyncParams,
+    DndPrepareDragParams,
     DndStartDragParams,
     DspAddDspParams,
     DspApplyPresetParams,
@@ -269,6 +271,7 @@ import type {
     PlaylistGetCountParams,
     PlaylistGetFocusedTrackParams,
     PlaylistGetFocusTrackParams,
+    PlaylistGetGroupRunsParams,
     PlaylistGetLockInfoParams,
     PlaylistGetPlayingParams,
     PlaylistGetSelectedTracksParams,
@@ -308,8 +311,11 @@ import type {
     QueueFlushParams,
     QueueGetParams,
     QueueGetCountParams,
+    QueueInsertNextParams,
     QueueMoveToTopParams,
+    QueuePlayNowParams,
     QueueRemoveParams,
+    QueueSetContentsParams,
     RatingGetParams,
     RatingSetParams,
     ReplaygainClearParams,
@@ -472,6 +478,7 @@ import type {
     ArtworkGetLyricsResponse,
     ArtworkGetMetadataResponse,
     AudioAnalyzeBPMResponse,
+    AudioCancelFullWaveformResponse,
     AudioGenerateFullWaveformResponse,
     AudioGenerateWaveformResponse,
     AudioGetOutputInfoResponse,
@@ -544,6 +551,7 @@ import type {
     DiscoverySearchCommandsResponse,
     DndGetCapabilitiesResponse,
     DndGetPathsAsyncResponse,
+    DndPrepareDragResponse,
     DndStartDragResponse,
     DspAddDspResponse,
     DspApplyPresetResponse,
@@ -704,6 +712,7 @@ import type {
     PlaylistGetCountResponse,
     PlaylistGetFocusedTrackResponse,
     PlaylistGetFocusTrackResponse,
+    PlaylistGetGroupRunsResponse,
     PlaylistGetLockInfoResponse,
     PlaylistGetPlayingResponse,
     PlaylistGetSelectedTracksResponse,
@@ -743,8 +752,11 @@ import type {
     QueueFlushResponse,
     QueueGetResponse,
     QueueGetCountResponse,
+    QueueInsertNextResponse,
     QueueMoveToTopResponse,
+    QueuePlayNowResponse,
     QueueRemoveResponse,
+    QueueSetContentsResponse,
     RatingGetResponse,
     RatingSetResponse,
     ReplaygainClearResponse,
@@ -907,6 +919,7 @@ export interface ApiMethodMap {
     "artwork.getLyrics": [ArtworkGetLyricsParams, ArtworkGetLyricsResponse];
     "artwork.getMetadata": [ArtworkGetMetadataParams, ArtworkGetMetadataResponse];
     "audio.analyzeBPM": [AudioAnalyzeBPMParams, AudioAnalyzeBPMResponse];
+    "audio.cancelFullWaveform": [AudioCancelFullWaveformParams, AudioCancelFullWaveformResponse];
     "audio.generateFullWaveform": [AudioGenerateFullWaveformParams, AudioGenerateFullWaveformResponse];
     "audio.generateWaveform": [AudioGenerateWaveformParams, AudioGenerateWaveformResponse];
     "audio.getOutputInfo": [AudioGetOutputInfoParams, AudioGetOutputInfoResponse];
@@ -979,6 +992,7 @@ export interface ApiMethodMap {
     "discovery.searchCommands": [DiscoverySearchCommandsParams, DiscoverySearchCommandsResponse];
     "dnd.getCapabilities": [DndGetCapabilitiesParams, DndGetCapabilitiesResponse];
     "dnd.getPathsAsync": [DndGetPathsAsyncParams, DndGetPathsAsyncResponse];
+    "dnd.prepareDrag": [DndPrepareDragParams, DndPrepareDragResponse];
     "dnd.startDrag": [DndStartDragParams, DndStartDragResponse];
     "dsp.addDsp": [DspAddDspParams, DspAddDspResponse];
     "dsp.applyPreset": [DspApplyPresetParams, DspApplyPresetResponse];
@@ -1139,6 +1153,7 @@ export interface ApiMethodMap {
     "playlist.getCount": [PlaylistGetCountParams, PlaylistGetCountResponse];
     "playlist.getFocusedTrack": [PlaylistGetFocusedTrackParams, PlaylistGetFocusedTrackResponse];
     "playlist.getFocusTrack": [PlaylistGetFocusTrackParams, PlaylistGetFocusTrackResponse];
+    "playlist.getGroupRuns": [PlaylistGetGroupRunsParams, PlaylistGetGroupRunsResponse];
     "playlist.getLockInfo": [PlaylistGetLockInfoParams, PlaylistGetLockInfoResponse];
     "playlist.getPlaying": [PlaylistGetPlayingParams, PlaylistGetPlayingResponse];
     "playlist.getSelectedTracks": [PlaylistGetSelectedTracksParams, PlaylistGetSelectedTracksResponse];
@@ -1178,8 +1193,11 @@ export interface ApiMethodMap {
     "queue.flush": [QueueFlushParams, QueueFlushResponse];
     "queue.get": [QueueGetParams, QueueGetResponse];
     "queue.getCount": [QueueGetCountParams, QueueGetCountResponse];
+    "queue.insertNext": [QueueInsertNextParams, QueueInsertNextResponse];
     "queue.moveToTop": [QueueMoveToTopParams, QueueMoveToTopResponse];
+    "queue.playNow": [QueuePlayNowParams, QueuePlayNowResponse];
     "queue.remove": [QueueRemoveParams, QueueRemoveResponse];
+    "queue.setContents": [QueueSetContentsParams, QueueSetContentsResponse];
     "rating.get": [RatingGetParams, RatingGetResponse];
     "rating.set": [RatingSetParams, RatingSetResponse];
     "replaygain.clear": [ReplaygainClearParams, ReplaygainClearResponse];

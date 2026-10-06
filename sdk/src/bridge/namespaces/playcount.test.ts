@@ -7,7 +7,7 @@
 //           the C++ handler `PlaycountApi.cpp::PlaycountGet` rejects any
 //           payload that doesn't carry a `paths` JSON array.
 //
-//   §5.2.2  `playcount.set` is a placeholder on the C++ side and the
+//   2. `playcount.set` is a placeholder on the C++ side and the
 //           wrapper MUST not throw on a `{ success: false }` host
 //           response, so consumers see the @deprecated reality without
 //           a runtime exception.

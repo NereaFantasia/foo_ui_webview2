@@ -12,11 +12,11 @@
 
 import { bridge } from '../Bridge.js';
 import type {
-    AlbumInfo,
     BaseResponse,
     LibraryAddToPlaylistResponse,
     LibraryAlbumTracksResponse,
     LibraryAlbumsResponse,
+    LibraryArtistAlbumsResponse,
     LibraryArtistTracksResponse,
     LibraryArtistsResponse,
     LibraryBrowseDirectoryResponse,
@@ -48,6 +48,7 @@ import type {
 } from '../../types/responses.js';
 import type {
     LibraryGetAlbumsParams,
+    LibraryGetArtistAlbumsParams,
     LibraryGetArtistsParams,
     LibrarySearchParams,
 } from '../../types/generated/params.js';
@@ -95,6 +96,15 @@ export const library = {
                 ? { limit: options }
                 : { ...(options || {}) },
         ),
+    /**
+     * List credited artists with per-artist aggregates.
+     *
+     * `options.includeAlbums` adds an `albums` array to every row — the
+     * `(name, artist)` identities of the albums that artist is credited on,
+     * so an "artist → albums" section can be built from one call instead of
+     * one `getArtistAlbums` scan per artist. `limit` caps the rows, never
+     * the `albums` inside them.
+     */
     getArtists: (
         limit?: number,
         options?: Omit<LibraryGetArtistsParams, 'limit'>,
@@ -213,16 +223,77 @@ export const library = {
                 ...(includeFiles != null ? { includeFiles } : {}),
             },
         ),
+    /**
+     * Tracks on an album, sorted by track number.
+     *
+     * `album` and `artist` are both compared byte for byte against the atomic
+     * tag values, so they are case-sensitive. Grouping is by album name alone,
+     * so identically titled albums by different artists come back as one list
+     * — pass `artist` to tell them apart.
+     */
     getAlbumTracks: (album: string, artist?: string) =>
         bridge.invoke<LibraryAlbumTracksResponse>('library.getAlbumTracks', {
             album,
             ...(artist ? { artist } : {}),
         }),
-    getArtistAlbums: (artist: string, limit?: number) =>
-        bridge.invoke<{ albums: AlbumInfo[] }>('library.getArtistAlbums', {
+    /**
+     * Albums an artist appears on, as rows shaped like `library.getAlbums`.
+     *
+     * `artist` is compared byte for byte against each atomic tag value, so a
+     * name taken from `getArtists` also matches tracks where it is not the
+     * first of several credited artists, and an artist differing only in case
+     * is never pulled in. Pass one artist name: on a multi-value track the
+     * joined `track.artist` string matches nothing, and on a single-value
+     * track it happens to equal the atomic value, so it is not a key you can
+     * rely on. Pass `match: 'substring'` to match on containment instead,
+     * which also returns albums by any other artist whose name contains the
+     * argument; that mode is looser about case, matching either case wherever
+     * the argument is lowercase.
+     *
+     * `trackCount`, `duration` and `discCount` count only the tracks this
+     * artist appears on, not the whole album — `getAlbums` returns the
+     * album-wide figures for the same row. Rendering a row here as an album
+     * card will therefore understate it.
+     *
+     * Rows are grouped by album name alone, so identically titled albums by
+     * different artists collapse into one row; tracks whose `album` tag is
+     * missing are grouped under `(Unknown Album)` rather than dropped. Both
+     * differ from `getAlbums`, which keys on album plus album artist and skips
+     * tracks with no album. Cover art is not inlined: pass
+     * `firstTrackAbsolutePath` to `artwork.getForTrack`, since
+     * `firstTrackPath` can be a `file-relative://` URI that endpoint refuses.
+     *
+     * There is no `offset`: when `hasMore` is true the only way to see the
+     * rest is a larger `limit`.
+     */
+    getArtistAlbums: (
+        artist: string,
+        limit?: number,
+        options?: Omit<
+            LibraryGetArtistAlbumsParams,
+            'artist' | 'limit' | 'match'
+        > & {
+            /**
+             * Host-side comparison mode. An unrecognised value is refused,
+             * unlike `sort`, which falls back to `name`.
+             */
+            match?: 'exact' | 'substring';
+        },
+    ) =>
+        bridge.invoke<LibraryArtistAlbumsResponse>('library.getArtistAlbums', {
             artist,
             ...(limit != null ? { limit } : {}),
+            ...(options && typeof options === 'object' ? options : {}),
         }),
+    /**
+     * Tracks an artist appears on.
+     *
+     * `artist` is matched exactly as in `getArtistAlbums` under
+     * `match: 'exact'`: compared byte for byte against each atomic tag value,
+     * so a name from `getArtists` matches even when it is not the first of
+     * several credited artists, and an artist differing only in case is never
+     * pulled in.
+     */
     getArtistTracks: (artist: string, limit?: number) =>
         bridge.invoke<LibraryArtistTracksResponse>('library.getArtistTracks', {
             artist,

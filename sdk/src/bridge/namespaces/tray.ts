@@ -68,11 +68,13 @@ export interface TrayMenuItem {
     // ── Rich-item payload (webview backend only) ──────────────────────────
 
     /**
-     * `type: 'nowplaying'` album art, rendered as a fixed 40x40 thumbnail.
-     * Accepts three forms: a full data URL (`data:image/jpeg;base64,...`), an
-     * `http(s)://` URL (used directly), or raw base64 (decoded as JPEG). If
-     * omitted and {@link TrayMenuConfig.autoNowPlaying} is on, the `'webview'`
-     * backend fills it with the current track's front art (downscaled).
+     * `type: 'nowplaying'` album art. Accepts three forms: a full data URL
+     * (`data:image/jpeg;base64,...`), an `http(s)://` URL (used directly), or
+     * raw base64 (decoded as JPEG). The default stylesheet draws it at 40x40
+     * CSS px, which a theme may override. If omitted and
+     * {@link TrayMenuConfig.autoNowPlaying} is on, the `'webview'` backend
+     * fills it with the current track's front art; see that field for the
+     * size and payload limits auto-fill applies.
      */
     cover?: string;
     /** `type: 'nowplaying'` primary line (track title). Falls back to `label`. */
@@ -207,9 +209,15 @@ export interface TrayMenuConfig {
      * `{ type: 'nowplaying', id: 'np' }` and get a live cover + title + artist.
      *
      * `cover` auto-fill is `'webview'`-only (the native backend fills text
-     * only) and reads the current track's front art (downscaled to a
-     * thumbnail), so it stays empty for sources foobar2000 cannot extract art
-     * from (e.g. most streams — pass `cover` yourself there). Default `false`.
+     * only) and reads the now-playing in-memory art cache with no disk
+     * fallback, so it stays empty for sources foobar2000 cannot extract art
+     * from (e.g. most streams — pass `cover` yourself there). Art whose
+     * longest side exceeds 64 px is downscaled to 64 px and re-encoded as
+     * JPEG when resizing succeeds; smaller originals, or a failed resize,
+     * keep the original bytes and format. The cover is omitted when those
+     * image bytes exceed 256 KiB, before base64 encoding. The default
+     * stylesheet draws it at 40x40 CSS px; a 64 px thumbnail rendered above
+     * roughly 51 CSS px at 125% display scaling is upscaled. Default `false`.
      */
     autoNowPlaying?: boolean;
 

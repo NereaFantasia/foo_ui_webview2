@@ -14,7 +14,7 @@
 
 import { FbBaseElement } from './FbBaseElement.js';
 import { getFb } from './runtime.js';
-import type { JsonObject } from '../types/json.js';
+import type { TrackInfo } from '../types/responses.js';
 
 export class FbTrackText extends FbBaseElement {
     private _text!: HTMLSpanElement;
@@ -61,11 +61,13 @@ export class FbTrackText extends FbBaseElement {
                 const result = await fb.utils.formatTitle(tf);
                 value = (result as { result?: string })?.result || '';
             } else {
-                const track = (await fb.player.getCurrentTrack()) as
-                    | JsonObject
-                    | null;
+                const result = await fb.player.getCurrentTrack();
+                // The no-track envelope (`found: false`) carries no metadata.
+                const track = 'found' in result ? null : result;
                 if (track) {
-                    const raw = track[field];
+                    // `field` is a free-form attribute; a missing TrackInfo
+                    // property reads as `undefined` and shows the placeholder.
+                    const raw = track[field as keyof TrackInfo];
                     if (raw == null) value = '';
                     else if (typeof raw === 'number') value = raw.toString();
                     else value = String(raw);
@@ -73,7 +75,7 @@ export class FbTrackText extends FbBaseElement {
             }
             this._text.textContent = value ? String(value) : placeholder;
         } catch {
-            // R6: silent degradation
+            // Keep the placeholder visible when the metadata request fails.
             this._text.textContent = placeholder;
         }
     }

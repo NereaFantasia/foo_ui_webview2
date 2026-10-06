@@ -56,6 +56,22 @@ function makeMockBridge(): {
             if (method === 'playback.getPosition') return { position: 0, duration: 0 };
             if (method === 'playback.getCurrentTrack') return { found: false };
             if (method === 'playback.getPlaybackOrder') return { orderIndex: 0 };
+            // One queue entry with no playlist coordinates, the shape
+            // queue.get reports for a track queued by path.
+            if (method === 'queue.get') {
+                return {
+                    items: [
+                        {
+                            path: 'C:\\music\\a.flac',
+                            absolutePath: 'C:\\music\\a.flac',
+                            playlist: null,
+                            playlistItem: null,
+                            queueIndex: 0,
+                        },
+                    ],
+                    count: 1,
+                };
+            }
             return {};
         }),
         on,
@@ -144,6 +160,21 @@ describe('bootstrapSmpCompat', () => {
         expect(typeof plman.AddItemToPlaybackQueue).toBe('function');
         expect(typeof plman.FlushPlaybackQueue).toBe('function');
         expect(typeof plman.GetPlaybackQueueContents).toBe('function');
+    });
+
+    // queue.get reports both coordinates as null for an entry that has
+    // none. SMP spells the same absence as -1 on both fields, so the pair
+    // has to arrive there rather than as 0 or undefined.
+    it('maps a queue entry without playlist coordinates to the SMP -1 sentinel', async () => {
+        const { fb } = makeMockBridge();
+        const { plman } = bootstrapSmpCompat(fb);
+
+        const contents = await plman.GetPlaybackQueueContents();
+
+        expect(contents).toHaveLength(1);
+        expect(contents[0].PlaylistIndex).toBe(-1);
+        expect(contents[0].PlaylistItemIndex).toBe(-1);
+        expect(contents[0].QueueIndex).toBe(0);
     });
 
     it('attaches SMP-style methods and properties to fb', () => {

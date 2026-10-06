@@ -96,6 +96,7 @@ export { playcount } from './namespaces/playcount.js';
 export { playlist } from './namespaces/playlist.js';
 export { port } from './namespaces/port.js';
 export { queue } from './namespaces/queue.js';
+export type { QueueContentRef, QueueListRef } from './namespaces/queue.js';
 export { rating } from './namespaces/rating.js';
 export { replaygain } from './namespaces/replaygain.js';
 export { selection } from './namespaces/selection.js';

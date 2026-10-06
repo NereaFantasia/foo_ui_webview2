@@ -9,6 +9,11 @@
  *
  * IIFE bundles (each requiring its own `globalName`) are produced from
  * the sibling {@link "./tsup.config.iife"} configuration.
+ *
+ * No entry cleans `dist/`: `build:esm` and `watch` must preserve the IIFE
+ * bundles, which this configuration does not produce. The full `build`
+ * runs `clean:dist` once before both configurations; `postbuild` verifies
+ * the complete artefact set via `scripts/check_sdk_dist.mjs`.
  */
 
 import { readFileSync } from 'node:fs';
@@ -70,22 +75,18 @@ export default defineConfig([
     {
         ...COMMON,
         entry: { index: 'src/index.ts' },
-        clean: true,
     },
     {
         ...COMMON,
         entry: { bridge: 'src/bridge/index.ts' },
-        clean: false,
     },
     {
         ...COMMON,
         entry: { components: 'src/components/index.ts' },
         dts: { footer: componentsGlobalFooter() },
-        clean: false,
     },
     {
         ...COMMON,
         entry: { 'smp-compat': 'src/smp/index.ts' },
-        clean: false,
     },
 ]);

@@ -12,14 +12,16 @@
 import type { JsonObject } from '../json.js';
 
 // ── Hand-written overrides — see sdk/src/types/overrides/ ────────────────
+import type { AudioGetSpectrumParams, AudioGetWaveformParams, AudioSubscribeSpectrumParams } from "../overrides/audio.js";
 import type { ConfigSetReplaygainModeParams } from "../overrides/config.js";
 import type { CursorSetHiddenParams } from "../overrides/cursor.js";
 import type { DspSetChainParams } from "../overrides/dsp.js";
 import type { FileCancelOpParams, FileCopyAsyncParams, FileDeleteAsyncParams, FileMoveAsyncParams } from "../overrides/file.js";
 import type { LibraryQueryParams, LibrarySearchParams } from "../overrides/library.js";
+import type { PlaylistGetGroupRunsParams } from "../overrides/playlist.js";
 import type { TraySetIconParams } from "../overrides/tray.js";
 import type { WindowCreatePopupParams, WindowGetBackdropPolicyParams, WindowGetMaxSizeParams, WindowGetMinSizeParams, WindowIsResizableParams, WindowSetBackdropPolicyParams, WindowSetMaxSizeParams, WindowSetMinSizeParams, WindowSetPopupBehaviorParams, WindowSetResizableParams } from "../overrides/window.js";
-export type { ConfigSetReplaygainModeParams, CursorSetHiddenParams, DspSetChainParams, FileCancelOpParams, FileCopyAsyncParams, FileDeleteAsyncParams, FileMoveAsyncParams, LibraryQueryParams, LibrarySearchParams, TraySetIconParams, WindowCreatePopupParams, WindowGetBackdropPolicyParams, WindowGetMaxSizeParams, WindowGetMinSizeParams, WindowIsResizableParams, WindowSetBackdropPolicyParams, WindowSetMaxSizeParams, WindowSetMinSizeParams, WindowSetPopupBehaviorParams, WindowSetResizableParams };
+export type { AudioGetSpectrumParams, AudioGetWaveformParams, AudioSubscribeSpectrumParams, ConfigSetReplaygainModeParams, CursorSetHiddenParams, DspSetChainParams, FileCancelOpParams, FileCopyAsyncParams, FileDeleteAsyncParams, FileMoveAsyncParams, LibraryQueryParams, LibrarySearchParams, PlaylistGetGroupRunsParams, TraySetIconParams, WindowCreatePopupParams, WindowGetBackdropPolicyParams, WindowGetMaxSizeParams, WindowGetMinSizeParams, WindowIsResizableParams, WindowSetBackdropPolicyParams, WindowSetMaxSizeParams, WindowSetMinSizeParams, WindowSetPopupBehaviorParams, WindowSetResizableParams };
 
 /**
  * Parameters for `artwork.getAvailableArtwork`.
@@ -149,6 +151,13 @@ export interface AudioAnalyzeBPMParams {
 }
 
 /**
+ * Parameters for `audio.cancelFullWaveform`.
+ */
+export interface AudioCancelFullWaveformParams {
+    taskId?: string;
+}
+
+/**
  * Parameters for `audio.generateFullWaveform`.
  */
 export interface AudioGenerateFullWaveformParams {
@@ -184,14 +193,6 @@ export interface AudioGenerateWaveformParams {
 export type AudioGetOutputInfoParams = Record<string, never>;
 
 /**
- * Parameters for `audio.getSpectrum`.
- */
-export interface AudioGetSpectrumParams {
-    /** @default 0 */
-    bands?: number;
-}
-
-/**
  * Parameters for `audio.getSpectrumDebugState` (this API takes no parameters).
  */
 export type AudioGetSpectrumDebugStateParams = Record<string, never>;
@@ -200,16 +201,6 @@ export type AudioGetSpectrumDebugStateParams = Record<string, never>;
  * Parameters for `audio.getStreamInfo` (this API takes no parameters).
  */
 export type AudioGetStreamInfoParams = Record<string, never>;
-
-/**
- * Parameters for `audio.getWaveform`.
- */
-export interface AudioGetWaveformParams {
-    /** @default 0.05 */
-    duration?: number;
-    /** @default false */
-    signed?: boolean;
-}
 
 /**
  * Parameters for `audio.isVisualizationAvailable` (this API takes no parameters).
@@ -222,22 +213,6 @@ export type AudioIsVisualizationAvailableParams = Record<string, never>;
 export interface AudioSetChannelModeParams {
     /** @default "default" */
     mode?: string;
-}
-
-/**
- * Parameters for `audio.subscribeSpectrum`.
- */
-export interface AudioSubscribeSpectrumParams {
-    /** @default 1024 */
-    fftSize?: number;
-    /** @default "audio:spectrum" */
-    event?: string;
-    /** @default 30 */
-    fps?: number;
-    /** @default 48 */
-    bands?: number;
-    /** @default "" */
-    subscriptionId?: string;
 }
 
 /**
@@ -542,6 +517,8 @@ export interface DialogOpenFileParams {
 export interface DialogOpenFolderParams {
     /** @default "Select Folder" */
     title?: string;
+    /** @default "" */
+    defaultPath?: string;
 }
 
 /**
@@ -673,6 +650,13 @@ export type DndGetCapabilitiesParams = JsonObject;
 export interface DndGetPathsAsyncParams {
     /** @default `std :: string ( )` */
     sessionId?: string;
+}
+
+/**
+ * Parameters for `dnd.prepareDrag`.
+ */
+export interface DndPrepareDragParams {
+    paths?: string[];
 }
 
 /**
@@ -1206,6 +1190,10 @@ export interface LibraryGetArtistAlbumsParams {
      * @default `static_cast < size_t > ( 100 )`
      */
     limit?: number;
+    /** @default "name" */
+    sort?: string;
+    /** @default "exact" */
+    match?: string;
 }
 
 /**
@@ -1219,6 +1207,8 @@ export interface LibraryGetArtistsParams {
      * @default `static_cast < size_t > ( 1000 )`
      */
     limit?: number;
+    /** @default false */
+    includeAlbums?: boolean;
 }
 
 /**
@@ -2132,6 +2122,7 @@ export interface PlaylistGetTracksParams {
     count?: number;
     /** @default `json :: object ( )` */
     formats?: JsonObject;
+    fields?: unknown;
     /**
      * int64 — may lose precision above 2^53
      * @default `pfc :: infinite_size`
@@ -2524,6 +2515,16 @@ export type QueueGetParams = Record<string, never>;
 export type QueueGetCountParams = Record<string, never>;
 
 /**
+ * Parameters for `queue.insertNext`.
+ */
+export interface QueueInsertNextParams {
+    /** @default `json :: array ( )` */
+    paths?: unknown[];
+    items?: unknown;
+    position?: unknown;
+}
+
+/**
  * Parameters for `queue.moveToTop`.
  */
 export interface QueueMoveToTopParams {
@@ -2532,6 +2533,13 @@ export interface QueueMoveToTopParams {
      * @default `pfc :: infinite_size`
      */
     index?: number;
+}
+
+/**
+ * Parameters for `queue.playNow`.
+ */
+export interface QueuePlayNowParams {
+    index?: unknown;
 }
 
 /**
@@ -2545,6 +2553,13 @@ export interface QueueRemoveParams {
     index?: number;
     /** int64 — may lose precision above 2^53 */
     indices?: number[];
+}
+
+/**
+ * Parameters for `queue.setContents`.
+ */
+export interface QueueSetContentsParams {
+    items?: unknown;
 }
 
 /**
@@ -3576,6 +3591,7 @@ export interface ApiParamsMap {
     "artwork.getLyrics": ArtworkGetLyricsParams;
     "artwork.getMetadata": ArtworkGetMetadataParams;
     "audio.analyzeBPM": AudioAnalyzeBPMParams;
+    "audio.cancelFullWaveform": AudioCancelFullWaveformParams;
     "audio.generateFullWaveform": AudioGenerateFullWaveformParams;
     "audio.generateWaveform": AudioGenerateWaveformParams;
     "audio.getOutputInfo": AudioGetOutputInfoParams;
@@ -3648,6 +3664,7 @@ export interface ApiParamsMap {
     "discovery.searchCommands": DiscoverySearchCommandsParams;
     "dnd.getCapabilities": DndGetCapabilitiesParams;
     "dnd.getPathsAsync": DndGetPathsAsyncParams;
+    "dnd.prepareDrag": DndPrepareDragParams;
     "dnd.startDrag": DndStartDragParams;
     "dsp.addDsp": DspAddDspParams;
     "dsp.applyPreset": DspApplyPresetParams;
@@ -3808,6 +3825,7 @@ export interface ApiParamsMap {
     "playlist.getCount": PlaylistGetCountParams;
     "playlist.getFocusedTrack": PlaylistGetFocusedTrackParams;
     "playlist.getFocusTrack": PlaylistGetFocusTrackParams;
+    "playlist.getGroupRuns": PlaylistGetGroupRunsParams;
     "playlist.getLockInfo": PlaylistGetLockInfoParams;
     "playlist.getPlaying": PlaylistGetPlayingParams;
     "playlist.getSelectedTracks": PlaylistGetSelectedTracksParams;
@@ -3847,8 +3865,11 @@ export interface ApiParamsMap {
     "queue.flush": QueueFlushParams;
     "queue.get": QueueGetParams;
     "queue.getCount": QueueGetCountParams;
+    "queue.insertNext": QueueInsertNextParams;
     "queue.moveToTop": QueueMoveToTopParams;
+    "queue.playNow": QueuePlayNowParams;
     "queue.remove": QueueRemoveParams;
+    "queue.setContents": QueueSetContentsParams;
     "rating.get": RatingGetParams;
     "rating.set": RatingSetParams;
     "replaygain.clear": ReplaygainClearParams;

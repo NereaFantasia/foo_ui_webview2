@@ -27,9 +27,8 @@
 
 import { FbBaseElement } from './FbBaseElement.js';
 import { getFb } from './runtime.js';
-import type { FullWaveformResult } from '../types/responses.js';
+import type { FullWaveformOptions, FullWaveformResult } from '../types/responses.js';
 import type { FbSeekDetail } from './types.js';
-import type { JsonObject } from '../types/json.js';
 
 type NormalizeMode = 'adaptive' | 'gamma' | 'histogram';
 
@@ -47,11 +46,13 @@ export class FbWaveform extends FbBaseElement {
      * Monotonic counter; every `_loadWaveform()` call captures the current
      * value and bails if a newer load (or a disconnect) has bumped it before
      * the async host call returned. Guards against:
-     *  - src / track / cue-index churn while `generateFullWaveform` is in flight
+     *  - a track change while `generateFullWaveform` is in flight
      *  - disconnect after dispatch: late results would otherwise write to a
      *    detached canvas and mutate attributes on an unmounted host.
      */
     private _loadToken = 0;
+    /** Aborts the host request of the load in flight when a newer load or a disconnect supersedes it. */
+    private _loadAbort: AbortController | null = null;
 
     static get observedAttributes(): string[] {
         return ['gamma', 'normalize'];
@@ -141,8 +142,11 @@ export class FbWaveform extends FbBaseElement {
 
     override disconnectedCallback(): void {
         // Invalidate any in-flight `_loadWaveform()` dispatches before
-        // tearing down observers / base-class subscriptions.
+        // tearing down observers / base-class subscriptions, and cancel the
+        // host task so it stops holding one of the host's two decode slots.
         this._loadToken++;
+        this._loadAbort?.abort();
+        this._loadAbort = null;
         if (this._resizeObserver) {
             this._resizeObserver.disconnect();
             this._resizeObserver = null;
@@ -153,6 +157,9 @@ export class FbWaveform extends FbBaseElement {
     private async _loadWaveform(): Promise<void> {
         const fb = getFb();
         const token = ++this._loadToken;
+        this._loadAbort?.abort();
+        const abort = new AbortController();
+        this._loadAbort = abort;
         try {
             let path = this.getAttribute('src');
             if (!path) {
@@ -170,10 +177,11 @@ export class FbWaveform extends FbBaseElement {
             this.setAttribute('status', 'pending');
             this._waveform = null;
 
-            const opts: JsonObject = {
+            const opts: FullWaveformOptions & { signal: AbortSignal } = {
                 resolution:
                     parseInt(this.getAttribute('resolution') || '', 10) || 200,
-                method: this.getAttribute('mode') || 'rms',
+                method: this.getAttribute('mode') === 'peak' ? 'peak' : 'rms',
+                signal: abort.signal,
             };
             const cueIndex = this.getAttribute('cue-index');
             if (cueIndex !== null) opts.cueIndex = parseInt(cueIndex, 10);

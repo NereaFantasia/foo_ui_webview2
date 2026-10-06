@@ -27,11 +27,27 @@
  * {@link dnd.getPaths} and {@link dnd.getResolvedPaths} answer with an empty
  * array inside an `<iframe>`. A framed page that needs paths has to receive
  * them from the main frame over `postMessage`.
+ *
+ * The reverse direction, dragging tracks OUT of the window into Explorer or
+ * another application, goes through {@link dnd.prepareDrag} and
+ * {@link dnd.applyDragToken}; see those for the handshake.
  */
 
 import { bridge } from '../Bridge.js';
-import type { DndCapabilities, DndSessionPaths } from '../../types/responses.js';
+import type {
+    DndCapabilities,
+    DndDragToken,
+    DndSessionPaths,
+} from '../../types/responses.js';
+import type { DndDragEndedPayload } from '../../types/events.js';
 import type { DndStartDragResponse } from '../../types/generated/responses.js';
+
+/**
+ * Marks the `text/plain` entry of a drag as carrying a drag token rather than
+ * page text. This exact prefix is part of the host's drag-token protocol;
+ * changing it prevents the host from attaching files to the drag.
+ */
+const DRAG_TOKEN_PREFIX = 'fb2k-dnd-token/1:';
 
 /**
  * Snapshot the host publishes to the page as `window.__fbDndSession`.
@@ -181,16 +197,129 @@ export const dnd = {
         bridge.invoke<DndCapabilities>('dnd.getCapabilities'),
 
     /**
-     * Dragging tracks out of the window into other applications.
+     * Exchanges a list of tracks for a one-shot token that lets the next drag
+     * out of this window carry those files.
      *
-     * Not implemented: it requires a native `IDropSource`, which this component
-     * does not provide. The returned promise always RESOLVES with a
+     * The token, not the paths, is what the page hands to the drag: call this
+     * BEFORE the drag begins (on `pointerdown` or `mousedown`), keep the token,
+     * and in the `dragstart` handler pass it synchronously to
+     * {@link dnd.applyDragToken}. Awaiting inside `dragstart` is too late: the
+     * drag data store is writable only while that handler runs synchronously,
+     * so a token written after an `await` is silently dropped and the drag
+     * goes out empty. A very fast press-and-move can also outrun this call, in
+     * which case the drag has no token yet; a page can detect that and treat
+     * the drag as an ordinary one.
+     *
+     * Token rules: valid for 30 seconds, spent by the first drag that uses it,
+     * bound to the window that minted it, and superseded by the next successful
+     * call from the same window (only the most recent token is live). Any other use is
+     * refused at drag start with a `dnd:dragEnded` of `PERMISSION_DENIED`.
+     *
+     * What lands at the drop target is always a physical file. A track inside
+     * a cue sheet or a multi-track container drags the whole container (a
+     * `path|subsong:N` entry loses its suffix), an `archive://` or `unpack://`
+     * entry drags the whole archive, and several requested entries can
+     * collapse into one file; the container-internal position is not carried.
+     * Paths are validated the same way as for `queue.addPaths`, after being
+     * normalised to native paths. Whether the file still exists is not
+     * checked: a stale path can get a token, but an accepted drop does not
+     * guarantee that the target copied a file.
+     *
+     * Handler failures resolve with an error envelope rather than rejecting;
+     * transport failures can still reject. Codes:
+     * `NOT_FOUND` (calling window has no drag-drop registration),
+     * `ORIGIN_DENIED` (document origin not trusted to drag files out; checked
+     * before any path is inspected), `NOT_SUPPORTED` (see `dragOut` on
+     * {@link dnd.getCapabilities}), `INVALID_PARAMS` (`paths` missing, empty
+     * or not all strings), `INVALID_PATH` (an entry has no local file behind
+     * it, such as a stream or a `cdda://` track; `paths[i]` names the offending
+     * index in the list you passed), `PERMISSION_DENIED` (an entry was refused
+     * by path security; here `paths[i]` indexes the normalised, de-duplicated
+     * list, which may be shorter than yours), `OPERATION_FAILED` (a token
+     * could not be created). Error messages never contain a path.
+     *
+     * @param paths Locations to drag out: native paths, `file://` URLs,
+     *              `file-relative://` URLs (what a portable install reports for
+     *              media on the program's volume, resolved by foobar2000),
+     *              `archive://` / `unpack://` entries, `path|subsong:N`. A
+     *              track's `path` and its `absolutePath` are both accepted.
+     * @returns The token to hand to {@link dnd.applyDragToken}.
+     *
+     * @example
+     *   let token = null;
+     *   el.addEventListener('pointerdown', async () => {
+     *     token = null;
+     *     const r = await fb.dnd.prepareDrag([trackPath]);
+     *     if (r.success) token = r.token;
+     *   });
+     *   el.addEventListener('dragstart', (e) => {
+     *     if (token) fb.dnd.applyDragToken(e.dataTransfer, token);
+     *   });
+     *   el.addEventListener('dragend', (e) => {
+     *     // 'copy' when a target took the files, 'none' otherwise.
+     *     console.log(e.dataTransfer.dropEffect);
+     *   });
+     */
+    prepareDrag: (paths: string[]) =>
+        bridge.invoke<DndDragToken>('dnd.prepareDrag', { paths }),
+
+    /**
+     * Writes a drag token into a `dragstart` event's data transfer so the host
+     * attaches the token's files to the drag.
+     *
+     * Must run synchronously inside the `dragstart` handler. It sets the
+     * `text/plain` entry to the token carrier, replacing anything the page put
+     * there, and sets `effectAllowed` to `'copy'`. Both are required: the host
+     * identifies a drag-out by that `text/plain` marker, and it refuses any
+     * drag whose allowed effects are wider than copy, because a drop target
+     * given a move effect would relocate the user's files. Do not change
+     * `effectAllowed` afterwards.
+     *
+     * The `text/plain` slot is therefore not available for page text during a
+     * drag-out. Text-oriented drop targets receive an empty string, never the
+     * token.
+     *
+     * Once the host accepts the token, the drag proceeds like any other page
+     * drag: it draws the drag image, and the page's `dragend` reports the
+     * outcome through `dataTransfer.dropEffect`. While a drag is in progress
+     * the host window waits for the drop target, exactly as it does for a
+     * plain HTML5 drag.
+     *
+     * @param dataTransfer `event.dataTransfer` of the `dragstart` event.
+     * @param token        Token from {@link dnd.prepareDrag}.
+     */
+    applyDragToken: (dataTransfer: DataTransfer, token: string): void => {
+        dataTransfer.setData('text/plain', DRAG_TOKEN_PREFIX + token);
+        dataTransfer.effectAllowed = 'copy';
+    },
+
+    /**
+     * Subscribes to `dnd:dragEnded`, which fires only when the host refuses
+     * a drag-out at the moment the drag starts.
+     *
+     * A successful hand-over produces no event; watch the element's own
+     * `dragend` for the outcome. The payload's `code` tells the page whether
+     * to mint a new token (`PERMISSION_DENIED`) or fix its `dragstart`
+     * handler (`INVALID_PARAMS`). `OPERATION_FAILED` means the file list
+     * could not be attached. A valid token is consumed before these last
+     * two checks, so request a fresh token before retrying either failure.
+     *
+     * @returns Unsubscribe function.
+     */
+    onDragEnded: (handler: (payload: DndDragEndedPayload) => void) =>
+        bridge.on('dnd:dragEnded', handler),
+
+    /**
+     * Report that programmatically starting a native drag is unsupported.
+     *
+     * This endpoint does not start a drag. The host handler resolves with a
      * `{ success: false, code: 'NOT_SUPPORTED' }` envelope rather than
      * rejecting, because the host delivers handler-returned error envelopes as
-     * a normal result. Test `success`; a `catch` block will never run.
+     * a normal result. Test `success`; transport failures can still reject.
      *
-     * @param _type Accepted and ignored, so existing call sites still compile.
-     *              The host reads no parameters from this call.
+     * Use {@link dnd.prepareDrag} with {@link dnd.applyDragToken} instead.
+     *
+     * @param _type Accepted but ignored; the host reads no parameters.
      */
     startDrag: (_type?: string) =>
         bridge.invoke<DndStartDragResponse>('dnd.startDrag'),

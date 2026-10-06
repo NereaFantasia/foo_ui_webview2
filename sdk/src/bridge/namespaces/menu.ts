@@ -44,8 +44,8 @@ type MenuShowPayload = { items: MenuPopupItem[]; x?: number; y?: number } & Menu
 /**
  * Build a `menu.show` payload. Keys the caller left undefined are omitted
  * rather than sent as `undefined`, so the host keeps its own defaults.
- * Field-by-field copies keep the payload fully typed (G3: no catch-all
- * index signatures in sdk/src).
+ * Field-by-field copies keep the payload fully typed without a catch-all
+ * index signature.
  */
 function buildShowPayload(
     items: MenuPopupItem[],
@@ -71,6 +71,12 @@ export const menu = {
      * `opts.i18n: false` disables label translation entirely.
      * `opts.withAvailability` (default `true`) includes per-submenu
      * command availability counters.
+     *
+     * Leaf `source` follows the node's own address: a command carrying
+     * `subGuid` reports `mainmenu_dynamic`, one without reports
+     * `mainmenu_static`. Every leaf of the v1 HMENU tier reports
+     * `hmenu_fallback`. The flat fallback (`fallback: true`) keeps `flags`
+     * and has no `commandId`; see {@link MenuCommand}.
      */
     getMainMenu: (root?: string, opts?: Omit<MenuGetMainMenuParams, 'root'>) =>
         bridge.invoke<MenuGetMainMenuResponse>('menu.getMainMenu', {
@@ -85,6 +91,9 @@ export const menu = {
      * host and validate no paths. `'handles'` validates every supplied path
      * individually, which costs filesystem metadata calls per entry and is
      * noticeably slower for network shares.
+     *
+     * A command leaf's `source` is `contextmenu_dynamic` when it carries
+     * `subGuid`, otherwise `contextmenu_static`.
      */
     getContextMenu: (opts?: MenuGetContextMenuParams) =>
         bridge.invoke<MenuGetContextMenuResponse>('menu.getContextMenu', opts || {}),

@@ -12,7 +12,6 @@
 
 import { FbBaseElement } from './FbBaseElement.js';
 import { getFb } from './runtime.js';
-import type { JsonObject } from '../types/json.js';
 
 type TechField = 'all' | 'codec' | 'bitrate' | 'samplerate' | 'channels';
 
@@ -54,9 +53,9 @@ export class FbTechInfo extends FbBaseElement {
     private async _fetchAndUpdate(): Promise<void> {
         const field = (this.getAttribute('field') as TechField | null) || 'all';
         try {
-            const track = (await getFb().player.getCurrentTrack()) as
-                | JsonObject
-                | null;
+            const result = await getFb().player.getCurrentTrack();
+            // The no-track envelope (`found: false`) carries no metadata.
+            const track = 'found' in result ? null : result;
             if (!track) {
                 this._text.textContent = '';
                 return;

@@ -102,12 +102,10 @@ describe('metadata namespace (§5.6 default logger)', () => {
 
     // ── Envelope typing guards ───────────────────────────────────────
     //
-    // Previously, `metadata.read` was typed as
-    // `bridge.invoke<TrackInfo>('metadata.read', …)` but the C++ handler
-    // always returns `{ success, path, tags, info }`. Consumer code had
-    // to cast through `unknown` to reach `.tags` / `.info`. These tests
-    // pin the new contract so the envelope keys survive any future
-    // refactor.
+    // `metadata.read` resolves the `{ success, path, tags, info }` envelope the
+    // C++ handler returns, not a bare `TrackInfo`, so consumers reach `.tags` /
+    // `.info` without casting through `unknown`. These tests pin that contract
+    // so the envelope keys survive any future refactor.
 
     it('read(path) returns the `{ success, path, tags, info }` envelope verbatim (§5.3)', async () => {
         const native = makeNative();

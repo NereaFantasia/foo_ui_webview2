@@ -66,7 +66,7 @@ describe('titleformat namespace — §5.4 fields contract', () => {
                 year: '$year(%date%)',
             },
         });
-        // Field map must NOT be flattened to an array (§5.4 contract).
+        // Field map must NOT be flattened to an array.
         const call = native.invoke.mock.calls[0];
         expect(Array.isArray(call[1].fields)).toBe(false);
         expect(typeof call[1].fields).toBe('object');

@@ -1,4 +1,38 @@
-import type { TrackInfo, TrackTechnicalInfo } from '../responses.js';
+import type { ApiErrorCode, TrackInfo, TrackTechnicalInfo } from '../responses.js';
+import type { SpectrumFrameInfo } from './audio.js';
+
+/**
+ * Payload for `dnd:dragEnded`.
+ *
+ * Emitted when the host REFUSES to carry a drag-out the page asked for, at
+ * the moment the drag starts. It is not a completion notice: when the host
+ * accepts the token and hands the files to the drag, no event follows, and
+ * the outcome is reported by the page's own `dragend` event through
+ * `dataTransfer.dropEffect` (`'copy'` when a target took the files, `'none'`
+ * when the drag was cancelled or refused).
+ *
+ * Emitted only for drags that carried a drag token; a page dragging its own
+ * text, image or link never triggers it.
+ *
+ * @codegen-override event:dnd:dragEnded
+ * @codegen-snapshot
+ */
+export interface DndDragEndedPayload {
+    /** Always `'failed'`: the host only reports refusals. */
+    result: 'failed';
+    /**
+     * Why the drag was refused.
+     *
+     * - `PERMISSION_DENIED`: the token was unknown, expired, already spent,
+     *   superseded by a later `prepareDrag`, or minted for another window.
+     * - `INVALID_PARAMS`: `dataTransfer.effectAllowed` was not exactly
+     *   `'copy'`; `dnd.applyDragToken` sets it correctly.
+     * - `OPERATION_FAILED`: the file list could not be attached to the drag.
+     */
+    code: ApiErrorCode;
+    /** Human-readable reason. Never contains a filesystem path. */
+    error: string;
+}
 
 /**
  * Per-track snapshot embedded in {@link MetadbChangedPayload}.`tracks`.
@@ -179,7 +213,7 @@ export interface PlaybackStartingPayload {
  * Payload for `playback:queueChanged`.
  *
  * @codegen-override event:playback:queueChanged
- * @codegen-snapshot origin:primitive
+ * @codegen-snapshot count:primitive,origin:primitive
  */
 export interface PlaybackQueueChangedPayload {
     origin:
@@ -187,6 +221,8 @@ export interface PlaybackQueueChangedPayload {
         | 'user_removed'
         | 'playback_advance'
         | 'unknown';
+    /** Queue length after the change. */
+    count: number;
 }
 
 /**
@@ -243,17 +279,16 @@ export interface PlaybackCursorFollowChangedPayload {
 
 /**
  * Payload for `audio:spectrum` and the push-mode stream of
- * `audio.subscribeSpectrum`.
+ * `audio.subscribeSpectrum`. Each subscription receives its own frames under
+ * its own event name; {@link SpectrumFrameInfo} lists the fields that
+ * describe how the frame was computed.
  *
  * @codegen-override event:audio:spectrum
  * @codegen-snapshot
  */
-export interface AudioSpectrumPayload {
+export interface AudioSpectrumPayload extends SpectrumFrameInfo {
+    /** One value per band, in the frame's `scale`; floor values in a silence frame. */
     spectrum: number[];
-    /** Effective FFT size used by the host (echo of the subscription). */
-    fftSize?: number;
-    /** Effective number of frequency bands (echo of the subscription). */
-    bands?: number;
 }
 
 /**
@@ -270,15 +305,32 @@ export interface AudioFullWaveformReadyPayload {
     resolution: number;
     /** Aggregation method used for each waveform point. */
     method: 'peak' | 'rms';
-    /** Source file size in bytes. */
+    /** Track duration in seconds. */
+    duration?: number;
+    /** Sample rate of the decoded track in Hz. */
+    sampleRate?: number;
+    /** Channel count of the decoded track. */
+    channels?: number;
+    /** Scale of the waveform points. */
+    scale?: 'linear' | 'db';
+    /** True when the points keep PCM polarity, in `[-1, 1]`. */
+    signed?: boolean;
+    /** Always false: a ready event only follows a decode. */
+    cached?: boolean;
+    /**
+     * The largest value of the selected sequence before normalisation, in
+     * linear full-scale units; see `FullWaveformResult.maxAmplitude`.
+     */
+    maxAmplitude?: number;
+    /** @deprecated The host never sends it. */
     fileSize?: number;
-    /** Cache key under which the waveform was stored. */
+    /** @deprecated The host never sends it. */
     cacheKey?: string;
 }
 
 /**
  * Payload for `audio:fullWaveformFailed`. `code` is an `ApiErrorCode`
- * value; see `responses.ts`.
+ * string (see `responses.ts`); `CANCELLED` when the request was cancelled.
  *
  * @codegen-override event:audio:fullWaveformFailed
  * @codegen-snapshot
@@ -287,7 +339,7 @@ export interface AudioFullWaveformFailedPayload {
     taskId: string;
     path: string;
     error: string;
-    code: number;
+    code: string;
 }
 
 /**

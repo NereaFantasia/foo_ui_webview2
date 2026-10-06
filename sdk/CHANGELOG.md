@@ -5,7 +5,158 @@ All notable changes to the foo-webview-sdk will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [1.14.0] - 2026-10-05
+
+> **Breaking changes**: `library.getArtistAlbums` now matches `artist`
+> exactly rather than as a substring — pass `match: 'substring'` for the old
+> containment test. The exact comparison is byte for byte, so case matters and
+> `*` / `?` are literal; `library.getArtistTracks` and
+> `library.getAlbumTracks` now use that same comparison, having previously
+> pulled in names differing only in case — which made `getAlbumTracks` merge
+> two identically titled albums. A name containing a double quote, which used
+> to match nothing at all, now resolves under the exact comparison.
+> A row's `artist` reports the album artist (the first value
+> of `album artist`, falling back to `artist`) instead of the first matching
+> track's credit. A call whose `limit` is below the artist's album count
+> returns a different *set* of albums, not merely a different order, and
+> `limit: 0` now returns none where it used to return one.
+> `QueueItem.playlist` and `QueueItem.playlistItem` are required
+> `number | null` — `null` for an entry without a playlist position — where
+> they used to be optional numbers carrying an out-of-range sentinel; test
+> `item.playlist == null` instead of comparing magnitudes.
+
+### Added
+
+- **Dragging tracks out of the window as files** — `dnd.prepareDrag(paths)`
+  exchanges a list of locations for a one-shot token *before* the drag
+  starts (request it on `pointerdown`), and `dnd.applyDragToken(dataTransfer,
+  token)` writes that token into the drag synchronously inside `dragstart`,
+  setting `effectAllowed` to `'copy'` as the host requires. The host swaps the
+  token for the already-validated files and the drag continues as an ordinary
+  page drag; Explorer and other applications receive real files. What lands is
+  always a physical file: a `path|subsong:N` entry drags its container, an
+  `archive://` / `unpack://` entry drags the archive, and several entries can
+  collapse into one. Accepted forms are native paths, `file://`,
+  `file-relative://` (a portable install's form for media on the program's
+  volume, resolved by foobar2000), `archive://` / `unpack://` and
+  `path|subsong:N`; a track's `path` and `absolutePath` are both fine.
+  Resolves — never rejects — with `ORIGIN_DENIED` (new code), `NOT_SUPPORTED`,
+  `INVALID_PARAMS`, `INVALID_PATH` or `PERMISSION_DENIED`; messages never
+  contain a path.
+- **`dnd.onDragEnded` / event `dnd:dragEnded`** — fires only when the host
+  refuses to attach the files (`PERMISSION_DENIED` for a bad, spent,
+  superseded or foreign token; `INVALID_PARAMS` for an `effectAllowed` wider
+  than `'copy'`; `OPERATION_FAILED` when the list could not be attached). A
+  successful hand-over produces no event; read `dragend`'s
+  `dataTransfer.dropEffect` instead (`'copy'` when a target took the files).
+  Typed as `DndDragEndedPayload` with `result: 'failed'`.
+- `DndCapabilities` and `DndCapabilitiesChangedPayload` gain `dragOut` and
+  `dragOutUnavailableReason` (`DndDragOutUnavailableReason`:
+  `'not-visual-hosting' | 'runtime-too-old' | 'register-failed'`; the WebView2
+  Runtime must be Edge 144 or newer). `dragOut` is independent of `paths`.
+  New response type `DndDragToken`.
+- **`queue.setContents`, `queue.insertNext` and `queue.playNow`** join the
+  `queue` namespace. `setContents(items)` replaces the entire queue with an
+  ordered list of `{ queueIndex }` / `{ playlist, item }` references, and
+  fails the whole call — leaving the queue untouched — on any unrecognized
+  entry, unlike `queue.add`'s per-entry skip. `insertNext(entries, position?)`
+  takes file paths, `QueueListRef` playlist positions (`{ playlist, item }`,
+  exported) or a mix, inserts them so they play next, moves a track already
+  queued to its new spot instead of duplicating it, and reports
+  `insertedCount` / `movedCount` / `invalidCount` separately. Path entries
+  carry no playlist position and the playback cursor does not follow them;
+  position entries carry theirs and it does. A mixed array is split by type
+  before it is sent — positions first, then paths — so `[p1, I1, p2]` queues
+  as `I1, p1, p2`; position entries deduplicate by track, and one bad
+  position entry fails the whole call. `playNow(index?)` plays a queue
+  entry immediately, promoting it to the front first when needed; its
+  `queueCount` is read right after playback starts and is not guaranteed to
+  land before or after the played entry is consumed.
+- `library.getArtistAlbums` takes a third `options` argument carrying `sort`
+  (`name` | `artist` | `year` | `trackCount`, default `name`) and `match`
+  (`'exact' | 'substring'`, default `exact`). An unrecognised `sort` falls
+  back to `name`; an unrecognised `match` is refused by the host, so `match`
+  is typed as a literal union to catch a misspelling at compile time.
+- `LibraryArtistAlbumsResponse` gains `artist`, `total` and `hasMore`.
+  `total` counts albums before `limit` truncation. There is no `offset`, so
+  `hasMore` means the page can only be widened with a larger `limit`.
+- `dialog.openFolder` accepts `defaultPath`, the folder the dialog opens in
+  every time it is shown, regardless of where the user last browsed;
+  `folderPath` still reports whatever the user confirmed. A value that does
+  not resolve to a folder — a missing path, an unplugged drive, a file — is
+  silently ignored and the dialog opens where it otherwise would, with no
+  `error`. `%music%` expands to the user's Music folder.
+  `DialogOpenFolderParams` gains `defaultPath?: string`.
+  `dialog.openFile`'s `defaultPath` follows the same rules.
+- The self-drawn menu's `rating`, `slider` and `segmented` rows answer the
+  mouse wheel. Scrolling up increases, the same direction as the arrow keys,
+  and one wheel event is one step — one star, a twentieth of a slider's range,
+  or the next enabled segment — regardless of how far the wheel turned. Steps
+  report through the same value channel as a click and the menu stays open. A
+  disabled row and a slider whose `min` equals its `max` never move, and the
+  wheel is ignored while a different row is in editor mode. Applies to
+  `tray.setContextMenu` with `render: 'webview'` and to `menu.show`.
+- `library.getArtists` accepts `includeAlbums` in its `options` argument
+  (`LibraryGetArtistsParams.includeAlbums`). When `true`, every `ArtistInfo`
+  row carries `albums: ArtistAlbumRef[]` — the `{ name, artist }` identities
+  of the albums that artist is credited on, de-duplicated by that pair and
+  sorted by `name`, then `artist`. `(name, artist)` is the identity
+  `library.getAlbums` groups by, so each element pairs with exactly one
+  `getAlbums` row. The host answers from the same single scan and cache as
+  the plain call; `limit` caps the rows, not the `albums` inside them.
+- New exported type `ArtistAlbumRef`.
+- `fb.audio.subscribeSpectrum` returns an unsubscribe function carrying
+  `ready`, a promise that never rejects and settles with whether the host
+  registered the subscription and with which values. The callback receives
+  only this subscription's frames. The options accept `scale: 'db'`,
+  `minFrequency` and `maxFrequency`, and `fftSize` up to 65536.
+- `fb.audio.generateFullWaveform` accepts `signal`. Aborting it, or the client
+  timeout, cancels the host task; an aborted signal rejects with a
+  `DOMException` named `AbortError`. New `fb.audio.cancelFullWaveform(taskId)`.
+- `fb.audio.getWaveform` accepts `channels` (`'mix' | 'stereo'`) and `points`.
+
+### Changed
+
+- `QueueItem.playlist` and `QueueItem.playlistItem` are required
+  `number | null`: exact indices for an entry that has a playlist position,
+  both `null` for one that has none. The SMP `plman.GetPlaybackQueueContents()`
+  maps `null` to `-1`, as its contract already stated.
+- **`playback:queueChanged` gains `count`**, the queue length after the
+  change, so a listener no longer has to call `queue.getCount` on every
+  event to know the new size. A rebuild-style change — `queue.setContents`,
+  the reorder path of `queue.insertNext`, `queue.moveToTop`, or
+  `queue.playNow` with `index > 0` — now broadcasts exactly once instead of
+  once per internal write, with `origin: 'unknown'` for that batched event.
+- `library.getArtistAlbums` rows now carry every `AlbumInfo` key that
+  `library.getAlbums` returns except `coverDataUrl` and `tracks` — notably
+  `albumArtist`, `duration`, `discCount`, `genre`, `label`, `firstTrackPath`
+  and `firstTrackAbsolutePath`. Pass `firstTrackPath` to
+  `artwork.getForTrack` for cover art.
+- **`trackCount`, `duration` and `discCount` on those rows count only the
+  tracks the artist appears on**, while `library.getAlbums` reports the
+  album-wide figures for the same album. The two share these key names
+  without sharing their scope, so a row from this endpoint understates an
+  album card.
+- `library.getArtistAlbums` is typed as `LibraryArtistAlbumsResponse`
+  instead of `{ albums: AlbumInfo[] }`.
+- `<fb-library-tree>` no longer lists other artists' albums under an artist
+  node whose name is a substring of theirs, following the new default
+  comparison.
+- `ArtistInfo.duration` is now `ArtistInfo.totalDuration`, matching the key
+  the host has always sent. Code that read `.duration` on an artist row was
+  reading `undefined`; it now fails to compile instead.
+
+### Fixed
+
+- Every `library.getArtistAlbums` response now carries `albums`. Its four
+  failure paths omitted the key, so `const { albums } = …` yielded
+  `undefined` against a type that declares the field required.
+- `AlbumInfo.duration` is required and this endpoint now sends it. Rows
+  previously carried four keys, none of them `duration`, so the declared row
+  type never described what arrived.
+- `library.getArtistAlbums` no longer under-reports `trackCount` when `limit`
+  is reached. Grouping used to stop at the cap, freezing the counts of the
+  albums collected so far.
 
 ## [1.13.0] - 2026-08-26
 

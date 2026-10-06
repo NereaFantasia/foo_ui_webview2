@@ -9,11 +9,20 @@ export const rating = {
     /**
      * Resolve the 0-5 integer rating stored for the track at `path`.
      *
+     * Uses `%rating%` when its `atoi` conversion yields 1 to 5; otherwise
+     * reads the file's `RATING` tag and clamps it to 0-5. `0` means unrated.
+     * `storage` is `'stats'` for an accepted `%rating%` value and `'file'`
+     * otherwise, including when neither source provides a rating.
+     *
      * @param path - Absolute file path. May carry a `|subsong:N`
      *               suffix; the host extracts the CUE index.
      */
     get: (path: string) =>
-        bridge.invoke<{ rating: number }>('rating.get', { path }),
+        bridge.invoke<{
+            rating: number;
+            /** `'stats'` for a valid statistics rating; `'file'` for tag fallback or no rating. */
+            storage?: string;
+        }>('rating.get', { path }),
     /**
      * Set the 0-5 integer rating for the track at `path`.
      *
@@ -36,7 +45,7 @@ export const rating = {
             BaseResponse & {
                 /** Menu hop the rating took (`'foo_playcount'` etc.). */
                 menuPath?: string;
-                /** Storage backend used (`'foo_playcount'` / `'tag'`). */
+                /** Write destination: `'stats'` (foo_playcount) or `'file'` (the `RATING` tag). */
                 storage?: string;
                 /** Free-form remediation hint when storage fell back. */
                 note?: string;

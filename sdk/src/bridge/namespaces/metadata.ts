@@ -163,8 +163,7 @@ export const metadata = {
         }),
     /**
      * Cancellable, non-blocking batch probe. Reads happen on a host worker
-     * thread, so a few hundred paths no longer stall the UI the way
-     * `readBatch` does.
+     * thread, so unlike `readBatch`, a few hundred paths do not stall the UI.
      *
      * Returns a `{ operationId, totalCount }` receipt immediately; the results
      * arrive in batches on `metadata:probeProgress` and are followed by
@@ -253,7 +252,8 @@ export const metadata = {
      *   `results` map; top-level `success` is true when any target succeeded.
      *
      * `opts.filename` overrides the auto-generated sidecar name (file mode only).
-     * Path separators or `..` sequences are rejected.
+     * It must be a plain file name: path separators are rejected, and so is a
+     * name made only of periods (`.`, `..`). Periods inside a name (`cover..jpg`) are fine.
      *
      * CUE / subsong paths share one sidecar per directory — this matches
      * fb2k's per-directory external artwork lookup.

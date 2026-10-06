@@ -12,6 +12,7 @@ import type {
     PlaylistAutoplaylistInfoResponse,
     PlaylistAvailableColumnsResponse,
     PlaylistClearResponse,
+    PlaylistGroupRunsResponse,
     PlaylistInfo,
     PlaylistLockInfoResponse,
     PlaylistRemoveAutoplaylistResponse,
@@ -45,15 +46,24 @@ export const playlist = {
      * `tracks` and resolves with `PlaylistTrack[]` so callers can iterate
      * the result directly.
      *
-     * Callers that need pagination metadata (`total` etc.) should hit
-     * the bridge directly:
-     *   `bridge.invoke<PlaylistTracksResponse>('playlist.getTracks', …)`.
+     * Use {@link playlist.getTracksPage} when pagination metadata such as
+     * `total` is needed.
+     *
+     * `fields` projects every row down to the requested keys plus `index`,
+     * out of the same case-sensitive whitelist `library.query` uses, minus
+     * `composer` and `comment`. Omitting the argument keeps the full row.
+     * Projected rows are narrower than {@link PlaylistTrack} declares, so
+     * read only the keys you asked for. A malformed list makes the host
+     * resolve with `{ success: false, code: 'INVALID_PARAMS' }`, which has
+     * no `tracks` to unwrap and therefore surfaces here as an empty array.
+     * Use {@link playlist.getTracksPage} to inspect the error envelope.
      */
     getTracks: async (
         index: number,
         start?: number,
         count?: number,
         formats?: Record<string, string>,
+        fields?: string[],
     ): Promise<PlaylistTrack[]> => {
         const response = await bridge.invoke<PlaylistTracksResponse>(
             'playlist.getTracks',
@@ -62,10 +72,61 @@ export const playlist = {
                 start,
                 count,
                 ...(formats && Object.keys(formats).length ? { formats } : {}),
+                ...(fields !== undefined ? { fields } : {}),
             },
         );
         return Array.isArray(response?.tracks) ? response.tracks : [];
     },
+    /**
+     * Fetch a slice of tracks and keep the page envelope.
+     *
+     * Same request as {@link playlist.getTracks}, but resolves with
+     * `{ playlist, start, count, total, tracks }` instead of unwrapping.
+     * Compare `total` with {@link playlist.getGroupRuns}'s `total` for the
+     * same playlist to detect a change in track count between the reads.
+     * Equal totals do not rule out replacements or reordering: the calls
+     * return independent snapshots, not a shared playlist revision.
+     */
+    getTracksPage: (
+        index: number,
+        start?: number,
+        count?: number,
+        formats?: Record<string, string>,
+        fields?: string[],
+    ) =>
+        bridge.invoke<PlaylistTracksResponse>('playlist.getTracks', {
+            playlist: index,
+            start,
+            count,
+            ...(formats && Object.keys(formats).length ? { formats } : {}),
+            ...(fields !== undefined ? { fields } : {}),
+        }),
+    /**
+     * Group a whole playlist into consecutive runs and get back only the run
+     * boundaries, never the rows.
+     *
+     * A run is a maximal stretch of adjacent tracks whose group key is equal,
+     * compared case-insensitively over ASCII `A-Z`/`a-z`. Rows are never
+     * reordered, so runs follow playlist order. Pass one Title Formatting
+     * pattern, or two to sub-group within each run.
+     *
+     * Pair it with {@link playlist.getTracksPage} to drive a grouped virtual
+     * list: the runs give header positions and total scroll height, each
+     * visible page of rows is fetched separately.
+     *
+     * A pattern that groups every row on its own makes `runs` as long as
+     * `total`. Payload size also depends on key lengths and second-level
+     * runs. There is no cap; choose patterns that combine adjacent tracks.
+     *
+     * Malformed `patterns`, or a pattern that fails to compile, resolves with
+     * `{ success: false, code: 'INVALID_PARAMS' }`; when one pattern is at
+     * fault `details.pattern` carries its index.
+     */
+    getGroupRuns: (patterns: string[], index?: number) =>
+        bridge.invoke<PlaylistGroupRunsResponse>('playlist.getGroupRuns', {
+            patterns,
+            ...(index !== undefined ? { playlist: index } : {}),
+        }),
     getCount: (index: number) =>
         bridge.invoke<{ count: number }>('playlist.getTrackCount', {
             playlist: index,

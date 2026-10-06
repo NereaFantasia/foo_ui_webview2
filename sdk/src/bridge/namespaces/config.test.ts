@@ -1,10 +1,10 @@
 // sdk/src/bridge/namespaces/config.test.ts
 //
-// Regression guard — `config.getAll` previously claimed
-// to return `Record<string, unknown>`, but the C++ handler returns the
-// envelope `{ success, items, configs, count }` where `items` and
-// `configs` reference the same map. Lock the new contract so the
-// wrapper surface stays accurate.
+// Regression guard — `config.getAll` resolves the envelope
+// `{ success, items, configs, count }` returned by the C++ handler, where
+// `items` and `configs` reference the same map, not a bare
+// `Record<string, unknown>`. Lock that contract so the wrapper surface
+// stays accurate.
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 

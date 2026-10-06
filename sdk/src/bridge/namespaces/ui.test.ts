@@ -49,4 +49,25 @@ describe('ui popup policy request contracts', () => {
             },
         );
     });
+
+    it('accepts inactiveEffect `inherit` and forwards it verbatim', async () => {
+        // The literal is typed against WindowInactiveBackdropEffect, so this
+        // call only compiles while `'inherit'` is part of the union.
+        await ui.setBackdropPolicy({
+            activeEffect: 'mica',
+            inactiveEffect: 'inherit',
+            darkMode: false,
+        });
+
+        expect(bridge.invoke).toHaveBeenCalledWith(
+            'window.setBackdropPolicy',
+            {
+                backdropPolicy: {
+                    activeEffect: 'mica',
+                    inactiveEffect: 'inherit',
+                    darkMode: false,
+                },
+            },
+        );
+    });
 });

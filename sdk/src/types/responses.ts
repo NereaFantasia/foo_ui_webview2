@@ -11,6 +11,7 @@
  */
 
 import type { JsonObject } from './json.js';
+import type { SpectrumBeatSource, SpectrumScale } from './overrides/audio.js';
 
 // ============================================================================
 // Base type aliases
@@ -138,7 +139,14 @@ export interface SelectionGetResult {
 // Library
 // ============================================================================
 
-/** Album-level aggregate row used by `library.getAlbums` etc. */
+/**
+ * Album-level aggregate row used by `library.getAlbums` etc.
+ *
+ * `trackCount`, `duration` and `discCount` are scoped to whatever the calling
+ * endpoint aggregated. `library.getAlbums` walks the whole library and reports
+ * the album; `library.getArtistAlbums` walks one artist's tracks and reports
+ * only those, so the same album yields smaller figures there.
+ */
 export interface AlbumInfo {
     name: string;
     artist: string;
@@ -155,12 +163,39 @@ export interface AlbumInfo {
     tracks?: TrackInfo[];
 }
 
-/** Artist-level aggregate row used by `library.getArtists`. */
+/**
+ * One album an artist is credited on, as listed in {@link ArtistInfo.albums}.
+ *
+ * `(name, artist)` is the same identity `library.getAlbums` groups by:
+ * `artist` is the first `album artist` value, falling back to the first
+ * `artist` value when that tag is absent. The pair therefore matches exactly
+ * one `library.getAlbums` row.
+ */
+export interface ArtistAlbumRef {
+    name: string;
+    artist: string;
+}
+
+/**
+ * Artist-level aggregate row used by `library.getArtists`.
+ *
+ * Every credited artist gets its own row, so `trackCount`, `albumCount` and
+ * `totalDuration` are participation figures. `albumCount` de-duplicates by
+ * album name only, while `albums` de-duplicates by `(name, artist)`: two
+ * same-named albums by different album artists count as 1 here and appear
+ * as 2 entries there.
+ */
 export interface ArtistInfo {
     name: string;
     albumCount: number;
     trackCount: number;
-    duration: number;
+    /** Summed length of the artist's tracks, in seconds. */
+    totalDuration: number;
+    /**
+     * Present only when the call passed `includeAlbums: true`. Sorted by
+     * `name`, then `artist` (byte order); not truncated by `limit`.
+     */
+    albums?: ArtistAlbumRef[];
 }
 
 /**
@@ -359,8 +394,16 @@ export type WindowActiveBackdropEffect =
     | 'mica-alt'
     | 'acrylic';
 
-/** Allowed values for the `inactiveEffect` slot in `window.backdropPolicy.*`. */
+/**
+ * Allowed values for the `inactiveEffect` slot in `window.backdropPolicy.*`.
+ *
+ * `'inherit'` (the host default) keeps the resolved `activeEffect` while the
+ * window is unfocused and lets DWM apply its own inactive dimming, so a
+ * theme does not have to re-apply the backdrop on every focus change.
+ * `'system'` hands the inactive frame back to the platform backdrop.
+ */
 export type WindowInactiveBackdropEffect =
+    | 'inherit'
     | 'system'
     | 'none'
     | 'mica'
@@ -989,8 +1032,10 @@ export type ApiErrorCode =
     | 'NO_ACTIVE_ITEM'    // No active playlist or track.
     // Operation failures
     | 'OPERATION_FAILED'  // Generic operation failure.
+    | 'CANCELLED'         // The caller cancelled an async task.
     // Path / media specific
     | 'PERMISSION_DENIED' // Path-validation refused (PathSecuritySpec decorator).
+    | 'ORIGIN_DENIED'     // Document origin not trusted for this capability.
     | 'MISSING_PATH'
     | 'INVALID_PATH'
     | 'INVALID_HANDLE'
@@ -1169,6 +1214,47 @@ export interface PlaylistTracksResponse {
     tracks: PlaylistTrack[];
 }
 
+/**
+ * One second-level run inside a {@link PlaylistGroupRun}.
+ *
+ * `start` is an absolute row index into the playlist, on the same basis as
+ * the parent run's — not an offset within the parent. The second run's first
+ * `sub` therefore starts at the parent's `start`, not at 0.
+ */
+export interface PlaylistGroupSubRun {
+    start: number;
+    count: number;
+    key: string;
+}
+
+/**
+ * One run of adjacent rows sharing a group key.
+ *
+ * `sub` is present only when two patterns were requested.
+ */
+export interface PlaylistGroupRun {
+    start: number;
+    count: number;
+    key: string;
+    sub?: PlaylistGroupSubRun[];
+}
+
+/**
+ * Result shape returned by `playlist.getGroupRuns`.
+ *
+ * On success, `runs` covers the whole playlist. For a non-empty playlist,
+ * `runs[0].start` is 0, adjacent runs meet end to end, and their `count`
+ * values sum to `total`. An empty playlist returns `total: 0` and `runs: []`.
+ * Comparing `total` with a page response for the same playlist detects a
+ * change in track count only; equal totals do not rule out replacements
+ * or reordering between the independent reads.
+ */
+export interface PlaylistGroupRunsResponse extends BaseResponse {
+    playlist: number;
+    total: number;
+    runs: PlaylistGroupRun[];
+}
+
 /** Result shape returned by `playlist.getSelectedTracks`. */
 export interface PlaylistSelectedTracksResponse extends BaseResponse {
     playlist: number;
@@ -1246,10 +1332,18 @@ export type PlaylistAvailableColumnsResponse = PlaylistColumnDefinition[];
 
 /** Single queue entry returned by `queue.get`. */
 export interface QueueItem extends TrackInfo {
-    /** Source playlist index for the queued item. */
-    playlist?: number;
-    /** Source playlist track index. */
-    playlistItem?: number;
+    /**
+     * Source playlist index, always present: an exact integer while the
+     * entry carries a playlist coordinate, `null` when it carries none —
+     * a track queued by path, for example.
+     */
+    playlist: number | null;
+    /**
+     * Source playlist track index, always present. `null` exactly when
+     * {@link QueueItem.playlist} is `null`; the two are reported as a
+     * pair, so a half-usable coordinate never reaches a caller.
+     */
+    playlistItem: number | null;
 }
 
 /** Result shape returned by `queue.get`. */
@@ -1349,10 +1443,25 @@ export interface LibraryArtistTracksResponse {
     artist: string;
 }
 
-/** Result shape returned by `library.getArtistAlbums`. */
+/**
+ * Result shape returned by `library.getArtistAlbums`.
+ *
+ * Rows carry every {@link AlbumInfo} key that `library.getAlbums` returns
+ * except `coverDataUrl` and `tracks` — this endpoint neither inlines cover
+ * art nor track lists.
+ */
 export interface LibraryArtistAlbumsResponse {
     success: boolean;
     albums: AlbumInfo[];
+    /** Echo of the requested artist name. */
+    artist?: string;
+    /** Album count before `limit` truncation. */
+    total?: number;
+    /**
+     * True when `limit` cut the list short. The endpoint takes no `offset`,
+     * so the only way to reach the rest is a larger `limit`.
+     */
+    hasMore?: boolean;
     error?: string;
 }
 
@@ -1910,19 +2019,6 @@ export interface ShellExecResult {
 // ============================================================================
 
 /**
- * Result shape returned by `audio.getWaveform` (short window of the
- * currently playing stream, used for compact realtime visualisations).
- */
-export interface AudioGetWaveformResponse extends BaseResponse {
-    /** Sample buffer (length depends on `duration`). */
-    waveform?: number[];
-    /** Window length in seconds (echo of the request). */
-    duration?: number;
-    /** True when samples are signed (PCM convention). */
-    signed?: boolean;
-}
-
-/**
  * Placeholder response from `audio.generateWaveform`. The method always
  * returns `success: false` plus whatever metadata the host could read
  * from the file.
@@ -1960,15 +2056,33 @@ export interface AudioStreamInfoResponse extends BaseResponse {
     duration?: number;
 }
 
-/** `audio.generateFullWaveform` options. */
+/**
+ * `audio.generateFullWaveform` options: the host parameters without `path`,
+ * which the method takes positionally. The fields mirror the generated
+ * `AudioGenerateFullWaveformParams` (importing it here would close a type
+ * import cycle through `generated/params.ts`); `audio.generateFullWaveform`
+ * builds its request as that generated type, so a field whose type drifts
+ * from the host's fails to compile.
+ */
 export interface FullWaveformOptions {
-    /** Waveform resolution (number of data points); defaults to 256. */
+    /** Number of waveform points, clamped to 64–4096; defaults to 256. */
     resolution?: number;
-    /** Aggregation method (`peak` or `rms`); defaults to `rms`. */
+    /** Aggregation method; defaults to `rms`. */
     method?: 'peak' | 'rms';
-    /** Use the on-disk cache; defaults to `true`. */
+    /**
+     * `linear` (default), or `db`: 60 dB below the track's own maximum maps
+     * to 0. Ignored when `signed` is set.
+     */
+    scale?: 'linear' | 'db';
+    /** Keep PCM polarity; points fall in `[-1, 1]`. Defaults to `false`. */
+    signed?: boolean;
+    /** Answer from the cache when possible; defaults to `true`. */
+    preferCache?: boolean;
+    /** Container subsong index; takes precedence over a `path|subsong:N` suffix. */
+    cueIndex?: number;
+    /** @deprecated The host never read it; use `preferCache`. */
     useCache?: boolean;
-    /** Force regeneration even on cache hit; defaults to `false`. */
+    /** @deprecated The host never read it; use `preferCache: false`. */
     forceRegenerate?: boolean;
 }
 
@@ -1981,11 +2095,11 @@ export interface FullWaveformResult {
     waveform?: number[];
     /** Background-task identifier; only present when `status === 'pending'`. */
     taskId?: string;
-    /** Cache key; only present when `status === 'pending'`. */
+    /** @deprecated The host never sends it. */
     cacheKey?: string;
-    /** True when the response was served from cache; alias of {@link fromCache}. */
-    cached?: boolean;
     /** True when the response was served from cache. */
+    cached?: boolean;
+    /** @deprecated The host never sends it; read {@link cached}. */
     fromCache?: boolean;
     /** Source file path. */
     path?: string;
@@ -1995,6 +2109,8 @@ export interface FullWaveformResult {
     method?: 'peak' | 'rms';
     /** Error message when `success === false`. */
     error?: string;
+    /** `ApiErrorCode` when `success === false`. */
+    code?: string;
     /** Track duration in seconds. */
     duration?: number;
     /** Sample rate in Hz. */
@@ -2003,19 +2119,86 @@ export interface FullWaveformResult {
     channels?: number;
     /** True when waveform samples are signed (PCM convention). */
     signed?: boolean;
-    /** Amplitude scale factor applied to the waveform points. */
-    scale?: number;
+    /** Scale of the waveform points. */
+    scale?: 'linear' | 'db';
+    /**
+     * The largest value of the selected sequence before normalisation, in
+     * linear full-scale units (window RMS for `rms`, peak for `peak`,
+     * absolute value for `signed`). On the `linear` scale
+     * `waveform[i] * maxAmplitude` restores the level; on `db`, dBFS is
+     * `(v * 60 - 60) + 20 * log10(maxAmplitude)`. Hosts before 1.14 omit it.
+     */
+    maxAmplitude?: number;
+}
+
+/**
+ * Settled value of {@link SpectrumSubscription.ready}: whether the host
+ * registered the subscription, with the values it registered.
+ */
+export type SpectrumSubscribeOutcome =
+    | {
+          ok: true;
+          subscriptionId: string;
+          /** Requested FFT size; frames report the size actually used. */
+          fftSize: number;
+          /** Band count after clamping to `[8, fftSize / 2]`. */
+          bands: number;
+          /** Frame rate after clamping to `[1, 60]`. */
+          fps: number;
+          scale: SpectrumScale;
+          backgroundThrottle: boolean;
+          /** Lower edge of the band range in Hz, as requested. */
+          minFrequency: number;
+          /**
+           * Requested upper edge in Hz; `null` when the range follows half the
+           * stream's sample rate. Frames report the edge actually used.
+           */
+          maxFrequency: number | null;
+          /**
+           * `true` once the visualisation stream exists, which includes the
+           * stopped state; whether audio flows shows in the frames' `state`.
+           */
+          streamReady: boolean;
+      }
+    | {
+          ok: false;
+          /**
+           * `INVALID_PARAMS` for rejected parameters, `NOT_SUPPORTED` when no
+           * host is available, `UNKNOWN_ERROR` when the call itself failed.
+           */
+          code: string;
+          error?: string;
+      };
+
+/**
+ * Unsubscribe callback returned by `audio.subscribeSpectrum`. Calling it
+ * detaches the listener and removes the subscription on the host.
+ */
+export interface SpectrumSubscription {
+    (): void;
+    /** Settles once the host has answered the registration; never rejects. */
+    readonly ready: Promise<SpectrumSubscribeOutcome>;
 }
 
 /** `audio.getSpectrumDebugState` return value. */
 export interface SpectrumDebugState {
     success: boolean;
     active: boolean;
+    /** `true` while the beat thread that pushes frames is running. */
     timerRunning: boolean;
+    /** Timer behind pushed frames; `null` while the beat thread is not running. Absent on older hosts. */
+    beatSource?: SpectrumBeatSource | null;
+    /** Current beat length in milliseconds (1000 / the highest `fps`); `null` while the beat thread is not running. */
+    beatIntervalMs?: number | null;
+    /** Beats dropped because the previous one had not reached the main thread yet; cumulative. */
+    beatsCoalesced?: number;
     effectiveFftSize: number;
     effectiveFps: number;
     effectiveBands: number;
     skipFrames: number;
+    /** Number of FFTs computed since the host started; flat while paused or stopped. */
+    framesComputed?: number;
+    /** `true` once the visualisation stream exists, also while stopped. */
     streamReady: boolean;
     subscriptionCount: number;
     /** Total number of distinct dispatch targets resolved from subscriptions. */
@@ -2025,9 +2208,18 @@ export interface SpectrumDebugState {
     subscriptions: Array<{
         token: string;
         windowId: string;
+        /** Handle of the window that owns the subscription, as a number. */
+        ownerHwnd?: number;
+        /** Requested FFT size; the size in use is reported in each frame. */
         fftSize: number;
         fps: number;
         bands: number;
+        event?: string;
+        scale?: SpectrumScale;
+        backgroundThrottle?: boolean;
+        minFrequency?: number;
+        /** `null` when the range follows half the stream's sample rate. */
+        maxFrequency?: number | null;
     }>;
     callerOwnsSubscription: boolean;
     // Caller diagnostics (always present in debug builds).
@@ -2040,7 +2232,7 @@ export interface SpectrumDebugState {
     foregroundTitle?: string;
     /** Total number of in-process WebView2 subscribers. */
     instanceCount?: number;
-    /** HWND owning the dispatch timer, if any. */
+    /** @deprecated Always `0` since frames are pushed by a beat thread instead of a window timer. */
     timerHwnd?: number;
 }
 
@@ -2210,14 +2402,23 @@ export interface MenuSeparator {
 /**
  * Menu command — invokable leaf node.
  *
- * `flags` and `commandId` are optional because they are tier-dependent, not
- * because they are unimportant: the v1 HMENU tier reads state from Win32 and
- * has no SDK `flags`, while the flat tier produces neither. Declaring them
- * required made every v1-tier response a type lie.
+ * `flags` and `commandId` depend on the menu tier. The v2 tree and the v1
+ * HMENU tier emit both,
+ * but `flags` means different bits on each: raw SDK display flags on the v2
+ * tree, raw Win32 `MENUITEMINFO` state bits on the HMENU tier. The flat
+ * fallback tier (`fallback: true`) emits `flags` and no `commandId`, because
+ * it enumerates commands without creating a menu. Check these optional
+ * fields before using them.
  *
  * `guid` is the ONLY stable way to run the command. `commandId` is a Win32
  * menu id that dies with the transient menu it was generated from, so it must
  * never be persisted or passed back as an address.
+ *
+ * `source` is decided per leaf: on the tree tiers a node that carries
+ * `subGuid` reports the family's dynamic value (`mainmenu_dynamic` /
+ * `contextmenu_dynamic`), one without it reports the static value. Every
+ * leaf of the v1 HMENU tier reports `hmenu_fallback` whether or not a
+ * `subGuid` was back-filled for it.
  */
 export interface MenuCommand extends MenuNodeState {
     type: 'command';
@@ -2320,9 +2521,10 @@ export interface MenuPopupItem {
     // ── Rich-item payload ─────────────────────────────────────────────────
 
     /**
-     * `type: 'nowplaying'` album art, rendered as a fixed 40x40 thumbnail.
-     * Accepts three forms: a full data URL (`data:image/jpeg;base64,...`), an
-     * `http(s)://` URL (used directly), or raw base64 (decoded as JPEG).
+     * `type: 'nowplaying'` album art, drawn at 40x40 CSS px by the default
+     * stylesheet. Accepts three forms: a full data URL
+     * (`data:image/jpeg;base64,...`), an `http(s)://` URL (used directly), or
+     * raw base64 (decoded as JPEG).
      */
     cover?: string;
     /** `type: 'nowplaying'` primary line (track title). Falls back to `label`. */
@@ -2570,6 +2772,31 @@ export type DndPathsUnavailableReason =
     /** The document origin is not trusted with real filesystem paths. */
     | 'origin-untrusted';
 
+/** Why dragging files out of the window is unavailable for the current window. */
+export type DndDragOutUnavailableReason =
+    /**
+     * The window hosts its WebView in standard controller mode, where Chromium
+     * owns the drag source and the host has no way to take a drag over.
+     */
+    | 'not-visual-hosting'
+    /**
+     * The installed WebView2 Runtime predates the drag-start event this
+     * feature is built on (Edge 144.0.3712.0).
+     */
+    | 'runtime-too-old'
+    /** Subscribing to the drag-start event failed on this window. */
+    | 'register-failed';
+
+/**
+ * One-shot token from `dnd.prepareDrag`, exchanged for the validated paths
+ * when the drag actually starts. `dnd.prepareDrag` documents the lifetime
+ * rules and the `dragstart` handshake.
+ */
+export interface DndDragToken extends BaseResponse {
+    /** Opaque, high-entropy. Never derive anything from its contents. */
+    token: string;
+}
+
 /**
  * Paths of one drag session, as resolved by `dnd.getPathsAsync`.
  *
@@ -2637,6 +2864,16 @@ export interface DndCapabilities extends BaseResponse {
     hosting: 'visual' | 'standard';
     /** Present only when `paths` is `false`. */
     pathsUnavailableReason?: DndPathsUnavailableReason;
+    /**
+     * Files can be dragged out of the window through `dnd.prepareDrag`.
+     *
+     * Independent of `paths`: a window may be able to receive paths but not to
+     * drag files out, or the reverse. Fixed for the lifetime of the window
+     * except that a failed drag-start subscription withdraws it.
+     */
+    dragOut: boolean;
+    /** Present only when `dragOut` is `false`. */
+    dragOutUnavailableReason?: DndDragOutUnavailableReason;
 }
 
 // ============================================================================
@@ -3194,7 +3431,7 @@ export type {
     ApiResponseMap, ArtworkGetAvailableArtworkResponse, ArtworkGetAvailableTypesResponse, ArtworkGetBatchResponse, ArtworkGetByPathResponse, ArtworkGetByPlaylistItemResponse,
     ArtworkGetCurrentResponse, ArtworkGetFb2kUrlByPathBatchResponse, ArtworkGetFb2kUrlByPathResponse, ArtworkGetFb2kUrlResponse, ArtworkGetFolderImagesResponse, ArtworkGetForTrackResponse,
     ArtworkGetLyricsResponse, ArtworkGetMetadataResponse, AudioAnalyzeBPMResponse, AudioGenerateFullWaveformResponse, AudioGetOutputInfoResponse, AudioGetSpectrumDebugStateResponse,
-    AudioGetSpectrumResponse, AudioGetStreamInfoResponse, AudioIsVisualizationAvailableResponse, AudioSetChannelModeResponse, AudioSubscribeSpectrumResponse, AudioSubscribeStreamResponse,
+    AudioGetSpectrumResponse, AudioGetStreamInfoResponse, AudioGetWaveformResponse, AudioIsVisualizationAvailableResponse, AudioSetChannelModeResponse, AudioSubscribeSpectrumResponse, AudioSubscribeStreamResponse,
     AudioUnsubscribeSpectrumResponse, AudioUnsubscribeStreamResponse, ClipboardReadResponse, ClipboardWriteFilesResponse, ClipboardWriteHTMLResponse, ClipboardWriteResponse,
     ConfigGetActiveDspPresetResponse, ConfigGetAdvancedConfigResponse, ConfigGetAdvancedConfigValueResponse, ConfigGetComponentsResponse, ConfigGetCursorFollowPlaybackResponse, ConfigGetDspPresetsResponse,
     ConfigGetLibraryFilePatternsResponse, ConfigGetLibraryStatusResponse, ConfigGetOutputConfigResponse, ConfigGetOutputDevicesResponse, ConfigGetPlaybackFollowCursorResponse, ConfigGetPreferencesPagesResponse,
@@ -3229,7 +3466,8 @@ export type {
     PlaylistRemoveSelectedTracksResponse, PlaylistRemoveTracksResponse, PlaylistRenameResponse, PlaylistReverseResponse, PlaylistSelectAllResponse, PlaylistSetActiveResponse,
     PlaylistSetFocusedTrackResponse, PlaylistSetSelectionResponse, PlaylistShuffleResponse, PlaylistSortResponse, PlaylistUndoResponse, PortConnectResponse,
     PortDisconnectResponse, PortGetPortsResponse, PortPostMessageResponse, PortPostMessageToResponse, QueueAddPathsResponse, QueueAddResponse,
-    QueueClearResponse, QueueFlushResponse, QueueGetCountResponse, QueueMoveToTopResponse, QueueRemoveResponse, RatingGetResponse,
+    QueueClearResponse, QueueFlushResponse, QueueGetCountResponse, QueueInsertNextResponse, QueueMoveToTopResponse, QueuePlayNowResponse,
+    QueueRemoveResponse, QueueSetContentsResponse, RatingGetResponse,
     RatingSetResponse, ReplaygainClearResponse, ReplaygainGetModeResponse, ReplaygainGetPreampResponse, ReplaygainGetResponse, ReplaygainGetSettingsResponse,
     ReplaygainScanResponse, ReplaygainSetModeResponse, ReplaygainSetPreampResponse, SelectionGetResponse, SelectionGetTypeResponse, SelectionGetViewerModeResponse,
     SelectionSetPlaylistTrackingResponse, SelectionSetResponse, ShellOpenExternalResponse, ShellOpenWithResponse, ShellShowInExplorerResponse, StateDeleteResponse,
@@ -3258,3 +3496,5 @@ export type {
     ReplaygainSourceModeName,
 } from './overrides/config.js';
 export { REPLAYGAIN_SOURCE_MODE } from './overrides/config.js';
+export type { PlaybackNoTrackResponse } from './overrides/playback.js';
+export type { SpectrumBeatSource, SpectrumFrameInfo, SpectrumFrameState, SpectrumScale, WaveformChannels } from './overrides/audio.js';

@@ -12,9 +12,11 @@
 import type { JsonObject } from '../json.js';
 
 // ── Hand-written overrides — see sdk/src/types/overrides/ ────────────────
+import type { AudioGetSpectrumDebugStateResponse, AudioGetSpectrumResponse, AudioGetWaveformResponse, AudioSubscribeSpectrumResponse } from "../overrides/audio.js";
 import type { ConfigGetReplaygainModeResponse, ConfigSetReplaygainModeResponse } from "../overrides/config.js";
 import type { CursorIsHiddenResponse, CursorSetHiddenResponse } from "../overrides/cursor.js";
-export type { ConfigGetReplaygainModeResponse, ConfigSetReplaygainModeResponse, CursorIsHiddenResponse, CursorSetHiddenResponse };
+import type { PlaybackGetCurrentTrackResponse } from "../overrides/playback.js";
+export type { AudioGetSpectrumDebugStateResponse, AudioGetSpectrumResponse, AudioGetWaveformResponse, AudioSubscribeSpectrumResponse, ConfigGetReplaygainModeResponse, ConfigSetReplaygainModeResponse, CursorIsHiddenResponse, CursorSetHiddenResponse, PlaybackGetCurrentTrackResponse };
 
 /**
  * Response from `artwork.getAvailableArtwork`.
@@ -198,6 +200,17 @@ export interface AudioAnalyzeBPMResponse {
 }
 
 /**
+ * Response from `audio.cancelFullWaveform`.
+ */
+export interface AudioCancelFullWaveformResponse {
+    success: boolean;
+    error?: unknown;
+    code?: unknown;
+    details?: JsonObject;
+    cancelled?: boolean;
+}
+
+/**
  * Response from `audio.generateFullWaveform`.
  */
 export interface AudioGenerateFullWaveformResponse {
@@ -207,15 +220,16 @@ export interface AudioGenerateFullWaveformResponse {
     status?: string;
     cached?: boolean;
     waveform?: number[];
+    maxAmplitude?: number;
     duration?: number;
     sampleRate?: number;
     channels?: number;
     resolution?: number;
     method?: string;
     scale?: string;
+    signed?: boolean;
     path?: string;
     taskId?: string;
-    signed?: boolean;
 }
 
 /**
@@ -241,48 +255,6 @@ export interface AudioGetOutputInfoResponse {
 }
 
 /**
- * Response from `audio.getSpectrum`.
- */
-export interface AudioGetSpectrumResponse {
-    success: boolean;
-    error?: string;
-    spectrum?: number[];
-    fftSize?: number;
-    bands?: number;
-}
-
-/**
- * Response from `audio.getSpectrumDebugState`.
- */
-export interface AudioGetSpectrumDebugStateResponse {
-    success: boolean;
-    active: boolean;
-    timerRunning: boolean;
-    /** int64 — may lose precision above 2^53 */
-    timerHwnd: number;
-    effectiveFftSize: number;
-    effectiveFps: number;
-    effectiveBands: number;
-    skipFrames: number;
-    streamReady: boolean;
-    subscriptionCount: number;
-    dispatchTargetCount: number;
-    subscriptions: JsonObject;
-    dispatchTargets: JsonObject;
-    /** int64 — may lose precision above 2^53 */
-    instanceCount: number;
-    /** int64 — may lose precision above 2^53 */
-    callerHwnd: number;
-    callerWindowId: string;
-    callerOwnsSubscription: boolean;
-    /** int64 — may lose precision above 2^53 */
-    foregroundHwnd: number;
-    foregroundPid: unknown;
-    foregroundIsExternal: boolean;
-    foregroundTitle: string;
-}
-
-/**
  * Response from `audio.getStreamInfo`.
  */
 export interface AudioGetStreamInfoResponse {
@@ -300,17 +272,6 @@ export interface AudioGetStreamInfoResponse {
 }
 
 /**
- * Response from `audio.getWaveform`.
- */
-export interface AudioGetWaveformResponse {
-    success: boolean;
-    error?: string;
-    waveform?: number[];
-    duration?: number;
-    signed?: boolean;
-}
-
-/**
  * Response from `audio.isVisualizationAvailable`.
  */
 export interface AudioIsVisualizationAvailableResponse {
@@ -324,19 +285,6 @@ export interface AudioIsVisualizationAvailableResponse {
 export interface AudioSetChannelModeResponse {
     success: boolean;
     mode: string;
-}
-
-/**
- * Response from `audio.subscribeSpectrum`.
- */
-export interface AudioSubscribeSpectrumResponse {
-    success: boolean;
-    error?: string;
-    subscriptionId?: string;
-    fftSize?: number;
-    bands?: number;
-    fps?: number;
-    event?: string;
 }
 
 /**
@@ -886,10 +834,12 @@ export interface DndGetCapabilitiesResponse {
     success: boolean;
     error?: unknown;
     code?: unknown;
+    pathsUnavailableReason?: unknown;
+    dragOutUnavailableReason?: unknown;
     html5?: boolean;
     paths?: boolean;
     hosting?: unknown;
-    pathsUnavailableReason?: unknown;
+    dragOut?: boolean;
 }
 
 /**
@@ -902,6 +852,16 @@ export interface DndGetPathsAsyncResponse {
     sessionId?: string;
     paths?: unknown[];
     resolvedPaths?: unknown[];
+}
+
+/**
+ * Response from `dnd.prepareDrag`.
+ */
+export interface DndPrepareDragResponse {
+    success: boolean;
+    error?: unknown;
+    code?: unknown;
+    token?: string;
 }
 
 /**
@@ -1500,7 +1460,11 @@ export interface LibraryGetAllResponse {
 export interface LibraryGetArtistAlbumsResponse {
     success: boolean;
     error?: string;
-    albums?: JsonObject;
+    albums: unknown[];
+    artist?: string;
+    /** int64 — may lose precision above 2^53 */
+    total?: number;
+    hasMore?: boolean;
 }
 
 /**
@@ -1794,6 +1758,7 @@ export interface MenuGetContextMenuResponse {
     available?: unknown;
     guid?: unknown;
     subGuid?: unknown;
+    source?: unknown;
     executable?: unknown;
     unaddressableReason?: unknown;
 }
@@ -1818,9 +1783,9 @@ export interface MenuGetMainMenuResponse {
     available?: unknown;
     guid?: unknown;
     subGuid?: unknown;
+    source?: unknown;
     executable?: unknown;
     unaddressableReason?: unknown;
-    source: unknown;
     root: string;
     requestedRoot: string;
     rootMatched: boolean;
@@ -2153,15 +2118,6 @@ export interface PanelSetConfigResponse {
     success: boolean;
     changed?: boolean;
     error?: string;
-}
-
-/**
- * Response from `playback.getCurrentTrack`.
- */
-export interface PlaybackGetCurrentTrackResponse {
-    success: boolean;
-    found: boolean;
-    playing: boolean;
 }
 
 /**
@@ -2672,6 +2628,11 @@ export interface PlaylistGetFocusTrackResponse {
 }
 
 /**
+ * Response from `playlist.getGroupRuns` (this API returns no payload).
+ */
+export type PlaylistGetGroupRunsResponse = void;
+
+/**
  * Response from `playlist.getLockInfo`.
  */
 export interface PlaylistGetLockInfoResponse {
@@ -2731,13 +2692,17 @@ export interface PlaylistGetTrackCountResponse {
  * Response from `playlist.getTracks`.
  */
 export interface PlaylistGetTracksResponse {
+    success?: boolean;
+    error?: string;
+    code?: unknown;
+    details?: JsonObject;
     /** int64 — may lose precision above 2^53 */
-    playlist: number;
+    playlist?: number;
     /** int64 — may lose precision above 2^53 */
-    start: number;
-    count: number;
-    total: number;
-    tracks: unknown[];
+    start?: number;
+    count?: number;
+    total?: number;
+    tracks?: unknown[];
 }
 
 /**
@@ -3105,13 +3070,40 @@ export interface QueueGetCountResponse {
 }
 
 /**
+ * Response from `queue.insertNext`.
+ */
+export interface QueueInsertNextResponse {
+    success: boolean;
+    error?: string;
+    /** int64 — may lose precision above 2^53 */
+    queueCount?: number;
+    invalidCount?: number;
+    /** int64 — may lose precision above 2^53 */
+    insertedCount?: number;
+    /** int64 — may lose precision above 2^53 */
+    movedCount?: number;
+}
+
+/**
  * Response from `queue.moveToTop`.
  */
 export interface QueueMoveToTopResponse {
     success: boolean;
     error?: string;
     /** int64 — may lose precision above 2^53 */
+    queueCount?: number;
+    /** int64 — may lose precision above 2^53 */
     movedIndex?: number;
+}
+
+/**
+ * Response from `queue.playNow`.
+ */
+export interface QueuePlayNowResponse {
+    success: boolean;
+    error?: string;
+    /** int64 — may lose precision above 2^53 */
+    playedIndex?: number;
     queueCount?: number;
 }
 
@@ -3126,6 +3118,15 @@ export interface QueueRemoveResponse {
     queueCount?: number;
     /** int64 — may lose precision above 2^53 */
     removedCount?: number;
+}
+
+/**
+ * Response from `queue.setContents`.
+ */
+export interface QueueSetContentsResponse {
+    success: boolean;
+    error?: string;
+    queueCount: number;
 }
 
 /**
@@ -4553,6 +4554,7 @@ export interface ApiResponseMap {
     "artwork.getLyrics": ArtworkGetLyricsResponse;
     "artwork.getMetadata": ArtworkGetMetadataResponse;
     "audio.analyzeBPM": AudioAnalyzeBPMResponse;
+    "audio.cancelFullWaveform": AudioCancelFullWaveformResponse;
     "audio.generateFullWaveform": AudioGenerateFullWaveformResponse;
     "audio.generateWaveform": AudioGenerateWaveformResponse;
     "audio.getOutputInfo": AudioGetOutputInfoResponse;
@@ -4625,6 +4627,7 @@ export interface ApiResponseMap {
     "discovery.searchCommands": DiscoverySearchCommandsResponse;
     "dnd.getCapabilities": DndGetCapabilitiesResponse;
     "dnd.getPathsAsync": DndGetPathsAsyncResponse;
+    "dnd.prepareDrag": DndPrepareDragResponse;
     "dnd.startDrag": DndStartDragResponse;
     "dsp.addDsp": DspAddDspResponse;
     "dsp.applyPreset": DspApplyPresetResponse;
@@ -4785,6 +4788,7 @@ export interface ApiResponseMap {
     "playlist.getCount": PlaylistGetCountResponse;
     "playlist.getFocusedTrack": PlaylistGetFocusedTrackResponse;
     "playlist.getFocusTrack": PlaylistGetFocusTrackResponse;
+    "playlist.getGroupRuns": PlaylistGetGroupRunsResponse;
     "playlist.getLockInfo": PlaylistGetLockInfoResponse;
     "playlist.getPlaying": PlaylistGetPlayingResponse;
     "playlist.getSelectedTracks": PlaylistGetSelectedTracksResponse;
@@ -4824,8 +4828,11 @@ export interface ApiResponseMap {
     "queue.flush": QueueFlushResponse;
     "queue.get": QueueGetResponse;
     "queue.getCount": QueueGetCountResponse;
+    "queue.insertNext": QueueInsertNextResponse;
     "queue.moveToTop": QueueMoveToTopResponse;
+    "queue.playNow": QueuePlayNowResponse;
     "queue.remove": QueueRemoveResponse;
+    "queue.setContents": QueueSetContentsResponse;
     "rating.get": RatingGetResponse;
     "rating.set": RatingSetResponse;
     "replaygain.clear": ReplaygainClearResponse;

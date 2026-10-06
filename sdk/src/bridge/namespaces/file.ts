@@ -150,8 +150,8 @@ export const file = {
         bridge.invoke<FileGetInfoResponse>('file.getInfo', { path }),
     /**
      * Cancellable, non-blocking batch copy. The work runs on a host worker
-     * thread, so copying a large album no longer freezes the UI the way
-     * `file.copy` does.
+     * thread, so unlike `file.copy`, copying a large album does not freeze
+     * the UI.
      *
      * Returns a `{ operationId, totalCount }` receipt immediately; the outcome
      * arrives in batches on `file:opProgress`, followed by one

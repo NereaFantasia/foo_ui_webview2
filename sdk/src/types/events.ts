@@ -8,7 +8,11 @@
  * with the hand-written `dnd:*` entries below.
  */
 
-import type { ApiErrorCode, DndPathsUnavailableReason } from './responses.js';
+import type {
+    ApiErrorCode,
+    DndDragOutUnavailableReason,
+    DndPathsUnavailableReason,
+} from './responses.js';
 
 export type {
     ApiRegisteredPayload,
@@ -22,6 +26,7 @@ export type {
     AudioSpectrumPayload,
     AudioStreamPayload,
     CursorHiddenChangedPayload,
+    DndDragEndedPayload,
     FileOpCompletePayload,
     FileOpProgressPayload,
     HttpDownloadCompletePayload,
@@ -275,14 +280,18 @@ export interface DndCapabilitiesChangedPayload {
     hosting: 'visual' | 'standard';
     /** Present only when `paths` is `false`. */
     pathsUnavailableReason?: DndPathsUnavailableReason;
+    /** Whether this window supports dragging files out through `dnd.prepareDrag`. */
+    dragOut: boolean;
+    /** Present only when `dragOut` is `false`. */
+    dragOutUnavailableReason?: DndDragOutUnavailableReason;
 }
 
 /**
- * Event-name to payload map for the `dnd:*` events.
+ * Event-name to payload map for incoming drags and capability changes.
  *
- * The host publishes these through a per-window event sink that passes the
- * event name as a runtime value, so they are absent from the generated map
- * and are merged into {@link FBEventPayloadMap} from here.
+ * These events describe the receiving window's drag session and available
+ * capabilities. {@link FBEventPayloadMap} also includes `dnd:dragEnded`,
+ * whose {@link DndDragEndedPayload} reports refusals of outgoing drags.
  */
 export interface DndEventPayloadMap {
     'dnd:enter': DndEnterPayload;

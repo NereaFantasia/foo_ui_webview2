@@ -214,4 +214,126 @@ describe('playlist namespace — §5.3 envelope unwrap', () => {
         const tracks = await playlist.getSelectedTracks(-1);
         expect(tracks).toEqual([]);
     });
+
+    // -- getTracksPage: keeps the envelope the windowed list needs --------
+
+    it('getTracksPage keeps the whole envelope instead of unwrapping', async () => {
+        const native = makeNative();
+        const envelope = {
+            playlist: 0,
+            start: 200,
+            count: 2,
+            total: 102400,
+            tracks: [{ index: 200 }, { index: 201 }],
+        };
+        native.invoke.mockResolvedValue(envelope);
+        vi.stubGlobal('window', { fb2k: native });
+        const { playlist } = await import('./playlist.js');
+
+        const page = await playlist.getTracksPage(0, 200, 2);
+
+        expect(page).toEqual(envelope);
+        // `total` is the whole point: the grouped list compares it against
+        // getGroupRuns's total to notice a playlist that changed underneath.
+        expect(page.total).toBe(102400);
+    });
+
+    it('getTracksPage forwards fields and formats on the same terms as getTracks', async () => {
+        const native = makeNative();
+        native.invoke.mockResolvedValue({ playlist: 0, start: 0, count: 0, total: 0, tracks: [] });
+        vi.stubGlobal('window', { fb2k: native });
+        const { playlist } = await import('./playlist.js');
+
+        await playlist.getTracksPage(0, 0, 100, {}, ['title', 'album']);
+        expect(native.invoke).toHaveBeenCalledWith('playlist.getTracks', {
+            playlist: 0,
+            start: 0,
+            count: 100,
+            fields: ['title', 'album'],
+        });
+    });
+
+    // -- getGroupRuns -----------------------------------------------------
+
+    it('getGroupRuns sends patterns and omits playlist when not given', async () => {
+        const native = makeNative();
+        native.invoke.mockResolvedValue({ success: true, playlist: 0, total: 0, runs: [] });
+        vi.stubGlobal('window', { fb2k: native });
+        const { playlist } = await import('./playlist.js');
+
+        await playlist.getGroupRuns(['%album artist% | %album%']);
+
+        expect(native.invoke).toHaveBeenCalledWith('playlist.getGroupRuns', {
+            patterns: ['%album artist% | %album%'],
+        });
+    });
+
+    it('getGroupRuns passes the playlist index through when given', async () => {
+        const native = makeNative();
+        native.invoke.mockResolvedValue({ success: true, playlist: 3, total: 0, runs: [] });
+        vi.stubGlobal('window', { fb2k: native });
+        const { playlist } = await import('./playlist.js');
+
+        await playlist.getGroupRuns(['%album%'], 3);
+
+        expect(native.invoke).toHaveBeenCalledWith('playlist.getGroupRuns', {
+            patterns: ['%album%'],
+            playlist: 3,
+        });
+    });
+
+    it('getGroupRuns resolves with the run envelope, sub starts absolute', async () => {
+        const native = makeNative();
+        native.invoke.mockResolvedValue({
+            success: true,
+            playlist: 0,
+            total: 33,
+            runs: [
+                {
+                    start: 0,
+                    count: 24,
+                    key: 'Nujabes | Modal Soul',
+                    sub: [
+                        { start: 0, count: 12, key: 'Disc 1' },
+                        { start: 12, count: 12, key: 'Disc 2' },
+                    ],
+                },
+                {
+                    start: 24,
+                    count: 9,
+                    key: 'Portishead | Dummy',
+                    sub: [{ start: 24, count: 9, key: 'Disc 1' }],
+                },
+            ],
+        });
+        vi.stubGlobal('window', { fb2k: native });
+        const { playlist } = await import('./playlist.js');
+
+        const res = await playlist.getGroupRuns(['%album artist% | %album%', '%discnumber%']);
+
+        expect(res.success).toBe(true);
+        expect(res.runs).toHaveLength(2);
+        // The discriminating case: the second run's first sub starts at the
+        // parent's start, not at 0.
+        expect(res.runs[1].sub?.[0].start).toBe(24);
+        // Runs tile the table.
+        expect(res.runs.reduce((n, r) => n + r.count, 0)).toBe(res.total);
+    });
+
+    it('getGroupRuns surfaces the host error envelope rather than swallowing it', async () => {
+        const native = makeNative();
+        native.invoke.mockResolvedValue({
+            success: false,
+            code: 'INVALID_PARAMS',
+            error: 'patterns must not contain an empty string',
+            details: { pattern: 0 },
+        });
+        vi.stubGlobal('window', { fb2k: native });
+        const { playlist } = await import('./playlist.js');
+
+        const res = await playlist.getGroupRuns(['']);
+
+        expect(res.success).toBe(false);
+        expect(res.code).toBe('INVALID_PARAMS');
+    });
 });

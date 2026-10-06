@@ -6,6 +6,7 @@ import { bridge } from '../Bridge.js';
 import type {
     BaseResponse,
     PlaybackOrder,
+    PlaybackNoTrackResponse,
     PlaybackOrderInfo,
     PlaybackPlayPathResponse,
     PlaybackPlayPathsResponse,
@@ -40,8 +41,15 @@ export const player = {
     toggleMute: () =>
         bridge.invoke<PlaybackToggleMuteResponse>('playback.toggleMute'),
     getState: () => bridge.invoke<PlaybackState>('playback.getState'),
+    /**
+     * Resolves with the current {@link TrackInfo}, or with
+     * {@link PlaybackNoTrackResponse} (`found: false`) when nothing is
+     * loaded. The host never answers `null`; narrow with `'found' in result`.
+     */
     getCurrentTrack: () =>
-        bridge.invoke<TrackInfo | null>('playback.getCurrentTrack'),
+        bridge.invoke<TrackInfo | PlaybackNoTrackResponse>(
+            'playback.getCurrentTrack',
+        ),
     getPosition: () => bridge.invoke<PositionResponse>('playback.getPosition'),
     getOrder: () => bridge.invoke<PlaybackOrderInfo>('playback.getPlaybackOrder'),
     setOrder: (order: PlaybackOrder | number) =>
