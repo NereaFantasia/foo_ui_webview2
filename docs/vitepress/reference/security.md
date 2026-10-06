@@ -62,7 +62,7 @@ SSRF protections reject:
 
 Disabled by default. Enable via:
 
-**Preferences → Advanced → Tools → WebView UI → Enable DevTools**, then restart foobar2000.
+**Preferences → Display → WebView2 UI → Developer → Enable Developer Tools (F12)**, press **Apply**, then restart foobar2000.
 
 ## Related runtime tokens
 

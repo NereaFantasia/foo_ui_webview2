@@ -16,10 +16,10 @@ Every payload key set is backed by a precise C++ emit-source rule. Internal `:__
 | --- | --- |
 | audio:dspPresetChanged | `{}` |
 | audio:fullWaveformFailed | `{ code, error, path, taskId }` |
-| audio:fullWaveformReady | `{ cached, channels, duration, method, path, resolution, sampleRate, scale, signed, taskId, waveform }` |
+| audio:fullWaveformReady | `{ cached, channels, duration, maxAmplitude, method, path, resolution, sampleRate, scale, signed, taskId, waveform }` |
 | audio:outputDeviceChanged | `{}` |
 | audio:replaygainModeChanged | `{ mode }` |
-| audio:spectrum | `{ spectrum }` |
+| audio:spectrum | `{ bands, fftSize, hostTime, maxFrequency, minFrequency, sampleRate, scale, spectrum, state, streamTime, subscriptionId }` |
 | audio:stream | `{}` |
 
 `audio:stream` is currently only a reserved token returned by the unimplemented stream-capture subscription stub; the runtime does not emit it.

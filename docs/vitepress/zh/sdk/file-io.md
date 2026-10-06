@@ -304,10 +304,10 @@ const r = await fb.dialog.saveFile({ defaultName: 'playlist.m3u8' });
 
 ### openFolder(options?)
 
-打开文件夹选择对话框，返回 `{ canceled, folderPath, error? }`。
+打开文件夹选择对话框，返回 `{ canceled, folderPath, error? }`。`defaultPath` 是对话框打开时定位到的目录，每次打开都定位；路径解析不到文件夹时静默忽略。
 
 ```javascript
-const r = await fb.dialog.openFolder({ title: '选择音乐目录' });
+const r = await fb.dialog.openFolder({ title: '选择音乐目录', defaultPath: 'D:\\Music' });
 // r.folderPath
 ```
 

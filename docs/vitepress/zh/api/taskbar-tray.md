@@ -356,7 +356,9 @@ await fb2k.invoke('tray.setContextMenu', {
 });
 ```
 
-**nowplaying 自动补全（`autoNowPlaying`）**：开启后，`type: 'nowplaying'` 项中**前端没传的字段**会在右键弹出时由后端用当前曲目自动补全（前端传了就用前端的，**前端优先**）。`cover` 自动补全仅 `render: 'webview'`，取当前曲目内嵌/本地封面并缩略为缩略图；对 foobar2000 取不到封面的来源（如多数流媒体）请前端自行传 `cover` —— 支持 `http(s)://` / `data:` / 裸 base64 三种形态。`title` 走 `%title%`（自动回退文件名），`subtitle` 走 `%artist%`，兼容流媒体动态标题。
+**nowplaying 自动补全（`autoNowPlaying`）**：开启后，`type: 'nowplaying'` 项中**前端没传的字段**会在右键弹出时由后端用当前曲目自动补全（前端传了就用前端的，**前端优先**）。`title` 走 `%title%`（自动回退文件名），`subtitle` 走 `%artist%`，兼容流媒体动态标题。
+
+`cover` 自动补全仅适用于 `render: 'webview'`，只读 now-playing 的**内存封面缓存**，不做磁盘回退。缓存无封面时字段留空，前端可自行传入 `cover`，支持 `http(s)://`、`data:` 和裸 base64。最长边超过 **64 px** 时尝试缩到 64 px 并重编码为 JPEG；原图不超过 64 px，或缩图失败时，沿用原始字节与格式。所选图像字节超过 **256 KiB** 时省略封面，此检查发生在 base64 编码之前。默认样式表以 40×40 CSS px 绘制；64 px 缩略图在 125% 显示缩放下绘制到约 51 CSS px 以上时会放大采样。
 
 ```javascript
 // 纯本地：只声明空 nowplaying，cover/title/subtitle 全自动
@@ -374,7 +376,7 @@ await fb2k.invoke('tray.setContextMenu', {
 
 **前端样式接管（`css` / `cssReplace`，仅 `render: 'webview'`）**：通过 `config.css` 把一段 CSS 字符串注入自绘菜单专用的 `<style>` 层，每次右键弹出时应用，**完全由前端决定菜单视觉**（颜色 / 字体 / 留白 / 圆角 / 阴影 / 深浅色 / 动效等）。
 
-- 默认 **override 叠加** 模式：你的规则叠加在内置样式之上，按菜单的**稳定 class 名**编写并靠源序或 `!important` 取胜。可用的稳定 class（自绘菜单 overlay 是独立顶层 document，宿主页的 `::part()` 无法跨 document 触达，故钩子 = class 名）：容器 `.fb-menu`；菜单项 `.fb-item`（+ `.nrm` / `.disabled` / `.active` / `.checked` / `.has-sub`）、图标列 `.fb-item-ico`、子菜单箭头 `.fb-arrow`、分隔线 `.fb-sep`；nowplaying `.fb-np` / `.fb-np-cover` / `.fb-np-text` / `.fb-np-title` / `.fb-np-sub`；rating `.fb-rating` / `.fb-stars` / `.fb-star`（+ `.on`）；slider `.fb-slider` / `.fb-slider-track` / `.fb-slider-fill` / `.fb-slider-thumb` / `.fb-slider-val`。
+- 默认 **override 叠加** 模式：你的规则叠加在内置样式之上，按菜单的**稳定 class 名**编写并靠源序或 `!important` 取胜。可用的稳定 class（自绘菜单 overlay 是独立顶层 document，宿主页的 `::part()` 无法跨 document 触达，故钩子 = class 名）：容器 `.fb-menu`；菜单项 `.fb-item`（+ `.nrm` / `.disabled` / `.active` / `.checked` / `.has-sub`）、图标列 `.fb-item-ico`、子菜单箭头 `.fb-arrow`、分隔线 `.fb-sep`；nowplaying `.fb-np` / `.fb-np-cover` / `.fb-np-text` / `.fb-np-title` / `.fb-np-sub`；rating `.fb-rating` / `.fb-stars` / `.fb-star`（+ `.on`）/ `.fb-rating-control`；slider `.fb-slider` / `.fb-slider-track` / `.fb-slider-fill` / `.fb-slider-thumb` / `.fb-slider-val` / `.fb-slider-control`；segmented `.fb-seg` / `.fb-seg-btn`。其中 `.fb-rating-control`、`.fb-slider-control` 与选中的 `.fb-seg-btn` 是仅有的三个会拿到真实 DOM 焦点的元素，编辑态的浏览器默认焦点环画在它们身上；内置样式与受保护层都不给这个焦点环写规则，`cssReplace` 模式下请针对这三个选择器设置或重置。
 - `cssReplace: true` 切 **replace** 模式：禁用全部内置默认样式，整张菜单（含入场动画）以你的 `css` 为准，仅保留一层**受保护结构层**（`#viewport` 几何、菜单盒模型 / 固定定位 / 溢出、隐藏态 fallback）以保证内容尺寸窗测量稳定。**可见态 display（block / flex / grid）不再由受保护层强制**，主题可直接布局根菜单；用户 CSS 无法用 `display:* !important` 重新显示已隐藏的菜单。
 - `native` 后端忽略 `css` / `cssReplace`。
 - **`layoutMode`**：默认 `'flat'`，零配置时 DOM 仍为 `#menu > .fb-item` / separator 直接子结构（旧主题选择器继续成立）。仅显式 `'zones'` 时生成 `.fb-zone[data-zone]`。稳定钩子：`.fb-menu[data-depth]`、`.fb-zone[data-zone]`、`.fb-item[data-item-id][data-kind][data-depth][data-zone]`；`data-item-token` 为内部单次 show 身份，**不是**公共 CSS 契约。zones 自 1.10.0 起提供；需兼容旧版的主题应先用 `config.getVersionInfo().plugin.version` 探测运行时版本。`menu.show` 始终保持 legacy 直接子 DOM，不继承 tray zones。
@@ -749,6 +751,8 @@ await fb2k.invoke('taskbar.setProgress', { state: 'indeterminate' });
 
 未声明本字段、仅靠 `tray:menuItemClicked` 再 `invoke('playback.*')` 的用户项，在主页面深挂起时不保证执行。后台可靠的托盘播放控制请用 `playbackAction`（或内置 `showPlaybackControls` 项）。这与 Electron `MenuItem.role` / Tauri `PredefinedMenuItem` 的声明式原生动作模式同构。
 
+内置 `showPlaybackControls` 注入项是**无状态**的：标签固定为「播放 / 暂停」「上一首」「下一首」「停止」（随 foobar2000 界面语言切换，但**不随播放态**变化），也不带图标。想让标签或图标跟随播放态，请关掉 `showPlaybackControls`、按下例自行声明 `playbackAction` 项，再用 `playback:*` 事件驱动它们的外观。
+
 ```js
 // 自定义外观 + 后台可靠的原生播放：
 await fb2k.invoke('tray.setContextMenu', {
@@ -803,6 +807,10 @@ await fb2k.invoke('tray.setContextMenu', {
 若想自绘该行而不用注入项，直接使用精确、大小写敏感的 id `_sys_show`（或 `_sys_exit`）：
 它获得同样的原生路由，你的 `label` / `icon` 被保留，对应的注入项则自动跳过。形似 id
 （如 `_sys_show_alt`、`_SYS_SHOW`）仍是普通用户项，且**不会**抑制注入。
+
+这套提升只认精确 id、**不看 `type`**，所以 `type: 'nowplaying'` 的封面卡也可以挂
+`id: '_sys_show'`，点它同样原生恢复主窗口。但该用法**仅在 `render: 'webview'` 下成立**：
+原生后端把 `nowplaying` 画成不可点击的灰色标题行，点不动，也不会触发任何路由。
 
 ```js
 fb2k.on('taskbar:buttonClicked', ({ id }) => console.log(id));

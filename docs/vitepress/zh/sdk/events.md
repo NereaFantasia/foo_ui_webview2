@@ -101,7 +101,7 @@ fb.off('playback:time', handler);
 | audio:outputDeviceChanged | 输出设备变化 | - |
 | audio:replaygainModeChanged | ReplayGain 模式变化 | {mode} |
 | audio:fullWaveformReady | 完整波形生成完成 | {taskId, path, waveform, duration, ...} |
-| audio:fullWaveformFailed | 完整波形生成失败 | {taskId, path, error, code} |
+| audio:fullWaveformFailed | 完整波形生成失败或被取消（`code` 为 `"CANCELLED"`） | {taskId, path, error, code} |
 
 ## 窗口 / 面板 / UI 事件
 

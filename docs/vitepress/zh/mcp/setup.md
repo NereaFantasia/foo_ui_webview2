@@ -4,7 +4,7 @@
 
 1. **Node.js 18+** — [下载](https://nodejs.org/)
 2. **foobar2000** 已安装并运行 `foo_ui_webview2` 组件
-3. **CDP 远程调试已启用** — 在 foobar2000 高级设置中开启 DevTools / CDP，默认端口 `9222`
+3. **CDP 远程调试已启用** — 在组件的 `Preferences → Display → WebView2 UI → 开发者` 页开启；端口也在那里设置（默认 `9222`）
 
 ## 安装方式 
 
@@ -105,10 +105,9 @@ npm start
 ### 启用 CDP 远程调试 
 
 1. 打开 foobar2000
-2. 进入 **Preferences → Advanced → Tools → WebView UI**
-3. 开启 **Enable DevTools** / **Enable CDP**
-4. 设置端口（默认 `9222`）
-5. 重启 foobar2000
+2. 进入 **Preferences → Display → WebView2 UI → 开发者**
+3. 勾选 **启用 CDP 远程调试（供 MCP / AI 代理使用）**；端口保持 `9222` 或在 1024–65535 内另选，然后按 **应用**
+4. 重启 foobar2000。改了端口的话，把 MCP 客户端配置里的 `FB2K_CDP_PORT` 设成同一个值
 
 ### 连接流程 
 
@@ -129,7 +128,7 @@ MCP Server 启动
 | 场景 | 表现 | 解决方案 |
 | --- | --- | --- |
 | foobar2000 未运行 | WebView2 not available at port 9222 | 启动 foobar2000 |
-| CDP 未启用 | 同上 | 在高级设置中启用 |
+| CDP 未启用 | 同上 | 在开发者子页启用并重启 |
 | 端口被占用 | 连接超时 | 更换端口或关闭占用程序 |
 | 连接中断 | 自动重连（最多 3 次） | 等待自动恢复 |
 | 调用超时 | 30 秒后返回错误 | 检查 foobar2000 是否卡顿 |
@@ -138,7 +137,7 @@ MCP Server 启动
 
 为节省内存，组件默认在窗口**最小化**、**隐藏到托盘**或**锁屏**时挂起 WebView 页面（`visibilityState=hidden`、渲染暂停、定时器节流）。挂起的页面会破坏 CDP 自动化：截图因不再出帧而停摆，依赖 `requestAnimationFrame` 或定时器的调用可能撞上 30 秒超时。
 
-开启 **Enable CDP remote debugging** 后，同一高级设置页的子开关 **Keep WebView active in background while CDP remote debugging is on (tray/minimize/lock)**（默认开启）会豁免上述挂起，让窗口最小化、托盘隐藏或锁屏期间 CDP 工具保持可用。若更在意后台省电可以关闭它，切换即时生效、无需重启。CDP 模式还会自动禁用 Chromium 的后台定时器节流。
+开启 **Enable CDP remote debugging** 后，**Preferences → Advanced → Tools → WebView2 UI** 里的子开关 **Keep WebView active in background while CDP remote debugging is on (tray/minimize/lock)**（默认开启）会豁免上述挂起，让窗口最小化、托盘隐藏或锁屏期间 CDP 工具保持可用。若更在意后台省电可以关闭它，切换即时生效、无需重启。CDP 模式还会自动禁用 Chromium 的后台定时器节流。
 
 | 症状 | 可能原因 | 处理 |
 | --- | --- | --- |

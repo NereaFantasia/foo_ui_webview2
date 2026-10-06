@@ -238,15 +238,18 @@ await fb2k.invoke('keyboard.unregisterHotkey', { key: 'Ctrl+Alt+Space' });
 }
 ```
 
-## DnD API - 外部文件拖入 (3 个 API)
+## DnD API - 文件拖入与拖出 (4 个 API)
 
 Windows 把拖入的文件列表交给原生窗口而非页面，且 HTML5 `File` 对象隐藏文件系统
 路径，因此本命名空间作为**旁路通道**提供宿主视角的真实路径。它不替代 HTML5 拖放：
 `dragenter` / `dragover` / `drop` 照原样触发。
 
-事件：`dnd:enter`、`dnd:leave`、`dnd:drop`、`dnd:capabilitiesChanged`。**没有**
-`dnd:over` 事件——一次拖放会产生上百次 `DragOver`，逐次发射会淹没 bridge；需要跟踪
-光标的页面用 HTML5 `dragover`。
+事件：`dnd:enter`、`dnd:leave`、`dnd:drop`、`dnd:capabilitiesChanged`，以及拖出
+方向的 `dnd:dragEnded`（见 `dnd.prepareDrag`）。**没有** `dnd:over` 事件——一次拖放
+会产生上百次 `DragOver`，逐次发射会淹没 bridge；需要跟踪光标的页面用 HTML5
+`dragover`。
+
+反方向——把曲目作为真实文件**拖出**窗口——走 `dnd.prepareDrag`。
 
 ### dnd.getCapabilities
 
@@ -262,18 +265,26 @@ Windows 把拖入的文件列表交给原生窗口而非页面，且 HTML5 `File
     "html5": true,
     "paths": true,
     "hosting": "visual",
-    "pathsUnavailableReason": "origin-untrusted"
+    "dragOut": true,
+    "pathsUnavailableReason": "origin-untrusted",
+    "dragOutUnavailableReason": "runtime-too-old"
 }
 ```
 
-`html5` 与 `paths` 相互独立：面板模式宿主会失去路径旁路通道，而 HTML5 拖放事件仍然
-工作（Chromium 自行处理）。`hosting` 为 `"visual"`（主窗口 / 弹出窗口）或
-`"standard"`（DUI / CUI 面板，此时路径不可用）。`pathsUnavailableReason` 仅当
-`paths` 为 `false` 时出现，取值为 `origin-untrusted`、`inner-target-not-found`、
-`forward-unavailable`、`chain-failed`、`displaced`、`register-failed` 之一。
+`html5`、`paths`、`dragOut` 三者相互独立：面板模式宿主会失去路径旁路通道，而 HTML5
+拖放事件仍然工作（Chromium 自行处理）；`dragOut` 另外依赖 WebView2 运行时。`hosting`
+为 `"visual"`（主窗口 / 弹出窗口）或 `"standard"`（DUI / CUI 面板，此时路径不可用）。
+`pathsUnavailableReason` 仅当 `paths` 为 `false` 时出现，取值为 `origin-untrusted`、
+`inner-target-not-found`、`forward-unavailable`、`chain-failed`、`displaced`、
+`register-failed` 之一。
+
+`dragOut` 为 `true` 表示页面可用 `dnd.prepareDrag` 把文件拖出。
+`dragOutUnavailableReason` 仅当它为 `false` 时出现：`not-visual-hosting`（面板模式，
+拖动源由 Chromium 持有）、`runtime-too-old`（WebView2 运行时早于拖放开始事件，需要
+Edge 144 或更新）、`register-failed`。
 
 能力在窗口生命周期内并非恒定：导航到不同 origin 会收回路径访问权，并发射
-`dnd:capabilitiesChanged`，载荷携带同样的四个字段。
+`dnd:capabilitiesChanged`，载荷携带同样这些字段。
 
 ```javascript
 const caps = await fb2k.invoke('dnd.getCapabilities');
@@ -313,20 +324,87 @@ document.addEventListener('drop', async (event) => {
 });
 ```
 
+### dnd.prepareDrag
+
+把一批路径换成一枚一次性 **token**，供本窗口的下一次拖出携带这些文件。
+
+| 参数 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `paths` | `string[]` | 是 | 要拖出的位置，至少一条。接受原生路径、`file://` URL、`file-relative://` URL（便携安装下与程序同卷媒体的路径形态，交由 foobar2000 解析）、`archive://` / `unpack://` 项，以及 `路径\|subsong:N` 形式（后缀会被去掉，拖走容器）。曲目的 `path` 与 `absolutePath` 都可以传。不检查文件是否存在。 |
+
+**返回值**: `{ "success": true, "token": "..." }`
+
+宿主先判定文档 origin，再把路径归一化为原生路径并按与 `queue.addPaths` 相同的方式
+校验，通过后才铸 token。拖放真正开始时，宿主凭 token 换回这份已校验的列表——
+**拖放时刻不从页面接受任何路径**。
+
+**token 必须在 `dragstart` 之前取得。** 拖放数据存储只在 `dragstart` 处理函数同步
+执行期间可写，在里面 `await` 本方法会让随后的 `setData` 静默失败，拖放空着出去。
+请在 `pointerdown` 时请求并保存，在 `dragstart` 里同步使用。按下后立刻拖动仍可能
+抢在回包之前触发 `dragstart`；此时没有 token，这次拖放就是普通的网页拖放。
+
+token 存活 30 秒、由第一次使用它的拖放消费，并绑定请求它的窗口。同一窗口的下一次
+调用成功后，旧 token 失效，即使尚未过期。
+
+**`dragstart` 里必须同时写两样东西：**
+
+1. `e.dataTransfer.setData('text/plain', 'fb2k-dnd-token/1:' + token)`——宿主凭
+   这个前缀识别拖出。`text/plain` 槽位因此被占用；宿主在拖放离开前把它置空，文本类
+   目标收到的是空串而不是 token。
+2. `e.dataTransfer.effectAllowed = 'copy'`——**必设**。文件挂上之后，**移动**由放置
+   目标执行（目的地与源同一分区时资源管理器默认就是移动），因此宿主拒绝一切允许
+   效果比 copy 更宽的拖放。不设等于 `copy | move | link`，同样被拒。
+
+**拖放开始时的拒绝通过 `dnd:dragEnded` 通知**，载荷 `{ result: 'failed', code, error }`：
+`PERMISSION_DENIED`（token 未知、过期、已消费、被顶掉或来自其他窗口）、
+`INVALID_PARAMS`（`effectAllowed` 不是 `'copy'`）、`OPERATION_FAILED`（文件列表
+挂不上去）。它**不是**拖放结束通知：宿主接受 token 后不再发事件，拖放像普通网页
+拖放一样进行（有浏览器拖影），结局在元素自己的 `dragend` 里——
+`dataTransfer.dropEffect` 为 `'copy'` 表示目标接收了文件，`'none'` 表示取消或被拒。
+拖放进行期间宿主窗口等待放置目标，与普通 HTML5 拖放完全一样。不带 token 前缀的
+拖放不受影响，也不产生 `dnd:dragEnded`。
+
+落到目标的永远是物理文件：cue / 多曲目容器里的一条曲目拖走整个容器，`archive://` /
+`unpack://` 项拖走整个压缩包，传入的多项可能折叠为一个文件。
+
+错误码：`NOT_FOUND`（调用窗口无 dnd 注册）、`ORIGIN_DENIED`（origin 不受信；先于
+一切路径检查）、`NOT_SUPPORTED`（`dragOut` 为 `false`）、`INVALID_PARAMS`（`paths`
+缺失、为空或元素非字符串）、`INVALID_PATH`（某项背后无本地文件；`paths[i]` 是传入
+数组下标）、`PERMISSION_DENIED`（某项被路径安全策略拒绝；`paths[i]` 是归一化去重后
+列表的下标）、`OPERATION_FAILED`（无法创建 token）。错误信息不含路径。
+处理函数返回的错误信封使 Promise resolve；通信失败仍可能 reject。
+有效 token 在检查允许效果或附加文件之前就已消费，因此拖放开始时失败后，
+重试前也必须申请新 token。
+
+```javascript
+let token = null;
+el.addEventListener('pointerdown', async () => {
+    token = null;
+    const r = await fb2k.invoke('dnd.prepareDrag', { paths: [trackPath] });
+    if (r.success) token = r.token;
+});
+el.addEventListener('dragstart', (e) => {
+    if (!token) return;
+    e.dataTransfer.setData('text/plain', 'fb2k-dnd-token/1:' + token);
+    e.dataTransfer.effectAllowed = 'copy';
+});
+el.addEventListener('dragend', (e) => console.log(e.dataTransfer.dropEffect));
+fb2k.on('dnd:dragEnded', (p) => console.warn('drag-out refused:', p.code, p.error));
+```
+
 ### dnd.startDrag
 
-把内容从窗口**拖出**到其他应用。
+本方法不启动拖放。
 
 - **参数**: 无
 
 **返回值**: 总是返回 `NOT_SUPPORTED` 错误信封。
 
 ::: tip 注意
-拖出需要 `IDropSource` 实现与宿主产出的数据对象，两者都不存在。它显式失败而非伪造
-`success: true`，避免调用方基于虚假的成功继续往下做。
+拖出功能由 `dnd.prepareDrag` 提供。本方法返回 `{ success: false, code: 'NOT_SUPPORTED' }`。
 
 该 Promise 会 **resolve** 这个信封而不是 reject——宿主把 handler 返回的错误信封当作
-正常结果投递，因此应判断 `success`，不要依赖 `catch`。
+正常结果投递，因此应判断 `success`；通信失败仍可能 reject。
 :::
 
 ## 交互投递与限制

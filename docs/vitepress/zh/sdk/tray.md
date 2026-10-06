@@ -209,7 +209,8 @@ await fb.tray.setContextMenu([
 ### 键盘 / ARIA / 减弱动效
 
 - 导航态：roving `tabindex` + 真实行焦点；Up/Down/Home/End 移动；Enter/Space 激活；子菜单 Right/Enter 展开并聚焦，Left 关闭并还原焦点，Escape 逐层退出。
-- 编辑态（评分 / 滑块 / 分段控件）：Enter 或 Right 进入，焦点落到内部控件；Escape/Enter 退回该行。
+- 编辑态（评分 / 滑块 / 分段控件）：Enter 或 Right 进入，焦点落到内部控件——`.fb-rating-control`、`.fb-slider-control`，或当前选中的 `.fb-seg-btn`，三者都带 `data-fb-focusable="1"`；Escape/Enter 退回该行。只有这三个元素会拿到真实 DOM 焦点，浏览器的默认焦点环（`:focus-visible`）也画在它们身上。默认样式表与受保护样式表都不给这个焦点环写样式；`cssReplace` 模式下请针对这三个选择器设置或重置它，而不是针对 `.fb-item`。
+- 在评分 / 滑块 / 分段控件行上滚动鼠标滚轮可调值（向上滚 = 增大），步长与方向和方向键一致。该行必须处于启用状态，滑块还必须不是常量滑块。当**另一行**正处于编辑态时，滚轮不生效，菜单照常滚动。
 - 纵向滑块：最小值在下、最大值在上；Up/Right 增大，Down/Left 减小；Home 取最小值，End 取最大值。
 - `checked: false` 仍表示这是一个可勾选项（`menuitemcheckbox`）；普通菜单项直接不写 `checked`。
 - 默认入退场动画遵循 `prefers-reduced-motion: reduce`（禁用 transform/transition），自定义 CSS 也应照做。这部分**不属于**受保护 CSS，也不改变 hide protocol 与 `closeAnimationMs`。

@@ -1,5 +1,39 @@
 # fb.player 播放控制
 
+## 底层端点对照
+
+`fb.player` 的方法名是 SDK 侧别名，不一定与底层 `fb2k.invoke` 端点同名。直接调用 bridge，或者 `Method not found` 报出 `playback.prev` 这类名字时，按此表查端点。
+
+| 方法 | 调用的端点 |
+| --- | --- |
+| `play()` | `playback.play` |
+| `pause()` | `playback.pause` |
+| `stop()` | `playback.stop` |
+| `next()` | `playback.next` |
+| `prev()` | `playback.previous` |
+| `random()` | `playback.random` |
+| `toggle()` | `playback.playOrPause` |
+| `playPause()` | `playback.playPause` |
+| `seek(seconds)` | `playback.setPosition` |
+| `getVolume()` | `playback.getVolume` |
+| `setVolume(volume)` | `playback.setVolume` |
+| `volumeUp()` | `playback.volumeUp` |
+| `volumeDown()` | `playback.volumeDown` |
+| `mute()` | `playback.mute` |
+| `toggleMute()` | `playback.toggleMute` |
+| `getState()` | `playback.getState` |
+| `getCurrentTrack()` | `playback.getCurrentTrack` |
+| `getPosition()` | `playback.getPosition` |
+| `getOrder()` | `playback.getPlaybackOrder` |
+| `setOrder(order)` | `playback.setPlaybackOrder` |
+| `getStopAfterCurrent()` | `playback.getStopAfterCurrent` |
+| `setStopAfterCurrent(enabled)` | `playback.setStopAfterCurrent` |
+| `toggleStopAfterCurrent()` | `playback.toggleStopAfterCurrent` |
+| `getCurrentTrackIndex(includeTrackInfo?)` | `playback.getCurrentTrackIndex` |
+| `getPlayingPlaylist()` | `playback.getPlayingPlaylist` |
+| `playPath(path)` | `playback.playPath` |
+| `playPaths(paths, options?)` | `playback.playPaths` |
+
 ## play()
 
 开始播放。如果已暂停则恢复播放，已停止则从头开始。返回 `{success}`。
@@ -105,7 +139,7 @@ const state = await fb.player.getState();
 
 ## getCurrentTrack()
 
-获取当前播放曲目信息。无正在播放时返回 `{success: true, found: false, playing: false}`。
+返回当前曲目的 `TrackInfo`。无曲目时宿主返回 `{ success: true, found: false, playing: false }`（`PlaybackNoTrackResponse`），不是 `null`。`TrackInfo` 不含 `found` 键，用 `'found' in track` 即可区分两种形状。
 
 | 返回字段 | 类型 | 说明 |
 | --- | --- | --- |
@@ -133,7 +167,9 @@ const state = await fb.player.getState();
 
 ```javascript
 const track = await fb.player.getCurrentTrack();
-if (track.found !== false) {
+if ('found' in track) {
+    console.log('当前没有曲目');
+} else {
     console.log(`${track.artist} - ${track.title} [${track.codec} ${track.bitrate}kbps]`);
 }
 ```

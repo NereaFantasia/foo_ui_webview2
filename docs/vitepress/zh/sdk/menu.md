@@ -8,7 +8,7 @@
 
 ### getContextMenu()
 
-封装 `menu.getContextMenu`。参数与返回类型以 `foo-webview-sdk` 的 TypeScript 声明为准（IDE 悬浮提示或包内 `bridge.d.ts`），行为契约见 API 文档对应条目。
+封装 `menu.getContextMenu`。参数与返回类型以 `foo-webview-sdk` 的 TypeScript 声明为准（IDE 悬浮提示或包内 `bridge.d.ts`），行为契约见 API 文档对应条目。命令叶节点带 `subGuid` 时 `source` 为 `contextmenu_dynamic`，否则为 `contextmenu_static`。
 
 ```javascript
 await fb.menu.getContextMenu(/* 参数见 TypeScript 声明 */);
@@ -16,7 +16,7 @@ await fb.menu.getContextMenu(/* 参数见 TypeScript 声明 */);
 
 ### getMainMenu()
 
-封装 `menu.getMainMenu`。参数与返回类型以 `foo-webview-sdk` 的 TypeScript 声明为准（IDE 悬浮提示或包内 `bridge.d.ts`），行为契约见 API 文档对应条目。
+封装 `menu.getMainMenu`。参数与返回类型以 `foo-webview-sdk` 的 TypeScript 声明为准（IDE 悬浮提示或包内 `bridge.d.ts`），行为契约见 API 文档对应条目。命令叶节点的 `source` 由自身地址决定：带 `subGuid` 为 `mainmenu_dynamic`，不带为 `mainmenu_static`；响应带 `source: 'v1-hmenu'` 时所有叶节点为 `hmenu_fallback`。扁平回退项带 `fallback: true`，保留 `flags`，没有 `commandId`。
 
 ```javascript
 await fb.menu.getMainMenu(/* 参数见 TypeScript 声明 */);
@@ -220,6 +220,8 @@ await fb.menu.close('api');
 #### 富控件
 
 `'rating'` / `'slider'` / `'segmented'` 是值控件：改变其值会以 `{ menuId, itemId, value }` 经 `menu:valueChanged` 回报，并**保持菜单打开**——索引到业务含义由前端决定，可以在菜单仍显示时就更新 foobar2000。`'nowplaying'` 卡片则属于普通选择：与任意普通行一样经 `menu:select` 回报并关闭菜单。
+
+除点击与方向键外，在值控件行上滚动鼠标滚轮也能调值（向上滚 = 增大）：每个滚轮事件走一步，`'rating'` 一步一星，`'slider'` 一步为量程的二十分之一，`'segmented'` 一步跳到下一个启用段。该行必须处于启用状态，`min` 与 `max` 相等的滑块则永远不动。当**另一行**正处于编辑态时，滚轮不生效，改为滚动菜单。
 
 `iconSvg` 由 `DOMParser` 解析，只把白名单内的图形元素与属性克隆进实时文档，因此不存在裸标记注入。非法或超限图标被静默丢弃，该行照常绘制、只是没有图标。
 

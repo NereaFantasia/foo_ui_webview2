@@ -190,7 +190,7 @@ _No parameters._
 
 **Returns**: `{ "items": [...], "count": 5 }`
 
-There is no paging and no `success` field; the whole queue is always returned. Each entry carries `queueIndex`, `path`, `absolutePath`, `subsong`, `fileSize`, the usual metadata fields, and the originating `playlist` and `playlistItem`.
+There is no paging and no `success` field; the whole queue is always returned. Each entry carries `queueIndex`, `path`, `absolutePath`, `subsong`, `fileSize`, the usual metadata fields, and the originating `playlist` and `playlistItem`. Both position fields are always present: exact integers for an entry that has a playlist position, and both `null` for an entry that has none — one queued through the `paths` of `queue.insertNext`, or one whose referenced playlist item has since been removed. `item.playlist == null` is the whole test.
 
 ```js
 const { items, count } = await fb2k.invoke('queue.get');
@@ -242,6 +242,112 @@ Supply either `index` or `indices`, not both — `index` wins when present. Dupl
 ```js
 await fb2k.invoke('queue.remove', { indices: [0, 2] });
 ```
+
+### queue.setContents
+
+Replaces the entire queue with an ordered list of references.
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `items` | `array<{ queueIndex: number } \| { playlist: number, item: number }>` | Yes | Ordered references — `{ queueIndex }` keeps/reorders an existing queue slot, `{ playlist, item }` adds a playlist track. |
+
+**Returns**: `{ "success": true, "queueCount": 5 }`
+
+An entry that matches neither shape fails the whole call before anything is written — unlike `queue.add`, which skips bad entries individually, any single invalid reference here rejects the entire call and leaves the queue untouched. `queueCount` is present on every response, success or failure. Passing an empty array clears the queue, equivalent to `queue.clear`. `items.length` is capped at `max(256, current queue length)`; exceeding it fails without changing the queue.
+
+::: tip Call pattern for drag-to-reorder UIs
+Call `setContents` once when the user releases the drag, not on every intermediate frame — each call flushes and rebuilds the whole queue, so per-frame calls during a drag gesture are wasted work and can visibly stutter.
+:::
+
+```js
+// Reorder: move queue slot 2 to the front, keep the rest in order
+await fb2k.invoke('queue.setContents', {
+  items: [{ queueIndex: 2 }, { queueIndex: 0 }, { queueIndex: 1 }],
+});
+// Clear the queue
+await fb2k.invoke('queue.setContents', { items: [] });
+```
+
+### queue.insertNext
+
+Inserts tracks so they play next, ahead of everything already queued. Entries are given as file paths, as playlist positions, or both.
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `paths` | `array<string>` | No¹ | File paths or URLs, optionally with a `\|subsong:N` suffix. The resulting entries carry no playlist position. |
+| `items` | `array<{ playlist, item }>` | No¹ | Playlist positions, in the shape `queue.setContents` accepts. The resulting entries carry that position, so the playback cursor follows them. |
+| `position` | `integer` | No | Insertion index within the queue *after* any moved entries are removed. Defaults to `0` (the front). |
+
+¹ At least one of `paths` and `items` must be non-empty.
+
+**Returns**: `{ "success": true, "insertedCount": 1, "movedCount": 1, "queueCount": 5, "invalidCount": 0 }`
+
+A track already present in the queue is moved to `position` instead of being queued a second time; only one occurrence moves, selected by the coordinate rules below. Within one call the `items` block lands first and the `paths` block after it; each block keeps its own order. `insertedCount` counts newly queued tracks and `movedCount` counts relocated entries. `invalidCount` is the input path count minus the number of tracks resolved from paths, floored at zero. It is not an exact count of failed paths: folder or container expansion can offset failures. `items` never counts toward `invalidCount`: one bad entry, such as a non-object, missing `playlist` or `item`, or an out-of-range position, fails the whole call with an `error` naming `items[i]`. Nothing is written, and the `paths` of the same call are not queued either.
+
+All input entries are deduplicated by track, not by position. For duplicate `items`, the first supplied coordinate already present in the queue is retained; if none matches, the first supplied coordinate is used. The track keeps its first-occurrence order within the input block. An existing entry at that coordinate moves first; otherwise the first queued entry for the track moves and takes the supplied coordinate. A path-only move preserves the existing entry's usable coordinate; only a newly inserted path lacks one. `queue.add` and `queue.setContents` preserve duplicate references. A lower `insertedCount + movedCount` can reflect deduplication or invalid paths; folders and containers can also expand to multiple tracks.
+
+Both arrays empty or absent fails with `{ "success": false, "error": "No paths or items specified" }`; `items` that is not an array fails with `"items must be an array"`; `paths` resolving to zero valid tracks with no `items` fails with `{ "success": false, "error": "No valid tracks found", "invalidCount": ... }`.
+
+::: warning Known limitation: legacy `|subsong:N` matching
+A track that entered the queue through the `path|subsong:N` suffix accepted by `queue.addPaths` may fail to match as "already in the queue" when passed to `insertNext` again — it may be queued a second time instead of moved. This only affects tracks queued before upgrading; new calls are unaffected. A bare path to a multi-subsong file and that same path with an explicit `|subsong:0` suffix are also treated as distinct identities rather than equivalent — do not assume they deduplicate against each other.
+:::
+
+::: warning Known limitation: the playlist cursor does not follow a track inserted by path
+Entries added through `paths` carry no playlist position (they are not written into any playlist, which is what keeps your playlists clean). foobar2000 therefore treats them as played *outside* the playlist: while such an entry plays, `playback.getCurrentTrackIndex` reports no position, and once it finishes playback resumes from the item **after the one that was playing before the queue was consumed**, not from the inserted track's own position. Two visible consequences when the inserted track also lives in the playing playlist: the sequence continues where it left off (e.g. item 8 → queued item → item 9), and the inserted track plays **again** when the sequence reaches it later. Entries added through `items`, like `queue.add({ playlist, tracks })` entries, carry a position and do not have this behaviour — the cursor jumps to the consumed entry and continues from there. When you know where the track sits in a playlist, pass `items`. Existing entries whose playlist position has become invalid (the referenced playlist was cleared) fall back to the same position-less form after `moveToTop` / `setContents` / `playNow` rebuild the queue.
+
+`playback.previous` is affected the same way. foobar2000 resolves "previous" from the cursor position in playlist order, not from playback history, and a consumed queue entry is never put back. While a position-less entry plays, `previous` lands on the item **before** the one that was interrupted (the interrupted track itself is skipped); while a positioned entry plays, it lands on the item before that entry's own playlist position. Neither returns to the interrupted track.
+:::
+
+```js
+// By path: the entry carries no playlist position
+await fb2k.invoke('queue.insertNext', { paths: ['C:\\Music\\a.flac'], position: 0 });
+// By playlist position: the cursor follows the entry once it plays
+await fb2k.invoke('queue.insertNext', { items: [{ playlist: 0, item: 12 }] });
+```
+
+### queue.playNow
+
+Plays the queue entry at `index` immediately, promoting it to the front of the queue first if it is not already there.
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `index` | `integer` | No | Queue index to play. Defaults to `0` (the current queue head). |
+
+**Returns**: `{ "success": true, "playedIndex": 0, "queueCount": 4 }`
+
+Fails with `{ "success": false, "error": "Queue is empty" }` when nothing is queued, or `{ "success": false, "error": "Invalid queue index" }` for a negative, non-integer, or out-of-range `index`.
+
+::: warning `queueCount` timing is not guaranteed
+`queueCount` is read immediately after playback starts. The host does not guarantee that its consumption of the queue head happens synchronously with that read, so the value may reflect the queue either just before or just after the played entry is removed. Call `queue.getCount` afterward if the exact post-play length matters.
+:::
+
+```js
+// Play whatever is at the head of the queue
+await fb2k.invoke('queue.playNow');
+// Play the 3rd entry, promoting it to the head first
+await fb2k.invoke('queue.playNow', { index: 2 });
+```
+
+### Explicit playback clears the queue
+
+`playlist.playTrack`, `playlist.replaceAllAndPlay`, `playback.playPath`, `playback.playPaths`, and `jitQueue.preloadBatch` when it starts playback (first call, or `replace: true`) all go through foobar2000's default-action path, which **flushes the whole playback queue first**. This is core behaviour, not something the component adds: the core implements "play this item" as *clear the queue, enqueue the target, consume it*, which is why you observe three `playback:queueChanged` events in a row (`user_removed` with `count: 0`, `user_added`, `playback_advance`). None of these calls can be asked to keep the queue.
+
+**Play a playlist item while keeping the queue.** Put the target at the head with `setContents`, then consume it with `playNow`:
+
+```js
+const { count } = await fb2k.invoke('queue.getCount');
+await fb2k.invoke('queue.setContents', {
+  items: [
+    { playlist, item },                                            // the track to play now
+    ...Array.from({ length: count }, (_, i) => ({ queueIndex: i })), // existing entries, in order
+  ],
+});
+await fb2k.invoke('queue.playNow'); // consumes the head, leaves the rest queued
+```
+
+After the count query, this uses two calls and one queue rebuild. The played track enters the queue with a playlist position, so the cursor follows it and the "cursor does not follow" limitation above does not apply.
+
+**Restore a queue that was cleared.** The host keeps no record of flushed entries, so snapshot `queue.get` *before* the call that starts playback. Entries whose `playlist` is not `null` can be added through `setContents` or `insertNext({ items })`; entries with `playlist: null` need `insertNext({ paths })`. Both forms can share one `insertNext` call, but it groups coordinates before paths and deduplicates by track. Use `setContents` afterwards to restore ordering and duplicate counts, not necessarily the original coordinate forms: if one track originally had both a coordinate entry and a coordinate-less entry, copying its remaining `queueIndex` also copies that entry's coordinate. Recreating every entry by path loses playlist coordinates and may collapse duplicates.
 
 ## selection
 

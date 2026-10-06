@@ -10,14 +10,11 @@
 [![CodeQL](https://github.com/NereaFantasia/foo_ui_webview2/actions/workflows/codeql.yml/badge.svg)](https://github.com/NereaFantasia/foo_ui_webview2/actions/workflows/codeql.yml)
 [![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/NereaFantasia/foo_ui_webview2)
 
-**文档站**: https://nereafantasia.github.io/foo_ui_webview2/ <!-- TODO: englishify the documentation site (currently Chinese-only) -->
+**文档站**: https://nereafantasia.github.io/foo_ui_webview2/
 
 基于 WebView2 的 foobar2000 现代 UI 组件 (C++ DLL)。将整个 foobar2000 窗口变为 WebView2 画布，使用现代 Web 技术构建界面，同时保留 Windows 11 原生视觉效果 (Mica/Acrylic)。
 
-- 版本: 1.12.0
 - 许可证: GPL-3.0-or-later (主组件) / MIT (`sdk/`)
-
-<!-- TODO(screenshots): 首屏截图待补 —— 计划：内置 Winamp 经典风格预设主题 + 基于本组件开发的社区主题（独立窗口、DUI/CUI 面板、Mica/Acrylic 效果）。 -->
 
 ---
 
@@ -84,8 +81,6 @@ foobar2000 已有非常优秀的自定义方案；本组件占据的是另一处
 ## 模板与主题
 
 组件本身不内置前端界面。请把你的 WebUI 放入 foobar2000 的 **profile** 目录下的 `webview-ui\<模板名>\`，并以 `index.html` 作为模板根目录的入口文件（例如 `<profile>\webview-ui\default\index.html`）。`<模板名>` 默认为 `default`，可在组件的「首选项」页中管理 / 切换。为向后兼容，旧路径 `<组件目录>\foo_ui_webview2_resources\dist\` 仍受支持。重启 foobar2000 即可加载。可基于 `sdk/`（`foo-webview-sdk`）构建自定义主题。
-
-<!-- TODO(preset-theme): Winamp 经典风格预设主题起草中，发布后在此登记链接。 -->
 
 ## 按人群选路线
 

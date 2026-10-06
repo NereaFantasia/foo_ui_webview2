@@ -34,7 +34,7 @@ if (response === 0) {
 
 Signature: `fb.dialog.openFile(options?: DialogOpenFileParams): Promise<DialogOpenFileResponse>`
 
-Returns `{ canceled, filePaths, error? }`. Set `multiple` to allow multiple selections; other options include `title`, `defaultPath`, `filters`, `name`, and `extensions`.
+Returns `{ canceled, filePaths, error? }`. Set `multiple` to allow multiple selections; other options include `title`, `defaultPath` (honored on every open), `filters`, `name`, and `extensions`.
 
 ```javascript
 const result = await fb.dialog.openFile({
@@ -48,10 +48,13 @@ const result = await fb.dialog.openFile({
 
 Signature: `fb.dialog.openFolder(options?: DialogOpenFolderParams): Promise<DialogOpenFolderResponse>`
 
-Accepts an optional `title` and returns `{ canceled, folderPath, error? }`.
+Accepts an optional `title` and an optional `defaultPath` — the folder the dialog opens in, every time it is shown; silently ignored when the path does not resolve to a folder, and `%music%` expands to the user's Music folder. Returns `{ canceled, folderPath, error? }`; `folderPath` is whatever the user confirmed, which need not be `defaultPath`.
 
 ```javascript
-const result = await fb.dialog.openFolder({ title: 'Choose a music folder' });
+const result = await fb.dialog.openFolder({
+	title: 'Choose a music folder',
+	defaultPath: 'D:\\Music'
+});
 ```
 
 ### saveFile(options?)

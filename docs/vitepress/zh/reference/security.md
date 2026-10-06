@@ -62,7 +62,7 @@ SSRF 防护拒绝：
 
 默认禁用。启用方法：
 
-**Preferences → Advanced → Tools → WebView UI → Enable DevTools**，然后重启 foobar2000。
+**Preferences → Display → WebView2 UI → 开发者 → 启用开发者工具 (F12)**，按**应用**，然后重启 foobar2000。
 
 ## 相关 API 与错误码
 

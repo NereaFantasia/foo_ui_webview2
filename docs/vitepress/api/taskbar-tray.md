@@ -108,6 +108,12 @@ route, your `label` / `icon` are preserved, and the matching injection is
 skipped. Lookalike ids such as `_sys_show_alt` or `_SYS_SHOW` stay ordinary user
 items and do not suppress the injection.
 
+Promotion is keyed on the exact id only, never on `type`, so a
+`type: 'nowplaying'` card carrying `id: '_sys_show'` also routes natively —
+clicking the cover restores the main window. That works under
+`render: 'webview'` only: the native backend draws `nowplaying` as a
+non-clickable header line, so there is nothing to click and no route fires.
+
 Top-level taskbar and tray icon fields are not generic image inputs. Non-empty
 values must be raw Base64-encoded `.ico` file bytes, without a Data URL header
 or `base64:` marker. PNG, JPEG, SVG, and Data URL payloads are not decoded by
@@ -303,6 +309,18 @@ Replaces the whole tray menu definition.
 the native or WebView menu backend. For WebView-rendered item icons, use
 `items[].iconSvg`; the native backend is text-only.
 
+With `config.autoNowPlaying` on, any `cover` / `title` / `subtitle` you leave
+empty on a `type: 'nowplaying'` item is filled from the current track when the
+menu opens; a value you supply always wins. `cover` auto-fill is
+`render: 'webview'` only and reads the now-playing in-memory art cache with no
+disk fallback, so it stays empty for sources foobar2000 cannot extract art from
+(most streams — pass `cover` yourself there). Art whose longest side exceeds
+64 px is downscaled to 64 px and re-encoded as JPEG when resizing succeeds.
+Smaller originals, or a failed resize, retain the original bytes and format.
+The cover is omitted if those image bytes exceed 256 KiB, before base64 encoding.
+The default stylesheet draws it at 40x40 CSS px; a 64 px thumbnail rendered above
+roughly 51 CSS px at 125% display scaling is upscaled.
+
 **Returns**: `{"error":"...","success":true}`
 
 ```js
@@ -443,6 +461,13 @@ page is deep-suspended (minimize / tray / lock). Use `playbackAction` (or the
 built-in `showPlaybackControls` items) for background-reliable tray playback
 control. This mirrors the declarative native action pattern of Electron
 `MenuItem.role` and Tauri `PredefinedMenuItem`.
+
+The built-in `showPlaybackControls` items are stateless: their labels are fixed
+(`Play / Pause`, `Previous Track`, `Next Track`, `Stop`, localized to the
+foobar2000 UI language but never to the playback state) and they carry no icon.
+To reflect playback state in a label or icon, turn `showPlaybackControls` off,
+declare your own `playbackAction` items as shown below, and drive their
+appearance from `playback:*` events.
 
 ```js
 // Custom appearance + background-reliable native playback:

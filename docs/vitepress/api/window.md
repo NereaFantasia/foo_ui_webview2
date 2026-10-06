@@ -264,6 +264,9 @@ Reads a window's DWM backdrop policy. Supports both the main window and popups.
 
 `resolvedBackdropPolicy` is the effective policy after profile defaults are applied. A window that cannot be resolved returns `{ "success": false, "error": "..." }`.
 
+- `activeEffect` values: `inherit` \| `none` \| `mica` \| `mica-alt` \| `acrylic` (the `WindowActiveBackdropEffect` type)
+- `inactiveEffect` values: `inherit` \| `system` \| `none` \| `mica` \| `mica-alt` \| `acrylic` (the `WindowInactiveBackdropEffect` type). `inherit` is the host default: the unfocused window keeps the resolved `activeEffect` and DWM applies its own inactive dimming. `system` hands the unfocused frame back to the platform backdrop. A string outside the table is not rejected: it is echoed in `backdropPolicy`, but `resolvedBackdropPolicy` keeps its previous effect.
+
 ```js
 // omit windowId to read the calling window
 const { resolvedBackdropPolicy } = await fb2k.invoke('window.getBackdropPolicy');
@@ -670,9 +673,19 @@ await fb2k.invoke('window.setAlwaysOnTop', { enabled: true });
 
 **Returns**: `{"error":"...","success":true}`
 
+Value tables match `window.getBackdropPolicy`:
+
+- `activeEffect` values: `inherit` \| `none` \| `mica` \| `mica-alt` \| `acrylic` (the `WindowActiveBackdropEffect` type)
+- `inactiveEffect` values: `inherit` \| `system` \| `none` \| `mica` \| `mica-alt` \| `acrylic` (the `WindowInactiveBackdropEffect` type). `inherit` is the host default: the unfocused window keeps the resolved `activeEffect` and DWM applies its own inactive dimming. `system` hands the unfocused frame back to the platform backdrop. A string outside the table is not rejected: it is echoed in `backdropPolicy`, but `resolvedBackdropPolicy` keeps its previous effect.
+
 ```js
 await fb2k.invoke('window.setBackdropPolicy', {
     backdropPolicy: { activeEffect: 'acrylic', darkMode: true },
+});
+
+// Keep the resolved activeEffect while unfocused; DWM dims the frame itself
+await fb2k.invoke('window.setBackdropPolicy', {
+    backdropPolicy: { activeEffect: 'mica', inactiveEffect: 'inherit' },
 });
 ```
 

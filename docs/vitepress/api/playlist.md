@@ -190,6 +190,7 @@ Get a paged list of tracks in a playlist. The response has no `success` field.
 | `start` | `integer` | No | `0` | Page offset. |
 | `count` | `integer` | No | `100` | Page size. |
 | `formats` | `object` | No | `{}` | Extra TitleFormat columns (see tip below). |
+| `fields` | `string[]` | No | all fields | Return only these fields (see tip below). |
 
 **Returns**:
 
@@ -233,6 +234,8 @@ Get a paged list of tracks in a playlist. The response has no `success` field.
 
 > Multi-value tags in `artist` / `albumArtist` / `genre` / `composer` (only the fields this API actually returns) are joined with `, ` in their original order, without de-duplication.
 
+> `rating` first reads `%rating%` and uses a value from `1` to `5`. If that value is missing or outside this range, it reads the file's `RATING` tag and clamps it to `0`-`5`; no available rating gives `0` (unrated). `rating.get` uses the same rule: `storage` is `'stats'` for an accepted `%rating%` value and `'file'` otherwise, including when no file tag exists.
+
 ::: tip column (`formats` Parameter)
 `playlist.getTracks` supports  `formats` Parameter TitleFormat column :
 
@@ -250,6 +253,69 @@ const result = await fb2k.invoke('playlist.getTracks', {
 
 ::: tip Paths
 `absolutePath` is the local filesystem path and can be passed directly to APIs such as `artwork.getForTrack`. `path` is the foobar2000 internal form.
+:::
+
+::: tip Projection (`fields` parameter)
+Pass `fields` to get back only the fields you name. `index` is always present, whether you ask for it or not.
+
+```javascript
+const page = await fb2k.invoke('playlist.getTracks', {
+    start: 0, count: 200,
+    fields: ['title', 'artist', 'album', 'duration', 'path']
+});
+```
+
+Accepted names are `index`, `title`, `artist`, `artists`, `album`, `albumArtist`, `genre`, `date`, `trackNumber`, `discNumber`, `duration`, `path`, `absolutePath`, `fileSize`, `bitrate`, `sampleRate`, `channels`, `codec`, `subsong` and `rating`. Names are matched exactly and are case sensitive; an unknown one fails the whole call with `INVALID_PARAMS` and lists the offenders in `details.unknownFields`, so a typo never silently drops a field. `composer` and `comment` are not accepted — they are returned only when you ask for no projection at all. `artists` works the other way round: this endpoint returns it only under a projection, as the array of atomic values behind `artist`.
+
+Omitting `absolutePath` and `rating` avoids resolving the filesystem path and evaluating `%rating%` for each row. The foo_playcount columns (`playCount`, `firstPlayed`, `lastPlayed`, `added`) are not produced under a projection either; request them through `formats` if you need them alongside one.
+:::
+
+### playlist.getGroupRuns
+
+Group a whole playlist and get back only the run boundaries, never the rows. A run is a maximal stretch of adjacent tracks whose group key is equal, so runs follow playlist order — nothing is reordered.
+
+| Parameter | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `patterns` | `string[]` | Yes | — | One TitleFormat pattern, or two for a second grouping level inside each run. |
+| `playlist` | `integer` | No | active playlist |  |
+| `index` | `integer` | No | — | Alias for `playlist`, read only when `playlist` is absent. |
+
+**Returns**:
+
+```json
+{
+    "success": true,
+    "playlist": 0,
+    "total": 150,
+    "runs": [
+        { "start": 0, "count": 12, "key": "Album A | Artist A" },
+        { "start": 12, "count": 9, "key": "Album B | Artist B" }
+    ]
+}
+```
+
+The example above shows only the first two runs. A successful response covers the entire playlist: for a non-empty list, `runs[0].start` is 0, adjacent runs meet end to end, and their `count` values sum to `total`. An empty playlist returns `total: 0` and `runs: []`.
+
+With two patterns each run also carries `sub`, and the sub-run `start` values are absolute row indices, not offsets within the parent:
+
+```json
+{
+    "start": 12,
+    "count": 9,
+    "key": "Album B | Artist B",
+    "sub": [
+        { "start": 12, "count": 5, "key": "1" },
+        { "start": 17, "count": 4, "key": "2" }
+    ]
+}
+```
+
+Keys are compared case-insensitively over ASCII `A-Z`/`a-z` only; every other code point is compared byte for byte. An empty key is an ordinary key, not a missing one — a pattern that evaluates to an empty string still forms runs, so handle the fallback text on the display side if you want one.
+
+`INVALID_PARAMS` is returned when `patterns` is absent, is not an array, is empty, holds more than two entries, holds a non-string or an empty string, or holds a pattern that fails to compile. Only errors in a specific entry carry its index in `details.pattern`; array-level errors have no such index. An out-of-range `playlist` also fails with `INVALID_PARAMS`, except that `-1` selects the active playlist.
+
+::: tip Driving a grouped virtual list
+Pair this with `playlist.getTracks`: the runs provide every header position and let the UI calculate total scroll height; each visible page of rows is fetched separately. Response size depends on the number of runs, key lengths and second-level groups, not on full track metadata. A pattern that puts every track in its own run makes `runs` as long as the playlist, and the host sets no upper bound. Compare `total` with a page response for the same playlist to detect a change in track count. Equal totals do not rule out replacements or reordering between the independent reads.
 :::
 
 ### playlist.playTrack
@@ -331,7 +397,11 @@ Add files or folders to a playlist. Paths are resolved synchronously via `playli
 | Parameter | Type | Required | Default | Description |
 | --- | --- | --- | --- | --- |
 | `playlist` | `integer` | No | active playlist |  |
-| `paths` | `array<string>` | Yes | — | File or folder paths. An empty array fails with `No paths specified`. |
+| `paths` | `array<string>` | Yes | — | File or folder paths, optionally with a `\|subsong:N` suffix. An empty array fails with `No paths specified`. |
+
+::: tip Order follows foobar2000's incoming-item filter, not the input array
+Plain paths go through the same filter foobar2000 applies when you add files from its own UI: duplicates are removed and the result is sorted by the user's *Sort incoming files by* preference (pointer order when that preference is empty). The added tracks therefore do **not** necessarily appear in the order you passed them, and `playlist.replaceAllAndPlay`'s `playIndex` refers to the resulting playlist position, not to an index into `paths`. Use `playlist.addPathsSequential` when input order must be preserved. Entries with a `\|subsong:N` suffix bypass the filter and are inserted ahead of the filtered batch.
+:::
 
 **Returns**:
 
@@ -369,9 +439,11 @@ await fb2k.invoke('playlist.addHandles', { handles: ['C:\\Music\\song.flac'] });
 | Parameter | Type | Required | Default | Description |
 | --- | --- | --- | --- | --- |
 | `playlist` | `integer` | No | active playlist |  |
-| `paths` | `array<string>` | Yes | — | File or folder paths. An empty array fails with `No paths specified`. |
+| `paths` | `array<string>` | Yes | — | File or folder paths, optionally with a `\|subsong:N` suffix. An empty array fails with `No paths specified`. |
 
 **Returns**: `{"error":"...","invalidCount":"...","operationId":"...","status":"...","success":true,"totalCount":"..."}`
+
+Local files and stream URLs are added synchronously without a progress dialog; only playlist wrappers (`.pls` / `.m3u` / `.cue`) go through asynchronous expansion. A `\|subsong:N` suffix selects that subsong of a multi-track file, rather than the default subsong 0.
 
 ```js
 const { operationId } = await fb2k.invoke('playlist.addPathsAsync', { paths: ['C:\\Music\\Album'] });
@@ -380,10 +452,12 @@ const { operationId } = await fb2k.invoke('playlist.addPathsAsync', { paths: ['C
 ### playlist.addPathsSequential
 
 
+Add paths in exactly the order given. Unlike `playlist.addPaths`, the incoming-item filter is bypassed: nothing is re-sorted or de-duplicated, so passing the same file twice adds it twice, and a folder or CUE sheet expands in place at its position in `paths`. `order` lists the playlist indices the new items landed on, in input order.
+
 | Parameter | Type | Required | Default | Description |
 | --- | --- | --- | --- | --- |
 | `playlist` | `integer` | No | active playlist |  |
-| `paths` | `array<string>` | Yes | — | File or folder paths. An empty array fails with `No paths specified`. |
+| `paths` | `array<string>` | Yes | — | File or folder paths, optionally with a `\|subsong:N` suffix. An empty array fails with `No paths specified`. |
 
 **Returns**: `{"addedCount":"...","error":"...","order":"...","playlist":"...","success":true}`
 

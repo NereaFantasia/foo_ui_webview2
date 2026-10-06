@@ -10,14 +10,11 @@ English | [中文](./README.zh-CN.md)
 [![CodeQL](https://github.com/NereaFantasia/foo_ui_webview2/actions/workflows/codeql.yml/badge.svg)](https://github.com/NereaFantasia/foo_ui_webview2/actions/workflows/codeql.yml)
 [![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/NereaFantasia/foo_ui_webview2)
 
-**Documentation**: https://nereafantasia.github.io/foo_ui_webview2/ <!-- TODO: englishify the documentation site (currently Chinese-only) -->
+**Documentation**: https://nereafantasia.github.io/foo_ui_webview2/
 
 A modern UI component for foobar2000 built on WebView2 (C++ DLL). It turns the entire foobar2000 window into a WebView2 canvas, letting you build the interface with modern web technologies while keeping native Windows 11 visual effects (Mica/Acrylic).
 
-- Version: 1.12.0
 - License: GPL-3.0-or-later (main component) / MIT (`sdk/`)
-
-<!-- TODO(screenshots): hero screenshots pending — planned set: bundled Winamp-classic-style preset theme + a community theme built on this component (standalone window, DUI/CUI panel, Mica/Acrylic effects). -->
 
 ---
 
@@ -84,8 +81,6 @@ No SDK files, no Node.js, no build step — the `fb2k` bridge is injected native
 ## Templates & themes
 
 The component ships without a built-in frontend. Place your WebUI under your foobar2000 **profile** directory at `webview-ui\<template>\`, with `index.html` as the required entry point at the template root (e.g. `<profile>\webview-ui\default\index.html`). `<template>` defaults to `default` and can be managed / switched from the component's preferences page. The legacy location `<component dir>\foo_ui_webview2_resources\dist\` is still supported for backward compatibility. Restart foobar2000 to load it. You can build custom themes on top of `sdk/` (`foo-webview-sdk`).
-
-<!-- TODO(preset-theme): a bundled Winamp-classic-style preset theme is in the works; link it here once shipped. -->
 
 ## Choose your path
 

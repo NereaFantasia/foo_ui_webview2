@@ -113,5 +113,6 @@ $msbuild = "$vsPath\MSBuild\Current\Bin\MSBuild.exe"
 
 ## 参考文档
 
+- [AGENTS.md](AGENTS.md) - AI智能体注意事项
 - [README.md](README.md) - 项目总览与快速上手
 - [docs/vitepress/guide/installation.md](docs/vitepress/guide/installation.md) - 安装与部署

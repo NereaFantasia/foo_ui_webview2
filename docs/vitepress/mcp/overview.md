@@ -1,6 +1,6 @@
 # MCP Server Overview
 
-Control foobar2000 from an AI agent through the [Model Context Protocol (MCP)](https://modelcontextprotocol.io/). The server registers **101 tools by default**: 98 Bridge tools and 3 always-on UI-testing tools. Setting `FB2K_ENABLE_EVAL` to `1` or `true` adds `fb2k_evaluate`, bringing the total to **102 tools**.
+Control foobar2000 from an AI agent through the [Model Context Protocol (MCP)](https://modelcontextprotocol.io/). The server registers **104 tools by default**: 101 Bridge tools and 3 always-on UI-testing tools. Setting `FB2K_ENABLE_EVAL` to `1` or `true` adds `fb2k_evaluate`, bringing the total to **105 tools**.
 
 ## What is MCP?
 

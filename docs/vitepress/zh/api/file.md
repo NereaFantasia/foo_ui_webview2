@@ -344,7 +344,7 @@ fb2k.on('file:opComplete', ({ operationId, successCount, cancelled }) => {
 | 参数 | 类型 | 必填 | 默认值 | 说明 |
 | --- | --- | --- | --- | --- |
 | `title` | `string` | 否 | `Open File` | 随界面语言本地化。 |
-| `defaultPath` | `string` | 否 | — | 初始目录，支持 `%music%` 等变量展开。 |
+| `defaultPath` | `string` | 否 | — | 对话框打开时定位到的目录，每次打开都定位；路径解析不到文件夹时静默忽略。支持 `%music%`。 |
 | `filters` | `array` | 否 | — | 文件类型过滤器，`{ name, extensions[] }` 数组。 |
 | `multiple` | `boolean` | 否 | `false` | 允许多选。 |
 
@@ -394,11 +394,17 @@ if (!result.canceled) {
 | 参数 | 类型 | 必填 | 默认值 | 说明 |
 | --- | --- | --- | --- | --- |
 | `title` | `string` | 否 | `Select Folder` | 随界面语言本地化。 |
+| `defaultPath` | `string` | 否 | — | 对话框打开时定位到的目录，每次打开都定位；路径解析不到文件夹时静默忽略。支持 `%music%`。 |
 
 **返回值**: `{"canceled":true,"error":"...","folderPath":"..."}`
 
+`folderPath` 是用户实际确认的目录，不一定等于 `defaultPath`。
+
 ```javascript
-const result = await fb2k.invoke('dialog.openFolder', { title: '选择音乐文件夹' });
+const result = await fb2k.invoke('dialog.openFolder', {
+    title: '选择音乐文件夹',
+    defaultPath: 'D:\\Music'
+});
 if (!result.canceled) {
     console.log('选中文件夹:', result.folderPath);
 }

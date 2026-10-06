@@ -84,10 +84,12 @@ const withFiles = await fb2k.invoke('library.browseTree', {
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `album` | `string` | No | Album name, matched exactly. Omitting it returns an empty result set. |
-| `artist` | `string` | No | Narrows the match to this album artist or track artist. |
+| `album` | `string` | No | Album name, compared byte for byte, so it is case-sensitive. Omitting it returns an empty result set. |
+| `artist` | `string` | No | Narrows the match to this album artist or track artist, compared the same way. |
 
 **Returns**: `{"album":"...","artist":"...","items":"...","success":true,"total":"...","tracks":"..."}`
+
+> Grouping is by album name alone, without the album artist, so identically titled albums by different artists come back as one track list whose length is the sum of the matching `library.getAlbums` rows. Pass `artist` to tell them apart.
 
 ```js
 // Tracks are returned sorted by track number
@@ -117,6 +119,8 @@ const scoped = await fb2k.invoke('library.getAlbumTracks', {
 | `useCache` | `boolean` | No | `true` | Serves cached results until the library changes. |
 
 **Returns**: `{"albums":[],"fromCache":"...","hasMore":true,"includeCover":"...","limit":"...","offset":"...","success":true,"total":"..."}`
+
+> Albums are grouped by album name plus the first value of `album artist`, falling back to the first value of `artist` when that tag is absent. A row's `artist` and `albumArtist` both carry whichever of the two the host resolved, so on an album with no `album artist` tag both report the first credited artist of the first track seen. Neither key is a per-track credit, and a multi-value `album artist` contributes only its first value. To list the albums one artist appears on, use `library.getArtistAlbums`.
 
 ```js
 // Minimal call: first 100 albums sorted by name
@@ -164,14 +168,33 @@ const page2 = await fb2k.invoke('library.getAll', { limit: 50, offset: 100 });
 
 | Parameter | Type | Required | Default | Description |
 | --- | --- | --- | --- | --- |
-| `artist` | `string` | Yes | — | Artist name, matched as a substring. |
-| `limit` | `integer` | No | `100` | Result cap. |
+| `artist` | `string` | Yes | — | Artist name. Compared byte for byte against each atomic tag value on a track, so it is case-sensitive; pass a name straight from `library.getArtists`. |
+| `limit` | `integer` | No | `100` | Album cap, applied after grouping. There is no `offset`. |
+| `sort` | `string` | No | `name` | Accepts `name`, `artist`, `year`, `trackCount`, as in `library.getAlbums`. An unrecognised value falls back to `name`. `artist` sorts on the album artist, which is often one value for every row here. |
+| `match` | `string` | No | `exact` | `exact` requires the whole atomic value to be byte-identical; `substring` matches on containment and is looser about case (see below). Any other value is refused — unlike `sort`, which falls back. |
 
-**Returns**: `{"albums":"...","error":"...","success":true}`
+**Returns**: `{"albums":[],"artist":"...","error":"...","hasMore":true,"success":true,"total":"..."}`
+
+> A row carries the same keys as a `library.getAlbums` row except `coverDataUrl` and `tracks`: `name`, `artist`, `albumArtist`, `trackCount`, `discCount`, `duration`, `year`, `genre`, `label`, `firstTrackPath` and `firstTrackAbsolutePath`. For cover art, pass `firstTrackAbsolutePath` to `artwork.getForTrack` — `firstTrackPath` can be a `file-relative://` URI, which that endpoint refuses. Every response carries `albums`, including the failures.
+
+> **`trackCount`, `duration` and `discCount` count only the tracks this artist appears on**, not the whole album. `library.getAlbums` returns the album-wide figures for the same album, so the two disagree on any album the artist appears on only partly — a one-track guest spot on a 20-track compilation reports `trackCount: 1`. Rendering a row here as an album card will understate it.
+
+> `total` counts albums before `limit` truncation. There is no `offset`: when `hasMore` is true, the only way to see the rest is a larger `limit`.
+
+> A name from `library.getArtists` matches here even when it is not the first of several credited artists, because the host compares each atomic tag value. The joined `artist` string on a track object is not a valid key — pass one artist name. Under `substring`, a short name also returns albums by other artists whose name contains it, and its case rule is asymmetric: a lowercase letter in the query matches either case in the tag, while an uppercase letter demands uppercase in the same position — `camellia` finds `Camellia`, `CAMELLIA` does not. `exact` is free of this.
+
+> Rows are grouped by album name alone, so identically titled albums by different artists collapse into one row. Tracks whose `album` tag is missing are grouped under `(Unknown Album)`; a tag present but empty forms its own group with an empty name. `library.getAlbums` differs on both counts: it keys on album plus album artist, and skips a track whose album is missing or empty.
 
 ```js
 const { albums } = await fb2k.invoke('library.getArtistAlbums', {
     artist: 'The Beatles'
+});
+
+// Discography newest first, capped at 20 albums
+const recent = await fb2k.invoke('library.getArtistAlbums', {
+    artist: 'The Beatles',
+    sort: 'year',
+    limit: 20
 });
 ```
 
@@ -180,10 +203,12 @@ const { albums } = await fb2k.invoke('library.getArtistAlbums', {
 
 | Parameter | Type | Required | Default | Description |
 | --- | --- | --- | --- | --- |
-| `artist` | `string` | No | — | Artist name, matched exactly. Omitting it returns an empty result set. |
+| `artist` | `string` | No | — | Artist name. Compared byte for byte against each atomic tag value on a track, so it is case-sensitive. Omitting it returns an empty result set. |
 | `limit` | `integer` | No | `500` | Result cap. |
 
 **Returns**: `{"artist":"...","count":"...","items":"...","success":true,"total":"...","tracks":"..."}`
+
+> Matching works exactly as `library.getArtistAlbums` does under `match: 'exact'`: a name from `library.getArtists` matches even when it is not the first of several credited artists, and an artist differing only in case is not pulled in.
 
 ```js
 const { items } = await fb2k.invoke('library.getArtistTracks', {
@@ -197,11 +222,18 @@ const { items } = await fb2k.invoke('library.getArtistTracks', {
 | Parameter | Type | Required | Default | Description |
 | --- | --- | --- | --- | --- |
 | `sort` | `string` | No | `name` | Accepts `name`, `trackCount`, `albumCount`. |
-| `limit` | `integer` | No | `1000` | Result cap. |
+| `limit` | `integer` | No | `1000` | Result cap. Caps the artist entries only, never the `albums` inside them. |
+| `includeAlbums` | `boolean` | No | `false` | When `true`, every entry carries an `albums` array listing the albums the artist is credited on. |
 
 **Returns**: `{"count":"...","error":"...","items":"...","success":true}`
 
+Each `items` entry is `{ name, albumCount, trackCount, totalDuration }`, plus `albums: [{ name, artist }]` when `includeAlbums` is `true`.
+
 > Every credited artist gets its own entry, so a track tagged with several artists is counted under each of them. `trackCount` is a participation count and the entries add up to more than the total number of tracks; `albumCount` and `totalDuration` are counted per artist the same way.
+
+> An entry `name` is a single atomic value and can be passed straight to `library.getArtistAlbums` or `library.getArtistTracks`. The joined `artist` string on a track object cannot: the host compares each atomic value, so on a multi-value track the joined string matches nothing. On a single-value track it happens to equal the atomic value, which makes it look usable — do not rely on it.
+
+> `albums` gives the "artist → albums" mapping for the whole library in the one scan this endpoint already performs, where calling `library.getArtistAlbums` per artist would scan the library once per artist. Each element's `(name, artist)` is the identity `library.getAlbums` groups by — `artist` is the first `album artist` value, falling back to the first `artist` value — so it matches exactly one `library.getAlbums` row, whose `firstTrackAbsolutePath` then leads to the cover. A track without an `album` tag contributes nothing here, as in `library.getAlbums`. Elements are de-duplicated by `(name, artist)` and sorted by `name`, then `artist`, in byte order. `albumCount` keeps its own rule and de-duplicates by album name only: two same-named albums by different album artists count as 1 in `albumCount` and appear as 2 elements in `albums`. Without `includeAlbums` the response is unchanged from earlier releases — the key is not present.
 
 ```js
 // Minimal call: up to 1000 artists sorted by name
@@ -212,6 +244,17 @@ const top = await fb2k.invoke('library.getArtists', {
     limit: 50,
     sort: 'trackCount'
 });
+
+// Artist -> albums mapping in one call (raise limit above the artist count)
+const { items: credited } = await fb2k.invoke('library.getArtists', {
+    includeAlbums: true,
+    limit: 100000
+});
+for (const artist of credited) {
+    for (const album of artist.albums) {
+        // album.name / album.artist pair up with a library.getAlbums row
+    }
+}
 ```
 
 ### library.getByPath

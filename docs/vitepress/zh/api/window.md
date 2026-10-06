@@ -387,8 +387,8 @@ await fb2k.invoke('window.setPopupBehavior', {
 
 - `backdropPolicy` — 调用方此前 `setBackdropPolicy` 显式设置过的字段（部分）
 - `resolvedBackdropPolicy` — 系统/profile 默认 + 显式覆盖后的最终生效值
-- `activeEffect` 取值：`inherit` \| `system` \| `none` \| `mica` \| `acrylic`
-- `inactiveEffect` 取值：`system` \| `none` \| `transparent` 等（详见 `WindowInactiveBackdropEffect` 类型）
+- `activeEffect` 取值：`inherit` \| `none` \| `mica` \| `mica-alt` \| `acrylic`（`WindowActiveBackdropEffect` 类型）
+- `inactiveEffect` 取值：`inherit` \| `system` \| `none` \| `mica` \| `mica-alt` \| `acrylic`（`WindowInactiveBackdropEffect` 类型）。`inherit` 为宿主默认值，表示失焦时沿用已解析的 `activeEffect`，由 DWM 负责失焦变暗；`system` 表示失焦时交还平台背景。不在取值表内的字符串不会报错：`backdropPolicy` 会原样回显，但 `resolvedBackdropPolicy` 沿用此前的效果。
 
 ```javascript
 const info = await fb2k.invoke('window.getBackdropPolicy');
@@ -411,6 +411,11 @@ console.log(info.resolvedBackdropPolicy.activeEffect); // 'mica'
 `backdropPolicy` 是必填字段且必须为 object，否则返回 `{ success: false, error: "backdropPolicy is required" }` 或 `"backdropPolicy must be an object"`。
 :::
 
+字段取值与 `window.getBackdropPolicy` 相同：
+
+- `activeEffect` 取值：`inherit` \| `none` \| `mica` \| `mica-alt` \| `acrylic`（`WindowActiveBackdropEffect` 类型）
+- `inactiveEffect` 取值：`inherit` \| `system` \| `none` \| `mica` \| `mica-alt` \| `acrylic`（`WindowInactiveBackdropEffect` 类型）。`inherit` 为宿主默认值，表示失焦时沿用已解析的 `activeEffect`，由 DWM 负责失焦变暗；`system` 表示失焦时交还平台背景。不在取值表内的字符串不会报错：`backdropPolicy` 会原样回显，但 `resolvedBackdropPolicy` 沿用此前的效果。
+
 ```javascript
 // 切换主窗口为 acrylic
 await fb2k.invoke('window.setBackdropPolicy', {
@@ -422,6 +427,14 @@ await fb2k.invoke('window.setBackdropPolicy', {
     backdropPolicy: {
         activeEffect: 'mica',
         inactiveEffect: 'system'
+    }
+});
+
+// 失焦沿用已解析的 activeEffect，由 DWM 做失焦变暗
+await fb2k.invoke('window.setBackdropPolicy', {
+    backdropPolicy: {
+        activeEffect: 'mica',
+        inactiveEffect: 'inherit'
     }
 });
 

@@ -6,7 +6,7 @@
 
 ### get()
 
-获取当前播放队列内容。
+获取当前播放队列内容。每个条目都带 `playlist` 与 `playlistItem`：有播放列表位置时是来源下标，没有时为 `null`。
 
 ```javascript
 const q = await fb.queue.get();

@@ -210,6 +210,8 @@ Returns the main menu tree, falling back to a flat command list when the host ca
 
 **Returns**: `{"error":"...","fallback":"...","items":[],"success":true}`
 
+Each command leaf carries a `source`. On the menu tree a leaf with `subGuid` reports `mainmenu_dynamic` and one without reports `mainmenu_static`; when the host had to walk the Win32 menu instead, the response carries `source: "v1-hmenu"` and every leaf reports `hmenu_fallback`. The flat fallback (`fallback: "flat-mainmenu-commands"`) marks each item with `fallback: true`, keeps `flags` and has no `commandId`.
+
 ```js
 const { items } = await fb2k.invoke('menu.getMainMenu', { root: 'View' });
 ```

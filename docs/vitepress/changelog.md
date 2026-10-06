@@ -1,5 +1,69 @@
 # Changelog
 
+## v1.14.0 (2026-10-05)
+
+::: warning Breaking changes in this release
+- `library.getArtistAlbums`, `getArtistTracks` and `getAlbumTracks` now match exactly: comparison is byte for byte and case-sensitive, and `*` and `?` are no longer treated as wildcards. To keep the previous substring match in `getArtistAlbums`, pass `match: 'substring'`.
+- The `artist` field of `library.getArtistAlbums` rows now reports the album artist (the first `album artist` value, or the first `artist` value when that tag is absent).
+- `library.getArtistAlbums` now sorts before applying `limit`, so a truncated result may contain different albums; `limit: 0` returns an empty list.
+- For queue entries without a playlist position, `queue.get` reports `playlist` and `playlistItem` as `null`; test `item.playlist == null`.
+:::
+
+### New features
+
+- Tracks can be dragged out of the window as real files: exchange paths for a one-time token with `dnd.prepareDrag`, then write it into the drag in `dragstart` (`fb.dnd.applyDragToken` in the SDK). `dataTransfer.effectAllowed` must be `'copy'`.
+- New `dnd:dragEnded` fires only when the host refuses to attach the files; subscribe with `fb.dnd.onDragEnded` in the SDK.
+- `dnd.getCapabilities` and `dnd:capabilitiesChanged` include `dragOut` and `dragOutUnavailableReason`; dragging out requires WebView2 Runtime 144 or later.
+- New `queue.setContents` replaces the playback queue with an ordered list.
+- New `queue.insertNext` queues tracks, given by path or playlist position, to play next; a track already queued is moved rather than queued twice.
+- New `queue.playNow` plays a queued item immediately.
+- `playback:queueChanged` includes `count`, and a rebuild of the queue is broadcast once.
+- New `playlist.getGroupRuns` returns the group boundaries of an entire playlist without its rows.
+- `playlist.getTracks` accepts `fields` to return only the specified fields; unknown names fail with `INVALID_PARAMS` and are listed in `details.unknownFields`.
+- `library.getArtistAlbums` accepts `sort` and `match`, and its response includes `artist`, `total` and `hasMore`. Its rows include the full set of album fields (`albumArtist`, `discCount`, `duration`, `genre`, `label`, `firstTrackPath`, `firstTrackAbsolutePath`), with counts covering only the artist's tracks.
+- `library.getArtists` accepts `includeAlbums`; when `true`, each artist includes its albums.
+- Lyrics files named `<artist> - <title>.lrc`, and shared `.lrc` files without the subsong number, are now found.
+- Spectrum adds `scale: 'db'`, `minFrequency` and `maxFrequency`, and the `fftSize` limit is raised to 65536. Each frame carries `subscriptionId`, the parameters in use, `streamTime` and `hostTime`.
+- `audio.getWaveform` accepts `channels` and `points`.
+- Full-track waveforms are no longer decoded again when `method`, `signed` or `scale` changes, and concurrent requests for one file share a single decode. The new `audio.cancelFullWaveform` cancels a pending task, and responses include `maxAmplitude`.
+- SDK: the function returned by `fb.audio.subscribeSpectrum` carries `ready`; `fb.audio.generateFullWaveform` accepts `signal`; new `playlist.getGroupRuns` and `playlist.getTracksPage`; `library.getArtistAlbums` accepts `options`.
+- `dialog.openFolder` accepts `defaultPath`, including `%music%`.
+- Rating, slider and segmented rows in self-drawn menus can be adjusted with the mouse wheel.
+- The preferences page (`Display → WebView2 UI`) is redesigned: changes are saved when `Apply` or `OK` is clicked, `Reset page` restores the defaults, and `Cancel` discards changes.
+- New Window, Performance and Developer pages provide settings for default zoom (50–200%), preloading WebView2 at startup and the CDP port (1024–65535, default 9222).
+- Templates are created, renamed and deleted under `Manage...`; these operations take effect immediately.
+
+### Changes
+
+- Background mode, deep suspend, developer tools, CDP remote debugging, and the development server switch and URL have moved from Advanced to the new pages, and existing values are carried over. Local network access over HTTP and invalid TLS certificates remain under `Advanced → Tools → WebView2 UI`.
+- Changing the component language is now written on `Apply`; dialogs opened afterwards use the new language.
+- The active template and templates referenced by a panel cannot be renamed or deleted, and an empty template list no longer creates `default` automatically.
+- Spectrum frames are pushed on time at each subscription's frame rate; on pause or stop one silent frame is sent before frames stop; out-of-range parameters fail with `INVALID_PARAMS`.
+- `duration` of `audio.getWaveform` must be within (0, 1] seconds, or the call fails with `INVALID_PARAMS`.
+- While hidden to the tray, `window.getState` reports `minimized: true`, and hiding sends one more `window:stateChanged`.
+- `Allow insecure HTTP connections (disable HSTS)` is marked as reserved and currently has no effect.
+
+### Fixes
+
+- Fixed an issue where lyrics and cover files in a track's folder could not be read, including in portable installations (#15).
+- Fixed an issue where tracks whose file names contain `..` were rejected as path traversal (#17); the `filename` of `lyrics.save` and `metadata.embedArtwork` and the `file` of `log.write` follow the same rule.
+- Fixed an issue where artists whose names contain a double quote returned no albums or tracks.
+- Fixed an issue where `library.getArtistAlbums` undercounted `trackCount` when truncated and omitted `albums` on failure.
+- Fixed an issue where `<fb-library-tree>` listed other artists' albums under an artist node.
+- Fixed an issue where spectrum subscriptions changed each other's `fftSize`, `bands` and `fps`.
+- Fixed an issue where foobar2000 could crash when generating a full-track waveform for a track with a very long path, and different tracks could share one waveform.
+- Fixed an issue where the area previously occupied by the window could not be clicked after hiding to the tray.
+- Fixed an issue where tracks added by native path (such as `E:\...`) did not match the same file in a playlist.
+- Fixed an issue where `playlist.addPathsSequential` did not preserve the given order.
+- Fixed an issue where `playlist.addPathsAsync`, `library.addToPlaylist` and `audio.analyzeBPM` ignored `path|subsong:N`.
+- Fixed an issue where a playlist row's `rating` could differ from `rating.get`; both now read foo_playcount first.
+
+### Known issues
+
+- 1.x does not fully check where a page comes from: an `http(s)` URL opened with `window.createPopup` is trusted outright, so the page can call every API, `shell.exec` included; in development mode, pages on any local port are trusted too; and events are pushed to whatever page is loaded, including one that has navigated to another origin. These issues are fixed in v2.0.0 and will not be fixed in 1.x. Do not open untrusted URLs in popups.
+- Tracks queued through the `paths` option of `queue.insertNext` carry no playlist position; after they finish, playback resumes from where it was before the insertion. When the track's playlist position is known, use `items` instead.
+- The playback queue is not kept across restarts; this is foobar2000's own behavior.
+
 ## v1.13.0 (2026-08-26)
 
 ::: warning Breaking changes in this release
@@ -10,7 +74,6 @@ Four changes may require code edits:
 - **`file.*` error messages changed, and a rejected path is no longer echoed back.** Every hand-rolled error envelope in the namespace now goes through the standard error envelope, and a `std::filesystem` exception surfaces only its Win32 error number — the exception text and the offending path no longer reach the payload or the host log. A path-security refusal now reads `file.read: path security denied for 'path': Access denied: protected system path`: it names the method, the parameter (with its index for array parameters, as in `items[2].destination`) and the policy reason, so a caller can tell which argument was refused without the host leaking a filesystem location into a payload a page may forward elsewhere. Code that parsed `result.error` for a path or for specific wording has to switch to `result.code` plus `result.details`.
 - **A parameter of the wrong shape now returns `INVALID_PARAMS`, not `PERMISSION_DENIED`.** The path-security decorator previously reported a refused path and a malformed argument under the same code. A handler that branched on `PERMISSION_DENIED` to catch type errors will stop seeing them there.
 
-The release stays on a minor version, consistent with this project's version axis (see 1.6.0 and 1.12.0). Pin an exact version if you need to upgrade deliberately.
 :::
 
 ### Asynchronous file operations
@@ -39,8 +102,8 @@ The release stays on a minor version, consistent with this project's version axi
 - An entry is `null` whenever no target is available: the path is not a shortcut, the shortcut names a shell namespace object such as the recycle bin rather than a file, the recorded target is too long to come back intact (Windows caps it at `MAX_PATH`, and a truncated path would name a different file), COM was unavailable, or resolution was skipped to keep the drop responsive. Never an empty string, so a truthiness test is enough.
 - A target says where the shortcut points, not that the file is there. A broken shortcut reports the path its `.lnk` recorded rather than `null`, because Windows hands that path back whether or not the target still exists and the host cannot afford a filesystem check on the thread the drag blocks. Expect a non-null entry to occasionally name nothing. Only `.lnk` is resolved — `.url`, `.library-ms` and virtual search results report `null`.
 - Reading `resolvedPaths` costs no filesystem access: the targets were resolved once when the drag arrived, so `getPathsAsync()` reads host memory only.
-- **Documented limitation** — the page-side snapshot is published to the top-level document only, so `dnd.getPaths()` and `dnd.getResolvedPaths()` answer with an empty array inside an `<iframe>` and the slot stays `null` for the life of that document. A framed page that needs paths has to receive them from the main frame over `postMessage`.
-- Dragging tracks **out** of the window is still unsupported and `dnd.startDrag` keeps resolving `{ success: false, code: 'NOT_SUPPORTED' }`. Measurements settled the design question — it needs a dedicated STA thread, because performing the drag on the host's main thread freezes the target application for as long as the gesture lasts — but the work is deliberately not in this release.
+- **A known limitation** — the page-side snapshot is published to the top-level document only, so `dnd.getPaths()` and `dnd.getResolvedPaths()` answer with an empty array inside an `<iframe>` and the slot stays `null` for the life of that document. A framed page that needs paths has to receive them from the main frame over `postMessage`.
+- Dragging tracks **out** of the window is still unsupported and `dnd.startDrag` keeps resolving `{ success: false, code: 'NOT_SUPPORTED' }`.
 
 ### Media library queries
 
@@ -55,7 +118,7 @@ The release stays on a minor version, consistent with this project's version axi
 ### Title formatting
 
 - **`titleformat.eval`, `evalBatch`, `evalFields` and `evalFieldsBatch` now report `infoAvailable`.** The host knew whether a track's metadb info was ready and was throwing that signal away, so tag-derived output could come back silently wrong. `infoAvailable: false` means tag-derived values are untrustworthy. Batch variants carry the flag per row, and rows that failed omit it.
-- Two limits worth knowing: one flag covers the whole merged script in the `evalFields` forms, so it cannot tell you which individual field was affected, and it never covers foo_playcount virtual fields. A `fields` key literally named `infoAvailable` overwrites the flag, matching the existing behaviour of `path` and `success`.
+- Two limits worth knowing: one flag covers the whole merged script in the `evalFields` forms, so it cannot tell you which individual field was affected, and it never covers foo_playcount virtual fields. A `fields` key literally named `infoAvailable` overwrites the flag, matching the existing behavior of `path` and `success`.
 
 ### Errors and permissions
 
@@ -94,7 +157,6 @@ Four changes may require code edits:
 - **Window size constraints target the calling window.** The six `window.setMinSize` / `getMinSize` / `setMaxSize` / `getMaxSize` / `setResizable` / `isResizable` endpoints no longer fall back to the main window, and a call that resolves no target now fails. A popup that relied on the old fallback was constraining the main window.
 - **`DiscoveryContextMenuCommand` is no longer a type alias.** Reading `path` / `isDynamic` / `subGuid` off a context-menu command no longer type-checks — those fields were never populated.
 
-The release stays on a minor version because the project's version axis has carried breaking changes in minor releases before (see 1.6.0). Pin an exact version if you need to upgrade deliberately.
 :::
 
 ### Drag and drop

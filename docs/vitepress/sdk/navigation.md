@@ -8,7 +8,7 @@ This page covers the `fb.queue`, `fb.jitQueue`, `fb.discovery`, and `fb.keyboard
 
 ### get()
 
-`fb.queue.get(): Promise<QueueGetResponse>` returns `{ items, count }`. Each `QueueItem` extends `TrackInfo` and may include the source `playlist` and `playlistItem` indices.
+`fb.queue.get(): Promise<QueueGetResponse>` returns `{ items, count }`. Each `QueueItem` extends `TrackInfo` and always carries `playlist` and `playlistItem`: the source indices for an entry that has a playlist position, `null` for one that has none.
 
 ```javascript
 const queue = await fb.queue.get();

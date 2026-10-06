@@ -1,6 +1,6 @@
 # Queue 工具 
 
-播放队列管理。共 8 个工具。
+播放队列管理。共 11 个工具。
 
 ## fb2k_queue_get 
 
@@ -46,8 +46,8 @@
 | 字段 | 类型 | 描述 |
 | --- | --- | --- |
 | queueIndex | integer | 队列中的位置 |
-| playlist | integer | 来源播放列表索引 |
-| playlistItem | integer | 来源播放列表中的项索引 |
+| playlist | integer \| null | 来源播放列表索引；条目不带播放列表位置时为 `null` |
+| playlistItem | integer \| null | 来源播放列表中的项索引；与 `playlist` 同时为 `null` |
 | 曲目字段 | — | 同 getCurrentTrack 的字段结构 |
 
 ## fb2k_queue_add 
@@ -130,3 +130,43 @@
 
 - **参数**: 无
 - **Bridge 方法**: `queue.flush`
+
+## fb2k_queue_set_contents 
+
+用一份有序引用列表替换整个队列。
+
+- **Bridge 方法**: `queue.setContents`
+
+| 参数 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| items | `{ queueIndex }` 或 `{ playlist, item }` 的数组 | 是 | 有序引用列表；空数组清空队列 |
+
+::: tip 整体失败，不会部分写入
+任一条目形态无法识别都会让整次调用在写入前失败，队列保持不变——与逐项跳过无效条目的 `fb2k_queue_add` 不同。
+:::
+
+## fb2k_queue_insert_next 
+
+插入曲目使其成为下一首播放，插入到当前队列所有曲目之前。条目可以按文件路径给、按播放列表位置给，或两者都给。
+
+- **Bridge 方法**: `queue.insertNext`
+
+| 参数 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| paths | string[] | 否¹ | 文件路径或 URL，支持 `path\|subsong:N` 格式；入队的条目不带播放列表位置 |
+| items | `[{ playlist, item }]` | 否¹ | 播放列表位置（非负整数）；入队的条目带该位置，播放游标会跟随 |
+| position | integer | 否 | 移除被移动条目之后的插入下标，默认 `0` |
+
+¹ `paths` 与 `items` 至少一个非空。
+
+已在队列中的曲目会被移动到 `position`，而不是重复入队。同一次调用里 `items` 块排在前、`paths` 块排在后。任一 `items` 条目有问题，整次调用在写入前失败；`items` 按曲目去重，同一曲目的两个位置只入队一条。返回结果除 `queueCount` 外还带 `insertedCount`、`movedCount` 与 `invalidCount`（只统计 `paths`）。
+
+## fb2k_queue_play_now 
+
+立即播放指定下标的队列曲目；若该曲目尚不在队首，会先将其移到队首。
+
+- **Bridge 方法**: `queue.playNow`
+
+| 参数 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| index | integer | 否 | 要播放的队列下标，默认 `0`（当前队首） |

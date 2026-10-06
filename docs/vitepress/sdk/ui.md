@@ -264,6 +264,10 @@ See [`WindowPopupBehaviorPatch`](../api/window#window-setpopupbehavior) and [`Wi
 | `getBackdropPolicy(windowId?)` | `(string?) => Promise<WindowBackdropPolicyState>` |
 | `setBackdropPolicy(opts)` | `(WindowBackdropPolicyPatch & { windowId?: string }) => Promise<WindowBackdropPolicyResponse>` |
 
+`setBackdropPolicy` takes a flat patch (`activeEffect`, `inactiveEffect`, and the other `WindowBackdropPolicyPatch` fields) plus optional `windowId`. The wrapper sends `{ backdropPolicy }` to the host; do not nest `backdropPolicy` yourself.
+
+`inactiveEffect` values: `inherit` \| `system` \| `none` \| `mica` \| `mica-alt` \| `acrylic` (`WindowInactiveBackdropEffect`). `inherit` is the host default: the unfocused window keeps the resolved `activeEffect` and DWM applies its own inactive dimming. `system` hands the unfocused frame back to the platform backdrop.
+
 ### Click-through regions
 
 | Method | Signature and result |

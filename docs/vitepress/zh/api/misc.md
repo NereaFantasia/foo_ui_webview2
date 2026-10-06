@@ -195,6 +195,8 @@ await fb2k.invoke('menu.runContextCommand', {
 
 每个 item 包含 `type`（"command"/"submenu"/"separator"）、`label`、`flags`、`guid`、`path`、`children` 等字段。
 
+命令叶节点带 `source`：菜单树上带 `subGuid` 的叶节点为 `mainmenu_dynamic`，不带的为 `mainmenu_static`；宿主改走 Win32 菜单时，响应带 `source: "v1-hmenu"`，所有叶节点为 `hmenu_fallback`。扁平回退（`fallback: "flat-mainmenu-commands"`）的每一项带 `fallback: true`，保留 `flags`，没有 `commandId`。
+
 ### menu.getContextMenu
 
 获取上下文菜单树结构。

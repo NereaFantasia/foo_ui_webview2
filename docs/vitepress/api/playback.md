@@ -11,7 +11,7 @@ This page is the primary owner for the namespaces listed below. Method names, pa
 
 _No parameters._
 
-**Returns**: `{"found":"...","playing":"...","success":true}`
+**Returns**: the current track object (`TrackInfo` fields such as `title`, `artist`, `duration`, `path`) while a track is loaded; `{"success":true,"found":false,"playing":false}` when nothing is loaded. The response is never `null`, and `TrackInfo` has no `found` key, so `'found' in result` distinguishes the two shapes.
 
 ```js
 const result = await fb2k.invoke('playback.getCurrentTrack');

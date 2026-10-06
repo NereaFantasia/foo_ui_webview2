@@ -41,12 +41,21 @@ const albums = await fb.library.getAlbums(50);
 
 | 参数 | 类型 | 说明 |
 | --- | --- | --- |
-| limit | number | 最大返回数量 |
+| limit | number | 最大返回数量。只截艺术家条目，不截每位的 `albums` |
+| options | `Omit<LibraryGetArtistsParams, 'limit'>?` | 其余原生参数：`sort`（`name` / `trackCount` / `albumCount`）与 `includeAlbums` |
+
+返回 `LibraryArtistsResponse`；`items` 的每一行是 `ArtistInfo`——`{ name, albumCount, trackCount, totalDuration }`，`options.includeAlbums` 为 `true` 时再多一个 `albums?: ArtistAlbumRef[]`（`{ name, artist }`）。
 
 > 每位参与艺术家各成一个条目，一首多艺术家曲目会计进其中每一位。`trackCount` 是参与曲目数，各条目相加会大于曲目总数；`albumCount` 与 `totalDuration` 同样按每位艺术家重复计入。
 
+> `includeAlbums` 在本调用本来就要做的那一遍扫描里给出整个媒体库的「艺术家 → 专辑」映射，不必逐位艺术家各扫一遍 `getArtistAlbums`。每个 `albums` 元素的 `(name, artist)` 就是 `getAlbums` 分组用的身份（`artist` 取 `album artist` 首值，缺则取 `artist` 首值），因此恰好对上 `getAlbums` 的一行。元素按这一对去重，先按 `name`、再按 `artist` 排序；`albumCount` 仍只按专辑名去重，同名但专辑艺术家不同的两张专辑在 `albumCount` 里算 1、在 `albums` 里是 2 条。
+
 ```javascript
 const artists = await fb.library.getArtists(100);
+
+// 给浏览器的「艺术家」分节一次拿到映射
+const { items } = await fb.library.getArtists(100000, { includeAlbums: true });
+const albumsByArtist = new Map(items.map((a) => [a.name, a.albums]));
 ```
 
 ## getStats()
@@ -262,7 +271,7 @@ for await (const node of fb.library.enumerateDirectories({ rootPath: '', strateg
 
 ## getAlbumTracks(album, artist?)
 
-获取指定专辑的所有曲目。
+获取指定专辑的所有曲目。`album` 与 `artist` 都逐字节比较、区分大小写。只按专辑名分组，同名不同专辑艺术家的几张会合成一份列表——要区分就传 `artist`。
 
 ```javascript
 const tracks = await fb.library.getAlbumTracks('Abbey Road', 'The Beatles');
@@ -368,17 +377,28 @@ const { tracks } = await fb.library.search('artist HAS Beatles');
 await fb.library.addToPlaylist(tracks.map(t => t.path), 0);
 ```
 
-### getArtistAlbums(artist, limit?)
+### getArtistAlbums(artist, limit?, options?)
 
-签名：`fb.library.getArtistAlbums(artist: string, limit?: number): Promise<LibraryAlbumsResponse>`
+签名：`fb.library.getArtistAlbums(artist: string, limit?: number, options?: { sort?: string; match?: 'exact' | 'substring' }): Promise<LibraryArtistAlbumsResponse>`
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
-| artist | string | 是 | 艺术家名称 |
-| limit | number | 否 | 最大返回数量 |
+| artist | string | 是 | 艺术家名，与每个原子标签值逐字节比较，区分大小写 |
+| limit | number | 否 | 专辑条数上限，分组完成后截断（默认 `100`）；没有 `offset` |
+| options.sort | string | 否 | `name`（默认）、`artist`、`year` 或 `trackCount`；取值无法识别时回退到 `name` |
+| options.match | `'exact' \| 'substring'` | 否 | `exact`（默认）要求整个原子值逐字节相等；`substring` 按包含匹配、大小写规则较宽；取值无法识别时直接拒绝，不回退 |
+
+返回该艺术家参与的专辑。行的键集与 `getAlbums` 相同，只少 `coverDataUrl` 与 `tracks`——要封面就把行里的 `firstTrackAbsolutePath` 交给 `artwork.getForTrack`，`firstTrackPath` 可能是 `file-relative://` 形态、那种形态该端点不受理。
+
+`trackCount`、`duration` 与 `discCount` 只统计该艺术家参与的曲目、不是整张专辑，因此只要该艺术家只参与了一部分，就与 `getAlbums` 给的数字不一致。该差异与分组规则见 [`library.getArtistAlbums`](../api/library.md#library-getartistalbums)。
 
 ```javascript
-const albums = await fb.library.getArtistAlbums('The Beatles', 50);
+const { albums } = await fb.library.getArtistAlbums('The Beatles', 50);
+
+// 按年份从新到旧
+const recent = await fb.library.getArtistAlbums('The Beatles', 20, {
+    sort: 'year',
+});
 ```
 
 ### getArtistTracks(artist, limit?)

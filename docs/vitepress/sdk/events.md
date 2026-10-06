@@ -101,7 +101,7 @@ fb.off('playback:time', handler);
 | `audio:outputDeviceChanged` | Output device changes | Empty object |
 | `audio:replaygainModeChanged` | ReplayGain mode changes | `{ mode }` |
 | `audio:fullWaveformReady` | Full-waveform generation completes | `AudioFullWaveformReadyPayload` |
-| `audio:fullWaveformFailed` | Full-waveform generation fails | `{ taskId, path, error, code }` |
+| `audio:fullWaveformFailed` | Full-waveform generation fails or is cancelled (`code: "CANCELLED"`) | `{ taskId, path, error, code }` |
 
 ## Window, panel, UI, and desktop events
 

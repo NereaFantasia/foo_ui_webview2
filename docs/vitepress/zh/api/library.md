@@ -210,6 +210,8 @@ if (result.found) {
 **返回值**: `{"albums":[],"fromCache":"...","hasMore":true,"includeCover":"...","limit":"...","offset":"...","success":true,"total":"..."}`
 
 
+> 专辑按「专辑名 + `album artist` 首值」分组，`album artist` 标签不存在时回退到 `artist` 首值。行里的 `artist` 与 `albumArtist` 装的都是宿主解析出的那一个值，所以在没有 `album artist` 标签的专辑上，两个键报的都是首见曲目的第一位署名艺术家。两个键都不是逐曲目的署名，而多值 `album artist` 只有首值参与。要列出某位艺术家参与的专辑，用 `library.getArtistAlbums`。
+
 > `coverDataUrl` 仅当 `includeCover: true` 且封面不超过 `coverMaxSize` KB 时返回。
 
 ::: tip 性能优化
@@ -235,13 +237,15 @@ const results = await fb2k.invoke('library.getAlbums', { query: 'Beatles' });
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
-| `album` | `string` | 否 | 专辑名，精确匹配；留空返回空列表。 |
-| `artist` | `string` | 否 | 匹配 album artist 或 artist，用于区分同名专辑。 |
+| `album` | `string` | 否 | 专辑名，逐字节比较、区分大小写；留空返回空列表。 |
+| `artist` | `string` | 否 | 匹配 album artist 或 artist，用于区分同名专辑。同样逐字节比较。 |
 
 **返回值**: `{"album":"...","artist":"...","items":[],"success":true,"total":"...","tracks":[]}`
 
 
 > `items` 和 `tracks` 内容相同，`items` 为兼容别名。
+
+> 只按专辑名分组，不带 album artist。所以同名不同专辑艺术家的几张专辑在这里会合成一份曲目列表，取回的轨数等于 `library.getAlbums` 里同名各行之和——要区分就传 `artist`。
 
 ```javascript
 const { items } = await fb2k.invoke('library.getAlbumTracks', {
@@ -256,15 +260,33 @@ const { items } = await fb2k.invoke('library.getAlbumTracks', {
 | 参数 | 类型 | 必填 | 默认值 | 说明 |
 | --- | --- | --- | --- | --- |
 | `sort` | `string` | 否 | `name` | 可取 `name` / `trackCount` / `albumCount`。 |
-| `limit` | `integer` | 否 | `1000` | 返回条数上限。 |
+| `limit` | `integer` | 否 | `1000` | 返回条数上限。只截艺术家条目，不截每位的 `albums`。 |
+| `includeAlbums` | `boolean` | 否 | `false` | 为 `true` 时每个条目多带一个 `albums` 数组，列出该艺术家署名过的专辑。 |
 
 **返回值**: `{"count":0,"error":"...","items":[],"success":true}`
 
+`items` 的每一项是 `{ name, albumCount, trackCount, totalDuration }`；`includeAlbums` 为 `true` 时再多一个 `albums: [{ name, artist }]`。
+
 > 每位参与艺术家各成一个条目，一首多艺术家曲目会计进其中每一位。`trackCount` 是参与曲目数，各条目相加会大于曲目总数；`albumCount` 与 `totalDuration` 同样按每位艺术家重复计入。
+
+> 条目的 `name` 是单个原子值，可直接传给 `library.getArtistAlbums` 或 `library.getArtistTracks`。曲目对象上拼接后的 `artist` 串不行：宿主按每个原子值比较，多值曲目上拼接串命中不了；单值曲目上它恰好等于那个原子值，看着能用，别依赖。
+
+> `albums` 在本端点本来就要做的那一遍扫描里给出整个媒体库的「艺术家 → 专辑」映射；逐位艺术家调 `library.getArtistAlbums` 则是每位艺术家各扫一遍。每个元素的 `(name, artist)` 就是 `library.getAlbums` 分组用的身份——`artist` 取 `album artist` 首值，缺则取 `artist` 首值——因此恰好对上 `library.getAlbums` 的一行，再由那一行的 `firstTrackAbsolutePath` 取封面。没有 `album` 标签的曲目在这里不计，与 `library.getAlbums` 一致。元素按 `(name, artist)` 去重，先按 `name`、再按 `artist` 的字节序排列。`albumCount` 保持自己的口径，只按专辑名去重：同名但专辑艺术家不同的两张专辑，`albumCount` 算 1，`albums` 里是 2 条。不传 `includeAlbums` 时响应与旧版完全相同——不会出现这个键。
 
 ```javascript
 // 按曲目数量排序
 const artists = await fb2k.invoke('library.getArtists', { sort: 'trackCount' });
+
+// 一次拿到「艺术家 → 专辑」映射（limit 提到艺术家数之上）
+const { items } = await fb2k.invoke('library.getArtists', {
+    includeAlbums: true,
+    limit: 100000
+});
+for (const artist of items) {
+    for (const album of artist.albums) {
+        // album.name / album.artist 与 library.getAlbums 的一行一一对应
+    }
+}
 ```
 
 ### library.getArtistTracks
@@ -273,7 +295,7 @@ const artists = await fb2k.invoke('library.getArtists', { sort: 'trackCount' });
 
 | 参数 | 类型 | 必填 | 默认值 | 说明 |
 | --- | --- | --- | --- | --- |
-| `artist` | `string` | 否 | — | 艺术家名，精确匹配；留空返回空列表。 |
+| `artist` | `string` | 否 | — | 艺术家名。与曲目上每个原子标签值逐字节比较，区分大小写；留空返回空列表。 |
 | `limit` | `integer` | 否 | `500` | 返回条数上限。 |
 
 **返回值**: `{"artist":"...","count":0,"items":[],"success":true,"total":"...","tracks":[]}`
@@ -281,32 +303,68 @@ const artists = await fb2k.invoke('library.getArtists', { sort: 'trackCount' });
 
 > `items` 和 `tracks` 内容相同。`count` 和 `total` 值相同，均为兼容字段。
 
+> 匹配口径与 `library.getArtistAlbums` 的 `match: 'exact'` 一致：`library.getArtists` 给出的名字在这里能命中，即使它不是某曲目多位艺术家中的第一位；仅大小写不同的另一位艺术家不会被带进来。
+
 ```javascript
 const { items } = await fb2k.invoke('library.getArtistTracks', { artist: 'The Beatles' });
 ```
 
 ### library.getArtistAlbums
 
-获取指定艺术家的专辑列表。使用大小写不敏感的模糊匹配。
+获取指定艺术家参与的专辑列表。
 
 | 参数 | 类型 | 必填 | 默认值 | 说明 |
 | --- | --- | --- | --- | --- |
-| `artist` | `string` | 是 | — | 艺术家名，大小写不敏感的模糊匹配。 |
-| `limit` | `integer` | 否 | `100` | 返回条数上限。 |
+| `artist` | `string` | 是 | — | 艺术家名。与曲目上每个原子标签值逐字节比较，区分大小写；直接传 `library.getArtists` 返回的名字即可。 |
+| `limit` | `integer` | 否 | `100` | 专辑条数上限，在分组完成之后截断。没有 `offset`。 |
+| `sort` | `string` | 否 | `name` | 可取 `name` / `artist` / `year` / `trackCount`，与 `library.getAlbums` 同义。取值无法识别时回退到 `name`。`artist` 按专辑艺术家排，在本端点各行往往是同一个值。 |
+| `match` | `string` | 否 | `exact` | `exact` 要求整个原子值逐字节相等；`substring` 按包含匹配，且大小写规则较宽（见下）。其余取值一律拒绝 —— 与会回退的 `sort` 不同。 |
 
 **返回值**:
 
 ```json
 {
     "success": true,
+    "artist": "The Beatles",
+    "total": 13,
+    "hasMore": false,
     "albums": [
-        { "name": "Abbey Road", "artist": "The Beatles", "year": "1969", "trackCount": 17 }
+        {
+            "name": "Abbey Road",
+            "artist": "The Beatles",
+            "albumArtist": "The Beatles",
+            "trackCount": 17,
+            "discCount": 1,
+            "duration": 2832.5,
+            "year": "1969",
+            "genre": "Rock",
+            "label": "Apple",
+            "firstTrackPath": "file://D:\\Music\\Abbey Road\\01.flac",
+            "firstTrackAbsolutePath": "D:\\Music\\Abbey Road\\01.flac"
+        }
     ]
 }
 ```
 
+> 行的键集与 `library.getAlbums` 的行相同，只少 `coverDataUrl` 与 `tracks`：`name`、`artist`、`albumArtist`、`trackCount`、`discCount`、`duration`、`year`、`genre`、`label`、`firstTrackPath` 与 `firstTrackAbsolutePath`。要封面就把 `firstTrackAbsolutePath` 交给 `artwork.getForTrack`——`firstTrackPath` 可能是 `file-relative://` 形态，那种形态该端点不受理。每一种响应都带 `albums` 键，失败路径也带。
+
+> **`trackCount`、`duration` 与 `discCount` 只统计该艺术家参与的曲目**，不是整张专辑。同一张专辑在 `library.getAlbums` 那边给的是整张的数字，所以只要该艺术家只参与了一部分，两边就不一致——在一张 20 轨合辑上客串一首，这里报的是 `trackCount: 1`。拿本端点的行当专辑卡渲染会把数字显示得偏小。
+
+> `total` 是截断前的专辑数。本端点没有 `offset`：`hasMore` 为真时，唯一的办法是加大 `limit` 重取。
+
+> `library.getArtists` 给出的名字在这里能命中，即使它不是某曲目多位艺术家中的第一位——宿主是拿每个原子标签值逐个比较的。曲目对象上拼接后的 `artist` 串不能当键用，请传单个艺术家名。`substring` 下短名还会带回名字里含它的其他艺术家的专辑，且它的大小写规则不对称：查询里的小写字母能匹配标签里的任意大小写，大写字母则要求标签同一位置也是大写——`camellia` 命中 `Camellia`，`CAMELLIA` 命不中。`exact` 不受这条影响。
+
+> 本端点只按专辑名分组，因此同名不同艺术家的专辑会并成一行。`album` 标签缺失的曲目归入 `(Unknown Album)`；标签存在但值为空串时自成一组、组名为空串。`library.getAlbums` 这两点都不同：它按专辑名加专辑艺术家分组，并且跳过专辑名缺失或为空的曲目。
+
 ```javascript
-const { albums } = await fb2k.invoke('library.getArtistAlbums', { artist: 'Beatles' });
+const { albums } = await fb2k.invoke('library.getArtistAlbums', { artist: 'The Beatles' });
+
+// 按年份从新到旧，最多 20 张
+const recent = await fb2k.invoke('library.getArtistAlbums', {
+    artist: 'The Beatles',
+    sort: 'year',
+    limit: 20
+});
 ```
 
 ### library.getGenres

@@ -22,7 +22,7 @@ Signature: `fb.menu.getContextMenu(options?: MenuGetContextMenuParams): Promise<
 | `options.i18n` | `boolean` | No | Enables localized labels. |
 | `options.withAvailability` | `boolean` | No | Includes availability metadata. |
 
-Returns a `MenuGetContextMenuResponse` containing the recursive `items` menu tree and context metadata.
+Returns a `MenuGetContextMenuResponse` containing the recursive `items` menu tree and context metadata. A command leaf's `source` is `contextmenu_dynamic` when it carries `subGuid`, otherwise `contextmenu_static`.
 
 ```javascript
 const result = await fb.menu.getContextMenu({ mode: 'nowPlaying' });
@@ -43,7 +43,7 @@ Signature: `fb.menu.getMainMenu(root?: string): Promise<MenuGetMainMenuResponse>
 | --- | --- | --- | --- |
 | `root` | `string` | No | Limits the returned tree, for example `'Main'` or `'View'`. |
 
-Returns a `MenuGetMainMenuResponse`. The optional `items` field is a recursive `MenuItem[]` tree.
+Returns a `MenuGetMainMenuResponse`. The optional `items` field is a recursive `MenuItem[]` tree. A command leaf's `source` follows its own address: `mainmenu_dynamic` when it carries `subGuid`, `mainmenu_static` otherwise. When the response reports `source: 'v1-hmenu'`, every leaf is `hmenu_fallback`. The flat fallback (`fallback: true`) keeps `flags` and has no `commandId`.
 
 ```javascript
 const result = await fb.menu.getMainMenu('View');
@@ -259,6 +259,8 @@ await fb.menu.close('api');
 #### Rich items
 
 `'rating'`, `'slider'`, and `'segmented'` are value controls: changing one reports through `menu:valueChanged` as `{ menuId, itemId, value }` and **keeps the menu open**, so the page decides what a value means and can update foobar2000 while the menu stays on screen. A `'nowplaying'` card is an ordinary selection instead: it reports through `menu:select` and closes the menu, like any normal row.
+
+Besides clicking and the arrow keys, the mouse wheel over a value-control row steps it (scroll up = increase): one step per wheel event, one star for `'rating'`, a twentieth of the range for `'slider'`, and the next enabled segment for `'segmented'`. The row must be enabled, and a slider whose `min` equals its `max` never moves. While a *different* row is in editor mode the wheel is ignored and the menu scrolls instead.
 
 An `iconSvg` is parsed with `DOMParser` and only an allowlisted set of shape elements and attributes is cloned into the live document, so raw markup injection is not possible. Illegal or oversized icons are dropped silently and the row is drawn without one.
 

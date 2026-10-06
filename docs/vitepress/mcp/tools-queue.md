@@ -1,6 +1,6 @@
 # Queue Tools
 
-Eight tools manage the playback queue.
+Eleven tools manage the playback queue.
 
 ## fb2k_queue_get 
 
@@ -46,8 +46,8 @@ Gets every item in the playback queue.
 | Field | Type | Description |
 | --- | --- | --- |
 | `queueIndex` | integer | Position in the queue |
-| `playlist` | integer | Source playlist index |
-| `playlistItem` | integer | Source item index |
+| `playlist` | integer \| null | Source playlist index; `null` when the entry has no playlist position |
+| `playlistItem` | integer \| null | Source item index; `null` together with `playlist` |
 | Track fields | — | Same track-data family as `playback.getCurrentTrack` |
 
 ## fb2k_queue_add 
@@ -130,3 +130,43 @@ Flushes the playback queue. The mapped Bridge method is an alias of `queue.clear
 
 - **Parameters**: none
 - **Bridge method**: `queue.flush`
+
+## fb2k_queue_set_contents 
+
+Replaces the entire playback queue with an ordered list of references.
+
+- **Bridge method**: `queue.setContents`
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `items` | array of `{ queueIndex }` or `{ playlist, item }` | Yes | Ordered references; an empty array clears the queue |
+
+::: tip Fails atomically
+An entry with an unrecognized shape fails the whole call before anything is written, leaving the queue unchanged — unlike `fb2k_queue_add`, which skips bad entries one at a time.
+:::
+
+## fb2k_queue_insert_next 
+
+Inserts tracks so they play next, ahead of everything already queued. Entries are given as file paths, as playlist positions, or both.
+
+- **Bridge method**: `queue.insertNext`
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `paths` | string[] | No¹ | File paths or URLs, optionally using `path\|subsong:N`; the resulting entries carry no playlist position |
+| `items` | `[{ playlist, item }]` | No¹ | Playlist positions (non-negative integers); the resulting entries carry that position, so the playback cursor follows them |
+| `position` | integer | No | Insertion index after any moved entries are removed; defaults to `0` |
+
+¹ At least one of `paths` and `items` must be non-empty.
+
+A track already in the queue is moved to `position` instead of being queued a second time. Within one call the `items` block lands first, then the `paths` block. One bad `items` entry fails the whole call before anything is written; `items` deduplicates by track, so two positions of one track become one queue entry. The result carries `insertedCount`, `movedCount`, and `invalidCount` (paths only) alongside `queueCount`.
+
+## fb2k_queue_play_now 
+
+Plays the queue entry at the given index immediately, moving it to the front of the queue first if it is not already there.
+
+- **Bridge method**: `queue.playNow`
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `index` | integer | No | Queue index to play; defaults to `0` (the current queue head) |

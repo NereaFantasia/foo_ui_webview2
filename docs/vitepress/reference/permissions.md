@@ -187,7 +187,7 @@ These endpoints manage their own policy outside ordinary decorator specs:
 ### Common rejections
 
 - Device paths: `\\.\...` and `\\?\...`
-- Directory traversal containing `..`
+- Directory traversal: any path segment that is `.` or `..` (periods inside a name, such as `Bonus Track..flac`, are allowed)
 - Empty or relative paths (absolute paths required)
 
 ### Read

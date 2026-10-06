@@ -4,7 +4,7 @@
 
 1. **Node.js 18+** — [download Node.js](https://nodejs.org/)
 2. **foobar2000** with the `foo_ui_webview2` component installed and running
-3. **CDP remote debugging enabled** in the component's advanced settings; the runtime uses port `9222`
+3. **CDP remote debugging enabled** on the component's `Preferences → Display → WebView2 UI → Developer` page; the port is set there too (default `9222`)
 
 ## Installation
 
@@ -105,9 +105,9 @@ Add the same server configuration under **MCP Servers** in Cursor settings.
 ### Enable CDP remote debugging
 
 1. Open foobar2000.
-2. Go to **Preferences → Advanced → Tools → WebView UI**.
-3. Enable **Enable CDP remote debugging on port 9222 (for MCP/AI agents)**.
-4. Restart foobar2000.
+2. Go to **Preferences → Display → WebView2 UI → Developer**.
+3. Check **Enable CDP remote debugging (for MCP / AI agents)**; leave the port at `9222` or pick another one in 1024–65535, then press **Apply**.
+4. Restart foobar2000. If you changed the port, set `FB2K_CDP_PORT` to the same value in the MCP client configuration.
 
 ### Connection sequence
 
@@ -135,7 +135,7 @@ MCP server starts
 
 To save memory, the component normally suspends the WebView page (`visibilityState=hidden`, rendering paused, timers throttled) when the window is **minimized**, **hidden to the tray**, or the **session is locked**. A suspended page breaks CDP automation: screenshots stall because no frames are produced, and calls that depend on `requestAnimationFrame` or timers can run into the 30-second invoke timeout.
 
-When **Enable CDP remote debugging** is on, the companion option **Keep WebView active in background while CDP remote debugging is on (tray/minimize/lock)** on the same Advanced page (enabled by default) skips that suspension, so CDP tools stay responsive while the window is minimized, in the tray, or the screen is locked. Disable it if you prefer background power savings over automation stability; toggling it takes effect immediately without a restart. CDP mode additionally disables Chromium's background timer throttling.
+When **Enable CDP remote debugging** is on, the companion option **Keep WebView active in background while CDP remote debugging is on (tray/minimize/lock)** under **Preferences → Advanced → Tools → WebView2 UI** (enabled by default) skips that suspension, so CDP tools stay responsive while the window is minimized, in the tray, or the screen is locked. Disable it if you prefer background power savings over automation stability; toggling it takes effect immediately without a restart. CDP mode additionally disables Chromium's background timer throttling.
 
 | Symptom | Likely cause | Fix |
 | --- | --- | --- |

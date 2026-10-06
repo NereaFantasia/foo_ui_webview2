@@ -11,7 +11,7 @@
 
 _无参数。_
 
-**返回值**: `{"found":"...","playing":"...","success":true}`
+**返回值**: 有曲目时返回当前曲目对象（`TrackInfo` 字段，如 `title`、`artist`、`duration`、`path`）；无曲目时返回 `{"success":true,"found":false,"playing":false}`。响应从不为 `null`；`TrackInfo` 不含 `found` 键，用 `'found' in result` 区分两种形状。
 
 ```js
 const result = await fb2k.invoke('playback.getCurrentTrack');

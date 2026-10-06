@@ -39,6 +39,24 @@ foobar2000 v2.0 是 64 位版本的分水岭。如果你使用的是 v1.x 版本
 - 偏好设置页 `File → Preferences → Display → WebView2 UI`
 - 高级分支 `File → Preferences → Advanced → Tools → WebView2 UI`
 
+## 偏好设置页
+
+`File → Preferences → Display → WebView2 UI` 是总览页，分三组：
+
+- **Web 模板** — 活动模板及其文件夹。`管理...` 用于创建、重命名、删除模板（新模板由你自己起名）；`打开...` 在文件夹存在时打开它。
+- **外观** — 组件语言（自动 / English / 中文）与默认窗口背景效果。语言改动对新打开的组件对话框生效；菜单与面板描述在重启后更新。
+- **工具** — 只读的开发服务器状态行，以及通往高级分支与 API 列表的按钮。
+
+它在左侧树里带三个子页（子页名跟随组件语言，重启后更新）：
+
+- **窗口** — 记住窗口位置和大小；后台模式（重启后生效）与启动时恢复后台窗口上次的显示 / 隐藏状态（勾上后台模式即可编辑）；最小化到托盘、关闭到托盘（当前主题未创建托盘图标时禁用并给出说明）；任务栏缩略图播放按钮（重启后生效）与任务栏按钮上的播放进度。主题在运行期通过 `tray.*` / `taskbar.*` API 设置的值只覆盖本次会话，不会写回这里。
+- **性能** — 启动时预热 WebView2 环境（关闭则在首个窗口需要时创建；重启后生效）；主窗口隐藏时深度挂起 WebView（只对主窗口；CDP 保活生效期间不挂起）；默认内容缩放，50–200%、步进 25，叠加在系统 DPI 缩放之上。按 `应用` 后已打开的窗口立即重设缩放（主题调过 `window.setZoom` 的除外），新窗口在创建时读取该值。
+- **开发者** — 开发者工具 (F12)；开发服务器开关与 URL，按 `应用` 即重载主窗口与跟随全局模板的面板（不重启；显式指定模板或 URL 的面板与弹出窗口不受影响）；CDP 远程调试及其端口（1024–65535，默认 9222）。开发者工具、CDP 开关与端口在重启后生效。改了端口，MCP 服务器也要指向新端口（`FB2K_CDP_PORT`，见 [MCP 配置指南](/zh/mcp/setup)）。
+
+每一页的改动都先进草稿：按 `应用` 或 `确定` 才写入，`重置页面` 只把草稿设回默认值、不写配置，`取消` 丢弃草稿。模板的创建 / 重命名 / 删除是立即执行的文件操作，`取消` 不会撤销；当前活动模板与被已加载面板引用的模板不能重命名或删除。
+
+安全例外仍在 `File → Preferences → Advanced → Tools → WebView2 UI`：CDP 后台保活、HTTP 访问本地网络、`fb.http.*` 使用无效 TLS 证书，以及保留的 HSTS 条目。条目名跟随组件语言。后台模式、深度挂起、开发者工具、CDP 开关以及开发服务器开关与 URL 不再是高级条目；旧版本在那里设过的值会在新设置首次读取时带过来。
+
 ## 资源根目录与模板
 
 用户可编辑的前端资源位于 profile 资源根目录：
@@ -100,7 +118,7 @@ await fb.player.play()
 
 **启用步骤：**
 
-1. `Preferences → Advanced → Tools → WebView2 UI` → `Enable background mode (run WebView when using other UIs) - requires restart`
+1. `Preferences → Display → WebView2 UI → Window` → 勾选 `后台模式：使用其他界面时仍运行 WebView` 并按 `应用`（组件语言为英文时显示为 `Background mode: keep the WebView running while another user interface is active`）
 2. `Preferences` → `Display` → `Default User Interface` → 选择其他 UI
 3. 重启 foobar2000
 4. `View → WebView2 UI → Show/Hide Window`

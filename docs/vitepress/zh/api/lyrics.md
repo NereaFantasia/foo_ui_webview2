@@ -177,6 +177,26 @@ await fb2k.invoke('lyrics.save', {
 await fb.lyrics.save('C:\\Music\\song.flac', lyricsText, { target: 'all' });
 ```
 
+## 外部歌词文件的查找 {#sidecar-lookup}
+
+`lyrics.get` 在音频文件所在目录里查找外挂歌词，按下表顺序取第一个能读到内容的文件。
+
+| 顺序 | 文件命名 | 适用范围 |
+| --- | --- | --- |
+| 1 | 与音频同主名（`song.flac` → `song.lrc`） | `.lrc` 与 `.txt`；容器格式带子轨编号，见下节 |
+| 2 | 去掉子轨编号的共享文件（`album.lrc`） | 仅 `.lrc`，兼容整张专辑共用一份歌词的旧数据 |
+| 3 | `<艺术家> - <标题>` | `.lrc` 与 `.txt`，歌词下载器常用的命名 |
+
+`format` 取默认值 `any` 时，`.lrc` 的三档全部落空才轮到 `.txt`。
+
+第 3 档取曲目 `artist` 与 `title` 标签的首值，缺任一个就跳过该档。文件名里 Win32 不接受的 `\ / : * ? " < > |` 各替换为 `_`，与歌词下载器落盘时的做法一致——标题 `dance / narehate` 对应的文件名是 `dance _ narehate.lrc`。
+
+foobar2000 便携安装时，与程序同卷的媒体文件在 API 里的路径是 `file-relative://` 形态。这类曲目同样能查到外挂歌词。容器内的条目（`archive://`、`unpack://`）不受理，它们指向容器文件而不是曲目本身。
+
+`lyrics.exists` 查同一批命名，但不查第 2 档的共享文件，并返回全部命中而不是第一个。
+
+`lyrics.save` 的写入命名不受本节影响，始终是与音频同主名的文件。
+
 ## 容器格式（CUE / ISO / 多子轨文件）
 
 当音频路径包含 `|subsong:N` 后缀时（如 CUE sheet、SACD ISO 等容器格式），歌词 API 会自动采用 **per-track 命名**，避免不同子轨之间的歌词互相覆盖。
@@ -198,7 +218,7 @@ await fb.lyrics.save('C:\\Music\\song.flac', lyricsText, { target: 'all' });
 
 ### 读取回退
 
-`lyrics.get` 在查找外部歌词文件时，优先查找 per-track 文件（如 `album.03.lrc`），若不存在则回退到共享文件（如 `album.lrc`），兼容旧版数据。
+`lyrics.get` 优先查找 per-track 文件（如 `album.03.lrc`），不存在则回退到共享文件（如 `album.lrc`），兼容旧版数据。完整的查找顺序见上一节。
 
 ### 示例
 
@@ -234,6 +254,6 @@ const result = await fb2k.invoke('lyrics.get', {
 ## 使用说明
 
 - `lyrics.get` 提供 `path` 时使用该路径，否则解析当前播放曲目。`source`、`type` 和 `format` 默认均为 `any`；成功结果包含 `success`、`available` 和 `path`，找到歌词时还包含 `source`、`lyrics` 和 `synced`，文件来源额外包含 `sourcePath`。
-- 对 `path|subsong:N` 容器路径，文件读取会先检查 per-track sidecar，再检查共享 sidecar。`lyrics.exists` 返回 `file:song.lrc` 这类来源标签，缺失 `path` 不会回退为当前播放曲目。
+- 外挂歌词文件按「与音频同主名 → 去掉子轨编号的共享文件 → `<艺术家> - <标题>`」三档查找，详见[外部歌词文件的查找](#sidecar-lookup)。`lyrics.exists` 返回 `file:song.lrc` 这类来源标签，缺失 `path` 不会回退为当前播放曲目。
 - `lyrics.save` 同时要求 `path` 和非空 `lyrics`。`target` 默认是 `file`，可取 `file`、`embedded`、`config`、`all` 或前三者组成的数组。`filename` 必须是普通文件名，路径分隔符和路径遍历序列会被拒绝。
 - 文档中的 `fb.lyrics.get(...)`、`fb.lyrics.exists(...)` 和 `fb.lyrics.save(...)` 是便捷 SDK 封装。此页的公开 Bridge contract 仍是三个 `lyrics.*` 方法；`<fb-lyrics-panel>` 是消费者而不是注册的 API 方法。

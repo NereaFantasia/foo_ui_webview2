@@ -35,7 +35,7 @@ el.addEventListener('fb-lyrics-line-change', e => {
 
 ## `<fb-spectrum-visualizer>` {#fb-spectrum-visualizer}
 
-频谱可视化。mode='raw' 时通过事件输出原始频谱数据，支持 DPR 自适应 + ResizeObserver。
+频谱可视化。mode='raw' 时通过事件输出原始频谱数据，支持 DPR 自适应 + ResizeObserver。每个元素有自己的宿主订阅，只画这个订阅的帧，所以 `bands` 不同的几个可视化元素可以放在同一页。
 
 ```html
 <fb-spectrum-visualizer bands="64" fps="30" mode="bars"></fb-spectrum-visualizer>
@@ -46,7 +46,7 @@ el.addEventListener('fb-lyrics-line-change', e => {
 | bands | string | '64' | 频带数 |
 | fps | string | '30' | 帧率 |
 | mode | string | 'raw' | 模式 raw / bars / wave |
-| fft-size | string | 自动 | FFT 大小（覆盖自动计算，必须为 2 的幂） |
+| fft-size | string | 自动 | FFT 大小。低于 256 会上调，结果向上取整到 2 的幂，超过 65536 会被截断 |
 | dpr | string | devicePixelRatio | 像素比（降低此值可减少 GPU 开销，如背景频谱用 dpr="1"） |
 | fall-speed | string | '0.28' | 回落系数（0..1），值越大回落越快 |
 | rise-speed | string | '0.65' | 上升系数（0..1），值越大上升越快 |
@@ -71,6 +71,8 @@ el.addEventListener('fb-spectrum-data', e => {
 ## `<fb-waveform>` {#fb-waveform}
 
 波形图显示。点击波形 seek，cursor 跟随播放进度更新。
+
+播放曲目切换或元素被移除时，如果波形还在解码，元素会取消这次宿主请求，旧请求不会一直占着宿主的两个解码槽位之一。页面上监听 `audio:fullWaveformFailed` 的代码会看到这些取消，`code` 为 `"CANCELLED"`。
 
 ```html
 <fb-waveform resolution="200"></fb-waveform>

@@ -305,10 +305,10 @@ const r = await fb.dialog.saveFile({ defaultName: 'playlist.m3u8' });
 
 ### openFolder(options?)
 
-Opens the native folder picker and returns `{ canceled, folderPath, error? }`.
+Opens the native folder picker and returns `{ canceled, folderPath, error? }`. `defaultPath` is the folder the picker opens in, every time it is shown; it is silently ignored when the path does not resolve to a folder.
 
 ```javascript
-const r = await fb.dialog.openFolder({ title: 'Choose a music folder' });
+const r = await fb.dialog.openFolder({ title: 'Choose a music folder', defaultPath: 'D:\\Music' });
 // r.folderPath
 ```
 

@@ -32,7 +32,7 @@ const { response } = await fb2k.invoke('dialog.confirm', {
 | Parameter | Type | Required | Default | Description |
 | --- | --- | --- | --- | --- |
 | `title` | `string` | No | `Open File` | Localized to the UI language. |
-| `defaultPath` | `string` | No | — | Initial directory; supports `%music%` expansion. |
+| `defaultPath` | `string` | No | — | Folder the dialog opens in, every time it is shown; silently ignored when the path does not resolve to a folder. Supports `%music%`. |
 | `filters` | `array` | No | — | Filter specs `{ name, extensions[] }`. |
 | `multiple` | `boolean` | No | `false` | Allow selecting multiple files. |
 
@@ -52,12 +52,16 @@ const { canceled, filePaths } = await fb2k.invoke('dialog.openFile', {
 | Parameter | Type | Required | Default | Description |
 | --- | --- | --- | --- | --- |
 | `title` | `string` | No | `Select Folder` | Localized to the UI language. |
+| `defaultPath` | `string` | No | — | Folder the dialog opens in, every time it is shown; silently ignored when the path does not resolve to a folder. Supports `%music%`. |
 
 **Returns**: `{"canceled":"...","error":"...","folderPath":"..."}`
+
+`folderPath` is whatever the user confirmed, which need not be `defaultPath`.
 
 ```js
 const { canceled, folderPath } = await fb2k.invoke('dialog.openFolder', {
 	title: 'Choose Music Folder',
+	defaultPath: 'D:\\Music',
 });
 ```
 

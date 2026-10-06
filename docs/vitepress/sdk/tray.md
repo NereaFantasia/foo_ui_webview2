@@ -292,7 +292,8 @@ await fb.tray.setContextMenu([
 ### Keyboard / ARIA / reduced motion
 
 - Navigation mode: roving `tabindex` + real row focus; Up/Down/Home/End; Enter/Space activate; submenu Right/Enter open + focus, Left close + restore focus, Escape layer-by-layer.
-- Editor mode (rating / slider / segmented): Enter or Right enters; internal control focuses; Escape/Enter returns to the row.
+- Editor mode (rating / slider / segmented): Enter or Right enters; focus moves to the internal control — `.fb-rating-control`, `.fb-slider-control`, or the selected `.fb-seg-btn`, all marked `data-fb-focusable="1"`; Escape/Enter returns to the row. These three are the only elements that take real DOM focus, so they are where the browser draws its default focus ring (`:focus-visible`). Neither the default nor the protected stylesheet styles that ring; in `cssReplace` mode, style or reset it on these three selectors rather than on `.fb-item`.
+- Mouse wheel over a rating / slider / segmented row steps its value (scroll up = increase), matching the arrow keys. The row must be enabled, and a slider must be non-constant. While a *different* row is in editor mode the wheel is ignored and the menu scrolls as usual.
 - Vertical slider: min bottom / max top; Up/Right increase; Down/Left decrease; Home=min; End=max.
 - `checked: false` still marks a checkable item (`menuitemcheckbox`); omit `checked` for a normal item.
 - Default enter/exit animations honor `prefers-reduced-motion: reduce` (disable transform/transition). Custom CSS should do the same; this is **not** in protected CSS and does not change the hide protocol / `closeAnimationMs`.

@@ -6,11 +6,17 @@ Subscribes to real-time spectrum data. The SDK starts the host spectrum pipeline
 
 | Parameter | Type | Description |
 | --- | --- | --- |
-| callback | function | Receives payloads shaped as `{ spectrum: number[], fftSize?: number, bands?: number }` |
-| options.fftSize | number | FFT size; a power of two from 256 to 16384. Defaults to 1024 |
+| callback | function | Receives this subscription's frames only, typed `AudioSpectrumPayload`: `spectrum` plus the frame fields listed under [`audio.subscribeSpectrum`](../api/audio.md#audio-subscribespectrum) (`subscriptionId`, `bands`, `fftSize`, `scale`, `sampleRate`, `state`, `streamTime`, `hostTime` and more). Older hosts send `spectrum` only |
+| options.fftSize | number | FFT size; a power of two from 256 to 65536. Defaults to 1024. 65536 is this component's ceiling and is only worth it when you need raw bin resolution |
 | options.bands | number | Number of output frequency bands. Defaults to 48 |
 | options.fps | number | Refresh rate from 1 to 60 FPS. Defaults to 30 |
+| options.scale | `'weighted' \| 'db'` | `'weighted'` (default) is a display curve in `[0, 1]`; `'db'` is band power in dB where a full-scale sine reads 0 dB |
+| options.backgroundThrottle | boolean | Defaults to `true`, which limits the subscription to at most 12 FPS, usually 10 to 12, while another application is in the foreground. Pass `false` to keep the full rate |
+| options.minFrequency | number | Lower edge of the band range in Hz, at least 1. Defaults to 20 |
+| options.maxFrequency | number | Upper edge in Hz, greater than `minFrequency`; capped at half the stream's sample rate, which is also the default |
 | options.event | string | Custom event name. Defaults to `audio:spectrum`; distinct names can isolate data across panels |
+
+The returned function has a `ready` property: a promise that settles with the host's answer and never rejects. It resolves to `{ ok: true, subscriptionId, fftSize, bands, fps, scale, backgroundThrottle, minFrequency, maxFrequency, streamReady }` once the subscription is registered (`maxFrequency` is `null` when the range follows half the sample rate), or to `{ ok: false, code, error }`: `code` is `INVALID_PARAMS` for rejected options, `NOT_SUPPORTED` without a host, and `UNKNOWN_ERROR` when the call itself failed.
 
 ```javascript
 // Basic usage
@@ -30,6 +36,14 @@ const unsubscribeCustom = fb.audio.subscribeSpectrum(
     { fftSize: 1024, bands: 48, fps: 30, event: 'audio:panelSpectrum' }
 );
 
+// Band power in dB at the full frame rate; check the registration
+const meter = fb.audio.subscribeSpectrum(
+    (frame) => drawMeter(frame.spectrum, frame.state),
+    { bands: 64, fftSize: 8192, scale: 'db', backgroundThrottle: false }
+);
+const outcome = await meter.ready;
+if (!outcome.ok) console.warn('spectrum subscription failed', outcome.code, outcome.error);
+
 // Detach listeners and release host visualization resources
 unsubscribe();
 unsubscribeCustom();
@@ -40,16 +54,19 @@ The returned function calls `audio.unsubscribeSpectrum` to release host visualiz
 :::
 
 ::: tip Low-level control
-`fb.audio.subscribeSpectrum()` generates and manages its own `subscriptionId`. Use low-level `fb2k.invoke('audio.subscribeSpectrum', ...)` when explicit subscription IDs, replacement of a same-ID subscription, or caller-level diagnostics are required.
+`fb.audio.subscribeSpectrum()` generates and manages its own `subscriptionId`; read it from `ready` when you need it, for example to poll that subscription with `getSpectrum`. Use low-level `fb2k.invoke('audio.subscribeSpectrum', ...)` when you need to choose the subscription ID yourself, replace a same-ID subscription, or run caller-level diagnostics.
 :::
 
 ## getSpectrum(options?)
 
-Polls the current spectrum buffer once. An active `subscribeSpectrum` host subscription is still required.
+Polls the current spectrum buffer once. An active `subscribeSpectrum` host subscription is still required. Resolves with `AudioGetSpectrumResponse`: one frame plus `success`, a silence frame while playback is paused or stopped, or `success: false` when no data is available yet. To draw in step with the display, pass the `subscriptionId` from `ready` and call this from `requestAnimationFrame`, one call at a time and no more often than the frame rate you need; see [`audio.getSpectrum`](../api/audio.md#audio-getspectrum).
 
 | Parameter | Type | Description |
 | --- | --- | --- |
-| options.bands | number | Requested band count for this poll. When omitted or `0`, the active subscription configuration is used |
+| options.subscriptionId | string | Compute the frame with this subscription's parameters (`bands`, `scale` and the frequency range are then ignored) |
+| options.bands | number | Requested band count for this poll. When omitted or `0`, the largest band count among the subscriptions is used |
+| options.scale | `'weighted' \| 'db'` | Scale for this poll when no `subscriptionId` is given. Defaults to `'weighted'` |
+| options.minFrequency / options.maxFrequency | number | Band range for this poll when no `subscriptionId` is given, as in `subscribeSpectrum` |
 
 ```javascript
 // Start the spectrum pipeline first
@@ -69,8 +86,12 @@ Returns a short waveform window from the current playback stream. Call `subscrib
 
 | Parameter | Type | Description |
 | --- | --- | --- |
-| options.duration | number | Window duration in seconds. Defaults to `0.05` |
-| options.signed | boolean | Preserve signed PCM polarity. Defaults to `false` |
+| options.duration | number | Window duration in seconds, greater than 0 and at most 1. Defaults to `0.05` |
+| options.signed | boolean | Preserve signed PCM polarity, clamped to `[-1, 1]`. Defaults to `false` |
+| options.channels | `'mix' \| 'stereo'` | `'mix'` (default) returns one averaged `waveform`; `'stereo'` returns the first two channels as `left` and `right`, with `right` equal to `left` on a mono stream |
+| options.points | number | Thin the window to this many evenly spaced samples, without averaging; an integer in `[2, 65536]`. Every sample is returned when omitted |
+
+The answer also carries `channels`, `sampleRate` and `channelCount` of the visualization stream. Invalid options fail with `code: 'INVALID_PARAMS'`.
 
 ::: warning Important
 This method reads a real-time window from the **current playback stream**, not an offline file waveform. Use `generateFullWaveform` for a complete file waveform. The legacy `(path, options)` overload ignores `path`.
@@ -83,6 +104,14 @@ const unsubscribe = fb.audio.subscribeSpectrum(() => {});
 // Get a 0.1-second waveform window
 const result = await fb.audio.getWaveform({ duration: 0.1 });
 console.log('Waveform:', result.waveform);
+
+// Both channels, 256 samples each
+const { left, right } = await fb.audio.getWaveform({
+  duration: 0.05,
+  signed: true,
+  channels: 'stereo',
+  points: 256,
+});
 
 unsubscribe();
 ```
@@ -101,10 +130,15 @@ Generates a complete file waveform with background decoding, caching, and asynch
 | options.preferCache | boolean | Return a cached result when available. Defaults to `true` |
 | options.cueIndex | number | Explicit CUE subsong index; takes precedence over `path\|subsong:N` |
 | options.timeout | number | SDK wait timeout in milliseconds for a pending task. Defaults to 60000; values `<= 0` disable the timeout |
+| options.signal | AbortSignal | Ends the wait early; see below |
 
-> The SDK forwards generation options to `audio.generateFullWaveform`, except `timeout`, which is consumed by the SDK. The host parses `path|subsong:N`, canonicalizes the path, and attempts a direct file read when cached metadata lacks the required technical fields.
+> The SDK forwards generation options to `audio.generateFullWaveform`, except `timeout` and `signal`, which the SDK consumes. The host parses `path|subsong:N`, canonicalizes the path, and attempts a direct file read when cached metadata lacks the required technical fields.
 
-**Returns:** A promise for `FullWaveformResult`. A cache hit resolves immediately with `status: 'ready'`; on a cache miss, the SDK waits for the matching completion event.
+**Returns:** A promise for `FullWaveformResult`. A cache hit resolves immediately with `status: 'ready'`; on a cache miss, the SDK waits for the matching completion event. `result.maxAmplitude` is the largest value of the selected sequence before normalization, in linear full-scale units: on the `linear` scale `waveform[i] * maxAmplitude` restores the level, on `db` the dBFS value is `(v * 60 - 60) + 20 * log10(maxAmplitude)`.
+
+**Ending the wait early:** an aborted `signal` rejects with a `DOMException` named `AbortError`, the timeout rejects with `{ success: false, error: 'TIMEOUT' }`, and both cancel the host task through `cancelFullWaveform`; a queued decode is dropped and a running one gives up its decode slot as soon as the decoder notices. A signal that is already aborted rejects without calling the host. A cache hit resolves whatever the signal does.
+
+**Failures:** a request the host refuses up front (missing or invalid path, permission, shutdown) resolves with `{ success: false, error, code }`, so check `success`; a decode that fails later rejects with the `audio:fullWaveformFailed` payload; a bridge-level error rejects with an `Error`.
 
 ```javascript
 // Basic usage; resolves immediately on a cache hit
@@ -133,6 +167,14 @@ const result4 = await fb.audio.generateFullWaveform('E:\\Music\\song.flac', {
     resolution: 512,
     method: 'rms'
 });
+
+// Drop the request when the user moves on to another track
+const controller = new AbortController();
+fb.audio.generateFullWaveform('E:\\Music\\song.flac', { signal: controller.signal })
+    .catch((err) => {
+        if (err.name !== 'AbortError') throw err;
+    });
+controller.abort();
 ```
 
 **Aggregation methods:**
@@ -142,9 +184,14 @@ const result4 = await fb.audio.generateFullWaveform('E:\\Music\\song.flac', {
 
 **Cache behavior:**
 
-- The cache key includes the path, subsong, resolution, method, file size, and modification time.
+- The cache key includes the canonical path, subsong, resolution, file size, and modification time. An entry holds the raw values of one decode, so every `method` / `signed` / `scale` is computed from it.
 - At most 50 entries are retained using LRU eviction.
 - Changing the file invalidates its cached waveform.
+
+**Queue behavior:**
+
+- On a cache miss, requests for the same track and resolution that are already in flight share one decode; each gets its own result.
+- The host decodes two tracks at a time and queues the rest in submission order. Time spent in the queue counts toward `timeout`, so cancel requests you no longer need.
 
 ::: tip Asynchronous completion
 The SDK handles both paths automatically:
@@ -153,6 +200,23 @@ The SDK handles both paths automatically:
 
 Callers can simply `await` the method and do not need to subscribe to these events manually.
 :::
+
+## cancelFullWaveform(taskId)
+
+Cancels a pending `generateFullWaveform` request by the `taskId` of its `pending` answer. Only the caller that made the request can cancel it. `generateFullWaveform` already calls this on `signal` abort and on timeout; call it directly when you hold a `taskId` from `fb2k.invoke`.
+
+| Parameter | Type | Description |
+| --- | --- | --- |
+| taskId | string | The `taskId` of a `pending` answer |
+
+**Returns:** A promise for `{ success: true, cancelled: boolean }`. `cancelled: false` means the task has already finished, does not exist, or belongs to another caller. A cancelled task receives one `audio:fullWaveformFailed` with `code: 'CANCELLED'`, which may arrive before this answer. Hosts before 1.14 do not have this endpoint and reject the call with `Method not found`.
+
+```javascript
+const pending = await fb2k.invoke('audio.generateFullWaveform', { path: 'E:\\Music\\song.flac' });
+if (pending.status === 'pending') {
+    const { cancelled } = await fb.audio.cancelFullWaveform(pending.taskId);
+}
+```
 
 ## analyzeBPM(path, options?)
 
@@ -187,7 +251,7 @@ const result = await fb.audio.setChannelMode('invalid'); // result.mode === "def
 
 ## getSpectrumDebugState()
 
-Returns internal spectrum diagnostics, including active subscriptions, dispatch targets, effective FFT/FPS/band settings, stream readiness, and timer state.
+Returns internal spectrum diagnostics, including active subscriptions with their `scale`, `backgroundThrottle` and frequency range, dispatch targets, the largest requested FFT/FPS/band settings, `framesComputed`, stream readiness, and the state of the beat thread that pushes frames (`timerRunning`, `beatSource`, `beatIntervalMs`, `beatsCoalesced`).
 
 ```javascript
 const debug = await fb.audio.getSpectrumDebugState();

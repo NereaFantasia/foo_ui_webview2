@@ -41,13 +41,21 @@ Returns artist aggregates.
 
 | Parameter | Type | Description |
 | --- | --- | --- |
-| `limit` | `number?` | Maximum result count |
-| `options` | `Omit<LibraryGetArtistsParams, 'limit'>?` | Additional native options |
+| `limit` | `number?` | Maximum result count. Caps the artist rows only, never the `albums` inside them |
+| `options` | `Omit<LibraryGetArtistsParams, 'limit'>?` | Additional native options: `sort` (`name` / `trackCount` / `albumCount`) and `includeAlbums` |
+
+Resolves to `LibraryArtistsResponse`; each `items` row is an `ArtistInfo` — `{ name, albumCount, trackCount, totalDuration }`, plus `albums?: ArtistAlbumRef[]` (`{ name, artist }`) when `options.includeAlbums` is `true`.
 
 > Every credited artist gets its own entry, so a track tagged with several artists is counted under each of them. `trackCount` is a participation count and the entries add up to more than the total number of tracks; `albumCount` and `totalDuration` are counted per artist the same way.
 
+> `includeAlbums` returns the whole "artist → albums" mapping from the single library scan this call already performs, instead of one `getArtistAlbums` scan per artist. Each `albums` element's `(name, artist)` is the identity `getAlbums` groups by (`artist` = first `album artist` value, falling back to the first `artist` value), so it pairs with exactly one `getAlbums` row. Elements are de-duplicated by that pair and sorted by `name`, then `artist`; `albumCount` still de-duplicates by album name only, so two same-named albums by different album artists are 1 in `albumCount` and 2 in `albums`.
+
 ```javascript
 const artists = await fb.library.getArtists(100);
+
+// Artist -> albums mapping for a browser section
+const { items } = await fb.library.getArtists(100000, { includeAlbums: true });
+const albumsByArtist = new Map(items.map((a) => [a.name, a.albums]));
 ```
 
 ## getStats() 
@@ -263,7 +271,7 @@ for await (const node of fb.library.enumerateDirectories({ rootPath: '', strateg
 
 ## getAlbumTracks(album, artist?)
 
-Returns matching album tracks.
+Returns matching album tracks. Both `album` and `artist` are compared byte for byte, so they are case-sensitive. Grouping is by album name alone, so identically titled albums by different artists come back as one list — pass `artist` to tell them apart.
 
 ```javascript
 const tracks = await fb.library.getAlbumTracks('Abbey Road', 'The Beatles');
@@ -370,19 +378,28 @@ Returns the append result, including optional `added` metadata.
 await fb.library.addToPlaylist(['E:\\Music\\song.flac'], 0);
 ```
 
-### getArtistAlbums(artist, limit?)
+### getArtistAlbums(artist, limit?, options?)
 
-Signature: `fb.library.getArtistAlbums(artist: string, limit?: number): Promise<{ albums: AlbumInfo[] }>`
+Signature: `fb.library.getArtistAlbums(artist: string, limit?: number, options?: { sort?: string; match?: 'exact' | 'substring' }): Promise<LibraryArtistAlbumsResponse>`
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `artist` | `string` | Yes | Artist name |
-| `limit` | `number` | No | Maximum result count |
+| `artist` | `string` | Yes | Artist name, compared byte for byte against each atomic tag value, so it is case-sensitive |
+| `limit` | `number` | No | Album cap, applied after grouping (default `100`); there is no `offset` |
+| `options.sort` | `string` | No | `name` (default), `artist`, `year` or `trackCount`; an unrecognised value falls back to `name` |
+| `options.match` | `'exact' \| 'substring'` | No | `exact` (default) requires the whole atomic value to be byte-identical; `substring` matches on containment and is looser about case; an unrecognised value is refused rather than falling back |
 
-Returns the artist's album aggregates.
+Albums the artist appears on. Rows carry the same keys as `getAlbums` except `coverDataUrl` and `tracks` — for cover art, pass a row's `firstTrackAbsolutePath` to `artwork.getForTrack`, since `firstTrackPath` can be a `file-relative://` URI that endpoint refuses.
+
+`trackCount`, `duration` and `discCount` count only the tracks this artist appears on, not the whole album, so they disagree with `getAlbums` for any album the artist appears on only partly. See [`library.getArtistAlbums`](../api/library.md#library-getartistalbums) for that and for the grouping rules.
 
 ```javascript
-const albums = await fb.library.getArtistAlbums('The Beatles', 50);
+const { albums } = await fb.library.getArtistAlbums('The Beatles', 50);
+
+// Newest first
+const recent = await fb.library.getArtistAlbums('The Beatles', 20, {
+    sort: 'year',
+});
 ```
 
 ### getArtistTracks(artist, limit?)

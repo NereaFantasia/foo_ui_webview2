@@ -35,13 +35,54 @@ Fetches a slice of playlist tracks. The SDK unwraps the native page envelope and
 | `start` | `number?` | Start offset |
 | `count` | `number?` | Maximum number of tracks |
 | `formats` | `Record<string, string>?` | Optional named Title Formatting expressions |
+| `fields` | `string[]?` | Track keys to project; every row then holds exactly these plus `index` |
 
 ```javascript
 const tracks = await fb.playlist.getTracks(0, 0, 50);
 console.log(`Received ${tracks.length} tracks`);
 ```
 
-Use `bridge.invoke('playlist.getTracks', ...)` directly only when the native pagination envelope (`playlist`, `start`, `count`, and `total`) is required.
+`fields` draws from the same case-sensitive whitelist `library.query` uses, minus `composer` and `comment`. Omit it to keep the full row. Projected rows are narrower than `PlaylistTrack` declares, so read only the keys you asked for. A malformed list makes the host resolve with `{ success: false, code: 'INVALID_PARAMS' }`, which has no `tracks` to unwrap and therefore surfaces here as an empty array.
+
+Use `getTracksPage()` when the pagination envelope or the host's error envelope is required.
+
+## getTracksPage(index, start, count, formats?, fields?)
+
+Same request as `getTracks()`, but keeps the page envelope instead of unwrapping it.
+
+Resolves with `{ playlist, start, count, total, tracks }`. Compare `total` with the `total` from `getGroupRuns()` for the same playlist to detect a change in track count between the reads. Equal totals do not rule out replacements or reordering: the calls return independent snapshots, not a shared playlist revision.
+
+```javascript
+const page = await fb.playlist.getTracksPage(0, 200, 200, undefined, ['title', 'album']);
+console.log(`${page.tracks.length} of ${page.total}`);
+```
+
+## getGroupRuns(patterns, index?)
+
+Groups a whole playlist into consecutive runs and returns only the run boundaries, never the rows.
+
+A run is a maximal stretch of adjacent tracks whose group key is equal, compared case-insensitively over ASCII `A-Z`/`a-z`. Rows are never reordered, so runs follow playlist order.
+
+| Parameter | Type | Description |
+| --- | --- | --- |
+| `patterns` | `string[]` | One or two Title Formatting expressions; the second sub-groups within each run |
+| `index` | `number?` | Playlist to group; defaults to the active playlist |
+
+```javascript
+const { runs, total } = await fb.playlist.getGroupRuns([
+  '%album artist% | %album%',
+  "$if(%discnumber%,'Disc '%discnumber%,)",
+]);
+// runs[1].sub[0].start is an absolute row index, not an offset in the parent
+```
+
+On success, `runs` covers the whole playlist. For a non-empty playlist, `runs[0].start` is 0, adjacent runs meet end to end, and the `count` values sum to `total`. An empty playlist returns `total: 0` and `runs: []`. `sub` appears only when two patterns are given, and its `start` uses the same absolute basis as the parent's.
+
+Pair it with `getTracksPage()` to drive a grouped virtual list: the runs give header positions and let the UI calculate total scroll height; each visible page of rows is fetched separately. A 100k-track playlist yields roughly 10k top-level runs only if each run contains about 10 tracks on average. Payload size depends on the group keys and any second-level runs; the size of full track rows also depends on the requested fields and metadata.
+
+A pattern that groups every row on its own makes `runs` as long as `total`. There is no cap or fixed byte size per run; choose patterns that combine adjacent tracks.
+
+Malformed `patterns`, or a pattern that fails to compile, resolves with `{ success: false, code: 'INVALID_PARAMS' }`; when one pattern is at fault, `details.pattern` carries its index.
 
 ## playTrack(playlistIndex, trackIndex, options?) 
 

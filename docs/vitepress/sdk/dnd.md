@@ -1,7 +1,9 @@
 # fb.dnd Drag and Drop
 
 `fb.dnd` exposes the host's view of an external file drag so a page can obtain
-real filesystem paths, which the HTML5 `File` object deliberately withholds.
+real filesystem paths, which the HTML5 `File` object deliberately withholds. It also
+lets a page drag tracks *out* of the window as real files; see
+[Dragging files out](#dragging-files-out).
 
 ## How it works
 
@@ -190,6 +192,8 @@ leaving HTML5 drag events intact.
 | `paths` | `boolean` | Real filesystem paths are obtainable. |
 | `hosting` | `'visual' \| 'standard'` | How the window hosts its WebView. |
 | `pathsUnavailableReason` | `string` | Present only when `paths` is `false`. |
+| `dragOut` | `boolean` | Files can be dragged out through [`prepareDrag`](#preparedrag-paths). |
+| `dragOutUnavailableReason` | `string` | Present only when `dragOut` is `false`. |
 
 ```javascript
 const caps = await fb.dnd.getCapabilities();
@@ -201,8 +205,14 @@ if (!caps.paths) {
 `pathsUnavailableReason` is one of `origin-untrusted`, `inner-target-not-found`,
 `forward-unavailable`, `chain-failed`, `displaced`, or `register-failed`.
 
+`dragOutUnavailableReason` is one of `not-visual-hosting` (a DUI / CUI panel, where
+Chromium owns the drag source), `runtime-too-old` (the WebView2 Runtime predates
+the drag-start event this feature needs; Edge 144 or newer is required), or
+`register-failed`. `paths` and `dragOut` are independent: check the one you need.
+
 Subscribe to `dnd:capabilitiesChanged` to react to a change. Its payload carries
-the same `html5`, `paths`, `hosting` and `pathsUnavailableReason` fields.
+the same `html5`, `paths`, `hosting`, `pathsUnavailableReason`, `dragOut` and
+`dragOutUnavailableReason` fields.
 
 ```javascript
 fb.on('dnd:capabilitiesChanged', (caps) => {
@@ -233,18 +243,184 @@ return an empty array rather than throwing. A framed page that needs paths must
 receive them from the main frame over `postMessage`, which puts the decision to
 share them where it belongs.
 
+## Dragging files out
+
+The reverse direction: a page element the user can drag into Explorer or another
+application, where it arrives as real files. The page never handles paths at drag
+time. It exchanges them for a one-shot **token** beforehand, writes the token into
+the drag when it starts, and the host swaps the token for the already-validated
+file list. From there the drag is an ordinary page drag: the browser draws the
+drag image, the cursor follows the target, and the page's own `dragend` reports
+the outcome.
+
+Check `dragOut` on [`getCapabilities()`](#getcapabilities) before offering the
+gesture.
+
+### prepareDrag(paths)
+
+Signature: `fb.dnd.prepareDrag(paths: string[]): Promise<DndDragToken>`
+
+Validates the paths and returns a token for the next drag out of this window.
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `paths` | `string[]` | Yes | Locations to drag out, at least one. Accepts native paths, `file://` URLs, `file-relative://` URLs (a portable install's form for media on the program's volume, resolved by foobar2000), `archive://` / `unpack://` entries, and the `path\|subsong:N` form (the suffix is dropped and the container is dragged). A track's `path` and its `absolutePath` are both accepted. |
+
+Returns `{ success: true, token }`. The token is opaque; the only thing to do with
+it is pass it to [`applyDragToken`](#applydragtoken-datatransfer-token).
+
+::: warning Call this before the drag starts, not inside `dragstart`
+The drag data store is writable only while the `dragstart` handler runs
+synchronously. A token that arrives after an `await` inside that handler cannot be
+written any more — `setData` fails silently and the drag goes out empty. Request the
+token on `pointerdown` (or `mousedown`), keep it, and use it synchronously in
+`dragstart`. A very fast press-and-move can still outrun the request; if the token
+has not arrived when `dragstart` fires, let the drag proceed as an ordinary one.
+:::
+
+Token rules:
+
+- valid for **30 seconds**
+- **spent** by the first drag that uses it
+- bound to the **window** that requested it
+- **superseded** by the next successful `prepareDrag` from the same window, even if it has
+  not expired — only the most recent token is live
+
+A token that breaks any of these is refused when the drag starts, with a
+`dnd:dragEnded` of `PERMISSION_DENIED`.
+
+::: tip What arrives at the target is always a physical file
+A track inside a cue sheet or a multi-track container drags the whole container.
+An `archive://` or `unpack://` entry drags the whole archive. Several requested
+entries can therefore collapse into one file, and the position inside the
+container is not carried across.
+:::
+
+Paths are normalised to native paths and then validated the same way as for
+`queue.addPaths`. Handler failures resolve with an error envelope rather than
+rejecting; test `success`. Transport failures can still reject.
+
+::: warning No existence check
+Validation does not guarantee that the file exists. A deleted or renamed file
+can still get a token, but an accepted drop does not prove that the target copied
+it. If the list can go stale, check the files before calling or verify the copied
+files independently of `dragend`.
+:::
+
+| `code` | Meaning |
+| --- | --- |
+| `NOT_FOUND` | The calling window has no drag-drop registration. |
+| `ORIGIN_DENIED` | The document origin is not trusted to drag files out. Checked before any path is inspected. |
+| `NOT_SUPPORTED` | `dragOut` is `false` for this window. |
+| `INVALID_PARAMS` | `paths` missing, empty, or not all strings. |
+| `INVALID_PATH` | An entry has no local file behind it (a stream, a `cdda://` track). `paths[i]` indexes **the array you passed**. |
+| `PERMISSION_DENIED` | An entry was refused by path security. `paths[i]` indexes the **normalised, de-duplicated** list, which can be shorter than yours. |
+| `OPERATION_FAILED` | A token could not be created. |
+
+Error messages never contain a path.
+
+### applyDragToken(dataTransfer, token)
+
+Signature: `fb.dnd.applyDragToken(dataTransfer: DataTransfer, token: string): void`
+
+Writes the token into a `dragstart` event so the host attaches the files. Must be
+called synchronously inside the `dragstart` handler. It does two things, and both
+are required:
+
+1. sets the `text/plain` entry to the token carrier (`fb2k-dnd-token/1:` followed
+   by the token), replacing anything the page put there — the host recognises a
+   drag-out by that marker
+2. sets `effectAllowed` to `'copy'`
+
+::: danger `effectAllowed` must be exactly `'copy'`
+Once the file list is attached, a *move* is carried out by the drop target, not by
+the page or the host: Explorer moves files by default when the destination is on
+the same drive as the source. The host therefore refuses any drag whose allowed
+effects are wider than copy (`INVALID_PARAMS` on `dnd:dragEnded`), and the drag
+does nothing. Leaving `effectAllowed` unset means `copy | move | link`, which is
+refused. Do not change it after `applyDragToken`.
+:::
+
+The `text/plain` slot is not available for page text during a drag-out. The host
+blanks it before the drag leaves, so a text editor as the drop target receives an
+empty string, never the token.
+
+```javascript
+let token = null;
+
+trackEl.addEventListener('pointerdown', async () => {
+    token = null;
+    const r = await fb.dnd.prepareDrag([trackPath]);
+    if (r.success) token = r.token;
+});
+
+trackEl.addEventListener('dragstart', (e) => {
+    if (token) fb.dnd.applyDragToken(e.dataTransfer, token);
+    // no token yet: an ordinary drag of whatever the page set
+});
+
+trackEl.addEventListener('dragend', (e) => {
+    // 'copy' — a target took the files; 'none' — cancelled or refused
+    console.log(e.dataTransfer.dropEffect);
+});
+```
+
+### onDragEnded(handler)
+
+Signature: `fb.dnd.onDragEnded(handler: (payload: DndDragEndedPayload) => void): () => void`
+
+Subscribes to `dnd:dragEnded`, which fires **only when the host refuses** a
+drag-out at the moment the drag starts. Returns an unsubscribe function.
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `result` | `'failed'` | Always `'failed'`; the host reports refusals only. |
+| `code` | `string` | `PERMISSION_DENIED` (token unknown, expired, spent, superseded or from another window), `INVALID_PARAMS` (`effectAllowed` was not `'copy'`), `OPERATION_FAILED` (the file list could not be attached). |
+| `error` | `string` | Human-readable reason. Never contains a path. |
+
+A valid token is consumed before checking `effectAllowed` or attaching the file list. After `INVALID_PARAMS` or `OPERATION_FAILED`, request a fresh token before retrying.
+
+::: warning This is not a completion notice
+When the host accepts the token there is **no event**. The drag proceeds like any
+page drag and the outcome is in the element's own `dragend`:
+`dataTransfer.dropEffect` is `'copy'` when a target took the files and `'none'`
+when the drag was cancelled or the target refused. Put your clean-up in `dragend`,
+and use `dnd:dragEnded` to tell the user (or yourself) why a drag did nothing.
+:::
+
+```javascript
+const off = fb.dnd.onDragEnded(({ code, error }) => {
+    if (code === 'PERMISSION_DENIED') token = null; // mint a fresh one next time
+    console.warn('drag-out refused:', code, error);
+});
+```
+
+### What to expect during a drag-out
+
+- A drag that carries a token is either handed over with the files attached, or
+  refused and swallowed (no drag image, nothing happens at the target). It never
+  falls back to dragging the token text.
+- Drags that do **not** carry a token — the page dragging its own text, an image
+  or a link — are untouched and never produce `dnd:dragEnded`.
+- While the drag is in progress the host window waits for the drop target to
+  respond, exactly as it does for any HTML5 drag out of a WebView. A target that
+  is slow to accept holds the window for that long; this is how WebView2 drags
+  work and not something the page can shorten.
+- Inside an `<iframe>` the token exchange goes through the same `invoke` channel
+  as everything else. Do not rely on framing as a security boundary; the host's
+  origin check is the boundary.
+
 ## Not supported
 
 ### startDrag(type?)
 
 Signature: `fb.dnd.startDrag(type?: string): Promise<DndStartDragResponse>`
 
-Dragging tracks *out of* the window into other applications. Not implemented: it
-requires a native `IDropSource`, which this component does not provide. The
-promise **resolves** with `{ success: false, code: 'NOT_SUPPORTED' }` rather than
-rejecting, because the host delivers handler-returned error envelopes as a normal
-result — test `success` instead of relying on `catch`. The argument is accepted
-and ignored so old call sites still compile.
+This endpoint does not start a drag and ignores its argument. The host handler
+**resolves** with `{ success: false, code: 'NOT_SUPPORTED' }` rather than rejecting.
+Test `success`; transport failures can still reject. Use
+[`prepareDrag`](#preparedrag-paths) with
+[`applyDragToken`](#applydragtoken-datatransfer-token) instead.
 
 ```javascript
 const r = await fb.dnd.startDrag('files');

@@ -90,6 +90,7 @@ Invalid requests or unknown methods are rejected by BridgeCore before a handler 
 | Code | Meaning |
 | --- | --- |
 | `OPERATION_FAILED` | Generic operation failure |
+| `CANCELLED` | The caller cancelled an async task (for example `audio.cancelFullWaveform`) |
 
 ### Security
 

@@ -90,6 +90,7 @@ foo_ui_webview2 的所有 API 在失败时遵循统一的错误信封结构。
 | Code | 说明 |
 | --- | --- |
 | OPERATION_FAILED | 通用操作失败 |
+| CANCELLED | 调用方取消了异步任务（如 `audio.cancelFullWaveform`） |
 
 ### 安全
 

@@ -454,6 +454,10 @@ await fb.ui.setPopupBehavior({
 
 获取/设置窗口背景策略。
 
+`setBackdropPolicy` 接受平铺字段（`activeEffect`、`inactiveEffect` 以及 `WindowBackdropPolicyPatch` 的其余字段）和可选的 `windowId`。封装层会组装成 `{ backdropPolicy }` 发给宿主，调用方不要再包一层 `backdropPolicy`。
+
+`inactiveEffect` 取值：`inherit` \| `system` \| `none` \| `mica` \| `mica-alt` \| `acrylic`（`WindowInactiveBackdropEffect`）。`inherit` 为宿主默认值，表示失焦时沿用已解析的 `activeEffect`，由 DWM 负责失焦变暗；`system` 表示失焦时交还平台背景。
+
 ```javascript
 await fb.ui.setBackdropPolicy({
     windowId: popup.windowId,

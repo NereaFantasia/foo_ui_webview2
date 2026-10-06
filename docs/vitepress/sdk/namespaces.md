@@ -2,7 +2,7 @@
 
 The aggregate `fb` object exposes 40 runtime namespaces, plus the reactive `fb.state` mirror and the top-level `fb.on`, `fb.off`, `fb.once`, `fb.invoke`, `fb.isAvailable()`, and `fb.ready()` helpers.
 
-The `fb` facade currently exposes `456` methods in total across these namespaces.
+The `fb` facade currently exposes `465` methods in total across these namespaces.
 
 ## Core media and UI
 

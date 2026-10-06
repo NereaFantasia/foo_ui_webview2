@@ -1,5 +1,39 @@
 # `fb.player` playback control
 
+## Endpoint mapping
+
+`fb.player` method names are SDK-side aliases and do not always match the underlying `fb2k.invoke` endpoint. Use this table when calling the bridge directly, or when a `Method not found` error names something like `playback.prev`.
+
+| Method | Invokes |
+| --- | --- |
+| `play()` | `playback.play` |
+| `pause()` | `playback.pause` |
+| `stop()` | `playback.stop` |
+| `next()` | `playback.next` |
+| `prev()` | `playback.previous` |
+| `random()` | `playback.random` |
+| `toggle()` | `playback.playOrPause` |
+| `playPause()` | `playback.playPause` |
+| `seek(seconds)` | `playback.setPosition` |
+| `getVolume()` | `playback.getVolume` |
+| `setVolume(volume)` | `playback.setVolume` |
+| `volumeUp()` | `playback.volumeUp` |
+| `volumeDown()` | `playback.volumeDown` |
+| `mute()` | `playback.mute` |
+| `toggleMute()` | `playback.toggleMute` |
+| `getState()` | `playback.getState` |
+| `getCurrentTrack()` | `playback.getCurrentTrack` |
+| `getPosition()` | `playback.getPosition` |
+| `getOrder()` | `playback.getPlaybackOrder` |
+| `setOrder(order)` | `playback.setPlaybackOrder` |
+| `getStopAfterCurrent()` | `playback.getStopAfterCurrent` |
+| `setStopAfterCurrent(enabled)` | `playback.setStopAfterCurrent` |
+| `toggleStopAfterCurrent()` | `playback.toggleStopAfterCurrent` |
+| `getCurrentTrackIndex(includeTrackInfo?)` | `playback.getCurrentTrackIndex` |
+| `getPlayingPlaylist()` | `playback.getPlayingPlaylist` |
+| `playPath(path)` | `playback.playPath` |
+| `playPaths(paths, options?)` | `playback.playPaths` |
+
 ## play() 
 
 Starts playback. If playback is paused, it resumes. Returns a `BaseResponse`.
@@ -105,7 +139,7 @@ const state = await fb.player.getState();
 
 ## getCurrentTrack() 
 
-Returns the current `TrackInfo`, or `null` when no track is loaded.
+Returns the current `TrackInfo`. When nothing is loaded the host answers `{ success: true, found: false, playing: false }` (`PlaybackNoTrackResponse`) rather than `null`. `TrackInfo` never carries a `found` key, so `'found' in track` tells the two shapes apart.
 
 | Field | Type | Description |
 | --- | --- | --- |
@@ -127,7 +161,9 @@ Returns the current `TrackInfo`, or `null` when no track is loaded.
 
 ```javascript
 const track = await fb.player.getCurrentTrack();
-if (track) {
+if ('found' in track) {
+    console.log('nothing is playing');
+} else {
     console.log(`${track.artist} - ${track.title} [${track.codec} ${track.bitrate}kbps]`);
 }
 ```

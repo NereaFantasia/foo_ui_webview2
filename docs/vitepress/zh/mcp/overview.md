@@ -1,6 +1,6 @@
 # MCP Server 概述 
 
-通过 [Model Context Protocol (MCP)](https://modelcontextprotocol.io/) 让 AI 智能体直接操控 foobar2000。服务器默认注册 **101 个工具**：98 个 Bridge 工具和 3 个始终启用的 UI 测试工具。将 `FB2K_ENABLE_EVAL` 设为 `1` 或 `true` 后，还会注册条件工具 `fb2k_evaluate`，合计 **102 个工具**。
+通过 [Model Context Protocol (MCP)](https://modelcontextprotocol.io/) 让 AI 智能体直接操控 foobar2000。服务器默认注册 **104 个工具**：101 个 Bridge 工具和 3 个始终启用的 UI 测试工具。将 `FB2K_ENABLE_EVAL` 设为 `1` 或 `true` 后，还会注册条件工具 `fb2k_evaluate`，合计 **105 个工具**。
 
 ## 什么是 MCP 
 

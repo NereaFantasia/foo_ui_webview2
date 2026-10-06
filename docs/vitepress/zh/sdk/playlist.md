@@ -34,13 +34,57 @@ await fb.playlist.setActive(1);
 | index | number | 播放列表索引 |
 | start | number | 起始位置（默认 0） |
 | count | number | 获取数量（默认 100） |
+| formats | Record<string, string>? | 具名的 Title Formatting 附加列 |
+| fields | string[]? | 要返回的曲目字段；每行包含所选字段和 `index` |
 
-返回 `{playlist, start, count, total, tracks: [{title, artist, album, duration, path, absolutePath, ...}]}`。
+SDK 解包宿主的分页响应，直接返回 `PlaylistTrack[]`。
 
 ```javascript
-const r = await fb.playlist.getTracks(0, 0, 50);
-console.log(`共 ${r.total} 首，当前返回 ${r.tracks.length} 首`);
+const tracks = await fb.playlist.getTracks(0, 0, 50);
+console.log(`当前返回 ${tracks.length} 首`);
 ```
+
+`fields` 使用与 `library.query` 相同的大小写敏感白名单，但不接受 `composer` 和 `comment`。省略时返回完整曲目行；投影后的行只包含部分 `PlaylistTrack` 字段，调用方只能读取请求的字段。字段列表不合法时，宿主返回 `{ success: false, code: 'INVALID_PARAMS' }`；该响应没有 `tracks`，因此本方法返回空数组。
+
+需要分页响应或宿主的错误信封时，使用 `getTracksPage()`。
+
+## getTracksPage(index, start, count, formats?, fields?)
+
+请求与 `getTracks()` 相同，但保留完整分页响应。
+
+返回 `{ playlist, start, count, total, tracks }`。与同一播放列表的 `getGroupRuns()` 响应比较 `total`，可以发现两次读取之间曲目数量发生变化。两者相等不能排除等量替换或重排；两次调用各自读取快照，并不共享播放列表版本。
+
+```javascript
+const page = await fb.playlist.getTracksPage(0, 200, 200, undefined, ['title', 'album']);
+console.log(`${page.tracks.length} / ${page.total}`);
+```
+
+## getGroupRuns(patterns, index?)
+
+把整份播放列表按顺序切成分组游程，只返回游程边界，不返回行。
+
+游程是相邻且分组键相同的最长一段，比较时按 ASCII 的 `A-Z`/`a-z` 折叠大小写。不重排行，所以游程顺序就是列表顺序。
+
+| 参数 | 类型 | 说明 |
+| --- | --- | --- |
+| patterns | string[] | 一到两个 Title Formatting 模式；第二个在每个游程内再分一层 |
+| index | number? | 要分组的播放列表，默认活动列表 |
+
+```javascript
+const { runs, total } = await fb.playlist.getGroupRuns([
+  '%album artist% | %album%',
+  "$if(%discnumber%,'Disc '%discnumber%,)",
+]);
+// runs[1].sub[0].start 是全表绝对行号，不是父游程内的偏移
+```
+
+成功时，`runs` 覆盖整份列表。非空列表的 `runs[0].start` 为 0，相邻游程首尾相接，`count` 之和等于 `total`。空列表返回 `total: 0` 和 `runs: []`。`sub` 只在传了两个模式时出现，其 `start` 与父游程采用相同的绝对行号。
+
+与 `getTracksPage()` 搭配可实现分组虚拟列表：游程提供组头位置，界面据此计算滚动总高度，可见页的曲目行另行获取。只有平均每组约 10 首时，10 万首才对应约 1 万个一级游程。响应大小取决于分组键和二级游程数量；完整曲目行的大小还取决于请求字段及元数据内容。
+
+若模式让每行单独成组，`runs` 的长度就等于 `total`。宿主不设上限，每个游程的字节数也不固定；请选能合并相邻曲目的模式。
+
+`patterns` 形状不对或模式编译失败，返回 `{ success: false, code: 'INVALID_PARAMS' }`；若问题出在某一个模式上，`details.pattern` 给出它的下标。
 
 ## playTrack(playlistIndex, trackIndex, options?) 
 

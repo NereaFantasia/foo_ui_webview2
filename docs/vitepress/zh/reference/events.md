@@ -16,10 +16,10 @@ foo_ui_webview2 的运行时事件 payload 参考。事件名使用 **冒号格�
 | --- | --- |
 | audio:dspPresetChanged | `{}` |
 | audio:fullWaveformFailed | `{ code, error, path, taskId }` |
-| audio:fullWaveformReady | `{ cached, channels, duration, method, path, resolution, sampleRate, scale, signed, taskId, waveform }` |
+| audio:fullWaveformReady | `{ cached, channels, duration, maxAmplitude, method, path, resolution, sampleRate, scale, signed, taskId, waveform }` |
 | audio:outputDeviceChanged | `{}` |
 | audio:replaygainModeChanged | `{ mode }` |
-| audio:spectrum | `{ spectrum }` |
+| audio:spectrum | `{ bands, fftSize, hostTime, maxFrequency, minFrequency, sampleRate, scale, spectrum, state, streamTime, subscriptionId }` |
 | audio:stream | `{}` |
 
 流捕获订阅尚未实现。`audio:stream` 只是该占位实现返回的保留名，运行时不会发射。

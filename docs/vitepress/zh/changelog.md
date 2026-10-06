@@ -1,5 +1,69 @@
 # 更新日志
 
+## v1.14.0 (2026-10-05)
+
+::: warning 本版的破坏性变更
+- `library.getArtistAlbums`、`getArtistTracks` 与 `getAlbumTracks` 改为精确匹配：逐字节比较，区分大小写，`*`、`?` 不再作为通配符。如需在 `getArtistAlbums` 中沿用原有的子串匹配，请传入 `match: 'substring'`。
+- `library.getArtistAlbums` 返回行中的 `artist` 改为专辑艺术家（`album artist` 首值，缺失时取 `artist` 首值）。
+- `library.getArtistAlbums` 改为先排序、再按 `limit` 截断，截断时返回的专辑可能与此前不同；`limit: 0` 返回空列表。
+- `queue.get` 中不带播放列表位置的条目，其 `playlist` 与 `playlistItem` 为 `null`，请用 `item.playlist == null` 判断。
+:::
+
+### 新功能
+
+- 支持将曲目作为真实文件拖出窗口：先用 `dnd.prepareDrag` 换取一次性 token，再在 `dragstart` 中写入（SDK 为 `fb.dnd.applyDragToken`）。`dataTransfer.effectAllowed` 必须为 `'copy'`。
+- 新增 `dnd:dragEnded`，仅在宿主拒绝挂上文件时触发；SDK 用 `fb.dnd.onDragEnded` 订阅。
+- `dnd.getCapabilities` 与 `dnd:capabilitiesChanged` 新增 `dragOut` 与 `dragOutUnavailableReason`；拖出需要 WebView2 Runtime 144 或更新。
+- 新增 `queue.setContents`，以有序列表整体替换播放队列。
+- 新增 `queue.insertNext`，按路径或播放列表位置插入为下一首；已在队列中的曲目会被移动，不会重复入队。
+- 新增 `queue.playNow`，立即播放队列中的指定项。
+- `playback:queueChanged` 新增 `count`，重建类变化只广播一次。
+- 新增 `playlist.getGroupRuns`，一次返回整个播放列表的分组边界，不含曲目行。
+- `playlist.getTracks` 新增 `fields`，仅返回指定字段；未知字段名以 `INVALID_PARAMS` 失败，并列在 `details.unknownFields` 中。
+- `library.getArtistAlbums` 新增 `sort` 与 `match` 参数，响应新增 `artist`、`total` 与 `hasMore`；返回行补全专辑字段（`albumArtist`、`discCount`、`duration`、`genre`、`label`、`firstTrackPath`、`firstTrackAbsolutePath`），计数只统计该艺术家参与的曲目。
+- `library.getArtists` 新增 `includeAlbums`，为 `true` 时附带每位艺术家的专辑。
+- 支持查找按「艺术家 - 标题」命名的歌词文件，以及去掉子轨编号的共享 `.lrc`。
+- 频谱新增 `scale: 'db'`、`minFrequency` 与 `maxFrequency`，`fftSize` 上限提高至 65536；每帧带 `subscriptionId`、实际使用的参数、`streamTime` 与 `hostTime`。
+- `audio.getWaveform` 新增 `channels` 与 `points`。
+- 整轨波形更换 `method`、`signed` 或 `scale` 时不再重新解码，同一文件的并发请求合并为一次解码；新增 `audio.cancelFullWaveform`，应答带 `maxAmplitude`。
+- SDK：`fb.audio.subscribeSpectrum` 的退订函数带 `ready`；`fb.audio.generateFullWaveform` 接受 `signal`；新增 `playlist.getGroupRuns` 与 `playlist.getTracksPage`；`library.getArtistAlbums` 接受 `options`。
+- `dialog.openFolder` 新增 `defaultPath`，支持 `%music%`。
+- 自绘菜单中的评分、滑块与分段行支持鼠标滚轮调节。
+- 偏好设置页（`Display → WebView2 UI`）重做：改动点击 `Apply` 或 `OK` 后保存，`Reset page` 恢复默认值，`Cancel` 放弃改动。
+- 新增窗口、性能、开发者三个子页，支持设置默认缩放（50–200%）、启动时预热 WebView2 与 CDP 端口（1024–65535，默认 9222）。
+- 模板的新建、重命名与删除移至 `Manage...`，操作立即生效。
+
+### 变更
+
+- 后台模式、深度挂起、开发者工具、CDP 远程调试、开发服务器开关与 URL 从高级设置移至子页，原有设置自动沿用；HTTP 访问本地网络与无效 TLS 证书仍在 `Advanced → Tools → WebView2 UI` 中。
+- 切换组件语言改为点击 `Apply` 后写入，之后新打开的对话框使用新语言。
+- 正在使用的模板与被面板引用的模板不能重命名或删除；模板列表为空时不再自动创建 `default`。
+- 频谱按订阅的帧率准时推送；暂停或停止时先发一帧静音再停发；参数越界以 `INVALID_PARAMS` 失败。
+- `audio.getWaveform` 的 `duration` 须在 (0, 1] 秒内，否则以 `INVALID_PARAMS` 失败。
+- 隐藏到托盘期间，`window.getState` 报告 `minimized: true`，隐藏时多发一次 `window:stateChanged`。
+- `Allow insecure HTTP connections (disable HSTS)` 标为保留项，当前无实际效果。
+
+### 修复
+
+- 修复曲目所在目录下的外挂歌词与封面文件无法读取的问题，便携版同样适用（#15）。
+- 修复文件名含 `..` 的曲目被误判为路径穿越的问题（#17）；`lyrics.save`、`metadata.embedArtwork` 的 `filename` 与 `log.write` 的 `file` 按同一规则判断。
+- 修复名称含双引号的艺术家无法获取专辑与曲目的问题。
+- 修复 `library.getArtistAlbums` 截断时 `trackCount` 偏小、失败时缺少 `albums` 的问题。
+- 修复 `<fb-library-tree>` 在艺术家节点下混入其他艺术家专辑的问题。
+- 修复多个频谱订阅相互改变 `fftSize`、`bands` 与 `fps` 的问题。
+- 修复为路径过长的曲目生成整轨波形时 foobar2000 可能崩溃、不同曲目共用同一份波形的问题。
+- 修复隐藏到托盘后，原窗口所在区域无法点击的问题。
+- 修复以原生路径（如 `E:\...`）添加的曲目与播放列表中的同一文件无法对应的问题。
+- 修复 `playlist.addPathsSequential` 未按传入顺序添加的问题。
+- 修复 `playlist.addPathsAsync`、`library.addToPlaylist` 与 `audio.analyzeBPM` 忽略 `path|subsong:N` 的问题。
+- 修复播放列表行的 `rating` 与 `rating.get` 不一致的问题，两者现在都先读 foo_playcount。
+
+### 已知问题
+
+- 1.x 对页面来源的校验不完整：通过 `window.createPopup` 打开的 `http(s)` 网址会被直接信任，页面可以调用全部 API（包括 `shell.exec`）；开发模式下，本机任意端口上的页面也受信任；事件会推送给当前加载的任何页面，包括已跳转到其他来源的页面。这些问题已在 v2.0.0 修复，1.x 不再修复。请勿在弹出窗口中打开不受信任的网址。
+- 通过 `queue.insertNext` 的 `paths` 插入的曲目不带播放列表位置，播放完毕后将从插入前的位置继续播放。已知曲目在播放列表中的位置时，请改用 `items`。
+- 播放队列不会在重启后保留，这是 foobar2000 自身的行为。
+
 ## v1.13.0 (2026-08-26)
 
 ::: warning 本版的破坏性变更
@@ -10,7 +74,6 @@
 - **`file.*` 的错误消息变了，且被拒绝的路径不再回显。** 该命名空间内所有裸写的错误信封统一改走标准错误信封，`std::filesystem` 异常只外传 Win32 错误号——异常文本与出错路径不再进入 payload 和宿主日志。路径安全拒绝现在形如 `file.read: path security denied for 'path': Access denied: protected system path`：给出方法名、出错参数（数组参数带下标，如 `items[2].destination`）与策略原因，调用方能判断是哪个实参被拒，而宿主不会把一个文件系统位置泄漏到页面可能转发出去的 payload 里。此前解析 `result.error` 取路径或匹配特定措辞的代码，需改用 `result.code` 配合 `result.details`。
 - **参数形状不对现在返回 `INVALID_PARAMS`，不再是 `PERMISSION_DENIED`。** 路径安全装饰器此前把「路径被拒」与「实参格式错误」报在同一个 code 下。靠 `PERMISSION_DENIED` 分支去捕获类型错误的处理逻辑，将不再在那里收到它们。
 
-本版仍作为 minor 发布，与本项目的版本号惯例一致（见 1.6.0 与 1.12.0）。需要可控升级时请锁定精确版本号。
 :::
 
 ### 异步文件操作
@@ -39,8 +102,8 @@
 - 拿不到目标时该项为 `null`：路径不是快捷方式、快捷方式指向回收站一类 shell 命名空间对象而非文件、记录的目标太长无法完整取回（Windows 以 `MAX_PATH` 截断，而被截断的路径会指向另一个文件）、COM 不可用，或为保持投放响应性而跳过了解析。永远不会是空字符串，因此真值判断就够了。
 - 目标只说明快捷方式指向何处，不保证那个文件在。已失效的快捷方式上报其 `.lnk` 记录的路径而非 `null`——因为无论目标是否还存在，Windows 都会把那个路径交回来，而宿主在被拖放阻塞的线程上负担不起一次文件系统检查。非空项也可能指向已不存在的文件，请自行处理。只解析 `.lnk`——`.url`、`.library-ms` 与虚拟搜索结果都报 `null`。
 - 读 `resolvedPaths` 不产生任何文件系统访问：目标在拖放到达时已解析一次，因此 `getPathsAsync()` 只读宿主内存。
-- **已建档的限制** —— 页面侧快照只发布给顶层文档，因此 `dnd.getPaths()` 与 `dnd.getResolvedPaths()` 在 `<iframe>` 内返回空数组，且该槽位在这个文档的生命周期内一直是 `null`。被嵌入的页面若需要路径，须由主框架经 `postMessage` 转交。
-- 把曲目**拖出**窗口仍不支持，`dnd.startDrag` 继续 resolve `{ success: false, code: 'NOT_SUPPORTED' }`。一次实测已确定实现方案——它需要一条独立 STA 线程，因为在宿主主线程上执行拖出会让目标应用在整个手势期间冻结——但这项工作有意不放进本版。
+- **一处已知限制** —— 页面侧快照只发布给顶层文档，因此 `dnd.getPaths()` 与 `dnd.getResolvedPaths()` 在 `<iframe>` 内返回空数组，且该槽位在这个文档的生命周期内一直是 `null`。被嵌入的页面若需要路径，须由主框架经 `postMessage` 转交。
+- 把曲目**拖出**窗口仍不支持，`dnd.startDrag` 继续 resolve `{ success: false, code: 'NOT_SUPPORTED' }`。
 
 ### 媒体库查询
 
@@ -94,7 +157,6 @@
 - **窗口尺寸约束改作用于调用方窗口。** `window.setMinSize` / `getMinSize` / `setMaxSize` / `getMaxSize` / `setResizable` / `isResizable` 这六个端点不再回退到主窗口，解析不到目标时调用失败。依赖旧回退行为的 popup，实际约束的是主窗口。
 - **`DiscoveryContextMenuCommand` 不再是类型别名。** 读取右键菜单命令的 `path` / `isDynamic` / `subGuid` 不再通过类型检查——这些字段从未被填充过。
 
-本版仍作为 minor 发布：本项目的版本号历史上已有 minor 版本承载破坏性变更的先例（见 1.6.0）。需要可控升级时请锁定精确版本号。
 :::
 
 ### 拖放
