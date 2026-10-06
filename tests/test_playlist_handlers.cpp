@@ -666,6 +666,9 @@ json PlaylistInsertTracks(IPlaylistService* svc, const json& params) {
 
 // 15. PlaylistGetTracks
 json PlaylistGetTracks(IPlaylistService* svc, const json& params) {
+    // fields 校验排在越界检查之前（与 PlaylistApi.cpp 的 handler 同序）
+    const auto fields = ParseTrackFieldSelection(params);
+    if (!fields.valid) return MakeTrackFieldsErrorBody(fields);
     size_t playlistIndex = params.contains("playlist") ? params.value("playlist", SIZE_MAX)
                                                         : params.value("index", SIZE_MAX);
     size_t start = params.value("start", static_cast<size_t>(0));
@@ -674,7 +677,7 @@ json PlaylistGetTracks(IPlaylistService* svc, const json& params) {
     if (playlistIndex == SIZE_MAX) playlistIndex = svc->get_active_playlist();
     if (playlistIndex >= svc->get_playlist_count())
         return { {"playlist", playlistIndex}, {"start", start}, {"count", 0}, {"total", 0}, {"tracks", json::array()} };
-    return svc->get_tracks_json(playlistIndex, start, count, extraFormats);
+    return svc->get_tracks_json(playlistIndex, start, count, extraFormats, fields);
 }
 
 // 16. PlaylistGetSelectedTracks
@@ -1038,6 +1041,30 @@ TEST_F(PlaylistHandlerP4Test, GetTracks_DefaultParams) {
     EXPECT_EQ(mock.getTracksJsonCallCount, 1);
     EXPECT_EQ(mock.lastGetTracksStart, 0u);
     EXPECT_EQ(mock.lastGetTracksCount, 100u);  // default
+    EXPECT_FALSE(mock.lastGetTracksProjected);  // 未传 fields 不走进投影
+}
+
+// fields 校验排在越界检查之前（SPEC §4.1）：playlist 99 越界但 fields 非法时
+// 必须报 INVALID_PARAMS 而不是静默出空页。
+TEST_F(PlaylistHandlerP4Test, GetTracks_InvalidFieldsBeforeRangeCheck) {
+    SetUpP4(1, 20);
+    auto r = reimpl_p4::PlaylistGetTracks(&mock, {{"playlist", 99}, {"fields", {"bogus"}}});
+    EXPECT_FALSE(r["success"].get<bool>());
+    EXPECT_EQ(r["code"], "INVALID_PARAMS");
+    EXPECT_EQ(r["details"]["unknownFields"], json::array({"bogus"}));
+    EXPECT_EQ(mock.getTracksJsonCallCount, 0);
+}
+
+TEST_F(PlaylistHandlerP4Test, GetTracks_ValidFieldsForwardedAsProjection) {
+    SetUpP4(1, 20);
+    mock.tracksJsonResult = {
+        {"playlist", 0}, {"start", 0}, {"count", 1}, {"total", 20},
+        {"tracks", json::array({json::object({{"index", 0}, {"title", "t"}})})}
+    };
+    auto r = reimpl_p4::PlaylistGetTracks(&mock, {{"playlist", 0}, {"fields", {"title"}}});
+    EXPECT_EQ(mock.getTracksJsonCallCount, 1);
+    EXPECT_TRUE(mock.lastGetTracksProjected);
+    EXPECT_EQ(r["tracks"][0].size(), 2u);  // index + title
 }
 
 // ==========================================================================

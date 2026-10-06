@@ -194,6 +194,11 @@ public:
     // 根据 DPI 自动调整缩放
     HRESULT SetZoomForDpi(int dpi);
 
+    // 主题经 window.setZoom / resetZoom / setZoomForDpi 改过缩放后，偏好设置里的默认缩放不再动这个 WebView；
+    // 覆盖只在本进程内有效，不写回偏好。
+    void MarkZoomOverriddenByTheme() { zoomOverriddenByTheme_ = true; }
+    bool IsZoomOverriddenByTheme() const { return zoomOverriddenByTheme_; }
+
     // ============================================
     // Visual Hosting 模式 - 鼠标输入转发
     // ============================================
@@ -252,9 +257,13 @@ public:
     int GetNonClientRegionAtPoint(POINT clientPt);
 
 private:
+    // controller 就绪时把偏好里的默认缩放（非 100% 时）应用到这个 WebView。
+    void ApplyDefaultZoomPreference();
+
     HWND parentHwnd_ = nullptr;
     bool useVisualHosting_ = true;           // Visual Hosting 模式标记
     bool isBackgroundTransparent_ = false;   // 跟踪透明状态
+    bool zoomOverriddenByTheme_ = false;     // 主题调过缩放 API，默认缩放偏好不再覆盖
 
     // WebView 输入焦点状态（用于决定是否让 fb2k 快捷键优先）
     std::atomic<bool> isWebInputFocused_{false};

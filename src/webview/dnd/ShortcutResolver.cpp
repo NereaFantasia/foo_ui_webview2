@@ -52,7 +52,7 @@ int64_t SteadyNowMs() {
 // directory rather than the file. Nothing recovers the rest: the interface has no
 // length above MAX_PATH and no out parameter for the untruncated size. So "every
 // writable character was used" counts as untrustworthy and reports no target at
-// all, which is the choice HdropReader.cpp:18-20 already makes for the paths
+// all, which is the choice HdropReader already makes for the paths
 // array. A real target of exactly ARRAYSIZE(buf) - 1 characters is
 // indistinguishable from a truncated one and is refused with it: null costs the
 // page a shortcut it could have followed, while a truncated path would have it

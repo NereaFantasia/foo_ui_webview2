@@ -106,6 +106,13 @@ void DropTargetBridge::EmitCapabilitiesChanged(const nlohmann::json& payload) co
     Emit("dnd:capabilitiesChanged", payload);
 }
 
+void DropTargetBridge::EmitDragEnded(const nlohmann::json& payload) const {
+    if (shuttingDown_) {
+        return;
+    }
+    Emit("dnd:dragEnded", payload);
+}
+
 void DropTargetBridge::Emit(const char* event, const nlohmann::json& payload) const {
     if (!sink_) {
         return;

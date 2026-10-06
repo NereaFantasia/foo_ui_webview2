@@ -7,6 +7,7 @@
 #include "api/MetadataApi.h"
 #include "utils/PathExpansion.h"
 #include "utils/PathSecurity.h"
+#include "utils/PathTraversalSegments.h"
 #include "utils/SubsongUtils.h"
 #include <fstream>
 #include <filesystem>
@@ -63,6 +64,12 @@ namespace {
         g_lyricsCache[MakeCacheKey(path, source)] = { result, std::chrono::steady_clock::now() };
     }
 
+    // Superseded by SubsongUtils::TryResolveNativeMediaPath, which decides the same
+    // question and hands back the converted path in one step. Kept for reference:
+    // note that the fallback below treats any path without "://" as a filesystem
+    // path, so a relative path such as "foo/bar.flac" was accepted and then
+    // resolved against the process working directory (the foobar2000 install
+    // folder). The replacement rejects that form outright.
     bool IsFilesystemPath(const std::string& path) {
         if (path.empty()) return false;
         if (path.rfind("\\\\?\\", 0) == 0 || path.rfind("\\\\", 0) == 0) {
@@ -247,6 +254,52 @@ namespace {
         return p.replace_extension(ext).wstring();
     }
     
+    // Replace the characters Win32 rejects in a file name. Lyrics downloaders
+    // apply the same substitution when they save, so a title like "dance / narehate"
+    // is on disk as "dance _ narehate".
+    std::wstring SanitizeFilenameComponent(const std::wstring& in) {
+        std::wstring out = in;
+        for (wchar_t& c : out) {
+            switch (c) {
+                case L'\\': case L'/': case L':': case L'*':
+                case L'?':  case L'"': case L'<': case L'>': case L'|':
+                    c = L'_';
+                    break;
+                default:
+                    break;
+            }
+        }
+        return out;
+    }
+
+    // "<artist> - <title><ext>" beside the audio file. This is how most lyrics
+    // downloaders name what they save, so it is far more common in the wild than
+    // a sidecar named after the audio file. Returns an empty string when either
+    // tag is missing or the track has no directory.
+    // nativeAudioPath must already be normalized; a "|subsong:N" suffix is ignored
+    // because this naming carries no per-subsong variant.
+    std::wstring GetTaggedLyricsFilePath(const std::string& nativeAudioPath,
+                                         const metadb_handle_ptr& track,
+                                         const std::wstring& ext) {
+        if (!track.is_valid()) return L"";
+
+        metadb_info_container::ptr infoContainer = track->get_info_ref();
+        if (!infoContainer.is_valid()) return L"";
+        const file_info& info = infoContainer->info();
+
+        const char* artist = info.meta_get("artist", 0);
+        const char* title = info.meta_get("title", 0);
+        if (!artist || !artist[0] || !title || !title[0]) return L"";
+
+        auto [filePath, subsong] = SubsongUtils::ParseSubsongPath(nativeAudioPath);
+        fs::path dir = fs::path(Utf8ToWide(filePath)).parent_path();
+        if (dir.empty()) return L"";
+
+        std::wstring name = SanitizeFilenameComponent(Utf8ToWide(artist)) + L" - " +
+                            SanitizeFilenameComponent(Utf8ToWide(title)) + ext;
+        return (dir / name).wstring();
+    }
+
     //==========================================================================
     // lyrics.get - Get lyrics for a track
     //==========================================================================
@@ -289,21 +342,28 @@ namespace {
             } catch (...) {}
         }
 
-        // Try external lyrics files (if source is 'file' or 'any')
-        if ((source == "file" || source == "any") && IsFilesystemPath(path)) {
+        // Try external lyrics files (if source is 'file' or 'any').
+        // Normalize once here: get_path() yields "file://D:\..." for a local file,
+        // or "file-relative://..\.." when foobar2000 runs portable and the media
+        // shares its volume. Every sidecar lookup below ends up in std::filesystem.
+        // A path that is not on the local filesystem leaves the branch unentered
+        // rather than producing a path that no file API can open.
+        std::string nativePath;
+        if ((source == "file" || source == "any") &&
+            SubsongUtils::TryResolveNativeMediaPath(path, nativePath)) {
 
-            // Helper lambda: try reading a lyrics file by extension
-            auto tryReadFile = [&](const std::wstring& ext) -> bool {
-                std::wstring filePath = GetLyricsFilePath(path, ext);
+            // Helper lambda: read one candidate file into result
+            auto tryReadPath = [&](const std::wstring& filePath) -> bool {
+                if (filePath.empty()) return false;
 
                 std::wstring pathError;
                 if (!PathSecurity::Instance().ValidateMediaAccess(filePath, pathError)) {
                     return false;
                 }
 
-                if (!fs::exists(filePath)) return false;
-
                 try {
+                    if (!fs::exists(filePath)) return false;
+
                     std::ifstream file(filePath, std::ios::in);
                     if (!file.is_open()) return false;
 
@@ -330,51 +390,42 @@ namespace {
                 }
             };
 
-            // Try per-track .lrc first, then shared fallback (if format is "lrc" or "any")
-            if (format == "lrc" || format == "any") {
-                if (tryReadFile(L".lrc")) {
-                    StoreCachedLyricsResult(path, cacheKey, result);
-                    return result;
+            // The "<artist> - <title>" candidate needs the track's tags. Resolve the
+            // handle at most once, and only after the cheaper candidates missed.
+            metadb_handle_ptr taggedTrack;
+            bool taggedResolved = false;
+            auto taggedPath = [&](const std::wstring& ext) -> std::wstring {
+                if (!taggedResolved) {
+                    taggedResolved = true;
+                    try {
+                        taggedTrack = ResolveTrackHandle(path);
+                    } catch (...) {}
                 }
-                // Shared fallback for backward compat (M7: existing album.lrc)
-                std::wstring sharedLrc = GetSharedLyricsFilePath(path, L".lrc");
-                std::wstring perTrackLrc = GetLyricsFilePath(path, L".lrc");
-                if (sharedLrc != perTrackLrc && fs::exists(sharedLrc)) {
-                    std::wstring pathError;
-                    if (PathSecurity::Instance().ValidateMediaAccess(sharedLrc, pathError)) {
-                        try {
-                            std::ifstream file(sharedLrc, std::ios::in);
-                            if (file.is_open()) {
-                                std::stringstream buffer;
-                                buffer << file.rdbuf();
-                                std::string lyrics = buffer.str();
-                                file.close();
-                                if (!lyrics.empty()) {
-                                    bool synced = IsSyncedLyrics(lyrics);
-                                    if ((type == "synced" && !synced) || (type == "unsynced" && synced)) {
-                                        // type mismatch, skip
-                                    } else {
-                                        result["available"] = true;
-                                        result["source"] = "file";
-                                        result["sourcePath"] = WideToUtf8(sharedLrc);
-                                        result["lyrics"] = lyrics;
-                                        result["synced"] = synced;
-                                        StoreCachedLyricsResult(path, cacheKey, result);
-                                        return result;
-                                    }
-                                }
-                            }
-                        } catch (...) {}
-                    }
+                return GetTaggedLyricsFilePath(nativePath, taggedTrack, ext);
+            };
+
+            // Candidate order per extension: the per-track sidecar, then the shared
+            // one without the subsong suffix, then "<artist> - <title>". The shared
+            // candidate stays limited to .lrc, matching the album.lrc case it was
+            // added for.
+            auto tryExtension = [&](const std::wstring& ext, bool withShared) -> bool {
+                const std::wstring perTrack = GetLyricsFilePath(nativePath, ext);
+                if (tryReadPath(perTrack)) return true;
+                if (withShared) {
+                    const std::wstring shared = GetSharedLyricsFilePath(nativePath, ext);
+                    if (shared != perTrack && tryReadPath(shared)) return true;
                 }
+                return tryReadPath(taggedPath(ext));
+            };
+
+            if ((format == "lrc" || format == "any") && tryExtension(L".lrc", true)) {
+                StoreCachedLyricsResult(path, cacheKey, result);
+                return result;
             }
 
-            // Try .txt (if format is "txt" or "any")
-            if (format == "txt" || format == "any") {
-                if (tryReadFile(L".txt")) {
-                    StoreCachedLyricsResult(path, cacheKey, result);
-                    return result;
-                }
+            if ((format == "txt" || format == "any") && tryExtension(L".txt", false)) {
+                StoreCachedLyricsResult(path, cacheKey, result);
+                return result;
             }
         }
 
@@ -386,26 +437,33 @@ namespace {
     // Helper: Validate filename has no path separators or traversal
     //==========================================================================
     bool ContainsPathTraversal(const std::string& filename) {
-        return filename.find(".\\") != std::string::npos ||
-               filename.find("./") != std::string::npos ||
-               filename.find("..") != std::string::npos ||
-               filename.find('/') != std::string::npos ||
-               filename.find('\\') != std::string::npos;
+        return !path_traversal::IsPlainFilename(filename);
     }
 
     //==========================================================================
     // Helper: Resolve lyrics output path from audio path + optional filename + format
     //==========================================================================
+    const char* const kNonLocalPathError =
+        "Cannot write an external lyrics file: the track is not on the local filesystem";
+
+    // Returns an empty string when the track is not on the local filesystem: an
+    // external sidecar has no directory to live in, so the caller reports the
+    // failure instead of handing a bogus path to ofstream.
     std::wstring ResolveLyricsOutputPath(const std::string& audioPath, const std::string& filename,
                                          const std::string& format = "lrc") {
+        std::string nativePath;
+        if (!SubsongUtils::TryResolveNativeMediaPath(audioPath, nativePath)) {
+            return L"";
+        }
+
         if (!filename.empty()) {
             // Explicit filename: strip subsong from path to get directory
-            auto [filePath, subsong] = SubsongUtils::ParseSubsongPath(audioPath);
+            auto [filePath, subsong] = SubsongUtils::ParseSubsongPath(nativePath);
             fs::path dir = fs::path(Utf8ToWide(filePath)).parent_path();
             return (dir / Utf8ToWide(filename)).wstring();
         }
         std::wstring ext = (format == "txt") ? L".txt" : L".lrc";
-        return SubsongUtils::MakeSidecarPath(audioPath, ext);
+        return SubsongUtils::MakeSidecarPath(nativePath, ext);
     }
 
     //==========================================================================
@@ -415,15 +473,27 @@ namespace {
                                          const std::string& format = "lrc") {
         std::wstring profileDir = PathExpansion::GetProfileDirectory();
         std::wstring lyricsDir = profileDir + L"lyrics\\";
-        // Ensure directory exists
-        fs::create_directories(lyricsDir);
+        // Ensure directory exists. A failure here surfaces below as the file
+        // failing to open, which the caller already reports.
+        try {
+            fs::create_directories(lyricsDir);
+        } catch (...) {}
 
         if (!filename.empty()) {
             return lyricsDir + Utf8ToWide(filename);
         }
+        // Only the file name comes from the track path here — the output always
+        // lands in the profile directory. Normalizing removes the reliance on
+        // filename() happening to drop a "file://" prefix. A track that is not on
+        // the local filesystem still yields a usable name, so keep the raw path in
+        // that case rather than failing a write that works today.
+        std::string nativePath;
+        if (!SubsongUtils::TryResolveNativeMediaPath(audioPath, nativePath)) {
+            nativePath = audioPath;
+        }
         // Use MakeSidecarPath for per-track naming in config dir
         std::wstring ext = (format == "txt") ? L".txt" : L".lrc";
-        std::wstring sidecar = SubsongUtils::MakeSidecarPath(audioPath, ext);
+        std::wstring sidecar = SubsongUtils::MakeSidecarPath(nativePath, ext);
         // Extract just the filename from the sidecar path
         return lyricsDir + fs::path(sidecar).filename().wstring();
     }
@@ -470,6 +540,14 @@ namespace {
             return {{"success", false}, {"error", "lyrics is required"}};
         }
 
+        // Security context handed to the write gate. Its same-directory trust rule
+        // takes the parent of this value; a "file://D:\..." string makes that throw
+        // and the exception is swallowed, so the rule never fires. Give it the
+        // native form whenever there is one.
+        std::string nativeAudioPath;
+        const std::wstring contextAudioPath = Utf8ToWide(
+            SubsongUtils::TryResolveNativeMediaPath(path, nativeAudioPath) ? nativeAudioPath : path);
+
         // Parse target — string or array of strings
         std::set<std::string> targets;
         if (params.contains("target") && params["target"].is_array()) {
@@ -501,9 +579,11 @@ namespace {
                 if (!filename.empty() && ContainsPathTraversal(filename)) {
                     return {{"success", false}, {"error", "Invalid filename: path separators and traversal sequences not allowed"}};
                 }
-                return WriteLyricsFile(
-                    ResolveLyricsOutputPath(path, filename, format),
-                    lyrics, Utf8ToWide(path));
+                std::wstring outputPath = ResolveLyricsOutputPath(path, filename, format);
+                if (outputPath.empty()) {
+                    return {{"success", false}, {"error", kNonLocalPathError}};
+                }
+                return WriteLyricsFile(outputPath, lyrics, contextAudioPath);
             }
 
             if (t == "embedded") {
@@ -519,7 +599,7 @@ namespace {
             }
             return WriteLyricsFile(
                 ResolveConfigLyricsPath(path, filename, format),
-                lyrics, Utf8ToWide(path));
+                lyrics, contextAudioPath);
         }
 
         // Multiple targets: collect results
@@ -530,9 +610,12 @@ namespace {
             if (!filename.empty() && ContainsPathTraversal(filename)) {
                 results["file"] = {{"success", false}, {"error", "Invalid filename: path separators and traversal sequences not allowed"}};
             } else {
-                results["file"] = WriteLyricsFile(
-                    ResolveLyricsOutputPath(path, filename, format),
-                    lyrics, Utf8ToWide(path));
+                std::wstring outputPath = ResolveLyricsOutputPath(path, filename, format);
+                if (outputPath.empty()) {
+                    results["file"] = {{"success", false}, {"error", kNonLocalPathError}};
+                } else {
+                    results["file"] = WriteLyricsFile(outputPath, lyrics, contextAudioPath);
+                }
             }
             if (results["file"].value("success", false)) anySuccess = true;
         }
@@ -551,7 +634,7 @@ namespace {
             } else {
                 results["config"] = WriteLyricsFile(
                     ResolveConfigLyricsPath(path, filename, format),
-                    lyrics, Utf8ToWide(path));
+                    lyrics, contextAudioPath);
             }
             if (results["config"].value("success", false)) anySuccess = true;
         }
@@ -572,9 +655,11 @@ namespace {
         json sources = json::array();
         bool exists = false;
 
-        // Check embedded lyrics
+        // Check embedded lyrics. The handle is kept for the tagged sidecar
+        // candidate below, which needs the same track's artist and title.
+        metadb_handle_ptr track;
         try {
-            auto track = ResolveTrackHandle(path, "lyrics.exists");
+            track = ResolveTrackHandle(path, "lyrics.exists");
             metadb_info_container::ptr infoContainer = track.is_valid() ? track->get_info_ref() : nullptr;
             if (infoContainer.is_valid()) {
                 const file_info& info = infoContainer->info();
@@ -585,20 +670,35 @@ namespace {
             }
         } catch (...) {}
 
-        // Check external LRC file (subsong-aware per-track path)
-        if (IsFilesystemPath(path)) {
-            std::wstring lrcPath = SubsongUtils::MakeSidecarPath(path, L".lrc");
-            if (fs::exists(lrcPath)) {
-                sources.push_back("file:" + WideToUtf8(fs::path(lrcPath).filename().wstring()));
-                exists = true;
-            }
+        // Check external LRC file (subsong-aware per-track path).
+        // Same normalization as lyrics.get — see the comment there.
+        std::string nativePath;
+        if (SubsongUtils::TryResolveNativeMediaPath(path, nativePath)) {
+            try {
+                std::wstring lrcPath = SubsongUtils::MakeSidecarPath(nativePath, L".lrc");
+                if (fs::exists(lrcPath)) {
+                    sources.push_back("file:" + WideToUtf8(fs::path(lrcPath).filename().wstring()));
+                    exists = true;
+                }
 
-            // Also check for .txt lyrics file (subsong-aware)
-            std::wstring txtPath = SubsongUtils::MakeSidecarPath(path, L".txt");
-            if (fs::exists(txtPath)) {
-                sources.push_back("file:" + WideToUtf8(fs::path(txtPath).filename().wstring()));
-                exists = true;
-            }
+                // Also check for .txt lyrics file (subsong-aware)
+                std::wstring txtPath = SubsongUtils::MakeSidecarPath(nativePath, L".txt");
+                if (fs::exists(txtPath)) {
+                    sources.push_back("file:" + WideToUtf8(fs::path(txtPath).filename().wstring()));
+                    exists = true;
+                }
+
+                // "<artist> - <title>" sidecars, the naming most lyrics downloaders
+                // use — see the candidate list in lyrics.get.
+                for (const wchar_t* ext : { L".lrc", L".txt" }) {
+                    std::wstring tagged = GetTaggedLyricsFilePath(nativePath, track, ext);
+                    if (tagged.empty() || tagged == lrcPath || tagged == txtPath) continue;
+                    if (fs::exists(tagged)) {
+                        sources.push_back("file:" + WideToUtf8(fs::path(tagged).filename().wstring()));
+                        exists = true;
+                    }
+                }
+            } catch (...) {}
         }
         
         return {

@@ -32,6 +32,7 @@ struct ArtworkResult {
     bool isNegative = false;  // 404 from extractor → write L1N
     std::string negCacheKey;
     std::string cacheKey;  // for L1 write-back on 200
+    std::string fingerprint;  // source fingerprint captured with the request; stored on L1 write-back
 };
 
 using CompletionFn = std::function<void(ArtworkResult)>;
@@ -42,6 +43,7 @@ struct WorkItem {
     int maxSize = 0;
     std::string cacheKey;  // empty if maxSize==0 → no single-flight
     std::string negCacheKey;
+    std::string fingerprint;  // owner-thread source fingerprint (may be empty when no source resolved)
     std::string etag;
     std::string ifNoneMatchEtag;
 
@@ -197,6 +199,7 @@ private:
         result.etag = item.etag;
         result.negCacheKey = item.negCacheKey;
         result.cacheKey = item.cacheKey;
+        result.fingerprint = item.fingerprint;
 
         if (item.abort && item.abort->is_aborting()) {
             result.statusCode = 503;
@@ -211,9 +214,14 @@ private:
         }
 
         try {
+            // The item's aborter reaches the SDK extractor, so CancelStale/DrainAll
+            // interrupt an in-flight extraction instead of waiting for it to finish.
+            abort_callback& abort = item.abort
+                ? static_cast<abort_callback&>(*item.abort)
+                : static_cast<abort_callback&>(fb2k::noAbort);
             artwork_internal::BinaryArtwork artwork;
             const bool found = artwork_internal::GetArtworkBinaryForPath(
-                item.pathUtf8, item.artworkType, artwork);
+                item.pathUtf8, item.artworkType, artwork, abort);
 
             if (item.abort && item.abort->is_aborting()) {
                 result.statusCode = 503;

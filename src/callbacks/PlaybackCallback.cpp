@@ -199,6 +199,8 @@ public:
                 if (duration > 0) {
                     g_QueueManager.OnPlaybackTime(time, duration);
                 }
+                // 任务栏进度条每秒跟一次已播比例；状态以 playback_control 为准，不假定本回调只在播放中触发。
+                TaskbarIntegration::GetInstance().OnPlaybackProgress(pc->is_paused() ? "paused" : "playing", time, duration);
             }
         } catch (...) {}
     }
@@ -361,6 +363,7 @@ private:
                 {"duration", duration}
             });
             TaskbarIntegration::GetInstance().OnPlaybackStateChanged(state);
+            TaskbarIntegration::GetInstance().OnPlaybackProgress(state, position, duration);
         } catch (...) {}
     }
     

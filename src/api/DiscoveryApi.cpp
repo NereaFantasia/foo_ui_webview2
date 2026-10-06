@@ -213,11 +213,11 @@ namespace {
                 const std::string label = SafeUtf8String(name.get_ptr());
                 const std::string cmdGuidStr = GuidToString(cmdGuid);
 
-                // Static slots previously reported no state at all: get_display()
-                // was never called, so disabled / checked was invisible and a
-                // command that returns false (shortcut-only) looked like an
-                // ordinary invocable entry. `label` still comes from get_name()
-                // so the existing `name` / `path` fields keep their shape.
+                // Static slots also go through get_display(): without it disabled /
+                // checked is invisible, and a command whose get_display() returns false
+                // (shortcut-only) looks like an ordinary invocable entry. `label` comes
+                // from get_name() rather than the display text, so `name` / `path` are
+                // unaffected by get_display().
                 t_uint32 flags = 0;
                 bool displayed = true;
                 try {
@@ -633,9 +633,9 @@ namespace {
                 pfc::string8 desc;
                 bool haveDesc = false;
                 try {
-                    // Only fill `description` when the SDK actually returns one;
-                    // the previous code kept whatever the buffer happened to
-                    // hold (SPEC D16).
+                    // Only fill `description` when the SDK actually returns one; when
+                    // get_item_description() returns false the buffer holds whatever the
+                    // implementation happened to leave in it.
                     haveDesc = ptr->get_item_description(i, desc);
                 } catch (...) {
                 }
@@ -792,10 +792,10 @@ namespace {
             return {{"success", false}, {"error", "No track selected or playing"}};
         }
 
-        // Pre-flight check. Previously any GUID was handed straight to
-        // run_command_context, so a FORCE_OFF command — which the SDK documents
-        // as shortcut-list-only and never shows in the real menu — was dispatched
-        // as if it were an ordinary entry. Callers can still opt out.
+        // Pre-flight check before run_command_context: the SDK documents a
+        // FORCE_OFF command as shortcut-list-only and never shown in the real
+        // menu, so it is not dispatched like an ordinary entry. Callers can opt
+        // out with `force`.
         const bool force = params.value("force", false);
         menu_node::ContextEnabledState enabledState =
             menu_node::ContextEnabledState::DefaultOn;
@@ -1245,9 +1245,8 @@ namespace {
         }
         
         // Context-menu commands, counted through the same walk
-        // discovery.getContextMenuCommands uses. Previously absent entirely, so
-        // the summary claimed to describe the discoverable surface while omitting
-        // one of its two menu families.
+        // discovery.getContextMenuCommands uses, so the summary covers both menu
+        // families of the discoverable surface.
         int contextMenuCommands = 0;
         int contextMenuHiddenFiltered = 0;
         bool contextMenuStateKnown = false;
@@ -1352,9 +1351,8 @@ namespace {
     // discovery.searchCommands - Search menu commands
     //==========================================================================
 
-    // Copies the state vocabulary from an enumerated entry onto a search hit.
-    // Search results previously carried no state at all, so a caller had to
-    // re-enumerate to find out whether a hit was even invocable.
+    // Copies the state vocabulary from an enumerated entry onto a search hit,
+    // so a caller can tell whether a hit is invocable without re-enumerating.
     void CopyCommandStateToHit(const json& command, json& hit) {
         static const char* const kStateKeys[] = {
             "enabled", "checked", "radioChecked", "hidden",

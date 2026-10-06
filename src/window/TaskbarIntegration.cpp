@@ -1,8 +1,10 @@
 // TaskbarIntegration.cpp - ITaskbarList3 integration
 #include "pch.h"
 #include "window/TaskbarIntegration.h"
+#include "window/TaskbarProgressPolicy.h"
 #include "window/TaskbarTrayContracts.h"
 #include "window/TrayIcon.h"
+#include "core/PreferencesPage.h"
 #include "utils/IconLoader.h"
 #include <foobar2000/SDK/ui.h>
 #include <foobar2000/SDK/playback_control.h>
@@ -53,10 +55,14 @@ bool TaskbarIntegration::Initialize(HWND hwnd) {
 
     if (!m_buttons.empty()) {
         AddButtons();
-    } else {
+    } else if (webview_prefs::GetTaskbarButtonsEnabled()) {
+        // 默认的播放按钮只在偏好开着时装；ThumbBarAddButtons 每个窗口只能调一次，
+        // 所以这个开关在下次任务栏按钮创建（重启）时才生效。主题自定义的按钮不受影响。
         SetDefaultButtons();
     }
 
+    // 进度条按当前播放状态补一次，免得开着开关启动时要等到下一次状态变化才出现。
+    RefreshProgressFromPlayback();
     return true;
 }
 
@@ -324,6 +330,8 @@ void TaskbarIntegration::SetDefaultButtons() {
 }
 
 void TaskbarIntegration::OnPlaybackStateChanged(const char* state) {
+    // 状态变化后进度条回到偏好驱动；主题要继续接管得再调一次 taskbar.setProgress。
+    m_themeOwnsProgress = false;
     if (!m_usingDefaultButtons || !m_buttonsAdded) return;
     bool isPlaying = (strcmp(state, "playing") == 0);
     m_defaultPlayIconPaused = isPlaying;
@@ -331,6 +339,50 @@ void TaskbarIntegration::OnPlaybackStateChanged(const char* state) {
     UpdateButton("_play",
         std::nullopt, std::nullopt, "",
         isPlaying ? L"\u6682\u505c" : L"\u64ad\u653e");
+}
+
+// ============================================================
+// 播放进度映射
+// ============================================================
+
+void TaskbarIntegration::OnPlaybackProgress(const char* state, double positionSec, double lengthSec) {
+    if (!m_initialized || !m_pTaskbarList) return;
+    if (!webview_prefs::GetTaskbarProgressEnabled() || m_themeOwnsProgress) return;
+
+    const taskbar_progress::Decision d = taskbar_progress::Decide(state ? state : "", positionSec, lengthSec);
+    switch (d.mode) {
+    case taskbar_progress::Mode::NoProgress:
+        SetProgressState(TBPF_NOPROGRESS);
+        break;
+    case taskbar_progress::Mode::Normal:
+        SetProgressState(TBPF_NORMAL);
+        SetProgressValue(d.completed, taskbar_progress::Decision::kTotal);
+        break;
+    case taskbar_progress::Mode::Paused:
+        // 先给值再给暂停态：暂停态下的 SetProgressValue 会被部分系统忽略。
+        SetProgressValue(d.completed, taskbar_progress::Decision::kTotal);
+        SetProgressState(TBPF_PAUSED);
+        break;
+    }
+}
+
+void TaskbarIntegration::NoteThemeProgressOverride() {
+    m_themeOwnsProgress = true;
+}
+
+void TaskbarIntegration::RefreshProgressFromPlayback() {
+    if (!m_initialized || !m_pTaskbarList) return;
+    if (!webview_prefs::GetTaskbarProgressEnabled()) {
+        // 开关关着：只在偏好驱动过进度条的前提下清掉；主题接管的那条留给主题。
+        if (!m_themeOwnsProgress) SetProgressState(TBPF_NOPROGRESS);
+        return;
+    }
+    try {
+        auto pc = playback_control::get();
+        const char* state = !pc->is_playing() ? "stopped" : (pc->is_paused() ? "paused" : "playing");
+        OnPlaybackProgress(state, pc->playback_get_position(), pc->playback_get_length());
+    } catch (...) {
+    }
 }
 
 // ============================================================

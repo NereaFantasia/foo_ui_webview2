@@ -455,14 +455,18 @@ bool MainWindow::ShouldRouteToDwmDefWindowProc(UINT msg) const {
 void MainWindow::ApplyFramelessState(bool frameless) {
     if (!hwnd_ || !IsWindow(hwnd_)) return;
 
-    // [v1.1.19 对齐] 短路守卫：v1.1.19 的 SetFrameless 在 frameless_==frameless 时直接 return。
-    // 当前 Chrome Apply 链会在启动期多次调用此函数，但 frameless 状态不变，
-    // 重复执行 DwmExtendFrameIntoClientArea + SWP_FRAMECHANGED + RedrawWindow(RDW_FRAME)
-    // 会触发 DWM 重新评估帧合成，导致三大键 overlay 复现。
-    if (framelessDwmApplied_ && frameless_ == frameless) {
+    /*
+     * 启动期可能重复应用相同配置。重复更新 DWM 边距并重绘非客户区会重新触发
+     * 帧合成，因此已写入的值相同时直接返回。
+     *
+     * 必须比较 lastFramelessDwmValue_，不能比较 frameless_：SetFrameless 在调用
+     * apply 链之前已经更新后者，用它比较会把真正的配置变更也当作重复调用。
+     */
+    if (framelessDwmApplied_ && lastFramelessDwmValue_ == frameless) {
         return;
     }
     framelessDwmApplied_ = true;
+    lastFramelessDwmValue_ = frameless;
 
     if (frameless) {
         MARGINS margins = { -1, -1, -1, -1 };

@@ -126,17 +126,7 @@ bool WebViewPanel::InitializeWebView(HWND hwnd, WebViewPanelMode mode) {
     webView_->SetNavigationCompletedCallback([this, myGeneration, weakAlive](bool success) {
         if (weakAlive.expired()) return;
         if (myGeneration != webViewGeneration_) return;
-
-        // Re-evaluate the path gate here rather than inside the virtual
-        // OnNavigationCompleted: MainWindow and PopupWindow both override it,
-        // so a virtual hook would skip them. The gate cannot be decided once at
-        // registration time, because registration happens before the first
-        // navigation and the document origin is not known yet.
-        if (success && dndRegistrar_) {
-            dndRegistrar_->ApplyOriginGate(webView_.get());
-        }
-
-        OnNavigationCompleted(success);
+        HandleNavigationCompleted(success);
     });
 
     // 进程崩溃回调（Visual Hosting 模式下进程崩溃只剩空窗口的诊断/恢复入口）
@@ -768,12 +758,11 @@ void WebViewPanel::ApplyConfig(const PanelConfig& oldCfg, const PanelConfig& new
 
 void WebViewPanel::LoadFrontendPage() {
     LOG("Loading frontend page...");
-    
+
+    devServerNavPending_ = false;
+
     // 检查是否使用开发服务器
-    bool useDevServer = security_config::UseDevServer();
-    bool navigated = false;
-    
-    if (useDevServer) {
+    if (security_config::UseDevServer()) {
         const char* devServerUrl = security_config::GetDevServerUrl();
         if (devServerUrl && devServerUrl[0]) {
             std::wstring wDevUrl = pfc::stringcvt::string_wide_from_utf8(devServerUrl).get_ptr();
@@ -784,12 +773,45 @@ void WebViewPanel::LoadFrontendPage() {
                 if (mode_ == WebViewPanelMode::Standalone && webView_) {
                     webView_->OpenDevTools();
                 }
-                navigated = true;
+                // 成败要等 NavigationCompleted; 回调据此标记回退到本地资源.
+                devServerNavPending_ = true;
+                LOG("Frontend page load initiated (dev server)");
+                return;
             }
         }
     }
-    
-    if (!navigated && !panelConfig_.urlOverride.empty()) {
+
+    if (!LoadFallbackFrontendPage()) {
+        LOG("ERROR: no frontend page could be submitted for navigation");
+    }
+}
+
+void WebViewPanel::HandleNavigationCompleted(bool success) {
+    // 开发服务器导航失败在此回退。回退成功后本函数会被再触发一次，由那一次
+    // 决定启动可见性；回退连提交都失败才继续往下宣告导航结束。
+    if (!success && devServerNavPending_) {
+        devServerNavPending_ = false;
+        LOG("Dev server navigation failed; falling back to local frontend");
+        if (LoadFallbackFrontendPage()) {
+            return;
+        }
+    }
+    devServerNavPending_ = false;
+
+    // Re-evaluate the path gate here rather than inside the virtual
+    // OnNavigationCompleted: MainWindow and PopupWindow both override it,
+    // so a virtual hook would skip them. The gate cannot be decided once at
+    // registration time, because registration happens before the first
+    // navigation and the document origin is not known yet.
+    if (success && dndRegistrar_) {
+        dndRegistrar_->ApplyOriginGate(webView_.get());
+    }
+
+    OnNavigationCompleted(success);
+}
+
+bool WebViewPanel::LoadFallbackFrontendPage() {
+    if (!panelConfig_.urlOverride.empty()) {
         // URL 覆盖检查（优先级高于模板）
         std::wstring wUrl = pfc::stringcvt::string_wide_from_utf8(
             panelConfig_.urlOverride.c_str()).get_ptr();
@@ -800,28 +822,23 @@ void WebViewPanel::LoadFrontendPage() {
             webView_->AddTrustedOrigin(wUrl);
         }
         if (Navigate(wUrl)) {
-            navigated = true;
+            LOG("Frontend page load initiated (URL override)");
+            return true;
         }
     }
-    
-    if (!navigated) {
-        std::wstring resourcesDir = GetFrontendResourcesDir();
-        
-        if (!resourcesDir.empty() && SetupVirtualHostMapping(resourcesDir)) {
-            std::wstring url = std::wstring(L"https://") + GetVirtualHostName() + L"/index.html";
-            if (Navigate(url)) {
-                navigated = true;
-            }
-        }
-        
-        if (!navigated) {
-            // 加载内嵌测试页面
-            LOG("Loading embedded test page");
-            NavigateToString(GetTestPageHtml());
+
+    std::wstring resourcesDir = GetFrontendResourcesDir();
+    if (!resourcesDir.empty() && SetupVirtualHostMapping(resourcesDir)) {
+        std::wstring url = std::wstring(L"https://") + GetVirtualHostName() + L"/index.html";
+        if (Navigate(url)) {
+            LOG("Frontend page load initiated (local resources)");
+            return true;
         }
     }
-    
-    LOG("Frontend page load ", navigated ? "initiated" : "fallback to test page");
+
+    // 加载内嵌测试页面
+    LOG("Loading embedded test page");
+    return NavigateToString(GetTestPageHtml());
 }
 
 bool WebViewPanel::SetupVirtualHostMapping(const std::wstring& resourcesDir) {

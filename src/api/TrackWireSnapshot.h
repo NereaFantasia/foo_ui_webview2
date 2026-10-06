@@ -25,6 +25,7 @@
 // 不可信的串由提取侧先过 StringUtils::SafeUtf8，否则坏字节会直接进 wire。
 
 #include "utils/JsonWriter.h"
+#include "api/ErrorEnvelope.h"
 
 #include <nlohmann/json.hpp>
 
@@ -222,6 +223,28 @@ inline TrackFieldSelection ParseTrackFieldSelection(const nlohmann::json& params
     selection.mask = mask;
     selection.projected = true;
     return selection;
+}
+
+// fields 校验失败的响应体。library.query / library.search / playlist.getTracks 共用
+// 同一份定义；放在本头是因为白名单与解析器都在这里，ErrorEnvelope.h 也是
+// fb2k-free，本头仍是纯值层。
+//
+// 形状是 ApiEnvelope::MakeError 产出的 success:false 正常响应体 + 机器可读 code，
+// 与其余 API 的参数错一致。不用 DeferredResponder::SendError：那是框架错误信封通道
+// （BridgeCore.h 中 SendError 的注释明文只给框架兜底用），页面侧收到 error 字段会把
+// Promise reject 掉（WebViewHost.cpp 注入脚本的 _handleResponse），而本仓库所有参数
+// 校验失败都是 resolve 出 success:false。
+inline json MakeTrackFieldsErrorBody(const TrackFieldSelection& fields) {
+    if (fields.unknownFields.empty()) {
+        return ApiEnvelope::MakeError(fields.errorMessage, ApiErrorCode::INVALID_PARAMS);
+    }
+    // 未知名回给调用方：拼写错误不静默丢字段，也不用逐个试
+    json unknown = json::array();
+    for (const std::string& name : fields.unknownFields) {
+        unknown.push_back(name);
+    }
+    return ApiEnvelope::MakeError(fields.errorMessage, ApiErrorCode::INVALID_PARAMS,
+                                  {{"unknownFields", unknown}});
 }
 
 // 把一条快照追加成 JSON 对象文本（含首尾花括号）。不清空调用方缓冲。

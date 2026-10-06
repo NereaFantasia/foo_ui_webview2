@@ -73,6 +73,9 @@ public:
     
     // 刷新 DWM 背景效果（偏好设置更改后热重载）
     void RefreshBackdropEffect();
+    // 全局默认模板改变后重新映射虚拟主机并导航到新模板的 index.html；
+    // WebView 未就绪或资源目录为空时什么都不做。导航是异步的，走既有加载与回退路径。
+    void ReloadFrontendForTemplateChange();
     // GetBackdropPolicyInfo() — declared in WindowShellBase override section below
     bool SetBackdropPolicy(const json& policyPatch, std::string& error);
     bool UpdateCompatibilityBackdropEffect(const std::optional<std::string>& effect,
@@ -207,6 +210,10 @@ private:
     bool resizable_ = true;  // 是否允许调整大小
     bool frameless_ = true;  // 默认无标题栏（主窗口始终以 frameless 模式启动）
     bool framelessDwmApplied_ = false;  // ApplyFramelessState 短路守卫（v1.1.19 对齐）
+    // 上次真正写进 DWM 的 frameless 值。守卫必须比较它而不是 frameless_：
+    // SetFrameless 先更新 frameless_ 再走 apply 链，拿 frameless_ 比会恒等，
+    // 短路守卫就从「幂等」退化成「永不执行」。初值对齐 frameless_ 的默认值。
+    bool lastFramelessDwmValue_ = true;
     bool hasBroadcastWindowState_ = false;
     bool lastBroadcastIsMaximized_ = false;
     bool lastBroadcastIsMinimized_ = false;
@@ -252,7 +259,10 @@ private:
 
     // 隐藏窗口到托盘：SC_MINIMIZE(minimizeToTray) / SC_CLOSE(closeToTray) /
     // WM_CLOSE(closeToTray) 三条路径共用的"隐藏到托盘"动作
-    //（暂停 WebView 省内存 + 清覆盖记账 + SW_HIDE）。
+    //（暂停 WebView 省内存 + 清覆盖记账 + SW_HIDE）。页面因 CDP keep-alive
+    // 保持可见时会先 SW_MINIMIZE 再 SW_HIDE，把 Visual Hosting 渲染窗停泊出屏，
+    // 否则它留在原矩形吞鼠标；副作用是托盘期间 IsIconic 为真、会广播一次
+    // window:stateChanged(minimized=true)。
     void HideWindowToTray();
 
     // 被完全覆盖（梯度 C）：保守判定 + 轮询恢复

@@ -2,13 +2,133 @@
 #include "pch.h"
 #include "webview/dnd/DndRegistrar.h"
 
+#include <wrl/event.h>
+
+#include "api/BridgeCore.h"
+#include "api/ErrorEnvelope.h"
 #include "core/SecurityConfig.h"
 #include "webview/WebViewHost.h"
 #include "webview/dnd/ChainedDelegate.h"
 #include "webview/dnd/CompositionDelegate.h"
 #include "webview/dnd/DndOriginPolicy.h"
+#include "webview/dnd/DragOutTokens.h"
+#include "webview/dnd/DragTokenStore.h"
+#include "webview/dnd/DropEffectPolicy.h"
+#include "webview/dnd/HdropBuilder.h"
+
+#include <cstring>
 
 namespace fb2k_dnd {
+namespace {
+
+// Releases a medium obtained from GetData on every exit, an exception included.
+struct StgMediumGuard {
+    STGMEDIUM* medium;
+    ~StgMediumGuard() { ::ReleaseStgMedium(medium); }
+};
+
+struct GlobalUnlockGuard {
+    HGLOBAL handle;
+    ~GlobalUnlockGuard() { ::GlobalUnlock(handle); }
+};
+
+// The CF_UNICODETEXT the drag carries, or an empty string when it carries none.
+// An empty result and a missing format are treated alike: neither can hold a
+// token.
+std::wstring ReadUnicodeText(IDataObject* data) noexcept {
+    if (!data) {
+        return {};
+    }
+
+    FORMATETC format = {};
+    format.cfFormat = CF_UNICODETEXT;
+    format.ptd = nullptr;
+    format.dwAspect = DVASPECT_CONTENT;
+    format.lindex = -1;
+    format.tymed = TYMED_HGLOBAL;
+
+    try {
+        STGMEDIUM medium = {};
+        if (FAILED(data->GetData(&format, &medium))) {
+            return {};
+        }
+        StgMediumGuard release{&medium};
+
+        // hGlobal shares a union with pstm and lpszFileName, so a source that
+        // answered S_OK with another tymed would have us read an IStream as text.
+        if (medium.tymed != TYMED_HGLOBAL || !medium.hGlobal) {
+            return {};
+        }
+        const auto* text = static_cast<const wchar_t*>(::GlobalLock(medium.hGlobal));
+        if (!text) {
+            return {};
+        }
+        GlobalUnlockGuard unlock{medium.hGlobal};
+
+        // The block is not required to carry a terminator, so the character count
+        // caps the scan and a terminator inside it ends the string earlier.
+        const size_t maxChars = ::GlobalSize(medium.hGlobal) / sizeof(wchar_t);
+        size_t length = 0;
+        while (length < maxChars && text[length] != L'\0') {
+            ++length;
+        }
+        return std::wstring(text, length);
+    } catch (...) {
+        return {};
+    }
+}
+
+// Stores bytes under format in WebView2's own data object, handing the block
+// over with fRelease so the object frees it. On refusal the block is freed
+// here: a failed SetData leaves ownership with the caller, which is also what
+// the shell's helpers assume.
+HRESULT SetGlobalFormat(IDataObject* data, CLIPFORMAT format, const void* bytes,
+                        size_t size) noexcept {
+    if (!data || !bytes || size == 0) {
+        return E_INVALIDARG;
+    }
+    HGLOBAL handle = ::GlobalAlloc(GMEM_MOVEABLE, size);
+    if (!handle) {
+        return E_OUTOFMEMORY;
+    }
+    void* destination = ::GlobalLock(handle);
+    if (!destination) {
+        ::GlobalFree(handle);
+        return E_OUTOFMEMORY;
+    }
+    std::memcpy(destination, bytes, size);
+    ::GlobalUnlock(handle);
+
+    FORMATETC formatEtc = {};
+    formatEtc.cfFormat = format;
+    formatEtc.ptd = nullptr;
+    formatEtc.dwAspect = DVASPECT_CONTENT;
+    formatEtc.lindex = -1;
+    formatEtc.tymed = TYMED_HGLOBAL;
+    STGMEDIUM medium = {};
+    medium.tymed = TYMED_HGLOBAL;
+    medium.hGlobal = handle;
+    medium.pUnkForRelease = nullptr;
+
+    const HRESULT hr = data->SetData(&formatEtc, &medium, TRUE);
+    if (FAILED(hr)) {
+        ::GlobalFree(handle);
+    }
+    return hr;
+}
+
+// Replaces the text formats the page used to carry the token with empty
+// strings. Once the drag goes back to WebView2 the object travels as it is, and
+// a text target would otherwise paste the spent token. Best effort: the files
+// still go out if the object declines.
+void BlankTextCarrier(IDataObject* data) noexcept {
+    static constexpr wchar_t kEmptyWide[] = L"";
+    static constexpr char kEmptyNarrow[] = "";
+    SetGlobalFormat(data, CF_UNICODETEXT, kEmptyWide, sizeof(kEmptyWide));
+    SetGlobalFormat(data, CF_TEXT, kEmptyNarrow, sizeof(kEmptyNarrow));
+}
+
+}  // namespace
 
 const char* ReasonToWire(PathsUnavailableReason reason) {
     switch (reason) {
@@ -24,6 +144,17 @@ const char* ReasonToWire(PathsUnavailableReason reason) {
     }
 }
 
+const char* DragOutReasonToWire(DragOutUnavailableReason reason) {
+    switch (reason) {
+    case DragOutUnavailableReason::NotVisualHosting: return "not-visual-hosting";
+    case DragOutUnavailableReason::RuntimeTooOld:    return "runtime-too-old";
+    case DragOutUnavailableReason::RegisterFailed:   return "register-failed";
+    case DragOutUnavailableReason::None:
+    default:
+        return nullptr;
+    }
+}
+
 void DndRegistrar::SetFailure(PathsUnavailableReason reason, bool html5) {
     // The detected host mode is kept: it describes where the WebView lives, not
     // whether registration worked, and the page uses it to interpret the reason.
@@ -32,6 +163,11 @@ void DndRegistrar::SetFailure(PathsUnavailableReason reason, bool html5) {
     caps_.visualHosting = visualHosting;
     caps_.html5 = html5;
     caps_.reason = reason;
+    // Nothing was probed, so dragging out is reported unavailable with a reason
+    // that says which of the two situations the page is in. Leaving the default
+    // None here would report "unavailable, no explanation".
+    caps_.dragOutReason = visualHosting ? DragOutUnavailableReason::RegisterFailed
+                                        : DragOutUnavailableReason::NotVisualHosting;
 }
 
 bool DndRegistrar::Register(HWND hostHwnd, WebViewHost* host, uint64_t generation,
@@ -54,6 +190,7 @@ bool DndRegistrar::Register(HWND hostHwnd, WebViewHost* host, uint64_t generatio
     if (!hostHwnd || !host) {
         caps_ = DndCapabilities{};
         caps_.reason = PathsUnavailableReason::RegisterFailed;
+        caps_.dragOutReason = DragOutUnavailableReason::RegisterFailed;
         return false;
     }
 
@@ -131,6 +268,53 @@ bool DndRegistrar::RegisterVisual(HWND hostHwnd, WebViewHost* host, uint64_t gen
     caps_ = DndCapabilities{};
     caps_.html5 = true;
     caps_.visualHosting = true;
+
+    // Dragging out rides on a different runtime feature than drop forwarding: it
+    // needs the drag-start event, which only exists from
+    // ICoreWebView2CompositionController5 onwards. Probed here so the page can
+    // learn from getCapabilities whether to offer the affordance, instead of
+    // starting a drag that silently does nothing.
+    //
+    // The interface is present on the runtime this was developed against, but it
+    // requires a newer one than the component's own floor, so the negative branch
+    // is reachable in the field and must leave the rest of drag-drop intact.
+    //
+    // The controller is non-null by construction: it is what selected this
+    // registration path over the chained one.
+    ICoreWebView2CompositionController* baseController = host->GetCompositionController();
+    wil::com_ptr<ICoreWebView2CompositionController5> dragSource;
+    const HRESULT dragHr = baseController
+                               ? baseController->QueryInterface(IID_PPV_ARGS(&dragSource))
+                               : E_NOINTERFACE;
+    caps_.dragOut = SUCCEEDED(dragHr) && dragSource;
+    caps_.dragOutReason = caps_.dragOut ? DragOutUnavailableReason::None
+                                        : DragOutUnavailableReason::RuntimeTooOld;
+    if (!caps_.dragOut) {
+        LOG("DndRegistrar: no CompositionController5, drag-out unavailable, hr=",
+            pfc::format_hex((uint32_t)dragHr));
+    }
+
+    if (caps_.dragOut) {
+        const HRESULT subHr = dragSource->add_DragStarting(
+            Microsoft::WRL::Callback<ICoreWebView2DragStartingEventHandler>(
+                [this](ICoreWebView2CompositionController* /*sender*/,
+                       ICoreWebView2DragStartingEventArgs* args) -> HRESULT {
+                    return OnDragStarting(args);
+                })
+                .Get(),
+            &dragStartingToken_);
+        if (SUCCEEDED(subHr)) {
+            dragSource_ = std::move(dragSource);
+        } else {
+            // A runtime that offers the interface but refuses the subscription
+            // would leave the page minting tokens nothing ever redeems, so the
+            // capability is withdrawn rather than reported optimistically.
+            caps_.dragOut = false;
+            caps_.dragOutReason = DragOutUnavailableReason::RegisterFailed;
+            LOG("DndRegistrar: add_DragStarting failed, drag-out unavailable, hr=",
+                pfc::format_hex((uint32_t)subHr));
+        }
+    }
 
     // Paths stay closed until the gate says otherwise, so an untrusted document
     // never sees a real path even for a drag that starts during this call.
@@ -222,6 +406,10 @@ bool DndRegistrar::RegisterChained(HWND hostHwnd, WebViewHost* host, uint64_t ge
     caps_ = DndCapabilities{};
     caps_.html5 = true;
     caps_.visualHosting = false;
+    // Chromium owns the drag source in this mode and there is no composition
+    // controller to take it over through, so dragging out is unavailable because
+    // of the host mode rather than the runtime version.
+    caps_.dragOutReason = DragOutUnavailableReason::NotVisualHosting;
 
     ApplyOriginGate(host);
     return true;
@@ -256,7 +444,9 @@ bool DndRegistrar::ApplyOriginGate(WebViewHost* host) {
     // registration, before the document exists, so there is no listener yet.
     const bool changed = before.paths != caps_.paths || before.html5 != caps_.html5 ||
                          before.reason != caps_.reason ||
-                         before.visualHosting != caps_.visualHosting;
+                         before.visualHosting != caps_.visualHosting ||
+                         before.dragOut != caps_.dragOut ||
+                         before.dragOutReason != caps_.dragOutReason;
     if (capsPublished_ && changed) {
         nlohmann::json payload;
         payload["html5"] = caps_.html5;
@@ -265,11 +455,102 @@ bool DndRegistrar::ApplyOriginGate(WebViewHost* host) {
         if (const char* wire = ReasonToWire(caps_.reason)) {
             payload["pathsUnavailableReason"] = wire;
         }
+        payload["dragOut"] = caps_.dragOut;
+        if (const char* wire = DragOutReasonToWire(caps_.dragOutReason)) {
+            payload["dragOutUnavailableReason"] = wire;
+        }
         bridge_->EmitCapabilitiesChanged(payload);
     }
     capsPublished_ = true;
 
     return allowed;
+}
+
+HRESULT DndRegistrar::OnDragStarting(ICoreWebView2DragStartingEventArgs* args) noexcept {
+    // Exception barrier: this runs inside a WebView2 event callback, so anything
+    // escaping here would unwind across the COM ABI.
+    try {
+        if (!args) {
+            return S_OK;
+        }
+
+        wil::com_ptr<IDataObject> data;
+        const std::wstring carrier = SUCCEEDED(args->get_Data(&data))
+                                         ? ReadUnicodeText(data.get())
+                                         : std::wstring();
+
+        // Split on whether the carrier is present, not on whether the token is
+        // any good. Every drag started inside the WebView raises this event,
+        // including a page dragging its own text, an image or a link out to
+        // another application; taking those over would swallow them and remove
+        // drag support the page had before this feature existed.
+        if (!carrier.starts_with(kDragTokenPrefix)) {
+            args->put_Handled(FALSE);
+            return S_OK;
+        }
+
+        // From here the page asked for a takeover. Every exit below that does
+        // not hand the drag back deliberately must leave it handled: WebView2's
+        // default handling would otherwise drag the token text itself to
+        // wherever the user dropped it.
+        args->put_Handled(TRUE);
+
+        // The store is keyed by the window that minted, which is the same HWND
+        // this registrar was registered on: dnd.prepareDrag mints under the
+        // caller window it resolved this registrar from.
+        const std::string token =
+            WideToUtf8(carrier.substr(std::size(kDragTokenPrefix) - 1));
+        std::vector<std::wstring> paths;
+        if (!DragOutTokenStore().Consume(token, reinterpret_cast<intptr_t>(target_),
+                                        paths)) {
+            EmitDragFailed(ApiErrorCode::PERMISSION_DENIED, "Drag token was rejected.");
+            return S_OK;
+        }
+
+        // The token was good. WebView2 runs the drag itself: its data object
+        // takes the file list and the event goes back to the default handling,
+        // which draws the drag image and runs the OLE loop on this thread as it
+        // does for every page drag.
+        //
+        // The effects on offer come from the page's dataTransfer.effectAllowed
+        // and cannot be narrowed from here, so they are checked instead. With
+        // CF_HDROP on board a MOVE is carried out by the target, which relocates
+        // the user's files; refusing anything but an exact COPY is the only
+        // place that can be prevented.
+        DWORD allowedEffects = 0;
+        if (FAILED(args->get_AllowedDropEffects(&allowedEffects)) ||
+            !DragOutMaskIsCopyOnly(allowedEffects)) {
+            EmitDragFailed(ApiErrorCode::INVALID_PARAMS,
+                           "dataTransfer.effectAllowed must be 'copy' for a drag-out.");
+            return S_OK;
+        }
+
+        const std::vector<unsigned char> block = BuildDropFilesBlock(paths);
+        if (block.empty() || FAILED(SetGlobalFormat(data.get(), CF_HDROP, block.data(),
+                                                    block.size()))) {
+            EmitDragFailed(ApiErrorCode::OPERATION_FAILED,
+                           "The drag's file list could not be prepared.");
+            return S_OK;
+        }
+        BlankTextCarrier(data.get());
+
+        // Handed back on purpose, with the files in and the token text gone.
+        args->put_Handled(FALSE);
+        return S_OK;
+    } catch (...) {
+        return S_OK;
+    }
+}
+
+void DndRegistrar::EmitDragFailed(const char* code, const char* error) const {
+    if (!bridge_) {
+        return;
+    }
+    nlohmann::json payload;
+    payload["result"] = "failed";
+    payload["code"] = code;
+    payload["error"] = error;
+    bridge_->EmitDragEnded(payload);
 }
 
 void DndRegistrar::Unregister(uint64_t generation) {
@@ -282,6 +563,17 @@ void DndRegistrar::Unregister(uint64_t generation) {
         LOG("DndRegistrar: stale Unregister ignored");
         return;
     }
+
+    if (dragSource_) {
+        // Removed before anything else so a drag starting during teardown cannot
+        // reach a half-destroyed registrar through the handler's captured this.
+        dragSource_->remove_DragStarting(dragStartingToken_);
+        dragSource_.reset();
+        dragStartingToken_ = {};
+    }
+    // A recycled HWND must not inherit the closing window's token. Done here
+    // because this registrar is what makes a token redeemable at all.
+    DragOutTokenStore().ClearWindow(reinterpret_cast<intptr_t>(target_));
 
     // Stops forwarding and event emission first, so a callback arriving during
     // revocation cannot reach a WebView that is about to go away.

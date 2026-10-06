@@ -5,10 +5,21 @@
 
 #include "pch.h"
 #include "core/PreferencesPage.h"
+#include "core/PreferencesFields.h"
+#include "core/PreferencesTemplateName.h"
+#include "core/PreferencesZoom.h"
+#include "core/PreferencesCdpPort.h"
+#include "webview/WebViewHost.h"
+#include "core/AdvconfigI18n.h"
 #include "core/SecurityConfig.h"
 #include "api/BridgeCore.h"
 #include "core/UserInterface.h"
+#include "core/BackgroundService.h"
+#include "core/WebViewContext.h"
+#include "core/WebViewPanel.h"
+#include "panels/PanelConfig.h"
 #include "window/MainWindow.h"
+#include "window/WindowManager.h"
 #include <CommCtrl.h>
 #include <shlobj.h>
 #include <uxtheme.h>
@@ -23,17 +34,16 @@
 namespace fs = std::filesystem;
 
 // ============================================
-// 开发者选项 (从 main.cpp 引用 advconfig) - 全局命名空间
+// 安全例外 (从 main.cpp 引用 advconfig) - 全局命名空间
 // ============================================
-extern advconfig_checkbox_factory g_cfg_devtools;
-extern advconfig_checkbox_factory g_cfg_local_network;
-extern advconfig_checkbox_factory g_cfg_allow_insecure;
-extern advconfig_checkbox_factory g_cfg_allow_insecure_tls;
-extern advconfig_checkbox_factory g_cfg_background_mode;
-extern advconfig_string_factory g_cfg_dev_server_url;
-extern advconfig_checkbox_factory g_cfg_use_dev_server;
+extern advconfig_i18n::CheckboxFactory g_cfg_local_network;
+extern advconfig_i18n::CheckboxFactory g_cfg_allow_insecure;
+extern advconfig_i18n::CheckboxFactory g_cfg_allow_insecure_tls;
 
 namespace webview_prefs {
+
+// 总览页字段表的下标与枚举上限。
+namespace overview = prefs_fields::overview;
 
 // ============================================
 // GUIDs
@@ -70,6 +80,37 @@ static constexpr GUID guid_cfg_auto_hide =
 static constexpr GUID guid_cfg_backdrop_effect = 
     { 0xb7e8f3a6, 0x4c5d, 0x2e9f, { 0x8a, 0x1b, 0x6c, 0x7d, 0x8e, 0x9f, 0x0a, 0x30 } };
 
+// Window 子页的托盘与任务栏开关
+// {689D06FC-5D6C-4750-895A-C866F734781A}
+static constexpr GUID guid_cfg_minimize_to_tray =
+    { 0x689d06fc, 0x5d6c, 0x4750, { 0x89, 0x5a, 0xc8, 0x66, 0xf7, 0x34, 0x78, 0x1a } };
+
+// {381E99C6-24AA-444C-B3AD-1D1877657B2A}
+static constexpr GUID guid_cfg_close_to_tray =
+    { 0x381e99c6, 0x24aa, 0x444c, { 0xb3, 0xad, 0x1d, 0x18, 0x77, 0x65, 0x7b, 0x2a } };
+
+// {8E440D98-9492-41ED-A6CE-8764D36BEEB4}
+static constexpr GUID guid_cfg_taskbar_buttons =
+    { 0x8e440d98, 0x9492, 0x41ed, { 0xa6, 0xce, 0x87, 0x64, 0xd3, 0x6b, 0xee, 0xb4 } };
+
+// {9E4060D0-2DC2-477F-AA97-0B73AAD9F71E}
+static constexpr GUID guid_cfg_taskbar_progress =
+    { 0x9e4060d0, 0x2dc2, 0x477f, { 0xaa, 0x97, 0x0b, 0x73, 0xaa, 0xd9, 0xf7, 0x1e } };
+
+// Performance 子页的预热开关与默认缩放。深度挂起的开关在 main.cpp（security_config），不在这里。
+// {FB43CF51-7672-4E15-BD55-9E617E5A8CFA}
+static constexpr GUID guid_cfg_preheat =
+    { 0xfb43cf51, 0x7672, 0x4e15, { 0xbd, 0x55, 0x9e, 0x61, 0x7e, 0x5a, 0x8c, 0xfa } };
+
+// {D8131D0F-3A4C-42FA-A9EB-96B008A7BB43}
+static constexpr GUID guid_cfg_default_zoom_percent =
+    { 0xd8131d0f, 0x3a4c, 0x42fa, { 0xa9, 0xeb, 0x96, 0xb0, 0x08, 0xa7, 0xbb, 0x43 } };
+
+// Developer 子页的 CDP 端口。开关本身在 main.cpp（security_config）。
+// {CC74C4AB-34C3-4FF4-A78F-05BC248F9C1C}
+static constexpr GUID guid_cfg_cdp_port =
+    { 0xcc74c4ab, 0x34c3, 0x4ff4, { 0xa7, 0x8f, 0x05, 0xbc, 0x24, 0x8f, 0x9c, 0x1c } };
+
 // ============================================
 // 配置变量
 // ============================================
@@ -79,13 +120,20 @@ static cfg_var_modern::cfg_bool cfg_start_with_foobar(guid_cfg_start_with_foobar
 static cfg_var_modern::cfg_bool cfg_remember_position(guid_cfg_remember_position, true);
 static cfg_var_modern::cfg_bool cfg_auto_hide(guid_cfg_auto_hide, false);
 static cfg_var_modern::cfg_int cfg_backdrop_effect(guid_cfg_backdrop_effect, static_cast<int>(BackdropEffect::Mica));
+static cfg_var_modern::cfg_bool cfg_minimize_to_tray(guid_cfg_minimize_to_tray, false);
+static cfg_var_modern::cfg_bool cfg_close_to_tray(guid_cfg_close_to_tray, false);
+static cfg_var_modern::cfg_bool cfg_taskbar_buttons(guid_cfg_taskbar_buttons, true);
+static cfg_var_modern::cfg_bool cfg_taskbar_progress(guid_cfg_taskbar_progress, false);
+static cfg_var_modern::cfg_bool cfg_preheat(guid_cfg_preheat, true);
+static cfg_var_modern::cfg_int cfg_default_zoom_percent(guid_cfg_default_zoom_percent, prefs_zoom::kDefaultPercent);
+static cfg_var_modern::cfg_int cfg_cdp_port(guid_cfg_cdp_port, prefs_cdp::kDefaultPort);
 
 // ============================================
 // Web 资源目录管理
 // ============================================
 
 std::wstring GetWebResourcesBaseDir() {
-    // 获取 foobar2000 profile 目录
+    // get_profile_path() 可能带 file:// 前缀，去掉后才是磁盘路径。
     pfc::string8 profilePath = core_api::get_profile_path();
     if (profilePath.startsWith("file://")) {
         profilePath = profilePath.subString(7);
@@ -96,7 +144,7 @@ std::wstring GetWebResourcesBaseDir() {
     // WebView UI 资源根目录: profile/webview-ui/
     basePath += L"\\webview-ui";
     
-    // 确保目录存在
+    // 根目录缺失时在这里建出来：模板枚举与打开文件夹都以它存在为前提；模板子目录不在此建。
     if (!fs::exists(basePath)) {
         fs::create_directories(basePath);
     }
@@ -106,9 +154,10 @@ std::wstring GetWebResourcesBaseDir() {
 
 std::wstring GetActiveWebResourcesDir() {
     std::wstring baseDir = GetWebResourcesBaseDir();
-    const char* templateName = cfg_active_template.get();
+    // cfg_string::get() 按值返回；先落到具名对象再取指针，避免指向已析构的临时量。
+    const pfc::string8 templateName = cfg_active_template.get();
     
-    std::string templateStr = (templateName && templateName[0]) ? templateName : "default";
+    std::string templateStr = templateName.is_empty() ? "default" : templateName.c_str();
     
     std::wstring templateDir = baseDir + L"\\" + 
         pfc::stringcvt::string_wide_from_utf8(templateStr.c_str()).get_ptr();
@@ -122,13 +171,14 @@ std::wstring GetActiveWebResourcesDir() {
 }
 
 std::wstring GetActiveTemplateName() {
-    const char* name = cfg_active_template.get();
-    std::string nameStr = name ? name : "default";
+    const pfc::string8 name = cfg_active_template.get();
+    std::string nameStr = name.is_empty() ? "default" : name.c_str();
     return pfc::stringcvt::string_wide_from_utf8(nameStr.c_str()).get_ptr();
 }
 
 void SetActiveTemplateName(const std::string& name) {
-    // Validate template name to prevent directory traversal
+    // 名字会拼进目录路径：只放行字母、数字、连字符、下划线（与 prefs_draft::IsValidTemplateName
+    // 同一规则），其余静默不写；调用方要读回比对，不能把调用成功当作已写入。
     if (name.empty()) return;
     for (char c : name) {
         if (!std::isalnum(static_cast<unsigned char>(c)) && c != '_' && c != '-') {
@@ -164,40 +214,34 @@ std::vector<std::string> GetTemplateList() {
         // 目录不存在或无法访问
     }
     
-    // 如果没有模板，创建默认模板
-    if (templates.empty()) {
-        CreateTemplate("default");
-        templates.emplace_back("default");
-    }
-    
+    // 列表为空就照实返回：页面显示“default（不存在）”并拒绝 Apply，
+    // 模板只由用户通过 Manage 创建（DESIGN D3）。
     return templates;
 }
 
 bool CreateTemplate(const std::string& name) {
-    if (name.empty() || TemplateExists(name)) {
+    if (!prefs_draft::IsValidTemplateName(name) || TemplateExists(name)) {
         return false;
-    }
-    
-    // 验证名称（只允许字母数字和下划线连字符）
-    // unsigned char 转型：非 ASCII 输入的字节为负值时 isalnum 是 UB（Debug CRT 断言）
-    for (char c : name) {
-        if (!std::isalnum(static_cast<unsigned char>(c)) && c != '_' && c != '-') {
-            return false;
-        }
     }
     
     std::wstring baseDir = GetWebResourcesBaseDir();
     std::wstring templateDir = baseDir + L"\\" + 
         pfc::stringcvt::string_wide_from_utf8(name.c_str()).get_ptr();
     
-    try {
-        fs::create_directories(templateDir);
-        
-        // 创建基本的 index.html
-        std::wstring indexPath = templateDir + L"\\index.html";
-        std::ofstream indexFile(indexPath);
-        if (indexFile.is_open()) {
-            indexFile << R"(<!DOCTYPE html>
+    // 目录、index.html 写入与关闭三步都成功才算成功。
+    // 中途失败不回滚：已建出的目录留在磁盘上，由调用方向用户如实报告。
+    std::error_code ec;
+    fs::create_directories(templateDir, ec);
+    if (ec) {
+        return false;
+    }
+    
+    std::wstring indexPath = templateDir + L"\\index.html";
+    std::ofstream indexFile(indexPath, std::ios::binary);
+    if (!indexFile.is_open()) {
+        return false;
+    }
+    indexFile << R"(<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
@@ -230,13 +274,9 @@ bool CreateTemplate(const std::string& name) {
 </body>
 </html>
 )";
-            indexFile.close();
-        }
-        
-        return true;
-    } catch (...) {
-        return false;
-    }
+    indexFile.close();
+    // close() 失败置 failbit，写入失败置 badbit：任一为真都不宣称成功。
+    return !indexFile.fail();
 }
 
 bool RenameTemplate(const std::string& oldName, const std::string& newName) {
@@ -244,7 +284,7 @@ bool RenameTemplate(const std::string& oldName, const std::string& newName) {
         return false;
     }
     
-    // 验证新名称
+    // 新名字的字符集与 prefs_draft::IsValidTemplateName 同一规则。
     // unsigned char 转型：非 ASCII 输入的字节为负值时 isalnum 是 UB（Debug CRT 断言）
     for (char c : newName) {
         if (!std::isalnum(static_cast<unsigned char>(c)) && c != '_' && c != '-') {
@@ -258,19 +298,11 @@ bool RenameTemplate(const std::string& oldName, const std::string& newName) {
     std::wstring newDir = baseDir + L"\\" + 
         pfc::stringcvt::string_wide_from_utf8(newName.c_str()).get_ptr();
     
-    try {
-        fs::rename(oldDir, newDir);
-        
-        // 如果重命名的是当前活动模板，更新配置
-        const char* currentTemplate = cfg_active_template.get();
-        if (currentTemplate && strcmp(currentTemplate, oldName.c_str()) == 0) {
-            cfg_active_template.set(newName.c_str());
-        }
-        
-        return true;
-    } catch (...) {
-        return false;
-    }
+    // 只改目录，不碰 cfg_active_template：活动模板的改名在页面层已被拒绝，
+    // 这里若替调用方改写配置，就等于绕过那条保护。
+    std::error_code ec;
+    fs::rename(oldDir, newDir, ec);
+    return !ec;
 }
 
 bool DeleteTemplate(const std::string& name) {
@@ -333,6 +365,74 @@ void SetAutoHideWithFoobar(bool value) {
 }
 
 // ============================================
+// 托盘与任务栏（Window 子页）
+// ============================================
+
+bool GetMinimizeToTrayPreference() {
+    return cfg_minimize_to_tray.get();
+}
+
+void SetMinimizeToTrayPreference(bool value) {
+    cfg_minimize_to_tray.set(value);
+}
+
+bool GetCloseToTrayPreference() {
+    return cfg_close_to_tray.get();
+}
+
+void SetCloseToTrayPreference(bool value) {
+    cfg_close_to_tray.set(value);
+}
+
+bool GetTaskbarButtonsEnabled() {
+    return cfg_taskbar_buttons.get();
+}
+
+void SetTaskbarButtonsEnabled(bool value) {
+    cfg_taskbar_buttons.set(value);
+}
+
+bool GetTaskbarProgressEnabled() {
+    return cfg_taskbar_progress.get();
+}
+
+void SetTaskbarProgressEnabled(bool value) {
+    cfg_taskbar_progress.set(value);
+}
+
+// ============================================
+// 性能（Performance 子页）
+// ============================================
+
+bool GetPreheatEnabled() {
+    return cfg_preheat.get();
+}
+
+void SetPreheatEnabled(bool value) {
+    cfg_preheat.set(value);
+}
+
+int GetDefaultZoomPercent() {
+    // 存储值可能来自旧版本或被外部改写：读出时就钳到下拉框范围，UI 与新窗口用同一个值。
+    return prefs_zoom::SanitizePercent(static_cast<int>(cfg_default_zoom_percent.get()));
+}
+
+void SetDefaultZoomPercent(int percent) {
+    cfg_default_zoom_percent.set(prefs_zoom::SanitizePercent(percent));
+}
+
+void ApplyDefaultZoomToFollowingHosts() {
+    const double factor = prefs_zoom::FactorFromPercent(GetDefaultZoomPercent());
+    auto& context = WebViewContext::GetInstance();
+    for (HWND hwnd : context.GetAllInstances()) {
+        if (!IsWindow(hwnd)) continue;
+        WebViewHost* host = context.GetHostByHwnd(hwnd);
+        if (!host || host->IsZoomOverriddenByTheme()) continue;
+        host->SetZoomFactor(factor);
+    }
+}
+
+// ============================================
 // DWM 背景效果
 // ============================================
 
@@ -345,11 +445,19 @@ void SetBackdropEffect(BackdropEffect effect) {
 }
 
 // ============================================
-// 开发者选项访问函数
+// 开发者选项与安全例外访问函数
 // ============================================
 
 bool GetDevToolsEnabled() {
-    return g_cfg_devtools.get();
+    return security_config::GetDevToolsSetting();
+}
+
+int GetCdpPort() {
+    return prefs_cdp::SanitizePort(static_cast<int>(cfg_cdp_port.get()));
+}
+
+void SetCdpPort(int port) {
+    cfg_cdp_port.set(prefs_cdp::SanitizePort(port));
 }
 
 bool GetLocalNetworkAllowed() {
@@ -364,48 +472,20 @@ bool GetInsecureTlsAllowed() {
     return g_cfg_allow_insecure_tls.get();
 }
 
-bool GetBackgroundModeEnabled() {
-    return g_cfg_background_mode.get();
-}
-
-void SetDevToolsEnabled(bool value) {
-    g_cfg_devtools.set(value);
-}
-
-void SetLocalNetworkAllowed(bool value) {
-    g_cfg_local_network.set(value);
-}
-
-void SetInsecureHttpAllowed(bool value) {
-    g_cfg_allow_insecure.set(value);
-}
-
-void SetInsecureTlsAllowed(bool value) {
-    g_cfg_allow_insecure_tls.set(value);
-}
-
-void SetBackgroundModeEnabled(bool value) {
-    g_cfg_background_mode.set(value);
-}
+// 上面三项安全例外的写入口在 Advanced Preferences（Tools > WebView2 UI），这里只读取。
 
 // ============================================
 // 开发服务器配置访问函数
 // ============================================
 
 bool UseDevServer() {
-    return g_cfg_use_dev_server.get();
+    return security_config::UseDevServer();
 }
 
-const char* GetDevServerUrl() {
-    return g_cfg_dev_server_url.get();
-}
-
-void SetDevServerUrl(const char* url) {
-    g_cfg_dev_server_url.set(url);
-}
-
-void SetUseDevServer(bool value) {
-    g_cfg_use_dev_server.set(value);
+std::string GetDevServerUrl() {
+    // security_config 交出的是静态缓冲的指针，下一次调用就会被覆盖，所以复制一份给调用方。
+    const char* url = security_config::GetDevServerUrl();
+    return std::string(url ? url : "");
 }
 
 // ============================================
@@ -413,39 +493,39 @@ void SetUseDevServer(bool value) {
 // ============================================
 
 enum ControlIds {
+    // Web template 组
+    IDC_GROUP_TEMPLATE = 1000,
     IDC_STATIC_TEMPLATE = 1001,
     IDC_COMBO_TEMPLATE = 1002,
-    IDC_BTN_CREATE = 1003,
-    IDC_BTN_RENAME = 1004,
-    IDC_BTN_DELETE = 1005,
+    IDC_BTN_MANAGE = 1003,
+    IDC_STATIC_PATH = 1004,
+    IDC_EDIT_PATH = 1005,
     IDC_BTN_OPEN_FOLDER = 1006,
-    
-    IDC_STATIC_WINDOW = 1010,
-    IDC_CHK_START_WITH_FOOBAR = 1011,
-    IDC_CHK_REMEMBER_POSITION = 1012,
-    IDC_CHK_AUTO_HIDE = 1013,
-    
-    IDC_STATIC_BACKDROP = 1020,
-    IDC_COMBO_BACKDROP = 1021,
-    
-    IDC_STATIC_LANGUAGE = 1022,
-    IDC_COMBO_LANGUAGE = 1023,
-    
-    IDC_STATIC_DEV = 1030,
-    IDC_CHK_DEVTOOLS = 1031,
-    IDC_CHK_LOCAL_NETWORK = 1032,
-    IDC_CHK_INSECURE_HTTP = 1033,
-    IDC_CHK_BACKGROUND_MODE = 1034,
-    IDC_STATIC_DEV_NOTE = 1035,
-    IDC_CHK_USE_DEV_SERVER = 1036,
-    IDC_EDIT_DEV_SERVER_URL = 1037,
-    IDC_STATIC_DEV_SERVER = 1038,
-    IDC_CHK_INSECURE_TLS = 1039,
-    
-    IDC_STATIC_PATH = 1040,
-    IDC_EDIT_PATH = 1041,
-    
-    IDC_BTN_SHOW_API_LIST = 1050,
+
+    // Appearance 组
+    IDC_GROUP_APPEARANCE = 1020,
+    IDC_STATIC_LANGUAGE = 1021,
+    IDC_COMBO_LANGUAGE = 1022,
+    IDC_STATIC_BACKDROP = 1023,
+    IDC_COMBO_BACKDROP = 1024,
+    IDC_STATIC_LANGUAGE_NOTE = 1025,
+
+    // 1010–1013 不复用。
+
+    // Tools 组
+    IDC_GROUP_TOOLS = 1050,
+    IDC_STATIC_DEV_SERVER = 1051,
+    IDC_STATIC_DEV_SERVER_STATUS = 1052,
+    IDC_BTN_ADVANCED = 1053,
+    IDC_BTN_SHOW_API_LIST = 1054,
+    IDC_STATIC_TOOLS_NOTE = 1055,
+};
+
+// Manage... 弹出菜单的命令 ID
+enum ManageMenuIds {
+    IDM_TEMPLATE_CREATE = 2001,
+    IDM_TEMPLATE_RENAME = 2002,
+    IDM_TEMPLATE_DELETE = 2003,
 };
 
 // ============================================
@@ -486,669 +566,481 @@ preferences_page_instance::ptr WebViewPreferencesPage::instantiate(
 WebViewPreferencesInstance::WebViewPreferencesInstance(
     HWND parent, 
     preferences_page_callback::ptr callback)
-    : callback_(std::move(callback)) {
+    : PreferencesPageBase(std::move(callback), overview::Table(&WebViewPreferencesInstance::TemplateIsUsable)) {
     
-    // 初始化待处理值
-    const char* templateStr = cfg_active_template.get();
-    pendingTemplate_ = templateStr ? templateStr : "default";
-    pendingStartWithFoobar_ = cfg_start_with_foobar.get();
-    pendingRememberPosition_ = cfg_remember_position.get();
-    pendingAutoHide_ = cfg_auto_hide.get();
-    pendingBackdrop_ = static_cast<BackdropEffect>(cfg_backdrop_effect.get());
+    // 语言覆盖只由本页写入，所以首个实例读到的值就是本进程启动值。
+    static const int s_startupLanguage = static_cast<int>(i18n::GetLanguageOverride());
+    startupLanguage_ = s_startupLanguage;
     
-    // 获取父窗口尺寸
-    RECT rcParent;
-    GetClientRect(parent, &rcParent);
-    int width = rcParent.right - rcParent.left;
-    int height = rcParent.bottom - rcParent.top;
-    if (width < 550) width = 550;
-    if (height < 600) height = 600;  // 增加最小高度以容纳所有控件
-    
-    // 创建对话框窗口 (无模板，手动创建控件)
-    hwnd_ = CreateWindowExW(
-        0,
-        L"STATIC",
-        L"",
-        WS_CHILD | WS_VISIBLE | SS_OWNERDRAW,
-        0, 0, width, height,
-        parent,
-        nullptr,
-        core_api::get_my_instance(),
-        nullptr);
-    
-    if (hwnd_) {
-        SetWindowLongPtrW(hwnd_, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(this));
-        
-        // 子类化窗口以处理消息
-        SetWindowLongPtrW(hwnd_, GWLP_WNDPROC, reinterpret_cast<LONG_PTR>(DialogProc));
-        
-        InitializeControls(hwnd_);
-    }
+    CreatePageWindow(parent);
 }
 
-WebViewPreferencesInstance::~WebViewPreferencesInstance() {
-    if (hwnd_) {
-        DestroyWindow(hwnd_);
-        hwnd_ = nullptr;
+// ============================================
+// 字段读写
+// ============================================
+
+std::wstring WebViewPreferencesInstance::FieldDisplayName(size_t field) const {
+    switch (field) {
+    case overview::Template: return TR("Template", "模板");
+    case overview::Backdrop: return TR("Default window backdrop", "默认窗口背景效果");
+    case overview::Language: return TR("Component language", "组件语言");
+    default:
+        break;
     }
-    if (hFont_) {
-        DeleteObject(hFont_);
-        hFont_ = nullptr;
-    }
+    return {};
 }
 
-t_uint32 WebViewPreferencesInstance::get_state() {
-    t_uint32 state = preferences_state::dark_mode_supported | preferences_state::resettable;
-    if (hasChanges_) {
-        state |= preferences_state::changed;
-    }
-    return state;
-}
-
-fb2k::hwnd_t WebViewPreferencesInstance::get_wnd() {
-    return hwnd_;
-}
-
-void WebViewPreferencesInstance::apply() {
-    // 应用所有设置并立即重新加载 WebView
-    hasChanges_ = false;
-    if (callback_.is_valid()) {
-        callback_->on_state_changed();
-    }
-    
-    // 立即重新加载 WebView 以应用开发服务器配置
-    auto* ui = WebViewUI::GetInstance();
-    if (ui && ui->GetMainWindow()) {
-        auto* mainWnd = ui->GetMainWindow();
-        if (mainWnd && mainWnd->GetWebView()) {
-            console::printf("[WebView2 UI] Applying settings and reloading WebView...");
-            
-            // 发送自定义命令 9999 触发重新加载（与模板更改相同）
-            PostMessage(mainWnd->GetHwnd(), WM_COMMAND, MAKEWPARAM(9999, 0), 0);
+std::wstring WebViewPreferencesInstance::ValidationMessage(const prefs_draft::ValidationResult& result) const {
+    if (result.field == overview::Template) {
+        if (result.error == prefs_draft::ValidationError::Invalid) {
+            return TR("The template name may only contain letters, numbers, hyphens and underscores.",
+                      "模板名只能包含字母、数字、连字符和下划线。");
+        }
+        if (result.error == prefs_draft::ValidationError::Missing) {
+            return TR("The selected template folder does not exist or has no index.html.\n"
+                      "Create it with Manage... or choose another template, then apply again.",
+                      "所选模板目录不存在或没有 index.html。\n"
+                      "请用“管理...”创建，或改选其他模板后再应用。");
         }
     }
+    return PreferencesPageBase::ValidationMessage(result);
 }
 
-void WebViewPreferencesInstance::reset() {
-    // 重置为默认值并立即保存
-    pendingTemplate_ = "default";
-    pendingStartWithFoobar_ = true;
-    pendingRememberPosition_ = true;
-    pendingAutoHide_ = false;
-    pendingBackdrop_ = BackdropEffect::Mica;
-    
-    // 立即保存默认值到配置
-    SetActiveTemplateName(pendingTemplate_);
-    SetStartWithFoobar(pendingStartWithFoobar_);
-    SetRememberWindowPosition(pendingRememberPosition_);
-    SetAutoHideWithFoobar(pendingAutoHide_);
-    SetBackdropEffect(pendingBackdrop_);
-    i18n::SetLanguageOverride(i18n::LanguageOverride::Auto);
-    
-    // 刷新 UI
-    if (!hwnd_) return;
+prefs_draft::Snapshot WebViewPreferencesInstance::ReadSnapshotFromConfig() const {
+    prefs_draft::Snapshot s = prefs_draft::Defaults(fields());
+    const pfc::string8 templateStr = cfg_active_template.get();
+    s.SetString(overview::Template, templateStr.is_empty() ? "default" : templateStr.c_str());
+    // 未知存储值在 UI 中按默认值显示；只有 Apply 时才会把值写回。
+    s.SetInt(overview::Backdrop, prefs_draft::SanitizeEnum(static_cast<int>(cfg_backdrop_effect.get()),
+        overview::kBackdropCount, static_cast<int>(BackdropEffect::Mica)));
+    s.SetInt(overview::Language, prefs_draft::SanitizeEnum(static_cast<int>(i18n::GetLanguageOverride()),
+        overview::kLanguageCount, static_cast<int>(i18n::LanguageOverride::Auto)));
+    return s;
+}
 
-    HWND hComboLanguage = GetDlgItem(hwnd_, IDC_COMBO_LANGUAGE);
-    if (hComboLanguage) {
-        SendMessageW(hComboLanguage, CB_SETCURSEL,
-            static_cast<int>(i18n::LanguageOverride::Auto), 0);
+prefs_draft::Snapshot WebViewPreferencesInstance::StartupSnapshot() const {
+    // 只有语言影响重启：宿主缓存的菜单 / 面板描述不会因 Apply 更新。其余字段取什么值都不参与判定。
+    prefs_draft::Snapshot s = prefs_draft::Defaults(fields());
+    s.SetInt(overview::Language, startupLanguage_);
+    return s;
+}
+
+bool WebViewPreferencesInstance::TemplateIsUsable(const std::string& name) {
+    if (!prefs_draft::IsValidTemplateName(name) || !TemplateExists(name)) return false;
+    std::wstring indexPath = GetWebResourcesBaseDir() + L"\\" +
+        pfc::stringcvt::string_wide_from_utf8(name.c_str()).get_ptr() + L"\\index.html";
+    std::error_code ec;
+    return fs::is_regular_file(indexPath, ec) && fs::file_size(indexPath, ec) > 0 && !ec;
+}
+
+bool WebViewPreferencesInstance::WriteField(size_t field, const prefs_draft::Snapshot& value) {
+    try {
+        switch (field) {
+        case overview::Template: {
+            // SetActiveTemplateName 对非法名字静默不写，所以要读回比对而不是信任调用成功。
+            const std::string& name = value.GetString(overview::Template);
+            SetActiveTemplateName(name);
+            return name == cfg_active_template.get().c_str();
+        }
+        case overview::Backdrop: {
+            const int backdrop = value.GetInt(overview::Backdrop);
+            SetBackdropEffect(static_cast<BackdropEffect>(backdrop));
+            return cfg_backdrop_effect.get() == backdrop;
+        }
+        case overview::Language: {
+            // 内部会清语言缓存；本页已创建的控件文案保持原语言，新建的组件对话框用新语言。
+            const int language = value.GetInt(overview::Language);
+            i18n::SetLanguageOverride(static_cast<i18n::LanguageOverride>(language));
+            return static_cast<int>(i18n::GetLanguageOverride()) == language;
+        }
+        default:
+            break;
+        }
+    } catch (...) {
     }
+    return false;
+}
 
-    HWND hComboTemplate = GetDlgItem(hwnd_, IDC_COMBO_TEMPLATE);
+void WebViewPreferencesInstance::AfterApply(const std::vector<size_t>& changed) {
+    // 导航是异步的，走既有加载与回退路径。
+    const auto has = [&changed](size_t field) {
+        return std::find(changed.begin(), changed.end(), field) != changed.end();
+    };
+    if (has(overview::Template)) ReloadFrontendsForTemplateChange();
+    if (has(overview::Backdrop)) RefreshChromeForBackdropChange();
+}
+
+namespace {
+
+// 主窗口与后台窗口可能是同一个实例，也可能都不存在；不存在的窗口不算保存失败。
+std::vector<MainWindow*> CollectMainWindows() {
+    std::vector<MainWindow*> mainWindows;
+    if (auto* ui = WebViewUI::GetInstance()) {
+        if (ui->GetMainWindow()) mainWindows.push_back(ui->GetMainWindow());
+    }
+    if (MainWindow* background = background_service::GetBackgroundWindow()) {
+        if (std::find(mainWindows.begin(), mainWindows.end(), background) == mainWindows.end()) {
+            mainWindows.push_back(background);
+        }
+    }
+    return mainWindows;
+}
+
+// 面板：先取句柄快照，再逐个解析活实例；显式模板或 URL 覆盖的面板不跟随全局模板。
+void ReloadPanelsFollowingGlobalTemplate() {
+    auto& context = WebViewContext::GetInstance();
+    for (HWND hwnd : context.GetAllInstances()) {
+        if (!IsWindow(hwnd)) continue;
+        WebViewPanel* panel = context.GetPanelByHwnd(hwnd);
+        if (!panel) continue;
+        const PanelConfig& cfg = panel->GetPanelConfig();
+        if (!cfg.templateName.empty() || !cfg.urlOverride.empty()) continue;
+        panel->ReloadFrontend();
+    }
+}
+
+}  // namespace
+
+void ReloadFrontendsForDevServerChange() {
+    // 主窗口走完整的前端加载路径：它会重新判断开关与 URL，开发服务器不可达时回退本地模板。
+    for (MainWindow* window : CollectMainWindows()) {
+        window->ReloadFrontend();
+    }
+    ReloadPanelsFollowingGlobalTemplate();
+    console::printf("[WebView2 UI] Development server settings applied; reloading frontends that follow the global template");
+}
+
+void WebViewPreferencesInstance::ReloadFrontendsForTemplateChange() {
+    // 开发服务器覆盖开启时默认模板只供之后的本地加载使用，不抢占当前开发页面。
+    if (security_config::UseDevServer()) {
+        console::printf("[WebView2 UI] Template changed; development server override is active, not reloading");
+        return;
+    }
+    
+    for (MainWindow* window : CollectMainWindows()) {
+        window->ReloadFrontendForTemplateChange();
+    }
+    ReloadPanelsFollowingGlobalTemplate();
+}
+
+void WebViewPreferencesInstance::RefreshChromeForBackdropChange() {
+    // 只刷新已存在的 MainWindow 与 Popup：重新解析继承，不写显式策略；
+    // miniPlayer / desktopLyrics 等自带策略的窗口在解析里保持优先。DUI/CUI 面板没有 DWM 外壳。
+    std::vector<WindowShellBase*> shells;
+    if (auto* ui = WebViewUI::GetInstance()) {
+        if (ui->GetMainWindow()) shells.push_back(ui->GetMainWindow());
+    }
+    if (MainWindow* background = background_service::GetBackgroundWindow()) {
+        if (std::find(shells.begin(), shells.end(), background) == shells.end()) shells.push_back(background);
+    }
+    auto& manager = WindowManager::GetInstance();
+    for (const std::string& id : manager.GetAllWindowIds()) {
+        if (PopupWindow* popup = manager.GetPopup(id)) shells.push_back(popup);
+    }
+    for (WindowShellBase* shell : shells) {
+        shell->RefreshChrome();
+    }
+}
+
+void WebViewPreferencesInstance::SyncControlsFromDraft() {
+    if (!hwnd()) return;
+    
+    HWND hComboTemplate = GetDlgItem(hwnd(), IDC_COMBO_TEMPLATE);
     if (hComboTemplate) {
-        int count = (int)SendMessageW(hComboTemplate, CB_GETCOUNT, 0, 0);
+        const std::wstring wanted =
+            pfc::stringcvt::string_wide_from_utf8(draft().GetString(overview::Template).c_str()).get_ptr();
+        const std::wstring missingSuffix = TR(" (missing)", "（不存在）");
+        auto itemText = [hComboTemplate](int index) {
+            const int length = static_cast<int>(SendMessageW(hComboTemplate, CB_GETLBTEXTLEN, index, 0));
+            if (length < 0) return std::wstring();
+            std::wstring item(static_cast<size_t>(length) + 1, L'\0');
+            SendMessageW(hComboTemplate, CB_GETLBTEXT, index, reinterpret_cast<LPARAM>(item.data()));
+            item.resize(static_cast<size_t>(length));
+            return item;
+        };
+        // 标注项只由本函数追加，不对应磁盘上的目录。每次同步先清掉旧标注，
+        // 这样 Reset / 冲突 / 写入失败路径反复调用也不会堆出重复项或过期项。
+        for (int i = static_cast<int>(SendMessageW(hComboTemplate, CB_GETCOUNT, 0, 0)) - 1; i >= 0; i--) {
+            const std::wstring item = itemText(i);
+            if (item.size() > missingSuffix.size() && item.ends_with(missingSuffix)) {
+                SendMessageW(hComboTemplate, CB_DELETESTRING, static_cast<WPARAM>(i), 0);
+            }
+        }
+        const int count = static_cast<int>(SendMessageW(hComboTemplate, CB_GETCOUNT, 0, 0));
+        int found = -1;
         for (int i = 0; i < count; i++) {
-            wchar_t buf[256];
-            SendMessageW(hComboTemplate, CB_GETLBTEXT, i, (LPARAM)buf);
-            if (wcscmp(buf, L"default") == 0) {
-                SendMessageW(hComboTemplate, CB_SETCURSEL, i, 0);
+            if (itemText(i) == wanted) {
+                found = i;
                 break;
             }
         }
+        if (found < 0) {
+            // 草稿指向不存在的模板（例如 default 缺失）：列出来并标注，不偷偷建也不另选。
+            const std::wstring label = wanted + missingSuffix;
+            found = static_cast<int>(SendMessageW(hComboTemplate, CB_ADDSTRING, 0,
+                reinterpret_cast<LPARAM>(label.c_str())));
+        }
+        SendMessageW(hComboTemplate, CB_SETCURSEL, found, 0);
     }
     
-    CheckDlgButton(hwnd_, IDC_CHK_START_WITH_FOOBAR, BST_CHECKED);
-    CheckDlgButton(hwnd_, IDC_CHK_REMEMBER_POSITION, BST_CHECKED);
-    CheckDlgButton(hwnd_, IDC_CHK_AUTO_HIDE, BST_UNCHECKED);
+    HWND hComboLanguage = GetDlgItem(hwnd(), IDC_COMBO_LANGUAGE);
+    if (hComboLanguage) {
+        SendMessageW(hComboLanguage, CB_SETCURSEL, static_cast<WPARAM>(draft().GetInt(overview::Language)), 0);
+    }
     
-    HWND hComboBackdrop = GetDlgItem(hwnd_, IDC_COMBO_BACKDROP);
+    HWND hComboBackdrop = GetDlgItem(hwnd(), IDC_COMBO_BACKDROP);
     if (hComboBackdrop) {
-        SendMessageW(hComboBackdrop, CB_SETCURSEL, 1, 0); // Mica
+        SendMessageW(hComboBackdrop, CB_SETCURSEL, static_cast<WPARAM>(draft().GetInt(overview::Backdrop)), 0);
     }
+    
+    RefreshTemplateFolderText();
 }
 
-INT_PTR CALLBACK WebViewPreferencesInstance::DialogProc(
-    HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
-    WebViewPreferencesInstance* self = reinterpret_cast<WebViewPreferencesInstance*>(
-        GetWindowLongPtrW(hwnd, GWLP_USERDATA));
+// 控件获得焦点时的滚入可见区由基类处理；这里只接命令与选择变化。
+INT_PTR WebViewPreferencesInstance::OnMessage(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
+    (void)lParam;
+    if (msg != WM_COMMAND) return FALSE;
+    const WORD code = HIWORD(wParam);
     
-    if (self) {
-        return self->HandleMessage(hwnd, msg, wParam, lParam);
-    }
-    
-    return DefWindowProcW(hwnd, msg, wParam, lParam);
-}
-
-INT_PTR WebViewPreferencesInstance::HandleMessage(
-    HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
-    
-    switch (msg) {
-    case WM_ERASEBKGND:
-        // 自绘背景 - 使用深色或浅色
-        {
-            HDC hdc = (HDC)wParam;
-            RECT rc;
-            GetClientRect(hwnd, &rc);
-            
-            auto api = ui_config_manager::tryGet();
-            bool isDark = api.is_valid() && api->is_dark_mode();
-            
-            HBRUSH hBrush = CreateSolidBrush(isDark ? RGB(32, 32, 32) : GetSysColor(COLOR_3DFACE));
-            FillRect(hdc, &rc, hBrush);
-            DeleteObject(hBrush);
-            return TRUE;
-        }
+    switch (LOWORD(wParam)) {
+    case IDC_COMBO_TEMPLATE:
+        if (code == CBN_SELCHANGE) OnTemplateSelectionChanged(hwnd);
+        return TRUE;
         
-    case WM_COMMAND:
-        switch (LOWORD(wParam)) {
-        case IDC_COMBO_TEMPLATE:
-            if (HIWORD(wParam) == CBN_SELCHANGE) {
-                OnTemplateSelectionChanged(hwnd);
-            }
-            break;
-            
-        case IDC_BTN_CREATE:
-            OnCreateTemplate(hwnd);
-            break;
-            
-        case IDC_BTN_RENAME:
-            OnRenameTemplate(hwnd);
-            break;
-            
-        case IDC_BTN_DELETE:
-            OnDeleteTemplate(hwnd);
-            break;
-            
-        case IDC_BTN_OPEN_FOLDER:
-            OnOpenTemplateFolder(hwnd);
-            break;
-            
-        case IDC_CHK_START_WITH_FOOBAR:
-            // 立即保存到配置
-            pendingStartWithFoobar_ = (IsDlgButtonChecked(hwnd, IDC_CHK_START_WITH_FOOBAR) == BST_CHECKED);
-            SetStartWithFoobar(pendingStartWithFoobar_);
-            hasChanges_ = true;
-            if (callback_.is_valid()) callback_->on_state_changed();
-            break;
-            
-        case IDC_CHK_REMEMBER_POSITION:
-            // 立即保存到配置
-            pendingRememberPosition_ = (IsDlgButtonChecked(hwnd, IDC_CHK_REMEMBER_POSITION) == BST_CHECKED);
-            SetRememberWindowPosition(pendingRememberPosition_);
-            hasChanges_ = true;
-            if (callback_.is_valid()) callback_->on_state_changed();
-            break;
-            
-        case IDC_CHK_AUTO_HIDE:
-            // 立即保存到配置
-            pendingAutoHide_ = (IsDlgButtonChecked(hwnd, IDC_CHK_AUTO_HIDE) == BST_CHECKED);
-            SetAutoHideWithFoobar(pendingAutoHide_);
-            hasChanges_ = true;
-            if (callback_.is_valid()) callback_->on_state_changed();
-            break;
-            
-        case IDC_COMBO_BACKDROP:
-            if (HIWORD(wParam) != CBN_SELCHANGE) break;
-            {
-                HWND hCombo = GetDlgItem(hwnd, IDC_COMBO_BACKDROP);
-                int sel = (int)SendMessageW(hCombo, CB_GETCURSEL, 0, 0);
-                pendingBackdrop_ = static_cast<BackdropEffect>(sel);
-                // 立即保存到配置
-                SetBackdropEffect(pendingBackdrop_);
-                hasChanges_ = true;
-                if (callback_.is_valid()) callback_->on_state_changed();
-                
-                // 热重载 DWM 背景效果
-                auto* ui = WebViewUI::GetInstance();
-                if (ui && ui->GetMainWindow()) {
-                    ui->GetMainWindow()->RefreshBackdropEffect();
-                }
-            }
-            break;
-            
-        case IDC_COMBO_LANGUAGE:
-            if (HIWORD(wParam) != CBN_SELCHANGE) break;
-            {
-                HWND hCombo = GetDlgItem(hwnd, IDC_COMBO_LANGUAGE);
-                int sel = (int)SendMessageW(hCombo, CB_GETCURSEL, 0, 0);
-                // 下拉项顺序与 LanguageOverride 数值一致，越界一律回落 Auto。
-                auto mode = i18n::LanguageOverride::Auto;
-                if (sel == static_cast<int>(i18n::LanguageOverride::English)) {
-                    mode = i18n::LanguageOverride::English;
-                } else if (sel == static_cast<int>(i18n::LanguageOverride::Chinese)) {
-                    mode = i18n::LanguageOverride::Chinese;
-                }
-                // 内部会清缓存，后续 TR/TRU 立即改用新语言；
-                // 但本页已创建的控件文案不会重绘（TR 在创建时求值一次）。
-                i18n::SetLanguageOverride(mode);
-                hasChanges_ = true;
-                if (callback_.is_valid()) callback_->on_state_changed();
-            }
-            break;
-            
-        // Developer Options - 直接保存到 advconfig
-        case IDC_CHK_DEVTOOLS:
-            SetDevToolsEnabled(IsDlgButtonChecked(hwnd, IDC_CHK_DEVTOOLS) == BST_CHECKED);
-            hasChanges_ = true;
-            if (callback_.is_valid()) callback_->on_state_changed();
-            break;
-            
-        case IDC_CHK_LOCAL_NETWORK:
-            SetLocalNetworkAllowed(IsDlgButtonChecked(hwnd, IDC_CHK_LOCAL_NETWORK) == BST_CHECKED);
-            hasChanges_ = true;
-            if (callback_.is_valid()) callback_->on_state_changed();
-            break;
-            
-        case IDC_CHK_INSECURE_HTTP:
-            SetInsecureHttpAllowed(IsDlgButtonChecked(hwnd, IDC_CHK_INSECURE_HTTP) == BST_CHECKED);
-            hasChanges_ = true;
-            if (callback_.is_valid()) callback_->on_state_changed();
-            break;
-
-        case IDC_CHK_INSECURE_TLS:
-            SetInsecureTlsAllowed(IsDlgButtonChecked(hwnd, IDC_CHK_INSECURE_TLS) == BST_CHECKED);
-            hasChanges_ = true;
-            if (callback_.is_valid()) callback_->on_state_changed();
-            break;
-            
-        case IDC_CHK_BACKGROUND_MODE:
-            SetBackgroundModeEnabled(IsDlgButtonChecked(hwnd, IDC_CHK_BACKGROUND_MODE) == BST_CHECKED);
-            hasChanges_ = true;
-            if (callback_.is_valid()) callback_->on_state_changed();
-            break;
-            
-        case IDC_CHK_USE_DEV_SERVER:
-            SetUseDevServer(IsDlgButtonChecked(hwnd, IDC_CHK_USE_DEV_SERVER) == BST_CHECKED);
-            hasChanges_ = true;
-            if (callback_.is_valid()) callback_->on_state_changed();
-            break;
-            
-        case IDC_EDIT_DEV_SERVER_URL:
-            // 当编辑框失去焦点时保存 URL
-            if (HIWORD(wParam) != EN_KILLFOCUS) break;
-            {
-                HWND hEdit = GetDlgItem(hwnd, IDC_EDIT_DEV_SERVER_URL);
-                wchar_t buf[512];
-                GetWindowTextW(hEdit, buf, 512);
-                std::string url = pfc::stringcvt::string_utf8_from_wide(buf).get_ptr();
-                SetDevServerUrl(url.c_str());
-                hasChanges_ = true;
-                if (callback_.is_valid()) callback_->on_state_changed();
-            }
-            break;
-            
-        case IDC_BTN_SHOW_API_LIST:
-            OnShowApiList(hwnd);
-            break;
-        }
-        break;
+    case IDC_BTN_MANAGE:
+        if (code == BN_CLICKED) OnManageTemplates(hwnd);
+        return TRUE;
         
-    case WM_CTLCOLORSTATIC:
-    case WM_CTLCOLORBTN:
-    case WM_CTLCOLOREDIT:
-        // 深色模式背景处理
+    case IDM_TEMPLATE_CREATE:
+        OnCreateTemplate(hwnd);
+        return TRUE;
+        
+    case IDM_TEMPLATE_RENAME:
+        OnRenameTemplate(hwnd);
+        return TRUE;
+        
+    case IDM_TEMPLATE_DELETE:
+        OnDeleteTemplate(hwnd);
+        return TRUE;
+        
+    case IDC_BTN_OPEN_FOLDER:
+        if (code == BN_CLICKED) OnOpenTemplateFolder(hwnd);
+        return TRUE;
+        
+    case IDC_EDIT_PATH:
+        return TRUE;
+        
+    case IDC_COMBO_BACKDROP:
+        if (code != CBN_SELCHANGE) return TRUE;
         {
-            HDC hdc = (HDC)wParam;
-            auto api = ui_config_manager::tryGet();
-            if (api.is_valid() && api->is_dark_mode()) {
-                SetTextColor(hdc, RGB(222, 222, 222));  // 浅色文字
-                SetBkColor(hdc, RGB(32, 32, 32));       // 深色背景
-                static HBRUSH hDarkBrush = CreateSolidBrush(RGB(32, 32, 32));
-                return (INT_PTR)hDarkBrush;
-            }
+            // 只改草稿：背景效果不做“选中即预览”，否则 Cancel 无法真正取消。
+            HWND hCombo = GetDlgItem(hwnd, IDC_COMBO_BACKDROP);
+            const int sel = static_cast<int>(SendMessageW(hCombo, CB_GETCURSEL, 0, 0));
+            if (sel >= 0) draft().SetInt(overview::Backdrop, sel);
+            UpdateState();
         }
+        return TRUE;
+        
+    case IDC_COMBO_LANGUAGE:
+        if (code != CBN_SELCHANGE) return TRUE;
+        {
+            // 下拉项顺序与 LanguageOverride 数值一致，越界一律回落 Auto。
+            // 语言只进草稿，Apply 才调用 SetLanguageOverride。
+            HWND hCombo = GetDlgItem(hwnd, IDC_COMBO_LANGUAGE);
+            const int sel = static_cast<int>(SendMessageW(hCombo, CB_GETCURSEL, 0, 0));
+            draft().SetInt(overview::Language, prefs_draft::SanitizeEnum(sel, overview::kLanguageCount,
+                static_cast<int>(i18n::LanguageOverride::Auto)));
+            UpdateState();
+        }
+        return TRUE;
+        
+    case IDC_BTN_ADVANCED:
+        if (code == BN_CLICKED) OnOpenAdvancedPreferences();
+        return TRUE;
+        
+    case IDC_BTN_SHOW_API_LIST:
+        if (code == BN_CLICKED) OnShowApiList(hwnd);
+        return TRUE;
+        
+    default:
         break;
     }
-    
-    return DefWindowProcW(hwnd, msg, wParam, lParam);
+    return FALSE;
 }
 
 // ============================================
-// DPI 缩放辅助函数
+// 控件创建
 // ============================================
 
-static int GetDpiForWindowSafe(HWND hwnd) {
-    // 尝试使用 Windows 10 1607+ API
-    using GetDpiForWindowFunc = UINT (WINAPI *)(HWND);
-    static GetDpiForWindowFunc pGetDpiForWindow = nullptr;
-    static bool tried = false;
-    
-    if (!tried) {
-        tried = true;
-        HMODULE hUser32 = GetModuleHandleW(L"user32.dll");
-        if (hUser32) {
-            pGetDpiForWindow = (GetDpiForWindowFunc)GetProcAddress(hUser32, "GetDpiForWindow");
-        }
-    }
-    
-    if (pGetDpiForWindow && hwnd) {
-        UINT dpi = pGetDpiForWindow(hwnd);
-        if (dpi > 0) return (int)dpi;
-    }
-    
-    // 回退到 DC 方式
-    HDC hdc = GetDC(hwnd);
-    int dpi = GetDeviceCaps(hdc, LOGPIXELSX);
-    ReleaseDC(hwnd, hdc);
-    return dpi > 0 ? dpi : 96;
-}
-
-static int DpiScale(int value, int dpi) {
-    return MulDiv(value, dpi, 96);
-}
-
-void WebViewPreferencesInstance::InitializeControls(HWND hwnd) {
+void WebViewPreferencesInstance::CreateControls(HWND hwnd) {
     HINSTANCE hInst = core_api::get_my_instance();
+    const HFONT pageFont = font();
     
-    // 获取 DPI 缩放比例
-    int dpi = GetDpiForWindowSafe(hwnd);
+    // 分组框先创建，排在 Z 序底部，避免盖住组内控件。
+    auto createGroup = [&](int id, const wchar_t* title) {
+        HWND h = CreateWindowExW(WS_EX_TRANSPARENT, L"BUTTON", title,
+            WS_CHILD | WS_VISIBLE | WS_CLIPSIBLINGS | BS_GROUPBOX,
+            0, 0, 0, 0, hwnd, reinterpret_cast<HMENU>(static_cast<INT_PTR>(id)), hInst, nullptr);
+        SendMessageW(h, WM_SETFONT, reinterpret_cast<WPARAM>(pageFont), FALSE);
+        return h;
+    };
+    auto createStatic = [&](int id, const wchar_t* text, DWORD extraStyle) {
+        HWND h = CreateWindowExW(0, L"STATIC", text,
+            WS_CHILD | WS_VISIBLE | WS_CLIPSIBLINGS | SS_LEFT | SS_NOPREFIX | extraStyle,
+            0, 0, 0, 0, hwnd, reinterpret_cast<HMENU>(static_cast<INT_PTR>(id)), hInst, nullptr);
+        SendMessageW(h, WM_SETFONT, reinterpret_cast<WPARAM>(pageFont), FALSE);
+        return h;
+    };
+    auto createCombo = [&](int id) {
+        HWND h = CreateWindowExW(0, L"COMBOBOX", L"",
+            WS_CHILD | WS_VISIBLE | WS_CLIPSIBLINGS | WS_TABSTOP | WS_VSCROLL | CBS_DROPDOWNLIST,
+            0, 0, 0, 0, hwnd, reinterpret_cast<HMENU>(static_cast<INT_PTR>(id)), hInst, nullptr);
+        SendMessageW(h, WM_SETFONT, reinterpret_cast<WPARAM>(pageFont), FALSE);
+        return h;
+    };
+    auto createButton = [&](int id, const wchar_t* text, DWORD style) {
+        // BS_NOTIFY 让按钮与复选框在获得焦点时发 BN_SETFOCUS，滚动区据此把它滚入可见范围。
+        HWND h = CreateWindowExW(0, L"BUTTON", text,
+            WS_CHILD | WS_VISIBLE | WS_CLIPSIBLINGS | WS_TABSTOP | BS_NOTIFY | style,
+            0, 0, 0, 0, hwnd, reinterpret_cast<HMENU>(static_cast<INT_PTR>(id)), hInst, nullptr);
+        SendMessageW(h, WM_SETFONT, reinterpret_cast<WPARAM>(pageFont), FALSE);
+        return h;
+    };
+    auto createReadOnlyEdit = [&](int id, DWORD exStyle, DWORD style) {
+        HWND h = CreateWindowExW(exStyle, L"EDIT", L"",
+            WS_CHILD | WS_VISIBLE | WS_CLIPSIBLINGS | ES_LEFT | ES_READONLY | ES_AUTOHSCROLL | style,
+            0, 0, 0, 0, hwnd, reinterpret_cast<HMENU>(static_cast<INT_PTR>(id)), hInst, nullptr);
+        SendMessageW(h, WM_SETFONT, reinterpret_cast<WPARAM>(pageFont), FALSE);
+        return h;
+    };
     
-    // 创建 DPI 感知字体
-    NONCLIENTMETRICSW ncm = {};
-    ncm.cbSize = sizeof(ncm);
-    SystemParametersInfoW(SPI_GETNONCLIENTMETRICS, sizeof(ncm), &ncm, 0);
-    ncm.lfMessageFont.lfHeight = DpiScale(-12, dpi);  // 12pt 字体
-    hFont_ = CreateFontIndirectW(&ncm.lfMessageFont);
-    HFONT hFont = hFont_;
+    createGroup(IDC_GROUP_TEMPLATE, TR("Web template", "Web 模板"));
+    createGroup(IDC_GROUP_APPEARANCE, TR("Appearance", "外观"));
+    createGroup(IDC_GROUP_TOOLS, TR("Tools", "工具"));
     
-    // 获取父窗口尺寸
-    RECT rcParent;
-    GetClientRect(hwnd, &rcParent);
-    int parentWidth = rcParent.right - rcParent.left;
+    // ---- Web template ----
+    createStatic(IDC_STATIC_TEMPLATE, TR("Template", "模板"), 0);
+    createCombo(IDC_COMBO_TEMPLATE);
+    createButton(IDC_BTN_MANAGE, TR("Manage...", "管理..."), BS_PUSHBUTTON);
+    createStatic(IDC_STATIC_PATH, TR("Template folder", "模板文件夹"), 0);
+    // 只读但可选中、可横向滚动、可复制：完整路径留在控件里，不写省略串。
+    createReadOnlyEdit(IDC_EDIT_PATH, WS_EX_CLIENTEDGE, WS_TABSTOP);
+    createButton(IDC_BTN_OPEN_FOLDER, TR("Open...", "打开..."), BS_PUSHBUTTON);
     
-    // DPI 缩放常量 - 压缩布局
-    int y = DpiScale(8, dpi);
-    const int MARGIN = DpiScale(14, dpi);
-    const int LABEL_HEIGHT = DpiScale(18, dpi);
-    const int CONTROL_HEIGHT = DpiScale(22, dpi);  // 减小控件高度
-    const int BUTTON_WIDTH = DpiScale(75, dpi);
-    const int CHECKBOX_WIDTH = DpiScale(420, dpi);  // 增加宽度以显示完整文本
-    const int SPACING = DpiScale(4, dpi);  // 减小间距
-    const int SECTION_SPACING = DpiScale(6, dpi);  // 区块间距
-    // 内容宽度基于父窗口宽度计算，最小 500
-    const int CONTENT_WIDTH = (std::max)(DpiScale(500, dpi), parentWidth - MARGIN * 2 - DpiScale(20, dpi));
-    
-    // ============================================
-    // Web 模板区域
-    // ============================================
-    
-    // "Web" 分组标签
-    HWND hLabel = CreateWindowExW(0, L"STATIC", TR("Web Template:", "Web 模板:"),
-        WS_CHILD | WS_VISIBLE | SS_LEFT,
-        MARGIN, y, DpiScale(120, dpi), LABEL_HEIGHT,
-        hwnd, (HMENU)IDC_STATIC_TEMPLATE, hInst, nullptr);
-    SendMessageW(hLabel, WM_SETFONT, (WPARAM)hFont, TRUE);
-    y += LABEL_HEIGHT + DpiScale(2, dpi);
-    
-    // 模板下拉框
-    HWND hComboTemplate = CreateWindowExW(0, L"COMBOBOX", L"",
-        WS_CHILD | WS_VISIBLE | CBS_DROPDOWNLIST | WS_VSCROLL | WS_TABSTOP,
-        MARGIN, y, DpiScale(160, dpi), DpiScale(200, dpi),
-        hwnd, (HMENU)IDC_COMBO_TEMPLATE, hInst, nullptr);
-    SendMessageW(hComboTemplate, WM_SETFONT, (WPARAM)hFont, TRUE);
-    
-    // 按钮行
-    int btnX = MARGIN + DpiScale(170, dpi);
-    
-    HWND hBtnCreate = CreateWindowExW(0, L"BUTTON", TR("Create", "创建"),
-        WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON | WS_TABSTOP,
-        btnX, y, BUTTON_WIDTH, CONTROL_HEIGHT,
-        hwnd, (HMENU)IDC_BTN_CREATE, hInst, nullptr);
-    SendMessageW(hBtnCreate, WM_SETFONT, (WPARAM)hFont, TRUE);
-    btnX += BUTTON_WIDTH + DpiScale(6, dpi);
-    
-    HWND hBtnRename = CreateWindowExW(0, L"BUTTON", TR("Rename", "重命名"),
-        WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON | WS_TABSTOP,
-        btnX, y, BUTTON_WIDTH, CONTROL_HEIGHT,
-        hwnd, (HMENU)IDC_BTN_RENAME, hInst, nullptr);
-    SendMessageW(hBtnRename, WM_SETFONT, (WPARAM)hFont, TRUE);
-    btnX += BUTTON_WIDTH + DpiScale(6, dpi);
-    
-    HWND hBtnDelete = CreateWindowExW(0, L"BUTTON", TR("Delete", "删除"),
-        WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON | WS_TABSTOP,
-        btnX, y, BUTTON_WIDTH, CONTROL_HEIGHT,
-        hwnd, (HMENU)IDC_BTN_DELETE, hInst, nullptr);
-    SendMessageW(hBtnDelete, WM_SETFONT, (WPARAM)hFont, TRUE);
-    
-    y += CONTROL_HEIGHT + DpiScale(2, dpi);
-    
-    // Open Folder 按钮
-    HWND hBtnOpen = CreateWindowExW(0, L"BUTTON", TR("Open Folder", "打开文件夹"),
-        WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON | WS_TABSTOP,
-        MARGIN, y, DpiScale(110, dpi), CONTROL_HEIGHT,
-        hwnd, (HMENU)IDC_BTN_OPEN_FOLDER, hInst, nullptr);
-    SendMessageW(hBtnOpen, WM_SETFONT, (WPARAM)hFont, TRUE);
-    
-    y += CONTROL_HEIGHT + SECTION_SPACING;
-    
-    // ============================================
-    // 窗口设置区域
-    // ============================================
-    
-    hLabel = CreateWindowExW(0, L"STATIC", TR("Window Settings:", "窗口设置:"),
-        WS_CHILD | WS_VISIBLE | SS_LEFT,
-        MARGIN, y, DpiScale(200, dpi), LABEL_HEIGHT,
-        hwnd, (HMENU)IDC_STATIC_WINDOW, hInst, nullptr);
-    SendMessageW(hLabel, WM_SETFONT, (WPARAM)hFont, TRUE);
-    y += LABEL_HEIGHT + DpiScale(2, dpi);
-    
-    // 复选框: Background mode - 用于后台运行（使用其他UI时保持WebView活跃）
-    HWND hChk = CreateWindowExW(0, L"BUTTON", TR("Keep WebView active when using other UIs (background mode)", "使用其他 UI 时保持 WebView 活跃 (后台模式)"),
-        WS_CHILD | WS_VISIBLE | BS_AUTOCHECKBOX | WS_TABSTOP,
-        MARGIN + DpiScale(10, dpi), y, CHECKBOX_WIDTH, CONTROL_HEIGHT,
-        hwnd, (HMENU)IDC_CHK_BACKGROUND_MODE, hInst, nullptr);
-    SendMessageW(hChk, WM_SETFONT, (WPARAM)hFont, TRUE);
-    if (GetBackgroundModeEnabled()) {
-        CheckDlgButton(hwnd, IDC_CHK_BACKGROUND_MODE, BST_CHECKED);
-    }
-    y += CONTROL_HEIGHT + SECTION_SPACING;
-    
-    // ============================================
-    // 背景效果区域
-    // ============================================
-    
-    hLabel = CreateWindowExW(0, L"STATIC", TR("Window Backdrop:", "窗口背景效果:"),
-        WS_CHILD | WS_VISIBLE | SS_LEFT,
-        MARGIN, y, DpiScale(200, dpi), LABEL_HEIGHT,
-        hwnd, (HMENU)IDC_STATIC_BACKDROP, hInst, nullptr);
-    SendMessageW(hLabel, WM_SETFONT, (WPARAM)hFont, TRUE);
-    y += LABEL_HEIGHT + DpiScale(2, dpi);
-    
-    HWND hComboBackdrop = CreateWindowExW(0, L"COMBOBOX", L"",
-        WS_CHILD | WS_VISIBLE | CBS_DROPDOWNLIST | WS_VSCROLL | WS_TABSTOP,
-        MARGIN + DpiScale(10, dpi), y, DpiScale(180, dpi), DpiScale(200, dpi),
-        hwnd, (HMENU)IDC_COMBO_BACKDROP, hInst, nullptr);
-    SendMessageW(hComboBackdrop, WM_SETFONT, (WPARAM)hFont, TRUE);
-    
-    // 添加背景效果选项
-    SendMessageW(hComboBackdrop, CB_ADDSTRING, 0, (LPARAM)TR("None", "无"));
-    SendMessageW(hComboBackdrop, CB_ADDSTRING, 0, (LPARAM)L"Mica");
-    SendMessageW(hComboBackdrop, CB_ADDSTRING, 0, (LPARAM)L"Mica Alt");
-    SendMessageW(hComboBackdrop, CB_ADDSTRING, 0, (LPARAM)L"Acrylic");
-    SendMessageW(hComboBackdrop, CB_ADDSTRING, 0, (LPARAM)L"Tabbed");
-    SendMessageW(hComboBackdrop, CB_SETCURSEL, static_cast<int>(pendingBackdrop_), 0);
-    
-    y += CONTROL_HEIGHT + SECTION_SPACING;
-    
-    // ============================================
-    // 界面语言区域
-    // ============================================
-    
-    hLabel = CreateWindowExW(0, L"STATIC", TR("Interface Language:", "界面语言:"),
-        WS_CHILD | WS_VISIBLE | SS_LEFT,
-        MARGIN, y, DpiScale(200, dpi), LABEL_HEIGHT,
-        hwnd, (HMENU)IDC_STATIC_LANGUAGE, hInst, nullptr);
-    SendMessageW(hLabel, WM_SETFONT, (WPARAM)hFont, TRUE);
-    y += LABEL_HEIGHT + DpiScale(2, dpi);
-    
-    HWND hComboLanguage = CreateWindowExW(0, L"COMBOBOX", L"",
-        WS_CHILD | WS_VISIBLE | CBS_DROPDOWNLIST | WS_VSCROLL | WS_TABSTOP,
-        MARGIN + DpiScale(10, dpi), y, DpiScale(240, dpi), DpiScale(200, dpi),
-        hwnd, (HMENU)IDC_COMBO_LANGUAGE, hInst, nullptr);
-    SendMessageW(hComboLanguage, WM_SETFONT, (WPARAM)hFont, TRUE);
-    
+    // ---- Appearance ----
+    createStatic(IDC_STATIC_LANGUAGE, TR("Component language", "组件语言"), 0);
+    HWND hComboLanguage = createCombo(IDC_COMBO_LANGUAGE);
     // 顺序必须与 i18n::LanguageOverride 的数值一一对应（Auto=0 / English=1 / Chinese=2）。
     SendMessageW(hComboLanguage, CB_ADDSTRING, 0,
-        (LPARAM)TR("Auto (follow foobar2000)", "自动 (跟随 foobar2000)"));
-    SendMessageW(hComboLanguage, CB_ADDSTRING, 0, (LPARAM)L"English");
-    SendMessageW(hComboLanguage, CB_ADDSTRING, 0, (LPARAM)L"中文");
-    SendMessageW(hComboLanguage, CB_SETCURSEL,
-        static_cast<int>(i18n::GetLanguageOverride()), 0);
+        reinterpret_cast<LPARAM>(TR("Auto (follow foobar2000)", "自动（跟随 foobar2000）")));
+    SendMessageW(hComboLanguage, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(L"English"));
+    SendMessageW(hComboLanguage, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(L"中文"));
+    SendMessageW(hComboLanguage, CB_SETCURSEL, static_cast<WPARAM>(draft().GetInt(overview::Language)), 0);
     
-    y += CONTROL_HEIGHT + DpiScale(2, dpi);
-    
+    // 说明行只讲语言，排在语言下拉框之下、背景效果之上；背景效果 Apply 后即时刷新，不需要重启。
     // 语言切换不会重绘已创建的控件：TR/TRU 在控件创建时求值一次。
-    hLabel = CreateWindowExW(0, L"STATIC",
-        TR("Takes effect for newly opened dialogs; restart foobar2000 to update menus and panel descriptions.",
-           "新打开的对话框立即生效；菜单与面板描述需重启 foobar2000。"),
-        WS_CHILD | WS_VISIBLE | SS_LEFT,
-        MARGIN + DpiScale(10, dpi), y, CONTENT_WIDTH, LABEL_HEIGHT,
-        hwnd, (HMENU)-1, hInst, nullptr);
-    SendMessageW(hLabel, WM_SETFONT, (WPARAM)hFont, TRUE);
+    createStatic(IDC_STATIC_LANGUAGE_NOTE,
+        TR("Component language: applies to newly opened component dialogs; menus and panel descriptions update after a restart.",
+           "组件语言：对新打开的组件对话框生效；菜单与面板描述在重启后更新。"), 0);
     
-    y += LABEL_HEIGHT + SECTION_SPACING;
+    createStatic(IDC_STATIC_BACKDROP, TR("Default window backdrop", "默认窗口背景效果"), 0);
+    HWND hComboBackdrop = createCombo(IDC_COMBO_BACKDROP);
+    // 顺序与 BackdropEffect 枚举值一致。
+    SendMessageW(hComboBackdrop, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(TR("None", "无")));
+    SendMessageW(hComboBackdrop, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(L"Mica"));
+    SendMessageW(hComboBackdrop, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(L"Mica Alt"));
+    SendMessageW(hComboBackdrop, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(L"Acrylic"));
+    SendMessageW(hComboBackdrop, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(L"Tabbed"));
+    SendMessageW(hComboBackdrop, CB_SETCURSEL, static_cast<WPARAM>(draft().GetInt(overview::Backdrop)), 0);
     
-    // ============================================
-    // 开发者选项区域 (可编辑复选框)
-    // ============================================
+    // ---- Tools ----
+    createStatic(IDC_STATIC_DEV_SERVER, TR("Development server", "开发服务器"), 0);
+    // 状态只读：开关与 URL 在 Developer 子页编辑，这里不进草稿。无边框、无 Tab 停靠，鼠标可选中复制。
+    createReadOnlyEdit(IDC_STATIC_DEV_SERVER_STATUS, 0, 0);
+    RefreshDevServerStatus();
+    createButton(IDC_BTN_ADVANCED, TR("Advanced preferences...", "高级首选项..."), BS_PUSHBUTTON);
+    createButton(IDC_BTN_SHOW_API_LIST, TR("API and services...", "API 与服务..."), BS_PUSHBUTTON);
+    createStatic(IDC_STATIC_TOOLS_NOTE,
+        TR("Window, performance and developer settings are on the sub-pages in the tree on the left; "
+           "security exceptions are in Advanced Preferences under Tools > WebView2 UI.",
+           "窗口、性能、开发者设置在左侧子页；安全例外在 高级首选项 > Tools > WebView2 UI。"), 0);
     
-    // 加宽以显示完整文本，基于父窗口宽度动态计算
-    const int DEV_CHECKBOX_WIDTH = (std::max)(DpiScale(480, dpi), parentWidth - MARGIN * 2 - DpiScale(30, dpi));
-    
-    hLabel = CreateWindowExW(0, L"STATIC", TR("Developer Options (requires restart):", "开发者选项 (需要重启):"),
-        WS_CHILD | WS_VISIBLE | SS_LEFT,
-        MARGIN, y, DpiScale(350, dpi), LABEL_HEIGHT,
-        hwnd, (HMENU)IDC_STATIC_DEV, hInst, nullptr);
-    SendMessageW(hLabel, WM_SETFONT, (WPARAM)hFont, TRUE);
-    y += LABEL_HEIGHT + DpiScale(2, dpi);
-    
-    // DevTools 复选框
-    hChk = CreateWindowExW(0, L"BUTTON", TR("Enable Developer Tools (F12)", "启用开发者工具 (F12)"),
-        WS_CHILD | WS_VISIBLE | BS_AUTOCHECKBOX | WS_TABSTOP,
-        MARGIN + DpiScale(10, dpi), y, DEV_CHECKBOX_WIDTH, CONTROL_HEIGHT,
-        hwnd, (HMENU)IDC_CHK_DEVTOOLS, hInst, nullptr);
-    SendMessageW(hChk, WM_SETFONT, (WPARAM)hFont, TRUE);
-    CheckDlgButton(hwnd, IDC_CHK_DEVTOOLS, GetDevToolsEnabled() ? BST_CHECKED : BST_UNCHECKED);
-    y += CONTROL_HEIGHT + DpiScale(1, dpi);
-    
-    // Local Network 复选框
-    hChk = CreateWindowExW(0, L"BUTTON", TR("Allow HTTP access to local network (127.0.0.1, 192.168.x.x)", "允许 HTTP 访问本地网络 (127.0.0.1, 192.168.x.x)"),
-        WS_CHILD | WS_VISIBLE | BS_AUTOCHECKBOX | WS_TABSTOP,
-        MARGIN + DpiScale(10, dpi), y, DEV_CHECKBOX_WIDTH, CONTROL_HEIGHT,
-        hwnd, (HMENU)IDC_CHK_LOCAL_NETWORK, hInst, nullptr);
-    SendMessageW(hChk, WM_SETFONT, (WPARAM)hFont, TRUE);
-    if (GetLocalNetworkAllowed()) {
-        CheckDlgButton(hwnd, IDC_CHK_LOCAL_NETWORK, BST_CHECKED);
-    }
-    y += CONTROL_HEIGHT + DpiScale(1, dpi);
-    
-    // Insecure HTTP 复选框
-    hChk = CreateWindowExW(0, L"BUTTON", TR("Allow insecure HTTP connections (disable HSTS)", "允许不安全的 HTTP 连接 (禁用 HSTS)"),
-        WS_CHILD | WS_VISIBLE | BS_AUTOCHECKBOX | WS_TABSTOP,
-        MARGIN + DpiScale(10, dpi), y, DEV_CHECKBOX_WIDTH, CONTROL_HEIGHT,
-        hwnd, (HMENU)IDC_CHK_INSECURE_HTTP, hInst, nullptr);
-    SendMessageW(hChk, WM_SETFONT, (WPARAM)hFont, TRUE);
-    if (GetInsecureHttpAllowed()) {
-        CheckDlgButton(hwnd, IDC_CHK_INSECURE_HTTP, BST_CHECKED);
-    }
-    y += CONTROL_HEIGHT + DpiScale(1, dpi);
-
-    // Insecure TLS 复选框 (允许自签 / 无效证书,fb.http.* 用,每请求还需 opt-in)
-    hChk = CreateWindowExW(0, L"BUTTON", TR("Allow self-signed / invalid TLS certs (per-request opt-in)", "允许自签 / 无效 TLS 证书 (每请求需 opt-in)"),
-        WS_CHILD | WS_VISIBLE | BS_AUTOCHECKBOX | WS_TABSTOP,
-        MARGIN + DpiScale(10, dpi), y, DEV_CHECKBOX_WIDTH, CONTROL_HEIGHT,
-        hwnd, (HMENU)IDC_CHK_INSECURE_TLS, hInst, nullptr);
-    SendMessageW(hChk, WM_SETFONT, (WPARAM)hFont, TRUE);
-    if (GetInsecureTlsAllowed()) {
-        CheckDlgButton(hwnd, IDC_CHK_INSECURE_TLS, BST_CHECKED);
-    }
-    y += CONTROL_HEIGHT + SECTION_SPACING;
-    
-    // ============================================
-    // 开发服务器配置 (HMR 热重载)
-    // ============================================
-    
-    hLabel = CreateWindowExW(0, L"STATIC", TR("Development Server (HMR Hot Reload):", "开发服务器 (HMR 热重载):"),
-        WS_CHILD | WS_VISIBLE | SS_LEFT,
-        MARGIN, y, DpiScale(350, dpi), LABEL_HEIGHT,
-        hwnd, (HMENU)IDC_STATIC_DEV_SERVER, hInst, nullptr);
-    SendMessageW(hLabel, WM_SETFONT, (WPARAM)hFont, TRUE);
-    y += LABEL_HEIGHT + DpiScale(2, dpi);
-    
-    // 使用开发服务器复选框
-    hChk = CreateWindowExW(0, L"BUTTON", TR("Use development server (e.g., Vite dev server) - requires restart", "使用开发服务器 (如 Vite) - 需要重启"),
-        WS_CHILD | WS_VISIBLE | BS_AUTOCHECKBOX | WS_TABSTOP,
-        MARGIN + DpiScale(10, dpi), y, DEV_CHECKBOX_WIDTH, CONTROL_HEIGHT,
-        hwnd, (HMENU)IDC_CHK_USE_DEV_SERVER, hInst, nullptr);
-    SendMessageW(hChk, WM_SETFONT, (WPARAM)hFont, TRUE);
-    if (security_config::UseDevServer()) {
-        CheckDlgButton(hwnd, IDC_CHK_USE_DEV_SERVER, BST_CHECKED);
-    }
-    y += CONTROL_HEIGHT + DpiScale(1, dpi);
-    
-    // 开发服务器 URL 输入框
-    HWND hEditDevUrl = CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", L"",
-        WS_CHILD | WS_VISIBLE | ES_AUTOHSCROLL | WS_TABSTOP,
-        MARGIN + DpiScale(10, dpi), y, CONTENT_WIDTH, CONTROL_HEIGHT,
-        hwnd, (HMENU)IDC_EDIT_DEV_SERVER_URL, hInst, nullptr);
-    SendMessageW(hEditDevUrl, WM_SETFONT, (WPARAM)hFont, TRUE);
-    
-    // 设置默认值
-    const char* devUrl = security_config::GetDevServerUrl();
-    std::wstring wDevUrl = pfc::stringcvt::string_wide_from_utf8(devUrl).get_ptr();
-    SetWindowTextW(hEditDevUrl, wDevUrl.c_str());
-    
-    y += CONTROL_HEIGHT + SECTION_SPACING;
-    
-    // ============================================
-    // 资源路径显示
-    // ============================================
-    
-    hLabel = CreateWindowExW(0, L"STATIC", TR("Resources Path:", "资源路径:"),
-        WS_CHILD | WS_VISIBLE | SS_LEFT,
-        MARGIN, y, DpiScale(150, dpi), LABEL_HEIGHT,
-        hwnd, (HMENU)IDC_STATIC_PATH, hInst, nullptr);
-    SendMessageW(hLabel, WM_SETFONT, (WPARAM)hFont, TRUE);
-    y += LABEL_HEIGHT + DpiScale(4, dpi);
-    
-    std::wstring pathInfo = GetWebResourcesBaseDir();
-    HWND hEdit = CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", pathInfo.c_str(),
-        WS_CHILD | WS_VISIBLE | ES_READONLY | ES_AUTOHSCROLL,
-        MARGIN, y, CONTENT_WIDTH, CONTROL_HEIGHT,
-        hwnd, (HMENU)IDC_EDIT_PATH, hInst, nullptr);
-    SendMessageW(hEdit, WM_SETFONT, (WPARAM)hFont, TRUE);
-    
-    y += CONTROL_HEIGHT + SECTION_SPACING;
-    
-    // ============================================
-    // API 列表按钮 - 加宽以显示完整文字
-    // ============================================
-    
-    HWND hBtnApiList = CreateWindowExW(0, L"BUTTON", TR("Show API && Services", "查看 API && 服务"),
-        WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON | WS_TABSTOP,
-        MARGIN, y, DpiScale(170, dpi), CONTROL_HEIGHT,
-        hwnd, (HMENU)IDC_BTN_SHOW_API_LIST, hInst, nullptr);
-    SendMessageW(hBtnApiList, WM_SETFONT, (WPARAM)hFont, TRUE);
-    
-    // ============================================
-    // 填充模板列表
-    // ============================================
+    // 模板列表与路径
     RefreshTemplateList(hwnd);
+}
+
+// ============================================
+// 布局描述
+// ============================================
+
+// 三个分组的行序即 Tab 序，也是控件矩形数值表的输出顺序；铺排、滚动与重绘由基类完成。
+void WebViewPreferencesInstance::LayoutContent(prefs_layout::PageLayoutBuilder& builder) {
+    const int comboWindowHeight = builder.comboWindowHeight();
     
-    // ============================================
-    // 应用深色模式主题
-    // ============================================
-    darkMode_.AddDialogWithControls(hwnd);
+    // ---- Web template ----
+    builder.BeginGroup(IDC_GROUP_TEMPLATE, {IDC_STATIC_TEMPLATE, IDC_STATIC_PATH});
+    builder.LabelFieldButton(IDC_STATIC_TEMPLATE, IDC_COMBO_TEMPLATE, IDC_BTN_MANAGE, comboWindowHeight);
+    builder.LabelFieldButton(IDC_STATIC_PATH, IDC_EDIT_PATH, IDC_BTN_OPEN_FOLDER);
+    builder.EndGroup();
+    
+    // ---- Appearance ----
+    builder.BeginGroup(IDC_GROUP_APPEARANCE, {IDC_STATIC_LANGUAGE, IDC_STATIC_BACKDROP});
+    builder.LabelControl(IDC_STATIC_LANGUAGE, IDC_COMBO_LANGUAGE, comboWindowHeight);
+    // 语言说明紧跟语言行，免得被读成背景效果的说明。
+    builder.Note(IDC_STATIC_LANGUAGE_NOTE);
+    builder.LabelControl(IDC_STATIC_BACKDROP, IDC_COMBO_BACKDROP, comboWindowHeight);
+    builder.EndGroup();
+    
+    // ---- Tools ----
+    builder.BeginGroup(IDC_GROUP_TOOLS, {IDC_STATIC_DEV_SERVER});
+    // 无边框只读编辑框：文字与标签基线对齐，高度按一行文字。
+    builder.LabelInlineText(IDC_STATIC_DEV_SERVER, IDC_STATIC_DEV_SERVER_STATUS);
+    builder.Buttons({IDC_BTN_ADVANCED, IDC_BTN_SHOW_API_LIST});
+    builder.Note(IDC_STATIC_TOOLS_NOTE);
+    builder.EndGroup();
+}
+
+// ============================================
+// 状态刷新
+// ============================================
+
+void WebViewPreferencesInstance::RefreshTemplateFolderText() {
+    if (!hwnd()) return;
+    std::wstring path = GetWebResourcesBaseDir();
+    const std::string& templateName = draft().GetString(overview::Template);
+    if (!templateName.empty()) {
+        path += L"\\";
+        path += pfc::stringcvt::string_wide_from_utf8(templateName.c_str()).get_ptr();
+    }
+    HWND hEdit = GetDlgItem(hwnd(), IDC_EDIT_PATH);
+    if (hEdit) SetWindowTextW(hEdit, path.c_str());
+    
+    // Open... 只对存在的目录可用，不替用户建目录。
+    HWND hOpen = GetDlgItem(hwnd(), IDC_BTN_OPEN_FOLDER);
+    if (hOpen) {
+        std::error_code ec;
+        EnableWindow(hOpen, fs::is_directory(path, ec) ? TRUE : FALSE);
+    }
+}
+
+void WebViewPreferencesInstance::RefreshDevServerStatus() {
+    if (!hwnd()) return;
+    HWND hStatus = GetDlgItem(hwnd(), IDC_STATIC_DEV_SERVER_STATUS);
+    if (!hStatus) return;
+    std::wstring text;
+    // 开关与 URL 在每次加载前端时读取，改动在下一次加载页面时生效，不需要重启。
+    if (UseDevServer()) {
+        const std::string url = GetDevServerUrl();
+        if (!url.empty()) {
+            text = pfc::stringcvt::string_wide_from_utf8(url.c_str()).get_ptr();
+            text += TR(" - enabled, applies on next page load", " - 已启用，下次加载页面时生效");
+        } else {
+            text = TR("Enabled, but no URL is set", "已启用但未填写 URL");
+        }
+    } else {
+        text = TR("Off", "关闭");
+    }
+    SetWindowTextW(hStatus, text.c_str());
 }
 
 void WebViewPreferencesInstance::RefreshTemplateList(HWND hwnd) {
@@ -1158,363 +1050,483 @@ void WebViewPreferencesInstance::RefreshTemplateList(HWND hwnd) {
     SendMessageW(hCombo, CB_RESETCONTENT, 0, 0);
     
     std::vector<std::string> templates = GetTemplateList();
-    int activeIndex = 0;
-    
-    for (size_t i = 0; i < templates.size(); i++) {
-        std::wstring wname = pfc::stringcvt::string_wide_from_utf8(templates[i].c_str()).get_ptr();
-        SendMessageW(hCombo, CB_ADDSTRING, 0, (LPARAM)wname.c_str());
-        
-        if (templates[i] == pendingTemplate_) {
-            activeIndex = (int)i;
-        }
+    for (const std::string& name : templates) {
+        std::wstring wname = pfc::stringcvt::string_wide_from_utf8(name.c_str()).get_ptr();
+        SendMessageW(hCombo, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(wname.c_str()));
     }
     
-    SendMessageW(hCombo, CB_SETCURSEL, activeIndex, 0);
+    // 选中项跟草稿走；草稿指向的模板不在磁盘上时由 SyncControlsFromDraft 补一条“（不存在）”。
+    SyncControlsFromDraft();
 }
 
-void WebViewPreferencesInstance::UpdateState() {
-    if (callback_.is_valid()) {
-        callback_->on_state_changed();
-    }
-}
+namespace {
 
-void WebViewPreferencesInstance::OnTemplateSelectionChanged(HWND hwnd) {
+// 模板下拉框当前选中项对应的名字（UTF-8）。列表里的“（不存在）”标注项不是真名字，
+// 剥掉后缀再返回；没有选中项时返回空串。
+std::string SelectedTemplateName(HWND hwnd) {
     HWND hCombo = GetDlgItem(hwnd, IDC_COMBO_TEMPLATE);
-    int sel = (int)SendMessageW(hCombo, CB_GETCURSEL, 0, 0);
-    if (sel >= 0) {
-        wchar_t buf[256];
-        SendMessageW(hCombo, CB_GETLBTEXT, sel, (LPARAM)buf);
-        std::string newTemplate = pfc::stringcvt::string_utf8_from_wide(buf).get_ptr();
-        
-        // 检查模板是否确实改变
-        if (newTemplate != pendingTemplate_) {
-            pendingTemplate_ = newTemplate;
-            // 立即保存到配置
-            SetActiveTemplateName(pendingTemplate_);
-            
-            // 通知主窗口重新加载前端以立即生效
-            auto* ui = WebViewUI::GetInstance();
-            if (ui && ui->GetMainWindow()) {
-                console::printf("[WebView2 UI] Template changed to: %s, reloading frontend...", pendingTemplate_.c_str());
-                PostMessage(ui->GetMainWindow()->GetHwnd(), WM_COMMAND, MAKEWPARAM(9999, 0), 0);  // 自定义命令触发重载
-            }
-        }
+    if (!hCombo) return {};
+    const int sel = static_cast<int>(SendMessageW(hCombo, CB_GETCURSEL, 0, 0));
+    if (sel < 0) return {};
+    const int length = static_cast<int>(SendMessageW(hCombo, CB_GETLBTEXTLEN, sel, 0));
+    if (length < 0) return {};
+    std::wstring item(static_cast<size_t>(length) + 1, L'\0');
+    SendMessageW(hCombo, CB_GETLBTEXT, sel, reinterpret_cast<LPARAM>(item.data()));
+    item.resize(static_cast<size_t>(length));
+    const std::wstring missingSuffix = TR(" (missing)", "（不存在）");
+    if (item.size() > missingSuffix.size() && item.ends_with(missingSuffix)) {
+        item.resize(item.size() - missingSuffix.size());
+    }
+    return pfc::stringcvt::string_utf8_from_wide(item.c_str()).get_ptr();
+}
+
+// 已加载面板里显式指定了该模板的个数。跟随全局模板的面板不在此列，它们由
+// “活动模板不能改名 / 删除”那条保护覆盖。只看 WebViewContext 注册表里活着的实例，
+// 不去翻未加载布局的存档。
+size_t CountLoadedPanelsUsingTemplate(const std::string& name) {
+    size_t count = 0;
+    auto& context = WebViewContext::GetInstance();
+    for (HWND hwnd : context.GetAllInstances()) {
+        if (!IsWindow(hwnd)) continue;
+        WebViewPanel* panel = context.GetPanelByHwnd(hwnd);
+        if (!panel) continue;
+        if (prefs_template::EqualsIgnoreCase(panel->GetPanelConfig().templateName, name)) ++count;
+    }
+    return count;
+}
+
+// 起名对话框的输入与结果。DialogBoxIndirectParamW 的 lParam 把它带进 WM_INITDIALOG，
+// 之后挂在 DWLP_USER 上，确定时把通过校验的名字写回 accepted。
+struct TemplateNamePrompt {
+    const wchar_t* title = L"";
+    std::wstring label;                 // 编辑框上方的一行说明
+    std::wstring hint;                  // 编辑框下方的规则提示；校验失败时换成原因
+    std::wstring value;                 // 初始文本
+    std::vector<std::string> existing;  // 现有模板名，用于重名判定
+    std::string accepted;               // 输出：通过校验的名字（UTF-8）
+};
+
+constexpr int IDC_PROMPT_LABEL = 1000;
+constexpr int IDC_PROMPT_EDIT = 1001;
+constexpr int IDC_PROMPT_HINT = 1002;
+
+const wchar_t* TemplateNameErrorText(prefs_template::NameError error) {
+    switch (error) {
+    case prefs_template::NameError::Empty:
+        return TR("Enter a name.", "请输入名称。");
+    case prefs_template::NameError::InvalidChars:
+        return TR("Only letters, numbers, hyphens and underscores are allowed.",
+                  "只能使用字母、数字、连字符和下划线。");
+    case prefs_template::NameError::Duplicate:
+        return TR("A template with this name already exists (names are not case-sensitive).",
+                  "已存在同名模板（名称不区分大小写）。");
+    case prefs_template::NameError::None:
+        break;
+    }
+    return L"";
+}
+
+void InitTemplateNameDialog(HWND hDlg, const TemplateNamePrompt& prompt) {
+    SetWindowTextW(hDlg, prompt.title);
+    SetDlgItemTextW(hDlg, IDC_PROMPT_LABEL, prompt.label.c_str());
+    SetDlgItemTextW(hDlg, IDC_PROMPT_HINT, prompt.hint.c_str());
+    // 按钮文案在此设置：DLGITEMTEMPLATE 的 titleArray 是定长内联数组，
+    // 放不下更长的译文，故模板里只留 ASCII 兜底文本。
+    SetDlgItemTextW(hDlg, IDOK, TR("OK", "确定"));
+    SetDlgItemTextW(hDlg, IDCANCEL, TR("Cancel", "取消"));
+    HWND hEdit = GetDlgItem(hDlg, IDC_PROMPT_EDIT);
+    if (hEdit) {
+        SetWindowTextW(hEdit, prompt.value.c_str());
+        SendMessageW(hEdit, EM_SETSEL, 0, -1);
+        SetFocus(hEdit);
     }
 }
 
-void WebViewPreferencesInstance::OnCreateTemplate(HWND hwnd) {
-    // 简单的输入对话框
-    wchar_t name[256] = L"";
+// 确定键：校验通过才关对话框；不通过就把原因写进提示行、焦点留在编辑框，不落盘。
+void AcceptTemplateNameIfValid(HWND hDlg, TemplateNamePrompt& prompt) {
+    HWND hEdit = GetDlgItem(hDlg, IDC_PROMPT_EDIT);
+    const int length = hEdit ? GetWindowTextLengthW(hEdit) : 0;
+    std::wstring text(static_cast<size_t>(length) + 1, L'\0');
+    if (hEdit) GetWindowTextW(hEdit, text.data(), length + 1);
+    text.resize(static_cast<size_t>(length));
     
-    // 使用 InputBox 风格的对话框
-    // 这里简化处理，使用固定名称模式
-    std::wstring newName = L"template_";
-    auto templates = GetTemplateList();
-    newName += std::to_wstring(templates.size() + 1);
-    
-    std::string utf8Name = pfc::stringcvt::string_utf8_from_wide(newName.c_str()).get_ptr();
-    
-    if (CreateTemplate(utf8Name)) {
-        RefreshTemplateList(hwnd);
-        
-        // 选中新创建的模板
-        HWND hCombo = GetDlgItem(hwnd, IDC_COMBO_TEMPLATE);
-        int count = (int)SendMessageW(hCombo, CB_GETCOUNT, 0, 0);
-        for (int i = 0; i < count; i++) {
-            wchar_t buf[256];
-            SendMessageW(hCombo, CB_GETLBTEXT, i, (LPARAM)buf);
-            if (wcscmp(buf, newName.c_str()) == 0) {
-                SendMessageW(hCombo, CB_SETCURSEL, i, 0);
-                pendingTemplate_ = utf8Name;
-                // 立即保存到配置
-                SetActiveTemplateName(pendingTemplate_);
-                break;
-            }
+    const std::string candidate =
+        prefs_template::Trim(pfc::stringcvt::string_utf8_from_wide(text.c_str()).get_ptr());
+    const prefs_template::NameError error = prefs_template::CheckName(candidate, prompt.existing);
+    if (error != prefs_template::NameError::None) {
+        SetDlgItemTextW(hDlg, IDC_PROMPT_HINT, TemplateNameErrorText(error));
+        if (hEdit) {
+            SendMessageW(hEdit, EM_SETSEL, 0, -1);
+            SetFocus(hEdit);
         }
-        
-        console::printf("[WebView2 UI] Created template: %s", utf8Name.c_str());
-    } else {
-        MessageBoxW(hwnd, TR("Failed to create template.", "创建模板失败。"), L"WebView2 UI", MB_OK | MB_ICONERROR);
+        return;
     }
+    prompt.accepted = candidate;
+    EndDialog(hDlg, IDOK);
 }
 
-void WebViewPreferencesInstance::OnRenameTemplate(HWND hwnd) {
-    HWND hCombo = GetDlgItem(hwnd, IDC_COMBO_TEMPLATE);
-    int sel = (int)SendMessageW(hCombo, CB_GETCURSEL, 0, 0);
-    if (sel < 0) return;
-    
-    wchar_t oldNameW[256];
-    SendMessageW(hCombo, CB_GETLBTEXT, sel, (LPARAM)oldNameW);
-    std::string oldName = pfc::stringcvt::string_utf8_from_wide(oldNameW).get_ptr();
-    
-    // 使用简单的输入循环实现重命名（替代半成品动态对话框）
-    // 避免复杂的 DLGTEMPLATE 构建，使用 GetSaveFileName 技巧或 prompt 组合
-    // 这里采用最简方案：循环 prompt 直到用户给出合法名称或取消
-    
-    // 注意：promptMsg 目前未被使用——下方对话框在 WM_INITDIALOG 里自行设置
-    // 标签文本。此处保留双语文案，供后续改回消息框式提示时复用。
-    std::wstring promptMsg = TR(
-        "Enter new name for template \"", "请输入模板 \"");
-    promptMsg += oldNameW;
-    promptMsg += TR(
-        "\":\n\n"
-        "(Only letters, numbers, hyphens and underscores allowed)\n\n"
-        "Click Cancel to abort.",
-        "\" 的新名称:\n\n"
-        "(只允许字母、数字、连字符和下划线)\n\n"
-        "点击取消以中止。");
-    
-    // Win32 没有现成的"带输入框的消息框"：TaskDialog 不支持文本输入，
-    // 因此在内存中构建最小 DLGTEMPLATE（label + edit + OK/Cancel）。
-
-    // 构建内存中的对话框模板
-    // 布局: [Label] [Edit] [OK] [Cancel]
-    struct alignas(DWORD) {
-        DLGTEMPLATE tmpl;
-        WORD menuArray[1];      // 无菜单
-        WORD classArray[1];     // 默认类
-        WORD titleArray[1];     // 空标题
-        // Item 1: Static label
-        struct alignas(DWORD) {
-            DLGITEMTEMPLATE item;
-            WORD classArray[2]; // 0xFFFF, 0x0082 = STATIC
-            WORD titleArray[2]; // ":" + nul (placeholder)
-            WORD extraBytes;
-        } label;
-        // Item 2: Edit box
-        struct alignas(DWORD) {
-            DLGITEMTEMPLATE item;
-            WORD classArray[2]; // 0xFFFF, 0x0081 = EDIT
-            WORD titleArray[1]; // empty
-            WORD extraBytes;
-        } edit;
-        // Item 3: OK button
-        struct alignas(DWORD) {
-            DLGITEMTEMPLATE item;
-            WORD classArray[2]; // 0xFFFF, 0x0080 = BUTTON
-            WORD titleArray[3]; // "OK" + nul
-            WORD extraBytes;
-        } ok;
-        // Item 4: Cancel button
-        struct alignas(DWORD) {
-            DLGITEMTEMPLATE item;
-            WORD classArray[2];
-            WORD titleArray[7]; // "Cancel" + nul
-            WORD extraBytes;
-        } cancel;
-    } dlg = {};
-    
-    dlg.tmpl.style = DS_MODALFRAME | DS_CENTER | WS_POPUP | WS_CAPTION | WS_SYSMENU;
-    dlg.tmpl.cdit = 4;
-    dlg.tmpl.cx = 220; dlg.tmpl.cy = 70;
-    
-    // Label
-    dlg.label.item = {WS_CHILD | WS_VISIBLE | SS_LEFT, 0, 7, 7, 200, 12, 1000};
-    dlg.label.classArray[0] = 0xFFFF; dlg.label.classArray[1] = 0x0082;
-    dlg.label.titleArray[0] = L':'; dlg.label.titleArray[1] = 0;
-    
-    // Edit
-    dlg.edit.item = {WS_CHILD | WS_VISIBLE | WS_BORDER | WS_TABSTOP | ES_AUTOHSCROLL, 0, 7, 22, 206, 14, 1001};
-    dlg.edit.classArray[0] = 0xFFFF; dlg.edit.classArray[1] = 0x0081;
-    dlg.edit.titleArray[0] = 0;
-    
-    // OK
-    dlg.ok.item = {WS_CHILD | WS_VISIBLE | BS_DEFPUSHBUTTON | WS_TABSTOP, 0, 110, 44, 50, 14, IDOK};
-    dlg.ok.classArray[0] = 0xFFFF; dlg.ok.classArray[1] = 0x0080;
-    dlg.ok.titleArray[0] = L'O'; dlg.ok.titleArray[1] = L'K'; dlg.ok.titleArray[2] = 0;
-    
-    // Cancel
-    dlg.cancel.item = {WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON | WS_TABSTOP, 0, 163, 44, 50, 14, IDCANCEL};
-    dlg.cancel.classArray[0] = 0xFFFF; dlg.cancel.classArray[1] = 0x0080;
-    dlg.cancel.titleArray[0] = L'C'; dlg.cancel.titleArray[1] = L'a'; dlg.cancel.titleArray[2] = L'n';
-    dlg.cancel.titleArray[3] = L'c'; dlg.cancel.titleArray[4] = L'e'; dlg.cancel.titleArray[5] = L'l';
-    dlg.cancel.titleArray[6] = 0;
-    
-    // 共享状态
-    static std::wstring s_renameOldName;
-    static std::wstring s_renameNewName;
-    s_renameOldName = oldNameW;
-    s_renameNewName = oldNameW;
-    
-    auto DlgProc = [](HWND hDlg, UINT msg, WPARAM wParam, LPARAM) -> INT_PTR {
-        switch (msg) {
-        case WM_INITDIALOG: {
-            SetWindowTextW(hDlg, TR("Rename Template", "重命名模板"));
-            HWND hLabel = GetDlgItem(hDlg, 1000);
-            if (hLabel) {
-                // 前后缀成对翻译：英文用 "name": 收尾，中文用括号包裹，
-                // 避免任一语言出现括号不配对。
-                std::wstring labelText = TR("New name for \"", "新名称 (\"");
-                labelText += s_renameOldName;
-                labelText += TR("\":", "\"):");
-                SetWindowTextW(hLabel, labelText.c_str());
-            }
-            // 按钮文案在此设置：DLGITEMTEMPLATE 的 titleArray 是定长内联数组,
-            // 放不下更长的译文, 故模板里只留 ASCII 兜底文本。
-            SetDlgItemTextW(hDlg, IDOK, TR("OK", "确定"));
-            SetDlgItemTextW(hDlg, IDCANCEL, TR("Cancel", "取消"));
-            HWND hEdit = GetDlgItem(hDlg, 1001);
-            if (hEdit) {
-                SetWindowTextW(hEdit, s_renameNewName.c_str());
-                SendMessageW(hEdit, EM_SETSEL, 0, -1);
-                SetFocus(hEdit);
-            }
-            return FALSE;
+INT_PTR CALLBACK TemplateNameDlgProc(HWND hDlg, UINT msg, WPARAM wParam, LPARAM lParam) {
+    auto* prompt = reinterpret_cast<TemplateNamePrompt*>(GetWindowLongPtrW(hDlg, DWLP_USER));
+    switch (msg) {
+    case WM_INITDIALOG:
+        prompt = reinterpret_cast<TemplateNamePrompt*>(lParam);
+        SetWindowLongPtrW(hDlg, DWLP_USER, static_cast<LONG_PTR>(lParam));
+        InitTemplateNameDialog(hDlg, *prompt);
+        return FALSE;  // 焦点已在 InitTemplateNameDialog 里交给编辑框
+    case WM_COMMAND:
+        if (LOWORD(wParam) == IDOK && prompt) {
+            AcceptTemplateNameIfValid(hDlg, *prompt);
+            return TRUE;
         }
-        case WM_COMMAND:
-            if (LOWORD(wParam) == IDOK) {
-                wchar_t buf[256] = {};
-                GetDlgItemTextW(hDlg, 1001, buf, 256);
-                s_renameNewName = buf;
-                EndDialog(hDlg, IDOK);
-                return TRUE;
-            } else if (LOWORD(wParam) == IDCANCEL) {
-                EndDialog(hDlg, IDCANCEL);
-                return TRUE;
-            }
-            break;
-        case WM_CLOSE:
+        if (LOWORD(wParam) == IDCANCEL) {
             EndDialog(hDlg, IDCANCEL);
             return TRUE;
         }
-        return FALSE;
-    };
+        break;
+    case WM_CLOSE:
+        EndDialog(hDlg, IDCANCEL);
+        return TRUE;
+    }
+    return FALSE;
+}
+
+// Win32 没有现成的“带输入框的消息框”：TaskDialog 不支持文本输入，
+// 因此在内存中构建最小 DLGTEMPLATE。布局（对话框单位）：
+//   [说明标签] / [编辑框] / [规则提示或错误原因] / [确定] [取消]
+// DS_SETFONT 指定 MS Shell Dlg，系统会映射到当前 UI 字体，各控件尺寸随之按 DPI 换算。
+struct alignas(DWORD) TemplateNameDialogTemplate {
+    DLGTEMPLATE tmpl;
+    WORD menuArray[1];      // 无菜单
+    WORD classArray[1];     // 默认类
+    WORD titleArray[1];     // 空标题，WM_INITDIALOG 再设
+    WORD pointSize;
+    WCHAR typeface[13];     // "MS Shell Dlg" + nul
+    struct alignas(DWORD) {
+        DLGITEMTEMPLATE item;
+        WORD classArray[2]; // 0xFFFF, 0x0082 = STATIC
+        WORD titleArray[1];
+        WORD extraBytes;
+    } label;
+    struct alignas(DWORD) {
+        DLGITEMTEMPLATE item;
+        WORD classArray[2]; // 0xFFFF, 0x0081 = EDIT
+        WORD titleArray[1];
+        WORD extraBytes;
+    } edit;
+    struct alignas(DWORD) {
+        DLGITEMTEMPLATE item;
+        WORD classArray[2]; // 0xFFFF, 0x0082 = STATIC
+        WORD titleArray[1];
+        WORD extraBytes;
+    } hint;
+    struct alignas(DWORD) {
+        DLGITEMTEMPLATE item;
+        WORD classArray[2]; // 0xFFFF, 0x0080 = BUTTON
+        WCHAR titleArray[3]; // "OK" + nul
+        WORD extraBytes;
+    } ok;
+    struct alignas(DWORD) {
+        DLGITEMTEMPLATE item;
+        WORD classArray[2];
+        WCHAR titleArray[7]; // "Cancel" + nul
+        WORD extraBytes;
+    } cancel;
+};
+
+TemplateNameDialogTemplate BuildTemplateNameDialogTemplate() {
+    TemplateNameDialogTemplate dlg = {};
+    dlg.tmpl.style = DS_MODALFRAME | DS_CENTER | DS_SETFONT | WS_POPUP | WS_CAPTION | WS_SYSMENU;
+    dlg.tmpl.cdit = 5;
+    dlg.tmpl.cx = 260; dlg.tmpl.cy = 96;
+    dlg.pointSize = 8;
+    wcscpy_s(dlg.typeface, L"MS Shell Dlg");
     
-    INT_PTR result = DialogBoxIndirectParamW(
-        nullptr, &dlg.tmpl, hwnd,
-        static_cast<DLGPROC>(DlgProc), 0);
+    dlg.label.item = {WS_CHILD | WS_VISIBLE | SS_LEFT, 0, 7, 7, 246, 10, IDC_PROMPT_LABEL};
+    dlg.label.classArray[0] = 0xFFFF; dlg.label.classArray[1] = 0x0082;
     
-    if (result != IDOK) return;
+    dlg.edit.item = {WS_CHILD | WS_VISIBLE | WS_BORDER | WS_TABSTOP | ES_AUTOHSCROLL, 0, 7, 20, 246, 14,
+                     IDC_PROMPT_EDIT};
+    dlg.edit.classArray[0] = 0xFFFF; dlg.edit.classArray[1] = 0x0081;
     
-    std::string newName = pfc::stringcvt::string_utf8_from_wide(s_renameNewName.c_str()).get_ptr();
+    // 提示行给三行高度：错误原因与“未加载布局不迁移”的说明在英文下也放得下。
+    dlg.hint.item = {WS_CHILD | WS_VISIBLE | SS_LEFT | SS_NOPREFIX, 0, 7, 38, 246, 30, IDC_PROMPT_HINT};
+    dlg.hint.classArray[0] = 0xFFFF; dlg.hint.classArray[1] = 0x0082;
     
-    // 验证
-    if (newName.empty() || newName == oldName) return;
+    dlg.ok.item = {WS_CHILD | WS_VISIBLE | BS_DEFPUSHBUTTON | WS_TABSTOP, 0, 149, 75, 50, 14, IDOK};
+    dlg.ok.classArray[0] = 0xFFFF; dlg.ok.classArray[1] = 0x0080;
+    wcscpy_s(dlg.ok.titleArray, L"OK");
     
-    if (!RenameTemplate(oldName, newName)) {
-        MessageBoxW(hwnd,
-            TR("Failed to rename template. Make sure:\n"
-               "- The name only contains letters, numbers, hyphens and underscores\n"
-               "- A template with the new name doesn't already exist",
-               "重命名失败。请确保:\n"
-               "- 名称只包含字母、数字、连字符和下划线\n"
-               "- 不存在同名模板"),
-            TR("Rename Failed", "重命名失败"), MB_OK | MB_ICONERROR);
+    dlg.cancel.item = {WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON | WS_TABSTOP, 0, 203, 75, 50, 14, IDCANCEL};
+    dlg.cancel.classArray[0] = 0xFFFF; dlg.cancel.classArray[1] = 0x0080;
+    wcscpy_s(dlg.cancel.titleArray, L"Cancel");
+    return dlg;
+}
+
+// Create 与 Rename 共用的起名对话框。返回 true 且 prompt.accepted 为通过校验的名字；
+// 取消或关闭返回 false。模态期间会重入消息循环，调用方要自己持有实例引用。
+bool PromptTemplateName(HWND owner, TemplateNamePrompt& prompt) {
+    TemplateNameDialogTemplate dlg = BuildTemplateNameDialogTemplate();
+    const INT_PTR result = DialogBoxIndirectParamW(nullptr, &dlg.tmpl, owner, TemplateNameDlgProc,
+                                                   reinterpret_cast<LPARAM>(&prompt));
+    return result == IDOK && !prompt.accepted.empty();
+}
+
+std::wstring Utf8ToWide(const std::string& text) {
+    return pfc::stringcvt::string_wide_from_utf8(text.c_str()).get_ptr();
+}
+
+}  // namespace
+
+void WebViewPreferencesInstance::OnTemplateSelectionChanged(HWND hwnd) {
+    // 选中项只进草稿；持久化与导航都等 Apply。
+    const std::string newTemplate = SelectedTemplateName(hwnd);
+    if (newTemplate.empty() || newTemplate == draft().GetString(overview::Template)) return;
+    draft().SetString(overview::Template, newTemplate);
+    RefreshTemplateFolderText();
+    UpdateState();
+}
+
+void WebViewPreferencesInstance::OnCreateTemplate(HWND hwnd) {
+    // 模态期间宿主可能关掉本页并释放实例：先持有自引用，返回后再看窗口是否还在。
+    service_ptr_t<WebViewPreferencesInstance> keepAlive(this);
+    
+    TemplateNamePrompt prompt;
+    prompt.title = TR("Create Template", "新建模板");
+    prompt.label = TR("Name for the new template:", "新模板的名称：");
+    prompt.hint = TR("Letters, numbers, hyphens and underscores only. A folder with an index.html is created "
+                     "under webview-ui.",
+                     "只能使用字母、数字、连字符和下划线。将在 webview-ui 下创建带 index.html 的文件夹。");
+    prompt.existing = GetTemplateList();
+    if (!PromptTemplateName(hwnd, prompt) || !get_wnd()) return;
+    
+    const std::string& name = prompt.accepted;
+    if (CreateTemplate(name)) {
+        // 新模板只选入草稿：不激活、不导航，Apply 才写配置。
+        draft().SetString(overview::Template, name);
+        RefreshTemplateList(hwnd);
+        UpdateState();
+        console::printf("[WebView2 UI] Created template: %s", name.c_str());
         return;
     }
     
-    // 刷新 ComboBox
+    // 失败：如实说明磁盘上留下了什么，不假装回滚；列表按磁盘现状重新枚举。
+    std::wstring message = TR("Failed to create the template \"", "创建模板 \"");
+    message += Utf8ToWide(name);
+    message += TR("\".", "\" 失败。");
+    if (TemplateExists(name)) {
+        message += TR("\n\nThe folder was created but index.html could not be written. "
+                      "The folder is left in place:\n",
+                      "\n\n文件夹已创建，但 index.html 未能写入。文件夹保留在：\n");
+        message += GetWebResourcesBaseDir() + L"\\" + Utf8ToWide(name);
+    } else {
+        message += TR("\n\nThe folder could not be created. Check the permissions of the webview-ui folder.",
+                      "\n\n无法创建文件夹。请检查 webview-ui 文件夹的权限。");
+    }
     RefreshTemplateList(hwnd);
+    MessageBoxW(hwnd, message.c_str(), L"WebView2 UI", MB_OK | MB_ICONERROR);
+}
+
+void WebViewPreferencesInstance::OnRenameTemplate(HWND hwnd) {
+    service_ptr_t<WebViewPreferencesInstance> keepAlive(this);
+    
+    const std::string oldName = SelectedTemplateName(hwnd);
+    if (oldName.empty()) return;
+    if (!TemplateExists(oldName)) {
+        // 选中的是“（不存在）”标注项，或目录在本页打开后被外部删掉了。
+        RefreshTemplateList(hwnd);
+        MessageBoxW(hwnd, TR("This template folder does not exist, so it cannot be renamed.",
+                             "该模板文件夹不存在，无法重命名。"),
+            L"WebView2 UI", MB_OK | MB_ICONINFORMATION);
+        return;
+    }
+    
+    // 已提交的活动模板不能改名：配置里还指着旧名字，改了就等于把当前主界面指向一个不存在的目录。
+    // 同时对照当前配置，本页打开期间被别处切换的活动模板也算。
+    if (oldName == initial().GetString(overview::Template) ||
+        oldName == ReadSnapshotFromConfig().GetString(overview::Template)) {
+        MessageBoxW(hwnd,
+            TR("This template is the active one. Switch to another template and apply first, then rename it.",
+               "这是当前活动模板。请先切换到其他模板并应用，再重命名。"),
+            L"WebView2 UI", MB_OK | MB_ICONINFORMATION);
+        return;
+    }
+    
+    // 已加载面板显式引用的模板也不能改名：面板配置里存的是名字，改了它就找不到目录。
+    if (const size_t panels = CountLoadedPanelsUsingTemplate(oldName); panels > 0) {
+        std::wstring message = std::to_wstring(panels);
+        message += TR(" loaded panel(s) use this template explicitly. Change their template in the panel "
+                      "settings first, then rename it.",
+                      " 个已加载的面板显式使用此模板。请先在面板设置里改用其他模板，再重命名。");
+        MessageBoxW(hwnd, message.c_str(), L"WebView2 UI", MB_OK | MB_ICONINFORMATION);
+        return;
+    }
+    
+    TemplateNamePrompt prompt;
+    prompt.title = TR("Rename Template", "重命名模板");
+    // 前后缀成对翻译：英文用 "name": 收尾，中文用括号包裹，避免任一语言出现括号不配对。
+    prompt.label = TR("New name for \"", "新名称 (\"");
+    prompt.label += Utf8ToWide(oldName);
+    prompt.label += TR("\":", "\"):");
+    prompt.hint = TR("Renames the folder immediately; Cancel on this page does not undo it. "
+                     "Panels in layouts that are not loaded keep the old name.",
+                     "文件夹会立即重命名，本页的取消不会撤销。未加载布局中的面板仍指向旧名称，不会被更新。");
+    prompt.value = Utf8ToWide(oldName);
+    prompt.existing = GetTemplateList();  // 含旧名本身：改回旧名或只改大小写都按重名拒绝
+    if (!PromptTemplateName(hwnd, prompt) || !get_wnd()) return;
+    
+    const std::string& newName = prompt.accepted;
+    if (!RenameTemplate(oldName, newName)) {
+        // 对话框已排除非法名与重名，走到这里多半是目录被占用或权限不足；列表按磁盘现状重枚举。
+        RefreshTemplateList(hwnd);
+        std::wstring message = TR("Failed to rename the template folder \"", "重命名模板文件夹 \"");
+        message += Utf8ToWide(oldName);
+        message += TR("\".\n\nThe folder may be in use or you may not have permission. "
+                      "Close programs that might be accessing the template files and try again.",
+                      "\" 失败。\n\n文件夹可能正在被使用或没有权限。请关闭可能正在访问模板文件的程序后重试。");
+        MessageBoxW(hwnd, message.c_str(), TR("Rename Failed", "重命名失败"), MB_OK | MB_ICONERROR);
+        return;
+    }
+    
+    // 草稿里若选的是旧名，跟着改成新名；其余字段的未提交编辑不变。
+    if (draft().GetString(overview::Template) == oldName) draft().SetString(overview::Template, newName);
+    RefreshTemplateList(hwnd);
+    UpdateState();
+    console::printf("[WebView2 UI] Renamed template: %s -> %s", oldName.c_str(), newName.c_str());
 }
 
 void WebViewPreferencesInstance::OnDeleteTemplate(HWND hwnd) {
-    HWND hCombo = GetDlgItem(hwnd, IDC_COMBO_TEMPLATE);
-    int sel = (int)SendMessageW(hCombo, CB_GETCURSEL, 0, 0);
-    if (sel < 0) return;
+    service_ptr_t<WebViewPreferencesInstance> keepAlive(this);
     
-    wchar_t buf[256];
-    SendMessageW(hCombo, CB_GETLBTEXT, sel, (LPARAM)buf);
-    std::string templateName = pfc::stringcvt::string_utf8_from_wide(buf).get_ptr();
-    
-    // 获取模板列表
-    auto templates = GetTemplateList();
-    
-    // 检查是否只有一个模板
-    if (templates.size() <= 1) {
-        MessageBoxW(hwnd, TR("Cannot delete the only template.\n\nAt least one template must exist.", "无法删除唯一的模板。\n\n至少需要保留一个模板。"), L"WebView2 UI", MB_OK | MB_ICONERROR);
-        return;
-    }
-    
-    // 检查是否是当前活动模板
-    const char* currentTemplate = cfg_active_template.get();
-    bool isActive = (currentTemplate && strcmp(currentTemplate, templateName.c_str()) == 0);
-    
-    // 构建确认消息
-    std::wstring msg = TR("Are you sure you want to delete template \"", "确定要删除模板 \"");
-    msg += buf;
-    msg += L"\"?";
-    
-    if (isActive) {
-        msg += TR("\n\nThis is the currently active template. "
-                  "After deletion, another template will be activated automatically.",
-                  "\n\n这是当前活动模板。删除后将自动激活另一个模板。");
-    }
-    
-    msg += TR("\n\nThis action cannot be undone.", "\n\n此操作无法撤销。");
-    
-    if (MessageBoxW(hwnd, msg.c_str(), L"WebView2 UI", MB_YESNO | MB_ICONWARNING) != IDYES)
-        return;
-
-    // 如果是活动模板，先切换到其他模板
-    if (isActive) {
-        std::string newActiveTemplate;
-        for (const auto& t : templates) {
-            if (t != templateName) {
-                newActiveTemplate = t;
-                break;
-            }
-        }
-        
-        if (!newActiveTemplate.empty()) {
-            SetActiveTemplateName(newActiveTemplate);
-            pendingTemplate_ = newActiveTemplate;
-            console::printf("[WebView2 UI] Switched to template: %s (before deleting %s)", 
-                newActiveTemplate.c_str(), templateName.c_str());
-        }
-    }
-    
-    // 现在删除模板
-    if (DeleteTemplate(templateName)) {
+    const std::string templateName = SelectedTemplateName(hwnd);
+    if (templateName.empty()) return;
+    if (!TemplateExists(templateName)) {
         RefreshTemplateList(hwnd);
-        
-        // 选中当前活动模板
-        int count = (int)SendMessageW(hCombo, CB_GETCOUNT, 0, 0);
-        for (int i = 0; i < count; i++) {
-            wchar_t itemBuf[256];
-            SendMessageW(hCombo, CB_GETLBTEXT, i, (LPARAM)itemBuf);
-            std::string itemName = pfc::stringcvt::string_utf8_from_wide(itemBuf).get_ptr();
-            if (itemName == pendingTemplate_) {
-                SendMessageW(hCombo, CB_SETCURSEL, i, 0);
-                break;
-            }
-        }
-        
-        // 通知主窗口重新加载前端
-        auto* ui = WebViewUI::GetInstance();
-        if (ui && ui->GetMainWindow()) {
-            PostMessage(ui->GetMainWindow()->GetHwnd(), WM_COMMAND, MAKEWPARAM(9999, 0), 0);
-        }
-        
-        hasChanges_ = true;
-        if (callback_.is_valid()) callback_->on_state_changed();
-        
-        console::printf("[WebView2 UI] Deleted template: %s", templateName.c_str());
-    } else {
-        // 删除失败
-        if (!TemplateExists(templateName)) {
-            MessageBoxW(hwnd, TR("Template does not exist or has been deleted.", "模板不存在或已被删除。"), L"WebView2 UI", MB_OK | MB_ICONERROR);
-        } else {
-            MessageBoxW(hwnd, TR("Failed to delete template.\n\nThe folder may be in use or you may not have permission.\nTry closing all programs that might be accessing the template files.", "删除模板失败。\n\n文件夹可能正在被使用或没有权限。\n请尝试关闭所有可能正在访问模板文件的程序。"), L"WebView2 UI", MB_OK | MB_ICONERROR);
-        }
+        MessageBoxW(hwnd, TR("This template folder does not exist; there is nothing to delete.",
+                             "该模板文件夹不存在，没有可删除的内容。"),
+            L"WebView2 UI", MB_OK | MB_ICONINFORMATION);
+        return;
     }
+    
+    // 列表可以删空：页面会显示“default（不存在）”并拒绝 Apply，不为此保留最后一个。
+    // 已提交的活动模板不能删：用户须先切换并应用，不能靠“先改配置再删除”绕过保护。
+    // 同时对照当前配置，本页打开期间被别处切换的活动模板也算。
+    if (templateName == initial().GetString(overview::Template) ||
+        templateName == ReadSnapshotFromConfig().GetString(overview::Template)) {
+        MessageBoxW(hwnd,
+            TR("This template is the active one. Switch to another template and apply first, then delete it.",
+               "这是当前活动模板。请先切换到其他模板并应用，再删除。"),
+            L"WebView2 UI", MB_OK | MB_ICONINFORMATION);
+        return;
+    }
+    
+    // 已加载面板显式引用的模板不能删；未加载布局里的引用查不到，只在确认文案里说明。
+    if (const size_t panels = CountLoadedPanelsUsingTemplate(templateName); panels > 0) {
+        std::wstring message = std::to_wstring(panels);
+        message += TR(" loaded panel(s) use this template explicitly. Change their template in the panel "
+                      "settings first, then delete it.",
+                      " 个已加载的面板显式使用此模板。请先在面板设置里改用其他模板，再删除。");
+        MessageBoxW(hwnd, message.c_str(), L"WebView2 UI", MB_OK | MB_ICONINFORMATION);
+        return;
+    }
+    
+    // 构建确认消息：文件操作立即执行，外层 Cancel 不撤销。
+    std::wstring msg = TR("Are you sure you want to delete template \"", "确定要删除模板 \"");
+    msg += Utf8ToWide(templateName);
+    msg += L"\"?";
+    msg += TR("\n\nThe folder is deleted immediately; Cancel on this page does not undo it.\n"
+              "Panels in layouts that are not loaded may still reference this name and will fall back to "
+              "the missing-template behavior when opened.",
+              "\n\n文件夹会立即删除；本页的取消不会撤销此操作。\n"
+              "未加载布局中的面板可能仍引用此名称，重开时会按模板缺失处理。");
+    
+    if (MessageBoxW(hwnd, msg.c_str(), L"WebView2 UI", MB_YESNO | MB_ICONWARNING) != IDYES || !get_wnd())
+        return;
+    
+    if (DeleteTemplate(templateName)) {
+        // 删的是草稿选择项时，草稿回到已提交的活动模板；其他字段的未提交编辑不变。
+        if (draft().GetString(overview::Template) == templateName) {
+            draft().SetString(overview::Template, initial().GetString(overview::Template));
+        }
+        RefreshTemplateList(hwnd);
+        UpdateState();
+        console::printf("[WebView2 UI] Deleted template: %s", templateName.c_str());
+        return;
+    }
+    
+    // 删除失败：remove_all 可能只删了一部分，按磁盘现状重枚举并报告实际状态。
+    RefreshTemplateList(hwnd);
+    if (!TemplateExists(templateName)) {
+        MessageBoxW(hwnd, TR("The template folder is already gone; the list has been refreshed.",
+                             "模板文件夹已不存在，列表已刷新。"),
+            L"WebView2 UI", MB_OK | MB_ICONINFORMATION);
+        return;
+    }
+    std::wstring message = TR("Failed to delete the template \"", "删除模板 \"");
+    message += Utf8ToWide(templateName);
+    message += TR("\".\n\nSome files may have been removed already; the folder still exists at:\n",
+                  "\" 失败。\n\n部分文件可能已被删除；文件夹仍在：\n");
+    message += GetWebResourcesBaseDir() + L"\\" + Utf8ToWide(templateName);
+    message += TR("\n\nThe folder may be in use or you may not have permission. "
+                  "Close programs that might be accessing the template files and try again.",
+                  "\n\n文件夹可能正在被使用或没有权限。请关闭可能正在访问模板文件的程序后重试。");
+    MessageBoxW(hwnd, message.c_str(), L"WebView2 UI", MB_OK | MB_ICONERROR);
 }
 
-void WebViewPreferencesInstance::OnOpenTemplateFolder(HWND hwnd) {
+void WebViewPreferencesInstance::OnOpenTemplateFolder(HWND hwnd) const {
     std::wstring path = GetWebResourcesBaseDir();
     
-    if (!pendingTemplate_.empty()) {
+    const std::string& templateName = draft().GetString(overview::Template);
+    if (!templateName.empty()) {
         path += L"\\";
-        path += pfc::stringcvt::string_wide_from_utf8(pendingTemplate_.c_str()).get_ptr();
+        path += pfc::stringcvt::string_wide_from_utf8(templateName.c_str()).get_ptr();
     }
     
-    // 确保目录存在
-    if (!fs::exists(path)) {
-        fs::create_directories(path);
+    // 只打开存在的目录，不替用户建；按钮在目录缺失时已禁用，这里是兜底(fallback)。
+    std::error_code ec;
+    if (!fs::is_directory(path, ec)) {
+        MessageBoxW(hwnd, TR("The template folder does not exist.", "模板文件夹不存在。"),
+            L"WebView2 UI", MB_OK | MB_ICONINFORMATION);
+        return;
     }
     
     static auto pShellExec = &::ShellExecuteW;
     if (pShellExec)
         pShellExec(nullptr, L"explore", path.c_str(), nullptr, nullptr, SW_SHOWNORMAL);
+}
+
+void WebViewPreferencesInstance::OnManageTemplates(HWND hwnd) {
+    HMENU menu = CreatePopupMenu();
+    if (!menu) return;
+    // 选中的是“（不存在）”标注项或列表为空时，Rename / Delete 没有对象，置灰而不是点开再报错。
+    const std::string selected = SelectedTemplateName(hwnd);
+    const UINT targetFlags = (!selected.empty() && TemplateExists(selected)) ? MF_STRING : (MF_STRING | MF_GRAYED);
+    AppendMenuW(menu, MF_STRING, IDM_TEMPLATE_CREATE, TR("Create...", "新建..."));
+    AppendMenuW(menu, targetFlags, IDM_TEMPLATE_RENAME, TR("Rename...", "重命名..."));
+    AppendMenuW(menu, targetFlags, IDM_TEMPLATE_DELETE, TR("Delete...", "删除..."));
+    
+    RECT rc{};
+    HWND hButton = GetDlgItem(hwnd, IDC_BTN_MANAGE);
+    if (hButton) GetWindowRect(hButton, &rc);
+    
+    // 弹出菜单会重入消息循环：期间宿主可能关掉本页并释放实例，
+    // 先持有一份自引用，返回后再看窗口是否还在。
+    service_ptr_t<WebViewPreferencesInstance> keepAlive(this);
+    const UINT cmd = static_cast<UINT>(TrackPopupMenuEx(menu,
+        TPM_LEFTALIGN | TPM_TOPALIGN | TPM_RETURNCMD | TPM_NONOTIFY,
+        rc.left, rc.bottom, hwnd, nullptr));
+    DestroyMenu(menu);
+    if (!cmd || !get_wnd()) return;
+    SendMessageW(get_wnd(), WM_COMMAND, MAKEWPARAM(cmd, 0), 0);
+}
+
+void WebViewPreferencesInstance::OnOpenAdvancedPreferences() {
+    // 目标是宿主的 Advanced 页，不是本组件的 advconfig 分支 GUID；
+    // 宿主不保证自动展开分支，控件旁的说明给出 Tools > WebView2 UI 位置。
+    try {
+        static_api_ptr_t<ui_control>()->show_preferences(preferences_page::guid_advanced);
+    } catch (...) {
+        console::printf("[WebView2 UI] Failed to open Advanced Preferences");
+    }
 }
 
 // ============================================
@@ -1553,7 +1565,7 @@ void ApplyApiListTheme(HWND hwnd, ApiListState* state) {
     if (!state) return;
 
     state->isDark = IsFb2kDarkMode();
-    // 深色取值与 Preferences 页面自绘背景一致；浅色沿用系统 Window 配色
+    // 本对话框不经 CCoreDarkModeHooks，深色用固定的深灰底与浅灰字自绘；浅色沿用系统 Window 配色
     state->bkColor = state->isDark ? RGB(32, 32, 32) : GetSysColor(COLOR_WINDOW);
     state->textColor = state->isDark ? RGB(222, 222, 222) : GetSysColor(COLOR_WINDOWTEXT);
 
@@ -1655,8 +1667,7 @@ static LRESULT CALLBACK ApiListWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARA
                 (HINSTANCE)GetWindowLongPtrW(hwnd, GWLP_HINSTANCE),
                 nullptr);
             
-            // 使用等宽字体 - 美化版本，更大更清晰
-            // 优先使用 Cascadia Code (Windows 11/Terminal默认)，回退到 Consolas
+            // 列表按等宽字体对齐各列；首选 Cascadia Code，其次 Consolas。
             HFONT hMonoFont = CreateFontW(
                 -16,        // 字体高度 (负值表示字符高度，正值表示单元格高度)
                 0,          // 字体宽度 (0=自动)
@@ -1672,7 +1683,8 @@ static LRESULT CALLBACK ApiListWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARA
                 FIXED_PITCH | FF_MODERN,
                 L"Cascadia Code");  // 优先使用Cascadia Code
             
-            // 如果Cascadia Code不可用，回退到Consolas
+            // GetObjectW 读回的是创建时请求的 LOGFONT，不是实际映射到的字体：字体缺失时 CreateFontW
+            // 仍返回句柄并由 GDI 代换，这个分支只在 CreateFontW 本身失败时才切到 Consolas。
             LOGFONTW lf = {};
             if (!GetObjectW(hMonoFont, sizeof(lf), &lf) || wcscmp(lf.lfFaceName, L"Cascadia Code") != 0) {
                 DeleteObject(hMonoFont);

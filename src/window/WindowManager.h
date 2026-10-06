@@ -85,7 +85,8 @@ public:
 
 private:
     WindowManager() = default;
-    ~WindowManager() = default;
+    // 只在进程退出的静态析构期运行，此时不再销毁窗口；正常关停走 Shutdown()。
+    ~WindowManager();
     WindowManager(const WindowManager&) = delete;
     WindowManager& operator=(const WindowManager&) = delete;
     

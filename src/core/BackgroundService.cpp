@@ -10,6 +10,8 @@
 #include "core/WebViewContext.h"
 #include "api/AudioApi.h"
 #include "utils/I18n.h"
+#include "window/MenuOverlayHost.h"
+#include "window/WindowManager.h"
 
 namespace {
     // Background window instance (only created when not using WebView2 UI as main UI)
@@ -139,7 +141,25 @@ void Shutdown() {
         console::print("[WebView2 UI] WARNING: Unknown exception during audio visualization shutdown");
     }
     
-    // 关键清理（窗口销毁 + 状态复位，必须执行）
+    // 关键清理（窗口销毁 + 状态复位，必须执行）。与 WebViewUI::shutdown 同一
+    // 顺序：先关菜单 overlay 与 popup，再关承载它们的窗口。必须在静态析构
+    // 之前完成，否则 OnDestroy 可能访问已经析构的异步操作注册表。
+    try {
+        MenuOverlayHost::GetInstance().Shutdown();
+    } catch (const std::exception& e) {
+        console::printf("[WebView2 UI] WARNING: MenuOverlayHost shutdown failed: %s", e.what());
+    } catch (...) {
+        console::print("[WebView2 UI] WARNING: Unknown exception during MenuOverlayHost shutdown");
+    }
+
+    try {
+        WindowManager::GetInstance().Shutdown();
+    } catch (const std::exception& e) {
+        console::printf("[WebView2 UI] WARNING: WindowManager shutdown failed: %s", e.what());
+    } catch (...) {
+        console::print("[WebView2 UI] WARNING: Unknown exception during WindowManager shutdown");
+    }
+
     try {
         if (g_backgroundWindow) {
             g_backgroundWindow->Destroy();

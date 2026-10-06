@@ -1,4 +1,4 @@
-<?xml version="1.0" encoding="utf-8"?>
+﻿<?xml version="1.0" encoding="utf-8"?>
 <Project DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
 
   <ItemGroup Label="ProjectConfigurations">
@@ -82,6 +82,7 @@
     <Link>
       <SubSystem>Console</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
+      <AdditionalDependencies>Mpr.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
 
@@ -101,9 +102,19 @@
     <ClCompile Include="..\src\webview\dnd\HdropReader.cpp" />
     <ClCompile Include="..\src\webview\dnd\ShortcutResolver.cpp" />
     <ClCompile Include="..\src\api\AsyncOperationRegistry.cpp" />
+    <ClCompile Include="..\src\api\QueueRebuildPlan.cpp" />
+    <ClCompile Include="..\src\api\GroupRunPlan.cpp" />
+    <ClCompile Include="..\src\api\SpectrumBands.cpp" />
+    <ClCompile Include="..\src\api\SpectrumSchedule.cpp" />
+    <ClCompile Include="..\src\api\LiveWaveform.cpp" />
+    <ClCompile Include="..\src\api\WaveformAccumulator.cpp" />
+    <ClCompile Include="..\src\api\WaveformTaskQueue.cpp" />
     <ClCompile Include="..\src\webview\dnd\DropEffectPolicy.cpp" />
     <ClCompile Include="..\src\webview\dnd\DragSession.cpp" />
     <ClCompile Include="..\src\webview\dnd\DndOriginPolicy.cpp" />
+    <ClCompile Include="..\src\webview\dnd\DragOutPathPolicy.cpp" />
+    <ClCompile Include="..\src\webview\dnd\HdropBuilder.cpp" />
+    <ClCompile Include="..\src\webview\dnd\DragTokenStore.cpp" />
     <ClCompile Include="..\src\utils\MediaMembershipIndex.cpp" />
     <ClCompile Include="..\src\utils\PathCanonicalCache.cpp" />
     <!-- src\utils\I18n.cpp needs the full SDK to probe fb2k's own strings;
@@ -116,16 +127,25 @@
     <ClCompile Include="test_guid_utils.cpp" />
     <ClCompile Include="test_artwork_cache_key.cpp" />
     <ClCompile Include="test_artwork_cache_p1.cpp" />
+    <ClCompile Include="test_scaled_artwork_cache.cpp" />
     <ClCompile Include="test_artwork_request_parser.cpp" />
     <ClCompile Include="test_artwork_request_lifecycle.cpp" />
     <ClCompile Include="test_artwork_instrumentation.cpp" />
     <ClCompile Include="test_subsong_utils.cpp" />
+    <ClCompile Include="test_canonical_handle.cpp" />
     <ClCompile Include="test_string_utils.cpp" />
     <ClCompile Include="test_api_constants.cpp" />
     <ClCompile Include="test_detect_mime.cpp" />
     <ClCompile Include="test_url_encode.cpp" />
     <ClCompile Include="test_track_number.cpp" />
     <ClCompile Include="test_window_utils.cpp" />
+    <ClCompile Include="test_preferences_layout.cpp" />
+    <ClCompile Include="test_preferences_draft.cpp" />
+    <ClCompile Include="test_preferences_template_name.cpp" />
+    <ClCompile Include="test_preferences_dev_server_url.cpp" />
+    <ClCompile Include="test_preferences_zoom.cpp" />
+    <ClCompile Include="test_preferences_cdp_port.cpp" />
+    <ClCompile Include="test_taskbar_progress_policy.cpp" />
     <ClCompile Include="test_match_pattern.cpp" />
     <ClCompile Include="test_bridge_dispatch.cpp" />
     <ClCompile Include="test_send_format.cpp" />
@@ -135,6 +155,9 @@
     <ClCompile Include="test_path_security_unc_bypass.cpp" />
     <ClCompile Include="test_path_security_write_tiers.cpp" />
     <ClCompile Include="test_path_security_canonical_form.cpp" />
+    <ClCompile Include="test_path_security_virtual_protocol.cpp" />
+    <ClCompile Include="test_path_security_traversal.cpp" />
+    <ClCompile Include="test_network_share_resolver.cpp" />
     <ClCompile Include="test_menu_handle_list_dedup.cpp" />
     <ClCompile Include="test_media_membership_index.cpp" />
     <ClCompile Include="test_path_canonical_cache.cpp" />
@@ -154,12 +177,24 @@
     <ClCompile Include="test_dnd_effect_policy.cpp" />
     <ClCompile Include="test_dnd_session.cpp" />
     <ClCompile Include="test_dnd_origin_policy.cpp" />
+    <ClCompile Include="test_dnd_dragout_path_policy.cpp" />
+    <ClCompile Include="test_dnd_hdrop_builder.cpp" />
+    <ClCompile Include="test_dnd_drag_token_store.cpp" />
     <ClCompile Include="test_dnd_shortcut_resolver.cpp" />
     <ClCompile Include="test_async_operation_registry.cpp" />
     <ClCompile Include="test_json_writer.cpp" />
     <ClCompile Include="test_bridge_deferred.cpp" />
     <ClCompile Include="test_track_wire_snapshot.cpp" />
     <ClCompile Include="test_meta_value_ops.cpp" />
+    <ClCompile Include="test_rating_select.cpp" />
+    <ClCompile Include="test_queue_rebuild_plan.cpp" />
+    <ClCompile Include="test_group_run_plan.cpp" />
+    <ClCompile Include="test_spectrum_bands.cpp" />
+    <ClCompile Include="test_waveform_accumulator.cpp" />
+    <ClCompile Include="test_waveform_task_queue.cpp" />
+    <ClCompile Include="test_live_waveform.cpp" />
+    <ClCompile Include="test_waveform_cache_key.cpp" />
+    <ClCompile Include="test_spectrum_schedule.cpp" />
   </ItemGroup>
 
   <!-- Headers -->
@@ -175,18 +210,30 @@
     <ClInclude Include="..\src\window\MenuResourceLimits.h" />
     <ClInclude Include="..\src\window\MenuTokenTable.h" />
     <ClInclude Include="..\src\webview\WebViewCrashPolicy.h" />
+    <ClInclude Include="..\src\webview\ScaledArtworkCache.h" />
     <ClInclude Include="..\src\window\WindowGeometryMath.h" />
     <ClInclude Include="..\src\window\WindowTargetPolicy.h" />
     <ClInclude Include="..\src\utils\WindowUtilsCore.h" />
     <ClInclude Include="..\src\webview\dnd\HdropReader.h" />
     <ClInclude Include="..\src\webview\dnd\ShortcutResolver.h" />
     <ClInclude Include="..\src\api\AsyncOperationRegistry.h" />
+    <ClInclude Include="..\src\api\ProbeFailureClassifier.h" />
     <ClInclude Include="..\src\webview\dnd\DropEffectPolicy.h" />
     <ClInclude Include="..\src\webview\dnd\DragSession.h" />
     <ClInclude Include="..\src\webview\dnd\DndOriginPolicy.h" />
+    <ClInclude Include="..\src\webview\dnd\DragOutPathPolicy.h" />
+    <ClInclude Include="..\src\webview\dnd\HdropBuilder.h" />
+    <ClInclude Include="..\src\webview\dnd\DragTokenStore.h" />
     <ClInclude Include="..\src\utils\MediaMembershipIndex.h" />
     <ClInclude Include="..\src\utils\PathCanonicalCache.h" />
+    <ClInclude Include="..\src\utils\PathTraversalSegments.h" />
     <ClInclude Include="..\src\utils\PlaylistFormatUtils.h" />
+    <ClInclude Include="..\src\core\PreferencesLayout.h" />
+    <ClInclude Include="..\src\core\PreferencesLayoutBuilder.h" />
+    <ClInclude Include="..\src\core\PreferencesDraft.h" />
+    <ClInclude Include="..\src\core\PreferencesFields.h" />
+    <ClInclude Include="..\src\core\PreferencesDevServerUrl.h" />
+    <ClInclude Include="..\src\window\TaskbarProgressPolicy.h" />
   </ItemGroup>
 
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />

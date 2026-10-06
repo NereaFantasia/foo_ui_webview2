@@ -6,6 +6,7 @@
 // BuildTrackJsonFromSnapshot 的输出逐字段对齐。键序不比（nlohmann 对象按键名
 // 排序输出，直写按声明序），键**集**与每个键的值必须全等。
 #include "pch.h"
+#include "compat/fb2k_types.h"  // console:: stub：ErrorEnvelope.h 的 FailureHook 引用它
 #include "api/TrackWireSnapshot.h"
 
 #include <initializer_list>
@@ -749,4 +750,50 @@ TEST(TrackWireProjection, AppendsWithoutClearingBuffer) {
     ASSERT_EQ(parsed.size(), 2u);
     EXPECT_EQ(parsed[0].size(), 1u);
     EXPECT_EQ(parsed[0], parsed[1]);
+}
+
+// ==========================================================================
+// MakeTrackFieldsErrorBody — playlist.getTracks 与 library.* 共用的参数错误形状
+// 直接验证 TrackWireSnapshot.h 的共享实现：错误码、details 条件与未知字段顺序。
+// ==========================================================================
+
+TEST(TrackFieldsErrorBody, InvalidShapesYieldInvalidParamsWithoutDetails) {
+    // null / 非数组 / 空数组 / 含非字符串：四类都不带 unknownFields
+    for (const json fields : {json(nullptr), json("title"), json::array(),
+                              json::array({"title", 123})}) {
+        const TrackFieldSelection selection = ParseTrackFieldSelection(json{{"fields", fields}});
+        ASSERT_FALSE(selection.valid) << fields.dump();
+        const json body = MakeTrackFieldsErrorBody(selection);
+        EXPECT_FALSE(body.at("success").get<bool>());
+        EXPECT_EQ(body.at("code").get<std::string>(), "INVALID_PARAMS");
+        EXPECT_FALSE(body.at("error").get<std::string>().empty());
+        EXPECT_FALSE(body.contains("details")) << fields.dump();
+    }
+}
+
+TEST(TrackFieldsErrorBody, UnknownNamesAreAllListedInDetails) {
+    // 扫完再报：调用方一次就能改对，不用逐个试
+    const TrackFieldSelection selection =
+        ParseTrackFieldSelection(json{{"fields", {"title", "bogus", "bogus2", "bogus"}}});
+    ASSERT_FALSE(selection.valid);
+    const json body = MakeTrackFieldsErrorBody(selection);
+    EXPECT_EQ(body.at("code").get<std::string>(), "INVALID_PARAMS");
+    // 重复名去重后按出现序列出
+    EXPECT_EQ(body.at("details").at("unknownFields"),
+              json::array({"bogus", "bogus2"}));
+}
+
+TEST(TrackFieldsErrorBody, ValidSelectionIsProjectedWithRequestedBits) {
+    const TrackFieldSelection selection =
+        ParseTrackFieldSelection(json{{"fields", {"title", "album"}}});
+    ASSERT_TRUE(selection.valid);
+    EXPECT_TRUE(selection.projected);
+    EXPECT_EQ(selection.mask, TrackField::kTitle | TrackField::kAlbum);
+}
+
+TEST(TrackFieldsErrorBody, AbsentFieldsKeyKeepsCurrentBehavior) {
+    const TrackFieldSelection selection = ParseTrackFieldSelection(json::object());
+    EXPECT_TRUE(selection.valid);
+    EXPECT_FALSE(selection.projected);
+    EXPECT_EQ(selection.mask, TrackField::kAll);
 }

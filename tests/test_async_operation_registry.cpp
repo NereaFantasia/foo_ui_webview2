@@ -3,6 +3,7 @@
 // by metadata.probeBatchAsync.
 #include "pch.h"
 #include "../src/api/AsyncOperationRegistry.h"
+#include "../src/api/ProbeFailureClassifier.h"
 
 #include <atomic>
 #include <exception>
@@ -609,6 +610,15 @@ TEST(BatchEmitScheduler, EmptyRunEmitsNothing) {
 // ===========================================================================
 // Failure classification: catch order
 //
+// The catch chain that maps the SDK's six exception types onto the three
+// failure values lives once, in src/api/ProbeFailureClassifier.h, as a template
+// over the exception types. ProbeOneTrack instantiates it with the real SDK
+// types; this file instantiates the SAME template with a mirror hierarchy, so a
+// reordering in production is a reordering here as well. The template's own
+// static_asserts reject an instantiation whose parameters do not have the
+// required subclass relations, which is what makes the mirror below a faithful
+// stand-in and not just a lookalike.
+//
 // The six real exception types cannot be constructed here, and the reason is
 // not a missing SDK import library: on MSVC, PFC_DECLARE_EXCEPTION
 // (pfc/primitives.h:34-42) expands to all-inline constructors over
@@ -619,8 +629,7 @@ TEST(BatchEmitScheduler, EmptyRunEmitsNothing) {
 // means dragging in the whole pfc/SDK header chain, which tests/pch.h and
 // tests/compat/fb2k_types.h deliberately stay clear of.
 //
-// What is reproduced instead is the exact inheritance shape read out of the SDK
-// headers, so the ordering property can be exercised:
+// The mirror reproduces the inheritance shape read out of the SDK headers:
 //
 //   pfc::exception            == std::exception          (pfc/primitives.h:201)
 //   exception_aborted          : pfc::exception          (abort_callback.h:5)
@@ -632,23 +641,10 @@ TEST(BatchEmitScheduler, EmptyRunEmitsNothing) {
 //   exception_io_bad_subsong_index    : exception_io_data (exception_io.h:22)
 //
 // PFC_DECLARE_EXCEPTION expands to `class NAME : public BASECLASS`
-// (pfc/primitives.h:35), so every relationship above is public.
-//
-// The same relationships are asserted against the REAL SDK types with
-// static_assert in src/api/MetadataApi.cpp, next to ProbeOneTrack. That pair
-// covers the type hierarchy: this file proves the catch order classifies
-// correctly for this hierarchy, and the production translation unit proves the
-// hierarchy is the one the SDK actually has.
-//
-// KNOWN GAP, not covered by anything here: the catch ORDER below is a hand
-// transcription of ProbeOneTrack's, and nothing binds the two. The static
-// asserts pin the inheritance relations, so a SDK reshuffle is caught at
-// compile time; an edit that reorders the production handlers is not. These
-// tests would stay green while the shipped code reported a cancellation as
-// read-error. Closing it would need the order expressed once and consumed by
-// both sides, which is not possible while the test project cannot see the SDK
-// types at all. Treat "ClassifyInSpecOrder still matches ProbeOneTrack" as a
-// review obligation, not as something CI verifies.
+// (pfc/primitives.h:35), so every relationship above is public. The real
+// relations are pinned with static_assert in src/api/MetadataApi.cpp next to
+// ProbeOneTrack, so an SDK reshuffle fails the production build rather than
+// silently changing a classification.
 // ===========================================================================
 
 namespace {
@@ -666,7 +662,14 @@ static_assert(std::is_base_of_v<std::exception, MirrorAborted>, "");
 static_assert(std::is_base_of_v<MirrorIoData, MirrorIoUnsupportedFormat>, "");
 static_assert(!std::is_base_of_v<MirrorIoData, MirrorIoNotFound>, "");
 
+// The production chain, instantiated over the mirror types. This is the only
+// place the mirror meets the classifier; every test below goes through it.
+using MirrorClassifier =
+    probe_failure::Classifier<MirrorAborted, MirrorIoNotFound, MirrorIoUnsupportedFormat,
+                              MirrorIoData, MirrorIo>;
+
 // Outcome of one classification, mirroring ProbeItemOutcome's two signals.
+// failure is copied into a std::string so EXPECT_EQ compares content.
 struct Classification {
     bool aborted = false;
     std::string failure;
@@ -676,26 +679,11 @@ struct Classification {
     }
 };
 
-// The shipped order, transcribed from ProbeOneTrack by hand. No compiler or
-// test checks that the transcription is still faithful - see the KNOWN GAP note
-// above before trusting a green run here as evidence about production.
-Classification ClassifyInSpecOrder(void (*thrower)()) {
+Classification ClassifyWithProduction(void (*thrower)()) {
+    const probe_failure::Classification verdict = MirrorClassifier::Classify(thrower);
     Classification result;
-    try {
-        thrower();
-    } catch (const MirrorAborted&) {
-        result.aborted = true;
-    } catch (const MirrorIoNotFound&) {
-        result.failure = "not-found";
-    } catch (const MirrorIoUnsupportedFormat&) {
-        result.failure = "unsupported-format";
-    } catch (const MirrorIoData&) {
-        result.failure = "read-error";
-    } catch (const MirrorIo&) {
-        result.failure = "read-error";
-    } catch (const std::exception&) {
-        result.failure = "read-error";
-    }
+    result.aborted = verdict.aborted;
+    result.failure = verdict.failure ? verdict.failure : "";
     return result;
 }
 
@@ -731,51 +719,67 @@ void ThrowTruncation() { throw MirrorIoTruncation(); }
 void ThrowBadSubsong() { throw MirrorIoBadSubsong(); }
 void ThrowGenericIo() { throw MirrorIo(); }
 void ThrowPlainStd() { throw std::exception(); }
+void ThrowNothing() {}
 
 }  // namespace
 
+TEST(ProbeFailureClassification, NormalReturnIsNotClassified) {
+    // A body that returns is neither aborted nor failed; threw is the only
+    // signal the caller may use to tell "no exception" from "aborted".
+    const probe_failure::Classification verdict = MirrorClassifier::Classify(&ThrowNothing);
+    EXPECT_FALSE(verdict.threw);
+    EXPECT_FALSE(verdict.aborted);
+    EXPECT_EQ(verdict.failure, nullptr);
+}
+
+TEST(ProbeFailureClassification, ThrowingSetsThrew) {
+    EXPECT_TRUE(MirrorClassifier::Classify(&ThrowAborted).threw);
+    EXPECT_TRUE(MirrorClassifier::Classify(&ThrowNotFound).threw);
+    EXPECT_TRUE(MirrorClassifier::Classify(&ThrowPlainStd).threw);
+}
+
 TEST(ProbeFailureClassification, AbortedIsNotAFailure) {
-    const Classification c = ClassifyInSpecOrder(&ThrowAborted);
+    const Classification c = ClassifyWithProduction(&ThrowAborted);
     EXPECT_TRUE(c.aborted);
     // The acceptance criterion for cancellation: no read-error may appear.
     EXPECT_EQ(c.failure, "");
 }
 
 TEST(ProbeFailureClassification, NotFoundIsItsOwnCategory) {
-    EXPECT_EQ(ClassifyInSpecOrder(&ThrowNotFound),
+    EXPECT_EQ(ClassifyWithProduction(&ThrowNotFound),
               (Classification{false, "not-found"}));
 }
 
 TEST(ProbeFailureClassification, UnsupportedFormatIsItsOwnCategory) {
-    EXPECT_EQ(ClassifyInSpecOrder(&ThrowUnsupportedFormat),
+    EXPECT_EQ(ClassifyWithProduction(&ThrowUnsupportedFormat),
               (Classification{false, "unsupported-format"}));
 }
 
 TEST(ProbeFailureClassification, TruncationCollapsesToReadError) {
-    EXPECT_EQ(ClassifyInSpecOrder(&ThrowTruncation),
+    EXPECT_EQ(ClassifyWithProduction(&ThrowTruncation),
               (Classification{false, "read-error"}));
 }
 
 TEST(ProbeFailureClassification, BadSubsongIndexCollapsesToReadError) {
-    EXPECT_EQ(ClassifyInSpecOrder(&ThrowBadSubsong),
+    EXPECT_EQ(ClassifyWithProduction(&ThrowBadSubsong),
               (Classification{false, "read-error"}));
 }
 
 TEST(ProbeFailureClassification, GenericIoCollapsesToReadError) {
-    EXPECT_EQ(ClassifyInSpecOrder(&ThrowGenericIo),
+    EXPECT_EQ(ClassifyWithProduction(&ThrowGenericIo),
               (Classification{false, "read-error"}));
 }
 
 TEST(ProbeFailureClassification, PlainStdExceptionCollapsesToReadError) {
-    EXPECT_EQ(ClassifyInSpecOrder(&ThrowPlainStd),
+    EXPECT_EQ(ClassifyWithProduction(&ThrowPlainStd),
               (Classification{false, "read-error"}));
 }
 
 TEST(ProbeFailureClassification, ThreeCategoriesNeverCollide) {
-    // "三者互不混淆" stated as an assertion rather than as prose.
-    const Classification notFound = ClassifyInSpecOrder(&ThrowNotFound);
-    const Classification unsupported = ClassifyInSpecOrder(&ThrowUnsupportedFormat);
-    const Classification readError = ClassifyInSpecOrder(&ThrowTruncation);
+    // not-found, unsupported-format and read-error must remain pairwise distinct.
+    const Classification notFound = ClassifyWithProduction(&ThrowNotFound);
+    const Classification unsupported = ClassifyWithProduction(&ThrowUnsupportedFormat);
+    const Classification readError = ClassifyWithProduction(&ThrowTruncation);
 
     EXPECT_NE(notFound.failure, unsupported.failure);
     EXPECT_NE(notFound.failure, readError.failure);
@@ -808,12 +812,11 @@ TEST(ProbeFailureClassification, BroadestFirstOrderErasesEveryCategory) {
 // pulls in the foobar2000 SDK, Win32 shell APIs and BridgeCore. What is
 // reproduced below is the mapping rule, so the derivation can be exercised.
 //
-// KNOWN GAP, identical in kind to the one documented above for the probe catch
-// order: the table below is a hand transcription of ApplyReason() and
-// TallyResult(), and nothing binds the two. These tests would stay green while
-// the shipped code reported a user-initiated cancel as a failure. Treat
-// "MirrorApplyReason still matches ApplyReason" as a review obligation, not as
-// something CI verifies.
+// Unlike the probe tests above, which share the production classifier, these
+// tests transcribe ApplyReason() and the TallyResult() counting rule without
+// invoking either function. They could stay green if production reported a
+// user-initiated cancel as a failure. Keeping the mirror aligned with both
+// functions remains a review obligation; these tests do not verify that parity.
 // ===========================================================================
 
 namespace {

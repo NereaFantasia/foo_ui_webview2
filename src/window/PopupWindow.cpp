@@ -8,6 +8,7 @@
 #include "core/PreferencesPage.h"
 #include "core/SecurityConfig.h"
 #include "webview/WebViewHost.h"
+#include "api/AudioApi.h"
 #include "api/BridgeCore.h"
 #include "api/FileApi.h"
 #include "api/HttpApi.h"
@@ -1568,16 +1569,17 @@ void PopupWindow::OnDestroy() {
     startupReadySignaled_ = false;
     pendingClose_ = false;
     
-    // 销毁该窗口的所有 Port（按设计文档，不清理全局 State）
+    // 销毁该窗口的所有 Port（不清理全局 State）
     PortHub::Instance().CleanupWindowPorts(GetWindowId());
     
     // 取消该窗口所有未完成的异步 HTTP 请求，释放并发槽位
     CancelAllHttpRequestsForWindow(GetWindowId());
 
-    // 同理取消该窗口发起的未完成文件操作与元数据探测：worker 每条之间查一次
-    // token，不取消就会把整个队列跑完，还把结果发往这个正在销毁的窗口。
+    // 同理取消该窗口发起的未完成文件操作、元数据探测与整轨波形请求：worker 每条之间
+    // 查一次 token，不取消就会把整个队列跑完，还把结果发往这个正在销毁的窗口。
     CancelAllFileOpsForWindow(GetWindowId());
     CancelAllProbesForWindow(GetWindowId());
+    CancelAllWaveformTasksForWindow(GetWindowId());
 
     // 销毁 WebView（基类方法）
     chromeBackdropBroadcastReady_ = false;

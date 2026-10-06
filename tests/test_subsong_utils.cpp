@@ -132,3 +132,121 @@ TEST(SubsongUtils, MakeSidecarPath_SubsongZeroExplicit) {
     auto r = SubsongUtils_Test::MakeSidecarPath("D:\\album.flac|subsong:0", L".lrc");
     EXPECT_EQ(r, L"D:\\album.lrc");
 }
+
+// ============================================================================
+// TryMakeNativeMediaPath tests — re-implements the helper inline for the same
+// reason as above. Paths stay ASCII-only: SimpleWiden truncates bytes rather
+// than decoding UTF-8, so non-ASCII cases belong in live verification.
+// ============================================================================
+
+namespace SubsongUtils_Test {
+    inline bool TryMakeNativeMediaPath(const std::string& in, std::string& out) {
+        out.clear();
+        if (in.empty()) return false;
+
+        std::string body = in;
+        if (in.rfind("file://", 0) == 0) {
+            body = in.substr(7);
+        } else if (in.find("://") != std::string::npos) {
+            return false;
+        }
+
+        const std::string base = ParseSubsongPath(body).first;
+
+        const bool driveRooted =
+            base.size() >= 3 &&
+            ((base[0] >= 'A' && base[0] <= 'Z') || (base[0] >= 'a' && base[0] <= 'z')) &&
+            base[1] == ':' && (base[2] == '\\' || base[2] == '/');
+        const bool unc = base.size() >= 2 && base[0] == '\\' && base[1] == '\\';
+
+        if (!driveRooted && !unc) return false;
+
+        out = body;
+        return true;
+    }
+}
+
+TEST(SubsongUtils, NativePath_StripsFileScheme) {
+    std::string out;
+    EXPECT_TRUE(SubsongUtils_Test::TryMakeNativeMediaPath("file://D:\\Music\\song.flac", out));
+    EXPECT_EQ(out, "D:\\Music\\song.flac");
+}
+
+TEST(SubsongUtils, NativePath_AlreadyNativeIsIdentity) {
+    std::string out;
+    EXPECT_TRUE(SubsongUtils_Test::TryMakeNativeMediaPath("D:\\Music\\song.flac", out));
+    EXPECT_EQ(out, "D:\\Music\\song.flac");
+}
+
+TEST(SubsongUtils, NativePath_KeepsSubsongSuffix) {
+    std::string out;
+    EXPECT_TRUE(SubsongUtils_Test::TryMakeNativeMediaPath("file://D:\\Music\\song.flac|subsong:2", out));
+    EXPECT_EQ(out, "D:\\Music\\song.flac|subsong:2");
+}
+
+TEST(SubsongUtils, NativePath_RejectsThreeSlashUri) {
+    std::string out;
+    EXPECT_FALSE(SubsongUtils_Test::TryMakeNativeMediaPath("file:///D:/Music/song.flac", out));
+}
+
+TEST(SubsongUtils, NativePath_RejectsArchive) {
+    std::string out;
+    EXPECT_FALSE(SubsongUtils_Test::TryMakeNativeMediaPath("archive://D:\\a.zip|/t.flac", out));
+}
+
+TEST(SubsongUtils, NativePath_RejectsUnpack) {
+    std::string out;
+    EXPECT_FALSE(SubsongUtils_Test::TryMakeNativeMediaPath("unpack://zip|0|D:\\a.zip|t.flac", out));
+}
+
+TEST(SubsongUtils, NativePath_RejectsHttp) {
+    std::string out;
+    EXPECT_FALSE(SubsongUtils_Test::TryMakeNativeMediaPath("http://example.com/song.flac", out));
+}
+
+TEST(SubsongUtils, NativePath_RejectsFileRelative) {
+    // LyricsApi and ArtworkApi both branch on this form, so it is a real input.
+    std::string out;
+    EXPECT_FALSE(SubsongUtils_Test::TryMakeNativeMediaPath("file-relative://song.flac", out));
+}
+
+TEST(SubsongUtils, NativePath_RejectsRelative) {
+    std::string out;
+    EXPECT_FALSE(SubsongUtils_Test::TryMakeNativeMediaPath("relative/song.flac", out));
+}
+
+TEST(SubsongUtils, NativePath_AcceptsUnc) {
+    std::string out;
+    EXPECT_TRUE(SubsongUtils_Test::TryMakeNativeMediaPath("\\\\NAS\\share\\song.flac", out));
+    EXPECT_EQ(out, "\\\\NAS\\share\\song.flac");
+}
+
+TEST(SubsongUtils, NativePath_AcceptsFileSchemeUnc) {
+    // get_path() emits this form for network paths.
+    std::string out;
+    EXPECT_TRUE(SubsongUtils_Test::TryMakeNativeMediaPath("file://\\\\NAS\\share\\song.flac", out));
+    EXPECT_EQ(out, "\\\\NAS\\share\\song.flac");
+}
+
+TEST(SubsongUtils, NativePath_RejectsEmpty) {
+    std::string out;
+    EXPECT_FALSE(SubsongUtils_Test::TryMakeNativeMediaPath("", out));
+}
+
+TEST(SubsongUtils, NativePath_SchemeIsCaseSensitive) {
+    // Matches the SDK's strncmp against a lowercase "file://".
+    std::string out;
+    EXPECT_FALSE(SubsongUtils_Test::TryMakeNativeMediaPath("FILE://D:\\Music\\song.flac", out));
+}
+
+TEST(SubsongUtils, NativePath_FeedsMakeSidecarPath) {
+    std::string out;
+    ASSERT_TRUE(SubsongUtils_Test::TryMakeNativeMediaPath("file://D:\\Music\\song.flac", out));
+    EXPECT_EQ(SubsongUtils_Test::MakeSidecarPath(out, L".lrc"), L"D:\\Music\\song.lrc");
+}
+
+TEST(SubsongUtils, NativePath_FeedsMakeSidecarPathWithSubsong) {
+    std::string out;
+    ASSERT_TRUE(SubsongUtils_Test::TryMakeNativeMediaPath("file://D:\\Music\\album.flac|subsong:2", out));
+    EXPECT_EQ(SubsongUtils_Test::MakeSidecarPath(out, L".lrc"), L"D:\\Music\\album.03.lrc");
+}

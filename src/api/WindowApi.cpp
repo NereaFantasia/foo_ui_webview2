@@ -1749,16 +1749,20 @@ json WindowGetDevServerConfig(const json& params) {
 
 
 json WindowSetDevServerConfig(const json& params) {
-    bool useDevServer = params.value("useDevServer", false);
-    std::string devServerUrl = params.value("devServerUrl", "");
-    
-    security_config::SetUseDevServer(useDevServer);
-    security_config::SetDevServerUrl(devServerUrl.c_str());
-    
+    // 两个字段各自独立写入: 省略 devServerUrl 曾经会把已存的地址擦成空串,
+    // 于是「只想打开开关」的调用把下次启动要用的地址一起丢掉了.
+    if (params.contains("useDevServer")) {
+        security_config::SetUseDevServer(params.value("useDevServer", false));
+    }
+    if (params.contains("devServerUrl")) {
+        security_config::SetDevServerUrl(params.value("devServerUrl", "").c_str());
+    }
+
+    // 回读而非回显请求值: 部分更新时未给的那个字段仍要报出真实的当前值.
     return {
         {"success", true},
-        {"useDevServer", useDevServer},
-        {"devServerUrl", devServerUrl}
+        {"useDevServer", security_config::UseDevServer()},
+        {"devServerUrl", security_config::GetDevServerUrl()}
     };
 }
 
@@ -1792,6 +1796,8 @@ json WindowSetZoom(const json& params) {
     }
     
     double zoomFactor = params.value("zoom", 1.0);
+    // 主题接管了这个 WebView 的缩放：偏好页的默认缩放此后不再覆盖它（本进程内有效）。
+    host->MarkZoomOverriddenByTheme();
     HRESULT hr = host->SetZoomFactor(zoomFactor);
     
     return {
@@ -1834,6 +1840,8 @@ json WindowResetZoom(const json& params) {
         return {{"success", false}, {"error", "WebView not available"}};
     }
     
+    // 主题显式要 1.0，同样算接管：偏好里的默认缩放不再推给这个 WebView。
+    host->MarkZoomOverriddenByTheme();
     HRESULT hr = host->SetZoomFactor(1.0);
     
     return {
@@ -1859,6 +1867,7 @@ json WindowSetZoomForDpi(const json& params) {
     }
     if (dpi <= 0) dpi = 96;
     
+    host->MarkZoomOverriddenByTheme();
     HRESULT hr = host->SetZoomForDpi(dpi);
     
     return {

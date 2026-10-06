@@ -5,6 +5,7 @@
 #include <memory>
 #include <string>
 
+#include <WebView2.h>
 #include <wil/com.h>
 
 #include "webview/dnd/DropTargetBridge.h"
@@ -26,17 +27,44 @@ enum class PathsUnavailableReason {
     OriginUntrusted,
 };
 
+// Why the page cannot drag content out to other applications.
+//
+// A separate enum from PathsUnavailableReason on purpose: the two capabilities
+// fail for disjoint sets of causes, and one shared enum would let a value that
+// is meaningless for the other capability be reported for it.
+enum class DragOutUnavailableReason {
+    None,
+    // Standard Controller mode: Chromium owns the drag source and there is no
+    // composition controller to take it over through.
+    NotVisualHosting,
+    // The WebView2 runtime predates ICoreWebView2CompositionController5, so the
+    // drag-start event this feature is built on does not exist.
+    RuntimeTooOld,
+    // Drag-drop registration did not complete, so nothing was probed.
+    RegisterFailed,
+};
+
 struct DndCapabilities {
     bool html5 = false;
     bool paths = false;
     bool visualHosting = false;
     PathsUnavailableReason reason = PathsUnavailableReason::None;
+    // Whether the page may drag content out of the window. Independent of
+    // paths: dragging out needs a runtime feature, while paths needs a trusted
+    // origin, and either can be missing on its own.
+    bool dragOut = false;
+    DragOutUnavailableReason dragOutReason = DragOutUnavailableReason::None;
 };
 
 // The kebab-case name the page sees for a reason, or nullptr when paths are
 // available and there is nothing to explain. Shared so the capability event and
 // the getCapabilities response cannot drift apart.
 const char* ReasonToWire(PathsUnavailableReason reason);
+
+// The kebab-case name the page sees for a drag-out reason, or nullptr when
+// dragging out is available and there is nothing to explain. Shared for the same
+// reason as ReasonToWire above.
+const char* DragOutReasonToWire(DragOutUnavailableReason reason);
 
 // Owns the IDropTarget registered on a host window and the paired teardown.
 //
@@ -95,6 +123,15 @@ private:
     // standard Controller mode.
     void SetFailure(PathsUnavailableReason reason, bool html5);
 
+    // Runs for every drag started inside the WebView, this feature's or not, and
+    // splits them by whether the token carrier is present before considering
+    // whether the token is any good. noexcept because it is called from a
+    // WebView2 event callback.
+    HRESULT OnDragStarting(ICoreWebView2DragStartingEventArgs* args) noexcept;
+
+    // Tells the page a drag out of this window ended without one happening.
+    void EmitDragFailed(const char* code, const char* error) const;
+
     wil::com_ptr<DropTargetBridge> bridge_;
     HWND target_ = nullptr;
     uint64_t generation_ = 0;
@@ -108,6 +145,12 @@ private:
     // property is unreadable every teardown would look foreign and skip the
     // revoke, which is worse than the displacement the comparison guards against.
     bool identityObservable_ = false;
+
+    // The drag-start subscription, kept so teardown can remove it before the
+    // handler's captured this goes away. Set only in Visual Hosting mode on a
+    // runtime new enough to offer the event.
+    wil::com_ptr<ICoreWebView2CompositionController5> dragSource_;
+    EventRegistrationToken dragStartingToken_{};
 };
 
 }  // namespace fb2k_dnd

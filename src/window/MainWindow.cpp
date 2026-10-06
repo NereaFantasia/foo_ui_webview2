@@ -757,7 +757,15 @@ LRESULT MainWindow::HandleMessage(UINT msg, WPARAM wParam, LPARAM lParam) {
                     ExitFullscreenIfActive(hwnd_);
                     return 0;
                 }
-                
+
+                // setResizable(false) 的窗口没有最大化语义（与 WS_MAXIMIZEBOX 被移除一致，
+                // 亦与 PopupWindow::HandleDragAreaMouse 对齐）。HTCAPTION 可能来自 CSS
+                // -webkit-app-region: drag，前端拦不住非客户区消息，必须在此吞掉，
+                // 否则 ShowWindow(SW_MAXIMIZE) 会无视样式位直接放大固定尺寸的窗口。
+                if (!resizable_) {
+                    return 0;
+                }
+
                 if (isMaximized_) {
                     ShowWindow(hwnd_, SW_RESTORE);
                 } else {
@@ -1205,6 +1213,15 @@ LRESULT MainWindow::HandleMessage(UINT msg, WPARAM wParam, LPARAM lParam) {
             // 表面随后仍由 RESTORE_SURFACE_CONVERGE nudge 兜底强制重呈现，防空窗。
             if (wasMinimized) {
                 SetBgSuspend(kBgSuspendMinimized, false, "restore-from-minimize");
+                // "隐藏+最小化"的窗口被 SW_RESTORE / SC_RESTORE 一步恢复到可见时，系统
+                // 不发 WM_SHOWWINDOW(TRUE)（DefWindowProc 内部按 SW_SHOWNORMAL 显示，
+                // 该命令被文档明确排除在 WM_SHOWWINDOW 之外），WM_SHOWWINDOW 里的
+                // kTrayHidden 清除到不了，reasons 会一直挂着 0x8 让页面在可见状态下
+                // 继续被投影成 Low。托盘隐藏现在总是先最小化（见 HideWindowToTray），
+                // 这条已是常规路径，在此补清。窗口尚未真正可见时留给 WM_SHOWWINDOW。
+                if ((bgSuspendReasons_ & kBgSuspendTrayHidden) != 0 && IsWindowVisible(hwnd_)) {
+                    SetBgSuspend(kBgSuspendTrayHidden, false, "restore-from-tray");
+                }
             }
 
             OnSize(LOWORD(lParam), HIWORD(lParam));
@@ -1451,8 +1468,9 @@ LRESULT MainWindow::HandleMessage(UINT msg, WPARAM wParam, LPARAM lParam) {
                         return 0;
                     }
                     else if (msg == WM_LBUTTONDBLCLK) {
-                        // 在拖拽区域内双击，切换最大化状态（全屏时禁用）
-                        if (IsWindowFullscreen()) {
+                        // 在拖拽区域内双击，切换最大化状态（全屏时禁用；
+                        // 不可调整大小的窗口同样没有最大化语义，与 WM_NCLBUTTONDBLCLK 分支一致）
+                        if (IsWindowFullscreen() || !resizable_) {
                             return 0;
                         }
                         if (isMaximized_) {
@@ -1608,10 +1626,32 @@ void MainWindow::HideWindowToTray() {
     // 应用（仅 SW_HIDE 不会让页面 visibilityState=hidden，因 IsVisible 仍 TRUE +
     // occlusion 已禁用）：put_IsVisible(FALSE) → TrySuspend 深挂起（advconfig 关闭
     // 时回退 Low）；CDP 自动化 keep-alive veto 在投影内（托盘期间 CDP 工具须持续可用）。
-    // 恢复路径统一在 WM_SHOWWINDOW(TRUE)（清 kBgSuspendTrayHidden），完整 surface
-    // 收敛由各恢复调用方既有的 RestoreSurfaceAfterHidden 后置调用完成。
+    // WM_SHOWWINDOW(TRUE) 或从最小化恢复的 WM_SIZE 分支清除 kBgSuspendTrayHidden；
+    // 各恢复调用方随后通过 RestoreSurfaceAfterHidden 同步 surface 状态。
     ClearCoverSuspend();
     SetBgSuspend(kBgSuspendTrayHidden, true, "tray-hide");
+    // 投影被否决（CDP keep-alive）时页面保持 IsVisible=TRUE，Visual Hosting 的渲染/输入
+    // 顶层窗（msedgewebview2 的 Chrome_WidgetWin_1）不随宿主 SW_HIDE 消失，会留在原矩形
+    // 拦截桌面鼠标输入。先最小化，让 Chromium 把该窗同步停泊到
+    // (-32000,-32000)，再隐藏；停泊期间仍出帧，CDP 截图不受影响。收 bounds 不可取：
+    // 零视口会停帧，而 keep-alive 存在的目的正是保持出帧。三条恢复路径
+    //（WebViewUI::activate / window.focus / window.restore）都先按 IsIconic 做
+    // SW_RESTORE，能处理"最小化+隐藏"复合态；SaveWindowPosition 按
+    // WPF_RESTORETOMAXIMIZED 保住最大化事实。
+    // 过渡动画临时禁用：隐藏到托盘不该出现"缩进任务栏"的最小化动画。
+    if (!bgSuspendPageHidden_ && webView_ && webView_->IsReady() && !IsIconic(hwnd_)) {
+        constexpr DWORD DWMWA_TRANSITIONS_FORCEDISABLED = 3;
+        BOOL transitionsDisabled = TRUE;
+        S_DwmSetWindowAttribute(hwnd_, DWMWA_TRANSITIONS_FORCEDISABLED,
+            &transitionsDisabled, sizeof(transitionsDisabled));
+        ShowWindow(hwnd_, SW_MINIMIZE);
+        ShowWindow(hwnd_, SW_HIDE);
+        transitionsDisabled = FALSE;
+        S_DwmSetWindowAttribute(hwnd_, DWMWA_TRANSITIONS_FORCEDISABLED,
+            &transitionsDisabled, sizeof(transitionsDisabled));
+        LogSurfaceDiagnostics("HideWindowToTray.parked");
+        return;
+    }
     ShowWindow(hwnd_, SW_HIDE);
 }
 
@@ -3171,6 +3211,9 @@ void MainWindow::TryCommitStartupReveal() {
     SetWindowPos(hwnd_, nullptr, 0, 0, 0, 0,
         SWP_FRAMECHANGED | SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE);
     framelessDwmApplied_ = true;
+    // 记下这次等效于「已按当前 frameless_ 应用过」，供 ApplyFramelessState 的
+    // 守卫比较；不记的话后续真正的 frameless 切换会被误判成重复调用。
+    lastFramelessDwmValue_ = frameless_;
 
     LogSurfaceDiagnostics("ShowWindow.after");
     CaptureRuntimeDomProbe("ShowWindow.after");
@@ -3850,7 +3893,13 @@ void MainWindow::SaveWindowPosition() {
     int y = wp.rcNormalPosition.top;
     int width = wp.rcNormalPosition.right - wp.rcNormalPosition.left;
     int height = wp.rcNormalPosition.bottom - wp.rcNormalPosition.top;
-    bool maximized = (wp.showCmd == SW_SHOWMAXIMIZED) || isMaximized_;
+    // 最小化时 WM_SIZE(SIZE_MINIMIZED) 已把 isMaximized_ 置假、showCmd 变成
+    // SW_SHOWMINIMIZED，最大化事实只剩 WPF_RESTORETOMAXIMIZED 记着。托盘隐藏现在
+    // 会先最小化（见 HideWindowToTray），从托盘退出是常规路径，不读这一位会让
+    // 最大化用户每次从托盘退出后回到普通尺寸。
+    const bool iconic = IsIconic(hwnd_) != FALSE || wp.showCmd == SW_SHOWMINIMIZED;
+    const bool restoresToMaximized = iconic && (wp.flags & WPF_RESTORETOMAXIMIZED) != 0;
+    bool maximized = (wp.showCmd == SW_SHOWMAXIMIZED) || isMaximized_ || restoresToMaximized;
     
     window_config::SetWindowPosition(x, y, width, height, maximized);
     

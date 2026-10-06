@@ -107,6 +107,15 @@ public:
     
     std::optional<json> GetCachedArtists() const;
     void SetCachedArtists(const json& data);
+
+    /**
+     * Artists list with the per-artist `albums` array (library.getArtists
+     * with includeAlbums). Kept as a second slot so the plain variant stays
+     * byte-identical to what it was before the parameter existed; both slots
+     * are filled by the same library scan and cleared by the same Invalidate().
+     */
+    std::optional<json> GetCachedArtistsWithAlbums() const;
+    void SetCachedArtists(const json& data, const json& dataWithAlbums);
     
     std::optional<json> GetCachedGenres() const;
     void SetCachedGenres(const json& data);
@@ -174,6 +183,7 @@ private:
     
     // Aggregate query caches
     std::optional<json> m_artistsCache;
+    std::optional<json> m_artistsWithAlbumsCache;
     std::optional<json> m_genresCache;
     std::optional<json> m_statsCache;
     

@@ -1,6 +1,6 @@
 #pragma once
 // MenuNodeContract.h - unified menu node representation
-// (docs/menu-subsystem/SPEC.md §5). Header-only and free of the foobar2000
+// Header-only and free of the foobar2000
 // SDK, WebView2 and Win32 so GoogleTest drives the SAME production code the
 // API layer runs - not a copy. This mirrors the established pattern in
 // MenuTokenTable.h / MenuResourceLimits.h / TaskbarTrayContracts.h.
@@ -32,7 +32,7 @@ enum class Kind {
 };
 
 // Where a node came from. Retained in the response so callers can reason about
-// capability differences between tiers (SPEC §2.1) instead of guessing.
+// capability differences between tiers instead of guessing.
 enum class Source {
     MainMenuStatic,      // mainmenu_commands slot
     MainMenuDynamic,     // mainmenu_node from dynamic_instantiate()
@@ -40,6 +40,23 @@ enum class Source {
     ContextMenuDynamic,  // contextmenu_item_node subtree
     HmenuFallback,       // walked from a generated Win32 HMENU
 };
+
+// A tree tier walks static slots and the children a dynamic slot expands into
+// through one recursion, so the walker can only be told which menu family it
+// is on. The leaf's own sub-command GUID is what marks a dynamic child; map
+// the family's static value onto its dynamic sibling when that GUID is set.
+// Values that already name a dynamic tier or the HMENU tier pass through.
+inline Source ResolveLeafSource(Source family, bool hasSubGuid) {
+    if (!hasSubGuid) return family;
+    switch (family) {
+        case Source::MainMenuStatic:     return Source::MainMenuDynamic;
+        case Source::ContextMenuStatic:  return Source::ContextMenuDynamic;
+        case Source::MainMenuDynamic:    return family;
+        case Source::ContextMenuDynamic: return family;
+        case Source::HmenuFallback:      return family;
+    }
+    return family;
+}
 
 // ---------------------------------------------------------------------------
 // Raw SDK flag vocabularies
@@ -115,7 +132,7 @@ inline bool ShouldRefuseExecution(ContextEnabledState state, bool force) {
 // `item_get_display_data_root()` takes a `metadb_handle_list`. Reporting a
 // cheerful `enabled: true` for an unqueried item would be indistinguishable
 // from a genuinely enabled one, so the distinction is carried explicitly rather
-// than papered over (SPEC §5.1 fail-loud).
+// than papered over.
 struct State {
     bool enabled = true;
     bool checked = false;
@@ -129,7 +146,7 @@ struct State {
 //
 // `displayReturnedTrue` is the bool result of get_display(); returning false is
 // the SDK's documented way to make a command shortcut-only, so it must be
-// treated as hidden rather than dropped on the floor (SPEC D1).
+// treated as hidden rather than dropped on the floor.
 inline State NormalizeMainMenu(std::uint32_t flags, bool displayReturnedTrue) {
     State s;
     s.flags = flags;
@@ -193,7 +210,7 @@ inline State NormalizeHmenu(std::uint32_t fState) {
 // ---------------------------------------------------------------------------
 
 // Why a node cannot be executed. Emitted alongside a null address so callers
-// never receive a listed-but-unusable entry with no explanation (SPEC D11).
+// never receive a listed-but-unusable entry with no explanation.
 enum class Unaddressable {
     None = 0,
     Separator,           // nothing to invoke
@@ -202,8 +219,8 @@ enum class Unaddressable {
     EmptyNode,           // degenerate registration: no name, no children
 };
 
-// The only stable way to reach a command. Path and label are display-only
-// (SPEC §5.5): name addressing was measured at 22% unreachable and cannot be
+// The only stable way to reach a command. Path and label are display-only:
+// name addressing was measured at 22% unreachable and cannot be
 // fixed by extending an alias table.
 struct Address {
     std::string guid;     // owning command GUID, required
@@ -440,16 +457,15 @@ inline MatchKind ClassifyMatch(std::size_t candidateCount) {
 // ---------------------------------------------------------------------------
 // Traversal limits
 //
-// A single depth cap for every menu walk. The pre-refactor code used three
-// different values (16 / 10 / unbounded), so the same tree was visible to
-// different extents depending on which endpoint you asked (SPEC D13).
+// A single depth cap for every menu walk, so every endpoint sees the same
+// tree to the same extent.
 // ---------------------------------------------------------------------------
 
 inline constexpr int kMaxMenuTreeDepth = 16;
 inline constexpr int kMaxChildrenPerNode = 512;
 
-// Truncation must be reported, never silent: the pre-refactor tree dump capped
-// children at 50 while still reporting the true childCount (SPEC D12).
+// Truncation must be reported explicitly, never left for the caller to infer
+// (for example from a child list shorter than childCount).
 struct Truncation {
     bool depthExceeded = false;
     bool childrenExceeded = false;

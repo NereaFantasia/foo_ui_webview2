@@ -114,6 +114,8 @@ static json TaskbarSetProgress(const json& params) {
     else if (stateStr == "paused")   flag = TBPF_PAUSED;
 
     auto& tb = TaskbarIntegration::GetInstance();
+    // 主题写了进度条就由主题接管，偏好驱动的播放进度到下次播放状态变化前不再覆盖它。
+    tb.NoteThemeProgressOverride();
     bool ok = tb.SetProgressState(flag);
     if (ok && params.contains("value") && params["value"].is_number()) {
         double v = params["value"].get<double>();

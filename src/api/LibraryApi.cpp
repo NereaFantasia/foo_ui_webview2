@@ -17,6 +17,7 @@
 #include "utils/Base64.h"
 #include "utils/JsonWriter.h"
 #include "utils/StringUtils.h"
+#include "utils/SubsongUtils.h"
 
 
 // ============================================
@@ -499,10 +500,10 @@ json LibraryGetCacheStats(const json& params) {
 //
 // 每曲标量的线程放置依据：
 //   · path / absolutePath 留主线程。get_path() 本身可跨线程（location 随 handle
-//     不可变：metadb_handle.h:42-43 的 "valid till the object is released" 加
-//     metadb.h:298 的"一个位置只有一个 handle"），但 absolutePath 要过
+//     不可变：SDK 对 metadb_handle::get_location() 注明 "valid till the object is
+//     released"，metadb.h 也注明"一个位置只有一个 handle"），但 absolutePath 要过
 //     filesystem::g_get_native_path —— 它对非 file:// 路径转派
-//     filesystem_v3::getNativePath（filesystem.cpp:136-156，实现方可以是第三方
+//     filesystem_v3::getNativePath（实现方可以是第三方
 //     插件）且 SDK 无线程标注，本仓库现有调用点全在主线程，无跨线程先例。
 //     absolutePath 既然留主线程，path 顺手一起捕获不额外要钱。
 //   · fileSize 走 get_filestats()（"最近一次"文件状态，是可变态），照 library.getAll
@@ -567,26 +568,8 @@ json MakeQueryWireErrorBody(QueryWireApi api, const char* message) {
           {"total", 0}};
 }
 
-// fields 校验失败的响应体。这条路径随 fields 参数新增，不在"错误形状不变"的回归面
-// 内（那管的是 query 语法错与 search 失败两条既有路径），故两个 API 共用同一形状：
-// ApiEnvelope::MakeError 产出的 success:false 正常响应体 + 机器可读 code，与其余
-// API 的参数错一致。
-//
-// 不用 DeferredResponder::SendError：那是框架错误信封通道（BridgeCore.h:78-82 明文
-// 只给框架兜底用），页面侧收到 error 字段会把 Promise reject 掉
-// （WebViewHost.cpp:794-799），而本仓库所有参数校验失败都是 resolve 出 success:false。
-json MakeTrackFieldsErrorBody(const TrackFieldSelection& fields) {
-  if (fields.unknownFields.empty()) {
-    return ApiEnvelope::MakeError(fields.errorMessage, ApiErrorCode::INVALID_PARAMS);
-  }
-  // 未知名回给调用方：拼写错误不静默丢字段，也不用逐个试
-  json unknown = json::array();
-  for (const std::string& name : fields.unknownFields) {
-    unknown.push_back(name);
-  }
-  return ApiEnvelope::MakeError(fields.errorMessage, ApiErrorCode::INVALID_PARAMS,
-                                {{"unknownFields", unknown}});
-}
+// MakeTrackFieldsErrorBody 已整体搬进 TrackWireSnapshot.h（playlist.getTracks 的 fields
+// 校验要用同一份，匿名 namespace 的内部链接够不着它）；两处调用点不变。
 
 // 一次请求在 worker 段要用的全部输入。用 shared_ptr 传递：rating 兜底会在
 // worker → 主线程 → worker 之间多跳一次，各段必须共享同一份状态。
@@ -828,7 +811,7 @@ void RunQueryWireWorker(const std::shared_ptr<QueryWireRequest>& req,
     // 1. 排序（仅 query 且脚本编译成功）。用 SDK 自己的 sort_by_format_get_order
     //    而不是自算排序键 + std::stable_sort：SDK 的排序键要过 tfhook_sort 与
     //    fb2k::makeSortString、比较走 fb2k::sortStringCompare 且以原下标兜平局
-    //    （metadb_handle_list.cpp:348-487），自算键无法复现同一顺序，而顺序是
+    //    （见 SDK 的 sort_by_format_get_order_v3 实现），自算键无法复现同一顺序，而顺序是
     //    可观测契约。取 get_order 而非就地 reorder，是为了把同一置换套到捕获的
     //    标量上；该函数内部即 queryMultiParallelEx_ + formatTitle_v2，与本管线
     //    其余调用同属已验证可在 worker 跑的那一组。
@@ -867,7 +850,7 @@ void RunQueryWireWorker(const std::shared_ptr<QueryWireRequest>& req,
 
     // 3. 逐曲定下最终生效的 info 容器。rec 里的 info 可能为空（该曲信息未知），
     //    此时退回 get_info_ref()：SDK 明文该简化版永不返回空、可在任意上下文调用
-    //    且无锁语义（metadb_handle.h:126-127 与 108-110），同步版走的就是它，
+    //    且无锁语义（见 SDK 对 get_info_ref 两个重载的注释），同步版走的就是它，
     //    形状因此不变。
     req->infos.assign(count, metadb_info_container::ptr());
     for (size_t i = 0; i < count; ++i) {
@@ -1082,7 +1065,7 @@ void LibrarySearchDeferred(const json& params, const DeferredResponder& responde
       return;
     }
 
-    // rating 未被请求就连脚本都不编译（spec §3.1 语义 3 的按需化）
+    // rating 未被请求就连脚本都不编译
     if (req->fieldMask & TrackField::kRating) {
       static_api_ptr_t<titleformat_compiler>()->compile_safe(req->ratingScript, "%rating%");
     }
@@ -1103,6 +1086,135 @@ void LibrarySearchDeferred(const json& params, const DeferredResponder& responde
 
 // ========== Albums (Enhanced with full metadata + optional cover + caching)
 // ==========
+
+// 下面三个单元由 library.getAlbums 与 library.getArtistAlbums 共用。分组键归
+// 各自的调用点（前者按专辑名加 album artist 的复合键，后者按专辑名），逐轨折叠、
+// 行序列化与排序谓词三件事共用同一份实现，两个端点的行形状因此不会各自漂移。
+
+// 把一条曲目折叠进它所属的专辑聚合。albumName 与 albumArtistResolved 由调用点
+// 传入：调用点构造分组键时已经取过这两个值，传进来才不会让字段查找翻倍。
+// 首轨写入的字段保持"先到先得"，本函数不做任何规范化。
+static void FoldTrackIntoAlbum(const file_info &info,
+                               const metadb_handle_ptr &item,
+                               const char *albumName,
+                               const char *albumArtistResolved,
+                               bool includeTracks, AlbumData &album) {
+  album.name = albumName;
+  album.trackCount++;
+  album.duration += info.get_length();
+
+  // First track path (for cover art)
+  if (album.firstTrackPath.empty()) {
+    album.firstTrackPath = item->get_path();
+  }
+
+  // Album artist
+  if (album.albumArtist.empty() && albumArtistResolved) {
+    album.albumArtist = albumArtistResolved;
+  }
+
+  // Artist (track artist, may differ from album artist)
+  if (album.artist.empty()) {
+    const char *artist = info.meta_get("artist", 0);
+    if (artist)
+      album.artist = artist;
+  }
+
+  // Year
+  if (album.year.empty()) {
+    const char *date = info.meta_get("date", 0);
+    if (date)
+      album.year = date;
+  }
+
+  // Genre
+  if (album.genre.empty()) {
+    const char *genre = info.meta_get("genre", 0);
+    if (genre)
+      album.genre = genre;
+  }
+
+  // Label
+  if (album.label.empty()) {
+    const char *label = info.meta_get("publisher", 0);
+    if (!label)
+      label = info.meta_get("label", 0);
+    if (label)
+      album.label = label;
+  }
+
+  // Disc numbers
+  const char *discNum = info.meta_get("discnumber", 0);
+  if (discNum) {
+    album.discs.insert(atoi(discNum));
+  }
+
+  // Track list (optional)
+  if (includeTracks) {
+    const char *trackNum = info.meta_get("tracknumber", 0);
+    album.tracks.push_back({trackNum ? atoi(trackNum) : 0, item->get_path()});
+  }
+}
+
+// 专辑行的 JSON 形态。coverDataUrl 不在此处出键：只有 getAlbums 需要它，且抽取
+// 成本高，由调用点在 firstTrackPath 非空时自行叠加。
+// g_get_native_path 刻意留在本函数（即每个输出行一次），不要挪进逐轨折叠 ——
+// 那会从"每页至多 limit 次"变成"每张专辑一次"。
+static json BuildAlbumRowJson(const AlbumData &data, bool includeTracks) {
+  json albumJson = {
+      {"name", data.name},
+      {"artist", data.albumArtist.empty() ? data.artist : data.albumArtist},
+      {"albumArtist", data.albumArtist},
+      {"trackCount", data.trackCount},
+      {"discCount", data.discs.empty() ? 1 : data.discs.size()},
+      {"duration", data.duration},
+      {"year", data.year},
+      {"genre", data.genre},
+      {"label", data.label},
+      {"firstTrackPath", data.firstTrackPath}, // For cover art retrieval
+  };
+
+  // Add absolute path for firstTrackPath
+  if (!data.firstTrackPath.empty()) {
+    pfc::string8 nativePath;
+    filesystem::g_get_native_path(data.firstTrackPath.c_str(), nativePath);
+    albumJson["firstTrackAbsolutePath"] = std::string(nativePath.get_ptr());
+  }
+
+  if (includeTracks) {
+    json trackList = json::array();
+    auto sortedTracks = data.tracks;
+    std::sort(sortedTracks.begin(), sortedTracks.end());
+    for (const auto &[num, path] : sortedTracks) {
+      pfc::string8 trackNativePath;
+      filesystem::g_get_native_path(path.c_str(), trackNativePath);
+      trackList.push_back(
+          {{"trackNumber", num},
+           {"path", path},
+           {"absolutePath", std::string(trackNativePath.get_ptr())}});
+    }
+    albumJson["tracks"] = trackList;
+  }
+
+  return albumJson;
+}
+
+// 排序谓词。两个端点共用，故写成命名函数，两处调用点各留一行转发 lambda。
+// 未知 sortBy 落到最后一支，与按名排序等价。
+static bool AlbumLess(const AlbumData &a, const AlbumData &b,
+                      const std::string &sortBy) {
+  if (sortBy == "artist") {
+    std::string aArtist = a.albumArtist.empty() ? a.artist : a.albumArtist;
+    std::string bArtist = b.albumArtist.empty() ? b.artist : b.albumArtist;
+    return aArtist < bArtist;
+  } else if (sortBy == "year") {
+    return a.year > b.year; // Newest first
+  } else if (sortBy == "trackCount") {
+    return a.trackCount > b.trackCount;
+  } else { // name (default)
+    return a.name < b.name;
+  }
+}
 
 json LibraryGetAlbums(const json& params) {
   auto lib = library_manager::get();
@@ -1169,63 +1281,8 @@ json LibraryGetAlbums(const json& params) {
     key += '\0';
     key += (albumArtist ? albumArtist : "");
 
-    auto &album = albumMap[key];
-    album.name = albumName;
-    album.trackCount++;
-    album.duration += info.get_length();
-
-    // First track path (for cover art)
-    if (album.firstTrackPath.empty()) {
-      album.firstTrackPath = item->get_path();
-    }
-
-    // Album artist
-    if (album.albumArtist.empty() && albumArtist) {
-      album.albumArtist = albumArtist;
-    }
-
-    // Artist (track artist, may differ from album artist)
-    if (album.artist.empty()) {
-      const char *artist = info.meta_get("artist", 0);
-      if (artist)
-        album.artist = artist;
-    }
-
-    // Year
-    if (album.year.empty()) {
-      const char *date = info.meta_get("date", 0);
-      if (date)
-        album.year = date;
-    }
-
-    // Genre
-    if (album.genre.empty()) {
-      const char *genre = info.meta_get("genre", 0);
-      if (genre)
-        album.genre = genre;
-    }
-
-    // Label
-    if (album.label.empty()) {
-      const char *label = info.meta_get("publisher", 0);
-      if (!label)
-        label = info.meta_get("label", 0);
-      if (label)
-        album.label = label;
-    }
-
-    // Disc numbers
-    const char *discNum = info.meta_get("discnumber", 0);
-    if (discNum) {
-      album.discs.insert(atoi(discNum));
-    }
-
-    // Track list (optional)
-    if (includeTracks) {
-      const char *trackNum = info.meta_get("tracknumber", 0);
-      album.tracks.push_back(
-          {trackNum ? atoi(trackNum) : 0, item->get_path()});
-    }
+    FoldTrackIntoAlbum(info, item, albumName, albumArtist, includeTracks,
+                       albumMap[key]);
   }
 
   // Filter by query if provided
@@ -1253,20 +1310,10 @@ json LibraryGetAlbums(const json& params) {
   }
 
   // Sort
-  auto sortFunc = [&sortBy](const AlbumData &a, const AlbumData &b) -> bool {
-    if (sortBy == "artist") {
-      std::string aArtist = a.albumArtist.empty() ? a.artist : a.albumArtist;
-      std::string bArtist = b.albumArtist.empty() ? b.artist : b.albumArtist;
-      return aArtist < bArtist;
-    } else if (sortBy == "year") {
-      return a.year > b.year; // Newest first
-    } else if (sortBy == "trackCount") {
-      return a.trackCount > b.trackCount;
-    } else { // name (default)
-      return a.name < b.name;
-    }
-  };
-  std::sort(filteredAlbums.begin(), filteredAlbums.end(), sortFunc);
+  std::sort(filteredAlbums.begin(), filteredAlbums.end(),
+            [&sortBy](const AlbumData &a, const AlbumData &b) {
+              return AlbumLess(a, b, sortBy);
+            });
 
   // Pagination
   size_t total = filteredAlbums.size();
@@ -1276,51 +1323,18 @@ json LibraryGetAlbums(const json& params) {
   json albums = json::array();
   for (size_t i = offset; i < endIdx; i++) {
     const auto &data = filteredAlbums[i];
-    json albumJson = {
-        {"name", data.name},
-        {"artist", data.albumArtist.empty() ? data.artist : data.albumArtist},
-        {"albumArtist", data.albumArtist},
-        {"trackCount", data.trackCount},
-        {"discCount", data.discs.empty() ? 1 : data.discs.size()},
-        {"duration", data.duration},
-        {"year", data.year},
-        {"genre", data.genre},
-        {"label", data.label},
-        {"firstTrackPath", data.firstTrackPath}, // For cover art retrieval
-    };
+    // 行整条 push 进数组，不经 json 局部变量中转：后者会让 schema 抽取器把行内
+    // 的键当成本 API 的顶层响应键平铺进去。与 tracks.push_back(
+    // GetLibraryTrackInfo(...)) 的既有写法一致。
+    albums.push_back(BuildAlbumRowJson(data, includeTracks));
 
-    // Add absolute path for firstTrackPath
-    if (!data.firstTrackPath.empty()) {
-      pfc::string8 nativePath;
-      filesystem::g_get_native_path(data.firstTrackPath.c_str(), nativePath);
-      albumJson["firstTrackAbsolutePath"] = std::string(nativePath.get_ptr());
-
-      // NEW: Include cover art data URL if requested
-      if (includeCover) {
-        std::string coverDataUrl =
-            GetCoverDataUrl(data.firstTrackPath, coverMaxSize);
-        if (!coverDataUrl.empty()) {
-          albumJson["coverDataUrl"] = coverDataUrl;
-        }
+    if (includeCover && !data.firstTrackPath.empty()) {
+      std::string coverDataUrl =
+          GetCoverDataUrl(data.firstTrackPath, coverMaxSize);
+      if (!coverDataUrl.empty()) {
+        albums.back()["coverDataUrl"] = coverDataUrl;
       }
     }
-
-    if (includeTracks) {
-      json trackList = json::array();
-      auto sortedTracks = data.tracks;
-      std::sort(sortedTracks.begin(), sortedTracks.end());
-      for (const auto &[num, path] : sortedTracks) {
-        pfc::string8 trackNativePath;
-        filesystem::g_get_native_path(path.c_str(), trackNativePath);
-        trackList.push_back(
-            {{"trackNumber", num},
-             {"path", path},
-             {"absolutePath", std::string(trackNativePath.get_ptr())}});
-      }
-      albumJson["tracks"] = trackList;
-    }
-
-    albums.push_back(albumJson);
   }
 
   json result = {{"albums", albums},          {"total", total},
@@ -1347,9 +1361,14 @@ json LibraryGetArtists(const json& params) {
 
   std::string sortBy = params.value("sort", "name");
   size_t limit = params.value("limit", static_cast<size_t>(1000));
+  // includeAlbums：每个条目多带一个 albums 数组，列出该艺术家署名过的专辑。两种
+  // 形态在同一遍扫描里一起算好、分两份缓存，缺省 false 的响应因此与加参数前逐键
+  // 相同；limit 只截艺术家条目，不截每位的 albums。
+  bool includeAlbums = params.value("includeAlbums", false);
 
   // 尝试缓存
-  auto cached = g_LibraryCache.GetCachedArtists();
+  auto cached = includeAlbums ? g_LibraryCache.GetCachedArtistsWithAlbums()
+                              : g_LibraryCache.GetCachedArtists();
   json artists;
   if (cached.has_value()) {
     artists = cached.value();
@@ -1360,6 +1379,10 @@ json LibraryGetArtists(const json& params) {
     struct ArtistData {
       std::string name;
       std::set<std::string> albums;
+      // 专辑身份 (专辑名, 专辑艺术家)，与 getAlbums 的分组键同口径：album artist
+      // 首值，缺则 artist 首值。同名不同艺术家的两张专辑在这里是两条，在 albums
+      // （只按名去重，供 albumCount）里是一条。
+      std::set<std::pair<std::string, std::string>> albumKeys;
       size_t trackCount = 0;
       double totalDuration = 0;
     };
@@ -1376,6 +1399,17 @@ json LibraryGetArtists(const json& params) {
         continue;
       const file_info& info = infoContainer->info();
 
+      // 专辑名与专辑艺术家按曲目取一次，再折进每位署名艺术家。无 album 标签的
+      // 曲目不计专辑，与 getAlbums 跳过它们一致。
+      const char *album = info.meta_get("album", 0);
+      const bool hasAlbum = album && strlen(album) > 0;
+      const char *albumArtist = nullptr;
+      if (hasAlbum) {
+        albumArtist = info.meta_get("album artist", 0);
+        if (!albumArtist)
+          albumArtist = info.meta_get("artist", 0);
+      }
+
       // 按值遍历：多值 artist 的每个值各成一个条目，曲目计进每一位参与者
       for (const auto &artistName : MetaValues(info, "artist")) {
         auto &artist = artistMap[artistName];
@@ -1383,25 +1417,37 @@ json LibraryGetArtists(const json& params) {
         artist.trackCount++;
         artist.totalDuration += info.get_length();
 
-        const char *album = info.meta_get("album", 0);
-        if (album && strlen(album) > 0) {
+        if (hasAlbum) {
           artist.albums.insert(album);
+          artist.albumKeys.emplace(album, albumArtist ? albumArtist : "");
         }
       }
     }
 
     artists = json::array();
+    json artistsWithAlbums = json::array();
     for (const auto &[key, data] : artistMap) {
-      artists.push_back({
+      json row = {
           {"name", data.name},
           {"albumCount", data.albums.size()},
           {"trackCount", data.trackCount},
           {"totalDuration", data.totalDuration},
-      });
+      };
+      artists.push_back(row);
+
+      // std::set 按 (name, artist) 字节序遍历，albums 的顺序因此可复现
+      json albumRows = json::array();
+      for (const auto &[albumName, albumArtistName] : data.albumKeys) {
+        albumRows.push_back({{"name", albumName}, {"artist", albumArtistName}});
+      }
+      row["albums"] = std::move(albumRows);
+      artistsWithAlbums.push_back(std::move(row));
     }
 
-    // 缓存未排序的完整结果
-    g_LibraryCache.SetCachedArtists(artists);
+    // 缓存未排序的完整结果，两种形态各一份；library.invalidateCache 一并作废
+    g_LibraryCache.SetCachedArtists(artists, artistsWithAlbums);
+    if (includeAlbums)
+      artists = std::move(artistsWithAlbums);
   }
 
   // Sort
@@ -1492,6 +1538,38 @@ json LibraryGetGenres(const json& params) {
 }
 
 
+// ========== 精确匹配的两个共享单元 ==========
+//
+// 宿主的 search_filter 不能单独用来做精确匹配。实机测得两类偏差，方向相反：
+//
+//   过宽 —— 星号与问号是通配符（"Camelli?" 会命中 Camellia），且查询里的小写
+//           字符可匹配标签任意大小写、大写字符才要求同位大写（查 "alinut" 会
+//           带回 "Alinut" 的曲目）。这部分由 MatchesAtomicValue 在命中行上收回。
+//
+//   过窄 —— 双引号在查询串里无法表达。把引号翻倍的写法宿主不接受，含引号的
+//           名字一条都命中不了，后置校验也就无从收起，只能整个跳过预筛、让
+//           全库进后置校验。
+//
+// 两者都不能靠改转义解决：查询语法没有任何转义手段，反斜杠、脱字符、方括号、
+// 单引号实测全部零命中。查询因此降级为纯性能预筛，判据以后置校验为准。
+
+// 精确匹配的唯一判据：某个原子标签值与目标逐字节相等。刻意与 getArtists 的
+// 条目口径同源（同样走 MetaValues），保证那边给出的名字回传后语义闭合。
+static bool MatchesAtomicValue(const file_info& info, const char* field,
+                               const std::string& wanted) {
+  const std::vector<std::string> values = MetaValues(info, field);
+  return std::find(values.begin(), values.end(), wanted) != values.end();
+}
+
+// 能安全嵌进查询串的值才回内容，含双引号的回空——调用方据此跳过预筛。
+// field 由调用方给出，需要引号的字段名（如 "album artist"）自带引号传入。
+static std::optional<std::string> BuildValueQuery(const char* field,
+                                                  const char* op,
+                                                  const std::string& value) {
+  if (value.find('"') != std::string::npos) return std::nullopt;
+  return std::string(field) + " " + op + " \"" + value + "\"";
+}
+
 // ========== Album Tracks ==========
 
 json LibraryGetAlbumTracks(const json& params) {
@@ -1516,33 +1594,32 @@ json LibraryGetAlbumTracks(const json& params) {
   }
 
   try {
-    // 使用 search_filter 替代全量逐条遍历
-    auto escapeQuery = [](const std::string& s) -> std::string {
-      std::string result;
-      result.reserve(s.size());
-      for (char c : s) {
-        if (c == '"') result += "\"\"";
-        else result += c;
-      }
-      return result;
-    };
-
-    std::string query = "album IS \"" + escapeQuery(albumName) + "\"";
-    if (!artistName.empty()) {
-      query += " AND (\"album artist\" IS \"" + escapeQuery(artistName)
-             + "\" OR artist IS \"" + escapeQuery(artistName) + "\")";
+    // 查询只作性能预筛，判据在下面的后置校验；含双引号的名字表达不出来，
+    // 那种情形直接放弃预筛、全库进后置校验。
+    std::optional<std::string> query = BuildValueQuery("album", "IS", albumName);
+    if (query && !artistName.empty()) {
+      const auto byAlbumArtist =
+          BuildValueQuery("\"album artist\"", "IS", artistName);
+      const auto byArtist = BuildValueQuery("artist", "IS", artistName);
+      if (byAlbumArtist && byArtist)
+        *query += " AND (" + *byAlbumArtist + " OR " + *byArtist + ")";
+      else
+        query.reset();
     }
-
-    search_filter_v2::ptr filter = search_filter_manager_v2::get()->create_ex(
-        query.c_str(), fb2k::service_new<completion_notify_dummy>(),
-        search_filter_manager_v2::KFlagSuppressNotify);
 
     metadb_handle_list allItems;
     lib->get_all_items(allItems);
 
     pfc::array_t<bool> mask;
     mask.set_size(allItems.get_count());
-    filter->test_multi(allItems, mask.get_ptr());
+    if (query) {
+      search_filter_v2::ptr filter = search_filter_manager_v2::get()->create_ex(
+          query->c_str(), fb2k::service_new<completion_notify_dummy>(),
+          search_filter_manager_v2::KFlagSuppressNotify);
+      filter->test_multi(allItems, mask.get_ptr());
+    } else {
+      for (size_t i = 0; i < allItems.get_count(); i++) mask[i] = true;
+    }
 
     // 收集匹配的曲目并按曲目号排序
     std::vector<std::pair<metadb_handle_ptr, int>> matchingTracks;
@@ -1550,12 +1627,21 @@ json LibraryGetAlbumTracks(const json& params) {
     for (size_t i = 0; i < allItems.get_count(); i++) {
       if (!mask[i]) continue;
 
-      int trackNum = 0;
       metadb_info_container::ptr infoContainer = allItems[i]->get_info_ref();
-      if (infoContainer.is_valid()) {
-        const char* trackNumStr = infoContainer->info().meta_get("tracknumber", 0);
-        if (trackNumStr) trackNum = atoi(trackNumStr);
-      }
+      if (!infoContainer.is_valid()) continue;
+      const file_info& info = infoContainer->info();
+
+      // 后置精确校验：专辑名必须逐字节相等；给了 artist 时它还要命中该曲目的
+      // album artist 或 artist 之一，与原查询的 OR 分支同义。
+      if (!MatchesAtomicValue(info, "album", albumName)) continue;
+      if (!artistName.empty() &&
+          !MatchesAtomicValue(info, "album artist", artistName) &&
+          !MatchesAtomicValue(info, "artist", artistName))
+        continue;
+
+      int trackNum = 0;
+      const char* trackNumStr = info.meta_get("tracknumber", 0);
+      if (trackNumStr) trackNum = atoi(trackNumStr);
       matchingTracks.push_back({allItems[i], trackNum});
     }
 
@@ -1599,34 +1685,36 @@ json LibraryGetArtistTracks(const json& params) {
   }
 
   try {
-    // 使用 search_filter 替代全量逐条遍历
-    auto escapeQuery = [](const std::string& s) -> std::string {
-      std::string result;
-      result.reserve(s.size());
-      for (char c : s) {
-        if (c == '"') result += "\"\"";
-        else result += c;
-      }
-      return result;
-    };
-
-    std::string query = "artist IS \"" + escapeQuery(artistName) + "\"";
-
-    search_filter_v2::ptr filter = search_filter_manager_v2::get()->create_ex(
-        query.c_str(), fb2k::service_new<completion_notify_dummy>(),
-        search_filter_manager_v2::KFlagSuppressNotify);
+    // 查询只作性能预筛，判据在下面的后置校验。
+    const std::optional<std::string> query =
+        BuildValueQuery("artist", "IS", artistName);
 
     metadb_handle_list allItems;
     lib->get_all_items(allItems);
 
     pfc::array_t<bool> mask;
     mask.set_size(allItems.get_count());
-    filter->test_multi(allItems, mask.get_ptr());
+    if (query) {
+      search_filter_v2::ptr filter = search_filter_manager_v2::get()->create_ex(
+          query->c_str(), fb2k::service_new<completion_notify_dummy>(),
+          search_filter_manager_v2::KFlagSuppressNotify);
+      filter->test_multi(allItems, mask.get_ptr());
+    } else {
+      for (size_t i = 0; i < allItems.get_count(); i++) mask[i] = true;
+    }
 
     json tracks = json::array();
     size_t count = 0;
     for (size_t i = 0; i < allItems.get_count() && count < limit; i++) {
       if (!mask[i]) continue;
+
+      // 取不到 file_info 的曲目一并排除：那种情形下 GetLibraryTrackInfo 只能
+      // 发一行 artist 为空串的降级信息，放进"精确匹配"的结果里名不副实。
+      metadb_info_container::ptr infoContainer = allItems[i]->get_info_ref();
+      if (!infoContainer.is_valid()) continue;
+      if (!MatchesAtomicValue(infoContainer->info(), "artist", artistName))
+        continue;
+
       tracks.push_back(GetLibraryTrackInfo(allItems[i], count));
       count++;
     }
@@ -1719,14 +1807,14 @@ json LibraryAddToPlaylist(const json& params) {
     return {{"success", false}, {"error", "Invalid playlist index"}};
   }
 
-  // Resolve paths to handles
+  // Resolve paths to handles. Accepts the repo-wide `path|subsong:N` spelling
+  // and canonicalizes, so items land with the same identity the library /
+  // playlist views already report for them.
   metadb_handle_list handles;
-  auto metadb = metadb::get();
 
   for (const auto &pathJson : paths) {
-    std::string path = pathJson.get<std::string>();
-    metadb_handle_ptr handle;
-    metadb->handle_create(handle, make_playable_location(path.c_str(), 0));
+    auto [filePath, subsong] = SubsongUtils::ParseSubsongPath(pathJson.get<std::string>());
+    metadb_handle_ptr handle = SubsongUtils::CreateCanonicalHandle(filePath, subsong);
     if (handle.is_valid()) {
       handles.add_item(handle);
     }
@@ -1750,47 +1838,96 @@ json LibraryAddToPlaylist(const json& params) {
 // ========== Extended Library APIs ==========
 
 // library.getArtistAlbums - Get all albums for a specific artist
+//
+// 行形状与 library.getAlbums 逐键同构（共用 BuildAlbumRowJson），差别有三处，
+// 都是刻意保留的：分组键是纯专辑名而非「专辑名 + album artist」复合键，故同名
+// 不同艺术家的专辑在本端点会合并；album 标签缺失的曲目归入 "(Unknown Album)"
+// 而 getAlbums 直接跳过；album 标签存在但值为空串时本端点归入名为空串的分组，
+// getAlbums 同样跳过。
+//
+// 另有一处同名不同义：行内的 trackCount / duration / discCount 只累加该艺术家
+// 参与的曲目（折叠只对 mask 命中项调用），而 getAlbums 遍历全库、算的是整张
+// 专辑。消费方拿本端点的行当专辑卡渲染会显示偏小的数字，故双语文档与 SDK
+// JSDoc 都必须点明这条。
+//
+// 全部失败路径都出 albums 键（空数组）：SDK 的 LibraryArtistAlbumsResponse
+// 把 albums 声明为必填，缺键会让 const { albums } = ... 拿到 undefined 而
+// 类型层不给任何警告。
 json LibraryGetArtistAlbums(const json& params) {
-  std::string artist = params.value("artist", "");
-  size_t limit = params.value("limit", static_cast<size_t>(100));
+  std::string artist;
+  size_t limit = 100;
+  std::string sortBy = "name";
+  std::string match = "exact";
+
+  // 参数取值单独收在一个 try 里：params.value 对类型不符的实参会抛
+  // （{match: null} 抛 type_error.302），落到框架顶层就成了 INTERNAL_ERROR
+  // 信封，与本函数其余失败路径的形状不一致。
+  try {
+    artist = params.value("artist", "");
+    limit = params.value("limit", static_cast<size_t>(100));
+    sortBy = params.value("sort", "name");
+    match = params.value("match", "exact");
+  } catch (...) {
+    return {{"success", false},
+            {"error", "artist, limit, sort and match must match their declared types"},
+            {"albums", json::array()}};
+  }
 
   if (artist.empty()) {
-    return {{"success", false}, {"error", "artist is required"}};
+    return {{"success", false},
+            {"error", "artist is required"},
+            {"albums", json::array()}};
+  }
+  if (match != "exact" && match != "substring") {
+    return {{"success", false},
+            {"error", "match must be 'exact' or 'substring'"},
+            {"albums", json::array()}};
   }
 
   auto lib = library_manager::get();
   if (!lib->is_library_enabled()) {
-    return {{"success", false}, {"error", "Library not enabled"}};
+    return {{"success", false},
+            {"error", "Library not enabled"},
+            {"albums", json::array()}};
   }
 
   try {
-    // 使用 search_filter 预筛选，减少手动遍历量
-    auto escapeQuery = [](const std::string& s) -> std::string {
-      std::string result;
-      result.reserve(s.size());
-      for (char c : s) {
-        if (c == '"') result += "\"\"";
-        else result += c;
-      }
-      return result;
-    };
+    // 默认精确匹配：fb2k 的查询引擎按原子值比较，所以 getArtists 给出的条目名
+    // 直接就能命中多值 artist 的非首位值。match: 'substring' 走 HAS 的子串匹配，
+    // 保留旧行为，代价是短名与互为子串的艺术家名会串台。
+    const bool exact = (match != "substring");
+    const std::optional<std::string> query =
+        BuildValueQuery("artist", exact ? "IS" : "HAS", artist);
 
-    // HAS 做子串匹配，与原代码 find() 语义一致
-    std::string query = "artist HAS \"" + escapeQuery(artist) + "\"";
-
-    search_filter_v2::ptr filter = search_filter_manager_v2::get()->create_ex(
-        query.c_str(), fb2k::service_new<completion_notify_dummy>(),
-        search_filter_manager_v2::KFlagSuppressNotify);
+    // substring 分支没有后置校验，跳过预筛就等于返回全库。含双引号的名字在这
+    // 条路径上表达不出来，只能照旧回空集——与改动前的可观察行为一致。
+    if (!query && !exact) {
+      // total 写成 size_t 而不是字面量 0：schema 抽取器按实参类型定宽，混进一个
+      // int 字面量会把生成层 total 的 int64 标注抹掉。
+      return {{"success", true},
+              {"artist", artist},
+              {"albums", json::array()},
+              {"total", static_cast<size_t>(0)},
+              {"hasMore", false}};
+    }
 
     metadb_handle_list allItems;
     lib->get_all_items(allItems);
 
     pfc::array_t<bool> mask;
     mask.set_size(allItems.get_count());
-    filter->test_multi(allItems, mask.get_ptr());
+    if (query) {
+      search_filter_v2::ptr filter = search_filter_manager_v2::get()->create_ex(
+          query->c_str(), fb2k::service_new<completion_notify_dummy>(),
+          search_filter_manager_v2::KFlagSuppressNotify);
+      filter->test_multi(allItems, mask.get_ptr());
+    } else {
+      for (size_t i = 0; i < allItems.get_count(); i++) mask[i] = true;
+    }
 
-    // 对匹配结果按 album 分组
-    std::map<std::string, json> albumMap;
+    // 对匹配结果按 album 分组。全量聚合完再截断到 limit —— 中途 break 会让已收
+    // 集专辑的 trackCount 停在半路，触顶时系统性偏低。
+    std::map<std::string, AlbumData> albumMap;
 
     for (size_t i = 0; i < allItems.get_count(); i++) {
       if (!mask[i]) continue;
@@ -1799,32 +1936,51 @@ json LibraryGetArtistAlbums(const json& params) {
       if (!infoContainer.is_valid()) continue;
       const file_info& info = infoContainer->info();
 
-      const char* trackArtist = info.meta_get("artist", 0);
+      // 后置精确校验只加在 exact 分支上；substring 的语义就是宿主的包含匹配，
+      // 收严会把它变成另一个契约。
+      if (exact && !MatchesAtomicValue(info, "artist", artist)) continue;
+
       const char* album = info.meta_get("album", 0);
       std::string albumName = album ? album : "(Unknown Album)";
 
-      if (albumMap.find(albumName) == albumMap.end()) {
-        const char* year = info.meta_get("date", 0);
-        albumMap[albumName] = {{"name", albumName},
-                               {"artist", trackArtist ? trackArtist : ""},
-                               {"year", year ? year : ""},
-                               {"trackCount", 1}};
-      } else {
-        albumMap[albumName]["trackCount"] =
-            albumMap[albumName]["trackCount"].get<int>() + 1;
-      }
+      const char* albumArtist = info.meta_get("album artist", 0);
+      if (!albumArtist)
+        albumArtist = info.meta_get("artist", 0);
 
-      if (albumMap.size() >= limit) break;
+      FoldTrackIntoAlbum(info, allItems[i], albumName.c_str(), albumArtist,
+                         false, albumMap[albumName]);
     }
+
+    std::vector<AlbumData> rows;
+    rows.reserve(albumMap.size());
+    for (const auto& [name, data] : albumMap) {
+      rows.push_back(data);
+    }
+
+    std::sort(rows.begin(), rows.end(),
+              [&sortBy](const AlbumData &a, const AlbumData &b) {
+                return AlbumLess(a, b, sortBy);
+              });
+
+    size_t total = rows.size();
+    size_t endIdx = std::min(limit, total);
 
     json albums = json::array();
-    for (auto& [name, album] : albumMap) {
-      albums.push_back(album);
+    for (size_t i = 0; i < endIdx; i++) {
+      // 与 getAlbums 同一条约束：行整条 push，不经 json 局部变量中转，否则
+      // schema 抽取器会把行内的键平铺进本 API 的顶层响应类型。
+      albums.push_back(BuildAlbumRowJson(rows[i], false));
     }
 
-    return {{"success", true}, {"albums", albums}};
+    return {{"success", true},
+            {"artist", artist},
+            {"albums", albums},
+            {"total", total},
+            {"hasMore", endIdx < total}};
   } catch (...) {
-    return {{"success", false}, {"error", "Search failed"}};
+    return {{"success", false},
+            {"error", "Search failed"},
+            {"albums", json::array()}};
   }
 }
 
@@ -2044,8 +2200,8 @@ void LibraryQueryDeferred(const json& params, const DeferredResponder& responder
     req->fieldMask = fields.mask;
     req->projected = fields.projected;
 
-    // 脚本一律在主线程编译（titleformat 编译的主线程口径见 titleformat.h:245-253
-    // 的 titleformat_object_cache 断言），worker 只负责求值。compile 失败 = 忽略
+    // 脚本一律在主线程编译（titleformat 编译的主线程口径见 SDK
+    // titleformat_object_cache 里的断言），worker 只负责求值。compile 失败 = 忽略
     // 排序继续，与同步版一致。sort 与 fields 互不相干：排序键是调用方给的
     // titleformat 串，不受投影字段集影响（排序仍在截 limit 之前）。
     if (!sortBy.empty()) {
@@ -2055,7 +2211,7 @@ void LibraryQueryDeferred(const json& params, const DeferredResponder& responder
         req->sortScript = script;
       }
     }
-    // rating 未被请求就连脚本都不编译（spec §3.1 语义 3 的按需化）
+    // rating 未被请求就连脚本都不编译
     if (req->fieldMask & TrackField::kRating) {
       static_api_ptr_t<titleformat_compiler>()->compile_safe(req->ratingScript, "%rating%");
     }

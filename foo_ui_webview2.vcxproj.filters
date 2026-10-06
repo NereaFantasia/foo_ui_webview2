@@ -81,6 +81,27 @@
     <ClCompile Include="src\api\AsyncOperationRegistry.cpp">
       <Filter>src\api</Filter>
     </ClCompile>
+    <ClCompile Include="src\api\QueueRebuildPlan.cpp">
+      <Filter>src\api</Filter>
+    </ClCompile>
+    <ClCompile Include="src\api\GroupRunPlan.cpp">
+      <Filter>src\api</Filter>
+    </ClCompile>
+    <ClCompile Include="src\api\SpectrumBands.cpp">
+      <Filter>src\api</Filter>
+    </ClCompile>
+    <ClCompile Include="src\api\SpectrumSchedule.cpp">
+      <Filter>src\api</Filter>
+    </ClCompile>
+    <ClCompile Include="src\api\LiveWaveform.cpp">
+      <Filter>src\api</Filter>
+    </ClCompile>
+    <ClCompile Include="src\api\WaveformAccumulator.cpp">
+      <Filter>src\api</Filter>
+    </ClCompile>
+    <ClCompile Include="src\api\WaveformTaskQueue.cpp">
+      <Filter>src\api</Filter>
+    </ClCompile>
     <ClCompile Include="src\webview\dnd\DropEffectPolicy.cpp">
       <Filter>src\webview\dnd</Filter>
     </ClCompile>
@@ -88,6 +109,18 @@
       <Filter>src\webview\dnd</Filter>
     </ClCompile>
     <ClCompile Include="src\webview\dnd\DndOriginPolicy.cpp">
+      <Filter>src\webview\dnd</Filter>
+    </ClCompile>
+    <ClCompile Include="src\webview\dnd\DragOutPathPolicy.cpp">
+      <Filter>src\webview\dnd</Filter>
+    </ClCompile>
+    <ClCompile Include="src\webview\dnd\HdropBuilder.cpp">
+      <Filter>src\webview\dnd</Filter>
+    </ClCompile>
+    <ClCompile Include="src\webview\dnd\DragTokenStore.cpp">
+      <Filter>src\webview\dnd</Filter>
+    </ClCompile>
+    <ClCompile Include="src\webview\dnd\DragOutTokens.cpp">
       <Filter>src\webview\dnd</Filter>
     </ClCompile>
     <ClCompile Include="src\webview\dnd\DropTargetBridge.cpp">
@@ -140,6 +173,12 @@
     <ClInclude Include="src\utils\PlaylistFormatUtils.h">
       <Filter>src\utils</Filter>
     </ClInclude>
+    <ClInclude Include="src\utils\CanonicalHandle.h">
+      <Filter>src\utils</Filter>
+    </ClInclude>
+    <ClInclude Include="src\utils\WaveformCacheKey.h">
+      <Filter>src\utils</Filter>
+    </ClInclude>
     <ClInclude Include="src\window\PopupWindow.h">
       <Filter>src\window</Filter>
     </ClInclude>
@@ -173,6 +212,30 @@
     <ClInclude Include="src\api\AsyncOperationRegistry.h">
       <Filter>src\api</Filter>
     </ClInclude>
+    <ClInclude Include="src\api\ProbeFailureClassifier.h">
+      <Filter>src\api</Filter>
+    </ClInclude>
+    <ClInclude Include="src\api\QueueRebuildPlan.h">
+      <Filter>src\api</Filter>
+    </ClInclude>
+    <ClInclude Include="src\api\GroupRunPlan.h">
+      <Filter>src\api</Filter>
+    </ClInclude>
+    <ClInclude Include="src\api\SpectrumBands.h">
+      <Filter>src\api</Filter>
+    </ClInclude>
+    <ClInclude Include="src\api\SpectrumSchedule.h">
+      <Filter>src\api</Filter>
+    </ClInclude>
+    <ClInclude Include="src\api\LiveWaveform.h">
+      <Filter>src\api</Filter>
+    </ClInclude>
+    <ClInclude Include="src\api\WaveformAccumulator.h">
+      <Filter>src\api</Filter>
+    </ClInclude>
+    <ClInclude Include="src\api\WaveformTaskQueue.h">
+      <Filter>src\api</Filter>
+    </ClInclude>
     <ClInclude Include="src\webview\dnd\DropEffectPolicy.h">
       <Filter>src\webview\dnd</Filter>
     </ClInclude>
@@ -180,6 +243,18 @@
       <Filter>src\webview\dnd</Filter>
     </ClInclude>
     <ClInclude Include="src\webview\dnd\DndOriginPolicy.h">
+      <Filter>src\webview\dnd</Filter>
+    </ClInclude>
+    <ClInclude Include="src\webview\dnd\DragOutPathPolicy.h">
+      <Filter>src\webview\dnd</Filter>
+    </ClInclude>
+    <ClInclude Include="src\webview\dnd\HdropBuilder.h">
+      <Filter>src\webview\dnd</Filter>
+    </ClInclude>
+    <ClInclude Include="src\webview\dnd\DragTokenStore.h">
+      <Filter>src\webview\dnd</Filter>
+    </ClInclude>
+    <ClInclude Include="src\webview\dnd\DragOutTokens.h">
       <Filter>src\webview\dnd</Filter>
     </ClInclude>
     <ClInclude Include="src\webview\dnd\IDropTargetDelegate.h">
@@ -207,6 +282,9 @@
       <Filter>src\webview</Filter>
     </ClInclude>
     <ClInclude Include="src\webview\ArtworkWorkerQueue.h">
+      <Filter>src\webview</Filter>
+    </ClInclude>
+    <ClInclude Include="src\webview\ScaledArtworkCache.h">
       <Filter>src\webview</Filter>
     </ClInclude>
   </ItemGroup>

@@ -41,8 +41,12 @@ namespace ApiErrorCode {
     constexpr const char* LIBRARY_DISABLED  = "LIBRARY_DISABLED";   // library not enabled
     constexpr const char* NO_ACTIVE_ITEM    = "NO_ACTIVE_ITEM";     // no active playlist/track
 
+    // --- Origin / caller trust ---
+    constexpr const char* ORIGIN_DENIED     = "ORIGIN_DENIED";      // document origin not trusted for this capability
+
     // --- Operation failures ---
     constexpr const char* OPERATION_FAILED  = "OPERATION_FAILED";   // generic operation failure
+    constexpr const char* CANCELLED         = "CANCELLED";          // async task cancelled by its caller
 
     // --- Path/media related (existing in AudioApi) ---
     constexpr const char* MISSING_PATH      = "MISSING_PATH";

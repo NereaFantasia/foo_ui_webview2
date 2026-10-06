@@ -62,4 +62,13 @@ namespace ApiLimits {
     // dialog ("The file name is too long" / "参数过长") that bypasses
     // plugin-level error handling.
     constexpr size_t MAX_STREAM_URL_LENGTH = 2048;
+
+    // Upper bound on the `items` array accepted by queue.setContents, only
+    // enforced when it also exceeds the live queue_get_count(). Aligned with the
+    // measured fb2k core playback-queue hard cap (256, undocumented in the
+    // SDK; verified 2026-08-29): rejecting above-cap requests before the
+    // flush avoids "count mismatch after write" failures that would leave
+    // the queue modified. If a future fb2k version raises the cap, oversize
+    // rebuilds degrade to an honest count-mismatch failure.
+    constexpr size_t MAX_QUEUE_ITEMS = 256;
 }

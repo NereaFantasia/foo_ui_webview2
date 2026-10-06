@@ -2,7 +2,7 @@
     var layers = [];   // index=depth: {el, rows:[{el,item,navigable,hasSub}], active}
     // Single interaction mode — navigation | editor.
     var interactionMode = "navigation";  // "navigation" | "editor"
-    var editorCtx = null;                // { depth, rowIdx, focusEl, exit }
+    var editorCtx = null;                // { depth, rowIdx, row, focusEl }
     var pendingRootFocus = false;        // ContentSized: focus after first placed
     var placedGeometry = null;           // ContentSized CSS-pixel slot geometry
     var submenuPanelSequence = 0;        // monotonic root→host panel state reports
@@ -226,6 +226,20 @@
     // ---- 富菜单项构建器（仅根层出现；均 push 一个 row 供键盘导航/active 高亮）----
     function applyDisabledAria(el, en){ if(!en) el.setAttribute("aria-disabled","true"); else el.removeAttribute("aria-disabled"); }
 
+    // 滚轮调值：挂在行元素上（导航态控件子树 inert，事件 target 本就是行）。
+    // 编辑态下只接受落在当前编辑行上的滚轮——segmented 的 adjust 会 focus() 目标分段，
+    // 跨行触发会让真实焦点与 editorCtx 分裂。不接管时不 preventDefault，菜单照常滚动。
+    function attachWheelAdjust(rowEl, row, isInteractive){
+      rowEl.addEventListener("wheel", function(e){
+        if(interactionMode==="editor" && editorCtx && editorCtx.row!==row) return;
+        if(!isInteractive()) return;
+        var step=wheelAdjustStep({deltaY:e.deltaY, deltaX:e.deltaX});
+        if(step===0) return;
+        e.preventDefault();
+        row.adjust(step);
+      }, {passive:false});
+    }
+
     function buildNowPlaying(menuEl, L, it, en, depth, zone){
       var d=document.createElement("div");
       d.className="fb-item fb-np"+(!en?" disabled":"");
@@ -311,6 +325,7 @@
           return false;
         }};
       L.rows.push(row);
+      attachWheelAdjust(d, row, function(){ return en; });
       d.addEventListener("mouseenter", function(){ if(interactionMode==="editor") return; setActiveFromPointer(depth, ridx); applyHoverIntent(depth, ridx, false); });
       d.addEventListener("mouseleave", function(){ cancelHoverIntentFor(depth, ridx); });
     }
@@ -408,6 +423,7 @@
           return false;
         }};
       L.rows.push(row);
+      attachWheelAdjust(d, row, function(){ return en && !constant; });
       d.addEventListener("mouseenter", function(){ if(interactionMode==="editor") return; setActiveFromPointer(depth, ridx); applyHoverIntent(depth, ridx, false); });
       d.addEventListener("mouseleave", function(){ cancelHoverIntentFor(depth, ridx); });
     }
@@ -505,6 +521,7 @@
           return false;
         }};
       L.rows.push(row);
+      attachWheelAdjust(d, row, function(){ return en; });
       d.addEventListener("mouseenter", function(){ if(interactionMode==="editor") return; setActiveFromPointer(depth, ridx); applyHoverIntent(depth, ridx, false); });
       d.addEventListener("mouseleave", function(){ cancelHoverIntentFor(depth, ridx); });
     }

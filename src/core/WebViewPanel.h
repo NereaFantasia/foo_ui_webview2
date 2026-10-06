@@ -215,6 +215,23 @@ protected:
      * 加载前端页面（开发服务器或本地文件）
      */
     void LoadFrontendPage();
+
+    /**
+     * 导航完成回调的实际处理体（开发服务器回退 + 拖放来源门 + 收敛信号）。
+     *
+     * 非虚且不放进 OnNavigationCompleted：后者被 MainWindow 与 PopupWindow
+     * 覆盖，挂在虚函数上的逻辑会被静默跳过。
+     */
+    void HandleNavigationCompleted(bool success);
+
+    /**
+     * 加载不经开发服务器的常规前端页面：URL 覆盖 → 本地资源 → 内嵌测试页。
+     *
+     * 既是首次加载的常规路径，也是开发服务器导航失败后的回退路径。
+     * 返回是否成功提交了某一次导航；全部失败时调用方要自行宣告导航结束，
+     * 否则不会再有 NavigationCompleted 回调，窗口会卡在不可见状态。
+     */
+    bool LoadFallbackFrontendPage();
     
     /**
      * 设置虚拟主机映射
@@ -258,6 +275,11 @@ protected:
     // WebView2 宿主进程已崩溃退出（僵尸态）。由 OnWebViewProcessFailed 在
     // 不可自愈的崩溃上置位，DestroyWebView / 重建成功后清零。
     bool webViewProcessDead_ = false;
+
+    // 最近一次导航是提交给开发服务器的。Navigate 只负责提交，服务器没在监听
+    // 要等到 NavigationCompleted 才知道，此时需要回退到本地资源——否则整个
+    // 界面停在浏览器错误页，而错误页里没有 bridge，用户无法从前端改回配置。
+    bool devServerNavPending_ = false;
 
     // Bumped on every InitializeWebView and on DestroyWebView, so a late
     // creation callback from a superseded generation can be discarded.

@@ -137,7 +137,10 @@ public:
     // 当前菜单状态（供前端 pull 渲染）：{visible, menuId, items, anchorX, anchorY}。
     json GetMenuStateJson(HWND caller = nullptr) const;
 
-    // fb2k on_quit / WindowManager::Shutdown 钩子。
+    // 同步销毁两个 overlay 窗口。由 WebViewUI::shutdown 与
+    // background_service::Shutdown 在销毁主窗口之前调用，此时服务系统与各
+    // 函数级 static 单例都还活着。overlay 不经 WindowManager 管理，漏掉这一步
+    // 它就只能活到静态析构期。
     void Shutdown();
 
     bool IsVisible() const { return visible_; }
@@ -171,7 +174,8 @@ public:
 
 private:
     MenuOverlayHost() = default;
-    ~MenuOverlayHost() = default;
+    // 只在进程退出的静态析构期运行，此时不再销毁窗口；正常关停走 Shutdown()。
+    ~MenuOverlayHost();
     MenuOverlayHost(const MenuOverlayHost&) = delete;
     MenuOverlayHost& operator=(const MenuOverlayHost&) = delete;
 
@@ -209,7 +213,7 @@ private:
     void OnRootDismissRequested(const std::string& reason, HWND other);
     void OnSubmenuDismissRequested(const std::string& reason, HWND other);
     void SyncWebViewToClient(MenuOverlayWindow* window, HWND hwnd) const;
-    // SyncWebViewToClient 的对称收口：宿主 HWND 隐藏时必须同步收敛其 WebView 的
+    // SyncWebViewToClient 的反向操作：宿主 HWND 隐藏时必须同步收敛其 WebView 的
     // 渲染面积。Visual Hosting（CompositionController）下可见性由宿主 app 负责，
     // 只 ShowWindow(SW_HIDE) 会留下一个属于 msedgewebview2.exe 的顶层渲染窗仍在出帧。
     void CollapseWebViewSurface(MenuOverlayWindow* window, HWND hwnd) const;

@@ -144,10 +144,15 @@ namespace {
             ++activeRequests_;
             
             std::thread([this, requestId, method, url, headers, body, timeout, callerHwnd, callerWindowId, options]() noexcept {
-                // Outer noexcept guard: catches any exception that escapes the
-                // inner try/catch handler (e.g. json copy in catch block,
-                // FailureHook::LogAsync, fb2k::inMainThread copy capture) so
-                // that std::thread does not call std::terminate.
+                // 最外层守卫：内层 catch handler 自身也可能抛（json 拷贝、
+                // FailureHook::LogAsync、inMainThread 的捕获拷贝），抛出去就是
+                // std::thread 上的 std::terminate。
+                //
+                // 守卫自己的 handler 体也必须不抛：C++ 规定 handler 体内抛出的
+                // 异常不由同一 try 的其他 handler 接，会直接冲出 noexcept。
+                // console::printf（SDK/console.h）没有 noexcept，所以下面单独包一层。
+                // 令牌清理与 GAP_702 计数放在守卫之后，请求无论怎么结束都要执行，
+                // 否则内层一抛就会漏掉摘除、计数永远回不到零。
                 try {
                 console::printf("[HTTP Async] Background thread started for %s", requestId.c_str());
                 try {
@@ -184,14 +189,20 @@ namespace {
                         DispatchHttpEventSafely(callerHwnd, callerWindowId, "http:response", errorResult);
                     });
                 }
-                // 清理取消令牌
-                UnregisterCancelToken(requestId);
-                UnregisterWindowOwner(requestId);
+                } catch (...) {
+                    try {
+                        console::printf("[HTTP Async] Request %s outer guard caught unknown exception", requestId.c_str());
+                    } catch (...) {
+                    }
+                }
+                // 清理取消令牌。加锁与 erase 都可能抛，兜住以便下面的计数照常归还。
+                try {
+                    UnregisterCancelToken(requestId);
+                    UnregisterWindowOwner(requestId);
+                } catch (...) {
+                }
                 // GAP_702: decrement 在线程结束时
                 --activeRequests_;
-                } catch (...) {
-                    console::printf("[HTTP Async] Request %s outer guard caught unknown exception", requestId.c_str());
-                }
             }).detach();
             
             console::printf("[HTTP Async] Async request %s dispatched (returning immediately)", requestId.c_str());
@@ -1317,7 +1328,8 @@ namespace {
             
             std::thread([url, wsaveTo, timeout, redirect, headers, cancelToken, insecureTls,
                          requestId, callerHwnd, callerWindowId]() noexcept {
-                // Outer noexcept guard (same rationale as HttpRequestAsync above).
+                // 最外层守卫，结构与 ExecuteAsync 完全相同：handler 体内的日志
+                // 单独兜住，清理与计数放在守卫之后无条件执行。
                 try {
                 json result;
                 try {
@@ -1335,13 +1347,18 @@ namespace {
                 fb2k::inMainThread([result, callerHwnd, callerWindowId]() noexcept {
                     DispatchHttpEventSafely(callerHwnd, callerWindowId, "http:downloadComplete", result);
                 });
-                
-                AsyncRequestManager::GetInstance().UnregisterCancelToken(requestId);
-                AsyncRequestManager::GetInstance().UnregisterWindowOwner(requestId);
-                AsyncRequestManager::GetInstance().DecrementActive();
                 } catch (...) {
-                    console::printf("[HTTP Download] Request %s outer guard caught unknown exception", requestId.c_str());
+                    try {
+                        console::printf("[HTTP Download] Request %s outer guard caught unknown exception", requestId.c_str());
+                    } catch (...) {
+                    }
                 }
+                try {
+                    AsyncRequestManager::GetInstance().UnregisterCancelToken(requestId);
+                    AsyncRequestManager::GetInstance().UnregisterWindowOwner(requestId);
+                } catch (...) {
+                }
+                AsyncRequestManager::GetInstance().DecrementActive();
             }).detach();
             
             return {{"success", true}, {"requestId", requestId}, {"async", true}, {"message", "Download started"}};

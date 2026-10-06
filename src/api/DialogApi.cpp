@@ -57,6 +57,41 @@ namespace {
         }
         return data;
     }
+
+    /*
+     * 用 SetFolder 指定本次对话框的初始目录，避免 SetDefaultFolder 被最近使用
+     * 目录覆盖。空值、解析失败或非文件夹输入不改变系统选择的目录，也不报错。
+     * 这里只展开 %music%，不展开其他变量，不把传入路径写入日志。
+     */
+    void ApplyInitialFolder(IFileDialog* dialog, const std::string& defaultPath) {
+        if (defaultPath.empty()) {
+            return;
+        }
+
+        std::wstring expandedPath = Utf8ToWide(defaultPath);
+        if (expandedPath.find(L"%music%") != std::wstring::npos) {
+            PWSTR musicPath = nullptr;
+            if (SUCCEEDED(SHGetKnownFolderPath(FOLDERID_Music, 0, nullptr, &musicPath))) {
+                size_t pos = expandedPath.find(L"%music%");
+                expandedPath.replace(pos, 7, musicPath);
+                CoTaskMemFree(musicPath);
+            }
+        }
+
+        IShellItem* pFolder = nullptr;
+        HRESULT hr = SHCreateItemFromParsingName(expandedPath.c_str(), nullptr, IID_IShellItem,
+            reinterpret_cast<void**>(&pFolder));
+        if (FAILED(hr)) {
+            return;
+        }
+
+        // 初始位置必须是文件夹；文件项与属性查询失败均保持系统选择的目录。
+        if (SFGAOF attrs = 0; SUCCEEDED(pFolder->GetAttributes(SFGAO_FOLDER, &attrs)) && (attrs & SFGAO_FOLDER) != 0) {
+            // 返回值不检查：SetFolder 失败时对话框仍以默认位置打开，与解析失败同一结果。
+            dialog->SetFolder(pFolder);
+        }
+        pFolder->Release();
+    }
     
     //==========================================================================
     // dialog.openFile - Open file selection dialog
@@ -96,27 +131,7 @@ namespace {
             pFileOpen->SetFileTypes(static_cast<UINT>(filterData.specs.size()), filterData.specs.data());
         }
         
-        // Set default path
-        if (!defaultPath.empty()) {
-            std::wstring expandedPath = Utf8ToWide(defaultPath);
-            
-            if (expandedPath.find(L"%music%") != std::wstring::npos) {
-                PWSTR musicPath = nullptr;
-                if (SUCCEEDED(SHGetKnownFolderPath(FOLDERID_Music, 0, nullptr, &musicPath))) {
-                    size_t pos = expandedPath.find(L"%music%");
-                    expandedPath.replace(pos, 7, musicPath);
-                    CoTaskMemFree(musicPath);
-                }
-            }
-            
-            IShellItem* pFolder = nullptr;
-            hr = SHCreateItemFromParsingName(expandedPath.c_str(), nullptr, IID_IShellItem, 
-                reinterpret_cast<void**>(&pFolder));
-            if (SUCCEEDED(hr)) {
-                pFileOpen->SetDefaultFolder(pFolder);
-                pFolder->Release();
-            }
-        }
+        ApplyInitialFolder(pFileOpen, defaultPath);
         
         // Show dialog — guard clause 展平结果处理嵌套
         HWND hwnd = GetMainWindowHandle();
@@ -236,6 +251,7 @@ namespace {
     //==========================================================================
     json DialogOpenFolder(const json& params) {
         std::string title = params.value("title", TRU("Select Folder", "选择文件夹"));
+        std::string defaultPath = params.value("defaultPath", "");
         
         json result;
         result["canceled"] = true;
@@ -255,6 +271,8 @@ namespace {
         pFileOpen->SetOptions(dwFlags);
         
         pFileOpen->SetTitle(Utf8ToWide(title).c_str());
+        
+        ApplyInitialFolder(pFileOpen, defaultPath);
         
         HWND hwnd = GetMainWindowHandle();
         hr = pFileOpen->Show(hwnd);

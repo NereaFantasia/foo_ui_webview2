@@ -197,10 +197,11 @@ public:
                     handle = handles[0];
                 }
 
-                // Fallback: explicit handle_create if subsong doesn't match
+                // Fallback: explicit handle if subsong doesn't match. Canonicalized so it
+                // shares identity with the process_locations results above.
                 if (!handle.is_valid() || static_cast<int>(handle->get_subsong_index()) != subsongIndex) {
-                    auto mm = metadb::get();
-                    metadb_handle_ptr explicitHandle = mm->handle_create(filePath.c_str(), subsongIndex);
+                    metadb_handle_ptr explicitHandle =
+                        SubsongUtils::CreateCanonicalHandle(filePath, static_cast<t_uint32>(subsongIndex));
                     if (explicitHandle.is_valid()) {
                         handle = explicitHandle;
                     }
@@ -242,14 +243,12 @@ public:
         MultiPathPlayResult result;
 
         try {
-            auto mm = metadb::get();
             auto pm = playlist_manager::get();
             metadb_handle_list allHandles;
 
             for (const auto& path : paths) {
                 auto [filePath, subsongIndex] = SubsongUtils::ParseSubsongPath(path);
-                pfc::string8 pathStr(filePath.c_str());
-                metadb_handle_ptr handle = mm->handle_create(pathStr.get_ptr(), subsongIndex);
+                metadb_handle_ptr handle = SubsongUtils::CreateCanonicalHandle(filePath, subsongIndex);
                 if (handle.is_valid()) {
                     allHandles.add_item(handle);
                 }

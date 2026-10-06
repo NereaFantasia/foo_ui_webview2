@@ -4,11 +4,15 @@
 #include "api/AsyncOperationRegistry.h"
 #include "api/BridgeCore.h"
 #include "api/ErrorEnvelope.h"
+#include "api/GroupRunPlan.h"
 #include "api/MetaAccess.h"
+#include "api/RatingResolve.h"
+#include "api/TrackWireSnapshot.h"
 #include "core/WebViewContext.h"
 #include "interfaces/Fb2kPlaylistService.h"
 #include "interfaces/Fb2kPlaybackService.h"
 #include "utils/PlaylistFormatUtils.h"
+#include "utils/SubsongUtils.h"
 #include <atomic>
 #include <random>
 
@@ -44,11 +48,16 @@ static ParsedPlayablePath ParsePlayablePath(const std::string& input) {
 
 // 将前端 paths 解析为 metadb_handle，优先处理 path|subsong:N，普通路径批量走 process_locations
 // 修复：批量调用 process_locations 避免逐条调用导致弹窗风暴
+//
+// 顺序语义（playlist.addPaths / replaceAllAndPlay 共用）：普通路径段传 p_filter=true，
+// 即 fb2k 原生"添加文件"的 incoming item filter——按指针排序去重后再按用户配置的
+// incoming sorter 排序（见 SDK playlist.h 对 incoming item filter 的说明）。因此输出顺序
+// **不是**输入顺序，也会去掉重复项；这是已发布行为，保持不变（queue.addPaths 取同一做法）。
+// 需要严格保持输入顺序的调用方走 add_paths_sequential。
 static void ResolvePathsToHandles(const json& paths, metadb_handle_list& outItems, size_t& invalidCount) {
     auto piif = playlist_incoming_item_filter::get();
-    auto mdb = metadb::get();
 
-    // 第一遍：分离 subsong 路径（直接 handle_create）和普通路径（收集后批量处理）
+    // 第一遍：分离 subsong 路径（直接建 handle）和普通路径（收集后批量处理）
     pfc::string_list_impl batchPaths;
     // 记录每条路径在 outItems 中的插入顺序：
     // type=0 表示 subsong handle（已直接加入 subsongHandles），type=1 表示普通路径（待批量解析）
@@ -76,9 +85,9 @@ static void ResolvePathsToHandles(const json& paths, metadb_handle_list& outItem
             continue;
         }
 
-        // subsong 指定时直接 handle_create，避免 process_locations 把后缀当成路径文本
+        // subsong 指定时直接建 handle（经规范化），避免 process_locations 把后缀当成路径文本
         if (parsed.hasSubsong) {
-            metadb_handle_ptr handle = mdb->handle_create(parsed.path.c_str(), parsed.subsong);
+            metadb_handle_ptr handle = SubsongUtils::CreateCanonicalHandle(parsed.path, parsed.subsong);
             if (handle.is_valid()) {
                 order.push_back({0, subsongHandles.get_count()});
                 subsongHandles.add_item(handle);
@@ -107,10 +116,10 @@ static void ResolvePathsToHandles(const json& paths, metadb_handle_list& outItem
         return;
     }
 
-    // 有 subsong 混合时，按原始顺序合并结果
-    // process_locations 会保持输入路径顺序，所以我们按 batch 路径顺序逐段取
-    // 注意：一条路径可能解析出多个 handle（如 CUE），所以用路径边界来分段
-    // 简化处理：subsong handle 按序插入，batch 结果整体追加（保持 process_locations 内部顺序）
+    // 有 subsong 混合时：显式 subsong 项按输入顺序前置，批量解析结果整体追加。
+    // 批量段内部的顺序由 p_filter=true 的 filter_items 决定（见函数头注释），
+    // 不与输入对齐；process_locations 也不报告每条输入展开出的 handle 边界，
+    // 无法把批量结果按输入位置切回去。跨类型混排时的输入顺序在此不保证。
     for (const auto& entry : order) {
         if (entry.type == 0) {
             outItems.add_item(subsongHandles[entry.index]);
@@ -125,7 +134,6 @@ static void ResolvePathsToHandles(const json& paths, metadb_handle_list& outItem
 
 // 将 JSON handles 数组（支持 object {path,subsong} 和 string 两种格式）解析为 metadb_handle_list
 static void ParseJsonHandlesToList(const json& handles, metadb_handle_list& outItems, size_t& invalidCount) {
-    auto mdb = metadb::get();
     for (const auto& h : handles) {
         std::string path;
         t_uint32 subsong = 0;
@@ -152,7 +160,7 @@ static void ParseJsonHandlesToList(const json& handles, metadb_handle_list& outI
             continue;
         }
 
-        metadb_handle_ptr handle = mdb->handle_create(path.c_str(), subsong);
+        metadb_handle_ptr handle = SubsongUtils::CreateCanonicalHandle(path, subsong);
         if (handle.is_valid()) {
             outItems.add_item(handle);
         } else {
@@ -197,11 +205,10 @@ static json MakePlaylistLockedError(size_t playlistIndex) {
 
 // 生成唯一操作 ID
 //
-// 走共享的 FormatAsyncOperationId（AsyncOperationRegistry.cpp:9-20），与
+// 走共享的 FormatAsyncOperationId（AsyncOperationRegistry.cpp），与
 // metadata.probeBatchAsync 的 probe_ 和 file.*Async 的 fileop_ 同一套格式。
-// 旧实现是「毫秒时间戳 + 6 位随机」，时间戳部分对任何页面都是可预测的，等于
-// 把 id 的熵砍到只剩那 6 位；operationId 对页面是不透明句柄，换格式不构成
-// 契约破坏（无任何前端按 op_ 前缀匹配）。
+// 不用「毫秒时间戳 + 6 位随机」这类格式：时间戳部分对任何页面都是可预测的，
+// id 的熵只剩那 6 位。operationId 对页面是不透明句柄，格式不属于对外契约。
 //
 // 只在主线程的 handler 里调用，所以 mt19937_64 不需要加锁。
 static std::string GenerateOperationId() {
@@ -279,28 +286,9 @@ json GetPlaylistTrackInfo(const metadb_handle_ptr& track, size_t index) {
         return value ? atoi(value) : 0;
     };
     
-    // First try meta tag (zero cost), only fallback to format_title if needed
-    int rating = getMetaInt("rating");
-    // Fallback to foo_playcount virtual field (more expensive)
-    if (rating == 0) {
-        try {
-            static titleformat_object::ptr script;
-            if (!script.is_valid()) {
-                static_api_ptr_t<titleformat_compiler>()->compile_safe(script, "%rating%");
-            }
-            pfc::string8 result;
-            track->format_title(nullptr, result, script, nullptr);
-            if (result.get_length() > 0 && result[0] != '?') {
-                rating = atoi(result.get_ptr());
-            }
-        } catch (...) {
-            // Silently ignore — falls through to clamping
-        }
-    }
-    // Clamp to valid range
-    if (rating < 0) rating = 0;
-    if (rating > 5) rating = 5;
-    
+    // 取值顺序与来源判定归 RatingResolve.h，rating.get 走的是同一处
+    const int rating = ResolveTrackRating(track, &info).value;
+
     // Get audio technical info
     std::string codec;
     int bitrate = 0;
@@ -345,6 +333,92 @@ json GetPlaylistTrackInfo(const metadb_handle_ptr& track, size_t index) {
 }
 
 // ============================================
+// 投影分支（playlist.getTracks 的 fields 参数）
+// ============================================
+// 与全字段路径同名键的取值表达式逐条相同，但只算掩码选中的字段——未选
+// absolutePath 不调 g_get_native_path、未选 rating 不走 %rating% 回退，这是
+// 投影的性能收益所在。
+// artists 是投影态独有的键（全字段路径没有）：使用 MetaValuesRaw
+// （注意源标签名是 artist 不是 artists），类型是字符串数组。
+// 无效句柄同样出全部请求键、值取类型默认：消费方的行校验器
+// 不用为损坏行分叉。composer / comment 不在投影白名单里，不会传入这里。
+json GetPlaylistTrackInfoProjected(const metadb_handle_ptr& track, size_t index,
+                                   uint32_t mask) {
+    json row;
+    row["index"] = index;
+
+    if (!track.is_valid()) {
+        if (mask & TrackField::kTitle) row["title"] = "";
+        if (mask & TrackField::kArtist) row["artist"] = "";
+        if (mask & TrackField::kArtists) row["artists"] = json::array();
+        if (mask & TrackField::kAlbum) row["album"] = "";
+        if (mask & TrackField::kAlbumArtist) row["albumArtist"] = "";
+        if (mask & TrackField::kGenre) row["genre"] = "";
+        if (mask & TrackField::kDate) row["date"] = "";
+        if (mask & TrackField::kTrackNumber) row["trackNumber"] = 0;
+        if (mask & TrackField::kDiscNumber) row["discNumber"] = 0;
+        if (mask & TrackField::kDuration) row["duration"] = 0.0;
+        if (mask & TrackField::kPath) row["path"] = "";
+        if (mask & TrackField::kAbsolutePath) row["absolutePath"] = "";
+        if (mask & TrackField::kFileSize) row["fileSize"] = 0;
+        if (mask & TrackField::kBitrate) row["bitrate"] = 0;
+        if (mask & TrackField::kSampleRate) row["sampleRate"] = 0;
+        if (mask & TrackField::kChannels) row["channels"] = 0;
+        if (mask & TrackField::kCodec) row["codec"] = "";
+        if (mask & TrackField::kSubsong) row["subsong"] = 0;
+        if (mask & TrackField::kRating) row["rating"] = 0;
+        return row;
+    }
+
+    // 使用 get_info_ref() 替代已弃用的 get_info()，与全字段路径同一口径
+    metadb_info_container::ptr infoContainer = track->get_info_ref();
+    const file_info& info = infoContainer->info();
+
+    auto getMeta = [&](const char* name) -> std::string {
+        const char* value = info.meta_get(name, 0);
+        return value ? value : "";
+    };
+    auto getMetaInt = [&](const char* name) -> int {
+        const char* value = info.meta_get(name, 0);
+        return value ? atoi(value) : 0;
+    };
+
+    if (mask & TrackField::kTitle) row["title"] = getMeta("title");
+    if (mask & TrackField::kArtist) row["artist"] = MetaJoined(info, "artist");
+    if (mask & TrackField::kArtists) row["artists"] = MetaValuesRaw(info, "artist");
+    if (mask & TrackField::kAlbum) row["album"] = getMeta("album");
+    if (mask & TrackField::kAlbumArtist) row["albumArtist"] = MetaJoined(info, "album artist");
+    if (mask & TrackField::kGenre) row["genre"] = MetaJoined(info, "genre");
+    if (mask & TrackField::kDate) row["date"] = getMeta("date");
+    if (mask & TrackField::kTrackNumber) row["trackNumber"] = getMetaInt("tracknumber");
+    if (mask & TrackField::kDiscNumber) row["discNumber"] = getMetaInt("discnumber");
+    if (mask & TrackField::kDuration) row["duration"] = info.get_length();
+    if (mask & TrackField::kPath) row["path"] = std::string(track->get_path());
+    if (mask & TrackField::kAbsolutePath) {
+        pfc::string8 nativePath;
+        filesystem::g_get_native_path(track->get_path(), nativePath);
+        row["absolutePath"] = std::string(nativePath.get_ptr());
+    }
+    if (mask & TrackField::kFileSize)
+        row["fileSize"] = static_cast<int64_t>(track->get_filesize());
+    if (mask & TrackField::kSubsong) row["subsong"] = track->get_subsong_index();
+    if (mask & TrackField::kRating) row["rating"] = ResolveTrackRating(track, &info).value;
+    if (mask & TrackField::kCodec) {
+        const char* value = info.info_get("codec");
+        row["codec"] = value ? value : "";
+    }
+    if (mask & TrackField::kBitrate) {
+        const char* value = info.info_get("bitrate");
+        row["bitrate"] = value ? atoi(value) : 0;
+    }
+    if (mask & TrackField::kSampleRate)
+        row["sampleRate"] = static_cast<int>(info.info_get_int("samplerate"));
+    if (mask & TrackField::kChannels)
+        row["channels"] = static_cast<int>(info.info_get_int("channels"));
+    return row;
+}
+
+// ============================================
 // Fb2kPlaylistService — out-of-line definitions
 // (These methods depend on static helpers defined above)
 // ============================================
@@ -371,7 +445,8 @@ IPlaylistService::InsertTracksResult Fb2kPlaylistService::insert_tracks(
 }
 
 json Fb2kPlaylistService::get_tracks_json(
-    size_t playlist, size_t start, size_t count, const json& formats) const {
+    size_t playlist, size_t start, size_t count, const json& formats,
+    const TrackFieldSelection& fields) const {
     auto plm = playlist_manager::get();
     size_t totalCount = plm->playlist_get_item_count(playlist);
 
@@ -401,6 +476,8 @@ json Fb2kPlaylistService::get_tracks_json(
     }
 
     // foo_playcount virtual fields — static compilation
+    // 投影态不产出这四个键（它们不在投影白名单里，要取值走 formats），
+    // 只在全字段路径逐行求值——每行要多跑四次 formatTitle_v2，开销较大。
     static titleformat_object::ptr s_playCount, s_firstPlayed, s_lastPlayed, s_added;
     static bool s_fpcInit = false;
     if (!s_fpcInit) {
@@ -413,10 +490,26 @@ json Fb2kPlaylistService::get_tracks_json(
     }
 
     auto mdb2 = metadb_v2::get();
-    auto v2recs = mdb2->queryMultiSimple(items);
+    // info 记录只有两处消费：全字段路径的四个 playcount 键、formats 附加列。
+    // 投影且无 formats 时整批不取，省掉每页一次数据库往返。
+    pfc::array_t<metadb_v2::rec_t> v2recs;
+    if (!fields.projected || !compiledFormats.empty()) {
+        v2recs = mdb2->queryMultiSimple(items);
+    }
 
     json tracks = json::array();
     for (size_t i = 0; i < items.get_count(); i++) {
+        if (fields.projected) {
+            json trackInfo = GetPlaylistTrackInfoProjected(items[i], start + i, fields.mask);
+            for (auto& [key, script] : compiledFormats) {
+                pfc::string8 result;
+                mdb2->formatTitle_v2(items[i], v2recs[i], nullptr, result, script, nullptr);
+                trackInfo[key] = std::string(result.get_ptr());
+            }
+            tracks.push_back(std::move(trackInfo));
+            continue;
+        }
+
         json trackInfo = GetPlaylistTrackInfo(items[i], start + i);
 
         auto evalV2 = [&](const titleformat_object::ptr& script) -> std::string {
@@ -513,71 +606,66 @@ IPlaylistService::AddPathsResult Fb2kPlaylistService::add_handles(
     return { items.get_count(), invalidCount, countBefore, countAfter };
 }
 
+// playlist.addPathsSequential 的契约是"按给定顺序逐条追加"（SDK JSDoc: one-by-one），
+// 因此与 ResolvePathsToHandles 刻意不同：普通路径段传 p_filter=false 关掉
+// filter_items 的按指针排序去重，段内输出顺序即输入顺序；只把"连续普通路径段"
+// 合成一次 process_locations 调用（避免逐条调用的进度框风暴），段与段之间、以及
+// 与 `|subsong:N` 项之间按原始出现顺序拼接。一条路径展开出的 N 个 handle
+// （cue / 多 subsong 文件）天然占据该路径在段内的位置。与 QueueApi 的
+// ResolveInsertNextPaths 同一做法。
 IPlaylistService::AddPathsSequentialResult Fb2kPlaylistService::add_paths_sequential(
     size_t playlist, const json& paths) {
     auto plm = playlist_manager::get();
     auto piif = playlist_incoming_item_filter::get();
-    auto mdb = metadb::get();
 
-    json resultIndices = json::array();
-    size_t addedCount = 0;
-    plm->playlist_undo_backup(playlist);
-
-    pfc::string_list_impl batchPaths;
-    struct SeqEntry { bool isSubsong; size_t batchIdx; metadb_handle_ptr handle; };
-    std::vector<SeqEntry> entries;
-    size_t batchIdx = 0;
+    metadb_handle_list ordered;
+    pfc::string_list_impl runBatch;
+    auto flushRun = [&]() {
+        if (runBatch.get_count() == 0) return;
+        metadb_handle_list resolved;
+        piif->process_locations(runBatch, resolved, /*p_filter=*/false, nullptr, nullptr,
+                                core_api::get_main_window());
+        ordered += resolved;
+        runBatch.remove_all();
+    };
 
     for (const auto& path : paths) {
         if (!path.is_string()) continue;
         ParsedPlayablePath parsed = ParsePlayablePath(path.get<std::string>());
-        std::string pathStr = parsed.path;
-        if (pathStr.empty()) continue;
-        if (pathStr.length() > ApiLimits::MAX_STREAM_URL_LENGTH) continue;
+        if (parsed.path.empty()) continue;
+        if (parsed.path.length() > ApiLimits::MAX_STREAM_URL_LENGTH) continue;
 
         if (parsed.hasSubsong) {
-            metadb_handle_ptr handle = mdb->handle_create(pathStr.c_str(), parsed.subsong);
+            flushRun();
+            metadb_handle_ptr handle = SubsongUtils::CreateCanonicalHandle(parsed.path, parsed.subsong);
             if (handle.is_valid()) {
-                entries.push_back({true, 0, handle});
+                ordered.add_item(handle);
             }
-        } else {
-            entries.push_back({false, batchIdx++, metadb_handle_ptr()});
-            batchPaths.add_item(pathStr.c_str());
+            continue;
         }
+        runBatch.add_item(parsed.path.c_str());
+    }
+    flushRun();
+
+    json resultIndices = json::array();
+    if (ordered.get_count() == 0) {
+        return { 0, resultIndices };
     }
 
-    metadb_handle_list batchResolved;
-    if (batchPaths.get_count() > 0) {
-        piif->process_locations(batchPaths, batchResolved, true, nullptr, nullptr, core_api::get_main_window());
+    plm->playlist_undo_backup(playlist);
+    size_t insertPos = plm->playlist_get_item_count(playlist);
+    plm->playlist_insert_items(playlist, insertPos, ordered, bit_array_false());
+    for (size_t j = 0; j < ordered.get_count(); j++) {
+        resultIndices.push_back(insertPos + j);
     }
 
-    for (const auto& entry : entries) {
-        if (entry.isSubsong) {
-            size_t insertPos = plm->playlist_get_item_count(playlist);
-            metadb_handle_list items;
-            items.add_item(entry.handle);
-            plm->playlist_insert_items(playlist, insertPos, items, bit_array_false());
-            resultIndices.push_back(insertPos);
-            addedCount++;
-        }
-    }
-    if (batchResolved.get_count() > 0) {
-        size_t insertPos = plm->playlist_get_item_count(playlist);
-        plm->playlist_insert_items(playlist, insertPos, batchResolved, bit_array_false());
-        for (size_t j = 0; j < batchResolved.get_count(); j++) {
-            resultIndices.push_back(insertPos + j);
-        }
-        addedCount += batchResolved.get_count();
-    }
-
-    return { addedCount, resultIndices };
+    return { ordered.get_count(), resultIndices };
 }
 
 IPlaylistService::AsyncAddPathsInfo Fb2kPlaylistService::start_add_paths_async(
     size_t playlist, const json& paths, const std::string& operationId,
     std::function<void(size_t addedCount, size_t totalCount)> onComplete) {
-    pfc::list_t<pfc::string8> pathStrings;
-    pfc::list_t<const char*> urlList;
+    std::vector<ParsedPlayablePath> parsedPaths;
     size_t invalidCount = 0;
 
     for (const auto& p : paths) {
@@ -588,30 +676,27 @@ IPlaylistService::AsyncAddPathsInfo Fb2kPlaylistService::start_add_paths_async(
                 invalidCount++;
                 continue;
             }
-            pathStrings.add_item(pfc::string8(parsed.path.c_str()));
+            parsedPaths.push_back(std::move(parsed));
         } else { invalidCount++; }
     }
-    for (size_t i = 0; i < pathStrings.get_count(); i++) {
-        urlList.add_item(pathStrings[i].get_ptr());
-    }
-    if (urlList.get_count() == 0) {
+    if (parsedPaths.empty()) {
         return { 0, invalidCount };
     }
 
-    size_t totalCount = urlList.get_count();
+    size_t totalCount = parsedPaths.size();
 
-    // 分流:本地路径 / 流媒体直链走 metadb::handle_create 同步零弹窗;
+    // 分流:本地路径 / 流媒体直链经规范化后同步建 handle,零弹窗;
     // 仅 .pls / .m3u / .cue 等 wrapper 走 process_locations_async 展开。
-    auto mdb = metadb::get();
+    // `|subsong:N` 已由 ParsePlayablePath 拆出,快路径必须把它交给 handle
+    // (此前恒传 0,cue 子曲目会被当成整轨)。
     metadb_handle_list fastHandles;
     pfc::list_t<pfc::string8> slowStrings;
     pfc::list_t<const char*> slowList;
-    for (size_t i = 0; i < urlList.get_count(); i++) {
-        const char* url = urlList[i];
-        if (PlaylistFormatUtils::LooksLikePlaylistWrapper(url)) {
-            slowStrings.add_item(pfc::string8(url));
+    for (const auto& parsed : parsedPaths) {
+        if (PlaylistFormatUtils::LooksLikePlaylistWrapper(parsed.path.c_str())) {
+            slowStrings.add_item(pfc::string8(parsed.path.c_str()));
         } else {
-            metadb_handle_ptr handle = mdb->handle_create(url, 0);
+            metadb_handle_ptr handle = SubsongUtils::CreateCanonicalHandle(parsed.path, parsed.subsong);
             if (handle.is_valid()) fastHandles.add_item(handle);
         }
     }
@@ -934,6 +1019,12 @@ json PlaylistGetTrackCount(const json& params) {
 
 json PlaylistGetTracks(const json& params) {
     auto* svc = s_playlistService;
+    // fields 校验排在越界检查之前：插在后面会让
+    // {playlist: 99, fields: ["bogus"]} 静默出空页而不是报 INVALID_PARAMS。
+    const TrackFieldSelection fields = ParseTrackFieldSelection(params);
+    if (!fields.valid) {
+        return MakeTrackFieldsErrorBody(fields);
+    }
     size_t playlistIndex = GetPlaylistIndexFromParams(params);
     size_t start = params.value("start", static_cast<size_t>(0));
     size_t count = params.value("count", static_cast<size_t>(100));
@@ -948,7 +1039,206 @@ json PlaylistGetTracks(const json& params) {
             {"count", 0}, {"total", 0}, {"tracks", json::array()}
         };
     }
-    return svc->get_tracks_json(playlistIndex, start, count, extraFormats);
+    return svc->get_tracks_json(playlistIndex, start, count, extraFormats, fields);
+}
+
+
+// ========== getGroupRuns ==========
+//
+// 按 Title Formatting 模式对整份播放列表做顺序游程，只返回游程边界，
+// 不返回整表行数据。返回体大小随游程数量增长；没有固定的
+// 游程数量或响应大小上限，调用方应按实际结果分页加载可见行。
+// 以 deferred 注册——求键与序列化在 CPU worker 上跑，主线程段只做校验、编译模式、
+// 取句柄列表。游程合并、ASCII 折叠与直写是纯值的，在 api/GroupRunPlan.h，测试
+// 工程（不链 fb2k SDK）能构建那一半。
+
+// 分批处理以限制单批 metadata 快照的内存占用；批大小由实现常量控制，不能据此
+// 推断整次请求的固定内存上限。
+constexpr size_t kGroupRunBatch = 2000;
+
+struct GroupRunsRequest {
+    size_t playlist = 0;
+    size_t total = 0;
+    bool twoLevel = false;
+    metadb_handle_list items;
+    std::vector<titleformat_object::ptr> scripts;
+    fb2k_group_runs::GroupRunAccumulator acc;
+    size_t nextRow = 0;  // 下一批的起点；批循环是多跳状态机，靠它在跳之间续
+};
+
+// worker 段的失败回正常体而不是 SendError（遵循 BridgeCore.h 中 DeferredResponder 注释里的不变量）。
+// 形状带上 runs/total，与 library.search 的 MakeQueryWireErrorBody 同一考虑：调用方
+// 不必为错误分支单独判空。
+json MakeGroupRunsErrorBody(const std::string& message) {
+    json body = ApiEnvelope::MakeError(message, ApiErrorCode::OPERATION_FAILED);
+    body["runs"] = json::array();
+    body["total"] = 0;
+    return body;
+}
+
+// 跑一批：取这批的 info 记录，再在**本线程**顺序求键并并入游程。抛出的异常由调用方
+// 接住、回滚该批并改走主线程。
+void ProcessGroupRunBatch(GroupRunsRequest& req, size_t begin, size_t end) {
+    const size_t n = end - begin;
+    auto mdb = metadb_v2::get();
+
+    // 零拷贝切片：queryMultiParallel_ 吃的是多态接口 metadb_handle_list_cref，
+    // 所以切片不复制；每批新建 metadb_handle_list 逐条
+    // add_item 会多一轮 n 次 refcount 与每批一次分配。
+    pfc::list_partial_ref_t<metadb_handle_ptr> slice(req.items, begin, n);
+
+    // 回调会被多线程并发调用，故预分配 n 槽、按 idx 写对应槽位，全程不扩容、不碰
+    // 共享可变态（同 LibraryApi.cpp 中 RunQueryWireWorker 的先例）。
+    pfc::array_t<metadb_v2::rec_t> recs;
+    recs.resize(n);
+    mdb->queryMultiParallel_(slice, [&recs, n](size_t idx, const metadb_v2::rec_t& rec) {
+        if (idx < n) recs[idx] = rec;
+    });
+
+    // TF 留在本线程顺序跑，**不进并发回调**。两条理由缺一不可：
+    // titleformat_object::run 没有任何线程安全说明，模式带
+    // $puts/$get 时尤其可疑；而 SDK 对 queryMultiParallel 回调里的异常传播只字未提，从 SDK
+    // 线程池的线程抛出接不住就是回包落空。先例同形（LibraryApi.cpp 的 RunQueryWireWorker）。
+    for (size_t i = 0; i < n; i++) {
+        pfc::string8 primary;
+        mdb->formatTitle_v2(req.items[begin + i], recs[i], nullptr, primary, req.scripts[0],
+                            nullptr);
+        pfc::string8 sub;
+        if (req.twoLevel) {
+            mdb->formatTitle_v2(req.items[begin + i], recs[i], nullptr, sub, req.scripts[1],
+                                nullptr);
+        }
+        req.acc.Push(begin + i, primary.get_ptr(), req.twoLevel ? sub.get_ptr() : "");
+    }
+}
+
+void RunGroupRunsWorker(const std::shared_ptr<GroupRunsRequest>& req,
+                        const DeferredResponder& responder);
+
+// 主线程只重算失败的批次，再交回 worker 续跑。Title Formatting 模式可能调用
+// 要求主线程的第三方 provider；整表重算会把其余批次也放到主线程，延长界面阻塞。
+// 本函数要么回包、要么把回包交给续段，两条路径都不能落空。
+void RetryGroupRunBatchOnMainThread(const std::shared_ptr<GroupRunsRequest>& req,
+                                    const DeferredResponder& responder, size_t begin,
+                                    size_t end) {
+    fb2k::inMainThread([req, responder, begin, end]() {
+        try {
+            ProcessGroupRunBatch(*req, begin, end);
+            req->nextRow = end;
+            // 当前批次重试成功后续跑剩余批次，不能提前返回不完整结果。
+            fb2k::inCpuWorkerThread([req, responder]() { RunGroupRunsWorker(req, responder); });
+        } catch (const std::exception& e) {
+            responder.SendJson(MakeGroupRunsErrorBody(e.what()));
+        } catch (...) {
+            responder.SendJson(MakeGroupRunsErrorBody("getGroupRuns failed"));
+        }
+    });
+}
+
+void RunGroupRunsWorker(const std::shared_ptr<GroupRunsRequest>& req,
+                        const DeferredResponder& responder) {
+    try {
+        while (req->nextRow < req->total) {
+            const size_t begin = req->nextRow;
+            const size_t end = std::min(begin + kGroupRunBatch, req->total);
+
+            // 批边界快照：游程合并是有状态的顺序累加，兜底重算前不回滚
+            // 的话，已并入的行会被二次合并，各游程 count 之和就不再等于 total。
+            const fb2k_group_runs::GroupRunAccumulator::Snapshot snapshot = req->acc.Capture();
+            try {
+                ProcessGroupRunBatch(*req, begin, end);
+            } catch (...) {
+                req->acc.Restore(snapshot);
+                console::printf("[Playlist] getGroupRuns batch [%u,%u) failed on worker, "
+                                "retrying it on main thread",
+                                static_cast<unsigned>(begin), static_cast<unsigned>(end));
+                RetryGroupRunBatchOnMainThread(req, responder, begin, end);
+                return;  // 回包交给续段，本段到此为止
+            }
+            req->nextRow = end;
+        }
+
+        // 只有最后一批结束才回包（恰好一次回包要在每一跳上都成立）
+        req->acc.Finish();
+        std::string out;
+        fb2k_group_runs::WriteGroupRunsJson(out, req->playlist, req->total, req->acc);
+        responder.SendRaw(std::move(out));
+    } catch (const std::exception& e) {
+        responder.SendJson(MakeGroupRunsErrorBody(e.what()));
+    } catch (...) {
+        responder.SendJson(MakeGroupRunsErrorBody("getGroupRuns failed"));
+    }
+}
+
+void PlaylistGetGroupRuns(const json& params, const DeferredResponder& responder) {
+    try {
+        auto* svc = s_playlistService;
+
+        const fb2k_group_runs::PatternSelection selection =
+            fb2k_group_runs::ParseGroupRunPatterns(params);
+        if (!selection.valid) {
+            if (selection.errorIndex == fb2k_group_runs::kNoPatternIndex) {
+                responder.SendJson(
+                    ApiEnvelope::MakeError(selection.errorMessage, ApiErrorCode::INVALID_PARAMS));
+            } else {
+                responder.SendJson(ApiEnvelope::MakeError(selection.errorMessage,
+                                                          ApiErrorCode::INVALID_PARAMS,
+                                                          {{"pattern", selection.errorIndex}}));
+            }
+            return;
+        }
+
+        size_t playlistIndex = GetPlaylistIndexFromParams(params);
+        if (playlistIndex == SIZE_MAX) {
+            playlistIndex = svc->get_active_playlist();
+        }
+        // 越界只对 >= count 的正值报错：JSON 的 -1 转 size_t 回绕成 SIZE_MAX，与「缺省」
+        // 哨兵同值，因此选择活动列表；不能将 -1 描述为越界错误。
+        if (playlistIndex >= svc->get_playlist_count()) {
+            responder.SendJson(ApiEnvelope::MakeError("Invalid playlist index",
+                                                      ApiErrorCode::INVALID_PARAMS,
+                                                      {{"playlist", playlistIndex}}));
+            return;
+        }
+
+        // 用 compile 不用 compile_safe：后者的 SDK 注释是「Should never fail,
+        // falls back to %filename% in case of failure」，拿它编译
+        // 用户串会让「编译失败返回 INVALID_PARAMS」永不触发——patterns: ["%album"]
+        // 会静默回退成 %filename%，每行一组还返回 success:true。
+        auto compiler = titleformat_compiler::get();
+        auto req = std::make_shared<GroupRunsRequest>();
+        for (size_t i = 0; i < selection.patterns.size(); i++) {
+            titleformat_object::ptr script;
+            if (!compiler->compile(script, selection.patterns[i].c_str())) {
+                responder.SendJson(ApiEnvelope::MakeError("patterns failed to compile",
+                                                          ApiErrorCode::INVALID_PARAMS,
+                                                          {{"pattern", i}}));
+                return;
+            }
+            req->scripts.push_back(script);
+        }
+
+        req->playlist = playlistIndex;
+        req->twoLevel = selection.patterns.size() == fb2k_group_runs::kMaxPatterns;
+        req->acc = fb2k_group_runs::GroupRunAccumulator(req->twoLevel);
+        playlist_manager::get()->playlist_get_all_items(playlistIndex, req->items);
+        req->total = req->items.get_count();
+
+        // 空列表就地回包，不为零行付线程跳变的税
+        if (req->total == 0) {
+            responder.SendJson({{"success", true},
+                                {"playlist", playlistIndex},
+                                {"total", 0},
+                                {"runs", json::array()}});
+            return;
+        }
+
+        fb2k::inCpuWorkerThread([req, responder]() { RunGroupRunsWorker(req, responder); });
+    } catch (const std::exception& e) {
+        responder.SendJson(MakeGroupRunsErrorBody(e.what()));
+    } catch (...) {
+        responder.SendJson(MakeGroupRunsErrorBody("getGroupRuns failed"));
+    }
 }
 
 
@@ -1870,4 +2160,6 @@ void RegisterPlaylistApi() {
     bridge.RegisterApi("playlist.replaceAllAndPlay", PlaylistReplaceAllAndPlay, {{"paths", SecurityLevel::MediaRead, true}});
     bridge.RegisterApi("playlist.reorderPlaylists", PlaylistReorderPlaylists);
     bridge.RegisterApi("playlist.getAvailableColumns", PlaylistGetAvailableColumns);
+    // deferred：全表求键与序列化在 CPU worker 上跑
+    bridge.RegisterApiDeferred("playlist.getGroupRuns", PlaylistGetGroupRuns);
 }

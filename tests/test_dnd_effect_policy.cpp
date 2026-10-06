@@ -56,3 +56,36 @@ TEST(DropEffectPolicy, NonFileDragWithDownstreamCopyIsHonoured) {
     EXPECT_EQ(ChooseDropEffect(DROPEFFECT_COPY, DROPEFFECT_COPY, false),
               static_cast<DWORD>(DROPEFFECT_COPY));
 }
+
+// --- Drag-out gate on the effects the page offered ---
+//
+// An offered mask containing MOVE lets Explorer move the source out of the
+// library. Drag-out must accept exactly COPY, not a broader mask such as
+// COPY|MOVE|LINK that an unset effectAllowed can offer.
+
+using fb2k_dnd::DragOutMaskIsCopyOnly;
+
+TEST(DragOutMask, ExactCopyPasses) {
+    EXPECT_TRUE(DragOutMaskIsCopyOnly(DROPEFFECT_COPY));
+}
+
+TEST(DragOutMask, AnyMaskContainingMoveIsRefused) {
+    EXPECT_FALSE(DragOutMaskIsCopyOnly(DROPEFFECT_MOVE));
+    EXPECT_FALSE(DragOutMaskIsCopyOnly(DROPEFFECT_COPY | DROPEFFECT_MOVE));
+    EXPECT_FALSE(DragOutMaskIsCopyOnly(DROPEFFECT_COPY | DROPEFFECT_MOVE | DROPEFFECT_LINK));
+}
+
+TEST(DragOutMask, AnyMaskContainingLinkIsRefused) {
+    EXPECT_FALSE(DragOutMaskIsCopyOnly(DROPEFFECT_LINK));
+    EXPECT_FALSE(DragOutMaskIsCopyOnly(DROPEFFECT_COPY | DROPEFFECT_LINK));
+}
+
+TEST(DragOutMask, EmptyMaskIsRefused) {
+    EXPECT_FALSE(DragOutMaskIsCopyOnly(DROPEFFECT_NONE));
+}
+
+TEST(DragOutMask, ScrollBitIsRefused) {
+    // DROPEFFECT_SCROLL is a hint bit, not an operation; a mask carrying it is
+    // still not "exactly copy".
+    EXPECT_FALSE(DragOutMaskIsCopyOnly(DROPEFFECT_COPY | DROPEFFECT_SCROLL));
+}

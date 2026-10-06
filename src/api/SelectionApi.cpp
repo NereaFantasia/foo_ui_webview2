@@ -2,6 +2,7 @@
 #include "api/SelectionApi.h"
 #include "api/BridgeCore.h"
 #include "api/PlaybackApi.h"  // 用于 GetTrackInfo()
+#include "utils/SubsongUtils.h"
 
 // ============================================
 // Selection API Implementation
@@ -298,32 +299,14 @@ json SelectionSet(const json& params) {
         };
     }
     
-    // 解析 handles
+    // 解析 handles：拆 path|subsong:N，规范化后建 handle，与 playlist 里的曲目同一身份
     metadb_handle_list items;
-    auto mm = metadb::get();
-    
+
     for (const auto& handleJson : handlesJson) {
         if (!handleJson.is_string()) continue;
-        
-        std::string path = handleJson.get<std::string>();
-        
-        // 解析 path|subsong:N 格式
-        std::string filePath = path;
-        t_uint32 subsongIndex = 0;
-        
-        size_t pos = path.find("|subsong:");
-        if (pos != std::string::npos) {
-            filePath = path.substr(0, pos);
-            try {
-                subsongIndex = static_cast<t_uint32>(std::stoul(path.substr(pos + 9)));
-            } catch (...) {
-                subsongIndex = 0;
-            }
-        }
-        
-        // 创建 handle
-        pfc::string8 pathStr(filePath.c_str());
-        metadb_handle_ptr handle = mm->handle_create(pathStr.get_ptr(), subsongIndex);
+
+        auto [filePath, subsongIndex] = SubsongUtils::ParseSubsongPath(handleJson.get<std::string>());
+        metadb_handle_ptr handle = SubsongUtils::CreateCanonicalHandle(filePath, subsongIndex);
         if (handle.is_valid()) {
             items.add_item(handle);
         }

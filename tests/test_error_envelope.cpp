@@ -27,6 +27,10 @@ TEST(ApiErrorCode, StateAndResourceCodes) {
     EXPECT_STREQ(ApiErrorCode::OPERATION_FAILED, "OPERATION_FAILED");
 }
 
+TEST(ApiErrorCode, OriginAndCallerTrustCodes) {
+    EXPECT_STREQ(ApiErrorCode::ORIGIN_DENIED,    "ORIGIN_DENIED");
+}
+
 TEST(ApiErrorCode, PathAndMediaCodes) {
     EXPECT_STREQ(ApiErrorCode::MISSING_PATH,     "MISSING_PATH");
     EXPECT_STREQ(ApiErrorCode::INVALID_PATH,     "INVALID_PATH");

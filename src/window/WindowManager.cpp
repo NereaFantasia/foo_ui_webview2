@@ -194,6 +194,15 @@ WindowManager& WindowManager::GetInstance() {
     return instance;
 }
 
+// 与 MenuOverlayHost::~MenuOverlayHost 同一条规则：静态析构期不销毁窗口。
+// 正常关停时 Shutdown() 已把 popups_ 清空，这里无事可做；仍有残留说明是
+// 没接关停点的宿主模式，此时走 OnDestroy 会碰到已析构的注册表。
+WindowManager::~WindowManager() {
+    for (auto& entry : popups_) {
+        (void)entry.second.release();
+    }
+}
+
 HWND WindowManager::GetActivationSinkHwnd() {
     // 不加 mutex_：sink 与 popups_ 无关，且仅在 UI 线程调用；
     // 而 CreatePopup 已持 mutex_ 调用本函数（PopupWindow::Create -> 此处），

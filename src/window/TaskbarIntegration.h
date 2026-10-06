@@ -57,6 +57,14 @@ public:
     // Called by PlaybackCallback to update default button tooltips.
     void OnPlaybackStateChanged(const char* state);
 
+    // 播放进度映射（Window 子页「任务栏播放进度」开关）。
+    // OnPlaybackProgress：PlaybackCallback 在状态变化与每秒时间回调时调用；开关关着或主题接管期间不动进度条。
+    // NoteThemeProgressOverride：taskbar.setProgress 被调用时记一笔，主题接管到下一次播放状态变化。
+    // RefreshProgressFromPlayback：开关刚被 Apply 时按当前播放状态立即刷新一次（关掉则清空进度条）。
+    void OnPlaybackProgress(const char* state, double positionSec, double lengthSec);
+    void NoteThemeProgressOverride();
+    void RefreshProgressFromPlayback();
+
 private:
     void SetDefaultButtons();
     TaskbarIntegration() = default;
@@ -77,6 +85,7 @@ private:
     bool m_buttonsAdded = false;
     bool m_usingDefaultButtons = false;
     bool m_defaultPlayIconPaused = false;
+    bool m_themeOwnsProgress = false;   // 主题调过 taskbar.setProgress，进度条归主题直到下次状态变化
     UINT m_taskbarCreatedMsg = 0;
     ButtonClickCallback m_callback;
 };

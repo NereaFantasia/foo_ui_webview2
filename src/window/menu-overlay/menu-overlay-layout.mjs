@@ -576,6 +576,19 @@ export function applySliderKey({ key, orientation, min, max, value, step = 1 }) 
 }
 
 /**
+ * Map one wheel event to a single adjust() step. Positive = increase.
+ * Vertical delta wins; horizontal delta is the fallback for horizontal-only wheels.
+ * Magnitude is ignored: one wheel event is one step, matching the arrow keys.
+ */
+export function wheelAdjustStep({ deltaY, deltaX } = {}) {
+  if (deltaY < 0) return 1;
+  if (deltaY > 0) return -1;
+  if (deltaX > 0) return 1;
+  if (deltaX < 0) return -1;
+  return 0;
+}
+
+/**
  * Whether a value change should be emitted for a slider.
  * Constant sliders never emit; NaN / out-of-range rejected.
  */

@@ -648,17 +648,16 @@ namespace {
     //
     // 同步的 file.copy / move / delete 一律阻塞主线程直到整棵目录树处理完,
     // 且中途不可取消。本组补的正是这三件: 不阻塞、可取消、逐条结果分类。
-    // 同步四个端点的行为一个字不动。
     //
     // 与 metadata.probeBatchAsync 的差异只有一处: 那边把活派给
     // fb2k::inCpuWorkerThread, 这边每个操作起一条自己的 std::thread。
     // 文件 IO 是长阻塞而非计算, 占着 CPU worker 池会把探测之类的活饿死;
-    // 取的是 HttpApi 的形态 (HttpApi.cpp:146-195 的 detach 款)。
+    // 取的是 HttpApi 异步请求的形态 (detach 的 std::thread)。
     //==========================================================================
 
     // 同时进行的操作数上限。页面可以无限次调用这三个方法, 没有上限就是
     // "一次点击起一条线程"的资源耗尽面。取值与 HttpApi 的并发闸门同数量级
-    // (HttpApi.cpp:93 是 10)。
+    // (HttpApi 的 MAX_CONCURRENT_REQUESTS 是 10)。
     constexpr size_t kMaxConcurrentFileOps = 8;
 
     // 回收站删除每批的条数上限。见 RunTrashItems 的说明。
@@ -875,7 +874,7 @@ namespace {
 
     // 注册表要求令牌类型提供 abort()。这里不用 abort_callback_impl:
     // 本组不走 SDK filesystem 入口, 没有任何要收 abort_callback& 的形参,
-    // 换来的只是一个 SDK 依赖 (AsyncOperationRegistry.h:10-23 的选型说明)。
+    // 换来的只是一个 SDK 依赖 (选型说明见 AsyncOperationRegistry.h 文件头)。
     class FileOpAbortToken {
     public:
         FileOpAbortToken() = default;
@@ -1094,7 +1093,7 @@ namespace {
     // 而那次复制既不可中断也不给进度, 等于把 worker 钉死在一个系统调用里;
     // 它对目录也无效。跨卷一律走自己的回退。
     // MOVEFILE_REPLACE_EXISTING 只在 overwrite 为真时给: 同步 file.move
-    // 底层的 fs::rename 是无条件覆盖, 本组把它改成显式选项。
+    // 底层的 fs::rename 是无条件覆盖, 异步版的覆盖由 overwrite 显式控制。
     FileOpItemResult RunMoveItem(const FileOpItem& item, bool overwrite,
                                  FileOpAbortToken& token) {
         FileOpItemResult out{item.sourceEcho, item.destEcho};
@@ -1279,7 +1278,7 @@ namespace {
             }
         }
 
-        // 残余批不得丢。fb2k::inMainThread 保证 FIFO (threadsLite.h:18-20),
+        // 残余批不得丢。fb2k::inMainThread 保证 FIFO (SDK 在其声明处写明),
         // 所以收尾时先 Flush 再发 complete, 页面看到的顺序就是这个顺序。
         void Flush() {
             if (pending_.empty()) {
@@ -1386,7 +1385,7 @@ namespace {
     }
 
     // worker 线程体。整体标 noexcept 并自己兜住所有异常: 抛出 std::thread 的
-    // 线程函数就是 std::terminate, 范式同 HttpApi.cpp:146-194 的外层守卫。
+    // 线程函数就是 std::terminate, 范式同 HttpApi 异步请求线程的外层守卫。
     // 最外层 catch 的 handler 体内再包一层 try: C++ 规定 handler 体内抛出的
     // 异常不由同一个 try 的其他 handler 处理, 一抛就直接冲出 noexcept。
     //
@@ -1474,13 +1473,12 @@ namespace {
         return params[key].get<bool>();
     }
 
-    // items 的逐条路径校验由三参 RegisterApi 的 wrapper 在 handler 之前跑完
-    // (BridgeCore.cpp:63-91)。copyAsync 在同一个 paramKey 上挂了两条 spec,
-    // wrapper 的 spec 循环对每条各调一次 ValidatePathParam, 各自完整走一遍
-    // items 数组 (BridgeCore.cpp:495-512 -> ValidateNestedArrayParam), 互不
-    // 干扰: 缺 source 与缺 destination 各由自己那条 spec 判成形状错。
-    // 这里只补校验器故意跳过的一类 —— 数组元素本身不是对象
-    // (BridgeCore.cpp:409-412 的 continue)。
+    // items 的逐条路径校验由三参 RegisterApi 的 wrapper 在 handler 之前跑完。
+    // copyAsync 在同一个 paramKey 上挂了两条 spec, wrapper 的 spec 循环对每条
+    // 各调一次 ValidatePathParam, 各自完整走一遍 items 数组
+    // (ValidateNestedArrayParam), 互不干扰: 缺 source 与缺 destination 各由
+    // 自己那条 spec 判成形状错。这里只补校验器故意跳过的一类 —— 数组元素
+    // 本身不是对象 (ValidateNestedArrayParam 遇到非对象元素直接 continue)。
     //
     // 返回值非空即为应当直接回给页面的错误信封。
     std::optional<json> CollectCopyMoveItems(const json& params, std::vector<FileOpItem>& out) {
@@ -1719,9 +1717,9 @@ void RegisterFileApi() {
     // file.write - Write content to file
     //
     // 以下六个写端点使用 FileWrite 而非 MediaWrite: 它们操作的是任意文件,
-    // 不是媒体上下文中的文件。此前挂在 MediaWrite 上, 使"非系统盘直通"这一
-    // 通用文件写策略混进了媒体写入语义。统一权限架构 §7.2 要求它们最终归入
-    // Write (profile/temp), 该改归属破坏性变更, 单独决策。
+    // 不是媒体上下文中的文件, "非系统盘直通"这一通用文件写策略不应混进媒体写入语义。
+    // 目标态是归入 Write (profile/temp) 严格写白名单; 那会拒绝非系统盘任意路径的写入,
+    // 属破坏性变更, 须单独决策。
     bridge.RegisterApi("file.write", FileWrite, {{"path", SecurityLevel::FileWrite}});
     
     // file.exists - Check if file/directory exists
@@ -1757,7 +1755,7 @@ void RegisterFileApi() {
     // file.copyAsync - 异步批量复制 (worker 线程, 可取消)
     //
     // 同一个 paramKey 上挂两条 spec: wrapper 的 spec 循环对每条各调一次
-    // ValidatePathParam (BridgeCore.cpp:69-79), 每次完整走一遍 items 数组并
+    // ValidatePathParam, 每次完整走一遍 items 数组并
     // 只看自己那个 nestedKey, 两条互不干扰。档位与同步版 file.copy 一致 ——
     // source 读、destination 写。
     bridge.RegisterApi("file.copyAsync", FileCopyAsync, {

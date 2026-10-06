@@ -7,6 +7,7 @@
 // WebViewUI::activate() 是"隐藏/最小化 → 恢复主窗口"的既有权威，
 // 托盘内置 _sys_show 原生路由复用它（见 RestoreMainWindowNatively）。
 #include "core/UserInterface.h"
+#include "core/PreferencesPage.h"
 #include <shellapi.h>
 #include <foobar2000/SDK/playback_control.h>
 #include <foobar2000/SDK/core_api.h>
@@ -216,6 +217,9 @@ bool TrayIcon::Create(HWND hwnd, HICON hIcon, const char* tooltip) {
         return false;
     }
     m_created = true;
+    // 偏好设置里的两个托盘开关作为初值；tray.setMinimizeToTray / setCloseToTray 之后可在运行期覆盖。
+    m_minimizeToTray = webview_prefs::GetMinimizeToTrayPreference();
+    m_closeToTray = webview_prefs::GetCloseToTrayPreference();
     return true;
 }
 

@@ -577,6 +577,23 @@ TEST(MenuNodeContractTest, KindAndSourceTokensAreStable) {
     EXPECT_STREQ(ToString(Source::HmenuFallback), "hmenu_fallback");
 }
 
+// The tree walker is started with the family's static value and cannot know
+// per node whether it is inside a dynamic slot; the leaf's sub-command GUID
+// decides. Both families must flip, and nothing else may move.
+TEST(MenuNodeContractTest, LeafSourceFollowsSubGuidForBothFamilies) {
+    EXPECT_EQ(ResolveLeafSource(Source::MainMenuStatic, true), Source::MainMenuDynamic);
+    EXPECT_EQ(ResolveLeafSource(Source::ContextMenuStatic, true), Source::ContextMenuDynamic);
+
+    EXPECT_EQ(ResolveLeafSource(Source::MainMenuStatic, false), Source::MainMenuStatic);
+    EXPECT_EQ(ResolveLeafSource(Source::ContextMenuStatic, false), Source::ContextMenuStatic);
+
+    for (const bool hasSubGuid : {false, true}) {
+        EXPECT_EQ(ResolveLeafSource(Source::MainMenuDynamic, hasSubGuid), Source::MainMenuDynamic);
+        EXPECT_EQ(ResolveLeafSource(Source::ContextMenuDynamic, hasSubGuid), Source::ContextMenuDynamic);
+        EXPECT_EQ(ResolveLeafSource(Source::HmenuFallback, hasSubGuid), Source::HmenuFallback);
+    }
+}
+
 // ===========================================================================
 // Live-host regression anchors (SPEC §2.3)
 //

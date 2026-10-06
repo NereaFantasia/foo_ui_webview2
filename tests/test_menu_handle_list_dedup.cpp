@@ -40,8 +40,10 @@ struct ValidatorFake {
     }
 };
 
-// Stand-in for metadb::get()->handle_create. `invalid` models handles the real
-// metadb rejects, which ParseHandleList drops without adding to the output.
+// Stand-in for SubsongUtils::CreateCanonicalHandle (canonicalize + handle_create;
+// its own contract is pinned in test_canonical_handle.cpp). `invalid` models
+// handles the real metadb rejects, which ParseHandleList drops without adding
+// to the output.
 struct HandleCreateFake {
     std::vector<std::pair<std::string, uint32_t>> calls;
     std::vector<std::string> invalid;

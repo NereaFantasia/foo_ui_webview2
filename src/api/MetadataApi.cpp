@@ -7,7 +7,10 @@
 #include "api/BridgeCore.h"
 #include "api/CallerContext.h"
 #include "api/ErrorEnvelope.h"
+#include "api/ProbeFailureClassifier.h"
+#include "api/RatingResolve.h"
 #include "utils/PathSecurity.h"
+#include "utils/PathTraversalSegments.h"
 #include "utils/SubsongUtils.h"
 #include <foobar2000/SDK/album_art.h>
 #include <foobar2000/SDK/metadb_index.h>
@@ -136,11 +139,7 @@ static std::wstring ArtworkBaseName(const std::string& type) {
 // Reject filenames that contain path separators or traversal sequences —
 // the input must be a plain file name, not a relative or absolute path.
 static bool ContainsFilenameTraversal(const std::string& filename) {
-  return filename.find(".\\") != std::string::npos ||
-         filename.find("./") != std::string::npos ||
-         filename.find("..") != std::string::npos ||
-         filename.find('/') != std::string::npos ||
-         filename.find('\\') != std::string::npos;
+  return !path_traversal::IsPlainFilename(filename);
 }
 
 // Resolve the artwork output path: parent directory of the audio file +
@@ -148,11 +147,19 @@ static bool ContainsFilenameTraversal(const std::string& filename) {
 // audioPath may carry a "|subsong:N" suffix; it is stripped before resolving the directory.
 // fb2k's external artwork lookup is per-directory, so we deliberately ignore subsong index
 // — CUE multi-track containers share one sidecar (later writes overwrite earlier ones).
+// The path is normalized first: for a local file fb2k hands back "file://D:\...",
+// whose parent directory is not a directory any file API can open. Returns an empty
+// string when the track is not on the local filesystem, which the caller reports.
 static std::wstring ResolveArtworkOutputPath(const std::string& audioPath,
                                              const std::string& filename,
                                              const std::string& type,
                                              const std::vector<uint8_t>& bytes) {
-  auto parsed = SubsongUtils::ParseSubsongPath(audioPath);
+  std::string nativePath;
+  if (!SubsongUtils::TryResolveNativeMediaPath(audioPath, nativePath)) {
+    return L"";
+  }
+
+  auto parsed = SubsongUtils::ParseSubsongPath(nativePath);
   const std::string& filePath = parsed.first;
   std::filesystem::path dir = std::filesystem::path(Utf8ToWide(filePath)).parent_path();
 
@@ -241,8 +248,18 @@ static json SaveArtworkToDirectory(const std::string& audioPath,
     return {{"success", false}, {"error", "Failed to resolve output path"}};
   }
 
+  // The gate's same-directory trust rule takes the parent of this context path.
+  // Handing it the raw "file://D:\..." form makes that throw, and the exception is
+  // swallowed, so the rule never fires and the write is refused. Reaching this line
+  // means the path resolved above, so normalization succeeds here too.
+  std::string nativeAudioPath;
+  if (!SubsongUtils::TryResolveNativeMediaPath(audioPath, nativeAudioPath)) {
+    nativeAudioPath = audioPath;
+  }
+
   std::wstring pathError;
-  if (!PathSecurity::Instance().ValidateMediaWriteAccess(outputPath, pathError, Utf8ToWide(audioPath))) {
+  if (!PathSecurity::Instance().ValidateMediaWriteAccess(outputPath, pathError,
+                                                         Utf8ToWide(nativeAudioPath))) {
     return {{"success", false}, {"error", "Write access denied: " + WideToUtf8(pathError)}};
   }
 
@@ -602,26 +619,6 @@ static std::optional<json> TryRatingViaUtf8Fallback(
       FindNamedPopupChild(statsMenu, utf8_rating_menu, "Rating", ratingName);
   return ExecuteRatingMenuNode(ratingMenu, statsName, ratingName, rating,
                                displayPath);
-}
-
-// 通过 titleformat API 读取 foo_playcount 评级
-static std::optional<int> TryReadRatingFromPlaycount(
-    const metadb_handle_ptr& handle) {
-  try {
-    static_api_ptr_t<titleformat_compiler> compiler;
-    titleformat_object::ptr script;
-    if (!compiler->compile(script, "%rating%")) return std::nullopt;
-
-    pfc::string8 result;
-    handle->format_title(nullptr, result, script, nullptr);
-    if (result.get_length() == 0 || result[0] == '?') return std::nullopt;
-
-    int rating = atoi(result.get_ptr());
-    if (rating > 0 && rating <= 5) return rating;
-  } catch (...) {
-    // Fall through
-  }
-  return std::nullopt;
 }
 
 //==========================================================================
@@ -1646,38 +1643,29 @@ json RatingGet(const json &params) {
       return {{"success", false}, {"error", "Failed to open file"}};
     }
 
-    // Use titleformat API to read %rating% via foo_playcount
-    auto statsRating = TryReadRatingFromPlaycount(handle);
-    if (statsRating.has_value()) {
+    // 与播放列表行和 metadb:changed 共用取值规则。容器无效时只读取统计值，
+    // 不因文件标签不可用而使整个请求失败。
+    metadb_info_container::ptr infoContainer = handle->get_info_ref();
+    const TrackRating resolved = ResolveTrackRating(
+        handle, infoContainer.is_valid() ? &infoContainer->info() : nullptr);
+
+    // 两种来源均无评分时返回 rating=0、storage="file"；storage 不能用于区分
+    // 标签不存在和标签中存了 0。
+    //
+    // 两个分支各自写出字面量而不是三元表达式：生成 SDK 类型的抽取器只认字面量，
+    // 合成一个三元会让 RatingGetResponse.storage 从 string 退化成 unknown。
+    if (resolved.source == RatingSource::kStats) {
       return {
           {"success", true},
-          {"path", originalPath},
-          {"rating", *statsRating},
+          {"path", originalPath},  // 返回原始路径（含 |subsong:N）
+          {"rating", resolved.value},
           {"storage", "stats"},
       };
     }
-
-    // Fallback: Read from file tag using get_info_ref() (cached, more reliable)
-    int rating = 0;
-    metadb_info_container::ptr infoContainer = handle->get_info_ref();
-    if (infoContainer.is_valid()) {
-      const file_info &info = infoContainer->info();
-      const char *ratingStr = info.meta_get("RATING", 0);
-      if (ratingStr) {
-        rating = atoi(ratingStr);
-        if (rating < 0)
-          rating = 0;
-        if (rating > 5)
-          rating = 5;
-      }
-    }
-    // Note: If infoContainer is invalid, we return rating=0 (unrated)
-    // This is better than failing completely
-
     return {
         {"success", true},
-        {"path", originalPath},  // 返回原始路径（含 |subsong:N）
-        {"rating", rating},
+        {"path", originalPath},
+        {"rating", resolved.value},
         {"storage", "file"},
     };
   } catch (const std::exception &e) {
@@ -1689,17 +1677,17 @@ json RatingGet(const json &params) {
 // metadata.probeBatchAsync / metadata.cancelProbe
 //
 // 既有四个 read API 已经能读未入库文件的 duration/bitrate/samplerate
-// （降级链 ReadMetadataInfoWithFallback）。本组新面只补它们做不到的三件事：
-// 不阻塞主线程、中途可取消、失败原因分类。四个 read API 的行为不变。
+// （降级链 ReadMetadataInfoWithFallback）。这一组异步接口补的是它们做不到的
+// 三件事：不阻塞主线程、中途可取消、失败原因分类。
 //
-// 已知残留缺口（本任务不修）：降级链判据 HasEssentialMetadataFields 只看
-// title 标签，「缓存里有 title 但缺 bitrate」不会重新读盘。本组新面改用
-// metadb_info_container::isInfoPartial() 绕开了它，但那四个 API 仍是旧判据；
-// 改判据会同时影响它们，属独立议题。
+// 已知限制：四个 read API 的降级判据 HasEssentialMetadataFields 只看 title
+// 标签，缓存里有 title 但缺 bitrate 时不会重新读盘。这一组改用
+// metadb_info_container::isInfoPartial() 判定；统一判据会同时改变那四个 API
+// 的行为。
 //==========================================================================
 
-// 取消令牌注册表。abort_callback_impl 可外部触发（abort_callback.h:71）
-// 但不可拷贝（:82-83），注册表与 worker 必须共享同一个对象，故用 shared_ptr。
+// 取消令牌注册表。abort_callback_impl 可外部触发（abort()）但不可拷贝（拷贝
+// 构造与拷贝赋值均为 delete），注册表与 worker 必须共享同一个对象，故用 shared_ptr。
 using ProbeAbortRegistry = fb2k_api::AsyncOperationRegistry<abort_callback_impl>;
 
 static ProbeAbortRegistry& GetProbeRegistry() {
@@ -1784,128 +1772,111 @@ struct ProbeItemOutcome {
 
 // 读一条：先看缓存快照，未命中或 partial 才落盘。
 //
-// 判据用 metadb_info_container::isInfoPartial()（metadb_handle.h:16）而不是
+// 判据用 metadb_info_container::isInfoPartial() 而不是
 // 本文件的 HasEssentialMetadataFields()（只看 title 标签，缺 bitrate 也算齐）。
-// 落盘走 SDK 原语 metadb_handle::get_full_info_ref(abort_callback&)
-// （metadb_handle.cpp:101-117），它原生接受 abort_callback，取消能真正打断读盘；
+// 落盘走 SDK 原语 metadb_handle::get_full_info_ref(abort_callback&)，
+// 它原生接受 abort_callback，取消能真正打断读盘；
 // 而本文件的 TryReadInfoDirect 用 fb2k::noAbort，打不断。
 //
 // worker 线程安全性：get_info_ref() 返回不可变快照，SDK 明写「任意上下文可调、
-// 不涉锁语义」（metadb_handle.h:108-111）；get_full_info_ref 内部只用它加
-// g_open_for_info_read。反之 metadb_handle::get_info()（:69）文档说明会临时锁
+// 不涉锁语义」；get_full_info_ref 内部只用它加
+// g_open_for_info_read。反之 metadb_handle::get_info() 文档说明会临时锁
 // metadb 且缓存状态只在主线程变化 —— 所以这里不用它。
 //
-// catch 顺序即语义，不得调换。pfc::exception 就是 std::exception
-// （pfc/primitives.h:201），exception_aborted 派生自它（abort_callback.h:5），
-// 所以 catch(const std::exception&) 提前会把「取消」吞成 read-error。
-// 继承链（exception_io.h，PFC_DECLARE_EXCEPTION 为 public 继承，
-// primitives.h:35）：exception_io_unsupported_format(:20) ⊂
-// exception_io_data(:16) ⊂ exception_io(:7) ⊂ std::exception；
-// exception_io_not_found(:9) 与 exception_io_data 是兄弟，必须排在
-// exception_io 之前，否则永不命中。
-// exception_io_data_truncation(:18) 与 exception_io_bad_subsong_index(:22)
+// 失败分类的 catch 链只写在 api/ProbeFailureClassifier.h 里，这里用真实 SDK
+// 类型实例化它，单测用镜像层级实例化同一个模板，顺序因此只有一份。
+//
+// 顺序即语义。pfc::exception 就是 std::exception（pfc 里的 typedef），
+// exception_aborted 派生自它（abort_callback.h 用 PFC_DECLARE_EXCEPTION
+// 声明），所以 catch(const std::exception&) 提前会把「取消」吞成 read-error。
+// 继承链（exception_io.h，PFC_DECLARE_EXCEPTION 为 public 继承）：
+// exception_io_unsupported_format ⊂ exception_io_data ⊂ exception_io ⊂
+// std::exception；exception_io_not_found 与 exception_io_data 是兄弟，
+// 必须排在 exception_io 之前，否则永不命中。
+// exception_io_data_truncation 与 exception_io_bad_subsong_index
 // 也在 exception_io_data 之下，被同一条归成 read-error。
 //
-// 下面这组 static_assert 把上面每一条继承关系钉在编译期。
+// 模板自带的 static_assert 已钉住五个参数之间的继承关系；下面补的是模板看
+// 不到的两点：pfc::exception 与 std::exception 同一，以及两个未作为参数传入的
+// exception_io_data 子类确实落在 read-error 那一条下。
 //
-// 为什么单测里构造不出这六类真异常 —— 不是「缺 SDK lib」：MSVC 分支的
-// PFC_DECLARE_EXCEPTION（pfc/primitives.h:34-42）展开出的 ctor 全是 inline，
-// 基类 std::exception(const char*, int) 由 MSVC CRT 提供，所以这些类型本身
-// header-only 就能构造，不需要任何 SDK lib。真正的障碍是这两个头不自含：
-// exception_io.h 与 abort_callback.h 都在 #pragma once 之后直接用
-// PFC_DECLARE_EXCEPTION（分别是 :7 起与 :5），零 include，要引它们就得把整条
-// pfc/SDK 头链拽进来；而 tests/pch.h 与 tests/compat/fb2k_types.h 是刻意不引
-// SDK 头的（后者只给 t_size 一类 typedef 加一个 console 桩）。
-//
-// 分工因此是：真实类型的继承事实由这里的 static_assert 保证，catch 排序逻辑由
-// tests/test_async_operation_registry.cpp 的镜像层级保证。SDK 升级把
-// exception_io_not_found 挪到 exception_io_data 之下，就会在这里编译失败，
-// 而不是在运行时静默失去分类。
+// 单测为什么不直接用这六个真类型 —— 不是「缺 SDK lib」：MSVC 分支的
+// PFC_DECLARE_EXCEPTION 展开出的 ctor 全是 inline，
+// 基类 std::exception(const char*, int) 由 MSVC CRT 提供，header-only 就能
+// 构造。真正的障碍是 exception_io.h 与 abort_callback.h 不自含（都在
+// #pragma once 之后直接用 PFC_DECLARE_EXCEPTION，零 include），要引它们就得
+// 把整条 pfc/SDK 头链拽进来，而 tests/pch.h 与 tests/compat/fb2k_types.h 是
+// 刻意不引 SDK 头的。
 static_assert(std::is_same_v<std::exception, pfc::exception>,
               "pfc::exception IS std::exception (a typedef, not a subclass). "
               "If this ever becomes a distinct type, re-derive the catch order "
               "instead of assuming the chain below still holds");
-static_assert(std::is_base_of_v<std::exception, exception_aborted>,
-              "exception_aborted derives from std::exception, so it MUST be "
-              "caught before catch(const std::exception&)");
-static_assert(std::is_base_of_v<exception_io, exception_io_not_found>);
-static_assert(std::is_base_of_v<exception_io, exception_io_data>);
-static_assert(std::is_base_of_v<exception_io_data, exception_io_unsupported_format>,
-              "unsupported-format must be caught before exception_io_data, "
-              "otherwise that classification never appears");
 static_assert(std::is_base_of_v<exception_io_data, exception_io_data_truncation>);
 static_assert(std::is_base_of_v<exception_io_data, exception_io_bad_subsong_index>);
-static_assert(!std::is_base_of_v<exception_io_data, exception_io_not_found>,
-              "not-found is a sibling of exception_io_data, not a child; the "
-              "catch order relies on it only having to precede exception_io");
+
+using ProbeClassifier =
+    probe_failure::Classifier<exception_aborted, exception_io_not_found,
+                              exception_io_unsupported_format, exception_io_data,
+                              exception_io>;
+
+// 探测体本身。可能抛出 SDK 异常，由 ProbeOneTrack 经 ProbeClassifier 分类；
+// 这里只管读，不管 catch。
+static void ProbeOneTrackBody(const metadb_handle_ptr& handle,
+                              bool includeTags,
+                              abort_callback& abort,
+                              ProbeItemOutcome& out) {
+  // 缓存全命中的批次也要能被及时取消，所以每条都先 check 一次。
+  abort.check();
+
+  metadb_info_container::ptr container;
+  if (handle->get_info_ref(container) && container.is_valid() &&
+      !container->isInfoPartial()) {
+    out.infoSource = "cached";
+  } else {
+    container = handle->get_full_info_ref(abort);
+    // 赋值放在调用之后：抛出时 infoSource 应留在 "none"。
+    out.infoSource = "direct";
+  }
+
+  if (!container.is_valid()) {
+    out.infoSource = "none";
+    out.failure = probe_failure::kReadError;
+    return;
+  }
+
+  const file_info& info = container->info();
+  // 与 metadata.read 的 techInfo 同形（本文件 MetadataRead）。
+  json techInfo = {
+      {"duration", info.get_length()},
+      {"bitrate", info.info_get_int("bitrate")},
+      {"sampleRate", info.info_get_int("samplerate")},
+      {"channels", info.info_get_int("channels")},
+      {"codec", info.info_get("codec") ? info.info_get("codec") : ""}};
+  out.info = std::move(techInfo);
+
+  if (includeTags) {
+    // stats() 取自同一个不可变快照，任意线程可读；
+    // handle->get_filesize() 没有这个保证，worker 上不能用。
+    out.tags = CollectFlatMetadataFromInfo(info, container->stats().m_size);
+    out.hasTags = true;
+  }
+}
 
 static ProbeItemOutcome ProbeOneTrack(const metadb_handle_ptr& handle,
                                       bool includeTags,
                                       abort_callback& abort) {
   ProbeItemOutcome out;
-  try {
-    // 缓存全命中的批次也要能被及时取消，所以每条都先 check 一次。
-    abort.check();
+  const probe_failure::Classification verdict = ProbeClassifier::Classify(
+      [&] { ProbeOneTrackBody(handle, includeTags, abort, out); });
 
-    metadb_info_container::ptr container;
-    if (handle->get_info_ref(container) && container.is_valid() &&
-        !container->isInfoPartial()) {
-      out.infoSource = "cached";
-    } else {
-      container = handle->get_full_info_ref(abort);
-      // 赋值放在调用之后：抛出时 infoSource 应留在 "none"。
-      out.infoSource = "direct";
-    }
-
-    if (!container.is_valid()) {
-      out.infoSource = "none";
-      out.failure = "read-error";
-      return out;
-    }
-
-    const file_info& info = container->info();
-    // 与 metadata.read 的 techInfo 同形（本文件 MetadataRead）。
-    json techInfo = {
-        {"duration", info.get_length()},
-        {"bitrate", info.info_get_int("bitrate")},
-        {"sampleRate", info.info_get_int("samplerate")},
-        {"channels", info.info_get_int("channels")},
-        {"codec", info.info_get("codec") ? info.info_get("codec") : ""}};
-    out.info = std::move(techInfo);
-
-    if (includeTags) {
-      // stats() 取自同一个不可变快照，任意线程可读；
-      // handle->get_filesize() 没有这个保证，worker 上不能用。
-      out.tags = CollectFlatMetadataFromInfo(info, container->stats().m_size);
-      out.hasTags = true;
-    }
-    return out;
-  } catch (const exception_aborted&) {
-    // 取消不是 failure：调用方要的是 cancelled，不是 read-error。
-    out.aborted = true;
-    out.infoSource = "none";
-    return out;
-  } catch (const exception_io_not_found&) {
-    out.infoSource = "none";
-    out.failure = "not-found";
-    return out;
-  } catch (const exception_io_unsupported_format&) {
-    out.infoSource = "none";
-    out.failure = "unsupported-format";
-    return out;
-  } catch (const exception_io_data&) {
-    out.infoSource = "none";
-    out.failure = "read-error";
-    return out;
-  } catch (const exception_io&) {
-    out.infoSource = "none";
-    out.failure = "read-error";
-    return out;
-  } catch (const std::exception&) {
-    out.infoSource = "none";
-    out.failure = "read-error";
+  if (!verdict.threw) {
     return out;
   }
+  // 抛出即无有效读数。取消不是 failure：调用方要的是 cancelled，不是 read-error。
+  out.infoSource = "none";
+  out.aborted = verdict.aborted;
+  out.failure = verdict.failure;
+  return out;
 }
 
 // 事件载荷由具名函数构造，而不是在 EmitEvent 调用点摊成 init-list。
@@ -1939,13 +1910,13 @@ static json BuildProbeCompletePayload(const std::string& operationId, size_t tot
 //==========================================================================
 json MetadataProbeBatchAsync(const json &params) {
   // paths 的逐项 MediaRead 校验由三参 RegisterApi 的 wrapper 在本函数之前
-  // 跑完（BridgeCore.cpp:63-91）。skipInvalid 保持默认 false，所以数组模式
-  // 是 fail-fast 整批拒绝（ValidateArrayParam，BridgeCore.cpp:438-469）：
+  // 跑完。skipInvalid 保持默认 false，所以数组模式是 fail-fast 整批拒绝
+  // （ValidateArrayParam）：
   // 任一条不过本函数就不执行，不产生 operationId。整批拒绝的 code 按失败
   // 类型分派 —— paths 非数组、元素非字符串这类形状错误是 INVALID_PARAMS，
   // 路径安全拒绝才是 PERMISSION_DENIED；两者都是整批 fail-fast，不逐项。
   // 逐项 invalid-path 在这个校验架构下做不出来，是显式取舍。
-  // 形状错误按 ErrorEnvelope.h:11 的 {success, error, code} 契约带 code 返回，
+  // 形状错误按 ErrorEnvelope.h 的 {success, error, code} 契约带 code 返回，
   // 否则页面只能去匹配 error 文案。文案本身不动：已被文档引用。
   if (!params.contains("paths") || !params["paths"].is_array()) {
     return ApiEnvelope::MakeError("paths array is required",
@@ -1973,7 +1944,7 @@ json MetadataProbeBatchAsync(const json &params) {
         // 只识别 |subsong:，不用本文件的 ParseSubsongIndex。后者在
         // path.rfind('#') 之后全为数字时切分（#N 向后兼容分支），于是
         // 无扩展名且以 #<数字> 结尾的文件名会被误切成 "Track " + subsong 2。
-        // T1 的输入是用户拖进来的任意文件名，必须避开这条兼容分支。
+        // 本函数的输入是用户拖进来的任意文件名，必须避开这条兼容分支。
         // SubsongUtils::ParseSubsongPath 只认 |subsong:，语义由
         // tests/test_subsong_utils.cpp 覆盖。
         auto [cleanPath, subsong] = SubsongUtils::ParseSubsongPath(target.path);
@@ -2022,16 +1993,17 @@ json MetadataProbeBatchAsync(const json &params) {
 
     // 事件路由上下文在主线程取，但只带 _callerHwnd 的值过去：
     // CallerContext 持的是裸 BridgeCore*，面板销毁后跨线程持有会悬垂，
-    // 所以在发射前于主线程重新解析（同 AudioApi.cpp:1302-1320 的做法）。
+    // 所以在发射前于主线程重新解析（同 AudioApi.cpp 中 ExecuteWaveformGeneration 的做法）。
     json callerSeed = json::object();
     if (params.contains("_callerHwnd")) {
       callerSeed["_callerHwnd"] = params["_callerHwnd"];
     }
 
-    // 读盘在 worker。参考 AudioApi.cpp:1299 / LibraryApi.cpp:1712。
+    // 读盘在 worker，参考 AudioApi.cpp 中的 ExecuteWaveformGeneration。
     //
     // 整个 worker 体标 noexcept 并自己兜住所有异常：抛出去会落进 fb2k 的
-    // 线程池，等于 std::terminate。范式同 HttpApi.cpp:146-194 的外层守卫。
+    // 线程池，等于 std::terminate。范式同 HttpApi.cpp AsyncRequestManager::ExecuteAsync
+    // 的外层守卫。
     //
     // 「兜住所有异常」必须连最外层 catch 自己的 handler 体一起兜：C++ 规定
     // handler 体内抛出的异常不由同一个 try 的其他 handler 处理，最外层 handler
@@ -2043,7 +2015,7 @@ json MetadataProbeBatchAsync(const json &params) {
       try {
         // 每次发射都必须包 fb2k::inMainThread：EmitEvent 最终落到 WebView2
         // COM 对象（STA / UI 线程绑定），从 worker 直接调是跨 apartment 调用。
-        // 范例 AudioApi.cpp:1333 / LibraryApi.cpp:1754。
+        // 范例：AudioApi.cpp 的 ExecuteWaveformGeneration、LibraryApi.cpp 的 LibraryGetAll。
         //
         // 两个事件各自写一个 lambda、事件名在 EmitEvent 调用点写成字面量，
         // 不合并成「事件名当参数」的单个发射器：Graph 的 cpp-parser 按调用点
@@ -2132,8 +2104,8 @@ json MetadataProbeBatchAsync(const json &params) {
             }
           }
 
-          // 最后一批不得丢。fb2k::inMainThread 保证 FIFO
-          // （threadsLite.h:18-20），所以这一批一定排在 probeComplete 之前。
+          // 最后一批不得丢。fb2k::inMainThread 保证 FIFO（SDK 在其声明处写明），
+          // 所以这一批一定排在 probeComplete 之前。
           if (!pending.empty()) {
             emitProgress(
                 BuildProbeProgressPayload(operationId, done, totalCount, pending));
@@ -2155,7 +2127,7 @@ json MetadataProbeBatchAsync(const json &params) {
         //
         // handler 体自己再包一层 try：这里已是最外层 handler，体内抛出的异常
         // 不会被同一个 try 的任何 handler 接住，会直接冲出这个 noexcept lambda。
-        // console::printf（SDK/console.h:16）没有 noexcept，写日志失败就把宿主
+        // console::printf 没有 noexcept，写日志失败就把宿主
         // 拖去 terminate 是本末倒置。
         try {
           console::printf("metadata.probeBatchAsync: outer guard, no probeComplete "
@@ -2204,16 +2176,16 @@ json MetadataCancelProbe(const json &params) {
 // 退出时取消所有未完成探测
 //==========================================================================
 //
-// 挂 initquit::on_quit 而不是 background_service::Shutdown()：后者被
-// g_initialized 门挡着（BackgroundService.cpp:119-121），只有后台模式初始化
+// 挂 initquit::on_quit 而不是 background_service::Shutdown()：后者开头被
+// g_initialized 门挡着，只有后台模式初始化
 // 成功过才往下走；WebView2 UI 当主界面时它第一行就 return，探测照跑不误。
-// on_quit 与运行模式无关，按 SDK 约定发生在主窗口销毁之前（initquit.h:2），
+// on_quit 与运行模式无关，按 SDK 对 initquit 的约定发生在主窗口销毁之前，
 // 此时服务系统仍可用；探测 worker 跑在 cpuThreadPool 上，线程池收工属于 core
 // 卸载的更后期，所以这里发出的 abort 还来得及被 worker 看见。多个 initquit
 // 之间的先后不确定，但这里不碰任何其他服务，与顺序无关。
 //
 // 反过来，这里也不要去碰 WebView 或 UI：独立 UI 模式下 user_interface::
-// shutdown() 已经先跑过（见 WebViewEnvironment.cpp:322-326 的说明）。
+// shutdown() 已经先跑过（见 WebViewEnvironment.cpp 中 on_quit 的说明）。
 //
 // 只 abort 不摘条目，摘除仍归 worker（理由见 AsyncOperationRegistry.h 的
 // CancelAll 注释）。取消也不是硬中断：worker 每条之间查一次 token，所以退出

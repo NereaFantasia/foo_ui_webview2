@@ -18,6 +18,7 @@
 #include "utils/GuidUtils.h"
 #include "utils/PathSecurity.h"
 #include "utils/StringUtils.h"
+#include "utils/SubsongUtils.h"
 #include "window/MenuOverlayHost.h"
 #include "window/MenuResourceLimits.h"
 
@@ -818,10 +819,8 @@ namespace {
     bool ParseHandleList(const json& handlesJson, metadb_handle_list& out) {
         if (!handlesJson.is_array()) return false;
 
-        auto mdb = metadb::get();
-
         // subsong 在校验前已从 path 剥离，故一张 CUE 的 N 个 subsong 会对同一裸路径
-        // 各校验一次。缓存结论（含拒绝）以消除该冗余；handle_create 仍需逐个执行。
+        // 各校验一次。缓存结论（含拒绝）以消除该冗余；handle 仍需逐个创建。
         std::unordered_map<std::string, bool> pathVerdicts;
 
         for (const auto& h : handlesJson) {
@@ -863,7 +862,9 @@ namespace {
                 continue;
             }
 
-            metadb_handle_ptr handle = mdb->handle_create(path.c_str(), subsong);
+            // 规范化后建 handle：菜单命令拿到的 handle 必须与播放列表 / 媒体库里的
+            // 同一曲目是同一 metadb 身份，否则"已在列表中"类判定失效。
+            metadb_handle_ptr handle = SubsongUtils::CreateCanonicalHandle(path, subsong);
             if (handle.is_valid()) {
                 out.add_item(handle);
             }
@@ -938,9 +939,8 @@ namespace {
         return result;
     }
 
-    // Shared by the main-menu v2 tier and the context-menu tier, hence the
-    // explicit `source`: the two produce structurally identical nodes but must
-    // not claim the same origin in the response.
+    // 主菜单 v2 与上下文菜单共用。`source` 是本次遍历所属族（调用方都传静态值）；
+    // 命令叶节点的 `source` 要等拿到子命令 GUID 后再解析，避免把动态子项标成静态槽。
     json BuildMenuTreeJson(
         const menu_tree_item::ptr& node,
         const std::string& pathPrefix,
@@ -1012,10 +1012,9 @@ namespace {
 
         if (node->isCommand()) {
             // menu_flags (menu_common.h) uses the same bit assignments as
-            // mainmenu_commands' flags, so one normalizer covers both. The v2
-            // tier previously reported `available` + `flags` while the v1 tier
-            // reported `available` + `checked`, so a caller had to know which
-            // tier answered before it could read state at all.
+            // mainmenu_commands' flags, so one normalizer covers both and the v1 and
+            // v2 tiers report state in the same shape; a caller does not need to know
+            // which tier answered.
             std::uint32_t rawFlags = 0;
             try {
                 rawFlags = static_cast<std::uint32_t>(node->flags());
@@ -1037,8 +1036,7 @@ namespace {
                 { "enabled", state.enabled },
                 { "checked", state.checked },
                 { "radioChecked", state.radioChecked },
-                { "hidden", state.hidden },
-                { "source", menu_node::ToString(source) }
+                { "hidden", state.hidden }
             };
 
             // commandID / commandGuid / subCommandGuid 在中文版 SDK 可能抛异常
@@ -1069,9 +1067,13 @@ namespace {
                 console::printf("[MenuApi] BuildMenuTreeJson: commandGuid() failed for '%s' (unknown)",
                                 label.c_str());
             }
+            bool haveSubGuid = false;
             try {
                 GUID subGuid = node->subCommandGuid();
-                if (subGuid != pfc::guid_null) item["subGuid"] = GuidToString(subGuid);
+                if (subGuid != pfc::guid_null) {
+                    item["subGuid"] = GuidToString(subGuid);
+                    haveSubGuid = true;
+                }
             } catch (const std::exception& ex) {
                 console::printf("[MenuApi] BuildMenuTreeJson: subCommandGuid() failed for '%s': %s",
                                 label.c_str(), ex.what());
@@ -1079,6 +1081,10 @@ namespace {
                 console::printf("[MenuApi] BuildMenuTreeJson: subCommandGuid() failed for '%s' (unknown)",
                                 label.c_str());
             }
+
+            // 调用方传入的是族，不是叶节点来源；有子命令 GUID 才标成动态。
+            item["source"] = menu_node::ToString(
+                menu_node::ResolveLeafSource(source, haveSubGuid));
 
             // State a missing address explicitly rather than emitting a listed
             // entry the caller cannot act on and cannot explain.
@@ -1146,7 +1152,7 @@ json MenuRunMainMenuCommand(const json& params) {
         // Both arms are spelled as braced literals on purpose: the response
         // schema extractor enumerates keys statically, so building one object and
         // conditionally inserting a key downgrades this endpoint's inferred
-        // response to a partial guess (SPEC §10.2 / §12).
+        // response to a partial guess.
         if (dynamic) {
             return {
                 {"success", ok},
@@ -1415,6 +1421,7 @@ static std::optional<json> TryGetMainMenuFromV2(const std::string& rootName,
                 continue;
             }
 
+            // 这里传族（静态）。动态判定在叶节点按 subGuid 解析，不改这个参数。
             auto item = BuildMenuTreeJson(child, baseLabel, baseLabel,
                                           locale, enableI18n,
                                           withAvailability,
@@ -1554,6 +1561,7 @@ json MenuGetContextMenu(const json& params) {
     for (size_t i = 0; i < count; i++) {
         auto child = root->childAt(i);
         if (!child.is_valid()) continue;
+        // 这里传族（静态）。动态判定在叶节点按 subGuid 解析，不改这个参数。
         auto item = BuildMenuTreeJson(child, "", "", locale, enableI18n, withAvailability,
                                       menu_node::Source::ContextMenuStatic);
         if (!item.is_null()) items.push_back(item);

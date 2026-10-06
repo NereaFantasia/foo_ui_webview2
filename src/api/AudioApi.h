@@ -20,6 +20,7 @@
 // - audio.isVisualizationAvailable 检查可视化是否可用
 // - audio.getSpectrumDebugState    获取频谱调试状态
 // - audio.generateFullWaveform     生成完整文件波形数据
+// - audio.cancelFullWaveform       取消整轨波形请求
 //=============================================================================
 /** @brief Register the audio.* API handlers (spectrum / waveform). */
 void RegisterAudioApi();
@@ -27,3 +28,7 @@ void RegisterAudioApi();
 /** @brief Release the spectrum-visualization runtime (timer / stream / subscriptions).
  *  Called from WebViewUI::shutdown() and background_service::Shutdown(). */
 void ShutdownAudioVisualizationRuntime();
+
+/** @brief Drop the full-track waveform requests a closing window made; decodes nobody
+ *  else waits for are aborted. Called from PopupWindow teardown. */
+void CancelAllWaveformTasksForWindow(const std::string& windowId);

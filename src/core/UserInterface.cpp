@@ -3,6 +3,7 @@
 #include "core/WebViewContext.h"
 #include "api/AudioApi.h"
 #include "window/MainWindow.h"
+#include "window/MenuOverlayHost.h"
 #include "window/WindowManager.h"
 
 // ============================================
@@ -75,7 +76,18 @@ void WebViewUI::shutdown() {
         LOG("WARNING: Unknown exception during audio visualization shutdown");
     }
     
-    // 关键清理（必须执行）
+    // 关键清理（必须执行）。每一个 PopupWindow 都必须在这里被同步销毁：
+    // 它的 OnDestroy 会回调文件操作 / 探测 / HTTP 三个注册表、PortHub 与
+    // WebViewContext，这些都是函数级 static，进程退出的静态析构期一旦开始就
+    // 不能再碰。菜单 overlay 不经 WindowManager 管理，要单独关。
+    try {
+        MenuOverlayHost::GetInstance().Shutdown();
+    } catch (const std::exception& e) {
+        LOG("WARNING: MenuOverlayHost shutdown failed: ", e.what());
+    } catch (...) {
+        LOG("WARNING: Unknown exception during MenuOverlayHost shutdown");
+    }
+
     try {
         WindowManager::GetInstance().Shutdown();
     } catch (const std::exception& e) {

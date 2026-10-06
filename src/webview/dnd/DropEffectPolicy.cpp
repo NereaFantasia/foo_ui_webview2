@@ -17,4 +17,8 @@ DWORD ChooseDropEffect(DWORD downstream, DWORD allowedMask, bool hasFiles) {
     return DROPEFFECT_NONE;
 }
 
+bool DragOutMaskIsCopyOnly(DWORD allowedMask) {
+    return allowedMask == DROPEFFECT_COPY;
+}
+
 }  // namespace fb2k_dnd

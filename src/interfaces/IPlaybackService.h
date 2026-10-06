@@ -30,7 +30,7 @@ public:
     /** @brief Skip to the previous track. */
     virtual void previous() = 0;			// SDK inline helper: start(track_command_prev)
     /** @brief Issue a raw transport command, optionally starting paused. */
-    virtual void start(unsigned command, bool paused = false) = 0; // command: playback_control::t_track_command enum (e.g. track_command_play=0, track_command_next=1, ...)
+    virtual void start(unsigned command, bool paused = false) = 0; // command: playback_control::t_track_command (default=0, play=1, next=2, prev=3, settrack=4, rand=5, resume=6)
 
     // State queries
     /** @brief Whether playback is active (playing or paused). */

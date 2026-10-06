@@ -11,6 +11,7 @@
 #include "callbacks/MetadbCallback.h"
 #include "api/BridgeCore.h"
 #include "api/MetaAccess.h"
+#include "api/RatingResolve.h"
 #include "core/WebViewContext.h"
 
 
@@ -18,36 +19,6 @@
 // Helper Functions for Rating and Path
 // ============================================
 namespace {
-
-/**
- * Read rating from foo_playcount using titleformat API
- * This is the documented interface exposed by foo_playcount: %rating%
- * Returns 0 if not found or on error
- */
-int GetRatingFromPlaycount(metadb_handle_ptr handle) {
-  try {
-    // Use titleformat to read %rating% from foo_playcount
-    static_api_ptr_t<titleformat_compiler> compiler;
-    titleformat_object::ptr script;
-
-    if (!compiler->compile(script, "%rating%")) {
-      return 0;
-    }
-
-    pfc::string8 result;
-    handle->format_title(nullptr, result, script, nullptr);
-
-    if (result.get_length() > 0 && result[0] != '?') {
-      int rating = atoi(result.get_ptr());
-      if (rating >= 0 && rating <= 5) {
-        return rating;
-      }
-    }
-  } catch (...) {
-    // Ignore errors, fall back to 0
-  }
-  return 0;
-}
 
 /**
  * Convert foobar2000 internal path to absolute Windows path
@@ -109,15 +80,8 @@ public:
       if (handle->get_info_ref(info)) {
         const file_info &fi = info->info();
 
-        // Get rating from foo_playcount first, then fallback to file tags
-        int rating = GetRatingFromPlaycount(handle);
-        if (rating == 0) {
-          // Fallback to file tag
-          const char *ratingStr = fi.meta_get("RATING", 0);
-          if (ratingStr)
-            rating = atoi(ratingStr);
-        }
-        track["rating"] = rating;
+        // 与播放列表行和 rating.get 共用取值顺序及限幅，事件评分保持在 0 到 5。
+        track["rating"] = ResolveTrackRating(handle, &fi).value;
 
         // Get play count if available
         const char *playCount = fi.meta_get("PLAY_COUNT", 0);

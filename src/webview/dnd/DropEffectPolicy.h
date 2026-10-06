@@ -18,4 +18,13 @@ namespace fb2k_dnd {
 // hasFiles      whether the session carries a CF_HDROP list
 DWORD ChooseDropEffect(DWORD downstream, DWORD allowedMask, bool hasFiles);
 
+// Whether a drag out of the window may go ahead with the effects the page
+// offered through dataTransfer.effectAllowed.
+//
+// Only an exact DROPEFFECT_COPY passes. With CF_HDROP on board it is the drop
+// target that carries out a MOVE, by relocating the user's files itself, so the
+// source's one and only defence is never to offer that effect. A mask that is
+// wider than COPY, or empty, is refused before any file list is exposed.
+bool DragOutMaskIsCopyOnly(DWORD allowedMask);
+
 }  // namespace fb2k_dnd

@@ -9,14 +9,46 @@
 // test_path_prefix_boundary.cpp and test_api_path_security.cpp, the guard chain
 // is reimplemented so the *ordering contract* can be pinned:
 //
-//     device-path interception  ->  traversal detection  ->  UNC early return
+//     device-path interception
+//     -> traversal detection
+//     -> mapped-drive rewrite (X:\ or X:/ on a mapped letter -> \\host\share\rest)
+//     -> UNC classification (remote: early return; loopback: rewrite to the
+//        local root and continue; unresolved loopback: refuse; fewer than two
+//        UNC segments: refuse)
+//     -> subsong-suffix strip
+//     -> canonical resolution
+//     -> at most one re-classification when canonical yields UNC (remote:
+//        return as remote; loopback: canonical once more; still UNC: refuse)
+//     -> system-drive 8.3 short-name expansion
 //
 // Ordering is the security-relevant property: device paths (\\.\ and \\?\) share
 // the leading \\ with UNC, so hoisting the UNC return above them would open a
 // bypass channel.
+//
+// With network-share classification the early return holds only for shares
+// classified as remote. Loopback shares (a \\host\share that is really a
+// local volume) are rewritten to their local root and continue into the
+// resolution stage, unresolvable loopbacks are refused outright, and mapped
+// drive letters are rewritten to their UNC share root before classification.
+// The two guards above run first, on the caller's spelling, before any
+// rewrite. Cases using RunGuardChain / RunFullChain rely on their default
+// classifier, which treats every share as remote.
+//
+// Mirrored production code (src/utils/PathSecurity.h and
+// src/utils/NetworkShareResolver.h): PassBasicPathSafetyChecks (the guard
+// section and the re-classification section), ClassifyAndRewriteUnc,
+// SplitUncShareRoot, JoinLocalRoot, and ResolveToCanonicalForm (stood in for
+// by CanonicalFn). Whenever the production step order changes, this file must
+// be updated in the same change; the reimplementation is the only place the
+// order is asserted.
 #include "pch.h"
+#include "utils/PathTraversalSegments.h"
 #include <string>
 #include <functional>
+#include <map>
+#include <optional>
+#include <utility>
+#include <algorithm>
 #include <cwctype>
 #include <cwchar>
 
@@ -27,11 +59,13 @@ bool IsUNCPath(const std::wstring& path) {
     return path.length() >= 2 && path[0] == L'\\' && path[1] == L'\\';
 }
 
-// Reimpl of PathSecurity::ContainsTraversal
+// PathSecurity::ContainsTraversal delegates to the SDK-free classifier in
+// utils/PathTraversalSegments.h, so this chain calls the real one rather than
+// a copy: a change to the classifier is exercised here, not masked by a
+// reimplementation that happens to agree. Its own contract (segment-based,
+// not substring-based) is pinned in test_path_security_traversal.cpp.
 bool ContainsTraversal(const std::wstring& path) {
-    return path.find(L"..") != std::wstring::npos ||
-           path.find(L"./") != std::wstring::npos ||
-           path.find(L".\\") != std::wstring::npos;
+    return path_traversal::ContainsTraversalSegment(path);
 }
 
 // Reimpl of PathSecurity::StripSubsongSuffix
@@ -43,29 +77,147 @@ std::wstring StripSubsongSuffix(const std::wstring& path) {
 enum class Outcome {
     DeviceRejected,
     TraversalRejected,
-    UncEarlyReturn,      // accepted without touching the filesystem
+    UncEarlyReturn,      // accepted without touching the filesystem (remote share)
     FellThroughToResolve, // reached fs::exists / canonical / GetLongPathNameW
+    LoopbackUnresolvedRejected,   // share proven local but not locatable
+    MalformedUncRejected,         // \\ prefix without both a host and a share name
     // Terminal states once the resolution stage is modelled as well; see the
     // short-name-expansion section at the bottom of this file.
+    DidNotConvergeRejected,       // canonical still UNC after the one allowed re-pass
     ResolvedWithShortNameExpansion, // canonical result on the system drive
     ResolvedWithoutExpansion        // canonical result off the system drive
 };
 
-// Reimpl of the guard chain in PassBasicPathSafetyChecks, in source order.
+// Reimpl of fb2k_utils::SplitUncShareRoot. Works on a copy in which every /
+// is folded to a backslash and cuts \\host\share[\rest] into (\\host\share,
+// \rest); a lone trailing separator counts as an empty rest. Fewer than two
+// segments is a failure, which the caller turns into a refusal.
+std::optional<std::pair<std::wstring, std::wstring>> SplitUncShareRoot(const std::wstring& path) {
+    std::wstring p = path;
+    std::replace(p.begin(), p.end(), L'/', L'\\');
+    if (p.size() < 2 || p[0] != L'\\' || p[1] != L'\\') {
+        return std::nullopt;
+    }
+    const size_t hostBegin = 2;
+    const size_t hostEnd = p.find(L'\\', hostBegin);
+    if (hostEnd == std::wstring::npos || hostEnd == hostBegin) {
+        return std::nullopt;
+    }
+    const size_t shareBegin = hostEnd + 1;
+    size_t shareEnd = p.find(L'\\', shareBegin);
+    if (shareEnd == std::wstring::npos) {
+        shareEnd = p.size();
+    }
+    if (shareEnd == shareBegin) {
+        return std::nullopt;
+    }
+    std::wstring root = p.substr(0, shareEnd);
+    std::wstring rest = p.substr(shareEnd);
+    if (rest == L"\\") {
+        rest.clear();
+    }
+    return std::make_pair(std::move(root), std::move(rest));
+}
+
+// Reimpl of fb2k_utils::JoinLocalRoot. Both \ and / count as separators: a
+// root ending in one and a rest starting with one collapse to a single
+// separator; a root without one and a non-empty rest without one get a
+// backslash inserted; anything else is appended as-is (so a forward slash in
+// rest is kept, only the share-root split normalises separators).
+std::wstring JoinLocalRoot(std::wstring root, std::wstring rest) {
+    const auto isSep = [](wchar_t c) { return c == L'\\' || c == L'/'; };
+    const bool rootEndsWithSep = !root.empty() && isSep(root.back());
+    const bool restStartsWithSep = !rest.empty() && isSep(rest.front());
+    if (rootEndsWithSep && restStartsWithSep) {
+        rest.erase(0, 1);
+    } else if (!rootEndsWithSep && !rest.empty() && !restStartsWithSep) {
+        root.push_back(L'\\');
+    }
+    return root + rest;
+}
+
+// Stand-in for NetworkShareResolver::Classify. Defaults to "every UNC share is
+// remote"; loopback and unresolved cases must supply a different verdict.
+enum class FakeKind { Remote, Loopback, LoopbackUnresolved };
+struct ClassifyFake {
+    FakeKind kind = FakeKind::Remote;
+    std::wstring localRoot;   // used when kind == Loopback
+    int calls = 0;
+    FakeKind operator()(const std::wstring&) { ++calls; return kind; }
+};
+
+// Stand-in for the mapped-drive table: letter -> share root, or empty. The
+// case folding lives here because it belongs to the replaced
+// ShareRootOfLetter, which upper-cases the queried letter before comparing;
+// table keys are therefore upper-case letters.
+struct MappedFake {
+    std::map<wchar_t, std::wstring> table;
+    int calls = 0;
+    std::wstring operator()(wchar_t l) {
+        ++calls;
+        const auto it = table.find(static_cast<wchar_t>(::towupper(l)));
+        return it == table.end() ? std::wstring() : it->second;
+    }
+};
+using MappedFn = std::function<std::wstring(wchar_t)>;
+inline std::wstring NoMappedDrives(wchar_t) { return L""; }
+
+struct GuardResult {
+    Outcome outcome;
+    std::wstring path;   // what the resolution stage would receive
+};
+
+// Reimpl of PathSecurity::ClassifyAndRewriteUnc. Non-UNC input passes through
+// untouched. A remote verdict keeps the caller's spelling, separators
+// included, because the split works on a copy; a loopback verdict is rewritten
+// to localRoot + rest with the separator-normalised rest, exactly as
+// production hands split->second to JoinLocalRoot.
+GuardResult ClassifyAndRewriteUnc(std::wstring path, ClassifyFake& classify) {
+    if (!IsUNCPath(path)) {
+        return {Outcome::FellThroughToResolve, path};
+    }
+    const auto split = SplitUncShareRoot(path);
+    if (!split) {
+        return {Outcome::MalformedUncRejected, path};
+    }
+    const FakeKind kind = classify(split->first);
+    if (kind == FakeKind::Remote) {
+        return {Outcome::UncEarlyReturn, path};
+    }
+    if (kind == FakeKind::LoopbackUnresolved) {
+        return {Outcome::LoopbackUnresolvedRejected, path};
+    }
+    return {Outcome::FellThroughToResolve, JoinLocalRoot(classify.localRoot, split->second)};
+}
+
+// Reimpl of the guard section of PassBasicPathSafetyChecks, in source order.
 // Virtual-protocol and PreprocessProtocolPath handling are out of scope; inputs
 // are already post-preprocessing paths.
-Outcome RunGuardChain(const std::wstring& path) {
+GuardResult RunGuardChainEx(std::wstring path,
+                            ClassifyFake& classify,
+                            const MappedFn& mapped = NoMappedDrives) {
     if (path.starts_with(L"\\\\.\\") || path.starts_with(L"\\\\?\\") ||
         path.starts_with(L"\\\\.\\.") || path.starts_with(L"\\\\?\\.")) {
-        return Outcome::DeviceRejected;
+        return {Outcome::DeviceRejected, path};
     }
     if (ContainsTraversal(path)) {
-        return Outcome::TraversalRejected;
+        return {Outcome::TraversalRejected, path};
     }
-    if (IsUNCPath(path)) {
-        return Outcome::UncEarlyReturn;
+    // Mapped-drive rewrite fires only on the absolute forms X:\ and X:/. A
+    // drive-relative spelling (X:dir\f, bare X:) means "under the current
+    // directory of X:" in Win32, so it is left for the resolution stage rather
+    // than rewritten into an object the OS would not open.
+    if (path.length() >= 3 && path[1] == L':' && (path[2] == L'\\' || path[2] == L'/')) {
+        const std::wstring share = mapped(path[0]);
+        if (!share.empty()) path = JoinLocalRoot(share, path.substr(2));
     }
-    return Outcome::FellThroughToResolve;
+    return ClassifyAndRewriteUnc(path, classify);
+}
+
+// Guard-chain helper with a remote-share classifier and no mapped drives.
+Outcome RunGuardChain(const std::wstring& path) {
+    ClassifyFake allRemote;
+    return RunGuardChainEx(path, allRemote).outcome;
 }
 
 } // namespace
@@ -241,17 +393,40 @@ struct ChainResult {
 };
 
 // Reimpl of the whole guard chain including the resolution stage, in source
-// order: early guards -> subsong strip -> canonical -> system-drive gate ->
-// 8.3 expansion.
+// order: early guards -> subsong strip -> canonical -> one loopback re-pass ->
+// system-drive gate -> 8.3 expansion.
 ChainResult RunFullChain(const std::wstring& path,
                          wchar_t systemDrive,
                          const CanonicalFn& canonical,
-                         const LongPathFn& longPath) {
-    const Outcome early = RunGuardChain(path);
-    if (early != Outcome::FellThroughToResolve) {
-        return {early, path};
+                         const LongPathFn& longPath,
+                         ClassifyFake* classify = nullptr,
+                         const MappedFn& mapped = NoMappedDrives) {
+    ClassifyFake allRemote;
+    ClassifyFake& cls = classify ? *classify : allRemote;
+    const GuardResult early = RunGuardChainEx(path, cls, mapped);
+    if (early.outcome != Outcome::FellThroughToResolve) {
+        return {early.outcome, early.path};
     }
-    std::wstring resolved = canonical(StripSubsongSuffix(path));
+    std::wstring resolved = canonical(StripSubsongSuffix(early.path));
+    if (IsUNCPath(resolved)) {
+        // One re-pass through classification. A remote verdict here is returned
+        // as remote (the caller's spelling is what callerForm keeps); a loopback
+        // verdict is resolved once more and must then be local. Like the
+        // re-classification section of the production PassBasicPathSafetyChecks,
+        // only ClassifyAndRewriteUnc runs here: the device, traversal and
+        // mapped-drive guards are not repeated on the canonical output.
+        const GuardResult second = ClassifyAndRewriteUnc(resolved, cls);
+        if (second.outcome == Outcome::UncEarlyReturn) {
+            return {Outcome::UncEarlyReturn, second.path};
+        }
+        if (second.outcome != Outcome::FellThroughToResolve) {
+            return {second.outcome, second.path};
+        }
+        resolved = canonical(second.path);
+        if (IsUNCPath(resolved)) {
+            return {Outcome::DidNotConvergeRejected, resolved};
+        }
+    }
     if (!IsOnSystemDrive(resolved, systemDrive)) {
         return {Outcome::ResolvedWithoutExpansion, resolved};
     }
@@ -681,4 +856,240 @@ TEST(PathSecuritySubsongStrip, StrippedPathIsWhatGetsSymlinkResolved) {
     EXPECT_EQ(canonical.lastInput, L"D:\\link\\a.flac");
     EXPECT_EQ(r.outcome, Outcome::ResolvedWithShortNameExpansion);
     EXPECT_EQ(r.resolvedPath, L"C:\\Windows\\System32\\a.flac");
+}
+
+// ============================================
+// Network-share classification: ordering and refusal outcomes
+// ============================================
+//
+// Shares return early only when classified as remote;
+// loopback shares are rewritten to their local root and go through the
+// resolution stage, and mapped drives are rewritten to UNC before
+// classification. The refusal outcomes distinguish:
+// LoopbackUnresolvedRejected (share proven local but not locatable),
+// MalformedUncRejected (a \\ prefix with fewer than two segments), and
+// DidNotConvergeRejected (still UNC after the one allowed re-pass). The
+// ordering contract requires device-path interception and traversal detection
+// to run first, on the caller's spelling, before any rewrite.
+
+TEST(PathSecurityShareClassify, LoopbackRewritesToLocalRootAndResolves) {
+    ClassifyFake loopback{FakeKind::Loopback, L"E:\\"};
+    const GuardResult r = RunGuardChainEx(L"\\\\localhost\\E$\\OST\\x.mp3", loopback);
+    EXPECT_EQ(r.outcome, Outcome::FellThroughToResolve);
+    EXPECT_EQ(r.path, L"E:\\OST\\x.mp3");
+    EXPECT_EQ(loopback.calls, 1);
+}
+
+TEST(PathSecurityShareClassify, LoopbackRootWithoutTrailingSeparatorJoinsCleanly) {
+    ClassifyFake loopback{FakeKind::Loopback, L"E:\\OST"};
+    const GuardResult r = RunGuardChainEx(L"\\\\localhost\\ost$\\x.mp3", loopback);
+    EXPECT_EQ(r.outcome, Outcome::FellThroughToResolve);
+    EXPECT_EQ(r.path, L"E:\\OST\\x.mp3");
+}
+
+TEST(PathSecurityShareClassify, LoopbackUnresolvedIsRefusedNotTreatedAsRemote) {
+    ClassifyFake unresolved{FakeKind::LoopbackUnresolved};
+    EXPECT_EQ(RunGuardChainEx(L"\\\\localhost\\C$\\Windows\\win.ini", unresolved).outcome,
+              Outcome::LoopbackUnresolvedRejected);
+}
+
+TEST(PathSecurityShareClassify, DevicePathStillWinsOverLoopbackRewrite) {
+    ClassifyFake loopback{FakeKind::Loopback, L"C:\\"};
+    EXPECT_EQ(RunGuardChainEx(L"\\\\?\\UNC\\localhost\\C$\\Windows\\win.ini", loopback).outcome,
+              Outcome::DeviceRejected);
+    EXPECT_EQ(loopback.calls, 0);
+}
+
+TEST(PathSecurityShareClassify, TraversalStillWinsOverLoopbackRewrite) {
+    ClassifyFake loopback{FakeKind::Loopback, L"C:\\"};
+    EXPECT_EQ(RunGuardChainEx(L"\\\\localhost\\C$\\Users\\..\\Windows\\win.ini", loopback).outcome,
+              Outcome::TraversalRejected);
+    EXPECT_EQ(loopback.calls, 0);
+}
+
+TEST(PathSecurityShareClassify, MappedDriveIsRewrittenToUncBeforeClassification) {
+    ClassifyFake remote;
+    MappedFake m;
+    m.table[L'Z'] = L"\\\\nas\\music";
+    const GuardResult r = RunGuardChainEx(L"Z:\\album\\track.flac", remote, std::ref(m));
+    EXPECT_EQ(r.outcome, Outcome::UncEarlyReturn);
+    EXPECT_EQ(r.path, L"\\\\nas\\music\\album\\track.flac");
+    EXPECT_EQ(remote.calls, 1);
+}
+
+TEST(PathSecurityShareClassify, MappedDriveToLoopbackShareResolvesLocally) {
+    ClassifyFake loopback{FakeKind::Loopback, L"E:\\"};
+    const MappedFn mapped = [](wchar_t l) { return l == L'Z' ? std::wstring(L"\\\\localhost\\E$") : std::wstring(); };
+    const GuardResult r = RunGuardChainEx(L"Z:\\OST\\x.mp3", loopback, mapped);
+    EXPECT_EQ(r.outcome, Outcome::FellThroughToResolve);
+    EXPECT_EQ(r.path, L"E:\\OST\\x.mp3");
+}
+
+TEST(PathSecurityShareClassify, TraversalOnMappedDriveIsCaughtBeforeRewrite) {
+    ClassifyFake remote;
+    MappedFake m;
+    m.table[L'Z'] = L"\\\\nas\\music";
+    EXPECT_EQ(RunGuardChainEx(L"Z:\\..\\secret", remote, std::ref(m)).outcome, Outcome::TraversalRejected);
+    EXPECT_EQ(m.calls, 0);
+    EXPECT_EQ(remote.calls, 0);
+}
+
+TEST(PathSecurityShareClassify, UnmappedLetterGoesStraightToResolution) {
+    ClassifyFake remote;
+    const GuardResult r = RunGuardChainEx(L"D:\\Music\\x.flac", remote);
+    EXPECT_EQ(r.outcome, Outcome::FellThroughToResolve);
+    EXPECT_EQ(remote.calls, 0);
+}
+
+TEST(PathSecurityShareClassify, CanonicalYieldingUncOfRemoteShareReturnsRemoteOnSecondPass) {
+    // Mapped table is stale, so Z: is not rewritten; canonical turns it into UNC;
+    // the re-pass classifies it as remote and returns the remote target. (The
+    // caller's Z: spelling survives in callerForm on the real type; this
+    // reimplementation only models the outcome.)
+    CanonicalFake canonical{L"\\\\nas\\music\\x.flac"};
+    LongPathFake longPath{};
+    ClassifyFake remote;
+    const ChainResult r = RunFullChain(L"Z:\\x.flac", L'C', std::ref(canonical), std::ref(longPath), &remote);
+    EXPECT_EQ(r.outcome, Outcome::UncEarlyReturn);
+    EXPECT_EQ(r.resolvedPath, L"\\\\nas\\music\\x.flac");
+    EXPECT_EQ(remote.calls, 1);
+    EXPECT_EQ(canonical.calls, 1);
+}
+
+TEST(PathSecurityShareClassify, SecondPassUnresolvedLoopbackIsRefused) {
+    CanonicalFake canonical{L"\\\\localhost\\E$\\x.flac"};
+    LongPathFake longPath{};
+    ClassifyFake unresolved{FakeKind::LoopbackUnresolved};
+    const ChainResult r = RunFullChain(L"Z:\\x.flac", L'C', std::ref(canonical), std::ref(longPath), &unresolved);
+    EXPECT_EQ(r.outcome, Outcome::LoopbackUnresolvedRejected);
+    EXPECT_EQ(canonical.calls, 1);
+}
+
+TEST(PathSecurityShareClassify, CanonicalYieldingUncOfLoopbackShareConvergesOnSecondPass) {
+    // Same stale-table scenario, but the share is loopback: the re-pass rewrites
+    // to the local root and the second canonical is local.
+    int calls = 0;
+    CanonicalFn canonical = [&](const std::wstring& in) {
+        ++calls;
+        return calls == 1 ? std::wstring(L"\\\\localhost\\E$\\x.flac") : in;
+    };
+    LongPathFake longPath{};
+    ClassifyFake loopback{FakeKind::Loopback, L"E:\\"};
+    const ChainResult r = RunFullChain(L"Z:\\x.flac", L'C', canonical, std::ref(longPath), &loopback);
+    EXPECT_EQ(r.outcome, Outcome::ResolvedWithoutExpansion);
+    EXPECT_EQ(r.resolvedPath, L"E:\\x.flac");
+    EXPECT_EQ(calls, 2);
+}
+
+TEST(PathSecurityShareClassify, StillUncAfterSecondCanonicalIsRefused) {
+    CanonicalFake canonical{L"\\\\localhost\\E$\\x.flac"};   // never turns local
+    LongPathFake longPath{};
+    ClassifyFake loopback{FakeKind::Loopback, L"E:\\"};
+    const ChainResult r = RunFullChain(L"Z:\\x.flac", L'C', std::ref(canonical), std::ref(longPath), &loopback);
+    EXPECT_EQ(r.outcome, Outcome::DidNotConvergeRejected);
+    EXPECT_EQ(canonical.calls, 2);
+    EXPECT_EQ(loopback.calls, 1);
+}
+
+TEST(PathSecurityShareClassify, LoopbackShareInsideCanonicalGetsJunctionResolved) {
+    // Server-side reparse points are invisible over SMB; once the loopback is
+    // rewritten to a local path the resolution stage can follow them.
+    CanonicalFake canonical{L"C:\\Windows\\System32\\x.dll"};
+    LongPathFake longPath{L"C:\\Windows\\System32\\x.dll"};
+    ClassifyFake loopback{FakeKind::Loopback, L"E:\\"};
+    const ChainResult r = RunFullChain(L"\\\\localhost\\E$\\link\\x.dll", L'C',
+                                       std::ref(canonical), std::ref(longPath), &loopback);
+    EXPECT_EQ(r.outcome, Outcome::ResolvedWithShortNameExpansion);
+    EXPECT_EQ(canonical.lastInput, L"E:\\link\\x.dll");
+}
+
+// Mapped-drive rewrite fires only on the absolute forms (X:\ and X:/); the
+// drive-relative spellings fall through to resolution untouched.
+
+TEST(PathSecurityShareClassify, DriveRelativeSpellingIsNotRewrittenToMappedShare) {
+    // Z:dir\f means "dir\f under the current directory of Z:"; rewriting it as
+    // Z:\dir\f would judge a different object than the one Win32 opens.
+    ClassifyFake remote;
+    MappedFake m;
+    m.table[L'Z'] = L"\\\\nas\\music";
+    const GuardResult r = RunGuardChainEx(L"Z:dir\\f.flac", remote, std::ref(m));
+    EXPECT_EQ(r.outcome, Outcome::FellThroughToResolve);
+    EXPECT_EQ(r.path, L"Z:dir\\f.flac");
+    EXPECT_EQ(remote.calls, 0);
+}
+
+TEST(PathSecurityShareClassify, BareDriveLetterIsNotRewrittenToMappedShare) {
+    ClassifyFake remote;
+    MappedFake m;
+    m.table[L'Z'] = L"\\\\nas\\music";
+    const GuardResult r = RunGuardChainEx(L"Z:", remote, std::ref(m));
+    EXPECT_EQ(r.outcome, Outcome::FellThroughToResolve);
+    EXPECT_EQ(r.path, L"Z:");
+    EXPECT_EQ(remote.calls, 0);
+}
+
+TEST(PathSecurityShareClassify, LowercaseLetterWithForwardSlashIsRewritten) {
+    ClassifyFake remote;
+    MappedFake m;
+    m.table[L'Z'] = L"\\\\nas\\music";
+    const GuardResult r = RunGuardChainEx(L"z:/album/x.flac", remote, std::ref(m));
+    EXPECT_EQ(r.outcome, Outcome::UncEarlyReturn);
+    EXPECT_EQ(r.path, L"\\\\nas\\music/album/x.flac");
+    EXPECT_EQ(remote.calls, 1);
+}
+
+// The share-root split and the local-root join follow the production string
+// rules: fewer than two UNC segments is a refusal, separators are normalised
+// only for the split, and the subsong suffix survives a remote early return
+// because stripping happens after classification.
+
+TEST(PathSecurityShareClassify, HostOnlyUncIsRefusedNotTreatedAsRemote) {
+    // A \\ prefix without both a host and a share names no share at all. The
+    // production SplitUncShareRoot fails on it and the path is refused before
+    // classification is consulted; treating it as remote would be fail-open.
+    ClassifyFake remote;
+    const GuardResult hostOnly = RunGuardChainEx(L"\\\\nas", remote);
+    EXPECT_EQ(hostOnly.outcome, Outcome::MalformedUncRejected);
+    EXPECT_EQ(hostOnly.path, L"\\\\nas");
+    const GuardResult hostWithSeparator = RunGuardChainEx(L"\\\\nas\\", remote);
+    EXPECT_EQ(hostWithSeparator.outcome, Outcome::MalformedUncRejected);
+    EXPECT_EQ(hostWithSeparator.path, L"\\\\nas\\");
+    const GuardResult prefixOnly = RunGuardChainEx(L"\\\\", remote);
+    EXPECT_EQ(prefixOnly.outcome, Outcome::MalformedUncRejected);
+    EXPECT_EQ(prefixOnly.path, L"\\\\");
+    EXPECT_EQ(remote.calls, 0);
+}
+
+TEST(PathSecurityShareClassify, ForwardSlashLoopbackIsNormalisedBeforeRewrite) {
+    // The split folds / to \ before cutting host and share, so the rest handed
+    // to the join is already backslash-separated.
+    ClassifyFake loopback{FakeKind::Loopback, L"E:\\"};
+    const GuardResult r = RunGuardChainEx(L"\\\\localhost/E$/OST/x.mp3", loopback);
+    EXPECT_EQ(r.outcome, Outcome::FellThroughToResolve);
+    EXPECT_EQ(r.path, L"E:\\OST\\x.mp3");
+    EXPECT_EQ(loopback.calls, 1);
+}
+
+TEST(PathSecurityShareClassify, MappedDriveRemoteKeepsSubsongSuffix) {
+    // The remote early return precedes the strip, exactly as for a UNC spelling
+    // typed by the caller.
+    ClassifyFake remote;
+    MappedFake m;
+    m.table[L'Z'] = L"\\\\nas\\music";
+    const GuardResult r = RunGuardChainEx(L"Z:\\OST\\x.mp3|subsong:3", remote, std::ref(m));
+    EXPECT_EQ(r.outcome, Outcome::UncEarlyReturn);
+    EXPECT_EQ(r.path, L"\\\\nas\\music\\OST\\x.mp3|subsong:3");
+}
+
+TEST(PathSecurityShareClassify, MappedDriveLoopbackStripsSuffixBeforeCanonical) {
+    // Mapped letter -> loopback share -> local root; the suffix is then stripped
+    // before the container path reaches canonical.
+    CanonicalFake canonical{};  // echoes its input
+    LongPathFake longPath{};
+    ClassifyFake loopback{FakeKind::Loopback, L"E:\\"};
+    MappedFake m;
+    m.table[L'Z'] = L"\\\\localhost\\E$";
+    RunFullChain(L"Z:\\OST\\x.mp3|subsong:3", L'C',
+                 std::ref(canonical), std::ref(longPath), &loopback, std::ref(m));
+    EXPECT_EQ(canonical.lastInput, L"E:\\OST\\x.mp3");
 }

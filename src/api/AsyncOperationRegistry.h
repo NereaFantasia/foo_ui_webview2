@@ -42,9 +42,10 @@ namespace fb2k_api {
 // in for the SDK type. Production instantiates it with the SDK type directly.
 //
 // Ownership: the token is shared, never owned solely by the registry. The SDK's
-// `abort_callback_impl` is externally triggerable but non-copyable
-// (abort_callback.h:82-83), so registry and worker must hold the same object;
-// `shared_ptr` also means Cancel() cannot race the worker into a freed token.
+// `abort_callback_impl` is externally triggerable but non-copyable (its copy
+// constructor and copy assignment are deleted), so registry and worker must
+// hold the same object; `shared_ptr` also means Cancel() cannot race the
+// worker into a freed token.
 //
 // Lifetime: Register on dispatch, Remove when the worker finishes. An entry
 // left behind would keep its token alive forever, so the worker must Remove on
@@ -83,19 +84,20 @@ public:
     // operation registry and the probe registry resolve it the same way. Two
     // properties of that resolution are easy to misread:
     //
-    //   - Its last-resort fallback (CallerContext.cpp:49-55) does not yield an
-    //     empty id, it yields the FIRST registered instance's windowId. That
-    //     branch is also unreachable for a bridge message, whose _callerHwnd is
-    //     by construction the calling instance's own registered hwnd, so the
-    //     direct lookup (:23-30) answers first. The fallback is left as it is on
-    //     purpose: an operation's events are routed through the same resolution,
+    //   - Its last-resort fallback (the final branch of CallerContext::FromParams)
+    //     does not yield an empty id, it yields the FIRST registered instance's
+    //     windowId. That branch is also unreachable for a bridge message, whose
+    //     _callerHwnd is by construction the calling instance's own registered
+    //     hwnd, so the direct _callerHwnd match answers first. The fallback is
+    //     left as it is on purpose: an operation's events are routed through the
+    //     same resolution,
     //     so "the window that receives the events is the one whose close cancels
     //     the work" holds whichever branch answered.
     //   - Empty ids do not come out of that resolution either. They arise where
     //     there is no routing context to resolve at all (a direct C++ caller that
     //     passes no _callerHwnd; never a page message, since the one entry point
-    //     for those, WebViewPanel.cpp:368, always hands BridgeCore the calling
-    //     panel's own hwnd), or on the registration side, where
+    //     for those, WebViewPanel::HandleWebMessage, always hands BridgeCore the
+    //     calling panel's own hwnd), or on the registration side, where
     //     WebViewPanel::CompleteWebViewInit selects WebViewContext's
     //     windowId-less RegisterInstance overload if windowId_ was never set.
     //     All four current hosts set it before that point (main window, popups,

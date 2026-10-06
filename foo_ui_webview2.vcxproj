@@ -130,6 +130,7 @@
         dwmapi.lib;
         Comctl32.lib;
         Shlwapi.lib;
+        Mpr.lib;
         %(AdditionalDependencies)
       </AdditionalDependencies>
       <AdditionalLibraryDirectories>
@@ -185,6 +186,10 @@
     <ClCompile Include="src\main.cpp" />
     <ClCompile Include="src\core\UserInterface.cpp" />
     <ClCompile Include="src\core\PreferencesPage.cpp" />
+    <ClCompile Include="src\core\PreferencesPageBase.cpp" />
+    <ClCompile Include="src\core\PreferencesDeveloperPage.cpp" />
+    <ClCompile Include="src\core\PreferencesWindowPage.cpp" />
+    <ClCompile Include="src\core\PreferencesPerformancePage.cpp" />
     <ClCompile Include="src\core\QueueManager.cpp" />
     <ClCompile Include="src\core\LibraryCache.cpp" />
     <ClCompile Include="src\core\LibraryTreeIndex.cpp" />
@@ -216,6 +221,10 @@
     <ClCompile Include="src\webview\dnd\DragSession.cpp" />
     <ClCompile Include="src\api\AsyncOperationRegistry.cpp" />
     <ClCompile Include="src\webview\dnd\DndOriginPolicy.cpp" />
+    <ClCompile Include="src\webview\dnd\DragOutPathPolicy.cpp" />
+    <ClCompile Include="src\webview\dnd\HdropBuilder.cpp" />
+    <ClCompile Include="src\webview\dnd\DragTokenStore.cpp" />
+    <ClCompile Include="src\webview\dnd\DragOutTokens.cpp" />
     <ClCompile Include="src\webview\dnd\CompositionDelegate.cpp" />
     <ClCompile Include="src\webview\dnd\ChainedDelegate.cpp" />
     <ClCompile Include="src\webview\dnd\DropTargetBridge.cpp" />
@@ -256,6 +265,13 @@
     <ClCompile Include="src\api\MenuApi.cpp" />
     <ClCompile Include="src\api\DndApi.cpp" />
     <ClCompile Include="src\api\QueueApi.cpp" />
+    <ClCompile Include="src\api\QueueRebuildPlan.cpp" />
+    <ClCompile Include="src\api\GroupRunPlan.cpp" />
+    <ClCompile Include="src\api\SpectrumBands.cpp" />
+    <ClCompile Include="src\api\SpectrumSchedule.cpp" />
+    <ClCompile Include="src\api\LiveWaveform.cpp" />
+    <ClCompile Include="src\api\WaveformAccumulator.cpp" />
+    <ClCompile Include="src\api\WaveformTaskQueue.cpp" />
     <ClCompile Include="src\api\DiscoveryApi.cpp" />
     <ClCompile Include="src\api\ReplayGainApi.cpp" />
     <ClCompile Include="src\api\PlaycountApi.cpp" />
@@ -293,6 +309,19 @@
     <ClInclude Include="src\pch.h" />
     <ClInclude Include="src\core\UserInterface.h" />
     <ClInclude Include="src\core\PreferencesPage.h" />
+    <ClInclude Include="src\core\PreferencesPageBase.h" />
+    <ClInclude Include="src\core\PreferencesLayout.h" />
+    <ClInclude Include="src\core\PreferencesLayoutBuilder.h" />
+    <ClInclude Include="src\core\PreferencesDraft.h" />
+    <ClInclude Include="src\core\PreferencesFields.h" />
+    <ClInclude Include="src\core\PreferencesDevServerUrl.h" />
+    <ClInclude Include="src\core\PreferencesCdpPort.h" />
+    <ClInclude Include="src\core\PreferencesDeveloperPage.h" />
+    <ClInclude Include="src\core\PreferencesWindowPage.h" />
+    <ClInclude Include="src\core\PreferencesPerformancePage.h" />
+    <ClInclude Include="src\core\PreferencesZoom.h" />
+    <ClInclude Include="src\core\PreferencesTemplateName.h" />
+    <ClInclude Include="src\core\AdvconfigI18n.h" />
     <ClInclude Include="src\core\QueueManager.h" />
     <ClInclude Include="src\core\LibraryCache.h" />
     <ClInclude Include="src\core\LibraryTreeIndex.h" />
@@ -316,6 +345,7 @@
     <None Include="src\window\menu-overlay\svg-allowlist.mjs" />
     <ClInclude Include="src\window\StartupPresentationCoordinator.h" />
     <ClInclude Include="src\window\TaskbarTrayContracts.h" />
+    <ClInclude Include="src\window\TaskbarProgressPolicy.h" />
     <ClInclude Include="src\window\WindowChromeState.h" />
     <ClInclude Include="src\window\WindowChromeResolver.h" />
     <ClInclude Include="src\window\WindowChromeApplier.h" />
@@ -333,6 +363,10 @@
     <ClInclude Include="src\webview\dnd\DropEffectPolicy.h" />
     <ClInclude Include="src\webview\dnd\DragSession.h" />
     <ClInclude Include="src\webview\dnd\DndOriginPolicy.h" />
+    <ClInclude Include="src\webview\dnd\DragOutPathPolicy.h" />
+    <ClInclude Include="src\webview\dnd\HdropBuilder.h" />
+    <ClInclude Include="src\webview\dnd\DragTokenStore.h" />
+    <ClInclude Include="src\webview\dnd\DragOutTokens.h" />
     <ClInclude Include="src\webview\dnd\IDropTargetDelegate.h" />
     <ClInclude Include="src\webview\dnd\CompositionDelegate.h" />
     <ClInclude Include="src\webview\dnd\ChainedDelegate.h" />
@@ -353,6 +387,7 @@
     <ClInclude Include="src\webview\ArtworkRequestLifecycle.h" />
     <ClInclude Include="src\webview\ArtworkRequestInstrumentation.h" />
     <ClInclude Include="src\webview\ArtworkWorkerQueue.h" />
+    <ClInclude Include="src\webview\ScaledArtworkCache.h" />
     <ClInclude Include="src\api\PluginRegistry.h" />
     <ClInclude Include="src\api\FileApi.h" />
     <ClInclude Include="src\api\DialogApi.h" />
@@ -364,6 +399,7 @@
     <ClInclude Include="src\api\CursorApi.h" />
     <ClInclude Include="src\api\LyricsApi.h" />
     <ClInclude Include="src\api\AsyncOperationRegistry.h" />
+    <ClInclude Include="src\api\ProbeFailureClassifier.h" />
     <ClInclude Include="src\api\MetadataApi.h" />
     <ClInclude Include="src\api\AudioApi.h" />
     <ClInclude Include="src\api\DspApi.h" />
@@ -373,6 +409,13 @@
     <ClInclude Include="src\api\MenuApi.h" />
     <ClInclude Include="src\api\DndApi.h" />
     <ClInclude Include="src\api\QueueApi.h" />
+    <ClInclude Include="src\api\QueueRebuildPlan.h" />
+    <ClInclude Include="src\api\GroupRunPlan.h" />
+    <ClInclude Include="src\api\SpectrumBands.h" />
+    <ClInclude Include="src\api\SpectrumSchedule.h" />
+    <ClInclude Include="src\api\LiveWaveform.h" />
+    <ClInclude Include="src\api\WaveformAccumulator.h" />
+    <ClInclude Include="src\api\WaveformTaskQueue.h" />
     <ClInclude Include="src\api\DiscoveryApi.h" />
     <ClInclude Include="src\api\ReplayGainApi.h" />
     <ClInclude Include="src\api\PlaycountApi.h" />
@@ -399,6 +442,8 @@
     <ClInclude Include="src\utils\ImageUtils.h" />
     <ClInclude Include="src\utils\StringUtils.h" />
     <ClInclude Include="src\utils\SubsongUtils.h" />
+    <ClInclude Include="src\utils\WaveformCacheKey.h" />
+    <ClInclude Include="src\utils\CanonicalHandle.h" />
     <ClInclude Include="src\utils\PathExpansion.h" />
     <ClInclude Include="src\utils\PlaylistFormatUtils.h" />
     <ClInclude Include="src\utils\WindowUtils.h" />

@@ -53,6 +53,10 @@ public:
     // a second one. Silent once shutdown has begun.
     void EmitCapabilitiesChanged(const nlohmann::json& payload) const;
 
+    // Reports the end of a drag out of this window. Same sink and the same
+    // shutdown rule as EmitCapabilitiesChanged.
+    void EmitDragEnded(const nlohmann::json& payload) const;
+
     DragSessionStore& Sessions() { return sessions_; }
 
     // IUnknown

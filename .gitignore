@@ -84,6 +84,8 @@ test_output*.xml
 test_results*.xml
 test-results*.xml
 test_detail*.json
+# Per-suite JSON summaries written by mcp/tests/run-e2e.mjs
+mcp/tests/.e2e-results/
 
 # ------ WebView2 user data / local data ------
 AppData/
@@ -124,10 +126,15 @@ clang-tidy-report.txt
 .agent/
 .agents/
 .claude/
+.codex/
+.superpowers/
+.workbuddy-ai/
 .continue/
 .trae/
 .windsurf/skills/
-plans/
+# Anchored to the repo root on purpose: an unanchored "plans/" also swallowed
+# docs/superpowers/plans/, where design plans are meant to be tracked.
+/plans/
 .windsurf/
 .kiro/
 # ------ Test outputs ------
@@ -135,7 +142,7 @@ test_output.txt
 
 # ------ Audit / scratch outputs ------
 # `_tmp_*` and `cpp_events.txt` are produced by ad-hoc audit scripts
-# (scripts/audit_sdk_cpp_params.mjs and inline node one-liners) for
+# (inline node one-liners) for
 # diff-style debugging. They are regenerated on demand and must not
 # enter version control.
 _tmp_*.txt
@@ -185,6 +192,14 @@ lib/columns_ui-sdk/
 # ------ Ad-hoc test capture (hyphen variant) ------
 # `npm test > test-output.txt` scratch capture (mcp/ etc.) - never commit.
 test-output*.txt
+
+# ------ MCP probe scratch ------
+# One-off CDP probes written while investigating an endpoint before its e2e
+# case exists (they import ../tests/lib/e2e-harness.mjs). Findings belong in
+# the suites, coverage-notes.json or PROGRESS_LOG, not in these files, so the
+# directory stays out of history. Move a probe into tests/ when it becomes a
+# suite.
+mcp/scratch/
 
 # ------ 5/18 cleanup recovery (2026-05) ------
 # Recovery mirror + helper scripts produced during the post-cleanup

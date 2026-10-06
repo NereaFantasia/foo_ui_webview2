@@ -111,9 +111,8 @@ void BridgeCore::UnregisterApi(const std::string& method) {
 }
 
 // 注册面查询对 deferred 与同步注册一视同仁。deferred 若在此不可见，把一个方法迁到
-// deferred 就等于：偏好页 API 清单（PreferencesPage.cpp:1690）与 PluginRegistry 的
-// API 清单（PluginRegistry.cpp:308）里凭空少一条，且插件能覆盖该内建 API
-// （PluginRegistry.cpp:177 的冲突检查以 HasApi 为口径）。
+// deferred 就等于：偏好页与 PluginRegistry 的 API 清单（都取自 GetRegisteredApiNames）
+// 里凭空少一条，且插件能覆盖该内建 API（PluginRegistry 的冲突检查以 HasApi 为口径）。
 bool BridgeCore::HasApi(const std::string& method) const {
     std::lock_guard lock(mutex_);
     return handlers_.contains(method) || deferredHandlers_.contains(method);
@@ -298,9 +297,9 @@ void BridgeCore::DispatchDeferredApiCall(const std::string& method,
 
 // id 归一化 —— 响应通道（SendResponse / SendResponseRaw）共用单点。
 //
-// JS 侧 _callbacks 是以 ++_callId 数值为键的 Map（WebViewHost.cpp:773-774、795），
+// JS 侧 _callbacks 是以 ++_callId 数值为键的 Map（WebViewHost.cpp 注入的桥脚本），
 // 按值匹配：数值 id 必须以 JSON number 回传，写成 string 即 Map miss，页面落到
-// 30s 超时兜底（WebViewHost.cpp:784-789）表现为假死。两条通道共用本函数即保证
+// 30s 的 Request timeout 兜底，表现为假死。两条通道共用本函数即保证
 // 二态判定与取值逐字节同源，不会各写一份而漂移。
 //
 // stoi 的宽松前缀语义在此原样保留（"007" -> 7、"12abc" -> 12）：这是既有 wire
@@ -419,9 +418,9 @@ void BridgeCore::SendError(const std::string& id, int /*numericCode*/, const std
 // 再拷进回主线程的 lambda，闸门必须是这些副本共享的同一份 —— 各副本各自"只回一次"
 // 合起来就回了多次。
 //
-// bridge 裸指针的生命周期：消息分发走 BridgeCore 单例（WebViewPanel.cpp:366-368
+// bridge 裸指针的生命周期：消息分发走 BridgeCore 单例（WebViewPanel::HandleWebMessage：
 // "API 都注册在单例上"，只把本实例的 host 当 responseTarget），函数内静态对象随进程
-// 存活；panel 自己的 bridge_（WebViewPanel.h:253）只用于 EmitEvent，不进本路径。
+// 存活；panel 自己的 WebViewPanel::bridge_ 只用于 EmitEvent，不进本路径。
 // 即便将来出现非单例 bridge 分发，PostGated 里 target 存活守卫先于 bridge 解引用
 // 执行 —— target 还在注册表里意味着其所属 panel 活着，panel 持有的 bridge 亦然。
 DeferredResponder::DeferredResponder(BridgeCore* bridge, std::string id, WebViewHost* target)
@@ -455,7 +454,7 @@ bool DeferredResponder::PassGate(State& state) {
 }
 
 void DeferredResponder::PostGated(std::function<void(const State&)> dispatch) const {
-    // 取 inMainThread2（声明 threadsLite.h:22-23，实现 main_thread_callback.cpp:41-47：
+    // 取 inMainThread2（SDK 的声明与实现：
     // 主线程调用即同步执行 f()，其余线程退回 inMainThread 入队）。不取无条件入队的
     // inMainThread：handler 在主线程段内的同步回包本该与同步 handler 逐拍一致，无条件
     // 入队会让这类响应晚一个 pump turn 发出，跨请求的投递顺序随之可观测地变化。
@@ -523,7 +522,8 @@ void BridgeCore::EmitEvent(const std::string& event, const json& data) {
     message["event"] = event;
     message["data"] = data;
 
-    // 事件经可见性门控发送；invoke 响应仍走 SendToWeb 直发。
+    // 不因页面隐藏而丢弃或合并事件；与 invoke 响应一样交给 WebView 投递。
+    // 高频流由生产侧根据 IsPageHidden 节流，避免本层改变事件的交付语义。
     WebViewHost* webView = nullptr;
     {
         std::lock_guard lock(mutex_);

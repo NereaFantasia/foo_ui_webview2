@@ -1031,7 +1031,21 @@ function applySliderKey({ key, orientation, min, max, value, step = 1 }) {
 }
 
 /**
- * Whether a value change should be emitted for a slider.
+ * Map one wheel event to a single adjust() step. Positive = increase.
+ * Vertical delta wins; horizontal delta is the fallback for horizontal-only wheels.
+ * Magnitude is ignored: one wheel event is one step, matching the arrow keys.
+ */
+function wheelAdjustStep({ deltaY, deltaX } = {}) {
+  if (deltaY < 0) return 1;
+  if (deltaY > 0) return -1;
+  if (deltaX > 0) return 1;
+  if (deltaX < 0) return -1;
+  return 0;
+}
+
+/**
+ * Whether a value change should )MENUHTML"
+        LR"MENUHTML(be emitted for a slider.
  * Constant sliders never emit; NaN / out-of-range rejected.
  */
 function shouldEmitSliderValue({ min, max, value, previous }) {
@@ -1043,8 +1057,7 @@ function shouldEmitSliderValue({ min, max, value, previous }) {
 }
 
 /** Throttle gate for pointermove (50ms). force always passes. */
-function shouldThrot)MENUHTML"
-        LR"MENUHTML(tleEmit(now, lastSent, force, throttleMs = 50) {
+function shouldThrottleEmit(now, lastSent, force, throttleMs = 50) {
   if (force) return true;
   return (now - lastSent) >= throttleMs;
 }
@@ -1202,7 +1215,8 @@ function planSegmentedNavigationInternals({ segments, selectedIndex } = {}) {
   const segs = segments || [];
   const n = segs.length;
   const tabIndexes = Array(n).fill('-1');
-  const ariaChecked = Array(n).fill('false');
+  c)MENUHTML"
+        LR"MENUHTML(onst ariaChecked = Array(n).fill('false');
   const sel = Number.isFinite(selectedIndex) ? selectedIndex : -1;
   if (sel >= 0 && sel < n && isSegmentEnabled(segs[sel])) ariaChecked[sel] = 'true';
   return { tabIndexes, ariaChecked, ariaHidden: true };
@@ -1211,8 +1225,7 @@ function planSegmentedNavigationInternals({ segments, selectedIndex } = {}) {
 /**
  * Static contract: every mouseenter callback that calls setActive must use a
  * non-stealing path (setActiveFromPointer, or setActive(..., {focus:false})).
- * Rating)MENUHTML"
-        LR"MENUHTML( star hover preview (paint only) is allowed without setActive.
+ * Rating star hover preview (paint only) is allowed without setActive.
  */
 function analyzeMouseenterSetActiveFocus(jsSource) {
   const text = String(jsSource || '');
@@ -1354,7 +1367,8 @@ function analyzeHoverIntentWiring(jsSource) {
     ['normal', 'function appendItems(', 'function itemsHaveIcon('],
   ];
   const hoverIntentSites = {};
-  for (const [name, from, to] of siteBounds) {
+  for (const [name, from, to] of s)MENUHTML"
+        LR"MENUHTML(iteBounds) {
     const region = sliceBetween(text, from, to);
     const hovers = collectHandlerBodies(region, 'mouseenter')
       .filter((b) => /setActiveFromPointer\s*\(/.test(b));
@@ -1362,8 +1376,7 @@ function analyzeHoverIntentWiring(jsSource) {
       && /applyHoverIntent\s*\(/.test(hovers[0])
       && !/closeLayersFrom\s*\(/.test(hovers[0])
       && !/openSub\s*\(/.test(hovers[0])
-      && collectHandlerBodies(region, 'mouseleave').s)MENUHTML"
-        LR"MENUHTML(ome((b) => /cancelHoverIntentFor\s*\(/.test(b));
+      && collectHandlerBodies(region, 'mouseleave').some((b) => /cancelHoverIntentFor\s*\(/.test(b));
   }
   const rowLeaves = collectHandlerBodies(text, 'mouseleave')
     .filter((b) => /cancelHoverIntentFor\s*\(/.test(b));
@@ -1467,13 +1480,13 @@ function findCssRuleBody(css, selector) {
  * 4px. The fullscreen sheet keeps its original radius and shadow.
  */
 function analyzeContentSizedChromeCss(css) {
-  // :where() keeps the compact-chrome default at 0-1-0 specificity so the
+  // :where() keep)MENUHTML"
+        LR"MENUHTML(s the compact-chrome default at 0-1-0 specificity so the
   // frontend css takeover (fb-user layer) can still restyle radius/shadow.
   // Radius stays 0 on compact surfaces: content must cover the corners so the
   // window-level DWM clip (ROUNDSMALL) shapes them; a CSS arc would expose an
   // uncovered square backdrop tip whenever the DWM clip is unavailable.
-  const compact = findCssRuleBody(css, ':where(.fb-content-s)MENUHTML"
-        LR"MENUHTML(ized) .fb-menu');
+  const compact = findCssRuleBody(css, ':where(.fb-content-sized) .fb-menu');
   const base = findCssRuleBody(css, '.fb-menu');
   return {
     hasCompactMenuRule: compact != null,
@@ -1505,7 +1518,7 @@ function analyzeContentSizedRootClassWiring(jsSource) {
     var layers = [];   // index=depth: {el, rows:[{el,item,navigable,hasSub}], active}
     // Single interaction mode — navigation | editor.
     var interactionMode = "navigation";  // "navigation" | "editor"
-    var editorCtx = null;                // { depth, rowIdx, focusEl, exit }
+    var editorCtx = null;                // { depth, rowIdx, row, focusEl }
     var pendingRootFocus = false;        // ContentSized: focus after first placed
     var placedGeometry = null;           // ContentSized CSS-pixel slot geometry
     var submenuPanelSequence = 0;        // monotonic root→host panel state reports
@@ -1563,7 +1576,8 @@ function analyzeContentSizedRootClassWiring(jsSource) {
       // 整数上取整，1-2px 残差会在右/底露出内容盖不住的裸 DWM 材质带、四角圆角错位
       //（tray zones 嵌套内容的小数布局尤其明显）。
       el.style.setProperty("width",geometry.width||"auto","important");
-      el.style.setProperty("height",geometry.height||"auto","important");
+      el.style.setProperty("height",geometry.height||"auto","impo)MENUHTML"
+        LR"MENUHTML(rtant");
       el.style.setProperty("max-width",geometry.maxWidth,"important");
       el.style.setProperty("max-height",geometry.maxHeight,"important");
       el.style.setProperty("min-width","0px","important");
@@ -1573,8 +1587,7 @@ function analyzeContentSizedRootClassWiring(jsSource) {
       if(!el) return;
       el.style.removeProperty("left");
       el.style.removeProperty("top");
-   )MENUHTML"
-        LR"MENUHTML(   el.style.removeProperty("width");
+      el.style.removeProperty("width");
       el.style.removeProperty("height");
       el.style.removeProperty("max-width");
       el.style.removeProperty("max-height");
@@ -1683,7 +1696,8 @@ function analyzeContentSizedRootClassWiring(jsSource) {
       if(plan.action!=="schedule") return;   // cancel=回到已开子菜单的父行（幂等不重开）；none=无层可关且本行无子菜单
       if(plan.delayMs<=0){ runHoverIntent(depth, ridx, hasSub); return; }   // MenuShowDelay=0 保持即时
       var token=hoverIntentToken();
-      hoverIntentTarget={depth:depth, ridx:ridx};
+      h)MENUHTML"
+        LR"MENUHTML(overIntentTarget={depth:depth, ridx:ridx};
       hoverIntentTimer=setTimeout(function(){
         hoverIntentTimer=0; hoverIntentTarget=null;
         if(token!==hoverIntentToken()) return;   // 代际防护
@@ -1694,8 +1708,7 @@ function analyzeContentSizedRootClassWiring(jsSource) {
     function enterEditor(depth, rowIdx){
       var L=layers[depth]; if(!L||!L.rows[rowIdx]) return;
       var row=L.rows[rowIdx];
-      if(!row.navig)MENUHTML"
-        LR"MENUHTML(able || !isRichKind(row.kind) || !row.enterEditor) return;
+      if(!row.navigable || !isRichKind(row.kind) || !row.enterEditor) return;
       interactionMode="editor";
       editorCtx={ depth:depth, rowIdx:rowIdx, row:row };
       row.el.setAttribute("role","none");
@@ -1730,6 +1743,20 @@ function analyzeContentSizedRootClassWiring(jsSource) {
 
     // ---- 富菜单项构建器（仅根层出现；均 push 一个 row 供键盘导航/active 高亮）----
     function applyDisabledAria(el, en){ if(!en) el.setAttribute("aria-disabled","true"); else el.removeAttribute("aria-disabled"); }
+
+    // 滚轮调值：挂在行元素上（导航态控件子树 inert，事件 target 本就是行）。
+    // 编辑态下只接受落在当前编辑行上的滚轮——segmented 的 adjust 会 focus() 目标分段，
+    // 跨行触发会让真实焦点与 editorCtx 分裂。不接管时不 preventDefault，菜单照常滚动。
+    function attachWheelAdjust(rowEl, row, isInteractive){
+      rowEl.addEventListener("wheel", function(e){
+        if(interactionMode==="editor" && editorCtx && editorCtx.row!==row) return;
+        if(!isInteractive()) return;
+        var step=wheelAdjustStep({deltaY:e.deltaY, deltaX:e.deltaX});
+        if(step===0) return;
+        e.preventDefault();
+        row.adjust(step);
+      }, {passive:false});
+    }
 
     function buildNowPlaying(menuEl, L, it, en, depth, zone){
       var d=document.createElement("div");
@@ -1784,7 +1811,8 @@ function analyzeContentSizedRootClassWiring(jsSource) {
         if(interactionMode==="navigation") applyNavAria();
       }
       for(var k=0;k<5;k++){ (function(k){
-        var s=document.createElement("span"); s.className="fb-star"; s.setAttribute("part","rating-star"); s.textContent="\u2605";
+        var s=document.createElement("span"); s.className="fb-star"; s)MENUHTML"
+        LR"MENUHTML(.setAttribute("part","rating-star"); s.textContent="\u2605";
         s.setAttribute("aria-hidden","true"); s.setAttribute("tabindex","-1");
         s.addEventListener("mouseenter", function(){ if(en) paint(k+1); });                                  // hover 预览
         s.addEventListener("click", function(ev){ ev.stopPropagation(); if(!en) return; var nv=((k+1)===ctl.v)?0:(k+1); ctl.v=nv; paint(nv); valueChange(it._token, nv); });   // 点同星=清 0
@@ -1800,8 +1828,7 @@ function analyzeContentSizedRootClassWiring(jsSource) {
         d.setAttribute("role","menuitem");
         d.setAttribute("tabindex","-1");
         d.setAttribute("aria-label", buildRichNavAriaLabel({kind:"rating", label:it.label, value:ctl.v, locale:uiLocale}));
-        setS)MENUHTML"
-        LR"MENUHTML(ubtreeInert(box, true);
+        setSubtreeInert(box, true);
       }
       applyNavAria();
       var row={el:d, item:it, navigable:en, hasSub:false, kind:"rating", zone:zone, controlRoot:box, applyNavAria:applyNavAria,
@@ -1817,6 +1844,7 @@ function analyzeContentSizedRootClassWiring(jsSource) {
           return false;
         }};
       L.rows.push(row);
+      attachWheelAdjust(d, row, function(){ return en; });
       d.addEventListener("mouseenter", function(){ if(interactionMode==="editor") return; setActiveFromPointer(depth, ridx); applyHoverIntent(depth, ridx, false); });
       d.addEventListener("mouseleave", function(){ cancelHoverIntentFor(depth, ridx); });
     }
@@ -1880,7 +1908,8 @@ function analyzeContentSizedRootClassWiring(jsSource) {
       }
       track.addEventListener("pointerdown", function(e){ if(!en||constant) return; e.stopPropagation(); dragging=true; try{ track.setPointerCapture(e.pointerId); }catch(x){} setFromEvent(e, false); });
       track.addEventListener("pointermove", function(e){ if(dragging) setFromEvent(e, false); });
-      track.addEventListener("pointerup", function(e){ if(dragging){ dragging=false; try{ track.releasePointerCapture(e.pointerId); }catch(x){} setFromEvent(e, true); } });
+      track.addEventListener("pointerup", f)MENUHTML"
+        LR"MENUHTML(unction(e){ if(dragging){ dragging=false; try{ track.releasePointerCapture(e.pointerId); }catch(x){} setFromEvent(e, true); } });
       track.addEventListener("pointercancel", function(){ if(dragging){ dragging=false; emit(ctl.v, true); } });
       track.addEventListener("click", function(ev){ ev.stopPropagation(); });   // 阻止冒泡到 row（不应选中/关闭）
       applyPaintStyles(ctl.v);
@@ -1898,8 +1927,7 @@ function analyzeContentSizedRootClassWiring(jsSource) {
         adjust:function(delta){
           if(!en||constant) return;
           var nv=clampInt(ctl.v+delta*step,mn,mx);
-  )MENUHTML"
-        LR"MENUHTML(        if(nv!==ctl.v){ ctl.v=nv; applyPaintStyles(nv); valueChange(it._token, nv); }
+          if(nv!==ctl.v){ ctl.v=nv; applyPaintStyles(nv); valueChange(it._token, nv); }
         },
         enterEditor:function(){ d.setAttribute("role","none"); d.removeAttribute("aria-label"); setSubtreeInert(track,false); focusEl.setAttribute("tabindex","0"); return focusEl; },
         exitEditor:function(){ focusEl.setAttribute("tabindex","-1"); applyNavAria(); },
@@ -1915,6 +1943,7 @@ function analyzeContentSizedRootClassWiring(jsSource) {
           return false;
         }};
       L.rows.push(row);
+      attachWheelAdjust(d, row, function(){ return en && !constant; });
       d.addEventListener("mouseenter", function(){ if(interactionMode==="editor") return; setActiveFromPointer(depth, ridx); applyHoverIntent(depth, ridx, false); });
       d.addEventListener("mouseleave", function(){ cancelHoverIntentFor(depth, ridx); });
     }
@@ -1975,7 +2004,8 @@ function analyzeContentSizedRootClassWiring(jsSource) {
         b.setAttribute("data-fb-focusable","1");
         if(c&&c.enabled===false) b.setAttribute("aria-disabled","true");
         if(c&&c.iconSvg&&c.iconSvg.content){ mountSanitizedSvgIcon(b, (c.iconSvg.viewBox)||"0 0 24 24", c.iconSvg.content); }
-        else { b.textContent=(c&&c.label)||""; }
+        else { b.textContent=(c&&c.label)||")MENUHTML"
+        LR"MENUHTML("; }
         b.addEventListener("click", function(ev){ ev.stopPropagation(); pick(idx, {focus:false}); });
         grp.appendChild(b); btns.push(b);
       })(segs[i], i); }
@@ -1999,8 +2029,7 @@ function analyzeContentSizedRootClassWiring(jsSource) {
           valueChange(it._token, plan.nextIndex);
         },
         enterEditor:function(){
-          d.setAttribute("ro)MENUHTML"
-        LR"MENUHTML(le","none"); d.removeAttribute("aria-label"); setSubtreeInert(grp,false);
+          d.setAttribute("role","none"); d.removeAttribute("aria-label"); setSubtreeInert(grp,false);
           var plan=planSegmentedEditorRoving({segments:segs, selectedIndex:ctl.v});
           for(var k=0;k<btns.length;k++) btns[k].setAttribute("tabindex", plan.tabIndexes[k]);
           return plan.focusIndex>=0?btns[plan.focusIndex]:null;
@@ -2013,6 +2042,7 @@ function analyzeContentSizedRootClassWiring(jsSource) {
           return false;
         }};
       L.rows.push(row);
+      attachWheelAdjust(d, row, function(){ return en; });
       d.addEventListener("mouseenter", function(){ if(interactionMode==="editor") return; setActiveFromPointer(depth, ridx); applyHoverIntent(depth, ridx, false); });
       d.addEventListener("mouseleave", function(){ cancelHoverIntentFor(depth, ridx); });
     }
@@ -2078,7 +2108,8 @@ function analyzeContentSizedRootClassWiring(jsSource) {
     }
 
     function itemsHaveIcon(items){
-      for(var hi=0;hi<(items||[]).length;hi++){ var hit=items[hi]; if(isNormalKind(hit)&&hit.iconSvg&&hit.iconSvg.content) return true; }
+      fo)MENUHTML"
+        LR"MENUHTML(r(var hi=0;hi<(items||[]).length;hi++){ var hit=items[hi]; if(isNormalKind(hit)&&hit.iconSvg&&hit.iconSvg.content) return true; }
       return false;
     }
 
@@ -2105,8 +2136,7 @@ function analyzeContentSizedRootClassWiring(jsSource) {
       if(layerHasIcon) menuEl.classList.add("has-icons");
       for(var i=0;i<present.length;i++){
         if(i>0){
-   )MENUHTML"
-        LR"MENUHTML(       var zs=document.createElement("div");
+          var zs=document.createElement("div");
           zs.className="fb-sep fb-zone-separator";
           zs.setAttribute("part","separator");
           // Inter-zone separator inherits the preceding zone.
@@ -2197,7 +2227,8 @@ function analyzeContentSizedRootClassWiring(jsSource) {
       cur=st;
       cleanupMenuInteraction();
       closeLayersFrom(0); layers.length=0;
-      var root=document.getElementById("menu"); root.innerHTML=""; root.classList.remove("in"); root.classList.remove("out");
+      var root=document.getElementById("menu"); root.innerHTML=""; root.classList.re)MENUHTML"
+        LR"MENUHTML(move("in"); root.classList.remove("out");
       root.classList.toggle("fb-submenu", !!(st && st.windowModel==="submenu"));
       clearContentSizedGeometry(root);
       placedGeometry=null;
@@ -2216,8 +2247,7 @@ function analyzeContentSizedRootClassWiring(jsSource) {
         ? st.zones.some(function(z){ return z && z.items && z.items.length; })
         : !!(st && st.items && st.items.length);
       if(!st || !st.visible || !hasContent){ hideMenuEl(root); return; }
-      if(useZones) buildZonesRoot)MENUHTML"
-        LR"MENUHTML((root, st.zones, 0);
+      if(useZones) buildZonesRoot(root, st.zones, 0);
       else buildLayer(root, st.items, 0, "");
       // 前端样式接管（S-CSS）：每次 render 覆盖 fb-user 防串味；cssReplace=true 时禁用默认样式（仅留 fb-user+fb-protected）。
       // 务必在 measureAndReport / placeRoot 之前应用，保证测量基于最终样式。
@@ -2321,7 +2351,8 @@ function analyzeContentSizedRootClassWiring(jsSource) {
         var previous=null, equalFrames=0;
         function sample(){
           _measureRaf=0;
-          if(generation!==_measureGeneration||!cur||cur.windowModel!=="contentSized") return;
+          if(generation!==_measureGeneration||!cur||cur.windowModel!==)MENUHTML"
+        LR"MENUHTML("contentSized") return;
           var root=document.getElementById("menu"); if(!root) return;
           var payload=buildMeasurePayload({menuId:(cur&&cur.menuId)||"",root:measureElement(root),submenus:measureFirstLevelSubmenus(),dpr:window.devicePixelRatio||1});
           if(payload.root.w<=0||payload.root.h<=0) return;
@@ -2348,8 +2379,7 @@ function analyzeContentSizedRootClassWiring(jsSource) {
         var root=document.getElementById("menu");
         requestAnimationFrame(function(){
           root.classList.add("in");
-          // ContentSized: real focus)MENUHTML"
-        LR"MENUHTML( only after first visible place.
+          // ContentSized: real focus only after first visible place.
           if(pendingRootFocus){
             pendingRootFocus=false;
             setActive(0, layers[0]?layers[0].active:firstNav(0), {focus:true});

@@ -3,16 +3,13 @@
 // ============================================
 // WindowUtilsCore.h - WindowUtils 中零 foobar2000 SDK 依赖的部分
 //
-// 拆分动机：WindowUtils.h 因 GetUserBackdropEffectString() 需要
-// core/PreferencesPage.h（fb2k SDK），导致整个头文件无法被测试项目包含。
-// 既有 tests/test_window_utils.cpp 因此在 namespace reimpl 内**重新实现**了
-// 这些 helper——生产代码漂移时测试仍会通过，等于没有防护。
+// WindowUtils.h 因 GetUserBackdropEffectString() 需要 core/PreferencesPage.h
+// （fb2k SDK），测试项目无法包含它。本头文件只保留不依赖 SDK 的符号，使测试
+// 可以直接包含并测试**真实生产符号**，而不必在测试里另写一份实现（那样生产
+// 代码漂移时测试仍会通过）。
 //
-// 本头文件只保留不依赖 SDK 的符号，使测试可以直接包含并测试**真实生产符号**。
-// WindowUtils.h 继续 include 本文件并保持同一 namespace，故所有既有消费者
-// （MainWindow.cpp / PopupWindow.cpp / WindowChromeResolver.cpp）无需改动。
-//
-// 本次拆分不改变任何函数体，属纯搬迁。
+// WindowUtils.h include 本文件并保持同一 namespace，消费者继续 include
+// WindowUtils.h 即可。
 // ============================================
 
 #include <string>

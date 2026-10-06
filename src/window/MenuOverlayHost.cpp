@@ -63,6 +63,16 @@ MenuOverlayHost& MenuOverlayHost::GetInstance() {
     return instance;
 }
 
+// 本单例是函数级 static，析构只发生在进程退出的静态析构期。那时候如果还持有
+// overlay，说明没有任何关停路径调过 Shutdown()（例如面板模式）；此处若照常
+// 析构 unique_ptr，就会经 PopupWindow::Destroy -> DestroyWindow -> OnDestroy
+// 去碰同为函数级 static、且比本单例更晚构造因而已先析构的三个异步操作
+// 注册表，读到的是已释放的 unordered_map 头节点。窗口交给系统随进程回收。
+MenuOverlayHost::~MenuOverlayHost() {
+    (void)overlay_.release();
+    (void)submenuOverlay_.release();
+}
+
 bool MenuOverlayHost::EnsureCreated() {
     PFC_ASSERT(core_api::is_main_thread());
     if (overlay_ && overlayHwnd_ && IsWindow(overlayHwnd_)) {
@@ -441,7 +451,7 @@ void MenuOverlayHost::FinalizeHide(const std::string& reason) {
     if (overlayHwnd_ && IsWindow(overlayHwnd_)) {
         ShowWindow(overlayHwnd_, SW_HIDE);
         // 必须在 SW_HIDE 之后：SW_HIDE 同步触发 WM_KILLFOCUS → dismiss → 重入 Hide
-        //（见本函数开头注释），此刻 visible_/closing_ 已复位，重入会早退，收口不被打断。
+        //（见本函数开头注释），此刻 visible_/closing_ 已复位，重入会早退，收敛渲染面积这一步不会被打断。
         CollapseWebViewSurface(overlay_.get(), overlayHwnd_);
     }
 
@@ -1031,7 +1041,7 @@ void MenuOverlayHost::HideSubmenuWindow(bool restoreRootFocus, bool notifyRoot, 
     suppressSubmenuDismiss_ = true;
     activationHandoff_ = true;  // submenu→root 内部交接：submenu 的失活不降观感/不误 blur
     ShowWindow(submenuHwnd_, SW_HIDE);
-    // 子菜单是独立 MenuOverlayWindow（: public PopupWindow，自带 WebView），收口同根窗。
+    // 子菜单是独立 MenuOverlayWindow（: public PopupWindow，自带 WebView），隐藏时按根窗同样的方式收敛其渲染面积。
     // 置于 suppressSubmenuDismiss_/activationHandoff_ 窗口内，与随后的焦点归还同批完成。
     CollapseWebViewSurface(submenuOverlay_.get(), submenuHwnd_);
     if (restoreRootFocus && visible_ && overlayHwnd_ && IsWindow(overlayHwnd_)) {

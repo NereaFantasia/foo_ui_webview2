@@ -4,6 +4,7 @@
 #include "pch.h"
 #include "api/ConsoleApi.h"
 #include "api/BridgeCore.h"
+#include "utils/PathTraversalSegments.h"
 #include <fstream>
 #include <chrono>
 #include <iomanip>
@@ -81,9 +82,12 @@ namespace {
     //==========================================================================
     std::wstring GetLogFilePath() {
         if (g_logFilePath.empty()) {
-            // Get profile directory
+            // 必须走 core_api::get_profile_path()：字面量 "profile://" 不是可解析
+            // 的路径，g_get_display_path 拿它解不出 profile 目录，拼出来的路径打不开，
+            // 于是 log.write 全部失败、log.read 又把打不开报成空文件。
+            // 同一仓库的 WebViewHost::GetProfileLogPath 是这条的正确写法。
             pfc::string8 profilePath;
-            filesystem::g_get_display_path("profile://", profilePath);
+            filesystem::g_get_display_path(core_api::get_profile_path(), profilePath);
             
             // Use proper UTF-8 → UTF-16 conversion (profilePath is UTF-8)
             std::wstring widePath = Utf8ToWide(std::string(profilePath.get_ptr(), profilePath.get_length()));
@@ -157,8 +161,10 @@ namespace {
             if (params.contains("file") && params["file"].is_string()) {
                 std::string customFile = params["file"].get<std::string>();
                 // Validate it's in profile directory
+                // 与 GetLogFilePath 同一约束：必须用 core_api::get_profile_path()，
+                // 字面量 "profile://" 解不出 profile 目录。
                 pfc::string8 profilePath;
-                filesystem::g_get_display_path("profile://", profilePath);
+                filesystem::g_get_display_path(core_api::get_profile_path(), profilePath);
                 
                 // Use proper UTF-8 → UTF-16 conversion (profilePath is UTF-8)
                 std::wstring widePath = Utf8ToWide(std::string(profilePath.get_ptr(), profilePath.get_length()));
@@ -185,9 +191,7 @@ namespace {
                 for (const auto& rn : reservedNames) {
                     if (baseName == rn) { isReserved = true; break; }
                 }
-                if (customFile.find("..") == std::string::npos && 
-                    customFile.find('/') == std::string::npos &&
-                    customFile.find('\\') == std::string::npos &&
+                if (path_traversal::IsPlainFilename(customFile) &&
                     hasValidExtension &&
                     !isReserved) {
                     logPath = widePath + L"\\" + customFileW;

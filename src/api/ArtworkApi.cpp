@@ -19,6 +19,7 @@
 #include <iomanip>
 #include <array>
 #include "utils/Base64.h"
+#include "utils/SubsongUtils.h"
 
 using json = nlohmann::json;
 
@@ -204,7 +205,10 @@ static bool GetArtworkSourcePathsForMetadbHandle(
 
 } // namespace
 
-static bool GetArtworkBinaryForMetadbHandle(metadb_handle_ptr track, const GUID& artType, BinaryArtworkInternal& out) {
+// `abort` is handed to album_art_manager_v2 so extraction can be interrupted;
+// exception_aborted is rethrown rather than swallowed as "no artwork".
+static bool GetArtworkBinaryForMetadbHandle(metadb_handle_ptr track, const GUID& artType,
+                                            BinaryArtworkInternal& out, abort_callback& abort) {
     if (!track.is_valid()) return false;
 
     // 1) now_playing_album_art_notify_manager (fast, cached) - only for cover_front
@@ -237,7 +241,6 @@ static bool GetArtworkBinaryForMetadbHandle(metadb_handle_ptr track, const GUID&
 
     // 2) album_art_manager_v2
     try {
-        abort_callback_dummy abort;
         auto artManager = album_art_manager_v2::get();
 
         metadb_handle_list items;
@@ -257,6 +260,8 @@ static bool GetArtworkBinaryForMetadbHandle(metadb_handle_ptr track, const GUID&
                 return true;
             }
         }
+    } catch (const exception_aborted&) {
+        throw;
     } catch (...) {
         // ignore
     }
@@ -320,7 +325,7 @@ bool GetCurrentArtworkBinary(const std::string& type, BinaryArtwork& out) {
         }
 
         BinaryArtworkInternal tmp;
-        if (!GetArtworkBinaryForMetadbHandle(track, artType, tmp)) {
+        if (!GetArtworkBinaryForMetadbHandle(track, artType, tmp, fb2k::noAbort)) {
             return false;
         }
 
@@ -332,14 +337,13 @@ bool GetCurrentArtworkBinary(const std::string& type, BinaryArtwork& out) {
     }
 }
 
-bool GetArtworkBinaryForPath(const std::string& path, const std::string& type, BinaryArtwork& out) {
+bool GetArtworkBinaryForPath(const std::string& path, const std::string& type, BinaryArtwork& out,
+                             abort_callback& abort) {
     if (path.empty()) return false;
 
     GUID artType = StringToArtType(type);
 
     try {
-        abort_callback_dummy abort;
-
         // Parse subsong from path (e.g. "file.cue|subsong:3")
         auto [filePath, subsong] = ArtworkParseSubsongPath(path);
 
@@ -353,7 +357,7 @@ bool GetArtworkBinaryForPath(const std::string& path, const std::string& type, B
         if (track.is_valid()) {
             // For non-current track requests, skip now_playing_manager cache by going straight to v2+extractor
             // We'll reuse helper but it may hit now_playing_manager; that's acceptable (still correct).
-            if (!GetArtworkBinaryForMetadbHandle(track, artType, tmp)) {
+            if (!GetArtworkBinaryForMetadbHandle(track, artType, tmp, abort)) {
                 return false;
             }
         } else {
@@ -364,6 +368,8 @@ bool GetArtworkBinaryForPath(const std::string& path, const std::string& type, B
         out.bytes = std::move(tmp.bytes);
         out.mimeType = std::move(tmp.mimeType);
         return true;
+    } catch (const exception_aborted&) {
+        throw;
     } catch (...) {
         return false;
     }
@@ -1231,24 +1237,33 @@ json ArtworkGetAvailableArtwork(const json& params) {
             }
         }
         
-        // Check for external artwork files in the directory
-        size_t lastSlash = filePath.rfind('\\');
-        if (lastSlash == std::string::npos) lastSlash = filePath.rfind('/');
-        
-        if (lastSlash != std::string::npos) {
-            std::string dir = filePath.substr(0, lastSlash);
-            std::wstring wdir = Utf8ToWide(dir);
-            
-            static const wchar_t* coverFiles[] = {
-                L"cover.jpg", L"cover.png", L"folder.jpg", L"folder.png",
-                L"front.jpg", L"front.png", L"album.jpg", L"album.png"
-            };
-            
-            for (const auto& coverFile : coverFiles) {
-                std::wstring fullPath = wdir + L"\\" + coverFile;
-                if (GetFileAttributesW(fullPath.c_str()) != INVALID_FILE_ATTRIBUTES) {
-                    std::string sourceName = "folder:" + WideToUtf8(coverFile);
-                    sources.push_back(sourceName);
+        // Check for external artwork files in the directory.
+        // This branch cuts the directory out of the path as a string and hands the
+        // result to a Win32 file API, so it needs the native form — for a local file
+        // fb2k gives "file://D:\Music\x.flac", whose directory part "file://D:\Music"
+        // never matches anything on disk and leaves the folder covers unreported.
+        // Normalizing has to happen before the cut, and stays scoped to this branch:
+        // the extractor above speaks fb2k's own path form and keeps receiving it.
+        std::string scanPath;
+        if (SubsongUtils::TryResolveNativeMediaPath(filePath, scanPath)) {
+            size_t lastSlash = scanPath.rfind('\\');
+            if (lastSlash == std::string::npos) lastSlash = scanPath.rfind('/');
+
+            if (lastSlash != std::string::npos) {
+                std::string dir = scanPath.substr(0, lastSlash);
+                std::wstring wdir = Utf8ToWide(dir);
+
+                static const wchar_t* coverFiles[] = {
+                    L"cover.jpg", L"cover.png", L"folder.jpg", L"folder.png",
+                    L"front.jpg", L"front.png", L"album.jpg", L"album.png"
+                };
+
+                for (const auto& coverFile : coverFiles) {
+                    std::wstring fullPath = wdir + L"\\" + coverFile;
+                    if (GetFileAttributesW(fullPath.c_str()) != INVALID_FILE_ATTRIBUTES) {
+                        std::string sourceName = "folder:" + WideToUtf8(coverFile);
+                        sources.push_back(sourceName);
+                    }
                 }
             }
         }

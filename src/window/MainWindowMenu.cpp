@@ -198,26 +198,9 @@ bool MainWindow::HandleWebViewMenuCommand(WORD cmdId) {
                 webView_->Reload();
             }
             return true;
-        case 9999: {
-            if (!webView_ || !webView_->IsReady()) {
-                return true;
-            }
-
-            console::printf("[WebView2 UI] Reloading frontend due to template change...");
-            std::wstring resourcesDir = GetFrontendResourcesDir();
-            if (resourcesDir.empty()) {
-                return true;
-            }
-
-            HRESULT hr = webView_->SetVirtualHostMapping(GetVirtualHostName(), resourcesDir);
-            if (FAILED(hr)) {
-                return true;
-            }
-
-            std::wstring url = std::wstring(L"https://") + GetVirtualHostName() + L"/index.html";
-            webView_->Navigate(url);
+        case 9999:
+            ReloadFrontendForTemplateChange();
             return true;
-        }
         case CMD_DEVTOOLS:
             if (webView_ && webView_->IsReady()) {
                 webView_->OpenDevTools();
@@ -229,6 +212,26 @@ bool MainWindow::HandleWebViewMenuCommand(WORD cmdId) {
         default:
             return false;
     }
+}
+
+void MainWindow::ReloadFrontendForTemplateChange() {
+    if (!webView_ || !webView_->IsReady()) {
+        return;
+    }
+
+    console::printf("[WebView2 UI] Reloading frontend due to template change...");
+    std::wstring resourcesDir = GetFrontendResourcesDir();
+    if (resourcesDir.empty()) {
+        return;
+    }
+
+    HRESULT hr = webView_->SetVirtualHostMapping(GetVirtualHostName(), resourcesDir);
+    if (FAILED(hr)) {
+        return;
+    }
+
+    std::wstring url = std::wstring(L"https://") + GetVirtualHostName() + L"/index.html";
+    webView_->Navigate(url);
 }
 
 bool MainWindow::HandleStandardMenuCommand(WORD cmdId) {

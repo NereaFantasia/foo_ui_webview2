@@ -31,6 +31,7 @@ void LibraryCache::Invalidate() {
     m_albumsCache.clear();
     m_tracksCache.reset();
     m_artistsCache.reset();
+    m_artistsWithAlbumsCache.reset();
     m_genresCache.reset();
     m_statsCache.reset();
     // Note: We keep cover cache as covers don't change with library updates
@@ -169,6 +170,23 @@ std::optional<json> LibraryCache::GetCachedArtists() const {
 void LibraryCache::SetCachedArtists(const json& data) {
     std::unique_lock<std::shared_mutex> lock(m_mutex);
     m_artistsCache = data;
+    m_valid = true;
+}
+
+std::optional<json> LibraryCache::GetCachedArtistsWithAlbums() const {
+    if (!m_valid.load()) return std::nullopt;
+    std::shared_lock<std::shared_mutex> lock(m_mutex);
+    if (m_artistsWithAlbumsCache.has_value()) { m_cacheHits++; return m_artistsWithAlbumsCache; }
+    m_cacheMisses++;
+    return std::nullopt;
+}
+
+// Both variants are written under one lock so an Invalidate() slipping in
+// between them can never leave one slot fresh and the other stale.
+void LibraryCache::SetCachedArtists(const json& data, const json& dataWithAlbums) {
+    std::unique_lock<std::shared_mutex> lock(m_mutex);
+    m_artistsCache = data;
+    m_artistsWithAlbumsCache = dataWithAlbums;
     m_valid = true;
 }
 

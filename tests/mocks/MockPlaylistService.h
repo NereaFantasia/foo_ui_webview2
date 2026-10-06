@@ -1,5 +1,7 @@
 #pragma once
+#include "../compat/fb2k_types.h"  // console:: stub：TrackWireSnapshot.h 链上的 FailureHook 引用它
 #include "../src/interfaces/IPlaylistService.h"
+#include "../src/api/TrackWireSnapshot.h"  // get_tracks_json 的 TrackFieldSelection 形参要读成员
 #include <string>
 #include <vector>
 #include <nlohmann/json.hpp>
@@ -115,6 +117,8 @@ public:
     mutable size_t lastGetTracksPlaylist = SIZE_MAX;
     mutable size_t lastGetTracksStart = 0;
     mutable size_t lastGetTracksCount = 0;
+    /** 最近一次 get_tracks_json 是否走了投影分支（fields 显式给出）。 */
+    mutable bool lastGetTracksProjected = false;
     mutable int getSelectedTracksJsonCallCount = 0;
     mutable size_t lastGetSelectedTracksPlaylist = SIZE_MAX;
 
@@ -259,6 +263,7 @@ public:
         lastGetTracksPlaylist = SIZE_MAX;
         lastGetTracksStart = 0;
         lastGetTracksCount = 0;
+        lastGetTracksProjected = false;
         getSelectedTracksJsonCallCount = 0;
         lastGetSelectedTracksPlaylist = SIZE_MAX;
 
@@ -556,11 +561,12 @@ public:
 
     // -- P4b: Track info retrieval ------------------------------------
 
-    nlohmann::json get_tracks_json(size_t playlist, size_t start, size_t count, const nlohmann::json& formats) const override {
+    nlohmann::json get_tracks_json(size_t playlist, size_t start, size_t count, const nlohmann::json& formats, const TrackFieldSelection& fields) const override {
         getTracksJsonCallCount++;
         lastGetTracksPlaylist = playlist;
         lastGetTracksStart = start;
         lastGetTracksCount = count;
+        lastGetTracksProjected = fields.projected;
         return tracksJsonResult;
     }
 

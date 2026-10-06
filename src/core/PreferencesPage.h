@@ -8,7 +8,7 @@
 #include <string>
 #include <vector>
 #include <functional>
-#include <foobar2000/SDK/coreDarkMode.h>
+#include "core/PreferencesPageBase.h"
 
 // Forward declarations
 class preferences_page_callback;
@@ -39,8 +39,32 @@ void SetStartWithFoobar(bool value);
 bool GetRememberWindowPosition();
 void SetRememberWindowPosition(bool value);
 
+// 无 UI 入口、无运行时消费者；配置键按 DESIGN D5 保留：不展示、不重置、不删。
 bool GetAutoHideWithFoobar();
 void SetAutoHideWithFoobar(bool value);
+
+// 托盘与任务栏（Window 子页）。偏好是启动初值与 Apply 时的即时写入；
+// tray.* / taskbar.* API 的运行期调用只覆盖本进程，不写回这里。
+bool GetMinimizeToTrayPreference();
+void SetMinimizeToTrayPreference(bool value);
+bool GetCloseToTrayPreference();
+void SetCloseToTrayPreference(bool value);
+// 关闭时 TaskbarIntegration 不再安装默认的缩略图播放按钮；主题用 taskbar.setButtons 装的按钮不受影响。
+bool GetTaskbarButtonsEnabled();
+void SetTaskbarButtonsEnabled(bool value);
+// 开启时按播放状态驱动任务栏按钮上的进度条；主题调 taskbar.setProgress 后由主题接管到下次状态变化。
+bool GetTaskbarProgressEnabled();
+void SetTaskbarProgressEnabled(bool value);
+
+// 性能（Performance 子页）。
+// 预热：initquit::on_init 是否在启动时创建 WebView2 环境；关闭后首个窗口创建时按需创建。改动后下次启动生效。
+bool GetPreheatEnabled();
+void SetPreheatEnabled(bool value);
+// 默认内容缩放，整数百分比（50–200，步进 25；100 = 不叠加在系统 DPI 之上）。读出时已钳到范围内。
+int GetDefaultZoomPercent();
+void SetDefaultZoomPercent(int percent);
+// 把当前默认缩放应用到所有还没被主题 window.setZoom 覆盖过的 WebView；新建的 WebView 在 controller 就绪时自己读。
+void ApplyDefaultZoomToFollowingHosts();
 
 // DWM 背景效果
 enum class BackdropEffect {
@@ -57,11 +81,20 @@ void SetBackdropEffect(BackdropEffect effect);
 // 偏好设置页 GUID（供 BackgroundService 等外部模块用）
 const GUID& GetPreferencesPageGuid();
 
-// 开发者选项
+// 开发者选项（Developer 子页）
 bool GetDevToolsEnabled();
+// CDP 远程调试端口（Developer 子页），1024–65535，默认 9222；读出时越界值已退回默认。
+// 环境创建时拼进 --remote-debugging-port，改动后重启生效。
+int GetCdpPort();
+void SetCdpPort(int port);
+// 安全例外，写入口在 Advanced Preferences（Tools > WebView2 UI），这里只读取。
 bool GetLocalNetworkAllowed();
 bool GetInsecureHttpAllowed();
 bool GetInsecureTlsAllowed();
+
+// 开发服务器开关或 URL 改变后，让主窗口、后台窗口与跟随全局模板的面板按当前配置重新加载前端；
+// 显式指定模板或 URL 的面板与弹出窗口不动。导航是异步的，返回不代表加载完成。
+void ReloadFrontendsForDevServerChange();
 
 // ============================================
 // Preferences 页面类
@@ -83,54 +116,55 @@ public:
 };
 
 // ============================================
-// Preferences 页面实例类
+// Preferences 页面实例类（总览页）
 // ============================================
 
-class WebViewPreferencesInstance : public preferences_page_instance {
+// 容器、字体、布局、滚动与草稿提交都在 PreferencesPageBase；本类只有总览页自己的
+// 字段读写、控件、布局描述、模板命令与 Apply 之后的运行时刷新。
+class WebViewPreferencesInstance : public PreferencesPageBase {
 public:
     WebViewPreferencesInstance(HWND parent, preferences_page_callback::ptr callback);
-    ~WebViewPreferencesInstance();
-    
-    // preferences_page_instance interface
-    t_uint32 get_state() override;
-    fb2k::hwnd_t get_wnd() override;
-    void apply() override;
-    void reset() override;
-    
+
+protected:
+    // PreferencesPageBase
+    prefs_draft::Snapshot ReadSnapshotFromConfig() const override;
+    prefs_draft::Snapshot StartupSnapshot() const override;
+    bool WriteField(size_t field, const prefs_draft::Snapshot& value) override;
+    void CreateControls(HWND hwnd) override;
+    void LayoutContent(prefs_layout::PageLayoutBuilder& builder) override;
+    void SyncControlsFromDraft() override;
+    std::wstring FieldDisplayName(size_t field) const override;
+    std::wstring ValidationMessage(const prefs_draft::ValidationResult& result) const override;
+    void AfterApply(const std::vector<size_t>& changed) override;
+    INT_PTR OnMessage(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) override;
+
 private:
-    // Dialog procedure
-    static INT_PTR CALLBACK DialogProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam);
-    INT_PTR HandleMessage(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam);
-    
-    // UI 更新
-    void InitializeControls(HWND hwnd);
+    // 模板可用：目录存在且含非空 index.html。作为字段表里模板字段的额外校验。
+    static bool TemplateIsUsable(const std::string& name);
+
+    // UI 状态刷新
     void RefreshTemplateList(HWND hwnd);
-    void UpdateState();
+    void RefreshTemplateFolderText();
+    void RefreshDevServerStatus();
     void OnTemplateSelectionChanged(HWND hwnd);
-    
+
+    // Apply 写成之后的运行时刷新
+    void ReloadFrontendsForTemplateChange();
+    void RefreshChromeForBackdropChange();
+
     // 模板操作
+    void OnManageTemplates(HWND hwnd);
     void OnCreateTemplate(HWND hwnd);
     void OnRenameTemplate(HWND hwnd);
     void OnDeleteTemplate(HWND hwnd);
-    void OnOpenTemplateFolder(HWND hwnd);
-    
-    // API 列表查看
+    void OnOpenTemplateFolder(HWND hwnd) const;
+
+    // 工具
+    void OnOpenAdvancedPreferences();
     void OnShowApiList(HWND hwnd);
-    
-    HWND hwnd_ = nullptr;
-    HFONT hFont_ = nullptr;
-    preferences_page_callback::ptr callback_;
-    
-    // 深色模式支持
-    fb2k::CCoreDarkModeHooks darkMode_;
-    
-    // 当前设置值（用于 UI 同步，设置更改时会立即保存到 cfg_var）
-    std::string pendingTemplate_;
-    bool pendingStartWithFoobar_ = false;
-    bool pendingRememberPosition_ = true;
-    bool pendingAutoHide_ = false;
-    BackdropEffect pendingBackdrop_ = BackdropEffect::Mica;
-    bool hasChanges_ = false;  // 跟踪是否有未应用的更改
+
+    // 本进程启动时的语言意图：语言覆盖只由本页写入，首个实例创建时读到的值即启动值
+    int startupLanguage_ = 0;
 };
 
 } // namespace webview_prefs

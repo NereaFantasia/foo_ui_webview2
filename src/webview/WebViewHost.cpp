@@ -4,7 +4,10 @@
 #include "webview/WebViewCrashPolicy.h"
 #include "webview/SdkBridgeScript.inl"
 #include "webview/ArtworkWorkerQueue.h"
+#include "webview/ScaledArtworkCache.h"
 #include "window/WindowChromeTrace.h"
+#include "core/PreferencesPage.h"   // webview_prefs::GetDefaultZoomPercent
+#include "core/PreferencesZoom.h"
 #include "api/ArtworkApi.h"
 #include "api/ArtworkRequestParser.h"
 #include "utils/ArtworkCacheKey.h"
@@ -216,6 +219,7 @@ void WebViewHost::CreateControllerWithEnvironment(ICoreWebView2Environment* env,
                     
                     SetupWebView();
                     SetupSettings();
+                    ApplyDefaultZoomPreference();
                     SetupCustomProtocol();
                     RegisterMessageHandler();
                     SetupProcessFailedHandling();
@@ -264,6 +268,7 @@ void WebViewHost::CreateControllerWithEnvironment(ICoreWebView2Environment* env,
 
                 SetupWebView();
                 SetupSettings();
+                ApplyDefaultZoomPreference();
                 SetupCustomProtocol();
                 RegisterMessageHandler();
                 SetupProcessFailedHandling();
@@ -2412,6 +2417,13 @@ HRESULT WebViewHost::SetZoomForDpi(int dpi) {
     return SetZoomFactor(zoomFactor);
 }
 
+void WebViewHost::ApplyDefaultZoomPreference() {
+    // WebView2 新建时就是 1.0；偏好为 100 时什么都不做，也不把主题稍后的覆盖抢在前面。
+    const int percent = webview_prefs::GetDefaultZoomPercent();
+    if (percent == prefs_zoom::kDefaultPercent) return;
+    SetZoomFactor(prefs_zoom::FactorFromPercent(percent));
+}
+
 // CSS app-region 查询
 // 需要 ICoreWebView2CompositionController4 (SDK 1.0.1185+)
 int WebViewHost::GetNonClientRegionAtPoint(POINT clientPt) {
@@ -2568,23 +2580,22 @@ static std::string UrlDecode(const std::wstring& encoded) {
 // share the same folder image to reuse the same resized JPEG entry.
 // ==========================================================================
 namespace {
-    struct ScaledArtworkEntry {
-        std::vector<uint8_t> jpegBytes;
-        std::string mimeType;
-        std::chrono::steady_clock::time_point created;     // TTL expiry
-        std::chrono::steady_clock::time_point lastAccess;  // LRU eviction order
-    };
-
     struct NegativeCacheEntry {
         std::chrono::steady_clock::time_point timestamp;
     };
 
-    std::unordered_map<std::string, ScaledArtworkEntry> s_scaledArtworkCache;
-    std::unordered_map<std::string, NegativeCacheEntry> s_artworkNegativeCache;
-    std::mutex s_scaledArtworkCacheMutex;  // guards both positive and negative caches
     static constexpr size_t MAX_SCALED_CACHE = 500;
-    static constexpr int SCALED_CACHE_TTL_SEC = 300;
+    static constexpr size_t MAX_SCALED_CACHE_BYTES = 64ull * 1024 * 1024;
+    static constexpr int SCALED_CACHE_TTL_SEC = 300;  // entries without a source fingerprint only
     static constexpr int NEGATIVE_CACHE_TTL_SEC = 30;
+
+    // Positive cache locks internally; both the async completion callback and the
+    // synchronous fallback write through it so one eviction policy applies.
+    artwork_cache::ScaledArtworkCache s_scaledArtworkCache{artwork_cache::ScaledArtworkLimits{
+        MAX_SCALED_CACHE, MAX_SCALED_CACHE_BYTES, std::chrono::seconds(SCALED_CACHE_TTL_SEC)}};
+
+    std::unordered_map<std::string, NegativeCacheEntry> s_artworkNegativeCache;
+    std::mutex s_artworkNegativeCacheMutex;
 }
 
 // Compute a source-content fingerprint from filesystem metadata.
@@ -2615,6 +2626,41 @@ static std::string ComputeSourceFingerprint(const std::vector<std::string>& sour
         }
     }
     return data;
+}
+
+// Serve a scaled-cache hit as a 200 response; false on miss so the caller
+// continues to the extractor. The current source fingerprint decides freshness:
+// an entry written for a different mtime/size of the same cover file is a miss.
+// Shared bytes come out of the cache lock; the response is built outside it.
+static bool TryRespondFromScaledCache(
+    ICoreWebView2Environment* environment,
+    ICoreWebView2WebResourceRequestedEventArgs* args,
+    const std::string& cacheKey,
+    const std::string& sourceFingerprint,
+    const std::string& etag)
+{
+    if (cacheKey.empty() || !environment || !args) return false;
+    const auto hit = s_scaledArtworkCache.Get(
+        cacheKey, sourceFingerprint, std::chrono::steady_clock::now());
+    if (!hit) return false;
+    const std::vector<uint8_t>& hitBytes = *hit->bytes;
+    IStream* cacheStream = SHCreateMemStream(
+        hitBytes.data(), static_cast<UINT>(hitBytes.size()));
+    if (!cacheStream) return false;
+    const std::wstring mimeTypeW(hit->mimeType.begin(), hit->mimeType.end());
+    const std::wstring etagW(etag.begin(), etag.end());
+    std::wstring headers = L"Content-Type: " + mimeTypeW + L"\r\n";
+    headers += L"Cache-Control: public, max-age=86400\r\n";
+    headers += L"ETag: " + etagW + L"\r\n";
+    headers += L"Access-Control-Allow-Origin: *\r\n";
+    wil::com_ptr<ICoreWebView2WebResourceResponse> response;
+    if (SUCCEEDED(environment->CreateWebResourceResponse(
+            cacheStream, 200, L"OK", headers.c_str(), &response))) {
+        args->put_Response(response.get());
+        LOG("Scaled artwork cache hit: ", hitBytes.size(), " bytes");
+    }
+    cacheStream->Release();
+    return true;
 }
 
 // ==========================================================================
@@ -2788,7 +2834,7 @@ void WebViewHost::SetupCustomProtocol() {
                     artworkType + ":" +
                     (artworkSourcePaths.empty() ? pathUtf8 : artworkSourcePaths[0]);
                 {
-                    std::lock_guard lock(s_scaledArtworkCacheMutex);
+                    std::lock_guard lock(s_artworkNegativeCacheMutex);
                     auto nit = s_artworkNegativeCache.find(negCacheKey);
                     if (nit != s_artworkNegativeCache.end()) {
                         const auto age =
@@ -2846,44 +2892,8 @@ void WebViewHost::SetupCustomProtocol() {
                         pathUtf8, artworkType, maxSize, artworkSourcePaths);
                 }
 
-                // Copy bytes under lock, build response outside lock; update LRU lastAccess.
-                auto tryScaledCacheHit = [&]() {
-                    if (maxSize <= 0 || cacheKey.empty()) return false;
-                    std::vector<uint8_t> hitBytes;
-                    std::string hitMime;
-                    {
-                        std::lock_guard lock(s_scaledArtworkCacheMutex);
-                        auto it = s_scaledArtworkCache.find(cacheKey);
-                        if (it == s_scaledArtworkCache.end()) return false;
-                        auto& entry = it->second;
-                        const auto now = std::chrono::steady_clock::now();
-                        if (std::chrono::duration_cast<std::chrono::seconds>(
-                                now - entry.created).count() >= SCALED_CACHE_TTL_SEC)
-                            return false;
-                        entry.lastAccess = now;  // true LRU update
-                        hitBytes = entry.jpegBytes;
-                        hitMime  = entry.mimeType;
-                    }
-                    // Build response outside the lock
-                    IStream* cacheStream = SHCreateMemStream(
-                        hitBytes.data(), static_cast<UINT>(hitBytes.size()));
-                    if (!cacheStream) return false;
-                    const std::wstring mimeTypeW(hitMime.begin(), hitMime.end());
-                    const std::wstring etagW(etag.begin(), etag.end());
-                    std::wstring headers = L"Content-Type: " + mimeTypeW + L"\r\n";
-                    headers += L"Cache-Control: public, max-age=86400\r\n";
-                    headers += L"ETag: " + etagW + L"\r\n";
-                    headers += L"Access-Control-Allow-Origin: *\r\n";
-                    wil::com_ptr<ICoreWebView2WebResourceResponse> response;
-                    if (SUCCEEDED(environment_->CreateWebResourceResponse(
-                            cacheStream, 200, L"OK", headers.c_str(), &response))) {
-                        args->put_Response(response.get());
-                        LOG("Scaled artwork cache hit: ", hitBytes.size(), " bytes");
-                    }
-                    cacheStream->Release();
-                    return true;
-                };
-                if (tryScaledCacheHit()) {
+                if (maxSize > 0 && TryRespondFromScaledCache(
+                        environment_.get(), args, cacheKey, sourceFingerprint, etag)) {
                     instrumentation.Complete("success", "scaled-cache-hit");
                     artworkLifecycle_.Complete(*lifecycleCapture);
                     return S_OK;
@@ -2925,6 +2935,7 @@ void WebViewHost::SetupCustomProtocol() {
                     workItem.maxSize         = maxSize;
                     workItem.cacheKey        = cacheKey;
                     workItem.negCacheKey     = negCacheKey;
+                    workItem.fingerprint     = sourceFingerprint;
                     workItem.etag            = etag;
                     workItem.ifNoneMatchEtag = std::move(ifNoneMatchEtag);
                     workItem.navGen          = lifecycleCapture->navigationGeneration;
@@ -2951,16 +2962,17 @@ void WebViewHost::SetupCustomProtocol() {
 
                         wil::com_ptr<ICoreWebView2WebResourceResponse> response;
                         if (result.statusCode == 200 && !result.bytes.empty()) {
-                            // Write L1 positive cache.
+                            // One shared buffer feeds both the cache entry and the response stream.
+                            auto sharedBytes = std::make_shared<const std::vector<uint8_t>>(
+                                std::move(result.bytes));
                             if (!result.cacheKey.empty()) {
-                                std::lock_guard lock(s_scaledArtworkCacheMutex);
-                                const auto now = std::chrono::steady_clock::now();
-                                s_scaledArtworkCache[result.cacheKey] = {
-                                    result.bytes, result.mime, now, now};
+                                s_scaledArtworkCache.Put(
+                                    result.cacheKey, sharedBytes, result.mime, result.fingerprint,
+                                    std::chrono::steady_clock::now());
                             }
                             IStream* stream = SHCreateMemStream(
-                                result.bytes.data(),
-                                static_cast<UINT>(result.bytes.size()));
+                                sharedBytes->data(),
+                                static_cast<UINT>(sharedBytes->size()));
                             if (stream) {
                                 const std::wstring mimeW(
                                     result.mime.begin(), result.mime.end());
@@ -2985,7 +2997,7 @@ void WebViewHost::SetupCustomProtocol() {
                                 nullptr, 304, L"Not Modified", h304.c_str(), &response);
                         } else if (result.statusCode == 404) {
                             if (result.isNegative && !result.negCacheKey.empty()) {
-                                std::lock_guard lock(s_scaledArtworkCacheMutex);
+                                std::lock_guard lock(s_artworkNegativeCacheMutex);
                                 s_artworkNegativeCache[result.negCacheKey] =
                                     NegativeCacheEntry{std::chrono::steady_clock::now()};
                             }
@@ -3045,7 +3057,7 @@ void WebViewHost::SetupCustomProtocol() {
                 if (!found || artwork.bytes.empty()) {
                     // Write negative cache so repeated requests skip the extractor.
                     {
-                        std::lock_guard lock(s_scaledArtworkCacheMutex);
+                        std::lock_guard lock(s_artworkNegativeCacheMutex);
                         s_artworkNegativeCache[negCacheKey] =
                             NegativeCacheEntry{std::chrono::steady_clock::now()};
                     }
@@ -3087,47 +3099,12 @@ void WebViewHost::SetupCustomProtocol() {
                         finalMimeType = outMimeType;
                         LOG("Image resized to ", outWidth, "x", outHeight, ", ", finalSize, " bytes");
 
-                        // Store in scaled artwork cache (eviction logic extracted to reduce nesting)
-                        auto evictScaledCache = [&]() {
-                            const auto now = std::chrono::steady_clock::now();
-                            // Remove TTL-expired entries first.
-                            for (auto ci = s_scaledArtworkCache.begin();
-                                 ci != s_scaledArtworkCache.end(); ) {
-                                if (std::chrono::duration_cast<std::chrono::seconds>(
-                                        now - ci->second.created).count() >= SCALED_CACHE_TTL_SEC) {
-                                    ci = s_scaledArtworkCache.erase(ci);
-                                } else {
-                                    ++ci;
-                                }
-                            }
-                            if (s_scaledArtworkCache.size() < MAX_SCALED_CACHE) return;
-                            // LRU eviction by lastAccess: evict 20% least-recently-accessed.
-                            std::vector<decltype(s_scaledArtworkCache)::iterator> entries;
-                            entries.reserve(s_scaledArtworkCache.size());
-                            for (auto it = s_scaledArtworkCache.begin();
-                                 it != s_scaledArtworkCache.end(); ++it) {
-                                entries.push_back(it);
-                            }
-                            size_t toEvict = MAX_SCALED_CACHE / 5;
-                            if (toEvict > entries.size()) toEvict = entries.size();
-                            std::partial_sort(
-                                entries.begin(), entries.begin() + toEvict, entries.end(),
-                                [](auto a, auto b) {
-                                    return a->second.lastAccess < b->second.lastAccess;
-                                });
-                            for (size_t i = 0; i < toEvict; ++i) {
-                                s_scaledArtworkCache.erase(entries[i]);
-                            }
-                        };
-                        {
-                            std::lock_guard lock(s_scaledArtworkCacheMutex);
-                            if (s_scaledArtworkCache.size() >= MAX_SCALED_CACHE)
-                                evictScaledCache();
-                            const auto now = std::chrono::steady_clock::now();
-                            s_scaledArtworkCache[cacheKey] = {
-                                resizedData, finalMimeType, now, now
-                            };
-                        }
+                        // Same cache and eviction policy as the async completion path.
+                        s_scaledArtworkCache.Put(
+                            cacheKey,
+                            std::make_shared<const std::vector<uint8_t>>(resizedData),
+                            finalMimeType, sourceFingerprint,
+                            std::chrono::steady_clock::now());
                     } else if (outWidth > 0) {
                         LOG("Image already ", outWidth, "x", outHeight, ", no resize needed");
                     }

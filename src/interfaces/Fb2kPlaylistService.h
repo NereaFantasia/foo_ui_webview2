@@ -262,7 +262,7 @@ public:
     // -- Complex methods (defined in PlaylistApi.cpp) ----------
 
     InsertTracksResult insert_tracks(size_t playlist, size_t position, const nlohmann::json& handles) override;
-    nlohmann::json get_tracks_json(size_t playlist, size_t start, size_t count, const nlohmann::json& formats) const override;
+    nlohmann::json get_tracks_json(size_t playlist, size_t start, size_t count, const nlohmann::json& formats, const TrackFieldSelection& fields) const override;
     nlohmann::json get_selected_tracks_json(size_t playlist) const override;
 
     // -- Undo / Redo ---------------------------------------------

@@ -14,6 +14,7 @@
 #include "core/QueueManager.h"
 #include "api/BridgeCore.h"
 #include "utils/PlaylistFormatUtils.h"
+#include "utils/SubsongUtils.h"
 #include <algorithm>
 #include <cctype>
 
@@ -641,6 +642,14 @@ void QueueManager::OnPlaybackNewTrack(const metadb_handle_ptr& track) {
             return;
         }
     }
+
+    // 新曲目开始后允许重新请求下一首。页面重载可能丢失上一轮 needNext 的应答；
+    // 将仍在等待的状态恢复为 Active，避免旧等待状态阻止 RequestNextTrack。
+    State unanswered = State::WaitingNext;
+    if (m_state.compare_exchange_strong(unanswered, State::Active)) {
+        FB2K_console_print("[JIT Queue] Previous needNext went unanswered; recovering to Active");
+    }
+
     RequestNextTrack();
 }
 
@@ -771,14 +780,16 @@ std::pair<pfc::string8, t_uint32> QueueManager::ParseSubsongUrl(const std::strin
 }
 
 metadb_handle_list QueueManager::BuildHandlesFromUrls(const std::vector<std::string>& urls) {
-    auto mm = metadb::get();
     metadb_handle_list allHandles;
     
     for (const auto& url : urls) {
         if (url.empty()) continue;
         
+        // 规范化后建 handle：流媒体直链没有 filesystem 认领时 g_get_canonical_path
+        // 原样透传，有 http filesystem 时得到的正是
+        // process_locations 慢路径会产出的同一身份。
         auto [pathStr, subsongIndex] = ParseSubsongUrl(url);
-        metadb_handle_ptr handle = mm->handle_create(pathStr.get_ptr(), subsongIndex);
+        metadb_handle_ptr handle = SubsongUtils::CreateCanonicalHandle(pathStr.get_ptr(), subsongIndex);
         if (handle.is_valid()) {
             allHandles.add_item(handle);
         } else {
@@ -1096,12 +1107,14 @@ void QueueManager::AddUrlToPlaylistAsync(const std::string& url, const std::stri
                 plm->playlist_clear(playlistIndex);
             }
 
-            // Fast path: 流媒体直链 / 本地文件路径直接 metadb::handle_create 同步生成 handle,
+            // Fast path: 流媒体直链 / 本地文件路径规范化后同步生成 handle,
             // 完全绕开 process_locations_async 的 fb2k 进度对话框 (零弹窗、瞬间返回)。
+            // 与 BuildHandlesFromUrls 同一解析：`|subsong:N` 拆出、路径规范化，
+            // 使快路径产出的身份与慢路径一致。
             // Slow path: .pls / .m3u / .cue 等 wrapper 必须走 process_locations_async 展开。
             if (!PlaylistFormatUtils::LooksLikePlaylistWrapper(urlCopy)) {
-                auto mdb = metadb::get();
-                metadb_handle_ptr handle = mdb->handle_create(urlCopy.c_str(), 0);
+                auto [pathStr, subsongIndex] = ParseSubsongUrl(urlCopy);
+                metadb_handle_ptr handle = SubsongUtils::CreateCanonicalHandle(pathStr.get_ptr(), subsongIndex);
                 if (handle.is_valid()) {
                     metadb_handle_list items;
                     items.add_item(handle);

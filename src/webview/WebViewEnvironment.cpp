@@ -2,6 +2,7 @@
 #include "webview/WebViewEnvironment.h"
 #include "core/WebViewContext.h"
 #include "core/SecurityConfig.h"
+#include "core/PreferencesPage.h"   // webview_prefs::GetPreheatEnabled / GetCdpPort
 #include <Shlobj.h>
 #include <wrl/client.h>
 #include <wrl/event.h>
@@ -174,17 +175,20 @@ void WebViewEnvironment::CreateEnvironmentInternal() {
     // CDP remote debugging port — 仅在 CDP 远程调试开关启用时开放
     // 允许 MCP 工具集 / AI 智能体通过 CDP 操控 WebView2
     if (security_config::IsCdpRemoteEnabled()) {
+        // 端口来自 Developer 子页（默认 9222）；读出时已钳到 1024–65535。环境只创建一次，
+        // 运行中改端口不影响本进程已开的端口。
+        const int cdpPort = webview_prefs::GetCdpPort();
         // CDP 模式追加后台节流禁用，消除 hidden ≥5min 后定时器分钟级对齐的长尾
         // （IntensiveWakeUpThrottling 是 blink feature、没有独立 switch，只能并入
         // --disable-features）。
-        extraArgs += L" --remote-debugging-port=9222"
+        extraArgs += L" --remote-debugging-port=" + std::to_wstring(cdpPort) +
                      L" --disable-background-timer-throttling"
                      L" --disable-renderer-backgrounding";
         disableFeatures += L",IntensiveWakeUpThrottling";
-        // keep-alive 判定绑定"本进程真实开了端口"的快照，而非 advconfig 实时值
+        // keep-alive 判定绑定"本进程真实开了端口"的快照，而非配置实时值
         // （运行中勾/取消 CDP 不影响已创建环境的端口状态）。
         security_config::NoteCdpPortOpenedThisProcess();
-        console::print("[WebView2 UI] CDP remote debugging enabled on port 9222");
+        FB2K_console_formatter() << "[WebView2 UI] CDP remote debugging enabled on port " << cdpPort;
     }
 
     std::wstring browserArgs = L"--disable-features=" + disableFeatures + extraArgs;
@@ -312,7 +316,12 @@ void WebViewEnvironment::Shutdown() {
 class WebViewEnvironmentInitQuit : public initquit {
 public:
     void on_init() override {
-        // Preheat environment on startup
+        // 预热开关在 Performance 子页；关闭时不在这里创建环境，首个 GetEnvironment() 调用会按需创建。
+        // 开关改动只影响下一次启动。
+        if (!webview_prefs::GetPreheatEnabled()) {
+            console::print("[WebView2 UI] WebView2 environment preheat disabled; it will be created on first use");
+            return;
+        }
         // Use main thread callback to ensure proper COM context
         fb2k::inMainThread([]() {
             WebViewEnvironment::GetInstance().Preheat();

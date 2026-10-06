@@ -4,6 +4,11 @@
 #include <functional>
 #include <nlohmann/json.hpp>
 
+// fields 投影的解析结果（TrackWireSnapshot.h）。接口签名只按引用传递，
+// 前向声明让本头不把 ErrorEnvelope 链带进每个消费方；要读成员的定义方
+// （PlaylistApi.cpp、MockPlaylistService.h）自己含 TrackWireSnapshot.h。
+struct TrackFieldSelection;
+
 // Abstract interface for PlaylistApi handler operations.
 // Production: Fb2kPlaylistService (delegates to playlist_manager / autoplaylist_manager).
 // Testing:    MockPlaylistService (in-memory state + call counters).
@@ -125,8 +130,10 @@ public:
 
     // -- Track info retrieval (involves metadb + titleformat) --
 
-    /** @brief Titleformat-evaluated metadata for a track range, as JSON. */
-    virtual nlohmann::json get_tracks_json(size_t playlist, size_t start, size_t count, const nlohmann::json& formats) const = 0;
+    /** @brief Titleformat-evaluated metadata for a track range, as JSON.
+        `fields` 是已解析的投影选择（SPEC docs/playlist-windowing/SPEC.md §4.1）：
+        projected=false 时与缺省形状逐键相同。 */
+    virtual nlohmann::json get_tracks_json(size_t playlist, size_t start, size_t count, const nlohmann::json& formats, const TrackFieldSelection& fields) const = 0;
     /** @brief Metadata for the selected tracks, as JSON. */
     virtual nlohmann::json get_selected_tracks_json(size_t playlist) const = 0;
 
