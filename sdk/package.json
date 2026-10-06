@@ -1,6 +1,6 @@
 {
   "name": "foo-webview-sdk",
-  "version": "1.14.0",
+  "version": "2.0.0",
   "description": "Simplified SDK for foo_ui_webview2 - foobar2000 WebView2 Plugin",
   "type": "module",
   "main": "./dist/bridge.js",
@@ -33,16 +33,32 @@
       "import": "./dist/smp-compat.js",
       "default": "./dist/smp-compat.js"
     },
-    "./smp-compat.global": "./dist/smp-compat.global.js"
+    "./smp-compat.global": "./dist/smp-compat.global.js",
+    "./schema": {
+      "types": "./dist/schema.d.ts",
+      "import": "./dist/schema.js",
+      "default": "./dist/schema.js"
+    }
   },
   "scripts": {
-    "type-check": "tsc --noEmit -p tsconfig.json",
+    "type-check": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.test.json",
+    "gen:types": "node ../scripts/gen_sdk_types.mjs --all",
+    "gen:types:diff": "node ../scripts/gen_sdk_types.mjs --all --diff",
+    "gen:types:validate": "node ../scripts/gen_sdk_types.mjs --all --validate",
+    "gen:components-global": "node ../scripts/gen_sdk_components_global.mjs",
+    "gen:components-global:diff": "node ../scripts/gen_sdk_components_global.mjs --diff --quiet",
     "test": "vitest run",
     "test:watch": "vitest",
-    "build": "tsup --config tsup.config.esm.ts && tsup --config tsup.config.iife.ts",
+    "clean:dist": "node -e \"require('node:fs').rmSync('dist', { recursive: true, force: true })\"",
+    "check-dist": "node ../scripts/check_sdk_dist.mjs",
+    "build": "npm run clean:dist && tsup --config tsup.config.esm.ts && tsup --config tsup.config.iife.ts",
+    "postbuild": "npm run check-dist && npm run audit:dist",
+    "audit:dist": "cd .. && node scripts/audit_sourcemap.mjs --strict && node scripts/audit_dts_hygiene.mjs --strict",
     "build:esm": "tsup --config tsup.config.esm.ts",
     "build:iife": "tsup --config tsup.config.iife.ts",
-    "watch": "tsup --config tsup.config.esm.ts --watch"
+    "watch": "tsup --config tsup.config.esm.ts --watch",
+    "prebuild": "npm run gen:types && npm run gen:components-global:diff",
+    "prepack": "npm run type-check && npm run test && npm run build"
   },
   "keywords": [
     "foobar2000",

@@ -15,12 +15,12 @@
 //   3. 禁止在其他文件中硬编码版本号
 //
 
-#define PLUGIN_VERSION_MAJOR  1
-#define PLUGIN_VERSION_MINOR  14
+#define PLUGIN_VERSION_MAJOR  2
+#define PLUGIN_VERSION_MINOR  0
 #define PLUGIN_VERSION_PATCH  0
 
-#define PLUGIN_VERSION_STR    "1.14.0"
-#define PLUGIN_VERSION_WSTR   L"1.14.0"
+#define PLUGIN_VERSION_STR    "2.0.0"
+#define PLUGIN_VERSION_WSTR   L"2.0.0"
 
 // SDK 版本与插件版本保持统一
 #define SDK_VERSION_STR       PLUGIN_VERSION_STR
