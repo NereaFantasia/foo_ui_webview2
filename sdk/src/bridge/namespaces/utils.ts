@@ -1,24 +1,26 @@
+import { bridge } from '../Bridge.js';
+import { call } from '../call.js';
+import type { TestEchoResponse, TestPingResponse } from '../../types/responses.js';
+
 /**
  * `utils` — diagnostic / glue helpers.
  *
  * `formatTitle` / `getFileInfo` are intentional façades over
  * `titleformat.eval` / `metadata.read` respectively.
  */
-
-import { bridge } from '../Bridge.js';
-import type { MetadataReadResponse } from '../../types/responses.js';
-
 export const utils = {
-    ping: () => bridge.invoke<{ pong: boolean }>('test.ping'),
-    echo: (message: string) =>
-        bridge.invoke<{ message: string }>('test.echo', { message }),
-    /** Façade over `titleformat.eval`. */
+    // `test.ping` and `test.echo` have no declaration, so they go through the untyped invoke.
+    /** Round trip through `test.ping`; `timestamp` is the host's Unix time in seconds. */
+    ping: () => bridge.invoke<TestPingResponse>('test.ping'),
+    /** Round trip through `test.echo`; the message comes back as `echo`. */
+    echo: (message: string) => bridge.invoke<TestEchoResponse>('test.echo', { message }),
+    /** Façade over `titleformat.eval`; an omitted or empty `path` evaluates the playing track. */
     formatTitle: (pattern: string, path?: string) =>
-        bridge.invoke<{ result: string }>('titleformat.eval', {
+        call('titleformat.eval', {
             pattern,
-            path,
+            ...(path ? { path } : {}),
         }),
     /** Façade over `metadata.read`. */
     getFileInfo: (path: string) =>
-        bridge.invoke<MetadataReadResponse>('metadata.read', { path }),
+        call('metadata.read', { path }),
 };

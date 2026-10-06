@@ -1,29 +1,29 @@
+import { call } from '../call.js';
+
 /**
  * `misc` — miscellaneous host actions (exit, paths, popups).
  */
-
-import { bridge } from '../Bridge.js';
-import type { BaseResponse } from '../../types/responses.js';
-
 export const misc = {
-    exit: () => bridge.invoke<BaseResponse>('misc.exit'),
-    restart: () => bridge.invoke<BaseResponse>('misc.restart'),
+    exit: () => call('misc.exit'),
+    restart: () => call('misc.restart'),
     getComponentPath: () =>
-        bridge.invoke<{ path: string }>('misc.getComponentPath'),
+        call('misc.getComponentPath'),
     getFoobarPath: () =>
-        bridge.invoke<{ path: string }>('misc.getFoobarPath'),
+        call('misc.getFoobarPath'),
     getProfilePath: () =>
-        bridge.invoke<{ path: string }>('misc.getProfilePath'),
-    showConsole: () => bridge.invoke<BaseResponse>('misc.showConsole'),
+        call('misc.getProfilePath'),
+    showConsole: () => call('misc.showConsole'),
+    /** An empty or omitted query opens a blank search window. */
     showLibrarySearch: (query?: string) =>
-        bridge.invoke<BaseResponse>('misc.showLibrarySearch', {
+        call('misc.showLibrarySearch', {
             ...(query ? { query } : {}),
         }),
+    /** `message` must not be empty; `title` defaults to "Message" on the host. */
     showPopupMessage: (message: string, title?: string) =>
-        bridge.invoke<BaseResponse>('misc.showPopupMessage', {
+        call('misc.showPopupMessage', {
             message,
             ...(title ? { title } : {}),
         }),
     showPreferences: () =>
-        bridge.invoke<BaseResponse>('misc.showPreferences'),
+        call('misc.showPreferences'),
 };

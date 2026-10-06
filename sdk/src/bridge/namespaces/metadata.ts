@@ -1,31 +1,20 @@
-/**
- * `metadata` — tag read / write namespace.
- */
-
-import { bridge } from '../Bridge.js';
+import { subscribe } from '../subscribe.js';
+import { call } from '../call.js';
 import { bytesToBase64, parseBase64DataUrl } from '../binaryData.js';
-import type {
-    BaseResponse,
-    MetadataCancelProbeResponse,
-    MetadataProbeBatchAsyncResponse,
-    MetadataReadBatchResponse,
-    MetadataReadRawResponse,
-    MetadataReadResponse,
-} from '../../types/responses.js';
 import type { JsonObject } from '../../types/json.js';
 import type { MetadataWriteCompletePayload } from '../../types/events.js';
 import type {
     MetadataEmbedArtworkParams,
+    MetadataProbeBatchAsyncParams,
+    MetadataReadByPathParams,
+    MetadataReadParams,
     MetadataReadRawParams,
     MetadataRemoveEmbeddedArtParams,
     MetadataRemoveFieldParams,
     MetadataRemoveTagParams,
     MetadataWriteParams,
 } from '../../types/generated/params.js';
-import type {
-    MetadataEmbedArtworkResponse,
-    MetadataReadByPathResponse,
-} from '../../types/generated/responses.js';
+import type { MetadataWriteBatchItem } from '../../types/generated/schema-types.js';
 
 /** Options for artwork byte helpers; the helper owns `imageData`. */
 export type MetadataArtworkBytesOptions = Omit<
@@ -34,6 +23,24 @@ export type MetadataArtworkBytesOptions = Omit<
 > & {
     target?: 'embedded' | 'file' | 'all' | Array<'embedded' | 'file'>;
 };
+
+// The host takes `target` as an array only; a single destination is sent as a
+// one-element array, and an omitted one stays omitted so the host writes the
+// embedded target.
+function artworkTarget(target: string | string[] | undefined): { target?: string[] } {
+    if (target === undefined) return {};
+    return { target: Array.isArray(target) ? target : [target] };
+}
+
+function embedArtworkParams(
+    path: string,
+    opts: Omit<MetadataEmbedArtworkParams, 'path' | 'target'> & {
+        target?: string | string[];
+    },
+) {
+    const { target, ...rest } = opts;
+    return { ...rest, path, ...artworkTarget(target) } satisfies MetadataEmbedArtworkParams;
+}
 
 /**
  * Default failure logger for `metadata:writeComplete`.
@@ -49,7 +56,7 @@ export type MetadataArtworkBytesOptions = Omit<
  * {@link disableDefaultMetadataLogger}, register its own
  * `bridge.on('metadata:writeComplete', ...)` listener, or both.
  */
-let _defaultMetadataLoggerOff: (() => void) | null = bridge.on(
+let _defaultMetadataLoggerOff: (() => void) | null = subscribe(
     'metadata:writeComplete',
     (event: MetadataWriteCompletePayload) => {
         if (event && event.success === false) {
@@ -81,14 +88,13 @@ function metadataEmbedArtworkBytes(
     bytes: ArrayBuffer | Uint8Array,
     opts?: MetadataArtworkBytesOptions,
 ) {
-    return bridge.invoke<MetadataEmbedArtworkResponse>(
-        'metadata.embedArtwork',
-        {
-            ...opts,
-            path,
-            imageData: bytesToBase64(bytes),
-        },
-    );
+    const { target, ...rest } = opts ?? {};
+    return call('metadata.embedArtwork', {
+        ...rest,
+        path,
+        imageData: bytesToBase64(bytes),
+        ...artworkTarget(target),
+    });
 }
 
 async function metadataEmbedArtworkFromDataUrl(
@@ -100,16 +106,18 @@ async function metadataEmbedArtworkFromDataUrl(
     if (!mediaType.startsWith('image/')) {
         throw new TypeError('Expected an image Base64 data URL.');
     }
-    return bridge.invoke<MetadataEmbedArtworkResponse>(
-        'metadata.embedArtwork',
-        {
-            ...opts,
-            path,
-            imageData: base64,
-        },
-    );
+    const { target, ...rest } = opts ?? {};
+    return call('metadata.embedArtwork', {
+        ...rest,
+        path,
+        imageData: base64,
+        ...artworkTarget(target),
+    });
 }
 
+/**
+ * `metadata` — tag read / write namespace.
+ */
 export const metadata = {
     /**
      * Read structured metadata for a single track.
@@ -123,8 +131,8 @@ export const metadata = {
      * `opts.cueIndex`; the option wins when both are given. CUE track
      * numbering starts at 1.
      */
-    read: (path: string, opts?: { cueIndex?: number }) =>
-        bridge.invoke<MetadataReadResponse>('metadata.read', {
+    read: (path: string, opts?: Omit<MetadataReadParams, 'path'>) =>
+        call('metadata.read', {
             path,
             ...(opts || {}),
         }),
@@ -135,29 +143,29 @@ export const metadata = {
      * subsong option.
      */
     readBatch: (paths: string[]) =>
-        bridge.invoke<MetadataReadBatchResponse>('metadata.readBatch', { paths }),
+        call('metadata.readBatch', {
+            paths,
+        }),
     /**
-     * Flat-form single-track read — every tag becomes a top-level field
-     * alongside `success` / `path`. Keys use upstream casing (typically
-     * UPPERCASE); the return shape is intentionally loose because the
-     * C++ host forwards whatever tags the file happens to carry.
+     * Flat-form single-track read — every tag and technical-info field
+     * becomes a top-level field, upper-cased by the host, alongside
+     * `success` / `path`. The return shape is intentionally loose because
+     * the host forwards whatever tags the file happens to carry.
      * `canonicalPath` appears only on the file-open failure envelope.
      *
      * Container tracks are addressed the same way as `read()`.
      */
-    readByPath: (path: string, opts?: { cueIndex?: number }) =>
-        bridge.invoke<MetadataReadByPathResponse & JsonObject>(
-            'metadata.readByPath',
-            {
-                path,
-                ...(opts || {}),
-            },
-        ),
-    readRaw: (
-        path: string,
-        opts?: Omit<MetadataReadRawParams, 'path'>,
-    ) =>
-        bridge.invoke<MetadataReadRawResponse>('metadata.readRaw', {
+    readByPath: (path: string, opts?: Omit<MetadataReadByPathParams, 'path'>) =>
+        call('metadata.readByPath', {
+            path,
+            ...(opts || {}),
+        }),
+    /**
+     * Read structured metadata straight from the file, bypassing the
+     * host's metadb cache; the result carries `source: 'file'`.
+     */
+    readRaw: (path: string, opts?: Omit<MetadataReadRawParams, 'path'>) =>
+        call('metadata.readRaw', {
             path,
             ...(opts || {}),
         }),
@@ -188,11 +196,11 @@ export const metadata = {
      *   wanted.
      * @returns Dispatch receipt; the actual results arrive by event.
      */
-    probeBatchAsync: (paths: string[], opts?: { includeTags?: boolean }) =>
-        bridge.invoke<MetadataProbeBatchAsyncResponse>(
-            'metadata.probeBatchAsync',
-            { paths, ...(opts || {}) },
-        ),
+    probeBatchAsync: (paths: string[], opts?: Omit<MetadataProbeBatchAsyncParams, 'paths'>) =>
+        call('metadata.probeBatchAsync', {
+            paths,
+            ...(opts || {}),
+        }),
     /**
      * Stop a probe started by {@link metadata.probeBatchAsync}.
      *
@@ -206,50 +214,52 @@ export const metadata = {
      *   never existed.
      */
     cancelProbe: (operationId: string) =>
-        bridge.invoke<MetadataCancelProbeResponse>('metadata.cancelProbe', {
+        call('metadata.cancelProbe', {
             operationId,
         }),
     /**
-     * Async write — dispatches immediately and signals completion via
-     * `metadata:writeComplete`. The receipt below describes the dispatch
-     * envelope; the final outcome is on the event payload.
+     * Queue tag updates and signal completion via
+     * `metadata:writeComplete`. The returned receipt describes the dispatch;
+     * the final outcome is on the event payload.
+     *
+     * String arrays replace all values of a tag; an empty array removes it.
+     * Non-string, empty or NUL-containing array elements fail the entire track
+     * with `INVALID_PARAMS` before any of its tags are queued.
      */
     write: (
         path: string,
         tags: JsonObject,
         opts?: Omit<MetadataWriteParams, 'path' | 'tags'>,
     ) =>
-        bridge.invoke<
-            BaseResponse & {
-                dispatched?: boolean;
-                canonicalPath?: string;
-                handlePath?: string;
-                subsong?: number;
-                tagsApplied?: number;
-                tagsSet?: number;
-                tagsRemoved?: number;
-                note?: string;
-            }
-        >('metadata.write', { path, tags, ...(opts || {}) }),
-    writeBatch: (items: Array<{ path: string; tags: JsonObject }>) =>
-        bridge.invoke<
-            BaseResponse & {
-                successCount?: number;
-                failCount?: number;
-                errors?: Array<{ path: string; error: string }>;
-            }
-        >('metadata.writeBatch', { items }),
+        call('metadata.write', {
+            path,
+            tags,
+            ...(opts || {}),
+        }),
+    /**
+     * Queue one write per entry. When any entry fails (for example one
+     * without `tags` or with an invalid tag array), the call resolves as a
+     * failure envelope that still carries `successCount`, `failCount` and
+     * `errors`; the other entries were dispatched all the same.
+     */
+    writeBatch: (items: MetadataWriteBatchItem[]) =>
+        call('metadata.writeBatch', {
+            items,
+        }),
     /**
      * Write artwork into the audio file or alongside it.
      *
-     * `opts.target` selects the destination:
+     * `opts.imageData` is the image as raw Base64.
+     *
+     * `opts.target` selects the destination. The host takes an array; a
+     * single string is sent as a one-element array:
      * - `"embedded"` (default) — write into the file's tag container via
      *   `album_art_editor`. Fails for formats the SDK cannot edit (e.g. CUE).
      * - `"file"` — write a sibling image file in the audio's directory using
      *   fb2k's external artwork naming (`cover.<ext>` / `back.<ext>` / ...).
      *   The extension is inferred from the image's magic bytes.
      * - `"all"` or `["embedded", "file"]` — run both targets and return a
-     *   `results` map; top-level `success` is true when any target succeeded.
+     *   `results` map; the call succeeds when either target succeeded.
      *
      * `opts.filename` overrides the auto-generated sidecar name (file mode only).
      * It must be a plain file name: path separators are rejected, and so is a
@@ -260,35 +270,33 @@ export const metadata = {
      */
     embedArtwork: (
         path: string,
-        opts?: Omit<MetadataEmbedArtworkParams, 'path'>,
+        opts: Omit<MetadataEmbedArtworkParams, 'path' | 'target'> & {
+            target?: string | string[];
+        },
     ) =>
-        bridge.invoke<MetadataEmbedArtworkResponse>(
+        call(
             'metadata.embedArtwork',
-            { path, ...(opts || {}) },
+            embedArtworkParams(path, opts),
         ),
+    /**
+     * Remove embedded artwork: one `type`, or every picture when `type` is
+     * omitted or `removeAll` is set.
+     */
     removeEmbeddedArt: (
         path: string,
         opts?: Omit<MetadataRemoveEmbeddedArtParams, 'path'>,
     ) =>
-        bridge.invoke<BaseResponse & { removedTypes?: string[] }>(
-            'metadata.removeEmbeddedArt',
-            { path, ...(opts || {}) },
-        ),
+        call('metadata.removeEmbeddedArt', {
+            path,
+            ...(opts || {}),
+        }),
     /** Removes a single tag field. */
     removeField: (
         path: string,
         field: string,
         opts?: Omit<MetadataRemoveFieldParams, 'path' | 'tags'>,
     ) =>
-        bridge.invoke<
-            BaseResponse & {
-                dispatched?: boolean;
-                subsong?: number;
-                removedTags?: string[];
-                removedCount?: number;
-                note?: string;
-            }
-        >('metadata.removeField', {
+        call('metadata.removeField', {
             path,
             tags: [field],
             ...(opts || {}),
@@ -298,15 +306,11 @@ export const metadata = {
         tags: string[],
         opts?: Omit<MetadataRemoveTagParams, 'path' | 'tags'>,
     ) =>
-        bridge.invoke<
-            BaseResponse & {
-                dispatched?: boolean;
-                subsong?: number;
-                removedTags?: string[];
-                removedCount?: number;
-                note?: string;
-            }
-        >('metadata.removeTag', { path, tags, ...(opts || {}) }),
+        call('metadata.removeTag', {
+            path,
+            tags,
+            ...(opts || {}),
+        }),
     /** Embed exact image bytes without exposing the raw Base64 wire format. */
     embedArtworkBytes: metadataEmbedArtworkBytes,
     /** Embed a Base64 `data:image/*` URL; rejects malformed input. */

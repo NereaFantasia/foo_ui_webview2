@@ -1,26 +1,18 @@
 // sdk/src/bridge/namespaces/playlist.test.ts
 //
-// Regression guards for playlist-envelope drift.
-//
-//   Finding       Before the fix, `bridge.invoke<PlaylistTrack[]>(
-//                 'playlist.getTracks', …)` pretended the response was
-//                 a bare array, but the C++ handler always returns
-//                 `{ playlist, start, count, total, tracks: [...] }`.
-//                 Callers expecting `Array.isArray(result)` (including
-//                 the integration tests in `web/src/tests/`) saw the
-//                 envelope object and broke silently.
-//
-// This test gate locks in the envelope-unwrap contract:
+// The playlist wrappers resolve with the host's envelope as it arrives:
 //
 //   1. `getTracks(...)` sends `{ playlist, start, count }` (and the
-//      optional `formats` key) to the host.
-//   2. When the host resolves with the full envelope, the SDK wrapper
-//      resolves with the inner `tracks` array.
-//   3. A malformed / null host response yields `[]` so callers can
-//      always iterate safely.
-//   4. `getSelectedTracks(...)` follows the same unwrap policy.
+//      optional `formats` / `fields` keys) to the host.
+//   2. A page resolves as `{ playlist, start, count, total, tracks }`.
+//   3. A failure resolves as the failure envelope. It is neither thrown
+//      nor turned into an empty array, so a failed call and an empty
+//      playlist or selection stay distinguishable.
+//   4. `getSelectedTracks`, `getAll` and `getAvailableColumns` follow
+//      the same policy; `getTracksPage` is the same call as `getTracks`.
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { expectFailure, expectSuccess } from './__tests__/expectEnvelope.js';
 
 interface MockNative {
     invoke: ReturnType<typeof vi.fn>;
@@ -40,7 +32,7 @@ function makeNative(): MockNative {
     };
 }
 
-describe('playlist namespace — §5.3 envelope unwrap', () => {
+describe('playlist namespace — envelopes pass through', () => {
     beforeEach(() => {
         vi.resetModules();
     });
@@ -95,9 +87,10 @@ describe('playlist namespace — §5.3 envelope unwrap', () => {
         expect(native.invoke.mock.calls[0][1]).not.toHaveProperty('formats');
     });
 
-    it('getTracks unwraps `tracks` from the envelope', async () => {
+    it('getTracks resolves with the page envelope', async () => {
         const native = makeNative();
-        native.invoke.mockResolvedValue({
+        const envelope = {
+            success: true,
             playlist: 0,
             start: 0,
             count: 2,
@@ -124,52 +117,35 @@ describe('playlist namespace — §5.3 envelope unwrap', () => {
                     isSelected: false,
                 },
             ],
-        });
+        };
+        native.invoke.mockResolvedValue(envelope);
         vi.stubGlobal('window', { fb2k: native });
         const { playlist } = await import('./playlist.js');
 
-        const tracks = await playlist.getTracks(0, 0, 100);
+        const page = await playlist.getTracks(0, 0, 100);
 
-        // Regression guard: legacy typing claimed `PlaylistTrack[]` so
-        // the old codepath returned the envelope object and every
-        // `Array.isArray(result)` check silently failed. The wrapper
-        // now unwraps so callers get a real array back.
-        expect(Array.isArray(tracks)).toBe(true);
-        expect(tracks).toHaveLength(2);
-        expect(tracks[0]).toMatchObject({
-            index: 0,
-            title: 'A',
-            path: '/a.flac',
-        });
+        expect(page).toEqual(envelope);
+        expectSuccess(page);
+        expect(page.tracks).toHaveLength(2);
+        expect(page.tracks[0]).toMatchObject({ index: 0, title: 'A', path: '/a.flac' });
     });
 
-    it('getTracks returns `[]` when the host omits tracks', async () => {
+    it('getTracks resolves with the failure envelope instead of an empty array', async () => {
         const native = makeNative();
-        native.invoke.mockResolvedValue({
-            success: false,
-            error: 'Invalid playlist index',
-        });
+        const failure = { success: false, error: 'Invalid playlist index', code: 'INVALID_INDEX' };
+        native.invoke.mockResolvedValue(failure);
         vi.stubGlobal('window', { fb2k: native });
         const { playlist } = await import('./playlist.js');
 
-        const tracks = await playlist.getTracks(42, 0, 10);
-        expect(Array.isArray(tracks)).toBe(true);
-        expect(tracks).toHaveLength(0);
-    });
-
-    it('getTracks returns `[]` when the host resolves with null', async () => {
-        const native = makeNative();
-        native.invoke.mockResolvedValue(null);
-        vi.stubGlobal('window', { fb2k: native });
-        const { playlist } = await import('./playlist.js');
-
-        const tracks = await playlist.getTracks(0, 0, 10);
-        expect(tracks).toEqual([]);
+        const page = await playlist.getTracks(42, 0, 10);
+        expect(page).toEqual(failure);
+        expectFailure(page);
+        expect(page.code).toBe('INVALID_INDEX');
     });
 
     // ── getSelectedTracks ────────────────────────────────────────
 
-    it('getSelectedTracks sends `{ playlist }` and unwraps tracks', async () => {
+    it('getSelectedTracks sends `{ playlist }` and resolves with the envelope', async () => {
         const native = makeNative();
         native.invoke.mockResolvedValue({
             success: true,
@@ -191,35 +167,60 @@ describe('playlist namespace — §5.3 envelope unwrap', () => {
         vi.stubGlobal('window', { fb2k: native });
         const { playlist } = await import('./playlist.js');
 
-        const tracks = await playlist.getSelectedTracks(1);
+        const selected = await playlist.getSelectedTracks(1);
 
         expect(native.invoke).toHaveBeenCalledWith(
             'playlist.getSelectedTracks',
             { playlist: 1 },
         );
-        expect(Array.isArray(tracks)).toBe(true);
-        expect(tracks[0].path).toBe('/sel.flac');
+        expectSuccess(selected);
+        expect(selected.tracks[0]?.path).toBe('/sel.flac');
     });
 
-    it('getSelectedTracks returns `[]` on host error envelope', async () => {
+    it('getSelectedTracks tells a failed call apart from an empty selection', async () => {
         const native = makeNative();
-        native.invoke.mockResolvedValue({
+        // The host's failure for a missing playlist still carries an empty tracks.
+        native.invoke.mockResolvedValueOnce({
             success: false,
             error: 'Invalid playlist index',
-            tracks: undefined,
+            code: 'INVALID_INDEX',
+            tracks: [],
         });
+        native.invoke.mockResolvedValueOnce({ success: true, playlist: 0, count: 0, tracks: [] });
         vi.stubGlobal('window', { fb2k: native });
         const { playlist } = await import('./playlist.js');
 
-        const tracks = await playlist.getSelectedTracks(-1);
-        expect(tracks).toEqual([]);
+        const failed = await playlist.getSelectedTracks(99);
+        expectFailure(failed);
+        expect(failed.code).toBe('INVALID_INDEX');
+
+        const empty = await playlist.getSelectedTracks(0);
+        expectSuccess(empty);
+        expect(empty.tracks).toEqual([]);
     });
 
-    // -- getTracksPage: keeps the envelope the windowed list needs --------
+    it('getAll and getAvailableColumns resolve with the envelope and never throw', async () => {
+        const native = makeNative();
+        const lists = { success: true, playlists: [{ index: 0, name: 'Default' }], count: 1 };
+        const failure = { success: false, error: 'boom', code: 'OPERATION_FAILED' };
+        native.invoke.mockResolvedValueOnce(lists).mockResolvedValueOnce(failure);
+        vi.stubGlobal('window', { fb2k: native });
+        const { playlist } = await import('./playlist.js');
 
-    it('getTracksPage keeps the whole envelope instead of unwrapping', async () => {
+        await expect(playlist.getAll()).resolves.toEqual(lists);
+        await expect(playlist.getAvailableColumns()).resolves.toEqual(failure);
+        expect(native.invoke.mock.calls.map((c) => c[0])).toEqual([
+            'playlist.getAll',
+            'playlist.getAvailableColumns',
+        ]);
+    });
+
+    // -- getTracksPage: deprecated alias of getTracks ---------------------
+
+    it('getTracksPage resolves with the same page as getTracks', async () => {
         const native = makeNative();
         const envelope = {
+            success: true,
             playlist: 0,
             start: 200,
             count: 2,
@@ -231,6 +232,7 @@ describe('playlist namespace — §5.3 envelope unwrap', () => {
         const { playlist } = await import('./playlist.js');
 
         const page = await playlist.getTracksPage(0, 200, 2);
+        expectSuccess(page);
 
         expect(page).toEqual(envelope);
         // `total` is the whole point: the grouped list compares it against
@@ -238,7 +240,7 @@ describe('playlist namespace — §5.3 envelope unwrap', () => {
         expect(page.total).toBe(102400);
     });
 
-    it('getTracksPage forwards fields and formats on the same terms as getTracks', async () => {
+    it('getTracksPage forwards fields and formats as getTracks does', async () => {
         const native = makeNative();
         native.invoke.mockResolvedValue({ playlist: 0, start: 0, count: 0, total: 0, tracks: [] });
         vi.stubGlobal('window', { fb2k: native });
@@ -310,6 +312,7 @@ describe('playlist namespace — §5.3 envelope unwrap', () => {
         const { playlist } = await import('./playlist.js');
 
         const res = await playlist.getGroupRuns(['%album artist% | %album%', '%discnumber%']);
+        expectSuccess(res);
 
         expect(res.success).toBe(true);
         expect(res.runs).toHaveLength(2);
@@ -332,8 +335,124 @@ describe('playlist namespace — §5.3 envelope unwrap', () => {
         const { playlist } = await import('./playlist.js');
 
         const res = await playlist.getGroupRuns(['']);
+        expectFailure(res);
 
         expect(res.success).toBe(false);
         expect(res.code).toBe('INVALID_PARAMS');
+    });
+});
+
+describe('playlist namespace — a playlist by index or by GUID', () => {
+    const GUID = '{12345678-1111-2222-3031-323334353637}';
+
+    beforeEach(() => {
+        vi.resetModules();
+    });
+
+    afterEach(() => {
+        vi.unstubAllGlobals();
+    });
+
+    it('sends a string as `playlistGuid` and a number as `playlist`, never both', async () => {
+        const native = makeNative();
+        native.invoke.mockResolvedValue({ success: true });
+        vi.stubGlobal('window', { fb2k: native });
+        const { playlist } = await import('./playlist.js');
+
+        await playlist.addHandles(GUID, ['a.flac']);
+        await playlist.addHandles(2, ['a.flac']);
+        await playlist.rename(GUID, 'Renamed');
+        await playlist.getTracks(GUID, 0, 10);
+
+        expect(native.invoke.mock.calls[0]).toEqual([
+            'playlist.addHandles',
+            { playlistGuid: GUID, handles: ['a.flac'] },
+        ]);
+        expect(native.invoke.mock.calls[1]).toEqual([
+            'playlist.addHandles',
+            { playlist: 2, handles: ['a.flac'] },
+        ]);
+        expect(native.invoke.mock.calls[2]).toEqual([
+            'playlist.rename',
+            { playlistGuid: GUID, name: 'Renamed' },
+        ]);
+        expect(native.invoke.mock.calls[3]).toEqual([
+            'playlist.getTracks',
+            { playlistGuid: GUID, start: 0, count: 10 },
+        ]);
+    });
+
+    it('library.addToPlaylist and artwork.getByPlaylistItem take a GUID the same way', async () => {
+        const native = makeNative();
+        native.invoke.mockResolvedValue({ success: true });
+        vi.stubGlobal('window', { fb2k: native });
+        const { library } = await import('./library.js');
+        const { artwork } = await import('./artwork.js');
+
+        await library.addToPlaylist(['a.flac'], GUID);
+        await library.addToPlaylist(['a.flac']);
+        await artwork.getByPlaylistItem(GUID, 3);
+
+        expect(native.invoke.mock.calls[0]).toEqual([
+            'library.addToPlaylist',
+            { paths: ['a.flac'], playlistGuid: GUID },
+        ]);
+        expect(native.invoke.mock.calls[1]).toEqual(['library.addToPlaylist', { paths: ['a.flac'] }]);
+        expect(native.invoke.mock.calls[2]).toEqual([
+            'artwork.getByPlaylistItem',
+            { playlistGuid: GUID, index: 3 },
+        ]);
+    });
+
+    it('reorderPlaylists sends GUIDs as `newOrderGuids` and indices as `newOrder`', async () => {
+        const native = makeNative();
+        native.invoke.mockResolvedValue({ success: true, count: 2 });
+        vi.stubGlobal('window', { fb2k: native });
+        const { playlist } = await import('./playlist.js');
+
+        const OTHER = '{00000000-1111-2222-3333-444444444444}';
+        await playlist.reorderPlaylists([OTHER, GUID]);
+        await playlist.reorderPlaylists([1, 0]);
+        await playlist.reorderPlaylists([]);
+
+        expect(native.invoke.mock.calls[0]).toEqual([
+            'playlist.reorderPlaylists',
+            { newOrderGuids: [OTHER, GUID] },
+        ]);
+        expect(native.invoke.mock.calls[1]).toEqual(['playlist.reorderPlaylists', { newOrder: [1, 0] }]);
+        expect(native.invoke.mock.calls[2]).toEqual(['playlist.reorderPlaylists', { newOrder: [] }]);
+    });
+
+    it('getMatchingRows sends the query with the playlist only when one is named', async () => {
+        const native = makeNative();
+        native.invoke.mockResolvedValue({ success: true, playlist: 0, total: 0, items: [], count: 0 });
+        vi.stubGlobal('window', { fb2k: native });
+        const { playlist } = await import('./playlist.js');
+
+        await playlist.getMatchingRows('artist HAS nachi', GUID);
+        await playlist.getMatchingRows('%rating% GREATER 3');
+
+        expect(native.invoke.mock.calls).toEqual([
+            ['playlist.getMatchingRows', { query: 'artist HAS nachi', playlistGuid: GUID }],
+            ['playlist.getMatchingRows', { query: '%rating% GREATER 3' }],
+        ]);
+    });
+
+    it('getTracksAt sends the rows as given and `formats` / `fields` only when set', async () => {
+        const native = makeNative();
+        native.invoke.mockResolvedValue({ success: true, playlist: 1, total: 9, count: 0, tracks: [] });
+        vi.stubGlobal('window', { fb2k: native });
+        const { playlist } = await import('./playlist.js');
+
+        await playlist.getTracksAt(GUID, [7, 2, 7]);
+        await playlist.getTracksAt(1, [0], { r: '%rating%' }, ['title']);
+
+        expect(native.invoke.mock.calls).toEqual([
+            ['playlist.getTracksAt', { playlistGuid: GUID, rows: [7, 2, 7] }],
+            [
+                'playlist.getTracksAt',
+                { playlist: 1, rows: [0], formats: { r: '%rating%' }, fields: ['title'] },
+            ],
+        ]);
     });
 });

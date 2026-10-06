@@ -10,6 +10,10 @@
 
 import { bridge } from './Bridge.js';
 import { state } from './state.js';
+import { ApiCallError, unwrap } from './unwrap.js';
+import { PlaybackClock } from './media/PlaybackClock.js';
+import { MediaElementFollower } from './media/MediaElementFollower.js';
+import { canPlay } from './media/canPlay.js';
 
 import { artwork } from './namespaces/artwork.js';
 import { audio } from './namespaces/audio.js';
@@ -29,6 +33,7 @@ import { keyboard } from './namespaces/keyboard.js';
 import { library } from './namespaces/library.js';
 import { log } from './namespaces/log.js';
 import { lyrics } from './namespaces/lyrics.js';
+import { media } from './namespaces/media.js';
 import { menu } from './namespaces/menu.js';
 import { metadata } from './namespaces/metadata.js';
 import { misc } from './namespaces/misc.js';
@@ -51,9 +56,11 @@ import { titleformat } from './namespaces/titleformat.js';
 import { tray } from './namespaces/tray.js';
 import { ui } from './namespaces/ui.js';
 import { utils } from './namespaces/utils.js';
+import { webview } from './namespaces/webview.js';
 
 export { bridge } from './Bridge.js';
 export { state } from './state.js';
+export { ApiCallError, unwrap } from './unwrap.js';
 
 // Runtime constant dictionary that otherwise only lives on the type
 // barrel; re-exported here so the package-root runtime target carries it
@@ -62,6 +69,28 @@ export { REPLAYGAIN_SOURCE_MODE } from '../types/responses.js';
 
 export { artwork } from './namespaces/artwork.js';
 export { audio } from './namespaces/audio.js';
+export { PcmBuffer } from './pcm/PcmBuffer.js';
+export { PcmDecodeError, DECODE_PCM_TIMEOUT_MS } from './pcm/decodePcm.js';
+export type { DecodePcmOptions } from './pcm/decodePcm.js';
+export { PcmHeaderError, readPcmHeader } from './pcm/PcmHeader.js';
+export type { PcmHeader, PcmHeaderErrorReason } from './pcm/PcmHeader.js';
+export { PcmStream, PCM_STREAM_END_GRACE_MS } from './pcm/PcmStream.js';
+export type { PcmStreamFormat, PcmStreamOptions, PcmStreamOutcome } from './pcm/PcmStream.js';
+export { PcmRingReader } from './pcm/PcmRingReader.js';
+export type { PcmRingRead } from './pcm/PcmRingReader.js';
+export type { PcmSegment, PcmSegmentReason } from './pcm/PcmSegments.js';
+export { PlaybackClock } from './media/PlaybackClock.js';
+export { MediaElementFollower } from './media/MediaElementFollower.js';
+export type { MediaElementFollowerOptions, MediaFollowerClock, MediaSourceOptions } from './media/MediaElementFollower.js';
+export { canPlay } from './media/canPlay.js';
+export type { MediaCapability, MediaCanPlayResult, MediaVideoDecodingLimits } from './media/canPlay.js';
+export type {
+    PlaybackClockChange,
+    PlaybackClockChangeReason,
+    PlaybackClockOptions,
+    PlaybackClockResyncOptions,
+    PlaybackClockState,
+} from './media/PlaybackClock.js';
 export { clipboard } from './namespaces/clipboard.js';
 export { config } from './namespaces/config.js';
 export { consoleApi } from './namespaces/consoleApi.js';
@@ -84,6 +113,8 @@ export { keyboard } from './namespaces/keyboard.js';
 export { library } from './namespaces/library.js';
 export { log } from './namespaces/log.js';
 export { lyrics } from './namespaces/lyrics.js';
+export { media } from './namespaces/media.js';
+export type { MediaContainerTrack, MediaContainerAttachment } from './namespaces/media.js';
 export { menu } from './namespaces/menu.js';
 export { metadata } from './namespaces/metadata.js';
 export type { MetadataArtworkBytesOptions } from './namespaces/metadata.js';
@@ -94,6 +125,7 @@ export { panel } from './namespaces/panel.js';
 export { player } from './namespaces/player.js';
 export { playcount } from './namespaces/playcount.js';
 export { playlist } from './namespaces/playlist.js';
+export type { PlaylistRef } from './playlistRef.js';
 export { port } from './namespaces/port.js';
 export { queue } from './namespaces/queue.js';
 export type { QueueContentRef, QueueListRef } from './namespaces/queue.js';
@@ -108,6 +140,7 @@ export { titleformat } from './namespaces/titleformat.js';
 export { tray } from './namespaces/tray.js';
 export { ui } from './namespaces/ui.js';
 export { utils } from './namespaces/utils.js';
+export { webview } from './namespaces/webview.js';
 
 /**
  * Aggregate runtime SDK surface. Provides the canonical `window.fb`
@@ -118,6 +151,8 @@ export { utils } from './namespaces/utils.js';
  * - `fb.invoke` — escape hatch for un-namespaced API calls.
  * - `fb.state` — synchronous playback state mirror.
  * - `fb.isAvailable()` / `fb.ready()` — availability probes.
+ * - `fb.unwrap` / `fb.ApiCallError` — turn a failure envelope into an exception.
+ * - `fb.PlaybackClock` — the playback position between the host's updates.
  */
 export const fb = {
     // Reactive state mirror
@@ -134,6 +169,14 @@ export const fb = {
     // Availability probes
     isAvailable: () => bridge.isAvailable,
     ready: () => bridge.ready(),
+
+    // Failure helpers, also reachable from the `<script>` bundle, which exposes only `fb`
+    unwrap,
+    ApiCallError,
+    // Also a class: the `<script>` bundle creates it as `new fb.PlaybackClock()`
+    PlaybackClock,
+    MediaElementFollower,
+    canPlay,
 
     // Namespaces (alphabetical)
     artwork,
@@ -154,6 +197,7 @@ export const fb = {
     library,
     log,
     lyrics,
+    media,
     menu,
     metadata,
     misc,
@@ -176,6 +220,7 @@ export const fb = {
     tray,
     ui,
     utils,
+    webview,
 } as const;
 
 export default fb;

@@ -1,11 +1,12 @@
 /**
  * `foo-webview-sdk` — Aggregated type re-export.
  *
- * Use this as the single import point for all SDK shared types:
+ * The package root re-exports everything here, so consumers import the types
+ * from `foo-webview-sdk` itself:
  *
  * ```ts
  * import type { TrackInfo, FBEventName, FBEventPayloadMap } from
- *     'foo-webview-sdk/types';
+ *     'foo-webview-sdk';
  * ```
  *
  * Sub-modules:
@@ -28,4 +29,11 @@ import './native.js';
 
 export type * from './responses.js';
 export type * from './events.js';
+// Every declared method's `XxxParams`, `ApiParamsMap` (method name to params) and
+// `ApiMethodMap` (method name to `[params, response]`).
+export type * from './generated/params.js';
+export type { ApiMethodMap } from './generated/index.js';
 export type { NativeFb2k } from './native.js';
+// The track row shared by every declared endpoint that returns whole tracks, from
+// src/api/schema/common.ts.
+export type { Track, TrackPartial } from './generated/schema-types.js';

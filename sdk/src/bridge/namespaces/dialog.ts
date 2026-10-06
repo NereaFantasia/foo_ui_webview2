@@ -1,14 +1,4 @@
-/**
- * `dialog` — file/folder pickers + confirm/prompt.
- */
-
-import { bridge } from '../Bridge.js';
-import type {
-    DialogConfirmResponse,
-    DialogOpenFileResponse,
-    DialogSaveFileResponse,
-    DialogOpenFolderResponse,
-} from '../../types/responses.js';
+import { call } from '../call.js';
 import type {
     DialogConfirmParams,
     DialogOpenFileParams,
@@ -16,16 +6,23 @@ import type {
     DialogSaveFileParams,
 } from '../../types/generated/params.js';
 
+/**
+ * `dialog` — file/folder pickers + confirm/prompt.
+ */
 export const dialog = {
-    /** Resolves with `{ canceled, filePaths }`; `filePaths` is empty when cancelled. */
+    /**
+     * Resolves with `{ success: true, canceled, filePaths }`; `filePaths` is empty when
+     * cancelled. When the dialog cannot be shown at all it resolves with the failure
+     * envelope `{ success: false, error, code }` instead.
+     */
     openFile: (opts?: DialogOpenFileParams) =>
-        bridge.invoke<DialogOpenFileResponse>('dialog.openFile', opts),
-    /** Resolves with `{ canceled, filePath }`; `filePath` is empty when cancelled. */
+        call('dialog.openFile', opts),
+    /** Resolves like {@link openFile}, with `filePath` (empty when cancelled) in place of `filePaths`. */
     saveFile: (opts?: DialogSaveFileParams) =>
-        bridge.invoke<DialogSaveFileResponse>('dialog.saveFile', opts),
-    /** Resolves with `{ canceled, folderPath }`; `folderPath` is empty when cancelled. */
+        call('dialog.saveFile', opts),
+    /** Resolves like {@link openFile}, with `folderPath` (empty when cancelled) in place of `filePaths`. */
     openFolder: (opts?: DialogOpenFolderParams) =>
-        bridge.invoke<DialogOpenFolderResponse>('dialog.openFolder', opts),
+        call('dialog.openFolder', opts),
     /**
      * Shows a modal confirmation dialog.
      *
@@ -36,10 +33,7 @@ export const dialog = {
      * Escape and the close button do not dismiss it and every result comes
      * from an actual button click. `-1` appears only on the host's fallback
      * path, when even a plain message box could not be shown.
-     *
-     * `response` is typed `unknown` because the host builds it arithmetically
-     * and the extractor cannot see the result type; narrow it at the call site.
      */
     confirm: (opts?: DialogConfirmParams) =>
-        bridge.invoke<DialogConfirmResponse>('dialog.confirm', opts),
+        call('dialog.confirm', opts),
 };

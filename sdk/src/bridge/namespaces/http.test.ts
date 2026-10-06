@@ -8,9 +8,13 @@
 //       * synchronous host response (`async: false`) → resolves immediately
 //       * asynchronous host response (`async: true`) → resolves on the
 //         matching `http:response` event
+//       * any failure rejects, so the resolved type is the success branch
 //   - hallucinated APIs (cancel / clearCache / getCacheStats) are absent
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { expectSuccess } from './__tests__/expectEnvelope.js';
+import type { HttpGetSuccess } from '../../types/generated/responses.js';
+import type { HttpBinarySuccess } from './http.js';
 
 interface MockNative {
     invoke: ReturnType<typeof vi.fn>;
@@ -227,6 +231,39 @@ describe('http namespace', () => {
         await expect(promise).rejects.toThrow('remote 500');
     });
 
+    it('http.request rejects when the synchronous reply is a failure', async () => {
+        const native = makeNative();
+        native.invoke.mockResolvedValue({
+            success: false,
+            error: 'only http and https URLs are allowed',
+            code: 'INVALID_PARAMS',
+        });
+        vi.stubGlobal('window', { fb2k: native });
+        const { http } = await import('./http.js');
+
+        await expect(http.request('ftp://example.com/', { async: false })).rejects.toThrow(
+            'only http and https URLs are allowed',
+        );
+    });
+
+    it('http.request resolves with the success branch, text or binary', async () => {
+        const native = makeNative();
+        native.invoke
+            .mockResolvedValueOnce({ success: true, async: false, status: 200, body: 'text-body', responseType: 'text' })
+            .mockResolvedValueOnce({ success: true, async: false, status: 200, body: 'AGFzbQ==', responseType: 'base64' });
+        vi.stubGlobal('window', { fb2k: native });
+        const { http } = await import('./http.js');
+
+        // The annotations compile only while the resolved types exclude ApiFailure.
+        const text: HttpGetSuccess = await http.request('https://example.com/', { async: false });
+        expect(text.body).toBe('text-body');
+        const binary: HttpBinarySuccess = await http.request('https://example.com/m.wasm', {
+            async: false,
+            responseType: 'arraybuffer',
+        });
+        expect(Array.from(new Uint8Array(binary.body as ArrayBuffer))).toEqual([0x00, 0x61, 0x73, 0x6d]);
+    });
+
     // Regression guard for the binary-response decoding path. The host
     // transports binary payloads as base64 and the SDK decodes them
     // transparently into an ArrayBuffer when the caller passes
@@ -249,6 +286,7 @@ describe('http namespace', () => {
         const r = await http.get('https://example.com/m.wasm', {
             responseType: 'arraybuffer',
         });
+        expectSuccess(r);
 
         expect(native.invoke).toHaveBeenCalledWith('http.get', {
             url: 'https://example.com/m.wasm',
@@ -278,6 +316,7 @@ describe('http namespace', () => {
         const r = await http.get('https://example.com/blob', {
             responseType: 'binary',
         });
+        expectSuccess(r);
 
         expect(r.body).toBeInstanceOf(ArrayBuffer);
         const bytes = new Uint8Array(r.body as ArrayBuffer);
@@ -298,6 +337,7 @@ describe('http namespace', () => {
         const r = await http.get('https://example.com/page', {
             responseType: 'text',
         });
+        expectSuccess(r);
 
         expect(typeof r.body).toBe('string');
         expect(r.body).toBe('hello world');
@@ -317,6 +357,7 @@ describe('http namespace', () => {
         const r = await http.get('https://example.com/m.wasm', {
             responseType: 'base64',
         });
+        expectSuccess(r);
 
         // 'base64' callers opted out of auto-decoding; body stays a string
         // so existing call sites keep working.
@@ -396,6 +437,46 @@ describe('http namespace', () => {
         });
     });
 
+    // The host rejects parameters it does not declare, so the deprecated
+    // options must never reach the wire.
+    it('http.get and http.request drop the deprecated verifyTls and sync options', async () => {
+        const native = makeNative();
+        native.invoke.mockResolvedValue({ success: true, async: false, status: 200, body: 'ok' });
+        vi.stubGlobal('window', { fb2k: native });
+        const { http } = await import('./http.js');
+
+        await http.get('https://example.com/', { verifyTls: false, sync: true, timeout: 1000 });
+        await http.request('https://example.com/', { verifyTls: true, sync: true, async: false });
+
+        expect(native.invoke).toHaveBeenNthCalledWith(1, 'http.get', {
+            url: 'https://example.com/',
+            timeout: 1000,
+        });
+        expect(native.invoke).toHaveBeenNthCalledWith(2, 'http.get', {
+            url: 'https://example.com/',
+            async: false,
+        });
+    });
+
+    it('http.download drops the deprecated requestId and verifyTls options', async () => {
+        const native = makeNative();
+        native.invoke.mockResolvedValue({ success: true, requestId: 'http_1', async: true });
+        vi.stubGlobal('window', { fb2k: native });
+        const { http } = await import('./http.js');
+
+        await http.download('https://example.com/f.bin', 'C:\\out\\f.bin', {
+            requestId: 'mine',
+            verifyTls: false,
+            async: true,
+        });
+
+        expect(native.invoke).toHaveBeenCalledWith('http.download', {
+            url: 'https://example.com/f.bin',
+            saveTo: 'C:\\out\\f.bin',
+            async: true,
+        });
+    });
+
     it('http.request with responseType: arraybuffer decodes the async http:response payload', async () => {
         const native = makeNative();
         native.invoke.mockResolvedValue({
@@ -431,6 +512,7 @@ describe('http namespace', () => {
         });
 
         const r = await promise;
+        expectSuccess(r);
         expect(r.body).toBeInstanceOf(ArrayBuffer);
         const bytes = new Uint8Array(r.body as ArrayBuffer);
         expect(Array.from(bytes)).toEqual([

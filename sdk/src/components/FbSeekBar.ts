@@ -13,7 +13,7 @@
  * - Click anywhere on the track → `fb.player.seek(position)`.
  * - Mouse-down + drag → continuous `fb-seeking` events; mouse-up →
  *   single `fb-seek` event.
- * - Arrow / Home / End keys → ±5s / 0 / duration seek (R5 keyboard).
+ * - Arrow / Home / End keys → ±5s / 0 / duration seek.
  *
  * Lifecycle:
  * - A dedicated `_dragController` drives `mousemove` / `mouseup`
@@ -148,8 +148,8 @@ export class FbSeekBar extends FbBaseElement {
                 fb.player
                     .getCurrentTrack()
                     .then((t) => {
-                        // The no-track envelope (`found: false`) has no duration.
-                        this._duration = 'found' in t ? 0 : t.duration || 0;
+                        // `track` is absent when nothing is loaded.
+                        this._duration = (t.success !== false && t.track?.duration) || 0;
                     })
                     .catch(() => {
                         /* silent */
@@ -168,8 +168,8 @@ export class FbSeekBar extends FbBaseElement {
         fb.player
             .getCurrentTrack()
             .then((t) => {
-                // The no-track envelope (`found: false`) has no duration.
-                this._duration = 'found' in t ? 0 : t.duration || 0;
+                // `track` is absent when nothing is loaded.
+                this._duration = (t.success !== false && t.track?.duration) || 0;
             })
             .then(() => fb.player.getPosition())
             .then((r) => {
@@ -210,14 +210,13 @@ export class FbSeekBar extends FbBaseElement {
             await getFb().player.seek(seconds);
             this._emit<FbSeekDetail>('fb-seek', { position: seconds });
         } catch {
-            /* R6: silent degradation */
+            /* Keep the local position display on failure; do not emit `fb-seek`. */
         }
     }
 
     /**
-     * R7: only `style` and host attribute writes — never DOM
-     * structural mutations from the high-frequency `playback:time`
-     * callback path.
+     * Limit the high-frequency `playback:time` callback to style and
+     * attribute writes without rebuilding the DOM.
      */
     private _updateVisual(): void {
         const progress =

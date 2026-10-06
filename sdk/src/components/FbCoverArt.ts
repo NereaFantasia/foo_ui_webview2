@@ -9,12 +9,13 @@
  * Attributes (observed):
  * - `type`: `'front' | 'back' | 'disc' | 'icon' | 'artist'`
  *   (default `'front'`).
- * - `use-fb2k`: when present, prefers the high-throughput
- *   `fb2k://` URL (only `data:` URLs are accepted because
- *   `file-relative://` URLs are unreachable from WebView2).
+ * - `use-fb2k`: when present, tries `artwork.getFb2kUrl` first and
+ *   accepts only a `data:` URL from its response. If no usable URL
+ *   is returned, falls back to `artwork.getCurrent`. A rejected
+ *   request shows the placeholder.
  *
- * Track-change is debounced 300 ms (R7: avoids hammering the host
- * during quick skip/back gestures).
+ * Track changes are debounced for 300 ms to limit host requests
+ * during rapid skips.
  */
 
 import { FbBaseElement } from './FbBaseElement.js';
@@ -73,7 +74,7 @@ export class FbCoverArt extends FbBaseElement {
 
     protected override _subscribe(): void {
         this._sub('playback:trackChanged', () => {
-            // R7: 300 ms debounce avoids storming the host during fast skips.
+            // Debounce for 300 ms to limit host requests during rapid skips.
             if (this._debounceTimer) clearTimeout(this._debounceTimer);
             this._debounceTimer = setTimeout(() => {
                 void this._loadCover();
@@ -124,7 +125,7 @@ export class FbCoverArt extends FbBaseElement {
 
             if (src) {
                 this._img.src = src;
-                // P3: never persist huge data URLs into a host attribute.
+                // Keep large data URLs out of the host's reflected `src` attribute.
                 if (!src.startsWith('data:')) this.setAttribute('src', src);
                 else this.removeAttribute('src');
             } else {
@@ -135,7 +136,7 @@ export class FbCoverArt extends FbBaseElement {
                 this.removeAttribute('src');
             }
         } catch {
-            // R6: silent degradation — show placeholder.
+            // Request failures show the placeholder without emitting `fb-cover-error`.
             this._img.hidden = true;
             if (this._placeholder) this._placeholder.hidden = false;
             this.removeAttribute('loaded');

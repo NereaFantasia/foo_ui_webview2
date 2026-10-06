@@ -11,12 +11,25 @@
  * - Keyboard navigation (Arrow / Enter / Delete / Ctrl-A).
  * - Per-row rating cell (5 stars, `#FFD700` hover preview, click on
  *   active value clears).
- * - `playback:trackChanged` reflects the playing index via the
- *   `playing` row attribute.
+ * - The row of the playing track carries the `playing` attribute, as
+ *   `fb.player.getCurrentTrackIndex()` locates it. No row carries it
+ *   while playback is stopped, while the track plays from another
+ *   playlist, or when it did not start from a playlist row (queued by
+ *   path, for example). The location is read again on every track
+ *   change and whenever the rows reload.
  *
  * Attributes (observed):
- * - `playlist`: index to render. `< 0` (or omitted) means "follow
- *   the active playlist".
+ * - `playlist`: the playlist to render, as its `guid` (any value
+ *   starting with `{`) or its index. Omitted, negative or unparsable
+ *   means "follow the active playlist". A GUID keeps showing that
+ *   playlist while others are added, removed or reordered, and shows no
+ *   rows once it is removed. An index shows whichever playlist is at that
+ *   position, looked up again whenever playlists are added, removed or
+ *   reordered. Whenever the playlist shown changes, through this
+ *   attribute, a switch of the followed active playlist or such a
+ *   lookup, the view drops the selection and focus it kept for the
+ *   previous one. With no active playlist to follow, or no playlist
+ *   under the GUID or index, the view shows no rows.
  * - `columns`: comma-separated column ids (default
  *   `'index,title,artist,album,duration'`).
  * - `row-height`: row height in pixels (default `32`).
@@ -24,7 +37,8 @@
  *   row. When set, rows render as CSS grid (used by the parent's
  *   `<fb-resizable-header>` to keep columns aligned).
  * - `formats`: JSON `{ columnId: titleFormat }` map for custom
- *   formatting passed to `fb.playlist.getTracks(..., formats)`.
+ *   formatting passed to `fb.playlist.getTracks(..., formats)`; a column
+ *   whose id is in the map shows the value the host evaluated for it.
  *
  * Reflects host attributes `track-count` and `selected-count`.
  *
@@ -45,6 +59,7 @@
 import { FbBaseElement } from './FbBaseElement.js';
 import { formatTime } from './constants.js';
 import { getFb } from './runtime.js';
+import type { PlaylistRef } from '../bridge/playlistRef.js';
 import type { JsonValue } from '../types/json.js';
 import type {
     FbTrackContextDetail,
@@ -69,6 +84,8 @@ interface RatingCell extends HTMLSpanElement {
 
 /** Loose track shape used by the playlist data cache. */
 interface PlaylistTrackData {
+    /** Values of the `formats` columns, by column id. */
+    formats?: Record<string, string>;
     duration?: number;
     rating?: number;
     bitrate?: number;
@@ -80,7 +97,19 @@ interface PlaylistTrackData {
 }
 
 export class FbPlaylistView extends FbBaseElement {
-    private _playlistIndex = -1;
+    /** What the `playlist` attribute names; `null` follows the active playlist. */
+    private _source: PlaylistRef | null = null;
+    /**
+     * GUID of the playlist shown, as the host reports it: `undefined` until
+     * looked up after a change, `null` when there is no such playlist. Every
+     * host call after the lookup names the playlist by this GUID, so a
+     * playlist added or removed in front of it cannot redirect the call.
+     */
+    private _shown: string | null | undefined = undefined;
+    /** The lookup of {@link _shown} in flight, shared by the callers waiting for it. */
+    private _shownLookup: Promise<string | null> | null = null;
+    /** Incremented whenever {@link _shown} is dropped, so an older lookup does not store its answer. */
+    private _shownQuery = 0;
     private _trackCount = 0;
     private _columns: string[] = [
         'index',
@@ -94,6 +123,11 @@ export class FbPlaylistView extends FbBaseElement {
     private _focusedIndex = -1;
     private _shiftAnchor = -1;
     private _playingIndex = -1;
+    /**
+     * Incremented by every read of the playing location, and by a stop, so
+     * an answer that arrives after a newer read or a stop is dropped.
+     */
+    private _playingQuery = 0;
     private _scrollTop = 0;
     private _visibleRows: RowEl[] = [];
     private _dataCache: Map<number, PlaylistTrackData> = new Map();
@@ -159,7 +193,9 @@ export class FbPlaylistView extends FbBaseElement {
                 parseInt(this.getAttribute('row-height') || '32', 10) || 32;
             this._recalcLayout();
         } else if (name === 'playlist') {
-            void this._loadPlaylist();
+            this._source = this._readPlaylistAttr();
+            this._forgetShown();
+            this._showOtherPlaylist();
         } else if (name === 'grid-template') {
             this._gridTemplate = this.getAttribute('grid-template') || '';
             this._applyGridToRows();
@@ -194,8 +230,7 @@ export class FbPlaylistView extends FbBaseElement {
         } catch {
             this._formats = {};
         }
-        const plAttr = this.getAttribute('playlist');
-        if (plAttr !== null) this._playlistIndex = parseInt(plAttr, 10);
+        this._source = this._readPlaylistAttr();
 
         // Structure only — themes own the scrollbar look (`background`
         // / `border-radius` for `::-webkit-scrollbar-*`). We keep
@@ -219,7 +254,7 @@ export class FbPlaylistView extends FbBaseElement {
     }
 
     protected override _setupEvents(): void {
-        // R7: rAF-throttled scroll handler.
+        // Coalesce scroll events into one update per animation frame.
         this._listen(this._viewport, 'scroll', () => {
             if (this._rafId) return;
             this._rafId = requestAnimationFrame(() => {
@@ -270,6 +305,7 @@ export class FbPlaylistView extends FbBaseElement {
                 await this._syncSelection();
                 this._emit<FbTrackContextDetail>('fb-track-context', {
                     indices: [...this._selection],
+                    playlistGuid: this._shown ?? null,
                     x: e.clientX,
                     y: e.clientY,
                 });
@@ -330,6 +366,7 @@ export class FbPlaylistView extends FbBaseElement {
         this._emit<FbTrackSelectDetail>('fb-track-select', {
             index,
             indices: [...this._selection],
+            playlistGuid: this._shown ?? null,
         });
     }
 
@@ -352,8 +389,10 @@ export class FbPlaylistView extends FbBaseElement {
 
     private async _syncSelection(): Promise<void> {
         try {
-            const pl = await this._getPlaylistIndex();
-            await getFb().playlist.setSelection(pl, [...this._selection]);
+            const pl = await this._target();
+            if (pl !== null) {
+                await getFb().playlist.setSelection(pl, [...this._selection]);
+            }
         } catch {
             /* fb-playlist-view syncSelection error — silent */
         }
@@ -363,7 +402,8 @@ export class FbPlaylistView extends FbBaseElement {
     private async _deleteSelected(): Promise<void> {
         if (this._selection.size === 0) return;
         try {
-            const pl = await this._getPlaylistIndex();
+            const pl = await this._target();
+            if (pl === null) return;
             await getFb().playlist.removeTracks(pl, [...this._selection]);
             this._selection.clear();
         } catch {
@@ -373,9 +413,10 @@ export class FbPlaylistView extends FbBaseElement {
 
     private async _playTrack(index: number): Promise<void> {
         try {
-            const pl = await this._getPlaylistIndex();
+            const pl = await this._target();
+            if (pl === null) return;
             await getFb().playlist.playTrack(pl, index);
-            this._emit<FbTrackPlayDetail>('fb-track-play', { index });
+            this._emit<FbTrackPlayDetail>('fb-track-play', { index, playlistGuid: pl });
         } catch {
             /* fb-playlist-view playTrack error — silent */
         }
@@ -628,6 +669,8 @@ export class FbPlaylistView extends FbBaseElement {
         index: number,
     ): string {
         if (col === 'index') return (index + 1).toString();
+        const formatted = track.formats?.[col];
+        if (formatted !== undefined) return formatted;
         if (col === 'duration') return formatTime(track.duration || 0);
         if (col === 'filename') {
             const p = track.absolutePath || track.path || '';
@@ -665,21 +708,24 @@ export class FbPlaylistView extends FbBaseElement {
         if (this._loadingRange) return;
         this._loadingRange = true;
         try {
-            const pl = await this._getPlaylistIndex();
+            const pl = await this._target();
+            if (pl === null) return;
             const fmts =
                 Object.keys(this._formats).length > 0
                     ? this._formats
                     : undefined;
-            // `getTracks` resolves with a flat `PlaylistTrack[]`; the
-            // envelope unwrap lives inside the SDK wrapper.
-            // Route through `unknown` because `PlaylistTrackData` carries
-            // an index signature the canonical `PlaylistTrack` doesn't.
-            const arr = (await getFb().playlist.getTracks(
+            const page = await getFb().playlist.getTracks(
                 pl,
                 start,
                 end - start,
                 fmts,
-            )) as unknown as PlaylistTrackData[];
+            );
+            // A failed page leaves the range unloaded, and so does a page of a
+            // playlist the view stopped showing while it was read.
+            if (page.success === false || this._shown !== pl) return;
+            // Route through `unknown` because `PlaylistTrackData` carries
+            // an index signature the declared row type doesn't.
+            const arr = page.tracks as unknown as PlaylistTrackData[];
             arr.forEach((t, i) => {
                 this._dataCache.set(start + i, t);
             });
@@ -693,28 +739,111 @@ export class FbPlaylistView extends FbBaseElement {
         }
     }
 
-    private async _getPlaylistIndex(): Promise<number> {
-        if (this._playlistIndex >= 0) return this._playlistIndex;
-        try {
-            const r = (await getFb().playlist.getActive()) as
-                | number
-                | { playlist?: number; index?: number; active?: number }
-                | null;
-            if (r == null) return 0;
-            if (typeof r === 'number') return r;
-            if (typeof r.playlist === 'number') return r.playlist;
-            if (typeof r.index === 'number') return r.index;
-            if (typeof r.active === 'number') return r.active;
-            return 0;
-        } catch {
-            return 0;
+    /**
+     * The `playlist` attribute: a GUID when it starts with `{`, an index when
+     * it is a non-negative integer, otherwise `null`, "follow the active
+     * playlist".
+     */
+    private _readPlaylistAttr(): PlaylistRef | null {
+        const attr = (this.getAttribute('playlist') ?? '').trim();
+        if (attr.startsWith('{')) return attr;
+        return /^\d+$/.test(attr) ? Number(attr) : null;
+    }
+
+    /**
+     * Drop the rows, selection and focus kept for the playlist shown until
+     * now, then load the playlist shown now. Row numbers of one playlist mean
+     * nothing in another: a kept selection would make Delete remove the rows
+     * with the same numbers from the new playlist.
+     */
+    private _showOtherPlaylist(): void {
+        this._dataCache.clear();
+        this._selection.clear();
+        this._focusedIndex = -1;
+        this._shiftAnchor = -1;
+        this.setAttribute('selected-count', '0');
+        void this._loadPlaylist();
+    }
+
+    /** GUID of the playlist shown, looked up on first use after a change; `null` when there is none. */
+    private _target(): Promise<string | null> {
+        if (this._shown !== undefined) return Promise.resolve(this._shown);
+        this._shownLookup ??= this._lookUpShown();
+        return this._shownLookup;
+    }
+
+    /** Drop the playlist shown so the next {@link _target} looks it up again. */
+    private _forgetShown(): void {
+        this._shownQuery++;
+        this._shown = undefined;
+        this._shownLookup = null;
+    }
+
+    /** Look up {@link _shown} and store it, unless it was dropped again meanwhile. */
+    private async _lookUpShown(): Promise<string | null> {
+        const query = this._shownQuery;
+        const guid = await this._queryShown();
+        if (query === this._shownQuery) {
+            this._shown = guid;
+            this._shownLookup = null;
         }
+        return guid;
+    }
+
+    /**
+     * Ask the host which playlist the `playlist` attribute names now: the
+     * active one, the one at the index, or the one with the GUID. A failed
+     * read counts as no playlist.
+     */
+    private async _queryShown(): Promise<string | null> {
+        try {
+            const fb = getFb();
+            const source = this._source;
+            if (source === null) {
+                const active = await fb.playlist.getActive();
+                return active.success !== false && active.found && active.guid ? active.guid : null;
+            }
+            const all = await fb.playlist.getAll();
+            if (all.success === false) return null;
+            const wanted = typeof source === 'string' ? source.toUpperCase() : '';
+            const row =
+                typeof source === 'number'
+                    ? all.playlists[source]
+                    : all.playlists.find((p) => p.guid.toUpperCase() === wanted);
+            return row?.guid ?? null;
+        } catch {
+            return null;
+        }
+    }
+
+    /**
+     * Look the playlist shown up again after playlists were added, removed
+     * or reordered, and show the new one when it changed: an index may name
+     * another playlist now, a GUID may name none. The playlist shown stays
+     * known while the lookup runs, so rows read for it meanwhile are kept.
+     */
+    private async _recheckShown(): Promise<void> {
+        const before = await this._target();
+        const query = this._shownQuery;
+        const now = await this._queryShown();
+        if (query !== this._shownQuery || now === before) return;
+        this._forgetShown();
+        this._shown = now;
+        this._showOtherPlaylist();
+    }
+
+    /** Whether an event about the playlist with `guid` concerns the playlist shown; unknown until looked up. */
+    private _concernsShown(guid: string | undefined): boolean {
+        return this._shown === undefined || guid === this._shown;
     }
 
     // ─── Subscriptions ───────────────────────────────────────────
 
     protected override _subscribe(): void {
-        const reloadData = (): void => {
+        // Every playlist reports its own changes; only those of the one shown
+        // reload the rows.
+        const reloadData = (data: { playlistGuid?: string } | undefined): void => {
+            if (!this._concernsShown(data?.playlistGuid)) return;
             this._dataCache.clear();
             void this._loadPlaylist();
         };
@@ -722,54 +851,114 @@ export class FbPlaylistView extends FbBaseElement {
         this._sub('playlist:itemsRemoved', reloadData);
         this._sub('playlist:itemsReordered', reloadData);
         this._sub('playlist:itemsReplaced', reloadData);
-        this._sub('playlist:selectionChanged', () => {
+        this._sub('playlist:selectionChanged', (data) => {
+            if (!this._concernsShown(data?.playlistGuid)) return;
             void this._loadExternalSelection();
         });
         this._sub('playlist:focusChanged', (data) => {
             const to = data?.to;
-            if (to !== undefined) {
+            if (to === undefined) return;
+            void this._target().then((pl) => {
+                if (pl === null || data.playlistGuid !== pl) return;
                 this._focusedIndex = to;
                 this._updateRows();
-            }
+            });
         });
         this._sub('playlist:activated', () => {
-            if (this._playlistIndex < 0) {
-                this._dataCache.clear();
-                void this._loadPlaylist();
-            }
+            if (this._source !== null) return;
+            this._forgetShown();
+            this._showOtherPlaylist();
         });
-        this._sub('playback:trackChanged', (data) => {
-            this._playingIndex =
-                (data as { index?: number } | null | undefined)?.index ?? -1;
-            this._updateRows();
+        const recheck = (): void => {
+            void this._recheckShown();
+        };
+        this._sub('playlist:created', recheck);
+        this._sub('playlist:removed', recheck);
+        this._sub('playlist:reordered', recheck);
+        // The payload is the track itself and carries no playlist position,
+        // so the row is looked up on the host.
+        this._sub('playback:trackChanged', () => {
+            void this._refreshPlayingIndex();
+        });
+        this._sub('playback:stopped', (data) => {
+            // A stop that makes way for the next track is followed by its
+            // `playback:trackChanged`; clearing here would only flicker.
+            if (data?.reason === 'starting_another') return;
+            this._playingQuery++;
+            this._setPlayingIndex(-1);
         });
         void this._loadPlaylist();
     }
 
+    /**
+     * Read where the playing track sits and mark that row, or no row when
+     * it is not a row of the playlist this view shows.
+     */
+    private async _refreshPlayingIndex(): Promise<void> {
+        const query = ++this._playingQuery;
+        let index = -1;
+        try {
+            const [pl, loc] = await Promise.all([
+                this._target(),
+                getFb().player.getCurrentTrackIndex(),
+            ]);
+            if (
+                pl !== null &&
+                loc.success !== false &&
+                loc.found === true &&
+                loc.playlistGuid === pl &&
+                typeof loc.index === 'number'
+            ) {
+                index = loc.index;
+            }
+        } catch {
+            /* fb-playlist-view playing location error — leave no row marked */
+        }
+        if (query !== this._playingQuery) return;
+        this._setPlayingIndex(index);
+    }
+
+    private _setPlayingIndex(index: number): void {
+        if (index === this._playingIndex) return;
+        this._playingIndex = index;
+        this._updateRows();
+    }
+
     private async _loadPlaylist(): Promise<void> {
         try {
-            const pl = await this._getPlaylistIndex();
-            const r = (await getFb().playlist.getCount(pl)) as
-                | { count?: number }
-                | number
-                | null;
-            this._trackCount =
-                (typeof r === 'object' && r !== null && r.count) ||
-                (typeof r === 'number' ? r : 0) ||
-                0;
+            const pl = await this._target();
+            let count = 0;
+            if (pl !== null) {
+                const r = (await getFb().playlist.getCount(pl)) as
+                    | { count?: number }
+                    | number
+                    | null;
+                count =
+                    (typeof r === 'object' && r !== null && r.count) ||
+                    (typeof r === 'number' ? r : 0) ||
+                    0;
+            }
+            // The load started for the playlist shown now takes over.
+            if (this._shown !== pl) return;
+            this._trackCount = count;
             this.setAttribute('track-count', this._trackCount.toString());
             this._recalcLayout();
         } catch {
             /* fb-playlist-view loadPlaylist error — silent */
         }
+        // The rows may have moved, or the view may show another playlist now.
+        await this._refreshPlayingIndex();
     }
 
     private async _loadExternalSelection(): Promise<void> {
         try {
-            const pl = await this._getPlaylistIndex();
+            const pl = await this._target();
+            if (pl === null) return;
             const sel = (await getFb().playlist.getSelection(pl)) as
                 | { items?: number[] }
                 | null;
+            // Row numbers of a playlist the view stopped showing meanwhile mean nothing here.
+            if (this._shown !== pl) return;
             this._selection = new Set(sel?.items || []);
             this.setAttribute(
                 'selected-count',

@@ -5,7 +5,7 @@
 // raw track-info objects, and copy-construction; this test defends
 // each variant.
 
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { FbMetadbHandle } from './FbMetadbHandle.js';
 
@@ -121,5 +121,29 @@ describe('FbMetadbHandle', () => {
         // returns null and GetFileInfo short-circuits to null.
         const h = new FbMetadbHandle('C:\\song.flac');
         await expect(h.GetFileInfo()).resolves.toBeNull();
+    });
+});
+
+// metadata.read takes the `|subsong:N` suffix, so a subsong must reach it
+// with the suffix to read its own tags rather than the file's first subsong.
+describe('FbMetadbHandle.GetFileInfo', () => {
+    const globalWithSmp = globalThis as { smp?: { invoke?: unknown } };
+    const saved = globalWithSmp.smp;
+
+    afterEach(() => {
+        globalWithSmp.smp = saved;
+    });
+
+    it('sends the handle id, suffix included for a subsong', async () => {
+        const invoke = vi.fn(async () => ({ success: true, tags: {}, info: {} }));
+        globalWithSmp.smp = { invoke };
+
+        await new FbMetadbHandle('C:\\album.cue|subsong:3').GetFileInfo();
+        await new FbMetadbHandle('C:\\a.flac').GetFileInfo();
+
+        expect(invoke.mock.calls).toEqual([
+            ['metadata.read', { path: 'C:\\album.cue|subsong:3' }],
+            ['metadata.read', { path: 'C:\\a.flac' }],
+        ]);
     });
 });

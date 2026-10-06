@@ -41,6 +41,7 @@ export class FbStopAfterCurrent extends FbBaseElement {
         try {
             const fb = getFb();
             const current = await fb.player.getStopAfterCurrent();
+            if (current.success === false) return;
             const newVal = !current.enabled;
             await fb.player.setStopAfterCurrent(newVal);
             this._emit<FbStopAfterCurrentToggleDetail>(
@@ -48,7 +49,7 @@ export class FbStopAfterCurrent extends FbBaseElement {
                 { active: newVal },
             );
         } catch {
-            /* R6: silent degradation */
+            /* A rejected host call does not emit `fb-stop-after-current-toggle`. */
         }
     }
 
@@ -58,7 +59,9 @@ export class FbStopAfterCurrent extends FbBaseElement {
         });
         getFb()
             .player.getStopAfterCurrent()
-            .then((r) => this._update(!!r.enabled))
+            .then((r) => {
+                if (r.success !== false) this._update(r.enabled);
+            })
             .catch(() => {
                 /* silent */
             });

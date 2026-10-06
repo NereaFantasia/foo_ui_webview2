@@ -28,6 +28,7 @@ export const ORDER_NAMES: readonly string[] = [
  */
 export const RG_MODE_NAMES = ['none', 'track', 'album', 'auto'] as const;
 
+/** Specify the source mode for `<fb-replaygain-selector>`. */
 export type ReplayGainMode = (typeof RG_MODE_NAMES)[number];
 
 /**

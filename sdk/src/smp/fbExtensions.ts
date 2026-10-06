@@ -13,6 +13,8 @@ import type { JsonValue } from '../types/json.js';
  */
 
 import type { ExtensibleFb, SmpBridgeShape } from './bridgeShape.js';
+import type { MenuTreeNode } from '../types/generated/schema-types.js';
+import { typedCall } from '../utils/typedCall.js';
 import type { BaseResponse } from '../types/responses.js';
 import { ContextMenuManager } from './classes/ContextMenuManager.js';
 import { FbMetadbHandle } from './classes/FbMetadbHandle.js';
@@ -22,10 +24,9 @@ import { FbTitleFormat } from './classes/FbTitleFormat.js';
 import { FbUiSelectionHolder } from './classes/FbUiSelectionHolder.js';
 import { MainMenuManager } from './classes/MainMenuManager.js';
 import { stripSubsongSuffix } from './handleId.js';
+import { smpWarn } from './smpLog.js';
 import type { SMPPlman, SmpCompatCache, SmpHandleLike } from './types.js';
-import { clamp, normalizeHandleList } from './utils.js';
-
-const LOG_PREFIX = '[SMP-Compat]';
+import { clamp, normalizeHandleList, successOf, toHandleId } from './utils.js';
 
 /**
  * Track keys requested from `library.search` by `fb.GetQueryItems`.
@@ -44,15 +45,6 @@ const QUERY_ITEM_FIELDS = [
     'duration',
     'fileSize',
 ];
-
-function _warn(...args: unknown[]): void {
-    try {
-        // eslint-disable-next-line no-console
-        console.warn(LOG_PREFIX, ...args);
-    } catch {
-        /* ignore */
-    }
-}
 
 /** Attach a property only if it is not already defined on `target`. */
 function _defineIfMissing(
@@ -86,6 +78,49 @@ function _toPath(handleLike: SmpHandleLike): string {
 }
 
 /**
+ * Handle ids of an SMP "handle or handle list" argument, each keeping its
+ * `|subsong:N` suffix: a handle list or an array gives one id per entry,
+ * anything else is a single handle.
+ */
+function _toHandleIds(handleOrList: unknown): string[] {
+    if (!handleOrList) return [];
+    const entries =
+        typeof handleOrList === 'string' ? [] : normalizeHandleList(handleOrList);
+    return (entries.length > 0 ? entries : [handleOrList])
+        .map(toHandleId)
+        .filter(Boolean);
+}
+
+/**
+ * `commandId` of the first command whose slash-separated `path` equals
+ * `command`, ignoring case, the way SMP names context-menu commands (for
+ * example `Playback Statistics/Rating/5`); `null` when the menu has none.
+ */
+function _findContextCommandId(
+    items: readonly MenuTreeNode[] | undefined,
+    command: string,
+): number | null {
+    const wanted = command.toLowerCase();
+    const walk = (nodes: readonly MenuTreeNode[] | undefined): number | null => {
+        for (const node of nodes ?? []) {
+            if (node.type === 'submenu') {
+                const id = walk(node.children);
+                if (id !== null) return id;
+            } else if (
+                node.type === 'command' &&
+                typeof node.commandId === 'number' &&
+                typeof node.path === 'string' &&
+                node.path.toLowerCase() === wanted
+            ) {
+                return node.commandId;
+            }
+        }
+        return null;
+    };
+    return walk(items);
+}
+
+/**
  * Install every SMP-style extension on `fb` and `plman`.
  *
  * All wrapper classes are bundled statically with this module; the
@@ -97,7 +132,7 @@ export function attachFbExtensions(
     cache: SmpCompatCache,
     schedulePlaylistRefresh: () => void,
 ): void {
-    const _invoke = fb.invoke.bind(fb);
+    const _invoke = typedCall(fb.invoke.bind(fb));
     const fbExt = fb as ExtensibleFb;
 
     // ─── Volume helpers ─────────────────────────────────────────────
@@ -106,10 +141,10 @@ export function attachFbExtensions(
         const nextDb = clamp(Number(db) || -100, -100, 0);
         const oldDb = cache.volumeDb;
         cache.volumeDb = nextDb;
-        return _invoke<BaseResponse>('playback.setVolume', {
+        return _invoke('playback.setVolume', {
             volume: _dbToPercent(nextDb),
         }).catch((e) => {
-            _warn('setVolumeDb failed, rolling back:', e);
+            smpWarn('setVolumeDb failed, rolling back:', e);
             cache.volumeDb = oldDb;
             throw e;
         });
@@ -164,17 +199,17 @@ export function attachFbExtensions(
         value: () =>
             _invoke('playback.volumeUp', {})
                 .catch(() => _setVolumeDb((cache.volumeDb ?? -100) + 1))
-                .catch((e) => _warn('VolumeUp failed:', e)),
+                .catch((e) => smpWarn('VolumeUp failed:', e)),
     });
     _defineIfMissing(fbExt, 'VolumeDown', {
         value: () =>
             _invoke('playback.volumeDown', {})
                 .catch(() => _setVolumeDb((cache.volumeDb ?? -100) - 1))
-                .catch((e) => _warn('VolumeDown failed:', e)),
+                .catch((e) => smpWarn('VolumeDown failed:', e)),
     });
     _defineIfMissing(fbExt, 'VolumeMute', {
         value: () =>
-            _invoke('playback.toggleMute', {}).catch(() =>
+            _invoke('playback.toggleMute', {}).catch<unknown>(() =>
                 fb.player?.mute
                     ? fb.player.mute()
                     : _invoke('playback.mute', {}),
@@ -183,7 +218,7 @@ export function attachFbExtensions(
 
     _defineIfMissing(fbExt, 'Exit', {
         value: () =>
-            _invoke('misc.exit', {}).catch(() =>
+            _invoke('misc.exit', {}).catch<unknown>(() =>
                 fb.ui?.close
                     ? fb.ui.close()
                     : _invoke('window.close', {}),
@@ -209,7 +244,7 @@ export function attachFbExtensions(
             configurable: true,
             get: () => (typeof cache.volumeDb === 'number' ? cache.volumeDb : -100),
             set: (db: number) => {
-                _setVolumeDb(db).catch((e) => _warn('set Volume failed:', e));
+                _setVolumeDb(db).catch((e) => smpWarn('set Volume failed:', e));
             },
         });
     }
@@ -224,9 +259,9 @@ export function attachFbExtensions(
                 cache.playbackTime = s;
                 const seek = fb.player?.seek
                     ? fb.player.seek(s)
-                    : _invoke('playback.setPosition', { seconds: s });
+                    : _invoke('playback.setPosition', { position: s });
                 Promise.resolve(seek).catch((e) => {
-                    _warn('set PlaybackTime failed, rolling back:', e);
+                    smpWarn('set PlaybackTime failed, rolling back:', e);
                     cache.playbackTime = oldValue;
                 });
             },
@@ -251,7 +286,7 @@ export function attachFbExtensions(
                     ? fb.player.setStopAfterCurrent(v)
                     : _invoke('playback.setStopAfterCurrent', { enabled: v });
                 Promise.resolve(p).catch((e) => {
-                    _warn('set StopAfterCurrent failed, rolling back:', e);
+                    smpWarn('set StopAfterCurrent failed, rolling back:', e);
                     cache.stopAfterCurrent = oldValue;
                 });
             },
@@ -269,7 +304,7 @@ export function attachFbExtensions(
                     ? fb.ui.setAlwaysOnTop(v)
                     : _invoke('window.setAlwaysOnTop', { enabled: v });
                 Promise.resolve(p).catch((e) => {
-                    _warn('set AlwaysOnTop failed, rolling back:', e);
+                    smpWarn('set AlwaysOnTop failed, rolling back:', e);
                     cache.alwaysOnTop = oldValue;
                 });
             },
@@ -290,9 +325,7 @@ export function attachFbExtensions(
 
     _defineIfMissing(fbExt, 'GetSelection', {
         value: async () => {
-            const res = (await _invoke('selection.get', { limit: 0 })) as
-                | { handles?: unknown[] }
-                | null;
+            const res = successOf(await _invoke('selection.get', { limit: 0 }));
             const handles: unknown[] = Array.isArray(res?.handles) ? res!.handles! : [];
             const list = new FbMetadbHandleList();
             for (const h of handles) {
@@ -303,18 +336,14 @@ export function attachFbExtensions(
     });
     _defineIfMissing(fbExt, 'GetSelectionType', {
         value: async () => {
-            const res = (await _invoke('selection.getType', {})) as
-                | { type?: number }
-                | null;
+            const res = successOf(await _invoke('selection.getType', {}));
             return typeof res?.type === 'number' ? res.type : 0;
         },
     });
 
     _defineIfMissing(fbExt, 'IsLibraryEnabled', {
         value: async () => {
-            const res = (await _invoke('library.getStatus', {})) as
-                | { enabled?: boolean; initialized?: boolean }
-                | null;
+            const res = successOf(await _invoke('library.getStatus', {}));
             return !!(res?.enabled ?? res?.initialized);
         },
     });
@@ -322,9 +351,7 @@ export function attachFbExtensions(
         value: async (handleLike: SmpHandleLike) => {
             const path = _toPath(handleLike);
             if (!path) return false;
-            const res = (await _invoke('library.getByPath', { path })) as
-                | { found?: boolean }
-                | null;
+            const res = successOf(await _invoke('library.getByPath', { path }));
             return !!res?.found;
         },
     });
@@ -337,10 +364,10 @@ export function attachFbExtensions(
             let total: number | null = null;
 
             while (total === null || offset < total) {
-                const res = (await _invoke('library.getAll', {
+                const res = successOf(await _invoke('library.getAll', {
                     offset,
                     limit: chunk,
-                })) as { tracks?: unknown[]; items?: unknown[]; total?: number } | null;
+                }));
                 const tracks: unknown[] = Array.isArray(res?.tracks)
                     ? res!.tracks!
                     : Array.isArray(res?.items)
@@ -380,31 +407,27 @@ export function attachFbExtensions(
             // dropped — `limit` is an upper bound, so a shrinking
             // library is harmless. The returned set is not guaranteed
             // stable while the library is being modified concurrently.
-            const probe = (await _invoke('library.search', {
+            const probe = successOf(await _invoke('library.search', {
                 query: q,
                 offset: 0,
                 limit: 1,
-            })) as { total?: number } | null;
+            }));
 
             const probed = probe?.total;
             const total = typeof probed === 'number' && probed > 0 ? probed : 0;
             if (total === 0) return new FbMetadbHandleList();
 
-            const res = (await _invoke('library.search', {
+            const res = successOf(await _invoke('library.search', {
                 query: q,
                 offset: 0,
                 limit: total,
                 fields: QUERY_ITEM_FIELDS,
-            })) as { tracks?: unknown[]; items?: unknown[] } | null;
-            const tracks: unknown[] = Array.isArray(res?.tracks)
-                ? res!.tracks!
-                : Array.isArray(res?.items)
-                    ? res!.items!
-                    : [];
+            }));
+            const tracks = Array.isArray(res?.tracks) ? res.tracks : [];
 
             const list = new FbMetadbHandleList();
             for (const t of tracks) {
-                list.Add(new FbMetadbHandle(t as SmpHandleLike));
+                list.Add(new FbMetadbHandle(t));
             }
             return list;
         },
@@ -412,28 +435,25 @@ export function attachFbExtensions(
 
     _defineIfMissing(fbExt, 'GetNowPlaying', {
         value: async () => {
-            const res = (await _invoke('playback.getCurrentTrack', {})) as
-                | { found?: boolean; [key: string]: JsonValue }
-                | null;
-            if (res && res.found === false) return null;
-            if (!res || typeof res !== 'object') return null;
-            return new FbMetadbHandle(res as SmpHandleLike);
+            const res = successOf(await _invoke('playback.getCurrentTrack', {}));
+            if (!res?.found || !res.track) return null;
+            return new FbMetadbHandle(res.track);
         },
     });
     _defineIfMissing(fbExt, 'GetFocusItem', {
         value: async (_force?: boolean) => {
-            const pl = cache.activePlaylist | 0;
-            const focus = (await _invoke('playlist.getFocusedTrack', {
-                playlist: pl,
-            })) as { index?: number } | null;
+            // No playlist named: the host reads the active playlist as the call
+            // arrives, which the cache may not have caught up with. The row is
+            // then read from the playlist the focus was read from.
+            const focus = successOf(await _invoke('playlist.getFocusedTrack', {}));
             const idx = typeof focus?.index === 'number' ? focus.index | 0 : -1;
-            if (idx < 0) return null;
+            if (idx < 0 || !focus?.playlistGuid) return null;
 
-            const res = (await _invoke('playlist.getTracks', {
-                playlist: pl,
+            const res = successOf(await _invoke('playlist.getTracks', {
+                playlistGuid: focus.playlistGuid,
                 start: idx,
                 count: 1,
-            })) as { tracks?: unknown[] } | null;
+            }));
             const t =
                 Array.isArray(res?.tracks) && res!.tracks!.length > 0
                     ? res!.tracks![0]
@@ -506,7 +526,7 @@ export function attachFbExtensions(
                 const oldValue = cache.cursorFollowPlayback;
                 cache.cursorFollowPlayback = v;
                 _invoke('config.setCursorFollowPlayback', { enabled: v }).catch((e) => {
-                    _warn('set CursorFollowPlayback failed, rolling back:', e);
+                    smpWarn('set CursorFollowPlayback failed, rolling back:', e);
                     cache.cursorFollowPlayback = oldValue;
                 });
             },
@@ -521,7 +541,7 @@ export function attachFbExtensions(
                 const oldValue = cache.playbackFollowCursor;
                 cache.playbackFollowCursor = v;
                 _invoke('config.setPlaybackFollowCursor', { enabled: v }).catch((e) => {
-                    _warn('set PlaybackFollowCursor failed, rolling back:', e);
+                    smpWarn('set PlaybackFollowCursor failed, rolling back:', e);
                     cache.playbackFollowCursor = oldValue;
                 });
             },
@@ -537,7 +557,7 @@ export function attachFbExtensions(
                 const oldValue = cache.replaygainMode;
                 cache.replaygainMode = n;
                 _invoke('config.setReplaygainMode', { mode: n }).catch((e) => {
-                    _warn('set ReplaygainMode failed, rolling back:', e);
+                    smpWarn('set ReplaygainMode failed, rolling back:', e);
                     cache.replaygainMode = oldValue;
                 });
             },
@@ -557,18 +577,14 @@ export function attachFbExtensions(
 
     _defineIfMissing(fbExt, 'CheckClipboardContents', {
         value: async () => {
-            const res = (await _invoke('clipboard.read', {})) as
-                | { hasFiles?: boolean }
-                | null;
+            const res = successOf(await _invoke('clipboard.read', {}));
             return !!res?.hasFiles;
         },
     });
 
     _defineIfMissing(fbExt, 'GetClipboardContents', {
         value: async () => {
-            const res = (await _invoke('clipboard.read', {})) as
-                | { files?: Array<string | { path?: string }> }
-                | null;
+            const res = successOf(await _invoke('clipboard.read', {}));
             const files: Array<string | { path?: string }> = Array.isArray(res?.files)
                 ? res!.files!
                 : [];
@@ -590,17 +606,17 @@ export function attachFbExtensions(
                 if (p) paths.push(p);
             }
             if (paths.length === 0) return false;
-            const res = (await _invoke('clipboard.writeFiles', { paths })) as
-                | { success?: boolean }
-                | null;
+            const res = successOf(await _invoke('clipboard.writeFiles', { paths }));
             return !!res?.success;
         },
     });
 
     _defineIfMissing(fbExt, 'GetDSPPresets', {
         value: async () => {
-            const res = (await _invoke('config.getDspPresets', {})) as unknown[] | null;
-            const presets = Array.isArray(res) ? res : [];
+            // The host wraps the presets in a `{ presets, count }` envelope.
+            const res = successOf(await _invoke('config.getDspPresets', {}));
+            const list = res?.presets;
+            const presets = Array.isArray(list) ? list : [];
             return JSON.stringify(presets);
         },
     });
@@ -612,10 +628,7 @@ export function attachFbExtensions(
 
     _defineIfMissing(fbExt, 'GetOutputDevices', {
         value: async () => {
-            const res = (await _invoke('config.getOutputDevices', {})) as
-                | { devices?: unknown[] }
-                | unknown[]
-                | null;
+            const res = successOf(await _invoke('config.getOutputDevices', {}));
             const devices = Array.isArray(res)
                 ? res
                 : Array.isArray((res as { devices?: unknown[] })?.devices)
@@ -643,23 +656,38 @@ export function attachFbExtensions(
     _defineIfMissing(fbExt, 'RunContextCommandWithMetadb', {
         value: async (
             command: string,
-            handleLike: SmpHandleLike,
+            handleOrList: unknown,
             _flags?: number,
-        ) => {
-            const res = (await _invoke('menu.runContextCommand', {
-                command: String(command ?? ''),
-                handles: handleLike ? [_toPath(handleLike)] : [],
-            })) as { success?: boolean } | null;
+        ): Promise<boolean> => {
+            const name = String(command ?? '');
+            const handles = _toHandleIds(handleOrList);
+            if (!name || handles.length === 0) return false;
+            // `menu.runContextCommand` runs on the playing track or the
+            // selection and takes no tracks. Build the menu for exactly these
+            // tracks instead and run the command by the id that menu gave it;
+            // the host rebuilds the same menu from the same `mode` and
+            // `handles`, and refuses rather than falls back to other tracks
+            // when none of the handles is usable.
+            const menu = successOf(await _invoke('menu.getContextMenu', {
+                mode: 'handles',
+                handles,
+            }));
+            const id = _findContextCommandId(menu?.items, name);
+            if (id === null) return false;
+            const res = successOf(await _invoke('menu.runContextCommandById', {
+                id,
+                mode: 'handles',
+                handles,
+            }));
             return !!res?.success;
         },
     });
 
     _defineIfMissing(fbExt, 'ClearPlaylist', {
         value: async () => {
-            const pl = cache.activePlaylist | 0;
-            const res = (await _invoke('playlist.clear', { playlist: pl })) as
-                | { success?: boolean }
-                | null;
+            // No playlist named: the host clears the playlist active as the call
+            // arrives, not the one the cache last saw active.
+            const res = successOf(await _invoke('playlist.clear', {}));
             schedulePlaylistRefresh();
             return !!res?.success;
         },

@@ -24,29 +24,23 @@ import type { BaseResponse } from '../types/responses.js';
  * coupling shows up as a compile error.
  */
 export interface SmpBridgeShape {
-    /** Subscribe to a strongly-typed event. */
+    /** Subscribe to a declared event; an undeclared name does not compile. */
     on<K extends FBEventName>(
         event: K,
         handler: (data: FBEventPayloadMap[K]) => void,
     ): () => void;
-    /** Subscribe to an arbitrary event name (untyped fallback). */
-    on(event: string, handler: (data: unknown) => void): () => void;
 
-    /** Detach handler from a strongly-typed event. */
+    /** Detach a handler from a declared event. */
     off<K extends FBEventName>(
         event: K,
         handler: (data: FBEventPayloadMap[K]) => void,
     ): void;
-    /** Detach handler from an arbitrary event name. */
-    off(event: string, handler: (data: unknown) => void): void;
 
-    /** One-shot subscribe to a strongly-typed event. */
+    /** One-shot subscribe to a declared event. */
     once<K extends FBEventName>(
         event: K,
         handler: (data: FBEventPayloadMap[K]) => void,
     ): () => void;
-    /** One-shot subscribe to an arbitrary event name. */
-    once(event: string, handler: (data: unknown) => void): () => void;
 
     /** Direct invoke escape hatch. */
     invoke<TResp = unknown>(

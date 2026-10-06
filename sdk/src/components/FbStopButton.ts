@@ -42,7 +42,7 @@ export class FbStopButton extends FbBaseElement {
             await getFb().player.stop();
             this._emit<FbStopDetail>('fb-stop', {});
         } catch {
-            /* R6: silent degradation when SDK unavailable */
+            /* A rejected host call does not emit `fb-stop`. */
         }
     }
 }

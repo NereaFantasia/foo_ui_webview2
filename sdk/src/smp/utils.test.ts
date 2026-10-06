@@ -40,6 +40,20 @@ describe('utils.toHandleId', () => {
         expect(toHandleId({ path: 'C.flac' })).toBe('C.flac');
     });
 
+    // A host track row carries the subsong beside a suffix-free path; the
+    // handle id must include it or a CUE subsong resolves to the first one.
+    it('appends the subsong of a host track row', () => {
+        expect(toHandleId({ absolutePath: 'D:\\a.cue', path: 'file://D:\\a.cue', subsong: 3 }))
+            .toBe('D:\\a.cue|subsong:3');
+        expect(toHandleId({ path: 'http://radio/stream', subsong: 0 })).toBe('http://radio/stream');
+        expect(toHandleId({ path: 'E:\\b.cue', subsong: 2 })).toBe('E:\\b.cue|subsong:2');
+    });
+
+    it('does not add a second suffix to a path that already has one', () => {
+        expect(toHandleId({ absolutePath: 'D:\\a.cue|subsong:2', subsong: 9 }))
+            .toBe('D:\\a.cue|subsong:2');
+    });
+
     it('returns empty string for falsy / unknown shapes', () => {
         expect(toHandleId(null)).toBe('');
         expect(toHandleId(undefined)).toBe('');

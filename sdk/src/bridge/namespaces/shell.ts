@@ -1,20 +1,11 @@
-/**
- * `shell` — OS-level integration namespace.
- *
- * Note: `spawn` short-circuits with `{ success: false }` when an empty
- * `cwd` string is passed.
- */
-
-import { bridge } from '../Bridge.js';
-import type {
-    BaseResponse,
-    ShellExecResponse,
-    ShellSpawnResponse,
-} from '../../types/responses.js';
+import { call } from '../call.js';
 import type {
     ShellExecParams,
     ShellSpawnParams,
 } from '../../types/generated/params.js';
+import type {
+    ShellSpawnResponse,
+} from '../../types/generated/responses.js';
 
 /** @deprecated Use {@link ShellExecParams}. */
 export type ShellExecOptions = Omit<ShellExecParams, 'command'>;
@@ -22,15 +13,30 @@ export type ShellExecOptions = Omit<ShellExecParams, 'command'>;
 /** @deprecated Use {@link ShellSpawnParams}. */
 export type ShellSpawnOptions = Omit<ShellSpawnParams, 'executable'>;
 
+/**
+ * `shell` — OS-level integration namespace.
+ *
+ * Note: `spawn` short-circuits with `{ success: false }` when an empty
+ * `cwd` string is passed.
+ */
 export const shell = {
     showInExplorer: (path: string) =>
-        bridge.invoke<BaseResponse>('shell.showInExplorer', { path }),
+        call('shell.showInExplorer', {
+            path,
+        }),
     openWith: (path: string) =>
-        bridge.invoke<BaseResponse>('shell.openWith', { path }),
+        call('shell.openWith', {
+            path,
+        }),
     openExternal: (url: string) =>
-        bridge.invoke<BaseResponse>('shell.openExternal', { url }),
+        call('shell.openExternal', {
+            url,
+        }),
     exec: (command: string, options?: Omit<ShellExecParams, 'command'>) =>
-        bridge.invoke<ShellExecResponse>('shell.exec', { command, ...options }),
+        call('shell.exec', {
+            command,
+            ...options,
+        }),
     spawn: (
         executable: string,
         options?: Omit<ShellSpawnParams, 'executable'>,
@@ -41,11 +47,14 @@ export const shell = {
             typeof opts.cwd === 'string' &&
             opts.cwd.trim() === ''
         ) {
+            // A failure envelope carries none of the declared fields; the flat
+            // response type cannot express that, hence the assertion.
             return Promise.resolve({
                 success: false,
                 error: 'cwd is empty string',
-            });
+                code: 'INVALID_PARAMS',
+            } as ShellSpawnResponse);
         }
-        return bridge.invoke<ShellSpawnResponse>('shell.spawn', opts);
+        return call('shell.spawn', opts);
     },
 };

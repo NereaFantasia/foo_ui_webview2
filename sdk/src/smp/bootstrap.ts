@@ -32,12 +32,11 @@ import { createOnSmp } from './eventMap.js';
 import { attachFbExtensions } from './fbExtensions.js';
 import { formatHandleId, parseHandleId, stripSubsongSuffix } from './handleId.js';
 import { buildPlman } from './plman.js';
+import { LOG_PREFIX } from './smpLog.js';
 import type { SmpCompatApi, SmpEventCallback, SmpEventName } from './types.js';
 import { smpUtils } from './utils.js';
 import { smpUtilsNamespace } from './utilsCompat.js';
 import { attachWindowProperties } from './windowProperties.js';
-
-const LOG_PREFIX = '[SMP-Compat]';
 
 /**
  * The window-level globals the SMP IIFE installs alongside the main

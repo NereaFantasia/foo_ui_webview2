@@ -1,16 +1,5 @@
-/**
- * `titleformat` — title-format script evaluation namespace.
- */
+import { call } from '../call.js';
 
-import { bridge } from '../Bridge.js';
-
-import type {
-    TitleformatBatchResult,
-    TitleformatBuiltinFields,
-    TitleformatEvalResult,
-    TitleformatFieldsBatchResult,
-    TitleformatFieldsResult,
-} from '../../types/responses.js';
 
 /**
  * `fields` is a `{ fieldName: pattern }` map mirroring the C++
@@ -19,16 +8,24 @@ import type {
  */
 export type TitleformatFieldMap = Record<string, string>;
 
+/**
+ * `titleformat` — title-format script evaluation namespace.
+ */
 export const titleformat = {
     /**
-     * Evaluate a single pattern against one track.
+     * Evaluate a single pattern against one track, or against the playing
+     * track when `path` is omitted or empty. Evaluating the playing track
+     * also fills dynamic fields such as `%playback_time%` and stream
+     * titles; with nothing playing it resolves `success: false` with
+     * `code: 'NO_ACTIVE_ITEM'`.
      *
-     * `infoAvailable: false` means the track's metadb info was not ready,
-     * so tag-derived output is untrustworthy. See the SDK docs for what
-     * the flag does not cover.
+     * `infoAvailable: false` means the host could not get the track's info
+     * (a remote path with nothing cached, or an unreadable file), so
+     * tag-derived output is untrustworthy. See the SDK docs for what the
+     * flag does not cover.
      */
     eval: (pattern: string, path?: string) =>
-        bridge.invoke<TitleformatEvalResult>('titleformat.eval', {
+        call('titleformat.eval', {
             pattern,
             ...(path ? { path } : {}),
         }),
@@ -37,7 +34,7 @@ export const titleformat = {
      * `infoAvailable` flag; rows that failed omit it.
      */
     evalBatch: (pattern: string, paths: string[]) =>
-        bridge.invoke<TitleformatBatchResult>('titleformat.evalBatch', {
+        call('titleformat.evalBatch', {
             pattern,
             paths,
         }),
@@ -46,14 +43,17 @@ export const titleformat = {
      * `fields` argument maps each output key to a titleformat pattern
      * string (e.g. `{ artist: '%artist%', year: '$year(%date%)' }`).
      *
-     * `infoAvailable: false` means tag-derived values are untrustworthy.
-     * One flag covers the whole merged script and never covers
+     * `infoAvailable: false` means tag-derived values are untrustworthy,
+     * under the same conditions as {@link eval}. One flag covers the whole
+     * merged script and never covers
      * foo_playcount virtual fields — see the SDK docs for the full
-     * limitation. A `fields` key named `infoAvailable` overwrites the
-     * flag, matching the existing behaviour of `path` and `success`.
+     * limitation. Keys of `fields` named `success`, `path` or
+     * `infoAvailable` are dropped because the response fields of those
+     * names take precedence; keys named `error` or `code` are kept, so
+     * check `success` to tell a failure.
      */
     evalFields: (path: string, fields: TitleformatFieldMap) =>
-        bridge.invoke<TitleformatFieldsResult>('titleformat.evalFields', {
+        call('titleformat.evalFields', {
             path,
             fields,
         }),
@@ -63,13 +63,15 @@ export const titleformat = {
      * roughly 10× speedup vs. calling {@link evalFields} per track.
      *
      * Each row carries its own `infoAvailable` flag with the same meaning
-     * and the same merged-script limitation as {@link evalFields}.
+     * and the same merged-script limitation as {@link evalFields}. Keys of
+     * `fields` named `path`, `success` or `infoAvailable` are dropped from
+     * each row; a key named `error` is kept, so check the row's `success`.
      */
     evalFieldsBatch: (paths: string[], fields: TitleformatFieldMap) =>
-        bridge.invoke<TitleformatFieldsBatchResult>(
+        call(
             'titleformat.evalFieldsBatch',
             { paths, fields },
         ),
     getBuiltinFields: () =>
-        bridge.invoke<TitleformatBuiltinFields>('titleformat.getBuiltinFields'),
+        call('titleformat.getBuiltinFields'),
 };

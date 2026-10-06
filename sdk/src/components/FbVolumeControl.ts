@@ -13,7 +13,7 @@
  * - Mouse-down + drag → continuous visual updates, host call on
  *   mouse-up.
  * - Wheel → ±5 step (passive: false to allow `preventDefault`).
- * - Arrow / Home / End keys → ±5 / 0 / 100 (R5 keyboard).
+ * - Arrow / Home / End keys → ±5 / 0 / 100.
  * - Mute button click / Enter / Space → `fb.player.toggleMute()`.
  */
 
@@ -225,7 +225,7 @@ export class FbVolumeControl extends FbBaseElement {
                 volume: this._volume,
             });
         } catch {
-            /* R6: silent degradation */
+            /* Keep the local volume display on failure; do not emit `fb-volume-change`. */
         }
     }
 
@@ -234,11 +234,11 @@ export class FbVolumeControl extends FbBaseElement {
             await getFb().player.toggleMute();
             this._emit<FbMuteToggleDetail>('fb-mute-toggle', {});
         } catch {
-            /* R6: silent degradation */
+            /* A rejected host call does not emit `fb-mute-toggle`. */
         }
     }
 
-    /** R7: only `style` / attribute writes during high-frequency updates. */
+    /** Limit high-frequency DOM updates to style and attribute writes. */
     private _updateVisual(): void {
         const pct = this._volume + '%';
         if (this.hasAttribute('vertical')) {

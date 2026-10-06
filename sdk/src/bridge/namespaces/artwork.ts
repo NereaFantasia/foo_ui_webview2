@@ -1,25 +1,6 @@
-/**
- * `artwork` — album-art retrieval namespace.
- *
- * Returns either embedded image data (`getCurrent` / `getByPath` /
- * `getForTrack`) or `fb2k://` URLs (`getFb2kUrl*`) suitable for direct
- * `<img src>` consumption.
- *
- * {@link artwork.withMaxSize} is a pure URL helper (no host call); it
- * appends a `?maxSize=N` query parameter so callers do not have to
- * splice strings by hand.
- */
-
-import { bridge } from '../Bridge.js';
-import type {
-    AlbumArtType,
-    ArtworkAvailableArtworkResponse,
-    ArtworkBatchItem,
-    ArtworkBatchResponse,
-    ArtworkLyricsResult,
-    ArtworkMetadataResponse,
-    ArtworkResponse,
-} from '../../types/responses.js';
+import { call } from '../call.js';
+import { playlistTarget, type PlaylistRef } from '../playlistRef.js';
+import type { AlbumArtType } from '../../types/responses.js';
 import type {
     ArtworkGetFb2kUrlByPathParams,
     ArtworkGetFb2kUrlParams,
@@ -28,6 +9,7 @@ import type {
     ArtworkGetFb2kUrlByPathResponse,
     ArtworkGetFb2kUrlResponse,
 } from '../../types/generated/responses.js';
+import type { ArtworkBatchItem } from '../../types/generated/schema-types.js';
 
 /** Optional artwork-retrieval flags shared across the `artwork.*` APIs. */
 export interface ArtworkOptions {
@@ -35,20 +17,31 @@ export interface ArtworkOptions {
     maxSize?: number;
 }
 
+/**
+ * `artwork` — album art retrieval namespace.
+ *
+ * Every reader answers with the host's `success` envelope. `available`
+ * tells whether a picture (or a URL) exists for the request; a refused
+ * call has `success: false` with a `code`.
+ */
 export const artwork = {
     getCurrent: (type?: AlbumArtType) =>
-        bridge.invoke<ArtworkResponse>('artwork.getCurrent', { type }),
+        call('artwork.getCurrent', { type }),
     getByPath: (path: string, type?: AlbumArtType) =>
-        bridge.invoke<ArtworkResponse>('artwork.getByPath', { path, type }),
+        call('artwork.getByPath', { path, type }),
+    /**
+     * `options` is accepted for source compatibility only: the host reads
+     * the picture as stored and does not scale it, so `maxSize` is not sent.
+     */
     getForTrack: (
         path: string,
         type?: AlbumArtType,
+        // eslint-disable-next-line @typescript-eslint/no-unused-vars
         options?: ArtworkOptions,
     ) =>
-        bridge.invoke<ArtworkResponse>('artwork.getForTrack', {
+        call('artwork.getForTrack', {
             path,
             type,
-            ...(options || {}),
         }),
     /**
      * Resolve a `fb2k://` URL for the currently playing track suitable
@@ -61,7 +54,7 @@ export const artwork = {
         type?: AlbumArtType,
         options?: Pick<ArtworkGetFb2kUrlParams, 'maxSize'>,
     ) =>
-        bridge.invoke<ArtworkGetFb2kUrlResponse>('artwork.getFb2kUrl', {
+        call('artwork.getFb2kUrl', {
             type,
             ...(options || {}),
         }),
@@ -77,7 +70,7 @@ export const artwork = {
         type?: AlbumArtType,
         options?: Pick<ArtworkGetFb2kUrlByPathParams, 'maxSize'>,
     ) =>
-        bridge.invoke<ArtworkGetFb2kUrlByPathResponse>(
+        call(
             'artwork.getFb2kUrlByPath',
             {
                 path,
@@ -95,44 +88,42 @@ export const artwork = {
         const sep = url.includes('?') ? '&' : '?';
         return url + sep + 'maxSize=' + encodeURIComponent(String(maxSize));
     },
-    getAvailableArtwork: (path?: string) =>
-        bridge.invoke<ArtworkAvailableArtworkResponse>(
-            'artwork.getAvailableArtwork',
-            { ...(path ? { path } : {}) },
-        ),
-    getAvailableTypes: () =>
-        bridge.invoke<AlbumArtType[]>('artwork.getAvailableTypes'),
-    getBatch: (paths: string[]) =>
-        bridge.invoke<ArtworkResponse[]>('artwork.getBatch', { paths }),
+    getAvailableArtwork: (path: string) => call('artwork.getAvailableArtwork', { path }),
+    /** Without `path` the host reads the playing track. */
+    getAvailableTypes: (path?: string) =>
+        call('artwork.getAvailableTypes', {
+            ...(path ? { path } : {}),
+        }),
+    getBatch: (paths: string[], type?: AlbumArtType) =>
+        call('artwork.getBatch', {
+            paths,
+            ...(type ? { type } : {}),
+        }),
+    /** A negative `playlist` index names the active playlist. */
     getByPlaylistItem: (
-        playlist: number,
+        playlist: PlaylistRef,
         index: number,
         type?: AlbumArtType,
     ) =>
-        bridge.invoke<ArtworkResponse>('artwork.getByPlaylistItem', {
-            playlist,
+        call('artwork.getByPlaylistItem', {
+            ...playlistTarget(playlist),
             index,
             ...(type ? { type } : {}),
         }),
     /**
      * Batch variant of {@link getFb2kUrlByPath}. Accepts either bare
-     * paths or `ArtworkBatchItem` objects with per-track overrides.
-     * Returns the full `{ artworks: ArtworkBatchEntry[] }` envelope so
-     * callers can map per-row availability and error reasons.
-     *
-     * Aligns the SDK signature with the C++ handler
-     * `ArtworkGetFb2kUrlByPathBatch` which accepts `items[]` or
-     * `paths[]` plus batch-wide `type` / `maxSize`.
+     * paths or `ArtworkBatchItem` objects whose own `type` / `maxSize`
+     * win over the batch-wide ones. Returns the full `{ artworks }`
+     * envelope so callers can map per-row availability and error reasons.
      */
     getFb2kUrlByPathBatch: (
         items: string[] | ArtworkBatchItem[],
         opts?: { type?: AlbumArtType; maxSize?: number },
     ) =>
-        bridge.invoke<ArtworkBatchResponse>(
+        call(
             'artwork.getFb2kUrlByPathBatch',
             {
-                // C++ accepts either `paths` (string[]) or `items` (object[]).
-                // We forward whichever the caller actually passed for clarity.
+                // The host accepts exactly one of `paths` (string[]) or `items` (object[]).
                 ...(items.length > 0 && typeof items[0] === 'string'
                     ? { paths: items as string[] }
                     : { items: items as ArtworkBatchItem[] }),
@@ -141,11 +132,17 @@ export const artwork = {
             },
         ),
     getFolderImages: (directory: string) =>
-        bridge.invoke<{ images: string[] }>('artwork.getFolderImages', {
+        call('artwork.getFolderImages', {
             directory,
         }),
-    getLyrics: (path: string) =>
-        bridge.invoke<ArtworkLyricsResult>('artwork.getLyrics', { path }),
-    getMetadata: (path: string) =>
-        bridge.invoke<ArtworkMetadataResponse>('artwork.getMetadata', { path }),
+    /** Without `path` the host reads the playing track. */
+    getLyrics: (path?: string) =>
+        call('artwork.getLyrics', {
+            ...(path ? { path } : {}),
+        }),
+    /** Without `path` the host reads the playing track. */
+    getMetadata: (path?: string) =>
+        call('artwork.getMetadata', {
+            ...(path ? { path } : {}),
+        }),
 };

@@ -3,8 +3,9 @@ import type { JsonValue } from '../../types/json.js';
  * `FbUiSelectionHolder` — UI selection holder wrapper.
  *
  * Surfaces the SMP API: explicitly stamp the active foobar2000 UI
- * selection (selection.set) and toggle which playlist event source
- * tracks the selection (`selection.setPlaylistTracking`).
+ * selection (selection.set) or take it from the active playlist
+ * (`selection.setPlaylistTracking`). The host holds a selection holder
+ * only for the duration of each call, not for the life of this object.
  *
  * Backend mapping:
  * - `SetSelection(handles, type)`            → `selection.set`
@@ -16,7 +17,7 @@ import type { JsonValue } from '../../types/json.js';
  * refuse the request asynchronously.
  */
 
-import { getInvoke, toHandleIdArray } from '../utils.js';
+import { getTypedInvoke, toHandleIdArray, successOf } from '../utils.js';
 
 interface SelectionResponse {
     success?: boolean;
@@ -30,37 +31,41 @@ export class FbUiSelectionHolder {
      * @param handleList Any value accepted by
      *                   {@link toHandleIdArray} (`FbMetadbHandleList`,
      *                   plain array, etc.).
-     * @param type       Selection-type integer (defaults to 0 — generic).
+     * @param _type      Accepted for SMP compatibility and ignored; the host
+     *                   has no selection types.
      */
-    async SetSelection(handleList: unknown, type?: number): Promise<boolean> {
-        const inv = getInvoke();
+    async SetSelection(handleList: unknown, _type?: number): Promise<boolean> {
+        const inv = getTypedInvoke();
         if (!inv) return false;
 
         const handles = toHandleIdArray(handleList);
-        const res = (await inv('selection.set', {
-            handles,
-            type: typeof type === 'number' ? type : 0,
-        })) as SelectionResponse | null;
+        const res = successOf(await inv('selection.set', { handles }));
         return !!res?.success;
     }
 
-    /** Track current playlist's *selection* events. */
+    /**
+     * Set the selection to the active playlist's selected rows. Unlike SMP, the host takes them
+     * once and does not keep tracking after the call.
+     */
     async SetPlaylistSelectionTracking(): Promise<boolean> {
-        const inv = getInvoke();
+        const inv = getTypedInvoke();
         if (!inv) return false;
-        const res = (await inv('selection.setPlaylistTracking', {
+        const res = successOf(await inv('selection.setPlaylistTracking', {
             mode: 'selection',
-        })) as SelectionResponse | null;
+        }));
         return !!res?.success;
     }
 
-    /** Track current playlist's *change* events. */
+    /**
+     * Set the selection to the whole active playlist. Unlike SMP, the host takes it once and does
+     * not keep tracking after the call.
+     */
     async SetPlaylistTracking(): Promise<boolean> {
-        const inv = getInvoke();
+        const inv = getTypedInvoke();
         if (!inv) return false;
-        const res = (await inv('selection.setPlaylistTracking', {
+        const res = successOf(await inv('selection.setPlaylistTracking', {
             mode: 'playlist',
-        })) as SelectionResponse | null;
+        }));
         return !!res?.success;
     }
 }

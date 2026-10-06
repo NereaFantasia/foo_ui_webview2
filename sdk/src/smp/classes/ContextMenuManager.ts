@@ -15,7 +15,7 @@ import type { JsonValue } from '../../types/json.js';
  * keeps theme code that bypasses `BuildMenu` working.
  */
 
-import { buildMenuItems, getInvoke, normalizeHandleList, toHandleId } from '../utils.js';
+import { buildMenuItems, getTypedInvoke, normalizeHandleList, toHandleId, successOf } from '../utils.js';
 import type {
     SmpMenuBuildState,
     SmpRawMenuItem,
@@ -39,6 +39,13 @@ export class ContextMenuManager {
     private _effectiveMode: ContextMode = 'auto';
     private _handles: string[] = [];
     private _idMap: Map<number, number | string> = new Map();
+    /**
+     * Ids the last `BuildMenu` handed out, `[first, end)`. An id in this range
+     * that `_idMap` lacks belongs to a row with no `commandId`; it must not be
+     * read as a raw host id, which would run whichever command happens to
+     * carry that number.
+     */
+    private _allocated: { first: number; end: number } | null = null;
 
     /** Configure the menu against an explicit handle list. */
     InitContext(handles: unknown): void {
@@ -70,13 +77,13 @@ export class ContextMenuManager {
         base_id?: number,
         max_id?: number,
     ): Promise<SmpStructuredMenuItem[]> {
-        const inv = getInvoke();
+        const inv = getTypedInvoke();
         if (!inv) return [];
 
-        const res = (await inv('menu.getContextMenu', {
+        const res = successOf(await inv('menu.getContextMenu', {
             mode: this._mode,
             handles: this._handles,
-        })) as ContextMenuResponse | null;
+        }));
 
         this._effectiveMode = res?.mode ?? this._mode;
 
@@ -95,6 +102,7 @@ export class ContextMenuManager {
             family: 'contextmenu',
         };
         const out = buildMenuItems(items, state);
+        this._allocated = { first: baseId, end: state.nextId };
 
         if (menu && typeof menu.SetItems === 'function') {
             try {
@@ -109,10 +117,12 @@ export class ContextMenuManager {
 
     /**
      * Dispatch the previously-allocated menu id (or a raw numeric C++
-     * command id). Returns `false` when the command cannot be resolved.
+     * command id outside the ids the last `BuildMenu` allocated). Returns
+     * `false` when the command cannot be resolved, including an allocated id
+     * whose row carried no `commandId`.
      */
     async ExecuteByID(id: number | string): Promise<boolean> {
-        const inv = getInvoke();
+        const inv = getTypedInvoke();
         if (!inv) return false;
 
         let cmdId: number | string | null = null;
@@ -121,14 +131,20 @@ export class ContextMenuManager {
             cmdId = this._idMap.get(Number(id)) ?? null;
         }
 
-        if (cmdId == null && typeof id === 'number') cmdId = id;
-        if (cmdId == null) return false;
+        const allocated =
+            this._allocated !== null &&
+            typeof id === 'number' &&
+            id >= this._allocated.first &&
+            id < this._allocated.end;
+        if (cmdId == null && typeof id === 'number' && !allocated) cmdId = id;
+        // The host takes numeric command ids only and refuses any other value.
+        if (typeof cmdId !== 'number') return false;
 
-        const res = (await inv('menu.runContextCommandById', {
+        const res = successOf(await inv('menu.runContextCommandById', {
             id: cmdId,
             mode: this._effectiveMode || this._mode,
             handles: this._handles,
-        })) as { success?: boolean } | null;
+        }));
         return !!res?.success;
     }
 }

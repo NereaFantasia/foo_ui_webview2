@@ -97,7 +97,7 @@ await fb.player.setStopAfterCurrent(true)
 
 ```javascript
 // Get playlists
-const playlists = await fb.playlist.getAll()
+const { playlists } = unwrap(await fb.playlist.getAll())
 const active = await fb.playlist.getActive()
 const playing = await fb.playlist.getPlaying()
 
@@ -110,7 +110,7 @@ await fb.playlist.remove(0)
 await fb.playlist.clear(0)
 
 // Track operations
-const tracks = await fb.playlist.getTracks(0, 0, 100)
+const { tracks } = unwrap(await fb.playlist.getTracks(0, 0, 100))
 const { count } = await fb.playlist.getCount(0)
 await fb.playlist.add(0, ['C:/Music/song.mp3'])
 await fb.playlist.removeTracks(0, [0, 1, 2])
@@ -234,28 +234,28 @@ await fb.ui.flashTaskbar()
 
 ```javascript
 // Output devices
-const devices = await fb.config.getOutputDevices()
+const { devices } = unwrap(await fb.config.getOutputDevices())
 const config = await fb.config.getOutputConfig()
 await fb.config.setOutputDevice('output-id', 'device-id')
 await fb.config.setOutputBuffer(500)
 
 // Advanced config
-const advanced = await fb.config.getAdvancedConfig()
+const { entries } = unwrap(await fb.config.getAdvancedConfig())
 const { value } = await fb.config.getAdvancedConfigValue('{guid}')
 await fb.config.setAdvancedConfigValue('{guid}', 'new-value')
 await fb.config.resetAdvancedConfig('{guid}')
 
 // Preferences
-const pages = await fb.config.getPreferencesPages()
+const { pages } = unwrap(await fb.config.getPreferencesPages())
 const guids = await fb.config.getPreferencesStandardGuids()
 await fb.config.showLibraryPreferences()
 
 // Component info
-const components = await fb.config.getComponents()
+const { components } = unwrap(await fb.config.getComponents())
 const version = await fb.config.getVersionInfo()
 
 // DSP
-const presets = await fb.config.getDspPresets()
+const { presets } = unwrap(await fb.config.getDspPresets())
 const active = await fb.config.getActiveDspPreset()
 await fb.config.setActiveDspPreset(0)  // set by index
 ```
@@ -312,15 +312,13 @@ const result3 = await fb.audio.generateFullWaveform('E:\\Music\\album.cue', {
     resolution: 256
 });
 
-// Analyze BPM
-const { bpm, source } = await fb.audio.analyzeBPM('E:\\Music\\song.flac');
-console.log(`BPM: ${bpm}, source: ${source}`);
-
-// Force re-analysis (ignore any existing BPM tag)
-const forced = await fb.audio.analyzeBPM('E:\\Music\\song.flac', {
-    forceAnalysis: true
-});
-console.log(`BPM: ${forced.bpm}, source: ${forced.source}`);
+// Read the BPM tag (the host does not detect tempo)
+const bpmResult = await fb.audio.analyzeBPM('E:\\Music\\song.flac');
+if (bpmResult.success) {
+    console.log(`BPM: ${bpmResult.bpm}`);
+} else if (bpmResult.code === 'NOT_FOUND') {
+    console.log('No BPM tag');
+}
 
 // An invalid channel mode automatically falls back to "default"
 const channelModeResult = await fb.audio.setChannelMode('invalid');
@@ -346,15 +344,15 @@ const info = await fb.utils.getFileInfo('C:/Music/song.mp3')
 
 ```javascript
 // API discovery
-const apis = await fb.system.listApis(true, true)
-const namespaceApis = await fb.system.getApisByNamespace('playback')
-const searchResults = await fb.system.searchApis('volume')
+const { apis } = unwrap(await fb.system.listApis(true, true))
+const namespaceApis = unwrap(await fb.system.getApisByNamespace('playback'), 'apis')
+const searchResults = unwrap(await fb.system.searchApis('volume'), 'apis')
 
 // API stats
 const stats = await fb.system.getApiStats()
 
 // Plugin management
-const plugins = await fb.system.getRegisteredPlugins()
+const { plugins } = unwrap(await fb.system.getRegisteredPlugins())
 const { registered } = await fb.system.isPluginRegistered('my-plugin')
 ```
 
@@ -521,15 +519,44 @@ if (fb.isAvailable()) {
 }
 ```
 
-## Development mock mode
+## Results and failures
 
-Outside a WebView2 environment the SDK automatically uses mock mode, and every API call returns mock data:
+Every namespace method resolves with the host's envelope: the result fields with `success: true`, or `{ success: false, error, code, details? }` when the call failed. A method does not throw for a failure it reports, and list methods do not replace a failure with an empty array. Only a request the host refuses outright (an unknown method, an exception in a handler, no answer within 30 s) rejects.
 
 ```javascript
-// Behavior outside a WebView2 environment
-const result = await fb.player.play()
-// returns: { mock: true, method: 'playback.play' }
+const res = await fb.playlist.getAll()
+if (res.success === false) {
+    console.warn(res.code, res.error)
+} else {
+    render(res.playlists)
+}
 ```
+
+To get an exception instead, pass the envelope to `unwrap` (`fb.unwrap` in the `<script>` bundle). It returns the success branch, or one field of it, and throws an `ApiCallError` carrying `code` and `details` for a failure:
+
+```javascript
+import { unwrap, ApiCallError } from 'foo-webview-sdk'
+
+try {
+    const playlists = unwrap(await fb.playlist.getAll(), 'playlists')
+    unwrap(await fb.library.addToPlaylist(paths))
+} catch (e) {
+    if (e instanceof ApiCallError && e.code === 'LOCKED') showLockedNotice()
+}
+```
+
+## Running without the host
+
+Outside foobar2000 (a plain browser tab, a unit test) there is no native bridge. Every call then resolves after 100 ms with a failure envelope, so the usual `success` check covers it:
+
+```javascript
+const result = await fb.player.play()
+// { success: false, code: 'NOT_SUPPORTED', error: 'No foobar2000 host is available',
+//   details: { method: 'playback.play' } }
+if (result.success === false) console.warn(result.code, result.error)
+```
+
+Events never fire without the host. To run a page against fake data, assign a stand-in with `invoke`, `on` and `off` to `window.fb2k`; the next call uses it as the host. Assign it before the page subscribes to events, because subscriptions made without a host are not replayed.
 
 ---
 
@@ -551,7 +578,7 @@ Load the IIFE global bundles via `<script>` (`components.global.js` auto-registe
 <fb-cover-art size="200"></fb-cover-art>
 ```
 
-Bundler users should use the ESM entry and register explicitly (the ESM entry has no automatic side effects):
+Bundler users should use the ESM entry and register explicitly (the ESM entry has no automatic side effects). The registered components use the SDK instance that `foo-webview-sdk` exports:
 
 ```js
 import { registerComponents } from 'foo-webview-sdk/components'
@@ -684,7 +711,7 @@ fb-cover-art::part(container) {
 
 ### Full example
 
-See the [examples directory](https://github.com/NereaFantasia/foo_ui_webview2/tree/main/examples) in the repository:
+For a complete theme project built on the ESM entry, see [`examples/starter`](https://github.com/NereaFantasia/foo_ui_webview2/tree/main/examples/starter) in the repository and the tutorial [Build your first theme](https://nereafantasia.github.io/foo_ui_webview2/tutorials/first-theme). A player layout with the components:
 
 ```html
 <div class="player">

@@ -9,6 +9,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { artwork } from './artwork.js';
+import { expectSuccess } from './__tests__/expectEnvelope.js';
 
 interface MockNative {
     invoke: ReturnType<typeof vi.fn>;
@@ -139,6 +140,7 @@ describe('artwork.getFb2kUrlByPathBatch (§5.4)', () => {
         const { artwork: aw } = await import('./artwork.js');
 
         const result = await aw.getFb2kUrlByPathBatch(['/a.flac', '']);
+        expectSuccess(result);
         expect(result?.artworks).toHaveLength(2);
         expect(result?.artworks[0]).toMatchObject({
             available: true,

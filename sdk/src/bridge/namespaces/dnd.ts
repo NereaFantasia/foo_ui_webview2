@@ -1,46 +1,6 @@
-/**
- * `dnd` — external file drop.
- *
- * Windows hands a dropped file list to the native window, not to the page, and
- * the HTML5 `File` object deliberately hides its filesystem path. This
- * namespace exposes the host's own view of a drag session so a page can obtain
- * real paths and pass them to playlist or library calls.
- *
- * Three ways to read paths, in decreasing reliability:
- *
- * 1. {@link dnd.getPathsAsync} — queries the host directly. Use this inside a
- *    HTML5 `drop` handler.
- * 2. The `dnd:drop` event payload — authoritative, but arrives on its own
- *    schedule relative to the page's `drop` handler.
- * 3. {@link dnd.getPaths} — synchronous snapshot read. Best-effort only.
- *
- * A dragged shortcut puts the `.lnk` file itself in the list, which foobar2000
- * cannot play, so every path source above is joined by a parallel array of
- * shortcut targets: `resolvedPaths` on the payloads and on
- * {@link dnd.getPathsAsync}, and {@link dnd.getResolvedPaths} for the snapshot.
- *
- * Paths are withheld from untrusted origins. Standard HTML5 drag events keep
- * working in that case, so check {@link dnd.getCapabilities} before showing UI
- * that depends on paths.
- *
- * The page-side snapshot is published to the top-level document only, so
- * {@link dnd.getPaths} and {@link dnd.getResolvedPaths} answer with an empty
- * array inside an `<iframe>`. A framed page that needs paths has to receive
- * them from the main frame over `postMessage`.
- *
- * The reverse direction, dragging tracks OUT of the window into Explorer or
- * another application, goes through {@link dnd.prepareDrag} and
- * {@link dnd.applyDragToken}; see those for the handshake.
- */
-
-import { bridge } from '../Bridge.js';
-import type {
-    DndCapabilities,
-    DndDragToken,
-    DndSessionPaths,
-} from '../../types/responses.js';
+import { subscribe } from '../subscribe.js';
+import { call } from '../call.js';
 import type { DndDragEndedPayload } from '../../types/events.js';
-import type { DndStartDragResponse } from '../../types/generated/responses.js';
 
 /**
  * Marks the `text/plain` entry of a drag as carrying a drag token rather than
@@ -78,6 +38,45 @@ function readSnapshot(): DndSessionSnapshot | null {
     return slot ?? null;
 }
 
+/**
+ * `dnd` — external file drop.
+ *
+ * Windows hands a dropped file list to the native window, not to the page, and
+ * the HTML5 `File` object deliberately hides its filesystem path. This
+ * namespace exposes the host's own view of a drag session so a page can obtain
+ * real paths and pass them to playlist or library calls.
+ *
+ * Three ways to read paths, in decreasing reliability:
+ *
+ * 1. {@link dnd.getPathsAsync} — queries the host directly. Use this inside a
+ *    HTML5 `drop` handler.
+ * 2. The `dnd:drop` event payload — authoritative, but arrives on its own
+ *    schedule relative to the page's `drop` handler.
+ * 3. {@link dnd.getPaths} — synchronous snapshot read. Best-effort only.
+ *
+ * A dragged shortcut puts the `.lnk` file itself in the list, which foobar2000
+ * cannot play, so every path source above is joined by a parallel array of
+ * shortcut targets: `resolvedPaths` on the payloads and on
+ * {@link dnd.getPathsAsync}, and {@link dnd.getResolvedPaths} for the snapshot.
+ *
+ * A drop lands only where the page accepts it by calling `preventDefault()` in
+ * its HTML5 `dragover` handler. Elsewhere the host refuses it: the cursor shows
+ * "forbidden" and no `dnd:drop` follows, except for a drop released in the
+ * first half second, before the page has answered.
+ *
+ * Paths are withheld from untrusted origins. Standard HTML5 drag events keep
+ * working in that case, so check {@link dnd.getCapabilities} before showing UI
+ * that depends on paths.
+ *
+ * The page-side snapshot is published to the top-level document only, so
+ * {@link dnd.getPaths} and {@link dnd.getResolvedPaths} answer with an empty
+ * array inside an `<iframe>`. A framed page that needs paths has to receive
+ * them from the main frame over `postMessage`.
+ *
+ * The reverse direction, dragging tracks OUT of the window into Explorer or
+ * another application, goes through {@link dnd.prepareDrag} and
+ * {@link dnd.applyDragToken}; see those for the handshake.
+ */
 export const dnd = {
     /**
      * Paths of the current drag session from the page-side snapshot.
@@ -180,7 +179,7 @@ export const dnd = {
      *          no file list, or the origin is not trusted with paths.
      */
     getPathsAsync: (sessionId?: string) =>
-        bridge.invoke<DndSessionPaths>(
+        call(
             'dnd.getPathsAsync',
             sessionId ? { sessionId } : {},
         ),
@@ -194,7 +193,7 @@ export const dnd = {
      * `dnd:capabilitiesChanged` to react to that.
      */
     getCapabilities: () =>
-        bridge.invoke<DndCapabilities>('dnd.getCapabilities'),
+        call('dnd.getCapabilities'),
 
     /**
      * Exchanges a list of tracks for a one-shot token that lets the next drag
@@ -213,7 +212,8 @@ export const dnd = {
      * Token rules: valid for 30 seconds, spent by the first drag that uses it,
      * bound to the window that minted it, and superseded by the next successful
      * call from the same window (only the most recent token is live). Any other use is
-     * refused at drag start with a `dnd:dragEnded` of `PERMISSION_DENIED`.
+     * refused at drag start with a `dnd:dragEnded` of `PERMISSION_DENIED`, and the
+     * drag goes on as an ordinary page drag without files.
      *
      * What lands at the drop target is always a physical file. A track inside
      * a cue sheet or a multi-track container drags the whole container (a
@@ -261,7 +261,7 @@ export const dnd = {
      *   });
      */
     prepareDrag: (paths: string[]) =>
-        bridge.invoke<DndDragToken>('dnd.prepareDrag', { paths }),
+        call('dnd.prepareDrag', { paths }),
 
     /**
      * Writes a drag token into a `dragstart` event's data transfer so the host
@@ -270,9 +270,9 @@ export const dnd = {
      * Must run synchronously inside the `dragstart` handler. It sets the
      * `text/plain` entry to the token carrier, replacing anything the page put
      * there, and sets `effectAllowed` to `'copy'`. Both are required: the host
-     * identifies a drag-out by that `text/plain` marker, and it refuses any
-     * drag whose allowed effects are wider than copy, because a drop target
-     * given a move effect would relocate the user's files. Do not change
+     * identifies a drag-out by that `text/plain` marker, and it attaches no
+     * files to a drag whose allowed effects are wider than copy, because a drop
+     * target given a move effect would relocate the user's files. Do not change
      * `effectAllowed` afterwards.
      *
      * The `text/plain` slot is therefore not available for page text during a
@@ -281,9 +281,11 @@ export const dnd = {
      *
      * Once the host accepts the token, the drag proceeds like any other page
      * drag: it draws the drag image, and the page's `dragend` reports the
-     * outcome through `dataTransfer.dropEffect`. While a drag is in progress
-     * the host window waits for the drop target, exactly as it does for a
-     * plain HTML5 drag.
+     * outcome through `dataTransfer.dropEffect`. When the host refuses the
+     * token or the effects, the drag still proceeds, as a page drag carrying no
+     * files, and `dnd:dragEnded` says why. While a drag is in progress the host
+     * window waits for the drop target, exactly as it does for a plain HTML5
+     * drag.
      *
      * @param dataTransfer `event.dataTransfer` of the `dragstart` event.
      * @param token        Token from {@link dnd.prepareDrag}.
@@ -294,8 +296,11 @@ export const dnd = {
     },
 
     /**
-     * Subscribes to `dnd:dragEnded`, which fires only when the host refuses
-     * a drag-out at the moment the drag starts.
+     * Subscribes to `dnd:dragEnded`, which fires only when the host declines,
+     * at the moment the drag starts, to attach files to a drag-out. The drag
+     * itself goes on as an ordinary page drag without files, so a drop inside
+     * the page still works; it is cancelled only in the rare case that the
+     * host cannot remove the token text from the drag data.
      *
      * A successful hand-over produces no event; watch the element's own
      * `dragend` for the outcome. The payload's `code` tells the page whether
@@ -307,7 +312,7 @@ export const dnd = {
      * @returns Unsubscribe function.
      */
     onDragEnded: (handler: (payload: DndDragEndedPayload) => void) =>
-        bridge.on('dnd:dragEnded', handler),
+        subscribe('dnd:dragEnded', handler),
 
     /**
      * Report that programmatically starting a native drag is unsupported.
@@ -322,5 +327,5 @@ export const dnd = {
      * @param _type Accepted but ignored; the host reads no parameters.
      */
     startDrag: (_type?: string) =>
-        bridge.invoke<DndStartDragResponse>('dnd.startDrag'),
+        call('dnd.startDrag'),
 };

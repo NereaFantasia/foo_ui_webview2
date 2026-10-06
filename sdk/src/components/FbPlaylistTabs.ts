@@ -3,14 +3,19 @@
  * per-tab width adjustment, native context menu integration, and a
  * persistent tab-width cache in `localStorage`.
  *
+ * Every tab carries its playlist's GUID as `data-guid`, and the tabs
+ * address playlists by GUID, so a playlist added or removed after the
+ * tabs were drawn cannot make a gesture act on another one.
+ *
  * Supported gestures:
- * - **Click** on a tab → `fb.playlist.setActive(index)`, emits
- *   `fb-playlist-select`.
+ * - **Click** on a tab → `fb.playlist.setActive(guid)`, emits
+ *   `fb-playlist-select` once the playlist is active.
  * - **Right-click** → emits `fb-playlist-context`. If
  *   `native-context` attribute is present, also calls
  *   `fb.menu.showNativePopup({ mode: 'playlist' })` after activating.
  * - **Drag** (>= 5 px from press point) → reorder via
- *   `fb.playlist.reorderPlaylists(perm)`, emits `fb-playlist-reorder`.
+ *   `fb.playlist.reorderPlaylists(guids)`, emits `fb-playlist-reorder`
+ *   once the host has reordered.
  * - **Drag from rightmost 5 px of tab** → resize tab width;
  *   width is keyed by playlist *name* in `localStorage` so renaming
  *   loses the saved width (intentional).
@@ -33,6 +38,7 @@ import type {
 } from './types.js';
 
 interface PlaylistRow {
+    guid: string;
     name: string;
     isActive?: boolean;
     isLocked?: boolean;
@@ -64,6 +70,8 @@ export class FbPlaylistTabs extends FbBaseElement {
 
     private _activeIndex = -1;
     private _playlists: PlaylistRow[] = [];
+    /** Incremented by every read of the playlists, so an answer that arrives after a newer read is dropped. */
+    private _loadQuery = 0;
     private _dragState: DragState | null = null;
     private _resizeState: ResizeState | null = null;
     private _tabWidths: Record<string, number> = {};
@@ -120,13 +128,15 @@ export class FbPlaylistTabs extends FbBaseElement {
             if (!tab) return;
             e.preventDefault();
             const index = parseInt(tab.dataset.index || '-1', 10);
+            const guid = tab.dataset.guid ?? '';
             this._emit<FbPlaylistContextDetail>('fb-playlist-context', {
                 index,
+                guid,
                 x: e.clientX,
                 y: e.clientY,
             });
-            if (this.hasAttribute('native-context')) {
-                void this._showNativeMenu(index);
+            if (this.hasAttribute('native-context') && guid) {
+                void this._showNativeMenu(guid);
             }
         });
 
@@ -301,10 +311,12 @@ export class FbPlaylistTabs extends FbBaseElement {
         });
     }
 
-    private async _showNativeMenu(index: number): Promise<void> {
+    private async _showNativeMenu(guid: string): Promise<void> {
         try {
             const fb = getFb();
-            await fb.playlist.setActive(index);
+            const activated = await fb.playlist.setActive(guid);
+            // The menu acts on the active playlist; with the tab's one gone it would act on another.
+            if (activated.success === false) return;
             await fb.menu.showNativePopup({ mode: 'playlist' });
         } catch {
             /* fb-playlist-tabs nativeMenu error — silent */
@@ -359,12 +371,17 @@ export class FbPlaylistTabs extends FbBaseElement {
         const [removed] = order.splice(fromIndex, 1);
         const insertAt = toIndex > fromIndex ? toIndex - 1 : toIndex;
         order.splice(insertAt, 0, removed!);
+        // Sent as GUIDs: indices would be read against the playlists as they
+        // are when the call arrives, which may no longer be the ones listed.
+        const guids = order.map((i) => this._playlists[i]!.guid);
         try {
-            await getFb().playlist.reorderPlaylists(order);
+            const result = await getFb().playlist.reorderPlaylists(guids);
+            if (result.success === false) return;
             this._emit<FbPlaylistReorderDetail>('fb-playlist-reorder', {
                 fromIndex,
                 toIndex,
                 newOrder: order,
+                newOrderGuids: guids,
             });
         } catch {
             /* fb-playlist-tabs reorder error — silent */
@@ -401,10 +418,15 @@ export class FbPlaylistTabs extends FbBaseElement {
     }
 
     private async _activatePlaylist(index: number): Promise<void> {
+        const guid = this._playlists[index]?.guid;
+        if (!guid) return;
         try {
-            await getFb().playlist.setActive(index);
+            // A tab whose playlist was removed meanwhile fails with NOT_FOUND and announces nothing.
+            const result = await getFb().playlist.setActive(guid);
+            if (result.success === false) return;
             this._emit<FbPlaylistSelectDetail>('fb-playlist-select', {
                 index,
+                guid,
             });
         } catch {
             /* fb-playlist-tabs activate error — silent */
@@ -422,18 +444,22 @@ export class FbPlaylistTabs extends FbBaseElement {
         this._sub('playlist:itemsAdded', refresh);
         this._sub('playlist:itemsRemoved', refresh);
         this._sub('playlist:activated', (data) => {
-            this._activeIndex = data?.newIndex ?? -1;
+            // Found by GUID among the tabs shown: the event's index counts the
+            // playlists as they are now, which a pending reload may not show yet.
+            const guid = data?.newGuid;
+            this._activeIndex = guid ? this._playlists.findIndex((p) => p.guid === guid) : -1;
             this._updateActive();
         });
         void this._loadPlaylists();
     }
 
     private async _loadPlaylists(): Promise<void> {
+        const query = ++this._loadQuery;
         try {
-            const result = (await getFb().playlist.getAll()) as
-                | PlaylistRow[]
-                | null;
-            this._playlists = result ?? [];
+            const result = await getFb().playlist.getAll();
+            // A failed call keeps the tabs shown so far; an older answer yields to a newer one.
+            if (result.success === false || query !== this._loadQuery) return;
+            this._playlists = result.playlists;
             this._activeIndex = this._playlists.findIndex((p) => p.isActive);
             this._rebuildTabs();
         } catch {
@@ -446,7 +472,7 @@ export class FbPlaylistTabs extends FbBaseElement {
         this._container.innerHTML = this._playlists
             .map(
                 (pl, i) =>
-                    `<div part="tab" data-index="${i}" role="tab" tabindex="${i === this._activeIndex ? '0' : '-1'}"` +
+                    `<div part="tab" data-index="${i}" data-guid="${this._escHtml(pl.guid)}" role="tab" tabindex="${i === this._activeIndex ? '0' : '-1'}"` +
                     ` aria-selected="${i === this._activeIndex}"` +
                     `${pl.isLocked ? ' locked' : ''}>` +
                     `<span part="tab-name">${this._escHtml(pl.name)}</span>` +

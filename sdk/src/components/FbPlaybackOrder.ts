@@ -38,7 +38,9 @@ export class FbPlaybackOrder extends FbBaseElement {
         this._setupEvents();
         getFb()
             .player.getOrder()
-            .then((r) => this._update(r.order))
+            .then((r) => {
+                if (r.success !== false) this._update(r.order);
+            })
             .catch(() => {
                 /* silent */
             });
@@ -99,7 +101,7 @@ export class FbPlaybackOrder extends FbBaseElement {
                 name: ORDER_NAMES[order] ?? 'unknown',
             });
         } catch {
-            /* R6: silent degradation */
+            /* A rejected host call does not emit `fb-order-change`. */
         }
     }
 
@@ -107,6 +109,7 @@ export class FbPlaybackOrder extends FbBaseElement {
         try {
             const fb = getFb();
             const current = await fb.player.getOrder();
+            if (current.success === false) return;
             const newOrder = (current.order + 1) % ORDER_NAMES.length;
             await fb.player.setOrder(newOrder);
             this._emit<FbOrderChangeDetail>('fb-order-change', {
@@ -114,7 +117,7 @@ export class FbPlaybackOrder extends FbBaseElement {
                 name: ORDER_NAMES[newOrder] ?? 'unknown',
             });
         } catch {
-            /* R6: silent degradation */
+            /* A rejected host call does not emit `fb-order-change`. */
         }
     }
 
@@ -124,7 +127,9 @@ export class FbPlaybackOrder extends FbBaseElement {
         });
         getFb()
             .player.getOrder()
-            .then((r) => this._update(r.order))
+            .then((r) => {
+                if (r.success !== false) this._update(r.order);
+            })
             .catch(() => {
                 /* silent */
             });

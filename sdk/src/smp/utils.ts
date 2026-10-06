@@ -8,7 +8,8 @@ import type { JsonObject } from '../types/json.js';
  * install it onto `window.smpUtils` without per-call adapters.
  */
 
-import { formatHandleId } from './handleId.js';
+import { HANDLE_TOKEN, formatHandleId } from './handleId.js';
+import { typedCall, type TypedCall } from '../utils/typedCall.js';
 import {
     SMP_MENU_FLAGS,
     type SmpHandleLike,
@@ -40,13 +41,41 @@ export function getInvoke(): SmpInvokeFn | null {
 }
 
 /**
+ * The success branch of a host response, or `undefined` when the host refused
+ * the call. A stub response without `success` counts as a success, so reading
+ * fields through the result behaves as reading them off the raw response did.
+ */
+export function successOf<T extends { success?: boolean } | null | undefined>(
+    res: T,
+): Exclude<T, { success: false }> | undefined {
+    return res?.success === false ? undefined : (res as Exclude<T, { success: false }>);
+}
+
+/**
+ * {@link getInvoke}, typed by the declared methods: the method name selects
+ * the parameter and response types. `null` under the same condition.
+ */
+export function getTypedInvoke(): TypedCall | null {
+    const inv = getInvoke();
+    // Declared params are JSON objects; the cast only bridges the interface
+    // types to `SmpInvokeFn`'s index-signature parameter.
+    return inv
+        ? typedCall((...args: [method: string, params?: object]) =>
+              inv(args[0], ...(args.length > 1 ? [args[1] as JsonObject | undefined] : [])),
+          )
+        : null;
+}
+
+/**
  * Coerce a loose handle-like value to its canonical handle-id string.
  *
  * Accepts:
  * - bare strings (returned as-is, including any `|subsong:N` suffix);
  * - `FbMetadbHandle`-shaped objects (via `HandleId` getter);
  * - track-info objects with `Path` + optional `SubSong`;
- * - track-info objects with `absolutePath` / `path`.
+ * - track-info objects with `absolutePath` / `path` + optional `subsong`,
+ *   the shape of a host track row. A path that already ends in
+ *   `|subsong:N` keeps that suffix and `subsong` is not applied again.
  *
  * Returns `''` when no path-like field is present.
  */
@@ -59,15 +88,22 @@ export function toHandleId(handle: SmpHandleLike | unknown): string {
         SubSong?: unknown;
         absolutePath?: unknown;
         path?: unknown;
+        subsong?: unknown;
     };
     if (typeof h.HandleId === 'string') return h.HandleId;
     if (typeof h.Path === 'string') {
         const sub = typeof h.SubSong === 'number' ? h.SubSong : 0;
         return formatHandleId(h.Path, sub);
     }
-    if (typeof h.absolutePath === 'string') return h.absolutePath;
-    if (typeof h.path === 'string') return h.path;
-    return '';
+    const trackPath =
+        typeof h.absolutePath === 'string'
+            ? h.absolutePath
+            : typeof h.path === 'string'
+                ? h.path
+                : undefined;
+    if (trackPath === undefined) return '';
+    if (trackPath.includes(HANDLE_TOKEN)) return trackPath;
+    return formatHandleId(trackPath, typeof h.subsong === 'number' ? h.subsong : 0);
 }
 
 /**

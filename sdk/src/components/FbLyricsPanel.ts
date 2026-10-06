@@ -1,7 +1,7 @@
 /**
  * `<fb-lyrics-panel>` — synchronised LRC lyrics display.
  *
- * Loads lyrics for the active track via `fb.lyrics.get(path, source)`,
+ * Loads lyrics for the active track via `fb.lyrics.get(path, { source })`,
  * parses LRC timestamps, then highlights the current line each time
  * `playback:time` ticks.
  *
@@ -31,7 +31,7 @@ import type {
     FbLyricsLoadedDetail,
     FbLyricsSeekDetail,
 } from './types.js';
-import type { JsonObject } from '../types/json.js';
+import type { LyricsGetParams } from '../types/generated/params.js';
 
 interface LyricsLine {
     time: number;
@@ -103,8 +103,7 @@ export class FbLyricsPanel extends FbBaseElement {
 
     protected override _subscribe(): void {
         this._sub('playback:trackChanged', () => {
-            // R7: 350 ms debounce — avoids racing other plugins (e.g.
-            // lyrics-search) that wake up on the same track-change tick.
+            // Debounce for 350 ms to limit host requests during rapid skips.
             if (this._debounceTimer) clearTimeout(this._debounceTimer);
             this._debounceTimer = setTimeout(() => {
                 void this._loadLyrics();
@@ -130,25 +129,20 @@ export class FbLyricsPanel extends FbBaseElement {
         const loadToken = ++this._loadToken;
         const fb = getFb();
         try {
-            const track = (await fb.player.getCurrentTrack()) as
-                | { path?: string }
-                | null;
+            const current = await fb.player.getCurrentTrack();
             if (loadToken !== this._loadToken) return;
 
-            const path = track?.path || '';
+            const path = (current.success !== false && current.track?.path) || '';
             if (!path || path === this._trackPath) return;
             this._trackPath = path;
 
-            const source = this.getAttribute('source') || 'any';
-            // The bridge spreads the second argument as an object, so
-            // passing the `source` string is effectively a no-op and
-            // the host falls back to its default `'any'` source. The
-            // call is preserved for forward-compatibility with hosts
-            // that may accept the positional form.
-            const result = (await fb.lyrics.get(
-                path,
-                source as unknown as JsonObject,
-            )) as LyricsResult | null;
+            // The host accepts exactly these three values and rejects
+            // anything else, so an unknown attribute value falls back to
+            // the host default instead of failing the load.
+            const attr = this.getAttribute('source');
+            const source: LyricsGetParams['source'] =
+                attr === 'embedded' || attr === 'file' ? attr : 'any';
+            const result = (await fb.lyrics.get(path, { source })) as LyricsResult | null;
             if (loadToken !== this._loadToken) return;
 
             if (result?.available && result.lyrics) {

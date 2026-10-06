@@ -108,6 +108,11 @@ export const defaultComponents: Record<string, CustomElementConstructor> = {
  * already defined (for example by an earlier `<script>` registering
  * the same tag) are skipped so the existing constructor wins.
  *
+ * This variant binds no SDK instance: the elements look for `window.fb`
+ * when they first connect. It is what `components.global.js` runs on load;
+ * the ESM entry exports a `registerComponents` that binds `foo-webview-sdk`
+ * first.
+ *
  * @param components map of tag names to constructors. Defaults to
  *                   {@link defaultComponents}; pass a subset for
  *                   advanced lazy-load scenarios.

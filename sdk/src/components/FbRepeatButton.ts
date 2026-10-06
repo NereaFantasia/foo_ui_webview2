@@ -51,6 +51,7 @@ export class FbRepeatButton extends FbBaseElement {
         try {
             const fb = getFb();
             const current = await fb.player.getOrder();
+            if (current.success === false) return;
             let newOrder: number;
             if (current.order === 1) newOrder = 2; // playlist → track
             else if (current.order === 2) newOrder = 0; // track → off
@@ -61,7 +62,7 @@ export class FbRepeatButton extends FbBaseElement {
                 order: newOrder,
             });
         } catch {
-            /* R6: silent degradation */
+            /* A rejected host call does not emit `fb-repeat-change`. */
         }
     }
 
@@ -71,7 +72,9 @@ export class FbRepeatButton extends FbBaseElement {
         });
         getFb()
             .player.getOrder()
-            .then((r) => this._update(r.order))
+            .then((r) => {
+                if (r.success !== false) this._update(r.order);
+            })
             .catch(() => {
                 /* silent */
             });

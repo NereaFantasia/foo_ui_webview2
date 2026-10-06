@@ -163,13 +163,11 @@ export class FbWaveform extends FbBaseElement {
         try {
             let path = this.getAttribute('src');
             if (!path) {
-                const track = (await fb.player.getCurrentTrack()) as
-                    | { path?: string; duration?: number }
-                    | null;
+                const current = await fb.player.getCurrentTrack();
                 if (token !== this._loadToken || !this.isConnected) return;
-                if (!track?.path) return;
-                path = track.path;
-                this._duration = track.duration || 0;
+                if (current.success === false || !current.track?.path) return;
+                path = current.track.path;
+                this._duration = current.track.duration || 0;
             }
 
             this._currentPath = path;

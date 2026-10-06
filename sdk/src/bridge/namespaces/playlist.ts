@@ -1,29 +1,9 @@
-/**
- * `playlist` — playlist management namespace.
- */
-
-import { bridge } from '../Bridge.js';
+import { call } from '../call.js';
+import { playlistTarget, type PlaylistRef } from '../playlistRef.js';
 import type {
-    BaseResponse,
-    PlaylistAddHandlesResponse,
-    PlaylistAddPathsAsyncResponse,
-    PlaylistAddPathsResponse,
-    PlaylistAddPathsSequentialResponse,
-    PlaylistAutoplaylistInfoResponse,
-    PlaylistAvailableColumnsResponse,
-    PlaylistClearResponse,
-    PlaylistGroupRunsResponse,
-    PlaylistInfo,
-    PlaylistLockInfoResponse,
-    PlaylistRemoveAutoplaylistResponse,
-    PlaylistReorderPlaylistsResponse,
-    PlaylistReorderResponse,
-    PlaylistReplaceAllAndPlayResponse,
-    PlaylistSelectedTracksResponse,
+    PlaylistHandleRef,
     PlaylistTrack,
-    PlaylistTracksResponse,
-    SelectionInfo,
-    TrackInfo,
+    PlaylistTrackPartial,
 } from '../../types/responses.js';
 import type {
     PlaylistCreateParams,
@@ -31,76 +11,67 @@ import type {
     PlaylistReplaceAllAndPlayParams,
 } from '../../types/generated/params.js';
 
+/** Whether a playlist order names its playlists by GUID; an empty order is sent as indices. */
+function isGuidOrder(order: readonly number[] | readonly string[]): order is readonly string[] {
+    return typeof order[0] === 'string';
+}
+
+/** The `playlist.getTracks` request behind `getTracks` and `getTracksPage`. */
+function getTracksPage(
+    playlist: PlaylistRef,
+    start?: number,
+    count?: number,
+    formats?: Record<string, string>,
+    fields?: string[],
+) {
+    return call('playlist.getTracks', {
+        ...playlistTarget(playlist),
+        ...(start != null ? { start } : {}),
+        ...(count != null ? { count } : {}),
+        ...(formats && Object.keys(formats).length ? { formats } : {}),
+        ...(fields != null ? { fields } : {}),
+    });
+}
+
+/**
+ * `playlist` — playlist management namespace.
+ *
+ * Methods that take a playlist accept a {@link PlaylistRef}: its index, or the `guid` from
+ * `getAll`, which still names the same playlist after others are added, removed or reordered.
+ */
 export const playlist = {
     // === Basic operations ===
-    getAll: () => bridge.invoke<PlaylistInfo[]>('playlist.getAll'),
-    getActive: () => bridge.invoke<PlaylistInfo | null>('playlist.getActive'),
-    setActive: (index: number) =>
-        bridge.invoke<BaseResponse>('playlist.setActive', { playlist: index }),
-    getPlaying: () => bridge.invoke<PlaylistInfo | null>('playlist.getPlaying'),
+    /** Every playlist in playlist order, in `playlists`. */
+    getAll: () => call('playlist.getAll'),
+    /** Resolves with `found: false` and no other fields when there is no active playlist. */
+    getActive: () => call('playlist.getActive'),
+    setActive: (playlist: PlaylistRef) =>
+        call('playlist.setActive', {
+            ...playlistTarget(playlist),
+        }),
+    /** Resolves with `found: false` and no other fields when nothing is playing. */
+    getPlaying: () => call('playlist.getPlaying'),
     /**
-     * Fetch a slice of tracks from a playlist.
+     * Fetch a slice of tracks from a playlist, as the page
+     * `{ playlist, start, count, total, tracks }`.
      *
-     * The host returns a page envelope
-     * `{ playlist, start, count, total, tracks }`; this wrapper unwraps
-     * `tracks` and resolves with `PlaylistTrack[]` so callers can iterate
-     * the result directly.
+     * Without `fields` each row is a whole {@link PlaylistTrack}, with the
+     * play statistics foo_playcount provides. `fields` narrows every row to
+     * the requested keys plus `index`, out of the same case-sensitive list
+     * `library.query` takes, which is why rows are typed as
+     * `PlaylistTrackPartial`. `formats` maps column names to Title
+     * Formatting patterns; each row carries their values under `formats`.
+     * An unknown field name resolves with
+     * `{ success: false, code: 'INVALID_PARAMS' }`.
      *
-     * Use {@link playlist.getTracksPage} when pagination metadata such as
-     * `total` is needed.
-     *
-     * `fields` projects every row down to the requested keys plus `index`,
-     * out of the same case-sensitive whitelist `library.query` uses, minus
-     * `composer` and `comment`. Omitting the argument keeps the full row.
-     * Projected rows are narrower than {@link PlaylistTrack} declares, so
-     * read only the keys you asked for. A malformed list makes the host
-     * resolve with `{ success: false, code: 'INVALID_PARAMS' }`, which has
-     * no `tracks` to unwrap and therefore surfaces here as an empty array.
-     * Use {@link playlist.getTracksPage} to inspect the error envelope.
-     */
-    getTracks: async (
-        index: number,
-        start?: number,
-        count?: number,
-        formats?: Record<string, string>,
-        fields?: string[],
-    ): Promise<PlaylistTrack[]> => {
-        const response = await bridge.invoke<PlaylistTracksResponse>(
-            'playlist.getTracks',
-            {
-                playlist: index,
-                start,
-                count,
-                ...(formats && Object.keys(formats).length ? { formats } : {}),
-                ...(fields !== undefined ? { fields } : {}),
-            },
-        );
-        return Array.isArray(response?.tracks) ? response.tracks : [];
-    },
-    /**
-     * Fetch a slice of tracks and keep the page envelope.
-     *
-     * Same request as {@link playlist.getTracks}, but resolves with
-     * `{ playlist, start, count, total, tracks }` instead of unwrapping.
      * Compare `total` with {@link playlist.getGroupRuns}'s `total` for the
      * same playlist to detect a change in track count between the reads.
      * Equal totals do not rule out replacements or reordering: the calls
      * return independent snapshots, not a shared playlist revision.
      */
-    getTracksPage: (
-        index: number,
-        start?: number,
-        count?: number,
-        formats?: Record<string, string>,
-        fields?: string[],
-    ) =>
-        bridge.invoke<PlaylistTracksResponse>('playlist.getTracks', {
-            playlist: index,
-            start,
-            count,
-            ...(formats && Object.keys(formats).length ? { formats } : {}),
-            ...(fields !== undefined ? { fields } : {}),
-        }),
+    getTracks: getTracksPage,
+    /** @deprecated Use {@link playlist.getTracks}, which resolves with the same page. */
+    getTracksPage,
     /**
      * Group a whole playlist into consecutive runs and get back only the run
      * boundaries, never the rows.
@@ -110,7 +81,7 @@ export const playlist = {
      * reordered, so runs follow playlist order. Pass one Title Formatting
      * pattern, or two to sub-group within each run.
      *
-     * Pair it with {@link playlist.getTracksPage} to drive a grouped virtual
+     * Pair it with {@link playlist.getTracks} to drive a grouped virtual
      * list: the runs give header positions and total scroll height, each
      * visible page of rows is fetched separately.
      *
@@ -119,202 +90,274 @@ export const playlist = {
      * runs. There is no cap; choose patterns that combine adjacent tracks.
      *
      * Malformed `patterns`, or a pattern that fails to compile, resolves with
-     * `{ success: false, code: 'INVALID_PARAMS' }`; when one pattern is at
-     * fault `details.pattern` carries its index.
+     * `{ success: false, code: 'INVALID_PARAMS' }`; for an empty pattern or
+     * one that fails to compile, `details.pattern` carries its index. An
+     * index past the last playlist resolves with `INVALID_INDEX`.
      */
-    getGroupRuns: (patterns: string[], index?: number) =>
-        bridge.invoke<PlaylistGroupRunsResponse>('playlist.getGroupRuns', {
+    getGroupRuns: (patterns: string[], playlist?: PlaylistRef) =>
+        call('playlist.getGroupRuns', {
             patterns,
-            ...(index !== undefined ? { playlist: index } : {}),
+            ...(playlist !== undefined ? playlistTarget(playlist) : {}),
         }),
-    getCount: (index: number) =>
-        bridge.invoke<{ count: number }>('playlist.getTrackCount', {
-            playlist: index,
+    /**
+     * The rows of a playlist whose tracks match a foobar2000 query, as
+     * `{ playlist, playlistGuid, total, items, count }` with `items` ascending;
+     * one call however long the playlist is. Read the rows with
+     * {@link playlist.getTracksAt}.
+     *
+     * A query the parser rejects, or one carrying `SORT BY`, resolves with
+     * `{ success: false, code: 'INVALID_PARAMS', details: { param: 'query' } }`;
+     * the `error` text is in the host's language. A lowercase letter matches
+     * either case in the tag, an uppercase one only the same case. The answer
+     * is a snapshot: drop it on `playlist:itemsAdded`, `itemsRemoved`,
+     * `itemsReordered`, `itemsReplaced` and `metadb:changed`. A query that
+     * depends on the time (`DURING LAST`) also drifts with no event.
+     *
+     * @param playlist - Omitted, the active playlist.
+     */
+    getMatchingRows: (query: string, playlist?: PlaylistRef) =>
+        call('playlist.getMatchingRows', {
+            query,
+            ...(playlist !== undefined ? playlistTarget(playlist) : {}),
+        }),
+    /**
+     * Rows of a playlist picked by row number, as
+     * `{ playlist, total, count, tracks }`, the rows in the order given. Rows
+     * past the last one are skipped and every row carries its `index`, so
+     * match rows by `index` rather than by position in `tracks`. `formats`
+     * and `fields` work as in {@link playlist.getTracks}; a playlist that does
+     * not exist answers an empty result, as there.
+     */
+    getTracksAt: (
+        playlist: PlaylistRef,
+        rows: readonly number[],
+        formats?: Record<string, string>,
+        fields?: string[],
+    ) =>
+        call('playlist.getTracksAt', {
+            ...playlistTarget(playlist),
+            rows: [...rows],
+            ...(formats && Object.keys(formats).length ? { formats } : {}),
+            ...(fields != null ? { fields } : {}),
+        }),
+    /**
+     * Number of tracks in `playlist`, sent as the host's
+     * `playlist.getTrackCount`; the envelope carries it in `count`. Resolves
+     * with `count` `0` when the playlist does not exist. The number of
+     * playlists is {@link playlist.getPlaylistCount}, which is what the host's
+     * `playlist.getCount` returns.
+     */
+    getCount: (playlist: PlaylistRef) =>
+        call('playlist.getTrackCount', {
+            ...playlistTarget(playlist),
         }),
     create: (name: string, options?: Omit<PlaylistCreateParams, 'name'>) =>
-        bridge.invoke<{ index: number }>('playlist.create', {
+        call('playlist.create', {
             name,
             ...(options && typeof options === 'object' ? options : {}),
         }),
-    remove: (index: number) =>
-        bridge.invoke<BaseResponse>('playlist.remove', { playlist: index }),
-    rename: (index: number, name: string) =>
-        bridge.invoke<BaseResponse>('playlist.rename', {
-            playlist: index,
+    remove: (playlist: PlaylistRef) =>
+        call('playlist.remove', {
+            ...playlistTarget(playlist),
+        }),
+    rename: (playlist: PlaylistRef, name: string) =>
+        call('playlist.rename', {
+            ...playlistTarget(playlist),
             name,
         }),
-    duplicate: (index: number) =>
-        bridge.invoke<{ index: number }>('playlist.duplicate', {
-            playlist: index,
+    /** `name` omitted or empty, the copy is named after the original with ` (Copy)` appended. */
+    duplicate: (playlist: PlaylistRef, name?: string) =>
+        call('playlist.duplicate', {
+            ...playlistTarget(playlist),
+            ...(name !== undefined ? { name } : {}),
         }),
-    clear: (index: number) =>
-        bridge.invoke<PlaylistClearResponse>('playlist.clear', {
-            playlist: index,
+    clear: (playlist: PlaylistRef) =>
+        call('playlist.clear', {
+            ...playlistTarget(playlist),
         }),
 
     // === Track addition ===
     /**
-     * Add the given paths to the playlist. Each path/URL is capped at
-     * 2048 chars (`INTERNET_MAX_URL_LENGTH`); over-length items are
-     * silently skipped and counted in `invalidCount`.
+     * Append files, folders or URLs. foobar2000 resolves the batch as its own
+     * Add Files does, so the rows do not keep the given order; use
+     * {@link playlist.addSequential} for that. Entries over 2048 characters and
+     * entries that resolve to nothing are counted in `invalidCount`; when
+     * nothing is added the call fails with `NOT_FOUND`.
      */
-    add: (index: number, paths: string[]) =>
-        bridge.invoke<PlaylistAddPathsResponse>('playlist.addPaths', {
-            playlist: index,
+    add: (playlist: PlaylistRef, paths: string[]) =>
+        call('playlist.addPaths', {
+            ...playlistTarget(playlist),
             paths,
         }),
     /**
-     * Asynchronously add the given paths to the playlist. Each path/URL
-     * is capped at 2048 chars; over-length items are silently skipped
-     * and counted in `invalidCount`.
+     * Start adding paths without waiting; `playlist:addComplete` with the
+     * returned `operationId` reports the outcome. Empty entries and entries
+     * over 2048 characters are counted in `invalidCount`.
      */
-    addAsync: (index: number, paths: string[]) =>
-        bridge.invoke<PlaylistAddPathsAsyncResponse>(
-            'playlist.addPathsAsync',
-            { playlist: index, paths },
-        ),
+    addAsync: (playlist: PlaylistRef, paths: string[]) =>
+        call('playlist.addPathsAsync', {
+            ...playlistTarget(playlist),
+            paths,
+        }),
     /**
-     * Sequentially add the given paths to the playlist one-by-one. Each
-     * path/URL is capped at 2048 chars; over-length items are silently
+     * Append paths in the given order and report the row of each added track.
+     * Entries over 2048 characters and entries that resolve to nothing are
      * skipped.
      */
-    addSequential: (index: number, paths: string[]) =>
-        bridge.invoke<PlaylistAddPathsSequentialResponse>(
-            'playlist.addPathsSequential',
-            { playlist: index, paths },
-        ),
+    addSequential: (playlist: PlaylistRef, paths: string[]) =>
+        call('playlist.addPathsSequential', {
+            ...playlistTarget(playlist),
+            paths,
+        }),
     /**
-     * Add tracks to the playlist via metadb handles. Each underlying
-     * path is capped at 2048 chars; over-length items are silently
-     * skipped and counted in `invalidCount`.
+     * Append tracks by path or `{ path, subsong }`. Unusable entries are counted
+     * in `invalidCount`; when none is usable the call fails with `NOT_FOUND`.
      */
-    addHandles: (index: number, handles: unknown[]) =>
-        bridge.invoke<PlaylistAddHandlesResponse>('playlist.addHandles', {
-            playlist: index,
+    addHandles: (playlist: PlaylistRef, handles: PlaylistHandleRef[]) =>
+        call('playlist.addHandles', {
+            ...playlistTarget(playlist),
             handles,
         }),
-    insertTracks: (index: number, insertIndex: number, handles: unknown[]) =>
-        bridge.invoke<PlaylistAddHandlesResponse>('playlist.insertTracks', {
-            playlist: index,
+    /** Insert tracks before row `insertIndex`; past the last row, they are appended. */
+    insertTracks: (playlist: PlaylistRef, insertIndex: number, handles: PlaylistHandleRef[]) =>
+        call('playlist.insertTracks', {
+            ...playlistTarget(playlist),
             position: insertIndex,
             handles,
         }),
 
     // === Track removal ===
-    removeTracks: (index: number, indices: number[]) =>
-        bridge.invoke<BaseResponse>('playlist.removeTracks', {
-            playlist: index,
+    removeTracks: (playlist: PlaylistRef, indices: number[]) =>
+        call('playlist.removeTracks', {
+            ...playlistTarget(playlist),
             items: indices,
         }),
-    removeSelectedTracks: (index: number) =>
-        bridge.invoke<BaseResponse>('playlist.removeSelectedTracks', {
-            playlist: index,
+    removeSelectedTracks: (playlist: PlaylistRef) =>
+        call('playlist.removeSelectedTracks', {
+            ...playlistTarget(playlist),
         }),
 
     // === Playback control ===
     playTrack: (
-        index: number,
+        playlist: PlaylistRef,
         trackIndex: number,
-        options?: Omit<PlaylistPlayTrackParams, 'playlist' | 'track'>,
+        options?: Omit<PlaylistPlayTrackParams, 'playlist' | 'playlistGuid' | 'index'>,
     ) =>
-        bridge.invoke<BaseResponse>('playlist.playTrack', {
-            playlist: index,
+        call('playlist.playTrack', {
+            ...playlistTarget(playlist),
             index: trackIndex,
             ...options,
         }),
 
     // === Focused track ===
-    getFocused: (index: number) =>
-        bridge.invoke<{ index: number; track?: TrackInfo }>(
-            'playlist.getFocusedTrack',
-            { playlist: index },
-        ),
-    setFocused: (index: number, trackIndex: number) =>
-        bridge.invoke<BaseResponse>('playlist.setFocusedTrack', {
-            playlist: index,
+    /** `index` is `-1` when the playlist has no focus or does not exist. */
+    getFocused: (playlist: PlaylistRef) =>
+        call('playlist.getFocusedTrack', {
+            ...playlistTarget(playlist),
+        }),
+    /** A negative `trackIndex` removes the focus. */
+    setFocused: (playlist: PlaylistRef, trackIndex: number) =>
+        call('playlist.setFocusedTrack', {
+            ...playlistTarget(playlist),
             index: trackIndex,
         }),
 
     // === Selection ===
-    getSelection: (index: number) =>
-        bridge.invoke<SelectionInfo>('playlist.getSelection', {
-            playlist: index,
+    getSelection: (playlist: PlaylistRef) =>
+        call('playlist.getSelection', {
+            ...playlistTarget(playlist),
         }),
     /**
-     * Fetch the currently selected tracks of a playlist.
-     *
-     * Same envelope-unwrap pattern as {@link getTracks}; the C++ handler
-     * returns `{ success, playlist, count, tracks }` and this wrapper
-     * surfaces only `tracks` to keep the iteration ergonomic.
+     * The selected tracks of a playlist, as `{ playlist, count, tracks }`.
+     * Rows are whole {@link PlaylistTrack}s without the play statistics. An
+     * empty selection succeeds with an empty `tracks`; a playlist that does
+     * not exist resolves with a failure envelope.
      */
-    getSelectedTracks: async (index: number): Promise<PlaylistTrack[]> => {
-        const response = await bridge.invoke<PlaylistSelectedTracksResponse>(
-            'playlist.getSelectedTracks',
-            { playlist: index },
-        );
-        return Array.isArray(response?.tracks) ? response.tracks : [];
-    },
-    setSelection: (index: number, indices: number[], clearOthers = true) =>
-        bridge.invoke<BaseResponse>('playlist.setSelection', {
-            playlist: index,
+    getSelectedTracks: (playlist: PlaylistRef) =>
+        call('playlist.getSelectedTracks', playlistTarget(playlist)),
+    /** Rows past the last one are ignored; a negative row fails with `INVALID_PARAMS`. */
+    setSelection: (playlist: PlaylistRef, indices: number[], clearOthers = true) =>
+        call('playlist.setSelection', {
+            ...playlistTarget(playlist),
             indices,
             clearOthers,
         }),
-    selectAll: (index: number) =>
-        bridge.invoke<BaseResponse>('playlist.selectAll', { playlist: index }),
-    deselectAll: (index: number) =>
-        bridge.invoke<BaseResponse>('playlist.deselectAll', {
-            playlist: index,
+    selectAll: (playlist: PlaylistRef) =>
+        call('playlist.selectAll', {
+            ...playlistTarget(playlist),
+        }),
+    deselectAll: (playlist: PlaylistRef) =>
+        call('playlist.deselectAll', {
+            ...playlistTarget(playlist),
         }),
 
     // === Move and sort tracks ===
-    moveTracks: (index: number, indices: number[], delta: number) =>
-        bridge.invoke<BaseResponse>('playlist.moveTracks', {
-            playlist: index,
+    /**
+     * Replace the selection with `indices`, then move the selection by `delta`
+     * rows; the caller's own selection is lost. An empty `indices` moves the
+     * current selection.
+     */
+    moveTracks: (playlist: PlaylistRef, indices: number[], delta: number) =>
+        call('playlist.moveTracks', {
+            ...playlistTarget(playlist),
             items: indices,
             delta,
         }),
-    reorder: (index: number, order: number[]) =>
-        bridge.invoke<PlaylistReorderResponse>('playlist.reorder', {
-            playlist: index,
+    reorder: (playlist: PlaylistRef, order: number[]) =>
+        call('playlist.reorder', {
+            ...playlistTarget(playlist),
             newOrder: order,
         }),
+    /**
+     * `descending` reverses the whole playlist after sorting, the unselected
+     * tracks too when `selectedOnly` is set.
+     */
     sort: (
-        index: number,
+        playlist: PlaylistRef,
         pattern: string,
         descending = false,
         selectedOnly = false,
     ) =>
-        bridge.invoke<BaseResponse>('playlist.sort', {
-            playlist: index,
+        call('playlist.sort', {
+            ...playlistTarget(playlist),
             pattern,
             descending,
             selectedOnly,
         }),
-    shuffle: (index: number) =>
-        bridge.invoke<BaseResponse>('playlist.shuffle', { playlist: index }),
-    reverse: (index: number) =>
-        bridge.invoke<BaseResponse>('playlist.reverse', { playlist: index }),
+    shuffle: (playlist: PlaylistRef) =>
+        call('playlist.shuffle', {
+            ...playlistTarget(playlist),
+        }),
+    reverse: (playlist: PlaylistRef) =>
+        call('playlist.reverse', {
+            ...playlistTarget(playlist),
+        }),
 
     // === Undo and redo ===
-    undo: (index: number) =>
-        bridge.invoke<BaseResponse>('playlist.undo', { playlist: index }),
-    redo: (index: number) =>
-        bridge.invoke<BaseResponse>('playlist.redo', { playlist: index }),
+    /** Fails with `NOT_FOUND` when there is nothing to undo. */
+    undo: (playlist: PlaylistRef) =>
+        call('playlist.undo', {
+            ...playlistTarget(playlist),
+        }),
+    /** Fails with `NOT_FOUND` when there is nothing to redo. */
+    redo: (playlist: PlaylistRef) =>
+        call('playlist.redo', {
+            ...playlistTarget(playlist),
+        }),
 
     // === Autoplaylist ===
-    isAutoplaylist: (index: number) =>
-        bridge.invoke<{ isAutoplaylist: boolean }>('playlist.isAutoplaylist', {
-            playlist: index,
+    isAutoplaylist: (playlist: PlaylistRef) =>
+        call('playlist.isAutoplaylist', {
+            ...playlistTarget(playlist),
         }),
-    getAutoplaylistInfo: (index: number) =>
-        bridge.invoke<PlaylistAutoplaylistInfoResponse>(
-            'playlist.getAutoplaylistInfo',
-            { playlist: index },
-        ),
-    getAutoplaylistQuery: (index: number) =>
-        bridge.invoke<{ query: string }>('playlist.getAutoplaylistQuery', {
-            playlist: index,
+    getAutoplaylistInfo: (playlist: PlaylistRef) =>
+        call('playlist.getAutoplaylistInfo', {
+            ...playlistTarget(playlist),
+        }),
+    /** `query` is always `null`: foobar2000 does not expose an autoplaylist's query. */
+    getAutoplaylistQuery: (playlist: PlaylistRef) =>
+        call('playlist.getAutoplaylistQuery', {
+            ...playlistTarget(playlist),
         }),
     createAutoplaylist: (
         name: string,
@@ -322,73 +365,84 @@ export const playlist = {
         sort?: string,
         keepSorted?: boolean,
     ) =>
-        bridge.invoke<{ index: number }>('playlist.createAutoplaylist', {
+        call('playlist.createAutoplaylist', {
             name,
             query,
-            sort,
+            ...(sort !== undefined ? { sort } : {}),
             keepSorted: !!keepSorted,
         }),
     convertToAutoplaylist: (
-        index: number,
+        playlist: PlaylistRef,
         query: string,
         sort?: string,
         keepSorted?: boolean,
     ) =>
-        bridge.invoke<BaseResponse>('playlist.convertToAutoplaylist', {
-            playlist: index,
+        call('playlist.convertToAutoplaylist', {
+            ...playlistTarget(playlist),
             query,
-            sort,
+            ...(sort !== undefined ? { sort } : {}),
             keepSorted: !!keepSorted,
         }),
-    removeAutoplaylist: (index: number) =>
-        bridge.invoke<PlaylistRemoveAutoplaylistResponse>(
-            'playlist.removeAutoplaylist',
-            { playlist: index },
-        ),
+    removeAutoplaylist: (playlist: PlaylistRef) =>
+        call('playlist.removeAutoplaylist', {
+            ...playlistTarget(playlist),
+        }),
 
     // === Lock state ===
-    isLocked: (index: number) =>
-        bridge.invoke<{ isLocked: boolean }>('playlist.isLocked', {
-            playlist: index,
+    isLocked: (playlist: PlaylistRef) =>
+        call('playlist.isLocked', {
+            ...playlistTarget(playlist),
         }),
-    getLockInfo: (index: number) =>
-        bridge.invoke<PlaylistLockInfoResponse>('playlist.getLockInfo', {
-            playlist: index,
+    getLockInfo: (playlist: PlaylistRef) =>
+        call('playlist.getLockInfo', {
+            ...playlistTarget(playlist),
         }),
 
     // === Playlist reordering ===
-    reorderPlaylists: (order: number[]) =>
-        bridge.invoke<PlaylistReorderPlaylistsResponse>(
+    /**
+     * Reorder the playlist list. `order[i]` names the playlist that moves to
+     * position `i`, every playlist exactly once: all current indices, sent as
+     * `newOrder`, or all `guid`s from {@link playlist.getAll}, sent as
+     * `newOrderGuids`. Indices are read as the call arrives, so an order built
+     * from an earlier `getAll` silently moves the wrong playlists once another
+     * one was added and removed in between; GUIDs keep naming the playlists
+     * they were read from and fail with `NOT_FOUND` for one that is gone.
+     */
+    reorderPlaylists: (order: readonly number[] | readonly string[]) =>
+        call(
             'playlist.reorderPlaylists',
-            { newOrder: order },
+            isGuidOrder(order) ? { newOrderGuids: [...order] } : { newOrder: [...order] },
         ),
 
     // === Advanced operations ===
-    replaceAllAndPlay: (
-        options: PlaylistReplaceAllAndPlayParams,
-    ): Promise<PlaylistReplaceAllAndPlayResponse> =>
-        bridge.invoke<PlaylistReplaceAllAndPlayResponse>(
-            'playlist.replaceAllAndPlay',
-            options,
-        ),
+    /**
+     * Stop, clear, add the paths, activate the playlist and play or focus
+     * `playIndex`. When nothing could be added the call fails with `NOT_FOUND`
+     * and the playlist stays empty.
+     */
+    replaceAllAndPlay: (options: PlaylistReplaceAllAndPlayParams) =>
+        call('playlist.replaceAllAndPlay', options),
 
     // === Column definitions ===
-    getAvailableColumns: () =>
-        bridge.invoke<PlaylistAvailableColumnsResponse>(
-            'playlist.getAvailableColumns',
-        ),
+    /** The Default UI playlist columns, in `columns`. */
+    getAvailableColumns: () => call('playlist.getAvailableColumns'),
 
     // === Focused track (namespace supplement) ===
-    focusTrack: (index: number, trackIndex: number) =>
-        bridge.invoke<BaseResponse>('playlist.focusTrack', {
-            playlist: index,
+    /** @deprecated Use {@link playlist.setFocused}. */
+    focusTrack: (playlist: PlaylistRef, trackIndex: number) =>
+        call('playlist.focusTrack', {
+            ...playlistTarget(playlist),
             index: trackIndex,
         }),
-    getPlaylistCount: () =>
-        bridge.invoke<{ count: number }>('playlist.getCount'),
-    getFocusTrack: (index: number) =>
-        bridge.invoke<{ index: number; track?: TrackInfo }>(
-            'playlist.getFocusTrack',
-            { playlist: index },
-        ),
+    /**
+     * Number of playlists, sent as the host's `playlist.getCount`; the
+     * envelope carries it in `count`. For the number of tracks in one
+     * playlist use {@link playlist.getCount}.
+     */
+    getPlaylistCount: () => call('playlist.getCount'),
+    /** @deprecated Use {@link playlist.getFocused}. */
+    getFocusTrack: (playlist: PlaylistRef) =>
+        call('playlist.getFocusTrack', {
+            ...playlistTarget(playlist),
+        }),
 };

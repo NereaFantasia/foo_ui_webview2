@@ -1,77 +1,90 @@
+import { call } from '../call.js';
+import type {
+    PlaybackPlayPathsResponse,
+} from '../../types/generated/responses.js';
+import type { PlaybackOrder } from '../../types/responses.js';
+
 /**
  * `player` — playback control namespace.
  */
-
-import { bridge } from '../Bridge.js';
-import type {
-    BaseResponse,
-    PlaybackOrder,
-    PlaybackNoTrackResponse,
-    PlaybackOrderInfo,
-    PlaybackPlayPathResponse,
-    PlaybackPlayPathsResponse,
-    PlaybackSetOrderResponse,
-    PlaybackSetPositionResponse,
-    PlaybackState,
-    PlaybackStopAfterCurrentState,
-    PlaybackToggleMuteResponse,
-    PlaybackToggleResponse,
-    PositionResponse,
-    TrackInfo,
-    VolumeResponse,
-} from '../../types/responses.js';
-
 export const player = {
-    play: () => bridge.invoke<BaseResponse>('playback.play'),
-    pause: () => bridge.invoke<BaseResponse>('playback.pause'),
-    stop: () => bridge.invoke<BaseResponse>('playback.stop'),
-    next: () => bridge.invoke<BaseResponse>('playback.next'),
-    prev: () => bridge.invoke<BaseResponse>('playback.previous'),
-    random: () => bridge.invoke<BaseResponse>('playback.random'),
+    play: () => call('playback.play'),
+    pause: () => call('playback.pause'),
+    stop: () => call('playback.stop'),
+    next: () => call('playback.next'),
+    prev: () => call('playback.previous'),
+    random: () => call('playback.random'),
     toggle: () =>
-        bridge.invoke<PlaybackToggleResponse>('playback.playOrPause'),
-    seek: (seconds: number) =>
-        bridge.invoke<PlaybackSetPositionResponse>('playback.setPosition', {
-            seconds,
-        }),
-    getVolume: () => bridge.invoke<VolumeResponse>('playback.getVolume'),
-    setVolume: (volume: number) =>
-        bridge.invoke<BaseResponse>('playback.setVolume', { volume }),
-    mute: () => bridge.invoke<BaseResponse>('playback.mute'),
-    toggleMute: () =>
-        bridge.invoke<PlaybackToggleMuteResponse>('playback.toggleMute'),
-    getState: () => bridge.invoke<PlaybackState>('playback.getState'),
+        call('playback.playOrPause'),
     /**
-     * Resolves with the current {@link TrackInfo}, or with
-     * {@link PlaybackNoTrackResponse} (`found: false`) when nothing is
-     * loaded. The host never answers `null`; narrow with `'found' in result`.
+     * Seeks within the current track. The host clamps the position to the
+     * track and reports both the requested and the applied value.
+     */
+    seek: (seconds: number) =>
+        call('playback.setPosition', {
+            position: seconds,
+        }),
+    getVolume: () =>
+        call('playback.getVolume'),
+    setVolume: (volume: number) =>
+        call('playback.setVolume', {
+            volume,
+        }),
+    /** Mutes by default; pass `false` to unmute. */
+    mute: (muted = true) =>
+        call('playback.mute', {
+            muted,
+        }),
+    toggleMute: () =>
+        call('playback.toggleMute'),
+    getState: () =>
+        call('playback.getState'),
+    /**
+     * Resolves with `found` and, when a track is loaded, the shared `track`
+     * row. The host never answers `null`.
      */
     getCurrentTrack: () =>
-        bridge.invoke<TrackInfo | PlaybackNoTrackResponse>(
+        call(
             'playback.getCurrentTrack',
         ),
-    getPosition: () => bridge.invoke<PositionResponse>('playback.getPosition'),
-    getOrder: () => bridge.invoke<PlaybackOrderInfo>('playback.getPlaybackOrder'),
+    getPosition: () =>
+        call('playback.getPosition'),
+    getOrder: () =>
+        call(
+            'playback.getPlaybackOrder',
+        ),
+    /** Takes the order's index or its name; the host reports what took effect. */
     setOrder: (order: PlaybackOrder | number) =>
-        bridge.invoke<PlaybackSetOrderResponse>(
+        call(
             'playback.setPlaybackOrder',
-            { order },
+            (typeof order === 'number'
+                ? { order }
+                : { name: order }),
         ),
     getStopAfterCurrent: () =>
-        bridge.invoke<PlaybackStopAfterCurrentState>(
+        call(
             'playback.getStopAfterCurrent',
         ),
     setStopAfterCurrent: (enabled: boolean) =>
-        bridge.invoke<BaseResponse>('playback.setStopAfterCurrent', { enabled }),
+        call(
+            'playback.setStopAfterCurrent',
+            { enabled },
+        ),
     getCurrentTrackIndex: (includeTrackInfo?: boolean) =>
-        bridge.invoke<{ index: number; track?: TrackInfo }>(
+        call(
             'playback.getCurrentTrackIndex',
-            { includeTrackInfo: !!includeTrackInfo },
+            {
+                includeTrackInfo: !!includeTrackInfo,
+            },
         ),
     getPlayingPlaylist: () =>
-        bridge.invoke<{ playlist: number }>('playback.getPlayingPlaylist'),
+        call(
+            'playback.getPlayingPlaylist',
+        ),
     playPath: (path: string) =>
-        bridge.invoke<PlaybackPlayPathResponse>('playback.playPath', { path }),
+        call('playback.playPath', {
+            path,
+        }),
     /**
      * Begin playback of the supplied paths.
      *
@@ -99,7 +112,7 @@ export const player = {
             typeof options === 'number' || options === undefined
                 ? { startIndex: options }
                 : options;
-        return bridge.invoke<PlaybackPlayPathsResponse>(
+        return call(
             'playback.playPaths',
             {
                 paths,
@@ -117,11 +130,12 @@ export const player = {
         ): Promise<PlaybackPlayPathsResponse>;
     },
     playPause: () =>
-        bridge.invoke<PlaybackToggleResponse>('playback.playPause'),
+        call('playback.playPause'),
     toggleStopAfterCurrent: () =>
-        bridge.invoke<PlaybackStopAfterCurrentState>(
+        call(
             'playback.toggleStopAfterCurrent',
         ),
-    volumeUp: () => bridge.invoke<BaseResponse>('playback.volumeUp'),
-    volumeDown: () => bridge.invoke<BaseResponse>('playback.volumeDown'),
+    volumeUp: () => call('playback.volumeUp'),
+    volumeDown: () =>
+        call('playback.volumeDown'),
 };

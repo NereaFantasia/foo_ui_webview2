@@ -1,108 +1,60 @@
+import { call } from '../call.js';
+import type { DspChainSpec } from '../../types/generated/schema-types.js';
+import type {
+    DspGetAvailableResponse,
+    DspGetChainResponse,
+    DspGetPresetsResponse,
+} from '../../types/generated/responses.js';
+
+// The shapes come from the declarations in src/api/schema/dsp.ts; these are the module's
+// public names for them.
+export type {
+    DspGetAvailableResponse,
+    DspGetChainResponse,
+    DspGetPresetsResponse,
+} from '../../types/generated/responses.js';
+export type {
+    DspAvailableEntry,
+    DspChainEntry,
+    DspChainSpec,
+} from '../../types/generated/schema-types.js';
+
 /**
  * `dsp` — DSP chain / preset namespace.
  */
-
-import { bridge } from '../Bridge.js';
-import type { BaseResponse, DspPreset } from '../../types/responses.js';
-
-/** Envelope returned by `dsp.getPresets`. */
-export interface DspGetPresetsResponse {
-    presets: Array<DspPreset & { active?: boolean }>;
-    count: number;
-    /** Index of the currently selected preset, or `-1` when none is selected. */
-    selectedIndex: number;
-}
-
-/** Single DSP entry in `DspGetChainResponse.dsps`. */
-export interface DspChainEntry {
-    /** Position in the active chain. */
-    index: number;
-    /** Owning DSP entry GUID rendered as `{...}`. */
-    guid: string;
-    /** Display name of the DSP. */
-    name: string;
-}
-
-/**
- * Envelope returned by `dsp.getChain`. The success branch carries the
- * active chain and (best-effort) the active preset name; a failure
- * branch carries `{ success: false, error }`.
- */
-export interface DspGetChainResponse {
-    /** Active DSP chain in execution order. */
-    dsps?: DspChainEntry[];
-    /** Active preset display name; `null` when no preset is currently selected. */
-    activePreset?: string | null;
-    /**
-     * Active preset index, or `-1` when no preset is selected or the host
-     * does not expose presets. Always present alongside `activePreset`.
-     */
-    activePresetIndex?: number;
-    /** Only present on failure. */
-    success?: false;
-    error?: string;
-}
-
-/** Single available-DSP descriptor in `DspGetAvailableResponse.dsps`. */
-export interface DspAvailableEntry {
-    /** DSP entry GUID rendered as `{...}`. */
-    guid: string;
-    /** Display name of the DSP. */
-    name: string;
-    /** True when the DSP exposes a configuration popup. */
-    hasConfig: boolean;
-}
-
-/** Envelope returned by `dsp.getAvailable`. */
-export interface DspGetAvailableResponse {
-    /** Discovered DSP entries (excludes presets). */
-    dsps?: DspAvailableEntry[];
-    /** Number of entries in {@link dsps}. */
-    count?: number;
-    /** Only present on failure. */
-    success?: false;
-    error?: string;
-}
-
 export const dsp = {
-    getChain: () => bridge.invoke<DspGetChainResponse>('dsp.getChain'),
-    setChain: (dsps: unknown[]) =>
-        bridge.invoke<BaseResponse & { count?: number }>('dsp.setChain', {
-            dsps,
+    getChain: () => call('dsp.getChain'),
+    /**
+     * Replaces the whole chain. Only `guid` is sent for each entry, since the host refuses
+     * any other key; the rows `getChain` reports can therefore be passed back as they are.
+     */
+    setChain: (dsps: ReadonlyArray<Pick<DspChainSpec, 'guid'>>) =>
+        call('dsp.setChain', {
+            dsps: dsps.map(({ guid }) => ({ guid })),
         }),
-    getPresets: () => bridge.invoke<DspGetPresetsResponse>('dsp.getPresets'),
+    getPresets: () => call('dsp.getPresets'),
     /** Accepts either preset index (number) or preset name (string). */
     applyPreset: (indexOrName: number | string) =>
-        bridge.invoke<
-            BaseResponse & { appliedPreset?: string; appliedIndex?: number }
-        >(
+        call(
             'dsp.applyPreset',
-            typeof indexOrName === 'string'
+            (typeof indexOrName === 'string'
                 ? { name: indexOrName }
-                : { index: indexOrName },
+                : { index: indexOrName }),
         ),
     getAvailable: () =>
-        bridge.invoke<DspGetAvailableResponse>('dsp.getAvailable'),
+        call('dsp.getAvailable'),
     addDsp: (guid: string, position?: number) =>
-        bridge.invoke<BaseResponse & { addedDsp?: string }>('dsp.addDsp', {
+        call('dsp.addDsp', {
             guid,
             ...(position != null ? { position } : {}),
         }),
     removeDsp: (index: number) =>
-        bridge.invoke<BaseResponse & { removedDsp?: string }>(
-            'dsp.removeDsp',
-            { index },
-        ),
+        call('dsp.removeDsp', {
+            index,
+        }),
     moveDsp: (from: number, to: number) =>
-        bridge.invoke<
-            BaseResponse & {
-                movedDsp?: string;
-                /** Source index as passed in. */
-                from?: number;
-                /** Final landing index after the move. */
-                to?: number;
-                /** Present when `from === to` and no move was needed. */
-                message?: string;
-            }
-        >('dsp.moveDsp', { from, to }),
+        call('dsp.moveDsp', {
+            from,
+            to,
+        }),
 };

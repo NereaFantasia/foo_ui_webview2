@@ -1,35 +1,28 @@
+import { bridge } from '../Bridge.js';
+import { call } from '../call.js';
 /**
  * `system` — API discovery / plugin / locale namespace.
  */
-
-import { bridge } from '../Bridge.js';
-import type {
-    SystemApiInfo,
-    SystemApiStatsResponse,
-    SystemPluginInfo,
-} from '../../types/responses.js';
-
 export const system = {
+    /** Methods the bridge accepts, in `apis`; calls `system.listAvailableApis`. */
     listApis: (includeInternal?: boolean, includeExternal?: boolean) =>
-        bridge.invoke<SystemApiInfo[]>('system.listAvailableApis', {
-            includeInternal,
-            includeExternal,
-        }),
+        call('system.listAvailableApis', { includeInternal, includeExternal }),
+    /** Methods of one namespace, in `apis`; empty for an unknown namespace. */
     getApisByNamespace: (namespace: string) =>
-        bridge.invoke<SystemApiInfo[]>('system.getApisByNamespace', {
-            namespace,
-        }),
+        call('system.getApisByNamespace', { namespace }),
+    /** Methods whose name or description contains `query`, in `apis`. */
     searchApis: (query: string) =>
-        bridge.invoke<SystemApiInfo[]>('system.searchApis', { query }),
+        call('system.searchApis', { query }),
     getApiStats: () =>
-        bridge.invoke<SystemApiStatsResponse>('system.getApiStats'),
+        call('system.getApiStats'),
+    /** External plugins registered with the bridge, in `plugins`. */
     getRegisteredPlugins: () =>
-        bridge.invoke<SystemPluginInfo[]>('system.getRegisteredPlugins'),
+        call('system.getRegisteredPlugins'),
     isPluginRegistered: (namespace: string) =>
-        bridge.invoke<{ registered: boolean }>('system.isPluginRegistered', {
+        call('system.isPluginRegistered', {
             namespace,
         }),
-    getDPI: () => bridge.invoke<{ dpi: number }>('system.getDPI'),
-    getLocale: () => bridge.invoke<{ locale: string }>('system.getLocale'),
-    getTheme: () => bridge.invoke<{ theme: string }>('system.getTheme'),
+    getDPI: () => call('system.getDPI'),
+    getLocale: () => call('system.getLocale'),
+    getTheme: () => call('system.getTheme'),
 };

@@ -1,18 +1,9 @@
-/**
- * `file` — file-system namespace.
- */
-
-import { bridge } from '../Bridge.js';
+import { call } from '../call.js';
 import {
     base64ToBytes,
     bytesToBase64,
     parseBase64DataUrl,
 } from '../binaryData.js';
-import type {
-    BaseResponse,
-    FileListResponse,
-    FileGetInfoResponse,
-} from '../../types/responses.js';
 import type {
     FileCopyAsyncParams,
     FileCopyParams,
@@ -22,12 +13,6 @@ import type {
     FileReadParams,
     FileWriteParams,
 } from '../../types/generated/params.js';
-import type {
-    FileCancelOpResponse,
-    FileCopyAsyncResponse,
-    FileDeleteAsyncResponse,
-    FileMoveAsyncResponse,
-} from '../../types/generated/responses.js';
 
 /** @deprecated Use `Omit<FileReadParams, 'path'>`. */
 export type FileReadOptions = Omit<FileReadParams, 'path'>;
@@ -54,10 +39,10 @@ export type FileOpAsyncOptions = Omit<FileCopyAsyncParams, 'items'>;
 export type FileDeleteAsyncOptions = Omit<FileDeleteAsyncParams, 'paths'>;
 
 async function fileReadBinary(path: string): Promise<Uint8Array> {
-    const response = await bridge.invoke<BaseResponse & { content?: string }>(
-        'file.read',
-        { path, encoding: 'binary' },
-    );
+    const response = await call('file.read', {
+        path,
+        encoding: 'binary',
+    });
     if (response?.success === false) {
         throw new Error(response.error ?? 'file.read failed.');
     }
@@ -72,7 +57,7 @@ function fileWriteBinary(
     bytes: ArrayBuffer | Uint8Array,
     opts?: FileBinaryWriteOptions,
 ) {
-    return bridge.invoke<BaseResponse & { bytesWritten?: number }>('file.write', {
+    return call('file.write', {
         ...opts,
         path,
         content: `base64:${bytesToBase64(bytes)}`,
@@ -86,7 +71,7 @@ async function fileWriteDataUrl(
     opts?: FileBinaryWriteOptions,
 ) {
     const { base64 } = parseBase64DataUrl(dataUrl);
-    return bridge.invoke<BaseResponse & { bytesWritten?: number }>(
+    return call(
         'file.write',
         {
             ...opts,
@@ -97,9 +82,12 @@ async function fileWriteDataUrl(
     );
 }
 
+/**
+ * `file` — file-system namespace.
+ */
 export const file = {
     read: (path: string, opts?: Omit<FileReadParams, 'path'>) =>
-        bridge.invoke<{ content: string }>('file.read', {
+        call('file.read', {
             path,
             ...(opts || {}),
         }),
@@ -108,25 +96,27 @@ export const file = {
         content: string,
         opts?: Omit<FileWriteParams, 'path' | 'content'>,
     ) =>
-        bridge.invoke<BaseResponse & { bytesWritten?: number }>('file.write', {
+        call('file.write', {
             path,
             content,
             ...(opts || {}),
         }),
     exists: (path: string) =>
-        bridge.invoke<{ exists: boolean }>('file.exists', { path }),
+        call('file.exists', {
+            path,
+        }),
     list: (path: string, opts?: Omit<FileListParams, 'path'>) =>
-        bridge.invoke<FileListResponse>('file.list', {
+        call('file.list', {
             path,
             ...(opts || {}),
         }),
     delete: (path: string, opts?: Omit<FileDeleteParams, 'path'>) =>
-        bridge.invoke<BaseResponse>('file.delete', {
+        call('file.delete', {
             path,
             ...(opts || {}),
         }),
     mkdir: (path: string) =>
-        bridge.invoke<BaseResponse & { created?: boolean }>('file.mkdir', {
+        call('file.mkdir', {
             path,
         }),
     copy: (
@@ -134,20 +124,25 @@ export const file = {
         destination: string,
         opts?: Omit<FileCopyParams, 'source' | 'destination'>,
     ) =>
-        bridge.invoke<BaseResponse>('file.copy', {
+        call('file.copy', {
             source,
             destination,
             ...(opts || {}),
         }),
     move: (source: string, destination: string) =>
-        bridge.invoke<BaseResponse>('file.move', { source, destination }),
+        call('file.move', {
+            source,
+            destination,
+        }),
     rename: (path: string, newName: string) =>
-        bridge.invoke<BaseResponse & { oldPath?: string; newPath?: string }>(
-            'file.rename',
-            { path, newName },
-        ),
+        call('file.rename', {
+            path,
+            newName,
+        }),
     getInfo: (path: string) =>
-        bridge.invoke<FileGetInfoResponse>('file.getInfo', { path }),
+        call('file.getInfo', {
+            path,
+        }),
     /**
      * Cancellable, non-blocking batch copy. The work runs on a host worker
      * thread, so unlike `file.copy`, copying a large album does not freeze
@@ -182,7 +177,7 @@ export const file = {
      * @returns Dispatch receipt; the actual results arrive by event.
      */
     copyAsync: (items: FileOpEntry[], opts?: FileOpAsyncOptions) =>
-        bridge.invoke<FileCopyAsyncResponse>('file.copyAsync', {
+        call('file.copyAsync', {
             items,
             ...(opts || {}),
         }),
@@ -208,7 +203,7 @@ export const file = {
      * @returns Dispatch receipt; the actual results arrive by event.
      */
     moveAsync: (items: FileOpEntry[], opts?: FileOpAsyncOptions) =>
-        bridge.invoke<FileMoveAsyncResponse>('file.moveAsync', {
+        call('file.moveAsync', {
             items,
             ...(opts || {}),
         }),
@@ -227,7 +222,7 @@ export const file = {
      * @returns Dispatch receipt; the actual results arrive by event.
      */
     deleteAsync: (paths: string[], opts?: FileDeleteAsyncOptions) =>
-        bridge.invoke<FileDeleteAsyncResponse>('file.deleteAsync', {
+        call('file.deleteAsync', {
             paths,
             ...(opts || {}),
         }),
@@ -249,7 +244,9 @@ export const file = {
      *   never existed; the two cases are deliberately indistinguishable.
      */
     cancelOp: (operationId: string) =>
-        bridge.invoke<FileCancelOpResponse>('file.cancelOp', { operationId }),
+        call('file.cancelOp', {
+            operationId,
+        }),
     /** Read exact bytes; rejects on Host failure or malformed Base64. */
     readBinary: fileReadBinary,
     /** Write exact bytes using the host's `base64:` binary wire format. */

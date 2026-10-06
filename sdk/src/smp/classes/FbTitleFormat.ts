@@ -1,3 +1,7 @@
+import type {
+    TitleformatEvalBatchParams,
+    TitleformatEvalParams,
+} from '../../types/generated/params.js';
 import type { JsonValue } from '../../types/json.js';
 /**
  * `FbTitleFormat` — title-format script accessor.
@@ -11,13 +15,14 @@ import type { JsonValue } from '../../types/json.js';
  * - `Eval` / `EvalWithMetadb` → `titleformat.eval` (`{ path, pattern }`).
  * - `EvalWithMetadbs` → `titleformat.evalBatch` (`{ paths, pattern }`).
  *
+ * Each path is the track's handle id, `|subsong:N` suffix included.
+ *
  * The single-pattern shape is preserved (rather than upgraded to the
  * newer `titleformat.evalFields` API) because SMP scripts depend on
  * the one-expression-per-call contract.
  */
 
-import { stripSubsongSuffix } from '../handleId.js';
-import { getInvoke } from '../utils.js';
+import { getTypedInvoke, successOf, toHandleId } from '../utils.js';
 import type { SmpHandleLike } from '../types.js';
 import { FbMetadbHandleList } from './FbMetadbHandleList.js';
 
@@ -36,19 +41,13 @@ interface FbTitleFormatBatchResponse {
     [key: string]: JsonValue;
 }
 
+/**
+ * The track key sent as `path`: the handle id, keeping any `|subsong:N`
+ * suffix so a subsong of a multi-track file (a CUE sheet, for one) is
+ * evaluated as itself rather than as the file's first subsong.
+ */
 function _getPathFromMetadb(handleLike: SmpHandleLike | unknown): string {
-    if (!handleLike) return '';
-    if (typeof handleLike === 'string') return stripSubsongSuffix(handleLike);
-
-    const h = handleLike as {
-        Path?: unknown;
-        absolutePath?: unknown;
-        path?: unknown;
-    };
-    if (typeof h.Path === 'string') return stripSubsongSuffix(h.Path);
-    if (typeof h.absolutePath === 'string') return stripSubsongSuffix(h.absolutePath);
-    if (typeof h.path === 'string') return stripSubsongSuffix(h.path);
-    return '';
+    return toHandleId(handleLike);
 }
 
 function _collectPaths(list: unknown): string[] {
@@ -82,8 +81,8 @@ function _collectPaths(list: unknown): string[] {
     return paths;
 }
 
-function _requireInvoke(): NonNullable<ReturnType<typeof getInvoke>> {
-    const inv = getInvoke();
+function _requireInvoke(): NonNullable<ReturnType<typeof getTypedInvoke>> {
+    const inv = getTypedInvoke();
     if (!inv) {
         throw new Error('[SMP] smp.invoke is not available. Load sdk/smp-compat.js first.');
     }
@@ -120,11 +119,11 @@ export class FbTitleFormat {
         if (!path) return '';
 
         const inv = _requireInvoke();
-        const res = (await inv('titleformat.eval', {
+        const res = successOf(await inv('titleformat.eval', {
             path,
             pattern: this._expr,
-        })) as FbTitleFormatEvalResponse | null;
-        return res && res.success === false ? '' : res?.result ?? '';
+        } satisfies TitleformatEvalParams));
+        return res?.result ?? '';
     }
 
     /** Evaluate against a single handle / track-info object. */
@@ -133,11 +132,11 @@ export class FbTitleFormat {
         if (!path) return '';
 
         const inv = _requireInvoke();
-        const res = (await inv('titleformat.eval', {
+        const res = successOf(await inv('titleformat.eval', {
             path,
             pattern: this._expr,
-        })) as FbTitleFormatEvalResponse | null;
-        return res && res.success === false ? '' : res?.result ?? '';
+        } satisfies TitleformatEvalParams));
+        return res?.result ?? '';
     }
 
     /** Batch evaluate against a list of handles. */
@@ -146,10 +145,10 @@ export class FbTitleFormat {
         if (paths.length === 0) return [];
 
         const inv = _requireInvoke();
-        const res = (await inv('titleformat.evalBatch', {
+        const res = successOf(await inv('titleformat.evalBatch', {
             paths,
             pattern: this._expr,
-        })) as FbTitleFormatBatchResponse | null;
+        } satisfies TitleformatEvalBatchParams));
         const results = res?.results;
         if (!Array.isArray(results)) return [];
 

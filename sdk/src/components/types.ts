@@ -99,7 +99,10 @@ export interface FbCoverErrorDetail {}
 export interface FbRatingChangeDetail {
     /** New star count (0 = cleared). */
     value: number;
-    /** Track absolute path the rating applied to. */
+    /**
+     * Key of the track the rating applied to: the track's `handle`, which
+     * carries a `|subsong:N` suffix for a CUE subsong.
+     */
     path: string;
 }
 
@@ -107,13 +110,22 @@ export interface FbRatingChangeDetail {
 
 /** `<fb-playlist-tabs>` user clicked / arrow-keyed onto a playlist. */
 export interface FbPlaylistSelectDetail {
-    /** Newly active playlist index. */
+    /** Newly active playlist index, as the tabs listed it. */
     index: number;
+    /** GUID of that playlist; pass it as a `PlaylistRef` to keep naming it after the playlist list changes. */
+    guid: string;
 }
 
 /** `<fb-playlist-tabs>` right-click on a tab. */
 export interface FbPlaylistContextDetail {
+    /** Index of the tab's playlist, as the tabs listed it. */
     index: number;
+    /**
+     * GUID of the tab's playlist. Act on the playlist through this rather
+     * than `index` once a menu is open: playlists can be added or removed
+     * before the user picks an entry, and an index would then name another one.
+     */
+    guid: string;
     x: number;
     y: number;
 }
@@ -127,13 +139,18 @@ export interface FbPlaylistReorderDetail {
     fromIndex: number;
     /** Drop-target slot index (already adjusted for drag direction). */
     toIndex: number;
-    /** Permutation array sent to `fb.playlist.reorderPlaylists`. */
+    /** The new order as indices into the playlists the tabs listed. */
     newOrder: number[];
+    /** The same order as playlist GUIDs, the form sent to `fb.playlist.reorderPlaylists`. */
+    newOrderGuids: string[];
 }
 
 /** `<fb-playlist-selector>` `<select>` value changed. */
 export interface FbPlaylistPickDetail {
+    /** Index of the picked playlist, as the selector listed it. */
     index: number;
+    /** GUID of the picked playlist. */
+    guid: string;
     name: string;
 }
 
@@ -143,17 +160,26 @@ export interface FbTrackSelectDetail {
     index: number;
     /** Full selection set after the click (sorted ascending). */
     indices: number[];
+    /** GUID of the playlist the rows belong to; `null` while the view has not looked it up. */
+    playlistGuid: string | null;
 }
 
 /** `<fb-playlist-view>` row was double-clicked / Enter-activated. */
 export interface FbTrackPlayDetail {
     index: number;
+    /** GUID of the playlist the row belongs to. */
+    playlistGuid: string;
 }
 
 /** `<fb-playlist-view>` right-click on a row. */
 export interface FbTrackContextDetail {
     /** Selection set at the moment of the right-click. */
     indices: number[];
+    /**
+     * GUID of the playlist the rows belong to; `null` while the view has not
+     * looked it up or shows no playlist.
+     */
+    playlistGuid: string | null;
     x: number;
     y: number;
 }
@@ -229,21 +255,13 @@ export interface FbPopupCloseDetail {
 
 /**
  * `<fb-popup-panel>` received an inter-window message via
- * `window:message`. The detail object is forwarded verbatim from the
- * bridge's `WindowMessagePayload`, so it carries both window ids and
- * the user-supplied message body.
- *
- * NOTE: an earlier hand-written declaration documented this as
- * `{ windowId; message }`, but the runtime always emits the full
- * `{ sourceWindowId; targetWindowId; message }` shape. The type now
- * matches the runtime payload.
+ * `window:message`. The detail is the bridge's `WindowMessagePayload`,
+ * forwarded as is.
  */
 export interface FbPopupMessageDetail {
     /** Window id of the message sender. */
     sourceWindowId: string;
-    /** Window id of the recipient (this popup). */
-    targetWindowId: string;
-    /** Loose payload — depends on what the sender posted. */
+    /** The message as the sender passed it. */
     message: unknown;
 }
 
@@ -352,7 +370,12 @@ export interface FbLibrarySelectDetail {
     type: string;
     /** Active view at the time of the click (`'artist' | 'album' | 'genre'`). */
     view: string;
-    /** Parent artist when `type === 'album' | 'track'`. */
+    /**
+     * The row's `data-artist`: the parent artist of an `album` row in the
+     * artist view, or the album artist of a `group` in the album view, which
+     * with `key` names the album for `library.getAlbumTracks`. Absent on other
+     * rows.
+     */
     artist?: string;
     /** Full selection set (anchor + range or ctrl-toggled rows). */
     selected: FbLibrarySelectionEntry[];
@@ -363,6 +386,8 @@ export interface FbLibraryPlayDetail {
     key: string;
     type: string;
     view: string;
+    /** The row's `data-artist`, as in {@link FbLibrarySelectDetail.artist}. */
+    artist?: string;
 }
 
 /** `<fb-library-tree>` right-click on a row. */
@@ -370,13 +395,19 @@ export interface FbLibraryContextDetail {
     key: string;
     type: string;
     view: string;
+    /** The row's `data-artist`, as in {@link FbLibrarySelectDetail.artist}. */
+    artist?: string;
     x: number;
     y: number;
     selected: FbLibrarySelectionEntry[];
 }
 
-/** `<fb-library-tree>` Add-to-playlist completed for `count` paths. */
+/**
+ * `<fb-library-tree>` added a row's tracks to the active playlist. Not
+ * dispatched when the host refused the call, as for a locked playlist.
+ */
 export interface FbLibraryAddedDetail {
+    /** Tracks the host reports as added. */
     count: number;
     type: string;
     key: string;

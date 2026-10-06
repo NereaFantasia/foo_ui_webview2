@@ -14,7 +14,7 @@ import type { JsonValue } from '../../types/json.js';
  * menu that produced it is gone.
  */
 
-import { buildMenuItems, getInvoke, splitMenuAddress } from '../utils.js';
+import { buildMenuItems, getTypedInvoke, splitMenuAddress, successOf } from '../utils.js';
 import type {
     SmpMenuBuildState,
     SmpRawMenuItem,
@@ -45,12 +45,12 @@ export class MainMenuManager {
         base_id?: number,
         max_id?: number,
     ): Promise<SmpStructuredMenuItem[]> {
-        const inv = getInvoke();
+        const inv = getTypedInvoke();
         if (!inv) return [];
 
-        const res = (await inv('menu.getMainMenu', {
+        const res = successOf(await inv('menu.getMainMenu', {
             root: this._root,
-        })) as MainMenuResponse | null;
+        }));
         const items = Array.isArray(res?.items) ? res!.items! : [];
 
         const baseId = (typeof base_id === 'number' ? base_id : 1) | 0;
@@ -84,7 +84,7 @@ export class MainMenuManager {
      * string. Returns `false` if the id cannot be mapped.
      */
     async ExecuteByID(id: number | string): Promise<boolean> {
-        const inv = getInvoke();
+        const inv = getTypedInvoke();
         if (!inv) return false;
 
         let mapped: number | string | null = null;
@@ -104,10 +104,10 @@ export class MainMenuManager {
         // Spelled out as literal keys rather than spread so the payload
         // shape stays statically readable at the call site.
         const { command, subGuid } = splitMenuAddress(mapped);
-        const res = (await inv('menu.runMainMenuCommand', {
+        const res = successOf(await inv('menu.runMainMenuCommand', {
             command,
             ...(subGuid ? { subGuid } : {}),
-        })) as { success?: boolean } | null;
+        }));
         return !!res?.success;
     }
 }

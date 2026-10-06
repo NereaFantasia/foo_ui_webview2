@@ -1,3 +1,7 @@
+import { subscribe } from '../subscribe.js';
+import { call } from '../call.js';
+import type { JsonValue } from '../../types/json.js';
+
 /**
  * `sharedState` — cross-window key/value state store.
  *
@@ -5,26 +9,26 @@
  * a shared persistent / TTL-bound key/value bag with change events.
  * Events use the `state:*` colon namespace.
  */
-
-import { bridge } from '../Bridge.js';
-import type { BaseResponse } from '../../types/responses.js';
-
 export const sharedState = {
     get: (key: string) =>
-        bridge.invoke<{ value: unknown }>('state.get', { key }),
-    set: (key: string, value: unknown, silent = false, ttlMs?: number) =>
-        bridge.invoke<BaseResponse>('state.set', {
+        call('state.get', { key }),
+    /**
+     * `ttlMs` is the lifetime in milliseconds. `null` is not a value; remove a
+     * key with {@link sharedState.delete} instead.
+     */
+    set: (key: string, value: JsonValue, silent = false, ttlMs?: number) =>
+        call('state.set', {
             key,
             value,
             silent,
             ...(ttlMs != null ? { ttlMs } : {}),
         }),
     delete: (key: string) =>
-        bridge.invoke<BaseResponse>('state.delete', { key }),
+        call('state.delete', { key }),
     keys: (pattern = '*') =>
-        bridge.invoke<{ keys: string[] }>('state.keys', { pattern }),
+        call('state.keys', { pattern }),
     onChange: (handler: (data: unknown) => void) =>
-        bridge.on('state:changed', handler),
+        subscribe('state:changed', handler),
     onDelete: (handler: (data: unknown) => void) =>
-        bridge.on('state:deleted', handler),
+        subscribe('state:deleted', handler),
 };

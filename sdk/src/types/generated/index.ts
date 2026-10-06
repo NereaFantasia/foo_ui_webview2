@@ -1,15 +1,15 @@
 // ─────────────────────────────────────────────────────────────
 // GENERATED FILE — DO NOT EDIT
 // File: sdk/src/types/generated/index.ts
-// Source: docs/graph/auto/code-index.json
-// Emitter: scripts/gen_sdk_types.mjs --all
-// schema_version: auto-1.0.0
+// Source: src/api/schema/*.ts
+// Emitter: scripts/gen_sdk_types.mjs
 // Regenerate: npm run gen:types (in sdk/) or `node scripts/gen_sdk_types.mjs --all`
 // ─────────────────────────────────────────────────────────────
 
 /* eslint-disable */
 
 // ── Barrel re-export ─────────────────────────────────────────────────────
+export * from './schema-types.js';
 export * from './params.js';
 export * from './responses.js';
 export * from './events.js';
@@ -17,10 +17,9 @@ export * from './events.js';
 /**
  * The master `api_name` → `[Params, Response]` tuple map.
  *
- * Consumed by the typed `bridge.invoke<M extends keyof ApiMethodMap>(m, p)
- * → Promise<ApiMethodMap[M][1]>` overload. Dynamic dispatch (string method
- * not known at compile-time) falls back to the permissive overload
- * declared in the bridge core — see PLAN §12.4.
+ * Consumed by the typed `call(method, params)` entry in `bridge/call.ts`:
+ * the method name selects the params and response types. The public
+ * `bridge.invoke` stays untyped for dynamic dispatch.
  */
 import type {
     ArtworkGetAvailableArtworkParams,
@@ -37,10 +36,12 @@ import type {
     ArtworkGetLyricsParams,
     ArtworkGetMetadataParams,
     AudioAnalyzeBPMParams,
+    AudioCancelDecodePcmParams,
     AudioCancelFullWaveformParams,
+    AudioDecodePcmParams,
     AudioGenerateFullWaveformParams,
-    AudioGenerateWaveformParams,
     AudioGetOutputInfoParams,
+    AudioGetPcmDebugStateParams,
     AudioGetSpectrumParams,
     AudioGetSpectrumDebugStateParams,
     AudioGetStreamInfoParams,
@@ -187,6 +188,8 @@ import type {
     LyricsExistsParams,
     LyricsGetParams,
     LyricsSaveParams,
+    MediaGetContainerInfoParams,
+    MediaGetStreamUrlParams,
     MenuCloseParams,
     MenuGetContextMenuParams,
     MenuGetMainMenuParams,
@@ -273,11 +276,13 @@ import type {
     PlaylistGetFocusTrackParams,
     PlaylistGetGroupRunsParams,
     PlaylistGetLockInfoParams,
+    PlaylistGetMatchingRowsParams,
     PlaylistGetPlayingParams,
     PlaylistGetSelectedTracksParams,
     PlaylistGetSelectionParams,
     PlaylistGetTrackCountParams,
     PlaylistGetTracksParams,
+    PlaylistGetTracksAtParams,
     PlaylistInsertTracksParams,
     PlaylistIsAutoplaylistParams,
     PlaylistIsLockedParams,
@@ -355,8 +360,6 @@ import type {
     TaskbarSetProgressParams,
     TaskbarSetThumbnailButtonsParams,
     TaskbarUpdateButtonParams,
-    TestEchoParams,
-    TestPingParams,
     TitleformatEvalParams,
     TitleformatEvalBatchParams,
     TitleformatEvalFieldsParams,
@@ -373,6 +376,7 @@ import type {
     TraySetContextMenuParams,
     TraySetIconParams,
     TraySetMenuItemStateParams,
+    TraySetMenuZonesParams,
     TraySetMinimizeToTrayParams,
     TraySetTooltipParams,
     TrayShowBalloonParams,
@@ -381,6 +385,7 @@ import type {
     UiShowCustomMenuParams,
     UiShowNotificationParams,
     UiShowToastParams,
+    WebviewGetSourceParams,
     WindowBlurParams,
     WindowBroadcastParams,
     WindowCancelCloseParams,
@@ -443,6 +448,7 @@ import type {
     WindowSetDragRegionsParams,
     WindowSetFramelessParams,
     WindowSetFullscreenParams,
+    WindowSetMaximizeButtonRegionParams,
     WindowSetMaxSizeParams,
     WindowSetMicaParams,
     WindowSetMicaEffectParams,
@@ -478,10 +484,12 @@ import type {
     ArtworkGetLyricsResponse,
     ArtworkGetMetadataResponse,
     AudioAnalyzeBPMResponse,
+    AudioCancelDecodePcmResponse,
     AudioCancelFullWaveformResponse,
+    AudioDecodePcmResponse,
     AudioGenerateFullWaveformResponse,
-    AudioGenerateWaveformResponse,
     AudioGetOutputInfoResponse,
+    AudioGetPcmDebugStateResponse,
     AudioGetSpectrumResponse,
     AudioGetSpectrumDebugStateResponse,
     AudioGetStreamInfoResponse,
@@ -628,6 +636,8 @@ import type {
     LyricsExistsResponse,
     LyricsGetResponse,
     LyricsSaveResponse,
+    MediaGetContainerInfoResponse,
+    MediaGetStreamUrlResponse,
     MenuCloseResponse,
     MenuGetContextMenuResponse,
     MenuGetMainMenuResponse,
@@ -714,11 +724,13 @@ import type {
     PlaylistGetFocusTrackResponse,
     PlaylistGetGroupRunsResponse,
     PlaylistGetLockInfoResponse,
+    PlaylistGetMatchingRowsResponse,
     PlaylistGetPlayingResponse,
     PlaylistGetSelectedTracksResponse,
     PlaylistGetSelectionResponse,
     PlaylistGetTrackCountResponse,
     PlaylistGetTracksResponse,
+    PlaylistGetTracksAtResponse,
     PlaylistInsertTracksResponse,
     PlaylistIsAutoplaylistResponse,
     PlaylistIsLockedResponse,
@@ -796,8 +808,6 @@ import type {
     TaskbarSetProgressResponse,
     TaskbarSetThumbnailButtonsResponse,
     TaskbarUpdateButtonResponse,
-    TestEchoResponse,
-    TestPingResponse,
     TitleformatEvalResponse,
     TitleformatEvalBatchResponse,
     TitleformatEvalFieldsResponse,
@@ -814,6 +824,7 @@ import type {
     TraySetContextMenuResponse,
     TraySetIconResponse,
     TraySetMenuItemStateResponse,
+    TraySetMenuZonesResponse,
     TraySetMinimizeToTrayResponse,
     TraySetTooltipResponse,
     TrayShowBalloonResponse,
@@ -822,6 +833,7 @@ import type {
     UiShowCustomMenuResponse,
     UiShowNotificationResponse,
     UiShowToastResponse,
+    WebviewGetSourceResponse,
     WindowBlurResponse,
     WindowBroadcastResponse,
     WindowCancelCloseResponse,
@@ -884,6 +896,7 @@ import type {
     WindowSetDragRegionsResponse,
     WindowSetFramelessResponse,
     WindowSetFullscreenResponse,
+    WindowSetMaximizeButtonRegionResponse,
     WindowSetMaxSizeResponse,
     WindowSetMicaResponse,
     WindowSetMicaEffectResponse,
@@ -919,10 +932,15 @@ export interface ApiMethodMap {
     "artwork.getLyrics": [ArtworkGetLyricsParams, ArtworkGetLyricsResponse];
     "artwork.getMetadata": [ArtworkGetMetadataParams, ArtworkGetMetadataResponse];
     "audio.analyzeBPM": [AudioAnalyzeBPMParams, AudioAnalyzeBPMResponse];
+    /** @experimental */
+    "audio.cancelDecodePcm": [AudioCancelDecodePcmParams, AudioCancelDecodePcmResponse];
     "audio.cancelFullWaveform": [AudioCancelFullWaveformParams, AudioCancelFullWaveformResponse];
+    /** @experimental */
+    "audio.decodePcm": [AudioDecodePcmParams, AudioDecodePcmResponse];
     "audio.generateFullWaveform": [AudioGenerateFullWaveformParams, AudioGenerateFullWaveformResponse];
-    "audio.generateWaveform": [AudioGenerateWaveformParams, AudioGenerateWaveformResponse];
     "audio.getOutputInfo": [AudioGetOutputInfoParams, AudioGetOutputInfoResponse];
+    /** @experimental */
+    "audio.getPcmDebugState": [AudioGetPcmDebugStateParams, AudioGetPcmDebugStateResponse];
     "audio.getSpectrum": [AudioGetSpectrumParams, AudioGetSpectrumResponse];
     "audio.getSpectrumDebugState": [AudioGetSpectrumDebugStateParams, AudioGetSpectrumDebugStateResponse];
     "audio.getStreamInfo": [AudioGetStreamInfoParams, AudioGetStreamInfoResponse];
@@ -930,8 +948,10 @@ export interface ApiMethodMap {
     "audio.isVisualizationAvailable": [AudioIsVisualizationAvailableParams, AudioIsVisualizationAvailableResponse];
     "audio.setChannelMode": [AudioSetChannelModeParams, AudioSetChannelModeResponse];
     "audio.subscribeSpectrum": [AudioSubscribeSpectrumParams, AudioSubscribeSpectrumResponse];
+    /** @experimental */
     "audio.subscribeStream": [AudioSubscribeStreamParams, AudioSubscribeStreamResponse];
     "audio.unsubscribeSpectrum": [AudioUnsubscribeSpectrumParams, AudioUnsubscribeSpectrumResponse];
+    /** @experimental */
     "audio.unsubscribeStream": [AudioUnsubscribeStreamParams, AudioUnsubscribeStreamResponse];
     "clipboard.read": [ClipboardReadParams, ClipboardReadResponse];
     "clipboard.write": [ClipboardWriteParams, ClipboardWriteResponse];
@@ -1069,6 +1089,10 @@ export interface ApiMethodMap {
     "lyrics.exists": [LyricsExistsParams, LyricsExistsResponse];
     "lyrics.get": [LyricsGetParams, LyricsGetResponse];
     "lyrics.save": [LyricsSaveParams, LyricsSaveResponse];
+    /** @experimental */
+    "media.getContainerInfo": [MediaGetContainerInfoParams, MediaGetContainerInfoResponse];
+    /** @experimental */
+    "media.getStreamUrl": [MediaGetStreamUrlParams, MediaGetStreamUrlResponse];
     "menu.close": [MenuCloseParams, MenuCloseResponse];
     "menu.getContextMenu": [MenuGetContextMenuParams, MenuGetContextMenuResponse];
     "menu.getMainMenu": [MenuGetMainMenuParams, MenuGetMainMenuResponse];
@@ -1155,11 +1179,13 @@ export interface ApiMethodMap {
     "playlist.getFocusTrack": [PlaylistGetFocusTrackParams, PlaylistGetFocusTrackResponse];
     "playlist.getGroupRuns": [PlaylistGetGroupRunsParams, PlaylistGetGroupRunsResponse];
     "playlist.getLockInfo": [PlaylistGetLockInfoParams, PlaylistGetLockInfoResponse];
+    "playlist.getMatchingRows": [PlaylistGetMatchingRowsParams, PlaylistGetMatchingRowsResponse];
     "playlist.getPlaying": [PlaylistGetPlayingParams, PlaylistGetPlayingResponse];
     "playlist.getSelectedTracks": [PlaylistGetSelectedTracksParams, PlaylistGetSelectedTracksResponse];
     "playlist.getSelection": [PlaylistGetSelectionParams, PlaylistGetSelectionResponse];
     "playlist.getTrackCount": [PlaylistGetTrackCountParams, PlaylistGetTrackCountResponse];
     "playlist.getTracks": [PlaylistGetTracksParams, PlaylistGetTracksResponse];
+    "playlist.getTracksAt": [PlaylistGetTracksAtParams, PlaylistGetTracksAtResponse];
     "playlist.insertTracks": [PlaylistInsertTracksParams, PlaylistInsertTracksResponse];
     "playlist.isAutoplaylist": [PlaylistIsAutoplaylistParams, PlaylistIsAutoplaylistResponse];
     "playlist.isLocked": [PlaylistIsLockedParams, PlaylistIsLockedResponse];
@@ -1237,8 +1263,6 @@ export interface ApiMethodMap {
     "taskbar.setProgress": [TaskbarSetProgressParams, TaskbarSetProgressResponse];
     "taskbar.setThumbnailButtons": [TaskbarSetThumbnailButtonsParams, TaskbarSetThumbnailButtonsResponse];
     "taskbar.updateButton": [TaskbarUpdateButtonParams, TaskbarUpdateButtonResponse];
-    "test.echo": [TestEchoParams, TestEchoResponse];
-    "test.ping": [TestPingParams, TestPingResponse];
     "titleformat.eval": [TitleformatEvalParams, TitleformatEvalResponse];
     "titleformat.evalBatch": [TitleformatEvalBatchParams, TitleformatEvalBatchResponse];
     "titleformat.evalFields": [TitleformatEvalFieldsParams, TitleformatEvalFieldsResponse];
@@ -1255,6 +1279,7 @@ export interface ApiMethodMap {
     "tray.setContextMenu": [TraySetContextMenuParams, TraySetContextMenuResponse];
     "tray.setIcon": [TraySetIconParams, TraySetIconResponse];
     "tray.setMenuItemState": [TraySetMenuItemStateParams, TraySetMenuItemStateResponse];
+    "tray.setMenuZones": [TraySetMenuZonesParams, TraySetMenuZonesResponse];
     "tray.setMinimizeToTray": [TraySetMinimizeToTrayParams, TraySetMinimizeToTrayResponse];
     "tray.setTooltip": [TraySetTooltipParams, TraySetTooltipResponse];
     "tray.showBalloon": [TrayShowBalloonParams, TrayShowBalloonResponse];
@@ -1263,6 +1288,7 @@ export interface ApiMethodMap {
     "ui.showCustomMenu": [UiShowCustomMenuParams, UiShowCustomMenuResponse];
     "ui.showNotification": [UiShowNotificationParams, UiShowNotificationResponse];
     "ui.showToast": [UiShowToastParams, UiShowToastResponse];
+    "webview.getSource": [WebviewGetSourceParams, WebviewGetSourceResponse];
     "window.blur": [WindowBlurParams, WindowBlurResponse];
     "window.broadcast": [WindowBroadcastParams, WindowBroadcastResponse];
     "window.cancelClose": [WindowCancelCloseParams, WindowCancelCloseResponse];
@@ -1325,6 +1351,7 @@ export interface ApiMethodMap {
     "window.setDragRegions": [WindowSetDragRegionsParams, WindowSetDragRegionsResponse];
     "window.setFrameless": [WindowSetFramelessParams, WindowSetFramelessResponse];
     "window.setFullscreen": [WindowSetFullscreenParams, WindowSetFullscreenResponse];
+    "window.setMaximizeButtonRegion": [WindowSetMaximizeButtonRegionParams, WindowSetMaximizeButtonRegionResponse];
     "window.setMaxSize": [WindowSetMaxSizeParams, WindowSetMaxSizeResponse];
     "window.setMica": [WindowSetMicaParams, WindowSetMicaResponse];
     "window.setMicaEffect": [WindowSetMicaEffectParams, WindowSetMicaEffectResponse];

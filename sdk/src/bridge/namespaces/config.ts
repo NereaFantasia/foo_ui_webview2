@@ -1,36 +1,27 @@
+import { bridge } from '../Bridge.js';
+import { call } from '../call.js';
+import type {
+    ConfigGetAdvancedConfigParams,
+    ConfigGetParams,
+    ConfigSetOutputBufferParams,
+} from '../../types/generated/params.js';
+import type { ConfigSetOutputBufferResponse } from '../../types/generated/responses.js';
+import type { JsonValue } from '../../types/json.js';
+import type {
+    ReplaygainSourceMode,
+    ReplaygainSourceModeName,
+} from '../../types/responses.js';
+
 /**
  * `config` — output / DSP / advanced / portable-config namespace.
  */
-
-import { bridge } from '../Bridge.js';
-import type {
-    ActiveDspPresetInfo,
-    AdvancedConfigResponse,
-    AdvancedConfigValueResponse,
-    BaseResponse,
-    ComponentInfo,
-    ConfigExportResponse,
-    ConfigGetAllResponse,
-    ConfigGetReplaygainModeResponse,
-    ConfigSetReplaygainModeResponse,
-    DspPreset,
-    LibraryFilePatternsResponse,
-    LibraryStatus,
-    OutputConfig,
-    OutputDevice,
-    PreferencesPagesResponse,
-    PreferencesStandardGuids,
-    ReplaygainSourceMode,
-    ReplaygainSourceModeName,
-    VersionInfo,
-} from '../../types/responses.js';
-
 export const config = {
-    getOutputDevices: () =>
-        bridge.invoke<OutputDevice[]>('config.getOutputDevices'),
-    getOutputConfig: () => bridge.invoke<OutputConfig>('config.getOutputConfig'),
+    /** The devices of every output module, in `devices`, flagged when one is in effect. */
+    getOutputDevices: () => call('config.getOutputDevices'),
+    getOutputConfig: () =>
+        call('config.getOutputConfig'),
     setOutputDevice: (outputId: string, deviceId: string) =>
-        bridge.invoke<BaseResponse>('config.setOutputDevice', {
+        call('config.setOutputDevice', {
             outputId,
             deviceId,
         }),
@@ -40,94 +31,150 @@ export const config = {
      * Accepts either a single numeric argument (milliseconds, matching
      * the original `(ms)` signature) or an options object that lets
      * callers pick the unit explicitly:
-     * - `milliseconds` — buffer in ms; the host divides by 1000.
-     * - `bufferLength` — buffer in seconds (the host's native unit).
+     * - `milliseconds` — buffer in ms, from 50 to 2000.
+     * - `bufferLength` — buffer in seconds (the host's native unit), from
+     *   0.05 to 2.
      *
-     * If both fields are present the host prefers `milliseconds`. The
-     * resolved buffer must fall within `[0.05, 2.0]` seconds; the host
-     * rejects out-of-range values with an error envelope.
+     * If both fields are present the host uses `milliseconds`, though it
+     * still refuses a `bufferLength` outside its range. Out-of-range values
+     * and a call with neither field resolve with an `INVALID_PARAMS`
+     * failure envelope.
      *
      * @param value - Numeric milliseconds, **or** an options object
      *                with `milliseconds` and/or `bufferLength`.
      */
     setOutputBuffer: ((
-        value: number | { milliseconds?: number; bufferLength?: number },
-    ): Promise<BaseResponse> => {
+        value: number | ConfigSetOutputBufferParams,
+    ): Promise<ConfigSetOutputBufferResponse> => {
         const opts =
             typeof value === 'number' ? { milliseconds: value } : value;
-        return bridge.invoke<BaseResponse>('config.setOutputBuffer', {
-            ...(opts.milliseconds != null
-                ? { milliseconds: opts.milliseconds }
-                : {}),
-            ...(opts.bufferLength != null
-                ? { bufferLength: opts.bufferLength }
-                : {}),
-        });
+        return call(
+            'config.setOutputBuffer',
+            {
+                ...(opts.milliseconds != null
+                    ? { milliseconds: opts.milliseconds }
+                    : {}),
+                ...(opts.bufferLength != null
+                    ? { bufferLength: opts.bufferLength }
+                    : {}),
+            },
+        );
     }) as {
-        (ms: number): Promise<BaseResponse>;
-        (opts: {
-            milliseconds?: number;
-            bufferLength?: number;
-        }): Promise<BaseResponse>;
+        (ms: number): Promise<ConfigSetOutputBufferResponse>;
+        (opts: ConfigSetOutputBufferParams): Promise<ConfigSetOutputBufferResponse>;
     },
-    getAdvancedConfig: () =>
-        bridge.invoke<AdvancedConfigResponse>('config.getAdvancedConfig'),
+    /**
+     * foobar2000's Advanced preferences from the root, or from below
+     * `parentGuid`, in `entries`; each branch has its entries nested in
+     * `children`.
+     */
+    getAdvancedConfig: (parentGuid?: string) =>
+        call(
+            'config.getAdvancedConfig',
+            parentGuid ? ({ parentGuid } satisfies ConfigGetAdvancedConfigParams) : undefined,
+        ),
     getAdvancedConfigValue: (guid: string) =>
-        bridge.invoke<AdvancedConfigValueResponse>(
+        call(
             'config.getAdvancedConfigValue',
             { guid },
         ),
-    setAdvancedConfigValue: (guid: string, value: unknown) =>
-        bridge.invoke<BaseResponse>('config.setAdvancedConfigValue', {
-            guid,
-            value,
-        }),
+    /**
+     * Writes one Advanced preferences entry: a boolean for a checkbox or
+     * radio entry, a string or a number for a string or integer entry.
+     * A value of the wrong kind resolves with an `INVALID_PARAMS` failure
+     * envelope.
+     */
+    setAdvancedConfigValue: (guid: string, value: JsonValue) =>
+        call(
+            'config.setAdvancedConfigValue',
+            { guid, value },
+        ),
     resetAdvancedConfig: (guid: string) =>
-        bridge.invoke<BaseResponse>('config.resetAdvancedConfig', { guid }),
-    getPreferencesPages: () =>
-        bridge.invoke<PreferencesPagesResponse>('config.getPreferencesPages'),
+        call(
+            'config.resetAdvancedConfig',
+            { guid },
+        ),
+    /** Every preferences page, then every preferences branch, in `pages`. */
+    getPreferencesPages: () => call('config.getPreferencesPages'),
     getPreferencesStandardGuids: () =>
-        bridge.invoke<PreferencesStandardGuids>(
+        call(
             'config.getPreferencesStandardGuids',
         ),
     getLibraryStatus: () =>
-        bridge.invoke<LibraryStatus>('config.getLibraryStatus'),
+        call('config.getLibraryStatus'),
+    /**
+     * Each pattern is present only when foobar2000 has it configured, so
+     * with neither configured the response is `{ success: true }` alone.
+     */
     getLibraryFilePatterns: () =>
-        bridge.invoke<LibraryFilePatternsResponse>(
+        call(
             'config.getLibraryFilePatterns',
         ),
     showLibraryPreferences: () =>
-        bridge.invoke<BaseResponse>('config.showLibraryPreferences'),
-    getComponents: () =>
-        bridge.invoke<ComponentInfo[]>('config.getComponents'),
-    getVersionInfo: () => bridge.invoke<VersionInfo>('config.getVersionInfo'),
-    getDspPresets: () => bridge.invoke<DspPreset[]>('config.getDspPresets'),
-    getActiveDspPreset: () =>
-        bridge.invoke<ActiveDspPresetInfo>('config.getActiveDspPreset'),
-    setActiveDspPreset: (index: number) =>
-        bridge.invoke<BaseResponse>('config.setActiveDspPreset', { index }),
-    // === Portable config storage ===
-    set: (key: string, value: unknown) =>
-        bridge.invoke<BaseResponse>('config.set', { key, value }),
-    get: (key: string) =>
-        bridge.invoke<{ value: unknown }>('config.get', { key }),
-    remove: (key: string) =>
-        bridge.invoke<BaseResponse & { existed?: boolean }>(
-            'config.remove',
-            { key },
+        call(
+            'config.showLibraryPreferences',
         ),
+    /** The installed components, in `components`. */
+    getComponents: () => call('config.getComponents'),
+    getVersionInfo: () =>
+        call('config.getVersionInfo'),
+    /** The stored DSP presets, in `presets`. */
+    getDspPresets: () => call('config.getDspPresets'),
+    getActiveDspPreset: () =>
+        call('config.getActiveDspPreset'),
+    /**
+     * Selects a preset by its `index` from {@link config.getDspPresets}. An
+     * index past the end resolves with an `INVALID_INDEX` failure envelope.
+     */
+    setActiveDspPreset: (index: number) =>
+        call('config.setActiveDspPreset', {
+            index,
+        }),
+    // === Portable config storage ===
+    /**
+     * Stores any JSON value under `key`. A top-level `null` is refused
+     * with an `INVALID_PARAMS` failure envelope; clear a key with
+     * {@link config.remove} instead.
+     */
+    set: (key: string, value: JsonValue) =>
+        call('config.set', {
+            key,
+            value,
+        }),
+    /**
+     * Reads the value stored under `key`. A key that is not stored is not an
+     * error: the response has `found: false` and `value` set to
+     * `defaultValue`, or `null` when no default is given.
+     *
+     * @param defaultValue - Any JSON value to answer with when the key is
+     *                       absent; sent as the host's `default`. Omitted
+     *                       from the call when `undefined`.
+     */
+    get: (key: string, defaultValue?: ConfigGetParams['default']) =>
+        call('config.get', {
+            key,
+            ...(defaultValue !== undefined ? { default: defaultValue } : {}),
+        }),
+    remove: (key: string) =>
+        call('config.remove', {
+            key,
+        }),
     /**
      * Full snapshot of the portable-config cache. Returns the
      * `{ success, items, configs, count }` envelope; `items` and
      * `configs` are interchangeable aliases of the same map.
      */
-    getAll: () => bridge.invoke<ConfigGetAllResponse>('config.getAll'),
-    export: () => bridge.invoke<ConfigExportResponse>('config.export'),
+    getAll: () => call('config.getAll'),
+    export: () => call('config.export'),
     // === Cursor follow / playback follow / ReplayGain mode ===
     getCursorFollowPlayback: () =>
-        bridge.invoke<{ enabled: boolean }>('config.getCursorFollowPlayback'),
+        call(
+            'config.getCursorFollowPlayback',
+        ),
     getPlaybackFollowCursor: () =>
-        bridge.invoke<{ enabled: boolean }>('config.getPlaybackFollowCursor'),
+        call(
+            'config.getPlaybackFollowCursor',
+        ),
     /**
      * Resolve the active ReplayGain source mode.
      *
@@ -143,37 +190,40 @@ export const config = {
      * compatibility with older host builds.
      */
     getReplaygainMode: () =>
-        bridge.invoke<ConfigGetReplaygainModeResponse>(
+        call(
             'config.getReplaygainMode',
         ),
     setCursorFollowPlayback: (enabled: boolean) =>
-        bridge.invoke<BaseResponse>('config.setCursorFollowPlayback', {
-            enabled,
-        }),
+        call(
+            'config.setCursorFollowPlayback',
+            { enabled },
+        ),
     setPlaybackFollowCursor: (enabled: boolean) =>
-        bridge.invoke<BaseResponse>('config.setPlaybackFollowCursor', {
-            enabled,
-        }),
+        call(
+            'config.setPlaybackFollowCursor',
+            { enabled },
+        ),
     /**
      * Set the active ReplayGain source mode.
      *
-     * Accepts either an integer (`0`-`3`, see `REPLAYGAIN_SOURCE_MODE`)
-     * or the named alias the host accepts on input
+     * Accepts either an integer (`0`-`3`, see `REPLAYGAIN_SOURCE_MODE`),
+     * sent as `mode`, or a name, sent as `sourceMode`
      * (`'none' | 'track' | 'album' | 'byPlaybackOrder' | 'auto'`).
      * `'auto'` is treated by the host as an alias of
      * `'byPlaybackOrder'` and yields integer mode `3`.
      *
      * @param mode - Numeric mode or named alias.
-     * @returns Echoes the integer mode the host applied. When an
-     *          invalid `'auto'`-style string slips past the typed
-     *          surface the host returns `code: 'INVALID_PARAMS'` plus a
-     *          human-readable `error` instead of `success: true`.
+     * @returns Echoes the integer mode the host applied. A value outside
+     *          those accepted resolves with `success: false` and
+     *          `code: 'INVALID_PARAMS'`, leaving the mode unchanged.
      */
     setReplaygainMode: (
         mode: ReplaygainSourceMode | ReplaygainSourceModeName,
     ) =>
-        bridge.invoke<ConfigSetReplaygainModeResponse>(
+        call(
             'config.setReplaygainMode',
-            typeof mode === 'number' ? { mode } : { sourceMode: mode },
+            (typeof mode === 'number'
+                ? { mode }
+                : { sourceMode: mode }),
         ),
 };

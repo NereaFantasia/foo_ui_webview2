@@ -5,7 +5,7 @@
  * `<fb-title>` / `<fb-artist>` / `<fb-album>` elements.
  *
  * Attributes (observed):
- * - `field`: TrackInfo property name (default `'title'`).
+ * - `field`: `Track` property name (default `'title'`).
  * - `tf`: title-formatting expression. When present overrides `field`.
  * - `placeholder`: text shown when the source returns an empty string.
  *
@@ -14,7 +14,7 @@
 
 import { FbBaseElement } from './FbBaseElement.js';
 import { getFb } from './runtime.js';
-import type { TrackInfo } from '../types/responses.js';
+import type { Track } from '../types/generated/schema-types.js';
 
 export class FbTrackText extends FbBaseElement {
     private _text!: HTMLSpanElement;
@@ -62,12 +62,12 @@ export class FbTrackText extends FbBaseElement {
                 value = (result as { result?: string })?.result || '';
             } else {
                 const result = await fb.player.getCurrentTrack();
-                // The no-track envelope (`found: false`) carries no metadata.
-                const track = 'found' in result ? null : result;
+                // `track` is absent when nothing is loaded.
+                const track = (result.success !== false && result.track) || null;
                 if (track) {
-                    // `field` is a free-form attribute; a missing TrackInfo
+                    // `field` is a free-form attribute; a missing Track
                     // property reads as `undefined` and shows the placeholder.
-                    const raw = track[field as keyof TrackInfo];
+                    const raw = track[field as keyof Track];
                     if (raw == null) value = '';
                     else if (typeof raw === 'number') value = raw.toString();
                     else value = String(raw);

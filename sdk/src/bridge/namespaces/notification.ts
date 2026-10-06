@@ -1,3 +1,10 @@
+import { call } from '../call.js';
+import type {
+    UiShowCustomMenuParams,
+    UiShowNotificationParams,
+    UiShowToastParams,
+} from '../../types/generated/params.js';
+
 /**
  * `notification` — toast / custom-menu / notification host bindings.
  *
@@ -5,27 +12,14 @@
  * remember the cross-namespace `invoke('ui.showNotification', ...)`
  * spelling.
  */
-
-import { bridge } from '../Bridge.js';
-import type {
-    BaseResponse,
-    UiShowCustomMenuResponse,
-} from '../../types/responses.js';
-import type {
-    UiShowCustomMenuParams,
-    UiShowNotificationParams,
-    UiShowToastParams,
-} from '../../types/generated/params.js';
-
 export const notification = {
+    /** Shows a balloon notification; the response carries the numeric `id`. */
     show: (opts: UiShowNotificationParams) =>
-        bridge.invoke<BaseResponse & { id?: string }>(
-            'ui.showNotification',
-            opts,
-        ),
-    hide: () => bridge.invoke<BaseResponse>('ui.hideNotification'),
+        call('ui.showNotification', opts),
+    hide: () => call('ui.hideNotification'),
+    /** Opens a native popup menu; `selectedId` is `null` when it is dismissed. */
     showCustomMenu: (opts: UiShowCustomMenuParams) =>
-        bridge.invoke<UiShowCustomMenuResponse>('ui.showCustomMenu', opts),
+        call('ui.showCustomMenu', opts),
     showToast: (opts: UiShowToastParams) =>
-        bridge.invoke<BaseResponse>('ui.showToast', opts),
+        call('ui.showToast', opts),
 };

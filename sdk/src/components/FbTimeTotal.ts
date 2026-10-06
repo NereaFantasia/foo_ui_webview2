@@ -37,8 +37,8 @@ export class FbTimeTotal extends FbBaseElement {
                 fb.player
                     .getCurrentTrack()
                     .then((t) => {
-                        // The no-track envelope (`found: false`) has no duration.
-                        this._seconds = 'found' in t ? 0 : t.duration || 0;
+                        // `track` is absent when nothing is loaded.
+                        this._seconds = (t.success !== false && t.track?.duration) || 0;
                         this._updateText();
                     })
                     .catch(() => {
@@ -50,8 +50,8 @@ export class FbTimeTotal extends FbBaseElement {
         fb.player
             .getCurrentTrack()
             .then((t) => {
-                // The no-track envelope (`found: false`) has no duration.
-                this._seconds = 'found' in t ? 0 : t.duration || 0;
+                // `track` is absent when nothing is loaded.
+                this._seconds = (t.success !== false && t.track?.duration) || 0;
                 this._updateText();
             })
             .catch(() => {

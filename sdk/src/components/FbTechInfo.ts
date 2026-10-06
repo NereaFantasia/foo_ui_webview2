@@ -54,8 +54,8 @@ export class FbTechInfo extends FbBaseElement {
         const field = (this.getAttribute('field') as TechField | null) || 'all';
         try {
             const result = await getFb().player.getCurrentTrack();
-            // The no-track envelope (`found: false`) carries no metadata.
-            const track = 'found' in result ? null : result;
+            // `track` is absent when nothing is loaded.
+            const track = (result.success !== false && result.track) || null;
             if (!track) {
                 this._text.textContent = '';
                 return;

@@ -1,20 +1,15 @@
 // sdk/src/bridge/namespaces/audio.test.ts
 //
-// Regression guards for `audio` namespace methods that are sensitive to
-// host-side stub state:
+// Regression guards for `audio` namespace methods:
 //
-//   `audio.subscribeStream` bridges into a C++ handler that returns
-//   `{success: false, error: "Stream capture requires
-//   playback_stream_capture integration"}` and never emits
-//   `audio:stream`. The SDK now (a) carries an `@deprecated` JSDoc and
-//   (b) surfaces a `console.warn` when the host response confirms the
-//   stub state, so callers stop registering listeners that will never
-//   fire.
+//   `audio.subscribeStream` returns a PcmStream handle whose id it generated
+//   and forwards the options; `audio.unsubscribeStream` forwards an optional
+//   id. The handle's own behaviour is covered in pcm/__tests__/PcmStream.test.ts.
 //
 //   `audio.subscribeSpectrum` returns an unsubscribe callback whose `ready`
 //   promise maps the host's answer (or its absence) onto an outcome and
 //   never rejects; its listener drops frames tagged with another
-//   subscription's id.
+//   subscription's id, and passes bin frames to bin subscriptions only.
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -34,98 +29,56 @@ function makeNative(): MockNative {
     };
 }
 
-describe('audio.subscribeStream (host stub guard)', () => {
-    let warnSpy: ReturnType<typeof vi.spyOn>;
-
+describe('audio.subscribeStream / unsubscribeStream (facade)', () => {
     beforeEach(() => {
         vi.resetModules();
-        warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {
-            /* swallow during assertion */
-        });
     });
 
     afterEach(() => {
         vi.unstubAllGlobals();
-        warnSpy.mockRestore();
     });
 
-    it('warns when the host returns success=false with the stub error', async () => {
+    it('sends the options with a generated subscriptionId and returns the handle', async () => {
         const native = makeNative();
-        native.invoke.mockResolvedValue({
-            success: false,
-            error: 'Stream capture requires playback_stream_capture integration',
-        });
+        native.invoke.mockImplementation(async (_method: string, params: { subscriptionId: string }) => ({
+            success: true,
+            subscriptionId: params.subscriptionId,
+            bufferSeconds: 0.5,
+        }));
+        const webview = { addEventListener: vi.fn(), removeEventListener: vi.fn(), releaseBuffer: vi.fn() };
+        vi.stubGlobal('window', { fb2k: native, chrome: { webview } });
+        const { audio } = await import('./audio.js');
+
+        const stream = audio.subscribeStream({ bufferSeconds: 0.5, interval: 0.05 });
+        const [method, params] = native.invoke.mock.calls[0];
+        expect(method).toBe('audio.subscribeStream');
+        expect(params).toEqual({ bufferSeconds: 0.5, interval: 0.05, subscriptionId: stream.subscriptionId });
+        expect(stream.subscriptionId.length).toBeGreaterThan(0);
+        await expect(stream.ready).resolves.toEqual({ ok: true, subscriptionId: stream.subscriptionId });
+        stream.unsubscribe();
+    });
+
+    it('resolves ready with NOT_SUPPORTED outside a WebView2 page without calling the host', async () => {
+        const native = makeNative();
         vi.stubGlobal('window', { fb2k: native });
         const { audio } = await import('./audio.js');
 
-        const cb = vi.fn();
-        const unsub = audio.subscribeStream(cb);
-
-        // Drain the microtask queue so the warning Promise resolves.
-        await new Promise<void>((resolve) => setTimeout(resolve, 0));
-
-        expect(warnSpy).toHaveBeenCalledTimes(1);
-        const msg = String(warnSpy.mock.calls[0][0]);
-        expect(msg).toContain('audio.subscribeStream');
-        expect(msg).toContain('callback will never fire');
-        expect(msg).toContain('playback_stream_capture integration');
-
-        // Unsubscribe is still callable and triggers the cleanup invoke.
-        expect(typeof unsub).toBe('function');
-        unsub();
-        const apis = native.invoke.mock.calls.map((c) => c[0]);
-        expect(apis).toContain('audio.subscribeStream');
-        expect(apis).toContain('audio.unsubscribeStream');
+        const stream = audio.subscribeStream();
+        await expect(stream.ready).resolves.toMatchObject({ ok: false, code: 'NOT_SUPPORTED' });
+        expect(stream.ended).toBe(true);
+        expect(native.invoke).not.toHaveBeenCalled();
     });
 
-    it('does not warn when the host returns success=true', async () => {
+    it('unsubscribeStream forwards the id, or an empty object when omitted', async () => {
         const native = makeNative();
-        native.invoke.mockResolvedValue({ success: true });
+        native.invoke.mockResolvedValue({ success: true, removed: 1 });
         vi.stubGlobal('window', { fb2k: native });
         const { audio } = await import('./audio.js');
 
-        audio.subscribeStream(() => {
-            /* never called */
-        });
-        await new Promise<void>((resolve) => setTimeout(resolve, 0));
-
-        expect(warnSpy).not.toHaveBeenCalled();
-    });
-
-    it('does not throw when bridge.invoke rejects', async () => {
-        const native = makeNative();
-        native.invoke.mockRejectedValue(new Error('transport down'));
-        vi.stubGlobal('window', { fb2k: native });
-        const { audio } = await import('./audio.js');
-
-        const unsub = audio.subscribeStream(() => {
-            /* unused */
-        });
-        await new Promise<void>((resolve) => setTimeout(resolve, 0));
-
-        expect(typeof unsub).toBe('function');
-        // Rejected invoke should not surface as a console.warn — the
-        // bridge layer already owns transport-error reporting.
-        expect(warnSpy).not.toHaveBeenCalled();
-    });
-
-    it('registers `audio:stream` on the bridge so cleanup is symmetrical', async () => {
-        const native = makeNative();
-        native.invoke.mockResolvedValue({ success: false, error: 'stub' });
-        vi.stubGlobal('window', { fb2k: native });
-        const { audio } = await import('./audio.js');
-
-        const cb = vi.fn();
-        const unsub = audio.subscribeStream(cb);
-        await new Promise<void>((resolve) => setTimeout(resolve, 0));
-
-        expect(native.on).toHaveBeenCalledWith('audio:stream', cb);
-
-        // The SDK's `bridge.on` ignores `native.on`'s return value and
-        // returns its own thunk that hits `native.off(event, handler)`,
-        // so the symmetrical-cleanup contract is checked there.
-        unsub();
-        expect(native.off).toHaveBeenCalledWith('audio:stream', cb);
+        await expect(audio.unsubscribeStream('meter')).resolves.toEqual({ success: true, removed: 1 });
+        await audio.unsubscribeStream();
+        expect(native.invoke.mock.calls[0]).toEqual(['audio.unsubscribeStream', { subscriptionId: 'meter' }]);
+        expect(native.invoke.mock.calls[1]).toEqual(['audio.unsubscribeStream', {}]);
     });
 });
 
@@ -172,6 +125,8 @@ describe('audio.subscribeSpectrum (ready outcome and frame filtering)', () => {
             bands: 64,
             fps: 30,
             scale: 'db',
+            output: 'bands',
+            channels: 'mix',
             backgroundThrottle: false,
             minFrequency: 500,
             maxFrequency: 2000,
@@ -189,7 +144,7 @@ describe('audio.subscribeSpectrum (ready outcome and frame filtering)', () => {
         });
     });
 
-    it('fills scale, backgroundThrottle, the range and streamReady for hosts that do not report them', async () => {
+    it('fills scale, output, channels, backgroundThrottle, the range and streamReady for hosts that do not report them', async () => {
         const native = makeNative();
         native.invoke.mockResolvedValue({ success: true, subscriptionId: 'x', fftSize: 1024, bands: 48, fps: 30 });
         vi.stubGlobal('window', { fb2k: native });
@@ -199,6 +154,8 @@ describe('audio.subscribeSpectrum (ready outcome and frame filtering)', () => {
         expect(outcome).toMatchObject({
             ok: true,
             scale: 'weighted',
+            output: 'bands',
+            channels: 'mix',
             backgroundThrottle: true,
             minFrequency: 20,
             maxFrequency: null,
@@ -273,6 +230,70 @@ describe('audio.subscribeSpectrum (ready outcome and frame filtering)', () => {
         expect(cb).toHaveBeenCalledTimes(2);
         expect(cb.mock.calls[0][0]).toEqual({ subscriptionId: own, spectrum: [4, 5] });
         expect(cb.mock.calls[1][0]).toEqual({ spectrum: [6] });
+    });
+
+    it('sends output and channels for bin output, leaves out bands, and reports what the host registered', async () => {
+        const native = makeNative();
+        native.invoke.mockImplementation(async (_method: string, params: { subscriptionId: string }) => ({
+            success: true,
+            subscriptionId: params.subscriptionId,
+            fftSize: 4096,
+            bands: 48,
+            fps: 60,
+            scale: 'db',
+            output: 'bins',
+            channels: 'stereo',
+            streamReady: true,
+        }));
+        vi.stubGlobal('window', { fb2k: native });
+        const { audio } = await import('./audio.js');
+
+        const stop = audio.subscribeSpectrum(() => undefined, {
+            output: 'bins',
+            channels: 'stereo',
+            fftSize: 4096,
+            fps: 60,
+        });
+        const [, params] = native.invoke.mock.calls[0];
+        expect(params).toMatchObject({ output: 'bins', channels: 'stereo', fftSize: 4096, fps: 60 });
+        expect(params.bands).toBeUndefined();
+        await expect(stop.ready).resolves.toMatchObject({ ok: true, output: 'bins', channels: 'stereo' });
+    });
+
+    it('reports band output when an older host ignores the bin request', async () => {
+        const native = makeNative();
+        native.invoke.mockResolvedValue({ success: true, subscriptionId: 'x', fftSize: 4096, bands: 48, fps: 30 });
+        vi.stubGlobal('window', { fb2k: native });
+        const { audio } = await import('./audio.js');
+
+        const outcome = await audio.subscribeSpectrum(() => undefined, { output: 'bins' }).ready;
+        expect(outcome).toMatchObject({ ok: true, output: 'bands', channels: 'mix' });
+    });
+
+    it('passes bin frames to a bin subscription only, and band frames to a band subscription only', async () => {
+        const native = makeNative();
+        native.invoke.mockResolvedValue({ success: true });
+        vi.stubGlobal('window', { fb2k: native });
+        const { audio } = await import('./audio.js');
+
+        const binsCb = vi.fn();
+        const bandsCb = vi.fn();
+        audio.subscribeSpectrum(binsCb, { output: 'bins', event: 'bins:spectrum' });
+        audio.subscribeSpectrum(bandsCb, { event: 'bands:spectrum' });
+        const binsHandler = native.on.mock.calls[0][1] as (data: unknown) => void;
+        const bandsHandler = native.on.mock.calls[1][1] as (data: unknown) => void;
+
+        const binFrame = { output: 'bins', channels: 'mix', firstBin: 4, spectrum: [-40, -41] };
+        const bandFrame = { spectrum: [0.5, 0.25] };
+        binsHandler(bandFrame);
+        binsHandler(binFrame);
+        bandsHandler(binFrame);
+        bandsHandler(bandFrame);
+
+        expect(binsCb).toHaveBeenCalledTimes(1);
+        expect(binsCb.mock.calls[0][0]).toEqual(binFrame);
+        expect(bandsCb).toHaveBeenCalledTimes(1);
+        expect(bandsCb.mock.calls[0][0]).toEqual(bandFrame);
     });
 
     it('unsubscribes with the same subscriptionId it registered', async () => {

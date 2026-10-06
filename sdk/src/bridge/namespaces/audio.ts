@@ -1,27 +1,13 @@
-/**
- * `audio` — real-time audio analysis namespace.
- *
- * Spectrum / waveform subscriptions return an unsubscribe callback;
- * call it to stop receiving callbacks **and** notify the host so the
- * underlying compute pipeline is torn down.
- *
- * {@link audio.generateFullWaveform} resolves either synchronously
- * (cache hit) or asynchronously by listening for the
- * `audio:fullWaveformReady` / `audio:fullWaveformFailed` events with
- * a client-side timeout; a timeout or an aborted `signal` also cancels
- * the host task.
- */
-
 import { bridge } from '../Bridge.js';
+import { subscribe } from '../subscribe.js';
+import { call } from '../call.js';
+import { decodePcm, type DecodePcmOptions } from '../pcm/decodePcm.js';
+import type { PcmBuffer } from '../pcm/PcmBuffer.js';
+import { subscribeStream, type PcmStream, type PcmStreamOptions } from '../pcm/PcmStream.js';
 import type {
-    AudioGenerateWaveformResponse,
-    AudioGetWaveformResponse,
-    AudioOutputInfoResponse,
-    AudioStreamInfoResponse,
-    BaseResponse,
     FullWaveformOptions,
     FullWaveformResult,
-    SpectrumDebugState,
+    SpectrumBinsFrame,
     SpectrumSubscribeOutcome,
     SpectrumSubscription,
 } from '../../types/responses.js';
@@ -31,27 +17,36 @@ import type {
     FullWaveformReadyEvent,
 } from '../../types/events.js';
 import type {
-    AudioAnalyzeBPMParams,
     AudioGenerateFullWaveformParams,
-    AudioGenerateWaveformParams,
     AudioGetSpectrumParams,
     AudioGetWaveformParams,
+    AudioSetChannelModeParams,
     AudioSubscribeSpectrumParams,
     AudioSubscribeStreamParams,
 } from '../../types/generated/params.js';
 import type {
-    AudioCancelFullWaveformResponse,
-    AudioGetSpectrumResponse,
     AudioSubscribeSpectrumResponse,
-    AudioUnsubscribeSpectrumResponse,
-    AudioUnsubscribeStreamResponse,
 } from '../../types/generated/responses.js';
 
 /** @deprecated Use `AudioSubscribeSpectrumParams`. */
 export type SubscribeSpectrumOptions = AudioSubscribeSpectrumParams;
 
 type SpectrumCallback = (data: AudioSpectrumPayload) => void;
-type StreamCallback = (data: unknown) => void;
+
+type SpectrumBinsCallback = (frame: SpectrumBinsFrame) => void;
+
+/**
+ * Call signatures of {@link audio.subscribeSpectrum}. Options with
+ * `output: 'bins'` pass bin frames to the callback; any other options pass
+ * band frames.
+ */
+export interface SpectrumSubscribeFunction {
+    (
+        callback: (frame: SpectrumBinsFrame) => void,
+        options: AudioSubscribeSpectrumParams & { output: 'bins' },
+    ): SpectrumSubscription;
+    (callback: (frame: AudioSpectrumPayload) => void, options?: AudioSubscribeSpectrumParams): SpectrumSubscription;
+}
 
 /** @deprecated Use `AudioSubscribeStreamParams`. */
 export type AudioStreamOptions = AudioSubscribeStreamParams;
@@ -61,9 +56,6 @@ export type GetSpectrumOptions = AudioGetSpectrumParams;
 
 /** @deprecated Use `AudioGetWaveformParams`. */
 export type GetWaveformOptions = AudioGetWaveformParams;
-
-/** @deprecated Use `Omit<AudioAnalyzeBPMParams, 'path'>`. */
-export type AnalyzeBpmOptions = Omit<AudioAnalyzeBPMParams, 'path'>;
 
 /**
  * Generate a UUID for spectrum subscription identifiers, falling back
@@ -97,6 +89,11 @@ function isForeignFrame(data: unknown, subscriptionId: string): boolean {
     return typeof id === 'string' && id !== subscriptionId;
 }
 
+/** True for a frame of bin output. Hosts without bin output never send one. */
+function isBinsFrame(data: unknown): data is SpectrumBinsFrame {
+    return typeof data === 'object' && data !== null && 'output' in data && data.output === 'bins';
+}
+
 /** What an aborted `signal` rejects `generateFullWaveform` with. */
 function abortError(): DOMException {
     return new DOMException('The operation was aborted.', 'AbortError');
@@ -109,9 +106,6 @@ function toSubscribeOutcome(
 ): SpectrumSubscribeOutcome {
     if (typeof resp !== 'object' || resp === null) {
         return { ok: false, code: 'UNKNOWN_ERROR' };
-    }
-    if ('mock' in resp && resp.mock === true) {
-        return { ok: false, code: 'NOT_SUPPORTED', error: 'No foobar2000 host is available' };
     }
     if (resp.success !== true) {
         return {
@@ -131,6 +125,8 @@ function toSubscribeOutcome(
         bands: resp.bands ?? requested.bands,
         fps: resp.fps ?? requested.fps,
         scale: resp.scale === 'db' ? 'db' : 'weighted',
+        output: resp.output === 'bins' ? 'bins' : 'bands',
+        channels: resp.channels === 'stereo' ? 'stereo' : 'mix',
         backgroundThrottle: resp.backgroundThrottle ?? true,
         minFrequency: typeof resp.minFrequency === 'number' ? resp.minFrequency : 20,
         maxFrequency: typeof resp.maxFrequency === 'number' ? resp.maxFrequency : null,
@@ -138,11 +134,30 @@ function toSubscribeOutcome(
     };
 }
 
+/**
+ * `audio` — real-time audio analysis namespace.
+ *
+ * Spectrum / waveform subscriptions return an unsubscribe callback;
+ * call it to stop receiving callbacks **and** notify the host so the
+ * underlying compute pipeline is torn down.
+ *
+ * {@link audio.generateFullWaveform} resolves either synchronously
+ * (cache hit) or asynchronously by listening for the
+ * `audio:fullWaveformReady` / `audio:fullWaveformFailed` events with
+ * a client-side timeout; a timeout or an aborted `signal` also cancels
+ * the host task.
+ */
 export const audio = {
     /**
      * Subscribe to a real-time spectrum stream. The callback receives this
      * subscription's frames only; other subscriptions on the same event
      * name get their own.
+     *
+     * With `output: 'bins'` the callback receives the FFT's linear bins as
+     * power in dB (see {@link SpectrumOutput}); band output is kept for
+     * compatibility. A host without bin output registers band output
+     * instead: `ready` then reports `output: 'bands'` and the callback
+     * receives nothing.
      *
      * Returns an unsubscribe callback that detaches the listener and removes
      * the subscription on the host. Its `ready` promise settles with the
@@ -150,14 +165,15 @@ export const audio = {
      * for rejected parameters) and never rejects.
      *
      * @example
-     *   const stop = fb.audio.subscribeSpectrum((frame) => draw(frame.spectrum), {
-     *       bands: 64, scale: 'db', backgroundThrottle: false,
-     *   });
+     *   const stop = fb.audio.subscribeSpectrum((frame) => {
+     *       const values = frame.channels === 'stereo' ? frame.left : frame.spectrum;
+     *       draw(frame.firstBin, values);
+     *   }, { output: 'bins', fftSize: 16384, backgroundThrottle: false });
      *   const outcome = await stop.ready;
-     *   if (!outcome.ok) console.warn(outcome.code, outcome.error);
+     *   if (!outcome.ok || outcome.output !== 'bins') console.warn('no bin output');
      */
-    subscribeSpectrum: (
-        callback: SpectrumCallback,
+    subscribeSpectrum: ((
+        callback: SpectrumCallback | SpectrumBinsCallback,
         options: AudioSubscribeSpectrumParams = {},
     ): SpectrumSubscription => {
         const subscriptionId = newSubscriptionId();
@@ -168,16 +184,19 @@ export const audio = {
             bands: options.bands || 48,
             fps: options.fps || 30,
         };
-        const ready = bridge
-            .invoke<AudioSubscribeSpectrumResponse>('audio.subscribeSpectrum', {
+        const bins = options.output === 'bins';
+        const ready = call('audio.subscribeSpectrum', {
                 subscriptionId,
                 fftSize: requested.fftSize,
                 fps: requested.fps,
-                bands: requested.bands,
+                // Bin output ignores the band count; leave it to the host default.
+                bands: bins ? undefined : requested.bands,
                 scale: options.scale,
                 backgroundThrottle: options.backgroundThrottle,
                 minFrequency: options.minFrequency,
                 maxFrequency: options.maxFrequency,
+                output: options.output,
+                channels: options.channels,
                 event: eventName,
             })
             .then((resp) => toSubscribeOutcome(resp, requested))
@@ -190,71 +209,72 @@ export const audio = {
             );
         const unsub = bridge.on(eventName, (data: unknown) => {
             if (isForeignFrame(data, subscriptionId)) return;
-            callback(data as AudioSpectrumPayload);
+            // The overloads pair a bin callback with bin output only, so the
+            // callback matches whichever kind of frame passes this check.
+            if (isBinsFrame(data)) {
+                if (bins) (callback as SpectrumBinsCallback)(data);
+            } else if (!bins) {
+                (callback as SpectrumCallback)(data as AudioSpectrumPayload);
+            }
         });
         const unsubscribe = (): void => {
             unsub();
             // Nothing is left to undo if the host call fails; swallow it so the
             // rejection does not surface as unhandled.
-            bridge
-                .invoke<AudioUnsubscribeSpectrumResponse>('audio.unsubscribeSpectrum', {
+            call('audio.unsubscribeSpectrum', {
                     subscriptionId,
                 })
                 .catch(() => undefined);
         };
         return Object.assign(unsubscribe, { ready });
-    },
+    }) as SpectrumSubscribeFunction,
 
     /**
-     * Subscribe to the raw audio-stream callback channel.
+     * Subscribe to the audio foobar2000 is playing and get a {@link PcmStream}
+     * to poll for frames.
      *
-     * @deprecated Host-side stream capture is **not implemented yet**:
-     * the C++ handler at `src/api/AudioApi.cpp:AudioSubscribeStream`
-     * currently returns
-     * `{success: false, error: "Stream capture requires
-     * playback_stream_capture integration"}` without ever emitting an
-     * `audio:stream` event. The returned unsubscribe is still wired
-     * up so callers can fail gracefully, but the supplied `callback`
-     * **will never fire** until the host integration lands. The SDK
-     * surfaces a one-shot `console.warn` from the underlying
-     * `bridge.invoke` resolution to make this state visible.
+     * The samples are what the DSP chain produces, before ReplayGain and the
+     * volume control, so they differ from `audio:spectrum` in not including
+     * ReplayGain. They live in read-only shared memory; `read()` copies them
+     * out per channel and reports frames the ring overwrote before they were
+     * read. Nothing arrives while playback is stopped or paused. Poll from
+     * `requestAnimationFrame` or a timer and call `unsubscribe()` when done.
      *
-     * Track the integration status before re-enabling consumer code.
+     * `opts.interval` asks the core for a callback interval in seconds; the
+     * core rounds it to about 16 ms steps, never exceeds 200 ms (its default),
+     * and applies the shortest interval any subscription in the component
+     * asked for. `opts.bufferSeconds` sizes the ring (default 1 s; the first
+     * chunk after playback starts can hold up to 0.8 s of audio).
+     *
+     * The handle's `ready` resolves with the host's answer and never rejects;
+     * `code` is `NOT_SUPPORTED` outside a WebView2 host or on a runtime without
+     * shared buffers, `OPERATION_FAILED` when the page already has 8 stream
+     * subscriptions.
+     *
+     * @example
+     *   const stream = fb.audio.subscribeStream({ bufferSeconds: 0.5 });
+     *   const tick = () => {
+     *       const chunk = stream.read();
+     *       if (chunk) meter.push(chunk.planes[0], chunk.dropped);
+     *       if (!stream.ended) requestAnimationFrame(tick);
+     *   };
+     *   requestAnimationFrame(tick);
+     * @experimental
      */
-    subscribeStream: (
-        callback: StreamCallback,
-        options: AudioSubscribeStreamParams = {},
-    ): (() => void) => {
-        bridge
-            .invoke<BaseResponse>('audio.subscribeStream', options)
-            .then((resp) => {
-                if (resp && resp.success === false) {
-                    const detail = resp.error
-                        ? ` (${resp.error})`
-                        : '';
-                    // eslint-disable-next-line no-console
-                    console.warn(
-                        '[fb-sdk] audio.subscribeStream: host returned ' +
-                            'success=false; the callback will never fire' +
-                            detail +
-                            '.',
-                    );
-                }
-            })
-            .catch(() => {
-                /* swallow — bridge layer already handles transport errors */
-            });
-        const unsub = bridge.on('audio:stream', callback);
-        return () => {
-            unsub();
-            bridge
-                .invoke<AudioUnsubscribeStreamResponse>('audio.unsubscribeStream')
-                .catch(() => undefined);
-        };
-    },
-    /** @deprecated Pairs with the deprecated {@link audio.subscribeStream}. */
-    unsubscribeStream: () =>
-        bridge.invoke<BaseResponse>('audio.unsubscribeStream'),
+    subscribeStream: (opts?: PcmStreamOptions): PcmStream => subscribeStream(opts),
+
+    /**
+     * Remove this page's stream subscriptions on the host: the one with
+     * `subscriptionId`, or all of them when omitted. {@link PcmStream.unsubscribe}
+     * does this for its own subscription; call this directly only for
+     * subscriptions made with a raw `invoke`. Resolves with the number removed.
+     * @experimental
+     */
+    unsubscribeStream: (subscriptionId?: string) =>
+        call(
+            'audio.unsubscribeStream',
+            subscriptionId === undefined ? {} : { subscriptionId },
+        ),
 
     /**
      * Single-shot poll of the spectrum; requires at least one active
@@ -264,7 +284,7 @@ export const audio = {
      * that has not produced data yet answers `success: false`.
      */
     getSpectrum: (options: AudioGetSpectrumParams = {}) =>
-        bridge.invoke<AudioGetSpectrumResponse>('audio.getSpectrum', options),
+        call('audio.getSpectrum', options),
 
     /**
      * Short-window waveform of the current playback stream. Accepts
@@ -277,41 +297,37 @@ export const audio = {
         opts?: AudioGetWaveformParams,
     ) => {
         if (typeof pathOrOpts === 'string') {
-            return bridge.invoke<AudioGetWaveformResponse>(
+            return call(
                 'audio.getWaveform',
                 opts || {},
             );
         }
-        return bridge.invoke<AudioGetWaveformResponse>(
+        return call(
             'audio.getWaveform',
             pathOrOpts || {},
         );
     },
     getOutputInfo: () =>
-        bridge.invoke<AudioOutputInfoResponse>('audio.getOutputInfo'),
+        call('audio.getOutputInfo'),
     getStreamInfo: () =>
-        bridge.invoke<AudioStreamInfoResponse>('audio.getStreamInfo'),
-    analyzeBPM: (
-        path: string,
-        opts: Omit<AudioAnalyzeBPMParams, 'path'> = {},
-    ) =>
-        bridge.invoke<{ bpm: number }>('audio.analyzeBPM', { path, ...opts }),
+        call('audio.getStreamInfo'),
+    /**
+     * Reads the track's `BPM` tag; the host does not detect tempo. Resolves
+     * `success: false` with `code: 'NOT_FOUND'` when the tag is missing or is
+     * not a number between 0 and 500 (exclusive).
+     */
+    analyzeBPM: (path: string) =>
+        call('audio.analyzeBPM', { path }),
     isVisualizationAvailable: () =>
-        bridge.invoke<{ available: boolean }>('audio.isVisualizationAvailable'),
-    setChannelMode: (mode: string) =>
-        bridge.invoke<BaseResponse>('audio.setChannelMode', { mode }),
-
-    /** @deprecated Use {@link audio.generateFullWaveform}. */
-    generateWaveform: (
-        path: string,
-        opts?: Omit<AudioGenerateWaveformParams, 'path'>,
-    ) =>
-        bridge.invoke<AudioGenerateWaveformResponse>(
-            'audio.generateWaveform',
-            { path, ...(opts || {}) },
-        ),
+        call('audio.isVisualizationAvailable'),
+    /**
+     * Choose the channels of the visualisation stream behind spectrum frames and
+     * `getWaveform`; what is heard does not change.
+     */
+    setChannelMode: (mode: NonNullable<AudioSetChannelModeParams['mode']>) =>
+        call('audio.setChannelMode', { mode }),
     getSpectrumDebugState: () =>
-        bridge.invoke<SpectrumDebugState>('audio.getSpectrumDebugState'),
+        call('audio.getSpectrumDebugState'),
 
     /**
      * Generate a full-track waveform. Resolves synchronously on cache
@@ -341,22 +357,17 @@ export const audio = {
 
         // path last: an untyped caller's opts.path must not override the argument.
         const request: AudioGenerateFullWaveformParams = { ...params, path };
-        const result = await bridge.invoke<FullWaveformResult>(
-            'audio.generateFullWaveform',
-            request,
-        );
+        const result = await call('audio.generateFullWaveform', request);
 
-        if (result?.status === 'ready') return result;
-        if (result?.success === false) return result;
-        if (result?.status !== 'pending') return result;
+        // A ready answer, a refusal, and anything else that is not pending go back as is.
+        if (!result || result.success === false || result.status !== 'pending') return result;
 
         const taskId = result.taskId;
         const cancelHostTask = (): void => {
             if (typeof taskId !== 'string') return;
             // Fire and forget: the host answers cancelled false once the task
             // has settled, and there is nothing to retry either way.
-            bridge
-                .invoke<AudioCancelFullWaveformResponse>('audio.cancelFullWaveform', { taskId })
+            call('audio.cancelFullWaveform', { taskId })
                 .catch(() => undefined);
         };
         if (signal?.aborted) {
@@ -379,14 +390,14 @@ export const audio = {
                 signal?.removeEventListener('abort', onAbort);
                 return true;
             };
-            const offReady = bridge.on(
+            const offReady = subscribe(
                 'audio:fullWaveformReady',
                 (e: FullWaveformReadyEvent) => {
                     if (e?.taskId !== taskId || !settle()) return;
                     resolve({ success: true, status: 'ready', ...e });
                 },
             );
-            const offFail = bridge.on(
+            const offFail = subscribe(
                 'audio:fullWaveformFailed',
                 (e: FullWaveformFailedEvent) => {
                     if (e?.taskId !== taskId || !settle()) return;
@@ -423,5 +434,51 @@ export const audio = {
      * `code: 'CANCELLED'`, which may arrive before this answer.
      */
     cancelFullWaveform: (taskId: string) =>
-        bridge.invoke<AudioCancelFullWaveformResponse>('audio.cancelFullWaveform', { taskId }),
+        call('audio.cancelFullWaveform', { taskId }),
+
+    /**
+     * Decode a track, or a range of it, into float32 PCM and resolve with a
+     * {@link PcmBuffer} that reads the samples in place.
+     *
+     * The samples live in read-only shared memory: writing through
+     * `getChannelView()` crashes the renderer process, so copy them with
+     * `toAudioBuffer()` when you need to change them, and call `release()` when
+     * done. One task decodes at a time and the rest queue; identical requests
+     * in flight share one decode.
+     *
+     * Rejects with `PcmDecodeError` carrying the host's `code` when the host
+     * refuses the request (`INVALID_PARAMS` also covers a range too large for
+     * one buffer: 256 MiB in 64-bit foobar2000, 64 MiB in 32-bit) or the task
+     * fails later; `NOT_SUPPORTED` outside a WebView2 host. `opts.signal` and
+     * `opts.timeoutMs` (default 120 s, `0` waits forever) cancel the host task
+     * and reject, with an `AbortError` `DOMException` and code `TIMEOUT`
+     * respectively.
+     *
+     * @example
+     *   const pcm = await fb.audio.decodePcm(path, { start: 30, end: 60, sampleRate: 22050, mono: true });
+     *   try {
+     *       analyse(pcm.getChannelView(0), pcm.sampleRate);
+     *   } finally {
+     *       pcm.release();
+     *   }
+     * @experimental
+     */
+    decodePcm: (path: string, opts?: DecodePcmOptions): Promise<PcmBuffer> => decodePcm(path, opts),
+
+    /**
+     * Cancel a pending `audio.decodePcm` task by its `taskId`. The SDK's
+     * {@link audio.decodePcm} does this for you on abort and timeout; call it
+     * directly only for tasks started with a raw `invoke`. `cancelled: false`
+     * means the task has already settled, does not exist or belongs to another
+     * page.
+     * @experimental
+     */
+    cancelDecodePcm: (taskId: string) =>
+        call('audio.cancelDecodePcm', { taskId }),
+
+    /**
+     * Shared-buffer support of this page and the state of the decode queue, for tests and diagnostics.
+     * @experimental
+     */
+    getPcmDebugState: () => call('audio.getPcmDebugState'),
 };

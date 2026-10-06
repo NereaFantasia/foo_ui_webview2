@@ -18,7 +18,7 @@
  * | `playback:time`             | sync `position` (high-frequency tick)        |
  */
 
-import { bridge } from './Bridge.js';
+import { subscribe } from './subscribe.js';
 import type { TrackInfo } from '../types/responses.js';
 
 /**
@@ -52,7 +52,7 @@ export const state: ReactiveState = {
 
 // ── Event wiring ────────────────────────────────────────────
 
-bridge.on('playback:stateChanged', (data) => {
+subscribe('playback:stateChanged', (data) => {
     if (data.state !== undefined) {
         state.isPlaying = data.state === 'playing';
     }
@@ -61,23 +61,23 @@ bridge.on('playback:stateChanged', (data) => {
     }
 });
 
-bridge.on('playback:trackChanged', (data) => {
+subscribe('playback:trackChanged', (data) => {
     state.currentTrack = data;
     state.isPlaying = true;
 });
 
-bridge.on('playback:stopped', () => {
+subscribe('playback:stopped', () => {
     state.isPlaying = false;
     state.position = 0;
 });
 
-bridge.on('playback:volumeChanged', (data) => {
+subscribe('playback:volumeChanged', (data) => {
     if (data.volume !== undefined) {
         state.volume = data.volume;
     }
 });
 
-bridge.on('playback:time', (data) => {
+subscribe('playback:time', (data) => {
     if (data.position !== undefined) {
         state.position = data.position;
     }

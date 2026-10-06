@@ -11,8 +11,10 @@
  */
 
 import type { SmpBridgeShape } from './bridgeShape.js';
+import { typedCall } from '../utils/typedCall.js';
 import type { NativeFb2k } from '../types/native.js';
 import type { JsonValue } from '../types/json.js';
+import { successOf } from './utils.js';
 
 const PROP_PREFIX = 'smp.prop.';
 
@@ -60,7 +62,7 @@ function _getNativeFb2k(): NativeFb2k | null {
  */
 export function attachWindowProperties(fb: SmpBridgeShape): void {
     if (typeof window === 'undefined') return;
-    const _invoke = fb.invoke.bind(fb);
+    const _invoke = typedCall(fb.invoke.bind(fb));
 
     if (typeof window.GetProperty !== 'function') {
         window.GetProperty = async (
@@ -68,10 +70,10 @@ export function attachWindowProperties(fb: SmpBridgeShape): void {
             defaultVal?: JsonValue,
         ): Promise<JsonValue> => {
             const key = PROP_PREFIX + String(name ?? '');
-            const res = (await _invoke('config.get', {
+            const res = successOf(await _invoke('config.get', {
                 key,
                 default: defaultVal ?? null,
-            })) as ConfigGetResponse | null;
+            }));
             const value = res?.value;
             if (value !== undefined) return value as JsonValue;
             return defaultVal ?? null;
@@ -87,7 +89,8 @@ export function attachWindowProperties(fb: SmpBridgeShape): void {
             if (val === null || val === undefined) {
                 await _invoke('config.remove', { key });
             } else {
-                await _invoke('config.set', { key, value: val });
+                // Scripts may pass any value; the bridge sends it as JSON.
+                await _invoke('config.set', { key, value: val as JsonValue });
             }
         };
     }

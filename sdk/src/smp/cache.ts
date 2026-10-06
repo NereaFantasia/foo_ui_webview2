@@ -7,7 +7,9 @@
  */
 
 import type { SmpBridgeShape } from './bridgeShape.js';
+import { typedCall } from '../utils/typedCall.js';
 import type { PlaylistInfo, TrackInfo } from '../types/responses.js';
+import type { PlaylistGetAllResponse } from '../types/generated/responses.js';
 import type {
     PlaybackBooleanPayload,
     PlaybackOrderChangedPayload,
@@ -16,9 +18,8 @@ import type {
     PlaybackTimePayload,
     PlaybackVolumeChangedPayload,
 } from '../types/events.js';
+import { LOG_PREFIX } from './smpLog.js';
 import type { SmpCompatCache } from './types.js';
-
-const LOG_PREFIX = '[SMP-Compat]';
 
 /** Default-initialised cache literal. */
 export function createInitialCache(): SmpCompatCache {
@@ -56,10 +57,12 @@ export function createPlaylistRefresher(
     schedule: () => void;
 } {
     let scheduled = false;
+    const inv = typedCall(fb.invoke.bind(fb));
 
     const refresh = async (): Promise<void> => {
         try {
-            const all = (await fb.invoke('playlist.getAll', {})) as PlaylistInfo[] | undefined;
+            const response: PlaylistGetAllResponse | undefined = await inv('playlist.getAll', {});
+            const all = response?.success !== false ? response?.playlists : undefined;
             if (!Array.isArray(all)) return;
 
             cache.playlists = all;
@@ -229,11 +232,12 @@ export async function populateCache(
     opts: { includePaths?: boolean } = {},
 ): Promise<void> {
     const includePaths = !!opts.includePaths;
+    const inv = typedCall(fb.invoke.bind(fb));
 
     type StateResp = { state?: string };
     type VolResp = { volumeDb?: number; muted?: boolean };
     type PosResp = { position?: number; duration?: number };
-    type TrackResp = TrackInfo & { found?: boolean };
+    type TrackResp = { found?: boolean; track?: TrackInfo };
     type OrderResp = { orderIndex?: number; order?: number };
     type StopAfterResp = { enabled?: boolean };
     type WinResp = { alwaysOnTop?: boolean; isAlwaysOnTop?: boolean };
@@ -241,30 +245,30 @@ export async function populateCache(
     type PathResp = { path?: string };
     type VersionResp = { version?: string };
 
-    // Deliberately untyped: the queries are heterogeneous and each result
-    // is narrowed via the local response interfaces (`StateResp`,
-    // `VolResp`, ...) at destructure-time, which preserves call-site type
-    // precision without an unwieldy tuple annotation.
-    const queries = [
-        fb.invoke('playback.getState', {}),
-        fb.invoke('playback.getVolume', {}),
-        fb.invoke('playback.getPosition', {}),
-        fb.invoke('playback.getCurrentTrack', {}),
-        fb.invoke('playlist.getAll', {}),
-        fb.invoke('playback.getPlaybackOrder', {}),
-        fb.invoke('playback.getStopAfterCurrent', {}).catch(() => ({ enabled: false }) as StopAfterResp),
-        fb.invoke('window.getState', {}).catch(() => ({ alwaysOnTop: false }) as WinResp),
-        fb.invoke('config.getCursorFollowPlayback', {}).catch(() => ({ enabled: false }) as StopAfterResp),
-        fb.invoke('config.getPlaybackFollowCursor', {}).catch(() => ({ enabled: false }) as StopAfterResp),
-        fb.invoke('config.getReplaygainMode', {}).catch(() => ({ mode: 0 }) as RgResp),
+    // Results deliberately untyped: the queries are heterogeneous and each
+    // result is read through the local response interfaces (`StateResp`,
+    // `VolResp`, ...) at destructure-time, which also accept the legacy key
+    // spellings. Method names and params are still checked per call.
+    const queries: Promise<object>[] = [
+        inv('playback.getState', {}),
+        inv('playback.getVolume', {}),
+        inv('playback.getPosition', {}),
+        inv('playback.getCurrentTrack', {}),
+        inv('playlist.getAll', {}),
+        inv('playback.getPlaybackOrder', {}),
+        inv('playback.getStopAfterCurrent', {}).catch(() => ({ enabled: false }) as StopAfterResp),
+        inv('window.getState', {}).catch(() => ({ alwaysOnTop: false }) as WinResp),
+        inv('config.getCursorFollowPlayback', {}).catch(() => ({ enabled: false }) as StopAfterResp),
+        inv('config.getPlaybackFollowCursor', {}).catch(() => ({ enabled: false }) as StopAfterResp),
+        inv('config.getReplaygainMode', {}).catch(() => ({ mode: 0 }) as RgResp),
     ];
 
     if (includePaths) {
         queries.push(
-            fb.invoke('misc.getComponentPath', {}).catch(() => ({}) as PathResp),
-            fb.invoke('misc.getFoobarPath', {}).catch(() => ({}) as PathResp),
-            fb.invoke('misc.getProfilePath', {}).catch(() => ({}) as PathResp),
-            fb.invoke('config.getVersionInfo', {}).catch(() => ({}) as VersionResp),
+            inv('misc.getComponentPath', {}).catch(() => ({}) as PathResp),
+            inv('misc.getFoobarPath', {}).catch(() => ({}) as PathResp),
+            inv('misc.getProfilePath', {}).catch(() => ({}) as PathResp),
+            inv('config.getVersionInfo', {}).catch(() => ({}) as VersionResp),
         );
     }
 
@@ -287,7 +291,8 @@ export async function populateCache(
     const vol = rawVol as VolResp | undefined;
     const pos = rawPos as PosResp | undefined;
     const track = rawTrack as TrackResp | null | undefined;
-    const playlists = rawPlaylists as PlaylistInfo[] | undefined;
+    const playlistsResponse = rawPlaylists as PlaylistGetAllResponse | undefined;
+    const playlists = playlistsResponse?.success !== false ? playlistsResponse?.playlists : undefined;
     const order = rawOrder as OrderResp | undefined;
     const stopAfter = rawStopAfter as StopAfterResp | undefined;
     const winState = rawWin as WinResp | undefined;
@@ -307,11 +312,11 @@ export async function populateCache(
     if (typeof pos?.position === 'number') cache.playbackTime = pos.position;
     if (typeof pos?.duration === 'number') cache.playbackLength = pos.duration;
 
-    if (track && track.found === false) {
+    if (!track?.found || !track.track) {
         cache.currentTrack = null;
-    } else if (track && typeof track === 'object') {
-        cache.currentTrack = track;
-        if (typeof track.duration === 'number') cache.playbackLength = track.duration;
+    } else {
+        cache.currentTrack = track.track;
+        if (typeof track.track.duration === 'number') cache.playbackLength = track.track.duration;
     }
 
     if (Array.isArray(playlists)) {

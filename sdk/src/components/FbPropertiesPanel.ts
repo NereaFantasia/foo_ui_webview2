@@ -55,10 +55,8 @@ export class FbPropertiesPanel extends FbBaseElement {
         try {
             let path = this.getAttribute('path');
             if (!path) {
-                const track = (await fb.player.getCurrentTrack()) as
-                    | { path?: string }
-                    | null;
-                path = track?.path ?? null;
+                const current = await fb.player.getCurrentTrack();
+                path = (current.success !== false && current.track?.path) || null;
             }
             if (!path || path === this._trackPath) return;
             this._trackPath = path;

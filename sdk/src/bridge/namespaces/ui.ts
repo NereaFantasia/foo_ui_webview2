@@ -1,295 +1,350 @@
-/**
- * `ui` — window-management namespace.
- */
-
 import { bridge } from '../Bridge.js';
+import { call } from '../call.js';
 import type {
-    BaseResponse,
-    DpiScaleResponse,
     WindowBackdropPolicyPatch,
-    WindowBackdropPolicyResponse,
-    WindowBackdropPolicyState,
-    WindowBounds,
-    WindowDevServerConfig,
+    WindowCreatePopupOptions,
     WindowListResponse,
-    WindowPopupBehaviorResponse,
-    WindowPopupBehaviorState,
-    WindowState,
-    WindowTitlebarInfo,
+    WindowSetPopupBehaviorOptions,
 } from '../../types/responses.js';
-import type { JsonObject } from '../../types/json.js';
-import type {
-    WindowCreatePopupParams,
-    WindowSetPopupBehaviorParams,
-} from '../../types/overrides/window.js';
+import type { JsonValue } from '../../types/json.js';
+import type { WindowRegion } from '../../types/generated/schema-types.js';
 import type {
     WindowFlashParams,
     WindowSetAcrylicParams,
     WindowSetBackgroundTransparencyParams,
     WindowSetBlurParams,
+    WindowSetBoundsParams,
     WindowSetClickThroughExcludeRegionsParams,
     WindowSetClickThroughParams,
     WindowSetDevServerConfigParams,
+    WindowSetMicaEffectParams,
+    WindowSetMicaParams,
 } from '../../types/generated/params.js';
-import type {
-    WindowIsAlwaysOnTopResponse,
-    WindowIsMinimizedResponse,
-} from '../../types/generated/responses.js';
 
+/**
+ * `ui` — window-management namespace.
+ */
 export const ui = {
     // === Basic window controls ===
-    minimize: () => bridge.invoke<BaseResponse>('window.minimize'),
-    maximize: () => bridge.invoke<BaseResponse>('window.maximize'),
-    restore: () => bridge.invoke<BaseResponse>('window.restore'),
-    close: () => bridge.invoke<BaseResponse>('window.close'),
+    minimize: () => call('window.minimize'),
+    maximize: () => call('window.maximize'),
+    restore: () => call('window.restore'),
+    close: () => call('window.close'),
     toggleMaximize: () =>
-        bridge.invoke<BaseResponse & { maximized?: boolean }>(
-            'window.toggleMaximize',
-        ),
-    startDrag: () => bridge.invoke<BaseResponse>('window.startDrag'),
+        call('window.toggleMaximize'),
+    startDrag: () => call('window.startDrag'),
     startResize: (edge: string) =>
-        bridge.invoke<BaseResponse>('window.startResize', { edge }),
-    reload: () => bridge.invoke<BaseResponse>('window.reload'),
+        call('window.startResize', {
+            edge,
+        }),
+    reload: () => call('window.reload'),
 
     // === State queries ===
-    getState: () => bridge.invoke<WindowState>('window.getState'),
+    getState: () => call('window.getState'),
+    /** Resolves with `{ maximized, isMaximized }` (both carry the same value). */
     isMaximized: () =>
-        bridge.invoke<{ isMaximized: boolean }>('window.isMaximized'),
+        call('window.isMaximized'),
     /** Resolves with `{ minimized }` (the host does not send an `isMinimized` alias). */
     isMinimized: () =>
-        bridge.invoke<WindowIsMinimizedResponse>('window.isMinimized'),
-    isFullscreen: () =>
-        bridge.invoke<{ isFullscreen: boolean }>('window.isFullscreen'),
+        call('window.isMinimized'),
+    /**
+     * Resolves with `{ fullscreen, isFullscreen, windowId }`. `windowId` targets another window;
+     * omitted, the calling window.
+     */
+    isFullscreen: (windowId?: string) =>
+        call('window.isFullscreen', {
+            ...(windowId != null ? { windowId } : {}),
+        }),
     /** Resolves with `{ enabled, isAlwaysOnTop }` (both carry the same value). */
     isAlwaysOnTop: () =>
-        bridge.invoke<WindowIsAlwaysOnTopResponse>('window.isAlwaysOnTop'),
-    isResizable: () =>
-        bridge.invoke<{ resizable: boolean }>('window.isResizable'),
-    getTitle: () => bridge.invoke<{ title: string }>('window.getTitle'),
-    getMode: () => bridge.invoke<{ mode: string }>('window.getMode'),
+        call('window.isAlwaysOnTop'),
+    /** `windowId` targets another window; omitted, the calling window. */
+    isResizable: (windowId?: string) =>
+        call('window.isResizable', {
+            ...(windowId != null ? { windowId } : {}),
+        }),
+    getTitle: () => call('window.getTitle'),
+    /** Resolves with `{ mode, panelMode, windowId }`; read it on startup to adapt to panel mode. */
+    getMode: () => call('window.getMode'),
 
     // === Position and size ===
     setPosition: (x: number, y: number) =>
-        bridge.invoke<BaseResponse>('window.setPosition', { x, y }),
+        call('window.setPosition', {
+            x,
+            y,
+        }),
     setSize: (width: number, height: number) =>
-        bridge.invoke<BaseResponse>('window.setSize', { width, height }),
+        call('window.setSize', {
+            width,
+            height,
+        }),
     setTitle: (title: string) =>
-        bridge.invoke<BaseResponse>('window.setTitle', { title }),
-    getBounds: () => bridge.invoke<WindowBounds>('window.getBounds'),
-    setBounds: (opts: Partial<WindowBounds>) =>
-        bridge.invoke<BaseResponse>('window.setBounds', opts),
-    center: () => bridge.invoke<BaseResponse>('window.center'),
+        call('window.setTitle', {
+            title,
+        }),
+    getBounds: () => call('window.getBounds'),
+    /**
+     * Only `x`, `y`, `width` and `height` are sent, so the object `getBounds` resolved with can be
+     * edited and passed back as is.
+     */
+    setBounds: ({ x, y, width, height }: WindowSetBoundsParams) =>
+        call('window.setBounds', {
+            x,
+            y,
+            width,
+            height,
+        }),
+    center: () => call('window.center'),
     hasSavedBounds: () =>
-        bridge.invoke<{ hasSavedBounds: boolean }>('window.hasSavedBounds'),
+        call('window.hasSavedBounds'),
 
     // === Size constraints ===
-    setMinSize: (width: number, height: number) =>
-        bridge.invoke<BaseResponse>('window.setMinSize', { width, height }),
-    getMinSize: () =>
-        bridge.invoke<{ width: number; height: number }>('window.getMinSize'),
-    setMaxSize: (width: number, height: number) =>
-        bridge.invoke<BaseResponse>('window.setMaxSize', { width, height }),
-    getMaxSize: () =>
-        bridge.invoke<{ width: number; height: number }>('window.getMaxSize'),
-    setResizable: (resizable: boolean) =>
-        bridge.invoke<BaseResponse>('window.setResizable', { resizable }),
+    /** Physical pixels. `windowId` targets another window; omitted, the calling window. */
+    setMinSize: (width: number, height: number, windowId?: string) =>
+        call('window.setMinSize', {
+            width,
+            height,
+            ...(windowId != null ? { windowId } : {}),
+        }),
+    /** `windowId` targets another window; omitted, the calling window. */
+    getMinSize: (windowId?: string) =>
+        call('window.getMinSize', {
+            ...(windowId != null ? { windowId } : {}),
+        }),
+    /**
+     * Physical pixels; `0` removes the bound. `windowId` targets another window; omitted, the
+     * calling window.
+     */
+    setMaxSize: (width: number, height: number, windowId?: string) =>
+        call('window.setMaxSize', {
+            width,
+            height,
+            ...(windowId != null ? { windowId } : {}),
+        }),
+    /** `windowId` targets another window; omitted, the calling window. */
+    getMaxSize: (windowId?: string) =>
+        call('window.getMaxSize', {
+            ...(windowId != null ? { windowId } : {}),
+        }),
+    /** `windowId` targets another window; omitted, the calling window. */
+    setResizable: (resizable: boolean, windowId?: string) =>
+        call('window.setResizable', {
+            resizable,
+            ...(windowId != null ? { windowId } : {}),
+        }),
 
     // === Always-on-top ===
     setAlwaysOnTop: (enabled: boolean) =>
-        bridge.invoke<BaseResponse>('window.setAlwaysOnTop', { enabled }),
+        call('window.setAlwaysOnTop', {
+            enabled,
+        }),
     toggleAlwaysOnTop: () =>
-        bridge.invoke<BaseResponse & { enabled?: boolean }>(
-            'window.toggleAlwaysOnTop',
-        ),
+        call('window.toggleAlwaysOnTop'),
 
     // === Fullscreen ===
-    toggleFullscreen: () =>
-        bridge.invoke<BaseResponse & { fullscreen?: boolean }>(
-            'window.toggleFullscreen',
-        ),
-    enterFullscreen: () =>
-        bridge.invoke<BaseResponse & { isFullscreen?: boolean }>(
-            'window.enterFullscreen',
-        ),
-    exitFullscreen: () =>
-        bridge.invoke<BaseResponse & { isFullscreen?: boolean }>(
-            'window.exitFullscreen',
-        ),
-    setFullscreen: (enabled: boolean) =>
-        bridge.invoke<BaseResponse & { fullscreen?: boolean }>(
-            'window.setFullscreen',
-            { enabled },
-        ),
+    /** `windowId` targets another window; omitted, the calling window. */
+    toggleFullscreen: (windowId?: string) =>
+        call('window.toggleFullscreen', {
+            ...(windowId != null ? { windowId } : {}),
+        }),
+    /**
+     * Fails with `OPERATION_FAILED` when the window is already fullscreen. `windowId` targets
+     * another window; omitted, the calling window.
+     */
+    enterFullscreen: (windowId?: string) =>
+        call('window.enterFullscreen', {
+            ...(windowId != null ? { windowId } : {}),
+        }),
+    /**
+     * Fails with `OPERATION_FAILED` when the window is not fullscreen. `windowId` targets another
+     * window; omitted, the calling window.
+     */
+    exitFullscreen: (windowId?: string) =>
+        call('window.exitFullscreen', {
+            ...(windowId != null ? { windowId } : {}),
+        }),
+    /** `windowId` targets another window; omitted, the calling window. */
+    setFullscreen: (enabled: boolean, windowId?: string) =>
+        call('window.setFullscreen', {
+            enabled,
+            ...(windowId != null ? { windowId } : {}),
+        }),
 
     // === Focus ===
     focus: (windowId?: string) =>
-        bridge.invoke<BaseResponse>(
+        call(
             'window.focus',
             windowId ? { windowId } : {},
         ),
-    blur: () => bridge.invoke<BaseResponse>('window.blur'),
+    blur: () => call('window.blur'),
     flash: (opts: WindowFlashParams) =>
-        bridge.invoke<BaseResponse>('window.flash', opts),
+        call('window.flash', opts),
     flashTaskbar: (count?: number) =>
-        bridge.invoke<BaseResponse>('window.flashTaskbar', {
+        call('window.flashTaskbar', {
             ...(count != null ? { count } : {}),
         }),
     showSystemMenu: (x: number, y: number, w?: number, h?: number) =>
-        bridge.invoke<BaseResponse>('window.showSystemMenu', {
+        call('window.showSystemMenu', {
             x,
             y,
             ...(w != null ? { w, h } : {}),
         }),
 
     // === DWM effects ===
-    setMica: (opts: JsonObject = {}) =>
-        bridge.invoke<
-            BaseResponse & {
-                enabled?: boolean;
-                variant?: string;
-                darkMode?: boolean;
-            }
-        >('window.setMica', opts),
-    setMicaEffect: (opts: JsonObject = {}) =>
-        bridge.invoke<
-            BaseResponse & {
-                enabled?: boolean;
-                variant?: string;
-                darkMode?: boolean;
-            }
-        >('window.setMicaEffect', opts),
+    setMica: (opts: WindowSetMicaParams = {}) =>
+        call('window.setMica', opts),
+    setMicaEffect: (opts: WindowSetMicaEffectParams = {}) =>
+        call('window.setMicaEffect', opts),
     setAcrylic: (opts: WindowSetAcrylicParams) =>
-        bridge.invoke<BaseResponse>('window.setAcrylic', opts),
+        call('window.setAcrylic', opts),
     setBlur: (opts: WindowSetBlurParams) =>
-        bridge.invoke<BaseResponse>('window.setBlur', opts),
-    setDarkMode: (enabled: boolean) =>
-        bridge.invoke<BaseResponse>('window.setDarkMode', { enabled }),
+        call('window.setBlur', opts),
+    /** `windowId` targets another window; omitted, the calling window. */
+    setDarkMode: (enabled: boolean, windowId?: string) =>
+        call('window.setDarkMode', {
+            enabled,
+            ...(windowId != null ? { windowId } : {}),
+        }),
     setBackgroundTransparency: (opts: WindowSetBackgroundTransparencyParams) =>
-        bridge.invoke<BaseResponse & { description?: string }>(
+        call(
             'window.setBackgroundTransparency',
             opts,
         ),
-    refreshWebView: () => bridge.invoke<BaseResponse>('window.refreshWebView'),
+    refreshWebView: () =>
+        call('window.refreshWebView'),
     setCornerPreference: (mode: string) =>
-        bridge.invoke<BaseResponse>('window.setCornerPreference', { mode }),
+        call('window.setCornerPreference', {
+            mode,
+        }),
+    /** Resolves with `{ mode, preference }` (both carry the same value). */
     getCornerPreference: () =>
-        bridge.invoke<{ mode: string }>('window.getCornerPreference'),
+        call('window.getCornerPreference'),
 
     // === Titlebar ===
     getTitlebarHeight: () =>
-        bridge.invoke<{ height: number }>('window.getTitlebarHeight'),
+        call('window.getTitlebarHeight'),
     setTitlebarHeight: (height: number) =>
-        bridge.invoke<BaseResponse>('window.setTitlebarHeight', { height }),
+        call('window.setTitlebarHeight', {
+            height,
+        }),
+    /** Resolves with `{ width, buttonWidth }`: all three buttons, and one of them. */
     getCaptionButtonsWidth: () =>
-        bridge.invoke<{ width: number }>('window.getCaptionButtonsWidth'),
+        call('window.getCaptionButtonsWidth'),
     getTitlebarInfo: () =>
-        bridge.invoke<WindowTitlebarInfo>('window.getTitlebarInfo'),
-    setDragRegions: (regions: unknown[]) =>
-        bridge.invoke<BaseResponse & { count?: number; dpiScale?: number }>(
-            'window.setDragRegions',
-            { regions },
-        ),
+        call('window.getTitlebarInfo'),
+    setDragRegions: (regions: WindowRegion[]) =>
+        call('window.setDragRegions', {
+            regions,
+        }),
     clearDragRegions: () =>
-        bridge.invoke<BaseResponse>('window.clearDragRegions'),
-    setNoDragRegions: (regions: unknown[]) =>
-        bridge.invoke<BaseResponse & { count?: number; dpiScale?: number }>(
-            'window.setNoDragRegions',
-            { regions },
-        ),
+        call('window.clearDragRegions'),
+    setNoDragRegions: (regions: WindowRegion[]) =>
+        call('window.setNoDragRegions', {
+            regions,
+        }),
     clearNoDragRegions: () =>
-        bridge.invoke<BaseResponse>('window.clearNoDragRegions'),
-    setFrameless: (frameless: boolean) =>
-        bridge.invoke<BaseResponse>('window.setFrameless', { frameless }),
+        call('window.clearNoDragRegions'),
+    /**
+     * Where the page draws the main window's maximize button, in CSS pixels, so
+     * that on Windows 11 hovering it offers Snap layouts. Omit `region` to remove
+     * it. The host passes the mouse input on the button back to the page, so its
+     * hover styles and click handler keep working; call again whenever layout
+     * moves the button. Main window only.
+     */
+    setMaximizeButtonRegion: (region?: WindowRegion) =>
+        call('window.setMaximizeButtonRegion', region ? { region } : {}),
+    /** `windowId` targets another window; omitted, the calling window. */
+    setFrameless: (frameless: boolean, windowId?: string) =>
+        call('window.setFrameless', {
+            frameless,
+            ...(windowId != null ? { windowId } : {}),
+        }),
 
     // === Multi-window ===
-    createPopup: (opts: WindowCreatePopupParams) =>
-        bridge.invoke<{ windowId: string }>('window.createPopup', opts),
+    createPopup: (opts: WindowCreatePopupOptions) =>
+        call('window.createPopup', opts),
     closePopup: (windowId: string) =>
-        bridge.invoke<BaseResponse>('window.closePopup', { windowId }),
-    closeAllPopups: () => bridge.invoke<BaseResponse>('window.closeAllPopups'),
-    getAllWindows: () =>
-        bridge.invoke<WindowListResponse>('window.getAllWindows'),
+        call('window.closePopup', {
+            windowId,
+        }),
+    closeAllPopups: () => call('window.closeAllPopups'),
+    /** Entries are discriminated by `isMain`: popups carry `url`, `profile`, `behavior` and `resolvedBehavior`. */
+    // The declaration types every entry with the popup-only fields optional;
+    // the host fills them exactly when `isMain` is false.
+    getAllWindows: () => call('window.getAllWindows') as Promise<WindowListResponse>,
     getCurrentWindowId: () =>
-        bridge.invoke<{ windowId: string }>('window.getCurrentWindowId'),
+        call('window.getCurrentWindowId'),
+    /** Popups only; `windowId` omitted, the calling popup. */
     getPopupBehavior: (windowId?: string) =>
-        bridge.invoke<WindowPopupBehaviorState>('window.getPopupBehavior', {
+        call('window.getPopupBehavior', {
             ...(windowId != null ? { windowId } : {}),
         }),
-    setPopupBehavior: (
-        opts: WindowSetPopupBehaviorParams,
-    ) =>
-        bridge.invoke<WindowPopupBehaviorResponse>(
-            'window.setPopupBehavior',
-            opts,
-        ),
+    setPopupBehavior: (opts: WindowSetPopupBehaviorOptions) =>
+        call('window.setPopupBehavior', opts),
+    /** `windowId` targets another window; omitted, the calling window. */
     getBackdropPolicy: (windowId?: string) =>
-        bridge.invoke<WindowBackdropPolicyState>('window.getBackdropPolicy', {
+        call('window.getBackdropPolicy', {
             ...(windowId != null ? { windowId } : {}),
         }),
-    setBackdropPolicy: (
-        opts: WindowBackdropPolicyPatch & { windowId?: string },
-    ) =>
-        bridge.invoke<WindowBackdropPolicyResponse>(
-            'window.setBackdropPolicy',
-            {
-                ...(opts.windowId != null ? { windowId: opts.windowId } : {}),
-                backdropPolicy: Object.fromEntries(
-                    Object.entries(opts).filter(([key]) => key !== 'windowId'),
-                ),
-            },
-        ),
+    /**
+     * Takes the policy fields flat and sends them as `backdropPolicy`; a `null` field removes that
+     * override. `windowId` targets another window; omitted, the calling window.
+     */
+    setBackdropPolicy: ({ windowId, ...policy }: WindowBackdropPolicyPatch & { windowId?: string }) =>
+        call('window.setBackdropPolicy', {
+            ...(windowId != null ? { windowId } : {}),
+            backdropPolicy: policy,
+        }),
     setClickThrough: (opts: WindowSetClickThroughParams) =>
-        bridge.invoke<BaseResponse & { clickThrough?: boolean }>(
-            'window.setClickThrough',
-            opts,
-        ),
+        call('window.setClickThrough', opts),
+    /** `windowId` targets another popup; omitted, the calling window. */
     isClickThrough: (windowId?: string) =>
-        bridge.invoke<{ clickThrough: boolean }>('window.isClickThrough', {
+        call('window.isClickThrough', {
             ...(windowId != null ? { windowId } : {}),
         }),
     setClickThroughExcludeRegions: (opts: WindowSetClickThroughExcludeRegionsParams) =>
-        bridge.invoke<
-            BaseResponse & {
-                count?: number;
-                dpiScale?: number;
-                warning?: string;
-            }
-        >('window.setClickThroughExcludeRegions', opts),
+        call(
+            'window.setClickThroughExcludeRegions',
+            opts,
+        ),
+    /** `windowId` targets another popup; omitted, the calling window. */
     clearClickThroughExcludeRegions: (windowId?: string) =>
-        bridge.invoke<BaseResponse>(
+        call(
             'window.clearClickThroughExcludeRegions',
             { ...(windowId != null ? { windowId } : {}) },
         ),
-    sendMessage: (targetWindowId: string, message: unknown) =>
-        bridge.invoke<BaseResponse>('window.sendMessage', {
+    sendMessage: (targetWindowId: string, message: JsonValue) =>
+        call('window.sendMessage', {
             targetWindowId,
             message,
         }),
-    broadcast: (message: unknown) =>
-        bridge.invoke<BaseResponse>('window.broadcast', { message }),
-    cancelClose: () => bridge.invoke<BaseResponse>('window.cancelClose'),
-    confirmClose: () => bridge.invoke<BaseResponse>('window.confirmClose'),
+    broadcast: (message: JsonValue) =>
+        call('window.broadcast', {
+            message,
+        }),
+    cancelClose: () => call('window.cancelClose'),
+    confirmClose: () => call('window.confirmClose'),
 
     // === Zoom and DPI ===
-    getDpiScale: () => bridge.invoke<DpiScaleResponse>('window.getDpiScale'),
+    getDpiScale: () => call('window.getDpiScale'),
     setZoom: (zoom: number) =>
-        bridge.invoke<BaseResponse>('window.setZoom', { zoom }),
-    getZoom: () => bridge.invoke<{ zoom: number }>('window.getZoom'),
-    resetZoom: () =>
-        bridge.invoke<BaseResponse & { zoom?: number }>('window.resetZoom'),
+        call('window.setZoom', {
+            zoom,
+        }),
+    getZoom: () => call('window.getZoom'),
+    resetZoom: () => call('window.resetZoom'),
     setZoomForDpi: (dpi?: number) =>
-        bridge.invoke<BaseResponse & { zoom?: number }>(
-            'window.setZoomForDpi',
-            { ...(dpi != null ? { dpi } : {}) },
-        ),
+        call('window.setZoomForDpi', {
+            ...(dpi != null ? { dpi } : {}),
+        }),
 
     // === Dev server ===
     getDevServerConfig: () =>
-        bridge.invoke<WindowDevServerConfig>('window.getDevServerConfig'),
+        call('window.getDevServerConfig'),
     setDevServerConfig: (opts: WindowSetDevServerConfigParams) =>
-        bridge.invoke<BaseResponse>('window.setDevServerConfig', opts),
+        call('window.setDevServerConfig', opts),
     showContextMenu: (x?: number, y?: number) =>
-        bridge.invoke<BaseResponse>('ui.showContextMenu', {
+        call('ui.showContextMenu', {
             ...(x != null ? { x, y } : {}),
         }),
 };

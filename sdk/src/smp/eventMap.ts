@@ -13,33 +13,12 @@
  *   positional argument list SMP scripts expect.
  */
 
+import type { FBEventName } from '../types/events.js';
 import type { SmpBridgeShape } from './bridgeShape.js';
 import { FbMetadbHandle } from './classes/FbMetadbHandle.js';
 import { FbMetadbHandleList } from './classes/FbMetadbHandleList.js';
+import { smpError, smpWarn } from './smpLog.js';
 import type { SmpEventCallback, SmpEventName, SmpHandleLike } from './types.js';
-
-const LOG_PREFIX = '[SMP-Compat]';
-
-function _error(...args: unknown[]): void {
-    try {
-        // eslint-disable-next-line no-console
-        console.error(LOG_PREFIX, ...args);
-    } catch {
-        /* ignore */
-    }
-}
-
-function _warn(...args: unknown[]): void {
-    // The helper is kept silent in production builds; the `console.warn`
-    // call below makes the message observable in dev tools when an
-    // unexpected SMP event mapping is triggered.
-    try {
-        // eslint-disable-next-line no-console
-        console.warn(LOG_PREFIX, ...args);
-    } catch {
-        /* ignore */
-    }
-}
 
 /**
  * Special markers returned when the SMP name does not resolve to a
@@ -54,7 +33,7 @@ type SmpSpecialEventName = '__special_focus__' | '__special_playlists__';
  * are dispatched manually inside the bootstrap because they bind to
  * multiple canonical events.
  */
-export const SMP_EVENT_MAP: Record<SmpEventName, string | SmpSpecialEventName> = {
+export const SMP_EVENT_MAP: Record<SmpEventName, FBEventName | SmpSpecialEventName> = {
     // Playback
     on_playback_starting: 'playback:starting',
     on_playback_new_track: 'playback:trackChanged',
@@ -246,7 +225,7 @@ export function createOnSmp(
 ): (smpEventName: SmpEventName | string, callback: SmpEventCallback) => () => void {
     return (smpEventName, callback) => {
         if (typeof callback !== 'function') {
-            _warn('fb.onSMP callback must be a function:', smpEventName);
+            smpWarn('fb.onSMP callback must be a function:', smpEventName);
             return () => {
                 /* no-op */
             };
@@ -258,14 +237,14 @@ export function createOnSmp(
                 try {
                     callback(true);
                 } catch (e) {
-                    _error('on_focus handler error:', e);
+                    smpError('on_focus handler error:', e);
                 }
             });
             const unsub2 = fb.on('panel:blur', () => {
                 try {
                     callback(false);
                 } catch (e) {
-                    _error('on_focus handler error:', e);
+                    smpError('on_focus handler error:', e);
                 }
             });
             return () => {
@@ -288,7 +267,7 @@ export function createOnSmp(
                 try {
                     callback();
                 } catch (e) {
-                    _error('on_playlists_changed handler error:', e);
+                    smpError('on_playlists_changed handler error:', e);
                 }
             };
             const events = [
@@ -311,8 +290,8 @@ export function createOnSmp(
         }
 
         const fb2kEvent = SMP_EVENT_MAP[smpEventName as SmpEventName];
-        if (!fb2kEvent || fb2kEvent.startsWith('__special_')) {
-            _warn('Unknown SMP event:', smpEventName);
+        if (!fb2kEvent || fb2kEvent === '__special_focus__' || fb2kEvent === '__special_playlists__') {
+            smpWarn('Unknown SMP event:', smpEventName);
             return () => {
                 /* no-op */
             };
@@ -335,7 +314,7 @@ export function createOnSmp(
                     callback();
                 }
             } catch (e) {
-                _error(`Error in ${smpEventName}:`, e);
+                smpError(`Error in ${smpEventName}:`, e);
             }
         };
 

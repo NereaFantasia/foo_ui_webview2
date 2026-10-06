@@ -1,88 +1,87 @@
-/**
- * `queue` — foobar2000 play-queue namespace (not to be confused with
- * the just-in-time queue exposed via `jitQueue`).
- */
-
-import { bridge } from '../Bridge.js';
-import type {
-    BaseResponse,
-    QueueGetResponse,
-    QueueInsertNextResponse,
-    QueuePlayNowResponse,
-    QueueSetContentsResponse,
-} from '../../types/responses.js';
+import { call } from '../call.js';
 import type {
     QueueAddParams,
     QueueAddPathsParams,
+    QueueRemoveParams,
 } from '../../types/generated/params.js';
 
 /**
  * A single entry accepted by {@link queue.setContents}.
  *
  * `{ queueIndex }` keeps (and repositions) a track already in the queue;
- * `{ playlist, item }` adds a playlist track that is not queued yet. A call
- * may freely mix both forms across its `items` array.
+ * `{ playlist, item }` or `{ playlistGuid, item }` adds a playlist track
+ * that is not queued yet. A call may freely mix the forms across its
+ * `items` array.
  */
 export type QueueContentRef =
     | { queueIndex: number }
-    | { playlist: number; item: number };
+    | { playlist: number; item: number }
+    | { playlistGuid: string; item: number };
 
 /**
- * The playlist-coordinate half of {@link QueueContentRef}: a track
- * addressed by its playlist index plus its item index inside that
- * playlist.
+ * The playlist-row half of {@link QueueContentRef}: a track addressed by
+ * its playlist, as an index or as the `guid` from `playlist.getAll`, plus
+ * its row inside that playlist.
  *
- * A queue entry created from a coordinate keeps it, so playback continues
- * from that playlist position once the entry is consumed. Accepted by
+ * An index is read as the call arrives, so one taken before another
+ * playlist was added, removed or moved names a row of a different
+ * playlist; a `playlistGuid` keeps naming the playlist it was read from.
+ *
+ * A queue entry created from a row keeps that position, so playback
+ * continues from it once the entry is consumed. Accepted by
  * {@link queue.insertNext} alongside plain paths.
  */
-export type QueueListRef = Extract<QueueContentRef, { playlist: number }>;
+export type QueueListRef = Exclude<QueueContentRef, { queueIndex: number }>;
 
+/**
+ * `queue` — foobar2000 play-queue namespace (not to be confused with
+ * the just-in-time queue exposed via `jitQueue`).
+ */
 export const queue = {
-    get: () => bridge.invoke<QueueGetResponse>('queue.get'),
-    getCount: () => bridge.invoke<{ count: number }>('queue.getCount'),
+    /** Every entry is the shared `Track` row plus `queueIndex`, `playlist` and `playlistItem`. */
+    get: () => call('queue.get'),
+    getCount: () => call('queue.getCount'),
+    /** Fails with `INVALID_INDEX` when no given position is in range. */
     add: (opts: QueueAddParams) =>
-        bridge.invoke<
-            BaseResponse & { addedCount?: number; queueCount?: number }
-        >('queue.add', opts),
+        call('queue.add', opts),
     /**
      * Add the given paths to the play queue. Each path/URL is capped at
      * 2048 chars; over-length items are silently skipped and counted in
      * `invalidCount`.
      */
     addPaths: (paths: string[], opts?: Omit<QueueAddPathsParams, 'paths'>) =>
-        bridge.invoke<
-            BaseResponse & {
-                addedCount?: number;
-                invalidCount?: number;
-                isLocked?: boolean;
-                queueCount?: number;
-            }
-        >('queue.addPaths', {
+        call('queue.addPaths', {
             paths,
             ...(opts || {}),
         }),
-    remove: (index: number) =>
-        bridge.invoke<
-            BaseResponse & {
-                removedIndex?: number;
-                removedCount?: number;
-                queueCount?: number;
-            }
-        >('queue.remove', { index }),
+    /**
+     * Remove queue entries: one position, sent as `index`, or an array of
+     * positions, sent as `indices` and removed in one call. In an array,
+     * duplicate and out-of-range positions are skipped and `removedCount`
+     * reports how many entries went. Fails with `INVALID_INDEX` when no
+     * given position is in range.
+     *
+     * @param target - A queue position, or an array of queue positions.
+     */
+    remove: (target: number | NonNullable<QueueRemoveParams['indices']>) =>
+        call(
+            'queue.remove',
+            Array.isArray(target) ? { indices: target } : { index: target },
+        ),
     moveToTop: (index: number) =>
-        bridge.invoke<
-            BaseResponse & { movedIndex?: number; queueCount?: number }
-        >('queue.moveToTop', { index }),
+        call('queue.moveToTop', {
+            index,
+        }),
     /**
      * Replace the entire queue with the given ordered list of references.
      *
      * Every entry must resolve to `{ queueIndex }` (keep/reorder an
-     * existing queue slot) or `{ playlist, item }` (add a playlist track);
-     * an unrecognized entry shape fails the whole call before anything is
-     * written, unlike {@link queue.add}, which skips bad entries one at a
-     * time. Passing an empty array clears the queue, equivalent to
-     * {@link queue.clear}.
+     * existing queue slot) or `{ playlist, item }` / `{ playlistGuid, item }`
+     * (add a playlist track); an unrecognized entry shape, or a
+     * `playlistGuid` no playlist has (`NOT_FOUND`), fails the whole call
+     * before anything is written, unlike {@link queue.add}, which skips bad
+     * entries one at a time. Passing an empty array clears the queue,
+     * equivalent to {@link queue.clear}.
      *
      * `items.length` is capped at `max(256, current queue length)`;
      * exceeding the cap fails without changing the queue.
@@ -92,7 +91,7 @@ export const queue = {
      * and rebuilds the queue from scratch.
      */
     setContents: (items: QueueContentRef[]) =>
-        bridge.invoke<QueueSetContentsResponse>('queue.setContents', {
+        call('queue.setContents', {
             items,
         }),
     /**
@@ -126,9 +125,10 @@ export const queue = {
      * can be below `entries.length` because of de-duplication or invalid
      * paths; a folder or container path can also expand to multiple tracks.
      *
-     * A coordinate that does not address a queueable playlist item fails
-     * the whole call before anything is written; the paths passed in the
-     * same call are not queued either.
+     * A coordinate that does not address a queueable playlist item, or
+     * names a `playlistGuid` no playlist has (`NOT_FOUND`), fails the whole
+     * call before anything is written; the paths passed in the same call
+     * are not queued either.
      *
      * The response separates `insertedCount` (new tracks), `movedCount`
      * (existing entries relocated). `invalidCount` is input path count minus
@@ -155,7 +155,7 @@ export const queue = {
         const items = entries.filter(
             (entry): entry is QueueListRef => typeof entry !== 'string',
         );
-        return bridge.invoke<QueueInsertNextResponse>('queue.insertNext', {
+        return call('queue.insertNext', {
             ...(paths.length > 0 ? { paths } : {}),
             ...(items.length > 0 ? { items } : {}),
             ...(position !== undefined ? { position } : {}),
@@ -166,8 +166,8 @@ export const queue = {
      * of the queue first if it is not already there.
      *
      * Defaults to `index: 0` (the current queue head). Fails with
-     * `"Queue is empty"` when nothing is queued, or `"Invalid queue index"`
-     * for a negative, non-integer, or out-of-range value.
+     * `NOT_FOUND` when nothing is queued, or `INVALID_INDEX` for an
+     * out-of-range value.
      *
      * `queueCount` is read immediately after playback starts; the host
      * does not guarantee that its consumption of the queue head happens
@@ -177,11 +177,9 @@ export const queue = {
      * matters.
      */
     playNow: (index?: number) =>
-        bridge.invoke<QueuePlayNowResponse>('queue.playNow', {
+        call('queue.playNow', {
             ...(index !== undefined ? { index } : {}),
         }),
-    flush: () =>
-        bridge.invoke<BaseResponse & { clearedCount?: number }>('queue.flush'),
-    clear: () =>
-        bridge.invoke<BaseResponse & { clearedCount?: number }>('queue.clear'),
+    flush: () => call('queue.flush'),
+    clear: () => call('queue.clear'),
 };

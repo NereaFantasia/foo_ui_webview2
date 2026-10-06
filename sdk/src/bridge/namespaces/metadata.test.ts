@@ -17,6 +17,7 @@
 // Bridge.ts is freshly constructed against the stubbed `window`.
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { expectSuccess } from './__tests__/expectEnvelope.js';
 
 interface MockNative {
     invoke: ReturnType<typeof vi.fn>;
@@ -129,6 +130,7 @@ describe('metadata namespace (§5.6 default logger)', () => {
         const { metadata } = await import('./metadata.js');
 
         const result = await metadata.read('/music/track.flac');
+        expectSuccess(result);
 
         expect(native.invoke).toHaveBeenCalledWith('metadata.read', {
             path: '/music/track.flac',
@@ -139,6 +141,58 @@ describe('metadata namespace (§5.6 default logger)', () => {
         expect(result?.tags?.TITLE).toBe('Song');
         expect(result?.info?.codec).toBe('FLAC');
         expect(result?.info?.channels).toBe(2);
+    });
+
+    it('write preserves multivalue tags, empty arrays and the subsong selector', async () => {
+        const native = makeNative();
+        const tags = {
+            ARTIST: ['甲', '乙', '甲'],
+            GENRE: ['Rock; Pop', 'Jazz, Blues'],
+            COMMENT: [],
+        };
+        const receipt = {
+            success: true,
+            path: '/album.cue',
+            dispatched: true,
+            subsong: 3,
+            tagsApplied: { ...tags, COMMENT: null },
+            tagsSet: 2,
+            tagsRemoved: 1,
+        };
+        native.invoke.mockResolvedValue(receipt);
+        vi.stubGlobal('window', { fb2k: native });
+        const { metadata } = await import('./metadata.js');
+
+        const result = await metadata.write('/album.cue', tags, { cueIndex: 3 });
+
+        expect(native.invoke).toHaveBeenCalledWith('metadata.write', {
+            path: '/album.cue',
+            tags,
+            cueIndex: 3,
+        });
+        expect(result).toEqual(receipt);
+    });
+
+    it('writeBatch leaves array validation and per-entry failures to the host', async () => {
+        const native = makeNative();
+        const failure = {
+            success: false,
+            code: 'OPERATION_FAILED',
+            error: '1 of 2 items failed',
+            successCount: 1,
+            failCount: 1,
+            errors: [{ path: '/bad.flac', error: 'Invalid tags["GENRE"][1]' }],
+        };
+        native.invoke.mockResolvedValue(failure);
+        vi.stubGlobal('window', { fb2k: native });
+        const { metadata } = await import('./metadata.js');
+        const items = [
+            { path: '/good.flac', tags: { ARTIST: ['甲', '乙'] } },
+            { path: '/bad.flac', tags: { GENRE: ['valid', 1] } },
+        ];
+
+        expect(await metadata.writeBatch(items)).toEqual(failure);
+        expect(native.invoke).toHaveBeenCalledWith('metadata.writeBatch', { items });
     });
 
     it('readBatch(paths) returns the `results[]` envelope verbatim (§5.3)', async () => {
@@ -168,6 +222,7 @@ describe('metadata namespace (§5.6 default logger)', () => {
             '/ok.flac',
             '/missing.flac',
         ]);
+        expectSuccess(result);
 
         expect(native.invoke).toHaveBeenCalledWith('metadata.readBatch', {
             paths: ['/ok.flac', '/missing.flac'],
@@ -205,6 +260,7 @@ describe('metadata namespace (§5.6 default logger)', () => {
             '/a.flac',
             '/album.cue|subsong:2',
         ]);
+        expectSuccess(receipt);
 
         expect(native.invoke).toHaveBeenCalledWith(
             'metadata.probeBatchAsync',
@@ -239,6 +295,7 @@ describe('metadata namespace (§5.6 default logger)', () => {
         const { metadata } = await import('./metadata.js');
 
         const result = await metadata.cancelProbe('probe_gone');
+        expectSuccess(result);
 
         expect(native.invoke).toHaveBeenCalledWith('metadata.cancelProbe', {
             operationId: 'probe_gone',
@@ -327,6 +384,8 @@ describe('metadata namespace (§5.6 default logger)', () => {
     });
 
     it('embedArtworkBytes sends raw Base64 imageData to the existing endpoint', async () => {
+        // The host takes `target` as an array only, so a single string is
+        // wrapped into a one-element array on the way out.
         const native = makeNative();
         native.invoke.mockResolvedValue({ success: true });
         vi.stubGlobal('window', { fb2k: native });
@@ -347,7 +406,7 @@ describe('metadata namespace (§5.6 default logger)', () => {
             path: '/music/track.flac',
             imageData: '/9j/4A==',
             type: 'front',
-            target: 'all',
+            target: ['all'],
         });
     });
 

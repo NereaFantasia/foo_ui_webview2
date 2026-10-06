@@ -16,7 +16,8 @@ import type { JsonObject } from '../types/json.js';
  * so re-loads are idempotent).
  */
 
-import { getInvoke } from './utils.js';
+import { getInvoke, successOf } from './utils.js';
+import { typedCall, type TypedCall } from '../utils/typedCall.js';
 
 interface FileInfoResponse {
     isFile?: boolean;
@@ -57,16 +58,14 @@ type ConfigComponentsResponse =
     | ConfigComponentEntry[]
     | { components?: ConfigComponentEntry[]; [key: string]: JsonValue };
 
-async function _invoke<T = unknown>(
-    method: string,
-    params?: JsonObject,
-): Promise<T> {
+// Always sends a params object, `{}` when the call site passes none.
+const _invoke: TypedCall = typedCall(async (method: string, params?: object) => {
     const inv = getInvoke();
     if (!inv) {
         throw new Error('[SMP-Utils] smp.invoke not available');
     }
-    return (await inv(method, params ?? {})) as T;
-}
+    return inv(method, (params ?? {}) as JsonObject);
+});
 
 // ---------------------------------------------------------------------------
 // 1. Pure JS helpers
@@ -143,33 +142,33 @@ export function DateStringFromTimestamp(ts: unknown): string {
 
 /** True iff the file or directory exists (`file.exists`). */
 export async function FileExists(path: unknown): Promise<boolean> {
-    const res = await _invoke<{ exists?: boolean }>('file.exists', {
+    const res = successOf(await _invoke('file.exists', {
         path: String(path ?? ''),
-    });
+    }));
     return !!res?.exists;
 }
 
 /** True iff `path` resolves to a regular file (`file.getInfo`). */
 export async function IsFile(path: unknown): Promise<boolean> {
-    const res = await _invoke<FileInfoResponse>('file.getInfo', {
+    const res = successOf(await _invoke('file.getInfo', {
         path: String(path ?? ''),
-    });
+    }));
     return !!res?.isFile;
 }
 
 /** True iff `path` resolves to a directory (`file.getInfo`). */
 export async function IsDirectory(path: unknown): Promise<boolean> {
-    const res = await _invoke<FileInfoResponse>('file.getInfo', {
+    const res = successOf(await _invoke('file.getInfo', {
         path: String(path ?? ''),
-    });
+    }));
     return !!res?.isDirectory;
 }
 
 /** Resolve the file size in bytes (`file.getInfo`). */
 export async function GetFileSize(path: unknown): Promise<number> {
-    const res = await _invoke<FileInfoResponse>('file.getInfo', {
+    const res = successOf(await _invoke('file.getInfo', {
         path: String(path ?? ''),
-    });
+    }));
     return typeof res?.size === 'number' ? res.size : 0;
 }
 
@@ -179,9 +178,9 @@ export async function GetFileSize(path: unknown): Promise<number> {
  * always returns UTF-8 strings.
  */
 export async function ReadTextFile(path: unknown, _codepage?: unknown): Promise<string> {
-    const res = await _invoke<FileReadResponse | string>('file.read', {
+    const res = successOf(await _invoke('file.read', {
         path: String(path ?? ''),
-    });
+    }));
     if (typeof res === 'string') return res;
     return typeof res?.content === 'string' ? res.content : '';
 }
@@ -200,7 +199,7 @@ export async function WriteTextFile(
     content: unknown,
     _writeBom?: unknown,
 ): Promise<boolean> {
-    const res = await _invoke<FileWriteResponse>('file.write', {
+    const res = await _invoke('file.write', {
         path: String(path ?? ''),
         content: String(content ?? ''),
     });
@@ -230,24 +229,15 @@ export async function Glob(
     const dir = lastSep >= 0 ? norm.slice(0, lastSep) : '.';
     const globPart = lastSep >= 0 ? norm.slice(lastSep + 1) : norm;
 
-    const res = await _invoke<FileListResponse>('file.list', {
+    const res = successOf(await _invoke('file.list', {
         path: dir,
         recursive: false,
-    });
+    }));
     const rawItems = Array.isArray(res?.items) ? res!.items! : [];
     const prefix = dir.endsWith('\\') ? dir : `${dir}\\`;
 
     const candidates: string[] = rawItems
-        .map((item) => {
-            if (typeof item === 'string') {
-                return item.includes('\\') || item.includes('/')
-                    ? item
-                    : prefix + item;
-            }
-            if (typeof item.path === 'string') return item.path;
-            if (typeof item.name === 'string') return prefix + item.name;
-            return '';
-        })
+        .map((item) => (item.includes('\\') || item.includes('/') ? item : prefix + item))
         .filter(Boolean);
 
     return candidates.filter((f) => {
@@ -261,10 +251,10 @@ export async function Glob(
 export async function ListFiles(folder: unknown, recursion?: unknown): Promise<string[]> {
     const folderStr = String(folder ?? '');
     const isRecursive = !!recursion;
-    const res = await _invoke<FileListResponse>('file.list', {
+    const res = successOf(await _invoke('file.list', {
         path: folderStr,
         recursive: isRecursive,
-    });
+    }));
     const items = Array.isArray(res?.items) ? res!.items! : [];
     const prefix =
         !isRecursive && folderStr
@@ -301,10 +291,10 @@ export async function ListFolders(
 ): Promise<string[]> {
     const folderStr = String(folder ?? '');
     const isRecursive = !!recursion;
-    const res = await _invoke<FileListResponse>('file.list', {
+    const res = successOf(await _invoke('file.list', {
         path: folderStr,
         recursive: isRecursive,
-    });
+    }));
     const dirs = Array.isArray(res?.directories) ? res!.directories! : [];
     const prefix =
         !isRecursive && folderStr
@@ -330,7 +320,7 @@ export async function ListFolders(
 
 /** Read clipboard text (`clipboard.read`). */
 export async function GetClipboardText(): Promise<string> {
-    const res = await _invoke<ClipboardReadResponse>('clipboard.read', {});
+    const res = successOf(await _invoke('clipboard.read', {}));
     return typeof res?.text === 'string' ? res.text : '';
 }
 
@@ -353,12 +343,8 @@ export async function CheckComponent(
 ): Promise<boolean> {
     const n = String(name ?? '').toLowerCase();
     if (!n) return false;
-    const res = await _invoke<ConfigComponentsResponse>('config.getComponents', {});
-    const components: ConfigComponentEntry[] = Array.isArray(res)
-        ? res
-        : Array.isArray((res as { components?: ConfigComponentEntry[] })?.components)
-            ? (res as { components: ConfigComponentEntry[] }).components
-            : [];
+    const res = successOf(await _invoke('config.getComponents', {}));
+    const components = Array.isArray(res?.components) ? res.components : [];
 
     return components.some((c) => {
         if (!c || typeof c !== 'object') return false;
@@ -385,9 +371,9 @@ export async function ReadINI(
 ): Promise<string> {
     const def = (defaultVal ?? '') as string;
     try {
-        const res = await _invoke<FileReadResponse | string>('file.read', {
+        const res = successOf(await _invoke('file.read', {
             path: String(path ?? ''),
-        });
+        }));
         const content = typeof res === 'string'
             ? res
             : typeof res?.content === 'string' ? res.content : '';
@@ -433,9 +419,9 @@ export async function WriteINI(
     try {
         let content = '';
         try {
-            const res = await _invoke<FileReadResponse | string>('file.read', {
+            const res = successOf(await _invoke('file.read', {
                 path: filePath,
-            });
+            }));
             content = typeof res === 'string'
                 ? res
                 : typeof res?.content === 'string' ? res.content : '';
@@ -488,7 +474,7 @@ export async function WriteINI(
         }
 
         const newContent = lines.join('\r\n');
-        const writeRes = await _invoke<FileWriteResponse>('file.write', {
+        const writeRes = await _invoke('file.write', {
             path: filePath,
             content: newContent,
         });

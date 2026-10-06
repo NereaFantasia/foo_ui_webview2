@@ -21,7 +21,7 @@
  * background / typography is included — themes own visual decisions.
  */
 
-import type { FBEventHandler, RawEventHandler } from '../bridge/Bridge.js';
+import type { FBEventHandler } from '../bridge/Bridge.js';
 import type { FBEventName } from '../types/events.js';
 import { getFb } from './runtime.js';
 
@@ -90,15 +90,11 @@ export class FbBaseElement extends HTMLElement {
     }
 
     /**
-     * Subscribe to a typed `fb` event. The unsubscribe callback is
-     * recorded so `disconnectedCallback` can drain it.
+     * Subscribe to a declared `fb` event; an undeclared name does not
+     * compile. The unsubscribe callback is recorded so
+     * `disconnectedCallback` can drain it.
      */
-    protected _sub<K extends FBEventName>(
-        event: K,
-        handler: FBEventHandler<K>,
-    ): void;
-    protected _sub(event: string, handler: RawEventHandler): void;
-    protected _sub(event: string, handler: RawEventHandler): void {
+    protected _sub<K extends FBEventName>(event: K, handler: FBEventHandler<K>): void {
         this._subscriptions.push(getFb().on(event, handler));
     }
 

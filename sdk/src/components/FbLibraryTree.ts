@@ -3,7 +3,9 @@
  *
  * Renders top-level groups (artists, albums, or genres depending on
  * the `view` attribute) and lazily expands the children of each group
- * via `fb.library.getArtistAlbums` / `getAlbumTracks` / `search`.
+ * via `fb.library.getArtistAlbums` / `getAlbumTracks` / `search`. Album
+ * groups carry their album artist as `data-artist`, and events report it
+ * as `artist`.
  *
  * Selection model mirrors the DUI library viewer:
  * - Plain click       — single select.
@@ -45,6 +47,8 @@ type LibraryView = 'artist' | 'album' | 'genre';
 interface LibraryGroupItem {
     name?: string;
     trackCount?: number;
+    /** Album view only; with `name` it identifies the album. */
+    albumArtist?: string;
 }
 
 interface LibraryAlbumChild {
@@ -57,7 +61,11 @@ interface LibraryTrackChild {
     duration?: number;
     path?: string;
     absolutePath?: string;
+    album?: string;
 }
+
+/** The name `library.getArtistAlbums` gives the tracks that have no `album` tag. */
+const UNKNOWN_ALBUM = '(Unknown Album)';
 
 const HEADER_LABELS: Record<LibraryView, string> = {
     artist: 'All Artists',
@@ -158,6 +166,7 @@ export class FbLibraryTree extends FbBaseElement {
                     key,
                     type,
                     view: this._view,
+                    artist: node.dataset.artist,
                     selected: this._getSelectedInfo(),
                 });
             } else if (type === 'album' || type === 'track') {
@@ -184,6 +193,7 @@ export class FbLibraryTree extends FbBaseElement {
                 key,
                 type,
                 view: this._view,
+                artist: node.dataset.artist,
             });
         });
 
@@ -214,6 +224,7 @@ export class FbLibraryTree extends FbBaseElement {
                 key: node.dataset.key || '',
                 type,
                 view: this._view,
+                artist: node.dataset.artist,
                 x: me.clientX,
                 y: me.clientY,
                 selected: this._getSelectedInfo(),
@@ -252,7 +263,7 @@ export class FbLibraryTree extends FbBaseElement {
             if (children?.getAttribute('part') === 'node-children') {
                 children.style.display = '';
                 if (!children.hasChildNodes()) {
-                    await this._loadChildren(key, children);
+                    await this._loadChildren(key, children, node.dataset.artist);
                 }
             }
         }
@@ -322,30 +333,7 @@ export class FbLibraryTree extends FbBaseElement {
             `<span part="node-count">(${totalCount})</span>`;
         frag.appendChild(header);
 
-        for (const item of this._items) {
-            const name = item.name || '(Unknown)';
-            const key = name;
-            const count = item.trackCount || 0;
-            const expanded = this._expanded.has(key);
-
-            const node = document.createElement('div');
-            node.setAttribute('part', 'node');
-            node.dataset.key = key;
-            node.dataset.type = 'group';
-            node.setAttribute('role', 'treeitem');
-            if (expanded) node.setAttribute('expanded', '');
-            node.innerHTML =
-                `<span part="node-toggle">${expanded ? '\u25BE' : '\u25B8'}</span>` +
-                `<span part="node-label">${this._escHtml(name)}</span>` +
-                `<span part="node-count">(${count})</span>`;
-            frag.appendChild(node);
-
-            const childrenDiv = document.createElement('div');
-            childrenDiv.setAttribute('part', 'node-children');
-            childrenDiv.setAttribute('role', 'group');
-            if (!expanded) childrenDiv.style.display = 'none';
-            frag.appendChild(childrenDiv);
-        }
+        for (const item of this._items) this._appendGroup(frag, item, view);
 
         this._container.textContent = '';
         this._container.appendChild(frag);
@@ -363,15 +351,49 @@ export class FbLibraryTree extends FbBaseElement {
                     children?.getAttribute('part') === 'node-children' &&
                     !children.hasChildNodes()
                 ) {
-                    void this._loadChildren(key, children);
+                    void this._loadChildren(key, children, node.dataset.artist);
                 }
             }
         }
     }
 
+    /** Append one top-level group row and its (initially empty) children container. */
+    private _appendGroup(
+        frag: DocumentFragment,
+        item: LibraryGroupItem,
+        view: LibraryView,
+    ): void {
+        const name = item.name || '(Unknown)';
+        const key = name;
+        const count = item.trackCount || 0;
+        const expanded = this._expanded.has(key);
+
+        const node = document.createElement('div');
+        node.setAttribute('part', 'node');
+        node.dataset.key = key;
+        node.dataset.type = 'group';
+        // An album is its name plus its album artist; the name alone can
+        // stand for several albums.
+        if (view === 'album') node.dataset.artist = item.albumArtist ?? '';
+        node.setAttribute('role', 'treeitem');
+        if (expanded) node.setAttribute('expanded', '');
+        node.innerHTML =
+            `<span part="node-toggle">${expanded ? '\u25BE' : '\u25B8'}</span>` +
+            `<span part="node-label">${this._escHtml(name)}</span>` +
+            `<span part="node-count">(${count})</span>`;
+        frag.appendChild(node);
+
+        const childrenDiv = document.createElement('div');
+        childrenDiv.setAttribute('part', 'node-children');
+        childrenDiv.setAttribute('role', 'group');
+        if (!expanded) childrenDiv.style.display = 'none';
+        frag.appendChild(childrenDiv);
+    }
+
     private async _loadChildren(
         key: string,
         container: HTMLElement,
+        artist?: string,
     ): Promise<void> {
         const fb = getFb();
         const gen = this._generation;
@@ -394,7 +416,7 @@ export class FbLibraryTree extends FbBaseElement {
                     )
                     .join('');
             } else if (view === 'album') {
-                const result = (await fb.library.getAlbumTracks(key)) as
+                const result = (await fb.library.getAlbumTracks(key, artist ?? '')) as
                     | {
                           items?: LibraryTrackChild[];
                           tracks?: LibraryTrackChild[];
@@ -460,6 +482,12 @@ export class FbLibraryTree extends FbBaseElement {
      * Themes typically wire this into the right-click context menu;
      * exposed publicly so callers don't have to re-implement the same
      * fan-out logic.
+     *
+     * @param key - The row's `key`, as event details carry it.
+     * @param type - The row's `type`.
+     * @param artist - The row's `artist` from the same event detail: the
+     *   parent artist of an album row, or the album artist of a group in the
+     *   album view. An album group needs it to tell same-named albums apart.
      */
     async addToPlaylist(
         key: string,
@@ -472,16 +500,23 @@ export class FbLibraryTree extends FbBaseElement {
             if (type === 'track') {
                 paths = [key];
             } else if (type === 'album') {
-                const result = (await fb.library.getAlbumTracks(
-                    key,
+                // An album row under an artist stands for that artist's tracks
+                // on it, as `getArtistAlbums` counted them; the whole album may
+                // hold more. Tracks without an `album` tag have an empty
+                // `album` field and sit under the `(Unknown Album)` row.
+                const result = (await fb.library.getArtistTracks(
                     artist || '',
+                    Number.MAX_SAFE_INTEGER,
                 )) as
                     | {
                           items?: LibraryTrackChild[];
                           tracks?: LibraryTrackChild[];
                       }
                     | null;
+                const onAlbum = (t: LibraryTrackChild): boolean =>
+                    t.album === key || (key === UNKNOWN_ALBUM && !t.album);
                 paths = (result?.items || result?.tracks || [])
+                    .filter(onAlbum)
                     .map((t) => t.path || t.absolutePath || '')
                     .filter(Boolean);
             } else if (type === 'group') {
@@ -513,6 +548,7 @@ export class FbLibraryTree extends FbBaseElement {
                 } else if (this._view === 'album') {
                     const result = (await fb.library.getAlbumTracks(
                         key,
+                        artist ?? '',
                     )) as
                         | {
                               items?: LibraryTrackChild[];
@@ -525,9 +561,11 @@ export class FbLibraryTree extends FbBaseElement {
                 }
             }
             if (paths.length > 0) {
-                await fb.library.addToPlaylist(paths);
+                const result = await fb.library.addToPlaylist(paths);
+                // Nothing was added when the call failed, a locked playlist included.
+                if (result.success === false) return;
                 this._emit<FbLibraryAddedDetail>('fb-library-added', {
-                    count: paths.length,
+                    count: result.added,
                     type,
                     key,
                 });

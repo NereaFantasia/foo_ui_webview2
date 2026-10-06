@@ -4,7 +4,8 @@
 // dot-form handlers with the expected payloads, and `popup` resolves with the
 // selected item id on `menu:select` (or `null` on `menu:dismiss`), matched by
 // the menu id returned from `menu.show` so overlapping popups never
-// cross-resolve.
+// cross-resolve. `popup` listens before it sends `menu.show`, so a result
+// delivered ahead of the call's response is not lost.
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -234,5 +235,88 @@ describe('menu.popup', () => {
         const result = await menu.popup([{ id: 'play', label: 'Play' }]);
 
         expect(result).toBeNull();
+        expect(native.handlers['menu:select']).toHaveLength(0);
+        expect(native.handlers['menu:dismiss']).toHaveLength(0);
+    });
+
+    it('listens before menu.show is sent', async () => {
+        const native = makeNative();
+        native.invoke.mockResolvedValue({ success: true, menuId: 'menu-1' });
+        vi.stubGlobal('window', { fb2k: native });
+        const { menu } = await import('./menu.js');
+
+        const p = menu.popup([{ id: 'play', label: 'Play' }]);
+
+        expect(native.on).toHaveBeenCalledWith('menu:select', expect.any(Function));
+        expect(native.on).toHaveBeenCalledWith('menu:dismiss', expect.any(Function));
+        expect(native.on.mock.invocationCallOrder[0]).toBeLessThan(
+            native.invoke.mock.invocationCallOrder[0],
+        );
+        native.emit('menu:dismiss', { menuId: 'menu-1', reason: 'outside' });
+        await expect(p).resolves.toBeNull();
+    });
+
+    it('settles on a result that reaches the page before the menu.show response', async () => {
+        const native = makeNative();
+        let answer: (value: unknown) => void = () => {};
+        native.invoke.mockReturnValue(
+            new Promise((resolve) => {
+                answer = resolve;
+            }),
+        );
+        vi.stubGlobal('window', { fb2k: native });
+        const { menu } = await import('./menu.js');
+
+        const p = menu.popup([{ id: 'play', label: 'Play' }]);
+        await flush();
+        native.emit('menu:select', { menuId: 'other', itemId: 'nope' });
+        native.emit('menu:select', { menuId: 'menu-1', itemId: 'play' });
+        native.emit('menu:dismiss', { menuId: 'menu-1', reason: 'select' });
+        answer({ success: true, menuId: 'menu-1' });
+
+        await expect(p).resolves.toBe('play');
+        expect(native.handlers['menu:select']).toHaveLength(0);
+        expect(native.handlers['menu:dismiss']).toHaveLength(0);
+    });
+
+    it('unbinds both listeners and rejects when menu.show throws', async () => {
+        const native = makeNative();
+        native.invoke.mockRejectedValue(new Error('host gone'));
+        vi.stubGlobal('window', { fb2k: native });
+        const { menu } = await import('./menu.js');
+
+        await expect(menu.popup([{ id: 'play', label: 'Play' }])).rejects.toThrow('host gone');
+
+        expect(native.handlers['menu:select']).toHaveLength(0);
+        expect(native.handlers['menu:dismiss']).toHaveLength(0);
+    });
+
+    it('unbinds both listeners when menu.show times out', async () => {
+        vi.useFakeTimers();
+        try {
+            const native = makeNative();
+            // Same shape as the injected bridge: an unanswered request rejects after 30 s.
+            native.invoke.mockImplementation(
+                () =>
+                    new Promise((_resolve, reject) => {
+                        setTimeout(() => reject(new Error('Request timeout')), 30000);
+                    }),
+            );
+            vi.stubGlobal('window', { fb2k: native });
+            const { menu } = await import('./menu.js');
+
+            const p = menu.popup([{ id: 'play', label: 'Play' }]);
+            const settled = expect(p).rejects.toThrow('Request timeout');
+            expect(native.handlers['menu:select']).toHaveLength(1);
+            expect(native.handlers['menu:dismiss']).toHaveLength(1);
+
+            await vi.advanceTimersByTimeAsync(30000);
+            await settled;
+
+            expect(native.handlers['menu:select']).toHaveLength(0);
+            expect(native.handlers['menu:dismiss']).toHaveLength(0);
+        } finally {
+            vi.useRealTimers();
+        }
     });
 });

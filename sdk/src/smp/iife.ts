@@ -14,8 +14,7 @@
 
 import { bootstrapSmpCompat, installSmpGlobals } from './bootstrap.js';
 import type { SmpBridgeShape } from './bridgeShape.js';
-
-const LOG_PREFIX = '[SMP-Compat]';
+import { LOG_PREFIX } from './smpLog.js';
 
 (function autoBootstrap(): void {
     if (typeof globalThis === 'undefined') return;

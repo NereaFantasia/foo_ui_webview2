@@ -2,7 +2,7 @@
 //
 // Core Bridge semantics:
 //
-//   - mock fallback when window.fb2k is missing
+//   - NOT_SUPPORTED failure envelope when window.fb2k is missing
 //   - happy-path delegation to the native invoke()
 //   - ready() returns Promise<void> (NOT a method reference)
 //   - on() returns an unsubscribe callback that calls native.off()
@@ -44,11 +44,33 @@ describe('Bridge', () => {
         vi.unstubAllGlobals();
     });
 
-    it('invoke resolves to a mock sentinel when window.fb2k is absent', async () => {
+    it('invoke resolves to a NOT_SUPPORTED failure envelope when window.fb2k is absent', async () => {
         vi.stubGlobal('window', {});
         const { bridge } = await import('./Bridge.js');
         const result = await bridge.invoke('test.method');
-        expect(result).toEqual({ mock: true, method: 'test.method' });
+        expect(result).toEqual({
+            success: false,
+            error: 'No foobar2000 host is available',
+            code: 'NOT_SUPPORTED',
+            details: { method: 'test.method' },
+        });
+    });
+
+    it('invoke uses a stand-in assigned to window.fb2k after the SDK loaded', async () => {
+        const win: { fb2k?: MockNativeFb2k } = {};
+        vi.stubGlobal('window', win);
+        const { bridge } = await import('./Bridge.js');
+        win.fb2k = makeNative({ invoke: vi.fn().mockResolvedValue({ success: true, value: 1 }) });
+
+        await expect(bridge.invoke('test.method')).resolves.toEqual({ success: true, value: 1 });
+    });
+
+    it('a typed call without a host narrows to the failure branch', async () => {
+        vi.stubGlobal('window', {});
+        const { call } = await import('./call.js');
+        const res = await call('playback.getState');
+        expect(res.success).toBe(false);
+        if (res.success === false) expect(res.code).toBe('NOT_SUPPORTED');
     });
 
     it('invoke delegates to native fb2k.invoke when present', async () => {
@@ -247,20 +269,21 @@ describe('Bridge.setMetricsHook', () => {
         consoleSpy.mockRestore();
     });
 
-    it('fires the hook on the mock-fallback path when no host is present', async () => {
+    it('fires the hook with the failure envelope when no host is present', async () => {
         vi.stubGlobal('window', {});
         const { bridge } = await import('./Bridge.js');
 
         const hook = vi.fn();
         bridge.setMetricsHook(hook);
 
-        const result = await bridge.invoke('mock.method');
+        const result = await bridge.invoke('absent.method');
 
-        expect(result).toEqual({ mock: true, method: 'mock.method' });
         expect(hook).toHaveBeenCalledTimes(1);
         const metrics = hook.mock.calls[0][0];
-        expect(metrics.method).toBe('mock.method');
+        expect(metrics.method).toBe('absent.method');
+        // The call resolved; the envelope itself carries the failure.
         expect(metrics.success).toBe(true);
-        expect(metrics.result).toEqual({ mock: true, method: 'mock.method' });
+        expect(metrics.result).toEqual(result);
+        expect(metrics.result).toMatchObject({ success: false, code: 'NOT_SUPPORTED' });
     });
 });

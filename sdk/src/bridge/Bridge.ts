@@ -6,10 +6,14 @@
  *
  * Key behaviours:
  *
- * - **Mock fallback** — When `window.fb2k` is missing (e.g. running
- *   in a non-WebView2 page), {@link Bridge.invoke} resolves with
- *   `{ mock: true, method }` after 100ms instead of throwing. This
- *   keeps storybook / unit-test consumers from blowing up.
+ * - **No host** — When `window.fb2k` is missing (e.g. running in a
+ *   plain browser tab or a unit test), {@link Bridge.invoke} resolves
+ *   after 100ms with a failure envelope, `success: false` and
+ *   `code: 'NOT_SUPPORTED'`, the same shape a failed host call has.
+ *   Until a bridge is found, each call looks for `window.fb2k` again,
+ *   so a stand-in with `invoke`, `on` and `off` assigned there later
+ *   serves the next call. Subscriptions made before it arrived are
+ *   not replayed.
  * - **Late host injection** — When `window.chrome.webview` is present
  *   but `window.fb2k` has not yet been injected, {@link Bridge} polls
  *   every 100ms (max 50 attempts = 5 s) and resolves
@@ -22,6 +26,7 @@
 import type { FBEventName, FBEventPayloadMap } from '../types/events.js';
 import type { NativeFb2k } from '../types/native.js';
 import type { JsonObject } from '../types/json.js';
+import type { ApiFailure } from '../types/responses.js';
 
 /**
  * Strongly-typed event handler used by {@link Bridge.on} /
@@ -36,29 +41,22 @@ export type FBEventHandler<K extends FBEventName> = (
 export type RawEventHandler = (data: unknown) => void;
 
 /**
- * Sentinel resolved by {@link Bridge.invoke} when the C++ host is not
- * available (typical in unit tests or storybook previews).
- */
-export interface MockInvokeResponse {
-    mock: true;
-    method: string;
-}
-
-/**
  * Snapshot delivered to the {@link BridgeMetricsHook} after every
- * {@link Bridge.invoke} call settles. Both successful and failed calls
- * trigger the hook; consumers should branch on the `success` flag.
+ * {@link Bridge.invoke} call settles, whether it resolved or rejected.
  */
 export interface BridgeInvokeMetrics {
     /** Canonical `<namespace>.<method>` name passed to `invoke`. */
     method: string;
     /** Wall-clock duration from invoke entry to settle, in milliseconds. */
     durationMs: number;
-    /** `true` when the host (or the mock fallback) resolved the call. */
+    /**
+     * `true` when the call resolved, including with a failure envelope
+     * (`success: false` in `result`); `false` only when it rejected.
+     */
     success: boolean;
-    /** Resolved value for successful calls; absent on failure. */
+    /** Resolved value; absent when the call rejected. */
     result?: unknown;
-    /** Rejection reason for failed calls; absent on success. */
+    /** Rejection reason; absent when the call resolved. */
     error?: unknown;
 }
 
@@ -74,7 +72,7 @@ export type BridgeMetricsHook = (metrics: BridgeInvokeMetrics) => void;
 export class Bridge {
     /**
      * Lazily resolved native bridge handle. Set once the host injects
-     * `window.fb2k`; remains `undefined` in mock environments.
+     * `window.fb2k`; remains `undefined` while no host is present.
      */
     private nativeFb2k: NativeFb2k | undefined;
 
@@ -103,9 +101,9 @@ export class Bridge {
 
     /**
      * Install or remove an instrumentation hook fired after every
-     * {@link Bridge.invoke} call settles, including the mock-fallback
-     * path. Useful for telemetry, logging, and per-method latency
-     * tracking.
+     * {@link Bridge.invoke} call settles, including the failure it
+     * answers with when no host is present. Useful for telemetry,
+     * logging, and per-method latency tracking.
      *
      * Exceptions thrown by the hook are caught and discarded so
      * downstream observability code cannot break invoke callers. Pass
@@ -158,8 +156,7 @@ export class Bridge {
      * Returns the cached `window._nativeFb2k` alias when present,
      * otherwise the host-injected `window.fb2k` if it exposes an
      * `invoke` function. Returns `undefined` when running outside a
-     * WebView2 host so callers can transparently fall back to the
-     * mock path.
+     * WebView2 host.
      */
     private getNativeFb2k(): NativeFb2k | undefined {
         if (typeof window === 'undefined') return undefined;
@@ -232,9 +229,13 @@ export class Bridge {
      *                 notation (e.g. `playback.play`).
      * @param params - Parameter object; structure determined by the
      *                 registered C++ handler.
-     * @returns Promise that resolves with `TResp`. In mock environments
-     *          (no host) resolves with {@link MockInvokeResponse} cast
-     *          to `TResp` after a 100ms delay.
+     * @returns Promise that resolves with the host's answer. Without a
+     *          host it resolves after 100ms with an {@link ApiFailure}:
+     *          `success: false`, `code: 'NOT_SUPPORTED'` and the method
+     *          name in `details.method`. It rejects instead when no
+     *          handler answers, for example for an unknown method, an
+     *          exception inside the handler, no answer within 30 s, or a
+     *          call from a subframe.
      */
     async invoke<TResp = unknown>(
         method: string,
@@ -264,14 +265,22 @@ export class Bridge {
         }
         return new Promise<TResp>((resolve) => {
             setTimeout(() => {
-                const stub: MockInvokeResponse = { mock: true, method };
+                const failure: ApiFailure = {
+                    success: false,
+                    error: 'No foobar2000 host is available',
+                    code: 'NOT_SUPPORTED',
+                    details: { method },
+                };
                 this._emitMetrics({
                     method,
                     durationMs: this._now() - start,
                     success: true,
-                    result: stub,
+                    result: failure,
                 });
-                resolve(stub as unknown as TResp);
+                // call() types each declared method's answer as
+                // `XxxSuccess | ApiFailure`, which this value fits; a caller
+                // that picks TResp itself has to allow for it.
+                resolve(failure as unknown as TResp);
             }, 100);
         });
     }
@@ -293,7 +302,7 @@ export class Bridge {
             return () => this.off(event, handler);
         }
         return () => {
-            /* no-op cleanup in mock mode */
+            /* no host: nothing was registered */
         };
     }
 

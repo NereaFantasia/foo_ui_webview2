@@ -1,3 +1,5 @@
+import { call } from '../call.js';
+
 /**
  * `cursor` — explicit client-area cursor visibility control.
  *
@@ -13,13 +15,6 @@
  * `cursor:hiddenChanged` event is routed only to the originating
  * window.
  */
-
-import { bridge } from '../Bridge.js';
-import type {
-    CursorIsHiddenResponse,
-    CursorSetHiddenResponse,
-} from '../../types/responses.js';
-
 export const cursor = {
     /**
      * Hide or restore the calling window's client-area cursor.
@@ -27,18 +22,20 @@ export const cursor = {
      * Repeated calls with the same `hidden` value resolve with
      * `success: true, changed: false` — only flips that actually move
      * the visibility flag emit a follow-up `cursor:hiddenChanged`
-     * event. Validation failures (caller-window resolver miss) resolve
-     * with `success: false` and a human-readable `error` string.
+     * event. When the host cannot resolve the calling window the call
+     * fails with `code: 'OPERATION_FAILED'`.
      *
      * @param hidden - `true` to hide, `false` to restore.
      */
     setHidden: (hidden: boolean) =>
-        bridge.invoke<CursorSetHiddenResponse>('cursor.setHidden', { hidden }),
+        call('cursor.setHidden', {
+            hidden,
+        }),
 
     /**
-     * Read the current hidden state for the calling window. Returns
-     * `{ hidden: false }` when the caller window cannot be resolved.
+     * Read the current hidden state for the calling window. Reports
+     * `hidden: false` when the caller window cannot be resolved.
      */
     isHidden: () =>
-        bridge.invoke<CursorIsHiddenResponse>('cursor.isHidden'),
+        call('cursor.isHidden'),
 };

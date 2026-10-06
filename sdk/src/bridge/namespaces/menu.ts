@@ -1,23 +1,12 @@
-/**
- * `menu` - main menu, context menu, and self-drawn popup menu namespace.
- */
-
-import { bridge } from '../Bridge.js';
+import { subscribe } from '../subscribe.js';
+import { call } from '../call.js';
 import type {
-    BaseResponse,
-    MenuGetMainMenuResponse,
     MenuGetContextMenuResponse,
-    MenuShowNativePopupResponse,
+    MenuGetMainMenuResponse,
     MenuPopupItem,
     MenuPopupOptions,
     MenuPopupPosition,
 } from '../../types/responses.js';
-import type {
-    MenuShowResponse,
-    MenuCloseResponse,
-    MenuRunContextCommandResponse,
-    MenuRunMainMenuCommandResponse,
-} from '../../types/generated/responses.js';
 import type {
     MenuGetContextMenuParams,
     MenuGetMainMenuParams,
@@ -25,6 +14,7 @@ import type {
     MenuRunContextCommandParams,
     MenuRunMainMenuCommandParams,
     MenuShowNativePopupParams,
+    MenuShowParams,
 } from '../../types/generated/params.js';
 
 /** Merge optional screen-pixel coordinates into a `menu.show` payload. */
@@ -39,7 +29,7 @@ function withPosition<T extends object>(
 }
 
 /** Wire shape of a `menu.show` request: items + anchor + presentation options. */
-type MenuShowPayload = { items: MenuPopupItem[]; x?: number; y?: number } & MenuPopupOptions;
+type MenuShowPayload = Omit<MenuShowParams, 'items'> & { items: MenuPopupItem[] };
 
 /**
  * Build a `menu.show` payload. Keys the caller left undefined are omitted
@@ -63,6 +53,9 @@ function buildShowPayload(
     return payload;
 }
 
+/**
+ * `menu` - main menu, context menu, and self-drawn popup menu namespace.
+ */
 export const menu = {
     /**
      * `root` scopes the returned menu tree (e.g. `'Main'` / `'View'`).
@@ -78,11 +71,13 @@ export const menu = {
      * `hmenu_fallback`. The flat fallback (`fallback: true`) keeps `flags`
      * and has no `commandId`; see {@link MenuCommand}.
      */
+    // The declaration types every node flatly; the facade returns the
+    // separator / command / submenu union the host's nodes follow.
     getMainMenu: (root?: string, opts?: Omit<MenuGetMainMenuParams, 'root'>) =>
-        bridge.invoke<MenuGetMainMenuResponse>('menu.getMainMenu', {
+        call('menu.getMainMenu', {
             ...(root ? { root } : {}),
             ...opts,
-        }),
+        }) as Promise<MenuGetMainMenuResponse>,
     /**
      * `mode` is one of `'auto' | 'selection' | 'playlist' | 'nowPlaying' | 'handles'`.
      *
@@ -96,7 +91,7 @@ export const menu = {
      * `subGuid`, otherwise `contextmenu_static`.
      */
     getContextMenu: (opts?: MenuGetContextMenuParams) =>
-        bridge.invoke<MenuGetContextMenuResponse>('menu.getContextMenu', opts || {}),
+        call('menu.getContextMenu', opts ?? {}) as Promise<MenuGetContextMenuResponse>,
     /**
      * Runs a main menu command.
      *
@@ -110,13 +105,14 @@ export const menu = {
      * Failure is reported as `success: false` with a `code`, never as a thrown
      * host error: `MENU_ITEM_DISABLED` (command exists but is greyed out),
      * `MENU_MATCH_AMBIGUOUS` (the name matched several commands — `candidates`
-     * lists them), `MENU_COMMAND_NOT_FOUND`.
+     * lists them), `MENU_COMMAND_NOT_FOUND` (no command has that name or path),
+     * `NOT_FOUND` (no command owns that GUID).
      */
     runMainMenuCommand: (
         command: string,
         opts?: Omit<MenuRunMainMenuCommandParams, 'command'>,
     ) =>
-        bridge.invoke<MenuRunMainMenuCommandResponse>(
+        call(
             'menu.runMainMenuCommand',
             { command, ...opts },
         ),
@@ -136,15 +132,21 @@ export const menu = {
         command: string,
         opts?: Omit<MenuRunContextCommandParams, 'command'>,
     ) =>
-        bridge.invoke<MenuRunContextCommandResponse>('menu.runContextCommand', {
+        call('menu.runContextCommand', {
             command,
             ...opts,
         }),
+    /**
+     * Runs the context-menu node whose `commandId` {@link getContextMenu}
+     * reported. The host rebuilds the menu from `opts.mode` and `opts.handles`,
+     * so pass the values that call used; an id the rebuilt menu lacks fails
+     * with `code: 'NOT_FOUND'`.
+     */
     runContextCommandById: (
         id: number,
         opts?: Omit<MenuRunContextCommandByIdParams, 'id'>,
     ) =>
-        bridge.invoke<BaseResponse>('menu.runContextCommandById', {
+        call('menu.runContextCommandById', {
             id,
             ...opts,
         }),
@@ -156,7 +158,10 @@ export const menu = {
      * `mode: 'selection'` over supplying `handles` for playlist rows.
      */
     showNativePopup: (opts?: MenuShowNativePopupParams) =>
-        bridge.invoke<MenuShowNativePopupResponse>('menu.showNativePopup', opts || {}),
+        call(
+            'menu.showNativePopup',
+            opts ?? {},
+        ),
 
     /**
      * Show a self-drawn (WebView-rendered) popup menu at `position`
@@ -185,14 +190,14 @@ export const menu = {
         position?: MenuPopupPosition,
         opts?: MenuPopupOptions,
     ) =>
-        bridge.invoke<MenuShowResponse>(
+        call(
             'menu.show',
             buildShowPayload(items, position, opts),
         ),
 
     /** Close the active self-drawn popup menu, if any. */
     close: (reason?: string) =>
-        bridge.invoke<MenuCloseResponse>(
+        call(
             'menu.close',
             reason ? { reason } : {},
         ),
@@ -202,7 +207,9 @@ export const menu = {
      * with the selected item id, or `null` when the menu is dismissed
      * (outside click, Escape, or any other close reason). Events are
      * matched by the menu id returned from `menu.show`, so overlapping
-     * callers never cross-resolve.
+     * callers never cross-resolve. The listeners are attached before
+     * `menu.show` is sent, so a result that reaches the page ahead of the
+     * call's response still settles the promise.
      *
      * `opts` is the same per-call presentation config as {@link show};
      * `windowModel: 'contentSized'` is the recommended model for a context
@@ -227,26 +234,52 @@ export const menu = {
         position?: MenuPopupPosition,
         opts?: MenuPopupOptions,
     ): Promise<string | null> => {
-        const res = await bridge.invoke<MenuShowResponse>(
+        // Results that arrive before the menu id is known are held and
+        // matched once `menu.show` answers; `null` stands for a dismissal.
+        const held: Array<{ menuId: string; itemId: string | null }> = [];
+        let menuId: string | undefined;
+        let settle: ((itemId: string | null) => void) | undefined;
+        const onResult = (id: string, itemId: string | null): void => {
+            if (menuId === undefined) held.push({ menuId: id, itemId });
+            else if (id === menuId) settle?.(itemId);
+        };
+        const offSelect = subscribe('menu:select', (payload) =>
+            onResult(payload.menuId, payload.itemId),
+        );
+        const offDismiss = subscribe('menu:dismiss', (payload) =>
+            onResult(payload.menuId, null),
+        );
+        let stopped = false;
+        const stop = (): void => {
+            if (stopped) return;
+            stopped = true;
+            offSelect();
+            offDismiss();
+        };
+
+        const res = await call(
             'menu.show',
             buildShowPayload(items, position, opts),
-        );
-        if (!res?.success || !res.menuId) return null;
-        const menuId = res.menuId;
+        ).catch((error: unknown) => {
+            stop();
+            throw error;
+        });
+        if (!res?.success || !res.menuId) {
+            stop();
+            return null;
+        }
+        const shownId = res.menuId;
+        const early = held.find((entry) => entry.menuId === shownId);
+        if (early) {
+            stop();
+            return early.itemId;
+        }
         return new Promise<string | null>((resolve) => {
-            let offSelect = (): void => {};
-            let offDismiss = (): void => {};
-            const finish = (value: string | null): void => {
-                offSelect();
-                offDismiss();
-                resolve(value);
+            settle = (itemId) => {
+                stop();
+                resolve(itemId);
             };
-            offSelect = bridge.on('menu:select', (payload) => {
-                if (payload.menuId === menuId) finish(payload.itemId);
-            });
-            offDismiss = bridge.on('menu:dismiss', (payload) => {
-                if (payload.menuId === menuId) finish(null);
-            });
+            menuId = shownId;
         });
     },
 };

@@ -19,6 +19,27 @@
 import { readFileSync } from 'node:fs';
 import { defineConfig, type Options } from 'tsup';
 
+type EsbuildPlugin = NonNullable<Options['esbuildPlugins']>[number];
+
+/**
+ * Keep the bridge out of `dist/components.js`.
+ *
+ * The components entry imports `../bridge/index.js` to bind the SDK in
+ * `registerComponents()`. Bundled in, that import would give the components
+ * a second `Bridge` instance next to the one in `dist/bridge.js`, which the
+ * package root and `./bridge` both resolve to. Rewriting it to an external
+ * `./bridge.js` makes every entry share that one instance.
+ */
+const sharedBridge: EsbuildPlugin = {
+    name: 'shared-bridge',
+    setup(build) {
+        build.onResolve({ filter: /^\.\.\/bridge\/index\.js$/ }, () => ({
+            path: './bridge.js',
+            external: true,
+        }));
+    },
+};
+
 const COMMON: Pick<
     Options,
     'format' | 'dts' | 'sourcemap' | 'target' | 'outDir' | 'splitting' | 'treeshake'
@@ -84,9 +105,14 @@ export default defineConfig([
         ...COMMON,
         entry: { components: 'src/components/index.ts' },
         dts: { footer: componentsGlobalFooter() },
+        esbuildPlugins: [sharedBridge],
     },
     {
         ...COMMON,
         entry: { 'smp-compat': 'src/smp/index.ts' },
+    },
+    {
+        ...COMMON,
+        entry: { schema: 'src/schema/index.ts' },
     },
 ]);

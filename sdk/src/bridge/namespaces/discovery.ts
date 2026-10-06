@@ -1,23 +1,4 @@
-/**
- * `discovery` — service / menu / component discovery namespace.
- */
-
-import { bridge } from '../Bridge.js';
-import type {
-    BaseResponse,
-    DiscoveryGetAllServicesResponse,
-    DiscoveryGetMainMenuCommandsResponse,
-    DiscoveryGetMainMenuGroupsResponse,
-    DiscoveryGetContextMenuCommandsResponse,
-    DiscoveryGetContextMenuTreeResponse,
-    DiscoveryGetInputFormatsResponse,
-    DiscoveryGetComponentsResponse,
-    DiscoveryGetUIElementsResponse,
-    DiscoveryGetDspEntriesResponse,
-    DiscoveryGetOutputDevicesResponse,
-    DiscoveryGetPreferencePagesResponse,
-    DiscoverySearchCommandsResponse,
-} from '../../types/responses.js';
+import { call } from '../call.js';
 import type {
     DiscoveryExecuteContextMenuByPathParams,
     DiscoveryExecuteContextMenuCommandParams,
@@ -26,9 +7,12 @@ import type {
     DiscoverySearchCommandsParams,
 } from '../../types/generated/params.js';
 
+/**
+ * `discovery` — service / menu / component discovery namespace.
+ */
 export const discovery = {
     getAllServices: () =>
-        bridge.invoke<DiscoveryGetAllServicesResponse>(
+        call(
             'discovery.getAllServices',
         ),
     /**
@@ -43,21 +27,21 @@ export const discovery = {
      * `{ includeHidden: true }` to get the unfiltered superset.
      */
     getMainMenuCommands: (opts?: DiscoveryGetMainMenuCommandsParams) =>
-        bridge.invoke<DiscoveryGetMainMenuCommandsResponse>(
+        call(
             'discovery.getMainMenuCommands',
             opts,
         ),
     getMainMenuGroups: () =>
-        bridge.invoke<DiscoveryGetMainMenuGroupsResponse>(
+        call(
             'discovery.getMainMenuGroups',
         ),
     /**
      * Executes a main-menu command. For a command expanded from a dynamic
      * submenu, pass the entry's `subGuid` as well; without it only the static
-     * command GUID is dispatched.
+     * command GUID is dispatched. A GUID no command owns fails with `NOT_FOUND`.
      */
     executeMainMenuCommand: (guid: string, subGuid?: string) =>
-        bridge.invoke<BaseResponse & { subGuid?: string; dynamic?: boolean }>(
+        call(
             'discovery.executeMainMenuCommand',
             subGuid ? { guid, subGuid } : { guid },
         ),
@@ -71,7 +55,7 @@ export const discovery = {
      * per the SDK and are omitted unless `includeHidden` is set.
      */
     getContextMenuCommands: (opts?: DiscoveryGetContextMenuCommandsParams) =>
-        bridge.invoke<DiscoveryGetContextMenuCommandsResponse>(
+        call(
             'discovery.getContextMenuCommands',
             opts,
         ),
@@ -81,21 +65,14 @@ export const discovery = {
      *
      * A `FORCE_OFF` command is refused rather than dispatched: the SDK treats
      * that state as "keyboard-shortcut list only", so the host never draws it and
-     * running it would perform something the user could not have clicked. Such a
-     * refusal comes back as `success: false` with `hidden: true`. Pass
+     * running it would perform something the user could not have clicked. The
+     * refusal fails with `NOT_SUPPORTED` and carries `hidden: true`. Pass
      * `{ force: true }` to dispatch anyway. `DEFAULT_OFF` commands (hidden unless
-     * Shift is held) are still invocable and are never refused.
+     * Shift is held) are still invocable and are never refused. With nothing
+     * selected or playing the call fails with `NO_ACTIVE_ITEM`.
      */
     executeContextMenuCommand: (opts: DiscoveryExecuteContextMenuCommandParams) =>
-        bridge.invoke<
-            BaseResponse & {
-                itemCount?: number;
-                name?: string;
-                hidden?: boolean;
-                resolved?: boolean;
-                force?: boolean;
-            }
-        >(
+        call(
             'discovery.executeContextMenuCommand',
             opts,
         ),
@@ -109,21 +86,16 @@ export const discovery = {
      * resolve to `'Rating/10'`.
      *
      * A path that matches several commands is refused instead of guessed —
-     * duplicated labels are common in real hosts. That comes back as
-     * `success: false` with `match: 'ambiguous'` and a `candidates` list of full
-     * names; use it to refine the path, or address the command by GUID via
+     * duplicated labels are common in real hosts. That failure carries
+     * `match: 'ambiguous'` and a `candidates` list of full names; use it to
+     * refine the path, or address the command by GUID via
      * {@link executeContextMenuCommand}, which is the only stable identifier.
      */
     executeContextMenuByPath: (opts: DiscoveryExecuteContextMenuByPathParams) =>
-        bridge.invoke<
-            BaseResponse & {
-                foundName?: string;
-                itemCount?: number;
-                match?: string;
-                candidateCount?: number;
-                candidates?: string[];
-            }
-        >('discovery.executeContextMenuByPath', opts),
+        call(
+            'discovery.executeContextMenuByPath',
+            opts,
+        ),
     /**
      * Dumps the full context-menu tree for the current selection (or the playing
      * track), as the host would build it.
@@ -135,25 +107,25 @@ export const discovery = {
      * response contains) so the two can be reconciled without counting.
      */
     getContextMenuTree: () =>
-        bridge.invoke<DiscoveryGetContextMenuTreeResponse>(
+        call(
             'discovery.getContextMenuTree',
         ),
     getInputFormats: () =>
-        bridge.invoke<DiscoveryGetInputFormatsResponse>(
+        call(
             'discovery.getInputFormats',
         ),
     getComponents: () =>
-        bridge.invoke<DiscoveryGetComponentsResponse>('discovery.getComponents'),
+        call('discovery.getComponents'),
     getUIElements: () =>
-        bridge.invoke<DiscoveryGetUIElementsResponse>('discovery.getUIElements'),
+        call('discovery.getUIElements'),
     getDspEntries: () =>
-        bridge.invoke<DiscoveryGetDspEntriesResponse>('discovery.getDspEntries'),
+        call('discovery.getDspEntries'),
     getOutputDevices: () =>
-        bridge.invoke<DiscoveryGetOutputDevicesResponse>(
+        call(
             'discovery.getOutputDevices',
         ),
     getPreferencePages: () =>
-        bridge.invoke<DiscoveryGetPreferencePagesResponse>(
+        call(
             'discovery.getPreferencePages',
         ),
     /**
@@ -175,14 +147,9 @@ export const discovery = {
      * `stateKnown` is false and its hits' `enabled` / `checked` must not be
      * filtered on.
      */
-    searchCommands: (
-        query: string,
-        opts?: Omit<DiscoverySearchCommandsParams, 'query' | 'scope'> & {
-            scope?: 'all' | 'mainmenu' | 'contextmenu';
-        },
-    ) =>
-        bridge.invoke<DiscoverySearchCommandsResponse>(
-            'discovery.searchCommands',
-            { query, ...opts },
-        ),
+    searchCommands: (query: string, opts?: Omit<DiscoverySearchCommandsParams, 'query'>) =>
+        call('discovery.searchCommands', {
+            query,
+            ...opts,
+        }),
 };

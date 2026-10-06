@@ -12,11 +12,16 @@
  *
  * Subscribes to `window:stateChanged` plus a one-shot
  * `fb.ui.isMaximized()` to keep the host attribute `maximized` and
- * the visible button in sync with the window state.
+ * the visible button in sync with the window state. Only the page's
+ * own window counts: an event whose `windowId` names another window is
+ * ignored, and events that arrive before `fb.ui.getCurrentWindowId()`
+ * answers are held until it does (see {@link OwnWindowStateFilter}).
  */
 
 import { FbBaseElement } from './FbBaseElement.js';
+import { OwnWindowStateFilter, learnOwnWindowId } from './ownWindowState.js';
 import { getFb } from './runtime.js';
+import type { WindowStateChangedPayload } from '../types/generated/events.js';
 import type {
     FbWindowCloseDetail,
     FbWindowMaximizeDetail,
@@ -28,6 +33,8 @@ export class FbWindowControls extends FbBaseElement {
     private _maxBtn!: HTMLButtonElement;
     private _restoreBtn!: HTMLButtonElement;
     private _closeBtn!: HTMLButtonElement;
+    /** Filter of the current connection; one left over from an earlier connection delivers nothing. */
+    private _stateFilter: OwnWindowStateFilter<WindowStateChangedPayload> | null = null;
 
     protected override _buildDOM(): void {
         const root = this.shadowRoot;
@@ -82,12 +89,12 @@ export class FbWindowControls extends FbBaseElement {
     }
 
     protected override _subscribe(): void {
-        this._sub('window:stateChanged', (data) =>
-            this._update(
-                !!(data as { isMaximized?: boolean } | null | undefined)
-                    ?.isMaximized,
-            ),
-        );
+        const filter = new OwnWindowStateFilter<WindowStateChangedPayload>((state) => {
+            if (this._stateFilter === filter) this._update(!!state?.isMaximized);
+        });
+        this._stateFilter = filter;
+        this._sub('window:stateChanged', (data) => filter.push(data));
+        learnOwnWindowId(filter);
         getFb()
             .ui.isMaximized()
             .then((r) =>

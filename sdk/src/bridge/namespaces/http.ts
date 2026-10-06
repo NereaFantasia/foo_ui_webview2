@@ -1,18 +1,22 @@
-/**
- * `http` — HTTP client routed through the host process.
- *
- * Bypasses the WebView2 sandbox so consumers can talk to file://,
- * localhost, or CORS-restricted origins.
- *
- * Body-bearing verbs (`post` / `put` / `delete` / `patch`) accept the
- * body as a positional argument; the host serialises non-string bodies
- * to JSON before dispatch.
- */
-
-import { bridge } from '../Bridge.js';
-import type { BaseResponse } from '../../types/responses.js';
+import { subscribe } from '../subscribe.js';
+import { call } from '../call.js';
 import type { HttpDownloadCompletePayload } from '../../types/events.js';
-import type { JsonObject, JsonValue } from '../../types/json.js';
+import type { JsonValue } from '../../types/json.js';
+import type { ApiFailure, HttpRequestOptions } from '../../types/responses.js';
+import type {
+    HttpDeleteParams,
+    HttpDownloadParams,
+    HttpGetParams,
+    HttpPatchParams,
+    HttpPostParams,
+    HttpPutParams,
+} from '../../types/generated/params.js';
+import type {
+    HttpDownloadResponse,
+    HttpGetResponse,
+    HttpGetSuccess,
+    HttpHeadResponse,
+} from '../../types/generated/responses.js';
 
 /**
  * Default failure logger for `http:downloadComplete`.
@@ -27,7 +31,7 @@ import type { JsonObject, JsonValue } from '../../types/json.js';
  * {@link disableDefaultHttpDownloadLogger}, register its own
  * `bridge.on('http:downloadComplete', ...)` listener, or both.
  */
-let _defaultHttpDownloadLoggerOff: (() => void) | null = bridge.on(
+let _defaultHttpDownloadLoggerOff: (() => void) | null = subscribe(
     'http:downloadComplete',
     (event: HttpDownloadCompletePayload) => {
         if (event && event.success === false && !event.cancelled) {
@@ -55,53 +59,6 @@ export function disableDefaultHttpDownloadLogger(): void {
 }
 
 /**
- * Options shared across `http.get` / `http.post` / ... verbs.
- *
- * Mirrors the host-recognised fields (`timeout`, `async`, `redirect`,
- * `responseType`) plus typed headers. Defaults: async dispatch with a
- * 30 s timeout, `follow` redirects, `text` response type.
- */
-export interface HttpRequestOptions {
-    headers?: Record<string, string>;
-    /** Host-side timeout in ms; default 30000. */
-    timeout?: number;
-    /** Set `false` for synchronous response; default `true`. */
-    async?: boolean;
-    /** Redirect handling: `'follow'` (default) or `'manual'`. */
-    redirect?: string;
-    /**
-     * Response decoding hint:
-     * - `'text'` (default) — UTF-8 string body. Rejects when the response
-     *   contains non-UTF-8 bytes; use a binary mode for arbitrary bytes
-     *   such as `.wasm` modules or images.
-     * - `'base64'` — body returned as a base64-encoded string.
-     * - `'arraybuffer'` / `'binary'` — `body` is decoded into an
-     *   `ArrayBuffer` (transported as base64 under the hood).
-     */
-    responseType?: 'text' | 'base64' | 'arraybuffer' | 'binary';
-    /**
-     * Skip TLS certificate validation for this request (self-signed,
-     * expired, host mismatch, untrusted CA). Modeled after
-     * `curl --insecure`.
-     *
-     * **Requires** the host-side advanced setting "Allow self-signed /
-     * invalid TLS certificates" to be enabled; if disabled the request
-     * keeps strict validation regardless of this flag (no error, just
-     * ignored). The request also emits a console audit line when the
-     * skip actually takes effect.
-     *
-     * **Security**: do not enable for requests carrying credentials or
-     * personal data — the connection becomes vulnerable to MITM. Prefer
-     * adding the target CA to the system trust store when possible.
-     */
-    insecureTls?: boolean;
-    /** @deprecated Not honoured by the host; use `insecureTls` to opt out of TLS validation. */
-    verifyTls?: boolean;
-    /** @deprecated Use `async: false` instead; will be removed. */
-    sync?: boolean;
-}
-
-/**
  * Sub-type of {@link HttpRequestOptions} that selects an `ArrayBuffer`
  * body. Used to drive the binary overload of every `http.*` verb.
  */
@@ -110,66 +67,41 @@ export interface HttpBinaryRequestOptions extends HttpRequestOptions {
 }
 
 /**
- * Options for `http.download`. Defaults to synchronous mode with a
- * 60 s host-side timeout.
+ * Options for `http.download`: its parameters other than `url` and
+ * `saveTo`. Defaults to synchronous mode with a 60 s host-side timeout.
  */
-export interface HttpDownloadOptions {
-    headers?: Record<string, string>;
-    /** Host-side timeout in ms; default 60000. */
-    timeout?: number;
-    /** Redirect handling: `'follow'` (default) or `'manual'`. */
-    redirect?: string;
-    /** Set `true` for async dispatch via `http:downloadComplete`. */
-    async?: boolean;
-    /** Override the request id used to correlate `http:downloadComplete`. */
-    requestId?: string;
+export interface HttpDownloadOptions extends Omit<HttpDownloadParams, 'url' | 'saveTo'> {
     /**
-     * Skip TLS certificate validation for this download. Requires the
-     * host-side "Allow self-signed / invalid TLS certificates" advanced
-     * setting; ignored otherwise. See {@link HttpRequestOptions.insecureTls}
-     * for the full security caveat.
+     * Accept invalid or self-signed certificates for this download.
+     * Requires the host-side "Allow self-signed / invalid TLS
+     * certificates" advanced setting; ignored otherwise. See
+     * {@link HttpRequestOptions.insecureTls} for the full security caveat.
      */
     insecureTls?: boolean;
-    /** @deprecated Not honoured by the host; use `insecureTls` to opt out of TLS validation. */
+    /**
+     * @deprecated Has no effect; `http:downloadComplete` carries the
+     * `requestId` returned in the receipt.
+     */
+    requestId?: string;
+    /** @deprecated Has no effect; use `insecureTls` to accept invalid certificates. */
     verifyTls?: boolean;
 }
 
 /**
- * Result of any `http.*` verb call.
+ * Reply of `http.get` / `post` / `put` / `delete` / `patch` and
+ * {@link http.request}.
  *
- * The C++ host runs every HTTP verb in either sync or async mode (default
- * async). In **async** mode the immediate return is a *dispatch* envelope
- * `{ success, requestId, async: true }` and the actual response arrives
- * later through the `http:response` event (use {@link http.request} for
- * the awaited variant). In **sync** mode the call resolves with the full
- * response (`status` / `body` / `headers`).
- *
- * Every field is optional so the same shape covers both paths; callers
- * checking `requestId` know they got the dispatch envelope, callers
- * checking `status` know they got the synchronous response.
+ * By default the host dispatches the request and replies at once with a
+ * receipt (`requestId`, `async: true`); the response arrives later as the
+ * `http:response` event, which {@link http.request} waits for. With
+ * `async: false` the reply is the response itself (`status`, `headers`,
+ * `body`, `responseType`).
  */
-export interface HttpResponse {
-    /** HTTP status code (sync mode only). */
-    status?: number;
-    statusText?: string;
-    headers?: Record<string, string>;
-    body?: string;
-    success?: boolean;
-    error?: string;
-    /** Correlation id for the deferred result (async mode only). */
-    requestId?: string;
-    /** True when the call dispatched asynchronously. */
-    async?: boolean;
-    /** HEAD-only convenience: parsed `Content-Length` header. */
-    contentLength?: number;
-    /**
-     * Actual transport encoding used by the host:
-     * - `'text'` for UTF-8 string bodies.
-     * - `'base64'` when the host base64-encoded a binary payload (the
-     *   SDK auto-decodes this into {@link HttpBinaryResponse} when the
-     *   caller asked for `'arraybuffer'` / `'binary'`).
-     */
-    responseType?: 'text' | 'base64';
+export type HttpResponse = HttpGetResponse;
+
+/** A successful {@link HttpResponse} whose `body` is decoded into an `ArrayBuffer`. */
+export interface HttpBinarySuccess extends Omit<HttpGetSuccess, 'body'> {
+    body?: ArrayBuffer;
 }
 
 /**
@@ -177,8 +109,15 @@ export interface HttpResponse {
  * `ArrayBuffer`. Returned by every `http.*` verb when the caller passes
  * `responseType: 'arraybuffer'` or `'binary'`.
  */
-export interface HttpBinaryResponse extends Omit<HttpResponse, 'body'> {
-    body?: ArrayBuffer;
+export type HttpBinaryResponse = HttpBinarySuccess | ApiFailure;
+
+/**
+ * The options as sent: the deprecated keys have no effect and the host
+ * rejects keys it does not declare, so they are dropped here.
+ */
+function _wire(opts: HttpRequestOptions = {}): Omit<HttpGetParams, 'url'> {
+    const { verifyTls: _verifyTls, sync: _sync, ...wire } = opts;
+    return wire;
 }
 
 /**
@@ -228,14 +167,18 @@ function _base64ToArrayBuffer(s: string): ArrayBuffer {
  * response is empty, an async-dispatch envelope, or already non-base64.
  */
 function _decodeBinary(resp: HttpResponse): HttpBinaryResponse {
-    if (!resp || typeof resp.body !== 'string') {
+    if (!resp || resp.success === false || typeof resp.body !== 'string' || resp.responseType !== 'base64') {
         return resp as HttpBinaryResponse;
     }
-    if (resp.responseType !== 'base64') {
-        return resp as HttpBinaryResponse;
+    return { ...resp, body: _base64ToArrayBuffer(resp.body) };
+}
+
+/** {@link _decodeBinary} for a response already known to be a success. */
+function _decodeBinarySuccess(resp: HttpGetSuccess): HttpBinarySuccess {
+    if (typeof resp.body !== 'string' || resp.responseType !== 'base64') {
+        return resp as HttpBinarySuccess;
     }
-    const decoded = _base64ToArrayBuffer(resp.body);
-    return { ...resp, body: decoded };
+    return { ...resp, body: _base64ToArrayBuffer(resp.body) };
 }
 
 /**
@@ -257,7 +200,10 @@ function httpGet(
     url: string,
     opts?: HttpRequestOptions,
 ): Promise<HttpResponse | HttpBinaryResponse> {
-    return _finalizeHttp(bridge.invoke<HttpResponse>('http.get', { url, ...(opts || {}) }), opts);
+    return _finalizeHttp(
+        call('http.get', { url, ..._wire(opts) }),
+        opts,
+    );
 }
 
 function httpPost(url: string, body?: JsonValue): Promise<HttpResponse>;
@@ -276,7 +222,10 @@ function httpPost(
     body?: JsonValue,
     opts?: HttpRequestOptions,
 ): Promise<HttpResponse | HttpBinaryResponse> {
-    return _finalizeHttp(bridge.invoke<HttpResponse>('http.post', { url, body, ...(opts || {}) }), opts);
+    return _finalizeHttp(
+        call('http.post', { url, body, ..._wire(opts) }),
+        opts,
+    );
 }
 
 function httpPut(url: string, body?: JsonValue): Promise<HttpResponse>;
@@ -295,7 +244,10 @@ function httpPut(
     body?: JsonValue,
     opts?: HttpRequestOptions,
 ): Promise<HttpResponse | HttpBinaryResponse> {
-    return _finalizeHttp(bridge.invoke<HttpResponse>('http.put', { url, body, ...(opts || {}) }), opts);
+    return _finalizeHttp(
+        call('http.put', { url, body, ..._wire(opts) }),
+        opts,
+    );
 }
 
 function httpDelete(url: string, body?: JsonValue): Promise<HttpResponse>;
@@ -314,7 +266,10 @@ function httpDelete(
     body?: JsonValue,
     opts?: HttpRequestOptions,
 ): Promise<HttpResponse | HttpBinaryResponse> {
-    return _finalizeHttp(bridge.invoke<HttpResponse>('http.delete', { url, body, ...(opts || {}) }), opts);
+    return _finalizeHttp(
+        call('http.delete', { url, body, ..._wire(opts) }),
+        opts,
+    );
 }
 
 function httpPatch(url: string, body?: JsonValue): Promise<HttpResponse>;
@@ -333,27 +288,57 @@ function httpPatch(
     body?: JsonValue,
     opts?: HttpRequestOptions,
 ): Promise<HttpResponse | HttpBinaryResponse> {
-    return _finalizeHttp(bridge.invoke<HttpResponse>('http.patch', { url, body, ...(opts || {}) }), opts);
+    return _finalizeHttp(
+        call('http.patch', { url, body, ..._wire(opts) }),
+        opts,
+    );
 }
 
-function httpHead(url: string, opts?: HttpRequestOptions): Promise<HttpResponse> {
-    return bridge.invoke<HttpResponse>('http.head', { url, ...(opts || {}) });
+// A HEAD response has no body, so `responseType` does not apply.
+function httpHead(
+    url: string,
+    opts?: Omit<HttpRequestOptions, 'responseType'>,
+): Promise<HttpHeadResponse> {
+    return call('http.head', { url, ..._wire(opts) });
 }
 
-function httpRequest(url: string): Promise<HttpResponse>;
-function httpRequest(url: string, opts: HttpBinaryRequestOptions): Promise<HttpBinaryResponse>;
-function httpRequest(url: string, opts: HttpRequestOptions): Promise<HttpResponse>;
+function httpRequest(url: string): Promise<HttpGetSuccess>;
+function httpRequest(url: string, opts: HttpBinaryRequestOptions): Promise<HttpBinarySuccess>;
+function httpRequest(url: string, opts: HttpRequestOptions): Promise<HttpGetSuccess>;
 function httpRequest(
     url: string,
     opts?: HttpRequestOptions,
-): Promise<HttpResponse | HttpBinaryResponse> {
+): Promise<HttpGetSuccess | HttpBinarySuccess> {
     const promise = _httpRequest(
-        { url, ...(opts || {}) },
+        { url, ..._wire(opts) },
         typeof opts?.timeout === 'number' ? opts.timeout + 5000 : 35000,
     );
-    return _wantsBinary(opts) ? promise.then(_decodeBinary) : promise;
+    return _wantsBinary(opts) ? promise.then(_decodeBinarySuccess) : promise;
 }
 
+function httpDownload(
+    url: string,
+    saveTo: string,
+    opts: HttpDownloadOptions = {},
+): Promise<HttpDownloadResponse> {
+    const { requestId: _requestId, verifyTls: _verifyTls, ...wire } = opts;
+    return call(
+        'http.download',
+        { url, saveTo, ...wire },
+    );
+}
+
+/**
+ * `http` — HTTP requests made by the host process.
+ *
+ * Requests are not subject to CORS. Only `http` and `https` URLs are
+ * allowed, and local or private network addresses fail with
+ * `PERMISSION_DENIED` unless the host setting allows them.
+ *
+ * Body-bearing verbs (`post` / `put` / `delete` / `patch`) accept the
+ * body as a positional argument; the host sends a non-string body as its
+ * JSON text.
+ */
 export const http = {
     get: httpGet,
     post: httpPost,
@@ -361,19 +346,9 @@ export const http = {
     delete: httpDelete,
     patch: httpPatch,
     head: httpHead,
-    download: (url: string, saveTo: string, opts?: HttpDownloadOptions) =>
-        bridge.invoke<
-            BaseResponse & {
-                requestId?: string;
-                path?: string;
-                bytesWritten?: number;
-                cancelled?: boolean;
-            }
-        >('http.download', { url, saveTo, ...(opts || {}) }),
+    download: httpDownload,
     abort: (requestId: string) =>
-        bridge.invoke<BaseResponse & { cancelled?: boolean }>('http.abort', {
-            requestId,
-        }),
+        call('http.abort', { requestId }),
     /** Detach the default failure logger; see {@link disableDefaultHttpDownloadLogger}. */
     disableDefaultDownloadLogger: disableDefaultHttpDownloadLogger,
 
@@ -381,11 +356,20 @@ export const http = {
      * Event-driven GET that awaits the `http:response` event. The
      * host may either respond synchronously (`async: false`) or queue
      * the request and deliver the result via `http:response`. A
-     * client-side timeout (default 35 s) guards against the event
-     * never arriving.
+     * client-side timeout (default 35 s, or `opts.timeout + 5000` ms)
+     * guards against the event never arriving.
+     *
+     * Unlike the other verbs it resolves with the success branch only.
+     * A failure the host reports rejects with an `Error` whose message
+     * is the failure's `error`; a failure delivered by `http:response`
+     * also carries that payload as the error's `response`. The client
+     * timeout rejects as well, after aborting the host request.
      */
     request: httpRequest,
 };
+
+/** An `http:response` payload: the response or failure plus the id from the receipt. */
+type HttpResponseEvent = HttpResponse & { requestId: string };
 
 /**
  * Wraps a verb-specific invoke into a Promise that resolves on the
@@ -394,22 +378,13 @@ export const http = {
  * exit path so concurrent calls cannot leak.
  *
  * `clientTimeoutMs` should be slightly larger than the host-side
- * timeout in `opts.timeout`; defaults to 35 s.
+ * timeout in `payload.timeout`; defaults to 35 s.
  */
-interface HttpInitResponse extends HttpResponse {
-    async?: boolean;
-    requestId?: string;
-}
-
-interface HttpResponseEvent extends HttpResponse {
-    requestId: string;
-}
-
 function _httpRequest(
-    payload: JsonObject,
+    payload: HttpGetParams,
     clientTimeoutMs = 35000,
-): Promise<HttpResponse> {
-    return new Promise<HttpResponse>((resolve, reject) => {
+): Promise<HttpGetSuccess> {
+    return new Promise<HttpGetSuccess>((resolve, reject) => {
         let timerId: ReturnType<typeof setTimeout> | null = null;
         let off: (() => void) | null = null;
 
@@ -424,17 +399,17 @@ function _httpRequest(
             }
         };
 
-        bridge
-            .invoke<HttpInitResponse>('http.get', payload)
+        call('http.get', payload)
             .then((init) => {
-                // Synchronous path: host already returned the full response.
-                if (!init || !init.async) {
+                if (init.success === false) {
                     cleanup();
-                    if (init && init.success === false) {
-                        reject(new Error(init.error || 'HTTP request failed'));
-                    } else {
-                        resolve(init);
-                    }
+                    reject(new Error(init.error || 'HTTP request failed'));
+                    return;
+                }
+                // Synchronous path: host already returned the full response.
+                if (!init.async) {
+                    cleanup();
+                    resolve(init);
                     return;
                 }
 
@@ -451,8 +426,7 @@ function _httpRequest(
 
                 timerId = setTimeout(() => {
                     cleanup();
-                    bridge
-                        .invoke<HttpResponse>('http.abort', { requestId })
+                    call('http.abort', { requestId })
                         .catch(() => {
                             /* swallow abort errors */
                         });
@@ -463,7 +437,7 @@ function _httpRequest(
                     );
                 }, clientTimeoutMs);
 
-                off = bridge.on(
+                off = subscribe(
                     'http:response',
                     (raw: unknown) => {
                         const data = raw as HttpResponseEvent | undefined;

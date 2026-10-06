@@ -13,10 +13,11 @@ import type { JsonValue } from '../../types/json.js';
  * `any`.
  */
 
-import { formatHandleId, parseHandleId, stripSubsongSuffix } from '../handleId.js';
-import { getInvoke } from '../utils.js';
+import { formatHandleId, parseHandleId } from '../handleId.js';
+import { getTypedInvoke, successOf } from '../utils.js';
 import { FbFileInfo } from './FbFileInfo.js';
 import type { SmpHandleLike } from '../types.js';
+import type { Track } from '../../types/generated/schema-types.js';
 
 interface MetadbInput {
     path?: string;
@@ -35,7 +36,7 @@ export class FbMetadbHandle {
     private _subsong: number = 0;
     private _trackInfo: MetadbInput | null = null;
 
-    constructor(input?: SmpHandleLike | MetadbInput | FbMetadbHandle) {
+    constructor(input?: SmpHandleLike | MetadbInput | FbMetadbHandle | Partial<Track>) {
         // Copy constructor
         if (input instanceof FbMetadbHandle) {
             this._path = input._path;
@@ -118,21 +119,20 @@ export class FbMetadbHandle {
     }
 
     /**
-     * Resolve full file info via `metadata.read`. Returns `null` when
-     * the path is empty, the bridge is unavailable, or the read fails.
+     * Resolve full file info via `metadata.read`, sending the handle id so a
+     * subsong reads its own tags. Returns `null` when the path is empty, the
+     * bridge is unavailable, or the read fails.
      */
     async GetFileInfo(): Promise<FbFileInfo | null> {
-        const inv = getInvoke();
+        const inv = getTypedInvoke();
         if (!inv) return null;
 
-        const path = stripSubsongSuffix(this.Path);
+        const path = this.HandleId;
         if (!path) return null;
 
         try {
-            const res = (await inv('metadata.read', { path })) as
-                | { success?: boolean; [key: string]: JsonValue }
-                | null;
-            if (!res || res.success === false) return null;
+            const res = successOf(await inv('metadata.read', { path }));
+            if (!res) return null;
             return new FbFileInfo(res);
         } catch {
             return null;

@@ -20,6 +20,14 @@ interface ReplaygainModeResult {
     sourceMode?: string;
 }
 
+/** The option values, which are also the names the host accepts. */
+const SOURCE_MODES = ['none', 'track', 'album', 'auto'] as const;
+type SourceMode = (typeof SOURCE_MODES)[number];
+
+function isSourceMode(value: string): value is SourceMode {
+    return (SOURCE_MODES as readonly string[]).includes(value);
+}
+
 export class FbReplaygainSelector extends FbBaseElement {
     private _select!: HTMLSelectElement;
 
@@ -40,6 +48,8 @@ export class FbReplaygainSelector extends FbBaseElement {
     protected override _setupEvents(): void {
         this._listen(this._select, 'change', () => {
             const mode = this._select.value;
+            // The select only holds the four names, but its value is a string to the compiler.
+            if (!isSourceMode(mode)) return;
             void (async () => {
                 try {
                     await getFb().replaygain.setMode(mode);

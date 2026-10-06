@@ -97,7 +97,7 @@ await fb.player.setStopAfterCurrent(true)
 
 ```javascript
 // 获取播放列表
-const playlists = await fb.playlist.getAll()
+const { playlists } = unwrap(await fb.playlist.getAll())
 const active = await fb.playlist.getActive()
 const playing = await fb.playlist.getPlaying()
 
@@ -110,7 +110,7 @@ await fb.playlist.remove(0)
 await fb.playlist.clear(0)
 
 // 曲目操作
-const tracks = await fb.playlist.getTracks(0, 0, 100)
+const { tracks } = unwrap(await fb.playlist.getTracks(0, 0, 100))
 const { count } = await fb.playlist.getCount(0)
 await fb.playlist.add(0, ['C:/Music/song.mp3'])
 await fb.playlist.removeTracks(0, [0, 1, 2])
@@ -234,28 +234,28 @@ await fb.ui.flashTaskbar()
 
 ```javascript
 // 输出设备
-const devices = await fb.config.getOutputDevices()
+const { devices } = unwrap(await fb.config.getOutputDevices())
 const config = await fb.config.getOutputConfig()
 await fb.config.setOutputDevice('output-id', 'device-id')
 await fb.config.setOutputBuffer(500)
 
 // 高级配置
-const advanced = await fb.config.getAdvancedConfig()
+const { entries } = unwrap(await fb.config.getAdvancedConfig())
 const { value } = await fb.config.getAdvancedConfigValue('{guid}')
 await fb.config.setAdvancedConfigValue('{guid}', 'new-value')
 await fb.config.resetAdvancedConfig('{guid}')
 
 // 偏好设置
-const pages = await fb.config.getPreferencesPages()
+const { pages } = unwrap(await fb.config.getPreferencesPages())
 const guids = await fb.config.getPreferencesStandardGuids()
 await fb.config.showLibraryPreferences()
 
 // 组件信息
-const components = await fb.config.getComponents()
+const { components } = unwrap(await fb.config.getComponents())
 const version = await fb.config.getVersionInfo()
 
 // DSP
-const presets = await fb.config.getDspPresets()
+const { presets } = unwrap(await fb.config.getDspPresets())
 const active = await fb.config.getActiveDspPreset()
 await fb.config.setActiveDspPreset(0)  // 按索引设置
 ```
@@ -312,15 +312,13 @@ const result3 = await fb.audio.generateFullWaveform('E:\\Music\\album.cue', {
     resolution: 256
 });
 
-// 分析 BPM
-const { bpm, source } = await fb.audio.analyzeBPM('E:\\Music\\song.flac');
-console.log(`BPM: ${bpm}, 来源: ${source}`);
-
-// 强制重新分析（忽略已有 BPM 标签）
-const forced = await fb.audio.analyzeBPM('E:\\Music\\song.flac', {
-    forceAnalysis: true
-});
-console.log(`BPM: ${forced.bpm}, 来源: ${forced.source}`);
+// 读取 BPM 标签（宿主不做节拍检测）
+const bpmResult = await fb.audio.analyzeBPM('E:\\Music\\song.flac');
+if (bpmResult.success) {
+    console.log(`BPM: ${bpmResult.bpm}`);
+} else if (bpmResult.code === 'NOT_FOUND') {
+    console.log('没有 BPM 标签');
+}
 
 // 无效声道模式会自动回退到 default
 const channelModeResult = await fb.audio.setChannelMode('invalid');
@@ -346,15 +344,15 @@ const info = await fb.utils.getFileInfo('C:/Music/song.mp3')
 
 ```javascript
 // API 发现
-const apis = await fb.system.listApis(true, true)
-const namespaceApis = await fb.system.getApisByNamespace('playback')
-const searchResults = await fb.system.searchApis('volume')
+const { apis } = unwrap(await fb.system.listApis(true, true))
+const namespaceApis = unwrap(await fb.system.getApisByNamespace('playback'), 'apis')
+const searchResults = unwrap(await fb.system.searchApis('volume'), 'apis')
 
 // API 统计
 const stats = await fb.system.getApiStats()
 
 // 插件管理
-const plugins = await fb.system.getRegisteredPlugins()
+const { plugins } = unwrap(await fb.system.getRegisteredPlugins())
 const { registered } = await fb.system.isPluginRegistered('my-plugin')
 ```
 
@@ -472,22 +470,22 @@ fb.on('myapp:lyricsUpdated', ({ payload, sourceWindowId }) => {
 
 ```javascript
 // 订阅播放状态变化
-const unsubscribe = fb.on('playback.state', (data) => {
-    console.log('状态:', data.state)
-    console.log('曲目:', data.track)
+const unsubscribe = fb.on('playback:stateChanged', (data) => {
+    console.log('状态:', data.state)       // 'playing' | 'paused' | 'stopped'
     console.log('位置:', data.position)
+    console.log('时长:', data.duration)
 })
 
-// 订阅播放列表变化
-fb.on('playlist.changed', (data) => {
-    console.log('播放列表:', data.playlistIndex)
+// 订阅播放列表切换
+fb.on('playlist:activated', (data) => {
+    console.log('当前播放列表:', data.newIndex)
 })
 
 // 取消订阅
 unsubscribe()
 
 // 一次性订阅
-fb.once('playback.state', (data) => {
+fb.once('playback:stateChanged', (data) => {
     console.log('一次性事件:', data)
 })
 ```
@@ -521,15 +519,44 @@ if (fb.isAvailable()) {
 }
 ```
 
-## 开发模式 Mock
+## 结果与失败
 
-在非 WebView2 环境中，SDK 会自动使用 Mock 模式，所有 API 调用会返回模拟数据：
+每个命名空间方法都 resolve 宿主的信封：成功时是带 `success: true` 的结果字段，失败时是 `{ success: false, error, code, details? }`。方法不会因为它报告的失败而抛错，列表方法也不会把失败换成空数组。只有宿主直接拒绝的请求（方法不存在、handler 内部抛异常、30 秒内没有应答）才会 reject。
 
 ```javascript
-// 非 WebView2 环境下的行为
-const result = await fb.player.play()
-// 返回: { mock: true, method: 'playback.play' }
+const res = await fb.playlist.getAll()
+if (res.success === false) {
+    console.warn(res.code, res.error)
+} else {
+    render(res.playlists)
+}
 ```
+
+想要异常时，把信封交给 `unwrap`（`<script>` 全局包里是 `fb.unwrap`）。它返回成功分支或其中一个字段；失败时抛出带 `code` 与 `details` 的 `ApiCallError`：
+
+```javascript
+import { unwrap, ApiCallError } from 'foo-webview-sdk'
+
+try {
+    const playlists = unwrap(await fb.playlist.getAll(), 'playlists')
+    unwrap(await fb.library.addToPlaylist(paths))
+} catch (e) {
+    if (e instanceof ApiCallError && e.code === 'LOCKED') showLockedNotice()
+}
+```
+
+## 在宿主之外运行
+
+在 foobar2000 之外（普通浏览器标签页、单元测试）没有原生桥。此时每个调用都会在 100 ms 后 resolve 一个失败信封，照常检查 `success` 即可：
+
+```javascript
+const result = await fb.player.play()
+// { success: false, code: 'NOT_SUPPORTED', error: 'No foobar2000 host is available',
+//   details: { method: 'playback.play' } }
+if (result.success === false) console.warn(result.code, result.error)
+```
+
+没有宿主时事件不会触发。要让页面跑在假数据上，把一个带 `invoke`、`on`、`off` 的替身赋给 `window.fb2k`，下一次调用就会把它当作宿主。要在页面订阅事件之前赋值：没有宿主时做的订阅不会补登记。
 
 ---
 

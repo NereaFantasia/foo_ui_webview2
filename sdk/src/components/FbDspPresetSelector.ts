@@ -16,20 +16,10 @@ import { FbBaseElement } from './FbBaseElement.js';
 import { getFb } from './runtime.js';
 import type { FbDspChangeDetail } from './types.js';
 
-/**
- * Wider shape than the bridge's exported `DspPreset` (`name`,
- * `isActive`) — the runtime JSON also carries an `index` field that
- * this component uses as the `<option value>`. Kept private so the
- * public bridge type stays the source of truth.
- */
+/** The fields of a `config.getDspPresets` row this component reads. */
 interface DspPresetInfo {
     index: number;
     name: string;
-}
-
-interface ActivePreset {
-    index?: number;
-    name?: string;
 }
 
 export class FbDspPresetSelector extends FbBaseElement {
@@ -77,11 +67,10 @@ export class FbDspPresetSelector extends FbBaseElement {
                 fb.config.getDspPresets(),
                 fb.config.getActiveDspPreset(),
             ]);
-            // Cast through `unknown` because the bridge's exported
-            // `DspPreset` type omits the `index` field returned by the host.
-            this._presets =
-                ((presets as unknown) as DspPresetInfo[] | null) ?? [];
-            const activeData = active as ActivePreset | null;
+            // A failed call keeps the list shown so far.
+            if (presets.success === false) return;
+            this._presets = presets.presets;
+            const activeData = active.success === false ? null : active;
             this._activeIndex = activeData?.index ?? -1;
             this._select.innerHTML = this._presets
                 .map(

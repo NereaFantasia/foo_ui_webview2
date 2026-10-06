@@ -10,8 +10,74 @@
  * Event payload shapes live in {@link "./events"}.
  */
 
-import type { JsonObject } from './json.js';
-import type { SpectrumBeatSource, SpectrumScale } from './overrides/audio.js';
+import type { JsonObject, JsonValue } from './json.js';
+import type {
+    AdvancedConfigItem, ArtworkAvailableEntry, ArtworkUrlRow, ConfigComponentInfo, ConfigDspPreset,
+    AlbumInfo, ArtistAlbumRef, ArtistInfo, ConfigLibraryFilePattern, ConfigOutputDevice, ConfigPreferencesPage, KeyboardHotkey,
+    LibraryRootInfo, LibraryTrack, MenuTreeNode, PanelConfig, PlaylistColumnDefinition, SystemApiInfo, SystemPluginInfo,
+} from './generated/schema-types.js';
+import type {
+    ArtworkGetAvailableArtworkResponse, ArtworkGetByPathResponse, ArtworkGetByPlaylistItemResponse,
+    ArtworkGetCurrentResponse, ArtworkGetFb2kUrlByPathBatchResponse, ArtworkGetForTrackResponse,
+    ArtworkGetLyricsResponse, ArtworkGetMetadataResponse, AudioGetOutputInfoResponse,
+    AudioGetSpectrumDebugStateResponse, AudioGetStreamInfoResponse, ConfigGetActiveDspPresetResponse,
+    ConfigGetAdvancedConfigResponse, ConfigGetAdvancedConfigValueResponse, ConfigGetAllResponse,
+    ConfigGetLibraryFilePatternsResponse, ConfigGetOutputConfigResponse, ConfigGetPreferencesPagesResponse,
+    ConfigGetPreferencesStandardGuidsResponse, ConfigGetVersionInfoResponse, DndGetCapabilitiesResponse,
+    DndGetPathsAsyncResponse, DndPrepareDragResponse, LibraryBrowseTreeResponse, LibraryGetAlbumTracksResponse,
+    LibraryGetAlbumsResponse,
+    LibraryGetArtistAlbumsResponse, LibraryGetArtistTracksResponse, LibraryGetArtistsResponse,
+    LibraryGetCacheStatsResponse, LibraryGetFieldValuesResponse, LibraryGetGenresResponse,
+    LibraryGetRandomTracksResponse, LibraryGetRecentlyAddedResponse,
+    LibraryGetStatsResponse, LibraryGetStatusResponse, LyricsExistsResponse,
+    LyricsGetResponse, LyricsSaveResponse, PlaylistGetAutoplaylistInfoResponse, PlaylistGetGroupRunsResponse,
+    PlaylistGetLockInfoResponse, PlaylistGetSelectedTracksResponse, PlaylistGetSelectionResponse,
+    PlaylistGetTrackCountResponse, PlaylistGetTracksResponse, PlaylistGetAvailableColumnsResponse,
+    SystemGetApiStatsResponse,
+    MenuGetContextMenuSuccess as MenuGetContextMenuWireSuccess,
+    MenuGetMainMenuSuccess as MenuGetMainMenuWireSuccess,
+    LibraryBrowseTreeSuccess,
+} from './generated/responses.js';
+import type {
+    AudioGenerateFullWaveformParams, HttpGetParams, LyricsGetParams, LyricsSaveParams, ShellExecParams,
+    ShellSpawnParams, WindowSetPopupBehaviorParams,
+} from './generated/params.js';
+import type { SpectrumChannels, SpectrumOutput, SpectrumScale } from './overrides/audio.js';
+import type {
+    JitQueueGetStateResponse,
+    PlaybackGetPlaybackOrderResponse,
+    PlaybackGetPositionResponse,
+    PlaybackGetStateResponse,
+    PlaybackGetStopAfterCurrentResponse,
+    PlaybackGetVolumeResponse,
+    PlaybackPlayPauseResponse,
+    PlaybackSetPlaybackOrderResponse,
+    PlaycountGetResponse,
+    PlaycountGetStatsResponse,
+    ReplaygainGetModeResponse,
+    ReplaygainGetPreampResponse,
+    ReplaygainGetResponse,
+    ReplaygainGetSettingsResponse,
+    SelectionGetResponse,
+    ShellExecResponse,
+    ShellSpawnResponse,
+    TitleformatEvalBatchResponse,
+    TitleformatEvalFieldsBatchResponse,
+    TitleformatEvalFieldsResponse,
+    TitleformatEvalResponse,
+    TitleformatGetBuiltinFieldsResponse,
+    WindowGetAllWindowsResponse,
+    WindowGetDevServerConfigResponse,
+    WindowGetDpiScaleResponse,
+    WindowGetStateResponse,
+    WindowGetTitlebarInfoResponse,
+    WindowSetBackdropPolicyResponse,
+    WindowSetPopupBehaviorResponse,
+    PlaycountGetSuccess,
+    WindowGetAllWindowsSuccess,
+} from './generated/responses.js';
+import type { WindowCreatePopupParams } from './generated/params.js';
+import type { WindowInfo } from './generated/schema-types.js';
 
 // ============================================================================
 // Base type aliases
@@ -51,16 +117,20 @@ export interface TrackInfo {
      * Atomic values behind `artist`, in tag order, neither de-duplicated nor
      * stripped of empty values: `artists.join(', ')` is exactly `artist`, so a
      * multi-value tag can be recovered from this field and not from `artist`.
-     * Carried by track rows from the library namespace — `library.getAll`,
-     * `library.query`, `library.search`, `library.getByPath` and the other
-     * `library.*` track endpoints. Track objects from other namespaces
-     * (`playlist.getTracks`, `playback.getCurrentTrack`, `queue.get`, artwork
-     * payloads, event payloads) do not carry it, which is why the field is
-     * optional on this shared shape.
+     * Every shared `Track` row carries it (library, playlist, queue and
+     * playback rows, and the track events); it is optional here because
+     * objects outside that row, such as the answer of `artwork.getMetadata`,
+     * do not.
      */
     artists?: string[];
     album: string;
     albumArtist?: string;
+    /**
+     * Atomic values behind `albumArtist`, with the same rules as `artists`:
+     * `albumArtists.join(', ')` is exactly `albumArtist`. Present wherever
+     * `artists` is.
+     */
+    albumArtists?: string[];
     genre?: string;
     date?: string;
     trackNumber?: number;
@@ -86,305 +156,94 @@ export interface TrackInfo {
     modified?: number;
 }
 
-/** A single track occupying a slot in a foobar2000 playlist. */
-export interface PlaylistTrack extends TrackInfo {
-    index: number;
-    isPlaying: boolean;
-    isSelected: boolean;
-}
+/**
+ * One playlist row, from the declaration in src/api/schema/playlist.ts; `PlaylistTrackPartial` is
+ * the same row narrowed to the `fields` a `playlist.getTracks` call asked for.
+ */
+export type { PlaylistTrack, PlaylistTrackPartial } from './generated/schema-types.js';
 
 // ============================================================================
 // Playlist
 // ============================================================================
 
-/** Top-level metadata for a foobar2000 playlist. */
-export interface PlaylistInfo {
-    index: number;
-    name: string;
-    trackCount: number;
-    isActive: boolean;
-    isPlaying: boolean;
-    isLocked: boolean;
-    isAutoplaylist?: boolean;
-}
+/** One entry of `playlist.getAll`, from the declaration in src/api/schema/playlist.ts. */
+export type { PlaylistInfo } from './generated/schema-types.js';
 
-/** Selection set descriptor returned by `playlist.getSelection`. */
-export interface SelectionInfo {
-    /** Indices of the selected playlist items. */
-    items: number[];
-    count: number;
-    playlist?: number;
-}
+/** `playlist.getSelection` response; the generated {@link PlaylistGetSelectionResponse} under its earlier name. */
+export type SelectionInfo = PlaylistGetSelectionResponse;
+
+/**
+ * A track reference `playlist.addHandles` and `playlist.insertTracks` accept:
+ * a path with an optional `|subsong:N` suffix, or the path and subsong apart.
+ */
+export type PlaylistHandleRef = string | { path: string; subsong?: number };
 
 /**
  * Result of `selection.get`. The selection-manager API works on
  * metadb handles rather than playlist indices, so the envelope is
  * structurally distinct from {@link SelectionInfo}: it carries
  * `handles[]` (with `|subsong:N` suffixes for CUE rows), the typed
- * selection-source string, and pagination metadata.
+ * selection-source string, and pagination metadata. The shape is declared in
+ * src/api/schema/selection.ts; this name stays as an alias.
  */
-export interface SelectionGetResult {
-    count: number;
-    type: string;
-    /** Stringified `path[|subsong:N]` for each selected metadb handle. */
-    handles: string[];
-    offset: number;
-    /** True when the slice is shorter than the full selection. */
-    hasMore: boolean;
-    /** True when the host capped the page at the implicit 100-item limit. */
-    truncated?: boolean;
-}
+export type SelectionGetResult = SelectionGetResponse;
 
 // ============================================================================
 // Library
 // ============================================================================
 
-/**
- * Album-level aggregate row used by `library.getAlbums` etc.
- *
- * `trackCount`, `duration` and `discCount` are scoped to whatever the calling
- * endpoint aggregated. `library.getAlbums` walks the whole library and reports
- * the album; `library.getArtistAlbums` walks one artist's tracks and reports
- * only those, so the same album yields smaller figures there.
- */
-export interface AlbumInfo {
-    name: string;
-    artist: string;
-    albumArtist?: string;
-    trackCount: number;
-    discCount?: number;
-    duration: number;
-    year?: string;
-    genre?: string;
-    label?: string;
-    firstTrackPath?: string;
-    firstTrackAbsolutePath?: string;
-    coverDataUrl?: string;
-    tracks?: TrackInfo[];
-}
+/** One album row of `library.getAlbums` and `library.getArtistAlbums`, from the declaration. */
+export type { AlbumInfo };
 
-/**
- * One album an artist is credited on, as listed in {@link ArtistInfo.albums}.
- *
- * `(name, artist)` is the same identity `library.getAlbums` groups by:
- * `artist` is the first `album artist` value, falling back to the first
- * `artist` value when that tag is absent. The pair therefore matches exactly
- * one `library.getAlbums` row.
- */
-export interface ArtistAlbumRef {
-    name: string;
-    artist: string;
-}
+/** One album an artist is credited on, from the declaration. */
+export type { ArtistAlbumRef };
 
-/**
- * Artist-level aggregate row used by `library.getArtists`.
- *
- * Every credited artist gets its own row, so `trackCount`, `albumCount` and
- * `totalDuration` are participation figures. `albumCount` de-duplicates by
- * album name only, while `albums` de-duplicates by `(name, artist)`: two
- * same-named albums by different album artists count as 1 here and appear
- * as 2 entries there.
- */
-export interface ArtistInfo {
-    name: string;
-    albumCount: number;
-    trackCount: number;
-    /** Summed length of the artist's tracks, in seconds. */
-    totalDuration: number;
-    /**
-     * Present only when the call passed `includeAlbums: true`. Sorted by
-     * `name`, then `artist` (byte order); not truncated by `limit`.
-     */
-    albums?: ArtistAlbumRef[];
-}
+/** One artist row of `library.getArtists`, from the declaration. */
+export type { ArtistInfo };
 
-/**
- * Coarse-grained snapshot of the media-library subsystem state,
- * returned by `config.getLibraryStatus` and `library.getStatus`.
- *
- * Per-entity counters (albums / artists / …) live in {@link LibraryStats}
- * (`library.getStats`).
- */
-export interface LibraryStatus {
-    enabled?: boolean;
-    initialized: boolean;
-    /** True while a scan is in progress. */
-    scanning?: boolean;
-    /** Total enumerated items in the library (foobar2000 calls them "items"). */
-    itemCount?: number;
-    /** Alias of {@link itemCount}; the host writes both. */
-    count?: number;
-}
+/** `library.getStats` counters; the generated {@link LibraryGetStatsResponse} under its earlier name. */
+export type LibraryStats = LibraryGetStatsResponse;
 
-/** Aggregate counters exposed by `library.getStats`. */
-export interface LibraryStats {
-    totalTracks: number;
-    totalAlbums: number;
-    totalArtists: number;
-    totalDuration: number;
-    totalSize: number;
-    averageBitrate?: number;
-    /** Last cache invalidation timestamp (epoch ms). */
-    lastModified?: number;
-    /** True when the cached snapshot is still valid. */
-    cacheValid?: boolean;
-}
+/** `library.getStatus` response; the generated {@link LibraryGetStatusResponse} under its earlier name. */
+export type LibraryStatus = LibraryGetStatusResponse;
 
 // ============================================================================
 // Playback state
 // ============================================================================
 
-/** Result of `playback.getState` calls. */
-export interface PlaybackState {
-    state: PlaybackStateValue;
-    canSeek: boolean;
-    /** Whether the current track can be paused (always `true` today). */
-    canPause: boolean;
-}
+/** Result of `playback.getState`: the generated response under its older name. */
+export type PlaybackState = PlaybackGetStateResponse;
 
-/** Single entry from the playback-order enumeration. */
-export interface PlaybackOrderInfo {
-    order: number;
-    name: string;
-    /** Alias of {@link order}; the host writes both. */
-    orderIndex?: number;
-    /** Alias of {@link name}; the host writes both. */
-    orderName?: string;
-}
+/** Result of `playback.getPlaybackOrder`: the generated response under its older name. */
+export type PlaybackOrderInfo = PlaybackGetPlaybackOrderResponse;
 
-/**
- * Receipt returned by `playback.setPlaybackOrder`. The handler echoes
- * the resolved `orderName` so callers know which mode landed when they
- * passed a string alias.
- */
-export interface PlaybackSetOrderResponse extends BaseResponse {
-    /** Resolved canonical order name. */
-    orderName?: string;
-}
+/** Result of `playback.setPlaybackOrder`: the generated response under its older name. */
+export type PlaybackSetOrderResponse = PlaybackSetPlaybackOrderResponse;
 
-/**
- * Result of `playback.playPause` and `playback.playOrPause`. Reports
- * the post-toggle play/pause state so callers don't need to follow up
- * with a `getState`.
- */
-export interface PlaybackToggleResponse extends BaseResponse {
-    isPlaying: boolean;
-}
+/** Result of `playback.playPause` and `playback.playOrPause`: the generated response under its older name. */
+export type PlaybackToggleResponse = PlaybackPlayPauseResponse;
 
-/** Result of `playback.toggleMute`. */
-export interface PlaybackToggleMuteResponse extends BaseResponse {
-    muted: boolean;
-}
+/** Result of `playback.getStopAfterCurrent` and `playback.toggleStopAfterCurrent`: the generated response under its older name. */
+export type PlaybackStopAfterCurrentState = PlaybackGetStopAfterCurrentResponse;
 
-/**
- * Result of `playback.toggleStopAfterCurrent` and
- * `playback.getStopAfterCurrent`. No `success` field is written; a
- * successful call just returns the new `enabled` flag.
- */
-export interface PlaybackStopAfterCurrentState {
-    enabled: boolean;
-}
+/** Result of `playback.getVolume`: the generated response under its older name. */
+export type VolumeResponse = PlaybackGetVolumeResponse;
 
-/**
- * Result of `playback.setPosition`. Surfaces the requested seek position
- * alongside the actual landing position and track context so callers
- * can validate clamp / snap behaviour.
- */
-export interface PlaybackSetPositionResponse extends BaseResponse {
-    /** Position the caller asked for (echoed for sanity). */
-    requestedPosition?: number;
-    /** Position after clamping to track bounds. */
-    actualPosition?: number;
-    /** Position before the seek. */
-    oldPosition?: number;
-    /** Position after the seek (post-engine reaction). */
-    newPosition?: number;
-    /** Active track duration in seconds. */
-    duration?: number;
-    /** Active subsong index. */
-    subsong?: number;
-}
-
-/** Result of `playback.playPath`. */
-export interface PlaybackPlayPathResponse extends BaseResponse {
-    path?: string;
-    /** Resolved subsong index after `|subsong:N` parsing. */
-    subsong?: number;
-    /** Number of tracks added to the active playlist. */
-    tracksAdded?: number;
-}
-
-/** Result of `playback.playPaths`. */
-export interface PlaybackPlayPathsResponse extends BaseResponse {
-    /** Number of tracks added to the active playlist. */
-    tracksAdded?: number;
-    /** Index where playback actually started. */
-    startedAt?: number;
-}
-
-/** Result shape returned by `playback.getVolume`. */
-export interface VolumeResponse {
-    /** Volume on a 0-100 linear scale. */
-    volume: number;
-    /** Volume in dB. */
-    volumeDb: number;
-    /** True when output is muted. */
-    muted: boolean;
-    /** Alias of {@link muted}; the host writes both. */
-    isMuted?: boolean;
-}
-
-/** Result shape returned by `playback.getPosition`. */
-export interface PositionResponse {
-    /** Current playback position in seconds. */
-    position: number;
-    /** Total track duration in seconds. */
-    duration?: number;
-    /** Subsong index. */
-    subsong?: number;
-    /** File path of the current track. */
-    path?: string;
-}
+/** Result of `playback.getPosition`: the generated response under its older name. */
+export type PositionResponse = PlaybackGetPositionResponse;
 
 // ============================================================================
 // Window
 // ============================================================================
 
 /**
- * Result shape returned by `ui.getWindowState` / `window.getState`.
- *
- * Every boolean is written twice - once with the `is*` prefix and once
- * without - so callers can use whichever style fits. Both flavours are
- * declared here as optional aliases.
+ * Result of `window.getState` (`ui.getState`). Every flag is sent twice, bare and
+ * `is`-prefixed, with the same value.
  */
-export interface WindowState {
-    isMaximized: boolean;
-    isMinimized: boolean;
-    isFullscreen: boolean;
-    isAlwaysOnTop?: boolean;
-    isFocused?: boolean;
-    /** Bare-name alias of {@link isMaximized}. */
-    maximized?: boolean;
-    /** Bare-name alias of {@link isMinimized}. */
-    minimized?: boolean;
-    /** Bare-name alias of {@link isFullscreen}. */
-    fullscreen?: boolean;
-    /** Bare-name alias of {@link isAlwaysOnTop}. */
-    alwaysOnTop?: boolean;
-    /** Bare-name alias of {@link isFocused}. */
-    focused?: boolean;
-    width: number;
-    height: number;
-    x: number;
-    y: number;
-}
+export type WindowState = WindowGetStateResponse;
 
-/** DPI scale factor reported by `ui.getDpiScale` / `window.getDpiScale`. */
-export interface DpiScaleResponse {
-    scale: number;
-    /** Raw DPI value (96 = 100% scale). */
-    dpi?: number;
-}
+/** Result of `window.getDpiScale` (`ui.getDpiScale`). */
+export type DpiScaleResponse = WindowGetDpiScaleResponse;
 
 /** Allowed values for the `activeEffect` slot in `window.backdropPolicy.*`. */
 export type WindowActiveBackdropEffect =
@@ -410,594 +269,207 @@ export type WindowInactiveBackdropEffect =
     | 'mica-alt'
     | 'acrylic';
 
-/** Built-in popup behaviour profiles. */
-export type WindowPopupProfile = 'legacy' | 'standard' | 'miniPlayer';
+/** Behavior presets `window.createPopup` and `window.setPopupBehavior` accept. */
+export type WindowPopupProfile = 'standard' | 'miniPlayer' | 'desktopLyrics';
 
-/** Rectangle in screen-space pixels. */
-export interface WindowBounds {
-    x: number;
-    y: number;
-    width: number;
-    height: number;
-}
-
-/** Authoritative backdrop policy reported by the host. */
-export interface WindowBackdropPolicyState {
-    activeEffect: WindowActiveBackdropEffect;
-    inactiveEffect: WindowInactiveBackdropEffect;
-    darkMode: boolean;
-    reapplyOnActivate: boolean;
-}
+// The window list and the resolved policy shapes declared in src/api/schema/window.ts.
+export type {
+    WindowBackdropPolicyState,
+    WindowBounds,
+    WindowInfo,
+    WindowObservationCapabilities,
+    WindowPopupBehaviorState,
+} from './generated/schema-types.js';
 
 /** Patch shape accepted by `window.setBackdropPolicy`. */
-export interface WindowBackdropPolicyPatch {
+export type WindowBackdropPolicyPatch = {
     activeEffect?: WindowActiveBackdropEffect | null;
     inactiveEffect?: WindowInactiveBackdropEffect | null;
     darkMode?: boolean | null;
     reapplyOnActivate?: boolean | null;
-}
-
-/** Authoritative popup behaviour reported by the host. */
-export interface WindowPopupBehaviorState {
-    showInTaskbar: boolean;
-    showInAltTab: boolean;
-    keepVisibleOnShowDesktop: boolean;
-    allowMinimize: boolean;
-    owner: 'none' | 'main';
-    noActivate: boolean;
-}
+};
 
 /** Patch shape accepted by `window.setPopupBehavior`. */
-export interface WindowPopupBehaviorPatch {
+export type WindowPopupBehaviorPatch = {
     showInTaskbar?: boolean | null;
     showInAltTab?: boolean | null;
     keepVisibleOnShowDesktop?: boolean | null;
     allowMinimize?: boolean | null;
     owner?: 'none' | 'main' | null;
     noActivate?: boolean | null;
-}
+};
 
-/** Capability bitmap describing which window features the host supports. */
-export interface WindowObservationCapabilities {
-    supportsBackdropPolicy: boolean;
-    supportsFrameless: boolean;
-    supportsCornerPreference: boolean;
-    supportsPopupBehavior: boolean;
-    supportsMicaAlt: boolean;
-    supportsFullscreen: boolean;
-}
+/** Fields every entry of `window.getAllWindows` carries. */
+export type WindowInfoBase = Pick<WindowInfo, 'windowId' | 'isMain' | 'title' | 'bounds' | 'capabilities'>;
 
-/** Common fields shared by all window-info entries. */
-export interface WindowInfoBase {
-    windowId: string;
-    isMain: boolean;
-    title: string;
-    bounds: WindowBounds;
-    capabilities: WindowObservationCapabilities;
-}
-
-/** Window-info entry for the foobar2000 main window. */
-export interface MainWindowInfo extends WindowInfoBase {
+/** The main window's entry of `window.getAllWindows`, without the popup-only fields. */
+export type MainWindowInfo = Omit<WindowInfo, 'url' | 'profile' | 'behavior' | 'resolvedBehavior' | 'isMain'> & {
     isMain: true;
-    backdropPolicy: Partial<WindowBackdropPolicyState>;
-    resolvedBackdropPolicy: WindowBackdropPolicyState;
-}
+};
 
-/** Window-info entry for a popup window. */
-export interface PopupWindowInfo extends WindowInfoBase {
-    isMain: false;
-    url: string;
-    profile: WindowPopupProfile;
-    behavior: Partial<WindowPopupBehaviorState>;
-    resolvedBehavior: WindowPopupBehaviorState;
-    backdropPolicy: Partial<WindowBackdropPolicyState>;
-    resolvedBackdropPolicy: WindowBackdropPolicyState;
-}
+/** A popup's entry of `window.getAllWindows`; the popup-only fields are always present. */
+export type PopupWindowInfo = Omit<WindowInfo, 'isMain'> &
+    Required<Pick<WindowInfo, 'url' | 'profile' | 'behavior' | 'resolvedBehavior'>> & {
+        isMain: false;
+    };
 
-/** Discriminated union of window-info entries. */
+/** An entry of `window.getAllWindows`, discriminated by `isMain`. */
 export type WindowInfoItem = MainWindowInfo | PopupWindowInfo;
 
-/** Result shape returned by `window.list`. */
-export interface WindowListResponse {
-    items: WindowInfoItem[];
+/** Result of `window.getAllWindows` (`ui.getAllWindows`), with the entries discriminated by `isMain`. */
+export type WindowListResponse = (Omit<WindowGetAllWindowsSuccess, 'items'> & { items: WindowInfoItem[] }) | ApiFailure;
+
+/** Result of `window.setPopupBehavior` (`ui.setPopupBehavior`). */
+export type WindowPopupBehaviorResponse = WindowSetPopupBehaviorResponse;
+
+/** Result of `window.setBackdropPolicy` (`ui.setBackdropPolicy`). */
+export type WindowBackdropPolicyResponse = WindowSetBackdropPolicyResponse;
+
+/**
+ * Options of `ui.createPopup`: the declared parameters, with the preset and the two override
+ * objects typed.
+ */
+export type WindowCreatePopupOptions = Omit<WindowCreatePopupParams, 'profile' | 'behavior' | 'backdropPolicy'> & {
+    /** Behavior preset; omitted, none. */
+    profile?: WindowPopupProfile;
+    /** Behavior overrides on top of the preset. */
+    behavior?: WindowPopupBehaviorPatch;
+    /** Backdrop policy overrides on top of the preset. */
+    backdropPolicy?: WindowBackdropPolicyPatch;
+};
+
+/**
+ * Options of `ui.setPopupBehavior`: the host parameters, with `profile` and
+ * `behavior` typed. The two are independent.
+ */
+export interface WindowSetPopupBehaviorOptions extends Omit<WindowSetPopupBehaviorParams, 'profile' | 'behavior'> {
+    /** New preset. */
+    profile?: WindowPopupProfile;
+    /** Overrides merged into the current ones; a `null` field removes that override. */
+    behavior?: WindowPopupBehaviorPatch;
 }
 
-/** Result shape returned by `window.setPopupBehavior`. */
-export interface WindowPopupBehaviorResponse extends BaseResponse {
-    windowId: string;
-    profile: WindowPopupProfile;
-    behavior: Partial<WindowPopupBehaviorState>;
-    resolvedBehavior: WindowPopupBehaviorState;
-}
+/** Result of `window.getTitlebarInfo` (`ui.getTitlebarInfo`); physical pixels of the main window. */
+export type WindowTitlebarInfo = WindowGetTitlebarInfoResponse;
 
-/** Result shape returned by `window.setBackdropPolicy`. */
-export interface WindowBackdropPolicyResponse extends BaseResponse {
-    windowId: string;
-    backdropPolicy: Partial<WindowBackdropPolicyState>;
-    resolvedBackdropPolicy: WindowBackdropPolicyState;
-}
+/** Result of `window.getDevServerConfig` (`ui.getDevServerConfig`). */
+export type WindowDevServerConfig = WindowGetDevServerConfigResponse;
 
-/** Result shape returned by `window.getTitlebarInfo`. */
-export interface WindowTitlebarInfo {
-    /** Titlebar height in physical pixels. */
-    height: number;
-    /** Combined width of the three caption buttons (min/max/close), in physical pixels. */
-    captionButtonsWidth: number;
-    /** Width of a single caption button, in physical pixels. */
-    captionButtonWidth: number;
-    /** True when the window is currently maximised (zoomed). */
-    isMaximized: boolean;
-}
-
-/** Result shape returned by `window.getDevServerConfig`. */
-export interface WindowDevServerConfig extends BaseResponse {
-    /** True when the dev-server route is active. */
-    useDevServer: boolean;
-    /** Dev-server URL (e.g. `http://localhost:5173`). */
-    devServerUrl: string;
-}
+// A drag or no-drag rectangle declared in src/api/schema/window.ts.
+export type { WindowRegion } from './generated/schema-types.js';
 
 // ============================================================================
 // Configuration
 // ============================================================================
 
+// The config shapes come from the declarations in src/api/schema/config.ts; the names this
+// module exported before stay available. The listing methods of the `config` facade resolve
+// with the arrays themselves, so the array-shaped names below describe what those methods
+// resolve with, not the host's `{ ..., count }` envelope.
+export type {
+    AdvancedConfigItem,
+    ConfigComponentInfo,
+    ConfigDspPreset,
+    ConfigLibraryFilePattern,
+    ConfigOutputDevice,
+    ConfigPreferencesPage,
+};
+
 /** A foobar2000 audio output device entry from `config.getOutputDevices`. */
-export interface OutputDevice {
-    /** Device GUID string (alias of {@link deviceId}). */
-    id: string;
-    /** Human-readable device name (often `"Output Driver: Device Name"`). */
-    name: string;
-    /** True when this device is the currently selected output. */
-    isCurrent: boolean;
-    /** Output-driver GUID. */
-    outputId: string;
-    /** Device GUID (mirror of {@link id}). */
-    deviceId: string;
-}
+export type OutputDevice = ConfigOutputDevice;
 
 /** Active audio output configuration as reported by `config.getOutputConfig`. */
-export interface OutputConfig {
-    /** Selected device GUID. */
-    deviceId: string;
-    /** Device display name; only present when the entry resolves. */
-    deviceName?: string;
-    /** Output-driver GUID. */
-    outputId: string;
-    /** Output-driver display name; only present when the entry resolves. */
-    outputName?: string;
-    /** Buffer length in seconds. */
-    bufferLength: number;
-    /** Effective output bit depth. */
-    bitDepth: number;
-    /** Whether dithering is enabled. */
-    useDither: boolean;
-    /** Whether fade in/out is enabled. */
-    useFades: boolean;
-}
+export type OutputConfig = ConfigGetOutputConfigResponse;
 
 /** A single DSP preset entry returned by `config.getDspPresets`. */
-export interface DspPreset {
-    /** Index in the global DSP-preset list; required for `setActiveDspPreset`. */
-    index: number;
-    name: string;
-}
+export type DspPreset = ConfigDspPreset;
 
 /**
- * State block returned by `config.getActiveDspPreset`. When no preset is
+ * State returned by `config.getActiveDspPreset`. When no preset is
  * currently active, `index` and `name` are `null` and `isActive` is `false`.
  */
-export interface ActiveDspPresetInfo {
-    index: number | null;
-    name: string | null;
-    isActive: boolean;
-}
+export type ActiveDspPresetInfo = ConfigGetActiveDspPresetResponse;
 
 /** A foobar2000 component descriptor returned by `config.getComponents`. */
-export interface ComponentInfo {
-    name: string;
-    version: string;
-    /** File name (lower-case canonical key). */
-    filename?: string;
-    /** Alias of {@link filename}; the host writes both. */
-    fileName?: string;
-}
-
-/**
- * Result shape returned by `config.getAll`. Full snapshot of the
- * portable-config cache; the same `Record<string, unknown>` map is
- * exposed under both `items` and `configs` - use whichever is more
- * convenient.
- */
-export interface ConfigGetAllResponse extends BaseResponse {
-    /** Key-value snapshot of every config entry. */
-    items: JsonObject;
-    /** Alias of {@link items} — same map, identical reference. */
-    configs: JsonObject;
-    /** Number of keys in the cache. */
-    count: number;
-}
+export type ComponentInfo = ConfigComponentInfo;
 
 /** Snapshot returned by `config.getAll`; see {@link ConfigGetAllResponse}. */
 export type ConfigSnapshot = ConfigGetAllResponse;
 
-/**
- * Composite version information returned by `config.getVersionInfo`.
- */
-export interface VersionInfo {
-    /** Short foobar2000 version string. */
-    version: string;
-    /** Alias of {@link version}; the host writes both. */
-    foobar2000: string;
-    /** Full version string (`Service Pack` etc. included). */
-    versionFull: string;
-    /** True for the 64-bit build. */
-    is64bit: boolean;
-    /** True when running in portable mode. */
-    isPortable: boolean;
-    /** Plugin self-identification block. */
-    plugin: {
-        name: string;
-        version: string;
-    };
-    /** Resolved profile directory (display path). */
-    profilePath: string;
-}
+/** Composite version information returned by `config.getVersionInfo`. */
+export type VersionInfo = ConfigGetVersionInfoResponse;
 
-/**
- * Discriminator describing how an `AdvancedConfigItem` should be
- * rendered:
- *
- * - `branch`: container; carries `children`.
- * - `checkbox` / `radio`: boolean leaf; `value` is `boolean`.
- * - `integer`: integer leaf; `value` is the string form (preserves
- *   sign / overflow handling delegated to consumers).
- * - `string`: text / path leaf; `value` is the string form.
- */
-export type AdvancedConfigItemType =
-    | 'branch'
-    | 'checkbox'
-    | 'radio'
-    | 'integer'
-    | 'string';
+/** Kind of an entry in the advanced-config tree; see {@link AdvancedConfigItem}. */
+export type AdvancedConfigItemType = NonNullable<AdvancedConfigItem['type']>;
 
-/**
- * Single entry in the advanced-config tree returned by
- * `config.getAdvancedConfig`. Branch entries carry `children`; leaf
- * entries carry `value` plus optional flags (string subtype, default
- * value).
- */
-export interface AdvancedConfigItem {
-    /** Display name. */
-    name: string;
-    /** Entry GUID rendered as `{...}`. */
-    guid: string;
-    /** Sort priority; lower values come first. */
-    sortPriority: number;
-    /** Entry kind; controls which optional fields are present. */
-    type: AdvancedConfigItemType;
-    /** Boolean state for `checkbox` / `radio`; string form for `integer` / `string`; absent for `branch`. */
-    value?: boolean | string;
-    /** Default value (only string-shape entries expose it). */
-    defaultValue?: boolean | string;
-    /** Sub-entries; only present when `type === 'branch'`. */
-    children?: AdvancedConfigItem[];
-    /** True when an integer string entry is signed (string subtype only). */
-    isSigned?: boolean;
-    /** True when a string entry is intended to hold a file path. */
-    isFilePath?: boolean;
-    /** True when a string entry is intended to hold a folder path. */
-    isFolderPath?: boolean;
-}
+/** `config.getAdvancedConfig` response; the generated {@link ConfigGetAdvancedConfigResponse} under its earlier name. */
+export type AdvancedConfigResponse = ConfigGetAdvancedConfigResponse;
 
-/**
- * Result shape returned by `config.getAdvancedConfig`. A flat top-level
- * array; nested levels are reached through each item's `children` field.
- */
-export type AdvancedConfigResponse = AdvancedConfigItem[];
+/** Result shape returned by `config.getAdvancedConfigValue` for a single entry. */
+export type AdvancedConfigValueResponse = ConfigGetAdvancedConfigValueResponse;
 
-/**
- * Result shape returned by `config.getAdvancedConfigValue` for a single
- * entry. The shape mirrors {@link AdvancedConfigItem} except branches
- * always return `value: null` (and never have children at this level).
- */
-export interface AdvancedConfigValueResponse {
-    /** Display name of the entry. */
-    name: string;
-    /** Entry GUID rendered as `{...}` (echo of the request). */
-    guid: string;
-    /** Entry kind. */
-    type: AdvancedConfigItemType;
-    /** Current value; `null` for branches. */
-    value: boolean | string | null;
-    /** Default value; only present on string-shape entries. */
-    defaultValue?: boolean | string;
-    /** True when an integer string entry is signed. */
-    isSigned?: boolean;
-    /** True when a string entry is intended to hold a file path. */
-    isFilePath?: boolean;
-    /** True when a string entry is intended to hold a folder path. */
-    isFolderPath?: boolean;
-}
+/** Preferences page or preferences branch returned by `config.getPreferencesPages`. */
+export type PreferencesPage = ConfigPreferencesPage;
 
-/**
- * Preferences page descriptor returned by `config.getPreferencesPages`.
- * Both real preferences pages and branch-only nodes are flattened into
- * a single array; branch-only entries carry `isBranch === true`.
- */
-export interface PreferencesPage {
-    /** Display name of the page. */
-    name: string;
-    /** Page GUID rendered as `{...}`. */
-    guid: string;
-    /** Parent GUID; the root page uses `00000000-0000-0000-0000-000000000000`. */
-    parentGuid: string;
-    /** Sort priority; defaults to `0.0` when not exposed by the host. */
-    sortPriority: number;
-    /** True when the entry is a branch (folder) rather than a real page. */
-    isBranch?: boolean;
-}
+/** `config.getPreferencesPages` response; the generated {@link ConfigGetPreferencesPagesResponse} under its earlier name. */
+export type PreferencesPagesResponse = ConfigGetPreferencesPagesResponse;
 
-/** Result shape returned by `config.getPreferencesPages`. */
-export type PreferencesPagesResponse = PreferencesPage[];
+/** Standard preferences GUID table returned by `config.getPreferencesStandardGuids`. */
+export type PreferencesStandardGuids = ConfigGetPreferencesStandardGuidsResponse;
 
-/**
- * Standard preferences-page GUID lookup table returned by
- * `config.getPreferencesStandardGuids`.
- */
-export interface PreferencesStandardGuids {
-    root: string;
-    hidden: string;
-    tools: string;
-    core: string;
-    display: string;
-    playback: string;
-    visualisations: string;
-    input: string;
-    tagWriting: string;
-    mediaLibrary: string;
-    tagging: string;
-    output: string;
-    advanced: string;
-    components: string;
-    dsp: string;
-    shell: string;
-    keyboardShortcuts: string;
-}
+/** Where foobar2000 puts one kind of new file; see `config.getLibraryFilePatterns`. */
+export type LibraryFilePattern = ConfigLibraryFilePattern;
 
-/** Per-section file pattern descriptor returned by `library_manager_v3`. */
-export interface LibraryFilePattern {
-    /** Target directory (foobar2000-style path with `$expand` macros). */
-    directory: string;
-    /** Title-format pattern applied to each item. */
-    format: string;
-}
-
-/**
- * Result shape returned by `config.getLibraryFilePatterns`. Both
- * sections are optional because newer foobar2000 builds may omit
- * either if the corresponding feature is disabled.
- */
-export interface LibraryFilePatternsResponse {
-    /** New-track pattern. */
-    tracks?: LibraryFilePattern;
-    /** Image-import pattern. */
-    images?: LibraryFilePattern;
-}
-
-/**
- * Result shape returned by `config.export`. Wraps the same map as
- * {@link ConfigGetAllResponse} but additionally exposes a serialised
- * `json` blob for tests / persistence.
- */
-export interface ConfigExportResponse extends BaseResponse {
-    /** Snapshot of every config key (same map as {@link ConfigGetAllResponse.items}). */
-    data: ConfigGetAllResponse['items'];
-    /** `JSON.stringify`-style serialisation of {@link data}. */
-    json: string;
-    /** Number of keys in the snapshot. */
-    count: number;
-}
+/** Result shape returned by `config.getLibraryFilePatterns`; an unconfigured section is absent. */
+export type LibraryFilePatternsResponse = ConfigGetLibraryFilePatternsResponse;
 
 // ============================================================================
 // Artwork
 // ============================================================================
 
 /**
- * Unified artwork response shape returned by `artwork.*` APIs.
- *
- * Read `available` first; when true, consume the renderable URL fields
- * (`dataUrl`, `url`).
+ * Any picture reader's response under the older shared name: read `available` first and,
+ * when it is true, `dataUrl`.
  */
-export interface ArtworkResponse {
-    /** True when album art is available. */
-    available: boolean;
+export type ArtworkResponse =
+    | ArtworkGetCurrentResponse
+    | ArtworkGetByPathResponse
+    | ArtworkGetForTrackResponse
+    | ArtworkGetByPlaylistItemResponse;
 
-    /** Resolved artwork type. */
-    type?: AlbumArtType;
+/** One `items` entry of `artwork.getFb2kUrlByPathBatch`, from the declaration. */
+export type { ArtworkBatchItem } from './generated/schema-types.js';
 
-    /** Source track path, useful for diagnostics. */
-    path?: string;
+/** One row of `artwork.getFb2kUrlByPathBatch`: the generated row under its older name. */
+export type ArtworkBatchEntry = ArtworkUrlRow;
 
-    /** Provider label that supplied the artwork. */
-    source?: string;
+/** The `artwork.getFb2kUrlByPathBatch` response under its older name. */
+export type ArtworkBatchResponse = ArtworkGetFb2kUrlByPathBatchResponse;
 
-    /** MIME type of the image bytes. */
-    mimeType?: string;
+/** The `artwork.getLyrics` response under its older name. */
+export type ArtworkLyricsResult = ArtworkGetLyricsResponse;
 
-    /** Image size in bytes. */
-    size?: number;
+/** One embedded picture of `artwork.getAvailableArtwork`: the generated row under its older name. */
+export type ArtworkAvailableArtworkEntry = ArtworkAvailableEntry;
 
-    /** Image width in pixels, when available. */
-    width?: number;
-    /** Image height in pixels, when available. */
-    height?: number;
+/** The `artwork.getAvailableArtwork` response under its older name. */
+export type ArtworkAvailableArtworkResponse = ArtworkGetAvailableArtworkResponse;
 
-    /** True when the host resized the image before returning. */
-    resized?: boolean;
-
-    /** Base64 data URL suitable for direct rendering. */
-    dataUrl?: string;
-
-    /** `fb2k://` protocol URL referencing the artwork. */
-    url?: string;
-
-    /** Reason artwork is unavailable (e.g. `no_track`, `not_found`, `invalid_path`). */
-    reason?: string;
-
-    /** Error message when the request failed. */
-    error?: string;
-}
-
-/**
- * Item shape accepted by `artwork.getFb2kUrlByPathBatch` when the
- * caller wants to override per-track `type` / `maxSize`. The `items`
- * array accepts either bare path strings or `{ path, type?, maxSize? }`
- * objects.
- */
-export interface ArtworkBatchItem {
-    path: string;
-    type?: AlbumArtType;
-    maxSize?: number;
-}
-
-/**
- * Per-track entry inside `ArtworkBatchResponse.artworks`. Available
- * tracks carry `dataUrl`; failures only carry `available: false` plus
- * an `error` reason.
- */
-export interface ArtworkBatchEntry {
-    path?: string;
-    available: boolean;
-    type?: AlbumArtType;
-    /** `fb2k://artwork/?path=...` URL ready for `<img src>`. */
-    dataUrl?: string;
-    error?: string;
-}
-
-/** Result shape returned by `artwork.getFb2kUrlByPathBatch`. */
-export interface ArtworkBatchResponse extends BaseResponse {
-    artworks: ArtworkBatchEntry[];
-}
-
-/** `artwork.getLyrics` result. */
-export interface ArtworkLyricsResult {
-    available: boolean;
-    /** Tag name that supplied the lyrics (e.g. `LYRICS`, `UNSYNCED LYRICS`). */
-    tag?: string;
-    lyrics?: string;
-    synced?: boolean;
-    error?: string;
-}
-
-/** Single descriptor in `ArtworkAvailableArtworkResponse.artworks`. */
-export interface ArtworkAvailableArtworkEntry {
-    /** Artwork variant the entry describes. */
-    type: AlbumArtType;
-    /** Where the artwork came from; currently always `'embedded'` for entries. */
-    source: 'embedded';
-}
-
-/**
- * Result shape returned by `artwork.getAvailableArtwork`.
- *
- * `artworks` enumerates the embedded artwork variants the file actually
- * carries (front / back / disc / icon / artist). `sources` is the
- * union of providers found: `'embedded'` is added once when any
- * embedded entry exists; folder-level sidecar files are added as
- * `'folder:<filename>'` strings.
- */
-export interface ArtworkAvailableArtworkResponse extends BaseResponse {
-    /** True when at least one embedded artwork variant was found. */
-    available: boolean;
-    /** Embedded artwork descriptors (one per variant the file carries). */
-    artworks: ArtworkAvailableArtworkEntry[];
-    /** Provider tags found, e.g. `['embedded', 'folder:cover.jpg']`. */
-    sources: string[];
-}
-
-/**
- * Result shape returned by `artwork.getMetadata`. Failure (no track,
- * handle creation failed, exception) returns `{ available: false, error }`.
- */
-export interface ArtworkMetadataResponse {
-    /** True when metadata was successfully read. */
-    available: boolean;
-    /** Only present on failure. */
-    error?: string;
-    /** Album-level fields read from the file's tags. */
-    album?: string;
-    artist?: string;
-    albumArtist?: string;
-    title?: string;
-    /** Year in raw tag form (typically `YYYY`). */
-    year?: string;
-    genre?: string;
-    /** Raw track number tag value (string because tags allow `1/12`). */
-    trackNumber?: string;
-    /** Raw disc number tag value. */
-    discNumber?: string;
-    /** True when the file carries any embedded artwork. */
-    hasEmbedded?: boolean;
-    /** True when any LYRICS/SYNCED LYRICS-style tag is present. */
-    hasLyrics?: boolean;
-}
-
-/**
- * Result shape returned by `lyrics.get`. The host always returns
- * `{ success, available, path, ... }`; lyrics-specific fields are only
- * present when `available === true`.
- */
-export interface LyricsGetResponse extends BaseResponse {
-    /** True when lyrics were successfully located. */
-    available: boolean;
-    /** Track path the lyrics belong to (echo of the request, or active-track path). */
-    path?: string;
-    /** Provider that supplied the lyrics. */
-    source?: 'embedded' | 'file';
-    /** Absolute path of the .lrc / .txt file when `source === 'file'`. */
-    sourcePath?: string;
-    /** Tag name when type-filtered embedded lookup hit a specific tag (e.g. `SYNCEDLYRICS`). */
-    tagName?: string;
-    /** Raw lyrics text. */
-    lyrics?: string;
-    /** True when the lyrics carry LRC-style timecodes. */
-    synced?: boolean;
-}
+/** The `artwork.getMetadata` response under its older name. */
+export type ArtworkMetadataResponse = ArtworkGetMetadataResponse;
 
 // ============================================================================
 // System / API discovery
 // ============================================================================
 
-/** Single API descriptor returned by `system.listApis` / `system.searchApis`. */
-export interface ApiInfo {
-    fullName: string;
-    plugin: string;
-    namespace: string;
-    method: string;
-    description: string;
-    version: string;
-    isExternal: boolean;
-}
+/** One row of `system.listApis` / `system.searchApis`: the generated row under its older name. */
+export type ApiInfo = SystemApiInfo;
 
-/** Plugin-level descriptor returned by `system.getRegisteredPlugins`. */
-export interface PluginInfo {
-    name: string;
-    namespace: string;
-    version: string;
-    author: string;
-    description: string;
-    apiCount: number;
-    apis: string[];
-}
+/** One row of `system.getRegisteredPlugins`: the generated row under its older name. */
+export type PluginInfo = SystemPluginInfo;
 
-/** Aggregate counters returned by `system.getApiStats`. */
-export interface ApiStats {
-    totalApis: number;
-    internalApis: number;
-    externalApis: number;
-    pluginCount: number;
-    byNamespace: Record<string, number>;
-}
+/** The `system.getApiStats` response under its older name. */
+export type ApiStats = SystemGetApiStatsResponse;
 
 // ============================================================================
 // Error envelope
@@ -1027,7 +499,8 @@ export type ApiErrorCode =
     // State / resource errors
     | 'NOT_FOUND'         // Target resource does not exist.
     | 'LOCKED'            // Playlist locked, etc.
-    | 'NOT_SUPPORTED'     // Operation not supported in current panel mode.
+    | 'NOT_SUPPORTED'     // The environment or the data does not support the operation.
+    | 'PANEL_MODE_UNSUPPORTED' // Called from a DUI/CUI panel; the method needs the standalone window.
     | 'LIBRARY_DISABLED'  // Media library not enabled.
     | 'NO_ACTIVE_ITEM'    // No active playlist or track.
     // Operation failures
@@ -1044,8 +517,32 @@ export type ApiErrorCode =
     | 'DECODE_FAILED'
     | 'UNKNOWN_ERROR'
     | 'EXCEPTION'
+    // Menu and port
+    | 'MENU_ITEM_DISABLED'     // The menu command exists but is disabled.
+    | 'MENU_MATCH_AMBIGUOUS'   // A menu command name matched several commands; see `candidates`.
+    | 'MENU_COMMAND_NOT_FOUND' // No menu command has the name or path.
+    | 'PORT_NOT_FOUND'         // No open port has the id.
+    | 'TARGET_NOT_FOUND'       // The target port of `port.postMessageTo` does not exist.
     // Allow third-party extensions
     | (string & {});
+
+/**
+ * What a failed call resolves with. Every generated `XxxResponse` is `XxxSuccess | ApiFailure`,
+ * so check `success` before reading the result fields.
+ *
+ * A few methods add fields of their own to the failure, such as `candidates` on
+ * `MENU_MATCH_AMBIGUOUS` or the window state after a failed window call. Test for them with
+ * `in` (`'candidates' in r`) and check the value before use.
+ */
+export interface ApiFailure {
+    success: false;
+    /** Why the call failed. */
+    error: string;
+    /** Machine-readable reason; see {@link ApiErrorCode}. */
+    code: ApiErrorCode;
+    /** Extra context some failures carry, such as the offending parameter. */
+    details?: JsonValue;
+}
 
 /**
  * Unified error envelope — minimum shape returned by failed sync API calls.
@@ -1076,563 +573,115 @@ export interface BaseResponse {
 // Playlist responses
 // ============================================================================
 
-/** Result shape returned by `playlist.clear`. */
-export interface PlaylistClearResponse extends BaseResponse {
-    playlist: number;
-    clearedCount: number;
-    remainingCount: number;
-}
+/** `playlist.getTrackCount` response; the generated {@link PlaylistGetTrackCountResponse} under its earlier name. */
+export type TrackCountResponse = PlaylistGetTrackCountResponse;
 
-/** Result shape returned by `playlist.addPaths` / `playlist.addPath`. */
-export interface PlaylistAddPathsResponse extends BaseResponse {
-    playlist: number;
-    requestedPaths: number;
-    addedCount: number;
-    countBefore: number;
-    totalCount: number;
-    /** Number of paths that failed to resolve into a metadb handle. */
-    invalidCount?: number;
-}
+/** `playlist.getTracks` page envelope; the generated {@link PlaylistGetTracksResponse} under its earlier name. */
+export type PlaylistTracksResponse = PlaylistGetTracksResponse;
 
-/**
- * Result shape returned by `playlist.addPathsAsync`. The handler
- * returns immediately with an `operationId` and signals completion via
- * the `playlist:addComplete` event — the eventual added count arrives
- * on the event payload, not here.
- */
-export interface PlaylistAddPathsAsyncResponse extends BaseResponse {
-    /** Correlation ID matching the `playlist:addComplete` event. */
-    operationId?: string;
-    /** Always `'pending'` on success. */
-    status?: 'pending';
-    /** Number of valid paths that started processing. */
-    totalCount?: number;
-    /** Number of paths rejected upfront before dispatch. */
-    invalidCount?: number;
-}
+/** Runs of `playlist.getGroupRuns`, from the declaration. */
+export type { PlaylistGroupRun, PlaylistGroupSubRun } from './generated/schema-types.js';
 
-/**
- * Result shape returned by `playlist.addPathsSequential`. Unlike
- * `playlist.addPaths` this variant omits `requestedPaths` /
- * `countBefore` / `totalCount` and instead exposes the resolved `order`
- * mapping (one entry per requested path).
- */
-export interface PlaylistAddPathsSequentialResponse extends BaseResponse {
-    playlist: number;
-    addedCount: number;
-    /** Insertion index per resolved path (length matches the request). */
-    order: number[];
-}
+/** `playlist.getGroupRuns` response; the generated {@link PlaylistGetGroupRunsResponse} under its earlier name. */
+export type PlaylistGroupRunsResponse = PlaylistGetGroupRunsResponse;
 
-/**
- * Result shape returned by `playlist.addHandles` and
- * `playlist.insertTracks`. Same envelope as {@link
- * PlaylistAddPathsResponse} but counts come from `handles[]` rather
- * than `paths[]`, plus `insertIndex` for the `insertTracks` variant.
- */
-export interface PlaylistAddHandlesResponse extends BaseResponse {
-    playlist: number;
-    requestedCount: number;
-    addedCount: number;
-    invalidCount?: number;
-    countBefore: number;
-    totalCount: number;
-    /** Only present on `insertTracks`. */
-    insertIndex?: number;
-}
+/** `playlist.getSelectedTracks` response; the generated {@link PlaylistGetSelectedTracksResponse} under its earlier name. */
+export type PlaylistSelectedTracksResponse = PlaylistGetSelectedTracksResponse;
 
-/** Result shape returned by `playlist.reorder`. */
-export interface PlaylistReorderResponse extends BaseResponse {
-    playlist?: number;
-    itemCount?: number;
-    /** Length-mismatch error context. */
-    expected?: number;
-    got?: number;
-    /** Out-of-range error context. */
-    index?: number;
-}
+/** `playlist.getAutoplaylistInfo` response; the generated {@link PlaylistGetAutoplaylistInfoResponse} under its earlier name. */
+export type PlaylistAutoplaylistInfoResponse = PlaylistGetAutoplaylistInfoResponse;
 
-/** Result shape returned by `playlist.reorderPlaylists`. */
-export interface PlaylistReorderPlaylistsResponse extends BaseResponse {
-    /** Total number of playlists reordered (echo of the count argument). */
-    count?: number;
-    /** Length-mismatch error context. */
-    expected?: number;
-    got?: number;
-    index?: number;
-}
+/** `playlist.getLockInfo` response; the generated {@link PlaylistGetLockInfoResponse} under its earlier name. */
+export type PlaylistLockInfoResponse = PlaylistGetLockInfoResponse;
 
-/** Result shape returned by `playlist.removeAutoplaylist`. */
-export interface PlaylistRemoveAutoplaylistResponse extends BaseResponse {
-    playlist?: number;
-    /** Where the autoplaylist marker came from. */
-    source?: 'sdk' | 'dui';
-    /** Free-form remediation hint when `source === 'dui'`. */
-    note?: string;
-}
+/** One column of `playlist.getAvailableColumns`, from the declaration. */
+export type { PlaylistColumnDefinition } from './generated/schema-types.js';
 
-/** Result shape returned by atomic `playlist.replaceAllAndPlay`. */
-export interface PlaylistReplaceAllAndPlayResponse extends BaseResponse {
-    playlist: number;
-    clearedCount: number;
-    addedCount: number;
-    totalCount: number;
-    playIndex: number;
-    /** Number of paths rejected during the bulk add. */
-    invalidCount?: number;
-}
-
-/** Result shape returned by `playlist.create`. */
-export interface PlaylistCreateResponse {
-    index: number;
-}
-
-/** Result shape returned by `playlist.duplicate`. */
-export interface PlaylistDuplicateResponse {
-    index: number;
-}
-
-/** Result shape returned by `playlist.getTrackCount`. */
-export interface TrackCountResponse {
-    count: number;
-}
-
-/**
- * Raw page envelope returned by `playlist.getTracks`.
- *
- * The SDK wrapper `fb.playlist.getTracks(...)` unwraps `tracks` and
- * resolves with `PlaylistTrack[]` for ergonomic iteration; this
- * interface exists for callers that hit the bridge directly via
- * `bridge.invoke('playlist.getTracks', …)` and need access to the
- * pagination metadata.
- */
-export interface PlaylistTracksResponse {
-    playlist: number;
-    start: number;
-    count: number;
-    total: number;
-    tracks: PlaylistTrack[];
-}
-
-/**
- * One second-level run inside a {@link PlaylistGroupRun}.
- *
- * `start` is an absolute row index into the playlist, on the same basis as
- * the parent run's — not an offset within the parent. The second run's first
- * `sub` therefore starts at the parent's `start`, not at 0.
- */
-export interface PlaylistGroupSubRun {
-    start: number;
-    count: number;
-    key: string;
-}
-
-/**
- * One run of adjacent rows sharing a group key.
- *
- * `sub` is present only when two patterns were requested.
- */
-export interface PlaylistGroupRun {
-    start: number;
-    count: number;
-    key: string;
-    sub?: PlaylistGroupSubRun[];
-}
-
-/**
- * Result shape returned by `playlist.getGroupRuns`.
- *
- * On success, `runs` covers the whole playlist. For a non-empty playlist,
- * `runs[0].start` is 0, adjacent runs meet end to end, and their `count`
- * values sum to `total`. An empty playlist returns `total: 0` and `runs: []`.
- * Comparing `total` with a page response for the same playlist detects a
- * change in track count only; equal totals do not rule out replacements
- * or reordering between the independent reads.
- */
-export interface PlaylistGroupRunsResponse extends BaseResponse {
-    playlist: number;
-    total: number;
-    runs: PlaylistGroupRun[];
-}
-
-/** Result shape returned by `playlist.getSelectedTracks`. */
-export interface PlaylistSelectedTracksResponse extends BaseResponse {
-    playlist: number;
-    count: number;
-    tracks: PlaylistTrack[];
-}
-
-/**
- * Result shape returned by `playlist.getAutoplaylistInfo`.
- *
- * Either a regular `{ isAutoplaylist, playlist, ... }` envelope (success
- * path, no `success` field) or `{ success: false, error }` (invalid
- * index). Check `success !== false` first, then read `isAutoplaylist`.
- */
-export interface PlaylistAutoplaylistInfoResponse {
-    /** True when the playlist is recognised as autoplaylist (DUI or SDK). */
-    isAutoplaylist?: boolean;
-    /** Playlist index echoed from the request (or active playlist when omitted). */
-    playlist?: number;
-    /** Whether the autoplaylist keeps results sorted across rebuilds. */
-    keepSorted?: boolean;
-    /** Origin of the autoplaylist marker. */
-    source?: 'dui' | 'sdk';
-    /** Internal lock-name marker, only when present. */
-    lockName?: string;
-    /** Only present on failure. */
-    success?: false;
-    error?: string;
-}
-
-/**
- * Result shape returned by `playlist.getLockInfo`.
- *
- * The success branch returns `{ playlist, isLocked }` (no `success` field);
- * the failure branch returns `{ success: false, error }`.
- */
-export interface PlaylistLockInfoResponse {
-    /** Playlist index echoed from the request. */
-    playlist?: number;
-    /** True when the playlist has any active lock owner. */
-    isLocked?: boolean;
-    /** Only present on failure. */
-    success?: false;
-    error?: string;
-}
-
-/**
- * Single DUI-column definition entry returned by
- * `playlist.getAvailableColumns`.
- */
-export interface PlaylistColumnDefinition {
-    /** Column GUID rendered as `{...}`. */
-    id: string;
-    /** Display name of the column. */
-    name: string;
-    /** Default title-format pattern for cell text. */
-    pattern: string;
-    /** Cell-content alignment. */
-    alignment: 'left' | 'right' | 'center';
-    /** True when the column should be rendered as numeric (right-aligned by default). */
-    numeric: boolean;
-    /** Override sort-time title-format pattern; absent when no specific sort script is set. */
-    sortPattern?: string;
-}
-
-/**
- * Result shape returned by `playlist.getAvailableColumns`. The handler
- * returns a flat array of {@link PlaylistColumnDefinition}.
- */
-export type PlaylistAvailableColumnsResponse = PlaylistColumnDefinition[];
+/** `playlist.getAvailableColumns` response; the generated {@link PlaylistGetAvailableColumnsResponse} under its earlier name. */
+export type PlaylistAvailableColumnsResponse = PlaylistGetAvailableColumnsResponse;
 
 // ============================================================================
 // Queue responses
 // ============================================================================
 
-/** Single queue entry returned by `queue.get`. */
-export interface QueueItem extends TrackInfo {
-    /**
-     * Source playlist index, always present: an exact integer while the
-     * entry carries a playlist coordinate, `null` when it carries none —
-     * a track queued by path, for example.
-     */
-    playlist: number | null;
-    /**
-     * Source playlist track index, always present. `null` exactly when
-     * {@link QueueItem.playlist} is `null`; the two are reported as a
-     * pair, so a half-usable coordinate never reaches a caller.
-     */
-    playlistItem: number | null;
-}
-
-/** Result shape returned by `queue.get`. */
-export interface QueueGetResponse {
-    items: QueueItem[];
-    count: number;
-}
+// `queue.get` is declared in src/api/schema/queue.ts; each entry is the shared `Track`
+// row plus `queueIndex`, `playlist` and `playlistItem`.
+export type { QueueItem } from './generated/schema-types.js';
 
 // ============================================================================
 // Library responses
 // ============================================================================
 
 /**
- * Paged-tracks response shared by several `library.*` endpoints.
- *
- * `offset` / `limit` are the *requested* page parameters and are not
- * always echoed back — some handlers (`library.getAlbumTracks`,
- * `library.getArtistTracks`) only return tracks + total without the
- * pagination metadata. Mark them optional so callers can rely on the
- * core `tracks` / `total` triple.
+ * One page of `library.getAll`, as `library.getAll()` resolves it: the
+ * synchronous answer, or the `library:getAllResult` payload when the host
+ * built the page off the main thread.
  */
 export interface LibraryPagedTracksResponse {
-    tracks: TrackInfo[];
-    /** Compatibility alias usually identical to `tracks`. */
-    items: TrackInfo[];
+    /** Always `true` here; a failed call resolves with `ApiFailure` instead. */
+    success: true;
+    /** The page in library order; `index` is the position in the library. */
+    tracks: LibraryTrack[];
+    /** The same list as `tracks`. */
+    items: LibraryTrack[];
+    /** Tracks in the library. */
     total: number;
+    /** The `offset` applied. */
     offset?: number;
+    /** The `limit` applied. */
     limit?: number;
+    /** `true` when the page came from the list the host keeps. */
     fromCache?: boolean;
 }
 
-/**
- * Result shape returned by `library.search`.
- *
- * Declared standalone rather than via {@link LibraryPagedTracksResponse}:
- * since v1.13.0 the host sends the row array once, under `tracks` — the
- * same key `library.query` uses.
- */
-export interface LibrarySearchResponse {
-    tracks: TrackInfo[];
-    /**
-     * @deprecated Duplicate of `tracks` that hosts stopped sending in
-     * v1.13.0. Older hosts still include it; read `tracks` instead.
-     */
-    items?: TrackInfo[];
-    total: number;
-    offset?: number;
-    limit?: number;
-    hasMore: boolean;
-    success?: boolean;
-    error?: string;
-}
+/** One track row of a library list, from the declaration in src/api/schema/library.ts. */
+export type { LibraryTrack, RecentLibraryTrack } from './generated/schema-types.js';
 
-/** Result shape returned by `library.getAlbums`. */
-export interface LibraryAlbumsResponse {
-    albums: AlbumInfo[];
-    total: number;
-    offset: number;
-    limit: number;
-    hasMore: boolean;
-    includeCover?: boolean;
-    fromCache?: boolean;
-}
+/** A library track row narrowed to the `fields` a `library.query` or `library.search` call asked for. */
+export type { LibraryTrackPartial } from './generated/schema-types.js';
 
-/** Result shape returned by `library.getArtists`. */
-export interface LibraryArtistsResponse {
-    success: boolean;
-    items: ArtistInfo[];
-    count: number;
-    error?: string;
-}
+/** `library.getAlbums` response; the generated {@link LibraryGetAlbumsResponse} under its earlier name. */
+export type LibraryAlbumsResponse = LibraryGetAlbumsResponse;
 
-/** Result shape returned by `library.getGenres`. */
-export interface LibraryGenresResponse {
-    success: boolean;
-    genres: Array<{ name: string; trackCount: number }>;
-    error?: string;
-}
+/** `library.getArtists` response; the generated {@link LibraryGetArtistsResponse} under its earlier name. */
+export type LibraryArtistsResponse = LibraryGetArtistsResponse;
 
-/** Result shape returned by `library.getAlbumTracks`. */
-export interface LibraryAlbumTracksResponse {
-    /** Compatibility alias usually identical to `tracks`. */
-    items: TrackInfo[];
-    tracks: TrackInfo[];
-    total: number;
-    album: string;
-    artist?: string;
-}
+/** `library.getAlbumTracks` response; the generated {@link LibraryGetAlbumTracksResponse} under its earlier name. */
+export type LibraryAlbumTracksResponse = LibraryGetAlbumTracksResponse;
 
-/** Result shape returned by `library.getArtistTracks`. */
-export interface LibraryArtistTracksResponse {
-    /** Compatibility alias usually identical to `tracks`. */
-    items: TrackInfo[];
-    tracks: TrackInfo[];
-    total: number;
-    count: number;
-    artist: string;
-}
+/** `library.getArtistTracks` response; the generated {@link LibraryGetArtistTracksResponse} under its earlier name. */
+export type LibraryArtistTracksResponse = LibraryGetArtistTracksResponse;
 
-/**
- * Result shape returned by `library.getArtistAlbums`.
- *
- * Rows carry every {@link AlbumInfo} key that `library.getAlbums` returns
- * except `coverDataUrl` and `tracks` — this endpoint neither inlines cover
- * art nor track lists.
- */
-export interface LibraryArtistAlbumsResponse {
-    success: boolean;
-    albums: AlbumInfo[];
-    /** Echo of the requested artist name. */
-    artist?: string;
-    /** Album count before `limit` truncation. */
-    total?: number;
-    /**
-     * True when `limit` cut the list short. The endpoint takes no `offset`,
-     * so the only way to reach the rest is a larger `limit`.
-     */
-    hasMore?: boolean;
-    error?: string;
-}
+// Every `library.*` method comes from the declarations in src/api/schema/library.ts; the names
+// below keep their earlier spellings, and the generated names are re-exported at the end of this
+// file.
 
-/** Result shape returned by `library.getByPath`. */
-export interface LibraryGetByPathResponse {
-    found: boolean;
-    path: string;
-    absolutePath?: string;
-    title?: string;
-    artist?: string;
-    album?: string;
-    duration?: number;
-    trackNumber?: string;
-    genre?: string;
-    date?: string;
-    success?: boolean;
-    error?: string;
-}
+/** `library.getGenres` response; the generated {@link LibraryGetGenresResponse} under its earlier name. */
+export type LibraryGenresResponse = LibraryGetGenresResponse;
 
-/** Result shape returned by `library.getFieldValues`. */
-export interface LibraryFieldValuesResponse {
-    success: boolean;
-    values: Array<{ name: string; trackCount: number }>;
-    total: number;
-    field: string;
-    error?: string;
-}
+/** `library.getArtistAlbums` response; the generated {@link LibraryGetArtistAlbumsResponse} under its earlier name. */
+export type LibraryArtistAlbumsResponse = LibraryGetArtistAlbumsResponse;
 
-/** Single library-root descriptor. */
-export interface LibraryRootInfo {
-    /** Stable root identifier (currently the canonical `absolutePath`). */
-    id: string;
-    /** Display name (directory name; falls back to full path on collisions). */
-    displayName: string;
-    /** Currently identical to `absolutePath`. */
-    rawPath: string;
-    /** Canonical absolute path on the local filesystem. */
-    absolutePath: string;
-    /** Number of tracks under this root. */
-    trackCount: number;
-}
+/** `library.getFieldValues` response; the generated {@link LibraryGetFieldValuesResponse} under its earlier name. */
+export type LibraryFieldValuesResponse = LibraryGetFieldValuesResponse;
 
-/** Result shape returned by `library.getRoots`. */
-export interface LibraryGetRootsResponse {
-    success: boolean;
-    /** True when the media library is enabled. */
-    enabled: boolean;
-    /** Real library-root descriptors. */
-    roots: LibraryRootInfo[];
-    /** Number of root directories. */
-    total: number;
-    /** Number of items successfully indexed. */
-    indexedTracks: number;
-    /** Number of items skipped during indexing. */
-    skippedTracks: number;
-    /** True when the response was served from cache. */
-    fromCache: boolean;
-    /** Error message; only present when `success` is `false`. */
-    error?: string;
-}
+/** One library root folder, from the declaration. */
+export type { LibraryRootInfo };
 
-/** Directory-listing response for `library.browseDirectory`. */
-export interface LibraryBrowseDirectoryResponse {
-    success: boolean;
-    directories: string[];
-    files: TrackInfo[];
-    /** Compatibility alias usually identical to `directories`. */
-    items: string[];
-    error?: string;
-}
+/** One folder of the directory tree index, from the declaration. */
+export type { LibraryDirectoryNodeInfo } from './generated/schema-types.js';
 
-/** Typed directory-tree node descriptor. */
-export interface LibraryDirectoryNodeInfo {
-    /** Unique identifier in the form `rootId::pathId`. */
-    id: string;
-    /** Identifier of the owning library root. */
-    rootId: string;
-    /** Path within the root, slash-separated; the root itself uses `""`. */
-    pathId: string;
-    /** Parent directory's `pathId`; root nodes carry `""`. */
-    parentPathId: string;
-    /** Directory name (last path segment). */
-    name: string;
-    /** Human-readable display name. */
-    displayName: string;
-    /** Raw path; currently identical to `absolutePath`. */
-    rawPath: string;
-    /** Canonical absolute path on the local filesystem. */
-    absolutePath: string;
-    /** Path relative to the root (mirror of `pathId`). */
-    relativePath: string;
-    /** Depth derived from splitting `pathId` on `/`. */
-    depth: number;
-    /** Aggregate track count, including subdirectories. */
-    trackCount: number;
-    /** Number of immediate child directories. */
-    childDirectoryCount: number;
-    /** True when the node has at least one child directory. */
-    hasChildren: boolean;
-}
+/** `library.getRecentlyAdded` response; the generated {@link LibraryGetRecentlyAddedResponse} under its earlier name. */
+export type LibraryRecentlyAddedResponse = LibraryGetRecentlyAddedResponse;
 
-/** Result shape returned by `library.browseTree`. */
-export interface LibraryBrowseTreeResponse {
-    success: boolean;
-    /** Owning library-root descriptor. */
-    root: LibraryRootInfo;
-    /** Requested `pathId`. */
-    pathId: string;
-    /** Absolute path of the current directory. */
-    absolutePath: string;
-    /** Immediate child directories. */
-    directories: LibraryDirectoryNodeInfo[];
-    /** Files inside the current directory; empty when `includeFiles=false`. */
-    files: TrackInfo[];
-    /** True when the response was served from cache. */
-    fromCache: boolean;
-    /** Error message; only present when `success` is `false`. */
-    error?: string;
-}
+/** `library.getCacheStats` response; the generated {@link LibraryGetCacheStatsResponse} under its earlier name. */
+export type LibraryCacheStatsResponse = LibraryGetCacheStatsResponse;
 
-/** Result shape returned by `library.getRecentlyAdded`. */
-export interface LibraryRecentlyAddedResponse {
-    success: boolean;
-    tracks: TrackInfo[];
-    total: number;
-    limit: number;
-    sortBy: string;
-    fallback: boolean;
-    error?: string;
-}
+/** `library.getRandomTracks` response; the generated {@link LibraryGetRandomTracksResponse} under its earlier name. */
+export type LibraryRandomTracksResponse = LibraryGetRandomTracksResponse;
 
-/** Result shape returned by `library.query` and friends. */
-export interface LibraryQueryResponse {
-    success: boolean;
-    tracks: TrackInfo[];
-    total: number;
-    error?: string;
-}
-
-/** Library cache statistics; the shape grows over time, hence the index signature. */
-export type LibraryCacheStatsResponse = BaseResponse & JsonObject;
-
-/** Result of `library.addToPlaylist`. */
-export interface LibraryAddToPlaylistResponse extends BaseResponse {
-    /** Number of tracks actually appended (after path resolution). */
-    added?: number;
-}
-
-/** Result of `library.invalidateCache`. */
-export interface LibraryInvalidateCacheResponse extends BaseResponse {
-    /** Epoch-ms timestamp when the cache was invalidated. */
-    timestamp?: number;
-}
-
-/**
- * Result of `library.getRandomTracks` — a flat envelope with the
- * shuffled `tracks` slice and a `count` echo. Differs from
- * {@link LibraryPagedTracksResponse} (no `items` / `total` / `offset`).
- */
-export interface LibraryRandomTracksResponse extends BaseResponse {
-    tracks: TrackInfo[];
-    count: number;
-}
-
-/** Result of `library.getArtistTracks`. */
-export interface LibraryArtistTracksFlatResponse extends BaseResponse {
-    tracks: TrackInfo[];
-    /** Number of tracks returned (alias of `tracks.length`). */
-    count: number;
-    artist: string;
-}
+/** `library.getArtistTracks` response; the generated {@link LibraryGetArtistTracksResponse} under another earlier name. */
+export type LibraryArtistTracksFlatResponse = LibraryGetArtistTracksResponse;
 
 /** High-level options for `library.enumerateFieldValues`. */
 export interface LibraryEnumerateFieldValuesOptions {
@@ -1656,7 +705,7 @@ export interface LibraryEnumerateTracksOptions {
 }
 
 /** Single page yielded by `library.enumerateTracks`. */
-export interface LibraryEnumerateTracksPage extends LibraryPagedTracksResponse {
+export interface LibraryEnumerateTracksPage extends Omit<LibraryPagedTracksResponse, 'success'> {
     fetched: number;
     pages: number;
 }
@@ -1687,7 +736,7 @@ export interface LibraryEnumerateDirectoriesOptions {
 export interface LibraryDirectoryBatch {
     path: string;
     directories: string[];
-    files: TrackInfo[];
+    files: LibraryTrack[];
     visited: number;
     pending: number;
     success: boolean;
@@ -1723,7 +772,7 @@ export interface LibraryEnumerateTreeOptions {
 }
 
 /** Single batch yielded by `library.enumerateTree`. */
-export interface LibraryTreeBatch extends LibraryBrowseTreeResponse {
+export interface LibraryTreeBatch extends LibraryBrowseTreeSuccess {
     /** Number of nodes already visited. */
     visited: number;
     /** Number of nodes still queued for traversal. */
@@ -1744,84 +793,13 @@ export interface LibraryEnumerateTreeSummary {
 // Metadata responses
 // ============================================================================
 
-/** Technical audio-info block returned by `metadata.read`. */
-export interface TrackTechnicalInfo {
-    duration?: number;
-    bitrate?: number;
-    sampleRate?: number;
-    channels?: number;
-    codec?: string;
-}
+// The `metadata.*` responses come from the declarations in src/api/schema/metadata.ts.
 
-/**
- * Envelope returned by `metadata.read`.
- *
- * `tags` preserves the raw upstream ID3 / Vorbis key casing
- * (typically UPPERCASE - `TITLE` / `ARTIST` / …) and may hold a single
- * string or an array for multi-value fields. Callers that want the
- * foobar2000 "flat camelCase" shape should hit `metadata.readByPath`
- * instead.
- */
-export interface MetadataReadResponse extends BaseResponse {
-    path?: string;
-    tags?: Record<string, string | string[]>;
-    info?: TrackTechnicalInfo;
-}
+/** Technical info of `metadata.read`, `metadata.readRaw` and the probe events, from the declaration. */
+export type { TrackTechnicalInfo } from './generated/schema-types.js';
 
-/**
- * Envelope returned by `metadata.readRaw`. Structurally identical to
- * {@link MetadataReadResponse} but bypasses the metadb cache and reads
- * the file directly, signalled by `source: 'file'`.
- */
-export interface MetadataReadRawResponse extends MetadataReadResponse {
-    /** Always `'file'` for `metadata.readRaw`; signals the bypass-cache path. */
-    source?: 'file';
-}
-
-/** Per-track entry in the `metadata.readBatch` `results` array. */
-export interface MetadataReadBatchItem {
-    path: string;
-    success: boolean;
-    tags?: Record<string, string | string[]>;
-    error?: string;
-}
-
-/** Envelope returned by `metadata.readBatch`. */
-export interface MetadataReadBatchResponse extends BaseResponse {
-    results: MetadataReadBatchItem[];
-    total?: number;
-    successCount?: number;
-    errorCount?: number;
-}
-
-/**
- * Dispatch receipt returned by `metadata.probeBatchAsync`.
- *
- * The call returns as soon as the batch is queued; the results arrive on
- * `metadata:probeProgress` and `metadata:probeComplete`. Keep `operationId`
- * to correlate those events and to cancel the run.
- *
- * `totalCount` is the number of paths accepted, which equals the requested
- * count: path validation is all-or-nothing, so a rejected batch produces an
- * error envelope with no `operationId` rather than a shortened run.
- */
-export interface MetadataProbeBatchAsyncResponse extends BaseResponse {
-    /** Correlation id for the two probe events and for `cancelProbe`. */
-    operationId?: string;
-    /** Paths accepted for probing. */
-    totalCount?: number;
-}
-
-/**
- * Envelope returned by `metadata.cancelProbe`.
- *
- * `cancelled` is false when the `operationId` is not in flight - either it
- * already finished or it never existed. The two cases are deliberately
- * indistinguishable.
- */
-export interface MetadataCancelProbeResponse extends BaseResponse {
-    cancelled?: boolean;
-}
+/** One row of `metadata.readBatch`, from the declaration. */
+export type { MetadataReadBatchItem } from './generated/schema-types.js';
 
 // ============================================================================
 // Misc playlist / utility responses
@@ -1833,11 +811,27 @@ export interface FocusedTrackResponse {
     track: TrackInfo | null;
 }
 
-/** Result shape returned by `utils.ping`. */
-export interface PingResponse {
+/**
+ * Response from `test.echo`. `test.echo` and `test.ping` are diagnostic methods without a
+ * declaration, so their types are written here rather than generated.
+ */
+export interface TestEchoResponse {
+    success: boolean;
+    /** `message` when the call passed one, otherwise the whole params object. */
+    echo: unknown;
+    /** The params object the host received. */
+    input: JsonObject;
+}
+
+/** Response from `test.ping`. */
+export interface TestPingResponse {
     pong: boolean;
+    /** The host's Unix time in seconds. */
     timestamp: number;
 }
+
+/** The `test.ping` response (what `utils.ping` resolves to) under its earlier name. */
+export type PingResponse = TestPingResponse;
 
 /** Result shape returned by `utils.formatTitle`. */
 export interface FormatTitleResponse {
@@ -1852,7 +846,7 @@ export interface FormatTitleResponse {
 export type LyricsSource = 'embedded' | 'file' | 'any';
 
 /** Save target for `lyrics.save`. */
-export type LyricsSaveTarget = 'file' | 'embedded' | 'config' | 'all';
+export type LyricsSaveTarget = 'file' | 'embedded' | 'all';
 
 /** Type filter for `lyrics.get`. */
 export type LyricsType = 'synced' | 'unsynced' | 'any';
@@ -1860,231 +854,83 @@ export type LyricsType = 'synced' | 'unsynced' | 'any';
 /** File-format filter for `lyrics.get`. */
 export type LyricsFileFormat = 'lrc' | 'txt' | 'any';
 
-/** `lyrics.get` return value. */
-export interface LyricsGetResult {
-    success: boolean;
-    available: boolean;
-    path?: string;
-    /** Lyrics source. */
-    source?: 'embedded' | 'file';
-    /** Full path to the external lyrics file; only present when `source === 'file'`. */
-    sourcePath?: string;
-    /** Matched tag name; only present when `source === 'embedded'` and a `type` filter is used. */
-    tagName?: string;
-    /** Lyrics text. */
-    lyrics?: string;
-    /** True when the payload is a synced LRC document. */
-    synced?: boolean;
-    error?: string;
-}
+/** `lyrics.get` return value; the generated {@link LyricsGetResponse} under its earlier name. */
+export type LyricsGetResult = LyricsGetResponse;
 
-/** `lyrics.save` single-target return value. */
-export interface LyricsSaveResult {
-    success: boolean;
-    /** Saved file path, when `target === 'file'`. */
-    savedTo?: string;
-    error?: string;
-}
+/** `lyrics.save` return value; the generated {@link LyricsSaveResponse} under its earlier name. */
+export type LyricsSaveResult = LyricsSaveResponse;
 
-/** `lyrics.save` multi-target structured return value. */
-export interface LyricsSaveAllResult {
-    success: boolean;
-    results: {
-        file?: LyricsSaveResult;
-        embedded?: {
-            success: boolean;
-            path?: string;
-            tagsApplied?: Record<string, string>;
-            error?: string;
-        };
-        config?: LyricsSaveResult;
-    };
-}
+/**
+ * `lyrics.save` return value with several targets; the generated
+ * {@link LyricsSaveResponse} under its earlier name, with each target's
+ * outcome under `results`.
+ */
+export type LyricsSaveAllResult = LyricsSaveResponse;
 
-/** `lyrics.save` options. */
-export interface LyricsSaveOptions {
-    /** Save destination(s): `file` (default), `embedded`, `config`, `all`, or an array such as `['file','config']`. */
+/**
+ * `lyrics.save` options: the host parameters other than the track path and
+ * the text, which the method takes positionally, with `target` also
+ * accepting a single destination.
+ */
+export interface LyricsSaveOptions extends Omit<LyricsSaveParams, 'path' | 'lyrics' | 'target'> {
+    /** Save destination(s): `file` (default), `embedded`, `all`, or an array such as `['file', 'embedded']`. */
     target?: LyricsSaveTarget | LyricsSaveTarget[];
-    /** Custom filename (relative to the audio file's directory). */
-    filename?: string;
-    /** Embedded tag name; only used when `target` is `embedded` / `all`. Defaults to `"LYRICS"`. */
-    tagName?: string;
-    /** File format; only used when `target` is `file` / `all`. Defaults to `"lrc"`. */
-    format?: 'lrc' | 'txt';
 }
 
-/** `lyrics.get` options. */
-export interface LyricsGetOptions {
-    /** Source filter; defaults to `"any"`. */
-    source?: LyricsSource;
-    /** Type filter (`synced` / `unsynced` / `any`); defaults to `"any"`. */
-    type?: LyricsType;
-    /** File-format filter (`lrc` / `txt` / `any`); only used when `source === 'file'`. Defaults to `"any"`. */
-    format?: LyricsFileFormat;
-}
+/** `lyrics.get` options: the host parameters other than the track path, which the method takes positionally. */
+export type LyricsGetOptions = Omit<LyricsGetParams, 'path'>;
 
-/** `lyrics.exists` return value. */
-export interface LyricsExistsResult {
-    exists: boolean;
-    /** Provider list, e.g. `["embedded", "file:song.lrc"]`. */
-    sources: string[];
-}
+/** `lyrics.exists` return value; the generated {@link LyricsExistsResponse} under its earlier name. */
+export type LyricsExistsResult = LyricsExistsResponse;
 
 // ============================================================================
 // Titleformat
 // ============================================================================
 
-/** `titleformat.eval` single-result shape. */
-export interface TitleformatEvalResult {
-    success: boolean;
-    path: string;
-    pattern: string;
-    result: string;
-    error?: string;
-    /** `false` = tag-derived output untrustworthy; absent on failures. */
-    infoAvailable?: boolean;
-}
+/** `titleformat.eval` response; the generated {@link TitleformatEvalResponse} under its earlier name. */
+export type TitleformatEvalResult = TitleformatEvalResponse;
 
-/** `titleformat.evalBatch` aggregate shape. */
-export interface TitleformatBatchResult {
-    success: boolean;
-    pattern: string;
-    total: number;
-    successCount: number;
-    errorCount: number;
-    results: Array<{
-        path: string;
-        success: boolean;
-        result?: string;
-        error?: string;
-        /** Per-row info readiness; present only when `success` is `true`. */
-        infoAvailable?: boolean;
-    }>;
-}
+/** `titleformat.evalBatch` response; the generated {@link TitleformatEvalBatchResponse} under its earlier name. */
+export type TitleformatBatchResult = TitleformatEvalBatchResponse;
 
-/** `titleformat.evalFields` single-row shape. */
-export interface TitleformatFieldsResult {
-    success: boolean;
-    path: string;
-    /** `false` = tag-derived values untrustworthy; one flag per merged script. */
-    infoAvailable?: boolean;
-    [fieldName: string]: string | boolean | undefined;
-}
+/** `titleformat.evalFields` response; the generated {@link TitleformatEvalFieldsResponse} under its earlier name. */
+export type TitleformatFieldsResult = TitleformatEvalFieldsResponse;
 
-/** `titleformat.evalFieldsBatch` aggregate shape. */
-export interface TitleformatFieldsBatchResult {
-    success: boolean;
-    total: number;
-    successCount: number;
-    errorCount: number;
-    results: Array<{
-        path: string;
-        success: boolean;
-        error?: string;
-        /** Per-row info readiness; present only when `success` is `true`. */
-        infoAvailable?: boolean;
-        [fieldName: string]: string | boolean | undefined;
-    }>;
-}
+/** `titleformat.evalFieldsBatch` response; the generated {@link TitleformatEvalFieldsBatchResponse} under its earlier name. */
+export type TitleformatFieldsBatchResult = TitleformatEvalFieldsBatchResponse;
 
-/** `titleformat.getBuiltinFields` return value. */
-export interface TitleformatBuiltinFields {
-    success: boolean;
-    fields: Record<string, string>;
-}
+/** `titleformat.getBuiltinFields` response; the generated {@link TitleformatGetBuiltinFieldsResponse} under its earlier name. */
+export type TitleformatBuiltinFields = TitleformatGetBuiltinFieldsResponse;
 
 // ============================================================================
 // Shell
 // ============================================================================
 
-/** `shell.exec` / `shell.spawn` options. */
-export interface ShellExecOptions {
-    /** Command-line arguments. */
-    args?: string[];
-    /** Working directory. */
-    cwd?: string;
-    /** Hide the spawned window. */
-    hidden?: boolean;
-}
+/**
+ * `shell.exec` options: the host parameters other than the command, which the
+ * method takes positionally. `shell.spawn` takes these and `waitForExitMs`;
+ * see {@link ShellSpawnParams}.
+ */
+export type ShellExecOptions = Omit<ShellExecParams, 'command'>;
 
-/** `shell.exec` / `shell.spawn` return value. */
-export interface ShellExecResult {
-    success: boolean;
-    processId?: number;
-    error?: string;
-}
+/** `shell.exec` response; the generated {@link ShellExecResponse} under its earlier name. */
+export type ShellExecResult = ShellExecResponse;
 
 // ============================================================================
 // Audio (waveform / spectrum)
 // ============================================================================
 
-/**
- * Placeholder response from `audio.generateWaveform`. The method always
- * returns `success: false` plus whatever metadata the host could read
- * from the file.
- *
- * @deprecated Use `audio.generateFullWaveform` for real waveform jobs.
- */
-export interface AudioGenerateWaveformResponse extends BaseResponse {
-    duration?: number;
-    sampleRate?: number;
-    channels?: number;
-    requestedResolution?: number;
-}
+/** The `audio.getOutputInfo` response under its earlier name. */
+export type AudioOutputInfoResponse = AudioGetOutputInfoResponse;
 
-/** Result shape returned by `audio.getOutputInfo`. */
-export interface AudioOutputInfoResponse extends BaseResponse {
-    /** Linear volume in dB (foobar2000 native scale). */
-    volume?: number;
-    /** Volume mapped to a 0-100% scale (linear conversion). */
-    volumePercent?: number;
-}
-
-/** Result shape returned by `audio.getStreamInfo`. */
-export interface AudioStreamInfoResponse extends BaseResponse {
-    /** True when playback is currently active. */
-    playing: boolean;
-    /** Sample rate in Hz; only present when `playing === true`. */
-    sampleRate?: number;
-    /** Channel count; only present when `playing === true`. */
-    channels?: number;
-    /** Bitrate in kbps; only present when `playing === true`. */
-    bitrate?: number;
-    /** Codec identifier; only present when `playing === true`. */
-    codec?: string;
-    /** Track duration in seconds; only present when `playing === true`. */
-    duration?: number;
-}
+/** The `audio.getStreamInfo` response under its earlier name. */
+export type AudioStreamInfoResponse = AudioGetStreamInfoResponse;
 
 /**
  * `audio.generateFullWaveform` options: the host parameters without `path`,
- * which the method takes positionally. The fields mirror the generated
- * `AudioGenerateFullWaveformParams` (importing it here would close a type
- * import cycle through `generated/params.ts`); `audio.generateFullWaveform`
- * builds its request as that generated type, so a field whose type drifts
- * from the host's fails to compile.
+ * which the method takes positionally.
  */
-export interface FullWaveformOptions {
-    /** Number of waveform points, clamped to 64–4096; defaults to 256. */
-    resolution?: number;
-    /** Aggregation method; defaults to `rms`. */
-    method?: 'peak' | 'rms';
-    /**
-     * `linear` (default), or `db`: 60 dB below the track's own maximum maps
-     * to 0. Ignored when `signed` is set.
-     */
-    scale?: 'linear' | 'db';
-    /** Keep PCM polarity; points fall in `[-1, 1]`. Defaults to `false`. */
-    signed?: boolean;
-    /** Answer from the cache when possible; defaults to `true`. */
-    preferCache?: boolean;
-    /** Container subsong index; takes precedence over a `path|subsong:N` suffix. */
-    cueIndex?: number;
-    /** @deprecated The host never read it; use `preferCache`. */
-    useCache?: boolean;
-    /** @deprecated The host never read it; use `preferCache: false`. */
-    forceRegenerate?: boolean;
-}
+export type FullWaveformOptions = Omit<AudioGenerateFullWaveformParams, 'path'>;
 
 /** `audio.generateFullWaveform` synchronous result shape. */
 export interface FullWaveformResult {
@@ -2146,6 +992,13 @@ export type SpectrumSubscribeOutcome =
           /** Frame rate after clamping to `[1, 60]`. */
           fps: number;
           scale: SpectrumScale;
+          /**
+           * Output the host registered. Hosts without bin output report
+           * `'bands'` whatever was requested; the subscription then receives
+           * no frames when bins were asked for.
+           */
+          output: SpectrumOutput;
+          channels: SpectrumChannels;
           backgroundThrottle: boolean;
           /** Lower edge of the band range in Hz, as requested. */
           minFrequency: number;
@@ -2180,61 +1033,8 @@ export interface SpectrumSubscription {
     readonly ready: Promise<SpectrumSubscribeOutcome>;
 }
 
-/** `audio.getSpectrumDebugState` return value. */
-export interface SpectrumDebugState {
-    success: boolean;
-    active: boolean;
-    /** `true` while the beat thread that pushes frames is running. */
-    timerRunning: boolean;
-    /** Timer behind pushed frames; `null` while the beat thread is not running. Absent on older hosts. */
-    beatSource?: SpectrumBeatSource | null;
-    /** Current beat length in milliseconds (1000 / the highest `fps`); `null` while the beat thread is not running. */
-    beatIntervalMs?: number | null;
-    /** Beats dropped because the previous one had not reached the main thread yet; cumulative. */
-    beatsCoalesced?: number;
-    effectiveFftSize: number;
-    effectiveFps: number;
-    effectiveBands: number;
-    skipFrames: number;
-    /** Number of FFTs computed since the host started; flat while paused or stopped. */
-    framesComputed?: number;
-    /** `true` once the visualisation stream exists, also while stopped. */
-    streamReady: boolean;
-    subscriptionCount: number;
-    /** Total number of distinct dispatch targets resolved from subscriptions. */
-    dispatchTargetCount: number;
-    /** Detail of every dispatch target the host plans to deliver to. */
-    dispatchTargets?: Array<JsonObject>;
-    subscriptions: Array<{
-        token: string;
-        windowId: string;
-        /** Handle of the window that owns the subscription, as a number. */
-        ownerHwnd?: number;
-        /** Requested FFT size; the size in use is reported in each frame. */
-        fftSize: number;
-        fps: number;
-        bands: number;
-        event?: string;
-        scale?: SpectrumScale;
-        backgroundThrottle?: boolean;
-        minFrequency?: number;
-        /** `null` when the range follows half the stream's sample rate. */
-        maxFrequency?: number | null;
-    }>;
-    callerOwnsSubscription: boolean;
-    // Caller diagnostics (always present in debug builds).
-    callerHwnd?: number;
-    callerWindowId?: string;
-    /** Foreground-window snapshot at the time of the call. */
-    foregroundHwnd?: number;
-    foregroundIsExternal?: boolean;
-    foregroundPid?: number;
-    foregroundTitle?: string;
-    /** Total number of in-process WebView2 subscribers. */
-    instanceCount?: number;
-    /** @deprecated Always `0` since frames are pushed by a beat thread instead of a window timer. */
-    timerHwnd?: number;
-}
+/** The `audio.getSpectrumDebugState` response under its earlier name. */
+export type SpectrumDebugState = AudioGetSpectrumDebugStateResponse;
 
 // ============================================================================
 // Reactive state
@@ -2257,12 +1057,8 @@ export interface FBReactiveState {
 // Port hub (cross-window messaging)
 // ============================================================================
 
-/** Single port descriptor returned by `port.connect` / `port.getPorts`. */
-export interface PortInfo {
-    portId: string;
-    windowId: string;
-    name: string;
-}
+// The port row declared in src/api/schema/port.ts.
+export type { PortInfo } from './generated/schema-types.js';
 
 // ============================================================================
 // Shared state
@@ -2280,61 +1076,24 @@ export interface SharedStateValue<T = any> {
 // ============================================================================
 
 /**
- * Per-track playcount entry returned by `playcount.get` / `playcount.getBatch`.
- *
- * On per-track failure (e.g. the file cannot be opened) the entry carries
- * `success: false` plus `error`, and the optional numeric fields are absent.
+ * Per-track playcount entry returned by `playcount.get` / `playcount.getBatch`;
+ * the row type of the generated {@link PlaycountGetResponse} under its earlier name.
  */
-export interface PlaycountInfo {
-    /** Original path passed in (preserves `|subsong:N` suffix when present). */
-    path: string;
-    /** Per-track success flag — false when the track could not be resolved. */
-    success: boolean;
-    /** Per-track error message when `success === false`. */
-    error?: string;
-    /** Total playback count from foo_playcount; 0 when never played. */
-    playCount?: number;
-    /** Timestamp string of the first playback (omitted when unset / "?"). */
-    firstPlayed?: string;
-    /** Timestamp string of the most recent playback. */
-    lastPlayed?: string;
-    /** Timestamp string of when the track was added to the library. */
-    added?: string;
-    /** Rating in the 1-5 range (omitted when unrated, never zero). */
-    rating?: number;
-    /** True when the track is currently in the media library. */
-    inLibrary?: boolean;
-}
+export type PlaycountInfo = PlaycountGetSuccess['results'][number];
 
-/** Result envelope for `playcount.get` / `playcount.getBatch`. */
-export interface PlaycountGetResponse extends BaseResponse {
-    /** Number of per-track entries (matches `results.length`). */
-    count: number;
-    results: PlaycountInfo[];
-}
-
-/** Result shape returned by `playcount.getStats`. */
-export interface PlaycountStats extends BaseResponse {
-    totalTracks: number;
-    playedTracks: number;
-    unplayedTracks: number;
-    ratedTracks: number;
-    totalPlayCount: number;
-    maxPlayCount: number;
-    averagePlayCount: number;
-    averageRating: number;
-}
+/** `playcount.getStats` response; the generated {@link PlaycountGetStatsResponse} under its earlier name. */
+export type PlaycountStats = PlaycountGetStatsResponse;
 
 // ============================================================================
 // HTTP
 // ============================================================================
 
-/** Request options shared by every `fb.http.*` method. */
-export interface HttpRequestOptions {
-    headers?: Record<string, string>;
-    timeout?: number;
-    async?: boolean;
-    redirect?: 'follow' | 'error' | 'manual';
+/**
+ * Request options shared by every `fb.http.*` verb: the {@link HttpGetParams}
+ * other than `url`. Defaults: async dispatch with a 30 s host-side timeout,
+ * `follow` redirects, `text` response type.
+ */
+export interface HttpRequestOptions extends Omit<HttpGetParams, 'url'> {
     /**
      * Response decoding hint:
      * - `'text'` (default) — UTF-8 string body. Rejects when the response
@@ -2355,44 +1114,20 @@ export interface HttpRequestOptions {
      * becomes vulnerable to MITM.
      */
     insecureTls?: boolean;
-}
-
-// ============================================================================
-// Dialog (file / folder pickers)
-// ============================================================================
-
-/** Response shape returned by `dialog.openFile`. */
-export interface DialogOpenFileResponse {
-    canceled: boolean;
-    filePaths: string[];
-    error?: string;
-}
-
-/** Response shape returned by `dialog.saveFile`. */
-export interface DialogSaveFileResponse {
-    canceled: boolean;
-    filePath: string;
-    error?: string;
-}
-
-/** Response shape returned by `dialog.openFolder`. */
-export interface DialogOpenFolderResponse {
-    canceled: boolean;
-    folderPath: string;
-    error?: string;
+    /** @deprecated Has no effect; use `insecureTls` to accept invalid certificates. */
+    verifyTls?: boolean;
+    /** @deprecated Has no effect; use `async: false`. */
+    sync?: boolean;
 }
 
 // ============================================================================
 // Menu (main / context menu tree)
 // ============================================================================
 
-/** Availability counters attached to submenu nodes when `withAvailability=true`. */
-export interface MenuAvailability {
-    totalCommands: number;
-    availableCommands: number;
-    disabledCommands: number;
-    allAvailable: boolean;
-}
+// The menu tree is declared in src/api/schema/menu.ts as one flat MenuTreeNode.
+// MenuSeparator, MenuCommand and MenuSubmenu narrow it by `type`, so code can
+// pick a shape with `Extract<MenuItem, { type: 'command' }>`.
+export type { MenuAvailability, MenuTreeNode } from './generated/schema-types.js';
 
 /** Menu separator — marks a visual gap in the menu tree. */
 export interface MenuSeparator {
@@ -2420,67 +1155,24 @@ export interface MenuSeparator {
  * leaf of the v1 HMENU tier reports `hmenu_fallback` whether or not a
  * `subGuid` was back-filled for it.
  */
-export interface MenuCommand extends MenuNodeState {
-    type: 'command';
-    label: string;
-    displayLabel: string;
-    path: string;
-    displayPath: string;
-    commandId?: number;
-    /** Kept as an alias of `enabled` for callers written against the old shape. */
-    available: boolean;
-    guid?: string;
-    subGuid?: string;
-    source?: MenuNodeSource;
-    /** False when no GUID could be resolved; see `unaddressableReason`. */
-    executable?: boolean;
-    unaddressableReason?: MenuUnaddressableReason;
-    /** Present on entries from the flat fallback tier, which has no hierarchy. */
-    fallback?: boolean;
-}
+export type MenuCommand = Omit<MenuTreeNode, 'type' | 'children' | 'availability' | MenuNodeLabelKey | 'available'> &
+    Required<Pick<MenuTreeNode, MenuNodeLabelKey | 'available'>> & { type: 'command' };
 
 /** Menu submenu — container with child nodes. */
-export interface MenuSubmenu {
-    type: 'submenu';
-    label: string;
-    displayLabel: string;
-    path: string;
-    displayPath: string;
-    /** Absent in the v1 HMENU tier, which has no SDK flags to report. */
-    flags?: number;
-    children: MenuItem[];
-    availability?: MenuAvailability;
-}
+export type MenuSubmenu = Pick<MenuTreeNode, 'flags' | 'availability'> &
+    Required<Pick<MenuTreeNode, MenuNodeLabelKey>> & { type: 'submenu'; children: MenuItem[] };
+
+/** The label and path fields every command and submenu carries. */
+type MenuNodeLabelKey = 'label' | 'displayLabel' | 'path' | 'displayPath';
 
 /** Recursive menu-tree union node returned by `menu.getMainMenu` / `menu.getContextMenu`. */
 export type MenuItem = MenuSeparator | MenuCommand | MenuSubmenu;
 
-/** Response shape returned by `menu.getMainMenu`. */
-export interface MenuGetMainMenuResponse extends BaseResponse {
-    root?: string;
-    requestedRoot?: string;
-    rootMatched?: boolean;
-    locale?: string;
-    i18n?: boolean;
-    withAvailability?: boolean;
-    items?: MenuItem[];
-    /** Source marker when an internal fallback path was used (`"v1-hmenu"`). */
-    source?: string;
-    /** Fallback marker when flat command list was returned instead of a tree. */
-    fallback?: string;
-}
+/** Response shape returned by `menu.getMainMenu`, with `items` narrowed to {@link MenuItem}. */
+export type MenuGetMainMenuResponse = (Omit<MenuGetMainMenuWireSuccess, 'items'> & { items: MenuItem[] }) | ApiFailure;
 
-/** Response shape returned by `menu.getContextMenu`. */
-export interface MenuGetContextMenuResponse extends BaseResponse {
-    mode?: string;
-    locale?: string;
-    i18n?: boolean;
-    withAvailability?: boolean;
-    items?: MenuItem[];
-}
-
-/** Response shape returned by `menu.showNativePopup` — defers rendering to a timer. */
-export type MenuShowNativePopupResponse = BaseResponse;
+/** Response shape returned by `menu.getContextMenu`, with `items` narrowed to {@link MenuItem}. */
+export type MenuGetContextMenuResponse = (Omit<MenuGetContextMenuWireSuccess, 'items'> & { items: MenuItem[] }) | ApiFailure;
 
 /**
  * A single item in a self-drawn (WebView-rendered) popup menu.
@@ -2489,7 +1181,7 @@ export type MenuShowNativePopupResponse = BaseResponse;
  * distinct from the read-only {@link MenuItem} tree returned by
  * `menu.getMainMenu` / `menu.getContextMenu`.
  */
-export interface MenuPopupItem {
+export type MenuPopupItem = {
     /** Stable id echoed back through `menu:select` when the row is chosen. */
     id?: string;
     /** Visible row text; omitted for separators. */
@@ -2566,7 +1258,7 @@ export interface MenuPopupItem {
     segments?: { label?: string; iconSvg?: { viewBox: string; content: string }; enabled?: boolean }[];
     /** Nested child items; presence renders a flyout arrow. */
     submenu?: MenuPopupItem[];
-}
+};
 
 /**
  * Optional presentation configuration for `menu.show` / `menu.popup`.
@@ -2683,53 +1375,20 @@ export interface MenuPopupPosition {
 }
 
 // ============================================================================
-// UI interaction (notification / custom menu)
-// ============================================================================
-
-/** Response shape returned by `ui.showCustomMenu` (via `notification.showCustomMenu`). */
-export interface UiShowCustomMenuResponse extends BaseResponse {
-    /** ID of the clicked menu item, or `null` when the menu was dismissed. */
-    selectedId?: string | null;
-}
-
-// ============================================================================
 // Panel (webview-level config)
 // ============================================================================
 
-/** Shape of the panel config object returned by `panel.getConfig`. */
-export interface PanelConfigShape {
-    panelName: string;
-    templateName: string;
-    edgeStyle: string;
-    urlOverride: string;
-    transparentBackground: boolean;
-    grabFocus: boolean;
-    enableDragDrop: boolean;
-    enableDevTools: boolean;
-}
-
-/** Response shape returned by `panel.getConfig`. */
-export interface PanelGetConfigResponse extends BaseResponse {
-    config?: PanelConfigShape;
-}
+/** The configuration `panel.getConfig` reports: the generated shape under its older name. */
+export type PanelConfigShape = PanelConfig;
+export type { PanelConfig } from './generated/schema-types.js';
 
 // ============================================================================
 // Keyboard (hotkeys)
 // ============================================================================
 
-/** Single hotkey descriptor returned by `keyboard.getRegisteredHotkeys`. */
-export interface HotkeyInfo {
-    /** Numeric handle from `keyboard.registerHotkey` (0 for shortcut-only entries). */
-    id: number;
-    key: string;
-    action: string;
-    global: boolean;
-}
-
-/** Response shape returned by `keyboard.getRegisteredHotkeys`. */
-export interface KeyboardGetRegisteredHotkeysResponse extends BaseResponse {
-    hotkeys: HotkeyInfo[];
-}
+/** One entry of `keyboard.getRegisteredHotkeys`: the generated row under its older name. */
+export type HotkeyInfo = KeyboardHotkey;
+export type { KeyboardHotkey } from './generated/schema-types.js';
 
 // ============================================================================
 // Selection — viewing track
@@ -2741,17 +1400,8 @@ export type ViewingTrackSource = 'now_playing' | 'selection';
 /** Resolution mode requested / used by `selection.getViewingTrack`. */
 export type ViewingTrackMode = 'prefer_playing' | 'prefer_selection';
 
-/** Response shape returned by `selection.getViewingTrack`. */
-export interface SelectionGetViewingTrackResponse extends BaseResponse {
-    found: boolean;
-    mode: ViewingTrackMode;
-    source?: ViewingTrackSource;
-    handle?: string;
-    playlistIndex?: number;
-    itemIndex?: number;
-    /** Present when `includeTrackInfo=true` was requested. */
-    track?: TrackInfo;
-}
+// `selection.getViewingTrack` is declared in src/api/schema/selection.ts; its `track`
+// is the shared `Track` row rather than the playback namespace's `TrackInfo`.
 
 // ============================================================================
 // Drag-and-Drop
@@ -2787,94 +1437,14 @@ export type DndDragOutUnavailableReason =
     /** Subscribing to the drag-start event failed on this window. */
     | 'register-failed';
 
-/**
- * One-shot token from `dnd.prepareDrag`, exchanged for the validated paths
- * when the drag actually starts. `dnd.prepareDrag` documents the lifetime
- * rules and the `dragstart` handshake.
- */
-export interface DndDragToken extends BaseResponse {
-    /** Opaque, high-entropy. Never derive anything from its contents. */
-    token: string;
-}
+/** `dnd.prepareDrag` response; the generated {@link DndPrepareDragResponse} under its earlier name. */
+export type DndDragToken = DndPrepareDragResponse;
 
-/**
- * Paths of one drag session, as resolved by `dnd.getPathsAsync`.
- *
- * `paths` and `resolvedPaths` are always the same length, so an index valid
- * for one is valid for the other, and both line up with `DataTransfer.files`.
- * Both are empty together when the session expired, carried no file list, or
- * the origin is not trusted with paths.
- */
-export interface DndSessionPaths extends BaseResponse {
-    /**
-     * Session the paths belong to. Empty string when no session was found, so
-     * that a caller can tell "nothing to report" from "a session with no
-     * files".
-     */
-    sessionId: string;
-    /** Absolute filesystem paths, in `DataTransfer.files` order. */
-    paths: string[];
-    /**
-     * Target of the `.lnk` shortcut at the same index, or `null`.
-     *
-     * `null` covers every case where no target is available: the entry is not
-     * a shortcut, it points at a shell namespace object rather than a file, its
-     * recorded target is too long to be read back intact (Windows caps it at
-     * `MAX_PATH`, and a truncated path would name a different file), COM was
-     * unavailable, or resolution was skipped to keep the drop responsive. Never
-     * an empty string.
-     *
-     * A BROKEN shortcut is not one of those cases: it reports the path its
-     * `.lnk` recorded, since Windows returns that whether or not the target
-     * still exists. Treat a non-null entry as where the shortcut points, and
-     * expect the file to be missing sometimes.
-     *
-     * Only `.lnk` is resolved. `.url`, `.library-ms` and virtual search
-     * results report `null`.
-     */
-    resolvedPaths: (string | null)[];
-}
+/** `dnd.getPathsAsync` response; the generated {@link DndGetPathsAsyncResponse} under its earlier name. */
+export type DndSessionPaths = DndGetPathsAsyncResponse;
 
-/**
- * What the host's drag-drop integration can deliver to the current window,
- * as resolved by `dnd.getCapabilities`.
- *
- * `html5` and `paths` are independent. A window can keep receiving standard
- * HTML5 drag events while the real-path side channel is unavailable, because
- * in standard controller mode Chromium handles those events itself.
- */
-export interface DndCapabilities extends BaseResponse {
-    /**
-     * Page receives standard HTML5 drag events (`dragenter` / `dragover` /
-     * `drop`). When `false` the window has no drag-drop support at all and a
-     * theme should hide its drop affordances.
-     */
-    html5: boolean;
-    /**
-     * Real filesystem paths are obtainable through `getPathsAsync` /
-     * `getPaths` / the `dnd:*` events.
-     *
-     * Not fixed for the lifetime of the window: in standard controller mode
-     * Chromium can re-register its own drop target and displace the host's,
-     * which downgrades this to `false`. Keep HTML5 drop handling working when
-     * this is `false` and `html5` is `true`.
-     */
-    paths: boolean;
-    /** Which host mode was detected. Diagnostic only. */
-    hosting: 'visual' | 'standard';
-    /** Present only when `paths` is `false`. */
-    pathsUnavailableReason?: DndPathsUnavailableReason;
-    /**
-     * Files can be dragged out of the window through `dnd.prepareDrag`.
-     *
-     * Independent of `paths`: a window may be able to receive paths but not to
-     * drag files out, or the reverse. Fixed for the lifetime of the window
-     * except that a failed drag-start subscription withdraws it.
-     */
-    dragOut: boolean;
-    /** Present only when `dragOut` is `false`. */
-    dragOutUnavailableReason?: DndDragOutUnavailableReason;
-}
+/** `dnd.getCapabilities` response; the generated {@link DndGetCapabilitiesResponse} under its earlier name. */
+export type DndCapabilities = DndGetCapabilitiesResponse;
 
 // ============================================================================
 // Discovery (services / menu / components / formats)
@@ -2930,369 +1500,45 @@ export interface MenuNodeState {
     flags?: number;
 }
 
-/** Main-menu command descriptor returned by `discovery.getMainMenuCommands`. */
-export interface DiscoveryMainMenuCommand extends MenuNodeState {
-    name: string;
-    description: string;
-    guid: string;
-    parentGuid: string;
-    index: number;
-    /** Slash-separated label path, e.g. `ESLyric/Search lyrics`. */
-    path?: string;
-    /** True for a dynamic parent slot and for every command expanded from it. */
-    isDynamic?: boolean;
-    /**
-     * True only for the container slot of a dynamic submenu. Such an entry is
-     * not executable on its own — use the expanded child entries instead.
-     */
-    isDynamicParent?: boolean;
-    /**
-     * Sub-command GUID of a dynamic child. Pass it alongside `guid` to
-     * `executeMainMenuCommand` to run the command.
-     */
-    subGuid?: string;
-    source?: MenuNodeSource;
-    /** False when this entry cannot be dispatched; see `unaddressableReason`. */
-    executable?: boolean;
-    unaddressableReason?: MenuUnaddressableReason;
-}
-
-/** Main-menu group descriptor returned by `discovery.getMainMenuGroups`. */
-export interface DiscoveryMainMenuGroup {
-    guid: string;
-    parentGuid: string;
-    /** Display name (only set when the group is a `mainmenu_group_popup`). */
-    name: string;
-    sortPriority: number;
-}
-
-/** Input-file-type descriptor returned by `discovery.getInputFormats`. */
-export interface DiscoveryInputFormatType {
-    name: string;
-    /** File-mask glob (e.g. `*.flac;*.wav`). */
-    mask: string;
-    index: number;
-}
-
-/** Installed-component descriptor returned by `discovery.getComponents`. */
-export interface DiscoveryComponentInfo {
-    filename: string;
-    name: string;
-    version: string;
-    /** Long "about" message — may be empty. */
-    about: string;
-}
-
-/** UI-element descriptor returned by `discovery.getUIElements`. */
-export interface DiscoveryUIElementInfo {
-    guid: string;
-    /** Subclass GUID (`pfc::guid_null` rendered as zero-GUID when absent). */
-    subclassGuid: string;
-    name: string;
-    description: string;
-    isUserAddable: boolean;
-}
-
-/** DSP-entry descriptor returned by `discovery.getDspEntries`. */
-export interface DiscoveryDspEntryInfo {
-    guid: string;
-    name: string;
-}
-
-/** Output-device descriptor returned by `discovery.getOutputDevices` (GUID-only). */
-export interface DiscoveryOutputDeviceEntry {
-    guid: string;
-}
-
-/**
- * Context-menu command descriptor returned by `discovery.getContextMenuCommands`.
- *
- * Declared independently of {@link DiscoveryMainMenuCommand} rather than aliased
- * to it: the two tiers do not carry the same fields. Context items are
- * registered flat and placed by the host, so they have no menu `path` of their
- * own and no dynamic-expansion fields.
- */
-export interface DiscoveryContextMenuCommand extends MenuNodeState {
-    name: string;
-    description: string;
-    guid: string;
-    /** Owning service-group GUID; zero-GUID when the item declares none. */
-    parentGuid: string;
-    /** Index within the owning `contextmenu_item`; not stable across restarts. */
-    index: number;
-    source?: MenuNodeSource;
-    /** False when this entry cannot be dispatched; see `unaddressableReason`. */
-    executable?: boolean;
-    unaddressableReason?: MenuUnaddressableReason;
-}
-
-/**
- * Recursive context-menu tree node returned by `discovery.getContextMenuTree`.
- *
- * Truncation is explicit. The walk is bounded in both depth and children per
- * node, and any node whose subtree was clipped says so — `childCount` is the
- * host's real count while `childrenReturned` is what this response contains.
- */
-export interface DiscoveryContextMenuTreeNode extends MenuNodeState {
-    name: string;
-    type: 'command' | 'popup' | 'separator' | 'unknown';
-    /** Distance from the tree root; the root itself is 0. */
-    depth?: number;
-    /** Set when `type === 'command'` — full path with parent labels. */
-    fullName?: string;
-    /** Set when `type === 'popup'` — the host's child count before any clipping. */
-    childCount?: number;
-    /** Number of entries actually present in `children`. */
-    childrenReturned?: number;
-    children?: DiscoveryContextMenuTreeNode[];
-    /** True when this node or anything under it was clipped by a walk limit. */
-    truncated?: boolean;
-    /** A subtree was dropped because it sat past the depth cap. */
-    depthExceeded?: boolean;
-    /** A child list was cut short at the per-node child cap. */
-    childrenExceeded?: boolean;
-}
-
-/** Preference-page descriptor returned by `discovery.getPreferencePages`. */
-export interface DiscoveryPreferencePageInfo {
-    guid: string;
-    parentGuid: string;
-    name: string;
-}
-
-/** Aggregate service counts returned by `discovery.getAllServices`. */
-export interface DiscoveryServiceCounts {
-    /** Includes commands expanded from dynamic submenus. */
-    mainMenuCommands: number;
-    /** Subset of `mainMenuCommands` contributed by dynamic submenus. */
-    mainMenuDynamicCommands?: number;
-    mainMenuGroups: number;
-    /**
-     * Context-menu commands, counted through the same walk
-     * `discovery.getContextMenuCommands` uses — so hidden entries are excluded
-     * and the number stays comparable with that listing.
-     */
-    contextMenuCommands?: number;
-    inputFormats: number;
-    uiElements: number;
-    dspEntries: number;
-    outputDevices: number;
-    preferencePages: number;
-    components: number;
-}
-
-/**
- * Search hit returned by `discovery.searchCommands`.
- *
- * Carries the same state vocabulary as the enumeration endpoints, so a caller
- * can tell whether a hit is invocable without a second round trip.
- */
-export interface DiscoverySearchResult extends MenuNodeState {
-    name: string;
-    description: string;
-    guid: string;
-    /** Which menu family the hit came from. */
-    type: 'mainmenu' | 'contextmenu' | (string & {});
-    /**
-     * Slash-separated label path. Context-menu items are registered flat, so for
-     * those this is just the label.
-     */
-    path?: string;
-    /** True when the hit came from an expanded dynamic submenu. */
-    isDynamic?: boolean;
-    /** Sub-command GUID required to execute a dynamic child. */
-    subGuid?: string;
-    source?: MenuNodeSource;
-    executable?: boolean;
-    unaddressableReason?: MenuUnaddressableReason;
-}
-
-/** Response shape returned by `discovery.getMainMenuCommands`. */
-export interface DiscoveryGetMainMenuCommandsResponse extends BaseResponse {
-    commands: DiscoveryMainMenuCommand[];
-    count: number;
-    /** Echoes whether dynamic submenus were expanded for this call. */
-    expandDynamic?: boolean;
-    /** Number of entries contributed by expanded dynamic submenus. */
-    dynamicCount?: number;
-    /** Echoes whether entries the host would not show were listed. */
-    includeHidden?: boolean;
-}
-
-/** Response shape returned by `discovery.getMainMenuGroups`. */
-export interface DiscoveryGetMainMenuGroupsResponse extends BaseResponse {
-    groups: DiscoveryMainMenuGroup[];
-    count: number;
-}
-
-/** Response shape returned by `discovery.getInputFormats`. */
-export interface DiscoveryGetInputFormatsResponse extends BaseResponse {
-    fileTypes: DiscoveryInputFormatType[];
-    count: number;
-}
-
-/** Response shape returned by `discovery.getComponents`. */
-export interface DiscoveryGetComponentsResponse extends BaseResponse {
-    components: DiscoveryComponentInfo[];
-    count: number;
-}
-
-/** Response shape returned by `discovery.getUIElements`. */
-export interface DiscoveryGetUIElementsResponse extends BaseResponse {
-    elements: DiscoveryUIElementInfo[];
-    count: number;
-}
-
-/** Response shape returned by `discovery.getDspEntries`. */
-export interface DiscoveryGetDspEntriesResponse extends BaseResponse {
-    entries: DiscoveryDspEntryInfo[];
-    count: number;
-}
-
-/** Response shape returned by `discovery.getOutputDevices`. */
-export interface DiscoveryGetOutputDevicesResponse extends BaseResponse {
-    devices: DiscoveryOutputDeviceEntry[];
-    count: number;
-}
-
-/** Response shape returned by `discovery.getContextMenuCommands`. */
-export interface DiscoveryGetContextMenuCommandsResponse extends BaseResponse {
-    commands: DiscoveryContextMenuCommand[];
-    count: number;
-    /** Echoes whether entries the host would not show were listed. */
-    includeHidden?: boolean;
-    /** Number of entries omitted for being hidden. */
-    hiddenFiltered?: number;
-    /**
-     * False when nothing was selected or playing. Every entry's `enabled` /
-     * `checked` is then unobserved and must not be filtered on — only `hidden`
-     * stays meaningful, because `FORCE_OFF` is a constant property of the item.
-     */
-    stateKnown?: boolean;
-    /** Tracks the reported state was evaluated against. */
-    selectionCount?: number;
-}
-
-/** Response shape returned by `discovery.getContextMenuTree`. */
-export interface DiscoveryGetContextMenuTreeResponse extends BaseResponse {
-    tree?: DiscoveryContextMenuTreeNode;
-    itemCount?: number;
-    /** True when any node in the tree was clipped by a walk limit. */
-    truncated?: boolean;
-    /** A subtree was dropped for sitting past the depth cap. */
-    depthExceeded?: boolean;
-    /** Some child list was cut short at the per-node child cap. */
-    childrenExceeded?: boolean;
-    /** The depth cap this walk applied. */
-    maxDepth?: number;
-    /** The per-node child cap this walk applied. */
-    maxChildrenPerNode?: number;
-}
-
-/** Response shape returned by `discovery.getPreferencePages`. */
-export interface DiscoveryGetPreferencePagesResponse extends BaseResponse {
-    pages: DiscoveryPreferencePageInfo[];
-    count: number;
-}
-
-/** Response shape returned by `discovery.getAllServices`. */
-export interface DiscoveryGetAllServicesResponse extends BaseResponse {
-    services: DiscoveryServiceCounts;
-    /** Sum of every entry in `services`. */
-    totalServices: number;
-    /** Context-menu entries excluded from the count for being hidden. */
-    contextMenuHiddenFiltered?: number;
-    /**
-     * False when no track was selected or playing, which makes the
-     * context-menu count a filter over unobservable state.
-     */
-    stateKnown?: boolean;
-}
-
-/** Response shape returned by `discovery.searchCommands`. */
-export interface DiscoverySearchCommandsResponse extends BaseResponse {
-    query?: string;
-    results?: DiscoverySearchResult[];
-    count?: number;
-    /** Echoes whether dynamic subtrees were expanded before matching. */
-    expandDynamic?: boolean;
-    /** Echoes the menu families that were searched. */
-    scope?: 'all' | 'mainmenu' | 'contextmenu' | (string & {});
-    /** Echoes whether hidden entries were searched. */
-    includeHidden?: boolean;
-    /** Hits contributed by the main menu. */
-    mainMenuHits?: number;
-    /** Hits contributed by the context menu. */
-    contextMenuHits?: number;
-    /**
-     * False when the context family was searched without a selection; its hits'
-     * `enabled` / `checked` then carry no observation.
-     */
-    stateKnown?: boolean;
-}
+// The discovery shapes come from src/api/schema/discovery.ts; the names this module
+// exported before stay available. `MenuNodeState`, `MenuNodeSource` and
+// `MenuUnaddressableReason` above stay hand-written under their earlier names.
+export type {
+    DiscoveryComponentInfo,
+    DiscoveryContextMenuCommand,
+    DiscoveryContextMenuTreeNode,
+    DiscoveryDspEntryInfo,
+    DiscoveryInputFormatType,
+    DiscoveryMainMenuCommand,
+    DiscoveryMainMenuGroup,
+    DiscoveryOutputDeviceEntry,
+    DiscoveryPreferencePageInfo,
+    DiscoverySearchResult,
+    DiscoveryServiceCounts,
+    DiscoveryUIElementInfo,
+} from './generated/schema-types.js';
 
 // ============================================================================
 // ReplayGain
 // ============================================================================
 
-/**
- * Per-track ReplayGain entry returned in the `results` array of
- * `replaygain.get`. All gain / peak fields are optional because
- * foobar2000 may have only partial RG data tagged on a given track.
- */
-export interface ReplayGainTrackInfo {
-    path: string;
-    success: boolean;
-    error?: string;
-    /** Formatted track gain (e.g. `"-6.50 dB"`). */
-    trackGain?: string;
-    /** Raw track gain in dB. */
-    trackGainRaw?: number;
-    /** Formatted track peak (`"%.6f"`). */
-    trackPeak?: string;
-    /** Raw track peak (linear). */
-    trackPeakRaw?: number;
-    albumGain?: string;
-    albumGainRaw?: number;
-    albumPeak?: string;
-    albumPeakRaw?: number;
-    /** True when at least one of `trackGain` / `albumGain` is present. */
-    hasReplayGain?: boolean;
-}
+// The replaygain shapes come from the declarations in src/api/schema/replaygain.ts; the earlier
+// names stay as aliases.
 
-/** Response shape returned by `replaygain.getSettings`. */
-export interface ReplayGainGetSettingsResponse {
-    sourceMode?: string;
-    processingMode?: string;
-    preampWithRg?: number;
-    preampWithoutRg?: number;
-    active?: boolean;
-    /** `false` when the underlying SDK call threw. */
-    success?: boolean;
-    error?: string;
-}
+/** Per-track row of `replaygain.get`; the generated {@link ReplayGainTrackInfo}. */
+export type { ReplayGainTrackInfo } from './generated/schema-types.js';
 
-/** Response shape returned by `replaygain.getMode`. */
-export interface ReplayGainGetModeResponse {
-    sourceMode?: string;
-    processingMode?: string;
-    success?: boolean;
-    error?: string;
-}
+/** `replaygain.getSettings` response; the generated {@link ReplaygainGetSettingsResponse} under its earlier name. */
+export type ReplayGainGetSettingsResponse = ReplaygainGetSettingsResponse;
 
-/** Response shape returned by `replaygain.getPreamp`. */
-export interface ReplayGainGetPreampResponse {
-    withRg?: number;
-    withoutRg?: number;
-    success?: boolean;
-    error?: string;
-}
+/** `replaygain.getMode` response; the generated {@link ReplaygainGetModeResponse} under its earlier name. */
+export type ReplayGainGetModeResponse = ReplaygainGetModeResponse;
 
-/** Response shape returned by `replaygain.get`. */
-export interface ReplayGainGetResponse extends BaseResponse {
-    count?: number;
-    results?: ReplayGainTrackInfo[];
-}
+/** `replaygain.getPreamp` response; the generated {@link ReplaygainGetPreampResponse} under its earlier name. */
+export type ReplayGainGetPreampResponse = ReplaygainGetPreampResponse;
+
+/** `replaygain.get` response; the generated {@link ReplaygainGetResponse} under its earlier name. */
+export type ReplayGainGetResponse = ReplaygainGetResponse;
 
 // ============================================================================
 // Output (modules / settings)
@@ -3330,98 +1576,34 @@ export interface OutputGetSettingsResponse {
 // JitQueue (just-in-time playback queue)
 // ============================================================================
 
-/** Response shape returned by `jitQueue.getState`. */
-export interface JitQueueStateInfo {
-    isActive: boolean;
-    state: string;
-    currentTrackId: string;
-    nextTrackId: string;
-    bufferSize: number;
-    shadowPlaylist: number;
-}
+/**
+ * Response shape returned by `jitQueue.getState`; declared in
+ * src/api/schema/jitQueue.ts, this name stays as an alias.
+ */
+export type JitQueueStateInfo = JitQueueGetStateResponse;
 
 // ============================================================================
 // File (directory listing / metadata)
 // ============================================================================
 
-/** Response shape returned by `file.list`. */
-export interface FileListResponse extends BaseResponse {
-    /** Regular-file names (or full paths when `recursive=true`). */
-    files?: string[];
-    /** Directory names (or full paths when `recursive=true`). */
-    directories?: string[];
-    /** Alias of {@link files} retained for test compatibility. */
-    items?: string[];
-}
-
-/** Response shape returned by `file.getInfo`. */
-export interface FileGetInfoResponse extends BaseResponse {
-    exists: boolean;
-    isDirectory?: boolean;
-    isFile?: boolean;
-    size?: number;
-    /** JavaScript timestamp in milliseconds (last-write time). */
-    modified?: number;
-    name?: string;
-    extension?: string;
-    parent?: string;
-}
+// `file.list` and `file.getInfo` responses come from the declarations in src/api/schema/file.ts;
+// both names are re-exported with the generated per-API types at the end of this file.
 
 // ============================================================================
 // Shell (process execution)
 // ============================================================================
 
-/** Response shape returned by `shell.exec`. */
-export interface ShellExecResponse extends BaseResponse {
-    /** Windows process ID; absent when `success=false`. */
-    processId?: number;
-}
-
-/** Response shape returned by `shell.spawn`. */
-export interface ShellSpawnResponse extends BaseResponse {
-    /** Windows process ID; absent when `success=false`. */
-    processId?: number;
-    /** True if the child exited within `waitForExitMs`; false on timeout. */
-    exited?: boolean;
-    /** Exit code; populated only when `exited=true`. */
-    exitCode?: number;
-}
+// `shell.exec` and `shell.spawn` responses come from the declarations in src/api/schema/shell.ts.
+export type { ShellExecResponse, ShellSpawnResponse };
 
 // ============================================================================
 // System (API discovery / plugin registry)
 // ============================================================================
 
-/** Individual entry returned by `system.listAvailableApis` / `searchApis` / `getApisByNamespace`. */
-export interface SystemApiInfo {
-    fullName: string;
-    plugin: string;
-    namespace: string;
-    method: string;
-    description: string;
-    version: string;
-    isExternal: boolean;
-}
+export type { SystemApiInfo, SystemPluginInfo } from './generated/schema-types.js';
 
-/** Response shape returned by `system.getApiStats`. */
-export interface SystemApiStatsResponse {
-    totalApis: number;
-    internalApis: number;
-    externalApis: number;
-    pluginCount: number;
-    /** Map of `namespace` → API count. */
-    byNamespace: Record<string, number>;
-}
-
-/** Individual entry returned by `system.getRegisteredPlugins`. */
-export interface SystemPluginInfo {
-    name: string;
-    namespace: string;
-    version: string;
-    author: string;
-    description: string;
-    apiCount: number;
-    apis: string[];
-}
+/** The `system.getApiStats` response under its older name. */
+export type SystemApiStatsResponse = SystemGetApiStatsResponse;
 
 // ============================================================================
 // Generated per-API response types
@@ -3433,48 +1615,56 @@ export type {
     ArtworkGetLyricsResponse, ArtworkGetMetadataResponse, AudioAnalyzeBPMResponse, AudioGenerateFullWaveformResponse, AudioGetOutputInfoResponse, AudioGetSpectrumDebugStateResponse,
     AudioGetSpectrumResponse, AudioGetStreamInfoResponse, AudioGetWaveformResponse, AudioIsVisualizationAvailableResponse, AudioSetChannelModeResponse, AudioSubscribeSpectrumResponse, AudioSubscribeStreamResponse,
     AudioUnsubscribeSpectrumResponse, AudioUnsubscribeStreamResponse, ClipboardReadResponse, ClipboardWriteFilesResponse, ClipboardWriteHTMLResponse, ClipboardWriteResponse,
-    ConfigGetActiveDspPresetResponse, ConfigGetAdvancedConfigResponse, ConfigGetAdvancedConfigValueResponse, ConfigGetComponentsResponse, ConfigGetCursorFollowPlaybackResponse, ConfigGetDspPresetsResponse,
+    ConfigExportResponse, ConfigGetActiveDspPresetResponse, ConfigGetAdvancedConfigResponse, ConfigGetAdvancedConfigValueResponse, ConfigGetAllResponse, ConfigGetComponentsResponse, ConfigGetCursorFollowPlaybackResponse, ConfigGetDspPresetsResponse,
     ConfigGetLibraryFilePatternsResponse, ConfigGetLibraryStatusResponse, ConfigGetOutputConfigResponse, ConfigGetOutputDevicesResponse, ConfigGetPlaybackFollowCursorResponse, ConfigGetPreferencesPagesResponse,
     ConfigGetPreferencesStandardGuidsResponse, ConfigGetReplaygainModeResponse, ConfigGetResponse, ConfigGetVersionInfoResponse, ConfigRemoveResponse, ConfigResetAdvancedConfigResponse,
     ConfigSetActiveDspPresetResponse, ConfigSetAdvancedConfigValueResponse, ConfigSetCursorFollowPlaybackResponse, ConfigSetOutputBufferResponse, ConfigSetOutputDeviceResponse, ConfigSetPlaybackFollowCursorResponse,
     ConfigSetReplaygainModeResponse, ConfigSetResponse, ConfigShowLibraryPreferencesResponse, ConsoleErrorResponse, ConsoleLogResponse, ConsoleWarnResponse,
     CursorIsHiddenResponse, CursorSetHiddenResponse,
-    DialogConfirmResponse, DiscoveryExecuteContextMenuByPathResponse, DiscoveryExecuteContextMenuCommandResponse, DiscoveryExecuteMainMenuCommandResponse, DndGetCapabilitiesResponse, DndGetPathsAsyncResponse,
+    DialogConfirmResponse, DialogOpenFileResponse, DialogOpenFolderResponse, DialogSaveFileResponse,
+    DiscoveryExecuteContextMenuByPathResponse, DiscoveryExecuteContextMenuCommandResponse, DiscoveryExecuteMainMenuCommandResponse, DiscoveryGetAllServicesResponse,
+    DiscoveryGetComponentsResponse, DiscoveryGetContextMenuCommandsResponse, DiscoveryGetContextMenuTreeResponse, DiscoveryGetDspEntriesResponse, DiscoveryGetInputFormatsResponse,
+    DiscoveryGetMainMenuCommandsResponse, DiscoveryGetMainMenuGroupsResponse, DiscoveryGetOutputDevicesResponse, DiscoveryGetPreferencePagesResponse, DiscoveryGetUIElementsResponse,
+    DiscoverySearchCommandsResponse, DndGetCapabilitiesResponse, DndGetPathsAsyncResponse, DndPrepareDragResponse,
     DndStartDragResponse, DspAddDspResponse, DspApplyPresetResponse, DspGetAvailableResponse, DspGetChainResponse, DspGetPresetsResponse,
     DspMoveDspResponse, DspRemoveDspResponse, DspSetChainResponse, EventEmitResponse, EventEmitToResponse, FileCancelOpResponse,
-    FileCopyAsyncResponse, FileCopyResponse, FileDeleteAsyncResponse, FileDeleteResponse, FileExistsResponse, FileMkdirResponse,
+    FileCopyAsyncResponse, FileCopyResponse, FileDeleteAsyncResponse, FileDeleteResponse, FileExistsResponse, FileGetInfoResponse, FileListResponse, FileMkdirResponse,
     FileMoveAsyncResponse, FileMoveResponse, FileReadResponse, FileRenameResponse, FileWriteResponse, HttpAbortResponse,
     HttpDeleteResponse, HttpDownloadResponse, HttpGetResponse, HttpHeadResponse,
     HttpPatchResponse, HttpPostResponse, HttpPutResponse, JitQueueClearResponse, JitQueueEnqueueNextResponse, JitQueueGetStateResponse,
-    JitQueueNotifyEmptyResponse, JitQueuePlayNowResponse, JitQueuePreloadBatchResponse, JitQueueSkipResponse, JitQueueStopResponse, KeyboardRegisterHotkeyResponse,
-    KeyboardRegisterShortcutResponse, KeyboardUnregisterHotkeyResponse, LibraryGetAlbumTracksResponse, LibraryGetAlbumsResponse, LibraryGetAllResponse, LibraryGetArtistAlbumsResponse,
-    LibraryGetArtistTracksResponse, LibraryGetArtistsResponse, LibraryGetCacheStatsResponse, LibraryGetCountResponse, LibraryGetFieldValuesResponse, LibraryGetGenresResponse,
-    LibraryGetRandomTracksResponse, LibraryGetRecentlyAddedResponse, LibraryGetStatsResponse, LibraryGetStatusResponse, LibraryIsEnabledResponse, LibraryRefreshResponse,
-    LibraryRescanResponse, LogClearResponse, LogReadResponse, LogWriteResponse, LyricsExistsResponse, LyricsSaveResponse,
-    MenuRunContextCommandByIdResponse, MenuRunContextCommandResponse, MenuRunMainMenuCommandResponse, MetadataEmbedArtworkResponse, MetadataReadByPathResponse, MetadataRemoveEmbeddedArtResponse,
+    JitQueueNotifyEmptyResponse, JitQueuePlayNowResponse, JitQueuePreloadBatchResponse, JitQueueSkipResponse, JitQueueStopResponse, KeyboardGetRegisteredHotkeysResponse, KeyboardRegisterHotkeyResponse,
+    KeyboardRegisterShortcutResponse, KeyboardUnregisterHotkeyResponse, LibraryAddToPlaylistResponse, LibraryBrowseDirectoryResponse, LibraryBrowseTreeResponse, LibraryGetAlbumTracksResponse, LibraryGetAlbumsResponse, LibraryGetAllResponse,
+    LibraryGetArtistAlbumsResponse, LibraryGetArtistTracksResponse, LibraryGetArtistsResponse, LibraryGetByPathResponse, LibraryGetCacheStatsResponse, LibraryGetCountResponse,
+    LibraryGetFieldValuesResponse, LibraryGetGenresResponse, LibraryGetRandomTracksResponse, LibraryGetRecentlyAddedResponse, LibraryGetRootsResponse, LibraryGetStatsResponse,
+    LibraryGetStatusResponse, LibraryInvalidateCacheResponse, LibraryIsEnabledResponse, LibraryQueryResponse, LibraryRefreshResponse, LibraryRescanResponse, LibrarySearchResponse, LogClearResponse, LogReadResponse, LogWriteResponse, LyricsExistsResponse, LyricsGetResponse, LyricsSaveResponse,
+    MenuRunContextCommandByIdResponse, MenuRunContextCommandResponse, MenuRunMainMenuCommandResponse, MenuShowNativePopupResponse, MetadataCancelProbeResponse, MetadataEmbedArtworkResponse,
+    MetadataProbeBatchAsyncResponse, MetadataReadBatchResponse, MetadataReadByPathResponse, MetadataReadRawResponse, MetadataReadResponse, MetadataRemoveEmbeddedArtResponse,
     MetadataRemoveFieldResponse, MetadataRemoveTagResponse, MetadataWriteBatchResponse, MetadataWriteResponse, MiscExitResponse, MiscGetComponentPathResponse,
     MiscGetFoobarPathResponse, MiscGetProfilePathResponse, MiscRestartResponse, MiscShowConsoleResponse, MiscShowLibrarySearchResponse, MiscShowPopupMessageResponse,
-    MiscShowPreferencesResponse, OutputGetDevicesResponse, PanelSetConfigResponse, PlaybackGetCurrentTrackIndexResponse, PlaybackGetCurrentTrackResponse, PlaybackGetPlaybackOrderResponse,
+    MiscShowPreferencesResponse, OutputGetDevicesResponse, PanelGetConfigResponse, PanelSetConfigResponse, PlaybackGetCurrentTrackIndexResponse, PlaybackGetCurrentTrackResponse, PlaybackGetPlaybackOrderResponse,
     PlaybackGetPlayingPlaylistResponse, PlaybackGetPositionResponse, PlaybackGetStateResponse, PlaybackGetStopAfterCurrentResponse, PlaybackGetVolumeResponse, PlaybackMuteResponse,
     PlaybackNextResponse, PlaybackPauseResponse, PlaybackPlayOrPauseResponse, PlaybackPlayPauseResponse, PlaybackPlayResponse, PlaybackPreviousResponse,
     PlaybackRandomResponse, PlaybackSetPlaybackOrderResponse, PlaybackSetStopAfterCurrentResponse, PlaybackSetVolumeResponse, PlaybackStopResponse, PlaybackToggleStopAfterCurrentResponse,
-    PlaybackVolumeDownResponse, PlaybackVolumeUpResponse, PlaycountGetBatchResponse, PlaycountGetStatsResponse, PlaycountSetResponse, PlaylistConvertToAutoplaylistResponse,
-    PlaylistCreateAutoplaylistResponse, PlaylistDeselectAllResponse, PlaylistFocusTrackResponse, PlaylistGetActiveResponse, PlaylistGetAllResponse, PlaylistGetAutoplaylistInfoResponse,
+    PlaybackPlayPathResponse, PlaybackPlayPathsResponse, PlaybackSetPositionResponse, PlaybackToggleMuteResponse,
+    PlaybackVolumeDownResponse, PlaybackVolumeUpResponse, PlaycountGetBatchResponse, PlaycountGetResponse, PlaycountGetStatsResponse, PlaycountSetResponse, PlaylistAddHandlesResponse, PlaylistAddPathsAsyncResponse,
+    PlaylistAddPathsResponse, PlaylistAddPathsSequentialResponse, PlaylistClearResponse, PlaylistConvertToAutoplaylistResponse,
+    PlaylistCreateAutoplaylistResponse, PlaylistCreateResponse, PlaylistDuplicateResponse, PlaylistDeselectAllResponse, PlaylistFocusTrackResponse, PlaylistGetActiveResponse, PlaylistGetAllResponse, PlaylistGetAutoplaylistInfoResponse,
     PlaylistGetAutoplaylistQueryResponse, PlaylistGetAvailableColumnsResponse, PlaylistGetCountResponse, PlaylistGetFocusTrackResponse, PlaylistGetFocusedTrackResponse, PlaylistGetLockInfoResponse,
-    PlaylistGetPlayingResponse, PlaylistGetSelectedTracksResponse, PlaylistGetSelectionResponse, PlaylistGetTrackCountResponse, PlaylistGetTracksResponse, PlaylistInsertTracksResponse,
+    PlaylistGetMatchingRowsResponse, PlaylistGetPlayingResponse, PlaylistGetSelectedTracksResponse, PlaylistGetSelectionResponse, PlaylistGetTrackCountResponse, PlaylistGetTracksAtResponse, PlaylistGetTracksResponse, PlaylistInsertTracksResponse,
     PlaylistIsAutoplaylistResponse, PlaylistIsLockedResponse, PlaylistMoveTracksResponse, PlaylistPlayTrackResponse, PlaylistRedoResponse, PlaylistRemoveResponse,
-    PlaylistRemoveSelectedTracksResponse, PlaylistRemoveTracksResponse, PlaylistRenameResponse, PlaylistReverseResponse, PlaylistSelectAllResponse, PlaylistSetActiveResponse,
+    PlaylistRemoveAutoplaylistResponse, PlaylistRemoveSelectedTracksResponse, PlaylistRemoveTracksResponse, PlaylistRenameResponse,
+    PlaylistReorderPlaylistsResponse, PlaylistReorderResponse, PlaylistReplaceAllAndPlayResponse, PlaylistReverseResponse, PlaylistSelectAllResponse, PlaylistSetActiveResponse,
     PlaylistSetFocusedTrackResponse, PlaylistSetSelectionResponse, PlaylistShuffleResponse, PlaylistSortResponse, PlaylistUndoResponse, PortConnectResponse,
     PortDisconnectResponse, PortGetPortsResponse, PortPostMessageResponse, PortPostMessageToResponse, QueueAddPathsResponse, QueueAddResponse,
     QueueClearResponse, QueueFlushResponse, QueueGetCountResponse, QueueInsertNextResponse, QueueMoveToTopResponse, QueuePlayNowResponse,
     QueueRemoveResponse, QueueSetContentsResponse, RatingGetResponse,
     RatingSetResponse, ReplaygainClearResponse, ReplaygainGetModeResponse, ReplaygainGetPreampResponse, ReplaygainGetResponse, ReplaygainGetSettingsResponse,
-    ReplaygainScanResponse, ReplaygainSetModeResponse, ReplaygainSetPreampResponse, SelectionGetResponse, SelectionGetTypeResponse, SelectionGetViewerModeResponse,
+    ReplaygainScanResponse, ReplaygainSetModeResponse, ReplaygainSetPreampResponse, SelectionGetResponse, SelectionGetTypeResponse, SelectionGetViewerModeResponse, SelectionGetViewingTrackResponse,
     SelectionSetPlaylistTrackingResponse, SelectionSetResponse, ShellOpenExternalResponse, ShellOpenWithResponse, ShellShowInExplorerResponse, StateDeleteResponse,
     StateGetResponse, StateKeysResponse, StateSetResponse, SystemGetApiStatsResponse, SystemGetApisByNamespaceResponse, SystemGetDPIResponse,
     SystemGetLocaleResponse, SystemGetRegisteredPluginsResponse, SystemGetThemeResponse, SystemIsPluginRegisteredResponse, SystemListAvailableApisResponse, SystemSearchApisResponse,
-    TestEchoResponse, TestPingResponse, TitleformatEvalBatchResponse, TitleformatEvalFieldsBatchResponse, TitleformatEvalFieldsResponse, TitleformatEvalResponse,
-    TitleformatGetBuiltinFieldsResponse, UiHideNotificationResponse, UiShowContextMenuResponse, UiShowNotificationResponse, UiShowToastResponse, WindowBlurResponse,
+    TitleformatEvalBatchResponse, TitleformatEvalFieldsBatchResponse, TitleformatEvalFieldsResponse, TitleformatEvalResponse,
+    TitleformatGetBuiltinFieldsResponse, UiHideNotificationResponse, UiShowContextMenuResponse, UiShowCustomMenuResponse, UiShowNotificationResponse, UiShowToastResponse, WindowBlurResponse,
     WindowBroadcastResponse, WindowCancelCloseResponse, WindowCenterResponse, WindowClearClickThroughExcludeRegionsResponse, WindowClearDragRegionsResponse, WindowClearNoDragRegionsResponse,
     WindowCloseAllPopupsResponse, WindowClosePopupResponse, WindowCloseResponse, WindowConfirmCloseResponse, WindowCreatePopupResponse, WindowEnterFullscreenResponse,
     WindowExitFullscreenResponse, WindowFlashResponse, WindowFlashTaskbarResponse, WindowFocusResponse, WindowGetAllWindowsResponse, WindowGetBackdropPolicyResponse,
@@ -3491,10 +1681,24 @@ export type {
     WindowToggleFullscreenResponse, WindowToggleMaximizeResponse,
 } from './generated/responses.js';
 
+// Every generated `XxxResponse` and its `XxxSuccess` half, including the ones the list above
+// does not name. A type of the same name declared in this file takes precedence.
+export type * from './generated/responses.js';
+
 export type {
     ReplaygainSourceMode,
     ReplaygainSourceModeName,
 } from './overrides/config.js';
 export { REPLAYGAIN_SOURCE_MODE } from './overrides/config.js';
-export type { PlaybackNoTrackResponse } from './overrides/playback.js';
-export type { SpectrumBeatSource, SpectrumFrameInfo, SpectrumFrameState, SpectrumScale, WaveformChannels } from './overrides/audio.js';
+export type {
+    SpectrumBeatSource,
+    SpectrumBinsFrame,
+    SpectrumChannels,
+    SpectrumFrameInfo,
+    SpectrumFrameState,
+    SpectrumMixBinsFrame,
+    SpectrumOutput,
+    SpectrumScale,
+    SpectrumStereoBinsFrame,
+    WaveformChannels,
+} from './overrides/audio.js';

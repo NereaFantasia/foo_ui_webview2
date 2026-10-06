@@ -44,6 +44,7 @@ export class FbShuffleButton extends FbBaseElement {
         try {
             const fb = getFb();
             const current = await fb.player.getOrder();
+            if (current.success === false) return;
             const newOrder = SHUFFLE_ORDERS.has(current.order) ? 0 : 4;
             await fb.player.setOrder(newOrder);
             this._emit<FbShuffleToggleDetail>('fb-shuffle-toggle', {
@@ -51,7 +52,7 @@ export class FbShuffleButton extends FbBaseElement {
                 order: newOrder,
             });
         } catch {
-            /* R6: silent degradation */
+            /* A rejected host call does not emit `fb-shuffle-toggle`. */
         }
     }
 
@@ -61,7 +62,9 @@ export class FbShuffleButton extends FbBaseElement {
         });
         getFb()
             .player.getOrder()
-            .then((r) => this._update(r.order))
+            .then((r) => {
+                if (r.success !== false) this._update(r.order);
+            })
             .catch(() => {
                 /* silent */
             });

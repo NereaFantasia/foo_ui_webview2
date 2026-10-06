@@ -2,10 +2,9 @@
  * `<fb-time-current>` — current playback position display (`m:ss` /
  * `h:mm:ss`).
  *
- * Pure display component. Subscribes to `playback:time` (R7: only
- * `textContent` and host-attribute writes inside the high-frequency
- * callback) and reflects the current value in seconds via the
- * `seconds` host attribute for theme-side hooks.
+ * DOM writes in the high-frequency `playback:time` callback are
+ * limited to `textContent` and the `seconds` host attribute, which
+ * exposes the current position in whole seconds for themes.
  */
 
 import { FbBaseElement } from './FbBaseElement.js';

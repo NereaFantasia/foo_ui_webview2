@@ -231,3 +231,43 @@ describe('tray.setContextMenu playbackAction passthrough', () => {
         expect(res.items[0].playbackAction).toBe('next');
     });
 });
+
+describe('tray.setMenuZones', () => {
+    beforeEach(() => vi.resetModules());
+    afterEach(() => vi.unstubAllGlobals());
+
+    it('sends every zone and the config in one call', async () => {
+        const native = makeNative();
+        native.invoke.mockResolvedValue({ success: true });
+        vi.stubGlobal('window', { fb2k: native });
+        const { tray } = await import('./tray.js');
+
+        const top = [{ id: 't', label: 'T' }];
+        const playback = [{ id: 'p', label: 'P', playbackAction: 'next' as const }];
+        const bottom = [{ id: 'b', label: 'B' }];
+        await tray.setMenuZones({ top, playback, bottom }, { render: 'webview' });
+
+        expect(native.invoke).toHaveBeenCalledTimes(1);
+        expect(native.invoke).toHaveBeenCalledWith('tray.setMenuZones', {
+            top,
+            playback,
+            bottom,
+            config: { render: 'webview' },
+        });
+    });
+
+    // On the host a missing zone key already means "clear the zone" and a
+    // missing config "keep the stored one", so the wrapper forwards only what
+    // it was given.
+    it('leaves out the zones and config the caller did not give', async () => {
+        const native = makeNative();
+        native.invoke.mockResolvedValue({ success: true });
+        vi.stubGlobal('window', { fb2k: native });
+        const { tray } = await import('./tray.js');
+
+        await tray.setMenuZones({ bottom: [{ id: 'b', label: 'B' }] });
+
+        const payload = native.invoke.mock.calls[0][1] as Record<string, unknown>;
+        expect(Object.keys(payload)).toEqual(['bottom']);
+    });
+});

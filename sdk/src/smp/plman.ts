@@ -1,5 +1,6 @@
 import type { JsonValue } from '../types/json.js';
 import type { JsonObject } from '../types/json.js';
+import type { PlaylistGetTracksResponse } from '../types/generated/responses.js';
 /**
  * `plman` — Spider Monkey Panel playlist manager compatibility layer.
  *
@@ -15,60 +16,12 @@ import type { JsonObject } from '../types/json.js';
  */
 
 import type { SmpBridgeShape } from './bridgeShape.js';
+import { typedCall } from '../utils/typedCall.js';
 import { FbMetadbHandle } from './classes/FbMetadbHandle.js';
 import { FbMetadbHandleList } from './classes/FbMetadbHandleList.js';
+import { smpWarn } from './smpLog.js';
 import type { SMPPlman, SmpCompatCache, SmpHandleLike, SmpPlaybackQueueItem } from './types.js';
-import { toHandleId } from './utils.js';
-
-const LOG_PREFIX = '[SMP-Compat]';
-
-function _warn(...args: unknown[]): void {
-    try {
-        // eslint-disable-next-line no-console
-        console.warn(LOG_PREFIX, ...args);
-    } catch {
-        /* ignore */
-    }
-}
-
-interface PlanInvokeOk {
-    success?: boolean;
-    [key: string]: JsonValue;
-}
-
-interface PlanCreateOk {
-    index?: number;
-    success?: boolean;
-    [key: string]: JsonValue;
-}
-
-interface PlanInsertOk {
-    addedCount?: number;
-    insertIndex?: number;
-    countBefore?: number;
-    [key: string]: JsonValue;
-}
-
-interface PlanFocusOk {
-    index?: number;
-    [key: string]: JsonValue;
-}
-
-interface PlanSelectionOk {
-    items?: number[];
-    [key: string]: JsonValue;
-}
-
-interface PlanCountOk {
-    count?: number;
-    [key: string]: JsonValue;
-}
-
-interface PlanAddPathsOk {
-    addedCount?: number;
-    countBefore?: number;
-    [key: string]: JsonValue;
-}
+import { toHandleId, successOf } from './utils.js';
 
 /** Coerce a number / number-like iterable into a flat numeric array. */
 function _toIndexArray(listLike: unknown): number[] {
@@ -107,7 +60,7 @@ export function buildPlman(
     cache: SmpCompatCache,
     schedulePlaylistRefresh: () => void,
 ): SMPPlman {
-    const _invoke = fb.invoke.bind(fb);
+    const _invoke = typedCall(fb.invoke.bind(fb));
 
     const plman = {} as SMPPlman;
 
@@ -122,7 +75,7 @@ export function buildPlman(
                 const oldValue = cache.activePlaylist;
                 cache.activePlaylist = n;
                 _invoke('playlist.setActive', { playlist: n }).catch((e) => {
-                    _warn('plman.ActivePlaylist set failed, rolling back cache:', e);
+                    smpWarn('plman.ActivePlaylist set failed, rolling back cache:', e);
                     cache.activePlaylist = oldValue;
                     schedulePlaylistRefresh();
                 });
@@ -144,7 +97,7 @@ export function buildPlman(
                 const oldValue = cache.playbackOrder;
                 cache.playbackOrder = n;
                 _invoke('playback.setPlaybackOrder', { order: n }).catch((e) => {
-                    _warn('plman.PlaybackOrder set failed, rolling back cache:', e);
+                    smpWarn('plman.PlaybackOrder set failed, rolling back cache:', e);
                     cache.playbackOrder = oldValue;
                 });
             },
@@ -210,12 +163,12 @@ export function buildPlman(
         // always appends. The argument is accepted for SMP API
         // compatibility but silently ignored.
         const keepSorted = !!((flags ?? 0) & 1);
-        const res = (await _invoke('playlist.createAutoplaylist', {
+        const res = successOf(await _invoke('playlist.createAutoplaylist', {
             name: String(name ?? 'New Autoplaylist'),
             query: String(query ?? ''),
             sort: String(sort ?? ''),
             keepSorted,
-        })) as PlanCreateOk;
+        }));
         schedulePlaylistRefresh();
         return typeof res?.index === 'number' ? res.index | 0 : -1;
     };
@@ -225,10 +178,10 @@ export function buildPlman(
         name: string,
     ): Promise<boolean> => {
         const idx = playlistIdx | 0;
-        const res = (await _invoke('playlist.rename', {
+        const res = successOf(await _invoke('playlist.rename', {
             playlist: idx,
             name: String(name ?? ''),
-        })) as PlanInvokeOk;
+        }));
         schedulePlaylistRefresh();
         return !!res?.success;
     };
@@ -242,25 +195,25 @@ export function buildPlman(
             name: String(name ?? 'New Playlist'),
         };
         if (pos >= 0) params.position = pos;
-        const res = (await _invoke('playlist.create', params)) as PlanCreateOk;
+        const res = successOf(await _invoke('playlist.create', params));
         schedulePlaylistRefresh();
         return typeof res?.index === 'number' ? res.index | 0 : -1;
     };
 
     plman.RemovePlaylist = async (playlistIdx: number): Promise<boolean> => {
         const idx = playlistIdx | 0;
-        const res = (await _invoke('playlist.remove', {
+        const res = successOf(await _invoke('playlist.remove', {
             playlist: idx,
-        })) as PlanInvokeOk;
+        }));
         schedulePlaylistRefresh();
         return !!res?.success;
     };
 
     plman.ClearPlaylist = async (playlistIdx: number): Promise<boolean> => {
         const idx = playlistIdx | 0;
-        const res = (await _invoke('playlist.clear', {
+        const res = successOf(await _invoke('playlist.clear', {
             playlist: idx,
-        })) as PlanInvokeOk;
+        }));
         schedulePlaylistRefresh();
         return !!res?.success;
     };
@@ -269,9 +222,9 @@ export function buildPlman(
         playlistIdx: number,
     ): Promise<number> => {
         const idx = playlistIdx | 0;
-        const res = (await _invoke('playlist.getFocusedTrack', {
+        const res = successOf(await _invoke('playlist.getFocusedTrack', {
             playlist: idx,
-        })) as PlanFocusOk;
+        }));
         return typeof res?.index === 'number' ? res.index | 0 : -1;
     };
 
@@ -281,10 +234,10 @@ export function buildPlman(
     ): Promise<boolean> => {
         const idx = playlistIdx | 0;
         const item = itemIdx | 0;
-        const res = (await _invoke('playlist.setFocusedTrack', {
+        const res = successOf(await _invoke('playlist.setFocusedTrack', {
             playlist: idx,
             index: item,
-        })) as PlanInvokeOk;
+        }));
         return !!res?.success;
     };
 
@@ -298,26 +251,27 @@ export function buildPlman(
         if (indices.length === 0) return true;
 
         if (state) {
-            const res = (await _invoke('playlist.setSelection', {
+            const res = successOf(await _invoke('playlist.setSelection', {
                 playlist: idx,
                 indices,
                 clearOthers: false,
-            })) as PlanInvokeOk;
+            }));
             return !!res?.success;
         }
 
-        // Deselect: rebuild selection as (current - indices)
-        const cur = (await _invoke('playlist.getSelection', { playlist: idx }).catch(
-            () => null,
-        )) as PlanSelectionOk | null;
-        const curItems = Array.isArray(cur?.items) ? cur!.items! : [];
+        // Deselect: rebuild selection as (current - indices), written back to
+        // the playlist the selection was read from even if the index moved.
+        const cur = successOf(
+            await _invoke('playlist.getSelection', { playlist: idx }).catch(() => null),
+        );
+        if (!cur?.playlistGuid) return false;
         const toRemove = new Set(indices);
-        const toKeep = curItems.filter((i: number) => !toRemove.has(i));
-        const res = (await _invoke('playlist.setSelection', {
-            playlist: idx,
+        const toKeep = cur.items.filter((i: number) => !toRemove.has(i));
+        const res = successOf(await _invoke('playlist.setSelection', {
+            playlistGuid: cur.playlistGuid,
             indices: toKeep,
             clearOthers: true,
-        })) as PlanInvokeOk;
+        }));
         return !!res?.success;
     };
 
@@ -325,9 +279,9 @@ export function buildPlman(
         playlistIdx: number,
     ): Promise<boolean> => {
         const idx = playlistIdx | 0;
-        const res = (await _invoke('playlist.deselectAll', {
+        const res = successOf(await _invoke('playlist.deselectAll', {
             playlist: idx,
-        })) as PlanInvokeOk;
+        }));
         return !!res?.success;
     };
 
@@ -339,31 +293,34 @@ export function buildPlman(
         const doCrop = !!crop;
 
         if (!doCrop) {
-            const res = (await _invoke('playlist.removeSelectedTracks', {
+            const res = successOf(await _invoke('playlist.removeSelectedTracks', {
                 playlist: idx,
-            })) as PlanInvokeOk;
+            }));
             schedulePlaylistRefresh();
             return !!res?.success;
         }
 
-        // Crop = remove unselected
-        const sel = (await _invoke('playlist.getSelection', { playlist: idx }).catch(
-            () => null,
-        )) as PlanSelectionOk | null;
-        const selected = Array.isArray(sel?.items) ? sel!.items! : [];
+        // Crop = remove unselected. Every step after the first names the
+        // playlist the selection was read from, so a playlist added or removed
+        // in between cannot turn this into a crop of another one.
+        const sel = successOf(
+            await _invoke('playlist.getSelection', { playlist: idx }).catch(() => null),
+        );
+        if (!sel?.playlistGuid) return false;
+        const target = { playlistGuid: sel.playlistGuid };
+        const selected = sel.items;
 
         if (selected.length === 0) {
-            const res = (await _invoke('playlist.clear', {
-                playlist: idx,
-            })) as PlanInvokeOk;
+            const res = successOf(await _invoke('playlist.clear', target));
             schedulePlaylistRefresh();
             return !!res?.success;
         }
 
-        const cnt = (await _invoke('playlist.getTrackCount', { playlist: idx }).catch(
-            () => ({ count: 0 }),
-        )) as PlanCountOk;
-        const total = typeof cnt?.count === 'number' ? cnt.count | 0 : 0;
+        const cnt = successOf(
+            await _invoke('playlist.getTrackCount', target).catch(() => null),
+        );
+        if (typeof cnt?.count !== 'number') return false;
+        const total = cnt.count | 0;
 
         const keep = new Set(selected.map((n: number) => n | 0));
         const remove: number[] = [];
@@ -372,10 +329,10 @@ export function buildPlman(
         }
 
         if (remove.length > 0) {
-            const res = (await _invoke('playlist.removeTracks', {
-                playlist: idx,
+            const res = successOf(await _invoke('playlist.removeTracks', {
+                ...target,
                 items: remove,
-            })) as PlanInvokeOk;
+            }));
             schedulePlaylistRefresh();
             return !!res?.success;
         }
@@ -389,12 +346,12 @@ export function buildPlman(
         selectedOnly?: boolean,
     ): Promise<boolean> => {
         const idx = playlistIdx | 0;
-        const res = (await _invoke('playlist.sort', {
+        const res = successOf(await _invoke('playlist.sort', {
             playlist: idx,
             pattern: String(pattern ?? '%title%'),
             selectedOnly: !!selectedOnly,
             descending: false,
-        })) as PlanInvokeOk;
+        }));
         return !!res?.success;
     };
 
@@ -412,11 +369,11 @@ export function buildPlman(
     ): Promise<boolean> => {
         const idx = playlistIdx | 0;
         const d = delta | 0;
-        const res = (await _invoke('playlist.moveTracks', {
+        const res = successOf(await _invoke('playlist.moveTracks', {
             playlist: idx,
             items: [],
             delta: d,
-        })) as PlanInvokeOk;
+        }));
         return !!res?.success;
     };
 
@@ -428,7 +385,7 @@ export function buildPlman(
         const params: JsonObject = { playlist: idx };
         const newName = String(name ?? '');
         if (newName) params.name = newName;
-        const res = (await _invoke('playlist.duplicate', params)) as PlanCreateOk;
+        const res = successOf(await _invoke('playlist.duplicate', params));
         schedulePlaylistRefresh();
         return typeof res?.index === 'number' ? res.index | 0 : -1;
     };
@@ -445,20 +402,22 @@ export function buildPlman(
                 ? Array.from(locations as Iterable<string>, (s) => String(s))
                 : [];
 
-        const res = (await _invoke('playlist.addPaths', {
+        const res = successOf(await _invoke('playlist.addPaths', {
             playlist: idx,
             paths: locs,
-        })) as PlanAddPathsOk;
+        }));
         schedulePlaylistRefresh();
 
         const added = typeof res?.addedCount === 'number' ? res.addedCount | 0 : 0;
 
-        if (select && added > 0 && typeof res?.countBefore === 'number') {
+        // The rows were counted in the playlist the tracks went into; select
+        // them there, by GUID, even if its index moved meanwhile.
+        if (select && added > 0 && res?.playlistGuid) {
             const start = res.countBefore | 0;
             const indices: number[] = [];
             for (let i = 0; i < added; i++) indices.push(start + i);
             await _invoke('playlist.setSelection', {
-                playlist: idx,
+                playlistGuid: res.playlistGuid,
                 indices,
                 clearOthers: true,
             }).catch(() => null);
@@ -473,9 +432,9 @@ export function buildPlman(
         playlistIdx: number,
     ): Promise<FbMetadbHandleList> => {
         const idx = playlistIdx | 0;
-        const res = (await _invoke('playlist.getSelectedTracks', {
+        const res = successOf(await _invoke('playlist.getSelectedTracks', {
             playlist: idx,
-        })) as { tracks?: unknown[] } | null;
+        }));
         const tracks: unknown[] = Array.isArray(res?.tracks) ? res!.tracks! : [];
         const list = new FbMetadbHandleList();
         for (const t of tracks) {
@@ -493,14 +452,18 @@ export function buildPlman(
 
         let start = 0;
         let total: number | null = null;
+        // The first page names the playlist by index; the later pages name the
+        // playlist that page came from, so the pages cannot mix two playlists.
+        let target: { playlist: number } | { playlistGuid: string } = { playlist: idx };
 
         while (total === null || start < total) {
-            const res = (await _invoke('playlist.getTracks', {
-                playlist: idx,
-                start,
-                count: chunk,
-            })) as { tracks?: unknown[]; total?: number } | null;
-            const tracks: unknown[] = res?.tracks ?? [];
+            // Annotated because `target` is assigned from `res` below.
+            const res: PlaylistGetTracksResponse | undefined = successOf(
+                await _invoke('playlist.getTracks', { ...target, start, count: chunk }),
+            );
+            if (!res?.playlistGuid) break;
+            target = { playlistGuid: res.playlistGuid };
+            const tracks: unknown[] = res.tracks ?? [];
             if (!Array.isArray(tracks) || tracks.length === 0) break;
 
             for (const t of tracks) {
@@ -542,22 +505,23 @@ export function buildPlman(
 
         if (handles.length === 0) return 0;
 
-        const res = (await _invoke('playlist.insertTracks', {
+        const res = successOf(await _invoke('playlist.insertTracks', {
             playlist: idx,
             position: pos,
             handles,
-        })) as PlanInsertOk;
+        }));
         schedulePlaylistRefresh();
 
         const added = typeof res?.addedCount === 'number' ? res.addedCount | 0 : 0;
 
-        if (select && added > 0) {
+        // Selected in the playlist the tracks went into, by GUID, as in AddLocations.
+        if (select && added > 0 && res?.playlistGuid) {
             const start =
-                typeof res?.insertIndex === 'number' ? res.insertIndex | 0 : pos;
+                typeof res.insertIndex === 'number' ? res.insertIndex | 0 : pos;
             const indices: number[] = [];
             for (let i = 0; i < added; i++) indices.push(start + i);
             await _invoke('playlist.setSelection', {
-                playlist: idx,
+                playlistGuid: res.playlistGuid,
                 indices,
                 clearOthers: true,
             }).catch(() => null);
@@ -571,12 +535,12 @@ export function buildPlman(
     ): Promise<number> => {
         const id = toHandleId(handleLike);
         if (!id) return 0;
-        // Strip subsong suffix because queue.addPaths takes plain paths.
-        const path = id.split('|subsong:')[0];
-        const res = (await _invoke('queue.addPaths', {
-            paths: [path],
+        // queue.addPaths accepts the `|subsong:N` suffix, so a subsong is
+        // queued as itself rather than as the file's first subsong.
+        const res = successOf(await _invoke('queue.addPaths', {
+            paths: [id],
             useQueuePlaylist: true,
-        })) as { addedCount?: number; success?: boolean } | null;
+        }));
         return typeof res?.addedCount === 'number'
             ? res.addedCount | 0
             : res?.success
@@ -585,7 +549,7 @@ export function buildPlman(
     };
 
     plman.GetPlaybackQueueContents = async (): Promise<SmpPlaybackQueueItem[]> => {
-        const res = (await _invoke('queue.get', {})) as { items?: unknown[] } | null;
+        const res = successOf(await _invoke('queue.get', {}));
         const items: unknown[] = Array.isArray(res?.items) ? res!.items! : [];
         return items.map((rawItem) => {
             const it = rawItem as {
@@ -618,15 +582,15 @@ export function buildPlman(
     ): Promise<boolean> => {
         const pl = playlistIdx | 0;
         const item = playlistItemIdx | 0;
-        const res = (await _invoke('queue.add', {
+        const res = successOf(await _invoke('queue.add', {
             playlist: pl,
             track: item,
-        })) as PlanInvokeOk;
+        }));
         return !!res?.success;
     };
 
     plman.GetPlaybackQueueHandles = async (): Promise<FbMetadbHandleList> => {
-        const res = (await _invoke('queue.get', {})) as { items?: unknown[] } | null;
+        const res = successOf(await _invoke('queue.get', {}));
         const items: unknown[] = Array.isArray(res?.items) ? res!.items! : [];
         const list = new FbMetadbHandleList();
         for (const it of items) {
@@ -641,9 +605,9 @@ export function buildPlman(
     ): Promise<boolean> => {
         const pl = playlistIdx | 0;
         const item = itemIdx | 0;
-        const res = (await _invoke('playlist.getSelection', {
+        const res = successOf(await _invoke('playlist.getSelection', {
             playlist: pl,
-        })) as PlanSelectionOk;
+        }));
         const selected = Array.isArray(res?.items) ? res.items! : [];
         return selected.includes(item);
     };
@@ -656,7 +620,7 @@ export function buildPlman(
         const findFn = plman.FindPlaylist as (name: string) => number;
         const idx = findFn(n);
         if (idx >= 0) return idx;
-        const res = (await _invoke('playlist.create', { name: n })) as PlanCreateOk;
+        const res = successOf(await _invoke('playlist.create', { name: n }));
         schedulePlaylistRefresh();
         return typeof res?.index === 'number' ? res.index | 0 : -1;
     };
@@ -666,14 +630,16 @@ export function buildPlman(
         const f = from | 0;
         const t = to | 0;
         if (f < 0 || f >= count || t < 0 || t >= count || f === t) return false;
-        // Build new order array: move f to position t.
-        const order: number[] = [];
-        for (let i = 0; i < count; i++) order.push(i);
-        order.splice(f, 1);
-        order.splice(t, 0, f);
-        const res = (await _invoke('playlist.reorderPlaylists', {
-            newOrder: order,
-        })) as PlanInvokeOk;
+        // Built from the cached playlists the indices refer to, and sent as
+        // GUIDs: the host fails the move when the playlists changed since the
+        // cache was read, instead of moving whichever playlist is at `from` now.
+        const guids = cache.playlists.map((p) => p.guid);
+        if (guids.length !== count) return false;
+        const [moved] = guids.splice(f, 1);
+        guids.splice(t, 0, moved!);
+        const res = successOf(await _invoke('playlist.reorderPlaylists', {
+            newOrderGuids: guids,
+        }));
         schedulePlaylistRefresh();
         return !!res?.success;
     };

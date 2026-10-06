@@ -1,3 +1,41 @@
+import { subscribe } from '../subscribe.js';
+import { call } from '../call.js';
+import { playlistTarget, type PlaylistRef } from '../playlistRef.js';
+import type {
+    LibraryDirectoryBatch,
+    LibraryEnumerateDirectoriesOptions,
+    LibraryEnumerateDirectoriesSummary,
+    LibraryEnumerateFieldValuesOptions,
+    LibraryEnumerateTracksOptions,
+    LibraryEnumerateTracksPage,
+    LibraryEnumerateTracksSummary,
+    LibraryEnumerateTreeOptions,
+    LibraryEnumerateTreeSummary,
+    ApiFailure,
+    LibraryPagedTracksResponse,
+    LibraryTrack,
+    LibraryTreeBatch,
+} from '../../types/responses.js';
+import type {
+    LibraryBrowseTreeParams,
+    LibraryGetAlbumsParams,
+    LibraryGetArtistAlbumsParams,
+    LibraryGetAllParams,
+    LibraryGetArtistsParams,
+    LibraryGetRecentlyAddedParams,
+    LibrarySearchParams,
+} from '../../types/generated/params.js';
+import type { LibraryGetAllResultPayload } from '../../types/events.js';
+
+/** @deprecated Use `Omit<LibrarySearchParams, 'query' | 'limit'>`. */
+export type LibrarySearchOptions = Omit<LibrarySearchParams, 'query' | 'limit'>;
+
+/** @deprecated Use `LibraryGetAlbumsParams`. */
+export type LibraryGetAlbumsOptions = Pick<LibraryGetAlbumsParams, 'limit'>;
+
+/** Parameters of {@link library.browseTree}; the generated declaration type. */
+export type { LibraryBrowseTreeParams };
+
 /**
  * `library` — media-library namespace.
  *
@@ -9,92 +47,34 @@
  * - {@link library.enumerateTree}        — root-aware BFS/DFS over the
  *                                          typed library tree.
  */
-
-import { bridge } from '../Bridge.js';
-import type {
-    BaseResponse,
-    LibraryAddToPlaylistResponse,
-    LibraryAlbumTracksResponse,
-    LibraryAlbumsResponse,
-    LibraryArtistAlbumsResponse,
-    LibraryArtistTracksResponse,
-    LibraryArtistsResponse,
-    LibraryBrowseDirectoryResponse,
-    LibraryBrowseTreeResponse,
-    LibraryCacheStatsResponse,
-    LibraryDirectoryBatch,
-    LibraryEnumerateDirectoriesOptions,
-    LibraryInvalidateCacheResponse,
-    LibraryRandomTracksResponse,
-    LibraryEnumerateDirectoriesSummary,
-    LibraryEnumerateFieldValuesOptions,
-    LibraryEnumerateTracksOptions,
-    LibraryEnumerateTracksPage,
-    LibraryEnumerateTracksSummary,
-    LibraryEnumerateTreeOptions,
-    LibraryEnumerateTreeSummary,
-    LibraryFieldValuesResponse,
-    LibraryGenresResponse,
-    LibraryGetByPathResponse,
-    LibraryGetRootsResponse,
-    LibraryPagedTracksResponse,
-    LibraryQueryResponse,
-    LibraryRecentlyAddedResponse,
-    LibrarySearchResponse,
-    LibraryStats,
-    LibraryStatus,
-    LibraryTreeBatch,
-    TrackInfo,
-} from '../../types/responses.js';
-import type {
-    LibraryGetAlbumsParams,
-    LibraryGetArtistAlbumsParams,
-    LibraryGetArtistsParams,
-    LibrarySearchParams,
-} from '../../types/generated/params.js';
-import type { LibraryGetAllResultPayload } from '../../types/events.js';
-
-/** @deprecated Use `Omit<LibrarySearchParams, 'query' | 'limit'>`. */
-export type LibrarySearchOptions = Omit<LibrarySearchParams, 'query' | 'limit'>;
-
-/** @deprecated Use `LibraryGetAlbumsParams`. */
-export type LibraryGetAlbumsOptions = Pick<LibraryGetAlbumsParams, 'limit'>;
-
-export interface LibraryBrowseTreeParams {
-    rootId: string;
-    pathId?: string;
-    includeFiles?: boolean;
-    recursiveFiles?: boolean;
-}
-
 export const library = {
     // ── Search / aggregation ────────────────────────────────────────────
     /**
      * Run a foobar2000 query expression against the media library.
      *
      * `options.offset` / `limit` page the hit list; `total` and `hasMore`
-     * report the full extent. `options.fields` projects each row down to
-     * the requested {@link TrackInfo} keys — runtime rows then hold only
-     * those keys while the declared type stays complete. An invalid
-     * `fields` selection resolves — never rejects — with
-     * `{ success: false, code: 'INVALID_PARAMS' }`.
+     * report the full extent. `options.fields` narrows each row to the named
+     * keys of a library track row, which is why rows are typed as
+     * `LibraryTrackPartial`. An unknown name resolves — never rejects — with
+     * `{ success: false, code: 'INVALID_PARAMS' }` and the names under
+     * `details.unknownFields`.
      */
     search: (
         query: string,
         limit?: number,
         options?: Omit<LibrarySearchParams, 'query' | 'limit'>,
     ) =>
-        bridge.invoke<LibrarySearchResponse>('library.search', {
+        call('library.search', {
             query,
-            limit,
+            ...(limit != null ? { limit } : {}),
             ...(options && typeof options === 'object' ? options : {}),
         }),
     getAlbums: (options?: number | LibraryGetAlbumsParams) =>
-        bridge.invoke<LibraryAlbumsResponse>(
+        call(
             'library.getAlbums',
-            typeof options === 'number'
+            (typeof options === 'number'
                 ? { limit: options }
-                : { ...(options || {}) },
+                : { ...(options || {}) }),
         ),
     /**
      * List credited artists with per-artist aggregates.
@@ -109,101 +89,150 @@ export const library = {
         limit?: number,
         options?: Omit<LibraryGetArtistsParams, 'limit'>,
     ) =>
-        bridge.invoke<LibraryArtistsResponse>('library.getArtists', {
+        call('library.getArtists', {
             limit,
             ...(options && typeof options === 'object' ? options : {}),
         }),
-    getGenres: () => bridge.invoke<LibraryGenresResponse>('library.getGenres'),
-    getStats: () => bridge.invoke<LibraryStats>('library.getStats'),
-    getStatus: () => bridge.invoke<LibraryStatus>('library.getStatus'),
-    getCount: () => bridge.invoke<{ count: number }>('library.getCount'),
+    getGenres: () => call('library.getGenres'),
+    getStats: () => call('library.getStats'),
+    getStatus: () => call('library.getStatus'),
+    getCount: () => call('library.getCount'),
     /**
-     * Fetch library tracks. Resolves synchronously for paged requests and
-     * cache hits. When the host offloads a full-library serialization to a
-     * background worker it returns `{ pending: true, requestId }`; this
-     * wrapper then awaits the `library:getAllResult` event (filtered by
-     * `requestId`) with a client-side timeout (default 60 s, override via
-     * `opts.timeout`). The resolved shape is always a
-     * {@link LibraryPagedTracksResponse}, so callers are unaffected by the
-     * threading model.
+     * Fetch library tracks: `count` tracks from position `start`, sent as the
+     * host's `offset` and `limit` (host defaults `0` and `100`). Resolves
+     * synchronously for paged requests and cache hits.
+     *
+     * Options:
+     * - `useCache` — from `start` 0, answer from the list the host kept after
+     *   an earlier request from 0 that covered every track. Sent only when
+     *   given; the host default is `true`. A request from 0 covering every
+     *   track is kept either way.
+     * - `asyncResult` — let the host build a request from 0 that covers every
+     *   track off the main thread. Defaults to `true` here (the host's own
+     *   default is `false`); it takes effect only with `useCache` and not when
+     *   the kept list answers. The host then answers `{ pending: true,
+     *   requestId }` and delivers the page as the `library:getAllResult`
+     *   event; this wrapper listens for that event before sending the call,
+     *   so an early delivery is not missed, and resolves with the page.
+     *   Pass `false` to have the host build the page on the main thread.
+     * - `timeout` — milliseconds to wait for the event, default 60 000;
+     *   `0` or less waits indefinitely.
+     *
+     * Either way it resolves with a {@link LibraryPagedTracksResponse} or an
+     * `ApiFailure`, so callers are unaffected by the threading model. A
+     * failure envelope from the call resolves as it is. A list the host failed
+     * to build and a timeout both resolve with `OPERATION_FAILED`;
+     * `details.requestId` names the request, and a timeout also carries
+     * `details.timeoutMs`. The returned promise rejects only when the call
+     * itself rejects. The event listener is removed in every case.
      */
     getAll: async (
         start?: number,
         count?: number,
-        opts: { timeout?: number } = {},
-    ): Promise<LibraryPagedTracksResponse> => {
-        const result = await bridge.invoke<
-            LibraryPagedTracksResponse & {
-                pending?: boolean;
-                requestId?: string;
-            }
-        >('library.getAll', {
-            start,
-            count,
-            asyncResult: true,
-        });
+        opts: Pick<LibraryGetAllParams, 'useCache' | 'asyncResult'> & {
+            timeout?: number;
+        } = {},
+    ): Promise<LibraryPagedTracksResponse | ApiFailure> => {
+        const asyncResult = opts.asyncResult !== false;
+        const params = {
+            ...(start != null ? { offset: start } : {}),
+            ...(count != null ? { limit: count } : {}),
+            ...(opts.useCache != null ? { useCache: opts.useCache } : {}),
+            asyncResult,
+        } satisfies LibraryGetAllParams;
 
-        if (result?.pending === true && result.requestId) {
-            const timeoutMs = opts.timeout ?? 60000;
-            const requestId = result.requestId;
-            return new Promise<LibraryPagedTracksResponse>(
-                (resolve, reject) => {
-                    let timer: ReturnType<typeof setTimeout> | null = null;
-                    const cleanup = (): void => {
-                        off();
-                        if (timer) {
-                            clearTimeout(timer);
-                            timer = null;
-                        }
-                    };
-                    const off = bridge.on(
-                        'library:getAllResult',
-                        (raw: unknown) => {
-                            const e = raw as LibraryGetAllResultPayload;
-                            if (e?.requestId !== requestId) return;
-                            cleanup();
-                            if (e.error) {
-                                reject(e);
-                                return;
-                            }
-                            resolve(e as LibraryPagedTracksResponse);
-                        },
-                    );
-                    if (timeoutMs > 0) {
-                        timer = setTimeout(() => {
-                            cleanup();
-                            reject({
-                                success: false,
-                                error: 'TIMEOUT',
-                                message:
-                                    'library.getAll timed out after ' +
-                                    timeoutMs +
-                                    'ms',
-                                requestId,
-                            });
-                        }, timeoutMs);
-                    }
-                },
-            );
+        if (!asyncResult) {
+            const direct = await call('library.getAll', params);
+            return direct.success === false ? direct : (direct as LibraryPagedTracksResponse);
         }
 
-        return result;
+        // The worker can post the page before the pending answer is handled,
+        // so listen first and hold what arrives until the request id is known.
+        const early: LibraryGetAllResultPayload[] = [];
+        let expectedId: string | undefined;
+        let deliver: ((e: LibraryGetAllResultPayload) => void) | undefined;
+        const off = subscribe('library:getAllResult', (e: LibraryGetAllResultPayload) => {
+            if (!deliver) {
+                early.push(e);
+                return;
+            }
+            if (e?.requestId === expectedId) deliver(e);
+        });
+
+        const result = await call('library.getAll', params).catch((err: unknown) => {
+            off();
+            throw err;
+        });
+
+        if (result.success === false || result.pending !== true || !result.requestId) {
+            off();
+            // A synchronous page carries the page fields; only a pending answer lacks them.
+            return result.success === false ? result : (result as LibraryPagedTracksResponse);
+        }
+
+        const requestId = result.requestId;
+        const timeoutMs = opts.timeout ?? 60000;
+        return new Promise<LibraryPagedTracksResponse | ApiFailure>((resolve) => {
+            let timer: ReturnType<typeof setTimeout> | null = null;
+            const settle = (e: LibraryGetAllResultPayload): void => {
+                off();
+                if (timer) {
+                    clearTimeout(timer);
+                    timer = null;
+                }
+                if (e.error) {
+                    resolve({
+                        success: false,
+                        error: e.error,
+                        code: 'OPERATION_FAILED',
+                        details: { requestId },
+                    });
+                    return;
+                }
+                resolve({ ...e, success: true });
+            };
+            const held = early.find((e) => e?.requestId === requestId);
+            early.length = 0;
+            if (held) {
+                settle(held);
+                return;
+            }
+            expectedId = requestId;
+            deliver = settle;
+            if (timeoutMs > 0) {
+                timer = setTimeout(() => {
+                    off();
+                    timer = null;
+                    resolve({
+                        success: false,
+                        error: `library.getAll timed out after ${timeoutMs} ms`,
+                        code: 'OPERATION_FAILED',
+                        details: { requestId, timeoutMs },
+                    });
+                }, timeoutMs);
+            }
+        });
     },
-    refresh: () => bridge.invoke<BaseResponse>('library.refresh'),
+    refresh: () => call('library.refresh'),
     getByPath: (path: string) =>
-        bridge.invoke<LibraryGetByPathResponse>('library.getByPath', {
+        call('library.getByPath', {
             path,
         }),
-    addToPlaylist: (paths: string[], playlist?: number) =>
-        bridge.invoke<LibraryAddToPlaylistResponse>('library.addToPlaylist', {
+    /**
+     * Append `paths` to a playlist, by default the active one. Pass the playlist's `guid` rather
+     * than its index when the playlist list may change between choosing the target and the call,
+     * for example while a menu is open.
+     */
+    addToPlaylist: (paths: string[], playlist?: PlaylistRef) =>
+        call('library.addToPlaylist', {
             paths,
-            ...(playlist != null ? { playlist } : {}),
+            ...(playlist != null ? playlistTarget(playlist) : {}),
         }),
 
     // ── Roots / typed tree ──────────────────────────────────────────────
-    getRoots: () => bridge.invoke<LibraryGetRootsResponse>('library.getRoots'),
+    getRoots: () => call('library.getRoots'),
     browseTree: (params: LibraryBrowseTreeParams) =>
-        bridge.invoke<LibraryBrowseTreeResponse>('library.browseTree', {
+        call('library.browseTree', {
             rootId: params.rootId,
             ...(params.pathId != null ? { pathId: params.pathId } : {}),
             ...(params.includeFiles != null
@@ -216,7 +245,7 @@ export const library = {
 
     // ── Filesystem-based directory listing ──────────────────────────────
     browseDirectory: (path: string, includeFiles?: boolean) =>
-        bridge.invoke<LibraryBrowseDirectoryResponse>(
+        call(
             'library.browseDirectory',
             {
                 path,
@@ -224,18 +253,25 @@ export const library = {
             },
         ),
     /**
-     * Tracks on an album, sorted by track number.
+     * Tracks of one album from {@link getAlbums}, sorted by disc number, then
+     * track number, then library order.
      *
-     * `album` and `artist` are both compared byte for byte against the atomic
-     * tag values, so they are case-sensitive. Grouping is by album name alone,
-     * so identically titled albums by different artists come back as one list
-     * — pass `artist` to tell them apart.
+     * Pass the row's `name` and `albumArtist` as they are: both are compared
+     * byte for byte, and `total` then equals the row's `trackCount`. The row's
+     * `artist` is not the same key, and an album artist that is `""` must be
+     * passed as `""`. A pair no row has resolves with no tracks and no `row`.
+     * The grouping is kept by the host until the library changes, so repeated
+     * calls do not rescan the library.
+     *
+     * @example
+     *   const page = await fb.library.getAlbums({ limit: 1 });
+     *   const album = page.success ? page.albums[0] : undefined;
+     *   if (album) {
+     *       const res = await fb.library.getAlbumTracks(album.name, album.albumArtist);
+     *   }
      */
-    getAlbumTracks: (album: string, artist?: string) =>
-        bridge.invoke<LibraryAlbumTracksResponse>('library.getAlbumTracks', {
-            album,
-            ...(artist ? { artist } : {}),
-        }),
+    getAlbumTracks: (album: string, albumArtist: string) =>
+        call('library.getAlbumTracks', { album, albumArtist }),
     /**
      * Albums an artist appears on, as rows shaped like `library.getAlbums`.
      *
@@ -269,18 +305,9 @@ export const library = {
     getArtistAlbums: (
         artist: string,
         limit?: number,
-        options?: Omit<
-            LibraryGetArtistAlbumsParams,
-            'artist' | 'limit' | 'match'
-        > & {
-            /**
-             * Host-side comparison mode. An unrecognised value is refused,
-             * unlike `sort`, which falls back to `name`.
-             */
-            match?: 'exact' | 'substring';
-        },
+        options?: Omit<LibraryGetArtistAlbumsParams, 'artist' | 'limit'>,
     ) =>
-        bridge.invoke<LibraryArtistAlbumsResponse>('library.getArtistAlbums', {
+        call('library.getArtistAlbums', {
             artist,
             ...(limit != null ? { limit } : {}),
             ...(options && typeof options === 'object' ? options : {}),
@@ -295,14 +322,14 @@ export const library = {
      * pulled in.
      */
     getArtistTracks: (artist: string, limit?: number) =>
-        bridge.invoke<LibraryArtistTracksResponse>('library.getArtistTracks', {
+        call('library.getArtistTracks', {
             artist,
             ...(limit != null ? { limit } : {}),
         }),
     getCacheStats: () =>
-        bridge.invoke<LibraryCacheStatsResponse>('library.getCacheStats'),
+        call('library.getCacheStats'),
     getFieldValues: (field: string, limit?: number, separator?: string) =>
-        bridge.invoke<LibraryFieldValuesResponse>('library.getFieldValues', {
+        call('library.getFieldValues', {
             field,
             ...(limit != null ? { limit } : {}),
             ...(separator ? { separator } : {}),
@@ -312,7 +339,7 @@ export const library = {
         field: string,
         options: LibraryEnumerateFieldValuesOptions = {},
     ) =>
-        bridge.invoke<LibraryFieldValuesResponse>('library.getFieldValues', {
+        call('library.getFieldValues', {
             field,
             ...(options?.limit != null ? { limit: options.limit } : {}),
             ...(options?.separator ? { separator: options.separator } : {}),
@@ -350,11 +377,11 @@ export const library = {
                 ? options.onProgress
                 : null;
 
-        const countResult = await bridge.invoke<{ count: number }>(
+        const countResult = await call(
             'library.getCount',
             {},
         );
-        const total = Math.max(0, Number(countResult?.count || 0));
+        const total = Math.max(0, Number((countResult?.success !== false && countResult?.count) || 0));
 
         let pages = 0;
         let fetched = 0;
@@ -365,22 +392,24 @@ export const library = {
                 return { total, fetched, pages, fromCacheHits, aborted: true };
             }
 
-            const page = await bridge.invoke<
-                LibraryPagedTracksResponse & { fromCache?: boolean }
-            >('library.getAll', { offset, limit: pageSize, useCache });
-            const tracks: TrackInfo[] = Array.isArray(page?.tracks)
-                ? page.tracks
+            const page = await call(
+                'library.getAll',
+                { offset, limit: pageSize, useCache },
+            );
+            const ok = page?.success !== false ? page : undefined;
+            const tracks: LibraryTrack[] = Array.isArray(ok?.tracks)
+                ? ok.tracks
                 : [];
-            const items: TrackInfo[] = Array.isArray(page?.items)
-                ? page.items
+            const items: LibraryTrack[] = Array.isArray(ok?.items)
+                ? ok.items
                 : tracks;
-            const currentOffset = Number.isFinite(Number(page?.offset))
-                ? Number(page.offset)
+            const currentOffset = Number.isFinite(Number(ok?.offset))
+                ? Number(ok?.offset)
                 : offset;
-            const currentLimit = Number.isFinite(Number(page?.limit))
-                ? Number(page.limit)
+            const currentLimit = Number.isFinite(Number(ok?.limit))
+                ? Number(ok?.limit)
                 : pageSize;
-            const fromCache = !!page?.fromCache;
+            const fromCache = !!ok?.fromCache;
 
             if (fromCache) fromCacheHits++;
             pages += 1;
@@ -463,15 +492,16 @@ export const library = {
             if (seen.has(current)) continue;
             seen.add(current);
 
-            const result = await bridge.invoke<LibraryBrowseDirectoryResponse>(
+            const result = await call(
                 'library.browseDirectory',
                 { path: current, includeFiles },
             );
-            const directories: string[] = Array.isArray(result?.directories)
-                ? result.directories
+            const ok = result?.success !== false ? result : undefined;
+            const directories: string[] = Array.isArray(ok?.directories)
+                ? ok.directories
                 : [];
-            const files: TrackInfo[] = Array.isArray(result?.files)
-                ? result.files
+            const files: LibraryTrack[] = Array.isArray(ok?.files)
+                ? ok.files
                 : [];
 
             for (const dir of directories) {
@@ -501,7 +531,7 @@ export const library = {
                 visited,
                 pending: pending.length,
                 success: result?.success !== false,
-                error: result?.error,
+                error: result?.success === false ? result.error : undefined,
             };
         }
 
@@ -543,7 +573,7 @@ export const library = {
             if (seen.has(currentPathId)) continue;
             seen.add(currentPathId);
 
-            const result = await bridge.invoke<LibraryBrowseTreeResponse>(
+            const result = await call(
                 'library.browseTree',
                 {
                     rootId,
@@ -600,29 +630,27 @@ export const library = {
 
     // ── Convenience queries ─────────────────────────────────────────────
     getRandomTracks: (count?: number) =>
-        bridge.invoke<LibraryRandomTracksResponse>('library.getRandomTracks', {
+        call('library.getRandomTracks', {
             ...(count != null ? { count } : {}),
         }),
-    getRecentlyAdded: (limit?: number, sortBy?: string) =>
-        bridge.invoke<LibraryRecentlyAddedResponse>('library.getRecentlyAdded', {
+    getRecentlyAdded: (
+        limit?: number,
+        sortBy?: LibraryGetRecentlyAddedParams['sortBy'],
+    ) =>
+        call('library.getRecentlyAdded', {
             ...(limit != null ? { limit } : {}),
             ...(sortBy ? { sortBy } : {}),
         }),
     invalidateCache: () =>
-        bridge.invoke<LibraryInvalidateCacheResponse>('library.invalidateCache'),
-    isEnabled: () => bridge.invoke<{ enabled: boolean }>('library.isEnabled'),
+        call('library.invalidateCache'),
+    isEnabled: () => call('library.isEnabled'),
     /**
      * Run a foobar2000 query expression with an optional Title Formatting
      * sort expression. Sorting is applied before `limit` truncation and
      * `total` reports the untruncated hit count.
      *
-     * `fields` narrows the projection exactly as documented on
-     * {@link library.search}: rows then hold only the requested keys out of
-     * the same 20-name case-sensitive whitelist, omitting the argument
-     * returns all 20, and a malformed list resolves with
-     * `{ success: false, code: 'INVALID_PARAMS' }` plus
-     * `details.unknownFields`. An explicit `null` is forwarded to the host
-     * and rejected there instead of being read as "every field".
+     * `fields` narrows the rows exactly as documented on
+     * {@link library.search}.
      */
     query: (
         query: string,
@@ -630,11 +658,11 @@ export const library = {
         limit?: number,
         fields?: string[],
     ) =>
-        bridge.invoke<LibraryQueryResponse>('library.query', {
+        call('library.query', {
             query,
             ...(sort ? { sort } : {}),
             ...(limit != null ? { limit } : {}),
-            ...(fields !== undefined ? { fields } : {}),
+            ...(fields != null ? { fields } : {}),
         }),
-    rescan: () => bridge.invoke<BaseResponse>('library.rescan'),
+    rescan: () => call('library.rescan'),
 };

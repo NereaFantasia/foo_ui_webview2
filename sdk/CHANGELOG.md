@@ -5,6 +5,491 @@ All notable changes to the foo-webview-sdk will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.0] - 2026-10-06
+
+> **Breaking changes**: `library.getAlbumTracks(album, albumArtist)` names
+> the album by a `library.getAlbums` row, and its result has `albumArtist` in
+> place of `artist`. The namespace methods that resolved with a bare list or
+> `null`, or threw, now resolve with the host's envelope; without a host
+> every call resolves with a `NOT_SUPPORTED` failure instead of
+> `{ mock: true, method }`. Every generated `XxxResponse` is
+> `XxxSuccess | ApiFailure`, so a result field read without checking
+> `success` no longer compiles. Several payload types are narrower,
+> `artwork.getAvailableArtwork` requires `path`, and `FbBaseElement._sub`
+> accepts only names in `FBEventName`. The track events drop `id` and
+> `fullPath`; read `handle`. `LyricsSaveTarget` drops `'config'`. From the
+> host: a declared method refuses an undeclared key or a value of the wrong
+> type with `INVALID_PARAMS`, `queue.addPaths` on a locked playlist fails
+> with `LOCKED` (was `OPERATION_FAILED`), a file drop
+> reaches the page only where a `dragover` handler calls `preventDefault()`,
+> and a page the host does not trust gets `ORIGIN_DENIED` for every call and
+> no events: a popup opened at an `http(s)` URL its opener does not trust, a
+> page that navigated away, `file://` pages, and in development mode any page
+> not on the configured server.
+>
+> The "Earlier 2.0.0" entry further down is a May 2026 version that used the
+> same number before the SDK version realigned with the component at 1.5.0.
+> It was never published to npm.
+
+### Added
+
+- `PlaybackClock` estimates the playback position at any moment between the
+  host's updates, for progress bars, word-timed lyrics and media elements that
+  follow playback. Exported from `foo-webview-sdk/bridge` and reachable as
+  `fb.PlaybackClock` in the `<script>` bundle.
+- `fb.media.getStreamUrl(path)` and `fb.media.getContainerInfo(path)`
+  (experimental): a URL, valid only in the calling document, for playing or
+  reading a local media file, and the tracks, attachments and chapters of an
+  MP4/QuickTime or Matroska/WebM file, read without decoding.
+- `MediaElementFollower` (experimental) keeps a muted media element on
+  foobar2000's playback position through `PlaybackClock`.
+  `setSource(path, { timelineOffset })` selects the file; for a chapter that
+  foobar2000 plays as a subsong, pass the chapter's `start`. Another subsong of
+  the same file keeps the loaded resource.
+- `fb.lyrics.get`, `fb.lyrics.exists` and `fb.lyrics.save` accept a
+  `filename` naming the lyrics file next to the audio file, in place of the
+  automatic candidates; `exists(path, options?)` gains the options argument.
+- `fb.metadata.write` and `fb.metadata.writeBatch` write multivalue tags: a
+  non-empty string array replaces all values of the tag and an empty array
+  removes it. An element that is not a non-empty string without NUL fails that
+  track with `INVALID_PARAMS` before any of its tags are written.
+- `canPlay(track, limits?)` (experimental), also `fb.media.canPlay`, asks the
+  browser whether it can decode a track from `media.getContainerInfo`:
+  `supported`, `smooth` and `powerEfficient` from `MediaCapabilities`, each
+  `'unknown'` when the browser cannot be asked, plus the `canPlayType` hint.
+- `playback.getPosition`, `playback.setPosition`, `playback:seeked`,
+  `playback:timeHighRes` and `playback:stateChanged` carry `hostTime`, the
+  system time the host read the position at in Unix milliseconds, on the clock
+  `Date.now()` reads. On `playback:seeked` it is when foobar2000 reported the
+  seek, and `position` is the seek target.
+- `fb.webview.getSource()` reports where the host loaded the page from: the
+  development server, a URL, a template folder or the built-in page, with the
+  mapped folder and template name, and the active template as configured now.
+- `fb.file.write`, `fb.file.writeBinary` and `fb.file.writeDataUrl` accept
+  `atomic: true`: the host writes a temporary file next to the target and
+  swaps it in with one rename, so a reader never sees a partly written file.
+- `fb.ui.setMaximizeButtonRegion(region?)` reports where the page draws the main
+  window's maximize button, so that on Windows 11 hovering it offers Snap layouts.
+  The host passes the mouse input on the button back to the page. The response's
+  `snapLayouts` says whether the system offers them.
+- `DndEnterPayload`, `DndDropPayload` and the `dnd.getPathsAsync` response carry
+  `source: 'self' | 'other-window' | 'external'`: where the drag started, in this
+  window's page, in another window of the same foobar2000, or anywhere else. The
+  host reads it from a marker any program could imitate, so it is a hint for
+  handling a drop, not a security check. On the response it is absent when no
+  session was found.
+- `unwrap(res)` returns the success branch of a response and `unwrap(res, key)`
+  one field of it; for a failure both throw an `ApiCallError` whose `code` and
+  `details` come from the envelope. Exported from the package entry and from
+  `foo-webview-sdk/bridge`, and reachable as `fb.unwrap` / `fb.ApiCallError`
+  in the `<script>` bundle.
+- `Track` (and every row type built on it, such as `LibraryTrack`,
+  `PlaylistTrack` and `QueueItem`) has `albumArtists: string[]`, the ALBUM
+  ARTIST values in tag order; `albumArtists.join(', ')` equals `albumArtist`.
+  `TrackInfo` gains it as an optional field. The album `library.getAlbums` files
+  a track under is `(album, albumArtists[0])`, or `(album, artists[0])` when the
+  array is empty, which is that row's `name` and `albumArtist`. `albumArtists`
+  is accepted in the `fields` of `library.query`, `library.search` and
+  `playlist.getTracks`.
+- `config.get(key, defaultValue?)`: the optional second argument is sent as
+  the host's `default`, the value answered with `found: false` when the key
+  is not stored. Omitted when `undefined`; falsy JSON values are sent.
+- `console.log`, `console.warn` and `console.error` accept values after the
+  message (`...args: JsonValue[]`). With any, the call is sent as the host's
+  `args` with the message first, and the host writes them on one line
+  separated by spaces, non-strings as JSON text. A lone message is sent as
+  `message`, as before.
+- `library.getAll(start, count, opts)`: `opts.useCache` and `opts.asyncResult`
+  (`LibraryGetAllParams`). `useCache` is sent only when given (host default
+  `true`); `asyncResult` defaults to `true`, as the wrapper always sent it,
+  and `false` makes the host build the page on the main thread. The wrapper
+  now listens for `library:getAllResult` before sending the call, so a page
+  delivered before the pending answer is handled is no longer missed (the
+  call used to wait for the timeout); the listener is removed when the page
+  arrives, the call fails or rejects, or the timeout fires.
+- `queue.remove` accepts an array of positions, sent as the host's `indices`
+  and removed in one call; the response then carries `removedCount`. A
+  single number is sent as `index`, as before.
+- New entry `foo-webview-sdk/schema` for test doubles and other stand-ins for the
+  host: `API_PARAM_SHAPES` lists the parameter keys every declared method accepts,
+  which of them are required, and the same for nested objects;
+  `findParamKeyProblem(method, params)` checks a call against it the way the host
+  does before a handler runs and returns the first key the host would refuse the
+  call for (`unknown` or `missing`), or `null`. Keys starting with `_` pass, and a
+  key whose value is `null` or `undefined` counts as absent, as on the host, which
+  receives the params as JSON. Only key names are checked.
+- Every declared method's `XxxParams` type, `ApiParamsMap` (method name to
+  params) and `ApiMethodMap` (method name to `[params, response]`) are exported
+  from the package entry.
+- `window:activated` and `window:dpiChanged` are listed in `FBEventName` and
+  `FBEventPayloadMap`, with `WindowActivatedPayload` and
+  `WindowDpiChangedPayload`. The host has always sent both to the main
+  window's page.
+- New exported types `MenuSelectPayload`, `MenuDismissPayload` and
+  `MenuValueChangedPayload`, the payloads of `menu:select`, `menu:dismiss` and
+  `menu:valueChanged`.
+- The payloads of `taskbar:buttonClicked`, `tray:beforeContextMenu`,
+  `tray:click`, `tray:doubleClick`, `tray:menuItemClicked` and
+  `webview:processFailed` are exported by name: `TaskbarButtonClickedPayload`,
+  `TrayBeforeContextMenuPayload`, `TrayClickPayload`, `TrayDoubleClickPayload`,
+  `TrayMenuItemClickedPayload` and `WebviewProcessFailedPayload`. They used to
+  be reachable only as `FBEventPayloadMap['<event>']`.
+- `fb.playlist.getMatchingRows(query, playlist?)` resolves with the rows of a
+  playlist whose tracks match a foobar2000 query, in one call however long the
+  playlist is, and
+  `fb.playlist.getTracksAt(playlist, rows, formats?, fields?)` reads rows
+  picked by number, such as those, in the order given. A query the host's
+  parser rejects fails with `INVALID_PARAMS` and `details.param: 'query'`, as
+  it now does in `library.search` and `library.query`.
+- `fb.playlist.reorderPlaylists(order)` takes the new order as GUID strings as
+  well as indices. GUIDs are sent as `newOrderGuids`, and one no playlist has
+  fails with `NOT_FOUND` instead of moving whichever playlist is at an index.
+- `QueueContentRef` and `QueueListRef` accept `{ playlistGuid, item }`, so
+  `fb.queue.setContents` and `fb.queue.insertNext` can name a row's playlist
+  by GUID.
+- Responses that report a playlist by index carry its GUID as `playlistGuid`:
+  the `playlist.*` results, `fb.player.getCurrentTrackIndex()` and
+  `getPlayingPlaylist()` (`null` without a location), `QueueItem`,
+  `queue.addPaths`, `artwork.getByPlaylistItem` and
+  `selection.getViewingTrack`. `PlaylistDuplicateResponse` adds
+  `sourcePlaylistGuid`. The `playlist:*` event payloads carry `playlistGuid`
+  for the playlist they concern; `playlist:created` and `playlist:renamed`
+  carry `guid`, `playlist:activated` `newGuid`, `playlist:reordered` the new
+  order as `guids`, and `playlist:removed` the `indices` and `guids` of the
+  removed playlists.
+- `<fb-playlist-view>` accepts a playlist GUID in `playlist`, and its
+  `fb-track-select`, `fb-track-play` and `fb-track-context` details carry
+  `playlistGuid`. `<fb-playlist-tabs>` puts each playlist's GUID on its tab as
+  `data-guid`; `fb-playlist-select` and `fb-playlist-context` carry `guid`, and
+  `fb-playlist-reorder` carries `newOrderGuids`. `fb-playlist-pick` of
+  `<fb-playlist-selector>` carries `guid`.
+
+### Changed
+
+- **Breaking:** `LyricsSaveTarget` drops `'config'`; the host no longer saves
+  lyrics to the configuration folder, and `'all'` writes the file and embedded
+  targets.
+- **Breaking:** only pages the host trusts can call it or receive its
+  events: pages on its own virtual host, pages it wrote itself, and pages on an
+  origin it navigated the window to (the development server, a panel's URL, or
+  a popup URL its opener already trusted). Calls from any other page reject at
+  once with `ORIGIN_DENIED` instead of timing out. A URL carrying a user name
+  or password no longer passes for a trusted origin, and `file://` pages and
+  other loopback ports are no longer trusted in development mode.
+- **Breaking:** `library.getAlbumTracks(album, albumArtist)` names the album by
+  a `library.getAlbums` row: pass the row's `name` and `albumArtist`, both
+  required and compared byte for byte. It returns exactly the tracks that row
+  groups, so `total` equals its `trackCount`, sorted by disc number, then track
+  number, then library order. The result has `albumArtist` in place of
+  `artist` and the album's `row` (absent when no row matches). The optional
+  `artist` parameter, which matched any `album artist` or `artist` value, is
+  gone. `<fb-library-tree>` follows: album groups carry their album artist as
+  `data-artist`, the `fb-library-select`, `fb-library-play` and
+  `fb-library-context` details report it as `artist`, and `addToPlaylist` on
+  an album row under an artist adds that artist's tracks on the album.
+- **Breaking:** the namespace methods that resolved with a bare list or
+  `null`, or threw, now resolve with the host's envelope like every other
+  method. None of them throws for a failure the host reports, and none turns
+  a failure into an empty array, so a failed call and an empty result stay
+  distinguishable. Check `success` first, or pass the answer to the new
+  `unwrap` (see Added).
+
+  | Method | Was | Now |
+  | --- | --- | --- |
+  | `playlist.getAll()` | `PlaylistInfo[]`; threw on failure | `{ playlists, count }` |
+  | `playlist.getTracks()` | the rows; `[]` on failure | `{ playlist, start, count, total, tracks }` |
+  | `playlist.getSelectedTracks()` | the rows; `[]` on failure | `{ playlist, count, tracks }` |
+  | `playlist.getAvailableColumns()` | the columns; threw on failure | `{ columns, count }` |
+  | `output.getDevices()` | the devices; threw on failure | `{ devices, count }` |
+  | `system.listApis()`, `getApisByNamespace()`, `searchApis()` | `SystemApiInfo[]`; threw on failure | `{ apis }` |
+  | `system.getRegisteredPlugins()` | `SystemPluginInfo[]`; threw on failure | `{ plugins }` |
+  | `config.getOutputDevices()` | the devices; threw on failure | `{ devices, count }` |
+  | `config.getAdvancedConfig()` | the entries; threw on failure | `{ entries, count }` |
+  | `config.getPreferencesPages()` | the pages; threw on failure | `{ pages, count }` |
+  | `config.getComponents()` | the components; threw on failure | `{ components, count }` |
+  | `config.getDspPresets()` | the presets; threw on failure | `{ presets, count }` |
+  | `playcount.get(path)` | `PlaycountInfo \| null` | `{ count, results }`; the entry is `results[0]` |
+  | `library.getAll()` | a failed or timed-out background list rejected with a plain object | resolves with `OPERATION_FAILED`, `details.requestId` (and `details.timeoutMs` on a timeout) |
+
+  Each also resolves with an `ApiFailure` when the call fails.
+  `PlaylistAvailableColumnsResponse`, `AdvancedConfigResponse` and
+  `PreferencesPagesResponse` now name the response union rather than the list,
+  and `LibraryPagedTracksResponse` has `success: true`.
+- `<fb-playlist-selector>`, `<fb-playlist-tabs>`, `<fb-output-selector>`,
+  `<fb-dsp-preset-selector>` and `<fb-playlist-view>` keep what they show when
+  a call fails, instead of clearing it. `<fb-library-tree>` dispatches
+  `fb-library-added` only when the host added the tracks, with the `count` the
+  host reports; a locked playlist no longer produces the event.
+- **Breaking:** without a host (`window.fb2k` missing, as in a plain browser
+  tab or a unit test), `bridge.invoke` and every namespace call resolve after
+  100 ms with an `ApiFailure`: `{ success: false, code: 'NOT_SUPPORTED',
+  error: 'No foobar2000 host is available', details: { method } }`. They used
+  to resolve with `{ mock: true, method }`, which has no `success` field, so a
+  `success === false` check took it for a success. The `MockInvokeResponse`
+  type is removed. To run a page against fake data, assign a stand-in with
+  `invoke`, `on` and `off` to `window.fb2k` before the page subscribes to
+  events.
+- **Breaking:** every generated `XxxResponse` is now `XxxSuccess | ApiFailure`
+  instead of one flat interface with optional `error` and `code`.
+  `XxxSuccess` has `success: true` and the method's result fields;
+  `ApiFailure` has `success: false`, `error`, `code` and an optional
+  `details`. Reading a result field without checking `success` first no
+  longer compiles: the flat type let it through, and on a failed call the
+  field was `undefined`. Check first, for example
+  `if (res.success === false) throw new Error(res.error);`; the `=== false`
+  form narrows with or without `strictNullChecks`, `!res.success` only with
+  it. A type built on a
+  response with `Omit`, `Pick` or an indexed access (`XxxResponse['field']`)
+  should start from `XxxSuccess`. `HttpBinaryResponse`, `WindowListResponse`,
+  `MenuGetMainMenuResponse` and `MenuGetContextMenuResponse` follow the same
+  pattern, and `HttpBinarySuccess` is new. Some failures carry fields of their
+  own, such as `candidates` on `MENU_MATCH_AMBIGUOUS`; test for them with
+  `in`. The payloads of `http:response`, `http:downloadComplete` and
+  `library:getAllResult` keep their flat shape for now.
+- New exported types `ApiFailure`, and an `XxxSuccess` for every method with a
+  generated `XxxResponse`.
+- The payload types of the `keyboard`, `taskbar`, `tray`, `ui`, `system`,
+  `app`, `webview`, `plugin`, `api`, `metadb`, `state`, `dnd`, `window`,
+  `panel`, `menu`, `jitQueue`, `port`, `file`, `metadata`, `http`,
+  `library`, `audio`, `playlist`, `playback` and `selection` events now match
+  what the host sends field for field, with a description on every field.
+  Apart from the changes to the track events and to the two empty events
+  listed below, the events themselves are unchanged. Some types are narrower,
+  so a
+  comparison with a value the host never sends, or a read of a field it never
+  sends, no longer compiles:
+  - `WebviewProcessFailedPayload.kind` and `.recoveryAction` are unions of the
+    values the host sends, and `kindRaw` is a `number` (was `unknown`).
+  - `UiColoursChangedPayload` and `UiFontChangedPayload` are
+    `Record<string, never>` (were `JsonObject`), as neither event carries
+    fields.
+  - `DndDragEndedPayload.code` is
+    `'PERMISSION_DENIED' | 'INVALID_PARAMS' | 'OPERATION_FAILED'` (was
+    `ApiErrorCode`).
+  - `FBEventPayloadMap['state:changed']` types `value` and `previousValue` as
+    `JsonValue` (was `unknown`). `StateChangedPayload<T>` keeps its type
+    parameter for typing a key's values yourself.
+  - `PanelFocusPayload` and `PanelBlurPayload` are `Record<string, never>`
+    (declared a `windowId` the host never sent).
+  - `WindowHoverStateChangedPayload.hovering` is required and `reason` is
+    gone; the host always sends `{ windowId, hovering }`.
+  - `WindowBackdropStateChangedPayload.mode` and `.effect`, and
+    `WindowBehaviorChangedPayload.profile`, are unions of the values the host
+    sends; `WindowBehaviorChangedPayload.resolvedBehavior` has the fields of
+    `window.getPopupBehavior` (was `JsonObject`).
+  - `MenuValueChangedPayload.itemId` is a `string` (was `unknown`).
+  - `JitQueueNeedNextPayload.reason` is `'trackChange'` (was `string`), the
+    only value the host sends.
+  - `PortMessagePayload.portId` is a `string` (was `unknown`).
+  - `MetadataWriteCompletePayload.operation` is `'write' | 'removeTag'` (was
+    `string`).
+  - `LibraryGetAllResultPayload.offset`, `.limit` and `.fromCache` are
+    required; the host always sends them.
+  - `PlaybackStartingPayload.command` is
+    `'play' | 'next' | 'previous' | 'random' | 'unknown'` (was
+    `'default' | 'play' | 'next' | 'prev' | 'random'`): the host has always
+    sent `previous` and `unknown`, never `prev` or `default`.
+  - `AudioFullWaveformFailedPayload.code` and `AudioPcmFailedPayload.code`
+    are unions of the codes each event can carry (were `string` and
+    `ApiErrorCode`).
+  - `AudioFullWaveformReadyPayload` no longer declares `fileSize` and
+    `cacheKey`, which the host never sent; `maxAmplitude`, `duration`,
+    `sampleRate`, `channels`, `scale`, `signed` and `cached` are required.
+  - `FbPopupMessageDetail` no longer declares `targetWindowId`, which
+    `window:message` never carried.
+- `WindowMessagePayload.message` is `JsonValue` (was `JsonObject`):
+  `window.sendMessage` and `window.broadcast` deliver whatever JSON the sender
+  passed.
+- `PortMessagePayload.message` is `JsonValue` (was `JsonObject`):
+  `port.postMessage` and `port.postMessageTo` deliver whatever JSON the sender
+  passed.
+- `HttpResponsePayload.status`, `.headers` and `.body` are optional (were
+  required): a failed request carries `error` and `code` instead, and
+  `status` only when a refused redirect produced one. Check `success` before
+  reading them. `HttpResponsePayload` and `HttpDownloadCompletePayload` gain
+  `code` and `cancelled`, and `HttpResponsePayload` gains `contentLength`,
+  which the host already sent.
+- `PlaybackStartingPayload.paused` and `PlaybackStateChangedPayload.position`
+  / `.duration` are required; the host always sends them.
+- `AudioSpectrumPayload` has the fields of an `audio.getSpectrum` answer:
+  `spectrum` is optional (was required), since a bin frame with
+  `channels: 'stereo'` carries `left` and `right` instead, which the type now
+  declares; `output`, `fftSize`, `scale`, `sampleRate`, `minFrequency`,
+  `maxFrequency`, `state`, `streamTime` and `hostTime` are required. It no
+  longer extends `SpectrumFrameInfo`.
+- `MetadataProbeResultItem.tags` is `Record<string, JsonValue>` (was
+  `Record<string, string | string[]>`), the same type as the flat fields of
+  `metadata.readBatch`.
+- `PanelConfig.edgeStyle` is a `number` (was `string`): the host sends `0`
+  (none), `1` (sunken) or `2` (grey).
+- `PluginRegisteredPayload` / `PluginUnregisteredPayload` are now aliases of
+  `SystemPluginInfo`, and `ApiRegisteredPayload` / `ApiUnregisteredPayload` of
+  `SystemApiInfo`, with the same fields as before.
+- Every `dnd:*` event is listed in `FBEventName` and `FBEventPayloadMap`
+  directly; they used to be merged in from `DndEventPayloadMap`.
+- `playback:trackChanged`, `playback:edited` and
+  `playback:itemPlayed` now carry the shared `Track`, the same row
+  `playback.getCurrentTrack` answers with, and `PlaybackTrackChangedPayload`,
+  `PlaybackEditedPayload` and `PlaybackItemPlayedPayload` are aliases of
+  `Track`. `id` and `fullPath` are gone: read `handle`, which is what
+  `fullPath` held. `artists` and `rating` are new, and every field is always
+  present.
+- The `track` and `nowPlaying` of `selection:changed` are the
+  shared `Track` too, and both are optional in `SelectionChangedPayload`
+  (were a required `JsonObject`): `track` comes only when exactly one track
+  is selected, `nowPlaying` only while a track is loaded. `handles` is a
+  `string[]` (was `JsonObject`) and `type` a union of the selection types.
+- `audio:dspPresetChanged` and `playlist:defaultFormatChanged` deliver `{}`,
+  as their `Record<string, never>` types always said; the host used to send
+  `null`.
+- **Breaking:** `artwork.getAvailableArtwork(path)` requires `path`, and
+  `metadata.embedArtwork(path, opts)` requires `opts`, which carries the
+  required `imageData`. The host refused every call without them with
+  `INVALID_PARAMS`; such a call now fails to compile instead.
+- `MenuPopupItem`, `WindowPopupBehaviorPatch` and `WindowBackdropPolicyPatch`
+  are type aliases instead of interfaces, so they are checked as JSON
+  wherever they are sent. Declaration merging into them no longer works.
+- `FbMetadbHandle`'s constructor also accepts a `Track` row, or a partial one
+  such as the rows of `library.search` with `fields`.
+- **Breaking:** `FbBaseElement._sub(event, handler)` accepts only event names
+  listed in `FBEventName`; a misspelled or custom name no longer compiles.
+  A subclass that listens for a plugin's own event subscribes with
+  `fb.on(name, handler)`, which still takes any string, and pushes the
+  returned callback onto `_subscriptions` so it is released on disconnect.
+- `<fb-playlist-view>` works out the GUID of the playlist it shows and names
+  it by that GUID in every host call, so a playlist added or removed in front
+  of it cannot turn a selection, a Delete or a double-click into one on
+  another playlist. With an index in `playlist` it looks the index up again
+  after `playlist:created`, `playlist:removed` and `playlist:reordered`, and
+  drops its selection and focus only when the index now names another
+  playlist. Rows reload only for the item events of the playlist it shows.
+- `<fb-playlist-tabs>` activates, opens the native menu for and reorders
+  playlists by GUID, and dispatches `fb-playlist-select` and
+  `fb-playlist-reorder` only once the host has done it; a tab whose playlist is
+  gone does nothing.
+- The multi-step `plman` methods of the SMP layer (`RemovePlaylistSelection`
+  with `crop`, `SetPlaylistSelection` with `false`, `AddLocations` and
+  `InsertPlaylistItems` with `select`, `GetPlaylistItems` after its first
+  page) name the playlist by index in their first call only, and by the GUID
+  that call reported afterwards. `MovePlaylist` sends the GUIDs of the cached
+  playlists.
+- The `options` of `fb.playlist.playTrack` no longer accept `playlistGuid`,
+  which conflicted with the playlist given as the first argument; pass the
+  GUID as that argument.
+- `fb.http.request()` is typed as resolving with the success branch only,
+  `HttpGetSuccess` (or `HttpBinarySuccess` with `responseType: 'arraybuffer'`
+  or `'binary'`), which is what it always did: every failure rejects. Read
+  `status` and `body` without checking `success`; a `res.success === false`
+  test on its result no longer compiles.
+
+### Fixed
+
+- `fb.ui.getMode()` in a popup reports the popup's own `windowId`, the one
+  `fb.ui.getCurrentWindowId()` gives, instead of `main`. Several panels in the
+  same foobar2000 window are no longer taken for one another by `getMode`,
+  `getCurrentWindowId`, `fb.panel.getConfig` and `setConfig`.
+- The synchronous `fb.file` methods fail a path longer than 259 characters with
+  `OPERATION_FAILED` and `details.value` 206. foobar2000 does not opt in to long
+  paths, and an existing file past the limit used to be reported as missing.
+  `fb.file.copyAsync`, `moveAsync` and `deleteAsync` report such an entry with
+  the new reason `path-too-long` instead of `not-found`.
+  `fb.file.read` and `fb.file.write` also put the Windows error code in
+  `details.value` when the file cannot be opened.
+- Components registered with `registerComponents()` from
+  `foo-webview-sdk/components` work inside foobar2000 without a `window.fb`
+  assignment. They looked the SDK up on `window.fb`, which the ESM entry never
+  set and where the host keeps a smaller object of its own, so their first SDK
+  call threw a `TypeError`. The ESM `registerComponents()` now binds them to the
+  instance `foo-webview-sdk` exports; `dist/components.js` imports it from
+  `dist/bridge.js`, so the theme and the components share one bridge.
+  `<script>` themes still load `bridge.global.js`; a `window.fb` without the
+  SDK's `on` and `invoke` now throws an error that says how to load the SDK.
+- `<fb-rating>` reads and sets the rating of a CUE subsong as itself. It sent
+  the track's bare `path` to `rating.get` and `rating.set`, which the host
+  resolves to the first subsong of the file; it now sends the track's `handle`
+  (or `path` with a `|subsong:N` suffix when `handle` is absent). The `path`
+  in the `fb-rating-change` detail carries the same key.
+- SMP `FbUiSelectionHolder.SetSelection` no longer sends a `type` key that
+  `selection.set` does not declare. The host refused it, so every call
+  failed; the `type` argument is now ignored.
+- `menu.popup` subscribes to `menu:select` and `menu:dismiss` before it sends
+  `menu.show`, so a result that reaches the page ahead of the call's response
+  still settles the promise. It used to subscribe only after `menu.show`
+  answered. When `menu.show` fails or rejects (including the bridge's request
+  timeout), both listeners are removed before the promise settles.
+- `<fb-titlebar>` and `<fb-window-controls>` follow only their own window.
+  `window:stateChanged` reaches every window, so maximizing the main window
+  also flipped `maximized` on the components in a popup, and a popup entering
+  fullscreen did the same in the main window. They now ask
+  `fb.ui.getCurrentWindowId()` on connect and ignore events whose `windowId`
+  names another window; events that arrive before the answer are held and the
+  latest one for the own window is applied once it comes. An event without
+  `windowId` (an older host) is applied as before, and so is every event when
+  the id cannot be learned.
+- `WindowStateChangedPayload` gains `windowId`, the window whose state changed.
+- SMP keeps the `|subsong:N` suffix when it hands a track to the host, so a
+  subsong of a multi-track file (a CUE sheet) is no longer treated as the
+  file's first subsong: `FbTitleFormat.Eval`, `EvalWithMetadb` and
+  `EvalWithMetadbs` (`titleformat.eval` / `evalBatch`, which accept the
+  suffix from host builds that resolve it), `FbMetadbHandle.GetFileInfo`
+  (`metadata.read`) and `plman.AddItemToPlaybackQueue` (`queue.addPaths`).
+  `smpUtils.toHandleId` now also adds the `subsong` of a host track row
+  (`absolutePath` / `path` plus `subsong`, as `smp.cache.currentTrack`
+  holds) instead of returning the bare path; a path that already ends in
+  the suffix is kept as it is.
+- `<fb-playlist-view>` marks the row of the playing track with `playing`. It
+  used to read a row number from the `playback:trackChanged` payload, which
+  carries none, so no row was ever marked. The view now asks
+  `fb.player.getCurrentTrackIndex()` on every track change and whenever its
+  rows reload, and marks a row only when the track plays from the playlist
+  the view shows; a stop clears the mark.
+- `<fb-playlist-view>` shows the playlist a changed `playlist` attribute
+  names; it used to reload the playlist it already showed. Whenever the
+  playlist shown changes, through the attribute or a switch of the followed
+  active playlist, the view drops the cached rows, selection and focus of the
+  previous one: a kept selection made Delete remove the rows with the same
+  numbers from the new playlist. A `playlist:focusChanged` of another
+  playlist no longer moves the view's focus.
+- SMP `fb.RunContextCommandWithMetadb(command, handle_or_handle_list)` runs
+  the command on the given tracks. It used to send `handles` to
+  `menu.runContextCommand`, which does not declare it, so every call failed.
+  It now builds the context menu for the tracks with `menu.getContextMenu`
+  (`mode: 'handles'`), finds the first command whose full path from the top
+  of the menu equals `command` ignoring case, as SMP does (for example
+  `Playback Statistics/Rating/5`), and runs it with
+  `menu.runContextCommandById`. It resolves `false` without running anything
+  when the menu has no such command or cannot be built for the tracks, and
+  never falls back to the selection or the playing track. A handle list
+  passes every track; a CUE subsong keeps its `|subsong:N` suffix.
+- SMP `ContextMenuManager.ExecuteByID(id)` resolves `false` for an id
+  `BuildMenu` allocated to a row without `commandId`. It used to send that id
+  as a raw host command id, running whichever command the host had numbered
+  the same. Ids outside the range the last `BuildMenu` allocated still pass
+  through as raw host ids.
+- `<fb-playlist-view>` following the active playlist shows no rows while there
+  is none. It used to fall back to the first playlist and act on it.
+- `<fb-playlist-tabs>` and `<fb-playlist-selector>` keep the newest list of
+  playlists when an earlier read answers last. `<fb-playlist-selector>`
+  redraws after `playlist:reordered`; its options kept the old indices.
+- `plman.RemovePlaylistSelection(playlist, true)` and
+  `plman.SetPlaylistSelection(playlist, items, false)` return `false` when the
+  selection cannot be read. The crop used to clear the whole playlist, and the
+  deselection the whole selection.
+- `fb.ClearPlaylist()` and `fb.GetFocusItem()` act on the playlist that is
+  active when they run, not on the one the SMP cache last saw active.
+
+### Removed
+
+- `menu:show` from `FBEventName` and `FBEventPayloadMap`. Only the host's own
+  menu page receives it; a page never did.
+
+### Deprecated
+
+- `DndSessionEventPayload` and `DndEventPayloadMap`. Use `DndLeavePayload` for
+  the `sessionId` shape, and index `FBEventPayloadMap` for a `dnd:*` payload.
+- `playlist.getTracksPage()`. `playlist.getTracks()` now resolves with the
+  same page.
+
 ## [1.14.0] - 2026-10-06
 
 > **Breaking changes**: `library.getArtistAlbums` now matches `artist`
@@ -868,11 +1353,11 @@ Version realigned with the plugin DLL under the unified-versioning policy
 drop from `2.0.0` to `1.5.0` is a deliberate alignment with the plugin
 release cadence, **not** a regression of any SDK feature or behavior.
 
-The publishing-layout migration introduced in [2.0.0] (dist-only entry,
-sub-path exports, archived hand-written files) remains in effect. No
-SDK-level public API or behavior has changed since [2.0.0].
+The publishing-layout migration introduced in the earlier 2.0.0 (dist-only
+entry, sub-path exports, archived hand-written files) remains in effect. No
+SDK-level public API or behavior has changed since that version.
 
-## [2.0.0] - 2026-05-05
+## Earlier 2.0.0 (publishing layout) - 2026-05-05
 
 This is a publishing-layout migration release. The runtime API surface
 is **identical** to 1.4.x; consumers using the documented public exports

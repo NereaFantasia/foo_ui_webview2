@@ -1,6 +1,7 @@
 // sdk/src/smp/fbExtensions.test.ts
 //
-// `fb.GetQueryItems` / `fb.GetLibraryItems` read contracts.
+// `fb.GetQueryItems` / `fb.GetLibraryItems` read contracts, and how
+// `fb.RunContextCommandWithMetadb` reaches the tracks it names.
 //
 // GetQueryItems issues at most two `library.search` calls regardless of
 // hit count: a one-row probe for the total, then a single projected
@@ -13,7 +14,8 @@ import { describe, expect, it, vi } from 'vitest';
 import { createInitialCache } from './cache.js';
 import { attachFbExtensions } from './fbExtensions.js';
 import type { SmpBridgeShape } from './bridgeShape.js';
-import type { FbMetadbHandleList } from './classes/FbMetadbHandleList.js';
+import { FbMetadbHandle } from './classes/FbMetadbHandle.js';
+import { FbMetadbHandleList } from './classes/FbMetadbHandleList.js';
 import type { SMPPlman } from './types.js';
 
 interface InvokeCall {
@@ -22,11 +24,18 @@ interface InvokeCall {
 }
 
 interface FbExtSurface {
+    ClearPlaylist: () => Promise<boolean>;
+    GetFocusItem: () => Promise<FbMetadbHandle | null>;
     GetQueryItems: (
         handlesLike: unknown,
         query: string,
     ) => Promise<FbMetadbHandleList>;
     GetLibraryItems: () => Promise<FbMetadbHandleList>;
+    RunContextCommandWithMetadb: (
+        command: string,
+        handleOrList: unknown,
+        flags?: number,
+    ) => Promise<boolean>;
 }
 
 /** Build a track row shaped like the projected `library.search` output. */
@@ -70,6 +79,44 @@ function setup(
 function callsTo(calls: InvokeCall[], method: string): InvokeCall[] {
     return calls.filter((c) => c.method === method);
 }
+
+// The cache may lag behind the host's active playlist, so these name no
+// playlist on the first call and the host reads the active one as it arrives.
+describe('fb.ClearPlaylist / fb.GetFocusItem and the active playlist', () => {
+    const GUID = '{00000000-0000-0000-0000-000000000004}';
+
+    it('clears without naming a playlist', async () => {
+        const { ext, calls } = setup(() => ({ success: true, clearedCount: 3 }));
+
+        expect(await ext.ClearPlaylist()).toBe(true);
+        expect(callsTo(calls, 'playlist.clear').map((c) => c.params)).toEqual([{}]);
+    });
+
+    it('reads the focused row from the playlist the focus came from', async () => {
+        const { ext, calls } = setup((call) =>
+            call.method === 'playlist.getFocusedTrack'
+                ? { success: true, playlist: 4, playlistGuid: GUID, index: 2 }
+                : { success: true, tracks: [row('C:\\focused.flac')] },
+        );
+
+        const handle = await ext.GetFocusItem();
+
+        expect(handle?.Path).toBe('C:\\focused.flac');
+        expect(callsTo(calls, 'playlist.getFocusedTrack')[0]!.params).toEqual({});
+        expect(callsTo(calls, 'playlist.getTracks')[0]!.params).toEqual({
+            playlistGuid: GUID,
+            start: 2,
+            count: 1,
+        });
+    });
+
+    it('answers null without a second read when there is no active playlist', async () => {
+        const { ext, calls } = setup(() => ({ success: true, playlist: -1, index: -1 }));
+
+        expect(await ext.GetFocusItem()).toBe(null);
+        expect(callsTo(calls, 'playlist.getTracks')).toEqual([]);
+    });
+});
 
 describe('fb.GetQueryItems', () => {
     it('makes no bridge call for an empty query', async () => {
@@ -207,5 +254,142 @@ describe('fb.GetLibraryItems', () => {
         expect(pages.map((p) => p.params.offset)).toEqual([0, 500, 1000]);
         expect(list.Count).toBe(total);
         expect(pages.every((p) => !('fields' in p.params))).toBe(true);
+    });
+});
+
+// `menu.runContextCommand` acts on the playing track or the selection and
+// declares no `handles`, so the host refuses the key and dropping it would run
+// the command on other tracks. The command is looked up in a menu built for
+// the given tracks and run by the id that menu reports, with the same `mode`
+// and `handles`.
+describe('fb.RunContextCommandWithMetadb', () => {
+    /** A context menu with `Properties` on top and `Rating/5` one level down. */
+    const MENU = {
+        success: true,
+        mode: 'handles',
+        items: [
+            { type: 'command', label: 'Properties', path: 'Properties', commandId: 3 },
+            { type: 'separator' },
+            {
+                type: 'submenu',
+                label: 'Playback Statistics',
+                path: 'Playback Statistics',
+                children: [
+                    {
+                        type: 'submenu',
+                        label: 'Rating',
+                        path: 'Playback Statistics/Rating',
+                        children: [
+                            {
+                                type: 'command',
+                                label: '5',
+                                path: 'Playback Statistics/Rating/5',
+                                commandId: 17,
+                            },
+                        ],
+                    },
+                ],
+            },
+        ],
+    };
+
+    function menuHost(
+        overrides: { menu?: unknown; run?: unknown } = {},
+    ): ReturnType<typeof setup> {
+        return setup((call) => {
+            if (call.method === 'menu.getContextMenu') return overrides.menu ?? MENU;
+            if (call.method === 'menu.runContextCommandById') {
+                return overrides.run ?? { success: true };
+            }
+            return { success: false, error: 'unexpected', code: 'INVALID_PARAMS' };
+        });
+    }
+
+    it('runs the command found by path in a menu built for the handle', async () => {
+        const { ext, calls } = menuHost();
+        const handle = new FbMetadbHandle('C:\\album.flac|subsong:2');
+
+        const ok = await ext.RunContextCommandWithMetadb(
+            'playback statistics/rating/5',
+            handle,
+        );
+
+        expect(ok).toBe(true);
+        expect(calls.map((c) => c.method)).toEqual([
+            'menu.getContextMenu',
+            'menu.runContextCommandById',
+        ]);
+        expect(calls[0].params).toEqual({
+            mode: 'handles',
+            handles: ['C:\\album.flac|subsong:2'],
+        });
+        expect(calls[1].params).toEqual({
+            id: 17,
+            mode: 'handles',
+            handles: ['C:\\album.flac|subsong:2'],
+        });
+    });
+
+    it('takes every handle of a handle list, and a plain path', async () => {
+        const list = new FbMetadbHandleList([
+            new FbMetadbHandle('C:\\a.flac'),
+            new FbMetadbHandle('C:\\b.cue|subsong:3'),
+        ]);
+        const first = menuHost();
+        expect(await first.ext.RunContextCommandWithMetadb('Properties', list)).toBe(true);
+        expect(first.calls[1].params).toEqual({
+            id: 3,
+            mode: 'handles',
+            handles: ['C:\\a.flac', 'C:\\b.cue|subsong:3'],
+        });
+
+        const second = menuHost();
+        expect(await second.ext.RunContextCommandWithMetadb('Properties', 'C:\\c.mp3')).toBe(true);
+        expect(second.calls[0].params).toEqual({ mode: 'handles', handles: ['C:\\c.mp3'] });
+    });
+
+    it('never calls menu.runContextCommand, which would run on other tracks', async () => {
+        const { ext, calls } = menuHost();
+
+        await ext.RunContextCommandWithMetadb('Properties', 'C:\\a.flac');
+
+        expect(callsTo(calls, 'menu.runContextCommand')).toHaveLength(0);
+    });
+
+    it('runs nothing and reports false when the menu has no such command', async () => {
+        const { ext, calls } = menuHost();
+
+        const ok = await ext.RunContextCommandWithMetadb('Rating/5', 'C:\\a.flac');
+
+        expect(ok).toBe(false);
+        expect(callsTo(calls, 'menu.runContextCommandById')).toHaveLength(0);
+    });
+
+    it('runs nothing when the host cannot build the menu for the handles', async () => {
+        const { ext, calls } = menuHost({
+            menu: { success: false, error: 'no usable handles', code: 'INVALID_PARAMS' },
+        });
+
+        const ok = await ext.RunContextCommandWithMetadb('Properties', 'C:\\gone.flac');
+
+        expect(ok).toBe(false);
+        expect(callsTo(calls, 'menu.runContextCommandById')).toHaveLength(0);
+    });
+
+    it('reports false when running the command fails', async () => {
+        const { ext } = menuHost({
+            run: { success: false, error: 'No context menu item has this id', code: 'NOT_FOUND' },
+        });
+
+        expect(await ext.RunContextCommandWithMetadb('Properties', 'C:\\a.flac')).toBe(false);
+    });
+
+    it('makes no call without a command or without a handle', async () => {
+        const { ext, calls } = menuHost();
+
+        expect(await ext.RunContextCommandWithMetadb('', 'C:\\a.flac')).toBe(false);
+        expect(await ext.RunContextCommandWithMetadb('Properties', null)).toBe(false);
+        expect(await ext.RunContextCommandWithMetadb('Properties', new FbMetadbHandleList())).toBe(false);
+        expect(calls).toHaveLength(0);
     });
 });

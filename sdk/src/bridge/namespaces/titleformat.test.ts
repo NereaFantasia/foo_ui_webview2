@@ -15,6 +15,7 @@
 //      rather than coerced to `false`.
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { expectSuccess } from './__tests__/expectEnvelope.js';
 
 interface MockNative {
     invoke: ReturnType<typeof vi.fn>;
@@ -58,6 +59,7 @@ describe('titleformat namespace — §5.4 fields contract', () => {
             artist: '%artist%',
             year: '$year(%date%)',
         });
+        expectSuccess(result);
 
         expect(native.invoke).toHaveBeenCalledWith('titleformat.evalFields', {
             path: '/track.flac',
@@ -107,6 +109,7 @@ describe('titleformat namespace — §5.4 fields contract', () => {
             ['/a.flac', '/b.flac'],
             { artist: '%artist%', year: '$year(%date%)' },
         );
+        expectSuccess(result);
 
         expect(native.invoke).toHaveBeenCalledWith(
             'titleformat.evalFieldsBatch',
@@ -140,6 +143,7 @@ describe('titleformat namespace — §5.4 fields contract', () => {
         const result = await titleformat.evalFields('/unindexed.flac', {
             bitrate: '%bitrate%',
         });
+        expectSuccess(result);
 
         // The wrapper must not normalise, default or drop the flag —
         // `false` has to survive as `false`, not become `undefined`.
@@ -168,6 +172,7 @@ describe('titleformat namespace — §5.4 fields contract', () => {
             ['/indexed.flac', '/unindexed.flac', '/missing.flac'],
             { bitrate: '%bitrate%' },
         );
+        expectSuccess(result);
 
         const rows = result?.results ?? [];
         expect(rows[0]?.infoAvailable).toBe(true);
@@ -176,5 +181,50 @@ describe('titleformat namespace — §5.4 fields contract', () => {
         // Absent on a failed row, not coerced to `false`.
         expect(rows[2]?.infoAvailable).toBeUndefined();
         expect('infoAvailable' in (rows[2] as object)).toBe(false);
+    });
+});
+
+// The host evaluates the playing track only when the request carries no `path`
+// key at all; an empty string is rejected as an invalid path instead.
+describe('titleformat.eval without a path', () => {
+    beforeEach(() => {
+        vi.resetModules();
+    });
+
+    afterEach(() => {
+        vi.unstubAllGlobals();
+    });
+
+    it('sends only the pattern, also for an empty path', async () => {
+        const native = makeNative();
+        native.invoke.mockResolvedValue({
+            success: true,
+            path: '/playing.flac',
+            pattern: '%title%',
+            result: 'Song',
+            infoAvailable: true,
+        });
+        vi.stubGlobal('window', { fb2k: native });
+        const { titleformat } = await import('./titleformat.js');
+
+        await titleformat.eval('%title%');
+        await titleformat.eval('%title%', '');
+
+        expect(native.invoke).toHaveBeenNthCalledWith(1, 'titleformat.eval', { pattern: '%title%' });
+        expect(native.invoke).toHaveBeenNthCalledWith(2, 'titleformat.eval', { pattern: '%title%' });
+    });
+
+    it('utils.formatTitle puts no path on the wire', async () => {
+        const native = makeNative();
+        native.invoke.mockResolvedValue({ success: true, result: 'Song' });
+        vi.stubGlobal('window', { fb2k: native });
+        const { utils } = await import('./utils.js');
+
+        await utils.formatTitle('%title%');
+
+        // The injected bridge serialises params as JSON, which drops an
+        // undefined `path`; compare what actually reaches the host.
+        const sent: unknown = JSON.parse(JSON.stringify(native.invoke.mock.calls[0][1]));
+        expect(sent).toEqual({ pattern: '%title%' });
     });
 });

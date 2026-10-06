@@ -4,15 +4,10 @@
  * Re-exports the per-event `*Payload` interfaces, and declares the
  * `FBEventName` literal-union covering every published event together with
  * the `FBEventPayloadMap` map consumed by `fb.on(name, handler)` /
- * `fb.event.subscribe(name, handler)`. Both combine the generated surface
- * with the hand-written `dnd:*` entries below.
+ * `fb.event.subscribe(name, handler)`.
  */
 
-import type {
-    ApiErrorCode,
-    DndDragOutUnavailableReason,
-    DndPathsUnavailableReason,
-} from './responses.js';
+import type { ApiErrorCode } from './responses.js';
 
 export type {
     ApiRegisteredPayload,
@@ -22,11 +17,17 @@ export type {
     AudioFullWaveformFailedPayload,
     AudioFullWaveformReadyPayload,
     AudioOutputDeviceChangedPayload,
+    AudioPcmFailedPayload,
+    AudioPcmReadyPayload,
     AudioReplaygainModeChangedPayload,
     AudioSpectrumPayload,
     AudioStreamPayload,
     CursorHiddenChangedPayload,
+    DndCapabilitiesChangedPayload,
     DndDragEndedPayload,
+    DndDropPayload,
+    DndEnterPayload,
+    DndLeavePayload,
     FileOpCompletePayload,
     FileOpProgressPayload,
     HttpDownloadCompletePayload,
@@ -37,10 +38,16 @@ export type {
     JitQueuePreloadCompletePayload,
     JitQueueTrackChangedPayload,
     KeyboardHotkeyPayload,
+    LibraryGetAllResultPayload,
     LibraryInitializedPayload,
     LibraryItemsAddedPayload,
     LibraryItemsModifiedPayload,
     LibraryItemsRemovedPayload,
+    MenuDismissPayload,
+    MenuSelectPayload,
+    MenuValueChangedPayload,
+    MetadataProbeCompletePayload,
+    MetadataProbeProgressPayload,
     MetadataWriteCompletePayload,
     MetadbChangedPayload,
     PanelBlurPayload,
@@ -86,17 +93,24 @@ export type {
     PortDisconnectedPayload,
     PortMessagePayload,
     SelectionChangedPayload,
-    StateChangedPayload,
     StateDeletedPayload,
     SystemThemeChangedPayload,
+    TaskbarButtonClickedPayload,
+    TrayBeforeContextMenuPayload,
+    TrayClickPayload,
+    TrayDoubleClickPayload,
+    TrayMenuItemClickedPayload,
     UiColoursChangedPayload,
     UiFontChangedPayload,
     UiMenuItemClickedPayload,
     UiToastPayload,
+    WebviewProcessFailedPayload,
+    WindowActivatedPayload,
     WindowAlwaysOnTopChangedPayload,
     WindowBackdropStateChangedPayload,
     WindowBeforeClosePayload,
     WindowBehaviorChangedPayload,
+    WindowDpiChangedPayload,
     WindowHoverStateChangedPayload,
     WindowMessagePayload,
     WindowMinimizeSuppressedPayload,
@@ -105,24 +119,45 @@ export type {
     WindowStateChangedPayload,
 } from './generated/events.js';
 
-export type { MetadbChangedTrackItem } from './overrides/events.js';
-
-export type { LibraryGetAllResultPayload } from './overrides/events.js';
-
 export type {
-    MetadataProbeCompletePayload,
-    MetadataProbeFailure,
-    MetadataProbeInfoSource,
-    MetadataProbeProgressPayload,
-    MetadataProbeResultItem,
-} from './overrides/events.js';
-
-export type {
-    FileOpKind,
     FileOpResultItem,
-    FileOpResultReason,
-    FileOpStatus,
-} from './overrides/events.js';
+    MetadataProbeResultItem,
+    MetadbChangedTrackItem,
+} from './generated/schema-types.js';
+
+import type {
+    FileOpResultItem,
+    MetadataProbeResultItem,
+} from './generated/schema-types.js';
+import type { FileOpProgressPayload } from './generated/events.js';
+
+/** Why one path in a `metadata.probeBatchAsync` batch produced no info. */
+export type MetadataProbeFailure = NonNullable<MetadataProbeResultItem['failure']>;
+
+/** Where a probed track's info came from. `'none'` accompanies a failure. */
+export type MetadataProbeInfoSource = MetadataProbeResultItem['infoSource'];
+
+/** Which of the async file operations a `file:op*` event reports on. */
+export type FileOpKind = FileOpProgressPayload['op'];
+
+/**
+ * Outcome class of one `FileOpResultItem`.
+ *
+ * `'skipped'` means the entry was deliberately not carried out (it already
+ * existed, or the run was cancelled before reaching it), so it is not an
+ * error; `'failed'` is.
+ */
+export type FileOpStatus = FileOpResultItem['status'];
+
+/**
+ * Why a `FileOpResultItem` ended the way it did.
+ *
+ * `'cross-volume'` is the one value that accompanies `status: 'ok'`: the
+ * entry succeeded, but the move had to fall back to copy-then-delete because
+ * source and destination sit on different volumes, which costs a full copy
+ * instead of a rename.
+ */
+export type FileOpResultReason = NonNullable<FileOpResultItem['reason']>;
 
 import type {
     AudioFullWaveformFailedPayload,
@@ -137,7 +172,7 @@ import type {
     ApiRegisteredPayload,
     PortConnectedPayload,
     PortMessagePayload,
-    StateChangedPayload,
+    StateChangedPayload as GeneratedStateChangedPayload,
     StateDeletedPayload,
     WindowAlwaysOnTopChangedPayload,
     WindowBackdropStateChangedPayload,
@@ -180,139 +215,53 @@ export interface EventEnvelope<T = any> {
 }
 
 /**
- * Fields shared by every `dnd:*` payload.
- *
- * Drag-drop events are delivered point-to-point to the window under the
- * cursor, never broadcast, because real filesystem paths are sensitive.
+ * Payload of `state:changed` with `value` and `previousValue` typed for a key
+ * whose values the page knows; without a type argument they are `unknown`.
+ * `FBEventPayloadMap['state:changed']` types them as `JsonValue`, which is
+ * what the host sends.
+ */
+export interface StateChangedPayload<T = unknown>
+    extends Omit<GeneratedStateChangedPayload, 'value' | 'previousValue'> {
+    /** The stored value; never `null`. */
+    value: T;
+    /** The value the key held before; `null` when the key is new. */
+    previousValue: T | null;
+}
+
+/**
+ * @deprecated Use `DndLeavePayload`; `dnd:enter` and `dnd:drop` carry the same
+ * `sessionId`.
  */
 export interface DndSessionEventPayload {
     /**
      * Identifier correlating `dnd:enter`, `dnd:leave` and `dnd:drop` for one
-     * drag gesture. Unique across the whole host process, so it also
-     * identifies which window the gesture belongs to.
+     * drag gesture.
      */
     sessionId: string;
 }
 
 /**
- * Emitted when a drag gesture enters the window.
- *
- * `paths` is an empty array when the drag carries no `CF_HDROP` file list
- * (browser links, virtual shell objects, archive entries) or when the
- * document origin is not trusted with real paths.
+ * @deprecated Index `FBEventPayloadMap` instead, which lists these events with
+ * the rest.
  */
-export interface DndEnterPayload extends DndSessionEventPayload {
-    /** Absolute filesystem paths, in the same order as `DataTransfer.files`. */
-    paths: string[];
-    /**
-     * Target of the `.lnk` shortcut at the same index, or `null`.
-     *
-     * Always the same length as `paths`, including when both are withheld and
-     * therefore empty, so an index valid for one is valid for the other. Only
-     * `.lnk` is resolved; a shortcut to a shell namespace object, a recorded
-     * target too long to be read back intact (Windows caps it at `MAX_PATH`,
-     * and a truncated path would name a different file), an unavailable COM
-     * apartment, and any entry skipped to keep the drop responsive all report
-     * `null` rather than an empty string.
-     *
-     * A BROKEN shortcut is not one of those cases: it reports the path its
-     * `.lnk` recorded, since Windows returns that whether or not the target
-     * still exists. A non-null entry is therefore where the shortcut points,
-     * not a guarantee that a file is there.
-     */
-    resolvedPaths: (string | null)[];
-    /**
-     * Whether the drag carries a `CF_HDROP` file list. Reported truthfully
-     * even when `paths` is withheld, since it leaks nothing by itself.
-     */
-    hasFiles: boolean;
-    /** Cursor x in client-area physical pixels; divide by `devicePixelRatio` for CSS pixels. */
-    x: number;
-    /** Cursor y in client-area physical pixels; divide by `devicePixelRatio` for CSS pixels. */
-    y: number;
-}
+export type DndEventPayloadMap = Pick<
+    GeneratedFBEventPayloadMap,
+    'dnd:enter' | 'dnd:leave' | 'dnd:drop' | 'dnd:capabilitiesChanged'
+>;
 
-/** Emitted when a drag gesture leaves the window without dropping. */
-export type DndLeavePayload = DndSessionEventPayload;
-
-/**
- * Emitted when a drag gesture is dropped on the window.
- *
- * `paths` carries the final list, which the drag source may have changed
- * since `dnd:enter`. Arrival time relative to the page's own HTML5 `drop`
- * handler is not guaranteed; call `fb.dnd.getPathsAsync()` from that handler
- * when paths are needed synchronously with the drop.
- */
-export interface DndDropPayload extends DndSessionEventPayload {
-    /** Absolute filesystem paths, in the same order as `DataTransfer.files`. */
-    paths: string[];
-    /**
-     * Target of the `.lnk` shortcut at the same index, or `null`. Same length
-     * and same rules as the `dnd:enter` field of this name.
-     */
-    resolvedPaths: (string | null)[];
-    /** Cursor x in client-area physical pixels. */
-    x: number;
-    /** Cursor y in client-area physical pixels. */
-    y: number;
-    /**
-     * Win32 modifier / mouse-button mask at drop time (`MK_*` flags), for
-     * pages that want modifier-dependent behaviour. It does not influence the
-     * drop effect the host reports to the drag source, which is always copy.
-     */
-    keyState: number;
-}
-
-/**
- * Emitted when the resolved drag-drop capability of the window changes, for
- * instance when Chromium re-registers its own drop target and displaces the
- * host's, or when a navigation changes the document origin.
- */
-export interface DndCapabilitiesChangedPayload {
-    /** Page still receives standard HTML5 drag events. */
-    html5: boolean;
-    /** Real filesystem paths are still obtainable. */
-    paths: boolean;
-    /**
-     * How the window hosts its WebView, which decides whether paths are
-     * obtainable at all: `standard` panels cannot supply them.
-     */
-    hosting: 'visual' | 'standard';
-    /** Present only when `paths` is `false`. */
-    pathsUnavailableReason?: DndPathsUnavailableReason;
-    /** Whether this window supports dragging files out through `dnd.prepareDrag`. */
-    dragOut: boolean;
-    /** Present only when `dragOut` is `false`. */
-    dragOutUnavailableReason?: DndDragOutUnavailableReason;
-}
-
-/**
- * Event-name to payload map for incoming drags and capability changes.
- *
- * These events describe the receiving window's drag session and available
- * capabilities. {@link FBEventPayloadMap} also includes `dnd:dragEnded`,
- * whose {@link DndDragEndedPayload} reports refusals of outgoing drags.
- */
-export interface DndEventPayloadMap {
-    'dnd:enter': DndEnterPayload;
-    'dnd:leave': DndLeavePayload;
-    'dnd:drop': DndDropPayload;
-    'dnd:capabilitiesChanged': DndCapabilitiesChangedPayload;
-}
-
+// A fresh union rather than a plain alias of the generated list, so editors and
+// compiler messages show the name `FBEventName`. Both operands list the same names.
 /**
  * Literal-union of every published event name, accepted by the typed
  * `fb.on(name, handler)` / `fb.once(name, handler)` overloads.
  */
-export type FBEventName = GeneratedFBEventName | keyof DndEventPayloadMap;
+export type FBEventName = GeneratedFBEventName | keyof GeneratedFBEventPayloadMap;
 
 /**
  * Master map from event name to payload type. Indexing it with an
  * {@link FBEventName} yields the payload the handler receives.
  */
-export interface FBEventPayloadMap
-    extends GeneratedFBEventPayloadMap,
-        DndEventPayloadMap {}
+export interface FBEventPayloadMap extends GeneratedFBEventPayloadMap {}
 
 /** @deprecated Use `AudioFullWaveformReadyPayload`. */
 export type FullWaveformReadyEvent = AudioFullWaveformReadyPayload;

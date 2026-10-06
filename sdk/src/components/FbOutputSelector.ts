@@ -15,12 +15,7 @@ import { FbBaseElement } from './FbBaseElement.js';
 import { getFb } from './runtime.js';
 import type { FbOutputChangeDetail } from './types.js';
 
-/**
- * Wider shape than the bridge's exported `OutputDevice` (`id`,
- * `name`, `isCurrent`) — the runtime JSON also carries `outputId`
- * and `deviceId` which this component relies on. Kept private so the
- * public bridge type stays the source of truth.
- */
+/** The fields of a `config.getOutputDevices` row this component reads. */
 interface OutputDeviceInfo {
     name: string;
     outputId: string;
@@ -70,14 +65,10 @@ export class FbOutputSelector extends FbBaseElement {
 
     private async _loadDevices(): Promise<void> {
         try {
-            // Cast through `unknown` because the bridge's exported
-            // `OutputDevice` type omits the `outputId` / `deviceId`
-            // fields the host actually returns.
-            const devices = (await getFb().config.getOutputDevices()) as
-                | unknown as
-                | OutputDeviceInfo[]
-                | null;
-            this._devices = devices ?? [];
+            const result = await getFb().config.getOutputDevices();
+            // A failed call keeps the list shown so far.
+            if (result.success === false) return;
+            this._devices = result.devices;
             this._select.innerHTML = this._devices
                 .map(
                     (d, i) =>

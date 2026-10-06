@@ -1,40 +1,34 @@
-/**
- * `keyboard` — hotkey / shortcut registration namespace.
- */
-
-import { bridge } from '../Bridge.js';
-import type {
-    BaseResponse,
-    KeyboardGetRegisteredHotkeysResponse,
-} from '../../types/responses.js';
+import { call } from '../call.js';
 import type {
     KeyboardRegisterHotkeyParams,
     KeyboardUnregisterHotkeyParams,
 } from '../../types/generated/params.js';
 
+/**
+ * `keyboard` — hotkey / shortcut registration namespace.
+ */
 export const keyboard = {
+    /** Registers a system-wide hotkey; the response carries the numeric `id`. */
     registerHotkey: (
         key: string,
         action: string,
         opts?: Omit<KeyboardRegisterHotkeyParams, 'key' | 'action'>,
     ) =>
-        bridge.invoke<BaseResponse & { id?: string }>(
-            'keyboard.registerHotkey',
-            {
-                key,
-                action,
-                ...(opts || {}),
-            },
-        ),
+        call('keyboard.registerHotkey', {
+            key,
+            action,
+            ...(opts || {}),
+        }),
     registerShortcut: (key: string, action: string) =>
-        bridge.invoke<BaseResponse>('keyboard.registerShortcut', {
+        call('keyboard.registerShortcut', {
             key,
             action,
         }),
+    /** Takes exactly one of the numeric `id` and the original `key` string. */
     unregisterHotkey: (opts: KeyboardUnregisterHotkeyParams) =>
-        bridge.invoke<BaseResponse>('keyboard.unregisterHotkey', opts),
+        call('keyboard.unregisterHotkey', opts),
     getRegisteredHotkeys: () =>
-        bridge.invoke<KeyboardGetRegisteredHotkeysResponse>(
+        call(
             'keyboard.getRegisteredHotkeys',
         ),
 };

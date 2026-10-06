@@ -24,6 +24,7 @@
 
 import { FbBaseElement } from './FbBaseElement.js';
 import { getFb } from './runtime.js';
+import { trackKeyOf, type TrackIdentity } from './trackKey.js';
 import type { FbRatingChangeDetail } from './types.js';
 
 export class FbRating extends FbBaseElement {
@@ -133,19 +134,17 @@ export class FbRating extends FbBaseElement {
     }
 
     protected override _subscribe(): void {
+        // The track key keeps the `|subsong:N` suffix, so a CUE subsong is
+        // read and rated as itself instead of as the first track of its file.
         this._sub('playback:trackChanged', (data) => {
-            const d = data as { path?: string; absolutePath?: string } | null;
-            this._currentPath = d?.path || d?.absolutePath || '';
+            this._currentPath = trackKeyOf(data as TrackIdentity | null);
             void this._loadRating();
         });
 
         getFb()
             .player.getCurrentTrack()
             .then((t) => {
-                const tt = t as
-                    | { path?: string; absolutePath?: string }
-                    | null;
-                this._currentPath = tt?.path || tt?.absolutePath || '';
+                this._currentPath = t.success !== false ? trackKeyOf(t.track) : '';
                 void this._loadRating();
             })
             .catch(() => {

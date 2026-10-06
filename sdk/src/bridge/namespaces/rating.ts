@@ -1,10 +1,8 @@
+import { call } from '../call.js';
+
 /**
  * `rating` — track rating namespace (0-5 integer scale).
  */
-
-import { bridge } from '../Bridge.js';
-import type { BaseResponse } from '../../types/responses.js';
-
 export const rating = {
     /**
      * Resolve the 0-5 integer rating stored for the track at `path`.
@@ -16,13 +14,15 @@ export const rating = {
      *
      * @param path - Absolute file path. May carry a `|subsong:N`
      *               suffix; the host extracts the CUE index.
+     * @param opts.cueIndex - Explicit CUE subsong index. Takes
+     *                        precedence over any `|subsong:N` suffix
+     *                        in `path`.
      */
-    get: (path: string) =>
-        bridge.invoke<{
-            rating: number;
-            /** `'stats'` for a valid statistics rating; `'file'` for tag fallback or no rating. */
-            storage?: string;
-        }>('rating.get', { path }),
+    get: (path: string, opts?: { cueIndex?: number }) =>
+        call('rating.get', {
+            path,
+            ...(opts?.cueIndex != null ? { cueIndex: opts.cueIndex } : {}),
+        }),
     /**
      * Set the 0-5 integer rating for the track at `path`.
      *
@@ -41,16 +41,7 @@ export const rating = {
         rating: number,
         opts?: { cueIndex?: number },
     ) =>
-        bridge.invoke<
-            BaseResponse & {
-                /** Menu hop the rating took (`'foo_playcount'` etc.). */
-                menuPath?: string;
-                /** Write destination: `'stats'` (foo_playcount) or `'file'` (the `RATING` tag). */
-                storage?: string;
-                /** Free-form remediation hint when storage fell back. */
-                note?: string;
-            }
-        >('rating.set', {
+        call('rating.set', {
             path,
             rating,
             ...(opts?.cueIndex != null ? { cueIndex: opts.cueIndex } : {}),

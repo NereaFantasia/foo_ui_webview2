@@ -42,7 +42,7 @@ export class FbNextButton extends FbBaseElement {
             await getFb().player.next();
             this._emit<FbNextDetail>('fb-next', {});
         } catch {
-            /* R6: silent degradation when SDK unavailable */
+            /* A rejected host call does not emit `fb-next`. */
         }
     }
 }

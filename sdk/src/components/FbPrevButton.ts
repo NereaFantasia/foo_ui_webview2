@@ -42,7 +42,7 @@ export class FbPrevButton extends FbBaseElement {
             await getFb().player.prev();
             this._emit<FbPrevDetail>('fb-prev', {});
         } catch {
-            /* R6: silent degradation when SDK unavailable */
+            /* A rejected host call does not emit `fb-prev`. */
         }
     }
 }

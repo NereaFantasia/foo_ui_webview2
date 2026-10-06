@@ -3,9 +3,10 @@
 // Regression guards for two `playcount` wrapper contracts:
 //
 //   1. `playcount.get(path)` MUST send `{ paths: [path] }` (not
-//           `{ path }`) and unwrap the first per-track result, because
-//           the C++ handler `PlaycountApi.cpp::PlaycountGet` rejects any
-//           payload that doesn't carry a `paths` JSON array.
+//           `{ path }`), because the C++ handler
+//           `PlaycountApi.cpp::PlaycountGet` rejects any payload that
+//           doesn't carry a `paths` JSON array; it resolves with the
+//           host's envelope, failure included.
 //
 //   2. `playcount.set` is a placeholder on the C++ side and the
 //           wrapper MUST not throw on a `{ success: false }` host
@@ -16,6 +17,7 @@
 // Bridge.ts is freshly constructed against the stubbed `window`.
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { expectSuccess } from './__tests__/expectEnvelope.js';
 
 interface MockNative {
     invoke: ReturnType<typeof vi.fn>;
@@ -82,7 +84,7 @@ describe('playcount namespace', () => {
         expect(call[1]).not.toHaveProperty('path');
     });
 
-    it('get(path) unwraps results[0] from the batch envelope', async () => {
+    it('get(path) sends paths: [path] and resolves with the envelope', async () => {
         const native = makeNative();
         native.invoke.mockResolvedValue({
             success: true,
@@ -103,40 +105,31 @@ describe('playcount namespace', () => {
 
         const r = await playcount.get('/music/track.flac');
 
-        expect(r).not.toBeNull();
-        expect(r?.path).toBe('/music/track.flac');
-        expect(r?.playCount).toBe(7);
-        expect(r?.rating).toBe(4);
-        expect(r?.inLibrary).toBe(true);
+        expect(native.invoke).toHaveBeenCalledWith('playcount.get', {
+            paths: ['/music/track.flac'],
+        });
+        expectSuccess(r);
+        const entry = r.results[0];
+        expect(entry?.path).toBe('/music/track.flac');
+        expect(entry?.playCount).toBe(7);
+        expect(entry?.rating).toBe(4);
+        expect(entry?.inLibrary).toBe(true);
     });
 
-    it('get(path) returns null when the envelope reports success: false', async () => {
+    it('get(path) resolves with the failure envelope rather than null', async () => {
         const native = makeNative();
-        native.invoke.mockResolvedValue({
+        const failure = {
             success: false,
             error: 'paths array is required',
-        });
+            code: 'INVALID_PARAMS',
+        };
+        native.invoke.mockResolvedValue(failure);
         vi.stubGlobal('window', { fb2k: native });
         const { playcount } = await import('./playcount.js');
 
         const r = await playcount.get('/music/track.flac');
 
-        expect(r).toBeNull();
-    });
-
-    it('get(path) returns null when results array is empty', async () => {
-        const native = makeNative();
-        native.invoke.mockResolvedValue({
-            success: true,
-            count: 0,
-            results: [],
-        });
-        vi.stubGlobal('window', { fb2k: native });
-        const { playcount } = await import('./playcount.js');
-
-        const r = await playcount.get('/missing/track.flac');
-
-        expect(r).toBeNull();
+        expect(r).toEqual(failure);
     });
 
     it('getBatch(paths) sends the array as-is and returns the full envelope', async () => {
@@ -199,6 +192,7 @@ describe('playcount namespace', () => {
         const { playcount } = await import('./playcount.js');
 
         const r = await playcount.getStats();
+        expectSuccess(r);
 
         // bridge.invoke forwards params=undefined when not supplied.
         expect(native.invoke).toHaveBeenCalledTimes(1);

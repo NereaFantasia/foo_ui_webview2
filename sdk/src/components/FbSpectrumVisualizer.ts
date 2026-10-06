@@ -23,8 +23,12 @@
 
 import { FbBaseElement } from './FbBaseElement.js';
 import { getFb } from './runtime.js';
+import { typedCall } from '../utils/typedCall.js';
 import type { AudioSpectrumPayload } from '../types/events.js';
 import type { FbSpectrumDataDetail } from './types.js';
+
+/** The page's `fb.invoke`, typed by the declared methods; read on every call. */
+const invokeHost = typedCall((...args: [method: string, params?: object]) => getFb().invoke(...args));
 
 type SpectrumPayload = AudioSpectrumPayload | { spectrum?: number[] };
 
@@ -95,16 +99,14 @@ export class FbSpectrumVisualizer extends FbBaseElement {
         // lifecycle) so the same `subscriptionId` can be passed to
         // both subscribe and unsubscribe, ensuring a clean teardown
         // when the component disconnects.
-        getFb()
-            .invoke('audio.subscribeSpectrum', {
-                subscriptionId: this._subscriptionId,
-                fftSize,
-                fps,
-                bands,
-            })
-            .catch(() => {
-                /* silent */
-            });
+        invokeHost('audio.subscribeSpectrum', {
+            subscriptionId: this._subscriptionId,
+            fftSize,
+            fps,
+            bands,
+        }).catch(() => {
+            /* silent */
+        });
 
         this._sub('audio:spectrum', (data: SpectrumPayload) => {
             const payload = data as { spectrum?: number[]; subscriptionId?: string } | number[];
@@ -160,13 +162,11 @@ export class FbSpectrumVisualizer extends FbBaseElement {
             this._resizeObserver = null;
         }
         if (this._subscriptionId) {
-            getFb()
-                .invoke('audio.unsubscribeSpectrum', {
-                    subscriptionId: this._subscriptionId,
-                })
-                .catch(() => {
-                    /* silent */
-                });
+            invokeHost('audio.unsubscribeSpectrum', {
+                subscriptionId: this._subscriptionId,
+            }).catch(() => {
+                /* silent */
+            });
             this._subscriptionId = '';
         }
         // D7: drop large buffers so GC can reclaim them promptly.

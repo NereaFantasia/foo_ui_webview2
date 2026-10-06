@@ -18,6 +18,38 @@
 // system.
 import type {} from './generated/global.js';
 
+// The published build resolves this import to the package's own bridge
+// module, the one `foo-webview-sdk` itself resolves to, so the components
+// and the theme share one SDK instance.
+import { fb } from '../bridge/index.js';
+import { defaultComponents, registerComponents as defineComponents } from './register.js';
+import { bindFb } from './runtime.js';
+
+/**
+ * Register the `fb-*` elements, bound to the SDK instance that
+ * `foo-webview-sdk` exports.
+ *
+ * Idempotent: tags already present in `customElements` keep their existing
+ * constructor and are left out of the result. Every component uses the same
+ * SDK instance, including elements registered earlier by another call.
+ *
+ * @param components - Tag names mapped to constructors. Defaults to
+ *                     {@link defaultComponents}; pass a subset to register
+ *                     only some elements.
+ * @returns The tag names this call defined.
+ *
+ * @example
+ *   import { registerComponents } from 'foo-webview-sdk/components';
+ *
+ *   registerComponents();
+ */
+export function registerComponents(
+    components: Record<string, CustomElementConstructor> = defaultComponents,
+): string[] {
+    bindFb(fb);
+    return defineComponents(components);
+}
+
 export { FbBaseElement } from './FbBaseElement.js';
 export { FbConsole } from './FbConsole.js';
 export { FbCoverArt } from './FbCoverArt.js';
@@ -58,7 +90,7 @@ export { FbWindowControls } from './FbWindowControls.js';
 
 export type { ColumnDescriptor } from './FbResizableHeader.js';
 
-export { defaultComponents, registerComponents } from './register.js';
+export { defaultComponents } from './register.js';
 export {
     ORDER_NAMES,
     RG_MODE_NAMES,

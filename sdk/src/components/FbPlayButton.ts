@@ -50,14 +50,14 @@ export class FbPlayButton extends FbBaseElement {
         this._sub('playback:stateChanged', (data) => {
             this._update(data?.state === 'playing');
         });
-        // Prime initial state — silently ignore failures (R6 degrade).
+        // Host events can still update the button if the initial state request fails.
         getFb()
             .player.getState()
             .then((s) => {
                 this._update((s as { state?: string })?.state === 'playing');
             })
             .catch(() => {
-                /* SDK unavailable — leave button in default state */
+                /* A rejected initial read leaves the current display unchanged. */
             });
     }
 
@@ -65,7 +65,7 @@ export class FbPlayButton extends FbBaseElement {
         try {
             await getFb().player.toggle();
         } catch {
-            /* R6: silent degradation when SDK unavailable */
+            /* A rejected toggle does not change the button state here. */
         }
     }
 
