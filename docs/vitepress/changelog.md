@@ -1,6 +1,6 @@
 # Changelog
 
-## v1.14.0 (2026-10-05)
+## v1.14.0 (2026-10-06)
 
 ::: warning Breaking changes in this release
 - `library.getArtistAlbums`, `getArtistTracks` and `getAlbumTracks` now match exactly: comparison is byte for byte and case-sensitive, and `*` and `?` are no longer treated as wildcards. To keep the previous substring match in `getArtistAlbums`, pass `match: 'substring'`.

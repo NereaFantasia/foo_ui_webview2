@@ -1,6 +1,6 @@
 # 更新日志
 
-## v1.14.0 (2026-10-05)
+## v1.14.0 (2026-10-06)
 
 ::: warning 本版的破坏性变更
 - `library.getArtistAlbums`、`getArtistTracks` 与 `getAlbumTracks` 改为精确匹配：逐字节比较，区分大小写，`*`、`?` 不再作为通配符。如需在 `getArtistAlbums` 中沿用原有的子串匹配，请传入 `match: 'substring'`。
