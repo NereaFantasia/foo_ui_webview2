@@ -3,6 +3,7 @@
 #include "pch.h"
 #include "ui/AppQuit.h"
 #include "api/EventEmit.h"
+#include "api/ArtworkJobDeadline.h"
 #include "api/generated/AppSchema.h"
 
 #include <atomic>
@@ -35,7 +36,13 @@ namespace {
 // and so the panels in it, are destroyed.
 class AppQuitInitQuit : public initquit {
 public:
-    void on_quit() override { app_quit::AnnounceBeforeQuit(); }
+    void on_quit() override {
+        app_quit::AnnounceBeforeQuit();
+        // 显式停 artwork 期限调度器（审查 SEC-03）：on_quit 阶段主线程不在
+        // Loader Lock 里，join 安全；之后到期的回调被丢弃，迟到的 worker 仍可
+        // 安全调用 gate->Finish（单例 deliberately leaked，互斥量始终有效）。
+        artwork_async::DeadlineScheduler::Shutdown();
+    }
 };
 
 initquit_factory_t<AppQuitInitQuit> g_app_quit_initquit;

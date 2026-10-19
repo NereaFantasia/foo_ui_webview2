@@ -351,8 +351,13 @@ namespace art = api::artwork;
  *
  * 恰好一次：JobGate 的 CAS 决定 worker 结果与到期超时谁回包；DeferredResponder 自己的
  * CAS 再兜一道（框架级重复响应仍会打日志）。
+ *
+ * 期限值 8s（审查 SEC-05 P2）：原 5s 对本地 SSD 有 30 倍以上裕量，但发烧友曲库常在
+ * 休眠机械盘（马达起转 3–8s）或 NAS/WebDAV 上，5s 会把"慢但最终读得到"误杀成无封面；
+ * 8s 覆盖常见起转时间，仍明显小于页面 30s 兜底。没有做 per-request timeoutMs 入参：
+ * 4 个方法加参数会改公共 schema/SDK 形状，而期限是宿主自保策略，单点调大即可。
  */
-constexpr std::uint64_t kArtworkWorkerDeadlineMs = 5000;
+constexpr std::uint64_t kArtworkWorkerDeadlineMs = 8000;
 
 // 超时信封：失败信封（success/error/code）+ 该方法结果里的业务字段子集。
 // 调用方既能看到错误码，也能从 available:false/reason 直接判断"没有图"。
@@ -430,11 +435,19 @@ void PutPicture(R& out, const uint8_t* ptr, size_t size) {
  *   · 实测：占位符上的读取会在 worker 线程里一直等水合（数秒~更久），既浪费带宽又让请求悬空
  *     （`_review\probe-async-cloud2.mjs`：页面主线程仅 18ms 抖动，但调用 5s 未 settle）。
  * 判定用 `FILE_ATTRIBUTE_RECALL_ON_DATA_ACCESS` 位（与资源管理器/cloud-state 扫描同源）。
+ *
+ * ★ 审查 SEC-02 修复：`TryResolveNativeMediaPath` 的契约是**原样保留** `|subsong:N`
+ * 后缀（`out = checked + suffix`）。带 `|` 的伪路径交给 GetFileAttributesW 必然
+ * ERROR_INVALID_NAME ⇒ 会把 CUE/分轨的云占位符判成"非占位符"、绕过防御触发水合。
+ * 因此取属性前必须先用 ParseSubsongPath 剥掉子曲目后缀。
  */
 bool IsCloudPlaceholderMediaFile(const std::string& mediaPath) {
     std::string nativePath;
     if (!SubsongUtils::TryResolveNativeMediaPath(mediaPath, nativePath)) return false;
-    const DWORD attrs = GetFileAttributesW(Utf8ToWide(nativePath).c_str());
+    const auto [filePath, subsong] = ArtworkParseSubsongPath(nativePath);
+    (void)subsong;  // 属性属于承载文件，子曲目序号对属性读取没有意义
+    if (filePath.empty()) return false;
+    const DWORD attrs = GetFileAttributesW(Utf8ToWide(filePath).c_str());
     if (attrs == INVALID_FILE_ATTRIBUTES) return false;
     return (attrs & FILE_ATTRIBUTE_RECALL_ON_DATA_ACCESS) != 0;
 }
@@ -504,7 +517,10 @@ api::Failure FileRelativeRefused(const std::string& path, const char* apiName) {
 
 // getCurrent 的 worker 段：now_playing 缓存是主线程独占的（playback_control /
 // now_playing_album_art_notify_manager 均为 main-thread-only），worker 上只能走
-// album_art_manager_v2 + extractor；慢 I/O 与云占位符水合都留在这里。
+// album_art_manager_v2 + extractor。云占位符判定已在主线程段完成（见
+// ArtworkGetCurrentDeferred）：这里拿到的 trackPath 可能仍是 file-relative://，
+// 而 TryResolveNativeMediaPath 对非 file:// 输入会走 SDK 的 g_get_native_path
+// （main-thread-only），不能在 worker 上调用。
 api::Result<art::GetCurrentResult> ArtworkGetCurrentWorker(const art::GetCurrentParams& p,
                                                            const metadb_handle_ptr& track,
                                                            const std::string& trackPath,
@@ -514,14 +530,6 @@ api::Result<art::GetCurrentResult> ArtworkGetCurrentWorker(const art::GetCurrent
     result.type = p.type;
     result.path = trackPath;
     const GUID artType = StringToArtType(p.type);
-
-    // 云占位符：绝不为了显示封面触发水合/下载（与 getByPath/getForTrack 同一红线）。
-    // 占位符上读图会在 worker 里等水合，既浪费带宽也会把调用拖到超时。
-    if (IsCloudPlaceholderMediaFile(trackPath)) {
-        LOG("[PATH_HOOK] api=artwork.getCurrent resultKind=cloud-placeholder (skip, no hydration)");
-        result.reason = "not_found";
-        return result;
-    }
 
     try {
         // Method 2: album_art_manager_v2 (more comprehensive)
@@ -609,9 +617,23 @@ void ArtworkGetCurrentDeferred(const art::GetCurrentParams& p, const DeferredRes
         }
     }
 
-    // Method 2/3: worker（album_art_manager_v2 → extractor），带 5s 期限与 abort。
+    // 云占位符：绝不为了显示封面触发水合/下载（与 getByPath/getForTrack 同一红线）。
+    // 判定放在主线程：trackPath 可能是 file-relative://，TryResolveNativeMediaPath 的
+    // 解析（g_get_native_path）只有主线程保证。缓存命中时已在上面先答，不需要判定。
+    if (IsCloudPlaceholderMediaFile(trackPath)) {
+        LOG("[PATH_HOOK] api=artwork.getCurrent resultKind=cloud-placeholder (skip, no hydration)");
+        result.reason = "not_found";
+        result.path = trackPath;
+        api::Send(responder, api::Result<art::GetCurrentResult>(result));
+        return;
+    }
+
+    // Method 2/3: worker（album_art_manager_v2 → extractor），带 8s 期限与 abort。
+    // 超时信封补齐 path（审查 SEC-06 P2）：与 getByPath/getForTrack 的失败信封一致。
+    json timeoutEnvelope = ArtworkTimeoutEnvelope("artwork.getCurrent", p.type);
+    timeoutEnvelope["path"] = trackPath;
     RunArtworkOnWorker<art::GetCurrentResult>(
-        responder, "artwork.getCurrent", ArtworkTimeoutEnvelope("artwork.getCurrent", p.type),
+        responder, "artwork.getCurrent", std::move(timeoutEnvelope),
         [params = p, track, trackPath](abort_callback& abort) {
             return ArtworkGetCurrentWorker(params, track, trackPath, abort);
         });
@@ -743,45 +765,24 @@ api::Result<art::GetForTrackResult> ArtworkGetForTrackSync(const art::GetForTrac
     }
 }
 
-api::Result<art::GetByPlaylistItemResult> ArtworkGetByPlaylistItemSync(
-    const art::GetByPlaylistItemParams& p, abort_callback& abort) {
-    auto plm = playlist_manager::get();
-
-    // 负的 playlist 表示活动列表，与省略同义。
-    const std::optional<std::int64_t> requested =
-        p.playlist >= 0 ? std::optional<std::int64_t>(p.playlist) : std::nullopt;
-    size_t playlistIndex = 0;
-    if (auto failure = api::ResolvePlaylistTarget(*GetPlaylistService(), requested, p.playlistGuid,
-                                                  playlistIndex)) {
-        return std::move(*failure);
-    }
-
-    const size_t itemIndex = (p.index >= 0) ? static_cast<size_t>(p.index) : 0;
-    const size_t count = plm->playlist_get_item_count(playlistIndex);
-    if (itemIndex >= count) {
-        return api::Fail("Index out of range", ApiErrorCode::NOT_FOUND);
-    }
-
-    metadb_handle_ptr track;
-    if (!plm->playlist_get_item_handle(track, playlistIndex, itemIndex)) {
-        return api::Fail("Failed to get track handle", ApiErrorCode::OPERATION_FAILED);
-    }
-    if (track.is_valid() && IsCloudPlaceholderMediaFile(track->get_path())) {
-        art::GetByPlaylistItemResult blocked;
-        blocked.available = false;
-        blocked.type = p.type;
-        blocked.playlist = static_cast<std::int64_t>(playlistIndex);
-        blocked.playlistGuid = api::PlaylistGuidOf(*GetPlaylistService(), playlistIndex);
-        blocked.index = static_cast<std::int64_t>(itemIndex);
-        LOG("[PATH_HOOK] api=artwork.getByPlaylistItem resultKind=cloud-placeholder (skip, no hydration)");
-        return blocked;
-    }
-
+// ★ P0 修复（审查 SEC-01）：`playlist_manager` 是主线程独占接口
+// （SDK playlist.h: "All playlist_manager methods are valid only from main app
+// thread, unless documented otherwise"）。因此这个 worker 段**不碰任何
+// playlist_manager**：播放列表解析、行号校验、handle 提取、playlistGuid 查询与
+// 云占位符判定都在 deferred handler 的主线程段完成，worker 只拿 metadb_handle_ptr
+// 做 album art 提取；handle 的引用计数保证其生命周期覆盖 worker 使用期。
+api::Result<art::GetByPlaylistItemResult> ArtworkGetByPlaylistItemWorker(
+    const art::GetByPlaylistItemParams& p,
+    const metadb_handle_ptr& track,
+    std::size_t playlistIndex,
+    std::string playlistGuid,
+    std::size_t itemIndex,
+    abort_callback& abort) {
     art::GetByPlaylistItemResult result;
     result.available = false;
     result.type = p.type;
     result.playlist = static_cast<std::int64_t>(playlistIndex);
-    result.playlistGuid = api::PlaylistGuidOf(*GetPlaylistService(), playlistIndex);
+    result.playlistGuid = std::move(playlistGuid);
     result.index = static_cast<std::int64_t>(itemIndex);
     const GUID artType = StringToArtType(p.type);
 
@@ -1189,7 +1190,7 @@ api::Result<art::GetFolderImagesResult> ArtworkGetFolderImages(const art::GetFol
 } // namespace
 
 // deferred 包装：manager 路径（可能扫目录图/触发 fallback）一律走 CPU worker。
-// 八代目二期起统一经 RunArtworkOnWorker：5s 期限 + abort + 恰好一次回包。
+// 八代目三期起统一经 RunArtworkOnWorker：8s 期限 + abort + 恰好一次回包。
 void ArtworkGetForTrackDeferred(const art::GetForTrackParams& p, const DeferredResponder& responder) {
     json timeoutEnvelope = ArtworkTimeoutEnvelope("artwork.getForTrack", p.type);
     timeoutEnvelope["path"] = p.path;
@@ -1198,16 +1199,68 @@ void ArtworkGetForTrackDeferred(const art::GetForTrackParams& p, const DeferredR
         [params = p](abort_callback& abort) { return ArtworkGetForTrackSync(params, abort); });
 }
 
+// ★ P0 修复（审查 SEC-01）：主线程段解析 playlist_manager 并取 handle，worker 只取图。
+// 早期失败（列表/行解析失败、handle 无效、云占位符）直接经 responder 回包，不再进 worker。
 void ArtworkGetByPlaylistItemDeferred(const art::GetByPlaylistItemParams& p,
                                       const DeferredResponder& responder) {
-    // 失败信封里能带的行定位信息：负值在 handler 里表示"活动列表/首行"，信封不重复解析，
-    // 只报请求原值，成功路径仍由 handler 填解析后的值。
+    // ---- 主线程段：下列 API 全部是 playlist_manager 主线程独占接口 ----
+    auto plm = playlist_manager::get();
+
+    // 负的 playlist 表示活动列表，与省略同义。
+    const std::optional<std::int64_t> requested =
+        p.playlist >= 0 ? std::optional<std::int64_t>(p.playlist) : std::nullopt;
+    size_t playlistIndex = 0;
+    if (auto failure = api::ResolvePlaylistTarget(*GetPlaylistService(), requested, p.playlistGuid,
+                                                  playlistIndex)) {
+        responder.SendJson(api::results::FailureToJson(*failure));
+        return;
+    }
+
+    const size_t itemIndex = (p.index >= 0) ? static_cast<size_t>(p.index) : 0;
+    const size_t count = plm->playlist_get_item_count(playlistIndex);
+    if (itemIndex >= count) {
+        responder.SendJson(api::results::FailureToJson(
+            api::Fail("Index out of range", ApiErrorCode::NOT_FOUND)));
+        return;
+    }
+
+    metadb_handle_ptr track;
+    if (!plm->playlist_get_item_handle(track, playlistIndex, itemIndex) || !track.is_valid()) {
+        responder.SendJson(api::results::FailureToJson(
+            api::Fail("Failed to get track handle", ApiErrorCode::OPERATION_FAILED)));
+        return;
+    }
+
+    const std::string playlistGuid = api::PlaylistGuidOf(*GetPlaylistService(), playlistIndex);
+
+    // 云占位符判定也留在主线程：track->get_path() 可能是 file-relative://，其原生化
+    // （g_get_native_path）只有主线程保证；worker 上不能做这件事。
+    const char* rawTrackPath = track->get_path();
+    const std::string trackPath = rawTrackPath ? rawTrackPath : "";
+    if (IsCloudPlaceholderMediaFile(trackPath)) {
+        art::GetByPlaylistItemResult blocked;
+        blocked.available = false;
+        blocked.type = p.type;
+        blocked.playlist = static_cast<std::int64_t>(playlistIndex);
+        blocked.playlistGuid = playlistGuid;
+        blocked.index = static_cast<std::int64_t>(itemIndex);
+        LOG("[PATH_HOOK] api=artwork.getByPlaylistItem resultKind=cloud-placeholder (skip, no hydration)");
+        api::Send(responder, api::Result<art::GetByPlaylistItemResult>(blocked));
+        return;
+    }
+
+    // 超时信封带解析后的行定位信息（成功路径同形）。
     json timeoutEnvelope = ArtworkTimeoutEnvelope("artwork.getByPlaylistItem", p.type);
-    timeoutEnvelope["playlist"] = p.playlist;
-    timeoutEnvelope["index"] = p.index;
+    timeoutEnvelope["playlist"] = static_cast<std::int64_t>(playlistIndex);
+    timeoutEnvelope["playlistGuid"] = playlistGuid;
+    timeoutEnvelope["index"] = static_cast<std::int64_t>(itemIndex);
+
     RunArtworkOnWorker<art::GetByPlaylistItemResult>(
         responder, "artwork.getByPlaylistItem", std::move(timeoutEnvelope),
-        [params = p](abort_callback& abort) { return ArtworkGetByPlaylistItemSync(params, abort); });
+        [params = p, track, playlistIndex, playlistGuid, itemIndex](abort_callback& abort) {
+            return ArtworkGetByPlaylistItemWorker(params, track, playlistIndex, playlistGuid,
+                                                  itemIndex, abort);
+        });
 }
 
 void RegisterArtworkApi() {

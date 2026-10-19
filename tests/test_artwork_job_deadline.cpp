@@ -126,3 +126,65 @@ TEST(ArtworkJobDeadlineTest, ZeroDeadlineStillAllowsWorkerToWinTheGate) {
         ASSERT_EQ(responses.load(), 1) << "round " << round;
     }
 }
+
+// ============================================================
+// DeadlineScheduler 生命周期（审查 SEC-03 / SEC-04）
+// ============================================================
+// 用局部实例测试（不打进程级停机标记），避免影响同一进程里 JobGate 的用例。
+// 单例的显式停机在 initquit::on_quit 走 Shutdown()，组件内不便单测。
+
+TEST(DeadlineSchedulerLifecycle, StopDropsPendingDeadlineAndSchedulesAreRejected) {
+    artwork_async::DeadlineScheduler scheduler;
+    std::atomic<int> fired{0};
+
+    ASSERT_NE(scheduler.Schedule(20ms, [&fired]() { ++fired; }), 0u);
+    WaitFor([&fired]() { return fired.load() == 1; }, 2000ms);
+    ASSERT_EQ(fired.load(), 1);
+
+    ASSERT_NE(scheduler.Schedule(60000ms, [&fired]() { ++fired; }), 0u);
+    scheduler.Stop();  // 丢弃未到期回调并 join 线程
+    std::this_thread::sleep_for(60ms);
+    EXPECT_EQ(fired.load(), 1);  // 未到期回调没有执行
+    EXPECT_EQ(scheduler.Schedule(10ms, [&fired]() { ++fired; }), 0u);  // 停机后不再设期限
+    scheduler.Stop();  // 幂等
+}
+
+TEST(DeadlineSchedulerLifecycle, StopReturnsPromptlyWithLongPendingDeadline) {
+    artwork_async::DeadlineScheduler scheduler;
+    scheduler.Schedule(60000ms, []() {});
+
+    const auto started = std::chrono::steady_clock::now();
+    scheduler.Stop();
+    const auto elapsedMs = std::chrono::duration_cast<std::chrono::milliseconds>(
+                               std::chrono::steady_clock::now() - started)
+                               .count();
+    // 停机要立刻唤醒，而不是等 60s 期限（Shutdown 路径不允许挂死）。
+    EXPECT_LT(elapsedMs, 1000) << "Stop took " << elapsedMs << "ms";
+}
+
+TEST(DeadlineSchedulerLifecycle, CancelReArmsNextDeadline) {
+    artwork_async::DeadlineScheduler scheduler;
+    std::atomic<int> cancelledFired{0};
+    std::atomic<int> nextFired{0};
+
+    const std::uint64_t head = scheduler.Schedule(30000ms, [&cancelledFired]() { ++cancelledFired; });
+    ASSERT_NE(head, 0u);
+    scheduler.Cancel(head);
+    ASSERT_NE(scheduler.Schedule(20ms, [&nextFired]() { ++nextFired; }), 0u);
+
+    WaitFor([&nextFired]() { return nextFired.load() == 1; }, 2000ms);
+    EXPECT_EQ(nextFired.load(), 1);
+    EXPECT_EQ(cancelledFired.load(), 0);
+}
+
+TEST(DeadlineSchedulerLifecycle, CancelledDeadlineNeverFires) {
+    artwork_async::DeadlineScheduler scheduler;
+    std::atomic<int> fired{0};
+
+    const std::uint64_t token = scheduler.Schedule(30ms, [&fired]() { ++fired; });
+    ASSERT_NE(token, 0u);
+    scheduler.Cancel(token);
+
+    std::this_thread::sleep_for(120ms);
+    EXPECT_EQ(fired.load(), 0);
+}
