@@ -347,6 +347,23 @@ void PutPicture(R& out, const uint8_t* ptr, size_t size) {
 }
 
 /**
+ * ★★★ 云占位符防御（2026-10-19 八代目，fix/async-bridge）。
+ *
+ * 取图 API 一律**不读** OneDrive 云占位符：
+ *   · 红线：不得为了显示封面触发水合/下载；
+ *   · 实测：占位符上的读取会在 worker 线程里一直等水合（数秒~更久），既浪费带宽又让请求悬空
+ *     （`_review\probe-async-cloud2.mjs`：页面主线程仅 18ms 抖动，但调用 5s 未 settle）。
+ * 判定用 `FILE_ATTRIBUTE_RECALL_ON_DATA_ACCESS` 位（与资源管理器/cloud-state 扫描同源）。
+ */
+bool IsCloudPlaceholderMediaFile(const std::string& mediaPath) {
+    std::string nativePath;
+    if (!SubsongUtils::TryResolveNativeMediaPath(mediaPath, nativePath)) return false;
+    const DWORD attrs = GetFileAttributesW(Utf8ToWide(nativePath).c_str());
+    if (attrs == INVALID_FILE_ATTRIBUTES) return false;
+    return (attrs & FILE_ATTRIBUTE_RECALL_ON_DATA_ACCESS) != 0;
+}
+
+/**
  * ★★★ 目录封面回退（2026-10-19 八代目；收藏者报障「本地曲目仍显示默认封面」）。
  *
  * 为什么需要：`artwork.getByPath` 原本只走 `album_art_extractor::g_open` —— 只读**标签内嵌图**，
@@ -477,7 +494,7 @@ api::Result<art::GetCurrentResult> ArtworkGetCurrent(const art::GetCurrentParams
 
 // Extractor-path contract: native path, file://, path|subsong:N (subsong stripped, the
 // extractor works per file). file-relative:// needs playlist context and is refused.
-api::Result<art::GetByPathResult> ArtworkGetByPath(const art::GetByPathParams& p) {
+api::Result<art::GetByPathResult> ArtworkGetByPathSync(const art::GetByPathParams& p) {
     if (p.path.starts_with("file-relative://")) {
         return FileRelativeRefused(p.path, "artwork.getByPath");
     }
@@ -491,6 +508,11 @@ api::Result<art::GetByPathResult> ArtworkGetByPath(const art::GetByPathParams& p
     pfc::string8 canonicalPath;
     filesystem::g_get_canonical_path(filePath.c_str(), canonicalPath);
     const GUID artType = StringToArtType(p.type);
+
+    if (IsCloudPlaceholderMediaFile(filePath)) {
+        LOG("[PATH_HOOK] api=artwork.getByPath resultKind=cloud-placeholder (skip, no hydration)");
+        return result;
+    }
 
     try {
         abort_callback_dummy abort;
@@ -532,8 +554,23 @@ api::Result<art::GetByPathResult> ArtworkGetByPath(const art::GetByPathParams& p
     }
 }
 
+// ★ 2026-10-19 八代目（fix/async-bridge）：把取图整段挪到 CPU worker。
+// 主线程只做参数拷贝与投递；慢 I/O（extractor 打开、云占位符水合、目录图读取）不再阻塞
+// fb2k 主线程。DeferredResponder 的闸门/送达走 fb2k::inMainThread2，可安全跨线程回包。
+void ArtworkGetByPathDeferred(const art::GetByPathParams& p, const DeferredResponder& responder) {
+    fb2k::inCpuWorkerThread([params = p, responder]() noexcept {
+        try {
+            api::Send(responder, ArtworkGetByPathSync(params));
+        } catch (const std::exception& e) {
+            responder.SendError(e.what(), ApiErrorCode::INTERNAL_ERROR, "artwork.getByPath");
+        } catch (...) {
+            responder.SendError("artwork worker failed", ApiErrorCode::INTERNAL_ERROR, "artwork.getByPath");
+        }
+    });
+}
+
 // album_art_manager_v2 path: also finds folder covers, and measures PNG dimensions.
-api::Result<art::GetForTrackResult> ArtworkGetForTrack(const art::GetForTrackParams& p) {
+api::Result<art::GetForTrackResult> ArtworkGetForTrackSync(const art::GetForTrackParams& p) {
     if (p.path.starts_with("file-relative://")) {
         return FileRelativeRefused(p.path, "artwork.getForTrack");
     }
@@ -548,6 +585,10 @@ api::Result<art::GetForTrackResult> ArtworkGetForTrack(const art::GetForTrackPar
         abort_callback_dummy abort;
         metadb_handle_ptr track = ArtworkResolveHandle(p.path, "artwork.getForTrack");
         if (!track.is_valid()) return result;
+        if (IsCloudPlaceholderMediaFile(p.path)) {
+            LOG("[PATH_HOOK] api=artwork.getForTrack resultKind=cloud-placeholder (skip, no hydration)");
+            return result;
+        }
 
         album_art_data::ptr data;
         if (!QueryManagerArtwork(track, artType, data, abort)) return result;
@@ -573,7 +614,7 @@ api::Result<art::GetForTrackResult> ArtworkGetForTrack(const art::GetForTrackPar
     }
 }
 
-api::Result<art::GetByPlaylistItemResult> ArtworkGetByPlaylistItem(const art::GetByPlaylistItemParams& p) {
+api::Result<art::GetByPlaylistItemResult> ArtworkGetByPlaylistItemSync(const art::GetByPlaylistItemParams& p) {
     auto plm = playlist_manager::get();
 
     // 负的 playlist 表示活动列表，与省略同义。
@@ -594,6 +635,16 @@ api::Result<art::GetByPlaylistItemResult> ArtworkGetByPlaylistItem(const art::Ge
     metadb_handle_ptr track;
     if (!plm->playlist_get_item_handle(track, playlistIndex, itemIndex)) {
         return api::Fail("Failed to get track handle", ApiErrorCode::OPERATION_FAILED);
+    }
+    if (track.is_valid() && IsCloudPlaceholderMediaFile(track->get_path())) {
+        art::GetByPlaylistItemResult blocked;
+        blocked.available = false;
+        blocked.type = p.type;
+        blocked.playlist = static_cast<std::int64_t>(playlistIndex);
+        blocked.playlistGuid = api::PlaylistGuidOf(*GetPlaylistService(), playlistIndex);
+        blocked.index = static_cast<std::int64_t>(itemIndex);
+        LOG("[PATH_HOOK] api=artwork.getByPlaylistItem resultKind=cloud-placeholder (skip, no hydration)");
+        return blocked;
     }
 
     art::GetByPlaylistItemResult result;
@@ -1006,12 +1057,37 @@ api::Result<art::GetFolderImagesResult> ArtworkGetFolderImages(const art::GetFol
 
 } // namespace
 
+// deferred 包装：manager 路径（可能扫目录图/触发 fallback）一律走 CPU worker。
+void ArtworkGetForTrackDeferred(const art::GetForTrackParams& p, const DeferredResponder& responder) {
+    fb2k::inCpuWorkerThread([params = p, responder]() noexcept {
+        try {
+            api::Send(responder, ArtworkGetForTrackSync(params));
+        } catch (const std::exception& e) {
+            responder.SendError(e.what(), ApiErrorCode::INTERNAL_ERROR, "artwork.getForTrack");
+        } catch (...) {
+            responder.SendError("artwork worker failed", ApiErrorCode::INTERNAL_ERROR, "artwork.getForTrack");
+        }
+    });
+}
+
+void ArtworkGetByPlaylistItemDeferred(const art::GetByPlaylistItemParams& p, const DeferredResponder& responder) {
+    fb2k::inCpuWorkerThread([params = p, responder]() noexcept {
+        try {
+            api::Send(responder, ArtworkGetByPlaylistItemSync(params));
+        } catch (const std::exception& e) {
+            responder.SendError(e.what(), ApiErrorCode::INTERNAL_ERROR, "artwork.getByPlaylistItem");
+        } catch (...) {
+            responder.SendError("artwork worker failed", ApiErrorCode::INTERNAL_ERROR, "artwork.getByPlaylistItem");
+        }
+    });
+}
+
 void RegisterArtworkApi() {
     // 路径参数的安全级别来自声明（生成头里的 kPathParams），不再在这里登记。
     api::RegisterApi("artwork.getCurrent", ArtworkGetCurrent);
-    api::RegisterApi("artwork.getByPath", ArtworkGetByPath);
-    api::RegisterApi("artwork.getForTrack", ArtworkGetForTrack);
-    api::RegisterApi("artwork.getByPlaylistItem", ArtworkGetByPlaylistItem);
+    api::RegisterApiDeferred("artwork.getByPath", ArtworkGetByPathDeferred);
+    api::RegisterApiDeferred("artwork.getForTrack", ArtworkGetForTrackDeferred);
+    api::RegisterApiDeferred("artwork.getByPlaylistItem", ArtworkGetByPlaylistItemDeferred);
     api::RegisterApi("artwork.getAvailableTypes", ArtworkGetAvailableTypes);
     api::RegisterApi("artwork.getFb2kUrl", ArtworkGetFb2kUrl);
     api::RegisterApi("artwork.getFb2kUrlByPath", ArtworkGetFb2kUrlByPath);
