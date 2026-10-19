@@ -1,4 +1,4 @@
-﻿// UiApi.cpp - UI Components API
+// UiApi.cpp - UI Components API
 // Provides custom context menus, toast notifications, and system notifications
 // 形状由 src/api/schema/ui.ts 声明，结构体与参数解析来自生成的 UiSchema.h；
 // ui.showContextMenu 的 handler 在 WindowApi.cpp。
@@ -90,8 +90,13 @@ namespace {
     //==========================================================================
     api::Result<ui::ShowCustomMenuResult> UiShowCustomMenu(const ui::ShowCustomMenuParams& p, const CallerContext& caller) {
         const int itemCount = static_cast<int>(p.items.size());
-        console::printf("[UiApi] showCustomMenu: x=%lld, y=%lld, items=%d, has_callerHwnd=%s",
-            static_cast<long long>(p.x), static_cast<long long>(p.y), itemCount, caller.callerHwnd ? "true" : "false");
+        // ★ backport 上游 PR#18（MoveToEx）：console::printf 的 %lld 不在 fb2k 格式化器支持范围内，
+        //   改用 SDK 的 console formatter 宏（流式），避免日志输出异常。
+        FB2K_console_formatter()
+            << "[UiApi] showCustomMenu: x=" << p.x
+            << ", y=" << p.y
+            << ", items=" << itemCount
+            << ", has_callerHwnd=" << (caller.callerHwnd ? "true" : "false");
 
         // 面板模式: 调用方 HWND 是面板 HWND（DOM 坐标相对于此窗口）
         // 独立窗口: 回退到主窗口
