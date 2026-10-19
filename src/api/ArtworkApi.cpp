@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Artwork API - Album art and lyrics functionality
  * Cover art and lyrics
  * 
@@ -23,6 +23,8 @@
 #include <sstream>
 #include <iomanip>
 #include <array>
+#include <fstream>
+#include <filesystem>
 #include "utils/Base64.h"
 #include "utils/SubsongUtils.h"
 
@@ -344,10 +346,51 @@ void PutPicture(R& out, const uint8_t* ptr, size_t size) {
     out.dataUrl = std::string("data:") + mimeType + ";base64," + utils::Base64Encode(ptr, size);
 }
 
+/**
+ * ★★★ 目录封面回退（2026-10-19 八代目；收藏者报障「本地曲目仍显示默认封面」）。
+ *
+ * 为什么需要：`artwork.getByPath` 原本只走 `album_art_extractor::g_open` —— 只读**标签内嵌图**，
+ * 完全不看目录里的 `cover.jpg` / `folder.jpg`；而 foobar 自己的封面显示走 `album_art_manager_v2`
+ * （带"文件夹图回退"）⇒ 两者行为不一致：只有目录封面、没有内嵌图的专辑，webview 永远落默认图。
+ *
+ * 为什么不用 `album_art_manager_v2`：实测在 API 工作线程里 `manager->open()` 会阻塞
+ * （B1b：进程活着、调用/界面不返回）⇒ 不能用。这里改为**按固定文件名找本地图片并直接读字节**：
+ *   · 只认目录里固定命名（cover/folder/front/album + jpg/png），不递归、不猜；
+ *   · **`FILE_ATTRIBUTE_RECALL_ON_DATA_ACCESS` 置位一律跳过**（OneDrive 云占位符）——
+ *     红线：不得为了显示封面触发水合/下载，也避免读占位符时阻塞；
+ *   · 只读已在本地的图片文件，不新增任何网络访问。
+ */
+bool ReadLocalFolderCover(const std::string& mediaPath, BinaryArtworkInternal& out) {
+    std::string nativePath;
+    if (!SubsongUtils::TryResolveNativeMediaPath(mediaPath, nativePath)) return false;
+    const size_t lastSlash = nativePath.find_last_of("\\/");
+    if (lastSlash == std::string::npos) return false;
+
+    const std::wstring wdir = Utf8ToWide(nativePath.substr(0, lastSlash));
+    static const wchar_t* coverFiles[] = {
+        L"cover.jpg", L"cover.png", L"folder.jpg", L"folder.png",
+        L"front.jpg", L"front.png", L"album.jpg", L"album.png",
+    };
+    for (const auto& coverFile : coverFiles) {
+        const std::wstring fullPath = wdir + L"\\" + coverFile;
+        const DWORD attrs = GetFileAttributesW(fullPath.c_str());
+        if (attrs == INVALID_FILE_ATTRIBUTES) continue;
+        if ((attrs & FILE_ATTRIBUTE_DIRECTORY) != 0) continue;
+        if ((attrs & FILE_ATTRIBUTE_RECALL_ON_DATA_ACCESS) != 0) continue; // 云占位符：不读、不水合
+        std::ifstream file(std::filesystem::path(fullPath), std::ios::binary);
+        if (!file) continue;
+        std::vector<uint8_t> bytes((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
+        if (bytes.empty() || bytes.size() > 32 * 1024 * 1024) continue;
+        out.bytes = std::move(bytes);
+        out.mimeType = DetectMimeType(out.bytes.data(), out.bytes.size());
+        return true;
+    }
+    return false;
+}
+
 // album_art_manager_v2 打开一个句柄并取一种图片；没有时返回 false。
 bool QueryManagerArtwork(const metadb_handle_ptr& track, const GUID& artType, album_art_data::ptr& data,
-                         abort_callback& abort) {
-    auto manager = album_art_manager_v2::get();
+                         abort_callback& abort) {    auto manager = album_art_manager_v2::get();
     metadb_handle_list items;
     items.add_item(track);
     pfc::list_t<GUID> ids;
@@ -451,19 +494,34 @@ api::Result<art::GetByPathResult> ArtworkGetByPath(const art::GetByPathParams& p
 
     try {
         abort_callback_dummy abort;
-        auto extractor = album_art_extractor::g_open(nullptr, canonicalPath.c_str(), abort);
-        if (!extractor.is_valid()) {
-            LOG("[PATH_HOOK] api=artwork.getByPath resultKind=extractor-invalid (no extractor for path)");
-            return result;
-        }
+        auto tryFolder = [&]() -> bool {
+            if (artType != album_art_ids::cover_front) return false;
+            BinaryArtworkInternal folder;
+            if (!ReadLocalFolderCover(filePath, folder)) return false;
+            PutPicture(result, folder.bytes.data(), folder.bytes.size());
+            result.available = true;
+            LOG("[PATH_HOOK] api=artwork.getByPath resultKind=folder-fallback size=%zu mime=%s",
+                folder.bytes.size(), folder.mimeType.c_str());
+            return true;
+        };
+
         album_art_data::ptr data;
-        if (!extractor->query(artType, data, abort) || !data.is_valid()) {
-            LOG("[PATH_HOOK] api=artwork.getByPath resultKind=extractor-invalid (art type not found)");
+        bool fromExtractor = false;
+        try {
+            auto extractor = album_art_extractor::g_open(nullptr, canonicalPath.c_str(), abort);
+            fromExtractor = extractor.is_valid() && extractor->query(artType, data, abort) &&
+                            data.is_valid() && data->get_size() > 0;
+        } catch (...) {
+            fromExtractor = false;
+        }
+        if (fromExtractor) {
+            LOG("[PATH_HOOK] api=artwork.getByPath resultKind=extractor-valid size=%zu", data->get_size());
+            PutPicture(result, static_cast<const uint8_t*>(data->data()), data->get_size());
+            result.available = true;
             return result;
         }
-        LOG("[PATH_HOOK] api=artwork.getByPath resultKind=extractor-valid size=%zu", data->get_size());
-        PutPicture(result, static_cast<const uint8_t*>(data->data()), data->get_size());
-        result.available = true;
+        if (tryFolder()) return result;
+        LOG("[PATH_HOOK] api=artwork.getByPath resultKind=not-found (extractor+folder)");
         return result;
     } catch (const exception_album_art_not_found&) {
         LOG("[PATH_HOOK] api=artwork.getByPath resultKind=extractor-invalid (not found exception)");
