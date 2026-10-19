@@ -1,4 +1,4 @@
-﻿<?xml version="1.0" encoding="utf-8"?>
+<?xml version="1.0" encoding="utf-8"?>
 <Project DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   
   <ItemGroup Label="ProjectConfigurations">
@@ -400,6 +400,7 @@
     <ClInclude Include="src\settings\WindowStateConfig.h" />
     <ClInclude Include="src\ComponentDescription.inc" />
     <ClInclude Include="src\domain\PathSecurity.h" />
+    <ClInclude Include="src\domain\ArtworkCloudDefense.h" />
     <ClInclude Include="src\core\QueueManager.h" />
     <ClInclude Include="src\core\QueueManagerInternal.h" />
     <ClInclude Include="src\domain\library\LibraryCache.h" />

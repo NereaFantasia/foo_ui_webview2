@@ -350,6 +350,9 @@
     <ClInclude Include="src\domain\PathSecurity.h">
       <Filter>src\domain</Filter>
     </ClInclude>
+    <ClInclude Include="src\domain\ArtworkCloudDefense.h">
+      <Filter>src\domain</Filter>
+    </ClInclude>
     <ClInclude Include="src\domain\library\LibraryCache.h">
       <Filter>src\domain\library</Filter>
     </ClInclude>

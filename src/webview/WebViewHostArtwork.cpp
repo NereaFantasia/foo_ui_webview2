@@ -1,4 +1,4 @@
-﻿/**
+/**
  * WebViewHostArtwork.cpp - WebViewHost 的封面协议
  *
  * fb2k://artwork、artwork:// 与同源 /fb2k-artwork/ 路由的 WebResourceRequested 处理，
@@ -13,6 +13,7 @@
 #include "utils/ArtworkCacheKey.h"
 #include "utils/ImageUtils.h"
 #include "domain/PathSecurity.h"
+#include "domain/ArtworkCloudDefense.h"
 #include <wrl/event.h>
 #include <objidl.h>
 #include <vector>
@@ -260,28 +261,25 @@ void WebViewHost::SetupCustomProtocol() {
                 }
                 instrumentation.SetPermissionResult("allowed");
 
-                // === Source-aware ETag: resolve source paths unconditionally ===
-                instrumentation.RecordSourceResolve();
-                std::vector<std::string> artworkSourcePaths;
-                artwork_internal::TryGetArtworkSourcePathsForPath(
-                    pathUtf8, artworkType, artworkSourcePaths);
-                const std::string sourceFingerprint =
-                    ComputeSourceFingerprint(artworkSourcePaths);
-                const std::string& fingerprintBase =
-                    sourceFingerprint.empty() ? pathUtf8 : sourceFingerprint;
-                const size_t contentHash = std::hash<std::string>{}(
-                    fingerprintBase + artworkType + std::to_string(maxSize));
-                char etagBuffer[32];
-                snprintf(etagBuffer, sizeof(etagBuffer), "\"%zx\"", contentHash);
-                const std::string etag(etagBuffer);
-                LOG("Artwork resource authorized: type=", artworkType.c_str(),
-                    ", maxSize=", maxSize, ", sources=",
-                    static_cast<int>(artworkSourcePaths.size()));
+                // === 1. 云占位符防御（Cloud Placeholder Defense）===
+                // 目标媒体文件或其目录封面图置位 RECALL_ON_DATA_ACCESS 时：
+                // 立即返回 404，禁止读文件、禁止触发水合下载。
+                if (artwork_defense::IsCloudPlaceholderArtworkTarget(pathUtf8)) {
+                    instrumentation.Complete("missing", "cloud-placeholder");
+                    artworkLifecycle_.Complete(*lifecycleCapture);
+                    wil::com_ptr<ICoreWebView2WebResourceResponse> response;
+                    if (SUCCEEDED(environment_->CreateWebResourceResponse(
+                            nullptr, 404, L"Not Found",
+                            L"Cache-Control: no-store\r\nAccess-Control-Allow-Origin: *\r\n",
+                            &response))) {
+                        args->put_Response(response.get());
+                    }
+                    LOG("Artwork resource short-circuited: cloud placeholder for ", pathUtf8.c_str());
+                    return S_OK;
+                }
 
-                // === Negative cache check (avoids extractor on known-missing artwork) ===
-                const std::string negCacheKey =
-                    artworkType + ":" +
-                    (artworkSourcePaths.empty() ? pathUtf8 : artworkSourcePaths[0]);
+                // === 2. 负缓存快速检查（Negative cache check）===
+                const std::string negCacheKey = artworkType + ":" + pathUtf8;
                 {
                     std::lock_guard lock(s_artworkNegativeCacheMutex);
                     auto nit = s_artworkNegativeCache.find(negCacheKey);
@@ -305,50 +303,19 @@ void WebViewHost::SetupCustomProtocol() {
                     }
                 }
 
-                // === If-None-Match against source-aware ETag (after source resolve) ===
-                {
-                    wil::com_ptr<ICoreWebView2HttpRequestHeaders> reqHdrs;
-                    if (wil::unique_cotaskmem_string ifNoneMatch;
-                        SUCCEEDED(request->get_Headers(&reqHdrs)) && reqHdrs &&
-                        SUCCEEDED(reqHdrs->GetHeader(L"If-None-Match", &ifNoneMatch)) &&
-                        ifNoneMatch) {
-                        const std::string ifNoneMatchStr(
-                            pfc::stringcvt::string_utf8_from_wide(ifNoneMatch.get()).get_ptr());
-                        if (ifNoneMatchStr == etag) {
-                            const std::wstring etagW(etag.begin(), etag.end());
-                            const std::wstring headers304 =
-                                L"ETag: " + etagW + L"\r\n"
-                                L"Cache-Control: no-cache\r\n"
-                                L"Access-Control-Allow-Origin: *\r\n";
-                            wil::com_ptr<ICoreWebView2WebResourceResponse> response;
-                            if (SUCCEEDED(environment_->CreateWebResourceResponse(
-                                    nullptr, 304, L"Not Modified",
-                                    headers304.c_str(), &response))) {
-                                args->put_Response(response.get());
-                                LOG("Artwork 304 Not Modified (source-aware ETag)");
-                            }
-                            instrumentation.Complete("not-modified", "etag-match");
-                            artworkLifecycle_.Complete(*lifecycleCapture);
-                            return S_OK;
-                        }
+                // === 3. 内存缩放缓存快速检查（Scaled artwork in-memory cache lookup）===
+                std::string cacheKey;
+                if (maxSize > 0) {
+                    cacheKey = BuildScaledArtworkCacheKey(pathUtf8, artworkType, maxSize, {});
+                    if (TryRespondFromScaledCache(
+                            environment_.get(), args, cacheKey, "", "")) {
+                        instrumentation.Complete("success", "scaled-cache-hit");
+                        artworkLifecycle_.Complete(*lifecycleCapture);
+                        return S_OK;
                     }
                 }
 
-                // === Scaled artwork cache lookup ===
-                std::string cacheKey;
-                if (maxSize > 0) {
-                    cacheKey = BuildScaledArtworkCacheKey(
-                        pathUtf8, artworkType, maxSize, artworkSourcePaths);
-                }
-
-                if (maxSize > 0 && TryRespondFromScaledCache(
-                        environment_.get(), args, cacheKey, sourceFingerprint, etag)) {
-                    instrumentation.Complete("success", "scaled-cache-hit");
-                    artworkLifecycle_.Complete(*lifecycleCapture);
-                    return S_OK;
-                }
-
-                // === Async cache miss: GetDeferral + worker queue ===
+                // === 4. 异步处理：GetDeferral + worker 线程提取（带 8s 有界超时与恰好一次回包）===
                 wil::com_ptr<ICoreWebView2Deferral> deferral;
                 if (SUCCEEDED(args->GetDeferral(&deferral)) && deferral) {
                     // Capture everything needed for owner-thread completion.
@@ -358,10 +325,10 @@ void WebViewHost::SetupCustomProtocol() {
                     wil::com_ptr<ICoreWebView2WebResourceRequestedEventArgs> argsCapture = args;
                     auto lifecycle   = &artworkLifecycle_;
                     auto capture     = *lifecycleCapture;
-                    const std::string etagCopy      = etag;
                     const std::string cacheKeyCopy  = cacheKey;
+                    const std::string negCacheKeyCopy = negCacheKey;
 
-                    // Read If-None-Match once more for the async path.
+                    // Read If-None-Match for 304 fast path.
                     std::string ifNoneMatchEtag;
                     {
                         wil::com_ptr<ICoreWebView2HttpRequestHeaders> reqHdrs2;
@@ -379,19 +346,15 @@ void WebViewHost::SetupCustomProtocol() {
                     workItem.maxSize         = maxSize;
                     workItem.cacheKey        = cacheKey;
                     workItem.negCacheKey     = negCacheKey;
-                    workItem.fingerprint     = sourceFingerprint;
-                    workItem.etag            = etag;
                     workItem.ifNoneMatchEtag = std::move(ifNoneMatchEtag);
                     workItem.navGen          = lifecycleCapture->navigationGeneration;
                     workItem.hostGen         = lifecycleCapture->hostGeneration;
                     workItem.abort           = std::make_shared<abort_callback_impl>();
-                    // Capture deferral by copy (wil::com_ptr is refcounted). Do NOT move it:
-                    // Submit(std::move(workItem)) always takes ownership of the WorkItem, even when
-                    // it returns false for queue-full; the outer deferral must remain usable for 503.
+
                     workItem.complete = [
                         aliveFlag, envCapture, argsCapture = std::move(argsCapture),
                         deferral, lifecycle, capture,
-                        etagCopy, cacheKeyCopy
+                        cacheKeyCopy, negCacheKeyCopy
                     ](artwork_worker::ArtworkResult result) mutable {
                         // Runs on fb2k main thread (== WebView owner thread).
                         if (!aliveFlag->load(std::memory_order_acquire)) {
@@ -406,12 +369,11 @@ void WebViewHost::SetupCustomProtocol() {
 
                         wil::com_ptr<ICoreWebView2WebResourceResponse> response;
                         if (result.statusCode == 200 && !result.bytes.empty()) {
-                            // One shared buffer feeds both the cache entry and the response stream.
                             auto sharedBytes = std::make_shared<const std::vector<uint8_t>>(
                                 std::move(result.bytes));
-                            if (!result.cacheKey.empty()) {
+                            if (!cacheKeyCopy.empty()) {
                                 s_scaledArtworkCache.Put(
-                                    result.cacheKey, sharedBytes, result.mime, result.fingerprint,
+                                    cacheKeyCopy, sharedBytes, result.mime, "",
                                     std::chrono::steady_clock::now());
                             }
                             IStream* stream = SHCreateMemStream(
@@ -424,7 +386,9 @@ void WebViewHost::SetupCustomProtocol() {
                                     result.etag.begin(), result.etag.end());
                                 std::wstring h = L"Content-Type: " + mimeW + L"\r\n";
                                 h += L"Cache-Control: public, max-age=86400\r\n";
-                                h += L"ETag: " + etagW + L"\r\n";
+                                if (!result.etag.empty()) {
+                                    h += L"ETag: " + etagW + L"\r\n";
+                                }
                                 h += L"Access-Control-Allow-Origin: *\r\n";
                                 envCapture->CreateWebResourceResponse(
                                     stream, 200, L"OK", h.c_str(), &response);
@@ -433,16 +397,16 @@ void WebViewHost::SetupCustomProtocol() {
                         } else if (result.statusCode == 304 || result.is304) {
                             const std::wstring etagW(
                                 result.etag.begin(), result.etag.end());
-                            const std::wstring h304 =
-                                L"ETag: " + etagW + L"\r\n"
-                                L"Cache-Control: no-cache\r\n"
-                                L"Access-Control-Allow-Origin: *\r\n";
+                            std::wstring h304 = L"Cache-Control: no-cache\r\nAccess-Control-Allow-Origin: *\r\n";
+                            if (!result.etag.empty()) {
+                                h304 = L"ETag: " + etagW + L"\r\n" + h304;
+                            }
                             envCapture->CreateWebResourceResponse(
                                 nullptr, 304, L"Not Modified", h304.c_str(), &response);
                         } else if (result.statusCode == 404) {
-                            if (result.isNegative && !result.negCacheKey.empty()) {
+                            if (result.isNegative && !negCacheKeyCopy.empty()) {
                                 std::lock_guard lock(s_artworkNegativeCacheMutex);
-                                s_artworkNegativeCache[result.negCacheKey] =
+                                s_artworkNegativeCache[negCacheKeyCopy] =
                                     NegativeCacheEntry{std::chrono::steady_clock::now()};
                             }
                             envCapture->CreateWebResourceResponse(
@@ -477,8 +441,6 @@ void WebViewHost::SetupCustomProtocol() {
                     }
 
                     // Queue full / worker unavailable — respond 503 and complete deferral.
-                    // workItem (and its completion lambda) was destroyed inside Submit; use the
-                    // outer refcounted deferral / args / lifecycle still on this stack.
                     wil::com_ptr<ICoreWebView2WebResourceResponse> response503;
                     if (SUCCEEDED(environment_->CreateWebResourceResponse(
                             nullptr, 503, L"Service Unavailable",
@@ -492,14 +454,25 @@ void WebViewHost::SetupCustomProtocol() {
                     return S_OK;
                 }
 
-                // No deferral — fall through to inline sync extraction below.
                 // === Sync fallback (GetDeferral failed or async path unavailable) ===
+                if (artwork_defense::IsCloudPlaceholderArtworkTarget(pathUtf8)) {
+                    instrumentation.Complete("missing", "cloud-placeholder");
+                    artworkLifecycle_.Complete(*lifecycleCapture);
+                    wil::com_ptr<ICoreWebView2WebResourceResponse> response;
+                    if (SUCCEEDED(environment_->CreateWebResourceResponse(
+                            nullptr, 404, L"Not Found",
+                            L"Cache-Control: no-store\r\nAccess-Control-Allow-Origin: *\r\n",
+                            &response))) {
+                        args->put_Response(response.get());
+                    }
+                    return S_OK;
+                }
+
                 instrumentation.RecordExtractor();
                 artwork_internal::BinaryArtwork artwork;
                 bool found = artwork_internal::GetArtworkBinaryForPath(pathUtf8, artworkType, artwork);
                 
                 if (!found || artwork.bytes.empty()) {
-                    // Write negative cache so repeated requests skip the extractor.
                     {
                         std::lock_guard lock(s_artworkNegativeCacheMutex);
                         s_artworkNegativeCache[negCacheKey] =
@@ -543,11 +516,10 @@ void WebViewHost::SetupCustomProtocol() {
                         finalMimeType = outMimeType;
                         LOG("Image resized to ", outWidth, "x", outHeight, ", ", finalSize, " bytes");
 
-                        // Same cache and eviction policy as the async completion path.
                         s_scaledArtworkCache.Put(
                             cacheKey,
                             std::make_shared<const std::vector<uint8_t>>(resizedData),
-                            finalMimeType, sourceFingerprint,
+                            finalMimeType, "",
                             std::chrono::steady_clock::now());
                     } else if (outWidth > 0) {
                         LOG("Image already ", outWidth, "x", outHeight, ", no resize needed");
@@ -561,11 +533,9 @@ void WebViewHost::SetupCustomProtocol() {
                 );
                 if (stream) {
                     std::wstring mimeTypeW(finalMimeType.begin(), finalMimeType.end());
-                    std::wstring etagW(etag.begin(), etag.end());
                     
                     std::wstring headers = L"Content-Type: " + mimeTypeW + L"\r\n";
-                    headers += L"Cache-Control: public, max-age=86400\r\n";  // no immutable
-                    headers += L"ETag: " + etagW + L"\r\n";
+                    headers += L"Cache-Control: public, max-age=86400\r\n";
                     headers += L"Access-Control-Allow-Origin: *\r\n";
 
                     wil::com_ptr<ICoreWebView2WebResourceResponse> response;

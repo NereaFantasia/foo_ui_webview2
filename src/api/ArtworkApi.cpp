@@ -17,6 +17,7 @@
 #include "api/PlaylistTarget.h"
 #include "api/TypedApi.h"
 #include "api/ArtworkJobDeadline.h"
+#include "domain/ArtworkCloudDefense.h"
 #include "api/generated/ArtworkSchema.h"
 #include "api/MetaAccess.h"
 #include <foobar2000/SDK/album_art.h>
@@ -442,14 +443,7 @@ void PutPicture(R& out, const uint8_t* ptr, size_t size) {
  * 因此取属性前必须先用 ParseSubsongPath 剥掉子曲目后缀。
  */
 bool IsCloudPlaceholderMediaFile(const std::string& mediaPath) {
-    std::string nativePath;
-    if (!SubsongUtils::TryResolveNativeMediaPath(mediaPath, nativePath)) return false;
-    const auto [filePath, subsong] = ArtworkParseSubsongPath(nativePath);
-    (void)subsong;  // 属性属于承载文件，子曲目序号对属性读取没有意义
-    if (filePath.empty()) return false;
-    const DWORD attrs = GetFileAttributesW(Utf8ToWide(filePath).c_str());
-    if (attrs == INVALID_FILE_ATTRIBUTES) return false;
-    return (attrs & FILE_ATTRIBUTE_RECALL_ON_DATA_ACCESS) != 0;
+    return artwork_defense::IsCloudPlaceholderArtworkTarget(mediaPath);
 }
 
 /**
