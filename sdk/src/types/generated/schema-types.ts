@@ -295,6 +295,19 @@ export interface PcmStreamState {
     subscriptions: PcmStreamDebugEntry[];
 }
 
+export interface CloudPathState {
+    /** The path as given for `paths`, or the native child path for `directory`. */
+    path: string;
+    /** Whether the path exists on disk. A cloud placeholder does exist. */
+    exists: boolean;
+    /** Whether the path exists and its content is local, i.e. reading it would not need the cloud to supply data. */
+    local: boolean;
+    /** Whether the path exists and is a cloud placeholder that would be hydrated by a read (`FILE_ATTRIBUTE_RECALL_ON_DATA_ACCESS` set). Directory entries are the same shape: the directory itself being a placeholder is reported here too. */
+    placeholder: boolean;
+    /** Raw Win32 file attribute bits (`GetFileAttributesW`), present when `exists` is `true`. `FILE_ATTRIBUTE_DIRECTORY` (`0x10`) tells a directory entry from a file entry. */
+    attrs?: number;
+}
+
 /**
  * One output device as `config.getOutputDevices` lists it.
  */

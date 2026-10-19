@@ -141,6 +141,7 @@
     <ClCompile Include="test_artwork_request_lifecycle.cpp" />
     <ClCompile Include="test_artwork_job_deadline.cpp" />
     <ClCompile Include="test_artwork_instrumentation.cpp" />
+    <ClCompile Include="test_cloud_state.cpp" />
     <ClCompile Include="test_subsong_utils.cpp" />
     <ClCompile Include="test_lyrics_file_policy.cpp" />
     <ClCompile Include="test_subsong_path.cpp" />

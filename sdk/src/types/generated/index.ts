@@ -56,6 +56,7 @@ import type {
     ClipboardWriteParams,
     ClipboardWriteFilesParams,
     ClipboardWriteHTMLParams,
+    CloudGetStatesParams,
     ConfigExportParams,
     ConfigGetParams,
     ConfigGetActiveDspPresetParams,
@@ -504,6 +505,7 @@ import type {
     ClipboardWriteResponse,
     ClipboardWriteFilesResponse,
     ClipboardWriteHTMLResponse,
+    CloudGetStatesResponse,
     ConfigExportResponse,
     ConfigGetResponse,
     ConfigGetActiveDspPresetResponse,
@@ -957,6 +959,7 @@ export interface ApiMethodMap {
     "clipboard.write": [ClipboardWriteParams, ClipboardWriteResponse];
     "clipboard.writeFiles": [ClipboardWriteFilesParams, ClipboardWriteFilesResponse];
     "clipboard.writeHTML": [ClipboardWriteHTMLParams, ClipboardWriteHTMLResponse];
+    "cloud.getStates": [CloudGetStatesParams, CloudGetStatesResponse];
     "config.export": [ConfigExportParams, ConfigExportResponse];
     "config.get": [ConfigGetParams, ConfigGetResponse];
     "config.getActiveDspPreset": [ConfigGetActiveDspPresetParams, ConfigGetActiveDspPresetResponse];

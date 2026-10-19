@@ -495,6 +495,17 @@ export interface ClipboardWriteHTMLParams {
 }
 
 /**
+ * Parameters for `cloud.getStates`.
+ * Report the local/cloud state of media paths from file attributes alone. No file is opened and no content is read, so an online-only OneDrive placeholder is reported with `placeholder: true` instead of being hydrated; this is a metadata read, not a content read. Give exactly one of `paths` or `directory`: `paths` reports one entry per path in the given order, while `directory` reports the immediate children of one directory and does not recurse. A path that does not exist is reported with `exists: false` rather than failing the call; in `directory` mode a missing or non-directory path fails the call.
+ */
+export interface CloudGetStatesParams {
+    /** Media paths to inspect, at most 256. A path that does not exist is a success with `exists: false`; `file://`, `file-relative://` and a `|subsong:N` suffix are accepted and resolve to the underlying file. */
+    paths?: string[];
+    /** Directory whose immediate children are inspected, in native path form. A directory that does not exist fails with `NOT_FOUND`; a path that is not a directory fails with `INVALID_PATH`. */
+    directory?: string;
+}
+
+/**
  * Parameters for `config.export`.
  * Read the whole store both as a map and as one JSON text.
  */
@@ -5363,6 +5374,7 @@ export interface ApiParamsMap {
     "clipboard.write": ClipboardWriteParams;
     "clipboard.writeFiles": ClipboardWriteFilesParams;
     "clipboard.writeHTML": ClipboardWriteHTMLParams;
+    "cloud.getStates": CloudGetStatesParams;
     "config.export": ConfigExportParams;
     "config.get": ConfigGetParams;
     "config.getActiveDspPreset": ConfigGetActiveDspPresetParams;

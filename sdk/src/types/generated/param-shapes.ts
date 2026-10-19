@@ -340,6 +340,12 @@ export const API_PARAM_SHAPES: { readonly [M in keyof ApiParamsMap]: ParamShape 
             "html"
         ]
     },
+    "cloud.getStates": {
+        "keys": {
+            "paths": null,
+            "directory": null
+        }
+    },
     "config.export": {
         "keys": {}
     },

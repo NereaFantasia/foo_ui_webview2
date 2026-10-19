@@ -3,13 +3,14 @@
 页面经 `fb2k.invoke('namespace.method', params)` 调用的全部方法，按命名空间列出。事件见[事件 API](./events.md)。SDK 把这些方法封装为 `fb.*`，见 [SDK 命名空间](../sdk/namespaces.md)。
 
 <!-- api-schema:begin index:namespaces -->
-共 446 个方法，分属 41 个命名空间。
+共 447 个方法，分属 42 个命名空间。
 
 | 命名空间 | 方法数 | 所在页面 |
 | --- | ---: | --- |
 | `artwork` | 13 | [Artwork API](./artwork.md) |
 | `audio` | 17 | [Audio 音频 API](./audio.md) |
 | `clipboard` | 4 | [Clipboard 剪贴板 API](./clipboard.md) |
+| `cloud` | 1 | [Cloud 云状态 API](./cloud.md) |
 | `config` | 29 | [Config API](./config.md) |
 | `console` | 3 | [Console 控制台 API](./console.md) |
 | `cursor` | 2 | [Cursor API](./cursor.md) |

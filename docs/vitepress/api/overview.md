@@ -3,13 +3,14 @@
 The methods a page calls with `fb2k.invoke('namespace.method', params)`, by namespace. Events are listed in [Events API](./events.md). The SDK wraps these methods as `fb.*`; see [SDK namespaces](../sdk/namespaces.md).
 
 <!-- api-schema:begin index:namespaces -->
-446 methods in 41 namespaces.
+447 methods in 42 namespaces.
 
 | Namespace | Methods | Documented on |
 | --- | ---: | --- |
 | `artwork` | 13 | [Artwork API](./artwork.md) |
 | `audio` | 17 | [Audio API](./audio.md) |
 | `clipboard` | 4 | [Clipboard API](./clipboard.md) |
+| `cloud` | 1 | [Cloud API](./cloud.md) |
 | `config` | 29 | [Config API](./config.md) |
 | `console` | 3 | [Console API](./console.md) |
 | `cursor` | 2 | [Cursor API](./cursor.md) |

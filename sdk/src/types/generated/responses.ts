@@ -12,7 +12,7 @@ import type { JsonValue } from '../json.js';
 
 import type { ApiFailure } from '../responses.js';
 
-import type { AdvancedConfigItem, AlbumInfo, ArtistInfo, ArtworkAvailableEntry, ArtworkBatchRow, ArtworkFolderImage, ArtworkUrlRow, ConfigComponentInfo, ConfigDspPreset, ConfigLibraryFilePattern, ConfigOutputDevice, ConfigPreferencesPage, ContainerAttachment, ContainerChapter, ContainerTrack, DiscoveryComponentInfo, DiscoveryContextMenuCommand, DiscoveryContextMenuTreeNode, DiscoveryDspEntryInfo, DiscoveryInputFormatType, DiscoveryMainMenuCommand, DiscoveryMainMenuGroup, DiscoveryOutputDeviceEntry, DiscoveryPreferencePageInfo, DiscoverySearchResult, DiscoveryServiceCounts, DiscoveryUIElementInfo, DspAvailableEntry, DspChainEntry, DspPresetEntry, EvalBatchRow, EvalFieldsBatchRow, KeyboardHotkey, LibraryDirectoryNodeInfo, LibraryRootInfo, LibraryTrack, LibraryTrackPartial, LibraryValueCount, MenuTreeNode, MetadataReadBatchItem, MetadataWriteBatchError, OutputDevice, OutputEntry, PanelConfig, PcmDecodeState, PcmRuntimeState, PcmStreamState, PlaycountRow, PlaylistColumnDefinition, PlaylistGroupRun, PlaylistInfo, PlaylistTrack, PlaylistTrackPartial, PortInfo, QueueItem, RecentLibraryTrack, ReplayGainTrackInfo, SpectrumDebugSubscription, SpectrumDebugTarget, SystemApiInfo, SystemPluginInfo, Track, TrackTechnicalInfo, TrayMenuItem, WindowBackdropPolicyState, WindowInfo, WindowPopupBehaviorState } from './schema-types.js';
+import type { AdvancedConfigItem, AlbumInfo, ArtistInfo, ArtworkAvailableEntry, ArtworkBatchRow, ArtworkFolderImage, ArtworkUrlRow, CloudPathState, ConfigComponentInfo, ConfigDspPreset, ConfigLibraryFilePattern, ConfigOutputDevice, ConfigPreferencesPage, ContainerAttachment, ContainerChapter, ContainerTrack, DiscoveryComponentInfo, DiscoveryContextMenuCommand, DiscoveryContextMenuTreeNode, DiscoveryDspEntryInfo, DiscoveryInputFormatType, DiscoveryMainMenuCommand, DiscoveryMainMenuGroup, DiscoveryOutputDeviceEntry, DiscoveryPreferencePageInfo, DiscoverySearchResult, DiscoveryServiceCounts, DiscoveryUIElementInfo, DspAvailableEntry, DspChainEntry, DspPresetEntry, EvalBatchRow, EvalFieldsBatchRow, KeyboardHotkey, LibraryDirectoryNodeInfo, LibraryRootInfo, LibraryTrack, LibraryTrackPartial, LibraryValueCount, MenuTreeNode, MetadataReadBatchItem, MetadataWriteBatchError, OutputDevice, OutputEntry, PanelConfig, PcmDecodeState, PcmRuntimeState, PcmStreamState, PlaycountRow, PlaylistColumnDefinition, PlaylistGroupRun, PlaylistInfo, PlaylistTrack, PlaylistTrackPartial, PortInfo, QueueItem, RecentLibraryTrack, ReplayGainTrackInfo, SpectrumDebugSubscription, SpectrumDebugTarget, SystemApiInfo, SystemPluginInfo, Track, TrackTechnicalInfo, TrayMenuItem, WindowBackdropPolicyState, WindowInfo, WindowPopupBehaviorState } from './schema-types.js';
 
 /**
  * Successful response from `artwork.getAvailableArtwork`.
@@ -801,6 +801,21 @@ export interface ClipboardWriteHTMLSuccess {
  * Response from `clipboard.writeHTML`: `ClipboardWriteHTMLSuccess`, or `ApiFailure` when the call failed.
  */
 export type ClipboardWriteHTMLResponse = ClipboardWriteHTMLSuccess | ApiFailure;
+
+/**
+ * Successful response from `cloud.getStates`.
+ */
+export interface CloudGetStatesSuccess {
+    /** Always `true` here; a failed call resolves with `ApiFailure` instead. */
+    success: true;
+    /** One entry per requested path, or one entry per immediate child of `directory`; directory entries are sorted by `path`. */
+    states: CloudPathState[];
+}
+
+/**
+ * Response from `cloud.getStates`: `CloudGetStatesSuccess`, or `ApiFailure` when the call failed.
+ */
+export type CloudGetStatesResponse = CloudGetStatesSuccess | ApiFailure;
 
 /**
  * Successful response from `config.export`.
@@ -8114,6 +8129,7 @@ export interface ApiResponseMap {
     "clipboard.write": ClipboardWriteResponse;
     "clipboard.writeFiles": ClipboardWriteFilesResponse;
     "clipboard.writeHTML": ClipboardWriteHTMLResponse;
+    "cloud.getStates": CloudGetStatesResponse;
     "config.export": ConfigExportResponse;
     "config.get": ConfigGetResponse;
     "config.getActiveDspPreset": ConfigGetActiveDspPresetResponse;

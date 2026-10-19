@@ -1,4 +1,4 @@
-﻿// WebViewPanel::RegisterAllApis 与 InitializeCallbacks 的定义单独放在这一个 TU：
+// WebViewPanel::RegisterAllApis 与 InitializeCallbacks 的定义单独放在这一个 TU：
 // 全部 api/ 与 callbacks/ 模块头只在这里 include，面板本体的 TU 不再依赖它们。
 #include "pch.h"
 #include "core/WebViewPanel.h"
@@ -10,6 +10,7 @@
 #include "api/LibraryApi.h"
 #include "api/WindowApi.h"
 #include "api/ArtworkApi.h"
+#include "api/CloudApi.h"
 #include "api/FileApi.h"
 #include "api/DialogApi.h"
 #include "api/ClipboardApi.h"
@@ -54,6 +55,7 @@ void WebViewPanel::RegisterAllApis() {
     RegisterLibraryApi();
     RegisterWindowApi();
     RegisterArtworkApi();
+    RegisterCloudApi();
     RegisterFileApi();
     RegisterDialogApi();
     RegisterClipboardApi();

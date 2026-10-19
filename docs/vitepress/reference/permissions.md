@@ -9,10 +9,10 @@ Counts are taken from the `@security` and `@pathKey` declarations in `src/api/sc
 | --- | ---: | --- |
 | `Read` | 10 | Ordinary filesystem read checks |
 | `Write` | 1 | Strict write destinations (config/temp style policy) |
-| `MediaRead` | 47 | Media-context read checks |
+| `MediaRead` | 49 | Media-context read checks |
 | `MediaWrite` | 10 | Media-context write checks |
 | `FileWrite` | 11 | General file writes (`file.*`) |
-| **Total** | **79** | **74 unique APIs** |
+| **Total** | **81** | **75 unique APIs** |
 <!-- api-schema:end -->
 
 ## Six-level model
@@ -95,7 +95,7 @@ if (result.success === false) {
 <!-- api-schema:end -->
 
 <!-- api-schema:begin permissions:MediaRead -->
-### MediaRead — media reads (47 specs)
+### MediaRead — media reads (49 specs)
 
 | API | Parameter | Array | Nested key |
 | --- | --- | --- | --- |
@@ -112,6 +112,8 @@ if (result.success === false) {
 | `audio.analyzeBPM` | `path` | — | — |
 | `audio.decodePcm` | `path` | — | — |
 | `audio.generateFullWaveform` | `path` | — | — |
+| `cloud.getStates` | `directory` | — | — |
+| `cloud.getStates` | `paths` | yes | — |
 | `discovery.executeContextMenuByPath` | `trackPath` | — | — |
 | `jitQueue.enqueueNext` | `url` | — | — |
 | `jitQueue.playNow` | `url` | — | — |
