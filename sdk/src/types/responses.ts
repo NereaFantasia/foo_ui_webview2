@@ -506,6 +506,7 @@ export type ApiErrorCode =
     // Operation failures
     | 'OPERATION_FAILED'  // Generic operation failure.
     | 'CANCELLED'         // The caller cancelled an async task.
+    | 'TIMEOUT'           // An async task exceeded its host-side deadline.
     // Path / media specific
     | 'PERMISSION_DENIED' // Path-validation refused (PathSecuritySpec decorator).
     | 'ORIGIN_DENIED'     // Document origin not trusted for this capability.

@@ -92,6 +92,7 @@ foo_ui_webview2 的所有 API 在失败时遵循统一的错误信封结构。
 | --- | --- |
 | OPERATION_FAILED | 通用操作失败 |
 | CANCELLED | 调用方取消了异步任务（如 `audio.cancelFullWaveform`） |
+| TIMEOUT | 异步任务超过宿主侧期限，宿主停止等待；之后才到的结果会被丢弃。用于在 CPU worker 上读图的 `artwork.*` 调用（5 秒期限） |
 
 ### 安全
 

@@ -92,6 +92,7 @@ Invalid requests or unknown methods are rejected by BridgeCore before a handler 
 | --- | --- |
 | `OPERATION_FAILED` | Generic operation failure |
 | `CANCELLED` | The caller cancelled an async task (for example `audio.cancelFullWaveform`) |
+| `TIMEOUT` | The host stopped waiting for an async task at its own deadline; a result that arrives later is discarded. Used by the `artwork.*` calls that read pictures on a CPU worker (5 s deadline) |
 
 ### Security
 

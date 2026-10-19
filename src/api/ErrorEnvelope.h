@@ -48,6 +48,7 @@ namespace ApiErrorCode {
     // --- Operation failures ---
     constexpr const char* OPERATION_FAILED  = "OPERATION_FAILED";   // generic operation failure
     constexpr const char* CANCELLED         = "CANCELLED";          // async task cancelled by its caller
+    constexpr const char* TIMEOUT           = "TIMEOUT";            // async task exceeded its host-side deadline
 
     // --- Path/media related (existing in AudioApi) ---
     constexpr const char* MISSING_PATH      = "MISSING_PATH";

@@ -16,10 +16,12 @@
 #include "api/PlaylistApi.h"
 #include "api/PlaylistTarget.h"
 #include "api/TypedApi.h"
+#include "api/ArtworkJobDeadline.h"
 #include "api/generated/ArtworkSchema.h"
 #include "api/MetaAccess.h"
 #include <foobar2000/SDK/album_art.h>
 #include <foobar2000/SDK/album_art_helpers.h>
+#include <foobar2000/SDK/abort_callback_impl.h>
 #include <sstream>
 #include <iomanip>
 #include <array>
@@ -337,6 +339,80 @@ namespace {
 
 namespace art = api::artwork;
 
+/**
+ * ★★★ deferred artwork 的期限/取消（2026-10-19 八代目二期，fix/async-bridge）。
+ *
+ * 页面侧 invoke 的兜底超时是 30s（webview/BridgeBootstrapScript.inl）。宿主侧不能等那么久：
+ * 慢 I/O 会把 CPU worker 线程一直占着，后续请求排队，而且页面其实早就放弃了这次调用。
+ * 这里给每个 deferred artwork 请求一个 5s 上限：到期先回 `available:false` + `code:TIMEOUT`
+ * 的失败信封（同时保留该方法结果的业务字段），并 abort 传给 album_art_manager/extractor 的
+ * abort_callback —— SDK 里可中断的调用随即抛 exception_aborted，worker 退出、线程归还
+ * 线程池。5s 远大于正常取图（测试台实测 getForTrack 158ms），又明显小于页面 30s 兜底。
+ *
+ * 恰好一次：JobGate 的 CAS 决定 worker 结果与到期超时谁回包；DeferredResponder 自己的
+ * CAS 再兜一道（框架级重复响应仍会打日志）。
+ */
+constexpr std::uint64_t kArtworkWorkerDeadlineMs = 5000;
+
+// 超时信封：失败信封（success/error/code）+ 该方法结果里的业务字段子集。
+// 调用方既能看到错误码，也能从 available:false/reason 直接判断"没有图"。
+json ArtworkTimeoutEnvelope(const char* method, std::string type) {
+    json envelope = ApiEnvelope::MakeError(
+        std::string(method) + ": artwork worker deadline exceeded", ApiErrorCode::TIMEOUT);
+    envelope["available"] = false;
+    envelope["type"] = std::move(type);
+    envelope["reason"] = "timeout";
+    return envelope;
+}
+
+// deferred artwork 的统一执行器：CPU worker + deadline + abort + 恰好一次回包。
+// `work` 在 worker 上执行；`abort` 在到期时被设置，会传进 SDK 的取图调用。
+template <class R>
+void RunArtworkOnWorker(const DeferredResponder& responder, const char* method,
+                        json timeoutEnvelope,
+                        std::function<api::Result<R>(abort_callback&)> work) {
+    auto abort = std::make_shared<abort_callback_impl>();
+    auto gate = artwork_async::JobGate::Create(
+        std::chrono::milliseconds(kArtworkWorkerDeadlineMs),
+        [responder, abort, timeoutEnvelope = std::move(timeoutEnvelope)]() mutable {
+            abort->abort();
+            try {
+                responder.SendJson(std::move(timeoutEnvelope));
+            } catch (...) {
+                // 投递失败（宿主卸载等）：页面侧落到既有 30s 超时兜底。
+            }
+        });
+
+    try {
+        fb2k::inCpuWorkerThread(
+            [responder, abort, gate, method, work = std::move(work)]() mutable noexcept {
+                try {
+                    api::Result<R> result = work(*abort);
+                    gate->Finish([&result, &responder]() { api::Send(responder, result); });
+                } catch (const exception_aborted&) {
+                    // 到期侧已 abort：闸门归它，下面这包按设计丢弃；未到期就被中止则回 CANCELLED。
+                    gate->Finish([&]() {
+                        responder.SendError("artwork worker aborted", ApiErrorCode::CANCELLED, method);
+                    });
+                } catch (const std::exception& e) {
+                    std::string message = e.what();
+                    gate->Finish([&]() {
+                        responder.SendError(message, ApiErrorCode::INTERNAL_ERROR, method);
+                    });
+                } catch (...) {
+                    gate->Finish([&]() {
+                        responder.SendError("artwork worker failed", ApiErrorCode::INTERNAL_ERROR, method);
+                    });
+                }
+            });
+    } catch (...) {
+        // 线程池拒收（卸载/资源耗尽）：立刻失败并收回期限，避免留下一条孤立的到期回调。
+        gate->Finish([responder, method]() {
+            responder.SendError("artwork worker dispatch failed", ApiErrorCode::INTERNAL_ERROR, method);
+        });
+    }
+}
+
 // 把一张图片的字节填进带 mimeType / size / dataUrl 三个可选字段的结果结构。
 template <class R>
 void PutPicture(R& out, const uint8_t* ptr, size_t size) {
@@ -426,40 +502,29 @@ api::Failure FileRelativeRefused(const std::string& path, const char* apiName) {
 
 // ========== Current Playing Artwork ==========
 
-api::Result<art::GetCurrentResult> ArtworkGetCurrent(const art::GetCurrentParams& p) {
+// getCurrent 的 worker 段：now_playing 缓存是主线程独占的（playback_control /
+// now_playing_album_art_notify_manager 均为 main-thread-only），worker 上只能走
+// album_art_manager_v2 + extractor；慢 I/O 与云占位符水合都留在这里。
+api::Result<art::GetCurrentResult> ArtworkGetCurrentWorker(const art::GetCurrentParams& p,
+                                                           const metadb_handle_ptr& track,
+                                                           const std::string& trackPath,
+                                                           abort_callback& abort) {
     art::GetCurrentResult result;
     result.available = false;
     result.type = p.type;
+    result.path = trackPath;
     const GUID artType = StringToArtType(p.type);
 
+    // 云占位符：绝不为了显示封面触发水合/下载（与 getByPath/getForTrack 同一红线）。
+    // 占位符上读图会在 worker 里等水合，既浪费带宽也会把调用拖到超时。
+    if (IsCloudPlaceholderMediaFile(trackPath)) {
+        LOG("[PATH_HOOK] api=artwork.getCurrent resultKind=cloud-placeholder (skip, no hydration)");
+        result.reason = "not_found";
+        return result;
+    }
+
     try {
-        auto pc = playback_control::get();
-        metadb_handle_ptr track;
-        if (!pc->get_now_playing(track) || !track.is_valid()) {
-            LOG("artwork.getCurrent: No track playing");
-            result.reason = "no_track";
-            return result;
-        }
-
-        const char* trackPath = track->get_path();
-        LOG("artwork.getCurrent: %s", trackPath);
-
-        // Method 1: now_playing_album_art_notify_manager (fastest, cached). The cache only
-        // holds cover_front, so other types skip it.
-        if (artType == album_art_ids::cover_front) {
-            auto manager = now_playing_album_art_notify_manager::get();
-            auto data = manager->current();
-            if (data.is_valid() && data->get_size() > 0) {
-                LOG("artwork.getCurrent: Found via now_playing_manager (%zu bytes)", data->get_size());
-                PutPicture(result, static_cast<const uint8_t*>(data->data()), data->get_size());
-                result.source = "now_playing_manager";
-                result.available = true;
-                return result;
-            }
-        }
-
         // Method 2: album_art_manager_v2 (more comprehensive)
-        abort_callback_dummy abort;
         album_art_data::ptr artData;
         if (QueryManagerArtwork(track, artType, artData, abort)) {
             LOG("artwork.getCurrent: Found via album_art_manager_v2 (%zu bytes)", artData->get_size());
@@ -470,7 +535,7 @@ api::Result<art::GetCurrentResult> ArtworkGetCurrent(const art::GetCurrentParams
         }
 
         // Method 3: album_art_extractor directly
-        auto directExtractor = album_art_extractor::g_open(nullptr, trackPath, abort);
+        auto directExtractor = album_art_extractor::g_open(nullptr, trackPath.c_str(), abort);
         if (directExtractor.is_valid()) {
             album_art_data::ptr direct;
             if (directExtractor->query(artType, direct, abort) && direct.is_valid() && direct->get_size() > 0) {
@@ -482,9 +547,13 @@ api::Result<art::GetCurrentResult> ArtworkGetCurrent(const art::GetCurrentParams
             }
         }
 
-        LOG("artwork.getCurrent: No artwork found for %s", trackPath);
+        LOG("artwork.getCurrent: No artwork found for %s", trackPath.c_str());
         result.reason = "not_found";
-        result.path = trackPath;
+        return result;
+    } catch (const exception_aborted&) {
+        throw;
+    } catch (const exception_album_art_not_found&) {
+        result.reason = "not_found";
         return result;
     } catch (const std::exception& e) {
         LOG("artwork.getCurrent error: %s", e.what());
@@ -492,9 +561,67 @@ api::Result<art::GetCurrentResult> ArtworkGetCurrent(const art::GetCurrentParams
     }
 }
 
+// ★ 2026-10-19 八代目二期（fix/async-bridge）：getCurrent 也迁到 deferred + CPU worker。
+// 主线程段只做两件事：解析 now_playing 句柄，以及 O(1) 的 now_playing 缓存命中（缓存
+// 只能主线程取，见 GetArtworkBinaryForMetadbHandle 的守卫）；未命中则把句柄交给 worker
+// 走 album_art_manager_v2 + extractor。慢 I/O（目录图扫描、慢盘、云端水合）不再冻结主线程。
+void ArtworkGetCurrentDeferred(const art::GetCurrentParams& p, const DeferredResponder& responder) {
+    art::GetCurrentResult result;
+    result.available = false;
+    result.type = p.type;
+    const GUID artType = StringToArtType(p.type);
+
+    metadb_handle_ptr track;
+    try {
+        auto pc = playback_control::get();
+        if (!pc->get_now_playing(track) || !track.is_valid()) {
+            LOG("artwork.getCurrent: No track playing");
+            result.reason = "no_track";
+            api::Send(responder, api::Result<art::GetCurrentResult>(result));
+            return;
+        }
+    } catch (...) {
+        result.reason = "no_track";
+        api::Send(responder, api::Result<art::GetCurrentResult>(result));
+        return;
+    }
+
+    const char* rawTrackPath = track->get_path();
+    const std::string trackPath = rawTrackPath ? rawTrackPath : "";
+    LOG("artwork.getCurrent: %s", trackPath.c_str());
+
+    // Method 1: now_playing_album_art_notify_manager (fastest, cached; cover_front only).
+    // 缓存读 + base64 都是 O(图片大小) 且无 I/O，留在主线程比排一次 worker 更快。
+    if (artType == album_art_ids::cover_front) {
+        try {
+            auto manager = now_playing_album_art_notify_manager::get();
+            auto data = manager->current();
+            if (data.is_valid() && data->get_size() > 0) {
+                LOG("artwork.getCurrent: Found via now_playing_manager (%zu bytes)", data->get_size());
+                PutPicture(result, static_cast<const uint8_t*>(data->data()), data->get_size());
+                result.source = "now_playing_manager";
+                result.available = true;
+                api::Send(responder, api::Result<art::GetCurrentResult>(result));
+                return;
+            }
+        } catch (...) {
+            // 缓存不可用（无 notify manager / 非主线程语义）：继续走 worker 的 manager 路径。
+        }
+    }
+
+    // Method 2/3: worker（album_art_manager_v2 → extractor），带 5s 期限与 abort。
+    RunArtworkOnWorker<art::GetCurrentResult>(
+        responder, "artwork.getCurrent", ArtworkTimeoutEnvelope("artwork.getCurrent", p.type),
+        [params = p, track, trackPath](abort_callback& abort) {
+            return ArtworkGetCurrentWorker(params, track, trackPath, abort);
+        });
+}
+
 // Extractor-path contract: native path, file://, path|subsong:N (subsong stripped, the
 // extractor works per file). file-relative:// needs playlist context and is refused.
-api::Result<art::GetByPathResult> ArtworkGetByPathSync(const art::GetByPathParams& p) {
+// `abort` 来自 deferred 执行器的期限闸门：到期时 abort() 让可中断的取图调用提前抛出。
+api::Result<art::GetByPathResult> ArtworkGetByPathSync(const art::GetByPathParams& p,
+                                                       abort_callback& abort) {
     if (p.path.starts_with("file-relative://")) {
         return FileRelativeRefused(p.path, "artwork.getByPath");
     }
@@ -515,7 +642,6 @@ api::Result<art::GetByPathResult> ArtworkGetByPathSync(const art::GetByPathParam
     }
 
     try {
-        abort_callback_dummy abort;
         auto tryFolder = [&]() -> bool {
             if (artType != album_art_ids::cover_front) return false;
             BinaryArtworkInternal folder;
@@ -533,6 +659,8 @@ api::Result<art::GetByPathResult> ArtworkGetByPathSync(const art::GetByPathParam
             auto extractor = album_art_extractor::g_open(nullptr, canonicalPath.c_str(), abort);
             fromExtractor = extractor.is_valid() && extractor->query(artType, data, abort) &&
                             data.is_valid() && data->get_size() > 0;
+        } catch (const exception_aborted&) {
+            throw;  // 期限到期：交给 RunArtworkOnWorker 的闸门（已由到期侧回包）
         } catch (...) {
             fromExtractor = false;
         }
@@ -545,6 +673,8 @@ api::Result<art::GetByPathResult> ArtworkGetByPathSync(const art::GetByPathParam
         if (tryFolder()) return result;
         LOG("[PATH_HOOK] api=artwork.getByPath resultKind=not-found (extractor+folder)");
         return result;
+    } catch (const exception_aborted&) {
+        throw;
     } catch (const exception_album_art_not_found&) {
         LOG("[PATH_HOOK] api=artwork.getByPath resultKind=extractor-invalid (not found exception)");
         return result;
@@ -557,20 +687,18 @@ api::Result<art::GetByPathResult> ArtworkGetByPathSync(const art::GetByPathParam
 // ★ 2026-10-19 八代目（fix/async-bridge）：把取图整段挪到 CPU worker。
 // 主线程只做参数拷贝与投递；慢 I/O（extractor 打开、云占位符水合、目录图读取）不再阻塞
 // fb2k 主线程。DeferredResponder 的闸门/送达走 fb2k::inMainThread2，可安全跨线程回包。
+// 八代目二期补上 5s 期限：到期回 available:false + code:TIMEOUT，并 abort 取图调用。
 void ArtworkGetByPathDeferred(const art::GetByPathParams& p, const DeferredResponder& responder) {
-    fb2k::inCpuWorkerThread([params = p, responder]() noexcept {
-        try {
-            api::Send(responder, ArtworkGetByPathSync(params));
-        } catch (const std::exception& e) {
-            responder.SendError(e.what(), ApiErrorCode::INTERNAL_ERROR, "artwork.getByPath");
-        } catch (...) {
-            responder.SendError("artwork worker failed", ApiErrorCode::INTERNAL_ERROR, "artwork.getByPath");
-        }
-    });
+    json timeoutEnvelope = ArtworkTimeoutEnvelope("artwork.getByPath", p.type);
+    timeoutEnvelope["path"] = p.path;
+    RunArtworkOnWorker<art::GetByPathResult>(
+        responder, "artwork.getByPath", std::move(timeoutEnvelope),
+        [params = p](abort_callback& abort) { return ArtworkGetByPathSync(params, abort); });
 }
 
 // album_art_manager_v2 path: also finds folder covers, and measures PNG dimensions.
-api::Result<art::GetForTrackResult> ArtworkGetForTrackSync(const art::GetForTrackParams& p) {
+api::Result<art::GetForTrackResult> ArtworkGetForTrackSync(const art::GetForTrackParams& p,
+                                                           abort_callback& abort) {
     if (p.path.starts_with("file-relative://")) {
         return FileRelativeRefused(p.path, "artwork.getForTrack");
     }
@@ -582,7 +710,6 @@ api::Result<art::GetForTrackResult> ArtworkGetForTrackSync(const art::GetForTrac
     const GUID artType = StringToArtType(p.type);
 
     try {
-        abort_callback_dummy abort;
         metadb_handle_ptr track = ArtworkResolveHandle(p.path, "artwork.getForTrack");
         if (!track.is_valid()) return result;
         if (IsCloudPlaceholderMediaFile(p.path)) {
@@ -607,6 +734,8 @@ api::Result<art::GetForTrackResult> ArtworkGetForTrackSync(const art::GetForTrac
         result.height = height;
         result.available = true;
         return result;
+    } catch (const exception_aborted&) {
+        throw;
     } catch (const exception_album_art_not_found&) {
         return result;
     } catch (const std::exception& e) {
@@ -614,7 +743,8 @@ api::Result<art::GetForTrackResult> ArtworkGetForTrackSync(const art::GetForTrac
     }
 }
 
-api::Result<art::GetByPlaylistItemResult> ArtworkGetByPlaylistItemSync(const art::GetByPlaylistItemParams& p) {
+api::Result<art::GetByPlaylistItemResult> ArtworkGetByPlaylistItemSync(
+    const art::GetByPlaylistItemParams& p, abort_callback& abort) {
     auto plm = playlist_manager::get();
 
     // 负的 playlist 表示活动列表，与省略同义。
@@ -656,12 +786,13 @@ api::Result<art::GetByPlaylistItemResult> ArtworkGetByPlaylistItemSync(const art
     const GUID artType = StringToArtType(p.type);
 
     try {
-        abort_callback_dummy abort;
         album_art_data::ptr data;
         if (!QueryManagerArtwork(track, artType, data, abort)) return result;
         PutPicture(result, static_cast<const uint8_t*>(data->data()), data->get_size());
         result.available = true;
         return result;
+    } catch (const exception_aborted&) {
+        throw;
     } catch (const exception_album_art_not_found&) {
         return result;
     } catch (const std::exception& e) {
@@ -1058,33 +1189,30 @@ api::Result<art::GetFolderImagesResult> ArtworkGetFolderImages(const art::GetFol
 } // namespace
 
 // deferred 包装：manager 路径（可能扫目录图/触发 fallback）一律走 CPU worker。
+// 八代目二期起统一经 RunArtworkOnWorker：5s 期限 + abort + 恰好一次回包。
 void ArtworkGetForTrackDeferred(const art::GetForTrackParams& p, const DeferredResponder& responder) {
-    fb2k::inCpuWorkerThread([params = p, responder]() noexcept {
-        try {
-            api::Send(responder, ArtworkGetForTrackSync(params));
-        } catch (const std::exception& e) {
-            responder.SendError(e.what(), ApiErrorCode::INTERNAL_ERROR, "artwork.getForTrack");
-        } catch (...) {
-            responder.SendError("artwork worker failed", ApiErrorCode::INTERNAL_ERROR, "artwork.getForTrack");
-        }
-    });
+    json timeoutEnvelope = ArtworkTimeoutEnvelope("artwork.getForTrack", p.type);
+    timeoutEnvelope["path"] = p.path;
+    RunArtworkOnWorker<art::GetForTrackResult>(
+        responder, "artwork.getForTrack", std::move(timeoutEnvelope),
+        [params = p](abort_callback& abort) { return ArtworkGetForTrackSync(params, abort); });
 }
 
-void ArtworkGetByPlaylistItemDeferred(const art::GetByPlaylistItemParams& p, const DeferredResponder& responder) {
-    fb2k::inCpuWorkerThread([params = p, responder]() noexcept {
-        try {
-            api::Send(responder, ArtworkGetByPlaylistItemSync(params));
-        } catch (const std::exception& e) {
-            responder.SendError(e.what(), ApiErrorCode::INTERNAL_ERROR, "artwork.getByPlaylistItem");
-        } catch (...) {
-            responder.SendError("artwork worker failed", ApiErrorCode::INTERNAL_ERROR, "artwork.getByPlaylistItem");
-        }
-    });
+void ArtworkGetByPlaylistItemDeferred(const art::GetByPlaylistItemParams& p,
+                                      const DeferredResponder& responder) {
+    // 失败信封里能带的行定位信息：负值在 handler 里表示"活动列表/首行"，信封不重复解析，
+    // 只报请求原值，成功路径仍由 handler 填解析后的值。
+    json timeoutEnvelope = ArtworkTimeoutEnvelope("artwork.getByPlaylistItem", p.type);
+    timeoutEnvelope["playlist"] = p.playlist;
+    timeoutEnvelope["index"] = p.index;
+    RunArtworkOnWorker<art::GetByPlaylistItemResult>(
+        responder, "artwork.getByPlaylistItem", std::move(timeoutEnvelope),
+        [params = p](abort_callback& abort) { return ArtworkGetByPlaylistItemSync(params, abort); });
 }
 
 void RegisterArtworkApi() {
     // 路径参数的安全级别来自声明（生成头里的 kPathParams），不再在这里登记。
-    api::RegisterApi("artwork.getCurrent", ArtworkGetCurrent);
+    api::RegisterApiDeferred("artwork.getCurrent", ArtworkGetCurrentDeferred);
     api::RegisterApiDeferred("artwork.getByPath", ArtworkGetByPathDeferred);
     api::RegisterApiDeferred("artwork.getForTrack", ArtworkGetForTrackDeferred);
     api::RegisterApiDeferred("artwork.getByPlaylistItem", ArtworkGetByPlaylistItemDeferred);

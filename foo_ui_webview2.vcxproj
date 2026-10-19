@@ -533,6 +533,7 @@
     <ClInclude Include="src\webview\ArtworkRequestLifecycle.h" />
     <ClInclude Include="src\webview\ArtworkRequestInstrumentation.h" />
     <ClInclude Include="src\webview\ArtworkWorkerQueue.h" />
+    <ClInclude Include="src\api\ArtworkJobDeadline.h" />
     <ClInclude Include="src\webview\ScaledArtworkCache.h" />
     <ClInclude Include="src\api\PluginRegistry.h" />
     <ClInclude Include="src\api\FileApi.h" />
