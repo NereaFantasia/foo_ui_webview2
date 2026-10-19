@@ -796,26 +796,14 @@ api::Result<art::GetByPlaylistItemResult> ArtworkGetByPlaylistItemWorker(
     }
 }
 
-api::Result<art::GetAvailableTypesResult> ArtworkGetAvailableTypes(const art::GetAvailableTypesParams& p) {
+api::Result<art::GetAvailableTypesResult> ArtworkGetAvailableTypesWorker(
+    const std::string& path,
+    abort_callback& abort) {
     art::GetAvailableTypesResult result;
-    std::string path = p.path.value_or("");
-
     try {
-        abort_callback_dummy abort;
-
-        if (path.empty()) {
-            auto pc = playback_control::get();
-            metadb_handle_ptr track;
-            if (!pc->get_now_playing(track)) {
-                return api::Fail("No track specified and nothing playing", ApiErrorCode::NO_ACTIVE_ITEM);
-            }
-            path = track->get_path();
-        }
-
         auto extractor = album_art_extractor::g_open_allowempty(nullptr, path.c_str(), abort);
         if (!extractor.is_valid()) return result;
 
-        // The probe order is the reported order.
         static const struct { const char* name; GUID id; } artTypes[] = {
             {"front", album_art_ids::cover_front},
             {"back", album_art_ids::cover_back},
@@ -824,15 +812,57 @@ api::Result<art::GetAvailableTypesResult> ArtworkGetAvailableTypes(const art::Ge
             {"artist", album_art_ids::artist},
         };
         for (const auto& at : artTypes) {
+            if (abort.is_aborting()) throw exception_aborted();
             if (extractor->have_entry(at.id, abort)) {
                 result.types.emplace_back(at.name);
             }
         }
+    } catch (const exception_aborted&) {
+        throw;
     } catch (const std::exception& e) {
         LOG("getAvailableTypes error: %s", e.what());
     }
-
     return result;
+}
+
+void ArtworkGetAvailableTypesDeferred(const art::GetAvailableTypesParams& p, const DeferredResponder& responder) {
+    std::string path = p.path.value_or("");
+    if (path.empty()) {
+        try {
+            auto pc = playback_control::get();
+            metadb_handle_ptr track;
+            if (!pc->get_now_playing(track) || !track.is_valid()) {
+                responder.SendJson(api::results::FailureToJson(
+                    api::Fail("No track specified and nothing playing", ApiErrorCode::NO_ACTIVE_ITEM)));
+                return;
+            }
+            const char* trackPath = track->get_path();
+            path = trackPath ? trackPath : "";
+        } catch (...) {
+            responder.SendJson(api::results::FailureToJson(
+                api::Fail("No track specified and nothing playing", ApiErrorCode::NO_ACTIVE_ITEM)));
+            return;
+        }
+    }
+
+    if (IsCloudPlaceholderMediaFile(path)) {
+        LOG("[PATH_HOOK] api=artwork.getAvailableTypes path=%s resultKind=cloud-placeholder (skip, no hydration)", path.c_str());
+        art::GetAvailableTypesResult result;
+        api::Send(responder, api::Result<art::GetAvailableTypesResult>(result));
+        return;
+    }
+
+    json timeoutEnvelope = ApiEnvelope::MakeError(
+        "artwork.getAvailableTypes: artwork worker deadline exceeded", ApiErrorCode::TIMEOUT);
+    timeoutEnvelope["available"] = false;
+    timeoutEnvelope["types"] = json::array();
+    timeoutEnvelope["reason"] = "timeout";
+
+    RunArtworkOnWorker<art::GetAvailableTypesResult>(
+        responder, "artwork.getAvailableTypes", std::move(timeoutEnvelope),
+        [path](abort_callback& abort) {
+            return ArtworkGetAvailableTypesWorker(path, abort);
+        });
 }
 
 // ========== fb2k:// Protocol URL helpers ==========
@@ -889,24 +919,11 @@ api::Result<art::GetFb2kUrlByPathResult> ArtworkGetFb2kUrlByPath(const art::GetF
 
 // ========== Lyrics ==========
 
-api::Result<art::GetLyricsResult> ArtworkGetLyrics(const art::GetLyricsParams& p) {
-    const std::string path = p.path.value_or("");
+api::Result<art::GetLyricsResult> ArtworkGetLyricsWorker(
+    const metadb_handle_ptr& track,
+    abort_callback& abort) {
+    if (abort.is_aborting()) throw exception_aborted();
     try {
-        metadb_handle_ptr track;
-        if (path.empty()) {
-            auto pc = playback_control::get();
-            if (!pc->get_now_playing(track)) {
-                return api::Fail("No track playing", ApiErrorCode::NO_ACTIVE_ITEM);
-            }
-            LOG("[PATH_HOOK] api=artwork.getLyrics usedNowPlayingShortcut=true resultKind=%s",
-                track.is_valid() ? "handle-valid" : "handle-invalid");
-        } else {
-            track = ArtworkResolveHandle(path, "artwork.getLyrics");
-            if (!track.is_valid()) {
-                return api::Fail("Failed to create track handle", ApiErrorCode::NOT_FOUND);
-            }
-        }
-
         metadb_info_container::ptr infoContainer = SubsongUtils::GetInfoOrReadFile(track);
         const file_info& info = infoContainer->info();
 
@@ -915,6 +932,7 @@ api::Result<art::GetLyricsResult> ArtworkGetLyrics(const art::GetLyricsParams& p
 
         // Probe order decides: the first non-empty tag wins.
         for (const char* tag : lyrics_file_policy::kKnownLyricsTags) {
+            if (abort.is_aborting()) throw exception_aborted();
             const char* value = info.meta_get(tag, 0);
             if (value && value[0] != '\0') {
                 result.available = true;
@@ -925,30 +943,69 @@ api::Result<art::GetLyricsResult> ArtworkGetLyrics(const art::GetLyricsParams& p
             }
         }
         return result;
+    } catch (const exception_aborted&) {
+        throw;
     } catch (const std::exception& e) {
         LOG("getLyrics error: %s", e.what());
         return api::Fail(e.what(), ApiErrorCode::OPERATION_FAILED);
     }
 }
 
-api::Result<art::GetMetadataResult> ArtworkGetMetadata(const art::GetMetadataParams& p) {
-    const std::string path = p.path.value_or("");
+void ArtworkGetLyricsDeferred(const art::GetLyricsParams& p, const DeferredResponder& responder) {
+    const std::string rawPath = p.path.value_or("");
+    std::string trackPath = rawPath;
+    metadb_handle_ptr track;
+
     try {
-        metadb_handle_ptr track;
-        if (path.empty()) {
+        if (rawPath.empty()) {
             auto pc = playback_control::get();
-            if (!pc->get_now_playing(track)) {
-                return api::Fail("No track playing", ApiErrorCode::NO_ACTIVE_ITEM);
+            if (!pc->get_now_playing(track) || !track.is_valid()) {
+                responder.SendJson(api::results::FailureToJson(
+                    api::Fail("No track playing", ApiErrorCode::NO_ACTIVE_ITEM)));
+                return;
             }
-            LOG("[PATH_HOOK] api=artwork.getMetadata usedNowPlayingShortcut=true resultKind=%s",
-                track.is_valid() ? "handle-valid" : "handle-invalid");
+            const char* pathStr = track->get_path();
+            trackPath = pathStr ? pathStr : "";
+            LOG("[PATH_HOOK] api=artwork.getLyrics usedNowPlayingShortcut=true resultKind=handle-valid");
         } else {
-            track = ArtworkResolveHandle(path, "artwork.getMetadata");
+            track = ArtworkResolveHandle(rawPath, "artwork.getLyrics");
             if (!track.is_valid()) {
-                return api::Fail("Failed to create track handle", ApiErrorCode::NOT_FOUND);
+                responder.SendJson(api::results::FailureToJson(
+                    api::Fail("Failed to create track handle", ApiErrorCode::NOT_FOUND)));
+                return;
             }
         }
+    } catch (...) {
+        responder.SendJson(api::results::FailureToJson(
+            api::Fail("Failed to resolve track", ApiErrorCode::OPERATION_FAILED)));
+        return;
+    }
 
+    if (IsCloudPlaceholderMediaFile(trackPath)) {
+        LOG("[PATH_HOOK] api=artwork.getLyrics path=%s resultKind=cloud-placeholder (skip, no hydration)", trackPath.c_str());
+        art::GetLyricsResult result;
+        result.available = false;
+        api::Send(responder, api::Result<art::GetLyricsResult>(result));
+        return;
+    }
+
+    json timeoutEnvelope = ApiEnvelope::MakeError(
+        "artwork.getLyrics: artwork worker deadline exceeded", ApiErrorCode::TIMEOUT);
+    timeoutEnvelope["available"] = false;
+    timeoutEnvelope["reason"] = "timeout";
+
+    RunArtworkOnWorker<art::GetLyricsResult>(
+        responder, "artwork.getLyrics", std::move(timeoutEnvelope),
+        [track](abort_callback& abort) {
+            return ArtworkGetLyricsWorker(track, abort);
+        });
+}
+
+api::Result<art::GetMetadataResult> ArtworkGetMetadataWorker(
+    const metadb_handle_ptr& track,
+    abort_callback& abort) {
+    if (abort.is_aborting()) throw exception_aborted();
+    try {
         metadb_info_container::ptr infoContainer = SubsongUtils::GetInfoOrReadFile(track);
         const file_info& info = infoContainer->info();
 
@@ -968,10 +1025,11 @@ api::Result<art::GetMetadataResult> ArtworkGetMetadata(const art::GetMetadataPar
         result.trackNumber = single("TRACKNUMBER");
         result.discNumber = single("DISCNUMBER");
 
+        if (abort.is_aborting()) throw exception_aborted();
+
         // Embedded artwork: any of the five standard types counts, not just cover_front.
         bool hasEmbedded = false;
         try {
-            abort_callback_dummy abort;
             auto extractor = album_art_extractor::g_open(nullptr, track->get_path(), abort);
             if (extractor.is_valid()) {
                 static const GUID embeddedTypes[] = {
@@ -979,15 +1037,20 @@ api::Result<art::GetMetadataResult> ArtworkGetMetadata(const art::GetMetadataPar
                     album_art_ids::disc, album_art_ids::icon, album_art_ids::artist,
                 };
                 for (const auto& artId : embeddedTypes) {
+                    if (abort.is_aborting()) throw exception_aborted();
                     album_art_data::ptr artData;
                     try {
                         if (extractor->query(artId, artData, abort) && artData.is_valid() && artData->get_size() > 0) {
                             hasEmbedded = true;
                             break;
                         }
+                    } catch (const exception_aborted&) {
+                        throw;
                     } catch (...) {}
                 }
             }
+        } catch (const exception_aborted&) {
+            throw;
         } catch (...) {}
         result.hasEmbedded = hasEmbedded;
 
@@ -997,25 +1060,86 @@ api::Result<art::GetMetadataResult> ArtworkGetMetadata(const art::GetMetadataPar
         }
         result.hasLyrics = foundLyrics;
         return result;
+    } catch (const exception_aborted&) {
+        throw;
     } catch (const std::exception& e) {
         LOG("getMetadata error: %s", e.what());
         return api::Fail(e.what(), ApiErrorCode::OPERATION_FAILED);
     }
 }
 
+void ArtworkGetMetadataDeferred(const art::GetMetadataParams& p, const DeferredResponder& responder) {
+    const std::string rawPath = p.path.value_or("");
+    std::string trackPath = rawPath;
+    metadb_handle_ptr track;
+
+    try {
+        if (rawPath.empty()) {
+            auto pc = playback_control::get();
+            if (!pc->get_now_playing(track) || !track.is_valid()) {
+                responder.SendJson(api::results::FailureToJson(
+                    api::Fail("No track playing", ApiErrorCode::NO_ACTIVE_ITEM)));
+                return;
+            }
+            const char* pathStr = track->get_path();
+            trackPath = pathStr ? pathStr : "";
+            LOG("[PATH_HOOK] api=artwork.getMetadata usedNowPlayingShortcut=true resultKind=handle-valid");
+        } else {
+            track = ArtworkResolveHandle(rawPath, "artwork.getMetadata");
+            if (!track.is_valid()) {
+                responder.SendJson(api::results::FailureToJson(
+                    api::Fail("Failed to create track handle", ApiErrorCode::NOT_FOUND)));
+                return;
+            }
+        }
+    } catch (...) {
+        responder.SendJson(api::results::FailureToJson(
+            api::Fail("Failed to resolve track", ApiErrorCode::OPERATION_FAILED)));
+        return;
+    }
+
+    if (IsCloudPlaceholderMediaFile(trackPath)) {
+        LOG("[PATH_HOOK] api=artwork.getMetadata path=%s resultKind=cloud-placeholder (skip, no hydration)", trackPath.c_str());
+        art::GetMetadataResult result;
+        result.available = false;
+        result.hasEmbedded = false;
+        result.hasLyrics = false;
+        api::Send(responder, api::Result<art::GetMetadataResult>(result));
+        return;
+    }
+
+    json timeoutEnvelope = ApiEnvelope::MakeError(
+        "artwork.getMetadata: artwork worker deadline exceeded", ApiErrorCode::TIMEOUT);
+    timeoutEnvelope["available"] = false;
+    timeoutEnvelope["reason"] = "timeout";
+
+    RunArtworkOnWorker<art::GetMetadataResult>(
+        responder, "artwork.getMetadata", std::move(timeoutEnvelope),
+        [track](abort_callback& abort) {
+            return ArtworkGetMetadataWorker(track, abort);
+        });
+}
+
 // ========== Extended Artwork APIs ==========
 
-api::Result<art::GetBatchResult> ArtworkGetBatch(const art::GetBatchParams& p) {
+api::Result<art::GetBatchResult> ArtworkGetBatchWorker(const art::GetBatchParams& p, abort_callback& abort) {
     const GUID artType = StringToArtType(p.type);
     art::GetBatchResult result;
     result.artworks.reserve(p.paths.size());
 
     for (const auto& path : p.paths) {
+        if (abort.is_aborting()) throw exception_aborted();
         art::ArtworkBatchRow row;
         row.path = path;
         row.available = false;
+
+        if (IsCloudPlaceholderMediaFile(path)) {
+            LOG("[PATH_HOOK] api=artwork.getBatch path=%s resultKind=cloud-placeholder (skip, no hydration)", path.c_str());
+            result.artworks.push_back(std::move(row));
+            continue;
+        }
+
         try {
-            abort_callback_dummy abort;
             auto [filePath, subsong] = ArtworkParseSubsongPath(path);
             auto extractor = album_art_extractor::g_open(nullptr, filePath.c_str(), abort);
             if (extractor.is_valid()) {
@@ -1025,6 +1149,8 @@ api::Result<art::GetBatchResult> ArtworkGetBatch(const art::GetBatchParams& p) {
                     row.available = true;
                 }
             }
+        } catch (const exception_aborted&) {
+            throw;
         } catch (...) {
             // A file that cannot be opened keeps its row with available: false.
         }
@@ -1033,13 +1159,30 @@ api::Result<art::GetBatchResult> ArtworkGetBatch(const art::GetBatchParams& p) {
     return result;
 }
 
-api::Result<art::GetAvailableArtworkResult> ArtworkGetAvailableArtwork(const art::GetAvailableArtworkParams& p) {
+void ArtworkGetBatchDeferred(const art::GetBatchParams& p, const DeferredResponder& responder) {
+    json timeoutEnvelope = ApiEnvelope::MakeError(
+        "artwork.getBatch: artwork worker deadline exceeded", ApiErrorCode::TIMEOUT);
+    timeoutEnvelope["available"] = false;
+    timeoutEnvelope["artworks"] = json::array();
+    timeoutEnvelope["reason"] = "timeout";
+
+    RunArtworkOnWorker<art::GetBatchResult>(
+        responder, "artwork.getBatch", std::move(timeoutEnvelope),
+        [params = p](abort_callback& abort) {
+            return ArtworkGetBatchWorker(params, abort);
+        });
+}
+
+api::Result<art::GetAvailableArtworkResult> ArtworkGetAvailableArtworkWorker(
+    const art::GetAvailableArtworkParams& p,
+    abort_callback& abort) {
     auto [filePath, subsong] = ArtworkParseSubsongPath(p.path);
     art::GetAvailableArtworkResult result;
     result.available = false;
 
+    if (abort.is_aborting()) throw exception_aborted();
+
     try {
-        abort_callback_dummy abort;
         auto extractor = album_art_extractor::g_open(nullptr, filePath.c_str(), abort);
 
         if (extractor.is_valid()) {
@@ -1051,6 +1194,7 @@ api::Result<art::GetAvailableArtworkResult> ArtworkGetAvailableArtwork(const art
                 {"artist", album_art_ids::artist},
             };
             for (const auto& at : artTypes) {
+                if (abort.is_aborting()) throw exception_aborted();
                 album_art_data::ptr data;
                 try {
                     if (extractor->query(at.id, data, abort) && data.is_valid()) {
@@ -1059,6 +1203,8 @@ api::Result<art::GetAvailableArtworkResult> ArtworkGetAvailableArtwork(const art
                         entry.source = "embedded";
                         result.artworks.push_back(std::move(entry));
                     }
+                } catch (const exception_aborted&) {
+                    throw;
                 } catch (...) {}
             }
             if (!result.artworks.empty()) {
@@ -1066,10 +1212,7 @@ api::Result<art::GetAvailableArtworkResult> ArtworkGetAvailableArtwork(const art
             }
         }
 
-        // External cover files next to the track. This branch cuts the directory out of the
-        // path as a string and hands it to a Win32 file API, so it needs the native form:
-        // fb2k gives "file://D:\Music\x.flac" for a local file, whose directory part never
-        // matches anything on disk. The extractor above keeps receiving fb2k's own form.
+        // External cover files next to the track.
         std::string scanPath;
         if (SubsongUtils::TryResolveNativeMediaPath(filePath, scanPath)) {
             size_t lastSlash = scanPath.rfind('\\');
@@ -1082,17 +1225,44 @@ api::Result<art::GetAvailableArtworkResult> ArtworkGetAvailableArtwork(const art
                     L"front.jpg", L"front.png", L"album.jpg", L"album.png"
                 };
                 for (const auto& coverFile : coverFiles) {
+                    if (abort.is_aborting()) throw exception_aborted();
                     const std::wstring fullPath = wdir + L"\\" + coverFile;
-                    if (GetFileAttributesW(fullPath.c_str()) != INVALID_FILE_ATTRIBUTES) {
+                    const DWORD attrs = GetFileAttributesW(fullPath.c_str());
+                    if (attrs != INVALID_FILE_ATTRIBUTES && !(attrs & FILE_ATTRIBUTE_DIRECTORY) && !(attrs & FILE_ATTRIBUTE_RECALL_ON_DATA_ACCESS)) {
                         result.sources.push_back("folder:" + WideToUtf8(coverFile));
                     }
                 }
             }
         }
+    } catch (const exception_aborted&) {
+        throw;
     } catch (...) {}
 
     result.available = !result.artworks.empty();
     return result;
+}
+
+void ArtworkGetAvailableArtworkDeferred(const art::GetAvailableArtworkParams& p, const DeferredResponder& responder) {
+    if (IsCloudPlaceholderMediaFile(p.path)) {
+        LOG("[PATH_HOOK] api=artwork.getAvailableArtwork path=%s resultKind=cloud-placeholder (skip, no hydration)", p.path.c_str());
+        art::GetAvailableArtworkResult result;
+        result.available = false;
+        api::Send(responder, api::Result<art::GetAvailableArtworkResult>(result));
+        return;
+    }
+
+    json timeoutEnvelope = ApiEnvelope::MakeError(
+        "artwork.getAvailableArtwork: artwork worker deadline exceeded", ApiErrorCode::TIMEOUT);
+    timeoutEnvelope["available"] = false;
+    timeoutEnvelope["artworks"] = json::array();
+    timeoutEnvelope["sources"] = json::array();
+    timeoutEnvelope["reason"] = "timeout";
+
+    RunArtworkOnWorker<art::GetAvailableArtworkResult>(
+        responder, "artwork.getAvailableArtwork", std::move(timeoutEnvelope),
+        [params = p](abort_callback& abort) {
+            return ArtworkGetAvailableArtworkWorker(params, abort);
+        });
 }
 
 api::Result<art::GetFb2kUrlByPathBatchResult> ArtworkGetFb2kUrlByPathBatch(const art::GetFb2kUrlByPathBatchParams& p) {
@@ -1137,7 +1307,9 @@ api::Result<art::GetFb2kUrlByPathBatchResult> ArtworkGetFb2kUrlByPathBatch(const
     return result;
 }
 
-api::Result<art::GetFolderImagesResult> ArtworkGetFolderImages(const art::GetFolderImagesParams& p) {
+api::Result<art::GetFolderImagesResult> ArtworkGetFolderImagesWorker(
+    const art::GetFolderImagesParams& p,
+    abort_callback& abort) {
     const std::wstring wdir = Utf8ToWide(p.directory);
     art::GetFolderImagesResult result;
 
@@ -1149,7 +1321,13 @@ api::Result<art::GetFolderImagesResult> ArtworkGetFolderImages(const art::GetFol
     if (hFind == INVALID_HANDLE_VALUE) return result;
 
     do {
+        if (abort.is_aborting()) {
+            FindClose(hFind);
+            throw exception_aborted();
+        }
+
         if (findData.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) continue;
+        if (findData.dwFileAttributes & FILE_ATTRIBUTE_RECALL_ON_DATA_ACCESS) continue;
 
         const std::wstring filename = findData.cFileName;
         std::wstring lowerFilename = filename;
@@ -1179,6 +1357,29 @@ api::Result<art::GetFolderImagesResult> ArtworkGetFolderImages(const art::GetFol
 
     FindClose(hFind);
     return result;
+}
+
+void ArtworkGetFolderImagesDeferred(const art::GetFolderImagesParams& p, const DeferredResponder& responder) {
+    const std::wstring wdir = Utf8ToWide(p.directory);
+    const DWORD dirAttrs = GetFileAttributesW(wdir.c_str());
+    if (dirAttrs != INVALID_FILE_ATTRIBUTES && (dirAttrs & FILE_ATTRIBUTE_RECALL_ON_DATA_ACCESS) != 0) {
+        LOG("[PATH_HOOK] api=artwork.getFolderImages dir=%s resultKind=cloud-placeholder (skip, no hydration)", p.directory.c_str());
+        art::GetFolderImagesResult result;
+        api::Send(responder, api::Result<art::GetFolderImagesResult>(result));
+        return;
+    }
+
+    json timeoutEnvelope = ApiEnvelope::MakeError(
+        "artwork.getFolderImages: artwork worker deadline exceeded", ApiErrorCode::TIMEOUT);
+    timeoutEnvelope["available"] = false;
+    timeoutEnvelope["images"] = json::array();
+    timeoutEnvelope["reason"] = "timeout";
+
+    RunArtworkOnWorker<art::GetFolderImagesResult>(
+        responder, "artwork.getFolderImages", std::move(timeoutEnvelope),
+        [params = p](abort_callback& abort) {
+            return ArtworkGetFolderImagesWorker(params, abort);
+        });
 }
 
 } // namespace
@@ -1263,15 +1464,15 @@ void RegisterArtworkApi() {
     api::RegisterApiDeferred("artwork.getByPath", ArtworkGetByPathDeferred);
     api::RegisterApiDeferred("artwork.getForTrack", ArtworkGetForTrackDeferred);
     api::RegisterApiDeferred("artwork.getByPlaylistItem", ArtworkGetByPlaylistItemDeferred);
-    api::RegisterApi("artwork.getAvailableTypes", ArtworkGetAvailableTypes);
+    api::RegisterApiDeferred("artwork.getAvailableTypes", ArtworkGetAvailableTypesDeferred);
     api::RegisterApi("artwork.getFb2kUrl", ArtworkGetFb2kUrl);
     api::RegisterApi("artwork.getFb2kUrlByPath", ArtworkGetFb2kUrlByPath);
-    api::RegisterApi("artwork.getLyrics", ArtworkGetLyrics);
-    api::RegisterApi("artwork.getMetadata", ArtworkGetMetadata);
-    api::RegisterApi("artwork.getBatch", ArtworkGetBatch);
-    api::RegisterApi("artwork.getAvailableArtwork", ArtworkGetAvailableArtwork);
+    api::RegisterApiDeferred("artwork.getLyrics", ArtworkGetLyricsDeferred);
+    api::RegisterApiDeferred("artwork.getMetadata", ArtworkGetMetadataDeferred);
+    api::RegisterApiDeferred("artwork.getBatch", ArtworkGetBatchDeferred);
+    api::RegisterApiDeferred("artwork.getAvailableArtwork", ArtworkGetAvailableArtworkDeferred);
     api::RegisterApi("artwork.getFb2kUrlByPathBatch", ArtworkGetFb2kUrlByPathBatch);
-    api::RegisterApi("artwork.getFolderImages", ArtworkGetFolderImages);
+    api::RegisterApiDeferred("artwork.getFolderImages", ArtworkGetFolderImagesDeferred);
 
     LOG("Artwork API registered (13 APIs)");
 }

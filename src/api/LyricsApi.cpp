@@ -1,4 +1,4 @@
-﻿// LyricsApi.cpp - Lyrics API
+// LyricsApi.cpp - Lyrics API
 // Provides lyrics read/write operations
 
 #include "pch.h"
@@ -8,8 +8,11 @@
 #include "api/MetadataApi.h"
 #include "api/TypedApi.h"
 #include "api/generated/LyricsSchema.h"
+#include "api/ArtworkJobDeadline.h"
+#include "domain/ArtworkCloudDefense.h"
 #include "domain/PathSecurity.h"
 #include "utils/SubsongUtils.h"
+#include <foobar2000/SDK/abort_callback_impl.h>
 #include <fstream>
 #include <filesystem>
 #include <chrono>
@@ -22,6 +25,51 @@ namespace fs = std::filesystem;
 namespace {
     using json = nlohmann::json;
     namespace lyrics = api::lyrics;
+
+    constexpr std::uint64_t kLyricsWorkerDeadlineMs = 8000;
+
+    template <class R>
+    void RunLyricsOnWorker(const DeferredResponder& responder, const char* method,
+                           json timeoutEnvelope,
+                           std::function<api::Result<R>(abort_callback&)> work) {
+        auto abort = std::make_shared<abort_callback_impl>();
+        auto gate = artwork_async::JobGate::Create(
+            std::chrono::milliseconds(kLyricsWorkerDeadlineMs),
+            [responder, abort, timeoutEnvelope = std::move(timeoutEnvelope)]() mutable {
+                abort->abort();
+                try {
+                    responder.SendJson(std::move(timeoutEnvelope));
+                } catch (...) {
+                }
+            });
+
+        try {
+            fb2k::inCpuWorkerThread(
+                [responder, abort, gate, method, work = std::move(work)]() mutable noexcept {
+                    try {
+                        api::Result<R> result = work(*abort);
+                        gate->Finish([&result, &responder]() { api::Send(responder, result); });
+                    } catch (const exception_aborted&) {
+                        gate->Finish([&]() {
+                            responder.SendError("lyrics worker aborted", ApiErrorCode::CANCELLED, method);
+                        });
+                    } catch (const std::exception& e) {
+                        std::string message = e.what();
+                        gate->Finish([&]() {
+                            responder.SendError(message, ApiErrorCode::INTERNAL_ERROR, method);
+                        });
+                    } catch (...) {
+                        gate->Finish([&]() {
+                            responder.SendError("lyrics worker failed", ApiErrorCode::INTERNAL_ERROR, method);
+                        });
+                    }
+                });
+        } catch (...) {
+            gate->Finish([responder, method]() {
+                responder.SendError("lyrics worker dispatch failed", ApiErrorCode::INTERNAL_ERROR, method);
+            });
+        }
+    }
 
     struct LyricsCacheEntry {
         lyrics::GetResult result;
@@ -102,6 +150,10 @@ namespace {
 
     metadb_handle_ptr ResolveTrackHandle(const std::string& path, const char* api = nullptr) {
         metadb_handle_ptr track;
+        if (!core_api::is_main_thread()) {
+            auto [filePath, subsong] = ParseSubsongPath(path);
+            return SubsongUtils::CreateCanonicalHandle(filePath.c_str(), subsong);
+        }
         auto pc = playback_control::get();
 
         if (path.empty()) {
@@ -237,41 +289,48 @@ namespace {
     //==========================================================================
     // lyrics.get - Get lyrics for a track
     //==========================================================================
-    api::Result<lyrics::GetResult> LyricsGet(const lyrics::GetParams& p) {
-        const std::string filename = p.filename.value_or("");
-        if (!IsValidLyricsFilename(filename)) return api::Fail(kInvalidFilenameError, ApiErrorCode::INVALID_PARAMS);
-        std::string path = p.path.value_or("");
-        if (path.empty()) {
-            metadb_handle_ptr track;
-            if (!playback_control::get()->get_now_playing(track) || !track.is_valid()) {
-                return api::Fail("No track playing and no path specified", ApiErrorCode::NO_ACTIVE_ITEM);
-            }
-            path = fb2k_paths::JoinSubsongPath(track->get_path(), track->get_subsong_index());
-        }
+    api::Result<lyrics::GetResult> LyricsGetWorker(
+        const lyrics::GetParams& p,
+        const std::string& path,
+        const std::string& filename,
+        const std::string& cacheKey,
+        const metadb_handle_ptr& track,
+        abort_callback& abort) {
+        if (abort.is_aborting()) throw exception_aborted();
 
-        const std::string cacheKey = json::array({p.source, p.type, p.format, filename}).dump();
         lyrics::GetResult result;
-        if (TryGetCachedLyricsResult(path, cacheKey, result)) return result;
         result.available = false;
         result.path = path;
 
         metadb_info_container::ptr trackInfo;
         if (p.source == "embedded" || p.source == "any") {
             try {
-                trackInfo = TryGetTrackInfo(ResolveTrackHandle(path, "lyrics.get"));
-                if (TryReadEmbeddedLyrics(trackInfo, result, p.type)) {
-                    StoreCachedLyricsResult(path, cacheKey, result);
-                    return result;
+                if (track.is_valid()) {
+                    trackInfo = TryGetTrackInfo(track);
+                    if (TryReadEmbeddedLyrics(trackInfo, result, p.type)) {
+                        StoreCachedLyricsResult(path, cacheKey, result);
+                        return result;
+                    }
                 }
+            } catch (const exception_aborted&) {
+                throw;
             } catch (const std::exception&) {}
         }
+
+        if (abort.is_aborting()) throw exception_aborted();
 
         std::string nativePath;
         if ((p.source == "file" || p.source == "any") &&
             SubsongUtils::TryResolveNativeMediaPath(path, nativePath)) {
             for (const auto& candidate : BuildLyricsFileCandidates(nativePath, filename, p.format, trackInfo)) {
+                if (abort.is_aborting()) throw exception_aborted();
                 if (!CanReadLyricsFile(candidate)) continue;
                 try {
+                    const DWORD attrs = GetFileAttributesW(candidate.c_str());
+                    if (artwork_defense::IsPlaceholderAttributes(attrs)) {
+                        LOG("[PATH_HOOK] api=lyrics.get candidate=%ls resultKind=cloud-placeholder (skip, no hydration)", candidate.c_str());
+                        continue;
+                    }
                     if (!fs::exists(candidate)) continue;
                     std::ifstream file(candidate, std::ios::in);
                     if (!file.is_open()) continue;
@@ -287,11 +346,70 @@ namespace {
                     result.lyrics = text;
                     result.synced = synced;
                     break;
+                } catch (const exception_aborted&) {
+                    throw;
                 } catch (const std::exception&) {}
             }
         }
         StoreCachedLyricsResult(path, cacheKey, result);
         return result;
+    }
+
+    void LyricsGetDeferred(const lyrics::GetParams& p, const DeferredResponder& responder) {
+        const std::string filename = p.filename.value_or("");
+        if (!IsValidLyricsFilename(filename)) {
+            responder.SendJson(api::results::FailureToJson(
+                api::Fail(kInvalidFilenameError, ApiErrorCode::INVALID_PARAMS)));
+            return;
+        }
+
+        std::string path = p.path.value_or("");
+        metadb_handle_ptr track;
+        try {
+            if (path.empty()) {
+                auto pc = playback_control::get();
+                if (!pc->get_now_playing(track) || !track.is_valid()) {
+                    responder.SendJson(api::results::FailureToJson(
+                        api::Fail("No track playing and no path specified", ApiErrorCode::NO_ACTIVE_ITEM)));
+                    return;
+                }
+                path = fb2k_paths::JoinSubsongPath(track->get_path(), track->get_subsong_index());
+            } else {
+                track = ResolveTrackHandle(path, "lyrics.get");
+            }
+        } catch (...) {
+            responder.SendJson(api::results::FailureToJson(
+                api::Fail("Failed to resolve track", ApiErrorCode::OPERATION_FAILED)));
+            return;
+        }
+
+        const std::string cacheKey = json::array({p.source, p.type, p.format, filename}).dump();
+        lyrics::GetResult cachedResult;
+        if (TryGetCachedLyricsResult(path, cacheKey, cachedResult)) {
+            api::Send(responder, api::Result<lyrics::GetResult>(cachedResult));
+            return;
+        }
+
+        if (artwork_defense::IsCloudPlaceholderArtworkTarget(path)) {
+            LOG("[PATH_HOOK] api=lyrics.get path=%s resultKind=cloud-placeholder (skip, no hydration)", path.c_str());
+            lyrics::GetResult result;
+            result.available = false;
+            result.path = path;
+            api::Send(responder, api::Result<lyrics::GetResult>(result));
+            return;
+        }
+
+        json timeoutEnvelope = ApiEnvelope::MakeError(
+            "lyrics.get: lyrics worker deadline exceeded", ApiErrorCode::TIMEOUT);
+        timeoutEnvelope["available"] = false;
+        timeoutEnvelope["path"] = path;
+        timeoutEnvelope["reason"] = "timeout";
+
+        RunLyricsOnWorker<lyrics::GetResult>(
+            responder, "lyrics.get", std::move(timeoutEnvelope),
+            [p, path, filename, cacheKey, track](abort_callback& abort) {
+                return LyricsGetWorker(p, path, filename, cacheKey, track, abort);
+            });
     }
 
     //==========================================================================
@@ -476,33 +594,88 @@ namespace {
     //==========================================================================
     // lyrics.exists - Check if lyrics exist for a track
     //==========================================================================
-    api::Result<lyrics::ExistsResult> LyricsExists(const lyrics::ExistsParams& p) {
-        const std::string filename = p.filename.value_or("");
-        if (!IsValidLyricsFilename(filename)) return api::Fail(kInvalidFilenameError, ApiErrorCode::INVALID_PARAMS);
+    api::Result<lyrics::ExistsResult> LyricsExistsWorker(
+        const lyrics::ExistsParams& p,
+        const std::string& filename,
+        const metadb_handle_ptr& track,
+        abort_callback& abort) {
+        if (abort.is_aborting()) throw exception_aborted();
+
         lyrics::ExistsResult result;
         result.exists = false;
         metadb_info_container::ptr trackInfo;
         try {
-            trackInfo = TryGetTrackInfo(ResolveTrackHandle(p.path, "lyrics.exists"));
-            if (trackInfo.is_valid() && HasAnyLyricsTag(trackInfo->info())) {
-                result.sources.emplace_back("embedded");
-                result.exists = true;
+            if (track.is_valid()) {
+                trackInfo = TryGetTrackInfo(track);
+                if (trackInfo.is_valid() && HasAnyLyricsTag(trackInfo->info())) {
+                    result.sources.emplace_back("embedded");
+                    result.exists = true;
+                }
             }
+        } catch (const exception_aborted&) {
+            throw;
         } catch (const std::exception&) {}
+
+        if (abort.is_aborting()) throw exception_aborted();
 
         std::string nativePath;
         if (SubsongUtils::TryResolveNativeMediaPath(p.path, nativePath)) {
             for (const auto& candidate : BuildLyricsFileCandidates(nativePath, filename, "any", trackInfo)) {
+                if (abort.is_aborting()) throw exception_aborted();
                 if (!CanReadLyricsFile(candidate)) continue;
                 try {
+                    const DWORD attrs = GetFileAttributesW(candidate.c_str());
+                    if (artwork_defense::IsPlaceholderAttributes(attrs)) {
+                        LOG("[PATH_HOOK] api=lyrics.exists candidate=%ls resultKind=cloud-placeholder (skip, no hydration)", candidate.c_str());
+                        continue;
+                    }
                     if (fs::exists(candidate)) {
                         result.sources.push_back("file:" + WideToUtf8(candidate.filename().wstring()));
                         result.exists = true;
                     }
+                } catch (const exception_aborted&) {
+                    throw;
                 } catch (const std::exception&) {}
             }
         }
         return result;
+    }
+
+    void LyricsExistsDeferred(const lyrics::ExistsParams& p, const DeferredResponder& responder) {
+        const std::string filename = p.filename.value_or("");
+        if (!IsValidLyricsFilename(filename)) {
+            responder.SendJson(api::results::FailureToJson(
+                api::Fail(kInvalidFilenameError, ApiErrorCode::INVALID_PARAMS)));
+            return;
+        }
+
+        if (artwork_defense::IsCloudPlaceholderArtworkTarget(p.path)) {
+            LOG("[PATH_HOOK] api=lyrics.exists path=%s resultKind=cloud-placeholder (skip, no hydration)", p.path.c_str());
+            lyrics::ExistsResult result;
+            result.exists = false;
+            api::Send(responder, api::Result<lyrics::ExistsResult>(result));
+            return;
+        }
+
+        metadb_handle_ptr track;
+        try {
+            track = ResolveTrackHandle(p.path, "lyrics.exists");
+        } catch (...) {
+            // handle resolution failure is non-fatal for exists
+        }
+
+        json timeoutEnvelope = ApiEnvelope::MakeError(
+            "lyrics.exists: lyrics worker deadline exceeded", ApiErrorCode::TIMEOUT);
+        timeoutEnvelope["available"] = false;
+        timeoutEnvelope["exists"] = false;
+        timeoutEnvelope["sources"] = json::array();
+        timeoutEnvelope["reason"] = "timeout";
+
+        RunLyricsOnWorker<lyrics::ExistsResult>(
+            responder, "lyrics.exists", std::move(timeoutEnvelope),
+            [p, filename, track](abort_callback& abort) {
+                return LyricsExistsWorker(p, filename, track, abort);
+            });
     }
 
 } // anonymous namespace
@@ -517,9 +690,9 @@ void InvalidateLyricsCache() {
 //==========================================================================
 void RegisterLyricsApi() {
     // The path security levels come from the declaration (kPathParams).
-    api::RegisterApi("lyrics.get", LyricsGet);
+    api::RegisterApiDeferred("lyrics.get", LyricsGetDeferred);
     api::RegisterApi("lyrics.save", LyricsSave);
-    api::RegisterApi("lyrics.exists", LyricsExists);
+    api::RegisterApiDeferred("lyrics.exists", LyricsExistsDeferred);
 
     LOG("Lyrics API registered (3 APIs)");
 }
