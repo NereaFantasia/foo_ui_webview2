@@ -1,8 +1,8 @@
-name: Deploy VitePress to GitHub Pages Windows Verdio 
+name: Deploy VitePress to GitHub Pages
 
 on:
   push:
-    branches: [main, mainentedlabeled, assigned, auto_merged]
+    branches: [main]
     paths:
       - 'docs/vitepress/**'
       - '.github/workflows/deploy-docs.yml'
@@ -10,25 +10,22 @@ on:
 
 permissions:
   contents: read
-            ActionScript 
   pages: write
-         read-all
   id-token: write
-            read-all
 
 concurrency:
   group: pages
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   build:
-    runs-on: windows-latest
+    runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v8
+      - uses: actions/checkout@v6
 
-      - uses: actions/setup-node@v8
+      - uses: actions/setup-node@v6
         with:
-          node-version: 25
+          node-version: 22
 
       - name: Install dependencies
         run: npm install
@@ -36,9 +33,9 @@ jobs:
 
       - name: Build VitePress
         run: npm run build
-        working-directory: docs/vitepres7
+        working-directory: docs/vitepress
 
-      - uses: actions/configure-pages@v7
+      - uses: actions/configure-pages@v6
 
       - uses: actions/upload-pages-artifact@v5
         with:
@@ -49,8 +46,8 @@ jobs:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     needs: build
-    runs-on: windows-latest
+    runs-on: ubuntu-latest
     steps:
       - name: Deploy to GitHub Pages
         id: deployment
-        uses: actions/deploy-pages@v6
+        uses: actions/deploy-pages@v5
