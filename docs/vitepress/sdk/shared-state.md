@@ -13,7 +13,7 @@ Signature: `fb.sharedState.delete(key: string): Promise<StateDeleteResponse>`
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `key` | `string` | Yes | Logical key to remove. |
+| `key` | `string` | Yes | Logical key to remove |
 
 The response's `existed` tells whether the key existed before the call. Removing a key that existed emits `state:deleted` with `reason: 'deleted'`.
 
@@ -27,7 +27,7 @@ Signature: `fb.sharedState.keys(pattern?: string): Promise<StateKeysResponse>`
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `pattern` | `string` | No | Key pattern; defaults to `'*'`. |
+| `pattern` | `string` | No | Key pattern; defaults to `'*'` |
 
 Resolves with the matching keys as `{ keys }`, in no particular order. `'*'` matches every key; a pattern ending in `*` matches by prefix, such as `'playlist:*'`; any other pattern matches one whole key, a `*` elsewhere being an ordinary character. Expired keys are swept first, and each one broadcasts `state:deleted` with `reason: 'expired'`.
 
@@ -43,10 +43,10 @@ Signature: `fb.sharedState.set(key: string, value: JsonValue, silent?: boolean, 
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `key` | `string` | Yes | Logical key to update. |
-| `value` | `unknown` | Yes | JSON-serializable value. A top-level `null` is refused; remove a key with `delete()`. |
-| `silent` | `boolean` | No | Suppresses the change event when `true`; defaults to `false`. |
-| `ttlMs` | `number` | No | Time to live in milliseconds; omitted, `0` or less, the value does not expire. |
+| `key` | `string` | Yes | Logical key to update |
+| `value` | `unknown` | Yes | JSON-serializable value. A top-level `null` is refused; remove a key with `delete()` |
+| `silent` | `boolean` | No | Suppresses the change event when `true`; defaults to `false` |
+| `ttlMs` | `number` | No | Time to live in milliseconds; omitted, `0` or less, the value does not expire |
 
 Broadcasts `state:changed` afterwards unless `silent` is `true`, with `key`, `value`, `previousValue` (`null` for a new key) and `sourceWindowId`. With a positive `ttlMs`, the result and the event both carry `expiresAt`, in milliseconds since the Unix epoch.
 

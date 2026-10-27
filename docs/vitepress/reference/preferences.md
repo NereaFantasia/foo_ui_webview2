@@ -1,30 +1,30 @@
 # Preferences
 
-The component's settings are on the `File → Preferences → Display → WebView2 UI` page and its three sub-pages, plus a few security exceptions in the Advanced branch.
+The component's settings are located on the `File → Preferences → Display → WebView2 UI` page and its three sub-pages, plus security exceptions in the Advanced branch.
 
 ## WebView2 UI page
 
-The overview page has three groups:
+The overview page contains three groups:
 
-- **Web template**: the active template and its folder. `Manage...` creates, renames or deletes templates (you name a new template yourself); `Open...` opens the folder when it exists.
-- **Appearance**: the component language (Auto / English / Chinese) and the default window backdrop. A language change applies to newly opened component dialogs; menus and panel descriptions update after a restart.
-- **Tools**: a read-only line with the development-server state, plus buttons to the Advanced branch and the API list.
+- **Web template**: Active template and its directory. `Manage...` creates, renames, or deletes templates (new templates are named by the user); `Open...` opens the template directory in the system file manager when present.
+- **Appearance**: Component language (Auto / English / Chinese) and default window backdrop effect (e.g. Mica, Acrylic, or none). Language changes apply to newly opened component dialogs immediately; menus and panel descriptions update after restarting foobar2000.
+- **Tools**: Read-only development-server status line, plus buttons linking to the Advanced branch and the public API reference.
 
 ## Sub-pages
 
-Three sub-pages sit under it in the tree on the left; their names follow the component language after a restart.
+Three sub-pages sit under it in the left navigation tree; their labels follow the component language after a restart:
 
-- **Window**: remember the window position and size; background mode (takes effect after a restart) and restoring the background window's last Show/Hide state on startup (editable once background mode is checked); minimize to tray and close to tray (disabled with a note while the current theme has not created a tray icon); the thumbnail toolbar playback buttons (after a restart) and playback progress on the taskbar button. Values a theme sets at run time through the `tray.*` / `taskbar.*` API override these for the current session only and are not written back.
-- **Performance**: preheat the WebView2 environment at startup (off: it is created when the first window needs it; after a restart); deep-suspend the WebView while the main window is hidden (main window only; not while CDP keep-alive is active); the default content zoom, 50–200% in steps of 25 on top of the system DPI scaling. `Apply` re-zooms open windows except those whose theme has called `window.setZoom`; new windows read the value when they are created.
-- **Developer**: Developer Tools (F12); the development server switch and URL, which `Apply` puts into effect at once by reloading the main window and the panels that follow the global template (no restart); CDP remote debugging and its port (1024–65535, default 9222). Developer Tools, the CDP switch and the port take effect after a restart. If you change the port, point the MCP server at it as well (`FB2K_CDP_PORT`, see the [MCP setup guide](/mcp/setup)).
+- **Window**: Remember window position and size; background mode (takes effect after restart) and restoring the background window's last Show/Hide state on startup (editable once background mode is checked); minimize to tray and close to tray (disabled with an explanatory note when the current theme has not created a tray icon); thumbnail toolbar playback buttons (takes effect after restart) and playback progress on the taskbar button. Values set at runtime by themes through the `tray.*` or `taskbar.*` APIs override these settings for the current session only and are not persisted back.
+- **Performance**: Pre-warm the WebView2 environment on startup (when off, created on demand when the first window requires it; takes effect after restart); deep-suspend the WebView while the main window is hidden (main window only; suppressed while CDP keep-alive is active); default content zoom (50%–200% in 25% increments on top of system DPI scaling). Clicking `Apply` immediately re-zooms open windows except those that explicitly called `window.setZoom`; newly created windows read this value at initialization.
+- **Developer**: Developer Tools (F12); development server toggle and URL, which `Apply` puts into effect immediately by reloading the main window and all panels following the global template (no restart needed); CDP remote debugging and its listen port (1024–65535, default 9222). Developer Tools, the CDP switch, and the port take effect after a restart. If the port is changed, update the MCP server configuration accordingly (`FB2K_CDP_PORT`, see the [MCP setup guide](/mcp/setup)).
 
-## Draft and apply
+## Draft and Persistence {#draft-and-apply}
 
-Every page holds its edits as a draft: nothing is written until `Apply` or `OK`, `Reset page` returns the draft to the defaults without writing, and `Cancel` discards it. Template create / rename / delete are file operations that run immediately and are not undone by `Cancel`; the active template and any template a loaded panel references cannot be renamed or deleted.
+Each page holds edits in a temporary draft buffer: settings are only persisted to disk upon clicking `Apply` or `OK`; `Reset page` resets the draft to defaults without writing to disk; `Cancel` discards all unapplied draft changes. Template management operations (create, rename, delete) execute immediately on the filesystem and are not rolled back by `Cancel`; the active template and any template currently referenced by open panels cannot be renamed or deleted.
 
-## Advanced branch
+## Advanced Branch
 
-Security exceptions stay in `File → Preferences → Advanced → Tools → WebView2 UI`: the CDP background keep-alive, HTTP access to the local network, invalid TLS certificates for `fb.http.*`, and the reserved HSTS entry. Entry names follow the component language. Background mode, deep suspend, Developer Tools, the CDP switch and the development server switch and URL are no longer Advanced entries; a value set there by an earlier version is carried over the first time the new setting is read.
+Security exceptions remain under `File → Preferences → Advanced → Tools → WebView2 UI`: CDP background keep-alive, HTTP requests to the local network (SSRF exceptions), allowing invalid TLS certificates for `fb.http.*`, and reserved HSTS entries. Setting names follow the component language. Background mode, deep suspend, Developer Tools, CDP toggle, and dev server options have moved to the standard Display preferences; earlier settings are automatically migrated upon first read.
 
 ## Related
 

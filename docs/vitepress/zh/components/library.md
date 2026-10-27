@@ -1,8 +1,8 @@
-# I. 媒体库 
+# I. 媒体库
 
 ## `<fb-library-tree>` {#fb-library-tree}
 
-按 Artist / Album / Genre 分组浏览媒体库的树形组件。支持 Ctrl/Shift 多选、懒加载子节点。
+按艺术家、专辑或流派分组浏览媒体库的树形组件。支持 Ctrl/Cmd 点击切换、Shift 连续范围多选以及子节点异步按需懒加载。
 
 ```html
 <fb-library-tree view="artist"></fb-library-tree>
@@ -10,14 +10,14 @@
 
 | 属性 | 类型 | 默认值 | 说明 |
 | --- | --- | --- | --- |
-| view | string | 'artist' | 浏览视图：'artist' / 'album' / 'genre'（observed） |
-| sort | string | 'name' | 排序方式（observed） |
-| filter | string | — | 过滤字符串（observed） |
-| item-count | string | — | 只读反映：顶级项目数量 |
+| `view` | `'artist' \| 'album' \| 'genre'` | `'artist'` | 分组浏览视图模式（observed 与 reflected） |
+| `sort` | string | `'name'` | 组件传递的排序字段（observed） |
+| `filter` | string | `''` | 组件传递的过滤条件字符串（observed） |
+| `item-count` | string | — | 只读反映顶级条目总数 |
 
 **CSS Parts:** `container`, `header`, `node`, `child`, `node-toggle`, `node-label`, `node-count`, `node-children`
 
-node 上的状态属性：`expanded`（已展开）、`selected`（已选中）
+node 元素上的状态属性：`expanded`（已展开）、`selected`（已选中）。
 
 **事件：**
 
@@ -45,17 +45,17 @@ el.addEventListener('fb-library-added', e => {
 });
 ```
 
-### 视图模式 
+### 视图模式
 
 - **artist**: 艺术家列表 → 展开显示专辑（子节点类型 `album`）
 - **album**: 专辑列表 → 展开显示曲目（子节点类型 `track`）
 - **genre**: 流派列表 → 展开显示匹配曲目
 
-事件 detail 里的 `artist` 取自该行的 `data-artist`。艺术家视图的 `album` 子节点上是它的上级艺术家，这一行代表这位艺术家在该专辑上的曲目。专辑视图的分组上是专辑艺术家：只凭 `key` 可能对应好几张专辑，`library.getAlbumTracks(key, artist)` 才能确定是哪一张。
+事件 detail 里的 `artist` 取自该行的 `data-artist`。艺术家视图的 `album` 子节点上是它的上级艺术家，这一行代表这位艺术家在该专辑上的曲目；专辑视图的分组上是专辑艺术家。事件及 `selected` 中的每项还可能带 `albumId` 或确切的成员 `tracks`。调用 `el.addToPlaylist(key, type, artist, detail)` 时把事件 detail 作为第四个参数传回，即可保留身份与子曲目。明确的空 `tracks` 数组表示没有成员，不会再按名称查找。原始标签含非法 UTF-8 时，仅凭显示名称可能无法区分专辑。
 
 ## `<fb-library-filesystem-tree>` {#fb-library-filesystem-tree}
 
-基于文件系统根树的媒体库浏览组件，通过 `getRoots` + `browseTree` API 按目录结构懒加载。支持 Ctrl/Shift 多选。
+基于文件系统结构的媒体库树形组件。基于 `library.getRoots()` 获取根目录并通过 `library.browseTree()` 递归按需懒加载目录层级。支持 Ctrl/Cmd 点击切换与 Shift 连续范围多选。
 
 ```html
 <fb-library-filesystem-tree></fb-library-filesystem-tree>
@@ -63,14 +63,14 @@ el.addEventListener('fb-library-added', e => {
 
 | 属性 | 类型 | 默认值 | 说明 |
 | --- | --- | --- | --- |
-| root-id | string | — | 指定单个 root ID，省略则显示所有根目录（observed） |
-| include-files | string | 'false' | 是否显示文件节点（observed） |
+| `root-id` | string | — | 锁定展示指定的单个根目录 ID 并隐藏多根标题栏（observed） |
+| `include-files` | string | `'false'` | 是否显示音频文件节点（observed，仅取值 `true` 时展示文件） |
 
 **CSS Parts:** `container`, `header`, `node`, `root`, `directory`, `file`, `node-toggle`, `node-label`, `node-count`, `node-children`
 
-node 上的 `data-node-type` 标识节点类型：`header` / `root` / `directory` / `file`
+node 上的 `data-node-type` 标识节点类型：`header`、`root`、`directory`、`file`。
 
-node 上的数据属性：`data-root-id`、`data-path-id`、`data-absolute-path`
+node 上的数据属性：`data-root-id`、`data-path-id`、`data-absolute-path`。
 
 **事件：**
 
@@ -93,11 +93,11 @@ el.addEventListener('fb-library-fs-context', e => {
 });
 ```
 
-### 节点类型 
+### 节点类型
 
-| data-node-type | 说明 |
+| `data-node-type` | 说明 |
 | --- | --- |
-| header | 顶级标题（"所有音乐"） |
-| root | 媒体库根目录 |
-| directory | 子目录 |
-| file | 音频文件（仅在 include-files="true" 时显示） |
+| `header` | 顶级全部音乐标题栏 |
+| `root` | 媒体库根目录 |
+| `directory` | 子目录文件夹 |
+| `file` | 音频文件节点（仅在 `include-files="true"` 时展示） |

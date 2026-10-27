@@ -39,7 +39,7 @@ Signature: `fb.tray.create(opts?: { icon?: string | null; tooltip?: string }): P
 | --- | --- | --- | --- |
 | `opts` | `{ icon?: string \| null; tooltip?: string }` | No | Initial icon as raw Base64 `.ico` file bytes, plus tooltip |
 
-Creates the tray icon. Call this before other `tray.*` methods.
+Creates the tray icon, preserving any click action already set with `setClickAction`.
 
 ```javascript
 const result = await fb.tray.create();
@@ -49,7 +49,7 @@ const result = await fb.tray.create();
 
 Signature: `fb.tray.destroy(): Promise<TrayDestroyResponse>`
 
-Removes the tray icon.
+Removes the tray icon, cancels pending clicks and resets the click action to `event`.
 
 ```javascript
 const result = await fb.tray.destroy();
@@ -242,7 +242,7 @@ await fb.tray.setContextMenu(items, {
 const ver = await fb.config.getVersionInfo();
 if (ver.success === false) throw new Error(ver.error);
 const plugin = ver?.plugin?.version; // probe before opting into zones
-// Zones ship from 1.10.0; probe the runtime version if you must support older hosts.
+// Zones ship from 1.10.0; probe the runtime version if you must support older hosts
 await fb.tray.setContextMenu(items, {
   render: 'webview',
   layoutMode: 'zones',
@@ -271,12 +271,12 @@ await fb.tray.setContextMenu(items, {
 ### Horizontal / vertical examples
 
 ```javascript
-// Horizontal (default) — old runtime / native ignore unknown orientation safely.
+// Horizontal (default) — old runtime / native ignore unknown orientation safely
 await fb.tray.setContextMenu([
   { id: 'vol', type: 'slider', label: 'Volume', min: 0, max: 100, value: 40 },
 ], { render: 'webview' });
 
-// Vertical — probe plugin version first; do not hard-code a fake minimum version.
+// Vertical — probe plugin version first; do not hard-code a fake minimum version
 const res = await fb.config.getVersionInfo();
 if (res.success === false) throw new Error(res.error);
 const { plugin } = res;
@@ -302,3 +302,20 @@ await fb.tray.setContextMenu([
 - `checked: false` still marks a checkable item (`menuitemcheckbox`); omit `checked` for a normal item.
 - Default enter/exit animations honor `prefers-reduced-motion: reduce` (disable transform/transition). Custom CSS should do the same; this is **not** in protected CSS and does not change the hide protocol / `closeAnimationMs`.
 - Native backend ignores `orientation` (stepped submenu degrade). Older runtimes ignore the key and keep horizontal interaction.
+
+## setClickAction(action)
+
+Signature: `fb.tray.setClickAction(action: TraySetClickActionParams['action']): Promise<TraySetClickActionResponse>`
+
+The default `event` action preserves click and double-click events. `toggleMainWindow` uses native window state: it hides a visible, non-minimized standalone main window, otherwise shows, restores and requests focus. A double-click toggles once. Placement, maximized state and always-on-top are preserved, including while the page is suspended. Windows may still refuse foreground activation.
+
+This setting is process-wide and can precede `create()`. The latest successful caller wins; even a repeated setter cancels pending clicks. Repeated creation and Explorer recreation preserve it; `destroy()` resets it to `event`. Panel mode returns `PANEL_MODE_UNSUPPORTED`.
+
+Native mode emits neither `tray:click` nor `tray:doubleClick`; right-click menu events are unchanged. Remove window commands from legacy click handlers during initialization before switching modes. Already queued page events cannot be recalled; avoid switching during a user gesture.
+
+Check for `tray.setClickAction` in `fb.system.listApis()` to discover host support.
+
+```typescript
+await fb.tray.setClickAction('toggleMainWindow');
+await fb.tray.create();
+```

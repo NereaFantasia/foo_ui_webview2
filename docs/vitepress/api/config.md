@@ -1,6 +1,6 @@
 # Config API
 
-Methods of the `config` namespace.
+Methods for persistent configuration storage, audio output devices, DSP presets, advanced preferences, and playback behaviors.
 
 ## config
 
@@ -682,20 +682,8 @@ const result = await fb2k.invoke('config.showLibraryPreferences');
 
 ## Storage and preference semantics
 
-`config.set`, `config.get`, `config.remove`, `config.getAll`, and
-`config.export` operate on the component's persistent configuration object.
-`config.get` requires `key`; when the key is absent it returns `found: false`
-and uses the optional `default` value when supplied. `config.set` requires both
-`key` and `value`; the value can be any JSON value.
+`config.set`, `config.get`, `config.remove`, `config.getAll`, and `config.export` operate on the component's persistent configuration store. `config.get` requires `key`; when the key is absent it returns `found: false` and uses the optional `default` value when supplied. `config.set` requires both `key` and `value`, accepting any JSON-serializable value.
 
-Output and advanced-preference methods use foobar2000 services. In particular,
-`config.setOutputDevice` requires valid `outputId` and `deviceId` GUIDs, while
-`config.setOutputBuffer` accepts either seconds in `bufferLength` or
-milliseconds in `milliseconds`. Advanced entries require a valid `guid`; their
-accepted `value` type depends on the entry type rather than a single universal
-schema.
+Output and advanced preference methods interact directly with foobar2000 services. Specifically, `config.setOutputDevice` requires valid `outputId` and `deviceId` GUIDs, while `config.setOutputBuffer` accepts either seconds in `bufferLength` or milliseconds in `milliseconds`. Advanced preference entries require a valid `guid`; the expected `value` type depends on the entry's underlying preference type rather than a single unified schema.
 
-The cursor-follow and ReplayGain setters accept their documented compatibility
-forms. For ReplayGain, `mode` and `value` are numeric forms, while
-`sourceMode` accepts `track`, `album`, `auto`, `byPlaybackOrder`, or `none`.
-The handler returns `INVALID_PARAMS` for an unknown string source mode.
+Cursor-follow and ReplayGain setters accept documented compatibility parameters. For ReplayGain, `mode` and `value` are numeric, while `sourceMode` accepts `track`, `album`, `auto`, `byPlaybackOrder`, or `none`. The handler returns `INVALID_PARAMS` when given an unrecognized string mode.

@@ -1,8 +1,8 @@
-# fb.playlist 播放列表 
+# fb.playlist 播放列表
 
 本页凡是接受播放列表（`index`、`playlistIndex`）的方法都接受 `PlaylistRef`：播放列表的序号，或 `getAll()`、`getActive()`、`create()`、`duplicate()` 报告的 `guid` 字符串。序号指的是宿主处理这次调用时位于该位置的列表；`guid` 在别的列表增删或重排时仍指向同一个列表，该列表不存在后以 `NOT_FOUND` 失败。`fb.library.addToPlaylist` 与 `fb.artwork.getByPlaylistItem` 同样接受 `PlaylistRef`。
 
-## getAll() 
+## getAll()
 
 获取所有播放列表，返回 `{ playlists, count }`，`playlists` 是按播放列表顺序排列的 `PlaylistInfo[]`；失败时返回失败信封。
 
@@ -18,15 +18,15 @@ if (res.success === false) throw new Error(res.error);
 const res = await fb.playlist.getAll();
 if (res.success === false) throw new Error(res.error);
 const target = res.playlists.find((p) => p.name === '收藏');
-// 稍后菜单关闭时再调用；这期间播放列表清单可能已经变了。
+// 稍后菜单关闭时再调用；这期间播放列表清单可能已经变了
 if (target) await fb.library.addToPlaylist(['E:\\Music\\song.flac'], target.guid);
 ```
 
 ::: tip
-v1.1.18 起 `getAll()` 不再返回 `duration` 字段。如需 duration，请使用 `fb.playlist.getActive()` 或 `fb.playlist.getPlaying()`。
+`PlaylistInfo` 不包含 `duration` 字段。如需播放列表的总时长，请调用 `fb.playlist.getActive()` 或 `fb.playlist.getPlaying()`。
 :::
 
-## getActive() / setActive(index) 
+## getActive() / setActive(index)
 
 获取/设置当前活动播放列表。`getActive()` 返回 `PlaylistGetActiveResponse`：没有活动播放列表时 `found` 为 `false`，其余字段不出现。
 
@@ -39,7 +39,7 @@ if (info.found) console.log(info.index, info.name);
 await fb.playlist.setActive(1);
 ```
 
-## getTracks(index, start, count) 
+## getTracks(index, start, count)
 
 获取播放列表中的曲目（分页）。
 
@@ -61,7 +61,7 @@ console.log(`${page.tracks.length} / ${page.total}`);
 
 `fields` 可用的名字与 `library.query` 相同，区分大小写。省略时返回整行，整行还带 `composer`、`comment` 与 foo_playcount 的播放统计。请求被拒（比如字段名未知）时返回 `{ success: false, code: 'INVALID_PARAMS' }`。
 
-与同一播放列表的 `getGroupRuns()` 响应比较 `total`，可以发现两次读取之间曲目数量发生变化。两者相等不能排除等量替换或重排；两次调用各自读取快照，并不共享播放列表版本。
+每页都带 `contentVersion`，`getGroupRuns()` 的应答也带。版本相同的分页读自同一份行。版本不同说明期间有行被插入、删除、重排或替换，`total` 不变也一样。
 
 ## getTracksPage(index, start, count, formats?, fields?)
 
@@ -112,9 +112,9 @@ if (hits.success === false) {
 
 解析器拒绝的查询、或带 `SORT BY` 的查询，返回 `INVALID_PARAMS` 并带 `details.param: 'query'`；`error` 文字是宿主语言的原文。查询里的小写字母匹配标签里的任意大小写，大写字母只匹配同样的大写。列表不存在时 `getMatchingRows()` 失败（`INVALID_INDEX`、`NOT_FOUND`、`NO_ACTIVE_ITEM`），`getTracksAt()` 则与 `getTracks()` 一样回答空结果。
 
-这些行是快照。收到 `playlist:itemsAdded`、`itemsRemoved`、`itemsReordered`、`itemsReplaced` 与 `metadb:changed` 时丢掉重取；`total` 与列表现在的长度相等不能排除重排或改标签。`%added% DURING LAST 2 WEEKS` 这类随时间变化的查询，结果也会在没有任何事件的情况下变化。
+这些行是快照。`playlist:itemsAdded`、`itemsRemoved`、`itemsReordered`、`itemsReplaced` 事件的 `contentVersion` 与它们不同时丢掉重取；收到 `metadb:changed` 时也要重取，因为改标签不会改变版本。`%added% DURING LAST 2 WEEKS` 这类随时间变化的查询，结果也会在没有任何事件的情况下变化。
 
-## playTrack(playlistIndex, trackIndex, options?) 
+## playTrack(playlistIndex, trackIndex, options?)
 
 播放指定曲目。返回 `{success}`。
 
@@ -130,7 +130,7 @@ await fb.playlist.playTrack(0, 4); // 第一个播放列表的第 5 首
 await fb.playlist.playTrack(0, 0, { muted: true }); // 播放但静音
 ```
 
-## add(index, paths) 
+## add(index, paths)
 
 添加文件到播放列表。返回 `{success, playlist, requestedPaths, addedCount, countBefore, totalCount}`。
 
@@ -145,7 +145,7 @@ if (r.success === false) throw new Error(r.error);
 console.log(`添加了 ${r.addedCount} 首`);
 ```
 
-## removeTracks(index, indices) 
+## removeTracks(index, indices)
 
 从播放列表移除指定索引的曲目。返回 `{success}`。
 
@@ -158,7 +158,7 @@ console.log(`添加了 ${r.addedCount} 首`);
 await fb.playlist.removeTracks(0, [0, 2, 5]);
 ```
 
-## getPlaying() 
+## getPlaying()
 
 获取当前正在播放的播放列表。返回结构同 `getActive()`，没有正在播放的列表时 `found` 为 `false`。
 
@@ -166,7 +166,7 @@ await fb.playlist.removeTracks(0, [0, 2, 5]);
 const playing = await fb.playlist.getPlaying();
 ```
 
-## getCount(index) 
+## getCount(index)
 
 获取第 `index` 个播放列表的曲目数，返回 `{count}`；列表不存在时 `count` 为 0。它调用宿主的 `playlist.getTrackCount`。宿主的 `playlist.getCount` 返回的是播放列表的个数，在 SDK 里对应 [`getPlaylistCount()`](#getplaylistcount)。
 
@@ -176,7 +176,7 @@ if (r.success === false) throw new Error(r.error);
 console.log(r.count);
 ```
 
-## create(name?) 
+## create(name?)
 
 创建新播放列表。返回 `{success, index}`。
 
@@ -190,7 +190,7 @@ if (r.success === false) throw new Error(r.error);
 console.log(`新播放列表索引: ${r.index}`);
 ```
 
-## remove(index) / clear(index) 
+## remove(index) / clear(index)
 
 删除播放列表 / 清空曲目。返回 `{success}`。
 
@@ -199,7 +199,7 @@ await fb.playlist.remove(2);
 await fb.playlist.clear(0);  // 清空但保留列表
 ```
 
-## rename(index, name) 
+## rename(index, name)
 
 重命名播放列表。返回 `PlaylistRenameResponse`；列表上的锁拒绝新名字时以 `LOCKED` 失败。
 
@@ -207,7 +207,7 @@ await fb.playlist.clear(0);  // 清空但保留列表
 await fb.playlist.rename(0, 'Favorites');
 ```
 
-## duplicate(index, name?) 
+## duplicate(index, name?)
 
 复制播放列表。返回 `{success, index, sourcePlaylist, newPlaylist, name, trackCount}`。`name` 省略或为空时，副本名为原名后加 ` (Copy)`。
 
@@ -217,7 +217,7 @@ if (r.success === false) throw new Error(r.error);
 console.log(`复制到索引 ${r.newPlaylist}`);
 ```
 
-## addAsync(index, paths) / addSequential(index, paths) 
+## addAsync(index, paths) / addSequential(index, paths)
 
 异步添加文件（不阻塞 UI）/ 顺序添加（保证文件顺序）。返回 `{success, addedCount}`。
 
@@ -231,7 +231,7 @@ await fb.playlist.addAsync(0, ['E:\\Music\\*.flac']);
 await fb.playlist.addSequential(0, paths); // 保证文件顺序
 ```
 
-## addHandles(index, handles) 
+## addHandles(index, handles)
 
 精确添加轨道，不自动展开 CUE。
 
@@ -247,7 +247,7 @@ await fb.playlist.addHandles(0, [
 ]);
 ```
 
-## insertTracks(index, insertIndex, handles) 
+## insertTracks(index, insertIndex, handles)
 
 在 `insertIndex` 行之前插入轨道，超出最后一行时追加到末尾。返回 `PlaylistInsertTracksResponse`。
 
@@ -271,7 +271,7 @@ await fb.playlist.insertTracks(0, 5, handles);
 await fb.playlist.removeSelectedTracks(0);
 ```
 
-## getFocused(index) / setFocused(index, trackIndex) 
+## getFocused(index) / setFocused(index, trackIndex)
 
 获取/设置焦点曲目（光标位置）。`getFocused` 返回 `{playlist, index}`，播放列表没有焦点或不存在时 `index` 为 `-1`；`setFocused` 的 `trackIndex` 为负数时去掉焦点。
 
@@ -282,7 +282,7 @@ console.log(`焦点在第 ${r.index} 首`);
 await fb.playlist.setFocused(0, 10);
 ```
 
-## getSelection(index) / getSelectedTracks(index) 
+## getSelection(index) / getSelectedTracks(index)
 
 获取选中曲目索引/详细信息。
 
@@ -296,7 +296,7 @@ if (selected.success === false) throw new Error(selected.error);
 console.log(selected.tracks.length);
 ```
 
-## setSelection(index, indices, clearOthers?) / selectAll(index) / deselectAll(index) 
+## setSelection(index, indices, clearOthers?) / selectAll(index) / deselectAll(index)
 
 设置/全选/取消选中。返回 `{success}`。
 
@@ -312,7 +312,7 @@ await fb.playlist.selectAll(0);
 await fb.playlist.deselectAll(0);
 ```
 
-## moveTracks(index, indices, delta) 
+## moveTracks(index, indices, delta)
 
 移动曲目。返回 `{success}`。
 
@@ -327,7 +327,7 @@ await fb.playlist.moveTracks(0, [0, 1], 3);  // 向下 3 位
 await fb.playlist.moveTracks(0, [5, 6], -2); // 向上 2 位
 ```
 
-## sort(index, pattern, descending?, selectedOnly?) 
+## sort(index, pattern, descending?, selectedOnly?)
 
 按 Title Formatting 模式排序。返回 `{success}`。
 
@@ -343,7 +343,7 @@ await fb.playlist.sort(0, '%artist%');
 await fb.playlist.sort(0, '%date%', true); // 按日期降序
 ```
 
-## reorder(index, order) / shuffle(index) / reverse(index) 
+## reorder(index, order) / shuffle(index) / reverse(index)
 
 自定义顺序 / 随机打乱 / 反转。返回 `{success}`。
 
@@ -353,7 +353,7 @@ await fb.playlist.shuffle(0);
 await fb.playlist.reverse(0);
 ```
 
-## undo(index) / redo(index) 
+## undo(index) / redo(index)
 
 撤销/重做播放列表操作。返回 `{success}`。
 
@@ -362,9 +362,9 @@ await fb.playlist.undo(0);
 await fb.playlist.redo(0);
 ```
 
-## 智能播放列表 
+## 智能播放列表
 
-### isAutoplaylist(index) 
+### isAutoplaylist(index)
 
 检查是否为智能播放列表。返回 `{isAutoplaylist}`。
 
@@ -374,7 +374,7 @@ if (r.success === false) throw new Error(r.error);
 if (r.isAutoplaylist) console.log('这是智能播放列表');
 ```
 
-### createAutoplaylist(name, query, sort?, keepSorted?) 
+### createAutoplaylist(name, query, sort?, keepSorted?)
 
 创建智能播放列表。返回 `{success, index, playlist, name, query}`。
 
@@ -394,12 +394,21 @@ await fb.playlist.createAutoplaylist(
 );
 ```
 
-### getAutoplaylistInfo(index) 
+### getAutoplaylistInfo(index)
 
-获取智能播放列表信息。返回 `{isAutoplaylist, playlist, keepSorted, source}`。
+读取智能播放列表状态和编辑器能力，不打开 UI。成功响应始终带 `editorAvailability` 和 `editorAvailabilityReason`，普通列表也一样：
 
-- `source` — `"sdk"`（SDK 创建）或 `"dui"`（DUI 创建）
-- 非智能播放列表时返回 `{isAutoplaylist: false, playlist}`
+| `editorAvailability` | `editorAvailabilityReason` | 含义 |
+| --- | --- | --- |
+| `available` | `supported` | 提供者声明支持编辑器 |
+| `unavailable` | `noEditor` | 提供者明确表示没有编辑器 |
+| `unknown` | `legacyClient` | client 没有能力探测接口 |
+| `unknown` | `unverifiedLock` | 兼容识别的自动列表锁没有能力探测接口 |
+| `unavailable` | `notAutoplaylist` | 这是普通列表 |
+
+`available` 不保证某次调用会显示窗口；`unknown` 可以尝试调用，但无法预判结果。查询提供者时抛异常，以 `OPERATION_FAILED` 失败，不会报告为 `unavailable`。
+
+`source:'sdk'` 表示 autoplaylist manager 管理的 client，也包括第三方 client。`source:'dui'` 表示按既有 `Auto` 锁名规则识别的列表，不代表当前 UI 模式或编辑器能力。这条锁路径的 `keepSorted:false` 是配置不可读时的占位值，不能当作实际设置。普通列表返回 `isAutoplaylist:false`，不带 `source` 或 `keepSorted`。
 
 ```javascript
 const info = await fb.playlist.getAutoplaylistInfo(0);
@@ -413,13 +422,106 @@ if (info.isAutoplaylist) {
 
 签名：`fb.playlist.getAutoplaylistQuery(index: PlaylistRef): Promise<PlaylistGetAutoplaylistQueryResponse>`
 
-返回与 `getAutoplaylistInfo()` 相同的状态，外加 `query`。foobar2000 不公开智能播放列表的查询语句，所以 `query` 始终为 `null`；是智能播放列表时，响应的 `note` 字段也会说明这一点。
+读取智能播放列表状态及 `query`。foobar2000 不公开查询语句，所以 `query` 始终为 `null`；是智能播放列表时，响应的 `note` 也会说明这一点。`source` 和不可读 `keepSorted` 的含义同上；这个方法不返回编辑器能力字段，需要时用 `getAutoplaylistInfo()`。
 
 ```javascript
 const res = await fb.playlist.getAutoplaylistQuery(0);
 ```
 
-### convertToAutoplaylist(index, query, sort?, keepSorted?) 
+### showAutoplaylistUI(playlist)
+
+签名：`fb.playlist.showAutoplaylistUI(playlist: PlaylistRef): Promise<PlaylistShowAutoplaylistUIResponse>`
+
+请求指定 `PlaylistRef` 的原生编辑器，目标必填，不切换活动列表、不启动播放。数字索引按宿主首次处理请求时的位置解析，后续操作固定跟随解析出的 GUID。需要在首次排队期间保持目标身份时，应传 GUID。
+
+成功受理时 Promise 返回 `{ success:true, accepted:true, operationId, playlistGuid }`，不等待原生调用或窗口结束。受理前的业务失败返回 `{ success:false, error, code, details }`；受理后的失败只经 `onAutoplaylistUIResult` 发送。桥传输失败仍可能 reject Promise。错误分类和生命周期详见 [API 说明](../api/playlist.md#playlist-showautoplaylistui)。
+
+foobar2000 进程内，同一个 GUID 只允许一个排队中或执行中的调用。原生调用返回时即解除限制；非模态编辑器此时可能仍然打开。窗口归属及后续调用是否复用窗口由提供者决定，SDK 不能指定 owner，也不保证复用。
+
+### onAutoplaylistUIResult(callback)
+
+签名：`fb.playlist.onAutoplaylistUIResult(callback: (event: PlaylistAutoplaylistUIResultPayload) => void): () => void`
+
+订阅 `playlist:autoplaylistUIResult`，返回取消订阅函数。务必**先订阅，再调用** `showAutoplaylistUI`：事件可能早于页面处理受理响应。按 `operationId` 关联，并核对 `playlistGuid` 是否为预期目标。每个受理操作最多向原调用文档发一个结果；导航或销毁后丢弃，不转发给主窗口。
+
+`success:true` 只表示原生调用正常返回；锁入口还须返回 `true`。它不证明窗口出现、保存了修改、取消了编辑或关闭了窗口。失败事件带 `error`、`code` 和 `reason`。原文档仍有效但目标在调用中删除时，`NOT_FOUND` / `targetGone` 优先于同时发生的提供者异常；提供者已执行的动作不会因此撤销。
+
+下面的示例统一管理一个页面的编辑器请求，最多跟踪 16 个请求、暂存 16 个早到结果。视图卸载时调用 `dispose()`；`pagehide` 也会清理页面资源。停止观察不会关闭提供者的编辑器。页面上的编辑器请求应共用这一个消费方，以免其他调用的结果占满暂存空间。
+
+```typescript
+import { playlist, type PlaylistRef } from 'foo-webview-sdk/bridge';
+import type { FBEventPayloadMap } from 'foo-webview-sdk';
+
+type EditorResult = FBEventPayloadMap['playlist:autoplaylistUIResult'];
+const MAX_PENDING = 16;
+const pending = new Map<string, string>();
+const early = new Map<string, EditorResult>();
+let accepting = 0;
+let disposed = false;
+
+function handleResult(event: EditorResult) {
+  if (pending.get(event.operationId) !== event.playlistGuid) return;
+  pending.delete(event.operationId);
+  if (event.success) {
+    console.log('原生编辑器调用已返回', event.playlistGuid);
+  } else {
+    console.error(event.code, event.reason, event.error);
+  }
+}
+
+const off = playlist.onAutoplaylistUIResult((event) => {
+  if (disposed) return;
+  if (pending.has(event.operationId)) {
+    handleResult(event);
+  } else if (accepting > 0) {
+    if (early.size >= MAX_PENDING) {
+      const oldest = early.keys().next().value;
+      if (oldest !== undefined) early.delete(oldest);
+      console.warn('已丢弃一条无法关联的编辑器结果');
+    }
+    early.set(event.operationId, event);
+  }
+});
+
+async function openEditor(target: PlaylistRef) {
+  if (disposed || pending.size + accepting >= MAX_PENDING) {
+    throw new Error('当前无法跟踪新的编辑器请求');
+  }
+  accepting++;
+  try {
+    const accepted = await playlist.showAutoplaylistUI(target);
+    if (disposed) return accepted;
+    if (accepted.success === false) {
+      console.error(accepted.code, accepted.details, accepted.error);
+      return accepted;
+    }
+    pending.set(accepted.operationId, accepted.playlistGuid);
+    const cached = early.get(accepted.operationId);
+    early.delete(accepted.operationId);
+    if (cached) handleResult(cached);
+    return accepted;
+  } finally {
+    accepting--;
+    if (accepting === 0) early.clear();
+  }
+}
+
+function dispose() {
+  disposed = true;
+  off();
+  pending.clear();
+  early.clear();
+  window.removeEventListener('pagehide', dispose);
+}
+window.addEventListener('pagehide', dispose, { once: true });
+
+void openEditor('{12345678-1111-2222-3031-323334353637}').catch(console.error);
+// 视图卸载时也要调用 dispose()
+```
+
+通过实际的 `playlist:itemsAdded`、`playlist:itemsRemoved`、`playlist:itemsReordered`、`playlist:itemsReplaced` 和 `playlist:lockChanged` 事件刷新相关状态。调用结果可以触发一次重读，但不表示配置变化，也不能覆盖非模态窗口后续的编辑。不要据此合成 changed 事件，也不要等待 saved、cancelled 或 closed 事件。
+
+### convertToAutoplaylist(index, query, sort?, keepSorted?)
 
 将普通播放列表转换为智能播放列表。参数同 `createAutoplaylist`。返回 `{success}`。
 
@@ -431,13 +533,13 @@ await fb.playlist.convertToAutoplaylist(0, '%rating% GREATER 3', '%rating%', tru
 
 签名：`fb.playlist.removeAutoplaylist(index: PlaylistRef): Promise<PlaylistRemoveAutoplaylistResponse>`
 
-把智能播放列表变回保留当前曲目的普通列表，此时响应的 `source` 为 `sdk`。由其他组件管理的智能播放列表不能这样解除：调用成功、`source` 为 `dui` 并带 `note`，但什么也不改，要删除它用 `remove()`。不是智能播放列表时以 `NOT_FOUND` 失败。
+解除 autoplaylist manager 管理的 client，包括第三方 client，保留当前曲目并变回普通列表，此时响应的 `source` 为 `sdk`。只有在没有 manager client、仅由兼容规则识别到自动列表锁时，调用才返回 `source` 为 `dui` 并带 `note`，但什么也不改；要删除这样的列表用 `remove()`。不是智能播放列表时以 `NOT_FOUND` 失败。
 
 ```javascript
 await fb.playlist.removeAutoplaylist(0);
 ```
 
-## isLocked(index) / getLockInfo(index) 
+## isLocked(index) / getLockInfo(index)
 
 获取播放列表锁定状态。
 
@@ -446,7 +548,7 @@ const locked = await fb.playlist.isLocked(0);   // {isLocked}
 const info = await fb.playlist.getLockInfo(0);   // {playlist, isLocked}
 ```
 
-## replaceAllAndPlay(options) 
+## replaceAllAndPlay(options)
 
 原子操作：清空 + 添加 + 播放。返回 `{success, addedCount}`。
 
@@ -530,4 +632,67 @@ const focus = await fb.playlist.getFocusTrack(0);
 const res = await fb.playlist.getPlaylistCount();
 if (res.success === false) throw new Error(res.error);
 const { count } = res;
+```
+
+## createManagedAutoplaylist(name, query, sort?, keepSorted?)
+
+签名：`fb.playlist.createManagedAutoplaylist(name: string, query: string, sort?: string, keepSorted?: boolean): Promise<PlaylistCreateManagedAutoplaylistResponse>`
+
+创建由本组件持有规则并支持编辑的智能列表，**需要持续安装 foo_ui_webview2**。已有 `createAutoplaylist` 和 `convertToAutoplaylist` 仍使用 foobar2000 自身的提供者，不能用新配置方法读取它们的规则。
+
+```javascript
+const created = await fb.playlist.createManagedAutoplaylist(
+  'Favourites', '%rating% GREATER 3', '%artist%|%album%|%tracknumber%', true
+);
+if (created.success === false) throw new Error(created.error);
+console.log(created.playlistGuid, created.revision);
+```
+
+## getAutoplaylistConfig(playlist)
+
+签名：`fb.playlist.getAutoplaylistConfig(playlist: PlaylistRef): Promise<PlaylistGetAutoplaylistConfigResponse>`
+
+读取提供者的查询原文、独立排序、当前保持排序标志和不透明配置版本。传入 GUID 可以在列表重排后继续指向同一列表。`getAutoplaylistInfo().configAvailability` 表示主题是否能提供自绘配置表单；原生编辑器可用性是另一个维度。其他提供者返回 `NOT_SUPPORTED`。`getAutoplaylistQuery` 继续遵守 `query: null` 的既有约定。
+
+## setAutoplaylistConfig(playlist, options)
+
+签名：`fb.playlist.setAutoplaylistConfig(playlist: PlaylistRef, options: Omit<PlaylistSetAutoplaylistConfigParams, 'playlist' | 'playlistGuid'>): Promise<PlaylistSetAutoplaylistConfigResponse>`
+
+编辑前先读取配置，把快照的 `revision` 作为 `expectedRevision`。至少传入 `query`、`sort`、`keepSorted` 中的一个。省略字段保留当前值；`sort: ''` 清除独立排序，`keepSorted: false` 允许手动调整顺序。查询内显式 `SORT BY` 不能与非空的独立排序并用。
+
+```javascript
+const all = await fb.playlist.getAll();
+if (all.success) {
+  const target = all.playlists.find((p) => p.name === 'Favourites');
+  if (target) {
+    const current = await fb.playlist.getAutoplaylistConfig(target.guid);
+    if (current.success) {
+      const result = await fb.playlist.setAutoplaylistConfig(target.guid, {
+        expectedRevision: current.revision,
+        query: '%rating% GREATER 4',
+        sort: '',
+        keepSorted: false,
+      });
+      if (result.success === false) console.error(result.code, result.error, result.details);
+    }
+  }
+}
+```
+
+旧版本返回 `OPERATION_FAILED`，`details.reason` 为 `revisionConflict`。重新读取后让用户决定如何处理冲突，再提交修改。重启或替换提供者会使旧版本失效；它不是列表内容版本。
+
+宿主失败可能留下部分修改。`details.state` 只比较调用前后的配置，为 `unchanged`、`changed` 或 `unknown`；能确认当前状态时附带 `details.current` 快照。成功和失败都不证明曲目重建或配置写盘已完成。业务失败仍返回失败信封，桥接传输失败可能 reject。
+
+## onAutoplaylistConfigChanged(callback)
+
+签名：`fb.playlist.onAutoplaylistConfigChanged(callback: (event: PlaylistAutoplaylistConfigChangedPayload) => void): () => void`
+
+订阅组件各窗口中已确认的配置变化，包括外部改动的保持排序标志。载荷包含 `playlistGuid` 和 `revision`。页面断开期间可能错过事件，编辑前仍须重读。曲目变化继续使用 items 系列事件。
+
+```javascript
+const unsubscribe = fb.playlist.onAutoplaylistConfigChanged((event) => {
+  console.log('Configuration changed', event.playlistGuid, event.revision);
+});
+// 消费者销毁时：
+unsubscribe();
 ```

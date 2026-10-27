@@ -7,7 +7,7 @@
 ### webview.getSource
 
 <!-- api-schema:begin webview.getSource -->
-报告宿主把调用方 WebView 的页面从哪里加载：开发服务器、某个 URL、某个模板文件夹，或内置的「Frontend not found」页面。宿主在提交导航时记下来源；页面之后自己导航到别处，报告的仍是这份记录。调用方不是本插件的 WebView，或宿主还没给它加载页面时，以 `NOT_FOUND` 失败。
+获取调用方 WebView 页面的加载来源。来源包括开发服务器、自定义 URL、模板文件夹或内置「Frontend not found」缺省页。宿主在发起导航时记录来源；页面后续自行重定向仍返回该记录。调用方非本插件 WebView 或尚未加载页面时返回 `NOT_FOUND`
 
 无参数。
 
@@ -15,17 +15,17 @@
 
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
-| `source` | `"devServer" \| "url" \| "panelTemplate" \| "activeTemplate" \| "componentDirectory" \| "defaultTemplate" \| "builtInPage"` | 页面的来源。`devServer`：开发服务器。`url`：面板配置里的 URL，或传给 `window.createPopup` 的绝对 URL。`panelTemplate`：面板自己的模板。`activeTemplate`：全局活动模板。`componentDirectory`：组件文件夹里的 `foo_ui_webview2_resources\dist`。`defaultTemplate`：`webview-ui\default`，因为它前面的文件夹都没有 `index.html` 才落到这里。`builtInPage`：所有文件夹都没有 `index.html` 时显示的页面。 |
-| `directory` | `string` | 映射到 `https://foo-ui-webview2.local/` 的文件夹；只在四种文件夹来源下出现。 |
-| `templateName` | `string` | 加载的模板文件夹名；只在 `panelTemplate`、`activeTemplate`、`defaultTemplate` 下出现。 |
-| `url` | `string` | 宿主导航到的地址；只在 `devServer` 与 `url` 下出现。 |
-| `activeTemplateName` | `string` | 现在配置的全局活动模板，可能与已加载的那个不同。 |
-| `templatesDirectory` | `string` | 存放模板的文件夹，即 foobar2000 profile 下的 `webview-ui`。 |
+| `source` | `"devServer" \| "url" \| "panelTemplate" \| "activeTemplate" \| "componentDirectory" \| "defaultTemplate" \| "builtInPage"` | 页面加载来源。`devServer`：开发服务器；`url`：面板配置 URL 或传给 `window.createPopup` 的绝对 URL；`panelTemplate`：面板独立模板；`activeTemplate`：全局活动模板；`componentDirectory`：组件内置资源目录（`foo_ui_webview2_resources\dist`）；`defaultTemplate`：回退默认模板（`webview-ui\default`，各前序目录均缺失 `index.html` 时使用）；`builtInPage`：各模板均未找到 `index.html` 时展示的内置缺省页 |
+| `directory` | `string` | 映射到虚拟域 `https://foo-ui-webview2.local/` 的本地目录绝对路径（仅在四种目录类来源下存在） |
+| `templateName` | `string` | 已加载的模板文件夹名称（仅在 `panelTemplate`、`activeTemplate` 与 `defaultTemplate` 来源下存在） |
+| `url` | `string` | 宿主导航的目标地址（仅在 `devServer` 与 `url` 来源下存在） |
+| `activeTemplateName` | `string` | 当前配置的全局活动模板名称（可能与实际加载的模板不一致） |
+| `templatesDirectory` | `string` | 存放模板的根目录绝对路径（对应配置目录下的 `webview-ui`） |
 
 成功时 `success` 为 `true`；失败时返回 `{ success: false, error, code }`，`code` 见[错误码](../reference/errors.md)。
 <!-- api-schema:end -->
 
-结果描述的是宿主加载这个页面时的情况。`activeTemplateName` 在调用时读取：页面来自活动模板时，拿它和 `templateName` 比较，就能知道加载之后用户有没有换过模板。
+返回结果描述宿主加载当前页面时的上下文。`activeTemplateName` 在调用时动态读取：对于来自活动模板的页面，比对该字段与 `templateName` 即可获知用户是否在页面加载后切换了全局活动模板。
 
 ```js
 const source = await fb2k.invoke('webview.getSource');

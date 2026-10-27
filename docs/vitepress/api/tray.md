@@ -1,6 +1,6 @@
 # Tray API
 
-Methods of the `tray` namespace.
+Provides Windows system tray integration, including icon management, context menus, balloon notifications, and minimize/close-to-tray behaviors.
 
 ## tray
 
@@ -79,7 +79,7 @@ await fb2k.invoke('tray.clearMenuItems');
 ### tray.create
 
 <!-- api-schema:begin tray.create -->
-Create the tray icon. Call it once before any other `tray.*` method: without it the other calls succeed but no icon shows, no tray event fires and `isVisible` reports `false`. Fails in panel mode, when the main window has no handle, and when the shell refuses the icon.
+Create the tray icon. It must exist to receive input or display notifications. Keeps the click action previously set with `setClickAction`, including on repeated calls. Fails in panel mode, when the main window has no handle, and when the shell refuses the icon.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
@@ -95,10 +95,12 @@ Create the tray icon. Call it once before any other `tray.*` method: without it 
 await fb2k.invoke('tray.create', { tooltip: 'foobar2000' });
 ```
 
+Call `tray.create` during frontend initialization to register the icon before receiving clicks or displaying notifications. `setClickAction` can be configured before creation. Without an icon, `setIcon`, `setTooltip` and `showBalloon` fail, and `tray.isVisible` returns `false`.
+
 ### tray.destroy
 
 <!-- api-schema:begin tray.destroy -->
-Remove the tray icon.
+Remove the tray icon, cancel pending clicks and reset the click action to `event`. A main window hidden to the tray is shown again, since nothing else could bring it back.
 
 This method takes no parameters.
 
@@ -205,7 +207,7 @@ const { removed } = res;
 ### tray.setCloseToTray
 
 <!-- api-schema:begin tray.setCloseToTray -->
-Hide the window to the tray instead of quitting when it is closed.
+Hide the window to the tray instead of quitting when it is closed. Without a tray icon from `create` the window is minimized instead, so it can still be found on the taskbar. `create` resets this from the preferences, so call it afterwards.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
@@ -465,7 +467,7 @@ await fb2k.invoke('tray.setMenuZones', {
 ### tray.setMinimizeToTray
 
 <!-- api-schema:begin tray.setMinimizeToTray -->
-Hide the window to the tray instead of the taskbar when it is minimized.
+Hide the window to the tray instead of the taskbar when it is minimized. Without a tray icon from `create` the window is minimized as usual. `create` resets this from the preferences, so call it afterwards.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
@@ -640,3 +642,19 @@ await fb2k.invoke('tray.setContextMenu', {
     config: { showPlaybackControls: false, render: 'webview' },
 });
 ```
+
+## tray.setClickAction
+
+<!-- api-schema:begin tray.setClickAction -->
+Set the process-wide left-click action, even before `create`. `event` is the default and emits the existing click events. `toggleMainWindow` hides a visible, non-minimized standalone main window, or shows, restores and requests focus otherwise, without page execution or the old click events. A double-click performs one toggle. Pending clicks are cancelled on every setter call; the latest successful caller wins. Shell recreation preserves this setting; `destroy` resets it. Fails with `PANEL_MODE_UNSUPPORTED` in panels. Remove legacy click handlers that issue window commands before enabling native actions; already queued page events cannot be recalled. The OS may refuse foreground activation.
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `action` | `"event" \| "toggleMainWindow"` | Yes | `event` sends clicks to pages; `toggleMainWindow` executes once natively per gesture. |
+
+**Returns**
+
+`success` is `true` on success. On failure the response is `{ success: false, error, code }`; see [Error codes](../reference/errors.md) for `code`.
+<!-- api-schema:end -->
+
+Existing themes keep click events by default. New themes should remove window commands from their old click handlers during initialization, then select native mode. The minimize-to-tray and close-to-tray settings are unaffected.

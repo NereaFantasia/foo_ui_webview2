@@ -1,6 +1,6 @@
 # WebView API
 
-Methods of the `webview` namespace. Its events, such as `webview:processFailed`, are listed in [Events API](./events.md).
+The `webview` namespace provides diagnostic inspection of the calling WebView2 instance. Lifecycle events, such as `webview:processFailed`, are listed in [Events API](./events.md).
 
 ## webview
 
@@ -25,7 +25,7 @@ This method takes no parameters.
 `success` is `true` on success. On failure the response is `{ success: false, error, code }`; see [Error codes](../reference/errors.md) for `code`.
 <!-- api-schema:end -->
 
-The result describes the page as the host loaded it. `activeTemplateName` is read at the time of the call: for a page loaded from the active template, comparing it with `templateName` shows whether the user has picked another template since.
+The result describes the page as originally loaded by the host. `activeTemplateName` reflects current configuration at call time: comparing it with `templateName` indicates whether the active template has changed since load.
 
 ```js
 const source = await fb2k.invoke('webview.getSource');

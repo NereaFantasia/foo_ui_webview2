@@ -319,6 +319,8 @@ await fb.ui.setFullscreen(true);
 
 Focuses or unfocuses a window. `focus` brings the window to the foreground and restores it first when it is minimized. `blur` hands the foreground to the window below the calling window in the z-order.
 
+An explicit ID targets only that window; omission targets the caller's top-level window, including a panel's host. Missing targets fail with `NOT_FOUND`. Focus supersedes older popup undo and menu focus-return work, without permanently changing a popup's no-activate policy. Success confirms the request, not that Windows granted the foreground.
+
 Signature: `fb.ui.focus(windowId?: string): Promise<WindowFocusResponse>`
 
 | Parameter | Type | Required | Description |
@@ -344,7 +346,7 @@ Signature: `fb.ui.flash(opts: WindowFlashParams): Promise<WindowFlashResponse>`
 
 ```javascript
 await fb.ui.flash({ count: 3 });
-await fb.ui.flash({ enabled: false }); // stop flashing
+await fb.ui.flash({ enabled: false }); // Stop flashing
 ```
 
 ### flashTaskbar(count?)
@@ -353,7 +355,7 @@ Flashes the taskbar button. The optional `count` sets how many times.
 
 ```javascript
 await fb.ui.flashTaskbar();
-await fb.ui.flashTaskbar(3); // flash 3 times
+await fb.ui.flashTaskbar(3); // Flash 3 times
 ```
 
 ### showSystemMenu(x, y, w?, h?)
@@ -667,7 +669,7 @@ await fb.ui.createPopup({
     profile: 'desktopLyrics',
     behavior: {
         // Override only the desktopLyrics defaults you want to change:
-        // let Show desktop (Win+D) hide the lyrics, and allow minimizing them.
+        // Hide lyrics on Show desktop (Win+D), and allow minimizing them
         keepVisibleOnShowDesktop: false,
         allowMinimize: true,
     },
@@ -843,7 +845,7 @@ Directed and broadcast messages arrive through `window:message` with the payload
 Confirms or cancels a close asynchronously. Call them from a `window:beforeClose` handler. Only a popup created with `beforeClose: true` gets that event. It stays open until its page calls one of the two, and closes anyway after 3 seconds without either.
 
 ```javascript
-// Placeholder for the page's own save logic.
+// Placeholder for the page's own save logic
 async function saveChanges() {}
 
 fb.on('window:beforeClose', async () => {

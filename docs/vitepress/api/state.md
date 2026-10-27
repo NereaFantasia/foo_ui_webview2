@@ -1,6 +1,6 @@
 # State API
 
-Methods of the `state` namespace.
+In-memory key-value state shared across windows via the `PortHub` communication hub, supporting TTL expiration and change broadcasts.
 
 ## state
 

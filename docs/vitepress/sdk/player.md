@@ -34,7 +34,7 @@
 | `playPath(path)` | `playback.playPath` |
 | `playPaths(paths, options?)` | `playback.playPaths` |
 
-## play() 
+## play()
 
 Starts playback. If playback is paused, it resumes. Resolves with `{ success: true }` on success.
 
@@ -42,7 +42,7 @@ Starts playback. If playback is paused, it resumes. Resolves with `{ success: tr
 await fb.player.play();
 ```
 
-## pause() 
+## pause()
 
 Pauses playback. Resolves with `{ success: true }` on success.
 
@@ -50,7 +50,7 @@ Pauses playback. Resolves with `{ success: true }` on success.
 await fb.player.pause();
 ```
 
-## stop() 
+## stop()
 
 Stops playback. Resolves with `{ success: true }` on success.
 
@@ -58,7 +58,7 @@ Stops playback. Resolves with `{ success: true }` on success.
 await fb.player.stop();
 ```
 
-## next() / prev() 
+## next() / prev()
 
 Starts the next or previous track. Both resolve with `{ success: true }` on success.
 
@@ -67,7 +67,7 @@ await fb.player.next();
 await fb.player.prev();
 ```
 
-## seek(seconds) 
+## seek(seconds)
 
 Seeks to a position in the current track.
 
@@ -79,7 +79,7 @@ Seeks to a position in the current track.
 await fb.player.seek(90); // 1 minute 30 seconds
 ```
 
-## getVolume() 
+## getVolume()
 
 Returns the current linear volume, decibel volume, and mute state. `volume` is in the range `0..100`.
 
@@ -91,7 +91,7 @@ console.log(info.volumeDb); // -100..0 dB
 console.log(info.muted);    // boolean
 ```
 
-## setVolume(volume) 
+## setVolume(volume)
 
 Sets the linear volume.
 
@@ -104,7 +104,7 @@ await fb.player.setVolume(80); // 80%
 await fb.player.setVolume(0);  // Minimum linear volume
 ```
 
-## mute() 
+## mute()
 
 Sets the mute state. The `muted` argument defaults to `true`; pass `false` to unmute. Use `fb.player.toggleMute()` to flip between the two.
 
@@ -112,7 +112,7 @@ Sets the mute state. The `muted` argument defaults to `true`; pass `false` to un
 await fb.player.mute();
 ```
 
-## toggle() 
+## toggle()
 
 Toggles play/pause through `playback.playOrPause`. The response includes the post-toggle `isPlaying` state.
 
@@ -122,7 +122,7 @@ if (r.success === false) throw new Error(r.error);
 console.log(r.isPlaying ? 'Playing' : 'Paused');
 ```
 
-## random() 
+## random()
 
 Starts a random track. Resolves with `{ success: true }` on success.
 
@@ -130,7 +130,7 @@ Starts a random track. Resolves with `{ success: true }` on success.
 await fb.player.random();
 ```
 
-## getState() 
+## getState()
 
 Returns `{ state, canSeek, canPause }`.
 
@@ -156,7 +156,7 @@ if (!result.found) {
 }
 ```
 
-## getPosition() 
+## getPosition()
 
 Returns the current position and duration in seconds, plus path/subsong information when exposed by the host. `hostTime` is the system time the host read the position at, in Unix milliseconds on the clock `Date.now()` reads: while playing, `pos.position + (Date.now() - pos.hostTime) / 1000` is where playback is now. [`PlaybackClock`](#playbackclock) keeps that estimate up to date.
 
@@ -168,7 +168,7 @@ console.log(`${pos.position} / ${pos.duration}`);
 // pos.path — current source path
 ```
 
-## getOrder() / setOrder(order) 
+## getOrder() / setOrder(order)
 
 Gets or sets the playback order. `setOrder()` accepts either the numeric host order or a canonical `PlaybackOrder` name; the host refuses anything else and reports the order in effect (`order`, `orderName`).
 
@@ -190,7 +190,7 @@ await fb.player.setOrder(2);  // Repeat track
 await fb.player.setOrder('shuffle-albums');
 ```
 
-## getStopAfterCurrent() / setStopAfterCurrent(enabled) 
+## getStopAfterCurrent() / setStopAfterCurrent(enabled)
 
 Gets or sets stop-after-current.
 
@@ -313,7 +313,7 @@ const draw = () => {
 };
 requestAnimationFrame(draw);
 const off = clock.onChange((change) => console.log(change.reason, change.position));
-// later
+// Cleanup
 off();
 clock.dispose();
 ```

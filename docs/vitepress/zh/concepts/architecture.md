@@ -2,16 +2,16 @@
 
 > **foobar2000 最低版本**: 2.0+
 
-foo_ui_webview2 是一个 foobar2000 组件：它用 Microsoft WebView2 承载网页，并让网页操控播放器。主题就是普通的网页，用 HTML、CSS、JavaScript 以及你喜欢的任何框架编写；组件把它变成 foobar2000 的窗口，或其他界面里的一个面板。
+foo_ui_webview2 是一个 foobar2000 UI 组件：它通过 Microsoft WebView2 承载前端页面，并开放完整的播放器控制与状态通知。主题本质是标准 Web 工程，支持 HTML、CSS、JavaScript 及各类现代前端框架；组件负责将其渲染为主窗口或嵌入其他界面的面板。
 
 <a id="主要特性"></a>
 <a id="key-features"></a>
 
 ## 页面与宿主
 
-组件给它加载的每个页面注入一个小对象 `window.fb2k`。调用 `fb2k.invoke('playback.play')` 时，消息经 WebView2 送到组件的 C++ 代码，由它对 foobar2000 执行这个方法并返回结果。反方向上，切歌这类 foobar2000 事件以具名事件的形式到达页面，由 `fb2k.on('playback:trackChanged', handler)` 接收。方法名用点号，事件名用冒号。消息格式见 [Bridge 协议](/zh/reference/bridge)。
+组件向所有加载的页面注入全局对象 `window.fb2k`。调用 `fb2k.invoke('playback.play')` 时，消息经由 WebView2 发送到 C++ 原生后端，由宿主执行对应操作并返回结构化结果信封。反方向上，曲目切换等播放器事件以具名通知的形式到达前端，通过 `fb2k.on('playback:trackChanged', handler)` 接收。方法调用采用点号分隔（`playback.play`），事件通知采用冒号分隔（`playback:trackChanged`）。协议细节见 [Bridge 协议](/zh/reference/bridge)。
 
-页面对播放器做的一切都经过这个 bridge。在 foobar2000 之外，比如普通浏览器标签页里，没有 `window.fb2k`，SDK 的调用会以 `NOT_SUPPORTED` 失败 resolve。加载哪个页面、从哪里加载，由[页面从哪里加载](./page-loading.md)里讲的模板与设置决定。
+页面与播放器的所有交互均经过此 Bridge 通道。在 foobar2000 之外（例如普通浏览器标签页），页面不存在 `window.fb2k`，SDK 调用将以 `NOT_SUPPORTED` 错误信封解决（resolve）。加载哪个页面及路径如何解析，由[页面从哪里加载](./page-loading.md)中定义的优先级规则决定。
 
 ## bridge 与 SDK
 

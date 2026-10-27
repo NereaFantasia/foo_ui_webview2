@@ -1,6 +1,6 @@
 # Test API
 
-Methods of the `test` namespace.
+The `test` namespace provides round-trip diagnostic endpoints for verification and liveness checks.
 
 ## test
 
@@ -10,7 +10,7 @@ Echoes the request back, for round-trip diagnostics.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `message` | `json` | No | Any JSON value, returned in `echo`. When omitted, the whole params object is echoed instead. |
+| `message` | `json` | No | Any JSON value, returned in `echo`; when omitted, the entire params object is echoed instead |
 
 **Returns**: `{"echo":"...","input":"...","success":true}`
 
@@ -32,4 +32,4 @@ const result = await fb2k.invoke('test.ping');
 
 ## Owner-family behavior and limits
 
-- `test.*` is diagnostic surface rather than application behavior.
+- Endpoints in `test.*` provide diagnostic capabilities rather than theme application logic.

@@ -1,6 +1,6 @@
 # Taskbar API
 
-Methods of the `taskbar` namespace.
+Provides Windows taskbar integration, including thumbnail toolbars, progress display, overlay badges, and flashing.
 
 ## taskbar
 

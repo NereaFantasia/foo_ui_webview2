@@ -89,7 +89,7 @@ console.log(res.ports.map((p) => `${p.portId} 位于 ${p.windowId}`));
 ```javascript
 const res = await fb.port.connect('transport');
 if (res.success === false) throw new Error(res.error);
-// 端口用完之后再关闭。
+// 端口用完之后再关闭
 await fb.port.disconnect(res.portId);
 ```
 

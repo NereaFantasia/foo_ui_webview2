@@ -1,59 +1,51 @@
-# Titleformat and ReplayGain reference
+# Titleformat and ReplayGain Reference
 
-Cross-page reference for title formatting and ReplayGain helpers. Primary owners remain:
+Cross-topic reference for title formatting and ReplayGain helpers. Primary endpoint documentation:
 
 - [Titleformat API](/api/titleformat)
 - [ReplayGain API](/api/replaygain)
 
 ## titleformat.eval
 
-Evaluate one titleformat expression for one file.
-
+Evaluates a single titleformat expression for one track.
 
 ## titleformat.evalBatch
 
-Evaluate the same expression across many files.
-
+Evaluates a single titleformat expression across multiple tracks.
 
 ## titleformat.evalFields
 
-Evaluate multiple named fields for one file. Preferred for structured UIs.
-
+Evaluates multiple named field expressions for one track. Recommended for structured UI components.
 
 ## titleformat.evalFieldsBatch
 
-Evaluate multiple named fields across many files. Useful for custom list columns.
-
+Evaluates multiple named field expressions across multiple tracks, suitable for custom playlist columns.
 
 ## titleformat.getBuiltinFields
 
-Returns a convenience map of built-in field expressions.
+Returns a dictionary mapping common built-in titleformat field expressions.
 
-Typical uses:
+Typical use cases:
 
-- custom list columns (`%play_count%`, `%rating%`, `%added%`)
-- conditional display such as `$if(%album%,%album%,Unknown)`
-- optional foo_playcount fields when the component is installed
-
+- Custom list columns (`%play_count%`, `%rating%`, `%added%`)
+- Conditional display expressions (such as `$if(%album%,%album%,Unknown)`)
+- Optional `foo_playcount` statistics fields when the component is installed
 
 ## replaygain.get
 
-Read ReplayGain data for one or more paths (`trackGain`, `trackPeak`, `albumGain`, `albumPeak`, plus per-item status fields from the handler).
-
+Reads ReplayGain gain and peak data for one or more paths (`trackGain`, `trackPeak`, `albumGain`, and `albumPeak`, along with per-item status fields).
 
 ## replaygain.scan
 
-Trigger ReplayGain scanning for the provided paths (via the context-menu workflow exposed by the handler).
-
+Triggers a ReplayGain scan workflow for the specified paths via the host context-menu infrastructure.
 
 ## replaygain.clear
 
-Clear ReplayGain data for the provided paths.
-
+Clears ReplayGain metadata for the specified track paths.
 
 ## Related configuration APIs
 
-Mode/preamp helpers live on the Audio owner page:
+ReplayGain mode and preamp configuration endpoints reside in the Audio API documentation:
 
 - `replaygain.getMode`
 - `replaygain.setMode`

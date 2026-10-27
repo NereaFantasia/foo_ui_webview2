@@ -1,6 +1,6 @@
 # Selection API
 
-Methods of the `selection` namespace.
+Provides methods to inspect and update the global track selection, and resolve viewing tracks for UI components.
 
 ## selection
 

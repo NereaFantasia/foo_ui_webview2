@@ -1,6 +1,6 @@
 # Queue API
 
-Methods of the `queue` namespace.
+Methods for inspecting the playback queue, adding tracks, reordering entries, and controlling next-track playback.
 
 ## queue
 
@@ -12,9 +12,10 @@ Queue one or more tracks by their position in a playlist. Positions past the las
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `playlist` | `integer` | No | Playlist the positions refer to; the active playlist when omitted. An index past the last playlist fails with `INVALID_INDEX`; with this omitted and no active playlist the call fails with `NO_ACTIVE_ITEM`. At least `0`. |
-| `playlistGuid` | `string` | No | A playlist's GUID instead of its index, written with braces as `playlist.getAll` and every result or event that names a playlist report it; either hex case is accepted. It keeps naming the same playlist while other playlists are added, removed or reordered, which an index does not. Giving both this and the index, or a malformed GUID, fails with `INVALID_PARAMS`. A playlist that no longer exists fails with `NOT_FOUND`; the call never falls back to another playlist. A malformed GUID and a missing playlist carry the GUID given as `details.playlistGuid`. |
+| `playlistGuid` | `string` | No | Persistent unique identifier of a playlist (bracketed GUID, case-insensitive), used in place of a mutable index. Mutually exclusive with `playlist`; passing both or an invalid format fails with `INVALID_PARAMS`. Fails with `NOT_FOUND` if the playlist does not exist, never falling back. Invalid-format and not-found failures return the given GUID in `details.playlistGuid`. |
 | `tracks` | `integer[]` | No | Rows to queue, in order. Takes precedence over `track`. Each item: at least `0`. |
 | `track` | `integer` | No | A single row to queue; read only when `tracks` is absent. At least `0`. |
+| `expectedPlaylistVersion` | `string` | No | Act only while the playlist that the rows belong to still has this `contentVersion`, as its reads report it. A different version changes nothing and fails with `STALE_TARGET`, the current version carried as `details.current`. Omitted, no check is made. |
 
 **Returns**
 
@@ -56,7 +57,7 @@ Queue tracks by path. Queueing needs playlist membership, so the paths are appen
 | `addedCount` | `integer` | How many tracks were appended and queued. |
 | `invalidCount` | `integer` | Entries of `paths` dropped: empty ones, ones longer than 2048 characters, a `\|subsong:N` no track could be made for, and the plain paths when none of them resolved. A plain path that resolves to nothing while another plain path of the call resolves is not counted, so a call that succeeds can have dropped more than this. |
 | `playlist` | `integer` | The playlist the tracks were appended to. |
-| `playlistGuid` | `string` | The playlist's GUID, written as `{XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX}`. Pass it as `playlistGuid` to address this playlist even after the playlist list has changed. |
+| `playlistGuid` | `string` | Unique identifier of the playlist, formatted as `{XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX}`. Pass as `playlistGuid` to reliably target this playlist. |
 | `queueCount` | `integer` | Queue length afterwards. |
 
 `success` is `true` on success. On failure the response is `{ success: false, error, code }`; see [Error codes](../reference/errors.md) for `code`.
@@ -130,6 +131,7 @@ This method takes no parameters.
 | `items[].playlistGuid` | `string \| null` | GUID of that playlist, as `playlistGuid` takes it; `null` exactly when `playlist` is `null`. |
 | `items[].playlistItem` | `integer \| null` | Row in that playlist; `null` exactly when `playlist` is `null`. |
 | `count` | `integer` | Number of entries. |
+| `contentVersion` | `string` | Pass it as `expectedVersion` so that a queue changed meanwhile fails the call instead of hitting other entries. |
 
 `success` is `true` on success. On failure the response is `{ success: false, error, code }`; see [Error codes](../reference/errors.md) for `code`.
 <!-- api-schema:end -->
@@ -179,6 +181,7 @@ Move a queued entry to the front so it plays next. Only queue order changes; the
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `index` | `integer` | Yes | Position of the entry to promote; `0` is already the front and is refused. At least `0`. |
+| `expectedVersion` | `string` | No | Expected content version for optimistic concurrency control. When mismatched, mutations are aborted with `STALE_TARGET` (`details.current` carries current version). Omitted, no check is made. |
 
 **Returns**
 
@@ -186,6 +189,7 @@ Move a queued entry to the front so it plays next. Only queue order changes; the
 | --- | --- | --- |
 | `movedIndex` | `integer` | The position the entry came from. |
 | `queueCount` | `integer` | Queue length afterwards. |
+| `contentVersion` | `string` | Already includes this change; pass it as `expectedVersion` to the next call. |
 
 `success` is `true` on success. On failure the response is `{ success: false, error, code }`; see [Error codes](../reference/errors.md) for `code`.
 <!-- api-schema:end -->
@@ -207,6 +211,7 @@ Remove one entry by `index`, or several by `indices`. An empty queue fails with 
 | --- | --- | --- | --- |
 | `index` | `integer` | No | One queue position to remove. Takes precedence over `indices`. At least `0`. |
 | `indices` | `integer[]` | No | Queue positions to remove; read only when `index` is absent. Each item: at least `0`. |
+| `expectedVersion` | `string` | No | Expected content version for optimistic concurrency control. When mismatched, mutations are aborted with `STALE_TARGET` (`details.current` carries current version). Omitted, no check is made. |
 
 **Returns**
 
@@ -215,6 +220,7 @@ Remove one entry by `index`, or several by `indices`. An empty queue fails with 
 | `removedIndex` | `integer` | The position removed; only when `index` was given. |
 | `removedCount` | `integer` | How many entries were removed; only when `indices` was given. |
 | `queueCount` | `integer` | Queue length afterwards. |
+| `contentVersion` | `string` | Already includes this change; pass it as `expectedVersion` to the next call. |
 
 `success` is `true` on success. On failure the response is `{ success: false, error, code }`; see [Error codes](../reference/errors.md) for `code`.
 <!-- api-schema:end -->
@@ -239,12 +245,15 @@ Replace the whole queue with an ordered list of references. One unusable referen
 | `items[].playlist` | `integer` | No | Playlist of the row to add; needs `item` as well. At least `0`. |
 | `items[].playlistGuid` | `string` | No | The playlist of the row to add by its `guid`, instead of `playlist`; needs `item` as well. |
 | `items[].item` | `integer` | No | Row in that playlist; needs `playlist` or `playlistGuid` as well. At least `0`. |
+| `items[].expectedPlaylistVersion` | `string` | No | Only with a playlist row; given with `queueIndex`, the call fails with `INVALID_PARAMS`. |
+| `expectedVersion` | `string` | No | Expected content version for optimistic concurrency control. When mismatched, mutations are aborted with `STALE_TARGET` (`details.current` carries current version). Omitted, no check is made. |
 
 **Returns**
 
 | Field | Type | Description |
 | --- | --- | --- |
 | `queueCount` | `integer` | Queue length afterwards. |
+| `contentVersion` | `string` | Already includes this change; pass it as `expectedVersion` to the next call. |
 
 `success` is `true` on success. On failure the response is `{ success: false, error, code }`; see [Error codes](../reference/errors.md) for `code`.
 <!-- api-schema:end -->
@@ -269,7 +278,7 @@ await fb2k.invoke('queue.setContents', { items: [] });
 ### queue.insertNext
 
 <!-- api-schema:begin queue.insertNext -->
-Insert tracks so they play next, ahead of everything already queued. A track that is already queued is moved instead of queued twice. `items` land before `paths`; each block keeps its own order. A call with neither `paths` nor `items` fails with `INVALID_PARAMS`. Every entry of `items` is checked before any path is resolved, and one bad entry fails the whole call with nothing written: an entry naming its playlist by neither or both of `playlist` and `playlistGuid`, or by a malformed GUID, fails with `INVALID_PARAMS`, a GUID no playlist has with `NOT_FOUND`, a playlist index or row out of range with `INVALID_INDEX`. A path the media-root check refuses fails the whole call with `PERMISSION_DENIED`; a path that resolves to nothing is dropped and counted in `invalidCount`, and when nothing at all is left to insert the call fails with `NOT_FOUND`. A playlist row that changed while the paths were resolved fails the call with `OPERATION_FAILED`, and so does a queue that cannot be rebuilt.
+Insert tracks so they play next, ahead of everything already queued. A track that is already queued is moved instead of queued twice. `items` land before `paths`; each block keeps its own order. A call with neither `paths` nor `items` fails with `INVALID_PARAMS`. Every entry of `items` is checked before any path is resolved, and one bad entry fails the whole call with nothing written: an entry naming its playlist by neither or both of `playlist` and `playlistGuid`, or by a malformed GUID, fails with `INVALID_PARAMS`, a GUID no playlist has with `NOT_FOUND`, a playlist index or row out of range with `INVALID_INDEX`. A path the media-root check refuses fails the whole call with `PERMISSION_DENIED`; a path that resolves to nothing is dropped and counted in `invalidCount`, and when nothing at all is left to insert the call fails with `NOT_FOUND`. A playlist row that changed while the paths were resolved fails the call with `OPERATION_FAILED`, and so does a queue that cannot be rebuilt. `expectedVersion` is compared when the queue is written, after the paths are resolved.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
@@ -278,7 +287,9 @@ Insert tracks so they play next, ahead of everything already queued. A track tha
 | `items[].playlist` | `integer` | No | Playlist index; give this or `playlistGuid`. At least `0`. |
 | `items[].playlistGuid` | `string` | No | The playlist's `guid`, instead of `playlist`. |
 | `items[].item` | `integer` | Yes | Row in that playlist. At least `0`. |
+| `items[].expectedPlaylistVersion` | `string` | No | Act only while the playlist that the rows belong to still has this `contentVersion`, as its reads report it. A different version changes nothing and fails with `STALE_TARGET`, the current version carried as `details.current`. Omitted, no check is made. |
 | `position` | `integer` | No | Where to insert, counted after any moved entries are taken out; `0` is the front. At least `0`. Default: `0`. |
+| `expectedVersion` | `string` | No | Expected content version for optimistic concurrency control. When mismatched, mutations are aborted with `STALE_TARGET` (`details.current` carries current version). Omitted, no check is made. |
 
 **Returns**
 
@@ -288,6 +299,7 @@ Insert tracks so they play next, ahead of everything already queued. A track tha
 | `movedCount` | `integer` | Entries that were already queued and moved. |
 | `queueCount` | `integer` | Queue length afterwards. |
 | `invalidCount` | `integer` | Input path count minus the tracks resolved from paths, floored at zero. A folder or playlist file resolves to several tracks, so this is not a count of the paths that failed. |
+| `contentVersion` | `string` | Already includes this change; pass it as `expectedVersion` to the next call. |
 
 `success` is `true` on success. On failure the response is `{ success: false, error, code }`; see [Error codes](../reference/errors.md) for `code`.
 <!-- api-schema:end -->
@@ -327,6 +339,7 @@ Play the queue entry at `index` now, moving it to the front first when it is not
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `index` | `integer` | No | Queue position to play. At least `0`. Default: `0`. |
+| `expectedVersion` | `string` | No | Expected content version for optimistic concurrency control. When mismatched, mutations are aborted with `STALE_TARGET` (`details.current` carries current version). Omitted, no check is made. |
 
 **Returns**
 
@@ -334,6 +347,7 @@ Play the queue entry at `index` now, moving it to the front first when it is not
 | --- | --- | --- |
 | `playedIndex` | `integer` | The position that was played. |
 | `queueCount` | `integer` | Queue length read right after playback started; the host may consume the played entry before or after that read. |
+| `contentVersion` | `string` | Read together with `queueCount`. |
 
 `success` is `true` on success. On failure the response is `{ success: false, error, code }`; see [Error codes](../reference/errors.md) for `code`.
 <!-- api-schema:end -->

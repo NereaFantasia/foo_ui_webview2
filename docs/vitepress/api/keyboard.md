@@ -1,6 +1,6 @@
 # Keyboard API
 
-Methods of the `keyboard` namespace.
+The `keyboard` namespace provides methods for registering global hotkeys and local shortcuts.
 
 ## keyboard
 
@@ -92,14 +92,10 @@ Remove a hotkey by its id, or a hotkey or shortcut by its key string; exactly on
 <!-- api-schema:end -->
 
 ```js
-// pass the id returned by keyboard.registerHotkey, or the original key string
+// Pass the ID returned by keyboard.registerHotkey, or the original key combination string
 await fb2k.invoke('keyboard.unregisterHotkey', { id: 1 });
 ```
 
 ## Interaction delivery and limitations
 
-`keyboard.registerHotkey` registers a Windows hotkey and later routes
-`keyboard:hotkey` to the window that registered it. `registerShortcut` only
-stores an application-local shortcut. Both registration methods require a
-non-empty `key` and `action`; `unregisterHotkey` takes exactly one of the numeric
-`id` and the original key string.
+`keyboard.registerHotkey` registers a Windows system hotkey and dispatches `keyboard:hotkey` to the registering window. `keyboard.registerShortcut` stores a WebView-local shortcut. Both registration methods require non-empty `key` and `action` parameters; `keyboard.unregisterHotkey` accepts either the numeric `id` or the registered `key` string.

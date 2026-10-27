@@ -17,6 +17,10 @@
 
 - 许可证: GPL-3.0-or-later (主组件) / MIT (`sdk/`、`mcp/`)
 
+> [!TIP]
+> **想直接用现成的界面？安装[默认主题](https://github.com/NereaFantasia/foo-webview-default-theme)。**
+> WinUI 3 风格的界面，支持封面取色、歌词、迷你播放器与在线更新。先安装组件（见[30 秒上手](#30-秒上手)），再从 [Releases](https://github.com/NereaFantasia/foo-webview-default-theme/releases) 下载主题，解压到 `<profile>\webview-ui\<模板名>\`，在组件的首选项页选择该模板，然后重启 foobar2000。主题在独立窗口中运行，不支持 DUI/CUI 面板。
+
 ---
 
 ## 特性
@@ -80,8 +84,6 @@ foobar2000 已有非常优秀的自定义方案；本组件占据的是另一处
 不需要 SDK 文件、不需要 Node.js、不需要构建步骤 —— `fb2k` 桥接对象由组件原生注入。在你部署模板之前，组件会显示内置测试页（可点击试用各 API），全新安装不会出现黑屏。
 
 ## 模板与主题
-
-默认主题：<https://github.com/NereaFantasia/foo-webview-default-theme>
 
 组件本身不内置前端界面。请把你的 WebUI 放入 foobar2000 的 **profile** 目录下的 `webview-ui\<模板名>\`，并以 `index.html` 作为模板根目录的入口文件（例如 `<profile>\webview-ui\default\index.html`）。`<模板名>` 默认为 `default`，可在组件的「首选项」页中管理 / 切换。为向后兼容，旧路径 `<组件目录>\foo_ui_webview2_resources\dist\` 仍受支持。重启 foobar2000 即可加载。可基于 `sdk/`（`foo-webview-sdk`）构建自定义主题。
 
@@ -163,10 +165,10 @@ const result = await fb2k.invoke('my_plugin.doSomething', { param1: 'value' });
 
 | API | 限制 |
 |-----|------|
-| 全部 API | 页面来源 - 只有宿主信任的页面能调用 API、收到事件：模板文件夹与内置页面、所配置的开发服务器、面板的 URL，以及打开者已信任的弹窗地址；其他页面的调用以 `ORIGIN_DENIED` 失败 |
+| 全部 API | 页面来源 - 只有宿主信任的页面能调用 API、收到事件：模板文件夹与内置页面、所配置的开发服务器、在本机或已在面板配置里允许的面板 URL，以及打开者已信任的弹窗地址；其他页面的调用以 `ORIGIN_DENIED` 失败 |
 | shell.exec / shell.spawn | 无命令/可执行白名单 - 命令按原样执行；`cwd` 与绝对路径经 PathSecurity 校验（信任主题作者，不是 sandbox）|
 | shell.openWith | 黑名单 - 禁止打开 29 种可执行/脚本扩展名（`.exe`、`.bat`、`.ps1`、`.dll`、`.lnk` 等）|
-| file.read/write | 路径限制 - 系统目录（`C:\Windows`、`C:\Program Files`、`C:\ProgramData`）禁止访问；`file.*` 的写入在 foobar2000 配置目录与 `%TEMP%`、媒体库监视目录内、任一非系统盘上，以及媒体库或播放列表里的曲目上放行 |
+| file.read/write | 路径限制 - 系统目录（`C:\Windows`、`C:\Program Files`、`C:\Program Files (x86)`、`C:\ProgramData`）禁止访问，foobar2000 的 profile 目录除外（便携版装在其中时仍能使用自己的 profile）；`file.*` 的写入在 foobar2000 配置目录与 `%TEMP%`、媒体库监视目录内、任一非系统盘上，以及媒体库或播放列表里的曲目上放行 |
 | http.get/post | SSRF 防护 - 禁止 localhost/私有/链路本地地址（含 DNS 解析后防 rebinding 校验）|
 | CDP 远程调试 | 默认关闭 - 需手动开启，仅绑定 localhost |
 
@@ -185,7 +187,7 @@ const result = await fb2k.invoke('my_plugin.doSomething', { param1: 'value' });
 - Visual Studio 2026（v145 工具集），或 Visual Studio 2022 加 `-PlatformToolset v143`
 - Windows SDK 10.0.22621+
 - WebView2 Runtime
-- Node.js 18+ (构建 SDK / MCP / 文档站)
+- Node.js 22，与 CI 一致（最低 20.19），用于构建 SDK / MCP / 文档站
 
 ### C++ 组件
 

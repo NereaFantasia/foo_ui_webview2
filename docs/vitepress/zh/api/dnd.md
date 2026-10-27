@@ -41,7 +41,7 @@ Windows 把拖入的文件列表交给原生窗口而非页面，且 HTML5 `File
 | `html5` | `boolean` | 页面收得到标准的 HTML5 拖放事件；`false` 表示窗口完全没有拖放支持。 |
 | `paths` | `boolean` | 能经 `dnd.getPathsAsync` 与 `dnd:*` 事件拿到真实路径。在窗口生命周期内并非恒定：导航或 Chromium 重新注册自己的放置目标都会收回它，由 `dnd:capabilitiesChanged` 通知。 |
 | `hosting` | `"visual" \| "standard"` | 窗口承载 WebView 的方式：主窗口与弹出窗口为 `visual`，DUI / CUI 面板为 `standard`。 |
-| `pathsUnavailableReason` | `"register-failed" \| "forward-unavailable" \| "inner-target-not-found" \| "chain-failed" \| "displaced" \| "origin-untrusted"` | `paths` 为 `false` 的原因；出现即表示 `paths` 为 `false`。 |
+| `pathsUnavailableReason` | `"register-failed" \| "forward-unavailable" \| "inner-target-not-found" \| "chain-failed" \| "origin-untrusted"` | `paths` 为 `false` 的原因；出现即表示 `paths` 为 `false`。 |
 | `dragOut` | `boolean` | 能经 `dnd.prepareDrag` 把文件拖出窗口。与 `paths` 无关。 |
 | `dragOutUnavailableReason` | `"not-visual-hosting" \| "runtime-too-old" \| "register-failed"` | `dragOut` 为 `false` 的原因；出现即表示 `dragOut` 为 `false`。 |
 
@@ -52,8 +52,7 @@ Windows 把拖入的文件列表交给原生窗口而非页面，且 HTML5 `File
 拖放事件仍然工作（Chromium 自行处理）；`dragOut` 另外依赖 WebView2 运行时。`hosting`
 为 `"visual"`（主窗口 / 弹出窗口）或 `"standard"`（DUI / CUI 面板，此时路径不可用）。
 `pathsUnavailableReason` 仅当 `paths` 为 `false` 时出现，取值为 `origin-untrusted`、
-`inner-target-not-found`、`forward-unavailable`、`chain-failed`、`displaced`、
-`register-failed` 之一。
+`inner-target-not-found`、`forward-unavailable`、`chain-failed`、`register-failed` 之一。
 
 `dragOut` 为 `true` 表示页面可用 `dnd.prepareDrag` 把文件拖出。
 `dragOutUnavailableReason` 仅当它为 `false` 时出现：`not-visual-hosting`（面板模式，

@@ -57,6 +57,10 @@ Invalid requests or unknown methods are rejected by BridgeCore before a handler 
 }
 ```
 
+### Timeouts
+
+`fb2k.invoke()` waits 30 seconds for an answer. Then it rejects with an `Error` whose `code` is `TIMEOUT`. The host may still be running the call, or may have finished it, and the late answer is dropped, so treat the outcome as unknown. See [operation results](./bridge.md#operation-results).
+
 ## Standard error codes (`ApiErrorCode`)
 
 ### Framework
@@ -71,7 +75,7 @@ Invalid requests or unknown methods are rejected by BridgeCore before a handler 
 
 | Code | Meaning |
 | --- | --- |
-| `REQUIRED_PARAM` | A required parameter is missing. Returned only by `audio.cancelFullWaveform`; every other endpoint reports a missing parameter as `INVALID_PARAMS` with the message `<name> is required` |
+| `REQUIRED_PARAM` | A required parameter is missing. Returned by legacy endpoint `audio.cancelFullWaveform`; other endpoints report missing parameters as `INVALID_PARAMS` (with the missing parameter named in the message) |
 | `INVALID_PARAMS` | A parameter value is invalid |
 | `INVALID_INDEX` | An index is out of range |
 
@@ -80,11 +84,15 @@ Invalid requests or unknown methods are rejected by BridgeCore before a handler 
 | Code | Meaning |
 | --- | --- |
 | `NOT_FOUND` | Resource does not exist |
+| `OPERATION_PENDING` | The media library is still loading |
+| `STALE_TARGET` | Target version or state is outdated (optimistic concurrency conflict) |
 | `LOCKED` | Playlist or resource is locked |
 | `NOT_SUPPORTED` | The environment or the data does not support this operation |
 | `PANEL_MODE_UNSUPPORTED` | Called from a DUI/CUI panel, but the method needs the standalone main window. Use `window.getMode` to learn the mode beforehand |
 | `LIBRARY_DISABLED` | Media library is disabled |
-| `NO_ACTIVE_ITEM` | No active playlist or now-playing item |
+| `NO_ACTIVE_ITEM` | No active playlist or now-playing item, or no ready next entry for `jitSession.skip` |
+| `CONFLICT` | State conflicts with the session command, or a request ID was reused with another payload or has expired |
+| `NOT_OWNER` | The calling document does not hold the current JIT session control token |
 
 ### Operation failures
 
@@ -92,6 +100,7 @@ Invalid requests or unknown methods are rejected by BridgeCore before a handler 
 | --- | --- |
 | `OPERATION_FAILED` | Generic operation failure |
 | `CANCELLED` | The caller cancelled an async task (for example `audio.cancelFullWaveform`) |
+| `TIMEOUT` | The page stopped waiting after 30 seconds; the call may still have run. Reported by `fb2k.invoke()` itself, not by the host |
 
 ### Security
 
@@ -115,7 +124,7 @@ Invalid requests or unknown methods are rejected by BridgeCore before a handler 
 
 ### Menu and port
 
-These codes were published before the shared codes above and are kept as they are.
+Specialized error codes for menu command invocation and inter-component port messaging:
 
 | Code | Meaning |
 | --- | --- |
@@ -158,7 +167,7 @@ fb2k.on('http:response', (data) => {
 
 ## Compatibility notes
 
-- Existing `{ success: false, error: string }` responses remain valid.
-- `code` is additive; consumers should treat it as optional when reading older payloads.
-- Artwork endpoints keep their dedicated availability fields.
-- Framework `SendError` responses include `code` while preserving `error`.
+- Synchronous API failure responses consistently provide `success: false` and a human-readable `error` description.
+- Machine-readable `code` fields cover all standard error categories; consumers should branch on `code` rather than parsing error message strings.
+- Artwork endpoints provide an additional `available` boolean field indicating cover image presence.
+- Both framework-level rejections and unhandled handler exceptions are packaged into standard error envelopes.

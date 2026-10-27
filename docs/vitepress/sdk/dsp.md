@@ -20,7 +20,7 @@ Signature: `fb.dsp.setChain(dsps: ReadonlyArray<Pick<DspChainSpec, 'guid'>>): Pr
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| dsps | `{ guid: string }[]` | Yes | The new chain in processing order. An empty array clears the chain. |
+| dsps | `{ guid: string }[]` | Yes | The new chain in processing order. An empty array clears the chain |
 
 Replaces the active chain with the supplied entries; each entry carries only a `guid`. The SDK drops every other field before sending, so the rows `getChain()` and `getAvailable()` report can be passed as they are. The response reports the new `count`. The whole call is refused, and the chain left untouched, on the first entry that does not resolve to an installed DSP.
 
@@ -51,7 +51,7 @@ Signature: `fb.dsp.applyPreset(indexOrName: number | string): Promise<DspApplyPr
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| indexOrName | number \| string | Yes | Preset `index` or `name` from `getPresets()`. A number is sent as `index`, a string as `name`. |
+| indexOrName | number \| string | Yes | Preset `index` or `name` from `getPresets()`. A number is sent as `index`, a string as `name` |
 
 Applies a saved preset by numeric index or display name. The preset replaces the whole active chain; the preset file is not written. The response echoes `appliedPreset` and `appliedIndex`.
 
@@ -79,7 +79,7 @@ Signature: `fb.dsp.addDsp(guid: string, position?: number): Promise<DspAddDspRes
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | guid | string | Yes | GUID of an installed DSP, as `getAvailable()` reports it |
-| position | number | No | Chain index to insert at. Omitted, negative, or at or past the end of the chain, the DSP is appended. |
+| position | number | No | Chain index to insert at. Omitted, negative, or at or past the end of the chain, the DSP is appended |
 
 Adds the DSP identified by `guid` with its default settings, optionally at a specific chain position (`-1` or omitted appends). The response carries `addedDsp` and the `position` it landed at.
 

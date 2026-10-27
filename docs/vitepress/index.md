@@ -21,30 +21,30 @@ features:
   - icon:
       src: /icons/globe.svg
     title: "WebView2 rendering"
-    details: "Full Chromium engine with modern web platform support"
+    details: "Full Chromium engine supporting modern web platform standards and frameworks"
   - icon:
       src: /icons/plug.svg
     title: "400+ APIs"
-    details: "Broad foobar2000 coverage — playback, playlists, library, artwork, windows, SMP compatibility, and more"
+    details: "Comprehensive coverage across playback, playlists, library, artwork, and window control"
   - icon:
       src: /icons/palette.svg
     title: "Mica & DWM effects"
-    details: "Native Windows 11 transparent and acrylic backgrounds"
+    details: "Native Windows 11 Mica backdrop, Acrylic blur, and rounded corner styling"
   - icon:
       src: /icons/radio.svg
     title: "Bidirectional realtime bridge"
-    details: "C++ ↔ JavaScript messaging with immediate event push"
+    details: "Low-latency C++ ↔ JavaScript messaging with immediate event push"
   - icon:
       src: /icons/image.svg
     title: "CUI/DUI panels"
-    details: "Embed into Columns UI and Default UI layouts"
+    details: "Run standalone or embed seamlessly into Columns UI and Default UI layouts"
   - icon:
       src: /icons/app-window.svg
     title: "Multi-window system"
-    details: "Popups, cross-window messaging, and async close handling"
+    details: "Popup panels, cross-window Port messaging, and safe asynchronous close lifecycles"
   - icon:
       src: /icons/refresh-cw.svg
     title: "SMP compatibility layer"
-    details: "Run Spider Monkey Panel scripts with a cache+event model that wraps async APIs as sync properties — 8 wrapper classes plus the fb/plman objects"
+    details: "Run Spider Monkey Panel scripts via a cache+event model wrapping async APIs as synchronous properties — 8 wrapper classes plus fb/plman objects"
 ---
 

@@ -67,7 +67,7 @@ const englishNav: DefaultTheme.NavItem[] = [
   { text: 'Reference', link: '/reference/types' },
   { text: 'MCP', link: '/mcp/overview' },
   {
-    text: 'v2.0.0',
+    text: 'v2.1.0',
     items: [{ text: 'Changelog', link: '/changelog' }],
   },
 ]
@@ -82,7 +82,7 @@ const chineseNav: DefaultTheme.NavItem[] = [
   { text: '参考', link: '/reference/types' },
   { text: 'MCP', link: '/mcp/overview' },
   {
-    text: 'v2.0.0',
+    text: 'v2.1.0',
     items: [{ text: '更新日志', link: '/changelog' }],
   },
 ]
@@ -146,6 +146,7 @@ const englishSidebar: DefaultTheme.Sidebar = {
         { text: 'fb.config Config', link: '/sdk/config' },
         { text: 'fb.dsp DSP Chain', link: '/sdk/dsp' },
         { text: 'fb.jitQueue Just-in-time Queue', link: '/sdk/jit-queue' },
+        { text: 'JIT Session Client', link: '/sdk/jit-session' },
         { text: 'fb.library Media Library', link: '/sdk/library' },
         { text: 'fb.output Audio Output', link: '/sdk/output' },
         { text: 'fb.player Playback', link: '/sdk/player' },
@@ -239,6 +240,7 @@ const englishSidebar: DefaultTheme.Sidebar = {
         { text: 'ReplayGain', link: '/api/replaygain' },
         { text: 'Queue', link: '/api/queue' },
         { text: 'JIT Queue', link: '/api/jit-queue' },
+        { text: 'JIT Session', link: '/api/jit-session' },
         { text: 'Selection', link: '/api/selection' },
         { text: 'Discovery', link: '/api/discovery' },
         { text: 'Port', link: '/api/port' },
@@ -375,6 +377,7 @@ const chineseSidebar: DefaultTheme.Sidebar = {
         { text: 'fb.config 配置', link: '/sdk/config' },
         { text: 'fb.dsp DSP 链', link: '/sdk/dsp' },
         { text: 'fb.jitQueue JIT 即时队列', link: '/sdk/jit-queue' },
+        { text: 'JIT 会话客户端', link: '/sdk/jit-session' },
         { text: 'fb.library 媒体库', link: '/sdk/library' },
         { text: 'fb.output 音频输出', link: '/sdk/output' },
         { text: 'fb.player 播放控制', link: '/sdk/player' },
@@ -468,6 +471,7 @@ const chineseSidebar: DefaultTheme.Sidebar = {
         { text: 'ReplayGain 回放增益', link: '/api/replaygain' },
         { text: 'Queue 播放队列', link: '/api/queue' },
         { text: 'JIT Queue 即时队列', link: '/api/jit-queue' },
+        { text: 'JIT Session 会话', link: '/api/jit-session' },
         { text: 'Selection 选择', link: '/api/selection' },
         { text: 'Discovery 服务发现', link: '/api/discovery' },
         { text: 'Port 跨窗口端口', link: '/api/port' },

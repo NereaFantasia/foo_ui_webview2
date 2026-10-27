@@ -33,7 +33,7 @@ Cover-art display. Add `use-fb2k` to try the SDK's `getFb2kUrl()` helper first; 
 | `loaded` | boolean | — | Read-only reflection of successful image loading |
 | `src` | string | — | Read-only reflection of the current non-data image source |
 
-**CSS Parts:** `container`, `image`
+**CSS Parts:** `container`, `image`  
 **Slots:** `placeholder`
 
 **Events:**

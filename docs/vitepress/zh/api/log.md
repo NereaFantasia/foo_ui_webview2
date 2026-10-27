@@ -1,28 +1,28 @@
 # Log 日志文件 API
 
-`log` 命名空间的方法。
+提供 foobar2000 配置目录日志文件的格式化写入、尾部按行回读与清空能力。
 
 ## Log API - 日志文件 (3 个 API)
 
 ### log.write
 
 <!-- api-schema:begin log.write -->
-向 foobar2000 配置目录里的日志文件写一行：默认是 `webview_ui.log`，也可以用 `file` 指定。
+向 foobar2000 配置目录内的日志文件写入一行日志（默认写入 webview_ui.log，支持通过 file 指定自定义文件名）
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
-| `message` | `any` | 否 | 要写的内容。字符串原样写出，其他 JSON 值写成 JSON 文本。与 `args` 同时给出时以它为准。 |
-| `args` | `any[]` | 否 | 要写的若干值，以空格分隔：字符串原样写出，其他值写成 JSON 文本。仅在没有 `message` 时使用。 |
-| `level` | `string` | 否 | 写在消息前方括号里的级别，会转成大写。默认 `"info"`。 |
-| `append` | `boolean` | 否 | 追加到文件末尾；为 `false` 时用这一行替换文件内容。默认 `true`。 |
-| `timestamp` | `boolean` | 否 | 在行首加上本地时间，形如 `[YYYY-MM-DD HH:MM:SS.mmm]`。默认 `true`。 |
-| `file` | `string` | 否 | 配置目录里另一个文件的名字。必须是单纯的文件名、以 `.log` 或 `.txt` 结尾，且不是 `CON` 这类 Windows 设备名；否则忽略，这一行写进 `webview_ui.log`。 |
+| `message` | `any` | 否 | 待写入的日志正文内容（字符串原样输出，对象或数组序列化为 JSON 文本；若与 args 同时提供则以本字段为准） |
+| `args` | `any[]` | 否 | 待写入的参数值列表（以空格连接输出；字符串原样输出，其他类型序列化为 JSON 文本；仅在缺省 message 时生效） |
+| `level` | `string` | 否 | 日志记录级别（自动转为大写并置于行首方括号内）默认 `"info"`。 |
+| `append` | `boolean` | 否 | 是否以追加模式写入（默认 true；为 false 时清空并替换文件内容）默认 `true`。 |
+| `timestamp` | `boolean` | 否 | 是否在行首添加本地时间戳（格式为 [YYYY-MM-DD HH:MM:SS.mmm]）默认 `true`。 |
+| `file` | `string` | 否 | 配置目录内的自定义日志文件名（须为以 .log 或 .txt 结尾的合法纯文件名，且不可使用 CON 等 Windows 保留设备名；不合法时将自动写入 webview_ui.log） |
 
 **返回值**
 
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
-| `path` | `string` | 实际写入的文件的完整路径。 |
+| `path` | `string` | 实际写入的日志文件完整绝对路径 |
 
 成功时 `success` 为 `true`；失败时返回 `{ success: false, error, code }`，`code` 见[错误码](../reference/errors.md)。
 <!-- api-schema:end -->
@@ -40,20 +40,20 @@ await fb2k.invoke('log.write', {
 ### log.read
 
 <!-- api-schema:begin log.read -->
-读取 `webview_ui.log` 末尾的若干行。文件还不存在时按空文件返回。
+读取 webview_ui.log 文件末尾的指定行数（文件不存在时返回空内容）
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
-| `lines` | `integer` | 否 | 从文件末尾返回多少行。不小于 `0`。默认 `100`。 |
+| `lines` | `integer` | 否 | 从日志文件末尾逆向读取的最大行数不小于 `0`。默认 `100`。 |
 
 **返回值**
 
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
-| `content` | `string` | 返回的各行以 `\n` 连接。 |
-| `lines` | `string[]` | 返回的各行。文件不存在时不出现。 |
-| `lineCount` | `integer` | 返回的行数。 |
-| `totalLines` | `integer` | 整个文件的行数。文件不存在时不出现。 |
+| `content` | `string` | 读取的各行日志内容（以换行符 \n 拼接） |
+| `lines` | `string[]` | 读取的各行日志字符串数组（文件不存在时缺省） |
+| `lineCount` | `integer` | 实际读取返回的日志行数 |
+| `totalLines` | `integer` | 日志文件包含的总行数（文件不存在时缺省） |
 
 成功时 `success` 为 `true`；失败时返回 `{ success: false, error, code }`，`code` 见[错误码](../reference/errors.md)。
 <!-- api-schema:end -->
@@ -71,7 +71,7 @@ await fb2k.invoke('log.write', {
 ### log.clear
 
 <!-- api-schema:begin log.clear -->
-清空 `webview_ui.log`。
+清空 webview_ui.log 日志文件内容
 
 无参数。
 

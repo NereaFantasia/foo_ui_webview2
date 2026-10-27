@@ -90,7 +90,9 @@ const result = await fb.jitQueue.preloadBatch({
 
 Signature: `fb.jitQueue.skip(): Promise<JitQueueSkipResponse>`
 
-Skips to the next buffered item. The response carries `currentTrackId`, the track playing after the skip. The call is refused with `NO_ACTIVE_ITEM` while no session is active.
+Skips to the next buffered item. The response carries `currentTrackId`, read when the call returns: the skipped-to track has not started yet, so it is still the track being skipped. Wait for `jitQueue:trackChanged` to learn the new track. The call is refused with `NO_ACTIVE_ITEM` while no session is active.
+
+The native playback queue is left alone only when a buffered item follows the playing one. Without one, the skip acts as foobar2000's Next command: it plays the first track of the native playback queue when the queue is not empty, and the JIT session ends.
 
 ```javascript
 const result = await fb.jitQueue.skip();

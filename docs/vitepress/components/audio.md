@@ -2,7 +2,7 @@
 
 ## `<fb-rating>` {#fb-rating}
 
-Interactive star rating. Activating the currently selected star clears the rating to 0.
+Interactive star rating component. Activating the currently selected star clears the rating to 0.
 
 ```html
 <fb-rating max="5"></fb-rating>
@@ -28,7 +28,7 @@ el.addEventListener('fb-rating-change', e => {
 
 ## `<fb-output-selector>` {#fb-output-selector}
 
-Audio output device selector.
+Audio output device dropdown selector component.
 
 ```html
 <fb-output-selector></fb-output-selector>
@@ -51,7 +51,7 @@ el.addEventListener('fb-output-change', e => {
 
 ## `<fb-dsp-preset-selector>` {#fb-dsp-preset-selector}
 
-DSP preset selector.
+DSP preset dropdown selector component.
 
 ```html
 <fb-dsp-preset-selector></fb-dsp-preset-selector>
@@ -73,7 +73,7 @@ el.addEventListener('fb-dsp-change', e => {
 
 ## `<fb-replaygain-selector>` {#fb-replaygain-selector}
 
-ReplayGain mode selector.
+ReplayGain mode dropdown selector component.
 
 ```html
 <fb-replaygain-selector></fb-replaygain-selector>

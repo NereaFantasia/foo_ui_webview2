@@ -1,8 +1,8 @@
-# fb.state 响应式状态 
+# fb.state 响应式状态
 
 `fb.state` 是一个自动同步的状态对象，通过订阅播放事件实时更新。适合 UI 绑定和状态轮询场景，无需手动调用 API 获取当前状态。
 
-## 属性 
+## 属性
 
 | 属性 | 类型 | 说明 |
 | --- | --- | --- |
@@ -11,7 +11,7 @@
 | currentTrack | object \| null | 当前曲目信息（曲目切换时更新，停止时为 null） |
 | position | number | 当前播放位置（秒），约每 500ms 更新 |
 
-## 自动更新机制 
+## 自动更新机制
 
 `fb.state` 通过监听以下事件自动更新：
 
@@ -23,9 +23,9 @@
 | playback:volumeChanged | volume |
 | playback:time | position |
 
-## 使用示例 
+## 使用示例
 
-### 基本读取 
+### 基本读取
 
 ```javascript
 console.log(fb.state.isPlaying);     // true
@@ -34,7 +34,7 @@ console.log(fb.state.position);      // 42.5
 console.log(fb.state.currentTrack);  // {title, artist, album, ...}
 ```
 
-### 定时器轮询 UI 更新 
+### 定时器轮询 UI 更新
 
 ```javascript
 setInterval(() => {
@@ -43,7 +43,7 @@ setInterval(() => {
 }, 500);
 ```
 
-### 结合事件使用 
+### 结合事件使用
 
 ```javascript
 // state 自动更新，事件回调可以直接读取 state

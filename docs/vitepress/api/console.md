@@ -1,6 +1,6 @@
 # Console API
 
-Methods of the `console` namespace.
+Provides output redirection for info, warning, and error messages to the foobar2000 system console.
 
 ## console
 

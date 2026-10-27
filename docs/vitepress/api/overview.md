@@ -3,7 +3,7 @@
 The methods a page calls with `fb2k.invoke('namespace.method', params)`, by namespace. Events are listed in [Events API](./events.md). The SDK wraps these methods as `fb.*`; see [SDK namespaces](../sdk/namespaces.md).
 
 <!-- api-schema:begin index:namespaces -->
-446 methods in 41 namespaces.
+470 methods in 42 namespaces.
 
 | Namespace | Methods | Documented on |
 | --- | ---: | --- |
@@ -21,8 +21,9 @@ The methods a page calls with `fb2k.invoke('namespace.method', params)`, by name
 | `file` | 14 | [File API](./file.md) |
 | `http` | 8 | [Http API](./http.md) |
 | `jitQueue` | 8 | [JIT Queue API](./jit-queue.md) |
+| `jitSession` | 17 | [JIT Session API](./jit-session.md) |
 | `keyboard` | 4 | [Keyboard API](./keyboard.md) |
-| `library` | 25 | [Library API](./library.md) |
+| `library` | 27 | [Library API](./library.md) |
 | `log` | 3 | [Log API](./log.md) |
 | `lyrics` | 3 | [Lyrics API](./lyrics.md) |
 | `media` | 2 | [Media API](./media.md) |
@@ -33,7 +34,7 @@ The methods a page calls with `fb2k.invoke('namespace.method', params)`, by name
 | `panel` | 2 | [Panel API](./panel.md) |
 | `playback` | 27 | [Playback API](./playback.md) |
 | `playcount` | 4 | [Playcount API](./playcount.md) |
-| `playlist` | 50 | [Playlist API](./playlist.md) |
+| `playlist` | 54 | [Playlist API](./playlist.md) |
 | `port` | 5 | [Port API](./port.md) |
 | `queue` | 11 | [Queue API](./queue.md) |
 | `rating` | 2 | [Rating API](./rating.md) |
@@ -44,7 +45,7 @@ The methods a page calls with `fb2k.invoke('namespace.method', params)`, by name
 | `system` | 9 | [System API](./system.md) |
 | `taskbar` | 5 | [Taskbar API](./taskbar.md) |
 | `titleformat` | 5 | [Titleformat API](./titleformat.md) |
-| `tray` | 15 | [Tray API](./tray.md) |
+| `tray` | 16 | [Tray API](./tray.md) |
 | `ui` | 5 | [UI API](./ui.md) |
 | `webview` | 1 | [WebView API](./webview.md) |
 | `window` | 82 | [Window API](./window.md) |

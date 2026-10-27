@@ -1,6 +1,6 @@
 # Lyrics API
 
-Methods of the `lyrics` namespace.
+The `lyrics` namespace provides methods to query, read, and save embedded tags and sidecar lyrics files.
 
 ## lyrics
 
@@ -35,7 +35,7 @@ const { exists, sources } = res;
 ### lyrics.get
 
 <!-- api-schema:begin lyrics.get -->
-Read non-empty lyrics from the five known lyrics tags, then files next to the audio. Automatic lookup tries the audio file's stem only for a verified single-track file, followed by `<first artist> - <title>`; subsongs use only the latter. Unknown input layouts skip the audio-stem candidate. No numbered or shared album fallback is used. Results are cached for 1200 ms per track, filename and filters. Successful file saves and metadata changes invalidate the cache.
+Read non-empty lyrics from the five known lyrics tags, then files next to the audio. Automatic lookup tries the audio file's stem only for a verified single-track file, followed by `<first artist> - <title>`; subsongs use only the latter. Unknown input layouts skip the audio-stem candidate. No numbered or shared album fallback is used. Results are cached for 1200 ms per track, filename and filters. Successful file saves and metadata changes invalidate the cache. Invalid UTF-8 in the returned lyrics is replaced with U+FFFD; no encoding is guessed and the source is not rewritten.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
@@ -155,15 +155,15 @@ if (result.available) console.log(result.lyrics);
 
 ## Save targets and cache
 
-The Bridge takes `target` as an array, defaulting to `['file']`; the SDK also accepts a single string. `file` writes beside the audio, `embedded` dispatches a tag write, and `all` tries both and reports each outcome. Support for writing a container's tags depends on its foobar2000 input plugin.
+The Bridge takes `target` as an array, defaulting to `['file']` (the SDK also accepts a single string). `file` writes next to the audio file, `embedded` dispatches a tag write, and `all` writes to both and reports each outcome. Support for writing container tags depends on the foobar2000 input plugin.
 
-Successful file saves and metadata changes invalidate the 1200 ms read cache. An embedded save is asynchronous: subscribe to `metadata:writeComplete` before saving, then read after completion. Dispatch is not proof that the file was written; see [Metadata API](/api/metadata) for event subscription.
+Successful file saves and metadata changes invalidate the 1200 ms read cache. Embedded saves are asynchronous: subscribe to `metadata:writeComplete` before saving, then read after completion. Successful dispatch confirms queuing rather than disk persistence; see [Metadata API](/api/metadata) for event subscription.
 
 ### Migrating older callers
 
-The `config` save target has been removed; `all` now means `file` and `embedded` only. Existing profile lyrics are neither deleted nor searched.
+The `config` save target has been removed; `all` writes to `file` and `embedded` only. Legacy lyrics files stored in the profile folder are neither deleted nor searched.
 
-Numbered `.NN.lrc` and shared album-stem files are no longer selected automatically for subsongs. If you know which track an existing file belongs to, pass its exact `filename` without renaming it.
+Numbered `.NN.lrc` and shared album-stem files are no longer matched automatically for subsongs. To access an existing sidecar file with custom naming, pass its exact `filename` without renaming the file on disk.
 
 ## Related
 

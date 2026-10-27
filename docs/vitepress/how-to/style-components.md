@@ -1,10 +1,10 @@
 # Style the components
 
-The `fb-*` elements draw almost nothing until a theme styles them. Each component's reference entry lists its parts, slots and host attributes; this page shows how to use the three kinds. [How the components work](/concepts/components) explains why they come unstyled.
+The `fb-*` Web Components ship unstyled, rendering minimal layout placeholders until the host theme applies styling. Each component's reference page documents its supported CSS parts, slots, and host attributes; this guide illustrates how to use these three customization mechanisms. [How the components work](/concepts/components) details the design philosophy behind this separation.
 
-## Style the inner elements with `::part()`
+## Style inner elements with `::part()` {#style-the-inner-elements-with-part}
 
-Select a part of the element from your stylesheet:
+Target designated Shadow DOM elements from your theme stylesheet using the standard `::part()` pseudo-element:
 
 ```css
 /* A round play button */
@@ -29,11 +29,11 @@ fb-seek-bar::part(fill) { height: 4px; background: #1db954; }
 fb-seek-bar::part(thumb) { width: 12px; height: 12px; border-radius: 50%; background: #fff; }
 ```
 
-`::part()` reaches only the named element; descendants of a part are out of reach, so style what the part itself shows.
+`::part()` targets only the element carrying the matching `part` attribute inside the Shadow DOM; it cannot reach nested child elements. Apply visual properties directly to the exposed part itself.
 
 ## React to state with host attributes
 
-Components mirror their state as attributes on the element. Combine them with `::part()`:
+Components mirror their internal state as host attributes on the element itself. Combine these attributes with `::part()` selectors:
 
 ```css
 /* Highlight the play button while playing */
@@ -48,11 +48,11 @@ fb-volume-control[muted] {
 }
 ```
 
-`::part()` combines with host attributes, as above, and with user-action pseudo-classes such as `:hover` and `:focus-visible`. An attribute selector after `::part()` is not valid CSS, so state that a component marks on an inner element, such as `data-filled` on the stars of `<fb-rating>`, cannot be selected from the page.
+Host attributes can be combined with `::part()` as shown above, alongside interactive pseudo-classes such as `:hover` and `:focus-visible`. Notice that attribute selectors appended after `::part()` (such as `::part(btn)[active]`) are invalid in CSS; state indicators placed on internal DOM nodes (such as `data-filled` on `<fb-rating>` stars) cannot be matched directly from page stylesheets.
 
 ## Replace content with slots
 
-Put your own markup in a named slot to replace the default content:
+Supply custom markup within named slots to override default placeholder icons or controls:
 
 ```html
 <fb-play-button>
@@ -61,8 +61,8 @@ Put your own markup in a named slot to replace the default content:
 </fb-play-button>
 ```
 
-The component still decides which slot is visible; here, the pause icon while playing.
+The component retains control over which slot renders based on runtime state (here, rendering the pause icon while playing).
 
-## Keep the styles in one place
+## Centralize theme stylesheets {#keep-the-styles-in-one-place}
 
-Component styles are ordinary page CSS, so they live in the theme's stylesheet next to everything else, and a CSS custom property set on `:root` (an accent colour, say) reaches them like any other rule. [Build your first theme](/tutorials/first-theme) styles a full player this way.
+Component styles are standard CSS declarations, organized within the theme's global stylesheets alongside other view rules. CSS custom properties declared on `:root` (such as accent colors and design tokens) cascade naturally into component parts. [Build your first theme](/tutorials/first-theme) demonstrates complete theme styling following this approach.

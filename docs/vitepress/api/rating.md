@@ -1,6 +1,6 @@
 # Rating API
 
-Methods of the `rating` namespace. For a track inside a CUE sheet or another container, see [Addressing a track inside a container](./metadata.md#subsong-addressing).
+Provides track star rating inspection and modification (0 to 5 stars), with automatic fallback between foo_playcount statistics and audio file RATING tags. For a track inside a CUE sheet or another container, see [Addressing a track inside a container](./metadata.md#subsong-addressing).
 
 ## rating
 

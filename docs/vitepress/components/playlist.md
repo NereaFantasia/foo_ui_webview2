@@ -108,6 +108,13 @@ Virtualized playlist view with an rAF-driven DOM pool. It supports Ctrl/Shift se
 | `track-count` | string | — | Read-only total track count |
 | `selected-count` | string | — | Read-only selected track count |
 
+The `play_count`, `first_played`, `last_played` and `added` columns show foo_playcount's fields, and `rating` shows five clickable stars. To show any other column that [`fb.playlist.getAvailableColumns()`](../sdk/playlist.md#getavailablecolumns) lists, put its `pattern` in `formats` under a column ID of your choice and add that ID to `columns`. Don't use the column's `name` as the ID: it is display text in foobar2000's language.
+
+```html
+<fb-playlist-view columns="index,title,play_count,rating,mood"
+  formats='{"mood":"%mood%"}'></fb-playlist-view>
+```
+
 **CSS Parts:** `viewport`, `scroll-content`, `row`, `row-{column}`
 
 Each `row` part may reflect the `selected`, `focused`, and `playing` states as attributes.
@@ -144,7 +151,7 @@ Playback queue view. Double-clicking a row removes that queue entry.
 | `empty` | boolean | — | Read-only reflection of whether the queue is empty |
 | `count` | string | — | Read-only queue-entry count |
 
-**CSS Parts:** `container`, `row`, `row-{column}`, `empty`
+**CSS Parts:** `container`, `row`, `row-{column}`, `empty`  
 **Slots:** `empty`
 
 **Events:**

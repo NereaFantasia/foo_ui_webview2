@@ -1,6 +1,6 @@
-# fb.shell 系统集成 
+# fb.shell 系统集成
 
-## showInExplorer(path) 
+## showInExplorer(path)
 
 在资源管理器中显示文件。
 
@@ -8,7 +8,7 @@
 await fb.shell.showInExplorer('E:\\Music\\song.flac');
 ```
 
-## openWith(path) 
+## openWith(path)
 
 用系统默认程序打开文件。
 
@@ -20,7 +20,7 @@ await fb.shell.showInExplorer('E:\\Music\\song.flac');
 await fb.shell.openWith('E:\\Music\\cover.jpg');
 ```
 
-## openExternal(url) 
+## openExternal(url)
 
 用默认浏览器打开 URL。
 
@@ -28,7 +28,7 @@ await fb.shell.openWith('E:\\Music\\cover.jpg');
 await fb.shell.openExternal('https://www.foobar2000.org');
 ```
 
-## exec(command, options?) 
+## exec(command, options?)
 
 执行系统命令。
 
@@ -45,7 +45,7 @@ await fb.shell.openExternal('https://www.foobar2000.org');
 await fb.shell.exec('notepad', { args: ['E:\\notes.txt'] });
 ```
 
-## spawn(executable, options?) 
+## spawn(executable, options?)
 
 结构化启动进程（推荐用于启动 Node 服务）。
 

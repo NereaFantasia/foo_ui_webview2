@@ -1,10 +1,10 @@
 # DSP API
 
-Methods of the `dsp` namespace.
+The `dsp` namespace provides methods to inspect installed DSP processors, query and modify the active DSP chain, and apply DSP presets.
 
 ## dsp
 
-> Note: `dsp.getActivePreset` / `dsp.setActivePreset` are not registered on the C++ side — use `config.getActiveDspPreset` / `config.setActiveDspPreset` instead.
+> `dsp.getActivePreset` and `dsp.setActivePreset` are not registered in the C++ backend. Use `config.getActiveDspPreset` and `config.setActiveDspPreset` instead.
 
 ### dsp.addDsp
 
@@ -60,11 +60,7 @@ Make a preset the active chain, by index or by name; `index` wins when both are 
 const result = await fb2k.invoke('dsp.applyPreset', { name: 'Headphones' });
 ```
 
-Supply either `index` or `name`; at least one is required, and `index` wins when
-both are present. Both address the same presets, and the response echoes
-`appliedPreset` / `appliedIndex` either way. Applying a preset replaces the whole
-active chain; it never writes back to the stored preset, so the files under
-`profile\dsp-presets\<name>.fb2k-dsp` are left untouched.
+Supply either `index` or `name`. At least one is required, and `index` takes precedence when both are provided. Both address the same presets, and the response echoes `appliedPreset` and `appliedIndex`. Applying a preset replaces the entire active chain; it never modifies the stored preset file on disk (`profile\dsp-presets\<name>.fb2k-dsp`).
 
 ### dsp.getAvailable
 
@@ -115,10 +111,7 @@ This method takes no parameters.
 const result = await fb2k.invoke('dsp.getChain');
 ```
 
-`activePreset` and `activePresetIndex` are always present. When no preset is
-selected — including right after `dsp.setChain`, `addDsp`, `removeDsp` or
-`moveDsp` edit the chain by hand — they report `null` and `-1` respectively
-rather than being omitted.
+`activePreset` and `activePresetIndex` are always present in the response. When no preset is selected — including immediately after manual chain modifications via `dsp.setChain`, `dsp.addDsp`, `dsp.removeDsp`, or `dsp.moveDsp` — they return `null` and `-1` respectively.
 
 ### dsp.getPresets
 
@@ -145,8 +138,7 @@ This method takes no parameters.
 const result = await fb2k.invoke('dsp.getPresets');
 ```
 
-`selectedIndex` is `-1` when no preset is selected. Presets live in
-`profile\dsp-presets\<name>.fb2k-dsp`.
+`selectedIndex` is `-1` when no preset is selected. Stored presets reside in `profile\dsp-presets\<name>.fb2k-dsp`.
 
 ### dsp.moveDsp
 
@@ -174,13 +166,7 @@ Move one entry of the active chain to another position, keeping its settings. Pr
 const result = await fb2k.invoke('dsp.moveDsp', { from: 2, to: 0 });
 ```
 
-`to` is the final index in the reordered chain and matches the value you passed,
-in both directions. When `from === to` nothing moves and the response carries
-`message: "No change needed"`. Use this — not `getChain` fed back into
-`setChain` — to reorder a chain, because it preserves each DSP's configuration.
-A negative `from` or `to` is refused by the parameter reader with `INVALID_PARAMS`
-(`from is out of range`); a position at or past the end of the chain is refused with
-`INVALID_INDEX` (`Index out of range`).
+`to` represents the final index in the reordered chain and matches the value passed. When `from === to`, no processors move and the response returns `message: "No change needed"`. Use `dsp.moveDsp` rather than feeding `dsp.getChain` back into `dsp.setChain` to reorder processors, as `dsp.moveDsp` preserves each processor's configuration. Negative `from` or `to` values fail with `INVALID_PARAMS` (`from is out of range`), while indices at or beyond chain length fail with `INVALID_INDEX` (`Index out of range`).
 
 ### dsp.removeDsp
 
@@ -205,9 +191,7 @@ Remove one entry from the active chain.
 const result = await fb2k.invoke('dsp.removeDsp', { index: 0 });
 ```
 
-A negative `index` never reaches the chain: the parameter reader refuses it with
-`INVALID_PARAMS` (`index is out of range`). An index at or past the end of the chain
-is refused with `INVALID_INDEX` (`Index out of range`).
+A negative `index` is rejected by parameter validation with `INVALID_PARAMS` (`index is out of range`). An index at or beyond chain length is rejected with `INVALID_INDEX` (`Index out of range`).
 
 ### dsp.setChain
 
@@ -235,17 +219,13 @@ const { dsps } = res;
 const eq = dsps.find(d => d.name === 'Equalizer');
 await fb2k.invoke('dsp.setChain', { dsps: [{ guid: eq.guid }] });
 
-// Clear the chain
+// Clear active DSP chain
 await fb2k.invoke('dsp.setChain', { dsps: [] });
 ```
 
-Replaces the entire chain. Passing `dsps: []` clears it. Each element must be an
-object carrying a `guid` and nothing else: the entries `getChain` reports also carry
-`index` and `name`, so pass them through the SDK's `fb.dsp.setChain`, which sends only
-`guid`, or map them yourself. Entries are applied in array order.
+Replaces the entire active chain. Passing `dsps: []` clears it. Each array element must be an object containing only a `guid`: entries returned by `dsp.getChain` also contain `index` and `name`, so map them to `{ guid }` or use the SDK's `fb.dsp.setChain`. Entries are applied in array order.
 
-Every entry must resolve to an installed DSP — the call is rejected as a whole,
-without touching the current chain, and the error names the offending index:
+Every entry must resolve to an installed DSP. The call is rejected as a whole without altering the current chain, and the error message identifies the offending index:
 
 | Condition | Error | `code` |
 | --- | --- | --- |
@@ -258,12 +238,6 @@ without touching the current chain, and the error names the offending index:
 | `guid` malformed | `dsps[0]: Invalid GUID format: <value>` | `INVALID_PARAMS` |
 | `guid` well-formed but DSP not installed | `dsps[0]: DSP not found or no default preset: <guid>` | `NOT_FOUND` |
 
-Because entries only carry a `guid`, each DSP is added using its default preset.
-**Whether that keeps the DSP's current settings depends on the DSP itself** —
-many foobar2000 DSPs store configuration globally, so their settings survive, but
-a DSP that keeps configuration per preset instance (VST wrappers, some
-third-party DSPs) will fall back to factory values. Do not rely on `setChain` to
-preserve configuration; use `moveDsp` when you only need to reorder.
+Because each entry supplies only a `guid`, each DSP is added with its default preset. Whether current settings are retained depends on the DSP implementation: processors with global configuration retain settings, whereas DSPs storing configuration per preset instance (such as VST wrappers and some third-party components) reset to factory defaults. Use `dsp.moveDsp` to reorder existing processors without losing settings.
 
-Editing the chain this way detaches it from any preset, so `getChain` afterwards
-reports `activePreset: null` and `getPresets` reports `selectedIndex: -1`.
+Editing the chain detaches it from any active preset. Subsequent calls to `dsp.getChain` return `activePreset: null`, and `dsp.getPresets` reports `selectedIndex: -1`.

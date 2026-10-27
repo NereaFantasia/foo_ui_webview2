@@ -312,7 +312,7 @@ const draw = () => {
 };
 requestAnimationFrame(draw);
 const off = clock.onChange((change) => console.log(change.reason, change.position));
-// 之后
+// 清理注销
 off();
 clock.dispose();
 ```

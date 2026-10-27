@@ -1,6 +1,6 @@
 # Media API
 
-The experimental `media` namespace gives the calling page access to local media bytes and container metadata. Decoding remains the browser's responsibility. See [SDK media helpers](../sdk/media.md) for muted playback that follows foobar2000.
+The experimental `media` namespace provides methods to access local media bytes and container metadata directly within WebView2 documents. Audio decoding remains the browser's responsibility. See [SDK media helpers](../sdk/media.md) for muted playback following foobar2000 state.
 
 ## media.getStreamUrl
 
@@ -24,9 +24,9 @@ Issue a URL for a local media file, usable by the calling document until navigat
 `success` is `true` on success. On failure the response is `{ success: false, error, code }`; see [Error codes](../reference/errors.md) for `code`.
 <!-- api-schema:end -->
 
-Use the URL only in the document that requested it. Reloading, navigation (including a cancelled navigation), closing the window or changing the file invalidates it. Up to 64 URLs are retained per document; issuing more evicts the least recently used. There is no fixed time-to-live. URLs contain an opaque random token, not a file path.
+Use the URL only within the document that requested it. Reloading, navigation (including a cancelled navigation), closing the window, or modifying the target file invalidates the URL. Up to 64 URLs are retained per document; issuing more evicts the least recently used. URLs contain an opaque random token rather than a file path and have no fixed time-to-live.
 
-The page must have a trusted HTTP(S) origin. Set `crossOrigin = 'anonymous'` **before** assigning `src`. Opaque origins such as `about:blank` and `file:` cannot identify the issuing page for CORS and cannot issue a media URL. This does not change their eligibility for other bridge calls.
+The page must use a trusted HTTP(S) origin. Set `crossOrigin = 'anonymous'` **before** assigning `src`. Opaque origins such as `about:blank` and `file:` cannot identify the requesting origin for CORS and cannot request a media stream URL. This restriction does not affect their eligibility for other bridge calls.
 
 | Request | Response |
 | --- | --- |
@@ -101,17 +101,17 @@ Inspect MP4/QuickTime or Matroska/WebM container metadata without decoding. Unkn
 `success` is `true` on success. On failure the response is `{ success: false, error, code }`; see [Error codes](../reference/errors.md) for `code`.
 <!-- api-schema:end -->
 
-The parser reads MP4/QuickTime and Matroska/WebM structures without decoding. It skips media payloads and bounds reads, nesting and element counts. Unrecognized formats return `recognized: false`; a damaged supported container or an exceeded resource limit fails with `OPERATION_FAILED`. QuickTime compressed movie headers (`cmov`) and reference movies (`rmra`) also fail with `OPERATION_FAILED`; external references are not followed.
+The parser inspects MP4/QuickTime and Matroska/WebM structures without decoding audio or video streams. It skips media payloads and bounds parsing depth, nesting, and element counts. Unrecognized formats return `recognized: false`; a corrupt supported container or exceeded resource limit fails with `OPERATION_FAILED`. QuickTime compressed movie headers (`cmov`) and reference movies (`rmra`) also fail with `OPERATION_FAILED`; external references are not followed.
 
-Track IDs are strings. Times are seconds, dimensions are pixels, sample rates are hertz and bitrates are bits per second. A missing optional field means unknown; so does a name, language or title that is not valid UTF-8. Cover art appears as image or attachment metadata, never as a video track. Attachments provide names, MIME types and sizes when available, without extraction URLs or file contents.
+Track IDs are strings. Times are in seconds, dimensions in pixels, sample rates in hertz, and bitrates in bits per second. Omitted optional fields represent unknown values, as do strings that are not valid UTF-8. Cover art appears as image or attachment metadata rather than a video track. Attachments report names, MIME types, and byte sizes when available, without extraction URLs or payload contents.
 
 ### Chapters
 
-foobar2000 plays each chapter of an MP4 or Matroska file as its own subsong, and the playback position of that subsong starts at 0 at the chapter start. `chapters` lists them in the same order as the subsongs:
+foobar2000 plays each chapter of an MP4 or Matroska file as its own subsong, with playback position starting at 0 at chapter start. The `chapters` array lists entries in container order:
 
-- MP4 uses the QuickTime chapter track when there is one, as foobar2000 does, and Nero `chpl` otherwise. The text track that carries chapter titles is reported with `type: 'other'`, not as subtitles.
-- Matroska lists the top-level chapters of every edition, one after another, including hidden and disabled ones; nested chapters are not listed. With more than one edition, `edition` tells which edition a chapter belongs to.
-- `subsong` appears only when foobar2000 splits the file into as many subsongs as there are chapters and every chapter except the last lasts as long as its subsong, within 10 ms. foobar2000 extends the last subsong to the end of the audio, so its length is not compared.
+- MP4 uses the QuickTime chapter track when present (following foobar2000 behavior) and Nero `chpl` otherwise. The text track carrying chapter titles is reported with `type: 'other'` rather than subtitles.
+- Matroska lists top-level chapters for each edition sequentially, including hidden and disabled entries; nested chapters are omitted. When multiple editions exist, `edition` identifies the owning edition index.
+- `subsong` is present only when foobar2000 divides the file into as many subsongs as there are chapters, and each chapter (except the final one) matches subsong duration within 10 ms. foobar2000 extends the final subsong to the end of audio, so its duration is not compared.
 
 To show the picture of a chapter subsong, look up the chapter whose `subsong` matches the playing track and start the video at its `start`:
 
@@ -126,11 +126,11 @@ async function chapterStart(path: string, subsong: number): Promise<number> {
 
 Current limits:
 
-- `startTime` is omitted: edit lists, composition offsets and the first Matroska block are not scanned. Chapter times are read as stored; the chapter track's edit list is not applied.
-- Chapters that link to other Matroska files (`ChapterSegmentUID`) omit `chapters`. Ordered editions are listed by file position, not as a combined playback timeline.
-- MP4 enabled-track flags are not interpreted as `default` or `forced`. AVC SPS colour and precision fields are not decoded; explicit container colour fields are returned.
-- Matroska container duration is not copied into every track. Missing frame rate, bitrate or codec configuration stays missing.
-- Where multiple MP4 sample descriptions disagree, only common metadata is returned. Different sample-entry codes produce `codec: 'unknown'`.
-- Compressed MP4 audio entries can contain placeholder sample rates and channel counts. These fields are omitted unless codec configuration determines them. AAC configuration is parsed; PCE channel layouts and ER/ELD extensions are not.
+- `startTime` is omitted: edit lists, composition offsets, and initial Matroska blocks are not scanned. Chapter times are read as stored; edit lists on chapter tracks are not applied.
+- Chapters referencing external Matroska files (`ChapterSegmentUID`) omit `chapters`. Ordered editions are listed by container order rather than as a combined playback timeline.
+- MP4 enabled-track flags are not mapped to `default` or `forced`. AVC SPS color and precision fields are not decoded; explicit container color fields are returned.
+- Matroska container duration is not propagated into track objects. Missing frame rate, bitrate, or codec configuration remains omitted.
+- When multiple MP4 sample descriptions conflict, only common metadata is returned. Conflicting sample-entry codes produce `codec: 'unknown'`.
+- Compressed MP4 audio entries may contain placeholder sample rates and channel counts. These fields are omitted unless confirmed by codec configuration. AAC configuration is parsed; PCE channel layouts and ER/ELD extensions are not supported.
 
-Container recognition does not guarantee browser playback. Use the SDK's `canPlay(track)` as a capability hint and handle media-element errors.
+Container recognition does not guarantee browser playback. Use SDK `canPlay(track)` as a capability hint and handle media element error events.

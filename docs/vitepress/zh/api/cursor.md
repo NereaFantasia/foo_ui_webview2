@@ -1,6 +1,6 @@
 # Cursor API
 
-显式控制客户区光标的可见性。
+提供 WebView 客户区光标的显式隐藏、恢复与状态监听能力。
 
 > 此 API 命名空间为 `cursor.*`，不支持别名。
 
@@ -24,17 +24,17 @@
 ### cursor.setHidden
 
 <!-- api-schema:begin cursor.setHidden -->
-隐藏或恢复调用窗口客户区的光标。只有真正改变了状态的调用才向该窗口发 `cursor:hiddenChanged`；重复同一个值报 `changed: false`。每个窗口各自维护状态。
+隐藏或恢复调用窗口客户区的光标（仅在实际改变状态时向该窗口派发 cursor:hiddenChanged 事件；重复请求相同状态时返回 changed: false；各窗口独立维护光标状态）
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
-| `hidden` | `boolean` | 是 | `true` 隐藏光标，`false` 恢复。 |
+| `hidden` | `boolean` | 是 | 是否隐藏光标（true 为隐藏，false 为恢复显示） |
 
 **返回值**
 
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
-| `changed` | `boolean` | 状态是否改变；已经是请求的状态时为 `false`。 |
+| `changed` | `boolean` | 光标隐藏状态是否实际发生改变（若当前已处于目标状态则为 false） |
 
 成功时 `success` 为 `true`；失败时返回 `{ success: false, error, code }`，`code` 见[错误码](../reference/errors.md)。
 <!-- api-schema:end -->
@@ -62,7 +62,7 @@ scheduleHide();
 ### cursor.isHidden
 
 <!-- api-schema:begin cursor.isHidden -->
-报告调用窗口的光标是否隐藏；解析不到调用窗口时为 `false`。
+查询调用窗口的光标当前是否处于隐藏状态（无法解析调用窗口时返回 false）
 
 无参数。
 
@@ -70,7 +70,7 @@ scheduleHide();
 
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
-| `hidden` | `boolean` | 光标是否隐藏。 |
+| `hidden` | `boolean` | 光标当前是否处于隐藏状态 |
 
 成功时 `success` 为 `true`；失败时返回 `{ success: false, error, code }`，`code` 见[错误码](../reference/errors.md)。
 <!-- api-schema:end -->

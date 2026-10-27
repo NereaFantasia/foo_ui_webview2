@@ -20,10 +20,10 @@ const { config } = res;
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
-| `options.panelName` | `string` | 否 | 面板显示名。 |
-| `options.transparentBackground` | `boolean` | 否 | 面板是否透明背景。 |
-| `options.grabFocus` | `boolean` | 否 | 点击是否让面板获得键盘焦点。 |
-| `options.enableDragDrop` | `boolean` | 否 | 是否允许拖放到面板。 |
+| `options.panelName` | `string` | 否 | 面板显示名 |
+| `options.transparentBackground` | `boolean` | 否 | 面板是否透明背景 |
+| `options.grabFocus` | `boolean` | 否 | 点击是否让面板获得键盘焦点 |
+| `options.enableDragDrop` | `boolean` | 否 | 是否允许拖放到面板 |
 
 页面只能改这四个键，省略的键保持原值；`PanelConfig` 的其余字段只能经面板的设置对话框修改。响应里的 `changed` 表示是否真有字段改动。
 

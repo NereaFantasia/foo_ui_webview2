@@ -1,25 +1,25 @@
 # Tray 托盘 API
 
-Windows 系统托盘图标、托盘菜单与气泡通知，以及最小化或关闭到托盘。
+提供 Windows 系统托盘图标管理、托盘上下文菜单、气泡通知以及最小化/关闭到托盘集成能力。
 
-## Tray API — 系统托盘（15 个 API）
+## Tray API — 系统托盘（16 个 API） {#tray-api-—-系统托盘-15-个-api}
 
 ### tray.create
 
 <!-- api-schema:begin tray.create -->
-创建托盘图标。其他 `tray.*` 方法之前先调用一次：没创建时它们照样成功返回，但图标不显示、托盘事件不触发、`isVisible` 报 `false`。面板模式、主窗口没有句柄、shell 拒绝注册图标时失败。
+创建系统托盘图标（图标成功创建后方可接收用户输入与展示气泡通知；重复调用将保留此前通过 setClickAction 设置的点击动作；面板模式下、主窗口句柄缺失或 Shell 拒绝注册时调用失败）
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
-| `icon` | `string` | 否 | 要显示的图标。 |
-| `tooltip` | `string` | 否 | 悬停提示文本。默认 `"foobar2000"`。 |
+| `icon` | `string` | 否 | 托盘图标（.ico 文件原始 Base64 编码字符串；省略时使用默认图标） |
+| `tooltip` | `string` | 否 | 鼠标悬停时的提示文本默认 `"foobar2000"`。 |
 
 **返回值**
 
 成功时 `success` 为 `true`；失败时返回 `{ success: false, error, code }`，`code` 见[错误码](../reference/errors.md)。
 <!-- api-schema:end -->
 
-> ⚠️ **必须在前端生命周期初始化阶段显式调用一次**（推荐放在 Vue/React 应用启动钩子或脚本入口）。其他所有 `tray.*` API（`setIcon` / `setTooltip` / `setContextMenu` / `showBalloon` / `appendMenuItems` 等）依赖 `tray.create` 建立的 Shell_NotifyIcon 注册；如果跳过，调用本身会成功返回但**托盘图标不显示、事件不触发、`tray.isVisible` 返回 false**。
+在前端初始化时调用 `tray.create`，注册图标后才能接收点击或显示通知。`setClickAction` 可在创建前配置；没有图标时，`setIcon`、`setTooltip` 和 `showBalloon` 会失败，`tray.isVisible` 返回 `false`。
 
 ```javascript
 await fb2k.invoke('tray.create', { tooltip: 'foobar2000 - 已停止' });
@@ -30,7 +30,7 @@ await fb2k.invoke('tray.create', { tooltip: 'foobar2000 - 已停止' });
 ### tray.destroy
 
 <!-- api-schema:begin tray.destroy -->
-移除托盘图标。
+销毁系统托盘图标（取消挂起的待处理点击，并将左键点击动作重置为 event；若主窗口当前处于隐藏到托盘状态，将自动恢复显示以防界面无法唤回）
 
 无参数。
 
@@ -44,11 +44,11 @@ await fb2k.invoke('tray.create', { tooltip: 'foobar2000 - 已停止' });
 ### tray.setIcon
 
 <!-- api-schema:begin tray.setIcon -->
-更换托盘图标图像；图标未创建时失败。
+更换系统托盘图标图像（若尚未通过 tray.create 创建图标则调用失败）
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
-| `icon` | `string` | 否 | 要显示的图标。 |
+| `icon` | `string` | 否 | 待更新的托盘图标（.ico 文件原始 Base64 编码字符串） |
 
 **返回值**
 
@@ -60,11 +60,11 @@ await fb2k.invoke('tray.create', { tooltip: 'foobar2000 - 已停止' });
 ### tray.setTooltip
 
 <!-- api-schema:begin tray.setTooltip -->
-更新托盘图标的悬停提示文本；图标未创建时失败。
+更新系统托盘图标的悬停提示文本（若尚未通过 tray.create 创建图标则调用失败）
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
-| `tooltip` | `string` | 否 | 悬停提示文本；空串即清除。默认 `""`。 |
+| `tooltip` | `string` | 否 | 待更新的悬停提示文本（传入空字符串表示清除提示）默认 `""`。 |
 
 **返回值**
 
@@ -84,13 +84,13 @@ fb2k.on('playback:trackChanged', async (track) => {
 ### tray.showBalloon
 
 <!-- api-schema:begin tray.showBalloon -->
-从托盘图标显示气泡通知；图标未创建时失败。
+通过系统托盘图标弹出气泡通知（若尚未通过 tray.create 创建图标则调用失败）
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
-| `title` | `string` | 否 | 通知标题。默认 `""`。 |
-| `message` | `string` | 否 | 通知正文。默认 `""`。 |
-| `icon` | `"info" \| "warning" \| "error"` | 否 | 气泡里的图标。默认 `"info"`。 |
+| `title` | `string` | 否 | 气泡通知标题文本默认 `""`。 |
+| `message` | `string` | 否 | 气泡通知正文文本默认 `""`。 |
+| `icon` | `"info" \| "warning" \| "error"` | 否 | 气泡通知图标类型（info 信息、warning 警告、error 错误）默认 `"info"`。 |
 
 **返回值**
 
@@ -102,48 +102,48 @@ fb2k.on('playback:trackChanged', async (track) => {
 ### tray.setContextMenu
 
 <!-- api-schema:begin tray.setContextMenu -->
-整体替换某一区（`config.customPosition`，默认 `top`）的用户行，其余区不动。任一行被拒或超出资源上限时什么都不存。普通行点击经 `tray:menuItemClicked` 上报；内置播放/系统行与声明了 `playbackAction` 的行由插件原生执行，不发该事件。要一次替换全部分区，用 `setMenuZones`。
+整体替换指定分区（由 config.customPosition 指定，默认为 top）的自定义菜单项（其余分区保持不变；任一菜单项校验失败或超出资源配额时整体放弃更新；普通菜单项点击时通过 tray:menuItemClicked 派发事件，内置播放/系统项与声明了 playbackAction 的项由宿主原生直接执行而不派发事件；如需单次原子更新全部三个分区请使用 setMenuZones）
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
-| `items` | `TrayMenuItem[]` | 是 | 该区的行。 |
-| `items[].id` | `string` | 否 | `tray:menuItemClicked` 上报的标识；分隔线可省略。精确的 `_sys_show` 与 `_sys_exit` 是原生的「显示主窗口」与「退出」行：保留调用方的文字，并跳过对应的内置注入。 |
-| `items[].label` | `string` | 否 | 显示文本。 |
-| `items[].type` | `"normal" \| "separator" \| "checkbox" \| "submenu" \| "nowplaying" \| "rating" \| "slider" \| "segmented"` | 否 | 行类型。`checkbox` 是「可勾选的 normal 行」的旧写法；勾选状态本身由 `checked` 决定。默认 `"normal"`。 |
-| `items[].enabled` | `boolean` | 否 | 是否可点击。默认 `true`。 |
-| `items[].visible` | `boolean` | 否 | 是否显示。默认 `true`。 |
-| `items[].checked` | `boolean` | 否 | 勾选状态。给了这个键（含 `false`）该行就是可勾选的：`webview` 后端映射为 `menuitemcheckbox`，`getMenuItems` 会带回这个键。省略则不可勾选。 |
-| `items[].icon` | `string` | 否 | 保留字段，两个后端都不绘制；行图标用 `iconSvg`。 |
-| `items[].iconSvg` | `TrayIconSvg` | 否 | `webview` 后端画在文字前的图标。同一层只要有一行带可渲染图标，该层所有 `normal` 与 `submenu` 行都预留图标列。 |
-| `items[].iconSvg.viewBox` | `string` | 是 | SVG 的 `viewBox` 属性。 |
-| `items[].iconSvg.content` | `string` | 是 | SVG 的内部标记。 |
-| `items[].cover` | `string` | 否 | `nowplaying` 行的封面：`data:` URL、`http(s)://` URL 或裸 Base64 JPEG。开了 `config.autoNowPlaying` 时留空由正在播放曲目的封面补上（仅 `webview`）。 |
-| `items[].title` | `string` | 否 | `nowplaying` 行的第一行，通常是曲名；缺省用 `label`。 |
-| `items[].subtitle` | `string` | 否 | `nowplaying` 行的第二行，通常是艺术家或专辑。 |
-| `items[].value` | `integer` | 否 | 当前值：`rating` 是 `0` 到 `5` 星，`slider` 是 `min` 到 `max` 内的值（会被夹取），`segmented` 是选中段的索引。只对这三种类型回报。 |
-| `items[].min` | `integer` | 否 | `slider` 的下限；大于 `max` 时两者互换。 |
-| `items[].max` | `integer` | 否 | `slider` 的上限。 |
-| `items[].orientation` | `"horizontal" \| "vertical"` | 否 | `slider` 的方向（仅 `webview`）；省略即水平。纵向时 `min` 在底部。 |
-| `items[].segments` | `TraySegment[]` | 否 | `segmented` 的分段，一行互斥选项；`value` 是选中段的索引。点选上报 `{ id, value }` 且菜单保持打开。 |
-| `items[].segments[].label` | `string` | 否 | 分段文字；没有图标时显示。 |
-| `items[].segments[].iconSvg` | `TrayIconSvg` | 否 | 分段图标；优先于文字。 |
-| `items[].segments[].iconSvg.viewBox` | `string` | 是 | SVG 的 `viewBox` 属性。 |
-| `items[].segments[].iconSvg.content` | `string` | 是 | SVG 的内部标记。 |
-| `items[].segments[].enabled` | `boolean` | 否 | `false` 置灰，不可选。默认 `true`。 |
-| `items[].submenu` | `TrayMenuItem[]` | 否 | `submenu` 行的子行。 |
-| `items[].playbackAction` | `"play-pause" \| "previous" \| "next" \| "stop"` | 否 | 该行被选中时由插件原生执行的播放命令，页面挂起（最小化、藏到托盘、锁屏）时仍可用；这样的行不发 `tray:menuItemClicked`。只能写在 `normal` 叶子上，写在别处整次调用失败。 |
-| `config` | `TrayMenuConfig` | 否 | 要改的菜单级选项。 |
-| `config.showPlaybackControls` | `boolean` | 否 | 向 `playback` 区注入内置的上一首、播放/暂停、下一首、停止行。默认 `true`。 |
-| `config.showSystemItems` | `boolean` | 否 | 向 `bottom` 区注入原生的「显示主窗口」与「退出」行；页面挂起时两者仍可用。默认 `true`。 |
-| `config.customPosition` | `"top" \| "playback" \| "bottom"` | 否 | `setContextMenu` 把行写进哪个区。默认 `top`。 |
-| `config.render` | `"native" \| "webview"` | 否 | 菜单后端：Win32 菜单，或自绘的 WebView2 浮层（渲染富类型行与下面的样式选项）。默认 `native`。 |
-| `config.autoNowPlaying` | `boolean` | 否 | 菜单打开时用正在播放的曲目补 `nowplaying` 行留空的 `cover`、`title`、`subtitle`；调用方给的值优先。封面缩到 64 px，超过 256 KiB 省略；`cover` 只在 `webview` 下补。默认 `false`。 |
-| `config.css` | `string` | 否 | 每次打开 `webview` 菜单时注入的样式表，叠加在内置样式之上；按菜单的稳定 class 名（`.fb-menu`、`.fb-item`、`.fb-sep` 等）编写。 |
-| `config.cssReplace` | `boolean` | 否 | `true` 时停用内置样式，只留 `css` 与受保护的结构层（仅 `webview`）。默认 `false`。 |
-| `config.backdrop` | `"acrylic" \| "mica" \| "mica-alt" \| "none"` | 否 | `webview` 菜单的 DWM 背景材质，取值与窗口相同。随窗口瞬间出现/消失，不能用 CSS 淡入淡出。默认 `acrylic`。 |
-| `config.backdropDarkMode` | `boolean` | 否 | 背景材质的暗色调（仅 `webview`）；`false` 跟随浅色主题。默认 `true`。 |
-| `config.closeAnimationMs` | `integer` | 否 | `webview` 菜单在用户关闭时先播放退场过渡（`#menu.out`）的毫秒数，夹到 `0` 到 `1000`；`0` 立即隐藏。默认 `0`。 |
-| `config.layoutMode` | `"flat" \| "zones"` | 否 | `webview` 菜单的 DOM 布局：`flat` 让行直接挂在根下，`zones` 把每个非空区包进 `.fb-zone[data-zone]`。默认 `flat`。 |
+| `items` | `TrayMenuItem[]` | 是 | 写入目标分区的自定义菜单项列表 |
+| `items[].id` | `string` | 否 | 菜单项唯一标识符（由 tray:menuItemClicked 事件上报；分隔线可省略；预留的 _sys_show 与 _sys_exit 将绑定原生显示主窗口与退出行为并抑制默认系统项注入） |
+| `items[].label` | `string` | 否 | 菜单项显示文本 |
+| `items[].type` | `"normal" \| "separator" \| "checkbox" \| "submenu" \| "nowplaying" \| "rating" \| "slider" \| "segmented"` | 否 | 菜单项展现类型（checkbox 为可勾选 normal 项的历史兼容写法，建议统一通过 checked 属性控制勾选状态）默认 `"normal"`。 |
+| `items[].enabled` | `boolean` | 否 | 菜单项是否处于启用可交互状态默认 `true`。 |
+| `items[].visible` | `boolean` | 否 | 菜单项是否可见默认 `true`。 |
+| `items[].checked` | `boolean` | 否 | 菜单项勾选状态（传入该属性包括 false 将使菜单项转为可勾选模式，webview 后端映射为 menuitemcheckbox 并支持通过 getMenuItems 读取；缺省时表示不可勾选普通菜单项） |
+| `items[].icon` | `string` | 否 | 保留字段（双后端均不绘制，图标定义请使用 iconSvg） |
+| `items[].iconSvg` | `TrayIconSvg` | 否 | 菜单项前置矢量图标（仅 webview 后端绘制；同一层级内只要有一项配置了图标，同级全部 normal 与 submenu 项均会自动对齐预留图标列宽度） |
+| `items[].iconSvg.viewBox` | `string` | 是 | SVG viewBox 视口属性 |
+| `items[].iconSvg.content` | `string` | 是 | SVG 内部矢量图形标记（例如 <path d="..."/>） |
+| `items[].cover` | `string` | 否 | nowplaying 正在播放卡片封面（支持 data: URL、http(s):// 链接或原始 Base64 JPEG；开启 config.autoNowPlaying 时缺省将自动拉取当前曲目前置封面；仅 webview 后端生效） |
+| `items[].title` | `string` | 否 | nowplaying 正在播放卡片主标题（通常为曲目名称；缺省时回退使用 label） |
+| `items[].subtitle` | `string` | 否 | nowplaying 正在播放卡片副标题（通常为艺术家或专辑信息） |
+| `items[].value` | `integer` | 否 | 控件当前数值（rating 支持 0 至 5 星；slider 支持 min 至 max 范围内的数值，超出范围自动夹取；segmented 为当前选中分段索引；仅在此三类控件上生效并回传） |
+| `items[].min` | `integer` | 否 | slider 滑块数值下限（若大于 max 将自动与 max 互换） |
+| `items[].max` | `integer` | 否 | slider 滑块数值上限 |
+| `items[].orientation` | `"horizontal" \| "vertical"` | 否 | slider 滑块布局方向（仅 webview 后端支持；缺省为水平方向，垂直方向时 min 位于底部） |
+| `items[].segments` | `TraySegment[]` | 否 | segmented 分段选项列表（单行互斥选择项，value 为当前选中项索引；点击分段上报 { id, value } 且菜单保持展开） |
+| `items[].segments[].label` | `string` | 否 | 分段文本标签（未提供图标时展示） |
+| `items[].segments[].iconSvg` | `TrayIconSvg` | 否 | 分段矢量图标（优先级高于文本标签） |
+| `items[].segments[].iconSvg.viewBox` | `string` | 是 | SVG viewBox 视口属性 |
+| `items[].segments[].iconSvg.content` | `string` | 是 | SVG 内部矢量图形标记（例如 <path d="..."/>） |
+| `items[].segments[].enabled` | `boolean` | 否 | 分段是否可用（为 false 时置灰且不可点击）默认 `true`。 |
+| `items[].submenu` | `TrayMenuItem[]` | 否 | submenu 子菜单包含的子菜单项列表 |
+| `items[].playbackAction` | `"play-pause" \| "previous" \| "next" \| "stop"` | 否 | 声明由宿主原生直接执行的播放命令（支持在主页面挂起、最小化或锁屏状态下稳定响应；配置后点击该项不触发 tray:menuItemClicked；仅允许配置在 normal 叶子节点上） |
+| `config` | `TrayMenuConfig` | 否 | 待更新的托盘菜单全局配置选项 |
+| `config.showPlaybackControls` | `boolean` | 否 | 是否在 playback 分区自动注入上一首、播放/暂停、下一首与停止等原生播放控制项（缺省为 true） |
+| `config.showSystemItems` | `boolean` | 否 | 是否在 bottom 分区自动注入显示主窗口与退出等原生系统控制项（支持在页面深度挂起状态下可靠响应；缺省为 true） |
+| `config.customPosition` | `"top" \| "playback" \| "bottom"` | 否 | setContextMenu 默认写入的目标菜单分区（缺省为 top） |
+| `config.render` | `"native" \| "webview"` | 否 | 菜单渲染后端（native 为 Win32 原生菜单；webview 为基于 WebView2 的自绘现代浮层，支持富控件与自定义 CSS 样式；缺省为 native） |
+| `config.autoNowPlaying` | `boolean` | 否 | 展开菜单时是否自动使用当前播放曲目填充 nowplaying 卡片中留空的 cover、title 与 subtitle 字段（调用方显式指定的字段优先；封面图像自动下采样至 64 像素且限制最大 256 KiB；仅 webview 后端生效；缺省为 false） |
+| `config.css` | `string` | 否 | 注入 webview 自绘菜单的自定义 CSS 样式代码（叠加在内置样式之上，可通过 .fb-menu、.fb-item、.fb-sep 等稳定类名定制视觉样式） |
+| `config.cssReplace` | `boolean` | 否 | 是否完全停用内置 CSS 样式（仅保留受保护的 DOM 结构层与用户自定义 css 规则；仅 webview 后端生效；缺省为 false） |
+| `config.backdrop` | `"acrylic" \| "mica" \| "mica-alt" \| "none"` | 否 | webview 自绘菜单的 Windows DWM 材质背景效果（acrylic 亚克力、mica、mica-alt 或 none；材质紧贴窗口即时切换，不支持 CSS 透明度渐变过渡；缺省为 acrylic） |
+| `config.backdropDarkMode` | `boolean` | 否 | DWM 背景材质是否强制启用深色调（仅 webview 后端生效；设为 false 时跟随浅色视觉风格；缺省为 true） |
+| `config.closeAnimationMs` | `integer` | 否 | webview 自绘菜单在用户主动关闭时的退场过渡动画时长（单位毫秒，取值范围 0 至 1000；传入 0 表示立即关闭窗口；可配合 #menu.out CSS 选择器定制动画；缺省为 0） |
+| `config.layoutMode` | `"flat" \| "zones"` | 否 | webview 自绘菜单的 DOM 容器布局模式（flat 表示所有菜单项平铺于根容器下；zones 表示将非空分区分别包裹于 .fb-zone[data-zone] 容器内；缺省为 flat） |
 
 **返回值**
 
@@ -329,100 +329,100 @@ await fb2k.invoke('tray.setContextMenu', {
 ### tray.setMenuZones
 
 <!-- api-schema:begin tray.setMenuZones -->
-一次替换三个区的全部用户行，没给出的区清空。行与 `config` 的规则同 `setContextMenu`；任一行被拒或超出资源上限时什么都不存，`config` 也不改。整份菜单要变时用它，不要先 `clearMenuItems` 再 `appendMenuItems`：分开的几次调用之间菜单可能被打开，只显示更新的一部分；两次这样的更新交错时，行会被加两遍。
+单次原子替换全部三个分区的自定义菜单项（未传入的分区将被清空；菜单项校验规则与 config 语义同 setContextMenu，任一菜单项校验失败或超限时整体放弃保存且不修改配置；整份菜单更新时建议优先使用本方法，避免通过 clearMenuItems 与 appendMenuItems 组合调用导致中间状态闪烁或并发交错重复）
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
-| `top` | `TrayMenuItem[]` | 否 | `top` 区的行；省略即清空该区。 |
-| `top[].id` | `string` | 否 | `tray:menuItemClicked` 上报的标识；分隔线可省略。精确的 `_sys_show` 与 `_sys_exit` 是原生的「显示主窗口」与「退出」行：保留调用方的文字，并跳过对应的内置注入。 |
-| `top[].label` | `string` | 否 | 显示文本。 |
-| `top[].type` | `"normal" \| "separator" \| "checkbox" \| "submenu" \| "nowplaying" \| "rating" \| "slider" \| "segmented"` | 否 | 行类型。`checkbox` 是「可勾选的 normal 行」的旧写法；勾选状态本身由 `checked` 决定。默认 `"normal"`。 |
-| `top[].enabled` | `boolean` | 否 | 是否可点击。默认 `true`。 |
-| `top[].visible` | `boolean` | 否 | 是否显示。默认 `true`。 |
-| `top[].checked` | `boolean` | 否 | 勾选状态。给了这个键（含 `false`）该行就是可勾选的：`webview` 后端映射为 `menuitemcheckbox`，`getMenuItems` 会带回这个键。省略则不可勾选。 |
-| `top[].icon` | `string` | 否 | 保留字段，两个后端都不绘制；行图标用 `iconSvg`。 |
-| `top[].iconSvg` | `TrayIconSvg` | 否 | `webview` 后端画在文字前的图标。同一层只要有一行带可渲染图标，该层所有 `normal` 与 `submenu` 行都预留图标列。 |
-| `top[].iconSvg.viewBox` | `string` | 是 | SVG 的 `viewBox` 属性。 |
-| `top[].iconSvg.content` | `string` | 是 | SVG 的内部标记。 |
-| `top[].cover` | `string` | 否 | `nowplaying` 行的封面：`data:` URL、`http(s)://` URL 或裸 Base64 JPEG。开了 `config.autoNowPlaying` 时留空由正在播放曲目的封面补上（仅 `webview`）。 |
-| `top[].title` | `string` | 否 | `nowplaying` 行的第一行，通常是曲名；缺省用 `label`。 |
-| `top[].subtitle` | `string` | 否 | `nowplaying` 行的第二行，通常是艺术家或专辑。 |
-| `top[].value` | `integer` | 否 | 当前值：`rating` 是 `0` 到 `5` 星，`slider` 是 `min` 到 `max` 内的值（会被夹取），`segmented` 是选中段的索引。只对这三种类型回报。 |
-| `top[].min` | `integer` | 否 | `slider` 的下限；大于 `max` 时两者互换。 |
-| `top[].max` | `integer` | 否 | `slider` 的上限。 |
-| `top[].orientation` | `"horizontal" \| "vertical"` | 否 | `slider` 的方向（仅 `webview`）；省略即水平。纵向时 `min` 在底部。 |
-| `top[].segments` | `TraySegment[]` | 否 | `segmented` 的分段，一行互斥选项；`value` 是选中段的索引。点选上报 `{ id, value }` 且菜单保持打开。 |
-| `top[].segments[].label` | `string` | 否 | 分段文字；没有图标时显示。 |
-| `top[].segments[].iconSvg` | `TrayIconSvg` | 否 | 分段图标；优先于文字。 |
-| `top[].segments[].iconSvg.viewBox` | `string` | 是 | SVG 的 `viewBox` 属性。 |
-| `top[].segments[].iconSvg.content` | `string` | 是 | SVG 的内部标记。 |
-| `top[].segments[].enabled` | `boolean` | 否 | `false` 置灰，不可选。默认 `true`。 |
-| `top[].submenu` | `TrayMenuItem[]` | 否 | `submenu` 行的子行。 |
-| `top[].playbackAction` | `"play-pause" \| "previous" \| "next" \| "stop"` | 否 | 该行被选中时由插件原生执行的播放命令，页面挂起（最小化、藏到托盘、锁屏）时仍可用；这样的行不发 `tray:menuItemClicked`。只能写在 `normal` 叶子上，写在别处整次调用失败。 |
-| `playback` | `TrayMenuItem[]` | 否 | `playback` 区的行；省略即清空该区。`config.showPlaybackControls` 注入的内置行不存在区里，清空该区不会去掉它们。 |
-| `playback[].id` | `string` | 否 | `tray:menuItemClicked` 上报的标识；分隔线可省略。精确的 `_sys_show` 与 `_sys_exit` 是原生的「显示主窗口」与「退出」行：保留调用方的文字，并跳过对应的内置注入。 |
-| `playback[].label` | `string` | 否 | 显示文本。 |
-| `playback[].type` | `"normal" \| "separator" \| "checkbox" \| "submenu" \| "nowplaying" \| "rating" \| "slider" \| "segmented"` | 否 | 行类型。`checkbox` 是「可勾选的 normal 行」的旧写法；勾选状态本身由 `checked` 决定。默认 `"normal"`。 |
-| `playback[].enabled` | `boolean` | 否 | 是否可点击。默认 `true`。 |
-| `playback[].visible` | `boolean` | 否 | 是否显示。默认 `true`。 |
-| `playback[].checked` | `boolean` | 否 | 勾选状态。给了这个键（含 `false`）该行就是可勾选的：`webview` 后端映射为 `menuitemcheckbox`，`getMenuItems` 会带回这个键。省略则不可勾选。 |
-| `playback[].icon` | `string` | 否 | 保留字段，两个后端都不绘制；行图标用 `iconSvg`。 |
-| `playback[].iconSvg` | `TrayIconSvg` | 否 | `webview` 后端画在文字前的图标。同一层只要有一行带可渲染图标，该层所有 `normal` 与 `submenu` 行都预留图标列。 |
-| `playback[].iconSvg.viewBox` | `string` | 是 | SVG 的 `viewBox` 属性。 |
-| `playback[].iconSvg.content` | `string` | 是 | SVG 的内部标记。 |
-| `playback[].cover` | `string` | 否 | `nowplaying` 行的封面：`data:` URL、`http(s)://` URL 或裸 Base64 JPEG。开了 `config.autoNowPlaying` 时留空由正在播放曲目的封面补上（仅 `webview`）。 |
-| `playback[].title` | `string` | 否 | `nowplaying` 行的第一行，通常是曲名；缺省用 `label`。 |
-| `playback[].subtitle` | `string` | 否 | `nowplaying` 行的第二行，通常是艺术家或专辑。 |
-| `playback[].value` | `integer` | 否 | 当前值：`rating` 是 `0` 到 `5` 星，`slider` 是 `min` 到 `max` 内的值（会被夹取），`segmented` 是选中段的索引。只对这三种类型回报。 |
-| `playback[].min` | `integer` | 否 | `slider` 的下限；大于 `max` 时两者互换。 |
-| `playback[].max` | `integer` | 否 | `slider` 的上限。 |
-| `playback[].orientation` | `"horizontal" \| "vertical"` | 否 | `slider` 的方向（仅 `webview`）；省略即水平。纵向时 `min` 在底部。 |
-| `playback[].segments` | `TraySegment[]` | 否 | `segmented` 的分段，一行互斥选项；`value` 是选中段的索引。点选上报 `{ id, value }` 且菜单保持打开。 |
-| `playback[].segments[].label` | `string` | 否 | 分段文字；没有图标时显示。 |
-| `playback[].segments[].iconSvg` | `TrayIconSvg` | 否 | 分段图标；优先于文字。 |
-| `playback[].segments[].iconSvg.viewBox` | `string` | 是 | SVG 的 `viewBox` 属性。 |
-| `playback[].segments[].iconSvg.content` | `string` | 是 | SVG 的内部标记。 |
-| `playback[].segments[].enabled` | `boolean` | 否 | `false` 置灰，不可选。默认 `true`。 |
-| `playback[].submenu` | `TrayMenuItem[]` | 否 | `submenu` 行的子行。 |
-| `playback[].playbackAction` | `"play-pause" \| "previous" \| "next" \| "stop"` | 否 | 该行被选中时由插件原生执行的播放命令，页面挂起（最小化、藏到托盘、锁屏）时仍可用；这样的行不发 `tray:menuItemClicked`。只能写在 `normal` 叶子上，写在别处整次调用失败。 |
-| `bottom` | `TrayMenuItem[]` | 否 | `bottom` 区的行；省略即清空该区。`config.showSystemItems` 注入的内置行不存在区里，清空该区不会去掉它们。 |
-| `bottom[].id` | `string` | 否 | `tray:menuItemClicked` 上报的标识；分隔线可省略。精确的 `_sys_show` 与 `_sys_exit` 是原生的「显示主窗口」与「退出」行：保留调用方的文字，并跳过对应的内置注入。 |
-| `bottom[].label` | `string` | 否 | 显示文本。 |
-| `bottom[].type` | `"normal" \| "separator" \| "checkbox" \| "submenu" \| "nowplaying" \| "rating" \| "slider" \| "segmented"` | 否 | 行类型。`checkbox` 是「可勾选的 normal 行」的旧写法；勾选状态本身由 `checked` 决定。默认 `"normal"`。 |
-| `bottom[].enabled` | `boolean` | 否 | 是否可点击。默认 `true`。 |
-| `bottom[].visible` | `boolean` | 否 | 是否显示。默认 `true`。 |
-| `bottom[].checked` | `boolean` | 否 | 勾选状态。给了这个键（含 `false`）该行就是可勾选的：`webview` 后端映射为 `menuitemcheckbox`，`getMenuItems` 会带回这个键。省略则不可勾选。 |
-| `bottom[].icon` | `string` | 否 | 保留字段，两个后端都不绘制；行图标用 `iconSvg`。 |
-| `bottom[].iconSvg` | `TrayIconSvg` | 否 | `webview` 后端画在文字前的图标。同一层只要有一行带可渲染图标，该层所有 `normal` 与 `submenu` 行都预留图标列。 |
-| `bottom[].iconSvg.viewBox` | `string` | 是 | SVG 的 `viewBox` 属性。 |
-| `bottom[].iconSvg.content` | `string` | 是 | SVG 的内部标记。 |
-| `bottom[].cover` | `string` | 否 | `nowplaying` 行的封面：`data:` URL、`http(s)://` URL 或裸 Base64 JPEG。开了 `config.autoNowPlaying` 时留空由正在播放曲目的封面补上（仅 `webview`）。 |
-| `bottom[].title` | `string` | 否 | `nowplaying` 行的第一行，通常是曲名；缺省用 `label`。 |
-| `bottom[].subtitle` | `string` | 否 | `nowplaying` 行的第二行，通常是艺术家或专辑。 |
-| `bottom[].value` | `integer` | 否 | 当前值：`rating` 是 `0` 到 `5` 星，`slider` 是 `min` 到 `max` 内的值（会被夹取），`segmented` 是选中段的索引。只对这三种类型回报。 |
-| `bottom[].min` | `integer` | 否 | `slider` 的下限；大于 `max` 时两者互换。 |
-| `bottom[].max` | `integer` | 否 | `slider` 的上限。 |
-| `bottom[].orientation` | `"horizontal" \| "vertical"` | 否 | `slider` 的方向（仅 `webview`）；省略即水平。纵向时 `min` 在底部。 |
-| `bottom[].segments` | `TraySegment[]` | 否 | `segmented` 的分段，一行互斥选项；`value` 是选中段的索引。点选上报 `{ id, value }` 且菜单保持打开。 |
-| `bottom[].segments[].label` | `string` | 否 | 分段文字；没有图标时显示。 |
-| `bottom[].segments[].iconSvg` | `TrayIconSvg` | 否 | 分段图标；优先于文字。 |
-| `bottom[].segments[].iconSvg.viewBox` | `string` | 是 | SVG 的 `viewBox` 属性。 |
-| `bottom[].segments[].iconSvg.content` | `string` | 是 | SVG 的内部标记。 |
-| `bottom[].segments[].enabled` | `boolean` | 否 | `false` 置灰，不可选。默认 `true`。 |
-| `bottom[].submenu` | `TrayMenuItem[]` | 否 | `submenu` 行的子行。 |
-| `bottom[].playbackAction` | `"play-pause" \| "previous" \| "next" \| "stop"` | 否 | 该行被选中时由插件原生执行的播放命令，页面挂起（最小化、藏到托盘、锁屏）时仍可用；这样的行不发 `tray:menuItemClicked`。只能写在 `normal` 叶子上，写在别处整次调用失败。 |
-| `config` | `TrayMenuConfig` | 否 | 要改的菜单级选项。`customPosition` 存下来供之后的 `setContextMenu` 使用，对本次调用不起作用。 |
-| `config.showPlaybackControls` | `boolean` | 否 | 向 `playback` 区注入内置的上一首、播放/暂停、下一首、停止行。默认 `true`。 |
-| `config.showSystemItems` | `boolean` | 否 | 向 `bottom` 区注入原生的「显示主窗口」与「退出」行；页面挂起时两者仍可用。默认 `true`。 |
-| `config.customPosition` | `"top" \| "playback" \| "bottom"` | 否 | `setContextMenu` 把行写进哪个区。默认 `top`。 |
-| `config.render` | `"native" \| "webview"` | 否 | 菜单后端：Win32 菜单，或自绘的 WebView2 浮层（渲染富类型行与下面的样式选项）。默认 `native`。 |
-| `config.autoNowPlaying` | `boolean` | 否 | 菜单打开时用正在播放的曲目补 `nowplaying` 行留空的 `cover`、`title`、`subtitle`；调用方给的值优先。封面缩到 64 px，超过 256 KiB 省略；`cover` 只在 `webview` 下补。默认 `false`。 |
-| `config.css` | `string` | 否 | 每次打开 `webview` 菜单时注入的样式表，叠加在内置样式之上；按菜单的稳定 class 名（`.fb-menu`、`.fb-item`、`.fb-sep` 等）编写。 |
-| `config.cssReplace` | `boolean` | 否 | `true` 时停用内置样式，只留 `css` 与受保护的结构层（仅 `webview`）。默认 `false`。 |
-| `config.backdrop` | `"acrylic" \| "mica" \| "mica-alt" \| "none"` | 否 | `webview` 菜单的 DWM 背景材质，取值与窗口相同。随窗口瞬间出现/消失，不能用 CSS 淡入淡出。默认 `acrylic`。 |
-| `config.backdropDarkMode` | `boolean` | 否 | 背景材质的暗色调（仅 `webview`）；`false` 跟随浅色主题。默认 `true`。 |
-| `config.closeAnimationMs` | `integer` | 否 | `webview` 菜单在用户关闭时先播放退场过渡（`#menu.out`）的毫秒数，夹到 `0` 到 `1000`；`0` 立即隐藏。默认 `0`。 |
-| `config.layoutMode` | `"flat" \| "zones"` | 否 | `webview` 菜单的 DOM 布局：`flat` 让行直接挂在根下，`zones` 把每个非空区包进 `.fb-zone[data-zone]`。默认 `flat`。 |
+| `top` | `TrayMenuItem[]` | 否 | top 分区菜单项列表（省略时清空该分区） |
+| `top[].id` | `string` | 否 | 菜单项唯一标识符（由 tray:menuItemClicked 事件上报；分隔线可省略；预留的 _sys_show 与 _sys_exit 将绑定原生显示主窗口与退出行为并抑制默认系统项注入） |
+| `top[].label` | `string` | 否 | 菜单项显示文本 |
+| `top[].type` | `"normal" \| "separator" \| "checkbox" \| "submenu" \| "nowplaying" \| "rating" \| "slider" \| "segmented"` | 否 | 菜单项展现类型（checkbox 为可勾选 normal 项的历史兼容写法，建议统一通过 checked 属性控制勾选状态）默认 `"normal"`。 |
+| `top[].enabled` | `boolean` | 否 | 菜单项是否处于启用可交互状态默认 `true`。 |
+| `top[].visible` | `boolean` | 否 | 菜单项是否可见默认 `true`。 |
+| `top[].checked` | `boolean` | 否 | 菜单项勾选状态（传入该属性包括 false 将使菜单项转为可勾选模式，webview 后端映射为 menuitemcheckbox 并支持通过 getMenuItems 读取；缺省时表示不可勾选普通菜单项） |
+| `top[].icon` | `string` | 否 | 保留字段（双后端均不绘制，图标定义请使用 iconSvg） |
+| `top[].iconSvg` | `TrayIconSvg` | 否 | 菜单项前置矢量图标（仅 webview 后端绘制；同一层级内只要有一项配置了图标，同级全部 normal 与 submenu 项均会自动对齐预留图标列宽度） |
+| `top[].iconSvg.viewBox` | `string` | 是 | SVG viewBox 视口属性 |
+| `top[].iconSvg.content` | `string` | 是 | SVG 内部矢量图形标记（例如 <path d="..."/>） |
+| `top[].cover` | `string` | 否 | nowplaying 正在播放卡片封面（支持 data: URL、http(s):// 链接或原始 Base64 JPEG；开启 config.autoNowPlaying 时缺省将自动拉取当前曲目前置封面；仅 webview 后端生效） |
+| `top[].title` | `string` | 否 | nowplaying 正在播放卡片主标题（通常为曲目名称；缺省时回退使用 label） |
+| `top[].subtitle` | `string` | 否 | nowplaying 正在播放卡片副标题（通常为艺术家或专辑信息） |
+| `top[].value` | `integer` | 否 | 控件当前数值（rating 支持 0 至 5 星；slider 支持 min 至 max 范围内的数值，超出范围自动夹取；segmented 为当前选中分段索引；仅在此三类控件上生效并回传） |
+| `top[].min` | `integer` | 否 | slider 滑块数值下限（若大于 max 将自动与 max 互换） |
+| `top[].max` | `integer` | 否 | slider 滑块数值上限 |
+| `top[].orientation` | `"horizontal" \| "vertical"` | 否 | slider 滑块布局方向（仅 webview 后端支持；缺省为水平方向，垂直方向时 min 位于底部） |
+| `top[].segments` | `TraySegment[]` | 否 | segmented 分段选项列表（单行互斥选择项，value 为当前选中项索引；点击分段上报 { id, value } 且菜单保持展开） |
+| `top[].segments[].label` | `string` | 否 | 分段文本标签（未提供图标时展示） |
+| `top[].segments[].iconSvg` | `TrayIconSvg` | 否 | 分段矢量图标（优先级高于文本标签） |
+| `top[].segments[].iconSvg.viewBox` | `string` | 是 | SVG viewBox 视口属性 |
+| `top[].segments[].iconSvg.content` | `string` | 是 | SVG 内部矢量图形标记（例如 <path d="..."/>） |
+| `top[].segments[].enabled` | `boolean` | 否 | 分段是否可用（为 false 时置灰且不可点击）默认 `true`。 |
+| `top[].submenu` | `TrayMenuItem[]` | 否 | submenu 子菜单包含的子菜单项列表 |
+| `top[].playbackAction` | `"play-pause" \| "previous" \| "next" \| "stop"` | 否 | 声明由宿主原生直接执行的播放命令（支持在主页面挂起、最小化或锁屏状态下稳定响应；配置后点击该项不触发 tray:menuItemClicked；仅允许配置在 normal 叶子节点上） |
+| `playback` | `TrayMenuItem[]` | 否 | playback 分区菜单项列表（省略时清空该分区；showPlaybackControls 注入的原生项独立维护，不受此清空影响） |
+| `playback[].id` | `string` | 否 | 菜单项唯一标识符（由 tray:menuItemClicked 事件上报；分隔线可省略；预留的 _sys_show 与 _sys_exit 将绑定原生显示主窗口与退出行为并抑制默认系统项注入） |
+| `playback[].label` | `string` | 否 | 菜单项显示文本 |
+| `playback[].type` | `"normal" \| "separator" \| "checkbox" \| "submenu" \| "nowplaying" \| "rating" \| "slider" \| "segmented"` | 否 | 菜单项展现类型（checkbox 为可勾选 normal 项的历史兼容写法，建议统一通过 checked 属性控制勾选状态）默认 `"normal"`。 |
+| `playback[].enabled` | `boolean` | 否 | 菜单项是否处于启用可交互状态默认 `true`。 |
+| `playback[].visible` | `boolean` | 否 | 菜单项是否可见默认 `true`。 |
+| `playback[].checked` | `boolean` | 否 | 菜单项勾选状态（传入该属性包括 false 将使菜单项转为可勾选模式，webview 后端映射为 menuitemcheckbox 并支持通过 getMenuItems 读取；缺省时表示不可勾选普通菜单项） |
+| `playback[].icon` | `string` | 否 | 保留字段（双后端均不绘制，图标定义请使用 iconSvg） |
+| `playback[].iconSvg` | `TrayIconSvg` | 否 | 菜单项前置矢量图标（仅 webview 后端绘制；同一层级内只要有一项配置了图标，同级全部 normal 与 submenu 项均会自动对齐预留图标列宽度） |
+| `playback[].iconSvg.viewBox` | `string` | 是 | SVG viewBox 视口属性 |
+| `playback[].iconSvg.content` | `string` | 是 | SVG 内部矢量图形标记（例如 <path d="..."/>） |
+| `playback[].cover` | `string` | 否 | nowplaying 正在播放卡片封面（支持 data: URL、http(s):// 链接或原始 Base64 JPEG；开启 config.autoNowPlaying 时缺省将自动拉取当前曲目前置封面；仅 webview 后端生效） |
+| `playback[].title` | `string` | 否 | nowplaying 正在播放卡片主标题（通常为曲目名称；缺省时回退使用 label） |
+| `playback[].subtitle` | `string` | 否 | nowplaying 正在播放卡片副标题（通常为艺术家或专辑信息） |
+| `playback[].value` | `integer` | 否 | 控件当前数值（rating 支持 0 至 5 星；slider 支持 min 至 max 范围内的数值，超出范围自动夹取；segmented 为当前选中分段索引；仅在此三类控件上生效并回传） |
+| `playback[].min` | `integer` | 否 | slider 滑块数值下限（若大于 max 将自动与 max 互换） |
+| `playback[].max` | `integer` | 否 | slider 滑块数值上限 |
+| `playback[].orientation` | `"horizontal" \| "vertical"` | 否 | slider 滑块布局方向（仅 webview 后端支持；缺省为水平方向，垂直方向时 min 位于底部） |
+| `playback[].segments` | `TraySegment[]` | 否 | segmented 分段选项列表（单行互斥选择项，value 为当前选中项索引；点击分段上报 { id, value } 且菜单保持展开） |
+| `playback[].segments[].label` | `string` | 否 | 分段文本标签（未提供图标时展示） |
+| `playback[].segments[].iconSvg` | `TrayIconSvg` | 否 | 分段矢量图标（优先级高于文本标签） |
+| `playback[].segments[].iconSvg.viewBox` | `string` | 是 | SVG viewBox 视口属性 |
+| `playback[].segments[].iconSvg.content` | `string` | 是 | SVG 内部矢量图形标记（例如 <path d="..."/>） |
+| `playback[].segments[].enabled` | `boolean` | 否 | 分段是否可用（为 false 时置灰且不可点击）默认 `true`。 |
+| `playback[].submenu` | `TrayMenuItem[]` | 否 | submenu 子菜单包含的子菜单项列表 |
+| `playback[].playbackAction` | `"play-pause" \| "previous" \| "next" \| "stop"` | 否 | 声明由宿主原生直接执行的播放命令（支持在主页面挂起、最小化或锁屏状态下稳定响应；配置后点击该项不触发 tray:menuItemClicked；仅允许配置在 normal 叶子节点上） |
+| `bottom` | `TrayMenuItem[]` | 否 | bottom 分区菜单项列表（省略时清空该分区；showSystemItems 注入的原生项独立维护，不受此清空影响） |
+| `bottom[].id` | `string` | 否 | 菜单项唯一标识符（由 tray:menuItemClicked 事件上报；分隔线可省略；预留的 _sys_show 与 _sys_exit 将绑定原生显示主窗口与退出行为并抑制默认系统项注入） |
+| `bottom[].label` | `string` | 否 | 菜单项显示文本 |
+| `bottom[].type` | `"normal" \| "separator" \| "checkbox" \| "submenu" \| "nowplaying" \| "rating" \| "slider" \| "segmented"` | 否 | 菜单项展现类型（checkbox 为可勾选 normal 项的历史兼容写法，建议统一通过 checked 属性控制勾选状态）默认 `"normal"`。 |
+| `bottom[].enabled` | `boolean` | 否 | 菜单项是否处于启用可交互状态默认 `true`。 |
+| `bottom[].visible` | `boolean` | 否 | 菜单项是否可见默认 `true`。 |
+| `bottom[].checked` | `boolean` | 否 | 菜单项勾选状态（传入该属性包括 false 将使菜单项转为可勾选模式，webview 后端映射为 menuitemcheckbox 并支持通过 getMenuItems 读取；缺省时表示不可勾选普通菜单项） |
+| `bottom[].icon` | `string` | 否 | 保留字段（双后端均不绘制，图标定义请使用 iconSvg） |
+| `bottom[].iconSvg` | `TrayIconSvg` | 否 | 菜单项前置矢量图标（仅 webview 后端绘制；同一层级内只要有一项配置了图标，同级全部 normal 与 submenu 项均会自动对齐预留图标列宽度） |
+| `bottom[].iconSvg.viewBox` | `string` | 是 | SVG viewBox 视口属性 |
+| `bottom[].iconSvg.content` | `string` | 是 | SVG 内部矢量图形标记（例如 <path d="..."/>） |
+| `bottom[].cover` | `string` | 否 | nowplaying 正在播放卡片封面（支持 data: URL、http(s):// 链接或原始 Base64 JPEG；开启 config.autoNowPlaying 时缺省将自动拉取当前曲目前置封面；仅 webview 后端生效） |
+| `bottom[].title` | `string` | 否 | nowplaying 正在播放卡片主标题（通常为曲目名称；缺省时回退使用 label） |
+| `bottom[].subtitle` | `string` | 否 | nowplaying 正在播放卡片副标题（通常为艺术家或专辑信息） |
+| `bottom[].value` | `integer` | 否 | 控件当前数值（rating 支持 0 至 5 星；slider 支持 min 至 max 范围内的数值，超出范围自动夹取；segmented 为当前选中分段索引；仅在此三类控件上生效并回传） |
+| `bottom[].min` | `integer` | 否 | slider 滑块数值下限（若大于 max 将自动与 max 互换） |
+| `bottom[].max` | `integer` | 否 | slider 滑块数值上限 |
+| `bottom[].orientation` | `"horizontal" \| "vertical"` | 否 | slider 滑块布局方向（仅 webview 后端支持；缺省为水平方向，垂直方向时 min 位于底部） |
+| `bottom[].segments` | `TraySegment[]` | 否 | segmented 分段选项列表（单行互斥选择项，value 为当前选中项索引；点击分段上报 { id, value } 且菜单保持展开） |
+| `bottom[].segments[].label` | `string` | 否 | 分段文本标签（未提供图标时展示） |
+| `bottom[].segments[].iconSvg` | `TrayIconSvg` | 否 | 分段矢量图标（优先级高于文本标签） |
+| `bottom[].segments[].iconSvg.viewBox` | `string` | 是 | SVG viewBox 视口属性 |
+| `bottom[].segments[].iconSvg.content` | `string` | 是 | SVG 内部矢量图形标记（例如 <path d="..."/>） |
+| `bottom[].segments[].enabled` | `boolean` | 否 | 分段是否可用（为 false 时置灰且不可点击）默认 `true`。 |
+| `bottom[].submenu` | `TrayMenuItem[]` | 否 | submenu 子菜单包含的子菜单项列表 |
+| `bottom[].playbackAction` | `"play-pause" \| "previous" \| "next" \| "stop"` | 否 | 声明由宿主原生直接执行的播放命令（支持在主页面挂起、最小化或锁屏状态下稳定响应；配置后点击该项不触发 tray:menuItemClicked；仅允许配置在 normal 叶子节点上） |
+| `config` | `TrayMenuConfig` | 否 | 待更新的托盘菜单全局配置选项（传入的 customPosition 将保存供后续 setContextMenu 调用使用） |
+| `config.showPlaybackControls` | `boolean` | 否 | 是否在 playback 分区自动注入上一首、播放/暂停、下一首与停止等原生播放控制项（缺省为 true） |
+| `config.showSystemItems` | `boolean` | 否 | 是否在 bottom 分区自动注入显示主窗口与退出等原生系统控制项（支持在页面深度挂起状态下可靠响应；缺省为 true） |
+| `config.customPosition` | `"top" \| "playback" \| "bottom"` | 否 | setContextMenu 默认写入的目标菜单分区（缺省为 top） |
+| `config.render` | `"native" \| "webview"` | 否 | 菜单渲染后端（native 为 Win32 原生菜单；webview 为基于 WebView2 的自绘现代浮层，支持富控件与自定义 CSS 样式；缺省为 native） |
+| `config.autoNowPlaying` | `boolean` | 否 | 展开菜单时是否自动使用当前播放曲目填充 nowplaying 卡片中留空的 cover、title 与 subtitle 字段（调用方显式指定的字段优先；封面图像自动下采样至 64 像素且限制最大 256 KiB；仅 webview 后端生效；缺省为 false） |
+| `config.css` | `string` | 否 | 注入 webview 自绘菜单的自定义 CSS 样式代码（叠加在内置样式之上，可通过 .fb-menu、.fb-item、.fb-sep 等稳定类名定制视觉样式） |
+| `config.cssReplace` | `boolean` | 否 | 是否完全停用内置 CSS 样式（仅保留受保护的 DOM 结构层与用户自定义 css 规则；仅 webview 后端生效；缺省为 false） |
+| `config.backdrop` | `"acrylic" \| "mica" \| "mica-alt" \| "none"` | 否 | webview 自绘菜单的 Windows DWM 材质背景效果（acrylic 亚克力、mica、mica-alt 或 none；材质紧贴窗口即时切换，不支持 CSS 透明度渐变过渡；缺省为 acrylic） |
+| `config.backdropDarkMode` | `boolean` | 否 | DWM 背景材质是否强制启用深色调（仅 webview 后端生效；设为 false 时跟随浅色视觉风格；缺省为 true） |
+| `config.closeAnimationMs` | `integer` | 否 | webview 自绘菜单在用户主动关闭时的退场过渡动画时长（单位毫秒，取值范围 0 至 1000；传入 0 表示立即关闭窗口；可配合 #menu.out CSS 选择器定制动画；缺省为 0） |
+| `config.layoutMode` | `"flat" \| "zones"` | 否 | webview 自绘菜单的 DOM 容器布局模式（flat 表示所有菜单项平铺于根容器下；zones 表示将非空分区分别包裹于 .fb-zone[data-zone] 容器内；缺省为 flat） |
 
 **返回值**
 
@@ -447,11 +447,11 @@ await fb2k.invoke('tray.setMenuZones', {
 ### tray.setMinimizeToTray
 
 <!-- api-schema:begin tray.setMinimizeToTray -->
-窗口最小化时隐藏到托盘而不是任务栏。
+配置主窗口最小化时是否自动隐藏至系统托盘（未通过 create 创建托盘图标时维持系统默认最小化行为；tray.create 会根据首选项重置该状态，故须在 create 之后调用）
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
-| `enabled` | `boolean` | 是 | `true` 即隐藏到托盘。 |
+| `enabled` | `boolean` | 是 | 是否启用最小化时隐藏至系统托盘 |
 
 **返回值**
 
@@ -463,11 +463,11 @@ await fb2k.invoke('tray.setMenuZones', {
 ### tray.setCloseToTray
 
 <!-- api-schema:begin tray.setCloseToTray -->
-关闭窗口时隐藏到托盘而不是退出。
+配置主窗口关闭时是否拦截退出并隐藏至系统托盘（未通过 create 创建托盘图标时将降级为最小化窗口以防失去窗口句柄；tray.create 会根据首选项重置该状态，故须在 create 之后调用）
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
-| `enabled` | `boolean` | 是 | `true` 即隐藏到托盘。 |
+| `enabled` | `boolean` | 是 | 是否启用关闭窗口时隐藏至系统托盘 |
 
 **返回值**
 
@@ -479,7 +479,7 @@ await fb2k.invoke('tray.setMenuZones', {
 ### tray.isVisible
 
 <!-- api-schema:begin tray.isVisible -->
-报告托盘图标是否存在。
+查询当前系统托盘图标是否存在并处于激活状态
 
 无参数。
 
@@ -487,7 +487,7 @@ await fb2k.invoke('tray.setMenuZones', {
 
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
-| `visible` | `boolean` | 图标是否存在。 |
+| `visible` | `boolean` | 托盘图标当前是否存在且处于显示状态 |
 
 成功时 `success` 为 `true`；失败时返回 `{ success: false, error, code }`，`code` 见[错误码](../reference/errors.md)。
 <!-- api-schema:end -->
@@ -497,37 +497,37 @@ await fb2k.invoke('tray.setMenuZones', {
 ### tray.appendMenuItems
 
 <!-- api-schema:begin tray.appendMenuItems -->
-向某一区追加行；校验规则同 `setContextMenu`。
+向指定菜单分区追加菜单项（参数校验规则与 setContextMenu 保持一致）
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
-| `items` | `TrayMenuItem[]` | 是 | 要追加的行。 |
-| `items[].id` | `string` | 否 | `tray:menuItemClicked` 上报的标识；分隔线可省略。精确的 `_sys_show` 与 `_sys_exit` 是原生的「显示主窗口」与「退出」行：保留调用方的文字，并跳过对应的内置注入。 |
-| `items[].label` | `string` | 否 | 显示文本。 |
-| `items[].type` | `"normal" \| "separator" \| "checkbox" \| "submenu" \| "nowplaying" \| "rating" \| "slider" \| "segmented"` | 否 | 行类型。`checkbox` 是「可勾选的 normal 行」的旧写法；勾选状态本身由 `checked` 决定。默认 `"normal"`。 |
-| `items[].enabled` | `boolean` | 否 | 是否可点击。默认 `true`。 |
-| `items[].visible` | `boolean` | 否 | 是否显示。默认 `true`。 |
-| `items[].checked` | `boolean` | 否 | 勾选状态。给了这个键（含 `false`）该行就是可勾选的：`webview` 后端映射为 `menuitemcheckbox`，`getMenuItems` 会带回这个键。省略则不可勾选。 |
-| `items[].icon` | `string` | 否 | 保留字段，两个后端都不绘制；行图标用 `iconSvg`。 |
-| `items[].iconSvg` | `TrayIconSvg` | 否 | `webview` 后端画在文字前的图标。同一层只要有一行带可渲染图标，该层所有 `normal` 与 `submenu` 行都预留图标列。 |
-| `items[].iconSvg.viewBox` | `string` | 是 | SVG 的 `viewBox` 属性。 |
-| `items[].iconSvg.content` | `string` | 是 | SVG 的内部标记。 |
-| `items[].cover` | `string` | 否 | `nowplaying` 行的封面：`data:` URL、`http(s)://` URL 或裸 Base64 JPEG。开了 `config.autoNowPlaying` 时留空由正在播放曲目的封面补上（仅 `webview`）。 |
-| `items[].title` | `string` | 否 | `nowplaying` 行的第一行，通常是曲名；缺省用 `label`。 |
-| `items[].subtitle` | `string` | 否 | `nowplaying` 行的第二行，通常是艺术家或专辑。 |
-| `items[].value` | `integer` | 否 | 当前值：`rating` 是 `0` 到 `5` 星，`slider` 是 `min` 到 `max` 内的值（会被夹取），`segmented` 是选中段的索引。只对这三种类型回报。 |
-| `items[].min` | `integer` | 否 | `slider` 的下限；大于 `max` 时两者互换。 |
-| `items[].max` | `integer` | 否 | `slider` 的上限。 |
-| `items[].orientation` | `"horizontal" \| "vertical"` | 否 | `slider` 的方向（仅 `webview`）；省略即水平。纵向时 `min` 在底部。 |
-| `items[].segments` | `TraySegment[]` | 否 | `segmented` 的分段，一行互斥选项；`value` 是选中段的索引。点选上报 `{ id, value }` 且菜单保持打开。 |
-| `items[].segments[].label` | `string` | 否 | 分段文字；没有图标时显示。 |
-| `items[].segments[].iconSvg` | `TrayIconSvg` | 否 | 分段图标；优先于文字。 |
-| `items[].segments[].iconSvg.viewBox` | `string` | 是 | SVG 的 `viewBox` 属性。 |
-| `items[].segments[].iconSvg.content` | `string` | 是 | SVG 的内部标记。 |
-| `items[].segments[].enabled` | `boolean` | 否 | `false` 置灰，不可选。默认 `true`。 |
-| `items[].submenu` | `TrayMenuItem[]` | 否 | `submenu` 行的子行。 |
-| `items[].playbackAction` | `"play-pause" \| "previous" \| "next" \| "stop"` | 否 | 该行被选中时由插件原生执行的播放命令，页面挂起（最小化、藏到托盘、锁屏）时仍可用；这样的行不发 `tray:menuItemClicked`。只能写在 `normal` 叶子上，写在别处整次调用失败。 |
-| `position` | `"top" \| "playback" \| "bottom"` | 否 | 追加到哪个区。默认 `"top"`。 |
+| `items` | `TrayMenuItem[]` | 是 | 待追加的菜单项列表 |
+| `items[].id` | `string` | 否 | 菜单项唯一标识符（由 tray:menuItemClicked 事件上报；分隔线可省略；预留的 _sys_show 与 _sys_exit 将绑定原生显示主窗口与退出行为并抑制默认系统项注入） |
+| `items[].label` | `string` | 否 | 菜单项显示文本 |
+| `items[].type` | `"normal" \| "separator" \| "checkbox" \| "submenu" \| "nowplaying" \| "rating" \| "slider" \| "segmented"` | 否 | 菜单项展现类型（checkbox 为可勾选 normal 项的历史兼容写法，建议统一通过 checked 属性控制勾选状态）默认 `"normal"`。 |
+| `items[].enabled` | `boolean` | 否 | 菜单项是否处于启用可交互状态默认 `true`。 |
+| `items[].visible` | `boolean` | 否 | 菜单项是否可见默认 `true`。 |
+| `items[].checked` | `boolean` | 否 | 菜单项勾选状态（传入该属性包括 false 将使菜单项转为可勾选模式，webview 后端映射为 menuitemcheckbox 并支持通过 getMenuItems 读取；缺省时表示不可勾选普通菜单项） |
+| `items[].icon` | `string` | 否 | 保留字段（双后端均不绘制，图标定义请使用 iconSvg） |
+| `items[].iconSvg` | `TrayIconSvg` | 否 | 菜单项前置矢量图标（仅 webview 后端绘制；同一层级内只要有一项配置了图标，同级全部 normal 与 submenu 项均会自动对齐预留图标列宽度） |
+| `items[].iconSvg.viewBox` | `string` | 是 | SVG viewBox 视口属性 |
+| `items[].iconSvg.content` | `string` | 是 | SVG 内部矢量图形标记（例如 <path d="..."/>） |
+| `items[].cover` | `string` | 否 | nowplaying 正在播放卡片封面（支持 data: URL、http(s):// 链接或原始 Base64 JPEG；开启 config.autoNowPlaying 时缺省将自动拉取当前曲目前置封面；仅 webview 后端生效） |
+| `items[].title` | `string` | 否 | nowplaying 正在播放卡片主标题（通常为曲目名称；缺省时回退使用 label） |
+| `items[].subtitle` | `string` | 否 | nowplaying 正在播放卡片副标题（通常为艺术家或专辑信息） |
+| `items[].value` | `integer` | 否 | 控件当前数值（rating 支持 0 至 5 星；slider 支持 min 至 max 范围内的数值，超出范围自动夹取；segmented 为当前选中分段索引；仅在此三类控件上生效并回传） |
+| `items[].min` | `integer` | 否 | slider 滑块数值下限（若大于 max 将自动与 max 互换） |
+| `items[].max` | `integer` | 否 | slider 滑块数值上限 |
+| `items[].orientation` | `"horizontal" \| "vertical"` | 否 | slider 滑块布局方向（仅 webview 后端支持；缺省为水平方向，垂直方向时 min 位于底部） |
+| `items[].segments` | `TraySegment[]` | 否 | segmented 分段选项列表（单行互斥选择项，value 为当前选中项索引；点击分段上报 { id, value } 且菜单保持展开） |
+| `items[].segments[].label` | `string` | 否 | 分段文本标签（未提供图标时展示） |
+| `items[].segments[].iconSvg` | `TrayIconSvg` | 否 | 分段矢量图标（优先级高于文本标签） |
+| `items[].segments[].iconSvg.viewBox` | `string` | 是 | SVG viewBox 视口属性 |
+| `items[].segments[].iconSvg.content` | `string` | 是 | SVG 内部矢量图形标记（例如 <path d="..."/>） |
+| `items[].segments[].enabled` | `boolean` | 否 | 分段是否可用（为 false 时置灰且不可点击）默认 `true`。 |
+| `items[].submenu` | `TrayMenuItem[]` | 否 | submenu 子菜单包含的子菜单项列表 |
+| `items[].playbackAction` | `"play-pause" \| "previous" \| "next" \| "stop"` | 否 | 声明由宿主原生直接执行的播放命令（支持在主页面挂起、最小化或锁屏状态下稳定响应；配置后点击该项不触发 tray:menuItemClicked；仅允许配置在 normal 叶子节点上） |
+| `position` | `"top" \| "playback" \| "bottom"` | 否 | 目标追加分区默认 `"top"`。 |
 
 **返回值**
 
@@ -539,17 +539,17 @@ await fb2k.invoke('tray.setMenuZones', {
 ### tray.removeMenuItems
 
 <!-- api-schema:begin tray.removeMenuItems -->
-按 id 从所有区（含子菜单）移除行。
+按菜单项唯一标识符 id 从所有分区（递归包含子菜单）中移除匹配的菜单项
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
-| `ids` | `string[]` | 是 | 要移除的行的 id。 |
+| `ids` | `string[]` | 是 | 待移除菜单项的标识符 id 列表 |
 
 **返回值**
 
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
-| `removed` | `integer` | 实际移除的行数；有 id 不存在时少于 id 的个数。 |
+| `removed` | `integer` | 实际成功移除的菜单项总数（若部分 id 未匹配则小于传入 id 数量） |
 
 成功时 `success` 为 `true`；失败时返回 `{ success: false, error, code }`，`code` 见[错误码](../reference/errors.md)。
 <!-- api-schema:end -->
@@ -559,11 +559,11 @@ await fb2k.invoke('tray.setMenuZones', {
 ### tray.clearMenuItems
 
 <!-- api-schema:begin tray.clearMenuItems -->
-清空某一区；省略 `position` 时清空全部三区。
+清空指定菜单分区的自定义菜单项（省略 position 时同时清空全部三个分区）
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
-| `position` | `"top" \| "playback" \| "bottom"` | 否 | 要清空的区；省略即全部。 |
+| `position` | `"top" \| "playback" \| "bottom"` | 否 | 待清空的目标菜单分区（省略时清空全部三个分区） |
 
 **返回值**
 
@@ -575,7 +575,7 @@ await fb2k.invoke('tray.setMenuZones', {
 ### tray.getMenuItems
 
 <!-- api-schema:begin tray.getMenuItems -->
-按 `top`、`playback`、`bottom` 的顺序平铺列出各区存储的用户行；运行时为 `showPlaybackControls` / `showSystemItems` 注入的行不在其中。
+平铺获取全部存储的自定义菜单项列表（按 top、playback、bottom 分区顺序排列；运行时自动注入的 showPlaybackControls 与 showSystemItems 菜单项不包含在内）
 
 无参数。
 
@@ -583,32 +583,32 @@ await fb2k.invoke('tray.setMenuZones', {
 
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
-| `items` | `TrayMenuItem[]` | 存储的用户行。 |
-| `items[].id` | `string` | `tray:menuItemClicked` 上报的标识；分隔线可省略。精确的 `_sys_show` 与 `_sys_exit` 是原生的「显示主窗口」与「退出」行：保留调用方的文字，并跳过对应的内置注入。 |
-| `items[].label` | `string` | 显示文本。 |
-| `items[].type` | `"normal" \| "separator" \| "checkbox" \| "submenu" \| "nowplaying" \| "rating" \| "slider" \| "segmented"` | 行类型。`checkbox` 是「可勾选的 normal 行」的旧写法；勾选状态本身由 `checked` 决定。 |
-| `items[].enabled` | `boolean` | 是否可点击。 |
-| `items[].visible` | `boolean` | 是否显示。 |
-| `items[].checked` | `boolean` | 勾选状态。给了这个键（含 `false`）该行就是可勾选的：`webview` 后端映射为 `menuitemcheckbox`，`getMenuItems` 会带回这个键。省略则不可勾选。 |
-| `items[].icon` | `string` | 保留字段，两个后端都不绘制；行图标用 `iconSvg`。 |
-| `items[].iconSvg` | `TrayIconSvg` | `webview` 后端画在文字前的图标。同一层只要有一行带可渲染图标，该层所有 `normal` 与 `submenu` 行都预留图标列。 |
-| `items[].iconSvg.viewBox` | `string` | SVG 的 `viewBox` 属性。 |
-| `items[].iconSvg.content` | `string` | SVG 的内部标记。 |
-| `items[].cover` | `string` | `nowplaying` 行的封面：`data:` URL、`http(s)://` URL 或裸 Base64 JPEG。开了 `config.autoNowPlaying` 时留空由正在播放曲目的封面补上（仅 `webview`）。 |
-| `items[].title` | `string` | `nowplaying` 行的第一行，通常是曲名；缺省用 `label`。 |
-| `items[].subtitle` | `string` | `nowplaying` 行的第二行，通常是艺术家或专辑。 |
-| `items[].value` | `integer` | 当前值：`rating` 是 `0` 到 `5` 星，`slider` 是 `min` 到 `max` 内的值（会被夹取），`segmented` 是选中段的索引。只对这三种类型回报。 |
-| `items[].min` | `integer` | `slider` 的下限；大于 `max` 时两者互换。 |
-| `items[].max` | `integer` | `slider` 的上限。 |
-| `items[].orientation` | `"horizontal" \| "vertical"` | `slider` 的方向（仅 `webview`）；省略即水平。纵向时 `min` 在底部。 |
-| `items[].segments` | `TraySegment[]` | `segmented` 的分段，一行互斥选项；`value` 是选中段的索引。点选上报 `{ id, value }` 且菜单保持打开。 |
-| `items[].segments[].label` | `string` | 分段文字；没有图标时显示。 |
-| `items[].segments[].iconSvg` | `TrayIconSvg` | 分段图标；优先于文字。 |
-| `items[].segments[].iconSvg.viewBox` | `string` | SVG 的 `viewBox` 属性。 |
-| `items[].segments[].iconSvg.content` | `string` | SVG 的内部标记。 |
-| `items[].segments[].enabled` | `boolean` | `false` 置灰，不可选。 |
-| `items[].submenu` | `TrayMenuItem[]` | `submenu` 行的子行。 |
-| `items[].playbackAction` | `"play-pause" \| "previous" \| "next" \| "stop"` | 该行被选中时由插件原生执行的播放命令，页面挂起（最小化、藏到托盘、锁屏）时仍可用；这样的行不发 `tray:menuItemClicked`。只能写在 `normal` 叶子上，写在别处整次调用失败。 |
+| `items` | `TrayMenuItem[]` | 当前存储的全部自定义菜单项列表（按 top、playback、bottom 分区顺序平铺展示） |
+| `items[].id` | `string` | 菜单项唯一标识符（由 tray:menuItemClicked 事件上报；分隔线可省略；预留的 _sys_show 与 _sys_exit 将绑定原生显示主窗口与退出行为并抑制默认系统项注入） |
+| `items[].label` | `string` | 菜单项显示文本 |
+| `items[].type` | `"normal" \| "separator" \| "checkbox" \| "submenu" \| "nowplaying" \| "rating" \| "slider" \| "segmented"` | 菜单项展现类型（checkbox 为可勾选 normal 项的历史兼容写法，建议统一通过 checked 属性控制勾选状态） |
+| `items[].enabled` | `boolean` | 菜单项是否处于启用可交互状态 |
+| `items[].visible` | `boolean` | 菜单项是否可见 |
+| `items[].checked` | `boolean` | 菜单项勾选状态（传入该属性包括 false 将使菜单项转为可勾选模式，webview 后端映射为 menuitemcheckbox 并支持通过 getMenuItems 读取；缺省时表示不可勾选普通菜单项） |
+| `items[].icon` | `string` | 保留字段（双后端均不绘制，图标定义请使用 iconSvg） |
+| `items[].iconSvg` | `TrayIconSvg` | 菜单项前置矢量图标（仅 webview 后端绘制；同一层级内只要有一项配置了图标，同级全部 normal 与 submenu 项均会自动对齐预留图标列宽度） |
+| `items[].iconSvg.viewBox` | `string` | SVG viewBox 视口属性 |
+| `items[].iconSvg.content` | `string` | SVG 内部矢量图形标记（例如 <path d="..."/>） |
+| `items[].cover` | `string` | nowplaying 正在播放卡片封面（支持 data: URL、http(s):// 链接或原始 Base64 JPEG；开启 config.autoNowPlaying 时缺省将自动拉取当前曲目前置封面；仅 webview 后端生效） |
+| `items[].title` | `string` | nowplaying 正在播放卡片主标题（通常为曲目名称；缺省时回退使用 label） |
+| `items[].subtitle` | `string` | nowplaying 正在播放卡片副标题（通常为艺术家或专辑信息） |
+| `items[].value` | `integer` | 控件当前数值（rating 支持 0 至 5 星；slider 支持 min 至 max 范围内的数值，超出范围自动夹取；segmented 为当前选中分段索引；仅在此三类控件上生效并回传） |
+| `items[].min` | `integer` | slider 滑块数值下限（若大于 max 将自动与 max 互换） |
+| `items[].max` | `integer` | slider 滑块数值上限 |
+| `items[].orientation` | `"horizontal" \| "vertical"` | slider 滑块布局方向（仅 webview 后端支持；缺省为水平方向，垂直方向时 min 位于底部） |
+| `items[].segments` | `TraySegment[]` | segmented 分段选项列表（单行互斥选择项，value 为当前选中项索引；点击分段上报 { id, value } 且菜单保持展开） |
+| `items[].segments[].label` | `string` | 分段文本标签（未提供图标时展示） |
+| `items[].segments[].iconSvg` | `TrayIconSvg` | 分段矢量图标（优先级高于文本标签） |
+| `items[].segments[].iconSvg.viewBox` | `string` | SVG viewBox 视口属性 |
+| `items[].segments[].iconSvg.content` | `string` | SVG 内部矢量图形标记（例如 <path d="..."/>） |
+| `items[].segments[].enabled` | `boolean` | 分段是否可用（为 false 时置灰且不可点击） |
+| `items[].submenu` | `TrayMenuItem[]` | submenu 子菜单包含的子菜单项列表 |
+| `items[].playbackAction` | `"play-pause" \| "previous" \| "next" \| "stop"` | 声明由宿主原生直接执行的播放命令（支持在主页面挂起、最小化或锁屏状态下稳定响应；配置后点击该项不触发 tray:menuItemClicked；仅允许配置在 normal 叶子节点上） |
 
 成功时 `success` 为 `true`；失败时返回 `{ success: false, error, code }`，`code` 见[错误码](../reference/errors.md)。
 <!-- api-schema:end -->
@@ -620,19 +620,19 @@ await fb2k.invoke('tray.setMenuZones', {
 ### tray.setMenuItemState
 
 <!-- api-schema:begin tray.setMenuItemState -->
-原地改一行的 `checked` / `enabled`，按 id 跨三区递归（含子菜单）查找。给了 `checked`（哪怕是 `false`）就把该行变成可勾选。原生菜单每次打开时重建，改动在下次打开时可见。
+原地更新指定菜单项的 checked 或 enabled 状态（跨全部三个分区递归检索子菜单匹配 id；传入 checked 参数（含 false）将自动使该项具备可勾选属性；原生菜单在每次弹出时动态重建，状态变更于下一次展开菜单时生效）
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
-| `id` | `string` | 是 | 行的 id。不能为空。 |
-| `checked` | `boolean` | 否 | 新的勾选状态。 |
-| `enabled` | `boolean` | 否 | 新的可用状态。 |
+| `id` | `string` | 是 | 待修改菜单项的唯一标识符 id不能为空。 |
+| `checked` | `boolean` | 否 | 新的勾选状态（传入布尔值时自动确保菜单项支持勾选交互） |
+| `enabled` | `boolean` | 否 | 新的启用状态 |
 
 **返回值**
 
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
-| `found` | `boolean` | 是否存在该 id 的行；成功时为 `true`。 |
+| `found` | `boolean` | 是否成功定位并更新了指定 id 的菜单项 |
 
 成功时 `success` 为 `true`；失败时返回 `{ success: false, error, code }`，`code` 见[错误码](../reference/errors.md)。
 <!-- api-schema:end -->
@@ -794,14 +794,14 @@ await fb2k.invoke('tray.removeMenuItems', { ids: ['revealInExplorer', 'copyPath'
 
 | 方面 | 行为 |
 | --- | --- |
-| 执行 | 组装阶段翻译为匹配的内置命令，由插件原生执行。 |
-| 后台可靠 | 窗口最小化、关闭到托盘或会话锁屏（主页面深挂起）时仍可用。 |
-| 事件 | 声明项**不发** `tray:menuItemClicked`；按钮态从 `playback:*` 反映。 |
-| 外观 | 调用方完整控制 `label` / `icon` / `id`；仅路由改变。 |
-| 校验 | fail-loud：未知 token，或写在 separator / submenu / 富控件上，整次 `setContextMenu` / `appendMenuItems` 返回 `INVALID_PARAMS`。 |
-| `'exit'` / `'show-main-window'` | 不接受——系统动作仍走精确 `_sys_exit` / `_sys_show`。 |
-| 作用域 | 仅 tray 菜单；对 `menu.show` 无效。 |
-| Round-trip | `getMenuItems()` 回传已声明的 `playbackAction`。 |
+| 执行 | 组装阶段翻译为匹配的内置命令，由插件原生直接执行 |
+| 后台可靠 | 窗口最小化、关闭到托盘或会话锁屏（主页面深度挂起）时仍可靠执行 |
+| 事件 | 声明项**不发** `tray:menuItemClicked`，按钮状态从 `playback:*` 事件反映 |
+| 外观 | 调用方完整控制 `label`、`icon` 与 `id`，仅底层路由改变 |
+| 校验 | 严格校验：未知 token，或写在 separator、submenu、富控件上时，整次调用返回 `INVALID_PARAMS` |
+| `'exit'` / `'show-main-window'` | 不接受：系统动作仍走精确保留标识符 `_sys_exit` 与 `_sys_show` |
+| 作用域 | 仅适用于系统托盘菜单，对通用弹出菜单 `menu.show` 无效 |
+| Round-trip | `getMenuItems()` 完整回传已声明的 `playbackAction` |
 
 未声明本字段、仅靠 `tray:menuItemClicked` 再 `invoke('playback.*')` 的用户项，在主页面深挂起时不保证执行。后台可靠的托盘播放控制请用 `playbackAction`（或内置 `showPlaybackControls` 项）。这与 Electron `MenuItem.role` / Tauri `PredefinedMenuItem` 的声明式原生动作模式同构。
 
@@ -873,3 +873,19 @@ fb2k.on('playback:stateChanged', () => {});
 fb2k.on('playback:time', () => {});
 fb2k.on('playback:trackChanged', () => {});
 ```
+
+## tray.setClickAction
+
+<!-- api-schema:begin tray.setClickAction -->
+配置系统托盘图标进程级左键点击行为（支持在 create 前预先设置；默认 event 模式派发常规点击事件；toggleMainWindow 模式由宿主原生切换独立主窗口的显隐与恢复聚焦状态，无需唤醒页面脚本亦不派发点击事件；双击仅触发单次状态切换；调用时自动取消挂起的待处理点击，以最后一次成功设置的值为准；Shell 重建时保留此配置，destroy 时重置为 event；面板模式下调用返回 PANEL_MODE_UNSUPPORTED；启用原生切换前应移除前端已注册的窗口控制监听器，系统可能因焦点策略拒绝前台激活）
+
+| 参数 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `action` | `"event" \| "toggleMainWindow"` | 是 | 左键点击行为模式（event 向页面派发点击事件；toggleMainWindow 触发原生窗口显隐切换） |
+
+**返回值**
+
+成功时 `success` 为 `true`；失败时返回 `{ success: false, error, code }`，`code` 见[错误码](../reference/errors.md)。
+<!-- api-schema:end -->
+
+旧主题默认仍使用点击事件。新主题应在初始化时移除旧点击回调中的窗口命令，然后选择原生模式；两个托盘开关的设置不受影响。

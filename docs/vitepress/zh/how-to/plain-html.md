@@ -1,8 +1,8 @@
 # 不用构建工具写主题
 
-主题可以只是一个带内联脚本的 `index.html`，用组件给每个页面注入的原生 bridge `window.fb2k`，不用安装也不用构建。
+主题可以完全基于纯静态 HTML 编写：利用组件向所有页面注入的全局 `window.fb2k` 原生 Bridge 对象，无需 Node.js 环境或前端构建工具即可完成播放控制与事件监听。
 
-## 写页面
+## 编写纯 HTML 页面示例 {#写页面}
 
 把下面的内容存为模板文件夹里的 `index.html`（怎样新建模板并设为活动模板，见[安装主题](./install-theme.md)）：
 
@@ -59,9 +59,9 @@ unsubscribe();
 
 方法名用点号（`playback.play`），事件名用冒号（`playback:trackChanged`）。[底层 API 参考](/zh/api/overview)列出全部方法和事件，[Bridge 协议](/zh/reference/bridge)说明消息格式。
 
-## 不用打包工具也用 SDK
+## 在纯 HTML 页面中引入 SDK 预构建文件 {#不用打包工具也用-sdk}
 
-要在这样的页面里使用 `fb.*` 封装和 `fb-*` 组件，把 SDK 的全局构建复制进模板文件夹，在你的脚本之前加载：
+要在单文件页面中使用 `fb.*` 封装和 `fb-*` Web Components，将 SDK 的全局预构建分发文件复制进模板文件夹，并在页面业务脚本之前引入：
 
 ```html
 <script src="./sdk/bridge.global.js"></script>

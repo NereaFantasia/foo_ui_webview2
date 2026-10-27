@@ -47,7 +47,7 @@ This method takes no parameters.
 | `html5` | `boolean` | The page receives standard HTML5 drag events; `false` means the window has no drag-drop support at all. |
 | `paths` | `boolean` | Real filesystem paths are obtainable through `dnd.getPathsAsync` and the `dnd:*` events. Not fixed for the window's lifetime: a navigation or Chromium re-registering its own drop target can withdraw it, announced by `dnd:capabilitiesChanged`. |
 | `hosting` | `"visual" \| "standard"` | How the window hosts its WebView: `visual` for the main and popup windows, `standard` for a DUI or CUI panel. |
-| `pathsUnavailableReason` | `"register-failed" \| "forward-unavailable" \| "inner-target-not-found" \| "chain-failed" \| "displaced" \| "origin-untrusted"` | Why `paths` is `false`; its presence always means `paths` is `false`. |
+| `pathsUnavailableReason` | `"register-failed" \| "forward-unavailable" \| "inner-target-not-found" \| "chain-failed" \| "origin-untrusted"` | Why `paths` is `false`; its presence always means `paths` is `false`. |
 | `dragOut` | `boolean` | Files can be dragged out of the window through `dnd.prepareDrag`. Independent of `paths`. |
 | `dragOutUnavailableReason` | `"not-visual-hosting" \| "runtime-too-old" \| "register-failed"` | Why `dragOut` is `false`; its presence always means `dragOut` is `false`. |
 
@@ -60,7 +60,7 @@ those itself, and `dragOut` additionally depends on the WebView2 Runtime. `hosti
 is `"visual"` (main or popup window) or `"standard"` (DUI / CUI panel, where paths
 are unavailable). `pathsUnavailableReason` appears only when `paths` is `false`,
 and is one of `origin-untrusted`, `inner-target-not-found`, `forward-unavailable`,
-`chain-failed`, `displaced`, `register-failed`.
+`chain-failed`, `register-failed`.
 
 `dragOut` is `true` when the page can drag files out through `dnd.prepareDrag`.
 `dragOutUnavailableReason` appears only when it is `false`: `not-visual-hosting`

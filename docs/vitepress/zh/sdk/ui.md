@@ -319,6 +319,8 @@ await fb.ui.setFullscreen(true);
 
 聚焦/失焦窗口。`focus` 把窗口带到前台，最小化的窗口先还原；`blur` 把前台交给 Z 序里位于调用方窗口之下的窗口。
 
+显式 ID 只定位指定窗口；省略时定位调用方顶层窗口，含面板所在宿主。目标不存在时以 `NOT_FOUND` 失败。聚焦请求使旧弹窗撤销和菜单焦点归还动作失效，不永久改变弹窗的禁止激活策略。成功只表示已请求，Windows 仍可能拒绝前台激活。
+
 签名：`fb.ui.focus(windowId?: string): Promise<WindowFocusResponse>`
 
 | 参数 | 类型 | 必填 | 说明 |
@@ -575,10 +577,7 @@ await fb.ui.clearNoDragRegions();
 
 ### setMaximizeButtonRegion(region?)
 
-告诉宿主页面把主窗口的最大化键画在哪里（页面 CSS 像素），这样在 Windows 11 上悬停
-它会弹出贴靠布局。按钮上的鼠标输入由宿主转回页面，按钮照常有悬停、按下样式和自己
-的点击处理。布局挪动按钮后要重新设置，省略 `region` 则移除。响应里 `snapLayouts`
-为 `true` 时，不要给按钮设 `title`，改用 `aria-label` 命名，否则提示会挡住浮层。
+告诉宿主页面把主窗口的最大化键画在哪里（页面 CSS 像素），在 Windows 11 上悬停时会弹出贴靠布局。按钮上的鼠标输入由宿主转回页面，按钮照常有悬停、按下样式和自己的点击处理。布局挪动按钮后要重新设置，省略 `region` 则移除。响应里 `snapLayouts` 为 `true` 时，不要给按钮设 `title`，改用 `aria-label` 命名，否则提示会挡住浮层。
 
 签名：`fb.ui.setMaximizeButtonRegion(region?: WindowRegion): Promise<WindowSetMaximizeButtonRegionResponse>`
 
@@ -846,7 +845,7 @@ await fb.ui.broadcast({ type: 'config-updated' });
 异步确认或取消关闭，在 `window:beforeClose` 的处理函数里调用。只有以 `beforeClose: true` 创建的 popup 会收到这个事件；它保持打开，直到页面调用两者之一，3 秒内都没调用则照样关闭。
 
 ```javascript
-// 页面自己的保存逻辑，这里只是占位。
+// 页面自己的保存逻辑，这里仅占位
 async function saveChanges() {}
 
 fb.on('window:beforeClose', async () => {

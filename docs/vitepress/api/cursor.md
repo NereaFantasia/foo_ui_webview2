@@ -1,6 +1,6 @@
 # Cursor API
 
-Methods of the `cursor` namespace.
+Provides explicit hide, restore, and visibility state tracking for the client-area cursor.
 
 ## cursor
 

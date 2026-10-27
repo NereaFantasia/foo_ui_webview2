@@ -1,6 +1,6 @@
 # Artwork API
 
-Methods of the `artwork` namespace.
+Methods for reading and resolving embedded and external album artwork, supporting `fb2k://` protocol URLs, Base64 Data URLs, batch lookups, and scaling.
 
 ## artwork
 
@@ -132,7 +132,7 @@ Read the picture of a playlist row through the album art manager. A negative `pl
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `playlist` | `integer` | No | Playlist index; negative for the active playlist. An index past the last playlist fails with `INVALID_INDEX`. Default: `-1`. |
-| `playlistGuid` | `string` | No | A playlist's GUID instead of its index, written with braces as `playlist.getAll` and every result or event that names a playlist report it; either hex case is accepted. It keeps naming the same playlist while other playlists are added, removed or reordered, which an index does not. Giving both this and the index, or a malformed GUID, fails with `INVALID_PARAMS`. A playlist that no longer exists fails with `NOT_FOUND`; the call never falls back to another playlist. A malformed GUID and a missing playlist carry the GUID given as `details.playlistGuid`. |
+| `playlistGuid` | `string` | No | Persistent unique identifier of a playlist (bracketed GUID, case-insensitive), used in place of a mutable index. Mutually exclusive with `playlist`; passing both or an invalid format fails with `INVALID_PARAMS`. Fails with `NOT_FOUND` if the playlist does not exist, never falling back. Invalid-format and not-found failures return the given GUID in `details.playlistGuid`. |
 | `index` | `integer` | No | Row index; negative for the first row. Default: `-1`. |
 | `type` | `"front" \| "cover_front" \| "back" \| "cover_back" \| "disc" \| "icon" \| "artist"` | No | Picture type. Default: `"front"`. |
 
@@ -143,7 +143,7 @@ Read the picture of a playlist row through the album art manager. A negative `pl
 | `available` | `boolean` | Whether a picture was found. |
 | `type` | `string` | The requested type. |
 | `playlist` | `integer` | The playlist actually read. |
-| `playlistGuid` | `string` | The playlist's GUID, written as `{XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX}`. Pass it as `playlistGuid` to address this playlist even after the playlist list has changed. |
+| `playlistGuid` | `string` | Unique identifier of the playlist, formatted as `{XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX}`. Pass as `playlistGuid` to reliably target this playlist. |
 | `index` | `integer` | The row actually read. |
 | `mimeType` | `string` | MIME type detected from the bytes. |
 | `size` | `integer` | Picture size in bytes. |
@@ -362,7 +362,7 @@ const { available, dataUrl } = res;
 ### artwork.getLyrics
 
 <!-- api-schema:begin artwork.getLyrics -->
-Read the lyrics tag of a track. The host's cached track info is used when complete; a local file it has not read is read from disk, and a remote or unrecognised path keeps whatever the cache has. The tags `LYRICS`, `UNSYNCED LYRICS`, `UNSYNCEDLYRICS`, `SYNCEDLYRICS` and `SYNCED LYRICS` are probed in that order and the first non-empty one wins. Without `path` the playing track is used; with nothing playing the call fails with `NO_ACTIVE_ITEM`. A path no track can be made for fails with `NOT_FOUND`, a local file that cannot be read with `OPERATION_FAILED`.
+Read the lyrics tag of a track. The host's cached track info is used when complete; a local file it has not read is read from disk, and a remote or unrecognised path keeps whatever the cache has. The tags `LYRICS`, `UNSYNCED LYRICS`, `UNSYNCEDLYRICS`, `SYNCEDLYRICS` and `SYNCED LYRICS` are probed in that order and the first non-empty one wins. Without `path` the playing track is used; with nothing playing the call fails with `NO_ACTIVE_ITEM`. A path no track can be made for fails with `NOT_FOUND`, a local file that cannot be read with `OPERATION_FAILED`. Invalid UTF-8 in lyrics is replaced with U+FFFD without changing tags.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
@@ -389,7 +389,7 @@ const { available, lyrics } = res;
 ### artwork.getMetadata
 
 <!-- api-schema:begin artwork.getMetadata -->
-Read the album-level tags of a track, plus whether the file embeds any picture and whether it carries a lyrics tag. The tags come from the host's cached track info when complete; a local file it has not read is read from disk, and a remote or unrecognised path keeps whatever the cache has, which can be blank. Without `path` the playing track is used; with nothing playing the call fails with `NO_ACTIVE_ITEM`. A path no track can be made for fails with `NOT_FOUND`, a local file that cannot be read with `OPERATION_FAILED`.
+Read the album-level tags of a track, plus whether the file embeds any picture and whether it carries a lyrics tag. The tags come from the host's cached track info when complete; a local file it has not read is read from disk, and a remote or unrecognised path keeps whatever the cache has, which can be blank. Without `path` the playing track is used; with nothing playing the call fails with `NO_ACTIVE_ITEM`. A path no track can be made for fails with `NOT_FOUND`, a local file that cannot be read with `OPERATION_FAILED`. Invalid UTF-8 in returned tag values is replaced with U+FFFD without changing the file.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
@@ -432,4 +432,4 @@ const { title, album, hasEmbedded } = res;
 - To save a direct-read Data URL with `file.write`, split it at the first comma, keep the Base64 payload after the comma, and write `content: 'base64:' + payload` with `encoding: 'binary'`. To pass the same artwork to `metadata.embedArtwork`, pass only the raw Base64 payload without the Data URL header and without the `base64:` marker.
 - `artwork.getFb2kUrlByPathBatch` requires exactly one array input named `paths` or `items`. Array entries may be strings or objects with a `path` member. It has no top-level `path` parameter. The result is `{ success, artworks }`, with one `available`/`error` result for each supplied entry.
 - `artwork.getAvailableArtwork` reports embedded items and external source labels such as `folder:cover.jpg`. The implementation opens files through `album_art_extractor`; absence of artwork is represented by `available: false`, not necessarily an error.
-- `artwork.getFolderImages` reads a directory and returns matching `.jpg`, `.jpeg`, `.png`, `.gif`, `.bmp`, and `.webp` files. Its `directory` argument is subject to the runtime `Read` security level.
+- `artwork.getFolderImages` reads a directory and returns matching `.jpg`, `.jpeg`, `.png`, `.gif`, `.bmp`, and `.webp` files. Its `directory` argument uses the `MediaRead` level, so a folder under a media-library watch folder is accepted even where `Read` would reject it.

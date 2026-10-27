@@ -1,6 +1,6 @@
 # Taskbar 任务栏 API
 
-Windows 任务栏按钮的缩略图工具栏、进度条、叠加图标与闪烁。
+提供 Windows 任务栏集成能力，支持缩略图预览工具栏、播放进度条、状态徽标与窗口闪烁提醒。
 
 > **前提**：仅在 standalone 窗口模式下可用。DUI/CUI 面板里调用 `taskbar.*` 与 `tray.*` 都会失败，`code` 为 `PANEL_MODE_UNSUPPORTED`。
 
@@ -13,17 +13,17 @@ Windows 任务栏按钮的缩略图工具栏、进度条、叠加图标与闪烁
 ### taskbar.setThumbnailButtons
 
 <!-- api-schema:begin taskbar.setThumbnailButtons -->
-安装任务栏预览缩略图上的工具栏。Windows 只允许每个窗口安装一次，之后用 `taskbar.updateButton` 改按钮状态。
+配置任务栏缩略图预览工具栏按钮（Windows 系统限制每个窗口仅可初始化安装一次；后续状态变更须调用 taskbar.updateButton）
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
-| `buttons` | `ThumbnailButton[]` | 是 | 按显示顺序排列的按钮，最多七个。超过时整个调用失败，不会截断。 |
-| `buttons[].id` | `string` | 是 | 按钮标识；`taskbar:buttonClicked` 事件与 `taskbar.updateButton` 都用它指认按钮。不能为空。 |
-| `buttons[].icon` | `string \| null` | 否 | 按钮图标，裸 Base64 编码的 `.ico` 文件字节，不带前缀。空、`null` 或省略时用 foobar2000 主图标。 |
-| `buttons[].tooltip` | `string` | 否 | 悬停提示文本。默认 `""`。 |
-| `buttons[].enabled` | `boolean` | 否 | 是否可点击。默认 `true`。 |
-| `buttons[].visible` | `boolean` | 否 | 是否显示。默认 `true`。 |
-| `buttons[].dismissOnClick` | `boolean` | 否 | 点击后是否关闭缩略图预览。默认 `false`。 |
+| `buttons` | `ThumbnailButton[]` | 是 | 缩略图按钮配置列表（按显示顺序排列，最多允许 7 个；超出限制将直接报错拒绝而不做截断） |
+| `buttons[].id` | `string` | 是 | 按钮唯一标识符（用于 taskbar:buttonClicked 事件派发与 taskbar.updateButton 状态更新）不能为空。 |
+| `buttons[].icon` | `string \| null` | 否 | 按钮图标（.ico 文件未经前缀修饰的原始 Base64 编码字符串；为空、null 或省略时使用 foobar2000 主程序图标） |
+| `buttons[].tooltip` | `string` | 否 | 鼠标悬停时的提示文本默认 `""`。 |
+| `buttons[].enabled` | `boolean` | 否 | 按钮是否处于启用可点击状态默认 `true`。 |
+| `buttons[].visible` | `boolean` | 否 | 按钮是否可见默认 `true`。 |
+| `buttons[].dismissOnClick` | `boolean` | 否 | 点击按钮后是否自动收起任务栏缩略图预览窗口默认 `false`。 |
 
 **返回值**
 
@@ -53,15 +53,15 @@ fb2k.on('taskbar:buttonClicked', ({ id }) => {
 ### taskbar.updateButton
 
 <!-- api-schema:begin taskbar.updateButton -->
-原地更新一个已安装的缩略图按钮，不能新增或删除按钮。
+更新已安装缩略图按钮的状态与属性（工具栏不支持动态增删按钮）
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
-| `id` | `string` | 是 | 按钮标识，即传给 `taskbar.setThumbnailButtons` 的 `id`。不能为空。 |
-| `icon` | `string \| null` | 否 | 新图标，裸 Base64 编码的 `.ico` 文件字节，不带前缀。空、`null` 或省略时保持当前图标。 |
-| `tooltip` | `string` | 否 | 新的悬停提示文本。空或省略时保持当前文本。默认 `""`。 |
-| `enabled` | `boolean` | 否 | 是否可点击。省略时保持当前状态。 |
-| `visible` | `boolean` | 否 | 是否显示。省略时保持当前状态。 |
+| `id` | `string` | 是 | 待更新按钮的标识符（对应 taskbar.setThumbnailButtons 中配置的 id）不能为空。 |
+| `icon` | `string \| null` | 否 | 新按钮图标（.ico 文件原始 Base64 编码；为空、null 或省略时保持原图标不变） |
+| `tooltip` | `string` | 否 | 新悬停提示文本（省略时保持原提示不变）默认 `""`。 |
+| `enabled` | `boolean` | 否 | 按钮是否可点击（省略时保持原状态不变） |
+| `visible` | `boolean` | 否 | 按钮是否显示（省略时保持原状态不变） |
 
 **返回值**
 
@@ -85,12 +85,12 @@ fb2k.on('playback:stateChanged', ({ state }) => {
 ### taskbar.setProgress
 
 <!-- api-schema:begin taskbar.setProgress -->
-设置任务栏按钮上的进度条。主题写过进度后，插件到下一次播放状态变化前不再用播放进度覆盖它。
+设置任务栏图标上的进度条状态与进度值（主题主动写入进度后，宿主暂停自动镜像播放进度，直至下一次播放状态发生变更）
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
-| `state` | `"none" \| "indeterminate" \| "normal" \| "error" \| "paused"` | 否 | 进度条状态，`none` 表示不显示进度条。默认 `"none"`。 |
-| `value` | `number` | 否 | 填充比例，对 `normal`、`error`、`paused` 三种状态有意义。取值 `0` 到 `1`（含端点）。 |
+| `state` | `"none" \| "indeterminate" \| "normal" \| "error" \| "paused"` | 否 | 进度条显示状态（none 清除进度条、indeterminate 不确定循环、normal 正常绿色、error 红色错误、paused 黄色暂停）默认 `"none"`。 |
+| `value` | `number` | 否 | 进度条填充比例（取值范围 0.0 至 1.0，仅在 normal、error、paused 状态下生效）取值 `0` 到 `1`（含端点）。 |
 
 **返回值**
 
@@ -128,12 +128,12 @@ fb2k.on('playback:time', ({ position }) => {
 ### taskbar.setOverlayIcon
 
 <!-- api-schema:begin taskbar.setOverlayIcon -->
-在任务栏按钮上叠加一个小徽标，或清除它。
+设置或清除任务栏图标上的状态徽标图标
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
-| `icon` | `string \| null` | 否 | 叠加图标，裸 Base64 编码的 `.ico` 文件字节，不带前缀。空、`null` 或省略时清除叠加图标。 |
-| `description` | `string` | 否 | 叠加图标的无障碍说明文本。默认 `""`。 |
+| `icon` | `string \| null` | 否 | 徽标图标（.ico 文件的原始 Base64 编码；为空、null 或省略时清除徽标） |
+| `description` | `string` | 否 | 徽标图标的无障碍辅助说明文本默认 `""`。 |
 
 **返回值**
 
@@ -155,12 +155,12 @@ fb2k.on('playback:stateChanged', ({ state }) => {
 ### taskbar.flash
 
 <!-- api-schema:begin taskbar.flash -->
-闪烁任务栏按钮以吸引注意。
+触发任务栏窗口按钮闪烁以提示用户关注
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
-| `count` | `integer` | 否 | 闪烁次数。不小于 `0`。默认 `3`。 |
-| `interval` | `integer` | 否 | 两次闪烁的间隔毫秒数，`0` 用系统光标闪烁速率。不小于 `0`。默认 `0`。 |
+| `count` | `integer` | 否 | 任务栏按钮闪烁总次数不小于 `0`。默认 `3`。 |
+| `interval` | `integer` | 否 | 闪烁间隔时间（单位毫秒；传入 0 表示采用系统默认光标闪烁速率）不小于 `0`。默认 `0`。 |
 
 **返回值**
 
@@ -180,7 +180,7 @@ fb2k.on('playback:trackChanged', () => {
 
 | 事件 | 数据 | 描述 |
 | --- | --- | --- |
-| `taskbar:buttonClicked` | `{ id: string }` | 缩略图按钮被点击 |
+| `taskbar:buttonClicked` | `{ id: string }` | 缩略图工具栏自定义按钮被点击 |
 
 ---
 
@@ -191,8 +191,8 @@ fb2k.on('playback:trackChanged', () => {
 
 | 参数 | 类型 | 必填 | 默认值 | 说明 |
 | --- | --- | --- | --- | --- |
-| `state` | `string` | 否 | `none` | 取 `none`、`indeterminate`、`normal`、`error`、`paused` 之一；其他值以 `INVALID_PARAMS` 拒绝。 |
-| `value` | `number` | 否 | — | 填充比例，0 到 1（含端点）；其他值以 `INVALID_PARAMS` 拒绝。 |
+| `state` | `string` | 否 | `none` | 取 `none`、`indeterminate`、`normal`、`error`、`paused` 之一；其他值以 `INVALID_PARAMS` 拒绝 |
+| `value` | `number` | 否 | — | 填充比例（0 到 1，含端点）；其他值以 `INVALID_PARAMS` 拒绝 |
 
 #### 返回值
 
@@ -205,8 +205,6 @@ await fb2k.invoke('taskbar.setProgress', { state: 'indeterminate' });
 
 ## 运行时生命周期、菜单数据与事件
 
-`taskbar.setProgress` 接受 `none`、`indeterminate`、`normal`、`error` 和 `paused`；
-其他 `state` 或 0–1 以外的 `value` 都以 `INVALID_PARAMS` 拒绝。缩略图按钮激活时广播
-`taskbar:buttonClicked`，payload 为 `{ id }`。
+`taskbar.setProgress` 接受 `none`、`indeterminate`、`normal`、`error` 和 `paused`；其他 `state` 或 0–1 范围之外的 `value` 均以 `INVALID_PARAMS` 拒绝。缩略图工具栏按钮被点击时广播 `taskbar:buttonClicked` 事件，其数据负载为 `{ id }`。
 
-与 `tray` 共用的说明在 Tray 页：standalone 主窗口要求、缩略图按钮数量上限与事件监听示例见[运行时生命周期、菜单数据与事件](./tray.md#运行时生命周期、菜单数据与事件)，顶层 `icon` 字段的格式见 [tray.setContextMenu](./tray.md#tray-setcontextmenu) 下的「顶层图标格式」提示，任务栏与托盘一起初始化的写法见[完整示例](./tray.md#完整示例)。
+与 `tray` 共用的机制说明请参阅托盘文档：standalone 独立主窗口运行要求、缩略图按钮上限与事件监听机制见[运行时生命周期、菜单数据与事件](./tray.md#运行时生命周期、菜单数据与事件)；顶层 `icon` 字段格式见 [tray.setContextMenu](./tray.md#tray-setcontextmenu) 下的「顶层图标格式」说明；任务栏与托盘统一初始化的代码模版见[完整示例](./tray.md#完整示例)。

@@ -1,6 +1,6 @@
-# fb.system 系统 
+# fb.system 系统
 
-## listApis() 
+## listApis()
 
 列出所有可用 API，返回 `{ apis }`，`apis` 是 `SystemApiInfo[]`；失败时返回失败信封。
 
@@ -10,7 +10,7 @@ if (res.success === false) throw new Error(res.error);
 // res.apis: [{ fullName: "playback.play", namespace: "playback", method: "play", ... }, ...]
 ```
 
-## getApiStats() 
+## getApiStats()
 
 获取 API 统计信息，返回 `SystemGetApiStatsResponse`。
 
@@ -19,7 +19,7 @@ const stats = await fb.system.getApiStats();
 // { success: true, totalApis: 368, internalApis: 368, externalApis: 0, pluginCount: 0, byNamespace: { playback: 27, ... } }
 ```
 
-## getApisByNamespace(namespace) 
+## getApisByNamespace(namespace)
 
 获取指定命名空间下的所有 API，返回 `{ apis }`；未知的命名空间得到空列表。
 
@@ -27,7 +27,7 @@ const stats = await fb.system.getApiStats();
 const res = await fb.system.getApisByNamespace('playback');
 ```
 
-## searchApis(query) 
+## searchApis(query)
 
 搜索名字或描述包含 `query` 的 API，返回 `{ apis }`。
 
@@ -35,7 +35,7 @@ const res = await fb.system.getApisByNamespace('playback');
 const res = await fb.system.searchApis('volume');
 ```
 
-## getRegisteredPlugins() 
+## getRegisteredPlugins()
 
 列出向 bridge 注册了方法的外部插件，返回 `{ plugins }`，即 `SystemPluginInfo[]`。每项有 `name`、`namespace`（插件之间唯一）、`version`、`author`、`description`、`apis`（完整方法名列表）与 `apiCount`（`apis` 的长度）。
 
@@ -45,7 +45,7 @@ if (res.success === false) throw new Error(res.error);
 for (const p of res.plugins) console.log(`${p.namespace} ${p.version}: ${p.apiCount} 个方法`);
 ```
 
-## isPluginRegistered(namespace) 
+## isPluginRegistered(namespace)
 
 检查指定插件是否已注册。
 

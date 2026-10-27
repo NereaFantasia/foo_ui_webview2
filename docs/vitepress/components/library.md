@@ -2,7 +2,7 @@
 
 ## `<fb-library-tree>` {#fb-library-tree}
 
-Tree browser for artist, album, and genre groupings. It supports Ctrl/Cmd toggling, Shift range selection, and lazy child loading.
+Tree browser for artist, album, and genre groupings, supporting Ctrl/Cmd toggling, Shift range selection, and lazy child loading.
 
 ```html
 <fb-library-tree view="artist"></fb-library-tree>
@@ -33,13 +33,13 @@ el.addEventListener('fb-library-play', e => {
   console.log('Play request:', e.detail.key, e.detail.type, e.detail.view);
 });
 
-// Context request; the component does not open a menu itself.
+// Context menu request; the component dispatches an event without opening a menu
 el.addEventListener('fb-library-context', e => {
   const { key, type, view, x, y, selected } = e.detail;
-  // Call fb.ui.showCustomMenu(...) from theme code if desired.
+  // Call fb.ui.showCustomMenu(...) from theme code to open a menu
 });
 
-// Emitted after the component's addToPlaylist() helper completes.
+// Emitted after addToPlaylist() completes
 el.addEventListener('fb-library-added', e => {
   console.log('Added:', e.detail.count, e.detail.type, e.detail.key);
 });
@@ -51,11 +51,11 @@ el.addEventListener('fb-library-added', e => {
 - **album**: album groups expand to tracks (`track` child nodes)
 - **genre**: genre groups expand to matching tracks
 
-Event details carry `artist`, read from the row's `data-artist`. On an `album` child in the artist view it is the parent artist, and the row stands for that artist's tracks on the album. On a group in the album view it is the album artist: `key` alone can name several albums, and `library.getAlbumTracks(key, artist)` names exactly one.
+Event payloads include `artist` from `data-artist`. On an `album` child in the artist view, this reflects the parent artist representing tracks by that artist on the album. On an album-view group, it reflects the album artist. Events and `selected` entries can also include `albumId` or exact member `tracks`. Pass the event detail as the fourth parameter to `el.addToPlaylist(key, type, artist, detail)` to preserve track identity (including subsongs). A provided empty `tracks` array signifies zero member tracks rather than triggering a fallback name-based query. Display names alone may not distinguish albums whose underlying tags contain invalid UTF-8.
 
 ## `<fb-library-filesystem-tree>` {#fb-library-filesystem-tree}
 
-Filesystem-style media-library browser. It starts with `library.getRoots()` and lazily expands directories through `library.browseTree()`. Selection supports Ctrl/Cmd toggling and Shift ranges.
+Filesystem-style media library browser. Root folders are loaded via `library.getRoots()`, and child directories expand lazily through `library.browseTree()`. Item selection supports Ctrl/Cmd toggling and Shift range selection.
 
 ```html
 <fb-library-filesystem-tree></fb-library-filesystem-tree>
@@ -86,10 +86,10 @@ el.addEventListener('fb-library-fs-play', e => {
   console.log('Play request:', e.detail.type, e.detail.absolutePath);
 });
 
-// Context request; the component does not open a menu itself.
+// Context menu request; the component dispatches an event without opening a menu
 el.addEventListener('fb-library-fs-context', e => {
   const { type, rootId, pathId, absolutePath, x, y } = e.detail;
-  // Call fb.ui.showCustomMenu(...) from theme code if desired.
+  // Call fb.ui.showCustomMenu(...) from theme code to open a menu
 });
 ```
 

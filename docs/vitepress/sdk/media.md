@@ -15,7 +15,7 @@ const follower = new MediaElementFollower(element);
 const unsubscribe = follower.onError(error => console.error(error));
 await follower.setSource('E:\\Music\\clip.mp4');
 
-// When the view is removed:
+// When the view is removed
 unsubscribe();
 follower.dispose();
 ```
@@ -68,7 +68,7 @@ async function followTrack(path: string, subsong: number) {
     const info = unwrap(await media.getContainerInfo(path));
     const chapter = info.chapters?.find(item => item.subsong === subsong);
     await follower.setSource(`${path}|subsong:${subsong}`, { timelineOffset: chapter?.start ?? 0 });
-    // Chapters of other editions belong to other subsongs.
+    // Chapters of other editions belong to other subsongs
     return info.chapters?.filter(item => item.edition === chapter?.edition) ?? [];
 }
 ```

@@ -1,36 +1,36 @@
 # Debug a theme with the development server
 
-While you work on a theme, foobar2000 can load it from a development server such as Vite instead of a template folder, so changes show up as soon as you save. [Build your first theme](/tutorials/first-theme) walks through a complete setup.
+During theme development, foobar2000 can load web pages directly from a development server (such as Vite with HMR hot module replacement) instead of static template folders, allowing source modifications to reflect immediately upon save. [Build your first theme](/tutorials/first-theme) walks through a complete end-to-end setup.
 
 ## Point foobar2000 at the server
 
-1. Start your development server and note its address, for example `http://localhost:5173`.
+1. Start your local development server and copy its network address, such as `http://localhost:5173`.
 2. Open `File → Preferences → Display → WebView2 UI → Developer`.
-3. Tick `Use development server (HMR hot reload)` and type the address into `URL`. It must start with `http://` or `https://` and name a host.
+3. Check `Use development server (HMR hot reload)` and input the address into `URL`. The URL must start with `http://` or `https://` and include a host.
 4. Press `Apply`.
 
-The main window and the panels that follow the global template reload at once; no restart is needed. Panels with their own template or URL load from the server too the next time they load their page. Popup windows open `<server>/<page>.html` on the same server.
+The main window and any panels configured to follow the global template reload immediately; no application restart is required. Embedded panels configured with custom templates or URL overrides will similarly load from the dev server on their next reload. Popup windows open `<server>/<page>.html` hosted on the same dev server.
 
-The host trusts the page it loads from that address, so `fb2k.invoke()` and the SDK work from the dev-server page. Trust goes by the exact scheme, host and port: a page on another port, or on `127.0.0.1` when you entered `localhost`, cannot call the host. See [Which pages can call the API](/reference/security#which-pages-can-call-the-api).
+The host grants API trust to pages loaded from this exact address, enabling `fb2k.invoke()` and the SDK to operate normally. Trust is bound to the exact scheme, host, and port: pages on alternative ports, or accessing `127.0.0.1` when configured for `localhost`, cannot call host APIs. See [Which pages can call the API](/reference/security#which-pages-can-call-the-api).
 
-A page or a script can change the same two settings with `fb.ui.setDevServerConfig({ useDevServer, devServerUrl })` (host method `window.setDevServerConfig`). They are stored, but take effect only the next time a page loads.
+Pages or build scripts can update these preferences programmatically via `fb.ui.setDevServerConfig({ useDevServer, devServerUrl })` (corresponding to host endpoint `window.setDevServerConfig`). These values persist across sessions, taking effect upon the next page reload.
 
-## If the old theme appears instead
+## Troubleshooting fallback to local templates {#if-the-old-theme-appears-instead}
 
-foobar2000 falls back to the installed template when it cannot reach the server. Check that the server is still running and listens on the address you entered (a Vite config with `strictPort: true` refuses to move to another port), then reload: press `Apply` again or restart foobar2000.
+When foobar2000 fails to connect to the specified development server, it falls back to the active local template. Verify that the development server process is actively running and listening on the designated address (configuring `strictPort: true` in Vite prevents silent port drift). Once confirmed, press `Apply` again or restart foobar2000.
 
 ## Open the developer tools
 
-- Tick `Enable Developer Tools (F12)` on the same page. The setting is read when a WebView is created, so restart foobar2000 after changing it. With it on, F12 in any WebView opens the developer tools, whether or not the development server is in use.
-- When the main window loads its page from the development server, it opens the developer tools by itself.
-- A panel can enable the developer tools for itself in its configuration dialog, without a restart: see [Put a page in a panel](./panels.md#give-a-panel-its-own-template-or-url).
+- Check `Enable Developer Tools (F12)` on the same preference page. This setting is evaluated during WebView instance creation, requiring a foobar2000 restart to take effect. Once enabled, pressing F12 in any WebView opens DevTools, regardless of whether a dev server is in use.
+- When the main window loads from a development server, DevTools opens automatically on launch.
+- Embedded panels can toggle DevTools independently in their configuration dialog without requiring a restart: see [Put a page in a panel](./panels.md#give-a-panel-its-own-template-or-url).
 
-There is no `Inspect` context menu; the page's own right-click handling stays in effect.
+The host disables the default WebView2 context menu, so there is no `Inspect Element` item; custom page right-click event handlers remain unaffected.
 
-## Go back to the installed template
+## Switch back to installed local templates {#go-back-to-the-installed-template}
 
-Untick `Use development server (HMR hot reload)` and press `Apply`. To keep the theme you were developing, build it and copy the output into a template: see [Install a theme](./install-theme.md).
+Uncheck `Use development server (HMR hot reload)` and press `Apply`. To retain the developed theme, compile the production bundle and copy the distribution files into a template folder: see [Install a theme](./install-theme.md).
 
-## Remote debugging for automation
+## Remote debugging and automation {#remote-debugging-for-automation}
 
-`CDP remote debugging` on the same page exposes the WebView over the Chrome DevTools Protocol on a local port (default 9222), which the MCP server uses. It takes effect after a restart; see the [MCP setup guide](/mcp/setup).
+The `CDP remote debugging` option on the same preference page exposes the WebView instance via the Chrome DevTools Protocol over a local port (default 9222), enabling automation via the MCP server. This requires an application restart; see the [MCP setup guide](/mcp/setup).

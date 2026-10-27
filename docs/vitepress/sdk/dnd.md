@@ -56,7 +56,7 @@ by index.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `sessionId` | `string` | No | Session to query, from a `dnd:*` payload. Omit to query the session that is active or most recently ended for this window. |
+| `sessionId` | `string` | No | Session to query, from a `dnd:*` payload. Omit to query the session that is active or most recently ended for this window |
 
 Returns `{ sessionId, paths, resolvedPaths }`. `paths` and `resolvedPaths` are
 always the same length, and both are empty when the session expired, carried no
@@ -93,12 +93,12 @@ fb.on('dnd:drop', (data) => {
 
 | Field | Type | Description |
 | --- | --- | --- |
-| `sessionId` | `string` | Correlates `dnd:enter`, `dnd:leave` and `dnd:drop` for one drag gesture. |
-| `paths` | `string[]` | Absolute filesystem paths, in `DataTransfer.files` order; empty when withheld. |
-| `resolvedPaths` | `(string \| null)[]` | Shortcut target per index, or `null`. Always the same length as `paths`. See [Shortcut targets](#shortcut-targets). |
-| `x`, `y` | `number` | Cursor position in client-area physical pixels — divide by `devicePixelRatio` for CSS pixels. |
-| `keyState` | `number` | Win32 `MK_*` modifier / mouse-button mask at drop time. |
-| `source` | `'self' \| 'other-window' \| 'external'` | Where the drag came from. See [Where a drag came from](#where-a-drag-came-from). |
+| `sessionId` | `string` | Correlates `dnd:enter`, `dnd:leave` and `dnd:drop` for one drag gesture |
+| `paths` | `string[]` | Absolute filesystem paths, in `DataTransfer.files` order; empty when withheld |
+| `resolvedPaths` | `(string \| null)[]` | Shortcut target per index, or `null`. Always the same length as `paths`. See [Shortcut targets](#shortcut-targets) |
+| `x`, `y` | `number` | Cursor position in client-area physical pixels — divide by `devicePixelRatio` for CSS pixels |
+| `keyState` | `number` | Win32 `MK_*` modifier / mouse-button mask at drop time |
+| `source` | `'self' \| 'other-window' \| 'external'` | Where the drag came from. See [Where a drag came from](#where-a-drag-came-from) |
 
 `dnd:enter` carries `sessionId`, `paths`, `resolvedPaths`, `hasFiles`, `source` and
 the same cursor fields; `dnd:leave` carries only `sessionId`.
@@ -204,7 +204,7 @@ vanished target shows up as a shortfall rather than as a thrown error).
 const paths = fb.dnd.getPaths();
 const targets = fb.dnd.getResolvedPaths();
 
-// A shortcut plays its target; anything else plays itself.
+// A shortcut plays its target; anything else plays itself
 const playable = paths.map((path, i) => targets[i] ?? path);
 await fb2k.invoke('playlist.addPaths', { paths: playable });
 ```
@@ -236,12 +236,12 @@ leaving HTML5 drag events intact.
 
 | Field | Type | Description |
 | --- | --- | --- |
-| `html5` | `boolean` | Page still receives standard HTML5 drag events. |
-| `paths` | `boolean` | Real filesystem paths are obtainable. |
-| `hosting` | `'visual' \| 'standard'` | How the window hosts its WebView. |
-| `pathsUnavailableReason` | `string` | Present only when `paths` is `false`. |
-| `dragOut` | `boolean` | Files can be dragged out through [`prepareDrag`](#preparedrag-paths). |
-| `dragOutUnavailableReason` | `string` | Present only when `dragOut` is `false`. |
+| `html5` | `boolean` | Page still receives standard HTML5 drag events |
+| `paths` | `boolean` | Real filesystem paths are obtainable |
+| `hosting` | `'visual' \| 'standard'` | How the window hosts its WebView |
+| `pathsUnavailableReason` | `string` | Present only when `paths` is `false` |
+| `dragOut` | `boolean` | Files can be dragged out through [`prepareDrag`](#preparedrag-paths) |
+| `dragOutUnavailableReason` | `string` | Present only when `dragOut` is `false` |
 
 ```javascript
 const caps = await fb.dnd.getCapabilities();
@@ -252,7 +252,7 @@ if (!caps.paths) {
 ```
 
 `pathsUnavailableReason` is one of `origin-untrusted`, `inner-target-not-found`,
-`forward-unavailable`, `chain-failed`, `displaced`, or `register-failed`.
+`forward-unavailable`, `chain-failed`, or `register-failed`.
 
 `dragOutUnavailableReason` is one of `not-visual-hosting` (a DUI / CUI panel, where
 Chromium owns the drag source), `runtime-too-old` (the WebView2 Runtime predates
@@ -313,7 +313,7 @@ Validates the paths and returns a token for the next drag out of this window.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `paths` | `string[]` | Yes | Locations to drag out, at least one. Accepts native paths, `file://` URLs, `file-relative://` URLs (a portable install's form for media on the program's volume, resolved by foobar2000), `archive://` / `unpack://` entries, and the `path\|subsong:N` form (the suffix is dropped and the container is dragged). A track's `path` and its `absolutePath` are both accepted. |
+| `paths` | `string[]` | Yes | Locations to drag out, at least one. Accepts native paths, `file://` URLs, `file-relative://` URLs (a portable install's form for media on the program's volume, resolved by foobar2000), `archive://` / `unpack://` entries, and the `path\|subsong:N` form (the suffix is dropped and the container is dragged). A track's `path` and its `absolutePath` are both accepted |
 
 Returns `{ success: true, token }`. The token is opaque; the only thing to do with
 it is pass it to [`applyDragToken`](#applydragtoken-datatransfer-token).
@@ -359,13 +359,13 @@ files independently of `dragend`.
 
 | `code` | Meaning |
 | --- | --- |
-| `NOT_FOUND` | The calling window has no drag-drop registration. |
-| `ORIGIN_DENIED` | The document origin is not trusted to drag files out. Checked before any path is inspected. |
-| `NOT_SUPPORTED` | `dragOut` is `false` for this window. |
-| `INVALID_PARAMS` | `paths` missing, empty, or not all strings. |
-| `INVALID_PATH` | An entry has no local file behind it (a stream, a `cdda://` track). `paths[i]` indexes **the array you passed**. |
-| `PERMISSION_DENIED` | An entry was refused by path security. `paths[i]` indexes the **normalised, de-duplicated** list, which can be shorter than yours. |
-| `OPERATION_FAILED` | A token could not be created. |
+| `NOT_FOUND` | The calling window has no drag-drop registration |
+| `ORIGIN_DENIED` | The document origin is not trusted to drag files out. Checked before any path is inspected |
+| `NOT_SUPPORTED` | `dragOut` is `false` for this window |
+| `INVALID_PARAMS` | `paths` missing, empty, or not all strings |
+| `INVALID_PATH` | An entry has no local file behind it (a stream, a `cdda://` track). `paths[i]` indexes **the array you passed** |
+| `PERMISSION_DENIED` | An entry was refused by path security. `paths[i]` indexes the **normalised, de-duplicated** list, which can be shorter than yours |
+| `OPERATION_FAILED` | A token could not be created |
 
 Error messages never contain a path.
 
@@ -427,9 +427,9 @@ the drag cancelled. Returns an unsubscribe function.
 
 | Field | Type | Description |
 | --- | --- | --- |
-| `result` | `'failed'` | Always `'failed'`; the host reports refusals only. |
-| `code` | `string` | `PERMISSION_DENIED` (token unknown, expired, spent, superseded or from another window), `INVALID_PARAMS` (`effectAllowed` was not `'copy'`), `OPERATION_FAILED` (the file list could not be attached). |
-| `error` | `string` | Human-readable reason. Never contains a path. |
+| `result` | `'failed'` | Always `'failed'`; the host reports refusals only |
+| `code` | `string` | `PERMISSION_DENIED` (token unknown, expired, spent, superseded or from another window), `INVALID_PARAMS` (`effectAllowed` was not `'copy'`), `OPERATION_FAILED` (the file list could not be attached) |
+| `error` | `string` | Human-readable reason. Never contains a path |
 
 A valid token is consumed before checking `effectAllowed` or attaching the file list. After `INVALID_PARAMS` or `OPERATION_FAILED`, request a fresh token before retrying.
 

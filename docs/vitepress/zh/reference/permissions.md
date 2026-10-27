@@ -1,18 +1,18 @@
-# 权限系统
+# 路径权限模型参考 {#权限系统}
 
-涉及文件路径的 Bridge API 会先由 BridgeCore 的路径安全 spec 校验，被拒的请求不会触及文件系统，也不会触发 foobar2000 SDK 的路径副作用。路径被安全策略拒绝返回 `PERMISSION_DENIED`；参数形状或类型不对返回 `INVALID_PARAMS`。
+涉及文件路径的 Bridge API 会先由 BridgeCore 路径安全规范（Path-security spec）在执行业务 handler 之前进行拦截校验。校验过程包括路径规范化解析、受保护目录过滤及媒体库成员资格判定；未通过校验的请求直接阻断且不进入业务处理函数。被安全策略拒绝的路径返回 `PERMISSION_DENIED`；参数形状或类型错误返回 `INVALID_PARAMS`。
 
 计数来自 `src/api/schema/*.ts` 里的 `@security` 与 `@pathKey` 声明，各注册点的路径安全 spec 都由它们生成：
 
 <!-- api-schema:begin permissions:counts -->
 | 级别 | spec 条数 | 含义 |
 | --- | ---: | --- |
-| `Read` | 10 | 普通文件系统只读校验 |
+| `Read` | 6 | 普通文件系统只读校验 |
 | `Write` | 1 | 严格写入目标（配置/临时目录策略） |
-| `MediaRead` | 47 | 媒体上下文只读校验 |
+| `MediaRead` | 53 | 媒体上下文只读校验 |
 | `MediaWrite` | 10 | 媒体上下文写校验 |
 | `FileWrite` | 11 | 通用文件写入（`file.*`） |
-| **合计** | **79** | **74 个唯一 API** |
+| **合计** | **81** | **76 个唯一 API** |
 <!-- api-schema:end -->
 
 ## 六级权限模型
@@ -22,19 +22,32 @@
 | `None` | 不涉及文件路径 | 无路径校验 |
 | `Read` | 只读文件系统操作 | 禁止系统保护目录、设备路径与 `..` 遍历 |
 | `Write` | 严格写入目标 | 仅允许 PathSecurity 接受的配置/临时等写入目标 |
-| `MediaRead` | 读取媒体元数据/内容 | 先走 Read 规则；媒体库/播放列表信任仅作为 Read 拒绝后的回退 |
+| `MediaRead` | 读取媒体元数据/内容 | 先按物理落点应用 Read 规则；媒体库、播放列表与监视目录信任作为回退，仍须通过落点检查 |
 | `MediaWrite` | 修改媒体文件 | 独立校验链：保护目录黑名单，再按严格写入目标／媒体库或播放列表成员／媒体库监视目录／与受信音频同目录的伴生文件依次放行。**仅仅位于非系统盘不构成放行理由** |
-| `FileWrite` | 通用文件写入（`file.*`） | 独立校验链，并非 `MediaWrite` 超集：黑名单后按严格写入目标／媒体库监视目录／盘符寻址的非系统盘（UNC 不在此列）／媒体库或播放列表成员依次放行——不含伴生文件步。监视目录与非系统盘两步共同让 `file.mkdir` 与 `file.write` 能创建新路径 |
+| `FileWrite` | 通用文件写入（`file.*`） | 独立校验链，并非 `MediaWrite` 超集：黑名单后按严格写入目标／媒体库监视目录／非系统卷（含真正远程共享；回环共享按实际本地落点）／媒体库或播放列表成员依次放行——不含伴生文件步。监视目录与非系统卷两步共同让 `file.mkdir` 与 `file.write` 能创建新路径 |
 
 ::: tip 权限层级关系
-`None < Read < Write` 是普通文件系统通道。
-`None < Read < MediaRead < MediaWrite` 是媒体通道。
-`Write`、`MediaWrite` 与 `FileWrite` 是三条独立写通道。
+- 普通文件系统通道：`None < Read < Write`
+- 媒体文件通道：`None < Read < MediaRead < MediaWrite`
+- 独立写通道：`Write`、`MediaWrite` 与 `FileWrite` 是三条平行的独立写入通道
 :::
 
-::: warning FileWrite 比 MediaWrite 宽
-`FileWrite` 接受非系统盘上的任意路径，以及媒体库监视目录内的任意路径（含系统盘），是当前暴露面最宽的写通道。它之所以存在，是因为 `file.*` 操作的是任意文件而非媒体上下文中的文件，套用媒体写入规则会使新建文件与新建目录完全无法进行。审查主题时应优先审计这条通道。
+::: warning FileWrite 权限边界说明
+`FileWrite` 允许写入非系统盘上的任意路径，以及媒体库监视目录内的任意路径（包括系统盘），是当前暴露面最宽的写通道。该通道专为 `file.*` 通用文件操作设计（而非局限于已建库的媒体文件），若套用媒体写入规则将导致无法新建文件或目录。代码审计或审查第三方主题时，应优先审计此通道的调用点。
 :::
+
+## 媒体路径的解析
+
+`MediaRead` 先从 `unpack://` 或受支持的 `archive://` 路径提取物理容器；嵌套 unpack 逐层展开。
+物理位置为 `file-relative://` 时，由 foobar2000 解析便携路径，再检查实际落点的设备路径、
+目录权限、映射盘与 UNC 规则。包内条目名不作为本机目录检查。解析失败仍以 `PERMISSION_DENIED` 拒绝。
+
+物理位置只用于授权检查，读取与路径回显仍使用原曲目路径；`|subsong:N` 继续选择原曲目的子曲目。
+媒体库成员查询保留该轨号。容器可读不代表每个接口都支持其内容：例如封面接口自身的
+便携路径限制、外挂歌词候选和媒体流的本地文件限制仍按各接口说明处理。
+
+上述解析只适用于 `MediaRead`，其它权限级别沿用各自规则。`MediaRead` 描述的是参数授权，
+不代表整个方法没有副作用；播放、添加列表和 ReplayGain 扫描等方法也使用它。
 
 ## 错误响应
 
@@ -70,20 +83,16 @@ if (result.success === false) {
 ## API 权限对照表
 
 <!-- api-schema:begin permissions:Read -->
-### Read — 只读文件系统（10 条）
+### Read — 只读文件系统（6 条）
 
 | API | 参数 | 数组 | 嵌套键 |
 | --- | --- | --- | --- |
-| `artwork.getFolderImages` | `directory` | — | — |
-| `clipboard.writeFiles` | `paths` | 是 | — |
 | `file.copy` | `source` | — | — |
 | `file.copyAsync` | `items` | 是 | `source` |
 | `file.exists` | `path` | — | — |
 | `file.getInfo` | `path` | — | — |
 | `file.list` | `path` | — | — |
 | `file.read` | `path` | — | — |
-| `shell.openWith` | `path` | — | — |
-| `shell.showInExplorer` | `path` | — | — |
 <!-- api-schema:end -->
 
 <!-- api-schema:begin permissions:Write -->
@@ -95,7 +104,7 @@ if (result.success === false) {
 <!-- api-schema:end -->
 
 <!-- api-schema:begin permissions:MediaRead -->
-### MediaRead — 读取媒体文件（47 条）
+### MediaRead — 读取媒体文件（53 条）
 
 | API | 参数 | 数组 | 嵌套键 |
 | --- | --- | --- | --- |
@@ -106,16 +115,20 @@ if (result.success === false) {
 | `artwork.getFb2kUrlByPath` | `path` | — | — |
 | `artwork.getFb2kUrlByPathBatch` | `items` | 是 | `path` |
 | `artwork.getFb2kUrlByPathBatch` | `paths` | 是 | — |
+| `artwork.getFolderImages` | `directory` | — | — |
 | `artwork.getForTrack` | `path` | — | — |
 | `artwork.getLyrics` | `path` | — | — |
 | `artwork.getMetadata` | `path` | — | — |
 | `audio.analyzeBPM` | `path` | — | — |
 | `audio.decodePcm` | `path` | — | — |
 | `audio.generateFullWaveform` | `path` | — | — |
+| `clipboard.writeFiles` | `paths` | 是 | — |
 | `discovery.executeContextMenuByPath` | `trackPath` | — | — |
 | `jitQueue.enqueueNext` | `url` | — | — |
 | `jitQueue.playNow` | `url` | — | — |
 | `jitQueue.preloadBatch` | `urls` | 是 | — |
+| `jitSession.play` | `location` | — | — |
+| `jitSession.setNext` | `location` | — | — |
 | `library.addToPlaylist` | `paths` | 是 | — |
 | `library.getByPath` | `path` | — | — |
 | `lyrics.exists` | `path` | — | — |
@@ -142,6 +155,8 @@ if (result.success === false) {
 | `rating.get` | `path` | — | — |
 | `replaygain.get` | `paths` | 是 | — |
 | `replaygain.scan` | `paths` | 是 | — |
+| `shell.openWith` | `path` | — | — |
+| `shell.showInExplorer` | `path` | — | — |
 | `titleformat.eval` | `path` | — | — |
 | `titleformat.evalBatch` | `paths` | 是 | — |
 | `titleformat.evalFields` | `path` | — | — |
@@ -215,6 +230,10 @@ if (result.success === false) {
 | `C:\\Program Files\\` | 程序文件 |
 | `C:\\Program Files (x86)\\` | 32 位程序文件 |
 | `C:\\ProgramData\\` | 系统配置数据 |
+
+foobar2000 的 profile 目录不受上表限制。便携版装在 `C:\Program Files\` 下时，仍能读写自己的 profile，包括其中的模板文件夹。
+
+保护目录以外，系统盘在 Read 下只放行 foobar2000 profile、临时目录、OneDrive，以及用户的音乐、视频、图片、桌面、文档和下载文件夹。
 
 非系统盘在 Read 下通常放行，以支持 NAS / 便携版场景。
 

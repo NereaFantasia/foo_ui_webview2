@@ -5,12 +5,12 @@ Event names use colon notation, such as `playback:trackChanged`. Method invocati
 ## Subscribe
 
 ```javascript
-// Subscribe and retain the returned unsubscribe function.
+// Subscribe and retain the returned unsubscribe function
 const unsubscribe = fb.on('playback:trackChanged', (track) => {
     console.log('Now playing:', track.title);
 });
 
-// Unsubscribe.
+// Unsubscribe
 unsubscribe();
 ```
 
@@ -25,11 +25,11 @@ fb.once('playback:trackChanged', (track) => {
 ## Unsubscribe
 
 ```javascript
-// Preferred: call the function returned by fb.on().
+// Preferred: call the function returned by fb.on()
 const unsub = fb.on('playback:time', handler);
 unsub();
 
-// Alternatively, remove the same handler explicitly.
+// Alternatively, remove the same handler explicitly
 fb.on('playback:time', handler);
 fb.off('playback:time', handler);
 ```
@@ -80,15 +80,15 @@ fb.off('playback:time', handler);
 
 | Event | Emitted when | Payload |
 | --- | --- | --- |
-| `library:itemsAdded` | Library items are added | `{ count, timestamp }` |
-| `library:itemsRemoved` | Library items are removed | `{ count, timestamp }` |
-| `library:itemsModified` | Library items are modified | `{ count, timestamp }` |
+| `library:itemsAdded` | Library items are added | `{ count, handles, truncated, timestamp }` |
+| `library:itemsRemoved` | Library items are removed | `{ count, handles, truncated, timestamp }` |
+| `library:itemsModified` | Library items are modified | `{ count, handles, truncated, fromHook, timestamp }` |
 | `library:initialized` | Library initialization completes | `{ timestamp }` |
 | `library:getAllResult` | An asynchronous `library.getAll` result is ready | `LibraryGetAllResultPayload` |
 | `metadata:writeComplete` | An asynchronous metadata write completes | `MetadataWriteCompletePayload` |
 | `metadata:probeProgress` | A batch of `metadata.probeBatchAsync` results is ready | `MetadataProbeProgressPayload` |
 | `metadata:probeComplete` | An asynchronous batch probe finishes, is cancelled, or fails | `MetadataProbeCompletePayload` |
-| `metadb:changed` | Metadata changes | `{ tracks, count, fromHook, timestamp }` |
+| `metadb:changed` | Metadata changes | `{ tracks, count, handles, truncated, fromHook, timestamp }` |
 | `selection:changed` | Global selection changes | `{ count, type, handles, truncated, track, nowPlaying }` |
 
 ## Audio events

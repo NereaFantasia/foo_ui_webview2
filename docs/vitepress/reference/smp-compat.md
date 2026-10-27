@@ -1,6 +1,6 @@
-# SMP compatibility layer
+# SMP Compatibility Layer
 
-Spider Monkey Panel (SMP) compatibility layer for running SMP-style scripts inside the WebView2 UI. The source layer is `sdk/src/smp/**` (bootstrap entry: `bootstrapSmpCompat`); published dist output is generated and must not be hand-edited.
+The Spider Monkey Panel (SMP) compatibility layer enables running SMP-style scripts within the WebView2 UI environment. The source implementation is in `sdk/src/smp/**` (bootstrap entry: `bootstrapSmpCompat`); published dist output is generated and must not be hand-edited.
 
 ## Quick start
 
@@ -54,10 +54,10 @@ plman.ActivePlaylist = 2;
 - Fire-and-forget setters make immediate re-reads match SMP expectations
 - Same BridgeCore entrypoint and security checks as the lower-level API
 
-### Risks
+### Considerations {#risks}
 
-1. Brief cache/backend divergence after a rejected write until the next event-driven refresh
-2. Initialization ordering: always `await window.smp.ready`
+1. Transient cache and backend divergence after a failed write: rejected writes roll back upon event receipt, but invalid client inputs (such as an out-of-range index) remain until the next event-driven synchronization
+2. Initialization ordering: always `await window.smp.ready` before reading properties
 3. Non-1:1 behaviors listed in the differences table below
 
 ## Architecture overview
@@ -248,7 +248,7 @@ unsub();
 | `on_metadb_changed` | `metadb:changed` | `(handle_list, fromHook)` |
 | `on_library_items_added` | `library:itemsAdded` | `()` |
 | `on_library_items_removed` | `library:itemsRemoved` | `()` |
-| `on_library_items_changed` | `library:itemsModified` | `()` |
+| `on_library_items_changed` | `library:itemsModified` | `(undefined, fromHook)` |
 
 **Audio / UI / window**
 
@@ -330,4 +330,3 @@ fb.onSMP('on_playback_new_track', async (track) => {
 
 - [SDK overview](/sdk/overview)
 - [Events API](/api/events)
-- [API events](/api/events)

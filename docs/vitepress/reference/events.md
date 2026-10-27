@@ -1,5 +1,5 @@
 # Event reference
 
-Event names use **colon** format (`namespace:eventName`); method invocations use **dot** format (`namespace.method`).
+Event names use **colon format** (`namespace:eventName`), while method invocations use **dot format** (`namespace.method`).
 
-Every event, who receives it and the fields of its payload are listed in [Events API](/api/events). Subscribing from a page is covered in [SDK events](/sdk/events).
+For the complete list of events, recipient target windows, and payload field definitions, see [Events API](/api/events). For subscribing to events within a web page, see [SDK events](/sdk/events).

@@ -20,8 +20,8 @@ Signature: `fb.keyboard.registerShortcut(key: string, action: string): Promise<K
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `key` | `string` | Yes | Shortcut key expression. |
-| `action` | `string` | Yes | Action name stored with the shortcut. |
+| `key` | `string` | Yes | Shortcut key expression |
+| `action` | `string` | Yes | Action name stored with the shortcut |
 
 Stores the key combination as a WebView-local shortcut under the given action name. Unlike `registerHotkey()`, it takes no options object and registers nothing system-wide. `getRegisteredHotkeys()` lists the shortcut with `id` `0`, and `unregisterHotkey({ key })` removes it.
 
@@ -35,8 +35,8 @@ Signature: `fb.keyboard.unregisterHotkey(options: KeyboardUnregisterHotkeyParams
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `options.key` | `string` | No | Registered key expression. |
-| `options.id` | `number` | No | Numeric registration ID. |
+| `options.key` | `string` | No | Registered key expression |
+| `options.id` | `number` | No | Numeric registration ID |
 
 Removes a hotkey or a shortcut. Give exactly one of `id` and `key`: `id` removes a hotkey by the number `registerHotkey()` returned, and `key` removes a hotkey or a shortcut by the string it was registered with.
 
@@ -52,9 +52,9 @@ Signature: `fb.keyboard.registerHotkey(key: string, action: string, options?: Om
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `key` | `string` | Yes | Key combination to register. |
-| `action` | `string` | Yes | Action name reported back in the `keyboard:hotkey` payload. |
-| `options.global` | `boolean` | No | Recorded on the entry and reported by `getRegisteredHotkeys()`; defaults to `true`. |
+| `key` | `string` | Yes | Key combination to register |
+| `action` | `string` | Yes | Action name reported back in the `keyboard:hotkey` payload |
+| `options.global` | `boolean` | No | Recorded on the entry and reported by `getRegisteredHotkeys()`; defaults to `true` |
 
 `fb.keyboard.registerHotkey(key, action, options?)` registers a system-wide hotkey through `keyboard.registerHotkey`. `options` is `Omit<KeyboardRegisterHotkeyParams, 'key' | 'action'>` and can set `global`. On success the response carries `id`, a number from `1`; `unregisterHotkey({ id })` takes it, and `getRegisteredHotkeys()` reports it as `HotkeyInfo.id`.
 

@@ -31,7 +31,7 @@ const result = await fb.tray.clearMenuItems();
 
 签名：`fb.tray.create(opts?: { icon?: string | null; tooltip?: string }): Promise<TrayCreateResponse>`
 
-创建托盘图标，须先于其他 `tray.*` 方法调用。`opts.icon` 是初始图标（格式见页首），`opts.tooltip` 是提示文字。
+创建托盘图标，保留 `setClickAction` 已设置的点击动作。`opts.icon` 是初始图标（格式见页首），`opts.tooltip` 是提示文字。
 
 ```javascript
 const result = await fb.tray.create({ tooltip: 'foobar2000' });
@@ -41,7 +41,7 @@ const result = await fb.tray.create({ tooltip: 'foobar2000' });
 
 签名：`fb.tray.destroy(): Promise<TrayDestroyResponse>`
 
-移除托盘图标。
+移除托盘图标，取消待处理点击，并将点击动作重置为 `event`。
 
 ```javascript
 const result = await fb.tray.destroy();
@@ -196,7 +196,7 @@ await fb.tray.setContextMenu(items, {
 const ver = await fb.config.getVersionInfo();
 if (ver.success === false) throw new Error(ver.error);
 const plugin = ver?.plugin?.version; // 启用 zones 前先探测版本
-// zones 自 1.10.0 起提供；需兼容旧版时先探测运行时版本。
+// zones 自 1.10.0 起提供；需兼容旧版时先探测运行时版本
 await fb.tray.setContextMenu(items, {
   render: 'webview',
   layoutMode: 'zones',
@@ -225,12 +225,12 @@ await fb.tray.setContextMenu(items, {
 ### 横向 / 纵向示例
 
 ```javascript
-// 横向（默认）——旧版运行时和原生菜单遇到不认识的 orientation 也不会出错。
+// 横向（默认）——旧版运行时和原生菜单遇到不认识的 orientation 也不会出错
 await fb.tray.setContextMenu([
   { id: 'vol', type: 'slider', label: 'Volume', min: 0, max: 100, value: 40 },
 ], { render: 'webview' });
 
-// 纵向——先探测插件版本，不要硬编码一个假的最低版本号。
+// 纵向——先探测插件版本，不要硬编码一个假的最低版本号
 const res = await fb.config.getVersionInfo();
 if (res.success === false) throw new Error(res.error);
 const { plugin } = res;
@@ -256,3 +256,20 @@ await fb.tray.setContextMenu([
 - `checked: false` 仍表示这是一个可勾选项（`menuitemcheckbox`）；普通菜单项直接不写 `checked`。
 - 默认入退场动画遵循 `prefers-reduced-motion: reduce`（禁用 transform/transition），自定义 CSS 也应照做。这部分**不属于**受保护 CSS，也不改变 hide protocol 与 `closeAnimationMs`。
 - 原生后端忽略 `orientation`（退化为分步子菜单）。旧版运行时会忽略这个键，保持横向交互。
+
+## setClickAction(action)
+
+签名：`fb.tray.setClickAction(action: TraySetClickActionParams['action']): Promise<TraySetClickActionResponse>`
+
+默认 `event` 保留旧单击／双击事件。`toggleMainWindow` 按原生窗口状态显隐独立主窗口：可见且未最小化时隐藏，否则显示、恢复并请求聚焦。双击只切换一次，保留普通／最大化状态、位置尺寸与置顶设置；页面深挂起时同样可以执行。系统仍可能拒绝前台请求。
+
+这是进程级设置，可先于 `create()` 调用；多个页面最后一次成功设置生效。重复设置也取消待处理点击。重复创建和 Explorer 重建保留模式，`destroy()` 恢复为 `event`。面板模式返回 `PANEL_MODE_UNSUPPORTED`。
+
+原生模式不发送旧 `tray:click`／`tray:doubleClick`，右键菜单事件不变。初始化时先移除旧点击处理中的窗口命令；已在页面队列中的事件无法撤回，不应在用户操作图标时切换模式。
+
+通过 `fb.system.listApis()` 中是否包含 `tray.setClickAction` 检查宿主能力。
+
+```typescript
+await fb.tray.setClickAction('toggleMainWindow');
+await fb.tray.create();
+```

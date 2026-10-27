@@ -53,17 +53,17 @@ plman.ActivePlaylist = 2;
 
 ### 优势
 
-- ✓ SMP 脚本的同步读取语义得以保留，`fb.IsPlaying`、`plman.PlaylistCount` 等立即返回
-- ✓ 适合 UI 渲染场景（高频读取、低频写入），无需每帧 await
-- ✓ setter 的 fire-and-forget 设计使得赋值后立即读回新值，体验与 SMP 一致
-- ✓ 无死锁风险：JS 单线程 + 消息队列解耦，与底层 API 共享同一通信架构
-- ✓ 无额外攻击面：所有调用经过 BridgeCore 统一入口，受同样的安全检查
+- SMP 脚本的同步读取语义得以保留，`fb.IsPlaying`、`plman.PlaylistCount` 等立即返回。
+- 适合高频 UI 渲染场景，无需每帧进行异步 `await`。
+- setter 采用即时更新本地缓存 + 异步通知后端的机制，使赋值后立即重新读取能够得到预期值。
+- 无死锁风险：依托 Chromium 消息循环与事件驱动机制，与底层 Bridge 共享安全架构。
+- 无额外越权面：所有底层调用统一由 BridgeCore 接入并经历同等权限检查。
 
 ### 风险与注意事项
 
-**1. 缓存与后端的短暂不一致**
-
-写入后，缓存立即更新，但后端可能尚未处理完成。如果后端拒绝操作（例如索引越界），缓存不会自动回滚。但后端处理完成后会推送事件触发缓存刷新，不一致窗口通常 < 1 帧。
+1. **缓存与后端的短暂不一致**：写入后缓存立即更新。调用被拒绝（方法缺失、异常或超时）时缓存回滚；宿主返回失败结果（如越界）时不回滚，需等待后续宿主事件刷新。
+2. **初始化顺序**：必须先执行 `await window.smp.ready`，等待底层批量读取并填入初始缓存。
+3. **部分未完全等价的行为**：参见文末已知非 1:1 差异对照表。
 
 ## 架构概述
 
@@ -71,17 +71,17 @@ plman.ActivePlaylist = 2;
 
 **包装器类**（`sdk/smp/` 目录，按需自动加载）：
 
-| 文件 | 类 | 说明 |
+| 文件 | 类名 | 说明 |
 | --- | --- | --- |
-| utils.js | smpUtils | 共享工具模块（toHandleId、normalizeHandleList、buildMenuItems） |
-| FbMetadbHandle.js | FbMetadbHandle | 曲目句柄（Path、RawPath、SubSong、Length、FileSize、HandleId） |
-| FbMetadbHandleList.js | FbMetadbHandleList | 曲目列表（Count、Add、Remove、RemoveById、Find、Clone） |
-| FbTitleFormat.js | FbTitleFormat | 标题格式化（Expression、Eval、EvalWithMetadb、EvalWithMetadbs） |
-| FbProfiler.js | FbProfiler | 性能计时器（Time、Reset、Print） |
-| FbFileInfo.js | FbFileInfo | 文件元数据（MetaCount、InfoCount、MetaFind、MetaName、MetaValue、MetaValueCount） |
-| FbUiSelectionHolder.js | FbUiSelectionHolder | UI 选择持有者（SetSelection、SetPlaylistSelectionTracking、SetPlaylistTracking） |
-| ContextMenuManager.js | ContextMenuManager | 上下文菜单管理器（InitContext、InitContextPlaylist、InitNowPlaying、BuildMenu、ExecuteByID） |
-| MainMenuManager.js | MainMenuManager | 主菜单管理器（Init、BuildMenu、ExecuteByID） |
+| `utils.js` | `smpUtils` | 共享工具模块（`toHandleId`、`normalizeHandleList`、`buildMenuItems`） |
+| `FbMetadbHandle.js` | `FbMetadbHandle` | 曲目句柄（`Path`、`RawPath`、`SubSong`、`Length`、`FileSize`、`HandleId`） |
+| `FbMetadbHandleList.js` | `FbMetadbHandleList` | 曲目列表（`Count`、`Add`、`Remove`、`RemoveById`、`Find`、`Clone`） |
+| `FbTitleFormat.js` | `FbTitleFormat` | 标题格式化（`Expression`、`Eval`、`EvalWithMetadb`、`EvalWithMetadbs`） |
+| `FbProfiler.js` | `FbProfiler` | 性能计时器（`Time`、`Reset`、`Print`） |
+| `FbFileInfo.js` | `FbFileInfo` | 文件元数据（`MetaCount`、`InfoCount`、`MetaFind`、`MetaName`、`MetaValue`、`MetaValueCount`） |
+| `FbUiSelectionHolder.js` | `FbUiSelectionHolder` | UI 选择持有者（`SetSelection`、`SetPlaylistSelectionTracking`、`SetPlaylistTracking`） |
+| `ContextMenuManager.js` | `ContextMenuManager` | 上下文菜单管理器（`InitContext`、`InitContextPlaylist`、`InitNowPlaying`、`BuildMenu`、`ExecuteByID`） |
+| `MainMenuManager.js` | `MainMenuManager` | 主菜单管理器（`Init`、`BuildMenu`、`ExecuteByID`） |
 
 ### 缓存 + 事件机制
 
@@ -253,7 +253,7 @@ unsub(); // 取消订阅
 | `on_metadb_changed` | metadb:changed | (`handle_list`, `fromHook`) |
 | `on_library_items_added` | library:itemsAdded | () |
 | `on_library_items_removed` | library:itemsRemoved | () |
-| `on_library_items_changed` | library:itemsModified | () |
+| `on_library_items_changed` | library:itemsModified | (undefined, fromHook) |
 
 **音频/DSP/UI/窗口：**
 

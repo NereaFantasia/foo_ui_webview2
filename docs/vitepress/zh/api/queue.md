@@ -1,30 +1,30 @@
 # Queue 播放队列 API
 
-`queue` 命名空间的方法：读取与编辑播放队列。
+管理待播队列读取、单曲与批量入队、顺序调整及插播控制。
 
 ## Queue API - 播放队列
 
 ### queue.addPaths
 
 <!-- api-schema:begin queue.addPaths -->
-按路径把曲目加入队列。入队需要曲目先在某个播放列表里，所以路径会先追加到一个播放列表：默认是专用的 `[WebView Queue]` 列表，不存在则创建。目标播放列表已上锁时以 `LOCKED` 失败，不添加也不入队。路径解析完会重新查找目标列表，处理同 `playlist.addPaths`：期间被挪动，曲目照样加进它，结果里的 `playlist` 是它的新索引；期间被删掉，以 `OPERATION_FAILED` 失败，不入队。有一条路径没通过媒体根检查，整次调用以 `PERMISSION_DENIED` 失败。解析不出曲目的路径被丢弃；一条都解析不出时以 `NOT_FOUND` 失败，失败里带 `invalidCount`。
+按文件路径或 URL 将曲目加入待播队列；宿主会先将曲目追加至播放列表（默认专用 `[WebView Queue]` 列表，不存在则自动创建）后再入队；目标列表已锁定时以 `LOCKED` 失败且不执行追加与入队；路径解析后重新定位目标列表，若期间被删除则以 `OPERATION_FAILED` 失败；未通过媒体根目录安全检查时整次调用以 `PERMISSION_DENIED` 失败；解析失败的无效路径自动丢弃，无任一有效曲目时以 `NOT_FOUND` 失败并在 `invalidCount` 中注明
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
-| `paths` | `string[]` | 是 | 文件路径或 URL，每条可带 `\|subsong:N` 后缀。超过 2048 字符的条目丢弃并计入 `invalidCount`。不能为空。 |
-| `useQueuePlaylist` | `boolean` | 否 | 追加到专用的 `[WebView Queue]` 播放列表，不存在则创建。`false` 时用 `playlist`，它也省略时用活动播放列表。默认 `true`。 |
-| `playlist` | `integer` | 否 | 目标播放列表；只在 `useQueuePlaylist` 为 `false` 时读取。超出最后一个播放列表的索引以 `INVALID_INDEX` 失败；它与 `playlistGuid` 都省略且没有活动播放列表时以 `NO_ACTIVE_ITEM` 失败。不小于 `0`。 |
-| `playlistGuid` | `string` | 否 | 目标播放列表的 `guid`，用来代替 `playlist`；和 `playlist` 一样只在 `useQueuePlaylist` 为 `false` 时读取，否则完全不检查。 |
+| `paths` | `string[]` | 是 | 待追加的文件路径或 URL 列表，单项可附加 `\|subsong:N` 后缀；超过 2048 字符的条目将被丢弃并计入 `invalidCount`不能为空。 |
+| `useQueuePlaylist` | `boolean` | 否 | 是否追加至专用的 `[WebView Queue]` 播放列表（不存在则自动创建）；设为 `false` 时使用 `playlist` 或当前活动列表默认 `true`。 |
+| `playlist` | `integer` | 否 | 目标播放列表索引；仅在 `useQueuePlaylist: false` 时读取；越界以 `INVALID_INDEX` 失败，缺省且无活动列表时以 `NO_ACTIVE_ITEM` 失败不小于 `0`。 |
+| `playlistGuid` | `string` | 否 | 目标播放列表的唯一标识 `guid`；仅在 `useQueuePlaylist: false` 时读取 |
 
 **返回值**
 
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
-| `addedCount` | `integer` | 追加并入队的曲目数。 |
-| `invalidCount` | `integer` | 被丢弃的 `paths` 条数：空的、超过 2048 字符的、建不出曲目的 `\|subsong:N`，以及一条都没解析出来时的全部普通路径。同一次调用里别的普通路径解析出了曲目时，解析不出的普通路径不计入，所以成功的调用实际丢弃的可能比这个数多。 |
-| `playlist` | `integer` | 曲目被追加到的播放列表。 |
-| `playlistGuid` | `string` | 播放列表的 GUID，写成 `{XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX}`。作为 `playlistGuid` 传入，播放列表清单变了之后仍能指定这个列表。 |
-| `queueCount` | `integer` | 之后的队列长度。 |
+| `addedCount` | `integer` | 成功追加并加入待播队列的曲目总数 |
+| `invalidCount` | `integer` | 丢弃的无效路径数量（包含空路径、超长路径、无对应曲目的 subsong 或全量解析失败项） |
+| `playlist` | `integer` | 曲目最终追加到的目标播放列表索引 |
+| `playlistGuid` | `string` | 播放列表的唯一标识，格式为 `{XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX}`。后续可作为 `playlistGuid` 稳定引用该列表。 |
+| `queueCount` | `integer` | 本次操作完成后待播队列的总长度 |
 
 成功时 `success` 为 `true`；失败时返回 `{ success: false, error, code }`，`code` 见[错误码](../reference/errors.md)。
 <!-- api-schema:end -->
@@ -40,21 +40,22 @@ await fb2k.invoke('queue.addPaths', {
 ### queue.add
 
 <!-- api-schema:begin queue.add -->
-按播放列表中的位置把一首或多首曲目加入队列。超出最后一行的位置跳过；一个都不在范围内时以 `INVALID_INDEX` 失败。负数位置以 `INVALID_PARAMS` 失败。
+按播放列表行号将一首或多首曲目追加至待播队列；超出列表范围的索引自动忽略，无任一有效索引时以 `INVALID_INDEX` 失败，负数索引以 `INVALID_PARAMS` 失败
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
-| `playlist` | `integer` | 否 | 位置所指的播放列表；省略时为活动播放列表。超出最后一个播放列表的索引以 `INVALID_INDEX` 失败；省略且没有活动播放列表时以 `NO_ACTIVE_ITEM` 失败。不小于 `0`。 |
-| `playlistGuid` | `string` | 否 | 播放列表的 GUID，用来代替序号；写法带花括号，与 `playlist.getAll` 以及所有指明播放列表的结果、事件报出的一致；十六进制大小写均可。别的列表增删或重排时它仍指向同一个列表，序号做不到。同时给了它和序号，或 GUID 格式不对，以 `INVALID_PARAMS` 失败。列表已不存在时以 `NOT_FOUND` 失败，不会改用别的列表。GUID 格式不对与列表不存在这两种失败都以 `details.playlistGuid` 带回传入的 GUID。 |
-| `tracks` | `integer[]` | 否 | 要入队的行，按顺序。优先于 `track`。每一项不小于 `0`。 |
-| `track` | `integer` | 否 | 要入队的单个行；只在没传 `tracks` 时读取。不小于 `0`。 |
+| `playlist` | `integer` | 否 | 索引所引用的来源播放列表；省略时默认操作活动播放列表；越界以 `INVALID_INDEX` 失败，缺省且无活动列表时以 `NO_ACTIVE_ITEM` 失败不小于 `0`。 |
+| `playlistGuid` | `string` | 否 | 播放列表的持久唯一标识（带花括号 GUID，大小写均可）。用于替代易变序号。与序号互斥，同时传入或格式非法以 `INVALID_PARAMS` 失败。列表不存在时以 `NOT_FOUND` 失败，不回退至其他列表。格式非法或列表不存在时，错误详情均带回 `details.playlistGuid`。 |
+| `tracks` | `integer[]` | 否 | 待入队的播放列表行号数组，按传入顺序排列；优先级高于 `track`每一项不小于 `0`。 |
+| `track` | `integer` | 否 | 待入队的单个播放列表行号；仅在未提供 `tracks` 时生效不小于 `0`。 |
+| `expectedPlaylistVersion` | `string` | 否 | 播放列表预期内容版本号；仅在行所属播放列表的版本与此匹配时执行变更，版本冲突时不修改并以 `STALE_TARGET` 失败（`details.current` 返回当前最新版本），省略时不校验 |
 
 **返回值**
 
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
-| `addedCount` | `integer` | 入队的行数。 |
-| `queueCount` | `integer` | 之后的队列长度。 |
+| `addedCount` | `integer` | 成功加入待播队列的曲目行数 |
+| `queueCount` | `integer` | 本次操作完成后待播队列的总长度 |
 
 成功时 `success` 为 `true`；失败时返回 `{ success: false, error, code }`，`code` 见[错误码](../reference/errors.md)。
 <!-- api-schema:end -->
@@ -74,7 +75,7 @@ await fb2k.invoke('queue.add', { tracks: [0, 1, 2], playlist: 0 });
 ### queue.get
 
 <!-- api-schema:begin queue.get -->
-按播放顺序读取整个播放队列。不分页，全部条目一次返回。
+按播放顺序读取完整待播队列；不分页一次性返回全量条目
 
 无参数。
 
@@ -82,13 +83,14 @@ await fb2k.invoke('queue.add', { tracks: [0, 1, 2], playlist: 0 });
 
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
-| `items` | `QueueItem[]` | 条目，按播放顺序。 |
+| `items` | `QueueItem[]` | 队列条目列表，按播放先后顺序排列 |
 | `items[].…` | [Track](../reference/types.md#track) | 包含 [Track](../reference/types.md#track) 的全部字段。 |
-| `items[].queueIndex` | `integer` | 在队列中的位置，从 `0` 起。 |
-| `items[].playlist` | `integer \| null` | 条目入队时所在的播放列表；不带播放列表位置时为 `null`：按路径入队，或 foobar2000 为它记的位置上已不是这首曲目（行或列表被删掉，或各行挪动了）。 |
-| `items[].playlistGuid` | `string \| null` | 该播放列表的 GUID，写法与 `playlistGuid` 接受的一致；恰在 `playlist` 为 `null` 时为 `null`。 |
-| `items[].playlistItem` | `integer \| null` | 在该播放列表中的行号；恰在 `playlist` 为 `null` 时为 `null`。 |
-| `count` | `integer` | 条目数。 |
+| `items[].queueIndex` | `integer` | 在待播队列中的顺序索引（从 `0` 开始） |
+| `items[].playlist` | `integer \| null` | 条目入队时的来源播放列表索引；通过路径入队或原列表位置已失效时为 `null` |
+| `items[].playlistGuid` | `string \| null` | 来源播放列表的持久唯一标识；当且仅当 `playlist` 为 `null` 时返回 `null` |
+| `items[].playlistItem` | `integer \| null` | 条目在来源播放列表中的行号索引；当且仅当 `playlist` 为 `null` 时返回 `null` |
+| `count` | `integer` | 待播队列当前包含的条目总数 |
+| `contentVersion` | `string` | 队列当前内容版本号；后续位置操作可作为 `expectedVersion` 传入以避免并发冲突 |
 
 成功时 `success` 为 `true`；失败时返回 `{ success: false, error, code }`，`code` 见[错误码](../reference/errors.md)。
 <!-- api-schema:end -->
@@ -102,20 +104,22 @@ await fb2k.invoke('queue.add', { tracks: [0, 1, 2], playlist: 0 });
 ### queue.remove
 
 <!-- api-schema:begin queue.remove -->
-按 `index` 移除一条，或按 `indices` 移除多条。队列为空时不论给了什么都以 `NOT_FOUND` 失败。`index` 超出队尾以 `INVALID_INDEX` 失败。批量时重复的下标与超出队尾的下标跳过；一个都不在范围内时以 `INVALID_INDEX` 失败，失败里带 `removedCount` 为 `0` 与 `queueCount`。两个键都没给或下标为负数，以 `INVALID_PARAMS` 失败。
+按队列索引 `index` 或索引列表 `indices` 从待播队列中移除条目；队列为空时一律以 `NOT_FOUND` 失败；单项 `index` 越界以 `INVALID_INDEX` 失败；批量移除时跳过重复或越界索引，无任一有效索引时以 `INVALID_INDEX` 失败（错误详情附带 `removedCount: 0` 与 `queueCount`）；未提供索引或传入负数时以 `INVALID_PARAMS` 失败
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
-| `index` | `integer` | 否 | 要移除的一个队列位置。优先于 `indices`。不小于 `0`。 |
-| `indices` | `integer[]` | 否 | 要移除的队列位置；只在没传 `index` 时读取。每一项不小于 `0`。 |
+| `index` | `integer` | 否 | 待移除的单条队列位置索引；优先级高于 `indices`不小于 `0`。 |
+| `indices` | `integer[]` | 否 | 待批量移除的队列位置索引数组；仅在未提供 `index` 时读取每一项不小于 `0`。 |
+| `expectedVersion` | `string` | 否 | 预期内容版本，用于乐观并发控制。版本不匹配时不执行变更并以 `STALE_TARGET` 失败（`details.current` 返回当前最新版本）。省略时不校验。 |
 
 **返回值**
 
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
-| `removedIndex` | `integer` | 被移除的位置；只在传了 `index` 时返回。 |
-| `removedCount` | `integer` | 移除的条数；只在传了 `indices` 时返回。 |
-| `queueCount` | `integer` | 之后的队列长度。 |
+| `removedIndex` | `integer` | 成功移除的队列位置索引；仅在传入 `index` 时返回 |
+| `removedCount` | `integer` | 成功移除的队列条目总数；仅在传入 `indices` 时返回 |
+| `queueCount` | `integer` | 本次操作完成后待播队列的总长度 |
+| `contentVersion` | `string` | 变更后的队列最新内容版本号；可作为后续调用的 `expectedVersion` |
 
 成功时 `success` 为 `true`；失败时返回 `{ success: false, error, code }`，`code` 见[错误码](../reference/errors.md)。
 <!-- api-schema:end -->
@@ -133,7 +137,7 @@ await fb2k.invoke('queue.remove', { indices: [0, 2, 4] });
 ### queue.clear
 
 <!-- api-schema:begin queue.clear -->
-清空队列。
+清空待播队列中的所有条目
 
 无参数。
 
@@ -141,7 +145,7 @@ await fb2k.invoke('queue.remove', { indices: [0, 2, 4] });
 
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
-| `clearedCount` | `integer` | 队列原先的条目数。 |
+| `clearedCount` | `integer` | 清空前队列中原有的条目总数 |
 
 成功时 `success` 为 `true`；失败时返回 `{ success: false, error, code }`，`code` 见[错误码](../reference/errors.md)。
 <!-- api-schema:end -->
@@ -151,7 +155,7 @@ await fb2k.invoke('queue.remove', { indices: [0, 2, 4] });
 ### queue.flush
 
 <!-- api-schema:begin queue.flush -->
-清空队列；与 `queue.clear` 是同一个操作，这是它的旧名字。
+清空待播队列中的所有条目（旧名别名，功能同 `queue.clear`）
 
 无参数。
 
@@ -159,7 +163,7 @@ await fb2k.invoke('queue.remove', { indices: [0, 2, 4] });
 
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
-| `clearedCount` | `integer` | 队列原先的条目数。 |
+| `clearedCount` | `integer` | 清空前队列中原有的条目总数 |
 
 成功时 `success` 为 `true`；失败时返回 `{ success: false, error, code }`，`code` 见[错误码](../reference/errors.md)。
 <!-- api-schema:end -->
@@ -169,7 +173,7 @@ await fb2k.invoke('queue.remove', { indices: [0, 2, 4] });
 ### queue.getCount
 
 <!-- api-schema:begin queue.getCount -->
-报告队列里有多少条目。
+获取待播队列当前容纳的条目总数
 
 无参数。
 
@@ -177,8 +181,8 @@ await fb2k.invoke('queue.remove', { indices: [0, 2, 4] });
 
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
-| `count` | `integer` | 条目数。 |
-| `hasItems` | `boolean` | 队列是否非空；等于 `count > 0`。 |
+| `count` | `integer` | 待播队列当前包含的条目总数 |
+| `hasItems` | `boolean` | 待播队列是否非空（等同于 `count > 0`） |
 
 成功时 `success` 为 `true`；失败时返回 `{ success: false, error, code }`，`code` 见[错误码](../reference/errors.md)。
 <!-- api-schema:end -->
@@ -194,18 +198,20 @@ console.log(`队列中有 ${result.count} 项`);
 ### queue.moveToTop
 
 <!-- api-schema:begin queue.moveToTop -->
-把队列中的一条移到队首，使其下一首播放。只改队列顺序，其余条目的相对顺序不变。`index` 为 `0`、超出队尾，以及队列为空时的任何下标，都以 `INVALID_INDEX` 失败。队列重建不成时以 `OPERATION_FAILED` 失败，失败里带 `queueCount`。
+将指定队列位置的条目移动至队首以便下一首播放；仅调整队列排序，保持其他条目的相对顺序；传入 `index: 0`、越界索引或队列为空时均以 `INVALID_INDEX` 失败；队列重建失败时以 `OPERATION_FAILED` 失败（附带 `queueCount`）
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
-| `index` | `integer` | 是 | 要提到队首的条目位置；`0` 已经在队首，会被拒绝。不小于 `0`。 |
+| `index` | `integer` | 是 | 待提升至队首的队列条目位置索引；`0` 已在队首，传入将直接拒绝不小于 `0`。 |
+| `expectedVersion` | `string` | 否 | 预期内容版本，用于乐观并发控制。版本不匹配时不执行变更并以 `STALE_TARGET` 失败（`details.current` 返回当前最新版本）。省略时不校验。 |
 
 **返回值**
 
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
-| `movedIndex` | `integer` | 条目原来的位置。 |
-| `queueCount` | `integer` | 之后的队列长度。 |
+| `movedIndex` | `integer` | 被移动条目在调整前的原始位置索引 |
+| `queueCount` | `integer` | 本次操作完成后待播队列的总长度 |
+| `contentVersion` | `string` | 变更后的队列最新内容版本号；可作为后续调用的 `expectedVersion` |
 
 成功时 `success` 为 `true`；失败时返回 `{ success: false, error, code }`，`code` 见[错误码](../reference/errors.md)。
 <!-- api-schema:end -->
@@ -220,21 +226,24 @@ await fb2k.invoke('queue.moveToTop', { index: 3 });
 ### queue.setContents
 
 <!-- api-schema:begin queue.setContents -->
-用一份有序引用列表替换整个队列。任一条引用不可用，整次调用在写入前失败。空列表即清空队列。播放列表索引按调用到达时的清单解读，所以在列表清单变化之前取来的索引会把另一张列表的行加进队列；`playlistGuid` 始终指向读取时的那张列表。某一条同时给了 `playlist` 与 `playlistGuid`、或 GUID 格式不对，以 `INVALID_PARAMS` 失败；没有列表持有该 GUID 时以 `NOT_FOUND` 失败。
+使用指定的有序引用列表全量替换当前待播队列；任一引用项校验失败整次调用立即终止且不写入变更；传入空列表等同清空队列；播放列表索引以调用到达时的状态为准，使用 `playlistGuid` 可稳定引用目标列表；单项同时传入 `playlist` 与 `playlistGuid` 或 GUID 格式非法时以 `INVALID_PARAMS` 失败，GUID 未匹配到列表时以 `NOT_FOUND` 失败
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
-| `items` | `QueueContentRef[]` | 是 | 新的队列内容，按顺序。最多 `max(256, 当前队列长度)` 条，多了以 `INVALID_PARAMS` 失败。 |
-| `items[].queueIndex` | `integer` | 否 | 队列中已有条目的位置。不小于 `0`。 |
-| `items[].playlist` | `integer` | 否 | 要加入的行所在的播放列表；须与 `item` 同时给出。不小于 `0`。 |
-| `items[].playlistGuid` | `string` | 否 | 用 `guid` 指定要加入的行所在的播放列表，代替 `playlist`；须与 `item` 同时给出。 |
-| `items[].item` | `integer` | 否 | 该播放列表中的行号；须与 `playlist` 或 `playlistGuid` 同时给出。不小于 `0`。 |
+| `items` | `QueueContentRef[]` | 是 | 新的队列条目有序列表；最多支持 `max(256, 当前队列长度)` 项，超出上限以 `INVALID_PARAMS` 失败 |
+| `items[].queueIndex` | `integer` | 否 | 现有待播队列中待保留条目的位置索引不小于 `0`。 |
+| `items[].playlist` | `integer` | 否 | 待引入曲目所在的来源播放列表索引；须与 `item` 同时提供不小于 `0`。 |
+| `items[].playlistGuid` | `string` | 否 | 待引入曲目所在播放列表的 `guid`；须与 `item` 同时提供 |
+| `items[].item` | `integer` | 否 | 待引入曲目在目标播放列表中的行号索引；须与 `playlist` 或 `playlistGuid` 同时提供不小于 `0`。 |
+| `items[].expectedPlaylistVersion` | `string` | 否 | 目标播放列表预期内容版本号；仅在引入播放列表行时有效，与 `queueIndex` 一同传入时以 `INVALID_PARAMS` 失败 |
+| `expectedVersion` | `string` | 否 | 预期内容版本，用于乐观并发控制。版本不匹配时不执行变更并以 `STALE_TARGET` 失败（`details.current` 返回当前最新版本）。省略时不校验。 |
 
 **返回值**
 
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
-| `queueCount` | `integer` | 之后的队列长度。 |
+| `queueCount` | `integer` | 本次操作完成后待播队列的总长度 |
+| `contentVersion` | `string` | 变更后的队列最新内容版本号；可作为后续调用的 `expectedVersion` |
 
 成功时 `success` 为 `true`；失败时返回 `{ success: false, error, code }`，`code` 见[错误码](../reference/errors.md)。
 <!-- api-schema:end -->
@@ -259,25 +268,28 @@ await fb2k.invoke('queue.setContents', { items: [] });
 ### queue.insertNext
 
 <!-- api-schema:begin queue.insertNext -->
-插入曲目使其下一首播放，排在已入队的所有条目之前。已在队列中的曲目被移动而不是再入队一次。`items` 块排在 `paths` 块之前，各块内部保持传入顺序。`paths` 与 `items` 都没给时以 `INVALID_PARAMS` 失败。`items` 的每一条都在解析路径之前检查，任一条不合格整次调用失败，什么也不写：一条用 `playlist` 与 `playlistGuid` 两个都没给或都给了、或 GUID 格式不对，以 `INVALID_PARAMS` 失败；没有列表持有该 GUID 时以 `NOT_FOUND` 失败；播放列表序号或行号越界以 `INVALID_INDEX` 失败。有一条路径没通过媒体根检查，整次调用以 `PERMISSION_DENIED` 失败；解析不出曲目的路径被丢弃并计入 `invalidCount`，什么也没剩下可插入时以 `NOT_FOUND` 失败。解析路径期间某个播放列表行变了，以 `OPERATION_FAILED` 失败；队列重建不成同样如此。
+将指定曲目插入待播队列前端以便下一首播放；已存在于队列中的曲目直接前移而不重复入队；`items` 列表排在 `paths` 列表之前，各自保持输入顺序；未提供 `paths` 与 `items` 时以 `INVALID_PARAMS` 失败；在解析路径前预检所有 `items` 引用，任一项非法立即失败且不写入变更；路径未通过媒体根目录安全检查以 `PERMISSION_DENIED` 失败；无效路径自动丢弃并计入 `invalidCount`，无任一有效曲目插入时以 `NOT_FOUND` 失败；路径解析期间播放列表发生变动或队列重建失败以 `OPERATION_FAILED` 失败；在路径解析完成后写入队列前校验 `expectedVersion`
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
-| `paths` | `string[]` | 否 | 文件路径或 URL，每条可带 `\|subsong:N` 后缀。由此入队的条目不带播放列表位置。 |
-| `items` | `QueueListRef[]` | 否 | 播放列表行；由此入队的条目带该位置，播放游标会跟随。最多 `max(256, 当前队列长度)` 条，多了以 `INVALID_PARAMS` 失败。 |
-| `items[].playlist` | `integer` | 否 | 播放列表索引；与 `playlistGuid` 给一个。不小于 `0`。 |
-| `items[].playlistGuid` | `string` | 否 | 播放列表的 `guid`，代替 `playlist`。 |
-| `items[].item` | `integer` | 是 | 该播放列表中的行号。不小于 `0`。 |
-| `position` | `integer` | 否 | 插入位置，按移出被移动条目之后的队列计算；`0` 是队首。不小于 `0`。默认 `0`。 |
+| `paths` | `string[]` | 否 | 待插入的文件路径或 URL 列表，可附加 `\|subsong:N` 后缀；由此入队的条目不携带播放列表位置信息 |
+| `items` | `QueueListRef[]` | 否 | 待插入的播放列表行引用列表；由此入队的条目附带列表位置且播放游标会跟随；最多支持 `max(256, 当前队列长度)` 项 |
+| `items[].playlist` | `integer` | 否 | 目标播放列表的索引序号；与 `playlistGuid` 二选一传入不小于 `0`。 |
+| `items[].playlistGuid` | `string` | 否 | 目标播放列表的唯一标识 `guid`，替代易变序号 |
+| `items[].item` | `integer` | 是 | 目标播放列表中的行号索引不小于 `0`。 |
+| `items[].expectedPlaylistVersion` | `string` | 否 | 播放列表预期内容版本号；仅在行所属播放列表的版本与此匹配时执行变更，版本冲突时不修改并以 `STALE_TARGET` 失败（`details.current` 返回当前最新版本），省略时不校验 |
+| `position` | `integer` | 否 | 插入的目标队列位置（按移出既有移动条目后的队列计算）；`0` 表示队首不小于 `0`。默认 `0`。 |
+| `expectedVersion` | `string` | 否 | 预期内容版本，用于乐观并发控制。版本不匹配时不执行变更并以 `STALE_TARGET` 失败（`details.current` 返回当前最新版本）。省略时不校验。 |
 
 **返回值**
 
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
-| `insertedCount` | `integer` | 新入队的曲目数。 |
-| `movedCount` | `integer` | 已在队列中、被移动的条目数。 |
-| `queueCount` | `integer` | 之后的队列长度。 |
-| `invalidCount` | `integer` | 输入路径数减去由路径解析出的曲目数，最低为零。文件夹或播放列表文件会解析出多首曲目，所以它不是失败路径的条数。 |
+| `insertedCount` | `integer` | 全新加入待播队列的曲目总数 |
+| `movedCount` | `integer` | 既已存在于队列中并前移位置的条目总数 |
+| `queueCount` | `integer` | 本次操作完成后待播队列的总长度 |
+| `invalidCount` | `integer` | 输入路径数减去解析得出的曲目数（最小截断至 0）；文件夹展开等多曲目解析不反映为精确失败数 |
+| `contentVersion` | `string` | 变更后的队列最新内容版本号；可作为后续调用的 `expectedVersion` |
 
 成功时 `success` 为 `true`；失败时返回 `{ success: false, error, code }`，`code` 见[错误码](../reference/errors.md)。
 <!-- api-schema:end -->
@@ -312,18 +324,20 @@ await fb2k.invoke('queue.insertNext', { items: [{ playlist: 0, item: 12 }] });
 ### queue.playNow
 
 <!-- api-schema:begin queue.playNow -->
-立即播放队列中 `index` 处的条目；它不在队首时先移到队首。队列为空时以 `NOT_FOUND` 失败，`index` 超出队尾以 `INVALID_INDEX` 失败。需要移动条目而队列重建不成时以 `OPERATION_FAILED` 失败，不起播。
+立即起播队列中指定索引的条目；若目标不在队首则先行移至队首；队列为空时以 `NOT_FOUND` 失败，索引越界以 `INVALID_INDEX` 失败；条目移动后队列重建失败时以 `OPERATION_FAILED` 失败且不起播
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
-| `index` | `integer` | 否 | 要播放的队列位置。不小于 `0`。默认 `0`。 |
+| `index` | `integer` | 否 | 待起播的队列条目位置索引不小于 `0`。默认 `0`。 |
+| `expectedVersion` | `string` | 否 | 预期内容版本，用于乐观并发控制。版本不匹配时不执行变更并以 `STALE_TARGET` 失败（`details.current` 返回当前最新版本）。省略时不校验。 |
 
 **返回值**
 
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
-| `playedIndex` | `integer` | 被播放的位置。 |
-| `queueCount` | `integer` | 播放启动后立即读到的队列长度；宿主消费被播放条目可能在这次读取之前或之后。 |
+| `playedIndex` | `integer` | 实际执行起播的队列条目位置索引 |
+| `queueCount` | `integer` | 起播后立即读取的队列长度；宿主消费已播条目可能发生在读取之前或之后 |
+| `contentVersion` | `string` | 与 `queueCount` 同时读取的队列内容版本号 |
 
 成功时 `success` 为 `true`；失败时返回 `{ success: false, error, code }`，`code` 见[错误码](../reference/errors.md)。
 <!-- api-schema:end -->

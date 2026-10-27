@@ -8,7 +8,7 @@ Signature: `fb.replaygain.clear(paths: string[]): Promise<ReplaygainClearRespons
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| paths | string[] | Yes | File paths whose ReplayGain metadata should be cleared; at least one. A `\|subsong:N` suffix selects a subsong, such as one track of a CUE sheet. |
+| paths | string[] | Yes | File paths whose ReplayGain metadata should be cleared; at least one. A `\|subsong:N` suffix selects a subsong, such as one track of a CUE sheet |
 
 Removes the ReplayGain values from the files. The response carries `clearedCount`, the number of files handed to the tag writer. The tags are rewritten in the background, so read the files again with `get()` to see the values gone.
 
@@ -74,7 +74,7 @@ Signature: `fb.replaygain.scan(paths: string[], opts?: { mode?: 'track' | 'album
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| paths | string[] | Yes | Files to scan; an empty list fails with `INVALID_PARAMS`. A `\|subsong:N` suffix selects a subsong, such as one track of a CUE sheet. |
+| paths | string[] | Yes | Files to scan; an empty list fails with `INVALID_PARAMS`. A `\|subsong:N` suffix selects a subsong, such as one track of a CUE sheet |
 | opts | `{ mode?: 'track' \| 'album' }` | No | `mode` is `'track'` by default, which scans each file's own track gain; `'album'` treats the selection as one album |
 
 Starts foobar2000's own ReplayGain scanner on the files through its context-menu command. The promise resolves once the scan has started; the scanner writes the results to the files afterwards. The response carries `scannedCount`, the `mode` the scan runs in, and `note`, a fixed English sentence saying the scan runs in the background.

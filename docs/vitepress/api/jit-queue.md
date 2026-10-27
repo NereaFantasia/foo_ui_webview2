@@ -1,6 +1,6 @@
 # JIT Queue API
 
-Methods of the `jitQueue` namespace.
+Provides Just-In-Time dynamic queue scheduling for network streaming and dynamic playback scenarios.
 
 ## jitQueue
 
@@ -89,7 +89,7 @@ const result = await fb2k.invoke('jitQueue.notifyEmpty');
 ### jitQueue.playNow
 
 <!-- api-schema:begin jitQueue.playNow -->
-Start a new JIT session with this track: the buffer is cleared and playback begins. The host detects the URL kind itself (`http(s)://` streams, Windows or UNC paths are local).
+Start a new JIT session with this track: the buffer is cleared and playback begins. The host detects the URL kind itself (`http(s)://` streams, Windows or UNC paths are local). Tracks in the native playback queue are kept: when this track ends, foobar2000 plays them first and the JIT session ends.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
@@ -148,7 +148,7 @@ await fb2k.invoke('jitQueue.preloadBatch', { urls: moreUrls, replace: false });
 ### jitQueue.skip
 
 <!-- api-schema:begin jitQueue.skip -->
-Skip to the next buffered track. Refused with `NO_ACTIVE_ITEM` while no JIT session is active.
+Skip to the next buffered track. When a buffered track follows the playing one, it plays that track and leaves the native playback queue untouched. Otherwise it acts as foobar2000's Next command, which plays the first track of the native playback queue when the queue is not empty. Refused with `NO_ACTIVE_ITEM` while no JIT session is active.
 
 This method takes no parameters.
 
@@ -156,7 +156,7 @@ This method takes no parameters.
 
 | Field | Type | Description |
 | --- | --- | --- |
-| `currentTrackId` | `string` | Identifier of the track playing after the skip. |
+| `currentTrackId` | `string` | Identifier of the session's current track when the call returns. The skipped-to track has not started yet at that point, so this is still the track being skipped; the new one is reported by `jitQueue:trackChanged`. |
 
 `success` is `true` on success. On failure the response is `{ success: false, error, code }`; see [Error codes](../reference/errors.md) for `code`.
 <!-- api-schema:end -->

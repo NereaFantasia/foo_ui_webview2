@@ -49,7 +49,7 @@ const albums = await fb.library.getAlbums(50);
 
 > 每位参与艺术家各成一个条目，一首多艺术家曲目会计进其中每一位。`trackCount` 是参与曲目数，各条目相加会大于曲目总数；`albumCount` 与 `totalDuration` 同样按每位艺术家重复计入。
 
-> `includeAlbums` 在本调用本来就要做的那一遍扫描里给出整个媒体库的「艺术家 → 专辑」映射，不必逐位艺术家各扫一遍 `getArtistAlbums`。每个 `albums` 元素的 `(name, artist)` 就是 `getAlbums` 分组用的身份（`artist` 取 `album artist` 首值，缺则取 `artist` 首值），因此恰好对上 `getAlbums` 的一行。元素按这一对去重，先按 `name`、再按 `artist` 排序；`albumCount` 仍只按专辑名去重，同名但专辑艺术家不同的两张专辑在 `albumCount` 里算 1、在 `albums` 里是 2 条。
+> `includeAlbums` 在本调用本来就要做的那一遍扫描里给出整个媒体库的「艺术家 → 专辑」映射，不必逐位艺术家各扫一遍 `getArtistAlbums`。每个 `albums` 元素的 `(name, artist)` 就是 `getAlbums` 分组用的身份（`artist` 取 `album artist` 首值，缺则取 `artist` 首值），没有 `albumId` 时，这对值恰好对上 `getAlbums` 的一行；存在标识时改按标识匹配，不用显示名称。元素按这一对的原始字节去重，先按 `name`、再按 `artist` 排序；`albumCount` 仍只按专辑名去重，同名但专辑艺术家不同的两张专辑在 `albumCount` 里算 1、在 `albums` 里是 2 条。
 
 ```javascript
 const artists = await fb.library.getArtists(100);
@@ -167,6 +167,26 @@ if (r.found) console.log(r.title, r.artist);
 ```
 
 > 扁平结果里 `artists` 与 `artist` 并列，含义与 `getAll()` 的行一致：`artists.join(', ')` 恰好等于 `artist`。本方法不返回 `albumArtist` / `composer`，因此只多 `artists` 这一个数组键。
+
+## getChanges(params?)
+
+获取媒体库 `epoch`、`revision` 及指定修订号之后发生变化的 handle，用于本地增量同步。参数缺省或与当前记录不匹配时，返回 `resync: true` 与全量 handle。媒体库载入完成前以 `OPERATION_PENDING` 失败。使用说明见[本地副本的增量同步](../api/library.md#keeping-a-local-copy)。
+
+```javascript @ts-nocheck
+const r = await fb.library.getChanges({ epoch: mark.epoch, since: mark.revision });
+if (r.success === false) throw new Error(r.error);
+const toFetch = r.resync ? r.handles : r.changed;
+```
+
+## getTracks(handles, fields?)
+
+按给定顺序获取最多 5000 个 handle 对应的媒体库曲目行。不存在或未启用时的 handle 放入 `missing`。可选参数 `fields` 用于限定返回字段，用法同 `query()`。
+
+```javascript @ts-nocheck
+const r = await fb.library.getTracks(toFetch.slice(0, 5000), ['handle', 'title', 'album']);
+if (r.success === false) throw new Error(r.error);
+console.log(r.tracks.length, r.missing.length);
+```
 
 ## getRoots()
 
@@ -303,13 +323,13 @@ for await (const node of fb.library.enumerateDirectories({ rootPath: '', strateg
 
 ## getAlbumTracks(album, albumArtist)
 
-取 `getAlbums` 里一张专辑的曲目，先按碟号、再按曲号、再按媒体库顺序排序。两个参数原样传该行的 `name` 与 `albumArtist`：都逐字节比较，`total` 就等于该行的 `trackCount`。该行的 `artist` 不是同一个键；`albumArtist` 为 `""` 时也要传 `""`。宿主保留归组结果到媒体库变化为止，重复调用不会重扫媒体库。
+取 `getAlbums` 里一张专辑的曲目，先按碟号、再按曲号、再按媒体库顺序排序。前两个参数原样传该行的 `name` 与 `albumArtist`；行带标识时，第三个可选参数传 `{ albumId: album.albumId }`。没有标识时按名称逐字节比较；有标识时按原始身份查找，即使替换字符让显示名称相同也不会混淆。`total` 等于该行的 `trackCount`。该行的 `artist` 不是同一个键；`albumArtist` 为 `""` 时也要传 `""`。宿主保留归组结果到媒体库变化为止，重复调用不会重扫媒体库。空或畸形标识以 `INVALID_PARAMS` 失败，不回退到按名称查询。
 
 ```javascript
 const page = await fb.library.getAlbums({ limit: 1 });
 const album = page.success ? page.albums[0] : undefined;
 if (album) {
-    const res = await fb.library.getAlbumTracks(album.name, album.albumArtist);
+    const res = await fb.library.getAlbumTracks(album.name, album.albumArtist, album);
 }
 ```
 
@@ -346,11 +366,11 @@ const paths = await fb.library.query('%codec% IS FLAC', undefined, 100000, [
 
 `query(..., fields)` 与 `search(query, limit, { fields })` 支持可选的曲目字段名列表。省略时每行输出媒体库曲目行的全部键。
 
-传了列表时，每行**恰好**包含请求的那几个键，不附带任何未请求字段，所以行的类型是 `LibraryTrackPartial`。元数据容器读取失败的损坏条目同样输出全部请求键，缺失值以类型默认值填充（空串、0）。响应信封不受影响。
+传了列表时，每行只包含请求的键，不附带任何未请求字段，所以行的类型是 `LibraryTrackPartial`。元数据容器读取失败的损坏条目仍输出请求的非可选键，缺失值以类型默认值填充（空串、0）。可选的 `albumId` 在没有标识时省略，即使请求了该键也是如此。响应信封不受影响。
 
 **可用字段名**（精确匹配、大小写敏感）：
 
-`index`、`handle`、`title`、`artist`、`artists`、`album`、`albumArtist`、`albumArtists`、`genre`、`date`、`trackNumber`、`discNumber`、`duration`、`path`、`absolutePath`、`fileSize`、`bitrate`、`sampleRate`、`channels`、`codec`、`subsong`、`rating`
+`index`、`handle`、`title`、`artist`、`artists`、`album`、`albumId`、`albumArtist`、`albumArtists`、`genre`、`date`、`trackNumber`、`discNumber`、`duration`、`path`、`absolutePath`、`fileSize`、`bitrate`、`sampleRate`、`channels`、`codec`、`subsong`、`rating`
 
 > `artist` / `albumArtist` / `genre` / `composer`（仅指该 API 实际返回的字段）的多值标签按 `, ` 原序拼接，不去重。
 
@@ -423,9 +443,9 @@ await fb.library.addToPlaylist(['E:\\Music\\song.flac'], 0);
 | options.sort | string | 否 | `name`（默认）、`artist`、`year` 或 `trackCount`；取值无法识别时回退到 `name` |
 | options.match | `'exact' \| 'substring'` | 否 | `exact`（默认）要求整个原子值逐字节相等；`substring` 按包含匹配、大小写规则较宽；取值无法识别时直接拒绝，不回退 |
 
-返回该艺术家参与的专辑。行的键集与 `getAlbums` 相同，只少 `coverDataUrl` 与 `tracks`——要封面就把行里的 `firstTrackAbsolutePath` 交给 `artwork.getForTrack`，`firstTrackPath` 可能是 `file-relative://` 形态、那种形态该端点不受理。
+返回该艺术家参与的专辑。行的键集与 `getAlbums` 相同，不带 `coverDataUrl` 与 canonical 专辑的 `albumId`，另有 `tracks` 引用该艺人在本组中的成员——要封面就把行里的 `firstTrackAbsolutePath` 交给 `artwork.getForTrack`，`firstTrackPath` 可能是 `file-relative://` 形态、那种形态该端点不受理。
 
-`trackCount`、`duration` 与 `discCount` 只统计该艺术家参与的曲目、不是整张专辑，因此只要该艺术家只参与了一部分，就与 `getAlbums` 给的数字不一致。该差异与分组规则见 [`library.getArtistAlbums`](../api/library.md#library-getartistalbums)。
+`trackCount`、`duration` 与 `discCount` 只统计该艺术家参与的曲目，因此只要该艺术家只参与了一部分，就与 `getAlbums` 给的数字不一致。每行的 `tracks` 就是这些成员；引用的 `path` 与 `subsong` 一起定位子曲目。使用这些引用，不要再按显示名称筛选其他曲目。这些行不提供 `albumId`，因为归组口径不同于 `getAlbums`。分组规则见 [`library.getArtistAlbums`](../api/library.md#library-getartistalbums)。
 
 ```javascript
 const res = await fb.library.getArtistAlbums('The Beatles', 50);

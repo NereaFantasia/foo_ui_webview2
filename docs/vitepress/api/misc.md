@@ -1,6 +1,6 @@
 # Misc API
 
-Methods of the `misc` namespace.
+Provides system path queries and native foobar2000 host UI commands.
 
 ## misc
 

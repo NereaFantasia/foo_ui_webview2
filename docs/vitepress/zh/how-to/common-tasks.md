@@ -1,8 +1,8 @@
 # 常见任务
 
-下面每一节用原生 bridge `fb2k` 完成一项常见任务，给出可以照着改的完整示例。同样的调用在 [SDK](/zh/sdk/namespaces) 里都有对应的 `fb.*` 方法。
+本指南演示通过原生 Bridge 实例 `fb2k` 执行常见控制任务的完整代码范例。所有调用在 [SDK](/zh/sdk/namespaces) 中均提供类型完备的对应 `fb.*` 方法。
 
-## 场景 1：构建播放器界面 
+## 场景 1：构建播放器界面
 
 ```javascript
 // ========== 工具函数：判断静态文件 ==========
@@ -60,7 +60,7 @@ volumeSlider.oninput = async (e) => {
 };
 
 // ========== 事件监听 ==========
-let currentDuration = 0; // playback:time 只带播放位置
+let currentDuration = 0; // playback:time 仅携带播放位置
 
 fb2k.on('playback:trackChanged', async (track) => {
     currentDuration = track.duration;
@@ -83,7 +83,7 @@ fb2k.on('playback:volumeChanged', (data) => {
 });
 ```
 
-## 场景 2：播放列表管理 
+## 场景 2：播放列表管理
 
 ```javascript
 // ========== 加载播放列表 ==========
@@ -136,7 +136,7 @@ fb2k.on('playlist:created', () => loadPlaylists());
 fb2k.on('playlist:removed', () => loadPlaylists());
 ```
 
-## 场景 3：媒体库搜索与封面获取 
+## 场景 3：媒体库搜索与封面获取
 
 ```javascript
 // ========== 搜索媒体库 ==========
@@ -180,7 +180,7 @@ async function loadAlbums() {
 }
 ```
 
-## 场景 4：窗口与外观控制 
+## 场景 4：窗口与外观控制
 
 ```javascript
 // ========== 窗口控制 ==========
@@ -217,11 +217,11 @@ document.querySelectorAll('.titlebar-button').forEach(btn => {
 });
 ```
 
-## 场景 5：全局快捷键 
+## 场景 5：全局快捷键
 
 ```javascript
 async function registerHotkeys() {
-    // C++ contract：key + action（+ 可选 global）。注册成功返回数字 id。
+    // C++ 契约：key + action（可选 global），注册成功返回数字 id
     await fb2k.invoke('keyboard.registerHotkey', {
         key: 'Ctrl+Shift+Space',
         action: 'play-pause',
@@ -245,7 +245,7 @@ fb2k.on('keyboard:hotkey', async (data) => {
 registerHotkeys();
 ```
 
-## 场景 6：配置与文件存储 
+## 场景 6：配置与文件存储
 
 ```javascript
 const CONFIG_PREFIX = 'myapp.';
@@ -283,17 +283,17 @@ async function exportPlaylistToFile() {
 }
 ```
 
-## 场景 7：路径处理与封面获取最佳实践 
+## 场景 7：路径处理与封面获取最佳实践
 
 ```javascript
-// ❌ 错误：使用 path 可能失败
+// ❌ 错误：使用 path 可能因相对路径或非文件协议失败
 const tracks = await fb2k.invoke('playlist.getTracks', { count: 1 });
 if (tracks.success === false) throw new Error(tracks.error);
 const artwork = await fb2k.invoke('artwork.getForTrack', {
     path: tracks.tracks[0].path  // 可能是 file-relative://...
 });
 
-// ✅ 正确：使用 absolutePath
+// ✅ 正确：使用 absolutePath 绝对路径
 const t = tracks.tracks[0];
 if (getFileType(t.absolutePath) !== 'stream') {
     const artwork = await fb2k.invoke('artwork.getForTrack', {
@@ -301,7 +301,7 @@ if (getFileType(t.absolutePath) !== 'stream') {
     });
 }
 
-// ✅ 更好：使用 getByPlaylistItem（不需要路径，自动处理）
+// ✅ 推荐：使用 getByPlaylistItem，无需路径并自动处理定位
 const artwork = await fb2k.invoke('artwork.getByPlaylistItem', {
     playlist: 0, index: 0, type: 'front'
 });

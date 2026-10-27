@@ -33,12 +33,12 @@ C++ BridgeCore -> foobar2000 SDK
 
 | Characteristic | Behavior |
 | --- | --- |
-| Pre-connect | After the stdio server starts, it attempts a CDP connection; a failed attempt is retried on the first tool call. |
-| Screenshot warm-up | Each successful CDP connection performs a best-effort 1×1 PNG capture before real screenshots. No fixed timing guarantee is implied. |
-| Automatic reconnect | A disconnected client retries with 1 s, 2 s, and 4 s delays after the initial attempt. |
-| Console recording | From the first connection on, the server collects the page's console messages and uncaught exceptions, together with the earlier ones the page still holds, and keeps the last 200. |
-| Rate limit | 40 tool calls in a burst, then 20 a second. |
-| Structured logging | JSON Lines are written to stderr so stdout remains available for MCP stdio traffic. |
+| Pre-connect | Initiates a CDP connection on startup; retries on the first tool call if disconnected |
+| Screenshot warm-up | Captures a 1×1 PNG to warm up the rendering pipeline before taking real screenshots |
+| Automatic reconnect | Reconnects automatically with 1 s, 2 s, and 4 s exponential backoff delays |
+| Console recording | Buffers console messages and uncaught exceptions (including pre-existing logs, up to 200) |
+| Rate limit | Allows bursts of up to 40 calls, sustained at 20 calls/second |
+| Structured logging | Writes JSON Lines to stderr to keep stdout clear for MCP JSON-RPC traffic |
 
 ## Tools
 

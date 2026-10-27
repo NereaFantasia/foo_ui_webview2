@@ -80,15 +80,15 @@ fb.off('playback:time', handler);
 
 | 事件名 | 触发时机 | 数据 |
 | --- | --- | --- |
-| library:itemsAdded | 媒体库新增项目 | {count, timestamp} |
-| library:itemsRemoved | 媒体库移除项目 | {count, timestamp} |
-| library:itemsModified | 媒体库项目修改 | {count, timestamp} |
+| library:itemsAdded | 媒体库新增项目 | {count, handles, truncated, timestamp} |
+| library:itemsRemoved | 媒体库移除项目 | {count, handles, truncated, timestamp} |
+| library:itemsModified | 媒体库项目修改 | {count, handles, truncated, fromHook, timestamp} |
 | library:initialized | 媒体库初始化完成 | {timestamp} |
 | library:getAllResult | 异步 `library.getAll` 结果就绪 | LibraryGetAllResultPayload |
 | metadata:writeComplete | 异步元数据写入完成 | MetadataWriteCompletePayload |
 | metadata:probeProgress | 异步批量探测的一批结果就绪 | MetadataProbeProgressPayload |
 | metadata:probeComplete | 异步批量探测收尾（完成 / 取消 / 失败） | MetadataProbeCompletePayload |
-| metadb:changed | 元数据变化 | {tracks, count, fromHook, timestamp} |
+| metadb:changed | 元数据变化 | {tracks, count, handles, truncated, fromHook, timestamp} |
 | selection:changed | 全局选择变化（50ms 节流） | {count, type, handles, truncated, track?, nowPlaying?} |
 
 ## 音频事件

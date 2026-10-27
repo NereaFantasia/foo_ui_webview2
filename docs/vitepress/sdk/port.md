@@ -89,7 +89,7 @@ Closes the port and announces it with `port:disconnected`. Only the window that 
 ```javascript
 const res = await fb.port.connect('transport');
 if (res.success === false) throw new Error(res.error);
-// The port stays open until it is no longer needed.
+// The port stays open until it is no longer needed
 await fb.port.disconnect(res.portId);
 ```
 

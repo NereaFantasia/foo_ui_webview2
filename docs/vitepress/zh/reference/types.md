@@ -1,6 +1,6 @@
 # 共享类型
 
-多个命名空间共同返回的形状。各方法自己的返回值表只链接到这里，不重复列字段。
+多个命名空间共同返回的数据结构形状。各方法自身的返回值文档直接链接至此处，避免重复定义字段语义。
 
 ## Track
 
@@ -17,8 +17,9 @@
 | `artist` | `string` | 全部 ARTIST 值用 `", "` 连接；没有标签时为空。 |
 | `artists` | `string[]` | 全部 ARTIST 值，按标签顺序；没有标签时为空数组。 |
 | `album` | `string` | 第一个 ALBUM 值；没有标签时为空。 |
+| `albumId` | `string` | 原始专辑名或专辑艺术家含非法 UTF-8 时提供的不透明身份标识。此时用它匹配专辑行，不用显示名称；普通名称不带此字段。 |
 | `albumArtist` | `string` | 全部 ALBUM ARTIST 值用 `", "` 连接；没有标签时为空。 |
-| `albumArtists` | `string[]` | 全部 ALBUM ARTIST 值，按标签顺序，`albumArtists.join(", ")` 等于 `albumArtist`；没有标签时为空数组。`library.getAlbums` 把有 `album` 的曲目归入名为 `album`、专辑艺术家为 `albumArtists[0]` 的专辑，本数组为空时取 `artists[0]`（两者都空时为 `""`）；这两个值就是该专辑行的 `name` 与 `albumArtist`。 |
+| `albumArtists` | `string[]` | 全部 ALBUM ARTIST 值，按标签顺序，`albumArtists.join(", ")` 等于 `albumArtist`；没有标签时为空数组。`library.getAlbums` 把有 `album` 的曲目归入名为 `album`、专辑艺术家为 `albumArtists[0]` 的专辑，本数组为空时取 `artists[0]`（两者都空时为 `""`）；这两个值就是该专辑行的 `name` 与 `albumArtist`。存在 `albumId` 时应改用它匹配，因为替换字符可能让不同原始名称显示相同。 |
 | `genre` | `string` | 全部 GENRE 值用 `", "` 连接；没有标签时为空。 |
 | `date` | `string` | 第一个 DATE 值，按标签原样，如 `2019` 或 `2019-05-01`；没有标签时为空。 |
 | `trackNumber` | `integer` | TRACKNUMBER 按整数读取；缺失或不是数字时为 `0`。 |

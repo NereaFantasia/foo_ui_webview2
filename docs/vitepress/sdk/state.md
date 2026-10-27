@@ -46,7 +46,7 @@ setInterval(() => {
 ### Reading State from an Event Handler
 
 ```javascript
-// The SDK updates state before consumer handlers run for this event.
+// The SDK updates state before consumer handlers run for this event
 fb.on('playback:trackChanged', () => {
     const track = fb.state.currentTrack;
     if (track) document.title = `${track.title} - ${track.artist}`;

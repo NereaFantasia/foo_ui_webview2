@@ -331,7 +331,7 @@ await fb2k.invoke('audio.setChannelMode', { mode: 'default' });
 ### audio.analyzeBPM
 
 <!-- api-schema:begin audio.analyzeBPM -->
-读曲目的 `BPM` 标签，宿主不做节拍检测。foobar2000 缓存的信息齐全时用缓存，否则读文件本身，所以不在任何播放列表或媒体库里的曲目也行。
+读取曲目元数据中的 `BPM` 标签（宿主不执行音频节拍分析算法）。缓存信息齐全时使用 foobar2000 内存缓存，否则直接读取音频文件，支持未加入播放列表或媒体库的曲目。
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
@@ -388,8 +388,8 @@ if (result.success === true) {
 | `waveform` | `number[]` | `ready` 应答：各点，按 `maxAmplitude` 归一化。 |
 | `maxAmplitude` | `number` | `ready` 应答：归一化前所选序列的最大值，线性满幅单位。`linear` 刻度下 `waveform[i] * maxAmplitude` 还原电平；`db` 刻度下 dBFS 为 `(v * 60 - 60) + 20 * log10(maxAmplitude)`。 |
 | `duration` | `number` | `ready` 应答：曲目长度，秒。 |
-| `sampleRate` | `integer` | `ready` 应答：采样率，Hz。 |
-| `channels` | `integer` | `ready` 应答：声道数。 |
+| `sampleRate` | `integer` | `ready` 应答：实际解码 PCM 的采样率，Hz，可能不同于文件的标称采样率。 |
+| `channels` | `integer` | `ready` 应答：实际解码 PCM 的声道数。 |
 | `resolution` | `integer` | 使用的点数。 |
 | `method` | `"rms" \| "peak"` | 同请求。 |
 | `scale` | `"linear" \| "db"` | 同请求。 |
@@ -665,7 +665,7 @@ if (info.playing) {
 ### audio.isVisualizationAvailable
 
 <!-- api-schema:begin audio.isVisualizationAvailable -->
-报告 foobar2000 是否提供可视化流。频谱帧与 getWaveform 都要靠它。
+报告 foobar2000 当前是否提供音频可视化流。`subscribeSpectrum` 与 `getWaveform` 依赖此流。
 
 无参数。
 
@@ -695,7 +695,7 @@ if (result.available) {
 <!-- api-schema:begin audio.subscribeStream -->
 实验性 API，后续版本可能发生变化。
 
-订阅 foobar2000 正在播放的音频：核心播出的每一块都写进与页面共享的环形缓冲，一个订阅一块。缓冲随第一块音频以 `chrome.webview` 的 `sharedbufferreceived` 事件到达；采样率或声道数变化时再投一块新的（`epoch` 加一），并以 `audio:stream` 通知旧的一代结束。停止或暂停期间没有任何投递。
+订阅 foobar2000 正在播放的实时 PCM 音频。foobar2000 播出的每个音频数据块均拷贝至与页面共享的环形缓冲（每个订阅独立分配）。缓冲随首个音频块通过 `chrome.webview` 的 `sharedbufferreceived` 事件交付；采样率或声道数变更时分配新缓冲并递增 `epoch`，同时通过 `audio:stream` 发送旧纪元结束通知。播放停止或暂停时不派发数据。
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
@@ -871,8 +871,8 @@ const { runtime, decode } = res;
 
 ## 运行时行为说明
 
-- `audio.subscribeSpectrum` 为调用方窗口创建订阅，`subscriptionId` 相同时替换原有的那个。不给 `subscriptionId` 时，键由调用方窗口与 `event` 推出；帧以 `event` 为事件名送达，默认 `audio:spectrum`。SDK 的 `fb.audio.subscribeSpectrum()` 建立的是同一种订阅。
-- 频谱订阅之间不共享参数。宿主的计时线程用高精度定时器，按请求中最高的 `fps` 走拍，每个订阅到了自己的间隔才出帧，所以推送的实际帧率接近请求值；实际 FFT 大小、频带数、`scale` 与频率范围都相同的订阅每拍共用一次 FFT。宿主主线程的开销随帧数增加，每帧约 0.5 ms。
-- `db` 档反映 ReplayGain 与 DSP 处理之后、音量控制之前的信号，调节音量不改变读数。
-- `audio.getSpectrum` 与 `audio.getWaveform` 读取可视化流。没有任何频谱订阅时两者都以 `OPERATION_FAILED` 失败；`audio.getSpectrum` 在播放中但流还没有数据时同样失败，暂停或停止时回一帧静音帧。
-- `audio.generateFullWaveform` 命中缓存时返回带数据的 `status: "ready"`，否则返回带 `taskId` 的 `status: "pending"`。调用方会收到 `audio:fullWaveformReady` 或 `audio:fullWaveformFailed`；`cueIndex` 优先于 `path|subsong:N` 后缀。
+- **频谱订阅与标识**：`audio.subscribeSpectrum` 为调用方窗口创建频谱订阅；传入相同 `subscriptionId` 时将替换已有订阅。若省略 `subscriptionId`，订阅键由调用方窗口标识与 `event` 联合推导。帧数据以 `event` 作为事件名派发（默认 `audio:spectrum`）。SDK 的 `fb.audio.subscribeSpectrum()` 使用相同底层机制。
+- **调度线程与性能优化**：各频谱订阅独立维护参数。宿主后台计时线程运行在高精度定时器上，以所有订阅中的最高 `fps` 作为调度节拍；各订阅仅在自身周期到达时派发帧。当多个订阅具有相同的实际 FFT 大小、频带数、`scale` 与频率范围时，单拍内复用同一次 FFT 运算。主线程帧派发开销随帧率递增（单帧约 0.5 ms）。
+- **信号采样点**：`scale: 'db'` 刻度采样自 ReplayGain 与 DSP 之后、系统主音量控制之前的音频信号，因此调节输出音量不会改变频谱读数。
+- **可视化流依赖**：`audio.getSpectrum` 与 `audio.getWaveform` 依赖实时可视化流。当不存在任何频谱订阅时，两类调用均以 `OPERATION_FAILED` 失败；正在播放但流缓冲尚无数据时亦返回失败；暂停或停止状态下则返回全零静音帧。
+- **全曲波形生成生命周期**：`audio.generateFullWaveform` 若命中缓存，直接返回带有数据的 `status: "ready"`；未命中则返回带有 `taskId` 的 `status: "pending"`，并在后台解码完成后通过 `audio:fullWaveformReady` 或 `audio:fullWaveformFailed` 交付。入参中的 `cueIndex` 优先级高于 `path|subsong:N` 后缀。

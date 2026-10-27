@@ -2,7 +2,7 @@
 
 > For full-library enumeration, prefer `getCount()` plus paged `getAll(start, count)`, or use `enumerateTracks()`. Use `getRoots()` for real library roots, `browseTree()` for typed directory browsing, and `enumerateTree()` for high-level traversal. `browseDirectory()` and `enumerateDirectories()` are deprecated legacy projection APIs.
 
-## search(query, limit?) 
+## search(query, limit?)
 
 Searches the media library and returns a `LibrarySearchResponse`.
 
@@ -27,7 +27,7 @@ const narrow = await fb.library.search('artist HAS Beatles', 500, {
 });
 ```
 
-## getAlbums(limit?) 
+## getAlbums(limit?)
 
 Returns album aggregates. Pass either a numeric limit or a `LibraryGetAlbumsParams` object.
 
@@ -36,7 +36,7 @@ const albums = await fb.library.getAlbums(50);
 // { albums: [{ name, artist, trackCount, duration, ... }], total, offset, limit, hasMore }
 ```
 
-## getArtists(limit?) 
+## getArtists(limit?)
 
 Returns artist aggregates.
 
@@ -49,7 +49,7 @@ Resolves to `LibraryArtistsResponse`; each `items` row is an `ArtistInfo` — `{
 
 > Every credited artist gets its own entry, so a track tagged with several artists is counted under each of them. `trackCount` is a participation count and the entries add up to more than the total number of tracks; `albumCount` and `totalDuration` are counted per artist the same way.
 
-> `includeAlbums` returns the whole "artist → albums" mapping from the single library scan this call already performs, instead of one `getArtistAlbums` scan per artist. Each `albums` element's `(name, artist)` is the identity `getAlbums` groups by (`artist` = first `album artist` value, falling back to the first `artist` value), so it pairs with exactly one `getAlbums` row. Elements are de-duplicated by that pair and sorted by `name`, then `artist`; `albumCount` still de-duplicates by album name only, so two same-named albums by different album artists are 1 in `albumCount` and 2 in `albums`.
+> `includeAlbums` returns the whole "artist → albums" mapping from the single library scan this call already performs, instead of one `getArtistAlbums` scan per artist. Each `albums` element's `(name, artist)` is the identity `getAlbums` groups by (`artist` = first `album artist` value, falling back to the first `artist` value), so it pairs with exactly one `getAlbums` row when no `albumId` is present. With `albumId`, match by that ID instead of the display names. Elements are de-duplicated by the original bytes of that pair and sorted by `name`, then `artist`; `albumCount` still de-duplicates by album name only, so two same-named albums by different album artists are 1 in `albumCount` and 2 in `albums`.
 
 ```javascript
 const artists = await fb.library.getArtists(100);
@@ -61,7 +61,7 @@ const { items } = res;
 const albumsByArtist = new Map(items.map((a) => [a.name, a.albums]));
 ```
 
-## getStats() 
+## getStats()
 
 Returns aggregate statistics such as `totalTracks`, `totalAlbums`, `totalArtists`, `totalDuration`, and `totalSize`.
 
@@ -73,7 +73,7 @@ if (stats.success === false) throw new Error(stats.error);
 console.log(`${stats.totalTracks} tracks, ${stats.totalDuration} seconds`);
 ```
 
-## getGenres() 
+## getGenres()
 
 Returns `{ success, genres: [{ name, trackCount }] }`.
 
@@ -84,7 +84,7 @@ const r = await fb.library.getGenres();
 // {genres: [{name: 'Rock', trackCount: 5000}, ...]}
 ```
 
-## getStatus() 
+## getStatus()
 
 Returns media-library state, including `initialized` and optional `enabled`, `scanning`, `itemCount`, and `count` fields.
 
@@ -94,7 +94,7 @@ if (s.success === false) throw new Error(s.error);
 if (s.initialized) console.log('The library is initialized');
 ```
 
-## getCount() 
+## getCount()
 
 Returns the media-library item count as `{ count }`.
 
@@ -104,7 +104,7 @@ if (res.success === false) throw new Error(res.error);
 const { count } = res;
 ```
 
-## getAll(start, count, opts?) 
+## getAll(start, count, opts?)
 
 Resolves with paged tracks as `LibraryPagedTracksResponse`, whose rows are `LibraryTrack`: the shared track fields plus `index`, the position in the library; a failed call resolves with a failure envelope. When the host offloads a full-library request to a background worker, the wrapper waits for the matching `library:getAllResult` event and still resolves to the same final shape. A list the host failed to build and a timeout both resolve with `OPERATION_FAILED` rather than rejecting; `details.requestId` names the request, and a timeout also carries `details.timeoutMs`.
 
@@ -123,7 +123,7 @@ const r = await fb.library.getAll(0, 100);
 if (r.success === false) throw new Error(r.error);
 console.log(`${r.total} total tracks; received ${r.tracks.length}`);
 
-// Rebuild the whole library list, skipping the kept copy.
+// Rebuild the whole library list, skipping the kept copy
 const all = await fb.library.getAll(0, 1_000_000, { useCache: false, asyncResult: false });
 if (all.success === false) {
     console.warn('library.getAll failed or timed out:', all.error, all.details);
@@ -156,7 +156,7 @@ The same operation as `rescan()`: asks foobar2000 to rescan the library folders 
 await fb.library.refresh();
 ```
 
-## getByPath(path) 
+## getByPath(path)
 
 Looks up a library item by path. Metadata fields are returned at the top level when `found` is true.
 
@@ -167,6 +167,26 @@ if (r.found) console.log(r.title, r.artist);
 ```
 
 > The flat result carries `artists` alongside `artist`, with the same meaning as on `getAll()` rows: `artists.join(', ')` is exactly `artist`. It has no `albumArtist` / `composer`, so `artists` is the only array key it gains.
+
+## getChanges(params?)
+
+Returns the library `epoch`, `revision`, and handles changed after `since` for local incremental sync. When parameters are omitted or no longer match the host log, returns `resync: true` with full handles. Fails with `OPERATION_PENDING` while the library is still loading at startup. See [Keeping a local copy](../api/library.md#keeping-a-local-copy).
+
+```javascript @ts-nocheck
+const r = await fb.library.getChanges({ epoch: mark.epoch, since: mark.revision });
+if (r.success === false) throw new Error(r.error);
+const toFetch = r.resync ? r.handles : r.changed;
+```
+
+## getTracks(handles, fields?)
+
+Returns library track rows for up to 5000 handles in the given order. Handles not in the library (or when disabled) are reported in `missing`. Optional `fields` restricts returned keys, as in `query()`.
+
+```javascript @ts-nocheck
+const r = await fb.library.getTracks(toFetch.slice(0, 5000), ['handle', 'title', 'album']);
+if (r.success === false) throw new Error(r.error);
+console.log(r.tracks.length, r.missing.length);
+```
 
 ## getRoots()
 
@@ -213,7 +233,7 @@ if (tree.success === false) throw new Error(tree.error);
 for (const dir of tree.directories) {
   console.log(dir.name, dir.trackCount, dir.hasChildren);
 }
-// Expand a child and include its direct files.
+// Expand a child and include its direct files
 const sub = await fb.library.browseTree({
   rootId: roots[0].id,
   pathId: tree.directories[0].pathId,
@@ -303,13 +323,13 @@ for await (const node of fb.library.enumerateDirectories({ rootPath: '', strateg
 
 ## getAlbumTracks(album, albumArtist)
 
-Returns the tracks of one album from `getAlbums`, sorted by disc number, then track number, then library order. Pass the row's `name` and `albumArtist` as they are: both are compared byte for byte, and `total` then equals the row's `trackCount`. The row's `artist` is not the same key, and an `albumArtist` of `""` is passed as `""`. The host keeps the grouping until the library changes, so repeated calls do not rescan the library.
+Returns the tracks of one album from `getAlbums`, sorted by disc number, then track number, then library order. Pass the row's `name` and `albumArtist` as they are, plus `{ albumId: album.albumId }` as the optional third argument when the row carries an ID. Without an ID the names are compared byte for byte; with one, the host uses the original identity even if replacement characters make display names equal. `total` equals the row's `trackCount`. The row's `artist` is not the same key, and an `albumArtist` of `""` is passed as `""`. The host keeps the grouping until the library changes, so repeated calls do not rescan the library. An empty or malformed ID fails with `INVALID_PARAMS` instead of falling back to the names.
 
 ```javascript
 const page = await fb.library.getAlbums({ limit: 1 });
 const album = page.success ? page.albums[0] : undefined;
 if (album) {
-    const res = await fb.library.getAlbumTracks(album.name, album.albumArtist);
+    const res = await fb.library.getAlbumTracks(album.name, album.albumArtist, album);
 }
 ```
 
@@ -346,11 +366,11 @@ const paths = await fb.library.query('%codec% IS FLAC', undefined, 100000, [
 
 `query(..., fields)` and `search(query, limit, { fields })` accept an optional list of track keys. Omitting it returns every key of a library track row.
 
-When the list is present each row holds **exactly** the requested keys and nothing else, which is why rows are typed as `LibraryTrackPartial`. Rows whose metadata container could not be read still carry every requested key, filled with type defaults (empty string, zero). Response envelopes are unchanged.
+When the list is present each row holds only the requested keys and nothing else, which is why rows are typed as `LibraryTrackPartial`. Rows whose metadata container could not be read still carry every requested non-optional key, filled with type defaults (empty string, zero). The optional `albumId` is omitted when unavailable, even when requested. Response envelopes are unchanged.
 
 **Accepted key names** (exact match, case-sensitive):
 
-`index`, `handle`, `title`, `artist`, `artists`, `album`, `albumArtist`, `albumArtists`, `genre`, `date`, `trackNumber`, `discNumber`, `duration`, `path`, `absolutePath`, `fileSize`, `bitrate`, `sampleRate`, `channels`, `codec`, `subsong`, `rating`
+`index`, `handle`, `title`, `artist`, `artists`, `album`, `albumId`, `albumArtist`, `albumArtists`, `genre`, `date`, `trackNumber`, `discNumber`, `duration`, `path`, `absolutePath`, `fileSize`, `bitrate`, `sampleRate`, `channels`, `codec`, `subsong`, `rating`
 
 > Multi-value tags in `artist` / `albumArtist` / `genre` / `composer` (only the fields this API actually returns) are joined with `, ` in their original order, without de-duplication.
 
@@ -404,7 +424,7 @@ Signature: `fb.library.addToPlaylist(paths: string[], playlistIndex?: PlaylistRe
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `paths` | `string[]` | Yes | Track paths to append, in this order; a `\|subsong:N` suffix selects a subsong |
-| `playlistIndex` | `number \| string` | No | Target playlist: its index, or its `guid` from `fb.playlist.getAll()`; omitted, the active playlist. Pass the `guid` when the playlist list may change between choosing the target and the call, as while a menu is open. |
+| `playlistIndex` | `number \| string` | No | Target playlist: its index, or its `guid` from `fb.playlist.getAll()`; omitted, the active playlist. Pass the `guid` when the playlist list may change between choosing the target and the call, as while a menu is open |
 
 Appends tracks to a playlist by path. A path does not have to be in the library, and a file that does not exist is added all the same. The response's `added` is the number of tracks added. A locked playlist fails with `LOCKED` and nothing is added; an index past the last playlist fails with `INVALID_INDEX`, and with `playlistIndex` omitted and no active playlist the call fails with `NO_ACTIVE_ITEM`.
 
@@ -423,9 +443,9 @@ Signature: `fb.library.getArtistAlbums(artist: string, limit?: number, options?:
 | `options.sort` | `string` | No | `name` (default), `artist`, `year` or `trackCount`; an unrecognised value falls back to `name` |
 | `options.match` | `'exact' \| 'substring'` | No | `exact` (default) requires the whole atomic value to be byte-identical; `substring` matches on containment and is looser about case; an unrecognised value is refused rather than falling back |
 
-Albums the artist appears on. Rows carry the same keys as `getAlbums` except `coverDataUrl` and `tracks` — for cover art, pass a row's `firstTrackAbsolutePath` to `artwork.getForTrack`, since `firstTrackPath` can be a `file-relative://` URI that endpoint refuses.
+Albums the artist appears on. Rows carry the same keys as `getAlbums` except `coverDataUrl` and the canonical `albumId`, with `tracks` identifying this artist's members of the group — for cover art, pass a row's `firstTrackAbsolutePath` to `artwork.getForTrack`, since `firstTrackPath` can be a `file-relative://` URI that endpoint refuses.
 
-`trackCount`, `duration` and `discCount` count only the tracks this artist appears on, not the whole album, so they disagree with `getAlbums` for any album the artist appears on only partly. See [`library.getArtistAlbums`](../api/library.md#library-getartistalbums) for that and for the grouping rules.
+`trackCount`, `duration` and `discCount` count only the tracks this artist appears on, not the whole album, so they disagree with `getAlbums` for any album the artist appears on only partly. Each row's `tracks` contains those exact members; combine a reference's `path` and `subsong` to address a subsong. Use these references rather than filtering other tracks by the display name. These rows do not provide `albumId` because their grouping differs from `getAlbums`. See [`library.getArtistAlbums`](../api/library.md#library-getartistalbums) for the grouping rules.
 
 ```javascript
 const res = await fb.library.getArtistAlbums('The Beatles', 50);

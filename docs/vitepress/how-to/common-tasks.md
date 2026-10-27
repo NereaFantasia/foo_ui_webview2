@@ -1,6 +1,6 @@
 # Common tasks
 
-Each section below solves one frequent task with the native bridge `fb2k`, as a complete example to adapt. The same calls exist as `fb.*` methods in the [SDK](/sdk/namespaces).
+Each section below demonstrates common playback and host control tasks using the native bridge instance `fb2k`. Equivalent typed methods are provided in the [SDK](/sdk/namespaces) under the `fb.*` namespace.
 
 ## Scenario 1: build a player UI
 
@@ -60,7 +60,7 @@ volumeSlider.oninput = async (e) => {
 };
 
 // ========== Events ==========
-let currentDuration = 0; // playback:time carries only the position
+let currentDuration = 0; // playback:time carries only the playback position
 
 fb2k.on('playback:trackChanged', async (track) => {
     currentDuration = track.duration;
@@ -73,7 +73,7 @@ fb2k.on('playback:trackChanged', async (track) => {
 fb2k.on('playback:stateChanged', (data) => updatePlayButton(data.state === 'playing'));
 
 fb2k.on('playback:time', (data) => {
-    if (currentDuration <= 0) return; // duration is 0 when the length is unknown
+    if (currentDuration <= 0) return; // Duration is 0 when the length is unknown
     const percent = (data.position / currentDuration) * 100;
     document.getElementById('progress-fill').style.width = percent + '%';
 });
@@ -221,7 +221,7 @@ document.querySelectorAll('.titlebar-button').forEach(btn => {
 
 ```javascript
 async function registerHotkeys() {
-    // C++ contract: key + action (+ optional global). Registration returns a numeric id.
+    // C++ contract: key + action (optional global); returns numeric id on success
     await fb2k.invoke('keyboard.registerHotkey', {
         key: 'Ctrl+Shift+Space',
         action: 'play-pause',
@@ -286,11 +286,11 @@ async function exportPlaylistToFile() {
 ## Scenario 7: path handling and artwork best practices
 
 ```javascript
-// ❌ Wrong: path may be a non-filesystem URI
+// ❌ Avoid: path may be a non-filesystem URI or relative path
 const tracks = await fb2k.invoke('playlist.getTracks', { count: 1 });
 if (tracks.success === false) throw new Error(tracks.error);
 const artwork = await fb2k.invoke('artwork.getForTrack', {
-    path: tracks.tracks[0].path  // may be file-relative://...
+    path: tracks.tracks[0].path  // May be file-relative://...
 });
 
 // ✅ Correct: use absolutePath
@@ -301,7 +301,7 @@ if (getFileType(t.absolutePath) !== 'stream') {
     });
 }
 
-// ✅ Better: getByPlaylistItem needs no path and handles resolution
+// ✅ Best: getByPlaylistItem resolves artwork without manual path management
 const artwork = await fb2k.invoke('artwork.getByPlaylistItem', {
     playlist: 0, index: 0, type: 'front'
 });

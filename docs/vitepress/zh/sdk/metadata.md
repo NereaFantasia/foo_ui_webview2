@@ -8,8 +8,8 @@
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
-| `path` | `string` | 是 | 曲目路径。 |
-| `opts.cueIndex` | `number` | 否 | CUE 或镜像内的曲目序号，从 1 开始。等同于路径后缀 `\|subsong:<n>`，两者都给时以该选项为准。 |
+| `path` | `string` | 是 | 曲目路径 |
+| `opts.cueIndex` | `number` | 否 | CUE 或镜像内的曲目序号，从 1 开始。等同于路径后缀 `\|subsong:<n>`，两者都给时以该选项为准 |
 
 返回 `{ success, path, tags, info }`。`tags` 的键保留文件里原样的大小写，每个值是 `string` 或 `string[]`。`info` 含 `duration`、`bitrate`、`sampleRate`、`channels` 和 `codec`。
 
@@ -30,7 +30,7 @@ const track3 = await fb.metadata.read('E:\\Music\\album.cue', { cueIndex: 3 });
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
-| `paths` | `string[]` | 是 | 要读取的曲目路径。 |
+| `paths` | `string[]` | 是 | 要读取的曲目路径 |
 
 返回 `results`，每个请求路径一个条目，另有汇总计数 `total`、`successCount` 和 `errorCount`。
 
@@ -49,8 +49,8 @@ const result = await fb.metadata.readBatch([
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
-| `path` | `string` | 是 | 曲目路径。 |
-| `opts.cueIndex` | `number` | 否 | CUE 或镜像内的曲目序号，从 1 开始，同 `read()`。 |
+| `path` | `string` | 是 | 曲目路径 |
+| `opts.cueIndex` | `number` | 否 | CUE 或镜像内的曲目序号，从 1 开始，同 `read()` |
 
 返回扁平的 `metadata.readByPath` 对象：标签键和宿主的状态、路径字段并列在顶层。本方法不会调用 `metadata.readRaw`。
 
@@ -68,9 +68,9 @@ console.log(fields.TITLE, fields.DURATION);
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
-| `path` | `string` | 是 | 曲目路径。 |
-| `field` | `string` | 是 | 要删除的单个标签名。 |
-| `opts.cueIndex` | `number` | 否 | CUE 或镜像内的曲目序号，从 1 开始；只作用于其中这一首，不作用于整个容器。 |
+| `path` | `string` | 是 | 曲目路径 |
+| `field` | `string` | 是 | 要删除的单个标签名 |
+| `opts.cueIndex` | `number` | 否 | CUE 或镜像内的曲目序号，从 1 开始；只作用于其中这一首，不作用于整个容器 |
 
 以 `tags: [field]` 派发 `metadata.removeField`。回执可能含 `dispatched`、`subsong`、`removedTags`、`removedCount` 和 `note`；最终结果由 `operation` 为 `'removeTag'` 的 `metadata:writeComplete` 报告。
 
@@ -87,9 +87,9 @@ const receipt = await fb.metadata.removeField(
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
-| `path` | `string` | 是 | 曲目路径。 |
-| `tags` | `string[]` | 是 | 要删除的标签名。 |
-| `opts.cueIndex` | `number` | 否 | CUE 或镜像内的曲目序号，从 1 开始；只作用于其中这一首，不作用于整个容器。 |
+| `path` | `string` | 是 | 曲目路径 |
+| `tags` | `string[]` | 是 | 要删除的标签名 |
+| `opts.cueIndex` | `number` | 否 | CUE 或镜像内的曲目序号，从 1 开始；只作用于其中这一首，不作用于整个容器 |
 
 异步派发删除并返回回执。标签名会转成大写，`removedTags` 按给出的顺序列出它们；`tags` 为空时不删除任何标签，直接成功，不派发。最终结果看 `metadata:writeComplete`。
 
@@ -110,9 +110,9 @@ await fb.metadata.removeTag('E:\\Music\\album.cue', ['COMMENT'], {
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
-| `path` | `string` | 是 | 曲目路径。 |
-| `tags` | `JsonObject` | 是 | 要改的标签；值为 `null`、空字符串或空数组时删除对应标签。 |
-| `opts.cueIndex` | `number` | 否 | CUE 或镜像内的曲目序号，从 1 开始；只把标签写到其中这一首，不写到整个容器。 |
+| `path` | `string` | 是 | 曲目路径 |
+| `tags` | `JsonObject` | 是 | 要改的标签；值为 `null`、空字符串或空数组时删除对应标签 |
+| `opts.cueIndex` | `number` | 否 | CUE 或镜像内的曲目序号，从 1 开始；只把标签写到其中这一首，不写到整个容器 |
 
 标签名会转成大写，所以只有大小写不同的键指同一个标签。字符串原样写入，整数或小数写成十进制文本（`2.5` 写成 `2.500000`），布尔或对象被忽略。
 
@@ -142,7 +142,7 @@ await fb.metadata.write('E:\\Music\\album.cue', { TITLE: 'Track three' }, {
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
-| `items` | `MetadataWriteBatchItem[]` | 是 | 逐曲目的标签修改：`path`、`tags`，以及可选的 `cueIndex`。 |
+| `items` | `MetadataWriteBatchItem[]` | 是 | 逐曲目的标签修改：`path`、`tags`，以及可选的 `cueIndex` |
 
 调用 `metadata.writeBatch`，返回 `successCount`、`failCount` 和逐路径的 `errors`。有任何条目失败时，调用以失败信封返回，信封里仍带这三个字段，其他条目照常派发。本方法不调用任何封面端点。
 
@@ -163,8 +163,8 @@ const result = await fb.metadata.writeBatch([
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
-| `path` | `string` | 是 | 曲目路径。 |
-| `opts.cueIndex` | `number` | 否 | CUE 或镜像内的曲目序号，从 1 开始，同 `read()`。 |
+| `path` | `string` | 是 | 曲目路径 |
+| `opts.cueIndex` | `number` | 否 | CUE 或镜像内的曲目序号，从 1 开始，同 `read()` |
 
 `fb.metadata.readRaw(path, options?)` 绕过 metadb 缓存并直接读取文件。`options` 类型为 `Omit<MetadataReadRawParams, 'path'>`，可包含 `cueIndex`。返回的 `MetadataReadRawResponse` 是 `read()` 的各字段加上 `source`，`source` 恒为 `'file'`。读不出的文件以 `OPERATION_FAILED` 失败。
 
@@ -186,19 +186,19 @@ const raw = await fb.metadata.readRaw('E:\\Music\\album.flac', {
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
-| `paths` | `string[]` | 是 | 待探测路径，不能为空。每一条独立识别 `\|subsong:N` 后缀。 |
-| `options.includeTags` | `boolean` | 否 | 默认 `true`。为每条成功结果附带扁平标签表。 |
+| `paths` | `string[]` | 是 | 待探测路径，不能为空。每一条独立识别 `\|subsong:N` 后缀 |
+| `options.includeTags` | `boolean` | 否 | 默认 `true`。为每条成功结果附带扁平标签表 |
 
 每条结果是一个 `MetadataProbeResultItem`：
 
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
-| `path` | `string` | 原样回显（含 `\|subsong:N`），可直接当查找键用。 |
-| `success` | `boolean` | 是否取到信息。 |
-| `infoSource` | `'cached' \| 'direct' \| 'none'` | `cached` 为 metadb 缓存命中，`direct` 为实际读盘，`none` 伴随失败出现。 |
-| `failure` | `'not-found' \| 'unsupported-format' \| 'read-error'` | 仅当 `success` 为 `false` 时存在。 |
-| `info` | `TrackTechnicalInfo` | `duration`、`bitrate`、`sampleRate`、`channels`、`codec`。 |
-| `tags` | `Record<string, string \| string[]>` | 键名大写的扁平表，与 `readBatch()` 一致。`includeTags` 为 `false` 时不返回。 |
+| `path` | `string` | 原样回显（含 `\|subsong:N`），可直接当查找键用 |
+| `success` | `boolean` | 是否取到信息 |
+| `infoSource` | `'cached' \| 'direct' \| 'none'` | `cached` 为 metadb 缓存命中，`direct` 为实际读盘，`none` 伴随失败出现 |
+| `failure` | `'not-found' \| 'unsupported-format' \| 'read-error'` | 仅当 `success` 为 `false` 时存在 |
+| `info` | `TrackTechnicalInfo` | `duration`、`bitrate`、`sampleRate`、`channels`、`codec` |
+| `tags` | `Record<string, string \| string[]>` | 键名大写的扁平表，与 `readBatch()` 一致。`includeTags` 为 `false` 时不返回 |
 
 ```javascript
 const off = fb.on('metadata:probeProgress', (event) => {

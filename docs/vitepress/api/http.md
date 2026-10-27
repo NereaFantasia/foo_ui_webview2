@@ -1,6 +1,6 @@
 # Http API
 
-Methods of the `http` namespace.
+Provides WinHTTP-backed network request methods supporting GET, POST, PUT, DELETE, PATCH, HEAD, file downloads, and cancellation.
 
 ## Custom User-Agent
 

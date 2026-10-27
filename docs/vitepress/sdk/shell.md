@@ -1,6 +1,6 @@
 # fb.shell System Integration
 
-## showInExplorer(path) 
+## showInExplorer(path)
 
 Reveals a file in Windows File Explorer.
 
@@ -8,7 +8,7 @@ Reveals a file in Windows File Explorer.
 await fb.shell.showInExplorer('E:\\Music\\song.flac');
 ```
 
-## openWith(path) 
+## openWith(path)
 
 Opens a file with its system-associated application.
 
@@ -20,7 +20,7 @@ Executable file types such as `.exe`, `.bat`, and `.cmd` are rejected.
 await fb.shell.openWith('E:\\Music\\cover.jpg');
 ```
 
-## openExternal(url) 
+## openExternal(url)
 
 Opens a URL in the default browser.
 
@@ -28,7 +28,7 @@ Opens a URL in the default browser.
 await fb.shell.openExternal('https://www.foobar2000.org');
 ```
 
-## exec(command, options?) 
+## exec(command, options?)
 
 Executes a system command and returns a `ShellExecResponse` containing `success` and, on success, `processId`.
 
@@ -47,7 +47,7 @@ Commands are not allowlisted because installed themes are treated as trusted cod
 await fb.shell.exec('notepad', { args: ['E:\\notes.txt'] });
 ```
 
-## spawn(executable, options?) 
+## spawn(executable, options?)
 
 Starts a process through the structured spawn API, recommended for services such as Node applications.
 

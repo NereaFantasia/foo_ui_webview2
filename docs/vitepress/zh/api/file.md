@@ -6,34 +6,34 @@
 
 ## 路径长度
 
-foobar2000 没有声明长路径支持，宿主受 Windows 传统的路径长度限制：展开变量后的完整路径最多 259 个字符，宿主新建的文件夹最多 247 个字符。同步方法遇到超长路径以 `OPERATION_FAILED` 失败，`details.value` 为 206（Windows 表示名称过长的错误号），不会把存在的文件报成不存在。原子写入的 `file.write` 还要在目标所在文件夹放下临时文件 `.~<进程号>-<序号>.tmp`。`file.copyAsync`、`file.moveAsync`、`file.deleteAsync` 把这样的条目报成 `failed`，原因为 `path-too-long`；复制的文件夹里面有路径超长时也一样。
+由于 foobar2000 未声明 Windows 长路径支持，组件受经典路径长度限制：展开变量后的完整文件路径最多 259 个字符，新建文件夹路径最多 247 个字符。同步方法遇到超长路径时以 `OPERATION_FAILED` 失败，并附带 `details.value: 206`（Windows 路径过长错误号），避免将已有文件误判为不存在。`file.write` 启用原子写入时，需要在目标目录下创建临时文件 `.~<进程号>-<序号>.tmp`，该临时路径同样不得超过 259 个字符。异步批量方法（`file.copyAsync`、`file.moveAsync`、`file.deleteAsync`）遇到超长路径（包括复制文件夹内部的超长路径）时，会将对应条目上报为 `failed`，原因为 `path-too-long`。
 
 ## File API - 文件系统
 
 ### file.read
 
 <!-- api-schema:begin file.read -->
-以文本读取文件，`encoding: "binary"` 时以 Base64 读取。路径不存在时以 `NOT_FOUND` 失败，不是普通文件时以 `INVALID_PATH` 失败。
+读取文件为文本；`encoding: "binary"` 时读取原始字节并编码为 Base64；路径不存在时以 `NOT_FOUND` 失败，不是普通文件时以 `INVALID_PATH` 失败
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
-| `path` | `string` | 是 | 要读取的文件。不能为空。 |
-| `encoding` | `string` | 否 | 只有恰为 `binary` 才按字节读取并以 Base64 返回；其他任何值都按文本读取。默认 `"utf-8"`。 |
+| `path` | `string` | 是 | 要读取的文件路径不能为空。 |
+| `encoding` | `string` | 否 | 字符编码；仅当取值为 `"binary"` 时按原始字节读取并编码为 Base64；其他任何取值均按文本读取默认 `"utf-8"`。 |
 
 **返回值**
 
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
-| `content` | `string` | 文件的文本；二进制读取时为其字节的裸 Base64，不带 `base64:` 前缀。 |
-| `size` | `integer` | 文件在磁盘上的字节数；文本读取时可能与 `content` 的长度不同。 |
-| `encoding` | `string` | 只在二进制读取时出现，恒为 `base64`。 |
+| `content` | `string` | 文件内容；文本读取时为文本字符串，二进制读取时为不带 `base64:` 前缀的裸 Base64 字符串 |
+| `size` | `integer` | 文件在磁盘上的字节大小；文本读取时可能与 `content` 字符串长度不同 |
+| `encoding` | `string` | 内容编码标识；仅在二进制读取时出现，固定为 `"base64"` |
 
 成功时 `success` 为 `true`；失败时返回 `{ success: false, error, code }`，`code` 见[错误码](../reference/errors.md)。
 <!-- api-schema:end -->
 
-二进制模式额外返回 `"encoding": "base64"`。
+在二进制模式下，接口额外返回 `"encoding": "base64"`。
 
-二进制读取时，`content` 是**不带 `base64:` 前缀的裸 Base64 payload**；它是传输表示，不是文本，也不是 Data URL。要把读取结果原样写回，必须在写入时补上 `base64:`，并同时保持 `encoding: 'binary'`。
+以二进制模式读取时，返回的 `content` 为**不带 `base64:` 前缀的裸 Base64 字符串**。该内容属于底层传输载荷，既不是纯文本，也不是 Data URL。若需将读取结果原样写回文件，必须在调用 `file.write` 时显式添加 `base64:` 前缀，并保持 `encoding: 'binary'`。
 
 ```javascript
 // 读取文本文件
@@ -50,26 +50,26 @@ console.log(bin.encoding); // "base64"
 ### file.write
 
 <!-- api-schema:begin file.write -->
-把文本或由 Base64 解码出的字节写入文件。父目录不存在时先创建。
+将文本或 Base64 解码后的字节写入文件；父目录不存在时会自动创建
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
-| `path` | `string` | 是 | 要写入的文件；缺失的父目录会被创建。不能为空。 |
-| `content` | `string` | 否 | 要写入的内容。`encoding: "binary"` 时，以 `base64:` 开头的值被解码后按字节写入：Base64 字母表以外的字符被跳过，遇到第一个 `=` 即停止解码。其他任何值（包括裸 Base64 与 Data URL）都按原样写入。空串会清空文件，除非设置了 `append`。默认 `""`。 |
-| `encoding` | `string` | 否 | 只有恰为 `binary` 才有区别：以二进制模式写入，并解码以 `base64:` 开头的 `content`。其他任何值都按文本写入。默认 `"utf-8"`。 |
-| `append` | `boolean` | 否 | 追加到文件末尾，而不是替换原有内容。默认 `false`。 |
-| `atomic` | `boolean` | 否 | 先在目标旁边写一个临时文件并落盘，再用一次改名替换目标：读者只会看到旧内容或新内容，不会看到写了一半的文件。替换失败时（例如目标被其他程序打开着）调用失败，目标保留原内容。临时文件名为 `.~<进程号>-<序号>.tmp`，它的路径同样不能超过 259 个字符。不能与 `append` 同用，两者同时传时以 `INVALID_PARAMS` 失败。默认 `false`。 |
+| `path` | `string` | 是 | 要写入的文件路径；父目录不存在时会自动创建不能为空。 |
+| `content` | `string` | 否 | 待写入的内容；未设置 `append` 时空字符串会清空文件；当 `encoding: "binary"` 且内容以 `base64:` 开头时，宿主将解码为字节后写入（跳过 Base64 字母表以外字符，遇首个 `=` 停止解码）；其他任何取值（含裸 Base64 与 Data URL）均按原样文本写入默认 `""`。 |
+| `encoding` | `string` | 否 | 字符编码；仅当取值为 `"binary"` 时进入二进制写入模式并解码以 `base64:` 开头的 `content`；其他任何取值均按文本写入默认 `"utf-8"`。 |
+| `append` | `boolean` | 否 | 是否追加到文件末尾，为 `false` 时替换原有内容默认 `false`。 |
+| `atomic` | `boolean` | 否 | 是否启用原子写入；开启时先在目标同目录下写入临时文件并落盘，再通过原子重命名替换目标，确保读取方只能读到完整的新内容或旧内容；若替换失败（如目标文件被其他程序占用），调用将失败且目标保留原内容；临时文件命名为 `.~<进程号>-<序号>.tmp`，路径长度同样受 259 字符限制；不可与 `append` 同时使用，两者同时传入时以 `INVALID_PARAMS` 失败默认 `false`。 |
 
 **返回值**
 
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
-| `bytesWritten` | `integer` | 写入后文件的字节数；`append` 时是整个文件的大小，而不只是新增的部分。 |
+| `bytesWritten` | `integer` | 写入后文件的字节总大小；`append` 为 `true` 时是追加后的完整文件大小，而非仅新增字节数 |
 
 成功时 `success` 为 `true`；失败时返回 `{ success: false, error, code }`，`code` 见[错误码](../reference/errors.md)。
 <!-- api-schema:end -->
 
-二进制写入只有在以下两个条件同时满足时才会解码：`encoding` 必须精确为 `'binary'`，且 `content` 必须以 `base64:` 开头。该前缀是 Bridge wire 标记，解码前会被移除。裸 Base64、`data:image/...;base64,...` Data URL 或 `fb2k://` 封面 URL 都不会进入该解码分支；调用仍可能返回 `success: true`，但文件内容会错误。
+二进制写入仅在同时满足两个条件时触发解码：`encoding` 参数必须精确为 `'binary'`，且 `content` 必须以 `base64:` 前缀开头。该前缀属于 Bridge 传输标记，宿主解码落盘前会自动剥离。裸 Base64 字符串、`data:image/...;base64,...` Data URL 或 `fb2k://` 封面 URL 均不满足解码前缀要求；此时调用虽可能返回 `success: true`，但写入的文件内容会出现乱码或数据异常。
 
 ```javascript
 // 写入 JSON 配置
@@ -98,19 +98,19 @@ await fb2k.invoke('file.write', {
 ### file.exists
 
 <!-- api-schema:begin file.exists -->
-检查路径是否存在，以及它是文件还是目录。
+检查路径是否存在，并区分它是文件还是目录
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
-| `path` | `string` | 是 | 要检查的路径。不能为空。 |
+| `path` | `string` | 是 | 要检查的路径不能为空。 |
 
 **返回值**
 
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
-| `exists` | `boolean` | 路径是否存在。 |
-| `isFile` | `boolean` | 路径是否是普通文件。 |
-| `isDirectory` | `boolean` | 路径是否是目录。 |
+| `exists` | `boolean` | 路径是否存在 |
+| `isFile` | `boolean` | 路径是否是普通文件 |
+| `isDirectory` | `boolean` | 路径是否是目录 |
 
 成功时 `success` 为 `true`；失败时返回 `{ success: false, error, code }`，`code` 见[错误码](../reference/errors.md)。
 <!-- api-schema:end -->
@@ -124,21 +124,21 @@ const { exists, isFile } = res;
 ### file.list
 
 <!-- api-schema:begin file.list -->
-列出目录下的文件与子目录。路径不存在时以 `NOT_FOUND` 失败，不是目录时以 `INVALID_PATH` 失败。
+列出目录下的文件与子目录；路径不存在时以 `NOT_FOUND` 失败，不是目录时以 `INVALID_PATH` 失败
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
-| `path` | `string` | 是 | 要列出的目录。不能为空。 |
-| `pattern` | `string` | 否 | 只过滤文件，目录总会列出。只认 `*`、`*.*` 和单个扩展名（如 `*.flac`），任何写法都不会被拒绝：不以 `*.` 开头的写法（`song*`、`?.txt`）匹配全部文件；`*.ext` 写法按不区分大小写的方式与文件名最后一个点起的文本比较，所以 `*.{flac,mp3}` 一个都匹配不上，没有扩展名的文件也匹配不上任何 `*.ext`。默认 `"*"`。 |
-| `recursive` | `boolean` | 否 | 同时遍历子目录；此时各项是完整路径而不是名称。遇到读不了的子目录时调用以 `OPERATION_FAILED` 失败。默认 `false`。 |
+| `path` | `string` | 是 | 要列出的目录路径不能为空。 |
+| `pattern` | `string` | 否 | 文件匹配规则，仅过滤文件，目录始终列出；仅支持 `*`、`*.*` 和单个扩展名（如 `*.flac`）；不以 `*.` 开头的模式（如 `song*`、`?.txt`）匹配全部文件；`*.ext` 模式按不区分大小写比对文件名末尾点号起的文本，因此 `*.{flac,mp3}` 无法匹配任何文件，无扩展名文件也无法匹配任何 `*.ext`默认 `"*"`。 |
+| `recursive` | `boolean` | 否 | 是否遍历子目录；开启时条目为完整路径，关闭时仅为名称；遇到无法读取的子目录时调用以 `OPERATION_FAILED` 失败默认 `false`。 |
 
 **返回值**
 
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
-| `files` | `string[]` | 匹配 `pattern` 的文件：名称；设置 `recursive` 时为完整路径。 |
-| `directories` | `string[]` | 子目录，不受 `pattern` 影响：名称；设置 `recursive` 时为完整路径。 |
-| `items` | `string[]` | 与 `files` 相同的列表；为读取这个名字的调用方保留。 |
+| `files` | `string[]` | 匹配 `pattern` 的文件列表：未开启 `recursive` 时为文件名，开启时为完整路径 |
+| `directories` | `string[]` | 子目录列表，不受 `pattern` 影响：未开启 `recursive` 时为子目录名，开启时为完整路径 |
+| `items` | `string[]` | 与 `files` 相同的列表，为读取此字段的旧调用方保留 |
 
 成功时 `success` 为 `true`；失败时返回 `{ success: false, error, code }`，`code` 见[错误码](../reference/errors.md)。
 <!-- api-schema:end -->
@@ -157,12 +157,12 @@ const { files } = res;
 ### file.delete
 
 <!-- api-schema:begin file.delete -->
-删除文件或目录；除非 `moveToTrash` 为 `false`，否则移入回收站。路径不存在时以 `NOT_FOUND` 失败。
+删除文件或目录，默认移入回收站，`moveToTrash` 为 `false` 时永久删除；路径不存在时以 `NOT_FOUND` 失败
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
-| `path` | `string` | 是 | 要删除的文件或目录。不能为空。 |
-| `moveToTrash` | `boolean` | 否 | 移入回收站。为 `false` 时永久删除，此时非空目录会删除失败。默认 `true`。 |
+| `path` | `string` | 是 | 要删除的文件或目录路径不能为空。 |
+| `moveToTrash` | `boolean` | 否 | 是否移入回收站；为 `false` 时永久删除，且无法删除非空目录默认 `true`。 |
 
 **返回值**
 
@@ -180,18 +180,18 @@ await fb2k.invoke('file.delete', { path: '%temp%\\cache.tmp', moveToTrash: false
 ### file.mkdir
 
 <!-- api-schema:begin file.mkdir -->
-创建目录，缺失的上级目录一并创建。目录已存在时成功并返回 `created: false`；该路径是文件时以 `INVALID_PATH` 失败。
+创建目录并自动补齐缺失的父目录；目录已存在时成功并返回 `created: false`，目标路径为已有文件时以 `INVALID_PATH` 失败
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
-| `path` | `string` | 是 | 要创建的目录。不能为空。 |
+| `path` | `string` | 是 | 要创建的目录路径不能为空。 |
 
 **返回值**
 
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
-| `created` | `boolean` | 本次调用是否创建了目录；目录已存在时为 `false`。 |
-| `message` | `string` | 目录已存在时为 `Directory already exists`；否则不出现。 |
+| `created` | `boolean` | 本次调用是否创建了新目录；目录已存在时为 `false` |
+| `message` | `string` | 提示信息；目录已存在时为 `"Directory already exists"`，否则不出现 |
 
 成功时 `success` 为 `true`；失败时返回 `{ success: false, error, code }`，`code` 见[错误码](../reference/errors.md)。
 <!-- api-schema:end -->
@@ -199,20 +199,20 @@ await fb2k.invoke('file.delete', { path: '%temp%\\cache.tmp', moveToTrash: false
 ### file.copy
 
 <!-- api-schema:begin file.copy -->
-复制文件或整棵目录树，复制完成前一直阻塞。源不存在时以 `NOT_FOUND` 失败。体量大时改用 `file.copyAsync`。
+复制文件或整棵目录树，复制完成前一直阻塞；源路径不存在时以 `NOT_FOUND` 失败；体量较大时建议改用 `file.copyAsync`
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
-| `source` | `string` | 是 | 要复制的文件或目录；目录连同其下全部内容一起复制。不能为空。 |
-| `destination` | `string` | 是 | 目标路径。其父目录必须已经存在。不能为空。 |
-| `overwrite` | `boolean` | 否 | 替换目标处已存在的文件。否则保留它们不动，调用仍然成功。默认 `false`。 |
+| `source` | `string` | 是 | 要复制的源文件或目录；若为目录则连同其下全部内容递归复制不能为空。 |
+| `destination` | `string` | 是 | 目标路径；其父目录必须已经存在不能为空。 |
+| `overwrite` | `boolean` | 否 | 是否替换目标处已存在的文件；为 `false` 时保留已有文件不动且调用仍然成功默认 `false`。 |
 
 **返回值**
 
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
-| `source` | `string` | 原样的源路径。 |
-| `destination` | `string` | 原样的目标路径。 |
+| `source` | `string` | 请求中传入的源路径 |
+| `destination` | `string` | 请求中传入的目标路径 |
 
 成功时 `success` 为 `true`；失败时返回 `{ success: false, error, code }`，`code` 见[错误码](../reference/errors.md)。
 <!-- api-schema:end -->
@@ -227,41 +227,41 @@ await fb2k.invoke('file.copy', {
 ### file.move
 
 <!-- api-schema:begin file.move -->
-移动文件或目录，移动完成前一直阻塞。文件可以跨卷移动；目录不能，跨卷时以 `NOT_SUPPORTED` 失败并带 `details.reason: "cross-volume"`。源不存在时以 `NOT_FOUND` 失败。
+移动文件或目录，移动完成前一直阻塞；文件支持跨卷移动，目录跨卷移动则会以 `NOT_SUPPORTED` 失败且附带 `details.reason: "cross-volume"`；源路径不存在时以 `NOT_FOUND` 失败
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
-| `source` | `string` | 是 | 要移动的文件或目录。不能为空。 |
-| `destination` | `string` | 是 | 目标路径。该处已有的文件会被替换；把文件移到已存在的目录上、或移到不存在的父目录下，都会失败。不能为空。 |
+| `source` | `string` | 是 | 要移动的文件或目录路径不能为空。 |
+| `destination` | `string` | 是 | 目标路径；该处已有的同名文件会被替换；若将文件移到已存在的目录上，或父目录不存在，调用均会失败不能为空。 |
 
 **返回值**
 
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
-| `source` | `string` | 原样的源路径。 |
-| `destination` | `string` | 原样的目标路径。 |
+| `source` | `string` | 请求中传入的源路径 |
+| `destination` | `string` | 请求中传入的目标路径 |
 
 成功时 `success` 为 `true`；失败时返回 `{ success: false, error, code }`，`code` 见[错误码](../reference/errors.md)。
 <!-- api-schema:end -->
 
-跨卷移动**文件**会成功 —— Windows 会自动复制后删除。跨卷移动**目录**失败，返回 `code: "NOT_SUPPORTED"` 与 `details.reason: "cross-volume"`。
+跨卷移动**文件**会执行成功，底层由 Windows 自动完成复制与删源；跨卷移动**目录**则不支持，调用将失败并返回错误码 `code: "NOT_SUPPORTED"` 与详细原因 `details.reason: "cross-volume"`。
 
 ### file.rename
 
 <!-- api-schema:begin file.rename -->
-在所在目录内重命名文件或目录。路径不存在时以 `NOT_FOUND` 失败，新名字已被占用时以 `OPERATION_FAILED` 失败。
+在所在目录内重命名文件或目录；原路径不存在时以 `NOT_FOUND` 失败，新名称已被占用时以 `OPERATION_FAILED` 失败
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
-| `path` | `string` | 是 | 要重命名的文件或目录。不能为空。 |
-| `newName` | `string` | 是 | 新名字，仍位于同一目录。含 `/` 或 `\` 的名字以 `INVALID_PARAMS` 失败。不能为空。 |
+| `path` | `string` | 是 | 要重命名的文件或目录路径不能为空。 |
+| `newName` | `string` | 是 | 新名称，仍位于同一目录；包含 `/` 或 `\` 时以 `INVALID_PARAMS` 失败不能为空。 |
 
 **返回值**
 
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
-| `oldPath` | `string` | 原样的路径。 |
-| `newPath` | `string` | 展开后的 `path` 的父目录拼上 `newName`。 |
+| `oldPath` | `string` | 请求中传入的原路径 |
+| `newPath` | `string` | 展开路径变量后的父目录与 `newName` 拼接所得的新路径 |
 
 成功时 `success` 为 `true`；失败时返回 `{ success: false, error, code }`，`code` 见[错误码](../reference/errors.md)。
 <!-- api-schema:end -->
@@ -269,24 +269,24 @@ await fb2k.invoke('file.copy', {
 ### file.getInfo
 
 <!-- api-schema:begin file.getInfo -->
-描述文件或目录。路径不存在时成功返回 `exists: false`，不带其他字段。
+获取文件或目录的元信息；路径不存在时仍然成功返回，结果中 `exists: false` 且不包含其他字段
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
-| `path` | `string` | 是 | 要描述的文件或目录。不能为空。 |
+| `path` | `string` | 是 | 要查询信息的文件或目录路径不能为空。 |
 
 **返回值**
 
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
-| `exists` | `boolean` | 路径是否存在；为 `false` 时不带其他字段。 |
-| `isDirectory` | `boolean` | 路径是否是目录。 |
-| `isFile` | `boolean` | 路径是否是普通文件。 |
-| `size` | `integer` | 字节数；目录为 `0`。 |
-| `modified` | `integer` | 最后写入时间，JavaScript 毫秒时间戳，截到整秒。 |
-| `name` | `string` | 带扩展名的文件名。 |
-| `extension` | `string` | 带前导点的扩展名，如 `.flac`；没有扩展名时为空串。 |
-| `parent` | `string` | 展开 `%变量%` 之后的路径的父目录。路径不做归一化，展开留下的双分隔符会原样保留。 |
+| `exists` | `boolean` | 路径是否存在；为 `false` 时不包含其他字段 |
+| `isDirectory` | `boolean` | 路径是否是目录 |
+| `isFile` | `boolean` | 路径是否是普通文件 |
+| `size` | `integer` | 文件字节大小；目录为 `0` |
+| `modified` | `integer` | 最后修改时间，截断到整秒的 JavaScript 毫秒时间戳 |
+| `name` | `string` | 文件或目录名称，包含扩展名 |
+| `extension` | `string` | 带前导点的扩展名（如 `".flac"`）；无扩展名时为空字符串 |
+| `parent` | `string` | 展开 `%变量%` 后的父目录路径；由于不做路径归一化，展开留下的多余斜杠会原样保留 |
 
 成功时 `success` 为 `true`；失败时返回 `{ success: false, error, code }`，`code` 见[错误码](../reference/errors.md)。
 <!-- api-schema:end -->
@@ -294,28 +294,28 @@ await fb2k.invoke('file.copy', {
 ### file.copyAsync
 
 <!-- api-schema:begin file.copyAsync -->
-在 worker 线程上启动可取消的批量复制，立即返回回执。结果经 `file:opProgress` 分批送达，最后是一条 `file:opComplete`。全进程同时最多进行 8 个批量操作，超出时以 `OPERATION_FAILED` 失败。
+在 worker 线程启动可取消的批量复制并立即返回任务回执；进度结果由 `file:opProgress` 分批推送，最终发送一条 `file:opComplete`；全进程最多同时进行 8 个批量操作，超出时以 `OPERATION_FAILED` 失败
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
-| `items` | `FileOpEntry[]` | 是 | 要复制的条目，按此顺序每条上报一个结果。条目不是恰好含字符串成员 `source` 与 `destination` 的对象时，调用以 `INVALID_PARAMS` 失败。开始之前逐条检查全部路径，`source` 按读取、`destination` 按写入检查；任何一条被拒（空串也算），整次调用以 `PERMISSION_DENIED` 失败，不产生 `operationId`。不能为空。 |
-| `items[].source` | `string` | 是 | 要复制或移动的文件或目录。在 `file:opProgress` 的结果里原样回显，`%变量%` 不展开。不能为空。 |
-| `items[].destination` | `string` | 是 | 目标路径；缺失的父目录会被创建。它指向已存在的目录且 `source` 是文件时，文件以原名放进该目录。与 `source` 一样原样回显。不能为空。 |
-| `overwrite` | `boolean` | 否 | 替换已存在的文件目标，而不是把该条记为 `skipped` / `already-exists`。目录复制到已存在的目录时总会并入其中；除非设置本项，目录内已存在的文件会被跳过且不单独上报。默认 `false`。 |
+| `items` | `FileOpEntry[]` | 是 | 要复制的条目列表，按此顺序每条上报一个结果；若条目不是仅包含字符串成员 `source` 与 `destination` 的对象，调用以 `INVALID_PARAMS` 失败；开始前逐条校验路径权限（`source` 按读取、`destination` 按写入），任一路径被拒绝（含空字符串）都会导致整次调用以 `PERMISSION_DENIED` 失败且不产生 `operationId`不能为空。 |
+| `items[].source` | `string` | 是 | 要复制或移动的文件或目录路径；在 `file:opProgress` 结果中原样回显且不展开 `%变量%`不能为空。 |
+| `items[].destination` | `string` | 是 | 目标路径；缺失的父目录会被自动创建；若目标指向已存在的目录且 `source` 为文件，则以原文件名存入该目录；结果中同样原样回显不能为空。 |
+| `overwrite` | `boolean` | 否 | 是否替换已存在的目标文件；为 `false` 时将该条记录为 `skipped` 且原因为 `already-exists`；目录复制到已存在的目录时总会并入其中，目录内已存在的同名文件仅在此项开启时才被替换，否则静默跳过且不单独上报默认 `false`。 |
 
 **返回值**
 
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
-| `operationId` | `string` | 操作的 id，以 `fileop_` 开头。该操作的事件带有它，`file.cancelOp` 也用它。 |
-| `totalCount` | `integer` | 受理的条目数；事件里以 `total` 报告。 |
+| `operationId` | `string` | 批量操作任务 ID，以 `fileop_` 开头；该操作的事件带有此 ID，`file.cancelOp` 也用它 |
+| `totalCount` | `integer` | 本次操作受理的条目总数，对应事件里的 `total` |
 
 成功时 `success` 为 `true`；失败时返回 `{ success: false, error, code }`，`code` 见[错误码](../reference/errors.md)。
 <!-- api-schema:end -->
 
-返回值只是派工回执；结果经 `file:opProgress`（分批）与最后一条 `file:opComplete` 送达。结果按**条目**上报而非按文件：目录条目在整棵树走完后只出一条结果。全进程同时进行的操作上限为 8 个，超出时调用返回 `OPERATION_FAILED`。
+方法的返回值仅为任务回执，实际操作结果通过 `file:opProgress` 分批推送，并在完成时发送 `file:opComplete`。结果按**请求条目**上报而非按单文件：整个目录树处理完毕后仅产生一条条目结果。全进程最多同时运行 8 个批量操作，达到上限时后续调用将直接返回 `OPERATION_FAILED`。
 
-目录复制到已存在的目录会**并入**其中：该条目不会被判成 `already-exists`，目录内已存在的文件被跳过且不单独上报（除非传了 `overwrite`），该条目仍记 `status: "ok"`。`already-exists` 跳过只适用于单文件条目。
+当目标目录已存在时，复制目录操作会自动**合并**入目标目录：该目录条目不会被判定为 `already-exists`，其处理状态仍记录为 `status: "ok"`；目录内已有的同名文件将静默跳过且不单独上报（除非传入 `overwrite: true` 覆盖）。`already-exists` 仅适用于目标已存在且未开启覆盖的单文件条目。
 
 ```javascript
 const receipt = await fb2k.invoke('file.copyAsync', {
@@ -326,28 +326,28 @@ const receipt = await fb2k.invoke('file.copyAsync', {
 ### file.moveAsync
 
 <!-- api-schema:begin file.moveAsync -->
-在 worker 线程上启动可取消的批量移动，回执与事件同 `file.copyAsync`。同卷移动是一次改名；跨卷时先复制该条目再删除源。
+在 worker 线程启动可取消的批量移动，回执与事件同 `file.copyAsync`；同卷移动直接重命名，跨卷移动则先复制该条目再删除源
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
-| `items` | `FileOpEntry[]` | 是 | 要移动的条目，按此顺序每条上报一个结果。条目不是恰好含字符串成员 `source` 与 `destination` 的对象时，调用以 `INVALID_PARAMS` 失败。开始之前逐条按写入检查全部路径，`source` 也不例外，因为移动会删掉它；任何一条被拒（空串也算），整次调用以 `PERMISSION_DENIED` 失败，不产生 `operationId`。不能为空。 |
-| `items[].source` | `string` | 是 | 要复制或移动的文件或目录。在 `file:opProgress` 的结果里原样回显，`%变量%` 不展开。不能为空。 |
-| `items[].destination` | `string` | 是 | 目标路径；缺失的父目录会被创建。它指向已存在的目录且 `source` 是文件时，文件以原名放进该目录。与 `source` 一样原样回显。不能为空。 |
-| `overwrite` | `boolean` | 否 | 替换已存在的文件目标，而不是把该条记为 `skipped` / `already-exists`；同步的 `file.move` 总是替换。已存在的目录目标永远不会被替换：Windows 不能原地换掉目录，同卷下这样的条目以 `skipped` 或 `failed` 结束。默认 `false`。 |
+| `items` | `FileOpEntry[]` | 是 | 要移动的条目列表，按此顺序每条上报一个结果；若条目不是仅包含字符串成员 `source` 与 `destination` 的对象，调用以 `INVALID_PARAMS` 失败；开始前逐条按写入权限校验全部路径（包括 `source`，因为移动会删除源文件），任一路径被拒绝（含空字符串）都会导致整次调用以 `PERMISSION_DENIED` 失败且不产生 `operationId`不能为空。 |
+| `items[].source` | `string` | 是 | 要复制或移动的文件或目录路径；在 `file:opProgress` 结果中原样回显且不展开 `%变量%`不能为空。 |
+| `items[].destination` | `string` | 是 | 目标路径；缺失的父目录会被自动创建；若目标指向已存在的目录且 `source` 为文件，则以原文件名存入该目录；结果中同样原样回显不能为空。 |
+| `overwrite` | `boolean` | 否 | 是否替换已存在的目标文件；为 `false` 时将该条记录为 `skipped` 且原因为 `already-exists`（同步 `file.move` 总是替换）；已存在的目标目录永远不会被替换（Windows 不支持原地替换目录），同卷移动遇到已有同名目录时条目将以 `skipped` 或 `failed` 结束默认 `false`。 |
 
 **返回值**
 
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
-| `operationId` | `string` | 操作的 id，以 `fileop_` 开头。该操作的事件带有它，`file.cancelOp` 也用它。 |
-| `totalCount` | `integer` | 受理的条目数；事件里以 `total` 报告。 |
+| `operationId` | `string` | 批量操作任务 ID，以 `fileop_` 开头；该操作的事件带有此 ID，`file.cancelOp` 也用它 |
+| `totalCount` | `integer` | 本次操作受理的条目总数，对应事件里的 `total` |
 
 成功时 `success` 为 `true`；失败时返回 `{ success: false, error, code }`，`code` 见[错误码](../reference/errors.md)。
 <!-- api-schema:end -->
 
-派工回执；结果经 `file:opProgress` 与 `file:opComplete` 送达。同卷移动是一次改名，与体积无关；跨卷时宿主自动复制后删源，该条目仍记 `status: "ok"` 但带 `reason: "cross-volume"`，让调用方看得见这一条的代价。目录跨卷同样走这条回退 —— 这是同步版 `file.move` 做不到的。
+方法返回值仅为任务回执，具体处理进度由 `file:opProgress` 与 `file:opComplete` 事件推送。同卷移动仅执行重命名操作，耗时与体积无关；跨卷移动时宿主自动转为复制后删除源条目，该条目仍记录为 `status: "ok"`，但附带 `reason: "cross-volume"` 以显式标识跨卷开销。目录跨卷同样支持该自动回退机制（同步版 `file.move` 不支持目录跨卷）。
 
-与 `file.copyAsync` 不同：目标目录已存在时该条目记 `skipped` / `already-exists` 而非并入。传 `overwrite` 也改不了这一点，见上面参数表的说明。
+与 `file.copyAsync` 的目录合并策略不同：若目标目录已存在，`file.moveAsync` 会直接将该条目记为 `skipped` 且原因为 `already-exists`，不会执行合并。即使传入 `overwrite: true` 也无法覆盖已有目录。
 
 ```javascript
 const receipt = await fb2k.invoke('file.moveAsync', {
@@ -358,24 +358,24 @@ const receipt = await fb2k.invoke('file.moveAsync', {
 ### file.deleteAsync
 
 <!-- api-schema:begin file.deleteAsync -->
-启动可取消的批量删除，回执与事件同 `file.copyAsync`，结果不带 `destination`。回收站删除在主线程上每 16 条一批执行，永久删除走 worker 线程。
+启动可取消的批量删除，回执与事件同 `file.copyAsync`（结果中不带 `destination`）；回收站删除在主线程上每 16 条一批执行，永久删除走 worker 线程
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
-| `paths` | `string[]` | 是 | 要删除的路径，按此顺序每条上报一个结果。有非字符串元素时调用以 `INVALID_PARAMS` 失败。开始之前逐条按写入检查全部路径；任何一条被拒（空串也算），整次调用以 `PERMISSION_DENIED` 失败，不产生 `operationId`。不能为空。 |
-| `moveToTrash` | `boolean` | 否 | 把每一条移入回收站。为 `false` 时永久删除，并且能删除非空目录，这是同步的 `file.delete` 做不到的。默认 `true`。 |
+| `paths` | `string[]` | 是 | 要删除的路径列表，按此顺序每条上报一个结果；数组中存在非字符串元素时调用以 `INVALID_PARAMS` 失败；开始前逐条按写入权限校验全部路径，任一路径被拒绝（含空字符串）都会导致整次调用以 `PERMISSION_DENIED` 失败且不产生 `operationId`不能为空。 |
+| `moveToTrash` | `boolean` | 否 | 是否移入回收站；为 `false` 时执行永久删除，且支持递归删除非空目录（同步 `file.delete` 拒绝删除非空目录）默认 `true`。 |
 
 **返回值**
 
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
-| `operationId` | `string` | 操作的 id，以 `fileop_` 开头。该操作的事件带有它，`file.cancelOp` 也用它。 |
-| `totalCount` | `integer` | 受理的条目数；事件里以 `total` 报告。 |
+| `operationId` | `string` | 批量操作任务 ID，以 `fileop_` 开头；该操作的事件带有此 ID，`file.cancelOp` 也用它 |
+| `totalCount` | `integer` | 本次操作受理的条目总数，对应事件里的 `total` |
 
 成功时 `success` 为 `true`；失败时返回 `{ success: false, error, code }`，`code` 见[错误码](../reference/errors.md)。
 <!-- api-schema:end -->
 
-派工回执；结果经 `file:opProgress` 与 `file:opComplete` 送达。回收站删除受 shell API 的 STA 约束，在宿主主线程上每 16 条一批执行；永久删除走 worker 线程且能删非空目录 —— 同步版 `file.delete` 在 `moveToTrash: false` 下删不了非空目录。
+方法返回值仅为任务回执，具体结果通过 `file:opProgress` 与 `file:opComplete` 事件推送。受 Windows Shell API 的 STA 线程模型约束，回收站删除操作在宿主主线程分批执行（每批 16 条）；永久删除（`moveToTrash: false`）则在 worker 线程执行，且支持递归删除非空目录（同步版 `file.delete` 无法永久删除非空目录）。
 
 ```javascript
 const receipt = await fb2k.invoke('file.deleteAsync', {
@@ -387,24 +387,24 @@ const receipt = await fb2k.invoke('file.deleteAsync', {
 ### file.cancelOp
 
 <!-- api-schema:begin file.cancelOp -->
-停止由 `file.copyAsync`、`file.moveAsync` 或 `file.deleteAsync` 启动的操作。尚未处理的条目记为 `skipped` / `cancelled`，收尾仍会发出 `file:opComplete`。
+停止由 `file.copyAsync`、`file.moveAsync` 或 `file.deleteAsync` 启动的操作；尚未处理的条目记为 `skipped` 且原因为 `cancelled`，收尾仍会发出 `file:opComplete`
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
-| `operationId` | `string` | 是 | `file.copyAsync`、`file.moveAsync` 或 `file.deleteAsync` 回执里的 id。不能为空。 |
+| `operationId` | `string` | 是 | `file.copyAsync`、`file.moveAsync` 或 `file.deleteAsync` 回执里的任务 ID不能为空。 |
 
 **返回值**
 
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
-| `cancelled` | `boolean` | 操作仍在进行并已被通知停止时为 `true`；已结束或从未存在时为 `false`，两者故意不可区分。 |
+| `cancelled` | `boolean` | 操作是否成功收到停止通知；若操作仍在进行并已通知停止则为 `true`；若操作已结束或从未存在则为 `false`（两者故意不可区分） |
 
 成功时 `success` 为 `true`；失败时返回 `{ success: false, error, code }`，`code` 见[错误码](../reference/errors.md)。
 <!-- api-schema:end -->
 
-`cancelled: false` 表示该操作已结束或从未存在，两者故意不可区分。复制/移动在一个文件之内停下（正在传输的那个文件被中止，其残片被删除），删除在下一条之前停下。已处理的条目保留各自结果，其余记 `skipped` / `cancelled`，收尾仍会发一条 `cancelled: true` 的 `file:opComplete`。
+返回 `cancelled: false` 表示操作已经结束或任务 ID 不存在，设计上刻意不区分这两种状态。调用取消后：复制与移动操作会在当前文件粒度中断（正在传输的文件会被中止并清理未完成的残片），删除操作则在下一条开始前停止。已处理完成的条目保留其实际结果，尚未处理的条目统一记录为 `skipped` 且原因为 `cancelled`；任务终止时仍会发出附带 `cancelled: true` 的 `file:opComplete` 事件。
 
-关闭发起该操作的 **popup 窗口**等效于取消，退出 foobar2000 同理。panel 宿主没有这个钩子：它发起的操作会一直跑到结束，除非用本方法停掉，其事件此后走上文所述的回退路径。
+关闭发起操作的 **popup 弹窗**或退出 foobar2000 时，宿主会自动取消进行中的任务。panel 宿主无此自动取消机制，其发起的任务会持续执行直至完成或调用本方法取消；若窗口提前销毁，事件将按前文规则回退投递至主窗口。
 
 ```javascript
 const res = await fb2k.invoke('file.cancelOp', { operationId });
@@ -414,48 +414,48 @@ const { cancelled } = res;
 
 ## 异步文件操作事件 {#file-op-events}
 
-`file.copyAsync`、`file.moveAsync`、`file.deleteAsync` 通过两个事件回报结果。两个事件都投递给发起该操作的那个窗口 —— 这是 `results` 里可以带真实路径的前提；错误信封与 console 日志里仍然一个路径都不会出现。
+`file.copyAsync`、`file.moveAsync` 与 `file.deleteAsync` 通过两组事件推送处理进度与最终结果。事件默认仅定向投递给发起操作的目标窗口，因此事件载荷中的 `results` 能够安全附带真实路径；作为安全防护，通用错误信封与控制台日志中始终不会包含任何文件路径。
 
-一个例外：宿主在每次发射时重新解析目标窗口，该窗口一旦销毁就再也解析不到，事件会改投主实例。popup 关闭时会取消自己发起的未完成操作，这类事件因此有限；panel 宿主没有对应的取消钩子。
+窗口生命周期异常处理：宿主在每次派发事件前会重新解析目标窗口；若该窗口已销毁，事件将改投至主窗口。popup 弹窗关闭时会自动取消未完成任务，因此改投事件极少；panel 宿主没有自动取消机制，需注意窗口生命周期。
 
 ### file:opProgress
 
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
-| `operationId` | `string` | 派工回执里的关联 id。 |
-| `op` | `string` | `copy` / `move` / `delete`。 |
-| `done` | `integer` | 截至目前所有批次已上报的条目数。 |
-| `total` | `integer` | 本次调用受理的条目数，等于回执里的 `totalCount`。 |
-| `results` | `array<object>` | 仅本批，不是累计列表。 |
+| `operationId` | `string` | 派工回执里的关联 ID |
+| `op` | `string` | `copy` / `move` / `delete` |
+| `done` | `integer` | 截至当前所有批次累计上报的条目数 |
+| `total` | `integer` | 本次调用受理的条目总数，等于回执中的 `totalCount` |
+| `results` | `array<object>` | 当前批次的条目结果列表，非累计数据 |
 
-分批发射，不是一条一个事件：攒够 64 条或距上一批满 100 ms，先到者触发。最后的残余批必定排在 `file:opComplete` 之前。
+事件按批次聚合派发，而非单条独立触发：待推送结果达到 64 条或距离上次推送满 100 ms 时触发一次派发。所有残余条目的最终批次一定会排在 `file:opComplete` 事件之前送达。
 
 `results` 逐条：
 
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
-| `source` | `string` | 请求时的 source 原样回显，`%变量%` 不展开。 |
-| `destination` | `string` | 请求时的 destination 原样回显。`file.deleteAsync` 的结果无此字段。 |
-| `status` | `string` | `ok` / `skipped` / `failed`。 |
-| `reason` | `string` | 条目干净成功时无此字段；否则为 `already-exists` / `not-found` / `permission` / `cross-volume` / `path-too-long` / `io-error` / `cancelled`。 |
+| `source` | `string` | 请求中传入的 `source` 原样回显，不展开 `%变量%` |
+| `destination` | `string` | 请求中传入的 `destination` 原样回显，`file.deleteAsync` 结果中无此字段 |
+| `status` | `string` | `ok` / `skipped` / `failed` |
+| `reason` | `string` | 条目直接成功时无此字段，异常或特殊状态时为 `already-exists` / `not-found` / `permission` / `cross-volume` / `path-too-long` / `io-error` / `cancelled` |
 
-`skipped` 表示这一条是"没做"（目标已存在，或取消时还没轮到它），不是错误。`cross-volume` 是唯一与 `status: "ok"` 同时出现的 reason：该条移动经复制加删源的回退成功了。
+`status: "skipped"` 表示该条目因目标已存在或操作提前取消而跳过，并非发生错误。`reason: "cross-volume"` 是唯一能与 `status: "ok"` 同时出现的理由字段，表明跨卷移动已通过先复制后删除的回退机制顺利完成。
 
 ### file:opComplete
 
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
-| `operationId` | `string` | 派工回执里的关联 id。 |
-| `op` | `string` | `copy` / `move` / `delete`。 |
-| `total` | `integer` | 本次调用受理的条目数。 |
-| `successCount` | `integer` | 做成的条目数，含跨卷回退成功的那些。 |
-| `skippedCount` | `integer` | 有意没做的条目数。 |
-| `failureCount` | `integer` | 失败的条目数。 |
-| `cancelled` | `boolean` | 至少有一条结果带 `reason: "cancelled"` 时为 true。 |
+| `operationId` | `string` | 派工回执里的关联 ID |
+| `op` | `string` | `copy` / `move` / `delete` |
+| `total` | `integer` | 本次调用受理的条目总数 |
+| `successCount` | `integer` | 成功执行的条目数，包含跨卷回退成功的条目 |
+| `skippedCount` | `integer` | 有意跳过的条目数 |
+| `failureCount` | `integer` | 执行失败的条目数 |
+| `cancelled` | `boolean` | 至少存在一条结果带 `reason: "cancelled"` 时为 true |
 
-它一旦到达就是该 `operationId` 的最后一个事件，取消与失败路径上照发。但有两条路径根本不会发它：宿主中途退出、以及 worker 侧出现意外失败被最外层兜底接住。因此不允许状态泄漏的监听方应自带超时，而不是无限等这个事件。
+`file:opComplete` 是该 `operationId` 任务周期的终末事件，操作正常完成、被取消或部分条目失败均会触发。仅在两种极端异常情况下该事件不会发出：宿主退出，以及 worker 线程发生非预期致命故障。因此，需要严格防范状态泄漏的监听方应自行设置超时保护，避免无限等待。
 
-取消不会丢条目：没轮到的那些仍记 `skipped` / `cancelled`，所以三个计数通常加起来等于 `total`。
+操作取消时不会丢失条目统计：尚未处理的条目均会记录为 `skipped` 且原因为 `cancelled`，因此成功数、跳过数与失败数三者之和通常等于 `total`。
 
 ```javascript
 fb2k.on('file:opProgress', ({ operationId, done, total, results }) => {
@@ -468,7 +468,7 @@ fb2k.on('file:opComplete', ({ operationId, successCount, cancelled }) => {
 
 ## 文件边界
 
-- 文件 API 会在访问前展开 `%profile%`、`%component%`、`%music%`、`%APPDATA%`、`%TEMP%`。每个端点按注册的 `SecurityLevel` 校验 —— 读端点走 `Read`，`file.*` 的全部写端点走 `FileWrite`，逐端点对照表见[权限系统](/zh/reference/permissions)。`file.write` 会创建缺失的父目录，`file.delete` 默认移入回收站。
-- `file.*` 的每一条失败都在 `error` 之外带 `code`。由文件系统本身抛出的失败还带 `details.value`，即原始 Win32 错误号。`error` 与 `details` 都不会包含路径。
-- `file.list` 在非递归模式下返回名称，在递归模式下返回完整路径。`file.getInfo` 以成功的不存在结果返回 `exists: false`。
-- 异步族（`copyAsync` / `moveAsync` / `deleteAsync`）的返回值只是派工回执，逐条结果只出现在 `file:opProgress` / `file:opComplete` 的 payload 里；这两个事件单窗口投递，因此 `results` 里带路径，而错误信封与日志仍然不带。同步的 `file.copy` / `file.move` / `file.delete` 行为不受本组影响。
+- 路径展开与安全校验：文件 API 在访问前自动展开 `%profile%`、`%component%`、`%music%`、`%APPDATA%` 与 `%TEMP%` 变量。每个端点按照注册的 `SecurityLevel` 进行权限校验：读取端点走 `Read` 级别，所有写入端点走 `FileWrite` 级别，逐端点权限映射详见[权限系统](/zh/reference/permissions)。`file.write` 自动创建缺失的父目录，`file.delete` 默认移入回收站。
+- 错误与隐私安全：`file.*` 所有调用失败均包含标准错误信息 `error` 与错误码 `code`。由底层文件系统抛出的错误还会携带原始 Win32 错误号 `details.value`。为保护用户隐私，`error` 与 `details` 中绝不包含任何文件路径。
+- 路径与元数据返回形式：`file.list` 在非递归模式下返回文件名列表，递归模式下返回完整路径列表。`file.getInfo` 查询不存在的路径时返回成功响应，结果中 `exists: false` 且不包含其余元数据字段。
+- 异步批量与同步操作边界：异步方法（`copyAsync`、`moveAsync`、`deleteAsync`）仅返回任务回执，逐条明细仅通过 `file:opProgress` 与 `file:opComplete` 事件载荷推送；这两类事件采用单窗口定向投递，因此载荷中的 `results` 包含路径，而错误信封和系统日志中始终脱敏。同步方法（`copy`、`move`、`delete`）的行为不受异步操作影响。

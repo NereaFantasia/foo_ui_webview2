@@ -1,6 +1,6 @@
 # ReplayGain API
 
-Methods of the `replaygain` namespace.
+Provides ReplayGain mode configuration, preamp adjustment, tag inspection/clearing, and background scanning.
 
 ## replaygain
 

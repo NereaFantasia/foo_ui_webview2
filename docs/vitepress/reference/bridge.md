@@ -33,9 +33,9 @@ Members whose names start with `_` are internal; do not use them.
 
 | Field | Type | Description |
 | --- | --- | --- |
-| id | number | Auto-increment request id used to match responses |
-| method | string | API method name as `namespace.action` |
-| params | object | Request parameters |
+| `id` | number | Auto-increment request id used to match responses |
+| `method` | string | API method name as `namespace.action` |
+| `params` | object | Request parameters |
 
 ## Response format
 
@@ -93,6 +93,37 @@ When the host refuses the request itself (no `method`, an unknown method, or a h
 }
 ```
 
+## Operation results {#operation-results}
+
+Calls that take a while, such as expanding playlist files, copying files or probing tags, answer at once with a receipt and report the end in an event. The receipt holds an operation id (`operationId`), and the end event carries the same id.
+
+- **A receipt is not a result.** `status: 'pending'` in a receipt only means the host accepted the call.
+- **How it ended.** End events and state queries use these values where they apply: `completed`, `partial` (some of it was done), `cancelled`, `failed` (none of it was done) and `unknown` (the host cannot tell). Each method lists the values it reports.
+- **Subscribe first.** The end event can arrive before your code handles the receipt. Subscribe before calling, and keep the events whose id you have not seen yet:
+
+```javascript
+async function addPathsAndWait(paths) {
+    const early = new Map();
+    let waiter = null;
+    const off = fb2k.on('playlist:addComplete', (event) => {
+        if (waiter?.id === event.operationId) waiter.resolve(event);
+        else early.set(event.operationId, event);
+    });
+    try {
+        const receipt = await fb2k.invoke('playlist.addPathsAsync', { paths });
+        if (!receipt.success) return receipt;
+        return early.get(receipt.operationId)
+            ?? await new Promise((resolve) => { waiter = { id: receipt.operationId, resolve }; });
+    } finally {
+        off();
+    }
+}
+```
+
+- **Missed events.** Where a method offers a state query (such as `jitSession.getOperation`), use it after a reload, or when the event may have come before you subscribed.
+- **Commands report nothing back.** Menu commands answer with `completion: 'unknown'`: foobar2000 does not say whether a command finished or whether a dialog it opened was cancelled.
+- **A timeout is not a failure.** `fb2k.invoke()` waits 30 seconds for an answer, then rejects with `code: 'TIMEOUT'`. The host may still be running the call, or may have finished it; its late answer is dropped. A menu command that shows a modal dialog, such as renaming a playlist, keeps its call waiting until the dialog closes.
+
 ## Important notes
 
 ### Async calls
@@ -140,8 +171,8 @@ Track objects returned by the API include two path fields:
 
 | Field | Description |
 | --- | --- |
-| path | foobar2000 internal path (may be `file-relative://`, etc.) |
-| absolutePath | Local filesystem absolute path (preferred) |
+| `path` | foobar2000 internal path (may be `file-relative://`, etc.) |
+| `absolutePath` | Local filesystem absolute path (preferred) |
 
 ::: warning Always prefer absolutePath
 When calling path-based APIs such as `artwork.getForTrack`, pass `absolutePath`, not `path`.
@@ -151,12 +182,12 @@ When calling path-based APIs such as `artwork.getForTrack`, pass `absolutePath`,
 
 | Prefix | Kind | Example |
 | --- | --- | --- |
-| C:\\ D:\\ | Local file | D:\\Music\\song.flac |
-| file:// | URI form | file://D:/Music/song.flac |
-| file-relative:// | Relative path | file-relative://../../song.flac |
-| archive:// | Archive entry | archive://D:\\Album.zip\|track01.flac |
-| cdda:// | CD track | cdda://E,1 |
-| http:// https:// | Network stream | https://stream.example.com/live |
+| `C:\` `D:\` | Local file | `D:\Music\song.flac` |
+| `file://` | URI form | `file://D:/Music/song.flac` |
+| `file-relative://` | Relative path | `file-relative://../../song.flac` |
+| `archive://` | Archive entry | `archive://D:\Album.zip|track01.flac` |
+| `cdda://` | CD track | `cdda://E,1` |
+| `http://` `https://` | Network stream | `https://stream.example.com/live` |
 
 #### File type detection
 

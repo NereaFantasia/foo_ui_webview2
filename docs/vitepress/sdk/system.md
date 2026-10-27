@@ -1,6 +1,6 @@
 # `fb.system` API and plugin discovery
 
-## listApis() 
+## listApis()
 
 Lists available APIs. Optional booleans control inclusion of internal and external registrations. Resolves with `{ apis }`, a `SystemApiInfo[]` rather than a string array, or with a failure envelope.
 
@@ -10,7 +10,7 @@ if (res.success === false) throw new Error(res.error);
 // res.apis: [{ fullName, namespace, method, description, version, isExternal, ... }, ...]
 ```
 
-## getApiStats() 
+## getApiStats()
 
 Returns API registration statistics as `SystemGetApiStatsResponse` (`SystemApiStatsResponse` remains as an alias).
 
@@ -20,7 +20,7 @@ if (stats.success === false) throw new Error(stats.error);
 console.log(stats.totalApis, stats.byNamespace.playback);
 ```
 
-## getApisByNamespace(namespace) 
+## getApisByNamespace(namespace)
 
 Resolves with `{ apis }`, the `SystemApiInfo[]` of a namespace; empty for an unknown namespace.
 
@@ -28,7 +28,7 @@ Resolves with `{ apis }`, the `SystemApiInfo[]` of a namespace; empty for an unk
 const res = await fb.system.getApisByNamespace('playback');
 ```
 
-## searchApis(query) 
+## searchApis(query)
 
 Searches registered API metadata and resolves with `{ apis }`, a `SystemApiInfo[]`.
 
@@ -36,7 +36,7 @@ Searches registered API metadata and resolves with `{ apis }`, a `SystemApiInfo[
 const res = await fb.system.searchApis('volume');
 ```
 
-## getRegisteredPlugins() 
+## getRegisteredPlugins()
 
 Lists the external plugins that registered methods with the bridge. Resolves with `{ plugins }`, a `SystemPluginInfo[]`; each entry has `name`, `namespace` (unique among plugins), `version`, `author`, `description`, `apis` (full method names) and `apiCount` (the length of `apis`).
 
@@ -46,7 +46,7 @@ if (res.success === false) throw new Error(res.error);
 for (const p of res.plugins) console.log(`${p.namespace} ${p.version}: ${p.apiCount} methods`);
 ```
 
-## isPluginRegistered(namespace) 
+## isPluginRegistered(namespace)
 
 Checks whether an external plugin namespace is registered.
 

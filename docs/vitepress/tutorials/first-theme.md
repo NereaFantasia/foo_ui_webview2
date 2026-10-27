@@ -1,20 +1,18 @@
 # Build your first theme
 
-In this tutorial we build a small player page for foobar2000 and install it as a theme. It shows the cover art, title and artist of the playing track, a seek bar with the elapsed and total time, and previous, play/pause and next buttons. While we work on it, foobar2000 loads the page from a development server, so every change shows up as soon as we save the file.
+This tutorial walks through building a lightweight player theme for foobar2000 and installing it as a standalone theme. The interface displays the current track's album art, title, artist, a progress bar with elapsed and total duration, and transport buttons (previous, play/pause, next). During development, foobar2000 loads the page directly from a local development server with hot module replacement (HMR), reflecting changes as soon as files are saved.
 
-We use [Vite](https://vite.dev/) for the development server and the build, and the [`foo-webview-sdk`](https://www.npmjs.com/package/foo-webview-sdk) package for ready-made player elements. No framework is needed. The finished project is in the repository as [`examples/starter`](https://github.com/NereaFantasia/foo_ui_webview2/tree/main/examples/starter).
+The project uses [Vite](https://vite.dev/) for development and production bundling, along with unstyled Web Components from [`foo-webview-sdk`](https://www.npmjs.com/package/foo-webview-sdk) without requiring a frontend framework. Complete source code is available in the repository at [`examples/starter`](https://github.com/NereaFantasia/foo_ui_webview2/tree/main/examples/starter).
 
-## Before you start
+## Prerequisites {#before-you-start}
 
-You need:
-
-- foobar2000 2.x with foo_ui_webview2 installed and `Webview2 UI` chosen as the user interface. [Install the component](/how-to/install) covers both.
-- Node.js 20.19 or later. Run `node --version` to see which version you have.
-- A few tracks in a foobar2000 playlist.
+- foobar2000 v2.0 or later with foo_ui_webview2 installed and `Webview2 UI` selected as the user interface (see [Install the component](/how-to/install))
+- Node.js 20.19 or later (run `node --version` to verify)
+- Playable tracks in a foobar2000 playlist
 
 ## Create the project
 
-Make an empty folder named `my-theme`. Keep it outside the foobar2000 profile folder; we copy the finished theme into the profile at the end.
+Create an empty directory named `my-theme` outside the foobar2000 profile folder (the compiled theme is copied into the profile once complete).
 
 In `my-theme`, create `package.json`:
 
@@ -41,17 +39,17 @@ In `my-theme`, create `package.json`:
 }
 ```
 
-Open a terminal in `my-theme` and install the packages:
+Open a terminal in `my-theme` and install dependencies:
 
 ```bash
 npm install
 ```
 
-When npm finishes, `my-theme` also contains a `node_modules` folder and a `package-lock.json` file.
+When installation completes, `my-theme` contains the `node_modules` directory and `package-lock.json`.
 
 ## Write the page
 
-Next we add four files. Start with `vite.config.js`, which fixes the port of the development server:
+The project consists of four core source files. First, create `vite.config.js` to lock the development server port:
 
 ```js
 import { defineConfig } from 'vite';
@@ -66,7 +64,7 @@ export default defineConfig({
 });
 ```
 
-Then `index.html`. Each `fb-*` tag is a player element from the SDK: it asks foobar2000 for its data and updates itself when the track or the position changes.
+Next, create the page entry point `index.html`. All `fb-*` elements are standardized Web Components provided by the SDK that automatically subscribe to host data and update on state and progress changes:
 
 ```html
 <!doctype html>
@@ -103,7 +101,7 @@ Then `index.html`. Each `fb-*` tag is a player element from the SDK: it asks foo
 </html>
 ```
 
-Create a folder named `src`. In it, `src/main.js` registers the `fb-*` elements and loads the stylesheet:
+Create a `src` directory containing `src/main.js` to register the components and import styles:
 
 ```js
 import { registerComponents } from 'foo-webview-sdk/components';
@@ -112,7 +110,7 @@ import './style.css';
 registerComponents();
 ```
 
-Last, `src/style.css`. The elements have no look of their own. The rules ending in `::part(...)` style the pieces inside them, such as the button in a play button or the fill of the seek bar.
+Create `src/style.css`. SDK components follow the zero-style convention; style internal sub-elements using `::part(...)` selectors (such as button surfaces and seek fill tracks):
 
 ```css
 :root {
@@ -212,7 +210,7 @@ body {
 }
 ```
 
-The project now looks like this:
+The project directory structure is now organized as follows:
 
 ```text
 my-theme/
@@ -228,13 +226,13 @@ my-theme/
 
 ## Start the development server
 
-In the terminal, run:
+In the terminal, run the development server:
 
 ```bash
 npm run dev
 ```
 
-Vite prints the address it serves the page on:
+Vite prints the local address once ready:
 
 ```text
   VITE v8.3.1  ready in 144 ms
@@ -242,23 +240,23 @@ Vite prints the address it serves the page on:
   ➜  Local:   http://localhost:5173/
 ```
 
-Leave it running for the rest of the tutorial. Open `http://localhost:5173` in a web browser: we see a dark grey square where the cover goes, "Nothing playing", `0:00` on both sides of the seek bar, and the three buttons. There is no foobar2000 behind an ordinary browser, so the buttons do nothing there.
+Keep the development server running. Open `http://localhost:5173` in an external browser: a dark gray placeholder marks the cover art, alongside "Nothing playing", `0:00` timestamps on the seek bar, and three control buttons. Because external browsers lack the native foobar2000 bridge, button clicks do not alter playback.
 
 ## Load the page in foobar2000
 
-In foobar2000, open `File → Preferences → Display → WebView2 UI → Developer`, then:
+In foobar2000, open `File → Preferences → Display → WebView2 UI → Developer`:
 
-1. Tick `Use development server (HMR hot reload)`.
-2. Type `http://localhost:5173` into the `URL` box.
-3. Press `Apply`.
+1. Tick `Use development server (HMR hot reload)`
+2. Type `http://localhost:5173` into the `URL` box
+3. Click `Apply`
 
-The foobar2000 window reloads and shows our page. Play a track. The cover, title and artist appear, the time counts up, and the play button turns into a pause button. Click somewhere on the seek bar to jump there, and try the previous and next buttons.
+The foobar2000 window reloads and displays the page. Play any track: the album art, track title, and artist populate immediately, playback progress advances, and the play button toggles to pause. Clicking along the seek bar navigates the track, and the transport controls take effect.
 
 If the window shows the theme you had before, foobar2000 could not reach the development server and loaded the theme from the profile instead. Check that `npm run dev` is still running in the terminal, then restart foobar2000.
 
-## Change the colour
+## Experience hot reload (change accent colour) {#change-the-colour}
 
-Keep foobar2000 open next to the editor. At the top of `src/style.css`, change the accent colour to any colour you like, for example:
+Open `src/style.css` in your editor, and change the accent colour variable at the top (for example, to orange):
 
 ```css
 :root {
@@ -271,13 +269,13 @@ Keep foobar2000 open next to the editor. At the top of `src/style.css`, change t
 }
 ```
 
-Save the file. The play button and the filled part of the seek bar change colour straight away, without the page reloading.
+Save the file. The play button and the filled part of the seek bar change colour immediately without reloading the page.
 
 ## Show the playback state
 
-So far the elements have done all the work. Now we call the SDK ourselves: a line that says whether foobar2000 is playing, and a button that plays a random track.
+Up to this point, Web Components have managed state and communication autonomously. Next, call the SDK directly to implement custom logic: displaying live playback state and triggering a random track.
 
-Add this block to `index.html`, inside `<main>` after the `controls` div:
+Add this block to `index.html`, inside `<main>` after the `.controls` div:
 
 ```html
       <div class="extra">
@@ -286,7 +284,7 @@ Add this block to `index.html`, inside `<main>` after the `controls` div:
       </div>
 ```
 
-When we save, the whole page reloads. Vite can swap a stylesheet in place but not the page's HTML. The new line appears under the buttons, still unstyled.
+Saving triggers a page reload as HTML structure changes require a full refresh. The unstyled text and button appear below the controls.
 
 Add these rules to the end of `src/style.css`:
 
@@ -310,7 +308,7 @@ Add these rules to the end of `src/style.css`:
 }
 ```
 
-Then add the marked lines to `src/main.js`. The first one imports `fb`, the SDK object the elements have been using all along:
+Add the marked lines to `src/main.js` to import `fb` and register the event listeners:
 
 ```js
 import fb from 'foo-webview-sdk'; // [!code ++]
@@ -336,41 +334,41 @@ document.querySelector('#random').addEventListener('click', () => {
 });
 ```
 
-`fb.player.getState()` asks foobar2000 once for the current state. `fb.on('playback:stateChanged', ...)` runs our function again each time the state changes. Every SDK call resolves with a result whose `success` field says whether it worked; outside foobar2000 it is `false`, so in an ordinary browser the line keeps saying "Not connected to foobar2000".
+`fb.player.getState()` retrieves the initial transport state. `fb.on('playback:stateChanged', ...)` listens for continuous state transitions. SDK calls resolve with a standard result object where `success` indicates host availability; outside foobar2000 it is `false`, keeping the fallback text visible in standard browsers.
 
-Save. The line now says "Playing". Pause in foobar2000 and it says "Paused"; press `Random track` and foobar2000 jumps to a random track.
+Save the file. The status line updates to "Playing". Pausing in foobar2000 toggles it to "Paused"; clicking `Random track` commands the host to jump to a random item.
 
-## Install the theme
+## Install the theme into the profile {#install-the-theme}
 
-The development server only runs while the terminal is open. To keep the theme, we build it and copy it into the foobar2000 profile as a template.
+The development server is intended for live debugging. To use the theme permanently, build the production bundle and copy it into the foobar2000 profile directory as a template.
 
-First switch foobar2000 back: on the `Developer` page, untick `Use development server (HMR hot reload)` and press `Apply`. The window shows the theme you had before.
+In foobar2000, open the `Developer` page, untick `Use development server (HMR hot reload)`, and click `Apply` to return to local template mode.
 
-In the terminal, press `Ctrl+C` to stop the development server, then build:
+Stop the development server in your terminal (`Ctrl+C`), then run the build:
 
 ```bash
 npm run build
 ```
 
-Vite writes the finished theme to the `dist` folder of the project: an `index.html` and an `assets` folder.
+Vite outputs production assets into the project's `dist` folder (containing `index.html` and the `assets` directory).
 
-In foobar2000, go to the `WebView2 UI` page itself (`File → Preferences → Display → WebView2 UI`):
+In foobar2000, navigate to `File → Preferences → Display → WebView2 UI`:
 
-1. Press `Manage...` and choose `Create...`. Enter `my-theme` as the name and confirm. foobar2000 creates a template folder with a placeholder `index.html` and selects `my-theme` in the `Template` box.
-2. Press `Open...`. The template folder opens in File Explorer.
-3. Copy everything inside the project's `dist` folder into the template folder, replacing the `index.html` there.
-4. Press `Apply`.
+1. Click `Manage...` to open the template menu, select `New...`, enter `my-theme`, and confirm. foobar2000 creates the template directory with a placeholder `index.html` and selects `my-theme`
+2. Click `Open...` to locate the template directory in File Explorer
+3. Copy all files and folders from the project's `dist` directory into the template directory, replacing the placeholder `index.html`
+4. Click `Apply`
 
-The window reloads and shows our theme, this time from the template folder. It stays after foobar2000 restarts, and it no longer needs the development server.
+The window reloads and renders the theme directly from the profile template directory. The theme persists across foobar2000 restarts without requiring an active development server.
 
-## What's next
+## Next steps {#what-s-next}
 
-We now have a working theme and a way to edit it live. From here:
+Now that you have a functioning custom theme, explore these topics:
 
-- [Namespaces](/sdk/namespaces) lists everything the SDK can do, from playlists and the media library to windows and the tray icon.
-- [Components](/components/) lists the other `fb-*` elements, such as the playlist view and the volume control.
-- [Put a page in a panel](/how-to/panels) shows how to put a page inside Default UI or Columns UI as a panel.
-- [Results and failures](/sdk/overview#results-and-failures) explains the result objects SDK calls resolve with.
-- [Preferences](/reference/preferences) describes the other settings we passed on the way.
+- [Namespaces](/sdk/namespaces): Browse complete SDK capabilities across playlists, media library, window management, and tray integration
+- [Components](/components/): Discover ready-to-use Web Components such as playlist views and volume sliders
+- [Put a page in a panel](/how-to/panels): Embed web themes into Default UI or Columns UI layout panels
+- [Results and failures](/sdk/overview#results-and-failures): Understand error codes and result envelope structures
+- [Preferences](/reference/preferences): Explore theme appearance, backdrop effects, and developer settings
 
-To start again from the finished code, copy [`examples/starter`](https://github.com/NereaFantasia/foo_ui_webview2/tree/main/examples/starter) from the repository.
+The complete starter project is available in the repository at [`examples/starter`](https://github.com/NereaFantasia/foo_ui_webview2/tree/main/examples/starter).

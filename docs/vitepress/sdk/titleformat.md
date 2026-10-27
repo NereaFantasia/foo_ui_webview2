@@ -108,15 +108,15 @@ Every successful evaluation reports `infoAvailable`. foobar2000 formats a track 
 
 | Value | Meaning |
 | --- | --- |
-| `true` | The host had the track's info, from foobar2000's cache or read from the file, so tag-derived output is trustworthy. |
-| `false` | The host could not get the track's info: a remote path with nothing cached, or a file that cannot be read. A placeholder `file_info` was rendered instead, so tag-derived output such as `%bitrate%` or `%codec%` cannot be trusted. |
-| absent | The flag was never set. The exact cases differ per method — see "When the flag is absent" below. |
+| `true` | The host had the track's info, from foobar2000's cache or read from the file, so tag-derived output is trustworthy |
+| `false` | The host could not get the track's info: a remote path with nothing cached, or a file that cannot be read. A placeholder `file_info` was rendered instead, so tag-derived output such as `%bitrate%` or `%codec%` cannot be trusted |
+| absent | The flag was never set. The exact cases differ per method — see "When the flag is absent" below |
 
 ```javascript
 const one = await fb.titleformat.eval('%bitrate%', 'E:\\Music\\one.flac');
 if (one.success === false) throw new Error(one.error);
 if (one.infoAvailable === false) {
-	// Unreadable, or remote with nothing cached — show the value as unknown instead of empty.
+	// Unreadable, or remote with nothing cached — show the value as unknown instead of empty
 }
 
 const many = await fb.titleformat.evalFieldsBatch(

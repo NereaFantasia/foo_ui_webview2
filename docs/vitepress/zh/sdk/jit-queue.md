@@ -90,7 +90,9 @@ const result = await fb.jitQueue.preloadBatch({
 
 签名：`fb.jitQueue.skip(): Promise<JitQueueSkipResponse>`
 
-跳到缓冲中的下一项。返回值带 `currentTrackId`，即跳过后正在播放的曲目。没有活动会话时以 `NO_ACTIVE_ITEM` 拒绝。
+跳到缓冲中的下一项。返回值带 `currentTrackId`，在调用返回时读取：此时跳到的曲目尚未开始播放，所以仍是被跳过的那首，新曲目要等 `jitQueue:trackChanged`。没有活动会话时以 `NO_ACTIVE_ITEM` 拒绝。
+
+只有正在播放的曲目之后有已缓冲的项时才不动原生播放队列。没有时按 foobar2000 的“下一首”命令执行：原生播放队列不为空时播放队列里的第一首，JIT 会话随之结束。
 
 ```javascript
 const result = await fb.jitQueue.skip();

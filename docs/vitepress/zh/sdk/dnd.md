@@ -49,7 +49,7 @@ document.getElementById('playlist')?.addEventListener('dragover', (event) => {
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
-| `sessionId` | `string` | 否 | 要查询的会话，取自 `dnd:*` 载荷。省略则查询本窗口当前活动或最近结束的会话。 |
+| `sessionId` | `string` | 否 | 要查询的会话，取自 `dnd:*` 载荷。省略则查询本窗口当前活动或最近结束的会话 |
 
 返回 `{ sessionId, paths, resolvedPaths }`。`paths` 与 `resolvedPaths` 长度恒
 相等；会话已过期、未携带文件列表，或 origin 不被信任时两者同为空数组。
@@ -84,12 +84,12 @@ fb.on('dnd:drop', (data) => {
 
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
-| `sessionId` | `string` | 关联同一次拖放手势的 `dnd:enter`、`dnd:leave` 与 `dnd:drop`。 |
-| `paths` | `string[]` | 绝对文件系统路径，顺序与 `DataTransfer.files` 一致；被扣留时为空数组。 |
-| `resolvedPaths` | `(string \| null)[]` | 对应下标的快捷方式目标，或 `null`。长度与 `paths` 恒相等，详见「快捷方式目标」一节。 |
-| `x`、`y` | `number` | 光标位置，客户区物理像素——除以 `devicePixelRatio` 得 CSS 像素。 |
-| `keyState` | `number` | drop 时刻的 Win32 `MK_*` 修饰键 / 鼠标键掩码。 |
-| `source` | `'self' \| 'other-window' \| 'external'` | 拖动从哪里来，见「拖动的来源」一节。 |
+| `sessionId` | `string` | 关联同一次拖放手势的 `dnd:enter`、`dnd:leave` 与 `dnd:drop` |
+| `paths` | `string[]` | 绝对文件系统路径，顺序与 `DataTransfer.files` 一致；被扣留时为空数组 |
+| `resolvedPaths` | `(string \| null)[]` | 对应下标的快捷方式目标，或 `null`。长度与 `paths` 恒相等，详见「快捷方式目标」一节 |
+| `x`、`y` | `number` | 光标位置，客户区物理像素——除以 `devicePixelRatio` 得 CSS 像素 |
+| `keyState` | `number` | drop 时刻的 Win32 `MK_*` 修饰键 / 鼠标键掩码 |
+| `source` | `'self' \| 'other-window' \| 'external'` | 拖动从哪里来，见「拖动的来源」一节 |
 
 `dnd:enter` 携带 `sessionId`、`paths`、`resolvedPaths`、`hasFiles`、`source` 与同样
 的光标字段；`dnd:leave` 仅携带 `sessionId`。
@@ -184,7 +184,7 @@ element.addEventListener('dragover', (event) => {
 const paths = fb.dnd.getPaths();
 const targets = fb.dnd.getResolvedPaths();
 
-// 快捷方式播放其目标，其他条目播放自身。
+// 快捷方式播放其目标，其他条目播放自身
 const playable = paths.map((path, i) => targets[i] ?? path);
 await fb2k.invoke('playlist.addPaths', { paths: playable });
 ```
@@ -213,12 +213,12 @@ await fb2k.invoke('playlist.addPaths', { paths: playable });
 
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
-| `html5` | `boolean` | 页面仍能收到标准 HTML5 拖放事件。 |
-| `paths` | `boolean` | 可取到真实文件系统路径。 |
-| `hosting` | `'visual' \| 'standard'` | 窗口承载 WebView 的方式。 |
-| `pathsUnavailableReason` | `string` | 仅当 `paths` 为 `false` 时出现。 |
-| `dragOut` | `boolean` | 可通过 [`prepareDrag`](#preparedrag-paths) 把文件拖出。 |
-| `dragOutUnavailableReason` | `string` | 仅当 `dragOut` 为 `false` 时出现。 |
+| `html5` | `boolean` | 页面仍能收到标准 HTML5 拖放事件 |
+| `paths` | `boolean` | 可取到真实文件系统路径 |
+| `hosting` | `'visual' \| 'standard'` | 窗口承载 WebView 的方式 |
+| `pathsUnavailableReason` | `string` | 仅当 `paths` 为 `false` 时出现 |
+| `dragOut` | `boolean` | 可通过 [`prepareDrag`](#preparedrag-paths) 把文件拖出 |
+| `dragOutUnavailableReason` | `string` | 仅当 `dragOut` 为 `false` 时出现 |
 
 ```javascript
 const caps = await fb.dnd.getCapabilities();
@@ -229,7 +229,7 @@ if (!caps.paths) {
 ```
 
 `pathsUnavailableReason` 取值为 `origin-untrusted`、`inner-target-not-found`、
-`forward-unavailable`、`chain-failed`、`displaced`、`register-failed` 之一。
+`forward-unavailable`、`chain-failed`、`register-failed` 之一。
 
 `dragOutUnavailableReason` 取值为 `not-visual-hosting`（DUI / CUI 面板，拖动源由
 Chromium 持有）、`runtime-too-old`（WebView2 运行时早于本功能依赖的拖放开始事件，
@@ -284,7 +284,7 @@ fb.on('dnd:capabilitiesChanged', (caps) => {
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
-| `paths` | `string[]` | 是 | 要拖出的位置，至少一条。接受原生路径、`file://` URL、`file-relative://` URL（便携安装下与程序同卷媒体的路径形态，交由 foobar2000 解析）、`archive://` / `unpack://` 项，以及 `路径\|subsong:N` 形式（后缀会被去掉，拖走容器）。曲目对象的 `path` 与 `absolutePath` 都可以传。 |
+| `paths` | `string[]` | 是 | 要拖出的位置，至少一条。接受原生路径、`file://` URL、`file-relative://` URL（便携安装下与程序同卷媒体的路径形态，交由 foobar2000 解析）、`archive://` / `unpack://` 项，以及 `路径\|subsong:N` 形式（后缀会被去掉，拖走容器）。曲目对象的 `path` 与 `absolutePath` 都可以传 |
 
 返回 `{ success: true, token }`。token 是不透明的，唯一用途是交给
 [`applyDragToken`](#applydragtoken-datatransfer-token)。
@@ -324,13 +324,13 @@ cue 或多曲目容器里的一条曲目拖走的是整个容器文件；`archiv
 
 | `code` | 含义 |
 | --- | --- |
-| `NOT_FOUND` | 调用窗口没有拖放注册。 |
-| `ORIGIN_DENIED` | 文档 origin 不受信任，不允许拖出文件。此判定先于任何路径检查。 |
-| `NOT_SUPPORTED` | 本窗口 `dragOut` 为 `false`。 |
-| `INVALID_PARAMS` | `paths` 缺失、为空，或元素不全是字符串。 |
-| `INVALID_PATH` | 某项背后没有本地文件（流媒体、`cdda://` 曲目）。`paths[i]` 是**你传入数组**的下标。 |
-| `PERMISSION_DENIED` | 某项被路径安全策略拒绝。`paths[i]` 是**归一化去重后**列表的下标，可能短于你的数组。 |
-| `OPERATION_FAILED` | 无法创建 token。 |
+| `NOT_FOUND` | 调用窗口没有拖放注册 |
+| `ORIGIN_DENIED` | 文档 origin 不受信任，不允许拖出文件。此判定先于任何路径检查 |
+| `NOT_SUPPORTED` | 本窗口 `dragOut` 为 `false` |
+| `INVALID_PARAMS` | `paths` 缺失、为空，或元素不全是字符串 |
+| `INVALID_PATH` | 某项背后没有本地文件（流媒体、`cdda://` 曲目）。`paths[i]` 是**你传入数组**的下标 |
+| `PERMISSION_DENIED` | 某项被路径安全策略拒绝。`paths[i]` 是**归一化去重后**列表的下标，可能短于你的数组 |
+| `OPERATION_FAILED` | 无法创建 token |
 
 错误信息不含路径本体。
 
@@ -386,9 +386,9 @@ trackEl.addEventListener('dragend', (e) => {
 
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
-| `result` | `'failed'` | 恒为 `'failed'`；宿主只报告拒绝。 |
-| `code` | `string` | `PERMISSION_DENIED`（token 未知、过期、已消费、被顶掉或来自其他窗口）、`INVALID_PARAMS`（`effectAllowed` 不是 `'copy'`）、`OPERATION_FAILED`（文件列表挂不上去）。 |
-| `error` | `string` | 可读原因，不含路径。 |
+| `result` | `'failed'` | 恒为 `'failed'`；宿主只报告拒绝 |
+| `code` | `string` | `PERMISSION_DENIED`（token 未知、过期、已消费、被顶掉或来自其他窗口）、`INVALID_PARAMS`（`effectAllowed` 不是 `'copy'`）、`OPERATION_FAILED`（文件列表挂不上去） |
+| `error` | `string` | 可读原因，不含路径 |
 
 有效 token 在检查 `effectAllowed` 和附加文件列表之前就已消费。因此收到 `INVALID_PARAMS` 或 `OPERATION_FAILED` 后，重试前也必须申请新 token。
 

@@ -1,10 +1,10 @@
 # File API
 
-Methods of the `file` namespace.
+The `file` namespace provides synchronous and asynchronous file system operations, directory management, and batch task execution.
 
 ## Path length
 
-foobar2000 does not opt in to long paths, so the host is held to the classic Windows limit: a path, with its variables expanded, can have at most 259 characters, and a folder the host creates at most 247. The synchronous methods fail a longer path with `OPERATION_FAILED` and `details.value` 206, the Windows error for a name that is too long, instead of reporting an existing file as missing. An atomic `file.write` also needs room for its temporary file, `.~<process id>-<sequence>.tmp`, in the target's folder. `file.copyAsync`, `file.moveAsync` and `file.deleteAsync` report such an entry as `failed` with reason `path-too-long`, including when a path inside a copied folder goes past the limit.
+foobar2000 does not opt in to Windows long paths, constraining the host to classic Win32 limits: an expanded path can have at most 259 characters, and a created folder at most 247. Synchronous methods reject longer paths with `OPERATION_FAILED` and `details.value: 206` (the Win32 `ERROR_FILENAME_EXCED_RANGE` code) rather than reporting them as missing. Atomic `file.write` also requires room in the target folder for its temporary file (`.~<process id>-<sequence>.tmp`). Batch operations (`file.copyAsync`, `file.moveAsync`, and `file.deleteAsync`) report paths exceeding this limit as `failed` with `reason: "path-too-long"`.
 
 ## file
 
@@ -26,9 +26,9 @@ Stop an operation started by `file.copyAsync`, `file.moveAsync` or `file.deleteA
 `success` is `true` on success. On failure the response is `{ success: false, error, code }`; see [Error codes](../reference/errors.md) for `code`.
 <!-- api-schema:end -->
 
-`cancelled: false` means the operation already finished or never existed; the two are intentionally indistinguishable. A copy or move stops within one file (the file in flight is aborted and its partial copy removed), a delete stops at the next entry. Entries already processed keep their results, the remainder is reported as `skipped` / `cancelled`, and the run still ends with a `file:opComplete` carrying `cancelled: true`.
+`cancelled: false` indicates that the operation had already completed or did not exist (the two cases are intentionally indistinguishable). A cancelled copy or move aborts the active file and deletes its partial copy; a cancelled delete stops before the next entry. Already processed entries retain their outcomes, remaining entries are reported as `skipped` / `cancelled`, and the operation concludes with a final `file:opComplete` event carrying `cancelled: true`.
 
-Closing a **popup** that started an operation cancels it the same way, and so does quitting foobar2000. A panel host has no such hook: its operations run to the end unless this method stops them, and their events then take the fallback route described above.
+Closing a **popup** window that initiated an operation cancels it automatically, as does quitting foobar2000. A panel host does not have an automatic cancellation hook: its operations run to completion unless stopped with `file.cancelOp`.
 
 ```js
 const res = await fb2k.invoke('file.cancelOp', { operationId });
@@ -86,9 +86,9 @@ Start a cancellable batch copy on a worker thread and return a receipt at once. 
 `success` is `true` on success. On failure the response is `{ success: false, error, code }`; see [Error codes](../reference/errors.md) for `code`.
 <!-- api-schema:end -->
 
-The return value is only a dispatch receipt; results arrive via `file:opProgress` (batched) and a final `file:opComplete`. One result is reported per entry, never per file: a directory entry is reported once its whole tree has been walked. At most 8 operations may be in flight process-wide; beyond that the call fails with `OPERATION_FAILED`.
+The return value is a dispatch receipt; batch results arrive via `file:opProgress` and complete with `file:opComplete`. Outcomes are reported per entry rather than per file: a directory entry completes after its entire subtree is traversed. At most 8 operations may run concurrently across the host process; additional requests fail with `OPERATION_FAILED`.
 
-A directory copied onto an existing directory is **merged** into it: the entry is not rejected as `already-exists`, files already present inside are skipped without individual reporting (unless `overwrite` is set), and the entry still reports `status: "ok"`. The `already-exists` skip applies to file entries only.
+Copying a directory onto an existing directory **merges** contents: the destination is not rejected as `already-exists`. Files already present in the target directory are skipped without individual progress items (unless `overwrite: true` is set), and the directory entry reports `status: "ok"`. The `already-exists` skip applies exclusively to file destinations.
 
 ```js
 const receipt = await fb2k.invoke('file.copyAsync', {
@@ -135,7 +135,7 @@ Start a cancellable batch delete, with the same receipt and events as `file.copy
 `success` is `true` on success. On failure the response is `{ success: false, error, code }`; see [Error codes](../reference/errors.md) for `code`.
 <!-- api-schema:end -->
 
-Dispatch receipt only; results arrive via `file:opProgress` and `file:opComplete`. Recycle Bin deletes run on the host main thread in batches of 16 because the shell API requires it; permanent deletes run on a worker thread and remove non-empty directories, which the synchronous `file.delete` refuses to do with `moveToTrash: false`.
+The return value is a dispatch receipt; batch results arrive via `file:opProgress` and conclude with `file:opComplete`. Recycle Bin deletes run on the main thread in batches of 16 as required by Windows shell APIs. Permanent deletes run on a background worker thread and can remove non-empty directories, whereas synchronous `file.delete` with `moveToTrash: false` rejects non-empty directories.
 
 ```js
 const receipt = await fb2k.invoke('file.deleteAsync', {
@@ -308,9 +308,9 @@ Start a cancellable batch move on a worker thread, with the same receipt and eve
 `success` is `true` on success. On failure the response is `{ success: false, error, code }`; see [Error codes](../reference/errors.md) for `code`.
 <!-- api-schema:end -->
 
-Dispatch receipt only; results arrive via `file:opProgress` and `file:opComplete`. Within one volume a move is a rename regardless of size. Across volumes the host copies and then deletes the source; that entry still reports `status: "ok"` but carries `reason: "cross-volume"`, so the extra cost is visible. Directories cross volumes the same way, which the synchronous `file.move` cannot do.
+The return value is a dispatch receipt; batch results arrive via `file:opProgress` and conclude with `file:opComplete`. Within a single volume, a move executes as an instant filesystem rename. Across volumes, the runtime copies data and then deletes the source; the entry reports `status: "ok"` with `reason: "cross-volume"` to indicate fallback overhead. Directories support cross-volume moves asynchronously, unlike synchronous `file.move`.
 
-Unlike `file.copyAsync`, a directory whose destination already exists is reported as `skipped` / `already-exists` rather than merged. `overwrite` does not change that: see the parameter note above.
+Unlike `file.copyAsync`, moving a directory onto an existing directory reports `skipped` with `reason: "already-exists"` rather than merging contents. Setting `overwrite: true` does not merge directories.
 
 ```js
 const receipt = await fb2k.invoke('file.moveAsync', {
@@ -347,11 +347,7 @@ if (res.success === false) throw new Error(res.error);
 const { content } = res;
 ```
 
-When `encoding: 'binary'`, `content` is a **raw Base64 payload** without a
-`base64:` prefix and the response sets `encoding: 'base64'`. This is a
-transport representation, not text and not a Data URL. To write the bytes
-back, add the `base64:` prefix required by `file.write` and keep
-`encoding: 'binary'`.
+When `encoding: 'binary'`, `content` contains a **raw Base64 payload** without a `base64:` prefix, and the response sets `encoding: 'base64'`. This is a transport representation rather than text or a Data URL. To write these bytes back using `file.write`, prepend the required `base64:` marker and keep `encoding: 'binary'`.
 
 ### file.rename
 
@@ -409,12 +405,7 @@ await fb2k.invoke('file.write', {
 });
 ```
 
-For binary writes, decoding happens only when **both** conditions are true:
-`encoding` is exactly `'binary'` and `content` starts with `base64:`. The
-prefix is a Bridge wire marker and is removed before decoding. A raw Base64
-string, a `data:image/...;base64,...` Data URL, or a `fb2k://` artwork URL is
-not decoded by this branch; such input can still produce `success: true` while
-writing the wrong bytes.
+For binary writes, Base64 decoding occurs only when **both** conditions are met: `encoding` is `'binary'` and `content` starts with `base64:`. The prefix is a Bridge protocol marker stripped prior to decoding. Raw Base64 strings, `data:image/...;base64,...` Data URLs, and `fb2k://` URLs are not decoded; passing them as-is will write literal ASCII text rather than decoded bytes.
 
 ```js
 const binary = await fb2k.invoke('file.read', {
@@ -440,11 +431,11 @@ One exception: the host resolves the target window on every emit, so once that w
 
 | Field | Type | Description |
 | --- | --- | --- |
-| `operationId` | `string` | Correlation id from the dispatch receipt. |
-| `op` | `string` | `copy` / `move` / `delete`. |
-| `done` | `integer` | Entries reported so far across all batches. |
-| `total` | `integer` | Entries accepted by the call; equals the receipt's `totalCount`. |
-| `results` | `array<object>` | This batch only, not the cumulative list. |
+| `operationId` | `string` | Correlation id from the dispatch receipt |
+| `op` | `string` | `copy` / `move` / `delete` |
+| `done` | `integer` | Entries reported so far across all batches |
+| `total` | `integer` | Entries accepted by the call; equals the receipt's `totalCount` |
+| `results` | `array<object>` | This batch only, not the cumulative list |
 
 Batched, never one event per entry: results accumulate until 64 are pending or 100 ms have passed since the previous batch, whichever comes first. The final partial batch always arrives before `file:opComplete`.
 
@@ -452,10 +443,10 @@ Each `results` entry:
 
 | Field | Type | Description |
 | --- | --- | --- |
-| `source` | `string` | Requested source path, echoed verbatim with `%variable%` placeholders unexpanded. |
-| `destination` | `string` | Requested destination, echoed verbatim. Absent for `file.deleteAsync`. |
-| `status` | `string` | `ok` / `skipped` / `failed`. |
-| `reason` | `string` | Absent when the entry succeeded outright; otherwise `already-exists` / `not-found` / `permission` / `cross-volume` / `path-too-long` / `io-error` / `cancelled`. |
+| `source` | `string` | Requested source path, echoed verbatim with `%variable%` placeholders unexpanded |
+| `destination` | `string` | Requested destination, echoed verbatim; absent for `file.deleteAsync` |
+| `status` | `string` | `ok` / `skipped` / `failed` |
+| `reason` | `string` | Absent when the entry succeeded outright; otherwise `already-exists` / `not-found` / `permission` / `cross-volume` / `path-too-long` / `io-error` / `cancelled` |
 
 `skipped` means the entry was deliberately not carried out - it already existed, or the run was cancelled before reaching it - so it is not an error. `cross-volume` is the one reason that accompanies `status: "ok"`: the move succeeded through the copy-then-delete fallback.
 
@@ -463,13 +454,13 @@ Each `results` entry:
 
 | Field | Type | Description |
 | --- | --- | --- |
-| `operationId` | `string` | Correlation id from the dispatch receipt. |
-| `op` | `string` | `copy` / `move` / `delete`. |
-| `total` | `integer` | Entries accepted by the call. |
-| `successCount` | `integer` | Entries carried out, cross-volume fallbacks included. |
-| `skippedCount` | `integer` | Entries deliberately not carried out. |
-| `failureCount` | `integer` | Entries that failed. |
-| `cancelled` | `boolean` | True when at least one entry was reported with `reason: "cancelled"`. |
+| `operationId` | `string` | Correlation id from the dispatch receipt |
+| `op` | `string` | `copy` / `move` / `delete` |
+| `total` | `integer` | Entries accepted by the call |
+| `successCount` | `integer` | Entries carried out, cross-volume fallbacks included |
+| `skippedCount` | `integer` | Entries deliberately not carried out |
+| `failureCount` | `integer` | Entries that failed |
+| `cancelled` | `boolean` | True when at least one entry was reported with `reason: "cancelled"` |
 
 The last event for an `operationId` when it arrives, and it is emitted on the cancelled and failed paths too. Two paths skip it entirely: the host shutting down mid-run, and an unexpected host-side failure in the worker. A listener that must not leak state should therefore carry its own timeout rather than wait on this event indefinitely.
 
@@ -480,13 +471,13 @@ fb2k.on('file:opProgress', ({ operationId, done, total, results }) => {
 	// results[].status: 'ok' | 'skipped' | 'failed'
 });
 fb2k.on('file:opComplete', ({ operationId, successCount, cancelled }) => {
-	// last event for this operationId
+	// Last event for this operationId
 });
 ```
 
 ## File boundaries
 
-- File APIs expand `%profile%`, `%component%`, `%music%`, `%APPDATA%` and `%TEMP%` before access. Each endpoint is validated at its registered `SecurityLevel` - `Read` for the read endpoints, `FileWrite` for every `file.*` write endpoint - and the full per-endpoint table is in the [permissions reference](/reference/permissions). `file.write` creates missing parent directories, while `file.delete` defaults to the Recycle Bin.
-- Every `file.*` failure carries a `code` alongside `error`. A failure raised by the filesystem itself also carries `details.value`, the raw Win32 error number. Neither `error` nor `details` ever contains a path.
-- `file.list` returns names in non-recursive mode and full paths in recursive mode. `file.getInfo` returns `exists: false` as a successful absence result.
-- The async family (`copyAsync` / `moveAsync` / `deleteAsync`) returns only a dispatch receipt; per-entry outcomes appear solely in the `file:opProgress` / `file:opComplete` payloads. Those events are delivered to a single window, which is why their `results` carry paths while error envelopes and logs still do not. The synchronous `file.copy` / `file.move` / `file.delete` are unchanged by this family.
+- File APIs expand `%profile%`, `%component%`, `%music%`, `%APPDATA%`, and `%TEMP%` before access. Each endpoint is validated against its registered `SecurityLevel` (`Read` for read endpoints, `FileWrite` for all `file.*` write endpoints); see the [Permissions reference](/reference/permissions). `file.write` creates missing parent directories, while `file.delete` defaults to the Recycle Bin.
+- Every `file.*` failure returns a `code` alongside `error`. A failure raised by the filesystem also carries `details.value` (the raw Win32 error number). Neither `error` nor `details` ever contains a file path.
+- `file.list` returns bare names in non-recursive mode and full paths in recursive mode. `file.getInfo` returns `exists: false` as a successful result when a target does not exist.
+- Async batch operations (`copyAsync`, `moveAsync`, and `deleteAsync`) return only a dispatch receipt; per-item outcomes appear solely in `file:opProgress` and `file:opComplete` payloads. Those events are delivered to the initiating window, which is why their `results` carry paths while general error envelopes and logs do not. Synchronous `file.copy`, `file.move`, and `file.delete` remain available for immediate operations.

@@ -75,7 +75,7 @@ await fb.misc.showConsole();
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
-| `query` | `string` | 否 | 预填进搜索框的查询。为空或省略时打开空白搜索。 |
+| `query` | `string` | 否 | 预填进搜索框的查询。为空或省略时打开空白搜索 |
 
 打开媒体库搜索窗口。响应里的 `query` 是窗口打开时使用的查询。
 
@@ -89,8 +89,8 @@ await fb.misc.showLibrarySearch('artist IS Beatles');
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
-| `message` | `string` | 是 | 对话框正文，不能为空。 |
-| `title` | `string` | 否 | 标题栏文本；为空或省略时宿主用 `"Message"`。 |
+| `message` | `string` | 是 | 对话框正文，不能为空 |
+| `title` | `string` | 否 | 标题栏文本；为空或省略时宿主用 `"Message"` |
 
 显示 foobar2000 的弹出消息对话框。对话框显示出来就返回，不等它关闭。`message` 为空时以 `INVALID_PARAMS` 失败。
 

@@ -1,6 +1,6 @@
 # Event API
 
-Methods of the `event` namespace.
+The `event` namespace provides cross-window event dispatching across WebView2 instances.
 
 ## event
 
@@ -50,4 +50,4 @@ await fb2k.invoke('event.emitTo', { event: 'lyrics:update', targetWindowId: 'pop
 
 ## Event envelopes
 
-- `event.emit` broadcasts the requested event name and `event.emitTo` targets one window. Receivers get the envelope `{ payload, sourceWindowId }`; `excludeSelf` affects only `event.emit`. Use the `namespace:eventName` convention for application-defined event names, such as `ui:themeChanged` or `lyrics:update`.
+- `event.emit` broadcasts the requested event name, and `event.emitTo` targets a specific window. Receivers get the envelope `{ payload, sourceWindowId }`; `excludeSelf` applies only to `event.emit`. Use the `namespace:eventName` convention for application-defined events, such as `ui:themeChanged` or `lyrics:update`.

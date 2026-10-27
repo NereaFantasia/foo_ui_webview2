@@ -1,6 +1,6 @@
 # Shared Types
 
-Shapes that several namespaces return. A method's own return table links here instead of repeating the fields.
+Common data shapes returned across multiple namespaces. Method-specific return tables reference these definitions to avoid duplication.
 
 ## Track
 
@@ -17,8 +17,9 @@ One track, as every method whose declaration returns whole rows reports it: the 
 | `artist` | `string` | Every ARTIST value joined with `", "`; empty when untagged. |
 | `artists` | `string[]` | Every ARTIST value in tag order; empty when untagged. |
 | `album` | `string` | First ALBUM value; empty when untagged. |
+| `albumId` | `string` | Opaque album identity when its original name or album artist contains invalid UTF-8. Use this instead of the display names to match an album row; absent for ordinary names. |
 | `albumArtist` | `string` | Every ALBUM ARTIST value joined with `", "`; empty when untagged. |
-| `albumArtists` | `string[]` | Every ALBUM ARTIST value in tag order, so `albumArtists.join(", ")` equals `albumArtist`; empty when untagged. `library.getAlbums` files a track that has an `album` under the name `album` and the album artist `albumArtists[0]`, or `artists[0]` when this array is empty (`""` when both are); those are the `name` and `albumArtist` of that album's row. |
+| `albumArtists` | `string[]` | Every ALBUM ARTIST value in tag order, so `albumArtists.join(", ")` equals `albumArtist`; empty when untagged. `library.getAlbums` files a track that has an `album` under the name `album` and the album artist `albumArtists[0]`, or `artists[0]` when this array is empty (`""` when both are); those are the `name` and `albumArtist` of that album's row. When `albumId` is present, use it instead: replacement characters can make display names equal. |
 | `genre` | `string` | Every GENRE value joined with `", "`; empty when untagged. |
 | `date` | `string` | First DATE value as tagged, such as `2019` or `2019-05-01`; empty when untagged. |
 | `trackNumber` | `integer` | TRACKNUMBER read as an integer; `0` when absent or not a number. |

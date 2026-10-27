@@ -91,8 +91,8 @@ foobar2000 的播放 DSP 链变了，比如加了一个 DSP 或载入了预设�
 | `waveform` | `number[]` | 每个点一个值，刻度为 `scale`；`signed` 时在 `[-1, 1]` 内，否则在 `[0, 1]` 内。 |
 | `maxAmplitude` | `number` | 归一化前所选序列的最大值，线性满幅单位：`linear` 下 `waveform[i] * maxAmplitude` 是绝对电平；`db` 下 dBFS 为 `(v * 60 - 60) + 20 * log10(maxAmplitude)`。 |
 | `duration` | `number` | 曲目时长，秒。 |
-| `sampleRate` | `integer` | 解码出的采样率，Hz。 |
-| `channels` | `integer` | 解码出的声道数。 |
+| `sampleRate` | `integer` | 实际解码 PCM 的采样率，Hz，可能不同于文件的标称采样率。 |
+| `channels` | `integer` | 实际解码 PCM 的声道数。 |
 | `resolution` | `integer` | 点数。 |
 | `method` | `"rms" \| "peak"` | 每个点的聚合方式，同请求。 |
 | `scale` | `"linear" \| "db"` | 点的刻度，同请求。 |
@@ -218,7 +218,7 @@ foobar2000 播放的某项 ReplayGain 设置变了，不只是音源模式。
 ### cursor:hiddenChanged
 
 <!-- api-schema:begin event:cursor:hiddenChanged -->
-`cursor.setHidden` 隐藏或恢复了调用窗口的光标；没有改变状态的调用不发。
+光标隐藏状态变更事件（由 cursor.setHidden 触发状态翻转时派发给调用窗口；未改变实际状态的调用不触发）
 
 发给发起调用的页面。
 
@@ -226,7 +226,7 @@ foobar2000 播放的某项 ReplayGain 设置变了，不只是音源模式。
 
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
-| `hidden` | `boolean` | 光标现在是否隐藏。 |
+| `hidden` | `boolean` | 翻转后的光标当前是否处于隐藏状态 |
 <!-- api-schema:end -->
 
 ## dnd 事件
@@ -281,7 +281,7 @@ foobar2000 播放的某项 ReplayGain 设置变了，不只是音源模式。
 | `resolvedPaths` | `(string \| null)[]` | `paths` 同下标处 `.lnk` 快捷方式的目标，或 `null`；长度与规则同 `dnd:enter` 的同名字段。 |
 | `x` | `integer` | 光标在客户区内的横坐标，单位物理像素。 |
 | `y` | `integer` | 光标在客户区内的纵坐标，单位物理像素。 |
-| `keyState` | `integer` | 放下时的 Win32 修饰键与鼠标按键掩码（`MK_*` 标志），供需要按修饰键区分行为的页面使用。它不影响报告给拖动源的放置效果，那个从不是移动或链接。 |
+| `keyState` | `integer` | 放下时的 Win32 修饰键与鼠标按键掩码（`MK_*` 标志），供需要按修饰键区分行为的页面使用。它不影响报告给拖动源的放置效果：来自其他程序的拖动报告复制，本组件页面发起的拖动按页面的答复报告。 |
 | `source` | `"self" \| "other-window" \| "external"` | 拖动从哪里来：从本窗口的页面拖出为 `self`；从同一个 foobar2000 的另一个窗口（主窗口或 popup）拖出为 `other-window`；其余都是 `external`，例如资源管理器、别的程序、另一个 foobar2000 进程，以及从 Default UI 或 Columns UI 面板拖出的拖动。宿主给它承载的窗口里开始的每次拖动加一个标记，据此判断；任何程序都能仿造这个标记，所以只把它当作来源提示，不要当作安全检查。 |
 <!-- api-schema:end -->
 
@@ -299,7 +299,7 @@ foobar2000 播放的某项 ReplayGain 设置变了，不只是音源模式。
 | `html5` | `boolean` | 页面收得到标准的 HTML5 拖放事件；`false` 表示窗口完全没有拖放支持。 |
 | `paths` | `boolean` | 能经 `dnd.getPathsAsync` 与 `dnd:*` 事件拿到真实路径。在窗口生命周期内并非恒定：导航或 Chromium 重新注册自己的放置目标都会收回它，由 `dnd:capabilitiesChanged` 通知。 |
 | `hosting` | `"visual" \| "standard"` | 窗口承载 WebView 的方式：主窗口与弹出窗口为 `visual`，DUI / CUI 面板为 `standard`。 |
-| `pathsUnavailableReason` | `"register-failed" \| "forward-unavailable" \| "inner-target-not-found" \| "chain-failed" \| "displaced" \| "origin-untrusted"` | `paths` 为 `false` 的原因；出现即表示 `paths` 为 `false`。 |
+| `pathsUnavailableReason` | `"register-failed" \| "forward-unavailable" \| "inner-target-not-found" \| "chain-failed" \| "origin-untrusted"` | `paths` 为 `false` 的原因；出现即表示 `paths` 为 `false`。 |
 | `dragOut` | `boolean` | 能经 `dnd.prepareDrag` 把文件拖出窗口。与 `paths` 无关。 |
 | `dragOutUnavailableReason` | `"not-visual-hosting" \| "runtime-too-old" \| "register-failed"` | `dragOut` 为 `false` 的原因；出现即表示 `dragOut` 为 `false`。 |
 <!-- api-schema:end -->
@@ -325,7 +325,7 @@ foobar2000 播放的某项 ReplayGain 设置变了，不只是音源模式。
 ### file:opProgress
 
 <!-- api-schema:begin event:file:opProgress -->
-`file.copyAsync`、`file.moveAsync` 或 `file.deleteAsync` 的结果，分批送达：积满 64 条或距上一批过了 100 ms 就发一批，最后不满一批的那些在 `file:opComplete` 之前送达。发给发起操作的页面；那时该窗口已不在的，发给主窗口的页面。
+分批推送 `file.copyAsync`、`file.moveAsync` 或 `file.deleteAsync` 的批量操作结果；待推送结果达到 64 条或距上次推送已满 100 ms 时发送一批，最后一批残余结果在 `file:opComplete` 之前送达；事件发送给发起操作的页面，若该窗口已销毁则转投主窗口页面
 
 发给发起调用的页面。
 
@@ -333,21 +333,21 @@ foobar2000 播放的某项 ReplayGain 设置变了，不只是音源模式。
 
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
-| `operationId` | `string` | 发起操作的调用回执里的 id。 |
-| `op` | `"copy" \| "move" \| "delete"` | 哪种操作：`copy`、`move` 或 `delete`。 |
-| `done` | `integer` | 到目前为止各批累计上报的条目数，含失败的。 |
-| `total` | `integer` | 调用受理的条目数。 |
-| `results` | `FileOpResultItem[]` | 仅本批的结果，顺序与请求一致。 |
-| `results[].source` | `string` | 请求里的源路径，原样，不展开路径变量。 |
-| `results[].destination` | `string` | 请求里的目标路径，原样；`file.deleteAsync` 没有。 |
-| `results[].status` | `"ok" \| "skipped" \| "failed"` | 完成为 `ok`；因目标已存在或操作先被取消而有意没做为 `skipped`；其余为 `failed`。 |
-| `results[].reason` | `"already-exists" \| "not-found" \| "permission" \| "cross-volume" \| "path-too-long" \| "io-error" \| "cancelled"` | 原因：`skipped` 配 `already-exists` 或 `cancelled`；`failed` 配 `not-found`、`permission`、`path-too-long` 或 `io-error`；`ok` 配 `cross-volume`，表示跨卷移动以复制加删除完成。`path-too-long` 表示这一条用到的某个路径（包括复制的文件夹里面的）超过 259 个字符，或要新建的文件夹超过 247 个字符。条目直接完成时不出现。 |
+| `operationId` | `string` | 发起操作时返回的任务回执 ID |
+| `op` | `"copy" \| "move" \| "delete"` | 操作类型：`copy`、`move` 或 `delete` |
+| `done` | `integer` | 截至当前批次已处理完成的累计条目数，含失败条目 |
+| `total` | `integer` | 本次批量调用受理的条目总数 |
+| `results` | `FileOpResultItem[]` | 仅当前批次的条目结果，保持请求时的先后顺序 |
+| `results[].source` | `string` | 请求中传入的源路径，原样保留且不展开路径变量 |
+| `results[].destination` | `string` | 请求中传入的目标路径，原样保留；`file.deleteAsync` 时无此字段 |
+| `results[].status` | `"ok" \| "skipped" \| "failed"` | 条目处理状态：成功执行为 `ok`；因目标已存在或操作提前取消而跳过为 `skipped`；其余为 `failed` |
+| `results[].reason` | `"already-exists" \| "not-found" \| "permission" \| "cross-volume" \| "path-too-long" \| "io-error" \| "cancelled"` | 状态原因说明；条目直接成功时无此字段；`skipped` 对应 `already-exists` 或 `cancelled`；`failed` 对应 `not-found`、`permission`、`path-too-long` 或 `io-error`；`ok` 对应 `cross-volume`（表示跨卷移动以复制加删除完成）；其中 `path-too-long` 表示涉及路径超过 259 个字符（含所复制文件夹内部路径）或新建文件夹超过 247 个字符 |
 <!-- api-schema:end -->
 
 ### file:opComplete
 
 <!-- api-schema:begin event:file:opComplete -->
-一次操作的最后一个事件，取消之后、有条目失败时也会发。只有 foobar2000 正在退出或 worker 意外失败时不发，所以靠它收尾的监听方应自带超时。之后 `operationId` 失效，对它调用 `file.cancelOp` 报 `cancelled: false`。投递范围同 `file:opProgress`。
+批量操作的终末事件；操作取消后或存在失败条目时均会发出，仅在 foobar2000 正在退出或 worker 意外失败时不发，依赖此事件清理状态的监听方应自带超时；事件发出后 `operationId` 即失效，对其调用 `file.cancelOp` 将返回 `cancelled: false`；投递规则同 `file:opProgress`
 
 发给发起调用的页面。
 
@@ -355,13 +355,13 @@ foobar2000 播放的某项 ReplayGain 设置变了，不只是音源模式。
 
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
-| `operationId` | `string` | 发起操作的调用回执里的 id。 |
-| `op` | `"copy" \| "move" \| "delete"` | 哪种操作：`copy`、`move` 或 `delete`。 |
-| `total` | `integer` | 调用受理的条目数。 |
-| `successCount` | `integer` | 上报为 `ok` 的条目数。 |
-| `skippedCount` | `integer` | 上报为 `skipped` 的条目数。 |
-| `failureCount` | `integer` | 上报为 `failed` 的条目数。 |
-| `cancelled` | `boolean` | 至少有一个条目以 `cancelled` 为原因上报时为 `true`。 |
+| `operationId` | `string` | 发起操作时返回的任务回执 ID |
+| `op` | `"copy" \| "move" \| "delete"` | 操作类型：`copy`、`move` 或 `delete` |
+| `total` | `integer` | 本次批量调用受理的条目总数 |
+| `successCount` | `integer` | 状态为 `ok` 的成功条目数 |
+| `skippedCount` | `integer` | 状态为 `skipped` 的跳过条目数 |
+| `failureCount` | `integer` | 状态为 `failed` 的失败条目数 |
+| `cancelled` | `boolean` | 至少有一个条目的原因上报为 `cancelled` 时为 `true` |
 <!-- api-schema:end -->
 
 ## http 事件
@@ -369,7 +369,7 @@ foobar2000 播放的某项 ReplayGain 设置变了，不只是音源模式。
 ### http:response
 
 <!-- api-schema:begin event:http:response -->
-异步的 `http.get`、`http.post`、`http.put`、`http.delete`、`http.patch` 或 `http.head` 的结果，带回执里的 `requestId`。成功时带同步响应的各字段；失败时带 `error` 与 `code`，同失败的调用。发给发起请求的页面；找不到它时发给同一顶层窗口下的页面，再没有就发给主窗口的页面。
+异步 HTTP 请求结果事件（涵盖 get、post、put、delete、patch 或 head 调用，载荷携带回执中的 requestId；成功时包含各同步响应字段，失败时包含 error 与 code；定向派发给发起请求的页面，若页面不可达则派发给同一顶层窗口的其他页面或主窗口页面）
 
 发给发起调用的页面。
 
@@ -377,22 +377,22 @@ foobar2000 播放的某项 ReplayGain 设置变了，不只是音源模式。
 
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
-| `requestId` | `string` | 回执里的 id。 |
-| `success` | `boolean` | 是否拿到了响应。`404` 之类的错误状态码也算成功。 |
-| `status` | `integer` | HTTP 状态码：成功时是响应的状态码；失败时只在 `redirect: "error"` 拒绝了重定向时出现，是该重定向的状态码。 |
-| `headers` | `Record<string, string>` | 响应头，以名称为键；重复的响应头取最后一个。成功时出现。 |
-| `body` | `string` | 响应体，按 `responseType` 为文本或 Base64；`http.head` 恒为空。成功时出现。 |
-| `responseType` | `"text" \| "base64"` | `text` 或 `base64`，即 `body` 的编码。成功时出现。 |
-| `contentLength` | `integer` | 数字形式的 `Content-Length` 响应头；`http.head` 成功且服务器发来可解析的值时出现。 |
-| `error` | `string` | 请求失败的原因；失败时出现。 |
-| `code` | `"INVALID_PARAMS" \| "PERMISSION_DENIED" \| "CANCELLED" \| "OPERATION_FAILED"` | 错误码：URL 不是 `http` 或 `https` 时为 `INVALID_PARAMS`，宿主设置不允许的本地或私有网络地址为 `PERMISSION_DENIED`，`http.abort` 之后为 `CANCELLED`，其余为 `OPERATION_FAILED`。失败时出现。 |
-| `cancelled` | `boolean` | 请求被 `http.abort` 取消时为 `true`；否则不出现。 |
+| `requestId` | `string` | 请求回执中分配的唯一标识符 requestId |
+| `success` | `boolean` | 是否成功接收到 HTTP 响应（接收到 404 等 HTTP 错误状态码亦视为网络请求成功） |
+| `status` | `integer` | HTTP 状态码（请求成功时为服务端返回的状态码；仅当 redirect: "error" 拒绝重定向时作为失败原因提供重定向状态码） |
+| `headers` | `Record<string, string>` | 响应头键值对（键名转为小写；存在重复响应头时以最后出现的数值为准；请求成功时提供） |
+| `body` | `string` | 响应体内容（依据 responseType 格式化为纯文本或 Base64 编码字符串；http.head 恒为空字符串；请求成功时提供） |
+| `responseType` | `"text" \| "base64"` | 响应体内容的编码格式（text 或 base64；请求成功时提供） |
+| `contentLength` | `integer` | 数值形式的 Content-Length 响应头（仅在 http.head 请求成功且服务端返回合法数字时提供） |
+| `error` | `string` | 请求失败的具体错误原因描述（仅在请求失败时提供） |
+| `code` | `"INVALID_PARAMS" \| "PERMISSION_DENIED" \| "CANCELLED" \| "OPERATION_FAILED"` | 错误码代码（URL 非 http/https 时为 INVALID_PARAMS；未授权访问本地或局域网私有地址为 PERMISSION_DENIED；被 http.abort 中止为 CANCELLED；其余网络错误为 OPERATION_FAILED；仅在失败时提供） |
+| `cancelled` | `boolean` | 请求是否由 http.abort 主动中止（仅在被取消时为 true，其余情况缺省） |
 <!-- api-schema:end -->
 
 ### http:downloadComplete
 
 <!-- api-schema:begin event:http:downloadComplete -->
-带 `async: true` 的 `http.download` 的结果，带回执里的 `requestId`。成功时带同步下载的各字段；失败时带 `error` 与 `code`。投递范围同 `http:response`。
+异步 http.download 任务完成或失败事件（载荷携带回执中的 requestId；成功时包含各同步下载字段，失败时包含 error 与 code；投递范围规则同 http:response）
 
 发给发起调用的页面。
 
@@ -400,14 +400,14 @@ foobar2000 播放的某项 ReplayGain 设置变了，不只是音源模式。
 
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
-| `requestId` | `string` | 回执里的 id。 |
-| `success` | `boolean` | 文件是否写成。`404` 之类的错误状态码的响应也会保存，算成功。 |
-| `status` | `integer` | HTTP 状态码：成功时是响应的状态码；失败时只在 `redirect: "error"` 拒绝了重定向时出现，是该重定向的状态码。 |
-| `bytesWritten` | `integer` | 写入的字节数；成功时出现。 |
-| `path` | `string` | 写入的文件（已展开路径变量）；成功时出现。 |
-| `error` | `string` | 下载失败的原因；失败时出现。 |
-| `code` | `"INVALID_PARAMS" \| "PERMISSION_DENIED" \| "CANCELLED" \| "OPERATION_FAILED"` | 错误码，同 `http:response`。失败时出现。 |
-| `cancelled` | `boolean` | 下载被 `http.abort` 取消时为 `true`；否则不出现。 |
+| `requestId` | `string` | 下载任务回执中分配的唯一标识符 requestId |
+| `success` | `boolean` | 文件是否已成功写入本地磁盘（服务端返回 404 等响应内容亦会写入并视为成功） |
+| `status` | `integer` | HTTP 状态码（成功时为服务端响应码；仅在 redirect: "error" 拦截重定向时提供重定向状态码） |
+| `bytesWritten` | `integer` | 实际写入磁盘的文件总字节数（仅在成功时提供） |
+| `path` | `string` | 实际写入文件的完整绝对路径（已展开路径变量；仅在成功时提供） |
+| `error` | `string` | 下载失败的具体错误原因描述（仅在失败时提供） |
+| `code` | `"INVALID_PARAMS" \| "PERMISSION_DENIED" \| "CANCELLED" \| "OPERATION_FAILED"` | 错误码代码（规则同 http:response；仅在失败时提供） |
+| `cancelled` | `boolean` | 下载任务是否由 http.abort 主动中止（仅在被取消时为 true，其余情况缺省） |
 <!-- api-schema:end -->
 
 ## jitQueue 事件
@@ -415,7 +415,7 @@ foobar2000 播放的某项 ReplayGain 设置变了，不只是音源模式。
 ### jitQueue:trackChanged
 
 <!-- api-schema:begin event:jitQueue:trackChanged -->
-影子播放列表里的一首曲目开始播放，重播当前曲目也算。`trackId` 与 `title` 是会话当前曲目在 `jitQueue.playNow` 或 `jitQueue.enqueueNext` 里给的标识与标题。`jitQueue.preloadBatch` 插入的曲目没有标识：播到它们时两者不变，某一批开始播放之后两者都为空。JIT 事件发给开启会话的页面，即调用 `jitQueue.playNow` 或调用了开始播放的 `jitQueue.preloadBatch` 的页面；该页面已不在时发给同一顶层窗口下的页面，再没有就发给主窗口的页面。会话被别的页面重新开启后，原来的页面不再收到它的事件。还没有开启过会话时发给主窗口的页面。
+影子播放列表曲目起播事件（涵盖重复播放当前曲目；trackId 与 title 反映 playNow 或 enqueueNext 配置的元数据；事件定向派发给启动会话的页面）
 
 发给发起调用的页面。
 
@@ -423,14 +423,14 @@ foobar2000 播放的某项 ReplayGain 设置变了，不只是音源模式。
 
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
-| `trackId` | `string` | 会话当前曲目的标识；没有时为空。 |
-| `title` | `string` | 会话当前曲目的标题；没有当前曲目或没给标题时为空。 |
+| `trackId` | `string` | 会话当前播放曲目的标识符 trackId（缺省时为空字符串） |
+| `title` | `string` | 会话当前播放曲目的显示标题（缺省时为空字符串） |
 <!-- api-schema:end -->
 
 ### jitQueue:needNext
 
 <!-- api-schema:begin event:jitQueue:needNext -->
-宿主需要下一首：缓冲里没有，也没有仍在等回复的请求。宿主在影子播放列表的曲目开始时检查（上一首期间没得到回复的请求就此作废），曲目剩 30 秒时再检查一次。页面以 `jitQueue.enqueueNext` 作答，没有更多曲目时以 `jitQueue.notifyEmpty` 作答。投递范围同 `jitQueue:trackChanged`。
+宿主请求下一首曲目事件（当缓冲为空且无进行中请求时触发，于曲目起播及剩余 30 秒时检查；页面须调用 enqueueNext 预载或 notifyEmpty 告知耗尽）
 
 发给发起调用的页面。
 
@@ -438,14 +438,14 @@ foobar2000 播放的某项 ReplayGain 设置变了，不只是音源模式。
 
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
-| `currentTrackId` | `string` | 会话当前曲目的标识；没有时为空。 |
-| `reason` | `"trackChange"` | 恒为 `trackChange`。 |
+| `currentTrackId` | `string` | 会话当前播放曲目的标识符 trackId（缺省时为空字符串） |
+| `reason` | `"trackChange"` | 请求触发原因（固定为 trackChange） |
 <!-- api-schema:end -->
 
 ### jitQueue:listExhausted
 
 <!-- api-schema:begin event:jitQueue:listExhausted -->
-调用了 `jitQueue.notifyEmpty`（没有活动会话时也发），或影子播放列表的播放在一首曲目结束时列表里已没有曲目。会话进入 `Exhausted`。投递范围同 `jitQueue:trackChanged`。
+会话曲目列表耗尽事件（由调用 notifyEmpty 触发或影子列表播放至末尾无后续曲目触发；会话状态流转为 Exhausted）
 
 发给发起调用的页面。
 
@@ -453,13 +453,13 @@ foobar2000 播放的某项 ReplayGain 设置变了，不只是音源模式。
 
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
-| `lastTrackId` | `string` | 会话当前曲目的标识；没有时为空。 |
+| `lastTrackId` | `string` | 会话当前播放曲目的标识符 trackId（缺省时为空字符串） |
 <!-- api-schema:end -->
 
 ### jitQueue:preloadComplete
 
 <!-- api-schema:begin event:jitQueue:preloadComplete -->
-`jitQueue.preloadBatch` 把曲目插入了影子播放列表。在调用返回之前发出；调用失败时不发。投递范围同 `jitQueue:trackChanged`：开始播放的一批发给调用它的页面，追加到正在播放的会话里的一批发给该会话的页面。
+批量预载曲目写入影子播放列表完成事件（在 preloadBatch 调用返回前派发）
 
 发给发起调用的页面。
 
@@ -467,15 +467,15 @@ foobar2000 播放的某项 ReplayGain 设置变了，不只是音源模式。
 
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
-| `count` | `integer` | 插入的曲目数；与调用返回的 `tracksAdded` 相同。 |
-| `startIndex` | `integer` | 调用的 `startIndex`。 |
-| `replace` | `boolean` | 调用的 `replace`。 |
+| `count` | `integer` | 实际成功插入的曲目总数（与调用返回的 tracksAdded 保持一致） |
+| `startIndex` | `integer` | 调用时传入的起始播放索引 startIndex |
+| `replace` | `boolean` | 调用时传入的替换模式标记 replace |
 <!-- api-schema:end -->
 
 ### jitQueue:error
 
 <!-- api-schema:begin event:jitQueue:error -->
-交给 `jitQueue.playNow` 或 `jitQueue.enqueueNext` 的曲目没能加入影子播放列表：位置解析不出曲目、影子播放列表已不存在，或加入时抛出异常。曲目在调用成功返回之后才加入，所以失败只以这个事件告知。投递范围同 `jitQueue:trackChanged`。
+曲目加入影子播放列表失败事件（当路径无法解析、列表被外部移除或底层抛出异常时在异步加入完成后派发；若加入前被新操作取代则不派发）
 
 发给发起调用的页面。
 
@@ -483,10 +483,10 @@ foobar2000 播放的某项 ReplayGain 设置变了，不只是音源模式。
 
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
-| `trackId` | `string` | 调用给该曲目的标识。 |
-| `error` | `string` | 出错原因，英文。 |
-| `url` | `string` | 位置，不是本地文件路径时出现。`url` 与 `path` 恰好出现一个。 |
-| `path` | `string` | 位置，是本地文件路径时出现。 |
+| `trackId` | `string` | 添加失败曲目的原始标识符 trackId |
+| `error` | `string` | 底层返回的错误原因描述 |
+| `url` | `string` | 发生错误的远程 URL 地址（与 path 互斥提供） |
+| `path` | `string` | 发生错误的本地文件绝对路径（与 url 互斥提供） |
 <!-- api-schema:end -->
 
 ## keyboard 事件
@@ -494,7 +494,7 @@ foobar2000 播放的某项 ReplayGain 设置变了，不只是音源模式。
 ### keyboard:hotkey
 
 <!-- api-schema:begin event:keyboard:hotkey -->
-用 `keyboard.registerHotkey` 注册的热键被按下，发给注册它的窗口。该窗口关闭后热键仍然有效，之后的按键改发给主窗口的页面。
+全局热键触发事件；定向投递给发起注册该热键的窗口页面（若注册窗口已关闭，热键仍然保持注册有效，后续触发将重定向投递至主窗口页面）
 
 发给订阅或任务所属的页面。
 
@@ -502,9 +502,9 @@ foobar2000 播放的某项 ReplayGain 设置变了，不只是音源模式。
 
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
-| `id` | `integer` | `keyboard.registerHotkey` 返回的 id。 |
-| `key` | `string` | 注册时给的组合。 |
-| `action` | `string` | 注册时给的动作名。 |
+| `id` | `integer` | `keyboard.registerHotkey` 注册成功时返回的热键数值标识符 id |
+| `key` | `string` | 注册时传入的按键组合字符串 key |
+| `action` | `string` | 注册时绑定的动作名称 action |
 <!-- api-schema:end -->
 
 ## library 事件
@@ -512,7 +512,7 @@ foobar2000 播放的某项 ReplayGain 设置变了，不只是音源模式。
 ### library:initialized
 
 <!-- api-schema:begin event:library:initialized -->
-foobar2000 报告媒体库已初始化完成。宿主先清掉自己的媒体库缓存再发。所有窗口都会收到；之后才加载的页面收不到。
+foobar2000 启动阶段载入媒体库完毕且宿主完成缓存清理后触发；广播通知所有当前已打开的窗口，后续加载的页面不会补发；可通过 `library.getStatus` 主动查询当前就绪状态
 
 发给所有窗口。
 
@@ -520,13 +520,13 @@ foobar2000 报告媒体库已初始化完成。宿主先清掉自己的媒体库
 
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
-| `timestamp` | `integer` | 宿主发出它的时间，自 Unix 纪元起的毫秒数。 |
+| `timestamp` | `integer` | 宿主发出事件的时间戳（自 Unix 纪元起的毫秒数） |
 <!-- api-schema:end -->
 
 ### library:itemsAdded
 
 <!-- api-schema:begin event:library:itemsAdded -->
-媒体库里加入了曲目。宿主先清掉自己的媒体库缓存再发。
+媒体库新增曲目时触发；宿主在广播前先行清空自身媒体库缓存
 
 发给所有窗口。
 
@@ -534,14 +534,16 @@ foobar2000 报告媒体库已初始化完成。宿主先清掉自己的媒体库
 
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
-| `count` | `integer` | 曲目数。 |
-| `timestamp` | `integer` | 宿主发出它的时间，自 Unix 纪元起的毫秒数。 |
+| `count` | `integer` | 发生变动的曲目数量 |
+| `handles` | `string[]` | 发生变动的每首曲目 handle 列表，顺序不固定；`truncated: true` 时为空列表 |
+| `truncated` | `boolean` | 单次变动是否超过 5000 首；为 `true` 时 `handles` 为空，前端应全量重新拉取数据 |
+| `timestamp` | `integer` | 宿主发出事件的时间戳（自 Unix 纪元起的毫秒数） |
 <!-- api-schema:end -->
 
 ### library:itemsRemoved
 
 <!-- api-schema:begin event:library:itemsRemoved -->
-媒体库里移除了曲目。宿主先清掉自己的媒体库缓存再发。
+媒体库移除曲目时触发；宿主在广播前先行清空自身媒体库缓存
 
 发给所有窗口。
 
@@ -549,14 +551,16 @@ foobar2000 报告媒体库已初始化完成。宿主先清掉自己的媒体库
 
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
-| `count` | `integer` | 曲目数。 |
-| `timestamp` | `integer` | 宿主发出它的时间，自 Unix 纪元起的毫秒数。 |
+| `count` | `integer` | 发生变动的曲目数量 |
+| `handles` | `string[]` | 发生变动的每首曲目 handle 列表，顺序不固定；`truncated: true` 时为空列表 |
+| `truncated` | `boolean` | 单次变动是否超过 5000 首；为 `true` 时 `handles` 为空，前端应全量重新拉取数据 |
+| `timestamp` | `integer` | 宿主发出事件的时间戳（自 Unix 纪元起的毫秒数） |
 <!-- api-schema:end -->
 
 ### library:itemsModified
 
 <!-- api-schema:begin event:library:itemsModified -->
-媒体库里的曲目被修改了，例如改了标签。宿主先清掉自己的媒体库缓存再发。
+媒体库曲目发生变更时触发（如标签更新或 `foo_playcount` 等第三方组件请求刷新播放统计字段 `fromHook`）；由于文件路径未变，宿主保留 `library.getRoots` 与 `library.browseTree` 所需的目录树索引，清空其余媒体库缓存后对外广播；`fromHook` 变更时仅清除缓存的 `library.getAll` 列表（因缓存字段中仅 `rating` 可能受组件影响）
 
 发给所有窗口。
 
@@ -564,14 +568,17 @@ foobar2000 报告媒体库已初始化完成。宿主先清掉自己的媒体库
 
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
-| `count` | `integer` | 曲目数。 |
-| `timestamp` | `integer` | 宿主发出它的时间，自 Unix 纪元起的毫秒数。 |
+| `count` | `integer` | 发生变动的曲目数量 |
+| `handles` | `string[]` | 发生变动的每首曲目 handle 列表，顺序不固定；`truncated: true` 时为空列表 |
+| `truncated` | `boolean` | 单次变动是否超过 5000 首；为 `true` 时 `handles` 为空，前端应全量重新拉取数据 |
+| `fromHook` | `boolean` | 文件物理内容未变，仅由 `foo_playcount` 等第三方组件请求刷新统计字段时为 `true`；此时路径、标签与专辑归组均保持不变 |
+| `timestamp` | `integer` | 宿主发出事件的时间戳（自 Unix 纪元起的毫秒数） |
 <!-- api-schema:end -->
 
 ### library:getAllResult
 
 <!-- api-schema:begin event:library:getAllResult -->
-回答了 `{ pending: true, requestId }` 的 `library.getAll` 的这一页：在主线程之外构建的整个媒体库，按媒体库顺序。只有构建期间媒体库没有变化，这份列表才保留给之后的调用。发给发起调用的页面；找不到它时发给同一顶层窗口下的页面，再没有就发给主窗口的页面。
+`library.getAll` 返回 `{ pending: true, requestId }` 后的异步数据就绪事件；包含在后台线程按媒体库顺序构建的全库曲目列表；仅在构建期间媒体库未发生变更时缓存供后续调用；优先投递至发起调用的页面，若该页面已销毁则退至同一顶层窗口内的页面或主窗口页面
 
 发给发起调用的页面。
 
@@ -579,18 +586,18 @@ foobar2000 报告媒体库已初始化完成。宿主先清掉自己的媒体库
 
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
-| `requestId` | `string` | `{ pending: true, requestId }` 回答里的 id。 |
-| `tracks` | `LibraryTrack[]` | 整个媒体库，按媒体库顺序；`index` 是在媒体库中的位置。带 `error` 时为空。 |
+| `requestId` | `string` | 对应异步请求调用返回的标识符 `requestId` |
+| `tracks` | `LibraryTrack[]` | 整个媒体库曲目列表，按媒体库原生顺序排列（发生错误时为空列表） |
 | `tracks[].…` | [Track](../reference/types.md#track) | 包含 [Track](../reference/types.md#track) 的全部字段。 |
-| `tracks[].index` | `integer` | 行号；数的是什么由所在的列表说明。 |
-| `items` | `LibraryTrack[]` | 与 `tracks` 相同的列表。 |
+| `tracks[].index` | `integer` | 当前上下文列表中的行索引序号 |
+| `items` | `LibraryTrack[]` | 与 `tracks` 完全一致的兼容曲目列表 |
 | `items[].…` | [Track](../reference/types.md#track) | 包含 [Track](../reference/types.md#track) 的全部字段。 |
-| `items[].index` | `integer` | 行号；数的是什么由所在的列表说明。 |
-| `total` | `integer` | 调用时媒体库的曲目数；带 `error` 时为 `0`。 |
-| `offset` | `integer` | 调用的 `offset`，恒为 `0`。 |
-| `limit` | `integer` | 调用的 `limit`。 |
-| `fromCache` | `boolean` | 恒为 `false`。 |
-| `error` | `string` | 列表构建失败的原因；只在失败时出现。 |
+| `items[].index` | `integer` | 当前上下文列表中的行索引序号 |
+| `total` | `integer` | 调用时媒体库曲目总数；发生错误时为 `0` |
+| `offset` | `integer` | 请求的起始偏移量，固定为 `0` |
+| `limit` | `integer` | 请求的分页大小上限 |
+| `fromCache` | `boolean` | 固定为 `false` |
+| `error` | `string` | 列表异步构建失败的原因说明；仅在失败时出现 |
 <!-- api-schema:end -->
 
 ## menu 事件
@@ -598,7 +605,7 @@ foobar2000 报告媒体库已初始化完成。宿主先清掉自己的媒体库
 ### menu:select
 
 <!-- api-schema:begin event:menu:select -->
-`menu.show` 打开的菜单里某一行被选中；菜单关闭时随后还有一个原因为 `select` 的 `menu:dismiss`。发给调用 `menu.show` 的页面；找不到它时发给同一顶层窗口下的页面，再没有就发给主窗口的页面。
+自绘菜单项选中事件；菜单项被选中后派发，随后伴随原因为 "select" 的 `menu:dismiss` 事件关闭菜单；定向投递给发起调用的页面（若该页面已失效则退回同顶层窗口其他页面或主窗口页面）
 
 发给发起调用的页面。
 
@@ -606,14 +613,14 @@ foobar2000 报告媒体库已初始化完成。宿主先清掉自己的媒体库
 
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
-| `menuId` | `string` | 菜单的 id，同 `menu.show` 的返回值。 |
-| `itemId` | `string` | 被选中的那一行的 `id`。 |
+| `menuId` | `string` | 自绘菜单唯一标识符（对应 `menu.show` 返回的 menuId） |
+| `itemId` | `string` | 被选中的菜单项条目标识符 itemId |
 <!-- api-schema:end -->
 
 ### menu:dismiss
 
 <!-- api-schema:begin event:menu:dismiss -->
-`menu.show` 打开的菜单关闭了，不论有没有选中某一行。投递范围同 `menu:select`，菜单被别的页面的 `menu.show` 或 `menu.close` 关掉时也一样。
+自绘菜单关闭事件（无论是否选中条目均会触发，包含被外部调用或点击外部关闭情形；投递目标同 `menu:select`）
 
 发给发起调用的页面。
 
@@ -621,14 +628,14 @@ foobar2000 报告媒体库已初始化完成。宿主先清掉自己的媒体库
 
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
-| `menuId` | `string` | 菜单的 id，同 `menu.show` 的返回值。 |
-| `reason` | `string` | 菜单关闭的原因：选中某一行后为 `select`，在菜单外点击为 `outside`，`escape`，别的窗口抢走焦点为 `blur`，另一个菜单打开为 `replaced`，菜单页面没按时响应为 `timeout`，或调用 `menu.close` 时给的 `reason`。 |
+| `menuId` | `string` | 自绘菜单唯一标识符（对应 `menu.show` 返回的 menuId） |
+| `reason` | `string` | 菜单关闭原因标识：条目选中为 "select"、点击外部区域为 "outside"、按下 Esc 为 "escape"、窗口失焦为 "blur"、新菜单顶替为 "replaced"、渲染超时为 "timeout"，或主动关闭时指定的 reason |
 <!-- api-schema:end -->
 
 ### menu:valueChanged
 
 <!-- api-schema:begin event:menu:valueChanged -->
-`menu.show` 打开的菜单里的评分、滑块或分段控件改了值，菜单保持打开。投递范围同 `menu:select`。
+自绘菜单内部控件值变更事件（评分、滑块或分段控件交互修改时触发且菜单保持展示，投递目标同 `menu:select`）
 
 发给发起调用的页面。
 
@@ -636,9 +643,9 @@ foobar2000 报告媒体库已初始化完成。宿主先清掉自己的媒体库
 
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
-| `menuId` | `string` | 菜单的 id，同 `menu.show` 的返回值。 |
-| `itemId` | `string` | 控件所在那一行的 `id`。 |
-| `value` | `integer` | 控件的新值。 |
+| `menuId` | `string` | 自绘菜单唯一标识符（对应 `menu.show` 返回的 menuId） |
+| `itemId` | `string` | 发生数值变动的控件所在菜单项 itemId |
+| `value` | `integer` | 控件更新后的当前数值 |
 <!-- api-schema:end -->
 
 ## metadata 事件
@@ -646,7 +653,7 @@ foobar2000 报告媒体库已初始化完成。宿主先清掉自己的媒体库
 ### metadata:probeProgress
 
 <!-- api-schema:begin event:metadata:probeProgress -->
-`metadata.probeBatchAsync` 的结果，分批送达：积满 64 条或距上一批过了 100 ms 就发一批，最后不满一批的那些在 `metadata:probeComplete` 之前送达。取消时正在读和尚未轮到的路径不上报。发给发起探测的页面；那时该窗口已不在的，发给主窗口的页面。
+`metadata.probeBatchAsync` 异步探测任务的进度批次事件；每累积 64 条结果或距上一批超过 100 毫秒即分批推送，最终未满批次在 `metadata:probeComplete` 前推送完毕；被取消或未处理的路径不予上报；定向投递给发起探测的页面窗口（窗口已销毁时退至主窗口页面）
 
 发给发起调用的页面。
 
@@ -654,27 +661,27 @@ foobar2000 报告媒体库已初始化完成。宿主先清掉自己的媒体库
 
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
-| `operationId` | `string` | `metadata.probeBatchAsync` 回执里的 id。 |
-| `done` | `integer` | 到目前为止各批累计上报的路径数，含失败的。 |
-| `total` | `integer` | 调用受理的路径数，即它的 `totalCount`。 |
-| `results` | `MetadataProbeResultItem[]` | 仅本批的结果，顺序与请求一致。 |
-| `results[].path` | `string` | 请求里的路径，原样，含 `\|subsong:N`。 |
-| `results[].success` | `boolean` | 曲目是否读取成功。 |
-| `results[].infoSource` | `"cached" \| "direct" \| "none"` | 用了宿主缓存里完整的信息为 `cached`，读了文件为 `direct`，失败时为 `none`。 |
-| `results[].failure` | `"not-found" \| "unsupported-format" \| "read-error"` | 路径读取失败的原因；`success` 为 `false` 时出现。 |
-| `results[].info` | `TrackTechnicalInfo` | 曲目的技术信息，同 `metadata.read`；`success` 为 `true` 时出现。 |
-| `results[].info.duration` | `number` | 时长，单位秒。 |
-| `results[].info.bitrate` | `integer` | 解码器报告的码率，单位 kbit/s；未知时为 `0`。 |
-| `results[].info.sampleRate` | `integer` | 采样率，单位 Hz；未知时为 `0`。 |
-| `results[].info.channels` | `integer` | 声道数；未知时为 `0`。 |
-| `results[].info.codec` | `string` | 解码器报告的编码名，如 `FLAC`、`MP3`；未知时为空。 |
-| `results[].tags` | `Record<string, any>` | 曲目的扁平字段，见 `includeTags` 的说明；`success` 为 `true` 且调用没传 `includeTags: false` 时出现。 |
+| `operationId` | `string` | 对应 `metadata.probeBatchAsync` 返回的操作标识符 `operationId` |
+| `done` | `integer` | 截至当前批次各批累计上报的路径总数（包含失败项） |
+| `total` | `integer` | 本次探测任务受理的路径总数（对应受理时的 `totalCount`） |
+| `results` | `MetadataProbeResultItem[]` | 仅包含本进度批次的探测结果列表，顺序与请求一致 |
+| `results[].path` | `string` | 请求传入的原样路径（包含 `\|subsong:N` 后缀） |
+| `results[].success` | `boolean` | 该曲目是否成功读取并解析 |
+| `results[].infoSource` | `"cached" \| "direct" \| "none"` | 元数据来源：`cached` 表示取自宿主完整内存缓存，`direct` 表示直接读取物理文件，`none` 表示读取失败 |
+| `results[].failure` | `"not-found" \| "unsupported-format" \| "read-error"` | 路径读取失败的原因分类：`not-found`、`unsupported-format` 或 `read-error`；仅在 `success: false` 时出现 |
+| `results[].info` | `TrackTechnicalInfo` | 曲目的音频技术参数；仅在 `success: true` 时返回 |
+| `results[].info.duration` | `number` | 曲目时长（秒） |
+| `results[].info.bitrate` | `integer` | 解码器报告的音频平均码率（kbit/s）；未知时为 `0` |
+| `results[].info.sampleRate` | `integer` | 音频采样率（Hz）；未知时为 `0` |
+| `results[].info.channels` | `integer` | 声道数量；未知时为 `0` |
+| `results[].info.codec` | `string` | 解码器报告的音频编码名称（如 `FLAC`、`MP3`）；未知时为空字符串 |
+| `results[].tags` | `Record<string, any>` | 曲目的扁平元数据标签字典；仅在 `success: true` 且未指定 `includeTags: false` 时返回 |
 <!-- api-schema:end -->
 
 ### metadata:probeComplete
 
 <!-- api-schema:begin event:metadata:probeComplete -->
-一次探测的最后一个事件，取消之后、探测失败时也会发；只有发送它时抛出异常（实际上只有内存耗尽）才会缺失。之后 `operationId` 失效，对它调用 `metadata.cancelProbe` 报 `cancelled: false`。投递范围同 `metadata:probeProgress`。
+异步探测任务结束事件；任务正常完成、被主动取消或因故失败后均会触发（仅在分发异常如内存耗尽时可能缺省）；触发后原 `operationId` 立即失效（对其调用 `metadata.cancelProbe` 将返回 `cancelled: false`）；投递目标与 `metadata:probeProgress` 相同
 
 发给发起调用的页面。
 
@@ -682,17 +689,17 @@ foobar2000 报告媒体库已初始化完成。宿主先清掉自己的媒体库
 
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
-| `operationId` | `string` | `metadata.probeBatchAsync` 回执里的 id。 |
-| `total` | `integer` | 调用受理的路径数。 |
-| `successCount` | `integer` | 以 `success: true` 上报的路径数。 |
-| `failureCount` | `integer` | 以 `success: false` 上报的路径数。 |
-| `cancelled` | `boolean` | 探测被提前停止时为 `true`：`metadata.cancelProbe`，或发起它的 popup 关闭了；此时两个计数之和小于 `total`。 |
+| `operationId` | `string` | 对应 `metadata.probeBatchAsync` 返回的操作标识符 `operationId` |
+| `total` | `integer` | 本次探测任务受理的路径总数 |
+| `successCount` | `integer` | 探测成功并上报的路径总数 |
+| `failureCount` | `integer` | 探测失败并上报的路径总数 |
+| `cancelled` | `boolean` | 探测任务是否被提前中止（通过 `metadata.cancelProbe` 或发起窗口关闭触发）；为 `true` 时成功与失败计数之和小于 `total` |
 <!-- api-schema:end -->
 
 ### metadata:writeComplete
 
 <!-- api-schema:begin event:metadata:writeComplete -->
-由 `metadata.write`、`metadata.writeBatch`、`metadata.removeTag` 或 `metadata.removeField` 排入的标签写入结束了。所有窗口都会收到。
+由 `metadata.write`、`metadata.writeBatch`、`metadata.removeTag` 或 `metadata.removeField` 排入的后台标签写入完成事件；广播通告所有打开的窗口
 
 发给所有窗口。
 
@@ -700,12 +707,12 @@ foobar2000 报告媒体库已初始化完成。宿主先清掉自己的媒体库
 
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
-| `operation` | `"write" \| "removeTag"` | `metadata.write` 与 `metadata.writeBatch` 为 `write`，`metadata.removeTag` 与 `metadata.removeField` 为 `removeTag`。 |
-| `path` | `string` | 调用给出的路径，原样，含后缀。 |
-| `subsong` | `integer` | 写入的子曲目：`cueIndex` 不小于 0 时就是它，否则取路径选中的，都没有时为 `0`。 |
-| `code` | `integer` | foobar2000 的完成代码：`0` 成功，`1` 中止，`2` 出错。 |
-| `success` | `boolean` | `code` 为 `0` 时为 `true`。 |
-| `status` | `"success" \| "aborted" \| "error"` | 按 `code` 为 `success`、`aborted` 或 `error`。 |
+| `operation` | `"write" \| "removeTag"` | 完成的写入操作类型：`write` 或 `removeTag` |
+| `path` | `string` | 请求传入的原样文件路径（包含后缀） |
+| `subsong` | `integer` | 实际写入的目标子曲目序号（`cueIndex >= 0` 时取该值，否则取路径解析值，均无时为 `0`） |
+| `code` | `integer` | foobar2000 宿主完成状态码：`0` 成功，`1` 中止，`2` 出错 |
+| `success` | `boolean` | 写入是否完全成功（当且仅当 `code === 0` 时为 `true`） |
+| `status` | `"success" \| "aborted" \| "error"` | 依据状态码转换的语义化状态：`success`、`aborted` 或 `error` |
 <!-- api-schema:end -->
 
 ## metadb 事件
@@ -721,7 +728,7 @@ foobar2000 报告媒体库已初始化完成。宿主先清掉自己的媒体库
 
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
-| `tracks` | `MetadbChangedTrackItem[]` | 最多 50 首变化的曲目，顺序不固定。无效条目会被跳过，所以条数可能少于 `count` 与 50 中的较小者。 |
+| `tracks` | `MetadbChangedTrackItem[]` | 最多 50 首变化的曲目，顺序不固定。无效条目会被跳过，所以条数可能少于 `count` 与 50 中的较小者。全部变化的曲目见 `handles`。 |
 | `tracks[].handle` | `string` | 曲目的键，构成方式与曲目行的 `handle` 相同：原生路径（没有原生形式的位置用 foobar2000 自己的路径），`subsong` 不为 `0` 时带 `\|subsong:N`。与同一首曲目在 `library.query`、`playlist.getTracks` 等方法返回的行里的 `handle` 相等。 |
 | `tracks[].path` | `string` | 原生形式的文件路径；没有原生形式的位置（如网络流）给 foobar2000 自己的路径。不带 subsong，所以 cue 或多曲目文件里的各首 `path` 相同，要靠 `handle` 区分。 |
 | `tracks[].subsong` | `integer` | 文件内的子曲目标识，与曲目行的 `subsong` 相同；整个文件为 `0`。 |
@@ -730,6 +737,8 @@ foobar2000 报告媒体库已初始化完成。宿主先清掉自己的媒体库
 | `tracks[].title` | `string` | 第一个 `TITLE` 值，有这个标签时才带。 |
 | `tracks[].artist` | `string` | 全部 `ARTIST` 值以 `, ` 连接，有这个标签时才带。 |
 | `count` | `integer` | 变化的曲目数，至少为 `1`；可能超过 `tracks` 的长度。 |
+| `handles` | `string[]` | 每首变化曲目的 `handle`，顺序不固定。`truncated` 时为空。要读取页面为它们显示的内容，把它们作为 `titleformat.evalFieldsBatch` 的 `paths` 传入。 |
+| `truncated` | `boolean` | 一次变化超过 5000 首时为 `true`。这时 `handles` 为空，页面应重新读取它显示的全部内容。 |
 | `fromHook` | `boolean` | 文件本身没变、而是 `foo_playcount` 之类的组件请求刷新它提供的字段时为 `true`。 |
 | `timestamp` | `integer` | 事件发出的时间，单位为自 Unix 纪元起的毫秒数。 |
 <!-- api-schema:end -->
@@ -739,7 +748,7 @@ foobar2000 报告媒体库已初始化完成。宿主先清掉自己的媒体库
 ### panel:focus
 
 <!-- api-schema:begin event:panel:focus -->
-面板获得了键盘焦点。只在面板的 `grabFocus` 选项打开时发。
+面板获得键盘焦点时派发（仅在面板启用 grabFocus 选项时触发）
 
 发给它所涉及的窗口或面板里的页面。
 
@@ -751,7 +760,7 @@ foobar2000 报告媒体库已初始化完成。宿主先清掉自己的媒体库
 ### panel:blur
 
 <!-- api-schema:begin event:panel:blur -->
-面板失去了键盘焦点。只在面板的 `grabFocus` 选项打开时发。
+面板失去键盘焦点时派发（仅在面板启用 grabFocus 选项时触发）
 
 发给它所涉及的窗口或面板里的页面。
 
@@ -763,7 +772,7 @@ foobar2000 报告媒体库已初始化完成。宿主先清掉自己的媒体库
 ### panel:initialized
 
 <!-- api-schema:begin event:panel:initialized -->
-DUI 元素或 CUI 面板建好了 WebView。只发一次，WebView 一就绪就发，此时页面可能还没订阅；需要运行模式的页面应在启动时读 `window.getMode`。
+DUI 元素或 CUI 面板完成 WebView 实例初始化时派发（在 WebView 就绪时单次触发，此时页面可能尚未完成事件订阅；如需检测运行模式建议在页面启动时主动调用 window.getMode）
 
 发给它所涉及的窗口或面板里的页面。
 
@@ -771,15 +780,15 @@ DUI 元素或 CUI 面板建好了 WebView。只发一次，WebView 一就绪就�
 
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
-| `mode` | `"dui" \| "cui"` | Default UI 元素为 `dui`，Columns UI 面板为 `cui`。 |
-| `panelMode` | `boolean` | 恒为 `true`。 |
-| `windowId` | `string` | 面板的 id，与 `window.getMode` 报告的相同。 |
+| `mode` | `"dui" \| "cui"` | 面板类型（dui 表示 Default UI 元素，cui 表示 Columns UI 面板） |
+| `panelMode` | `boolean` | 是否处于面板模式（固定为 true） |
+| `windowId` | `string` | 面板所属窗口唯一标识符 windowId（与 window.getMode 返回值一致） |
 <!-- api-schema:end -->
 
 ### panel:visibilityChanged
 
 <!-- api-schema:begin event:panel:visibilityChanged -->
-DUI 元素被显示或隐藏，例如在选项卡容器里切换标签页。Columns UI 面板不发。
+DUI 元素可见性发生切换时派发（例如选项卡容器中切换标签页；Columns UI 面板不派发此事件）
 
 发给它所涉及的窗口或面板里的页面。
 
@@ -787,13 +796,13 @@ DUI 元素被显示或隐藏，例如在选项卡容器里切换标签页。Colu
 
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
-| `visible` | `boolean` | 元素现在是否可见。 |
+| `visible` | `boolean` | 面板当前是否处于可见状态 |
 <!-- api-schema:end -->
 
 ### panel:configChanged
 
 <!-- api-schema:begin event:panel:configChanged -->
-面板配置变了：经 `panel.setConfig`、面板的设置对话框，或 foobar2000 交给元素的一份配置。载荷与 `panel.getConfig` 的 `config` 字段相同。
+面板配置发生变更时派发（通过 panel.setConfig、面板设置对话框或宿主注入更新触发；数据结构与 panel.getConfig 返回的 config 字段一致）
 
 发给它所涉及的窗口或面板里的页面。
 
@@ -801,14 +810,14 @@ DUI 元素被显示或隐藏，例如在选项卡容器里切换标签页。Colu
 
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
-| `panelName` | `string` | 面板显示名。 |
-| `templateName` | `string` | 面板加载的页面模板名。 |
-| `edgeStyle` | `integer` | 面板边框样式：`0` 无边框，`1` 凹陷，`2` 灰边。 |
-| `urlOverride` | `string` | 代替模板加载的 URL；没有时为空。 |
-| `transparentBackground` | `boolean` | 面板是否透明背景。 |
-| `grabFocus` | `boolean` | 点击是否让面板获得键盘焦点。 |
-| `enableDragDrop` | `boolean` | 是否允许拖放到面板。 |
-| `enableDevTools` | `boolean` | 是否启用开发者工具。 |
+| `panelName` | `string` | 面板自定义显示名称 |
+| `templateName` | `string` | 面板加载的页面模板名称 |
+| `edgeStyle` | `integer` | 面板边框样式（0 无边框、1 凹陷立体效果、2 纯灰边框） |
+| `urlOverride` | `string` | 覆盖模板的自定义加载 URL（未设置时为空字符串） |
+| `transparentBackground` | `boolean` | 面板是否启用透明背景渲染 |
+| `grabFocus` | `boolean` | 点击面板时是否主动获取键盘焦点 |
+| `enableDragDrop` | `boolean` | 是否允许向面板拖放文件 |
+| `enableDevTools` | `boolean` | 是否启用 WebView2 开发者工具 F12/右键审查 |
 <!-- api-schema:end -->
 
 ## playback 事件
@@ -1071,6 +1080,7 @@ foobar2000 的播放队列变了。一次改动队列多次的 `queue.*` 调用�
 | --- | --- | --- |
 | `origin` | `"user_added" \| "user_removed" \| "playback_advance" \| "unknown"` | 队列因何变化：`user_added`、`user_removed`、`playback_advance`（播放取走了下一条排队曲目）或 `unknown`。 |
 | `count` | `integer` | 变化后的队列长度。 |
+| `contentVersion` | `string` | 已包含这次变化。 |
 <!-- api-schema:end -->
 
 ## playlist 事件
@@ -1099,9 +1109,10 @@ foobar2000 报告它的默认播放列表格式变了。
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
 | `playlist` | `integer` | 播放列表的序号。 |
-| `playlistGuid` | `string` | 播放列表的 GUID，写成 `{XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX}`。作为 `playlistGuid` 传入，播放列表清单变了之后仍能指定这个列表。 |
+| `playlistGuid` | `string` | 播放列表的唯一标识，格式为 `{XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX}`。后续可作为 `playlistGuid` 稳定引用该列表。 |
 | `start` | `integer` | 第一条插入曲目所在的行。 |
 | `count` | `integer` | 插入的曲目数。 |
+| `contentVersion` | `string` | 已包含这次变化。 |
 <!-- api-schema:end -->
 
 ### playlist:itemsRemoved
@@ -1116,9 +1127,10 @@ foobar2000 报告它的默认播放列表格式变了。
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
 | `playlist` | `integer` | 播放列表的序号。 |
-| `playlistGuid` | `string` | 播放列表的 GUID，写成 `{XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX}`。作为 `playlistGuid` 传入，播放列表清单变了之后仍能指定这个列表。 |
+| `playlistGuid` | `string` | 播放列表的唯一标识，格式为 `{XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX}`。后续可作为 `playlistGuid` 稳定引用该列表。 |
 | `oldCount` | `integer` | 移除前的曲目数。 |
 | `newCount` | `integer` | 移除后的曲目数。 |
+| `contentVersion` | `string` | 已包含这次变化。 |
 <!-- api-schema:end -->
 
 ### playlist:itemsReordered
@@ -1133,8 +1145,9 @@ foobar2000 报告它的默认播放列表格式变了。
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
 | `playlist` | `integer` | 播放列表的序号。 |
-| `playlistGuid` | `string` | 播放列表的 GUID，写成 `{XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX}`。作为 `playlistGuid` 传入，播放列表清单变了之后仍能指定这个列表。 |
+| `playlistGuid` | `string` | 播放列表的唯一标识，格式为 `{XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX}`。后续可作为 `playlistGuid` 稳定引用该列表。 |
 | `count` | `integer` | 播放列表的曲目数。 |
+| `contentVersion` | `string` | 已包含这次变化。 |
 <!-- api-schema:end -->
 
 ### playlist:selectionChanged
@@ -1149,7 +1162,7 @@ foobar2000 报告它的默认播放列表格式变了。
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
 | `playlist` | `integer` | 播放列表的序号。 |
-| `playlistGuid` | `string` | 播放列表的 GUID，写成 `{XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX}`。作为 `playlistGuid` 传入，播放列表清单变了之后仍能指定这个列表。 |
+| `playlistGuid` | `string` | 播放列表的唯一标识，格式为 `{XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX}`。后续可作为 `playlistGuid` 稳定引用该列表。 |
 <!-- api-schema:end -->
 
 ### playlist:focusChanged
@@ -1164,7 +1177,7 @@ foobar2000 报告它的默认播放列表格式变了。
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
 | `playlist` | `integer` | 播放列表的序号。 |
-| `playlistGuid` | `string` | 播放列表的 GUID，写成 `{XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX}`。作为 `playlistGuid` 传入，播放列表清单变了之后仍能指定这个列表。 |
+| `playlistGuid` | `string` | 播放列表的唯一标识，格式为 `{XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX}`。后续可作为 `playlistGuid` 稳定引用该列表。 |
 | `from` | `integer` | 之前的焦点行；没有时为 `-1`。 |
 | `to` | `integer` | 现在的焦点行；没有时为 `-1`。 |
 <!-- api-schema:end -->
@@ -1181,8 +1194,9 @@ foobar2000 报告它的默认播放列表格式变了。
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
 | `playlist` | `integer` | 播放列表的序号。 |
-| `playlistGuid` | `string` | 播放列表的 GUID，写成 `{XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX}`。作为 `playlistGuid` 传入，播放列表清单变了之后仍能指定这个列表。 |
+| `playlistGuid` | `string` | 播放列表的唯一标识，格式为 `{XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX}`。后续可作为 `playlistGuid` 稳定引用该列表。 |
 | `count` | `integer` | 被替换的曲目数。 |
+| `contentVersion` | `string` | 已包含这次变化。 |
 <!-- api-schema:end -->
 
 ### playlist:created
@@ -1197,7 +1211,7 @@ foobar2000 报告它的默认播放列表格式变了。
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
 | `index` | `integer` | 新播放列表的序号。 |
-| `guid` | `string` | 播放列表的 GUID，写成 `{XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX}`。作为 `playlistGuid` 传入，播放列表清单变了之后仍能指定这个列表。 |
+| `guid` | `string` | 播放列表的唯一标识，格式为 `{XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX}`。后续可作为 `playlistGuid` 稳定引用该列表。 |
 | `name` | `string` | 它的名字。 |
 <!-- api-schema:end -->
 
@@ -1261,9 +1275,32 @@ foobar2000 报告它的默认播放列表格式变了。
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
 | `index` | `integer` | 播放列表的序号。 |
-| `guid` | `string` | 播放列表的 GUID，写成 `{XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX}`。作为 `playlistGuid` 传入，播放列表清单变了之后仍能指定这个列表。 |
+| `guid` | `string` | 播放列表的唯一标识，格式为 `{XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX}`。后续可作为 `playlistGuid` 稳定引用该列表。 |
 | `name` | `string` | 新名字。 |
 <!-- api-schema:end -->
+
+### playlist:autoplaylistUIResult
+
+<!-- api-schema:begin event:playlist:autoplaylistUIResult -->
+已受理的自动列表原生编辑器调用已返回或失败。每个操作至多发一次，只投递给原调用文档；导航或销毁后丢弃。`success` 只描述原生调用，不表示保存、取消或编辑器生命周期。
+
+发给发起调用的页面。
+
+**载荷**
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `operationId` | `string` | 与受理响应相同的不透明标识，用于关联本次操作。 |
+| `playlistGuid` | `string` | 播放列表的唯一标识，格式为 `{XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX}`。后续可作为 `playlistGuid` 稳定引用该列表。 |
+| `success` | `boolean` | 原生调用是否正常返回；锁入口还须返回 `true`。 |
+| `error` | `string` | 仅在失败时出现，与 `code`、`reason` 一起提供。 |
+| `code` | `string` | 业务错误码，仅在 `success` 为 `false` 时出现。 |
+| `reason` | `"targetGone" \| "notAutoplaylist" \| "noEditor" \| "queryFailed" \| "dispatchFailed" \| "providerFailed"` | 失败的检查或原生调用环节，仅在 `success` 为 `false` 时出现。 |
+<!-- api-schema:end -->
+
+请先订阅，再调用 [`playlist.showAutoplaylistUI`](playlist.md#playlist-showautoplaylistui)：事件可能早于页面处理受理响应。按 `operationId` 关联，不按到达顺序判断；[SDK 有界示例](../sdk/playlist.md#onautoplaylistuiresult-callback) 展示早到结果处理及清理。失败载荷始终带 `error`、`code` 和 `reason`，成功载荷不带这三个字段。
+
+结果只描述一次原生调用，非模态编辑器可能在调用返回后仍然打开。它不能代替曲目或锁事件，也不报告 saved、cancelled 或 closed 状态。导航或销毁后丢弃投递，不转发到其他文档或主窗口。原文档仍有效但目标已删除时，`NOT_FOUND` / `targetGone` 优先于同时发生的提供者异常。
 
 ### playlist:lockChanged
 
@@ -1277,7 +1314,7 @@ foobar2000 报告它的默认播放列表格式变了。
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
 | `playlist` | `integer` | 播放列表的序号。 |
-| `playlistGuid` | `string` | 播放列表的 GUID，写成 `{XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX}`。作为 `playlistGuid` 传入，播放列表清单变了之后仍能指定这个列表。 |
+| `playlistGuid` | `string` | 播放列表的唯一标识，格式为 `{XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX}`。后续可作为 `playlistGuid` 稳定引用该列表。 |
 | `locked` | `boolean` | 现在是否有锁。 |
 <!-- api-schema:end -->
 
@@ -1294,7 +1331,9 @@ foobar2000 报告它的默认播放列表格式变了。
 | --- | --- | --- |
 | `operationId` | `string` | 调用应答里的 id。 |
 | `playlistGuid` | `string` | 调用加入的那张播放列表的 GUID，取调用解析出的那张；期间被挪动仍指向它，期间被删掉就不再属于任何列表。 |
-| `success` | `boolean` | 恒为 `true`。 |
+| `success` | `boolean` | 恒为 `true`；调用如何结束看 `status`。 |
+| `status` | `"completed" \| "partial" \| "failed" \| "cancelled"` | `completed` 表示路径解析出的曲目全部加入。`partial`、`failed` 表示其中部分或全部被丢弃，原因见 `reason`；被丢弃的通常是从播放列表文件与 cue 展开的曲目，因为普通文件在调用返回前已加入。`cancelled` 表示用户取消了展开，此前加入的曲目留在列表里。 |
+| `reason` | `"targetRemoved" \| "locked"` | 曲目被丢弃的原因：加入之前列表被删掉（`targetRemoved`）或上锁（`locked`）。`status` 为 `partial`、`failed` 时才有。 |
 | `addedCount` | `integer` | 展开播放列表与 cue 之后加入的曲目数。展开完成前列表被删掉或上锁而丢弃的曲目不计入。 |
 | `totalCount` | `integer` | 调用受理的路径数。 |
 <!-- api-schema:end -->
@@ -1330,7 +1369,7 @@ foobar2000 报告它的默认播放列表格式变了。
 ### port:connected
 
 <!-- api-schema:begin event:port:connected -->
-`port.connect` 打开了一个端口。所有窗口都会收到，包括打开它的窗口。
+端口建立连接广播事件（由 port.connect 触发，向当前所有窗口广播派发）
 
 发给所有窗口。
 
@@ -1338,15 +1377,15 @@ foobar2000 报告它的默认播放列表格式变了。
 
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
-| `portId` | `string` | 新端口的 id，与 `port.connect` 返回的相同。 |
-| `name` | `string` | 频道名。 |
-| `windowId` | `string` | 打开端口的窗口 id；对不上窗口时为 `main`。 |
+| `portId` | `string` | 新建端口的唯一标识符 portId（与 port.connect 返回一致） |
+| `name` | `string` | 端口所属的频道名称 |
+| `windowId` | `string` | 打开该端口的源窗口标识符 windowId（若无法匹配到具体窗口则固定为 main） |
 <!-- api-schema:end -->
 
 ### port:disconnected
 
 <!-- api-schema:begin event:port:disconnected -->
-一个端口关闭了：`port.disconnect` 关闭了它，或者打开它的页面开始顶层导航、随 WebView 一起消失（popup 关闭、面板移除、WebView 重建），这时该页面的端口全部关闭。所有窗口都会收到；因导航而关闭端口的页面，只有在卸载之前到达的事件才收得到。
+端口断开连接广播事件（由 port.disconnect 显式关闭、页面导航或宿主 WebView 销毁触发，向当前所有窗口广播派发）
 
 发给所有窗口。
 
@@ -1354,15 +1393,15 @@ foobar2000 报告它的默认播放列表格式变了。
 
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
-| `portId` | `string` | 关闭的端口 id。 |
-| `name` | `string` | 端口所在的频道名。 |
-| `windowId` | `string` | 打开该端口的窗口 id。 |
+| `portId` | `string` | 已关闭端口的唯一标识符 portId |
+| `name` | `string` | 该端口原本所属的频道名称 |
+| `windowId` | `string` | 打开该端口的源窗口标识符 windowId |
 <!-- api-schema:end -->
 
 ### port:message
 
 <!-- api-schema:begin event:port:message -->
-一条消息到达了某个端口。每个接收端口各收到一个事件，发给打开它的窗口：`port.postMessage` 送到发送端口所在频道的其他每个端口（发送方自己窗口里的也算），`port.postMessageTo` 只送到一个端口。
+端口消息到达事件（定向派发给接收端口所属的宿主窗口；通过 port.postMessage 广播时频道内所有对等端口均会收到，通过 port.postMessageTo 单播时仅目标端口收到）
 
 发给订阅或任务所属的页面。
 
@@ -1370,10 +1409,10 @@ foobar2000 报告它的默认播放列表格式变了。
 
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
-| `portId` | `string` | 接收端口的 id，是本窗口打开的端口。 |
-| `sourcePortId` | `string` | 发送端口的 id。 |
-| `sourceWindowId` | `string` | 发送方页面所在窗口的 id；对不上窗口时为 `main`。 |
-| `message` | `any` | 发送方传入的消息，原样送达；不会是 `null`。 |
+| `portId` | `string` | 接收该消息的本窗口端口标识符 portId |
+| `sourcePortId` | `string` | 发送该消息的源端口标识符 sourcePortId |
+| `sourceWindowId` | `string` | 发送方页面所在的源窗口标识符 sourceWindowId（若无法匹配窗口则固定为 main） |
+| `message` | `any` | 发送方传入的消息正文数据（原样透传，非 null） |
 <!-- api-schema:end -->
 
 ## selection 事件
@@ -1381,7 +1420,7 @@ foobar2000 报告它的默认播放列表格式变了。
 ### selection:changed
 
 <!-- api-schema:begin event:selection:changed -->
-foobar2000 的全局选择变了。距上一个事件不到 50 ms 的变化直接丢弃而不是推迟，所以连续快速变化中的最后一次可能不发；需要当前值时读 `selection.get`。
+foobar2000 全局选区状态变更时广播（两次变更间隔低于 50 ms 时直接丢弃而非延迟派发，连续快速变更中最后一次可能不会触发事件；若需获取最新确切状态请主动调用 selection.get 查询）
 
 发给所有窗口。
 
@@ -1389,12 +1428,12 @@ foobar2000 的全局选择变了。距上一个事件不到 50 ms 的变化直�
 
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
-| `count` | `integer` | 选中的曲目数。 |
-| `type` | `"now_playing" \| "active_playlist_selection" \| "active_playlist" \| "playlist_manager" \| "media_library_viewer" \| "unknown"` | 选择的来源，同 `selection.getType` 应答里的 `typeName`。 |
-| `handles` | `string[]` | 前 100 首选中曲目的 handle，按选择顺序：原生路径，子曲目不为 `0` 时附加 `\|subsong:N`。 |
-| `truncated` | `boolean` | 是否选中了超过 100 首，因而 `handles` 只列出前 100 首。 |
-| `track` | [Track](../reference/types.md#track) | 选中的那首曲目；只在恰好选中一首时出现。 |
-| `nowPlaying` | [Track](../reference/types.md#track) | 已载入播放的曲目（正在播放或暂停）；没有时缺省。 |
+| `count` | `integer` | 当前选中的曲目总数 |
+| `type` | `"now_playing" \| "active_playlist_selection" \| "active_playlist" \| "playlist_manager" \| "media_library_viewer" \| "unknown"` | 选区来源类型（取值与 selection.getType 返回的 typeName 一致） |
+| `handles` | `string[]` | 前 100 首选中曲目的句柄列表（保持选区原始顺序；原生文件路径，子曲目序号大于 0 时附加 \|subsong:N） |
+| `truncated` | `boolean` | 选中曲目总数是否超过 100 条（为 true 时 handles 仅截断保留前 100 首） |
+| `track` | [Track](../reference/types.md#track) | 当前选中的单首曲目元数据（仅在全局选区恰好包含唯一一首曲目时提供） |
+| `nowPlaying` | [Track](../reference/types.md#track) | 当前已载入播放核心的曲目元数据（包含正在播放或处于暂停状态；未处于播放相关状态时缺省） |
 <!-- api-schema:end -->
 
 ## state 事件
@@ -1402,7 +1441,7 @@ foobar2000 的全局选择变了。距上一个事件不到 50 ms 的变化直�
 ### state:changed
 
 <!-- api-schema:begin event:state:changed -->
-`state.set` 存了一个值且没带 `silent`。该键原来的值已过期但还没被清扫时，`previousValue` 就是那个旧值，它的过期也不会再通告。
+调用 `state.set` 写入共享键值（且未设置 `silent: true`）时触发；若写入前目标键已过期但尚未被清理，`previousValue` 仍记录该旧值且不再广播过期事件
 
 发给所有窗口。
 
@@ -1410,17 +1449,17 @@ foobar2000 的全局选择变了。距上一个事件不到 50 ms 的变化直�
 
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
-| `key` | `string` | 键。 |
-| `value` | `any` | 存入的值；不会是 `null`，`state.set` 把 null 当作没传。 |
-| `previousValue` | `any` | 该键原来的值；新键为 `null`。 |
-| `sourceWindowId` | `string` | 写入它的窗口 id；对不上窗口时为 `main`。 |
-| `expiresAt` | `integer` | 值的过期时间，自 Unix 纪元起的毫秒数；只有用正数 `ttlMs` 存的值才有。 |
+| `key` | `string` | 发生变更的存储键名 |
+| `value` | `any` | 存入的键值；不会为 `null`（`state.set` 将 `null` 视作参数缺失） |
+| `previousValue` | `any` | 写入前该键原有的旧值；若此前不存在则为 `null` |
+| `sourceWindowId` | `string` | 写入该键值的源窗口 ID；无法匹配调用方窗口时为 `main` |
+| `expiresAt` | `integer` | 键值的过期时间戳（自 Unix 纪元起的毫秒数）；仅在写入时指定了正数 `ttlMs` 时提供 |
 <!-- api-schema:end -->
 
 ### state:deleted
 
 <!-- api-schema:begin event:state:deleted -->
-共享状态里的一个值被移除：`state.delete` 删掉了它，或它的存活期到了。过期的值只在 `state.get` 或 `state.keys` 运行时才清扫，所以过期事件在那时发出，而不是在到期的那一刻；删除一个已过期但还没清扫的值报 `deleted`。
+共享状态中的键被显式删除或存活期耗尽过期时触发；过期键仅在调用 `state.get` 或 `state.keys` 触发延迟清理时广播事件（事件时间为清理触发时刻而非实际到期时刻），若主动删除已过期但尚未清理的键，事件原因记为 `deleted`
 
 发给所有窗口。
 
@@ -1428,9 +1467,9 @@ foobar2000 的全局选择变了。距上一个事件不到 50 ms 的变化直�
 
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
-| `key` | `string` | 键。 |
-| `sourceWindowId` | `string` | 删除它的窗口 id，对不上窗口时为 `main`；过期时为 `""`。 |
-| `reason` | `"deleted" \| "expired"` | `state.delete` 删除为 `deleted`，存活期到了为 `expired`。 |
+| `key` | `string` | 被删除或过期的存储键名 |
+| `sourceWindowId` | `string` | 执行删除操作的源窗口 ID；无法匹配调用方窗口时为 `main`，因超时过期被清理时为空字符串 `""` |
+| `reason` | `"deleted" \| "expired"` | 移除原因：`deleted` 表示由 `state.delete` 显式删除，`expired` 表示存活期满过期清理 |
 <!-- api-schema:end -->
 
 ## system 事件
@@ -1438,7 +1477,7 @@ foobar2000 的全局选择变了。距上一个事件不到 50 ms 的变化直�
 ### system:themeChanged
 
 <!-- api-schema:begin event:system:themeChanged -->
-foobar2000 默认界面（Default UI）的配色变了，包括深浅色切换。只有本插件 Default UI 面板里的页面会收到，与 `ui:coloursChanged` 一起发；Columns UI 面板与插件自己的窗口收不到。
+foobar2000 默认界面（Default UI）配色或深浅色模式发生变更时触发；仅宿主在 Default UI 面板内的页面会收到此事件（与 `ui:coloursChanged` 同步触发），Columns UI 面板及独立弹窗不接收此事件
 
 发给它所涉及的窗口或面板里的页面。
 
@@ -1446,7 +1485,7 @@ foobar2000 默认界面（Default UI）的配色变了，包括深浅色切换�
 
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
-| `darkMode` | `boolean` | Default UI 现在是否为深色模式。它跟随 foobar2000 自己的设置，可能与 `system.getTheme` 报告的 Windows 应用主题不同。 |
+| `darkMode` | `boolean` | Default UI 当前是否处于深色模式；该状态由 foobar2000 自身外观设置决定，可能与 `system.getTheme` 返回的 Windows 系统主题不一致 |
 <!-- api-schema:end -->
 
 ## taskbar 事件
@@ -1454,7 +1493,7 @@ foobar2000 默认界面（Default UI）的配色变了，包括深浅色切换�
 ### taskbar:buttonClicked
 
 <!-- api-schema:begin event:taskbar:buttonClicked -->
-用 `taskbar.setThumbnailButtons` 安装的缩略图工具栏按钮被点击。页面安装自己的按钮之前显示的默认播放按钮由插件原生执行，不发此事件。
+缩略图工具栏自定义按钮被点击时广播（未配置自定义按钮前显示的默认原生播放控制按钮不派发此事件）
 
 发给所有窗口。
 
@@ -1462,7 +1501,7 @@ foobar2000 默认界面（Default UI）的配色变了，包括深浅色切换�
 
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
-| `id` | `string` | 按钮的 `id`。 |
+| `id` | `string` | 触发点击事件的按钮唯一标识符 id |
 <!-- api-schema:end -->
 
 ## tray 事件
@@ -1470,7 +1509,7 @@ foobar2000 默认界面（Default UI）的配色变了，包括深浅色切换�
 ### tray:beforeContextMenu
 
 <!-- api-schema:begin event:tray:beforeContextMenu -->
-托盘上下文菜单即将在右键时打开。菜单不等页面，处理函数对菜单的改动从下一次右键起生效。菜单没有可见的行、什么也不弹出时同样会发。
+鼠标右键点击托盘图标且上下文菜单即将展开前广播（菜单弹出过程不阻塞等待前端响应，事件处理函数中对菜单结构的修改将于下一次右键时生效；即使当前菜单无可见菜单项导致未弹出菜单亦会派发此事件）
 
 发给所有窗口。
 
@@ -1478,14 +1517,14 @@ foobar2000 默认界面（Default UI）的配色变了，包括深浅色切换�
 
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
-| `x` | `integer` | 光标的屏幕横坐标，菜单在此打开。 |
-| `y` | `integer` | 光标的屏幕纵坐标，菜单在此打开。 |
+| `x` | `integer` | 托盘菜单弹出的屏幕横坐标锚点（像素） |
+| `y` | `integer` | 托盘菜单弹出的屏幕纵坐标锚点（像素） |
 <!-- api-schema:end -->
 
 ### tray:click
 
 <!-- api-schema:begin event:tray:click -->
-托盘图标被左键单击，在松开按键时发出。右键打开上下文菜单，发的是 `tray:beforeContextMenu`。
+系统托盘图标被鼠标左键单击释放时广播（仅在 event 点击模式下派发；鼠标右键触发上下文菜单时派发 tray:beforeContextMenu）
 
 发给所有窗口。
 
@@ -1493,15 +1532,15 @@ foobar2000 默认界面（Default UI）的配色变了，包括深浅色切换�
 
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
-| `button` | `integer` | 恒为 `0`，即左键。 |
-| `x` | `integer` | 光标的屏幕横坐标。 |
-| `y` | `integer` | 光标的屏幕纵坐标。 |
+| `button` | `integer` | 鼠标按键索引（固定为 0，表示鼠标左键） |
+| `x` | `integer` | 光标所在的屏幕横坐标（像素） |
+| `y` | `integer` | 光标所在的屏幕纵坐标（像素） |
 <!-- api-schema:end -->
 
 ### tray:doubleClick
 
 <!-- api-schema:begin event:tray:doubleClick -->
-托盘图标被左键双击。
+系统托盘图标被鼠标左键双击时广播（仅在 event 点击模式下派发）
 
 发给所有窗口。
 
@@ -1509,14 +1548,14 @@ foobar2000 默认界面（Default UI）的配色变了，包括深浅色切换�
 
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
-| `x` | `integer` | 光标的屏幕横坐标。 |
-| `y` | `integer` | 光标的屏幕纵坐标。 |
+| `x` | `integer` | 光标所在的屏幕横坐标（像素） |
+| `y` | `integer` | 光标所在的屏幕纵坐标（像素） |
 <!-- api-schema:end -->
 
 ### tray:menuItemClicked
 
 <!-- api-schema:begin event:tray:menuItemClicked -->
-托盘菜单的某一行被选中，或其中的富控件改了值。内置的播放行、系统行以及声明了 `playbackAction` 的行由插件原生执行，不发此事件。`render: 'webview'` 时富控件每次改值都会上报，菜单保持打开；默认的原生菜单每次选择后都会关闭，滑块只提供五档，分段行按普通行显示，上报时不带 `value`。
+自定义托盘菜单项被点击或内嵌富控件值发生变更时广播（内置播放/系统项及声明了 playbackAction 的项由宿主原生直接执行而不派发此事件；在 render: 'webview' 模式下富控件每次变更均会实时派发且菜单保持展开，在默认 native 模式下每次点击后菜单自动关闭、滑块离散为五档、分段项降级为普通项且不携带 value）
 
 发给所有窗口。
 
@@ -1524,8 +1563,8 @@ foobar2000 默认界面（Default UI）的配色变了，包括深浅色切换�
 
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
-| `id` | `string` | 该行的 `id`；没有 id 的行为 `""`。 |
-| `value` | `integer` | 富控件的新值：`rating` 为 `0` 到 `5` 星（`0` 为清除），`slider` 为 `min` 到 `max` 内的值，`segmented` 为选中分段的索引。其他行不带。 |
+| `id` | `string` | 被触发菜单项的唯一标识符 id（无 id 的项为空字符串） |
+| `value` | `integer` | 富控件的最新数值（rating 返回 0 至 5 星，0 表示清除评分；slider 返回 min 至 max 范围内的整数；segmented 返回当前选中分段的索引；普通菜单项不附带该字段） |
 <!-- api-schema:end -->
 
 ## ui 事件
@@ -1533,7 +1572,7 @@ foobar2000 默认界面（Default UI）的配色变了，包括深浅色切换�
 ### ui:coloursChanged
 
 <!-- api-schema:begin event:ui:coloursChanged -->
-foobar2000 默认界面（Default UI）的配色变了。只有本插件 Default UI 面板里的页面会收到，与 `system:themeChanged` 一起发；Columns UI 面板与插件自己的窗口收不到。
+foobar2000 Default UI 宿主配色方案变更事件；仅投递给承载于 Default UI 面板中的页面（与 `system:themeChanged` 联动派发；Columns UI 面板与插件独立弹窗不接收此事件）
 
 发给它所涉及的窗口或面板里的页面。
 
@@ -1545,7 +1584,7 @@ foobar2000 默认界面（Default UI）的配色变了。只有本插件 Default
 ### ui:fontChanged
 
 <!-- api-schema:begin event:ui:fontChanged -->
-foobar2000 默认界面（Default UI）的字体变了。只有本插件 Default UI 面板里的页面会收到；Columns UI 面板与插件自己的窗口收不到。
+foobar2000 Default UI 宿主字体配置变更事件；仅投递给承载于 Default UI 面板中的页面（Columns UI 面板与插件独立弹窗不接收此事件）
 
 发给它所涉及的窗口或面板里的页面。
 
@@ -1557,7 +1596,7 @@ foobar2000 默认界面（Default UI）的字体变了。只有本插件 Default
 ### ui:menuItemClicked
 
 <!-- api-schema:begin event:ui:menuItemClicked -->
-`ui.showCustomMenu` 打开的菜单里某一行被选中。打开菜单的页面除了拿到方法返回的 `selectedId`，还会收到此事件；取消菜单时不发。
+`ui.showCustomMenu` 原生菜单项选中事件；定向投递至发起菜单调用的页面窗口（附带选中的 `{ id, label }`；用户取消菜单时不触发）
 
 发给发起调用的页面。
 
@@ -1565,14 +1604,14 @@ foobar2000 默认界面（Default UI）的字体变了。只有本插件 Default
 
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
-| `id` | `string` | 该行的 `id`；没有 id 的行为 `""`。 |
-| `label` | `string` | 该行的 `label` 原文，不含快捷键提示；没有 label 的行为 `""`。 |
+| `id` | `string` | 被点击菜单项的标识符 id（未配置 id 时为空字符串 `""`） |
+| `label` | `string` | 被点击菜单项的显示文本（不含右侧快捷键提示；未配置 label 时为空字符串 `""`） |
 <!-- api-schema:end -->
 
 ### ui:toast
 
 <!-- api-schema:begin event:ui:toast -->
-`ui.showToast` 请调用它的页面显示一条 toast。宿主不绘制，由页面按这些字段渲染。
+由 `ui.showToast` 触发的 Toast 通知渲染请求；定向投递给发起调用窗口，由前端按载荷参数自行实现视觉呈现
 
 发给发起调用的页面。
 
@@ -1580,10 +1619,10 @@ foobar2000 默认界面（Default UI）的字体变了。只有本插件 Default
 
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
-| `message` | `string` | toast 文本，不为空。 |
-| `duration` | `integer` | 显示时长（毫秒），原样转交，省略时为 `3000`。不检查范围，可能为 `0` 或负数。 |
-| `type` | `"info" \| "success" \| "warning" \| "error"` | toast 种类；省略时为 `info`。 |
-| `position` | `string` | 屏幕角落，原样转交、不做检查；省略时为 `bottom-right`。 |
+| `message` | `string` | Toast 提示正文文本内容 |
+| `duration` | `integer` | 提示显示时长（毫秒；未指定时默认 3000，不执行范围校验） |
+| `type` | `"info" \| "success" \| "warning" \| "error"` | Toast 提示类型：info、success、warning 或 error（未指定时默认 info） |
+| `position` | `string` | 提示在屏幕中的对齐角落位置（未指定时默认 "bottom-right"） |
 <!-- api-schema:end -->
 
 ## webview 事件
@@ -1591,7 +1630,7 @@ foobar2000 默认界面（Default UI）的字体变了。只有本插件 Default
 ### webview:processFailed
 
 <!-- api-schema:begin event:webview:processFailed -->
-本插件的某个 WebView2 进程出了故障。此事件发给所有窗口；无法恢复（`recovered` 为 `false`）时，出故障的那个窗口不在其中。
+广播本插件关联的 WebView2 核心或辅助进程故障事件。向所有窗口广播；若故障不可恢复（`recovered` 为 `false`），崩溃窗口本身不接收此事件
 
 发给所有窗口。
 
@@ -1599,10 +1638,10 @@ foobar2000 默认界面（Default UI）的字体变了。只有本插件 Default
 
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
-| `kind` | `"browserProcessExited" \| "renderProcessExited" \| "renderProcessUnresponsive" \| "frameRenderProcessExited" \| "utilityProcessExited" \| "sandboxHelperProcessExited" \| "gpuProcessExited" \| "ppapiPluginProcessExited" \| "ppapiBrokerProcessExited" \| "unknownProcessExited"` | 出故障的进程；本插件不认识的种类报为 `unknownProcessExited`。 |
-| `kindRaw` | `integer` | WebView2 报告的 `COREWEBVIEW2_PROCESS_FAILED_KIND` 值。 |
-| `recovered` | `boolean` | WebView 是否已恢复可用：渲染进程重新加载成功、以及运行时自行重启的进程为 `true`；重新加载失败或浏览器进程退出为 `false`。 |
-| `recoveryAction` | `"reload" \| "needRebuild" \| "none"` | 插件采取的处理：渲染进程为 `reload`（结果见 `recovered`）；浏览器进程退出、WebView 需要重新创建时为 `needRebuild`；运行时自行重启的进程为 `none`。 |
+| `kind` | `"browserProcessExited" \| "renderProcessExited" \| "renderProcessUnresponsive" \| "frameRenderProcessExited" \| "utilityProcessExited" \| "sandboxHelperProcessExited" \| "gpuProcessExited" \| "ppapiPluginProcessExited" \| "ppapiBrokerProcessExited" \| "unknownProcessExited"` | 发生故障的进程类型（未知或未识别的种类返回 `unknownProcessExited`） |
+| `kindRaw` | `integer` | WebView2 原始报告的 `COREWEBVIEW2_PROCESS_FAILED_KIND` 枚举数值 |
+| `recovered` | `boolean` | WebView 实例是否恢复可用。渲染进程重载成功或运行时自行重启时为 `true`；重载失败或浏览器主进程退出时为 `false` |
+| `recoveryAction` | `"reload" \| "needRebuild" \| "none"` | 插件采取的故障恢复动作。渲染进程故障时为 `reload`（恢复结果见 `recovered`）；浏览器主进程退出且需重建实例时为 `needRebuild`；运行时自行重启时为 `none` |
 <!-- api-schema:end -->
 
 ## window 事件
@@ -1809,3 +1848,17 @@ foobar2000 自己的「总在最前」选项变了（经它的菜单或某个组
 - `playback:stopAfterCurrentChanged` 的 payload 为 `{ enabled }`，与对应 API 字段相同。
 - 播放列表生命周期 payload 的字段在后续版本中可能增加；请把未知键视为增量而非异常。
 - 每一行的精确 emit source 和字段集以组件源码中的 C++ `EmitEvent` / `BroadcastEvent` 调用点为准。
+### playlist:autoplaylistConfigChanged
+
+<!-- api-schema:begin event:playlist:autoplaylistConfigChanged -->
+本组件管理的智能列表配置已变化，包括观察到的保持排序标志变化。用 getAutoplaylistConfig 重读快照。这不是曲目内容版本或写盘通知，不为外部提供者发送。
+
+发给所有窗口。
+
+**载荷**
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `playlistGuid` | `string` | 播放列表的唯一标识，格式为 `{XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX}`。后续可作为 `playlistGuid` 稳定引用该列表。 |
+| `revision` | `string` | 观察到的配置版本，编辑前应重新读取配置。 |
+<!-- api-schema:end -->

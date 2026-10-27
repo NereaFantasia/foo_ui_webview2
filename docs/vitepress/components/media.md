@@ -2,7 +2,7 @@
 
 ## `<fb-lyrics-panel>` {#fb-lyrics-panel}
 
-Lyrics panel for synchronized LRC or plain-text lyrics. Synchronized lyrics highlight the active line, and clicking a timestamped line seeks to that time.
+Lyrics panel displaying synchronized LRC or plain-text lyrics. Synchronized lines highlight in real time, and clicking a timestamped line seeks playback.
 
 ```html
 <fb-lyrics-panel></fb-lyrics-panel>
@@ -35,7 +35,7 @@ el.addEventListener('fb-lyrics-line-change', e => {
 
 ## `<fb-spectrum-visualizer>` {#fb-spectrum-visualizer}
 
-Real-time spectrum visualization with device-pixel-ratio scaling and `ResizeObserver` support. In `mode="raw"`, the component emits band data instead of drawing it. Each element runs its own host subscription and draws only that subscription's frames, so visualizers with different `bands` can share a page.
+Real-time spectrum visualization component with device-pixel-ratio scaling and `ResizeObserver` support. In `mode="raw"`, the element emits band data via custom events instead of rendering to canvas. Each instance maintains an independent host subscription and renders its own frames, allowing multiple visualizers with different band counts on a single page.
 
 ```html
 <fb-spectrum-visualizer bands="64" fps="30" mode="bars"></fb-spectrum-visualizer>
@@ -63,16 +63,16 @@ const ctx = el.getContext(); // CanvasRenderingContext2D or null
 
 ```js
 el.addEventListener('fb-spectrum-data', e => {
-  // Emitted only in mode="raw".
+  // Emitted only in mode="raw"
   console.log('Spectrum data:', e.detail.bands); // Float32Array
 });
 ```
 
 ## `<fb-waveform>` {#fb-waveform}
 
-Full-track waveform overview. Clicking the canvas seeks, while the cursor follows playback progress.
+Full-track waveform overview component. Clicking the canvas seeks playback, and an interactive cursor tracks playback progress.
 
-When the playing track changes or the element is removed while its waveform is still being decoded, the element cancels that host request, so a stale request does not keep one of the host's two decode slots busy. Page-level listeners on `audio:fullWaveformFailed` see these cancellations with `code: "CANCELLED"`.
+When the playing track changes or the element disconnects while decoding is in progress, the component cancels the host request to free decoder worker slots. Window listeners for `audio:fullWaveformFailed` receive cancellation events with `code: "CANCELLED"`.
 
 ```html
 <fb-waveform resolution="200"></fb-waveform>
@@ -83,7 +83,7 @@ When the playing track changes or the element is removed while its waveform is s
 | `src` | string | current track | Explicit track path; when present, track-change reloads and playback-time cursor updates are not subscribed |
 | `resolution` | string | `'200'` | Requested waveform sample count |
 | `mode` | `'peak' \| 'rms'` | `'rms'` | Host-side sampling method |
-| `cue-index` | string | — | Optional cue-sheet sub-song index |
+| `cue-index` | string | — | Optional CUE sheet subsong index |
 | `normalize` | `'adaptive' \| 'gamma' \| 'histogram'` | `'adaptive'` | Visual normalization mode (observed) |
 | `gamma` | string | `'1.5'` | Gamma exponent in the range $(0, 2]$; observed and used by `normalize="gamma"` |
 | `status` | `'pending' \| 'ready' \| 'failed'` | — | Read-only generation state |

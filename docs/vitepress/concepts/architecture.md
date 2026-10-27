@@ -2,16 +2,16 @@
 
 > **Minimum foobar2000 version**: 2.0+
 
-foo_ui_webview2 is a foobar2000 component that hosts web pages in Microsoft WebView2 and lets them drive the player. A theme is an ordinary web page, written with HTML, CSS and JavaScript and any framework you like; the component turns it into the foobar2000 window, or into a panel inside another interface.
+foo_ui_webview2 is a foobar2000 component that hosts web pages via Microsoft WebView2 and exposes playback control and status interfaces. A theme is a standard web application built with HTML, CSS, JavaScript, and any modern web framework; the component renders it as the main foobar2000 window or as an embedded panel within another user interface.
 
 <a id="key-features"></a>
 <a id="主要特性"></a>
 
 ## A page and the host
 
-The component injects a small object, `window.fb2k`, into every page it loads. Calling `fb2k.invoke('playback.play')` sends a message over WebView2 to the component's C++ code, which runs the method against foobar2000 and answers with a result. In the other direction, foobar2000 events such as a track change reach the page as named events that `fb2k.on('playback:trackChanged', handler)` receives. Method names use a dot and event names a colon. [Bridge protocol](/reference/bridge) describes the messages.
+The component injects a global `window.fb2k` object into every loaded page. Calling `fb2k.invoke('playback.play')` sends a message through WebView2 to the native C++ backend, which executes the action against foobar2000 and returns a structured result envelope. In reverse, player state events (such as track progression) reach the page as named notifications received via `fb2k.on('playback:trackChanged', handler)`. Endpoint invocations use dot notation (`playback.play`), while event notifications use colon notation (`playback:trackChanged`). The complete wire format is documented in [Bridge protocol](/reference/bridge).
 
-Everything a page does with the player goes through this bridge. Outside foobar2000, in an ordinary browser tab, there is no `window.fb2k`, and SDK calls resolve with a `NOT_SUPPORTED` failure. Which page loads, and from where, is decided by the templates and settings described in [How a page is found](./page-loading.md).
+All interactions between the web page and the player traverse this Bridge channel. Outside foobar2000 (such as in an ordinary browser tab), `window.fb2k` is absent, and SDK calls resolve with a `NOT_SUPPORTED` failure envelope. Target page selection and directory resolution follow the priority rules detailed in [How a page is found](./page-loading.md).
 
 ## The bridge and the SDK
 

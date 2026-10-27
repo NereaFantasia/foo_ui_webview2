@@ -1,6 +1,6 @@
 # Clipboard API
 
-Methods of the `clipboard` namespace.
+Provides read and write operations for plain text, rich text (HTML Format), and file lists (CF_HDROP) on the Windows clipboard.
 
 ## clipboard
 

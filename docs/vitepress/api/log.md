@@ -1,6 +1,6 @@
 # Log API
 
-Methods of the `log` namespace.
+Provides formatted writing, tail reading, and clearing for log files in the foobar2000 profile directory.
 
 ## log
 

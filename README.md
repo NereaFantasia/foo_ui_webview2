@@ -17,6 +17,10 @@ A modern UI component for foobar2000 built on WebView2 (C++ DLL). It turns the e
 
 - License: GPL-3.0-or-later (main component) / MIT (`sdk/`, `mcp/`)
 
+> [!TIP]
+> **Want a ready-made interface? Install the [Default Theme](https://github.com/NereaFantasia/foo-webview-default-theme).**
+> A WinUI 3 style interface with cover colors, lyrics, a mini player and online updates. Install the component (see [Quick start](#quick-start-30-seconds)), download the theme from [Releases](https://github.com/NereaFantasia/foo-webview-default-theme/releases), extract it into `<profile>\webview-ui\<template>\`, select the template on the component's preferences page, and restart foobar2000. The theme runs in the standalone window, not in DUI/CUI panels.
+
 ---
 
 ## Features
@@ -80,8 +84,6 @@ These stacks compose rather than exclude each other: this component itself runs 
 No SDK files, no Node.js, no build step — the `fb2k` bridge is injected natively by the component. Until you deploy a template, the component shows a built-in test page with clickable API demos, so a fresh install is never a blank window.
 
 ## Templates & themes
-
-Default theme: <https://github.com/NereaFantasia/foo-webview-default-theme>
 
 The component ships without a built-in frontend. Place your WebUI under your foobar2000 **profile** directory at `webview-ui\<template>\`, with `index.html` as the required entry point at the template root (e.g. `<profile>\webview-ui\default\index.html`). `<template>` defaults to `default` and can be managed / switched from the component's preferences page. The legacy location `<component dir>\foo_ui_webview2_resources\dist\` is still supported for backward compatibility. Restart foobar2000 to load it. You can build custom themes on top of `sdk/` (`foo-webview-sdk`).
 
@@ -163,10 +165,10 @@ const result = await fb2k.invoke('my_plugin.doSomething', { param1: 'value' });
 
 | API | Restriction |
 |-----|------|
-| All APIs | Page origin — only pages the host trusts can call the bridge or receive events: template folders and built-in pages, the configured development server, a panel's URL, and popup URLs the opener already trusts. Calls from any other page fail with `ORIGIN_DENIED` |
+| All APIs | Page origin — only pages the host trusts can call the bridge or receive events: template folders and built-in pages, the configured development server, a panel's URL when it is on this computer or allowed in the panel configuration, and popup URLs the opener already trusts. Calls from any other page fail with `ORIGIN_DENIED` |
 | shell.exec / shell.spawn | No command / executable allowlist — commands run as given; `cwd` and absolute paths are validated by PathSecurity (trusts the theme author; this is not a sandbox) |
 | shell.openWith | Blocklist — opening 29 executable / script extensions (`.exe`, `.bat`, `.ps1`, `.dll`, `.lnk`, …) is refused |
-| file.read/write | Path restrictions — system directories (`C:\Windows`, `C:\Program Files`, `C:\ProgramData`) are inaccessible. `file.*` writes are accepted in the foobar2000 config dir and `%TEMP%`, inside media-library watch folders, on any non-system drive, and on library or playlist tracks |
+| file.read/write | Path restrictions — system directories (`C:\Windows`, `C:\Program Files`, `C:\Program Files (x86)`, `C:\ProgramData`) are inaccessible, except the foobar2000 profile directory (a portable install inside them can still use its own profile). `file.*` writes are accepted in the foobar2000 config dir and `%TEMP%`, inside media-library watch folders, on any non-system drive, and on library or playlist tracks |
 | http.get/post | SSRF protection — localhost / private / link-local addresses are blocked (including post-DNS-resolution checks against rebinding) |
 | CDP remote debugging | Off by default — must be enabled manually, bound to localhost only |
 
@@ -185,7 +187,7 @@ Full details: [security notes](https://nereafantasia.github.io/foo_ui_webview2/r
 - Visual Studio 2026 (v145 toolset), or Visual Studio 2022 with `-PlatformToolset v143`
 - Windows SDK 10.0.22621+
 - WebView2 Runtime
-- Node.js 18+ (to build the SDK / MCP / docs site)
+- Node.js 22, as in CI (at least 20.19), to build the SDK / MCP / docs site
 
 ### C++ Component
 

@@ -1,8 +1,8 @@
 # Menu API
 
-Methods of the `menu` namespace.
+The `menu` namespace provides methods to query host menu structures, execute main and context menu commands, and display native or custom popup menus.
 
-See [Standard command GUIDs](../sdk/menu.md#standard-command-guids) for SDK-defined addresses and [Targets and completion](../sdk/menu.md#command-targets) for the limits of each execution route. The addresses are the same for SDK calls and `fb2k.invoke`.
+See [Standard command GUIDs](../sdk/menu.md#standard-command-guids) for SDK-defined addresses and [Targets and completion](../sdk/menu.md#command-targets) for execution route constraints. The addresses are identical for SDK calls and `fb2k.invoke`.
 
 ## menu
 
@@ -66,10 +66,16 @@ Get the context menu for the tracks `mode` selects, as a tree.
 | `items[].commandId` | `integer` | Menu item id. For a context-menu command, `menu.runContextCommandById` runs it. The id is valid only for the menu it came from, so do not store it. Absent on the flat list. |
 | `items[].guid` | `string` | Command GUID, the stable address to pass to `menu.runMainMenuCommand` or `menu.runContextCommand`; absent when it could not be resolved. |
 | `items[].subGuid` | `string` | GUID of a dynamic child command, passed together with `guid`. |
-| `items[].source` | `"mainmenu_static" \| "mainmenu_dynamic" \| "contextmenu_static" \| "contextmenu_dynamic" \| "hmenu_fallback"` | Where the command came from: the dynamic value when it carries `subGuid`, the static value otherwise, and `hmenu_fallback` for every command of the Win32 menus. |
-| `items[].executable` | `boolean` | Whether the command has a `guid` to run it by. |
-| `items[].unaddressableReason` | `"noStableIdentifier"` | Why the command cannot be run; present when `executable` is false. |
+| `items[].source` | `"mainmenu_static" \| "mainmenu_dynamic" \| "contextmenu_static" \| "contextmenu_dynamic" \| "hmenu_fallback"` | Main-menu sources reflect the provider's node kind, even when a dynamic leaf has no usable subGuid. Context-menu sources use subGuid presence. Win32 menu commands use `hmenu_fallback`. |
+| `items[].executable` | `boolean` | For main menus, whether the command has a unique complete execution address, independently of enabled. For context menus, whether a command GUID is present. |
+| `items[].unaddressableReason` | `"noStableIdentifier" \| "ambiguousMatch" \| "missingDynamicIdentifier" \| "dynamicParent" \| "incompleteHierarchy"` | Why the command cannot be run; present when `executable` is false. |
+| `items[].addressCandidates` | `MenuAddressCandidate[]` | Diagnostic candidates for an ambiguous main-menu node; never select the first automatically. |
+| `items[].addressCandidates[].path` | `string` | Full observed label path. |
+| `items[].addressCandidates[].guid` | `string` | Owning command GUID. |
+| `items[].addressCandidates[].subGuid` | `string` | Dynamic leaf GUID, when present. |
+| `items[].addressCandidates[].groupGuid` | `string` | Immediate registered parent group GUID; empty when unavailable. |
 | `items[].fallback` | `boolean` | `true` on a command of the flat list. |
+| `targetKey` | `string` | A fingerprint of the tracks the menu was built for, to pass back as `expectTarget`. Absent for `mode: "playlist"`. Opaque, and valid only while the host process runs. |
 
 `success` is `true` on success. On failure the response is `{ success: false, error, code }`; see [Error codes](../reference/errors.md) for `code`.
 <!-- api-schema:end -->
@@ -83,7 +89,7 @@ const { items } = res;
 ### menu.getMainMenu
 
 <!-- api-schema:begin menu.getMainMenu -->
-Get the main menu as a tree. The host builds it from its menu tree, falls back to the Win32 menus (`source: "v1-hmenu"`), and as a last resort returns a flat command list (`fallback: "flat-mainmenu-commands"`); fails with `OPERATION_FAILED` when none can be built.
+Get the main menu as a tree. The host builds it from its menu tree, falls back to the Win32 menus (`source: "v1-hmenu"`), and as a last resort returns a flat command list (`fallback: "flat-mainmenu-commands"`). A source that cannot build a tree permits fallback; unreadable state in a built tree fails with `OPERATION_FAILED` instead of returning guessed availability. Root filtering keeps full command paths. Addressability is independent of enabled.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
@@ -123,9 +129,14 @@ Get the main menu as a tree. The host builds it from its menu tree, falls back t
 | `items[].commandId` | `integer` | Menu item id. For a context-menu command, `menu.runContextCommandById` runs it. The id is valid only for the menu it came from, so do not store it. Absent on the flat list. |
 | `items[].guid` | `string` | Command GUID, the stable address to pass to `menu.runMainMenuCommand` or `menu.runContextCommand`; absent when it could not be resolved. |
 | `items[].subGuid` | `string` | GUID of a dynamic child command, passed together with `guid`. |
-| `items[].source` | `"mainmenu_static" \| "mainmenu_dynamic" \| "contextmenu_static" \| "contextmenu_dynamic" \| "hmenu_fallback"` | Where the command came from: the dynamic value when it carries `subGuid`, the static value otherwise, and `hmenu_fallback` for every command of the Win32 menus. |
-| `items[].executable` | `boolean` | Whether the command has a `guid` to run it by. |
-| `items[].unaddressableReason` | `"noStableIdentifier"` | Why the command cannot be run; present when `executable` is false. |
+| `items[].source` | `"mainmenu_static" \| "mainmenu_dynamic" \| "contextmenu_static" \| "contextmenu_dynamic" \| "hmenu_fallback"` | Main-menu sources reflect the provider's node kind, even when a dynamic leaf has no usable subGuid. Context-menu sources use subGuid presence. Win32 menu commands use `hmenu_fallback`. |
+| `items[].executable` | `boolean` | For main menus, whether the command has a unique complete execution address, independently of enabled. For context menus, whether a command GUID is present. |
+| `items[].unaddressableReason` | `"noStableIdentifier" \| "ambiguousMatch" \| "missingDynamicIdentifier" \| "dynamicParent" \| "incompleteHierarchy"` | Why the command cannot be run; present when `executable` is false. |
+| `items[].addressCandidates` | `MenuAddressCandidate[]` | Diagnostic candidates for an ambiguous main-menu node; never select the first automatically. |
+| `items[].addressCandidates[].path` | `string` | Full observed label path. |
+| `items[].addressCandidates[].guid` | `string` | Owning command GUID. |
+| `items[].addressCandidates[].subGuid` | `string` | Dynamic leaf GUID, when present. |
+| `items[].addressCandidates[].groupGuid` | `string` | Immediate registered parent group GUID; empty when unavailable. |
 | `items[].fallback` | `boolean` | `true` on a command of the flat list. |
 | `source` | `"v1-hmenu"` | `v1-hmenu` when the tree was built from the Win32 menus. |
 | `fallback` | `"flat-mainmenu-commands"` | `flat-mainmenu-commands` when only the flat command list could be built. |
@@ -133,7 +144,7 @@ Get the main menu as a tree. The host builds it from its menu tree, falls back t
 `success` is `true` on success. On failure the response is `{ success: false, error, code }`; see [Error codes](../reference/errors.md) for `code`.
 <!-- api-schema:end -->
 
-Each command leaf carries a `source`. On the menu tree a leaf with `subGuid` reports `mainmenu_dynamic` and one without reports `mainmenu_static`; when the host had to walk the Win32 menu instead, the response carries `source: "v1-hmenu"` and every leaf reports `hmenu_fallback`. The flat fallback (`fallback: "flat-mainmenu-commands"`) marks each item with `fallback: true`, keeps `flags` and has no `commandId`.
+Each command leaf carries a `source`. In the primary menu tree, a leaf with a `subGuid` reports `mainmenu_dynamic`, while one without reports `mainmenu_static`. When falling back to Win32 menu traversal, the response sets `source: "v1-hmenu"` and leaves report `hmenu_fallback`. The flat command list fallback (`fallback: "flat-mainmenu-commands"`) marks items with `fallback: true`, preserves `flags`, and omits `commandId`.
 
 ```js
 const res = await fb2k.invoke('menu.getMainMenu', { root: 'View' });
@@ -144,7 +155,7 @@ const { items } = res;
 ### menu.runContextCommand
 
 <!-- api-schema:begin menu.runContextCommand -->
-Run a context-menu command on the playing track, or on the active playlist selection when nothing is playing; fails with `NO_ACTIVE_ITEM` when there is neither. A name that matches no command fails with `MENU_COMMAND_NOT_FOUND`, a GUID that no command owns with `NOT_FOUND`.
+Run a context-menu command on the playing track, or on the active playlist selection when nothing is playing; fails with `NO_ACTIVE_ITEM` when there is neither. A name that matches no command fails with `MENU_COMMAND_NOT_FOUND`, a GUID that no command owns with `NOT_FOUND`. The call answers when the command returns: one that shows a modal dialog answers only after the dialog closes.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
@@ -158,13 +169,12 @@ Run a context-menu command on the playing track, or on the active playlist selec
 | `guid` | `string` | GUID of the command that ran; absent when it was reached by name and has no GUID. |
 | `itemCount` | `integer` | How many tracks the command ran on. |
 | `executionConfirmed` | `boolean` | `false` when the command has no GUID and was handed to a host entry point that reports nothing back, so whether it ran is unknown. |
+| `completion` | `"completed" \| "partial" \| "cancelled" \| "failed" \| "unknown"` | Always `unknown`: foobar2000 does not report whether the command finished or whether a dialog it opened was cancelled. |
 
 `success` is `true` on success. On failure the response is `{ success: false, error, code }`; see [Error codes](../reference/errors.md) for `code`.
 <!-- api-schema:end -->
 
-`executionConfirmed: false` means the command was handed to the host through an
-entry point that returns nothing, so completion could not be observed. It only
-occurs for a registration that exposes no stable GUID.
+`executionConfirmed: false` indicates that the command was handed to a host entry point that provides no return status, preventing completion observation. This applies only to registrations lacking a stable GUID.
 
 ```js
 // Track properties; the target is resolved when the call runs.
@@ -185,15 +195,21 @@ async function runChosenDynamicContextCommand(node) {
 ### menu.runContextCommandById
 
 <!-- api-schema:begin menu.runContextCommandById -->
-Run the context-menu item whose `commandId` a `menu.getContextMenu` call reported. The menu is rebuilt from `mode` and `handles`, so pass the `handles` that call used and the `mode` it reported, not `auto` again. An id is a position in the rebuilt menu, not a name: an id past its end fails with `NOT_FOUND`, but when the tracks, the selection, the playing track or the installed components changed since, the same id can run another item without failing.
+Run the context-menu item whose `commandId` a `menu.getContextMenu` call reported. The menu is rebuilt from `mode` and `handles`, so pass the `handles` that call used and the `mode` it reported, not `auto` again. An id is a position in the rebuilt menu, not a name: an id past its end fails with `NOT_FOUND`, but when the tracks, the selection, the playing track or the installed components changed since, the same id can run another item without failing. Pass `expectPath` and `expectTarget` together to rule that out: the host then runs the item only when the rebuilt menu matches what that call reported, and otherwise fails without running anything, with `details.reason` set: `NOT_FOUND` (`targetChanged`, `commandChanged`), `MENU_MATCH_AMBIGUOUS` (`ambiguousPath`), `MENU_ITEM_DISABLED` (`disabled`), or `NOT_SUPPORTED` (`unsupportedTargetMode`) for `mode: "playlist"`. Reopen the menu after such a failure. The call answers when the command returns: one that shows a modal dialog answers only after the dialog closes.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `id` | `integer` | Yes | The `commandId` of a context-menu node. Between `0` and `4294967295` inclusive. |
 | `mode` | `string` | No | The `mode` the menu was built with; see `menu.getContextMenu`. Default: `"auto"`. |
 | `handles` | `any[]` | No | The `handles` the menu was built with; see `menu.getContextMenu`. |
+| `expectPath` | `string` | No | The node's `path` as `menu.getContextMenu` reported it. Give it with `expectTarget`: the item at `id` must have this path, and no other node may share it. Must not be empty. |
+| `expectTarget` | `string` | No | The `targetKey` that `menu.getContextMenu` reported. Give it with `expectPath`: the tracks resolved now must give the same key. Must not be empty. |
 
 **Returns**
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `completion` | `"completed" \| "partial" \| "cancelled" \| "failed" \| "unknown"` | Always `unknown`: foobar2000 does not report whether the command finished or whether a dialog it opened was cancelled. |
 
 `success` is `true` on success. On failure the response is `{ success: false, error, code }`; see [Error codes](../reference/errors.md) for `code`.
 <!-- api-schema:end -->
@@ -205,7 +221,7 @@ await fb2k.invoke('menu.runContextCommandById', { id: 3 });
 ### menu.runMainMenuCommand
 
 <!-- api-schema:begin menu.runMainMenuCommand -->
-Run a main-menu command addressed by GUID, leaf name or slash-separated path. A disabled command fails with `MENU_ITEM_DISABLED`; a name that matches several commands fails with `MENU_MATCH_AMBIGUOUS` and lists them in `candidates`; a name that matches none fails with `MENU_COMMAND_NOT_FOUND`, and a GUID that no command owns with `NOT_FOUND`.
+Run a main-menu command addressed by GUID, leaf name or slash-separated path. A disabled command fails with `MENU_ITEM_DISABLED`. Paths match every ancestor; a wrong prefix never falls back to a leaf name. Ambiguous identities fail with `MENU_MATCH_AMBIGUOUS` and `details.candidates`; a missing name/path is `MENU_COMMAND_NOT_FOUND`, a missing GUID is `NOT_FOUND`. Addressing a dynamic leaf by GUID requires both GUIDs. Unreadable state fails with `OPERATION_FAILED`. The call answers when the command returns: one that shows a modal dialog, such as renaming a playlist, answers only after the dialog closes.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
@@ -216,31 +232,27 @@ Run a main-menu command addressed by GUID, leaf name or slash-separated path. A 
 
 | Field | Type | Description |
 | --- | --- | --- |
-| `guid` | `string` | GUID of the command that ran; absent when the menu tree ran it by name or path. |
+| `guid` | `string` | GUID of the command that ran, including calls resolved from names or paths. Older hosts can omit it for those forms. |
 | `dynamic` | `boolean` | Whether it was a dynamic child command. |
 | `subGuid` | `string` | GUID of the dynamic child that ran. |
 | `source` | `"v2-tree" \| "index"` | How a name or path was resolved: `v2-tree` by the menu tree, `index` by the command list. Absent for the GUID form. |
+| `completion` | `"completed" \| "partial" \| "cancelled" \| "failed" \| "unknown"` | Always `unknown`: foobar2000 does not report whether the command finished or whether a dialog it opened was cancelled. |
 
 `success` is `true` on success. On failure the response is `{ success: false, error, code }`; see [Error codes](../reference/errors.md) for `code`.
 <!-- api-schema:end -->
 
-`command` accepts a GUID, a leaf command name, or a slash-separated path. Prefer
-the GUID: it is the only form that is stable across hosts. A localized
-foobar2000 build reports localized command labels, so an English name or path
-will not resolve there.
+`command` accepts a GUID, a leaf command name, or a slash-separated path. Prefer GUIDs, which remain stable across localized hosts. Localized foobar2000 installations report translated labels, causing English names or paths to fail resolution.
 
-Name and path forms are matched exactly per segment. When a name matches more
-than one command the call fails with `MENU_MATCH_AMBIGUOUS` and lists the
-candidates, rather than picking one.
+Name and path forms are matched exactly per segment. When a path or name matches multiple commands, the call fails with `MENU_MATCH_AMBIGUOUS` and lists candidate commands rather than executing an arbitrary match.
 
-Failure is always reported as `success: false` with a `code`:
+Failure is reported as `success: false` with a `code`:
 
 | `code` | Meaning |
 | --- | --- |
-| `MENU_ITEM_DISABLED` | Command exists but is currently greyed out. |
-| `MENU_MATCH_AMBIGUOUS` | Name matched several commands; see `candidates`. |
-| `MENU_COMMAND_NOT_FOUND` | No command matched. |
-| `NOT_FOUND` | No command owns the GUID. |
+| `MENU_ITEM_DISABLED` | Command exists but is currently greyed out |
+| `MENU_MATCH_AMBIGUOUS` | Name matched several commands; see `candidates` |
+| `MENU_COMMAND_NOT_FOUND` | No command matched |
+| `NOT_FOUND` | No command owns the GUID |
 
 ```js
 // Preferences: an SDK-defined GUID independent of the host's language.
@@ -319,23 +331,23 @@ await fb2k.invoke('menu.showNativePopup', { mode: 'nowPlaying' });
 
 ## Owner-family behavior and limits
 
-- `menu.getContextMenu`, `menu.runContextCommandById`, and `menu.showNativePopup` use `mode` to select `handles`, `nowPlaying`, `selection`, or `playlist` context. `auto` tries those sources in that order, ending with playlist context. In `handles` mode, every path is media-access validated before a handle is created. `menu.showNativePopup` uses screen cursor coordinates and returns before the native menu is displayed.
-- `menu.show` opens the self-drawn overlay after resource validation. `menu.close` only closes the active overlay; `menu.__*` endpoints are internal and are not public APIs.
+- `menu.getContextMenu`, `menu.runContextCommandById`, and `menu.showNativePopup` use `mode` to select `handles`, `nowPlaying`, `selection`, or `playlist` context. `auto` evaluates those sources in sequence, ending with active playlist context. In `handles` mode, every path is validated for media access before creating track handles. `menu.showNativePopup` positions at screen cursor coordinates and returns immediately after triggering popup display.
+- `menu.show` displays a custom HTML overlay after resource validation. `menu.close` dismisses the active overlay; internal `menu.__*` endpoints are not part of the public API surface.
 
 ## Contract supplements
 
-The sections below close public-contract findings from the strict parameter audit without replacing existing explanations.
+The sections below document parameter validation and return schemas established during the strict parameter audit without altering existing semantics.
 
 <!-- phase3-supplement:menu.getContextMenu -->
 ### Contract supplement: `menu.getContextMenu`
 
 | Parameter | Type | Required | Default | Description |
 | --- | --- | --- | --- | --- |
-| `handles` | `array` | No | `[]` | Track paths, or `{ path, subsong }` objects, used as the menu context. |
-| `i18n` | `boolean` | No | `true` | Translates item labels into `displayLabel`. |
-| `locale` | `string` | No | `auto` | Translation locale; `auto` keeps the host's own labels. |
-| `mode` | `string` | No | `auto` | One of `auto`, `selection`, `playlist`, `nowPlaying`, or `handles`. |
-| `withAvailability` | `boolean` | No | `true` | Includes per-submenu availability counters. |
+| `handles` | `array` | No | `[]` | Track paths, or `{ path, subsong }` objects, used as the menu context |
+| `i18n` | `boolean` | No | `true` | Translates item labels into `displayLabel` |
+| `locale` | `string` | No | `auto` | Translation locale; `auto` keeps the host's own labels |
+| `mode` | `string` | No | `auto` | One of `auto`, `selection`, `playlist`, `nowPlaying`, or `handles` |
+| `withAvailability` | `boolean` | No | `true` | Includes per-submenu availability counters |
 
 #### Return fields
 
@@ -362,9 +374,9 @@ const { items } = res;
 
 | Parameter | Type | Required | Default | Description |
 | --- | --- | --- | --- | --- |
-| `id` | `integer` | Yes | — | Command id from the built context menu. A missing id fails with `id is required`, a non-integer one with `id must be an integer` and a negative one with `id is out of range`, all as `INVALID_PARAMS`. |
-| `mode` | `string` | No | `auto` | One of `selection`, `playlist`, `nowPlaying`, `handles`, or `auto`. |
-| `handles` | `array` | No | `[]` | Track paths, or `{ path, subsong }` objects, used as the menu context. |
+| `id` | `integer` | Yes | — | Command id from the built context menu. A missing id fails with `id is required`, a non-integer with `id must be an integer`, and a negative value with `id is out of range`, all as `INVALID_PARAMS` |
+| `mode` | `string` | No | `auto` | One of `selection`, `playlist`, `nowPlaying`, `handles`, or `auto` |
+| `handles` | `array` | No | `[]` | Track paths, or `{ path, subsong }` objects, used as the menu context |
 
 #### Return fields
 

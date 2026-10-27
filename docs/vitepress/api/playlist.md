@@ -2,22 +2,14 @@
 
 Playlist management, track operations, autoplaylists, and helpers.
 
-## Naming a playlist
+## Targeting a playlist {#naming-a-playlist}
 
-A method that acts on one playlist takes either `playlist`, its index, or `playlistGuid`, the
-`guid` that `playlist.getAll`, `getActive`, `getPlaying`, `create`, `duplicate` and
-`createAutoplaylist` report. A result that names a playlist by index carries its GUID next to it
-as `playlistGuid`; the `playlist:*` events name their playlists by GUID as well, each under the
-field its payload lists. The same two keys work for
-`library.addToPlaylist`, `queue.add`, `queue.addPaths` and `artwork.getByPlaylistItem`, and in
-each entry of `queue.setContents` and `queue.insertNext`; `playlist.reorderPlaylists` takes the
-new order as GUIDs in `newOrderGuids`.
+Methods that operate on an individual playlist accept either `playlist` (a 0-based index) or `playlistGuid` (a persistent unique identifier). The two parameters are mutually exclusive; passing both fails with `INVALID_PARAMS`.
 
-An index names whichever playlist is at that position when the host handles the call, so it can
-point somewhere else once playlists are removed or reordered, for example while a menu that
-listed them is open. A GUID stays with its playlist: a call made with it lands in that playlist
-or, when the playlist has been removed, fails with `NOT_FOUND`. Two playlists with the same name
-have different GUIDs. Give one key or the other; both fail with `INVALID_PARAMS`.
+- **Index (`playlist`)**: Points to the position occupied when the host processes the call. Index values can shift as playlists are inserted, removed, or reordered.
+- **GUID (`playlistGuid`)**: Assigned upon creation and globally unique. A GUID stays bound to the playlist across renames and reordering; calls targeting a removed GUID fail with `NOT_FOUND`.
+
+Endpoints returning playlist info (`getAll`, `getActive`, `getPlaying`, `create`, `duplicate`, `createAutoplaylist`) include `guid`; results that identify a playlist by index also carry `playlistGuid`. `playlist:*` events identify playlists by GUID in their payloads. Cross-namespace methods (such as `library.addToPlaylist` and `queue.add`) also accept `playlistGuid`.
 
 ```javascript
 const res = await fb2k.invoke('playlist.getAll');
@@ -68,7 +60,7 @@ This method takes no parameters.
 | --- | --- | --- |
 | `playlists` | `PlaylistInfo[]` | Every playlist, in playlist order. |
 | `playlists[].index` | `integer` | Position in the playlist list, from `0`. |
-| `playlists[].guid` | `string` | The playlist's GUID, written as `{XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX}`. Pass it as `playlistGuid` to address this playlist even after the playlist list has changed. |
+| `playlists[].guid` | `string` | Unique identifier of the playlist, formatted as `{XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX}`. Pass as `playlistGuid` to reliably target this playlist. |
 | `playlists[].name` | `string` | Playlist name. |
 | `playlists[].trackCount` | `integer` | Number of tracks. |
 | `playlists[].isActive` | `boolean` | Whether this is the active playlist. |
@@ -101,7 +93,7 @@ This method takes no parameters.
 | --- | --- | --- |
 | `found` | `boolean` | Whether there is an active playlist. |
 | `index` | `integer` | Index of the active playlist. |
-| `guid` | `string` | The playlist's GUID, written as `{XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX}`. Pass it as `playlistGuid` to address this playlist even after the playlist list has changed. |
+| `guid` | `string` | Unique identifier of the playlist, formatted as `{XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX}`. Pass as `playlistGuid` to reliably target this playlist. |
 | `name` | `string` | Its name. |
 | `trackCount` | `integer` | Number of tracks. |
 | `isActive` | `boolean` | Always `true` here. |
@@ -120,7 +112,7 @@ Make a playlist the active one. An index past the last playlist fails with `INVA
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `playlist` | `integer` | No | Index of the playlist to activate. Give this or `playlistGuid`; with neither the call fails with `INVALID_PARAMS`. At least `0`. |
-| `playlistGuid` | `string` | No | A playlist's GUID instead of its index, written with braces as `playlist.getAll` and every result or event that names a playlist report it; either hex case is accepted. It keeps naming the same playlist while other playlists are added, removed or reordered, which an index does not. Giving both this and the index, or a malformed GUID, fails with `INVALID_PARAMS`. A playlist that no longer exists fails with `NOT_FOUND`; the call never falls back to another playlist. A malformed GUID and a missing playlist carry the GUID given as `details.playlistGuid`. |
+| `playlistGuid` | `string` | No | Persistent unique identifier of a playlist (bracketed GUID, case-insensitive), used in place of a mutable index. Mutually exclusive with `playlist`; passing both or an invalid format fails with `INVALID_PARAMS`. Fails with `NOT_FOUND` if the playlist does not exist, never falling back. Invalid-format and not-found failures return the given GUID in `details.playlistGuid`. |
 
 **Returns**
 
@@ -146,7 +138,7 @@ This method takes no parameters.
 | --- | --- | --- |
 | `found` | `boolean` | Whether there is a playing playlist. |
 | `index` | `integer` | Index of the playing playlist. |
-| `guid` | `string` | The playlist's GUID, written as `{XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX}`. Pass it as `playlistGuid` to address this playlist even after the playlist list has changed. |
+| `guid` | `string` | Unique identifier of the playlist, formatted as `{XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX}`. Pass as `playlistGuid` to reliably target this playlist. |
 | `name` | `string` | Its name. |
 | `trackCount` | `integer` | Number of tracks. |
 | `isActive` | `boolean` | Whether it is also the active playlist. |
@@ -172,7 +164,7 @@ Create an empty playlist. Fails with `OPERATION_FAILED` when foobar2000 refuses 
 | Field | Type | Description |
 | --- | --- | --- |
 | `index` | `integer` | Index of the new playlist. |
-| `guid` | `string` | The playlist's GUID, written as `{XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX}`. Pass it as `playlistGuid` to address this playlist even after the playlist list has changed. |
+| `guid` | `string` | Unique identifier of the playlist, formatted as `{XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX}`. Pass as `playlistGuid` to reliably target this playlist. |
 
 `success` is `true` on success. On failure the response is `{ success: false, error, code }`; see [Error codes](../reference/errors.md) for `code`.
 <!-- api-schema:end -->
@@ -189,7 +181,7 @@ Delete a playlist. Fails with `LOCKED` when a lock on the playlist refuses the r
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `playlist` | `integer` | No | Index of the playlist to delete; omitted, the active playlist. An index past the last playlist fails with `INVALID_INDEX`; with this omitted and no active playlist the call fails with `NO_ACTIVE_ITEM`. At least `0`. |
-| `playlistGuid` | `string` | No | A playlist's GUID instead of its index, written with braces as `playlist.getAll` and every result or event that names a playlist report it; either hex case is accepted. It keeps naming the same playlist while other playlists are added, removed or reordered, which an index does not. Giving both this and the index, or a malformed GUID, fails with `INVALID_PARAMS`. A playlist that no longer exists fails with `NOT_FOUND`; the call never falls back to another playlist. A malformed GUID and a missing playlist carry the GUID given as `details.playlistGuid`. |
+| `playlistGuid` | `string` | No | Persistent unique identifier of a playlist (bracketed GUID, case-insensitive), used in place of a mutable index. Mutually exclusive with `playlist`; passing both or an invalid format fails with `INVALID_PARAMS`. Fails with `NOT_FOUND` if the playlist does not exist, never falling back. Invalid-format and not-found failures return the given GUID in `details.playlistGuid`. |
 
 **Returns**
 
@@ -204,7 +196,7 @@ Rename a playlist. Fails with `LOCKED` when a lock on the playlist refuses the n
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `playlist` | `integer` | No | Index of the playlist to rename. An index past the last playlist fails with `INVALID_INDEX`. Give this or `playlistGuid`; with neither the call fails with `INVALID_PARAMS`. At least `0`. |
-| `playlistGuid` | `string` | No | A playlist's GUID instead of its index, written with braces as `playlist.getAll` and every result or event that names a playlist report it; either hex case is accepted. It keeps naming the same playlist while other playlists are added, removed or reordered, which an index does not. Giving both this and the index, or a malformed GUID, fails with `INVALID_PARAMS`. A playlist that no longer exists fails with `NOT_FOUND`; the call never falls back to another playlist. A malformed GUID and a missing playlist carry the GUID given as `details.playlistGuid`. |
+| `playlistGuid` | `string` | No | Persistent unique identifier of a playlist (bracketed GUID, case-insensitive), used in place of a mutable index. Mutually exclusive with `playlist`; passing both or an invalid format fails with `INVALID_PARAMS`. Fails with `NOT_FOUND` if the playlist does not exist, never falling back. Invalid-format and not-found failures return the given GUID in `details.playlistGuid`. |
 | `name` | `string` | Yes | New name. |
 
 **Returns**
@@ -226,14 +218,14 @@ Remove every track from a playlist, saving an undo point first. A locked playlis
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `playlist` | `integer` | No | Index of the playlist to empty; omitted, the active playlist. An index past the last playlist fails with `INVALID_INDEX`; with this omitted and no active playlist the call fails with `NO_ACTIVE_ITEM`. At least `0`. |
-| `playlistGuid` | `string` | No | A playlist's GUID instead of its index, written with braces as `playlist.getAll` and every result or event that names a playlist report it; either hex case is accepted. It keeps naming the same playlist while other playlists are added, removed or reordered, which an index does not. Giving both this and the index, or a malformed GUID, fails with `INVALID_PARAMS`. A playlist that no longer exists fails with `NOT_FOUND`; the call never falls back to another playlist. A malformed GUID and a missing playlist carry the GUID given as `details.playlistGuid`. |
+| `playlistGuid` | `string` | No | Persistent unique identifier of a playlist (bracketed GUID, case-insensitive), used in place of a mutable index. Mutually exclusive with `playlist`; passing both or an invalid format fails with `INVALID_PARAMS`. Fails with `NOT_FOUND` if the playlist does not exist, never falling back. Invalid-format and not-found failures return the given GUID in `details.playlistGuid`. |
 
 **Returns**
 
 | Field | Type | Description |
 | --- | --- | --- |
 | `playlist` | `integer` | Index of the playlist. |
-| `playlistGuid` | `string` | The playlist's GUID, written as `{XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX}`. Pass it as `playlistGuid` to address this playlist even after the playlist list has changed. |
+| `playlistGuid` | `string` | Unique identifier of the playlist, formatted as `{XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX}`. Pass as `playlistGuid` to reliably target this playlist. |
 | `clearedCount` | `integer` | Number of tracks it held before. |
 | `remainingCount` | `integer` | Number of tracks left; `0` on success. |
 
@@ -248,7 +240,7 @@ Copy a playlist, tracks included, into a new playlist placed right after it.
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `playlist` | `integer` | No | Index of the playlist to copy; omitted, the active playlist. An index past the last playlist fails with `INVALID_INDEX`; with this omitted and no active playlist the call fails with `NO_ACTIVE_ITEM`. At least `0`. |
-| `playlistGuid` | `string` | No | A playlist's GUID instead of its index, written with braces as `playlist.getAll` and every result or event that names a playlist report it; either hex case is accepted. It keeps naming the same playlist while other playlists are added, removed or reordered, which an index does not. Giving both this and the index, or a malformed GUID, fails with `INVALID_PARAMS`. A playlist that no longer exists fails with `NOT_FOUND`; the call never falls back to another playlist. A malformed GUID and a missing playlist carry the GUID given as `details.playlistGuid`. |
+| `playlistGuid` | `string` | No | Persistent unique identifier of a playlist (bracketed GUID, case-insensitive), used in place of a mutable index. Mutually exclusive with `playlist`; passing both or an invalid format fails with `INVALID_PARAMS`. Fails with `NOT_FOUND` if the playlist does not exist, never falling back. Invalid-format and not-found failures return the given GUID in `details.playlistGuid`. |
 | `name` | `string` | No | Name of the copy; omitted or empty, the original name followed by ` (Copy)`. |
 
 **Returns**
@@ -276,7 +268,7 @@ Report how many tracks a playlist holds. An index past the last playlist, a `pla
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `playlist` | `integer` | No | Index of the playlist; omitted, the active playlist. At least `0`. |
-| `playlistGuid` | `string` | No | A playlist's GUID instead of its index, written as the results and events that name a playlist report it, for a query that answers an empty result for a missing playlist: a GUID no playlist has answers the same way. Either hex case is accepted. Giving both this and the index, or a malformed GUID, fails with `INVALID_PARAMS`. |
+| `playlistGuid` | `string` | No | Persistent unique identifier of a playlist, used in place of an index. For read queries where a missing target returns an empty result instead of failing. Mutually exclusive with `playlist`; passing both or an invalid format fails with `INVALID_PARAMS`. |
 
 **Returns**
 
@@ -297,11 +289,11 @@ A page of a playlist's rows. Without `fields` each row is a whole playlist row w
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `playlist` | `integer` | No | Playlist index; omitted, the active playlist. At least `0`. |
-| `playlistGuid` | `string` | No | A playlist's GUID instead of its index, written as the results and events that name a playlist report it, for a query that answers an empty result for a missing playlist: a GUID no playlist has answers the same way. Either hex case is accepted. Giving both this and the index, or a malformed GUID, fails with `INVALID_PARAMS`. |
+| `playlistGuid` | `string` | No | Persistent unique identifier of a playlist, used in place of an index. For read queries where a missing target returns an empty result instead of failing. Mutually exclusive with `playlist`; passing both or an invalid format fails with `INVALID_PARAMS`. |
 | `start` | `integer` | No | First row to return. At least `0`. Default: `0`. |
 | `count` | `integer` | No | Most rows to return. At least `0`. Default: `100`. |
 | `formats` | `Record<string, string>` | No | Extra columns, each a Title Formatting pattern under a name of your choosing; every row carries their values under `formats`, in projected rows too. |
-| `fields` | `string[]` | No | Keys each row carries besides `index`; omitted, the whole row. The names are those `library.query` takes; an unknown name fails with `INVALID_PARAMS` and is listed in `details.unknownFields`. Must not be empty. |
+| `fields` | `string[]` | No | Keys each row carries besides `index`; omitted, the whole row. The names are those `library.query` takes; an unknown name fails with `INVALID_PARAMS` and is listed in `details.unknownFields`. The optional `albumId` is omitted when unavailable, even when requested. Must not be empty. |
 
 **Returns**
 
@@ -321,8 +313,9 @@ A page of a playlist's rows. Without `fields` each row is a whole playlist row w
 | `tracks[].artist` | `string` | Every ARTIST value joined with `", "`; empty when untagged. |
 | `tracks[].artists` | `string[]` | Every ARTIST value in tag order; empty when untagged. |
 | `tracks[].album` | `string` | First ALBUM value; empty when untagged. |
+| `tracks[].albumId` | `string` | Opaque album identity when its original name or album artist contains invalid UTF-8. Use this instead of the display names to match an album row; absent for ordinary names. |
 | `tracks[].albumArtist` | `string` | Every ALBUM ARTIST value joined with `", "`; empty when untagged. |
-| `tracks[].albumArtists` | `string[]` | Every ALBUM ARTIST value in tag order, so `albumArtists.join(", ")` equals `albumArtist`; empty when untagged. `library.getAlbums` files a track that has an `album` under the name `album` and the album artist `albumArtists[0]`, or `artists[0]` when this array is empty (`""` when both are); those are the `name` and `albumArtist` of that album's row. |
+| `tracks[].albumArtists` | `string[]` | Every ALBUM ARTIST value in tag order, so `albumArtists.join(", ")` equals `albumArtist`; empty when untagged. `library.getAlbums` files a track that has an `album` under the name `album` and the album artist `albumArtists[0]`, or `artists[0]` when this array is empty (`""` when both are); those are the `name` and `albumArtist` of that album's row. When `albumId` is present, use it instead: replacement characters can make display names equal. |
 | `tracks[].genre` | `string` | Every GENRE value joined with `", "`; empty when untagged. |
 | `tracks[].date` | `string` | First DATE value as tagged, such as `2019` or `2019-05-01`; empty when untagged. |
 | `tracks[].trackNumber` | `integer` | TRACKNUMBER read as an integer; `0` when absent or not a number. |
@@ -342,6 +335,7 @@ A page of a playlist's rows. Without `fields` each row is a whole playlist row w
 | `tracks[].lastPlayed` | `string` | `%last_played%` as foo_playcount formats it; absent when empty, on rows of `playlist.getSelectedTracks` and on rows of a `fields` request. |
 | `tracks[].added` | `string` | `%added%` as foo_playcount formats it; absent when empty, on rows of `playlist.getSelectedTracks` and on rows of a `fields` request. |
 | `tracks[].formats` | `Record<string, string>` | The `formats` columns of `playlist.getTracks`, by the names given; present only when `formats` was passed. |
+| `contentVersion` | `string` | Pages can be joined only when this matches; absent when the playlist does not exist. |
 
 `success` is `true` on success. On failure the response is `{ success: false, error, code }`; see [Error codes](../reference/errors.md) for `code`.
 <!-- api-schema:end -->
@@ -379,7 +373,7 @@ const page = await fb2k.invoke('playlist.getTracks', {
 });
 ```
 
-Accepted names are `index`, `handle`, `title`, `artist`, `artists`, `album`, `albumArtist`, `albumArtists`, `genre`, `date`, `trackNumber`, `discNumber`, `duration`, `path`, `absolutePath`, `fileSize`, `bitrate`, `sampleRate`, `channels`, `codec`, `subsong` and `rating`. Names are matched exactly and are case sensitive; an unknown one fails the whole call with `INVALID_PARAMS` and lists the offenders in `details.unknownFields`, so a typo never silently drops a field. `composer`, `comment` and the play statistics are not accepted; they come only with whole rows.
+Accepted names are `index`, `handle`, `title`, `artist`, `artists`, `album`, `albumId`, `albumArtist`, `albumArtists`, `genre`, `date`, `trackNumber`, `discNumber`, `duration`, `path`, `absolutePath`, `fileSize`, `bitrate`, `sampleRate`, `channels`, `codec`, `subsong` and `rating`. The optional `albumId` is omitted when unavailable. Names are matched exactly and are case sensitive; an unknown one fails the whole call with `INVALID_PARAMS` and lists the offenders in `details.unknownFields`, so a typo never silently drops a field. `composer`, `comment` and the play statistics are not accepted; they come only with whole rows.
 
 Leaving out `handle`, `absolutePath` and `rating` avoids resolving the filesystem path and evaluating `%rating%` for each row. To get play statistics alongside a projection, ask for them through `formats`.
 :::
@@ -393,14 +387,14 @@ Split a whole playlist into runs of adjacent rows whose group key is equal, with
 | --- | --- | --- | --- |
 | `patterns` | `string[]` | Yes | One or two Title Formatting patterns; the second sub-groups each run. Must not be empty. |
 | `playlist` | `integer` | No | Playlist index; omitted, the active playlist. At least `0`. |
-| `playlistGuid` | `string` | No | A playlist's GUID instead of its index, written with braces as `playlist.getAll` and every result or event that names a playlist report it; either hex case is accepted. It keeps naming the same playlist while other playlists are added, removed or reordered, which an index does not. Giving both this and the index, or a malformed GUID, fails with `INVALID_PARAMS`. A playlist that no longer exists fails with `NOT_FOUND`; the call never falls back to another playlist. A malformed GUID and a missing playlist carry the GUID given as `details.playlistGuid`. |
+| `playlistGuid` | `string` | No | Persistent unique identifier of a playlist (bracketed GUID, case-insensitive), used in place of a mutable index. Mutually exclusive with `playlist`; passing both or an invalid format fails with `INVALID_PARAMS`. Fails with `NOT_FOUND` if the playlist does not exist, never falling back. Invalid-format and not-found failures return the given GUID in `details.playlistGuid`. |
 
 **Returns**
 
 | Field | Type | Description |
 | --- | --- | --- |
 | `playlist` | `integer` | The playlist grouped. |
-| `playlistGuid` | `string` | The playlist's GUID, written as `{XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX}`. Pass it as `playlistGuid` to address this playlist even after the playlist list has changed. |
+| `playlistGuid` | `string` | Unique identifier of the playlist, formatted as `{XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX}`. Pass as `playlistGuid` to reliably target this playlist. |
 | `total` | `integer` | Rows in the playlist; the runs' `count` values add up to it. |
 | `runs` | `PlaylistGroupRun[]` | The runs in playlist order, the first starting at row `0`; empty for an empty playlist. |
 | `runs[].start` | `integer` | First row of the run. |
@@ -410,6 +404,7 @@ Split a whole playlist into runs of adjacent rows whose group key is equal, with
 | `runs[].sub[].start` | `integer` | First row of the run. |
 | `runs[].sub[].count` | `integer` | Rows in the run. |
 | `runs[].sub[].key` | `string` | The second-level key as the first row of the run spells it. |
+| `contentVersion` | `string` | The runs describe the rows as they were at this version. |
 
 `success` is `true` on success. On failure the response is `{ success: false, error, code }`; see [Error codes](../reference/errors.md) for `code`.
 <!-- api-schema:end -->
@@ -443,17 +438,18 @@ The rows of a playlist whose tracks match a foobar2000 query, in playlist order,
 | --- | --- | --- | --- |
 | `query` | `string` | Yes | foobar2000 query, as in the Media Library search; `SORT BY` is refused. Must not be empty. |
 | `playlist` | `integer` | No | Playlist index; omitted, the active playlist. At least `0`. |
-| `playlistGuid` | `string` | No | A playlist's GUID instead of its index, written with braces as `playlist.getAll` and every result or event that names a playlist report it; either hex case is accepted. It keeps naming the same playlist while other playlists are added, removed or reordered, which an index does not. Giving both this and the index, or a malformed GUID, fails with `INVALID_PARAMS`. A playlist that no longer exists fails with `NOT_FOUND`; the call never falls back to another playlist. A malformed GUID and a missing playlist carry the GUID given as `details.playlistGuid`. |
+| `playlistGuid` | `string` | No | Persistent unique identifier of a playlist (bracketed GUID, case-insensitive), used in place of a mutable index. Mutually exclusive with `playlist`; passing both or an invalid format fails with `INVALID_PARAMS`. Fails with `NOT_FOUND` if the playlist does not exist, never falling back. Invalid-format and not-found failures return the given GUID in `details.playlistGuid`. |
 
 **Returns**
 
 | Field | Type | Description |
 | --- | --- | --- |
 | `playlist` | `integer` | The playlist searched. |
-| `playlistGuid` | `string` | The playlist's GUID, written as `{XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX}`. Pass it as `playlistGuid` to address this playlist even after the playlist list has changed. |
+| `playlistGuid` | `string` | Unique identifier of the playlist, formatted as `{XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX}`. Pass as `playlistGuid` to reliably target this playlist. |
 | `total` | `integer` | Rows in the playlist when the query ran. Equal to the `total` of a later `playlist.getTracks` does not mean the playlist is unchanged: reordering and tag edits keep the count. |
 | `items` | `integer[]` | The matching rows, ascending. |
 | `count` | `integer` | Number of entries in `items`. |
+| `contentVersion` | `string` | The row numbers in `items` hold only while the playlist keeps this version. |
 
 `success` is `true` on success. On failure the response is `{ success: false, error, code }`; see [Error codes](../reference/errors.md) for `code`.
 <!-- api-schema:end -->
@@ -487,7 +483,7 @@ Rows of a playlist picked by row number, in the order given, such as the rows `p
 | --- | --- | --- | --- |
 | `rows` | `integer[]` | Yes | Rows to read, in the order to return them. Each item: at least `0`. |
 | `playlist` | `integer` | No | Playlist index; omitted, the active playlist. At least `0`. |
-| `playlistGuid` | `string` | No | A playlist's GUID instead of its index, written as the results and events that name a playlist report it, for a query that answers an empty result for a missing playlist: a GUID no playlist has answers the same way. Either hex case is accepted. Giving both this and the index, or a malformed GUID, fails with `INVALID_PARAMS`. |
+| `playlistGuid` | `string` | No | Persistent unique identifier of a playlist, used in place of an index. For read queries where a missing target returns an empty result instead of failing. Mutually exclusive with `playlist`; passing both or an invalid format fails with `INVALID_PARAMS`. |
 | `formats` | `Record<string, string>` | No | Extra columns, as in `playlist.getTracks`. |
 | `fields` | `string[]` | No | Keys each row carries besides `index`, as in `playlist.getTracks`; omitted, the whole row. Must not be empty. |
 
@@ -508,8 +504,9 @@ Rows of a playlist picked by row number, in the order given, such as the rows `p
 | `tracks[].artist` | `string` | Every ARTIST value joined with `", "`; empty when untagged. |
 | `tracks[].artists` | `string[]` | Every ARTIST value in tag order; empty when untagged. |
 | `tracks[].album` | `string` | First ALBUM value; empty when untagged. |
+| `tracks[].albumId` | `string` | Opaque album identity when its original name or album artist contains invalid UTF-8. Use this instead of the display names to match an album row; absent for ordinary names. |
 | `tracks[].albumArtist` | `string` | Every ALBUM ARTIST value joined with `", "`; empty when untagged. |
-| `tracks[].albumArtists` | `string[]` | Every ALBUM ARTIST value in tag order, so `albumArtists.join(", ")` equals `albumArtist`; empty when untagged. `library.getAlbums` files a track that has an `album` under the name `album` and the album artist `albumArtists[0]`, or `artists[0]` when this array is empty (`""` when both are); those are the `name` and `albumArtist` of that album's row. |
+| `tracks[].albumArtists` | `string[]` | Every ALBUM ARTIST value in tag order, so `albumArtists.join(", ")` equals `albumArtist`; empty when untagged. `library.getAlbums` files a track that has an `album` under the name `album` and the album artist `albumArtists[0]`, or `artists[0]` when this array is empty (`""` when both are); those are the `name` and `albumArtist` of that album's row. When `albumId` is present, use it instead: replacement characters can make display names equal. |
 | `tracks[].genre` | `string` | Every GENRE value joined with `", "`; empty when untagged. |
 | `tracks[].date` | `string` | First DATE value as tagged, such as `2019` or `2019-05-01`; empty when untagged. |
 | `tracks[].trackNumber` | `integer` | TRACKNUMBER read as an integer; `0` when absent or not a number. |
@@ -529,6 +526,7 @@ Rows of a playlist picked by row number, in the order given, such as the rows `p
 | `tracks[].lastPlayed` | `string` | `%last_played%` as foo_playcount formats it; absent when empty, on rows of `playlist.getSelectedTracks` and on rows of a `fields` request. |
 | `tracks[].added` | `string` | `%added%` as foo_playcount formats it; absent when empty, on rows of `playlist.getSelectedTracks` and on rows of a `fields` request. |
 | `tracks[].formats` | `Record<string, string>` | The `formats` columns of `playlist.getTracks`, by the names given; present only when `formats` was passed. |
+| `contentVersion` | `string` | The row numbers hold only while the playlist keeps this version; absent when the playlist does not exist. |
 
 `success` is `true` on success. On failure the response is `{ success: false, error, code }`; see [Error codes](../reference/errors.md) for `code`.
 <!-- api-schema:end -->
@@ -536,15 +534,16 @@ Rows of a playlist picked by row number, in the order given, such as the rows `p
 ### playlist.playTrack
 
 <!-- api-schema:begin playlist.playTrack -->
-Play a row of a playlist, as double-clicking it does. A row past the last one fails with `INVALID_INDEX`.
+Play a row of a playlist, as double-clicking it does. A row past the last one fails with `INVALID_INDEX`. With `deferred`, `expectedVersion` is compared again when playback starts; if the rows changed by then, nothing plays.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `playlist` | `integer` | No | Index of the playlist; omitted, the active playlist. An index past the last playlist fails with `INVALID_INDEX`; with this omitted and no active playlist the call fails with `NO_ACTIVE_ITEM`. At least `0`. |
-| `playlistGuid` | `string` | No | A playlist's GUID instead of its index, written with braces as `playlist.getAll` and every result or event that names a playlist report it; either hex case is accepted. It keeps naming the same playlist while other playlists are added, removed or reordered, which an index does not. Giving both this and the index, or a malformed GUID, fails with `INVALID_PARAMS`. A playlist that no longer exists fails with `NOT_FOUND`; the call never falls back to another playlist. A malformed GUID and a missing playlist carry the GUID given as `details.playlistGuid`. |
+| `playlistGuid` | `string` | No | Persistent unique identifier of a playlist (bracketed GUID, case-insensitive), used in place of a mutable index. Mutually exclusive with `playlist`; passing both or an invalid format fails with `INVALID_PARAMS`. Fails with `NOT_FOUND` if the playlist does not exist, never falling back. Invalid-format and not-found failures return the given GUID in `details.playlistGuid`. |
 | `index` | `integer` | No | Row to play. At least `0`. Default: `0`. |
 | `deferred` | `boolean` | No | Start the playback after the current message has been handled instead of before the call returns. The playlist is looked up again by its GUID when the playback starts: moved meanwhile, the same playlist plays; removed meanwhile, or shorter than `index` by then, nothing plays. Default: `false`. |
 | `muted` | `boolean` | No | Mute before starting, so a page that sets the volume right afterwards leaves no audible gap. The mute is not undone by this call. Default: `false`. |
+| `expectedVersion` | `string` | No | Expected content version for optimistic concurrency control. When mismatched, mutations are aborted with `STALE_TARGET` (`details.current` carries current version). Omitted, no check is made. |
 
 **Returns**
 
@@ -568,10 +567,15 @@ Remove rows from a playlist, saving an undo point first. Rows past the last one 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `playlist` | `integer` | No | Index of the playlist; omitted, the active playlist. An index past the last playlist fails with `INVALID_INDEX`; with this omitted and no active playlist the call fails with `NO_ACTIVE_ITEM`. At least `0`. |
-| `playlistGuid` | `string` | No | A playlist's GUID instead of its index, written with braces as `playlist.getAll` and every result or event that names a playlist report it; either hex case is accepted. It keeps naming the same playlist while other playlists are added, removed or reordered, which an index does not. Giving both this and the index, or a malformed GUID, fails with `INVALID_PARAMS`. A playlist that no longer exists fails with `NOT_FOUND`; the call never falls back to another playlist. A malformed GUID and a missing playlist carry the GUID given as `details.playlistGuid`. |
+| `playlistGuid` | `string` | No | Persistent unique identifier of a playlist (bracketed GUID, case-insensitive), used in place of a mutable index. Mutually exclusive with `playlist`; passing both or an invalid format fails with `INVALID_PARAMS`. Fails with `NOT_FOUND` if the playlist does not exist, never falling back. Invalid-format and not-found failures return the given GUID in `details.playlistGuid`. |
 | `items` | `integer[]` | Yes | Rows to remove. Each item: at least `0`. |
+| `expectedVersion` | `string` | No | Expected content version for optimistic concurrency control. When mismatched, mutations are aborted with `STALE_TARGET` (`details.current` carries current version). Omitted, no check is made. |
 
 **Returns**
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `contentVersion` | `string` | Already includes this change; pass it as `expectedVersion` to the next call. |
 
 `success` is `true` on success. On failure the response is `{ success: false, error, code }`; see [Error codes](../reference/errors.md) for `code`.
 <!-- api-schema:end -->
@@ -584,7 +588,7 @@ Remove the selected rows from a playlist, saving an undo point first. A locked p
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `playlist` | `integer` | No | Index of the playlist; omitted, the active playlist. An index past the last playlist fails with `INVALID_INDEX`; with this omitted and no active playlist the call fails with `NO_ACTIVE_ITEM`. At least `0`. |
-| `playlistGuid` | `string` | No | A playlist's GUID instead of its index, written with braces as `playlist.getAll` and every result or event that names a playlist report it; either hex case is accepted. It keeps naming the same playlist while other playlists are added, removed or reordered, which an index does not. Giving both this and the index, or a malformed GUID, fails with `INVALID_PARAMS`. A playlist that no longer exists fails with `NOT_FOUND`; the call never falls back to another playlist. A malformed GUID and a missing playlist carry the GUID given as `details.playlistGuid`. |
+| `playlistGuid` | `string` | No | Persistent unique identifier of a playlist (bracketed GUID, case-insensitive), used in place of a mutable index. Mutually exclusive with `playlist`; passing both or an invalid format fails with `INVALID_PARAMS`. Fails with `NOT_FOUND` if the playlist does not exist, never falling back. Invalid-format and not-found failures return the given GUID in `details.playlistGuid`. |
 
 **Returns**
 
@@ -599,11 +603,16 @@ Move the selected rows of a playlist by `delta` positions, saving an undo point 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `playlist` | `integer` | No | Index of the playlist; omitted, the active playlist. An index past the last playlist fails with `INVALID_INDEX`; with this omitted and no active playlist the call fails with `NO_ACTIVE_ITEM`. At least `0`. |
-| `playlistGuid` | `string` | No | A playlist's GUID instead of its index, written with braces as `playlist.getAll` and every result or event that names a playlist report it; either hex case is accepted. It keeps naming the same playlist while other playlists are added, removed or reordered, which an index does not. Giving both this and the index, or a malformed GUID, fails with `INVALID_PARAMS`. A playlist that no longer exists fails with `NOT_FOUND`; the call never falls back to another playlist. A malformed GUID and a missing playlist carry the GUID given as `details.playlistGuid`. |
+| `playlistGuid` | `string` | No | Persistent unique identifier of a playlist (bracketed GUID, case-insensitive), used in place of a mutable index. Mutually exclusive with `playlist`; passing both or an invalid format fails with `INVALID_PARAMS`. Fails with `NOT_FOUND` if the playlist does not exist, never falling back. Invalid-format and not-found failures return the given GUID in `details.playlistGuid`. |
 | `items` | `integer[]` | No | Rows to move; they replace the current selection first. Omitted or empty, the current selection moves. Each item: at least `0`. |
 | `delta` | `integer` | Yes | How many positions to move: negative towards the top, positive towards the bottom. |
+| `expectedVersion` | `string` | No | Expected content version for optimistic concurrency control. When mismatched, mutations are aborted with `STALE_TARGET` (`details.current` carries current version). Omitted, no check is made. |
 
 **Returns**
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `contentVersion` | `string` | Already includes this change; pass it as `expectedVersion` to the next call. |
 
 `success` is `true` on success. On failure the response is `{ success: false, error, code }`; see [Error codes](../reference/errors.md) for `code`.
 <!-- api-schema:end -->
@@ -621,7 +630,7 @@ Append files, folders or URLs to a playlist, saving an undo point first. foobar2
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `playlist` | `integer` | No | Index of the playlist; omitted, the active playlist. An index past the last playlist fails with `INVALID_INDEX`; with this omitted and no active playlist the call fails with `NO_ACTIVE_ITEM`. At least `0`. |
-| `playlistGuid` | `string` | No | A playlist's GUID instead of its index, written with braces as `playlist.getAll` and every result or event that names a playlist report it; either hex case is accepted. It keeps naming the same playlist while other playlists are added, removed or reordered, which an index does not. Giving both this and the index, or a malformed GUID, fails with `INVALID_PARAMS`. A playlist that no longer exists fails with `NOT_FOUND`; the call never falls back to another playlist. A malformed GUID and a missing playlist carry the GUID given as `details.playlistGuid`. |
+| `playlistGuid` | `string` | No | Persistent unique identifier of a playlist (bracketed GUID, case-insensitive), used in place of a mutable index. Mutually exclusive with `playlist`; passing both or an invalid format fails with `INVALID_PARAMS`. Fails with `NOT_FOUND` if the playlist does not exist, never falling back. Invalid-format and not-found failures return the given GUID in `details.playlistGuid`. |
 | `paths` | `string[]` | Yes | Files, folders or URLs; a `\|subsong:N` suffix selects a subsong. Must not be empty. |
 
 **Returns**
@@ -629,7 +638,7 @@ Append files, folders or URLs to a playlist, saving an undo point first. foobar2
 | Field | Type | Description |
 | --- | --- | --- |
 | `playlist` | `integer` | Index of the playlist. |
-| `playlistGuid` | `string` | The playlist's GUID, written as `{XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX}`. Pass it as `playlistGuid` to address this playlist even after the playlist list has changed. |
+| `playlistGuid` | `string` | Unique identifier of the playlist, formatted as `{XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX}`. Pass as `playlistGuid` to reliably target this playlist. |
 | `requestedPaths` | `integer` | Number of entries in `paths`. |
 | `addedCount` | `integer` | Tracks added; a folder counts every track it holds. |
 | `invalidCount` | `integer` | Entries that were not usable. |
@@ -649,7 +658,7 @@ Append tracks to a playlist, saving an undo point first. `handles` takes the sam
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `playlist` | `integer` | No | Index of the playlist; omitted, the active playlist. An index past the last playlist fails with `INVALID_INDEX`; with this omitted and no active playlist the call fails with `NO_ACTIVE_ITEM`. At least `0`. |
-| `playlistGuid` | `string` | No | A playlist's GUID instead of its index, written with braces as `playlist.getAll` and every result or event that names a playlist report it; either hex case is accepted. It keeps naming the same playlist while other playlists are added, removed or reordered, which an index does not. Giving both this and the index, or a malformed GUID, fails with `INVALID_PARAMS`. A playlist that no longer exists fails with `NOT_FOUND`; the call never falls back to another playlist. A malformed GUID and a missing playlist carry the GUID given as `details.playlistGuid`. |
+| `playlistGuid` | `string` | No | Persistent unique identifier of a playlist (bracketed GUID, case-insensitive), used in place of a mutable index. Mutually exclusive with `playlist`; passing both or an invalid format fails with `INVALID_PARAMS`. Fails with `NOT_FOUND` if the playlist does not exist, never falling back. Invalid-format and not-found failures return the given GUID in `details.playlistGuid`. |
 | `handles` | `any[]` | Yes | Tracks to append: each a path with an optional `\|subsong:N` suffix, or `{ path, subsong }`. Must not be empty. |
 
 **Returns**
@@ -657,7 +666,7 @@ Append tracks to a playlist, saving an undo point first. `handles` takes the sam
 | Field | Type | Description |
 | --- | --- | --- |
 | `playlist` | `integer` | Index of the playlist. |
-| `playlistGuid` | `string` | The playlist's GUID, written as `{XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX}`. Pass it as `playlistGuid` to address this playlist even after the playlist list has changed. |
+| `playlistGuid` | `string` | Unique identifier of the playlist, formatted as `{XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX}`. Pass as `playlistGuid` to reliably target this playlist. |
 | `requestedCount` | `integer` | Number of entries in `handles`. |
 | `addedCount` | `integer` | Tracks appended. |
 | `invalidCount` | `integer` | Entries that were not usable. |
@@ -679,7 +688,7 @@ Start appending paths to a playlist without waiting: the call returns a receipt,
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `playlist` | `integer` | No | Index of the playlist; omitted, the active playlist. An index past the last playlist fails with `INVALID_INDEX`; with this omitted and no active playlist the call fails with `NO_ACTIVE_ITEM`. At least `0`. |
-| `playlistGuid` | `string` | No | A playlist's GUID instead of its index, written with braces as `playlist.getAll` and every result or event that names a playlist report it; either hex case is accepted. It keeps naming the same playlist while other playlists are added, removed or reordered, which an index does not. Giving both this and the index, or a malformed GUID, fails with `INVALID_PARAMS`. A playlist that no longer exists fails with `NOT_FOUND`; the call never falls back to another playlist. A malformed GUID and a missing playlist carry the GUID given as `details.playlistGuid`. |
+| `playlistGuid` | `string` | No | Persistent unique identifier of a playlist (bracketed GUID, case-insensitive), used in place of a mutable index. Mutually exclusive with `playlist`; passing both or an invalid format fails with `INVALID_PARAMS`. Fails with `NOT_FOUND` if the playlist does not exist, never falling back. Invalid-format and not-found failures return the given GUID in `details.playlistGuid`. |
 | `paths` | `string[]` | Yes | Files, folders, URLs or playlist files; a `\|subsong:N` suffix selects a subsong. Must not be empty. |
 
 **Returns**
@@ -709,7 +718,7 @@ Append paths to a playlist in the given order, saving an undo point first; a pat
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `playlist` | `integer` | No | Index of the playlist; omitted, the active playlist. An index past the last playlist fails with `INVALID_INDEX`; with this omitted and no active playlist the call fails with `NO_ACTIVE_ITEM`. At least `0`. |
-| `playlistGuid` | `string` | No | A playlist's GUID instead of its index, written with braces as `playlist.getAll` and every result or event that names a playlist report it; either hex case is accepted. It keeps naming the same playlist while other playlists are added, removed or reordered, which an index does not. Giving both this and the index, or a malformed GUID, fails with `INVALID_PARAMS`. A playlist that no longer exists fails with `NOT_FOUND`; the call never falls back to another playlist. A malformed GUID and a missing playlist carry the GUID given as `details.playlistGuid`. |
+| `playlistGuid` | `string` | No | Persistent unique identifier of a playlist (bracketed GUID, case-insensitive), used in place of a mutable index. Mutually exclusive with `playlist`; passing both or an invalid format fails with `INVALID_PARAMS`. Fails with `NOT_FOUND` if the playlist does not exist, never falling back. Invalid-format and not-found failures return the given GUID in `details.playlistGuid`. |
 | `paths` | `string[]` | Yes | Files, folders or URLs, in the order to add them; a `\|subsong:N` suffix selects a subsong. Must not be empty. |
 
 **Returns**
@@ -717,7 +726,7 @@ Append paths to a playlist in the given order, saving an undo point first; a pat
 | Field | Type | Description |
 | --- | --- | --- |
 | `playlist` | `integer` | Index of the playlist. |
-| `playlistGuid` | `string` | The playlist's GUID, written as `{XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX}`. Pass it as `playlistGuid` to address this playlist even after the playlist list has changed. |
+| `playlistGuid` | `string` | Unique identifier of the playlist, formatted as `{XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX}`. Pass as `playlistGuid` to reliably target this playlist. |
 | `addedCount` | `integer` | Tracks added; `0` when nothing resolved, which still succeeds. |
 | `order` | `integer[]` | Row of each added track, in the order they were added. |
 
@@ -736,7 +745,7 @@ Turn an existing playlist into an autoplaylist; its tracks are replaced by the q
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `playlist` | `integer` | No | Index of the playlist to convert; omitted, the active playlist. An index past the last playlist fails with `INVALID_INDEX`; with this omitted and no active playlist the call fails with `NO_ACTIVE_ITEM`. At least `0`. |
-| `playlistGuid` | `string` | No | A playlist's GUID instead of its index, written with braces as `playlist.getAll` and every result or event that names a playlist report it; either hex case is accepted. It keeps naming the same playlist while other playlists are added, removed or reordered, which an index does not. Giving both this and the index, or a malformed GUID, fails with `INVALID_PARAMS`. A playlist that no longer exists fails with `NOT_FOUND`; the call never falls back to another playlist. A malformed GUID and a missing playlist carry the GUID given as `details.playlistGuid`. |
+| `playlistGuid` | `string` | No | Persistent unique identifier of a playlist (bracketed GUID, case-insensitive), used in place of a mutable index. Mutually exclusive with `playlist`; passing both or an invalid format fails with `INVALID_PARAMS`. Fails with `NOT_FOUND` if the playlist does not exist, never falling back. Invalid-format and not-found failures return the given GUID in `details.playlistGuid`. |
 | `query` | `string` | Yes | Library query that selects the tracks, in foobar2000's query syntax. Must not be empty. |
 | `sort` | `string` | No | Title Formatting pattern to sort the results by; empty, library order. Default: `""`. |
 | `keepSorted` | `boolean` | No | Keep the playlist sorted by `sort`: when set, the user cannot reorder its tracks. Default: `false`. |
@@ -746,7 +755,7 @@ Turn an existing playlist into an autoplaylist; its tracks are replaced by the q
 | Field | Type | Description |
 | --- | --- | --- |
 | `playlist` | `integer` | Index of the playlist. |
-| `playlistGuid` | `string` | The playlist's GUID, written as `{XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX}`. Pass it as `playlistGuid` to address this playlist even after the playlist list has changed. |
+| `playlistGuid` | `string` | Unique identifier of the playlist, formatted as `{XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX}`. Pass as `playlistGuid` to reliably target this playlist. |
 
 `success` is `true` on success. On failure the response is `{ success: false, error, code }`; see [Error codes](../reference/errors.md) for `code`.
 <!-- api-schema:end -->
@@ -773,7 +782,7 @@ Create a playlist that foobar2000 fills from a library query and keeps up to dat
 | --- | --- | --- |
 | `index` | `integer` | Index of the new playlist. |
 | `playlist` | `integer` | Index of the new playlist; the same as `index`. |
-| `guid` | `string` | The playlist's GUID, written as `{XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX}`. Pass it as `playlistGuid` to address this playlist even after the playlist list has changed. |
+| `guid` | `string` | Unique identifier of the playlist, formatted as `{XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX}`. Pass as `playlistGuid` to reliably target this playlist. |
 | `name` | `string` | Name of the new playlist. |
 | `query` | `string` | The query, as given. |
 
@@ -794,7 +803,7 @@ Clear the selection of a playlist.
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `playlist` | `integer` | No | Index of the playlist; omitted, the active playlist. An index past the last playlist fails with `INVALID_INDEX`; with this omitted and no active playlist the call fails with `NO_ACTIVE_ITEM`. At least `0`. |
-| `playlistGuid` | `string` | No | A playlist's GUID instead of its index, written with braces as `playlist.getAll` and every result or event that names a playlist report it; either hex case is accepted. It keeps naming the same playlist while other playlists are added, removed or reordered, which an index does not. Giving both this and the index, or a malformed GUID, fails with `INVALID_PARAMS`. A playlist that no longer exists fails with `NOT_FOUND`; the call never falls back to another playlist. A malformed GUID and a missing playlist carry the GUID given as `details.playlistGuid`. |
+| `playlistGuid` | `string` | No | Persistent unique identifier of a playlist (bracketed GUID, case-insensitive), used in place of a mutable index. Mutually exclusive with `playlist`; passing both or an invalid format fails with `INVALID_PARAMS`. Fails with `NOT_FOUND` if the playlist does not exist, never falling back. Invalid-format and not-found failures return the given GUID in `details.playlistGuid`. |
 
 **Returns**
 
@@ -813,8 +822,9 @@ Move the focus of a playlist; the same operation as `playlist.setFocusedTrack` u
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `playlist` | `integer` | No | Index of the playlist; omitted, the active playlist. An index past the last playlist fails with `INVALID_INDEX`; with this omitted and no active playlist the call fails with `NO_ACTIVE_ITEM`. At least `0`. |
-| `playlistGuid` | `string` | No | A playlist's GUID instead of its index, written with braces as `playlist.getAll` and every result or event that names a playlist report it; either hex case is accepted. It keeps naming the same playlist while other playlists are added, removed or reordered, which an index does not. Giving both this and the index, or a malformed GUID, fails with `INVALID_PARAMS`. A playlist that no longer exists fails with `NOT_FOUND`; the call never falls back to another playlist. A malformed GUID and a missing playlist carry the GUID given as `details.playlistGuid`. |
+| `playlistGuid` | `string` | No | Persistent unique identifier of a playlist (bracketed GUID, case-insensitive), used in place of a mutable index. Mutually exclusive with `playlist`; passing both or an invalid format fails with `INVALID_PARAMS`. Fails with `NOT_FOUND` if the playlist does not exist, never falling back. Invalid-format and not-found failures return the given GUID in `details.playlistGuid`. |
 | `index` | `integer` | No | Row to focus; omitted or negative, the playlist loses its focus. |
+| `expectedVersion` | `string` | No | Expected content version for optimistic concurrency control. When mismatched, mutations are aborted with `STALE_TARGET` (`details.current` carries current version). Omitted, no check is made. |
 
 **Returns**
 
@@ -828,22 +838,26 @@ await fb2k.invoke('playlist.focusTrack', { playlist: 0, index: 3 });
 ### playlist.getAutoplaylistInfo
 
 <!-- api-schema:begin playlist.getAutoplaylistInfo -->
-Describe a playlist's autoplaylist status.
+Describe a playlist's autoplaylist status and native editor availability without opening UI. Provider query failures fail with `OPERATION_FAILED`; an unknown capability is not a failure.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `playlist` | `integer` | No | Index of the playlist; omitted, the active playlist. An index past the last playlist fails with `INVALID_INDEX`; with this omitted and no active playlist the call fails with `NO_ACTIVE_ITEM`. At least `0`. |
-| `playlistGuid` | `string` | No | A playlist's GUID instead of its index, written with braces as `playlist.getAll` and every result or event that names a playlist report it; either hex case is accepted. It keeps naming the same playlist while other playlists are added, removed or reordered, which an index does not. Giving both this and the index, or a malformed GUID, fails with `INVALID_PARAMS`. A playlist that no longer exists fails with `NOT_FOUND`; the call never falls back to another playlist. A malformed GUID and a missing playlist carry the GUID given as `details.playlistGuid`. |
+| `playlistGuid` | `string` | No | Persistent unique identifier of a playlist (bracketed GUID, case-insensitive), used in place of a mutable index. Mutually exclusive with `playlist`; passing both or an invalid format fails with `INVALID_PARAMS`. Fails with `NOT_FOUND` if the playlist does not exist, never falling back. Invalid-format and not-found failures return the given GUID in `details.playlistGuid`. |
 
 **Returns**
 
 | Field | Type | Description |
 | --- | --- | --- |
-| `isAutoplaylist` | `boolean` | Whether the playlist is an autoplaylist; the remaining fields other than `playlist` are present only when it is. |
+| `isAutoplaylist` | `boolean` | Whether the playlist is an autoplaylist. `keepSorted`, `source` and `lockName` are present only when it is; editor availability is always reported on success. |
 | `playlist` | `integer` | Index of the playlist. |
-| `playlistGuid` | `string` | The playlist's GUID, written as `{XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX}`. Pass it as `playlistGuid` to address this playlist even after the playlist list has changed. |
-| `keepSorted` | `boolean` | Whether the autoplaylist keeps its tracks sorted; always `false` when `source` is `dui`. |
-| `source` | `"sdk" \| "dui"` | `sdk` for an autoplaylist foobar2000 runs, `dui` for one another component manages. |
+| `playlistGuid` | `string` | Unique identifier of the playlist, formatted as `{XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX}`. Pass as `playlistGuid` to reliably target this playlist. |
+| `editorAvailability` | `"available" \| "unavailable" \| "unknown"` | `available` means the provider declares UI support; `unknown` means it cannot be probed without attempting the native call. Neither guarantees that a particular call shows a window. |
+| `editorAvailabilityReason` | `"supported" \| "noEditor" \| "legacyClient" \| "unverifiedLock" \| "notAutoplaylist"` | Why the capability is available, unavailable, or unknown. A legacy client or a compatible automatic-playlist lock has no side-effect-free editor probe. |
+| `configAvailability` | `"available" \| "unavailable"` | Whether this component can read and edit the provider's configuration. |
+| `configAvailabilityReason` | `"supported" \| "externalProvider" \| "unverifiedLock" \| "notAutoplaylist"` | Own providers are supported; external providers and unverified locks have no configuration protocol here. |
+| `keepSorted` | `boolean` | Whether the manager-backed autoplaylist keeps its tracks sorted. For `source: 'dui'`, the existing `false` value is a placeholder because the lock's configuration is not readable. |
+| `source` | `"sdk" \| "dui"` | `sdk` identifies the autoplaylist-manager path, including third-party clients; `dui` identifies the existing automatic-lock name heuristic. Neither identifies the current UI or editor support. |
 | `lockName` | `string` | Name of the playlist's lock, present when `source` is `dui`. |
 
 `success` is `true` on success. On failure the response is `{ success: false, error, code }`; see [Error codes](../reference/errors.md) for `code`.
@@ -855,15 +869,64 @@ if (info.success === false) throw new Error(info.error);
 if (info.isAutoplaylist) console.log(info.source, info.keepSorted);
 ```
 
+### playlist.showAutoplaylistUI
+
+<!-- api-schema:begin playlist.showAutoplaylistUI -->
+Accept a request to open the native editor of an explicitly named autoplaylist. Give exactly one of `playlist` and `playlistGuid`. Acceptance precedes the queued native call; its normal return or failure is reported by `playlist:autoplaylistUIResult` to the same calling document. Subscribe before calling because the event can arrive before the acceptance promise resolves. The request does not activate the playlist or start playback. A normal native return does not report whether a window appeared, the user saved changes, cancelled, or closed the editor.
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `playlist` | `integer` | No | Playlist index when the host first handles the request. Required unless `playlistGuid` is supplied; use the GUID to preserve identity across that initial queueing delay. At least `0`. |
+| `playlistGuid` | `string` | No | Persistent unique identifier of a playlist (bracketed GUID, case-insensitive), used in place of a mutable index. Mutually exclusive with `playlist`; passing both or an invalid format fails with `INVALID_PARAMS`. Fails with `NOT_FOUND` if the playlist does not exist, never falling back. Invalid-format and not-found failures return the given GUID in `details.playlistGuid`. |
+
+**Returns**
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `accepted` | `boolean` | Always `true` on success: the request was accepted, not necessarily executed yet. |
+| `operationId` | `string` | Opaque identifier used to correlate the single native-call result event. |
+| `playlistGuid` | `string` | Unique identifier of the playlist, formatted as `{XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX}`. Pass as `playlistGuid` to reliably target this playlist. |
+
+`success` is `true` on success. On failure the response is `{ success: false, error, code }`; see [Error codes](../reference/errors.md) for `code`.
+<!-- api-schema:end -->
+
+The host resolves the target on its first main-thread turn and pins its GUID. A numeric index therefore means the playlist at that position at that first lookup; use `playlistGuid` to keep identity stable before it. Later reordering cannot redirect the request. The host queries the current provider again before calling it, so the GUID binds the playlist, not a particular provider instance. The playlist's track lock does not itself prevent opening its editor.
+
+**Failures**
+
+Before acceptance, a business failure is returned in the response, with any reason under `details.reason`. Once accepted, a failure is reported only by [`playlist:autoplaylistUIResult`](events.md#playlist-autoplaylistuiresult), with `reason` directly on the event. It does not produce a second response to the original request.
+
+| Situation | `code` | `reason` |
+| --- | --- | --- |
+| No target, both target keys, malformed value or negative index | `INVALID_PARAMS` | — |
+| Nonnegative index past the end | `INVALID_INDEX` | — |
+| Target GUID no longer exists | `NOT_FOUND` | `targetGone` |
+| Ordinary playlist | `NOT_SUPPORTED` | `notAutoplaylist` |
+| Provider explicitly reports no editor | `NOT_SUPPORTED` | `noEditor` |
+| Same GUID already queued or inside its native call | `OPERATION_FAILED` | `requestInProgress` |
+| Provider query failed | `OPERATION_FAILED` | `queryFailed` |
+| Native call could not be scheduled | `OPERATION_FAILED` | `dispatchFailed` |
+| Native call threw, or the lock entry returned `false` | `OPERATION_FAILED` | `providerFailed` |
+
+A lock entry returning `false` does not establish that an editor is unavailable. An explicit no-editor result, a query error or a native-call error never triggers a retry through a different provider path.
+
+**Lifetime and repeated requests**
+
+The in-progress record is shared across the process for each GUID and lasts until the native call returns or throws. Navigating a page does not release a call that has already entered the provider. A non-modal editor may outlive that call; its owner and reuse behavior belong to the provider. The API cannot specify an owner, guarantee activation of an existing editor, or close that editor when the page is disposed.
+
+Navigation, destruction or host recreation cancels pending work for the old document and discards results addressed to it. Results never go to a replacement document or fall back to the main window. If the original document is still valid when the native call finishes but the target was deleted, the result is `NOT_FOUND` / `targetGone`, even if the provider also threw. This does not undo actions the provider already performed.
+
+See the [complete SDK subscription example](../sdk/playlist.md#onautoplaylistuiresult-callback) for a subscription installed before the call, a bounded early-result buffer, `operationId` matching and disposal. Acceptance and a successful call result provide no saved, cancelled, closed or changed notification. Refresh affected state from actual `playlist:itemsAdded`, `playlist:itemsRemoved`, `playlist:itemsReordered`, `playlist:itemsReplaced` and `playlist:lockChanged` events. A call result can prompt one reread but cannot cover subsequent edits in a non-modal window.
+
 ### playlist.getAutoplaylistQuery
 
 <!-- api-schema:begin playlist.getAutoplaylistQuery -->
-Describe a playlist's autoplaylist status, as `playlist.getAutoplaylistInfo` does. foobar2000 does not expose the query of an autoplaylist, so `query` is always `null`.
+Describe a playlist's autoplaylist status without editor capability fields. foobar2000 does not expose the query of an autoplaylist, so `query` is always `null`.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `playlist` | `integer` | No | Index of the playlist; omitted, the active playlist. An index past the last playlist fails with `INVALID_INDEX`; with this omitted and no active playlist the call fails with `NO_ACTIVE_ITEM`. At least `0`. |
-| `playlistGuid` | `string` | No | A playlist's GUID instead of its index, written with braces as `playlist.getAll` and every result or event that names a playlist report it; either hex case is accepted. It keeps naming the same playlist while other playlists are added, removed or reordered, which an index does not. Giving both this and the index, or a malformed GUID, fails with `INVALID_PARAMS`. A playlist that no longer exists fails with `NOT_FOUND`; the call never falls back to another playlist. A malformed GUID and a missing playlist carry the GUID given as `details.playlistGuid`. |
+| `playlistGuid` | `string` | No | Persistent unique identifier of a playlist (bracketed GUID, case-insensitive), used in place of a mutable index. Mutually exclusive with `playlist`; passing both or an invalid format fails with `INVALID_PARAMS`. Fails with `NOT_FOUND` if the playlist does not exist, never falling back. Invalid-format and not-found failures return the given GUID in `details.playlistGuid`. |
 
 **Returns**
 
@@ -871,10 +934,10 @@ Describe a playlist's autoplaylist status, as `playlist.getAutoplaylistInfo` doe
 | --- | --- | --- |
 | `isAutoplaylist` | `boolean` | Whether the playlist is an autoplaylist; `keepSorted`, `source`, `note` and `lockName` are present only when it is. |
 | `playlist` | `integer` | Index of the playlist. |
-| `playlistGuid` | `string` | The playlist's GUID, written as `{XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX}`. Pass it as `playlistGuid` to address this playlist even after the playlist list has changed. |
+| `playlistGuid` | `string` | Unique identifier of the playlist, formatted as `{XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX}`. Pass as `playlistGuid` to reliably target this playlist. |
 | `query` | `string \| null` | Always `null`: foobar2000 does not expose the query. |
-| `keepSorted` | `boolean` | Whether the autoplaylist keeps its tracks sorted; always `false` when `source` is `dui`. |
-| `source` | `"sdk" \| "dui"` | `sdk` for an autoplaylist foobar2000 runs, `dui` for one another component manages. |
+| `keepSorted` | `boolean` | Whether the manager-backed autoplaylist keeps its tracks sorted. The `false` value for `source: 'dui'` is a placeholder for an unreadable lock configuration. |
+| `source` | `"sdk" \| "dui"` | `sdk` identifies the autoplaylist-manager path, including third-party clients; `dui` identifies the existing automatic-lock name heuristic. Neither identifies the current UI or editor support. |
 | `note` | `string` | Says that the query is not available. |
 | `lockName` | `string` | Name of the playlist's lock, present when `source` is `dui`. |
 
@@ -921,14 +984,14 @@ Report the focused row of a playlist; the same as `playlist.getFocusedTrack` und
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `playlist` | `integer` | No | Index of the playlist; omitted, the active playlist. An index past the last playlist fails with `INVALID_INDEX`; with this omitted and no active playlist the call fails with `NO_ACTIVE_ITEM`. At least `0`. |
-| `playlistGuid` | `string` | No | A playlist's GUID instead of its index, written with braces as `playlist.getAll` and every result or event that names a playlist report it; either hex case is accepted. It keeps naming the same playlist while other playlists are added, removed or reordered, which an index does not. Giving both this and the index, or a malformed GUID, fails with `INVALID_PARAMS`. A playlist that no longer exists fails with `NOT_FOUND`; the call never falls back to another playlist. A malformed GUID and a missing playlist carry the GUID given as `details.playlistGuid`. |
+| `playlistGuid` | `string` | No | Persistent unique identifier of a playlist (bracketed GUID, case-insensitive), used in place of a mutable index. Mutually exclusive with `playlist`; passing both or an invalid format fails with `INVALID_PARAMS`. Fails with `NOT_FOUND` if the playlist does not exist, never falling back. Invalid-format and not-found failures return the given GUID in `details.playlistGuid`. |
 
 **Returns**
 
 | Field | Type | Description |
 | --- | --- | --- |
 | `playlist` | `integer` | Index of the playlist. |
-| `playlistGuid` | `string` | The playlist's GUID, written as `{XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX}`. Pass it as `playlistGuid` to address this playlist even after the playlist list has changed. |
+| `playlistGuid` | `string` | Unique identifier of the playlist, formatted as `{XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX}`. Pass as `playlistGuid` to reliably target this playlist. |
 | `index` | `integer` | Focused row; `-1` when the playlist has no focus. |
 
 `success` is `true` on success. On failure the response is `{ success: false, error, code }`; see [Error codes](../reference/errors.md) for `code`.
@@ -948,7 +1011,7 @@ Report the focused row of a playlist. An index past the last playlist, a `playli
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `playlist` | `integer` | No | Index of the playlist; omitted, the active playlist. At least `0`. |
-| `playlistGuid` | `string` | No | A playlist's GUID instead of its index, written as the results and events that name a playlist report it, for a query that answers an empty result for a missing playlist: a GUID no playlist has answers the same way. Either hex case is accepted. Giving both this and the index, or a malformed GUID, fails with `INVALID_PARAMS`. |
+| `playlistGuid` | `string` | No | Persistent unique identifier of a playlist, used in place of an index. For read queries where a missing target returns an empty result instead of failing. Mutually exclusive with `playlist`; passing both or an invalid format fails with `INVALID_PARAMS`. |
 
 **Returns**
 
@@ -975,14 +1038,14 @@ Report whether a playlist carries a lock, such as an autoplaylist's.
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `playlist` | `integer` | No | Index of the playlist; omitted, the active playlist. An index past the last playlist fails with `INVALID_INDEX`; with this omitted and no active playlist the call fails with `NO_ACTIVE_ITEM`. At least `0`. |
-| `playlistGuid` | `string` | No | A playlist's GUID instead of its index, written with braces as `playlist.getAll` and every result or event that names a playlist report it; either hex case is accepted. It keeps naming the same playlist while other playlists are added, removed or reordered, which an index does not. Giving both this and the index, or a malformed GUID, fails with `INVALID_PARAMS`. A playlist that no longer exists fails with `NOT_FOUND`; the call never falls back to another playlist. A malformed GUID and a missing playlist carry the GUID given as `details.playlistGuid`. |
+| `playlistGuid` | `string` | No | Persistent unique identifier of a playlist (bracketed GUID, case-insensitive), used in place of a mutable index. Mutually exclusive with `playlist`; passing both or an invalid format fails with `INVALID_PARAMS`. Fails with `NOT_FOUND` if the playlist does not exist, never falling back. Invalid-format and not-found failures return the given GUID in `details.playlistGuid`. |
 
 **Returns**
 
 | Field | Type | Description |
 | --- | --- | --- |
 | `playlist` | `integer` | Index of the playlist. |
-| `playlistGuid` | `string` | The playlist's GUID, written as `{XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX}`. Pass it as `playlistGuid` to address this playlist even after the playlist list has changed. |
+| `playlistGuid` | `string` | Unique identifier of the playlist, formatted as `{XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX}`. Pass as `playlistGuid` to reliably target this playlist. |
 | `isLocked` | `boolean` | Whether it carries a lock. |
 
 `success` is `true` on success. On failure the response is `{ success: false, error, code }`; see [Error codes](../reference/errors.md) for `code`.
@@ -1002,14 +1065,14 @@ The selected rows of a playlist in playlist order, without the play statistics. 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `playlist` | `integer` | No | Playlist index; omitted, the active playlist. At least `0`. |
-| `playlistGuid` | `string` | No | A playlist's GUID instead of its index, written with braces as `playlist.getAll` and every result or event that names a playlist report it; either hex case is accepted. It keeps naming the same playlist while other playlists are added, removed or reordered, which an index does not. Giving both this and the index, or a malformed GUID, fails with `INVALID_PARAMS`. A playlist that no longer exists fails with `NOT_FOUND`; the call never falls back to another playlist. A malformed GUID and a missing playlist carry the GUID given as `details.playlistGuid`. |
+| `playlistGuid` | `string` | No | Persistent unique identifier of a playlist (bracketed GUID, case-insensitive), used in place of a mutable index. Mutually exclusive with `playlist`; passing both or an invalid format fails with `INVALID_PARAMS`. Fails with `NOT_FOUND` if the playlist does not exist, never falling back. Invalid-format and not-found failures return the given GUID in `details.playlistGuid`. |
 
 **Returns**
 
 | Field | Type | Description |
 | --- | --- | --- |
 | `playlist` | `integer` | The playlist read. |
-| `playlistGuid` | `string` | The playlist's GUID, written as `{XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX}`. Pass it as `playlistGuid` to address this playlist even after the playlist list has changed. |
+| `playlistGuid` | `string` | Unique identifier of the playlist, formatted as `{XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX}`. Pass as `playlistGuid` to reliably target this playlist. |
 | `tracks` | `PlaylistTrack[]` | The selected rows in playlist order. |
 | `tracks[].…` | [Track](../reference/types.md#track) | Every field of [Track](../reference/types.md#track). |
 | `tracks[].index` | `integer` | Row in the playlist, from `0`. |
@@ -1021,6 +1084,7 @@ The selected rows of a playlist in playlist order, without the play statistics. 
 | `tracks[].added` | `string` | `%added%` as foo_playcount formats it; absent when empty, on rows of `playlist.getSelectedTracks` and on rows of a `fields` request. |
 | `tracks[].formats` | `Record<string, string>` | The `formats` columns of `playlist.getTracks`, by the names given; present only when `formats` was passed. |
 | `count` | `integer` | Rows returned. |
+| `contentVersion` | `string` | The row numbers in `tracks` hold only while the playlist keeps this version. |
 
 `success` is `true` on success. On failure the response is `{ success: false, error, code }`; see [Error codes](../reference/errors.md) for `code`.
 <!-- api-schema:end -->
@@ -1037,7 +1101,7 @@ List the selected rows of a playlist.
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `playlist` | `integer` | No | Index of the playlist; omitted, the active playlist. An index past the last playlist fails with `INVALID_INDEX`; with this omitted and no active playlist the call fails with `NO_ACTIVE_ITEM`. At least `0`. |
-| `playlistGuid` | `string` | No | A playlist's GUID instead of its index, written with braces as `playlist.getAll` and every result or event that names a playlist report it; either hex case is accepted. It keeps naming the same playlist while other playlists are added, removed or reordered, which an index does not. Giving both this and the index, or a malformed GUID, fails with `INVALID_PARAMS`. A playlist that no longer exists fails with `NOT_FOUND`; the call never falls back to another playlist. A malformed GUID and a missing playlist carry the GUID given as `details.playlistGuid`. |
+| `playlistGuid` | `string` | No | Persistent unique identifier of a playlist (bracketed GUID, case-insensitive), used in place of a mutable index. Mutually exclusive with `playlist`; passing both or an invalid format fails with `INVALID_PARAMS`. Fails with `NOT_FOUND` if the playlist does not exist, never falling back. Invalid-format and not-found failures return the given GUID in `details.playlistGuid`. |
 
 **Returns**
 
@@ -1046,7 +1110,8 @@ List the selected rows of a playlist.
 | `items` | `integer[]` | Selected rows, in playlist order. |
 | `count` | `integer` | Number of entries in `items`. |
 | `playlist` | `integer` | Index of the playlist. |
-| `playlistGuid` | `string` | The playlist's GUID, written as `{XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX}`. Pass it as `playlistGuid` to address this playlist even after the playlist list has changed. |
+| `playlistGuid` | `string` | Unique identifier of the playlist, formatted as `{XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX}`. Pass as `playlistGuid` to reliably target this playlist. |
+| `contentVersion` | `string` | The row numbers in `items` hold only while the playlist keeps this version. |
 
 `success` is `true` on success. On failure the response is `{ success: false, error, code }`; see [Error codes](../reference/errors.md) for `code`.
 <!-- api-schema:end -->
@@ -1065,22 +1130,24 @@ Insert tracks at a position of a playlist, saving an undo point first. Each entr
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `playlist` | `integer` | No | Index of the playlist; omitted, the active playlist. An index past the last playlist fails with `INVALID_INDEX`; with this omitted and no active playlist the call fails with `NO_ACTIVE_ITEM`. At least `0`. |
-| `playlistGuid` | `string` | No | A playlist's GUID instead of its index, written with braces as `playlist.getAll` and every result or event that names a playlist report it; either hex case is accepted. It keeps naming the same playlist while other playlists are added, removed or reordered, which an index does not. Giving both this and the index, or a malformed GUID, fails with `INVALID_PARAMS`. A playlist that no longer exists fails with `NOT_FOUND`; the call never falls back to another playlist. A malformed GUID and a missing playlist carry the GUID given as `details.playlistGuid`. |
+| `playlistGuid` | `string` | No | Persistent unique identifier of a playlist (bracketed GUID, case-insensitive), used in place of a mutable index. Mutually exclusive with `playlist`; passing both or an invalid format fails with `INVALID_PARAMS`. Fails with `NOT_FOUND` if the playlist does not exist, never falling back. Invalid-format and not-found failures return the given GUID in `details.playlistGuid`. |
 | `position` | `integer` | No | Row before which the tracks go; past the last row, they are appended. At least `0`. Default: `0`. |
 | `handles` | `any[]` | Yes | Tracks to insert: each a path with an optional `\|subsong:N` suffix, or `{ path, subsong }`. Must not be empty. |
+| `expectedVersion` | `string` | No | Expected content version for optimistic concurrency control. When mismatched, mutations are aborted with `STALE_TARGET` (`details.current` carries current version). Omitted, no check is made. |
 
 **Returns**
 
 | Field | Type | Description |
 | --- | --- | --- |
 | `playlist` | `integer` | Index of the playlist. |
-| `playlistGuid` | `string` | The playlist's GUID, written as `{XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX}`. Pass it as `playlistGuid` to address this playlist even after the playlist list has changed. |
+| `playlistGuid` | `string` | Unique identifier of the playlist, formatted as `{XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX}`. Pass as `playlistGuid` to reliably target this playlist. |
 | `insertIndex` | `integer` | The `position` that was asked for, before it was limited to the end of the playlist. |
 | `requestedCount` | `integer` | Number of entries in `handles`. |
 | `addedCount` | `integer` | Tracks inserted. |
 | `invalidCount` | `integer` | Entries that were not usable. |
 | `countBefore` | `integer` | Number of tracks before the insertion. |
 | `totalCount` | `integer` | Number of tracks after the insertion. |
+| `contentVersion` | `string` | Already includes this change; pass it as `expectedVersion` to the next call. |
 
 `success` is `true` on success. On failure the response is `{ success: false, error, code }`; see [Error codes](../reference/errors.md) for `code`.
 <!-- api-schema:end -->
@@ -1096,21 +1163,21 @@ const result = await fb2k.invoke('playlist.insertTracks', {
 ### playlist.isAutoplaylist
 
 <!-- api-schema:begin playlist.isAutoplaylist -->
-Report whether a playlist is an autoplaylist: one foobar2000 fills from a library query, or one carrying a lock whose name contains `Auto` (autoplaylists that other components manage).
+Report whether a playlist has an autoplaylist-manager client, including third-party clients, or is recognized by the compatible lock-name rule containing `Auto`.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `playlist` | `integer` | No | Index of the playlist; omitted, the active playlist. An index past the last playlist fails with `INVALID_INDEX`; with this omitted and no active playlist the call fails with `NO_ACTIVE_ITEM`. At least `0`. |
-| `playlistGuid` | `string` | No | A playlist's GUID instead of its index, written with braces as `playlist.getAll` and every result or event that names a playlist report it; either hex case is accepted. It keeps naming the same playlist while other playlists are added, removed or reordered, which an index does not. Giving both this and the index, or a malformed GUID, fails with `INVALID_PARAMS`. A playlist that no longer exists fails with `NOT_FOUND`; the call never falls back to another playlist. A malformed GUID and a missing playlist carry the GUID given as `details.playlistGuid`. |
+| `playlistGuid` | `string` | No | Persistent unique identifier of a playlist (bracketed GUID, case-insensitive), used in place of a mutable index. Mutually exclusive with `playlist`; passing both or an invalid format fails with `INVALID_PARAMS`. Fails with `NOT_FOUND` if the playlist does not exist, never falling back. Invalid-format and not-found failures return the given GUID in `details.playlistGuid`. |
 
 **Returns**
 
 | Field | Type | Description |
 | --- | --- | --- |
 | `playlist` | `integer` | Index of the playlist. |
-| `playlistGuid` | `string` | The playlist's GUID, written as `{XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX}`. Pass it as `playlistGuid` to address this playlist even after the playlist list has changed. |
+| `playlistGuid` | `string` | Unique identifier of the playlist, formatted as `{XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX}`. Pass as `playlistGuid` to reliably target this playlist. |
 | `isAutoplaylist` | `boolean` | Whether it is an autoplaylist. |
-| `lockName` | `string` | Name of the playlist's lock, present when the playlist carries a named lock and is not an autoplaylist foobar2000 runs, whether or not the lock makes it count as one. |
+| `lockName` | `string` | Name of the playlist's lock, present when it carries a named lock without an autoplaylist-manager client, whether or not the lock makes it count as an autoplaylist. |
 
 `success` is `true` on success. On failure the response is `{ success: false, error, code }`; see [Error codes](../reference/errors.md) for `code`.
 <!-- api-schema:end -->
@@ -1129,7 +1196,7 @@ Report whether a playlist carries a lock. An index past the last playlist fails 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `playlist` | `integer` | No | Index of the playlist; omitted, the active playlist. With this omitted and no active playlist the call fails with `NO_ACTIVE_ITEM`. At least `0`. |
-| `playlistGuid` | `string` | No | A playlist's GUID instead of its index, written with braces as `playlist.getAll` and every result or event that names a playlist report it; either hex case is accepted. It keeps naming the same playlist while other playlists are added, removed or reordered, which an index does not. Giving both this and the index, or a malformed GUID, fails with `INVALID_PARAMS`. A playlist that no longer exists fails with `NOT_FOUND`; the call never falls back to another playlist. A malformed GUID and a missing playlist carry the GUID given as `details.playlistGuid`. |
+| `playlistGuid` | `string` | No | Persistent unique identifier of a playlist (bracketed GUID, case-insensitive), used in place of a mutable index. Mutually exclusive with `playlist`; passing both or an invalid format fails with `INVALID_PARAMS`. Fails with `NOT_FOUND` if the playlist does not exist, never falling back. Invalid-format and not-found failures return the given GUID in `details.playlistGuid`. |
 
 **Returns**
 
@@ -1154,7 +1221,7 @@ Reapply the change the last `playlist.undo` reverted. Fails with `NOT_FOUND` whe
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `playlist` | `integer` | No | Index of the playlist; omitted, the active playlist. An index past the last playlist fails with `INVALID_INDEX`; with this omitted and no active playlist the call fails with `NO_ACTIVE_ITEM`. At least `0`. |
-| `playlistGuid` | `string` | No | A playlist's GUID instead of its index, written with braces as `playlist.getAll` and every result or event that names a playlist report it; either hex case is accepted. It keeps naming the same playlist while other playlists are added, removed or reordered, which an index does not. Giving both this and the index, or a malformed GUID, fails with `INVALID_PARAMS`. A playlist that no longer exists fails with `NOT_FOUND`; the call never falls back to another playlist. A malformed GUID and a missing playlist carry the GUID given as `details.playlistGuid`. |
+| `playlistGuid` | `string` | No | Persistent unique identifier of a playlist (bracketed GUID, case-insensitive), used in place of a mutable index. Mutually exclusive with `playlist`; passing both or an invalid format fails with `INVALID_PARAMS`. Fails with `NOT_FOUND` if the playlist does not exist, never falling back. Invalid-format and not-found failures return the given GUID in `details.playlistGuid`. |
 
 **Returns**
 
@@ -1168,20 +1235,20 @@ await fb2k.invoke('playlist.redo', { playlist: 0 });
 ### playlist.removeAutoplaylist
 
 <!-- api-schema:begin playlist.removeAutoplaylist -->
-Turn an autoplaylist back into an ordinary playlist that keeps its current tracks. An autoplaylist that another component manages cannot be released this way: the call succeeds with `source` `dui` and changes nothing, and `playlist.remove` deletes it. A playlist that is not an autoplaylist fails with `NOT_FOUND`.
+Release an autoplaylist-manager client, including a third-party client, keeping the current tracks. A compatible automatic-playlist lock without a manager client cannot be released this way: the call succeeds with `source` `dui` and changes nothing; `playlist.remove` deletes that playlist. A playlist that is not an autoplaylist fails with `NOT_FOUND`.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `playlist` | `integer` | No | Index of the playlist; omitted, the active playlist. An index past the last playlist fails with `INVALID_INDEX`; with this omitted and no active playlist the call fails with `NO_ACTIVE_ITEM`. At least `0`. |
-| `playlistGuid` | `string` | No | A playlist's GUID instead of its index, written with braces as `playlist.getAll` and every result or event that names a playlist report it; either hex case is accepted. It keeps naming the same playlist while other playlists are added, removed or reordered, which an index does not. Giving both this and the index, or a malformed GUID, fails with `INVALID_PARAMS`. A playlist that no longer exists fails with `NOT_FOUND`; the call never falls back to another playlist. A malformed GUID and a missing playlist carry the GUID given as `details.playlistGuid`. |
+| `playlistGuid` | `string` | No | Persistent unique identifier of a playlist (bracketed GUID, case-insensitive), used in place of a mutable index. Mutually exclusive with `playlist`; passing both or an invalid format fails with `INVALID_PARAMS`. Fails with `NOT_FOUND` if the playlist does not exist, never falling back. Invalid-format and not-found failures return the given GUID in `details.playlistGuid`. |
 
 **Returns**
 
 | Field | Type | Description |
 | --- | --- | --- |
 | `playlist` | `integer` | Index of the playlist. |
-| `playlistGuid` | `string` | The playlist's GUID, written as `{XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX}`. Pass it as `playlistGuid` to address this playlist even after the playlist list has changed. |
-| `source` | `"sdk" \| "dui"` | `sdk` when foobar2000's autoplaylist was released, `dui` when the playlist is an autoplaylist another component manages and nothing changed. |
+| `playlistGuid` | `string` | Unique identifier of the playlist, formatted as `{XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX}`. Pass as `playlistGuid` to reliably target this playlist. |
+| `source` | `"sdk" \| "dui"` | `sdk` when a manager client was released, including a third-party client; `dui` when only a compatible automatic-playlist lock was found and nothing changed. |
 | `note` | `string` | Explanation, present when `source` is `dui`. |
 
 `success` is `true` on success. On failure the response is `{ success: false, error, code }`; see [Error codes](../reference/errors.md) for `code`.
@@ -1199,16 +1266,18 @@ Reorder a playlist's tracks, saving an undo point first: `newOrder[i]` is the cu
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `playlist` | `integer` | No | Index of the playlist; omitted, the active playlist. An index past the last playlist fails with `INVALID_INDEX`; with this omitted and no active playlist the call fails with `NO_ACTIVE_ITEM`. At least `0`. |
-| `playlistGuid` | `string` | No | A playlist's GUID instead of its index, written with braces as `playlist.getAll` and every result or event that names a playlist report it; either hex case is accepted. It keeps naming the same playlist while other playlists are added, removed or reordered, which an index does not. Giving both this and the index, or a malformed GUID, fails with `INVALID_PARAMS`. A playlist that no longer exists fails with `NOT_FOUND`; the call never falls back to another playlist. A malformed GUID and a missing playlist carry the GUID given as `details.playlistGuid`. |
+| `playlistGuid` | `string` | No | Persistent unique identifier of a playlist (bracketed GUID, case-insensitive), used in place of a mutable index. Mutually exclusive with `playlist`; passing both or an invalid format fails with `INVALID_PARAMS`. Fails with `NOT_FOUND` if the playlist does not exist, never falling back. Invalid-format and not-found failures return the given GUID in `details.playlistGuid`. |
 | `newOrder` | `integer[]` | Yes | For each new row, the current row of the track that goes there; every row exactly once. Each item: at least `0`. |
+| `expectedVersion` | `string` | No | Expected content version for optimistic concurrency control. When mismatched, mutations are aborted with `STALE_TARGET` (`details.current` carries current version). Omitted, no check is made. |
 
 **Returns**
 
 | Field | Type | Description |
 | --- | --- | --- |
 | `playlist` | `integer` | Index of the playlist. |
-| `playlistGuid` | `string` | The playlist's GUID, written as `{XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX}`. Pass it as `playlistGuid` to address this playlist even after the playlist list has changed. |
+| `playlistGuid` | `string` | Unique identifier of the playlist, formatted as `{XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX}`. Pass as `playlistGuid` to reliably target this playlist. |
 | `itemCount` | `integer` | Number of tracks reordered. |
+| `contentVersion` | `string` | Already includes this change; pass it as `expectedVersion` to the next call. |
 
 `success` is `true` on success. On failure the response is `{ success: false, error, code }`; see [Error codes](../reference/errors.md) for `code`.
 <!-- api-schema:end -->
@@ -1250,7 +1319,7 @@ Replace the whole content of a playlist and play it: stop playback, clear the pl
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `playlist` | `integer` | No | Index of the playlist; omitted, the active playlist. An index past the last playlist fails with `INVALID_INDEX`; with this omitted and no active playlist the call fails with `NO_ACTIVE_ITEM`. At least `0`. |
-| `playlistGuid` | `string` | No | A playlist's GUID instead of its index, written with braces as `playlist.getAll` and every result or event that names a playlist report it; either hex case is accepted. It keeps naming the same playlist while other playlists are added, removed or reordered, which an index does not. Giving both this and the index, or a malformed GUID, fails with `INVALID_PARAMS`. A playlist that no longer exists fails with `NOT_FOUND`; the call never falls back to another playlist. A malformed GUID and a missing playlist carry the GUID given as `details.playlistGuid`. |
+| `playlistGuid` | `string` | No | Persistent unique identifier of a playlist (bracketed GUID, case-insensitive), used in place of a mutable index. Mutually exclusive with `playlist`; passing both or an invalid format fails with `INVALID_PARAMS`. Fails with `NOT_FOUND` if the playlist does not exist, never falling back. Invalid-format and not-found failures return the given GUID in `details.playlistGuid`. |
 | `paths` | `string[]` | Yes | The new content: files, folders or URLs. Must not be empty. |
 | `playIndex` | `integer` | No | Row to play, or to focus with `autoPlay` `false`; past the last row, the first one. The rows do not keep the order of `paths`, so this names a position, not one of the given paths. At least `0`. Default: `0`. |
 | `stopFirst` | `boolean` | No | Stop playback first, when something is playing. Default: `true`. |
@@ -1261,7 +1330,7 @@ Replace the whole content of a playlist and play it: stop playback, clear the pl
 | Field | Type | Description |
 | --- | --- | --- |
 | `playlist` | `integer` | Index of the playlist. |
-| `playlistGuid` | `string` | The playlist's GUID, written as `{XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX}`. Pass it as `playlistGuid` to address this playlist even after the playlist list has changed. |
+| `playlistGuid` | `string` | Unique identifier of the playlist, formatted as `{XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX}`. Pass as `playlistGuid` to reliably target this playlist. |
 | `clearedCount` | `integer` | Number of tracks removed. |
 | `addedCount` | `integer` | Tracks added. |
 | `totalCount` | `integer` | Number of tracks afterwards. |
@@ -1282,7 +1351,7 @@ Reverse the order of a playlist's tracks, saving an undo point first. A locked p
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `playlist` | `integer` | No | Index of the playlist; omitted, the active playlist. An index past the last playlist fails with `INVALID_INDEX`; with this omitted and no active playlist the call fails with `NO_ACTIVE_ITEM`. At least `0`. |
-| `playlistGuid` | `string` | No | A playlist's GUID instead of its index, written with braces as `playlist.getAll` and every result or event that names a playlist report it; either hex case is accepted. It keeps naming the same playlist while other playlists are added, removed or reordered, which an index does not. Giving both this and the index, or a malformed GUID, fails with `INVALID_PARAMS`. A playlist that no longer exists fails with `NOT_FOUND`; the call never falls back to another playlist. A malformed GUID and a missing playlist carry the GUID given as `details.playlistGuid`. |
+| `playlistGuid` | `string` | No | Persistent unique identifier of a playlist (bracketed GUID, case-insensitive), used in place of a mutable index. Mutually exclusive with `playlist`; passing both or an invalid format fails with `INVALID_PARAMS`. Fails with `NOT_FOUND` if the playlist does not exist, never falling back. Invalid-format and not-found failures return the given GUID in `details.playlistGuid`. |
 
 **Returns**
 
@@ -1301,7 +1370,7 @@ Select every row of a playlist.
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `playlist` | `integer` | No | Index of the playlist; omitted, the active playlist. An index past the last playlist fails with `INVALID_INDEX`; with this omitted and no active playlist the call fails with `NO_ACTIVE_ITEM`. At least `0`. |
-| `playlistGuid` | `string` | No | A playlist's GUID instead of its index, written with braces as `playlist.getAll` and every result or event that names a playlist report it; either hex case is accepted. It keeps naming the same playlist while other playlists are added, removed or reordered, which an index does not. Giving both this and the index, or a malformed GUID, fails with `INVALID_PARAMS`. A playlist that no longer exists fails with `NOT_FOUND`; the call never falls back to another playlist. A malformed GUID and a missing playlist carry the GUID given as `details.playlistGuid`. |
+| `playlistGuid` | `string` | No | Persistent unique identifier of a playlist (bracketed GUID, case-insensitive), used in place of a mutable index. Mutually exclusive with `playlist`; passing both or an invalid format fails with `INVALID_PARAMS`. Fails with `NOT_FOUND` if the playlist does not exist, never falling back. Invalid-format and not-found failures return the given GUID in `details.playlistGuid`. |
 
 **Returns**
 
@@ -1320,8 +1389,9 @@ Move the focus of a playlist to a row, or remove it. A row past the last one fai
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `playlist` | `integer` | No | Index of the playlist; omitted, the active playlist. An index past the last playlist fails with `INVALID_INDEX`; with this omitted and no active playlist the call fails with `NO_ACTIVE_ITEM`. At least `0`. |
-| `playlistGuid` | `string` | No | A playlist's GUID instead of its index, written with braces as `playlist.getAll` and every result or event that names a playlist report it; either hex case is accepted. It keeps naming the same playlist while other playlists are added, removed or reordered, which an index does not. Giving both this and the index, or a malformed GUID, fails with `INVALID_PARAMS`. A playlist that no longer exists fails with `NOT_FOUND`; the call never falls back to another playlist. A malformed GUID and a missing playlist carry the GUID given as `details.playlistGuid`. |
+| `playlistGuid` | `string` | No | Persistent unique identifier of a playlist (bracketed GUID, case-insensitive), used in place of a mutable index. Mutually exclusive with `playlist`; passing both or an invalid format fails with `INVALID_PARAMS`. Fails with `NOT_FOUND` if the playlist does not exist, never falling back. Invalid-format and not-found failures return the given GUID in `details.playlistGuid`. |
 | `index` | `integer` | No | Row to focus; omitted or negative, the playlist loses its focus. |
+| `expectedVersion` | `string` | No | Expected content version for optimistic concurrency control. When mismatched, mutations are aborted with `STALE_TARGET` (`details.current` carries current version). Omitted, no check is made. |
 
 **Returns**
 
@@ -1340,11 +1410,16 @@ Select rows of a playlist. Rows past the last one are ignored; a negative row fa
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `playlist` | `integer` | No | Index of the playlist; omitted, the active playlist. An index past the last playlist fails with `INVALID_INDEX`; with this omitted and no active playlist the call fails with `NO_ACTIVE_ITEM`. At least `0`. |
-| `playlistGuid` | `string` | No | A playlist's GUID instead of its index, written with braces as `playlist.getAll` and every result or event that names a playlist report it; either hex case is accepted. It keeps naming the same playlist while other playlists are added, removed or reordered, which an index does not. Giving both this and the index, or a malformed GUID, fails with `INVALID_PARAMS`. A playlist that no longer exists fails with `NOT_FOUND`; the call never falls back to another playlist. A malformed GUID and a missing playlist carry the GUID given as `details.playlistGuid`. |
+| `playlistGuid` | `string` | No | Persistent unique identifier of a playlist (bracketed GUID, case-insensitive), used in place of a mutable index. Mutually exclusive with `playlist`; passing both or an invalid format fails with `INVALID_PARAMS`. Fails with `NOT_FOUND` if the playlist does not exist, never falling back. Invalid-format and not-found failures return the given GUID in `details.playlistGuid`. |
 | `indices` | `integer[]` | Yes | Rows to select; an empty list selects nothing. Each item: at least `0`. |
 | `clearOthers` | `boolean` | No | Deselect every other row; `false` adds `indices` to the current selection. Default: `true`. |
+| `expectedVersion` | `string` | No | Expected content version for optimistic concurrency control. When mismatched, mutations are aborted with `STALE_TARGET` (`details.current` carries current version). Omitted, no check is made. |
 
 **Returns**
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `contentVersion` | `string` | Selecting rows leaves it unchanged. |
 
 `success` is `true` on success. On failure the response is `{ success: false, error, code }`; see [Error codes](../reference/errors.md) for `code`.
 <!-- api-schema:end -->
@@ -1361,7 +1436,7 @@ Put a playlist's tracks in random order, saving an undo point first. A locked pl
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `playlist` | `integer` | No | Index of the playlist; omitted, the active playlist. An index past the last playlist fails with `INVALID_INDEX`; with this omitted and no active playlist the call fails with `NO_ACTIVE_ITEM`. At least `0`. |
-| `playlistGuid` | `string` | No | A playlist's GUID instead of its index, written with braces as `playlist.getAll` and every result or event that names a playlist report it; either hex case is accepted. It keeps naming the same playlist while other playlists are added, removed or reordered, which an index does not. Giving both this and the index, or a malformed GUID, fails with `INVALID_PARAMS`. A playlist that no longer exists fails with `NOT_FOUND`; the call never falls back to another playlist. A malformed GUID and a missing playlist carry the GUID given as `details.playlistGuid`. |
+| `playlistGuid` | `string` | No | Persistent unique identifier of a playlist (bracketed GUID, case-insensitive), used in place of a mutable index. Mutually exclusive with `playlist`; passing both or an invalid format fails with `INVALID_PARAMS`. Fails with `NOT_FOUND` if the playlist does not exist, never falling back. Invalid-format and not-found failures return the given GUID in `details.playlistGuid`. |
 
 **Returns**
 
@@ -1380,7 +1455,7 @@ Sort a playlist by a Title Formatting pattern, saving an undo point first. A loc
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `playlist` | `integer` | No | Index of the playlist; omitted, the active playlist. An index past the last playlist fails with `INVALID_INDEX`; with this omitted and no active playlist the call fails with `NO_ACTIVE_ITEM`. At least `0`. |
-| `playlistGuid` | `string` | No | A playlist's GUID instead of its index, written with braces as `playlist.getAll` and every result or event that names a playlist report it; either hex case is accepted. It keeps naming the same playlist while other playlists are added, removed or reordered, which an index does not. Giving both this and the index, or a malformed GUID, fails with `INVALID_PARAMS`. A playlist that no longer exists fails with `NOT_FOUND`; the call never falls back to another playlist. A malformed GUID and a missing playlist carry the GUID given as `details.playlistGuid`. |
+| `playlistGuid` | `string` | No | Persistent unique identifier of a playlist (bracketed GUID, case-insensitive), used in place of a mutable index. Mutually exclusive with `playlist`; passing both or an invalid format fails with `INVALID_PARAMS`. Fails with `NOT_FOUND` if the playlist does not exist, never falling back. Invalid-format and not-found failures return the given GUID in `details.playlistGuid`. |
 | `pattern` | `string` | No | Title Formatting pattern to sort by. Default: `"%title%"`. |
 | `descending` | `boolean` | No | Reverse the whole playlist after sorting. The reversal covers every track, the unselected ones too, even with `selectedOnly`. Default: `false`. |
 | `selectedOnly` | `boolean` | No | Sort only the selected tracks among themselves, keeping the others in place. Default: `false`. |
@@ -1402,7 +1477,7 @@ Revert a playlist to its last undo point. Fails with `NOT_FOUND` when there is n
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `playlist` | `integer` | No | Index of the playlist; omitted, the active playlist. An index past the last playlist fails with `INVALID_INDEX`; with this omitted and no active playlist the call fails with `NO_ACTIVE_ITEM`. At least `0`. |
-| `playlistGuid` | `string` | No | A playlist's GUID instead of its index, written with braces as `playlist.getAll` and every result or event that names a playlist report it; either hex case is accepted. It keeps naming the same playlist while other playlists are added, removed or reordered, which an index does not. Giving both this and the index, or a malformed GUID, fails with `INVALID_PARAMS`. A playlist that no longer exists fails with `NOT_FOUND`; the call never falls back to another playlist. A malformed GUID and a missing playlist carry the GUID given as `details.playlistGuid`. |
+| `playlistGuid` | `string` | No | Persistent unique identifier of a playlist (bracketed GUID, case-insensitive), used in place of a mutable index. Mutually exclusive with `playlist`; passing both or an invalid format fails with `INVALID_PARAMS`. Fails with `NOT_FOUND` if the playlist does not exist, never falling back. Invalid-format and not-found failures return the given GUID in `details.playlistGuid`. |
 
 **Returns**
 
@@ -1435,3 +1510,77 @@ The following playlist lifecycle events are broadcast. Item-level events for the
 | `playlist:addComplete` | An asynchronous path-add operation finished. | `{ operationId, success, addedCount, totalCount }` |
 
 `from`, `to`, `oldIndex`, and `newIndex` are `-1` when the corresponding index is unavailable.
+## playlist.createManagedAutoplaylist
+
+<!-- api-schema:begin playlist.createManagedAutoplaylist -->
+Create an autoplaylist whose query and sorting are managed by this component. Requires foo_ui_webview2 to remain installed. Invalid configuration is rejected before creating the playlist. Success reports the configuration snapshot, not completed track rebuilding or disk persistence.
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `name` | `string` | No | Name of the new playlist; at most 65536 UTF-8 bytes, without NUL. Default: `"New Autoplaylist"`. |
+| `query` | `string` | Yes | foobar2000 library query, at most 65536 UTF-8 bytes. Blank text and NUL are rejected. |
+| `sort` | `string` | No | Independent Title Formatting sort. Empty uses the query's sorting or the host default. A nonempty value conflicts with explicit SORT BY in the query. At most 65536 UTF-8 bytes, without NUL. Default: `""`. |
+| `keepSorted` | `boolean` | No | Keep tracks sorted and prevent manual reordering. Default: `false`. |
+
+**Returns**
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `playlistGuid` | `string` | Unique identifier of the playlist, formatted as `{XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX}`. Pass as `playlistGuid` to reliably target this playlist. |
+| `query` | `string` | The provider's query text, unchanged. |
+| `sort` | `string` | Independent sort text, unchanged; query-embedded sorting remains in query. |
+| `keepSorted` | `boolean` | Current keep-sorted flag read from the autoplaylist manager. |
+| `revision` | `string` | Opaque configuration revision, scoped to this provider instance. Not a track-content version. |
+
+`success` is `true` on success. On failure the response is `{ success: false, error, code }`; see [Error codes](../reference/errors.md) for `code`.
+<!-- api-schema:end -->
+
+## playlist.getAutoplaylistConfig
+
+<!-- api-schema:begin playlist.getAutoplaylistConfig -->
+Read the configuration of an autoplaylist managed by this component. Specify exactly one target. Ordinary playlists and playlists from other providers fail with `NOT_SUPPORTED` (with `details.reason`).
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `playlist` | `integer` | No | Playlist index; required unless playlistGuid is given. No active-playlist default. At least `0`. |
+| `playlistGuid` | `string` | No | Persistent unique identifier of a playlist (bracketed GUID, case-insensitive), used in place of a mutable index. Mutually exclusive with `playlist`; passing both or an invalid format fails with `INVALID_PARAMS`. Fails with `NOT_FOUND` if the playlist does not exist, never falling back. Invalid-format and not-found failures return the given GUID in `details.playlistGuid`. |
+
+**Returns**
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `playlistGuid` | `string` | Unique identifier of the playlist, formatted as `{XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX}`. Pass as `playlistGuid` to reliably target this playlist. |
+| `query` | `string` | The provider's query text, unchanged. |
+| `sort` | `string` | Independent sort text, unchanged; query-embedded sorting remains in query. |
+| `keepSorted` | `boolean` | Current keep-sorted flag read from the autoplaylist manager. |
+| `revision` | `string` | Opaque configuration revision, scoped to this provider instance. Not a track-content version. |
+
+`success` is `true` on success. On failure the response is `{ success: false, error, code }`; see [Error codes](../reference/errors.md) for `code`.
+<!-- api-schema:end -->
+
+## playlist.setAutoplaylistConfig
+
+<!-- api-schema:begin playlist.setAutoplaylistConfig -->
+Edit configuration of a managed autoplaylist against its expected revision. Omitted fields keep existing values; provide at least one modification. Unchanged values do not advance revision or trigger rebuilds. Stale revisions fail with `OPERATION_FAILED` (`details.reason: 'revisionConflict'`). Configuration is validated before write. Host failures may leave changes partially applied: `details.state` (`unchanged`, `changed`, or `unknown`) covers the configuration only, and `details.current` is included only when the current state is known. Neither success nor failure indicates disk persistence or finished track rebuilds.
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `playlist` | `integer` | No | Playlist index; required unless playlistGuid is given. No active-playlist default. At least `0`. |
+| `playlistGuid` | `string` | No | Persistent unique identifier of a playlist (bracketed GUID, case-insensitive), used in place of a mutable index. Mutually exclusive with `playlist`; passing both or an invalid format fails with `INVALID_PARAMS`. Fails with `NOT_FOUND` if the playlist does not exist, never falling back. Invalid-format and not-found failures return the given GUID in `details.playlistGuid`. |
+| `expectedRevision` | `string` | Yes | Opaque revision from the most recent configuration snapshot. Invalid after restart or provider replacement. |
+| `query` | `string` | No | New query, at most 65536 UTF-8 bytes. Blank text and NUL are rejected; omitted keeps the query. |
+| `sort` | `string` | No | New independent sort; empty clears it, omitted keeps it. Conflicts with query SORT BY when nonempty. At most 65536 UTF-8 bytes, without NUL. |
+| `keepSorted` | `boolean` | No | New keep-sorted setting; omitted keeps the current manager flag. |
+
+**Returns**
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `playlistGuid` | `string` | Unique identifier of the playlist, formatted as `{XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX}`. Pass as `playlistGuid` to reliably target this playlist. |
+| `query` | `string` | The provider's query text, unchanged. |
+| `sort` | `string` | Independent sort text, unchanged; query-embedded sorting remains in query. |
+| `keepSorted` | `boolean` | Current keep-sorted flag read from the autoplaylist manager. |
+| `revision` | `string` | Opaque configuration revision, scoped to this provider instance. Not a track-content version. |
+
+`success` is `true` on success. On failure the response is `{ success: false, error, code }`; see [Error codes](../reference/errors.md) for `code`.
+<!-- api-schema:end -->

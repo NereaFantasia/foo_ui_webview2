@@ -1,6 +1,6 @@
 # Titleformat API
 
-Methods of the `titleformat` namespace.
+Provides title formatting expression evaluation for single tracks, batches, and named field mappings.
 
 ## titleformat
 

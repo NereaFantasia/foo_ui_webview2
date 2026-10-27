@@ -8,8 +8,8 @@ Signature: `fb.metadata.read(path: string, opts?: Omit<MetadataReadParams, 'path
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `path` | `string` | Yes | Track path. |
-| `opts.cueIndex` | `number` | No | 1-based track index inside a CUE sheet or image. Equivalent to a `\|subsong:<n>` path suffix; the option wins when both are given. |
+| `path` | `string` | Yes | Track path |
+| `opts.cueIndex` | `number` | No | 1-based track index inside a CUE sheet or image. Equivalent to a `\|subsong:<n>` path suffix; the option wins when both are given |
 
 Returns `{ success, path, tags, info }`. `tags` preserves upstream key casing and each value is a `string` or `string[]`. `info` carries `duration`, `bitrate`, `sampleRate`, `channels`, and `codec`.
 
@@ -30,7 +30,7 @@ Signature: `fb.metadata.readBatch(paths: string[]): Promise<MetadataReadBatchRes
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `paths` | `string[]` | Yes | Track paths to read. |
+| `paths` | `string[]` | Yes | Track paths to read |
 
 Returns `results`, one envelope per requested path, plus the aggregate counters `total`, `successCount`, and `errorCount`.
 
@@ -49,8 +49,8 @@ Signature: `fb.metadata.readByPath(path: string, opts?: Omit<MetadataReadByPathP
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `path` | `string` | Yes | Track path. |
-| `opts.cueIndex` | `number` | No | 1-based track index inside a CUE sheet or image, as in `read()`. |
+| `path` | `string` | Yes | Track path |
+| `opts.cueIndex` | `number` | No | 1-based track index inside a CUE sheet or image, as in `read()` |
 
 Returns the flat `metadata.readByPath` object. Tag keys become top-level fields alongside host status and path fields. This method does not invoke `metadata.readRaw`.
 
@@ -68,9 +68,9 @@ Signature: `fb.metadata.removeField(path: string, field: string, opts?: Omit<Met
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `path` | `string` | Yes | Track path. |
-| `field` | `string` | Yes | Single tag name to remove. |
-| `opts.cueIndex` | `number` | No | 1-based track index inside a CUE sheet or image; targets a single contained track instead of the container. |
+| `path` | `string` | Yes | Track path |
+| `field` | `string` | Yes | Single tag name to remove |
+| `opts.cueIndex` | `number` | No | 1-based track index inside a CUE sheet or image; targets a single contained track instead of the container |
 
 Dispatches `metadata.removeField` with `tags: [field]`. The receipt can contain `dispatched`, `subsong`, `removedTags`, `removedCount`, and `note`; final completion is reported by `metadata:writeComplete` with `operation: 'removeTag'`.
 
@@ -87,9 +87,9 @@ Signature: `fb.metadata.removeTag(path: string, tags: string[], opts?: Omit<Meta
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `path` | `string` | Yes | Track path. |
-| `tags` | `string[]` | Yes | Tag names to remove. |
-| `opts.cueIndex` | `number` | No | 1-based track index inside a CUE sheet or image; targets a single contained track instead of the container. |
+| `path` | `string` | Yes | Track path |
+| `tags` | `string[]` | Yes | Tag names to remove |
+| `opts.cueIndex` | `number` | No | 1-based track index inside a CUE sheet or image; targets a single contained track instead of the container |
 
 Dispatches an asynchronous removal and returns its receipt. Tag names are upper-cased, and `removedTags` lists them in the order given; an empty `tags` removes nothing and succeeds without dispatching. Observe `metadata:writeComplete` for the final outcome.
 
@@ -110,9 +110,9 @@ Signature: `fb.metadata.write(path: string, tags: JsonObject, opts?: Omit<Metada
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `path` | `string` | Yes | Track path. |
-| `tags` | `JsonObject` | Yes | Tag updates; `null`, an empty string or an empty array removes the corresponding tag. |
-| `opts.cueIndex` | `number` | No | 1-based track index inside a CUE sheet or image; writes tags to that single contained track instead of the container. |
+| `path` | `string` | Yes | Track path |
+| `tags` | `JsonObject` | Yes | Tag updates; `null`, an empty string or an empty array removes the corresponding tag |
+| `opts.cueIndex` | `number` | No | 1-based track index inside a CUE sheet or image; writes tags to that single contained track instead of the container |
 
 Tag names are upper-cased, so keys that differ only in case name the same tag. A string is written as it is, an integer or a fraction as its decimal text (`2.5` becomes `2.500000`), and a boolean or object is ignored.
 
@@ -142,7 +142,7 @@ Signature: `fb.metadata.writeBatch(items: MetadataWriteBatchItem[]): Promise<Met
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `items` | `MetadataWriteBatchItem[]` | Yes | Per-track tag updates: `path`, `tags`, and an optional `cueIndex`. |
+| `items` | `MetadataWriteBatchItem[]` | Yes | Per-track tag updates: `path`, `tags`, and an optional `cueIndex` |
 
 Invokes `metadata.writeBatch` and returns `successCount`, `failCount`, and per-path `errors`. When any entry fails, the call resolves as a failure envelope that still carries all three, and the other entries are dispatched all the same. It does not call either artwork endpoint.
 
@@ -163,8 +163,8 @@ Signature: `fb.metadata.readRaw(path: string, opts?: Omit<MetadataReadRawParams,
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `path` | `string` | Yes | Track path. |
-| `opts.cueIndex` | `number` | No | 1-based track index inside a CUE sheet or image, as in `read()`. |
+| `path` | `string` | Yes | Track path |
+| `opts.cueIndex` | `number` | No | 1-based track index inside a CUE sheet or image, as in `read()` |
 
 `fb.metadata.readRaw(path, options?)` bypasses the metadb cache and reads the file directly. `options` is `Omit<MetadataReadRawParams, 'path'>` and may contain `cueIndex`. The typed result is `MetadataReadRawResponse`: the fields of `read()` plus `source`, which is always `'file'`. A file that cannot be read fails with `OPERATION_FAILED`.
 
@@ -186,19 +186,19 @@ Returns immediately with `{ success, operationId, totalCount }`. Results arrive 
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `paths` | `string[]` | Yes | Paths to probe; must not be empty. A `\|subsong:N` suffix is honoured per entry. |
-| `options.includeTags` | `boolean` | No | Default `true`. Attaches the flat tag map to each successful result. |
+| `paths` | `string[]` | Yes | Paths to probe; must not be empty. A `\|subsong:N` suffix is honoured per entry |
+| `options.includeTags` | `boolean` | No | Default `true`. Attaches the flat tag map to each successful result |
 
 Each result entry is a `MetadataProbeResultItem`:
 
 | Field | Type | Description |
 | --- | --- | --- |
-| `path` | `string` | Echoed verbatim, `\|subsong:N` included, so it works as a lookup key. |
-| `success` | `boolean` | Whether info was obtained. |
-| `infoSource` | `'cached' \| 'direct' \| 'none'` | `cached` is a metadb hit, `direct` is a fresh disk read, `none` accompanies a failure. |
-| `failure` | `'not-found' \| 'unsupported-format' \| 'read-error'` | Present only when `success` is `false`. |
-| `info` | `TrackTechnicalInfo` | `duration`, `bitrate`, `sampleRate`, `channels`, `codec`. |
-| `tags` | `Record<string, string \| string[]>` | Flat map with upper-cased keys, as in `readBatch()`. Omitted when `includeTags` is `false`. |
+| `path` | `string` | Echoed verbatim, `\|subsong:N` included, so it works as a lookup key |
+| `success` | `boolean` | Whether info was obtained |
+| `infoSource` | `'cached' \| 'direct' \| 'none'` | `cached` is a metadb hit, `direct` is a fresh disk read, `none` accompanies a failure |
+| `failure` | `'not-found' \| 'unsupported-format' \| 'read-error'` | Present only when `success` is `false` |
+| `info` | `TrackTechnicalInfo` | `duration`, `bitrate`, `sampleRate`, `channels`, `codec` |
+| `tags` | `Record<string, string \| string[]>` | Flat map with upper-cased keys, as in `readBatch()`. Omitted when `includeTags` is `false` |
 
 ```javascript
 const off = fb.on('metadata:probeProgress', (event) => {

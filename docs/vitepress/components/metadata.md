@@ -38,7 +38,7 @@ Debounced media-library search input with a minimum-length filter. Enter searche
 | `debounce` | string | `'300'` | Keystroke debounce delay in milliseconds |
 | `min-length` | string | `'2'` | Minimum query length for debounced input searches |
 
-**CSS Parts:** `container`, `input`
+**CSS Parts:** `container`, `input`  
 **Slots:** `icon` (default: 🔍)
 
 **Events:**

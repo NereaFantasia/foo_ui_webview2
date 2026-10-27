@@ -1,6 +1,6 @@
 # Playcount API
 
-Methods of the `playcount` namespace.
+Provides track playback statistics inspection and library-wide aggregation backed by foo_playcount.
 
 ## playcount
 

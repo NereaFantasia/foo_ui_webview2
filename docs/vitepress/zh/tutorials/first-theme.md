@@ -1,24 +1,22 @@
 # 构建第一个主题
 
-这篇教程里，我们给 foobar2000 做一个小巧的播放器页面，最后把它装成主题。页面显示当前曲目的封面、标题和艺术家，一条带已播放时间和总时长的进度条，以及上一首、播放 / 暂停、下一首三个按钮。开发期间 foobar2000 从开发服务器加载页面，文件一保存，改动就出现在窗口里。
+本教程引导构建一个轻量级 foobar2000 播放器页面并将其安装为独立主题。页面包含当前曲目封面、标题、艺术家、带播放进度与总时长的进度条，以及基础播放控制按钮（上一曲、播放/暂停、下一曲）。开发期间 foobar2000 直接从本地开发服务器加载页面，支持热重载（HMR），修改保存后即时呈现。
 
-开发服务器与构建用 [Vite](https://vite.dev/)，现成的播放器元素来自 [`foo-webview-sdk`](https://www.npmjs.com/package/foo-webview-sdk) 包，不需要框架。做完的项目在仓库的 [`examples/starter`](https://github.com/NereaFantasia/foo_ui_webview2/tree/main/examples/starter)。
+项目基于 [Vite](https://vite.dev/) 构建开发服务器，UI 组件采用 [`foo-webview-sdk`](https://www.npmjs.com/package/foo-webview-sdk) 提供的无样式 Web Components，无需引入前端框架。完成品源码可直接参考仓库中的 [`examples/starter`](https://github.com/NereaFantasia/foo_ui_webview2/tree/main/examples/starter)。
 
-## 开始之前
+## 前置准备 {#开始之前}
 
-需要准备：
+- foobar2000 v2.0 或更高版本，已安装 foo_ui_webview2 且界面选择为 `Webview2 UI`（详见[安装组件](/zh/how-to/install)）
+- Node.js 20.19 或更高版本（运行 `node --version` 验证）
+- foobar2000 播放列表中包含可播放的曲目
 
-- foobar2000 2.x，已装好 foo_ui_webview2，并把用户界面选为 `Webview2 UI`。两步都见[安装组件](/zh/how-to/install)。
-- Node.js 20.19 或更高版本。运行 `node --version` 查看当前版本。
-- foobar2000 播放列表里有几首曲目。
-
-下文的选项和按钮名按组件语言为中文时的文字书写。
+本文以组件语言设置为简体中文时的界面文案为准。
 
 ## 创建项目
 
-新建一个空文件夹 `my-theme`，放在 foobar2000 的 profile 文件夹之外；主题做完后，我们再把它复制进 profile。
+在 foobar2000 profile 目录外新建项目文件夹 `my-theme`（主题构建完成后再统一导入 profile 目录）。
 
-在 `my-theme` 里创建 `package.json`：
+在 `my-theme` 根目录创建 `package.json`：
 
 ```json
 {
@@ -43,17 +41,17 @@
 }
 ```
 
-在 `my-theme` 打开终端，安装依赖：
+在 `my-theme` 目录打开终端安装依赖：
 
 ```bash
 npm install
 ```
 
-npm 装完后，`my-theme` 里会多出 `node_modules` 文件夹和 `package-lock.json` 文件。
+依赖安装完成后，项目根目录下将生成 `node_modules` 目录与 `package-lock.json` 锁文件。
 
 ## 编写页面
 
-接下来添加四个文件。先是 `vite.config.js`，它把开发服务器的端口固定下来：
+项目包含四个核心源文件。首先创建 `vite.config.js`，锁定开发服务器监听端口：
 
 ```js
 import { defineConfig } from 'vite';
@@ -68,7 +66,7 @@ export default defineConfig({
 });
 ```
 
-然后是 `index.html`。每个 `fb-*` 标签都是 SDK 提供的播放器元素：它自己向 foobar2000 取数据，曲目或播放位置变了就自己更新。
+接下来创建页面入口 `index.html`。所有 `fb-*` 标签均为 SDK 提供的标准化 Web Components，挂载后自动从宿主订阅数据，并在播放状态或进度变更时自主响应更新：
 
 ```html
 <!doctype html>
@@ -105,7 +103,7 @@ export default defineConfig({
 </html>
 ```
 
-新建 `src` 文件夹。里面的 `src/main.js` 注册 `fb-*` 元素并加载样式表：
+创建 `src` 目录，并在其中编写入口脚本 `src/main.js`，负责注册组件并引入样式表：
 
 ```js
 import { registerComponents } from 'foo-webview-sdk/components';
@@ -114,7 +112,7 @@ import './style.css';
 registerComponents();
 ```
 
-最后是 `src/style.css`。这些元素本身不带任何外观，以 `::part(...)` 结尾的规则给元素内部的部件上样式，比如播放按钮里的按钮、进度条的填充段。
+编写样式表 `src/style.css`。SDK 组件遵循零样式规范，不附带视觉规则；通过 `::part(...)` 选择器直接为内部部件配置样式（例如播放按钮主体、进度条填充轨道）：
 
 ```css
 :root {
@@ -214,7 +212,7 @@ body {
 }
 ```
 
-现在项目结构如下：
+当前项目目录结构如下：
 
 ```text
 my-theme/
@@ -230,13 +228,13 @@ my-theme/
 
 ## 启动开发服务器
 
-在终端运行：
+在项目根目录运行开发服务器：
 
 ```bash
 npm run dev
 ```
 
-Vite 打印出页面的地址：
+启动成功后控制台输出本地访问地址：
 
 ```text
   VITE v8.3.1  ready in 144 ms
@@ -244,23 +242,23 @@ Vite 打印出页面的地址：
   ➜  Local:   http://localhost:5173/
 ```
 
-让它一直运行到教程结束。用浏览器打开 `http://localhost:5173`：封面位置是一块深灰色方块，下面写着 “Nothing playing”，进度条两端都是 `0:00`，再下面是三个按钮。普通浏览器背后没有 foobar2000，所以按钮在这里点了没反应。
+保持终端运行。在普通浏览器中打开 `http://localhost:5173`：页面显示封面占位深灰方块、“Nothing playing” 占位文本，进度条两端均为 `0:00`，下方包含三个控制按钮。由于外部浏览器缺乏宿主 Bridge 环境，此时点击按钮不会触发播放控制。
 
 ## 在 foobar2000 里加载页面
 
-在 foobar2000 中打开 `File → Preferences → Display → WebView2 UI` 下的 `开发者` 页，然后：
+在 foobar2000 中打开 `File → Preferences → Display → WebView2 UI` 下的 `开发者` 页：
 
-1. 勾选 `使用开发服务器（HMR 热重载）`。
-2. 在 `URL` 框里填 `http://localhost:5173`。
-3. 按 `应用`。
+1. 勾选 `使用开发服务器（HMR 热重载）`
+2. 在 `URL` 框中填写 `http://localhost:5173`
+3. 点击 `应用`
 
-foobar2000 窗口重新加载，显示我们的页面。播放一首曲目：封面、标题和艺术家出现，时间开始走，播放按钮变成暂停按钮。点进度条上的任意位置可以跳过去，上一首、下一首按钮也可以试试。
+foobar2000 窗口将重新加载并呈现该页面。播放任意曲目：封面、曲目标题与艺术家即时呈现，播放进度随之推进，播放按钮自动切换为暂停状态。点击进度条任意位置可直接定位，同时支持上一曲与下一曲控制。
 
-如果窗口显示的还是原来的主题，说明 foobar2000 没连上开发服务器，改为从 profile 加载了主题。确认终端里的 `npm run dev` 还在运行，然后重启 foobar2000。
+若窗口仍显示原有主题，说明未能成功连接开发服务器（宿主回退至本地模板）。请确认终端中 `npm run dev` 正常运行且端口一致，必要时重启 foobar2000。
 
-## 改个颜色
+## 体验热重载（修改强调色） {#改个颜色}
 
-让 foobar2000 和编辑器并排开着。把 `src/style.css` 开头的强调色改成你喜欢的颜色，例如：
+在编辑器中打开 `src/style.css`，将顶部的强调色变量修改为目标颜色（例如橙色）：
 
 ```css
 :root {
@@ -273,13 +271,13 @@ foobar2000 窗口重新加载，显示我们的页面。播放一首曲目：封
 }
 ```
 
-保存文件。播放按钮和进度条的填充段立刻换了颜色，页面没有重新加载。
+保存文件后，播放按钮背景与进度条填充轨道即时切换颜色，页面无需整页刷新。
 
-## 显示播放状态
+## 编写业务逻辑与状态监听 {#显示播放状态}
 
-到目前为止，活都是元素自己干的。现在我们亲自调用 SDK：加一行文字显示 foobar2000 是否在播放，再加一个随机播放一首的按钮。
+此前的数据获取与界面响应均由 Web Components 自主完成。接下来直接调用 SDK 编写业务逻辑：添加状态文本展示当前播放状态，并新增一个随机播放按钮。
 
-在 `index.html` 的 `<main>` 里、`controls` 那个 div 之后加入：
+在 `index.html` 的 `<main>` 容器内追加状态栏结构（紧跟 `.controls` 元素之后）：
 
 ```html
       <div class="extra">
@@ -288,9 +286,9 @@ foobar2000 窗口重新加载，显示我们的页面。播放一首曲目：封
       </div>
 ```
 
-保存后整个页面会重新加载：Vite 能原地替换样式表，页面的 HTML 却换不了。按钮下方出现新的一行，暂时还没有样式。
+保存后页面将重新加载（HTML 结构变更触发整页刷新）。控制按钮下方将呈现未应用样式的文本与按钮。
 
-在 `src/style.css` 末尾加上这些规则：
+在 `src/style.css` 末尾追加样式定义：
 
 ```css
 .extra {
@@ -312,7 +310,7 @@ foobar2000 窗口重新加载，显示我们的页面。播放一首曲目：封
 }
 ```
 
-再给 `src/main.js` 加上标出的几行。第一行导入 `fb`，也就是那些元素一直在用的 SDK 对象：
+在 `src/main.js` 中引入 `fb` 核心实例并注册事件监听：
 
 ```js
 import fb from 'foo-webview-sdk'; // [!code ++]
@@ -338,41 +336,41 @@ document.querySelector('#random').addEventListener('click', () => {
 });
 ```
 
-`fb.player.getState()` 向 foobar2000 查一次当前状态；`fb.on('playback:stateChanged', ...)` 在状态每次变化时再调用我们的函数。SDK 的每个调用都 resolve 一个结果对象，其中 `success` 字段表示调用是否成功；在 foobar2000 之外它是 `false`，所以普通浏览器里这一行始终显示 “Not connected to foobar2000”。
+`fb.player.getState()` 用于初始化时拉取当前播放状态；`fb.on('playback:stateChanged', ...)` 持续监听状态流转并在变更时回调。SDK 异步调用统一返回结果信封，`success` 字段指示调用是否成功；宿主桥接环境缺失时 `success` 为 `false`，因此外部浏览器中将常驻显示缺省文本。
 
-保存。这一行现在显示 “Playing”。在 foobar2000 里暂停，它变成 “Paused”；按 `Random track`，foobar2000 随机跳到一首曲目。
+保存修改后，文本即时更新为 “Playing”。在 foobar2000 中暂停，文本随之变为 “Paused”；点击 `Random track` 按钮，播放器将随机切播下一首曲目。
 
-## 安装主题
+## 安装主题至 Profile {#安装主题}
 
-开发服务器只在终端开着时运行。要长期使用这个主题，就得构建它，再作为模板复制进 foobar2000 的 profile。
+本地开发服务器适合调试。若需脱离终端长期使用主题，需执行生产构建并将产物作为静态模板导入 foobar2000 profile 目录。
 
-先让 foobar2000 切回来：在 `开发者` 页取消勾选 `使用开发服务器（HMR 热重载）`，按 `应用`。窗口显示原来的主题。
+在 foobar2000 `开发者` 首选项页中取消勾选 `使用开发服务器（HMR 热重载）` 并点击 `应用`，使窗口切回本地模板模式。
 
-在终端按 `Ctrl+C` 停掉开发服务器，然后构建：
+在终端终止开发服务器进程（`Ctrl+C`），执行生产构建：
 
 ```bash
 npm run build
 ```
 
-Vite 把做好的主题写进项目的 `dist` 文件夹：一个 `index.html` 和一个 `assets` 文件夹。
+构建完成后，生产包产物将输出至 `dist` 目录（包含 `index.html` 与 `assets` 静态资源目录）。
 
-在 foobar2000 中回到 `WebView2 UI` 页本身（`File → Preferences → Display → WebView2 UI`）：
+在 foobar2000 中回到 `WebView2 UI` 主首选项页（`File → Preferences → Display → WebView2 UI`）：
 
-1. 按 `管理...`，选 `新建...`。名称填 `my-theme` 并确认。foobar2000 创建模板文件夹，放入一个占位用的 `index.html`，并在 `模板` 框里选中 `my-theme`。
-2. 按 `打开...`，在文件资源管理器里打开模板文件夹。
-3. 把项目 `dist` 文件夹里的全部内容复制进模板文件夹，覆盖原有的 `index.html`。
-4. 按 `应用`。
+1. 点击 `管理...` 弹出模板菜单，选择 `新建...`，输入名称 `my-theme` 并确认。宿主将在 profile 中创建模板目录并写入占位文件，同时自动选中该模板
+2. 点击 `打开...` 在文件资源管理器中定位当前模板目录
+3. 将项目 `dist` 目录下的所有文件及子目录复制到模板目录中，覆盖原有的占位 `index.html`
+4. 点击 `应用`
 
-窗口重新加载，显示我们的主题，这次是从模板文件夹加载的。重启 foobar2000 后它依然在，也不再需要开发服务器。
+窗口重新加载后将直接呈现由模板目录驱动的全新主题。该配置在重启 foobar2000 后持续有效，且无需依赖外部开发服务器。
 
-## 接下来
+## 后续指引 {#接下来}
 
-现在我们有了一个能用的主题，也有了实时修改它的办法。接下来可以看：
+完成入门主题开发后，可参考以下专题进一步扩展界面功能：
 
-- [命名空间](/zh/sdk/namespaces)：SDK 能做的全部事情，从播放列表、媒体库到窗口和托盘图标。
-- [组件](/zh/components/)：其他 `fb-*` 元素，比如播放列表视图和音量控制。
-- [把页面放进面板](/zh/how-to/panels)：怎样把页面作为面板放进 Default UI 或 Columns UI。
-- [结果与失败](/zh/sdk/overview#结果与失败)：SDK 调用 resolve 的结果对象是什么样的。
-- [偏好设置](/zh/reference/preferences)：这一路上略过的其他设置。
+- [命名空间](/zh/sdk/namespaces)：浏览 SDK 完整 API 能力（播放列表、媒体库、窗口控制、系统托盘等）
+- [组件](/zh/components/)：探索现成 Web Components（播放列表视图、音量滑块等）
+- [把页面放进面板](/zh/how-to/panels)：将 Web 页面嵌入 Default UI 或 Columns UI 布局面板
+- [结果与失败](/zh/sdk/overview#结果与失败)：掌握统一响应信封与错误处理机制
+- [首选项参考](/zh/reference/preferences)：查阅外观材质、预热及开发者高级设置
 
-想从做好的代码重新开始，就从仓库复制 [`examples/starter`](https://github.com/NereaFantasia/foo_ui_webview2/tree/main/examples/starter)。
+完整的示例项目源码可直接参考仓库中的 [`examples/starter`](https://github.com/NereaFantasia/foo_ui_webview2/tree/main/examples/starter)。

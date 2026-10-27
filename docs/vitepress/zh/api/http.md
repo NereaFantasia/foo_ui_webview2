@@ -1,6 +1,6 @@
 # HTTP API
 
-HTTP 请求功能，支持 GET/POST/PUT/DELETE/PATCH/HEAD/Download/Abort。
+提供基于 WinHTTP 的网络请求能力，支持 GET、POST、PUT、DELETE、PATCH、HEAD、文件下载及任务中止控制。
 
 ::: warning 安全限制
 
@@ -69,28 +69,28 @@ const result = await fb2k.invoke('http.get', {
 ### http.get
 
 <!-- api-schema:begin http.get -->
-发送 GET 请求。缺省时立即返回回执，响应随后以带同一 `requestId` 的 `http:response` 事件到达；`async: false` 时宿主阻塞到收到响应再返回。请求本地或私有网络地址会以 `PERMISSION_DENIED` 失败，除非宿主设置允许，每次重定向都会重新检查。
+发送 HTTP GET 请求（默认立即返回回执并通过携带相同 requestId 的 http:response 事件异步回送响应；传 async: false 时宿主阻塞至收到响应后直接返回；除非宿主高级设置明确允许，否则请求本地或局域网私有地址将以 PERMISSION_DENIED 拒绝，每次重定向均会重新校验）
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
-| `url` | `string` | 是 | 请求 URL；只允许 `http` 与 `https`。不能为空。 |
-| `headers` | `Record<string, string>` | 否 | 自定义请求头。`User-Agent` 可覆盖首次请求的宿主默认值。名称或值含换行的请求头会被丢弃。重定向后不再携带自定义头，`User-Agent` 也恢复为宿主默认值。 |
-| `timeout` | `integer` | 否 | 解析、连接、发送、接收各自的超时，单位毫秒；`0` 或负数保留 WinHTTP 缺省值。默认 `30000`。 |
-| `async` | `boolean` | 否 | 立即返回回执、以 `http:response` 事件送达响应；为 `false` 时阻塞到收到响应。默认 `true`。 |
-| `redirect` | `"follow" \| "error" \| "manual"` | 否 | `follow` 最多跟随 10 次重定向；`error` 遇到重定向时以 `OPERATION_FAILED` 失败；`manual` 原样返回重定向响应。默认 `"follow"`。 |
-| `responseType` | `"text" \| "base64" \| "arraybuffer" \| "binary"` | 否 | `text` 以文本返回响应体；`base64` 及其别名 `arraybuffer`、`binary` 以 Base64 编码返回。默认 `"text"`。 |
-| `insecureTls` | `boolean` | 否 | 接受无效或自签名证书；只有宿主设置同时允许不安全 TLS 时才生效。默认 `false`。 |
+| `url` | `string` | 是 | 目标请求 URL（仅支持 http 与 https 协议）不能为空。 |
+| `headers` | `Record<string, string>` | 否 | 自定义 HTTP 请求头（User-Agent 可覆盖首次请求的宿主默认值；键名或键值包含换行符的请求头将被直接丢弃；发生重定向后将丢弃全部自定义头并恢复 User-Agent 为宿主默认值） |
+| `timeout` | `integer` | 否 | 域名解析、建立连接、发送数据与接收响应各自的超时时间（单位毫秒；传入 0 或负数保留 WinHTTP 默认值）默认 `30000`。 |
+| `async` | `boolean` | 否 | 是否以异步模式执行（默认 true，立即返回任务回执并通过 http:response 派发响应；传 false 时阻塞当前调用至接收到响应）默认 `true`。 |
+| `redirect` | `"follow" \| "error" \| "manual"` | 否 | 重定向处理策略（follow 最多自动跟随 10 次重定向；error 在遇到重定向时以 OPERATION_FAILED 报错；manual 原样返回重定向响应）默认 `"follow"`。 |
+| `responseType` | `"text" \| "base64" \| "arraybuffer" \| "binary"` | 否 | 响应体数据格式（text 返回纯文本；base64 及其别名 arraybuffer、binary 返回 Base64 编码字符串）默认 `"text"`。 |
+| `insecureTls` | `boolean` | 否 | 是否接受无效或自签名 TLS 证书（仅在宿主高级设置中同时启用了不安全 TLS 选项时方可生效）默认 `false`。 |
 
 **返回值**
 
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
-| `requestId` | `string` | 请求的 id；异步回执里出现。`http:response` 与 `http.abort` 用它。 |
-| `async` | `boolean` | 异步回执里为 `true`。 |
-| `status` | `integer` | HTTP 状态码；同步响应里出现。 |
-| `headers` | `Record<string, string>` | 响应头，以名称为键；重复的响应头取最后一个。同步响应里出现。 |
-| `body` | `string` | 响应体，按 `responseType` 为文本或 Base64；同步响应里出现。 |
-| `responseType` | `"text" \| "base64"` | `text` 或 `base64`，即 `body` 的编码；同步响应里出现。 |
+| `requestId` | `string` | 异步请求任务分配的唯一标识符 requestId（仅在异步回执中提供，用于关联 http:response 或传给 http.abort） |
+| `async` | `boolean` | 是否为异步任务回执（异步模式下固定为 true） |
+| `status` | `integer` | HTTP 状态码（仅在同步请求完成时提供） |
+| `headers` | `Record<string, string>` | 响应头键值对（键名转为小写；重复响应头以最后出现的数值为准；仅在同步请求完成时提供） |
+| `body` | `string` | 响应体内容（依据 responseType 格式化；仅在同步请求完成时提供） |
+| `responseType` | `"text" \| "base64"` | 响应体内容的编码格式（text 或 base64；仅在同步请求完成时提供） |
 
 成功时 `success` 为 `true`；失败时返回 `{ success: false, error, code }`，`code` 见[错误码](../reference/errors.md)。
 <!-- api-schema:end -->
@@ -98,29 +98,29 @@ const result = await fb2k.invoke('http.get', {
 ### http.post
 
 <!-- api-schema:begin http.post -->
-发送 POST 请求；其余同 `http.get`。
+发送 HTTP POST 请求（其余参数行为与 http.get 一致）
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
-| `url` | `string` | 是 | 请求 URL；只允许 `http` 与 `https`。不能为空。 |
-| `body` | `any` | 否 | 请求体：字符串原样发送，对象或数组发送其 JSON 文本，其他值按空请求体发送。 |
-| `headers` | `Record<string, string>` | 否 | 自定义请求头。`User-Agent` 可覆盖首次请求的宿主默认值。名称或值含换行的请求头会被丢弃。重定向后不再携带自定义头，`User-Agent` 也恢复为宿主默认值。 |
-| `timeout` | `integer` | 否 | 解析、连接、发送、接收各自的超时，单位毫秒；`0` 或负数保留 WinHTTP 缺省值。默认 `30000`。 |
-| `async` | `boolean` | 否 | 立即返回回执、以 `http:response` 事件送达响应；为 `false` 时阻塞到收到响应。默认 `true`。 |
-| `redirect` | `"follow" \| "error" \| "manual"` | 否 | `follow` 最多跟随 10 次重定向；`error` 遇到重定向时以 `OPERATION_FAILED` 失败；`manual` 原样返回重定向响应。默认 `"follow"`。 |
-| `responseType` | `"text" \| "base64" \| "arraybuffer" \| "binary"` | 否 | `text` 以文本返回响应体；`base64` 及其别名 `arraybuffer`、`binary` 以 Base64 编码返回。默认 `"text"`。 |
-| `insecureTls` | `boolean` | 否 | 接受无效或自签名证书；只有宿主设置同时允许不安全 TLS 时才生效。默认 `false`。 |
+| `url` | `string` | 是 | 目标请求 URL（仅支持 http 与 https 协议）不能为空。 |
+| `body` | `any` | 否 | 请求体内容（字符串原样发送，对象或数组序列化为 JSON 文本发送，其余类型作为空请求体发送） |
+| `headers` | `Record<string, string>` | 否 | 自定义 HTTP 请求头（User-Agent 可覆盖首次请求的宿主默认值；键名或键值包含换行符的请求头将被直接丢弃；发生重定向后将丢弃全部自定义头并恢复 User-Agent 为宿主默认值） |
+| `timeout` | `integer` | 否 | 域名解析、建立连接、发送数据与接收响应各自的超时时间（单位毫秒；传入 0 或负数保留 WinHTTP 默认值）默认 `30000`。 |
+| `async` | `boolean` | 否 | 是否以异步模式执行（默认 true，立即返回任务回执并通过 http:response 派发响应；传 false 时阻塞当前调用至接收到响应）默认 `true`。 |
+| `redirect` | `"follow" \| "error" \| "manual"` | 否 | 重定向处理策略（follow 最多自动跟随 10 次重定向；error 在遇到重定向时以 OPERATION_FAILED 报错；manual 原样返回重定向响应）默认 `"follow"`。 |
+| `responseType` | `"text" \| "base64" \| "arraybuffer" \| "binary"` | 否 | 响应体数据格式（text 返回纯文本；base64 及其别名 arraybuffer、binary 返回 Base64 编码字符串）默认 `"text"`。 |
+| `insecureTls` | `boolean` | 否 | 是否接受无效或自签名 TLS 证书（仅在宿主高级设置中同时启用了不安全 TLS 选项时方可生效）默认 `false`。 |
 
 **返回值**
 
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
-| `requestId` | `string` | 请求的 id；异步回执里出现。`http:response` 与 `http.abort` 用它。 |
-| `async` | `boolean` | 异步回执里为 `true`。 |
-| `status` | `integer` | HTTP 状态码；同步响应里出现。 |
-| `headers` | `Record<string, string>` | 响应头，以名称为键；重复的响应头取最后一个。同步响应里出现。 |
-| `body` | `string` | 响应体，按 `responseType` 为文本或 Base64；同步响应里出现。 |
-| `responseType` | `"text" \| "base64"` | `text` 或 `base64`，即 `body` 的编码；同步响应里出现。 |
+| `requestId` | `string` | 异步请求任务分配的唯一标识符 requestId（仅在异步回执中提供，用于关联 http:response 或传给 http.abort） |
+| `async` | `boolean` | 是否为异步任务回执（异步模式下固定为 true） |
+| `status` | `integer` | HTTP 状态码（仅在同步请求完成时提供） |
+| `headers` | `Record<string, string>` | 响应头键值对（键名转为小写；重复响应头以最后出现的数值为准；仅在同步请求完成时提供） |
+| `body` | `string` | 响应体内容（依据 responseType 格式化；仅在同步请求完成时提供） |
+| `responseType` | `"text" \| "base64"` | 响应体内容的编码格式（text 或 base64；仅在同步请求完成时提供） |
 
 成功时 `success` 为 `true`；失败时返回 `{ success: false, error, code }`，`code` 见[错误码](../reference/errors.md)。
 <!-- api-schema:end -->
@@ -128,28 +128,28 @@ const result = await fb2k.invoke('http.get', {
 ### http.head
 
 <!-- api-schema:begin http.head -->
-发送 HEAD 请求；其余同 `http.get`。响应体恒为空文本，服务器发来数字形式的 `Content-Length` 时另带 `contentLength`。
+发送 HTTP HEAD 请求（其余参数行为与 http.get 一致；响应体恒为空字符串，若服务器返回数字形式的 Content-Length 则同步附带 contentLength）
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
-| `url` | `string` | 是 | 请求 URL；只允许 `http` 与 `https`。不能为空。 |
-| `headers` | `Record<string, string>` | 否 | 自定义请求头。`User-Agent` 可覆盖首次请求的宿主默认值。名称或值含换行的请求头会被丢弃。重定向后不再携带自定义头，`User-Agent` 也恢复为宿主默认值。 |
-| `timeout` | `integer` | 否 | 解析、连接、发送、接收各自的超时，单位毫秒；`0` 或负数保留 WinHTTP 缺省值。默认 `30000`。 |
-| `async` | `boolean` | 否 | 立即返回回执、以 `http:response` 事件送达响应；为 `false` 时阻塞到收到响应。默认 `true`。 |
-| `redirect` | `"follow" \| "error" \| "manual"` | 否 | `follow` 最多跟随 10 次重定向；`error` 遇到重定向时以 `OPERATION_FAILED` 失败；`manual` 原样返回重定向响应。默认 `"follow"`。 |
-| `insecureTls` | `boolean` | 否 | 接受无效或自签名证书；只有宿主设置同时允许不安全 TLS 时才生效。默认 `false`。 |
+| `url` | `string` | 是 | 目标请求 URL（仅支持 http 与 https 协议）不能为空。 |
+| `headers` | `Record<string, string>` | 否 | 自定义 HTTP 请求头（User-Agent 可覆盖首次请求的宿主默认值；键名或键值包含换行符的请求头将被直接丢弃；发生重定向后将丢弃全部自定义头并恢复 User-Agent 为宿主默认值） |
+| `timeout` | `integer` | 否 | 域名解析、建立连接、发送数据与接收响应各自的超时时间（单位毫秒；传入 0 或负数保留 WinHTTP 默认值）默认 `30000`。 |
+| `async` | `boolean` | 否 | 是否以异步模式执行（默认 true，立即返回任务回执并通过 http:response 派发响应；传 false 时阻塞当前调用至接收到响应）默认 `true`。 |
+| `redirect` | `"follow" \| "error" \| "manual"` | 否 | 重定向处理策略（follow 最多自动跟随 10 次重定向；error 在遇到重定向时以 OPERATION_FAILED 报错；manual 原样返回重定向响应）默认 `"follow"`。 |
+| `insecureTls` | `boolean` | 否 | 是否接受无效或自签名 TLS 证书（仅在宿主高级设置中同时启用了不安全 TLS 选项时方可生效）默认 `false`。 |
 
 **返回值**
 
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
-| `requestId` | `string` | 请求的 id；异步回执里出现。`http:response` 与 `http.abort` 用它。 |
-| `async` | `boolean` | 异步回执里为 `true`。 |
-| `status` | `integer` | HTTP 状态码；同步响应里出现。 |
-| `headers` | `Record<string, string>` | 响应头，以名称为键；重复的响应头取最后一个。同步响应里出现。 |
-| `body` | `string` | 恒为空；同步响应里出现。 |
-| `responseType` | `"text" \| "base64"` | 恒为 `text`；同步响应里出现。 |
-| `contentLength` | `integer` | 数字形式的 `Content-Length` 响应头；同步响应里、服务器发来可解析的值时出现。 |
+| `requestId` | `string` | 异步请求任务分配的唯一标识符 requestId（仅在异步回执中提供，用于关联 http:response 或传给 http.abort） |
+| `async` | `boolean` | 是否为异步任务回执（异步模式下固定为 true） |
+| `status` | `integer` | HTTP 状态码（仅在同步请求完成时提供） |
+| `headers` | `Record<string, string>` | 响应头键值对（键名转为小写；重复响应头以最后出现的数值为准；仅在同步请求完成时提供） |
+| `body` | `string` | 响应体内容（HEAD 请求固定为空字符串；仅在同步请求完成时提供） |
+| `responseType` | `"text" \| "base64"` | 响应体编码格式（HEAD 请求固定为 text；仅在同步请求完成时提供） |
+| `contentLength` | `integer` | 数值形式的 Content-Length 响应头（仅在同步请求完成且服务端返回合法数字时提供） |
 
 成功时 `success` 为 `true`；失败时返回 `{ success: false, error, code }`，`code` 见[错误码](../reference/errors.md)。
 <!-- api-schema:end -->
@@ -157,29 +157,29 @@ const result = await fb2k.invoke('http.get', {
 ### http.put
 
 <!-- api-schema:begin http.put -->
-发送 PUT 请求；其余同 `http.get`。
+发送 HTTP PUT 请求（其余参数行为与 http.get 一致）
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
-| `url` | `string` | 是 | 请求 URL；只允许 `http` 与 `https`。不能为空。 |
-| `body` | `any` | 否 | 请求体：字符串原样发送，对象或数组发送其 JSON 文本，其他值按空请求体发送。 |
-| `headers` | `Record<string, string>` | 否 | 自定义请求头。`User-Agent` 可覆盖首次请求的宿主默认值。名称或值含换行的请求头会被丢弃。重定向后不再携带自定义头，`User-Agent` 也恢复为宿主默认值。 |
-| `timeout` | `integer` | 否 | 解析、连接、发送、接收各自的超时，单位毫秒；`0` 或负数保留 WinHTTP 缺省值。默认 `30000`。 |
-| `async` | `boolean` | 否 | 立即返回回执、以 `http:response` 事件送达响应；为 `false` 时阻塞到收到响应。默认 `true`。 |
-| `redirect` | `"follow" \| "error" \| "manual"` | 否 | `follow` 最多跟随 10 次重定向；`error` 遇到重定向时以 `OPERATION_FAILED` 失败；`manual` 原样返回重定向响应。默认 `"follow"`。 |
-| `responseType` | `"text" \| "base64" \| "arraybuffer" \| "binary"` | 否 | `text` 以文本返回响应体；`base64` 及其别名 `arraybuffer`、`binary` 以 Base64 编码返回。默认 `"text"`。 |
-| `insecureTls` | `boolean` | 否 | 接受无效或自签名证书；只有宿主设置同时允许不安全 TLS 时才生效。默认 `false`。 |
+| `url` | `string` | 是 | 目标请求 URL（仅支持 http 与 https 协议）不能为空。 |
+| `body` | `any` | 否 | 请求体内容（字符串原样发送，对象或数组序列化为 JSON 文本发送，其余类型作为空请求体发送） |
+| `headers` | `Record<string, string>` | 否 | 自定义 HTTP 请求头（User-Agent 可覆盖首次请求的宿主默认值；键名或键值包含换行符的请求头将被直接丢弃；发生重定向后将丢弃全部自定义头并恢复 User-Agent 为宿主默认值） |
+| `timeout` | `integer` | 否 | 域名解析、建立连接、发送数据与接收响应各自的超时时间（单位毫秒；传入 0 或负数保留 WinHTTP 默认值）默认 `30000`。 |
+| `async` | `boolean` | 否 | 是否以异步模式执行（默认 true，立即返回任务回执并通过 http:response 派发响应；传 false 时阻塞当前调用至接收到响应）默认 `true`。 |
+| `redirect` | `"follow" \| "error" \| "manual"` | 否 | 重定向处理策略（follow 最多自动跟随 10 次重定向；error 在遇到重定向时以 OPERATION_FAILED 报错；manual 原样返回重定向响应）默认 `"follow"`。 |
+| `responseType` | `"text" \| "base64" \| "arraybuffer" \| "binary"` | 否 | 响应体数据格式（text 返回纯文本；base64 及其别名 arraybuffer、binary 返回 Base64 编码字符串）默认 `"text"`。 |
+| `insecureTls` | `boolean` | 否 | 是否接受无效或自签名 TLS 证书（仅在宿主高级设置中同时启用了不安全 TLS 选项时方可生效）默认 `false`。 |
 
 **返回值**
 
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
-| `requestId` | `string` | 请求的 id；异步回执里出现。`http:response` 与 `http.abort` 用它。 |
-| `async` | `boolean` | 异步回执里为 `true`。 |
-| `status` | `integer` | HTTP 状态码；同步响应里出现。 |
-| `headers` | `Record<string, string>` | 响应头，以名称为键；重复的响应头取最后一个。同步响应里出现。 |
-| `body` | `string` | 响应体，按 `responseType` 为文本或 Base64；同步响应里出现。 |
-| `responseType` | `"text" \| "base64"` | `text` 或 `base64`，即 `body` 的编码；同步响应里出现。 |
+| `requestId` | `string` | 异步请求任务分配的唯一标识符 requestId（仅在异步回执中提供，用于关联 http:response 或传给 http.abort） |
+| `async` | `boolean` | 是否为异步任务回执（异步模式下固定为 true） |
+| `status` | `integer` | HTTP 状态码（仅在同步请求完成时提供） |
+| `headers` | `Record<string, string>` | 响应头键值对（键名转为小写；重复响应头以最后出现的数值为准；仅在同步请求完成时提供） |
+| `body` | `string` | 响应体内容（依据 responseType 格式化；仅在同步请求完成时提供） |
+| `responseType` | `"text" \| "base64"` | 响应体内容的编码格式（text 或 base64；仅在同步请求完成时提供） |
 
 成功时 `success` 为 `true`；失败时返回 `{ success: false, error, code }`，`code` 见[错误码](../reference/errors.md)。
 <!-- api-schema:end -->
@@ -187,29 +187,29 @@ const result = await fb2k.invoke('http.get', {
 ### http.delete
 
 <!-- api-schema:begin http.delete -->
-发送 DELETE 请求；其余同 `http.get`。
+发送 HTTP DELETE 请求（其余参数行为与 http.get 一致）
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
-| `url` | `string` | 是 | 请求 URL；只允许 `http` 与 `https`。不能为空。 |
-| `body` | `any` | 否 | 请求体：字符串原样发送，对象或数组发送其 JSON 文本，其他值按空请求体发送。 |
-| `headers` | `Record<string, string>` | 否 | 自定义请求头。`User-Agent` 可覆盖首次请求的宿主默认值。名称或值含换行的请求头会被丢弃。重定向后不再携带自定义头，`User-Agent` 也恢复为宿主默认值。 |
-| `timeout` | `integer` | 否 | 解析、连接、发送、接收各自的超时，单位毫秒；`0` 或负数保留 WinHTTP 缺省值。默认 `30000`。 |
-| `async` | `boolean` | 否 | 立即返回回执、以 `http:response` 事件送达响应；为 `false` 时阻塞到收到响应。默认 `true`。 |
-| `redirect` | `"follow" \| "error" \| "manual"` | 否 | `follow` 最多跟随 10 次重定向；`error` 遇到重定向时以 `OPERATION_FAILED` 失败；`manual` 原样返回重定向响应。默认 `"follow"`。 |
-| `responseType` | `"text" \| "base64" \| "arraybuffer" \| "binary"` | 否 | `text` 以文本返回响应体；`base64` 及其别名 `arraybuffer`、`binary` 以 Base64 编码返回。默认 `"text"`。 |
-| `insecureTls` | `boolean` | 否 | 接受无效或自签名证书；只有宿主设置同时允许不安全 TLS 时才生效。默认 `false`。 |
+| `url` | `string` | 是 | 目标请求 URL（仅支持 http 与 https 协议）不能为空。 |
+| `body` | `any` | 否 | 请求体内容（字符串原样发送，对象或数组序列化为 JSON 文本发送，其余类型作为空请求体发送） |
+| `headers` | `Record<string, string>` | 否 | 自定义 HTTP 请求头（User-Agent 可覆盖首次请求的宿主默认值；键名或键值包含换行符的请求头将被直接丢弃；发生重定向后将丢弃全部自定义头并恢复 User-Agent 为宿主默认值） |
+| `timeout` | `integer` | 否 | 域名解析、建立连接、发送数据与接收响应各自的超时时间（单位毫秒；传入 0 或负数保留 WinHTTP 默认值）默认 `30000`。 |
+| `async` | `boolean` | 否 | 是否以异步模式执行（默认 true，立即返回任务回执并通过 http:response 派发响应；传 false 时阻塞当前调用至接收到响应）默认 `true`。 |
+| `redirect` | `"follow" \| "error" \| "manual"` | 否 | 重定向处理策略（follow 最多自动跟随 10 次重定向；error 在遇到重定向时以 OPERATION_FAILED 报错；manual 原样返回重定向响应）默认 `"follow"`。 |
+| `responseType` | `"text" \| "base64" \| "arraybuffer" \| "binary"` | 否 | 响应体数据格式（text 返回纯文本；base64 及其别名 arraybuffer、binary 返回 Base64 编码字符串）默认 `"text"`。 |
+| `insecureTls` | `boolean` | 否 | 是否接受无效或自签名 TLS 证书（仅在宿主高级设置中同时启用了不安全 TLS 选项时方可生效）默认 `false`。 |
 
 **返回值**
 
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
-| `requestId` | `string` | 请求的 id；异步回执里出现。`http:response` 与 `http.abort` 用它。 |
-| `async` | `boolean` | 异步回执里为 `true`。 |
-| `status` | `integer` | HTTP 状态码；同步响应里出现。 |
-| `headers` | `Record<string, string>` | 响应头，以名称为键；重复的响应头取最后一个。同步响应里出现。 |
-| `body` | `string` | 响应体，按 `responseType` 为文本或 Base64；同步响应里出现。 |
-| `responseType` | `"text" \| "base64"` | `text` 或 `base64`，即 `body` 的编码；同步响应里出现。 |
+| `requestId` | `string` | 异步请求任务分配的唯一标识符 requestId（仅在异步回执中提供，用于关联 http:response 或传给 http.abort） |
+| `async` | `boolean` | 是否为异步任务回执（异步模式下固定为 true） |
+| `status` | `integer` | HTTP 状态码（仅在同步请求完成时提供） |
+| `headers` | `Record<string, string>` | 响应头键值对（键名转为小写；重复响应头以最后出现的数值为准；仅在同步请求完成时提供） |
+| `body` | `string` | 响应体内容（依据 responseType 格式化；仅在同步请求完成时提供） |
+| `responseType` | `"text" \| "base64"` | 响应体内容的编码格式（text 或 base64；仅在同步请求完成时提供） |
 
 成功时 `success` 为 `true`；失败时返回 `{ success: false, error, code }`，`code` 见[错误码](../reference/errors.md)。
 <!-- api-schema:end -->
@@ -217,29 +217,29 @@ const result = await fb2k.invoke('http.get', {
 ### http.patch
 
 <!-- api-schema:begin http.patch -->
-发送 PATCH 请求；其余同 `http.get`。
+发送 HTTP PATCH 请求（其余参数行为与 http.get 一致）
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
-| `url` | `string` | 是 | 请求 URL；只允许 `http` 与 `https`。不能为空。 |
-| `body` | `any` | 否 | 请求体：字符串原样发送，对象或数组发送其 JSON 文本，其他值按空请求体发送。 |
-| `headers` | `Record<string, string>` | 否 | 自定义请求头。`User-Agent` 可覆盖首次请求的宿主默认值。名称或值含换行的请求头会被丢弃。重定向后不再携带自定义头，`User-Agent` 也恢复为宿主默认值。 |
-| `timeout` | `integer` | 否 | 解析、连接、发送、接收各自的超时，单位毫秒；`0` 或负数保留 WinHTTP 缺省值。默认 `30000`。 |
-| `async` | `boolean` | 否 | 立即返回回执、以 `http:response` 事件送达响应；为 `false` 时阻塞到收到响应。默认 `true`。 |
-| `redirect` | `"follow" \| "error" \| "manual"` | 否 | `follow` 最多跟随 10 次重定向；`error` 遇到重定向时以 `OPERATION_FAILED` 失败；`manual` 原样返回重定向响应。默认 `"follow"`。 |
-| `responseType` | `"text" \| "base64" \| "arraybuffer" \| "binary"` | 否 | `text` 以文本返回响应体；`base64` 及其别名 `arraybuffer`、`binary` 以 Base64 编码返回。默认 `"text"`。 |
-| `insecureTls` | `boolean` | 否 | 接受无效或自签名证书；只有宿主设置同时允许不安全 TLS 时才生效。默认 `false`。 |
+| `url` | `string` | 是 | 目标请求 URL（仅支持 http 与 https 协议）不能为空。 |
+| `body` | `any` | 否 | 请求体内容（字符串原样发送，对象或数组序列化为 JSON 文本发送，其余类型作为空请求体发送） |
+| `headers` | `Record<string, string>` | 否 | 自定义 HTTP 请求头（User-Agent 可覆盖首次请求的宿主默认值；键名或键值包含换行符的请求头将被直接丢弃；发生重定向后将丢弃全部自定义头并恢复 User-Agent 为宿主默认值） |
+| `timeout` | `integer` | 否 | 域名解析、建立连接、发送数据与接收响应各自的超时时间（单位毫秒；传入 0 或负数保留 WinHTTP 默认值）默认 `30000`。 |
+| `async` | `boolean` | 否 | 是否以异步模式执行（默认 true，立即返回任务回执并通过 http:response 派发响应；传 false 时阻塞当前调用至接收到响应）默认 `true`。 |
+| `redirect` | `"follow" \| "error" \| "manual"` | 否 | 重定向处理策略（follow 最多自动跟随 10 次重定向；error 在遇到重定向时以 OPERATION_FAILED 报错；manual 原样返回重定向响应）默认 `"follow"`。 |
+| `responseType` | `"text" \| "base64" \| "arraybuffer" \| "binary"` | 否 | 响应体数据格式（text 返回纯文本；base64 及其别名 arraybuffer、binary 返回 Base64 编码字符串）默认 `"text"`。 |
+| `insecureTls` | `boolean` | 否 | 是否接受无效或自签名 TLS 证书（仅在宿主高级设置中同时启用了不安全 TLS 选项时方可生效）默认 `false`。 |
 
 **返回值**
 
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
-| `requestId` | `string` | 请求的 id；异步回执里出现。`http:response` 与 `http.abort` 用它。 |
-| `async` | `boolean` | 异步回执里为 `true`。 |
-| `status` | `integer` | HTTP 状态码；同步响应里出现。 |
-| `headers` | `Record<string, string>` | 响应头，以名称为键；重复的响应头取最后一个。同步响应里出现。 |
-| `body` | `string` | 响应体，按 `responseType` 为文本或 Base64；同步响应里出现。 |
-| `responseType` | `"text" \| "base64"` | `text` 或 `base64`，即 `body` 的编码；同步响应里出现。 |
+| `requestId` | `string` | 异步请求任务分配的唯一标识符 requestId（仅在异步回执中提供，用于关联 http:response 或传给 http.abort） |
+| `async` | `boolean` | 是否为异步任务回执（异步模式下固定为 true） |
+| `status` | `integer` | HTTP 状态码（仅在同步请求完成时提供） |
+| `headers` | `Record<string, string>` | 响应头键值对（键名转为小写；重复响应头以最后出现的数值为准；仅在同步请求完成时提供） |
+| `body` | `string` | 响应体内容（依据 responseType 格式化；仅在同步请求完成时提供） |
+| `responseType` | `"text" \| "base64"` | 响应体内容的编码格式（text 或 base64；仅在同步请求完成时提供） |
 
 成功时 `success` 为 `true`；失败时返回 `{ success: false, error, code }`，`code` 见[错误码](../reference/errors.md)。
 <!-- api-schema:end -->
@@ -247,18 +247,18 @@ const result = await fb2k.invoke('http.get', {
 ### http.abort
 
 <!-- api-schema:begin http.abort -->
-取消异步请求或下载。该请求随后以报告 `CANCELLED` 的事件结束。
+中止正在执行的异步 HTTP 请求或下载任务（中止后请求将以报告 CANCELLED 状态的事件结束）
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
-| `requestId` | `string` | 是 | 请求或下载回执里的 id。不能为空。 |
+| `requestId` | `string` | 是 | 待中止请求或下载任务的唯一标识符 requestId不能为空。 |
 
 **返回值**
 
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
-| `requestId` | `string` | 原样的 id。 |
-| `cancelled` | `boolean` | 请求仍在进行并已被通知停止时为 `true`；已结束或从未存在时为 `false`。 |
+| `requestId` | `string` | 传入的任务标识符 requestId |
+| `cancelled` | `boolean` | 任务中止结果（若请求仍在执行且已发送中止信号则为 true；若任务已结束或不存在则为 false） |
 
 成功时 `success` 为 `true`；失败时返回 `{ success: false, error, code }`，`code` 见[错误码](../reference/errors.md)。
 <!-- api-schema:end -->
@@ -289,28 +289,28 @@ if (result.cancelled) {
 ### http.download
 
 <!-- api-schema:begin http.download -->
-把 URL 下载到文件，缺失的文件夹会被创建。缺省时阻塞到文件写完；`async: true` 时立即返回回执，结果随后以 `http:downloadComplete` 事件到达。超过 500 MB 的下载以 `OPERATION_FAILED` 失败。
+将指定 URL 资源下载并写入本地文件（自动展开路径变量并创建缺失的父级目录；默认阻塞至文件写入完成；传 async: true 时立即返回回执并随后派发 http:downloadComplete 事件；超过 500 MB 的下载将以 OPERATION_FAILED 失败）
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
-| `url` | `string` | 是 | 要下载的 URL；只允许 `http` 与 `https`。不能为空。 |
-| `saveTo` | `string` | 是 | 要写入的文件；会展开路径变量并创建缺失的文件夹。已有的文件会被覆盖。不能为空。 |
-| `headers` | `Record<string, string>` | 否 | 自定义请求头。`User-Agent` 可覆盖首次请求的宿主默认值。名称或值含换行的请求头会被丢弃。重定向后不再携带自定义头，`User-Agent` 也恢复为宿主默认值。 |
-| `timeout` | `integer` | 否 | 解析、连接、发送、接收各自的超时，单位毫秒；`0` 或负数保留 WinHTTP 缺省值。默认 `60000`。 |
-| `async` | `boolean` | 否 | 立即返回回执、以 `http:downloadComplete` 事件送达结果；为 `false` 时阻塞到文件写完。默认 `false`。 |
-| `redirect` | `"follow" \| "error" \| "manual"` | 否 | `follow` 最多跟随 10 次重定向；`error` 遇到重定向时以 `OPERATION_FAILED` 失败；`manual` 原样保存重定向响应。默认 `"follow"`。 |
-| `insecureTls` | `boolean` | 否 | 接受无效或自签名证书；只有宿主设置同时允许不安全 TLS 时才生效。默认 `false`。 |
+| `url` | `string` | 是 | 目标下载资源的 URL（仅支持 http 与 https 协议）不能为空。 |
+| `saveTo` | `string` | 是 | 待保存的目标文件路径（支持路径变量展开并自动创建缺失的父级目录；若目标文件已存在将被覆盖）不能为空。 |
+| `headers` | `Record<string, string>` | 否 | 自定义 HTTP 请求头（User-Agent 可覆盖首次请求的宿主默认值；包含换行符的请求头将被丢弃；发生重定向后将丢弃自定义头） |
+| `timeout` | `integer` | 否 | 各阶段网络超时时间（单位毫秒；传入 0 或负数保留 WinHTTP 默认值）默认 `60000`。 |
+| `async` | `boolean` | 否 | 是否以异步模式下载（默认 false，阻塞调用至文件写入完成；传 true 立即返回回执并通过 http:downloadComplete 派发结果）默认 `false`。 |
+| `redirect` | `"follow" \| "error" \| "manual"` | 否 | 重定向处理策略（follow 最多跟随 10 次重定向；error 遇到重定向报错；manual 原样保存重定向响应）默认 `"follow"`。 |
+| `insecureTls` | `boolean` | 否 | 是否允许无效或自签名 TLS 证书（须宿主全局设置开启方可生效）默认 `false`。 |
 
 **返回值**
 
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
-| `requestId` | `string` | 下载的 id；异步回执里出现。`http:downloadComplete` 与 `http.abort` 用它。 |
-| `async` | `boolean` | 异步回执里为 `true`。 |
-| `message` | `string` | 异步回执里为 `Download started`。 |
-| `status` | `integer` | HTTP 状态码；同步下载完成时出现。 |
-| `bytesWritten` | `integer` | 写入的字节数；同步下载完成时出现。 |
-| `path` | `string` | 写入的文件（已展开路径变量）；同步下载完成时出现。 |
+| `requestId` | `string` | 异步下载任务分配的唯一标识符 requestId（仅在异步回执中提供） |
+| `async` | `boolean` | 是否为异步任务回执（异步模式下固定为 true） |
+| `message` | `string` | 异步任务启动状态描述（异步回执中固定为 Download started） |
+| `status` | `integer` | HTTP 状态码（仅在同步下载完成时提供） |
+| `bytesWritten` | `integer` | 实际写入磁盘的文件总字节数（仅在同步下载完成时提供） |
+| `path` | `string` | 实际写入文件的完整绝对路径（已展开路径变量；仅在同步下载完成时提供） |
 
 成功时 `success` 为 `true`；失败时返回 `{ success: false, error, code }`，`code` 见[错误码](../reference/errors.md)。
 <!-- api-schema:end -->

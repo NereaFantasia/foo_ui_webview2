@@ -20,10 +20,10 @@ Signature: `fb.panel.setConfig(options: PanelSetConfigParams): Promise<PanelSetC
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `options.panelName` | `string` | No | Panel name. |
-| `options.transparentBackground` | `boolean` | No | Whether the panel background is transparent. |
-| `options.grabFocus` | `boolean` | No | Whether the panel takes focus. |
-| `options.enableDragDrop` | `boolean` | No | Whether drag-and-drop is enabled. |
+| `options.panelName` | `string` | No | Panel name |
+| `options.transparentBackground` | `boolean` | No | Whether the panel background is transparent |
+| `options.grabFocus` | `boolean` | No | Whether the panel takes focus |
+| `options.enableDragDrop` | `boolean` | No | Whether drag-and-drop is enabled |
 
 Only these four keys can be set from a page; omitted keys keep their value, and the other `PanelConfig` fields change only through the panel's settings dialog. The response's `changed` tells whether any field actually changed.
 

@@ -8,8 +8,8 @@ Signature: `fb.lyrics.exists(path: string, options?: Omit<LyricsExistsParams, 'p
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `path` | `string` | Yes | Track path to inspect; a `\|subsong:N` suffix selects a subsong. |
-| `options.filename` | `string` | No | Exact file name beside the audio, including its extension; empty or omitted uses automatic lookup. |
+| `path` | `string` | Yes | Track path to inspect; a `\|subsong:N` suffix selects a subsong |
+| `options.filename` | `string` | No | Exact file name beside the audio, including its extension; empty or omitted uses automatic lookup |
 
 Lists existing known lyrics tags and sidecar files, including empty ones. File candidates and access checks match `get()`; an explicit filename restricts only the file candidates, and embedded tags are still checked.
 
@@ -27,11 +27,11 @@ Signature: `fb.lyrics.get(path?: string, options?: Omit<LyricsGetParams, 'path'>
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `path` | `string` | No | Track path; omit it to use the current track. With nothing playing the call then fails with `NO_ACTIVE_ITEM`. |
-| `options.source` | `string` | No | `'embedded'`, `'file'`, or `'any'`; defaults to `'any'`, which checks the embedded tags first, then the sidecar files. |
-| `options.type` | `string` | No | `'synced'`, `'unsynced'`, or `'any'`; defaults to `'any'`. |
-| `options.format` | `string` | No | `'lrc'`, `'txt'`, or `'any'`; defaults to `'any'`, which tries `.lrc` before `.txt`. Applies to the sidecar lookup only. |
-| `options.filename` | `string` | No | Exact file name beside the audio; a non-empty value replaces automatic candidates and ignores `format`. `source` and `type` still apply. |
+| `path` | `string` | No | Track path; omit it to use the current track. With nothing playing the call then fails with `NO_ACTIVE_ITEM` |
+| `options.source` | `string` | No | `'embedded'`, `'file'`, or `'any'`; defaults to `'any'`, which checks the embedded tags first, then the sidecar files |
+| `options.type` | `string` | No | `'synced'`, `'unsynced'`, or `'any'`; defaults to `'any'` |
+| `options.format` | `string` | No | `'lrc'`, `'txt'`, or `'any'`; defaults to `'any'`, which tries `.lrc` before `.txt`. Applies to the sidecar lookup only |
+| `options.filename` | `string` | No | Exact file name beside the audio; a non-empty value replaces automatic candidates and ignores `format`. `source` and `type` still apply |
 
 Returns `LyricsGetResponse`. Check `success`, then `available`; matches can include `source`, `sourcePath`, `tagName`, `lyrics`, and `synced`. Automatic lookup uses the audio stem only for verified single-track files, then the first-artist/title name; subsongs use only the latter. See [file lookup and naming](/api/lyrics#sidecar-lookup).
 
@@ -48,12 +48,12 @@ const result = await fb.lyrics.get(undefined, { type: 'synced' });
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `path` | `string` | Yes | Track path the lyrics belong to. |
-| `lyricsText` | `string` | Yes | Lyrics text to save. |
-| `options.target` | `LyricsSaveTarget \| LyricsSaveTarget[]` | No | `'file'` (a sidecar next to the audio file, the default), `'embedded'` (a tag in the file), or `'all'` for both. |
-| `options.filename` | `string` | No | Exact file name, including its extension, for the `file` target. A non-empty value overrides the default name and `format`. |
-| `options.tagName` | `string` | No | Tag the `embedded` target writes; defaults to `'LYRICS'`. |
-| `options.format` | `string` | No | `'lrc'` or `'txt'`, the extension for a default sidecar name; defaults to `'lrc'`. Ignored for a non-empty `filename`. |
+| `path` | `string` | Yes | Track path the lyrics belong to |
+| `lyricsText` | `string` | Yes | Lyrics text to save |
+| `options.target` | `LyricsSaveTarget \| LyricsSaveTarget[]` | No | `'file'` (a sidecar next to the audio file, the default), `'embedded'` (a tag in the file), or `'all'` for both |
+| `options.filename` | `string` | No | Exact file name, including its extension, for the `file` target. A non-empty value overrides the default name and `format` |
+| `options.tagName` | `string` | No | Tag the `embedded` target writes; defaults to `'LYRICS'` |
+| `options.format` | `string` | No | `'lrc'` or `'txt'`, the extension for a default sidecar name; defaults to `'lrc'`. Ignored for a non-empty `filename` |
 
 The SDK return type is `LyricsSaveResponse`. With one target it describes that write (`savedTo` for a file, the tag-write receipt for `embedded`); with several targets each outcome is keyed under `results`, and the call fails with `OPERATION_FAILED` only when every target failed. The `embedded` target only queues the tag write: `dispatched: true` in its receipt means it was queued, and the final outcome arrives as the `metadata:writeComplete` event.
 

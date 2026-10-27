@@ -128,11 +128,11 @@ MCP server starts
 
 | Scenario | Behavior | Action |
 | --- | --- | --- |
-| foobar2000 is not running | CDP discovery or connection fails | Start foobar2000. |
-| CDP is disabled | No page target is available | Enable CDP and restart foobar2000. |
-| Host or port does not match | Discovery or connection fails | Set `FB2K_CDP_HOST` / `FB2K_CDP_PORT` to the runtime endpoint. |
-| Connection is lost | The cached client is dropped; the next call reconnects | Let the retry sequence complete. |
-| A Bridge invocation exceeds the timeout | The call fails after 30 seconds | Check whether foobar2000 or the WebView2 page is responsive. |
+| foobar2000 is not running | CDP discovery or connection fails | Start foobar2000 |
+| CDP is disabled | No page target is available | Enable CDP and restart foobar2000 |
+| Host or port does not match | Discovery or connection fails | Set `FB2K_CDP_HOST` / `FB2K_CDP_PORT` to the runtime endpoint |
+| Connection is lost | The cached client is dropped; the next call reconnects | Let the retry sequence complete |
+| A Bridge invocation exceeds the timeout | The call fails after 30 seconds | Check whether foobar2000 or the WebView2 page is responsive |
 
 ### Background behavior & keep-alive
 
@@ -142,7 +142,7 @@ When **Enable CDP remote debugging** is on, the companion option **Keep WebView 
 
 | Symptom | Likely cause | Fix |
 | --- | --- | --- |
-| A `fb2k_page_inspect` screenshot times out while the window is minimized / in the tray |keep-alive disabled) | Restore the window, or enable the keep-alive option |
+| A `fb2k_page_inspect` screenshot times out while the window is minimized / in the tray | Page is suspended (keep-alive disabled) | Restore the window, or enable the keep-alive option |
 | Calls stall after ~5 minutes in the background | Background timer throttling on an older component version | Update the component; CDP mode now disables throttling |
 | Tools act on the wrong window (for example the tray menu overlay) | Several page targets share port 9222 | Set `FB2K_CDP_TARGET_URL` (for example `foo-ui-webview2.local`) |
 

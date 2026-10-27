@@ -326,11 +326,11 @@ await fb2k.invoke('window.flashTaskbar');
 ### window.focus
 
 <!-- api-schema:begin window.focus -->
-Bring a window to the foreground, restoring it first when minimized and showing it when hidden. Fails with `NOT_FOUND` when there is no such window.
+Bring a window to the foreground, restoring it first when minimized and showing it when hidden. An explicit id targets exactly that window; omission targets the caller's top-level window, including the host of a panel. Fails with `NOT_FOUND` when the target no longer exists. Supersedes older popup focus-restoration work without changing the popup's no-activate policy. Success means the request was made; Windows may refuse to grant the foreground.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `windowId` | `string` | No | Target window: `main` or a popup id; omitted or empty, the calling window. There is no fallback to the main window: a caller that is not one of the plugin's windows fails with `NOT_FOUND`, and a DUI/CUI panel with `PANEL_MODE_UNSUPPORTED`. |
+| `windowId` | `string` | No | `main` or a popup id. Omitted or empty, focus the caller's top-level window, including the foobar2000 host in DUI/CUI panel mode. An unknown explicit id fails with `NOT_FOUND`. |
 
 **Returns**
 
@@ -774,7 +774,7 @@ const result = await fb2k.invoke('window.getTitlebarInfo');
 ### window.getZoom
 
 <!-- api-schema:begin window.getZoom -->
-Report the zoom factor of the calling window's WebView and the window's DPI. Without a WebView of its own the call reports zoom `1` and leaves out `dpi` and `dpiScale`.
+Report the zoom factor of the calling window's WebView, the window's DPI and the Windows text size; the page's `devicePixelRatio` is `dpiScale * textScaleFactor * zoom`. Without a WebView of its own the call reports zoom `1` and leaves out `dpi` and `dpiScale`.
 
 This method takes no parameters.
 
@@ -785,6 +785,7 @@ This method takes no parameters.
 | `zoom` | `number` | The zoom factor; `1` is 100 %. |
 | `dpi` | `integer` | The window's DPI; left out without a WebView. |
 | `dpiScale` | `number` | `dpi / 96`; left out without a WebView. |
+| `textScaleFactor` | `number` | The Windows text size as a factor, `1` to `2.25`, which the host applies to its WebViews together with the DPI; `1` when Windows does not report one. |
 
 `success` is `true` on success. On failure the response is `{ success: false, error, code }`; see [Error codes](../reference/errors.md) for `code`.
 <!-- api-schema:end -->
@@ -1077,7 +1078,7 @@ await fb2k.invoke('window.sendMessage', {
 ### window.setAcrylic
 
 <!-- api-schema:begin window.setAcrylic -->
-Turn the acrylic backdrop of a window on or off. The setting is stored even when the window does not draw it right away; the call then fails with `OPERATION_FAILED` and the failure carries the result fields. Fails in panel mode.
+Enable or disable the Acrylic backdrop material on a window. If the effect cannot be applied immediately, the configuration is still saved; the call fails with `OPERATION_FAILED` and includes result fields in the error response. Not supported in panel mode.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
@@ -1122,7 +1123,7 @@ await fb2k.invoke('window.setAlwaysOnTop', { enabled: true });
 ### window.setBackdropPolicy
 
 <!-- api-schema:begin window.setBackdropPolicy -->
-Merge per-field overrides into a window's backdrop policy; a `null` value removes that override. The overrides are stored even when the window does not draw the result right away, for example while it is still hidden at startup; the call then fails with `OPERATION_FAILED`.
+Merge per-field overrides into a window's backdrop policy; passing `null` removes that override. Overrides are saved even if the window cannot apply them immediately (such as while hidden at startup); the call then fails with `OPERATION_FAILED`.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
@@ -1163,7 +1164,7 @@ await fb2k.invoke('window.setBackdropPolicy', {
 ### window.setBackgroundTransparency
 
 <!-- api-schema:begin window.setBackgroundTransparency -->
-Make a window's WebView background transparent, so the backdrop effect shows through, or opaque. Fails in panel mode, and with `OPERATION_FAILED` when neither the window nor its WebView took the change; that failure carries the result fields unless the window has no WebView.
+Set the window WebView background to transparent (revealing backdrop material effects) or opaque. Not supported in panel mode. Fails with `OPERATION_FAILED` (carrying result fields when the window has a WebView) if neither the window nor the WebView accepted the change.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
@@ -1187,7 +1188,7 @@ await fb2k.invoke('window.setBackgroundTransparency', { transparent: true });
 ### window.setBlur
 
 <!-- api-schema:begin window.setBlur -->
-Turn the blur-behind effect of a window on or off. The setting is stored even when the window does not draw it right away; the call then fails with `OPERATION_FAILED` and the failure carries `enabled`. Fails in panel mode.
+Enable or disable the blur-behind effect on a window. If the effect cannot be applied immediately, the configuration is still saved; the call fails with `OPERATION_FAILED` and includes `enabled` in the error response. Not supported in panel mode.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
@@ -1254,7 +1255,7 @@ await fb2k.invoke('window.setClickThrough', { enabled: true });
 ### window.setClickThroughExcludeRegions
 
 <!-- api-schema:begin window.setClickThroughExcludeRegions -->
-Set the rectangles of a popup that keep taking mouse input while it lets input pass through, replacing the earlier ones. Rectangles are CSS pixels of the page, scaled by the popup's DPI; rectangles without a positive width and height are skipped, and at most 32 are kept. Targets as `window.setClickThrough` does.
+Set the rectangles of a popup that keep taking mouse input while it lets input pass through, replacing the earlier ones. Rectangles are CSS pixels of the popup's page, scaled by its `devicePixelRatio`: the popup's DPI, the Windows text size and the page zoom. Set them again when `devicePixelRatio` changes. Rectangles without a positive width and height are skipped, and at most 32 are kept. Targets as `window.setClickThrough` does.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
@@ -1271,7 +1272,8 @@ Set the rectangles of a popup that keep taking mouse input while it lets input p
 | --- | --- | --- |
 | `windowId` | `string` | Id of the popup. |
 | `count` | `integer` | How many rectangles were kept. |
-| `dpiScale` | `number` | Scale applied to the rectangles, the popup's DPI divided by 96. |
+| `dpiScale` | `number` | The popup's DPI divided by 96. |
+| `scale` | `number` | Scale applied to the rectangles, the `devicePixelRatio` of the popup's page. |
 | `warning` | `string` | `regions truncated to 32` when more than 32 rectangles were given. |
 
 `success` is `true` on success. On failure the response is `{ success: false, error, code }`; see [Error codes](../reference/errors.md) for `code`.
@@ -1306,7 +1308,7 @@ await fb2k.invoke('window.setCornerPreference', { mode: 'round' });
 ### window.setDarkMode
 
 <!-- api-schema:begin window.setDarkMode -->
-Switch a window's backdrop between its dark and light variant. The setting is stored even when the window does not draw it right away; the call then fails with `OPERATION_FAILED` and the failure carries `enabled`. Fails in panel mode.
+Switch a window's backdrop between dark and light themes. If the change cannot be applied immediately, the configuration is still saved; the call fails with `OPERATION_FAILED` and includes `enabled` in the error response. Not supported in panel mode.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
@@ -1356,7 +1358,7 @@ await fb2k.invoke('window.setDevServerConfig', {
 ### window.setDragRegions
 
 <!-- api-schema:begin window.setDragRegions -->
-Set the rectangles that drag the calling window, the main window or a popup, replacing the earlier ones. Rectangles are CSS pixels of the page, scaled by the window's DPI; rectangles without a positive width and height are skipped. Fails in panel mode, and with `NOT_FOUND` when the caller is neither the main window nor a popup.
+Set draggable rectangles for the calling window (main window or popup), replacing earlier ones. Rectangles use page CSS pixels and are scaled by `devicePixelRatio` (window DPI, text scaling, and zoom). Update these rectangles whenever `devicePixelRatio` changes. Rectangles without positive width and height are ignored. Fails in panel mode, or with `NOT_FOUND` if the caller is neither the main window nor a popup.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
@@ -1371,7 +1373,8 @@ Set the rectangles that drag the calling window, the main window or a popup, rep
 | Field | Type | Description |
 | --- | --- | --- |
 | `count` | `integer` | How many rectangles were kept. |
-| `dpiScale` | `number` | Scale applied to the rectangles, the window's DPI divided by 96. |
+| `dpiScale` | `number` | The window's DPI divided by 96. |
+| `scale` | `number` | Scale applied to the rectangles, the page's `devicePixelRatio`. |
 
 `success` is `true` on success. On failure the response is `{ success: false, error, code }`; see [Error codes](../reference/errors.md) for `code`.
 <!-- api-schema:end -->
@@ -1431,11 +1434,11 @@ await fb2k.invoke('window.setFullscreen', { enabled: true });
 ### window.setMaximizeButtonRegion
 
 <!-- api-schema:begin window.setMaximizeButtonRegion -->
-Tell the host where the page draws the main window's maximize button, so that on Windows 11 hovering it offers Snap layouts as a standard window's button does. The rectangle is CSS pixels of the page, scaled by the window's DPI and the page zoom, the same factor as `devicePixelRatio`, and replaces the earlier one; `region` omitted, or without a positive width and height, removes it. While the window is frameless, resizable and not full screen, the host answers the rectangle as the window's maximize button and passes the mouse input it receives there on to the page, so the button keeps its hover and pressed styles and its own click handler; on Windows 10 and in every other state the rectangle stays ordinary page content. Set it again whenever layout moves the button; a navigation or reload of the page removes it. Main window only: fails with `NOT_SUPPORTED` from a popup, in panel mode, and with `NOT_FOUND` when the caller is no window.
+Register the custom maximize button rectangle on the main window to enable Windows 11 Snap layouts. The rectangle uses page CSS pixels and scales with `devicePixelRatio`. It replaces any previous rectangle; omitting `region` or passing non-positive dimensions clears the registration. When the window is frameless, resizable, and not fullscreen, the host reports this area as the system maximize button while forwarding mouse events to the page (preserving CSS hover styles and click handlers). On Windows 10 or in other states, the area behaves as normal page content. Re-register whenever button layout moves or `devicePixelRatio` changes. Page reload or navigation clears this registration. Main window only: fails with `NOT_SUPPORTED` from popups, in panel mode, or with `NOT_FOUND` without a window.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `region` | `WindowRegion` | No | Where the page draws the maximize button; omitted, the host forgets the button. |
+| `region` | `WindowRegion` | No | Custom maximize button bounding box in CSS pixels; omitted or zero-sized to clear. |
 | `region.x` | `number` | No | Left edge. Default: `0`. |
 | `region.y` | `number` | No | Top edge. Default: `0`. |
 | `region.width` | `number` | No | Width. Default: `0`. |
@@ -1445,9 +1448,9 @@ Tell the host where the page draws the main window's maximize button, so that on
 
 | Field | Type | Description |
 | --- | --- | --- |
-| `hasRegion` | `boolean` | Whether a rectangle is now set: `false` after removing it, or when the rectangle had no positive width and height. |
-| `snapLayouts` | `boolean` | The system offers Snap layouts for a maximize button, which means Windows 11 or later. Where it is `false` the host never answers the rectangle as the maximize button. Where it is `true` the button's `title` tooltip, which the page still shows on hover, would cover the Snap layouts flyout, so leave the title off and name the button with `aria-label`. |
-| `scale` | `number` | Scale applied to the rectangle: the window's DPI divided by 96, times the page zoom. |
+| `hasRegion` | `boolean` | Whether an active maximize button rectangle is registered. |
+| `snapLayouts` | `boolean` | Whether the system provides Windows 11 Snap layouts. When false, the host never reports this area as the maximize button. When true, avoid using HTML title tooltips on the button as they obstruct the Snap flyout; use aria-label instead. |
+| `scale` | `number` | Scale applied to the rectangle, the page's `devicePixelRatio`: the window's DPI divided by 96, times the Windows text size and the page zoom. |
 
 `success` is `true` on success. On failure the response is `{ success: false, error, code }`; see [Error codes](../reference/errors.md) for `code`.
 <!-- api-schema:end -->
@@ -1504,7 +1507,7 @@ await fb2k.invoke('window.setMaxSize', { width: 1920, height: 1080 });
 ### window.setMica
 
 <!-- api-schema:begin window.setMica -->
-Turn the Mica backdrop of a window on or off. The setting is stored even when the window does not draw it right away, for example while it is still hidden at startup; the call then fails with `OPERATION_FAILED` and the failure carries the result fields. Fails in panel mode.
+Enable or disable the Mica backdrop material on a window. If the effect cannot be applied immediately (such as while the window is hidden at startup), the configuration is still saved; the call fails with `OPERATION_FAILED` and includes result fields in the error response. Not supported in panel mode.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
@@ -1586,7 +1589,7 @@ await fb2k.invoke('window.setMinSize', { width: 480, height: 320 });
 ### window.setNoDragRegions
 
 <!-- api-schema:begin window.setNoDragRegions -->
-Set the rectangles that never drag the calling window, such as buttons inside a drag area, replacing the earlier ones. Rectangles are CSS pixels of the page, scaled by the window's DPI; rectangles without a positive width and height are skipped. Fails in panel mode, and with `NOT_FOUND` when the caller is neither the main window nor a popup.
+Set non-draggable exclusion rectangles (such as buttons inside a drag area), replacing earlier ones. Rectangles use page CSS pixels and are scaled by `devicePixelRatio`. Update these rectangles whenever `devicePixelRatio` changes. Rectangles without positive width and height are ignored. Fails in panel mode, or with `NOT_FOUND` if the caller is neither the main window nor a popup.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
@@ -1601,7 +1604,8 @@ Set the rectangles that never drag the calling window, such as buttons inside a 
 | Field | Type | Description |
 | --- | --- | --- |
 | `count` | `integer` | How many rectangles were kept. |
-| `dpiScale` | `number` | Scale applied to the rectangles, the window's DPI divided by 96. |
+| `dpiScale` | `number` | The window's DPI divided by 96. |
+| `scale` | `number` | Scale applied to the rectangles, the page's `devicePixelRatio`. |
 
 `success` is `true` on success. On failure the response is `{ success: false, error, code }`; see [Error codes](../reference/errors.md) for `code`.
 <!-- api-schema:end -->
@@ -1935,21 +1939,10 @@ const result = await fb2k.invoke('window.toggleMaximize');
 
 ## Runtime behavior and events
 
-All `window.*` calls run in the context of the calling WebView unless a method
-accepts `windowId`. A value of `main` identifies the main shell; popup IDs are
-returned by `window.createPopup` and `window.getAllWindows`. Calls that require
-a standalone shell report an unsupported or not-found result in panel mode
-instead of silently targeting an unrelated window.
-
-`window.setDragRegions`, `window.setNoDragRegions`, and click-through exclude
-regions accept CSS-pixel rectangles. The native handler converts them using the
-target window DPI. Popup-only operations such as click-through and close
-confirmation reject a main-window target.
-
-The runtime emits `window:stateChanged` when shell state changes and routes
-`window:beforeClose` to the popup that requested close confirmation. Popup
-lifecycle and coordination events include `window:popupOpened`,
-`window:popupClosed`, `window:message`, `window:behaviorChanged`,
-`window:backdropStateChanged`, `window:hoverStateChanged`,
-`window:minimizeSuppressed`, and `window:alwaysOnTopChanged`. Event payloads
-are runtime data; callers should tolerate fields added by the shell.
+- **Caller context and targeting**: All `window.*` calls execute in the calling WebView's context by default. Methods that accept `windowId` can explicitly target a specific window (`main` identifies the main window; popup IDs are returned by `window.createPopup` and `window.getAllWindows`). In DUI/CUI panel mode, calls requiring a standalone shell fail immediately (reporting unsupported or not-found) instead of silently falling back to the main window.
+- **Coordinate scaling**: `window.setDragRegions`, `window.setNoDragRegions`, `window.setMaximizeButtonRegion`, and `window.setClickThroughExcludeRegions` accept CSS-pixel rectangles. The host scales them using the page's `devicePixelRatio` (combining window DPI, Windows text scale, and page zoom); callers must re-register them whenever `devicePixelRatio` changes. Popup-only operations (such as click-through and close confirmation) reject main-window targets.
+- **State transitions and events**:
+  - The runtime emits `window:stateChanged` when shell state changes.
+  - A popup configured for close confirmation receives `window:beforeClose` before closing.
+  - Multi-window coordination and lifecycle events include `window:popupOpened`, `window:popupClosed`, `window:message`, `window:behaviorChanged`, `window:backdropStateChanged`, `window:hoverStateChanged`, `window:minimizeSuppressed`, and `window:alwaysOnTopChanged`.
+  - Event payloads are extensible runtime data; callers should tolerate fields added in future updates.

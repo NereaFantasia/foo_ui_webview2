@@ -1,8 +1,8 @@
 # Shell API
 
-Methods of the `shell` namespace.
+File revelation, associated program execution, and external process management.
 
-## shell
+## Shell API {#shell}
 
 ### shell.exec
 

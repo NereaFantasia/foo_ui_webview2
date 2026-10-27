@@ -66,7 +66,7 @@ import { findParamKeyProblem } from 'foo-webview-sdk/schema';
 
 const problem = findParamKeyProblem('playlist.getTracks', { playlist: 0, limit: 10 });
 if (problem) {
-  // { path: 'limit', reason: 'unknown' }：宿主会以 INVALID_PARAMS 拒绝。
+  // { path: 'limit', reason: 'unknown' }：宿主会以 INVALID_PARAMS 拒绝
   console.warn(`${problem.reason} parameter ${problem.path}`);
 }
 ```

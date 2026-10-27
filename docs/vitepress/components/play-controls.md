@@ -15,8 +15,8 @@ Play/pause toggle button.
 | --- | --- | --- | --- |
 | `playing` | boolean | — | Read-only reflection of the playing state |
 
-**CSS Parts:** `button`
-**Slots:** `play-icon` (default: ▶), `pause-icon` (default: ⏸)
+**CSS Parts:** `button`  
+**Slots:** `play-icon` (default: ▶), `pause-icon` (default: ⏸)  
 **ARIA:** `role="button"`; `aria-label` changes between `Play` and `Pause`
 
 **Events:**

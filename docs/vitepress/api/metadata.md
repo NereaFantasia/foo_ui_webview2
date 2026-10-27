@@ -1,30 +1,23 @@
 # Metadata API
 
-Methods of the `metadata` namespace.
+The `metadata` namespace provides methods to read, write, probe, and manage track tags, technical audio properties, and embedded album art.
 
 ## Addressing a track inside a container {#subsong-addressing}
 
-A CUE sheet, ISO image, or multi-track file holds several tracks behind one
-file path. Every read method addresses an individual track the same way:
+A CUE sheet, ISO image, or multi-track container holds multiple tracks under a single file path. Read methods address individual tracks consistently:
 
-- Append `|subsong:N` to the path, e.g. `D:\album.cue|subsong:2`.
-- Or pass `cueIndex: N` alongside the plain path. When both are supplied,
-  `cueIndex` wins.
+- Append `|subsong:N` to the path (for example, `D:\album.cue|subsong:2`).
+- Pass `cueIndex: N` alongside the base path. When both are provided, `cueIndex` takes precedence.
 
-Track numbering follows foobar2000, which is **1-based for CUE sheets**:
-`|subsong:1` is the first track. A bare container path (or `|subsong:0`)
-addresses subsong 0, which does not exist in a CUE sheet and therefore fails
-with `Failed to get track info` — that is the host's numbering, not an error in
-the request.
+Track numbering follows foobar2000 conventions, which are **1-based for CUE sheets**: `|subsong:1` corresponds to the first track. A bare container path or `|subsong:0` addresses subsong 0, which does not exist in a CUE sheet and therefore fails with `Failed to get track info`. This reflects host container indexing rather than a malformed request.
 
-Reading a plain single-track file needs no suffix; `|subsong:0` is equivalent
-to omitting it.
+Plain single-track audio files require no suffix; specifying `|subsong:0` is equivalent to omitting it.
 
 ## metadata
 
 ### metadata.cancelProbe
 
-Cancels an in-flight `metadata.probeBatchAsync` operation.
+Cancels an active `metadata.probeBatchAsync` operation.
 
 <!-- api-schema:begin metadata.cancelProbe -->
 Stop a probe started by `metadata.probeBatchAsync`. The read in progress is interrupted, the paths not yet reached are never reported, and the run still ends with `metadata:probeComplete` carrying `cancelled: true`.
@@ -42,7 +35,7 @@ Stop a probe started by `metadata.probeBatchAsync`. The read in progress is inte
 `success` is `true` on success. On failure the response is `{ success: false, error, code }`; see [Error codes](../reference/errors.md) for `code`.
 <!-- api-schema:end -->
 
-`cancelled: false` means the operation already finished or never existed; the two are intentionally indistinguishable. A cancelled batch still ends with a final `metadata:probeComplete` event carrying `cancelled: true`.
+`cancelled: false` indicates that the operation had already finished or never existed (the two cases are intentionally indistinguishable). A cancelled batch still concludes with a final `metadata:probeComplete` event carrying `cancelled: true`.
 
 ```js
 const res = await fb2k.invoke('metadata.cancelProbe', { operationId });
@@ -85,10 +78,10 @@ await fb2k.invoke('metadata.embedArtwork', {
 
 ### metadata.probeBatchAsync
 
-Cancellable batch metadata probe; disk reads run on a worker thread.
+Starts a cancellable batch metadata probe; file operations run asynchronously on a worker thread.
 
 <!-- api-schema:begin metadata.probeBatchAsync -->
-Start a cancellable batch probe on a worker thread and return a receipt at once. The results arrive in batches on `metadata:probeProgress`, every 64 results or 100 ms, followed by one `metadata:probeComplete`. Each result says whether its info came from the cache or the disk, and a failure is classified as `not-found`, `unsupported-format` or `read-error`.
+Start a cancellable batch probe on a worker thread and return a receipt at once. The results arrive in batches on `metadata:probeProgress`, every 64 results or 100 ms, followed by one `metadata:probeComplete`. Each result says whether its info came from the cache or the disk, and a failure is classified as `not-found`, `unsupported-format` or `read-error`. Values and field names use the same UTF-8 handling as `metadata.read`.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
@@ -105,7 +98,7 @@ Start a cancellable batch probe on a worker thread and return a receipt at once.
 `success` is `true` on success. On failure the response is `{ success: false, error, code }`; see [Error codes](../reference/errors.md) for `code`.
 <!-- api-schema:end -->
 
-The return value is only a dispatch receipt; results arrive via `metadata:probeProgress` (batched) and a final `metadata:probeComplete`. Each result carries `infoSource` (`cached` / `direct` / `none`); failed items carry `failure` (`not-found` / `unsupported-format` / `read-error`).
+The return value is a dispatch receipt; batch results arrive via `metadata:probeProgress` and conclude with `metadata:probeComplete`. Each result reports `infoSource` (`cached` / `direct` / `none`); failed items carry `failure` (`not-found` / `unsupported-format` / `read-error`).
 
 ```js
 const receipt = await fb2k.invoke('metadata.probeBatchAsync', { paths });
@@ -114,7 +107,7 @@ const receipt = await fb2k.invoke('metadata.probeBatchAsync', { paths });
 ### metadata.read
 
 <!-- api-schema:begin metadata.read -->
-Read the tags and technical info of one track. The host reads its cached info and falls back to reading the file when that info cannot be had or has no title tag; a track that cannot be opened or read fails with `OPERATION_FAILED`.
+Read the tags and technical info of one track. The host reads its cached info and falls back to reading the file when that info cannot be had or has no title tag; a track that cannot be opened or read fails with `OPERATION_FAILED`. Invalid UTF-8 in values is replaced with U+FFFD; fields whose names are invalid UTF-8 are omitted, without changing the file.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
@@ -150,7 +143,7 @@ See [Addressing a track inside a container](#subsong-addressing) for CUE sheets,
 ### metadata.readBatch
 
 <!-- api-schema:begin metadata.readBatch -->
-Read the flat fields of several tracks, one row per path. A path that cannot be read gets a row with its own error and does not fail the call. The reads run on the main thread; prefer `metadata.probeBatchAsync` for many files.
+Read the flat fields of several tracks, one row per path. A path that cannot be read gets a row with its own error and does not fail the call. The reads run on the main thread; prefer `metadata.probeBatchAsync` for many files. UTF-8 handling is the same as `metadata.read`.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
@@ -180,12 +173,12 @@ if (res.success === false) throw new Error(res.error);
 const { results } = res;
 ```
 
-Each entry is resolved independently, so a batch may mix plain file paths and `container|subsong:N` references. There is no batch-wide `cueIndex`; put the index in each path.
+Each entry is resolved independently, allowing batches to mix plain file paths and `container|subsong:N` references. There is no batch-wide `cueIndex` parameter; specify subsong indices directly in each path.
 
 ### metadata.readByPath
 
 <!-- api-schema:begin metadata.readByPath -->
-Read one track as a flat object: every tag and technical-info field becomes a top-level key under its upper-case name, beside `path`. The track is read the same way as by `metadata.read`, with the same failures.
+Read one track as a flat object: every tag and technical-info field becomes a top-level key under its upper-case name, beside `path`. The track is read the same way as by `metadata.read`, with the same failures and UTF-8 handling. Only ASCII letters in names are upper-cased.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
@@ -407,7 +400,7 @@ const { successCount, failCount } = res;
 
 ## Usage notes
 
-- `metadata.read`, `metadata.readByPath`, and `metadata.readRaw` all take `path` and an optional `cueIndex` (default `-1`); a `path|subsong:N` value or `cueIndex` selects a container subsong. `readRaw` bypasses the metadb cache, and its successful result adds `source: "file"` to the structured `{ success, path, tags, info }` shape of `metadata.read`.
-- `metadata.write`, `metadata.removeTag`, and the compatibility endpoint `metadata.removeField` dispatch an asynchronous update. A successful dispatch is not final persistence confirmation: listen for the broadcast `metadata:writeComplete` payload `{ operation, path, subsong, code, success, status }`.
-- `metadata.embedArtwork` requires non-empty `path` and **raw Base64 image bytes** in `imageData`. Do not pass a `data:image/...;base64,` header, a `base64:` marker, or an `fb2k://` URL; strip a standard Data URL at its first comma before invoking this endpoint. `type` defaults to `front`; `cover_front` and `cover_back` are accepted as `front` and `back`, and any other value fails with `INVALID_PARAMS`. `target` is an array: omitted it writes `embedded`, and it takes `embedded`, `file`, and `all` (both) in any combination, while a plain string such as `"file"` fails with `INVALID_PARAMS` (the SDK helpers send a single target as a one-element array). With both targets each outcome is reported under `results`; the call succeeds when either target succeeded, and fails with `OPERATION_FAILED`, still carrying `results`, when both failed.
-- `metadata.removeEmbeddedArt` removes one picture `type`, or every picture when `type` is omitted or `removeAll` is `true`. It requires a format that supports the `album_art_editor` workflow.
+- `metadata.read`, `metadata.readByPath`, and `metadata.readRaw` all accept `path` and an optional `cueIndex` (default `-1`); a `path|subsong:N` value or `cueIndex` selects a container subsong. `metadata.readRaw` bypasses the metadb cache, and its successful result adds `source: "file"` to the structured `{ success, path, tags, info }` shape of `metadata.read`.
+- `metadata.write`, `metadata.removeTag`, and the compatibility endpoint `metadata.removeField` dispatch asynchronous updates. Successful dispatch is not final persistence confirmation: listen for the broadcast `metadata:writeComplete` payload (`{ operation, path, subsong, code, success, status }`).
+- `metadata.embedArtwork` requires a non-empty `path` and **raw Base64 image bytes** in `imageData`. Do not pass a `data:image/...;base64,` header, a `base64:` marker, or an `fb2k://` URL; strip a standard Data URL at its first comma before invoking this endpoint. `type` defaults to `front`; `cover_front` and `cover_back` are accepted as aliases for `front` and `back`, and any other value fails with `INVALID_PARAMS`. `target` is an array: omitted it defaults to `embedded`, and accepts `embedded`, `file`, and `all` (both) in any combination, while a plain string such as `"file"` fails with `INVALID_PARAMS` (the SDK helpers wrap a single target string in a one-element array). With both targets, each outcome is reported under `results`; the call succeeds when either target succeeds, and fails with `OPERATION_FAILED` (still carrying `results`) only when both fail.
+- `metadata.removeEmbeddedArt` removes one picture `type`, or all pictures when `type` is omitted or `removeAll` is `true`. It requires a format that supports the `album_art_editor` interface.

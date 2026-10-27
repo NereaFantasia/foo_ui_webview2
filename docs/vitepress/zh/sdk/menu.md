@@ -26,8 +26,8 @@
 ### 操作目标与完成结果 {#command-targets}
 
 - `runContextCommand` 在调用时确定目标：优先正在播放的曲目，没有播放时才使用活动播放列表的选中项。它不接受 `handles` 或 `mode`。先为指定句柄构建菜单，不会把后续 GUID 调用绑定到那些句柄。
-- `runContextCommandById` 接受目标模式和句柄，但执行时会重建菜单。即使参数没变，动态菜单仍可能变化，同一个位置可能执行另一条命令。重新读取菜单只能缩短间隔，不能提供原子的身份校验。
-- 需要由宿主为指定曲目显示原生菜单时，可用 `showNativePopup({ mode: 'handles', handles })`。当前 API 尚不能在一次调用中同时按稳定地址与显式目标执行自绘菜单的选择。
+- `runContextCommandById` 接受目标模式和句柄，但执行时会重建菜单。即使参数没变，动态菜单仍可能变化，同一个位置可能执行另一条命令。把节点的 `path` 作为 `expectPath`、菜单的 `targetKey` 作为 `expectTarget` 传入，宿主会先核对重建后的菜单：该 id 仍是这条路径、没有别的节点同路径、命令可用，且曲目与构建菜单时相同，才会运行；否则什么都不运行。`mode: 'playlist'` 没有 `targetKey`，不能核对。
+- 需要由宿主为指定曲目显示原生菜单时，可用 `showNativePopup({ mode: 'handles', handles })`。
 - 命令调用成功，即使 `executionConfirmed: true`，也不代表对话框或第三方异步操作已经最终完成。它不能说明用户是否取消了对话框，也不报告哪些对象最终发生了变化。超时同样不能证明操作没有执行，因此不要自动重放可能写入或删除数据的命令。
 
 ## getContextMenu(options?)
@@ -36,11 +36,11 @@
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
-| `options.mode` | `string` | 否 | 上下文模式：`'auto'`、`'selection'`、`'playlist'`、`'nowPlaying'` 或 `'handles'`。 |
-| `options.handles` | `JsonValue[]` | 否 | `'handles'` 与 `'auto'` 用的曲目：路径（可带 `\|subsong:N` 后缀）或 `{ path, subsong }` 对象。 |
-| `options.locale` | `string` | 否 | 语言选择，默认 `'auto'`。 |
-| `options.i18n` | `boolean` | 否 | 启用标签本地化。 |
-| `options.withAvailability` | `boolean` | 否 | 附带可用性信息。 |
+| `options.mode` | `string` | 否 | 上下文模式：`'auto'`、`'selection'`、`'playlist'`、`'nowPlaying'` 或 `'handles'` |
+| `options.handles` | `JsonValue[]` | 否 | `'handles'` 与 `'auto'` 用的曲目：路径（可带 `\|subsong:N` 后缀）或 `{ path, subsong }` 对象 |
+| `options.locale` | `string` | 否 | 语言选择，默认 `'auto'` |
+| `options.i18n` | `boolean` | 否 | 启用标签本地化 |
+| `options.withAvailability` | `boolean` | 否 | 附带可用性信息 |
 
 返回 `MenuGetContextMenuResponse`，含递归的 `items` 菜单树与上下文信息。命令叶节点带 `subGuid` 时 `source` 为 `contextmenu_dynamic`，否则为 `contextmenu_static`。
 
@@ -60,12 +60,16 @@ const result = await fb.menu.getContextMenu({ mode: 'selection' });
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
-| `root` | `string` | 否 | 限定返回的子树，例如 `'Main'` 或 `'View'`。 |
-| `options.locale` | `string` | 否 | 语言选择，默认 `'auto'`。 |
-| `options.i18n` | `boolean` | 否 | 启用标签本地化。 |
-| `options.withAvailability` | `boolean` | 否 | 附带可用性信息。 |
+| `root` | `string` | 否 | 限定返回的子树，例如 `'View'` |
+| `options.locale` | `string` | 否 | 语言选择，默认 `'auto'` |
+| `options.i18n` | `boolean` | 否 | 启用标签本地化 |
+| `options.withAvailability` | `boolean` | 否 | 附带可用性信息 |
 
-返回 `MenuGetMainMenuResponse`，其 `items` 是递归的 `MenuItem[]` 树。命令叶节点的 `source` 由自身地址决定：带 `subGuid` 为 `mainmenu_dynamic`，不带为 `mainmenu_static`；响应带 `source: 'v1-hmenu'` 时所有叶节点为 `hmenu_fallback`。扁平回退（`fallback: 'flat-mainmenu-commands'`，每项带 `fallback: true`）保留 `flags`，没有 `commandId`。
+返回 `MenuGetMainMenuResponse`，其 `items` 是递归的 `MenuItem[]` 树。主菜单 `source` 按提供者的节点类型区分：动态叶子缺少 subGuid 时仍为 `mainmenu_dynamic`，但不可执行；Win32 菜单叶子使用 `hmenu_fallback`。扁平回退保留 `flags`，没有可长期使用的 `commandId`。
+
+`executable` 表示地址唯一且完整，与 `enabled/available` 独立。真实禁用项仍可拥有 GUID。无法寻址时查看 `unaddressableReason`；`addressCandidates` 只作歧义诊断，不能自动选择第一项。root 过滤保留完整祖先路径；执行路径逐段匹配，错误前缀不会退成同名叶子。
+
+来源无法构树时可以回退到下一来源；已构成的树中状态读取失败则返回 `OPERATION_FAILED`，`details.reason` 为 `stateUnavailable`，不返回猜测的启用状态。
 
 ```javascript
 const result = await fb.menu.getMainMenu('View');
@@ -85,10 +89,10 @@ const result = await fb.menu.getMainMenu('View');
 返回值可能含 `guid`、`itemCount` 与 `executionConfirmed`——后者为 `false` 表示命令走的是不返回结果的入口，无法观测是否真的执行。
 
 ```javascript
-// 打开正在播放的曲目属性；停止播放时使用活动播放列表选区。
+// 打开正在播放的曲目属性；停止播放时使用活动播放列表选区
 const result = await fb.menu.runContextCommand('{6F441057-1D18-4A58-9AC4-8F409CDA7DFD}');
 
-// 仅传入用户从 getContextMenu().items 中选中的动态叶子。
+// 仅传入用户从 getContextMenu().items 中选中的动态叶子
 async function runChosenDynamicContextCommand(node) {
     if (node.type !== 'command' || !node.guid || !node.subGuid) return;
     return fb.menu.runContextCommand(node.guid, { subGuid: node.subGuid });
@@ -101,21 +105,27 @@ async function runChosenDynamicContextCommand(node) {
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
-| `id` | `number` | 是 | 右键菜单节点的 `commandId`，取自 `getContextMenu()` 的结果。 |
-| `options.mode` | `string` | 否 | 构建菜单时用的 `mode`，默认 `'auto'`。 |
-| `options.handles` | `JsonValue[]` | 否 | 构建菜单时用的 `handles`。 |
+| `id` | `number` | 是 | 右键菜单节点的 `commandId`，取自 `getContextMenu()` 的结果 |
+| `options.mode` | `string` | 否 | 构建菜单时用的 `mode`，默认 `'auto'` |
+| `options.handles` | `JsonValue[]` | 否 | 构建菜单时用的 `handles` |
+| `options.expectPath` | `string` | 否 | 节点的 `path`，须与 `expectTarget` 一起给出 |
+| `options.expectTarget` | `string` | 否 | `getContextMenu()` 报告的 `targetKey`，须与 `expectPath` 一起给出 |
 
 运行 `getContextMenu()` 报告的 `commandId` 对应的右键菜单项。宿主按 `options.mode` 与 `options.handles` 重建菜单，所以要传那次调用用的值。id 只对产生它的那份菜单有效，不要保存；重建的菜单里没有该 id 时以 `NOT_FOUND` 失败。
 
-菜单变化后，同一个 id 也可能对应另一条命令，执行时并不报错。用于破坏性操作前，请先阅读[操作目标与完成结果](#command-targets)。
+不传 `expectPath` 和 `expectTarget` 时，菜单变化后同一个 id 可能对应另一条命令，执行时并不报错。两项都传时，宿主改为拒绝执行、什么都不运行，`details.reason` 为 `targetChanged`、`commandChanged`、`ambiguousPath`、`disabled` 或 `unsupportedTargetMode`。被拒绝后请重新打开菜单。另见[操作目标与完成结果](#command-targets)。
 
 ```javascript
 const opts = { mode: 'selection' };
 const menu = await fb.menu.getContextMenu(opts);
 if (menu.success === false) throw new Error(menu.error);
 const node = menu.items.find((item) => item.type === 'command');
-if (node && node.type === 'command' && node.commandId !== undefined) {
-    const res = await fb.menu.runContextCommandById(node.commandId, opts);
+if (node && node.type === 'command' && node.commandId !== undefined && node.path && menu.targetKey) {
+    const res = await fb.menu.runContextCommandById(node.commandId, {
+        ...opts,
+        expectPath: node.path,
+        expectTarget: menu.targetKey,
+    });
     if (res.success === false) console.warn(res.code, res.error);
 }
 ```
@@ -129,22 +139,22 @@ if (node && node.type === 'command' && node.commandId !== undefined) {
 | `command` | `string` | 是 | 命令 GUID、叶子命令名或斜杠分隔的路径 |
 | `options.subGuid` | `string` | 否 | 动态子命令的子 GUID |
 
-封装 `menu.runMainMenuCommand`。成功时响应带 `guid`，即实际运行的命令的 GUID；菜单树按名称或路径运行命令时没有这个字段。
+封装 `menu.runMainMenuCommand`。成功时响应带实际命令的 `guid`，包括名称或路径解析得到的地址；旧宿主在名称／路径调用时可能省略该字段。
 
 **推荐用 GUID 形式**：它是唯一跨宿主稳定的寻址方式。汉化版 foobar2000 上报的是中文命令名，
 英文名或英文路径在该宿主上解析不到。GUID 可从 `discovery.getMainMenuCommands()` 或
 `menu.getMainMenu()` 叶子节点的 `guid` 字段取得。
 
 失败以 `success: false` 加 `code` 返回：`MENU_ITEM_DISABLED`、
-`MENU_MATCH_AMBIGUOUS`（详见 `candidates`）、`MENU_COMMAND_NOT_FOUND`，没有命令拥有该 GUID 时为 `NOT_FOUND`。
+`MENU_MATCH_AMBIGUOUS`（详见 `details.candidates`）、`MENU_COMMAND_NOT_FOUND`，没有命令拥有该 GUID 时为 `NOT_FOUND`。
 
 ```javascript
-// 偏好设置：SDK 定义的 GUID 不受宿主语言影响。
+// 偏好设置：SDK 定义的 GUID 不受宿主语言影响
 const result = await fb.menu.runMainMenuCommand(
     '{11213A01-9F36-4E69-A1BB-7A72F418DE3A}',
 );
 
-// 仅传入用户从 getMainMenu().items 中选中的动态叶子。
+// 仅传入用户从 getMainMenu().items 中选中的动态叶子
 async function runChosenDynamicMainCommand(node) {
     if (node.type !== 'command' || !node.guid || !node.subGuid) return;
     return fb.menu.runMainMenuCommand(node.guid, { subGuid: node.subGuid });
@@ -157,9 +167,9 @@ async function runChosenDynamicMainCommand(node) {
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
-| `options.mode` | `string` | 否 | 上下文模式，默认 `'auto'`：依次尝试 handles、当前播放曲目、活动播放列表选中项，最后是播放列表级上下文。 |
-| `options.handles` | `JsonValue[]` | 否 | `'handles'` 与 `'auto'` 用的曲目，格式同 `getContextMenu()`。 |
-| `options.x`、`options.y` | `number` | 否 | 为兼容而接受，没有作用：菜单总在鼠标指针处打开。 |
+| `options.mode` | `string` | 否 | 上下文模式，默认 `'auto'`：依次尝试 handles、当前播放曲目、活动播放列表选中项，最后是播放列表级上下文 |
+| `options.handles` | `JsonValue[]` | 否 | `'handles'` 与 `'auto'` 用的曲目，格式同 `getContextMenu()` |
+| `options.x`、`options.y` | `number` | 否 | 为兼容而接受，没有作用：菜单总在鼠标指针处打开 |
 
 宿主在调用返回后随即在鼠标指针处弹出原生菜单。
 
@@ -227,12 +237,12 @@ fb.on('menu:dismiss', (e) => { if (e.menuId === menuId) console.log('dismissed',
 
 | 字段 | 类型 | 默认值 | 说明 |
 | --- | --- | --- | --- |
-| `windowModel` | `'fullscreen' \| 'contentSized'` | `'fullscreen'` | `'contentSized'` 把根菜单与一级子菜单分别画在按内容测量的紧凑窗里，每个面板在自己的表面上承载真实 DWM 背景材质并带系统窗口阴影，**推荐用于右键菜单**；`'fullscreen'` 是兼容默认值，即用一个全屏浮层窗口承载菜单 DOM。 |
-| `css` | `string` | — | 前端样式接管，最大 256 KiB，注入 overlay 专用样式层，每次弹出都应用。 |
-| `cssReplace` | `boolean` | `false` | `true` 把 `css` 从叠加模式切换为替换模式：禁用内置样式，只保留你的 CSS 与受保护结构层，整体外观（含入场动画）完全由你定义。 |
-| `backdrop` | `'acrylic' \| 'mica' \| 'mica-alt' \| 'none'` | `'acrylic'` | 菜单窗口的 DWM 系统背景。`'acrylic'` 是瞬态表面材质，对弹出菜单是正确的默认值；`'mica'` / `'mica-alt'` 面向主窗口背景设计，用在瞬态菜单上可能不协调。 |
-| `backdropDarkMode` | `boolean` | `true` | 背景材质的暗色调。传 `false` 以跟随浅色主题。 |
-| `closeAnimationMs` | `number` | `0` | 退场（淡出）动画时长（毫秒），clamp 到 `0..1000`。`0` 表示立即隐藏。 |
+| `windowModel` | `'fullscreen' \| 'contentSized'` | `'fullscreen'` | `'contentSized'` 把根菜单与一级子菜单分别画在按内容测量的紧凑窗里，每个面板在自己的表面上承载真实 DWM 背景材质并带系统窗口阴影，**推荐用于右键菜单**；`'fullscreen'` 是兼容默认值，即用一个全屏浮层窗口承载菜单 DOM |
+| `css` | `string` | — | 前端样式接管，最大 256 KiB，注入 overlay 专用样式层，每次弹出都应用 |
+| `cssReplace` | `boolean` | `false` | `true` 把 `css` 从叠加模式切换为替换模式：禁用内置样式，只保留你的 CSS 与受保护结构层，整体外观（含入场动画）完全由你定义 |
+| `backdrop` | `'acrylic' \| 'mica' \| 'mica-alt' \| 'none'` | `'acrylic'` | 菜单窗口的 DWM 系统背景。`'acrylic'` 是瞬态表面材质，对弹出菜单是正确的默认值；`'mica'` / `'mica-alt'` 面向主窗口背景设计，用在瞬态菜单上可能不协调 |
+| `backdropDarkMode` | `boolean` | `true` | 背景材质的暗色调。传 `false` 以跟随浅色主题 |
+| `closeAnimationMs` | `number` | `0` | 退场（淡出）动画时长（毫秒），clamp 到 `0..1000`。`0` 表示立即隐藏 |
 
 #### 完整示例
 
@@ -272,7 +282,7 @@ fb.on('menu:valueChanged', (e) => {
 
 #### 样式指南
 
-overlay 是独立的顶层文档，宿主页面的 `::part()` 选择器够不到它。受支持的样式契约是稳定 class 名：`.fb-menu`、`.fb-item`（带 `.nrm` / `.disabled` / `.active` / `.checked` / `.has-sub`）、`.fb-item-ico`、`.fb-arrow`、`.fb-sep`、now-playing 的 `.fb-np*`、评分的 `.fb-rating*` 与 `.fb-star`、滑块的 `.fb-slider*`、分段控件的 `.fb-seg*`。默认叠加模式下，你的规则靠源码顺序或 `!important` 取胜。一个很小的受保护结构层（`#viewport`、菜单 box-sizing、固定定位、overflow 与隐藏态兜底）始终最后强制应用。
+overlay 是独立的顶层文档，宿主页面的 `::part()` 选择器够不到它。受支持的样式契约是稳定 class 名：`.fb-menu`、`.fb-item`（带 `.nrm` / `.disabled` / `.active` / `.checked` / `.has-sub`）、`.fb-item-ico`、`.fb-arrow`、`.fb-sep`、now-playing 的 `.fb-np*`、评分的 `.fb-rating*` 与 `.fb-star`、滑块的 `.fb-slider*`、分段控件的 `.fb-seg*`。默认叠加模式下，你的规则靠源码顺序或 `!important` 取胜。一个很小的受保护结构层（`#viewport`、菜单 box-sizing、固定定位、overflow 与隐藏态回退）始终最后强制应用。
 
 要做半透明菜单，背景 alpha 建议保持在 0.75 到 0.9 之间：既能保住文字对比度，Windows 11 系统菜单本身对「透」也很克制。
 

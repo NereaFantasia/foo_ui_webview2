@@ -16,9 +16,9 @@
         └── assets/
 ```
 
-全局活动模板是在 `File → Preferences → Display → WebView2 UI` 页选中的那个；从没选过时为 `default`。在那里新建模板只会写入一个占位的 `index.html`，不带 SDK、脚本或其他文件。
+全局活动模板在 `File → Preferences → Display → WebView2 UI` 偏好设置中指定；未显式配置时默认为 `default`。偏好设置中的「新建模板」仅生成基础 `index.html` 占位文件，不包含 SDK、构建脚本或前端依赖。
 
-本地页面经 `https://foo-ui-webview2.local/` 提供，这个地址映射到模板文件夹，所以 `/index.html` 就是模板的 `index.html`，`/assets/app.js` 这类以根开头的路径也在文件夹内解析。
+本地模板由自定义虚拟源 `https://foo-ui-webview2.local/` 托管并映射到模板根目录：根路径 `/index.html` 对应模板入口文件，`/assets/app.js` 等绝对根路径亦在模板目录内正确解析。
 
 ## 查找顺序
 
@@ -28,11 +28,11 @@
 2. **面板的 URL 覆盖。** 面板配置里填了 URL 时加载它。
 3. **面板自己的模板**，指定了且该文件夹里有 `index.html` 时。
 4. **全局活动模板**，其文件夹里有 `index.html` 时。
-5. **组件文件夹里的 `foo_ui_webview2_resources\dist`**，里面有 `index.html` 时。旧版本曾把内置主题装在这里，现在的版本不再提供；组件包建出的空文件夹会被跳过。
+5. **组件安装目录中的 `foo_ui_webview2_resources\dist`**：存在 `index.html` 时加载；若该目录为空或不存在入口文件则跳过。
 6. **`<profile>\webview-ui\default\`**，里面有 `index.html` 时。
 7. **内置页面**。主窗口与后台窗口显示一个测试页，上面的按钮可以试用各个 API；面板显示 “Frontend not found. Please install a template.”。
 
-页面打开的弹出窗口另有规则：它们从同一个模板（或开发服务器）加载 `<页面>.html`，查询参数里带窗口 ID。连不上开发服务器时，弹出窗口改从模板加载同一个页面；没有哪个模板文件夹有 `index.html` 时显示 “Frontend not found” 页面。
+由 `window.createPopup` 创建的弹出窗口遵循独立加载规则：直接从当前模板（或开发服务器）加载指定页面文件（如 `<page>.html`），并在 URL 查询参数中附带 `windowId`。当开发服务器不可达时回退加载本地模板的对应文件；若模板目录中不存在入口文件，则显示 “Frontend not found” 错误提示。
 
 ## 什么时候重新加载
 

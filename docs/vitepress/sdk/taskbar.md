@@ -29,7 +29,7 @@ Signature: `fb.taskbar.setOverlayIcon(options?: TaskbarSetOverlayIconParams): Pr
 Lays a small icon over the taskbar button, typically to show the playback state; calling it without arguments clears the overlay. Fails with `OPERATION_FAILED` when the taskbar button does not exist yet or the system rejects the call.
 
 ```javascript
-// Raw Base64 .ico bytes the theme stored earlier; null clears the overlay.
+// Raw Base64 .ico bytes the theme stored earlier; null clears the overlay
 const icon = localStorage.getItem('pausedOverlayIcon');
 const result = await fb.taskbar.setOverlayIcon({ icon, description: 'Paused' });
 ```

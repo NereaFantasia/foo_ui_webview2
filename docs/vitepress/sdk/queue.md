@@ -169,7 +169,7 @@ console.log(result.count);
 
 ## moveToTop(index)
 
-Signature: `fb.queue.moveToTop(index: number): Promise<QueueMoveToTopResponse>`
+Signature: `fb.queue.moveToTop(index: number, expectedVersion?: string): Promise<QueueMoveToTopResponse>`
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |

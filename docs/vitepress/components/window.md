@@ -15,7 +15,7 @@ Custom title-bar drag region. Double-clicking toggles maximize/restore, and righ
 | --- | --- | --- | --- |
 | `maximized` | boolean | — | Read-only reflection of whether the window is maximized |
 
-**CSS Parts:** `drag-region`
+**CSS Parts:** `drag-region`  
 **Slots:** `left`, `right` (slotted content is excluded from the drag region)
 
 **Events:**
@@ -43,7 +43,7 @@ Minimize, maximize/restore, and close buttons. The `maximize-button` and `restor
 | --- | --- | --- | --- |
 | `maximized` | boolean | — | Read-only reflection of whether the window is maximized |
 
-**CSS Parts:** `controls`, `minimize-button`, `maximize-button`, `restore-icon`, `close-button`
+**CSS Parts:** `controls`, `minimize-button`, `maximize-button`, `restore-icon`, `close-button`  
 **Slots:** `minimize-icon` (default: —), `maximize-icon` (default: □), `restore-icon` (default: ❐), `close-icon` (default: ✕)
 
 **Events:**

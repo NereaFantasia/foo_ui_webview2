@@ -2,7 +2,6 @@
 
 Bridge connectivity helpers registered beside the playback family.
 
-
 ## test.echo
 
 Echoes the provided parameters so themes can verify invoke transport.

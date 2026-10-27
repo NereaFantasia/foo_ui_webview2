@@ -75,7 +75,7 @@ Signature: `fb.misc.showLibrarySearch(query?: string): Promise<MiscShowLibrarySe
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `query` | `string` | No | Query filled into the search box. Empty or omitted opens a blank search. |
+| `query` | `string` | No | Query filled into the search box. Empty or omitted opens a blank search |
 
 Opens the Media Library Search window. The response's `query` is the query the window opened with.
 
@@ -89,8 +89,8 @@ Signature: `fb.misc.showPopupMessage(message: string, title?: string): Promise<M
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `message` | `string` | Yes | Body text of the dialog; must not be empty. |
-| `title` | `string` | No | Title bar text; the host uses `"Message"` when it is empty or omitted. |
+| `message` | `string` | Yes | Body text of the dialog; must not be empty |
+| `title` | `string` | No | Title bar text; the host uses `"Message"` when it is empty or omitted |
 
 Shows a foobar2000 popup message dialog. The call returns once the dialog is shown, not when it is closed. An empty `message` fails with `INVALID_PARAMS`.
 

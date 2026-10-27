@@ -1,25 +1,25 @@
 # Install a theme
 
-A theme is a folder with an `index.html`, called a template. Templates live under `<profile>\webview-ui\`, one folder per template, and the active one fills the main window. [How a page is found](/concepts/page-loading) explains the full lookup.
+A theme is organized as a directory containing an `index.html` entry point, referred to as a template. All templates reside under `<profile>\webview-ui\`, with one folder per template, and the global active template powers the main window. [How a page is found](/concepts/page-loading) outlines the full resolution hierarchy.
 
-## Create a template and copy the theme into it
+## Create a template and deploy theme assets {#create-a-template-and-copy-the-theme-into-it}
 
 1. Open `File → Preferences → Display → WebView2 UI`.
-2. Press `Manage...` and choose `Create...`. Enter a name made of letters, digits, `-` and `_`, then confirm. foobar2000 creates `<profile>\webview-ui\<name>\` with a placeholder `index.html` and selects the new template in the `Template` box.
-3. Press `Open...` to open the template folder in File Explorer.
-4. Copy the theme's files into it, replacing the placeholder `index.html`. For a project built with a bundler, copy the contents of its output folder (for Vite, `dist`), not the folder itself.
-5. Press `Apply`. The main window, and every panel that follows the global template, reloads with the theme.
+2. Click `Manage...` and choose `Create...`. Enter an identifier using letters, numbers, `-`, and `_`, then confirm. foobar2000 generates `<profile>\webview-ui\<name>\` with a starter `index.html` and selects this new entry in the `Template` dropdown.
+3. Click `Open...` to reveal the template folder in File Explorer.
+4. Copy your theme files into the folder, replacing the placeholder `index.html`. For projects built with a bundler, copy the contents of the distribution folder (such as `dist` in Vite), not the wrapper folder itself.
+5. Click `Apply`. The main window and all panels following the global template will reload with the new theme.
 
-`Apply` refuses a template whose folder has no `index.html`, or an empty one.
+The preferences page rejects templates whose directory lacks an `index.html` or contains a 0-byte empty file.
 
 ## Switch between installed templates
 
-Pick another entry in the `Template` box and press `Apply`. Creating, renaming and deleting templates are file operations that happen at once and are not undone by `Cancel`; the active template and any template a loaded panel uses cannot be renamed or deleted.
+Select another entry from the `Template` dropdown and press `Apply`. Creating, renaming, and deleting templates are immediate file operations on disk that cannot be reverted via `Cancel`. The currently active template and any template in use by an active panel cannot be renamed or deleted.
 
-## Use a template in one panel only
+## Use a dedicated template for a single panel {#use-a-template-in-one-panel-only}
 
-A panel can load its own template instead of the global one: see [Put a page in a panel](./panels.md#give-a-panel-its-own-template-or-url).
+An embedded panel can load its own template independently of the global setting: see [Put a page in a panel](./panels.md#give-a-panel-its-own-template-or-url).
 
-## When the development server is on
+## Behavior when the development server is active {#when-the-development-server-is-on}
 
-While `Use development server (HMR hot reload)` is ticked on the `Developer` page, pages load from the server URL and a template change does not reload them. Untick it and press `Apply` to see the installed template. See [Debug a theme with the development server](./dev-server.md).
+When `Use development server (HMR hot reload)` is checked under the `Developer` page, all windows load from the configured server URL, and switching templates will not trigger a reload. Uncheck the option and press `Apply` to return to the installed local template. See [Debug a theme with the development server](./dev-server.md).

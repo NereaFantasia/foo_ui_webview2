@@ -1,13 +1,13 @@
 # Output 输出设备 API
 
-`output` 命名空间的方法：列出输出模块与设备。
+提供音频输出设备与输出模块能力查询接口。
 
 ## Output API - 音频输出
 
 ### output.getDevices
 
 <!-- api-schema:begin output.getDevices -->
-列出所有输出模块的设备。
+获取全部输出模块下的音频设备列表
 
 无参数。
 
@@ -15,12 +15,12 @@
 
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
-| `devices` | `OutputDevice[]` | 所有输出模块的设备，按模块依次排列。 |
-| `devices[].guid` | `string` | 设备 GUID，形如 `{...}`。单独不唯一：模块用全零 GUID 表示其默认设备，要用 `(entryGuid, guid)` 作键。 |
-| `devices[].name` | `string` | 设备的显示名。 |
-| `devices[].entry` | `string` | 提供该设备的输出模块的显示名。 |
-| `devices[].entryGuid` | `string` | 该输出模块的 GUID，形如 `{...}`。 |
-| `count` | `integer` | `devices` 的条目数。 |
+| `devices` | `OutputDevice[]` | 全部输出模块下的设备列表（按模块归属依次排列） |
+| `devices[].guid` | `string` | 输出设备唯一标识符 GUID（格式为 {...}；由于默认设备为全零 GUID，需结合 (entryGuid, guid) 作为唯一复合键） |
+| `devices[].name` | `string` | 音频输出设备显示名称 |
+| `devices[].entry` | `string` | 提供该设备的输出模块显示名称 |
+| `devices[].entryGuid` | `string` | 提供该设备的输出模块 GUID（格式为 {...}） |
+| `count` | `integer` | devices 数组包含的设备总数 |
 
 成功时 `success` 为 `true`；失败时返回 `{ success: false, error, code }`，`code` 见[错误码](../reference/errors.md)。
 <!-- api-schema:end -->
@@ -32,7 +32,7 @@
 ### output.getEntries
 
 <!-- api-schema:begin output.getEntries -->
-列出输出模块（foobar2000 的 output entry）及其能力标志。
+获取全部输出模块（output entry）及其能力标志列表
 
 无参数。
 
@@ -40,15 +40,15 @@
 
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
-| `entries` | `OutputEntry[]` | 所有输出模块。 |
-| `entries[].guid` | `string` | 模块 GUID，形如 `{...}`。 |
-| `entries[].name` | `string` | 模块的显示名。可能有多个模块同名，也有模块报告空名字。 |
-| `entries[].needsBitdepthConfig` | `boolean` | 该模块需要配置输出位深。 |
-| `entries[].needsDitherConfig` | `boolean` | 该模块需要配置抖动。 |
-| `entries[].supportsMultipleStreams` | `boolean` | 该模块能同时播放多路流。 |
-| `entries[].isHighLatency` | `boolean` | 该模块声明自己是高延迟的。 |
-| `entries[].isLowLatency` | `boolean` | 该模块声明自己是低延迟的。 |
-| `count` | `integer` | `entries` 的条目数。 |
+| `entries` | `OutputEntry[]` | 全部已安装的输出模块列表 |
+| `entries[].guid` | `string` | 输出模块唯一标识符 GUID（格式为 {...}） |
+| `entries[].name` | `string` | 输出模块显示名称（可能存在同名或空名称） |
+| `entries[].needsBitdepthConfig` | `boolean` | 该模块是否需要显式配置输出位深 |
+| `entries[].needsDitherConfig` | `boolean` | 该模块是否需要配置抖动处理（Dithering） |
+| `entries[].supportsMultipleStreams` | `boolean` | 该模块是否支持同时播放多路音频流 |
+| `entries[].isHighLatency` | `boolean` | 该模块是否声明为高延迟输出 |
+| `entries[].isLowLatency` | `boolean` | 该模块是否声明为低延迟输出 |
+| `count` | `integer` | entries 数组包含的模块总数 |
 
 成功时 `success` 为 `true`；失败时返回 `{ success: false, error, code }`，`code` 见[错误码](../reference/errors.md)。
 <!-- api-schema:end -->
@@ -56,7 +56,7 @@
 ### output.getSettings
 
 <!-- api-schema:begin output.getSettings -->
-报告各输出模块的显示名。仅供参考：输出设置在 foobar2000 首选项里修改，切换设备用 `config.setOutputDevice`。
+获取各输出模块的显示名称（仅供参考展示；输出配置须在 foobar2000 首选项调整，切换设备请调用 config.setOutputDevice）
 
 无参数。
 
@@ -64,8 +64,8 @@
 
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
-| `note` | `string` | 一句固定的英文说明，指出输出设置在哪里修改。 |
-| `availableOutputs` | `string[]` | 各输出模块的显示名。名字可能重复或为空，顺序在两次调用之间也不稳定；新代码请用 `output.getEntries`，它给出名字与 GUID 的对应。 |
+| `note` | `string` | 固定的英文提示文本（指出首选项中修改输出设置的路径） |
+| `availableOutputs` | `string[]` | 各输出模块显示名称列表（名称可能重复或为空且调用间顺序不固定；建议优先使用 output.getEntries 配合 GUID 唯一标识） |
 
 成功时 `success` 为 `true`；失败时返回 `{ success: false, error, code }`，`code` 见[错误码](../reference/errors.md)。
 <!-- api-schema:end -->

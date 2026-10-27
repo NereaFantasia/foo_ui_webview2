@@ -15,7 +15,7 @@ const follower = new MediaElementFollower(element);
 const unsubscribe = follower.onError(error => console.error(error));
 await follower.setSource('E:\\Music\\clip.mp4');
 
-// 移除视图时释放资源。
+// 移除视图时释放资源
 unsubscribe();
 follower.dispose();
 ```
@@ -68,7 +68,7 @@ async function followTrack(path: string, subsong: number) {
     const info = unwrap(await media.getContainerInfo(path));
     const chapter = info.chapters?.find(item => item.subsong === subsong);
     await follower.setSource(`${path}|subsong:${subsong}`, { timelineOffset: chapter?.start ?? 0 });
-    // 其他版本的章节对应别的子曲目。
+    // 其他版本的章节对应别的子曲目
     return info.chapters?.filter(item => item.edition === chapter?.edition) ?? [];
 }
 ```

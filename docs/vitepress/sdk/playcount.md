@@ -8,7 +8,7 @@ Signature: `fb.playcount.getBatch(paths: string[]): Promise<PlaycountGetBatchRes
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `paths` | `string[]` | Yes | Track paths to inspect. |
+| `paths` | `string[]` | Yes | Track paths to inspect |
 
 Returns `{ success, count, results }`. Each `PlaycountInfo` result carries its own `success` flag and may include `playCount`, `firstPlayed`, `lastPlayed`, `added`, `rating`, and `inLibrary`.
 
@@ -37,8 +37,8 @@ Signature: `fb.playcount.set(path: string, count: number): Promise<PlaycountSetR
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `path` | `string` | Yes | Track path. |
-| `count` | `number` | Yes | Compatibility argument accepted by the SDK facade. |
+| `path` | `string` | Yes | Track path |
+| `count` | `number` | Yes | Compatibility argument accepted by the SDK facade |
 
 ::: warning Deprecated
 This method is deprecated. foo_playcount offers no way to change playback statistics, so the host always fails the call with `code: 'NOT_SUPPORTED'` and the promise resolves `{ success: false }`. The SDK sends only `path`; `count` is kept for signature compatibility and never reaches the host. Use `fb.rating.set()` for ratings, and let actual playback update play counts.
@@ -57,7 +57,7 @@ Signature: `fb.playcount.get(path: string): Promise<PlaycountGetResponse>`
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `path` | `string` | Yes | Track path; a `\|subsong:N` suffix selects a CUE subsong. |
+| `path` | `string` | Yes | Track path; a `\|subsong:N` suffix selects a CUE subsong |
 
 `fb.playcount.get()` calls the registered `playcount.get` handler with `paths: [path]` and resolves with its envelope `{ count, results }`, so the track's entry is `results[0]`; a failed call resolves with a failure envelope. The entry has the fields described under `getBatch()`: `success`, `playCount`, `rating` (absent when unrated), `inLibrary`, and the dates `firstPlayed`, `lastPlayed`, and `added` when known.
 

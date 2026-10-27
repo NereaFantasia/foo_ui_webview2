@@ -1,6 +1,6 @@
 # UI API
 
-Methods of the `ui` namespace.
+The `ui` namespace provides methods for displaying native popup menus, balloon notifications, context menus, and theme toast events.
 
 ## ui
 
@@ -36,7 +36,7 @@ Open the main window's own context menu. Coordinates that are omitted, not posit
 <!-- api-schema:end -->
 
 ```js
-// omit x and y to open at the current cursor position
+// Omit x and y to open at the current cursor position
 await fb2k.invoke('ui.showContextMenu');
 ```
 
@@ -133,7 +133,4 @@ await fb2k.invoke('ui.showToast', { message: 'Playlist saved', type: 'success' }
 
 ## Interaction delivery and limitations
 
-`ui.showCustomMenu` uses the current cursor position for native placement and
-routes `ui:menuItemClicked` only to the caller. A dismissed menu returns a
-successful result with `selectedId: null`. `ui.showToast` does not paint UI in
-native code; it emits `ui:toast` to the caller, so the theme owns rendering.
+`ui.showCustomMenu` uses the current cursor position for native placement and routes `ui:menuItemClicked` to the calling window. A dismissed menu returns a successful result with `selectedId: null`. `ui.showToast` paints no native UI: it dispatches `ui:toast` to the caller so that the active theme controls presentation.

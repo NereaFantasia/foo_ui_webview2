@@ -1,6 +1,6 @@
 # Panel API
 
-Methods of the `panel` namespace.
+Provides configuration inspection, runtime attribute updates, and lifecycle events for Default UI (DUI) and Columns UI (CUI) panels.
 
 ## panel
 

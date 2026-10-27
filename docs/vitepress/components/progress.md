@@ -52,10 +52,10 @@ Volume slider with a mute button.
 | `volume` | string | — | Read-only current volume on the 0–100 linear scale |
 | `muted` | boolean | — | Read-only reflection of the mute state |
 
-**CSS Parts:** `mute-button`, `track`, `fill`, `thumb`
-**Slots:** `icon` (default: 🔊)
-**CSS Custom Properties:** `--fb-volume` (0–1)
-**Keyboard:** Arrow keys change volume by ±5; Home sets 0 and End sets 100
+**CSS Parts:** `mute-button`, `track`, `fill`, `thumb`  
+**Slots:** `icon` (default: 🔊)  
+**CSS Custom Properties:** `--fb-volume` (0–1)  
+**Keyboard:** Arrow keys change volume by ±5; Home sets 0 and End sets 100  
 **Mouse Wheel:** changes volume by ±5
 
 **Events:**
@@ -80,8 +80,8 @@ Seven-state playback-order picker with dropdown and cycling-button modes.
 | `mode` | `'select' \| 'button'` | `'button'` | Display mode (observed); only the exact value `select` selects the dropdown |
 | `order` | string | — | Read-only reflection of the current order name |
 
-**CSS Parts:** `button` (button mode) or `select` (select mode)
-**Slots:** default slot (button mode label)
+**CSS Parts:** `button` (button mode) or `select` (select mode)  
+**Slots:** default slot (button mode label)  
 **Orders:** `default`, `repeat-playlist`, `repeat-track`, `random`, `shuffle-tracks`, `shuffle-albums`, `shuffle-folders`
 
 **Events:**

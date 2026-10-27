@@ -7,7 +7,7 @@ Methods of the `audio` namespace.
 ### audio.analyzeBPM
 
 <!-- api-schema:begin audio.analyzeBPM -->
-Read the track's `BPM` tag. The host does not detect tempo. foobar2000's cached info is used when complete; otherwise the file itself is read, so tracks that are in no playlist or library work too.
+Read the track's `BPM` metadata tag (the host does not perform audio tempo analysis). Uses foobar2000 cached metadata when complete, falling back to reading the file directly so tracks outside playlists or library are also supported.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
@@ -180,8 +180,8 @@ Compute a waveform of a whole track. A cache hit answers `ready` with the wavefo
 | `waveform` | `number[]` | `ready` answers: the points, normalized by `maxAmplitude`. |
 | `maxAmplitude` | `number` | `ready` answers: the largest value of the selected sequence before normalization, in linear full-scale units. On the `linear` scale `waveform[i] * maxAmplitude` restores the level; on `db`, dBFS is `(v * 60 - 60) + 20 * log10(maxAmplitude)`. |
 | `duration` | `number` | `ready` answers: track length in seconds. |
-| `sampleRate` | `integer` | `ready` answers: sample rate in Hz. |
-| `channels` | `integer` | `ready` answers: channel count. |
+| `sampleRate` | `integer` | `ready` answers: actual decoded PCM sample rate in Hz, which can differ from the file's nominal sample rate. |
+| `channels` | `integer` | `ready` answers: actual decoded PCM channel count. |
 | `resolution` | `integer` | Point count in use. |
 | `method` | `"rms" \| "peak"` | As requested. |
 | `scale` | `"linear" \| "db"` | As requested. |
@@ -485,7 +485,7 @@ const { left, right } = res2;
 ### audio.isVisualizationAvailable
 
 <!-- api-schema:begin audio.isVisualizationAvailable -->
-Report whether foobar2000 offers a visualization stream. Spectrum frames and getWaveform need one.
+Report whether foobar2000 provides an active visualization stream (required by `subscribeSpectrum` and `getWaveform`).
 
 This method takes no parameters.
 
@@ -635,7 +635,7 @@ const bins = await fb2k.invoke('audio.subscribeSpectrum', {
 <!-- api-schema:begin audio.subscribeStream -->
 Experimental API; it may change in future releases.
 
-Subscribe to the audio foobar2000 is playing. Every chunk the core plays is copied into a ring buffer shared with the page, one buffer per subscription. The buffer arrives as a `sharedbufferreceived` event on `chrome.webview` with the first chunk of audio, and again with a new `epoch` whenever the sample rate or channel count changes; `audio:stream` then reports the old epoch as ended. Nothing arrives while playback is stopped or paused.
+Subscribe to live playback PCM audio. Audio chunks played by foobar2000 are copied into a shared memory ring buffer (one dedicated buffer per subscription). The buffer is delivered via a `sharedbufferreceived` event on `chrome.webview` alongside the first audio chunk. When sample rate or channel count changes, a new buffer is allocated (incrementing `epoch`) and `audio:stream` announces the previous epoch has ended. No chunks are delivered while playback is stopped or paused.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
@@ -729,8 +729,8 @@ await fb2k.invoke('audio.unsubscribeStream', { subscriptionId: 'meter' });
 
 ## Runtime behavior notes
 
-- `audio.subscribeSpectrum` creates a subscription of the calling window, or replaces the one with the same `subscriptionId`. Without `subscriptionId` the key is derived from the calling window and `event`; frames arrive under `event`, which defaults to `audio:spectrum`. The SDK's `fb.audio.subscribeSpectrum()` sets up the same subscription.
-- Spectrum subscriptions do not share parameters. A beat thread on a high-resolution timer ticks at the highest requested `fps`, and each subscription gets a frame when its own interval is due, so pushed frames arrive close to the requested rate; subscriptions with the same effective FFT size, band count, `scale` and frequency range share one FFT per tick. Host main-thread time grows with the number of frames, about 0.5 ms each.
-- The `db` scale reflects the signal after ReplayGain and DSP processing and before the volume control, so changing the volume does not change the readings.
-- `audio.getSpectrum` and `audio.getWaveform` read the visualization stream. Both fail with `OPERATION_FAILED` while no spectrum subscription exists; `audio.getSpectrum` also fails while playback runs and the stream has no data yet, and answers a silence frame while playback is paused or stopped.
-- `audio.generateFullWaveform` returns `status: "ready"` with cached data or `status: "pending"` with `taskId`. The caller receives `audio:fullWaveformReady` or `audio:fullWaveformFailed`; `cueIndex` takes precedence over a `path|subsong:N` suffix.
+- **Subscription identity & dispatching**: `audio.subscribeSpectrum` creates a spectrum subscription for the calling window, replacing any existing subscription with the same `subscriptionId`. When `subscriptionId` is omitted, the key is derived from the calling window and `event`. Frames arrive under the specified `event` name (defaulting to `audio:spectrum`). SDK's `fb.audio.subscribeSpectrum()` creates the same underlying subscription.
+- **Timer scheduling & FFT deduplication**: Subscriptions maintain independent parameters. A dedicated host timer thread ticks at the highest requested `fps` using high-resolution timers; each subscription delivers a frame only when its own interval elapses. Subscriptions sharing the same effective FFT size, band count, `scale`, and frequency range share a single FFT calculation per tick. Host main-thread dispatch overhead scales with frame count (~0.5 ms per frame).
+- **Signal tap point**: The `scale: 'db'` mode measures the signal after ReplayGain and DSP processing but before output volume attenuation; adjusting player volume does not alter spectrum readings.
+- **Visualization stream dependency**: `audio.getSpectrum` and `audio.getWaveform` query the real-time visualization stream. If no spectrum subscriptions exist, both calls fail with `OPERATION_FAILED`. If playback is active but stream buffers have not yet accumulated data, `audio.getSpectrum` also fails; during pause or stop, it returns a silent frame.
+- **Full waveform lifecycle**: `audio.generateFullWaveform` immediately returns `status: "ready"` with cached data on cache hit, or `status: "pending"` with a `taskId` on cache miss. The caller subsequently receives `audio:fullWaveformReady` or `audio:fullWaveformFailed`. An explicit `cueIndex` parameter takes precedence over a `path|subsong:N` suffix.

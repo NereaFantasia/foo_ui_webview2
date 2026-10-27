@@ -11,9 +11,9 @@ Sets a track rating. Prefers the foo_playcount context-menu path when available;
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `path` | string | No | Audio path. Supports `path\|subsong:N`. Omit to target the now-playing item when the handler allows it. |
-| `rating` | number | Yes | `0`–`5`; `0` clears the rating. |
-| `cueIndex` | number | No | CUE subsong index. Takes priority over `\|subsong:N` embedded in `path`. |
+| `path` | string | No | Audio path (supports `path\|subsong:N`); omit to target the now-playing item when the handler allows it |
+| `rating` | number | Yes | `0`–`5`; `0` clears the rating |
+| `cueIndex` | number | No | CUE subsong index; takes priority over `\|subsong:N` embedded in `path` |
 
 ::: warning Dependency
 Install [foo_playcount](https://www.foobar2000.org/components/view/foo_playcount) for stats-backed ratings.
@@ -26,8 +26,8 @@ Reads a track rating. Prefers foo_playcount (`%rating%` titleformat) and falls b
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `path` | string | Yes | Audio path. Supports `path\|subsong:N`. |
-| `cueIndex` | number | No | CUE subsong index. |
+| `path` | string | Yes | Audio path (supports `path\|subsong:N`) |
+| `cueIndex` | number | No | CUE subsong index |
 
 Example return:
 

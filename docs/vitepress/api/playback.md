@@ -4,11 +4,9 @@ Methods of the `playback` namespace.
 
 ## Playback position and timing
 
-`playback.getPosition`, `playback:timeHighRes` and `playback:stateChanged` report a position that already accounts for output-buffer and DSP latency. Do not subtract that latency again when synchronizing lyrics or video. The reading advances in steps, typically 10–30 ms apart; this is separate from the roughly 100 ms interval of `playback:timeHighRes` events.
-
-`hostTime` records when the host sampled the position, in Unix milliseconds on the same clock as `Date.now()`. Extrapolation estimates movement between samples; it does not remove stalls or jumps after starting, seeking or resuming, or during crossfades. For video, use the SDK's [MediaElementFollower](../sdk/media.md).
-
-`playback:time` is a coarse display update without a sample timestamp. `playback:seeked.position` and `playback.setPosition.actualPosition` are seek targets; the immediately sampled `newPosition` may still contain the old position.
+- **Latency compensation & stepped advancement**: `playback.getPosition`, `playback:timeHighRes`, and `playback:stateChanged` report positions that already account for output-buffer and DSP latency. **Do not subtract latency again** when synchronizing lyrics or media. Audio engine readings advance in discrete steps (typically updating every 10–30 ms), independent of the ~100 ms broadcast interval of `playback:timeHighRes`.
+- **Sampling timestamps & extrapolation**: `hostTime` records the host system timestamp when the position was sampled (Unix epoch milliseconds, on the same clock as `Date.now()`). Linear extrapolation can estimate inter-sample positions, but cannot eliminate transient stalls or discontinuities during startup, seeking, pause-resume, or crossfading. For video synchronization, use the SDK's [MediaElementFollower](../sdk/media.md).
+- **Position event semantics**: `playback:time` provides a coarse display update (~once per second) without sample timestamps. `playback:seeked.position` and `playback.setPosition.actualPosition` represent the seek target; the immediately sampled `newPosition` or the subsequent `playback:timeHighRes` may still reflect the pre-seek position while the audio engine settles.
 
 ## playback
 
@@ -570,4 +568,5 @@ const result = await fb2k.invoke('playback.volumeUp');
 
 ## Related events
 
-Related event `playback:stopAfterCurrentChanged` uses payload `{ enabled }` (same field name as the API).
+- `playback:stopAfterCurrentChanged`: Emitted when the "stop after current" toggle changes. The payload is `{ enabled }`, matching the API response field.
+- For the full list of playback events and their payload schemas, see [Global Events Reference](events.md#playback-events).

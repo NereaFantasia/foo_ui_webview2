@@ -1,6 +1,6 @@
 # Dialog API
 
-Methods of the `dialog` namespace.
+Provides native system dialogs for opening files, saving files, selecting folders, and modal confirmations.
 
 ## dialog
 

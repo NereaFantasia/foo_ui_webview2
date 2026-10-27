@@ -8,8 +8,8 @@
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
-| `path` | `string` | 是 | 要检查的曲目路径，带 `\|subsong:N` 时选子曲目。 |
-| `options.filename` | `string` | 否 | 音频旁文件的精确名称，含扩展名；空字符串或省略表示自动查找。 |
+| `path` | `string` | 是 | 要检查的曲目路径，带 `\|subsong:N` 时选子曲目 |
+| `options.filename` | `string` | 否 | 音频旁文件的精确名称，含扩展名；空字符串或省略表示自动查找 |
 
 列出存在的已知歌词标签与外挂文件，空内容也算存在。文件候选与访问检查和 `get()` 一致；显式文件名只限定文件候选，仍检查内嵌标签。
 
@@ -27,11 +27,11 @@ const { exists } = res;
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
-| `path` | `string` | 否 | 曲目路径；省略则取当前曲目，此时没在播放会以 `NO_ACTIVE_ITEM` 失败。 |
-| `options.source` | `string` | 否 | `'embedded'`、`'file'` 或 `'any'`；默认 `'any'`，先查内嵌标签，再查外挂文件。 |
-| `options.type` | `string` | 否 | `'synced'`、`'unsynced'` 或 `'any'`；默认 `'any'`。 |
-| `options.format` | `string` | 否 | `'lrc'`、`'txt'` 或 `'any'`；默认 `'any'`，先试 `.lrc` 再试 `.txt`。只影响外挂文件查找。 |
-| `options.filename` | `string` | 否 | 音频旁文件的精确名称；非空时替代自动候选并忽略 `format`，`source` 与 `type` 仍生效。 |
+| `path` | `string` | 否 | 曲目路径；省略则取当前曲目，此时没在播放会以 `NO_ACTIVE_ITEM` 失败 |
+| `options.source` | `string` | 否 | `'embedded'`、`'file'` 或 `'any'`；默认 `'any'`，先查内嵌标签，再查外挂文件 |
+| `options.type` | `string` | 否 | `'synced'`、`'unsynced'` 或 `'any'`；默认 `'any'` |
+| `options.format` | `string` | 否 | `'lrc'`、`'txt'` 或 `'any'`；默认 `'any'`，先试 `.lrc` 再试 `.txt`。只影响外挂文件查找 |
+| `options.filename` | `string` | 否 | 音频旁文件的精确名称；非空时替代自动候选并忽略 `format`，`source` 与 `type` 仍生效 |
 
 返回 `LyricsGetResponse`。先判 `success` 再看 `available`；找到时可能带 `source`、`sourcePath`、`tagName`、`lyrics` 与 `synced`。自动查找仅在确认整文件单曲后使用音频同名文件，再查首个艺人值与曲名的组合；子曲目只使用后者，见[文件查找与命名](/zh/api/lyrics#sidecar-lookup)。
 
@@ -48,12 +48,12 @@ const result = await fb.lyrics.get(undefined, { type: 'synced' });  // 仅同步
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
-| `path` | `string` | 是 | 歌词所属的曲目路径。 |
-| `lyricsText` | `string` | 是 | 要保存的歌词文本。 |
-| `options.target` | `LyricsSaveTarget \| LyricsSaveTarget[]` | 否 | `'file'`（音频旁的外挂文件，默认）、`'embedded'`（文件里的标签），或 `'all'` 表示两处。 |
-| `options.filename` | `string` | 否 | `file` 目标的精确文件名，含扩展名。非空时替代默认名称并忽略 `format`。 |
-| `options.tagName` | `string` | 否 | `embedded` 目标写的标签，默认 `'LYRICS'`。 |
-| `options.format` | `string` | 否 | `'lrc'` 或 `'txt'`，默认外挂文件名的扩展名；默认 `'lrc'`，非空 `filename` 时忽略。 |
+| `path` | `string` | 是 | 歌词所属的曲目路径 |
+| `lyricsText` | `string` | 是 | 要保存的歌词文本 |
+| `options.target` | `LyricsSaveTarget \| LyricsSaveTarget[]` | 否 | `'file'`（音频旁的外挂文件，默认）、`'embedded'`（文件里的标签），或 `'all'` 表示两处 |
+| `options.filename` | `string` | 否 | `file` 目标的精确文件名，含扩展名。非空时替代默认名称并忽略 `format` |
+| `options.tagName` | `string` | 否 | `embedded` 目标写的标签，默认 `'LYRICS'` |
+| `options.format` | `string` | 否 | `'lrc'` 或 `'txt'`，默认外挂文件名的扩展名；默认 `'lrc'`，非空 `filename` 时忽略 |
 
 SDK 返回类型为 `LyricsSaveResponse`。单个目标时描述这次写入（文件目标有 `savedTo`，`embedded` 目标是标签写入回执）；多个目标时各目标的结果在 `results` 下，只有全部失败才以 `OPERATION_FAILED` 失败。`embedded` 目标只把标签写入排入队列：回执里的 `dispatched: true` 表示已排入，最终结果由 `metadata:writeComplete` 事件报告。
 

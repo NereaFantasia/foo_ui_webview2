@@ -1,6 +1,6 @@
 # Port API
 
-Methods of the `port` namespace.
+Provides PortHub-backed inter-window communication over named channels and point-to-point messaging.
 
 ## port
 

@@ -1,6 +1,6 @@
 # Discovery API
 
-Methods of the `discovery` namespace.
+The `discovery` namespace provides methods to enumerate services registered in the running foobar2000 process (v1.1.3+), including menu commands, formats, UI elements, DSPs, output devices, and preference pages.
 
 ## discovery
 
@@ -57,9 +57,9 @@ Run a context-menu command by GUID against the playing track, or the active play
 `success` is `true` on success. On failure the response is `{ success: false, error, code }`; see [Error codes](../reference/errors.md) for `code`.
 <!-- api-schema:end -->
 
-A `FORCE_OFF` command is refused rather than dispatched: the SDK treats that state as "keyboard-shortcut list only", so the host never draws it and running it would perform something the user could not have clicked. The refusal fails with `NOT_SUPPORTED` and carries `hidden: true`, `name`, `resolved` and `force`. `DEFAULT_OFF` commands (hidden unless Shift is held) remain reachable and are never refused. A GUID no registered item owns fails with `NOT_FOUND` and `resolved: false`.
+A `FORCE_OFF` command is refused rather than dispatched: the SDK treats that state as keyboard-shortcut only, so the host never renders it and running it would perform an action unavailable in the UI. The refusal fails with `NOT_SUPPORTED` and carries `hidden: true`, `name`, `resolved`, and `force`. `DEFAULT_OFF` commands (hidden unless Shift is held) remain reachable and are never refused. A GUID that no registered item owns fails with `NOT_FOUND` and `resolved: false`.
 
-`hidden` and `resolved` come back on the refusal and the success path alike, so "was not refused" is distinguishable from "this build does not report the field".
+Both the refusal and success paths return `hidden` and `resolved`, distinguishing successful execution from builds that omit the field.
 
 ```js
 const res = await fb2k.invoke('discovery.getContextMenuCommands');
@@ -74,7 +74,7 @@ await fb2k.invoke('discovery.executeContextMenuCommand', { guid: rate5.guid });
 ### discovery.executeMainMenuCommand
 
 <!-- api-schema:begin discovery.executeMainMenuCommand -->
-Run a main-menu command by GUID. A child of a dynamic submenu is addressed by its parent's `guid` plus its own `subGuid`. Fails with `NOT_FOUND` when no command owns the GUID.
+Run a main-menu command by GUID. A child of a dynamic submenu is addressed by its parent's `guid` plus its own `subGuid`. The address must identify one current leaf; dynamic containers cannot be executed. Missing addresses fail with `NOT_FOUND`, ambiguous ones with `MENU_MATCH_AMBIGUOUS`, disabled leaves with `MENU_ITEM_DISABLED`, and unreadable state with `OPERATION_FAILED`.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
@@ -199,7 +199,7 @@ List the registered context-menu commands, flattened, with their state for the c
 `success` is `true` on success. On failure the response is `{ success: false, error, code }`; see [Error codes](../reference/errors.md) for `code`.
 <!-- api-schema:end -->
 
-`enabled` / `checked` are only observable with a track selected or playing, because the SDK's `item_get_display_data_root()` evaluates display data against a `metadb_handle_list`. Check the response's `stateKnown` first: when it is false those two fields carry no observation and only `hidden` stays meaningful, since `FORCE_OFF` is a constant property of the item rather than a per-selection one.
+`enabled` and `checked` are observable only when a track is selected or playing, because `item_get_display_data_root()` evaluates display data against a `metadb_handle_list`. Check `stateKnown` first: when it is `false`, those two fields carry no observation and only `hidden` remains meaningful, as `FORCE_OFF` is a constant item property rather than a per-selection state.
 
 ```js
 const result = await fb2k.invoke('discovery.getContextMenuCommands');
@@ -337,7 +337,7 @@ List the main-menu commands, flattened, with their label path, GUID and display 
 `success` is `true` on success. On failure the response is `{ success: false, error, code }`; see [Error codes](../reference/errors.md) for `code`.
 <!-- api-schema:end -->
 
-Dynamic submenus registered through `mainmenu_commands_v2` (used by SMP-era components such as ESLyric) are expanded by default. A parent slot has `isDynamicParent: true` and is only a container; entries expanded from its subtree carry `isDynamic: true` and `subGuid`. Executing one requires passing its `subGuid` to `discovery.executeMainMenuCommand`.
+Dynamic submenus registered through `mainmenu_commands_v2` (used by SMP-era components such as ESLyric) expand by default. A parent slot has `isDynamicParent: true` and serves only as a container; entries expanded from its subtree carry `isDynamic: true` and `subGuid`. To execute an expanded entry, pass its `subGuid` to `discovery.executeMainMenuCommand`.
 
 ```js
 const result = await fb2k.invoke('discovery.getMainMenuCommands');
@@ -485,7 +485,7 @@ Search command names, descriptions and menu paths across both menu families, cas
 `success` is `true` on success. On failure the response is `{ success: false, error, code }`; see [Error codes](../reference/errors.md) for `code`.
 <!-- api-schema:end -->
 
-Dynamic parent slots are skipped, since their expanded children carry the executable identity. Entries produced by a dynamic submenu carry `subGuid`; pass both `guid` and `subGuid` to `discovery.executeMainMenuCommand`. Context-menu items are registered flat and placed by the host, so for those `path` is just the label.
+Dynamic parent slots are skipped because their expanded children carry the executable identity. Entries produced by a dynamic submenu carry `subGuid`; pass both `guid` and `subGuid` to `discovery.executeMainMenuCommand`. Context-menu items are registered flat and placed by the host, so their `path` matches their label.
 
 ```js
 const res = await fb2k.invoke('discovery.searchCommands', { query: 'rating' });
@@ -496,9 +496,9 @@ const { results } = res;
 ## Discovery scope and execution rules
 
 - Results enumerate services registered in the current foobar2000 process; counts and names vary with installed components and host configuration.
-- `discovery.executeMainMenuCommand` and `discovery.executeContextMenuCommand` require a well-formed GUID; a malformed one fails with `INVALID_PARAMS`, one that no command owns with `NOT_FOUND`. A context command applies to the now-playing item when available, otherwise to the active playlist selection; with neither it fails with `NO_ACTIVE_ITEM`.
+- `discovery.executeMainMenuCommand` and `discovery.executeContextMenuCommand` require a well-formed GUID; a malformed one fails with `INVALID_PARAMS`, and a GUID that no command owns fails with `NOT_FOUND`. A context command applies to the now-playing item when available, otherwise to the active playlist selection; with neither it fails with `NO_ACTIVE_ITEM`.
 - Components that build their main-menu subtree at runtime (`mainmenu_commands_v2`, for example ESLyric) are expanded by `discovery.getMainMenuCommands` and `discovery.searchCommands`. Expanded entries are identified by `guid` plus `subGuid`, and `discovery.executeMainMenuCommand` dispatches them through the dynamic execution path when `subGuid` is supplied.
 - Dynamic submenus are a snapshot of the moment the call is made: their contents can depend on the current track, selection, or component state.
 - `discovery.executeContextMenuByPath` requires `path`; optional `trackPath` is subject to media-read security. Without it, the runtime uses the same now-playing/selection fallback.
-- `discovery.getContextMenuTree` is diagnostic output. It requires an active target item. Recursion and per-node child count are both bounded, and any clipping is reported through `truncated` / `depthExceeded` / `childrenExceeded` rather than left for the caller to notice; the applied limits come back as `maxDepth` and `maxChildrenPerNode`.
-- `discovery.searchCommands` requires a non-empty `query` and performs a case-insensitive match over command names, descriptions, and menu paths, across both the main menu and the context menu. Case folding is ASCII-only, so UTF-8 multi-byte sequences (CJK labels, which have no case to fold) pass through unchanged. `scope` accepts only `all`, `mainmenu` and `contextmenu`; any other value fails with `INVALID_PARAMS`.
+- `discovery.getContextMenuTree` provides diagnostic output and requires an active target item. Recursion depth and per-node child counts are both bounded, and any clipping is reported through `truncated` / `depthExceeded` / `childrenExceeded` rather than left silent; applied limits are returned in `maxDepth` and `maxChildrenPerNode`.
+- `discovery.searchCommands` requires a non-empty `query` and performs a case-insensitive match over command names, descriptions, and menu paths across both the main menu and the context menu. Case folding is ASCII-only, so UTF-8 multi-byte sequences pass through unchanged. `scope` accepts only `all`, `mainmenu`, and `contextmenu`; any other value fails with `INVALID_PARAMS`.

@@ -1,6 +1,6 @@
 # Output API
 
-Methods of the `output` namespace.
+Provides device enumeration and capability inspection for audio output modules.
 
 ## output
 

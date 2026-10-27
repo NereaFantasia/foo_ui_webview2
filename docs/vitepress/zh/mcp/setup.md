@@ -1,14 +1,14 @@
-# 安装与配置 
+# 安装与配置
 
-## 先决条件 
+## 先决条件
 
 1. **Node.js 18+** — [下载](https://nodejs.org/)
 2. **foobar2000** 已安装并运行 `foo_ui_webview2` 组件
 3. **CDP 远程调试已启用** — 在组件的 `Preferences → Display → WebView2 UI → 开发者` 页开启；端口也在那里设置（默认 `9222`）
 
-## 安装方式 
+## 安装方式
 
-### 方式一：npx 直接运行（推荐） 
+### 方式一：npx 直接运行（推荐）
 
 无需安装，在 MCP 客户端配置中直接使用：
 
@@ -25,14 +25,14 @@
 }
 ```
 
-### 方式二：全局安装 
+### 方式二：全局安装
 
 ```bash
 npm install -g foo-ui-webview2-mcp
 foo-ui-webview2-mcp
 ```
 
-### 方式三：本地开发 
+### 方式三：本地开发
 
 ```bash
 cd mcp/
@@ -41,9 +41,9 @@ npm run build
 npm start
 ```
 
-## 客户端配置 
+## 客户端配置
 
-### VS Code (GitHub Copilot) 
+### VS Code (GitHub Copilot)
 
 在项目根目录创建或编辑 `.vscode/mcp.json`：
 
@@ -62,7 +62,7 @@ npm start
 }
 ```
 
-### Claude Desktop 
+### Claude Desktop
 
 编辑配置文件：
 
@@ -83,11 +83,11 @@ npm start
 }
 ```
 
-### Cursor 
+### Cursor
 
 在 Cursor 设置中，MCP Servers 部分添加同样的配置。
 
-## 环境变量 
+## 环境变量
 
 | 变量 | 默认值 | 说明 |
 | --- | --- | --- |
@@ -103,16 +103,16 @@ npm start
 `fb2k_page_evaluate` 允许在 WebView2 页面里执行任意 JavaScript 表达式，能调用页面可以调用的全部 Bridge 方法，仅建议在可信的开发或调试会话里使用。
 :::
 
-## CDP 连接 
+## CDP 连接
 
-### 启用 CDP 远程调试 
+### 启用 CDP 远程调试
 
 1. 打开 foobar2000
 2. 进入 **Preferences → Display → WebView2 UI → 开发者**
 3. 勾选 **启用 CDP 远程调试（供 MCP / AI 代理使用）**；端口保持 `9222` 或在 1024–65535 内另选，然后按 **应用**
 4. 重启 foobar2000。改了端口的话，把 MCP 客户端配置里的 `FB2K_CDP_PORT` 设成同一个值
 
-### 连接流程 
+### 连接流程
 
 MCP Server 启动
     │
@@ -126,7 +126,7 @@ MCP Server 启动
     │
     └─ 就绪，等待工具调用
 
-### 连接失败处理 
+### 连接失败处理
 
 | 场景 | 表现 | 解决方案 |
 | --- | --- | --- |
@@ -136,7 +136,7 @@ MCP Server 启动
 | 连接中断 | 自动重连（最多 3 次） | 等待自动恢复 |
 | 调用超时 | 30 秒后返回错误 | 检查 foobar2000 是否卡顿 |
 
-### 后台行为与 keep-alive 
+### 后台行为与 keep-alive
 
 为节省内存，组件默认在窗口**最小化**、**隐藏到托盘**或**锁屏**时挂起 WebView 页面（`visibilityState=hidden`、渲染暂停、定时器节流）。挂起的页面会破坏 CDP 自动化：截图因不再出帧而停摆，依赖 `requestAnimationFrame` 或定时器的调用可能撞上 30 秒超时。
 
@@ -152,7 +152,7 @@ MCP Server 启动
 弹窗、DUI/CUI 面板与托盘菜单 overlay 是同端口下彼此独立的 CDP page target。客户端优先选择有具体 URL 的 target——托盘 overlay 与内置测试页都显示为 `about:blank`——多候选时向 stderr 告警。用 `FB2K_CDP_TARGET_URL` 可以锁定到唯一 target；过滤无匹配会报错并列出候选，而不是绑到任意页面。
 :::
 
-## 与 Chrome DevTools MCP 配合 
+## 与 Chrome DevTools MCP 配合
 
 可搭配 [chrome-devtools-mcp](https://github.com/ChromeDevTools/chrome-devtools-mcp) 使用：
 

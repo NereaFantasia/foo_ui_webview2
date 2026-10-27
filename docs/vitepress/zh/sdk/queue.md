@@ -169,7 +169,7 @@ console.log(result.count);
 
 ## moveToTop(index)
 
-签名：`fb.queue.moveToTop(index: number): Promise<QueueMoveToTopResponse>`
+签名：`fb.queue.moveToTop(index: number, expectedVersion?: string): Promise<QueueMoveToTopResponse>`
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |

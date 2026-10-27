@@ -70,7 +70,7 @@ import { findParamKeyProblem } from 'foo-webview-sdk/schema';
 
 const problem = findParamKeyProblem('playlist.getTracks', { playlist: 0, limit: 10 });
 if (problem) {
-  // { path: 'limit', reason: 'unknown' }: the host answers with INVALID_PARAMS.
+  // { path: 'limit', reason: 'unknown' }: the host answers with INVALID_PARAMS
   console.warn(`${problem.reason} parameter ${problem.path}`);
 }
 ```

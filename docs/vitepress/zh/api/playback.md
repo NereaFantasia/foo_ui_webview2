@@ -6,11 +6,9 @@
 
 ## 播放位置与时钟
 
-`playback.getPosition`、`playback:timeHighRes` 与 `playback:stateChanged` 报告的位置已扣除输出缓冲与 DSP 延迟，同步歌词或视频时不要再次扣减。读数呈阶梯变化，通常每 10–30 ms 更新一次；这个间隔与 `playback:timeHighRes` 约每 100 ms 发送一次的事件间隔不同。
-
-`hostTime` 记录宿主读取位置的时刻，单位为 Unix 毫秒，与 `Date.now()` 使用同一个时钟。外推可估算两次采样之间的位置，但不能消除起播、定位、恢复播放后或交叉渐变期间的停滞与跳变。视频同步可使用 SDK 的 [MediaElementFollower](../sdk/media.md)。
-
-`playback:time` 只提供粗粒度的显示位置，不带采样时刻。`playback:seeked.position` 和 `playback.setPosition.actualPosition` 是定位目标；定位后立即采样得到的 `newPosition` 仍可能是旧位置。
+- **延迟补偿与阶梯推进**：`playback.getPosition`、`playback:timeHighRes` 与 `playback:stateChanged` 报告的播放位置均已扣除输出缓冲与 DSP 延迟，同步歌词或音视频时**无需重复扣减**。底层音频引擎的读数呈阶梯式更新（通常每 10–30 ms 前进一步），此更新步长不同于 `playback:timeHighRes` 约每 100 ms 派发一次的广播频率。
+- **采样基准与时间外推**：`hostTime` 记录宿主读取位置的系统时间（Unix 毫秒，与前端 `Date.now()` 同源）。两次采样之间可通过 `hostTime` 线性外推估算位置，但无法消除起播、跳转、恢复播放或交叉渐变时的瞬态停滞与跳变；视频同步推荐使用 SDK 的 [MediaElementFollower](../sdk/media.md)。
+- **时间事件判据**：`playback:time` 仅提供粗粒度的显示用位置（约每秒一次），不包含采样时间戳。`playback:seeked.position` 与 `playback.setPosition` 返回的 `actualPosition` 为设定的跳转目标；跳转后瞬时采集到的 `newPosition` 或收到的 `playback:timeHighRes` 因处于引擎稳定期，读数仍可能为旧位置。
 
 ## playback
 
@@ -38,7 +36,7 @@ const result = await fb2k.invoke('playback.getCurrentTrack');
 ### playback.getCurrentTrackIndex
 
 <!-- api-schema:begin playback.getCurrentTrackIndex -->
-定位正在播放的曲目在播放列表中的位置。只有从播放列表项起播时才有位置；从别处起播的曲目没有位置，即便存在正在播放的列表。正在播放的那一行从起播的列表里删掉（连同列表一起删也算）之后，曲目照常播放，但位置随之丢失；停止时也没有位置。
+定位当前播放曲目在所在播放列表中的索引位置。仅当曲目自播放列表项起播时可用；自其他来源起播的曲目无索引位置（即使存在播放中列表）。当播放行从源列表中移除（或源列表本身被删除）后，曲目虽继续播放但索引位置丢失；停止状态下亦无索引。
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
@@ -287,7 +285,7 @@ const result = await fb2k.invoke('playback.playOrPause');
 ### playback.playPath
 
 <!-- api-schema:begin playback.playPath -->
-把一个文件追加到活动播放列表并播放；没有活动列表时新建一个。`|subsong:N` 后缀选择文件内的子曲目。活动播放列表已上锁时以 `LOCKED` 失败，不添加也不播放。没通过媒体根检查的路径以 `PERMISSION_DENIED` 失败；foobar2000 解析不出任何曲目的路径以 `NOT_FOUND` 失败，失败里带 `path` 与 `subsong`。
+追加单个文件至活动播放列表并立即播放；无活动列表时自动创建。支持以 `|subsong:N` 后缀指定子曲目序号。若活动列表已锁定，以 `LOCKED` 失败且不修改列表或起播。路径未通过媒体根安全检查时以 `PERMISSION_DENIED` 失败；若宿主无法解析为有效曲目，以 `NOT_FOUND` 失败（附带 `path` 与 `subsong`）。
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
@@ -313,7 +311,7 @@ await fb2k.invoke('playback.playPath', { path: 'C:\\Music\\song.flac' });
 ### playback.playPaths
 
 <!-- api-schema:begin playback.playPaths -->
-把多个文件加入活动播放列表并从其中一首起播。不是字符串或没通过媒体根检查的条目被丢弃并计入 `skippedPaths`，只有成功的调用才报这个数；全部被丢弃时以 `INVALID_PARAMS` 失败。其余每条路径按原样做成一首曲目：不展开文件夹与播放列表文件，也不打开文件，所以不存在的文件也会被加入。一首都做不出时以 `NOT_FOUND` 失败。活动播放列表已上锁时以 `LOCKED` 失败，不清空、不添加也不播放。
+批量添加文件至活动播放列表并起播其中一首。非字符串或未通过媒体根检查的项被跳过并计入 `skippedPaths`（仅成功响应包含此项）；全部项被跳过时以 `INVALID_PARAMS` 失败。其余路径按字面添加为曲目（不展开目录或播放列表文件，亦不校验文件是否存在）。若无法生成任何曲目以 `NOT_FOUND` 失败。活动列表锁定则以 `LOCKED` 失败，不执行任何清空、添加或播放。
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
@@ -572,4 +570,5 @@ const result = await fb2k.invoke('playback.volumeUp');
 
 ## 相关事件
 
-事件 `playback:stopAfterCurrentChanged` 的 payload 为 `{ enabled }`，字段名与 API 返回值相同。
+- `playback:stopAfterCurrentChanged`：单曲播放结束停止选项变更事件，payload 为 `{ enabled }`，字段名与 API 返回值一致。
+- 完整的播放事件清单与参数定义参见[全局事件参考](events.md#playback-事件)。

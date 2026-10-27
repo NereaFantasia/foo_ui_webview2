@@ -91,8 +91,8 @@ Sent to the page that made the call.
 | `waveform` | `number[]` | One value per point, in `scale`; in `[-1, 1]` when `signed`, else in `[0, 1]`. |
 | `maxAmplitude` | `number` | The largest value of the selected sequence before normalisation, in linear full-scale units: with `linear`, `waveform[i] * maxAmplitude` is the absolute level; with `db`, dBFS is `(v * 60 - 60) + 20 * log10(maxAmplitude)`. |
 | `duration` | `number` | Track duration in seconds. |
-| `sampleRate` | `integer` | Sample rate of the decoded track in Hz. |
-| `channels` | `integer` | Channel count of the decoded track. |
+| `sampleRate` | `integer` | Actual decoded PCM sample rate in Hz, which can differ from the file's nominal sample rate. |
+| `channels` | `integer` | Actual decoded PCM channel count. |
 | `resolution` | `integer` | Number of points. |
 | `method` | `"rms" \| "peak"` | How each point was aggregated, as requested. |
 | `scale` | `"linear" \| "db"` | Scale of the points, as requested. |
@@ -281,7 +281,7 @@ Sent to the page of the window or panel it concerns.
 | `resolvedPaths` | `(string \| null)[]` | Target of the `.lnk` shortcut at the same index of `paths`, or `null`; same length and same rules as the field of this name in `dnd:enter`. |
 | `x` | `integer` | Cursor x in client-area physical pixels. |
 | `y` | `integer` | Cursor y in client-area physical pixels. |
-| `keyState` | `integer` | Win32 modifier and mouse-button mask at drop time (`MK_*` flags), for a page that wants modifier-dependent behaviour. It does not change the drop effect reported to the drag source, which is never move or link. |
+| `keyState` | `integer` | Win32 modifier and mouse-button mask at drop time (`MK_*` flags), for a page that wants modifier-dependent behaviour. It does not change the drop effect reported to the drag source: copy for a drag from another application, the page's answer for one started in a page of this component. |
 | `source` | `"self" \| "other-window" \| "external"` | Where the drag came from: `self` when it started in this window's page, `other-window` when it started in another window of the same foobar2000 (the main window or a popup), `external` for everything else, such as Explorer, another application, another foobar2000 process or a drag that started in a Default UI or Columns UI panel. The host reads it from a marker it adds to every drag that starts in a window it hosts; any program can imitate that marker, so treat the value as a hint about the drag's origin, not as a security check. |
 <!-- api-schema:end -->
 
@@ -299,7 +299,7 @@ Sent to the page of the window or panel it concerns.
 | `html5` | `boolean` | The page receives standard HTML5 drag events; `false` means the window has no drag-drop support at all. |
 | `paths` | `boolean` | Real filesystem paths are obtainable through `dnd.getPathsAsync` and the `dnd:*` events. Not fixed for the window's lifetime: a navigation or Chromium re-registering its own drop target can withdraw it, announced by `dnd:capabilitiesChanged`. |
 | `hosting` | `"visual" \| "standard"` | How the window hosts its WebView: `visual` for the main and popup windows, `standard` for a DUI or CUI panel. |
-| `pathsUnavailableReason` | `"register-failed" \| "forward-unavailable" \| "inner-target-not-found" \| "chain-failed" \| "displaced" \| "origin-untrusted"` | Why `paths` is `false`; its presence always means `paths` is `false`. |
+| `pathsUnavailableReason` | `"register-failed" \| "forward-unavailable" \| "inner-target-not-found" \| "chain-failed" \| "origin-untrusted"` | Why `paths` is `false`; its presence always means `paths` is `false`. |
 | `dragOut` | `boolean` | Files can be dragged out of the window through `dnd.prepareDrag`. Independent of `paths`. |
 | `dragOutUnavailableReason` | `"not-visual-hosting" \| "runtime-too-old" \| "register-failed"` | Why `dragOut` is `false`; its presence always means `dragOut` is `false`. |
 <!-- api-schema:end -->
@@ -475,7 +475,7 @@ Sent to the page that made the call.
 ### jitQueue:error
 
 <!-- api-schema:begin event:jitQueue:error -->
-A track given to `jitQueue.playNow` or `jitQueue.enqueueNext` could not be added to the shadow playlist: its location resolved to no tracks, the shadow playlist was gone, or adding it failed with an exception. The track is added after the call has already succeeded, so the failure arrives only as this event. Delivered like `jitQueue:trackChanged`.
+A track given to `jitQueue.playNow` or `jitQueue.enqueueNext` could not be added to the shadow playlist: its location resolved to no tracks, the shadow playlist was gone, or adding it failed with an exception. The track is added after the call has already succeeded, so the failure arrives only as this event. Not sent for an add superseded before it completes: by a later `jitQueue.playNow`, another `jitQueue.enqueueNext` for the next track, `jitQueue.stop`, `jitQueue.clear`, a `jitQueue.preloadBatch` that starts playback, the user stopping playback, or playback leaving the shadow playlist; such a track is neither added nor played. Advancing to an already buffered next track also supersedes an unresolved current track. Delivered like `jitQueue:trackChanged`.
 
 Sent to the page that made the call.
 
@@ -512,7 +512,7 @@ Sent to the page that owns the subscription or task.
 ### library:initialized
 
 <!-- api-schema:begin event:library:initialized -->
-foobar2000 reported that the Media Library has finished initializing. The host drops its library caches before sending it. Every window receives it; a page that loads afterwards does not.
+Sent after foobar2000 finishes loading the library at startup and the host purges its library caches. Broadcast to all open windows; pages loaded afterwards will not receive it. Use `library.getStatus` to query current status.
 
 Sent to every window.
 
@@ -535,6 +535,8 @@ Sent to every window.
 | Field | Type | Description |
 | --- | --- | --- |
 | `count` | `integer` | How many tracks. |
+| `handles` | `string[]` | The `handle` of every track, the key track rows carry, in no particular order. Empty when `truncated`. |
+| `truncated` | `boolean` | `true` when more than 5000 tracks changed at once. `handles` is then empty, and a page should read again everything it shows. |
 | `timestamp` | `integer` | When the host sent it, in milliseconds since the Unix epoch. |
 <!-- api-schema:end -->
 
@@ -550,13 +552,15 @@ Sent to every window.
 | Field | Type | Description |
 | --- | --- | --- |
 | `count` | `integer` | How many tracks. |
+| `handles` | `string[]` | The `handle` of every track, the key track rows carry, in no particular order. Empty when `truncated`. |
+| `truncated` | `boolean` | `true` when more than 5000 tracks changed at once. `handles` is then empty, and a page should read again everything it shows. |
 | `timestamp` | `integer` | When the host sent it, in milliseconds since the Unix epoch. |
 <!-- api-schema:end -->
 
 ### library:itemsModified
 
 <!-- api-schema:begin event:library:itemsModified -->
-Tracks in the Media Library were modified, for example by a tag edit. The host drops its library caches before sending it.
+Tracks in the Media Library were modified: their tags changed, or a component such as `foo_playcount` asked foobar2000 to show its fields anew (`fromHook`). Paths stay as they were, so the host keeps the directory index behind `library.getRoots` and `library.browseTree`. It drops its other library caches before sending it; for a `fromHook` change only the kept `library.getAll` list, because `rating` is the one field of the kept results that such a component can supply.
 
 Sent to every window.
 
@@ -565,6 +569,9 @@ Sent to every window.
 | Field | Type | Description |
 | --- | --- | --- |
 | `count` | `integer` | How many tracks. |
+| `handles` | `string[]` | The `handle` of every track, the key track rows carry, in no particular order. Empty when `truncated`. |
+| `truncated` | `boolean` | `true` when more than 5000 tracks changed at once. `handles` is then empty, and a page should read again everything it shows. |
+| `fromHook` | `boolean` | `true` when the files themselves did not change and a component such as `foo_playcount` asked for its fields to be shown anew. Paths, tags and album grouping are then as before. |
 | `timestamp` | `integer` | When the host sent it, in milliseconds since the Unix epoch. |
 <!-- api-schema:end -->
 
@@ -721,7 +728,7 @@ Sent to every window.
 
 | Field | Type | Description |
 | --- | --- | --- |
-| `tracks` | `MetadbChangedTrackItem[]` | Up to 50 of the changed tracks, in no particular order. An invalid entry is skipped, so the list can hold fewer than the smaller of `count` and 50. |
+| `tracks` | `MetadbChangedTrackItem[]` | Up to 50 of the changed tracks, in no particular order. An invalid entry is skipped, so the list can hold fewer than the smaller of `count` and 50. `handles` names all of them. |
 | `tracks[].handle` | `string` | The track's key, built the way a track row's `handle` is: the native path (foobar2000's own path for a location that has none), with `\|subsong:N` when `subsong` is not `0`. It equals the `handle` of the same track in rows from `library.query`, `playlist.getTracks` and the like. |
 | `tracks[].path` | `string` | The file path in native form, or foobar2000's own path for a location that has none, such as a stream. It carries no subsong, so every track of a cue sheet or a multi-track file has the same `path`; `handle` tells them apart. |
 | `tracks[].subsong` | `integer` | Subsong identifier inside the file, as a track row's `subsong`; `0` for a whole file. |
@@ -730,6 +737,8 @@ Sent to every window.
 | `tracks[].title` | `string` | The first `TITLE` value, when the file has one. |
 | `tracks[].artist` | `string` | All `ARTIST` values joined with `, `, when the file has any. |
 | `count` | `integer` | How many tracks changed, at least `1`; can exceed the length of `tracks`. |
+| `handles` | `string[]` | The `handle` of every changed track, in no particular order. Empty when `truncated`. To read what a page shows for them, pass them as the `paths` of `titleformat.evalFieldsBatch`. |
+| `truncated` | `boolean` | `true` when more than 5000 tracks changed at once. `handles` is then empty, and a page should read again everything it shows. |
 | `fromHook` | `boolean` | `true` when the files themselves did not change and a component such as `foo_playcount` asked for its fields to be shown anew. |
 | `timestamp` | `integer` | When the event was sent, in milliseconds since the Unix epoch. |
 <!-- api-schema:end -->
@@ -1071,6 +1080,7 @@ Sent to every window.
 | --- | --- | --- |
 | `origin` | `"user_added" \| "user_removed" \| "playback_advance" \| "unknown"` | What changed the queue: `user_added`, `user_removed`, `playback_advance` (playback took the next queued track), or `unknown`. |
 | `count` | `integer` | Queue length after the change. |
+| `contentVersion` | `string` | Already includes this change. |
 <!-- api-schema:end -->
 
 ## playlist events
@@ -1099,9 +1109,10 @@ Sent to every window.
 | Field | Type | Description |
 | --- | --- | --- |
 | `playlist` | `integer` | Index of the playlist. |
-| `playlistGuid` | `string` | The playlist's GUID, written as `{XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX}`. Pass it as `playlistGuid` to address this playlist even after the playlist list has changed. |
+| `playlistGuid` | `string` | Unique identifier of the playlist, formatted as `{XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX}`. Pass as `playlistGuid` to reliably target this playlist. |
 | `start` | `integer` | Row of the first inserted track. |
 | `count` | `integer` | Number of tracks inserted. |
+| `contentVersion` | `string` | Already includes this change. |
 <!-- api-schema:end -->
 
 ### playlist:itemsRemoved
@@ -1116,9 +1127,10 @@ Sent to every window.
 | Field | Type | Description |
 | --- | --- | --- |
 | `playlist` | `integer` | Index of the playlist. |
-| `playlistGuid` | `string` | The playlist's GUID, written as `{XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX}`. Pass it as `playlistGuid` to address this playlist even after the playlist list has changed. |
+| `playlistGuid` | `string` | Unique identifier of the playlist, formatted as `{XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX}`. Pass as `playlistGuid` to reliably target this playlist. |
 | `oldCount` | `integer` | Track count before the removal. |
 | `newCount` | `integer` | Track count after the removal. |
+| `contentVersion` | `string` | Already includes this change. |
 <!-- api-schema:end -->
 
 ### playlist:itemsReordered
@@ -1133,8 +1145,9 @@ Sent to every window.
 | Field | Type | Description |
 | --- | --- | --- |
 | `playlist` | `integer` | Index of the playlist. |
-| `playlistGuid` | `string` | The playlist's GUID, written as `{XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX}`. Pass it as `playlistGuid` to address this playlist even after the playlist list has changed. |
+| `playlistGuid` | `string` | Unique identifier of the playlist, formatted as `{XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX}`. Pass as `playlistGuid` to reliably target this playlist. |
 | `count` | `integer` | Track count of the playlist. |
+| `contentVersion` | `string` | Already includes this change. |
 <!-- api-schema:end -->
 
 ### playlist:selectionChanged
@@ -1149,7 +1162,7 @@ Sent to every window.
 | Field | Type | Description |
 | --- | --- | --- |
 | `playlist` | `integer` | Index of the playlist. |
-| `playlistGuid` | `string` | The playlist's GUID, written as `{XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX}`. Pass it as `playlistGuid` to address this playlist even after the playlist list has changed. |
+| `playlistGuid` | `string` | Unique identifier of the playlist, formatted as `{XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX}`. Pass as `playlistGuid` to reliably target this playlist. |
 <!-- api-schema:end -->
 
 ### playlist:focusChanged
@@ -1164,7 +1177,7 @@ Sent to every window.
 | Field | Type | Description |
 | --- | --- | --- |
 | `playlist` | `integer` | Index of the playlist. |
-| `playlistGuid` | `string` | The playlist's GUID, written as `{XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX}`. Pass it as `playlistGuid` to address this playlist even after the playlist list has changed. |
+| `playlistGuid` | `string` | Unique identifier of the playlist, formatted as `{XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX}`. Pass as `playlistGuid` to reliably target this playlist. |
 | `from` | `integer` | Row focused before; `-1` when none was. |
 | `to` | `integer` | Row focused now; `-1` when none is. |
 <!-- api-schema:end -->
@@ -1181,8 +1194,9 @@ Sent to every window.
 | Field | Type | Description |
 | --- | --- | --- |
 | `playlist` | `integer` | Index of the playlist. |
-| `playlistGuid` | `string` | The playlist's GUID, written as `{XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX}`. Pass it as `playlistGuid` to address this playlist even after the playlist list has changed. |
+| `playlistGuid` | `string` | Unique identifier of the playlist, formatted as `{XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX}`. Pass as `playlistGuid` to reliably target this playlist. |
 | `count` | `integer` | Number of tracks replaced. |
+| `contentVersion` | `string` | Already includes this change. |
 <!-- api-schema:end -->
 
 ### playlist:created
@@ -1197,7 +1211,7 @@ Sent to every window.
 | Field | Type | Description |
 | --- | --- | --- |
 | `index` | `integer` | Index of the new playlist. |
-| `guid` | `string` | The playlist's GUID, written as `{XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX}`. Pass it as `playlistGuid` to address this playlist even after the playlist list has changed. |
+| `guid` | `string` | Unique identifier of the playlist, formatted as `{XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX}`. Pass as `playlistGuid` to reliably target this playlist. |
 | `name` | `string` | Its name. |
 <!-- api-schema:end -->
 
@@ -1261,9 +1275,32 @@ Sent to every window.
 | Field | Type | Description |
 | --- | --- | --- |
 | `index` | `integer` | Index of the playlist. |
-| `guid` | `string` | The playlist's GUID, written as `{XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX}`. Pass it as `playlistGuid` to address this playlist even after the playlist list has changed. |
+| `guid` | `string` | Unique identifier of the playlist, formatted as `{XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX}`. Pass as `playlistGuid` to reliably target this playlist. |
 | `name` | `string` | The new name. |
 <!-- api-schema:end -->
+
+### playlist:autoplaylistUIResult
+
+<!-- api-schema:begin event:playlist:autoplaylistUIResult -->
+An accepted native autoplaylist editor call returned or failed. Sent at most once per operation, only to its original document; navigation or destruction discards delivery. `success` reports the native call, not saved changes, cancellation, or the editor's lifetime.
+
+Sent to the page that made the call.
+
+**Payload**
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `operationId` | `string` | The same opaque identifier as the acceptance response, used to match this operation. |
+| `playlistGuid` | `string` | Unique identifier of the playlist, formatted as `{XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX}`. Pass as `playlistGuid` to reliably target this playlist. |
+| `success` | `boolean` | Whether the native call returned normally; a lock entry must also return `true`. |
+| `error` | `string` | Present only on failure, together with `code` and `reason`. |
+| `code` | `string` | Business error code; present only when `success` is `false`. |
+| `reason` | `"targetGone" \| "notAutoplaylist" \| "noEditor" \| "queryFailed" \| "dispatchFailed" \| "providerFailed"` | The failed check or native-call stage; present only when `success` is `false`. |
+<!-- api-schema:end -->
+
+Subscribe before [`playlist.showAutoplaylistUI`](playlist.md#playlist-showautoplaylistui), since this event can arrive before the page handles its acceptance response. Match `operationId`, not arrival order; see the [bounded SDK example](../sdk/playlist.md#onautoplaylistuiresult-callback) for early results and cleanup. Failure payloads always include `error`, `code` and `reason`; success payloads omit them.
+
+The result describes one native call, including calls that return while a non-modal editor remains open. It does not replace track or lock events, and cannot report saved, cancelled or closed state. Delivery is discarded after navigation or destruction, without forwarding to another document or the main window. When the original document is valid but the target was deleted, `NOT_FOUND` / `targetGone` takes precedence over a simultaneous provider error.
 
 ### playlist:lockChanged
 
@@ -1277,7 +1314,7 @@ Sent to every window.
 | Field | Type | Description |
 | --- | --- | --- |
 | `playlist` | `integer` | Index of the playlist. |
-| `playlistGuid` | `string` | The playlist's GUID, written as `{XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX}`. Pass it as `playlistGuid` to address this playlist even after the playlist list has changed. |
+| `playlistGuid` | `string` | Unique identifier of the playlist, formatted as `{XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX}`. Pass as `playlistGuid` to reliably target this playlist. |
 | `locked` | `boolean` | Whether a lock is on it now. |
 <!-- api-schema:end -->
 
@@ -1294,7 +1331,9 @@ Sent to every window.
 | --- | --- | --- |
 | `operationId` | `string` | Id from the call's answer. |
 | `playlistGuid` | `string` | GUID of the playlist the call added to, as the call resolved it; still that playlist when it was moved meanwhile, and no longer anyone's when it was removed. |
-| `success` | `boolean` | Always `true`. |
+| `success` | `boolean` | Always `true`; `status` tells how the call ended. |
+| `status` | `"completed" \| "partial" \| "failed" \| "cancelled"` | `completed` when every track the paths resolved to was added. `partial` or `failed` when some or all of them were dropped, for the cause in `reason`; the dropped ones are normally the tracks expanded from playlist files and cue sheets, since plain files are added before the call returns. `cancelled` when the user cancelled the expansion; tracks added before that stay in the playlist. |
+| `reason` | `"targetRemoved" \| "locked"` | Why tracks were dropped: the playlist was removed (`targetRemoved`) or locked (`locked`) before they could be added. Present with `partial` and `failed`. |
 | `addedCount` | `integer` | Tracks added, after expanding playlists and cue sheets. Tracks dropped because the playlist was removed or locked before the expansion finished are not counted. |
 | `totalCount` | `integer` | Paths the call accepted. |
 <!-- api-schema:end -->
@@ -1485,7 +1524,7 @@ Sent to every window.
 ### tray:click
 
 <!-- api-schema:begin event:tray:click -->
-The tray icon was clicked with the left button, on release. A right click opens the context menu instead and sends `tray:beforeContextMenu`.
+The tray icon was clicked with the left button, on release. A right click opens the context menu instead and sends `tray:beforeContextMenu`. Only emitted in the `event` click action.
 
 Sent to every window.
 
@@ -1501,7 +1540,7 @@ Sent to every window.
 ### tray:doubleClick
 
 <!-- api-schema:begin event:tray:doubleClick -->
-The tray icon was double-clicked with the left button.
+The tray icon was double-clicked with the left button in the `event` click action.
 
 Sent to every window.
 
@@ -1809,3 +1848,17 @@ Sent to every window.
 - `playback:stopAfterCurrentChanged` uses `{ enabled }`, the same field as its API.
 - Playlist lifecycle payload fields may gain entries in future versions; treat unknown keys as additive.
 - The exact emit source and field set for every row follow the C++ `EmitEvent` / `BroadcastEvent` call sites in the component source.
+### playlist:autoplaylistConfigChanged
+
+<!-- api-schema:begin event:playlist:autoplaylistConfigChanged -->
+A managed autoplaylist's configuration changed, including observed changes to its keep-sorted flag. Read the new snapshot with getAutoplaylistConfig. This is not a track-content revision or a persistence notification, and is not emitted for external providers.
+
+Sent to every window.
+
+**Payload**
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `playlistGuid` | `string` | Unique identifier of the playlist, formatted as `{XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX}`. Pass as `playlistGuid` to reliably target this playlist. |
+| `revision` | `string` | The observed configuration revision. Re-read the configuration before editing. |
+<!-- api-schema:end -->

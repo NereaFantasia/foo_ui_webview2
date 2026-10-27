@@ -1,8 +1,8 @@
 # System API
 
-Methods of the `system` namespace.
+System information, runtime environment, and API discovery.
 
-## system
+## System API {#system}
 
 ### system.getApiStats
 
@@ -207,4 +207,4 @@ const apis = await fb2k.invoke('system.searchApis', { query: 'playlist' });
 
 ## Owner-family behavior and limits
 
-- `system.*` reports registered runtime and plugin information.
+- `system.*` reports registered runtime information, external plugin status, and Windows system environment settings.

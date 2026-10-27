@@ -1,18 +1,18 @@
 # Permissions reference
 
-Path-bearing Bridge endpoints are validated by BridgeCore path-security specs before the handler body runs. Rejected requests never reach the filesystem or foobar2000 SDK path side effects. A path the policy refuses returns `PERMISSION_DENIED`; a parameter of the wrong shape or type returns `INVALID_PARAMS`.
+Path-bearing Bridge endpoints are validated by BridgeCore path-security specs before the handler body runs. Validation may resolve file locations and query the filesystem and media membership; rejected requests do not enter the handler. A path the policy refuses returns `PERMISSION_DENIED`; a parameter of the wrong shape or type returns `INVALID_PARAMS`.
 
 Counts are taken from the `@security` and `@pathKey` declarations in `src/api/schema/*.ts`, which generate the path-security specs every registration uses:
 
 <!-- api-schema:begin permissions:counts -->
 | Level | Spec count | Meaning |
 | --- | ---: | --- |
-| `Read` | 10 | Ordinary filesystem read checks |
+| `Read` | 6 | Ordinary filesystem read checks |
 | `Write` | 1 | Strict write destinations (config/temp style policy) |
-| `MediaRead` | 47 | Media-context read checks |
+| `MediaRead` | 53 | Media-context read checks |
 | `MediaWrite` | 10 | Media-context write checks |
 | `FileWrite` | 11 | General file writes (`file.*`) |
-| **Total** | **79** | **74 unique APIs** |
+| **Total** | **81** | **76 unique APIs** |
 <!-- api-schema:end -->
 
 ## Six-level model
@@ -22,19 +22,37 @@ Counts are taken from the `@security` and `@pathKey` declarations in `src/api/sc
 | `None` | No file-path parameter | No path validation |
 | `Read` | Read-only filesystem operations | Blocks system protected directories, device paths, and `..` traversal |
 | `Write` | Write destinations under the strict write policy | Allowed only under foobar2000 profile / temp destinations enforced by PathSecurity |
-| `MediaRead` | Media metadata/content reads | Read rules first; media-library / playlist trust is a fallback used only when Read rejects the path |
+| `MediaRead` | Media metadata/content reads | Read rules apply to the physical location first; media-library, playlist and watch-folder trust provide a fallback that still checks the resolved target |
 | `MediaWrite` | Media mutation (tags, lyrics, artwork, counts) | Own chain: protected-directory blacklist, then strict write destination, media-library / playlist membership, media-library watch folders, or a sidecar sharing the directory of a trusted audio file. A non-system drive alone does **not** grant write access |
-| `FileWrite` | General file writes (`file.*`) | Own chain, not a superset of `MediaWrite`: blacklist, then strict write destination, media-library watch folders, non-system drive (drive letter only, UNC excluded), or media-library / playlist membership — no sidecar step. The watch-folder and non-system-drive steps are what let `file.mkdir` and `file.write` create brand-new paths |
+| `FileWrite` | General file writes (`file.*`) | Own chain, not a superset of `MediaWrite`: blacklist, then strict write destination, media-library watch folders, a non-system volume (including a true remote share; loopback shares follow their local target), or media-library / playlist membership — no sidecar step. The watch-folder and non-system-volume steps let `file.mkdir` and `file.write` create brand-new paths |
 
 ::: tip Level relationships
-`None < Read < Write` forms the ordinary filesystem channel.
-`None < Read < MediaRead < MediaWrite` forms the media channel.
-`Write`, `MediaWrite` and `FileWrite` are independent write channels.
+- Standard filesystem channel: `None < Read < Write`
+- Media channel: `None < Read < MediaRead < MediaWrite`
+- Independent write channels: `Write`, `MediaWrite`, and `FileWrite` form three separate write channels
 :::
 
-::: warning FileWrite is broader than MediaWrite
-`FileWrite` accepts any path on a non-system drive, and also any path inside a media-library watch folder (including on the system drive), so it is the widest write channel currently exposed. It exists because `file.*` operates on arbitrary files rather than on media-context files, and applying media-write rules would make creating new files or directories impossible. Treat it as the channel to audit first when reviewing a theme.
+::: warning FileWrite scope considerations
+`FileWrite` permits writes to arbitrary paths on non-system drives, as well as any path inside a media-library watch folder (including on the system drive). It constitutes the widest write channel exposed by the component, intentionally designed for arbitrary file operations via `file.*` (where imposing media-membership rules would prevent creating new files or folders). Security audits of third-party themes should prioritize reviewing `file.*` invocations.
 :::
+
+## Media path resolution
+
+`MediaRead` extracts the physical container from `unpack://` or supported `archive://` paths,
+unwrapping nested unpack paths one layer at a time. foobar2000 resolves a `file-relative://`
+physical location before the host checks its device path, directory permissions, mapped drive
+and UNC rules. Archive entry names are not checked as local directories. Failed resolution
+still returns `PERMISSION_DENIED`.
+
+The physical location is used only for authorization. Reading and path echoes retain the
+original track path, and `|subsong:N` still selects that track's subsong. Library membership
+queries retain this index. An authorized container does not imply that every endpoint supports
+its contents: artwork endpoints' own portable-path restrictions, lyrics sidecar lookup and
+media streaming's local-file restrictions still follow their individual contracts.
+
+This resolution applies only to `MediaRead`; other access levels retain their own rules.
+`MediaRead` describes parameter authorization, not whether the method has side effects:
+playback, playlist additions and ReplayGain scanning also use it.
 
 ## Error response
 
@@ -70,20 +88,16 @@ if (result.success === false) {
 ## API permission matrix
 
 <!-- api-schema:begin permissions:Read -->
-### Read — filesystem read (10 specs)
+### Read — filesystem read (6 specs)
 
 | API | Parameter | Array | Nested key |
 | --- | --- | --- | --- |
-| `artwork.getFolderImages` | `directory` | — | — |
-| `clipboard.writeFiles` | `paths` | yes | — |
 | `file.copy` | `source` | — | — |
 | `file.copyAsync` | `items` | yes | `source` |
 | `file.exists` | `path` | — | — |
 | `file.getInfo` | `path` | — | — |
 | `file.list` | `path` | — | — |
 | `file.read` | `path` | — | — |
-| `shell.openWith` | `path` | — | — |
-| `shell.showInExplorer` | `path` | — | — |
 <!-- api-schema:end -->
 
 <!-- api-schema:begin permissions:Write -->
@@ -95,7 +109,7 @@ if (result.success === false) {
 <!-- api-schema:end -->
 
 <!-- api-schema:begin permissions:MediaRead -->
-### MediaRead — media reads (47 specs)
+### MediaRead — media reads (53 specs)
 
 | API | Parameter | Array | Nested key |
 | --- | --- | --- | --- |
@@ -106,16 +120,20 @@ if (result.success === false) {
 | `artwork.getFb2kUrlByPath` | `path` | — | — |
 | `artwork.getFb2kUrlByPathBatch` | `items` | yes | `path` |
 | `artwork.getFb2kUrlByPathBatch` | `paths` | yes | — |
+| `artwork.getFolderImages` | `directory` | — | — |
 | `artwork.getForTrack` | `path` | — | — |
 | `artwork.getLyrics` | `path` | — | — |
 | `artwork.getMetadata` | `path` | — | — |
 | `audio.analyzeBPM` | `path` | — | — |
 | `audio.decodePcm` | `path` | — | — |
 | `audio.generateFullWaveform` | `path` | — | — |
+| `clipboard.writeFiles` | `paths` | yes | — |
 | `discovery.executeContextMenuByPath` | `trackPath` | — | — |
 | `jitQueue.enqueueNext` | `url` | — | — |
 | `jitQueue.playNow` | `url` | — | — |
 | `jitQueue.preloadBatch` | `urls` | yes | — |
+| `jitSession.play` | `location` | — | — |
+| `jitSession.setNext` | `location` | — | — |
 | `library.addToPlaylist` | `paths` | yes | — |
 | `library.getByPath` | `path` | — | — |
 | `lyrics.exists` | `path` | — | — |
@@ -142,6 +160,8 @@ if (result.success === false) {
 | `rating.get` | `path` | — | — |
 | `replaygain.get` | `paths` | yes | — |
 | `replaygain.scan` | `paths` | yes | — |
+| `shell.openWith` | `path` | — | — |
+| `shell.showInExplorer` | `path` | — | — |
 | `titleformat.eval` | `path` | — | — |
 | `titleformat.evalBatch` | `paths` | yes | — |
 | `titleformat.evalFields` | `path` | — | — |
@@ -217,6 +237,10 @@ System-drive protected directories include:
 | `C:\\Program Files\\` | Installed programs |
 | `C:\\Program Files (x86)\\` | 32-bit programs |
 | `C:\\ProgramData\\` | System configuration data |
+
+The foobar2000 profile directory is exempt from this list. A portable installation inside `C:\Program Files\` can still read and write its own profile, including its template folders.
+
+Outside the protected directories, Read on the system drive allows only the foobar2000 profile, the temporary directory, OneDrive, and the user's Music, Videos, Pictures, Desktop, Documents and Downloads folders.
 
 Non-system drives are generally allowed for portable / NAS media workflows under Read.
 

@@ -1,25 +1,25 @@
 # Keyboard 键盘 API
 
-注册全局热键与 WebView 内快捷键。
+提供 Windows 系统级全局热键与 WebView 应用内快捷键的注册、管理与事件监听能力。
 
 ## Keyboard API - 快捷键 (4 个 API)
 
 ### keyboard.registerHotkey
 
 <!-- api-schema:begin keyboard.registerHotkey -->
-在主窗口上注册全局热键。按下时注册它的窗口收到 `keyboard:hotkey`（`{ id, key, action }`）。别的程序已占用的组合 Windows 会拒绝。
+在主窗口句柄上注册系统级全局热键；按下该热键时向发起注册的窗口派发 `keyboard:hotkey` 事件（载荷为 `{ id, key, action }`）；若按键组合已被系统中其他程序占用，Windows 系统将拒绝注册
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
-| `key` | `string` | 是 | 要注册的组合。不能为空。 |
-| `action` | `string` | 是 | 随 `keyboard:hotkey` 载荷报回的动作名。不能为空。 |
-| `global` | `boolean` | 否 | 记录在条目上并由 `getRegisteredHotkeys` 报出；无论取值热键都是全局注册的。默认 `true`。 |
+| `key` | `string` | 是 | 待注册的按键组合字符串不能为空。 |
+| `action` | `string` | 是 | 触发热键时随 `keyboard:hotkey` 事件载荷回传的动作名称不能为空。 |
+| `global` | `boolean` | 否 | 是否标记为全局热键（记录于条目属性中供 `getRegisteredHotkeys` 查询，实际均注册为系统级热键）默认 `true`。 |
 
 **返回值**
 
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
-| `id` | `integer` | 热键 id，从 `1` 起；`unregisterHotkey` 用它。 |
+| `id` | `integer` | 分配的热键唯一标识符（自 `1` 开始递增，注销时可传给 `unregisterHotkey`） |
 
 成功时 `success` 为 `true`；失败时返回 `{ success: false, error, code }`，`code` 见[错误码](../reference/errors.md)。
 <!-- api-schema:end -->
@@ -40,12 +40,12 @@ fb2k.on('keyboard:hotkey', (data) => {
 ### keyboard.registerShortcut
 
 <!-- api-schema:begin keyboard.registerShortcut -->
-把一个按键组合登记为 WebView 内的快捷键，挂在给定的动作名下。`getRegisteredHotkeys` 以 `id` 为 `0` 列出它，`unregisterHotkey` 按 key 移除。
+登记 WebView 页面作用域内的应用内快捷键（绑定至指定动作名；通过 `getRegisteredHotkeys` 列出时 `id` 固定为 `0`，注销时通过 `unregisterHotkey` 传入 key 字符串移除）
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
-| `key` | `string` | 是 | 要登记的组合。不能为空。 |
-| `action` | `string` | 是 | 随快捷键存储的动作名。不能为空。 |
+| `key` | `string` | 是 | 待登记的按键组合字符串不能为空。 |
+| `action` | `string` | 是 | 与快捷键关联绑定的动作名称不能为空。 |
 
 **返回值**
 
@@ -55,12 +55,12 @@ fb2k.on('keyboard:hotkey', (data) => {
 ### keyboard.unregisterHotkey
 
 <!-- api-schema:begin keyboard.unregisterHotkey -->
-按 id 移除热键，或按 key 字符串移除热键或快捷键；两者必须恰好给一个。
+注销已注册的热键或应用内快捷键（支持通过数字 `id` 注销热键，或通过按键组合 `key` 字符串注销热键或快捷键；两者必须恰好提供一项）
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
-| `id` | `integer` | 否 | `registerHotkey` 返回的 id。不小于 `1`。 |
-| `key` | `string` | 否 | 注册热键或快捷键时用的 key 字符串。 |
+| `id` | `integer` | 否 | 待注销热键的数值标识符 id（取自 `registerHotkey` 的返回值）不小于 `1`。 |
+| `key` | `string` | 否 | 待注销热键或快捷键的原始按键组合字符串 key |
 
 **返回值**
 
@@ -76,7 +76,7 @@ await fb2k.invoke('keyboard.unregisterHotkey', { key: 'Ctrl+Alt+Space' });
 ### keyboard.getRegisteredHotkeys
 
 <!-- api-schema:begin keyboard.getRegisteredHotkeys -->
-列出已注册的热键，随后是快捷键。
+获取已注册的全部全局热键及应用内快捷键列表（先列出系统热键，后列出应用内快捷键）
 
 无参数。
 
@@ -84,11 +84,11 @@ await fb2k.invoke('keyboard.unregisterHotkey', { key: 'Ctrl+Alt+Space' });
 
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
-| `hotkeys` | `KeyboardHotkey[]` | 先热键，后快捷键。 |
-| `hotkeys[].id` | `integer` | 热键 id；快捷键为 `0`。 |
-| `hotkeys[].key` | `string` | 注册时的组合。 |
-| `hotkeys[].action` | `string` | 动作名。 |
-| `hotkeys[].global` | `boolean` | 注册时给的 `global`；快捷键为 `false`。 |
+| `hotkeys` | `KeyboardHotkey[]` | 已注册条目列表（系统级全局热键在前，应用内快捷键在后） |
+| `hotkeys[].id` | `integer` | 热键标识符 id（系统级全局热键大于等于 1，应用内快捷键固定为 `0`） |
+| `hotkeys[].key` | `string` | 注册时配置的按键组合字符串 |
+| `hotkeys[].action` | `string` | 关联绑定的动作名称 |
+| `hotkeys[].global` | `boolean` | 是否为全局热键（全局热键为 true，应用内快捷键为 false） |
 
 成功时 `success` 为 `true`；失败时返回 `{ success: false, error, code }`，`code` 见[错误码](../reference/errors.md)。
 <!-- api-schema:end -->
@@ -104,6 +104,4 @@ await fb2k.invoke('keyboard.unregisterHotkey', { key: 'Ctrl+Alt+Space' });
 
 ## 交互投递与限制
 
-`keyboard.registerHotkey` 注册 Windows 热键，随后将 `keyboard:hotkey` 路由到
-注册它的窗口。`registerShortcut` 只保存应用内快捷键。两个注册方法都要求非空
-`key` 和 `action`；`unregisterHotkey` 只认数字 `id` 与原始 key 字符串二者之一。
+`keyboard.registerHotkey` 向 Windows 注册系统级全局热键，触发时将 `keyboard:hotkey` 事件定向派发给发起注册的窗口；若注册窗口已销毁，后续触发自动转派给主窗口。`keyboard.registerShortcut` 仅登记应用内快捷键。两类注册方法均要求传入非空的 `key` 与 `action`；`keyboard.unregisterHotkey` 必须在数字 `id` 与原始 `key` 按键组合字符串中恰好指定一项。

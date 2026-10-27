@@ -206,11 +206,11 @@ console.log(`DPI: ${dpi.dpi}, 缩放: ${dpi.scale}x`);
 ## window.focus
 
 <!-- api-schema:begin window.focus -->
-把窗口带到前台：最小化的先还原，隐藏的先显示。没有这个窗口时以 `NOT_FOUND` 失败。
+把窗口带到前台：最小化的先还原，隐藏的先显示。显式 ID 只定位指定窗口；省略时定位调用方顶层窗口，含面板所在宿主。目标不存在时以 `NOT_FOUND` 失败。该请求使旧弹窗焦点归还动作失效，不永久改变弹窗的禁止激活策略。成功表示已请求，Windows 仍可能拒绝前台激活。
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
-| `windowId` | `string` | 否 | 目标窗口：`main` 或 popup 的 id；省略或为空串时为调用方窗口。不会回退到主窗口：调用方不是插件的窗口时以 `NOT_FOUND` 失败，DUI/CUI 面板以 `PANEL_MODE_UNSUPPORTED` 失败。 |
+| `windowId` | `string` | 否 | `main` 或 popup 的 id；省略或为空串时聚焦调用方顶级窗口，包括 DUI/CUI 面板所在的 foobar2000 宿主窗口。显式指定的 id 不存在时以 `NOT_FOUND` 失败。 |
 
 **返回值**
 
@@ -364,7 +364,7 @@ titlebar.addEventListener('mousedown', async () => {
 ## window.setDragRegions
 
 <!-- api-schema:begin window.setDragRegions -->
-设置拖动调用方窗口（主窗口或 popup）的矩形，替换之前的设置。矩形是页面的 CSS 像素，按窗口 DPI 缩放；宽或高不为正的矩形被跳过。面板模式下失败；调用方既不是主窗口也不是 popup 时以 `NOT_FOUND` 失败。
+设置调用方窗口（主窗口或 popup）的可拖动矩形，替换已有区域。矩形使用页面 CSS 像素，由宿主按 `devicePixelRatio`（综合窗口 DPI、文本缩放与页面缩放）换算为物理像素。`devicePixelRatio` 变化时须重新设置。忽略宽高不为正的矩形。在面板模式下失败；调用方非主窗口且非 popup 时以 `NOT_FOUND` 失败。
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
@@ -379,7 +379,8 @@ titlebar.addEventListener('mousedown', async () => {
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
 | `count` | `integer` | 保留下来的矩形个数。 |
-| `dpiScale` | `number` | 矩形所乘的缩放比例，即窗口 DPI 除以 96。 |
+| `dpiScale` | `number` | 窗口 DPI 除以 96。 |
+| `scale` | `number` | 矩形所乘的缩放比例，即页面的 `devicePixelRatio`。 |
 
 成功时 `success` 为 `true`；失败时返回 `{ success: false, error, code }`，`code` 见[错误码](../reference/errors.md)。
 <!-- api-schema:end -->
@@ -516,7 +517,7 @@ console.log(info.resolvedBackdropPolicy.activeEffect); // 'mica'
 ## window.setBackdropPolicy
 
 <!-- api-schema:begin window.setBackdropPolicy -->
-把逐字段覆盖合并进窗口的背景策略；值为 `null` 的键删除该覆盖。即使窗口没能立即画出结果（例如启动时仍隐藏），覆盖也会保存；此时调用以 `OPERATION_FAILED` 失败。
+将逐字段覆盖合并至窗口的背景策略；设为 `null` 可清除该项覆盖。即使窗口未能即时呈现（如启动时处于隐藏状态），覆盖配置仍会保存；此时调用以 `OPERATION_FAILED` 失败。
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
@@ -1124,7 +1125,7 @@ const result = await fb2k.invoke('window.getTitlebarHeight');
 ### window.getZoom
 
 <!-- api-schema:begin window.getZoom -->
-报告调用方窗口 WebView 的缩放倍数与窗口的 DPI。调用方窗口自己没有 WebView 时报缩放 `1`，并省略 `dpi` 与 `dpiScale`。
+报告调用方窗口 WebView 的缩放倍数、窗口的 DPI 与 Windows 文本大小；页面的 `devicePixelRatio` 等于 `dpiScale * textScaleFactor * zoom`。调用方窗口自己没有 WebView 时报缩放 `1`，并省略 `dpi` 与 `dpiScale`。
 
 无参数。
 
@@ -1135,6 +1136,7 @@ const result = await fb2k.invoke('window.getTitlebarHeight');
 | `zoom` | `number` | 缩放倍数；`1` 即 100 %。 |
 | `dpi` | `integer` | 窗口的 DPI；没有 WebView 时省略。 |
 | `dpiScale` | `number` | `dpi / 96`；没有 WebView 时省略。 |
+| `textScaleFactor` | `number` | Windows 文本大小的倍数，`1` 到 `2.25`，宿主把它与 DPI 一起作用到自己的 WebView 上；Windows 不提供时为 `1`。 |
 
 成功时 `success` 为 `true`；失败时返回 `{ success: false, error, code }`，`code` 见[错误码](../reference/errors.md)。
 <!-- api-schema:end -->
@@ -1349,7 +1351,7 @@ await fb2k.invoke('window.sendMessage', {
 ### window.setAcrylic
 
 <!-- api-schema:begin window.setAcrylic -->
-打开或关闭窗口的亚克力背景。即使窗口没能立即画出，设置也会保存；此时调用以 `OPERATION_FAILED` 失败，失败里带返回值的字段。面板模式下失败。
+启用或禁用窗口的 Acrylic（亚克力）背景材质。若未能即时呈现，配置仍会保存；此时以 `OPERATION_FAILED` 失败并附带状态字段。面板模式下不支持。
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
@@ -1396,7 +1398,7 @@ await fb2k.invoke('window.setAlwaysOnTop', { enabled: true });
 ### window.setBackgroundTransparency
 
 <!-- api-schema:begin window.setBackgroundTransparency -->
-让窗口的 WebView 背景透明（背景效果得以透出）或不透明。面板模式下失败；窗口与其 WebView 都没接受时以 `OPERATION_FAILED` 失败，窗口有 WebView 时失败里带返回值的字段。
+设置窗口 WebView 背景为透明（透出底层背景材质效果）或不透明。面板模式下不支持；若窗口与 WebView 均未能应用变更，以 `OPERATION_FAILED` 失败（窗口有 WebView 时附带状态字段）。
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
@@ -1421,7 +1423,7 @@ await fb2k.invoke('window.setBackgroundTransparency', { transparent: true });
 ### window.setBlur
 
 <!-- api-schema:begin window.setBlur -->
-打开或关闭窗口的背景模糊。即使窗口没能立即画出，设置也会保存；此时调用以 `OPERATION_FAILED` 失败，失败里带 `enabled`。面板模式下失败。
+启用或禁用窗口的背景模糊效果。若未能即时呈现，配置仍会保存；此时以 `OPERATION_FAILED` 失败并附带 `enabled` 状态。面板模式下不支持。
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
@@ -1469,7 +1471,7 @@ await fb2k.invoke('window.setClickThrough', { enabled: true });
 ### window.setClickThroughExcludeRegions
 
 <!-- api-schema:begin window.setClickThroughExcludeRegions -->
-设置 popup 在鼠标穿透时仍接收鼠标输入的矩形，替换之前的设置。矩形是页面的 CSS 像素，按 popup 的 DPI 缩放；宽或高不为正的矩形被跳过，最多保留 32 个。目标的选取同 `window.setClickThrough`。
+设置 popup 在鼠标穿透时仍接收鼠标输入的矩形，替换之前的设置。矩形是 popup 页面的 CSS 像素，按该页面的 `devicePixelRatio` 换算，即 popup 的 DPI、Windows 文本大小与页面缩放；`devicePixelRatio` 变化后要重新设置。宽或高不为正的矩形被跳过，最多保留 32 个。目标的选取同 `window.setClickThrough`。
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
@@ -1486,7 +1488,8 @@ await fb2k.invoke('window.setClickThrough', { enabled: true });
 | --- | --- | --- |
 | `windowId` | `string` | popup 的 id。 |
 | `count` | `integer` | 保留下来的矩形个数。 |
-| `dpiScale` | `number` | 矩形所乘的缩放比例，即 popup 的 DPI 除以 96。 |
+| `dpiScale` | `number` | popup 的 DPI 除以 96。 |
+| `scale` | `number` | 矩形所乘的缩放比例，即 popup 页面的 `devicePixelRatio`。 |
 | `warning` | `string` | 给出的矩形超过 32 个时为 `regions truncated to 32`。 |
 
 成功时 `success` 为 `true`；失败时返回 `{ success: false, error, code }`，`code` 见[错误码](../reference/errors.md)。
@@ -1523,7 +1526,7 @@ await fb2k.invoke('window.setCornerPreference', { mode: 'round' });
 ### window.setDarkMode
 
 <!-- api-schema:begin window.setDarkMode -->
-在深色与浅色之间切换窗口的背景。即使窗口没能立即画出，设置也会保存；此时调用以 `OPERATION_FAILED` 失败，失败里带 `enabled`。面板模式下失败。
+切换窗口背景的深色与浅色主题变体。若未能即时呈现，配置仍会保存；此时以 `OPERATION_FAILED` 失败并附带 `enabled` 状态。面板模式下不支持。
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
@@ -1599,11 +1602,11 @@ await fb2k.invoke('window.setFrameless', { frameless: true });
 ### window.setMaximizeButtonRegion
 
 <!-- api-schema:begin window.setMaximizeButtonRegion -->
-告诉宿主页面把主窗口的最大化键画在哪里，这样在 Windows 11 上悬停它会像标准窗口的按钮一样弹出贴靠布局。矩形是页面的 CSS 像素，按窗口 DPI 与页面缩放换算，与 `devicePixelRatio` 同一个系数，替换之前的矩形；省略 `region`，或宽高不为正，则移除。窗口无标题栏、可调整大小且不在全屏时，宿主把这个矩形当作窗口的最大化键回答，并把在这里收到的鼠标输入转给页面，所以按钮照常有悬停与按下样式，照常由它自己的点击处理；在 Windows 10 上和其他状态下，这个矩形仍是普通的页面内容。布局挪动按钮后要重新设置；页面导航或重载时它被移除。只对主窗口：从 popup 调用以 `NOT_SUPPORTED` 失败，面板模式下失败，调用方不是窗口时以 `NOT_FOUND` 失败。
+注册主窗口的自定义最大化按钮矩形，以支持 Windows 11 贴靠布局（Snap layouts）。矩形使用页面 CSS 像素并按 `devicePixelRatio` 换算，替换此前设置；省略 `region` 或宽高非正时清除注册。当主窗口为无边框、可调整大小且非全屏时，宿主将该区域响应为系统最大化按钮，同时向页面转发鼠标事件以保留 CSS 悬停与点击处理；在 Windows 10 或其他状态下作为普通页面内容。当按钮布局移动或 `devicePixelRatio` 改变时须重新注册；页面导航或刷新后注册自动清除。仅限主窗口：在 popup 中以 `NOT_SUPPORTED` 失败，面板模式下失败，无窗口时以 `NOT_FOUND` 失败。
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
-| `region` | `WindowRegion` | 否 | 页面画最大化键的位置；省略时宿主忘掉这个按钮。 |
+| `region` | `WindowRegion` | 否 | 自定义最大化按钮在页面中的 CSS 像素矩形；省略或尺寸非正时清除注册。 |
 | `region.x` | `number` | 否 | 左边缘。默认 `0`。 |
 | `region.y` | `number` | 否 | 上边缘。默认 `0`。 |
 | `region.width` | `number` | 否 | 宽度。默认 `0`。 |
@@ -1613,9 +1616,9 @@ await fb2k.invoke('window.setFrameless', { frameless: true });
 
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
-| `hasRegion` | `boolean` | 现在是否设着矩形：移除之后，或矩形宽高不为正时为 `false`。 |
-| `snapLayouts` | `boolean` | 系统会为最大化键提供贴靠布局，即 Windows 11 或更新。为 `false` 时宿主从不把这个矩形当作最大化键。为 `true` 时，页面悬停时仍会显示按钮的 `title` 提示，它会挡住贴靠布局浮层，所以不要设 title，改用 `aria-label` 给按钮命名。 |
-| `scale` | `number` | 矩形所乘的缩放比例：窗口 DPI 除以 96，再乘页面缩放。 |
+| `hasRegion` | `boolean` | 当前是否注册了有效的最大化按钮矩形。 |
+| `snapLayouts` | `boolean` | 当前系统是否支持 Windows 11 贴靠布局。为 false 时宿主不会将该区域响应为最大化按钮。若为 true，应避免为按钮设置 HTML title 属性以免遮挡系统贴靠菜单，推荐改用 aria-label 提供无障碍描述。 |
+| `scale` | `number` | 矩形所乘的缩放比例，即页面的 `devicePixelRatio`：窗口 DPI 除以 96，再乘 Windows 文本大小与页面缩放。 |
 
 成功时 `success` 为 `true`；失败时返回 `{ success: false, error, code }`，`code` 见[错误码](../reference/errors.md)。
 <!-- api-schema:end -->
@@ -1670,7 +1673,7 @@ await fb2k.invoke('window.setMaxSize', { width: 1920, height: 1080 });
 ### window.setMica
 
 <!-- api-schema:begin window.setMica -->
-打开或关闭窗口的 Mica 背景。即使窗口没能立即画出（例如启动时仍隐藏），设置也会保存；此时调用以 `OPERATION_FAILED` 失败，失败里带返回值的字段。面板模式下失败。
+启用或禁用窗口的 Mica 背景材质。若效果未能即时呈现（如启动时窗口处于隐藏状态），配置仍会保存；此时以 `OPERATION_FAILED` 失败并附带状态字段。面板模式下不支持。
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
@@ -1755,7 +1758,7 @@ await fb2k.invoke('window.setMinSize', { width: 480, height: 320 });
 ### window.setNoDragRegions
 
 <!-- api-schema:begin window.setNoDragRegions -->
-设置永远不拖动调用方窗口的矩形（例如拖动区域里的按钮），替换之前的设置。矩形是页面的 CSS 像素，按窗口 DPI 缩放；宽或高不为正的矩形被跳过。面板模式下失败；调用方既不是主窗口也不是 popup 时以 `NOT_FOUND` 失败。
+设置不可拖动的排除矩形（如拖拽区内部的按钮），替换已有区域。矩形使用页面 CSS 像素，由宿主按 `devicePixelRatio` 换算。`devicePixelRatio` 变化时须重新设置。忽略宽高不为正的矩形。在面板模式下失败；调用方非主窗口且非 popup 时以 `NOT_FOUND` 失败。
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
@@ -1770,7 +1773,8 @@ await fb2k.invoke('window.setMinSize', { width: 480, height: 320 });
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
 | `count` | `integer` | 保留下来的矩形个数。 |
-| `dpiScale` | `number` | 矩形所乘的缩放比例，即窗口 DPI 除以 96。 |
+| `dpiScale` | `number` | 窗口 DPI 除以 96。 |
+| `scale` | `number` | 矩形所乘的缩放比例，即页面的 `devicePixelRatio`。 |
 
 成功时 `success` 为 `true`；失败时返回 `{ success: false, error, code }`，`code` 见[错误码](../reference/errors.md)。
 <!-- api-schema:end -->
@@ -1985,19 +1989,10 @@ const result = await fb2k.invoke('window.toggleFullscreen');
 
 ## 运行时行为与事件
 
-所有 `window.*` 调用默认在发起调用的 WebView 上下文中执行；接受 `windowId`
-的方法可显式指定目标。`main` 表示主窗口，popup ID 由
-`window.createPopup` 与 `window.getAllWindows` 返回。面板模式下需要独立窗口
-shell 的调用会返回不支持或找不到窗口，而不会静默改为操作其他窗口。
-
-`window.setDragRegions`、`window.setNoDragRegions` 与 click-through 排除区域使用
-CSS 像素矩形，native handler 会按目标窗口 DPI 转换。click-through 和关闭确认等
-popup 专用操作拒绝主窗口目标。
-
-运行时会在 shell 状态变化时发射 `window:stateChanged`，并将
-`window:beforeClose` 路由到请求关闭确认的 popup。popup 生命周期和协同事件包括
-`window:popupOpened`、`window:popupClosed`、`window:message`、
-`window:behaviorChanged`、`window:backdropStateChanged`、
-`window:hoverStateChanged`、`window:minimizeSuppressed` 与
-`window:alwaysOnTopChanged`。事件 payload 是运行时数据，调用方应兼容 shell 后续
-新增的字段。
+- **调用上下文与目标定位**：`window.*` 默认作用于发起调用的 WebView。接受 `windowId` 的方法可显式指定目标窗口（`main` 代表主窗口，popup ID 由 `window.createPopup` 或 `window.getAllWindows` 获取）。在 DUI/CUI 面板模式下，需要独立窗口 Shell 的方法将直接返回失败（不支持或找不到窗口），不会静默回退到主窗口。
+- **矩形坐标换算**：`window.setDragRegions`、`window.setNoDragRegions`、`window.setMaximizeButtonRegion` 与 `window.setClickThroughExcludeRegions` 均使用页面的 CSS 像素矩形。宿主按页面当前的 `devicePixelRatio`（综合窗口 DPI、Windows 文本大小与页面缩放倍数）换算为物理像素；当页面发生缩放或 DPI 变化时，须重新调用设置。click-through 穿透与关闭确认等 popup 专有 API 会拒绝主窗口目标。
+- **状态流转与事件通知**：
+  - Shell 状态变更时触发 `window:stateChanged`。
+  - 请求关闭确认的 popup 在关闭前接收 `window:beforeClose`。
+  - Popup 生命周期与多窗协同事件涵盖 `window:popupOpened`、`window:popupClosed`、`window:message`、`window:behaviorChanged`、`window:backdropStateChanged`、`window:hoverStateChanged`、`window:minimizeSuppressed` 与 `window:alwaysOnTopChanged`。
+  - 事件 payload 属于运行时结构，调用方应容许 Shell 后续扩展新字段。

@@ -1,10 +1,10 @@
 # Write a theme without a build step
 
-A theme can be a single `index.html` with inline script, using the native bridge `window.fb2k` that the component injects into every page. Nothing has to be installed or built.
+A theme can be authored as a single static `index.html` file with inline scripts, leveraging the native `window.fb2k` Bridge object that the component injects into every loaded page. No Node.js tooling or build process is required.
 
-## Write the page
+## Example HTML document {#write-the-page}
 
-Save this as `index.html` in a template folder ([Install a theme](./install-theme.md) shows how to create one and make it active):
+Save the following markup as `index.html` within a template directory ([Install a theme](./install-theme.md) describes creating and activating templates):
 
 ```html
 <!DOCTYPE html>
@@ -57,11 +57,11 @@ const unsubscribe = fb2k.on('playback:trackChanged', (data) => {
 unsubscribe();
 ```
 
-Method names use a dot (`playback.play`) and event names a colon (`playback:trackChanged`). The [low-level API reference](/api/overview) lists every method and event, and [Bridge protocol](/reference/bridge) describes the message format.
+Method names use dot notation (`playback.play`) and event names use colon notation (`playback:trackChanged`). The [low-level API reference](/api/overview) indexes every registered method and event, and [Bridge protocol](/reference/bridge) describes the wire envelope format.
 
-## Use the SDK without a bundler
+## Use SDK pre-built bundles in plain HTML {#use-the-sdk-without-a-bundler}
 
-To use the `fb.*` wrappers and the `fb-*` components in such a page, copy the SDK's global bundles into the template folder and load them before your script:
+To use typed `fb.*` wrappers and `fb-*` Web Components in a plain HTML project, copy the SDK's global bundle files into your template folder and include them before custom scripts:
 
 ```html
 <script src="./sdk/bridge.global.js"></script>
