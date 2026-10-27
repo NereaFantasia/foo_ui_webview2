@@ -109,8 +109,7 @@ node scripts/api-schema/generate.mjs --check
 node scripts/gen_sdk_types.mjs --all --diff
 node scripts/gen_sdk_components_global.mjs --diff --quiet
 node scripts/gen_menu_overlay_page.mjs --check
-node scripts/audit_invoke_typing.mjs --strict
-node scripts/audit_index_signature.mjs --strict
+npm --prefix sdk run lint
 npm --prefix sdk run type-check
 npm --prefix sdk test
 npm --prefix sdk run build

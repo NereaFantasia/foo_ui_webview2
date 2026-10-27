@@ -113,10 +113,9 @@ jobs:
           node scripts/gen_sdk_components_global.mjs --diff --quiet
           node scripts/gen_menu_overlay_page.mjs --check
 
-      - name: SDK source checks
-        run: |
-          node scripts/audit_invoke_typing.mjs --strict
-          node scripts/audit_index_signature.mjs --strict
+      - name: Lint
+        working-directory: sdk
+        run: npm run lint
 
       - name: Type check
         working-directory: sdk

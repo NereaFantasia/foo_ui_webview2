@@ -24,7 +24,11 @@
 .PARAMETER TimeoutSec
     单文件扫描超时秒数（默认 120）
 .PARAMETER Jobs
-    并行扫描线程数（默认自动检测：CPU 核心数 / 2，上限 16）。设为 1 禁用并行。
+    并行扫描线程数。默认在大小核混合的 CPU 上等于能效核数，否则为逻辑处理器数 / 3（上限 12）。
+    设为 1 禁用并行。
+.PARAMETER NoAffinity
+    不把 clang-tidy 进程限定在能效核上。并行扫描时子进程默认以低于正常的优先级运行，
+    在大小核混合的 CPU 上只用能效核，性能核留给前台。
 .EXAMPLE
     .\scripts\run-clang-tidy.ps1              # 全量扫描（自动并行）
     .\scripts\run-clang-tidy.ps1 -Fast        # 快速模式（跳过 analyzer）
@@ -43,19 +47,70 @@ param(
     [switch]$Deep,
     [switch]$NoCache,
     [int]$TimeoutSec = 120,
-    [int]$Jobs = 0
+    [int]$Jobs = 0,
+    [switch]$NoAffinity
 )
 
 $ErrorActionPreference = "Stop"
 $projectRoot = Split-Path $PSScriptRoot -Parent
 $headerExtensions = @('.h', '.hpp', '.hh', '.hxx', '.inl', '.inc', '.ipp', '.tpp')
 
-# ── 自动检测线程数 ──
-if ($Jobs -le 0) {
-    $cpuCores = [Environment]::ProcessorCount
-    $Jobs = [Math]::Max(1, [Math]::Min([Math]::Floor($cpuCores / 4), 4))
+# ── 线程数与能效核 ──
+# 大小核混合时返回能效等级最低那组逻辑处理器的掩码；同构 CPU、多处理器组或查询失败时返回 0。
+function Get-EfficiencyCoreMask {
+    try {
+        if (-not ('ClangTidyCpuSets' -as [type])) {
+            Add-Type -TypeDefinition @'
+using System;
+using System.Runtime.InteropServices;
+public static class ClangTidyCpuSets {
+    [DllImport("kernel32.dll", SetLastError = true)]
+    static extern bool GetSystemCpuSetInformation(IntPtr info, uint length, out uint returned, IntPtr process, uint flags);
+    // 每个 CPU 集依次给出：处理器组、逻辑处理器号、能效等级。
+    public static int[] Read() {
+        uint length;
+        GetSystemCpuSetInformation(IntPtr.Zero, 0, out length, IntPtr.Zero, 0);
+        IntPtr buffer = Marshal.AllocHGlobal((int)length);
+        try {
+            if (!GetSystemCpuSetInformation(buffer, length, out length, IntPtr.Zero, 0)) return new int[0];
+            var values = new System.Collections.Generic.List<int>();
+            for (int offset = 0; offset < length; offset += Marshal.ReadInt32(buffer, offset)) {
+                values.Add(Marshal.ReadInt16(buffer, offset + 12));
+                values.Add(Marshal.ReadByte(buffer, offset + 14));
+                values.Add(Marshal.ReadByte(buffer, offset + 18));
+            }
+            return values.ToArray();
+        } finally {
+            Marshal.FreeHGlobal(buffer);
+        }
+    }
 }
-Write-Host "并行线程: $Jobs (CPU 核心: $([Environment]::ProcessorCount))" -ForegroundColor Cyan
+'@
+        }
+        $values = [ClangTidyCpuSets]::Read()
+        $sets = for ($i = 0; $i + 2 -lt $values.Count; $i += 3) {
+            [pscustomobject]@{ Group = $values[$i]; Processor = $values[$i + 1]; Efficiency = $values[$i + 2] }
+        }
+        if (-not $sets -or ($sets | Where-Object Group -ne 0)) { return 0L }
+        $lowest = ($sets | Measure-Object Efficiency -Minimum).Minimum
+        if (($sets | Where-Object Efficiency -ne $lowest).Count -eq 0) { return 0L }
+        $mask = 0L
+        $sets | Where-Object Efficiency -eq $lowest | ForEach-Object { $mask = $mask -bor (1L -shl $_.Processor) }
+        return $mask
+    } catch {
+        return 0L
+    }
+}
+
+$affinityMask = if ($NoAffinity) { 0L } else { Get-EfficiencyCoreMask }
+$efficiencyCores = 0
+for ($rest = $affinityMask; $rest -ne 0; $rest = $rest -band ($rest - 1)) { $efficiencyCores++ }
+if ($Jobs -le 0) {
+    $Jobs = if ($efficiencyCores -gt 0) { $efficiencyCores }
+            else { [Math]::Max(1, [Math]::Min([Math]::Floor([Environment]::ProcessorCount / 3), 12)) }
+}
+$coreNote = if ($efficiencyCores -gt 0) { "，限定在 $efficiencyCores 个能效核" } else { '' }
+Write-Host "并行线程: $Jobs (逻辑处理器: $([Environment]::ProcessorCount)$coreNote)" -ForegroundColor Cyan
 
 # ── Fast/Deep 模式处理 ──
 if ($Fast -and $Deep) {
@@ -101,39 +156,69 @@ if ($cacheEnabled) {
     $checksFingerprint = "checks:$Checks|config:$configHash"
 }
 
-function Get-FileCacheKey {
-    param([string]$FilePath)
-    $hash = (Get-FileHash $FilePath -Algorithm MD5).Hash
-    return "$hash|$checksFingerprint"
-}
-
-function Get-ScanInputsFingerprint {
-    param([string]$Root, [string]$ToolPath)
-    # 未维护逐 TU 的依赖图，保守地让所有包含文件共同参与缓存键。
-    # 路径也计入摘要，使文件新增、删除和同内容改名都能使旧结果失效。
-    $inputs = [System.Collections.Generic.List[string]]::new()
-    $inputs.Add($ToolPath)
-    $inputs.Add((Join-Path $Root 'scripts/run-clang-tidy.ps1'))
-    $inputs.Add((Join-Path $Root 'foo_ui_webview2.vcxproj'))
-    foreach ($directory in @('src', 'lib', 'packages')) {
-        $dependencyRoot = Join-Path $Root $directory
-        if (Test-Path -LiteralPath $dependencyRoot) {
-            Get-ChildItem -LiteralPath $dependencyRoot -Recurse -File -FollowSymlink |
-                Where-Object { $_.Extension -in $headerExtensions } |
-                ForEach-Object { $inputs.Add($_.FullName) }
-        }
-    }
-    $records = foreach ($inputFile in ($inputs | Sort-Object -Unique)) {
-        $contentHash = (Get-FileHash -LiteralPath $inputFile -Algorithm SHA256).Hash
-        "$inputFile|$contentHash"
-    }
+function Get-Digest {
+    param([string[]]$Records)
     $hasher = [System.Security.Cryptography.SHA256]::Create()
     try {
-        $bytes = [System.Text.Encoding]::UTF8.GetBytes(($records -join "`n"))
+        $bytes = [System.Text.Encoding]::UTF8.GetBytes(($Records -join "`n"))
         return [System.BitConverter]::ToString($hasher.ComputeHash($bytes))
     } finally {
         $hasher.Dispose()
     }
+}
+
+# 同一个头文件被许多单元包含，一次运行内只算一次摘要。
+$contentHashes = @{}
+function Get-ContentHash {
+    param([string]$Path)
+    if (-not $contentHashes.ContainsKey($Path)) {
+        $contentHashes[$Path] = if (Test-Path -LiteralPath $Path) {
+            (Get-FileHash -LiteralPath $Path -Algorithm SHA256).Hash
+        } else {
+            'missing'
+        }
+    }
+    return $contentHashes[$Path]
+}
+
+# 有逐单元依赖时，键里含该单元上次构建读过的每个项目文件的摘要。
+function Get-FileCacheKey {
+    param([string]$FilePath)
+    $key = "$(Get-ContentHash $FilePath)|$checksFingerprint"
+    if ($tuDependencies) {
+        $records = foreach ($dependency in $tuDependencies[$FilePath.ToUpperInvariant()]) {
+            "$dependency|$(Get-ContentHash $dependency)"
+        }
+        $key += "|deps:$(Get-Digest @($records))"
+    }
+    return $key
+}
+
+# 项目内全部头文件，含经目录联接引入的依赖库。
+function Get-HeaderInputs {
+    param([string]$Root)
+    foreach ($directory in @('src', 'lib', 'packages')) {
+        $dependencyRoot = Join-Path $Root $directory
+        if (Test-Path -LiteralPath $dependencyRoot) {
+            Get-ChildItem -LiteralPath $dependencyRoot -Recurse -File -FollowSymlink |
+                Where-Object { $_.Extension -in $headerExtensions }
+        }
+    }
+}
+
+# 没有逐单元依赖时，所有头文件的内容共同参与缓存键；路径也计入摘要，
+# 使文件新增、删除和同内容改名都能使旧结果失效。有依赖时头文件改由逐单元的键负责。
+function Get-ScanInputsFingerprint {
+    param([string]$Root, [string]$ToolPath, [System.IO.FileInfo[]]$Headers)
+    $inputs = [System.Collections.Generic.List[string]]::new()
+    $inputs.Add($ToolPath)
+    $inputs.Add((Join-Path $Root 'scripts/run-clang-tidy.ps1'))
+    $inputs.Add((Join-Path $Root 'foo_ui_webview2.vcxproj'))
+    foreach ($header in $Headers) { $inputs.Add($header.FullName) }
+    $records = foreach ($inputFile in ($inputs | Sort-Object -Unique)) {
+        "$inputFile|$(Get-ContentHash $inputFile)"
+    }
+    return Get-Digest @($records)
 }
 
 # ── 查找 clang-tidy（三层 fallback）──
@@ -206,13 +291,6 @@ if (-not $clangTidy) {
 Write-Host "Using clang-tidy: $clangTidy" -ForegroundColor Cyan
 & $clangTidy --version
 
-$analysisInputsChanged = $false
-if ($cacheEnabled) {
-    $inputsFingerprint = Get-ScanInputsFingerprint -Root $projectRoot -ToolPath $clangTidy
-    $checksFingerprint += "|inputs:$inputsFingerprint"
-    $analysisInputsChanged = $cacheData['@inputs'] -ne $checksFingerprint
-}
-
 # ── 从 vcxproj 提取项目真实编译单元 ──
 function Get-ProjectTUs {
     $vcxprojPath = Join-Path $projectRoot "foo_ui_webview2.vcxproj"
@@ -229,6 +307,66 @@ function Get-ProjectTUs {
             Join-Path $projectRoot $rel
         }
     } | Where-Object { $_ }
+}
+
+# 每个编译单元在上次构建中读过的项目内文件（大写完整路径），取自 MSBuild 的 CL.read.1.tlog。
+# 记录缺失、比任一项目文件旧（之后可能改过包含关系）或缺少某个单元时返回 $null。
+function Get-TuDependencies {
+    param([string]$Root, [string[]]$ProjectTUs, [System.IO.FileInfo[]]$Headers)
+    $objRoot = Join-Path $Root 'obj\foo_ui_webview2'
+    if (-not (Test-Path -LiteralPath $objRoot)) { return $null }
+    $tlog = Get-ChildItem -LiteralPath $objRoot -Recurse -File -Filter 'CL.read.1.tlog' |
+        Sort-Object LastWriteTimeUtc -Descending | Select-Object -First 1
+    if (-not $tlog) { return $null }
+    $inputs = @($Headers) + @($ProjectTUs | ForEach-Object { Get-Item -LiteralPath $_ }) +
+        @(Get-Item -LiteralPath (Join-Path $Root 'foo_ui_webview2.vcxproj'))
+    if ($inputs | Where-Object { $_.LastWriteTimeUtc -gt $tlog.LastWriteTimeUtc } | Select-Object -First 1) {
+        return $null
+    }
+
+    $recorded = @{}
+    $current = $null
+    foreach ($line in [System.IO.File]::ReadLines($tlog.FullName, [System.Text.Encoding]::Unicode)) {
+        if ($line.StartsWith('^')) {
+            $current = [System.Collections.Generic.List[string]]::new()
+            foreach ($unit in $line.Substring(1).Split('|')) { $recorded[$unit] = $current }
+        } elseif ($null -ne $current -and $line) {
+            $current.Add($line)
+        }
+    }
+    $rootPrefix = $Root.TrimEnd('\').ToUpperInvariant() + '\'
+    $objPrefix = $objRoot.ToUpperInvariant() + '\'
+    # 使用预编译头的单元只记下 .pch 文件，补上 pch.cpp 读过的头文件。
+    $pchReads = $recorded[$rootPrefix + 'SRC\PCH.CPP']
+    $dependencies = @{}
+    foreach ($tu in $ProjectTUs) {
+        $unit = $tu.ToUpperInvariant()
+        if (-not $recorded.ContainsKey($unit)) { return $null }
+        $reads = @($recorded[$unit])
+        if ($pchReads -and ($reads | Where-Object { $_.EndsWith('.PCH') })) { $reads += $pchReads }
+        $dependencies[$unit] = @($reads | Where-Object {
+            $_.StartsWith($rootPrefix) -and -not $_.StartsWith($objPrefix) -and $_ -ne $unit
+        } | Sort-Object -Unique)
+    }
+    return $dependencies
+}
+
+# ── 逐单元依赖与缓存指纹 ──
+$tuDependencies = $null
+$analysisInputsChanged = $false
+if ($cacheEnabled) {
+    $headerInputs = @(Get-HeaderInputs -Root $projectRoot)
+    $tuDependencies = Get-TuDependencies -Root $projectRoot -ProjectTUs @(Get-ProjectTUs) -Headers $headerInputs
+    if ($tuDependencies) {
+        Write-Host "[DEPS] 按上次构建的包含记录逐单元判断改动" -ForegroundColor Gray
+        $inputsFingerprint = Get-ScanInputsFingerprint -Root $projectRoot -ToolPath $clangTidy
+        $checksFingerprint += "|inputs:deps:$inputsFingerprint"
+    } else {
+        Write-Host "[DEPS] 没有与当前源码对应的构建记录，头文件改动按全量处理" -ForegroundColor Gray
+        $inputsFingerprint = Get-ScanInputsFingerprint -Root $projectRoot -ToolPath $clangTidy -Headers $headerInputs
+        $checksFingerprint += "|inputs:$inputsFingerprint"
+    }
+    $analysisInputsChanged = $cacheData['@inputs'] -ne $checksFingerprint
 }
 
 # ── 收集文件 ──
@@ -258,12 +396,22 @@ if ($GitDiff -or $Since) {
         exit 0
     }
 
-    if ($diffH.Count -gt 0 -or $diffConfiguration.Count -gt 0 -or $analysisInputsChanged) {
+    if ($diffConfiguration.Count -gt 0 -or $analysisInputsChanged -or ($diffH.Count -gt 0 -and -not $tuDependencies)) {
         # 包含文件删除后仍须检查使用方，不能仅按当前存在的文件收集差异。
         # Git 可能信任未变的时间戳和大小，因此也核对缓存中的内容摘要。
         Write-Host "Detected changed headers or analysis inputs — expanding to full project scan" -ForegroundColor Yellow
         $diffH | ForEach-Object { Write-Host "  [header] $_" -ForegroundColor Yellow }
         $Files = @(Get-ProjectTUs)
+    } elseif ($diffH.Count -gt 0) {
+        # 删除的头文件仍在旧记录里，读过它的单元照样会被选中。
+        $changedHeaders = [System.Collections.Generic.HashSet[string]]::new(
+            [string[]]@($diffH | ForEach-Object { (Join-Path $projectRoot $_).ToUpperInvariant() }))
+        $changedCpp = @($diffCpp | ForEach-Object { Join-Path $projectRoot $_ })
+        $Files = @(Get-ProjectTUs | Where-Object {
+            $_ -in $changedCpp -or $changedHeaders.Overlaps([string[]]$tuDependencies[$_.ToUpperInvariant()])
+        })
+        Write-Host "Changed headers — scanning the TUs that read them in the last build" -ForegroundColor Yellow
+        $diffH | ForEach-Object { Write-Host "  [header] $_" -ForegroundColor Yellow }
     } else {
         # 纯 .cpp 变更 → 只扫改动文件（必须在项目 TU 中）
         $projectTUs = @(Get-ProjectTUs)
@@ -414,6 +562,13 @@ if ($useParallel) {
         $p = [System.Diagnostics.Process]::new()
         $p.StartInfo = $psi
         $p.Start() | Out-Null
+        # 启动后立即降优先级并限定核心；进程已经退出时设置会失败，不影响结果。
+        try {
+            $p.PriorityClass = [System.Diagnostics.ProcessPriorityClass]::BelowNormal
+            if ($using:affinityMask -ne 0) { $p.ProcessorAffinity = [IntPtr]$using:affinityMask }
+        } catch {
+            Write-Verbose "clang-tidy exited before scheduling could be adjusted: $_"
+        }
 
         # 异步读取 stdout/stderr 防死锁
         $stdoutTask = $p.StandardOutput.ReadToEndAsync()
