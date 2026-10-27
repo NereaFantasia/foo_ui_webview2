@@ -5,9 +5,9 @@ All notable changes to the foo-webview-sdk will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [2.1.0] - 2026-10-27
 
-Targeted for foo-webview-sdk 2.1.0 and foo_ui_webview2 2.1.0.
+Released together with foo_ui_webview2 2.1.0.
 
 ### Added
 

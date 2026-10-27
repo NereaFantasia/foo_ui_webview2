@@ -1,6 +1,6 @@
 {
   "name": "foo-ui-webview2-mcp",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "MCP Server for foo_ui_webview2 - AI agent bridge to fb2k WebView2",
   "type": "module",
   "main": "dist/index.js",
