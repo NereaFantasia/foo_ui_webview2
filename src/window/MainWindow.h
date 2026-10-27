@@ -46,6 +46,8 @@ public:
     // 争抢，保持物理 IsWindowVisible 与 cfg_background_window_visible 一致。
     void SetStartupVisibility(bool visible) { startupVisibilityHint_ = visible; }
     bool GetStartupVisibility() const { return startupVisibilityHint_; }
+    void HideToTrayNatively() { HideWindowToTray(); }
+    bool IsHiddenToTray() const { return (bgSuspendReasons_ & kBgSuspendTrayHidden) != 0; }
 
     // Re-present WebView/DWM surfaces after a runtime SW_HIDE -> SW_SHOW restore.
     bool RestoreSurfaceAfterHidden(const char* reason);
@@ -150,6 +152,10 @@ public:
     // WM_WINDOWPOSCHANGED 中发现实际位与期望不符即矫正（见 WndProc）。
     void SetExpectedTopmost(bool expected);
 
+    // 活动的 jitSession 由本窗口的页面控制时持有：隐藏期间只降内存、不深度挂起，页面才能
+    // 继续回答 needNext。释放时若窗口仍隐藏，按原设置重新挂起。主线程调用。
+    void SetSessionKeepsRunning(bool keep);
+
     // ========== WindowShellBase 实现 ==========
     std::string GetShellWindowId() const override;
     WindowKind GetWindowKind() const override;
@@ -247,9 +253,11 @@ private:
     // 互斥铁律——该状态期间不得手动 SetMemoryUsageLow（TrySuspend 自动置 Low、
     // Resume 自动回 Normal，混用会被运行时忽略并破坏状态推理）。
     bool bgSuspendDeepRequested_ = false;
+    bool sessionKeepsRunning_ = false;
     unsigned bgSuspendResumeRetryCount_ = 0;
     unsigned bgSuspendHealthRecoveryAttempts_ = 0;
     bool webViewRebuildInProgress_ = false;
+    bool initFailureDialogOpen_ = false;
     bool pageHealthProbePending_ = false;
     uint64_t pageHealthProbeGeneration_ = 0;
     // 僵尸态重建的限流状态（webview_crash_policy::DecideBrowserExitRebuild 持有
@@ -281,6 +289,7 @@ private:
     // overlay 误激活防御（见 OnActivate）：一次性撤销主窗口被 overlay 交互激活的状态，
     // 后续同一窗口期内的激活消息被抑制，避免 SetForegroundWindow → WM_ACTIVATEAPP 震荡。
     bool overlayRedirectInProgress_ = false;   // 正在执行 redirect，后续激活消息静默跳过
+    std::uint64_t overlayRedirectInteraction_ = 0;
     unsigned long long lastOverlayRedirectTick_ = 0;  // 最近一次 redirect 时间（用于超时清除）
 
     // 期望置顶状态（见 SetExpectedTopmost / WM_WINDOWPOSCHANGED 守护）。
@@ -320,6 +329,8 @@ private:
     static constexpr DWORD STARTUP_REVEAL_TIMEOUT_MS = 1500;
     static constexpr UINT WM_DEFERRED_CHROME_REAPPLY = WM_APP + 0x60;
     static constexpr UINT WM_DEFERRED_SURFACE_CONVERGE = WM_APP + 0x61;
+    // 创建失败的回调来自 WebView2 COM 回调，不能在它的栈上开模态对话框，投递到下一轮消息再弹
+    static constexpr UINT WM_DEFERRED_INIT_FAILURE_REPORT = WM_APP + 0x62;
     static constexpr UINT_PTR STARTUP_SETTLEMENT_PROBE_T100_TIMER_ID = 110;
     static constexpr UINT_PTR STARTUP_SETTLEMENT_PROBE_T250_TIMER_ID = 111;
     static constexpr UINT_PTR STARTUP_SETTLEMENT_PROBE_T500_TIMER_ID = 112;
@@ -495,6 +506,10 @@ private:
     bool HandleMaximizeButtonMessage(UINT msg, WPARAM wParam, LPARAM lParam, LRESULT& result);
     RECT GetCaptionButtonsRect() const;
     void ShowSystemMenu(int screenX, int screenY);
+    // WebView 不可用时的原生兜底（MainWindowInitFailure.cpp）
+    bool HasWebViewInitFailed() const;
+    void ShowInitFailureDialog();
+    void ShowFallbackContextMenu(LPARAM lParam);
     bool HandleWebViewMenuCommand(WORD cmdId);
     bool HandleStandardMenuCommand(WORD cmdId);
     bool HandleMainMenuLookupCommand(WORD cmdId);

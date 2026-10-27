@@ -12,6 +12,7 @@
 #include "api/CallerContext.h"
 #include "api/ErrorEnvelope.h"
 #include "api/EventEmit.h"
+#include "api/MediaReadQueue.h"
 #include "api/TypedApi.h"
 #include "api/generated/FileSchema.h"
 #include "utils/PathExpansion.h"
@@ -1738,6 +1739,14 @@ namespace {
                param.access == access;
     }
 
+    // file.read、exists、list、getInfo 连同路径校验在这条队列上执行。放在主线程上时，
+    // 离线 NAS 或断开的映射盘一次就让整个 foobar2000 卡二十多秒。
+    // ponytail: 单线程 FIFO，一个慢路径会让排在后面的这几个调用跟着等；真成问题再给它加并发。
+    void RunOnFileRead(std::function<void()> work) {
+        static api::MediaReadQueue queue;
+        queue.Add(std::move(work));
+    }
+
 } // anonymous namespace
 
 //==========================================================================
@@ -1762,7 +1771,7 @@ void RegisterFileApi() {
     // 路径参数的安全级别来自声明 (生成头里的 kPathParams), 不再在这里登记。
     
     // file.read - Read file content
-    api::RegisterApi("file.read", FileRead);
+    api::RegisterApiDeferred("file.read", FileRead, RunOnFileRead);
     
     // file.write - Write content to file
     //
@@ -1773,10 +1782,10 @@ void RegisterFileApi() {
     api::RegisterApi("file.write", FileWrite);
     
     // file.exists - Check if file/directory exists
-    api::RegisterApi("file.exists", FileExists);
-    
+    api::RegisterApiDeferred("file.exists", FileExists, RunOnFileRead);
+
     // file.list - List directory contents
-    api::RegisterApi("file.list", FileList);
+    api::RegisterApiDeferred("file.list", FileList, RunOnFileRead);
     
     // file.delete - Delete a file
     api::RegisterApi("file.delete", FileDelete);
@@ -1794,7 +1803,7 @@ void RegisterFileApi() {
     api::RegisterApi("file.rename", FileRename);
 
     // file.getInfo - Get file information
-    api::RegisterApi("file.getInfo", FileGetInfo);
+    api::RegisterApiDeferred("file.getInfo", FileGetInfo, RunOnFileRead);
 
     // file.copyAsync - 异步批量复制 (worker 线程, 可取消)
     //

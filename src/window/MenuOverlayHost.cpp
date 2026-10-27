@@ -229,6 +229,29 @@ std::string MenuOverlayHost::Show(const json& items, int screenX, int screenY,
         return std::string();
     }
 
+    currentMenuId_ = "menu-" + std::to_string(++showSeq_);
+    visible_ = true;
+    showTick_ = GetTickCount64();
+    // 记录交接前的前台窗口（FinalizeHide 归还激活与键盘焦点用）。菜单替换菜单时
+    // 前台可能已在菜单面上，此时保留上一轮记录，避免"还给菜单自己"。
+    const HWND fgBeforeShow = GetForegroundWindow();
+    if (fgBeforeShow && fgBeforeShow != overlayHwnd_ && fgBeforeShow != submenuHwnd_) {
+        previousForeground_ = fgBeforeShow;
+        previousForegroundReference_ = WindowManager::GetInstance().CaptureWindowReference(fgBeforeShow);
+    }
+    auto menuActivation = WindowManager::GetInstance().BeginExplicitActivation(overlayHwnd_, "menu.show");
+    focusReturn_ = WindowManager::GetInstance().CaptureFocusReturn(overlayHwnd_);
+    const auto showReturn = focusReturn_;
+    auto shownMenuId = currentMenuId_;
+    const auto isCurrentShow = [&] {
+        return currentMenuId_ == shownMenuId && visible_ && !closing_ &&
+            WindowManager::GetInstance().CanReturnFocus(showReturn);
+    };
+    const auto abandonShow = [&] {
+        if (currentMenuId_ == shownMenuId && (visible_ || closing_)) FinalizeHide("superseded");
+        return shownMenuId;
+    };
+
     // A pooled submenu may still be visible from the preceding session. Hide
     // it before the new root receives focus so the two HWNDs never overlap
     // across menu generations.
@@ -272,18 +295,14 @@ std::string MenuOverlayHost::Show(const json& items, int screenX, int screenY,
         SetWindowPos(overlayHwnd_, HWND_TOPMOST, work.left, work.top, w, h, SWP_NOACTIVATE);
     }
 
-    // 记录交接前的前台窗口（FinalizeHide 归还激活与键盘焦点用）。菜单替换菜单时
-    // 前台可能已在菜单面上，此时保留上一轮记录，避免"还给菜单自己"。
-    const HWND fgBeforeShow = GetForegroundWindow();
-    if (fgBeforeShow && fgBeforeShow != overlayHwnd_ && fgBeforeShow != submenuHwnd_) {
-        previousForeground_ = fgBeforeShow;
-    }
     // handoff 窗口期：SetForegroundWindow 同步派发宿主的 WM_NCACTIVATE/WM_ACTIVATE，
     // 宿主经 ShouldHoldOwnerActivation 识别"失活是让位给菜单"从而维持激活观感。
+    if (!isCurrentShow()) return abandonShow();
     activationHandoff_ = true;
     ShowWindow(overlayHwnd_, SW_SHOW);
-    SetForegroundWindow(overlayHwnd_);
+    if (isCurrentShow()) SetForegroundWindow(overlayHwnd_);
     activationHandoff_ = false;
+    if (!isCurrentShow()) return abandonShow();
     SetWindowPos(overlayHwnd_, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
 
     // 运行时按本次 config 应用 DWM 系统背景：池化 overlay 被 tray（ContentSized）与
@@ -308,14 +327,13 @@ std::string MenuOverlayHost::Show(const json& items, int screenX, int screenY,
             wv->Resize(rc);
             if (auto* ctrl = wv->GetController()) {
                 ctrl->NotifyParentWindowPositionChanged();
-                ctrl->MoveFocus(COREWEBVIEW2_MOVE_FOCUS_REASON_PROGRAMMATIC);  // 让 WebView 内容获键盘焦点（菜单可即时键盘导航）
+                if (!isCurrentShow()) return abandonShow();
+                ctrl->MoveFocus(COREWEBVIEW2_MOVE_FOCUS_REASON_PROGRAMMATIC);
             }
         }
     }
 
-    currentMenuId_ = "menu-" + std::to_string(++showSeq_);
-    visible_ = true;
-    showTick_ = GetTickCount64();
+    if (!isCurrentShow()) return abandonShow();
     ArmWatchdog();
     if (windowModel_ == MenuWindowModel::ContentSized) {
         ArmMeasureTimer();  // 测量回报兜底
@@ -451,7 +469,10 @@ void MenuOverlayHost::FinalizeHide(const std::string& reason) {
     // 焦点一并回到调用方）。外点击/切他窗时系统已把前台转走，不做干预。
     if (IsMenuSurfaceWindow(fgAtClose) &&
         previousForeground_ && IsWindow(previousForeground_) &&
-        IsWindowVisible(previousForeground_)) {
+        IsWindowVisible(previousForeground_) &&
+        WindowManager::GetInstance().CanReturnFocus(focusReturn_) &&
+        WindowManager::GetInstance().IsWindowReferenceLive(previousForegroundReference_)) {
+        auto activation = WindowManager::GetInstance().BeginExplicitActivation(previousForeground_, "menu.return");
         SetForegroundWindow(previousForeground_);
     }
     previousForeground_ = nullptr;
@@ -709,6 +730,7 @@ bool MenuOverlayHost::OnSubmenuSurfaceReady(HWND caller, const std::string& pare
         WindowChromeTrace::EmitAuxiliaryLine(oss.str());
     }
     if (caller != submenuHwnd_ || !visible_ || closing_ || !openSubmenuVirtualRect_.has_value() ||
+        !WindowManager::GetInstance().CanReturnFocus(focusReturn_) ||
         parentToken.empty() || parentToken != openSubmenuParentToken_ ||
         !pendingSubmenuPanelSequence_.has_value()) {
         return false;
@@ -967,6 +989,9 @@ bool MenuOverlayHost::EnsureSubmenuCreated() {
 
 bool MenuOverlayHost::ShowSubmenuWindow(const menu_overlay_geometry::Rect& virtualRect,
                                         const std::string& parentToken) {
+    const auto returnTicket = focusReturn_;
+    auto& manager = WindowManager::GetInstance();
+    if (!manager.CanReturnFocus(returnTicket) || !IsMenuSurfaceWindow(GetForegroundWindow())) return false;
     // 握手取证：子菜单窗可见化的最终一步（仅 ready 校验通过后到达）。
     {
         std::ostringstream oss;
@@ -1001,12 +1026,15 @@ bool MenuOverlayHost::ShowSubmenuWindow(const menu_overlay_geometry::Rect& virtu
         json{{"activeEffect", currentBackdrop_}, {"inactiveEffect", currentBackdrop_},
              {"darkMode", currentBackdropDarkMode_}}, backdropError);
     SyncWebViewToClient(submenuOverlay_.get(), submenuHwnd_);
+    if (!manager.CanReturnFocus(returnTicket)) return false;
+    auto activation = manager.ProtectActivation(submenuHwnd_);
     openingSubmenu_ = true;
     activationHandoff_ = true;  // root→submenu 内部交接：root 的 NCACTIVATE(FALSE) 不降观感
     ShowWindow(submenuHwnd_, SW_SHOW);
-    SetForegroundWindow(submenuHwnd_);
+    if (manager.CanReturnFocus(returnTicket)) SetForegroundWindow(submenuHwnd_);
     activationHandoff_ = false;
     openingSubmenu_ = false;
+    if (!manager.CanReturnFocus(returnTicket)) return false;
     SetWindowPos(submenuHwnd_, HWND_TOPMOST, 0, 0, 0, 0,
                  SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
     // 池化复用空白修复：SW_SHOW 之后必须再同步一次 WebView surface。
@@ -1017,11 +1045,12 @@ bool MenuOverlayHost::ShowSubmenuWindow(const menu_overlay_geometry::Rect& virtu
     // 补了显示后同步，故"第一次正常、池化复用空白"（2026-08-13 取证：
     // 空白时握手全绿、DOM/opacity 均正常，唯窗口无内容帧）。
     SyncWebViewToClient(submenuOverlay_.get(), submenuHwnd_);
-    if (auto* wv = submenuOverlay_->GetWebView()) {
+    if (auto* wv = submenuOverlay_->GetWebView(); wv && manager.CanReturnFocus(returnTicket)) {
         if (auto* ctrl = wv->GetController()) {
             ctrl->MoveFocus(COREWEBVIEW2_MOVE_FOCUS_REASON_PROGRAMMATIC);
         }
     }
+    if (!manager.CanReturnFocus(returnTicket)) return false;
     if (submenuOverlay_->GetBridge()) {
         submenuOverlay_->GetBridge()->EmitEvent("menu:__submenuVisible", {{"menuId", currentMenuId_}});
     }
@@ -1029,6 +1058,8 @@ bool MenuOverlayHost::ShowSubmenuWindow(const menu_overlay_geometry::Rect& virtu
 }
 
 void MenuOverlayHost::HideSubmenuWindow(bool restoreRootFocus, bool notifyRoot, bool clearState) {
+    const auto returnTicket = focusReturn_;
+    const HWND foregroundBeforeHide = GetForegroundWindow();
     // 握手取证：隐藏路径的三参语义 + 隐藏前窗口可见性（区分真隐藏与空操作）。
     {
         std::ostringstream oss;
@@ -1052,9 +1083,12 @@ void MenuOverlayHost::HideSubmenuWindow(bool restoreRootFocus, bool notifyRoot, 
     // 子菜单是独立 MenuOverlayWindow（: public PopupWindow，自带 WebView），隐藏时按根窗同样的方式收敛其渲染面积。
     // 置于 suppressSubmenuDismiss_/activationHandoff_ 窗口内，与随后的焦点归还同批完成。
     CollapseWebViewSurface(submenuOverlay_.get(), submenuHwnd_);
-    if (restoreRootFocus && visible_ && overlayHwnd_ && IsWindow(overlayHwnd_)) {
+    if (restoreRootFocus && visible_ && overlayHwnd_ && IsWindow(overlayHwnd_) &&
+        IsMenuSurfaceWindow(foregroundBeforeHide) && WindowManager::GetInstance().CanReturnFocus(returnTicket)) {
+        auto activation = WindowManager::GetInstance().ProtectActivation(overlayHwnd_);
         SetForegroundWindow(overlayHwnd_);
-        if (overlay_ && overlay_->GetWebView() && overlay_->GetWebView()->GetController()) {
+        if (WindowManager::GetInstance().CanReturnFocus(returnTicket) &&
+            overlay_ && overlay_->GetWebView() && overlay_->GetWebView()->GetController()) {
             overlay_->GetWebView()->GetController()->MoveFocus(COREWEBVIEW2_MOVE_FOCUS_REASON_PROGRAMMATIC);
         }
     }
@@ -1194,18 +1228,22 @@ std::optional<json> MenuOverlayHost::FindSubmenuItems(const std::string& parentT
 
 void MenuOverlayHost::ArmWatchdog() {
     if (overlayHwnd_ && IsWindow(overlayHwnd_)) {
-        SetTimer(overlayHwnd_, kWatchdogTimerId, kWatchdogTimeoutMs, &MenuOverlayHost::WatchdogTimerProc);
+        KillWatchdog();
+        watchdogTimerId_ = ++nextTimerId_;
+        if (!SetTimer(overlayHwnd_, watchdogTimerId_, kWatchdogTimeoutMs, &MenuOverlayHost::WatchdogTimerProc)) watchdogTimerId_ = 0;
     }
 }
 
 void MenuOverlayHost::KillWatchdog() {
     if (overlayHwnd_ && IsWindow(overlayHwnd_)) {
-        KillTimer(overlayHwnd_, kWatchdogTimerId);
+        if (watchdogTimerId_) KillTimer(overlayHwnd_, watchdogTimerId_);
     }
+    watchdogTimerId_ = 0;
 }
 
-void CALLBACK MenuOverlayHost::WatchdogTimerProc(HWND /*hwnd*/, UINT /*msg*/, UINT_PTR idEvent, DWORD /*elapsed*/) {
-    if (idEvent != kWatchdogTimerId) {
+void CALLBACK MenuOverlayHost::WatchdogTimerProc(HWND hwnd, UINT /*msg*/, UINT_PTR idEvent, DWORD /*elapsed*/) {
+    const auto& current = MenuOverlayHost::GetInstance();
+    if (!idEvent || hwnd != current.overlayHwnd_ || idEvent != current.watchdogTimerId_) {
         return;
     }
     MenuOverlayHost::GetInstance().Hide("timeout");
@@ -1213,18 +1251,22 @@ void CALLBACK MenuOverlayHost::WatchdogTimerProc(HWND /*hwnd*/, UINT /*msg*/, UI
 
 void MenuOverlayHost::ArmMeasureTimer() {
     if (overlayHwnd_ && IsWindow(overlayHwnd_)) {
-        SetTimer(overlayHwnd_, kMeasureTimerId, kMeasureTimeoutMs, &MenuOverlayHost::MeasureTimerProc);
+        KillMeasureTimer();
+        measureTimerId_ = ++nextTimerId_;
+        if (!SetTimer(overlayHwnd_, measureTimerId_, kMeasureTimeoutMs, &MenuOverlayHost::MeasureTimerProc)) measureTimerId_ = 0;
     }
 }
 
 void MenuOverlayHost::KillMeasureTimer() {
     if (overlayHwnd_ && IsWindow(overlayHwnd_)) {
-        KillTimer(overlayHwnd_, kMeasureTimerId);
+        if (measureTimerId_) KillTimer(overlayHwnd_, measureTimerId_);
     }
+    measureTimerId_ = 0;
 }
 
-void CALLBACK MenuOverlayHost::MeasureTimerProc(HWND /*hwnd*/, UINT /*msg*/, UINT_PTR idEvent, DWORD /*elapsed*/) {
-    if (idEvent != kMeasureTimerId) {
+void CALLBACK MenuOverlayHost::MeasureTimerProc(HWND hwnd, UINT /*msg*/, UINT_PTR idEvent, DWORD /*elapsed*/) {
+    const auto& current = MenuOverlayHost::GetInstance();
+    if (!idEvent || hwnd != current.overlayHwnd_ || idEvent != current.measureTimerId_) {
         return;
     }
     // ContentSized 测量回报兜底：超时未收 menu.__ready 即关闭，避免卡在临时尺寸。
@@ -1240,17 +1282,24 @@ void MenuOverlayHost::ArmCloseTimer(int ms) {
     }
     if (ms < 0) ms = 0;
     if (ms > kCloseAnimationMaxMs) ms = kCloseAnimationMaxMs;   // 防御性 clamp（解析层已 clamp 0..1000）
-    SetTimer(overlayHwnd_, kCloseTimerId, static_cast<UINT>(ms), &MenuOverlayHost::CloseTimerProc);
+    KillCloseTimer();
+    closeTimerId_ = ++nextTimerId_;
+    if (!SetTimer(overlayHwnd_, closeTimerId_, static_cast<UINT>(ms), &MenuOverlayHost::CloseTimerProc)) {
+        closeTimerId_ = 0;
+        FinalizeHide(pendingCloseReason_);
+    }
 }
 
 void MenuOverlayHost::KillCloseTimer() {
     if (overlayHwnd_ && IsWindow(overlayHwnd_)) {
-        KillTimer(overlayHwnd_, kCloseTimerId);
+        if (closeTimerId_) KillTimer(overlayHwnd_, closeTimerId_);
     }
+    closeTimerId_ = 0;
 }
 
-void CALLBACK MenuOverlayHost::CloseTimerProc(HWND /*hwnd*/, UINT /*msg*/, UINT_PTR idEvent, DWORD /*elapsed*/) {
-    if (idEvent != kCloseTimerId) {
+void CALLBACK MenuOverlayHost::CloseTimerProc(HWND hwnd, UINT /*msg*/, UINT_PTR idEvent, DWORD /*elapsed*/) {
+    const auto& current = MenuOverlayHost::GetInstance();
+    if (!idEvent || hwnd != current.overlayHwnd_ || idEvent != current.closeTimerId_) {
         return;
     }
     // 退场动画收尾：退场时长到期后做与立即路径等价的同步收尾。reason 用进入 Closing 时记录的原始值。

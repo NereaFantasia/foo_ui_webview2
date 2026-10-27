@@ -7,6 +7,7 @@
 #include <nlohmann/json.hpp>
 
 #include "api/generated/PlaylistSchema.h"
+#include "api/AutoplaylistEditor.h"
 
 // fields 投影的解析结果（TrackWireSnapshot.h）。接口签名只按引用传递，
 // 前向声明让本头不把 ErrorEnvelope 链带进每个消费方；要读成员的定义方
@@ -197,6 +198,10 @@ public:
     };
     /** @brief Detect whether (and which kind of) autoplaylist backs the playlist. */
     virtual AutoplaylistDetectResult detect_autoplaylist(size_t playlist) const = 0;
+    /** @brief Probe the current editor on the main thread without opening its UI. */
+    virtual api::autoplaylist_editor::Probe probe_autoplaylist_editor(size_t playlist) const = 0;
+    /** @brief Whether the provider implements this component's editable configuration protocol. */
+    virtual bool is_managed_autoplaylist(size_t) const { return false; }
     /** @brief Convert the playlist into an autoplaylist driven by a query/sort. */
     virtual void add_autoplaylist_client(size_t playlist, const char* query, const char* sort, uint32_t flags) = 0;
     /** @brief Detach the autoplaylist client, leaving a normal playlist. */
@@ -251,12 +256,28 @@ public:
         size_t validPathCount = 0;
         size_t invalidCount = 0;
     };
-    /** @brief Resolve paths in the background; invoke onComplete when finished. Tracks expanded
-        after the target was removed or locked are not inserted and not counted in addedCount. */
+    struct AsyncAddOutcome {
+        size_t addedCount = 0;
+        size_t totalCount = 0;
+        // The user cancelled the expansion; tracks added before it stay.
+        bool cancelled = false;
+        // Set when resolved tracks were not inserted: "targetRemoved" or "locked".
+        const char* dropReason = nullptr;
+
+        // playlist:addComplete status: a cancel wins over a drop.
+        const char* Status() const {
+            if (cancelled) return "cancelled";
+            if (dropReason) return addedCount > 0 ? "partial" : "failed";
+            return "completed";
+        }
+    };
+    /** @brief Resolve paths in the background; invoke onComplete once when finished, also when
+        the user cancels. Tracks expanded after the target was removed or locked are not inserted
+        and not counted in addedCount. */
     virtual AsyncAddPathsInfo start_add_paths_async(
         size_t playlist, const nlohmann::json& paths,
         const std::string& operationId,
-        std::function<void(size_t addedCount, size_t totalCount)> onComplete) = 0;
+        std::function<void(const AsyncAddOutcome&)> onComplete) = 0;
 
     // Clear playlist and re-add from paths.
     struct ReplaceAllResult {

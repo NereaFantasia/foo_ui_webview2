@@ -5,6 +5,9 @@
 #include "core/WebViewContext.h"
 #include "api/EventEmit.h"
 #include "api/generated/WindowSchema.h"
+#include "window/WindowChromeTrace.h"
+#include <commctrl.h>
+#include <sstream>
 
 namespace {
 
@@ -64,13 +67,13 @@ json ShellSnapshotToJson(const WindowShellSnapshot& snap) {
     };
 }
 
-json BuildMainWindowCapabilities() {
+json BuildMainWindowCapabilities(const WindowShellCapabilities& capabilities) {
     return {
         {"supportsBackdropPolicy", true},
         {"supportsFrameless", true},
-        {"supportsCornerPreference", true},
+        {"supportsCornerPreference", capabilities.supportsCornerPreference},
         {"supportsPopupBehavior", false},
-        {"supportsMicaAlt", true},
+        {"supportsMicaAlt", capabilities.supportsMicaAlt},
         {"supportsFullscreen", true}
     };
 }
@@ -99,7 +102,7 @@ json BuildMainWindowInfo(const MainWindow& mainWindow) {
         {"title", GetWindowTitleUtf8(mainWindow.GetHwnd(), "foobar2000")},
         {"backdropPolicy", backdropInfo.value("backdropPolicy", json::object())},
         {"resolvedBackdropPolicy", backdropInfo.value("resolvedBackdropPolicy", json::object())},
-        {"capabilities", BuildMainWindowCapabilities()},
+        {"capabilities", BuildMainWindowCapabilities(snap.capabilities)},
         {"bounds", BuildWindowBoundsInfo(mainWindow.GetHwnd())},
         {"shell", ShellSnapshotToJson(snap)}
     };
@@ -199,7 +202,8 @@ WindowManager& WindowManager::GetInstance() {
 // 与 MenuOverlayHost::~MenuOverlayHost 同一条规则：静态析构期不销毁窗口。
 // 正常关停时 Shutdown() 已把 popups_ 清空，这里无事可做；仍有残留说明是
 // 没接关停点的宿主模式，此时走 OnDestroy 会碰到已析构的注册表。
-WindowManager::~WindowManager() {
+WindowManager::~WindowManager() noexcept {
+    ClearActivationTargets();
     for (auto& entry : popups_) {
         (void)entry.second.release();
     }
@@ -209,24 +213,176 @@ HWND WindowManager::GetActivationSinkHwnd() {
     // 不加 mutex_：sink 与 popups_ 无关，且仅在 UI 线程调用；
     // 而 CreatePopup 已持 mutex_ 调用本函数（PopupWindow::Create -> 此处），
     // 再次加锁会自死锁（std::mutex 非递归）。
-    return EnsureActivationSink();
+    const HWND sink = EnsureActivationSink();
+    RegisterActivationTarget(sink);
+    return sink;
 }
 
-void WindowManager::NotifyOverlayInteraction(HWND foregroundBeforeClick) {
+window_activation::Interaction WindowManager::NotifyOverlayInteraction(HWND source, HWND foregroundBeforeClick) {
     // 仅 UI 线程调用；不加 mutex_（与 popups_ 无关，且可能在 popup 消息处理中调用）。
     overlayInteractionTick_ = GetTickCount64();
     overlayInteractionForeground_ = foregroundBeforeClick;
+    overlayForegroundReference_ = CaptureWindowReference(foregroundBeforeClick);
+    overlayInteraction_ = activationPolicy_.Interact(RegisterActivationTarget(source), overlayInteractionTick_);
+    return overlayInteraction_;
 }
 
-bool WindowManager::IsOverlayInteractionRecent(unsigned int windowMs) const {
-    if (overlayInteractionTick_ == 0) return false;
-    const unsigned long long now = GetTickCount64();
-    return now >= overlayInteractionTick_ &&
-           (now - overlayInteractionTick_) <= windowMs;
+bool WindowManager::IsOverlayInteractionRecent(HWND target, unsigned int windowMs) const {
+    return activationPolicy_.IsRecent(overlayInteraction_,
+        activationPolicy_.Find(reinterpret_cast<std::uintptr_t>(target)), GetTickCount64(), windowMs);
 }
 
 HWND WindowManager::GetOverlayInteractionForeground() const {
-    return overlayInteractionForeground_;
+    return IsWindowReferenceLive(overlayForegroundReference_) ? overlayInteractionForeground_ : nullptr;
+}
+
+namespace {
+constexpr UINT_PTR kActivationSubclassId = 1;
+UINT ExplicitSystemCommandMessage() {
+    static const UINT message = RegisterWindowMessageW(L"FooUiWebView2.ExplicitSystemCommand");
+    return message;
+}
+}
+
+window_activation::Target WindowManager::RegisterActivationTarget(HWND hwnd) {
+    if (!hwnd || !IsWindow(hwnd) || GetWindowThreadProcessId(hwnd, nullptr) != GetCurrentThreadId()) return {};
+    const auto key = reinterpret_cast<std::uintptr_t>(hwnd);
+    const auto known = activationPolicy_.Find(key);
+    if (known.instance) return known;
+    if (!SetWindowSubclass(hwnd, ActivationSubclassProc, kActivationSubclassId, 0)) return {};
+    return activationPolicy_.Register(key);
+}
+
+void WindowManager::UnregisterActivationTarget(HWND hwnd) {
+    const auto target = activationPolicy_.Find(reinterpret_cast<std::uintptr_t>(hwnd));
+    activationPolicy_.Forget(target);
+    std::erase_if(pendingSystemCommands_, [&](const auto& entry) { return entry.second.target == target; });
+    RemoveWindowSubclass(hwnd, ActivationSubclassProc, kActivationSubclassId);
+}
+
+window_activation::Scope WindowManager::BeginExplicitActivation(HWND hwnd, const char* source) {
+    const auto request = activationPolicy_.BeginExplicit(RegisterActivationTarget(hwnd));
+    std::ostringstream line;
+    line << "[ActivationIntent] source=" << source << " target=" << hwnd << " instance="
+         << request.target.instance << " epoch=" << request.epoch;
+    WindowChromeTrace::EmitAuxiliaryLine(line.str());
+    return window_activation::Scope(activationPolicy_, request);
+}
+
+window_activation::Scope WindowManager::ProtectActivation(HWND hwnd) {
+    return window_activation::Scope(activationPolicy_, {RegisterActivationTarget(hwnd), activationPolicy_.Epoch()});
+}
+
+bool WindowManager::IsExplicitActivation(HWND hwnd) const {
+    return activationPolicy_.IsExplicit(activationPolicy_.Find(reinterpret_cast<std::uintptr_t>(hwnd)));
+}
+
+bool WindowManager::IsActivationTarget(HWND hwnd) const {
+    return activationPolicy_.Find(reinterpret_cast<std::uintptr_t>(hwnd)).instance != 0;
+}
+
+bool WindowManager::RequestForeground(HWND hwnd, const char* source) {
+    const BOOL result = SetForegroundWindow(hwnd);
+    std::ostringstream line;
+    line << "[ActivationIntent] source=" << source << " target=" << hwnd
+         << " setForegroundOk=" << (result != FALSE) << " foreground=" << GetForegroundWindow();
+    WindowChromeTrace::EmitAuxiliaryLine(line.str());
+    return result != FALSE;
+}
+
+bool WindowManager::PostExplicitSystemCommand(HWND hwnd, UINT command) {
+    const auto target = RegisterActivationTarget(hwnd);
+    if (!target.instance) return false;
+    // Lifetime guards queued commands; a later focus must not silently cancel a restore.
+    auto intent = BeginExplicitActivation(hwnd, "window.systemCommand.queued");
+    if (++nextSystemCommand_ == 0) ++nextSystemCommand_;
+    pendingSystemCommands_.emplace(nextSystemCommand_, PendingSystemCommand{target, command});
+    if (PostMessageW(hwnd, ExplicitSystemCommandMessage(), nextSystemCommand_, 0)) return true;
+    pendingSystemCommands_.erase(nextSystemCommand_);
+    return false;
+}
+
+LRESULT CALLBACK WindowManager::ActivationSubclassProc(HWND hwnd, UINT message, WPARAM wParam,
+    LPARAM lParam, UINT_PTR, DWORD_PTR) {
+    auto& manager = GetInstance();
+    if (message == ExplicitSystemCommandMessage()) {
+        const auto found = manager.pendingSystemCommands_.find(wParam);
+        if (found == manager.pendingSystemCommands_.end()) return 0;
+        const auto command = found->second;
+        manager.pendingSystemCommands_.erase(found);
+        if (command.target.handle != reinterpret_cast<std::uintptr_t>(hwnd) ||
+            !manager.activationPolicy_.IsLive(command.target)) return 0;
+        auto intent = manager.BeginExplicitActivation(hwnd, "window.systemCommand.execute");
+        return SendMessageW(hwnd, WM_SYSCOMMAND, command.command, 0);
+    }
+    if (message == WM_NCDESTROY) manager.UnregisterActivationTarget(hwnd);
+    if (message == WM_SYSCOMMAND && ((wParam & 0xFFF0) == SC_RESTORE || (wParam & 0xFFF0) == SC_MAXIMIZE) &&
+        !manager.IsExplicitActivation(hwnd)) {
+        auto intent = manager.BeginExplicitActivation(hwnd, "native.systemCommand");
+        return DefSubclassProc(hwnd, message, wParam, lParam);
+    }
+    return DefSubclassProc(hwnd, message, wParam, lParam);
+}
+
+window_activation::Undo WindowManager::CaptureActivationUndo(window_activation::Interaction interaction, HWND target) const {
+    return activationPolicy_.CaptureUndo(interaction, activationPolicy_.Find(reinterpret_cast<std::uintptr_t>(target)));
+}
+
+window_activation::Undo WindowManager::CaptureOverlayUndo(HWND target) const {
+    return CaptureActivationUndo(overlayInteraction_, target);
+}
+
+bool WindowManager::CanUndoActivation(const window_activation::Undo& undo) const {
+    const HWND foreground = GetAncestor(GetForegroundWindow(), GA_ROOT);
+    return activationPolicy_.CanUndo(undo, activationPolicy_.Find(reinterpret_cast<std::uintptr_t>(foreground)));
+}
+
+bool WindowManager::CanContinueActivationUndo(const window_activation::Undo& undo) const {
+    return activationPolicy_.CanContinue(undo);
+}
+
+bool WindowManager::CanContinueActivationUndo(const window_activation::Undo& undo, HWND intermediary) const {
+    const auto foreground = reinterpret_cast<std::uintptr_t>(GetAncestor(GetForegroundWindow(), GA_ROOT));
+    return activationPolicy_.CanContinue(undo, activationPolicy_.Find(foreground),
+        activationPolicy_.Find(reinterpret_cast<std::uintptr_t>(intermediary)));
+}
+
+window_activation::Reference WindowManager::CaptureWindowReference(HWND hwnd) {
+    DWORD process = 0;
+    const DWORD thread = hwnd ? GetWindowThreadProcessId(hwnd, &process) : 0;
+    auto target = RegisterActivationTarget(hwnd);
+    if (!target.instance) target.handle = reinterpret_cast<std::uintptr_t>(hwnd);
+    return {target, process, thread};
+}
+
+bool WindowManager::IsWindowReferenceLive(window_activation::Reference reference) const {
+    if (reference.target.instance) return activationPolicy_.IsLive(reference.target);
+    if (!reference.process || reference.process == GetCurrentProcessId()) return false;
+    DWORD process = 0;
+    const DWORD thread = GetWindowThreadProcessId(reinterpret_cast<HWND>(reference.target.handle), &process);
+    return thread && thread == reference.thread && process == reference.process;
+}
+
+void WindowManager::ClearActivationTargets() {
+    while (!activationPolicy_.Targets().empty()) {
+        const auto [handle, instance] = *activationPolicy_.Targets().begin();
+        activationPolicy_.Forget({handle, instance});
+        RemoveWindowSubclass(reinterpret_cast<HWND>(handle), ActivationSubclassProc, kActivationSubclassId);
+    }
+    pendingSystemCommands_.clear();
+    activationPolicy_.Clear();
+    overlayInteraction_ = {};
+    overlayForegroundReference_ = {};
+    overlayInteractionTick_ = 0;
+    overlayInteractionForeground_ = nullptr;
+}
+
+window_activation::Return WindowManager::CaptureFocusReturn(HWND surface) {
+    return activationPolicy_.CaptureReturn(RegisterActivationTarget(surface));
+}
+
+bool WindowManager::CanReturnFocus(window_activation::Return ticket) const {
+    return activationPolicy_.CanReturn(ticket);
 }
 
 void WindowManager::Initialize(MainWindow* mainWindow) {
@@ -260,6 +416,7 @@ void WindowManager::Shutdown() {
     popups_.clear();
     // popup 已全部销毁，再销毁其 owner（activation sink），避免悬空 owner。
     DestroyActivationSink();
+    ClearActivationTargets();
     mainWindow_ = nullptr;
     initialized_ = false;
     
@@ -454,6 +611,7 @@ void WindowManager::UnregisterPanel() {
         }
         popups_.clear();
         initialized_ = false;
+        ClearActivationTargets();
         activePanelCount_ = 0;
         FB2K_console_formatter() << "[WindowManager] All panels gone, cleaned up";
     }

@@ -1257,16 +1257,18 @@ inline bool FromJson(const json& j, GetCaptionButtonsWidthParams&, std::string& 
 }
 
 struct SetDragRegionsResult {
-    static constexpr std::array<std::string_view, 2> kFields{{"count", "dpiScale"}};
+    static constexpr std::array<std::string_view, 3> kFields{{"count", "dpiScale", "scale"}};
 
     std::int64_t count{};
     double dpiScale{};
+    double scale{};
 };
 
 inline json ToJson(const SetDragRegionsResult& v) {
     json j = json::object();
     api::results::Put(j, "count", v.count);
     api::results::Put(j, "dpiScale", v.dpiScale);
+    api::results::Put(j, "scale", v.scale);
     return j;
 }
 
@@ -1315,16 +1317,18 @@ inline bool FromJson(const json& j, ClearDragRegionsParams&, std::string& error,
 }
 
 struct SetNoDragRegionsResult {
-    static constexpr std::array<std::string_view, 2> kFields{{"count", "dpiScale"}};
+    static constexpr std::array<std::string_view, 3> kFields{{"count", "dpiScale", "scale"}};
 
     std::int64_t count{};
     double dpiScale{};
+    double scale{};
 };
 
 inline json ToJson(const SetNoDragRegionsResult& v) {
     json j = json::object();
     api::results::Put(j, "count", v.count);
     api::results::Put(j, "dpiScale", v.dpiScale);
+    api::results::Put(j, "scale", v.scale);
     return j;
 }
 
@@ -1762,11 +1766,12 @@ inline bool FromJson(const json& j, SetZoomParams& out, std::string& error, cons
 }
 
 struct GetZoomResult {
-    static constexpr std::array<std::string_view, 3> kFields{{"zoom", "dpi", "dpiScale"}};
+    static constexpr std::array<std::string_view, 4> kFields{{"zoom", "dpi", "dpiScale", "textScaleFactor"}};
 
     double zoom{};
     std::optional<std::int64_t> dpi{};
     std::optional<double> dpiScale{};
+    double textScaleFactor{};
 };
 
 inline json ToJson(const GetZoomResult& v) {
@@ -1774,6 +1779,7 @@ inline json ToJson(const GetZoomResult& v) {
     api::results::Put(j, "zoom", v.zoom);
     api::results::Put(j, "dpi", v.dpi);
     api::results::Put(j, "dpiScale", v.dpiScale);
+    api::results::Put(j, "textScaleFactor", v.textScaleFactor);
     return j;
 }
 
@@ -2347,11 +2353,12 @@ inline bool FromJson(const json& j, IsClickThroughParams& out, std::string& erro
 }
 
 struct SetClickThroughExcludeRegionsResult {
-    static constexpr std::array<std::string_view, 4> kFields{{"windowId", "count", "dpiScale", "warning"}};
+    static constexpr std::array<std::string_view, 5> kFields{{"windowId", "count", "dpiScale", "scale", "warning"}};
 
     std::string windowId{};
     std::int64_t count{};
     double dpiScale{};
+    double scale{};
     std::optional<std::string> warning{};
 };
 
@@ -2360,6 +2367,7 @@ inline json ToJson(const SetClickThroughExcludeRegionsResult& v) {
     api::results::Put(j, "windowId", v.windowId);
     api::results::Put(j, "count", v.count);
     api::results::Put(j, "dpiScale", v.dpiScale);
+    api::results::Put(j, "scale", v.scale);
     api::results::Put(j, "warning", v.warning);
     return j;
 }

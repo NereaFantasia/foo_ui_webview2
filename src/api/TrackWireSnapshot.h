@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 // ============================================
 // TrackWireSnapshot.h - library.query / library.search 曲目 JSON 的纯值层
 // ============================================
@@ -9,15 +9,16 @@
 // SDK 调用与线程放置的约束全留在提取侧。
 //
 // 全字段的键集就是声明的媒体库曲目行 LibraryTrack（src/api/schema/library.ts）的
-// 全部键，单测拿写出的键集与生成的 kFields 核对。取不到 info 容器的行照样出全部键，
-// 取自 info 的字段由提取侧归零到类型默认（ResetInfoFields），与 BuildTrackRow 对这种
+// 全部可用键，单测拿写出的键集与生成的 kFields 核对。albumId 无值时省略；取不到
+// info 容器的行照样出其余全部键，取自 info 的字段由提取侧归零到类型默认
+//（ResetInfoFields），与 BuildTrackRow 对这种
 // 句柄的处理一致。键序不进契约，只承诺 parse 回来语义相等。
 //
 // artists 是 artist 的原子值数组并列形态：artists.join(", ") 与 artist 逐字节
 // 相等（取值侧由 MetaValuesRaw + JoinMetaValues 保证）；albumArtists 与 albumArtist 同理。
 //
 // 调用方传 fields 时走投影写法（WriteTrackJsonProjected）：每行恰好输出请求的那
-// 几键。省略 fields 等于请求全部键。
+// 几键；albumId 没有值时仍省略。省略 fields 等于请求全部键。
 //
 // 入参字符串必须已是合法 UTF-8（JsonWriter.h 的约定）：标签值、codec 等来源
 // 不可信的串由提取侧先过 StringUtils::SafeUtf8，否则坏字节会直接进 wire。
@@ -43,6 +44,7 @@ struct TrackWireSnapshot {
     std::string artist;
     std::vector<std::string> artists;  // artist 的原子值数组；join(", ") 即 artist
     std::string album;
+    std::optional<std::string> albumId;
     std::string albumArtist;
     std::vector<std::string> albumArtists;  // album artist 的原子值数组；join(", ") 即 albumArtist
     std::string genre;
@@ -80,22 +82,23 @@ constexpr uint32_t kTitle        = 1u << 2;
 constexpr uint32_t kArtist       = 1u << 3;
 constexpr uint32_t kArtists      = 1u << 4;
 constexpr uint32_t kAlbum        = 1u << 5;
-constexpr uint32_t kAlbumArtist  = 1u << 6;
-constexpr uint32_t kAlbumArtists = 1u << 7;
-constexpr uint32_t kGenre        = 1u << 8;
-constexpr uint32_t kDate         = 1u << 9;
-constexpr uint32_t kTrackNumber  = 1u << 10;
-constexpr uint32_t kDiscNumber   = 1u << 11;
-constexpr uint32_t kDuration     = 1u << 12;
-constexpr uint32_t kPath         = 1u << 13;
-constexpr uint32_t kAbsolutePath = 1u << 14;
-constexpr uint32_t kFileSize     = 1u << 15;
-constexpr uint32_t kBitrate      = 1u << 16;
-constexpr uint32_t kSampleRate   = 1u << 17;
-constexpr uint32_t kChannels     = 1u << 18;
-constexpr uint32_t kCodec        = 1u << 19;
-constexpr uint32_t kSubsong      = 1u << 20;
-constexpr uint32_t kRating       = 1u << 21;
+constexpr uint32_t kAlbumId      = 1u << 6;
+constexpr uint32_t kAlbumArtist  = 1u << 7;
+constexpr uint32_t kAlbumArtists = 1u << 8;
+constexpr uint32_t kGenre        = 1u << 9;
+constexpr uint32_t kDate         = 1u << 10;
+constexpr uint32_t kTrackNumber  = 1u << 11;
+constexpr uint32_t kDiscNumber   = 1u << 12;
+constexpr uint32_t kDuration     = 1u << 13;
+constexpr uint32_t kPath         = 1u << 14;
+constexpr uint32_t kAbsolutePath = 1u << 15;
+constexpr uint32_t kFileSize     = 1u << 16;
+constexpr uint32_t kBitrate      = 1u << 17;
+constexpr uint32_t kSampleRate   = 1u << 18;
+constexpr uint32_t kChannels     = 1u << 19;
+constexpr uint32_t kCodec        = 1u << 20;
+constexpr uint32_t kSubsong      = 1u << 21;
+constexpr uint32_t kRating       = 1u << 22;
 
 struct Entry {
     const char* name;
@@ -110,6 +113,7 @@ inline constexpr Entry kTable[] = {
     {"artist",       kArtist},
     {"artists",      kArtists},
     {"album",        kAlbum},
+    {"albumId",      kAlbumId},
     {"albumArtist",  kAlbumArtist},
     {"albumArtists", kAlbumArtists},
     {"genre",        kGenre},
@@ -242,6 +246,7 @@ inline void ResetInfoFields(TrackWireSnapshot& snap) {
     snap.artist.clear();
     snap.artists.clear();
     snap.album.clear();
+    snap.albumId.reset();
     snap.albumArtist.clear();
     snap.albumArtists.clear();
     snap.genre.clear();
@@ -295,6 +300,10 @@ inline void WriteTrackJsonProjected(std::string& out, const TrackWireSnapshot& s
     if (mask & TrackField::kAlbum) {
         appendKey("album");
         JsonWriter::AppendJsonString(out, snap.album);
+    }
+    if ((mask & TrackField::kAlbumId) && snap.albumId) {
+        appendKey("albumId");
+        JsonWriter::AppendJsonString(out, *snap.albumId);
     }
     if (mask & TrackField::kAlbumArtist) {
         appendKey("albumArtist");

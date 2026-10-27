@@ -632,7 +632,7 @@ inline json ToJson(const GetFolderImagesResult& v) {
 
 struct GetFolderImagesParams {
     static constexpr const char* kMethod = "artwork.getFolderImages";
-    static constexpr std::array<api::params::PathParam, 1> kPathParams{{{"directory", api::params::PathAccess::Read, false, false, nullptr}}};
+    static constexpr std::array<api::params::PathParam, 1> kPathParams{{{"directory", api::params::PathAccess::MediaRead, false, false, nullptr}}};
     using Result = GetFolderImagesResult;
 
     std::string directory{};

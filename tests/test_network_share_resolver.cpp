@@ -1,4 +1,4 @@
-// test_network_share_resolver.cpp - NetworkShareResolver against a scripted probe
+﻿// test_network_share_resolver.cpp - NetworkShareResolver against a scripted probe
 //
 // Exercises the real implementation (the header pulls no foobar2000 SDK, same
 // reasoning as test_path_security_canonical_form.cpp). The probe is a scripted
@@ -174,6 +174,29 @@ TEST(NetworkShareResolver, ShareRootOfLetterReadsMappedTable) {
     EXPECT_FALSE(r.ShareRootOfLetter(L'E').has_value());
 }
 
+TEST(NetworkShareResolver, LocalDriveLookupDoesNotProbeUnrelatedShares) {
+    auto probe = TypicalMachine();
+    FakeProbe* raw = probe.get();
+    probe->mapped = {{L'Z', L"\\\\offline-nas\\music"}};
+    NetworkShareResolver r(std::move(probe));
+    EXPECT_FALSE(r.ShareRootOfLetter(L'D').has_value());
+    EXPECT_EQ(raw->identityCalls, 0);
+    raw->now += NetworkShareResolver::kTtlMs + 1;
+    EXPECT_FALSE(r.ShareRootOfLetter(L'D').has_value());
+    EXPECT_EQ(raw->identityCalls, 0);
+    EXPECT_EQ(r.ShareRootOfLetter(L'Z'), std::optional<std::wstring>(L"\\\\offline-nas\\music"));
+    EXPECT_EQ(r.Classify(L"\\\\offline-nas\\music").kind, ShareKind::Remote);
+    EXPECT_EQ(raw->identityCalls, 1);
+}
+
+TEST(NetworkShareResolver, LoopbackLettersDiscoverMappedAliasesOnDemand) {
+    auto probe = TypicalMachine();
+    probe->mapped = {{L'Z', L"\\\\127.0.0.1\\E$"}};
+    NetworkShareResolver r(std::move(probe));
+    r.Classify(L"\\\\localhost\\E$");
+    EXPECT_EQ(r.LettersFor(L"\\\\localhost\\E$"), std::vector<wchar_t>{L'Z'});
+}
+
 TEST(NetworkShareResolver, LettersForMatchesNormalisedShareRoot) {
     auto probe = TypicalMachine();
     probe->mapped = {{L'Z', L"\\\\LOCALHOST\\e$"}, {L'Y', L"\\\\nas\\music"}};
@@ -232,7 +255,7 @@ TEST(NetworkShareResolver, MappedTableIsLoadedOnFirstUseEvenAtSmallTickCounts) {
     EXPECT_TRUE(r.ShareRootOfLetter(L'Z').has_value());
 }
 
-TEST(NetworkShareResolver, MappedDriveTargetsAreClassifiedOnRefresh) {
+TEST(NetworkShareResolver, MappedDriveTargetsAreClassifiedForReverseLookup) {
     // A local path must expand to the UNC spelling of a loopback share that is
     // only known through the mapped-drive table, without any UNC call having
     // been made first. Mirrors a local path being checked while the share is

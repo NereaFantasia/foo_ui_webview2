@@ -12,6 +12,7 @@
 #include "api/ArtworkRequestParser.h"
 #include "utils/ArtworkCacheKey.h"
 #include "utils/ImageUtils.h"
+#include "utils/SubsongUtils.h"
 #include "domain/PathSecurity.h"
 #include <wrl/event.h>
 #include <objidl.h>
@@ -75,6 +76,86 @@ static std::string ComputeSourceFingerprint(const std::vector<std::string>& sour
         }
     }
     return data;
+}
+
+// The cover's source files and every key derived from them. Resolving them opens
+// the media file through album_art_manager_v2, which can block for seconds on slow
+// or cloud storage, so the async path does it on the artwork worker.
+struct ArtworkLookup {
+    std::vector<std::string> sourcePaths;
+    std::string fingerprint;
+    std::string etag;
+    std::string negCacheKey;
+    std::string cacheKey;  // empty when maxSize == 0
+};
+
+static ArtworkLookup ResolveArtworkLookup(const std::string& path, const std::string& type,
+                                          int maxSize, abort_callback& abort) {
+    ArtworkLookup lookup;
+    artwork_internal::TryGetArtworkSourcePathsForPath(path, type, lookup.sourcePaths, abort);
+    lookup.fingerprint = ComputeSourceFingerprint(lookup.sourcePaths);
+    const std::string& fingerprintBase = lookup.fingerprint.empty() ? path : lookup.fingerprint;
+    const size_t contentHash = std::hash<std::string>{}(
+        fingerprintBase + type + std::to_string(maxSize));
+    char etagBuffer[32];
+    snprintf(etagBuffer, sizeof(etagBuffer), "\"%zx\"", contentHash);
+    lookup.etag = etagBuffer;
+    lookup.negCacheKey =
+        type + ":" + (lookup.sourcePaths.empty() ? path : lookup.sourcePaths[0]);
+    if (maxSize > 0) {
+        lookup.cacheKey = BuildScaledArtworkCacheKey(path, type, maxSize, lookup.sourcePaths);
+    }
+    return lookup;
+}
+
+// True while a recorded miss is younger than NEGATIVE_CACHE_TTL_SEC; drops an expired one.
+static bool IsNegativeCacheHit(const std::string& negCacheKey) {
+    std::lock_guard lock(s_artworkNegativeCacheMutex);
+    auto nit = s_artworkNegativeCache.find(negCacheKey);
+    if (nit == s_artworkNegativeCache.end()) {
+        return false;
+    }
+    const auto age = std::chrono::steady_clock::now() - nit->second.timestamp;
+    if (std::chrono::duration_cast<std::chrono::seconds>(age).count() < NEGATIVE_CACHE_TTL_SEC) {
+        return true;
+    }
+    s_artworkNegativeCache.erase(nit);
+    return false;
+}
+
+// WorkItem::prepare of the resource handler: the lookup and the three cache answers
+// the main thread gave before queueing, in the same order. A scaled-cache hit leaves
+// cacheKey empty so the completion does not write the entry back.
+static std::optional<artwork_worker::ArtworkResult> PrepareArtworkOnWorker(
+    artwork_worker::WorkItem& item, abort_callback& abort) {
+    const ArtworkLookup lookup =
+        ResolveArtworkLookup(item.pathUtf8, item.artworkType, item.maxSize, abort);
+    item.fingerprint = lookup.fingerprint;
+    item.etag = lookup.etag;
+    item.negCacheKey = lookup.negCacheKey;
+    item.cacheKey = lookup.cacheKey;
+
+    artwork_worker::ArtworkResult answered;
+    answered.etag = lookup.etag;
+    if (IsNegativeCacheHit(lookup.negCacheKey)) {
+        answered.statusCode = 404;
+        return answered;
+    }
+    if (!item.ifNoneMatchEtag.empty() && item.ifNoneMatchEtag == lookup.etag) {
+        answered.statusCode = 304;
+        answered.is304 = true;
+        return answered;
+    }
+    if (!lookup.cacheKey.empty()) {
+        if (const auto hit = s_scaledArtworkCache.Get(
+                lookup.cacheKey, lookup.fingerprint, std::chrono::steady_clock::now())) {
+            answered.statusCode = 200;
+            answered.bytes = *hit->bytes;
+            answered.mime = hit->mimeType;
+            return answered;
+        }
+    }
+    return std::nullopt;
 }
 
 // Serve a scaled-cache hit as a 200 response; false on miss so the caller
@@ -260,95 +341,9 @@ void WebViewHost::SetupCustomProtocol() {
                 }
                 instrumentation.SetPermissionResult("allowed");
 
-                // === Source-aware ETag: resolve source paths unconditionally ===
-                instrumentation.RecordSourceResolve();
-                std::vector<std::string> artworkSourcePaths;
-                artwork_internal::TryGetArtworkSourcePathsForPath(
-                    pathUtf8, artworkType, artworkSourcePaths);
-                const std::string sourceFingerprint =
-                    ComputeSourceFingerprint(artworkSourcePaths);
-                const std::string& fingerprintBase =
-                    sourceFingerprint.empty() ? pathUtf8 : sourceFingerprint;
-                const size_t contentHash = std::hash<std::string>{}(
-                    fingerprintBase + artworkType + std::to_string(maxSize));
-                char etagBuffer[32];
-                snprintf(etagBuffer, sizeof(etagBuffer), "\"%zx\"", contentHash);
-                const std::string etag(etagBuffer);
-                LOG("Artwork resource authorized: type=", artworkType.c_str(),
-                    ", maxSize=", maxSize, ", sources=",
-                    static_cast<int>(artworkSourcePaths.size()));
-
-                // === Negative cache check (avoids extractor on known-missing artwork) ===
-                const std::string negCacheKey =
-                    artworkType + ":" +
-                    (artworkSourcePaths.empty() ? pathUtf8 : artworkSourcePaths[0]);
-                {
-                    std::lock_guard lock(s_artworkNegativeCacheMutex);
-                    auto nit = s_artworkNegativeCache.find(negCacheKey);
-                    if (nit != s_artworkNegativeCache.end()) {
-                        const auto age =
-                            std::chrono::steady_clock::now() - nit->second.timestamp;
-                        if (std::chrono::duration_cast<std::chrono::seconds>(age).count()
-                                < NEGATIVE_CACHE_TTL_SEC) {
-                            instrumentation.Complete("missing", "negative-cache-hit");
-                            artworkLifecycle_.Complete(*lifecycleCapture);
-                            wil::com_ptr<ICoreWebView2WebResourceResponse> response;
-                            if (SUCCEEDED(environment_->CreateWebResourceResponse(
-                                    nullptr, 404, L"Not Found",
-                                    L"Cache-Control: no-store\r\nAccess-Control-Allow-Origin: *\r\n",
-                                    &response))) {
-                                args->put_Response(response.get());
-                            }
-                            return S_OK;
-                        }
-                        s_artworkNegativeCache.erase(nit);  // expired entry
-                    }
-                }
-
-                // === If-None-Match against source-aware ETag (after source resolve) ===
-                {
-                    wil::com_ptr<ICoreWebView2HttpRequestHeaders> reqHdrs;
-                    if (wil::unique_cotaskmem_string ifNoneMatch;
-                        SUCCEEDED(request->get_Headers(&reqHdrs)) && reqHdrs &&
-                        SUCCEEDED(reqHdrs->GetHeader(L"If-None-Match", &ifNoneMatch)) &&
-                        ifNoneMatch) {
-                        const std::string ifNoneMatchStr(
-                            pfc::stringcvt::string_utf8_from_wide(ifNoneMatch.get()).get_ptr());
-                        if (ifNoneMatchStr == etag) {
-                            const std::wstring etagW(etag.begin(), etag.end());
-                            const std::wstring headers304 =
-                                L"ETag: " + etagW + L"\r\n"
-                                L"Cache-Control: no-cache\r\n"
-                                L"Access-Control-Allow-Origin: *\r\n";
-                            wil::com_ptr<ICoreWebView2WebResourceResponse> response;
-                            if (SUCCEEDED(environment_->CreateWebResourceResponse(
-                                    nullptr, 304, L"Not Modified",
-                                    headers304.c_str(), &response))) {
-                                args->put_Response(response.get());
-                                LOG("Artwork 304 Not Modified (source-aware ETag)");
-                            }
-                            instrumentation.Complete("not-modified", "etag-match");
-                            artworkLifecycle_.Complete(*lifecycleCapture);
-                            return S_OK;
-                        }
-                    }
-                }
-
-                // === Scaled artwork cache lookup ===
-                std::string cacheKey;
-                if (maxSize > 0) {
-                    cacheKey = BuildScaledArtworkCacheKey(
-                        pathUtf8, artworkType, maxSize, artworkSourcePaths);
-                }
-
-                if (maxSize > 0 && TryRespondFromScaledCache(
-                        environment_.get(), args, cacheKey, sourceFingerprint, etag)) {
-                    instrumentation.Complete("success", "scaled-cache-hit");
-                    artworkLifecycle_.Complete(*lifecycleCapture);
-                    return S_OK;
-                }
-
-                // === Async cache miss: GetDeferral + worker queue ===
+                // === Async: GetDeferral + worker queue ===
+                // Nothing past the permission check runs here: the source lookup opens
+                // the media file, and the ETag and both caches depend on its result.
                 wil::com_ptr<ICoreWebView2Deferral> deferral;
                 if (SUCCEEDED(args->GetDeferral(&deferral)) && deferral) {
                     // Capture everything needed for owner-thread completion.
@@ -358,10 +353,8 @@ void WebViewHost::SetupCustomProtocol() {
                     wil::com_ptr<ICoreWebView2WebResourceRequestedEventArgs> argsCapture = args;
                     auto lifecycle   = &artworkLifecycle_;
                     auto capture     = *lifecycleCapture;
-                    const std::string etagCopy      = etag;
-                    const std::string cacheKeyCopy  = cacheKey;
 
-                    // Read If-None-Match once more for the async path.
+                    // Compared on the worker once the ETag is known.
                     std::string ifNoneMatchEtag;
                     {
                         wil::com_ptr<ICoreWebView2HttpRequestHeaders> reqHdrs2;
@@ -375,23 +368,26 @@ void WebViewHost::SetupCustomProtocol() {
 
                     artwork_worker::WorkItem workItem;
                     workItem.pathUtf8        = pathUtf8;
+                    // Resolved here: file-relative:// goes through the SDK, main thread only.
+                    if (SubsongUtils::TryResolveNativeMediaPath(pathUtf8, workItem.nativePath)) {
+                        workItem.nativePath =
+                            fb2k_paths::SplitSubsongPath(workItem.nativePath).path;
+                    }
                     workItem.artworkType     = artworkType;
                     workItem.maxSize         = maxSize;
-                    workItem.cacheKey        = cacheKey;
-                    workItem.negCacheKey     = negCacheKey;
-                    workItem.fingerprint     = sourceFingerprint;
-                    workItem.etag            = etag;
+                    workItem.flightKey       = pathUtf8 + '\n' + artworkType + '\n' +
+                                               std::to_string(maxSize) + '\n' + ifNoneMatchEtag;
                     workItem.ifNoneMatchEtag = std::move(ifNoneMatchEtag);
                     workItem.navGen          = lifecycleCapture->navigationGeneration;
                     workItem.hostGen         = lifecycleCapture->hostGeneration;
                     workItem.abort           = std::make_shared<abort_callback_impl>();
+                    workItem.prepare         = PrepareArtworkOnWorker;
                     // Capture deferral by copy (wil::com_ptr is refcounted). Do NOT move it:
                     // Submit(std::move(workItem)) always takes ownership of the WorkItem, even when
                     // it returns false for queue-full; the outer deferral must remain usable for 503.
                     workItem.complete = [
                         aliveFlag, envCapture, argsCapture = std::move(argsCapture),
-                        deferral, lifecycle, capture,
-                        etagCopy, cacheKeyCopy
+                        deferral, lifecycle, capture
                     ](artwork_worker::ArtworkResult result) mutable {
                         // Runs on fb2k main thread (== WebView owner thread).
                         if (!aliveFlag->load(std::memory_order_acquire)) {
@@ -494,6 +490,68 @@ void WebViewHost::SetupCustomProtocol() {
 
                 // No deferral — fall through to inline sync extraction below.
                 // === Sync fallback (GetDeferral failed or async path unavailable) ===
+                instrumentation.RecordSourceResolve();
+                const ArtworkLookup lookup =
+                    ResolveArtworkLookup(pathUtf8, artworkType, maxSize, fb2k::noAbort);
+                const std::string& sourceFingerprint = lookup.fingerprint;
+                const std::string& etag = lookup.etag;
+                const std::string& negCacheKey = lookup.negCacheKey;
+                const std::string& cacheKey = lookup.cacheKey;
+                LOG("Artwork resource authorized: type=", artworkType.c_str(),
+                    ", maxSize=", maxSize, ", sources=",
+                    static_cast<int>(lookup.sourcePaths.size()));
+
+                // === Negative cache check (avoids extractor on known-missing artwork) ===
+                if (IsNegativeCacheHit(negCacheKey)) {
+                    instrumentation.Complete("missing", "negative-cache-hit");
+                    artworkLifecycle_.Complete(*lifecycleCapture);
+                    wil::com_ptr<ICoreWebView2WebResourceResponse> response;
+                    if (SUCCEEDED(environment_->CreateWebResourceResponse(
+                            nullptr, 404, L"Not Found",
+                            L"Cache-Control: no-store\r\nAccess-Control-Allow-Origin: *\r\n",
+                            &response))) {
+                        args->put_Response(response.get());
+                    }
+                    return S_OK;
+                }
+
+                // === If-None-Match against source-aware ETag (after source resolve) ===
+                {
+                    wil::com_ptr<ICoreWebView2HttpRequestHeaders> reqHdrs;
+                    if (wil::unique_cotaskmem_string ifNoneMatch;
+                        SUCCEEDED(request->get_Headers(&reqHdrs)) && reqHdrs &&
+                        SUCCEEDED(reqHdrs->GetHeader(L"If-None-Match", &ifNoneMatch)) &&
+                        ifNoneMatch) {
+                        const std::string ifNoneMatchStr(
+                            pfc::stringcvt::string_utf8_from_wide(ifNoneMatch.get()).get_ptr());
+                        if (ifNoneMatchStr == etag) {
+                            const std::wstring etagW(etag.begin(), etag.end());
+                            const std::wstring headers304 =
+                                L"ETag: " + etagW + L"\r\n"
+                                L"Cache-Control: no-cache\r\n"
+                                L"Access-Control-Allow-Origin: *\r\n";
+                            wil::com_ptr<ICoreWebView2WebResourceResponse> response;
+                            if (SUCCEEDED(environment_->CreateWebResourceResponse(
+                                    nullptr, 304, L"Not Modified",
+                                    headers304.c_str(), &response))) {
+                                args->put_Response(response.get());
+                                LOG("Artwork 304 Not Modified (source-aware ETag)");
+                            }
+                            instrumentation.Complete("not-modified", "etag-match");
+                            artworkLifecycle_.Complete(*lifecycleCapture);
+                            return S_OK;
+                        }
+                    }
+                }
+
+                // === Scaled artwork cache lookup ===
+                if (maxSize > 0 && TryRespondFromScaledCache(
+                        environment_.get(), args, cacheKey, sourceFingerprint, etag)) {
+                    instrumentation.Complete("success", "scaled-cache-hit");
+                    artworkLifecycle_.Complete(*lifecycleCapture);
+                    return S_OK;
+                }
+
                 instrumentation.RecordExtractor();
                 artwork_internal::BinaryArtwork artwork;
                 bool found = artwork_internal::GetArtworkBinaryForPath(pathUtf8, artworkType, artwork);

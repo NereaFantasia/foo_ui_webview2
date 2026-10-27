@@ -1,16 +1,23 @@
-import type { Int, PlaylistGuid, ReportedPlaylistGuid, Track } from './common.js';
+import type {
+  ContentVersion,
+  ExpectedContentVersion,
+  Int,
+  PlaylistGuid,
+  ReportedPlaylistGuid,
+  Track,
+} from './common.js';
 
 export interface Api {
   /**
    * Read the whole playback queue, in play order. No paging: every entry comes back.
-   * @zh 按播放顺序读取整个播放队列。不分页，全部条目一次返回。
+   * @zh 按播放顺序读取完整待播队列；不分页一次性返回全量条目
    * @effect read
    */
   get(): GetResult;
 
   /**
    * Report how many entries the queue holds.
-   * @zh 报告队列里有多少条目。
+   * @zh 获取待播队列当前容纳的条目总数
    */
   getCount(): GetCountResult;
 
@@ -18,7 +25,7 @@ export interface Api {
    * Queue one or more tracks by their position in a playlist. Positions past the last row are
    * skipped; when none is in range the call fails with `INVALID_INDEX`. A negative position fails
    * with `INVALID_PARAMS`.
-   * @zh 按播放列表中的位置把一首或多首曲目加入队列。超出最后一行的位置跳过；一个都不在范围内时以 `INVALID_INDEX` 失败。负数位置以 `INVALID_PARAMS` 失败。
+   * @zh 按播放列表行号将一首或多首曲目追加至待播队列；超出列表范围的索引自动忽略，无任一有效索引时以 `INVALID_INDEX` 失败，负数索引以 `INVALID_PARAMS` 失败
    * @effect write
    */
   add(params: AddParams): AddResult;
@@ -32,7 +39,7 @@ export interface Api {
    * call fails with `OPERATION_FAILED` and nothing is queued. A path the media-root check refuses
    * fails the whole call with `PERMISSION_DENIED`. Paths that resolve to nothing are dropped;
    * when none resolves the call fails with `NOT_FOUND`, the failure carrying `invalidCount`.
-   * @zh 按路径把曲目加入队列。入队需要曲目先在某个播放列表里，所以路径会先追加到一个播放列表：默认是专用的 `[WebView Queue]` 列表，不存在则创建。目标播放列表已上锁时以 `LOCKED` 失败，不添加也不入队。路径解析完会重新查找目标列表，处理同 `playlist.addPaths`：期间被挪动，曲目照样加进它，结果里的 `playlist` 是它的新索引；期间被删掉，以 `OPERATION_FAILED` 失败，不入队。有一条路径没通过媒体根检查，整次调用以 `PERMISSION_DENIED` 失败。解析不出曲目的路径被丢弃；一条都解析不出时以 `NOT_FOUND` 失败，失败里带 `invalidCount`。
+   * @zh 按文件路径或 URL 将曲目加入待播队列；宿主会先将曲目追加至播放列表（默认专用 `[WebView Queue]` 列表，不存在则自动创建）后再入队；目标列表已锁定时以 `LOCKED` 失败且不执行追加与入队；路径解析后重新定位目标列表，若期间被删除则以 `OPERATION_FAILED` 失败；未通过媒体根目录安全检查时整次调用以 `PERMISSION_DENIED` 失败；解析失败的无效路径自动丢弃，无任一有效曲目时以 `NOT_FOUND` 失败并在 `invalidCount` 中注明
    * @effect write
    */
   addPaths(params: AddPathsParams): AddPathsResult;
@@ -43,14 +50,14 @@ export interface Api {
    * indices and those past the end of the queue are skipped; when none is in range the call fails
    * with `INVALID_INDEX`, the failure carrying `removedCount` `0` and `queueCount`. Giving neither
    * key, or a negative index, fails with `INVALID_PARAMS`.
-   * @zh 按 `index` 移除一条，或按 `indices` 移除多条。队列为空时不论给了什么都以 `NOT_FOUND` 失败。`index` 超出队尾以 `INVALID_INDEX` 失败。批量时重复的下标与超出队尾的下标跳过；一个都不在范围内时以 `INVALID_INDEX` 失败，失败里带 `removedCount` 为 `0` 与 `queueCount`。两个键都没给或下标为负数，以 `INVALID_PARAMS` 失败。
+   * @zh 按队列索引 `index` 或索引列表 `indices` 从待播队列中移除条目；队列为空时一律以 `NOT_FOUND` 失败；单项 `index` 越界以 `INVALID_INDEX` 失败；批量移除时跳过重复或越界索引，无任一有效索引时以 `INVALID_INDEX` 失败（错误详情附带 `removedCount: 0` 与 `queueCount`）；未提供索引或传入负数时以 `INVALID_PARAMS` 失败
    * @effect destructive
    */
   remove(params: RemoveParams): RemoveResult;
 
   /**
    * Empty the queue.
-   * @zh 清空队列。
+   * @zh 清空待播队列中的所有条目
    * @effect destructive
    * @idempotent
    */
@@ -58,7 +65,7 @@ export interface Api {
 
   /**
    * Empty the queue; the same operation as `queue.clear` under its older name.
-   * @zh 清空队列；与 `queue.clear` 是同一个操作，这是它的旧名字。
+   * @zh 清空待播队列中的所有条目（旧名别名，功能同 `queue.clear`）
    */
   flush(): FlushResult;
 
@@ -67,7 +74,7 @@ export interface Api {
    * order of the other entries is kept. An `index` of `0`, one past the end, and any index while
    * the queue is empty fail with `INVALID_INDEX`. When the queue cannot be rebuilt the call fails
    * with `OPERATION_FAILED`, the failure carrying `queueCount`.
-   * @zh 把队列中的一条移到队首，使其下一首播放。只改队列顺序，其余条目的相对顺序不变。`index` 为 `0`、超出队尾，以及队列为空时的任何下标，都以 `INVALID_INDEX` 失败。队列重建不成时以 `OPERATION_FAILED` 失败，失败里带 `queueCount`。
+   * @zh 将指定队列位置的条目移动至队首以便下一首播放；仅调整队列排序，保持其他条目的相对顺序；传入 `index: 0`、越界索引或队列为空时均以 `INVALID_INDEX` 失败；队列重建失败时以 `OPERATION_FAILED` 失败（附带 `queueCount`）
    * @effect write
    */
   moveToTop(params: MoveToTopParams): MoveToTopResult;
@@ -79,7 +86,7 @@ export interface Api {
    * another playlist; `playlistGuid` keeps naming the playlist it was read from. An entry giving
    * both `playlist` and `playlistGuid`, or a malformed GUID, fails with `INVALID_PARAMS`, a GUID
    * no playlist has with `NOT_FOUND`.
-   * @zh 用一份有序引用列表替换整个队列。任一条引用不可用，整次调用在写入前失败。空列表即清空队列。播放列表索引按调用到达时的清单解读，所以在列表清单变化之前取来的索引会把另一张列表的行加进队列；`playlistGuid` 始终指向读取时的那张列表。某一条同时给了 `playlist` 与 `playlistGuid`、或 GUID 格式不对，以 `INVALID_PARAMS` 失败；没有列表持有该 GUID 时以 `NOT_FOUND` 失败。
+   * @zh 使用指定的有序引用列表全量替换当前待播队列；任一引用项校验失败整次调用立即终止且不写入变更；传入空列表等同清空队列；播放列表索引以调用到达时的状态为准，使用 `playlistGuid` 可稳定引用目标列表；单项同时传入 `playlist` 与 `playlistGuid` 或 GUID 格式非法时以 `INVALID_PARAMS` 失败，GUID 未匹配到列表时以 `NOT_FOUND` 失败
    * @effect destructive
    * @idempotent
    */
@@ -97,7 +104,8 @@ export interface Api {
    * to nothing is dropped and counted in `invalidCount`, and when nothing at all is left to
    * insert the call fails with `NOT_FOUND`. A playlist row that changed while the paths were
    * resolved fails the call with `OPERATION_FAILED`, and so does a queue that cannot be rebuilt.
-   * @zh 插入曲目使其下一首播放，排在已入队的所有条目之前。已在队列中的曲目被移动而不是再入队一次。`items` 块排在 `paths` 块之前，各块内部保持传入顺序。`paths` 与 `items` 都没给时以 `INVALID_PARAMS` 失败。`items` 的每一条都在解析路径之前检查，任一条不合格整次调用失败，什么也不写：一条用 `playlist` 与 `playlistGuid` 两个都没给或都给了、或 GUID 格式不对，以 `INVALID_PARAMS` 失败；没有列表持有该 GUID 时以 `NOT_FOUND` 失败；播放列表序号或行号越界以 `INVALID_INDEX` 失败。有一条路径没通过媒体根检查，整次调用以 `PERMISSION_DENIED` 失败；解析不出曲目的路径被丢弃并计入 `invalidCount`，什么也没剩下可插入时以 `NOT_FOUND` 失败。解析路径期间某个播放列表行变了，以 `OPERATION_FAILED` 失败；队列重建不成同样如此。
+   * `expectedVersion` is compared when the queue is written, after the paths are resolved.
+   * @zh 将指定曲目插入待播队列前端以便下一首播放；已存在于队列中的曲目直接前移而不重复入队；`items` 列表排在 `paths` 列表之前，各自保持输入顺序；未提供 `paths` 与 `items` 时以 `INVALID_PARAMS` 失败；在解析路径前预检所有 `items` 引用，任一项非法立即失败且不写入变更；路径未通过媒体根目录安全检查以 `PERMISSION_DENIED` 失败；无效路径自动丢弃并计入 `invalidCount`，无任一有效曲目插入时以 `NOT_FOUND` 失败；路径解析期间播放列表发生变动或队列重建失败以 `OPERATION_FAILED` 失败；在路径解析完成后写入队列前校验 `expectedVersion`
    * @effect write
    */
   insertNext(params: InsertNextParams): InsertNextResult;
@@ -107,38 +115,46 @@ export interface Api {
    * there. An empty queue fails with `NOT_FOUND`, an `index` past the end with `INVALID_INDEX`.
    * When the entry has to be moved and the queue cannot be rebuilt, the call fails with
    * `OPERATION_FAILED` and playback is not started.
-   * @zh 立即播放队列中 `index` 处的条目；它不在队首时先移到队首。队列为空时以 `NOT_FOUND` 失败，`index` 超出队尾以 `INVALID_INDEX` 失败。需要移动条目而队列重建不成时以 `OPERATION_FAILED` 失败，不起播。
+   * @zh 立即起播队列中指定索引的条目；若目标不在队首则先行移至队首；队列为空时以 `NOT_FOUND` 失败，索引越界以 `INVALID_INDEX` 失败；条目移动后队列重建失败时以 `OPERATION_FAILED` 失败且不起播
    * @effect write
    */
   playNow(params: PlayNowParams): PlayNowResult;
 }
 
 /**
+ * Act only while the playlist that the rows belong to still has this `contentVersion`, as its
+ * reads report it. A different version changes nothing and fails with `STALE_TARGET`, the current
+ * version carried as `details.current`. Omitted, no check is made.
+ * @zh 播放列表预期内容版本号；仅在行所属播放列表的版本与此匹配时执行变更，版本冲突时不修改并以 `STALE_TARGET` 失败（`details.current` 返回当前最新版本），省略时不校验
+ */
+type ExpectedPlaylistVersion = string;
+
+/**
  * One queue entry: the shared track row plus its queue position and, when it has one, the
  * playlist position it was queued from.
- * @zh 一条队列条目：共享曲目行，加上队列位置，以及它入队时所在的播放列表位置（如果有）。
+ * @zh 待播队列条目信息（包含通用曲目数据、队列序号及来源播放列表位置）
  */
 interface QueueItem extends Track {
   /**
    * Position in the queue, from `0`.
-   * @zh 在队列中的位置，从 `0` 起。
+   * @zh 在待播队列中的顺序索引（从 `0` 开始）
    */
   queueIndex: Int;
   /**
    * Playlist the entry was queued from; `null` when it carries no playlist position: queued by
    * path, or the position foobar2000 keeps for it no longer holds this track (the row or the
    * playlist was removed, or the rows moved).
-   * @zh 条目入队时所在的播放列表；不带播放列表位置时为 `null`：按路径入队，或 foobar2000 为它记的位置上已不是这首曲目（行或列表被删掉，或各行挪动了）。
+   * @zh 条目入队时的来源播放列表索引；通过路径入队或原列表位置已失效时为 `null`
    */
   playlist: Int | null;
   /**
    * GUID of that playlist, as `playlistGuid` takes it; `null` exactly when `playlist` is `null`.
-   * @zh 该播放列表的 GUID，写法与 `playlistGuid` 接受的一致；恰在 `playlist` 为 `null` 时为 `null`。
+   * @zh 来源播放列表的持久唯一标识；当且仅当 `playlist` 为 `null` 时返回 `null`
    */
   playlistGuid: ReportedPlaylistGuid | null;
   /**
    * Row in that playlist; `null` exactly when `playlist` is `null`.
-   * @zh 在该播放列表中的行号；恰在 `playlist` 为 `null` 时为 `null`。
+   * @zh 条目在来源播放列表中的行号索引；当且仅当 `playlist` 为 `null` 时返回 `null`
    */
   playlistItem: Int | null;
 }
@@ -147,80 +163,92 @@ interface QueueItem extends Track {
  * A reference `queue.setContents` accepts: `{ queueIndex }` keeps a slot the queue already
  * holds, `{ playlist, item }` or `{ playlistGuid, item }` adds a playlist row. Exactly one of the
  * forms per entry.
- * @zh `queue.setContents` 接受的引用：`{ queueIndex }` 保留队列里已有的槽位，`{ playlist, item }` 或 `{ playlistGuid, item }` 加入一个播放列表行。每条只能是其中一种形态。
+ * @zh `queue.setContents` 接受的队列条目引用形态：通过 `{ queueIndex }` 保留已有条目，或通过 `{ playlist, item }` / `{ playlistGuid, item }` 引入播放列表行
  */
 interface QueueContentRef {
   /**
    * Position of an entry already in the queue.
-   * @zh 队列中已有条目的位置。
+   * @zh 现有待播队列中待保留条目的位置索引
    * @minimum 0
    */
   queueIndex?: Int;
   /**
    * Playlist of the row to add; needs `item` as well.
-   * @zh 要加入的行所在的播放列表；须与 `item` 同时给出。
+   * @zh 待引入曲目所在的来源播放列表索引；须与 `item` 同时提供
    * @minimum 0
    */
   playlist?: Int;
   /**
    * The playlist of the row to add by its `guid`, instead of `playlist`; needs `item` as well.
-   * @zh 用 `guid` 指定要加入的行所在的播放列表，代替 `playlist`；须与 `item` 同时给出。
+   * @zh 待引入曲目所在播放列表的 `guid`；须与 `item` 同时提供
    */
   playlistGuid?: PlaylistGuid;
   /**
    * Row in that playlist; needs `playlist` or `playlistGuid` as well.
-   * @zh 该播放列表中的行号；须与 `playlist` 或 `playlistGuid` 同时给出。
+   * @zh 待引入曲目在目标播放列表中的行号索引；须与 `playlist` 或 `playlistGuid` 同时提供
    * @minimum 0
    */
   item?: Int;
+  /**
+   * Only with a playlist row; given with `queueIndex`, the call fails with `INVALID_PARAMS`.
+   * @zh 目标播放列表预期内容版本号；仅在引入播放列表行时有效，与 `queueIndex` 一同传入时以 `INVALID_PARAMS` 失败
+   */
+  expectedPlaylistVersion?: ExpectedPlaylistVersion;
 }
 
 /**
  * A playlist row, addressed by the playlist's index or `guid` and the row.
- * @zh 一个播放列表行，按播放列表的索引或 `guid` 加行号寻址。
+ * @zh 播放列表行引用（通过播放列表序号或 `guid` 及行索引定位）
  */
 interface QueueListRef {
   /**
    * Playlist index; give this or `playlistGuid`.
-   * @zh 播放列表索引；与 `playlistGuid` 给一个。
+   * @zh 目标播放列表的索引序号；与 `playlistGuid` 二选一传入
    * @minimum 0
    */
   playlist?: Int;
   /**
    * The playlist's `guid`, instead of `playlist`.
-   * @zh 播放列表的 `guid`，代替 `playlist`。
+   * @zh 目标播放列表的唯一标识 `guid`，替代易变序号
    */
   playlistGuid?: PlaylistGuid;
   /**
    * Row in that playlist.
-   * @zh 该播放列表中的行号。
+   * @zh 目标播放列表中的行号索引
    * @minimum 0
    */
   item: Int;
+  expectedPlaylistVersion?: ExpectedPlaylistVersion;
 }
 
 interface GetResult {
   /**
    * The entries, in play order.
-   * @zh 条目，按播放顺序。
+   * @zh 队列条目列表，按播放先后顺序排列
    */
   items: QueueItem[];
   /**
    * Number of entries.
-   * @zh 条目数。
+   * @zh 待播队列当前包含的条目总数
    */
   count: Int;
+  /**
+   * Pass it as `expectedVersion` so that a queue changed meanwhile fails the call instead of
+   * hitting other entries.
+   * @zh 队列当前内容版本号；后续位置操作可作为 `expectedVersion` 传入以避免并发冲突
+   */
+  contentVersion: ContentVersion;
 }
 
 interface GetCountResult {
   /**
    * Number of entries.
-   * @zh 条目数。
+   * @zh 待播队列当前包含的条目总数
    */
   count: Int;
   /**
    * Whether the queue holds anything; the same as `count > 0`.
-   * @zh 队列是否非空；等于 `count > 0`。
+   * @zh 待播队列是否非空（等同于 `count > 0`）
    */
   hasItems: boolean;
 }
@@ -230,34 +258,35 @@ interface AddParams {
    * Playlist the positions refer to; the active playlist when omitted. An index past the last
    * playlist fails with `INVALID_INDEX`; with this omitted and no active playlist the call fails
    * with `NO_ACTIVE_ITEM`.
-   * @zh 位置所指的播放列表；省略时为活动播放列表。超出最后一个播放列表的索引以 `INVALID_INDEX` 失败；省略且没有活动播放列表时以 `NO_ACTIVE_ITEM` 失败。
+   * @zh 索引所引用的来源播放列表；省略时默认操作活动播放列表；越界以 `INVALID_INDEX` 失败，缺省且无活动列表时以 `NO_ACTIVE_ITEM` 失败
    * @minimum 0
    */
   playlist?: Int;
   playlistGuid?: PlaylistGuid;
   /**
    * Rows to queue, in order. Takes precedence over `track`.
-   * @zh 要入队的行，按顺序。优先于 `track`。
+   * @zh 待入队的播放列表行号数组，按传入顺序排列；优先级高于 `track`
    * @minimum 0
    */
   tracks?: Int[];
   /**
    * A single row to queue; read only when `tracks` is absent.
-   * @zh 要入队的单个行；只在没传 `tracks` 时读取。
+   * @zh 待入队的单个播放列表行号；仅在未提供 `tracks` 时生效
    * @minimum 0
    */
   track?: Int;
+  expectedPlaylistVersion?: ExpectedPlaylistVersion;
 }
 
 interface AddResult {
   /**
    * How many rows were queued.
-   * @zh 入队的行数。
+   * @zh 成功加入待播队列的曲目行数
    */
   addedCount: Int;
   /**
    * Queue length afterwards.
-   * @zh 之后的队列长度。
+   * @zh 本次操作完成后待播队列的总长度
    */
   queueCount: Int;
 }
@@ -266,7 +295,7 @@ interface AddPathsParams {
   /**
    * File paths or URLs, each optionally with a `|subsong:N` suffix. Entries longer than 2048
    * characters are dropped and counted in `invalidCount`.
-   * @zh 文件路径或 URL，每条可带 `|subsong:N` 后缀。超过 2048 字符的条目丢弃并计入 `invalidCount`。
+   * @zh 待追加的文件路径或 URL 列表，单项可附加 `|subsong:N` 后缀；超过 2048 字符的条目将被丢弃并计入 `invalidCount`
    * @minItems 1
    * @security MediaRead
    */
@@ -274,7 +303,7 @@ interface AddPathsParams {
   /**
    * Append to the dedicated `[WebView Queue]` playlist, creating it when missing. `false` uses
    * `playlist`, or the active playlist when that is omitted too.
-   * @zh 追加到专用的 `[WebView Queue]` 播放列表，不存在则创建。`false` 时用 `playlist`，它也省略时用活动播放列表。
+   * @zh 是否追加至专用的 `[WebView Queue]` 播放列表（不存在则自动创建）；设为 `false` 时使用 `playlist` 或当前活动列表
    * @default true
    */
   useQueuePlaylist?: boolean;
@@ -282,14 +311,14 @@ interface AddPathsParams {
    * Target playlist; read only when `useQueuePlaylist` is `false`. An index past the last playlist
    * fails with `INVALID_INDEX`; with this and `playlistGuid` omitted and no active playlist the
    * call fails with `NO_ACTIVE_ITEM`.
-   * @zh 目标播放列表；只在 `useQueuePlaylist` 为 `false` 时读取。超出最后一个播放列表的索引以 `INVALID_INDEX` 失败；它与 `playlistGuid` 都省略且没有活动播放列表时以 `NO_ACTIVE_ITEM` 失败。
+   * @zh 目标播放列表索引；仅在 `useQueuePlaylist: false` 时读取；越界以 `INVALID_INDEX` 失败，缺省且无活动列表时以 `NO_ACTIVE_ITEM` 失败
    * @minimum 0
    */
   playlist?: Int;
   /**
    * The target playlist's `guid`, instead of `playlist`; like `playlist` it is read only when
    * `useQueuePlaylist` is `false`, and not checked at all otherwise.
-   * @zh 目标播放列表的 `guid`，用来代替 `playlist`；和 `playlist` 一样只在 `useQueuePlaylist` 为 `false` 时读取，否则完全不检查。
+   * @zh 目标播放列表的唯一标识 `guid`；仅在 `useQueuePlaylist: false` 时读取
    */
   playlistGuid?: PlaylistGuid;
 }
@@ -297,7 +326,7 @@ interface AddPathsParams {
 interface AddPathsResult {
   /**
    * How many tracks were appended and queued.
-   * @zh 追加并入队的曲目数。
+   * @zh 成功追加并加入待播队列的曲目总数
    */
   addedCount: Int;
   /**
@@ -305,18 +334,18 @@ interface AddPathsResult {
    * track could be made for, and the plain paths when none of them resolved. A plain path that
    * resolves to nothing while another plain path of the call resolves is not counted, so a call
    * that succeeds can have dropped more than this.
-   * @zh 被丢弃的 `paths` 条数：空的、超过 2048 字符的、建不出曲目的 `|subsong:N`，以及一条都没解析出来时的全部普通路径。同一次调用里别的普通路径解析出了曲目时，解析不出的普通路径不计入，所以成功的调用实际丢弃的可能比这个数多。
+   * @zh 丢弃的无效路径数量（包含空路径、超长路径、无对应曲目的 subsong 或全量解析失败项）
    */
   invalidCount: Int;
   /**
    * The playlist the tracks were appended to.
-   * @zh 曲目被追加到的播放列表。
+   * @zh 曲目最终追加到的目标播放列表索引
    */
   playlist: Int;
   playlistGuid: ReportedPlaylistGuid;
   /**
    * Queue length afterwards.
-   * @zh 之后的队列长度。
+   * @zh 本次操作完成后待播队列的总长度
    */
   queueCount: Int;
 }
@@ -324,40 +353,46 @@ interface AddPathsResult {
 interface RemoveParams {
   /**
    * One queue position to remove. Takes precedence over `indices`.
-   * @zh 要移除的一个队列位置。优先于 `indices`。
+   * @zh 待移除的单条队列位置索引；优先级高于 `indices`
    * @minimum 0
    */
   index?: Int;
   /**
    * Queue positions to remove; read only when `index` is absent.
-   * @zh 要移除的队列位置；只在没传 `index` 时读取。
+   * @zh 待批量移除的队列位置索引数组；仅在未提供 `index` 时读取
    * @minimum 0
    */
   indices?: Int[];
+  expectedVersion?: ExpectedContentVersion;
 }
 
 interface RemoveResult {
   /**
    * The position removed; only when `index` was given.
-   * @zh 被移除的位置；只在传了 `index` 时返回。
+   * @zh 成功移除的队列位置索引；仅在传入 `index` 时返回
    */
   removedIndex?: Int;
   /**
    * How many entries were removed; only when `indices` was given.
-   * @zh 移除的条数；只在传了 `indices` 时返回。
+   * @zh 成功移除的队列条目总数；仅在传入 `indices` 时返回
    */
   removedCount?: Int;
   /**
    * Queue length afterwards.
-   * @zh 之后的队列长度。
+   * @zh 本次操作完成后待播队列的总长度
    */
   queueCount: Int;
+  /**
+   * Already includes this change; pass it as `expectedVersion` to the next call.
+   * @zh 变更后的队列最新内容版本号；可作为后续调用的 `expectedVersion`
+   */
+  contentVersion: ContentVersion;
 }
 
 interface ClearResult {
   /**
    * How many entries the queue held.
-   * @zh 队列原先的条目数。
+   * @zh 清空前队列中原有的条目总数
    */
   clearedCount: Int;
 }
@@ -365,7 +400,7 @@ interface ClearResult {
 interface FlushResult {
   /**
    * How many entries the queue held.
-   * @zh 队列原先的条目数。
+   * @zh 清空前队列中原有的条目总数
    */
   clearedCount: Int;
 }
@@ -373,108 +408,132 @@ interface FlushResult {
 interface MoveToTopParams {
   /**
    * Position of the entry to promote; `0` is already the front and is refused.
-   * @zh 要提到队首的条目位置；`0` 已经在队首，会被拒绝。
+   * @zh 待提升至队首的队列条目位置索引；`0` 已在队首，传入将直接拒绝
    * @minimum 0
    */
   index: Int;
+  expectedVersion?: ExpectedContentVersion;
 }
 
 interface MoveToTopResult {
   /**
    * The position the entry came from.
-   * @zh 条目原来的位置。
+   * @zh 被移动条目在调整前的原始位置索引
    */
   movedIndex: Int;
   /**
    * Queue length afterwards.
-   * @zh 之后的队列长度。
+   * @zh 本次操作完成后待播队列的总长度
    */
   queueCount: Int;
+  /**
+   * Already includes this change; pass it as `expectedVersion` to the next call.
+   * @zh 变更后的队列最新内容版本号；可作为后续调用的 `expectedVersion`
+   */
+  contentVersion: ContentVersion;
 }
 
 interface SetContentsParams {
   /**
    * The new queue, in order. At most `max(256, current queue length)` entries; more fail with `INVALID_PARAMS`.
-   * @zh 新的队列内容，按顺序。最多 `max(256, 当前队列长度)` 条，多了以 `INVALID_PARAMS` 失败。
+   * @zh 新的队列条目有序列表；最多支持 `max(256, 当前队列长度)` 项，超出上限以 `INVALID_PARAMS` 失败
    */
   items: QueueContentRef[];
+  expectedVersion?: ExpectedContentVersion;
 }
 
 interface SetContentsResult {
   /**
    * Queue length afterwards.
-   * @zh 之后的队列长度。
+   * @zh 本次操作完成后待播队列的总长度
    */
   queueCount: Int;
+  /**
+   * Already includes this change; pass it as `expectedVersion` to the next call.
+   * @zh 变更后的队列最新内容版本号；可作为后续调用的 `expectedVersion`
+   */
+  contentVersion: ContentVersion;
 }
 
 interface InsertNextParams {
   /**
    * File paths or URLs, each optionally with a `|subsong:N` suffix. The entries they produce carry
    * no playlist position.
-   * @zh 文件路径或 URL，每条可带 `|subsong:N` 后缀。由此入队的条目不带播放列表位置。
+   * @zh 待插入的文件路径或 URL 列表，可附加 `|subsong:N` 后缀；由此入队的条目不携带播放列表位置信息
    * @security MediaRead
    */
   paths?: string[];
   /**
    * Playlist rows; the entries they produce carry that position, so the playback cursor follows
    * them. At most `max(256, current queue length)` entries; more fail with `INVALID_PARAMS`.
-   * @zh 播放列表行；由此入队的条目带该位置，播放游标会跟随。最多 `max(256, 当前队列长度)` 条，多了以 `INVALID_PARAMS` 失败。
+   * @zh 待插入的播放列表行引用列表；由此入队的条目附带列表位置且播放游标会跟随；最多支持 `max(256, 当前队列长度)` 项
    */
   items?: QueueListRef[];
   /**
    * Where to insert, counted after any moved entries are taken out; `0` is the front.
-   * @zh 插入位置，按移出被移动条目之后的队列计算；`0` 是队首。
+   * @zh 插入的目标队列位置（按移出既有移动条目后的队列计算）；`0` 表示队首
    * @minimum 0
    * @default 0
    */
   position?: Int;
+  expectedVersion?: ExpectedContentVersion;
 }
 
 interface InsertNextResult {
   /**
    * Tracks newly queued.
-   * @zh 新入队的曲目数。
+   * @zh 全新加入待播队列的曲目总数
    */
   insertedCount: Int;
   /**
    * Entries that were already queued and moved.
-   * @zh 已在队列中、被移动的条目数。
+   * @zh 既已存在于队列中并前移位置的条目总数
    */
   movedCount: Int;
   /**
    * Queue length afterwards.
-   * @zh 之后的队列长度。
+   * @zh 本次操作完成后待播队列的总长度
    */
   queueCount: Int;
   /**
    * Input path count minus the tracks resolved from paths, floored at zero. A folder or playlist
    * file resolves to several tracks, so this is not a count of the paths that failed.
-   * @zh 输入路径数减去由路径解析出的曲目数，最低为零。文件夹或播放列表文件会解析出多首曲目，所以它不是失败路径的条数。
+   * @zh 输入路径数减去解析得出的曲目数（最小截断至 0）；文件夹展开等多曲目解析不反映为精确失败数
    */
   invalidCount: Int;
+  /**
+   * Already includes this change; pass it as `expectedVersion` to the next call.
+   * @zh 变更后的队列最新内容版本号；可作为后续调用的 `expectedVersion`
+   */
+  contentVersion: ContentVersion;
 }
 
 interface PlayNowParams {
   /**
    * Queue position to play.
-   * @zh 要播放的队列位置。
+   * @zh 待起播的队列条目位置索引
    * @minimum 0
    * @default 0
    */
   index?: Int;
+  expectedVersion?: ExpectedContentVersion;
 }
 
 interface PlayNowResult {
   /**
    * The position that was played.
-   * @zh 被播放的位置。
+   * @zh 实际执行起播的队列条目位置索引
    */
   playedIndex: Int;
   /**
    * Queue length read right after playback started; the host may consume the played entry before
    * or after that read.
-   * @zh 播放启动后立即读到的队列长度；宿主消费被播放条目可能在这次读取之前或之后。
+   * @zh 起播后立即读取的队列长度；宿主消费已播条目可能发生在读取之前或之后
    */
   queueCount: Int;
+  /**
+   * Read together with `queueCount`.
+   * @zh 与 `queueCount` 同时读取的队列内容版本号
+   */
+  contentVersion: ContentVersion;
 }

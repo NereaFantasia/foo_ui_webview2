@@ -11,8 +11,10 @@
 #include "api/TypedApi.h"
 #include "api/generated/UiSchema.h"
 #include "window/MainWindow.h"
+#include "window/WindowManager.h"
 #include "webview/WebViewHost.h"
 #include <map>
+#include <sstream>
 
 namespace {
     using json = nlohmann::json;
@@ -90,8 +92,12 @@ namespace {
     //==========================================================================
     api::Result<ui::ShowCustomMenuResult> UiShowCustomMenu(const ui::ShowCustomMenuParams& p, const CallerContext& caller) {
         const int itemCount = static_cast<int>(p.items.size());
-        console::printf("[UiApi] showCustomMenu: x=%lld, y=%lld, items=%d, has_callerHwnd=%s",
-            static_cast<long long>(p.x), static_cast<long long>(p.y), itemCount, caller.callerHwnd ? "true" : "false");
+        {
+            std::ostringstream line;
+            line << "[UiApi] showCustomMenu: x=" << p.x << ", y=" << p.y
+                 << ", items=" << itemCount << ", has_callerHwnd=" << (caller.callerHwnd ? "true" : "false");
+            console::print(line.str().c_str());
+        }
 
         // 面板模式: 调用方 HWND 是面板 HWND（DOM 坐标相对于此窗口）
         // 独立窗口: 回退到主窗口
@@ -106,8 +112,13 @@ namespace {
         HWND topLevel = ::GetAncestor(hwnd, GA_ROOT);
         if (!topLevel) topLevel = hwnd;
 
-        console::printf("[UiApi] showCustomMenu: panelHwnd=0x%p, hwnd=0x%p, topLevel=0x%p",
-            (void*)panelHwnd, (void*)hwnd, (void*)topLevel);
+        {
+            std::ostringstream line;
+            line << "[UiApi] showCustomMenu: panelHwnd=0x" << std::hex << reinterpret_cast<UINT_PTR>(panelHwnd)
+                 << ", hwnd=0x" << reinterpret_cast<UINT_PTR>(hwnd)
+                 << ", topLevel=0x" << reinterpret_cast<UINT_PTR>(topLevel);
+            console::print(line.str().c_str());
+        }
 
         // Clear previous menu items
         g_menuItems.clear();
@@ -143,7 +154,10 @@ namespace {
             (int)pt.x, (int)pt.y, GetMenuItemCount(hMenu));
 
         // TrackPopupMenu 要求窗口为前台窗口，否则可能静默失败
-        SetForegroundWindow(topLevel);
+        {
+            auto activation = WindowManager::GetInstance().BeginExplicitActivation(topLevel, "ui.showCustomMenu");
+            WindowManager::GetInstance().RequestForeground(topLevel, "ui.showCustomMenu");
+        }
 
         int result = 0;
         if (w > 0 && h > 0) {

@@ -5,10 +5,12 @@
 #include "api/LyricsApi.h"
 #include "api/LyricsFilePolicy.h"
 #include "api/BridgeCore.h"
+#include "api/MediaReadQueue.h"
 #include "api/MetadataApi.h"
 #include "api/TypedApi.h"
 #include "api/generated/LyricsSchema.h"
 #include "domain/PathSecurity.h"
+#include "utils/StringUtils.h"
 #include "utils/SubsongUtils.h"
 #include <fstream>
 #include <filesystem>
@@ -30,6 +32,9 @@ namespace {
 
     std::mutex g_lyricsCacheMutex;
     std::unordered_map<std::string, LyricsCacheEntry> g_lyricsCache;
+    // Bumped by InvalidateLyricsCache. A lookup that started before a save does not
+    // store what it read, so the cache never keeps lyrics older than the save.
+    std::uint64_t g_lyricsCacheGeneration = 0;
 
     constexpr auto LYRICS_CACHE_TTL = std::chrono::milliseconds(1200);
     
@@ -61,8 +66,16 @@ namespace {
         return true;
     }
 
-    void StoreCachedLyricsResult(const std::string& path, const std::string& source, const lyrics::GetResult& result) {
+    std::uint64_t LyricsCacheGeneration() {
         std::lock_guard<std::mutex> lock(g_lyricsCacheMutex);
+        return g_lyricsCacheGeneration;
+    }
+
+    // `generation` is LyricsCacheGeneration() from before the lookup read anything.
+    void StoreCachedLyricsResult(const std::string& path, const std::string& source, const lyrics::GetResult& result,
+                                 std::uint64_t generation) {
+        std::lock_guard<std::mutex> lock(g_lyricsCacheMutex);
+        if (generation != g_lyricsCacheGeneration) return;
         g_lyricsCache[MakeCacheKey(path, source)] = { result, std::chrono::steady_clock::now() };
     }
 
@@ -173,7 +186,7 @@ namespace {
             result.available = true;
             result.source = "embedded";
             if (type != "any") result.tagName = tag;
-            result.lyrics = value;
+            result.lyrics = StringUtils::SafeUtf8(value);
             result.synced = synced;
             return true;
         }
@@ -207,19 +220,26 @@ namespace {
         }
     }
 
+    // Tags of the track at `path`, or null when they cannot be read. Main thread only:
+    // ResolveTrackHandle asks for the playing track.
+    metadb_info_container::ptr TryGetTrackInfoForPath(const std::string& path) {
+        try {
+            return TryGetTrackInfo(ResolveTrackHandle(path));
+        } catch (const std::exception&) {
+            return nullptr;
+        }
+    }
+
+    // Without `filename` the names come from the track's tags (`infoContainer`, null when
+    // unreadable), and the media file is opened to count its subsongs.
     std::vector<fs::path> BuildLyricsFileCandidates(const std::string& nativeAudioPath,
                                                    const std::string& filename, const std::string& format,
-                                                   metadb_info_container::ptr infoContainer = nullptr) {
+                                                   const metadb_info_container::ptr& infoContainer) {
         const auto [filePath, subsong] = ParseSubsongPath(nativeAudioPath);
         lyrics_file_policy::FileContext context;
         context.audioPath = Utf8ToWide(filePath);
         if (filename.empty()) {
             context.wholeFileSingleTrack = IsWholeFileSingleTrack(filePath, subsong);
-            if (!infoContainer.is_valid()) {
-                try {
-                    infoContainer = TryGetTrackInfo(ResolveTrackHandle(nativeAudioPath));
-                } catch (const std::exception&) {}
-            }
             if (infoContainer.is_valid()) {
                 const file_info& info = infoContainer->info();
                 if (const char* artist = info.meta_get("ARTIST", 0)) context.artist = Utf8ToWide(artist);
@@ -237,61 +257,158 @@ namespace {
     //==========================================================================
     // lyrics.get - Get lyrics for a track
     //==========================================================================
-    api::Result<lyrics::GetResult> LyricsGet(const lyrics::GetParams& p) {
-        const std::string filename = p.filename.value_or("");
-        if (!IsValidLyricsFilename(filename)) return api::Fail(kInvalidFilenameError, ApiErrorCode::INVALID_PARAMS);
-        std::string path = p.path.value_or("");
-        if (path.empty()) {
-            metadb_handle_ptr track;
-            if (!playback_control::get()->get_now_playing(track) || !track.is_valid()) {
-                return api::Fail("No track playing and no path specified", ApiErrorCode::NO_ACTIVE_ITEM);
-            }
-            path = fb2k_paths::JoinSubsongPath(track->get_path(), track->get_subsong_index());
-        }
-
-        const std::string cacheKey = json::array({p.source, p.type, p.format, filename}).dump();
-        lyrics::GetResult result;
-        if (TryGetCachedLyricsResult(path, cacheKey, result)) return result;
-        result.available = false;
-        result.path = path;
-
-        metadb_info_container::ptr trackInfo;
-        if (p.source == "embedded" || p.source == "any") {
+    // Hands a lookup back to the main thread, where the candidate files' permission
+    // check has to run; exceptions answer INTERNAL_ERROR like the other hops.
+    template <class F>
+    void ContinueOnMainThread(const DeferredResponder& responder, F work) {
+        fb2k::inMainThread([responder, work = std::move(work)]() mutable {
             try {
-                trackInfo = TryGetTrackInfo(ResolveTrackHandle(path, "lyrics.get"));
-                if (TryReadEmbeddedLyrics(trackInfo, result, p.type)) {
-                    StoreCachedLyricsResult(path, cacheKey, result);
-                    return result;
+                work();
+            } catch (const std::exception& e) {
+                responder.SendError(e.what(), ApiErrorCode::INTERNAL_ERROR);
+            } catch (...) {
+                responder.SendError("Unknown internal error", ApiErrorCode::INTERNAL_ERROR);
+            }
+        });
+    }
+
+    // Candidates that exist on disk, in order. The permission check comes after on the
+    // main thread; a file it rejects is dropped without anything about it being reported.
+    std::vector<fs::path> ExistingLyricsFiles(const std::string& nativePath, const std::string& filename,
+                                              const std::string& format,
+                                              const metadb_info_container::ptr& info) {
+        std::vector<fs::path> existing;
+        for (auto& candidate : BuildLyricsFileCandidates(nativePath, filename, format, info)) {
+            try {
+                if (fs::exists(candidate)) existing.push_back(std::move(candidate));
+            } catch (const std::exception&) {}
+        }
+        return existing;
+    }
+
+    void KeepReadableLyricsFiles(std::vector<fs::path>& candidates) {
+        std::erase_if(candidates, [](const fs::path& candidate) { return !CanReadLyricsFile(candidate); });
+    }
+
+    // One lyrics.get call as it moves between the main thread and the media read queue.
+    struct LyricsGetLookup {
+        std::string path;
+        std::string cacheKey;
+        std::string type;
+        std::string format;
+        std::string filename;
+        bool searchEmbedded = false;
+        bool searchFiles = false;
+        std::string nativePath;  // set when searchFiles
+        metadb_handle_ptr track;  // the tags come from it; invalid when they are not needed
+        std::uint64_t cacheGeneration = 0;
+        std::vector<fs::path> candidates;
+        lyrics::GetResult result;
+    };
+
+    void FinishLyricsGet(const LyricsGetLookup& lookup, const DeferredResponder& responder) {
+        StoreCachedLyricsResult(lookup.path, lookup.cacheKey, lookup.result, lookup.cacheGeneration);
+        api::Send(responder, api::Result<lyrics::GetResult>(lookup.result));
+    }
+
+    // The first candidate that reads and matches `type` wins.
+    void ReadLyricsFile(LyricsGetLookup& lookup) {
+        for (const auto& candidate : lookup.candidates) {
+            try {
+                std::ifstream file(candidate, std::ios::in);
+                if (!file.is_open()) continue;
+                std::stringstream buffer;
+                buffer << file.rdbuf();
+                const std::string text = buffer.str();
+                if (text.empty() || file.bad()) continue;
+                const bool synced = IsSyncedLyrics(text);
+                if ((lookup.type == "synced" && !synced) || (lookup.type == "unsynced" && synced)) continue;
+                lookup.result.available = true;
+                lookup.result.source = "file";
+                lookup.result.sourcePath = WideToUtf8(candidate.wstring());
+                lookup.result.lyrics = StringUtils::SafeUtf8(text);
+                lookup.result.synced = synced;
+                return;
+            } catch (const std::exception&) {}
+        }
+    }
+
+    // Media read queue: tags, embedded lyrics and the candidate files on disk.
+    void FindLyrics(const std::shared_ptr<LyricsGetLookup>& lookup, const DeferredResponder& responder) {
+        const metadb_info_container::ptr info = TryGetTrackInfo(lookup->track);
+        if (lookup->searchEmbedded) {
+            try {
+                if (TryReadEmbeddedLyrics(info, lookup->result, lookup->type)) {
+                    FinishLyricsGet(*lookup, responder);
+                    return;
                 }
             } catch (const std::exception&) {}
         }
-
-        std::string nativePath;
-        if ((p.source == "file" || p.source == "any") &&
-            SubsongUtils::TryResolveNativeMediaPath(path, nativePath)) {
-            for (const auto& candidate : BuildLyricsFileCandidates(nativePath, filename, p.format, trackInfo)) {
-                if (!CanReadLyricsFile(candidate)) continue;
-                try {
-                    if (!fs::exists(candidate)) continue;
-                    std::ifstream file(candidate, std::ios::in);
-                    if (!file.is_open()) continue;
-                    std::stringstream buffer;
-                    buffer << file.rdbuf();
-                    const std::string text = buffer.str();
-                    if (text.empty() || file.bad()) continue;
-                    const bool synced = IsSyncedLyrics(text);
-                    if ((p.type == "synced" && !synced) || (p.type == "unsynced" && synced)) continue;
-                    result.available = true;
-                    result.source = "file";
-                    result.sourcePath = WideToUtf8(candidate.wstring());
-                    result.lyrics = text;
-                    result.synced = synced;
-                    break;
-                } catch (const std::exception&) {}
-            }
+        if (lookup->searchFiles) {
+            lookup->candidates =
+                ExistingLyricsFiles(lookup->nativePath, lookup->filename, lookup->format, info);
         }
-        StoreCachedLyricsResult(path, cacheKey, result);
-        return result;
+        if (lookup->candidates.empty()) {
+            FinishLyricsGet(*lookup, responder);
+            return;
+        }
+        ContinueOnMainThread(responder, [lookup, responder] {
+            KeepReadableLyricsFiles(lookup->candidates);
+            if (lookup->candidates.empty()) {
+                FinishLyricsGet(*lookup, responder);
+                return;
+            }
+            api::RunOnMediaRead(responder, [lookup, responder] {
+                ReadLyricsFile(*lookup);
+                FinishLyricsGet(*lookup, responder);
+            });
+        });
+    }
+
+    void LyricsGet(const lyrics::GetParams& p, const DeferredResponder& responder) {
+        using Answer = api::Result<lyrics::GetResult>;
+        auto lookup = std::make_shared<LyricsGetLookup>();
+        lookup->filename = p.filename.value_or("");
+        if (!IsValidLyricsFilename(lookup->filename)) {
+            api::Send(responder, Answer(api::Fail(kInvalidFilenameError, ApiErrorCode::INVALID_PARAMS)));
+            return;
+        }
+        lookup->path = p.path.value_or("");
+        if (lookup->path.empty()) {
+            metadb_handle_ptr track;
+            if (!playback_control::get()->get_now_playing(track) || !track.is_valid()) {
+                api::Send(responder, Answer(api::Fail("No track playing and no path specified",
+                                                      ApiErrorCode::NO_ACTIVE_ITEM)));
+                return;
+            }
+            lookup->path = fb2k_paths::JoinSubsongPath(track->get_path(), track->get_subsong_index());
+        }
+
+        lookup->cacheKey = json::array({p.source, p.type, p.format, lookup->filename}).dump();
+        lyrics::GetResult cached;
+        if (TryGetCachedLyricsResult(lookup->path, lookup->cacheKey, cached)) {
+            api::Send(responder, Answer(std::move(cached)));
+            return;
+        }
+        lookup->cacheGeneration = LyricsCacheGeneration();
+        lookup->type = p.type;
+        lookup->format = p.format;
+        lookup->result.available = false;
+        lookup->result.path = lookup->path;
+
+        // ResolveTrackHandle and TryResolveNativeMediaPath are main-thread only.
+        lookup->searchEmbedded = p.source == "embedded" || p.source == "any";
+        lookup->searchFiles = (p.source == "file" || p.source == "any") &&
+                              SubsongUtils::TryResolveNativeMediaPath(lookup->path, lookup->nativePath);
+        try {
+            if (lookup->searchEmbedded) {
+                lookup->track = ResolveTrackHandle(lookup->path, "lyrics.get");
+            } else if (lookup->searchFiles && lookup->filename.empty()) {
+                lookup->track = ResolveTrackHandle(lookup->nativePath);
+            }
+        } catch (const std::exception&) {}
+
+        api::RunOnMediaRead(responder, [lookup, responder] { FindLyrics(lookup, responder); });
     }
 
     //==========================================================================
@@ -379,7 +496,9 @@ namespace {
         if (!SubsongUtils::TryResolveNativeMediaPath(path, nativePath)) {
             return TargetFailure("Cannot write external lyrics for a non-local track", ApiErrorCode::INVALID_PATH);
         }
-        const auto candidates = BuildLyricsFileCandidates(nativePath, filename, format);
+        const auto candidates = BuildLyricsFileCandidates(
+            nativePath, filename, format,
+            filename.empty() ? TryGetTrackInfoForPath(nativePath) : metadb_info_container::ptr());
         if (candidates.empty()) {
             return TargetFailure("Cannot derive a lyrics filename; specify filename", ApiErrorCode::INVALID_PARAMS);
         }
@@ -476,33 +595,46 @@ namespace {
     //==========================================================================
     // lyrics.exists - Check if lyrics exist for a track
     //==========================================================================
-    api::Result<lyrics::ExistsResult> LyricsExists(const lyrics::ExistsParams& p) {
-        const std::string filename = p.filename.value_or("");
-        if (!IsValidLyricsFilename(filename)) return api::Fail(kInvalidFilenameError, ApiErrorCode::INVALID_PARAMS);
-        lyrics::ExistsResult result;
-        result.exists = false;
-        metadb_info_container::ptr trackInfo;
+    void LyricsExists(const lyrics::ExistsParams& p, const DeferredResponder& responder) {
+        using Answer = api::Result<lyrics::ExistsResult>;
+        std::string filename = p.filename.value_or("");
+        if (!IsValidLyricsFilename(filename)) {
+            api::Send(responder, Answer(api::Fail(kInvalidFilenameError, ApiErrorCode::INVALID_PARAMS)));
+            return;
+        }
+
+        // ResolveTrackHandle and TryResolveNativeMediaPath are main-thread only.
+        metadb_handle_ptr track;
         try {
-            trackInfo = TryGetTrackInfo(ResolveTrackHandle(p.path, "lyrics.exists"));
-            if (trackInfo.is_valid() && HasAnyLyricsTag(trackInfo->info())) {
+            track = ResolveTrackHandle(p.path, "lyrics.exists");
+        } catch (const std::exception&) {}
+        std::string nativePath;
+        if (!SubsongUtils::TryResolveNativeMediaPath(p.path, nativePath)) nativePath.clear();
+
+        api::RunOnMediaRead(responder, [responder, track, nativePath = std::move(nativePath),
+                                        filename = std::move(filename)] {
+            lyrics::ExistsResult result;
+            result.exists = false;
+            const metadb_info_container::ptr info = TryGetTrackInfo(track);
+            if (info.is_valid() && HasAnyLyricsTag(info->info())) {
                 result.sources.emplace_back("embedded");
                 result.exists = true;
             }
-        } catch (const std::exception&) {}
-
-        std::string nativePath;
-        if (SubsongUtils::TryResolveNativeMediaPath(p.path, nativePath)) {
-            for (const auto& candidate : BuildLyricsFileCandidates(nativePath, filename, "any", trackInfo)) {
-                if (!CanReadLyricsFile(candidate)) continue;
-                try {
-                    if (fs::exists(candidate)) {
-                        result.sources.push_back("file:" + WideToUtf8(candidate.filename().wstring()));
-                        result.exists = true;
-                    }
-                } catch (const std::exception&) {}
+            std::vector<fs::path> files;
+            if (!nativePath.empty()) files = ExistingLyricsFiles(nativePath, filename, "any", info);
+            if (files.empty()) {
+                api::Send(responder, Answer(std::move(result)));
+                return;
             }
-        }
-        return result;
+            ContinueOnMainThread(responder, [responder, files = std::move(files), result = std::move(result)]() mutable {
+                KeepReadableLyricsFiles(files);
+                for (const auto& file : files) {
+                    result.sources.push_back("file:" + WideToUtf8(file.filename().wstring()));
+                    result.exists = true;
+                }
+                api::Send(responder, Answer(std::move(result)));
+            });
+        });
     }
 
 } // anonymous namespace
@@ -510,16 +642,18 @@ namespace {
 void InvalidateLyricsCache() {
     std::lock_guard<std::mutex> lock(g_lyricsCacheMutex);
     g_lyricsCache.clear();
+    ++g_lyricsCacheGeneration;
 }
 
 //==========================================================================
 // Register Lyrics API
 //==========================================================================
 void RegisterLyricsApi() {
-    // The path security levels come from the declaration (kPathParams).
-    api::RegisterApi("lyrics.get", LyricsGet);
+    // The path security levels come from the declaration (kPathParams). get and exists
+    // read tags and sidecar files on the media read queue; save stays synchronous.
+    api::RegisterApiDeferred("lyrics.get", LyricsGet);
     api::RegisterApi("lyrics.save", LyricsSave);
-    api::RegisterApi("lyrics.exists", LyricsExists);
+    api::RegisterApiDeferred("lyrics.exists", LyricsExists);
 
     LOG("Lyrics API registered (3 APIs)");
 }

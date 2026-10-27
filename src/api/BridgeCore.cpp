@@ -12,42 +12,79 @@
 #include <chrono>
 
 // ============================================
-// 性能追踪器 - 检测阻塞主线程的 API 调用
+// 性能追踪 - 慢调用与阻塞主线程的 API 调用
 // ============================================
+static constexpr int kInfoThresholdMs = 50;    // 50ms 以上记录
+static constexpr int kWarnThresholdMs = 200;   // 200ms 以上警告
+static constexpr int kBlockThresholdMs = 500;  // 500ms 以上视为阻塞
+
+static int ElapsedMs(std::chrono::steady_clock::time_point since) {
+    return static_cast<int>(std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::steady_clock::now() - since).count());
+}
+
+// 行尾附上第一个路径参数：慢调用多半慢在那个路径所在的存储上（离线 NAS、断开的映射盘），
+// 只有方法名时无从查起。
+static std::string PathSuffix(const std::string& pathArgument) {
+    return pathArgument.empty() ? std::string() : " path=" + pathArgument;
+}
+
+static void ReportApiDuration(const std::string& method, const std::string& pathArgument, int duration) {
+    if (duration >= kWarnThresholdMs) {
+        console::printf("[Perf] !!! SLOW API: %s took %d ms (threshold: %d ms)%s",
+                        method.c_str(), duration, kWarnThresholdMs, PathSuffix(pathArgument).c_str());
+    } else if (duration >= kInfoThresholdMs) {
+        console::printf("[Perf] <<< END: %s took %d ms%s", method.c_str(), duration,
+                        PathSuffix(pathArgument).c_str());
+    }
+}
+
+// 计时主线程分发段。同步方法的这一段就是页面等待的全部时间；deferred 方法回包可能在后台，
+// 总耗时由闸门放行时报（PassGate），这里只报主线程被占了多久（reportDuration = false）。
 class ApiPerformanceTracker {
 public:
-    explicit ApiPerformanceTracker(std::string method) 
-        : method_(std::move(method)), start_(std::chrono::high_resolution_clock::now()) {
+    ApiPerformanceTracker(std::string method, std::string pathArgument, bool reportDuration)
+        : method_(std::move(method)), pathArgument_(std::move(pathArgument)),
+          reportDuration_(reportDuration), start_(std::chrono::steady_clock::now()) {
     }
-    
+
     ~ApiPerformanceTracker() {
-        auto end = std::chrono::high_resolution_clock::now();
-        auto duration_ms = std::chrono::duration_cast<std::chrono::milliseconds>(end - start_).count();
-        int duration = static_cast<int>(duration_ms);  // 转换为 int 以兼容 printf %d
-        
-        // 超过阈值时警告
-        if (duration >= WARN_THRESHOLD_MS) {
-            console::printf("[Perf] !!! SLOW API: %s took %d ms (threshold: %d ms)", 
-                           method_.c_str(), duration, WARN_THRESHOLD_MS);
-        } else if (duration >= INFO_THRESHOLD_MS) {
-            console::printf("[Perf] <<< END: %s took %d ms", method_.c_str(), duration);
-        }
-        
+        const int duration = ElapsedMs(start_);
+        if (reportDuration_) ReportApiDuration(method_, pathArgument_, duration);
+
         // 超过阻塞阈值时严重警告
-        if (duration >= BLOCK_THRESHOLD_MS) {
-            console::printf("[Perf] *** BLOCKING API: %s BLOCKED UI for %d ms! Consider async operation.", 
-                           method_.c_str(), duration);
+        if (duration >= kBlockThresholdMs) {
+            console::printf("[Perf] *** BLOCKING API: %s BLOCKED UI for %d ms! Consider async operation.%s",
+                            method_.c_str(), duration, PathSuffix(pathArgument_).c_str());
         }
     }
-    
+
 private:
     std::string method_;
-    std::chrono::high_resolution_clock::time_point start_;
-    
-    static constexpr int INFO_THRESHOLD_MS = 50;    // 50ms 以上记录
-    static constexpr int WARN_THRESHOLD_MS = 200;   // 200ms 以上警告
-    static constexpr int BLOCK_THRESHOLD_MS = 500;  // 500ms 以上视为阻塞
+    std::string pathArgument_;
+    bool reportDuration_;
+    std::chrono::steady_clock::time_point start_;
 };
+
+// 第一条路径规格对应的参数值，数组取第一项；方法没有路径参数或页面没传时为空。
+static std::string FirstPathArgument(const json& params, const std::vector<PathSecuritySpec>& specs) {
+    for (const PathSecuritySpec& spec : specs) {
+        const auto it = params.find(spec.paramKey);
+        if (it == params.end()) continue;
+        const json* value = &*it;
+        if (spec.isArray || !spec.nestedKey.empty()) {
+            if (!value->is_array() || value->empty()) continue;
+            value = &value->front();
+            if (!spec.nestedKey.empty() && value->is_object()) {
+                const auto nested = value->find(spec.nestedKey);
+                if (nested == value->end()) continue;
+                value = &*nested;
+            }
+        }
+        if (value->is_string()) return value->get<std::string>();
+    }
+    return {};
+}
 
 BridgeCore& BridgeCore::GetInstance() {
     static BridgeCore instance;
@@ -103,8 +140,8 @@ void BridgeCore::RegisterApi(const std::string& method, ApiHandler handler,
 // 变动，分发侧只多一次查表。两表同名时同步表优先（见 HandleMessage 查表顺序），此处
 // 只记警告不覆盖 —— 静默择一会让某个 API 实际走哪条路取决于注册顺序。
 void BridgeCore::RegisterApiDeferred(const std::string& method, DeferredApiHandler handler,
-                                     std::vector<PathSecuritySpec> specs) {
-    auto wrapped = [handler = std::move(handler), specs, methodName = method](const json& params, DeferredResponder responder) {
+                                     std::vector<PathSecuritySpec> specs, BackgroundRunner runOn) {
+    DeferredApiHandler wrapped = [handler = std::move(handler), specs, methodName = method](const json& params, DeferredResponder responder) {
         auto checked = api::CheckPathSpecs(params, specs, [&methodName](const json& raw, const PathSecuritySpec& spec) {
             return ValidatePathParam(raw, spec, methodName);
         });
@@ -116,6 +153,23 @@ void BridgeCore::RegisterApiDeferred(const std::string& method, DeferredApiHandl
         if (checked.skipped.empty()) handler(params, responder);
         else handler(api::WithoutSkippedEntries(params, checked.skipped), responder);
     };
+    // 路径校验自己也访问文件系统：映射盘与 UNC 要探测共享根，慢存储上 canonical 解析要等，
+    // 主机离线时一次就是二十多秒。给了 runOn 的方法因此连校验一起放到后台；后台段的异常
+    // 线程池不会替我们回包，这里兜成 INTERNAL_ERROR。
+    if (runOn) {
+        auto validated = std::make_shared<const DeferredApiHandler>(std::move(wrapped));
+        wrapped = [validated, runOn, methodName = method](const json& params, const DeferredResponder& responder) {
+            runOn([validated, params, responder, methodName] {
+                try {
+                    (*validated)(params, responder);
+                } catch (const std::exception& e) {
+                    responder.SendError(e.what(), ApiErrorCode::INTERNAL_ERROR, methodName);
+                } catch (...) {
+                    responder.SendError("Unknown internal error", ApiErrorCode::INTERNAL_ERROR, methodName);
+                }
+            });
+        };
+    }
     std::lock_guard lock(mutex_);
     if (handlers_.contains(method)) {
         console::printf("[Bridge] RegisterApiDeferred: '%s' is already a synchronous API; "
@@ -222,8 +276,12 @@ void BridgeCore::HandleMessage(const std::wstring& message, WebViewHost* respons
         ApiHandler handler;
         DeferredApiHandler deferredHandler;
         bool methodFound = false;
+        std::string pathArgument;
         {
             std::lock_guard lock(mutex_);
+            if (auto specIt = securitySpecs_.find(method); specIt != securitySpecs_.end()) {
+                pathArgument = FirstPathArgument(params, specIt->second);
+            }
             auto it = handlers_.find(method);
             if (it != handlers_.end()) {
                 handler = it->second;
@@ -251,16 +309,16 @@ void BridgeCore::HandleMessage(const std::wstring& message, WebViewHost* respons
             // responder 在此构造（而非投递的 lambda 内）：句柄自带 bridge/id/target，
             // lambda 因此无需捕获 this，并在排队前绑定发起调用的文档。
             DeferredResponder responder(this, id, responseTarget);
-            fb2k::inMainThread([method, deferredHandler, params, responder]() {
+            fb2k::inMainThread([method, deferredHandler, params, pathArgument, responder]() {
                 if (responder.state_->isCurrentDocument && !responder.state_->isCurrentDocument()) return;
-                DispatchDeferredApiCall(method, deferredHandler, params, responder);
+                DispatchDeferredApiCall(method, deferredHandler, params, pathArgument, responder);
             });
             return;
         }
 
         // Execute on main thread (foobar2000 SDK requirement)
-        fb2k::inMainThread([this, id, method, handler, params, responseTarget]() {
-            DispatchApiCall(id, method, handler, params, responseTarget);
+        fb2k::inMainThread([this, id, method, handler, params, pathArgument, responseTarget]() {
+            DispatchApiCall(id, method, handler, params, pathArgument, responseTarget);
         });
 
     } catch (const json::exception& e) {
@@ -274,9 +332,9 @@ void BridgeCore::HandleMessage(const std::wstring& message, WebViewHost* respons
 // 错误信封；id 为空（通知型调用）时成败都不回包。
 void BridgeCore::DispatchApiCall(const std::string& id, const std::string& method,
                                  const ApiHandler& handler, const json& params,
-                                 WebViewHost* responseTarget) {
+                                 const std::string& pathArgument, WebViewHost* responseTarget) {
     try {
-        ApiPerformanceTracker tracker(method);
+        ApiPerformanceTracker tracker(method, pathArgument, true);
         const window_behavior_trace::InvokeScope traceScope(method, params);
         json result = handler(params);
         if (!id.empty()) {
@@ -301,14 +359,20 @@ void BridgeCore::DispatchApiCall(const std::string& id, const std::string& metho
 // 延迟响应 API 的主线程分发段：与同步段同构（同一个 tracker 覆盖范围、同一形状的
 // INTERNAL_ERROR 兜底），差别是回包交给 responder —— 因此兜底必须经 responder 的
 // 恰好一次闸门（handler 完全可能先回过包才抛，那一包要被挡掉），且 id 为空时由闸门
-// 负责静默丢弃。worker 段的耗时与异常由 handler 自己兜（漏响应即页面侧超时假死）。
+// 负责静默丢弃。worker 段的异常由 handler 自己兜（漏响应即页面侧超时假死）；到回包为止
+// 的总耗时由闸门放行时报，tracker 只报主线程阻塞。
 // 不访问任何实例成员，故为 static：投递的 lambda 无需捕获 this。
 void BridgeCore::DispatchDeferredApiCall(const std::string& method,
                                          const DeferredApiHandler& handler,
                                          const json& params,
+                                         const std::string& pathArgument,
                                          const DeferredResponder& responder) {
+    DeferredResponder::State& state = *responder.state_;
+    state.method = method;
+    state.pathArgument = pathArgument;
+    state.dispatchedAt = std::chrono::steady_clock::now();
     try {
-        ApiPerformanceTracker tracker(method);
+        ApiPerformanceTracker tracker(method, pathArgument, false);
         const window_behavior_trace::InvokeScope traceScope(method, params);
         handler(params, responder);
     } catch (const std::exception& e) {
@@ -472,6 +536,14 @@ bool DeferredResponder::PassGate(State& state) {
         console::printf("[Bridge] Deferred response dropped: already responded (id=%s)",
                         state.id.c_str());
         return false;
+    }
+
+    // 只报超过警告阈值的：deferred 方法多半在后台做重活，50 ms 一档的记录会刷屏
+    // （封面墙一屏就是上百次调用）。method 为空表示没经过主线程分发段，没有起点可算。
+    if (!state.method.empty()) {
+        if (const int duration = ElapsedMs(state.dispatchedAt); duration >= kWarnThresholdMs) {
+            ReportApiDuration(state.method, state.pathArgument, duration);
+        }
     }
 
     // 目标页面已随 WebView 崩溃重建被销毁（failure_00000195 修复模式）：丢弃即可。

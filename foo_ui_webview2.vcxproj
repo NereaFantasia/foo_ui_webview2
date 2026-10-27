@@ -207,7 +207,17 @@
     <ClCompile Include="src\core\QueueManager.cpp" />
     <ClCompile Include="src\core\QueueShadowPlaylist.cpp" />
     <ClCompile Include="src\core\QueueSources.cpp" />
+    <ClCompile Include="src\core\QueueSession.cpp" />
+    <ClCompile Include="src\core\QueueSessionCommands.cpp" />
+    <ClCompile Include="src\core\ContentVersions.cpp" />
+    <ClCompile Include="src\core\JitNativeObservation.cpp" />
+    <ClCompile Include="src\core\QueueNativeAdoption.cpp" />
+    <ClCompile Include="src\core\QueueSessionPlayback.cpp" />
     <ClCompile Include="src\domain\library\LibraryCache.cpp" />
+    <ClCompile Include="src\domain\library\LibrarySync.cpp" />
+    <ClCompile Include="src\domain\autoplaylist\AutoplaylistConfig.cpp" />
+    <ClCompile Include="src\domain\autoplaylist\ManagedAutoplaylist.cpp" />
+    <ClCompile Include="src\api\ManagedAutoplaylistApi.cpp" />
     <ClCompile Include="src\domain\library\LibraryPathAlgebra.cpp" />
     <ClCompile Include="src\domain\library\LibraryTreeBuilder.cpp" />
     <ClCompile Include="src\domain\library\LibraryTreeIndex.cpp" />
@@ -229,6 +239,7 @@
     <ClCompile Include="src\window\MainWindowActivation.cpp" />
     <ClCompile Include="src\window\MainWindowBackground.cpp" />
     <ClCompile Include="src\window\MainWindowCaption.cpp" />
+    <ClCompile Include="src\window\MainWindowInitFailure.cpp" />
     <ClCompile Include="src\window\MainWindowDiagnostics.cpp" />
     <ClCompile Include="src\window\MainWindowDwm.cpp" />
     <ClCompile Include="src\window\MainWindowInternal.cpp" />
@@ -259,6 +270,7 @@
     <ClCompile Include="src\webview\WebViewHostSettings.cpp" />
     <ClCompile Include="src\webview\WebViewHostOrigin.cpp" />
     <ClCompile Include="src\webview\OriginPolicy.cpp" />
+    <ClCompile Include="src\webview\TextScaleFactor.cpp" />
     <ClCompile Include="src\webview\WebViewHostVisibility.cpp" />
     <ClCompile Include="src\webview\WebViewHostVirtualHost.cpp" />
     <ClCompile Include="src\webview\WebViewHostComposition.cpp" />
@@ -275,6 +287,7 @@
     <ClCompile Include="src\webview\dnd\DragOverThrottle.cpp" />
     <ClCompile Include="src\webview\dnd\DragSession.cpp" />
     <ClCompile Include="src\api\AsyncOperationRegistry.cpp" />
+    <ClCompile Include="src\api\AutoplaylistEditor.cpp" />
     <ClCompile Include="src\webview\dnd\DndOriginPolicy.cpp" />
     <ClCompile Include="src\webview\dnd\DragOutPathPolicy.cpp" />
     <ClCompile Include="src\webview\dnd\HdropBuilder.cpp" />
@@ -322,6 +335,7 @@
     <ClCompile Include="src\api\MenuApi.cpp" />
     <ClCompile Include="src\api\DndApi.cpp" />
     <ClCompile Include="src\api\QueueApi.cpp" />
+    <ClCompile Include="src\api\JitSessionApi.cpp" />
     <ClCompile Include="src\api\QueueRebuildPlan.cpp" />
     <ClCompile Include="src\api\GroupRunPlan.cpp" />
     <ClCompile Include="src\api\SpectrumBands.cpp" />
@@ -402,6 +416,11 @@
     <ClInclude Include="src\core\QueueManager.h" />
     <ClInclude Include="src\core\QueueManagerInternal.h" />
     <ClInclude Include="src\domain\library\LibraryCache.h" />
+    <ClInclude Include="src\domain\library\LibraryChangeLog.h" />
+    <ClInclude Include="src\domain\library\LibrarySync.h" />
+    <ClInclude Include="src\domain\autoplaylist\AutoplaylistConfig.h" />
+    <ClInclude Include="src\domain\autoplaylist\ManagedAutoplaylist.h" />
+    <ClInclude Include="src\api\ManagedAutoplaylistApi.h" />
     <ClInclude Include="src\domain\library\LibraryPathAlgebra.h" />
     <ClInclude Include="src\domain\library\LibraryTreeIndex.h" />
     <ClInclude Include="src\ui\AppQuit.h" />
@@ -410,6 +429,14 @@
     <ClInclude Include="src\core\WebViewPanel.h" />
     <ClInclude Include="src\core\PanelCrashDiagnostics.h" />
     <ClInclude Include="src\core\FrontendDirectoryPolicy.h" />
+    <ClInclude Include="src\core\JitShadowRows.h" />
+    <ClInclude Include="src\core\JitSessionModel.h" />
+    <ClInclude Include="src\core\JitNativeContext.h" />
+    <ClInclude Include="src\core\ContentVersions.h" />
+    <ClInclude Include="src\core\JitNativeObservation.h" />
+    <ClInclude Include="src\core\QueueSessionState.h" />
+    <ClInclude Include="src\core\QueueSessionInternal.h" />
+    <ClInclude Include="src\api\JitSessionApi.h" />
     <ClInclude Include="src\core\FrontendDirectoryResolver.h" />
     <ClInclude Include="src\window\BackgroundSuspendPolicy.h" />
     <ClInclude Include="src\window\MainWindow.h" />
@@ -431,6 +458,7 @@
     <ClInclude Include="src\window\TaskbarProgressPolicy.h" />
     <ClInclude Include="src\window\WindowChromeState.h" />
     <ClInclude Include="src\window\WindowChromeResolver.h" />
+    <ClInclude Include="src\window\DwmCompatibility.h" />
     <ClInclude Include="src\window\WindowChromeApplier.h" />
     <ClInclude Include="src\window\WindowBehaviorTrace.h" />
     <ClInclude Include="src\window\WindowShellBase.h" />
@@ -443,6 +471,7 @@
     <ClInclude Include="src\window\WindowManager.h" />
     <ClInclude Include="src\webview\WebViewHost.h" />
     <ClInclude Include="src\webview\OriginPolicy.h" />
+    <ClInclude Include="src\webview\TextScaleFactor.h" />
     <ClInclude Include="src\webview\BridgeBootstrapScript.inl" />
     <ClInclude Include="src\webview\StartupProbeScript.inl" />
     <ClInclude Include="src\webview\SharedPcmBuffer.h" />
@@ -545,7 +574,9 @@
     <ClInclude Include="src\api\CursorApi.h" />
     <ClInclude Include="src\api\LyricsApi.h" />
     <ClInclude Include="src\api\LyricsFilePolicy.h" />
+    <ClInclude Include="src\api\MediaReadQueue.h" />
     <ClInclude Include="src\api\AsyncOperationRegistry.h" />
+    <ClInclude Include="src\api\AutoplaylistEditor.h" />
     <ClInclude Include="src\api\ProbeFailureClassifier.h" />
     <ClInclude Include="src\api\MetadataApi.h" />
     <ClInclude Include="src\api\MetadataTagValues.h" />
@@ -573,6 +604,8 @@
     <ClInclude Include="src\api\TitleformatApi.h" />
     <ClInclude Include="src\api\SelectionApi.h" />
     <ClInclude Include="src\api\TrackRow.h" />
+    <ClInclude Include="src\api\AlbumRowText.h" />
+    <ClInclude Include="src\api\MetadataText.h" />
     <ClInclude Include="src\api\PlaylistLock.h" />
     <ClInclude Include="src\api\PortHub.h" />
     <ClInclude Include="src\api\PortRegistry.h" />
@@ -606,6 +639,11 @@
     <ClInclude Include="src\utils\PlaylistFormatUtils.h" />
     <ClInclude Include="src\utils\WindowUtils.h" />
     <ClInclude Include="src\utils\WindowUtilsCore.h" />
+  </ItemGroup>
+
+  <!-- Windows 版本资源，版本号取自 src/version.h -->
+  <ItemGroup>
+    <ResourceCompile Include="src\foo_ui_webview2.rc" />
   </ItemGroup>
 
   <!-- foobar2000 SDK 引用 -->

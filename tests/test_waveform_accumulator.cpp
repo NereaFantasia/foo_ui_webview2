@@ -1,4 +1,4 @@
-// test_waveform_accumulator.cpp - 整轨波形一次解码三组窗口值的纯值计算
+﻿// test_waveform_accumulator.cpp - 整轨波形一次解码三组窗口值的纯值计算
 // （docs/audio-visualization/SPEC.md D6、§5.1、§10 A2.3）。
 //
 // 解码在宿主里；这里喂进已解码的交错样本块，测三组原始窗口值的累加与按请求
@@ -13,9 +13,12 @@
 #include <cstring>
 #include <numeric>
 #include <random>
+#include <stdexcept>
 #include <string>
 
 using fb2k_waveform::Accumulator;
+using fb2k_waveform::DecodedAccumulator;
+using fb2k_waveform::DecodedWindows;
 using fb2k_waveform::Method;
 using fb2k_waveform::RawWindows;
 using fb2k_waveform::Render;
@@ -397,3 +400,219 @@ TEST(WaveformAccumulator, DbScaleMapsSixtyDecibelsOntoUnitRange) {
     EXPECT_EQ(got.waveform[3], 0.0f);           // 低于下限
     EXPECT_EQ(got.waveform[4], 0.0f);
 }
+
+namespace {
+
+void ExpectRawBitsEqual(const RawWindows& actual, const RawWindows& expected) {
+    EXPECT_EQ(FirstBitDifference(actual.rms, expected.rms), -1);
+    EXPECT_EQ(FirstBitDifference(actual.peak, expected.peak), -1);
+    EXPECT_EQ(FirstBitDifference(actual.signedPeak, expected.signedPeak), -1);
+}
+
+void ExpectConstantWindow(const RawWindows& raw, size_t window, float amplitude) {
+    ASSERT_LT(window, raw.rms.size());
+    ASSERT_LT(window, raw.peak.size());
+    ASSERT_LT(window, raw.signedPeak.size());
+    EXPECT_FLOAT_EQ(raw.rms[window], std::abs(amplitude));
+    EXPECT_FLOAT_EQ(raw.peak[window], std::abs(amplitude));
+    EXPECT_FLOAT_EQ(raw.signedPeak[window], amplitude);
+}
+
+template <typename Sample>
+void ExpectFourSecondTimeline(unsigned sampleRate) {
+    DecodedAccumulator<Sample> accumulator(1024, 4.0);
+    // 四个一秒区间的幅度已知；文件标称格式不参与构造或喂入。
+    for (float amplitude : {0.125f, -0.25f, 0.5f, -1.0f}) {
+        const std::vector<Sample> second(sampleRate, static_cast<Sample>(amplitude));
+        accumulator.Feed(second.data(), second.size(), 1, sampleRate);
+    }
+    const DecodedWindows decoded = accumulator.Finish();
+    EXPECT_EQ(decoded.sampleRate, sampleRate);
+    EXPECT_EQ(decoded.channels, 1u);
+    ASSERT_EQ(decoded.raw.rms.size(), 1024u);
+    ASSERT_EQ(decoded.raw.peak.size(), 1024u);
+    ASSERT_EQ(decoded.raw.signedPeak.size(), 1024u);
+    ExpectConstantWindow(decoded.raw, 0, 0.125f);
+    ExpectConstantWindow(decoded.raw, 128, 0.125f);
+    ExpectConstantWindow(decoded.raw, 384, -0.25f);
+    ExpectConstantWindow(decoded.raw, 640, 0.5f);
+    ExpectConstantWindow(decoded.raw, 896, -1.0f);
+    ExpectConstantWindow(decoded.raw, 1023, -1.0f);
+}
+
+template <typename Sample>
+class DecodedWaveformAccumulator : public ::testing::Test {};
+
+using DecodedSampleTypes = ::testing::Types<float, double>;
+TYPED_TEST_CASE(DecodedWaveformAccumulator, DecodedSampleTypes);
+
+TYPED_TEST(DecodedWaveformAccumulator, Dsd64DecodedAt44100HzFillsTrackTimeline) {
+    // DSD64 的文件标签为 2822400 Hz，实际 PCM 为 44100 Hz。
+    ExpectFourSecondTimeline<TypeParam>(44100);
+}
+
+TYPED_TEST(DecodedWaveformAccumulator, OutputAt88200HzPreservesAudioBeyond44100HzFileLabel) {
+    ExpectFourSecondTimeline<TypeParam>(88200);
+}
+
+TYPED_TEST(DecodedWaveformAccumulator, OrdinaryPcmMatchesLegacyRawValuesAndEveryRenderMode) {
+    for (const Fixture& fixture : Fixtures()) {
+        SCOPED_TRACE(fixture.name);
+        // 四分之一帧的余量避开浮点表示恰落整数边界，取整后仍是既定窗口总帧数。
+        const double duration = (static_cast<double>(fixture.samplesPerWindow) *
+                                 fixture.resolution + 0.25) / 48000.0;
+        DecodedAccumulator<TypeParam> decoded(fixture.resolution, duration);
+        Accumulator<TypeParam> legacy(fixture.resolution, fixture.samplesPerWindow);
+        for (const auto& chunk : fixture.chunks) {
+            std::vector<TypeParam> samples;
+            samples.reserve(chunk.size());
+            for (double sample : chunk) samples.push_back(static_cast<TypeParam>(sample));
+            const size_t frames = samples.size() / fixture.channels;
+            decoded.Feed(samples.data(), frames, fixture.channels, 48000);
+            legacy.Feed(samples.data(), frames, fixture.channels);
+        }
+        const DecodedWindows actual = decoded.Finish();
+        const RawWindows expected = legacy.Finish();
+        EXPECT_EQ(actual.sampleRate, 48000u);
+        EXPECT_EQ(actual.channels, fixture.channels);
+        ExpectRawBitsEqual(actual.raw, expected);
+        for (Method method : {Method::Rms, Method::Peak}) {
+            for (Scale scale : {Scale::Linear, Scale::Db}) {
+                for (bool signedOutput : {false, true}) {
+                    const RenderOptions options{method, scale, signedOutput};
+                    const Rendered rendered = Render(actual.raw, options);
+                    const Rendered reference = Render(expected, options);
+                    EXPECT_EQ(FirstBitDifference(rendered.waveform, reference.waveform), -1);
+                    EXPECT_TRUE(SameBits(rendered.maxAmplitude, reference.maxAmplitude));
+                }
+            }
+        }
+    }
+}
+
+TYPED_TEST(DecodedWaveformAccumulator, FirstBlockIsConsumedOnceAndLastWindowIsClosed) {
+    std::vector<TypeParam> samples(16, TypeParam{0});
+    samples.front() = TypeParam{1};
+    samples.back() = TypeParam{-0.5};
+    DecodedAccumulator<TypeParam> accumulator(4, 2.0);
+    accumulator.Feed(samples.data(), 1, 1, 8);
+    accumulator.Feed(samples.data() + 1, 15, 1, 8);
+    const DecodedWindows decoded = accumulator.Finish();
+    const RawWindows expected{{0.5f, 0.0f, 0.0f, 0.25f},
+                              {1.0f, 0.0f, 0.0f, 0.5f},
+                              {1.0f, 0.0f, 0.0f, -0.5f}};
+    ExpectRawBitsEqual(decoded.raw, expected);
+}
+
+TYPED_TEST(DecodedWaveformAccumulator, ChunkBoundariesDoNotMoveKnownPulses) {
+    std::vector<TypeParam> samples(16, TypeParam{0});
+    samples[0] = TypeParam{1};
+    samples[5] = TypeParam{-0.5};
+    samples[10] = TypeParam{0.25};
+    samples[15] = TypeParam{-1};
+    DecodedAccumulator<TypeParam> whole(4, 2.0);
+    DecodedAccumulator<TypeParam> chunked(4, 2.0);
+    DecodedAccumulator<TypeParam> singleFrames(4, 2.0);
+    whole.Feed(samples.data(), samples.size(), 1, 8);
+    chunked.Feed(samples.data(), 3, 1, 8);
+    chunked.Feed(samples.data() + 3, 7, 1, 8);
+    chunked.Feed(samples.data() + 10, 6, 1, 8);
+    for (size_t frame = 0; frame < samples.size(); ++frame) {
+        singleFrames.Feed(samples.data() + frame, 1, 1, 8);
+    }
+    const RawWindows expected{{0.5f, 0.25f, 0.125f, 0.5f},
+                              {1.0f, 0.5f, 0.25f, 1.0f},
+                              {1.0f, -0.5f, 0.25f, -1.0f}};
+    ExpectRawBitsEqual(whole.Finish().raw, expected);
+    ExpectRawBitsEqual(chunked.Finish().raw, expected);
+    ExpectRawBitsEqual(singleFrames.Finish().raw, expected);
+}
+
+TYPED_TEST(DecodedWaveformAccumulator, ValidSilenceReturnsZeroWithDecodedFormat) {
+    const std::vector<TypeParam> silence(32, TypeParam{0});
+    DecodedAccumulator<TypeParam> accumulator(4, 2.0);
+    accumulator.Feed(silence.data(), 16, 2, 8);
+    const DecodedWindows decoded = accumulator.Finish();
+    EXPECT_EQ(decoded.sampleRate, 8u);
+    EXPECT_EQ(decoded.channels, 2u);
+    const RawWindows expected{{0.0f, 0.0f, 0.0f, 0.0f},
+                              {0.0f, 0.0f, 0.0f, 0.0f},
+                              {0.0f, 0.0f, 0.0f, 0.0f}};
+    ExpectRawBitsEqual(decoded.raw, expected);
+}
+
+TYPED_TEST(DecodedWaveformAccumulator, EmptyChunksDoNotSetFormatOrAdvanceTime) {
+    DecodedAccumulator<TypeParam> accumulator(2, 1.0);
+    accumulator.Feed(nullptr, 0, 0, 0);
+    accumulator.Feed(nullptr, 0, 6, 2822400);
+    const TypeParam first[] = {TypeParam{1}, TypeParam{1}};
+    accumulator.Feed(first, 2, 1, 4);
+    accumulator.Feed(nullptr, 0, 2, 48000);
+    accumulator.Feed(nullptr, 0, 0, 0);
+    const TypeParam last[] = {TypeParam{-0.5}, TypeParam{-0.5}};
+    accumulator.Feed(last, 2, 1, 4);
+    const DecodedWindows decoded = accumulator.Finish();
+    EXPECT_EQ(decoded.sampleRate, 4u);
+    EXPECT_EQ(decoded.channels, 1u);
+    const RawWindows expected{{1.0f, 0.5f}, {1.0f, 0.5f}, {1.0f, -0.5f}};
+    ExpectRawBitsEqual(decoded.raw, expected);
+}
+
+TYPED_TEST(DecodedWaveformAccumulator, NoFramesCannotProduceSuccessfulWaveform) {
+    DecodedAccumulator<TypeParam> untouched(4, 1.0);
+    EXPECT_THROW(untouched.Finish(), std::runtime_error);
+    DecodedAccumulator<TypeParam> empty(4, 1.0);
+    empty.Feed(nullptr, 0, 2, 44100);
+    empty.Feed(nullptr, 0, 0, 0);
+    EXPECT_THROW(empty.Finish(), std::runtime_error);
+}
+
+TYPED_TEST(DecodedWaveformAccumulator, RejectsNonemptyChunksWithZeroSampleRate) {
+    const TypeParam samples[] = {TypeParam{1}, TypeParam{-1}};
+    DecodedAccumulator<TypeParam> accumulator(4, 1.0);
+    EXPECT_THROW(accumulator.Feed(samples, 1, 2, 0), std::runtime_error);
+}
+
+TYPED_TEST(DecodedWaveformAccumulator, RejectsNonemptyChunksWithZeroChannels) {
+    const TypeParam sample = TypeParam{1};
+    DecodedAccumulator<TypeParam> accumulator(4, 1.0);
+    EXPECT_THROW(accumulator.Feed(&sample, 1, 0, 44100), std::runtime_error);
+}
+
+TYPED_TEST(DecodedWaveformAccumulator, RejectsSampleRateChangesAfterFirstValidChunk) {
+    const TypeParam samples[] = {TypeParam{1}, TypeParam{-1}};
+    DecodedAccumulator<TypeParam> accumulator(4, 1.0);
+    accumulator.Feed(samples, 1, 2, 44100);
+    EXPECT_THROW(accumulator.Feed(samples, 1, 2, 48000), std::runtime_error);
+}
+
+TYPED_TEST(DecodedWaveformAccumulator, RejectsChannelChangesAfterFirstValidChunk) {
+    const TypeParam samples[] = {TypeParam{1}, TypeParam{-1}};
+    DecodedAccumulator<TypeParam> accumulator(4, 1.0);
+    accumulator.Feed(samples, 1, 2, 44100);
+    EXPECT_THROW(accumulator.Feed(samples, 1, 1, 44100), std::runtime_error);
+}
+
+TYPED_TEST(DecodedWaveformAccumulator, FormatChangesFailEvenAfterAllWindowsAreFilled) {
+    const TypeParam samples[] = {TypeParam{1}, TypeParam{1}, TypeParam{1}, TypeParam{1}};
+    DecodedAccumulator<TypeParam> accumulator(4, 1.0);
+    accumulator.Feed(samples, 4, 1, 4);
+    EXPECT_THROW(accumulator.Feed(samples, 1, 1, 8), std::runtime_error);
+}
+
+TYPED_TEST(DecodedWaveformAccumulator, DecodedStereoUsesBothChannelsAndReturnsStereoFormat) {
+    const TypeParam samples[] = {TypeParam{0.75}, TypeParam{-0.25},
+                                 TypeParam{-0.5}, TypeParam{-1}};
+    DecodedAccumulator<TypeParam> accumulator(2, 1.0);
+    accumulator.Feed(samples, 2, 2, 2);
+    const DecodedWindows decoded = accumulator.Finish();
+    EXPECT_EQ(decoded.sampleRate, 2u);
+    EXPECT_EQ(decoded.channels, 2u);
+    ASSERT_EQ(decoded.raw.rms.size(), 2u);
+    EXPECT_FLOAT_EQ(decoded.raw.rms[0], std::sqrt(0.3125f));
+    EXPECT_FLOAT_EQ(decoded.raw.rms[1], std::sqrt(0.625f));
+    EXPECT_EQ(decoded.raw.peak, (std::vector<float>{0.75f, 1.0f}));
+    EXPECT_EQ(decoded.raw.signedPeak, (std::vector<float>{0.25f, -0.75f}));
+}
+
+}  // namespace

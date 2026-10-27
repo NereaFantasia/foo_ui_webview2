@@ -43,10 +43,10 @@ export interface Api {
   setChannelMode(params: SetChannelModeParams): SetChannelModeResult;
 
   /**
-   * Read the track's `BPM` tag. The host does not detect tempo. foobar2000's cached info is used
-   * when complete; otherwise the file itself is read, so tracks that are in no playlist or library
-   * work too.
-   * @zh 读曲目的 `BPM` 标签，宿主不做节拍检测。foobar2000 缓存的信息齐全时用缓存，否则读文件本身，所以不在任何播放列表或媒体库里的曲目也行。
+   * Read the track's `BPM` metadata tag (the host does not perform audio tempo analysis). Uses
+   * foobar2000 cached metadata when complete, falling back to reading the file directly so
+   * tracks outside playlists or library are also supported.
+   * @zh 读取曲目元数据中的 `BPM` 标签（宿主不执行音频节拍分析算法）。缓存信息齐全时使用 foobar2000 内存缓存，否则直接读取音频文件，支持未加入播放列表或媒体库的曲目。
    */
   analyzeBPM(params: AnalyzeBPMParams): AnalyzeBPMResult;
 
@@ -77,9 +77,9 @@ export interface Api {
   getStreamInfo(): GetStreamInfoResult;
 
   /**
-   * Report whether foobar2000 offers a visualization stream. Spectrum frames and getWaveform need
-   * one.
-   * @zh 报告 foobar2000 是否提供可视化流。频谱帧与 getWaveform 都要靠它。
+   * Report whether foobar2000 provides an active visualization stream (required by
+   * `subscribeSpectrum` and `getWaveform`).
+   * @zh 报告 foobar2000 当前是否提供音频可视化流。`subscribeSpectrum` 与 `getWaveform` 依赖此流。
    */
   isVisualizationAvailable(): IsVisualizationAvailableResult;
 
@@ -100,12 +100,13 @@ export interface Api {
   cancelDecodePcm(params: CancelDecodePcmParams): CancelDecodePcmResult;
 
   /**
-   * Subscribe to the audio foobar2000 is playing. Every chunk the core plays is copied into a ring
-   * buffer shared with the page, one buffer per subscription. The buffer arrives as a
-   * `sharedbufferreceived` event on `chrome.webview` with the first chunk of audio, and again with a
-   * new `epoch` whenever the sample rate or channel count changes; `audio:stream` then reports the
-   * old epoch as ended. Nothing arrives while playback is stopped or paused.
-   * @zh 订阅 foobar2000 正在播放的音频：核心播出的每一块都写进与页面共享的环形缓冲，一个订阅一块。缓冲随第一块音频以 `chrome.webview` 的 `sharedbufferreceived` 事件到达；采样率或声道数变化时再投一块新的（`epoch` 加一），并以 `audio:stream` 通知旧的一代结束。停止或暂停期间没有任何投递。
+   * Subscribe to live playback PCM audio. Audio chunks played by foobar2000 are copied into
+   * a shared memory ring buffer (one dedicated buffer per subscription). The buffer is delivered
+   * via a `sharedbufferreceived` event on `chrome.webview` alongside the first audio chunk. When
+   * sample rate or channel count changes, a new buffer is allocated (incrementing `epoch`) and
+   * `audio:stream` announces the previous epoch has ended. No chunks are delivered while playback
+   * is stopped or paused.
+   * @zh 订阅 foobar2000 正在播放的实时 PCM 音频。foobar2000 播出的每个音频数据块均拷贝至与页面共享的环形缓冲（每个订阅独立分配）。缓冲随首个音频块通过 `chrome.webview` 的 `sharedbufferreceived` 事件交付；采样率或声道数变更时分配新缓冲并递增 `epoch`，同时通过 `audio:stream` 发送旧纪元结束通知。播放停止或暂停时不派发数据。
    * @experimental
    */
   subscribeStream(params: SubscribeStreamParams): SubscribeStreamResult;
@@ -1002,13 +1003,14 @@ interface GenerateFullWaveformResult {
    */
   duration?: number;
   /**
-   * `ready` answers: sample rate in Hz.
-   * @zh `ready` 应答：采样率，Hz。
+   * `ready` answers: actual decoded PCM sample rate in Hz, which can differ from the file's
+   * nominal sample rate.
+   * @zh `ready` 应答：实际解码 PCM 的采样率，Hz，可能不同于文件的标称采样率。
    */
   sampleRate?: Int;
   /**
-   * `ready` answers: channel count.
-   * @zh `ready` 应答：声道数。
+   * `ready` answers: actual decoded PCM channel count.
+   * @zh `ready` 应答：实际解码 PCM 的声道数。
    */
   channels?: Int;
   /**
@@ -1409,13 +1411,13 @@ interface FullWaveformReadyPayload {
    */
   duration: number;
   /**
-   * Sample rate of the decoded track in Hz.
-   * @zh 解码出的采样率，Hz。
+   * Actual decoded PCM sample rate in Hz, which can differ from the file's nominal sample rate.
+   * @zh 实际解码 PCM 的采样率，Hz，可能不同于文件的标称采样率。
    */
   sampleRate: Int;
   /**
-   * Channel count of the decoded track.
-   * @zh 解码出的声道数。
+   * Actual decoded PCM channel count.
+   * @zh 实际解码 PCM 的声道数。
    */
   channels: Int;
   /**

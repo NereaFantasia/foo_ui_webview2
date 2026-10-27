@@ -1,4 +1,12 @@
-import type { Int, Json, PlaylistGuid, ReportedPlaylistGuid, Track } from './common.js';
+import type {
+  ContentVersion,
+  ExpectedContentVersion,
+  Int,
+  Json,
+  PlaylistGuid,
+  ReportedPlaylistGuid,
+  Track,
+} from './common.js';
 
 export interface Api {
   /**
@@ -110,9 +118,9 @@ export interface Api {
   redo(params: RedoParams): void;
 
   /**
-   * Report whether a playlist is an autoplaylist: one foobar2000 fills from a library query, or
-   * one carrying a lock whose name contains `Auto` (autoplaylists that other components manage).
-   * @zh 报告一个播放列表是否为自动播放列表：由 foobar2000 按媒体库查询填充的，或带有名字含 `Auto` 的锁的（由其他组件管理的自动播放列表）。
+   * Report whether a playlist has an autoplaylist-manager client, including third-party clients,
+   * or is recognized by the compatible lock-name rule containing `Auto`.
+   * @zh 报告播放列表是否有 autoplaylist manager client（包括第三方 client），或符合名字含 `Auto` 的兼容锁识别规则。
    */
   isAutoplaylist(params: IsAutoplaylistParams): IsAutoplaylistResult;
 
@@ -126,6 +134,38 @@ export interface Api {
   createAutoplaylist(params: CreateAutoplaylistParams): CreateAutoplaylistResult;
 
   /**
+   * Create an autoplaylist whose query and sorting are managed by this component. Requires
+   * foo_ui_webview2 to remain installed. Invalid configuration is rejected before creating the
+   * playlist. Success reports the configuration snapshot, not completed track rebuilding or disk persistence.
+   * @zh 创建由本组件托管查询与排序配置的自动播放列表（依赖本组件持续安装）。配置非法时在建表前即拒绝。成功返回配置快照，不代表曲目重建或写盘已完成。
+   * @effect write
+   */
+  createManagedAutoplaylist(params: CreateManagedAutoplaylistParams): AutoplaylistConfigResult;
+
+  /**
+   * Read the configuration of an autoplaylist managed by this component. Specify exactly one
+   * target. Ordinary playlists and playlists from other providers fail with `NOT_SUPPORTED`
+   * (with `details.reason`).
+   * @zh 读取由本组件托管的自动播放列表配置。必须且仅能指定一个目标。普通列表或其他提供者管理的列表以 `NOT_SUPPORTED` 失败（附带 `details.reason`）。
+   * @effect read
+   */
+  getAutoplaylistConfig(params: GetAutoplaylistConfigParams): AutoplaylistConfigResult;
+
+  /**
+   * Edit configuration of a managed autoplaylist against its expected revision. Omitted fields
+   * keep existing values; provide at least one modification. Unchanged values do not advance
+   * revision or trigger rebuilds. Stale revisions fail with `OPERATION_FAILED`
+   * (`details.reason: 'revisionConflict'`). Configuration is validated before write. Host
+   * failures may leave changes partially applied: `details.state` (`unchanged`, `changed`, or
+   * `unknown`) covers the configuration only, and `details.current` is included only when the
+   * current state is known. Neither success nor failure indicates disk persistence or finished
+   * track rebuilds.
+   * @zh 基于预期版本号修改托管自动播放列表的配置。省略字段保持原值，须提供至少一个修改项。新值相同时不推进版本号亦不重建曲目。版本过期时以 `OPERATION_FAILED` 失败（`details.reason: 'revisionConflict'`）。配置先编译校验再写入。宿主失败可能留下部分修改：`details.state`（`unchanged`、`changed` 或 `unknown`）仅针对配置，能确认当前状态时才附带 `details.current`。调用成功或失败均不代表曲目重建或写盘已完成。
+   * @effect destructive
+   */
+  setAutoplaylistConfig(params: SetAutoplaylistConfigParams): AutoplaylistConfigResult;
+
+  /**
    * Turn an existing playlist into an autoplaylist; its tracks are replaced by the query results.
    * Fails with `OPERATION_FAILED` when foobar2000 refuses, for instance because the playlist is
    * already an autoplaylist.
@@ -135,28 +175,41 @@ export interface Api {
   convertToAutoplaylist(params: ConvertToAutoplaylistParams): ConvertToAutoplaylistResult;
 
   /**
-   * Turn an autoplaylist back into an ordinary playlist that keeps its current tracks. An
-   * autoplaylist that another component manages cannot be released this way: the call succeeds
-   * with `source` `dui` and changes nothing, and `playlist.remove` deletes it. A playlist that is
-   * not an autoplaylist fails with `NOT_FOUND`.
-   * @zh 把自动播放列表变回保留当前曲目的普通列表。由其他组件管理的自动播放列表不能这样解除：调用成功、`source` 为 `dui`，但什么也不改，要删除它用 `playlist.remove`。不是自动播放列表时以 `NOT_FOUND` 失败。
+   * Release an autoplaylist-manager client, including a third-party client, keeping the current
+   * tracks. A compatible automatic-playlist lock without a manager client cannot be released
+   * this way: the call succeeds with `source` `dui` and changes nothing; `playlist.remove`
+   * deletes that playlist. A playlist that is not an autoplaylist fails with `NOT_FOUND`.
+   * @zh 解除 autoplaylist manager client（包括第三方 client），保留当前曲目。没有 manager client、仅按兼容规则识别的自动列表锁不能这样解除：调用成功、`source` 为 `dui`，但什么也不改；删除列表用 `playlist.remove`。不是自动播放列表时以 `NOT_FOUND` 失败。
    * @effect destructive
    */
   removeAutoplaylist(params: RemoveAutoplaylistParams): RemoveAutoplaylistResult;
 
   /**
-   * Describe a playlist's autoplaylist status.
-   * @zh 描述一个播放列表的自动播放列表状态。
+   * Describe a playlist's autoplaylist status and native editor availability without opening UI.
+   * Provider query failures fail with `OPERATION_FAILED`; an unknown capability is not a failure.
+   * @zh 描述播放列表的自动列表状态及原生编辑器可用性，不打开 UI。提供者查询异常以 `OPERATION_FAILED` 失败；能力未知本身不是失败。
    * @effect read
    */
   getAutoplaylistInfo(params: GetAutoplaylistInfoParams): GetAutoplaylistInfoResult;
 
   /**
-   * Describe a playlist's autoplaylist status, as `playlist.getAutoplaylistInfo` does. foobar2000
-   * does not expose the query of an autoplaylist, so `query` is always `null`.
-   * @zh 描述一个播放列表的自动播放列表状态，与 `playlist.getAutoplaylistInfo` 相同。foobar2000 不公开自动播放列表的查询语句，所以 `query` 总是 `null`。
+   * Describe a playlist's autoplaylist status without editor capability fields. foobar2000 does
+   * not expose the query of an autoplaylist, so `query` is always `null`.
+   * @zh 描述播放列表的自动列表状态，不包含编辑器能力字段。foobar2000 不公开自动播放列表的查询语句，所以 `query` 总是 `null`。
    */
   getAutoplaylistQuery(params: GetAutoplaylistQueryParams): GetAutoplaylistQueryResult;
+
+  /**
+   * Accept a request to open the native editor of an explicitly named autoplaylist. Give exactly
+   * one of `playlist` and `playlistGuid`. Acceptance precedes the queued native call; its normal
+   * return or failure is reported by `playlist:autoplaylistUIResult` to the same calling document.
+   * Subscribe before calling because the event can arrive before the acceptance promise resolves.
+   * The request does not activate the playlist or start playback. A normal native return does not
+   * report whether a window appeared, the user saved changes, cancelled, or closed the editor.
+   * @zh 受理打开指定自动列表原生编辑器的请求，`playlist` 与 `playlistGuid` 必须恰好给一个。先回受理，再排队调用原生入口；调用正常返回或失败经 `playlist:autoplaylistUIResult` 仅发给原调用文档。事件可能早于受理 Promise 的处理，须先订阅再调用。请求不切换活动列表、不启动播放；原生调用正常返回不表示窗口已出现，也不表示用户保存、取消或关闭了编辑器。
+   * @effect write
+   */
+  showAutoplaylistUI(params: ShowAutoplaylistUIParams): ShowAutoplaylistUIResult;
 
   /**
    * Report whether a playlist carries a lock, such as an autoplaylist's.
@@ -239,7 +292,7 @@ export interface Api {
    * @effect write
    * @idempotent
    */
-  setSelection(params: SetSelectionParams): void;
+  setSelection(params: SetSelectionParams): SetSelectionResult;
 
   /**
    * Select every row of a playlist.
@@ -263,7 +316,7 @@ export interface Api {
    * @zh 从播放列表移除行，事先保存撤销点。超出最后一行的行号忽略，负数行号以 `INVALID_PARAMS` 失败。已上锁的列表以 `LOCKED` 失败。
    * @effect destructive
    */
-  removeTracks(params: RemoveTracksParams): void;
+  removeTracks(params: RemoveTracksParams): RemoveTracksResult;
 
   /**
    * Remove the selected rows from a playlist, saving an undo point first. A locked playlist fails
@@ -280,12 +333,13 @@ export interface Api {
    * @zh 把播放列表中选中的行移动 `delta` 个位置，事先保存撤销点。给了 `items` 时先把选中换成这些行，调用方原有的选中随之丢失。已上锁的列表以 `LOCKED` 失败。
    * @effect destructive
    */
-  moveTracks(params: MoveTracksParams): void;
+  moveTracks(params: MoveTracksParams): MoveTracksResult;
 
   /**
    * Play a row of a playlist, as double-clicking it does. A row past the last one fails with
-   * `INVALID_INDEX`.
-   * @zh 播放播放列表中的一行，与双击它相同。超出最后一行的行号以 `INVALID_INDEX` 失败。
+   * `INVALID_INDEX`. With `deferred`, `expectedVersion` is compared again when playback starts;
+   * if the rows changed by then, nothing plays.
+   * @zh 播放播放列表中的一行，与双击它相同。超出最后一行的行号以 `INVALID_INDEX` 失败。给了 `deferred` 时，开始播放前会再比对一次 `expectedVersion`；那时行已变过就不播放。
    * @effect write
    */
   playTrack(params: PlayTrackParams): void;
@@ -545,6 +599,24 @@ export interface Events {
    * @delivery broadcast
    */
   lockChanged: LockChangedPayload;
+
+  /**
+   * An accepted native autoplaylist editor call returned or failed. Sent at most once per
+   * operation, only to its original document; navigation or destruction discards delivery.
+   * `success` reports the native call, not saved changes, cancellation, or the editor's lifetime.
+   * @zh 已受理的自动列表原生编辑器调用已返回或失败。每个操作至多发一次，只投递给原调用文档；导航或销毁后丢弃。`success` 只描述原生调用，不表示保存、取消或编辑器生命周期。
+   * @delivery caller
+   */
+  autoplaylistUIResult: AutoplaylistUIResultPayload;
+
+  /**
+   * A managed autoplaylist's configuration changed, including observed changes to its keep-sorted
+   * flag. Read the new snapshot with getAutoplaylistConfig. This is not a track-content revision
+   * or a persistence notification, and is not emitted for external providers.
+   * @zh 本组件管理的智能列表配置已变化，包括观察到的保持排序标志变化。用 getAutoplaylistConfig 重读快照。这不是曲目内容版本或写盘通知，不为外部提供者发送。
+   * @delivery broadcast
+   */
+  autoplaylistConfigChanged: AutoplaylistConfigChangedPayload;
 
   /**
    * foobar2000 reported that its default playlist format changed.
@@ -1076,11 +1148,112 @@ interface IsAutoplaylistResult {
    */
   isAutoplaylist: boolean;
   /**
-   * Name of the playlist's lock, present when the playlist carries a named lock and is not an
-   * autoplaylist foobar2000 runs, whether or not the lock makes it count as one.
-   * @zh 播放列表的锁的名字；播放列表带有具名的锁、且不是 foobar2000 运行的自动播放列表时出现，不论这把锁是否让它算作自动播放列表。
+   * Name of the playlist's lock, present when it carries a named lock without an
+   * autoplaylist-manager client, whether or not the lock makes it count as an autoplaylist.
+   * @zh 播放列表没有 autoplaylist manager client 且带有具名锁时返回锁名，不论这把锁是否使它符合自动列表识别规则。
    */
   lockName?: string;
+}
+
+interface CreateManagedAutoplaylistParams {
+  /**
+   * Name of the new playlist; at most 65536 UTF-8 bytes, without NUL.
+   * @zh 新列表名称，最多 65536 个 UTF-8 字节，不含 NUL。
+   * @default "New Autoplaylist"
+   */
+  name?: string;
+  /**
+   * foobar2000 library query, at most 65536 UTF-8 bytes. Blank text and NUL are rejected.
+   * @zh foobar2000 媒体库查询，最多 65536 个 UTF-8 字节；拒绝空白文本和 NUL。
+   */
+  query: string;
+  /**
+   * Independent Title Formatting sort. Empty uses the query's sorting or the host default.
+   * A nonempty value conflicts with explicit SORT BY in the query. At most 65536 UTF-8 bytes, without NUL.
+   * @zh 独立的 Title Formatting 排序。空值使用查询内排序或宿主默认顺序。非空值不能与查询内显式 SORT BY 并用。最多 65536 个 UTF-8 字节，不含 NUL。
+   * @default ""
+   */
+  sort?: string;
+  /**
+   * Keep tracks sorted and prevent manual reordering.
+   * @zh 持续保持排序，并禁止手动调整曲目顺序。
+   * @default false
+   */
+  keepSorted?: boolean;
+}
+
+interface GetAutoplaylistConfigParams {
+  /**
+   * Playlist index; required unless playlistGuid is given. No active-playlist default.
+   * @zh 播放列表序号；未传 playlistGuid 时必填，不默认使用活动列表。
+   * @minimum 0
+   */
+  playlist?: Int;
+  playlistGuid?: PlaylistGuid;
+}
+
+interface SetAutoplaylistConfigParams {
+  /**
+   * Playlist index; required unless playlistGuid is given. No active-playlist default.
+   * @zh 播放列表序号；未传 playlistGuid 时必填，不默认使用活动列表。
+   * @minimum 0
+   */
+  playlist?: Int;
+  playlistGuid?: PlaylistGuid;
+  /**
+   * Opaque revision from the most recent configuration snapshot. Invalid after restart or provider replacement.
+   * @zh 最近配置快照中的不透明版本，重启或替换提供者后失效。
+   */
+  expectedRevision: string;
+  /**
+   * New query, at most 65536 UTF-8 bytes. Blank text and NUL are rejected; omitted keeps the query.
+   * @zh 新查询，最多 65536 个 UTF-8 字节；拒绝空白文本和 NUL，省略时保留查询。
+   */
+  query?: string;
+  /**
+   * New independent sort; empty clears it, omitted keeps it. Conflicts with query SORT BY when nonempty.
+   * At most 65536 UTF-8 bytes, without NUL.
+   * @zh 新独立排序；空值清除，省略时保留。非空时不能与查询内 SORT BY 并用。最多 65536 个 UTF-8 字节，不含 NUL。
+   */
+  sort?: string;
+  /**
+   * New keep-sorted setting; omitted keeps the current manager flag.
+   * @zh 新的保持排序设置，省略时保留 manager 当前标志。
+   */
+  keepSorted?: boolean;
+}
+
+interface AutoplaylistConfigResult {
+  playlistGuid: ReportedPlaylistGuid;
+  /**
+   * The provider's query text, unchanged.
+   * @zh 提供者持有的查询原文。
+   */
+  query: string;
+  /**
+   * Independent sort text, unchanged; query-embedded sorting remains in query.
+   * @zh 独立排序原文；查询内的排序仍保留在 query 中。
+   */
+  sort: string;
+  /**
+   * Current keep-sorted flag read from the autoplaylist manager.
+   * @zh 从 autoplaylist manager 读取的当前保持排序标志。
+   */
+  keepSorted: boolean;
+  /**
+   * Opaque configuration revision, scoped to this provider instance. Not a track-content version.
+   * @zh 当前提供者实例内的不透明配置版本，不是曲目内容版本。
+   */
+  revision: string;
+}
+
+interface AutoplaylistConfigChangedPayload {
+  playlistGuid: ReportedPlaylistGuid;
+  /**
+   * The observed configuration revision. Re-read the configuration before editing.
+   * @zh 观察到的配置版本，编辑前应重新读取配置。
+   */
+  revision: string;
 }
 
 interface CreateAutoplaylistParams {
@@ -1193,9 +1366,9 @@ interface RemoveAutoplaylistResult {
   playlist: Int;
   playlistGuid: ReportedPlaylistGuid;
   /**
-   * `sdk` when foobar2000's autoplaylist was released, `dui` when the playlist is an
-   * autoplaylist another component manages and nothing changed.
-   * @zh foobar2000 的自动播放列表已解除时为 `sdk`；播放列表是由其他组件管理的自动播放列表、什么也没改时为 `dui`。
+   * `sdk` when a manager client was released, including a third-party client; `dui` when only
+   * a compatible automatic-playlist lock was found and nothing changed.
+   * @zh 解除 manager client（包括第三方 client）时为 `sdk`；仅找到兼容识别的自动列表锁、没有改动时为 `dui`。
    */
   source: 'sdk' | 'dui';
   /**
@@ -1217,11 +1390,19 @@ interface GetAutoplaylistInfoParams {
   playlistGuid?: PlaylistGuid;
 }
 
+type AutoplaylistEditorAvailability = 'available' | 'unavailable' | 'unknown';
+type AutoplaylistEditorAvailabilityReason =
+  | 'supported'
+  | 'noEditor'
+  | 'legacyClient'
+  | 'unverifiedLock'
+  | 'notAutoplaylist';
+
 interface GetAutoplaylistInfoResult {
   /**
-   * Whether the playlist is an autoplaylist; the remaining fields other than `playlist` are
-   * present only when it is.
-   * @zh 播放列表是否为自动播放列表；除 `playlist` 外的其余字段只在它是时出现。
+   * Whether the playlist is an autoplaylist. `keepSorted`, `source` and `lockName` are present
+   * only when it is; editor availability is always reported on success.
+   * @zh 播放列表是否为自动列表。`keepSorted`、`source` 与 `lockName` 仅在它是时出现；成功响应始终带编辑器可用性。
    */
   isAutoplaylist: boolean;
   /**
@@ -1231,13 +1412,37 @@ interface GetAutoplaylistInfoResult {
   playlist: Int;
   playlistGuid: ReportedPlaylistGuid;
   /**
-   * Whether the autoplaylist keeps its tracks sorted; always `false` when `source` is `dui`.
-   * @zh 自动播放列表是否保持排序；`source` 为 `dui` 时总是 `false`。
+   * `available` means the provider declares UI support; `unknown` means it cannot be probed
+   * without attempting the native call. Neither guarantees that a particular call shows a window.
+   * @zh `available` 表示提供者声明支持 UI；`unknown` 表示不尝试原生调用就无法判定。两者都不保证某次调用会显示窗口。
+   */
+  editorAvailability: AutoplaylistEditorAvailability;
+  /**
+   * Why the capability is available, unavailable, or unknown. A legacy client or a compatible
+   * automatic-playlist lock has no side-effect-free editor probe.
+   * @zh 可用、不可用或未知的原因。旧 client 或兼容识别的自动列表锁没有无副作用的编辑器探测接口。
+   */
+  editorAvailabilityReason: AutoplaylistEditorAvailabilityReason;
+  /**
+   * Whether this component can read and edit the provider's configuration.
+   * @zh 本组件是否能读取和编辑该提供者的配置。
+   */
+  configAvailability: 'available' | 'unavailable';
+  /**
+   * Own providers are supported; external providers and unverified locks have no configuration protocol here.
+   * @zh 支持本组件提供者；外部提供者和未经确认的锁不支持此处的配置协议。
+   */
+  configAvailabilityReason: 'supported' | 'externalProvider' | 'unverifiedLock' | 'notAutoplaylist';
+  /**
+   * Whether the manager-backed autoplaylist keeps its tracks sorted. For `source: 'dui'`,
+   * the existing `false` value is a placeholder because the lock's configuration is not readable.
+   * @zh manager 管理的自动列表是否保持排序。`source:'dui'` 的锁配置不可读，沿用的 `false` 是占位值。
    */
   keepSorted?: boolean;
   /**
-   * `sdk` for an autoplaylist foobar2000 runs, `dui` for one another component manages.
-   * @zh foobar2000 运行的自动播放列表为 `sdk`，由其他组件管理的为 `dui`。
+   * `sdk` identifies the autoplaylist-manager path, including third-party clients; `dui` identifies
+   * the existing automatic-lock name heuristic. Neither identifies the current UI or editor support.
+   * @zh `sdk` 表示 autoplaylist manager 路径，也包括第三方 client；`dui` 表示既有锁名启发式识别。两者都不表示当前界面类型或编辑器能力。
    */
   source?: 'sdk' | 'dui';
   /**
@@ -1278,13 +1483,15 @@ interface GetAutoplaylistQueryResult {
    */
   query: string | null;
   /**
-   * Whether the autoplaylist keeps its tracks sorted; always `false` when `source` is `dui`.
-   * @zh 自动播放列表是否保持排序；`source` 为 `dui` 时总是 `false`。
+   * Whether the manager-backed autoplaylist keeps its tracks sorted. The `false` value for
+   * `source: 'dui'` is a placeholder for an unreadable lock configuration.
+   * @zh manager 管理的自动列表是否保持排序。`source:'dui'` 的 `false` 是不可读锁配置的占位值。
    */
   keepSorted?: boolean;
   /**
-   * `sdk` for an autoplaylist foobar2000 runs, `dui` for one another component manages.
-   * @zh foobar2000 运行的自动播放列表为 `sdk`，由其他组件管理的为 `dui`。
+   * `sdk` identifies the autoplaylist-manager path, including third-party clients; `dui` identifies
+   * the existing automatic-lock name heuristic. Neither identifies the current UI or editor support.
+   * @zh `sdk` 表示 autoplaylist manager 路径，也包括第三方 client；`dui` 表示既有锁名启发式识别。两者都不表示当前界面类型或编辑器能力。
    */
   source?: 'sdk' | 'dui';
   /**
@@ -1297,6 +1504,60 @@ interface GetAutoplaylistQueryResult {
    * @zh 播放列表的锁的名字，`source` 为 `dui` 时出现。
    */
   lockName?: string;
+}
+
+interface ShowAutoplaylistUIParams {
+  /**
+   * Playlist index when the host first handles the request. Required unless `playlistGuid` is
+   * supplied; use the GUID to preserve identity across that initial queueing delay.
+   * @zh 宿主首次处理请求时的列表索引。不传 `playlistGuid` 时必填；需要跨首次排队稳定身份时应使用 GUID。
+   * @minimum 0
+   */
+  playlist?: Int;
+  playlistGuid?: PlaylistGuid;
+}
+
+interface ShowAutoplaylistUIResult {
+  /**
+   * Always `true` on success: the request was accepted, not necessarily executed yet.
+   * @zh 成功时始终为 `true`：请求已受理，原生调用未必已执行。
+   */
+  accepted: boolean;
+  /**
+   * Opaque identifier used to correlate the single native-call result event.
+   * @zh 用于关联单次原生调用结果事件的不透明标识。
+   */
+  operationId: string;
+  playlistGuid: ReportedPlaylistGuid;
+}
+
+interface AutoplaylistUIResultPayload {
+  /**
+   * The same opaque identifier as the acceptance response, used to match this operation.
+   * @zh 与受理响应相同的不透明标识，用于关联本次操作。
+   */
+  operationId: string;
+  playlistGuid: ReportedPlaylistGuid;
+  /**
+   * Whether the native call returned normally; a lock entry must also return `true`.
+   * @zh 原生调用是否正常返回；锁入口还须返回 `true`。
+   */
+  success: boolean;
+  /**
+   * Present only on failure, together with `code` and `reason`.
+   * @zh 仅在失败时出现，与 `code`、`reason` 一起提供。
+   */
+  error?: string;
+  /**
+   * Business error code; present only when `success` is `false`.
+   * @zh 业务错误码，仅在 `success` 为 `false` 时出现。
+   */
+  code?: string;
+  /**
+   * The failed check or native-call stage; present only when `success` is `false`.
+   * @zh 失败的检查或原生调用环节，仅在 `success` 为 `false` 时出现。
+   */
+  reason?: 'targetGone' | 'notAutoplaylist' | 'noEditor' | 'queryFailed' | 'dispatchFailed' | 'providerFailed';
 }
 
 interface GetLockInfoParams {
@@ -1428,6 +1689,7 @@ interface ReorderParams {
    * @minimum 0
    */
   newOrder: Int[];
+  expectedVersion?: ExpectedContentVersion;
 }
 
 interface ReorderResult {
@@ -1442,15 +1704,19 @@ interface ReorderResult {
    * @zh 重排的曲目数。
    */
   itemCount: Int;
+  /**
+   * Already includes this change; pass it as `expectedVersion` to the next call.
+   * @zh 已包含这次修改，可作为下一次调用的 `expectedVersion`。
+   */
+  contentVersion: ContentVersion;
 }
 
 
 /**
- * A playlist's GUID instead of its index, written as the results and events that name a playlist
- * report it, for a query that answers an empty result for a missing playlist: a GUID no
- * playlist has answers the same way. Either hex case is accepted. Giving both this and the
- * index, or a malformed GUID, fails with `INVALID_PARAMS`.
- * @zh 播放列表的 GUID，用来代替序号，写法与指明播放列表的结果、事件报出的一致；用于列表不存在时回空结果的查询，没有列表持有的 GUID 也照此回答。十六进制大小写均可。同时给了它和序号，或 GUID 格式不对，以 `INVALID_PARAMS` 失败。
+ * Persistent unique identifier of a playlist, used in place of an index. For read queries where a
+ * missing target returns an empty result instead of failing. Mutually exclusive with `playlist`;
+ * passing both or an invalid format fails with `INVALID_PARAMS`.
+ * @zh 播放列表的持久唯一标识，用于替代序号。目标不存在时返回空结果而非报错。与序号互斥，同时传入或格式非法以 `INVALID_PARAMS` 失败。
  */
 type QueriedPlaylistGuid = string;
 
@@ -1501,6 +1767,11 @@ interface GetSelectionResult {
    */
   playlist: Int;
   playlistGuid: ReportedPlaylistGuid;
+  /**
+   * The row numbers in `items` hold only while the playlist keeps this version.
+   * @zh 列表仍是此版本时，`items` 中的行号才有效。
+   */
+  contentVersion: ContentVersion;
 }
 
 interface SetSelectionParams {
@@ -1525,6 +1796,15 @@ interface SetSelectionParams {
    * @default true
    */
   clearOthers?: boolean;
+  expectedVersion?: ExpectedContentVersion;
+}
+
+interface SetSelectionResult {
+  /**
+   * Selecting rows leaves it unchanged.
+   * @zh 选中行不会改变此值。
+   */
+  contentVersion: ContentVersion;
 }
 
 interface SelectAllParams {
@@ -1567,6 +1847,15 @@ interface RemoveTracksParams {
    * @minimum 0
    */
   items: Int[];
+  expectedVersion?: ExpectedContentVersion;
+}
+
+interface RemoveTracksResult {
+  /**
+   * Already includes this change; pass it as `expectedVersion` to the next call.
+   * @zh 已包含这次修改，可作为下一次调用的 `expectedVersion`。
+   */
+  contentVersion: ContentVersion;
 }
 
 interface RemoveSelectedTracksParams {
@@ -1603,6 +1892,15 @@ interface MoveTracksParams {
    * @zh 移动的位置数：负数向上，正数向下。
    */
   delta: Int;
+  expectedVersion?: ExpectedContentVersion;
+}
+
+interface MoveTracksResult {
+  /**
+   * Already includes this change; pass it as `expectedVersion` to the next call.
+   * @zh 已包含这次修改，可作为下一次调用的 `expectedVersion`。
+   */
+  contentVersion: ContentVersion;
 }
 
 interface PlayTrackParams {
@@ -1638,6 +1936,7 @@ interface PlayTrackParams {
    * @default false
    */
   muted?: boolean;
+  expectedVersion?: ExpectedContentVersion;
 }
 
 interface FocusTrackParams {
@@ -1655,6 +1954,7 @@ interface FocusTrackParams {
    * @zh 要聚焦的行；省略或为负数时播放列表失去焦点。
    */
   index?: Int;
+  expectedVersion?: ExpectedContentVersion;
 }
 
 interface GetFocusTrackParams {
@@ -1726,6 +2026,7 @@ interface SetFocusedTrackParams {
    * @zh 要聚焦的行；省略或为负数时播放列表失去焦点。
    */
   index?: Int;
+  expectedVersion?: ExpectedContentVersion;
 }
 
 interface InsertTracksParams {
@@ -1753,6 +2054,7 @@ interface InsertTracksParams {
    * @pathKey path
    */
   handles: Json[];
+  expectedVersion?: ExpectedContentVersion;
 }
 
 interface InsertTracksResult {
@@ -1792,6 +2094,11 @@ interface InsertTracksResult {
    * @zh 插入后的曲目数。
    */
   totalCount: Int;
+  /**
+   * Already includes this change; pass it as `expectedVersion` to the next call.
+   * @zh 已包含这次修改，可作为下一次调用的 `expectedVersion`。
+   */
+  contentVersion: ContentVersion;
 }
 
 interface AddPathsParams {
@@ -2088,7 +2395,8 @@ interface GetTracksParams {
    * Keys each row carries besides `index`; omitted, the whole row. The names are those
    * `library.query` takes; an unknown name fails with `INVALID_PARAMS` and is listed in
    * `details.unknownFields`.
-   * @zh 每行除 `index` 外带的键；省略时为整行。可用的名字与 `library.query` 相同；未知的名字以 `INVALID_PARAMS` 失败，并列在 `details.unknownFields` 里。
+   * The optional `albumId` is omitted when unavailable, even when requested.
+   * @zh 每行除 `index` 外带的键；省略时为整行。可用的名字与 `library.query` 相同；未知的名字以 `INVALID_PARAMS` 失败，并列在 `details.unknownFields` 里。没有可选的 `albumId` 时省略该键，即使请求了它也是如此。
    * @minItems 1
    */
   fields?: string[];
@@ -2128,6 +2436,11 @@ interface GetTracksResult {
    * @zh 从 `start` 起的行：整行，或 `index` 加上 `fields` 要求的键。
    */
   tracks: Partial<PlaylistTrack>[];
+  /**
+   * Pages can be joined only when this matches; absent when the playlist does not exist.
+   * @zh 各页的此值相同才能拼接。列表不存在时，应答里没有此字段。
+   */
+  contentVersion?: ContentVersion;
 }
 
 // ---- getSelectedTracks ----
@@ -2159,6 +2472,11 @@ interface GetSelectedTracksResult {
    * @zh 返回的行数。
    */
   count: Int;
+  /**
+   * The row numbers in `tracks` hold only while the playlist keeps this version.
+   * @zh 列表仍是此版本时，`tracks` 中的行号才有效。
+   */
+  contentVersion: ContentVersion;
 }
 
 // ---- getGroupRuns ----
@@ -2196,6 +2514,11 @@ interface GetGroupRunsResult {
    * @zh 各游程，按列表顺序，第一个从第 `0` 行开始；空列表时为空。
    */
   runs: PlaylistGroupRun[];
+  /**
+   * The runs describe the rows as they were at this version.
+   * @zh 这些游程对应列表处于此版本时的各行。
+   */
+  contentVersion: ContentVersion;
 }
 
 // ---- getMatchingRows ----
@@ -2240,6 +2563,11 @@ interface GetMatchingRowsResult {
    * @zh `items` 的条目数。
    */
   count: Int;
+  /**
+   * The row numbers in `items` hold only while the playlist keeps this version.
+   * @zh 列表仍是此版本时，`items` 中的行号才有效。
+   */
+  contentVersion: ContentVersion;
 }
 
 // ---- getTracksAt ----
@@ -2297,6 +2625,12 @@ interface GetTracksAtResult {
    * @zh 按请求顺序排列的行，超出最后一行的已跳过。
    */
   tracks: Partial<PlaylistTrack>[];
+  /**
+   * The row numbers hold only while the playlist keeps this version; absent when the playlist
+   * does not exist.
+   * @zh 列表仍是此版本时，行号才有效。列表不存在时，应答里没有此字段。
+   */
+  contentVersion?: ContentVersion;
 }
 
 // ---- events ----
@@ -2318,6 +2652,11 @@ interface ItemsAddedPayload {
    * @zh 插入的曲目数。
    */
   count: Int;
+  /**
+   * Already includes this change.
+   * @zh 已包含这次变化。
+   */
+  contentVersion: ContentVersion;
 }
 
 interface ItemsRemovedPayload {
@@ -2337,6 +2676,11 @@ interface ItemsRemovedPayload {
    * @zh 移除后的曲目数。
    */
   newCount: Int;
+  /**
+   * Already includes this change.
+   * @zh 已包含这次变化。
+   */
+  contentVersion: ContentVersion;
 }
 
 interface ItemsReorderedPayload {
@@ -2351,6 +2695,11 @@ interface ItemsReorderedPayload {
    * @zh 播放列表的曲目数。
    */
   count: Int;
+  /**
+   * Already includes this change.
+   * @zh 已包含这次变化。
+   */
+  contentVersion: ContentVersion;
 }
 
 interface SelectionChangedPayload {
@@ -2393,6 +2742,11 @@ interface ItemsReplacedPayload {
    * @zh 被替换的曲目数。
    */
   count: Int;
+  /**
+   * Already includes this change.
+   * @zh 已包含这次变化。
+   */
+  contentVersion: ContentVersion;
 }
 
 interface CreatedPayload {
@@ -2506,10 +2860,25 @@ interface AddCompletePayload {
    */
   playlistGuid: ReportedPlaylistGuid;
   /**
-   * Always `true`.
-   * @zh 恒为 `true`。
+   * Always `true`; `status` tells how the call ended.
+   * @zh 恒为 `true`；调用如何结束看 `status`。
    */
   success: boolean;
+  /**
+   * `completed` when every track the paths resolved to was added. `partial` or `failed` when
+   * some or all of them were dropped, for the cause in `reason`; the dropped ones are normally
+   * the tracks expanded from playlist files and cue sheets, since plain files are added before
+   * the call returns. `cancelled` when the user cancelled the expansion; tracks added before
+   * that stay in the playlist.
+   * @zh `completed` 表示路径解析出的曲目全部加入。`partial`、`failed` 表示其中部分或全部被丢弃，原因见 `reason`；被丢弃的通常是从播放列表文件与 cue 展开的曲目，因为普通文件在调用返回前已加入。`cancelled` 表示用户取消了展开，此前加入的曲目留在列表里。
+   */
+  status: 'completed' | 'partial' | 'failed' | 'cancelled';
+  /**
+   * Why tracks were dropped: the playlist was removed (`targetRemoved`) or locked (`locked`)
+   * before they could be added. Present with `partial` and `failed`.
+   * @zh 曲目被丢弃的原因：加入之前列表被删掉（`targetRemoved`）或上锁（`locked`）。`status` 为 `partial`、`failed` 时才有。
+   */
+  reason?: 'targetRemoved' | 'locked';
   /**
    * Tracks added, after expanding playlists and cue sheets. Tracks dropped because the playlist
    * was removed or locked before the expansion finished are not counted.

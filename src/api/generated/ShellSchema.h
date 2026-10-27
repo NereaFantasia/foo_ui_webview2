@@ -32,7 +32,7 @@ inline bool FromJson(const json& j, SpawnParams& out, std::string& error, const 
 
 struct ShowInExplorerParams {
     static constexpr const char* kMethod = "shell.showInExplorer";
-    static constexpr std::array<api::params::PathParam, 1> kPathParams{{{"path", api::params::PathAccess::Read, false, false, nullptr}}};
+    static constexpr std::array<api::params::PathParam, 1> kPathParams{{{"path", api::params::PathAccess::MediaRead, false, false, nullptr}}};
     using Result = void;
 
     std::string path{};
@@ -48,7 +48,7 @@ inline bool FromJson(const json& j, ShowInExplorerParams& out, std::string& erro
 
 struct OpenWithParams {
     static constexpr const char* kMethod = "shell.openWith";
-    static constexpr std::array<api::params::PathParam, 1> kPathParams{{{"path", api::params::PathAccess::Read, false, false, nullptr}}};
+    static constexpr std::array<api::params::PathParam, 1> kPathParams{{{"path", api::params::PathAccess::MediaRead, false, false, nullptr}}};
     using Result = void;
 
     std::string path{};

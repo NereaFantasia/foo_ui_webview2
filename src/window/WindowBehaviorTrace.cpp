@@ -507,7 +507,8 @@ std::string InvokeHeader(const std::string& method, const nlohmann::json& params
     if (params.is_object()) {
         nlohmann::json visible = nlohmann::json::object();
         for (auto it = params.begin(); it != params.end(); ++it) {
-            if (!it.key().empty() && it.key()[0] != '_') visible[it.key()] = it.value();
+            // 文档控制令牌与内部路由字段都不写入诊断轨迹。
+            if (!it.key().empty() && it.key()[0] != '_' && it.key() != "controlToken") visible[it.key()] = it.value();
         }
         if (!visible.empty()) paramsText = visible.dump(-1, ' ', false, nlohmann::json::error_handler_t::replace);
     } else if (!params.is_null()) {

@@ -124,7 +124,7 @@ inline json ToJson(const WriteFilesResult& v) {
 
 struct WriteFilesParams {
     static constexpr const char* kMethod = "clipboard.writeFiles";
-    static constexpr std::array<api::params::PathParam, 1> kPathParams{{{"paths", api::params::PathAccess::Read, true, false, nullptr}}};
+    static constexpr std::array<api::params::PathParam, 1> kPathParams{{{"paths", api::params::PathAccess::MediaRead, true, false, nullptr}}};
     using Result = WriteFilesResult;
 
     std::vector<std::string> paths{};

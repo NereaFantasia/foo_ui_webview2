@@ -1,6 +1,7 @@
 ﻿#pragma once
 #include "pch.h"
 #include "window/PopupWindow.h"
+#include "window/WindowActivationPolicy.h"
 
 class MainWindow;
 
@@ -67,9 +68,27 @@ public:
     // 窗口（外部应用）与时间戳。WebView2 会在 popup 与主窗口两个 controller 间回授焦点，
     // 使主窗口在 overlay 点击后短时内被无意激活。MainWindow 用这些信号判断该激活是否
     // 由 overlay 交互引发，并据此把激活引回外部应用 / sink。仅 UI 线程读写。
-    void NotifyOverlayInteraction(HWND foregroundBeforeClick);
-    bool IsOverlayInteractionRecent(unsigned int windowMs) const;
+    window_activation::Interaction NotifyOverlayInteraction(HWND source, HWND foregroundBeforeClick);
+    bool IsOverlayInteractionRecent(HWND target, unsigned int windowMs) const;
     HWND GetOverlayInteractionForeground() const;
+    window_activation::Target RegisterActivationTarget(HWND hwnd);
+    void UnregisterActivationTarget(HWND hwnd);
+    window_activation::Scope BeginExplicitActivation(HWND hwnd, const char* source);
+    window_activation::Scope ProtectActivation(HWND hwnd);
+    bool IsExplicitActivation(HWND hwnd) const;
+    bool RequestForeground(HWND hwnd, const char* source);
+    bool PostExplicitSystemCommand(HWND hwnd, UINT command);
+    bool IsActivationTarget(HWND hwnd) const;
+    window_activation::Undo CaptureActivationUndo(window_activation::Interaction interaction, HWND target) const;
+    window_activation::Undo CaptureOverlayUndo(HWND target) const;
+    bool CanUndoActivation(const window_activation::Undo& undo) const;
+    bool CanContinueActivationUndo(const window_activation::Undo& undo) const;
+    bool CanContinueActivationUndo(const window_activation::Undo& undo, HWND intermediary) const;
+    window_activation::Reference CaptureWindowReference(HWND hwnd);
+    bool IsWindowReferenceLive(window_activation::Reference reference) const;
+    window_activation::Return CaptureFocusReturn(HWND surface);
+    bool CanReturnFocus(window_activation::Return ticket) const;
+    UINT_PTR NextActivationWorkId() { if (++nextSystemCommand_ == 0) ++nextSystemCommand_; return nextSystemCommand_; }
 
     // 面板模式：引用计数管理
     void RegisterPanel();    // 面板注册（引用计数 +1）
@@ -85,7 +104,7 @@ public:
 private:
     WindowManager() = default;
     // 只在进程退出的静态析构期运行，此时不再销毁窗口；正常关停走 Shutdown()。
-    ~WindowManager();
+    ~WindowManager() noexcept;
     WindowManager(const WindowManager&) = delete;
     WindowManager& operator=(const WindowManager&) = delete;
     
@@ -100,6 +119,14 @@ private:
 
     unsigned long long overlayInteractionTick_ = 0;  // GetTickCount64() at last overlay click
     HWND overlayInteractionForeground_ = nullptr;    // foreground window captured before that click
+    window_activation::Interaction overlayInteraction_;
+    window_activation::Reference overlayForegroundReference_;
+    window_activation::Policy activationPolicy_;
+    struct PendingSystemCommand { window_activation::Target target; UINT command; };
+    std::map<UINT_PTR, PendingSystemCommand> pendingSystemCommands_;
+    UINT_PTR nextSystemCommand_ = 0;
+    static LRESULT CALLBACK ActivationSubclassProc(HWND, UINT, WPARAM, LPARAM, UINT_PTR, DWORD_PTR);
+    void ClearActivationTargets();
     
     std::string GenerateId();
 };

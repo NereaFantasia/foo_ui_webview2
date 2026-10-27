@@ -7,7 +7,10 @@
 #include "api/PlaylistApi.h"
 #include "api/adapters/Fb2kPlaylistService.h"
 #include "core/QueueManager.h"
+#include "core/ContentVersions.h"
+#include "core/JitNativeObservation.h"
 #include "domain/PathSecurity.h"
+#include "domain/autoplaylist/ManagedAutoplaylist.h"
 #include "utils/GuidUtils.h"
 #include "utils/StringUtils.h"
 #include <vector>
@@ -77,6 +80,7 @@ public:
         const bit_array& p_selection
     ) override {
         try {
+            const std::string version = content_version::hooks::PlaylistContentChanged(p_playlist);
             InvalidatePlaylistMembershipCaches();
             if (IsShadowPlaylist(p_playlist)) return;  // suppress JIT internal events
             pl::ItemsAddedPayload payload;
@@ -84,6 +88,7 @@ public:
             payload.playlistGuid = GuidOfPlaylist(p_playlist);
             payload.start = static_cast<std::int64_t>(p_start);
             payload.count = static_cast<std::int64_t>(p_data.get_count());
+            payload.contentVersion = version;
             api::emit::Broadcast<pl::events::ItemsAdded>(payload);
         } catch (...) {}
     }
@@ -96,6 +101,7 @@ public:
         size_t p_new_count
     ) override {
         try {
+            const std::string version = content_version::hooks::PlaylistContentChanged(p_playlist);
             InvalidatePlaylistMembershipCaches();
             if (IsShadowPlaylist(p_playlist)) return;  // suppress JIT internal events
             pl::ItemsRemovedPayload payload;
@@ -103,6 +109,7 @@ public:
             payload.playlistGuid = GuidOfPlaylist(p_playlist);
             payload.oldCount = static_cast<std::int64_t>(p_old_count);
             payload.newCount = static_cast<std::int64_t>(p_new_count);
+            payload.contentVersion = version;
             api::emit::Broadcast<pl::events::ItemsRemoved>(payload);
         } catch (...) {}
     }
@@ -114,12 +121,14 @@ public:
         size_t p_count
     ) override {
         try {
+            const std::string version = content_version::hooks::PlaylistContentChanged(p_playlist);
             Fb2kPlaylistService::InvalidatePlaylistCache();
             if (IsShadowPlaylist(p_playlist)) return;  // suppress JIT internal events
             pl::ItemsReorderedPayload payload;
             payload.playlist = static_cast<std::int64_t>(p_playlist);
             payload.playlistGuid = GuidOfPlaylist(p_playlist);
             payload.count = static_cast<std::int64_t>(p_count);
+            payload.contentVersion = version;
             api::emit::Broadcast<pl::events::ItemsReordered>(payload);
         } catch (...) {}
     }
@@ -163,6 +172,7 @@ public:
         const pfc::list_base_const_t<t_on_items_replaced_entry>& p_data
     ) override {
         try {
+            const std::string version = content_version::hooks::PlaylistContentChanged(p_playlist);
             // Replacement swaps in different tracks, so paths change even though
             // the item count does not.
             InvalidatePlaylistMembershipCaches();
@@ -171,6 +181,7 @@ public:
             payload.playlist = static_cast<std::int64_t>(p_playlist);
             payload.playlistGuid = GuidOfPlaylist(p_playlist);
             payload.count = static_cast<std::int64_t>(p_data.get_count());
+            payload.contentVersion = version;
             api::emit::Broadcast<pl::events::ItemsReplaced>(payload);
         } catch (...) {}
     }
@@ -209,7 +220,9 @@ public:
             m_removing.clear();
             m_removingOldCount = p_old_count;
             for (size_t i = 0; i < p_old_count; i++) {
-                if (p_mask.get(i)) m_removing.push_back(GuidOfPlaylist(i));
+                if (!p_mask.get(i)) continue;
+                content_version::hooks::PlaylistContentChanged(i);
+                m_removing.push_back(GuidOfPlaylist(i));
             }
         } catch (...) {
             m_removing.clear();
@@ -304,6 +317,7 @@ public:
         bool p_locked
     ) override {
         try {
+            managed_autoplaylist::ScheduleFlagsObservation(p_playlist);
             Fb2kPlaylistService::InvalidatePlaylistCache();
             pl::LockChangedPayload payload;
             payload.playlist = static_cast<std::int64_t>(p_playlist);
@@ -323,6 +337,7 @@ public:
     // Called when playback order changes
     void on_playback_order_changed(size_t p_new_index) override {
         try {
+            jit_native::hooks::SettingsChanged();
             api::playback::OrderChangedPayload payload;
             payload.orderIndex = static_cast<std::int64_t>(p_new_index);
             payload.order = payload.orderIndex;  // alias: match playback.getPlaybackOrder response

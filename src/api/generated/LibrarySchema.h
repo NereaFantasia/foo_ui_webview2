@@ -74,6 +74,10 @@ struct QueryResult;
 struct QueryParams;
 struct SearchResult;
 struct SearchParams;
+struct GetChangesResult;
+struct GetChangesParams;
+struct GetTracksResult;
+struct GetTracksParams;
 struct InitializedPayload;
 struct ItemsAddedPayload;
 struct ItemsRemovedPayload;
@@ -137,6 +141,10 @@ inline json ToJson(const QueryResult& v);
 inline bool FromJson(const json& j, QueryParams& out, std::string& error, const std::string& where = {});
 inline json ToJson(const SearchResult& v);
 inline bool FromJson(const json& j, SearchParams& out, std::string& error, const std::string& where = {});
+inline json ToJson(const GetChangesResult& v);
+inline bool FromJson(const json& j, GetChangesParams& out, std::string& error, const std::string& where = {});
+inline json ToJson(const GetTracksResult& v);
+inline bool FromJson(const json& j, GetTracksParams& out, std::string& error, const std::string& where = {});
 inline json ToJson(const InitializedPayload& v);
 inline json ToJson(const ItemsAddedPayload& v);
 inline json ToJson(const ItemsRemovedPayload& v);
@@ -323,8 +331,9 @@ inline bool FromJson(const json& j, AddToPlaylistParams& out, std::string& error
 }
 
 struct AlbumTrackRef {
-    static constexpr std::array<std::string_view, 3> kFields{{"trackNumber", "path", "absolutePath"}};
+    static constexpr std::array<std::string_view, 4> kFields{{"subsong", "trackNumber", "path", "absolutePath"}};
 
+    std::optional<std::int64_t> subsong{};
     std::int64_t trackNumber{};
     std::string path{};
     std::string absolutePath{};
@@ -332,6 +341,7 @@ struct AlbumTrackRef {
 
 inline json ToJson(const AlbumTrackRef& v) {
     json j = json::object();
+    api::results::Put(j, "subsong", v.subsong);
     api::results::Put(j, "trackNumber", v.trackNumber);
     api::results::Put(j, "path", v.path);
     api::results::Put(j, "absolutePath", v.absolutePath);
@@ -339,8 +349,9 @@ inline json ToJson(const AlbumTrackRef& v) {
 }
 
 struct AlbumInfo {
-    static constexpr std::array<std::string_view, 13> kFields{{"name", "artist", "albumArtist", "trackCount", "discCount", "duration", "year", "genre", "label", "firstTrackPath", "firstTrackAbsolutePath", "coverDataUrl", "tracks"}};
+    static constexpr std::array<std::string_view, 14> kFields{{"albumId", "name", "artist", "albumArtist", "trackCount", "discCount", "duration", "year", "genre", "label", "firstTrackPath", "firstTrackAbsolutePath", "coverDataUrl", "tracks"}};
 
+    std::optional<std::string> albumId{};
     std::string name{};
     std::string artist{};
     std::string albumArtist{};
@@ -358,6 +369,7 @@ struct AlbumInfo {
 
 inline json ToJson(const AlbumInfo& v) {
     json j = json::object();
+    api::results::Put(j, "albumId", v.albumId);
     api::results::Put(j, "name", v.name);
     api::results::Put(j, "artist", v.artist);
     api::results::Put(j, "albumArtist", v.albumArtist);
@@ -635,14 +647,16 @@ inline bool FromJson(const json& j, GetAlbumsParams& out, std::string& error, co
 }
 
 struct ArtistAlbumRef {
-    static constexpr std::array<std::string_view, 2> kFields{{"name", "artist"}};
+    static constexpr std::array<std::string_view, 3> kFields{{"albumId", "name", "artist"}};
 
+    std::optional<std::string> albumId{};
     std::string name{};
     std::string artist{};
 };
 
 inline json ToJson(const ArtistAlbumRef& v) {
     json j = json::object();
+    api::results::Put(j, "albumId", v.albumId);
     api::results::Put(j, "name", v.name);
     api::results::Put(j, "artist", v.artist);
     return j;
@@ -791,7 +805,7 @@ inline bool FromJson(const json& j, GetCacheStatsParams&, std::string& error, co
 }
 
 struct LibraryTrack : api::common::Track {
-    static constexpr std::array<std::string_view, 22> kFields{{"handle", "path", "absolutePath", "subsong", "title", "artist", "artists", "album", "albumArtist", "albumArtists", "genre", "date", "trackNumber", "discNumber", "duration", "fileSize", "bitrate", "sampleRate", "channels", "codec", "rating", "index"}};
+    static constexpr std::array<std::string_view, 23> kFields{{"handle", "path", "absolutePath", "subsong", "title", "artist", "artists", "album", "albumId", "albumArtist", "albumArtists", "genre", "date", "trackNumber", "discNumber", "duration", "fileSize", "bitrate", "sampleRate", "channels", "codec", "rating", "index"}};
 
     std::int64_t index{};
 };
@@ -806,6 +820,7 @@ inline json ToJson(const LibraryTrack& v) {
     api::results::Put(j, "artist", v.artist);
     api::results::Put(j, "artists", v.artists);
     api::results::Put(j, "album", v.album);
+    api::results::Put(j, "albumId", v.albumId);
     api::results::Put(j, "albumArtist", v.albumArtist);
     api::results::Put(j, "albumArtists", v.albumArtists);
     api::results::Put(j, "genre", v.genre);
@@ -899,6 +914,7 @@ struct GetAlbumTracksParams {
     static constexpr std::array<api::params::PathParam, 0> kPathParams{};
     using Result = GetAlbumTracksResult;
 
+    std::optional<std::string> albumId{};
     std::string album{};
     std::string albumArtist{};
 };
@@ -906,7 +922,8 @@ struct GetAlbumTracksParams {
 inline bool FromJson(const json& j, GetAlbumTracksParams& out, std::string& error, const std::string& where) {
     api::params::Reader r(j, error, where);
     return r.IsObject()
-        && r.OnlyKeys({"album", "albumArtist"})
+        && r.OnlyKeys({"albumId", "album", "albumArtist"})
+        && r.Optional("albumId", out.albumId)
         && r.Required("album", out.album)
         && r.Required("albumArtist", out.albumArtist);
 }
@@ -980,7 +997,7 @@ inline bool FromJson(const json& j, GetRandomTracksParams& out, std::string& err
 }
 
 struct RecentLibraryTrack : LibraryTrack {
-    static constexpr std::array<std::string_view, 24> kFields{{"handle", "path", "absolutePath", "subsong", "title", "artist", "artists", "album", "albumArtist", "albumArtists", "genre", "date", "trackNumber", "discNumber", "duration", "fileSize", "bitrate", "sampleRate", "channels", "codec", "rating", "index", "added", "modified"}};
+    static constexpr std::array<std::string_view, 25> kFields{{"handle", "path", "absolutePath", "subsong", "title", "artist", "artists", "album", "albumId", "albumArtist", "albumArtists", "genre", "date", "trackNumber", "discNumber", "duration", "fileSize", "bitrate", "sampleRate", "channels", "codec", "rating", "index", "added", "modified"}};
 
     std::optional<std::string> added{};
     std::optional<std::int64_t> modified{};
@@ -996,6 +1013,7 @@ inline json ToJson(const RecentLibraryTrack& v) {
     api::results::Put(j, "artist", v.artist);
     api::results::Put(j, "artists", v.artists);
     api::results::Put(j, "album", v.album);
+    api::results::Put(j, "albumId", v.albumId);
     api::results::Put(j, "albumArtist", v.albumArtist);
     api::results::Put(j, "albumArtists", v.albumArtists);
     api::results::Put(j, "genre", v.genre);
@@ -1168,7 +1186,7 @@ inline bool FromJson(const json& j, BrowseDirectoryParams& out, std::string& err
 }
 
 struct LibraryTrackPartial {
-    static constexpr std::array<std::string_view, 22> kFields{{"handle", "path", "absolutePath", "subsong", "title", "artist", "artists", "album", "albumArtist", "albumArtists", "genre", "date", "trackNumber", "discNumber", "duration", "fileSize", "bitrate", "sampleRate", "channels", "codec", "rating", "index"}};
+    static constexpr std::array<std::string_view, 23> kFields{{"handle", "path", "absolutePath", "subsong", "title", "artist", "artists", "album", "albumId", "albumArtist", "albumArtists", "genre", "date", "trackNumber", "discNumber", "duration", "fileSize", "bitrate", "sampleRate", "channels", "codec", "rating", "index"}};
 
     std::optional<std::string> handle{};
     std::optional<std::string> path{};
@@ -1178,6 +1196,7 @@ struct LibraryTrackPartial {
     std::optional<std::string> artist{};
     std::optional<std::vector<std::string>> artists{};
     std::optional<std::string> album{};
+    std::optional<std::string> albumId{};
     std::optional<std::string> albumArtist{};
     std::optional<std::vector<std::string>> albumArtists{};
     std::optional<std::string> genre{};
@@ -1204,6 +1223,7 @@ inline json ToJson(const LibraryTrackPartial& v) {
     api::results::Put(j, "artist", v.artist);
     api::results::Put(j, "artists", v.artists);
     api::results::Put(j, "album", v.album);
+    api::results::Put(j, "albumId", v.albumId);
     api::results::Put(j, "albumArtist", v.albumArtist);
     api::results::Put(j, "albumArtists", v.albumArtists);
     api::results::Put(j, "genre", v.genre);
@@ -1303,6 +1323,78 @@ inline bool FromJson(const json& j, SearchParams& out, std::string& error, const
         && r.MinItems("fields", out.fields, 1);
 }
 
+struct GetChangesResult {
+    static constexpr std::array<std::string_view, 6> kFields{{"epoch", "revision", "resync", "changed", "removed", "handles"}};
+
+    std::string epoch{};
+    std::int64_t revision{};
+    bool resync{};
+    std::optional<std::vector<std::string>> changed{};
+    std::optional<std::vector<std::string>> removed{};
+    std::optional<std::vector<std::string>> handles{};
+};
+
+inline json ToJson(const GetChangesResult& v) {
+    json j = json::object();
+    api::results::Put(j, "epoch", v.epoch);
+    api::results::Put(j, "revision", v.revision);
+    api::results::Put(j, "resync", v.resync);
+    api::results::Put(j, "changed", v.changed);
+    api::results::Put(j, "removed", v.removed);
+    api::results::Put(j, "handles", v.handles);
+    return j;
+}
+
+struct GetChangesParams {
+    static constexpr const char* kMethod = "library.getChanges";
+    static constexpr std::array<api::params::PathParam, 0> kPathParams{};
+    using Result = GetChangesResult;
+
+    std::optional<std::string> epoch{};
+    std::optional<std::int64_t> since{};
+};
+
+inline bool FromJson(const json& j, GetChangesParams& out, std::string& error, const std::string& where) {
+    api::params::Reader r(j, error, where);
+    return r.IsObject()
+        && r.OnlyKeys({"epoch", "since"})
+        && r.Optional("epoch", out.epoch)
+        && r.Optional("since", out.since)
+        && r.Range("since", out.since, std::optional<std::int64_t>(0), std::nullopt);
+}
+
+struct GetTracksResult {
+    static constexpr std::array<std::string_view, 2> kFields{{"tracks", "missing"}};
+
+    std::vector<LibraryTrackPartial> tracks{};
+    std::vector<std::string> missing{};
+};
+
+inline json ToJson(const GetTracksResult& v) {
+    json j = json::object();
+    api::results::Put(j, "tracks", v.tracks);
+    api::results::Put(j, "missing", v.missing);
+    return j;
+}
+
+struct GetTracksParams {
+    static constexpr const char* kMethod = "library.getTracks";
+    static constexpr std::array<api::params::PathParam, 0> kPathParams{};
+    using Result = GetTracksResult;
+
+    std::vector<std::string> handles{};
+    std::optional<std::vector<std::string>> fields{};
+};
+
+inline bool FromJson(const json& j, GetTracksParams& out, std::string& error, const std::string& where) {
+    api::params::Reader r(j, error, where);
+    return r.IsObject()
+        && r.OnlyKeys({"handles", "fields"})
+        && r.Required("handles", out.handles)
+        && r.Optional("fields", out.fields)
+        && r.MinItems("fields", out.fields, 1);
+}
+
 struct InitializedPayload {
     static constexpr std::array<std::string_view, 1> kFields{{"timestamp"}};
 
@@ -1316,43 +1408,57 @@ inline json ToJson(const InitializedPayload& v) {
 }
 
 struct ItemsAddedPayload {
-    static constexpr std::array<std::string_view, 2> kFields{{"count", "timestamp"}};
+    static constexpr std::array<std::string_view, 4> kFields{{"count", "handles", "truncated", "timestamp"}};
 
     std::int64_t count{};
+    std::vector<std::string> handles{};
+    bool truncated{};
     std::int64_t timestamp{};
 };
 
 inline json ToJson(const ItemsAddedPayload& v) {
     json j = json::object();
     api::results::Put(j, "count", v.count);
+    api::results::Put(j, "handles", v.handles);
+    api::results::Put(j, "truncated", v.truncated);
     api::results::Put(j, "timestamp", v.timestamp);
     return j;
 }
 
 struct ItemsRemovedPayload {
-    static constexpr std::array<std::string_view, 2> kFields{{"count", "timestamp"}};
+    static constexpr std::array<std::string_view, 4> kFields{{"count", "handles", "truncated", "timestamp"}};
 
     std::int64_t count{};
+    std::vector<std::string> handles{};
+    bool truncated{};
     std::int64_t timestamp{};
 };
 
 inline json ToJson(const ItemsRemovedPayload& v) {
     json j = json::object();
     api::results::Put(j, "count", v.count);
+    api::results::Put(j, "handles", v.handles);
+    api::results::Put(j, "truncated", v.truncated);
     api::results::Put(j, "timestamp", v.timestamp);
     return j;
 }
 
 struct ItemsModifiedPayload {
-    static constexpr std::array<std::string_view, 2> kFields{{"count", "timestamp"}};
+    static constexpr std::array<std::string_view, 5> kFields{{"count", "handles", "truncated", "fromHook", "timestamp"}};
 
     std::int64_t count{};
+    std::vector<std::string> handles{};
+    bool truncated{};
+    bool fromHook{};
     std::int64_t timestamp{};
 };
 
 inline json ToJson(const ItemsModifiedPayload& v) {
     json j = json::object();
     api::results::Put(j, "count", v.count);
+    api::results::Put(j, "handles", v.handles);
+    api::results::Put(j, "truncated", v.truncated);
+    api::results::Put(j, "fromHook", v.fromHook);
     api::results::Put(j, "timestamp", v.timestamp);
     return j;
 }

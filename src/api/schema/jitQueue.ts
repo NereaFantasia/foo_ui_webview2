@@ -4,53 +4,57 @@ export interface Api {
   /**
    * Start a new JIT session with this track: the buffer is cleared and playback begins. The
    * host detects the URL kind itself (`http(s)://` streams, Windows or UNC paths are local).
-   * @zh 用这首曲目开启新的 JIT 会话：清空缓冲并开始播放。宿主自己判断 URL 类型（`http(s)://` 是流，Windows 或 UNC 路径是本地文件）。
+   * Tracks in the native playback queue are kept: when this track ends, foobar2000 plays them
+   * first and the JIT session ends.
+   * @zh 基于指定曲目开启全新 JIT 会话（清空当前缓冲并立即起播；宿主自动识别 URL 协议与本地文件路径；原生播放队列保留并在本会话结束后接续播放）
    */
   playNow(params: PlayNowParams): PlayNowResult;
 
   /**
    * Preload the next track into the buffer, in answer to `jitQueue:needNext`. Refused with
    * `NO_ACTIVE_ITEM` unless a JIT session is playing or waiting for its next track.
-   * @zh 把下一首预载进缓冲，用于响应 `jitQueue:needNext`。除非有 JIT 会话正在播放或正在等下一首，否则以 `NO_ACTIVE_ITEM` 拒绝。
+   * @zh 将下一首曲目预载进播放缓冲（用于响应 jitQueue:needNext 事件；仅在存在活跃会话播放或等待下一首时受理，否则返回 NO_ACTIVE_ITEM）
    */
   enqueueNext(params: EnqueueNextParams): EnqueueNextResult;
 
   /**
-   * Skip to the next buffered track. Refused with `NO_ACTIVE_ITEM` while no JIT session is
-   * active.
-   * @zh 跳到缓冲中的下一首。没有活动的 JIT 会话时以 `NO_ACTIVE_ITEM` 拒绝。
+   * Skip to the next buffered track. When a buffered track follows the playing one, it plays
+   * that track and leaves the native playback queue untouched. Otherwise it acts as foobar2000's
+   * Next command, which plays the first track of the native playback queue when the queue is not
+   * empty. Refused with `NO_ACTIVE_ITEM` while no JIT session is active.
+   * @zh 跳过当前曲目并播放缓冲中的下一首（若缓冲存在后续曲目则直接播放且不改动原生队列；否则执行原生下一首逻辑；无活跃会话时返回 NO_ACTIVE_ITEM）
    */
   skip(): SkipResult;
 
   /**
    * Stop playback, optionally keeping the buffer.
-   * @zh 停止播放，可选保留缓冲。
+   * @zh 停止当前播放（支持选择是否保留已缓冲内容）
    */
   stop(params: StopParams): void;
 
   /**
    * Empty the buffer and return the session to idle.
-   * @zh 清空缓冲并让会话回到空闲。
+   * @zh 清空当前播放缓冲并使会话恢复空闲状态
    */
   clear(): void;
 
   /**
    * Report the JIT session state.
-   * @zh 报告 JIT 会话的状态。
+   * @zh 查询 JIT 会话当前运行状态
    */
   getState(): GetStateResult;
 
   /**
    * Tell the host the page has no more tracks to offer; the session moves to `Exhausted` and
    * `jitQueue:listExhausted` is emitted.
-   * @zh 告诉宿主页面没有更多曲目可供；会话进入 `Exhausted` 并发出 `jitQueue:listExhausted`。
+   * @zh 通知宿主当前会话无更多后续曲目（会话进入 Exhausted 状态并派发 jitQueue:listExhausted 事件）
    */
   notifyEmpty(): void;
 
   /**
    * Insert a batch of tracks into the shadow playlist, starting playback from `startIndex` when
    * the session is not already playing.
-   * @zh 把一批曲目插入影子播放列表，会话尚未在播放时从 `startIndex` 起播。
+   * @zh 将一组曲目批量写入影子播放列表（若会话尚未播放则自动从 startIndex 处开始起播）
    */
   preloadBatch(params: PreloadBatchParams): PreloadBatchResult;
 }
@@ -66,7 +70,7 @@ export interface Events {
    * the same top-level window, and else to the main window's page. A page whose session another
    * page started anew hears nothing more of it. Before any session has started they go to the
    * main window's page.
-   * @zh 影子播放列表里的一首曲目开始播放，重播当前曲目也算。`trackId` 与 `title` 是会话当前曲目在 `jitQueue.playNow` 或 `jitQueue.enqueueNext` 里给的标识与标题。`jitQueue.preloadBatch` 插入的曲目没有标识：播到它们时两者不变，某一批开始播放之后两者都为空。JIT 事件发给开启会话的页面，即调用 `jitQueue.playNow` 或调用了开始播放的 `jitQueue.preloadBatch` 的页面；该页面已不在时发给同一顶层窗口下的页面，再没有就发给主窗口的页面。会话被别的页面重新开启后，原来的页面不再收到它的事件。还没有开启过会话时发给主窗口的页面。
+   * @zh 影子播放列表曲目起播事件（涵盖重复播放当前曲目；trackId 与 title 反映 playNow 或 enqueueNext 配置的元数据；事件定向派发给启动会话的页面）
    * @delivery caller
    */
   trackChanged: TrackChangedPayload;
@@ -77,7 +81,7 @@ export interface Events {
    * unanswered during the previous track, and again when 30 seconds of the track remain. The
    * page answers with `jitQueue.enqueueNext`, or with `jitQueue.notifyEmpty` when it has no more
    * tracks. Delivered like `jitQueue:trackChanged`.
-   * @zh 宿主需要下一首：缓冲里没有，也没有仍在等回复的请求。宿主在影子播放列表的曲目开始时检查（上一首期间没得到回复的请求就此作废），曲目剩 30 秒时再检查一次。页面以 `jitQueue.enqueueNext` 作答，没有更多曲目时以 `jitQueue.notifyEmpty` 作答。投递范围同 `jitQueue:trackChanged`。
+   * @zh 宿主请求下一首曲目事件（当缓冲为空且无进行中请求时触发，于曲目起播及剩余 30 秒时检查；页面须调用 enqueueNext 预载或 notifyEmpty 告知耗尽）
    * @delivery caller
    */
   needNext: NeedNextPayload;
@@ -86,7 +90,7 @@ export interface Events {
    * `jitQueue.notifyEmpty` was called, even with no session active, or playback of the shadow
    * playlist reached the end of a track while the playlist held no tracks. The session is now
    * `Exhausted`. Delivered like `jitQueue:trackChanged`.
-   * @zh 调用了 `jitQueue.notifyEmpty`（没有活动会话时也发），或影子播放列表的播放在一首曲目结束时列表里已没有曲目。会话进入 `Exhausted`。投递范围同 `jitQueue:trackChanged`。
+   * @zh 会话曲目列表耗尽事件（由调用 notifyEmpty 触发或影子列表播放至末尾无后续曲目触发；会话状态流转为 Exhausted）
    * @delivery caller
    */
   listExhausted: ListExhaustedPayload;
@@ -96,7 +100,7 @@ export interface Events {
    * returns; a call that fails sends nothing. Delivered like `jitQueue:trackChanged`: a batch that
    * starts playback reports to the page that called it, a batch appended to a playing session
    * reports to that session's page.
-   * @zh `jitQueue.preloadBatch` 把曲目插入了影子播放列表。在调用返回之前发出；调用失败时不发。投递范围同 `jitQueue:trackChanged`：开始播放的一批发给调用它的页面，追加到正在播放的会话里的一批发给该会话的页面。
+   * @zh 批量预载曲目写入影子播放列表完成事件（在 preloadBatch 调用返回前派发）
    * @delivery caller
    */
   preloadComplete: PreloadCompletePayload;
@@ -105,8 +109,13 @@ export interface Events {
    * A track given to `jitQueue.playNow` or `jitQueue.enqueueNext` could not be added to the
    * shadow playlist: its location resolved to no tracks, the shadow playlist was gone, or adding
    * it failed with an exception. The track is added after the call has already succeeded, so the
-   * failure arrives only as this event. Delivered like `jitQueue:trackChanged`.
-   * @zh 交给 `jitQueue.playNow` 或 `jitQueue.enqueueNext` 的曲目没能加入影子播放列表：位置解析不出曲目、影子播放列表已不存在，或加入时抛出异常。曲目在调用成功返回之后才加入，所以失败只以这个事件告知。投递范围同 `jitQueue:trackChanged`。
+   * failure arrives only as this event. Not sent for an add superseded before it completes: by a
+   * later `jitQueue.playNow`, another `jitQueue.enqueueNext` for the next track,
+   * `jitQueue.stop`, `jitQueue.clear`, a `jitQueue.preloadBatch` that starts playback, the user
+   * stopping playback, or playback leaving the shadow playlist; such a track is neither added nor
+   * played. Advancing to an already buffered next track also supersedes an unresolved current
+   * track. Delivered like `jitQueue:trackChanged`.
+   * @zh 曲目加入影子播放列表失败事件（当路径无法解析、列表被外部移除或底层抛出异常时在异步加入完成后派发；若加入前被新操作取代则不派发）
    * @delivery caller
    */
   error: ErrorPayload;
@@ -115,12 +124,12 @@ export interface Events {
 interface TrackChangedPayload {
   /**
    * Identifier of the session's current track; empty when it has none.
-   * @zh 会话当前曲目的标识；没有时为空。
+   * @zh 会话当前播放曲目的标识符 trackId（缺省时为空字符串）
    */
   trackId: string;
   /**
    * Title of the session's current track; empty when it has none or none was given.
-   * @zh 会话当前曲目的标题；没有当前曲目或没给标题时为空。
+   * @zh 会话当前播放曲目的显示标题（缺省时为空字符串）
    */
   title: string;
 }
@@ -128,12 +137,12 @@ interface TrackChangedPayload {
 interface NeedNextPayload {
   /**
    * Identifier of the session's current track; empty when it has none.
-   * @zh 会话当前曲目的标识；没有时为空。
+   * @zh 会话当前播放曲目的标识符 trackId（缺省时为空字符串）
    */
   currentTrackId: string;
   /**
    * Always `trackChange`.
-   * @zh 恒为 `trackChange`。
+   * @zh 请求触发原因（固定为 trackChange）
    */
   reason: 'trackChange';
 }
@@ -141,7 +150,7 @@ interface NeedNextPayload {
 interface ListExhaustedPayload {
   /**
    * Identifier of the session's current track; empty when it has none.
-   * @zh 会话当前曲目的标识；没有时为空。
+   * @zh 会话当前播放曲目的标识符 trackId（缺省时为空字符串）
    */
   lastTrackId: string;
 }
@@ -149,17 +158,17 @@ interface ListExhaustedPayload {
 interface PreloadCompletePayload {
   /**
    * How many tracks were inserted; the same as `tracksAdded` of the call.
-   * @zh 插入的曲目数；与调用返回的 `tracksAdded` 相同。
+   * @zh 实际成功插入的曲目总数（与调用返回的 tracksAdded 保持一致）
    */
   count: Int;
   /**
    * `startIndex` of the call.
-   * @zh 调用的 `startIndex`。
+   * @zh 调用时传入的起始播放索引 startIndex
    */
   startIndex: Int;
   /**
    * `replace` of the call.
-   * @zh 调用的 `replace`。
+   * @zh 调用时传入的替换模式标记 replace
    */
   replace: boolean;
 }
@@ -167,48 +176,48 @@ interface PreloadCompletePayload {
 interface ErrorPayload {
   /**
    * Identifier the call gave the track.
-   * @zh 调用给该曲目的标识。
+   * @zh 添加失败曲目的原始标识符 trackId
    */
   trackId: string;
   /**
    * What went wrong, in English.
-   * @zh 出错原因，英文。
+   * @zh 底层返回的错误原因描述
    */
   error: string;
   /**
    * The location, when it is not a local file path. Exactly one of `url` and `path` is present.
-   * @zh 位置，不是本地文件路径时出现。`url` 与 `path` 恰好出现一个。
+   * @zh 发生错误的远程 URL 地址（与 path 互斥提供）
    */
   url?: string;
   /**
    * The location, when it is a local file path.
-   * @zh 位置，是本地文件路径时出现。
+   * @zh 发生错误的本地文件绝对路径（与 url 互斥提供）
    */
   path?: string;
 }
 
 /**
  * State of the JIT session.
- * @zh JIT 会话的状态。
+ * @zh JIT 会话状态枚举
  */
 type JitQueueState = 'Idle' | 'Active' | 'WaitingNext' | 'Exhausted' | 'Unknown';
 
 interface PlayNowParams {
   /**
    * Caller-assigned identifier of the track, echoed in the session state and events.
-   * @zh 调用方给曲目的标识，会在会话状态与事件里回显。
+   * @zh 调用方分配的曲目唯一标识符 trackId（在状态查询与事件中回显）
    * @minLength 1
    */
   trackId: string;
   /**
    * Display title.
-   * @zh 显示标题。
+   * @zh 用于界面展示的曲目标题
    * @default ""
    */
   title?: string;
   /**
    * Stream URL or file path. At most 2048 characters.
-   * @zh 流 URL 或文件路径。最多 2048 字符。
+   * @zh 音频流 URL 或本地文件物理路径（最多 2048 字符）
    * @minLength 1
    * @security MediaRead
    */
@@ -218,13 +227,13 @@ interface PlayNowParams {
 interface PlayNowResult {
   /**
    * The identifier given.
-   * @zh 传入的标识。
+   * @zh 传入的曲目标识符 trackId
    */
   trackId: string;
   /**
    * Index of the shadow playlist, which the call creates or takes over when this session has
    * none; `-1` only if foobar2000 could not create it.
-   * @zh 影子播放列表的索引；本次会话还没有时由这次调用创建或接管；只有 foobar2000 建不出来时才是 `-1`。
+   * @zh 影子播放列表在播放列表管理器中的索引（不存在时由宿主自动创建接管，创建失败返回 -1）
    */
   shadowPlaylist: Int;
 }
@@ -232,19 +241,19 @@ interface PlayNowResult {
 interface EnqueueNextParams {
   /**
    * Caller-assigned identifier of the track.
-   * @zh 调用方给曲目的标识。
+   * @zh 调用方分配的曲目唯一标识符 trackId
    * @minLength 1
    */
   trackId: string;
   /**
    * Display title.
-   * @zh 显示标题。
+   * @zh 用于界面展示的曲目标题
    * @default ""
    */
   title?: string;
   /**
    * Stream URL or file path. At most 2048 characters.
-   * @zh 流 URL 或文件路径。最多 2048 字符。
+   * @zh 音频流 URL 或本地文件物理路径（最多 2048 字符）
    * @minLength 1
    * @security MediaRead
    */
@@ -254,20 +263,22 @@ interface EnqueueNextParams {
 interface EnqueueNextResult {
   /**
    * The identifier given.
-   * @zh 传入的标识。
+   * @zh 传入的曲目标识符 trackId
    */
   trackId: string;
   /**
    * Tracks in the buffer afterwards.
-   * @zh 之后缓冲里的曲目数。
+   * @zh 预载完成后缓冲内的曲目总数
    */
   bufferSize: Int;
 }
 
 interface SkipResult {
   /**
-   * Identifier of the track playing after the skip.
-   * @zh 跳过后正在播放的曲目标识。
+   * Identifier of the session's current track when the call returns. The skipped-to track has
+   * not started yet at that point, so this is still the track being skipped; the new one is
+   * reported by `jitQueue:trackChanged`.
+   * @zh 调用返回时会话记录的曲目标识符（此时新曲目尚未起播，仍为被跳过的曲目 ID，起播后由 jitQueue:trackChanged 通知）
    */
   currentTrackId: string;
 }
@@ -275,7 +286,7 @@ interface SkipResult {
 interface StopParams {
   /**
    * Also empty the buffer.
-   * @zh 是否同时清空缓冲。
+   * @zh 停止播放时是否同步清空已缓冲的曲目
    * @default true
    */
   clearBuffer?: boolean;
@@ -284,27 +295,27 @@ interface StopParams {
 interface GetStateResult {
   /**
    * Whether a JIT session is active.
-   * @zh 是否有活动的 JIT 会话。
+   * @zh 当前是否存在活跃运行的 JIT 会话
    */
   isActive: boolean;
   /**
    * The session state.
-   * @zh 会话状态。
+   * @zh 会话当前运行状态
    */
   state: JitQueueState;
   /**
    * Identifier of the playing track; empty when none.
-   * @zh 正在播放的曲目标识；没有时为空。
+   * @zh 当前正在播放的曲目标识符 trackId（缺省时为空字符串）
    */
   currentTrackId: string;
   /**
    * Identifier of the buffered next track; empty when none.
-   * @zh 已缓冲的下一首标识；没有时为空。
+   * @zh 已预载到缓冲的下一首曲目标识符（缺省时为空字符串）
    */
   nextTrackId: string;
   /**
    * Tracks in the buffer.
-   * @zh 缓冲里的曲目数。
+   * @zh 当前缓冲队列中待播放的曲目总数
    */
   bufferSize: Int;
   /**
@@ -312,7 +323,7 @@ interface GetStateResult {
    * this foobar2000 session creates or takes it over, even when one is left from an earlier
    * session, and again after the playlist is removed, which also ends the JIT session. Stopping
    * or clearing keeps the index of the emptied playlist.
-   * @zh 影子播放列表的索引；在本次 foobar2000 运行中的 `jitQueue.playNow` 或 `jitQueue.preloadBatch` 创建或接管它之前为 `-1`，即便上次运行留下了一个；列表被删掉之后也回到 `-1`，同时 JIT 会话结束。停止或清空保留那张已清空列表的索引。
+   * @zh 影子播放列表索引（被外部删除时重置为 -1 并终止会话；停止或清空操作会保留空列表的索引）
    */
   shadowPlaylist: Int;
 }
@@ -321,20 +332,20 @@ interface PreloadBatchParams {
   /**
    * Track URLs or `path|subsong:N` values. Entries longer than 2048 characters are dropped and
    * counted in `invalidCount`; at most 10000 entries may remain.
-   * @zh 曲目 URL 或 `path|subsong:N`。超过 2048 字符的条目丢弃并计入 `invalidCount`；剩余最多 10000 条。
+   * @zh 待批量预载的音频 URL 或「path|subsong:N」条目列表（超出 2048 字符的条目将被丢弃并计入 invalidCount；单次最多支持 10000 条）
    * @security MediaRead
    */
   urls?: string[];
   /**
    * Which entry to start playing from.
-   * @zh 从第几条起播。
+   * @zh 批量插入后起始起播的曲目索引 startIndex
    * @minimum 0
    * @default 0
    */
   startIndex?: Int;
   /**
    * Empty the shadow playlist before inserting. `false` appends.
-   * @zh 插入前先清空影子播放列表。`false` 为追加。
+   * @zh 插入前是否清空影子播放列表（false 为追加到末尾）
    * @default true
    */
   replace?: boolean;
@@ -343,12 +354,12 @@ interface PreloadBatchParams {
 interface PreloadBatchResult {
   /**
    * How many tracks were inserted.
-   * @zh 插入的曲目数。
+   * @zh 实际成功追加或写入的曲目数量
    */
   tracksAdded: Int;
   /**
    * How many entries were dropped for being too long.
-   * @zh 因过长被丢弃的条数。
+   * @zh 因长度超出限制等原因被丢弃的无效条目数
    */
   invalidCount: Int;
 }

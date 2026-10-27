@@ -43,9 +43,8 @@ struct Resolution {
 // directory 下有名为 index.html 的文件（不是同名目录）时为真；directory 为空时为假。
 bool HasIndexHtml(const std::wstring& directory);
 
-// 按 Candidates 的字段顺序返回第一个含 index.html 的目录。
-// 每一级都按 index.html 判定：只有目录、没有入口文件的候选不算命中，例如组件包里
-// 预建的空 dist 目录。这样活动模板缺入口文件时，才会继续落到后面的级别。
+// 按 Candidates 的字段顺序返回第一个含 index.html 的目录。只有目录、没有入口文件的候选
+// 不算命中（如组件包里预建的空 dist），活动模板缺入口文件时才会落到后面的级别。
 Resolution Resolve(const Candidates& candidates);
 
 }  // namespace frontend_directory_policy

@@ -1,10 +1,12 @@
 ﻿#include "pch.h"
 #include "window/WindowChromeApplier.h"
+#include "window/DwmCompatibility.h"
 #include "window/WindowChromeTrace.h"
 #include "webview/WebViewHost.h"
 
 namespace {
 static HRESULT S_DwmSetWindowAttribute(HWND h, DWORD a, LPCVOID d, DWORD s) {
+    if (!dwm_compatibility::Current().SupportsAttribute(a)) return E_NOTIMPL;
     return ::DwmSetWindowAttribute(h, a, d, s);
 }
 
@@ -55,6 +57,11 @@ static bool S_IsManagedBackdropEffect(const std::string& effect) {
 }
 
 static HRESULT S_ApplyBackdropEffect(HWND hwnd, const std::string& effect) {
+    const auto& capabilities = dwm_compatibility::Current();
+    if (!capabilities.Mica()) {
+        // 没有材质能力的系统已解析为纯色，不需要向不存在的属性写关闭值。
+        return effect == "none" || effect == "system" ? S_OK : E_NOTIMPL;
+    }
     int backdropType = S_BackdropTypeFromEffect(effect);
 
     HRESULT hr = S_DwmSetWindowAttribute(hwnd, DWMWA_SYSTEMBACKDROP_TYPE_V,

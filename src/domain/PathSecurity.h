@@ -7,11 +7,10 @@
 // 策略:
 //   - 非系统盘 (D:, E:, ...) 默认放行
 //   - 系统盘 (C:) 仅允许白名单目录
-//   - 危险目录黑名单 (Windows, System32, Program Files)
+//   - 危险目录黑名单 (Windows, System32, Program Files); FB2K profile 例外
 //   - 网络路径: 映射盘先改写为 UNC; 回环共享 (指向本机对象的 \\Server\Share)
 //     按其指向的本地路径判定; 真远程共享视同非系统盘
-//   - 映射表刷新可能在任意绝对盘符路径的校验中触发一轮共享根探测
-//     (代价登记在 NetworkShareResolver.h)
+//   - 映射表刷新只枚举名称；共享身份在 UNC 访问或反向别名查询时核对
 //   - 支持 FB2K 特殊协议 (archive://, tone://, cdda://)
 //   - 上下文信任: 播放列表/媒体库中的文件自动信任
 //
@@ -124,6 +123,7 @@ private:
     wchar_t systemDrive_ = L'C';
     std::vector<std::wstring> whitelist_;
     std::vector<std::wstring> blacklist_;
+    std::vector<std::wstring> blacklistExempt_;
     std::vector<std::wstring> writeAllowedDirs_;
     
     // ========================================
@@ -215,8 +215,10 @@ private:
     // 安全的目录前缀比较: 要求 path 与 prefix 精确匹配或 path 在 prefix 目录内部
     static bool IsPathPrefixOf(const std::wstring& prefix, const std::wstring& path);
 
+    // FB2K profile 及其子路径不算黑名单。便携版装在 Program Files 下时，
+    // profile 也落在黑名单前缀内，宿主自己加载的模板目录会因此读写不了。
     bool IsInBlacklist(const std::wstring& path);
-    
+
     bool IsInWhitelist(const std::wstring& path);
     
     // 严格写白名单 (profile / temp)。三个写入校验共用同一份判定,
@@ -258,6 +260,8 @@ private:
     };
     bool MemoAddable(TrustQueryMemo& m, const std::wstring& s);
     bool MemoMember(TrustQueryMemo& m, const std::wstring& s);
+    // 原始媒体曲目按自身 subsong 查询，结果以原始拼写记忆，避免与物理文件查询混淆。
+    bool MemoTrackMember(TrustQueryMemo& m, const std::wstring& s);
     
     // 信任拼写集, 三部分取并集 (字节精确去重), 都不能少:
     //   - 调用方原始拼写 rawPath 原样。它与旧实现查询的字符串完全一致, 保证新集合
@@ -299,8 +303,8 @@ private:
     bool IsInTrustedMediaRoots(const std::wstring& path);
     
     // 检查文件是否在媒体库或播放列表中 (上下文信任)
-    // 修复: 遍历全部播放列表 / 规范化路径比较 / 忽略 subsong index
-    bool IsItemInLibraryOrPlaylist(const std::wstring& path);
+    // 库成员使用指定轨号；播放列表保持文件路径级信任。
+    bool IsItemInLibraryOrPlaylist(const std::wstring& path, t_uint32 subsong = 0);
     
     // 逐条扫描全部播放列表。索引不可用时的回退路径, 也是索引的构建口径来源:
     // 两者都拿 item->get_path() 原值与 g_get_canonical_path 的结果比较,

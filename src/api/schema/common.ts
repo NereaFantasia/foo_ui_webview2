@@ -14,23 +14,45 @@ export type Int = number;
 export type Json = unknown;
 
 /**
- * A playlist's GUID instead of its index, written with braces as `playlist.getAll` and every
- * result or event that names a playlist report it; either hex case is accepted. It keeps naming
- * the same playlist while other playlists are added, removed or reordered, which an index does
- * not. Giving both this and the index, or a malformed GUID, fails with `INVALID_PARAMS`. A
- * playlist that no longer exists fails with `NOT_FOUND`; the call never falls back to another
- * playlist. A malformed GUID and a missing playlist carry the GUID given as
- * `details.playlistGuid`.
- * @zh 播放列表的 GUID，用来代替序号；写法带花括号，与 `playlist.getAll` 以及所有指明播放列表的结果、事件报出的一致；十六进制大小写均可。别的列表增删或重排时它仍指向同一个列表，序号做不到。同时给了它和序号，或 GUID 格式不对，以 `INVALID_PARAMS` 失败。列表已不存在时以 `NOT_FOUND` 失败，不会改用别的列表。GUID 格式不对与列表不存在这两种失败都以 `details.playlistGuid` 带回传入的 GUID。
+ * Persistent unique identifier of a playlist (bracketed GUID, case-insensitive), used in place
+ * of a mutable index. Mutually exclusive with `playlist`; passing both or an invalid format fails
+ * with `INVALID_PARAMS`. Fails with `NOT_FOUND` if the playlist does not exist, never falling
+ * back. Invalid-format and not-found failures return the given GUID in `details.playlistGuid`.
+ * @zh 播放列表的持久唯一标识（带花括号 GUID，大小写均可）。用于替代易变序号。与序号互斥，同时传入或格式非法以 `INVALID_PARAMS` 失败。列表不存在时以 `NOT_FOUND` 失败，不回退至其他列表。格式非法或列表不存在时，错误详情均带回 `details.playlistGuid`。
  */
 export type PlaylistGuid = string;
 
 /**
- * The playlist's GUID, written as `{XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX}`. Pass it as
- * `playlistGuid` to address this playlist even after the playlist list has changed.
- * @zh 播放列表的 GUID，写成 `{XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX}`。作为 `playlistGuid` 传入，播放列表清单变了之后仍能指定这个列表。
+ * Unique identifier of the playlist, formatted as `{XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX}`. Pass
+ * as `playlistGuid` to reliably target this playlist.
+ * @zh 播放列表的唯一标识，格式为 `{XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX}`。后续可作为 `playlistGuid` 稳定引用该列表。
  */
 export type ReportedPlaylistGuid = string;
+
+/**
+ * Opaque version token for playlist tracks or queue items, comparable only for equality. Changes
+ * whenever items are added, removed, reordered, or replaced, and for the queue also when
+ * playback consumes its next entry; selection, focus, renames, and tag edits do not affect it.
+ * Invalid across process restarts.
+ * @zh 曲目行集合或队列的不透明版本号，仅支持相等性比较。条目增删、重排或替换时均会变化，队列在播放取走下一项时也会变化；选择、焦点、重命名与标签编辑不影响此值。进程重启后旧版本永久失效。
+ */
+export type ContentVersion = string;
+
+/**
+ * Expected content version for optimistic concurrency control. When mismatched, mutations are
+ * aborted with `STALE_TARGET` (`details.current` carries current version). Omitted, no check is made.
+ * @zh 预期内容版本，用于乐观并发控制。版本不匹配时不执行变更并以 `STALE_TARGET` 失败（`details.current` 返回当前最新版本）。省略时不校验。
+ */
+export type ExpectedContentVersion = string;
+
+/**
+ * How an operation ended: `completed` when everything it was asked to do was done; `partial` when
+ * some of it was done and the rest was not; `cancelled` when the user or the caller stopped it;
+ * `failed` when none of it was done; `unknown` when the host cannot tell, as with commands that
+ * report nothing back.
+ * @zh 操作如何结束：`completed` 要求的都做完了；`partial` 做了一部分，其余没做成；`cancelled` 被用户或调用方停下；`failed` 什么也没做成；`unknown` 宿主无从得知，例如不回报结果的命令。
+ */
+export type OperationStatus = 'completed' | 'partial' | 'cancelled' | 'failed' | 'unknown';
 
 /**
  * One track, as every method whose declaration returns whole rows reports it: the playing
@@ -87,6 +109,12 @@ export interface Track {
    */
   album: string;
   /**
+   * Opaque album identity when its original name or album artist contains invalid UTF-8.
+   * Use this instead of the display names to match an album row; absent for ordinary names.
+   * @zh 原始专辑名或专辑艺术家含非法 UTF-8 时提供的不透明身份标识。此时用它匹配专辑行，不用显示名称；普通名称不带此字段。
+   */
+  albumId?: string;
+  /**
    * Every ALBUM ARTIST value joined with `", "`; empty when untagged.
    * @zh 全部 ALBUM ARTIST 值用 `", "` 连接；没有标签时为空。
    */
@@ -95,8 +123,9 @@ export interface Track {
    * Every ALBUM ARTIST value in tag order, so `albumArtists.join(", ")` equals `albumArtist`;
    * empty when untagged. `library.getAlbums` files a track that has an `album` under the name
    * `album` and the album artist `albumArtists[0]`, or `artists[0]` when this array is empty
-   * (`""` when both are); those are the `name` and `albumArtist` of that album's row.
-   * @zh 全部 ALBUM ARTIST 值，按标签顺序，`albumArtists.join(", ")` 等于 `albumArtist`；没有标签时为空数组。`library.getAlbums` 把有 `album` 的曲目归入名为 `album`、专辑艺术家为 `albumArtists[0]` 的专辑，本数组为空时取 `artists[0]`（两者都空时为 `""`）；这两个值就是该专辑行的 `name` 与 `albumArtist`。
+   * (`""` when both are); those are the `name` and `albumArtist` of that album's row. When
+   * `albumId` is present, use it instead: replacement characters can make display names equal.
+   * @zh 全部 ALBUM ARTIST 值，按标签顺序，`albumArtists.join(", ")` 等于 `albumArtist`；没有标签时为空数组。`library.getAlbums` 把有 `album` 的曲目归入名为 `album`、专辑艺术家为 `albumArtists[0]` 的专辑，本数组为空时取 `artists[0]`（两者都空时为 `""`）；这两个值就是该专辑行的 `name` 与 `albumArtist`。存在 `albumId` 时应改用它匹配，因为替换字符可能让不同原始名称显示相同。
    */
   albumArtists: string[];
   /**

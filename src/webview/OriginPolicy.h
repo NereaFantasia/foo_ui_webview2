@@ -32,4 +32,15 @@ std::wstring DevServerOrigin(bool useDevServer, const std::string& urlUtf8);
 // this WebView (`registered`, already normalised by OriginOf).
 bool IsTrustedPage(std::wstring_view url, const std::vector<std::wstring>& registered);
 
+// Whether a normalised origin (OriginOf output) is on this computer: host
+// "localhost", a dotted-decimal 127.0.0.0/8 address, or [::1]. Decided from the
+// text alone, without DNS, so "*.localhost" and names that resolve to loopback
+// do not count.
+bool IsLoopbackOrigin(std::wstring_view origin);
+
+// Origin to trust for a panel's URL override, or empty when its page may only
+// display. Loopback and the bundled origin need no approval; any other origin
+// must equal approvedOrigin, the one the user allowed in the panel configuration.
+std::wstring PanelUrlTrustedOrigin(std::wstring_view url, std::wstring_view approvedOrigin);
+
 }  // namespace origin_policy

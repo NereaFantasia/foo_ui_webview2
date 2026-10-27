@@ -1,5 +1,6 @@
 ﻿#pragma once
 #include "pch.h"
+#include "window/WindowActivationPolicy.h"
 #include "window/PopupWindow.h"
 #include "window/MenuActionContract.h"
 #include "window/MenuOverlayGeometry.h"
@@ -26,6 +27,7 @@ public:
     void SetWebViewReadyCallback(std::function<void()> callback) { webViewReadyCallback_ = std::move(callback); }
 
 protected:
+    bool OwnsStartupVisibility() const override { return false; }
     void OnWebViewReady() override;
 
 private:
@@ -287,6 +289,10 @@ private:
     // previousForeground_ 记录 Show 前的前台窗口，FinalizeHide 时归还。
     bool activationHandoff_ = false;
     HWND previousForeground_ = nullptr;
+    window_activation::Reference previousForegroundReference_;
+    window_activation::Return focusReturn_;
+    UINT_PTR watchdogTimerId_ = 0, measureTimerId_ = 0, closeTimerId_ = 0;
+    UINT_PTR nextTimerId_ = 0xFB0000;
     bool suppressSubmenuDismiss_ = false;
     bool openingSubmenu_ = false;
     std::uint64_t lastSubmenuPanelSequence_ = 0;

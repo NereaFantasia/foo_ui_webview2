@@ -15,7 +15,8 @@ struct Rect {
 };
 
 // Scales a rectangle the page gave in CSS pixels by scale, the page's
-// devicePixelRatio (window DPI / 96 times the WebView zoom). The CSS values
+// devicePixelRatio (window DPI / 96 times the Windows text size and the WebView
+// zoom). The CSS values
 // arrive already truncated to integers, as for the drag rectangles. nullopt when
 // the scaled width or height is not positive, which the caller treats as "no
 // button".

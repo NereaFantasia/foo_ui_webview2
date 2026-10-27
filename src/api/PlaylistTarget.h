@@ -7,8 +7,11 @@
 //
 // GUID 找不到时直接失败，不退回序号或活动列表：页面按 GUID 调用时，目标可能刚被删掉，
 // 退回别的列表就会把曲目写进页面没点名的列表。
+//
+// 按行号读写的方法还在这里取列表的内容版本；期望版本不符的失败与队列方法共用。
 #include "api/ApiResult.h"
 #include "api/ErrorEnvelope.h"
+#include "core/ContentVersions.h"
 #include "interfaces/IPlaylistService.h"
 #include "utils/GuidUtils.h"
 #include <cstddef>
@@ -101,6 +104,18 @@ inline std::optional<Failure> ResolvePlaylistGuidOrder(const IPlaylistService& s
 // 结果里的 guid 字段，写法与 playlistGuid 接受的一致，原样传回即可。
 inline std::string PlaylistGuidOf(const IPlaylistService& svc, size_t index) {
     return GuidUtils::GuidToString(svc.get_playlist_guid(index));
+}
+
+inline std::string PlaylistContentVersion(const IPlaylistService& svc, size_t index) {
+    return content_version::ListToken(PlaylistGuidOf(svc, index));
+}
+
+// expectedVersion 与当前版本不同时的失败；调用方据此不做任何修改。未给或相同时为空。
+inline std::optional<Failure> StaleContent(const std::optional<std::string>& expected,
+                                           const std::string& current) {
+    if (!expected || *expected == current) return std::nullopt;
+    return Fail("Content version changed", ApiErrorCode::STALE_TARGET,
+                {{"details", nlohmann::json{{"current", current}}}});
 }
 
 // 按路径加曲目时，解析前得到的序号到写入时可能已指向另一张列表：process_locations 开着

@@ -80,6 +80,19 @@ SizeClampResult ClampSize(int reqW, int reqH, int minW, int minH, int maxW, int 
     return result;
 }
 
+ResizeRect ResizeFromEdges(const ResizeRect& start, int dx, int dy, const ResizeEdges& edges,
+                          int minW, int minH, int maxW, int maxH) {
+    const int requestedWidth = start.width + (edges.left ? -dx : edges.right ? dx : 0);
+    const int requestedHeight = start.height + (edges.top ? -dy : edges.bottom ? dy : 0);
+    const auto size = ClampSize(requestedWidth, requestedHeight, minW, minH, maxW, maxH);
+    return {
+        edges.left ? start.x + start.width - size.width : start.x,
+        edges.top ? start.y + start.height - size.height : start.y,
+        size.width,
+        size.height
+    };
+}
+
 bool SizeMatchesWithinTolerance(int actual, int expected, int tolerance) {
     const int allowed = tolerance < 0 ? 0 : tolerance;
     const int delta = actual - expected;

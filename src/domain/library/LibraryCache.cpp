@@ -29,12 +29,17 @@ void LibraryCache::Invalidate() {
     
     m_valid = false;
     ++m_generation;
-    
+    ++m_fileGeneration;
+
     m_lastModified = std::chrono::duration_cast<std::chrono::milliseconds>(
         std::chrono::system_clock::now().time_since_epoch()
     ).count();
     
     FB2K_console_print("[LibraryCache] Cache invalidated");
+}
+
+void LibraryCache::InvalidateHookFields() {
+    ++m_generation;
 }
 
 bool LibraryCache::IsValid() const {
@@ -58,6 +63,10 @@ int64_t LibraryCache::GetLastModified() const {
 
 uint64_t LibraryCache::GetGeneration() const {
     return m_generation.load();
+}
+
+uint64_t LibraryCache::GetFileGeneration() const {
+    return m_fileGeneration.load();
 }
 
 void LibraryCache::NoteKept() {

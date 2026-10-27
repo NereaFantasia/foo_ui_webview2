@@ -1,5 +1,7 @@
 ﻿#pragma once
 #include "interfaces/IPlaylistService.h"
+#include "domain/autoplaylist/ManagedAutoplaylist.h"
+#include <stdexcept>
 
 // Production implementation of IPlaylistService.
 // All methods delegate to playlist_manager::get() / autoplaylist_manager::get().
@@ -323,8 +325,43 @@ public:
         return result;
     }
 
+    api::autoplaylist_editor::Probe probe_autoplaylist_editor(size_t playlist) const override {
+        core_api::ensure_main_thread();
+        api::autoplaylist_editor::BackendHooks hooks;
+        hooks.hasClient = [](size_t index) {
+            return autoplaylist_manager::get()->is_client_present(index);
+        };
+        hooks.queryClient = [](size_t index) {
+            auto client = autoplaylist_manager::get()->query_client(index);
+            if (!client.is_valid()) throw std::runtime_error("Autoplaylist client is unavailable");
+            std::optional<bool> availability;
+            service_ptr_t<autoplaylist_client_v2> clientV2;
+            if (client->service_query_t(clientV2)) availability = clientV2->show_ui_available();
+            return api::autoplaylist_editor::Client{
+                availability,
+                [client](size_t currentIndex) {
+                    core_api::ensure_main_thread();
+                    client->show_ui(currentIndex);
+                }
+            };
+        };
+        hooks.isCompatibleAutoplaylistLock = [this](size_t index) {
+            const auto detected = detect_autoplaylist(index);
+            return detected.isAutoplaylist && detected.isDuiAutoplaylist;
+        };
+        hooks.showLock = [](size_t index) {
+            core_api::ensure_main_thread();
+            return playlist_manager::get()->playlist_lock_show_ui(index);
+        };
+        return api::autoplaylist_editor::ProbeProvider(hooks, playlist);
+    }
+
     void add_autoplaylist_client(size_t playlist, const char* query, const char* sort, uint32_t flags) override {
         autoplaylist_manager::get()->add_client_simple(query, sort, playlist, flags);
+    }
+
+    bool is_managed_autoplaylist(size_t playlist) const override {
+        return managed_autoplaylist::IsManaged(playlist);
     }
 
     void remove_autoplaylist_client(size_t playlist) override {
@@ -351,6 +388,6 @@ public:
     AsyncAddPathsInfo start_add_paths_async(
         size_t playlist, const nlohmann::json& paths,
         const std::string& operationId,
-        std::function<void(size_t addedCount, size_t totalCount)> onComplete) override;
+        std::function<void(const AsyncAddOutcome&)> onComplete) override;
     ReplaceAllResult replace_all(size_t playlist, const nlohmann::json& paths) override;
 };

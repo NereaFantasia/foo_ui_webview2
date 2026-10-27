@@ -3,6 +3,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <stdexcept>
 
 namespace fb2k_waveform {
 
@@ -80,6 +81,40 @@ RawWindows Accumulator<Sample>::Finish() {
 
 template class Accumulator<float>;
 template class Accumulator<double>;
+
+template <typename Sample>
+DecodedAccumulator<Sample>::DecodedAccumulator(int resolution, double duration)
+    : resolution_(resolution), duration_(duration) {}
+
+template <typename Sample>
+void DecodedAccumulator<Sample>::Feed(const Sample* data, size_t frames,
+                                      unsigned channels, unsigned sampleRate) {
+    if (frames == 0) return;
+    if (channels == 0 || sampleRate == 0) {
+        throw std::runtime_error("Decoded audio has an invalid sample rate or channel count");
+    }
+    if (!accumulator_) {
+        const auto totalFrames = static_cast<uint64_t>(duration_ * sampleRate);
+        const auto framesPerWindow = std::max<uint64_t>(1, totalFrames / static_cast<uint64_t>(resolution_));
+        accumulator_.emplace(resolution_, framesPerWindow);
+        sampleRate_ = sampleRate;
+        channels_ = channels;
+    } else if (sampleRate != sampleRate_ || channels != channels_) {
+        throw std::runtime_error("Audio format changed during waveform decoding");
+    }
+    accumulator_->Feed(data, frames, channels);
+}
+
+template <typename Sample>
+DecodedWindows DecodedAccumulator<Sample>::Finish() {
+    if (!accumulator_) {
+        throw std::runtime_error("Decoder returned no audio frames");
+    }
+    return {accumulator_->Finish(), sampleRate_, channels_};
+}
+
+template class DecodedAccumulator<float>;
+template class DecodedAccumulator<double>;
 
 Rendered Render(const RawWindows& raw, const RenderOptions& options) {
     Rendered out;

@@ -1,13 +1,13 @@
-#pragma once
+﻿#pragma once
 // ============================================
-// MetaAccess.h - 多值标签的 fb2k 适配层
+// MetaAccess.h - 标签的 fb2k 适配层
 // ============================================
 //
 // 多值语义字段（artist / album artist / genre / composer）从 file_info 取值的
 // 唯一入口，拼接与去重语义在纯值层 MetaValueOps.h。file_info 的完整定义由
 // pch.h 提供（引用本头的 TU 全部使用 PCH），此处不自行 include fb2k 头。
 //
-// 四个函数会在主线程（SDK 回调）与 CPU worker 线程（deferred 序列化）两个
+// 这些函数会在主线程（SDK 回调）与 CPU worker 线程（deferred 序列化）两个
 // 上下文被调用：禁止引入任何共享可变状态，含 static 缓冲。
 //
 // 实现约定：每次调用只做一次字段查找（meta_find），单值快路径不分配 vector，
@@ -20,6 +20,11 @@
 #include <cstdint>
 #include <string>
 #include <vector>
+
+// 首值展示文本；字段缺失时返回空串，非法 UTF-8 替换为 U+FFFD。
+inline std::string MetaFirst(const file_info& info, const char* name) {
+    return StringUtils::SafeUtf8(info.meta_get(name, 0));
+}
 
 // 白名单字段的显示串：多值按 sep 原序拼接（不去重、不丢空值）。
 // 标签为合法 UTF-8 的单值曲目上与 meta_get 首值结果逐字节等价；

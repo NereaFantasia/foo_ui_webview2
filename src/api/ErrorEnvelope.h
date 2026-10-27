@@ -36,11 +36,15 @@ namespace ApiErrorCode {
 
     // --- State/resource errors ---
     constexpr const char* NOT_FOUND         = "NOT_FOUND";          // resource not found
-    constexpr const char* LOCKED            = "LOCKED";             // playlist locked etc.
+    constexpr const char* OPERATION_PENDING = "OPERATION_PENDING";
+    constexpr const char* STALE_TARGET = "STALE_TARGET";
+    constexpr const char* LOCKED          = "LOCKED";             // playlist locked etc.
     constexpr const char* NOT_SUPPORTED     = "NOT_SUPPORTED";      // operation unsupported by this environment or data
     constexpr const char* PANEL_MODE_UNSUPPORTED = "PANEL_MODE_UNSUPPORTED"; // called from a DUI/CUI panel, needs the standalone window
     constexpr const char* LIBRARY_DISABLED  = "LIBRARY_DISABLED";   // library not enabled
     constexpr const char* NO_ACTIVE_ITEM    = "NO_ACTIVE_ITEM";     // no active playlist/track
+    constexpr const char* CONFLICT          = "CONFLICT";           // stale state or request ID reused with another payload
+    constexpr const char* NOT_OWNER         = "NOT_OWNER";          // document does not hold the current control token
 
     // --- Origin / caller trust ---
     constexpr const char* ORIGIN_DENIED     = "ORIGIN_DENIED";      // document origin not trusted for this capability

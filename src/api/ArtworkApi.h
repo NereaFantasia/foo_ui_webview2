@@ -47,9 +47,12 @@ bool GetArtworkBinaryForPath(const std::string& path, const std::string& type, B
 
 // Try to resolve stable source file paths for cache sharing.
 // Returns false for embedded-only artwork or when the source paths are unavailable.
+// Opens the media file through album_art_manager_v2, which can block on slow or
+// cloud storage; `abort` interrupts it the same way as GetArtworkBinaryForPath.
 bool TryGetArtworkSourcePathsForPath(
     const std::string& path,
     const std::string& type,
-    std::vector<std::string>& outPaths);
+    std::vector<std::string>& outPaths,
+    abort_callback& abort = fb2k::noAbort);
 
 }

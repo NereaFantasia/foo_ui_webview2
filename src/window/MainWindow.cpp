@@ -219,6 +219,7 @@ LRESULT CALLBACK MainWindow::WindowProc(HWND hwnd, UINT msg, WPARAM wParam, LPAR
         pThis = reinterpret_cast<MainWindow*>(pCreate->lpCreateParams);
         SetWindowLongPtrW(hwnd, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(pThis));
         pThis->hwnd_ = hwnd;
+        WindowManager::GetInstance().RegisterActivationTarget(hwnd);
     } else {
         pThis = reinterpret_cast<MainWindow*>(GetWindowLongPtrW(hwnd, GWLP_USERDATA));
     }
@@ -233,10 +234,10 @@ LRESULT CALLBACK MainWindow::WindowProc(HWND hwnd, UINT msg, WPARAM wParam, LPAR
 LRESULT MainWindow::HandleMessage(UINT msg, WPARAM wParam, LPARAM lParam) {
     // TaskbarButtonCreated 在 Explorer 重启或首次出现时初始化 ITaskbarList3
     {
-        UINT tbcMsg = TaskbarIntegration::GetInstance().GetTaskbarCreatedMsg();
+        UINT tbcMsg = TaskbarIntegration::GetTaskbarCreatedMsg();
         if (tbcMsg != 0 && msg == tbcMsg) {
             TaskbarIntegration::GetInstance().Initialize(hwnd_);
-            TrayIcon::GetInstance().RecreateAfterShellRestart();
+            if (!TrayIcon::GetInstance().IsCreated()) TrayIcon::GetInstance().RecreateAfterShellRestart();
             return 0;
         }
     }
@@ -1071,9 +1072,15 @@ LRESULT MainWindow::HandleMessage(UINT msg, WPARAM wParam, LPARAM lParam) {
         }
             
         case WM_CONTEXTMENU:
-            // 不自动显示右键菜单，让前端通过 ui.showContextMenu API 控制
-            // 前端可以使用 e.preventDefault() 阻止默认菜单
-            // 需要菜单时调用 fb2k.invoke('ui.showContextMenu', {x, y})
+            // 页面在时右键菜单由前端经 ui.showContextMenu 控制，这里不弹；
+            // WebView 不可用时页面那条路断了，改弹原生兜底菜单，否则窗口里没有任何出口
+            if (!webView_ || !webView_->IsReady()) {
+                ShowFallbackContextMenu(lParam);
+            }
+            return 0;
+
+        case WM_DEFERRED_INIT_FAILURE_REPORT:
+            ShowInitFailureDialog();
             return 0;
             
         case WM_COMMAND:
@@ -1277,15 +1284,12 @@ void MainWindow::OnCreate() {
         ApplyStartupPresentationDecision(
             startupPresentationCoordinator_.ForceFallbackReveal(),
             "InitializeWebViewFailed");
-        MessageBoxW(hwnd_, 
-            TR("Failed to initialize WebView2.\n\nPlease ensure WebView2 Runtime is installed:\nhttps://go.microsoft.com/fwlink/p/?LinkId=2124703",
-               "WebView2 初始化失败。\n\n请确认已安装 WebView2 运行时:\nhttps://go.microsoft.com/fwlink/p/?LinkId=2124703"),
-            TR("WebView2 UI Error", "WebView2 UI 错误"),
-            MB_OK | MB_ICONERROR);
+        PostMessage(hwnd_, WM_DEFERRED_INIT_FAILURE_REPORT, 0, 0);
     }
 }
 
 void MainWindow::OnDestroy() {
+    WindowManager::GetInstance().UnregisterActivationTarget(hwnd_);
     LOG("MainWindow::OnDestroy - saving position");
     KillTimer(hwnd_, STARTUP_REVEAL_TIMER_ID);
     KillTimer(hwnd_, SHORT_REVEAL_TIMER_ID);
@@ -1333,6 +1337,13 @@ void MainWindow::HideWindowToTray() {
     // 时回退 Low）；CDP 自动化 keep-alive veto 在投影内（托盘期间 CDP 工具须持续可用）。
     // WM_SHOWWINDOW(TRUE) 或从最小化恢复的 WM_SIZE 分支清除 kBgSuspendTrayHidden；
     // 各恢复调用方随后通过 RestoreSurfaceAfterHidden 同步 surface 状态。
+    //
+    // 没有托盘图标时隐藏的窗口无处恢复（关闭/最小化到托盘可在首选项里勾选，与页面是否
+    // 调用 tray.create 无关），退回为最小化到任务栏。
+    if (!TrayIcon::GetInstance().IsCreated()) {
+        ShowWindow(hwnd_, SW_MINIMIZE);
+        return;
+    }
     ClearCoverSuspend();
     SetBgSuspend(kBgSuspendTrayHidden, true, "tray-hide");
     // 投影被否决（CDP keep-alive）时页面保持 IsVisible=TRUE，Visual Hosting 的渲染/输入
@@ -1675,6 +1686,7 @@ void MainWindow::OnWebViewInitFailed() {
         console::print("[WebView2 UI] WebView rebuild failed during controller creation");
     }
     WebViewPanel::OnWebViewInitFailed();
+    PostMessage(hwnd_, WM_DEFERRED_INIT_FAILURE_REPORT, 0, 0);
 }
 
 bool MainWindow::IsStartupRevealChromeReady() const {

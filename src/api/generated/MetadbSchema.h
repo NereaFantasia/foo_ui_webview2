@@ -45,10 +45,12 @@ inline json ToJson(const MetadbChangedTrackItem& v) {
 }
 
 struct ChangedPayload {
-    static constexpr std::array<std::string_view, 4> kFields{{"tracks", "count", "fromHook", "timestamp"}};
+    static constexpr std::array<std::string_view, 6> kFields{{"tracks", "count", "handles", "truncated", "fromHook", "timestamp"}};
 
     std::vector<MetadbChangedTrackItem> tracks{};
     std::int64_t count{};
+    std::vector<std::string> handles{};
+    bool truncated{};
     bool fromHook{};
     std::int64_t timestamp{};
 };
@@ -57,6 +59,8 @@ inline json ToJson(const ChangedPayload& v) {
     json j = json::object();
     api::results::Put(j, "tracks", v.tracks);
     api::results::Put(j, "count", v.count);
+    api::results::Put(j, "handles", v.handles);
+    api::results::Put(j, "truncated", v.truncated);
     api::results::Put(j, "fromHook", v.fromHook);
     api::results::Put(j, "timestamp", v.timestamp);
     return j;

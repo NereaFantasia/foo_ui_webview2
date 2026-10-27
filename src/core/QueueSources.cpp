@@ -20,6 +20,17 @@ namespace jitq = api::jitQueue;
 
 using jit_queue_detail::Announce;
 
+class QueueLocationNotify : public process_locations_notify {
+public:
+    QueueLocationNotify(func_t completed, std::function<void()> aborted)
+        : m_completed(std::move(completed)), m_aborted(std::move(aborted)) {}
+    void on_completion(metadb_handle_list_cref items) override { m_completed(items); }
+    void on_aborted() override { m_aborted(); }
+private:
+    func_t m_completed;
+    std::function<void()> m_aborted;
+};
+
 // A track given to playNow / enqueueNext could not be added: `url` for a stream or playlist
 // location, `path` for a local file.
 void AnnounceUrlError(const JitSessionCaller& to, const std::string& trackId, const std::string& error,
@@ -49,7 +60,6 @@ void AnnouncePathError(const JitSessionCaller& to, const std::string& trackId, c
 bool QueueManager::IsLocalFilePath(const std::string& url) {
     if (url.empty()) return false;
     
-    // HTTP/HTTPS URLs are NOT local files — use case-insensitive prefix check
     {
         std::string lowerPrefix;
         if (url.length() >= 8) {
@@ -76,7 +86,6 @@ bool QueueManager::IsLocalFilePath(const std::string& url) {
         return true;
     }
     
-    // Check for file:// protocol
     if (url.length() >= 7) {
         std::string prefix = url.substr(0, 7);
         std::transform(prefix.begin(), prefix.end(), prefix.begin(), ::tolower);
@@ -85,7 +94,6 @@ bool QueueManager::IsLocalFilePath(const std::string& url) {
         }
     }
     
-    // Assume local if contains backslashes (Windows path separator)
     if (url.find('\\') != std::string::npos) {
         return true;
     }
@@ -97,7 +105,6 @@ bool QueueManager::IsLocalFilePath(const std::string& url) {
     for (const char* ext : audioExtensions) {
         if (lowerUrl.length() > strlen(ext) && 
             lowerUrl.compare(lowerUrl.length() - strlen(ext), strlen(ext), ext) == 0) {
-            // Has audio extension but no http prefix - likely local
             if (lowerUrl.find("://") == std::string::npos) {
                 return true;
             }
@@ -125,13 +132,26 @@ QueueManager::PreloadResult QueueManager::PreloadBatch(
         result.error = "startIndex out of range";
         return result;
     }
+
+    // 先把会失败的输入判定完，再撤销新协议的控制；转换只建立 handle，不访问文件内容。
+    metadb_handle_list allHandles;
+    try {
+        allHandles = BuildHandlesFromUrls(urls);
+    } catch (const std::exception& error) {
+        result.error = error.what();
+        return result;
+    } catch (...) {
+        result.error = "Unknown error";
+        return result;
+    }
+    if (allHandles.get_count() == 0) {
+        result.error = "No valid handles created from URLs";
+        return result;
+    }
     
-    FB2K_console_print("[JIT Queue] PreloadBatch: ", urls.size(), " tracks, startIndex=", startIndex, 
+    FB2K_console_print("[JIT Queue] PreloadBatch: ", urls.size(), " tracks, startIndex=", startIndex,
                        ", replace=", replace ? "true" : "false");
-    
-    // Cancel any pending async operation to prevent stale callback corruption
-    m_pendingOperation = false;
-    
+
     // Save and force playbackOrder to Default (0)
     {
         auto plm = playlist_manager::get();
@@ -149,7 +169,6 @@ QueueManager::PreloadResult QueueManager::PreloadBatch(
         }
     }
     
-    // Ensure shadow playlist exists
     if (m_shadowPlaylistIndex == pfc::infinite_size) {
         m_shadowPlaylistIndex = GetOrCreateShadowPlaylist();
     }
@@ -166,44 +185,50 @@ QueueManager::PreloadResult QueueManager::PreloadBatch(
             result.error = "Shadow playlist no longer exists";
             return result;
         }
+
+        LegacyTakeover();
         
         if (replace) {
             plm->playlist_clear(m_shadowPlaylistIndex);
+            std::lock_guard<std::mutex> lock(m_mutex);
+            m_rows.Reset();
         }
         
-        // Bulk handle_create — pure in-memory, no I/O
-        metadb_handle_list allHandles = BuildHandlesFromUrls(urls);
-        
-        if (allHandles.get_count() == 0) {
-            result.error = "No valid handles created from URLs";
-            return result;
-        }
-        
-        // Bulk insert into shadow playlist
+        VerifyRows(m_shadowPlaylistIndex);
         size_t base = plm->playlist_get_item_count(m_shadowPlaylistIndex);
         plm->playlist_insert_items(m_shadowPlaylistIndex, base, allHandles, pfc::bit_array_true());
         
         FB2K_console_print("[JIT Queue] PreloadBatch: Inserted ", allHandles.get_count(), 
                            " tracks at position ", base);
         
-        // Only start/restart playback when replacing or not yet Active
         bool alreadyPlaying = (m_state.load() == State::Active) && !replace;
+
+        // Appended rows are batch rows of the playing session; a batch that starts playback makes
+        // every row of the shadow playlist a batch row, so any of them counts as the session's.
+        const std::vector<jit_shadow::HandleKey> batchRows =
+            alreadyPlaying ? jit_queue_detail::HandleKeys(allHandles) : ReadRowHandles(m_shadowPlaylistIndex);
+        {
+            std::lock_guard<std::mutex> lock(m_mutex);
+            const jit_shadow::EntrySerial entry = ++m_lastEntry;
+            if (alreadyPlaying) {
+                m_rows.Insert(base, entry, jit_shadow::EntryKind::Batch, batchRows);
+            } else {
+                m_rows.ResetAsBatch(batchRows, entry);
+                // Starting playback replaces the session: its pending adds must not land
+                m_generations.EndSession();
+            }
+        }
         
         if (!alreadyPlaying) {
-            // Start playback from startIndex
             size_t playFrom = base + startIndex;
             if (playFrom >= plm->playlist_get_item_count(m_shadowPlaylistIndex)) {
-                playFrom = base;  // fallback to first inserted track
+                playFrom = base;
             }
             
-            plm->set_active_playlist(m_shadowPlaylistIndex);
-            plm->set_playing_playlist(m_shadowPlaylistIndex);
-            plm->playlist_execute_default_action(m_shadowPlaylistIndex, playFrom);
+            ActivatePlaybackOnShadow(m_shadowPlaylistIndex, playFrom);
             
-            // Update state
             m_state = State::Active;
             
-            // Only clear JIT URLs when starting new playback (not appending)
             {
                 std::lock_guard<std::mutex> lock(m_mutex);
                 // Starting playback starts a session owned by this page; appending to a playing
@@ -213,8 +238,8 @@ QueueManager::PreloadResult QueueManager::PreloadBatch(
                 m_nextTrackId.clear();
                 m_currentTitle.clear();
                 m_nextTitle.clear();
-                m_currentJitUrl.clear();
-                m_nextJitUrl.clear();
+                m_currentEntry = 0;
+                m_nextEntry = 0;
                 m_needNextRequested = false;
             }
         }
@@ -222,7 +247,6 @@ QueueManager::PreloadResult QueueManager::PreloadBatch(
         result.success = true;
         result.tracksAdded = allHandles.get_count();
         
-        // Emit completion event
         jitq::PreloadCompletePayload done;
         done.count = static_cast<std::int64_t>(allHandles.get_count());
         done.startIndex = static_cast<std::int64_t>(startIndex);
@@ -243,7 +267,7 @@ QueueManager::PreloadResult QueueManager::PreloadBatch(
 }
 
 //==============================================================================
-// Extracted Helpers (cognitive complexity reduction)
+// Helpers
 //==============================================================================
 
 std::pair<pfc::string8, t_uint32> QueueManager::ParseSubsongUrl(const std::string& url) {
@@ -293,88 +317,129 @@ metadb_handle_list QueueManager::BuildHandlesFromUrls(const std::vector<std::str
 }
 
 void QueueManager::HandleResolvedItems(metadb_handle_list_cref items, const std::string& trackId,
-                                        const std::string& sourceUrl, size_t playlistIndex, bool startPlayback,
-                                        bool replaceBufferedNext) {
+                                        const std::string& location, bool locationIsPath,
+                                        jit_shadow::EntrySerial entry, jit_shadow::Ticket ticket) {
+    // A later command superseded this add: no insert, no playback, no event
+    if (!AddIsLive(ticket, trackId, "resolved")) {
+        return;
+    }
+    const bool currentSlot = ticket.slot == jit_shadow::Slot::Current;
+
+    auto announceError = [&](const std::string& error) {
+        if (ReportSessionAdd(entry, false, error)) return;
+        if (locationIsPath) {
+            AnnouncePathError(GetSessionCaller(), trackId, error, location);
+        } else {
+            AnnounceUrlError(GetSessionCaller(), trackId, error, location);
+        }
+    };
+
     if (items.get_count() == 0) {
-        FB2K_console_print("[JIT Queue] Error: Failed to resolve URL: ", sourceUrl.c_str());
-        AnnounceUrlError(GetSessionCaller(), trackId, "Failed to resolve URL", sourceUrl);
-        if (startPlayback) m_pendingOperation = false;
+        const char* error = locationIsPath ? "Failed to resolve local file path" : "Failed to resolve URL";
+        FB2K_console_print("[JIT Queue] Error: ", error, ": ", location.c_str());
+        announceError(error);
         return;
     }
 
-    // 影子列表在解析期间被删掉时序号为 infinite_size，不能再激活播放。
+    if (items.get_count() > 1 && SessionOwnsEntry(entry)) {
+        ReportSessionAdd(entry, false, "multipleResources");
+        return;
+    }
+    if (SessionOwnsEntry(entry)) {
+        const auto [path, subsong] = ParseSubsongUrl(location);
+        (void)subsong;
+        if (strcmp(path.get_ptr(), location.c_str()) == 0 &&
+            PlaylistFormatUtils::ExtensionEquals(PlaylistFormatUtils::ExtractExtension(location), ".cue")) {
+            ReportSessionAdd(entry, false, "subsongRequired");
+            return;
+        }
+    }
+
+    // 解析期间（流媒体异步展开，或本地 process_locations 开着模态进度框）影子列表可能被挪动或
+    // 删掉，重读锁回调维护的序号；被删掉时序号为 infinite_size，不能再激活播放。
+    const size_t playlistIndex = m_shadowPlaylistIndex.load();
     auto plm = playlist_manager::get();
     if (playlistIndex >= plm->get_playlist_count()) {
         FB2K_console_print("[JIT Queue] Error: Shadow playlist no longer exists");
-        AnnounceUrlError(GetSessionCaller(), trackId, "Shadow playlist no longer exists", sourceUrl);
-        if (startPlayback) m_pendingOperation = false;
+        announceError("Shadow playlist no longer exists");
         return;
     }
-    
-    // Drop any stale buffered next first so this insert lands right after current,
-    // keeping the shadow playlist equal to the [current, next] window.
-    if (replaceBufferedNext) {
+
+    if (!currentSlot) {
         RemoveBufferedNextFromShadow(playlistIndex);
     }
-    
-    size_t currentCount = plm->playlist_get_item_count(playlistIndex);
-    plm->playlist_insert_items(playlistIndex, currentCount, items, bit_array_false());
-    FB2K_console_print("[JIT Queue] Added to buffer: ", trackId.c_str(), " at position ", currentCount);
-    
-    if (startPlayback) {
-        ActivatePlaybackOnShadow(playlistIndex);
+
+    VerifyRows(playlistIndex);
+    const size_t count = plm->playlist_get_item_count(playlistIndex);
+    size_t at;
+    {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        // playNow adds the current entry: its rows go before a next entry that resolved first
+        at = currentSlot ? m_rows.CurrentInsertPosition(m_nextEntry, count) : count;
+    }
+    const size_t base = plm->playlist_insert_items(playlistIndex, at, items, bit_array_false());
+    if (base != pfc::infinite_size) {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        m_rows.Insert(base, entry, jit_shadow::EntryKind::Single, jit_queue_detail::HandleKeys(items));
+    }
+    FB2K_console_print("[JIT Queue] Added to buffer: ", trackId.c_str(), " at position ", at, " (",
+                       items.get_count(), " items)");
+
+    // The current entry's first row: a next entry that resolved first stays after it
+    if (currentSlot && base != pfc::infinite_size) {
+        ActivatePlaybackOnShadow(playlistIndex, base);
         FB2K_console_print("[JIT Queue] Playback started");
     }
-    
-    if (startPlayback) m_pendingOperation = false;
+    ReportSessionAdd(entry, base != pfc::infinite_size, "insertFailed");
 }
 
 void QueueManager::AddUrlToPlaylistAsync(const std::string& url, const std::string& trackId,
-                                          const std::string& title, bool clearFirst, bool startPlayback,
-                                          bool replaceBufferedNext) {
-    // Lazy initialization: create shadow playlist on first use
+                                          const std::string& title, jit_shadow::EntrySerial entry,
+                                          jit_shadow::Ticket ticket) {
     if (m_shadowPlaylistIndex == pfc::infinite_size) {
         m_shadowPlaylistIndex = GetOrCreateShadowPlaylist();
     }
-    
-    // Capture copies for the lambda
+
     std::string urlCopy = url;
     std::string trackIdCopy = trackId;
-    
-    // ALL playlist operations MUST be done on the main thread
-    // Re-read shadow index inside lambda to avoid stale capture
-    fb2k::inMainThread([this, urlCopy, trackIdCopy, clearFirst, startPlayback, replaceBufferedNext]() {
+
+    // Playlist edits must run on the main thread; the index is read there, not captured.
+    fb2k::inMainThread([this, urlCopy, trackIdCopy, entry, ticket]() {
+        if (!AddIsLive(ticket, trackIdCopy, "queued")) {
+            return;
+        }
         size_t playlistIndex = m_shadowPlaylistIndex.load();
         try {
             auto plm = playlist_manager::get();
-            
-            // Validate playlist still exists
+
             if (playlistIndex >= plm->get_playlist_count()) {
                 FB2K_console_print("[JIT Queue] Error: Shadow playlist no longer exists");
-                if (startPlayback) m_pendingOperation = false;
-                AnnounceUrlError(GetSessionCaller(), trackIdCopy, "Shadow playlist no longer exists", urlCopy);
+                if (!ReportSessionAdd(entry, false, "shadowPlaylistMissing")) {
+                    AnnounceUrlError(GetSessionCaller(), trackIdCopy, "Shadow playlist no longer exists", urlCopy);
+                }
                 return;
             }
-            
-            if (clearFirst) {
+
+            if (ticket.slot == jit_shadow::Slot::Current) {
                 plm->playlist_clear(playlistIndex);
+                std::lock_guard<std::mutex> lock(m_mutex);
+                m_rows.Reset();
             }
 
-            // Fast path: 流媒体直链 / 本地文件路径规范化后同步生成 handle,
-            // 完全绕开 process_locations_async 的 fb2k 进度对话框 (零弹窗、瞬间返回)。
-            // 与 BuildHandlesFromUrls 同一解析：`|subsong:N` 拆出、路径规范化，
-            // 使快路径产出的身份与慢路径一致。
-            // Slow path: .pls / .m3u / .cue 等 wrapper 必须走 process_locations_async 展开。
-            if (!PlaylistFormatUtils::LooksLikePlaylistWrapper(urlCopy)) {
-                auto [pathStr, subsongIndex] = ParseSubsongUrl(urlCopy);
+            // 快路径同步建 handle，不经 process_locations_async，不弹进度框；解析与 BuildHandlesFromUrls
+            // 相同，所得身份与慢路径一致。.pls、.m3u、.cue 等容器须走慢路径展开。
+            // 写明 `|subsong:N` 时直接按它建 handle：带查询参数的网络 CUE（`a.cue?token=x|subsong:2`）
+            // 裁掉查询后像容器，进慢路径会把后缀当成地址的一部分。
+            auto [pathStr, subsongIndex] = ParseSubsongUrl(urlCopy);
+            const bool namesSubsong = strcmp(pathStr.get_ptr(), urlCopy.c_str()) != 0;
+            if (namesSubsong || !PlaylistFormatUtils::LooksLikePlaylistWrapper(urlCopy)) {
                 metadb_handle_ptr handle = SubsongUtils::CreateCanonicalHandle(pathStr.get_ptr(), subsongIndex);
                 if (handle.is_valid()) {
                     metadb_handle_list items;
                     items.add_item(handle);
-                    HandleResolvedItems(items, trackIdCopy, urlCopy, playlistIndex, startPlayback, replaceBufferedNext);
+                    HandleResolvedItems(items, trackIdCopy, urlCopy, false, entry, ticket);
                     return;
                 }
-                // handle_create 失败 → 回退到 slow path 让 fb2k 自己尝试解析
                 FB2K_console_print("[JIT Queue] handle_create failed for URL, falling back to process_locations_async: ", urlCopy.c_str());
             }
 
@@ -382,28 +447,41 @@ void QueueManager::AddUrlToPlaylistAsync(const std::string& url, const std::stri
             pathList.add_item(urlCopy.c_str());
 
             auto filter = playlist_incoming_item_filter_v2::get();
-            // 展开期间影子列表可能被挪动或删掉，完成时重读锁回调维护的序号，不用发起时的。
-            auto notify = process_locations_notify::create(
-                [this, trackIdCopy, urlCopy, startPlayback, replaceBufferedNext](metadb_handle_list_cref items) {
-                    HandleResolvedItems(items, trackIdCopy, urlCopy, m_shadowPlaylistIndex.load(), startPlayback,
-                                        replaceBufferedNext);
+            // 展开期间影子列表可能被挪动或删掉，HandleResolvedItems 在完成时重读序号，不用发起时的。
+            process_locations_notify::func_t completed = [this, trackIdCopy, urlCopy, entry, ticket](metadb_handle_list_cref items) {
+                try {
+                    HandleResolvedItems(items, trackIdCopy, urlCopy, false, entry, ticket);
+                } catch (...) {
+                    if (AddIsLive(ticket, trackIdCopy, "completion exception") && !ReportSessionAdd(entry, false, "insertFailed")) {
+                        AnnounceUrlError(GetSessionCaller(), trackIdCopy, "Failed to insert resolved resources", urlCopy);
+                    }
                 }
-            );
+            };
+            process_locations_notify::ptr notify;
+            if (SessionOwnsEntry(entry)) {
+                notify = new service_impl_t<QueueLocationNotify>(completed, [this, entry, ticket, trackIdCopy]() {
+                    if (AddIsLive(ticket, trackIdCopy, "aborted")) ReportSessionAdd(entry, false, "resolutionAborted");
+                });
+            } else {
+                notify = process_locations_notify::create(std::move(completed));
+            }
 
             filter->process_locations_async(
                 pathList,
                 playlist_incoming_item_filter_v2::op_flag_delay_ui | playlist_incoming_item_filter_v2::op_flag_background,
                 nullptr, nullptr, nullptr, notify
             );
-            
+
         } catch (const std::exception& e) {
             FB2K_console_print("[JIT Queue] Exception in AddUrlToPlaylistAsync: ", e.what());
-            if (startPlayback) m_pendingOperation = false;
-            AnnounceUrlError(GetSessionCaller(), trackIdCopy, e.what(), urlCopy);
+            if (AddIsLive(ticket, trackIdCopy, "exception") && !ReportSessionAdd(entry, false, "resolutionFailed")) {
+                AnnounceUrlError(GetSessionCaller(), trackIdCopy, e.what(), urlCopy);
+            }
         } catch (...) {
             FB2K_console_print("[JIT Queue] Unknown exception in AddUrlToPlaylistAsync");
-            if (startPlayback) m_pendingOperation = false;
-            AnnounceUrlError(GetSessionCaller(), trackIdCopy, "Unknown error", urlCopy);
+            if (AddIsLive(ticket, trackIdCopy, "exception") && !ReportSessionAdd(entry, false, "resolutionFailed")) {
+                AnnounceUrlError(GetSessionCaller(), trackIdCopy, "Unknown error", urlCopy);
+            }
         }
     });
 }
@@ -413,88 +491,68 @@ void QueueManager::AddUrlToPlaylistAsync(const std::string& url, const std::stri
 //==============================================================================
 
 void QueueManager::AddLocalFileToPlaylistAsync(const std::string& path, const std::string& trackId,
-                                                const std::string& title, bool clearFirst, bool startPlayback,
-                                                bool replaceBufferedNext) {
-    // Lazy initialization: create shadow playlist on first use
+                                                const std::string& title, jit_shadow::EntrySerial entry,
+                                                jit_shadow::Ticket ticket) {
     if (m_shadowPlaylistIndex == pfc::infinite_size) {
         m_shadowPlaylistIndex = GetOrCreateShadowPlaylist();
     }
-    
-    // Capture copies for the lambda
+
     std::string pathCopy = path;
     std::string trackIdCopy = trackId;
-    
+
     FB2K_console_print("[JIT Queue] AddLocalFileToPlaylistAsync (LOCAL): ", path.c_str());
-    
-    // ALL playlist operations MUST be done on the main thread
-    // Re-read shadow index inside lambda to avoid stale capture
-    fb2k::inMainThread([this, pathCopy, trackIdCopy, clearFirst, startPlayback, replaceBufferedNext]() {
+
+    // Playlist edits must run on the main thread; the index is read there, not captured.
+    fb2k::inMainThread([this, pathCopy, trackIdCopy, entry, ticket]() {
+        if (!AddIsLive(ticket, trackIdCopy, "queued")) {
+            return;
+        }
         try {
             size_t playlistIndex = m_shadowPlaylistIndex.load();
             auto plm = playlist_manager::get();
-            
+
             if (playlistIndex >= plm->get_playlist_count()) {
                 FB2K_console_print("[JIT Queue] Error: Shadow playlist no longer exists");
-                if (startPlayback) m_pendingOperation = false;
-                AnnouncePathError(GetSessionCaller(), trackIdCopy, "Shadow playlist no longer exists", pathCopy);
-                return;
-            }
-            
-            if (clearFirst) {
-                plm->playlist_clear(playlistIndex);
-            }
-            
-            // Synchronous process_locations — proven method for local files
-            pfc::string_list_impl pathList;
-            pathList.add_item(pathCopy.c_str());
-            
-            auto piif = playlist_incoming_item_filter::get();
-            metadb_handle_list items;
-            piif->process_locations(pathList, items, true, nullptr, nullptr, core_api::get_main_window());
-            
-            if (items.get_count() == 0) {
-                FB2K_console_print("[JIT Queue] Error: Failed to resolve local path: ", pathCopy.c_str());
-                AnnouncePathError(GetSessionCaller(), trackIdCopy, "Failed to resolve local file path", pathCopy);
-                if (startPlayback) m_pendingOperation = false;
+                if (!ReportSessionAdd(entry, false, "shadowPlaylistMissing")) {
+                    AnnouncePathError(GetSessionCaller(), trackIdCopy, "Shadow playlist no longer exists", pathCopy);
+                }
                 return;
             }
 
-            // process_locations 开着模态进度框，影子列表可能被挪动或删掉，重读锁回调维护的序号。
-            playlistIndex = m_shadowPlaylistIndex.load();
-            if (playlistIndex >= plm->get_playlist_count()) {
-                FB2K_console_print("[JIT Queue] Error: Shadow playlist no longer exists");
-                if (startPlayback) m_pendingOperation = false;
-                AnnouncePathError(GetSessionCaller(), trackIdCopy, "Shadow playlist no longer exists", pathCopy);
-                return;
+            if (ticket.slot == jit_shadow::Slot::Current) {
+                plm->playlist_clear(playlistIndex);
+                std::lock_guard<std::mutex> lock(m_mutex);
+                m_rows.Reset();
             }
-            
-            // Drop any stale buffered next first so this insert lands right after
-            // current, keeping the shadow playlist equal to the [current, next] window.
-            if (replaceBufferedNext) {
-                RemoveBufferedNextFromShadow(playlistIndex);
+
+            metadb_handle_list items;
+            auto [pathStr, subsongIndex] = ParseSubsongUrl(pathCopy);
+            if (strcmp(pathStr.get_ptr(), pathCopy.c_str()) != 0) {
+                // `path|subsong:N` names one subsong: build its handle as BuildHandlesFromUrls does.
+                // process_locations would take the suffix as part of the file name.
+                metadb_handle_ptr handle = SubsongUtils::CreateCanonicalHandle(pathStr.get_ptr(), subsongIndex);
+                if (handle.is_valid()) items.add_item(handle);
+            } else {
+                // process_locations also expands embedded cuesheets and multi-subsong files.
+                pfc::string_list_impl pathList;
+                pathList.add_item(pathCopy.c_str());
+
+                auto piif = playlist_incoming_item_filter::get();
+                piif->process_locations(pathList, items, true, nullptr, nullptr, core_api::get_main_window());
             }
-            
-            size_t currentCount = plm->playlist_get_item_count(playlistIndex);
-            plm->playlist_insert_items(playlistIndex, currentCount, items, bit_array_false());
-            
-            FB2K_console_print("[JIT Queue] Local file added to buffer: ", trackIdCopy.c_str(), 
-                               " at position ", currentCount, " (", items.get_count(), " items)");
-            
-            if (startPlayback) {
-                ActivatePlaybackOnShadow(playlistIndex);
-                FB2K_console_print("[JIT Queue] Local file playback started");
-            }
-            
-            if (startPlayback) m_pendingOperation = false;
-            
+
+            HandleResolvedItems(items, trackIdCopy, pathCopy, true, entry, ticket);
+
         } catch (const std::exception& e) {
             FB2K_console_print("[JIT Queue] Exception in AddLocalFileToPlaylistAsync: ", e.what());
-            if (startPlayback) m_pendingOperation = false;
-            AnnouncePathError(GetSessionCaller(), trackIdCopy, e.what(), pathCopy);
+            if (AddIsLive(ticket, trackIdCopy, "exception") && !ReportSessionAdd(entry, false, "resolutionFailed")) {
+                AnnouncePathError(GetSessionCaller(), trackIdCopy, e.what(), pathCopy);
+            }
         } catch (...) {
             FB2K_console_print("[JIT Queue] Unknown exception in AddLocalFileToPlaylistAsync");
-            if (startPlayback) m_pendingOperation = false;
-            AnnouncePathError(GetSessionCaller(), trackIdCopy, "Unknown error", pathCopy);
+            if (AddIsLive(ticket, trackIdCopy, "exception") && !ReportSessionAdd(entry, false, "resolutionFailed")) {
+                AnnouncePathError(GetSessionCaller(), trackIdCopy, "Unknown error", pathCopy);
+            }
         }
     });
 }

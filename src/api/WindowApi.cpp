@@ -18,6 +18,7 @@
 #include "window/WindowShellBase.h"
 #include "window/WindowGeometryMath.h"
 #include "webview/WebViewHost.h"
+#include "webview/TextScaleFactor.h"
 #include "settings/SecurityConfig.h"
 #include "settings/WindowStateConfig.h"
 #include "core/WebViewPanel.h"  // panel.getConfig/setConfig API
@@ -612,7 +613,7 @@ api::Result<void> WindowMaximize(const wn::MaximizeParams&, const CallerContext&
     ExitFullscreenIfActive(hwnd);
 
     // 使用 WM_SYSCOMMAND 触发系统动画
-    PostMessage(hwnd, WM_SYSCOMMAND, SC_MAXIMIZE, 0);
+    if (!WindowManager::GetInstance().PostExplicitSystemCommand(hwnd, SC_MAXIMIZE)) return WindowNotFound();
     return api::Ok();
 }
 
@@ -629,7 +630,7 @@ api::Result<void> WindowRestore(const wn::RestoreParams&, const CallerContext& c
     }
 
     // 使用 WM_SYSCOMMAND 触发系统动画
-    PostMessage(hwnd, WM_SYSCOMMAND, SC_RESTORE, 0);
+    if (!WindowManager::GetInstance().PostExplicitSystemCommand(hwnd, SC_RESTORE)) return WindowNotFound();
     return api::Ok();
 }
 
@@ -661,7 +662,7 @@ api::Result<wn::ToggleMaximizeResult> WindowToggleMaximize(const wn::ToggleMaxim
 
     bool wasMaximized = IsZoomed(hwnd) != FALSE;
     // 使用 WM_SYSCOMMAND 触发系统动画
-    PostMessage(hwnd, WM_SYSCOMMAND, wasMaximized ? SC_RESTORE : SC_MAXIMIZE, 0);
+    if (!WindowManager::GetInstance().PostExplicitSystemCommand(hwnd, wasMaximized ? SC_RESTORE : SC_MAXIMIZE)) return WindowNotFound();
 
     result.maximized = !wasMaximized;
     return result;
@@ -1086,14 +1087,16 @@ api::Result<void> WindowFocus(const wn::FocusParams& p, const CallerContext& cal
     if (!targetId.empty()) {
         auto& wm = WindowManager::GetInstance();
         if (targetId == "main") {
-            targetMainWin = wm.GetMainWindow();
+            auto* ui = WebViewUI::GetInstance();
+            targetMainWin = ui ? ui->GetMainWindow() : wm.GetMainWindow();
             if (targetMainWin) hwnd = targetMainWin->GetShellHwnd();
         } else {
             auto* popup = wm.GetPopup(targetId);
             if (popup) hwnd = popup->GetShellHwnd();
         }
     } else {
-        hwnd = CallerTopLevelHwnd(caller);
+        hwnd = caller.callerHwnd && IsWindow(caller.callerHwnd)
+            ? GetAncestor(caller.callerHwnd, GA_ROOT) : nullptr;
         if (hwnd) {
             auto* candidate = WindowManager::GetInstance().GetMainWindow();
             if (candidate && candidate->GetShellHwnd() == hwnd) {
@@ -1102,7 +1105,9 @@ api::Result<void> WindowFocus(const wn::FocusParams& p, const CallerContext& cal
         }
     }
 
-    if (!hwnd) return WindowNotFound();
+    if (!hwnd || !IsWindow(hwnd)) return WindowNotFound();
+    auto intent = WindowManager::GetInstance().BeginExplicitActivation(hwnd, "window.focus");
+    if (!intent) return WindowNotFound();
 
     // SWP_SHOWWINDOW will reveal a hidden window, so snapshot the hidden state
     // up front and reuse RestoreSurfaceAfterHidden to converge the WebView
@@ -1125,7 +1130,7 @@ api::Result<void> WindowFocus(const wn::FocusParams& p, const CallerContext& cal
 
     // 使用 SetWindowPos 确保窗口在 Z 序最前，然后激活
     SetWindowPos(hwnd, HWND_TOP, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW);
-    SetForegroundWindow(hwnd);
+    WindowManager::GetInstance().RequestForeground(hwnd, "window.focus");
     BringWindowToTop(hwnd);
 
     if (attached) {
@@ -1310,15 +1315,15 @@ api::Result<wn::GetCaptionButtonsWidthResult> WindowGetCaptionButtonsWidth(const
 
 // 页面给的 CSS 像素矩形换成物理像素；宽或高不为正的矩形丢掉。先截小数再乘缩放，与迁移前一致。
 std::vector<TitlebarDragRegion> ToPhysicalRegions(const std::optional<std::vector<wn::WindowRegion>>& regions,
-                                                   double dpiScale) {
+                                                   double scale) {
     std::vector<TitlebarDragRegion> physical;
     if (!regions) return physical;
     for (const auto& r : *regions) {
         TitlebarDragRegion region;
-        region.x = static_cast<int>(PixelArg(r.x) * dpiScale);
-        region.y = static_cast<int>(PixelArg(r.y) * dpiScale);
-        region.width = static_cast<int>(PixelArg(r.width) * dpiScale);
-        region.height = static_cast<int>(PixelArg(r.height) * dpiScale);
+        region.x = static_cast<int>(PixelArg(r.x) * scale);
+        region.y = static_cast<int>(PixelArg(r.y) * scale);
+        region.width = static_cast<int>(PixelArg(r.width) * scale);
+        region.height = static_cast<int>(PixelArg(r.height) * scale);
 
         if (region.width <= 0 || region.height <= 0)
             continue;
@@ -1328,15 +1333,25 @@ std::vector<TitlebarDragRegion> ToPhysicalRegions(const std::optional<std::vecto
 }
 
 
+// 页面 CSS 像素换成物理像素的系数，即该窗口页面的 devicePixelRatio（DPI、文本大小、缩放倍数）。
+// 窗口没有自己的 WebView 时只按 DPI。
+double PageScaleFor(HWND hwnd, double dpiScale) {
+    if (WebViewHost* host = WebViewContext::GetInstance().GetWebViewHost(hwnd)) {
+        return host->GetPageScale();
+    }
+    return dpiScale;
+}
+
+
 api::Result<wn::SetDragRegionsResult> WindowSetDragRegions(const wn::SetDragRegionsParams& p,
                                                            const CallerContext& caller) {
     if (IsPanelMode()) return api::PanelModeUnsupported("window.setDragRegions");
     HWND callerHwnd = CallerTopLevelHwnd(caller);
     if (!callerHwnd) return WindowNotFound();
 
-    // 获取 DPI 缩放比例 (CSS 像素 -> 物理像素)
     const double dpiScale = GetDpiForWindow(callerHwnd) / 96.0;
-    std::vector<TitlebarDragRegion> regions = ToPhysicalRegions(p.regions, dpiScale);
+    const double scale = PageScaleFor(callerHwnd, dpiScale);
+    std::vector<TitlebarDragRegion> regions = ToPhysicalRegions(p.regions, scale);
 
     if (auto* mainWnd = FindMainByCallerHwnd(callerHwnd)) {
         mainWnd->SetDragRegions(regions);
@@ -1349,6 +1364,7 @@ api::Result<wn::SetDragRegionsResult> WindowSetDragRegions(const wn::SetDragRegi
     wn::SetDragRegionsResult result;
     result.count = static_cast<std::int64_t>(regions.size());
     result.dpiScale = dpiScale;
+    result.scale = scale;
     return result;
 }
 
@@ -1374,9 +1390,9 @@ api::Result<wn::SetNoDragRegionsResult> WindowSetNoDragRegions(const wn::SetNoDr
     HWND callerHwnd = CallerTopLevelHwnd(caller);
     if (!callerHwnd) return WindowNotFound();
 
-    // 获取 DPI 缩放比例 (CSS 像素 -> 物理像素)
     const double dpiScale = GetDpiForWindow(callerHwnd) / 96.0;
-    std::vector<TitlebarDragRegion> regions = ToPhysicalRegions(p.regions, dpiScale);
+    const double scale = PageScaleFor(callerHwnd, dpiScale);
+    std::vector<TitlebarDragRegion> regions = ToPhysicalRegions(p.regions, scale);
 
     if (auto* mainWnd = FindMainByCallerHwnd(callerHwnd)) {
         mainWnd->SetNoDragRegions(regions);
@@ -1389,6 +1405,7 @@ api::Result<wn::SetNoDragRegionsResult> WindowSetNoDragRegions(const wn::SetNoDr
     wn::SetNoDragRegionsResult result;
     result.count = static_cast<std::int64_t>(regions.size());
     result.dpiScale = dpiScale;
+    result.scale = scale;
     return result;
 }
 
@@ -1425,14 +1442,8 @@ api::Result<wn::SetMaximizeButtonRegionResult> WindowSetMaximizeButtonRegion(
         return WindowNotFound();
     }
 
-    // 与页面的 devicePixelRatio 同一个系数：拖动矩形只乘 DPI，但最大化键的位置
-    // 错一点贴靠浮层就不出，页面缩放不能漏。
-    double zoom = 1.0;
-    if (WebViewHost* host = WebViewContext::GetInstance().GetWebViewHost(callerHwnd)) {
-        const double factor = host->GetZoomFactor();
-        if (factor > 0.0) zoom = factor;
-    }
-    const double scale = GetDpiForWindow(callerHwnd) / 96.0 * zoom;
+    // 位置错一点贴靠浮层就不出，所以和拖动矩形一样按页面的 devicePixelRatio 换算
+    const double scale = PageScaleFor(callerHwnd, GetDpiForWindow(callerHwnd) / 96.0);
 
     std::optional<maximize_button_region::Rect> region;
     if (p.region) {
@@ -1939,6 +1950,7 @@ api::Result<wn::GetZoomResult> WindowGetZoom(const wn::GetZoomParams&, const Cal
     HWND callerHwnd = CallerTopLevelHwnd(caller);
     auto* host = WebViewContext::GetInstance().GetHostByHwnd(callerHwnd);
     wn::GetZoomResult result;
+    result.textScaleFactor = text_scale::Current();
     if (!host) {
         // 没有 WebView 时只报默认倍数，不带 DPI
         result.zoom = 1.0;
@@ -2230,13 +2242,13 @@ api::Result<wn::SetClickThroughExcludeRegionsResult> WindowSetClickThroughExclud
     auto* popup = FindClickThroughPopup(p.windowId, caller, windowId);
     if (!popup) return WindowNotFound();
 
-    // 获取 DPI 缩放比例（CSS 像素 → 物理像素）
     double dpiScale = 1.0;
     HWND hwnd = popup->GetHwnd();
     if (hwnd) {
         int dpi = GetDpiForWindow(hwnd);
         dpiScale = dpi / 96.0;
     }
+    const double scale = hwnd ? PageScaleFor(hwnd, dpiScale) : dpiScale;
 
     const std::vector<wn::WindowRegion> none;
     const auto& regions = p.regions ? *p.regions : none;
@@ -2250,13 +2262,13 @@ api::Result<wn::SetClickThroughExcludeRegionsResult> WindowSetClickThroughExclud
     // 先截小数再乘缩放，与迁移前一致；只数保留下来的矩形
     for (const auto& r : regions) {
         if (physicalRects.size() >= MAX_REGIONS) break;
-        int w = static_cast<int>(PixelArg(r.width) * dpiScale);
-        int h = static_cast<int>(PixelArg(r.height) * dpiScale);
+        int w = static_cast<int>(PixelArg(r.width) * scale);
+        int h = static_cast<int>(PixelArg(r.height) * scale);
         if (w <= 0 || h <= 0) continue;
 
         RECT rc;
-        rc.left   = static_cast<int>(PixelArg(r.x) * dpiScale);
-        rc.top    = static_cast<int>(PixelArg(r.y) * dpiScale);
+        rc.left   = static_cast<int>(PixelArg(r.x) * scale);
+        rc.top    = static_cast<int>(PixelArg(r.y) * scale);
         rc.right  = rc.left + w;
         rc.bottom = rc.top + h;
         physicalRects.push_back(rc);
@@ -2268,6 +2280,7 @@ api::Result<wn::SetClickThroughExcludeRegionsResult> WindowSetClickThroughExclud
     result.windowId = windowId;
     result.count = static_cast<std::int64_t>(physicalRects.size());
     result.dpiScale = dpiScale;
+    result.scale = scale;
     if (truncated) {
         result.warning = "regions truncated to 32";
     }

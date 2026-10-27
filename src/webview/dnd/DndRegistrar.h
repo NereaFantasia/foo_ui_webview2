@@ -23,7 +23,6 @@ enum class PathsUnavailableReason {
     ForwardUnavailable,
     InnerTargetNotFound,
     ChainFailed,
-    Displaced,
     OriginUntrusted,
 };
 

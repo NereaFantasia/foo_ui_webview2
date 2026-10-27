@@ -4,6 +4,7 @@
 #include "api/EventEmit.h"
 #include "api/generated/PlaybackSchema.h"
 #include "api/generated/WindowSchema.h"
+#include "core/JitNativeObservation.h"
 
 // ============================================
 // 配置变化回调实现
@@ -28,6 +29,7 @@ public:
     
     void on_watched_object_changed(const service_ptr_t<config_object>& obj) override {
         try {
+            jit_native::hooks::SettingsChanged();
             GUID guid = obj->get_guid();
             bool value = false;
             obj->get_data_bool(value);

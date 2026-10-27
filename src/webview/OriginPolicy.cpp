@@ -98,4 +98,47 @@ bool IsTrustedPage(std::wstring_view url, const std::vector<std::wstring>& regis
     return std::ranges::find(registered, origin) != registered.end();
 }
 
+namespace {
+
+// 恰好四段、每段 1–3 位十进制且不超过 255，首段为 127。
+bool IsLoopbackIpv4(std::wstring_view host) {
+    unsigned parts = 0;
+    unsigned first = 0;
+    while (true) {
+        const size_t dot = host.find(L'.');
+        const std::wstring_view part = host.substr(0, dot);
+        if (part.empty() || part.size() > 3) return false;
+        unsigned value = 0;
+        for (wchar_t c : part) {
+            if (c < L'0' || c > L'9') return false;
+            value = value * 10 + static_cast<unsigned>(c - L'0');
+        }
+        if (value > 255) return false;
+        if (parts++ == 0) first = value;
+        if (dot == std::wstring_view::npos) break;
+        host.remove_prefix(dot + 1);
+    }
+    return parts == 4 && first == 127;
+}
+
+}  // namespace
+
+bool IsLoopbackOrigin(std::wstring_view origin) {
+    const size_t schemeEnd = origin.find(L"://");
+    if (schemeEnd == std::wstring_view::npos) return false;
+    const std::wstring_view authority = origin.substr(schemeEnd + 3);
+    if (authority.starts_with(L"[::1]")) {
+        return authority.size() == 5 || authority[5] == L':';
+    }
+    const std::wstring_view host = authority.substr(0, authority.find(L':'));
+    return host == L"localhost" || IsLoopbackIpv4(host);
+}
+
+std::wstring PanelUrlTrustedOrigin(std::wstring_view url, std::wstring_view approvedOrigin) {
+    std::wstring origin = OriginOf(url);
+    if (origin.empty()) return {};
+    if (origin == kBundledOrigin || IsLoopbackOrigin(origin) || origin == approvedOrigin) return origin;
+    return {};
+}
+
 }  // namespace origin_policy

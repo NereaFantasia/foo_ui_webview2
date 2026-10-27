@@ -68,7 +68,7 @@ inline json ToJson(const PlayNowResult& v);
 inline bool FromJson(const json& j, PlayNowParams& out, std::string& error, const std::string& where = {});
 
 struct QueueItem : api::common::Track {
-    static constexpr std::array<std::string_view, 25> kFields{{"handle", "path", "absolutePath", "subsong", "title", "artist", "artists", "album", "albumArtist", "albumArtists", "genre", "date", "trackNumber", "discNumber", "duration", "fileSize", "bitrate", "sampleRate", "channels", "codec", "rating", "queueIndex", "playlist", "playlistGuid", "playlistItem"}};
+    static constexpr std::array<std::string_view, 26> kFields{{"handle", "path", "absolutePath", "subsong", "title", "artist", "artists", "album", "albumId", "albumArtist", "albumArtists", "genre", "date", "trackNumber", "discNumber", "duration", "fileSize", "bitrate", "sampleRate", "channels", "codec", "rating", "queueIndex", "playlist", "playlistGuid", "playlistItem"}};
 
     std::int64_t queueIndex{};
     std::optional<std::int64_t> playlist{};
@@ -86,6 +86,7 @@ inline json ToJson(const QueueItem& v) {
     api::results::Put(j, "artist", v.artist);
     api::results::Put(j, "artists", v.artists);
     api::results::Put(j, "album", v.album);
+    api::results::Put(j, "albumId", v.albumId);
     api::results::Put(j, "albumArtist", v.albumArtist);
     api::results::Put(j, "albumArtists", v.albumArtists);
     api::results::Put(j, "genre", v.genre);
@@ -107,16 +108,18 @@ inline json ToJson(const QueueItem& v) {
 }
 
 struct GetResult {
-    static constexpr std::array<std::string_view, 2> kFields{{"items", "count"}};
+    static constexpr std::array<std::string_view, 3> kFields{{"items", "count", "contentVersion"}};
 
     std::vector<QueueItem> items{};
     std::int64_t count{};
+    std::string contentVersion{};
 };
 
 inline json ToJson(const GetResult& v) {
     json j = json::object();
     api::results::Put(j, "items", v.items);
     api::results::Put(j, "count", v.count);
+    api::results::Put(j, "contentVersion", v.contentVersion);
     return j;
 }
 
@@ -181,19 +184,21 @@ struct AddParams {
     std::optional<std::string> playlistGuid{};
     std::optional<std::vector<std::int64_t>> tracks{};
     std::optional<std::int64_t> track{};
+    std::optional<std::string> expectedPlaylistVersion{};
 };
 
 inline bool FromJson(const json& j, AddParams& out, std::string& error, const std::string& where) {
     api::params::Reader r(j, error, where);
     return r.IsObject()
-        && r.OnlyKeys({"playlist", "playlistGuid", "tracks", "track"})
+        && r.OnlyKeys({"playlist", "playlistGuid", "tracks", "track", "expectedPlaylistVersion"})
         && r.Optional("playlist", out.playlist)
         && r.Range("playlist", out.playlist, std::optional<std::int64_t>(0), std::nullopt)
         && r.Optional("playlistGuid", out.playlistGuid)
         && r.Optional("tracks", out.tracks)
         && r.ItemsRange("tracks", out.tracks, std::optional<std::int64_t>(0), std::nullopt)
         && r.Optional("track", out.track)
-        && r.Range("track", out.track, std::optional<std::int64_t>(0), std::nullopt);
+        && r.Range("track", out.track, std::optional<std::int64_t>(0), std::nullopt)
+        && r.Optional("expectedPlaylistVersion", out.expectedPlaylistVersion);
 }
 
 struct AddPathsResult {
@@ -240,11 +245,12 @@ inline bool FromJson(const json& j, AddPathsParams& out, std::string& error, con
 }
 
 struct RemoveResult {
-    static constexpr std::array<std::string_view, 3> kFields{{"removedIndex", "removedCount", "queueCount"}};
+    static constexpr std::array<std::string_view, 4> kFields{{"removedIndex", "removedCount", "queueCount", "contentVersion"}};
 
     std::optional<std::int64_t> removedIndex{};
     std::optional<std::int64_t> removedCount{};
     std::int64_t queueCount{};
+    std::string contentVersion{};
 };
 
 inline json ToJson(const RemoveResult& v) {
@@ -252,6 +258,7 @@ inline json ToJson(const RemoveResult& v) {
     api::results::Put(j, "removedIndex", v.removedIndex);
     api::results::Put(j, "removedCount", v.removedCount);
     api::results::Put(j, "queueCount", v.queueCount);
+    api::results::Put(j, "contentVersion", v.contentVersion);
     return j;
 }
 
@@ -262,16 +269,18 @@ struct RemoveParams {
 
     std::optional<std::int64_t> index{};
     std::optional<std::vector<std::int64_t>> indices{};
+    std::optional<std::string> expectedVersion{};
 };
 
 inline bool FromJson(const json& j, RemoveParams& out, std::string& error, const std::string& where) {
     api::params::Reader r(j, error, where);
     return r.IsObject()
-        && r.OnlyKeys({"index", "indices"})
+        && r.OnlyKeys({"index", "indices", "expectedVersion"})
         && r.Optional("index", out.index)
         && r.Range("index", out.index, std::optional<std::int64_t>(0), std::nullopt)
         && r.Optional("indices", out.indices)
-        && r.ItemsRange("indices", out.indices, std::optional<std::int64_t>(0), std::nullopt);
+        && r.ItemsRange("indices", out.indices, std::optional<std::int64_t>(0), std::nullopt)
+        && r.Optional("expectedVersion", out.expectedVersion);
 }
 
 struct ClearResult {
@@ -323,16 +332,18 @@ inline bool FromJson(const json& j, FlushParams&, std::string& error, const std:
 }
 
 struct MoveToTopResult {
-    static constexpr std::array<std::string_view, 2> kFields{{"movedIndex", "queueCount"}};
+    static constexpr std::array<std::string_view, 3> kFields{{"movedIndex", "queueCount", "contentVersion"}};
 
     std::int64_t movedIndex{};
     std::int64_t queueCount{};
+    std::string contentVersion{};
 };
 
 inline json ToJson(const MoveToTopResult& v) {
     json j = json::object();
     api::results::Put(j, "movedIndex", v.movedIndex);
     api::results::Put(j, "queueCount", v.queueCount);
+    api::results::Put(j, "contentVersion", v.contentVersion);
     return j;
 }
 
@@ -342,25 +353,29 @@ struct MoveToTopParams {
     using Result = MoveToTopResult;
 
     std::int64_t index{};
+    std::optional<std::string> expectedVersion{};
 };
 
 inline bool FromJson(const json& j, MoveToTopParams& out, std::string& error, const std::string& where) {
     api::params::Reader r(j, error, where);
     return r.IsObject()
-        && r.OnlyKeys({"index"})
+        && r.OnlyKeys({"index", "expectedVersion"})
         && r.Required("index", out.index)
-        && r.Range("index", out.index, std::optional<std::int64_t>(0), std::nullopt);
+        && r.Range("index", out.index, std::optional<std::int64_t>(0), std::nullopt)
+        && r.Optional("expectedVersion", out.expectedVersion);
 }
 
 struct SetContentsResult {
-    static constexpr std::array<std::string_view, 1> kFields{{"queueCount"}};
+    static constexpr std::array<std::string_view, 2> kFields{{"queueCount", "contentVersion"}};
 
     std::int64_t queueCount{};
+    std::string contentVersion{};
 };
 
 inline json ToJson(const SetContentsResult& v) {
     json j = json::object();
     api::results::Put(j, "queueCount", v.queueCount);
+    api::results::Put(j, "contentVersion", v.contentVersion);
     return j;
 }
 
@@ -369,19 +384,21 @@ struct QueueContentRef {
     std::optional<std::int64_t> playlist{};
     std::optional<std::string> playlistGuid{};
     std::optional<std::int64_t> item{};
+    std::optional<std::string> expectedPlaylistVersion{};
 };
 
 inline bool FromJson(const json& j, QueueContentRef& out, std::string& error, const std::string& where) {
     api::params::Reader r(j, error, where);
     return r.IsObject()
-        && r.OnlyKeys({"queueIndex", "playlist", "playlistGuid", "item"})
+        && r.OnlyKeys({"queueIndex", "playlist", "playlistGuid", "item", "expectedPlaylistVersion"})
         && r.Optional("queueIndex", out.queueIndex)
         && r.Range("queueIndex", out.queueIndex, std::optional<std::int64_t>(0), std::nullopt)
         && r.Optional("playlist", out.playlist)
         && r.Range("playlist", out.playlist, std::optional<std::int64_t>(0), std::nullopt)
         && r.Optional("playlistGuid", out.playlistGuid)
         && r.Optional("item", out.item)
-        && r.Range("item", out.item, std::optional<std::int64_t>(0), std::nullopt);
+        && r.Range("item", out.item, std::optional<std::int64_t>(0), std::nullopt)
+        && r.Optional("expectedPlaylistVersion", out.expectedPlaylistVersion);
 }
 
 struct SetContentsParams {
@@ -390,22 +407,25 @@ struct SetContentsParams {
     using Result = SetContentsResult;
 
     std::vector<QueueContentRef> items{};
+    std::optional<std::string> expectedVersion{};
 };
 
 inline bool FromJson(const json& j, SetContentsParams& out, std::string& error, const std::string& where) {
     api::params::Reader r(j, error, where);
     return r.IsObject()
-        && r.OnlyKeys({"items"})
-        && r.Required("items", out.items);
+        && r.OnlyKeys({"items", "expectedVersion"})
+        && r.Required("items", out.items)
+        && r.Optional("expectedVersion", out.expectedVersion);
 }
 
 struct InsertNextResult {
-    static constexpr std::array<std::string_view, 4> kFields{{"insertedCount", "movedCount", "queueCount", "invalidCount"}};
+    static constexpr std::array<std::string_view, 5> kFields{{"insertedCount", "movedCount", "queueCount", "invalidCount", "contentVersion"}};
 
     std::int64_t insertedCount{};
     std::int64_t movedCount{};
     std::int64_t queueCount{};
     std::int64_t invalidCount{};
+    std::string contentVersion{};
 };
 
 inline json ToJson(const InsertNextResult& v) {
@@ -414,6 +434,7 @@ inline json ToJson(const InsertNextResult& v) {
     api::results::Put(j, "movedCount", v.movedCount);
     api::results::Put(j, "queueCount", v.queueCount);
     api::results::Put(j, "invalidCount", v.invalidCount);
+    api::results::Put(j, "contentVersion", v.contentVersion);
     return j;
 }
 
@@ -421,17 +442,19 @@ struct QueueListRef {
     std::optional<std::int64_t> playlist{};
     std::optional<std::string> playlistGuid{};
     std::int64_t item{};
+    std::optional<std::string> expectedPlaylistVersion{};
 };
 
 inline bool FromJson(const json& j, QueueListRef& out, std::string& error, const std::string& where) {
     api::params::Reader r(j, error, where);
     return r.IsObject()
-        && r.OnlyKeys({"playlist", "playlistGuid", "item"})
+        && r.OnlyKeys({"playlist", "playlistGuid", "item", "expectedPlaylistVersion"})
         && r.Optional("playlist", out.playlist)
         && r.Range("playlist", out.playlist, std::optional<std::int64_t>(0), std::nullopt)
         && r.Optional("playlistGuid", out.playlistGuid)
         && r.Required("item", out.item)
-        && r.Range("item", out.item, std::optional<std::int64_t>(0), std::nullopt);
+        && r.Range("item", out.item, std::optional<std::int64_t>(0), std::nullopt)
+        && r.Optional("expectedPlaylistVersion", out.expectedPlaylistVersion);
 }
 
 struct InsertNextParams {
@@ -442,29 +465,33 @@ struct InsertNextParams {
     std::optional<std::vector<std::string>> paths{};
     std::optional<std::vector<QueueListRef>> items{};
     std::int64_t position = 0;
+    std::optional<std::string> expectedVersion{};
 };
 
 inline bool FromJson(const json& j, InsertNextParams& out, std::string& error, const std::string& where) {
     api::params::Reader r(j, error, where);
     return r.IsObject()
-        && r.OnlyKeys({"paths", "items", "position"})
+        && r.OnlyKeys({"paths", "items", "position", "expectedVersion"})
         && r.Optional("paths", out.paths)
         && r.Optional("items", out.items)
         && r.Optional("position", out.position)
-        && r.Range("position", out.position, std::optional<std::int64_t>(0), std::nullopt);
+        && r.Range("position", out.position, std::optional<std::int64_t>(0), std::nullopt)
+        && r.Optional("expectedVersion", out.expectedVersion);
 }
 
 struct PlayNowResult {
-    static constexpr std::array<std::string_view, 2> kFields{{"playedIndex", "queueCount"}};
+    static constexpr std::array<std::string_view, 3> kFields{{"playedIndex", "queueCount", "contentVersion"}};
 
     std::int64_t playedIndex{};
     std::int64_t queueCount{};
+    std::string contentVersion{};
 };
 
 inline json ToJson(const PlayNowResult& v) {
     json j = json::object();
     api::results::Put(j, "playedIndex", v.playedIndex);
     api::results::Put(j, "queueCount", v.queueCount);
+    api::results::Put(j, "contentVersion", v.contentVersion);
     return j;
 }
 
@@ -474,14 +501,16 @@ struct PlayNowParams {
     using Result = PlayNowResult;
 
     std::int64_t index = 0;
+    std::optional<std::string> expectedVersion{};
 };
 
 inline bool FromJson(const json& j, PlayNowParams& out, std::string& error, const std::string& where) {
     api::params::Reader r(j, error, where);
     return r.IsObject()
-        && r.OnlyKeys({"index"})
+        && r.OnlyKeys({"index", "expectedVersion"})
         && r.Optional("index", out.index)
-        && r.Range("index", out.index, std::optional<std::int64_t>(0), std::nullopt);
+        && r.Range("index", out.index, std::optional<std::int64_t>(0), std::nullopt)
+        && r.Optional("expectedVersion", out.expectedVersion);
 }
 
 }  // namespace api::queue

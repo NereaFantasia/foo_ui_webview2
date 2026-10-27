@@ -1,4 +1,4 @@
-// test_string_utils.cpp — JSON-safe UTF-8 normalization tests
+﻿// test_string_utils.cpp — JSON-safe UTF-8 normalization tests
 #include "pch.h"
 #include "../src/utils/StringUtils.h"
 
@@ -16,6 +16,66 @@ void ExpectJsonSerializable(std::string_view input) {
 }
 
 }  // namespace string_utils_test
+
+TEST(StringUtils, IsValidUtf8AcceptsEmptyStringsAndNullPointer) {
+    EXPECT_TRUE(StringUtils::IsValidUtf8(std::string_view{}));
+    EXPECT_TRUE(StringUtils::IsValidUtf8(""));
+    EXPECT_TRUE(StringUtils::IsValidUtf8(static_cast<const char*>(nullptr)));
+}
+
+TEST(StringUtils, IsValidUtf8AcceptsAsciiChineseAndEmoji) {
+    EXPECT_TRUE(StringUtils::IsValidUtf8("Title 123"));
+    EXPECT_TRUE(StringUtils::IsValidUtf8("播放 \xF0\x9F\x8E\xB5"));
+    EXPECT_TRUE(StringUtils::IsValidUtf8(std::string_view("播放 \xF0\x9F\x8E\xB5")));
+}
+
+TEST(StringUtils, IsValidUtf8AcceptsUnicodeScalarBoundaries) {
+    const std::string_view inputs[] = {
+        "\x7F", "\xC2\x80", "\xDF\xBF", "\xE0\xA0\x80", "\xED\x9F\xBF",
+        "\xEE\x80\x80", "\xEF\xBF\xBF", "\xF0\x90\x80\x80", "\xF4\x8F\xBF\xBF"
+    };
+    for (const auto input : inputs) {
+        EXPECT_TRUE(StringUtils::IsValidUtf8(input));
+        EXPECT_EQ(StringUtils::SafeUtf8(input), input);
+    }
+}
+
+TEST(StringUtils, IsValidUtf8RejectsStrayContinuationAndInvalidLeadingBytes) {
+    const std::string_view inputs[] = {
+        "\x80", "\xB9", "\xBF", "Title \xB9", "\xFE", "\xFF", "\xF5\x80\x80\x80"
+    };
+    for (const auto input : inputs) EXPECT_FALSE(StringUtils::IsValidUtf8(input));
+    EXPECT_FALSE(StringUtils::IsValidUtf8("\xB9"));
+    EXPECT_EQ(StringUtils::SafeUtf8("\xB9"), string_utils_test::kReplacement);
+}
+
+TEST(StringUtils, IsValidUtf8RejectsTruncatedAndInterruptedSequences) {
+    const std::string_view inputs[] = {
+        "\xC2", "\xE6\x92", "\xF0\x9F\x8E", "\xC2Z", "\xE6\x92Z", "\xF0\x9F\x8EZ"
+    };
+    for (const auto input : inputs) EXPECT_FALSE(StringUtils::IsValidUtf8(input));
+}
+
+TEST(StringUtils, IsValidUtf8RejectsOverlongEncodings) {
+    EXPECT_FALSE(StringUtils::IsValidUtf8("\xC0\x80"));
+    EXPECT_FALSE(StringUtils::IsValidUtf8("\xC1\xBF"));
+    EXPECT_FALSE(StringUtils::IsValidUtf8("\xE0\x80\xAF"));
+    EXPECT_FALSE(StringUtils::IsValidUtf8("\xF0\x80\x80\xAF"));
+}
+
+TEST(StringUtils, IsValidUtf8RejectsSurrogatesAndOutOfRangeCodePoints) {
+    EXPECT_FALSE(StringUtils::IsValidUtf8("\xED\xA0\x80"));
+    EXPECT_FALSE(StringUtils::IsValidUtf8("\xED\xBF\xBF"));
+    EXPECT_FALSE(StringUtils::IsValidUtf8("\xF4\x90\x80\x80"));
+}
+
+TEST(StringUtils, IsValidUtf8ChecksBytesAfterEmbeddedNullInStringView) {
+    const std::string valid("A\0B", 3);
+    const std::string invalid("A\0\xB9", 3);
+    EXPECT_TRUE(StringUtils::IsValidUtf8(std::string_view(valid)));
+    EXPECT_FALSE(StringUtils::IsValidUtf8(std::string_view(invalid)));
+    EXPECT_TRUE(StringUtils::IsValidUtf8(invalid.c_str()));
+}
 
 TEST(StringUtils, SafeUtf8PreservesValidChineseAndEmoji) {
     const std::string input = "播放 \xF0\x9F\x8E\xB5";

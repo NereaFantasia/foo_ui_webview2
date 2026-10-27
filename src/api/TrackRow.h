@@ -23,6 +23,7 @@
 // A caller that builds rows off the main thread fills the identity fields and
 // rating on the main thread and the metadata from an info snapshot on the
 // worker; BuildTrackRow is the two halves plus rating in one go.
+#include "api/AlbumIdentity.h"
 #include "api/MetaAccess.h"
 #include "api/RatingResolve.h"
 #include "api/generated/CommonSchema.h"
@@ -32,6 +33,7 @@
 #include <cstdint>
 #include <format>
 #include <string>
+#include <vector>
 
 // The fields that name a track: handle, path, absolutePath and subsong. Events
 // that report tracks without a whole row, such as metadb:changed, take handle
@@ -66,6 +68,23 @@ inline TrackIdentity TrackIdentityOf(const metadb_handle_ptr& track) {
     return id;
 }
 
+// The most tracks a change event (library:items*, metadb:changed) names one by
+// one. Past it the event names none and says `truncated`: a page then reads
+// again everything it shows, which beats patching from a partial list.
+inline constexpr size_t kChangedHandlesLimit = 5000;
+
+// Fills `handles` with the handle of every valid track, or leaves it empty and
+// returns true when there are more than kChangedHandlesLimit. Main thread, as
+// TrackIdentityOf.
+inline bool FillChangedHandles(metadb_handle_list_cref items, std::vector<std::string>& handles) {
+    if (items.get_count() > kChangedHandlesLimit) return true;
+    handles.reserve(items.get_count());
+    for (size_t i = 0; i < items.get_count(); ++i) {
+        if (items[i].is_valid()) handles.push_back(TrackIdentityOf(items[i]).handle);
+    }
+    return false;
+}
+
 // The identity fields plus fileSize. Main thread, as TrackIdentityOf, and
 // because get_filesize() reads the mutable file stats.
 inline void FillTrackIdentity(api::common::Track& row, const metadb_handle_ptr& track) {
@@ -81,8 +100,7 @@ inline void FillTrackIdentity(api::common::Track& row, const metadb_handle_ptr& 
 // do. Leaves the identity fields and rating alone.
 inline void FillTrackMetadata(api::common::Track& row, const file_info& info) {
     auto getMeta = [&](const char* name) -> std::string {
-        const char* value = info.meta_get(name, 0);
-        return value ? StringUtils::SafeUtf8(value) : std::string();
+        return MetaFirst(info, name);
     };
     auto getMetaInt = [&](const char* name) -> std::int64_t {
         const char* value = info.meta_get(name, 0);
@@ -93,6 +111,7 @@ inline void FillTrackMetadata(api::common::Track& row, const file_info& info) {
     row.artist = MetaJoined(info, "artist");
     row.artists = MetaValuesRaw(info, "artist");
     row.album = getMeta("album");
+    row.albumId = AlbumIdOf(info);
     // One lookup for both: joining MetaValuesRaw gives what MetaJoined would (MetaAccess.h).
     row.albumArtists = MetaValuesRaw(info, "album artist");
     row.albumArtist = JoinMetaValues(row.albumArtists, ", ");

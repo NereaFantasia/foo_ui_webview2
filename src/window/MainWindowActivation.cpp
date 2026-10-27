@@ -43,7 +43,10 @@ void MainWindow::OnActivate(WPARAM wParam, LPARAM lParam) {
     // 后续在同一窗口期内的激活消息直接静默跳过（不做 backdrop 切换、不调 SetForegroundWindow、
     // 不发广播），避免 SetForegroundWindow → WM_ACTIVATEAPP → overlayRedirect → SetForegroundWindow
     // 的震荡死循环。
-    if (active && WindowManager::GetInstance().IsOverlayInteractionRecent(300)) {
+    const auto undo = WindowManager::GetInstance().CaptureOverlayUndo(hwnd_);
+    if (overlayRedirectInteraction_ != undo.interaction.serial) overlayRedirectInProgress_ = false;
+    if (active && WindowManager::GetInstance().IsOverlayInteractionRecent(hwnd_, 300) &&
+        WindowManager::GetInstance().CanUndoActivation(undo)) {
         // -- 后续抑制：如果 redirect 已在执行中，静默跳过 --
         // 阻止 SetForegroundWindow 触发的 WM_ACTIVATEAPP 再次进入 redirect，消除震荡。
         if (overlayRedirectInProgress_) {
@@ -54,6 +57,7 @@ void MainWindow::OnActivate(WPARAM wParam, LPARAM lParam) {
 
         // -- 第一次 redirect：标记 in-progress，执行一次性撤销 --
         overlayRedirectInProgress_ = true;
+        overlayRedirectInteraction_ = undo.interaction.serial;
         lastOverlayRedirectTick_ = GetTickCount64();
 
         HWND ext = WindowManager::GetInstance().GetOverlayInteractionForeground();
@@ -71,13 +75,16 @@ void MainWindow::OnActivate(WPARAM wParam, LPARAM lParam) {
             (GetWindowLongW(hwnd_, GWL_EXSTYLE) & WS_EX_TOPMOST) != 0;
 
         // 把主窗口 z-order 压回外部窗口之后，避免即便仍短暂前台也覆盖外部应用。
-        if (extValid && extTopmost == selfTopmost) {
+        if (extValid && extTopmost == selfTopmost && WindowManager::GetInstance().CanUndoActivation(undo) &&
+            WindowManager::GetInstance().GetOverlayInteractionForeground() == ext) {
             SetWindowPos(hwnd_, ext, 0, 0, 0, 0,
                 SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
         }
         // 优先把前台还给外部应用；若未生效（主窗口仍前台）再引到 sink（同进程，可靠）。
-        if (extValid) SetForegroundWindow(ext);
-        if (GetForegroundWindow() == hwnd_ && sink && IsWindow(sink) && sink != hwnd_) {
+        if (extValid && WindowManager::GetInstance().CanUndoActivation(undo) &&
+            WindowManager::GetInstance().GetOverlayInteractionForeground() == ext) SetForegroundWindow(ext);
+        if (WindowManager::GetInstance().CanUndoActivation(undo) &&
+            GetForegroundWindow() == hwnd_ && sink && IsWindow(sink) && sink != hwnd_) {
             SetForegroundWindow(sink);
         }
 
@@ -93,6 +100,7 @@ void MainWindow::OnActivate(WPARAM wParam, LPARAM lParam) {
                    << " fgAfter=0x" << pfc::format_hex((size_t)::GetForegroundWindow());
             S_EmitEvidenceLine(stream.str());
         }
+        if (!WindowManager::GetInstance().CanContinueActivationUndo(undo)) return;
         // 不应用 active 外观：保持主窗口"未激活"语义。
         ApplyWindowActivationState(false, "WM_ACTIVATE.overlayRedirect");
         return;
@@ -102,7 +110,7 @@ void MainWindow::OnActivate(WPARAM wParam, LPARAM lParam) {
     // 也用超时兜底（500ms），防止标志永远不被清除。
     if (overlayRedirectInProgress_) {
         const unsigned long long now = GetTickCount64();
-        if (!WindowManager::GetInstance().IsOverlayInteractionRecent(500) ||
+        if (!WindowManager::GetInstance().IsOverlayInteractionRecent(hwnd_, 500) ||
             (now - lastOverlayRedirectTick_ > 500)) {
             overlayRedirectInProgress_ = false;
         }
@@ -132,13 +140,16 @@ void MainWindow::OnActivate(WPARAM wParam, LPARAM lParam) {
 }
 
 void MainWindow::OnActivateApp(bool active) {
+    if (overlayRedirectInteraction_ != WindowManager::GetInstance().CaptureOverlayUndo(hwnd_).interaction.serial) {
+        overlayRedirectInProgress_ = false;
+    }
     // -- popup 误激活抑制（与 OnActivate 中相同的逻辑）--
     // WM_ACTIVATEAPP 是线程级消息，Chromium 激活 popup 时同线程的 main 也收到 active=true。
     // 所有 popup（miniplayer、desktopLyrics 等）在 Visual Hosting 模式下点击可交互元素时，
     // Chromium 都会调 SetForegroundWindow 导致主窗口被无意激活。
     // 必须在此拦截，否则 WM_ACTIVATEAPP(active=true) 会先于 WM_ACTIVATE 把外观切换到 active，
     // 造成短暂的视觉闪烁（active→inactive→active→suppressed 的震颤）。
-    if (active && WindowManager::GetInstance().IsOverlayInteractionRecent(300)) {
+    if (active && WindowManager::GetInstance().IsOverlayInteractionRecent(hwnd_, 300)) {
         if (overlayRedirectInProgress_) {
             // 抑制后续激活消息，不做任何外观切换
             ApplyWindowActivationState(false, "WM_ACTIVATEAPP.overlayRedirect.suppressed");
@@ -154,7 +165,7 @@ void MainWindow::OnActivateApp(bool active) {
     // -- overlay 交互窗口期结束：清除 redirect 标志 --
     if (overlayRedirectInProgress_) {
         const unsigned long long now = GetTickCount64();
-        if (!WindowManager::GetInstance().IsOverlayInteractionRecent(500) ||
+        if (!WindowManager::GetInstance().IsOverlayInteractionRecent(hwnd_, 500) ||
             (now - lastOverlayRedirectTick_ > 500)) {
             overlayRedirectInProgress_ = false;
         }

@@ -36,6 +36,7 @@ struct SetMenuItemStateResult;
 struct SetMenuItemStateParams;
 struct SetMinimizeToTrayParams;
 struct SetCloseToTrayParams;
+struct SetClickActionParams;
 struct IsVisibleResult;
 struct IsVisibleParams;
 struct ClickPayload;
@@ -66,6 +67,7 @@ inline json ToJson(const SetMenuItemStateResult& v);
 inline bool FromJson(const json& j, SetMenuItemStateParams& out, std::string& error, const std::string& where = {});
 inline bool FromJson(const json& j, SetMinimizeToTrayParams& out, std::string& error, const std::string& where = {});
 inline bool FromJson(const json& j, SetCloseToTrayParams& out, std::string& error, const std::string& where = {});
+inline bool FromJson(const json& j, SetClickActionParams& out, std::string& error, const std::string& where = {});
 inline json ToJson(const IsVisibleResult& v);
 inline bool FromJson(const json& j, IsVisibleParams& out, std::string& error, const std::string& where = {});
 inline json ToJson(const ClickPayload& v);
@@ -490,6 +492,22 @@ inline bool FromJson(const json& j, SetCloseToTrayParams& out, std::string& erro
     return r.IsObject()
         && r.OnlyKeys({"enabled"})
         && r.Required("enabled", out.enabled);
+}
+
+struct SetClickActionParams {
+    static constexpr const char* kMethod = "tray.setClickAction";
+    static constexpr std::array<api::params::PathParam, 0> kPathParams{};
+    using Result = void;
+
+    std::string action{};
+};
+
+inline bool FromJson(const json& j, SetClickActionParams& out, std::string& error, const std::string& where) {
+    api::params::Reader r(j, error, where);
+    return r.IsObject()
+        && r.OnlyKeys({"action"})
+        && r.Required("action", out.action)
+        && r.OneOf("action", out.action, {"event", "toggleMainWindow"});
 }
 
 struct IsVisibleResult {

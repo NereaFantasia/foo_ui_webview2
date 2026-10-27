@@ -4,6 +4,9 @@
 // ============================================
 #include "pch.h"
 #include "domain/PathSecurity.h"
+#include "utils/MediaContainerPath.h"
+#include "utils/MediaReadPath.h"
+#include "utils/SubsongUtils.h"
 
 namespace fs = std::filesystem;
 
@@ -46,9 +49,30 @@ bool PathSecurity::ValidateWritePath(const std::wstring& rawPath, std::wstring& 
 }
 
 bool PathSecurity::ValidateMediaAccess(const std::wstring& rawPath, std::wstring& errorMsg) {
-    if (IsVirtualOrNetworkProtocol(rawPath)) return true;
+    std::wstring accessPath;
+    try {
+        if (rawPath.find(L'\0') != std::wstring::npos) {
+            errorMsg = L"Invalid protocol path";
+            return false;
+        }
+        const std::string input = pfc::stringcvt::string_utf8_from_wide(rawPath.c_str()).get_ptr();
+        if (IsVirtualOrNetworkProtocol(rawPath) &&
+            !media_container_path::StartsWith(input, "file-relative://")) return true;
+        const auto prepared = media_read_path::Resolve(input, [](const std::string& relative, std::string& native) {
+            // filesystem_v3 的实现可能来自第三方组件，没有通用的跨线程保证。
+            return core_api::is_main_thread() && SubsongUtils::TryResolveNativeMediaPath(relative, native);
+        });
+        if (prepared.error != nullptr) {
+            errorMsg = pfc::stringcvt::string_wide_from_utf8(prepared.error).get_ptr();
+            return false;
+        }
+        accessPath = pfc::stringcvt::string_wide_from_utf8(prepared.path.c_str()).get_ptr();
+    } catch (const std::exception&) {
+        errorMsg = L"Path validation error";
+        return false;
+    }
     ResolvedTarget t;
-    if (!PassBasicPathSafetyChecks(rawPath, t, errorMsg)) return false;   // 基础检查失败 → 硬拒绝, 不再回退
+    if (!PassBasicPathSafetyChecks(accessPath, t, errorMsg)) return false;   // 基础检查失败 → 硬拒绝, 不再回退
     try {
         if (ApplyReadRules(t, errorMsg)) return true;
     } catch (const std::exception&) {
@@ -57,6 +81,12 @@ bool PathSecurity::ValidateMediaAccess(const std::wstring& rawPath, std::wstring
     }
     try {
         TrustQueryMemo memo;
+        // 常见的媒体库路径先用原拼写与实际落点核对，只有别名未命中才探测回环共享。
+        if ((MemoAddable(memo, rawPath) || MemoTrackMember(memo, rawPath)) &&
+            (!IsInBlacklist(t.path) || MemoAddable(memo, t.path) || MemoMember(memo, t.path))) {
+            errorMsg.clear();
+            return true;
+        }
         const auto s = TrustSpellings(t, rawPath);
         if (IsInTrustedMediaRootsAny(memo, s) && LandingSafeForRead(memo, t)) { errorMsg.clear(); return true; }
         if (IsItemInLibraryOrPlaylistAny(memo, s) && LandingSafeForRead(memo, t)) { errorMsg.clear(); return true; }
@@ -219,6 +249,11 @@ void PathSecurity::InitializeWhitelist() {
         PushNormalized(whitelist_, path);
     }
 
+    // 用户图片目录
+    if (SUCCEEDED(SHGetFolderPathW(nullptr, CSIDL_MYPICTURES, nullptr, 0, path))) {
+        PushNormalized(whitelist_, path);
+    }
+
     // OneDrive 目录 (很多用户在 OneDrive 同步音乐库)
     PWSTR oneDrivePath = nullptr;
     if (SUCCEEDED(SHGetKnownFolderPath(FOLDERID_SkyDrive, 0, nullptr, &oneDrivePath))) {
@@ -229,6 +264,9 @@ void PathSecurity::InitializeWhitelist() {
 
 void PathSecurity::InitializeBlacklist() {
     blacklist_.clear();
+    blacklistExempt_.clear();
+
+    PushNormalized(blacklistExempt_, GetFoobarProfilePath());
 
     wchar_t path[MAX_PATH];
 
@@ -305,11 +343,8 @@ bool PathSecurity::PassBasicPathSafetyChecks(const std::wstring& rawPath, Resolv
             return false;
         }
         
-        // 映射盘先改写成 UNC。查表本身是纯字符串比对, 不产生 IO; 但映射表
-        // 从未加载或过期后的首次调用会刷新它: 枚举映射盘并对每个目标共享探测
-        // 一次共享根 (离线 NAS 为一次 SMB 超时), 任何盘符路径 (含 C:\、E:\
-        // 这类本地路径) 都可能触发。代价登记在 NetworkShareResolver.h 头注释;
-        // 本层不改变这一刷新策略；后台刷新或限定触发入口属于缓存策略调整。
+        // 映射盘先改写成 UNC。查表只枚举映射关系，不探测共享；只有实际命中的
+        // UNC 目标才在下方分类，普通本地盘符不等待无关网络盘。
         //
         // 只改写绝对形态 (X:\ 与 X:/); 盘符相对拼写 (X:dir\f、裸 X:) 在 Win32
         // 语义下指 X: 当前目录之下, 交给下方 canonical 按当前目录展开, 避免
@@ -481,35 +516,9 @@ bool PathSecurity::IsVirtualOrNetworkProtocol(const std::wstring& path) {
 }
 
 std::wstring PathSecurity::PreprocessProtocolPath(const std::wstring& path) {
-    // 检测特殊协议前缀
-    static const std::vector<std::wstring> protocols = {
-        L"archive://",   // 压缩包内文件
-        L"unpack://",    // 解压文件
-        L"tone://",      // 音轨
-        L"cdda://",      // CD 音轨
-        L"file://",      // 本地文件
-    };
-    
-    for (const auto& proto : protocols) {
-        if (path.find(proto) == 0) {
-            std::wstring extracted = path.substr(proto.length());
-            
-            // archive://D:\Music\Album.zip|/Track01.flac
-            // 提取 | 之前的部分
-            size_t pipePos = extracted.find(L'|');
-            if (pipePos != std::wstring::npos) {
-                extracted = extracted.substr(0, pipePos);
-            }
-            
-            // 处理 URL 编码
-            // 简单处理常见编码 (完整实现需要 URL decode)
-            // 完整 URL 解码暂未实现。
-            
-            return extracted;
-        }
-    }
-    
-    return path;
+    const std::string utf8 = pfc::stringcvt::string_utf8_from_wide(path.c_str()).get_ptr();
+    const std::string container = media_container_path::Unwrap(utf8);
+    return pfc::stringcvt::string_wide_from_utf8(container.c_str()).get_ptr();
 }
 
 bool PathSecurity::ContainsTraversal(const std::wstring& path) {
@@ -577,7 +586,15 @@ bool PathSecurity::IsPathPrefixOf(const std::wstring& prefix, const std::wstring
 bool PathSecurity::IsInBlacklist(const std::wstring& path) {
     std::wstring lowerPath = path;
     std::transform(lowerPath.begin(), lowerPath.end(), lowerPath.begin(), ::towlower);
-    
+
+    for (const auto& exempt : blacklistExempt_) {
+        std::wstring lowerExempt = exempt;
+        std::transform(lowerExempt.begin(), lowerExempt.end(), lowerExempt.begin(), ::towlower);
+        if (IsPathPrefixOf(lowerExempt, lowerPath)) {
+            return false;
+        }
+    }
+
     for (const auto& blocked : blacklist_) {
         std::wstring lowerBlocked = blocked;
         std::transform(lowerBlocked.begin(), lowerBlocked.end(), lowerBlocked.begin(), ::towlower);
@@ -676,6 +693,17 @@ bool PathSecurity::MemoMember(TrustQueryMemo& m, const std::wstring& s) {
     return it->second;
 }
 
+bool PathSecurity::MemoTrackMember(TrustQueryMemo& m, const std::wstring& s) {
+    auto it = m.member.find(s);
+    if (it == m.member.end()) {
+        const std::string input = pfc::stringcvt::string_utf8_from_wide(s.c_str()).get_ptr();
+        const auto track = SubsongUtils::SplitSubsongPath(input);
+        const std::wstring path = pfc::stringcvt::string_wide_from_utf8(track.path.c_str()).get_ptr();
+        it = m.member.try_emplace(s, IsItemInLibraryOrPlaylist(path, track.subsong)).first;
+    }
+    return it->second;
+}
+
 std::vector<std::wstring> PathSecurity::TrustSpellings(const ResolvedTarget& t, const std::wstring& rawPath) {
     std::vector<std::wstring> s;
     auto push = [&s](std::wstring p) {
@@ -739,17 +767,17 @@ bool PathSecurity::IsInTrustedMediaRoots(const std::wstring& path) {
     }
 }
 
-bool PathSecurity::IsItemInLibraryOrPlaylist(const std::wstring& path) {
+bool PathSecurity::IsItemInLibraryOrPlaylist(const std::wstring& path, t_uint32 subsong) {
     try {
         // 转换为 UTF8 并规范化路径 (file://... 格式)
         std::string utf8Path = pfc::stringcvt::string_utf8_from_wide(path.c_str()).get_ptr();
         pfc::string8 canonicalPath;
         filesystem::g_get_canonical_path(utf8Path.c_str(), canonicalPath);
         
-        // 1. 检查媒体库 (subsong 0 覆盖绝大多数非 CUE 文件)
+        // 库成员性包含轨号；未指定轨号的文件查询使用 0。
         auto library = library_manager::get();
         metadb_handle_ptr handle;
-        metadb::get()->handle_create(handle, make_playable_location(canonicalPath.c_str(), 0));
+        metadb::get()->handle_create(handle, make_playable_location(canonicalPath.c_str(), subsong));
         if (handle.is_valid() && library->is_item_in_library(handle)) {
             return true;
         }

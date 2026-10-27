@@ -2,6 +2,7 @@
 // 仅供 MainWindow*.cpp 使用
 #include "pch.h"
 #include "window/MainWindowInternal.h"
+#include "window/DwmCompatibility.h"
 #include "window/WindowChromeTrace.h"
 #include "prefs/PreferencesPage.h"
 #include <iomanip>
@@ -15,6 +16,7 @@ using json = nlohmann::json;
 namespace mainwindow_detail {
     // DWM wrappers
     HRESULT S_DwmSetWindowAttribute(HWND h, DWORD a, LPCVOID d, DWORD s) {
+        if (!dwm_compatibility::Current().SupportsAttribute(a)) return E_NOTIMPL;
         return ::DwmSetWindowAttribute(h, a, d, s);
     }
     HRESULT S_DwmGetWindowAttribute(HWND h, DWORD a, LPVOID d, DWORD s) {

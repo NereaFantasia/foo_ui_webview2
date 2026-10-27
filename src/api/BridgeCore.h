@@ -3,6 +3,7 @@
 #include "utils/Encoding.h"
 #include <nlohmann/json.hpp>
 #include <atomic>
+#include <chrono>
 #include <functional>
 #include <memory>
 #include <unordered_map>
@@ -100,6 +101,10 @@ private:
         WebViewHost* target = nullptr;  // nullptr = 走 bridge 默认 webView_
         std::function<bool()> isCurrentDocument;
         std::atomic<bool> responded{false};
+        // 慢调用日志用：主线程分发时填写，闸门放行时据此算出页面等到回包的总耗时。
+        std::string method;
+        std::string pathArgument;
+        std::chrono::steady_clock::time_point dispatchedAt{};
     };
 
     DeferredResponder(BridgeCore* bridge, std::string id, WebViewHost* target);
@@ -118,6 +123,9 @@ private:
 
 // Deferred API handler：不返回结果，通过 responder 回包（可跨线程、可延迟）
 using DeferredApiHandler = std::function<void(const json& params, DeferredResponder responder)>;
+
+// 把一段工作交给某条后台队列执行。注册 deferred 方法时给了它，路径校验就连同 handler 一起离开主线程。
+using BackgroundRunner = void (*)(std::function<void()> work);
 
 // ============================================
 // Bridge Core - C++ <-> JavaScript communication
@@ -197,8 +205,9 @@ private:
     // 注册延迟响应 API：handler 收 responder 而非返回 json，回包时机由 handler 决定。
     // 与 RegisterApi 分表存放（互不覆盖），但在 HasApi / GetRegisteredApiNames /
     // UnregisterApi 三个查询面与同步注册等价可见 —— 见实现处注释。
+    // runOn 为空时路径校验在主线程进行；给了就在 runOn 的队列上校验并调用 handler。
     void RegisterApiDeferred(const std::string& method, DeferredApiHandler handler,
-                             std::vector<PathSecuritySpec> specs);
+                             std::vector<PathSecuritySpec> specs, BackgroundRunner runOn = nullptr);
 
     WebViewHost* webView_ = nullptr;
     std::unordered_map<std::string, ApiHandler, std::hash<std::string>, std::equal_to<>> handlers_;
@@ -209,12 +218,14 @@ private:
     // 主线程分发段 —— HandleMessage 投递的 lambda 只做一行转调，段体在此具名。
     // 两条路径参数与回包时机不同，分成两个方法而非一个带判别标记的方法：
     // 同步段自己回包（含 id 为空则不回包），deferred 段把回包交给 responder。
+    // pathArgument 是第一个路径参数的值，只写进慢调用日志。
     void DispatchApiCall(const std::string& id, const std::string& method,
                          const ApiHandler& handler, const json& params,
-                         WebViewHost* responseTarget);
+                         const std::string& pathArgument, WebViewHost* responseTarget);
     static void DispatchDeferredApiCall(const std::string& method,
                                         const DeferredApiHandler& handler,
                                         const json& params,
+                                        const std::string& pathArgument,
                                         const DeferredResponder& responder);
 
     // id 归一化（number/string 二态）——响应通道共用单点，见实现处注释

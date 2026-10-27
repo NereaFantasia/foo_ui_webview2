@@ -57,6 +57,9 @@
     <ClCompile Include="src\main.cpp">
       <Filter>src</Filter>
     </ClCompile>
+    <ResourceCompile Include="src\foo_ui_webview2.rc">
+      <Filter>src</Filter>
+    </ResourceCompile>
     <ClCompile Include="src\settings\WindowStateConfig.cpp">
       <Filter>src\settings</Filter>
     </ClCompile>
@@ -114,10 +117,34 @@
     <ClCompile Include="src\core\QueueSources.cpp">
       <Filter>src\core</Filter>
     </ClCompile>
+    <ClCompile Include="src\core\QueueSession.cpp">
+      <Filter>src\core</Filter>
+    </ClCompile>
+    <ClCompile Include="src\core\QueueSessionCommands.cpp">
+      <Filter>src\core</Filter>
+    </ClCompile>
+    <ClCompile Include="src\core\ContentVersions.cpp">
+      <Filter>src\core</Filter>
+    </ClCompile>
+    <ClCompile Include="src\core\JitNativeObservation.cpp">
+      <Filter>src\core</Filter>
+    </ClCompile>
+    <ClCompile Include="src\core\QueueNativeAdoption.cpp">
+      <Filter>src\core</Filter>
+    </ClCompile>
+    <ClCompile Include="src\core\QueueSessionPlayback.cpp">
+      <Filter>src\core</Filter>
+    </ClCompile>
+    <ClCompile Include="src\api\JitSessionApi.cpp">
+      <Filter>src\api</Filter>
+    </ClCompile>
     <ClCompile Include="src\domain\PathSecurity.cpp">
       <Filter>src\domain</Filter>
     </ClCompile>
     <ClCompile Include="src\domain\library\LibraryCache.cpp">
+      <Filter>src\domain\library</Filter>
+    </ClCompile>
+    <ClCompile Include="src\domain\library\LibrarySync.cpp">
       <Filter>src\domain\library</Filter>
     </ClCompile>
     <ClCompile Include="src\domain\library\LibraryPathAlgebra.cpp">
@@ -142,6 +169,9 @@
       <Filter>src\window</Filter>
     </ClCompile>
     <ClCompile Include="src\window\MainWindowCaption.cpp">
+      <Filter>src\window</Filter>
+    </ClCompile>
+    <ClCompile Include="src\window\MainWindowInitFailure.cpp">
       <Filter>src\window</Filter>
     </ClCompile>
     <ClCompile Include="src\window\MainWindowDiagnostics.cpp">
@@ -216,6 +246,9 @@
     <ClCompile Include="src\webview\OriginPolicy.cpp">
       <Filter>src\webview</Filter>
     </ClCompile>
+    <ClCompile Include="src\webview\TextScaleFactor.cpp">
+      <Filter>src\webview</Filter>
+    </ClCompile>
     <ClCompile Include="src\webview\WebViewHostVisibility.cpp">
       <Filter>src\webview</Filter>
     </ClCompile>
@@ -241,6 +274,18 @@
       <Filter>src\webview\dnd</Filter>
     </ClCompile>
     <ClCompile Include="src\api\AsyncOperationRegistry.cpp">
+      <Filter>src\api</Filter>
+    </ClCompile>
+    <ClCompile Include="src\api\AutoplaylistEditor.cpp">
+      <Filter>src\api</Filter>
+    </ClCompile>
+    <ClCompile Include="src\domain\autoplaylist\AutoplaylistConfig.cpp">
+      <Filter>src\domain</Filter>
+    </ClCompile>
+    <ClCompile Include="src\domain\autoplaylist\ManagedAutoplaylist.cpp">
+      <Filter>src\domain</Filter>
+    </ClCompile>
+    <ClCompile Include="src\api\ManagedAutoplaylistApi.cpp">
       <Filter>src\api</Filter>
     </ClCompile>
     <ClCompile Include="src\api\QueueRebuildPlan.cpp">
@@ -329,6 +374,9 @@
     <ClInclude Include="src\api\LyricsFilePolicy.h">
       <Filter>src\api</Filter>
     </ClInclude>
+    <ClInclude Include="src\api\MediaReadQueue.h">
+      <Filter>src\api</Filter>
+    </ClInclude>
     <ClInclude Include="src\ui\UserInterface.h">
       <Filter>src\ui</Filter>
     </ClInclude>
@@ -344,6 +392,30 @@
     <ClInclude Include="src\core\FrontendDirectoryPolicy.h">
       <Filter>src\core</Filter>
     </ClInclude>
+    <ClInclude Include="src\core\JitSessionModel.h">
+      <Filter>src\core</Filter>
+    </ClInclude>
+    <ClInclude Include="src\core\JitNativeContext.h">
+      <Filter>src\core</Filter>
+    </ClInclude>
+    <ClInclude Include="src\core\ContentVersions.h">
+      <Filter>src\core</Filter>
+    </ClInclude>
+    <ClInclude Include="src\core\JitNativeObservation.h">
+      <Filter>src\core</Filter>
+    </ClInclude>
+    <ClInclude Include="src\core\QueueSessionState.h">
+      <Filter>src\core</Filter>
+    </ClInclude>
+    <ClInclude Include="src\core\QueueSessionInternal.h">
+      <Filter>src\core</Filter>
+    </ClInclude>
+    <ClInclude Include="src\api\JitSessionApi.h">
+      <Filter>src\api</Filter>
+    </ClInclude>
+    <ClInclude Include="src\core\JitShadowRows.h">
+      <Filter>src\core</Filter>
+    </ClInclude>
     <ClInclude Include="src\core\FrontendDirectoryResolver.h">
       <Filter>src\core</Filter>
     </ClInclude>
@@ -351,6 +423,12 @@
       <Filter>src\domain</Filter>
     </ClInclude>
     <ClInclude Include="src\domain\library\LibraryCache.h">
+      <Filter>src\domain\library</Filter>
+    </ClInclude>
+    <ClInclude Include="src\domain\library\LibraryChangeLog.h">
+      <Filter>src\domain\library</Filter>
+    </ClInclude>
+    <ClInclude Include="src\domain\library\LibrarySync.h">
       <Filter>src\domain\library</Filter>
     </ClInclude>
     <ClInclude Include="src\domain\library\LibraryPathAlgebra.h">
@@ -419,6 +497,12 @@
     <ClInclude Include="src\window\MenuResourceLimits.h">
       <Filter>src\window</Filter>
     </ClInclude>
+    <ClInclude Include="src\api\AlbumRowText.h">
+      <Filter>src\api</Filter>
+    </ClInclude>
+    <ClInclude Include="src\api\MetadataText.h">
+      <Filter>src\api</Filter>
+    </ClInclude>
     <ClInclude Include="src\utils\StringUtils.h">
       <Filter>src\utils</Filter>
     </ClInclude>
@@ -452,6 +536,9 @@
     <ClInclude Include="src\window\WindowChromeResolver.h">
       <Filter>src\window</Filter>
     </ClInclude>
+    <ClInclude Include="src\window\DwmCompatibility.h">
+      <Filter>src\window</Filter>
+    </ClInclude>
     <ClInclude Include="src\window\WindowChromeApplier.h">
       <Filter>src\window</Filter>
     </ClInclude>
@@ -462,6 +549,9 @@
       <Filter>src\window</Filter>
     </ClInclude>
     <ClInclude Include="src\webview\OriginPolicy.h">
+      <Filter>src\webview</Filter>
+    </ClInclude>
+    <ClInclude Include="src\webview\TextScaleFactor.h">
       <Filter>src\webview</Filter>
     </ClInclude>
     <ClInclude Include="src\webview\WebViewHost.h">
@@ -483,6 +573,18 @@
       <Filter>src\webview\dnd</Filter>
     </ClInclude>
     <ClInclude Include="src\api\AsyncOperationRegistry.h">
+      <Filter>src\api</Filter>
+    </ClInclude>
+    <ClInclude Include="src\api\AutoplaylistEditor.h">
+      <Filter>src\api</Filter>
+    </ClInclude>
+    <ClInclude Include="src\domain\autoplaylist\AutoplaylistConfig.h">
+      <Filter>src\domain</Filter>
+    </ClInclude>
+    <ClInclude Include="src\domain\autoplaylist\ManagedAutoplaylist.h">
+      <Filter>src\domain</Filter>
+    </ClInclude>
+    <ClInclude Include="src\api\ManagedAutoplaylistApi.h">
       <Filter>src\api</Filter>
     </ClInclude>
     <ClInclude Include="src\api\MetadataTagValues.h">

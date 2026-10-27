@@ -165,18 +165,28 @@ void WebViewEnvironment::CreateEnvironmentInternal() {
     // 必须在 GetUserDataPath 创建目录之前：迁移以目标目录不存在为前提
     MigrateSharedUserData();
     auto userDataPath = GetUserDataPath();
-    
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        lastCreation_ = {};
+        lastCreation_.userDataPath = pfc::stringcvt::string_utf8_from_wide(userDataPath.c_str()).get_ptr();
+    }
+
     // Check WebView2 Runtime availability
     wil::unique_cotaskmem_string version;
     HRESULT checkHr = GetAvailableCoreWebView2BrowserVersionString(nullptr, &version);
     if (FAILED(checkHr) || !version) {
         console::print("[WebView2 UI] WebView2 Runtime not available");
+        RecordFailure("runtime", FAILED(checkHr) ? checkHr : HRESULT_FROM_WIN32(ERROR_FILE_NOT_FOUND));
         DrainPendingCallbacksOnFailure();
         return;
     }
-    
-    FB2K_console_formatter() << "[WebView2 UI] WebView2 Runtime version: " 
-                             << pfc::stringcvt::string_utf8_from_wide(version.get()).get_ptr();
+
+    const std::string runtimeVersion = pfc::stringcvt::string_utf8_from_wide(version.get()).get_ptr();
+    FB2K_console_formatter() << "[WebView2 UI] WebView2 Runtime version: " << runtimeVersion.c_str();
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        lastCreation_.runtimeVersion = runtimeVersion;
+    }
     
     // Create environment options with custom schemes
     auto envOptions = Make<CoreWebView2EnvironmentOptions>();
@@ -242,6 +252,15 @@ void WebViewEnvironment::CreateEnvironmentInternal() {
     std::wstring disableFeatures = L"CalculateNativeWinOcclusion,SpareRendererForSitePerProcess";
     std::wstring extraArgs;
 
+    // 浏览器进程的 DPI 感知要与宿主一致。窗口托管时 WebView2 自己传这个参数；第一个控制器是
+    // 组合托管时它不传，浏览器按逐显示器感知运行，会把 Windows 文本大小再乘进设备缩放比，
+    // 而宿主尺寸只按 RasterizationScale 换算：文本大小不是 100% 时 devicePixelRatio 与
+    // app-region 命中区域都比页面实际排版大出这个倍数。这里按 WebView2 的取值方式补上。
+    const DPI_AWARENESS awareness = GetAwarenessFromDpiAwarenessContext(GetThreadDpiAwarenessContext());
+    if (awareness != DPI_AWARENESS_INVALID) {
+        extraArgs += L" --embedded-browser-webview-dpi-awareness=" + std::to_wstring(static_cast<int>(awareness));
+    }
+
     // CDP remote debugging port — 仅在 CDP 远程调试开关启用时开放
     // 允许 MCP 工具集 / AI 智能体通过 CDP 操控 WebView2
     if (security_config::IsCdpRemoteEnabled()) {
@@ -275,13 +294,23 @@ void WebViewEnvironment::CreateEnvironmentInternal() {
                 std::vector<EnvironmentCallback> callbacksToInvoke;
                 ICoreWebView2Environment* envToReturn = nullptr;
                 bool failed = false;
+
+                std::string effectiveUserDataPath;
+                wil::com_ptr<ICoreWebView2Environment7> env7;
+                wil::unique_cotaskmem_string folder;
+                if (SUCCEEDED(result) && env && SUCCEEDED(env->QueryInterface(IID_PPV_ARGS(&env7))) &&
+                    SUCCEEDED(env7->get_UserDataFolder(&folder)) && folder) {
+                    effectiveUserDataPath = pfc::stringcvt::string_utf8_from_wide(folder.get()).get_ptr();
+                }
                 
                 {
                     std::lock_guard<std::mutex> lock(mutex_);
                     
                     if (FAILED(result) || !env) {
-                        FB2K_console_formatter() << "[WebView2 UI] Failed to create environment, HRESULT: 0x" 
+                        FB2K_console_formatter() << "[WebView2 UI] Failed to create environment, HRESULT: 0x"
                                                  << pfc::format_hex((uint32_t)result);
+                        lastCreation_.failedStage = "environment";
+                        lastCreation_.hr = FAILED(result) ? result : E_FAIL;
                         // 提取等待者，在锁外以 nullptr 回调
                         callbacksToInvoke = std::move(pendingCallbacks_);
                         pendingCallbacks_.clear();
@@ -289,6 +318,7 @@ void WebViewEnvironment::CreateEnvironmentInternal() {
                         failed = true;
                     } else {
                         environment_ = env;
+                        lastCreation_.effectiveUserDataPath = std::move(effectiveUserDataPath);
                         ready_ = true;
                         creating_ = false;
                         envToReturn = environment_.get();
@@ -322,10 +352,22 @@ void WebViewEnvironment::CreateEnvironmentInternal() {
     );
     
     if (FAILED(hr)) {
-        FB2K_console_formatter() << "[WebView2 UI] CreateCoreWebView2EnvironmentWithOptions failed: 0x" 
+        FB2K_console_formatter() << "[WebView2 UI] CreateCoreWebView2EnvironmentWithOptions failed: 0x"
                                  << pfc::format_hex((uint32_t)hr);
+        RecordFailure("environment", hr);
         DrainPendingCallbacksOnFailure();
     }
+}
+
+void WebViewEnvironment::RecordFailure(const char* stage, HRESULT hr) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    lastCreation_.failedStage = stage;
+    lastCreation_.hr = hr;
+}
+
+WebViewEnvironment::CreationInfo WebViewEnvironment::LastCreation() const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    return lastCreation_;
 }
 
 void WebViewEnvironment::DrainPendingCallbacksOnFailure() {

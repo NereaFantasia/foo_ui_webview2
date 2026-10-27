@@ -178,9 +178,10 @@ interface DropPayload {
   y: Int;
   /**
    * Win32 modifier and mouse-button mask at drop time (`MK_*` flags), for a page that wants
-   * modifier-dependent behaviour. It does not change the drop effect reported to the drag source,
-   * which is never move or link.
-   * @zh 放下时的 Win32 修饰键与鼠标按键掩码（`MK_*` 标志），供需要按修饰键区分行为的页面使用。它不影响报告给拖动源的放置效果，那个从不是移动或链接。
+   * modifier-dependent behaviour. It does not change the drop effect reported to the drag source:
+   * copy for a drag from another application, the page's answer for one started in a page of this
+   * component.
+   * @zh 放下时的 Win32 修饰键与鼠标按键掩码（`MK_*` 标志），供需要按修饰键区分行为的页面使用。它不影响报告给拖动源的放置效果：来自其他程序的拖动报告复制，本组件页面发起的拖动按页面的答复报告。
    */
   keyState: Int;
   source: DragSource;
@@ -274,7 +275,6 @@ interface GetCapabilitiesResult {
     | 'forward-unavailable'
     | 'inner-target-not-found'
     | 'chain-failed'
-    | 'displaced'
     | 'origin-untrusted';
   /**
    * Files can be dragged out of the window through `dnd.prepareDrag`. Independent of `paths`.

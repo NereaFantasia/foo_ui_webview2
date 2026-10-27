@@ -19,6 +19,8 @@ void WebViewHost::Resize(int width, int height) {
 
 void WebViewHost::Resize(const RECT& bounds) {
     if (controller_) {
+        // DPI 变化后各窗口都会按新尺寸 Resize，比例在这里跟上
+        SyncRasterizationScale();
         // Resize 在拖拽期间每条 WM_SIZE 都被调用，无条件写控制台会在逐帧路径上
         // 产生真实开销（console::print 需格式化并投递到 fb2k 控制台）。
         if (WindowChromeTrace::AuxiliaryTraceEnabled()) {
@@ -188,16 +190,17 @@ void WebViewHost::TrySuspendDeep() {
 
                 if (generation != state->generation.load(std::memory_order_acquire)) {
                     // 代数过期：请求发出后页面已恢复可见（put_IsVisible(TRUE)
-                    // 自动 resume）或有更新的挂起请求接管。不写状态、不回退 Low；
-                    // 若页面此刻应可见而运行时仍报告挂起（回调晚于恢复的窗口期），
-                    // 立即 Resume 兜底。
-                    if (!state->pageHidden.load(std::memory_order_acquire)) {
+                    // 自动 resume）、要求保持运行，或有更新的挂起请求接管。不写状态、
+                    // 不回退 Low；页面此刻应可见或应保持运行而运行时仍报告挂起时
+                    // （回调晚于恢复的窗口期），立即 Resume 兜底。
+                    if (!state->pageHidden.load(std::memory_order_acquire) ||
+                        state->keepRunning.load(std::memory_order_acquire)) {
                         wil::com_ptr<ICoreWebView2_3> wv3Late;
                         if (SUCCEEDED(webview.try_query_to(&wv3Late)) && wv3Late) {
                             BOOL suspended = FALSE;
                             if (SUCCEEDED(wv3Late->get_IsSuspended(&suspended)) && suspended) {
                                 wv3Late->Resume();
-                                console::print("[WebView2 UI] stale deep-suspend completion resumed (page visible again)");
+                                console::print("[WebView2 UI] stale deep-suspend completion resumed (page visible or kept running)");
                             }
                         }
                     }
@@ -237,6 +240,22 @@ bool WebViewHost::IsSuspended() const {
     BOOL suspended = FALSE;
     if (FAILED(wv3->get_IsSuspended(&suspended))) return false;
     return suspended != FALSE;
+}
+
+void WebViewHost::KeepRunningWhileHidden(bool keep) {
+    suspendState_->keepRunning.store(keep, std::memory_order_release);
+    LogLifecycle("suspend.keep-running", std::string("keep=") + (keep ? "1" : "0"));
+    if (!keep || !webview_) return;
+    // 作废在途的挂起请求；它若晚于这里完成，回调按 keepRunning 再恢复。
+    suspendState_->generation.fetch_add(1, std::memory_order_acq_rel);
+    wil::com_ptr<ICoreWebView2_3> wv3;
+    if (FAILED(webview_.try_query_to(&wv3)) || !wv3) return;
+    BOOL suspended = FALSE;
+    if (SUCCEEDED(wv3->get_IsSuspended(&suspended)) && suspended) {
+        window_behavior_trace::Com(parentHwnd_, "webview.Resume");
+        const HRESULT hr = wv3->Resume();
+        LogLifecycle("suspend.resumed-hidden", "hr=" + std::to_string((long long)hr));
+    }
 }
 
 void WebViewHost::SetBoundsVisible(bool visible) {

@@ -7,6 +7,7 @@
 #include "api/PlaybackApi.h"
 #include "api/TrackRow.h"
 #include "api/VolumeScale.h"
+#include "core/JitNativeObservation.h"
 #include "core/QueueManager.h"
 #include "utils/HostTime.h"
 #include "utils/StringUtils.h"
@@ -43,6 +44,7 @@ public:
     // Called when a new track starts playing
     void on_playback_new_track(metadb_handle_ptr track) override {
         try {
+            jit_native::hooks::PlaybackNewTrack();
             // Reset time throttle for immediate update on new track
             ResetTimeThrottle();
             
@@ -71,6 +73,7 @@ public:
     // Called when playback stops
     void on_playback_stop(play_control::t_stop_reason reason) override {
         try {
+            jit_native::hooks::PlaybackStopped(reason == play_control::stop_reason_user);
             std::string reasonStr;
             switch (reason) {
                 case play_control::stop_reason_user:
@@ -251,6 +254,7 @@ public:
     // on_playback_new_track follows once the first track opens for decoding.
     void on_playback_starting(play_control::t_track_command cmd, bool paused) override {
         try {
+            jit_native::hooks::PlaybackStarting();
             std::string command;
             switch (cmd) {
                 case play_control::track_command_play:

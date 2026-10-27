@@ -10,6 +10,7 @@
 #include "core/FrontendDirectoryResolver.h"
 #include "prefs/PreferencesPage.h"
 #include "utils/I18n.h"
+#include "webview/OriginPolicy.h"
 #include <foobar2000/SDK/coreDarkMode.h>
 #include <CommCtrl.h>
 
@@ -46,6 +47,7 @@ enum PanelDlgControlIds {
     IDC_PD_EDIT_PATH        = 2014,
     IDC_PD_BTN_OK           = 2015,
     IDC_PD_BTN_CANCEL       = 2016,
+    IDC_PD_CHECK_ALLOW_URL  = 2017,
 };
 
 // ============================================
@@ -109,6 +111,21 @@ static void UpdatePathDisplay(HWND hwnd, const std::string& templateName, const 
     }
     
     SetWindowTextW(hEditPath, path.c_str());
+}
+
+// 复选框显示 URL 覆盖的页面能否调用接口：本机与内置地址自动允许、不可改；
+// 其他网址只在来源等于已允许的来源时勾选，换了网站就显示未允许。
+static void UpdateAllowUrlCheck(HWND hwnd, const PanelConfig& config) {
+    HWND hCheck = GetDlgItem(hwnd, IDC_PD_CHECK_ALLOW_URL);
+    if (!hCheck) return;
+
+    const std::wstring url = pfc::stringcvt::string_wide_from_utf8(config.urlOverride.c_str()).get_ptr();
+    const bool hasOrigin = !origin_policy::OriginOf(url).empty();
+    const bool automatic = !origin_policy::PanelUrlTrustedOrigin(url, L"").empty();
+    const bool approved = hasOrigin && config.UrlOrigin() == config.approvedUrlOrigin;
+
+    EnableWindow(hCheck, hasOrigin && !automatic);
+    SendMessageW(hCheck, BM_SETCHECK, (automatic || approved) ? BST_CHECKED : BST_UNCHECKED, 0);
 }
 
 // ============================================
@@ -228,7 +245,18 @@ static LRESULT CALLBACK PanelConfigDlgProc(HWND hwnd, UINT msg, WPARAM wParam, L
         if (!state->config.urlOverride.empty()) {
             SetWindowTextW(hEditUrl, pfc::stringcvt::string_wide_from_utf8(state->config.urlOverride.c_str()).get_ptr());
         }
-        y += CTRL_H + GAP;
+        y += CTRL_H + PanelDlgDpiScale(2, dpi);
+
+        // 括号前手动换行，免得按宽度断在词中间；留两行高度
+        const int allowUrlH = PanelDlgDpiScale(32, dpi);
+        HWND hCheckAllowUrl = CreateWindowExW(0, L"BUTTON",
+            TR("Allow this site to access foobar2000 and this computer\n(it can run programs and read or write files)",
+               "允许此网站访问 foobar2000 和这台电脑\n（可运行程序、读写文件）"),
+            WS_CHILD | WS_VISIBLE | BS_AUTOCHECKBOX | BS_MULTILINE | WS_TABSTOP,
+            MARGIN, y, contentW, allowUrlH,
+            hwnd, (HMENU)IDC_PD_CHECK_ALLOW_URL, hInst, nullptr);
+        SendMessageW(hCheckAllowUrl, WM_SETFONT, (WPARAM)hFont, TRUE);
+        y += allowUrlH + GAP;
         
         // ========== 第四行：复选框 (2x2) ==========
         HWND hCheck1 = CreateWindowExW(0, L"BUTTON", TR("Transparent Background", "透明背景"),
@@ -296,6 +324,7 @@ static LRESULT CALLBACK PanelConfigDlgProc(HWND hwnd, UINT msg, WPARAM wParam, L
         
         // 初始化路径显示
         UpdatePathDisplay(hwnd, state->config.templateName, state->config.urlOverride);
+        UpdateAllowUrlCheck(hwnd, state->config);
         
         // 深色模式
         state->darkMode.AddDialogWithControls(hwnd);
@@ -369,6 +398,15 @@ static LRESULT CALLBACK PanelConfigDlgProc(HWND hwnd, UINT msg, WPARAM wParam, L
                 GetDlgItemTextW(hwnd, IDC_PD_EDIT_URL, urlBuf.data(), urlLen + 1);
                 state->config.urlOverride = pfc::stringcvt::string_utf8_from_wide(urlBuf.c_str()).get_ptr();
                 UpdatePathDisplay(hwnd, state->config.templateName, state->config.urlOverride);
+                UpdateAllowUrlCheck(hwnd, state->config);
+            }
+            break;
+
+        case IDC_PD_CHECK_ALLOW_URL:
+            if (state) {
+                const bool allow =
+                    SendDlgItemMessageW(hwnd, IDC_PD_CHECK_ALLOW_URL, BM_GETCHECK, 0, 0) == BST_CHECKED;
+                state->config.approvedUrlOrigin = allow ? state->config.UrlOrigin() : std::string();
             }
             break;
         
@@ -407,7 +445,12 @@ static LRESULT CALLBACK PanelConfigDlgProc(HWND hwnd, UINT msg, WPARAM wParam, L
                 std::wstring nameBuf(static_cast<size_t>(nameLen) + 1, L'\0');
                 GetDlgItemTextW(hwnd, IDC_PD_EDIT_NAME, nameBuf.data(), nameLen + 1);
                 state->config.panelName = pfc::stringcvt::string_utf8_from_wide(nameBuf.c_str()).get_ptr();
-                
+
+                // 只保留当前网址的允许，免得改回以前的网址时旧的允许悄悄生效
+                if (state->config.approvedUrlOrigin != state->config.UrlOrigin()) {
+                    state->config.approvedUrlOrigin.clear();
+                }
+
                 state->confirmed = true;
             }
             DestroyWindow(hwnd);
@@ -488,7 +531,7 @@ bool ShowPanelConfigDialog(HWND parent, PanelConfig& config) {
     // 计算窗口大小和位置（居中于父窗口）
     int dpi = PanelDlgGetDpi(parent);
     int dlgW = PanelDlgDpiScale(400, dpi);   // 加宽以容纳更多控件
-    int dlgH = PanelDlgDpiScale(320, dpi);   // 加高以容纳所有控件
+    int dlgH = PanelDlgDpiScale(356, dpi);   // 加高以容纳所有控件
     
     RECT parentRect = {};
     if (parent && IsWindow(parent)) {

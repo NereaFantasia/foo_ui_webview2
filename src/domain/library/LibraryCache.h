@@ -3,8 +3,9 @@
  * 
  * Tells when the library changed. The API layer keeps its own declared
  * results (albums, artists, status, the full track list) and drops them when
- * GetGeneration() moves, so this header does not depend on the generated API
- * types. Invalidate() runs whenever a library change is detected.
+ * the generations below move, so this header does not depend on the generated
+ * API types. Invalidate() runs whenever tracks are added, removed or retagged;
+ * InvalidateHookFields() when only fields supplied by a component changed.
  */
 
 #pragma once
@@ -35,7 +36,15 @@ public:
      * Invalidate all caches. Called when library changes are detected.
      */
     void Invalidate();
-    
+
+    /**
+     * For a change from a display hook: a component such as foo_playcount
+     * asked for its fields (%rating%, %play_count%) to be shown anew, and paths
+     * and tags are as before. Moves GetGeneration() only; IsValid() and
+     * GetLastModified() keep describing the last Invalidate().
+     */
+    void InvalidateHookFields();
+
     /**
      * Check if cache is valid
      */
@@ -52,10 +61,17 @@ public:
     int64_t GetLastModified() const;
 
     /**
-     * Counts Invalidate() calls. A result kept elsewhere is stale once the
-     * generation it was stored under differs from this.
+     * Counts Invalidate() and InvalidateHookFields() calls. A result kept
+     * elsewhere that carries a hook field is stale once the generation it was
+     * stored under differs from this.
      */
     uint64_t GetGeneration() const;
+
+    /**
+     * Counts Invalidate() calls only. A result built from paths and tags alone
+     * is stale once the generation it was stored under differs from this.
+     */
+    uint64_t GetFileGeneration() const;
 
     /**
      * Marks the cache valid on behalf of a result kept elsewhere, so that
@@ -78,7 +94,8 @@ private:
     std::atomic<bool> m_valid{false};
     std::atomic<int64_t> m_lastModified{0};
     std::atomic<uint64_t> m_generation{0};
-    
+    std::atomic<uint64_t> m_fileGeneration{0};
+
     // Statistics
     mutable std::atomic<size_t> m_cacheHits{0};
     mutable std::atomic<size_t> m_cacheMisses{0};

@@ -216,7 +216,8 @@ void MainWindow::SetBgSuspend(unsigned reason, bool active, const char* why) {
     const bool keepAlive = security_config::IsAutomationKeepAliveActive();
     const auto currentProjection =
         background_suspend_policy::Project(bgSuspendReasons_, keepAlive);
-    const bool deepSuspendEnabled = security_config::IsDeepSuspendEnabled();
+    // 会话持有运行资格时按深挂起关闭处理：页面隐藏并降内存，但脚本继续运行。
+    const bool deepSuspendEnabled = security_config::IsDeepSuspendEnabled() && !sessionKeepsRunning_;
 
     // 原因未变化时通常是 no-op；但上次 hidden→visible 命令失败后，实际状态
     // 仍与投影不一致，重试定时器必须能再次进入同一收敛逻辑。
@@ -236,6 +237,7 @@ void MainWindow::SetBgSuspend(unsigned reason, bool active, const char* why) {
                << " projectedLow=" << (currentProjection.useLowMemory ? 1 : 0)
                << " projectedDeep=" << (currentProjection.deepSuspend ? 1 : 0)
                << " deepEnabled=" << (deepSuspendEnabled ? 1 : 0)
+               << " sessionHold=" << (sessionKeepsRunning_ ? 1 : 0)
                << " keepAlive=" << (keepAlive ? 1 : 0);
         LogWebViewLifecycle("background.project", detail.str());
     }
@@ -311,6 +313,30 @@ void MainWindow::SetBgSuspend(unsigned reason, bool active, const char* why) {
         const bool useManualLow = currentProjection.useLowMemory ||
             (currentProjection.deepSuspend && !deepSuspendEnabled);
         webView_->SetMemoryUsageLow(useManualLow);
+    }
+}
+
+void MainWindow::SetSessionKeepsRunning(bool keep) {
+    if (sessionKeepsRunning_ == keep) return;
+    sessionKeepsRunning_ = keep;
+    LogWebViewLifecycle("background.session-hold",
+        std::string("keep=") + (keep ? "1" : "0") + " pageHidden=" + (bgSuspendPageHidden_ ? "1" : "0") +
+        " deepRequested=" + (bgSuspendDeepRequested_ ? "1" : "0"));
+    if (!webView_) return;
+    webView_->KeepRunningWhileHidden(keep);
+    if (!bgSuspendPageHidden_ || !hwnd_ || !IsWindow(hwnd_)) return;
+
+    if (keep) {
+        // 已挂起的页面由 KeepRunningWhileHidden 恢复；内存目标改由手动 Low 管理。
+        bgSuspendDeepRequested_ = false;
+        webView_->SetMemoryUsageLow(true);
+        return;
+    }
+    const auto projection = background_suspend_policy::Project(
+        bgSuspendReasons_, security_config::IsAutomationKeepAliveActive());
+    if (projection.deepSuspend && security_config::IsDeepSuspendEnabled()) {
+        bgSuspendDeepRequested_ = true;
+        webView_->TrySuspendDeep();
     }
 }
 

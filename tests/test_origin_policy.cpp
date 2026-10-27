@@ -3,8 +3,10 @@
 #include "../src/webview/OriginPolicy.h"
 
 using origin_policy::DevServerOrigin;
+using origin_policy::IsLoopbackOrigin;
 using origin_policy::IsTrustedPage;
 using origin_policy::OriginOf;
+using origin_policy::PanelUrlTrustedOrigin;
 
 TEST(OriginPolicyOriginOf, KeepsSchemeHostAndPort) {
     EXPECT_EQ(OriginOf(L"https://foo-ui-webview2.local/index.html?windowId=popup_1"),
@@ -87,4 +89,49 @@ TEST(OriginPolicyIsTrustedPage, NothingElseByDefault) {
     EXPECT_FALSE(IsTrustedPage(L"https://app.local/", none));
     EXPECT_FALSE(IsTrustedPage(L"https://fb2k.local/", none));
     EXPECT_FALSE(IsTrustedPage(L"", none));
+}
+
+TEST(OriginPolicyIsLoopbackOrigin, LocalhostLoopbackIpv4AndIpv6) {
+    EXPECT_TRUE(IsLoopbackOrigin(L"http://localhost"));
+    EXPECT_TRUE(IsLoopbackOrigin(L"http://localhost:5173"));
+    EXPECT_TRUE(IsLoopbackOrigin(L"https://127.0.0.1:8443"));
+    EXPECT_TRUE(IsLoopbackOrigin(L"http://127.12.0.250"));
+    EXPECT_TRUE(IsLoopbackOrigin(L"http://[::1]"));
+    EXPECT_TRUE(IsLoopbackOrigin(L"http://[::1]:5173"));
+}
+
+TEST(OriginPolicyIsLoopbackOrigin, NothingThatNeedsResolving) {
+    EXPECT_FALSE(IsLoopbackOrigin(L"http://app.localhost:5173"));
+    EXPECT_FALSE(IsLoopbackOrigin(L"http://localhost.example.com"));
+    EXPECT_FALSE(IsLoopbackOrigin(L"http://0.0.0.0:5173"));
+    EXPECT_FALSE(IsLoopbackOrigin(L"http://192.168.1.10:5173"));
+    EXPECT_FALSE(IsLoopbackOrigin(L"http://128.0.0.1"));
+    EXPECT_FALSE(IsLoopbackOrigin(L"http://127.0.0"));
+    EXPECT_FALSE(IsLoopbackOrigin(L"http://127.0.0.1.5"));
+    EXPECT_FALSE(IsLoopbackOrigin(L"http://127.0.0.256"));
+    EXPECT_FALSE(IsLoopbackOrigin(L"http://127..0.1"));
+    EXPECT_FALSE(IsLoopbackOrigin(L"http://[::2]"));
+    EXPECT_FALSE(IsLoopbackOrigin(L"http://[::1]x"));
+    EXPECT_FALSE(IsLoopbackOrigin(L""));
+}
+
+TEST(OriginPolicyPanelUrlTrustedOrigin, LoopbackAndBundledNeedNoApproval) {
+    EXPECT_EQ(PanelUrlTrustedOrigin(L"http://localhost:5173/", L""), L"http://localhost:5173");
+    EXPECT_EQ(PanelUrlTrustedOrigin(L"http://127.0.0.1:8080/app", L""), L"http://127.0.0.1:8080");
+    EXPECT_EQ(PanelUrlTrustedOrigin(L"https://foo-ui-webview2.local/index.html", L""),
+              L"https://foo-ui-webview2.local");
+}
+
+TEST(OriginPolicyPanelUrlTrustedOrigin, RemoteOnlyWhenItsOriginWasApproved) {
+    EXPECT_EQ(PanelUrlTrustedOrigin(L"https://example.com/player", L"https://example.com"),
+              L"https://example.com");
+    EXPECT_EQ(PanelUrlTrustedOrigin(L"https://example.com/player", L""), L"");
+    EXPECT_EQ(PanelUrlTrustedOrigin(L"https://example.com/player", L"https://other.example"), L"");
+    EXPECT_EQ(PanelUrlTrustedOrigin(L"http://example.com/player", L"https://example.com"), L"");
+}
+
+TEST(OriginPolicyPanelUrlTrustedOrigin, UnparsableUrlsStayUntrusted) {
+    EXPECT_EQ(PanelUrlTrustedOrigin(L"", L""), L"");
+    EXPECT_EQ(PanelUrlTrustedOrigin(L"file:///C:/theme/index.html", L""), L"");
+    EXPECT_EQ(PanelUrlTrustedOrigin(L"https://example.com:1@localhost:5173/", L"https://example.com"), L"");
 }

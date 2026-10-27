@@ -2,6 +2,7 @@
 #include "callbacks/QueueCallback.h"
 #include "api/EventEmit.h"
 #include "api/generated/PlaybackSchema.h"
+#include "core/ContentVersions.h"
 #include "core/WebViewContext.h"
 
 #include <cassert>
@@ -31,6 +32,7 @@ void EmitQueueChanged(const std::string& origin) {
         api::playback::QueueChangedPayload payload;
         payload.origin = origin;
         payload.count = static_cast<std::int64_t>(count);
+        payload.contentVersion = content_version::QueueToken();
         api::emit::Broadcast<api::playback::events::QueueChanged>(payload);
     } catch (...) {}
 }
@@ -60,6 +62,7 @@ class QueueCallbackImpl : public playback_queue_callback {
 public:
     void on_changed(t_change_origin origin) override {
         try {
+            content_version::hooks::QueueChanged();
             std::string originStr;
             switch (origin) {
                 case changed_user_added: 

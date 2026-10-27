@@ -1,13 +1,5 @@
 ﻿/**
- * QueueManager.cpp - JIT Queue Manager Implementation
- * 
- * Implements dual-layer queue architecture for streaming media playback.
- * Uses fb2k's shadow playlist as a minimal buffer while frontend manages
- * the full logical queue with play modes.
- * 
- * v1.1.2+: Now supports both HTTP streaming URLs and local file paths.
- * - HTTP URLs: Uses process_locations_async with streaming configuration
- * - Local files: Uses native playlist insertion for optimal playback
+ * QueueManager.cpp - legacy jitQueue commands, playback callbacks and restoring the user's context
  */
 
 #include "pch.h"
@@ -39,9 +31,10 @@ QueueManager& QueueManager::GetInstance() {
 
 void QueueManager::Initialize() {
     std::lock_guard<std::mutex> lock(m_mutex);
+    if (m_initialized) return;
+    m_initialized = true;
     
-    // Don't create shadow playlist on startup - lazy initialization
-    // It will be created on first use of JIT Queue
+    // The shadow playlist is created on first use, not at startup.
     m_shadowPlaylistIndex = pfc::infinite_size;
     
     FB2K_console_print("[JIT Queue] Initialized (lazy mode - playlist created on first use)");
@@ -65,7 +58,14 @@ void QueueManager::Shutdown() {
     m_nextTrackId.clear();
     m_currentTitle.clear();
     m_nextTitle.clear();
-    
+    m_rows.Reset();
+    m_currentEntry = 0;
+    m_nextEntry = 0;
+    m_generations.EndSession();
+
+    m_protocol.reset();
+    m_initialized = false;
+
     FB2K_console_print("[JIT Queue] Shutdown");
 }
 
@@ -73,20 +73,17 @@ void QueueManager::Shutdown() {
 // Core API Methods
 //==============================================================================
 
-bool QueueManager::PlayNow(const std::string& trackId, const std::string& title, const std::string& url,
+void QueueManager::PlayNow(const std::string& trackId, const std::string& title, const std::string& url,
                            const JitSessionCaller& caller) {
-    // Check for pending operation with timeout safety net
-    if (m_pendingOperation.exchange(true)) {
-        auto elapsed = std::chrono::steady_clock::now() - m_pendingStartTime;
-        if (elapsed < std::chrono::seconds(PENDING_TIMEOUT_SECONDS)) {
-            FB2K_console_print("[JIT Queue] PlayNow rejected - operation pending");
-            return false;
-        }
-        // Timeout exceeded — force-reset and proceed
-        FB2K_console_print("[JIT Queue] WARNING: pendingOperation timeout (", PENDING_TIMEOUT_SECONDS, "s), force-resetting");
+    LegacyTakeover();
+    {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        m_sessionCaller = caller;
     }
-    m_pendingStartTime = std::chrono::steady_clock::now();
-    
+    StartCurrentEntry(trackId, title, url);
+}
+
+void QueueManager::StartCurrentEntry(const std::string& trackId, const std::string& title, const std::string& url) {
     bool isLocal = IsLocalFilePath(url);
     FB2K_console_print("[JIT Queue] PlayNow: ", trackId.c_str(), " - ", title.c_str());
     FB2K_console_print("[JIT Queue] URL: ", url.c_str(), " (", isLocal ? "LOCAL" : "STREAM", ")");
@@ -108,116 +105,145 @@ bool QueueManager::PlayNow(const std::string& trackId, const std::string& title,
         }
     }
     
-    // Update state immediately
+    jit_shadow::EntrySerial entry;
+    jit_shadow::Ticket ticket;
     {
         std::lock_guard<std::mutex> lock(m_mutex);
-        // A new session: from here on its events go to this page, a page that had the previous
-        // session hears nothing more from it (there is no closing event for a replaced session).
-        m_sessionCaller = caller;
+        // 新的当前条目取代全部旧添加；事件接收方由调用入口保存。
+        m_generations.EndSession();
+        ticket = m_generations.TakeCurrent();
         m_currentTrackId = trackId;
         m_currentTitle = title;
-        m_currentJitUrl = url;  // Save URL for JIT detection
         m_nextTrackId.clear();
         m_nextTitle.clear();
-        m_nextJitUrl.clear();
         m_needNextRequested = false;
+        entry = ++m_lastEntry;
+        m_currentEntry = entry;
+        m_nextEntry = 0;
+        BindSessionEntry(entry, jit_shadow::Slot::Current);
     }
     
     m_state = State::Active;
     
-    // Route based on URL type
     if (isLocal) {
-        AddLocalFileToPlaylistAsync(url, trackId, title, true, true);
+        AddLocalFileToPlaylistAsync(url, trackId, title, entry, ticket);
     } else {
-        AddUrlToPlaylistAsync(url, trackId, title, true, true);
+        AddUrlToPlaylistAsync(url, trackId, title, entry, ticket);
     }
-    
-    return true;
 }
 
 bool QueueManager::EnqueueNext(const std::string& trackId, const std::string& title, const std::string& url) {
-    // State guard — only accept if Active or WaitingNext
     State currentState = m_state.load();
     if (currentState != State::Active && currentState != State::WaitingNext) {
         FB2K_console_print("[JIT Queue] EnqueueNext rejected - state=", StateToString(currentState));
         return false;
     }
+
+    LegacyTakeover();
+    BufferNextEntry(trackId, title, url);
+    return true;
+}
+
+void QueueManager::BufferNextEntry(const std::string& trackId, const std::string& title, const std::string& url) {
     
     bool isLocal = IsLocalFilePath(url);
     FB2K_console_print("[JIT Queue] EnqueueNext: ", trackId.c_str(), " - ", title.c_str());
     FB2K_console_print("[JIT Queue] URL: ", url.c_str(), " (", isLocal ? "LOCAL" : "STREAM", ")");
     
-    // Update state
+    jit_shadow::EntrySerial entry;
+    jit_shadow::Ticket ticket;
     {
         std::lock_guard<std::mutex> lock(m_mutex);
-        // Warn if overwriting a previously queued next track
+        // Drops the add of a previously requested next, never the current track's
+        ticket = m_generations.TakeNext();
         if (!m_nextTrackId.empty() && m_nextTrackId != trackId) {
             FB2K_console_print("[JIT Queue] WARNING: Overwriting next track '", m_nextTrackId.c_str(), 
                                "' with '", trackId.c_str(), "'");
         }
         m_nextTrackId = trackId;
         m_nextTitle = title;
-        m_nextJitUrl = url;  // Save URL for JIT detection
         m_needNextRequested = false;
+        entry = ++m_lastEntry;
+        m_nextEntry = entry;
+        BindSessionEntry(entry, jit_shadow::Slot::Next);
     }
     
     // Transition: WaitingNext → Active (response received)
     m_state = State::Active;
     
-    // Route based on URL type. replaceBufferedNext=true so a re-enqueue (e.g. the
-    // frontend re-requesting next after a replay/"previous") physically replaces any
-    // previously buffered next instead of appending after it — otherwise the stale
-    // next is left as an orphan between current and the new next, which native
-    // prev/next can land on, escaping the [current, next] window and killing the queue.
     if (isLocal) {
-        AddLocalFileToPlaylistAsync(url, trackId, title, false, false, true);
+        AddLocalFileToPlaylistAsync(url, trackId, title, entry, ticket);
     } else {
-        AddUrlToPlaylistAsync(url, trackId, title, false, false, true);
+        AddUrlToPlaylistAsync(url, trackId, title, entry, ticket);
     }
     
-    return true;
 }
 
 bool QueueManager::Skip() {
     if (m_state.load() == State::Idle) {
         return false;
     }
-    
-    auto pc = playback_control::get();
-    pc->next();
-    
+
+    LegacyTakeover();
+    return SkipInternal();
+}
+
+bool QueueManager::SkipInternal() {
+
+    // Play the shadow row after the playing one: playback_control::next() would play the head
+    // of the native playback queue first. Falls back to next() when that row is not known.
+    auto plm = playlist_manager::get();
+    const size_t shadowIdx = m_shadowPlaylistIndex.load();
+    size_t playingPlaylist = pfc::infinite_size;
+    size_t playingRow = pfc::infinite_size;
+    if (shadowIdx != pfc::infinite_size && plm->get_playing_item_location(&playingPlaylist, &playingRow) &&
+        playingPlaylist == shadowIdx && playingRow + 1 < plm->playlist_get_item_count(shadowIdx)) {
+        ActivatePlaybackOnShadow(shadowIdx, playingRow + 1);
+    } else {
+        playback_control::get()->next();
+    }
+
     return true;
 }
 
 void QueueManager::Stop(bool clearBuffer) {
+    LegacyTakeover();
+    StopInternal(clearBuffer);
+}
+
+void QueueManager::StopInternal(bool clearBuffer) {
+    {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        m_generations.EndSession();
+    }
     auto pc = playback_control::get();
     pc->stop();
     
     if (clearBuffer) {
-        // Clear() internally calls RestoreUserContext() and sets State::Idle
-        Clear();
+        // ClearInternal 会恢复上下文并将内核设为空闲。
+        ClearInternal();
     } else {
-        // Only restore here when not clearing (Clear already handles it)
+        // 保留缓冲时由这里恢复上下文。
         RestoreUserContext();
         m_state = State::Idle;
     }
 }
 
 void QueueManager::Clear() {
-    // Restore user context before taking lock (calls playlist_manager SDK)
-    // RestoreUserContext is idempotent (-1 guard), safe if called multiple times
+    LegacyTakeover();
+    ClearInternal();
+}
+
+void QueueManager::ClearInternal() {
+    // Before taking the lock: it calls playlist_manager.
     RestoreUserContext();
     
-    std::lock_guard<std::mutex> lock(m_mutex);
-    
     auto plm = playlist_manager::get();
-    // S134 fix: merge two conditions to reduce nesting from 4 to 3
     if (m_shadowPlaylistIndex != pfc::infinite_size &&
         m_shadowPlaylistIndex < plm->get_playlist_count()) {
-        // Clear shadow playlist content
         plm->playlist_clear(m_shadowPlaylistIndex);
         
-        // Restore user's active playlist instead of hardcoding 0
+        // Do not leave the shadow playlist active.
         if (plm->get_active_playlist() == m_shadowPlaylistIndex) {
             if (m_savedActivePlaylist < plm->get_playlist_count()) {
                 plm->set_active_playlist(m_savedActivePlaylist);
@@ -229,15 +255,18 @@ void QueueManager::Clear() {
         }
     }
     
+    std::lock_guard<std::mutex> lock(m_mutex);
     m_currentTrackId.clear();
     m_nextTrackId.clear();
     m_currentTitle.clear();
     m_nextTitle.clear();
-    m_currentJitUrl.clear();
-    m_nextJitUrl.clear();
+    m_rows.Reset();
+    m_currentEntry = 0;
+    m_nextEntry = 0;
+    m_generations.EndSession();
     m_needNextRequested = false;
     m_state = State::Idle;
-    
+
     FB2K_console_print("[JIT Queue] Buffer cleared");
 }
 
@@ -289,78 +318,82 @@ bool QueueManager::IsActive() const {
 //==============================================================================
 
 void QueueManager::OnPlaybackNewTrack(const metadb_handle_ptr& track) {
-    FB2K_console_print("[JIT Queue] OnPlaybackNewTrack called");
-    
-    // Check if playing from our shadow playlist
-    bool isFromShadow = IsPlayingFromShadowPlaylist();
-    FB2K_console_print("[JIT Queue] IsPlayingFromShadowPlaylist: ", isFromShadow ? "true" : "false");
-    
-    if (!isFromShadow) {
-        // Not our track, deactivate and clear JIT URLs
-        if (m_state.load() != State::Idle) {
-            m_state = State::Idle;
-            RestoreUserContext();
-            std::lock_guard<std::mutex> lock(m_mutex);
-            m_currentJitUrl.clear();
-            m_nextJitUrl.clear();
-            FB2K_console_print("[JIT Queue] Playback switched away from JIT queue");
-        }
-        return;
-    }
-    
-    m_state = State::Active;
-    FB2K_console_print("[JIT Queue] JIT Queue is now active");
-    
-    // Capture the actually-playing track path BEFORE shifting. on_playback_new_track
-    // also fires for "previous" / replay-current, where the playing track still
-    // matches m_currentJitUrl (not m_nextJitUrl). An unconditional shift would then
-    // consume the buffered next track and break the FM queue, so we must distinguish
-    // a real forward advance from a replay first.
-    const char* playingPath = track.is_empty() ? nullptr : track->get_path();
-    
-    // Shift track IDs and URLs: next becomes current — only when we actually
-    // advanced to the buffered next track.
+    std::uint64_t trackSeq;
     {
         std::lock_guard<std::mutex> lock(m_mutex);
-        
-        FB2K_console_print("[JIT Queue] Current trackId: ", m_currentTrackId.c_str(), ", Next trackId: ", m_nextTrackId.c_str());
-        
-        // Match the playing path against the pre-shift buffered URLs using the same
-        // strcmp method as IsPlayingFromShadowPlaylist (covers both local-file URLs
-        // and stream proxy URLs).
-        bool advancedToNext = playingPath != nullptr && !m_nextJitUrl.empty() &&
-                              strcmp(playingPath, m_nextJitUrl.c_str()) == 0;
-        bool replayedCurrent = playingPath != nullptr && !m_currentJitUrl.empty() &&
-                               strcmp(playingPath, m_currentJitUrl.c_str()) == 0;
-        
-        if (!m_nextTrackId.empty() && advancedToNext) {
-            // Real forward advance to the buffered next track → shift next -> current
+        trackSeq = m_generations.TrackStarted();
+    }
+    // Attribute after the callback returns: inside it get_playing_item_location() can still report
+    // the previous row, and removing rows here leaves the location fb2k reports afterwards invalid.
+    fb2k::inMainThread([this, trackSeq, track]() { AttributeNewTrack(trackSeq, track); });
+}
+
+void QueueManager::AttributeNewTrack(std::uint64_t trackSeq, const metadb_handle_ptr& track) {
+    {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        // A later track has started, or a command replaced the session since this one started;
+        // that later step or the new session decides
+        if (!m_generations.IsLatestTrack(trackSeq)) {
+            return;
+        }
+    }
+    metadb_handle_ptr playing;
+    if (!playback_control::get()->get_now_playing(playing) || playing != track) {
+        return;
+    }
+
+    auto plm = playlist_manager::get();
+    const size_t shadowIdx = m_shadowPlaylistIndex.load();
+    size_t playingPlaylist = pfc::infinite_size;
+    jit_shadow::PlayingLocation location;
+    location.located = plm->get_playing_item_location(&playingPlaylist, &location.row);
+    location.inShadow = location.located && shadowIdx != pfc::infinite_size && playingPlaylist == shadowIdx;
+    if (location.inShadow) {
+        VerifyRows(shadowIdx);
+    }
+
+    jit_shadow::Attribution attribution;
+    {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        attribution = jit_shadow::Attribute(m_rows, location, m_currentEntry, m_nextEntry,
+                                            m_state.load() == State::Idle);
+    }
+
+    if (attribution == jit_shadow::Attribution::Release) {
+        if (!location.located) {
+            // The deferred step is meant to always find the playing row; seeing this while the
+            // session plays its own rows means that assumption does not hold.
+            FB2K_console_print("[JIT Queue] Attribution: playing location unavailable after track change");
+        }
+        ReleaseSession(!location.located   ? "playing location unavailable"
+                       : !location.inShadow ? "playing from another playlist"
+                                            : "playing row not owned by the session");
+        return;
+    }
+
+    {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        if (attribution == jit_shadow::Attribution::Advance) {
+            // 下一条已经起播，旧当前条目尚未完成的解析不能再插入或抢播。
+            m_generations.EndSession();
+            // A replay of the current entry or a batch row keeps both IDs.
             m_currentTrackId = m_nextTrackId;
             m_currentTitle = m_nextTitle;
-            m_currentJitUrl = m_nextJitUrl;  // Shift URL too
+            m_currentEntry = m_nextEntry;
             m_nextTrackId.clear();
             m_nextTitle.clear();
-            m_nextJitUrl.clear();
+            m_nextEntry = 0;
             FB2K_console_print("[JIT Queue] Shifted: next -> current, new currentId: ", m_currentTrackId.c_str());
-        } else if (replayedCurrent) {
-            // "Previous" / replay of the current track → keep current and next intact
-            // so the buffered next stays available and the FM queue remains usable.
-            FB2K_console_print("[JIT Queue] Replay/previous detected (playing == current), buffer kept intact");
-        } else {
-            // First play via playNow() (next buffer empty), or path matched neither URL
-            // (e.g. PreloadBatch playlist-index path) → keep currentTrackId as is.
-            FB2K_console_print("[JIT Queue] No shift (first play / unmatched path)");
         }
-        
-        // Reset the needNext flag so we can request again
+
         m_needNextRequested = false;
     }
+
+    m_state = State::Active;
+
+    RemovePlayedRows(shadowIdx, location.row);
+    SessionTrackStarted(attribution);
     
-    // Clean up played tracks (pass the authoritative now-playing handle so the
-    // current track is reliably pinned to index 0; see CleanupPlayedTracks).
-    CleanupPlayedTracks(track);
-    
-    // Emit track changed event
     std::string currentId = GetCurrentTrackId();
     std::string currentTitle;
     {
@@ -374,7 +407,6 @@ void QueueManager::OnPlaybackNewTrack(const metadb_handle_ptr& track) {
     changed.title = currentTitle;
     Announce<jitq::events::TrackChanged>(GetSessionCaller(), changed);
     
-    // Only request next if buffer is empty (don't re-request if next is already queued)
     {
         std::lock_guard<std::mutex> lock(m_mutex);
         if (m_nextTrackId.empty()) {
@@ -395,14 +427,42 @@ void QueueManager::OnPlaybackNewTrack(const metadb_handle_ptr& track) {
     RequestNextTrack();
 }
 
+void QueueManager::ReleaseSession(const char* reason) {
+    if (m_state.load() == State::Idle) {
+        return;
+    }
+    SessionPlaybackExternal();
+    m_state = State::Idle;
+    RestoreUserContext();
+    {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        // The rows left in the shadow playlist become ownerless at the next comparison
+        m_rows.Reset();
+        m_generations.EndSession();
+    }
+    FB2K_console_print("[JIT Queue] Playback switched away from JIT queue: ", reason);
+}
+
+bool QueueManager::AddIsLive(const jit_shadow::Ticket& ticket, const std::string& trackId, const char* stage) const {
+    bool live;
+    {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        live = m_generations.IsLive(ticket);
+    }
+    if (!live) {
+        FB2K_console_print("[JIT Queue] Dropped superseded add of ", trackId.c_str(), " (", stage, ")");
+    }
+    return live;
+}
+
 void QueueManager::OnPlaybackStop(play_control::t_stop_reason reason) {
+    if (SessionPlaybackStopped(reason)) return;
     FB2K_console_print("[JIT Queue] OnPlaybackStop called, reason: ", static_cast<int>(reason), ", state: ", static_cast<int>(m_state.load()));
     
     if (m_state.load() == State::Idle) {
         return;
     }
     
-    // Handle different stop reasons
     if (reason == play_control::stop_reason_eof) {
         FB2K_console_print("[JIT Queue] Playback stopped - EOF");
         
@@ -410,30 +470,31 @@ void QueueManager::OnPlaybackStop(play_control::t_stop_reason reason) {
         FB2K_console_print("[JIT Queue] Buffer size: ", bufferSize);
         
         if (bufferSize > 0) {
-            // There are more tracks in buffer, foobar should auto-play
-            // But if it doesn't, we might need to trigger it
             FB2K_console_print("[JIT Queue] Buffer has tracks, waiting for auto-play");
         } else {
-            // Buffer exhausted, notify frontend
             FB2K_console_print("[JIT Queue] Buffer empty, notifying frontend");
             NotifyListExhausted();
         }
     } else if (reason == play_control::stop_reason_starting_another) {
-        // This is normal when switching tracks, do nothing
         FB2K_console_print("[JIT Queue] Stop reason: starting another track");
     } else if (reason == play_control::stop_reason_user) {
         FB2K_console_print("[JIT Queue] Playback stopped by user");
+        {
+            std::lock_guard<std::mutex> lock(m_mutex);
+            m_generations.EndSession();
+        }
         m_state = State::Idle;
         RestoreUserContext();
     }
 }
 
 void QueueManager::OnPlaybackTime(double time, double duration) {
+    SessionPlaybackTime(time, duration);
+    if (HasProtocolSession()) return;
     if (m_state.load() == State::Idle) {
         return;
     }
     
-    // Check if we should prefetch (when near end of track and no next track buffered)
     double remaining = duration - time;
     
     if (remaining <= PREFETCH_THRESHOLD_SECONDS) {
@@ -441,7 +502,6 @@ void QueueManager::OnPlaybackTime(double time, double duration) {
         {
             std::lock_guard<std::mutex> lock(m_mutex);
             
-            // Request next track if we don't have one and haven't already requested
             if (m_nextTrackId.empty() && !m_needNextRequested) {
                 m_needNextRequested = true;
                 shouldRequest = true;
@@ -463,7 +523,6 @@ void QueueManager::OnPlaybackTime(double time, double duration) {
 //==============================================================================
 
 void QueueManager::RestoreUserContext() {
-    // Read saved values under lock to prevent data race
     int savedOrder;
     size_t savedPlaylist;
     {
@@ -484,7 +543,6 @@ void QueueManager::RestoreUserContext() {
         m_savedPlaybackOrder = -1;
     }
     
-    // Also restore active playlist if currently pointing at shadow
     size_t shadowIdx = m_shadowPlaylistIndex.load();
     if (plm->get_active_playlist() == shadowIdx && savedPlaylist < plm->get_playlist_count()) {
         plm->set_active_playlist(savedPlaylist);
@@ -493,6 +551,7 @@ void QueueManager::RestoreUserContext() {
 }
 
 void QueueManager::RequestNextTrack() {
+    if (HasProtocolSession()) return;
     std::string currentId;
     std::string nextId;
     {
@@ -501,7 +560,6 @@ void QueueManager::RequestNextTrack() {
         nextId = m_nextTrackId;
     }
     
-    // Don't request if we already have a next track buffered
     if (!nextId.empty()) {
         FB2K_console_print("[JIT Queue] Skip request - next track already buffered: ", nextId.c_str());
         return;
@@ -509,7 +567,7 @@ void QueueManager::RequestNextTrack() {
     
     FB2K_console_print("[JIT Queue] Emitting jitQueue:needNext for current: ", currentId.c_str());
     
-    // CAS guard — only transition Active→WaitingNext, prevent duplicate needNext
+    // Only one needNext per wait.
     State expected = State::Active;
     if (!m_state.compare_exchange_strong(expected, State::WaitingNext)) {
         FB2K_console_print("[JIT Queue] Skip needNext - state already ", StateToString(expected));
@@ -523,6 +581,7 @@ void QueueManager::RequestNextTrack() {
 }
 
 void QueueManager::NotifyListExhausted() {
+    if (HasProtocolSession()) return;
     m_state = State::Exhausted;
     FB2K_console_print("[JIT Queue] List exhausted - notifying frontend");
     

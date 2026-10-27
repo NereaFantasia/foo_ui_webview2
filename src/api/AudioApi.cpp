@@ -33,9 +33,11 @@
 #include <cmath>
 #include <algorithm>
 #include <atomic>
+#include <iomanip>
 #include <memory>
 #include <mutex>
 #include <optional>
+#include <sstream>
 #include <thread>
 #include <unordered_map>
 #include <unordered_set>
@@ -496,8 +498,10 @@ namespace {
                 source = kBeatSourceStandard;
             }
             if (!timer) {
-                console::printf("[Spectrum] beat timer unavailable (error %lu), push frames disabled",
-                                static_cast<unsigned long>(GetLastError()));
+                const DWORD error = GetLastError();
+                std::ostringstream line;
+                line << "[Spectrum] beat timer unavailable (error " << error << "), push frames disabled";
+                console::print(line.str().c_str());
                 return;
             }
 
@@ -516,9 +520,12 @@ namespace {
             }
             beatTimer = timer;
             beatSource.store(source);
-            console::printf("[Spectrum] beat thread started: %s timer, interval=%.3fms",
-                            source == kBeatSourceHighResolution ? "high-resolution" : "standard",
-                            static_cast<double>(beatIntervalNs.load()) / 1e6);
+            std::ostringstream line;
+            line << "[Spectrum] beat thread started: "
+                 << (source == kBeatSourceHighResolution ? "high-resolution" : "standard")
+                 << " timer, interval=" << std::fixed << std::setprecision(3)
+                 << static_cast<double>(beatIntervalNs.load()) / 1e6 << "ms";
+            console::print(line.str().c_str());
         }
 
         // 计时线程在等待与投递之间不持锁、也不等主线程，所以在主线程上 join 不会互等。
@@ -832,8 +839,10 @@ namespace {
         }
 
         if (ShouldEmitSpectrumDiagnostic(state, nowTick)) {
-            console::printf("[Spectrum] External foreground window detected (pid=%lu), throttling visualization dispatch to reduce cross-app input lag.",
-                static_cast<unsigned long>(foregroundPid));
+            std::ostringstream line;
+            line << "[Spectrum] External foreground window detected (pid=" << foregroundPid
+                 << "), throttling visualization dispatch to reduce cross-app input lag.";
+            console::print(line.str().c_str());
         }
 
         constexpr DWORD kBackgroundMinIntervalMs = 1000 / 12;
@@ -1090,8 +1099,10 @@ namespace {
 
         if (elapsedMs > slowFrameThresholdMs &&
             ShouldEmitSpectrumDiagnostic(state, GetTickCount())) {
-            console::printf("[Spectrum] Slow visualization frame detected: %lums (target interval=%dms, configured fps=%d).",
-                static_cast<unsigned long>(elapsedMs), frameInterval, targetFps);
+            std::ostringstream line;
+            line << "[Spectrum] Slow visualization frame detected: " << elapsedMs
+                 << "ms (target interval=" << frameInterval << "ms, configured fps=" << targetFps << ").";
+            console::print(line.str().c_str());
         }
 
         if (elapsedMs > static_cast<DWORD>(frameInterval) && targetFps > 20) {
@@ -1213,8 +1224,10 @@ namespace {
                 LARGE_INTEGER due{};
                 due.QuadPart = -std::max<int64_t>(1, std::chrono::duration_cast<HundredNs>(deadline - now).count());
                 if (!SetWaitableTimer(timer, &due, 0, nullptr, nullptr, FALSE)) {
-                    console::printf("[Spectrum] SetWaitableTimer failed (error %lu), push frames stopped",
-                                    static_cast<unsigned long>(GetLastError()));
+                    const DWORD error = GetLastError();
+                    std::ostringstream line;
+                    line << "[Spectrum] SetWaitableTimer failed (error " << error << "), push frames stopped";
+                    console::print(line.str().c_str());
                     return;
                 }
 
@@ -1225,8 +1238,11 @@ namespace {
                     // 拍长变了：立即出一拍，再从当前时刻按新拍长走
                     deadline = fb2k_spectrum::Clock::now();
                 } else if (signaled != WAIT_OBJECT_0 + 2) {
-                    console::printf("[Spectrum] beat wait returned %lu (error %lu), push frames stopped",
-                                    static_cast<unsigned long>(signaled), static_cast<unsigned long>(GetLastError()));
+                    const DWORD error = GetLastError();
+                    std::ostringstream line;
+                    line << "[Spectrum] beat wait returned " << signaled << " (error " << error
+                         << "), push frames stopped";
+                    console::print(line.str().c_str());
                     return;
                 }
                 PostSpectrumBeat(state);
@@ -1899,21 +1915,17 @@ namespace {
             }
             decoder->initialize(spec.subsong, input_flag_no_looping, abort);
 
-            // 窗口长按 duration 估算；曲目比 resolution 还短时每窗至少一帧
-            uint64_t totalSamples = static_cast<uint64_t>(audioInfo.duration * audioInfo.sampleRate);
-            uint64_t samplesPerWindow = totalSamples / spec.resolution;
-            if (samplesPerWindow == 0) samplesPerWindow = 1;
-
-            fb2k_waveform::Accumulator<audio_sample> accumulator(spec.resolution, samplesPerWindow);
+            fb2k_waveform::DecodedAccumulator<audio_sample> accumulator(spec.resolution, audioInfo.duration);
             audio_chunk_impl_temporary chunk;
             while (decoder->run(chunk, abort)) {
-                accumulator.Feed(chunk.get_data(), chunk.get_sample_count(), chunk.get_channels());
+                accumulator.Feed(chunk.get_data(), chunk.get_sample_count(), chunk.get_channels(), chunk.get_srate());
             }
+            auto decoded = accumulator.Finish();
             result.outcome = fb2k_waveform::JobOutcome::Succeeded;
-            result.raw = accumulator.Finish();
+            result.raw = std::move(decoded.raw);
             result.duration = audioInfo.duration;
-            result.sampleRate = audioInfo.sampleRate;
-            result.channels = audioInfo.channels;
+            result.sampleRate = decoded.sampleRate;
+            result.channels = decoded.channels;
             return result;
         } catch (const exception_aborted&) {
             // exception_aborted 也派生自 std::exception，必须排在它前面，否则取消会被当成解码失败

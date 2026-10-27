@@ -10,6 +10,7 @@
 #include "version.h"
 #include <foobar2000/SDK/replaygain.h>
 #include "utils/GuidUtils.h"
+#include <sstream>
 
 namespace {
     using json = nlohmann::json;
@@ -771,8 +772,9 @@ static json* GetConfigCache() {
                 if (legacy.is_object()) {
                     // 迁移到新存储；写失败时整次加载失败（落到下面的 catch），下次调用重试
                     store->setConfigString(kConfigStoreKey, legacy.dump().c_str());
-                    console::printf("[ConfigApi] Migrated config from cfg_string to configStore (%zu keys)",
-                                    legacy.size());
+                    std::ostringstream line;
+                    line << "[ConfigApi] Migrated config from cfg_string to configStore (" << legacy.size() << " keys)";
+                    console::print(line.str().c_str());
                     loaded = std::move(legacy);
                 }
             }

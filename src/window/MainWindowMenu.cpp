@@ -141,7 +141,7 @@ void MainWindow::OnContextMenu(int x, int y) {
     if (hLibraryMenu) {
         AppendMenuW(hLibraryMenu, MF_STRING, 5001, TR("Configure...", "配置..."));
         AppendMenuW(hLibraryMenu, MF_SEPARATOR, 0, nullptr);
-        AppendMenuW(hLibraryMenu, MF_STRING, 5002, TR("Rescan", "重新扇描"));
+        AppendMenuW(hLibraryMenu, MF_STRING, 5002, TR("Rescan", "重新扫描"));
         AppendMenuW(hLibraryMenu, MF_STRING, 5003, TR("Search...\tAlt+Q", "搜索...\tAlt+Q"));
         AppendMenuW(hLibraryMenu, MF_SEPARATOR, 0, nullptr);
         AppendMenuW(hLibraryMenu, MF_STRING, 5004, TR("Album List", "专辑列表"));

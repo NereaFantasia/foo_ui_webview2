@@ -15,8 +15,8 @@ export interface Events {
 interface ChangedPayload {
   /**
    * Up to 50 of the changed tracks, in no particular order. An invalid entry is skipped, so the
-   * list can hold fewer than the smaller of `count` and 50.
-   * @zh 最多 50 首变化的曲目，顺序不固定。无效条目会被跳过，所以条数可能少于 `count` 与 50 中的较小者。
+   * list can hold fewer than the smaller of `count` and 50. `handles` names all of them.
+   * @zh 最多 50 首变化的曲目，顺序不固定。无效条目会被跳过，所以条数可能少于 `count` 与 50 中的较小者。全部变化的曲目见 `handles`。
    */
   tracks: MetadbChangedTrackItem[];
   /**
@@ -24,6 +24,18 @@ interface ChangedPayload {
    * @zh 变化的曲目数，至少为 `1`；可能超过 `tracks` 的长度。
    */
   count: Int;
+  /**
+   * The `handle` of every changed track, in no particular order. Empty when `truncated`. To
+   * read what a page shows for them, pass them as the `paths` of `titleformat.evalFieldsBatch`.
+   * @zh 每首变化曲目的 `handle`，顺序不固定。`truncated` 时为空。要读取页面为它们显示的内容，把它们作为 `titleformat.evalFieldsBatch` 的 `paths` 传入。
+   */
+  handles: string[];
+  /**
+   * `true` when more than 5000 tracks changed at once. `handles` is then empty, and a page
+   * should read again everything it shows.
+   * @zh 一次变化超过 5000 首时为 `true`。这时 `handles` 为空，页面应重新读取它显示的全部内容。
+   */
+  truncated: boolean;
   /**
    * `true` when the files themselves did not change and a component such as `foo_playcount`
    * asked for its fields to be shown anew.

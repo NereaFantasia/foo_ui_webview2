@@ -8,6 +8,7 @@
 #include "api/generated/FileSchema.h"
 #include "api/generated/HttpSchema.h"
 #include "api/generated/JitQueueSchema.h"
+#include "api/generated/JitSessionSchema.h"
 #include "api/generated/KeyboardSchema.h"
 #include "api/generated/LibrarySchema.h"
 #include "api/generated/MenuSchema.h"
@@ -59,6 +60,12 @@ using All = std::tuple<
     api::jitQueue::events::ListExhausted,
     api::jitQueue::events::PreloadComplete,
     api::jitQueue::events::Error,
+    api::jitSession::events::StateChanged,
+    api::jitSession::events::NeedNext,
+    api::jitSession::events::OperationCompleted,
+    api::jitSession::events::AttemptFinished,
+    api::jitSession::events::AttemptRechecked,
+    api::jitSession::events::ControlChanged,
     api::keyboard::events::Hotkey,
     api::library::events::Initialized,
     api::library::events::ItemsAdded,
@@ -107,6 +114,8 @@ using All = std::tuple<
     api::playlist::events::Activated,
     api::playlist::events::Renamed,
     api::playlist::events::LockChanged,
+    api::playlist::events::AutoplaylistUIResult,
+    api::playlist::events::AutoplaylistConfigChanged,
     api::playlist::events::DefaultFormatChanged,
     api::playlist::events::AddComplete,
     api::plugin::events::Registered,

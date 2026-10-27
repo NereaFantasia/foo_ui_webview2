@@ -1,7 +1,9 @@
 ﻿#include "pch.h"
 #include "api/PlaylistApi.h"
+#include "api/ManagedAutoplaylistApi.h"
 #include "api/ApiConstants.h"
 #include "api/AsyncOperationRegistry.h"
+#include "api/AutoplaylistEditor.h"
 #include "api/BridgeCore.h"
 #include "api/ErrorEnvelope.h"
 #include "api/EventEmit.h"
@@ -15,6 +17,7 @@
 #include "api/TypedApi.h"
 #include "api/generated/PlaylistSchema.h"
 #include "core/WebViewContext.h"
+#include "webview/WebViewHost.h"
 #include "api/adapters/Fb2kPlaylistService.h"
 #include "api/adapters/Fb2kPlaybackService.h"
 #include "utils/GuidUtils.h"
@@ -22,6 +25,7 @@
 #include "utils/SubsongUtils.h"
 #include <atomic>
 #include <random>
+#include <stdexcept>
 
 // ============================================
 // Helper Functions
@@ -211,10 +215,10 @@ static AutoplaylistDetection DetectAutoplaylist(size_t playlistIndex) {
 // id 的熵只剩那 6 位。operationId 对页面是不透明句柄，格式不属于对外契约。
 //
 // 只在主线程的 handler 里调用，所以 mt19937_64 不需要加锁。
-static std::string GenerateOperationId() {
+static std::string GenerateOperationId(const char* prefix = "addpaths") {
     static std::mt19937_64 rng(std::random_device{}());
     static std::atomic<uint64_t> counter{0};
-    return fb2k_api::FormatAsyncOperationId("addpaths", counter.fetch_add(1) + 1, rng());
+    return fb2k_api::FormatAsyncOperationId(prefix, counter.fetch_add(1) + 1, rng());
 }
 
 json GetPlaylistInfo(size_t index, bool includeDuration) {
@@ -289,7 +293,8 @@ namespace plrow = api::playlist;
 // The fields that come from the file's tags and technical info, as opposed to the handle.
 constexpr uint32_t kInfoFieldMask =
     TrackField::kTitle | TrackField::kArtist | TrackField::kArtists | TrackField::kAlbum |
-    TrackField::kAlbumArtist | TrackField::kAlbumArtists | TrackField::kGenre | TrackField::kDate |
+    TrackField::kAlbumId | TrackField::kAlbumArtist | TrackField::kAlbumArtists |
+    TrackField::kGenre | TrackField::kDate |
     TrackField::kTrackNumber | TrackField::kDiscNumber | TrackField::kDuration |
     TrackField::kBitrate | TrackField::kSampleRate | TrackField::kChannels | TrackField::kCodec;
 
@@ -340,6 +345,7 @@ plrow::PlaylistTrackPartial PlaylistRowOf(const metadb_handle_ptr& track, size_t
     if (mask & TrackField::kArtist) row.artist = std::move(full.artist);
     if (mask & TrackField::kArtists) row.artists = std::move(full.artists);
     if (mask & TrackField::kAlbum) row.album = std::move(full.album);
+    if (mask & TrackField::kAlbumId) row.albumId = std::move(full.albumId);
     if (mask & TrackField::kAlbumArtist) row.albumArtist = std::move(full.albumArtist);
     if (mask & TrackField::kAlbumArtists) row.albumArtists = std::move(full.albumArtists);
     if (mask & TrackField::kGenre) row.genre = std::move(full.genre);
@@ -671,9 +677,26 @@ IPlaylistService::AddPathsSequentialResult Fb2kPlaylistService::add_paths_sequen
     return r;
 }
 
+namespace {
+
+// process_locations_notify::create 的 on_aborted 什么也不做，这里两路都接。
+class AddPathsNotify : public process_locations_notify {
+public:
+    AddPathsNotify(func_t completed, std::function<void()> aborted)
+        : m_completed(std::move(completed)), m_aborted(std::move(aborted)) {}
+    void on_completion(metadb_handle_list_cref items) override { m_completed(items); }
+    void on_aborted() override { m_aborted(); }
+
+private:
+    func_t m_completed;
+    std::function<void()> m_aborted;
+};
+
+}  // namespace
+
 IPlaylistService::AsyncAddPathsInfo Fb2kPlaylistService::start_add_paths_async(
     size_t playlist, const json& paths, const std::string& operationId,
-    std::function<void(size_t addedCount, size_t totalCount)> onComplete) {
+    std::function<void(const AsyncAddOutcome&)> onComplete) {
     std::vector<ParsedPlayablePath> parsedPaths;
     size_t invalidCount = 0;
 
@@ -716,41 +739,56 @@ IPlaylistService::AsyncAddPathsInfo Fb2kPlaylistService::start_add_paths_async(
     // playlist_insert_items 整批插入或整批拒绝（锁的 query_items_add 对整批只答一次），
     // 拒绝时返回 SIZE_MAX；只把真插进去的计入 addedCount。
     auto plm = playlist_manager::get();
-    size_t fastAdded = 0;
+    AsyncAddOutcome fast;
+    fast.totalCount = totalCount;
     if (fastHandles.get_count() > 0 && playlist < plm->get_playlist_count()) {
         plm->playlist_undo_backup(playlist);
         size_t insertPos = plm->playlist_get_item_count(playlist);
         if (plm->playlist_insert_items(playlist, insertPos, fastHandles, bit_array_false()) != SIZE_MAX) {
-            fastAdded = fastHandles.get_count();
+            fast.addedCount = fastHandles.get_count();
+        } else {
+            fast.dropReason = "locked";
         }
     }
 
     if (slowList.get_count() == 0) {
         // 全是 fast path,立即触发回调,不走 process_locations_async (永不弹窗)。
-        if (onComplete) onComplete(fastAdded, totalCount);
+        if (onComplete) onComplete(fast);
         return { totalCount, invalidCount };
     }
 
     // 还有 wrapper 路径,异步展开 (op_flag_delay_ui+background 短操作不弹)。
     const api::PinnedPlaylist target(*this, playlist);
     auto filter = playlist_incoming_item_filter_v2::get();
-    auto notify = process_locations_notify::create(
-        [target, totalCount, fastAdded, onComplete](metadb_handle_list_cref items) {
-            // 展开期间列表可能被拖动、删掉或上锁：按 GUID 找回目标，删掉了就不插；
-            // 按插入的返回值计数，而不是按展开出的条数。
-            size_t slowAdded = 0;
-            auto plm = playlist_manager::get();
-            if (const auto located = target.Locate(Fb2kPlaylistService{});
-                items.get_count() > 0 && located.has_value()) {
+    auto completed = [target, fast, onComplete](metadb_handle_list_cref items) {
+        // 展开期间列表可能被拖动、删掉或上锁：按 GUID 找回目标，删掉了就不插；
+        // 按插入的返回值计数，而不是按展开出的条数。
+        AsyncAddOutcome outcome = fast;
+        auto plm = playlist_manager::get();
+        if (items.get_count() > 0) {
+            const auto located = target.Locate(Fb2kPlaylistService{});
+            if (!located.has_value()) {
+                outcome.dropReason = "targetRemoved";
+            } else {
                 plm->playlist_undo_backup(*located);
                 size_t insertPos = plm->playlist_get_item_count(*located);
                 if (plm->playlist_insert_items(*located, insertPos, items, bit_array_false()) != SIZE_MAX) {
-                    slowAdded = items.get_count();
+                    outcome.addedCount += items.get_count();
+                } else {
+                    outcome.dropReason = "locked";
                 }
             }
-            if (onComplete) onComplete(fastAdded + slowAdded, totalCount);
         }
-    );
+        if (onComplete) onComplete(outcome);
+    };
+    // 用户在进度框里取消时 SDK 只调 on_aborted；不接住它，这次调用就永远等不到完成事件。
+    auto aborted = [fast, onComplete]() {
+        AsyncAddOutcome outcome = fast;
+        outcome.cancelled = true;
+        if (onComplete) onComplete(outcome);
+    };
+    process_locations_notify::ptr notify =
+        new service_impl_t<AddPathsNotify>(std::move(completed), std::move(aborted));
     filter->process_locations_async(slowList,
         playlist_incoming_item_filter_v2::op_flag_delay_ui | playlist_incoming_item_filter_v2::op_flag_background,
         nullptr, nullptr, nullptr, notify);
@@ -829,6 +867,7 @@ IPlaybackService* GetPlaylistApiPlaybackService() {
 namespace {
 
 namespace pl = api::playlist;
+namespace autoplaylist_editor = api::autoplaylist_editor;
 
 // 目标播放列表：p 的 playlist 与 playlistGuid 二选一，省略时取活动列表；失败码见 PlaylistTarget.h。
 template <class P>
@@ -932,6 +971,9 @@ api::Result<void> SetFocus(const P& p, const std::optional<std::int64_t>& row, c
     auto* svc = s_playlistService;
     size_t playlistIndex = 0;
     if (auto failure = ResolvePlaylist(svc, p, playlistIndex, invalidMessage)) return std::move(*failure);
+    if (auto stale = api::StaleContent(p.expectedVersion, api::PlaylistContentVersion(*svc, playlistIndex))) {
+        return std::move(*stale);
+    }
 
     const size_t focus = FocusRowOf(row);
     if (focus != pfc::infinite_size && focus >= svc->playlist_get_item_count(playlistIndex)) {
@@ -1097,11 +1139,29 @@ api::Result<pl::ClearResult> PlaylistClear(const pl::ClearParams& p) {
 
 // ========== Track Operations ==========
 
+// 读取前后各取一次版本：读取期间列表变了就作废，不交出前后不一致的行。
+template <class Read>
+auto ReadAtContentVersion(const IPlaylistService& svc, size_t index, Read&& read)
+    -> api::Result<std::decay_t<decltype(read())>> {
+    const std::string before = api::PlaylistContentVersion(svc, index);
+    auto result = read();
+    const std::string after = api::PlaylistContentVersion(svc, index);
+    if (after != before) {
+        return api::Fail("Playlist changed while it was read", ApiErrorCode::STALE_TARGET,
+                         {{"details", json{{"current", after}}}});
+    }
+    result.contentVersion = after;
+    return result;
+}
+
 api::Result<pl::InsertTracksResult> PlaylistInsertTracks(const pl::InsertTracksParams& p) {
     auto* svc = s_playlistService;
     size_t index = 0;
     if (auto failure = ResolvePlaylist(svc, p, index)) return std::move(*failure);
     if (svc->playlist_lock_is_present(index)) return PlaylistLocked(index);
+    if (auto stale = api::StaleContent(p.expectedVersion, api::PlaylistContentVersion(*svc, index))) {
+        return std::move(*stale);
+    }
 
     const json handles = p.handles;
     const auto r = svc->insert_tracks(index, static_cast<size_t>(p.position), handles);
@@ -1120,6 +1180,7 @@ api::Result<pl::InsertTracksResult> PlaylistInsertTracks(const pl::InsertTracksP
     result.invalidCount = static_cast<std::int64_t>(r.invalidCount);
     result.countBefore = static_cast<std::int64_t>(r.countBefore);
     result.totalCount = static_cast<std::int64_t>(r.totalCount);
+    result.contentVersion = api::PlaylistContentVersion(*svc, index);
     return result;
 }
 
@@ -1156,8 +1217,10 @@ api::Result<pl::GetTracksResult> PlaylistGetTracks(const pl::GetTracksParams& p)
         empty.start = p.start;
         return empty;
     }
-    return svc->get_tracks(index, static_cast<size_t>(p.start), static_cast<size_t>(p.count),
-                           p.formats.value_or(std::map<std::string, std::string>{}), fields);
+    return ReadAtContentVersion(*svc, index, [&] {
+        return svc->get_tracks(index, static_cast<size_t>(p.start), static_cast<size_t>(p.count),
+                               p.formats.value_or(std::map<std::string, std::string>{}), fields);
+    });
 }
 
 
@@ -1176,8 +1239,10 @@ api::Result<pl::GetTracksAtResult> PlaylistGetTracksAt(const pl::GetTracksAtPara
         empty.playlist = p.playlist.value_or(-1);
         return empty;
     }
-    return svc->get_tracks_at(index, RowsOf(p.rows),
-                              p.formats.value_or(std::map<std::string, std::string>{}), fields);
+    return ReadAtContentVersion(*svc, index, [&] {
+        return svc->get_tracks_at(index, RowsOf(p.rows),
+                                  p.formats.value_or(std::map<std::string, std::string>{}), fields);
+    });
 }
 
 
@@ -1213,6 +1278,7 @@ api::Result<pl::GetMatchingRowsResult> PlaylistGetMatchingRows(const pl::GetMatc
     pl::GetMatchingRowsResult result;
     result.playlist = static_cast<std::int64_t>(index);
     result.playlistGuid = api::PlaylistGuidOf(*svc, index);
+    result.contentVersion = api::PlaylistContentVersion(*svc, index);
     result.total = static_cast<std::int64_t>(items.get_count());
     if (items.get_count() > 0) {
         pfc::array_t<bool> mask;
@@ -1247,6 +1313,7 @@ constexpr size_t kGroupRunBatch = 2000;
 struct GroupRunsRequest {
     size_t playlist = 0;
     std::string playlistGuid;
+    std::string contentVersion;
     size_t total = 0;
     bool twoLevel = false;
     metadb_handle_list items;
@@ -1350,7 +1417,8 @@ void RunGroupRunsWorker(const std::shared_ptr<GroupRunsRequest>& req,
         // 只有最后一批结束才回包（恰好一次回包要在每一跳上都成立）
         req->acc.Finish();
         std::string out;
-        fb2k_group_runs::WriteGroupRunsJson(out, req->playlist, req->playlistGuid, req->total, req->acc);
+        fb2k_group_runs::WriteGroupRunsJson(out, req->playlist, req->playlistGuid, req->contentVersion,
+                                            req->total, req->acc);
         responder.SendRaw(std::move(out));
     } catch (const std::exception& e) {
         responder.SendJson(MakeGroupRunsErrorBody(e.what()));
@@ -1410,6 +1478,7 @@ void PlaylistGetGroupRuns(const pl::GetGroupRunsParams& p, const DeferredRespond
         req->twoLevel = selection.patterns.size() == fb2k_group_runs::kMaxPatterns;
         req->acc = fb2k_group_runs::GroupRunAccumulator(req->twoLevel);
         playlist_manager::get()->playlist_get_all_items(playlistIndex, req->items);
+        req->contentVersion = api::PlaylistContentVersion(*svc, playlistIndex);
         req->total = req->items.get_count();
 
         // 空列表就地回包，不为零行付线程跳变的税
@@ -1417,6 +1486,7 @@ void PlaylistGetGroupRuns(const pl::GetGroupRunsParams& p, const DeferredRespond
             pl::GetGroupRunsResult empty;
             empty.playlist = static_cast<std::int64_t>(playlistIndex);
             empty.playlistGuid = req->playlistGuid;
+            empty.contentVersion = req->contentVersion;
             api::Send(responder, api::Result<pl::GetGroupRunsResult>(std::move(empty)));
             return;
         }
@@ -1439,28 +1509,36 @@ api::Result<pl::GetSelectedTracksResult> PlaylistGetSelectedTracks(
         failure->extra["tracks"] = json::array();
         return std::move(*failure);
     }
-    return svc->get_selected_tracks(index);
+    return ReadAtContentVersion(*svc, index, [&] { return svc->get_selected_tracks(index); });
 }
 
 
-api::Result<void> PlaylistSetSelection(const pl::SetSelectionParams& p) {
+api::Result<pl::SetSelectionResult> PlaylistSetSelection(const pl::SetSelectionParams& p) {
     auto* svc = s_playlistService;
     size_t index = 0;
     if (auto failure = ResolvePlaylist(svc, p, index)) return std::move(*failure);
+    pl::SetSelectionResult result;
+    result.contentVersion = api::PlaylistContentVersion(*svc, index);
+    if (auto stale = api::StaleContent(p.expectedVersion, result.contentVersion)) return std::move(*stale);
 
     svc->set_selection(index, RowsOf(p.indices), p.clearOthers);
-    return api::Ok();
+    return result;
 }
 
 
-api::Result<void> PlaylistRemoveTracks(const pl::RemoveTracksParams& p) {
+api::Result<pl::RemoveTracksResult> PlaylistRemoveTracks(const pl::RemoveTracksParams& p) {
     auto* svc = s_playlistService;
     size_t index = 0;
     if (auto failure = ResolvePlaylist(svc, p, index)) return std::move(*failure);
     if (svc->playlist_lock_is_present(index)) return PlaylistLocked(index);
+    if (auto stale = api::StaleContent(p.expectedVersion, api::PlaylistContentVersion(*svc, index))) {
+        return std::move(*stale);
+    }
 
     svc->remove_tracks(index, RowsOf(p.items));
-    return api::Ok();
+    pl::RemoveTracksResult result;
+    result.contentVersion = api::PlaylistContentVersion(*svc, index);
+    return result;
 }
 
 
@@ -1475,11 +1553,14 @@ api::Result<void> PlaylistRemoveSelectedTracks(const pl::RemoveSelectedTracksPar
 }
 
 
-api::Result<void> PlaylistMoveTracks(const pl::MoveTracksParams& p) {
+api::Result<pl::MoveTracksResult> PlaylistMoveTracks(const pl::MoveTracksParams& p) {
     auto* svc = s_playlistService;
     size_t index = 0;
     if (auto failure = ResolvePlaylist(svc, p, index)) return std::move(*failure);
     if (svc->playlist_lock_is_present(index)) return PlaylistLocked(index);
+    if (auto stale = api::StaleContent(p.expectedVersion, api::PlaylistContentVersion(*svc, index))) {
+        return std::move(*stale);
+    }
 
     svc->playlist_undo_backup(index);
 
@@ -1490,7 +1571,9 @@ api::Result<void> PlaylistMoveTracks(const pl::MoveTracksParams& p) {
     const auto delta = std::clamp<std::int64_t>(p.delta, std::numeric_limits<int>::min(),
                                                 std::numeric_limits<int>::max());
     svc->move_selection(index, static_cast<int>(delta));
-    return api::Ok();
+    pl::MoveTracksResult result;
+    result.contentVersion = api::PlaylistContentVersion(*svc, index);
+    return result;
 }
 
 
@@ -1498,6 +1581,9 @@ api::Result<void> PlaylistPlayTrack(const pl::PlayTrackParams& p) {
     auto* svc = s_playlistService;
     size_t playlistIndex = 0;
     if (auto failure = ResolvePlaylist(svc, p, playlistIndex)) return std::move(*failure);
+    if (auto stale = api::StaleContent(p.expectedVersion, api::PlaylistContentVersion(*svc, playlistIndex))) {
+        return std::move(*stale);
+    }
 
     const auto trackIndex = static_cast<size_t>(p.index);
     if (trackIndex >= svc->playlist_get_item_count(playlistIndex)) {
@@ -1516,12 +1602,17 @@ api::Result<void> PlaylistPlayTrack(const pl::PlayTrackParams& p) {
         // 不可通过 service 抽象。排队期间别的消息可能增删、挪动列表，捕获的序号那时可能已是
         // 另一张列表：钉住 GUID，执行时找回；列表没了或行数不够就不播。
         const api::PinnedPlaylist target(*svc, playlistIndex);
-        fb2k::inMainThread([target, trackIndex]() {
+        fb2k::inMainThread([target, trackIndex, expected = p.expectedVersion]() {
             auto* live = s_playlistService;
             const auto located = target.Locate(*live);
             if (!located.has_value() || trackIndex >= live->playlist_get_item_count(*located)) {
                 console::print("[Playlist] playTrack (deferred): the playlist was removed or "
                                "shortened before playback started; nothing played");
+                return;
+            }
+            if (expected && api::PlaylistContentVersion(*live, *located) != *expected) {
+                console::print("[Playlist] playTrack (deferred): the rows changed before playback "
+                               "started; nothing played");
                 return;
             }
             playlist_manager::get()->playlist_execute_default_action(*located, trackIndex);
@@ -1719,13 +1810,162 @@ api::Result<pl::RemoveAutoplaylistResult> PlaylistRemoveAutoplaylist(const pl::R
 }
 
 
-// Get autoplaylist info (flags, query if available)
+const char* EditorAvailabilityName(autoplaylist_editor::Availability availability) {
+    switch (availability) {
+    case autoplaylist_editor::Availability::Available: return "available";
+    case autoplaylist_editor::Availability::Unavailable: return "unavailable";
+    case autoplaylist_editor::Availability::Unknown: return "unknown";
+    }
+    throw std::logic_error("Invalid autoplaylist editor availability");
+}
+
+const char* EditorAvailabilityReasonName(autoplaylist_editor::AvailabilityReason reason) {
+    switch (reason) {
+    case autoplaylist_editor::AvailabilityReason::Supported: return "supported";
+    case autoplaylist_editor::AvailabilityReason::NoEditor: return "noEditor";
+    case autoplaylist_editor::AvailabilityReason::LegacyClient: return "legacyClient";
+    case autoplaylist_editor::AvailabilityReason::UnverifiedLock: return "unverifiedLock";
+    case autoplaylist_editor::AvailabilityReason::NotAutoplaylist: return "notAutoplaylist";
+    }
+    throw std::logic_error("Invalid autoplaylist editor availability reason");
+}
+
+struct EditorFailureDescription {
+    const char* code;
+    const char* reason;
+    const char* message;
+};
+
+EditorFailureDescription DescribeEditorFailure(autoplaylist_editor::FailureReason failure) {
+    using Reason = autoplaylist_editor::FailureReason;
+    switch (failure) {
+    case Reason::TargetGone:
+        return {ApiErrorCode::NOT_FOUND, "targetGone", "The target playlist no longer exists"};
+    case Reason::NotAutoplaylist:
+        return {ApiErrorCode::NOT_SUPPORTED, "notAutoplaylist", "The target is not an autoplaylist"};
+    case Reason::NoEditor:
+        return {ApiErrorCode::NOT_SUPPORTED, "noEditor", "The autoplaylist provider has no editor"};
+    case Reason::RequestInProgress:
+        return {ApiErrorCode::OPERATION_FAILED, "requestInProgress", "An editor request for this playlist is still in progress"};
+    case Reason::QueryFailed:
+        return {ApiErrorCode::OPERATION_FAILED, "queryFailed", "Could not query the autoplaylist editor"};
+    case Reason::DispatchFailed:
+        return {ApiErrorCode::OPERATION_FAILED, "dispatchFailed", "Could not dispatch the autoplaylist editor call"};
+    case Reason::ProviderFailed:
+        return {ApiErrorCode::OPERATION_FAILED, "providerFailed", "The autoplaylist editor call failed"};
+    }
+    throw std::logic_error("Invalid autoplaylist editor failure");
+}
+
+api::Failure EditorFailure(autoplaylist_editor::FailureReason failure, const std::string& guid) {
+    const auto description = DescribeEditorFailure(failure);
+    json details{{"reason", description.reason}};
+    if (!guid.empty()) details["playlistGuid"] = guid;
+    return api::Fail(description.message, description.code, {{"details", std::move(details)}});
+}
+
+struct EditorCallingDocument {
+    HWND hwnd;
+    WebViewHost::DocumentStamp stamp;
+
+    WebViewHost* CurrentHost() const {
+        auto* host = WebViewContext::GetInstance().GetWebViewHost(hwnd);
+        return host && host->IsCurrentDocument(stamp) ? host : nullptr;
+    }
+};
+
+// 占位跨全部调用文档共享；页面导航不会重建这张表。
+api::AutoplaylistEditor& ProcessAutoplaylistEditor() {
+    static api::AutoplaylistEditor editor;
+    return editor;
+}
+
+void PlaylistShowAutoplaylistUI(const pl::ShowAutoplaylistUIParams& p,
+                              const CallerContext& caller, const DeferredResponder& responder) {
+    auto* svc = s_playlistService;
+    auto* host = WebViewContext::GetInstance().GetWebViewHost(caller.callerHwnd);
+    if (!host) return;
+    const EditorCallingDocument document{caller.callerHwnd, host->CaptureDocument()};
+    if (!document.CurrentHost()) return;
+
+    size_t index = 0;
+    if (auto failure = api::ResolvePlaylistTarget(*svc, p.playlist, p.playlistGuid, index,
+                                                  api::PlaylistOmitted::Refuse)) {
+        if (failure->code == ApiErrorCode::NOT_FOUND) failure->extra["details"]["reason"] = "targetGone";
+        api::Send(responder, api::Result<pl::ShowAutoplaylistUIResult>(std::move(*failure)));
+        return;
+    }
+
+    autoplaylist_editor::Request request;
+    api::AutoplaylistEditor* editor = nullptr;
+    std::string guid;
+    try {
+        const api::PinnedPlaylist pinned(*svc, index);
+        guid = api::PlaylistGuidOf(*svc, index);
+        const std::string operationId = GenerateOperationId("autoplaylist");
+        request.operationId = operationId;
+        request.playlistGuid = guid;
+        request.isCurrentDocument = [document] { return document.CurrentHost() != nullptr; };
+        request.locate = [svc, pinned] { return pinned.Locate(*svc); };
+        request.probe = [svc](size_t currentIndex) { return svc->probe_autoplaylist_editor(currentIndex); };
+        request.accepted = [responder, operationId = operationId, guid] {
+            pl::ShowAutoplaylistUIResult result;
+            result.accepted = true;
+            result.operationId = operationId;
+            result.playlistGuid = guid;
+            api::Send(responder, api::Result<pl::ShowAutoplaylistUIResult>(std::move(result)));
+        };
+        request.complete = [document](const autoplaylist_editor::Result& result) {
+            pl::AutoplaylistUIResultPayload payload;
+            payload.operationId = result.operationId;
+            payload.playlistGuid = result.playlistGuid;
+            payload.success = !result.failure.has_value();
+            if (result.failure) {
+                const auto description = DescribeEditorFailure(*result.failure);
+                payload.error = description.message;
+                payload.code = description.code;
+                payload.reason = description.reason;
+            }
+            // 精确匹配 HWND 与原文档代际，不使用带主窗口回落的 CallerContext 路由。
+            if (auto* current = document.CurrentHost()) {
+                api::emit::Post<pl::events::AutoplaylistUIResult>(*current, payload);
+            }
+        };
+        // inMainThread 始终排队；inMainThread2 在当前主线程会同步执行，不能用于这里。
+        request.schedule = [](std::function<void()> callback) { fb2k::inMainThread(std::move(callback)); };
+        editor = &ProcessAutoplaylistEditor();
+    } catch (...) {
+        api::Send(responder, api::Result<pl::ShowAutoplaylistUIResult>(
+            EditorFailure(autoplaylist_editor::FailureReason::QueryFailed, guid)));
+        return;
+    }
+
+    // Start 受理后由 complete 独占结果通道；这里只处理受理前返回的失败。
+    if (auto failure = editor->Start(std::move(request))) {
+        api::Send(responder, api::Result<pl::ShowAutoplaylistUIResult>(EditorFailure(*failure, guid)));
+    }
+}
+
+// 状态和能力查询共用同一目标；query 方法继续只取既有状态字段。
 api::Result<pl::GetAutoplaylistInfoResult> PlaylistGetAutoplaylistInfo(const pl::GetAutoplaylistInfoParams& p) {
     auto* svc = s_playlistService;
     size_t index = 0;
     if (auto failure = ResolvePlaylist(svc, p, index)) return std::move(*failure);
 
-    return AutoplaylistStateOf<pl::GetAutoplaylistInfoResult>(svc, index);
+    try {
+        auto result = AutoplaylistStateOf<pl::GetAutoplaylistInfoResult>(svc, index);
+        const auto probe = svc->probe_autoplaylist_editor(index);
+        result.editorAvailability = EditorAvailabilityName(probe.availability);
+        result.editorAvailabilityReason = EditorAvailabilityReasonName(probe.reason);
+        const bool managed = result.isAutoplaylist && svc->is_managed_autoplaylist(index);
+        result.configAvailability = managed ? "available" : "unavailable";
+        result.configAvailabilityReason = managed ? "supported" :
+            !result.isAutoplaylist ? "notAutoplaylist" :
+            result.source == "dui" ? "unverifiedLock" : "externalProvider";
+        return result;
+    } catch (...) {
+        return api::Fail("Could not query the autoplaylist editor", ApiErrorCode::OPERATION_FAILED);
+    }
 }
 
 
@@ -1869,6 +2109,7 @@ api::Result<pl::GetSelectionResult> PlaylistGetSelection(const pl::GetSelectionP
     result.count = static_cast<std::int64_t>(result.items.size());
     result.playlist = static_cast<std::int64_t>(index);
     result.playlistGuid = api::PlaylistGuidOf(*svc, index);
+    result.contentVersion = api::PlaylistContentVersion(*svc, index);
     return result;
 }
 
@@ -1938,6 +2179,9 @@ api::Result<pl::ReorderResult> PlaylistReorder(const pl::ReorderParams& p) {
     size_t index = 0;
     if (auto failure = ResolvePlaylist(svc, p, index)) return std::move(*failure);
     if (svc->playlist_lock_is_present(index)) return PlaylistLocked(index);
+    if (auto stale = api::StaleContent(p.expectedVersion, api::PlaylistContentVersion(*svc, index))) {
+        return std::move(*stale);
+    }
 
     const size_t count = svc->playlist_get_item_count(index);
     std::vector<size_t> order;
@@ -1950,6 +2194,7 @@ api::Result<pl::ReorderResult> PlaylistReorder(const pl::ReorderParams& p) {
     result.playlist = static_cast<std::int64_t>(index);
     result.playlistGuid = api::PlaylistGuidOf(*svc, index);
     result.itemCount = static_cast<std::int64_t>(count);
+    result.contentVersion = api::PlaylistContentVersion(*svc, index);
     return result;
 }
 
@@ -1987,14 +2232,16 @@ api::Result<pl::AddPathsAsyncResult> PlaylistAddPathsAsync(const pl::AddPathsAsy
     std::string playlistGuid = api::PlaylistGuidOf(*svc, index);
 
     auto info = svc->start_add_paths_async(index, json(p.paths), operationId,
-        [operationId, playlistGuid](size_t addedCount, size_t totalCount) {
-            fb2k::inMainThread([opId = operationId, guid = playlistGuid, addedCount, totalCount]() {
+        [operationId, playlistGuid](const IPlaylistService::AsyncAddOutcome& outcome) {
+            fb2k::inMainThread([opId = operationId, guid = playlistGuid, outcome]() {
                 pl::AddCompletePayload payload;
                 payload.operationId = opId;
                 payload.playlistGuid = guid;
                 payload.success = true;
-                payload.addedCount = static_cast<std::int64_t>(addedCount);
-                payload.totalCount = static_cast<std::int64_t>(totalCount);
+                payload.status = outcome.Status();
+                if (outcome.dropReason) payload.reason = outcome.dropReason;
+                payload.addedCount = static_cast<std::int64_t>(outcome.addedCount);
+                payload.totalCount = static_cast<std::int64_t>(outcome.totalCount);
                 api::emit::Broadcast<pl::events::AddComplete>(payload);
             });
         }
@@ -2120,6 +2367,7 @@ api::Result<pl::GetAvailableColumnsResult> PlaylistGetAvailableColumns(const pl:
 } // namespace
 
 void RegisterPlaylistApi() {
+    RegisterManagedAutoplaylistApi();
     api::RegisterApi("playlist.getCount", PlaylistGetCount);
     api::RegisterApi("playlist.getAll", PlaylistGetAll);
     api::RegisterApi("playlist.getActive", PlaylistGetActive);
@@ -2152,6 +2400,7 @@ void RegisterPlaylistApi() {
     api::RegisterApi("playlist.removeAutoplaylist", PlaylistRemoveAutoplaylist);
     api::RegisterApi("playlist.getAutoplaylistInfo", PlaylistGetAutoplaylistInfo);
     api::RegisterApi("playlist.getAutoplaylistQuery", PlaylistGetAutoplaylistQuery);
+    api::RegisterApiDeferred("playlist.showAutoplaylistUI", PlaylistShowAutoplaylistUI);
     api::RegisterApi("playlist.duplicate", PlaylistDuplicate);
     api::RegisterApi("playlist.addPaths", PlaylistAddPaths);
     api::RegisterApi("playlist.addHandles", PlaylistAddHandles);

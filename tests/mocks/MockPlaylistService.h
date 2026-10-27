@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 #include "../compat/fb2k_types.h"  // console:: stub：TrackWireSnapshot.h 链上的 FailureHook 引用它
 #include "../src/interfaces/IPlaylistService.h"
 #include "../src/api/TrackWireSnapshot.h"  // get_tracks 的 TrackFieldSelection 形参要读成员
@@ -146,6 +146,7 @@ public:
     mutable int detectAutoplaylistCallCount = 0;
     mutable size_t lastDetectPlaylist = SIZE_MAX;
     AutoplaylistDetectResult detectAutoplaylistResult;
+    api::autoplaylist_editor::BackendHooks editorBackend;
     int addAutoplaylistClientCallCount = 0;
     size_t lastAddAutoPlaylist = SIZE_MAX;
     std::string lastAddAutoQuery;
@@ -290,6 +291,7 @@ public:
         detectAutoplaylistCallCount = 0;
         lastDetectPlaylist = SIZE_MAX;
         detectAutoplaylistResult = {};
+        editorBackend = {};
         addAutoplaylistClientCallCount = 0;
         lastAddAutoPlaylist = SIZE_MAX;
         lastAddAutoQuery.clear();
@@ -644,6 +646,10 @@ public:
         return detectAutoplaylistResult;
     }
 
+    api::autoplaylist_editor::Probe probe_autoplaylist_editor(size_t playlist) const override {
+        return api::autoplaylist_editor::ProbeProvider(editorBackend, playlist);
+    }
+
     void add_autoplaylist_client(size_t playlist, const char* query, const char* sort, uint32_t flags) override {
         addAutoplaylistClientCallCount++;
         lastAddAutoPlaylist = playlist;
@@ -702,14 +708,15 @@ public:
     }
 
     AsyncAddPathsInfo start_add_paths_async(size_t playlist, const nlohmann::json& paths,
-        const std::string& operationId, std::function<void(size_t, size_t)> callback) override {
+        const std::string& operationId, std::function<void(const AsyncAddOutcome&)> callback) override {
         startAddPathsAsyncCallCount++;
         lastAsyncPlaylist = playlist;
         lastAsyncPaths = paths;
         lastAsyncOperationId = operationId;
         // Optionally invoke callback synchronously for testing
         if (callback && asyncAddPathsInfo.validPathCount > 0) {
-            callback(asyncAddPathsInfo.validPathCount, asyncAddPathsInfo.validPathCount + asyncAddPathsInfo.invalidCount);
+            callback({asyncAddPathsInfo.validPathCount,
+                      asyncAddPathsInfo.validPathCount + asyncAddPathsInfo.invalidCount});
         }
         return asyncAddPathsInfo;
     }

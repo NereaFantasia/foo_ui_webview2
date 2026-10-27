@@ -206,6 +206,7 @@ TEST(ApiSchemaEvents, MetadbChangedWritesOnlyTheTagsATrackHas) {
     tagged.artist = "X, Y";
     payload.tracks = {bare, tagged};
     payload.count = 60;
+    payload.handles = {"D:\\Music\\a.flac", "D:\\Music\\b.cue|subsong:3"};
     payload.fromHook = true;
     payload.timestamp = 1790000000000;
     EXPECT_EQ(ToJson(payload),
@@ -215,6 +216,8 @@ TEST(ApiSchemaEvents, MetadbChangedWritesOnlyTheTagsATrackHas) {
                                                  {"subsong", 3}, {"rating", 0}, {"playCount", 12},
                                                  {"title", "B"}, {"artist", "X, Y"}}})},
                     {"count", 60},
+                    {"handles", json::array({"D:\\Music\\a.flac", "D:\\Music\\b.cue|subsong:3"})},
+                    {"truncated", false},
                     {"fromHook", true},
                     {"timestamp", 1790000000000}}));
 }
@@ -510,10 +513,27 @@ TEST(ApiSchemaEvents, LibraryJitQueueAndPortEventsKeepTheirKeys) {
     EXPECT_EQ(ToJson(initialized), (json{{"timestamp", 1790000000000}}));
     lb::ItemsAddedPayload added;
     added.count = 12;
+    added.handles = {"D:\\Music\\a.flac"};
     added.timestamp = 1790000000000;
-    EXPECT_EQ(ToJson(added), (json{{"count", 12}, {"timestamp", 1790000000000}}));
-    EXPECT_EQ(ToJson(lb::ItemsRemovedPayload{}), (json{{"count", 0}, {"timestamp", 0}}));
-    EXPECT_EQ(ToJson(lb::ItemsModifiedPayload{}), (json{{"count", 0}, {"timestamp", 0}}));
+    EXPECT_EQ(ToJson(added), (json{{"count", 12},
+                                   {"handles", json::array({"D:\\Music\\a.flac"})},
+                                   {"truncated", false},
+                                   {"timestamp", 1790000000000}}));
+    // Past the limit no handle is named; the page refreshes everything instead.
+    lb::ItemsRemovedPayload removed;
+    removed.count = 6000;
+    removed.truncated = true;
+    EXPECT_EQ(ToJson(removed), (json{{"count", 6000}, {"handles", json::array()}, {"truncated", true},
+                                     {"timestamp", 0}}));
+    lb::ItemsModifiedPayload modified;
+    modified.count = 1;
+    modified.handles = {"D:\\Music\\b.cue|subsong:3"};
+    modified.fromHook = true;
+    EXPECT_EQ(ToJson(modified), (json{{"count", 1},
+                                      {"handles", json::array({"D:\\Music\\b.cue|subsong:3"})},
+                                      {"truncated", false},
+                                      {"fromHook", true},
+                                      {"timestamp", 0}}));
 
     namespace jq = api::jitQueue;
     EXPECT_EQ(std::string_view(jq::events::TrackChanged::kName), "jitQueue:trackChanged");
@@ -870,7 +890,9 @@ TEST(ApiSchemaEvents, PlaylistEventsKeepTheirKeys) {
     added.playlistGuid = guid;
     added.start = 5;
     added.count = 2;
-    EXPECT_EQ(ToJson(added), (json{{"playlist", 1}, {"playlistGuid", guid}, {"start", 5}, {"count", 2}}));
+    added.contentVersion = "p-3";
+    EXPECT_EQ(ToJson(added), (json{{"playlist", 1}, {"playlistGuid", guid}, {"start", 5}, {"count", 2},
+                                   {"contentVersion", "p-3"}}));
     // 没有焦点行或活动列表时写 -1。
     pl::FocusChangedPayload focus;
     focus.playlist = 0;
@@ -911,9 +933,12 @@ TEST(ApiSchemaEvents, PlaylistEventsKeepTheirKeys) {
     done.operationId = "op_1";
     done.playlistGuid = guid;
     done.success = true;
+    done.status = "partial";
+    done.reason = "targetRemoved";
     done.addedCount = 3;
     done.totalCount = 4;
     EXPECT_EQ(ToJson(done), (json{{"operationId", "op_1"}, {"playlistGuid", guid}, {"success", true},
+                                  {"status", "partial"}, {"reason", "targetRemoved"},
                                   {"addedCount", 3}, {"totalCount", 4}}));
 
     namespace pb = api::playback;
@@ -969,7 +994,8 @@ TEST(ApiSchemaEvents, PlaybackEventsKeepTheirKeys) {
     pb::QueueChangedPayload queue;
     queue.origin = "user_added";
     queue.count = 2;
-    EXPECT_EQ(ToJson(queue), (json{{"origin", "user_added"}, {"count", 2}}));
+    queue.contentVersion = "p-4";
+    EXPECT_EQ(ToJson(queue), (json{{"origin", "user_added"}, {"count", 2}, {"contentVersion", "p-4"}}));
 }
 
 TEST(ApiSchemaEvents, TrackEventsSendTheSharedTrackAndEmptyEventsAnObject) {

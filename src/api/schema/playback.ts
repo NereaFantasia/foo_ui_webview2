@@ -1,4 +1,4 @@
-import type { Int, ReportedPlaylistGuid, Track } from './common.js';
+import type { ContentVersion, Int, ReportedPlaylistGuid, Track } from './common.js';
 
 export interface Api {
   /**
@@ -183,7 +183,7 @@ export interface Api {
    * the call fails with `LOCKED`, and nothing is added or played. A path the media-root check
    * refuses fails with `PERMISSION_DENIED`; one foobar2000 resolves to nothing fails with
    * `NOT_FOUND`, the failure carrying `path` and `subsong`.
-   * @zh 把一个文件追加到活动播放列表并播放；没有活动列表时新建一个。`|subsong:N` 后缀选择文件内的子曲目。活动播放列表已上锁时以 `LOCKED` 失败，不添加也不播放。没通过媒体根检查的路径以 `PERMISSION_DENIED` 失败；foobar2000 解析不出任何曲目的路径以 `NOT_FOUND` 失败，失败里带 `path` 与 `subsong`。
+   * @zh 追加单个文件至活动播放列表并立即播放；无活动列表时自动创建。支持以 `|subsong:N` 后缀指定子曲目序号。若活动列表已锁定，以 `LOCKED` 失败且不修改列表或起播。路径未通过媒体根安全检查时以 `PERMISSION_DENIED` 失败；若宿主无法解析为有效曲目，以 `NOT_FOUND` 失败（附带 `path` 与 `subsong`）。
    * @effect write
    */
   playPath(params: PlayPathParams): PlayPathResult;
@@ -196,7 +196,7 @@ export interface Api {
    * and the file is not opened, so a missing file is added too. When no track can be made the
    * call fails with `NOT_FOUND`. When the active playlist is locked the call fails with `LOCKED`,
    * and nothing is cleared, added or played.
-   * @zh 把多个文件加入活动播放列表并从其中一首起播。不是字符串或没通过媒体根检查的条目被丢弃并计入 `skippedPaths`，只有成功的调用才报这个数；全部被丢弃时以 `INVALID_PARAMS` 失败。其余每条路径按原样做成一首曲目：不展开文件夹与播放列表文件，也不打开文件，所以不存在的文件也会被加入。一首都做不出时以 `NOT_FOUND` 失败。活动播放列表已上锁时以 `LOCKED` 失败，不清空、不添加也不播放。
+   * @zh 批量添加文件至活动播放列表并起播其中一首。非字符串或未通过媒体根检查的项被跳过并计入 `skippedPaths`（仅成功响应包含此项）；全部项被跳过时以 `INVALID_PARAMS` 失败。其余路径按字面添加为曲目（不展开目录或播放列表文件，亦不校验文件是否存在）。若无法生成任何曲目以 `NOT_FOUND` 失败。活动列表锁定则以 `LOCKED` 失败，不执行任何清空、添加或播放。
    */
   playPaths(params: PlayPathsParams): PlayPathsResult;
 
@@ -205,7 +205,7 @@ export interface Api {
    * item; a track played from elsewhere has no location even while a playing playlist exists.
    * The location is also lost once the playing row is removed from the playlist it started
    * from, the playlist included, while the track keeps playing; and there is none while stopped.
-   * @zh 定位正在播放的曲目在播放列表中的位置。只有从播放列表项起播时才有位置；从别处起播的曲目没有位置，即便存在正在播放的列表。正在播放的那一行从起播的列表里删掉（连同列表一起删也算）之后，曲目照常播放，但位置随之丢失；停止时也没有位置。
+   * @zh 定位当前播放曲目在所在播放列表中的索引位置。仅当曲目自播放列表项起播时可用；自其他来源起播的曲目无索引位置（即使存在播放中列表）。当播放行从源列表中移除（或源列表本身被删除）后，曲目虽继续播放但索引位置丢失；停止状态下亦无索引。
    * @effect read
    */
   getCurrentTrackIndex(params: GetCurrentTrackIndexParams): GetCurrentTrackIndexResult;
@@ -976,4 +976,9 @@ interface QueueChangedPayload {
    * @zh 变化后的队列长度。
    */
   count: Int;
+  /**
+   * Already includes this change.
+   * @zh 已包含这次变化。
+   */
+  contentVersion: ContentVersion;
 }

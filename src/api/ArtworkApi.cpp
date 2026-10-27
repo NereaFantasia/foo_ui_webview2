@@ -13,6 +13,7 @@
 #include "api/LyricsFilePolicy.h"
 #include "api/ArtworkRequestParser.h"
 #include "api/BridgeCore.h"
+#include "api/MediaReadQueue.h"
 #include "api/PlaylistApi.h"
 #include "api/PlaylistTarget.h"
 #include "api/TypedApi.h"
@@ -24,6 +25,7 @@
 #include <iomanip>
 #include <array>
 #include "utils/Base64.h"
+#include "utils/StringUtils.h"
 #include "utils/SubsongUtils.h"
 
 using json = nlohmann::json;
@@ -122,14 +124,14 @@ static void AppendCanonicalArtworkSourcePaths(
 static bool GetArtworkSourcePathsForMetadbHandle(
     const metadb_handle_ptr& track,
     const GUID& artType,
-    std::vector<std::string>& outPaths)
+    std::vector<std::string>& outPaths,
+    abort_callback& abort)
 {
     if (!track.is_valid()) {
         return false;
     }
 
     try {
-        abort_callback_dummy abort;
         auto artManager = album_art_manager_v2::get();
 
         metadb_handle_list items;
@@ -145,6 +147,8 @@ static bool GetArtworkSourcePathsForMetadbHandle(
 
         AppendCanonicalArtworkSourcePaths(extractor->query_paths(artType, abort), outPaths);
         return !outPaths.empty();
+    } catch (const exception_aborted&) {
+        throw;
     } catch (...) {
         return false;
     }
@@ -304,7 +308,8 @@ bool GetArtworkBinaryForPath(const std::string& path, const std::string& type, B
 bool TryGetArtworkSourcePathsForPath(
     const std::string& path,
     const std::string& type,
-    std::vector<std::string>& outPaths)
+    std::vector<std::string>& outPaths,
+    abort_callback& abort)
 {
     outPaths.clear();
     if (path.empty()) {
@@ -316,7 +321,10 @@ bool TryGetArtworkSourcePathsForPath(
     try {
         auto [filePath, subsong] = ArtworkParseSubsongPath(path);
         metadb_handle_ptr track = SubsongUtils::CreateCanonicalHandle(filePath, subsong);
-        return GetArtworkSourcePathsForMetadbHandle(track, artType, outPaths);
+        return GetArtworkSourcePathsForMetadbHandle(track, artType, outPaths, abort);
+    } catch (const exception_aborted&) {
+        outPaths.clear();
+        throw;
     } catch (...) {
         outPaths.clear();
         return false;
@@ -366,37 +374,12 @@ api::Failure FileRelativeRefused(const std::string& path, const char* apiName) {
 
 // ========== Current Playing Artwork ==========
 
-api::Result<art::GetCurrentResult> ArtworkGetCurrent(const art::GetCurrentParams& p) {
-    art::GetCurrentResult result;
-    result.available = false;
-    result.type = p.type;
-    const GUID artType = StringToArtType(p.type);
-
+// Methods 2 and 3 of artwork.getCurrent; both open the track's file.
+api::Result<art::GetCurrentResult> CurrentArtworkFromFile(art::GetCurrentResult result,
+                                                          const metadb_handle_ptr& track,
+                                                          const GUID& artType) {
     try {
-        auto pc = playback_control::get();
-        metadb_handle_ptr track;
-        if (!pc->get_now_playing(track) || !track.is_valid()) {
-            LOG("artwork.getCurrent: No track playing");
-            result.reason = "no_track";
-            return result;
-        }
-
         const char* trackPath = track->get_path();
-        LOG("artwork.getCurrent: %s", trackPath);
-
-        // Method 1: now_playing_album_art_notify_manager (fastest, cached). The cache only
-        // holds cover_front, so other types skip it.
-        if (artType == album_art_ids::cover_front) {
-            auto manager = now_playing_album_art_notify_manager::get();
-            auto data = manager->current();
-            if (data.is_valid() && data->get_size() > 0) {
-                LOG("artwork.getCurrent: Found via now_playing_manager (%zu bytes)", data->get_size());
-                PutPicture(result, static_cast<const uint8_t*>(data->data()), data->get_size());
-                result.source = "now_playing_manager";
-                result.available = true;
-                return result;
-            }
-        }
 
         // Method 2: album_art_manager_v2 (more comprehensive)
         abort_callback_dummy abort;
@@ -430,6 +413,51 @@ api::Result<art::GetCurrentResult> ArtworkGetCurrent(const art::GetCurrentParams
         LOG("artwork.getCurrent error: %s", e.what());
         return api::Fail(e.what(), ApiErrorCode::OPERATION_FAILED);
     }
+}
+
+// Asking for the playing track and its cached cover is main-thread only; anything
+// that opens the file goes to the media read queue.
+void ArtworkGetCurrent(const art::GetCurrentParams& p, const DeferredResponder& responder) {
+    using Answer = api::Result<art::GetCurrentResult>;
+    art::GetCurrentResult result;
+    result.available = false;
+    result.type = p.type;
+    const GUID artType = StringToArtType(p.type);
+    metadb_handle_ptr track;
+
+    try {
+        auto pc = playback_control::get();
+        if (!pc->get_now_playing(track) || !track.is_valid()) {
+            LOG("artwork.getCurrent: No track playing");
+            result.reason = "no_track";
+            api::Send(responder, Answer(std::move(result)));
+            return;
+        }
+        LOG("artwork.getCurrent: %s", track->get_path());
+
+        // Method 1: now_playing_album_art_notify_manager (fastest, cached). The cache only
+        // holds cover_front, so other types skip it.
+        if (artType == album_art_ids::cover_front) {
+            auto manager = now_playing_album_art_notify_manager::get();
+            auto data = manager->current();
+            if (data.is_valid() && data->get_size() > 0) {
+                LOG("artwork.getCurrent: Found via now_playing_manager (%zu bytes)", data->get_size());
+                PutPicture(result, static_cast<const uint8_t*>(data->data()), data->get_size());
+                result.source = "now_playing_manager";
+                result.available = true;
+                api::Send(responder, Answer(std::move(result)));
+                return;
+            }
+        }
+    } catch (const std::exception& e) {
+        LOG("artwork.getCurrent error: %s", e.what());
+        api::Send(responder, Answer(api::Fail(e.what(), ApiErrorCode::OPERATION_FAILED)));
+        return;
+    }
+
+    api::AnswerFromMediaRead(responder, [result, track, artType] {
+        return CurrentArtworkFromFile(result, track, artType);
+    });
 }
 
 // Extractor-path contract: native path, file://, path|subsong:N (subsong stripped, the
@@ -515,37 +543,9 @@ api::Result<art::GetForTrackResult> ArtworkGetForTrack(const art::GetForTrackPar
     }
 }
 
-api::Result<art::GetByPlaylistItemResult> ArtworkGetByPlaylistItem(const art::GetByPlaylistItemParams& p) {
-    auto plm = playlist_manager::get();
-
-    // 负的 playlist 表示活动列表，与省略同义。
-    const std::optional<std::int64_t> requested =
-        p.playlist >= 0 ? std::optional<std::int64_t>(p.playlist) : std::nullopt;
-    size_t playlistIndex = 0;
-    if (auto failure = api::ResolvePlaylistTarget(*GetPlaylistService(), requested, p.playlistGuid,
-                                                  playlistIndex)) {
-        return std::move(*failure);
-    }
-
-    const size_t itemIndex = (p.index >= 0) ? static_cast<size_t>(p.index) : 0;
-    const size_t count = plm->playlist_get_item_count(playlistIndex);
-    if (itemIndex >= count) {
-        return api::Fail("Index out of range", ApiErrorCode::NOT_FOUND);
-    }
-
-    metadb_handle_ptr track;
-    if (!plm->playlist_get_item_handle(track, playlistIndex, itemIndex)) {
-        return api::Fail("Failed to get track handle", ApiErrorCode::OPERATION_FAILED);
-    }
-
-    art::GetByPlaylistItemResult result;
-    result.available = false;
-    result.type = p.type;
-    result.playlist = static_cast<std::int64_t>(playlistIndex);
-    result.playlistGuid = api::PlaylistGuidOf(*GetPlaylistService(), playlistIndex);
-    result.index = static_cast<std::int64_t>(itemIndex);
-    const GUID artType = StringToArtType(p.type);
-
+api::Result<art::GetByPlaylistItemResult> PlaylistItemArtwork(art::GetByPlaylistItemResult result,
+                                                               const metadb_handle_ptr& track,
+                                                               const GUID& artType) {
     try {
         abort_callback_dummy abort;
         album_art_data::ptr data;
@@ -561,22 +561,52 @@ api::Result<art::GetByPlaylistItemResult> ArtworkGetByPlaylistItem(const art::Ge
     }
 }
 
-api::Result<art::GetAvailableTypesResult> ArtworkGetAvailableTypes(const art::GetAvailableTypesParams& p) {
+// playlist_manager is main-thread only; the artwork query goes to the media read queue.
+void ArtworkGetByPlaylistItem(const art::GetByPlaylistItemParams& p, const DeferredResponder& responder) {
+    using Answer = api::Result<art::GetByPlaylistItemResult>;
+    auto plm = playlist_manager::get();
+
+    // 负的 playlist 表示活动列表，与省略同义。
+    const std::optional<std::int64_t> requested =
+        p.playlist >= 0 ? std::optional<std::int64_t>(p.playlist) : std::nullopt;
+    size_t playlistIndex = 0;
+    if (auto failure = api::ResolvePlaylistTarget(*GetPlaylistService(), requested, p.playlistGuid,
+                                                  playlistIndex)) {
+        api::Send(responder, Answer(std::move(*failure)));
+        return;
+    }
+
+    const size_t itemIndex = (p.index >= 0) ? static_cast<size_t>(p.index) : 0;
+    const size_t count = plm->playlist_get_item_count(playlistIndex);
+    if (itemIndex >= count) {
+        api::Send(responder, Answer(api::Fail("Index out of range", ApiErrorCode::NOT_FOUND)));
+        return;
+    }
+
+    metadb_handle_ptr track;
+    if (!plm->playlist_get_item_handle(track, playlistIndex, itemIndex)) {
+        api::Send(responder, Answer(api::Fail("Failed to get track handle", ApiErrorCode::OPERATION_FAILED)));
+        return;
+    }
+
+    art::GetByPlaylistItemResult result;
+    result.available = false;
+    result.type = p.type;
+    result.playlist = static_cast<std::int64_t>(playlistIndex);
+    result.playlistGuid = api::PlaylistGuidOf(*GetPlaylistService(), playlistIndex);
+    result.index = static_cast<std::int64_t>(itemIndex);
+    const GUID artType = StringToArtType(p.type);
+
+    api::AnswerFromMediaRead(responder, [result, track, artType] {
+        return PlaylistItemArtwork(result, track, artType);
+    });
+}
+
+api::Result<art::GetAvailableTypesResult> AvailableTypesOf(const std::string& path) {
     art::GetAvailableTypesResult result;
-    std::string path = p.path.value_or("");
 
     try {
         abort_callback_dummy abort;
-
-        if (path.empty()) {
-            auto pc = playback_control::get();
-            metadb_handle_ptr track;
-            if (!pc->get_now_playing(track)) {
-                return api::Fail("No track specified and nothing playing", ApiErrorCode::NO_ACTIVE_ITEM);
-            }
-            path = track->get_path();
-        }
-
         auto extractor = album_art_extractor::g_open_allowempty(nullptr, path.c_str(), abort);
         if (!extractor.is_valid()) return result;
 
@@ -598,6 +628,21 @@ api::Result<art::GetAvailableTypesResult> ArtworkGetAvailableTypes(const art::Ge
     }
 
     return result;
+}
+
+// Without a path the playing track is used, which only the main thread may ask for.
+void ArtworkGetAvailableTypes(const art::GetAvailableTypesParams& p, const DeferredResponder& responder) {
+    std::string path = p.path.value_or("");
+    if (path.empty()) {
+        metadb_handle_ptr track;
+        if (!playback_control::get()->get_now_playing(track)) {
+            api::Send(responder, api::Result<art::GetAvailableTypesResult>(
+                api::Fail("No track specified and nothing playing", ApiErrorCode::NO_ACTIVE_ITEM)));
+            return;
+        }
+        path = track->get_path();
+    }
+    api::AnswerFromMediaRead(responder, [path] { return AvailableTypesOf(path); });
 }
 
 // ========== fb2k:// Protocol URL helpers ==========
@@ -654,18 +699,24 @@ api::Result<art::GetFb2kUrlByPathResult> ArtworkGetFb2kUrlByPath(const art::GetF
 
 // ========== Lyrics ==========
 
-api::Result<art::GetLyricsResult> ArtworkGetLyrics(const art::GetLyricsParams& p) {
-    const std::string path = p.path.value_or("");
+// getLyrics and getMetadata read the playing track when no path is given. Only the
+// main thread may ask for it; false means nothing is playing and the call was answered.
+bool TakeNowPlayingIfNoPath(const std::string& path, const char* apiName, metadb_handle_ptr& track,
+                            const DeferredResponder& responder) {
+    if (!path.empty()) return true;
+    if (!playback_control::get()->get_now_playing(track)) {
+        responder.SendJson(ApiEnvelope::MakeError("No track playing", ApiErrorCode::NO_ACTIVE_ITEM));
+        return false;
+    }
+    LOG("[PATH_HOOK] api=%s usedNowPlayingShortcut=true resultKind=%s",
+        apiName, track.is_valid() ? "handle-valid" : "handle-invalid");
+    return true;
+}
+
+// `track` is the playing track when `path` is empty.
+api::Result<art::GetLyricsResult> TrackLyrics(const std::string& path, metadb_handle_ptr track) {
     try {
-        metadb_handle_ptr track;
-        if (path.empty()) {
-            auto pc = playback_control::get();
-            if (!pc->get_now_playing(track)) {
-                return api::Fail("No track playing", ApiErrorCode::NO_ACTIVE_ITEM);
-            }
-            LOG("[PATH_HOOK] api=artwork.getLyrics usedNowPlayingShortcut=true resultKind=%s",
-                track.is_valid() ? "handle-valid" : "handle-invalid");
-        } else {
+        if (!path.empty()) {
             track = ArtworkResolveHandle(path, "artwork.getLyrics");
             if (!track.is_valid()) {
                 return api::Fail("Failed to create track handle", ApiErrorCode::NOT_FOUND);
@@ -684,7 +735,7 @@ api::Result<art::GetLyricsResult> ArtworkGetLyrics(const art::GetLyricsParams& p
             if (value && value[0] != '\0') {
                 result.available = true;
                 result.tag = tag;
-                result.lyrics = value;
+                result.lyrics = StringUtils::SafeUtf8(value);
                 result.synced = strstr(tag, "SYNC") != nullptr && strstr(tag, "UNSYNC") == nullptr;
                 return result;
             }
@@ -692,22 +743,21 @@ api::Result<art::GetLyricsResult> ArtworkGetLyrics(const art::GetLyricsParams& p
         return result;
     } catch (const std::exception& e) {
         LOG("getLyrics error: %s", e.what());
-        return api::Fail(e.what(), ApiErrorCode::OPERATION_FAILED);
+        return api::Fail(StringUtils::SafeUtf8(e.what()), ApiErrorCode::OPERATION_FAILED);
     }
 }
 
-api::Result<art::GetMetadataResult> ArtworkGetMetadata(const art::GetMetadataParams& p) {
-    const std::string path = p.path.value_or("");
+void ArtworkGetLyrics(const art::GetLyricsParams& p, const DeferredResponder& responder) {
+    std::string path = p.path.value_or("");
+    metadb_handle_ptr track;
+    if (!TakeNowPlayingIfNoPath(path, "artwork.getLyrics", track, responder)) return;
+    api::AnswerFromMediaRead(responder, [path = std::move(path), track] { return TrackLyrics(path, track); });
+}
+
+// `track` is the playing track when `path` is empty.
+api::Result<art::GetMetadataResult> TrackMetadata(const std::string& path, metadb_handle_ptr track) {
     try {
-        metadb_handle_ptr track;
-        if (path.empty()) {
-            auto pc = playback_control::get();
-            if (!pc->get_now_playing(track)) {
-                return api::Fail("No track playing", ApiErrorCode::NO_ACTIVE_ITEM);
-            }
-            LOG("[PATH_HOOK] api=artwork.getMetadata usedNowPlayingShortcut=true resultKind=%s",
-                track.is_valid() ? "handle-valid" : "handle-invalid");
-        } else {
+        if (!path.empty()) {
             track = ArtworkResolveHandle(path, "artwork.getMetadata");
             if (!track.is_valid()) {
                 return api::Fail("Failed to create track handle", ApiErrorCode::NOT_FOUND);
@@ -718,8 +768,7 @@ api::Result<art::GetMetadataResult> ArtworkGetMetadata(const art::GetMetadataPar
         const file_info& info = infoContainer->info();
 
         const auto single = [&info](const char* name) -> std::string {
-            const char* value = info.meta_get(name, 0);
-            return value ? value : "";
+            return MetaFirst(info, name);
         };
 
         art::GetMetadataResult result;
@@ -764,8 +813,15 @@ api::Result<art::GetMetadataResult> ArtworkGetMetadata(const art::GetMetadataPar
         return result;
     } catch (const std::exception& e) {
         LOG("getMetadata error: %s", e.what());
-        return api::Fail(e.what(), ApiErrorCode::OPERATION_FAILED);
+        return api::Fail(StringUtils::SafeUtf8(e.what()), ApiErrorCode::OPERATION_FAILED);
     }
+}
+
+void ArtworkGetMetadata(const art::GetMetadataParams& p, const DeferredResponder& responder) {
+    std::string path = p.path.value_or("");
+    metadb_handle_ptr track;
+    if (!TakeNowPlayingIfNoPath(path, "artwork.getMetadata", track, responder)) return;
+    api::AnswerFromMediaRead(responder, [path = std::move(path), track] { return TrackMetadata(path, track); });
 }
 
 // ========== Extended Artwork APIs ==========
@@ -798,8 +854,10 @@ api::Result<art::GetBatchResult> ArtworkGetBatch(const art::GetBatchParams& p) {
     return result;
 }
 
-api::Result<art::GetAvailableArtworkResult> ArtworkGetAvailableArtwork(const art::GetAvailableArtworkParams& p) {
-    auto [filePath, subsong] = ArtworkParseSubsongPath(p.path);
+// `scanPath` is the native form of `filePath` for the sibling cover-file check;
+// empty when the track has none.
+api::Result<art::GetAvailableArtworkResult> AvailableArtworkOf(const std::string& filePath,
+                                                               const std::string& scanPath) {
     art::GetAvailableArtworkResult result;
     result.available = false;
 
@@ -835,8 +893,7 @@ api::Result<art::GetAvailableArtworkResult> ArtworkGetAvailableArtwork(const art
         // path as a string and hands it to a Win32 file API, so it needs the native form:
         // fb2k gives "file://D:\Music\x.flac" for a local file, whose directory part never
         // matches anything on disk. The extractor above keeps receiving fb2k's own form.
-        std::string scanPath;
-        if (SubsongUtils::TryResolveNativeMediaPath(filePath, scanPath)) {
+        if (!scanPath.empty()) {
             size_t lastSlash = scanPath.rfind('\\');
             if (lastSlash == std::string::npos) lastSlash = scanPath.rfind('/');
 
@@ -858,6 +915,16 @@ api::Result<art::GetAvailableArtworkResult> ArtworkGetAvailableArtwork(const art
 
     result.available = !result.artworks.empty();
     return result;
+}
+
+void ArtworkGetAvailableArtwork(const art::GetAvailableArtworkParams& p, const DeferredResponder& responder) {
+    std::string filePath = ArtworkParseSubsongPath(p.path).first;
+    // Resolving file-relative:// goes through the SDK, main thread only.
+    std::string scanPath;
+    if (!SubsongUtils::TryResolveNativeMediaPath(filePath, scanPath)) scanPath.clear();
+    api::AnswerFromMediaRead(responder, [filePath = std::move(filePath), scanPath = std::move(scanPath)] {
+        return AvailableArtworkOf(filePath, scanPath);
+    });
 }
 
 api::Result<art::GetFb2kUrlByPathBatchResult> ArtworkGetFb2kUrlByPathBatch(const art::GetFb2kUrlByPathBatchParams& p) {
@@ -950,19 +1017,25 @@ api::Result<art::GetFolderImagesResult> ArtworkGetFolderImages(const art::GetFol
 
 void RegisterArtworkApi() {
     // 路径参数的安全级别来自声明（生成头里的 kPathParams），不再在这里登记。
-    api::RegisterApi("artwork.getCurrent", ArtworkGetCurrent);
-    api::RegisterApi("artwork.getByPath", ArtworkGetByPath);
-    api::RegisterApi("artwork.getForTrack", ArtworkGetForTrack);
-    api::RegisterApi("artwork.getByPlaylistItem", ArtworkGetByPlaylistItem);
-    api::RegisterApi("artwork.getAvailableTypes", ArtworkGetAvailableTypes);
+    // Methods that open media files or folders answer from the media read queue;
+    // the URL builders only format strings and stay synchronous.
+    api::RegisterApiDeferred("artwork.getCurrent", ArtworkGetCurrent);
+    api::RegisterApiDeferred("artwork.getByPath",
+        api::OnMediaRead<art::GetByPathParams, art::GetByPathResult, ArtworkGetByPath>);
+    api::RegisterApiDeferred("artwork.getForTrack",
+        api::OnMediaRead<art::GetForTrackParams, art::GetForTrackResult, ArtworkGetForTrack>);
+    api::RegisterApiDeferred("artwork.getByPlaylistItem", ArtworkGetByPlaylistItem);
+    api::RegisterApiDeferred("artwork.getAvailableTypes", ArtworkGetAvailableTypes);
     api::RegisterApi("artwork.getFb2kUrl", ArtworkGetFb2kUrl);
     api::RegisterApi("artwork.getFb2kUrlByPath", ArtworkGetFb2kUrlByPath);
-    api::RegisterApi("artwork.getLyrics", ArtworkGetLyrics);
-    api::RegisterApi("artwork.getMetadata", ArtworkGetMetadata);
-    api::RegisterApi("artwork.getBatch", ArtworkGetBatch);
-    api::RegisterApi("artwork.getAvailableArtwork", ArtworkGetAvailableArtwork);
+    api::RegisterApiDeferred("artwork.getLyrics", ArtworkGetLyrics);
+    api::RegisterApiDeferred("artwork.getMetadata", ArtworkGetMetadata);
+    api::RegisterApiDeferred("artwork.getBatch",
+        api::OnMediaRead<art::GetBatchParams, art::GetBatchResult, ArtworkGetBatch>);
+    api::RegisterApiDeferred("artwork.getAvailableArtwork", ArtworkGetAvailableArtwork);
     api::RegisterApi("artwork.getFb2kUrlByPathBatch", ArtworkGetFb2kUrlByPathBatch);
-    api::RegisterApi("artwork.getFolderImages", ArtworkGetFolderImages);
+    api::RegisterApiDeferred("artwork.getFolderImages",
+        api::OnMediaRead<art::GetFolderImagesParams, art::GetFolderImagesResult, ArtworkGetFolderImages>);
 
     LOG("Artwork API registered (13 APIs)");
 }

@@ -292,11 +292,9 @@ void MainWindow::CaptureRuntimeDomProbe(const std::string& phase, int scheduledD
     })())JS";
 
     const HRESULT executeHr = webView_->ExecuteScript(runtimeProbeScript,
-        // 本回调已证明 nothrow：所有可抛操作均在外层 try 内，两个 catch 处理器各自再以 try/catch(...) 兜底
-        //（日志路径 OOM 也不外抛）。clang-tidy bugprone-exception-escape 对该嵌套 try/catch 模式误报，最小范围抑制。
-        // NOLINTNEXTLINE(bugprone-exception-escape)
-        [phase, scheduledDelayMs, requestedAtMs, hwnd, windowId,
-         clientRectText, controllerBoundsText,
+        // 字符串用初始化捕获：直接捕获 const 对象时闭包移动要复制它们，可能抛出。
+        [phase = phase, scheduledDelayMs, requestedAtMs, hwnd, windowId = windowId,
+         clientRectText = clientRectText, controllerBoundsText = controllerBoundsText,
          visible, iconic, zoomed, active,
          startupRevealPending, startupRevealCommitted, startupRevealSettling](const std::wstring& resultJson) {
             // 本地防御：DOM 探针完成回调跑在主线程 WebView2 回调里，下方 json 的 .value()/.contains()

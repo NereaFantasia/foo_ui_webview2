@@ -42,6 +42,12 @@ struct IsAutoplaylistResult;
 struct IsAutoplaylistParams;
 struct CreateAutoplaylistResult;
 struct CreateAutoplaylistParams;
+struct CreateManagedAutoplaylistResult;
+struct CreateManagedAutoplaylistParams;
+struct GetAutoplaylistConfigResult;
+struct GetAutoplaylistConfigParams;
+struct SetAutoplaylistConfigResult;
+struct SetAutoplaylistConfigParams;
 struct ConvertToAutoplaylistResult;
 struct ConvertToAutoplaylistParams;
 struct RemoveAutoplaylistResult;
@@ -50,6 +56,8 @@ struct GetAutoplaylistInfoResult;
 struct GetAutoplaylistInfoParams;
 struct GetAutoplaylistQueryResult;
 struct GetAutoplaylistQueryParams;
+struct ShowAutoplaylistUIResult;
+struct ShowAutoplaylistUIParams;
 struct GetLockInfoResult;
 struct GetLockInfoParams;
 struct IsLockedResult;
@@ -66,11 +74,14 @@ struct GetTrackCountResult;
 struct GetTrackCountParams;
 struct GetSelectionResult;
 struct GetSelectionParams;
+struct SetSelectionResult;
 struct SetSelectionParams;
 struct SelectAllParams;
 struct DeselectAllParams;
+struct RemoveTracksResult;
 struct RemoveTracksParams;
 struct RemoveSelectedTracksParams;
+struct MoveTracksResult;
 struct MoveTracksParams;
 struct PlayTrackParams;
 struct FocusTrackParams;
@@ -117,6 +128,8 @@ struct ReorderedPayload;
 struct ActivatedPayload;
 struct RenamedPayload;
 struct LockChangedPayload;
+struct AutoplaylistUIResultPayload;
+struct AutoplaylistConfigChangedPayload;
 struct DefaultFormatChangedPayload;
 struct AddCompletePayload;
 inline json ToJson(const GetCountResult& v);
@@ -145,6 +158,12 @@ inline json ToJson(const IsAutoplaylistResult& v);
 inline bool FromJson(const json& j, IsAutoplaylistParams& out, std::string& error, const std::string& where = {});
 inline json ToJson(const CreateAutoplaylistResult& v);
 inline bool FromJson(const json& j, CreateAutoplaylistParams& out, std::string& error, const std::string& where = {});
+inline json ToJson(const CreateManagedAutoplaylistResult& v);
+inline bool FromJson(const json& j, CreateManagedAutoplaylistParams& out, std::string& error, const std::string& where = {});
+inline json ToJson(const GetAutoplaylistConfigResult& v);
+inline bool FromJson(const json& j, GetAutoplaylistConfigParams& out, std::string& error, const std::string& where = {});
+inline json ToJson(const SetAutoplaylistConfigResult& v);
+inline bool FromJson(const json& j, SetAutoplaylistConfigParams& out, std::string& error, const std::string& where = {});
 inline json ToJson(const ConvertToAutoplaylistResult& v);
 inline bool FromJson(const json& j, ConvertToAutoplaylistParams& out, std::string& error, const std::string& where = {});
 inline json ToJson(const RemoveAutoplaylistResult& v);
@@ -153,6 +172,8 @@ inline json ToJson(const GetAutoplaylistInfoResult& v);
 inline bool FromJson(const json& j, GetAutoplaylistInfoParams& out, std::string& error, const std::string& where = {});
 inline json ToJson(const GetAutoplaylistQueryResult& v);
 inline bool FromJson(const json& j, GetAutoplaylistQueryParams& out, std::string& error, const std::string& where = {});
+inline json ToJson(const ShowAutoplaylistUIResult& v);
+inline bool FromJson(const json& j, ShowAutoplaylistUIParams& out, std::string& error, const std::string& where = {});
 inline json ToJson(const GetLockInfoResult& v);
 inline bool FromJson(const json& j, GetLockInfoParams& out, std::string& error, const std::string& where = {});
 inline json ToJson(const IsLockedResult& v);
@@ -169,11 +190,14 @@ inline json ToJson(const GetTrackCountResult& v);
 inline bool FromJson(const json& j, GetTrackCountParams& out, std::string& error, const std::string& where = {});
 inline json ToJson(const GetSelectionResult& v);
 inline bool FromJson(const json& j, GetSelectionParams& out, std::string& error, const std::string& where = {});
+inline json ToJson(const SetSelectionResult& v);
 inline bool FromJson(const json& j, SetSelectionParams& out, std::string& error, const std::string& where = {});
 inline bool FromJson(const json& j, SelectAllParams& out, std::string& error, const std::string& where = {});
 inline bool FromJson(const json& j, DeselectAllParams& out, std::string& error, const std::string& where = {});
+inline json ToJson(const RemoveTracksResult& v);
 inline bool FromJson(const json& j, RemoveTracksParams& out, std::string& error, const std::string& where = {});
 inline bool FromJson(const json& j, RemoveSelectedTracksParams& out, std::string& error, const std::string& where = {});
+inline json ToJson(const MoveTracksResult& v);
 inline bool FromJson(const json& j, MoveTracksParams& out, std::string& error, const std::string& where = {});
 inline bool FromJson(const json& j, PlayTrackParams& out, std::string& error, const std::string& where = {});
 inline bool FromJson(const json& j, FocusTrackParams& out, std::string& error, const std::string& where = {});
@@ -220,6 +244,8 @@ inline json ToJson(const ReorderedPayload& v);
 inline json ToJson(const ActivatedPayload& v);
 inline json ToJson(const RenamedPayload& v);
 inline json ToJson(const LockChangedPayload& v);
+inline json ToJson(const AutoplaylistUIResultPayload& v);
+inline json ToJson(const AutoplaylistConfigChangedPayload& v);
 inline json ToJson(const DefaultFormatChangedPayload& v);
 inline json ToJson(const AddCompletePayload& v);
 
@@ -691,6 +717,131 @@ inline bool FromJson(const json& j, CreateAutoplaylistParams& out, std::string& 
         && r.Optional("keepSorted", out.keepSorted);
 }
 
+struct CreateManagedAutoplaylistResult {
+    static constexpr std::array<std::string_view, 5> kFields{{"playlistGuid", "query", "sort", "keepSorted", "revision"}};
+
+    std::string playlistGuid{};
+    std::string query{};
+    std::string sort{};
+    bool keepSorted{};
+    std::string revision{};
+};
+
+inline json ToJson(const CreateManagedAutoplaylistResult& v) {
+    json j = json::object();
+    api::results::Put(j, "playlistGuid", v.playlistGuid);
+    api::results::Put(j, "query", v.query);
+    api::results::Put(j, "sort", v.sort);
+    api::results::Put(j, "keepSorted", v.keepSorted);
+    api::results::Put(j, "revision", v.revision);
+    return j;
+}
+
+struct CreateManagedAutoplaylistParams {
+    static constexpr const char* kMethod = "playlist.createManagedAutoplaylist";
+    static constexpr std::array<api::params::PathParam, 0> kPathParams{};
+    using Result = CreateManagedAutoplaylistResult;
+
+    std::string name = "New Autoplaylist";
+    std::string query{};
+    std::string sort = "";
+    bool keepSorted = false;
+};
+
+inline bool FromJson(const json& j, CreateManagedAutoplaylistParams& out, std::string& error, const std::string& where) {
+    api::params::Reader r(j, error, where);
+    return r.IsObject()
+        && r.OnlyKeys({"name", "query", "sort", "keepSorted"})
+        && r.Optional("name", out.name)
+        && r.Required("query", out.query)
+        && r.Optional("sort", out.sort)
+        && r.Optional("keepSorted", out.keepSorted);
+}
+
+struct GetAutoplaylistConfigResult {
+    static constexpr std::array<std::string_view, 5> kFields{{"playlistGuid", "query", "sort", "keepSorted", "revision"}};
+
+    std::string playlistGuid{};
+    std::string query{};
+    std::string sort{};
+    bool keepSorted{};
+    std::string revision{};
+};
+
+inline json ToJson(const GetAutoplaylistConfigResult& v) {
+    json j = json::object();
+    api::results::Put(j, "playlistGuid", v.playlistGuid);
+    api::results::Put(j, "query", v.query);
+    api::results::Put(j, "sort", v.sort);
+    api::results::Put(j, "keepSorted", v.keepSorted);
+    api::results::Put(j, "revision", v.revision);
+    return j;
+}
+
+struct GetAutoplaylistConfigParams {
+    static constexpr const char* kMethod = "playlist.getAutoplaylistConfig";
+    static constexpr std::array<api::params::PathParam, 0> kPathParams{};
+    using Result = GetAutoplaylistConfigResult;
+
+    std::optional<std::int64_t> playlist{};
+    std::optional<std::string> playlistGuid{};
+};
+
+inline bool FromJson(const json& j, GetAutoplaylistConfigParams& out, std::string& error, const std::string& where) {
+    api::params::Reader r(j, error, where);
+    return r.IsObject()
+        && r.OnlyKeys({"playlist", "playlistGuid"})
+        && r.Optional("playlist", out.playlist)
+        && r.Range("playlist", out.playlist, std::optional<std::int64_t>(0), std::nullopt)
+        && r.Optional("playlistGuid", out.playlistGuid);
+}
+
+struct SetAutoplaylistConfigResult {
+    static constexpr std::array<std::string_view, 5> kFields{{"playlistGuid", "query", "sort", "keepSorted", "revision"}};
+
+    std::string playlistGuid{};
+    std::string query{};
+    std::string sort{};
+    bool keepSorted{};
+    std::string revision{};
+};
+
+inline json ToJson(const SetAutoplaylistConfigResult& v) {
+    json j = json::object();
+    api::results::Put(j, "playlistGuid", v.playlistGuid);
+    api::results::Put(j, "query", v.query);
+    api::results::Put(j, "sort", v.sort);
+    api::results::Put(j, "keepSorted", v.keepSorted);
+    api::results::Put(j, "revision", v.revision);
+    return j;
+}
+
+struct SetAutoplaylistConfigParams {
+    static constexpr const char* kMethod = "playlist.setAutoplaylistConfig";
+    static constexpr std::array<api::params::PathParam, 0> kPathParams{};
+    using Result = SetAutoplaylistConfigResult;
+
+    std::optional<std::int64_t> playlist{};
+    std::optional<std::string> playlistGuid{};
+    std::string expectedRevision{};
+    std::optional<std::string> query{};
+    std::optional<std::string> sort{};
+    std::optional<bool> keepSorted{};
+};
+
+inline bool FromJson(const json& j, SetAutoplaylistConfigParams& out, std::string& error, const std::string& where) {
+    api::params::Reader r(j, error, where);
+    return r.IsObject()
+        && r.OnlyKeys({"playlist", "playlistGuid", "expectedRevision", "query", "sort", "keepSorted"})
+        && r.Optional("playlist", out.playlist)
+        && r.Range("playlist", out.playlist, std::optional<std::int64_t>(0), std::nullopt)
+        && r.Optional("playlistGuid", out.playlistGuid)
+        && r.Required("expectedRevision", out.expectedRevision)
+        && r.Optional("query", out.query)
+        && r.Optional("sort", out.sort)
+        && r.Optional("keepSorted", out.keepSorted);
+}
+
 struct ConvertToAutoplaylistResult {
     static constexpr std::array<std::string_view, 2> kFields{{"playlist", "playlistGuid"}};
 
@@ -767,11 +918,15 @@ inline bool FromJson(const json& j, RemoveAutoplaylistParams& out, std::string& 
 }
 
 struct GetAutoplaylistInfoResult {
-    static constexpr std::array<std::string_view, 6> kFields{{"isAutoplaylist", "playlist", "playlistGuid", "keepSorted", "source", "lockName"}};
+    static constexpr std::array<std::string_view, 10> kFields{{"isAutoplaylist", "playlist", "playlistGuid", "editorAvailability", "editorAvailabilityReason", "configAvailability", "configAvailabilityReason", "keepSorted", "source", "lockName"}};
 
     bool isAutoplaylist{};
     std::int64_t playlist{};
     std::string playlistGuid{};
+    std::string editorAvailability{};
+    std::string editorAvailabilityReason{};
+    std::string configAvailability{};
+    std::string configAvailabilityReason{};
     std::optional<bool> keepSorted{};
     std::optional<std::string> source{};
     std::optional<std::string> lockName{};
@@ -782,6 +937,10 @@ inline json ToJson(const GetAutoplaylistInfoResult& v) {
     api::results::Put(j, "isAutoplaylist", v.isAutoplaylist);
     api::results::Put(j, "playlist", v.playlist);
     api::results::Put(j, "playlistGuid", v.playlistGuid);
+    api::results::Put(j, "editorAvailability", v.editorAvailability);
+    api::results::Put(j, "editorAvailabilityReason", v.editorAvailabilityReason);
+    api::results::Put(j, "configAvailability", v.configAvailability);
+    api::results::Put(j, "configAvailabilityReason", v.configAvailabilityReason);
     api::results::Put(j, "keepSorted", v.keepSorted);
     api::results::Put(j, "source", v.source);
     api::results::Put(j, "lockName", v.lockName);
@@ -842,6 +1001,40 @@ struct GetAutoplaylistQueryParams {
 };
 
 inline bool FromJson(const json& j, GetAutoplaylistQueryParams& out, std::string& error, const std::string& where) {
+    api::params::Reader r(j, error, where);
+    return r.IsObject()
+        && r.OnlyKeys({"playlist", "playlistGuid"})
+        && r.Optional("playlist", out.playlist)
+        && r.Range("playlist", out.playlist, std::optional<std::int64_t>(0), std::nullopt)
+        && r.Optional("playlistGuid", out.playlistGuid);
+}
+
+struct ShowAutoplaylistUIResult {
+    static constexpr std::array<std::string_view, 3> kFields{{"accepted", "operationId", "playlistGuid"}};
+
+    bool accepted{};
+    std::string operationId{};
+    std::string playlistGuid{};
+};
+
+inline json ToJson(const ShowAutoplaylistUIResult& v) {
+    json j = json::object();
+    api::results::Put(j, "accepted", v.accepted);
+    api::results::Put(j, "operationId", v.operationId);
+    api::results::Put(j, "playlistGuid", v.playlistGuid);
+    return j;
+}
+
+struct ShowAutoplaylistUIParams {
+    static constexpr const char* kMethod = "playlist.showAutoplaylistUI";
+    static constexpr std::array<api::params::PathParam, 0> kPathParams{};
+    using Result = ShowAutoplaylistUIResult;
+
+    std::optional<std::int64_t> playlist{};
+    std::optional<std::string> playlistGuid{};
+};
+
+inline bool FromJson(const json& j, ShowAutoplaylistUIParams& out, std::string& error, const std::string& where) {
     api::params::Reader r(j, error, where);
     return r.IsObject()
         && r.OnlyKeys({"playlist", "playlistGuid"})
@@ -1023,11 +1216,12 @@ inline bool FromJson(const json& j, ReverseParams& out, std::string& error, cons
 }
 
 struct ReorderResult {
-    static constexpr std::array<std::string_view, 3> kFields{{"playlist", "playlistGuid", "itemCount"}};
+    static constexpr std::array<std::string_view, 4> kFields{{"playlist", "playlistGuid", "itemCount", "contentVersion"}};
 
     std::int64_t playlist{};
     std::string playlistGuid{};
     std::int64_t itemCount{};
+    std::string contentVersion{};
 };
 
 inline json ToJson(const ReorderResult& v) {
@@ -1035,6 +1229,7 @@ inline json ToJson(const ReorderResult& v) {
     api::results::Put(j, "playlist", v.playlist);
     api::results::Put(j, "playlistGuid", v.playlistGuid);
     api::results::Put(j, "itemCount", v.itemCount);
+    api::results::Put(j, "contentVersion", v.contentVersion);
     return j;
 }
 
@@ -1046,17 +1241,19 @@ struct ReorderParams {
     std::optional<std::int64_t> playlist{};
     std::optional<std::string> playlistGuid{};
     std::vector<std::int64_t> newOrder{};
+    std::optional<std::string> expectedVersion{};
 };
 
 inline bool FromJson(const json& j, ReorderParams& out, std::string& error, const std::string& where) {
     api::params::Reader r(j, error, where);
     return r.IsObject()
-        && r.OnlyKeys({"playlist", "playlistGuid", "newOrder"})
+        && r.OnlyKeys({"playlist", "playlistGuid", "newOrder", "expectedVersion"})
         && r.Optional("playlist", out.playlist)
         && r.Range("playlist", out.playlist, std::optional<std::int64_t>(0), std::nullopt)
         && r.Optional("playlistGuid", out.playlistGuid)
         && r.Required("newOrder", out.newOrder)
-        && r.ItemsRange("newOrder", out.newOrder, std::optional<std::int64_t>(0), std::nullopt);
+        && r.ItemsRange("newOrder", out.newOrder, std::optional<std::int64_t>(0), std::nullopt)
+        && r.Optional("expectedVersion", out.expectedVersion);
 }
 
 struct GetTrackCountResult {
@@ -1090,12 +1287,13 @@ inline bool FromJson(const json& j, GetTrackCountParams& out, std::string& error
 }
 
 struct GetSelectionResult {
-    static constexpr std::array<std::string_view, 4> kFields{{"items", "count", "playlist", "playlistGuid"}};
+    static constexpr std::array<std::string_view, 5> kFields{{"items", "count", "playlist", "playlistGuid", "contentVersion"}};
 
     std::vector<std::int64_t> items{};
     std::int64_t count{};
     std::int64_t playlist{};
     std::string playlistGuid{};
+    std::string contentVersion{};
 };
 
 inline json ToJson(const GetSelectionResult& v) {
@@ -1104,6 +1302,7 @@ inline json ToJson(const GetSelectionResult& v) {
     api::results::Put(j, "count", v.count);
     api::results::Put(j, "playlist", v.playlist);
     api::results::Put(j, "playlistGuid", v.playlistGuid);
+    api::results::Put(j, "contentVersion", v.contentVersion);
     return j;
 }
 
@@ -1125,27 +1324,41 @@ inline bool FromJson(const json& j, GetSelectionParams& out, std::string& error,
         && r.Optional("playlistGuid", out.playlistGuid);
 }
 
+struct SetSelectionResult {
+    static constexpr std::array<std::string_view, 1> kFields{{"contentVersion"}};
+
+    std::string contentVersion{};
+};
+
+inline json ToJson(const SetSelectionResult& v) {
+    json j = json::object();
+    api::results::Put(j, "contentVersion", v.contentVersion);
+    return j;
+}
+
 struct SetSelectionParams {
     static constexpr const char* kMethod = "playlist.setSelection";
     static constexpr std::array<api::params::PathParam, 0> kPathParams{};
-    using Result = void;
+    using Result = SetSelectionResult;
 
     std::optional<std::int64_t> playlist{};
     std::optional<std::string> playlistGuid{};
     std::vector<std::int64_t> indices{};
     bool clearOthers = true;
+    std::optional<std::string> expectedVersion{};
 };
 
 inline bool FromJson(const json& j, SetSelectionParams& out, std::string& error, const std::string& where) {
     api::params::Reader r(j, error, where);
     return r.IsObject()
-        && r.OnlyKeys({"playlist", "playlistGuid", "indices", "clearOthers"})
+        && r.OnlyKeys({"playlist", "playlistGuid", "indices", "clearOthers", "expectedVersion"})
         && r.Optional("playlist", out.playlist)
         && r.Range("playlist", out.playlist, std::optional<std::int64_t>(0), std::nullopt)
         && r.Optional("playlistGuid", out.playlistGuid)
         && r.Required("indices", out.indices)
         && r.ItemsRange("indices", out.indices, std::optional<std::int64_t>(0), std::nullopt)
-        && r.Optional("clearOthers", out.clearOthers);
+        && r.Optional("clearOthers", out.clearOthers)
+        && r.Optional("expectedVersion", out.expectedVersion);
 }
 
 struct SelectAllParams {
@@ -1184,25 +1397,39 @@ inline bool FromJson(const json& j, DeselectAllParams& out, std::string& error, 
         && r.Optional("playlistGuid", out.playlistGuid);
 }
 
+struct RemoveTracksResult {
+    static constexpr std::array<std::string_view, 1> kFields{{"contentVersion"}};
+
+    std::string contentVersion{};
+};
+
+inline json ToJson(const RemoveTracksResult& v) {
+    json j = json::object();
+    api::results::Put(j, "contentVersion", v.contentVersion);
+    return j;
+}
+
 struct RemoveTracksParams {
     static constexpr const char* kMethod = "playlist.removeTracks";
     static constexpr std::array<api::params::PathParam, 0> kPathParams{};
-    using Result = void;
+    using Result = RemoveTracksResult;
 
     std::optional<std::int64_t> playlist{};
     std::optional<std::string> playlistGuid{};
     std::vector<std::int64_t> items{};
+    std::optional<std::string> expectedVersion{};
 };
 
 inline bool FromJson(const json& j, RemoveTracksParams& out, std::string& error, const std::string& where) {
     api::params::Reader r(j, error, where);
     return r.IsObject()
-        && r.OnlyKeys({"playlist", "playlistGuid", "items"})
+        && r.OnlyKeys({"playlist", "playlistGuid", "items", "expectedVersion"})
         && r.Optional("playlist", out.playlist)
         && r.Range("playlist", out.playlist, std::optional<std::int64_t>(0), std::nullopt)
         && r.Optional("playlistGuid", out.playlistGuid)
         && r.Required("items", out.items)
-        && r.ItemsRange("items", out.items, std::optional<std::int64_t>(0), std::nullopt);
+        && r.ItemsRange("items", out.items, std::optional<std::int64_t>(0), std::nullopt)
+        && r.Optional("expectedVersion", out.expectedVersion);
 }
 
 struct RemoveSelectedTracksParams {
@@ -1223,27 +1450,41 @@ inline bool FromJson(const json& j, RemoveSelectedTracksParams& out, std::string
         && r.Optional("playlistGuid", out.playlistGuid);
 }
 
+struct MoveTracksResult {
+    static constexpr std::array<std::string_view, 1> kFields{{"contentVersion"}};
+
+    std::string contentVersion{};
+};
+
+inline json ToJson(const MoveTracksResult& v) {
+    json j = json::object();
+    api::results::Put(j, "contentVersion", v.contentVersion);
+    return j;
+}
+
 struct MoveTracksParams {
     static constexpr const char* kMethod = "playlist.moveTracks";
     static constexpr std::array<api::params::PathParam, 0> kPathParams{};
-    using Result = void;
+    using Result = MoveTracksResult;
 
     std::optional<std::int64_t> playlist{};
     std::optional<std::string> playlistGuid{};
     std::optional<std::vector<std::int64_t>> items{};
     std::int64_t delta{};
+    std::optional<std::string> expectedVersion{};
 };
 
 inline bool FromJson(const json& j, MoveTracksParams& out, std::string& error, const std::string& where) {
     api::params::Reader r(j, error, where);
     return r.IsObject()
-        && r.OnlyKeys({"playlist", "playlistGuid", "items", "delta"})
+        && r.OnlyKeys({"playlist", "playlistGuid", "items", "delta", "expectedVersion"})
         && r.Optional("playlist", out.playlist)
         && r.Range("playlist", out.playlist, std::optional<std::int64_t>(0), std::nullopt)
         && r.Optional("playlistGuid", out.playlistGuid)
         && r.Optional("items", out.items)
         && r.ItemsRange("items", out.items, std::optional<std::int64_t>(0), std::nullopt)
-        && r.Required("delta", out.delta);
+        && r.Required("delta", out.delta)
+        && r.Optional("expectedVersion", out.expectedVersion);
 }
 
 struct PlayTrackParams {
@@ -1256,19 +1497,21 @@ struct PlayTrackParams {
     std::int64_t index = 0;
     bool deferred = false;
     bool muted = false;
+    std::optional<std::string> expectedVersion{};
 };
 
 inline bool FromJson(const json& j, PlayTrackParams& out, std::string& error, const std::string& where) {
     api::params::Reader r(j, error, where);
     return r.IsObject()
-        && r.OnlyKeys({"playlist", "playlistGuid", "index", "deferred", "muted"})
+        && r.OnlyKeys({"playlist", "playlistGuid", "index", "deferred", "muted", "expectedVersion"})
         && r.Optional("playlist", out.playlist)
         && r.Range("playlist", out.playlist, std::optional<std::int64_t>(0), std::nullopt)
         && r.Optional("playlistGuid", out.playlistGuid)
         && r.Optional("index", out.index)
         && r.Range("index", out.index, std::optional<std::int64_t>(0), std::nullopt)
         && r.Optional("deferred", out.deferred)
-        && r.Optional("muted", out.muted);
+        && r.Optional("muted", out.muted)
+        && r.Optional("expectedVersion", out.expectedVersion);
 }
 
 struct FocusTrackParams {
@@ -1279,16 +1522,18 @@ struct FocusTrackParams {
     std::optional<std::int64_t> playlist{};
     std::optional<std::string> playlistGuid{};
     std::optional<std::int64_t> index{};
+    std::optional<std::string> expectedVersion{};
 };
 
 inline bool FromJson(const json& j, FocusTrackParams& out, std::string& error, const std::string& where) {
     api::params::Reader r(j, error, where);
     return r.IsObject()
-        && r.OnlyKeys({"playlist", "playlistGuid", "index"})
+        && r.OnlyKeys({"playlist", "playlistGuid", "index", "expectedVersion"})
         && r.Optional("playlist", out.playlist)
         && r.Range("playlist", out.playlist, std::optional<std::int64_t>(0), std::nullopt)
         && r.Optional("playlistGuid", out.playlistGuid)
-        && r.Optional("index", out.index);
+        && r.Optional("index", out.index)
+        && r.Optional("expectedVersion", out.expectedVersion);
 }
 
 struct GetFocusTrackResult {
@@ -1367,20 +1612,22 @@ struct SetFocusedTrackParams {
     std::optional<std::int64_t> playlist{};
     std::optional<std::string> playlistGuid{};
     std::optional<std::int64_t> index{};
+    std::optional<std::string> expectedVersion{};
 };
 
 inline bool FromJson(const json& j, SetFocusedTrackParams& out, std::string& error, const std::string& where) {
     api::params::Reader r(j, error, where);
     return r.IsObject()
-        && r.OnlyKeys({"playlist", "playlistGuid", "index"})
+        && r.OnlyKeys({"playlist", "playlistGuid", "index", "expectedVersion"})
         && r.Optional("playlist", out.playlist)
         && r.Range("playlist", out.playlist, std::optional<std::int64_t>(0), std::nullopt)
         && r.Optional("playlistGuid", out.playlistGuid)
-        && r.Optional("index", out.index);
+        && r.Optional("index", out.index)
+        && r.Optional("expectedVersion", out.expectedVersion);
 }
 
 struct InsertTracksResult {
-    static constexpr std::array<std::string_view, 8> kFields{{"playlist", "playlistGuid", "insertIndex", "requestedCount", "addedCount", "invalidCount", "countBefore", "totalCount"}};
+    static constexpr std::array<std::string_view, 9> kFields{{"playlist", "playlistGuid", "insertIndex", "requestedCount", "addedCount", "invalidCount", "countBefore", "totalCount", "contentVersion"}};
 
     std::int64_t playlist{};
     std::string playlistGuid{};
@@ -1390,6 +1637,7 @@ struct InsertTracksResult {
     std::int64_t invalidCount{};
     std::int64_t countBefore{};
     std::int64_t totalCount{};
+    std::string contentVersion{};
 };
 
 inline json ToJson(const InsertTracksResult& v) {
@@ -1402,6 +1650,7 @@ inline json ToJson(const InsertTracksResult& v) {
     api::results::Put(j, "invalidCount", v.invalidCount);
     api::results::Put(j, "countBefore", v.countBefore);
     api::results::Put(j, "totalCount", v.totalCount);
+    api::results::Put(j, "contentVersion", v.contentVersion);
     return j;
 }
 
@@ -1414,19 +1663,21 @@ struct InsertTracksParams {
     std::optional<std::string> playlistGuid{};
     std::int64_t position = 0;
     std::vector<json> handles{};
+    std::optional<std::string> expectedVersion{};
 };
 
 inline bool FromJson(const json& j, InsertTracksParams& out, std::string& error, const std::string& where) {
     api::params::Reader r(j, error, where);
     return r.IsObject()
-        && r.OnlyKeys({"playlist", "playlistGuid", "position", "handles"})
+        && r.OnlyKeys({"playlist", "playlistGuid", "position", "handles", "expectedVersion"})
         && r.Optional("playlist", out.playlist)
         && r.Range("playlist", out.playlist, std::optional<std::int64_t>(0), std::nullopt)
         && r.Optional("playlistGuid", out.playlistGuid)
         && r.Optional("position", out.position)
         && r.Range("position", out.position, std::optional<std::int64_t>(0), std::nullopt)
         && r.Required("handles", out.handles)
-        && r.MinItems("handles", out.handles, 1);
+        && r.MinItems("handles", out.handles, 1)
+        && r.Optional("expectedVersion", out.expectedVersion);
 }
 
 struct AddPathsResult {
@@ -1650,7 +1901,7 @@ inline bool FromJson(const json& j, ReplaceAllAndPlayParams& out, std::string& e
 }
 
 struct PlaylistTrackPartial {
-    static constexpr std::array<std::string_view, 29> kFields{{"handle", "path", "absolutePath", "subsong", "title", "artist", "artists", "album", "albumArtist", "albumArtists", "genre", "date", "trackNumber", "discNumber", "duration", "fileSize", "bitrate", "sampleRate", "channels", "codec", "rating", "index", "composer", "comment", "playCount", "firstPlayed", "lastPlayed", "added", "formats"}};
+    static constexpr std::array<std::string_view, 30> kFields{{"handle", "path", "absolutePath", "subsong", "title", "artist", "artists", "album", "albumId", "albumArtist", "albumArtists", "genre", "date", "trackNumber", "discNumber", "duration", "fileSize", "bitrate", "sampleRate", "channels", "codec", "rating", "index", "composer", "comment", "playCount", "firstPlayed", "lastPlayed", "added", "formats"}};
 
     std::optional<std::string> handle{};
     std::optional<std::string> path{};
@@ -1660,6 +1911,7 @@ struct PlaylistTrackPartial {
     std::optional<std::string> artist{};
     std::optional<std::vector<std::string>> artists{};
     std::optional<std::string> album{};
+    std::optional<std::string> albumId{};
     std::optional<std::string> albumArtist{};
     std::optional<std::vector<std::string>> albumArtists{};
     std::optional<std::string> genre{};
@@ -1693,6 +1945,7 @@ inline json ToJson(const PlaylistTrackPartial& v) {
     api::results::Put(j, "artist", v.artist);
     api::results::Put(j, "artists", v.artists);
     api::results::Put(j, "album", v.album);
+    api::results::Put(j, "albumId", v.albumId);
     api::results::Put(j, "albumArtist", v.albumArtist);
     api::results::Put(j, "albumArtists", v.albumArtists);
     api::results::Put(j, "genre", v.genre);
@@ -1718,7 +1971,7 @@ inline json ToJson(const PlaylistTrackPartial& v) {
 }
 
 struct GetTracksResult {
-    static constexpr std::array<std::string_view, 6> kFields{{"playlist", "playlistGuid", "start", "count", "total", "tracks"}};
+    static constexpr std::array<std::string_view, 7> kFields{{"playlist", "playlistGuid", "start", "count", "total", "tracks", "contentVersion"}};
 
     std::int64_t playlist{};
     std::optional<std::string> playlistGuid{};
@@ -1726,6 +1979,7 @@ struct GetTracksResult {
     std::int64_t count{};
     std::int64_t total{};
     std::vector<PlaylistTrackPartial> tracks{};
+    std::optional<std::string> contentVersion{};
 };
 
 inline json ToJson(const GetTracksResult& v) {
@@ -1736,6 +1990,7 @@ inline json ToJson(const GetTracksResult& v) {
     api::results::Put(j, "count", v.count);
     api::results::Put(j, "total", v.total);
     api::results::Put(j, "tracks", v.tracks);
+    api::results::Put(j, "contentVersion", v.contentVersion);
     return j;
 }
 
@@ -1769,7 +2024,7 @@ inline bool FromJson(const json& j, GetTracksParams& out, std::string& error, co
 }
 
 struct PlaylistTrack : api::common::Track {
-    static constexpr std::array<std::string_view, 29> kFields{{"handle", "path", "absolutePath", "subsong", "title", "artist", "artists", "album", "albumArtist", "albumArtists", "genre", "date", "trackNumber", "discNumber", "duration", "fileSize", "bitrate", "sampleRate", "channels", "codec", "rating", "index", "composer", "comment", "playCount", "firstPlayed", "lastPlayed", "added", "formats"}};
+    static constexpr std::array<std::string_view, 30> kFields{{"handle", "path", "absolutePath", "subsong", "title", "artist", "artists", "album", "albumId", "albumArtist", "albumArtists", "genre", "date", "trackNumber", "discNumber", "duration", "fileSize", "bitrate", "sampleRate", "channels", "codec", "rating", "index", "composer", "comment", "playCount", "firstPlayed", "lastPlayed", "added", "formats"}};
 
     std::int64_t index{};
     std::string composer{};
@@ -1791,6 +2046,7 @@ inline json ToJson(const PlaylistTrack& v) {
     api::results::Put(j, "artist", v.artist);
     api::results::Put(j, "artists", v.artists);
     api::results::Put(j, "album", v.album);
+    api::results::Put(j, "albumId", v.albumId);
     api::results::Put(j, "albumArtist", v.albumArtist);
     api::results::Put(j, "albumArtists", v.albumArtists);
     api::results::Put(j, "genre", v.genre);
@@ -1816,12 +2072,13 @@ inline json ToJson(const PlaylistTrack& v) {
 }
 
 struct GetSelectedTracksResult {
-    static constexpr std::array<std::string_view, 4> kFields{{"playlist", "playlistGuid", "tracks", "count"}};
+    static constexpr std::array<std::string_view, 5> kFields{{"playlist", "playlistGuid", "tracks", "count", "contentVersion"}};
 
     std::int64_t playlist{};
     std::string playlistGuid{};
     std::vector<PlaylistTrack> tracks{};
     std::int64_t count{};
+    std::string contentVersion{};
 };
 
 inline json ToJson(const GetSelectedTracksResult& v) {
@@ -1830,6 +2087,7 @@ inline json ToJson(const GetSelectedTracksResult& v) {
     api::results::Put(j, "playlistGuid", v.playlistGuid);
     api::results::Put(j, "tracks", v.tracks);
     api::results::Put(j, "count", v.count);
+    api::results::Put(j, "contentVersion", v.contentVersion);
     return j;
 }
 
@@ -1886,12 +2144,13 @@ inline json ToJson(const PlaylistGroupRun& v) {
 }
 
 struct GetGroupRunsResult {
-    static constexpr std::array<std::string_view, 4> kFields{{"playlist", "playlistGuid", "total", "runs"}};
+    static constexpr std::array<std::string_view, 5> kFields{{"playlist", "playlistGuid", "total", "runs", "contentVersion"}};
 
     std::int64_t playlist{};
     std::string playlistGuid{};
     std::int64_t total{};
     std::vector<PlaylistGroupRun> runs{};
+    std::string contentVersion{};
 };
 
 inline json ToJson(const GetGroupRunsResult& v) {
@@ -1900,6 +2159,7 @@ inline json ToJson(const GetGroupRunsResult& v) {
     api::results::Put(j, "playlistGuid", v.playlistGuid);
     api::results::Put(j, "total", v.total);
     api::results::Put(j, "runs", v.runs);
+    api::results::Put(j, "contentVersion", v.contentVersion);
     return j;
 }
 
@@ -1925,13 +2185,14 @@ inline bool FromJson(const json& j, GetGroupRunsParams& out, std::string& error,
 }
 
 struct GetMatchingRowsResult {
-    static constexpr std::array<std::string_view, 5> kFields{{"playlist", "playlistGuid", "total", "items", "count"}};
+    static constexpr std::array<std::string_view, 6> kFields{{"playlist", "playlistGuid", "total", "items", "count", "contentVersion"}};
 
     std::int64_t playlist{};
     std::string playlistGuid{};
     std::int64_t total{};
     std::vector<std::int64_t> items{};
     std::int64_t count{};
+    std::string contentVersion{};
 };
 
 inline json ToJson(const GetMatchingRowsResult& v) {
@@ -1941,6 +2202,7 @@ inline json ToJson(const GetMatchingRowsResult& v) {
     api::results::Put(j, "total", v.total);
     api::results::Put(j, "items", v.items);
     api::results::Put(j, "count", v.count);
+    api::results::Put(j, "contentVersion", v.contentVersion);
     return j;
 }
 
@@ -1966,13 +2228,14 @@ inline bool FromJson(const json& j, GetMatchingRowsParams& out, std::string& err
 }
 
 struct GetTracksAtResult {
-    static constexpr std::array<std::string_view, 5> kFields{{"playlist", "playlistGuid", "total", "count", "tracks"}};
+    static constexpr std::array<std::string_view, 6> kFields{{"playlist", "playlistGuid", "total", "count", "tracks", "contentVersion"}};
 
     std::int64_t playlist{};
     std::optional<std::string> playlistGuid{};
     std::int64_t total{};
     std::int64_t count{};
     std::vector<PlaylistTrackPartial> tracks{};
+    std::optional<std::string> contentVersion{};
 };
 
 inline json ToJson(const GetTracksAtResult& v) {
@@ -1982,6 +2245,7 @@ inline json ToJson(const GetTracksAtResult& v) {
     api::results::Put(j, "total", v.total);
     api::results::Put(j, "count", v.count);
     api::results::Put(j, "tracks", v.tracks);
+    api::results::Put(j, "contentVersion", v.contentVersion);
     return j;
 }
 
@@ -2012,12 +2276,13 @@ inline bool FromJson(const json& j, GetTracksAtParams& out, std::string& error, 
 }
 
 struct ItemsAddedPayload {
-    static constexpr std::array<std::string_view, 4> kFields{{"playlist", "playlistGuid", "start", "count"}};
+    static constexpr std::array<std::string_view, 5> kFields{{"playlist", "playlistGuid", "start", "count", "contentVersion"}};
 
     std::int64_t playlist{};
     std::string playlistGuid{};
     std::int64_t start{};
     std::int64_t count{};
+    std::string contentVersion{};
 };
 
 inline json ToJson(const ItemsAddedPayload& v) {
@@ -2026,16 +2291,18 @@ inline json ToJson(const ItemsAddedPayload& v) {
     api::results::Put(j, "playlistGuid", v.playlistGuid);
     api::results::Put(j, "start", v.start);
     api::results::Put(j, "count", v.count);
+    api::results::Put(j, "contentVersion", v.contentVersion);
     return j;
 }
 
 struct ItemsRemovedPayload {
-    static constexpr std::array<std::string_view, 4> kFields{{"playlist", "playlistGuid", "oldCount", "newCount"}};
+    static constexpr std::array<std::string_view, 5> kFields{{"playlist", "playlistGuid", "oldCount", "newCount", "contentVersion"}};
 
     std::int64_t playlist{};
     std::string playlistGuid{};
     std::int64_t oldCount{};
     std::int64_t newCount{};
+    std::string contentVersion{};
 };
 
 inline json ToJson(const ItemsRemovedPayload& v) {
@@ -2044,15 +2311,17 @@ inline json ToJson(const ItemsRemovedPayload& v) {
     api::results::Put(j, "playlistGuid", v.playlistGuid);
     api::results::Put(j, "oldCount", v.oldCount);
     api::results::Put(j, "newCount", v.newCount);
+    api::results::Put(j, "contentVersion", v.contentVersion);
     return j;
 }
 
 struct ItemsReorderedPayload {
-    static constexpr std::array<std::string_view, 3> kFields{{"playlist", "playlistGuid", "count"}};
+    static constexpr std::array<std::string_view, 4> kFields{{"playlist", "playlistGuid", "count", "contentVersion"}};
 
     std::int64_t playlist{};
     std::string playlistGuid{};
     std::int64_t count{};
+    std::string contentVersion{};
 };
 
 inline json ToJson(const ItemsReorderedPayload& v) {
@@ -2060,6 +2329,7 @@ inline json ToJson(const ItemsReorderedPayload& v) {
     api::results::Put(j, "playlist", v.playlist);
     api::results::Put(j, "playlistGuid", v.playlistGuid);
     api::results::Put(j, "count", v.count);
+    api::results::Put(j, "contentVersion", v.contentVersion);
     return j;
 }
 
@@ -2096,11 +2366,12 @@ inline json ToJson(const FocusChangedPayload& v) {
 }
 
 struct ItemsReplacedPayload {
-    static constexpr std::array<std::string_view, 3> kFields{{"playlist", "playlistGuid", "count"}};
+    static constexpr std::array<std::string_view, 4> kFields{{"playlist", "playlistGuid", "count", "contentVersion"}};
 
     std::int64_t playlist{};
     std::string playlistGuid{};
     std::int64_t count{};
+    std::string contentVersion{};
 };
 
 inline json ToJson(const ItemsReplacedPayload& v) {
@@ -2108,6 +2379,7 @@ inline json ToJson(const ItemsReplacedPayload& v) {
     api::results::Put(j, "playlist", v.playlist);
     api::results::Put(j, "playlistGuid", v.playlistGuid);
     api::results::Put(j, "count", v.count);
+    api::results::Put(j, "contentVersion", v.contentVersion);
     return j;
 }
 
@@ -2207,6 +2479,42 @@ inline json ToJson(const LockChangedPayload& v) {
     return j;
 }
 
+struct AutoplaylistUIResultPayload {
+    static constexpr std::array<std::string_view, 6> kFields{{"operationId", "playlistGuid", "success", "error", "code", "reason"}};
+
+    std::string operationId{};
+    std::string playlistGuid{};
+    bool success{};
+    std::optional<std::string> error{};
+    std::optional<std::string> code{};
+    std::optional<std::string> reason{};
+};
+
+inline json ToJson(const AutoplaylistUIResultPayload& v) {
+    json j = json::object();
+    api::results::Put(j, "operationId", v.operationId);
+    api::results::Put(j, "playlistGuid", v.playlistGuid);
+    api::results::Put(j, "success", v.success);
+    api::results::Put(j, "error", v.error);
+    api::results::Put(j, "code", v.code);
+    api::results::Put(j, "reason", v.reason);
+    return j;
+}
+
+struct AutoplaylistConfigChangedPayload {
+    static constexpr std::array<std::string_view, 2> kFields{{"playlistGuid", "revision"}};
+
+    std::string playlistGuid{};
+    std::string revision{};
+};
+
+inline json ToJson(const AutoplaylistConfigChangedPayload& v) {
+    json j = json::object();
+    api::results::Put(j, "playlistGuid", v.playlistGuid);
+    api::results::Put(j, "revision", v.revision);
+    return j;
+}
+
 struct DefaultFormatChangedPayload {
     static constexpr std::array<std::string_view, 0> kFields{};
 };
@@ -2217,11 +2525,13 @@ inline json ToJson(const DefaultFormatChangedPayload&) {
 }
 
 struct AddCompletePayload {
-    static constexpr std::array<std::string_view, 5> kFields{{"operationId", "playlistGuid", "success", "addedCount", "totalCount"}};
+    static constexpr std::array<std::string_view, 7> kFields{{"operationId", "playlistGuid", "success", "status", "reason", "addedCount", "totalCount"}};
 
     std::string operationId{};
     std::string playlistGuid{};
     bool success{};
+    std::string status{};
+    std::optional<std::string> reason{};
     std::int64_t addedCount{};
     std::int64_t totalCount{};
 };
@@ -2231,6 +2541,8 @@ inline json ToJson(const AddCompletePayload& v) {
     api::results::Put(j, "operationId", v.operationId);
     api::results::Put(j, "playlistGuid", v.playlistGuid);
     api::results::Put(j, "success", v.success);
+    api::results::Put(j, "status", v.status);
+    api::results::Put(j, "reason", v.reason);
     api::results::Put(j, "addedCount", v.addedCount);
     api::results::Put(j, "totalCount", v.totalCount);
     return j;
@@ -2308,6 +2620,18 @@ struct LockChanged {
     static constexpr const char* kName = "playlist:lockChanged";
     static constexpr bool kCustomName = false;
     using Payload = LockChangedPayload;
+};
+
+struct AutoplaylistUIResult {
+    static constexpr const char* kName = "playlist:autoplaylistUIResult";
+    static constexpr bool kCustomName = false;
+    using Payload = AutoplaylistUIResultPayload;
+};
+
+struct AutoplaylistConfigChanged {
+    static constexpr const char* kName = "playlist:autoplaylistConfigChanged";
+    static constexpr bool kCustomName = false;
+    using Payload = AutoplaylistConfigChangedPayload;
 };
 
 struct DefaultFormatChanged {

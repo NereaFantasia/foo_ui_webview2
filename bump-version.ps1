@@ -145,7 +145,9 @@ $versionHContent = @"
 
 // SDK 版本与插件版本保持统一
 #define SDK_VERSION_STR       PLUGIN_VERSION_STR
+
 "@
+# 末尾的空行让文件以换行结束：src/foo_ui_webview2.rc 也包含本文件，资源编译器遇到没有换行的最后一行会报 RC1004。
 
 [System.IO.File]::WriteAllText($VersionH, $versionHContent, $Utf8Bom)
 Write-Host "        $VersionH" -ForegroundColor Gray

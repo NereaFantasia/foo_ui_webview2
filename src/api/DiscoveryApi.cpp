@@ -7,6 +7,7 @@
  */
 
 #include "pch.h"
+#include "api/MenuApi.h"
 #include "api/DiscoveryApi.h"
 #include "api/MenuNodeContract.h"
 #include "api/TypedApi.h"
@@ -312,39 +313,24 @@ namespace {
     //==========================================================================
     api::Result<discovery::ExecuteMainMenuCommandResult> ExecuteMainMenuCommand(
         const discovery::ExecuteMainMenuCommandParams& params) {
-        GUID cmdGuid;
-        if (!StringToGuid(params.guid, cmdGuid)) {
-            return api::Fail("Invalid GUID format", ApiErrorCode::INVALID_PARAMS);
+        GUID guid{}, subGuid{};
+        if (!StringToGuid(params.guid, guid)) return api::Fail("Invalid GUID format", ApiErrorCode::INVALID_PARAMS);
+        const auto child = params.subGuid.value_or("");
+        if (!child.empty() && !StringToGuid(child, subGuid)) return api::Fail("Invalid subGuid format", ApiErrorCode::INVALID_PARAMS);
+        if (!child.empty() && subGuid == pfc::guid_null) {
+            return api::Fail("No dynamic leaf owns this address", ApiErrorCode::NOT_FOUND,
+                             {{"guid", params.guid}, {"subGuid", child}, {"dynamic", true}});
         }
-
-        // Dynamic children reported by getMainMenuCommands are addressed by the
-        // owning command GUID plus the node subGuid; g_execute alone cannot
-        // reach them.
-        if (params.subGuid.has_value() && !params.subGuid->empty()) {
-            GUID subGuid;
-            if (!StringToGuid(*params.subGuid, subGuid)) {
-                return api::Fail("Invalid subGuid format", ApiErrorCode::INVALID_PARAMS);
-            }
-
-            if (!mainmenu_commands::g_execute_dynamic(cmdGuid, subGuid)) {
-                return api::Fail("No dynamic main-menu command owns this guid and subGuid",
-                                 ApiErrorCode::NOT_FOUND,
-                                 {{"guid", params.guid}, {"subGuid", *params.subGuid}, {"dynamic", true}});
-            }
-            discovery::ExecuteMainMenuCommandResult result;
-            result.guid = params.guid;
-            result.subGuid = *params.subGuid;
-            result.dynamic = true;
-            return result;
-        }
-
-        if (!mainmenu_commands::g_execute(cmdGuid)) {
-            return api::Fail("No main-menu command owns this guid", ApiErrorCode::NOT_FOUND,
-                             {{"guid", params.guid}, {"dynamic", false}});
+        if (auto failure = ExecuteMainMenuAddress(guid, subGuid)) {
+            failure->extra["guid"] = params.guid;
+            failure->extra["dynamic"] = !child.empty();
+            if (!child.empty()) failure->extra["subGuid"] = child;
+            return *failure;
         }
         discovery::ExecuteMainMenuCommandResult result;
         result.guid = params.guid;
-        result.dynamic = false;
+        result.dynamic = !child.empty();
+        if (!child.empty()) result.subGuid = child;
         return result;
     }
 

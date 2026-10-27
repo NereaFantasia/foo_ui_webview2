@@ -12,7 +12,6 @@ WebViewContext& WebViewContext::GetInstance() {
 void WebViewContext::RegisterInstance(HWND hwnd, WebViewHost* host, BridgeCore* bridge) {
     std::lock_guard<std::mutex> lock(mutex_);
     
-    // Set as primary if this is the first instance
     if (instances_.empty()) {
         primaryHwnd_ = hwnd;
     }
@@ -57,7 +56,6 @@ void WebViewContext::UnregisterInstance(HWND hwnd) {
     
     instances_.erase(hwnd);
     
-    // Update primary if needed
     if (primaryHwnd_ == hwnd) {
         if (!instances_.empty()) {
             primaryHwnd_ = instances_.begin()->first;
@@ -131,13 +129,11 @@ std::vector<HWND> WebViewContext::GetAllInstances() const {
 WebViewHost* WebViewContext::GetHostByHwnd(HWND hwnd) const {
     std::lock_guard<std::mutex> lock(mutex_);
     
-    // 直接查找
     auto it = instances_.find(hwnd);
     if (it != instances_.end()) {
         return it->second.host;
     }
     
-    // 若 hwnd 是子窗口，获取顶级窗口后再查找
     HWND topLevel = ::GetAncestor(hwnd, GA_ROOT);
     if (topLevel && topLevel != hwnd) {
         auto it2 = instances_.find(topLevel);
@@ -152,13 +148,11 @@ WebViewHost* WebViewContext::GetHostByHwnd(HWND hwnd) const {
 WebViewPanel* WebViewContext::GetPanelByHwnd(HWND hwnd) const {
     std::lock_guard<std::mutex> lock(mutex_);
     
-    // 直接查找
     auto it = instances_.find(hwnd);
     if (it != instances_.end()) {
         return it->second.panel;
     }
     
-    // 若 hwnd 是子窗口，获取顶级窗口后再查找
     HWND topLevel = ::GetAncestor(hwnd, GA_ROOT);
     if (topLevel && topLevel != hwnd) {
         auto it2 = instances_.find(topLevel);

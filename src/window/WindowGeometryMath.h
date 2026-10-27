@@ -70,6 +70,24 @@ struct SizeClampResult {
 //      SetMinSize 负责规范化存储值，本函数只消费已给定的约束值。
 SizeClampResult ClampSize(int reqW, int reqH, int minW, int minH, int maxW, int maxH);
 
+struct ResizeRect {
+    int x = 0;
+    int y = 0;
+    int width = 0;
+    int height = 0;
+};
+
+struct ResizeEdges {
+    bool left = false;
+    bool right = false;
+    bool top = false;
+    bool bottom = false;
+};
+
+// 按拖动边应用屏幕坐标增量；尺寸受约束时固定对边，坐标和尺寸均为物理像素。
+ResizeRect ResizeFromEdges(const ResizeRect& start, int dx, int dy, const ResizeEdges& edges,
+                          int minW, int minH, int maxW, int maxH);
+
 // ============================================
 // 达成度比较
 // ============================================

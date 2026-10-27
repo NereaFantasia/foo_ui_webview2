@@ -1,4 +1,4 @@
-// WaveformAccumulator.h - one-pass window accumulation for full-track waveforms
+﻿// WaveformAccumulator.h - one-pass window accumulation for full-track waveforms
 //
 /* No foobar2000 SDK dependency. The decode loop feeds interleaved chunks in;
  * the accumulator keeps, for every window, the three raw values the host used
@@ -19,6 +19,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <optional>
 #include <vector>
 
 namespace fb2k_waveform {
@@ -36,6 +37,13 @@ struct RawWindows {
     // Per-frame channel mean with the largest magnitude in the window, sign
     // kept; the first such frame wins on ties.
     std::vector<float> signedPeak;
+};
+
+// 格式字段表示生成这些窗口值的实际 PCM 格式。
+struct DecodedWindows {
+    RawWindows raw;
+    unsigned sampleRate;
+    unsigned channels;
 };
 
 // `Sample` follows audio_sample: double on x64, float on Win32. Both are
@@ -72,6 +80,27 @@ private:
     float peakMax_ = 0.0f;
     float signedBest_ = 0.0f;
     RawWindows out_;
+};
+
+template <typename Sample>
+class DecodedAccumulator {
+public:
+    // resolution 与 duration 必须为正；duration 的单位为秒。
+    DecodedAccumulator(int resolution, double duration);
+
+    // 首个非空块确定 PCM 格式与窗口大小；空块不参与格式校验，也不推进时间。
+    // 非空块的采样率或声道数为零，或与此前的格式不同，均抛 std::runtime_error。
+    void Feed(const Sample* data, size_t frames, unsigned channels, unsigned sampleRate);
+
+    // 无有效帧时抛 std::runtime_error；有帧的静音成功。调用后不可继续 Feed。
+    DecodedWindows Finish();
+
+private:
+    int resolution_;
+    double duration_;
+    unsigned sampleRate_ = 0;
+    unsigned channels_ = 0;
+    std::optional<Accumulator<Sample>> accumulator_;
 };
 
 struct RenderOptions {

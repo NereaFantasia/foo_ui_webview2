@@ -161,7 +161,6 @@ const char* ReasonToWire(PathsUnavailableReason reason) {
     case PathsUnavailableReason::ForwardUnavailable:  return "forward-unavailable";
     case PathsUnavailableReason::InnerTargetNotFound: return "inner-target-not-found";
     case PathsUnavailableReason::ChainFailed:         return "chain-failed";
-    case PathsUnavailableReason::Displaced:           return "displaced";
     case PathsUnavailableReason::OriginUntrusted:     return "origin-untrusted";
     case PathsUnavailableReason::None:
     default:

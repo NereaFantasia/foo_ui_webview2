@@ -113,3 +113,29 @@ TEST(IsPluginManagedBackdropEffect, Empty) {
 TEST(IsPluginManagedBackdropEffect, Unknown) {
     EXPECT_FALSE(WindowUtils::IsPluginManagedBackdropEffect("blur"));
 }
+
+// ============================================
+// AppendQueryParam
+// ============================================
+
+TEST(AppendQueryParam, StartsAQueryWhenThereIsNone) {
+    EXPECT_EQ(WindowUtils::AppendQueryParam("https://h/page.html", "windowId=popup_1"),
+              "https://h/page.html?windowId=popup_1");
+}
+
+TEST(AppendQueryParam, JoinsAnExistingQuery) {
+    EXPECT_EQ(WindowUtils::AppendQueryParam("https://h/page.html?retest=1", "windowId=popup_1"),
+              "https://h/page.html?retest=1&windowId=popup_1");
+}
+
+TEST(AppendQueryParam, StaysBeforeTheFragment) {
+    EXPECT_EQ(WindowUtils::AppendQueryParam("https://h/page.html#panel", "windowId=popup_1"),
+              "https://h/page.html?windowId=popup_1#panel");
+    EXPECT_EQ(WindowUtils::AppendQueryParam("https://h/page.html?a=1#x?y", "windowId=popup_1"),
+              "https://h/page.html?a=1&windowId=popup_1#x?y");
+}
+
+TEST(AppendQueryParam, QuestionMarkInsideTheFragmentIsNotAQuery) {
+    EXPECT_EQ(WindowUtils::AppendQueryParam("https://h/#/a?b", "windowId=popup_1"),
+              "https://h/?windowId=popup_1#/a?b");
+}

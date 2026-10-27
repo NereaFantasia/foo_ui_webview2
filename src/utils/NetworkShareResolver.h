@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 // ============================================
 // NetworkShareResolver.h - 网络共享分类 (回环 / 远程) 与映射盘表的单点实现
 // ============================================
@@ -190,13 +190,10 @@ inline std::wstring JoinLocalRoot(std::wstring_view localRoot, std::wstring_view
 // \\127.0.0.1\E$ 因此收敛到同一条目; 取不到身份时退回 NormalizeShareRoot 结果。
 // 每个条目记着到达它的全部原拼写, 拼写展开时逐个返回。
 //
-// 映射盘表刷新后会对表中每个目标共享分类一次, 这样只经映射盘认识的回环共享也能
-// 出现在本地路径的拼写展开里。代价: 映射表过期后的第一次校验会为每个映射盘付一次
-// 共享根探测 (离线 NAS 是一次网络超时, 之后 60 秒内命中失败缓存)。这笔代价不是
-// 一次性的: 只要某个映射目标离线, 每 60 秒重复一轮。触发方也不限于 UNC 路径——
-// KnownLoopbackSharesCovering 无条件先刷映射表, 所以校验 E:\x.mp3 这样的本地路径
-// 也可能等待无关离线 NAS 的网络超时。当前刷新会遍历所有映射目标，没有后台刷新
-// 或跳过离线目标的机制。映射盘表保留 WNetGetConnectionW 的原始拼写，只在比键时归一化。
+// 映射盘表只枚举盘符与共享名称，查本地盘符不会触发共享根探测。身份分类由真实
+// UNC 访问或 KnownLoopbackSharesCovering 的反向别名查找触发；后者仍需探测映射
+// 目标，调用方应先核对原路径的信任，只在需要别名时使用。映射盘表保留
+// WNetGetConnectionW 的原始拼写，只在比键时归一化。
 //
 // 「从未加载」与「过期」分开表示: 时间戳用 std::optional, 空即从未加载。只靠时间戳
 // 为 0 判断的话, 开机 60 秒内 GetTickCount64 的返回值小于 TTL, 空表会被当成新鲜表
@@ -290,6 +287,16 @@ public:
         const std::wstring normalized = NormalizeShareRoot(shareRoot);
         const std::vector<MappedDrive> mapped = MappedDrives(probe_->NowMs());
 
+        bool loopback = false;
+        {
+            std::scoped_lock lock(mutex_);
+            const ShareEntry* known = FindFreshBySpelling(normalized, probe_->NowMs());
+            loopback = known && known->info.kind == ShareKind::Loopback;
+        }
+        if (loopback) {
+            for (const MappedDrive& drive : mapped) Classify(drive.shareRoot);
+        }
+
         std::vector<std::wstring> aliases{normalized};
         {
             std::lock_guard<std::mutex> lock(mutex_);
@@ -317,7 +324,9 @@ public:
     // 本地根覆盖 localPath 的全部已知回环共享, 每个原拼写各一条 (shareRootAsSeen, localRoot)。
     // 先刷新映射盘表: 只经映射盘认识的回环共享要靠表刷新时的分类才进入分类表。
     std::vector<std::pair<std::wstring, std::wstring>> KnownLoopbackSharesCovering(std::wstring_view localPath) {
-        MappedDrives(probe_->NowMs());
+        for (const MappedDrive& drive : MappedDrives(probe_->NowMs())) {
+            Classify(drive.shareRoot);
+        }
 
         const std::wstring localPathStr(localPath);
         std::vector<std::pair<std::wstring, std::wstring>> out;
@@ -425,14 +434,7 @@ private:
         return fresh;
     }
 
-    // 映射盘表, 按 TTL 缓存; 新鲜则直接返回副本。刷新时先在锁外对每个目标共享分类, 再
-    // 加锁写表: 表一旦可见, 其目标已在分类表里, KnownLoopbackSharesCovering 不会看到
-    // 「有表无分类」的中间态。Classify 自己要拿 mutex_, 分类循环绝不能在持锁时做。
-    // 代价: 分类循环期间表尚未写入, 此时并发进来的其他线程会各自再做一遍枚举与分类
-    // (重复工作, 结果一致, 方向安全)。时间戳在分类循环结束后重取, 表的有效期从写表时刻
-    // 起算——离线目标的探测可能耗时数十秒, 沿用循环前的 now 会让表出生即接近过期。
-    // 这轮刷新 (含对每个目标的探测) 在映射表每次过期后都会重来一遍, 且由任何入口触发,
-    // 包括只校验本地路径的 KnownLoopbackSharesCovering; 本单元不跳过任何目标。
+    // 映射表枚举与共享身份探测分开；这里不得打开共享根，否则本地盘符查询也会等 SMB。
     std::vector<MappedDrive> MappedDrives(uint64_t now) {
         {
             std::lock_guard<std::mutex> lock(mutex_);
@@ -441,9 +443,6 @@ private:
             }
         }
         std::vector<MappedDrive> fresh = probe_->EnumerateMappedDrives();
-        for (const MappedDrive& drive : fresh) {
-            Classify(drive.shareRoot);
-        }
         const uint64_t stamp = probe_->NowMs();
         std::lock_guard<std::mutex> lock(mutex_);
         mapped_ = fresh;

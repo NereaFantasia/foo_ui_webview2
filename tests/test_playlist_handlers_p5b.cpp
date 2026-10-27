@@ -1,4 +1,4 @@
-// test_playlist_handlers_p5b.cpp - PlaylistApi add-paths, add-handles and replace-all handlers
+﻿// test_playlist_handlers_p5b.cpp - PlaylistApi add-paths, add-handles and replace-all handlers
 // Validates PlaylistApi handler logic using MockPlaylistService.
 // Uses reimpl pattern: handler functions mirror product code but accept
 // IPlaylistService* instead of calling playlist_manager::get().
@@ -486,4 +486,14 @@ TEST_F(PlaylistHandlerP5bTest, ReplaceAll_DefaultActive) {
         {{"paths", {"a.mp3"}}});
     EXPECT_TRUE(r["success"].get<bool>());
     EXPECT_EQ(mock.lastReplaceAllPlaylist, 0u);
+}
+
+// playlist:addComplete 的 status 直接取自生产头里的 AsyncAddOutcome::Status。
+TEST(AsyncAddOutcome, StatusFollowsCancelThenDrop) {
+    using Outcome = IPlaylistService::AsyncAddOutcome;
+    EXPECT_STREQ((Outcome{3, 2}).Status(), "completed");
+    EXPECT_STREQ((Outcome{0, 2}).Status(), "completed");  // 路径没解析出曲目不算丢弃
+    EXPECT_STREQ((Outcome{1, 2, false, "targetRemoved"}).Status(), "partial");
+    EXPECT_STREQ((Outcome{0, 2, false, "locked"}).Status(), "failed");
+    EXPECT_STREQ((Outcome{1, 2, true, "locked"}).Status(), "cancelled");
 }

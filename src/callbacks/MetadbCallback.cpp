@@ -68,7 +68,9 @@ public:
       return;
 
     // Invalidate before truncating the event so every changed track is covered.
-    InvalidateLyricsCache();
+    // A hook change leaves the tags, and with them the lyrics, as they were.
+    if (!p_fromhook)
+      InvalidateLyricsCache();
 
     // Build track list with metadata
     api::metadb::ChangedPayload payload;
@@ -123,6 +125,7 @@ public:
 
     // Emit event to WebView
     payload.count = static_cast<std::int64_t>(count);
+    payload.truncated = FillChangedHandles(p_items_sorted, payload.handles);
     payload.fromHook =
         p_fromhook; // true = internal modification (like foo_playcount)
     payload.timestamp =

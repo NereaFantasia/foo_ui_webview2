@@ -1,6 +1,7 @@
 ﻿#include "pch.h"
 #include "window/MainWindow.h"
 #include "window/MainWindowInternal.h"
+#include "window/DwmCompatibility.h"
 #include "window/ChromeController.h"
 #include "window/WindowChromeResolver.h"
 #include "window/WindowChromeTrace.h"
@@ -17,6 +18,11 @@ using namespace mainwindow_detail;
 // Mica 效果 (Windows 11)
 // ============================================
 void MainWindow::EnableMicaEffect() {
+    const auto& capabilities = dwm_compatibility::Current();
+    if (!capabilities.Mica() || capabilities.Backdrop(S_GetUserBackdropEffectString()) == "none") {
+        UpdateDpiDependentSizes();
+        return;
+    }
     // 直接写 DWM 属性，不走 Chrome 统一层，不写 corner preference、
     // BlurBehind、MICA_EFFECT=FALSE。Chrome 层在 OnWebViewReady 后首次激活。
 
@@ -141,9 +147,9 @@ WindowChromeDerivedState MainWindow::BuildChromeDerivedState() const {
     WindowChromeDerivedState derived;
     derived.active = isActive_;
     derived.fullscreen = IsWindowFullscreen();
-    derived.supportsCornerPreference = true;
+    derived.supportsCornerPreference = dwm_compatibility::Current().RoundedCorners();
     derived.supportsBackdropPolicy = true;
-    derived.supportsMicaAlt = true;
+    derived.supportsMicaAlt = dwm_compatibility::Current().SystemBackdrop();
     derived.windowKind = WindowKind::Main;
     return derived;
 }

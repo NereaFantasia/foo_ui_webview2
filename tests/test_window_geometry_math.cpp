@@ -257,3 +257,68 @@ TEST(WindowGeometryTolerance, NegativeToleranceTreatedAsZero) {
     EXPECT_TRUE(SizeMatchesWithinTolerance(800, 800, -5));
     EXPECT_FALSE(SizeMatchesWithinTolerance(801, 800, -5));
 }
+
+TEST(WindowGeometryResize, LeftTopKeepsOppositeCornerWhenMinimumIsReached) {
+    const ResizeRect start{100, 200, 640, 480};
+    const auto next = ResizeFromEdges(start, 900, 900, {true, false, true, false}, 360, 150, 0, 0);
+    EXPECT_EQ(next.x, 380);
+    EXPECT_EQ(next.y, 530);
+    EXPECT_EQ(next.width, 360);
+    EXPECT_EQ(next.height, 150);
+}
+
+TEST(WindowGeometryResize, RightBottomKeepsOriginWhenMaximumIsReached) {
+    const ResizeRect start{-600, -200, 640, 480};
+    const auto next = ResizeFromEdges(start, 900, 900, {false, true, false, true}, 360, 150, 800, 600);
+    EXPECT_EQ(next.x, -600);
+    EXPECT_EQ(next.y, -200);
+    EXPECT_EQ(next.width, 800);
+    EXPECT_EQ(next.height, 600);
+}
+
+TEST(WindowGeometryResize, SingleEdgeDoesNotApplyTheOtherAxisDelta) {
+    const ResizeRect start{100, 200, 640, 480};
+    const auto right = ResizeFromEdges(start, 70, 90, {false, true, false, false}, 360, 150, 0, 0);
+    EXPECT_EQ(right.x, 100);
+    EXPECT_EQ(right.y, 200);
+    EXPECT_EQ(right.width, 710);
+    EXPECT_EQ(right.height, 480);
+    const auto top = ResizeFromEdges(start, 70, -90, {false, false, true, false}, 360, 150, 0, 0);
+    EXPECT_EQ(top.x, 100);
+    EXPECT_EQ(top.y, 110);
+    EXPECT_EQ(top.width, 640);
+    EXPECT_EQ(top.height, 570);
+}
+
+TEST(WindowGeometryResize, ConstraintsUseCurrentDpi) {
+    const ResizeRect start{0, 0, 1000, 800};
+    const auto next = ResizeFromEdges(start, -1000, -1000, {false, true, false, true},
+        DipToPhysical(360, 144), DipToPhysical(150, 144), 0, 0);
+    EXPECT_EQ(next.width, 540);
+    EXPECT_EQ(next.height, 225);
+}
+
+TEST(WindowGeometryResize, AllEdgesKeepTheOppositeEdgesFixed) {
+    const ResizeRect start{-700, 200, 640, 480};
+    struct Case {
+        ResizeEdges edges;
+        ResizeRect expected;
+    };
+    const Case cases[] = {
+        {{true, false, false, false}, {-650, 200, 590, 480}},
+        {{false, true, false, false}, {-700, 200, 690, 480}},
+        {{false, false, true, false}, {-700, 170, 640, 510}},
+        {{false, false, false, true}, {-700, 200, 640, 450}},
+        {{true, false, true, false}, {-650, 170, 590, 510}},
+        {{false, true, true, false}, {-700, 170, 690, 510}},
+        {{true, false, false, true}, {-650, 200, 590, 450}},
+        {{false, true, false, true}, {-700, 200, 690, 450}}
+    };
+    for (const auto& item : cases) {
+        const auto next = ResizeFromEdges(start, 50, -30, item.edges, 360, 150, 800, 600);
+        EXPECT_EQ(next.x, item.expected.x);
+        EXPECT_EQ(next.y, item.expected.y);
+        EXPECT_EQ(next.width, item.expected.width);
+        EXPECT_EQ(next.height, item.expected.height);
+    }
+}

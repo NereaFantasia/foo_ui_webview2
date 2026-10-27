@@ -40,4 +40,12 @@ inline bool IsPluginManagedBackdropEffect(std::string_view effect) {
     return effect == "mica" || effect == "mica-alt" || effect == "acrylic";
 }
 
+// Adds "name=value" to url's query: after an existing query with '&', before any '#fragment'.
+inline std::string AppendQueryParam(const std::string& url, std::string_view param) {
+    const size_t hash = url.find('#');
+    const size_t end = hash == std::string::npos ? url.size() : hash;
+    const char separator = url.find('?') < end ? '&' : '?';
+    return url.substr(0, end) + separator + std::string(param) + url.substr(end);
+}
+
 } // namespace WindowUtils

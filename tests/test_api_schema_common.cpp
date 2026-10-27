@@ -1,4 +1,4 @@
-// test_api_schema_common.cpp - src/api/schema/common.ts 生成的共享结构体（CommonSchema.h）。
+﻿// test_api_schema_common.cpp - src/api/schema/common.ts 生成的共享结构体（CommonSchema.h）。
 //
 // 共享结构体只出现在返回值里，这里是唯一在 C++ 层编译它的地方。kFields 是声明的键集，直写 JSON 的
 // 路径（媒体库查询的 WriteTrackJson 等）改用 Track 时拿它对拍自己写出的键；这里锁住 kFields 与
@@ -50,11 +50,20 @@ std::set<std::string> KeysOf(const json& j) {
 }  // namespace
 
 TEST(ApiSchemaCommon, TrackKFieldsIsExactlyTheKeySetToJsonWrites) {
-    const json j = ToJson(SampleTrack());
+    auto track = SampleTrack();
+    const json j = ToJson(track);
     std::set<std::string> declared(common::Track::kFields.begin(), common::Track::kFields.end());
+    EXPECT_EQ(declared.erase("albumId"), 1u);
     EXPECT_EQ(KeysOf(j), declared);
-    EXPECT_EQ(common::Track::kFields.size(), 21u);
+    EXPECT_FALSE(j.contains("albumId"));
+    EXPECT_EQ(common::Track::kFields.size(), 22u);
     EXPECT_EQ(common::Track::kFields.front(), "handle");
+
+    track.albumId = "album1:b900";
+    const json identified = ToJson(track);
+    declared.emplace("albumId");
+    EXPECT_EQ(KeysOf(identified), declared);
+    EXPECT_EQ(identified.at("albumId").get<std::string>(), *track.albumId);
 }
 
 TEST(ApiSchemaCommon, TrackPartialWritesOnlyTheFieldsItHolds) {
@@ -65,4 +74,9 @@ TEST(ApiSchemaCommon, TrackPartialWritesOnlyTheFieldsItHolds) {
     // Its key set is Track's: a projection never invents a field.
     EXPECT_EQ((std::set<std::string>(common::TrackPartial::kFields.begin(), common::TrackPartial::kFields.end())),
               (std::set<std::string>(common::Track::kFields.begin(), common::Track::kFields.end())));
+    EXPECT_FALSE(ToJson(p).contains("albumId"));
+    p.albumId = "album1:b900";
+    const json identified = ToJson(p);
+    EXPECT_EQ(KeysOf(identified), (std::set<std::string>{"title", "rating", "albumId"}));
+    EXPECT_EQ(identified.at("albumId").get<std::string>(), *p.albumId);
 }

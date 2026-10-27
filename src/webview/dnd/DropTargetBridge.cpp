@@ -317,7 +317,7 @@ HRESULT STDMETHODCALLTYPE DropTargetBridge::DragEnter(IDataObject* data, DWORD k
 
         sawRendererEffect_ = downstream != DROPEFFECT_NONE;
         *effect = ChooseDropEffect(downstream, allowedMask, hasFiles,
-                                   RendererHasAnswered(sawRendererEffect_, 0));
+                                   RendererHasAnswered(sawRendererEffect_, 0), source);
         if (DndTraceEnabled()) {
             EffectTrace trace;
             trace.phase = "enter";
@@ -402,7 +402,8 @@ HRESULT STDMETHODCALLTYPE DropTargetBridge::DragOver(DWORD keyState, POINTL pt,
         }
         const bool answered = RendererHasAnswered(
             sawRendererEffect_, session ? now - session->startedAtMs : 0);
-        *effect = ChooseDropEffect(downstream, allowedMask, hasFiles, answered);
+        *effect = ChooseDropEffect(downstream, allowedMask, hasFiles, answered,
+                                   session ? session->source : DragSource::External);
         if (DndTraceEnabled()) {
             OverTrace& stats = overTrace_;
             ++stats.calls;
@@ -571,7 +572,8 @@ HRESULT STDMETHODCALLTYPE DropTargetBridge::Drop(IDataObject* data, DWORD keySta
         // page may still take it, and dnd:drop below reports it either way.
         *effect = ChooseDropEffect(
             downstream, allowedMask, hasFiles,
-            RendererHasAnswered(sawRendererEffect_, dropped ? now - dropped->startedAtMs : 0));
+            RendererHasAnswered(sawRendererEffect_, dropped ? now - dropped->startedAtMs : 0),
+            dropped ? dropped->source : DragSource::External);
 
         sessions_.EndSession(sessionId, now);
         const SessionData* ended = sessionId.empty() ? nullptr : sessions_.Query(sessionId, now);

@@ -953,16 +953,18 @@ inline json ToJson(const StateChangedPayload& v) {
 }
 
 struct QueueChangedPayload {
-    static constexpr std::array<std::string_view, 2> kFields{{"origin", "count"}};
+    static constexpr std::array<std::string_view, 3> kFields{{"origin", "count", "contentVersion"}};
 
     std::string origin{};
     std::int64_t count{};
+    std::string contentVersion{};
 };
 
 inline json ToJson(const QueueChangedPayload& v) {
     json j = json::object();
     api::results::Put(j, "origin", v.origin);
     api::results::Put(j, "count", v.count);
+    api::results::Put(j, "contentVersion", v.contentVersion);
     return j;
 }
 

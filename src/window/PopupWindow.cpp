@@ -1,5 +1,6 @@
 ﻿#include "pch.h"
 #include "window/PopupWindow.h"
+#include "window/DwmCompatibility.h"
 #include "window/MenuOverlayHost.h"
 #include "window/WindowBehaviorTrace.h"
 #include "window/WindowChromeResolver.h"
@@ -39,6 +40,7 @@ namespace {
         return ::DwmExtendFrameIntoClientArea(h, m);
     }
     static HRESULT S_DwmSetWindowAttribute(HWND h, DWORD a, LPCVOID d, DWORD s) {
+        if (!dwm_compatibility::Current().SupportsAttribute(a)) return E_NOTIMPL;
         return ::DwmSetWindowAttribute(h, a, d, s);
     }
 
@@ -192,6 +194,7 @@ bool PopupWindow::SetResizableShell(bool resizable) {
 
     // 只有 Win32 两步都成功后才提交运行时状态。
     resizable_ = resizable;
+    if (!resizable_) EndOverlayResize();
 
     // 外框尺寸未变，但非客户区厚度变了 → 客户区随之变化，需重算 WebView 边界。
     // 与 MainWindow::SetResizable 走 OnSize 的做法对齐。
@@ -445,6 +448,7 @@ LRESULT CALLBACK PopupWindow::WindowProc(HWND hwnd, UINT msg, WPARAM wParam, LPA
         pThis = reinterpret_cast<PopupWindow*>(pCreate->lpCreateParams);
         SetWindowLongPtrW(hwnd, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(pThis));
         pThis->hwnd_ = hwnd;
+        WindowManager::GetInstance().RegisterActivationTarget(hwnd);
     } else {
         pThis = reinterpret_cast<PopupWindow*>(GetWindowLongPtrW(hwnd, GWLP_USERDATA));
     }
@@ -454,6 +458,24 @@ LRESULT CALLBACK PopupWindow::WindowProc(HWND hwnd, UINT msg, WPARAM wParam, LPA
     }
     
     return DefWindowProcW(hwnd, msg, wParam, lParam);
+}
+
+void PopupWindow::RecordActivationInteraction() {
+    auto& manager = WindowManager::GetInstance();
+    const HWND foreground = GetForegroundWindow();
+    lastForegroundBeforeClick_ = foreground == manager.GetActivationSinkHwnd() ? nullptr : foreground;
+    activationRestoreReference_ = manager.CaptureWindowReference(lastForegroundBeforeClick_);
+    activationInteraction_ = manager.NotifyOverlayInteraction(hwnd_, lastForegroundBeforeClick_);
+}
+
+void PopupWindow::ScheduleActivationUndo(HWND target) {
+    auto& manager = WindowManager::GetInstance();
+    pendingActivationUndo_ = manager.CaptureActivationUndo(activationInteraction_, target);
+    if (!pendingActivationUndo_.target.instance) return;
+    pendingActivationRestore_ = lastForegroundBeforeClick_;
+    pendingActivationRestoreReference_ = activationRestoreReference_;
+    pendingActivationUndoId_ = manager.NextActivationWorkId();
+    if (!PostMessageW(hwnd_, WM_POPUP_UNDO_FOREGROUND, pendingActivationUndoId_, 0)) pendingActivationUndoId_ = 0;
 }
 
 LRESULT PopupWindow::HandleMessage(UINT msg, WPARAM wParam, LPARAM lParam) {
@@ -498,13 +520,14 @@ LRESULT PopupWindow::HandleMessage(UINT msg, WPARAM wParam, LPARAM lParam) {
             case HTTOPLEFT: case HTTOPRIGHT:
             case HTBOTTOMLEFT: case HTBOTTOMRIGHT:
                 ExitFullscreenIfActive(hwnd_);
-                // 不 return：让后续 DefWindowProc 接管对应 modal loop
-                // (HTCAPTION → SC_MOVE, HT*Edge → SC_SIZE)。
+                // 继续按窗口行为选择系统或自定义的移动、改尺寸路径。
                 break;
             default:
                 break;
         }
     }
+
+    if (msg == WM_NCLBUTTONDOWN && BeginOverlayResize(wParam)) return 0;
 
     // frame=false 时，阻止 DWM / UxTheme 在合成层绘制原生标题栏按钮（三大键）
     if (!createParams_.frame) {
@@ -585,13 +608,13 @@ LRESULT PopupWindow::HandleMessage(UINT msg, WPARAM wParam, LPARAM lParam) {
                 EmitActivationEvidence("WM_ACTIVATE", extra.str());
             }
             if (activationKind != WA_INACTIVE &&
-                (resolvedBehavior_.noActivate || overlayIntent_)) {
+                (resolvedBehavior_.noActivate || overlayIntent_) &&
+                !WindowManager::GetInstance().IsExplicitActivation(hwnd_)) {
                 EmitActivationEvidence("WM_ACTIVATE.undoScheduled",
                     std::string("wParam.kind=") + std::to_string(activationKind));
                 // 同步调 SetForegroundWindow 在 WM_ACTIVATE 内部不可靠（系统正在处理激活链）。
                 // 改为 PostMessage 异步还原：等激活链完成后再调。
-                PostMessage(hwnd_, WM_POPUP_UNDO_FOREGROUND, 0,
-                    (LPARAM)lastForegroundBeforeClick_);
+                ScheduleActivationUndo(hwnd_);
                 // 不调用 OnActivate — 保持 popup 的 inactive 语义
                 return 0;
             }
@@ -600,12 +623,12 @@ LRESULT PopupWindow::HandleMessage(UINT msg, WPARAM wParam, LPARAM lParam) {
             // 在 popup 把激活交给主窗口时再次把激活引到不可感知的 sink。
             if (activationKind == WA_INACTIVE &&
                 (resolvedBehavior_.noActivate || overlayIntent_) &&
-                otherHwnd && otherHwnd == core_api::get_main_window()) {
+                otherHwnd && WindowManager::GetInstance().IsActivationTarget(otherHwnd) &&
+                !WindowManager::GetInstance().IsExplicitActivation(otherHwnd)) {
                 std::ostringstream e2;
                 e2 << "otherHwnd=0x" << pfc::format_hex((size_t)otherHwnd);
                 EmitActivationEvidence("WM_ACTIVATE.undoScheduled.inactiveToMain", e2.str());
-                PostMessage(hwnd_, WM_POPUP_UNDO_FOREGROUND, 0,
-                    (LPARAM)lastForegroundBeforeClick_);
+                ScheduleActivationUndo(otherHwnd);
             }
             // 自绘菜单的内部激活交接（宿主→menu / root↔submenu）：维持本窗激活
             // 状态，且不触发 blur dismiss。外点击的对端非菜单面，不进此分支，
@@ -675,9 +698,19 @@ LRESULT PopupWindow::HandleMessage(UINT msg, WPARAM wParam, LPARAM lParam) {
         }
 
         case WM_POPUP_UNDO_FOREGROUND: {
-            HWND hRestore = (HWND)lParam;
-            HWND mainHwnd = core_api::get_main_window();
-            const bool restoreValid = hRestore && IsWindow(hRestore);
+            auto& manager = WindowManager::GetInstance();
+            if (!pendingActivationUndoId_ || wParam != pendingActivationUndoId_) return 0;
+            const auto undo = pendingActivationUndo_;
+            const HWND hRestore = pendingActivationRestore_;
+            const auto restoreReference = pendingActivationRestoreReference_;
+            pendingActivationUndoId_ = 0;
+            if (!manager.CanUndoActivation(undo)) {
+                EmitActivationEvidence("WM_POPUP_UNDO_FOREGROUND.expired");
+                return 0;
+            }
+            const HWND mainHwnd = reinterpret_cast<HWND>(undo.target.handle);
+            const bool restoreValid = manager.IsWindowReferenceLive(restoreReference);
+            const bool popupWasTopmost = (GetWindowLongPtrW(hwnd_, GWL_EXSTYLE) & WS_EX_TOPMOST) != 0;
             {
                 std::ostringstream extra;
                 extra << "restoreTo=0x" << pfc::format_hex((size_t)hRestore)
@@ -690,7 +723,7 @@ LRESULT PopupWindow::HandleMessage(UINT msg, WPARAM wParam, LPARAM lParam) {
             // 会落到 fb2k 主窗口并覆盖外部应用。先让 sink 成为最近活动窗口，
             // 使后续回退 / 二次夺焦落到 sink 而非主窗口。sink 屏幕外全透明，用户不可感知。
             HWND sink = WindowManager::GetInstance().GetActivationSinkHwnd();
-            if (sink && IsWindow(sink) && sink != hwnd_) {
+            if (sink && IsWindow(sink) && sink != hwnd_ && manager.CanUndoActivation(undo)) {
                 BOOL sinkOk = SetForegroundWindow(sink);
                 EmitActivationEvidence("WM_POPUP_UNDO_FOREGROUND.setForegroundSink",
                     std::string("setForegroundOk=") + WindowChromeTrace::BoolText(sinkOk != FALSE));
@@ -704,7 +737,8 @@ LRESULT PopupWindow::HandleMessage(UINT msg, WPARAM wParam, LPARAM lParam) {
             // 同 band 内移动不改置顶状态，安全执行。升段场景下主窗口位于非 topmost
             // 段顶部，天然已排在整个 topmost 段之后，跳过即正确；其余残差由
             // MainWindow 的 WM_WINDOWPOSCHANGED 期望置顶守护兜底。
-            if (mainHwnd && restoreValid
+            if (manager.CanContinueActivationUndo(undo, sink) && mainHwnd && restoreValid &&
+                manager.IsWindowReferenceLive(restoreReference)
                 && mainHwnd != hwnd_ && mainHwnd != hRestore) {
                 const bool refTopmost =
                     (GetWindowLongW(hRestore, GWL_EXSTYLE) & WS_EX_TOPMOST) != 0;
@@ -723,14 +757,17 @@ LRESULT PopupWindow::HandleMessage(UINT msg, WPARAM wParam, LPARAM lParam) {
                 }
             }
             // 策略 2：尝试将前台还给外部窗口（可能被系统拒绝，策略 1 是保底）
-            if (restoreValid && hRestore != hwnd_) {
+            if (manager.CanContinueActivationUndo(undo, sink) && restoreValid && hRestore != hwnd_ &&
+                manager.IsWindowReferenceLive(restoreReference)) {
                 BOOL fgOk = SetForegroundWindow(hRestore);
                 EmitActivationEvidence("WM_POPUP_UNDO_FOREGROUND.setForeground",
                     std::string("setForegroundOk=") + WindowChromeTrace::BoolText(fgOk != FALSE));
             }
             // 确保 popup 保持 TOPMOST（视觉上仍置顶），但不激活
-            SetWindowPos(hwnd_, HWND_TOPMOST, 0, 0, 0, 0,
-                SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+            if (manager.CanContinueActivationUndo(undo)) {
+                SetWindowPos(hwnd_, popupWasTopmost ? HWND_TOPMOST : HWND_NOTOPMOST, 0, 0, 0, 0,
+                    SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+            }
             EmitActivationEvidence("WM_POPUP_UNDO_FOREGROUND.exit");
             return 0;
         }
@@ -761,7 +798,8 @@ LRESULT PopupWindow::HandleMessage(UINT msg, WPARAM wParam, LPARAM lParam) {
             // 通知 WindowManager 使主窗口能识别这种"无意激活"并抑制它，
             // 把前台还给外部应用 / sink，避免主窗口覆盖用户当前操作的程序。
             // 不限于 overlay/noActivate popup——miniplayer 等普通 popup 也需要保护。
-            WindowManager::GetInstance().NotifyOverlayInteraction(lastForegroundBeforeClick_);
+            activationInteraction_ = WindowManager::GetInstance().NotifyOverlayInteraction(hwnd_, lastForegroundBeforeClick_);
+            activationRestoreReference_ = WindowManager::GetInstance().CaptureWindowReference(lastForegroundBeforeClick_);
             // 穿透模式：非热区点击不激活窗口（仅对 inactive 窗口有效的首次激活防御）
             if (clickThrough_ && !clickThroughExcludeRegions_.empty()) {
                 POINT pt;
@@ -934,8 +972,7 @@ LRESULT PopupWindow::HandleMessage(UINT msg, WPARAM wParam, LPARAM lParam) {
         case WM_GETMINMAXINFO: {
             auto* mmi = reinterpret_cast<MINMAXINFO*>(lParam);
 
-            // 约束以 DIP 存储，此处换算为物理像素——这是唯一把约束值交给
-            // Win32 的地方，也是唯一天然知道当前 DPI 的时刻（Q9）。
+            // 系统改尺寸路径在此将 DIP 约束转换为当前 DPI 的物理像素。
             //
             // hwnd_ 在 WM_NCCREATE 才赋值，而本消息可能早于它到达
             // （CreateWindowExW 内部），故 DPI 取用需容错退回基准值。
@@ -973,6 +1010,12 @@ LRESULT PopupWindow::HandleMessage(UINT msg, WPARAM wParam, LPARAM lParam) {
 
             RevalidateSizeAgainstConstraints();
 
+            // 跨屏后以系统采纳的矩形为新起点，避免下一次指针增量拉回旧 DPI 的尺寸。
+            if (overlayResizeHit_ != HTNOWHERE) {
+                GetWindowRect(hwnd_, &overlayResizeStartBounds_);
+                GetCursorPos(&overlayResizeStartCursor_);
+            }
+
             // 客户区尺寸已变，重算 WebView 边界。
             RECT clientRect{};
             if (GetClientRect(hwnd_, &clientRect)) {
@@ -982,6 +1025,17 @@ LRESULT PopupWindow::HandleMessage(UINT msg, WPARAM wParam, LPARAM lParam) {
         }
         
         case WM_TIMER:
+            if (wParam == OVERLAY_RESIZE_TIMER_ID) {
+                if (overlayResizeHit_ != HTNOWHERE) {
+                    UpdateOverlayResize();
+                    if (!(GetAsyncKeyState(VK_LBUTTON) & 0x8000)) EndOverlayResize();
+                }
+                return 0;
+            }
+            if (wParam == RESIZE_COALESCE_TIMER_ID) {
+                FlushPendingInteractiveResize();
+                return 0;
+            }
             if (wParam == CLOSE_TIMER_ID) {
                 // beforeClose 超时，强制关闭
                 KillTimer(hwnd_, CLOSE_TIMER_ID);
@@ -1072,6 +1126,7 @@ LRESULT PopupWindow::HandleMessage(UINT msg, WPARAM wParam, LPARAM lParam) {
         // 在到达此处之前由 DefWindowProc 处理掉, 不会落到 HTCLIENT 分支。
         // ============================================
         case WM_SETCURSOR:
+            if (overlayResizeHit_ != HTNOWHERE) return TRUE;
             if (LOWORD(lParam) == HTCLIENT && webView_ &&
                 webView_->ApplyCurrentCursor()) {
                 return TRUE;
@@ -1084,14 +1139,21 @@ LRESULT PopupWindow::HandleMessage(UINT msg, WPARAM wParam, LPARAM lParam) {
             // HandleMouseMessage 中 SetCapture 抢占系统拖拽
             // ============================================
         case WM_ENTERSIZEMOVE: {
+            interactiveSizingActive_ = true;
+            hasPendingInteractiveResize_ = false;
+            lastInteractiveResizeQpc_ = 0;
+            KillTimer(hwnd_, RESIZE_COALESCE_TIMER_ID);
             EmitActivationEvidence("WM_ENTERSIZEMOVE");
             break;  // fall through to DefWindowProc
         }
         case WM_EXITSIZEMOVE: {
+            interactiveSizingActive_ = false;
+            FlushPendingInteractiveResize();
             EmitActivationEvidence("WM_EXITSIZEMOVE");
             break;  // fall through to DefWindowProc
         }
         case WM_CAPTURECHANGED: {
+            EndOverlayResize();
             std::ostringstream extra;
             extra << "newCaptureHwnd=0x" << pfc::format_hex((size_t)(HWND)lParam)
                   << " wasOverlayDragging=" << WindowChromeTrace::BoolText(isOverlayDragging_);
@@ -1103,6 +1165,10 @@ LRESULT PopupWindow::HandleMessage(UINT msg, WPARAM wParam, LPARAM lParam) {
             }
             break;  // fall through to DefWindowProc
         }
+
+        case WM_CANCELMODE:
+            EndOverlayResize();
+            break;
 
         case WM_MOUSEMOVE:
         case WM_LBUTTONDOWN:
@@ -1140,6 +1206,7 @@ LRESULT PopupWindow::HandleMessage(UINT msg, WPARAM wParam, LPARAM lParam) {
                       << " wParam=0x" << pfc::format_hex((size_t)wParam);
                 EmitActivationEvidence(phase, extra.str());
             }
+            if (HandleOverlayResize(msg)) return 0;
             // -- 穿透模式前置过滤：非热区鼠标消息一律吞掉 --
             // 自定义拖拽期间跳过此过滤：光标可能被拖出热区，
             // 但 SetCapture 保证 mouse move/up 必须达到 popup 才能继续拖拽 / 释放。
@@ -1318,6 +1385,78 @@ bool PopupWindow::HandleDragAreaMouse(UINT msg, WPARAM /*wParam*/, LPARAM lParam
     return false;
 }
 
+bool PopupWindow::BeginOverlayResize(WPARAM hit) {
+    if ((!resolvedBehavior_.noActivate && !overlayIntent_) || !resizable_ || isMaximized_ ||
+        hit < HTLEFT || hit > HTBOTTOMRIGHT) return false;
+    if (!GetCursorPos(&overlayResizeStartCursor_) || !GetWindowRect(hwnd_, &overlayResizeStartBounds_))
+        return false;
+
+    // 不进入系统 SC_SIZE 模态循环，使 WebView2 的边界更新与呈现继续由普通消息循环推进。
+    ReleaseCapture();
+    SetCapture(hwnd_);
+    if (GetCapture() != hwnd_) return false;
+    // 后台窗口的 capture 不保证接收窗外鼠标消息；轮询补齐窗外移动与松手。
+    if (!SetTimer(hwnd_, OVERLAY_RESIZE_TIMER_ID, OVERLAY_RESIZE_POLL_MS, nullptr)) {
+        ReleaseCapture();
+        return false;
+    }
+    overlayResizeHit_ = static_cast<int>(hit);
+    interactiveSizingActive_ = true;
+    hasPendingInteractiveResize_ = false;
+    lastInteractiveResizeQpc_ = 0;
+    KillTimer(hwnd_, RESIZE_COALESCE_TIMER_ID);
+    return true;
+}
+
+bool PopupWindow::HandleOverlayResize(UINT message) {
+    if (overlayResizeHit_ == HTNOWHERE) return false;
+    if (message == WM_LBUTTONUP) {
+        UpdateOverlayResize();
+        EndOverlayResize();
+        return true;
+    }
+    if (message != WM_MOUSEMOVE) return false;
+    UpdateOverlayResize();
+    return true;
+}
+
+void PopupWindow::UpdateOverlayResize() {
+    if (overlayResizeHit_ == HTNOWHERE) return;
+    POINT cursor{};
+    if (!GetCursorPos(&cursor)) return;
+    const int edge = overlayResizeHit_;
+    const window_geometry::ResizeEdges edges{
+        edge == HTLEFT || edge == HTTOPLEFT || edge == HTBOTTOMLEFT,
+        edge == HTRIGHT || edge == HTTOPRIGHT || edge == HTBOTTOMRIGHT,
+        edge == HTTOP || edge == HTTOPLEFT || edge == HTTOPRIGHT,
+        edge == HTBOTTOM || edge == HTBOTTOMLEFT || edge == HTBOTTOMRIGHT
+    };
+    const auto& start = overlayResizeStartBounds_;
+    const window_geometry::ResizeRect original{
+        static_cast<int>(start.left), static_cast<int>(start.top),
+        static_cast<int>(start.right - start.left), static_cast<int>(start.bottom - start.top)
+    };
+    const int dpi = static_cast<int>(GetDpiForWindow(hwnd_));
+    const auto next = window_geometry::ResizeFromEdges(original,
+        cursor.x - overlayResizeStartCursor_.x, cursor.y - overlayResizeStartCursor_.y, edges,
+        window_geometry::DipToPhysical(minWidthDip_, dpi), window_geometry::DipToPhysical(minHeightDip_, dpi),
+        window_geometry::DipToPhysical(maxWidthDip_, dpi), window_geometry::DipToPhysical(maxHeightDip_, dpi));
+    RECT current{};
+    if (GetWindowRect(hwnd_, &current) && current.left == next.x && current.top == next.y &&
+        current.right - current.left == next.width && current.bottom - current.top == next.height) return;
+    SetWindowPos(hwnd_, nullptr, next.x, next.y, next.width, next.height,
+        SWP_NOZORDER | SWP_NOACTIVATE);
+}
+
+void PopupWindow::EndOverlayResize() {
+    if (overlayResizeHit_ == HTNOWHERE) return;
+    overlayResizeHit_ = HTNOWHERE;
+    KillTimer(hwnd_, OVERLAY_RESIZE_TIMER_ID);
+    interactiveSizingActive_ = false;
+    FlushPendingInteractiveResize();
+    if (GetCapture() == hwnd_) ReleaseCapture();
+}
+
 bool PopupWindow::IsPointInDragRegion(int clientX, int clientY) const {
     std::lock_guard<std::mutex> lock(regionsMutex_);
     for (const auto& region : dragRegions_) {
@@ -1420,7 +1559,8 @@ void PopupWindow::InstallMoveFocusGuard() {
                 // 被激活。对 noActivate/overlay popup，标记 Handled 阻止默认行为，
                 // 焦点不会转移到 popup 或主窗口，但按钮点击仍正常处理（mousedown/up
                 // 不依赖焦点移交）。
-                if (resolvedBehavior_.noActivate || overlayIntent_ || createParams_.clickThrough) {
+                if ((resolvedBehavior_.noActivate || overlayIntent_ || createParams_.clickThrough) &&
+                    !WindowManager::GetInstance().IsExplicitActivation(hwnd_)) {
                     COREWEBVIEW2_MOVE_FOCUS_REASON reason = COREWEBVIEW2_MOVE_FOCUS_REASON_PROGRAMMATIC;
                     if (args) {
                         args->get_Reason(&reason);
@@ -1475,6 +1615,7 @@ LRESULT CALLBACK PopupWindow::WebViewSubclassProc(HWND hwnd, UINT msg,
             self = (PopupWindow*)GetWindowLongPtr(popupHwnd, GWLP_USERDATA);
         }
         if (self && (self->resolvedBehavior_.noActivate || self->overlayIntent_ || self->createParams_.clickThrough)) {
+            self->RecordActivationInteraction();
             std::ostringstream ev;
             ev << "result=MA_NOACTIVATE (webview child hwnd intercepted)"
                << " childHwnd=0x" << pfc::format_hex((size_t)hwnd);
@@ -1555,6 +1696,8 @@ void PopupWindow::RemoveWebViewSubclass() {
 }
 
 void PopupWindow::OnDestroy() {
+    WindowManager::GetInstance().UnregisterActivationTarget(hwnd_);
+    pendingActivationUndoId_ = 0;
     console::printf("[PopupWindow] OnDestroy: %s", GetWindowId().c_str());
     
     // 移除 WebView2 子 HWND 子类化（必须在 DestroyWebView 之前，
@@ -1567,6 +1710,11 @@ void PopupWindow::OnDestroy() {
     // 取消计时器
     KillTimer(hwnd_, CLOSE_TIMER_ID);
     KillTimer(hwnd_, STARTUP_REVEAL_TIMER_ID);
+    KillTimer(hwnd_, RESIZE_COALESCE_TIMER_ID);
+    interactiveSizingActive_ = false;
+    hasPendingInteractiveResize_ = false;
+    overlayResizeHit_ = HTNOWHERE;
+    KillTimer(hwnd_, OVERLAY_RESIZE_TIMER_ID);
     startupRevealPending_ = false;
     startupNavigationCompleted_ = false;
     startupReadySignaled_ = false;
@@ -1614,7 +1762,54 @@ void PopupWindow::OnSize(int /*width*/, int /*height*/) {
     
     RECT clientRect;
     GetClientRect(hwnd_, &clientRect);
+    if (CoalesceInteractiveResize(clientRect)) return;
     webView_->Resize(clientRect);
+}
+
+bool PopupWindow::CoalesceInteractiveResize(const RECT& clientRect) {
+    if (!interactiveSizingActive_ || !hwnd_ || !IsWindow(hwnd_)) return false;
+
+    static const double qpcMsPerTick = [] {
+        LARGE_INTEGER frequency{};
+        return QueryPerformanceFrequency(&frequency) && frequency.QuadPart
+            ? 1000.0 / static_cast<double>(frequency.QuadPart)
+            : 0.0;
+    }();
+    LARGE_INTEGER now{};
+    if (qpcMsPerTick == 0.0 || !QueryPerformanceCounter(&now)) return false;
+
+    const double sinceLastMs = lastInteractiveResizeQpc_ == 0
+        ? RESIZE_COALESCE_MIN_INTERVAL_MS
+        : static_cast<double>(now.QuadPart - lastInteractiveResizeQpc_) * qpcMsPerTick;
+    if (sinceLastMs >= RESIZE_COALESCE_MIN_INTERVAL_MS) {
+        lastInteractiveResizeQpc_ = now.QuadPart;
+        hasPendingInteractiveResize_ = false;
+        KillTimer(hwnd_, RESIZE_COALESCE_TIMER_ID);
+        return false;
+    }
+
+    pendingInteractiveResizeBounds_ = clientRect;
+    // 模态改尺寸循环仍处理 WM_TIMER，按住停顿时也会提交最后一次尺寸。
+    if (!hasPendingInteractiveResize_) {
+        hasPendingInteractiveResize_ = true;
+        if (!SetTimer(hwnd_, RESIZE_COALESCE_TIMER_ID, RESIZE_COALESCE_TRAILING_MS, nullptr)) {
+            hasPendingInteractiveResize_ = false;
+            lastInteractiveResizeQpc_ = now.QuadPart;
+            return false;
+        }
+    }
+    return true;
+}
+
+void PopupWindow::FlushPendingInteractiveResize() {
+    if (hwnd_ && IsWindow(hwnd_)) KillTimer(hwnd_, RESIZE_COALESCE_TIMER_ID);
+    if (!hasPendingInteractiveResize_) return;
+    hasPendingInteractiveResize_ = false;
+    if (!webView_ || !webView_->IsReady() || isMinimized_) return;
+
+    LARGE_INTEGER now{};
+    if (QueryPerformanceCounter(&now)) lastInteractiveResizeQpc_ = now.QuadPart;
+    webView_->Resize(pendingInteractiveResizeBounds_);
 }
 
 void PopupWindow::OnActivate(WPARAM wParam) {
@@ -1752,8 +1947,10 @@ void PopupWindow::SetClickThroughExcludeRegions(const std::vector<RECT>& regions
     } else {
         clickThroughExcludeRegions_.assign(regions.begin(), regions.begin() + MAX_EXCLUDE_REGIONS);
     }
-    console::printf("[PopupWindow] SetClickThroughExcludeRegions: %s, count=%zu",
-                   GetWindowId().c_str(), clickThroughExcludeRegions_.size());
+    std::ostringstream line;
+    line << "[PopupWindow] SetClickThroughExcludeRegions: " << GetWindowId()
+         << ", count=" << clickThroughExcludeRegions_.size();
+    console::print(line.str().c_str());
     UpdateClickThroughEffective();
 }
 
@@ -2196,6 +2393,14 @@ void PopupWindow::TryCommitStartupReveal() {
     startupRevealSettling_ = true;
 
     KillTimer(hwnd_, STARTUP_REVEAL_TIMER_ID);
+
+    if (!OwnsStartupVisibility()) {
+        // The menu host owns show/hide and activation; late navigation cannot reopen a closed menu.
+        startupRevealSettling_ = false;
+        if (IsWindowVisible(hwnd_)) RefreshStartupRevealSurface();
+        TraceWindowPhase("TryCommitStartupReveal.host-managed");
+        return;
+    }
 
     const bool canRefreshSurface = webView_ && webView_->IsReady();
     if (canRefreshSurface) {
@@ -2806,6 +3011,9 @@ bool PopupWindow::UpdateBackdropPolicy(const json& backdropPolicyPatch, std::str
 // ============================================
 
 bool PopupWindow::NavigateToPage(bool viaDevServer) {
+    if (webView_) {
+        webView_->ResetTrustedOrigins();
+    }
     FrontendOrigin origin;
     if (IsAbsolutePageUrl(createParams_.url)) {
         origin.kind = FrontendOrigin::Kind::Url;
@@ -2855,43 +3063,27 @@ std::wstring PopupWindow::BuildNavigationUrl(bool viaDevServer) const {
         if (urlParam.size() >= 5 && _strnicmp(urlParam.c_str(), "data:", 5) == 0) {
             return pfc::stringcvt::string_wide_from_utf8(urlParam.c_str()).get_ptr();
         }
-        char separator = (urlParam.find('?') != std::string::npos) ? '&' : '?';
-        std::string url = urlParam + separator + "windowId=" + windowId;
+        const std::string url = WindowUtils::AppendQueryParam(urlParam, "windowId=" + windowId);
         return pfc::stringcvt::string_wide_from_utf8(url.c_str()).get_ptr();
     }
 
+    // .html 路径可能自带查询或片段，windowId 一律经 AppendQueryParam 放进查询部分。
     const char* devServerUrl = viaDevServer ? security_config::GetDevServerUrl() : nullptr;
-
+    const bool isHtmlFile = (urlParam.find(".html") != std::string::npos);
+    std::string url;
     if (devServerUrl && devServerUrl[0]) {
-        std::string url(devServerUrl);
-        bool isHtmlFile = (urlParam.find(".html") != std::string::npos);
-
+        url = devServerUrl;
         if (isHtmlFile) {
             if (url.back() != '/') url += '/';
             url += urlParam;
-            url += "?windowId=" + windowId;
-        } else {
-            char separator = (url.find('?') != std::string::npos) ? '&' : '?';
-            url += separator;
-            url += "windowId=" + windowId;
-            if (!urlParam.empty()) {
-                url += "&route=" + urlParam;
-            }
         }
-        return pfc::stringcvt::string_wide_from_utf8(url.c_str()).get_ptr();
-    }
-
-    // 生产模式：使用虚拟主机名
-    bool isHtmlFile = (urlParam.find(".html") != std::string::npos);
-    std::string url;
-
-    if (isHtmlFile) {
-        url = "https://foo-ui-webview2.local/" + urlParam + "?windowId=" + windowId;
     } else {
-        url = "https://foo-ui-webview2.local/index.html?windowId=" + windowId;
-        if (!urlParam.empty()) {
-            url += "&route=" + urlParam;
-        }
+        // 生产模式：使用虚拟主机名
+        url = std::string("https://foo-ui-webview2.local/") + (isHtmlFile ? urlParam : "index.html");
+    }
+    url = WindowUtils::AppendQueryParam(url, "windowId=" + windowId);
+    if (!isHtmlFile && !urlParam.empty()) {
+        url = WindowUtils::AppendQueryParam(url, "route=" + urlParam);
     }
 
     return pfc::stringcvt::string_wide_from_utf8(url.c_str()).get_ptr();

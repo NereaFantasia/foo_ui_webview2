@@ -1,5 +1,6 @@
 ﻿#pragma once
 #include "pch.h"
+#include "window/WindowActivationPolicy.h"
 #include "core/WebViewPanel.h"
 #include "window/WindowChromeApplier.h"
 #include "window/WindowChromeState.h"
@@ -234,6 +235,8 @@ public:
     void ClearNoDragRegions();
 
 protected:
+    // Pooled surfaces may delegate visibility to their host instead of navigation completion.
+    virtual bool OwnsStartupVisibility() const { return true; }
     void OnWebViewReady() override;
     void OnNavigationCompleted(bool success) override;
     void OnWindowReadySignal(const std::string& source) override;
@@ -261,6 +264,15 @@ private:
     // 对 iconic 窗口调 SetWindowPos 会改写还原态几何，故不能就地校正。
     bool pendingConstraintRevalidate_ = false;
 
+    // 交互改尺寸时只保留过密通知中的最后一个，避免 WebView 边界更新排队。
+    bool interactiveSizingActive_ = false;
+    bool hasPendingInteractiveResize_ = false;
+    RECT pendingInteractiveResizeBounds_ {};
+    LONGLONG lastInteractiveResizeQpc_ = 0;
+    static constexpr UINT_PTR RESIZE_COALESCE_TIMER_ID = 4;
+    static constexpr DWORD RESIZE_COALESCE_TRAILING_MS = 10;
+    static constexpr double RESIZE_COALESCE_MIN_INTERVAL_MS = 8.0;
+
     std::vector<DragRegion> dragRegions_;
     std::vector<DragRegion> noDragRegions_;
     mutable std::mutex regionsMutex_;
@@ -272,6 +284,14 @@ private:
     bool clickThrough_ = false;            // 鼠标穿透运行时状态（请求态）
     bool overlayIntent_ = false;           // 曾进入 clickThrough 模式（overlay 意图，永不激活）
     HWND lastForegroundBeforeClick_ = nullptr;  // WM_MOUSEACTIVATE 时保存的前台窗口（用于还原）
+    window_activation::Interaction activationInteraction_;
+    window_activation::Undo pendingActivationUndo_;
+    HWND pendingActivationRestore_ = nullptr;
+    window_activation::Reference activationRestoreReference_;
+    window_activation::Reference pendingActivationRestoreReference_;
+    UINT_PTR pendingActivationUndoId_ = 0;
+    void RecordActivationInteraction();
+    void ScheduleActivationUndo(HWND target);
     // 自定义拖拽循环（仅 overlay popup 启用：noActivate / overlayIntent）
     // 普通 popup 走 SendMessage(WM_NCLBUTTONDOWN HTCAPTION) → DefWindowProc → SC_MOVE，
     // 但 SC_MOVE modal loop 内部会调 SetForegroundWindow(self) 强制激活，
@@ -282,6 +302,15 @@ private:
     bool isOverlayDragging_ = false;
     POINT overlayDragStartCursor_ {};   // 拖拽起点光标屏幕坐标
     POINT overlayDragStartWindow_ {};   // 拖拽起点窗口左上角屏幕坐标
+    int overlayResizeHit_ = HTNOWHERE;
+    POINT overlayResizeStartCursor_ {};
+    RECT overlayResizeStartBounds_ {};
+    static constexpr UINT_PTR OVERLAY_RESIZE_TIMER_ID = 5;
+    static constexpr DWORD OVERLAY_RESIZE_POLL_MS = 10;
+    bool BeginOverlayResize(WPARAM hit);
+    bool HandleOverlayResize(UINT message);
+    void UpdateOverlayResize();
+    void EndOverlayResize();
     bool clickThroughEffective_ = false;     // 当前原生样式是否处于穿透（生效态）
     // WebView2 子 HWND 子类化（拦截 Chromium 内部的 WM_MOUSEACTIVATE）
     // 当点击 WebView2 内可交互元素时，WM_MOUSEACTIVATE 发到的是 Chromium 子 HWND
@@ -359,6 +388,8 @@ private:
     void OnClose();
     void OnDestroy();
     void OnSize(int width, int height);
+    bool CoalesceInteractiveResize(const RECT& clientRect);
+    void FlushPendingInteractiveResize();
     void OnActivate(WPARAM wParam);
     
     // 构建导航 URL；viaDevServer 为 false 时相对地址落到本地模板的虚拟主机下

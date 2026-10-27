@@ -147,8 +147,9 @@ private:
 // in the worst case runs is as long as total, and a DOM would cost one full
 // intermediate copy before dump(). `sub` is emitted only in two-level mode.
 // playlistGuid is the GUID of the playlist grouped, taken on the main thread when
-// the request was resolved, as the declared result carries it.
-void WriteGroupRunsJson(std::string& out, size_t playlist, std::string_view playlistGuid, size_t total,
-                        const GroupRunAccumulator& acc);
+// the request was resolved, as the declared result carries it; contentVersion is taken
+// at the same moment.
+void WriteGroupRunsJson(std::string& out, size_t playlist, std::string_view playlistGuid,
+                        std::string_view contentVersion, size_t total, const GroupRunAccumulator& acc);
 
 }  // namespace fb2k_group_runs

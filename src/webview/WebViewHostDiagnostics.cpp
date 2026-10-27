@@ -5,6 +5,9 @@
  */
 #include "pch.h"
 #include "webview/WebViewHost.h"
+#include "webview/WebViewEnvironment.h"
+#include "window/DwmCompatibility.h"
+#include "version.h"
 #include <wrl/event.h>
 #include <algorithm>
 #include <fstream>     // 崩溃诊断日志落盘 (webview_crash.log)
@@ -32,6 +35,41 @@ namespace {
         path += L"\\";
         path += fileName;
         return path;
+    }
+
+    std::string EnvironmentVariable(const wchar_t* name) {
+        wchar_t value[1024] = {};
+        const DWORD length = GetEnvironmentVariableW(name, value, ARRAYSIZE(value));
+        if (length == 0 || length >= ARRAYSIZE(value)) return {};
+        return pfc::stringcvt::string_utf8_from_wide(value).get_ptr();
+    }
+
+    std::string Quoted(const std::string& value) {
+        return value.empty() ? std::string() : "\"" + value + "\"";
+    }
+
+    const char* DpiAwarenessName(DPI_AWARENESS_CONTEXT context) {
+        if (!context) return "-";
+        if (AreDpiAwarenessContextsEqual(context, DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2)) {
+            return "pmv2";
+        }
+        switch (GetAwarenessFromDpiAwarenessContext(context)) {
+            case DPI_AWARENESS_UNAWARE: return "unaware";
+            case DPI_AWARENESS_SYSTEM_AWARE: return "system";
+            case DPI_AWARENESS_PER_MONITOR_AWARE: return "pm";
+            default: return "invalid";
+        }
+    }
+
+    const char* ProcessElevation() {
+        HANDLE token = nullptr;
+        if (!OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &token)) return "?";
+        TOKEN_ELEVATION elevation = {};
+        DWORD size = 0;
+        const BOOL ok = GetTokenInformation(token, TokenElevation, &elevation, sizeof(elevation), &size);
+        CloseHandle(token);
+        if (!ok) return "?";
+        return elevation.TokenIsElevated ? "1" : "0";
     }
 }
 
@@ -125,6 +163,54 @@ void WebViewHost::LogLifecycle(const char* event, const std::string& detail) con
     } catch (...) {
         // COM state inspection is best-effort and must remain non-throwing.
     }
+}
+
+void WebViewHost::RecordInitFailure(const char* event, const char* stage, HRESULT hr) {
+    lastInitFailure_ = {stage, hr};
+    LogLifecycle(event, std::string("stage=") + stage + " hr=0x" +
+        pfc::format_hex((uint32_t)hr, 8).get_ptr() + " " + DescribeInitContext(parentHwnd_, ' '));
+}
+
+std::string WebViewHost::DescribeInitContext(HWND hwnd, char separator) {
+    // 路径、兼容层和环境变量的值可能含空格，加引号，免得和日志里的分隔符混在一起。
+    // __COMPAT_LAYER 是 exe「属性 → 兼容性」里勾的兼容模式和高 DPI 替代。
+    // WEBVIEW2_* 环境变量会覆盖组件传给 WebView2 的参数，从组件自己的设置里看不出来。
+    std::string webView2Overrides;
+    for (const wchar_t* name : {L"WEBVIEW2_USER_DATA_FOLDER", L"WEBVIEW2_BROWSER_EXECUTABLE_FOLDER",
+                                L"WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS", L"WEBVIEW2_RELEASE_CHANNEL_PREFERENCE"}) {
+        const std::string value = EnvironmentVariable(name);
+        if (value.empty()) continue;
+        if (!webView2Overrides.empty()) webView2Overrides += "; ";
+        webView2Overrides += pfc::stringcvt::string_utf8_from_wide(name).get_ptr();
+        webView2Overrides += '=';
+        webView2Overrides += value;
+    }
+    const auto creation = WebViewEnvironment::GetInstance().LastCreation();
+    const DPI_AWARENESS_CONTEXT windowDpi =
+        hwnd && IsWindow(hwnd) ? GetWindowDpiAwarenessContext(hwnd) : nullptr;
+
+    std::string out;
+    const auto add = [&out, separator](const char* key, const std::string& value) {
+        if (!out.empty()) out += separator;
+        out += key;
+        out += '=';
+        out += value.empty() ? "-" : value;
+    };
+    add("component", PLUGIN_VERSION_STR);
+    add("fb2k", core_version_info::g_get_version_string());
+    add("osBuild", std::to_string(dwm_compatibility::Current().build));
+    add("portable", core_api::is_portable_mode_enabled() ? "1" : "0");
+    add("elevated", ProcessElevation());
+    add("dpiThread", DpiAwarenessName(GetThreadDpiAwarenessContext()));
+    add("dpiWindow", DpiAwarenessName(windowDpi));
+    add("compatLayer", Quoted(EnvironmentVariable(L"__COMPAT_LAYER")));
+    add("webview2Env", Quoted(webView2Overrides));
+    add("runtime", creation.runtimeVersion);
+    add("userData", Quoted(creation.userDataPath));
+    if (!creation.effectiveUserDataPath.empty() && creation.effectiveUserDataPath != creation.userDataPath) {
+        add("userDataEffective", Quoted(creation.effectiveUserDataPath));
+    }
+    return out;
 }
 
 // ==========================================================================

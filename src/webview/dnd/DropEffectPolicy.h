@@ -5,6 +5,8 @@
 
 #include <cstdint>
 
+#include "webview/dnd/DragSourceMarker.h"
+
 namespace fb2k_dnd {
 
 // How long after a drag enters the window a NONE from the WebView is taken as
@@ -20,10 +22,17 @@ bool RendererHasAnswered(bool sawEffect, int64_t sinceEnterMs);
 
 // Chooses the effect to report for one drag callback.
 //
-// Only DROPEFFECT_COPY is ever returned for a file drop. DROPEFFECT is an
-// operation contract, not a cursor hint: reporting MOVE tells the source it may
-// delete the originals, and this component never moves files - it only hands
-// paths to the page. Modifier keys therefore do not influence the result.
+// A drag from outside the component only ever gets DROPEFFECT_COPY. DROPEFFECT
+// is an operation contract, not a cursor hint: reporting MOVE tells the source
+// it may delete the originals, and this component never moves files - it only
+// hands paths to the page. Modifier keys therefore do not influence the result.
+//
+// A drag that started in a page this component hosts gets the page's answer
+// within the source's mask, MOVE included, which is how a page moves its own
+// rows. Its source is a WebView, which deletes nothing on MOVE. A file list on
+// such a drag either went through the drag-out gate, which offers exactly COPY,
+// or was made by Chromium for the drag. The marker can be forged, but then the
+// MOVE is reported to the forger about its own data.
 //
 // A file drag the WebView has not answered yet is reported as COPY, so the
 // cursor does not flash "forbidden" on the way in; once it has answered, its
@@ -33,8 +42,9 @@ bool RendererHasAnswered(bool sawEffect, int64_t sinceEnterMs);
 // allowedMask       the in/out value the drag source passed in, i.e. permitted effects
 // hasFiles          whether the session carries a CF_HDROP list
 // rendererAnswered  RendererHasAnswered for this drag
+// source            where the drag's marker says it started
 DWORD ChooseDropEffect(DWORD downstream, DWORD allowedMask, bool hasFiles,
-                       bool rendererAnswered);
+                       bool rendererAnswered, DragSource source);
 
 // Whether a drag out of the window may go ahead with the effects the page
 // offered through dataTransfer.effectAllowed.

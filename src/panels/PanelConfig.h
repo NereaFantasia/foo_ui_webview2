@@ -14,6 +14,10 @@
  *   [flags:1B]  — bit0=transparentBackground, bit1=grabFocus,
  *                  bit2=enableDragDrop, bit3=enableDevTools
  *   [urlOverrideLen:4B][urlOverride:NB UTF-8]
+ *   [approvedUrlOriginLen:4B][approvedUrlOrigin:NB UTF-8]  — 末尾追加，版本号仍为 2
+ *
+ * 追加字段不升版本号：旧版遇到更高版本会丢弃整份配置，而末尾多出的字节它不读。
+ * 数据止于 urlOverride 时是旧版保存的，按已允许其来源迁移，见 Deserialize。
  */
 
 #pragma once
@@ -54,7 +58,11 @@ struct PanelConfig {
     // 直接 URL 覆盖（空=使用模板）
     // 非空时跳过模板查找逻辑，直接导航到此 URL
     std::string urlOverride;
-    
+
+    // 用户允许调用接口的远程来源，按 origin_policy::OriginOf 规范化；空=没有允许。
+    // 只有等于 urlOverride 的来源时才生效，本机地址不需要允许。
+    std::string approvedUrlOrigin;
+
     // ========== 构造函数 ==========
     
     PanelConfig() = default;
@@ -70,7 +78,8 @@ struct PanelConfig {
                grabFocus == other.grabFocus &&
                enableDragDrop == other.enableDragDrop &&
                enableDevTools == other.enableDevTools &&
-               urlOverride == other.urlOverride;
+               urlOverride == other.urlOverride &&
+               approvedUrlOrigin == other.approvedUrlOrigin;
     }
     
     bool operator!=(const PanelConfig& other) const {
@@ -89,6 +98,12 @@ struct PanelConfig {
     
     // 是否使用 URL 覆盖（非空即覆盖）
     bool HasUrlOverride() const { return !urlOverride.empty(); }
+
+    // urlOverride 的来源；取不出 http(s) 来源时为空。
+    std::string UrlOrigin() const;
+
+    // 加载 urlOverride 时应登记为可信的来源；为空时页面只显示，不能调用接口。
+    std::wstring TrustedUrlOrigin() const;
     
     // ========== 序列化 ==========
     

@@ -25,7 +25,7 @@ inline json ToJson(const SystemApiInfo& v);
 inline json ToJson(const SystemPluginInfo& v);
 
 struct Track {
-    static constexpr std::array<std::string_view, 21> kFields{{"handle", "path", "absolutePath", "subsong", "title", "artist", "artists", "album", "albumArtist", "albumArtists", "genre", "date", "trackNumber", "discNumber", "duration", "fileSize", "bitrate", "sampleRate", "channels", "codec", "rating"}};
+    static constexpr std::array<std::string_view, 22> kFields{{"handle", "path", "absolutePath", "subsong", "title", "artist", "artists", "album", "albumId", "albumArtist", "albumArtists", "genre", "date", "trackNumber", "discNumber", "duration", "fileSize", "bitrate", "sampleRate", "channels", "codec", "rating"}};
 
     std::string handle{};
     std::string path{};
@@ -35,6 +35,7 @@ struct Track {
     std::string artist{};
     std::vector<std::string> artists{};
     std::string album{};
+    std::optional<std::string> albumId{};
     std::string albumArtist{};
     std::vector<std::string> albumArtists{};
     std::string genre{};
@@ -60,6 +61,7 @@ inline json ToJson(const Track& v) {
     api::results::Put(j, "artist", v.artist);
     api::results::Put(j, "artists", v.artists);
     api::results::Put(j, "album", v.album);
+    api::results::Put(j, "albumId", v.albumId);
     api::results::Put(j, "albumArtist", v.albumArtist);
     api::results::Put(j, "albumArtists", v.albumArtists);
     api::results::Put(j, "genre", v.genre);
@@ -77,7 +79,7 @@ inline json ToJson(const Track& v) {
 }
 
 struct TrackPartial {
-    static constexpr std::array<std::string_view, 21> kFields{{"handle", "path", "absolutePath", "subsong", "title", "artist", "artists", "album", "albumArtist", "albumArtists", "genre", "date", "trackNumber", "discNumber", "duration", "fileSize", "bitrate", "sampleRate", "channels", "codec", "rating"}};
+    static constexpr std::array<std::string_view, 22> kFields{{"handle", "path", "absolutePath", "subsong", "title", "artist", "artists", "album", "albumId", "albumArtist", "albumArtists", "genre", "date", "trackNumber", "discNumber", "duration", "fileSize", "bitrate", "sampleRate", "channels", "codec", "rating"}};
 
     std::optional<std::string> handle{};
     std::optional<std::string> path{};
@@ -87,6 +89,7 @@ struct TrackPartial {
     std::optional<std::string> artist{};
     std::optional<std::vector<std::string>> artists{};
     std::optional<std::string> album{};
+    std::optional<std::string> albumId{};
     std::optional<std::string> albumArtist{};
     std::optional<std::vector<std::string>> albumArtists{};
     std::optional<std::string> genre{};
@@ -112,6 +115,7 @@ inline json ToJson(const TrackPartial& v) {
     api::results::Put(j, "artist", v.artist);
     api::results::Put(j, "artists", v.artists);
     api::results::Put(j, "album", v.album);
+    api::results::Put(j, "albumId", v.albumId);
     api::results::Put(j, "albumArtist", v.albumArtist);
     api::results::Put(j, "albumArtists", v.albumArtists);
     api::results::Put(j, "genre", v.genre);

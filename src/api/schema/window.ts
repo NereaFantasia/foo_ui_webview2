@@ -198,8 +198,11 @@ export interface Api {
 
   /**
    * Bring a window to the foreground, restoring it first when minimized and showing it when
-   * hidden. Fails with `NOT_FOUND` when there is no such window.
-   * @zh 把窗口带到前台：最小化的先还原，隐藏的先显示。没有这个窗口时以 `NOT_FOUND` 失败。
+   * hidden. An explicit id targets exactly that window; omission targets the caller's top-level
+   * window, including the host of a panel. Fails with `NOT_FOUND` when the target no longer exists.
+   * Supersedes older popup focus-restoration work without changing the popup's no-activate policy.
+   * Success means the request was made; Windows may refuse to grant the foreground.
+   * @zh 把窗口带到前台：最小化的先还原，隐藏的先显示。显式 ID 只定位指定窗口；省略时定位调用方顶层窗口，含面板所在宿主。目标不存在时以 `NOT_FOUND` 失败。该请求使旧弹窗焦点归还动作失效，不永久改变弹窗的禁止激活策略。成功表示已请求，Windows 仍可能拒绝前台激活。
    */
   focus(params: FocusParams): void;
 
@@ -301,11 +304,12 @@ export interface Api {
   getCaptionButtonsWidth(): GetCaptionButtonsWidthResult;
 
   /**
-   * Set the rectangles that drag the calling window, the main window or a popup, replacing the
-   * earlier ones. Rectangles are CSS pixels of the page, scaled by the window's DPI; rectangles
-   * without a positive width and height are skipped. Fails in panel mode, and with `NOT_FOUND`
-   * when the caller is neither the main window nor a popup.
-   * @zh 设置拖动调用方窗口（主窗口或 popup）的矩形，替换之前的设置。矩形是页面的 CSS 像素，按窗口 DPI 缩放；宽或高不为正的矩形被跳过。面板模式下失败；调用方既不是主窗口也不是 popup 时以 `NOT_FOUND` 失败。
+   * Set draggable rectangles for the calling window (main window or popup), replacing earlier ones.
+   * Rectangles use page CSS pixels and are scaled by `devicePixelRatio` (window DPI, text scaling,
+   * and zoom). Update these rectangles whenever `devicePixelRatio` changes. Rectangles without
+   * positive width and height are ignored. Fails in panel mode, or with `NOT_FOUND` if the caller
+   * is neither the main window nor a popup.
+   * @zh 设置调用方窗口（主窗口或 popup）的可拖动矩形，替换已有区域。矩形使用页面 CSS 像素，由宿主按 `devicePixelRatio`（综合窗口 DPI、文本缩放与页面缩放）换算为物理像素。`devicePixelRatio` 变化时须重新设置。忽略宽高不为正的矩形。在面板模式下失败；调用方非主窗口且非 popup 时以 `NOT_FOUND` 失败。
    */
   setDragRegions(params: SetDragRegionsParams): SetDragRegionsResult;
 
@@ -317,11 +321,11 @@ export interface Api {
   clearDragRegions(): void;
 
   /**
-   * Set the rectangles that never drag the calling window, such as buttons inside a drag area,
-   * replacing the earlier ones. Rectangles are CSS pixels of the page, scaled by the window's DPI;
-   * rectangles without a positive width and height are skipped. Fails in panel mode, and with
-   * `NOT_FOUND` when the caller is neither the main window nor a popup.
-   * @zh 设置永远不拖动调用方窗口的矩形（例如拖动区域里的按钮），替换之前的设置。矩形是页面的 CSS 像素，按窗口 DPI 缩放；宽或高不为正的矩形被跳过。面板模式下失败；调用方既不是主窗口也不是 popup 时以 `NOT_FOUND` 失败。
+   * Set non-draggable exclusion rectangles (such as buttons inside a drag area), replacing earlier ones.
+   * Rectangles use page CSS pixels and are scaled by `devicePixelRatio`. Update these rectangles
+   * whenever `devicePixelRatio` changes. Rectangles without positive width and height are ignored.
+   * Fails in panel mode, or with `NOT_FOUND` if the caller is neither the main window nor a popup.
+   * @zh 设置不可拖动的排除矩形（如拖拽区内部的按钮），替换已有区域。矩形使用页面 CSS 像素，由宿主按 `devicePixelRatio` 换算。`devicePixelRatio` 变化时须重新设置。忽略宽高不为正的矩形。在面板模式下失败；调用方非主窗口且非 popup 时以 `NOT_FOUND` 失败。
    */
   setNoDragRegions(params: SetNoDragRegionsParams): SetNoDragRegionsResult;
 
@@ -333,18 +337,16 @@ export interface Api {
   clearNoDragRegions(): void;
 
   /**
-   * Tell the host where the page draws the main window's maximize button, so that on Windows 11
-   * hovering it offers Snap layouts as a standard window's button does. The rectangle is CSS
-   * pixels of the page, scaled by the window's DPI and the page zoom, the same factor as
-   * `devicePixelRatio`, and replaces the earlier one; `region` omitted, or without a positive
-   * width and height, removes it. While the window is frameless, resizable and not full screen,
-   * the host answers the rectangle as the window's maximize button and passes the mouse input it
-   * receives there on to the page, so the button keeps its hover and pressed styles and its own
-   * click handler; on Windows 10 and in every other state the rectangle stays ordinary page
-   * content. Set it again whenever layout moves the button; a navigation or reload of the page
-   * removes it. Main window only: fails with `NOT_SUPPORTED` from a popup, in panel mode, and
-   * with `NOT_FOUND` when the caller is no window.
-   * @zh 告诉宿主页面把主窗口的最大化键画在哪里，这样在 Windows 11 上悬停它会像标准窗口的按钮一样弹出贴靠布局。矩形是页面的 CSS 像素，按窗口 DPI 与页面缩放换算，与 `devicePixelRatio` 同一个系数，替换之前的矩形；省略 `region`，或宽高不为正，则移除。窗口无标题栏、可调整大小且不在全屏时，宿主把这个矩形当作窗口的最大化键回答，并把在这里收到的鼠标输入转给页面，所以按钮照常有悬停与按下样式，照常由它自己的点击处理；在 Windows 10 上和其他状态下，这个矩形仍是普通的页面内容。布局挪动按钮后要重新设置；页面导航或重载时它被移除。只对主窗口：从 popup 调用以 `NOT_SUPPORTED` 失败，面板模式下失败，调用方不是窗口时以 `NOT_FOUND` 失败。
+   * Register the custom maximize button rectangle on the main window to enable Windows 11 Snap layouts.
+   * The rectangle uses page CSS pixels and scales with `devicePixelRatio`. It replaces any previous
+   * rectangle; omitting `region` or passing non-positive dimensions clears the registration.
+   * When the window is frameless, resizable, and not fullscreen, the host reports this area as the
+   * system maximize button while forwarding mouse events to the page (preserving CSS hover styles
+   * and click handlers). On Windows 10 or in other states, the area behaves as normal page content.
+   * Re-register whenever button layout moves or `devicePixelRatio` changes. Page reload or navigation
+   * clears this registration. Main window only: fails with `NOT_SUPPORTED` from popups, in panel mode,
+   * or with `NOT_FOUND` without a window.
+   * @zh 注册主窗口的自定义最大化按钮矩形，以支持 Windows 11 贴靠布局（Snap layouts）。矩形使用页面 CSS 像素并按 `devicePixelRatio` 换算，替换此前设置；省略 `region` 或宽高非正时清除注册。当主窗口为无边框、可调整大小且非全屏时，宿主将该区域响应为系统最大化按钮，同时向页面转发鼠标事件以保留 CSS 悬停与点击处理；在 Windows 10 或其他状态下作为普通页面内容。当按钮布局移动或 `devicePixelRatio` 改变时须重新注册；页面导航或刷新后注册自动清除。仅限主窗口：在 popup 中以 `NOT_SUPPORTED` 失败，面板模式下失败，无窗口时以 `NOT_FOUND` 失败。
    */
   setMaximizeButtonRegion(params: SetMaximizeButtonRegionParams): SetMaximizeButtonRegionResult;
 
@@ -371,10 +373,11 @@ export interface Api {
   getCornerPreference(): GetCornerPreferenceResult;
 
   /**
-   * Turn the Mica backdrop of a window on or off. The setting is stored even when the window does
-   * not draw it right away, for example while it is still hidden at startup; the call then fails
-   * with `OPERATION_FAILED` and the failure carries the result fields. Fails in panel mode.
-   * @zh 打开或关闭窗口的 Mica 背景。即使窗口没能立即画出（例如启动时仍隐藏），设置也会保存；此时调用以 `OPERATION_FAILED` 失败，失败里带返回值的字段。面板模式下失败。
+   * Enable or disable the Mica backdrop material on a window. If the effect cannot be applied
+   * immediately (such as while the window is hidden at startup), the configuration is still saved;
+   * the call fails with `OPERATION_FAILED` and includes result fields in the error response.
+   * Not supported in panel mode.
+   * @zh 启用或禁用窗口的 Mica 背景材质。若效果未能即时呈现（如启动时窗口处于隐藏状态），配置仍会保存；此时以 `OPERATION_FAILED` 失败并附带状态字段。面板模式下不支持。
    */
   setMica(params: SetMicaParams): SetMicaResult;
 
@@ -385,35 +388,34 @@ export interface Api {
   setMicaEffect(params: SetMicaEffectParams): SetMicaEffectResult;
 
   /**
-   * Turn the blur-behind effect of a window on or off. The setting is stored even when the window
-   * does not draw it right away; the call then fails with `OPERATION_FAILED` and the failure
-   * carries `enabled`. Fails in panel mode.
-   * @zh 打开或关闭窗口的背景模糊。即使窗口没能立即画出，设置也会保存；此时调用以 `OPERATION_FAILED` 失败，失败里带 `enabled`。面板模式下失败。
+   * Enable or disable the blur-behind effect on a window. If the effect cannot be applied
+   * immediately, the configuration is still saved; the call fails with `OPERATION_FAILED` and
+   * includes `enabled` in the error response. Not supported in panel mode.
+   * @zh 启用或禁用窗口的背景模糊效果。若未能即时呈现，配置仍会保存；此时以 `OPERATION_FAILED` 失败并附带 `enabled` 状态。面板模式下不支持。
    */
   setBlur(params: SetBlurParams): SetBlurResult;
 
   /**
-   * Turn the acrylic backdrop of a window on or off. The setting is stored even when the window
-   * does not draw it right away; the call then fails with `OPERATION_FAILED` and the failure
-   * carries the result fields. Fails in panel mode.
-   * @zh 打开或关闭窗口的亚克力背景。即使窗口没能立即画出，设置也会保存；此时调用以 `OPERATION_FAILED` 失败，失败里带返回值的字段。面板模式下失败。
+   * Enable or disable the Acrylic backdrop material on a window. If the effect cannot be applied
+   * immediately, the configuration is still saved; the call fails with `OPERATION_FAILED` and
+   * includes result fields in the error response. Not supported in panel mode.
+   * @zh 启用或禁用窗口的 Acrylic（亚克力）背景材质。若未能即时呈现，配置仍会保存；此时以 `OPERATION_FAILED` 失败并附带状态字段。面板模式下不支持。
    */
   setAcrylic(params: SetAcrylicParams): SetAcrylicResult;
 
   /**
-   * Switch a window's backdrop between its dark and light variant. The setting is stored even
-   * when the window does not draw it right away; the call then fails with `OPERATION_FAILED` and
-   * the failure carries `enabled`. Fails in panel mode.
-   * @zh 在深色与浅色之间切换窗口的背景。即使窗口没能立即画出，设置也会保存；此时调用以 `OPERATION_FAILED` 失败，失败里带 `enabled`。面板模式下失败。
+   * Switch a window's backdrop between dark and light themes. If the change cannot be applied
+   * immediately, the configuration is still saved; the call fails with `OPERATION_FAILED` and
+   * includes `enabled` in the error response. Not supported in panel mode.
+   * @zh 切换窗口背景的深色与浅色主题变体。若未能即时呈现，配置仍会保存；此时以 `OPERATION_FAILED` 失败并附带 `enabled` 状态。面板模式下不支持。
    */
   setDarkMode(params: SetDarkModeParams): SetDarkModeResult;
 
   /**
-   * Make a window's WebView background transparent, so the backdrop effect shows through, or
-   * opaque. Fails in panel mode, and with `OPERATION_FAILED` when neither the window nor its
-   * WebView took the change; that failure carries the result fields unless the window has no
-   * WebView.
-   * @zh 让窗口的 WebView 背景透明（背景效果得以透出）或不透明。面板模式下失败；窗口与其 WebView 都没接受时以 `OPERATION_FAILED` 失败，窗口有 WebView 时失败里带返回值的字段。
+   * Set the window WebView background to transparent (revealing backdrop material effects) or
+   * opaque. Not supported in panel mode. Fails with `OPERATION_FAILED` (carrying result fields
+   * when the window has a WebView) if neither the window nor the WebView accepted the change.
+   * @zh 设置窗口 WebView 背景为透明（透出底层背景材质效果）或不透明。面板模式下不支持；若窗口与 WebView 均未能应用变更，以 `OPERATION_FAILED` 失败（窗口有 WebView 时附带状态字段）。
    */
   setBackgroundTransparency(params: SetBackgroundTransparencyParams): SetBackgroundTransparencyResult;
 
@@ -456,9 +458,10 @@ export interface Api {
   setZoom(params: SetZoomParams): SetZoomResult;
 
   /**
-   * Report the zoom factor of the calling window's WebView and the window's DPI. Without a WebView
+   * Report the zoom factor of the calling window's WebView, the window's DPI and the Windows text
+   * size; the page's `devicePixelRatio` is `dpiScale * textScaleFactor * zoom`. Without a WebView
    * of its own the call reports zoom `1` and leaves out `dpi` and `dpiScale`.
-   * @zh 报告调用方窗口 WebView 的缩放倍数与窗口的 DPI。调用方窗口自己没有 WebView 时报缩放 `1`，并省略 `dpi` 与 `dpiScale`。
+   * @zh 报告调用方窗口 WebView 的缩放倍数、窗口的 DPI 与 Windows 文本大小；页面的 `devicePixelRatio` 等于 `dpiScale * textScaleFactor * zoom`。调用方窗口自己没有 WebView 时报缩放 `1`，并省略 `dpi` 与 `dpiScale`。
    */
   getZoom(): GetZoomResult;
 
@@ -545,10 +548,10 @@ export interface Api {
   getBackdropPolicy(params: GetBackdropPolicyParams): GetBackdropPolicyResult;
 
   /**
-   * Merge per-field overrides into a window's backdrop policy; a `null` value removes that
-   * override. The overrides are stored even when the window does not draw the result right away,
-   * for example while it is still hidden at startup; the call then fails with `OPERATION_FAILED`.
-   * @zh 把逐字段覆盖合并进窗口的背景策略；值为 `null` 的键删除该覆盖。即使窗口没能立即画出结果（例如启动时仍隐藏），覆盖也会保存；此时调用以 `OPERATION_FAILED` 失败。
+   * Merge per-field overrides into a window's backdrop policy; passing `null` removes that
+   * override. Overrides are saved even if the window cannot apply them immediately (such as
+   * while hidden at startup); the call then fails with `OPERATION_FAILED`.
+   * @zh 将逐字段覆盖合并至窗口的背景策略；设为 `null` 可清除该项覆盖。即使窗口未能即时呈现（如启动时处于隐藏状态），覆盖配置仍会保存；此时调用以 `OPERATION_FAILED` 失败。
    */
   setBackdropPolicy(params: SetBackdropPolicyParams): SetBackdropPolicyResult;
 
@@ -582,10 +585,11 @@ export interface Api {
 
   /**
    * Set the rectangles of a popup that keep taking mouse input while it lets input pass through,
-   * replacing the earlier ones. Rectangles are CSS pixels of the page, scaled by the popup's DPI;
-   * rectangles without a positive width and height are skipped, and at most 32 are kept. Targets
-   * as `window.setClickThrough` does.
-   * @zh 设置 popup 在鼠标穿透时仍接收鼠标输入的矩形，替换之前的设置。矩形是页面的 CSS 像素，按 popup 的 DPI 缩放；宽或高不为正的矩形被跳过，最多保留 32 个。目标的选取同 `window.setClickThrough`。
+   * replacing the earlier ones. Rectangles are CSS pixels of the popup's page, scaled by its
+   * `devicePixelRatio`: the popup's DPI, the Windows text size and the page zoom. Set them again
+   * when `devicePixelRatio` changes. Rectangles without a positive width and height are skipped,
+   * and at most 32 are kept. Targets as `window.setClickThrough` does.
+   * @zh 设置 popup 在鼠标穿透时仍接收鼠标输入的矩形，替换之前的设置。矩形是 popup 页面的 CSS 像素，按该页面的 `devicePixelRatio` 换算，即 popup 的 DPI、Windows 文本大小与页面缩放；`devicePixelRatio` 变化后要重新设置。宽或高不为正的矩形被跳过，最多保留 32 个。目标的选取同 `window.setClickThrough`。
    */
   setClickThroughExcludeRegions(params: SetClickThroughExcludeRegionsParams): SetClickThroughExcludeRegionsResult;
 
@@ -1294,6 +1298,11 @@ interface ExitFullscreenResult {
 }
 
 interface FocusParams {
+  /**
+   * `main` or a popup id. Omitted or empty, focus the caller's top-level window, including
+   * the foobar2000 host in DUI/CUI panel mode. An unknown explicit id fails with `NOT_FOUND`.
+   * @zh `main` 或 popup 的 id；省略或为空串时聚焦调用方顶级窗口，包括 DUI/CUI 面板所在的 foobar2000 宿主窗口。显式指定的 id 不存在时以 `NOT_FOUND` 失败。
+   */
   windowId?: TargetWindowId;
 }
 
@@ -1508,10 +1517,15 @@ interface SetDragRegionsResult {
    */
   count: Int;
   /**
-   * Scale applied to the rectangles, the window's DPI divided by 96.
-   * @zh 矩形所乘的缩放比例，即窗口 DPI 除以 96。
+   * The window's DPI divided by 96.
+   * @zh 窗口 DPI 除以 96。
    */
   dpiScale: number;
+  /**
+   * Scale applied to the rectangles, the page's `devicePixelRatio`.
+   * @zh 矩形所乘的缩放比例，即页面的 `devicePixelRatio`。
+   */
+  scale: number;
 }
 
 interface SetNoDragRegionsParams {
@@ -1529,38 +1543,42 @@ interface SetNoDragRegionsResult {
    */
   count: Int;
   /**
-   * Scale applied to the rectangles, the window's DPI divided by 96.
-   * @zh 矩形所乘的缩放比例，即窗口 DPI 除以 96。
+   * The window's DPI divided by 96.
+   * @zh 窗口 DPI 除以 96。
    */
   dpiScale: number;
+  /**
+   * Scale applied to the rectangles, the page's `devicePixelRatio`.
+   * @zh 矩形所乘的缩放比例，即页面的 `devicePixelRatio`。
+   */
+  scale: number;
 }
 
 interface SetMaximizeButtonRegionParams {
   /**
-   * Where the page draws the maximize button; omitted, the host forgets the button.
-   * @zh 页面画最大化键的位置；省略时宿主忘掉这个按钮。
+   * Custom maximize button bounding box in CSS pixels; omitted or zero-sized to clear.
+   * @zh 自定义最大化按钮在页面中的 CSS 像素矩形；省略或尺寸非正时清除注册。
    */
   region?: WindowRegion;
 }
 
 interface SetMaximizeButtonRegionResult {
   /**
-   * Whether a rectangle is now set: `false` after removing it, or when the rectangle had no
-   * positive width and height.
-   * @zh 现在是否设着矩形：移除之后，或矩形宽高不为正时为 `false`。
+   * Whether an active maximize button rectangle is registered.
+   * @zh 当前是否注册了有效的最大化按钮矩形。
    */
   hasRegion: boolean;
   /**
-   * The system offers Snap layouts for a maximize button, which means Windows 11 or later. Where
-   * it is `false` the host never answers the rectangle as the maximize button. Where it is `true`
-   * the button's `title` tooltip, which the page still shows on hover, would cover the Snap
-   * layouts flyout, so leave the title off and name the button with `aria-label`.
-   * @zh 系统会为最大化键提供贴靠布局，即 Windows 11 或更新。为 `false` 时宿主从不把这个矩形当作最大化键。为 `true` 时，页面悬停时仍会显示按钮的 `title` 提示，它会挡住贴靠布局浮层，所以不要设 title，改用 `aria-label` 给按钮命名。
+   * Whether the system provides Windows 11 Snap layouts. When false, the host never reports this
+   * area as the maximize button. When true, avoid using HTML title tooltips on the button as they
+   * obstruct the Snap flyout; use aria-label instead.
+   * @zh 当前系统是否支持 Windows 11 贴靠布局。为 false 时宿主不会将该区域响应为最大化按钮。若为 true，应避免为按钮设置 HTML title 属性以免遮挡系统贴靠菜单，推荐改用 aria-label 提供无障碍描述。
    */
   snapLayouts: boolean;
   /**
-   * Scale applied to the rectangle: the window's DPI divided by 96, times the page zoom.
-   * @zh 矩形所乘的缩放比例：窗口 DPI 除以 96，再乘页面缩放。
+   * Scale applied to the rectangle, the page's `devicePixelRatio`: the window's DPI divided by 96,
+   * times the Windows text size and the page zoom.
+   * @zh 矩形所乘的缩放比例，即页面的 `devicePixelRatio`：窗口 DPI 除以 96，再乘 Windows 文本大小与页面缩放。
    */
   scale: number;
 }
@@ -1848,6 +1866,12 @@ interface GetZoomResult {
    * @zh `dpi / 96`；没有 WebView 时省略。
    */
   dpiScale?: number;
+  /**
+   * The Windows text size as a factor, `1` to `2.25`, which the host applies to its WebViews
+   * together with the DPI; `1` when Windows does not report one.
+   * @zh Windows 文本大小的倍数，`1` 到 `2.25`，宿主把它与 DPI 一起作用到自己的 WebView 上；Windows 不提供时为 `1`。
+   */
+  textScaleFactor: number;
 }
 
 interface ResetZoomResult {
@@ -2451,10 +2475,15 @@ interface SetClickThroughExcludeRegionsResult {
    */
   count: Int;
   /**
-   * Scale applied to the rectangles, the popup's DPI divided by 96.
-   * @zh 矩形所乘的缩放比例，即 popup 的 DPI 除以 96。
+   * The popup's DPI divided by 96.
+   * @zh popup 的 DPI 除以 96。
    */
   dpiScale: number;
+  /**
+   * Scale applied to the rectangles, the `devicePixelRatio` of the popup's page.
+   * @zh 矩形所乘的缩放比例，即 popup 页面的 `devicePixelRatio`。
+   */
+  scale: number;
   /**
    * `regions truncated to 32` when more than 32 rectangles were given.
    * @zh 给出的矩形超过 32 个时为 `regions truncated to 32`。

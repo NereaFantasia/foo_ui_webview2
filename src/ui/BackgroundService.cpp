@@ -172,11 +172,13 @@ MainWindow* GetBackgroundWindow() {
 void ShowWindow() {
     if (g_backgroundHwnd && IsWindow(g_backgroundHwnd)) {
         const bool wasHidden = !IsWindowVisible(g_backgroundHwnd);
+        auto intent = WindowManager::GetInstance().BeginExplicitActivation(g_backgroundHwnd, "background.show");
+        if (!intent) return;
         ::ShowWindow(g_backgroundHwnd, SW_SHOW);
         if (wasHidden && g_backgroundWindow) {
             g_backgroundWindow->RestoreSurfaceAfterHidden("background-service-show");
         }
-        ::SetForegroundWindow(g_backgroundHwnd);
+        WindowManager::GetInstance().RequestForeground(g_backgroundHwnd, "background.show");
         // 持久化状态：下次启动时恢复“可见”
         window_config::SetBackgroundWindowVisible(true);
         console::print("[WebView2 UI] Background window shown");

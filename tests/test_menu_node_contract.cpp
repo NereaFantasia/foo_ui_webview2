@@ -6,6 +6,7 @@
 // rather than sampled: the pre-refactor defects were all "a state bit was never
 // read", which sampling does not reliably catch.
 #include "pch.h"
+#include "api/MainMenuIdentity.h"
 #include "api/MenuNodeContract.h"
 
 using namespace menu_node;
@@ -295,23 +296,13 @@ TEST(MenuNodeContractTest, JoinPathRoundTripsThroughSplit) {
     EXPECT_EQ(JoinPath(SplitPath(path)), path);
 }
 
-// The main-menu index resolves a caller-supplied path by its LAST segment,
-// because the flat service enumeration has no submenu hierarchy to walk. This
-// locks the two primitives that composition relies on: a path yields its leaf,
-// and the leaf compares exactly.
-TEST(MenuNodeContractTest, PathQueryReducesToItsLeafSegment) {
-    const auto parts = SplitPath("File/Preferences");
-    ASSERT_FALSE(parts.empty());
-    EXPECT_EQ(parts.back(), "Preferences");
-
-    // A bare name and a fully-qualified path must reach the same leaf, so both
-    // request forms resolve identically.
-    EXPECT_TRUE(SegmentsEqual(SplitPath("Preferences").back(),
-                              SplitPath("File/Preferences").back()));
-
-    // Reducing to the leaf must not turn a distinct command into a match.
-    EXPECT_FALSE(SegmentsEqual(SplitPath("Rating/1").back(),
-                               SplitPath("Rating/10").back()));
+TEST(MenuNodeContractTest, PathQueryPreservesEveryAncestor) {
+    EXPECT_TRUE(main_menu::MatchesQuery("Preferences", "Preferences", "File/Preferences", true,
+                                       "File/Preferences"));
+    EXPECT_FALSE(main_menu::MatchesQuery("Preferences", "Preferences", "File/Preferences", true,
+                                        "View/Preferences"));
+    EXPECT_TRUE(main_menu::MatchesQuery("Preferences", "Preferences", "File/Preferences", true,
+                                       "Preferences"));
 }
 
 // ===========================================================================

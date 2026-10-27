@@ -1,6 +1,7 @@
 ﻿// MainWindowShell.cpp — MainWindow 对 WindowShellBase 的实现（窗口 id、类型、能力、快照与各项补丁入口）
 #include "pch.h"
 #include "window/MainWindow.h"
+#include "window/DwmCompatibility.h"
 
 // ============================================
 // WindowShellBase 实现
@@ -23,8 +24,8 @@ WindowShellCapabilities MainWindow::GetCapabilities() const {
     WindowShellCapabilities caps;
     caps.supportsFullscreen = true;
     caps.supportsBackdropPolicy = true;
-    caps.supportsCornerPreference = true;
-    caps.supportsMicaAlt = true;
+    caps.supportsCornerPreference = dwm_compatibility::Current().RoundedCorners();
+    caps.supportsMicaAlt = dwm_compatibility::Current().SystemBackdrop();
     caps.supportsOwnerPolicy = false;
     caps.supportsNoActivate = false;
     caps.participatesInAppBootstrap = true;

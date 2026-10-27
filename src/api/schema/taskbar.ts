@@ -4,32 +4,32 @@ export interface Api {
   /**
    * Install the thumbnail toolbar shown on the taskbar preview. Windows lets a window install it
    * once; change the buttons afterwards with `taskbar.updateButton`.
-   * @zh 安装任务栏预览缩略图上的工具栏。Windows 只允许每个窗口安装一次，之后用 `taskbar.updateButton` 改按钮状态。
+   * @zh 配置任务栏缩略图预览工具栏按钮（Windows 系统限制每个窗口仅可初始化安装一次；后续状态变更须调用 taskbar.updateButton）
    */
   setThumbnailButtons(params: SetThumbnailButtonsParams): void;
 
   /**
    * Update one installed thumbnail button in place. Buttons cannot be added or removed.
-   * @zh 原地更新一个已安装的缩略图按钮，不能新增或删除按钮。
+   * @zh 更新已安装缩略图按钮的状态与属性（工具栏不支持动态增删按钮）
    */
   updateButton(params: UpdateButtonParams): void;
 
   /**
    * Set the progress bar drawn on the taskbar button. Once a theme sets it, the plugin stops
    * mirroring playback progress there until the next playback state change.
-   * @zh 设置任务栏按钮上的进度条。主题写过进度后，插件到下一次播放状态变化前不再用播放进度覆盖它。
+   * @zh 设置任务栏图标上的进度条状态与进度值（主题主动写入进度后，宿主暂停自动镜像播放进度，直至下一次播放状态发生变更）
    */
   setProgress(params: SetProgressParams): void;
 
   /**
    * Draw a small overlay badge on the taskbar button, or clear it.
-   * @zh 在任务栏按钮上叠加一个小徽标，或清除它。
+   * @zh 设置或清除任务栏图标上的状态徽标图标
    */
   setOverlayIcon(params: SetOverlayIconParams): void;
 
   /**
    * Flash the taskbar button to draw attention.
-   * @zh 闪烁任务栏按钮以吸引注意。
+   * @zh 触发任务栏窗口按钮闪烁以提示用户关注
    */
   flash(params: FlashParams): void;
 }
@@ -39,7 +39,7 @@ export interface Events {
    * A thumbnail toolbar button installed with `taskbar.setThumbnailButtons` was clicked. The
    * default playback buttons shown before a page installs its own run natively and send
    * nothing.
-   * @zh 用 `taskbar.setThumbnailButtons` 安装的缩略图工具栏按钮被点击。页面安装自己的按钮之前显示的默认播放按钮由插件原生执行，不发此事件。
+   * @zh 缩略图工具栏自定义按钮被点击时广播（未配置自定义按钮前显示的默认原生播放控制按钮不派发此事件）
    * @delivery broadcast
    */
   buttonClicked: ButtonClickedPayload;
@@ -48,7 +48,7 @@ export interface Events {
 interface ButtonClickedPayload {
   /**
    * The button's `id`.
-   * @zh 按钮的 `id`。
+   * @zh 触发点击事件的按钮唯一标识符 id
    */
   id: string;
 }
@@ -57,37 +57,37 @@ interface ButtonClickedPayload {
 interface ThumbnailButton {
   /**
    * Identifier reported by `taskbar:buttonClicked` and used by `taskbar.updateButton`.
-   * @zh 按钮标识；`taskbar:buttonClicked` 事件与 `taskbar.updateButton` 都用它指认按钮。
+   * @zh 按钮唯一标识符（用于 taskbar:buttonClicked 事件派发与 taskbar.updateButton 状态更新）
    * @minLength 1
    */
   id: string;
   /**
    * Button icon as raw Base64 of an `.ico` file, without a prefix. Empty, `null` or omitted uses
    * the foobar2000 main icon.
-   * @zh 按钮图标，裸 Base64 编码的 `.ico` 文件字节，不带前缀。空、`null` 或省略时用 foobar2000 主图标。
+   * @zh 按钮图标（.ico 文件未经前缀修饰的原始 Base64 编码字符串；为空、null 或省略时使用 foobar2000 主程序图标）
    */
   icon?: string | null;
   /**
    * Hover text.
-   * @zh 悬停提示文本。
+   * @zh 鼠标悬停时的提示文本
    * @default ""
    */
   tooltip?: string;
   /**
    * Whether the button accepts clicks.
-   * @zh 是否可点击。
+   * @zh 按钮是否处于启用可点击状态
    * @default true
    */
   enabled?: boolean;
   /**
    * Whether the button is shown.
-   * @zh 是否显示。
+   * @zh 按钮是否可见
    * @default true
    */
   visible?: boolean;
   /**
    * Close the thumbnail preview after a click.
-   * @zh 点击后是否关闭缩略图预览。
+   * @zh 点击按钮后是否自动收起任务栏缩略图预览窗口
    * @default false
    */
   dismissOnClick?: boolean;
@@ -99,7 +99,7 @@ interface SetThumbnailButtonsParams {
   /**
    * Buttons in display order, at most seven. A longer list fails the whole call; it is never
    * truncated.
-   * @zh 按显示顺序排列的按钮，最多七个。超过时整个调用失败，不会截断。
+   * @zh 缩略图按钮配置列表（按显示顺序排列，最多允许 7 个；超出限制将直接报错拒绝而不做截断）
    */
   buttons: ThumbnailButton[];
 }
@@ -109,30 +109,30 @@ interface SetThumbnailButtonsParams {
 interface UpdateButtonParams {
   /**
    * Id of the button, as passed to `taskbar.setThumbnailButtons`.
-   * @zh 按钮标识，即传给 `taskbar.setThumbnailButtons` 的 `id`。
+   * @zh 待更新按钮的标识符（对应 taskbar.setThumbnailButtons 中配置的 id）
    * @minLength 1
    */
   id: string;
   /**
    * New icon as raw Base64 of an `.ico` file, without a prefix. Empty, `null` or omitted keeps
    * the current icon.
-   * @zh 新图标，裸 Base64 编码的 `.ico` 文件字节，不带前缀。空、`null` 或省略时保持当前图标。
+   * @zh 新按钮图标（.ico 文件原始 Base64 编码；为空、null 或省略时保持原图标不变）
    */
   icon?: string | null;
   /**
    * New hover text. Empty or omitted keeps the current text.
-   * @zh 新的悬停提示文本。空或省略时保持当前文本。
+   * @zh 新悬停提示文本（省略时保持原提示不变）
    * @default ""
    */
   tooltip?: string;
   /**
    * Whether the button accepts clicks. Omitted keeps the current state.
-   * @zh 是否可点击。省略时保持当前状态。
+   * @zh 按钮是否可点击（省略时保持原状态不变）
    */
   enabled?: boolean;
   /**
    * Whether the button is shown. Omitted keeps the current state.
-   * @zh 是否显示。省略时保持当前状态。
+   * @zh 按钮是否显示（省略时保持原状态不变）
    */
   visible?: boolean;
 }
@@ -142,13 +142,13 @@ interface UpdateButtonParams {
 interface SetProgressParams {
   /**
    * Progress bar state. `none` removes the bar.
-   * @zh 进度条状态，`none` 表示不显示进度条。
+   * @zh 进度条显示状态（none 清除进度条、indeterminate 不确定循环、normal 正常绿色、error 红色错误、paused 黄色暂停）
    * @default "none"
    */
   state?: 'none' | 'indeterminate' | 'normal' | 'error' | 'paused';
   /**
    * Fill fraction, meaningful for the `normal`, `error` and `paused` states.
-   * @zh 填充比例，对 `normal`、`error`、`paused` 三种状态有意义。
+   * @zh 进度条填充比例（取值范围 0.0 至 1.0，仅在 normal、error、paused 状态下生效）
    * @minimum 0
    * @maximum 1
    */
@@ -161,12 +161,12 @@ interface SetOverlayIconParams {
   /**
    * Overlay icon as raw Base64 of an `.ico` file, without a prefix. Empty, `null` or omitted
    * clears the overlay.
-   * @zh 叠加图标，裸 Base64 编码的 `.ico` 文件字节，不带前缀。空、`null` 或省略时清除叠加图标。
+   * @zh 徽标图标（.ico 文件的原始 Base64 编码；为空、null 或省略时清除徽标）
    */
   icon?: string | null;
   /**
    * Accessibility text for the overlay.
-   * @zh 叠加图标的无障碍说明文本。
+   * @zh 徽标图标的无障碍辅助说明文本
    * @default ""
    */
   description?: string;
@@ -177,14 +177,14 @@ interface SetOverlayIconParams {
 interface FlashParams {
   /**
    * Number of flashes.
-   * @zh 闪烁次数。
+   * @zh 任务栏按钮闪烁总次数
    * @default 3
    * @minimum 0
    */
   count?: Int;
   /**
    * Milliseconds between flashes; `0` uses the system cursor blink rate.
-   * @zh 两次闪烁的间隔毫秒数，`0` 用系统光标闪烁速率。
+   * @zh 闪烁间隔时间（单位毫秒；传入 0 表示采用系统默认光标闪烁速率）
    * @default 0
    * @minimum 0
    */

@@ -116,6 +116,8 @@ void WebViewUI::shutdown() {
 
 void WebViewUI::activate() {
     if (mainHwnd_ && IsWindow(mainHwnd_)) {
+        auto intent = WindowManager::GetInstance().BeginExplicitActivation(mainHwnd_, "WebViewUI.activate");
+        if (!intent) return;
         const bool wasHidden = !IsWindowVisible(mainHwnd_);
         // 检查窗口当前状态，避免覆盖最大化/最小化状态
         WINDOWPLACEMENT wp = { sizeof(WINDOWPLACEMENT) };
@@ -135,7 +137,7 @@ void WebViewUI::activate() {
         if (wasHidden && mainWindow_) {
             mainWindow_->RestoreSurfaceAfterHidden("webview-ui-activate");
         }
-        SetForegroundWindow(mainHwnd_);
+        WindowManager::GetInstance().RequestForeground(mainHwnd_, "WebViewUI.activate");
     }
 }
 

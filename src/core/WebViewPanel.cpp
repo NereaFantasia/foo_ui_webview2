@@ -17,7 +17,6 @@
 #include "core/PanelCrashDiagnostics.h"
 #include "core/FrontendDirectoryResolver.h"
 
-// Selection Watcher
 #include "selection/SelectionWatcher.h"
 #include "selection/SelectionHolder.h"
 
@@ -25,7 +24,6 @@
 // WebViewPanel 实现
 // ============================================
 
-// 虚拟主机名
 std::wstring WebViewPanel::GetVirtualHostName() {
     return L"foo-ui-webview2.local";
 }
@@ -52,10 +50,8 @@ bool WebViewPanel::InitializeWebView(HWND hwnd, WebViewPanelMode mode) {
         mode == WebViewPanelMode::Standalone ? "Standalone" :
         mode == WebViewPanelMode::DuiPanel ? "DUI" : "CUI");
     
-    // 创建 per-instance BridgeCore
     bridge_ = std::make_unique<BridgeCore>();
     
-    // 创建 WebView2 宿主
     webView_ = std::make_unique<WebViewHost>();
 
     // Declared before the callbacks below so each of them can capture the pair
@@ -63,7 +59,6 @@ bool WebViewPanel::InitializeWebView(HWND hwnd, WebViewPanelMode mode) {
     const uint64_t myGeneration = ++webViewGeneration_;
     std::weak_ptr<PanelAlive> weakAlive = alive_;
 
-    // Set focus change callback for panel:focus/blur events
     webView_->SetFocusChangedCallback([this](bool gotFocus) {
         if (gotFocus) {
             OnSetFocus();
@@ -107,7 +102,6 @@ bool WebViewPanel::InitializeWebView(HWND hwnd, WebViewPanelMode mode) {
             LOG("ERROR: WebView2 initialization failed");
             // 先让子类清理初始化/重建状态，再触发导航失败信号允许窗口显示。
             OnWebViewInitFailed();
-            // WebView 初始化失败，触发导航失败信号以允许窗口显示
             OnNavigationCompleted(false);
         }
     }, useVisualHosting);
@@ -121,20 +115,15 @@ bool WebViewPanel::InitializeWebView(HWND hwnd, WebViewPanelMode mode) {
     return true;
 }
 
-// Success half of the WebView creation callback. Extracted from the lambda so
-// the callback stays a thin dispatcher; the generation is passed through because
-// the registrar records it to reject a stale Unregister.
 void WebViewPanel::CompleteWebViewInit(uint64_t generation) {
     webViewReady_ = true;
 
-    // 注册到 WebViewContext（带 windowId 支持多窗口系统）
     if (!windowId_.empty()) {
         WebViewContext::GetInstance().RegisterInstance(hwnd_, webView_.get(), bridge_.get(), windowId_);
     } else {
         WebViewContext::GetInstance().RegisterInstance(hwnd_, webView_.get(), bridge_.get());
     }
 
-    // 调用虚函数，允许子类添加额外Initializing
     OnWebViewReady();
 
     // Registered after OnWebViewReady rather than inside it: PopupWindow
@@ -159,7 +148,6 @@ void WebViewPanel::DestroyWebView() {
     }
     ++webViewGeneration_;   // invalidate any in-flight creation callback
 
-    // Unregister from SelectionWatcher first
     SelectionWatcher::GetInstance().UnregisterPanel(this);
 
     if (webView_) {
@@ -172,7 +160,6 @@ void WebViewPanel::DestroyWebView() {
     }
     
     if (hwnd_ && webViewReady_) {
-        // Unregister from WebViewContext
         WebViewContext::GetInstance().UnregisterInstance(hwnd_);
         // 页面随 WebView 一起消失，它打开的端口也关闭；先注销再清理，
         // port:disconnected 不再投给这个正在销毁的页面。
@@ -233,24 +220,19 @@ void WebViewPanel::Reload() {
 void WebViewPanel::OnWebViewReady() {
     LOG("WebViewPanel::OnWebViewReady");
     
-    // 确保 WebView 覆盖整个客户区
     ResizeWebView();
     
-    // 连接 WebView 到 BridgeCore
     bridge_->SetWebView(webView_.get());
     
-    // 注册所有 API
     RegisterAllApis();
     
-    // Initializing回调
     InitializeCallbacks();
     
-    // 设置消息处理器
     webView_->SetMessageHandler([this](const std::wstring& json) {
         HandleWebMessage(json);
     });
     
-    // 面板级 DevTools 初始化（全局 OR 面板级 → DevTools 可用）
+    // 全局或面板任一开启 DevTools 即可用。
     if (panelConfig_.enableDevTools && !security_config::IsDevToolsEnabled()) {
         if (auto* wv = webView_->GetWebView()) {
             wil::com_ptr<ICoreWebView2Settings> settings;
@@ -261,10 +243,8 @@ void WebViewPanel::OnWebViewReady() {
         }
     }
 
-    // Load frontend page
     LoadFrontendPage();
     
-    // Register with SelectionWatcher for selection change events
     SelectionWatcher::GetInstance().RegisterPanel(this);
     
     LOG("WebViewPanel::OnWebViewReady completed");
@@ -322,8 +302,7 @@ void WebViewPanel::HandleWebMessage(const std::wstring& json) {
             // JSON 解析失败，继续交给 BridgeCore
         }
     }
-    // 使用单例 BridgeCore 处理消息（API 都注册在单例上）
-    // 响应发送到当前实例的 WebViewHost，同时注入调用者 HWND
+    // API 都注册在单例 BridgeCore 上；响应回到本实例的 WebViewHost。
     BridgeCore::GetInstance().HandleMessage(json, webView_.get(), hwnd_);
 }
 
@@ -336,12 +315,10 @@ void WebViewPanel::OnSetFocus() {
         return;
     }
     
-    // Acquiring selection holder
     if (selectionHolder_) {
         selectionHolder_->Acquire();
     }
     
-    // Broadcasting panel:focus 事件
     if (IsWebViewReady() && bridge_) {
         api::emit::Emit<api::panel::events::Focus>(*bridge_, {});
     }
@@ -356,19 +333,16 @@ void WebViewPanel::OnKillFocus() {
         return;
     }
     
-    // Releasing selection holder
     if (selectionHolder_) {
         selectionHolder_->Release();
     }
     
-    // Broadcasting panel:blur 事件
     if (IsWebViewReady() && bridge_) {
         api::emit::Emit<api::panel::events::Blur>(*bridge_, {});
     }
 }
 
 void WebViewPanel::OnNavigationCompleted(bool /*success*/) {
-    // 默认空实现；Standalone 窗口重写用于启动可见性收敛
 }
 
 void WebViewPanel::OnWebViewProcessFailed(COREWEBVIEW2_PROCESS_FAILED_KIND failedKind, bool recovered) {
@@ -378,11 +352,8 @@ void WebViewPanel::OnWebViewProcessFailed(COREWEBVIEW2_PROCESS_FAILED_KIND faile
     // registration so broadcasts stop targeting a dead instance. Subclasses
     // may still rebuild afterwards; RebuildWebView* clears the flag on success.
     //
-    // `!recovered` is the panel-visible projection of
-    // webview_crash_policy::Disposition::markPanelDead -- the policy keeps the
-    // two mutually exclusive in every branch (see
-    // WebViewCrashPolicyTest.RecoveredAndMarkDeadAreMutuallyExclusive), so the
-    // host does not need a second callback parameter to carry it.
+    // `!recovered` stands for webview_crash_policy::Disposition::markPanelDead; the policy
+    // keeps the two mutually exclusive (WebViewCrashPolicyTest.RecoveredAndMarkDeadAreMutuallyExclusive).
     if (!recovered) {
         webViewProcessDead_ = true;
         if (hwnd_) {
@@ -392,12 +363,8 @@ void WebViewPanel::OnWebViewProcessFailed(COREWEBVIEW2_PROCESS_FAILED_KIND faile
         }
     }
 
-    // Base-class default: broadcast `webview:processFailed` so every window
-    // can react. Subclasses that override this method MUST call
-    // WebViewPanel::OnWebViewProcessFailed(failedKind, recovered) before
-    // their custom logic, otherwise the broadcast is skipped. Broadcast
-    // failures must not block crash handling -- detailed diagnostics are
-    // already written to profile://webview_crash.log by WriteCrashLog().
+    // A failed broadcast must not block crash handling; WriteCrashLog() has already written
+    // the diagnostics to profile://webview_crash.log.
     try {
         api::webview::ProcessFailedPayload payload;
         payload.kind = panel_crash::FailedKindToString(failedKind);
@@ -409,13 +376,10 @@ void WebViewPanel::OnWebViewProcessFailed(COREWEBVIEW2_PROCESS_FAILED_KIND faile
 }
 
 void WebViewPanel::OnWebViewInitFailed() {
-    // 默认空实现；持有重建状态的子类必须重写以释放重建锁，
-    // 否则一次异步创建失败会让后续重建被永久堵死。
 }
 
 void WebViewPanel::OnWindowReadySignal(const std::string& source) {
     (void)source;
-    // 默认空实现；Standalone 窗口重写用于启动可见性收敛
 }
 
 void WebViewPanel::OnVisualReadySignal(const std::string& source) {
@@ -443,7 +407,6 @@ WebViewPanel::FrontendOrigin WebViewPanel::LocalFrontendOrigin(
 }
 
 std::wstring WebViewPanel::GetTestPageHtml() const {
-    // 返回简单的测试页面
     return LR"(<!DOCTYPE html>
 <html>
 <head>
@@ -502,7 +465,6 @@ void WebViewPanel::ApplyConfig(const PanelConfig& oldCfg, const PanelConfig& new
     
     bool needNavigate = false;
     
-    // 1. 边框样式变更
     if (oldCfg.edgeStyle != newCfg.edgeStyle) {
         LOG("WebViewPanel::ApplyConfig - Edge style changed: ", (int)oldCfg.edgeStyle, " -> ", (int)newCfg.edgeStyle);
         DWORD exStyle = GetWindowLongW(hwnd_, GWL_EXSTYLE);
@@ -514,7 +476,6 @@ void WebViewPanel::ApplyConfig(const PanelConfig& oldCfg, const PanelConfig& new
             SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_FRAMECHANGED);
     }
     
-    // 2. 透明背景变更
     if (oldCfg.transparentBackground != newCfg.transparentBackground) {
         LOG("WebViewPanel::ApplyConfig - Transparent background changed: ", 
             oldCfg.transparentBackground ? "true" : "false", " -> ", 
@@ -522,14 +483,13 @@ void WebViewPanel::ApplyConfig(const PanelConfig& oldCfg, const PanelConfig& new
         webView_->SetBackgroundTransparent(newCfg.transparentBackground);
     }
     
-    // 3. 焦点策略变更（运行时读取 panelConfig_.grabFocus，无需额外操作）
+    // grabFocus 在运行时读取，无需额外操作。
     if (oldCfg.grabFocus != newCfg.grabFocus) {
         LOG("WebViewPanel::ApplyConfig - Grab focus changed: ", 
             oldCfg.grabFocus ? "true" : "false", " -> ", 
             newCfg.grabFocus ? "true" : "false");
     }
     
-    // 4. 拖放开关变更
     if (oldCfg.enableDragDrop != newCfg.enableDragDrop) {
         LOG("WebViewPanel::ApplyConfig - Drag drop changed: ", 
             oldCfg.enableDragDrop ? "true" : "false", " -> ", 
@@ -537,7 +497,6 @@ void WebViewPanel::ApplyConfig(const PanelConfig& oldCfg, const PanelConfig& new
         // 拖放开关变更目前仅记录日志；注入/移除全局 drop 拦截脚本尚未实现。
     }
     
-    // 5. DevTools 开关变更
     if (oldCfg.enableDevTools != newCfg.enableDevTools) {
         LOG("WebViewPanel::ApplyConfig - DevTools changed: ", 
             oldCfg.enableDevTools ? "true" : "false", " -> ", 
@@ -553,19 +512,17 @@ void WebViewPanel::ApplyConfig(const PanelConfig& oldCfg, const PanelConfig& new
         }
     }
     
-    // 6. 模板或 URL 变更 → 需要重新导航
     if (oldCfg.templateName != newCfg.templateName ||
-        oldCfg.urlOverride != newCfg.urlOverride) {
-        LOG("WebViewPanel::ApplyConfig - Template/URL changed, will reload");
+        oldCfg.urlOverride != newCfg.urlOverride ||
+        oldCfg.approvedUrlOrigin != newCfg.approvedUrlOrigin) {
+        LOG("WebViewPanel::ApplyConfig - Template/URL/approval changed, will reload");
         needNavigate = true;
     }
     
-    // 7. 重新导航（如需要）
     if (needNavigate) {
         LoadFrontendPage();
     }
     
-    // 8. 通知前端配置变更
     if (bridge_) {
         api::panel::ConfigChangedPayload config;
         FillPanelConfig(newCfg, config);
@@ -579,8 +536,10 @@ void WebViewPanel::LoadFrontendPage() {
     LOG("Loading frontend page...");
 
     devServerNavPending_ = false;
+    if (webView_) {
+        webView_->ResetTrustedOrigins();
+    }
 
-    // 检查是否使用开发服务器
     if (security_config::UseDevServer()) {
         const char* devServerUrl = security_config::GetDevServerUrl();
         if (devServerUrl && devServerUrl[0]) {
@@ -596,7 +555,6 @@ void WebViewPanel::LoadFrontendPage() {
                 frontendOrigin_ = FrontendOrigin{};
                 frontendOrigin_.kind = FrontendOrigin::Kind::DevServer;
                 frontendOrigin_.url = wDevUrl;
-                // 独立窗口模式下自动打开 DevTools
                 if (mode_ == WebViewPanelMode::Standalone && webView_) {
                     webView_->OpenDevTools();
                 }
@@ -648,10 +606,9 @@ bool WebViewPanel::LoadFallbackFrontendPage() {
         std::wstring wUrl = pfc::stringcvt::string_wide_from_utf8(
             panelConfig_.urlOverride.c_str()).get_ptr();
         LOG("Navigating to URL override: ", panelConfig_.urlOverride.c_str());
-        // 显式登记到 origin 白名单, 否则该来源的 invoke 会被
-        // WebViewHost::IsOriginAllowed 静默早退, 表现为 30s 超时.
-        if (webView_) {
-            webView_->AddTrustedOrigin(wUrl);
+        // 本机地址直接可信；其他来源须在面板配置里允许，否则页面照常显示，调用被拒。
+        if (const std::wstring trusted = panelConfig_.TrustedUrlOrigin(); webView_ && !trusted.empty()) {
+            webView_->AddTrustedOrigin(trusted);
         }
         if (Navigate(wUrl)) {
             frontendOrigin_ = FrontendOrigin{};
@@ -667,7 +624,6 @@ bool WebViewPanel::LoadFallbackFrontendPage() {
         return true;
     }
 
-    // 加载内嵌测试页面
     LOG("Loading embedded test page");
     if (!NavigateToString(GetTestPageHtml())) return false;
     frontendOrigin_ = FrontendOrigin{};

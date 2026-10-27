@@ -8,6 +8,7 @@
 #include "pch.h"
 #include "api/MetadataApi.h"
 #include "api/MetadataTagValues.h"
+#include "api/MetadataText.h"
 #include "api/AsyncOperationRegistry.h"
 #include "api/BridgeCore.h"
 #include "api/CallerContext.h"
@@ -20,6 +21,7 @@
 #include "api/generated/RatingSchema.h"
 #include "domain/PathSecurity.h"
 #include "utils/PathTraversalSegments.h"
+#include "utils/StringUtils.h"
 #include "utils/SubsongUtils.h"
 #include <foobar2000/SDK/album_art.h>
 #include <foobar2000/SDK/metadb_index.h>
@@ -361,42 +363,11 @@ static bool ReadMetadataInfoWithFallback(const metadb_handle_ptr& handle,
 // metadb_handle::get_filestats() 没有这个保证。主线程调用方传
 // handle->get_filesize() 即为原行为。
 static json CollectFlatMetadataFromInfo(const file_info &info, t_filesize fileSize) {
-  json tags = json::object();
-
-  for (t_size i = 0; i < info.meta_get_count(); i++) {
-    const char *name = info.meta_enum_name(i);
-    std::string upperName = name;
-    std::transform(upperName.begin(), upperName.end(), upperName.begin(), ::toupper);
-
-    t_size valueCount = info.meta_enum_value_count(i);
-    if (valueCount == 1) {
-      tags[upperName] = info.meta_enum_value(i, 0);
-    } else {
-      json values = json::array();
-      for (t_size j = 0; j < valueCount; j++) {
-        values.push_back(info.meta_enum_value(i, j));
-      }
-      tags[upperName] = values;
-    }
-  }
-
-  for (t_size i = 0; i < info.info_get_count(); i++) {
-    const char *name = info.info_enum_name(i);
-    const char *value = info.info_enum_value(i);
-    std::string upperName = name;
-    std::transform(upperName.begin(), upperName.end(), upperName.begin(), ::toupper);
-    tags[upperName] = value;
-  }
-
-  char durationStr[32];
-  snprintf(durationStr, sizeof(durationStr), "%.3f", info.get_length());
-  tags["DURATION"] = durationStr;
-
+  std::optional<std::uint64_t> knownFileSize;
   if (fileSize != filesize_invalid) {
-    tags["FILESIZE"] = std::to_string(fileSize);
+    knownFileSize = fileSize;
   }
-
-  return tags;
+  return metadata_text::CollectFlatMetadata(info, info.get_length(), knownFileSize);
 }
 
 // 供 MetadataReadBatch 和 MetadataReadByPath 共享（主线程调用者）
@@ -1169,32 +1140,15 @@ api::Result<md::ReadResult> MetadataRead(const md::ReadParams &p) {
     md::ReadResult result;
     result.path = path;
 
-    // Read all metadata fields
-    for (t_size i = 0; i < info.meta_get_count(); i++) {
-      const char *name = info.meta_enum_name(i);
-      t_size valueCount = info.meta_enum_value_count(i);
-
-      if (valueCount == 1) {
-        result.tags[name] = info.meta_enum_value(i, 0);
-      } else {
-        json values = json::array();
-        for (t_size j = 0; j < valueCount; j++) {
-          values.push_back(info.meta_enum_value(i, j));
-        }
-        result.tags[name] = values;
-      }
-    }
-
-    // Technical info
-    result.info.duration = info.get_length();
-    result.info.bitrate = info.info_get_int("bitrate");
-    result.info.sampleRate = info.info_get_int("samplerate");
-    result.info.channels = info.info_get_int("channels");
-    result.info.codec = info.info_get("codec") ? info.info_get("codec") : "";
+    result.tags = metadata_text::CollectMetadataTags(
+        info, metadata_text::MetadataNameCase::Preserve);
+    result.info = metadata_text::MakeTechnicalInfo(
+        info.get_length(), info.info_get_int("bitrate"), info.info_get_int("samplerate"),
+        info.info_get_int("channels"), info.info_get("codec"));
 
     return result;
   } catch (const std::exception &e) {
-    return api::Fail(e.what(), ApiErrorCode::OPERATION_FAILED);
+    return api::Fail(StringUtils::SafeUtf8(e.what()), ApiErrorCode::OPERATION_FAILED);
   }
 }
 
@@ -1251,7 +1205,7 @@ api::Result<md::ReadBatchResult> MetadataReadBatch(const md::ReadBatchParams &p)
       // A fresh row: the one above may be half filled or already moved from.
       md::MetadataReadBatchItem failed;
       failed.path = path;
-      failed.error = e.what();
+      failed.error = StringUtils::SafeUtf8(e.what());
       result.results.push_back(std::move(failed));
       result.errorCount++;
     }
@@ -1285,32 +1239,16 @@ api::Result<md::ReadRawResult> MetadataReadRaw(const md::ReadRawParams &p) {
     md::ReadRawResult result;
     result.path = path;
 
-    // 收集 tags（保留原始 key 大小写，与 metadata.read 一致）
-    for (t_size i = 0; i < info.meta_get_count(); i++) {
-      const char *name = info.meta_enum_name(i);
-      t_size valueCount = info.meta_enum_value_count(i);
-      if (valueCount == 1) {
-        result.tags[name] = info.meta_enum_value(i, 0);
-      } else {
-        json values = json::array();
-        for (t_size j = 0; j < valueCount; j++) {
-          values.push_back(info.meta_enum_value(i, j));
-        }
-        result.tags[name] = values;
-      }
-    }
-
-    // 技术信息
-    result.info.duration = info.get_length();
-    result.info.bitrate = info.info_get_int("bitrate");
-    result.info.sampleRate = info.info_get_int("samplerate");
-    result.info.channels = info.info_get_int("channels");
-    result.info.codec = info.info_get("codec") ? info.info_get("codec") : "";
+    result.tags = metadata_text::CollectMetadataTags(
+        info, metadata_text::MetadataNameCase::Preserve);
+    result.info = metadata_text::MakeTechnicalInfo(
+        info.get_length(), info.info_get_int("bitrate"), info.info_get_int("samplerate"),
+        info.info_get_int("channels"), info.info_get("codec"));
     result.source = "file";
 
     return result;
   } catch (const std::exception &e) {
-    return api::Fail(e.what(), ApiErrorCode::OPERATION_FAILED);
+    return api::Fail(StringUtils::SafeUtf8(e.what()), ApiErrorCode::OPERATION_FAILED);
   }
 }
 
@@ -1370,7 +1308,7 @@ api::Result<md::ReadByPathResult> MetadataReadByPath(const md::ReadByPathParams 
     result.additional = flat.get<std::map<std::string, json>>();
     return result;
   } catch (const std::exception &e) {
-    return api::Fail(e.what(), ApiErrorCode::OPERATION_FAILED);
+    return api::Fail(StringUtils::SafeUtf8(e.what()), ApiErrorCode::OPERATION_FAILED);
   }
 }
 
@@ -1816,12 +1754,9 @@ static void ProbeOneTrackBody(const metadb_handle_ptr& handle,
   }
 
   const file_info& info = container->info();
-  // 与 metadata.read 的 techInfo 同形（本文件 MetadataRead）。
-  out.info.duration = info.get_length();
-  out.info.bitrate = info.info_get_int("bitrate");
-  out.info.sampleRate = info.info_get_int("samplerate");
-  out.info.channels = info.info_get_int("channels");
-  out.info.codec = info.info_get("codec") ? info.info_get("codec") : "";
+  out.info = metadata_text::MakeTechnicalInfo(
+      info.get_length(), info.info_get_int("bitrate"), info.info_get_int("samplerate"),
+      info.info_get_int("channels"), info.info_get("codec"));
 
   if (includeTags) {
     // stats() 取自同一个不可变快照，任意线程可读；
@@ -2112,7 +2047,7 @@ api::Result<md::ProbeBatchAsyncResult> MetadataProbeBatchAsync(
     result.totalCount = static_cast<std::int64_t>(totalCount);
     return result;
   } catch (const std::exception &e) {
-    return api::Fail(e.what(), ApiErrorCode::OPERATION_FAILED);
+    return api::Fail(StringUtils::SafeUtf8(e.what()), ApiErrorCode::OPERATION_FAILED);
   }
 }
 

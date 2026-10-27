@@ -50,6 +50,20 @@ public:
     // 由 WebView2 用它的缺省位置。
     static std::wstring GetUserDataPath();
 
+    // 最近一次创建环境的结果，供初始化失败时写日志和诊断信息。
+    // failedStage 为 nullptr 表示没有失败："runtime" 是找不到 Runtime，
+    // "environment" 是 CreateCoreWebView2EnvironmentWithOptions 同步或异步失败。
+    // userDataPath 是组件传进去的目录；effectiveUserDataPath 是环境创建成功后
+    // WebView2 报告的实际目录，被 WEBVIEW2_USER_DATA_FOLDER 或策略覆盖时两者不同。
+    struct CreationInfo {
+        const char* failedStage = nullptr;
+        HRESULT hr = S_OK;
+        std::string runtimeVersion;
+        std::string userDataPath;
+        std::string effectiveUserDataPath;
+    };
+    CreationInfo LastCreation() const;
+
 private:
     WebViewEnvironment() = default;
 
@@ -61,9 +75,12 @@ private:
     
     // 失败时 drain 等待队列并以 nullptr 回调
     void DrainPendingCallbacksOnFailure();
-    
+
+    void RecordFailure(const char* stage, HRESULT hr);
+
     wil::com_ptr<ICoreWebView2Environment> environment_;
-    std::mutex mutex_;
+    mutable std::mutex mutex_;
+    CreationInfo lastCreation_;
     bool ready_ = false;
     bool creating_ = false;
     

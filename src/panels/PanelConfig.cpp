@@ -8,6 +8,7 @@
 
 #include "pch.h"
 #include "panels/PanelConfig.h"
+#include "webview/OriginPolicy.h"
 
 // ============================================
 // 字节数组序列化（v2）
@@ -22,7 +23,8 @@ std::vector<uint8_t> PanelConfig::Serialize(const PanelConfig& config) {
                    + 4 + config.templateName.size()       // v1: templateName
                    + 4 + config.panelName.size()          // v2: panelName
                    + 1 + 1                                // v2: edgeStyle + flags
-                   + 4 + config.urlOverride.size();       // v2: urlOverride
+                   + 4 + config.urlOverride.size()        // v2: urlOverride
+                   + 4 + config.approvedUrlOrigin.size(); // v2 追加: approvedUrlOrigin
     data.reserve(estSize);
     
     // 辅助写入函数
@@ -60,7 +62,10 @@ std::vector<uint8_t> PanelConfig::Serialize(const PanelConfig& config) {
     
     // v2 字段：urlOverride
     writeStr(config.urlOverride);
-    
+
+    // v2 追加字段：空串也写，读取方据此区分新旧数据
+    writeStr(config.approvedUrlOrigin);
+
     return data;
 }
 
@@ -126,10 +131,30 @@ PanelConfig PanelConfig::Deserialize(const uint8_t* data, size_t size) {
         
         // urlOverride
         if (!readStr(config.urlOverride)) return config;
+
+        // 旧版保存的数据到此为止：升级前已填的网址继续可用。
+        // 追加字段损坏时留空，宁可不信任。
+        if (ptr == end) {
+            config.approvedUrlOrigin = config.UrlOrigin();
+        } else {
+            readStr(config.approvedUrlOrigin);
+        }
     }
     // 注意：v1 数据读取后，v2 字段保持构造函数默认值（transparentBackground=true 等）
     
     return config;
+}
+
+std::string PanelConfig::UrlOrigin() const {
+    const std::wstring origin = origin_policy::OriginOf(
+        pfc::stringcvt::string_wide_from_utf8(urlOverride.c_str()).get_ptr());
+    return pfc::stringcvt::string_utf8_from_wide(origin.c_str()).get_ptr();
+}
+
+std::wstring PanelConfig::TrustedUrlOrigin() const {
+    return origin_policy::PanelUrlTrustedOrigin(
+        pfc::stringcvt::string_wide_from_utf8(urlOverride.c_str()).get_ptr(),
+        pfc::stringcvt::string_wide_from_utf8(approvedUrlOrigin.c_str()).get_ptr());
 }
 
 // ============================================

@@ -232,6 +232,18 @@ namespace {
     //==========================================================================
     // queue.get - Get current playback queue contents
     //==========================================================================
+    // 行引用带了列表期望版本、且该列表现在的版本不同时的失败；序号越界交给后面的坐标校验。
+    std::optional<api::Failure> StaleRow(size_t i, const std::optional<std::string>& expected, size_t playlist,
+                                         size_t queueCount) {
+        if (!expected) return std::nullopt;
+        const auto& svc = *GetPlaylistService();
+        if (playlist >= svc.get_playlist_count()) return std::nullopt;
+        const std::string current = api::PlaylistContentVersion(svc, playlist);
+        if (*expected == current) return std::nullopt;
+        return api::Fail("items[" + std::to_string(i) + "]: playlist changed", ApiErrorCode::STALE_TARGET,
+                         {{"details", nlohmann::json{{"current", current}}}, {"queueCount", queueCount}});
+    }
+
     api::Result<queue::GetResult> QueueGet(const queue::GetParams& /*params*/) {
         auto plm = playlist_manager::get();
 
@@ -245,6 +257,7 @@ namespace {
             result.items.push_back(QueueItemOf(queueItems[i], i));
         }
         result.count = static_cast<std::int64_t>(count);
+        result.contentVersion = content_version::QueueToken();
         return result;
     }
 
@@ -258,6 +271,10 @@ namespace {
         if (auto failure = api::ResolvePlaylistTarget(*GetPlaylistService(), params.playlist,
                                                       params.playlistGuid, playlistIndex)) {
             return std::move(*failure);
+        }
+        if (auto stale = api::StaleContent(params.expectedPlaylistVersion,
+                                           api::PlaylistContentVersion(*GetPlaylistService(), playlistIndex))) {
+            return std::move(*stale);
         }
 
         if (!params.tracks.has_value() && !params.track.has_value()) {
@@ -379,6 +396,9 @@ namespace {
     // queue.remove - Remove item from queue by index
     //==========================================================================
     api::Result<queue::RemoveResult> QueueRemove(const queue::RemoveParams& params) {
+        if (auto stale = api::StaleContent(params.expectedVersion, content_version::QueueToken())) {
+            return std::move(*stale);
+        }
         auto plm = playlist_manager::get();
 
         size_t queueCount = plm->queue_get_count();
@@ -400,6 +420,7 @@ namespace {
             queue::RemoveResult result;
             result.removedIndex = static_cast<std::int64_t>(index);
             result.queueCount = CurrentQueueCount();
+            result.contentVersion = content_version::QueueToken();
             return result;
         }
 
@@ -426,6 +447,7 @@ namespace {
             queue::RemoveResult result;
             result.removedCount = static_cast<std::int64_t>(removeCount);
             result.queueCount = CurrentQueueCount();
+            result.contentVersion = content_version::QueueToken();
             return result;
         }
 
@@ -585,6 +607,9 @@ namespace {
     // queue.moveToTop - Move queue item to top (play next)
     //==========================================================================
     api::Result<queue::MoveToTopResult> QueueMoveToTop(const queue::MoveToTopParams& params) {
+        if (auto stale = api::StaleContent(params.expectedVersion, content_version::QueueToken())) {
+            return std::move(*stale);
+        }
         auto plm = playlist_manager::get();
 
         const size_t index = static_cast<size_t>(params.index);
@@ -619,6 +644,7 @@ namespace {
         queue::MoveToTopResult result;
         result.movedIndex = static_cast<std::int64_t>(index);
         result.queueCount = static_cast<std::int64_t>(rebuildResult.queueCount);
+        result.contentVersion = content_version::QueueToken();
         return result;
     }
 
@@ -628,6 +654,9 @@ namespace {
     // queueIndex / playlist / item 的对象；两种形态的判定仍归本 handler。
     //==========================================================================
     api::Result<queue::SetContentsResult> QueueSetContents(const queue::SetContentsParams& params) {
+        if (auto stale = api::StaleContent(params.expectedVersion, content_version::QueueToken())) {
+            return std::move(*stale);
+        }
         auto plm = playlist_manager::get();
 
         // 空数组 = 显式清空（等价 queue.clear），不特判：ComputeSetContentsPlan
@@ -650,6 +679,10 @@ namespace {
             fb2k_queue::SetContentsItemRef ref;
 
             if (itemRef.queueIndex.has_value()) {
+                if (itemRef.expectedPlaylistVersion.has_value()) {
+                    return api::Fail("items[" + std::to_string(i) + "]: expectedPlaylistVersion needs a playlist row",
+                                     ApiErrorCode::INVALID_PARAMS, {{"queueCount", queueCountBeforeValidation}});
+                }
                 ref.kind = fb2k_queue::SetContentsRefKind::QueueReference;
                 ref.queueIndex = static_cast<size_t>(*itemRef.queueIndex);
             } else if (itemRef.playlistGuid.has_value() && itemRef.item.has_value()) {
@@ -672,6 +705,9 @@ namespace {
                                        "playlistGuid with item)",
                                  ApiErrorCode::INVALID_PARAMS,
                                  {{"queueCount", queueCountBeforeValidation}});
+            }
+            if (auto stale = StaleRow(i, itemRef.expectedPlaylistVersion, ref.playlist, queueCountBeforeValidation)) {
+                return std::move(*stale);
             }
             refs.push_back(ref);
         }
@@ -700,6 +736,7 @@ namespace {
 
         queue::SetContentsResult result;
         result.queueCount = static_cast<std::int64_t>(rebuildResult.queueCount);
+        result.contentVersion = content_version::QueueToken();
         return result;
     }
 
@@ -789,6 +826,10 @@ namespace {
         // 重取成功也确认坐标仍可取到条目；items-only 调用同样执行重验。
         // 重验后本 handler 不再主动运行消息循环，随即计算并写入目标队列。
         for (size_t i = 0; i < listItems.size(); i++) {
+            if (auto stale = StaleRow(i, items[i].expectedPlaylistVersion, listItems[i].playlist,
+                                      plm->queue_get_count())) {
+                return std::move(*stale);
+            }
             metadb_handle_ptr recheck;
             if (!plm->playlist_get_item_handle(recheck,
                                                 static_cast<t_size>(listItems[i].playlist),
@@ -808,6 +849,11 @@ namespace {
         if (resolvedPaths.empty() && listItems.empty()) {
             return api::Fail("No valid tracks found", ApiErrorCode::NOT_FOUND,
                              {{"invalidCount", paths.size()}});
+        }
+
+        // 解析路径期间队列可能已变，期望版本在这里、写入之前比对。
+        if (auto stale = api::StaleContent(params.expectedVersion, content_version::QueueToken())) {
+            return std::move(*stale);
         }
 
         // 当前队列快照：与 moveToTop / setContents 同型，额外填充
@@ -889,6 +935,7 @@ namespace {
             }
 
             result.queueCount = CurrentQueueCount();
+            result.contentVersion = content_version::QueueToken();
             return result;
         }
 
@@ -905,6 +952,7 @@ namespace {
         }
 
         result.queueCount = static_cast<std::int64_t>(rebuildResult.queueCount);
+        result.contentVersion = content_version::QueueToken();
         return result;
     }
 
@@ -913,6 +961,9 @@ namespace {
     // 不接受路径参数，与 queue.setContents 同级。
     //==========================================================================
     api::Result<queue::PlayNowResult> QueuePlayNow(const queue::PlayNowParams& params) {
+        if (auto stale = api::StaleContent(params.expectedVersion, content_version::QueueToken())) {
+            return std::move(*stale);
+        }
         auto plm = playlist_manager::get();
 
         const size_t queueCount = plm->queue_get_count();
@@ -940,6 +991,7 @@ namespace {
             queue::PlayNowResult result;
             result.playedIndex = static_cast<std::int64_t>(index);
             result.queueCount = CurrentQueueCount();
+            result.contentVersion = content_version::QueueToken();
             return result;
         }
 
@@ -972,6 +1024,7 @@ namespace {
         queue::PlayNowResult result;
         result.playedIndex = static_cast<std::int64_t>(index);
         result.queueCount = CurrentQueueCount();
+        result.contentVersion = content_version::QueueToken();
         return result;
     }
 
@@ -1010,14 +1063,10 @@ namespace {
             return api::Fail(ApiError::URL_TOO_LONG, ApiErrorCode::INVALID_PARAMS);
         }
 
-        const std::int64_t shadowPlaylist = static_cast<std::int64_t>(g_QueueManager.GetShadowPlaylistIndex());
-        // The calling page owns the new session: the jitQueue:* events go back to it.
-        if (!g_QueueManager.PlayNow(params.trackId, params.title, params.url,
-                                    JitSessionCaller{caller.windowId, caller.callerHwnd})) {
-            // The manager refuses while a previous playNow is still being resolved.
-            return api::Fail("The JIT queue is still starting a previous track", ApiErrorCode::OPERATION_FAILED,
-                             {{"trackId", params.trackId}, {"shadowPlaylist", shadowPlaylist}});
-        }
+        // The calling page owns the new session: the jitQueue:* events go back to it. A previous
+        // playNow still being resolved is superseded, not a reason to refuse.
+        g_QueueManager.PlayNow(params.trackId, params.title, params.url,
+                               JitSessionCaller{caller.windowId, caller.callerHwnd});
 
         jitq::PlayNowResult result;
         result.trackId = params.trackId;
@@ -1098,7 +1147,7 @@ namespace {
         // Frontend has no more tracks to provide
         // Actually trigger the exhaustion flow so C++ side knows
         FB2K_console_print("[JIT Queue] Frontend reports: queue empty");
-        g_QueueManager.NotifyListExhausted();
+        g_QueueManager.NotifyEmpty();
         return api::Ok();
     }
 
@@ -1179,4 +1228,5 @@ void RegisterJitQueueApi() {
 //==========================================================================
 void InitializeJitQueue() {
     g_QueueManager.Initialize();
+    g_QueueManager.TidyNativeRestoreLists();
 }

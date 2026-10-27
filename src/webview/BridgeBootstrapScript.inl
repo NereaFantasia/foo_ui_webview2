@@ -54,11 +54,13 @@ constexpr const wchar_t* kBridgeBootstrapScript = LR"(
                         params: params || {}
                     });
                     
-                    // 超时处理
+                    // 超时只说明页面不再等了：宿主可能仍在执行，也可能已执行完，之后到达的应答被丢弃。
                     setTimeout(() => {
                         if (this._callbacks.has(id)) {
                             this._callbacks.delete(id);
-                            reject(new Error('Request timeout'));
+                            const err = new Error('Request timeout: ' + method);
+                            err.code = 'TIMEOUT';
+                            reject(err);
                         }
                     }, 30000);
                 });
@@ -252,20 +254,25 @@ constexpr const wchar_t* kBridgeBootstrapScript = LR"(
         // 页面没接住的拖放一律拒收。Chromium 对没人处理的文件拖动默认答「复制」，
         // 松手后自己去打开那个文件；这里替页面答「不接受」，宿主报给拖动源的光标
         // 就跟页面的意思一致，也不会打开文件。挂在 window 的冒泡阶段，页面自己的
-        // 处理先跑；可编辑元素保留浏览器默认的文本放下。
-        const fbDndEditable = (target) => {
+        // 处理先跑。保留浏览器默认的只有两种：文件拖到文件输入框，非文件拖到可编辑
+        // 元素（文本放下）。文件拖到文本框时 Chromium 不插入文本，而是去打开文件。
+        const fbDndKeepsDefault = (e) => {
+            const target = e.target;
             const el = target && target.nodeType === 1 ? target : target && target.parentElement;
-            return !!el && (el.isContentEditable || !!el.closest('input, textarea'));
+            if (!el) return false;
+            const types = e.dataTransfer ? e.dataTransfer.types : [];
+            if (Array.prototype.includes.call(types, 'Files')) return !!el.closest('input[type=file]');
+            return el.isContentEditable || !!el.closest('input, textarea');
         };
         const fbDndRefuse = (e) => {
-            if (e.defaultPrevented || fbDndEditable(e.target)) return;
+            if (e.defaultPrevented || fbDndKeepsDefault(e)) return;
             e.preventDefault();
             if (e.dataTransfer) e.dataTransfer.dropEffect = 'none';
         };
         window.addEventListener('dragenter', fbDndRefuse);
         window.addEventListener('dragover', fbDndRefuse);
         window.addEventListener('drop', (e) => {
-            if (e.defaultPrevented || fbDndEditable(e.target)) return;
+            if (e.defaultPrevented || fbDndKeepsDefault(e)) return;
             e.preventDefault();
         });
         

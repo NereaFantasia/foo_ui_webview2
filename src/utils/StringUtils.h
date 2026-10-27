@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 // StringUtils.h - Shared string helpers for JSON-safe UTF-8 and related utilities
 //
 // Menu labels and plugin-provided names may contain truncated/invalid UTF-8
@@ -57,6 +57,21 @@ inline size_t ValidSequenceLength(std::string_view input, size_t index) {
 }
 
 }  // namespace detail
+
+// 与 SafeUtf8 接受相同的 Unicode 范围；空字符串和空指针均视为有效。
+inline bool IsValidUtf8(std::string_view input) {
+    size_t index = 0;
+    while (index < input.size()) {
+        const size_t sequenceLength = detail::ValidSequenceLength(input, index);
+        if (sequenceLength == 0) return false;
+        index += sequenceLength;
+    }
+    return true;
+}
+
+inline bool IsValidUtf8(const char* str) {
+    return !str || IsValidUtf8(std::string_view(str));
+}
 
 // Ensure a byte string is valid UTF-8 for nlohmann::json serialization.
 // Invalid or truncated sequences are replaced with U+FFFD. The validator

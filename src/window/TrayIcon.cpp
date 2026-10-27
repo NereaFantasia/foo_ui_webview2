@@ -1,6 +1,9 @@
 ﻿// TrayIcon.cpp - system tray icon management
 #include "pch.h"
 #include "window/TrayIcon.h"
+#include "window/MainWindow.h"
+#include "window/WindowChromeTrace.h"
+#include <sstream>
 #include "window/TaskbarTrayContracts.h"
 #include "utils/IconLoader.h"
 #include "api/BridgeCore.h"
@@ -181,6 +184,15 @@ LRESULT CALLBACK TrayIcon::MessageWindowProc(HWND hwnd, UINT msg, WPARAM wParam,
     if (self && msg == TrayIcon::kCallbackMessage) {
         return self->HandleTrayCallback(wParam, lParam);
     }
+    if (self && msg == WM_TIMER) {
+        self->HandleClickTimer(wParam);
+        return 0;
+    }
+    static const UINT shellCreated = RegisterWindowMessageW(L"TaskbarCreated");
+    if (self && shellCreated && msg == shellCreated) {
+        self->RecreateAfterShellRestart();
+        return 0;
+    }
     return DefWindowProcW(hwnd, msg, wParam, lParam);
 }
 
@@ -217,6 +229,7 @@ bool TrayIcon::Create(HWND hwnd, HICON hIcon, const char* tooltip) {
         return false;
     }
     m_created = true;
+    m_clickPolicy.Created();
     // 偏好设置里的两个托盘开关作为初值；tray.setMinimizeToTray / setCloseToTray 之后可在运行期覆盖。
     m_minimizeToTray = webview_prefs::GetMinimizeToTrayPreference();
     m_closeToTray = webview_prefs::GetCloseToTrayPreference();
@@ -224,6 +237,8 @@ bool TrayIcon::Create(HWND hwnd, HICON hIcon, const char* tooltip) {
 }
 
 void TrayIcon::RecreateAfterShellRestart() {
+    m_clickPolicy.Rebuilding();
+    SyncClickTimer();
     // No-op when we never created an icon, or have been explicitly destroyed.
     if (!m_hwnd) return;
     // The previous NIM_ADD was wiped by explorer.exe restart -- force a
@@ -241,10 +256,15 @@ void TrayIcon::RecreateAfterShellRestart() {
         wcsncpy_s(nid.szTip, _countof(nid.szTip),
             Utf8ToWide(m_cachedTooltip).c_str(), _TRUNCATE);
     }
-    if (Shell_NotifyIconW(NIM_ADD, &nid)) m_created = true;
+    if (Shell_NotifyIconW(NIM_ADD, &nid)) {
+        m_created = true;
+        m_clickPolicy.Created();
+    }
 }
 
 void TrayIcon::Destroy() {
+    m_clickPolicy.Destroyed();
+    SyncClickTimer();
     if (!m_created) {
         if (m_hwnd) DestroyWindow(m_hwnd);
         m_hwnd = nullptr;
@@ -852,6 +872,22 @@ LRESULT TrayIcon::HandleTrayCallback(WPARAM /*wParam*/, LPARAM lParam) {
     GetCursorPos(&pt);
     x = pt.x; y = pt.y;
 
+    if (event == WM_LBUTTONDOWN || event == WM_LBUTTONUP || event == WM_LBUTTONDBLCLK) {
+        const auto input = event == WM_LBUTTONDOWN ? tray_click::Input::Down :
+            event == WM_LBUTTONUP ? tray_click::Input::Up : tray_click::Input::DoubleClick;
+        const unsigned toggles = m_clickPolicy.Handle(input, GetTickCount64(), GetDoubleClickTime());
+        SyncClickTimer();
+        std::ostringstream line;
+        line << "[TrayClick] message=" << event << " native="
+             << (m_clickPolicy.GetAction() == tray_click::Action::ToggleMainWindow)
+             << " timer=" << m_clickTimer.id << " generation=" << m_clickTimer.generation << " toggles=" << toggles;
+        WindowChromeTrace::EmitAuxiliaryLine(line.str());
+        if (m_clickPolicy.GetAction() == tray_click::Action::ToggleMainWindow) {
+            if (toggles) ToggleMainWindowNatively();
+            return 0;
+        }
+    }
+
     switch (event) {
         case WM_LBUTTONUP:
             if (m_clickCb) m_clickCb(0, x, y);
@@ -864,4 +900,46 @@ LRESULT TrayIcon::HandleTrayCallback(WPARAM /*wParam*/, LPARAM lParam) {
             break;
     }
     return 0;
+}
+
+void TrayIcon::SetClickAction(tray_click::Action action) {
+    m_clickPolicy.SetAction(action);
+    SyncClickTimer();
+}
+
+void TrayIcon::SyncClickTimer() {
+    const auto pending = m_clickPolicy.Pending();
+    if (pending.id == m_clickTimer.id) return;
+    if (m_hwnd && m_clickTimer.id) KillTimer(m_hwnd, m_clickTimer.id);
+    m_clickTimer = pending;
+    if (m_hwnd && pending.id) {
+        const auto now = GetTickCount64();
+        const UINT delay = pending.deadline > now ? static_cast<UINT>(pending.deadline - now) : 1;
+        if (!SetTimer(m_hwnd, pending.id, delay, nullptr)) {
+            m_clickPolicy.CancelPending();
+            m_clickTimer = {};
+            WindowChromeTrace::EmitAuxiliaryLine("[TrayClick] timer creation failed; pending gesture cancelled");
+        }
+    }
+}
+
+void TrayIcon::HandleClickTimer(UINT_PTR id) {
+    if (!m_created || !id || id != m_clickTimer.id) return;
+    const unsigned toggles = m_clickPolicy.Expire(m_clickTimer, GetTickCount64());
+    SyncClickTimer();
+    if (toggles) ToggleMainWindowNatively();
+}
+
+void TrayIcon::ToggleMainWindowNatively() const {
+    auto* ui = WebViewUI::GetInstance();
+    auto* window = ui ? ui->GetMainWindow() : nullptr;
+    const HWND hwnd = window ? window->GetShellHwnd() : nullptr;
+    if (!m_created || !hwnd || !IsWindow(hwnd)) return;
+    const bool hide = IsWindowVisible(hwnd) && !IsIconic(hwnd);
+    std::ostringstream line;
+    line << "[TrayClick] action=" << (hide ? "hide" : "restore") << " target=" << hwnd
+         << " visible=" << (IsWindowVisible(hwnd) != FALSE) << " iconic=" << (IsIconic(hwnd) != FALSE);
+    WindowChromeTrace::EmitAuxiliaryLine(line.str());
+    if (hide) window->HideToTrayNatively();
+    else RestoreMainWindowNatively();
 }

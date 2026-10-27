@@ -84,8 +84,10 @@ HRESULT WebViewHost::Initialize(HWND parentHwnd, InitCallback callback, bool use
     parentHwnd_ = parentHwnd;
     useVisualHosting_ = useVisualHosting;
     ownerThreadId_ = GetCurrentThreadId();
+    lastInitFailure_ = {};
     LogLifecycle("host.initialize.begin",
-        std::string("visualHosting=") + (useVisualHosting ? "true" : "false"));
+        std::string("visualHosting=") + (useVisualHosting ? "true" : "false") + " " +
+        DescribeInitContext(parentHwnd_, ' '));
     
     LOG("WebViewHost::Initialize - useVisualHosting=", useVisualHosting ? "true" : "false",
         " parentHwnd=0x", pfc::format_hex((uintptr_t)parentHwnd));
@@ -104,7 +106,10 @@ HRESULT WebViewHost::Initialize(HWND parentHwnd, InitCallback callback, bool use
         [this, state = suspendState_, callback, dcompHr](ICoreWebView2Environment* env) {
             if (!state->alive.load(std::memory_order_acquire)) return;
             if (!env) {
-                LogLifecycle("host.environment.failed", "environment=null");
+                const auto creation = WebViewEnvironment::GetInstance().LastCreation();
+                RecordInitFailure("host.environment.failed",
+                    creation.failedStage ? creation.failedStage : "environment",
+                    FAILED(creation.hr) ? creation.hr : E_FAIL);
                 LOG("Failed to get WebView2 environment");
                 if (callback) callback(false);
                 return;
@@ -135,8 +140,8 @@ void WebViewHost::CreateControllerWithEnvironment(ICoreWebView2Environment* env,
                     if (!state->alive.load(std::memory_order_acquire)) return S_OK;
                     
                     if (FAILED(result) || !compositionController) {
-                        LogLifecycle("controller.create.failed",
-                            "mode=composition hr=" + std::to_string((long long)result));
+                        RecordInitFailure("controller.create.failed", "controller-composition",
+                            FAILED(result) ? result : E_FAIL);
                         LOG("Failed to create CompositionController, HRESULT: ", pfc::format_hex((uint32_t)result));
                         if (callback) callback(false);
                         return result;
@@ -147,11 +152,13 @@ void WebViewHost::CreateControllerWithEnvironment(ICoreWebView2Environment* env,
                     // Get standard Controller from CompositionController
                     HRESULT hr = compositionController->QueryInterface(IID_PPV_ARGS(&controller_));
                     if (FAILED(hr)) {
+                        RecordInitFailure("controller.create.failed", "controller-composition", hr);
                         LOG("Failed to get Controller from CompositionController");
                         if (callback) callback(false);
                         return hr;
                     }
                     
+                    SyncRasterizationScale();
                     window_behavior_trace::Com(parentHwnd_, "controller.put_IsVisible", 1);
                     controller_->put_IsVisible(TRUE);
                     controller_->get_CoreWebView2(&webview_);
@@ -208,14 +215,15 @@ void WebViewHost::CreateControllerWithEnvironment(ICoreWebView2Environment* env,
                 if (!state->alive.load(std::memory_order_acquire)) return S_OK;
                 
                 if (FAILED(result) || !controller) {
-                    LogLifecycle("controller.create.failed",
-                        "mode=standard hr=" + std::to_string((long long)result));
+                    RecordInitFailure("controller.create.failed", "controller-standard",
+                        FAILED(result) ? result : E_FAIL);
                     LOG("Failed to create WebView2 controller, HRESULT: ", pfc::format_hex((uint32_t)result));
                     if (callback) callback(false);
                     return result;
                 }
                 
                 controller_ = controller;
+                SyncRasterizationScale();
                 window_behavior_trace::Com(parentHwnd_, "controller.put_IsVisible", 1);
                 controller_->put_IsVisible(TRUE);
                 controller->get_CoreWebView2(&webview_);

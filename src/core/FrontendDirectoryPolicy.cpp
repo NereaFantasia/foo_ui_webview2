@@ -1,5 +1,4 @@
-﻿// FrontendDirectoryPolicy.cpp
-#include "pch.h"
+﻿#include "pch.h"
 #include "core/FrontendDirectoryPolicy.h"
 
 #include <array>

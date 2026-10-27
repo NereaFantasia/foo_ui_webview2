@@ -1,5 +1,6 @@
 ﻿#include "pch.h"
 #include "window/WindowChromeResolver.h"
+#include "window/DwmCompatibility.h"
 #include "utils/WindowUtils.h"
 
 namespace {
@@ -28,14 +29,15 @@ static std::string S_ResolveEffectiveEffect(const std::string& semanticEffect,
 
     if (effect == "mica-alt") {
         if (snapshot.derived.windowKind == WindowKind::Popup) {
-            return "acrylic";
+            return std::string(dwm_compatibility::Current().Backdrop("acrylic"));
         }
         if (!snapshot.derived.supportsMicaAlt) {
-            return snapshot.derived.windowKind == WindowKind::Main ? "mica" : "acrylic";
+            return std::string(dwm_compatibility::Current().Backdrop(
+                snapshot.derived.windowKind == WindowKind::Main ? "mica" : "acrylic"));
         }
     }
 
-    return effect;
+    return std::string(dwm_compatibility::Current().Backdrop(effect));
 }
 
 static bool S_IsPluginManagedEffect(const std::string& effect) {

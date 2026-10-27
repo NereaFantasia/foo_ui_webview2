@@ -9,6 +9,7 @@
 #include "webview/OriginPolicy.h"
 #include "prefs/PreferencesPage.h"   // webview_prefs::GetDefaultZoomPercent
 #include "prefs/PreferencesZoom.h"
+#include "webview/TextScaleFactor.h"
 #include <wrl/event.h>
 
 using namespace Microsoft::WRL;
@@ -278,6 +279,39 @@ HRESULT WebViewHost::SetZoomForDpi(int dpi) {
     // 144 DPI = 150% = 1.5x
     double zoomFactor = dpi / 96.0;
     return SetZoomFactor(zoomFactor);
+}
+
+void WebViewHost::SyncRasterizationScale() {
+    if (!controller_ || !parentHwnd_) return;
+    wil::com_ptr<ICoreWebView2Controller3> controller3;
+    if (FAILED(controller_->QueryInterface(IID_PPV_ARGS(&controller3))) || !controller3) return;
+
+    const UINT dpi = GetDpiForWindow(parentHwnd_);
+    if (dpi == 0) return;
+
+    BOOL detecting = FALSE;
+    if (SUCCEEDED(controller3->get_ShouldDetectMonitorScaleChanges(&detecting)) && detecting) {
+        controller3->put_ShouldDetectMonitorScaleChanges(FALSE);
+    }
+    const double target = dpi / 96.0 * text_scale::Current();
+    double current = 0.0;
+    if (FAILED(controller3->get_RasterizationScale(&current)) || current != target) {
+        controller3->put_RasterizationScale(target);
+    }
+}
+
+double WebViewHost::GetPageScale() const {
+    double zoom = GetZoomFactor();
+    if (!(zoom > 0.0)) zoom = 1.0;
+
+    wil::com_ptr<ICoreWebView2Controller3> controller3;
+    double raster = 0.0;
+    if (controller_ && SUCCEEDED(controller_->QueryInterface(IID_PPV_ARGS(&controller3))) && controller3 &&
+        SUCCEEDED(controller3->get_RasterizationScale(&raster)) && raster > 0.0) {
+        return raster * zoom;
+    }
+    const UINT dpi = parentHwnd_ ? GetDpiForWindow(parentHwnd_) : 0;
+    return (dpi != 0 ? dpi : 96) / 96.0 * zoom;
 }
 
 void WebViewHost::ApplyDefaultZoomPreference() {

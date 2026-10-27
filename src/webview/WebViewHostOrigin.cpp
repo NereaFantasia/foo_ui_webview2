@@ -30,6 +30,11 @@ void WebViewHost::AddTrustedOrigin(const std::wstring& urlOrOrigin) {
     extraTrustedOrigins_.push_back(std::move(origin));
 }
 
+void WebViewHost::ResetTrustedOrigins() {
+    std::lock_guard<std::mutex> lock(extraTrustedOriginsMutex_);
+    extraTrustedOrigins_.clear();
+}
+
 bool WebViewHost::IsOriginAllowed(ICoreWebView2* webview) {
     std::wstring origin;
     if (IsSourceTrusted(webview, origin)) return true;

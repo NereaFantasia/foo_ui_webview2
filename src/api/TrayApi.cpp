@@ -1,4 +1,4 @@
-// TrayApi.cpp - tray.* API implementation
+﻿// TrayApi.cpp - tray.* API implementation
 // 形状由 src/api/schema/tray.ts 声明，结构体与参数解析来自生成的 TraySchema.h。
 #include "pch.h"
 #include "api/TrayApi.h"
@@ -65,6 +65,10 @@ api::Result<void> TrayCreate(const tray::CreateParams& p) {
 api::Result<void> TrayDestroy(const tray::DestroyParams&) {
     if (IsPanelMode()) return api::PanelModeUnsupported("tray.destroy");
     TrayIcon::GetInstance().Destroy();
+    // 窗口还隐藏在托盘里时，图标没了就无处恢复，把窗口找回来。
+    if (auto* ui = WebViewUI::GetInstance(); ui && ui->GetMainWindow() && ui->GetMainWindow()->IsHiddenToTray()) {
+        ui->activate();
+    }
     return api::Ok();
 }
 
@@ -396,6 +400,13 @@ api::Result<void> TraySetCloseToTray(const tray::SetCloseToTrayParams& p) {
     return api::Ok();
 }
 
+api::Result<void> TraySetClickAction(const tray::SetClickActionParams& p) {
+    if (IsPanelMode()) return api::PanelModeUnsupported("tray.setClickAction");
+    TrayIcon::GetInstance().SetClickAction(p.action == "toggleMainWindow"
+        ? tray_click::Action::ToggleMainWindow : tray_click::Action::Event);
+    return api::Ok();
+}
+
 api::Result<tray::IsVisibleResult> TrayIsVisible(const tray::IsVisibleParams&) {
     if (IsPanelMode()) return api::PanelModeUnsupported("tray.isVisible");
     tray::IsVisibleResult result;
@@ -464,6 +475,7 @@ void RegisterTrayApi() {
     api::RegisterApi("tray.setMenuZones",      TraySetMenuZones);
     api::RegisterApi("tray.setMinimizeToTray", TraySetMinimizeToTray);
     api::RegisterApi("tray.setCloseToTray",    TraySetCloseToTray);
+    api::RegisterApi("tray.setClickAction",    TraySetClickAction);
     api::RegisterApi("tray.isVisible",         TrayIsVisible);
 
     // Incremental menu management APIs

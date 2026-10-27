@@ -99,9 +99,22 @@ TEST_F(PlaybackHandlerTest, GetCurrentTrack_WithTrack_ReturnsTrackRow) {
     EXPECT_EQ(result["track"]["artist"].get<std::string>(), "Test Artist");
     EXPECT_EQ(result["track"]["album"].get<std::string>(), "Test Album");
     EXPECT_DOUBLE_EQ(result["track"]["duration"].get<double>(), 240.5);
-    // The row carries every declared key, the ones without a value included.
-    EXPECT_EQ(result["track"].size(), api::common::Track::kFields.size());
+    // albumId is omitted when the original album identity is valid UTF-8.
+    EXPECT_EQ(result["track"].size(), api::common::Track::kFields.size() - 1);
+    EXPECT_FALSE(result["track"].contains("albumId"));
+    for (const auto key : api::common::Track::kFields) {
+        if (key != "albumId") EXPECT_TRUE(result["track"].contains(std::string(key)));
+    }
     EXPECT_EQ(mock.getCurrentTrackCallCount, 1);
+
+    track.albumId = "album1:b900";
+    mock.currentTrack = track;
+    const auto identified = reimpl_p2a::PlaybackGetCurrentTrack(&mock, emptyParams);
+    EXPECT_EQ(identified["track"].size(), api::common::Track::kFields.size());
+    for (const auto key : api::common::Track::kFields) {
+        EXPECT_TRUE(identified["track"].contains(std::string(key)));
+    }
+    EXPECT_EQ(identified["track"]["albumId"].get<std::string>(), *track.albumId);
 }
 
 TEST_F(PlaybackHandlerTest, GetCurrentTrack_WithSubsong_ReturnsSubsongHandle) {

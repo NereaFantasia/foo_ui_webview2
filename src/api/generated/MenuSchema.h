@@ -20,11 +20,13 @@ struct RunMainMenuCommandParams;
 struct RunContextCommandResult;
 struct RunContextCommandParams;
 struct MenuAvailability;
+struct MenuAddressCandidate;
 struct MenuTreeNode;
 struct GetMainMenuResult;
 struct GetMainMenuParams;
 struct GetContextMenuResult;
 struct GetContextMenuParams;
+struct RunContextCommandByIdResult;
 struct RunContextCommandByIdParams;
 struct ShowNativePopupParams;
 struct ShowResult;
@@ -38,11 +40,13 @@ inline bool FromJson(const json& j, RunMainMenuCommandParams& out, std::string& 
 inline json ToJson(const RunContextCommandResult& v);
 inline bool FromJson(const json& j, RunContextCommandParams& out, std::string& error, const std::string& where = {});
 inline json ToJson(const MenuAvailability& v);
+inline json ToJson(const MenuAddressCandidate& v);
 inline json ToJson(const MenuTreeNode& v);
 inline json ToJson(const GetMainMenuResult& v);
 inline bool FromJson(const json& j, GetMainMenuParams& out, std::string& error, const std::string& where = {});
 inline json ToJson(const GetContextMenuResult& v);
 inline bool FromJson(const json& j, GetContextMenuParams& out, std::string& error, const std::string& where = {});
+inline json ToJson(const RunContextCommandByIdResult& v);
 inline bool FromJson(const json& j, RunContextCommandByIdParams& out, std::string& error, const std::string& where = {});
 inline bool FromJson(const json& j, ShowNativePopupParams& out, std::string& error, const std::string& where = {});
 inline json ToJson(const ShowResult& v);
@@ -53,12 +57,13 @@ inline json ToJson(const DismissPayload& v);
 inline json ToJson(const ValueChangedPayload& v);
 
 struct RunMainMenuCommandResult {
-    static constexpr std::array<std::string_view, 4> kFields{{"guid", "dynamic", "subGuid", "source"}};
+    static constexpr std::array<std::string_view, 5> kFields{{"guid", "dynamic", "subGuid", "source", "completion"}};
 
     std::optional<std::string> guid{};
     std::optional<bool> dynamic{};
     std::optional<std::string> subGuid{};
     std::optional<std::string> source{};
+    std::string completion{};
 };
 
 inline json ToJson(const RunMainMenuCommandResult& v) {
@@ -67,6 +72,7 @@ inline json ToJson(const RunMainMenuCommandResult& v) {
     api::results::Put(j, "dynamic", v.dynamic);
     api::results::Put(j, "subGuid", v.subGuid);
     api::results::Put(j, "source", v.source);
+    api::results::Put(j, "completion", v.completion);
     return j;
 }
 
@@ -89,11 +95,12 @@ inline bool FromJson(const json& j, RunMainMenuCommandParams& out, std::string& 
 }
 
 struct RunContextCommandResult {
-    static constexpr std::array<std::string_view, 3> kFields{{"guid", "itemCount", "executionConfirmed"}};
+    static constexpr std::array<std::string_view, 4> kFields{{"guid", "itemCount", "executionConfirmed", "completion"}};
 
     std::optional<std::string> guid{};
     std::int64_t itemCount{};
     bool executionConfirmed{};
+    std::string completion{};
 };
 
 inline json ToJson(const RunContextCommandResult& v) {
@@ -101,6 +108,7 @@ inline json ToJson(const RunContextCommandResult& v) {
     api::results::Put(j, "guid", v.guid);
     api::results::Put(j, "itemCount", v.itemCount);
     api::results::Put(j, "executionConfirmed", v.executionConfirmed);
+    api::results::Put(j, "completion", v.completion);
     return j;
 }
 
@@ -140,8 +148,26 @@ inline json ToJson(const MenuAvailability& v) {
     return j;
 }
 
+struct MenuAddressCandidate {
+    static constexpr std::array<std::string_view, 4> kFields{{"path", "guid", "subGuid", "groupGuid"}};
+
+    std::string path{};
+    std::string guid{};
+    std::optional<std::string> subGuid{};
+    std::string groupGuid{};
+};
+
+inline json ToJson(const MenuAddressCandidate& v) {
+    json j = json::object();
+    api::results::Put(j, "path", v.path);
+    api::results::Put(j, "guid", v.guid);
+    api::results::Put(j, "subGuid", v.subGuid);
+    api::results::Put(j, "groupGuid", v.groupGuid);
+    return j;
+}
+
 struct MenuTreeNode {
-    static constexpr std::array<std::string_view, 20> kFields{{"type", "label", "displayLabel", "path", "displayPath", "flags", "children", "availability", "enabled", "available", "checked", "radioChecked", "hidden", "commandId", "guid", "subGuid", "source", "executable", "unaddressableReason", "fallback"}};
+    static constexpr std::array<std::string_view, 21> kFields{{"type", "label", "displayLabel", "path", "displayPath", "flags", "children", "availability", "enabled", "available", "checked", "radioChecked", "hidden", "commandId", "guid", "subGuid", "source", "executable", "unaddressableReason", "addressCandidates", "fallback"}};
 
     std::string type{};
     std::optional<std::string> label{};
@@ -162,6 +188,7 @@ struct MenuTreeNode {
     std::optional<std::string> source{};
     std::optional<bool> executable{};
     std::optional<std::string> unaddressableReason{};
+    std::optional<std::vector<MenuAddressCandidate>> addressCandidates{};
     std::optional<bool> fallback{};
 };
 
@@ -186,6 +213,7 @@ inline json ToJson(const MenuTreeNode& v) {
     api::results::Put(j, "source", v.source);
     api::results::Put(j, "executable", v.executable);
     api::results::Put(j, "unaddressableReason", v.unaddressableReason);
+    api::results::Put(j, "addressCandidates", v.addressCandidates);
     api::results::Put(j, "fallback", v.fallback);
     return j;
 }
@@ -240,13 +268,14 @@ inline bool FromJson(const json& j, GetMainMenuParams& out, std::string& error, 
 }
 
 struct GetContextMenuResult {
-    static constexpr std::array<std::string_view, 5> kFields{{"mode", "locale", "i18n", "withAvailability", "items"}};
+    static constexpr std::array<std::string_view, 6> kFields{{"mode", "locale", "i18n", "withAvailability", "items", "targetKey"}};
 
     std::string mode{};
     std::string locale{};
     bool i18n{};
     bool withAvailability{};
     std::vector<MenuTreeNode> items{};
+    std::optional<std::string> targetKey{};
 };
 
 inline json ToJson(const GetContextMenuResult& v) {
@@ -256,6 +285,7 @@ inline json ToJson(const GetContextMenuResult& v) {
     api::results::Put(j, "i18n", v.i18n);
     api::results::Put(j, "withAvailability", v.withAvailability);
     api::results::Put(j, "items", v.items);
+    api::results::Put(j, "targetKey", v.targetKey);
     return j;
 }
 
@@ -282,24 +312,42 @@ inline bool FromJson(const json& j, GetContextMenuParams& out, std::string& erro
         && r.Optional("handles", out.handles);
 }
 
+struct RunContextCommandByIdResult {
+    static constexpr std::array<std::string_view, 1> kFields{{"completion"}};
+
+    std::string completion{};
+};
+
+inline json ToJson(const RunContextCommandByIdResult& v) {
+    json j = json::object();
+    api::results::Put(j, "completion", v.completion);
+    return j;
+}
+
 struct RunContextCommandByIdParams {
     static constexpr const char* kMethod = "menu.runContextCommandById";
     static constexpr std::array<api::params::PathParam, 0> kPathParams{};
-    using Result = void;
+    using Result = RunContextCommandByIdResult;
 
     std::int64_t id{};
     std::string mode = "auto";
     std::optional<std::vector<json>> handles{};
+    std::optional<std::string> expectPath{};
+    std::optional<std::string> expectTarget{};
 };
 
 inline bool FromJson(const json& j, RunContextCommandByIdParams& out, std::string& error, const std::string& where) {
     api::params::Reader r(j, error, where);
     return r.IsObject()
-        && r.OnlyKeys({"id", "mode", "handles"})
+        && r.OnlyKeys({"id", "mode", "handles", "expectPath", "expectTarget"})
         && r.Required("id", out.id)
         && r.Range("id", out.id, std::optional<std::int64_t>(0), std::optional<std::int64_t>(4294967295))
         && r.Optional("mode", out.mode)
-        && r.Optional("handles", out.handles);
+        && r.Optional("handles", out.handles)
+        && r.Optional("expectPath", out.expectPath)
+        && r.MinLength("expectPath", out.expectPath, 1)
+        && r.Optional("expectTarget", out.expectTarget)
+        && r.MinLength("expectTarget", out.expectTarget, 1);
 }
 
 struct ShowNativePopupParams {

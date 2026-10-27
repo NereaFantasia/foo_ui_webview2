@@ -1,4 +1,4 @@
-// test_track_wire_snapshot.cpp — 曲目直写序列化的纯函数层对拍
+﻿// test_track_wire_snapshot.cpp — 曲目直写序列化的纯函数层对拍
 //
 // WriteTrackJson 是 library.query / library.search 热路径唯一产出 tracks 元素的
 // 地方，字段名或取值类型写错就是静默的契约破口。判据：json::parse(writer 产物) ==
@@ -8,6 +8,7 @@
 #include "pch.h"
 #include "compat/fb2k_types.h"  // console:: stub：ErrorEnvelope.h 的 FailureHook 引用它
 #include "api/TrackWireSnapshot.h"
+#include "api/AlbumIdentity.h"
 #include "api/generated/LibrarySchema.h"
 
 #include <initializer_list>
@@ -52,7 +53,7 @@ TrackWireSnapshot MakeFullSnapshot() {
 
 // 声明的 LibraryTrack 行的等价对象
 json ExpectedFullDom(const TrackWireSnapshot& snap) {
-    return {
+    json result = {
         {"index", snap.index},
         {"handle", snap.handle},
         {"title", snap.title},
@@ -76,6 +77,8 @@ json ExpectedFullDom(const TrackWireSnapshot& snap) {
         {"subsong", snap.subsong},
         {"rating", snap.rating},
     };
+    if (snap.albumId) result["albumId"] = *snap.albumId;
+    return result;
 }
 
 json WriteAndParse(const TrackWireSnapshot& snap) {
@@ -156,7 +159,18 @@ TEST(TrackWireSnapshot, FullFieldSetEqualsDeclaredLibraryTrackKeys) {
     for (const auto& [key, value] : parsed.items()) written.insert(key);
     std::set<std::string> declared;
     for (std::string_view key : api::library::LibraryTrack::kFields) declared.emplace(key);
+    EXPECT_EQ(declared.erase("albumId"), 1u);
     EXPECT_EQ(written, declared);
+    EXPECT_FALSE(parsed.contains("albumId"));
+
+    auto withId = track_wire_test::MakeFullSnapshot();
+    withId.albumId = "album1:b900";
+    const json identified = track_wire_test::WriteAndParse(withId);
+    written.clear();
+    for (const auto& [key, value] : identified.items()) written.insert(key);
+    declared.emplace("albumId");
+    EXPECT_EQ(written, declared);
+    EXPECT_EQ(identified["albumId"].get<std::string>(), *withId.albumId);
 }
 
 TEST(TrackWireSnapshot, DefaultSnapshotMatchesDomSemantics) {
@@ -426,7 +440,9 @@ TEST(TrackWireSnapshot, SnapshotReuseAcrossRowsLeavesNoResidue) {
 TEST(TrackFieldSelection, WhitelistEqualsFullFieldOutputKeys) {
     // 白名单 = 全字段输出的键集。两处各写一份必然漂移，此处对拍钉住：新增字段时
     // 只改了表没改 writer（或反之）会在这里断。
-    const json full = track_wire_test::WriteAndParse(track_wire_test::MakeFullSnapshot());
+    auto snapshot = track_wire_test::MakeFullSnapshot();
+    snapshot.albumId = "album1:b900";
+    const json full = track_wire_test::WriteAndParse(snapshot);
     ASSERT_EQ(full.size(), std::size(TrackField::kTable));
     for (const auto& entry : TrackField::kTable) {
         EXPECT_TRUE(full.contains(entry.name)) << "whitelist name not in output: " << entry.name;
@@ -733,6 +749,49 @@ TEST(TrackWireProjection, AppendsWithoutClearingBuffer) {
     ASSERT_EQ(parsed.size(), 2u);
     EXPECT_EQ(parsed[0].size(), 1u);
     EXPECT_EQ(parsed[0], parsed[1]);
+}
+
+TEST(TrackWireProjection, OptionalAlbumIdAppearsOnlyWhenPresentAndSelected) {
+    const auto selection = track_wire_test::SelectFields({"albumId"});
+    ASSERT_TRUE(selection.valid);
+    EXPECT_EQ(selection.mask, TrackField::kAlbumId);
+    auto snap = track_wire_test::MakeFullSnapshot();
+    EXPECT_TRUE(track_wire_test::WriteProjectedAndParse(snap, selection.mask).empty());
+
+    snap.albumId = AlbumId("\xB9", "Artist");
+    ASSERT_TRUE(snap.albumId);
+    const json projected = track_wire_test::WriteProjectedAndParse(snap, selection.mask);
+    ASSERT_EQ(projected.size(), 1u);
+    EXPECT_EQ(projected.at("albumId").get<std::string>(), *snap.albumId);
+    EXPECT_TRUE(track_wire_test::WriteAndParse(snap) == track_wire_test::ExpectedFullDom(snap));
+    EXPECT_FALSE(track_wire_test::WriteProjectedAndParse(snap, TrackField::kAlbum).contains("albumId"));
+}
+
+TEST(TrackWireProjection, InvalidThenValidThenMissingInfoDoesNotLeakAlbumId) {
+    struct FirstValueInfo {
+        const char* album;
+        const char* meta_get(const char* name, size_t index) const {
+            if (index != 0) return nullptr;
+            if (std::string_view(name) == "album") return album;
+            if (std::string_view(name) == "album artist") return "Artist";
+            return nullptr;
+        }
+    };
+    TrackWireSnapshot snap;
+    const uint32_t mask = TrackField::kAlbumId | TrackField::kAlbum;
+    snap.albumId = AlbumIdOf(FirstValueInfo{"\xB9"});
+    ASSERT_TRUE(snap.albumId);
+    EXPECT_TRUE(track_wire_test::WriteProjectedAndParse(snap, mask).contains("albumId"));
+    snap.albumId = AlbumIdOf(FirstValueInfo{"中文专辑"});
+    EXPECT_FALSE(track_wire_test::WriteProjectedAndParse(snap, mask).contains("albumId"));
+    ResetInfoFields(snap);
+    EXPECT_FALSE(track_wire_test::WriteProjectedAndParse(snap, mask).contains("albumId"));
+
+    snap.albumId = AlbumIdOf(FirstValueInfo{"\xBA"});
+    ASSERT_TRUE(snap.albumId);
+    ResetInfoFields(snap);
+    EXPECT_FALSE(snap.albumId);
+    EXPECT_FALSE(track_wire_test::WriteAndParse(snap).contains("albumId"));
 }
 
 // ==========================================================================

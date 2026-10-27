@@ -12,6 +12,7 @@
 #include <deque>
 #include <functional>
 #include <mutex>
+#include <optional>
 #include <string>
 #include <unordered_map>
 #include <utility>
@@ -36,27 +37,37 @@ struct ArtworkResult {
 };
 
 using CompletionFn = std::function<void(ArtworkResult)>;
+struct WorkItem;
+// Runs on the worker before extraction and may answer the request itself.
+using PrepareFn = std::function<std::optional<ArtworkResult>(WorkItem&, abort_callback&)>;
 
 struct WorkItem {
     std::string pathUtf8;
+    std::string nativePath;  // container file without |subsong:N; empty when not a local file
     std::string artworkType;
     int maxSize = 0;
-    std::string cacheKey;  // empty if maxSize==0 → no single-flight
-    std::string negCacheKey;
-    std::string fingerprint;  // owner-thread source fingerprint (may be empty when no source resolved)
-    std::string etag;
+    std::string flightKey;  // identical requests share one extraction; empty → no single-flight
     std::string ifNoneMatchEtag;
+
+    // Filled by `prepare` from the cover's source files.
+    std::string cacheKey;  // empty if maxSize==0
+    std::string negCacheKey;
+    std::string fingerprint;  // empty when no source file was resolved
+    std::string etag;
 
     uint64_t navGen = 0;
     uint64_t hostGen = 0;
 
     std::shared_ptr<abort_callback_impl> abort;
+    PrepareFn prepare;
     CompletionFn complete;
 };
 
 class ArtworkWorkerQueue {
 public:
-    static constexpr size_t kMaxQueueDepth = 32;
+    // A cover wall submits every visible tile at once; a rejected request
+    // gets 503 and the page shows no cover, since <img> does not retry.
+    static constexpr size_t kMaxQueueDepth = 512;
 
     ArtworkWorkerQueue() = default;
 
@@ -81,9 +92,9 @@ public:
             return false;
         }
 
-        // single-flight: same cacheKey already in-flight / queued → add follower
-        if (!item.cacheKey.empty()) {
-            auto fit = singleFlight_.find(item.cacheKey);
+        // single-flight: same flightKey already in-flight / queued → add follower
+        if (!item.flightKey.empty()) {
+            auto fit = singleFlight_.find(item.flightKey);
             if (fit != singleFlight_.end()) {
                 fit->second.push_back(std::move(item.complete));
                 return true;  // follower does not count against depth
@@ -94,8 +105,8 @@ public:
             return false;
         }
 
-        if (!item.cacheKey.empty()) {
-            singleFlight_[item.cacheKey] = {};  // register leader
+        if (!item.flightKey.empty()) {
+            singleFlight_[item.flightKey] = {};  // register leader
         }
         queue_.push_back(std::move(item));
         PumpLocked();
@@ -136,8 +147,8 @@ public:
                 // Leader was registered in singleFlight_; drop it so Dispatch
                 // for an already-popped in-flight leader does not re-complete
                 // followers twice after we complete them here.
-                if (!item.cacheKey.empty()) {
-                    singleFlight_.erase(item.cacheKey);
+                if (!item.flightKey.empty()) {
+                    singleFlight_.erase(item.flightKey);
                 }
             }
             queue_.clear();
@@ -194,31 +205,48 @@ private:
         });
     }
 
-    ArtworkResult Execute(const WorkItem& item) {
+    // Cloud Files placeholders (OneDrive Files On-Demand and the like) that are
+    // not on disk carry RECALL_ON_DATA_ACCESS; reading one downloads the file.
+    static bool IsOnlineOnlyFile(const std::string& nativePath) {
+        if (nativePath.empty()) {
+            return false;
+        }
+        const DWORD attrs = GetFileAttributesW(
+            pfc::stringcvt::string_wide_from_utf8(nativePath.c_str()).get_ptr());
+        return attrs != INVALID_FILE_ATTRIBUTES &&
+               (attrs & FILE_ATTRIBUTE_RECALL_ON_DATA_ACCESS) != 0;
+    }
+
+    ArtworkResult Execute(WorkItem& item) {
         ArtworkResult result;
-        result.etag = item.etag;
-        result.negCacheKey = item.negCacheKey;
-        result.cacheKey = item.cacheKey;
-        result.fingerprint = item.fingerprint;
 
         if (item.abort && item.abort->is_aborting()) {
             result.statusCode = 503;
             return result;
         }
 
-        // 304 fast path (ETag pre-computed on owner thread)
-        if (!item.ifNoneMatchEtag.empty() && item.ifNoneMatchEtag == item.etag) {
-            result.statusCode = 304;
-            result.is304 = true;
-            return result;
-        }
-
         try {
-            // The item's aborter reaches the SDK extractor, so CancelStale/DrainAll
-            // interrupt an in-flight extraction instead of waiting for it to finish.
+            // Looking for a picture is not worth downloading the whole media file.
+            if (IsOnlineOnlyFile(item.nativePath)) {
+                result.statusCode = 404;
+                return result;
+            }
+
+            // The item's aborter reaches the SDK calls, so CancelStale/DrainAll
+            // interrupt an in-flight item instead of waiting for it to finish.
             abort_callback& abort = item.abort
                 ? static_cast<abort_callback&>(*item.abort)
                 : static_cast<abort_callback&>(fb2k::noAbort);
+            if (item.prepare) {
+                if (auto answered = item.prepare(item, abort)) {
+                    return std::move(*answered);
+                }
+            }
+            result.etag = item.etag;
+            result.negCacheKey = item.negCacheKey;
+            result.cacheKey = item.cacheKey;
+            result.fingerprint = item.fingerprint;
+
             artwork_internal::BinaryArtwork artwork;
             const bool found = artwork_internal::GetArtworkBinaryForPath(
                 item.pathUtf8, item.artworkType, artwork, abort);
@@ -274,8 +302,8 @@ private:
         std::vector<CompletionFn> followers;
         {
             std::lock_guard<std::mutex> lock(mutex_);
-            if (!leader.cacheKey.empty()) {
-                auto fit = singleFlight_.find(leader.cacheKey);
+            if (!leader.flightKey.empty()) {
+                auto fit = singleFlight_.find(leader.flightKey);
                 if (fit != singleFlight_.end()) {
                     followers = std::move(fit->second);
                     singleFlight_.erase(fit);

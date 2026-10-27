@@ -1,6 +1,7 @@
 ﻿#pragma once
 #include "pch.h"
 #include "window/MenuActionContract.h"
+#include "window/TrayClickPolicy.h"
 #include "window/MenuResourceLimits.h"
 #include "utils/I18n.h"
 #include <string>
@@ -715,6 +716,7 @@ public:
     void SetCloseToTray(bool enabled) { m_closeToTray = enabled; }
     bool GetMinimizeToTray() const { return m_minimizeToTray; }
     bool GetCloseToTray() const { return m_closeToTray; }
+    void SetClickAction(tray_click::Action action);
 
     LRESULT HandleTrayCallback(WPARAM wParam, LPARAM lParam);
 
@@ -742,6 +744,11 @@ private:
     static LRESULT CALLBACK MessageWindowProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam);
     bool EnsureMessageWindow(HWND ownerHwnd);
     bool RegisterMessageWindowClass();
+    void SyncClickTimer();
+    void HandleClickTimer(UINT_PTR id);
+    void ToggleMainWindowNatively() const;
+    tray_click::Policy m_clickPolicy;
+    tray_click::Timer m_clickTimer;
 
     HWND m_ownerHwnd = nullptr;
     HWND m_hwnd = nullptr;

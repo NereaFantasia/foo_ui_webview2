@@ -1,5 +1,4 @@
-﻿// FrontendDirectoryResolver.cpp
-#include "pch.h"
+﻿#include "pch.h"
 #include "core/FrontendDirectoryResolver.h"
 
 #include "prefs/PreferencesPage.h"

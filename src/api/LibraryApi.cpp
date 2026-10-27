@@ -1,6 +1,7 @@
 ﻿#include "pch.h"
 #include "api/LibraryApi.h"
 #include "api/AlbumIdentity.h"
+#include "api/AlbumRowText.h"
 #include "api/BridgeCore.h"
 #include "api/CallerContext.h"
 #include "api/ErrorEnvelope.h"
@@ -14,6 +15,7 @@
 #include "api/TypedApi.h"
 #include "api/generated/LibrarySchema.h"
 #include "domain/library/LibraryCache.h"
+#include "domain/library/LibrarySync.h"
 #include "domain/library/LibraryTreeIndex.h"
 #include "core/WebViewContext.h"
 #include <foobar2000/SDK/album_art.h>
@@ -175,8 +177,8 @@ struct AlbumData {
   size_t discCount = 0;
   double duration = 0;
   std::set<size_t> discs; // Track unique disc numbers
-  std::vector<std::pair<size_t, std::string>>
-      tracks; // (trackNum, path) for track list
+  std::vector<std::tuple<size_t, std::string, uint32_t>>
+      tracks; // (trackNum, path, subsong) for track list
 
   AlbumData() = default;
   AlbumData(const AlbumData&) = default;
@@ -199,10 +201,7 @@ using AlbumIndex = std::map<std::string, AlbumEntry>;
 // 一首曲目的专辑身份，口径见 AlbumIdentity.h。album artist 在时不读 artist。
 // 返回的指针指向 info 内部，info 存活期间有效。
 static std::optional<AlbumIdentity> AlbumIdentityOf(const file_info &info) {
-  const char *album = info.meta_get("album", 0);
-  const char *albumArtist = info.meta_get("album artist", 0);
-  const char *artist = albumArtist ? nullptr : info.meta_get("artist", 0);
-  return ResolveAlbumIdentity(album, albumArtist, artist);
+  return ResolveAlbumIdentity(info);
 }
 
 // ============================================
@@ -229,11 +228,14 @@ size_t ToSize(std::int64_t value) {
 
 // Declared results kept between calls. They live here rather than in
 // domain/library/LibraryCache so that domain does not depend on the generated types;
-// LibraryCache stays the one place that knows when the library changed, and
-// once its generation moves everything kept here is dropped. The handlers and
-// the library callbacks that invalidate all run on the main thread.
+// LibraryCache stays the one place that knows when the library changed. Once
+// its file generation moves everything kept here is dropped; when only its
+// generation moves, only allTracks is, its rows being the one place that holds
+// a hook field (rating). The handlers and the library callbacks that
+// invalidate all run on the main thread.
 struct KeptResults {
   uint64_t generation = 0;
+  uint64_t fileGeneration = 0;
   // library.getAlbums complete lists, by query, sort and includeCover.
   std::map<std::tuple<std::string, std::string, bool>, std::vector<lb::AlbumInfo>> albums;
   // Every album of the library with its tracks, read by library.getAlbums and
@@ -253,10 +255,15 @@ struct KeptResults {
 KeptResults &Kept() {
   static KeptResults kept;
   const uint64_t generation = g_LibraryCache.GetGeneration();
-  if (kept.generation != generation) {
+  if (const uint64_t fileGeneration = g_LibraryCache.GetFileGeneration();
+      kept.fileGeneration != fileGeneration) {
     kept = KeptResults{};
-    kept.generation = generation;
+    kept.fileGeneration = fileGeneration;
+  } else if (kept.generation != generation) {
+    kept.allTracks.reset();
+    kept.allTracksTotal = 0;
   }
+  kept.generation = generation;
   return kept;
 }
 
@@ -476,13 +483,13 @@ QueryTrackCapture CaptureQueryTrack(const metadb_handle_ptr& track, uint32_t fie
   return cap;
 }
 
-// 两个 API 的信封与错误体形状不同，不得混写。
-enum class QueryWireApi { Query, Search };
+// 各 API 的信封与错误体形状不同，不得混写。getTracks 借用同一条管线写行。
+enum class QueryWireApi { Query, Search, Tracks };
 
 // 查询过滤建起来之后的失败（取曲目、序列化等）。search 的失败一直带空的 tracks 与
 // total，照旧带出。
 json MakeQueryWireErrorBody(QueryWireApi api, const char* message) {
-  if (api == QueryWireApi::Query) {
+  if (api != QueryWireApi::Search) {
     return api::results::FailureToJson(
         api::Fail(message ? message : "Query failed", ApiErrorCode::OPERATION_FAILED));
   }
@@ -526,6 +533,7 @@ struct QueryWireRequest {
   size_t offset = 0;                        // search 信封字段
   size_t baseIndex = 0;                     // 输出 index 起点
   size_t total = 0;                         // 信封 total（截断前的命中总数）
+  std::vector<std::string> missing;         // getTracks 信封字段：不在库里的 handle
   std::chrono::steady_clock::time_point workerStart;
 };
 
@@ -596,7 +604,7 @@ std::string BuildTracksArrayJson(const QueryWireRequest& req) {
 
     const file_info& info = infoHolder->info();
     auto getMeta = [&](const char* name) -> std::string {
-      return StringUtils::SafeUtf8(info.meta_get(name, 0));
+      return MetaFirst(info, name);
     };
     auto getMetaInt = [&](const char* name) -> int {
       const char* value = info.meta_get(name, 0);
@@ -615,6 +623,7 @@ std::string BuildTracksArrayJson(const QueryWireRequest& req) {
       snap.artist = MetaJoined(info, "artist");
     }
     if (mask & TrackField::kAlbum) snap.album = getMeta("album");
+    if (mask & TrackField::kAlbumId) snap.albumId = AlbumIdOf(info);
     // albumArtists 与 albumArtist 的关系同上面的 artists 与 artist。
     if (mask & TrackField::kAlbumArtists) {
       snap.albumArtists = MetaValuesRaw(info, "album artist");
@@ -658,6 +667,16 @@ std::string BuildQueryWireEnvelope(const QueryWireRequest& req, const std::strin
     envelope.append(tracksJson);
     envelope.append(",\"total\":");
     JsonWriter::AppendJsonInt(envelope, static_cast<int64_t>(req.total));
+    envelope.push_back('}');
+    return envelope;
+  }
+
+  if (req.api == QueryWireApi::Tracks) {
+    envelope.reserve(tracksJson.size() + 64);
+    envelope.append("{\"success\":true,\"tracks\":");
+    envelope.append(tracksJson);
+    envelope.append(",\"missing\":");
+    JsonWriter::AppendJsonStringArray(envelope, req.missing);
     envelope.push_back('}');
     return envelope;
   }
@@ -933,6 +952,117 @@ void LibrarySearchDeferred(const lb::SearchParams& p, const DeferredResponder& r
 }
 
 
+// ========== Local copy sync ==========
+
+api::Result<lb::GetChangesResult> LibraryGetChanges(const lb::GetChangesParams& p) {
+  if (!library_sync::Recording()) {
+    // 没收到 on_library_initialized，SDK 却已报告载入完成时，从这里开始记录。
+    if (!library_manager_v4::get()->is_initialized()) {
+      return api::Fail("The media library is still loading", ApiErrorCode::OPERATION_PENDING,
+                       {{"details", {{"reason", "libraryLoading"}}}});
+    }
+    library_sync::OnLibraryLoaded();
+  }
+
+  auto lib = library_manager::get();
+  const bool enabled = lib->is_library_enabled();
+  const library_sync::ChangeLog& log = library_sync::Log();
+
+  lb::GetChangesResult result;
+  result.epoch = library_sync::Epoch();
+  result.revision = static_cast<std::int64_t>(log.Revision());
+
+  std::vector<std::string> changed;
+  std::vector<std::string> removed;
+  if (enabled && p.epoch && p.since && *p.epoch == result.epoch &&
+      log.Since(static_cast<std::uint64_t>(*p.since), changed, removed)) {
+    result.changed = std::move(changed);
+    result.removed = std::move(removed);
+    return result;
+  }
+
+  result.resync = true;
+  std::vector<std::string> handles;
+  if (enabled) {
+    // ponytail: 全库逐首算 handle，在主线程完成，10 万首的耗时未测；慢了再分页
+    metadb_handle_list all;
+    lib->get_all_items(all);
+    handles.reserve(all.get_count());
+    for (size_t i = 0; i < all.get_count(); ++i) {
+      if (all[i].is_valid()) handles.push_back(TrackIdentityOf(all[i]).handle);
+    }
+  }
+  result.handles = std::move(handles);
+  return result;
+}
+
+// 拼写坏的 handle 也算不在库里，不让整次调用失败。
+metadb_handle_ptr LibraryTrackOf(const library_manager::ptr& lib, const std::string& handle) {
+  try {
+    metadb_handle_ptr track = SubsongUtils::CreateTrackHandle(handle);
+    if (track.is_valid() && lib->is_item_in_library(track)) return track;
+  } catch (const std::exception&) {
+    return {};
+  }
+  return {};
+}
+
+// 与 library.query 同一条直写管线：主线程解析 handle、捕获标量，worker 取信息并写行。
+void LibraryGetTracksDeferred(const lb::GetTracksParams& p, const DeferredResponder& responder) {
+  const TrackFieldSelection fields = ParseTrackFieldSelection(p.fields);
+  if (!fields.valid) {
+    responder.SendJson(MakeTrackFieldsErrorBody(fields));
+    return;
+  }
+  if (p.handles.size() > kChangedHandlesLimit) {
+    responder.SendJson(api::results::FailureToJson(
+        api::Fail("Too many handles", ApiErrorCode::INVALID_PARAMS,
+                  {{"details", {{"param", "handles"}, {"limit", kChangedHandlesLimit}}}})));
+    return;
+  }
+
+  try {
+    auto lib = library_manager::get();
+    const bool enabled = lib->is_library_enabled();
+    auto req = std::make_shared<QueryWireRequest>();
+    for (const std::string& handle : p.handles) {
+      metadb_handle_ptr track = enabled ? LibraryTrackOf(lib, handle) : metadb_handle_ptr();
+      if (track.is_valid()) {
+        req->tracks.add_item(track);
+      } else {
+        req->missing.push_back(handle);
+      }
+    }
+
+    req->api = QueryWireApi::Tracks;
+    req->method = "library.getTracks";
+    req->limit = req->tracks.get_count();
+    req->total = req->tracks.get_count();
+    req->fieldMask = fields.mask;
+    req->projected = fields.projected;
+
+    if (SendEmptyQueryWireResultIfNoRows(req, responder)) {
+      return;
+    }
+
+    if (req->fieldMask & TrackField::kRating) {
+      static_api_ptr_t<titleformat_compiler>()->compile_safe(req->ratingScript, "%rating%");
+    }
+
+    req->caps.reserve(req->tracks.get_count());
+    for (size_t i = 0; i < req->tracks.get_count(); i++) {
+      req->caps.push_back(CaptureQueryTrack(req->tracks[i], req->fieldMask));
+    }
+
+    fb2k::inCpuWorkerThread([req, responder]() { RunQueryWireWorker(req, responder); });
+  } catch (const std::exception& e) {
+    responder.SendJson(MakeQueryWireErrorBody(QueryWireApi::Tracks, e.what()));
+  } catch (...) {
+    responder.SendJson(MakeQueryWireErrorBody(QueryWireApi::Tracks, "Reading tracks failed"));
+  }
+}
+
+
 // ========== Albums (Enhanced with full metadata + optional cover + caching)
 // ==========
 
@@ -1001,7 +1131,8 @@ static void FoldTrackIntoAlbum(const file_info &info,
   // Track list (optional)
   if (includeTracks) {
     const char *trackNum = info.meta_get("tracknumber", 0);
-    album.tracks.push_back({trackNum ? atoi(trackNum) : 0, item->get_path()});
+    album.tracks.emplace_back(trackNum ? atoi(trackNum) : 0, item->get_path(),
+                              item->get_subsong_index());
   }
 }
 
@@ -1009,24 +1140,19 @@ static void FoldTrackIntoAlbum(const file_info &info,
 // 成本高，由调用点在 firstTrackPath 非空时自行叠加。
 // g_get_native_path 刻意留在本函数（即每个输出行一次），不要挪进逐轨折叠 ——
 // 那会从"每页至多 limit 次"变成"每张专辑一次"。
-static lb::AlbumInfo BuildAlbumRow(const AlbumData &data, bool includeTracks) {
+static lb::AlbumInfo BuildAlbumRow(const AlbumData &data, bool includeTracks,
+                                  bool canonicalIdentity = true) {
   lb::AlbumInfo row;
-  row.name = data.name;
-  row.artist = data.albumArtist.empty() ? data.artist : data.albumArtist;
-  row.albumArtist = data.albumArtist;
+  FillAlbumRowText(row, data, canonicalIdentity);
   row.trackCount = static_cast<std::int64_t>(data.trackCount);
   row.discCount = static_cast<std::int64_t>(data.discs.empty() ? 1 : data.discs.size());
   row.duration = data.duration;
-  row.year = data.year;
-  row.genre = data.genre;
-  row.label = data.label;
-  row.firstTrackPath = data.firstTrackPath; // For cover art retrieval
 
   // Add absolute path for firstTrackPath
   if (!data.firstTrackPath.empty()) {
     pfc::string8 nativePath;
     filesystem::g_get_native_path(data.firstTrackPath.c_str(), nativePath);
-    row.firstTrackAbsolutePath = std::string(nativePath.get_ptr());
+    row.firstTrackAbsolutePath = StringUtils::SafeUtf8(nativePath.get_ptr());
   }
 
   if (includeTracks) {
@@ -1034,13 +1160,11 @@ static lb::AlbumInfo BuildAlbumRow(const AlbumData &data, bool includeTracks) {
     auto sortedTracks = data.tracks;
     std::sort(sortedTracks.begin(), sortedTracks.end());
     trackList.reserve(sortedTracks.size());
-    for (const auto &[num, path] : sortedTracks) {
+    for (const auto &[num, path, subsong] : sortedTracks) {
       pfc::string8 trackNativePath;
       filesystem::g_get_native_path(path.c_str(), trackNativePath);
       lb::AlbumTrackRef ref;
-      ref.trackNumber = static_cast<std::int64_t>(num);
-      ref.path = path;
-      ref.absolutePath = std::string(trackNativePath.get_ptr());
+      FillAlbumTrackRef(ref, static_cast<std::int64_t>(num), path, trackNativePath.get_ptr(), subsong);
       trackList.push_back(std::move(ref));
     }
     row.tracks = std::move(trackList);
@@ -1170,23 +1294,12 @@ api::Result<lb::GetAlbumsResult> LibraryGetAlbums(const lb::GetAlbumsParams& p) 
 
   // Filter by query if provided
   std::vector<const AlbumEntry *> filteredAlbums;
-  std::string lowerQuery = filterQuery;
-  std::transform(lowerQuery.begin(), lowerQuery.end(), lowerQuery.begin(),
-                 ::tolower);
-
   for (const auto &[key, entry] : *index) {
     const AlbumData &data = entry.data;
     if (!filterQuery.empty()) {
-      std::string lowerName = data.name;
-      std::string lowerArtist =
-          data.albumArtist.empty() ? data.artist : data.albumArtist;
-      std::transform(lowerName.begin(), lowerName.end(), lowerName.begin(),
-                     ::tolower);
-      std::transform(lowerArtist.begin(), lowerArtist.end(),
-                     lowerArtist.begin(), ::tolower);
-
-      if (lowerName.find(lowerQuery) == std::string::npos &&
-          lowerArtist.find(lowerQuery) == std::string::npos) {
+      if (!AlbumTextMatchesQuery(data.name,
+                                 data.albumArtist.empty() ? data.artist : data.albumArtist,
+                                 filterQuery)) {
         continue;
       }
     }
@@ -1304,8 +1417,7 @@ api::Result<lb::GetArtistsResult> LibraryGetArtists(const lb::GetArtistsParams& 
       albumRows.reserve(data.albumKeys.size());
       for (const auto &[albumName, albumArtistName] : data.albumKeys) {
         lb::ArtistAlbumRef ref;
-        ref.name = albumName;
-        ref.artist = albumArtistName;
+        FillArtistAlbumRefText(ref, albumName, albumArtistName);
         albumRows.push_back(std::move(ref));
       }
       row.albums = std::move(albumRows);
@@ -1371,25 +1483,34 @@ static bool MatchesAtomicValue(const file_info& info, const char* field,
   return std::find(values.begin(), values.end(), wanted) != values.end();
 }
 
-// 能安全嵌进查询串的值才回内容，含双引号的回空——调用方据此跳过预筛。
+// 不能表示的值返回空，由调用方决定跳过预筛还是返回空结果。
 // field 由调用方给出，需要引号的字段名（如 "album artist"）自带引号传入。
 static std::optional<std::string> BuildValueQuery(const char* field,
                                                   const char* op,
                                                   const std::string& value) {
   if (value.find('"') != std::string::npos) return std::nullopt;
+  // 显示替换字符无法精确表达原始坏字节，只让后置 MetaValues 比较决定是否命中。
+  if (std::string_view(op) == "IS" && value.find("\xEF\xBF\xBD") != std::string::npos) {
+    return std::nullopt;
+  }
   return std::string(field) + " " + op + " \"" + value + "\"";
 }
 
 // ========== Album Tracks ==========
 
 // 按 getAlbums 的分组键查保留的归组，只为这一张专辑生成曲目行。归组还没有时
-// 读一遍媒体库建立；专辑名为空时不可能命中，不为它读媒体库。
+// 读一遍媒体库建立；无标识且专辑名为空时不可能命中，不为它读媒体库。
 api::Result<lb::GetAlbumTracksResult> LibraryGetAlbumTracks(const lb::GetAlbumTracksParams& p) {
   lb::GetAlbumTracksResult result;
   result.album = p.album;
   result.albumArtist = p.albumArtist;
 
-  if (p.album.empty() || !library_manager::get()->is_library_enabled()) {
+  const auto key = ResolveAlbumLookupKey(p.album, p.albumArtist, p.albumId);
+  if (!key) {
+    return api::Fail("Invalid albumId", ApiErrorCode::INVALID_PARAMS,
+                     {{"details", json{{"param", "albumId"}}}});
+  }
+  if ((!p.albumId && p.album.empty()) || !library_manager::get()->is_library_enabled()) {
     return result;
   }
 
@@ -1398,7 +1519,7 @@ api::Result<lb::GetAlbumTracksResult> LibraryGetAlbumTracks(const lb::GetAlbumTr
     const std::shared_ptr<const AlbumIndex> index = KeptAlbumIndex(true, &reused);
     g_LibraryCache.RecordLookup(reused);
 
-    const auto it = index->find(AlbumKey(p.album, p.albumArtist));
+    const auto it = index->find(*key);
     if (it == index->end()) {
       return result;
     }
@@ -1682,7 +1803,7 @@ api::Result<lb::GetArtistAlbumsResult> LibraryGetArtistAlbums(const lb::GetArtis
         albumArtist = info.meta_get("artist", 0);
 
       FoldTrackIntoAlbum(info, allItems[i], albumName.c_str(), albumArtist,
-                         false, albumMap[albumName]);
+                         true, albumMap[albumName]);
     }
 
     std::vector<AlbumData> rows;
@@ -1703,7 +1824,7 @@ api::Result<lb::GetArtistAlbumsResult> LibraryGetArtistAlbums(const lb::GetArtis
     result.artist = artist;
     result.albums.reserve(endIdx);
     for (size_t i = 0; i < endIdx; i++) {
-      result.albums.push_back(BuildAlbumRow(rows[i], false));
+      result.albums.push_back(BuildAlbumRow(rows[i], true, false));
     }
     result.total = static_cast<std::int64_t>(total);
     result.hasMore = endIdx < total;
@@ -1807,7 +1928,7 @@ api::Result<lb::GetFieldValuesResult> LibraryGetFieldValues(const lb::GetFieldVa
   result.values.reserve(sorted.size());
   for (auto &entry : sorted) {
     lb::LibraryValueCount row;
-    row.name = std::move(entry.name);
+    row.name = StringUtils::SafeUtf8(entry.name);
     row.trackCount = entry.count;
     result.values.push_back(std::move(row));
   }
@@ -2129,7 +2250,7 @@ api::Result<lb::GetStatusResult> LibraryGetStatus(const lb::GetStatusParams& /*p
 
   lb::GetStatusResult result;
   result.enabled = enabled;
-  result.initialized = enabled;
+  result.initialized = library_manager_v4::get()->is_initialized();
   result.scanning = false;
   result.itemCount = static_cast<std::int64_t>(count);
   result.count = static_cast<std::int64_t>(count);
@@ -2338,8 +2459,7 @@ api::Result<lb::GetByPathResult> LibraryGetByPath(const lb::GetByPathParams& p) 
   filesystem::g_get_native_path(handle->get_path(), nativePath);
   
   auto getMeta = [&](const char *name) -> std::string {
-    const char *v = info.meta_get(name, 0);
-    return v ? v : "";
+    return MetaFirst(info, name);
   };
 
   // 与 DOM 版同口径：artist / artists 同源于一次字段查找。本 API 是扁平对象，
@@ -2347,8 +2467,8 @@ api::Result<lb::GetByPathResult> LibraryGetByPath(const lb::GetByPathParams& p) 
   const std::vector<std::string> artistValues = MetaValuesRaw(info, "artist");
 
   result.found = true;
-  result.path = handle->get_path();
-  result.absolutePath = std::string(nativePath.get_ptr());
+  result.path = StringUtils::SafeUtf8(handle->get_path());
+  result.absolutePath = StringUtils::SafeUtf8(nativePath.get_ptr());
   result.title = getMeta("title");
   result.artist = JoinMetaValues(artistValues, ", ");
   result.artists = artistValues;
@@ -2431,7 +2551,7 @@ api::Result<lb::GetRecentlyAddedResult> LibraryGetRecentlyAdded(const lb::GetRec
         lb::RecentLibraryTrack row;
         static_cast<lb::LibraryTrack &>(row) = LibraryTrackRow(all[entries[i].index], entries[i].index);
         if (HasAddedTime(entries[i].timeStr)) {
-          row.added = entries[i].timeStr;
+          row.added = StringUtils::SafeUtf8(entries[i].timeStr);
         }
         result.tracks.push_back(std::move(row));
       }
@@ -2501,6 +2621,8 @@ void RegisterLibraryApi() {
     api::RegisterApi("library.getArtistAlbums", LibraryGetArtistAlbums);
     api::RegisterApi("library.getFieldValues", LibraryGetFieldValues);
     api::RegisterApiDeferred("library.query", LibraryQueryDeferred);
+    api::RegisterApi("library.getChanges", LibraryGetChanges);
+    api::RegisterApiDeferred("library.getTracks", LibraryGetTracksDeferred);
     api::RegisterApi("library.getRoots", LibraryGetRoots);
     api::RegisterApi("library.browseTree", LibraryBrowseTree);
     api::RegisterApi("library.browseDirectory", LibraryBrowseDirectory);

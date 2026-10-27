@@ -14,6 +14,7 @@
 #include "api/CallerContext.h"
 #include "api/ErrorEnvelope.h"
 
+#include <algorithm>
 #include <string>
 #include <string_view>
 #include <type_traits>
@@ -28,8 +29,8 @@ struct Registrar {
         BridgeCore::GetInstance().RegisterApi(method, std::move(handler), std::move(specs));
     }
     static void RegisterDeferred(const std::string& method, DeferredApiHandler handler,
-                                 std::vector<PathSecuritySpec> specs) {
-        BridgeCore::GetInstance().RegisterApiDeferred(method, std::move(handler), std::move(specs));
+                                 std::vector<PathSecuritySpec> specs, BackgroundRunner runOn = nullptr) {
+        BridgeCore::GetInstance().RegisterApiDeferred(method, std::move(handler), std::move(specs), runOn);
     }
 };
 }  // namespace detail
@@ -138,6 +139,30 @@ void RegisterApiDeferred(std::type_identity_t<MethodName<P>> method,
             }
             handler(parsed, CallerContext::FromParams(raw), responder);
         }, PathSecuritySpecsOf<P>());
+}
+
+// handler 写法与同步方法相同，但路径校验、参数解析与 handler 都在 runOn 的后台队列上执行，
+// 主线程只负责投递。路径参数只能是 Read 级：它的校验只碰文件系统，其余级别有的要在主线程
+// 查媒体库与播放列表。
+template <class P, class R>
+void RegisterApiDeferred(std::type_identity_t<MethodName<P>> method, Result<R> (*handler)(const P&),
+                         BackgroundRunner runOn) {
+    static_assert(std::is_same_v<R, typename P::Result>, "handler returns the result type of another method");
+    static_assert(std::ranges::all_of(P::kPathParams,
+                                      [](const params::PathParam& p) { return p.access == params::PathAccess::Read; }),
+                  "only Read-level path checks can run off the main thread");
+    detail::Registrar::RegisterDeferred(
+        method.value,
+        [handler](const json& raw, DeferredResponder responder) {
+            P parsed;
+            std::string error;
+            if (!FromJson(raw, parsed, error)) {
+                responder.SendJson(ApiEnvelope::MakeError(error, ApiErrorCode::INVALID_PARAMS));
+                return;
+            }
+            responder.SendJson(handler(parsed).ToJson());
+        },
+        PathSecuritySpecsOf<P>(), runOn);
 }
 
 // ToJson 在调用线程完成，json 按值交给 responder，可以从任何线程调用。

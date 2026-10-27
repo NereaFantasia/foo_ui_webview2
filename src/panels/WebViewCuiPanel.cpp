@@ -242,6 +242,7 @@ LRESULT WebViewCuiPanel::HandleMessage(HWND hwnd, UINT msg, WPARAM wParam, LPARA
             
             if (auto* webView = GetWebView()) {
                 if (auto* controller = webView->GetController()) {
+                    webView->SyncRasterizationScale();
                     RECT bounds = {0, 0, width, height};
                     controller->put_Bounds(bounds);
                 }

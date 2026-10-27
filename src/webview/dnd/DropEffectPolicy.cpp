@@ -9,11 +9,12 @@ bool RendererHasAnswered(bool sawEffect, int64_t sinceEnterMs) {
 }
 
 DWORD ChooseDropEffect(DWORD downstream, DWORD allowedMask, bool hasFiles,
-                       bool rendererAnswered) {
-    // Clamp to COPY unconditionally: see the header for why MOVE/LINK are unsafe.
+                       bool rendererAnswered, DragSource source) {
+    // Clamp to COPY unless a hosted page started the drag: see the header for
+    // why MOVE/LINK are unsafe from anywhere else.
     const DWORD copyIfPermitted = allowedMask & DROPEFFECT_COPY;
     if (downstream != DROPEFFECT_NONE) {
-        return downstream & copyIfPermitted;
+        return downstream & (source == DragSource::External ? copyIfPermitted : allowedMask);
     }
     if (hasFiles && !rendererAnswered) {
         return copyIfPermitted;

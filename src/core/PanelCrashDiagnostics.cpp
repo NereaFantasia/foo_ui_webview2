@@ -2,8 +2,6 @@
 #include "core/PanelCrashDiagnostics.h"
 
 namespace panel_crash {
-    // Map COREWEBVIEW2_PROCESS_FAILED_KIND -> JS-friendly camelCase string.
-    // Used as the `kind` field of the `webview:processFailed` event payload.
     const char* FailedKindToString(COREWEBVIEW2_PROCESS_FAILED_KIND kind) {
         switch (kind) {
             case COREWEBVIEW2_PROCESS_FAILED_KIND_BROWSER_PROCESS_EXITED:        return "browserProcessExited";

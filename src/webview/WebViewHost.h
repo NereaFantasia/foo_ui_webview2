@@ -40,6 +40,19 @@ public:
     // 是否初始化完成
     bool IsReady() const { return webview_ != nullptr; }
 
+    // 最近一次 Initialize 失败在哪一步、HRESULT 是多少；stage 为 nullptr 表示没有失败。
+    // stage 取 "runtime"、"environment"、"controller-composition"、"controller-standard"。
+    struct InitFailure {
+        const char* stage = nullptr;
+        HRESULT hr = S_OK;
+    };
+    const InitFailure& LastInitFailure() const { return lastInitFailure_; }
+
+    // 定性初始化失败要用的环境信息：组件与 fb2k 版本、系统 build、Runtime 版本、
+    // 数据目录、DPI 感知、兼容层、是否提权。每项写成 key=value，以 separator 分隔。
+    // hwnd 用来读窗口的 DPI 感知，可以为空。只在主线程调用。
+    static std::string DescribeInitContext(HWND hwnd, char separator);
+
     // ============================================
     // 导航
     // ============================================
@@ -148,6 +161,10 @@ public:
     // Resume() 兜底（防"最小化→秒恢复"时回调晚于 put_IsVisible(TRUE)）。
     void TrySuspendDeep();
 
+    // keep=true 时让已挂起或挂起在途的页面恢复运行，页面仍保持 hidden；之后迟到的挂起完成
+    // 回调也会把它恢复。keep=false 只撤销这一约束，是否再挂起由调用方决定。
+    void KeepRunningWhileHidden(bool keep);
+
     // 页面当前是否处于挂起态（ICoreWebView2_3::get_IsSuspended 实时查询；
     // 接口不可用或 WebView 未就绪时返回 false）。
     bool IsSuspended() const;
@@ -231,6 +248,15 @@ public:
     
     // 根据 DPI 自动调整缩放
     HRESULT SetZoomForDpi(int dpi);
+
+    // 把 RasterizationScale 设为「窗口 DPI / 96 × Windows 文本大小」，并关掉 WebView2 自己的
+    // 检测，与 WinUI 的 WebView2 控件一致：WebView2 的检测只跟踪显示器 DPI，不跟踪运行中的
+    // 文本大小变化。controller 创建后、每次 Resize 与文本大小变化时调用；值没变时不写。
+    void SyncRasterizationScale();
+
+    // 页面 CSS 像素换成客户区物理像素的系数，即页面的 devicePixelRatio：RasterizationScale
+    // 乘缩放倍数。controller 不可用时按窗口 DPI 乘缩放倍数。
+    double GetPageScale() const;
 
     // 主题经 window.setZoom / resetZoom / setZoomForDpi 改过缩放后，偏好设置里的默认缩放不再动这个 WebView；
     // 覆盖只在本进程内有效，不写回偏好。
@@ -361,6 +387,7 @@ private:
         std::atomic<bool> pageHidden{false};
         std::atomic<uint64_t> generation{0};
         std::atomic<bool> alive{true};
+        std::atomic<bool> keepRunning{false};
     };
 
     // pageHidden 由 SetVisible 维护，供生产侧可见性判定（IsPageHidden）使用。
@@ -374,6 +401,10 @@ private:
     FocusChangedCallback focusChangedCallback_;
     NavigationCompletedCallback navigationCompletedCallback_;
     bool lastNavigationSuperseded_ = false;
+    InitFailure lastInitFailure_;
+
+    // 记下失败并写一条带环境信息的 lifecycle 日志。
+    void RecordInitFailure(const char* event, const char* stage, HRESULT hr);
     UINT64 latestNavigationId_ = 0;  // 最近一次 NavigationStarting 的导航 ID
     NavigationStartingCallback navigationStartingCallback_;
     ProcessFailedCallback processFailedCallback_;
@@ -443,6 +474,9 @@ private:
     // 接受完整 URL 或 origin；取不出 http(s) origin 的输入被忽略。
 public:
     void AddTrustedOrigin(const std::wstring& urlOrOrigin);
+    // 宿主每次加载前端页面前清空登记，再登记这次要用的来源。改了面板网址、
+    // 撤销允许或关掉开发服务器后，旧来源不会留到这个 WebView 销毁。
+    void ResetTrustedOrigins();
 
 private:
     std::vector<std::wstring> extraTrustedOrigins_;

@@ -3,7 +3,6 @@
 #include "pch.h"
 #include "core/WebViewPanel.h"
 
-// API 注册函数声明
 #include "api/PlaybackApi.h"
 #include "api/ConfigApi.h"
 #include "api/PlaylistApi.h"
@@ -29,6 +28,7 @@
 #include "api/MenuApi.h"
 #include "api/DndApi.h"
 #include "api/QueueApi.h"
+#include "api/JitSessionApi.h"
 #include "api/DiscoveryApi.h"
 #include "api/ReplayGainApi.h"
 #include "api/PlaycountApi.h"
@@ -39,7 +39,6 @@
 #include "api/PortApi.h"
 #include "api/WebviewApi.h"
 #include "api/PluginRegistry.h"
-// 回调Initializing函数声明
 #include "callbacks/PlaybackCallback.h"
 #include "callbacks/PlaylistCallback.h"
 #include "callbacks/LibraryCallback.h"
@@ -74,36 +73,27 @@ void WebViewPanel::RegisterAllApis() {
     RegisterDndApi();
     RegisterQueueApi();
     
-    // JIT Queue API
     InitializeJitQueue();
     RegisterJitQueueApi();
+    RegisterJitSessionApi();
     
-    // Plugin Registry
     PluginRegistry::GetInstance().Initialize();
     
-    // Discovery API
     discovery_api::RegisterApis();
     
-    // ReplayGain API
     RegisterReplayGainApi();
     
-    // Playcount API
     RegisterPlaycountApi();
     
-    // Titleformat API
     RegisterTitleformatApi();
     
-    // Selection API
     RegisterSelectionApi();
     
-    // Port/Event/State API (PortHub)
     RegisterPortApi();
     
-    // Tray & Taskbar APIs
     RegisterTrayApi();
     RegisterTaskbarApi();
 
-    // WebView page source
     RegisterWebviewApi();
 
     LOG("All APIs registered");
