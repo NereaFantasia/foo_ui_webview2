@@ -1,5 +1,7 @@
 import { call } from '../call.js';
+import { subscribe } from '../subscribe.js';
 import { playlistTarget, type PlaylistRef } from '../playlistRef.js';
+import type { PlaylistAutoplaylistUIResultPayload, PlaylistAutoplaylistConfigChangedPayload } from '../../types/generated/events.js';
 import type {
     PlaylistHandleRef,
     PlaylistTrack,
@@ -9,6 +11,7 @@ import type {
     PlaylistCreateParams,
     PlaylistPlayTrackParams,
     PlaylistReplaceAllAndPlayParams,
+    PlaylistSetAutoplaylistConfigParams,
 } from '../../types/generated/params.js';
 
 /** Whether a playlist order names its playlists by GUID; an empty order is sent as indices. */
@@ -43,13 +46,14 @@ export const playlist = {
     // === Basic operations ===
     /** Every playlist in playlist order, in `playlists`. */
     getAll: () => call('playlist.getAll'),
-    /** Resolves with `found: false` and no other fields when there is no active playlist. */
+    /** Resolve with `found: false` and no other fields when there is no active playlist. */
     getActive: () => call('playlist.getActive'),
+    /** Make a playlist the active one. */
     setActive: (playlist: PlaylistRef) =>
         call('playlist.setActive', {
             ...playlistTarget(playlist),
         }),
-    /** Resolves with `found: false` and no other fields when nothing is playing. */
+    /** Resolve with `found: false` and no other fields when nothing is playing. */
     getPlaying: () => call('playlist.getPlaying'),
     /**
      * Fetch a slice of tracks from a playlist, as the page
@@ -151,15 +155,18 @@ export const playlist = {
         call('playlist.getTrackCount', {
             ...playlistTarget(playlist),
         }),
+    /** Create an empty playlist with the given name and options. */
     create: (name: string, options?: Omit<PlaylistCreateParams, 'name'>) =>
         call('playlist.create', {
             name,
             ...(options && typeof options === 'object' ? options : {}),
         }),
+    /** Delete a playlist. */
     remove: (playlist: PlaylistRef) =>
         call('playlist.remove', {
             ...playlistTarget(playlist),
         }),
+    /** Rename a playlist. */
     rename: (playlist: PlaylistRef, name: string) =>
         call('playlist.rename', {
             ...playlistTarget(playlist),
@@ -171,6 +178,7 @@ export const playlist = {
             ...playlistTarget(playlist),
             ...(name !== undefined ? { name } : {}),
         }),
+    /** Remove every track from a playlist, saving an undo point first. */
     clear: (playlist: PlaylistRef) =>
         call('playlist.clear', {
             ...playlistTarget(playlist),
@@ -218,26 +226,46 @@ export const playlist = {
             ...playlistTarget(playlist),
             handles,
         }),
-    /** Insert tracks before row `insertIndex`; past the last row, they are appended. */
-    insertTracks: (playlist: PlaylistRef, insertIndex: number, handles: PlaylistHandleRef[]) =>
+    /**
+     * Insert tracks before row `insertIndex`; past the last row, they are appended.
+     *
+     * @param expectedVersion - Change nothing and fail with `STALE_TARGET` unless the playlist
+     *   still has this `contentVersion`.
+     */
+    insertTracks: (
+        playlist: PlaylistRef,
+        insertIndex: number,
+        handles: PlaylistHandleRef[],
+        expectedVersion?: string,
+    ) =>
         call('playlist.insertTracks', {
             ...playlistTarget(playlist),
             position: insertIndex,
             handles,
+            expectedVersion,
         }),
 
     // === Track removal ===
-    removeTracks: (playlist: PlaylistRef, indices: number[]) =>
+    /**
+     * Remove rows; rows past the last one are ignored.
+     *
+     * @param expectedVersion - Change nothing and fail with `STALE_TARGET` unless the playlist
+     *   still has this `contentVersion`.
+     */
+    removeTracks: (playlist: PlaylistRef, indices: number[], expectedVersion?: string) =>
         call('playlist.removeTracks', {
             ...playlistTarget(playlist),
             items: indices,
+            expectedVersion,
         }),
+    /** Remove all selected tracks from a playlist, saving an undo point first. */
     removeSelectedTracks: (playlist: PlaylistRef) =>
         call('playlist.removeSelectedTracks', {
             ...playlistTarget(playlist),
         }),
 
     // === Playback control ===
+    /** Start playing the track at the specified index in a playlist. */
     playTrack: (
         playlist: PlaylistRef,
         trackIndex: number,
@@ -255,14 +283,21 @@ export const playlist = {
         call('playlist.getFocusedTrack', {
             ...playlistTarget(playlist),
         }),
-    /** A negative `trackIndex` removes the focus. */
-    setFocused: (playlist: PlaylistRef, trackIndex: number) =>
+    /**
+     * A negative `trackIndex` removes the focus.
+     *
+     * @param expectedVersion - Change nothing and fail with `STALE_TARGET` unless the playlist
+     *   still has this `contentVersion`.
+     */
+    setFocused: (playlist: PlaylistRef, trackIndex: number, expectedVersion?: string) =>
         call('playlist.setFocusedTrack', {
             ...playlistTarget(playlist),
             index: trackIndex,
+            expectedVersion,
         }),
 
     // === Selection ===
+    /** Report the 0-based indices of all selected tracks in a playlist. */
     getSelection: (playlist: PlaylistRef) =>
         call('playlist.getSelection', {
             ...playlistTarget(playlist),
@@ -275,17 +310,30 @@ export const playlist = {
      */
     getSelectedTracks: (playlist: PlaylistRef) =>
         call('playlist.getSelectedTracks', playlistTarget(playlist)),
-    /** Rows past the last one are ignored; a negative row fails with `INVALID_PARAMS`. */
-    setSelection: (playlist: PlaylistRef, indices: number[], clearOthers = true) =>
+    /**
+     * Rows past the last one are ignored; a negative row fails with `INVALID_PARAMS`.
+     *
+     * @param expectedVersion - Change nothing and fail with `STALE_TARGET` unless the playlist
+     *   still has this `contentVersion`.
+     */
+    setSelection: (
+        playlist: PlaylistRef,
+        indices: number[],
+        clearOthers = true,
+        expectedVersion?: string,
+    ) =>
         call('playlist.setSelection', {
             ...playlistTarget(playlist),
             indices,
             clearOthers,
+            expectedVersion,
         }),
+    /** Select all tracks in a playlist. */
     selectAll: (playlist: PlaylistRef) =>
         call('playlist.selectAll', {
             ...playlistTarget(playlist),
         }),
+    /** Deselect all tracks in a playlist. */
     deselectAll: (playlist: PlaylistRef) =>
         call('playlist.deselectAll', {
             ...playlistTarget(playlist),
@@ -296,17 +344,28 @@ export const playlist = {
      * Replace the selection with `indices`, then move the selection by `delta`
      * rows; the caller's own selection is lost. An empty `indices` moves the
      * current selection.
+     *
+     * @param expectedVersion - Change nothing and fail with `STALE_TARGET` unless the playlist
+     *   still has this `contentVersion`.
      */
-    moveTracks: (playlist: PlaylistRef, indices: number[], delta: number) =>
+    moveTracks: (playlist: PlaylistRef, indices: number[], delta: number, expectedVersion?: string) =>
         call('playlist.moveTracks', {
             ...playlistTarget(playlist),
             items: indices,
             delta,
+            expectedVersion,
         }),
-    reorder: (playlist: PlaylistRef, order: number[]) =>
+    /**
+     * `order[i]` is the current row of the track that moves to row `i`.
+     *
+     * @param expectedVersion - Change nothing and fail with `STALE_TARGET` unless the playlist
+     *   still has this `contentVersion`.
+     */
+    reorder: (playlist: PlaylistRef, order: number[], expectedVersion?: string) =>
         call('playlist.reorder', {
             ...playlistTarget(playlist),
             newOrder: order,
+            expectedVersion,
         }),
     /**
      * `descending` reverses the whole playlist after sorting, the unselected
@@ -324,10 +383,12 @@ export const playlist = {
             descending,
             selectedOnly,
         }),
+    /** Randomly shuffle tracks in a playlist, saving an undo point first. */
     shuffle: (playlist: PlaylistRef) =>
         call('playlist.shuffle', {
             ...playlistTarget(playlist),
         }),
+    /** Reverse track order in a playlist, saving an undo point first. */
     reverse: (playlist: PlaylistRef) =>
         call('playlist.reverse', {
             ...playlistTarget(playlist),
@@ -346,19 +407,106 @@ export const playlist = {
         }),
 
     // === Autoplaylist ===
+    /**
+     * Create an autoplaylist with editable query and sorting rules.
+     * It requires this component to remain installed. Success returns the
+     * configuration, without waiting for track rebuilding or disk persistence.
+     */
+    createManagedAutoplaylist: (name: string, query: string, sort?: string, keepSorted?: boolean) =>
+        call('playlist.createManagedAutoplaylist', {
+            name,
+            query,
+            ...(sort !== undefined ? { sort } : {}),
+            ...(keepSorted !== undefined ? { keepSorted } : {}),
+        }),
+    /**
+     * Read this component's managed autoplaylist configuration and revision.
+     * Other providers return a failure envelope. Use configAvailability from
+     * getAutoplaylistInfo to decide whether to offer a configuration form.
+     */
+    getAutoplaylistConfig: (playlist: PlaylistRef) =>
+        call('playlist.getAutoplaylistConfig', playlistTarget(playlist)),
+    /**
+     * Edit rules using the revision from a recent configuration snapshot.
+     * Omitted fields stay unchanged; an empty sort clears it and false disables
+     * keep-sorted. Host failures can leave partial changes: inspect the failure
+     * envelope and re-read before retrying. A revision is not a track version.
+     */
+    setAutoplaylistConfig: (
+        playlist: PlaylistRef,
+        options: Omit<PlaylistSetAutoplaylistConfigParams, 'playlist' | 'playlistGuid'>,
+    ) => call('playlist.setAutoplaylistConfig', {
+        ...playlistTarget(playlist),
+        expectedRevision: options.expectedRevision,
+        ...(options.query !== undefined ? { query: options.query } : {}),
+        ...(options.sort !== undefined ? { sort: options.sort } : {}),
+        ...(options.keepSorted !== undefined ? { keepSorted: options.keepSorted } : {}),
+    }),
+    /**
+     * Observe managed configuration changes from all component windows.
+     * Re-read the snapshot before editing; this does not signal completion of
+     * track rebuilding or disk persistence. Returns an unsubscribe function.
+     */
+    onAutoplaylistConfigChanged: (callback: (event: PlaylistAutoplaylistConfigChangedPayload) => void) =>
+        subscribe('playlist:autoplaylistConfigChanged', callback),
+    /** Report whether a playlist is an autoplaylist or carries an automatic-playlist lock. */
     isAutoplaylist: (playlist: PlaylistRef) =>
         call('playlist.isAutoplaylist', {
             ...playlistTarget(playlist),
         }),
+    /**
+     * Inspect autoplaylist state and editor availability without opening UI.
+     * `unknown` means the provider has no capability probe. `source: 'sdk'`
+     * includes third-party clients; `source: 'dui'` identifies an Auto-named
+     * lock, not a UI mode. That lock's `keepSorted: false` is an unreadable
+     * setting's placeholder, not its actual value.
+     * configAvailability separately reports structured configuration support.
+     */
     getAutoplaylistInfo: (playlist: PlaylistRef) =>
         call('playlist.getAutoplaylistInfo', {
             ...playlistTarget(playlist),
         }),
-    /** `query` is always `null`: foobar2000 does not expose an autoplaylist's query. */
+    /**
+     * Read autoplaylist state with `query: null`; foobar2000 does not expose
+     * the query text. Editor capability is available from `getAutoplaylistInfo`.
+     * The same provider-source and unreadable `keepSorted` rules apply here.
+     */
     getAutoplaylistQuery: (playlist: PlaylistRef) =>
         call('playlist.getAutoplaylistQuery', {
             ...playlistTarget(playlist),
         }),
+    /**
+     * Request the native editor for an explicitly named autoplaylist.
+     * A numeric index selects the playlist at that position when first handled
+     * by the host; subsequent work follows its GUID. Pass a GUID to preserve
+     * identity before that first lookup. Does not activate the playlist or play.
+     *
+     * Resolves with acceptance or a business failure envelope, without waiting
+     * for the native call to return or the editor to close. Subscribe with
+     * `onAutoplaylistUIResult` before calling: a result can arrive before this
+     * promise is handled. Match it by `operationId`; it does not report saving
+     * or cancellation. Navigation or destruction discards result delivery.
+     */
+    showAutoplaylistUI: (playlist: PlaylistRef) =>
+        call('playlist.showAutoplaylistUI', playlistTarget(playlist)),
+    /**
+     * Subscribe to native editor call results for this calling document.
+     * Subscribe before `showAutoplaylistUI` and retain early events by
+     * `operationId` in a bounded buffer until acceptance is handled. Success
+     * only means the native call returned normally, not that an editor opened,
+     * closed or saved changes. Results are not forwarded after navigation.
+     * Returns the unsubscribe function; call it when the consumer is disposed.
+     */
+    onAutoplaylistUIResult: (callback: (event: PlaylistAutoplaylistUIResultPayload) => void) =>
+        subscribe('playlist:autoplaylistUIResult', callback),
+    /**
+     * Create a playlist that foobar2000 fills from a library query and keeps up to date.
+     *
+     * @param name - Playlist name.
+     * @param query - foobar2000 query string (e.g. `artist HAS rock`).
+     * @param sort - Title formatting pattern for sorting.
+     * @param keepSorted - Whether to re-sort automatically when new items match.
+     */
     createAutoplaylist: (
         name: string,
         query: string,
@@ -371,6 +519,14 @@ export const playlist = {
             ...(sort !== undefined ? { sort } : {}),
             keepSorted: !!keepSorted,
         }),
+    /**
+     * Turn an existing playlist into an autoplaylist; its tracks are replaced by the query results.
+     *
+     * @param playlist - Target playlist index or GUID.
+     * @param query - foobar2000 query string.
+     * @param sort - Title formatting pattern for sorting.
+     * @param keepSorted - Whether to re-sort automatically when new items match.
+     */
     convertToAutoplaylist: (
         playlist: PlaylistRef,
         query: string,
@@ -383,16 +539,19 @@ export const playlist = {
             ...(sort !== undefined ? { sort } : {}),
             keepSorted: !!keepSorted,
         }),
+    /** Release an autoplaylist-manager client, keeping the current tracks. */
     removeAutoplaylist: (playlist: PlaylistRef) =>
         call('playlist.removeAutoplaylist', {
             ...playlistTarget(playlist),
         }),
 
     // === Lock state ===
+    /** Report whether a playlist carries a lock (e.g. from an autoplaylist). */
     isLocked: (playlist: PlaylistRef) =>
         call('playlist.isLocked', {
             ...playlistTarget(playlist),
         }),
+    /** Describe a playlist's lock status, lock name, and what the lock forbids. */
     getLockInfo: (playlist: PlaylistRef) =>
         call('playlist.getLockInfo', {
             ...playlistTarget(playlist),

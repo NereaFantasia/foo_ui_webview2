@@ -1,16 +1,3 @@
-/**
- * `<fb-output-selector>` — `<select>`-based audio output device picker.
- *
- * Calls `fb.config.getOutputDevices()` on connect and on every
- * `audio:outputDeviceChanged` event to populate the dropdown. The
- * device flagged with `isCurrent: true` becomes the selected option.
- *
- * On change, calls `fb.config.setOutputDevice(outputId, deviceId)`
- * with the picked device's ids and emits `fb-output-change`.
- *
- * Reflects host attribute `device-name`.
- */
-
 import { FbBaseElement } from './FbBaseElement.js';
 import { getFb } from './runtime.js';
 import type { FbOutputChangeDetail } from './types.js';
@@ -23,6 +10,18 @@ interface OutputDeviceInfo {
     isCurrent?: boolean;
 }
 
+/**
+ * `<fb-output-selector>` — `<select>`-based audio output device picker.
+ *
+ * Calls `fb.config.getOutputDevices()` on connect and on every
+ * `audio:outputDeviceChanged` event to populate the dropdown. The
+ * device flagged with `isCurrent: true` becomes the selected option.
+ *
+ * On change, calls `fb.config.setOutputDevice(outputId, deviceId)`
+ * with the picked device's ids and emits `fb-output-change`.
+ *
+ * Reflects host attribute `device-name`.
+ */
 export class FbOutputSelector extends FbBaseElement {
     private _select!: HTMLSelectElement;
     private _devices: OutputDeviceInfo[] = [];

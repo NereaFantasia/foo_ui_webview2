@@ -1,5 +1,8 @@
 import type { JsonValue } from '../types/json.js';
 import type { JsonObject } from '../types/json.js';
+import { getInvoke, successOf } from './utils.js';
+import { typedCall, type TypedCall } from '../utils/typedCall.js';
+
 /**
  * `utilsCompat` — SMP `window.utils` namespace compatibility layer.
  *
@@ -15,9 +18,6 @@ import type { JsonObject } from '../types/json.js';
  * installs onto `window.utils` (with a `__smpUtilsCompat: true` marker
  * so re-loads are idempotent).
  */
-
-import { getInvoke, successOf } from './utils.js';
-import { typedCall, type TypedCall } from '../utils/typedCall.js';
 
 interface FileInfoResponse {
     isFile?: boolean;
@@ -589,4 +589,5 @@ export const smpUtilsNamespace = {
     CheckFont,
 } as const;
 
+/** Type shape of the public SMP `utils` compatibility namespace. */
 export type SmpUtilsNamespaceShape = typeof smpUtilsNamespace;

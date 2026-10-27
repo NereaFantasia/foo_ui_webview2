@@ -1,33 +1,3 @@
-/**
- * `<fb-playlist-tabs>` — horizontal playlist tab strip with reorder,
- * per-tab width adjustment, native context menu integration, and a
- * persistent tab-width cache in `localStorage`.
- *
- * Every tab carries its playlist's GUID as `data-guid`, and the tabs
- * address playlists by GUID, so a playlist added or removed after the
- * tabs were drawn cannot make a gesture act on another one.
- *
- * Supported gestures:
- * - **Click** on a tab → `fb.playlist.setActive(guid)`, emits
- *   `fb-playlist-select` once the playlist is active.
- * - **Right-click** → emits `fb-playlist-context`. If
- *   `native-context` attribute is present, also calls
- *   `fb.menu.showNativePopup({ mode: 'playlist' })` after activating.
- * - **Drag** (>= 5 px from press point) → reorder via
- *   `fb.playlist.reorderPlaylists(guids)`, emits `fb-playlist-reorder`
- *   once the host has reordered.
- * - **Drag from rightmost 5 px of tab** → resize tab width;
- *   width is keyed by playlist *name* in `localStorage` so renaming
- *   loses the saved width (intentional).
- * - **Wheel (vertical or horizontal)** → horizontal scroll when the
- *   tabs container overflows.
- * - **`+` button** → `fb.playlist.create('New Playlist')`, emits
- *   `fb-playlist-add`.
- *
- * Reflects host attributes: `active-index`, `count`, `dragging`,
- * `overflow`.
- */
-
 import { FbBaseElement } from './FbBaseElement.js';
 import { getFb } from './runtime.js';
 import type {
@@ -62,6 +32,35 @@ interface ResizeState {
     pointerId: number;
 }
 
+/**
+ * `<fb-playlist-tabs>` — horizontal playlist tab strip with reorder,
+ * per-tab width adjustment, native context menu integration, and a
+ * persistent tab-width cache in `localStorage`.
+ *
+ * Every tab carries its playlist's GUID as `data-guid`, and the tabs
+ * address playlists by GUID, so a playlist added or removed after the
+ * tabs were drawn cannot make a gesture act on another one.
+ *
+ * Supported gestures:
+ * - **Click** on a tab → `fb.playlist.setActive(guid)`, emits
+ *   `fb-playlist-select` once the playlist is active.
+ * - **Right-click** → emits `fb-playlist-context`. If
+ *   `native-context` attribute is present, also calls
+ *   `fb.menu.showNativePopup({ mode: 'playlist' })` after activating.
+ * - **Drag** (>= 5 px from press point) → reorder via
+ *   `fb.playlist.reorderPlaylists(guids)`, emits `fb-playlist-reorder`
+ *   once the host has reordered.
+ * - **Drag from rightmost 5 px of tab** → resize tab width;
+ *   width is keyed by playlist *name* in `localStorage` so renaming
+ *   loses the saved width (intentional).
+ * - **Wheel (vertical or horizontal)** → horizontal scroll when the
+ *   tabs container overflows.
+ * - **`+` button** → `fb.playlist.create('New Playlist')`, emits
+ *   `fb-playlist-add`.
+ *
+ * Reflects host attributes: `active-index`, `count`, `dragging`,
+ * `overflow`.
+ */
 export class FbPlaylistTabs extends FbBaseElement {
     private static readonly DRAG_THRESHOLD = 5;
     /** Width of the right-edge zone that triggers resize (pixels). */

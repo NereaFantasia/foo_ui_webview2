@@ -153,10 +153,15 @@ export const SMP_PARAM_ADAPTERS: Partial<Record<SmpEventName, SmpParamAdapter>> 
     on_selection_changed: () => undefined,
     on_library_items_added: () => undefined,
     on_library_items_removed: () => undefined,
-    on_library_items_changed: () => undefined,
+    // The event names no tracks, so `handle_list` stays undefined.
+    on_library_items_changed: (d) => [undefined, !!(d as { fromHook?: boolean } | null)?.fromHook],
     on_metadb_changed: (d) => {
-        const data = d as { tracks?: unknown[]; fromHook?: boolean } | null;
-        const tracks: unknown[] = Array.isArray(data?.tracks) ? data!.tracks! : [];
+        const data = d as { tracks?: unknown[]; handles?: string[]; fromHook?: boolean } | null;
+        // `handles` names every changed track; `tracks` only up to 50, so it
+        // serves when `handles` is empty because too many changed.
+        const named = data?.tracks;
+        let tracks: unknown[] = Array.isArray(named) ? named : [];
+        if (data?.handles?.length) tracks = data.handles;
         const fromHook = !!data?.fromHook;
         try {
             const list = new FbMetadbHandleList();

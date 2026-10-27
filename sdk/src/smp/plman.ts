@@ -1,20 +1,6 @@
 import type { JsonValue } from '../types/json.js';
 import type { JsonObject } from '../types/json.js';
 import type { PlaylistGetTracksResponse } from '../types/generated/responses.js';
-/**
- * `plman` — Spider Monkey Panel playlist manager compatibility layer.
- *
- * Builds the runtime `plman` object the IIFE bundle installs onto
- * `window.plman`. Every method maps to a single C++ API call (or a
- * small composition); the cache-backed properties read from the
- * shared {@link SmpCompatCache}.
- *
- * Cache rollback rule: every cache-backed setter writes the new value
- * optimistically, fires the C++ invoke, and on rejection rolls the
- * cache back so UI subscribers see eventual consistency. Sync helpers
- * (`GetPlaylistName`, `FindPlaylist`, ...) read directly from cache.
- */
-
 import type { SmpBridgeShape } from './bridgeShape.js';
 import { typedCall } from '../utils/typedCall.js';
 import { FbMetadbHandle } from './classes/FbMetadbHandle.js';
@@ -47,9 +33,12 @@ function _toIndexArray(listLike: unknown): number[] {
 }
 
 /**
- * Build the `plman` object using the supplied bridge + cache + refresh
- * scheduler. The result is installed onto `window.plman` by the
- * bootstrap.
+ * `plman` — Spider Monkey Panel playlist manager compatibility layer.
+ *
+ * Builds the runtime `plman` object the IIFE bundle installs onto
+ * `window.plman`. Every method maps to a single C++ API call (or a
+ * small composition); the cache-backed properties read from the
+ * shared {@link SmpCompatCache}.
  *
  * The schedulePlaylistRefresh callback is invoked after any operation
  * that changes the playlist set or per-playlist contents so the cache

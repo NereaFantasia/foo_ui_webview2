@@ -1,3 +1,7 @@
+import { FbBaseElement } from './FbBaseElement.js';
+import { getFb } from './runtime.js';
+import type { FbPrevDetail } from './types.js';
+
 /**
  * `<fb-prev-button>` — jumps to the previous track.
  *
@@ -6,11 +10,6 @@
  *
  * Emits `fb-prev` after the host call resolves.
  */
-
-import { FbBaseElement } from './FbBaseElement.js';
-import { getFb } from './runtime.js';
-import type { FbPrevDetail } from './types.js';
-
 export class FbPrevButton extends FbBaseElement {
     private _btn!: HTMLButtonElement;
 

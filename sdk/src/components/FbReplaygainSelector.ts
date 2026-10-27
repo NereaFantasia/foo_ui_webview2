@@ -1,16 +1,3 @@
-/**
- * `<fb-replaygain-selector>` — fixed-options `<select>` for the
- * host's ReplayGain source mode (Off / Track / Album / Auto).
- *
- * The four `<option>` values are hard-coded (`'none' | 'track' |
- * 'album' | 'auto'`) — the host enum is stable across foobar2000
- * releases. Numeric `audio:replaygainModeChanged` payloads are
- * mapped through {@link RG_MODE_NAMES}.
- *
- * On change, calls `fb.replaygain.setMode(mode)` and emits
- * `fb-replaygain-change`. Reflects host attribute `mode`.
- */
-
 import { FbBaseElement } from './FbBaseElement.js';
 import { RG_MODE_NAMES } from './constants.js';
 import { getFb } from './runtime.js';
@@ -28,6 +15,18 @@ function isSourceMode(value: string): value is SourceMode {
     return (SOURCE_MODES as readonly string[]).includes(value);
 }
 
+/**
+ * `<fb-replaygain-selector>` — fixed-options `<select>` for the
+ * host's ReplayGain source mode (Off / Track / Album / Auto).
+ *
+ * The four `<option>` values are hard-coded (`'none' | 'track' |
+ * 'album' | 'auto'`) — the host enum is stable across foobar2000
+ * releases. Numeric `audio:replaygainModeChanged` payloads are
+ * mapped through {@link RG_MODE_NAMES}.
+ *
+ * On change, calls `fb.replaygain.setMode(mode)` and emits
+ * `fb-replaygain-change`. Reflects host attribute `mode`.
+ */
 export class FbReplaygainSelector extends FbBaseElement {
     private _select!: HTMLSelectElement;
 

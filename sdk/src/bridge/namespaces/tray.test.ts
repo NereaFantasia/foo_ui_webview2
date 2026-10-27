@@ -33,6 +33,29 @@ describe('tray.setContextMenu layoutMode', () => {
     beforeEach(() => vi.resetModules());
     afterEach(() => vi.unstubAllGlobals());
 
+    it('exposes process-wide native click selection before icon creation', async () => {
+        const native = makeNative();
+        native.invoke.mockResolvedValue({ success: true });
+        vi.stubGlobal('window', { fb2k: native });
+        const { tray } = await import('./tray.js');
+        expect(tray.setClickAction).toBeTypeOf('function');
+        await tray.setClickAction('toggleMainWindow');
+        expect(native.invoke).toHaveBeenCalledTimes(1);
+        expect(native.invoke).toHaveBeenCalledWith('tray.setClickAction', {
+            action: 'toggleMainWindow',
+        });
+    });
+
+    it('forwards an explicit return to legacy click events', async () => {
+        const native = makeNative();
+        native.invoke.mockResolvedValue({ success: true });
+        vi.stubGlobal('window', { fb2k: native });
+        const { tray } = await import('./tray.js');
+        expect(tray.setClickAction).toBeTypeOf('function');
+        await tray.setClickAction('event');
+        expect(native.invoke).toHaveBeenCalledWith('tray.setClickAction', { action: 'event' });
+    });
+
     it('forwards layoutMode zones without rewriting defaults', async () => {
         const native = makeNative();
         native.invoke.mockResolvedValue({ success: true });

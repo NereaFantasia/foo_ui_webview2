@@ -503,9 +503,12 @@ export type ApiErrorCode =
     | 'PANEL_MODE_UNSUPPORTED' // Called from a DUI/CUI panel; the method needs the standalone window.
     | 'LIBRARY_DISABLED'  // Media library not enabled.
     | 'NO_ACTIVE_ITEM'    // No active playlist or track.
+    | 'CONFLICT'          // Session state changed or a request ID cannot be reused.
+    | 'NOT_OWNER'         // This document does not hold the current session control token.
     // Operation failures
     | 'OPERATION_FAILED'  // Generic operation failure.
     | 'CANCELLED'         // The caller cancelled an async task.
+    | 'TIMEOUT'           // The page stopped waiting after 30 s; the call may still have run.
     // Path / media specific
     | 'PERMISSION_DENIED' // Path-validation refused (PathSecuritySpec decorator).
     | 'ORIGIN_DENIED'     // Document origin not trusted for this capability.
@@ -1149,9 +1152,9 @@ export interface MenuSeparator {
  * menu id that dies with the transient menu it was generated from, so it must
  * never be persisted or passed back as an address.
  *
- * `source` is decided per leaf: on the tree tiers a node that carries
- * `subGuid` reports the family's dynamic value (`mainmenu_dynamic` /
- * `contextmenu_dynamic`), one without it reports the static value. Every
+ * Main-menu `source` reflects the provider's node kind; a dynamic leaf without
+ * its subGuid remains dynamic and cannot be executed. Context-menu sources
+ * distinguish dynamic leaves by subGuid presence. Every
  * leaf of the v1 HMENU tier reports `hmenu_fallback` whether or not a
  * `subGuid` was back-filled for it.
  */
@@ -1417,8 +1420,6 @@ export type DndPathsUnavailableReason =
     | 'inner-target-not-found'
     /** The revoke/register transaction that installs the chain failed. */
     | 'chain-failed'
-    /** Chromium re-registered its own drop target over the host's. */
-    | 'displaced'
     /** The document origin is not trusted with real filesystem paths. */
     | 'origin-untrusted';
 
@@ -1460,10 +1461,9 @@ export type DndCapabilities = DndGetCapabilitiesResponse;
  * - `emptyNode` — a degenerate registration with neither name nor children.
  */
 export type MenuUnaddressableReason =
+    | NonNullable<MenuTreeNode['unaddressableReason']>
     | ''
     | 'separator'
-    | 'dynamicParent'
-    | 'noStableIdentifier'
     | 'emptyNode';
 
 /** Which registration tier a menu node was enumerated from. */
@@ -1649,12 +1649,13 @@ export type {
     PlaybackVolumeDownResponse, PlaybackVolumeUpResponse, PlaycountGetBatchResponse, PlaycountGetResponse, PlaycountGetStatsResponse, PlaycountSetResponse, PlaylistAddHandlesResponse, PlaylistAddPathsAsyncResponse,
     PlaylistAddPathsResponse, PlaylistAddPathsSequentialResponse, PlaylistClearResponse, PlaylistConvertToAutoplaylistResponse,
     PlaylistCreateAutoplaylistResponse, PlaylistCreateResponse, PlaylistDuplicateResponse, PlaylistDeselectAllResponse, PlaylistFocusTrackResponse, PlaylistGetActiveResponse, PlaylistGetAllResponse, PlaylistGetAutoplaylistInfoResponse,
+    PlaylistCreateManagedAutoplaylistResponse, PlaylistGetAutoplaylistConfigResponse, PlaylistSetAutoplaylistConfigResponse,
     PlaylistGetAutoplaylistQueryResponse, PlaylistGetAvailableColumnsResponse, PlaylistGetCountResponse, PlaylistGetFocusTrackResponse, PlaylistGetFocusedTrackResponse, PlaylistGetLockInfoResponse,
     PlaylistGetMatchingRowsResponse, PlaylistGetPlayingResponse, PlaylistGetSelectedTracksResponse, PlaylistGetSelectionResponse, PlaylistGetTrackCountResponse, PlaylistGetTracksAtResponse, PlaylistGetTracksResponse, PlaylistInsertTracksResponse,
     PlaylistIsAutoplaylistResponse, PlaylistIsLockedResponse, PlaylistMoveTracksResponse, PlaylistPlayTrackResponse, PlaylistRedoResponse, PlaylistRemoveResponse,
     PlaylistRemoveAutoplaylistResponse, PlaylistRemoveSelectedTracksResponse, PlaylistRemoveTracksResponse, PlaylistRenameResponse,
     PlaylistReorderPlaylistsResponse, PlaylistReorderResponse, PlaylistReplaceAllAndPlayResponse, PlaylistReverseResponse, PlaylistSelectAllResponse, PlaylistSetActiveResponse,
-    PlaylistSetFocusedTrackResponse, PlaylistSetSelectionResponse, PlaylistShuffleResponse, PlaylistSortResponse, PlaylistUndoResponse, PortConnectResponse,
+    PlaylistSetFocusedTrackResponse, PlaylistSetSelectionResponse, PlaylistShowAutoplaylistUIResponse, PlaylistShuffleResponse, PlaylistSortResponse, PlaylistUndoResponse, PortConnectResponse,
     PortDisconnectResponse, PortGetPortsResponse, PortPostMessageResponse, PortPostMessageToResponse, QueueAddPathsResponse, QueueAddResponse,
     QueueClearResponse, QueueFlushResponse, QueueGetCountResponse, QueueInsertNextResponse, QueueMoveToTopResponse, QueuePlayNowResponse,
     QueueRemoveResponse, QueueSetContentsResponse, RatingGetResponse,

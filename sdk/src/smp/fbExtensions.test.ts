@@ -330,6 +330,21 @@ describe('fb.RunContextCommandWithMetadb', () => {
         });
     });
 
+    it('asks the host to check the found path and the tracks when it reported targetKey', async () => {
+        const { ext, calls } = menuHost({ menu: { ...MENU, targetKey: 'k1' } });
+
+        const ok = await ext.RunContextCommandWithMetadb('playback statistics/rating/5', 'C:\\a.flac');
+
+        expect(ok).toBe(true);
+        expect(calls[1].params).toEqual({
+            id: 17,
+            mode: 'handles',
+            handles: ['C:\\a.flac'],
+            expectPath: 'Playback Statistics/Rating/5',
+            expectTarget: 'k1',
+        });
+    });
+
     it('takes every handle of a handle list, and a plain path', async () => {
         const list = new FbMetadbHandleList([
             new FbMetadbHandle('C:\\a.flac'),

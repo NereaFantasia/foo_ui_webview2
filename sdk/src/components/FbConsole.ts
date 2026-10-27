@@ -1,3 +1,7 @@
+import { FbBaseElement } from './FbBaseElement.js';
+import { getFb } from './runtime.js';
+import type { FbConsoleUpdateDetail } from './types.js';
+
 /**
  * `<fb-console>` — foobar2000 console log viewer.
  *
@@ -12,11 +16,6 @@
  *
  * Emits `fb-console-update` once per successful poll.
  */
-
-import { FbBaseElement } from './FbBaseElement.js';
-import { getFb } from './runtime.js';
-import type { FbConsoleUpdateDetail } from './types.js';
-
 export class FbConsole extends FbBaseElement {
     private _container!: HTMLElement;
     private _maxLines = 200;

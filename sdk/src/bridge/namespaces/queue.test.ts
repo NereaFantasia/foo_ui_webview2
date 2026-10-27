@@ -43,6 +43,18 @@ describe('queue.remove', () => {
             ['queue.remove', { indices: [] }],
         ]);
     });
+
+    it('forwards `expectedVersion` only when given', async () => {
+        const native = makeNative();
+        vi.stubGlobal('window', { fb2k: native });
+        const { queue } = await import('./queue.js');
+
+        await queue.remove(1, 'p-9');
+        await queue.remove(1);
+
+        expect(native.invoke.mock.calls[0]).toEqual(['queue.remove', { index: 1, expectedVersion: 'p-9' }]);
+        expect(JSON.parse(JSON.stringify(native.invoke.mock.calls[1][1]))).toEqual({ index: 1 });
+    });
 });
 
 describe('queue playlist-row references', () => {

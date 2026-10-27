@@ -69,6 +69,13 @@ export interface BridgeInvokeMetrics {
  */
 export type BridgeMetricsHook = (metrics: BridgeInvokeMetrics) => void;
 
+/**
+ * Core communication bridge between WebView2 and the foobar2000 host DLL.
+ *
+ * Coordinates asynchronous method invocation, typed event subscriptions,
+ * availability readiness probing, and instrumentation hooks. Accessible
+ * via the singleton {@link bridge} export or the aggregate {@link fb} object.
+ */
 export class Bridge {
     /**
      * Lazily resolved native bridge handle. Set once the host injects

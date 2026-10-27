@@ -50,6 +50,7 @@ const atomicSeq: SeqLoader = (header) => Atomics.load(header, SEQ_INDEX);
 export class PcmRingReader {
     /** Samples per second per channel. */
     readonly sampleRate: number;
+    /** Number of audio channels in each frame (e.g. `2` for stereo). */
     readonly channels: number;
     /** Frames the ring holds. */
     readonly capacityFrames: number;

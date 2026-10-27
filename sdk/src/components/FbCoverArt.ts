@@ -1,3 +1,9 @@
+import { FbBaseElement } from './FbBaseElement.js';
+import { getFb } from './runtime.js';
+import type { FbCoverErrorDetail, FbCoverLoadDetail } from './types.js';
+
+type CoverType = 'front' | 'back' | 'disc' | 'icon' | 'artist';
+
 /**
  * `<fb-cover-art>` — current-track album-art display.
  *
@@ -17,13 +23,6 @@
  * Track changes are debounced for 300 ms to limit host requests
  * during rapid skips.
  */
-
-import { FbBaseElement } from './FbBaseElement.js';
-import { getFb } from './runtime.js';
-import type { FbCoverErrorDetail, FbCoverLoadDetail } from './types.js';
-
-type CoverType = 'front' | 'back' | 'disc' | 'icon' | 'artist';
-
 export class FbCoverArt extends FbBaseElement {
     private _debounceTimer: ReturnType<typeof setTimeout> | null = null;
     private _img!: HTMLImageElement;

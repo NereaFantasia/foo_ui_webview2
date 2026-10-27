@@ -1,3 +1,8 @@
+import { FbBaseElement } from './FbBaseElement.js';
+import { getFb } from './runtime.js';
+import { trackKeyOf, type TrackIdentity } from './trackKey.js';
+import type { FbRatingChangeDetail } from './types.js';
+
 /**
  * `<fb-rating>` — interactive N-star track rating widget.
  *
@@ -21,12 +26,6 @@
  * - `[part=star][aria-checked=true]` — mirrors the committed rating
  *   for accessibility; themes may use it for persistent styling.
  */
-
-import { FbBaseElement } from './FbBaseElement.js';
-import { getFb } from './runtime.js';
-import { trackKeyOf, type TrackIdentity } from './trackKey.js';
-import type { FbRatingChangeDetail } from './types.js';
-
 export class FbRating extends FbBaseElement {
     private _stars!: HTMLDivElement;
     private _currentPath = '';

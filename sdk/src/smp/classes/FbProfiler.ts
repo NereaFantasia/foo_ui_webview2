@@ -1,14 +1,3 @@
-/**
- * `FbProfiler` — Simple wall-clock stopwatch.
- *
- * Mirrors the SMP `FbProfiler` API (`Time` getter, `Reset()`,
- * `Print()`).
- *
- * Implementation prefers `performance.now()` when available (sub-ms
- * resolution) and falls back to `Date.now()` for environments without
- * a high-resolution timer.
- */
-
 function _now(): number {
     if (
         typeof performance !== 'undefined' &&
@@ -19,6 +8,16 @@ function _now(): number {
     return Date.now();
 }
 
+/**
+ * `FbProfiler` — Simple wall-clock stopwatch.
+ *
+ * Mirrors the SMP `FbProfiler` API (`Time` getter, `Reset()`,
+ * `Print()`).
+ *
+ * Implementation prefers `performance.now()` when available (sub-ms
+ * resolution) and falls back to `Date.now()` for environments without
+ * a high-resolution timer.
+ */
 export class FbProfiler {
     private _name: string;
     private _start: number;

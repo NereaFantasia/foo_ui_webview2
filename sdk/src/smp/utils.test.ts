@@ -320,6 +320,20 @@ describe('utils.buildMenuItems', () => {
         expect(state.idMap.get(2)).toBe('abcd-1234');
     });
 
+    it('keeps availability separate from stable addressing and never chooses a candidate', () => {
+        const state = makeState(1, 'mainmenu');
+        const items: SmpRawMenuItem[] = [
+            { type: 'command', label: 'Disabled', guid: 'disabled-guid', executable: true, enabled: false },
+            { type: 'command', label: 'Ambiguous', enabled: true, executable: false, path: 'View/Show',
+                addressCandidates: [{ path: 'View/Show', guid: 'candidate', groupGuid: 'group' }] },
+        ];
+        const result = buildMenuItems(items, state);
+        expect(result[0]).toMatchObject({ enabled: false });
+        expect(result[1]).toMatchObject({ enabled: true });
+        expect(state.idMap.get(1)).toBe('disabled-guid');
+        expect(state.idMap.has(2)).toBe(false);
+    });
+
     it('prefers guid over path when both are present', () => {
         // The host resolves a GUID directly, while a path has to be matched
         // against a generated menu tree — a lookup that fails outright on

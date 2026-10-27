@@ -12,11 +12,15 @@ import type {
  * `{ playlist, item }` or `{ playlistGuid, item }` adds a playlist track
  * that is not queued yet. A call may freely mix the forms across its
  * `items` array.
+ *
+ * A row form may carry `expectedPlaylistVersion`, the playlist's
+ * `contentVersion` when the row was read: if the playlist has changed
+ * since, the call changes nothing and fails with `STALE_TARGET`.
  */
 export type QueueContentRef =
     | { queueIndex: number }
-    | { playlist: number; item: number }
-    | { playlistGuid: string; item: number };
+    | { playlist: number; item: number; expectedPlaylistVersion?: string }
+    | { playlistGuid: string; item: number; expectedPlaylistVersion?: string };
 
 /**
  * The playlist-row half of {@link QueueContentRef}: a track addressed by
@@ -40,6 +44,7 @@ export type QueueListRef = Exclude<QueueContentRef, { queueIndex: number }>;
 export const queue = {
     /** Every entry is the shared `Track` row plus `queueIndex`, `playlist` and `playlistItem`. */
     get: () => call('queue.get'),
+    /** Report how many entries the queue holds. */
     getCount: () => call('queue.getCount'),
     /** Fails with `INVALID_INDEX` when no given position is in range. */
     add: (opts: QueueAddParams) =>
@@ -62,15 +67,24 @@ export const queue = {
      * given position is in range.
      *
      * @param target - A queue position, or an array of queue positions.
+     * @param expectedVersion - Change nothing and fail with `STALE_TARGET` unless the queue
+     *   still has this `contentVersion`.
      */
-    remove: (target: number | NonNullable<QueueRemoveParams['indices']>) =>
-        call(
-            'queue.remove',
-            Array.isArray(target) ? { indices: target } : { index: target },
-        ),
-    moveToTop: (index: number) =>
+    remove: (target: number | NonNullable<QueueRemoveParams['indices']>, expectedVersion?: string) =>
+        call('queue.remove', {
+            ...(Array.isArray(target) ? { indices: target } : { index: target }),
+            expectedVersion,
+        }),
+    /**
+     * Move the entry at `index` to the front; `0` is refused.
+     *
+     * @param expectedVersion - Change nothing and fail with `STALE_TARGET` unless the queue
+     *   still has this `contentVersion`.
+     */
+    moveToTop: (index: number, expectedVersion?: string) =>
         call('queue.moveToTop', {
             index,
+            expectedVersion,
         }),
     /**
      * Replace the entire queue with the given ordered list of references.
@@ -89,10 +103,14 @@ export const queue = {
      * Intended for a single commit at the end of a drag-to-reorder
      * gesture, not for per-frame calls while dragging — each call flushes
      * and rebuilds the queue from scratch.
+     *
+     * @param expectedVersion - Change nothing and fail with `STALE_TARGET` unless the queue
+     *   still has this `contentVersion`.
      */
-    setContents: (items: QueueContentRef[]) =>
+    setContents: (items: QueueContentRef[], expectedVersion?: string) =>
         call('queue.setContents', {
             items,
+            expectedVersion,
         }),
     /**
      * Insert tracks so they play next, ahead of everything already queued.
@@ -147,8 +165,12 @@ export const queue = {
      * upgrading, not new calls. A bare path to a multi-subsong file and
      * that same path with an explicit `|subsong:0` suffix are also treated
      * as distinct identities rather than equivalent.
+     *
+     * @param expectedVersion - Change nothing and fail with `STALE_TARGET` unless the queue
+     *   still has this `contentVersion`.
+     *   It is compared when the queue is written, after the paths are resolved.
      */
-    insertNext: (entries: Array<string | QueueListRef>, position?: number) => {
+    insertNext: (entries: Array<string | QueueListRef>, position?: number, expectedVersion?: string) => {
         const paths = entries.filter(
             (entry): entry is string => typeof entry === 'string',
         );
@@ -159,6 +181,7 @@ export const queue = {
             ...(paths.length > 0 ? { paths } : {}),
             ...(items.length > 0 ? { items } : {}),
             ...(position !== undefined ? { position } : {}),
+            expectedVersion,
         });
     },
     /**
@@ -175,11 +198,17 @@ export const queue = {
      * either just before or just after the played entry is removed. Call
      * {@link queue.getCount} afterward if the exact post-play length
      * matters.
+     *
+     * @param expectedVersion - Change nothing and fail with `STALE_TARGET` unless the queue
+     *   still has this `contentVersion`.
      */
-    playNow: (index?: number) =>
+    playNow: (index?: number, expectedVersion?: string) =>
         call('queue.playNow', {
             ...(index !== undefined ? { index } : {}),
+            expectedVersion,
         }),
+    /** Clear the play queue. Same as {@link queue.clear}. */
     flush: () => call('queue.flush'),
+    /** Clear all items from the play queue. */
     clear: () => call('queue.clear'),
 };

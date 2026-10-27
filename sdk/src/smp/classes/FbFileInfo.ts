@@ -1,15 +1,5 @@
 import type { JsonValue } from '../../types/json.js';
 import type { JsonObject } from '../../types/json.js';
-/**
- * `FbFileInfo` — meta + technical-info accessor.
- *
- * Wraps the JSON envelope returned by `metadata.read` so SMP-style
- * scripts can use `MetaCount` / `MetaFind(name)` / `MetaValue(...)` to
- * inspect tags, and `InfoCount` / `InfoFind(name)` / `InfoValue(idx)`
- * for technical info (codec / sample rate / etc.).
- *
- * Lookups are case-insensitive to match the SMP runtime behaviour.
- */
 
 interface FbFileInfoInput {
     tags?: JsonObject;
@@ -35,6 +25,16 @@ function _findIndexCaseInsensitive(list: readonly string[], name: string): numbe
     return -1;
 }
 
+/**
+ * `FbFileInfo` — meta + technical-info accessor.
+ *
+ * Wraps the JSON envelope returned by `metadata.read` so SMP-style
+ * scripts can use `MetaCount` / `MetaFind(name)` / `MetaValue(...)` to
+ * inspect tags, and `InfoCount` / `InfoFind(name)` / `InfoValue(idx)`
+ * for technical info (codec / sample rate / etc.).
+ *
+ * Lookups are case-insensitive to match the SMP runtime behaviour.
+ */
 export class FbFileInfo {
     private readonly _metaNames: string[] = [];
     private readonly _metaValues: string[][] = [];
@@ -81,10 +81,12 @@ export class FbFileInfo {
         return _findIndexCaseInsensitive(this._infoNames, name);
     }
 
+    /** Get the name of the meta tag at the given zero-based index. */
     MetaName(index: number): string {
         return this._metaNames[index] || '';
     }
 
+    /** Get the name of the technical info field at the given zero-based index. */
     InfoName(index: number): string {
         return this._infoNames[index] || '';
     }
@@ -102,6 +104,7 @@ export class FbFileInfo {
         return values[valueIndex] || '';
     }
 
+    /** Get the value of the technical info field at the given zero-based index. */
     InfoValue(index: number): string {
         return this._infoValues[index] || '';
     }

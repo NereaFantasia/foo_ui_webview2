@@ -23,10 +23,10 @@ let savedSmp: unknown;
 let invoke: InvokeMock;
 
 /** Serve `menu.getContextMenu` from `items`; report success for everything else. */
-function installHost(items: SmpRawMenuItem[]): void {
+function installHost(items: SmpRawMenuItem[], targetKey?: string): void {
     invoke = vi.fn(async (method: string) =>
         method === 'menu.getContextMenu'
-            ? { success: true, mode: 'handles', items }
+            ? { success: true, mode: 'handles', items, ...(targetKey ? { targetKey } : {}) }
             : { success: true },
     );
     globalWithSmp.smp = { invoke };
@@ -38,8 +38,8 @@ function methods(): string[] {
 }
 
 /** A manager whose menu is built for one CUE subsong and one plain file. */
-async function builtManager(items: SmpRawMenuItem[]): Promise<ContextMenuManager> {
-    installHost(items);
+async function builtManager(items: SmpRawMenuItem[], targetKey?: string): Promise<ContextMenuManager> {
+    installHost(items, targetKey);
     const cm = new ContextMenuManager();
     cm.InitContext(
         new FbMetadbHandleList([
@@ -76,6 +76,31 @@ describe('ContextMenuManager.ExecuteByID', () => {
             'menu.runContextCommandById',
             { id: 42, mode: 'handles', handles: ['C:\\album.cue|subsong:2', 'C:\\a.flac'] },
         ]);
+    });
+
+    it('asks the host to check the path and tracks when it reported targetKey', async () => {
+        const cm = await builtManager(
+            [{ type: 'command', label: 'Properties', path: 'Tools/Properties', commandId: 42 }],
+            'k1',
+        );
+
+        expect(await cm.ExecuteByID(100)).toBe(true);
+        expect(invoke.mock.calls[1][1]).toMatchObject({
+            id: 42,
+            expectPath: 'Tools/Properties',
+            expectTarget: 'k1',
+        });
+    });
+
+    it('sends a raw host id without the check, as it has no path from the menu', async () => {
+        const cm = await builtManager(
+            [{ type: 'command', label: 'Properties', path: 'Properties', commandId: 42 }],
+            'k1',
+        );
+
+        expect(await cm.ExecuteByID(7)).toBe(true);
+        expect(invoke.mock.calls[1][1]).not.toHaveProperty('expectPath');
+        expect(invoke.mock.calls[1][1]).not.toHaveProperty('expectTarget');
     });
 
     it('resolves a numeric string through the same map', async () => {

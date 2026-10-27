@@ -1,9 +1,16 @@
 import type { JsonValue } from '../../types/json.js';
+import { getTypedInvoke, toHandleIdArray, successOf } from '../utils.js';
+
+interface SelectionResponse {
+    success?: boolean;
+    [key: string]: JsonValue;
+}
+
 /**
  * `FbUiSelectionHolder` — UI selection holder wrapper.
  *
  * Surfaces the SMP API: explicitly stamp the active foobar2000 UI
- * selection (selection.set) or take it from the active playlist
+ * selection (`selection.set`) or take it from the active playlist
  * (`selection.setPlaylistTracking`). The host holds a selection holder
  * only for the duration of each call, not for the life of this object.
  *
@@ -16,14 +23,6 @@ import type { JsonValue } from '../../types/json.js';
  * Callers should always `await` the result because the host may
  * refuse the request asynchronously.
  */
-
-import { getTypedInvoke, toHandleIdArray, successOf } from '../utils.js';
-
-interface SelectionResponse {
-    success?: boolean;
-    [key: string]: JsonValue;
-}
-
 export class FbUiSelectionHolder {
     /**
      * Replace the current UI selection.

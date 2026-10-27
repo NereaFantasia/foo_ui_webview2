@@ -3,25 +3,6 @@ import type {
     TitleformatEvalParams,
 } from '../../types/generated/params.js';
 import type { JsonValue } from '../../types/json.js';
-/**
- * `FbTitleFormat` — title-format script accessor.
- *
- * Mirrors the SMP API: a wrapper around a single titleformat
- * expression that can be evaluated against the current track
- * (`Eval`), a single handle (`EvalWithMetadb`), or a list
- * (`EvalWithMetadbs`).
- *
- * Backend mapping:
- * - `Eval` / `EvalWithMetadb` → `titleformat.eval` (`{ path, pattern }`).
- * - `EvalWithMetadbs` → `titleformat.evalBatch` (`{ paths, pattern }`).
- *
- * Each path is the track's handle id, `|subsong:N` suffix included.
- *
- * The single-pattern shape is preserved (rather than upgraded to the
- * newer `titleformat.evalFields` API) because SMP scripts depend on
- * the one-expression-per-call contract.
- */
-
 import { getTypedInvoke, successOf, toHandleId } from '../utils.js';
 import type { SmpHandleLike } from '../types.js';
 import { FbMetadbHandleList } from './FbMetadbHandleList.js';
@@ -98,6 +79,24 @@ interface SmpHostShape {
     cache?: SmpCacheShape;
 }
 
+/**
+ * `FbTitleFormat` — title-format script accessor.
+ *
+ * Mirrors the SMP API: a wrapper around a single titleformat
+ * expression that can be evaluated against the current track
+ * (`Eval`), a single handle (`EvalWithMetadb`), or a list
+ * (`EvalWithMetadbs`).
+ *
+ * Backend mapping:
+ * - `Eval` / `EvalWithMetadb` → `titleformat.eval` (`{ path, pattern }`).
+ * - `EvalWithMetadbs` → `titleformat.evalBatch` (`{ paths, pattern }`).
+ *
+ * Each path is the track's handle id, `|subsong:N` suffix included.
+ *
+ * The single-pattern shape is preserved (rather than upgraded to the
+ * newer `titleformat.evalFields` API) because SMP scripts depend on
+ * the one-expression-per-call contract.
+ */
 export class FbTitleFormat {
     private readonly _expr: string;
 
@@ -105,6 +104,7 @@ export class FbTitleFormat {
         this._expr = String(expression || '');
     }
 
+    /** Title formatting pattern wrapped by this instance. */
     get Expression(): string {
         return this._expr;
     }
@@ -158,6 +158,7 @@ export class FbTitleFormat {
         });
     }
 
+    /** Return the title formatting pattern string. */
     toString(): string {
         return this._expr;
     }

@@ -10,7 +10,7 @@
 
 import type { JsonValue } from '../json.js';
 
-import type { FileOpResultItem, LibraryTrack, MetadataProbeResultItem, MetadbChangedTrackItem, SystemApiInfo, SystemPluginInfo, Track, WindowPopupBehaviorState } from './schema-types.js';
+import type { FileOpResultItem, JitSessionOperation, JitSessionSnapshot, LibraryTrack, MetadataProbeResultItem, MetadbChangedTrackItem, SystemApiInfo, SystemPluginInfo, Track, WindowPopupBehaviorState } from './schema-types.js';
 
 /**
  * Payload of the `api:registered` event.
@@ -66,9 +66,9 @@ export interface AudioFullWaveformReadyPayload {
     maxAmplitude: number;
     /** Track duration in seconds. */
     duration: number;
-    /** Sample rate of the decoded track in Hz. */
+    /** Actual decoded PCM sample rate in Hz, which can differ from the file's nominal sample rate. */
     sampleRate: number;
-    /** Channel count of the decoded track. */
+    /** Actual decoded PCM channel count. */
     channels: number;
     /** Number of points. */
     resolution: number;
@@ -216,7 +216,7 @@ export interface DndCapabilitiesChangedPayload {
     /** How the window hosts its WebView: `visual` for the main and popup windows, `standard` for a DUI or CUI panel. */
     hosting: "visual" | "standard";
     /** Why `paths` is `false`; its presence always means `paths` is `false`. */
-    pathsUnavailableReason?: "register-failed" | "forward-unavailable" | "inner-target-not-found" | "chain-failed" | "displaced" | "origin-untrusted";
+    pathsUnavailableReason?: "register-failed" | "forward-unavailable" | "inner-target-not-found" | "chain-failed" | "origin-untrusted";
     /** Files can be dragged out of the window through `dnd.prepareDrag`. Independent of `paths`. */
     dragOut: boolean;
     /** Why `dragOut` is `false`; its presence always means `dragOut` is `false`. */
@@ -251,7 +251,7 @@ export interface DndDropPayload {
     x: number;
     /** Cursor y in client-area physical pixels. */
     y: number;
-    /** Win32 modifier and mouse-button mask at drop time (`MK_*` flags), for a page that wants modifier-dependent behaviour. It does not change the drop effect reported to the drag source, which is never move or link. */
+    /** Win32 modifier and mouse-button mask at drop time (`MK_*` flags), for a page that wants modifier-dependent behaviour. It does not change the drop effect reported to the drag source: copy for a drag from another application, the page's answer for one started in a page of this component. */
     keyState: number;
     /** Where the drag came from: `self` when it started in this window's page, `other-window` when it started in another window of the same foobar2000 (the main window or a popup), `external` for everything else, such as Explorer, another application, another foobar2000 process or a drag that started in a Default UI or Columns UI panel. The host reads it from a marker it adds to every drag that starts in a window it hosts; any program can imitate that marker, so treat the value as a hint about the drag's origin, not as a security check. */
     source: "self" | "other-window" | "external";
@@ -377,7 +377,7 @@ export interface HttpResponsePayload {
 
 /**
  * Payload of the `jitQueue:error` event.
- * A track given to `jitQueue.playNow` or `jitQueue.enqueueNext` could not be added to the shadow playlist: its location resolved to no tracks, the shadow playlist was gone, or adding it failed with an exception. The track is added after the call has already succeeded, so the failure arrives only as this event. Delivered like `jitQueue:trackChanged`.
+ * A track given to `jitQueue.playNow` or `jitQueue.enqueueNext` could not be added to the shadow playlist: its location resolved to no tracks, the shadow playlist was gone, or adding it failed with an exception. The track is added after the call has already succeeded, so the failure arrives only as this event. Not sent for an add superseded before it completes: by a later `jitQueue.playNow`, another `jitQueue.enqueueNext` for the next track, `jitQueue.stop`, `jitQueue.clear`, a `jitQueue.preloadBatch` that starts playback, the user stopping playback, or playback leaving the shadow playlist; such a track is neither added nor played. Advancing to an already buffered next track also supersedes an unresolved current track. Delivered like `jitQueue:trackChanged`.
  */
 export interface JitQueueErrorPayload {
     /** Identifier the call gave the track. */
@@ -435,6 +435,120 @@ export interface JitQueueTrackChangedPayload {
 }
 
 /**
+ * Payload of the `jitSession:attemptFinished` event.
+ * An attempt ended. `outcome` is `completed` only when playback reached the end of the resource; an ending the host cannot attribute is `unknown`, with the facts it has. Sent like `jitSession:stateChanged`.
+ */
+export interface JitSessionAttemptFinishedPayload {
+    /** The session. */
+    sessionId: string;
+    /** Order of this event within the session; consumers drop an event they have already seen. */
+    eventSeq: number;
+    /** State version this event reflects. */
+    revision: number;
+    /** The attempt that ended. */
+    attemptId: string;
+    /** Its entry. */
+    entryId: string;
+    /** `completed`: playback reached the end; `stopped`: stopped by the user or `jitSession.stop`; `superseded`: another attempt or playback started; `released`: the session ended; `unknown`: the host cannot attribute the ending. */
+    outcome: "completed" | "stopped" | "superseded" | "released" | "unknown";
+    /** Native stop reason, when one was observed; null for a command or an inferred transition. */
+    stopReason: "user" | "eof" | "startingAnother" | "shuttingDown" | null;
+    /** Last playback position read for the attempt, in seconds, or null. */
+    position: number | null;
+    /** Duration of the resource, in seconds, or null when unknown. */
+    duration: number | null;
+}
+
+/**
+ * Payload of the `jitSession:attemptRechecked` event.
+ * The host reopened the resource of an attempt that ended as `unknown` within its first second, and reports what that second try ran into. It describes the resource at the time of the recheck, not necessarily the cause of the original failure: a transient network failure may not reproduce, and a single-use address may fail differently the second time. Follows the attempt's `jitSession:attemptFinished`, up to about ten seconds later for network errors; not sent for other endings or when the host shuts down meanwhile. It changes no session state and is not kept in the snapshot, so a page that misses it cannot read it back. Sent like `jitSession:stateChanged`.
+ */
+export interface JitSessionAttemptRecheckedPayload {
+    /** The session. */
+    sessionId: string;
+    /** Order of this event within the session; consumers drop an event they have already seen. */
+    eventSeq: number;
+    /** State version this event reflects. */
+    revision: number;
+    /** The attempt whose resource was rechecked. */
+    attemptId: string;
+    /** Its entry. */
+    entryId: string;
+    /** `reproduced`: the recheck failed too; `notReproduced`: the resource opened and decoded its first block this time. */
+    result: "reproduced" | "notReproduced";
+    /** Why the recheck failed, or null when it did not: `accessDenied` (for example HTTP 403), `notFound` (HTTP 404 or a missing file), `unsupportedContent` (not audio, or a format no installed decoder reads), `network` (other HTTP errors, refused or timed-out connections), `other`. */
+    reason: "accessDenied" | "notFound" | "unsupportedContent" | "network" | "other" | null;
+    /** Where the recheck failed: opening the resource, initializing the decoder, or decoding the first block; null when it did not fail. */
+    stage: "open" | "initialize" | "decode" | null;
+    /** Whether foobar2000 logged a playback failure naming this resource within the last minute, for example that it could not open it. */
+    engineReported: boolean;
+}
+
+/**
+ * Payload of the `jitSession:controlChanged` event.
+ * Control of the session moved: claimed by another page, taken over by a `jitQueue` call, or released. Sent to the new and the previous controlling page.
+ */
+export interface JitSessionControlChangedPayload {
+    /** The session. */
+    sessionId: string;
+    /** Order of this event within the session; consumers drop an event they have already seen. */
+    eventSeq: number;
+    /** State version this event reflects. */
+    revision: number;
+    /** Control generation after the change. */
+    ownerEpoch: number;
+    /** `claimed` by another page, taken over by a `jitQueue` call (`legacyTakeover`), or `released`. */
+    reason: "claimed" | "legacyTakeover" | "released";
+}
+
+/**
+ * Payload of the `jitSession:needNext` event.
+ * The session needs its next entry: an attempt started with none buffered and no end of queue declared. Answer with `jitSession.setNext`. The open request stays readable in the snapshot as `neededAfterAttemptId`. Sent like `jitSession:stateChanged`.
+ */
+export interface JitSessionNeedNextPayload {
+    /** The session. */
+    sessionId: string;
+    /** Order of this event within the session; consumers drop an event they have already seen. */
+    eventSeq: number;
+    /** State version this event reflects. */
+    revision: number;
+    /** The attempt that has no next entry. */
+    afterAttemptId: string;
+    /** Identifier of this supply request; also readable in the snapshot. */
+    requestKey: string;
+}
+
+/**
+ * Payload of the `jitSession:operationCompleted` event.
+ * An operation reached its final status. Each operation sends this once. Sent like `jitSession:stateChanged`.
+ */
+export interface JitSessionOperationCompletedPayload {
+    /** The session. */
+    sessionId: string;
+    /** Order of this event within the session; consumers drop an event they have already seen. */
+    eventSeq: number;
+    /** State version this event reflects. */
+    revision: number;
+    /** The operation in its final status. */
+    operation: JitSessionOperation;
+}
+
+/**
+ * Payload of the `jitSession:stateChanged` event.
+ * The session's state changed: an attempt started or ended, an operation finished, supply or control changed. Carries the full snapshot. Sent to the controlling page only; a page that missed events reads `jitSession.getState`.
+ */
+export interface JitSessionStateChangedPayload {
+    /** The session. */
+    sessionId: string;
+    /** Order of this event within the session; consumers drop an event they have already seen. */
+    eventSeq: number;
+    /** State version this event reflects. */
+    revision: number;
+    /** Snapshot after the change. */
+    state: JitSessionSnapshot;
+}
+
+/**
  * Payload of the `keyboard:hotkey` event.
  * A hotkey registered with `keyboard.registerHotkey` was pressed. It goes to the window that registered it. A hotkey stays registered after that window closes; its presses then go to the main window's page.
  */
@@ -472,7 +586,7 @@ export interface LibraryGetAllResultPayload {
 
 /**
  * Payload of the `library:initialized` event.
- * foobar2000 reported that the Media Library has finished initializing. The host drops its library caches before sending it. Every window receives it; a page that loads afterwards does not.
+ * Sent after foobar2000 finishes loading the library at startup and the host purges its library caches. Broadcast to all open windows; pages loaded afterwards will not receive it. Use `library.getStatus` to query current status.
  */
 export interface LibraryInitializedPayload {
     /** When the host sent it, in milliseconds since the Unix epoch. */
@@ -486,17 +600,27 @@ export interface LibraryInitializedPayload {
 export interface LibraryItemsAddedPayload {
     /** How many tracks. */
     count: number;
+    /** The `handle` of every track, the key track rows carry, in no particular order. Empty when `truncated`. */
+    handles: string[];
+    /** `true` when more than 5000 tracks changed at once. `handles` is then empty, and a page should read again everything it shows. */
+    truncated: boolean;
     /** When the host sent it, in milliseconds since the Unix epoch. */
     timestamp: number;
 }
 
 /**
  * Payload of the `library:itemsModified` event.
- * Tracks in the Media Library were modified, for example by a tag edit. The host drops its library caches before sending it.
+ * Tracks in the Media Library were modified: their tags changed, or a component such as `foo_playcount` asked foobar2000 to show its fields anew (`fromHook`). Paths stay as they were, so the host keeps the directory index behind `library.getRoots` and `library.browseTree`. It drops its other library caches before sending it; for a `fromHook` change only the kept `library.getAll` list, because `rating` is the one field of the kept results that such a component can supply.
  */
 export interface LibraryItemsModifiedPayload {
     /** How many tracks. */
     count: number;
+    /** The `handle` of every track, the key track rows carry, in no particular order. Empty when `truncated`. */
+    handles: string[];
+    /** `true` when more than 5000 tracks changed at once. `handles` is then empty, and a page should read again everything it shows. */
+    truncated: boolean;
+    /** `true` when the files themselves did not change and a component such as `foo_playcount` asked for its fields to be shown anew. Paths, tags and album grouping are then as before. */
+    fromHook: boolean;
     /** When the host sent it, in milliseconds since the Unix epoch. */
     timestamp: number;
 }
@@ -508,6 +632,10 @@ export interface LibraryItemsModifiedPayload {
 export interface LibraryItemsRemovedPayload {
     /** How many tracks. */
     count: number;
+    /** The `handle` of every track, the key track rows carry, in no particular order. Empty when `truncated`. */
+    handles: string[];
+    /** `true` when more than 5000 tracks changed at once. `handles` is then empty, and a page should read again everything it shows. */
+    truncated: boolean;
     /** When the host sent it, in milliseconds since the Unix epoch. */
     timestamp: number;
 }
@@ -603,10 +731,14 @@ export interface MetadataWriteCompletePayload {
  * The metadata of tracks changed: tags were written or read again, or a component such as `foo_playcount` asked foobar2000 to show its fields anew (`fromHook`). Each entry names its track by `handle`, the key the track rows of other methods carry, so a single track of a cue sheet or a multi-track file can be told from the rest of the file.
  */
 export interface MetadbChangedPayload {
-    /** Up to 50 of the changed tracks, in no particular order. An invalid entry is skipped, so the list can hold fewer than the smaller of `count` and 50. */
+    /** Up to 50 of the changed tracks, in no particular order. An invalid entry is skipped, so the list can hold fewer than the smaller of `count` and 50. `handles` names all of them. */
     tracks: MetadbChangedTrackItem[];
     /** How many tracks changed, at least `1`; can exceed the length of `tracks`. */
     count: number;
+    /** The `handle` of every changed track, in no particular order. Empty when `truncated`. To read what a page shows for them, pass them as the `paths` of `titleformat.evalFieldsBatch`. */
+    handles: string[];
+    /** `true` when more than 5000 tracks changed at once. `handles` is then empty, and a page should read again everything it shows. */
+    truncated: boolean;
     /** `true` when the files themselves did not change and a component such as `foo_playcount` asked for its fields to be shown anew. */
     fromHook: boolean;
     /** When the event was sent, in milliseconds since the Unix epoch. */
@@ -751,6 +883,8 @@ export interface PlaybackQueueChangedPayload {
     origin: "user_added" | "user_removed" | "playback_advance" | "unknown";
     /** Queue length after the change. */
     count: number;
+    /** Already includes this change. */
+    contentVersion: string;
 }
 
 /**
@@ -873,12 +1007,46 @@ export interface PlaylistAddCompletePayload {
     operationId: string;
     /** GUID of the playlist the call added to, as the call resolved it; still that playlist when it was moved meanwhile, and no longer anyone's when it was removed. */
     playlistGuid: string;
-    /** Always `true`. */
+    /** Always `true`; `status` tells how the call ended. */
     success: boolean;
+    /** `completed` when every track the paths resolved to was added. `partial` or `failed` when some or all of them were dropped, for the cause in `reason`; the dropped ones are normally the tracks expanded from playlist files and cue sheets, since plain files are added before the call returns. `cancelled` when the user cancelled the expansion; tracks added before that stay in the playlist. */
+    status: "completed" | "partial" | "failed" | "cancelled";
+    /** Why tracks were dropped: the playlist was removed (`targetRemoved`) or locked (`locked`) before they could be added. Present with `partial` and `failed`. */
+    reason?: "targetRemoved" | "locked";
     /** Tracks added, after expanding playlists and cue sheets. Tracks dropped because the playlist was removed or locked before the expansion finished are not counted. */
     addedCount: number;
     /** Paths the call accepted. */
     totalCount: number;
+}
+
+/**
+ * Payload of the `playlist:autoplaylistConfigChanged` event.
+ * A managed autoplaylist's configuration changed, including observed changes to its keep-sorted flag. Read the new snapshot with getAutoplaylistConfig. This is not a track-content revision or a persistence notification, and is not emitted for external providers.
+ */
+export interface PlaylistAutoplaylistConfigChangedPayload {
+    /** Unique identifier of the playlist, formatted as `{XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX}`. Pass as `playlistGuid` to reliably target this playlist. */
+    playlistGuid: string;
+    /** The observed configuration revision. Re-read the configuration before editing. */
+    revision: string;
+}
+
+/**
+ * Payload of the `playlist:autoplaylistUIResult` event.
+ * An accepted native autoplaylist editor call returned or failed. Sent at most once per operation, only to its original document; navigation or destruction discards delivery. `success` reports the native call, not saved changes, cancellation, or the editor's lifetime.
+ */
+export interface PlaylistAutoplaylistUIResultPayload {
+    /** The same opaque identifier as the acceptance response, used to match this operation. */
+    operationId: string;
+    /** Unique identifier of the playlist, formatted as `{XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX}`. Pass as `playlistGuid` to reliably target this playlist. */
+    playlistGuid: string;
+    /** Whether the native call returned normally; a lock entry must also return `true`. */
+    success: boolean;
+    /** Present only on failure, together with `code` and `reason`. */
+    error?: string;
+    /** Business error code; present only when `success` is `false`. */
+    code?: string;
+    /** The failed check or native-call stage; present only when `success` is `false`. */
+    reason?: "targetGone" | "notAutoplaylist" | "noEditor" | "queryFailed" | "dispatchFailed" | "providerFailed";
 }
 
 /**
@@ -888,7 +1056,7 @@ export interface PlaylistAddCompletePayload {
 export interface PlaylistCreatedPayload {
     /** Index of the new playlist. */
     index: number;
-    /** The playlist's GUID, written as `{XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX}`. Pass it as `playlistGuid` to address this playlist even after the playlist list has changed. */
+    /** Unique identifier of the playlist, formatted as `{XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX}`. Pass as `playlistGuid` to reliably target this playlist. */
     guid: string;
     /** Its name. */
     name: string;
@@ -907,7 +1075,7 @@ export type PlaylistDefaultFormatChangedPayload = Record<string, never>;
 export interface PlaylistFocusChangedPayload {
     /** Index of the playlist. */
     playlist: number;
-    /** The playlist's GUID, written as `{XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX}`. Pass it as `playlistGuid` to address this playlist even after the playlist list has changed. */
+    /** Unique identifier of the playlist, formatted as `{XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX}`. Pass as `playlistGuid` to reliably target this playlist. */
     playlistGuid: string;
     /** Row focused before; `-1` when none was. */
     from: number;
@@ -922,12 +1090,14 @@ export interface PlaylistFocusChangedPayload {
 export interface PlaylistItemsAddedPayload {
     /** Index of the playlist. */
     playlist: number;
-    /** The playlist's GUID, written as `{XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX}`. Pass it as `playlistGuid` to address this playlist even after the playlist list has changed. */
+    /** Unique identifier of the playlist, formatted as `{XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX}`. Pass as `playlistGuid` to reliably target this playlist. */
     playlistGuid: string;
     /** Row of the first inserted track. */
     start: number;
     /** Number of tracks inserted. */
     count: number;
+    /** Already includes this change. */
+    contentVersion: string;
 }
 
 /**
@@ -937,12 +1107,14 @@ export interface PlaylistItemsAddedPayload {
 export interface PlaylistItemsRemovedPayload {
     /** Index of the playlist. */
     playlist: number;
-    /** The playlist's GUID, written as `{XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX}`. Pass it as `playlistGuid` to address this playlist even after the playlist list has changed. */
+    /** Unique identifier of the playlist, formatted as `{XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX}`. Pass as `playlistGuid` to reliably target this playlist. */
     playlistGuid: string;
     /** Track count before the removal. */
     oldCount: number;
     /** Track count after the removal. */
     newCount: number;
+    /** Already includes this change. */
+    contentVersion: string;
 }
 
 /**
@@ -952,10 +1124,12 @@ export interface PlaylistItemsRemovedPayload {
 export interface PlaylistItemsReorderedPayload {
     /** Index of the playlist. */
     playlist: number;
-    /** The playlist's GUID, written as `{XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX}`. Pass it as `playlistGuid` to address this playlist even after the playlist list has changed. */
+    /** Unique identifier of the playlist, formatted as `{XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX}`. Pass as `playlistGuid` to reliably target this playlist. */
     playlistGuid: string;
     /** Track count of the playlist. */
     count: number;
+    /** Already includes this change. */
+    contentVersion: string;
 }
 
 /**
@@ -965,10 +1139,12 @@ export interface PlaylistItemsReorderedPayload {
 export interface PlaylistItemsReplacedPayload {
     /** Index of the playlist. */
     playlist: number;
-    /** The playlist's GUID, written as `{XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX}`. Pass it as `playlistGuid` to address this playlist even after the playlist list has changed. */
+    /** Unique identifier of the playlist, formatted as `{XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX}`. Pass as `playlistGuid` to reliably target this playlist. */
     playlistGuid: string;
     /** Number of tracks replaced. */
     count: number;
+    /** Already includes this change. */
+    contentVersion: string;
 }
 
 /**
@@ -978,7 +1154,7 @@ export interface PlaylistItemsReplacedPayload {
 export interface PlaylistLockChangedPayload {
     /** Index of the playlist. */
     playlist: number;
-    /** The playlist's GUID, written as `{XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX}`. Pass it as `playlistGuid` to address this playlist even after the playlist list has changed. */
+    /** Unique identifier of the playlist, formatted as `{XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX}`. Pass as `playlistGuid` to reliably target this playlist. */
     playlistGuid: string;
     /** Whether a lock is on it now. */
     locked: boolean;
@@ -1006,7 +1182,7 @@ export interface PlaylistRemovedPayload {
 export interface PlaylistRenamedPayload {
     /** Index of the playlist. */
     index: number;
-    /** The playlist's GUID, written as `{XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX}`. Pass it as `playlistGuid` to address this playlist even after the playlist list has changed. */
+    /** Unique identifier of the playlist, formatted as `{XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX}`. Pass as `playlistGuid` to reliably target this playlist. */
     guid: string;
     /** The new name. */
     name: string;
@@ -1030,7 +1206,7 @@ export interface PlaylistReorderedPayload {
 export interface PlaylistSelectionChangedPayload {
     /** Index of the playlist. */
     playlist: number;
-    /** The playlist's GUID, written as `{XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX}`. Pass it as `playlistGuid` to address this playlist even after the playlist list has changed. */
+    /** Unique identifier of the playlist, formatted as `{XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX}`. Pass as `playlistGuid` to reliably target this playlist. */
     playlistGuid: string;
 }
 
@@ -1167,7 +1343,7 @@ export interface TrayBeforeContextMenuPayload {
 
 /**
  * Payload of the `tray:click` event.
- * The tray icon was clicked with the left button, on release. A right click opens the context menu instead and sends `tray:beforeContextMenu`.
+ * The tray icon was clicked with the left button, on release. A right click opens the context menu instead and sends `tray:beforeContextMenu`. Only emitted in the `event` click action.
  */
 export interface TrayClickPayload {
     /** Always `0`, the left button. */
@@ -1180,7 +1356,7 @@ export interface TrayClickPayload {
 
 /**
  * Payload of the `tray:doubleClick` event.
- * The tray icon was double-clicked with the left button.
+ * The tray icon was double-clicked with the left button in the `event` click action.
  */
 export interface TrayDoubleClickPayload {
     /** Cursor x in screen coordinates. */
@@ -1438,6 +1614,12 @@ export type FBEventName =
     | "jitQueue:needNext"
     | "jitQueue:preloadComplete"
     | "jitQueue:trackChanged"
+    | "jitSession:attemptFinished"
+    | "jitSession:attemptRechecked"
+    | "jitSession:controlChanged"
+    | "jitSession:needNext"
+    | "jitSession:operationCompleted"
+    | "jitSession:stateChanged"
     | "keyboard:hotkey"
     | "library:getAllResult"
     | "library:initialized"
@@ -1476,6 +1658,8 @@ export type FBEventName =
     | "playback:volumeChanged"
     | "playlist:activated"
     | "playlist:addComplete"
+    | "playlist:autoplaylistConfigChanged"
+    | "playlist:autoplaylistUIResult"
     | "playlist:created"
     | "playlist:defaultFormatChanged"
     | "playlist:focusChanged"
@@ -1552,6 +1736,12 @@ export interface FBEventPayloadMap {
     "jitQueue:needNext": JitQueueNeedNextPayload;
     "jitQueue:preloadComplete": JitQueuePreloadCompletePayload;
     "jitQueue:trackChanged": JitQueueTrackChangedPayload;
+    "jitSession:attemptFinished": JitSessionAttemptFinishedPayload;
+    "jitSession:attemptRechecked": JitSessionAttemptRecheckedPayload;
+    "jitSession:controlChanged": JitSessionControlChangedPayload;
+    "jitSession:needNext": JitSessionNeedNextPayload;
+    "jitSession:operationCompleted": JitSessionOperationCompletedPayload;
+    "jitSession:stateChanged": JitSessionStateChangedPayload;
     "keyboard:hotkey": KeyboardHotkeyPayload;
     "library:getAllResult": LibraryGetAllResultPayload;
     "library:initialized": LibraryInitializedPayload;
@@ -1590,6 +1780,8 @@ export interface FBEventPayloadMap {
     "playback:volumeChanged": PlaybackVolumeChangedPayload;
     "playlist:activated": PlaylistActivatedPayload;
     "playlist:addComplete": PlaylistAddCompletePayload;
+    "playlist:autoplaylistConfigChanged": PlaylistAutoplaylistConfigChangedPayload;
+    "playlist:autoplaylistUIResult": PlaylistAutoplaylistUIResultPayload;
     "playlist:created": PlaylistCreatedPayload;
     "playlist:defaultFormatChanged": PlaylistDefaultFormatChangedPayload;
     "playlist:focusChanged": PlaylistFocusChangedPayload;

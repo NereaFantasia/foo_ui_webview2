@@ -1,3 +1,46 @@
+import { FbBaseElement } from './FbBaseElement.js';
+import type {
+    FbColumnReorderDetail,
+    FbColumnResizeDetail,
+    FbColumnSortDetail,
+    FbHeaderContextDetail,
+} from './types.js';
+
+/**
+ * Column definition for header rows and tabular playlist / queue views.
+ */
+export interface ColumnDescriptor {
+    /** Unique identifier for the column. */
+    id: string;
+    /** Header display text. */
+    label?: string;
+    /** Fallback header text used when {@link label} is not provided. */
+    name?: string;
+    /** CSS grid track value (e.g. `'1fr'` or `'120px'`). */
+    width?: string;
+    /** Whether the column can be clicked to sort. Defaults to `true`. */
+    sortable?: boolean;
+    /** Locked columns: cannot be reordered or resized. */
+    fixed?: boolean;
+}
+
+interface DragState {
+    active: boolean;
+    colIdx: number;
+    startX: number;
+    startY: number;
+    isDragging: boolean;
+    dropTarget: number;
+    dropPos: 'left' | 'right' | null;
+}
+
+interface ResizeState {
+    active: boolean;
+    colIdx: number;
+    startX: number;
+    startW: number;
+}
+
 /**
  * `<fb-resizable-header>` — header row used by the playlist view and
  * other tabular components.
@@ -26,44 +69,6 @@
  * even when the mouse exits the component during a drag. The
  * paired `onUp` handler removes them.
  */
-
-import { FbBaseElement } from './FbBaseElement.js';
-import type {
-    FbColumnReorderDetail,
-    FbColumnResizeDetail,
-    FbColumnSortDetail,
-    FbHeaderContextDetail,
-} from './types.js';
-
-export interface ColumnDescriptor {
-    id: string;
-    label?: string;
-    /** Fallback header text used when {@link label} is not provided. */
-    name?: string;
-    /** CSS grid track value (e.g. `'1fr'` or `'120px'`). */
-    width?: string;
-    sortable?: boolean;
-    /** Locked columns: cannot be reordered or resized. */
-    fixed?: boolean;
-}
-
-interface DragState {
-    active: boolean;
-    colIdx: number;
-    startX: number;
-    startY: number;
-    isDragging: boolean;
-    dropTarget: number;
-    dropPos: 'left' | 'right' | null;
-}
-
-interface ResizeState {
-    active: boolean;
-    colIdx: number;
-    startX: number;
-    startW: number;
-}
-
 export class FbResizableHeader extends FbBaseElement {
     private _cols: ColumnDescriptor[] = [];
     private _colWidths: number[] = [];

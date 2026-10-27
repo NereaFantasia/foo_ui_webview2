@@ -1,4 +1,7 @@
 import type { JsonObject } from '../types/json.js';
+import type { FBEventName, FBEventPayloadMap } from '../types/events.js';
+import type { BaseResponse } from '../types/responses.js';
+
 /**
  * Type-only contract for the runtime bridge surface that the SMP
  * compatibility layer needs.
@@ -11,9 +14,6 @@ import type { JsonObject } from '../types/json.js';
  *   sites would couple every SMP file to the entire aggregate type;
  *   this thin shape narrows the surface to just what SMP touches.
  */
-
-import type { FBEventName, FBEventPayloadMap } from '../types/events.js';
-import type { BaseResponse } from '../types/responses.js';
 
 /**
  * Minimal projection of `fb` (the runtime aggregate exported by

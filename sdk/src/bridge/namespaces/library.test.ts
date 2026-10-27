@@ -18,6 +18,37 @@ function makeNative(): MockNative {
     };
 }
 
+describe('library.getAlbumTracks identity', () => {
+    beforeEach(() => vi.resetModules());
+    afterEach(() => vi.unstubAllGlobals());
+
+    it.each(['album1:b90041', ''])('forwards albumId %j without name fallback', async (albumId) => {
+        const native = makeNative();
+        vi.stubGlobal('window', { fb2k: native });
+        const { library } = await import('./library.js');
+
+        await library.getAlbumTracks('', 'A', { albumId });
+
+        expect(native.invoke).toHaveBeenCalledWith('library.getAlbumTracks', {
+            album: '', albumArtist: 'A', albumId,
+        });
+    });
+
+    it('keeps calls without identity compatible with hosts that accept only names', async () => {
+        const native = makeNative();
+        vi.stubGlobal('window', { fb2k: native });
+        const { library } = await import('./library.js');
+
+        await library.getAlbumTracks('Album', '');
+        await library.getAlbumTracks('Album', '', {});
+
+        expect(native.invoke.mock.calls).toEqual([
+            ['library.getAlbumTracks', { album: 'Album', albumArtist: '' }],
+            ['library.getAlbumTracks', { album: 'Album', albumArtist: '' }],
+        ]);
+    });
+});
+
 describe('library.getArtistAlbums', () => {
     beforeEach(() => {
         vi.resetModules();

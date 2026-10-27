@@ -31,9 +31,11 @@ export interface Track {
     artists: string[];
     /** First ALBUM value; empty when untagged. */
     album: string;
+    /** Opaque album identity when its original name or album artist contains invalid UTF-8. Use this instead of the display names to match an album row; absent for ordinary names. */
+    albumId?: string;
     /** Every ALBUM ARTIST value joined with `", "`; empty when untagged. */
     albumArtist: string;
-    /** Every ALBUM ARTIST value in tag order, so `albumArtists.join(", ")` equals `albumArtist`; empty when untagged. `library.getAlbums` files a track that has an `album` under the name `album` and the album artist `albumArtists[0]`, or `artists[0]` when this array is empty (`""` when both are); those are the `name` and `albumArtist` of that album's row. */
+    /** Every ALBUM ARTIST value in tag order, so `albumArtists.join(", ")` equals `albumArtist`; empty when untagged. `library.getAlbums` files a track that has an `album` under the name `album` and the album artist `albumArtists[0]`, or `artists[0]` when this array is empty (`""` when both are); those are the `name` and `albumArtist` of that album's row. When `albumId` is present, use it instead: replacement characters can make display names equal. */
     albumArtists: string[];
     /** Every GENRE value joined with `", "`; empty when untagged. */
     genre: string;
@@ -79,9 +81,11 @@ export interface TrackPartial {
     artists?: string[];
     /** First ALBUM value; empty when untagged. */
     album?: string;
+    /** Opaque album identity when its original name or album artist contains invalid UTF-8. Use this instead of the display names to match an album row; absent for ordinary names. */
+    albumId?: string;
     /** Every ALBUM ARTIST value joined with `", "`; empty when untagged. */
     albumArtist?: string;
-    /** Every ALBUM ARTIST value in tag order, so `albumArtists.join(", ")` equals `albumArtist`; empty when untagged. `library.getAlbums` files a track that has an `album` under the name `album` and the album artist `albumArtists[0]`, or `artists[0]` when this array is empty (`""` when both are); those are the `name` and `albumArtist` of that album's row. */
+    /** Every ALBUM ARTIST value in tag order, so `albumArtists.join(", ")` equals `albumArtist`; empty when untagged. `library.getAlbums` files a track that has an `album` under the name `album` and the album artist `albumArtists[0]`, or `artists[0]` when this array is empty (`""` when both are); those are the `name` and `albumArtist` of that album's row. When `albumId` is present, use it instead: replacement characters can make display names equal. */
     albumArtists?: string[];
     /** Every GENRE value joined with `", "`; empty when untagged. */
     genre?: string;
@@ -711,6 +715,161 @@ export interface FileOpResultItem {
     reason?: "already-exists" | "not-found" | "permission" | "cross-volume" | "path-too-long" | "io-error" | "cancelled";
 }
 
+export interface JitSessionDiscovery {
+    /** The session. */
+    sessionId: string;
+    /** `connected` while the page holding control is still loaded; `disconnected` after it navigated away or closed. */
+    ownerState: "connected" | "disconnected";
+    /** Current control generation, for `jitSession.claimControl`. */
+    ownerEpoch: number;
+    /** Whether the calling page may claim it with `mode: 'resume'`. */
+    canResume: boolean;
+}
+
+export interface JitSessionAttempt {
+    /** Caller's entry identifier. */
+    entryId: string;
+    /** Host's identifier of this attempt; a replay of the same entry gets a new one. */
+    attemptId: string;
+    /** Display title. */
+    title: string;
+    /** `preparing` until playback starts, then `playing`; `ended` once the attempt finished. */
+    status: "preparing" | "playing" | "ended";
+    /** The native reference the entry plays, for an adopted current track or a native supply; absent for a location. */
+    nativeRef?: string;
+}
+
+export interface JitSessionNextEntry {
+    /** Caller's entry identifier. */
+    entryId: string;
+    /** Display title. */
+    title: string;
+    /** Operation adding it to the buffer. */
+    operationId: string;
+    /** The native reference the entry plays, for a native supply; absent for a location. */
+    nativeRef?: string;
+}
+
+export interface JitNativeContextSummary {
+    /** The context. */
+    contextId: string;
+    /** Version of the occurrences, their bindings and the context status; every change raises it together with the session `revision`. */
+    contextRevision: number;
+    /** `prepared` while only the snapshot exists and native playback runs on its own. */
+    status: "prepared" | "managed" | "restoring" | "restored" | "conflicted" | "detached";
+    /** Why the context stopped applying, or null: `snapshotExpired` after 30 seconds unadopted, `nativeChanged` when playback, the queue, the settings or a captured playlist changed. */
+    reason: "snapshotExpired" | "nativeChanged" | null;
+    /** `playback` while the session may schedule playback; `recovery` while only release is allowed. */
+    controlMode: "playback" | "recovery";
+    /** Source row native playback continues from when the context is given back; equals `sourceCount` when the source is exhausted. */
+    sourceNextOffset: number;
+}
+
+export interface JitSessionSnapshot {
+    /** The session. */
+    sessionId: string;
+    /** State version; every change the session reports raises it. */
+    revision: number;
+    /** `eventSeq` of the last event this snapshot reflects. */
+    lastEventSeq: number;
+    /** Current control generation. */
+    ownerEpoch: number;
+    /** Whether the controlling page is still loaded. */
+    ownerState: "connected" | "disconnected" | "none";
+    /** `active` while the session runs playback, `stopped` after a stop, `released` after `jitSession.release` or a `jitQueue` takeover; a takeover while an adopted native context is open leaves it `stopped`. */
+    phase: "active" | "stopped" | "released";
+    /** Why the session last stopped or was released, or null. */
+    phaseReason: "user" | "command" | "external" | "legacyTakeover" | null;
+    /** The current attempt, or null. */
+    current: JitSessionAttempt | null;
+    /** The next entry, or null. */
+    next: JitSessionNextEntry | null;
+    /** `needed`: no next entry and no end declared; `preparing`: the next entry's operation is pending; `ready`: the next entry is buffered; `exhausted`: the end of queue was declared. */
+    supplyState: "needed" | "preparing" | "ready" | "exhausted";
+    /** The attempt an unanswered `jitSession:needNext` was sent for, or null. */
+    neededAfterAttemptId: string | null;
+    /** Identifier of the unanswered supply request, or null. */
+    neededRequestKey: string | null;
+    /** Pending operations, in the order they were accepted. */
+    pendingOperations: string[];
+    /** The native context captured with `jitSession.prepareAdoption`; absent when there is none. */
+    nativeContext?: JitNativeContextSummary;
+}
+
+export interface JitSessionOperation {
+    /** The operation. */
+    operationId: string;
+    /** Command that created it. */
+    kind: "play" | "setNext" | "skip";
+    /** Entry it adds. */
+    entryId: string;
+    /** Attempt started by play or skip; null while preparing a next entry. */
+    attemptId: string | null;
+    /** `pending`, or the final status: `completed` (added, and started for `play`), `failed`, or `superseded` by a later command. */
+    status: "pending" | "completed" | "failed" | "superseded";
+    /** Why it failed or was superseded, or null. */
+    reason: string | null;
+}
+
+export interface JitNativeTrack {
+    /** Host's reference to this occurrence or source row, valid within its context only. */
+    nativeRef: string;
+    /** foobar2000 path of the track. */
+    path: string;
+    /** Subsong index within the file. */
+    subsong: number;
+    /** Title tag, or the file name when there is none. */
+    title: string;
+    /** Playlist the track is in, or null for a queue entry without a playlist position. */
+    playlistGuid: string | null;
+    /** Row within that playlist, or null. */
+    row: number | null;
+}
+
+export interface JitNativeContextDetail {
+    /** The context. */
+    contextId: string;
+    /** Version of the context. */
+    contextRevision: number;
+    /** Status, as in the state snapshot. */
+    status: "prepared" | "managed" | "restoring" | "restored" | "conflicted" | "detached";
+    /** Why the context stopped applying, as in the state snapshot, or null. */
+    reason: "snapshotExpired" | "nativeChanged" | null;
+    /** Control mode, as in the state snapshot. */
+    controlMode: "playback" | "recovery";
+    /** Source row native playback continues from when the context is given back. */
+    sourceNextOffset: number;
+    /** The track playing when the snapshot was taken. */
+    current: JitNativeTrack;
+    /** Occurrences captured from the native playback queue. */
+    manualCount: number;
+    /** Rows of the playlist being played when the snapshot was taken. */
+    sourceCount: number;
+}
+
+export interface JitNativeEntry {
+    /** Host's reference, valid within this context only. */
+    nativeRef: string;
+    /** The caller's entry bound to this reference, or null before it is supplied. */
+    entryId: string | null;
+    /** foobar2000 path of the track. */
+    path: string;
+    /** Subsong index within the file. */
+    subsong: number;
+    /** Title tag, or the file name when there is none. */
+    title: string;
+    /** Playlist the track is in, or null for a queue entry without a playlist position. */
+    playlistGuid: string | null;
+    /** Row within that playlist, or null. */
+    row: number | null;
+    /** Occurrence identifier for `manual` items; null for source rows. */
+    occurrenceId: string | null;
+    /** What happened to a `manual` occurrence: `pending` not handed to playback yet, `queued` in the native queue as the next track, `submitted` taken by playback without a confirmed start, `consumed` started, `discarded` removed by the caller, `indeterminate` handed over without a known outcome, `restored` given back to the native queue. Null for source rows. */
+    disposition: "pending" | "queued" | "submitted" | "consumed" | "discarded" | "indeterminate" | "restored" | null;
+    /** Position among the occurrences to give back, from 0; null when it will not be given back. */
+    restorationRank: number | null;
+}
+
 /**
  * One registered entry.
  */
@@ -739,6 +898,8 @@ export interface LibraryValueCount {
  * One track of an album row.
  */
 export interface AlbumTrackRef {
+    /** Subsong index; combine with `path` when addressing a track in a multi-track file. */
+    subsong?: number;
     /** Track number; `0` when the track has none. */
     trackNumber: number;
     /** Track path, as foobar2000 stores it. */
@@ -751,6 +912,8 @@ export interface AlbumTrackRef {
  * One album row, as `library.getAlbums` and `library.getArtistAlbums` return it; the `row` of `library.getAlbumTracks` has the same shape.
  */
 export interface AlbumInfo {
+    /** Opaque identity for an album whose original name or album artist is not valid UTF-8. Pass it to `library.getAlbumTracks`; display text alone cannot identify such an album. Absent for ordinary names and for the differently grouped `library.getArtistAlbums` rows. */
+    albumId?: string;
     /** Album name. */
     name: string;
     /** `albumArtist` when it is set, otherwise the first `artist` value found among the tracks. */
@@ -775,7 +938,7 @@ export interface AlbumInfo {
     firstTrackAbsolutePath?: string;
     /** Front cover as a `data:image/...` URL; only `library.getAlbums` with `includeCover` fills it, and only when a cover exists. */
     coverDataUrl?: string;
-    /** The album's tracks in track-number order; only `library.getAlbums` with `includeTracks` fills it. */
+    /** Tracks in track-number order. `library.getAlbums` fills it with `includeTracks`; `library.getArtistAlbums` fills it with the tracks credited to the requested artist in this group. Use these references to keep groups with equal display names apart. */
     tracks?: AlbumTrackRef[];
 }
 
@@ -796,9 +959,11 @@ export interface LibraryRootInfo {
 }
 
 /**
- * One album an artist is credited on. `(name, artist)` is the grouping `library.getAlbums` uses, so the pair matches exactly one of its rows.
+ * One album an artist is credited on. `(name, artist)` is the grouping `library.getAlbums` uses, so the pair matches exactly one of its rows when no `albumId` is present. With `albumId`, match by that opaque value instead of the display names.
  */
 export interface ArtistAlbumRef {
+    /** The album row's opaque identity when its original grouping fields contain invalid UTF-8. */
+    albumId?: string;
     /** Album name. */
     name: string;
     /** The first `album artist` value, or the first `artist` value when there is none. */
@@ -891,9 +1056,11 @@ export interface LibraryTrackPartial {
     artists?: string[];
     /** First ALBUM value; empty when untagged. */
     album?: string;
+    /** Opaque album identity when its original name or album artist contains invalid UTF-8. Use this instead of the display names to match an album row; absent for ordinary names. */
+    albumId?: string;
     /** Every ALBUM ARTIST value joined with `", "`; empty when untagged. */
     albumArtist?: string;
-    /** Every ALBUM ARTIST value in tag order, so `albumArtists.join(", ")` equals `albumArtist`; empty when untagged. `library.getAlbums` files a track that has an `album` under the name `album` and the album artist `albumArtists[0]`, or `artists[0]` when this array is empty (`""` when both are); those are the `name` and `albumArtist` of that album's row. */
+    /** Every ALBUM ARTIST value in tag order, so `albumArtists.join(", ")` equals `albumArtist`; empty when untagged. `library.getAlbums` files a track that has an `album` under the name `album` and the album artist `albumArtists[0]`, or `artists[0]` when this array is empty (`""` when both are); those are the `name` and `albumArtist` of that album's row. When `albumId` is present, use it instead: replacement characters can make display names equal. */
     albumArtists?: string[];
     /** Every GENRE value joined with `", "`; empty when untagged. */
     genre?: string;
@@ -1022,7 +1189,21 @@ export interface MenuAvailability {
 }
 
 /**
- * One node of a menu tree. `type` tells the kind: a separator has no other fields, a submenu has `children`, and a command has the state and address fields.
+ * An observed command identity used to diagnose an ambiguous menu path.
+ */
+export interface MenuAddressCandidate {
+    /** Full observed label path. */
+    path: string;
+    /** Owning command GUID. */
+    guid: string;
+    /** Dynamic leaf GUID, when present. */
+    subGuid?: string;
+    /** Immediate registered parent group GUID; empty when unavailable. */
+    groupGuid: string;
+}
+
+/**
+ * A separator, submenu with children, or command with state and address fields.
  */
 export interface MenuTreeNode {
     /** Node kind. */
@@ -1057,12 +1238,14 @@ export interface MenuTreeNode {
     guid?: string;
     /** GUID of a dynamic child command, passed together with `guid`. */
     subGuid?: string;
-    /** Where the command came from: the dynamic value when it carries `subGuid`, the static value otherwise, and `hmenu_fallback` for every command of the Win32 menus. */
+    /** Main-menu sources reflect the provider's node kind, even when a dynamic leaf has no usable subGuid. Context-menu sources use subGuid presence. Win32 menu commands use `hmenu_fallback`. */
     source?: "mainmenu_static" | "mainmenu_dynamic" | "contextmenu_static" | "contextmenu_dynamic" | "hmenu_fallback";
-    /** Whether the command has a `guid` to run it by. */
+    /** For main menus, whether the command has a unique complete execution address, independently of enabled. For context menus, whether a command GUID is present. */
     executable?: boolean;
     /** Why the command cannot be run; present when `executable` is false. */
-    unaddressableReason?: "noStableIdentifier";
+    unaddressableReason?: "noStableIdentifier" | "ambiguousMatch" | "missingDynamicIdentifier" | "dynamicParent" | "incompleteHierarchy";
+    /** Diagnostic candidates for an ambiguous main-menu node; never select the first automatically. */
+    addressCandidates?: MenuAddressCandidate[];
     /** `true` on a command of the flat list. */
     fallback?: boolean;
 }
@@ -1246,7 +1429,7 @@ export interface PlaycountRow {
 export interface PlaylistInfo {
     /** Position in the playlist list, from `0`. */
     index: number;
-    /** The playlist's GUID, written as `{XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX}`. Pass it as `playlistGuid` to address this playlist even after the playlist list has changed. */
+    /** Unique identifier of the playlist, formatted as `{XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX}`. Pass as `playlistGuid` to reliably target this playlist. */
     guid: string;
     /** Playlist name. */
     name: string;
@@ -1322,9 +1505,11 @@ export interface PlaylistTrackPartial {
     artists?: string[];
     /** First ALBUM value; empty when untagged. */
     album?: string;
+    /** Opaque album identity when its original name or album artist contains invalid UTF-8. Use this instead of the display names to match an album row; absent for ordinary names. */
+    albumId?: string;
     /** Every ALBUM ARTIST value joined with `", "`; empty when untagged. */
     albumArtist?: string;
-    /** Every ALBUM ARTIST value in tag order, so `albumArtists.join(", ")` equals `albumArtist`; empty when untagged. `library.getAlbums` files a track that has an `album` under the name `album` and the album artist `albumArtists[0]`, or `artists[0]` when this array is empty (`""` when both are); those are the `name` and `albumArtist` of that album's row. */
+    /** Every ALBUM ARTIST value in tag order, so `albumArtists.join(", ")` equals `albumArtist`; empty when untagged. `library.getAlbums` files a track that has an `album` under the name `album` and the album artist `albumArtists[0]`, or `artists[0]` when this array is empty (`""` when both are); those are the `name` and `albumArtist` of that album's row. When `albumId` is present, use it instead: replacement characters can make display names equal. */
     albumArtists?: string[];
     /** Every GENRE value joined with `", "`; empty when untagged. */
     genre?: string;
@@ -1430,6 +1615,8 @@ export interface QueueContentRef {
     playlistGuid?: string;
     /** Row in that playlist; needs `playlist` or `playlistGuid` as well. */
     item?: number;
+    /** Only with a playlist row; given with `queueIndex`, the call fails with `INVALID_PARAMS`. */
+    expectedPlaylistVersion?: string;
 }
 
 /**
@@ -1442,6 +1629,8 @@ export interface QueueListRef {
     playlistGuid?: string;
     /** Row in that playlist. */
     item: number;
+    /** Act only while the playlist that the rows belong to still has this `contentVersion`, as its reads report it. A different version changes nothing and fails with `STALE_TARGET`, the current version carried as `details.current`. Omitted, no check is made. */
+    expectedPlaylistVersion?: string;
 }
 
 /**

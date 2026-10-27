@@ -18,8 +18,10 @@ import type {
 export const config = {
     /** The devices of every output module, in `devices`, flagged when one is in effect. */
     getOutputDevices: () => call('config.getOutputDevices'),
+    /** Report the output settings in effect: module, device, buffer length, bit depth, dithering and fades. */
     getOutputConfig: () =>
         call('config.getOutputConfig'),
+    /** Switch output to a device of an output module; take both GUIDs from `config.getOutputDevices`. */
     setOutputDevice: (outputId: string, deviceId: string) =>
         call('config.setOutputDevice', {
             outputId,
@@ -73,13 +75,14 @@ export const config = {
             'config.getAdvancedConfig',
             parentGuid ? ({ parentGuid } satisfies ConfigGetAdvancedConfigParams) : undefined,
         ),
+    /** Read one Advanced preferences entry by GUID. */
     getAdvancedConfigValue: (guid: string) =>
         call(
             'config.getAdvancedConfigValue',
             { guid },
         ),
     /**
-     * Writes one Advanced preferences entry: a boolean for a checkbox or
+     * Write one Advanced preferences entry: a boolean for a checkbox or
      * radio entry, a string or a number for a string or integer entry.
      * A value of the wrong kind resolves with an `INVALID_PARAMS` failure
      * envelope.
@@ -89,6 +92,7 @@ export const config = {
             'config.setAdvancedConfigValue',
             { guid, value },
         ),
+    /** Return one Advanced preferences entry to its default value. */
     resetAdvancedConfig: (guid: string) =>
         call(
             'config.resetAdvancedConfig',
@@ -96,10 +100,12 @@ export const config = {
         ),
     /** Every preferences page, then every preferences branch, in `pages`. */
     getPreferencesPages: () => call('config.getPreferencesPages'),
+    /** Report the GUIDs of foobar2000's standard preferences parents. */
     getPreferencesStandardGuids: () =>
         call(
             'config.getPreferencesStandardGuids',
         ),
+    /** Report whether the media library is enabled and loaded, and how many items it holds. */
     getLibraryStatus: () =>
         call('config.getLibraryStatus'),
     /**
@@ -110,20 +116,23 @@ export const config = {
         call(
             'config.getLibraryFilePatterns',
         ),
+    /** Open foobar2000's Media Library preferences page. */
     showLibraryPreferences: () =>
         call(
             'config.showLibraryPreferences',
         ),
     /** The installed components, in `components`. */
     getComponents: () => call('config.getComponents'),
+    /** Report the foobar2000 version, this component's version and the profile folder. */
     getVersionInfo: () =>
         call('config.getVersionInfo'),
     /** The stored DSP presets, in `presets`. */
     getDspPresets: () => call('config.getDspPresets'),
+    /** Report which DSP preset is selected. */
     getActiveDspPreset: () =>
         call('config.getActiveDspPreset'),
     /**
-     * Selects a preset by its `index` from {@link config.getDspPresets}. An
+     * Select a preset by its `index` from {@link config.getDspPresets}. An
      * index past the end resolves with an `INVALID_INDEX` failure envelope.
      */
     setActiveDspPreset: (index: number) =>
@@ -155,6 +164,7 @@ export const config = {
             key,
             ...(defaultValue !== undefined ? { default: defaultValue } : {}),
         }),
+    /** Delete a key from the component's configuration store. */
     remove: (key: string) =>
         call('config.remove', {
             key,
@@ -165,12 +175,15 @@ export const config = {
      * `configs` are interchangeable aliases of the same map.
      */
     getAll: () => call('config.getAll'),
+    /** Read the whole store both as a map and as one JSON text. */
     export: () => call('config.export'),
     // === Cursor follow / playback follow / ReplayGain mode ===
+    /** Report foobar2000's "cursor follows playback" setting. */
     getCursorFollowPlayback: () =>
         call(
             'config.getCursorFollowPlayback',
         ),
+    /** Report foobar2000's "playback follows cursor" setting. */
     getPlaybackFollowCursor: () =>
         call(
             'config.getPlaybackFollowCursor',
@@ -193,11 +206,13 @@ export const config = {
         call(
             'config.getReplaygainMode',
         ),
+    /** Turn foobar2000's "cursor follows playback" setting on or off. */
     setCursorFollowPlayback: (enabled: boolean) =>
         call(
             'config.setCursorFollowPlayback',
             { enabled },
         ),
+    /** Turn foobar2000's "playback follows cursor" setting on or off. */
     setPlaybackFollowCursor: (enabled: boolean) =>
         call(
             'config.setPlaybackFollowCursor',

@@ -13,13 +13,15 @@ import type {
  * spelling.
  */
 export const notification = {
-    /** Shows a balloon notification; the response carries the numeric `id`. */
+    /** Show a balloon notification; the response carries the numeric `id`. */
     show: (opts: UiShowNotificationParams) =>
         call('ui.showNotification', opts),
+    /** Hide the balloon notification shown by `show`. */
     hide: () => call('ui.hideNotification'),
-    /** Opens a native popup menu; `selectedId` is `null` when it is dismissed. */
+    /** Open a native popup menu; `selectedId` is `null` when it is dismissed. */
     showCustomMenu: (opts: UiShowCustomMenuParams) =>
         call('ui.showCustomMenu', opts),
+    /** Dispatch a toast notification event (`ui:toast`) to the calling window. */
     showToast: (opts: UiShowToastParams) =>
         call('ui.showToast', opts),
 };

@@ -1,3 +1,16 @@
+import { FbBaseElement } from './FbBaseElement.js';
+import { getFb } from './runtime.js';
+import type {
+    FbPopupCloseDetail,
+    FbPopupMessageDetail,
+    FbPopupOpenDetail,
+} from './types.js';
+
+interface CreatePopupResult {
+    success?: boolean;
+    windowId?: string;
+}
+
 /**
  * `<fb-popup-panel>` — declarative wrapper around `fb.ui.createPopup`.
  *
@@ -27,20 +40,6 @@
  * `disconnectedCallback` proactively closes the popup so detached
  * components don't leak their child windows.
  */
-
-import { FbBaseElement } from './FbBaseElement.js';
-import { getFb } from './runtime.js';
-import type {
-    FbPopupCloseDetail,
-    FbPopupMessageDetail,
-    FbPopupOpenDetail,
-} from './types.js';
-
-interface CreatePopupResult {
-    success?: boolean;
-    windowId?: string;
-}
-
 export class FbPopupPanel extends FbBaseElement {
     private _windowId: string | null = null;
 

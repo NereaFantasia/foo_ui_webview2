@@ -307,17 +307,20 @@ export const audio = {
             pathOrOpts || {},
         );
     },
+    /** Report foobar2000's volume and output information. */
     getOutputInfo: () =>
         call('audio.getOutputInfo'),
+    /** Report the audio format of the playing track. */
     getStreamInfo: () =>
         call('audio.getStreamInfo'),
     /**
-     * Reads the track's `BPM` tag; the host does not detect tempo. Resolves
+     * Read the track's `BPM` tag; the host does not detect tempo. Resolves
      * `success: false` with `code: 'NOT_FOUND'` when the tag is missing or is
      * not a number between 0 and 500 (exclusive).
      */
     analyzeBPM: (path: string) =>
         call('audio.analyzeBPM', { path }),
+    /** Report whether foobar2000 provides an active visualization stream. */
     isVisualizationAvailable: () =>
         call('audio.isVisualizationAvailable'),
     /**
@@ -326,6 +329,7 @@ export const audio = {
      */
     setChannelMode: (mode: NonNullable<AudioSetChannelModeParams['mode']>) =>
         call('audio.setChannelMode', { mode }),
+    /** Report the spectrum runtime state as the host sees it, for diagnostics. */
     getSpectrumDebugState: () =>
         call('audio.getSpectrumDebugState'),
 

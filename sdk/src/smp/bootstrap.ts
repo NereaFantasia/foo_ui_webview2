@@ -1,18 +1,4 @@
 import type { JsonObject } from '../types/json.js';
-/**
- * SMP compatibility bootstrap orchestrator.
- *
- * Wires the cache, event subscriptions, plman methods, fb extensions,
- * `fb.onSMP` registry, window-level properties, and SMP wrapper
- * classes onto the provided runtime `fb` object. Returns the fully
- * populated {@link SmpCompatApi} that the caller installs onto
- * `window.smp`.
- *
- * Idempotent — re-invoking with the same `fb` is safe because every
- * extension uses `_defineIfMissing` / `__smpCompatLoaded` guards.
- *
- */
-
 import type { SmpBridgeShape } from './bridgeShape.js';
 import {
     attachCacheEventSubscriptions,
@@ -37,6 +23,19 @@ import type { SmpCompatApi, SmpEventCallback, SmpEventName } from './types.js';
 import { smpUtils } from './utils.js';
 import { smpUtilsNamespace } from './utilsCompat.js';
 import { attachWindowProperties } from './windowProperties.js';
+
+/**
+ * SMP compatibility bootstrap orchestrator.
+ *
+ * Wires the cache, event subscriptions, plman methods, fb extensions,
+ * `fb.onSMP` registry, window-level properties, and SMP wrapper
+ * classes onto the provided runtime `fb` object. Returns the fully
+ * populated {@link SmpCompatApi} that the caller installs onto
+ * `window.smp`.
+ *
+ * Idempotent — re-invoking with the same `fb` is safe because every
+ * extension uses `_defineIfMissing` / `__smpCompatLoaded` guards.
+ */
 
 /**
  * The window-level globals the SMP IIFE installs alongside the main

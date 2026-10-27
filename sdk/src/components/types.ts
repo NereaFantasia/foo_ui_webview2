@@ -14,6 +14,8 @@
  * correct `CustomEvent<T>` instantiation.
  */
 
+import type { AlbumTrackRef } from '../types/generated/schema-types.js';
+
 // A. Playback control events ─────────────────────────────────────────
 
 /** `<fb-play-button>` entered the *playing* state (or user clicked while paused). */
@@ -354,13 +356,17 @@ export interface FbConsoleUpdateDetail {
 
 /**
  * Selection descriptor reused by `<fb-library-tree>` /
- * `<fb-library-filesystem-tree>` events. Matches the `data-*`
- * attributes that themes read off the DOM nodes.
+ * `<fb-library-filesystem-tree>` events. Carries the row key and any
+ * album identity or member references needed by theme actions.
  */
 export interface FbLibrarySelectionEntry {
     key: string;
     type: string;
     artist?: string;
+    /** Opaque album identity; pass it to the tree's `addToPlaylist` options. */
+    albumId?: string;
+    /** Exact members of an artist's album row; an empty array means no tracks. */
+    tracks?: AlbumTrackRef[];
 }
 
 /** `<fb-library-tree>` row clicked — selection state updated. */
@@ -373,10 +379,14 @@ export interface FbLibrarySelectDetail {
     /**
      * The row's `data-artist`: the parent artist of an `album` row in the
      * artist view, or the album artist of a `group` in the album view, which
-     * with `key` names the album for `library.getAlbumTracks`. Absent on other
-     * rows.
+     * with `key` names the album for `library.getAlbumTracks` when `albumId`
+     * is absent. Absent on other rows.
      */
     artist?: string;
+    /** Opaque identity used when display names cannot identify the album. */
+    albumId?: string;
+    /** Exact members of an artist's album row; pass them to `addToPlaylist`. */
+    tracks?: AlbumTrackRef[];
     /** Full selection set (anchor + range or ctrl-toggled rows). */
     selected: FbLibrarySelectionEntry[];
 }
@@ -388,6 +398,10 @@ export interface FbLibraryPlayDetail {
     view: string;
     /** The row's `data-artist`, as in {@link FbLibrarySelectDetail.artist}. */
     artist?: string;
+    /** Opaque identity used when display names cannot identify the album. */
+    albumId?: string;
+    /** Exact members of an artist's album row; pass them to `addToPlaylist`. */
+    tracks?: AlbumTrackRef[];
 }
 
 /** `<fb-library-tree>` right-click on a row. */
@@ -397,6 +411,10 @@ export interface FbLibraryContextDetail {
     view: string;
     /** The row's `data-artist`, as in {@link FbLibrarySelectDetail.artist}. */
     artist?: string;
+    /** Opaque identity used when display names cannot identify the album. */
+    albumId?: string;
+    /** Exact members of an artist's album row; pass them to `addToPlaylist`. */
+    tracks?: AlbumTrackRef[];
     x: number;
     y: number;
     selected: FbLibrarySelectionEntry[];

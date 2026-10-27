@@ -1,13 +1,4 @@
 import type { JsonObject } from '../types/json.js';
-/**
- * `smpUtils` — Shared helpers for the SMP wrapper layer.
- *
- * Exposes `getInvoke`, `toHandleId`, `normalizeHandleList`,
- * `toHandleIdArray`, `clamp`, `sleep`, `MENU_FLAGS`, and
- * `buildMenuItems` as a flat module shape, so the IIFE bundle can
- * install it onto `window.smpUtils` without per-call adapters.
- */
-
 import { HANDLE_TOKEN, formatHandleId } from './handleId.js';
 import { typedCall, type TypedCall } from '../utils/typedCall.js';
 import {
@@ -18,6 +9,15 @@ import {
     type SmpRawMenuItem,
     type SmpStructuredMenuItem,
 } from './types.js';
+
+/**
+ * `smpUtils` — Shared helpers for the SMP wrapper layer.
+ *
+ * Exposes `getInvoke`, `toHandleId`, `normalizeHandleList`,
+ * `toHandleIdArray`, `clamp`, `sleep`, `MENU_FLAGS`, and
+ * `buildMenuItems` as a flat module shape, so the IIFE bundle can
+ * install it onto `window.smpUtils` without per-call adapters.
+ */
 
 /** `window.fb2k.invoke`-shaped function; mirrored on `window.smp.invoke`. */
 export type SmpInvokeFn = <TResp = unknown>(
@@ -209,10 +209,12 @@ function resolveMenuAddress(
         return typeof item.commandId === 'number' ? item.commandId : null;
     }
 
+    if (item.executable === false || item.unaddressableReason) return null;
+    if (item.source === 'mainmenu_dynamic' && !item.subGuid) return null;
+
     if (typeof item.guid === 'string' && item.guid.length > 0) {
         // A dynamic child is addressed by the owning GUID *plus* its own node
-        // GUID. Dispatching the owner alone runs the container slot, which the
-        // host documents as undefined behaviour.
+        // GUID. The owner GUID alone does not identify a dynamic leaf.
         return typeof item.subGuid === 'string' && item.subGuid.length > 0
             ? `${item.guid}${MENU_ADDRESS_SEPARATOR}${item.subGuid}`
             : item.guid;
@@ -319,4 +321,5 @@ export const smpUtils = {
     splitMenuAddress,
 } as const;
 
+/** Type shape of the internal SMP utility namespace. */
 export type SmpUtilsNamespace = typeof smpUtils;

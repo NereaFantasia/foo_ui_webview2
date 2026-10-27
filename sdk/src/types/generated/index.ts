@@ -153,6 +153,23 @@ import type {
     JitQueuePreloadBatchParams,
     JitQueueSkipParams,
     JitQueueStopParams,
+    JitSessionAdoptNativeParams,
+    JitSessionClaimControlParams,
+    JitSessionCreateParams,
+    JitSessionDiscoverParams,
+    JitSessionGetCapabilitiesParams,
+    JitSessionGetNativeContextParams,
+    JitSessionGetOperationParams,
+    JitSessionGetStateParams,
+    JitSessionPlayParams,
+    JitSessionPlayNativeParams,
+    JitSessionPrepareAdoptionParams,
+    JitSessionReleaseParams,
+    JitSessionSetNativeNextParams,
+    JitSessionSetNativeQueueParams,
+    JitSessionSetNextParams,
+    JitSessionSkipParams,
+    JitSessionStopParams,
     KeyboardGetRegisteredHotkeysParams,
     KeyboardRegisterHotkeyParams,
     KeyboardRegisterShortcutParams,
@@ -168,6 +185,7 @@ import type {
     LibraryGetArtistTracksParams,
     LibraryGetByPathParams,
     LibraryGetCacheStatsParams,
+    LibraryGetChangesParams,
     LibraryGetCountParams,
     LibraryGetFieldValuesParams,
     LibraryGetGenresParams,
@@ -176,6 +194,7 @@ import type {
     LibraryGetRootsParams,
     LibraryGetStatsParams,
     LibraryGetStatusParams,
+    LibraryGetTracksParams,
     LibraryInvalidateCacheParams,
     LibraryIsEnabledParams,
     LibraryQueryParams,
@@ -263,11 +282,13 @@ import type {
     PlaylistConvertToAutoplaylistParams,
     PlaylistCreateParams,
     PlaylistCreateAutoplaylistParams,
+    PlaylistCreateManagedAutoplaylistParams,
     PlaylistDeselectAllParams,
     PlaylistDuplicateParams,
     PlaylistFocusTrackParams,
     PlaylistGetActiveParams,
     PlaylistGetAllParams,
+    PlaylistGetAutoplaylistConfigParams,
     PlaylistGetAutoplaylistInfoParams,
     PlaylistGetAutoplaylistQueryParams,
     PlaylistGetAvailableColumnsParams,
@@ -300,8 +321,10 @@ import type {
     PlaylistReverseParams,
     PlaylistSelectAllParams,
     PlaylistSetActiveParams,
+    PlaylistSetAutoplaylistConfigParams,
     PlaylistSetFocusedTrackParams,
     PlaylistSetSelectionParams,
+    PlaylistShowAutoplaylistUIParams,
     PlaylistShuffleParams,
     PlaylistSortParams,
     PlaylistUndoParams,
@@ -372,6 +395,7 @@ import type {
     TrayGetMenuItemsParams,
     TrayIsVisibleParams,
     TrayRemoveMenuItemsParams,
+    TraySetClickActionParams,
     TraySetCloseToTrayParams,
     TraySetContextMenuParams,
     TraySetIconParams,
@@ -601,6 +625,23 @@ import type {
     JitQueuePreloadBatchResponse,
     JitQueueSkipResponse,
     JitQueueStopResponse,
+    JitSessionAdoptNativeResponse,
+    JitSessionClaimControlResponse,
+    JitSessionCreateResponse,
+    JitSessionDiscoverResponse,
+    JitSessionGetCapabilitiesResponse,
+    JitSessionGetNativeContextResponse,
+    JitSessionGetOperationResponse,
+    JitSessionGetStateResponse,
+    JitSessionPlayResponse,
+    JitSessionPlayNativeResponse,
+    JitSessionPrepareAdoptionResponse,
+    JitSessionReleaseResponse,
+    JitSessionSetNativeNextResponse,
+    JitSessionSetNativeQueueResponse,
+    JitSessionSetNextResponse,
+    JitSessionSkipResponse,
+    JitSessionStopResponse,
     KeyboardGetRegisteredHotkeysResponse,
     KeyboardRegisterHotkeyResponse,
     KeyboardRegisterShortcutResponse,
@@ -616,6 +657,7 @@ import type {
     LibraryGetArtistTracksResponse,
     LibraryGetByPathResponse,
     LibraryGetCacheStatsResponse,
+    LibraryGetChangesResponse,
     LibraryGetCountResponse,
     LibraryGetFieldValuesResponse,
     LibraryGetGenresResponse,
@@ -624,6 +666,7 @@ import type {
     LibraryGetRootsResponse,
     LibraryGetStatsResponse,
     LibraryGetStatusResponse,
+    LibraryGetTracksResponse,
     LibraryInvalidateCacheResponse,
     LibraryIsEnabledResponse,
     LibraryQueryResponse,
@@ -711,11 +754,13 @@ import type {
     PlaylistConvertToAutoplaylistResponse,
     PlaylistCreateResponse,
     PlaylistCreateAutoplaylistResponse,
+    PlaylistCreateManagedAutoplaylistResponse,
     PlaylistDeselectAllResponse,
     PlaylistDuplicateResponse,
     PlaylistFocusTrackResponse,
     PlaylistGetActiveResponse,
     PlaylistGetAllResponse,
+    PlaylistGetAutoplaylistConfigResponse,
     PlaylistGetAutoplaylistInfoResponse,
     PlaylistGetAutoplaylistQueryResponse,
     PlaylistGetAvailableColumnsResponse,
@@ -748,8 +793,10 @@ import type {
     PlaylistReverseResponse,
     PlaylistSelectAllResponse,
     PlaylistSetActiveResponse,
+    PlaylistSetAutoplaylistConfigResponse,
     PlaylistSetFocusedTrackResponse,
     PlaylistSetSelectionResponse,
+    PlaylistShowAutoplaylistUIResponse,
     PlaylistShuffleResponse,
     PlaylistSortResponse,
     PlaylistUndoResponse,
@@ -820,6 +867,7 @@ import type {
     TrayGetMenuItemsResponse,
     TrayIsVisibleResponse,
     TrayRemoveMenuItemsResponse,
+    TraySetClickActionResponse,
     TraySetCloseToTrayResponse,
     TraySetContextMenuResponse,
     TraySetIconResponse,
@@ -1054,6 +1102,40 @@ export interface ApiMethodMap {
     "jitQueue.preloadBatch": [JitQueuePreloadBatchParams, JitQueuePreloadBatchResponse];
     "jitQueue.skip": [JitQueueSkipParams, JitQueueSkipResponse];
     "jitQueue.stop": [JitQueueStopParams, JitQueueStopResponse];
+    /** @experimental */
+    "jitSession.adoptNative": [JitSessionAdoptNativeParams, JitSessionAdoptNativeResponse];
+    /** @experimental */
+    "jitSession.claimControl": [JitSessionClaimControlParams, JitSessionClaimControlResponse];
+    /** @experimental */
+    "jitSession.create": [JitSessionCreateParams, JitSessionCreateResponse];
+    /** @experimental */
+    "jitSession.discover": [JitSessionDiscoverParams, JitSessionDiscoverResponse];
+    /** @experimental */
+    "jitSession.getCapabilities": [JitSessionGetCapabilitiesParams, JitSessionGetCapabilitiesResponse];
+    /** @experimental */
+    "jitSession.getNativeContext": [JitSessionGetNativeContextParams, JitSessionGetNativeContextResponse];
+    /** @experimental */
+    "jitSession.getOperation": [JitSessionGetOperationParams, JitSessionGetOperationResponse];
+    /** @experimental */
+    "jitSession.getState": [JitSessionGetStateParams, JitSessionGetStateResponse];
+    /** @experimental */
+    "jitSession.play": [JitSessionPlayParams, JitSessionPlayResponse];
+    /** @experimental */
+    "jitSession.playNative": [JitSessionPlayNativeParams, JitSessionPlayNativeResponse];
+    /** @experimental */
+    "jitSession.prepareAdoption": [JitSessionPrepareAdoptionParams, JitSessionPrepareAdoptionResponse];
+    /** @experimental */
+    "jitSession.release": [JitSessionReleaseParams, JitSessionReleaseResponse];
+    /** @experimental */
+    "jitSession.setNativeNext": [JitSessionSetNativeNextParams, JitSessionSetNativeNextResponse];
+    /** @experimental */
+    "jitSession.setNativeQueue": [JitSessionSetNativeQueueParams, JitSessionSetNativeQueueResponse];
+    /** @experimental */
+    "jitSession.setNext": [JitSessionSetNextParams, JitSessionSetNextResponse];
+    /** @experimental */
+    "jitSession.skip": [JitSessionSkipParams, JitSessionSkipResponse];
+    /** @experimental */
+    "jitSession.stop": [JitSessionStopParams, JitSessionStopResponse];
     "keyboard.getRegisteredHotkeys": [KeyboardGetRegisteredHotkeysParams, KeyboardGetRegisteredHotkeysResponse];
     "keyboard.registerHotkey": [KeyboardRegisterHotkeyParams, KeyboardRegisterHotkeyResponse];
     "keyboard.registerShortcut": [KeyboardRegisterShortcutParams, KeyboardRegisterShortcutResponse];
@@ -1069,6 +1151,7 @@ export interface ApiMethodMap {
     "library.getArtistTracks": [LibraryGetArtistTracksParams, LibraryGetArtistTracksResponse];
     "library.getByPath": [LibraryGetByPathParams, LibraryGetByPathResponse];
     "library.getCacheStats": [LibraryGetCacheStatsParams, LibraryGetCacheStatsResponse];
+    "library.getChanges": [LibraryGetChangesParams, LibraryGetChangesResponse];
     "library.getCount": [LibraryGetCountParams, LibraryGetCountResponse];
     "library.getFieldValues": [LibraryGetFieldValuesParams, LibraryGetFieldValuesResponse];
     "library.getGenres": [LibraryGetGenresParams, LibraryGetGenresResponse];
@@ -1077,6 +1160,7 @@ export interface ApiMethodMap {
     "library.getRoots": [LibraryGetRootsParams, LibraryGetRootsResponse];
     "library.getStats": [LibraryGetStatsParams, LibraryGetStatsResponse];
     "library.getStatus": [LibraryGetStatusParams, LibraryGetStatusResponse];
+    "library.getTracks": [LibraryGetTracksParams, LibraryGetTracksResponse];
     "library.invalidateCache": [LibraryInvalidateCacheParams, LibraryInvalidateCacheResponse];
     "library.isEnabled": [LibraryIsEnabledParams, LibraryIsEnabledResponse];
     "library.query": [LibraryQueryParams, LibraryQueryResponse];
@@ -1166,11 +1250,13 @@ export interface ApiMethodMap {
     "playlist.convertToAutoplaylist": [PlaylistConvertToAutoplaylistParams, PlaylistConvertToAutoplaylistResponse];
     "playlist.create": [PlaylistCreateParams, PlaylistCreateResponse];
     "playlist.createAutoplaylist": [PlaylistCreateAutoplaylistParams, PlaylistCreateAutoplaylistResponse];
+    "playlist.createManagedAutoplaylist": [PlaylistCreateManagedAutoplaylistParams, PlaylistCreateManagedAutoplaylistResponse];
     "playlist.deselectAll": [PlaylistDeselectAllParams, PlaylistDeselectAllResponse];
     "playlist.duplicate": [PlaylistDuplicateParams, PlaylistDuplicateResponse];
     "playlist.focusTrack": [PlaylistFocusTrackParams, PlaylistFocusTrackResponse];
     "playlist.getActive": [PlaylistGetActiveParams, PlaylistGetActiveResponse];
     "playlist.getAll": [PlaylistGetAllParams, PlaylistGetAllResponse];
+    "playlist.getAutoplaylistConfig": [PlaylistGetAutoplaylistConfigParams, PlaylistGetAutoplaylistConfigResponse];
     "playlist.getAutoplaylistInfo": [PlaylistGetAutoplaylistInfoParams, PlaylistGetAutoplaylistInfoResponse];
     "playlist.getAutoplaylistQuery": [PlaylistGetAutoplaylistQueryParams, PlaylistGetAutoplaylistQueryResponse];
     "playlist.getAvailableColumns": [PlaylistGetAvailableColumnsParams, PlaylistGetAvailableColumnsResponse];
@@ -1203,8 +1289,10 @@ export interface ApiMethodMap {
     "playlist.reverse": [PlaylistReverseParams, PlaylistReverseResponse];
     "playlist.selectAll": [PlaylistSelectAllParams, PlaylistSelectAllResponse];
     "playlist.setActive": [PlaylistSetActiveParams, PlaylistSetActiveResponse];
+    "playlist.setAutoplaylistConfig": [PlaylistSetAutoplaylistConfigParams, PlaylistSetAutoplaylistConfigResponse];
     "playlist.setFocusedTrack": [PlaylistSetFocusedTrackParams, PlaylistSetFocusedTrackResponse];
     "playlist.setSelection": [PlaylistSetSelectionParams, PlaylistSetSelectionResponse];
+    "playlist.showAutoplaylistUI": [PlaylistShowAutoplaylistUIParams, PlaylistShowAutoplaylistUIResponse];
     "playlist.shuffle": [PlaylistShuffleParams, PlaylistShuffleResponse];
     "playlist.sort": [PlaylistSortParams, PlaylistSortResponse];
     "playlist.undo": [PlaylistUndoParams, PlaylistUndoResponse];
@@ -1275,6 +1363,7 @@ export interface ApiMethodMap {
     "tray.getMenuItems": [TrayGetMenuItemsParams, TrayGetMenuItemsResponse];
     "tray.isVisible": [TrayIsVisibleParams, TrayIsVisibleResponse];
     "tray.removeMenuItems": [TrayRemoveMenuItemsParams, TrayRemoveMenuItemsResponse];
+    "tray.setClickAction": [TraySetClickActionParams, TraySetClickActionResponse];
     "tray.setCloseToTray": [TraySetCloseToTrayParams, TraySetCloseToTrayResponse];
     "tray.setContextMenu": [TraySetContextMenuParams, TraySetContextMenuResponse];
     "tray.setIcon": [TraySetIconParams, TraySetIconResponse];

@@ -5,6 +5,115 @@ All notable changes to the foo-webview-sdk will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+Targeted for foo-webview-sdk 2.1.0 and foo_ui_webview2 2.1.0.
+
+### Added
+
+- `library.getChanges(params?)` and `library.getTracks(handles, fields?)` for pages maintaining a
+  local library cache: `getChanges` reports persistent revisions alongside incremental track
+  changes, and `getTracks` fetches track rows for up to 5000 handles at a time.
+- Experimental `jitSession` methods and `JitSessionClient` for document-bound playback
+  control, page reload recovery and explicit handover. The client serializes commands,
+  reconciles missed events and waits for operation results. `refresh()` rechecks operations
+  with active waiters so a missed terminal event does not leave them waiting until timeout;
+  gaps observed during reconciliation trigger another pass, and aborted, disposed or
+  replaced-session waits stay closed. `skip` rejects with `NO_ACTIVE_ITEM` when the next
+  entry is not ready, preserving current playback and the native queue. Existing `jitQueue`
+  behavior is unchanged.
+- `JitSessionClient` can adopt native playback: `prepareAdoption`, `getNativeContext`,
+  `adoptNative`, `playNative`, `setNativeNext` and `setNativeQueue` take over the playing
+  track and the native queue without interrupting playback, and stopping or releasing the
+  session hands the remaining queue items back. `release(requestId?, nativeDisposition?)`
+  gains the optional second argument; when release fails, the client keeps its credentials
+  and refreshes its state so the caller can retry. `getCapabilities()` reports `adoption`,
+  `failureRecheck` and `backgroundExecution`, and `jitSession:attemptRechecked` reports why
+  an attempt that ended as `unknown` within its first second failed.
+- Playlist and queue reads return `contentVersion`, which changes whenever rows are inserted,
+  removed, reordered or replaced. `playlist.insertTracks`, `removeTracks`, `moveTracks`,
+  `reorder`, `setSelection` and `setFocused`, and `queue.remove`, `moveToTop`, `setContents`,
+  `insertNext` and `playNow` take `expectedVersion` as their last optional argument;
+  `playlist.playTrack` takes it in `options`. When the rows changed since that version, the
+  call fails with `STALE_TARGET` and changes nothing. `queue.add`, and the playlist rows
+  passed to `queue.setContents` or `queue.insertNext`, take `expectedPlaylistVersion`. The
+  playlist item events and `playback:queueChanged` carry the new version.
+- Managed autoplaylists: `playlist.createManagedAutoplaylist(name, query, sort?, keepSorted?)`
+  creates one whose query, sort and keep-sorted setting can be read with
+  `getAutoplaylistConfig(playlist)` and changed with `setAutoplaylistConfig(playlist, options)`.
+  Pass the `revision` you read; if the configuration changed since, the call fails with
+  `details.reason: 'revisionConflict'`. `onAutoplaylistConfigChanged(callback)` reports
+  changes.
+- `playlist.showAutoplaylistUI(playlist)` opens foobar2000's editor for an autoplaylist, and
+  `playlist.onAutoplaylistUIResult(callback)` reports whether the editor could be opened.
+  `playlist.getAutoplaylistInfo` reports `editorAvailability` and
+  `editorAvailabilityReason`.
+- `fb.tray.setClickAction(action)`: `'toggleMainWindow'` makes a left click on the tray icon
+  hide or show the main window natively, without page code; the default `'event'` keeps
+  `tray:click` and `tray:doubleClick`. It can be called before `create()`, and `destroy()`
+  resets it.
+- `fb.menu.runContextCommandById(id, opts)` accepts `expectPath` and `expectTarget`, the node's
+  `path` and the `targetKey` that `getContextMenu` now reports. If the tracks or the command
+  changed after the menu was read, the host runs nothing and fails with `details.reason`.
+  SMP `RunContextCommandWithMetadb` and `ContextMenuManager.ExecuteByID` pass them when the
+  host reports `targetKey`.
+- `library:itemsAdded`, `library:itemsRemoved`, `library:itemsModified` and `metadb:changed`
+  carry `handles` and `truncated`; past 5000 tracks `handles` is empty and `truncated` is
+  `true`. `library:itemsModified` carries `fromHook`, `true` when a component such as
+  foo_playcount asked foobar2000 to refresh its fields rather than tags being edited.
+- `library.getAlbums` rows whose original album or album artist is not valid UTF-8 carry
+  `albumId`; `library.getAlbumTracks(album, albumArtist, options?)` takes it in `options`
+  and matches by it instead of the names.
+- `playlist:addComplete` carries `status` (`completed`, `partial`, `failed` or `cancelled`)
+  and, for `partial` and `failed`, `reason`. `menu.runMainMenuCommand`,
+  `runContextCommand` and `runContextCommandById` answer with `completion: 'unknown'`.
+- A call the host does not answer within 30 seconds rejects with an error whose `code` is
+  `'TIMEOUT'` and whose message names the method; `'TIMEOUT'` joins the error code union.
+  The host may still have run the call.
+- `fb.ui.getZoom()` returns `textScaleFactor`, and `fb.ui.setDragRegions`,
+  `setNoDragRegions` and `setClickThroughExcludeRegions` return `scale`, the factor applied
+  to the rectangles.
+
+### Changed
+
+- **Breaking:** `pathsUnavailableReason` in `dnd.getCapabilities` and
+  `dnd:capabilitiesChanged` drops `'displaced'`, which the host never reported. TypeScript
+  code that compares against it no longer compiles; remove the comparison.
+- **Breaking:** `<fb-playlist-view>` no longer accepts the Chinese display names of
+  foo_playcount columns as column IDs. Use `play_count`, `first_played`, `last_played`,
+  `added` and `rating`, or put the column's `pattern` from
+  `fb.playlist.getAvailableColumns()` in `formats`.
+- **Breaking:** `menu.runMainMenuCommand` matches a slash-separated path against every
+  ancestor; a wrong prefix no longer falls back to a command with the same leaf name. A
+  dynamic leaf addressed by GUID needs both `guid` and `subGuid`. In menu trees,
+  `executable` on a main-menu item means its address is unique and complete, whether or not
+  it is enabled; `unaddressableReason` adds `ambiguousMatch`, `missingDynamicIdentifier`,
+  `dynamicParent` and `incompleteHierarchy`, and an ambiguous item lists
+  `addressCandidates` for diagnosis only. SMP `MainMenuManager` leaves such items unmapped.
+  When the menu state cannot be read, the main-menu methods fail with `OPERATION_FAILED`
+  instead of treating the item as enabled.
+- `fb.ui.setDragRegions`, `setNoDragRegions` and `setClickThroughExcludeRegions` convert the
+  rectangles by the page's `devicePixelRatio`, which includes page zoom and Windows text
+  scaling. Remove any multiplication by the zoom factor from page code.
+- A panel whose URL is not on `localhost`, `127.x.x.x` or `[::1]` gets `ORIGIN_DENIED` for
+  every call until **Allow this site to access foobar2000 and this computer** is turned on
+  in its configuration. URLs saved before the upgrade keep access.
+- `fb.ui.focus()` without a window ID, called from a DUI/CUI panel, brings the foobar2000
+  main window to the foreground instead of failing with `PANEL_MODE_UNSUPPORTED`.
+- `<fb-playlist-view>` re-reads the cached rows that `metadb:changed` names, so ratings,
+  play counts and tag edits show without scrolling. `<fb-library-filesystem-tree>` no longer
+  reloads on `library:itemsModified`, and the library tree components ignore changes with
+  `fromHook`. SMP `on_metadb_changed` receives up to 5000 tracks at once (was 50).
+
+### Fixed
+
+- `<fb-library-tree>` and the `library` namespace keep albums whose names are not valid
+  UTF-8 apart even when they display the same, and keep embedded CUE subsongs when loading
+  their tracks.
+- `audio.generateFullWaveform` and `audio:fullWaveformReady` report the decoded PCM
+  `sampleRate` and `channels`, and the waveform follows the decoded audio, which can differ
+  from the file's nominal format.
+
 ## [2.0.0] - 2026-10-06
 
 > **Breaking changes**: `library.getAlbumTracks(album, albumArtist)` names

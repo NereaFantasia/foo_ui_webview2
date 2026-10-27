@@ -14,6 +14,15 @@ describe('ui popup policy request contracts', () => {
         vi.mocked(bridge.invoke).mockReset();
     });
 
+    it('preserves explicit focus targets and leaves an omitted target to the caller', async () => {
+        await ui.focus('popup_7');
+        expect(bridge.invoke).toHaveBeenLastCalledWith('window.focus', { windowId: 'popup_7' });
+        await ui.focus('main');
+        expect(bridge.invoke).toHaveBeenLastCalledWith('window.focus', { windowId: 'main' });
+        await ui.focus();
+        expect(bridge.invoke).toHaveBeenLastCalledWith('window.focus', {});
+    });
+
     it('forwards popup behavior inside the runtime behavior slot', async () => {
         await ui.setPopupBehavior({
             windowId: 'popup-1',

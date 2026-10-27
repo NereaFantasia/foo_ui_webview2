@@ -1,8 +1,12 @@
+import type { FBEventHandler } from '../bridge/Bridge.js';
+import type { FBEventName } from '../types/events.js';
+import { getFb } from './runtime.js';
+
 /**
  * `FbBaseElement` — shared base class for every `fb-*` web component.
  *
- * Implements the lifecycle contract documented in `2.6.1` of the
- * project AGENTS rules: zero visual styling, expose function only.
+ * Implements the component lifecycle contract: zero visual styling,
+ * exposing functional behavior only.
  *
  * Subclass hooks:
  * - {@link FbBaseElement._buildDOM}    — one-shot Shadow DOM build.
@@ -20,11 +24,6 @@
  * cursor, button reset) shared by every component. **No** color /
  * background / typography is included — themes own visual decisions.
  */
-
-import type { FBEventHandler } from '../bridge/Bridge.js';
-import type { FBEventName } from '../types/events.js';
-import { getFb } from './runtime.js';
-
 export class FbBaseElement extends HTMLElement {
     /**
      * Unsubscribe callbacks returned by `fb.on(...)`. Drained on
@@ -165,11 +164,12 @@ export class FbBaseElement extends HTMLElement {
             .replace(/'/g, '&#39;');
     }
 
-    /**
-     * Cached structural CSS shared by every component. Intentionally
-     * minimal: layout primitives + button reset only.
-     */
     private static _baseCSSCache: string | null = null;
+
+    /**
+     * Minimal structural CSS shared by every component (layout primitives
+     * and button reset only, without visual styling).
+     */
     static get baseCSS(): string {
         if (!FbBaseElement._baseCSSCache) {
             FbBaseElement._baseCSSCache =

@@ -86,11 +86,13 @@ async function fileWriteDataUrl(
  * `file` — file-system namespace.
  */
 export const file = {
+    /** Read a file as text, or as Base64 with `encoding: "binary"`. */
     read: (path: string, opts?: Omit<FileReadParams, 'path'>) =>
         call('file.read', {
             path,
             ...(opts || {}),
         }),
+    /** Write text, or bytes decoded from Base64, to a file. Missing parent directories are created first. */
     write: (
         path: string,
         content: string,
@@ -101,24 +103,29 @@ export const file = {
             content,
             ...(opts || {}),
         }),
+    /** Check whether a path exists and whether it is a file or a directory. */
     exists: (path: string) =>
         call('file.exists', {
             path,
         }),
+    /** List the files and subdirectories of a directory. */
     list: (path: string, opts?: Omit<FileListParams, 'path'>) =>
         call('file.list', {
             path,
             ...(opts || {}),
         }),
+    /** Delete a file or directory, to the Recycle Bin unless `moveToTrash` is `false`. */
     delete: (path: string, opts?: Omit<FileDeleteParams, 'path'>) =>
         call('file.delete', {
             path,
             ...(opts || {}),
         }),
+    /** Create a directory together with any missing parents. */
     mkdir: (path: string) =>
         call('file.mkdir', {
             path,
         }),
+    /** Copy a file or a whole directory tree, blocking until the copy is done. */
     copy: (
         source: string,
         destination: string,
@@ -129,16 +136,19 @@ export const file = {
             destination,
             ...(opts || {}),
         }),
+    /** Move a file or directory, blocking until the move is done. */
     move: (source: string, destination: string) =>
         call('file.move', {
             source,
             destination,
         }),
+    /** Rename a file or directory within its parent directory. */
     rename: (path: string, newName: string) =>
         call('file.rename', {
             path,
             newName,
         }),
+    /** Describe a file or directory: size, timestamps, and attributes. */
     getInfo: (path: string) =>
         call('file.getInfo', {
             path,

@@ -37,3 +37,13 @@ export type { NativeFb2k } from './native.js';
 // The track row shared by every declared endpoint that returns whole tracks, from
 // src/api/schema/common.ts.
 export type { Track, TrackPartial } from './generated/schema-types.js';
+export type {
+    JitSessionSnapshot, JitSessionOperation, JitSessionAttempt,
+    JitSessionNextEntry, JitSessionDiscovery,
+} from './generated/schema-types.js';
+export type {
+    JitSessionCreateResponse, JitSessionClaimControlResponse, JitSessionDiscoverResponse,
+    JitSessionGetCapabilitiesResponse, JitSessionGetStateResponse, JitSessionGetOperationResponse,
+    JitSessionPlayResponse, JitSessionSetNextResponse, JitSessionSkipResponse,
+    JitSessionStopResponse, JitSessionReleaseResponse,
+} from './generated/responses.js';

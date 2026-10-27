@@ -290,7 +290,7 @@ export const metadata = {
             path,
             ...(opts || {}),
         }),
-    /** Removes a single tag field. */
+    /** Remove a single tag field. */
     removeField: (
         path: string,
         field: string,
@@ -301,6 +301,7 @@ export const metadata = {
             tags: [field],
             ...(opts || {}),
         }),
+    /** Remove one or more tag fields from a file. */
     removeTag: (
         path: string,
         tags: string[],

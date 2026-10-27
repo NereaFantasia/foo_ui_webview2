@@ -12,7 +12,7 @@ import type { JsonValue } from '../json.js';
 
 import type { ApiFailure } from '../responses.js';
 
-import type { AdvancedConfigItem, AlbumInfo, ArtistInfo, ArtworkAvailableEntry, ArtworkBatchRow, ArtworkFolderImage, ArtworkUrlRow, ConfigComponentInfo, ConfigDspPreset, ConfigLibraryFilePattern, ConfigOutputDevice, ConfigPreferencesPage, ContainerAttachment, ContainerChapter, ContainerTrack, DiscoveryComponentInfo, DiscoveryContextMenuCommand, DiscoveryContextMenuTreeNode, DiscoveryDspEntryInfo, DiscoveryInputFormatType, DiscoveryMainMenuCommand, DiscoveryMainMenuGroup, DiscoveryOutputDeviceEntry, DiscoveryPreferencePageInfo, DiscoverySearchResult, DiscoveryServiceCounts, DiscoveryUIElementInfo, DspAvailableEntry, DspChainEntry, DspPresetEntry, EvalBatchRow, EvalFieldsBatchRow, KeyboardHotkey, LibraryDirectoryNodeInfo, LibraryRootInfo, LibraryTrack, LibraryTrackPartial, LibraryValueCount, MenuTreeNode, MetadataReadBatchItem, MetadataWriteBatchError, OutputDevice, OutputEntry, PanelConfig, PcmDecodeState, PcmRuntimeState, PcmStreamState, PlaycountRow, PlaylistColumnDefinition, PlaylistGroupRun, PlaylistInfo, PlaylistTrack, PlaylistTrackPartial, PortInfo, QueueItem, RecentLibraryTrack, ReplayGainTrackInfo, SpectrumDebugSubscription, SpectrumDebugTarget, SystemApiInfo, SystemPluginInfo, Track, TrackTechnicalInfo, TrayMenuItem, WindowBackdropPolicyState, WindowInfo, WindowPopupBehaviorState } from './schema-types.js';
+import type { AdvancedConfigItem, AlbumInfo, ArtistInfo, ArtworkAvailableEntry, ArtworkBatchRow, ArtworkFolderImage, ArtworkUrlRow, ConfigComponentInfo, ConfigDspPreset, ConfigLibraryFilePattern, ConfigOutputDevice, ConfigPreferencesPage, ContainerAttachment, ContainerChapter, ContainerTrack, DiscoveryComponentInfo, DiscoveryContextMenuCommand, DiscoveryContextMenuTreeNode, DiscoveryDspEntryInfo, DiscoveryInputFormatType, DiscoveryMainMenuCommand, DiscoveryMainMenuGroup, DiscoveryOutputDeviceEntry, DiscoveryPreferencePageInfo, DiscoverySearchResult, DiscoveryServiceCounts, DiscoveryUIElementInfo, DspAvailableEntry, DspChainEntry, DspPresetEntry, EvalBatchRow, EvalFieldsBatchRow, JitNativeContextDetail, JitNativeEntry, JitNativeTrack, JitSessionDiscovery, JitSessionOperation, JitSessionSnapshot, KeyboardHotkey, LibraryDirectoryNodeInfo, LibraryRootInfo, LibraryTrack, LibraryTrackPartial, LibraryValueCount, MenuTreeNode, MetadataReadBatchItem, MetadataWriteBatchError, OutputDevice, OutputEntry, PanelConfig, PcmDecodeState, PcmRuntimeState, PcmStreamState, PlaycountRow, PlaylistColumnDefinition, PlaylistGroupRun, PlaylistInfo, PlaylistTrack, PlaylistTrackPartial, PortInfo, QueueItem, RecentLibraryTrack, ReplayGainTrackInfo, SpectrumDebugSubscription, SpectrumDebugTarget, SystemApiInfo, SystemPluginInfo, Track, TrackTechnicalInfo, TrayMenuItem, WindowBackdropPolicyState, WindowInfo, WindowPopupBehaviorState } from './schema-types.js';
 
 /**
  * Successful response from `artwork.getAvailableArtwork`.
@@ -100,7 +100,7 @@ export interface ArtworkGetByPlaylistItemSuccess {
     type: string;
     /** The playlist actually read. */
     playlist: number;
-    /** The playlist's GUID, written as `{XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX}`. Pass it as `playlistGuid` to address this playlist even after the playlist list has changed. */
+    /** Unique identifier of the playlist, formatted as `{XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX}`. Pass as `playlistGuid` to reliably target this playlist. */
     playlistGuid: string;
     /** The row actually read. */
     index: number;
@@ -391,9 +391,9 @@ export interface AudioGenerateFullWaveformSuccess {
     maxAmplitude?: number;
     /** `ready` answers: track length in seconds. */
     duration?: number;
-    /** `ready` answers: sample rate in Hz. */
+    /** `ready` answers: actual decoded PCM sample rate in Hz, which can differ from the file's nominal sample rate. */
     sampleRate?: number;
-    /** `ready` answers: channel count. */
+    /** `ready` answers: actual decoded PCM channel count. */
     channels?: number;
     /** Point count in use. */
     resolution: number;
@@ -1797,7 +1797,7 @@ export interface DndGetCapabilitiesSuccess {
     /** How the window hosts its WebView: `visual` for the main and popup windows, `standard` for a DUI or CUI panel. */
     hosting: "visual" | "standard";
     /** Why `paths` is `false`; its presence always means `paths` is `false`. */
-    pathsUnavailableReason?: "register-failed" | "forward-unavailable" | "inner-target-not-found" | "chain-failed" | "displaced" | "origin-untrusted";
+    pathsUnavailableReason?: "register-failed" | "forward-unavailable" | "inner-target-not-found" | "chain-failed" | "origin-untrusted";
     /** Files can be dragged out of the window through `dnd.prepareDrag`. Independent of `paths`. */
     dragOut: boolean;
     /** Why `dragOut` is `false`; its presence always means `dragOut` is `false`. */
@@ -2578,7 +2578,7 @@ export type JitQueuePreloadBatchResponse = JitQueuePreloadBatchSuccess | ApiFail
 export interface JitQueueSkipSuccess {
     /** Always `true` here; a failed call resolves with `ApiFailure` instead. */
     success: true;
-    /** Identifier of the track playing after the skip. */
+    /** Identifier of the session's current track when the call returns. The skipped-to track has not started yet at that point, so this is still the track being skipped; the new one is reported by `jitQueue:trackChanged`. */
     currentTrackId: string;
 }
 
@@ -2599,6 +2599,357 @@ export interface JitQueueStopSuccess {
  * Response from `jitQueue.stop`: `JitQueueStopSuccess`, or `ApiFailure` when the call failed.
  */
 export type JitQueueStopResponse = JitQueueStopSuccess | ApiFailure;
+
+/**
+ * Successful response from `jitSession.adoptNative`.
+ * @experimental
+ */
+export interface JitSessionAdoptNativeSuccess {
+    /** Always `true` here; a failed call resolves with `ApiFailure` instead. */
+    success: true;
+    /** The context, now managed by the session. */
+    contextId: string;
+    /** The attempt given to the track playing. */
+    attemptId: string;
+    /** State version after accepting the command. */
+    revision: number;
+    /** Version of the context. */
+    contextRevision: number;
+}
+
+/**
+ * Response from `jitSession.adoptNative`: `JitSessionAdoptNativeSuccess`, or `ApiFailure` when the call failed.
+ * @experimental
+ */
+export type JitSessionAdoptNativeResponse = JitSessionAdoptNativeSuccess | ApiFailure;
+
+/**
+ * Successful response from `jitSession.claimControl`.
+ * @experimental
+ */
+export interface JitSessionClaimControlSuccess {
+    /** Always `true` here; a failed call resolves with `ApiFailure` instead. */
+    success: true;
+    /** New control token; the previous controller's no longer works. */
+    controlToken: string;
+    /** New control generation. */
+    ownerEpoch: number;
+    /** Current state version. */
+    revision: number;
+}
+
+/**
+ * Response from `jitSession.claimControl`: `JitSessionClaimControlSuccess`, or `ApiFailure` when the call failed.
+ * @experimental
+ */
+export type JitSessionClaimControlResponse = JitSessionClaimControlSuccess | ApiFailure;
+
+/**
+ * Successful response from `jitSession.create`.
+ * @experimental
+ */
+export interface JitSessionCreateSuccess {
+    /** Always `true` here; a failed call resolves with `ApiFailure` instead. */
+    success: true;
+    /** The new session. */
+    sessionId: string;
+    /** Token that write commands must carry. Keep it in the page; it is never sent in events or state. */
+    controlToken: string;
+    /** Control generation; changes whenever control moves. */
+    ownerEpoch: number;
+    /** Current state version. */
+    revision: number;
+}
+
+/**
+ * Response from `jitSession.create`: `JitSessionCreateSuccess`, or `ApiFailure` when the call failed.
+ * @experimental
+ */
+export type JitSessionCreateResponse = JitSessionCreateSuccess | ApiFailure;
+
+/**
+ * Successful response from `jitSession.discover`.
+ * @experimental
+ */
+export interface JitSessionDiscoverSuccess {
+    /** Always `true` here; a failed call resolves with `ApiFailure` instead. */
+    success: true;
+    /** The session, or null when there is none. */
+    session: JitSessionDiscovery | null;
+}
+
+/**
+ * Response from `jitSession.discover`: `JitSessionDiscoverSuccess`, or `ApiFailure` when the call failed.
+ * @experimental
+ */
+export type JitSessionDiscoverResponse = JitSessionDiscoverSuccess | ApiFailure;
+
+/**
+ * Successful response from `jitSession.getCapabilities`.
+ * @experimental
+ */
+export interface JitSessionGetCapabilitiesSuccess {
+    /** Always `true` here; a failed call resolves with `ApiFailure` instead. */
+    success: true;
+    /** Version of the session protocol. */
+    protocolVersion: number;
+    /** Whether a session can take over native playback without interrupting it, through `jitSession.prepareAdoption` and `jitSession.adoptNative`. This host supports it; `jitSession.prepareAdoption` decides whether the playback at hand qualifies. */
+    adoption: boolean;
+    /** Whether attempt failures are classified (network, decoding). Not available: foobar2000 reports no structured playback error. See `failureRecheck` for the best-effort substitute. */
+    preciseFailure: boolean;
+    /** Whether an attempt that ends as `unknown` within its first second is followed by `jitSession:attemptRechecked`. */
+    failureRecheck?: boolean;
+    /** Whether the controlling page keeps answering `jitSession:needNext` while its window is minimized, hidden to the tray or the screen is locked. This host supports it: while a session is active, its page is hidden but not suspended. Closing or reloading the page still interrupts the supply until a page claims control again. */
+    backgroundExecution: boolean;
+    /** When playback started elsewhere is recognized: only once that track has started, so an operation completing before then may still be added. */
+    externalTakeoverDetection: "afterTrackStart";
+}
+
+/**
+ * Response from `jitSession.getCapabilities`: `JitSessionGetCapabilitiesSuccess`, or `ApiFailure` when the call failed.
+ * @experimental
+ */
+export type JitSessionGetCapabilitiesResponse = JitSessionGetCapabilitiesSuccess | ApiFailure;
+
+/**
+ * Successful response from `jitSession.getNativeContext`.
+ * @experimental
+ */
+export interface JitSessionGetNativeContextSuccess {
+    /** Always `true` here; a failed call resolves with `ApiFailure` instead. */
+    success: true;
+    /** The context, with the track captured as current and the counts. */
+    context: JitNativeContextDetail;
+    /** Number of items in the collection. */
+    total: number;
+    /** The page. */
+    items: JitNativeEntry[];
+    /** Offset of the next page, or null on the last page. */
+    nextOffset: number | null;
+}
+
+/**
+ * Response from `jitSession.getNativeContext`: `JitSessionGetNativeContextSuccess`, or `ApiFailure` when the call failed.
+ * @experimental
+ */
+export type JitSessionGetNativeContextResponse = JitSessionGetNativeContextSuccess | ApiFailure;
+
+/**
+ * Successful response from `jitSession.getOperation`.
+ * @experimental
+ */
+export interface JitSessionGetOperationSuccess {
+    /** Always `true` here; a failed call resolves with `ApiFailure` instead. */
+    success: true;
+    /** The operation. */
+    operation: JitSessionOperation;
+}
+
+/**
+ * Response from `jitSession.getOperation`: `JitSessionGetOperationSuccess`, or `ApiFailure` when the call failed.
+ * @experimental
+ */
+export type JitSessionGetOperationResponse = JitSessionGetOperationSuccess | ApiFailure;
+
+/**
+ * Successful response from `jitSession.getState`.
+ * @experimental
+ */
+export interface JitSessionGetStateSuccess {
+    /** Always `true` here; a failed call resolves with `ApiFailure` instead. */
+    success: true;
+    /** Snapshot of the session. */
+    state: JitSessionSnapshot;
+}
+
+/**
+ * Response from `jitSession.getState`: `JitSessionGetStateSuccess`, or `ApiFailure` when the call failed.
+ * @experimental
+ */
+export type JitSessionGetStateResponse = JitSessionGetStateSuccess | ApiFailure;
+
+/**
+ * Successful response from `jitSession.play`.
+ * @experimental
+ */
+export interface JitSessionPlaySuccess {
+    /** Always `true` here; a failed call resolves with `ApiFailure` instead. */
+    success: true;
+    /** Operation adding and starting the entry. */
+    operationId: string;
+    /** The attempt this command starts. */
+    attemptId: string;
+    /** State version after accepting the command. */
+    revision: number;
+}
+
+/**
+ * Response from `jitSession.play`: `JitSessionPlaySuccess`, or `ApiFailure` when the call failed.
+ * @experimental
+ */
+export type JitSessionPlayResponse = JitSessionPlaySuccess | ApiFailure;
+
+/**
+ * Successful response from `jitSession.playNative`.
+ * @experimental
+ */
+export interface JitSessionPlayNativeSuccess {
+    /** Always `true` here; a failed call resolves with `ApiFailure` instead. */
+    success: true;
+    /** Operation adding and starting the entry. */
+    operationId: string;
+    /** The attempt this command starts. */
+    attemptId: string;
+    /** State version after accepting the command. */
+    revision: number;
+}
+
+/**
+ * Response from `jitSession.playNative`: `JitSessionPlayNativeSuccess`, or `ApiFailure` when the call failed.
+ * @experimental
+ */
+export type JitSessionPlayNativeResponse = JitSessionPlayNativeSuccess | ApiFailure;
+
+/**
+ * Successful response from `jitSession.prepareAdoption`.
+ * @experimental
+ */
+export interface JitSessionPrepareAdoptionSuccess {
+    /** Always `true` here; a failed call resolves with `ApiFailure` instead. */
+    success: true;
+    /** The native context. */
+    contextId: string;
+    /** Authorizes adopting this snapshot once. Keep it in the page; it is never sent in events or state. */
+    snapshotToken: string;
+    /** When the snapshot expires unadopted, in Unix milliseconds; the host times it with its own monotonic clock. */
+    expiresAt: number;
+    /** State version after accepting the command. */
+    revision: number;
+    /** Version of the context. */
+    contextRevision: number;
+    /** The track playing; its `nativeRef` is the same as its source row's. */
+    current: JitNativeTrack;
+    /** Occurrences captured from the native playback queue. */
+    manualCount: number;
+    /** Rows of the playlist being played. */
+    sourceCount: number;
+    /** Source row after the track playing. */
+    sourceNextOffset: number;
+}
+
+/**
+ * Response from `jitSession.prepareAdoption`: `JitSessionPrepareAdoptionSuccess`, or `ApiFailure` when the call failed.
+ * @experimental
+ */
+export type JitSessionPrepareAdoptionResponse = JitSessionPrepareAdoptionSuccess | ApiFailure;
+
+/**
+ * Successful response from `jitSession.release`.
+ * @experimental
+ */
+export interface JitSessionReleaseSuccess {
+    /** Always `true` here; a failed call resolves with `ApiFailure` instead. */
+    success: true;
+}
+
+/**
+ * Response from `jitSession.release`: `JitSessionReleaseSuccess`, or `ApiFailure` when the call failed.
+ * @experimental
+ */
+export type JitSessionReleaseResponse = JitSessionReleaseSuccess | ApiFailure;
+
+/**
+ * Successful response from `jitSession.setNativeNext`.
+ * @experimental
+ */
+export interface JitSessionSetNativeNextSuccess {
+    /** Always `true` here; a failed call resolves with `ApiFailure` instead. */
+    success: true;
+    /** Operation adding the next entry; absent when the next entry was withdrawn. */
+    operationId?: string;
+    /** State version after accepting the command. */
+    revision: number;
+}
+
+/**
+ * Response from `jitSession.setNativeNext`: `JitSessionSetNativeNextSuccess`, or `ApiFailure` when the call failed.
+ * @experimental
+ */
+export type JitSessionSetNativeNextResponse = JitSessionSetNativeNextSuccess | ApiFailure;
+
+/**
+ * Successful response from `jitSession.setNativeQueue`.
+ * @experimental
+ */
+export interface JitSessionSetNativeQueueSuccess {
+    /** Always `true` here; a failed call resolves with `ApiFailure` instead. */
+    success: true;
+    /** State version after accepting the command. */
+    revision: number;
+    /** Version of the context after the change. */
+    contextRevision: number;
+}
+
+/**
+ * Response from `jitSession.setNativeQueue`: `JitSessionSetNativeQueueSuccess`, or `ApiFailure` when the call failed.
+ * @experimental
+ */
+export type JitSessionSetNativeQueueResponse = JitSessionSetNativeQueueSuccess | ApiFailure;
+
+/**
+ * Successful response from `jitSession.setNext`.
+ * @experimental
+ */
+export interface JitSessionSetNextSuccess {
+    /** Always `true` here; a failed call resolves with `ApiFailure` instead. */
+    success: true;
+    /** Operation adding the next entry; absent when the next entry was withdrawn. */
+    operationId?: string;
+    /** State version after accepting the command. */
+    revision: number;
+}
+
+/**
+ * Response from `jitSession.setNext`: `JitSessionSetNextSuccess`, or `ApiFailure` when the call failed.
+ * @experimental
+ */
+export type JitSessionSetNextResponse = JitSessionSetNextSuccess | ApiFailure;
+
+/**
+ * Successful response from `jitSession.skip`.
+ * @experimental
+ */
+export interface JitSessionSkipSuccess {
+    /** Always `true` here; a failed call resolves with `ApiFailure` instead. */
+    success: true;
+    /** Operation starting the buffered next entry. */
+    operationId: string;
+    /** State version after accepting the command. */
+    revision: number;
+}
+
+/**
+ * Response from `jitSession.skip`: `JitSessionSkipSuccess`, or `ApiFailure` when the call failed.
+ * @experimental
+ */
+export type JitSessionSkipResponse = JitSessionSkipSuccess | ApiFailure;
+
+/**
+ * Successful response from `jitSession.stop`.
+ * @experimental
+ */
+export interface JitSessionStopSuccess {
+    /** Always `true` here; a failed call resolves with `ApiFailure` instead. */
+    success: true;
+    /** State version after accepting the command. */
+    revision: number;
+}
+
+/**
+ * Response from `jitSession.stop`: `JitSessionStopSuccess`, or `ApiFailure` when the call failed.
+ * @experimental
+ */
+export type JitSessionStopResponse = JitSessionStopSuccess | ApiFailure;
 
 /**
  * Successful response from `keyboard.getRegisteredHotkeys`.
@@ -2804,7 +3155,7 @@ export interface LibraryGetArtistAlbumsSuccess {
     success: true;
     /** The artist, as given. */
     artist: string;
-    /** The albums, sorted by `sort`. Rows never carry `coverDataUrl` or `tracks`. */
+    /** The albums, sorted by `sort`, with `tracks` referencing this artist's members of each group. Rows do not carry `coverDataUrl` or a canonical `albumId`. */
     albums: AlbumInfo[];
     /** Albums found, before `limit`. */
     total: number;
@@ -2938,6 +3289,31 @@ export interface LibraryGetCacheStatsSuccess {
  * Response from `library.getCacheStats`: `LibraryGetCacheStatsSuccess`, or `ApiFailure` when the call failed.
  */
 export type LibraryGetCacheStatsResponse = LibraryGetCacheStatsSuccess | ApiFailure;
+
+/**
+ * Successful response from `library.getChanges`.
+ */
+export interface LibraryGetChangesSuccess {
+    /** Always `true` here; a failed call resolves with `ApiFailure` instead. */
+    success: true;
+    /** Changes when the host starts its record over, for example after an abnormal shutdown; copies from another epoch must be rebuilt. */
+    epoch: string;
+    /** The revision this response brings the copy to; pass as `since` next time. */
+    revision: number;
+    /** Whether the page must rebuild its copy from `handles`. */
+    resync: boolean;
+    /** Tracks added or modified after `since` that are still in the library; fetch via `library.getTracks`. Absent when `resync` is true. */
+    changed?: string[];
+    /** Tracks removed from the library after `since`. Absent when `resync` is true. */
+    removed?: string[];
+    /** All tracks currently in the library. Absent when `resync` is false. */
+    handles?: string[];
+}
+
+/**
+ * Response from `library.getChanges`: `LibraryGetChangesSuccess`, or `ApiFailure` when the call failed.
+ */
+export type LibraryGetChangesResponse = LibraryGetChangesSuccess | ApiFailure;
 
 /**
  * Successful response from `library.getCount`.
@@ -3088,7 +3464,7 @@ export interface LibraryGetStatusSuccess {
     success: true;
     /** Whether the media library is enabled. */
     enabled: boolean;
-    /** Always the same as `enabled`. */
+    /** Whether foobar2000 has finished loading the library at startup. Prior to completion, `library:itemsAdded` announces loaded tracks rather than newly added ones. */
     initialized: boolean;
     /** Always `false`; the host does not report scanning. */
     scanning: boolean;
@@ -3102,6 +3478,23 @@ export interface LibraryGetStatusSuccess {
  * Response from `library.getStatus`: `LibraryGetStatusSuccess`, or `ApiFailure` when the call failed.
  */
 export type LibraryGetStatusResponse = LibraryGetStatusSuccess | ApiFailure;
+
+/**
+ * Successful response from `library.getTracks`.
+ */
+export interface LibraryGetTracksSuccess {
+    /** Always `true` here; a failed call resolves with `ApiFailure` instead. */
+    success: true;
+    /** Found rows in the order of `handles`; `index` is the position in this list. Contains requested `fields`; `albumId` omitted when unavailable. */
+    tracks: LibraryTrackPartial[];
+    /** Handles not found in the library, in the order given. */
+    missing: string[];
+}
+
+/**
+ * Response from `library.getTracks`: `LibraryGetTracksSuccess`, or `ApiFailure` when the call failed.
+ */
+export type LibraryGetTracksResponse = LibraryGetTracksSuccess | ApiFailure;
 
 /**
  * Successful response from `library.invalidateCache`.
@@ -3139,7 +3532,7 @@ export type LibraryIsEnabledResponse = LibraryIsEnabledSuccess | ApiFailure;
 export interface LibraryQuerySuccess {
     /** Always `true` here; a failed call resolves with `ApiFailure` instead. */
     success: true;
-    /** The matches, sorted by `sort` or in library order; `index` is the position in this list. Each row carries exactly the `fields` asked for. */
+    /** The matches, sorted by `sort` or in library order; `index` is the position in this list. Each row carries the `fields` asked for; `albumId` is omitted when unavailable. */
     tracks: LibraryTrackPartial[];
     /** Matches, before `limit`. */
     total: number;
@@ -3182,7 +3575,7 @@ export type LibraryRescanResponse = LibraryRescanSuccess | ApiFailure;
 export interface LibrarySearchSuccess {
     /** Always `true` here; a failed call resolves with `ApiFailure` instead. */
     success: true;
-    /** This page of the matches in library order; `index` is the position among all matches. Each row carries exactly the `fields` asked for. */
+    /** This page of the matches in library order; `index` is the position among all matches. Each row carries the `fields` asked for; `albumId` is omitted when unavailable. */
     tracks: LibraryTrackPartial[];
     /** Matches, before `offset` and `limit`. */
     total: number;
@@ -3404,6 +3797,8 @@ export interface MenuGetContextMenuSuccess {
     withAvailability: boolean;
     /** The top-level nodes. */
     items: MenuTreeNode[];
+    /** A fingerprint of the tracks the menu was built for, to pass back as `expectTarget`. Absent for `mode: "playlist"`. Opaque, and valid only while the host process runs. */
+    targetKey?: string;
 }
 
 /**
@@ -3454,6 +3849,8 @@ export interface MenuRunContextCommandSuccess {
     itemCount: number;
     /** `false` when the command has no GUID and was handed to a host entry point that reports nothing back, so whether it ran is unknown. */
     executionConfirmed: boolean;
+    /** Always `unknown`: foobar2000 does not report whether the command finished or whether a dialog it opened was cancelled. */
+    completion: "completed" | "partial" | "cancelled" | "failed" | "unknown";
 }
 
 /**
@@ -3467,6 +3864,8 @@ export type MenuRunContextCommandResponse = MenuRunContextCommandSuccess | ApiFa
 export interface MenuRunContextCommandByIdSuccess {
     /** Always `true` here; a failed call resolves with `ApiFailure` instead. */
     success: true;
+    /** Always `unknown`: foobar2000 does not report whether the command finished or whether a dialog it opened was cancelled. */
+    completion: "completed" | "partial" | "cancelled" | "failed" | "unknown";
 }
 
 /**
@@ -3480,7 +3879,7 @@ export type MenuRunContextCommandByIdResponse = MenuRunContextCommandByIdSuccess
 export interface MenuRunMainMenuCommandSuccess {
     /** Always `true` here; a failed call resolves with `ApiFailure` instead. */
     success: true;
-    /** GUID of the command that ran; absent when the menu tree ran it by name or path. */
+    /** GUID of the command that ran, including calls resolved from names or paths. Older hosts can omit it for those forms. */
     guid?: string;
     /** Whether it was a dynamic child command. */
     dynamic?: boolean;
@@ -3488,6 +3887,8 @@ export interface MenuRunMainMenuCommandSuccess {
     subGuid?: string;
     /** How a name or path was resolved: `v2-tree` by the menu tree, `index` by the command list. Absent for the GUID form. */
     source?: "v2-tree" | "index";
+    /** Always `unknown`: foobar2000 does not report whether the command finished or whether a dialog it opened was cancelled. */
+    completion: "completed" | "partial" | "cancelled" | "failed" | "unknown";
 }
 
 /**
@@ -4514,7 +4915,7 @@ export interface PlaylistAddHandlesSuccess {
     success: true;
     /** Index of the playlist. */
     playlist: number;
-    /** The playlist's GUID, written as `{XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX}`. Pass it as `playlistGuid` to address this playlist even after the playlist list has changed. */
+    /** Unique identifier of the playlist, formatted as `{XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX}`. Pass as `playlistGuid` to reliably target this playlist. */
     playlistGuid: string;
     /** Number of entries in `handles`. */
     requestedCount: number;
@@ -4541,7 +4942,7 @@ export interface PlaylistAddPathsSuccess {
     success: true;
     /** Index of the playlist. */
     playlist: number;
-    /** The playlist's GUID, written as `{XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX}`. Pass it as `playlistGuid` to address this playlist even after the playlist list has changed. */
+    /** Unique identifier of the playlist, formatted as `{XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX}`. Pass as `playlistGuid` to reliably target this playlist. */
     playlistGuid: string;
     /** Number of entries in `paths`. */
     requestedPaths: number;
@@ -4591,7 +4992,7 @@ export interface PlaylistAddPathsSequentialSuccess {
     success: true;
     /** Index of the playlist. */
     playlist: number;
-    /** The playlist's GUID, written as `{XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX}`. Pass it as `playlistGuid` to address this playlist even after the playlist list has changed. */
+    /** Unique identifier of the playlist, formatted as `{XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX}`. Pass as `playlistGuid` to reliably target this playlist. */
     playlistGuid: string;
     /** Tracks added; `0` when nothing resolved, which still succeeds. */
     addedCount: number;
@@ -4612,7 +5013,7 @@ export interface PlaylistClearSuccess {
     success: true;
     /** Index of the playlist. */
     playlist: number;
-    /** The playlist's GUID, written as `{XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX}`. Pass it as `playlistGuid` to address this playlist even after the playlist list has changed. */
+    /** Unique identifier of the playlist, formatted as `{XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX}`. Pass as `playlistGuid` to reliably target this playlist. */
     playlistGuid: string;
     /** Number of tracks it held before. */
     clearedCount: number;
@@ -4633,7 +5034,7 @@ export interface PlaylistConvertToAutoplaylistSuccess {
     success: true;
     /** Index of the playlist. */
     playlist: number;
-    /** The playlist's GUID, written as `{XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX}`. Pass it as `playlistGuid` to address this playlist even after the playlist list has changed. */
+    /** Unique identifier of the playlist, formatted as `{XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX}`. Pass as `playlistGuid` to reliably target this playlist. */
     playlistGuid: string;
 }
 
@@ -4650,7 +5051,7 @@ export interface PlaylistCreateSuccess {
     success: true;
     /** Index of the new playlist. */
     index: number;
-    /** The playlist's GUID, written as `{XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX}`. Pass it as `playlistGuid` to address this playlist even after the playlist list has changed. */
+    /** Unique identifier of the playlist, formatted as `{XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX}`. Pass as `playlistGuid` to reliably target this playlist. */
     guid: string;
 }
 
@@ -4669,7 +5070,7 @@ export interface PlaylistCreateAutoplaylistSuccess {
     index: number;
     /** Index of the new playlist; the same as `index`. */
     playlist: number;
-    /** The playlist's GUID, written as `{XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX}`. Pass it as `playlistGuid` to address this playlist even after the playlist list has changed. */
+    /** Unique identifier of the playlist, formatted as `{XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX}`. Pass as `playlistGuid` to reliably target this playlist. */
     guid: string;
     /** Name of the new playlist. */
     name: string;
@@ -4681,6 +5082,29 @@ export interface PlaylistCreateAutoplaylistSuccess {
  * Response from `playlist.createAutoplaylist`: `PlaylistCreateAutoplaylistSuccess`, or `ApiFailure` when the call failed.
  */
 export type PlaylistCreateAutoplaylistResponse = PlaylistCreateAutoplaylistSuccess | ApiFailure;
+
+/**
+ * Successful response from `playlist.createManagedAutoplaylist`.
+ */
+export interface PlaylistCreateManagedAutoplaylistSuccess {
+    /** Always `true` here; a failed call resolves with `ApiFailure` instead. */
+    success: true;
+    /** Unique identifier of the playlist, formatted as `{XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX}`. Pass as `playlistGuid` to reliably target this playlist. */
+    playlistGuid: string;
+    /** The provider's query text, unchanged. */
+    query: string;
+    /** Independent sort text, unchanged; query-embedded sorting remains in query. */
+    sort: string;
+    /** Current keep-sorted flag read from the autoplaylist manager. */
+    keepSorted: boolean;
+    /** Opaque configuration revision, scoped to this provider instance. Not a track-content version. */
+    revision: string;
+}
+
+/**
+ * Response from `playlist.createManagedAutoplaylist`: `PlaylistCreateManagedAutoplaylistSuccess`, or `ApiFailure` when the call failed.
+ */
+export type PlaylistCreateManagedAutoplaylistResponse = PlaylistCreateManagedAutoplaylistSuccess | ApiFailure;
 
 /**
  * Successful response from `playlist.deselectAll`.
@@ -4745,7 +5169,7 @@ export interface PlaylistGetActiveSuccess {
     found: boolean;
     /** Index of the active playlist. */
     index?: number;
-    /** The playlist's GUID, written as `{XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX}`. Pass it as `playlistGuid` to address this playlist even after the playlist list has changed. */
+    /** Unique identifier of the playlist, formatted as `{XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX}`. Pass as `playlistGuid` to reliably target this playlist. */
     guid?: string;
     /** Its name. */
     name?: string;
@@ -4784,20 +5208,51 @@ export interface PlaylistGetAllSuccess {
 export type PlaylistGetAllResponse = PlaylistGetAllSuccess | ApiFailure;
 
 /**
+ * Successful response from `playlist.getAutoplaylistConfig`.
+ */
+export interface PlaylistGetAutoplaylistConfigSuccess {
+    /** Always `true` here; a failed call resolves with `ApiFailure` instead. */
+    success: true;
+    /** Unique identifier of the playlist, formatted as `{XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX}`. Pass as `playlistGuid` to reliably target this playlist. */
+    playlistGuid: string;
+    /** The provider's query text, unchanged. */
+    query: string;
+    /** Independent sort text, unchanged; query-embedded sorting remains in query. */
+    sort: string;
+    /** Current keep-sorted flag read from the autoplaylist manager. */
+    keepSorted: boolean;
+    /** Opaque configuration revision, scoped to this provider instance. Not a track-content version. */
+    revision: string;
+}
+
+/**
+ * Response from `playlist.getAutoplaylistConfig`: `PlaylistGetAutoplaylistConfigSuccess`, or `ApiFailure` when the call failed.
+ */
+export type PlaylistGetAutoplaylistConfigResponse = PlaylistGetAutoplaylistConfigSuccess | ApiFailure;
+
+/**
  * Successful response from `playlist.getAutoplaylistInfo`.
  */
 export interface PlaylistGetAutoplaylistInfoSuccess {
     /** Always `true` here; a failed call resolves with `ApiFailure` instead. */
     success: true;
-    /** Whether the playlist is an autoplaylist; the remaining fields other than `playlist` are present only when it is. */
+    /** Whether the playlist is an autoplaylist. `keepSorted`, `source` and `lockName` are present only when it is; editor availability is always reported on success. */
     isAutoplaylist: boolean;
     /** Index of the playlist. */
     playlist: number;
-    /** The playlist's GUID, written as `{XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX}`. Pass it as `playlistGuid` to address this playlist even after the playlist list has changed. */
+    /** Unique identifier of the playlist, formatted as `{XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX}`. Pass as `playlistGuid` to reliably target this playlist. */
     playlistGuid: string;
-    /** Whether the autoplaylist keeps its tracks sorted; always `false` when `source` is `dui`. */
+    /** `available` means the provider declares UI support; `unknown` means it cannot be probed without attempting the native call. Neither guarantees that a particular call shows a window. */
+    editorAvailability: "available" | "unavailable" | "unknown";
+    /** Why the capability is available, unavailable, or unknown. A legacy client or a compatible automatic-playlist lock has no side-effect-free editor probe. */
+    editorAvailabilityReason: "supported" | "noEditor" | "legacyClient" | "unverifiedLock" | "notAutoplaylist";
+    /** Whether this component can read and edit the provider's configuration. */
+    configAvailability: "available" | "unavailable";
+    /** Own providers are supported; external providers and unverified locks have no configuration protocol here. */
+    configAvailabilityReason: "supported" | "externalProvider" | "unverifiedLock" | "notAutoplaylist";
+    /** Whether the manager-backed autoplaylist keeps its tracks sorted. For `source: 'dui'`, the existing `false` value is a placeholder because the lock's configuration is not readable. */
     keepSorted?: boolean;
-    /** `sdk` for an autoplaylist foobar2000 runs, `dui` for one another component manages. */
+    /** `sdk` identifies the autoplaylist-manager path, including third-party clients; `dui` identifies the existing automatic-lock name heuristic. Neither identifies the current UI or editor support. */
     source?: "sdk" | "dui";
     /** Name of the playlist's lock, present when `source` is `dui`. */
     lockName?: string;
@@ -4818,13 +5273,13 @@ export interface PlaylistGetAutoplaylistQuerySuccess {
     isAutoplaylist: boolean;
     /** Index of the playlist. */
     playlist: number;
-    /** The playlist's GUID, written as `{XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX}`. Pass it as `playlistGuid` to address this playlist even after the playlist list has changed. */
+    /** Unique identifier of the playlist, formatted as `{XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX}`. Pass as `playlistGuid` to reliably target this playlist. */
     playlistGuid: string;
     /** Always `null`: foobar2000 does not expose the query. */
     query: string | null;
-    /** Whether the autoplaylist keeps its tracks sorted; always `false` when `source` is `dui`. */
+    /** Whether the manager-backed autoplaylist keeps its tracks sorted. The `false` value for `source: 'dui'` is a placeholder for an unreadable lock configuration. */
     keepSorted?: boolean;
-    /** `sdk` for an autoplaylist foobar2000 runs, `dui` for one another component manages. */
+    /** `sdk` identifies the autoplaylist-manager path, including third-party clients; `dui` identifies the existing automatic-lock name heuristic. Neither identifies the current UI or editor support. */
     source?: "sdk" | "dui";
     /** Says that the query is not available. */
     note?: string;
@@ -4896,7 +5351,7 @@ export interface PlaylistGetFocusTrackSuccess {
     success: true;
     /** Index of the playlist. */
     playlist: number;
-    /** The playlist's GUID, written as `{XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX}`. Pass it as `playlistGuid` to address this playlist even after the playlist list has changed. */
+    /** Unique identifier of the playlist, formatted as `{XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX}`. Pass as `playlistGuid` to reliably target this playlist. */
     playlistGuid: string;
     /** Focused row; `-1` when the playlist has no focus. */
     index: number;
@@ -4915,12 +5370,14 @@ export interface PlaylistGetGroupRunsSuccess {
     success: true;
     /** The playlist grouped. */
     playlist: number;
-    /** The playlist's GUID, written as `{XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX}`. Pass it as `playlistGuid` to address this playlist even after the playlist list has changed. */
+    /** Unique identifier of the playlist, formatted as `{XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX}`. Pass as `playlistGuid` to reliably target this playlist. */
     playlistGuid: string;
     /** Rows in the playlist; the runs' `count` values add up to it. */
     total: number;
     /** The runs in playlist order, the first starting at row `0`; empty for an empty playlist. */
     runs: PlaylistGroupRun[];
+    /** The runs describe the rows as they were at this version. */
+    contentVersion: string;
 }
 
 /**
@@ -4936,7 +5393,7 @@ export interface PlaylistGetLockInfoSuccess {
     success: true;
     /** Index of the playlist. */
     playlist: number;
-    /** The playlist's GUID, written as `{XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX}`. Pass it as `playlistGuid` to address this playlist even after the playlist list has changed. */
+    /** Unique identifier of the playlist, formatted as `{XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX}`. Pass as `playlistGuid` to reliably target this playlist. */
     playlistGuid: string;
     /** Whether it carries a lock. */
     isLocked: boolean;
@@ -4955,7 +5412,7 @@ export interface PlaylistGetMatchingRowsSuccess {
     success: true;
     /** The playlist searched. */
     playlist: number;
-    /** The playlist's GUID, written as `{XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX}`. Pass it as `playlistGuid` to address this playlist even after the playlist list has changed. */
+    /** Unique identifier of the playlist, formatted as `{XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX}`. Pass as `playlistGuid` to reliably target this playlist. */
     playlistGuid: string;
     /** Rows in the playlist when the query ran. Equal to the `total` of a later `playlist.getTracks` does not mean the playlist is unchanged: reordering and tag edits keep the count. */
     total: number;
@@ -4963,6 +5420,8 @@ export interface PlaylistGetMatchingRowsSuccess {
     items: number[];
     /** Number of entries in `items`. */
     count: number;
+    /** The row numbers in `items` hold only while the playlist keeps this version. */
+    contentVersion: string;
 }
 
 /**
@@ -4980,7 +5439,7 @@ export interface PlaylistGetPlayingSuccess {
     found: boolean;
     /** Index of the playing playlist. */
     index?: number;
-    /** The playlist's GUID, written as `{XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX}`. Pass it as `playlistGuid` to address this playlist even after the playlist list has changed. */
+    /** Unique identifier of the playlist, formatted as `{XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX}`. Pass as `playlistGuid` to reliably target this playlist. */
     guid?: string;
     /** Its name. */
     name?: string;
@@ -5009,12 +5468,14 @@ export interface PlaylistGetSelectedTracksSuccess {
     success: true;
     /** The playlist read. */
     playlist: number;
-    /** The playlist's GUID, written as `{XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX}`. Pass it as `playlistGuid` to address this playlist even after the playlist list has changed. */
+    /** Unique identifier of the playlist, formatted as `{XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX}`. Pass as `playlistGuid` to reliably target this playlist. */
     playlistGuid: string;
     /** The selected rows in playlist order. */
     tracks: PlaylistTrack[];
     /** Rows returned. */
     count: number;
+    /** The row numbers in `tracks` hold only while the playlist keeps this version. */
+    contentVersion: string;
 }
 
 /**
@@ -5034,8 +5495,10 @@ export interface PlaylistGetSelectionSuccess {
     count: number;
     /** Index of the playlist. */
     playlist: number;
-    /** The playlist's GUID, written as `{XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX}`. Pass it as `playlistGuid` to address this playlist even after the playlist list has changed. */
+    /** Unique identifier of the playlist, formatted as `{XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX}`. Pass as `playlistGuid` to reliably target this playlist. */
     playlistGuid: string;
+    /** The row numbers in `items` hold only while the playlist keeps this version. */
+    contentVersion: string;
 }
 
 /**
@@ -5076,6 +5539,8 @@ export interface PlaylistGetTracksSuccess {
     total: number;
     /** The rows from `start`: whole rows, or `index` plus the `fields` asked for. */
     tracks: PlaylistTrackPartial[];
+    /** Pages can be joined only when this matches; absent when the playlist does not exist. */
+    contentVersion?: string;
 }
 
 /**
@@ -5099,6 +5564,8 @@ export interface PlaylistGetTracksAtSuccess {
     count: number;
     /** The rows in the order asked for, skipping those past the last row. */
     tracks: PlaylistTrackPartial[];
+    /** The row numbers hold only while the playlist keeps this version; absent when the playlist does not exist. */
+    contentVersion?: string;
 }
 
 /**
@@ -5114,7 +5581,7 @@ export interface PlaylistInsertTracksSuccess {
     success: true;
     /** Index of the playlist. */
     playlist: number;
-    /** The playlist's GUID, written as `{XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX}`. Pass it as `playlistGuid` to address this playlist even after the playlist list has changed. */
+    /** Unique identifier of the playlist, formatted as `{XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX}`. Pass as `playlistGuid` to reliably target this playlist. */
     playlistGuid: string;
     /** The `position` that was asked for, before it was limited to the end of the playlist. */
     insertIndex: number;
@@ -5128,6 +5595,8 @@ export interface PlaylistInsertTracksSuccess {
     countBefore: number;
     /** Number of tracks after the insertion. */
     totalCount: number;
+    /** Already includes this change; pass it as `expectedVersion` to the next call. */
+    contentVersion: string;
 }
 
 /**
@@ -5143,11 +5612,11 @@ export interface PlaylistIsAutoplaylistSuccess {
     success: true;
     /** Index of the playlist. */
     playlist: number;
-    /** The playlist's GUID, written as `{XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX}`. Pass it as `playlistGuid` to address this playlist even after the playlist list has changed. */
+    /** Unique identifier of the playlist, formatted as `{XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX}`. Pass as `playlistGuid` to reliably target this playlist. */
     playlistGuid: string;
     /** Whether it is an autoplaylist. */
     isAutoplaylist: boolean;
-    /** Name of the playlist's lock, present when the playlist carries a named lock and is not an autoplaylist foobar2000 runs, whether or not the lock makes it count as one. */
+    /** Name of the playlist's lock, present when it carries a named lock without an autoplaylist-manager client, whether or not the lock makes it count as an autoplaylist. */
     lockName?: string;
 }
 
@@ -5177,6 +5646,8 @@ export type PlaylistIsLockedResponse = PlaylistIsLockedSuccess | ApiFailure;
 export interface PlaylistMoveTracksSuccess {
     /** Always `true` here; a failed call resolves with `ApiFailure` instead. */
     success: true;
+    /** Already includes this change; pass it as `expectedVersion` to the next call. */
+    contentVersion: string;
 }
 
 /**
@@ -5231,9 +5702,9 @@ export interface PlaylistRemoveAutoplaylistSuccess {
     success: true;
     /** Index of the playlist. */
     playlist: number;
-    /** The playlist's GUID, written as `{XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX}`. Pass it as `playlistGuid` to address this playlist even after the playlist list has changed. */
+    /** Unique identifier of the playlist, formatted as `{XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX}`. Pass as `playlistGuid` to reliably target this playlist. */
     playlistGuid: string;
-    /** `sdk` when foobar2000's autoplaylist was released, `dui` when the playlist is an autoplaylist another component manages and nothing changed. */
+    /** `sdk` when a manager client was released, including a third-party client; `dui` when only a compatible automatic-playlist lock was found and nothing changed. */
     source: "sdk" | "dui";
     /** Explanation, present when `source` is `dui`. */
     note?: string;
@@ -5263,6 +5734,8 @@ export type PlaylistRemoveSelectedTracksResponse = PlaylistRemoveSelectedTracksS
 export interface PlaylistRemoveTracksSuccess {
     /** Always `true` here; a failed call resolves with `ApiFailure` instead. */
     success: true;
+    /** Already includes this change; pass it as `expectedVersion` to the next call. */
+    contentVersion: string;
 }
 
 /**
@@ -5291,10 +5764,12 @@ export interface PlaylistReorderSuccess {
     success: true;
     /** Index of the playlist. */
     playlist: number;
-    /** The playlist's GUID, written as `{XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX}`. Pass it as `playlistGuid` to address this playlist even after the playlist list has changed. */
+    /** Unique identifier of the playlist, formatted as `{XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX}`. Pass as `playlistGuid` to reliably target this playlist. */
     playlistGuid: string;
     /** Number of tracks reordered. */
     itemCount: number;
+    /** Already includes this change; pass it as `expectedVersion` to the next call. */
+    contentVersion: string;
 }
 
 /**
@@ -5325,7 +5800,7 @@ export interface PlaylistReplaceAllAndPlaySuccess {
     success: true;
     /** Index of the playlist. */
     playlist: number;
-    /** The playlist's GUID, written as `{XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX}`. Pass it as `playlistGuid` to address this playlist even after the playlist list has changed. */
+    /** Unique identifier of the playlist, formatted as `{XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX}`. Pass as `playlistGuid` to reliably target this playlist. */
     playlistGuid: string;
     /** Number of tracks removed. */
     clearedCount: number;
@@ -5382,6 +5857,29 @@ export interface PlaylistSetActiveSuccess {
 export type PlaylistSetActiveResponse = PlaylistSetActiveSuccess | ApiFailure;
 
 /**
+ * Successful response from `playlist.setAutoplaylistConfig`.
+ */
+export interface PlaylistSetAutoplaylistConfigSuccess {
+    /** Always `true` here; a failed call resolves with `ApiFailure` instead. */
+    success: true;
+    /** Unique identifier of the playlist, formatted as `{XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX}`. Pass as `playlistGuid` to reliably target this playlist. */
+    playlistGuid: string;
+    /** The provider's query text, unchanged. */
+    query: string;
+    /** Independent sort text, unchanged; query-embedded sorting remains in query. */
+    sort: string;
+    /** Current keep-sorted flag read from the autoplaylist manager. */
+    keepSorted: boolean;
+    /** Opaque configuration revision, scoped to this provider instance. Not a track-content version. */
+    revision: string;
+}
+
+/**
+ * Response from `playlist.setAutoplaylistConfig`: `PlaylistSetAutoplaylistConfigSuccess`, or `ApiFailure` when the call failed.
+ */
+export type PlaylistSetAutoplaylistConfigResponse = PlaylistSetAutoplaylistConfigSuccess | ApiFailure;
+
+/**
  * Successful response from `playlist.setFocusedTrack`.
  */
 export interface PlaylistSetFocusedTrackSuccess {
@@ -5400,12 +5898,33 @@ export type PlaylistSetFocusedTrackResponse = PlaylistSetFocusedTrackSuccess | A
 export interface PlaylistSetSelectionSuccess {
     /** Always `true` here; a failed call resolves with `ApiFailure` instead. */
     success: true;
+    /** Selecting rows leaves it unchanged. */
+    contentVersion: string;
 }
 
 /**
  * Response from `playlist.setSelection`: `PlaylistSetSelectionSuccess`, or `ApiFailure` when the call failed.
  */
 export type PlaylistSetSelectionResponse = PlaylistSetSelectionSuccess | ApiFailure;
+
+/**
+ * Successful response from `playlist.showAutoplaylistUI`.
+ */
+export interface PlaylistShowAutoplaylistUISuccess {
+    /** Always `true` here; a failed call resolves with `ApiFailure` instead. */
+    success: true;
+    /** Always `true` on success: the request was accepted, not necessarily executed yet. */
+    accepted: boolean;
+    /** Opaque identifier used to correlate the single native-call result event. */
+    operationId: string;
+    /** Unique identifier of the playlist, formatted as `{XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX}`. Pass as `playlistGuid` to reliably target this playlist. */
+    playlistGuid: string;
+}
+
+/**
+ * Response from `playlist.showAutoplaylistUI`: `PlaylistShowAutoplaylistUISuccess`, or `ApiFailure` when the call failed.
+ */
+export type PlaylistShowAutoplaylistUIResponse = PlaylistShowAutoplaylistUISuccess | ApiFailure;
 
 /**
  * Successful response from `playlist.shuffle`.
@@ -5550,7 +6069,7 @@ export interface QueueAddPathsSuccess {
     invalidCount: number;
     /** The playlist the tracks were appended to. */
     playlist: number;
-    /** The playlist's GUID, written as `{XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX}`. Pass it as `playlistGuid` to address this playlist even after the playlist list has changed. */
+    /** Unique identifier of the playlist, formatted as `{XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX}`. Pass as `playlistGuid` to reliably target this playlist. */
     playlistGuid: string;
     /** Queue length afterwards. */
     queueCount: number;
@@ -5601,6 +6120,8 @@ export interface QueueGetSuccess {
     items: QueueItem[];
     /** Number of entries. */
     count: number;
+    /** Pass it as `expectedVersion` so that a queue changed meanwhile fails the call instead of hitting other entries. */
+    contentVersion: string;
 }
 
 /**
@@ -5639,6 +6160,8 @@ export interface QueueInsertNextSuccess {
     queueCount: number;
     /** Input path count minus the tracks resolved from paths, floored at zero. A folder or playlist file resolves to several tracks, so this is not a count of the paths that failed. */
     invalidCount: number;
+    /** Already includes this change; pass it as `expectedVersion` to the next call. */
+    contentVersion: string;
 }
 
 /**
@@ -5656,6 +6179,8 @@ export interface QueueMoveToTopSuccess {
     movedIndex: number;
     /** Queue length afterwards. */
     queueCount: number;
+    /** Already includes this change; pass it as `expectedVersion` to the next call. */
+    contentVersion: string;
 }
 
 /**
@@ -5673,6 +6198,8 @@ export interface QueuePlayNowSuccess {
     playedIndex: number;
     /** Queue length read right after playback started; the host may consume the played entry before or after that read. */
     queueCount: number;
+    /** Read together with `queueCount`. */
+    contentVersion: string;
 }
 
 /**
@@ -5692,6 +6219,8 @@ export interface QueueRemoveSuccess {
     removedCount?: number;
     /** Queue length afterwards. */
     queueCount: number;
+    /** Already includes this change; pass it as `expectedVersion` to the next call. */
+    contentVersion: string;
 }
 
 /**
@@ -5707,6 +6236,8 @@ export interface QueueSetContentsSuccess {
     success: true;
     /** Queue length afterwards. */
     queueCount: number;
+    /** Already includes this change; pass it as `expectedVersion` to the next call. */
+    contentVersion: string;
 }
 
 /**
@@ -6574,6 +7105,19 @@ export interface TrayRemoveMenuItemsSuccess {
 export type TrayRemoveMenuItemsResponse = TrayRemoveMenuItemsSuccess | ApiFailure;
 
 /**
+ * Successful response from `tray.setClickAction`.
+ */
+export interface TraySetClickActionSuccess {
+    /** Always `true` here; a failed call resolves with `ApiFailure` instead. */
+    success: true;
+}
+
+/**
+ * Response from `tray.setClickAction`: `TraySetClickActionSuccess`, or `ApiFailure` when the call failed.
+ */
+export type TraySetClickActionResponse = TraySetClickActionSuccess | ApiFailure;
+
+/**
  * Successful response from `tray.setCloseToTray`.
  */
 export interface TraySetCloseToTraySuccess {
@@ -7322,6 +7866,8 @@ export interface WindowGetZoomSuccess {
     dpi?: number;
     /** `dpi / 96`; left out without a WebView. */
     dpiScale?: number;
+    /** The Windows text size as a factor, `1` to `2.25`, which the host applies to its WebViews together with the DPI; `1` when Windows does not report one. */
+    textScaleFactor: number;
 }
 
 /**
@@ -7658,8 +8204,10 @@ export interface WindowSetClickThroughExcludeRegionsSuccess {
     windowId: string;
     /** How many rectangles were kept. */
     count: number;
-    /** Scale applied to the rectangles, the popup's DPI divided by 96. */
+    /** The popup's DPI divided by 96. */
     dpiScale: number;
+    /** Scale applied to the rectangles, the `devicePixelRatio` of the popup's page. */
+    scale: number;
     /** `regions truncated to 32` when more than 32 rectangles were given. */
     warning?: string;
 }
@@ -7722,8 +8270,10 @@ export interface WindowSetDragRegionsSuccess {
     success: true;
     /** How many rectangles were kept. */
     count: number;
-    /** Scale applied to the rectangles, the window's DPI divided by 96. */
+    /** The window's DPI divided by 96. */
     dpiScale: number;
+    /** Scale applied to the rectangles, the page's `devicePixelRatio`. */
+    scale: number;
 }
 
 /**
@@ -7767,11 +8317,11 @@ export type WindowSetFullscreenResponse = WindowSetFullscreenSuccess | ApiFailur
 export interface WindowSetMaximizeButtonRegionSuccess {
     /** Always `true` here; a failed call resolves with `ApiFailure` instead. */
     success: true;
-    /** Whether a rectangle is now set: `false` after removing it, or when the rectangle had no positive width and height. */
+    /** Whether an active maximize button rectangle is registered. */
     hasRegion: boolean;
-    /** The system offers Snap layouts for a maximize button, which means Windows 11 or later. Where it is `false` the host never answers the rectangle as the maximize button. Where it is `true` the button's `title` tooltip, which the page still shows on hover, would cover the Snap layouts flyout, so leave the title off and name the button with `aria-label`. */
+    /** Whether the system provides Windows 11 Snap layouts. When false, the host never reports this area as the maximize button. When true, avoid using HTML title tooltips on the button as they obstruct the Snap flyout; use aria-label instead. */
     snapLayouts: boolean;
-    /** Scale applied to the rectangle: the window's DPI divided by 96, times the page zoom. */
+    /** Scale applied to the rectangle, the page's `devicePixelRatio`: the window's DPI divided by 96, times the Windows text size and the page zoom. */
     scale: number;
 }
 
@@ -7856,8 +8406,10 @@ export interface WindowSetNoDragRegionsSuccess {
     success: true;
     /** How many rectangles were kept. */
     count: number;
-    /** Scale applied to the rectangles, the window's DPI divided by 96. */
+    /** The window's DPI divided by 96. */
     dpiScale: number;
+    /** Scale applied to the rectangles, the page's `devicePixelRatio`. */
+    scale: number;
 }
 
 /**
@@ -8211,6 +8763,40 @@ export interface ApiResponseMap {
     "jitQueue.preloadBatch": JitQueuePreloadBatchResponse;
     "jitQueue.skip": JitQueueSkipResponse;
     "jitQueue.stop": JitQueueStopResponse;
+    /** @experimental */
+    "jitSession.adoptNative": JitSessionAdoptNativeResponse;
+    /** @experimental */
+    "jitSession.claimControl": JitSessionClaimControlResponse;
+    /** @experimental */
+    "jitSession.create": JitSessionCreateResponse;
+    /** @experimental */
+    "jitSession.discover": JitSessionDiscoverResponse;
+    /** @experimental */
+    "jitSession.getCapabilities": JitSessionGetCapabilitiesResponse;
+    /** @experimental */
+    "jitSession.getNativeContext": JitSessionGetNativeContextResponse;
+    /** @experimental */
+    "jitSession.getOperation": JitSessionGetOperationResponse;
+    /** @experimental */
+    "jitSession.getState": JitSessionGetStateResponse;
+    /** @experimental */
+    "jitSession.play": JitSessionPlayResponse;
+    /** @experimental */
+    "jitSession.playNative": JitSessionPlayNativeResponse;
+    /** @experimental */
+    "jitSession.prepareAdoption": JitSessionPrepareAdoptionResponse;
+    /** @experimental */
+    "jitSession.release": JitSessionReleaseResponse;
+    /** @experimental */
+    "jitSession.setNativeNext": JitSessionSetNativeNextResponse;
+    /** @experimental */
+    "jitSession.setNativeQueue": JitSessionSetNativeQueueResponse;
+    /** @experimental */
+    "jitSession.setNext": JitSessionSetNextResponse;
+    /** @experimental */
+    "jitSession.skip": JitSessionSkipResponse;
+    /** @experimental */
+    "jitSession.stop": JitSessionStopResponse;
     "keyboard.getRegisteredHotkeys": KeyboardGetRegisteredHotkeysResponse;
     "keyboard.registerHotkey": KeyboardRegisterHotkeyResponse;
     "keyboard.registerShortcut": KeyboardRegisterShortcutResponse;
@@ -8226,6 +8812,7 @@ export interface ApiResponseMap {
     "library.getArtistTracks": LibraryGetArtistTracksResponse;
     "library.getByPath": LibraryGetByPathResponse;
     "library.getCacheStats": LibraryGetCacheStatsResponse;
+    "library.getChanges": LibraryGetChangesResponse;
     "library.getCount": LibraryGetCountResponse;
     "library.getFieldValues": LibraryGetFieldValuesResponse;
     "library.getGenres": LibraryGetGenresResponse;
@@ -8234,6 +8821,7 @@ export interface ApiResponseMap {
     "library.getRoots": LibraryGetRootsResponse;
     "library.getStats": LibraryGetStatsResponse;
     "library.getStatus": LibraryGetStatusResponse;
+    "library.getTracks": LibraryGetTracksResponse;
     "library.invalidateCache": LibraryInvalidateCacheResponse;
     "library.isEnabled": LibraryIsEnabledResponse;
     "library.query": LibraryQueryResponse;
@@ -8323,11 +8911,13 @@ export interface ApiResponseMap {
     "playlist.convertToAutoplaylist": PlaylistConvertToAutoplaylistResponse;
     "playlist.create": PlaylistCreateResponse;
     "playlist.createAutoplaylist": PlaylistCreateAutoplaylistResponse;
+    "playlist.createManagedAutoplaylist": PlaylistCreateManagedAutoplaylistResponse;
     "playlist.deselectAll": PlaylistDeselectAllResponse;
     "playlist.duplicate": PlaylistDuplicateResponse;
     "playlist.focusTrack": PlaylistFocusTrackResponse;
     "playlist.getActive": PlaylistGetActiveResponse;
     "playlist.getAll": PlaylistGetAllResponse;
+    "playlist.getAutoplaylistConfig": PlaylistGetAutoplaylistConfigResponse;
     "playlist.getAutoplaylistInfo": PlaylistGetAutoplaylistInfoResponse;
     "playlist.getAutoplaylistQuery": PlaylistGetAutoplaylistQueryResponse;
     "playlist.getAvailableColumns": PlaylistGetAvailableColumnsResponse;
@@ -8360,8 +8950,10 @@ export interface ApiResponseMap {
     "playlist.reverse": PlaylistReverseResponse;
     "playlist.selectAll": PlaylistSelectAllResponse;
     "playlist.setActive": PlaylistSetActiveResponse;
+    "playlist.setAutoplaylistConfig": PlaylistSetAutoplaylistConfigResponse;
     "playlist.setFocusedTrack": PlaylistSetFocusedTrackResponse;
     "playlist.setSelection": PlaylistSetSelectionResponse;
+    "playlist.showAutoplaylistUI": PlaylistShowAutoplaylistUIResponse;
     "playlist.shuffle": PlaylistShuffleResponse;
     "playlist.sort": PlaylistSortResponse;
     "playlist.undo": PlaylistUndoResponse;
@@ -8432,6 +9024,7 @@ export interface ApiResponseMap {
     "tray.getMenuItems": TrayGetMenuItemsResponse;
     "tray.isVisible": TrayIsVisibleResponse;
     "tray.removeMenuItems": TrayRemoveMenuItemsResponse;
+    "tray.setClickAction": TraySetClickActionResponse;
     "tray.setCloseToTray": TraySetCloseToTrayResponse;
     "tray.setContextMenu": TraySetContextMenuResponse;
     "tray.setIcon": TraySetIconResponse;

@@ -1,3 +1,7 @@
+import { FbBaseElement } from './FbBaseElement.js';
+import { formatTime } from './constants.js';
+import { getFb } from './runtime.js';
+
 /**
  * `<fb-time-current>` — current playback position display (`m:ss` /
  * `h:mm:ss`).
@@ -6,11 +10,6 @@
  * limited to `textContent` and the `seconds` host attribute, which
  * exposes the current position in whole seconds for themes.
  */
-
-import { FbBaseElement } from './FbBaseElement.js';
-import { formatTime } from './constants.js';
-import { getFb } from './runtime.js';
-
 export class FbTimeCurrent extends FbBaseElement {
     private _seconds = 0;
     private _text!: HTMLSpanElement;

@@ -20,23 +20,28 @@ export type ShellSpawnOptions = Omit<ShellSpawnParams, 'executable'>;
  * `cwd` string is passed.
  */
 export const shell = {
+    /** Reveal a file or folder in Windows Explorer, selecting it. */
     showInExplorer: (path: string) =>
         call('shell.showInExplorer', {
             path,
         }),
+    /** Open a file with the application Windows associates with its type. */
     openWith: (path: string) =>
         call('shell.openWith', {
             path,
         }),
+    /** Open an http, https, or mailto URL with the default handler. */
     openExternal: (url: string) =>
         call('shell.openExternal', {
             url,
         }),
+    /** Start a process from a command line and return at once. */
     exec: (command: string, options?: Omit<ShellExecParams, 'command'>) =>
         call('shell.exec', {
             command,
             ...options,
         }),
+    /** Start a process from an executable and an argument list. */
     spawn: (
         executable: string,
         options?: Omit<ShellSpawnParams, 'executable'>,

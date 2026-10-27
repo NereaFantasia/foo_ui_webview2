@@ -37,7 +37,9 @@ export const jitQueue = {
     /** `clearBuffer` defaults to `true` on the host. */
     stop: (opts?: JitQueueStopParams) =>
         call('jitQueue.stop', opts || {}),
+    /** Empty the buffer and return the session to idle. */
     clear: () => call('jitQueue.clear'),
+    /** Tell the host the page has no more tracks to offer; the session moves to `Exhausted`. */
     notifyEmpty: () =>
         call('jitQueue.notifyEmpty'),
     /**

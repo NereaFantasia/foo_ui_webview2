@@ -1,3 +1,7 @@
+import { FbBaseElement } from './FbBaseElement.js';
+import { getFb } from './runtime.js';
+import type { FbSearchDetail, FbSearchResultDetail } from './types.js';
+
 /**
  * `<fb-search-bar>` — debounced media-library search input.
  *
@@ -14,11 +18,6 @@
  * Slots:
  * - `icon` — optional icon glyph next to the input (default 🔍).
  */
-
-import { FbBaseElement } from './FbBaseElement.js';
-import { getFb } from './runtime.js';
-import type { FbSearchDetail, FbSearchResultDetail } from './types.js';
-
 export class FbSearchBar extends FbBaseElement {
     private _input!: HTMLInputElement;
     private _debounceTimer: ReturnType<typeof setTimeout> | null = null;

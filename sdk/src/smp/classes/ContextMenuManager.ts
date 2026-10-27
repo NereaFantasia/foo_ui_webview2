@@ -1,21 +1,6 @@
 import type { JsonValue } from '../../types/json.js';
-/**
- * `ContextMenuManager` — Context-menu builder for tracks / playlists.
- *
- * Backend mapping:
- * - `BuildMenu(menu, base_id, max_id)` → `menu.getContextMenu` (`{ mode, handles }`)
- * - `ExecuteByID(id)`                  → `menu.runContextCommandById` (`{ id, mode, handles }`)
- *
- * Three context modes mirror the SMP API:
- * - `InitContext(handles)`     → `mode = 'handles'`, attach handle ids.
- * - `InitContextPlaylist()`    → `mode = 'playlist'`, no handles.
- * - `InitNowPlaying()`         → `mode = 'nowPlaying'`, no handles.
- *
- * `ExecuteByID` also accepts a numeric C++ command id directly; this
- * keeps theme code that bypasses `BuildMenu` working.
- */
-
 import { buildMenuItems, getTypedInvoke, normalizeHandleList, toHandleId, successOf } from '../utils.js';
+import type { MenuTreeNode } from '../../types/generated/schema-types.js';
 import type {
     SmpMenuBuildState,
     SmpRawMenuItem,
@@ -34,6 +19,21 @@ interface MenuTarget {
     SetItems?: (items: SmpStructuredMenuItem[]) => void;
 }
 
+/**
+ * `ContextMenuManager` — Context-menu builder for tracks / playlists.
+ *
+ * Backend mapping:
+ * - `BuildMenu(menu, base_id, max_id)` → `menu.getContextMenu` (`{ mode, handles }`)
+ * - `ExecuteByID(id)`                  → `menu.runContextCommandById` (`{ id, mode, handles }`)
+ *
+ * Three context modes mirror the SMP API:
+ * - `InitContext(handles)`     → `mode = 'handles'`, attach handle ids.
+ * - `InitContextPlaylist()`    → `mode = 'playlist'`, no handles.
+ * - `InitNowPlaying()`         → `mode = 'nowPlaying'`, no handles.
+ *
+ * `ExecuteByID` also accepts a numeric C++ command id directly; this
+ * keeps theme code that bypasses `BuildMenu` working.
+ */
 export class ContextMenuManager {
     private _mode: ContextMode = 'auto';
     private _effectiveMode: ContextMode = 'auto';
@@ -46,6 +46,10 @@ export class ContextMenuManager {
      * carry that number.
      */
     private _allocated: { first: number; end: number } | null = null;
+    /** Host `commandId` → node `path` in the last `BuildMenu`. */
+    private _paths: Map<number, string> = new Map();
+    /** The last `BuildMenu`'s `targetKey`; `null` when the host reported none. */
+    private _targetKey: string | null = null;
 
     /** Configure the menu against an explicit handle list. */
     InitContext(handles: unknown): void {
@@ -86,6 +90,17 @@ export class ContextMenuManager {
         }));
 
         this._effectiveMode = res?.mode ?? this._mode;
+        this._targetKey = typeof res?.targetKey === 'string' ? res.targetKey : null;
+        this._paths.clear();
+        const collectPaths = (nodes: readonly MenuTreeNode[] | undefined): void => {
+            for (const node of nodes ?? []) {
+                if (typeof node.commandId === 'number' && typeof node.path === 'string') {
+                    this._paths.set(node.commandId, node.path);
+                }
+                collectPaths(node.children);
+            }
+        };
+        collectPaths(res?.items);
 
         const items = Array.isArray(res?.items) ? res!.items! : [];
         const baseId = (typeof base_id === 'number' ? base_id : 1) | 0;
@@ -136,14 +151,24 @@ export class ContextMenuManager {
             typeof id === 'number' &&
             id >= this._allocated.first &&
             id < this._allocated.end;
+        // A raw host id carries no path from a built menu, so it runs unchecked.
+        const fromMenu = cmdId != null;
         if (cmdId == null && typeof id === 'number' && !allocated) cmdId = id;
         // The host takes numeric command ids only and refuses any other value.
         if (typeof cmdId !== 'number') return false;
 
+        // When the host reported `targetKey`, it refuses rather than runs
+        // another item if the menu or tracks changed since `BuildMenu`.
+        const path = fromMenu ? this._paths.get(cmdId) : undefined;
+        const check =
+            path !== undefined && this._targetKey !== null
+                ? { expectPath: path, expectTarget: this._targetKey }
+                : {};
         const res = successOf(await inv('menu.runContextCommandById', {
             id: cmdId,
             mode: this._effectiveMode || this._mode,
             handles: this._handles,
+            ...check,
         }));
         return !!res?.success;
     }

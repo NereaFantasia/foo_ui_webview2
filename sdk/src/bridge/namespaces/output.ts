@@ -18,8 +18,10 @@ export type OutputDeviceInfo = OutputGetDevicesSuccess['devices'][number];
 export const output = {
     /** The available output devices, in `devices`. */
     getDevices: () => call('output.getDevices'),
+    /** List the output modules (foobar2000's output entries) with their capability flags. */
     getEntries: () =>
         call('output.getEntries'),
+    /** Report the display names of the output modules. */
     getSettings: () =>
         call('output.getSettings'),
 };

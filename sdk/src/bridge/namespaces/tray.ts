@@ -1,5 +1,6 @@
 import { call } from '../call.js';
 import type {
+    TraySetClickActionParams,
     TraySetMenuZonesParams,
     TrayShowBalloonParams,
 } from '../../types/generated/params.js';
@@ -23,14 +24,14 @@ export type TrayMenuPosition = NonNullable<TrayMenuConfig['customPosition']>;
  * See the taskbar-tray page of the API reference for the full contract.
  */
 export const tray = {
-    /** Create the tray icon. Must be called once before any other `tray.*` API. */
+    /** Create the tray icon, preserving any previously configured click action. */
     create: (opts: { icon?: string | null; tooltip?: string } = {}) =>
         call('tray.create', {
             ...(opts.icon != null ? { icon: opts.icon } : {}),
             ...(opts.tooltip !== undefined ? { tooltip: opts.tooltip } : {}),
         }),
 
-    /** Remove the tray icon. */
+    /** Remove the icon, cancel pending clicks and reset the click action to `event`. */
     destroy: () => call('tray.destroy', {}),
 
     /** Replace the tray icon image; omit or pass null to fall back to the main icon. */
@@ -91,6 +92,18 @@ export const tray = {
         call('tray.setCloseToTray', {
             enabled,
         }),
+
+    /**
+     * Select the process-wide left-click action, even before creating the icon.
+     * `event` preserves existing click notifications. `toggleMainWindow` handles each
+     * gesture natively, including while the page is suspended, and emits neither
+     * click nor double-click events. It preserves window placement and tray settings.
+     * Every call cancels pending clicks; the latest successful caller wins.
+     * Remove click handlers that issue window commands before enabling native mode;
+     * events already queued in a page cannot be recalled. Panel mode is unsupported.
+     */
+    setClickAction: (action: TraySetClickActionParams['action']) =>
+        call('tray.setClickAction', { action }),
 
     /** Resolve whether the tray icon currently exists. */
     isVisible: () => call('tray.isVisible', {}),

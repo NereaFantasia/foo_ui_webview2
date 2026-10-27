@@ -1038,6 +1038,253 @@ export const API_PARAM_SHAPES: { readonly [M in keyof ApiParamsMap]: ParamShape 
             "clearBuffer": null
         }
     },
+    "jitSession.adoptNative": {
+        "keys": {
+            "sessionId": null,
+            "controlToken": null,
+            "expectedRevision": null,
+            "requestId": null,
+            "contextId": null,
+            "snapshotToken": null,
+            "currentEntryId": null
+        },
+        "required": [
+            "sessionId",
+            "controlToken",
+            "expectedRevision",
+            "requestId",
+            "contextId",
+            "snapshotToken",
+            "currentEntryId"
+        ]
+    },
+    "jitSession.claimControl": {
+        "keys": {
+            "sessionId": null,
+            "mode": null,
+            "expectedOwnerEpoch": null,
+            "requestId": null
+        },
+        "required": [
+            "sessionId",
+            "mode",
+            "requestId"
+        ]
+    },
+    "jitSession.create": {
+        "keys": {
+            "requestId": null
+        },
+        "required": [
+            "requestId"
+        ]
+    },
+    "jitSession.discover": {
+        "keys": {}
+    },
+    "jitSession.getCapabilities": {
+        "keys": {}
+    },
+    "jitSession.getNativeContext": {
+        "keys": {
+            "sessionId": null,
+            "contextId": null,
+            "expectedContextRevision": null,
+            "collection": null,
+            "offset": null,
+            "limit": null
+        },
+        "required": [
+            "sessionId",
+            "contextId",
+            "expectedContextRevision",
+            "collection",
+            "offset",
+            "limit"
+        ]
+    },
+    "jitSession.getOperation": {
+        "keys": {
+            "sessionId": null,
+            "operationId": null
+        },
+        "required": [
+            "sessionId",
+            "operationId"
+        ]
+    },
+    "jitSession.getState": {
+        "keys": {
+            "sessionId": null
+        },
+        "required": [
+            "sessionId"
+        ]
+    },
+    "jitSession.play": {
+        "keys": {
+            "sessionId": null,
+            "controlToken": null,
+            "expectedRevision": null,
+            "requestId": null,
+            "entryId": null,
+            "title": null,
+            "location": null,
+            "expiresAt": null
+        },
+        "required": [
+            "sessionId",
+            "controlToken",
+            "expectedRevision",
+            "requestId",
+            "entryId",
+            "location"
+        ]
+    },
+    "jitSession.playNative": {
+        "keys": {
+            "sessionId": null,
+            "controlToken": null,
+            "expectedRevision": null,
+            "requestId": null,
+            "contextId": null,
+            "nativeRef": null,
+            "entryId": null,
+            "title": null
+        },
+        "required": [
+            "sessionId",
+            "controlToken",
+            "expectedRevision",
+            "requestId",
+            "contextId",
+            "nativeRef",
+            "entryId"
+        ]
+    },
+    "jitSession.prepareAdoption": {
+        "keys": {
+            "sessionId": null,
+            "controlToken": null,
+            "expectedRevision": null,
+            "requestId": null
+        },
+        "required": [
+            "sessionId",
+            "controlToken",
+            "expectedRevision",
+            "requestId"
+        ]
+    },
+    "jitSession.release": {
+        "keys": {
+            "sessionId": null,
+            "controlToken": null,
+            "expectedRevision": null,
+            "requestId": null,
+            "nativeDisposition": null
+        },
+        "required": [
+            "sessionId",
+            "controlToken",
+            "expectedRevision",
+            "requestId"
+        ]
+    },
+    "jitSession.setNativeNext": {
+        "keys": {
+            "sessionId": null,
+            "controlToken": null,
+            "expectedRevision": null,
+            "requestId": null,
+            "contextId": null,
+            "afterAttemptId": null,
+            "nativeRef": null,
+            "entryId": null,
+            "title": null
+        },
+        "required": [
+            "sessionId",
+            "controlToken",
+            "expectedRevision",
+            "requestId",
+            "contextId",
+            "afterAttemptId",
+            "nativeRef",
+            "entryId"
+        ]
+    },
+    "jitSession.setNativeQueue": {
+        "keys": {
+            "sessionId": null,
+            "controlToken": null,
+            "expectedRevision": null,
+            "requestId": null,
+            "contextId": null,
+            "expectedContextRevision": null,
+            "remainingOccurrenceIds": null
+        },
+        "required": [
+            "sessionId",
+            "controlToken",
+            "expectedRevision",
+            "requestId",
+            "contextId",
+            "expectedContextRevision",
+            "remainingOccurrenceIds"
+        ]
+    },
+    "jitSession.setNext": {
+        "keys": {
+            "sessionId": null,
+            "controlToken": null,
+            "expectedRevision": null,
+            "requestId": null,
+            "afterAttemptId": null,
+            "entryId": null,
+            "title": null,
+            "location": null,
+            "expiresAt": null,
+            "endOfQueue": null
+        },
+        "required": [
+            "sessionId",
+            "controlToken",
+            "expectedRevision",
+            "requestId",
+            "afterAttemptId"
+        ]
+    },
+    "jitSession.skip": {
+        "keys": {
+            "sessionId": null,
+            "controlToken": null,
+            "expectedRevision": null,
+            "requestId": null,
+            "attemptId": null
+        },
+        "required": [
+            "sessionId",
+            "controlToken",
+            "expectedRevision",
+            "requestId",
+            "attemptId"
+        ]
+    },
+    "jitSession.stop": {
+        "keys": {
+            "sessionId": null,
+            "controlToken": null,
+            "expectedRevision": null,
+            "requestId": null
+        },
+        "required": [
+            "sessionId",
+            "controlToken",
+            "expectedRevision",
+            "requestId"
+        ]
+    },
     "keyboard.getRegisteredHotkeys": {
         "keys": {}
     },
@@ -1109,6 +1356,7 @@ export const API_PARAM_SHAPES: { readonly [M in keyof ApiParamsMap]: ParamShape 
     },
     "library.getAlbumTracks": {
         "keys": {
+            "albumId": null,
             "album": null,
             "albumArtist": null
         },
@@ -1160,6 +1408,12 @@ export const API_PARAM_SHAPES: { readonly [M in keyof ApiParamsMap]: ParamShape 
     "library.getCacheStats": {
         "keys": {}
     },
+    "library.getChanges": {
+        "keys": {
+            "epoch": null,
+            "since": null
+        }
+    },
     "library.getCount": {
         "keys": {}
     },
@@ -1195,6 +1449,15 @@ export const API_PARAM_SHAPES: { readonly [M in keyof ApiParamsMap]: ParamShape 
     },
     "library.getStatus": {
         "keys": {}
+    },
+    "library.getTracks": {
+        "keys": {
+            "handles": null,
+            "fields": null
+        },
+        "required": [
+            "handles"
+        ]
     },
     "library.invalidateCache": {
         "keys": {}
@@ -1328,7 +1591,9 @@ export const API_PARAM_SHAPES: { readonly [M in keyof ApiParamsMap]: ParamShape 
         "keys": {
             "id": null,
             "mode": null,
-            "handles": null
+            "handles": null,
+            "expectPath": null,
+            "expectTarget": null
         },
         "required": [
             "id"
@@ -1761,6 +2026,17 @@ export const API_PARAM_SHAPES: { readonly [M in keyof ApiParamsMap]: ParamShape 
             "query"
         ]
     },
+    "playlist.createManagedAutoplaylist": {
+        "keys": {
+            "name": null,
+            "query": null,
+            "sort": null,
+            "keepSorted": null
+        },
+        "required": [
+            "query"
+        ]
+    },
     "playlist.deselectAll": {
         "keys": {
             "playlist": null,
@@ -1778,7 +2054,8 @@ export const API_PARAM_SHAPES: { readonly [M in keyof ApiParamsMap]: ParamShape 
         "keys": {
             "playlist": null,
             "playlistGuid": null,
-            "index": null
+            "index": null,
+            "expectedVersion": null
         }
     },
     "playlist.getActive": {
@@ -1786,6 +2063,12 @@ export const API_PARAM_SHAPES: { readonly [M in keyof ApiParamsMap]: ParamShape 
     },
     "playlist.getAll": {
         "keys": {}
+    },
+    "playlist.getAutoplaylistConfig": {
+        "keys": {
+            "playlist": null,
+            "playlistGuid": null
+        }
     },
     "playlist.getAutoplaylistInfo": {
         "keys": {
@@ -1891,7 +2174,8 @@ export const API_PARAM_SHAPES: { readonly [M in keyof ApiParamsMap]: ParamShape 
             "playlist": null,
             "playlistGuid": null,
             "position": null,
-            "handles": null
+            "handles": null,
+            "expectedVersion": null
         },
         "required": [
             "handles"
@@ -1914,7 +2198,8 @@ export const API_PARAM_SHAPES: { readonly [M in keyof ApiParamsMap]: ParamShape 
             "playlist": null,
             "playlistGuid": null,
             "items": null,
-            "delta": null
+            "delta": null,
+            "expectedVersion": null
         },
         "required": [
             "delta"
@@ -1926,7 +2211,8 @@ export const API_PARAM_SHAPES: { readonly [M in keyof ApiParamsMap]: ParamShape 
             "playlistGuid": null,
             "index": null,
             "deferred": null,
-            "muted": null
+            "muted": null,
+            "expectedVersion": null
         }
     },
     "playlist.redo": {
@@ -1957,7 +2243,8 @@ export const API_PARAM_SHAPES: { readonly [M in keyof ApiParamsMap]: ParamShape 
         "keys": {
             "playlist": null,
             "playlistGuid": null,
-            "items": null
+            "items": null,
+            "expectedVersion": null
         },
         "required": [
             "items"
@@ -1977,7 +2264,8 @@ export const API_PARAM_SHAPES: { readonly [M in keyof ApiParamsMap]: ParamShape 
         "keys": {
             "playlist": null,
             "playlistGuid": null,
-            "newOrder": null
+            "newOrder": null,
+            "expectedVersion": null
         },
         "required": [
             "newOrder"
@@ -2020,11 +2308,25 @@ export const API_PARAM_SHAPES: { readonly [M in keyof ApiParamsMap]: ParamShape 
             "playlistGuid": null
         }
     },
+    "playlist.setAutoplaylistConfig": {
+        "keys": {
+            "playlist": null,
+            "playlistGuid": null,
+            "expectedRevision": null,
+            "query": null,
+            "sort": null,
+            "keepSorted": null
+        },
+        "required": [
+            "expectedRevision"
+        ]
+    },
     "playlist.setFocusedTrack": {
         "keys": {
             "playlist": null,
             "playlistGuid": null,
-            "index": null
+            "index": null,
+            "expectedVersion": null
         }
     },
     "playlist.setSelection": {
@@ -2032,11 +2334,18 @@ export const API_PARAM_SHAPES: { readonly [M in keyof ApiParamsMap]: ParamShape 
             "playlist": null,
             "playlistGuid": null,
             "indices": null,
-            "clearOthers": null
+            "clearOthers": null,
+            "expectedVersion": null
         },
         "required": [
             "indices"
         ]
+    },
+    "playlist.showAutoplaylistUI": {
+        "keys": {
+            "playlist": null,
+            "playlistGuid": null
+        }
     },
     "playlist.shuffle": {
         "keys": {
@@ -2107,7 +2416,8 @@ export const API_PARAM_SHAPES: { readonly [M in keyof ApiParamsMap]: ParamShape 
             "playlist": null,
             "playlistGuid": null,
             "tracks": null,
-            "track": null
+            "track": null,
+            "expectedPlaylistVersion": null
         }
     },
     "queue.addPaths": {
@@ -2140,18 +2450,21 @@ export const API_PARAM_SHAPES: { readonly [M in keyof ApiParamsMap]: ParamShape 
                 "keys": {
                     "playlist": null,
                     "playlistGuid": null,
-                    "item": null
+                    "item": null,
+                    "expectedPlaylistVersion": null
                 },
                 "required": [
                     "item"
                 ]
             },
-            "position": null
+            "position": null,
+            "expectedVersion": null
         }
     },
     "queue.moveToTop": {
         "keys": {
-            "index": null
+            "index": null,
+            "expectedVersion": null
         },
         "required": [
             "index"
@@ -2159,13 +2472,15 @@ export const API_PARAM_SHAPES: { readonly [M in keyof ApiParamsMap]: ParamShape 
     },
     "queue.playNow": {
         "keys": {
-            "index": null
+            "index": null,
+            "expectedVersion": null
         }
     },
     "queue.remove": {
         "keys": {
             "index": null,
-            "indices": null
+            "indices": null,
+            "expectedVersion": null
         }
     },
     "queue.setContents": {
@@ -2175,9 +2490,11 @@ export const API_PARAM_SHAPES: { readonly [M in keyof ApiParamsMap]: ParamShape 
                     "queueIndex": null,
                     "playlist": null,
                     "playlistGuid": null,
-                    "item": null
+                    "item": null,
+                    "expectedPlaylistVersion": null
                 }
-            }
+            },
+            "expectedVersion": null
         },
         "required": [
             "items"
@@ -2575,6 +2892,14 @@ export const API_PARAM_SHAPES: { readonly [M in keyof ApiParamsMap]: ParamShape 
         },
         "required": [
             "ids"
+        ]
+    },
+    "tray.setClickAction": {
+        "keys": {
+            "action": null
+        },
+        "required": [
+            "action"
         ]
     },
     "tray.setCloseToTray": {

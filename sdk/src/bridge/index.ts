@@ -4,7 +4,7 @@
  * Re-exports the singleton {@link bridge} handle, the reactive
  * {@link state} mirror, every per-namespace proxy, and the aggregate
  * {@link fb} object that combines them into a single ergonomic
- * surface (`fb.playback.play()`, `fb.on('playback:stateChanged', ...)`,
+ * surface (`fb.player.play()`, `fb.on('playback:stateChanged', ...)`,
  * `fb.state.isPlaying`, ...).
  */
 
@@ -29,6 +29,8 @@ import { event } from './namespaces/event.js';
 import { file } from './namespaces/file.js';
 import { http } from './namespaces/http.js';
 import { jitQueue } from './namespaces/jitQueue.js';
+import { jitSession } from './namespaces/jitSession.js';
+import { JitSessionClient } from './jitSession/JitSessionClient.js';
 import { keyboard } from './namespaces/keyboard.js';
 import { library } from './namespaces/library.js';
 import { log } from './namespaces/log.js';
@@ -109,6 +111,12 @@ export type {
 } from './namespaces/file.js';
 export { http } from './namespaces/http.js';
 export { jitQueue } from './namespaces/jitQueue.js';
+export { jitSession } from './namespaces/jitSession.js';
+export { JitSessionClient } from './jitSession/JitSessionClient.js';
+export type {
+    JitSessionClientEvent, JitSessionWaitOptions, JitSessionPlayOptions,
+    JitSessionNextOptions, JitSessionClaimOptions,
+} from './jitSession/JitSessionClient.js';
 export { keyboard } from './namespaces/keyboard.js';
 export { library } from './namespaces/library.js';
 export { log } from './namespaces/log.js';
@@ -146,7 +154,7 @@ export { webview } from './namespaces/webview.js';
  * Aggregate runtime SDK surface. Provides the canonical `window.fb`
  * shape used by themes and SMP-compatible scripts.
  *
- * - `fb.playback`, `fb.playlist`, `fb.library`, ... — namespace proxies.
+ * - `fb.player`, `fb.playlist`, `fb.library`, ... — namespace proxies.
  * - `fb.on` / `fb.off` / `fb.once` — typed event subscription.
  * - `fb.invoke` — escape hatch for un-namespaced API calls.
  * - `fb.state` — synchronous playback state mirror.
@@ -176,6 +184,7 @@ export const fb = {
     // Also a class: the `<script>` bundle creates it as `new fb.PlaybackClock()`
     PlaybackClock,
     MediaElementFollower,
+    JitSessionClient,
     canPlay,
 
     // Namespaces (alphabetical)
@@ -193,6 +202,7 @@ export const fb = {
     file,
     http,
     jitQueue,
+    jitSession,
     keyboard,
     library,
     log,

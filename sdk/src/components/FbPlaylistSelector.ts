@@ -1,15 +1,3 @@
-/**
- * `<fb-playlist-selector>` — `<select>`-based playlist picker.
- *
- * Lists every playlist returned by `fb.playlist.getAll()` with its
- * track count. Subscribes to `playlist:created` / `:removed` /
- * `:renamed` / `:reordered` and refreshes its option list on each event.
- * `fb-playlist-pick` carries the picked playlist's GUID next to its
- * index; the GUID keeps naming that playlist after the list changes.
- *
- * Reflects host attributes `selected-index` and `selected-name`.
- */
-
 import { FbBaseElement } from './FbBaseElement.js';
 import { getFb } from './runtime.js';
 import type { FbPlaylistPickDetail } from './types.js';
@@ -21,6 +9,17 @@ interface PlaylistRow {
     trackCount: number;
 }
 
+/**
+ * `<fb-playlist-selector>` — `<select>`-based playlist picker.
+ *
+ * Lists every playlist returned by `fb.playlist.getAll()` with its
+ * track count. Subscribes to `playlist:created` / `:removed` /
+ * `:renamed` / `:reordered` and refreshes its option list on each event.
+ * `fb-playlist-pick` carries the picked playlist's GUID next to its
+ * index; the GUID keeps naming that playlist after the list changes.
+ *
+ * Reflects host attributes `selected-index` and `selected-name`.
+ */
 export class FbPlaylistSelector extends FbBaseElement {
     private _select!: HTMLSelectElement;
     private _playlists: PlaylistRow[] = [];

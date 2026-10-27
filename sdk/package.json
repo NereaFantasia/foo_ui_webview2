@@ -1,6 +1,6 @@
 {
   "name": "foo-webview-sdk",
-  "version": "2.0.0",
+  "version": "2.1.0",
   "description": "Simplified SDK for foo_ui_webview2 - foobar2000 WebView2 Plugin",
   "type": "module",
   "main": "./dist/bridge.js",
@@ -42,6 +42,7 @@
   },
   "scripts": {
     "type-check": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.test.json",
+    "lint": "eslint src",
     "gen:types": "node ../scripts/gen_sdk_types.mjs --all",
     "gen:types:diff": "node ../scripts/gen_sdk_types.mjs --all --diff",
     "gen:types:validate": "node ../scripts/gen_sdk_types.mjs --all --validate",
@@ -58,7 +59,7 @@
     "build:iife": "tsup --config tsup.config.iife.ts",
     "watch": "tsup --config tsup.config.esm.ts --watch",
     "prebuild": "npm run gen:types && npm run gen:components-global:diff",
-    "prepack": "npm run type-check && npm run test && npm run build"
+    "prepack": "npm run type-check && npm run lint && npm run test && npm run build"
   },
   "keywords": [
     "foobar2000",
@@ -88,8 +89,10 @@
     "access": "public"
   },
   "devDependencies": {
+    "eslint": "^10.12.0",
     "tsup": "^8.5.0",
     "typescript": "^6.0.2",
+    "typescript-eslint": "^8.71.1",
     "vitest": "^2.1.9"
   },
   "files": [

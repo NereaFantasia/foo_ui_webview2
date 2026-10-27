@@ -58,16 +58,17 @@ function buildShowPayload(
  */
 export const menu = {
     /**
-     * `root` scopes the returned menu tree (e.g. `'Main'` / `'View'`).
+     * `root` scopes the returned menu tree (e.g. `'View'`).
      * `opts.locale` selects the `displayLabel` translation locale; the
      * default `'auto'` keeps the host's native labels untranslated.
      * `opts.i18n: false` disables label translation entirely.
      * `opts.withAvailability` (default `true`) includes per-submenu
      * command availability counters.
      *
-     * Leaf `source` follows the node's own address: a command carrying
-     * `subGuid` reports `mainmenu_dynamic`, one without reports
-     * `mainmenu_static`. Every leaf of the v1 HMENU tier reports
+     * Leaf `source` follows the provider's node kind. Dynamic leaves without a
+     * usable `subGuid` remain dynamic and are not executable. Addressability
+     * is independent of enabled; `addressCandidates` is diagnostic only.
+     * Every leaf of the v1 HMENU tier reports
      * `hmenu_fallback`. The flat fallback (`fallback: true`) keeps `flags`
      * and has no `commandId`; see {@link MenuCommand}.
      */
@@ -100,13 +101,15 @@ export const menu = {
      * across hosts, because a localized build reports localized labels.
      *
      * `opts.subGuid` addresses a dynamic child command, paired with its owning
-     * command GUID.
+     * command GUID. A path must match every ancestor; a wrong prefix never
+     * falls back to the leaf name. Root-filtered results keep their full paths.
      *
-     * Failure is reported as `success: false` with a `code`, never as a thrown
-     * host error: `MENU_ITEM_DISABLED` (command exists but is greyed out),
-     * `MENU_MATCH_AMBIGUOUS` (the name matched several commands — `candidates`
-     * lists them), `MENU_COMMAND_NOT_FOUND` (no command has that name or path),
-     * `NOT_FOUND` (no command owns that GUID).
+     * Business failures resolve as `success: false` with a `code`:
+     * `MENU_ITEM_DISABLED` (command exists but is greyed out),
+     * `MENU_MATCH_AMBIGUOUS` (identity is ambiguous; see `details.candidates`),
+     * `MENU_COMMAND_NOT_FOUND` (no command has that name or path), `NOT_FOUND`
+     * (no command owns that GUID), or `OPERATION_FAILED` (state cannot be read
+     * or the provider fails). Dynamic containers cannot be executed.
      */
     runMainMenuCommand: (
         command: string,
@@ -141,6 +144,11 @@ export const menu = {
      * reported. The host rebuilds the menu from `opts.mode` and `opts.handles`,
      * so pass the values that call used; an id the rebuilt menu lacks fails
      * with `code: 'NOT_FOUND'`.
+     *
+     * An id is a position, so a changed menu or selection can make it run
+     * another item. Pass the node's `path` as `opts.expectPath` and the menu's
+     * `targetKey` as `opts.expectTarget` to have the host refuse instead; the
+     * refusal carries `details.reason` and runs nothing, so reopen the menu.
      */
     runContextCommandById: (
         id: number,

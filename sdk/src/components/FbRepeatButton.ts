@@ -1,3 +1,9 @@
+import { FbBaseElement } from './FbBaseElement.js';
+import { getFb } from './runtime.js';
+import type { FbRepeatChangeDetail } from './types.js';
+
+type RepeatMode = 'off' | 'playlist' | 'track';
+
 /**
  * `<fb-repeat-button>` — cycles through the three repeat modes
  * `off → playlist → track → off`.
@@ -6,13 +12,6 @@
  * `off`, `playlist`, `track`. Reflects the resolved label via the
  * `mode` host attribute (`'off' | 'playlist' | 'track'`).
  */
-
-import { FbBaseElement } from './FbBaseElement.js';
-import { getFb } from './runtime.js';
-import type { FbRepeatChangeDetail } from './types.js';
-
-type RepeatMode = 'off' | 'playlist' | 'track';
-
 export class FbRepeatButton extends FbBaseElement {
     private _btn!: HTMLButtonElement;
     private _offSlot!: HTMLSlotElement;

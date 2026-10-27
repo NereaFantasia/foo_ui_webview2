@@ -1,3 +1,7 @@
+import { FbBaseElement } from './FbBaseElement.js';
+import { getFb } from './runtime.js';
+import type { FbSeekDetail, FbSeekingDetail } from './types.js';
+
 /**
  * `<fb-seek-bar>` — playback progress bar with drag-to-seek and
  * keyboard-to-seek support.
@@ -21,11 +25,6 @@
  *   Overrides `disconnectedCallback` to abort the drag controller
  *   *before* delegating to {@link FbBaseElement.disconnectedCallback}.
  */
-
-import { FbBaseElement } from './FbBaseElement.js';
-import { getFb } from './runtime.js';
-import type { FbSeekDetail, FbSeekingDetail } from './types.js';
-
 export class FbSeekBar extends FbBaseElement {
     private _position = 0;
     private _duration = 0;

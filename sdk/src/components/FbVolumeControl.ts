@@ -1,3 +1,10 @@
+import { FbBaseElement } from './FbBaseElement.js';
+import { getFb } from './runtime.js';
+import type {
+    FbMuteToggleDetail,
+    FbVolumeChangeDetail,
+} from './types.js';
+
 /**
  * `<fb-volume-control>` — volume slider with mute button.
  *
@@ -16,14 +23,6 @@
  * - Arrow / Home / End keys → ±5 / 0 / 100.
  * - Mute button click / Enter / Space → `fb.player.toggleMute()`.
  */
-
-import { FbBaseElement } from './FbBaseElement.js';
-import { getFb } from './runtime.js';
-import type {
-    FbMuteToggleDetail,
-    FbVolumeChangeDetail,
-} from './types.js';
-
 export class FbVolumeControl extends FbBaseElement {
     private _volume = 100;
     private _muted = false;

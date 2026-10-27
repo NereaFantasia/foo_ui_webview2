@@ -1,18 +1,4 @@
 import type { JsonValue } from '../../types/json.js';
-/**
- * `FbMetadbHandle` — Spider Monkey Panel handle wrapper.
- *
- * Represents one foobar2000 track address (`path` + optional sub-song
- * index). Constructable from a string handle-id, an existing
- * `FbMetadbHandle` (copy ctor), or a track-info object that carries
- * `absolutePath` / `path` / `Path` plus optional `subsong`.
- *
- * Mirrors `sdk/smp/FbMetadbHandle.js` field-for-field; the only TS
- * change is making `_trackInfo` typed as `Partial<TrackInfo>`-shaped
- * loose record so accessors can pull `duration` / `fileSize` without
- * `any`.
- */
-
 import { formatHandleId, parseHandleId } from '../handleId.js';
 import { getTypedInvoke, successOf } from '../utils.js';
 import { FbFileInfo } from './FbFileInfo.js';
@@ -31,6 +17,14 @@ interface MetadbInput {
     [key: string]: JsonValue;
 }
 
+/**
+ * `FbMetadbHandle` — Spider Monkey Panel handle wrapper.
+ *
+ * Represents one foobar2000 track address (`path` + optional sub-song
+ * index). Constructable from a string handle-id, an existing
+ * `FbMetadbHandle` (copy ctor), or a track-info object that carries
+ * `absolutePath` / `path` / `Path` plus optional `subsong`.
+ */
 export class FbMetadbHandle {
     private _path: string = '';
     private _subsong: number = 0;
@@ -139,6 +133,7 @@ export class FbMetadbHandle {
         }
     }
 
+    /** Return the string handle id. */
     toString(): string {
         return this.HandleId;
     }

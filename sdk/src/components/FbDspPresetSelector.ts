@@ -1,3 +1,13 @@
+import { FbBaseElement } from './FbBaseElement.js';
+import { getFb } from './runtime.js';
+import type { FbDspChangeDetail } from './types.js';
+
+/** The fields of a `config.getDspPresets` row this component reads. */
+interface DspPresetInfo {
+    index: number;
+    name: string;
+}
+
 /**
  * `<fb-dsp-preset-selector>` — `<select>` for the host DSP preset
  * chain.
@@ -11,17 +21,6 @@
  * On change, fires `fb.config.setActiveDspPreset(index)` and emits
  * `fb-dsp-change`. Reflects host attribute `preset-name`.
  */
-
-import { FbBaseElement } from './FbBaseElement.js';
-import { getFb } from './runtime.js';
-import type { FbDspChangeDetail } from './types.js';
-
-/** The fields of a `config.getDspPresets` row this component reads. */
-interface DspPresetInfo {
-    index: number;
-    name: string;
-}
-
 export class FbDspPresetSelector extends FbBaseElement {
     private _select!: HTMLSelectElement;
     private _presets: DspPresetInfo[] = [];

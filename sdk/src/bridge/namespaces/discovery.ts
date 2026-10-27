@@ -11,12 +11,13 @@ import type {
  * `discovery` — service / menu / component discovery namespace.
  */
 export const discovery = {
+    /** Count the discoverable service families in the running process. */
     getAllServices: () =>
         call(
             'discovery.getAllServices',
         ),
     /**
-     * Lists main-menu commands. Components that build their submenu at runtime
+     * List main-menu commands. Components that build their submenu at runtime
      * (`mainmenu_commands_v2`, e.g. ESLyric) are expanded by default, so the
      * result includes their child commands in addition to the parent slot.
      * Pass `{ expandDynamic: false }` for the raw static registry only.
@@ -31,14 +32,16 @@ export const discovery = {
             'discovery.getMainMenuCommands',
             opts,
         ),
+    /** List the groups main-menu commands are filed under. */
     getMainMenuGroups: () =>
         call(
             'discovery.getMainMenuGroups',
         ),
     /**
-     * Executes a main-menu command. For a command expanded from a dynamic
-     * submenu, pass the entry's `subGuid` as well; without it only the static
-     * command GUID is dispatched. A GUID no command owns fails with `NOT_FOUND`.
+     * Execute a main-menu command. For a command expanded from a dynamic
+     * submenu, pass the entry's `subGuid` as well. Dynamic containers and
+     * incomplete addresses are refused; the current leaf must have a unique
+     * owner and be enabled. A missing GUID fails with `NOT_FOUND`.
      */
     executeMainMenuCommand: (guid: string, subGuid?: string) =>
         call(
@@ -110,20 +113,26 @@ export const discovery = {
         call(
             'discovery.getContextMenuTree',
         ),
+    /** List the playable input file types, each with a display name and a filename mask. */
     getInputFormats: () =>
         call(
             'discovery.getInputFormats',
         ),
+    /** List the installed components. */
     getComponents: () =>
         call('discovery.getComponents'),
+    /** List the registered UI elements. */
     getUIElements: () =>
         call('discovery.getUIElements'),
+    /** List the registered DSP entries. */
     getDspEntries: () =>
         call('discovery.getDspEntries'),
+    /** List the registered output backends by GUID. */
     getOutputDevices: () =>
         call(
             'discovery.getOutputDevices',
         ),
+    /** List the pages of the Preferences dialog. */
     getPreferencePages: () =>
         call(
             'discovery.getPreferencePages',

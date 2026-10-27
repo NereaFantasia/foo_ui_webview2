@@ -44,6 +44,19 @@ afterEach(() => {
 });
 
 describe('MainMenuManager.ExecuteByID', () => {
+    it.each([
+        { executable: false, guid: '{OWNER}', path: 'View/Show' },
+        { source: 'mainmenu_dynamic' as const, guid: '{OWNER}', path: 'View/Show' },
+        { source: 'mainmenu_dynamic' as const, guid: '{OWNER}', subGuid: '' },
+    ])('does not dispatch an incomplete or explicitly unaddressable item: %j', async (address) => {
+        installHost([{ type: 'command', label: 'Show', ...address }]);
+        const manager = new MainMenuManager();
+        manager.Init('View');
+        await manager.BuildMenu(undefined, 1, 100);
+        expect(await manager.ExecuteByID(1)).toBe(false);
+        expect(invoke.mock.calls.some(([method]) => method === 'menu.runMainMenuCommand')).toBe(false);
+    });
+
     it('dispatches a string command even when the row carries a commandId', async () => {
         // Both main-menu tiers emit a commandId unconditionally. Sending it
         // made the host reject every row on type, so main-menu dispatch failed

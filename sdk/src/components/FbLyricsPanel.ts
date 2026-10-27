@@ -1,29 +1,3 @@
-/**
- * `<fb-lyrics-panel>` — synchronised LRC lyrics display.
- *
- * Loads lyrics for the active track via `fb.lyrics.get(path, { source })`,
- * parses LRC timestamps, then highlights the current line each time
- * `playback:time` ticks.
- *
- * Behaviour highlights:
- * - 350 ms debounce after `playback:trackChanged` to avoid hammering
- *   the host while users mash skip / back.
- * - Per-track load token guards against late results from a previous
- *   track overwriting the new one.
- * - `_scrollCurrentRow` only auto-scrolls when the row is not already
- *   comfortably in view, with a 350 ms / 900 ms cooldown depending on
- *   whether the document has focus (avoids stealing scroll from the
- *   user when the window is in the background).
- *
- * Attributes:
- * - `source`     — passed through to `fb.lyrics.get` (default `'any'`).
- * - `scroll`     — `'smooth'` (default) or anything else for `'auto'`.
- *
- * Reflects host attributes:
- * - `has-lyrics` — set when at least one line was rendered.
- * - `current-line` — index of the highlighted row (or `'-1'`).
- */
-
 import { FbBaseElement } from './FbBaseElement.js';
 import { getFb } from './runtime.js';
 import type {
@@ -63,6 +37,31 @@ function parseLRC(lrc: string): LyricsLine[] {
     return lines.sort((a, b) => a.time - b.time);
 }
 
+/**
+ * `<fb-lyrics-panel>` — synchronised LRC lyrics display.
+ *
+ * Loads lyrics for the active track via `fb.lyrics.get(path, { source })`,
+ * parses LRC timestamps, then highlights the current line each time
+ * `playback:time` ticks.
+ *
+ * Behaviour highlights:
+ * - 350 ms debounce after `playback:trackChanged` to avoid hammering
+ *   the host while users mash skip / back.
+ * - Per-track load token guards against late results from a previous
+ *   track overwriting the new one.
+ * - `_scrollCurrentRow` only auto-scrolls when the row is not already
+ *   comfortably in view, with a 350 ms / 900 ms cooldown depending on
+ *   whether the document has focus (avoids stealing scroll from the
+ *   user when the window is in the background).
+ *
+ * Attributes:
+ * - `source`     — passed through to `fb.lyrics.get` (default `'any'`).
+ * - `scroll`     — `'smooth'` (default) or anything else for `'auto'`.
+ *
+ * Reflects host attributes:
+ * - `has-lyrics` — set when at least one line was rendered.
+ * - `current-line` — index of the highlighted row (or `'-1'`).
+ */
 export class FbLyricsPanel extends FbBaseElement {
     private _container!: HTMLElement;
     private _lines: LyricsLine[] = [];

@@ -1,19 +1,4 @@
 import type { JsonValue } from '../../types/json.js';
-/**
- * `MainMenuManager` — Main-menu (File / Edit / Playback / ...) wrapper.
- *
- * Backend mapping:
- * - `BuildMenu(menu, base_id, max_id)` → `menu.getMainMenu` (`{ root }`)
- * - `ExecuteByID(id)`                  → `menu.runMainMenuCommand` (`{ command }`)
- *
- * The root sub-menu (`Init('File')`, `Init('Playback')`, ...) is set
- * once and forwarded to the host. Allocated ids map to the host-supplied
- * `guid` (plus the node `subGuid` for a dynamic child) or, failing that, to
- * the `path` string. The `commandId` main-menu rows also carry is deliberately
- * never used: it is a transient Win32 menu id that addresses nothing once the
- * menu that produced it is gone.
- */
-
 import { buildMenuItems, getTypedInvoke, splitMenuAddress, successOf } from '../utils.js';
 import type {
     SmpMenuBuildState,
@@ -30,6 +15,21 @@ interface MenuTarget {
     SetItems?: (items: SmpStructuredMenuItem[]) => void;
 }
 
+/**
+ * `MainMenuManager` — Main-menu (File / Edit / Playback / ...) wrapper.
+ *
+ * Backend mapping:
+ * - `BuildMenu(menu, base_id, max_id)` → `menu.getMainMenu` (`{ root }`)
+ * - `ExecuteByID(id)`                  → `menu.runMainMenuCommand` (`{ command }`)
+ *
+ * The root sub-menu (`Init('File')`, `Init('Playback')`, ...) is set
+ * once and forwarded to the host. Allocated ids map to the host-supplied
+ * `guid` (plus the node `subGuid` for a dynamic child). Explicitly unaddressable
+ * nodes remain unmapped; older hosts can supply a `path` instead. The
+ * `commandId` main-menu rows also carry is deliberately
+ * never used: it is a transient Win32 menu id that addresses nothing once the
+ * menu that produced it is gone.
+ */
 export class MainMenuManager {
     private _root: string = '';
     private _idMap: Map<number, number | string> = new Map();

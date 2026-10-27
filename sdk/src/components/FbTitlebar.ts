@@ -1,3 +1,9 @@
+import { FbBaseElement } from './FbBaseElement.js';
+import { OwnWindowStateFilter, learnOwnWindowId } from './ownWindowState.js';
+import { getFb } from './runtime.js';
+import type { WindowStateChangedPayload } from '../types/generated/events.js';
+import type { FbTitlebarDblclickDetail } from './types.js';
+
 /**
  * `<fb-titlebar>` — custom titlebar drag region.
  *
@@ -20,13 +26,6 @@
  * `fb.ui.getCurrentWindowId()` answers are held until it does (see
  * {@link OwnWindowStateFilter}).
  */
-
-import { FbBaseElement } from './FbBaseElement.js';
-import { OwnWindowStateFilter, learnOwnWindowId } from './ownWindowState.js';
-import { getFb } from './runtime.js';
-import type { WindowStateChangedPayload } from '../types/generated/events.js';
-import type { FbTitlebarDblclickDetail } from './types.js';
-
 export class FbTitlebar extends FbBaseElement {
     private _dragRegion!: HTMLDivElement;
     /** Filter of the current connection; one left over from an earlier connection delivers nothing. */

@@ -1,3 +1,8 @@
+import { FbBaseElement } from './FbBaseElement.js';
+import { ORDER_NAMES } from './constants.js';
+import { getFb } from './runtime.js';
+import type { FbOrderChangeDetail } from './types.js';
+
 /**
  * `<fb-playback-order>` — full 7-state playback-order picker.
  *
@@ -14,12 +19,6 @@
  * Reflects the resolved order via the `order` host attribute
  * (string label, e.g. `'shuffle-tracks'`).
  */
-
-import { FbBaseElement } from './FbBaseElement.js';
-import { ORDER_NAMES } from './constants.js';
-import { getFb } from './runtime.js';
-import type { FbOrderChangeDetail } from './types.js';
-
 export class FbPlaybackOrder extends FbBaseElement {
     private _select: HTMLSelectElement | null = null;
     private _btn: HTMLButtonElement | null = null;

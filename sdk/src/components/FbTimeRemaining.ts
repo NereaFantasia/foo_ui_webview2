@@ -1,3 +1,7 @@
+import { FbBaseElement } from './FbBaseElement.js';
+import { formatTime } from './constants.js';
+import { getFb } from './runtime.js';
+
 /**
  * `<fb-time-remaining>` — time-left display (always negative-prefix,
  * e.g. `-2:43`).
@@ -7,11 +11,6 @@
  * value is sourced from the event payload when present and falls
  * back to `fb.player.getCurrentTrack()` otherwise.
  */
-
-import { FbBaseElement } from './FbBaseElement.js';
-import { formatTime } from './constants.js';
-import { getFb } from './runtime.js';
-
 export class FbTimeRemaining extends FbBaseElement {
     private _position = 0;
     private _duration = 0;

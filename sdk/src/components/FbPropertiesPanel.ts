@@ -1,3 +1,8 @@
+import { FbBaseElement } from './FbBaseElement.js';
+import { formatTime } from './constants.js';
+import { getFb } from './runtime.js';
+import type { JsonObject } from '../types/json.js';
+
 /**
  * `<fb-properties-panel>` — track properties read-only viewer.
  *
@@ -16,12 +21,6 @@
  *
  * Reflects host attribute `track-path` once a load completes.
  */
-
-import { FbBaseElement } from './FbBaseElement.js';
-import { formatTime } from './constants.js';
-import { getFb } from './runtime.js';
-import type { JsonObject } from '../types/json.js';
-
 export class FbPropertiesPanel extends FbBaseElement {
     private _container!: HTMLElement;
     private _trackPath: string | null = null;

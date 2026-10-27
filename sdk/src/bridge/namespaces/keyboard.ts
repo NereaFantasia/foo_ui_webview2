@@ -8,7 +8,7 @@ import type {
  * `keyboard` — hotkey / shortcut registration namespace.
  */
 export const keyboard = {
-    /** Registers a system-wide hotkey; the response carries the numeric `id`. */
+    /** Register a system-wide hotkey; the response carries the numeric `id`. */
     registerHotkey: (
         key: string,
         action: string,
@@ -19,6 +19,7 @@ export const keyboard = {
             action,
             ...(opts || {}),
         }),
+    /** Register a key combination as an in-window local shortcut. */
     registerShortcut: (key: string, action: string) =>
         call('keyboard.registerShortcut', {
             key,
@@ -27,6 +28,7 @@ export const keyboard = {
     /** Takes exactly one of the numeric `id` and the original `key` string. */
     unregisterHotkey: (opts: KeyboardUnregisterHotkeyParams) =>
         call('keyboard.unregisterHotkey', opts),
+    /** List registered system hotkeys followed by local shortcuts. */
     getRegisteredHotkeys: () =>
         call(
             'keyboard.getRegisteredHotkeys',

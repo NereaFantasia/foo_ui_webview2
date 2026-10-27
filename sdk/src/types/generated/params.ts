@@ -68,7 +68,7 @@ export interface ArtworkGetByPlaylistItemParams {
      * @default -1
      */
     playlist?: number;
-    /** A playlist's GUID instead of its index, written with braces as `playlist.getAll` and every result or event that names a playlist report it; either hex case is accepted. It keeps naming the same playlist while other playlists are added, removed or reordered, which an index does not. Giving both this and the index, or a malformed GUID, fails with `INVALID_PARAMS`. A playlist that no longer exists fails with `NOT_FOUND`; the call never falls back to another playlist. A malformed GUID and a missing playlist carry the GUID given as `details.playlistGuid`. */
+    /** Persistent unique identifier of a playlist (bracketed GUID, case-insensitive), used in place of a mutable index. Mutually exclusive with `playlist`; passing both or an invalid format fails with `INVALID_PARAMS`. Fails with `NOT_FOUND` if the playlist does not exist, never falling back. Invalid-format and not-found failures return the given GUID in `details.playlistGuid`. */
     playlistGuid?: string;
     /**
      * Row index; negative for the first row.
@@ -167,7 +167,7 @@ export interface ArtworkGetForTrackParams {
 
 /**
  * Parameters for `artwork.getLyrics`.
- * Read the lyrics tag of a track. The host's cached track info is used when complete; a local file it has not read is read from disk, and a remote or unrecognised path keeps whatever the cache has. The tags `LYRICS`, `UNSYNCED LYRICS`, `UNSYNCEDLYRICS`, `SYNCEDLYRICS` and `SYNCED LYRICS` are probed in that order and the first non-empty one wins. Without `path` the playing track is used; with nothing playing the call fails with `NO_ACTIVE_ITEM`. A path no track can be made for fails with `NOT_FOUND`, a local file that cannot be read with `OPERATION_FAILED`.
+ * Read the lyrics tag of a track. The host's cached track info is used when complete; a local file it has not read is read from disk, and a remote or unrecognised path keeps whatever the cache has. The tags `LYRICS`, `UNSYNCED LYRICS`, `UNSYNCEDLYRICS`, `SYNCEDLYRICS` and `SYNCED LYRICS` are probed in that order and the first non-empty one wins. Without `path` the playing track is used; with nothing playing the call fails with `NO_ACTIVE_ITEM`. A path no track can be made for fails with `NOT_FOUND`, a local file that cannot be read with `OPERATION_FAILED`. Invalid UTF-8 in lyrics is replaced with U+FFFD without changing tags.
  */
 export interface ArtworkGetLyricsParams {
     /** Track path; omitted for the playing track. */
@@ -176,7 +176,7 @@ export interface ArtworkGetLyricsParams {
 
 /**
  * Parameters for `artwork.getMetadata`.
- * Read the album-level tags of a track, plus whether the file embeds any picture and whether it carries a lyrics tag. The tags come from the host's cached track info when complete; a local file it has not read is read from disk, and a remote or unrecognised path keeps whatever the cache has, which can be blank. Without `path` the playing track is used; with nothing playing the call fails with `NO_ACTIVE_ITEM`. A path no track can be made for fails with `NOT_FOUND`, a local file that cannot be read with `OPERATION_FAILED`.
+ * Read the album-level tags of a track, plus whether the file embeds any picture and whether it carries a lyrics tag. The tags come from the host's cached track info when complete; a local file it has not read is read from disk, and a remote or unrecognised path keeps whatever the cache has, which can be blank. Without `path` the playing track is used; with nothing playing the call fails with `NO_ACTIVE_ITEM`. A path no track can be made for fails with `NOT_FOUND`, a local file that cannot be read with `OPERATION_FAILED`. Invalid UTF-8 in returned tag values is replaced with U+FFFD without changing the file.
  */
 export interface ArtworkGetMetadataParams {
     /** Track path; omitted for the playing track. */
@@ -185,7 +185,7 @@ export interface ArtworkGetMetadataParams {
 
 /**
  * Parameters for `audio.analyzeBPM`.
- * Read the track's `BPM` tag. The host does not detect tempo. foobar2000's cached info is used when complete; otherwise the file itself is read, so tracks that are in no playlist or library work too.
+ * Read the track's `BPM` metadata tag (the host does not perform audio tempo analysis). Uses foobar2000 cached metadata when complete, falling back to reading the file directly so tracks outside playlists or library are also supported.
  */
 export interface AudioAnalyzeBPMParams {
     /** Track path; a `|subsong:N` suffix selects a subsong. */
@@ -354,7 +354,7 @@ export interface AudioGetWaveformParams {
 
 /**
  * Parameters for `audio.isVisualizationAvailable`.
- * Report whether foobar2000 offers a visualization stream. Spectrum frames and getWaveform need one.
+ * Report whether foobar2000 provides an active visualization stream (required by `subscribeSpectrum` and `getWaveform`).
  */
 export type AudioIsVisualizationAvailableParams = Record<string, never>;
 
@@ -425,7 +425,7 @@ export interface AudioSubscribeSpectrumParams {
 
 /**
  * Parameters for `audio.subscribeStream`.
- * Subscribe to the audio foobar2000 is playing. Every chunk the core plays is copied into a ring buffer shared with the page, one buffer per subscription. The buffer arrives as a `sharedbufferreceived` event on `chrome.webview` with the first chunk of audio, and again with a new `epoch` whenever the sample rate or channel count changes; `audio:stream` then reports the old epoch as ended. Nothing arrives while playback is stopped or paused.
+ * Subscribe to live playback PCM audio. Audio chunks played by foobar2000 are copied into a shared memory ring buffer (one dedicated buffer per subscription). The buffer is delivered via a `sharedbufferreceived` event on `chrome.webview` alongside the first audio chunk. When sample rate or channel count changes, a new buffer is allocated (incrementing `epoch`) and `audio:stream` announces the previous epoch has ended. No chunks are delivered while playback is stopped or paused.
  * @experimental
  */
 export interface AudioSubscribeStreamParams {
@@ -871,7 +871,7 @@ export interface DiscoveryExecuteContextMenuCommandParams {
 
 /**
  * Parameters for `discovery.executeMainMenuCommand`.
- * Run a main-menu command by GUID. A child of a dynamic submenu is addressed by its parent's `guid` plus its own `subGuid`. Fails with `NOT_FOUND` when no command owns the GUID.
+ * Run a main-menu command by GUID. A child of a dynamic submenu is addressed by its parent's `guid` plus its own `subGuid`. The address must identify one current leaf; dynamic containers cannot be executed. Missing addresses fail with `NOT_FOUND`, ambiguous ones with `MENU_MATCH_AMBIGUOUS`, disabled leaves with `MENU_ITEM_DISABLED`, and unreadable state with `OPERATION_FAILED`.
  */
 export interface DiscoveryExecuteMainMenuCommandParams {
     /** Command GUID in `{...}` form. For a dynamic child, its parent command's GUID. */
@@ -1607,7 +1607,7 @@ export type JitQueueNotifyEmptyParams = Record<string, never>;
 
 /**
  * Parameters for `jitQueue.playNow`.
- * Start a new JIT session with this track: the buffer is cleared and playback begins. The host detects the URL kind itself (`http(s)://` streams, Windows or UNC paths are local).
+ * Start a new JIT session with this track: the buffer is cleared and playback begins. The host detects the URL kind itself (`http(s)://` streams, Windows or UNC paths are local). Tracks in the native playback queue are kept: when this track ends, foobar2000 plays them first and the JIT session ends.
  */
 export interface JitQueuePlayNowParams {
     /** Caller-assigned identifier of the track, echoed in the session state and events. */
@@ -1642,7 +1642,7 @@ export interface JitQueuePreloadBatchParams {
 
 /**
  * Parameters for `jitQueue.skip`.
- * Skip to the next buffered track. Refused with `NO_ACTIVE_ITEM` while no JIT session is active.
+ * Skip to the next buffered track. When a buffered track follows the playing one, it plays that track and leaves the native playback queue untouched. Otherwise it acts as foobar2000's Next command, which plays the first track of the native playback queue when the queue is not empty. Refused with `NO_ACTIVE_ITEM` while no JIT session is active.
  */
 export type JitQueueSkipParams = Record<string, never>;
 
@@ -1656,6 +1656,308 @@ export interface JitQueueStopParams {
      * @default true
      */
     clearBuffer?: boolean;
+}
+
+/**
+ * Parameters for `jitSession.adoptNative`.
+ * Adopt the native playback captured by `jitSession.prepareAdoption` without interrupting it. The track playing becomes the current attempt, bound to `currentEntryId`, and keeps decoding; the native playback queue is emptied, its occurrences kept by the host, and the session schedules what follows (`jitSession:needNext` asks for it). Stopping or releasing the session gives the remaining occurrences back to the native queue and continues the playlist after the last row played from it. When no row is left after it, the last occurrence goes into a single-track playlist the host keeps for this (`__webview_restore__`), so playback stops after it instead of continuing the playlist it came from. A `jitQueue` call made while the context is open keeps its usual behavior; the session then stays `stopped` with reason `legacyTakeover`, keeps its control token and accepts only `jitSession.release`. Fails with `CONFLICT` when the snapshot was replaced, expired or already used, or native playback changed since it was taken, and with `NOT_SUPPORTED` when a setting no longer allows adoption; nothing changes then.
+ * @experimental
+ */
+export interface JitSessionAdoptNativeParams {
+    /** Session to act on. */
+    sessionId: string;
+    /** Control token from `jitSession.create` or `jitSession.claimControl`. */
+    controlToken: string;
+    /** The `revision` the command is based on. */
+    expectedRevision: number;
+    /** Caller-chosen key that makes a retry return the first answer instead of running again. */
+    requestId: string;
+    /** The context returned by `jitSession.prepareAdoption`. */
+    contextId: string;
+    /** The snapshot token returned with it. */
+    snapshotToken: string;
+    /** Caller's entry identifier for the track playing. */
+    currentEntryId: string;
+}
+
+/**
+ * Parameters for `jitSession.claimControl`.
+ * Take control of a session without restarting what is playing. `resume` is for a page reloaded in the window whose previous page held control; `handover` is for any other page and must name the current `ownerEpoch`. The previous controller's token stops working and its pending operations are kept. Fails with `NOT_OWNER` when resuming is not allowed and with `CONFLICT` when `expectedOwnerEpoch` is out of date.
+ * @experimental
+ */
+export interface JitSessionClaimControlParams {
+    /** Session to claim. */
+    sessionId: string;
+    /** `resume` after reloading in the controlling window, `handover` from any other page. */
+    mode: "resume" | "handover";
+    /** The `ownerEpoch` being taken over; required for `handover`. */
+    expectedOwnerEpoch?: number;
+    /** Caller-chosen key that makes a retry return the first answer. */
+    requestId: string;
+}
+
+/**
+ * Parameters for `jitSession.create`.
+ * Create a session and take control of it. Creating changes nothing in playback. Fails with `CONFLICT` while another session exists (released sessions excepted), with its `sessionId` in `details`; take it over with `jitSession.claimControl` instead. A retry with the same `requestId` from the same page returns the first answer.
+ * @experimental
+ */
+export interface JitSessionCreateParams {
+    /** Caller-chosen key that makes a retry return the first answer. */
+    requestId: string;
+}
+
+/**
+ * Parameters for `jitSession.discover`.
+ * Find the session a page can resume or take over, without changing playback or granting control. `canResume` is true for a page reloaded in the window whose previous page held control.
+ * @experimental
+ */
+export type JitSessionDiscoverParams = Record<string, never>;
+
+/**
+ * Parameters for `jitSession.getCapabilities`.
+ * Report what this host's JIT sessions can and cannot do, so a coordinator can plan around the limits instead of discovering them in playback.
+ * @experimental
+ */
+export type JitSessionGetCapabilitiesParams = Record<string, never>;
+
+/**
+ * Parameters for `jitSession.getNativeContext`.
+ * Read one page of a native context: the `manual` occurrences captured from the native queue, in their order, or the `source` rows of the playlist being played. Reading changes neither revision; a row read twice keeps its `nativeRef`. Fails with `CONFLICT` when `expectedContextRevision` is out of date, and for `source` pages also when the playlist's content changed since the snapshot; a page past the end is empty.
+ * @experimental
+ */
+export interface JitSessionGetNativeContextParams {
+    /** Session the context belongs to. */
+    sessionId: string;
+    /** Context to read. */
+    contextId: string;
+    /** The `contextRevision` the page is based on. */
+    expectedContextRevision: number;
+    /** `manual` for the queue occurrences, `source` for the playlist rows. */
+    collection: "manual" | "source";
+    /** First item: an occurrence index for `manual`, a playlist row for `source`. */
+    offset: number;
+    /** Items per page. */
+    limit: number;
+}
+
+/**
+ * Parameters for `jitSession.getOperation`.
+ * Read an operation's status. The pending operations and the latest 64 finished ones of a session can be read. After release they remain readable until the next `jitSession.create` or for ten minutes, whichever comes first; an expired record fails with `NOT_FOUND`.
+ * @experimental
+ */
+export interface JitSessionGetOperationParams {
+    /** Session the operation belongs to. */
+    sessionId: string;
+    /** Operation to read. */
+    operationId: string;
+}
+
+/**
+ * Parameters for `jitSession.getState`.
+ * Read a consistent snapshot of a session. The snapshot never contains the control token.
+ * @experimental
+ */
+export interface JitSessionGetStateParams {
+    /** Session to read. */
+    sessionId: string;
+}
+
+/**
+ * Parameters for `jitSession.play`.
+ * Play an entry now as a new attempt. The answer means the command was accepted, not that the resource can play: `jitSession:operationCompleted` reports whether it was added and started, and `jitSession:attemptFinished` how the attempt ended. Tracks in the native playback queue are kept and play first when the attempt ends. Write commands fail with `NOT_OWNER` for a token that is not the current controller's and with `CONFLICT` when `expectedRevision` is out of date or `requestId` was used for a different command.
+ * @experimental
+ */
+export interface JitSessionPlayParams {
+    /** Session to act on. */
+    sessionId: string;
+    /** Control token from `jitSession.create` or `jitSession.claimControl`. */
+    controlToken: string;
+    /** The `revision` the command is based on. */
+    expectedRevision: number;
+    /** Caller-chosen key that makes a retry return the first answer instead of running again. */
+    requestId: string;
+    /** Caller's identifier of this occurrence in its queue; repeated resources use different ones. */
+    entryId: string;
+    /**
+     * Display title.
+     * @default ""
+     */
+    title?: string;
+    /** Resource to play: a file path or `file://` URL, `path|subsong:N` for one subsong, or an `http(s)://` stream. A playlist file that expands to more than one track fails the operation. CUE locations must name a subsong explicitly. At most 2048 characters. */
+    location: string;
+    /** When the location stops being valid, in Unix milliseconds; recorded only. */
+    expiresAt?: number;
+}
+
+/**
+ * Parameters for `jitSession.playNative`.
+ * Play a source row or queue occurrence of the adopted context now, as `jitSession.play` does for a location: the answer means accepted, and `jitSession:operationCompleted` reports the start. The first supply of a `nativeRef` binds it to `entryId`; replaying it keeps that `entryId`, and a different one fails with `CONFLICT`. Starting a queue occurrence consumes it, so it is not given back later; replaying a consumed or removed one does not bring it back. Playing a source row moves the point the playlist continues from when the context is given back.
+ * @experimental
+ */
+export interface JitSessionPlayNativeParams {
+    /** Session to act on. */
+    sessionId: string;
+    /** Control token from `jitSession.create` or `jitSession.claimControl`. */
+    controlToken: string;
+    /** The `revision` the command is based on. */
+    expectedRevision: number;
+    /** Caller-chosen key that makes a retry return the first answer instead of running again. */
+    requestId: string;
+    /** The adopted context. */
+    contextId: string;
+    /** A `nativeRef` read from `jitSession.getNativeContext`. */
+    nativeRef: string;
+    /** Caller's identifier for this entry. */
+    entryId: string;
+    /** Display title; the track's title tag when left out. */
+    title?: string;
+}
+
+/**
+ * Parameters for `jitSession.prepareAdoption`.
+ * Capture the native playback for adoption: the track playing, the native playback queue one occurrence at a time (repeated tracks stay separate) and the playlist it plays from. Nothing in playback, the queue, the playlists or the settings changes; read the occurrences and source rows with `jitSession.getNativeContext`. The session must be new: `CONFLICT` once it has played, while a `jitQueue` buffer is in use or while an adopted context is still open. A new call replaces an unadopted snapshot. Fails with `NOT_SUPPORTED` unless playback is running and not paused from a row of a normal playlist (not an autoplaylist or another locked one), the playback order is Default, cursor and playback following and stop-after-current are off, and the queue holds at most 1024 tracks whose positions match their playlists; `details.reason` names the first failed condition. `jitSession.adoptNative` commits the snapshot.
+ * @experimental
+ */
+export interface JitSessionPrepareAdoptionParams {
+    /** Session to act on. */
+    sessionId: string;
+    /** Control token from `jitSession.create` or `jitSession.claimControl`. */
+    controlToken: string;
+    /** The `revision` the command is based on. */
+    expectedRevision: number;
+    /** Caller-chosen key that makes a retry return the first answer instead of running again. */
+    requestId: string;
+}
+
+/**
+ * Parameters for `jitSession.release`.
+ * End the session and give the native context back: the buffer is emptied, the track playing keeps decoding, and the playback order and active playlist saved when the session first played are restored. After `jitSession.adoptNative`, the remaining native queue occurrences are given back first (see `nativeDisposition`); when that fails the session is kept, the error carries `details.contextId` and `details.recoveryId`, and a release with a new `requestId` continues where it stopped. Giving the context back while foobar2000 may already have picked the buffered next entry (see `jitSession.setNext`) fails with `CONFLICT` and `details.reason: "nextPreselected"` and changes nothing; `nativeDisposition: "detach"` is still accepted. Without an adopted context, a next entry picked that way may still play after the release.
+ * @experimental
+ */
+export interface JitSessionReleaseParams {
+    /** Session to act on. */
+    sessionId: string;
+    /** Control token from `jitSession.create` or `jitSession.claimControl`. */
+    controlToken: string;
+    /** The `revision` the command is based on. */
+    expectedRevision: number;
+    /** Caller-chosen key that makes a retry return the first answer instead of running again. */
+    requestId: string;
+    /** What to do with an adopted native context: `restore` (default) gives the remaining occurrences back to the native queue and continues the playlist; `detach` leaves the native queue and playlists as they are and keeps the occurrences readable. Only for a session that adopted native playback. */
+    nativeDisposition?: "restore" | "detach";
+}
+
+/**
+ * Parameters for `jitSession.setNativeNext`.
+ * Set a source row or queue occurrence of the adopted context as the entry after the current attempt, as `jitSession.setNext` does for a location. Binding works as for `jitSession.playNative`; use `jitSession.setNext` without `entryId` to withdraw it. Replacing a buffered next entry fails with `nextPreselected` under the same condition as `jitSession.setNext`.
+ * @experimental
+ */
+export interface JitSessionSetNativeNextParams {
+    /** Session to act on. */
+    sessionId: string;
+    /** Control token from `jitSession.create` or `jitSession.claimControl`. */
+    controlToken: string;
+    /** The `revision` the command is based on. */
+    expectedRevision: number;
+    /** Caller-chosen key that makes a retry return the first answer instead of running again. */
+    requestId: string;
+    /** The adopted context. */
+    contextId: string;
+    /** The current attempt the command is meant for. */
+    afterAttemptId: string;
+    /** A `nativeRef` read from `jitSession.getNativeContext`. */
+    nativeRef: string;
+    /** Caller's identifier for this entry. */
+    entryId: string;
+    /** Display title; the track's title tag when left out. */
+    title?: string;
+}
+
+/**
+ * Parameters for `jitSession.setNativeQueue`.
+ * Decide which queue occurrences of the adopted context are still to be given back, and in what order: list every pending or queued occurrence to keep; the ones left out are removed and never given back. A removed occurrence that is the next entry is withdrawn from the buffer. Fails with `INVALID_PARAMS` for a repeated or unknown identifier, and with `CONFLICT` when `expectedContextRevision` is out of date or a listed occurrence has meanwhile been handed to playback, and with `CONFLICT` and `details.reason: "nextPreselected"` when removing the buffered next entry under the condition described for `jitSession.setNext`; nothing changes then.
+ * @experimental
+ */
+export interface JitSessionSetNativeQueueParams {
+    /** Session to act on. */
+    sessionId: string;
+    /** Control token from `jitSession.create` or `jitSession.claimControl`. */
+    controlToken: string;
+    /** The `revision` the command is based on. */
+    expectedRevision: number;
+    /** Caller-chosen key that makes a retry return the first answer instead of running again. */
+    requestId: string;
+    /** The adopted context. */
+    contextId: string;
+    /** The `contextRevision` the command is based on. */
+    expectedContextRevision: number;
+    /** Occurrences to keep, in the order to give them back. */
+    remainingOccurrenceIds: string[];
+}
+
+/**
+ * Parameters for `jitSession.setNext`.
+ * Set, replace or withdraw the entry after the current attempt. Accepted only while `afterAttemptId` is still the current attempt. A replaced or withdrawn next entry is removed from the buffer and its pending operation ends as `superseded`; the current attempt keeps playing. Without `entryId`, the next entry is withdrawn; `endOfQueue: true` also declares that nothing follows. When the current attempt has already ended and the session is waiting for its next entry, the new entry starts at once. Within the output buffer length plus one second of the current track's end, foobar2000 may already have picked the buffered next entry to follow it, so withdrawing or replacing a buffered entry then fails with `CONFLICT` and `details.reason: "nextPreselected"`: nothing changes and the buffered entry plays next. Once it starts, set what follows it against its attempt. Setting a next entry while none is buffered is still accepted.
+ * @experimental
+ */
+export interface JitSessionSetNextParams {
+    /** Session to act on. */
+    sessionId: string;
+    /** Control token from `jitSession.create` or `jitSession.claimControl`. */
+    controlToken: string;
+    /** The `revision` the command is based on. */
+    expectedRevision: number;
+    /** Caller-chosen key that makes a retry return the first answer instead of running again. */
+    requestId: string;
+    /** The current attempt the command is meant for. */
+    afterAttemptId: string;
+    /** Identifier of the next entry; leave out to withdraw the next entry. */
+    entryId?: string;
+    /** Display title. */
+    title?: string;
+    /** Resource of the next entry, written as for `jitSession.play`; required with `entryId`. */
+    location?: string;
+    /** When the location stops being valid, in Unix milliseconds; recorded only. */
+    expiresAt?: number;
+    /**
+     * Declare that nothing follows. Cannot be combined with `entryId`.
+     * @default false
+     */
+    endOfQueue?: boolean;
+}
+
+/**
+ * Parameters for `jitSession.skip`.
+ * End the current attempt and play the buffered next entry, leaving the native playback queue untouched. Accepted only while `attemptId` is the current attempt. Without a ready next entry, fails with `NO_ACTIVE_ITEM`: the current attempt keeps playing, the revision does not change and no operation is created.
+ * @experimental
+ */
+export interface JitSessionSkipParams {
+    /** Session to act on. */
+    sessionId: string;
+    /** Control token from `jitSession.create` or `jitSession.claimControl`. */
+    controlToken: string;
+    /** The `revision` the command is based on. */
+    expectedRevision: number;
+    /** Caller-chosen key that makes a retry return the first answer instead of running again. */
+    requestId: string;
+    /** The current attempt to end. */
+    attemptId: string;
+}
+
+/**
+ * Parameters for `jitSession.stop`.
+ * Stop playback and supersede pending operations. The session stays, in `stopped`, for its state and results to be read; a later `jitSession.play` starts a new attempt. After `jitSession.adoptNative`, the remaining native queue occurrences are given back without starting playback; a failure is recorded in `nativeContext`.
+ * @experimental
+ */
+export interface JitSessionStopParams {
+    /** Session to act on. */
+    sessionId: string;
+    /** Control token from `jitSession.create` or `jitSession.claimControl`. */
+    controlToken: string;
+    /** The `revision` the command is based on. */
+    expectedRevision: number;
+    /** Caller-chosen key that makes a retry return the first answer instead of running again. */
+    requestId: string;
 }
 
 /**
@@ -1711,7 +2013,7 @@ export interface LibraryAddToPlaylistParams {
     paths: string[];
     /** Index of the target playlist; omitted, the active playlist. An index past the last playlist fails with `INVALID_INDEX`; with this omitted and no active playlist the call fails with `NO_ACTIVE_ITEM`. */
     playlist?: number;
-    /** A playlist's GUID instead of its index, written with braces as `playlist.getAll` and every result or event that names a playlist report it; either hex case is accepted. It keeps naming the same playlist while other playlists are added, removed or reordered, which an index does not. Giving both this and the index, or a malformed GUID, fails with `INVALID_PARAMS`. A playlist that no longer exists fails with `NOT_FOUND`; the call never falls back to another playlist. A malformed GUID and a missing playlist carry the GUID given as `details.playlistGuid`. */
+    /** Persistent unique identifier of a playlist (bracketed GUID, case-insensitive), used in place of a mutable index. Mutually exclusive with `playlist`; passing both or an invalid format fails with `INVALID_PARAMS`. Fails with `NOT_FOUND` if the playlist does not exist, never falling back. Invalid-format and not-found failures return the given GUID in `details.playlistGuid`. */
     playlistGuid?: string;
 }
 
@@ -1805,9 +2107,11 @@ export interface LibraryGetAlbumsParams {
 
 /**
  * Parameters for `library.getAlbumTracks`.
- * The tracks of one `library.getAlbums` row, named by the row's `name` and `albumArtist`. Tracks are grouped exactly as `library.getAlbums` groups them, so `total` equals the row's `trackCount`. They are sorted by disc number, then track number, then library order. The grouping is kept until the library changes and `library.getAlbums` builds and reads the same one, so a call after it, or after an earlier call, does not read the library again. A name and album artist that no row has, and a disabled library, succeed with no tracks and no `row`.
+ * The tracks of one `library.getAlbums` row, named by the row's `name` and `albumArtist`. Tracks are grouped exactly as `library.getAlbums` groups them, so `total` equals the row's `trackCount`. They are sorted by disc number, then track number, then library order. The grouping is kept until the library changes and `library.getAlbums` builds and reads the same one, so a call after it, or after an earlier call, does not read the library again. A name and album artist that no row has, and a disabled library, succeed with no tracks and no `row`. Pass the row's `albumId` as well when present; it takes precedence over the names. A malformed ID fails with `INVALID_PARAMS` and `details.param` `albumId`.
  */
 export interface LibraryGetAlbumTracksParams {
+    /** The row's opaque album identity. When provided, it takes precedence over both names; empty or malformed strings fail rather than falling back to a name lookup. As for other optional parameters, JSON null is treated as omitted. */
+    albumId?: string;
     /** The row's `name`: the first `album` value of its tracks, compared byte for byte. */
     album: string;
     /** The row's `albumArtist`: the first `album artist` value of its tracks, or their first `artist` value when they have no `album artist`, or `""` when they have neither. Compared byte for byte, so the row's `artist` is not a substitute. */
@@ -1920,6 +2224,17 @@ export interface LibraryGetByPathParams {
 export type LibraryGetCacheStatsParams = Record<string, never>;
 
 /**
+ * Parameters for `library.getChanges`.
+ * The library revision and tracks changed after revision `since`, for local incremental sync. The revision persists across restarts. When `epoch` matches and `since` is within the recorded range, returns `changed` and `removed`. Otherwise sets `resync: true` with full `handles` for the page to rebuild its copy. Changes reported after startup loading advance the revision, including play statistics from components like foo_playcount. Fails with `OPERATION_PENDING` (`details.reason: 'libraryLoading'`) while the library is still loading. When disabled, returns `resync: true` with empty `handles`.
+ */
+export interface LibraryGetChangesParams {
+    /** The `epoch` the page's copy was built under; omitted, the answer is a `resync`. */
+    epoch?: string;
+    /** The `revision` the page's copy is at; omitted, the answer is a `resync`. */
+    since?: number;
+}
+
+/**
  * Parameters for `library.getCount`.
  * Number of tracks in the library.
  */
@@ -1998,6 +2313,17 @@ export type LibraryGetStatsParams = Record<string, never>;
 export type LibraryGetStatusParams = Record<string, never>;
 
 /**
+ * Parameters for `library.getTracks`.
+ * Fetch library rows in the given handle order without reading media files. Missing handles (or all handles when disabled) are reported in `missing`. More than 5000 handles fail with `INVALID_PARAMS`. Rows are serialized off the main thread.
+ */
+export interface LibraryGetTracksParams {
+    /** Track handles to look up, as given by a track row's `handle`; at most 5000. */
+    handles: string[];
+    /** Keys to include in each row, as in `library.query`. */
+    fields?: string[];
+}
+
+/**
  * Parameters for `library.invalidateCache`.
  * Drop the host's cached library results and the directory tree index; the next call to an endpoint that uses them rebuilds them. They are also dropped whenever the library changes.
  */
@@ -2026,7 +2352,7 @@ export interface LibraryQueryParams {
      * @default 100
      */
     limit?: number;
-    /** Keys each row carries; omitted, every key of a library track row. Names are matched case-sensitively against those keys: `index`, `handle`, `title`, `artist`, `artists`, `album`, `albumArtist`, `albumArtists`, `genre`, `date`, `trackNumber`, `discNumber`, `duration`, `path`, `absolutePath`, `fileSize`, `bitrate`, `sampleRate`, `channels`, `codec`, `subsong` and `rating`. An unknown name fails with `INVALID_PARAMS` and is listed in `details.unknownFields`. */
+    /** Keys each row carries; omitted, every key of a library track row. Names are matched case-sensitively against those keys: `index`, `handle`, `title`, `artist`, `artists`, `album`, `albumId`, `albumArtist`, `albumArtists`, `genre`, `date`, `trackNumber`, `discNumber`, `duration`, `path`, `absolutePath`, `fileSize`, `bitrate`, `sampleRate`, `channels`, `codec`, `subsong` and `rating`. An unknown name fails with `INVALID_PARAMS` and is listed in `details.unknownFields`. The optional `albumId` is omitted when the track has none, even when requested. */
     fields?: string[];
 }
 
@@ -2125,7 +2451,7 @@ export interface LyricsExistsParams {
 
 /**
  * Parameters for `lyrics.get`.
- * Read non-empty lyrics from the five known lyrics tags, then files next to the audio. Automatic lookup tries the audio file's stem only for a verified single-track file, followed by `<first artist> - <title>`; subsongs use only the latter. Unknown input layouts skip the audio-stem candidate. No numbered or shared album fallback is used. Results are cached for 1200 ms per track, filename and filters. Successful file saves and metadata changes invalidate the cache.
+ * Read non-empty lyrics from the five known lyrics tags, then files next to the audio. Automatic lookup tries the audio file's stem only for a verified single-track file, followed by `<first artist> - <title>`; subsongs use only the latter. Unknown input layouts skip the audio-stem candidate. No numbered or shared album fallback is used. Results are cached for 1200 ms per track, filename and filters. Successful file saves and metadata changes invalidate the cache. Invalid UTF-8 in the returned lyrics is replaced with U+FFFD; no encoding is guessed and the source is not rewritten.
  */
 export interface LyricsGetParams {
     /** Track path; a `|subsong:N` suffix selects a subsong. Omit it for the playing track; with nothing playing the call fails with `NO_ACTIVE_ITEM`. The playing track keeps its subsong. */
@@ -2237,7 +2563,7 @@ export interface MenuGetContextMenuParams {
 
 /**
  * Parameters for `menu.getMainMenu`.
- * Get the main menu as a tree. The host builds it from its menu tree, falls back to the Win32 menus (`source: "v1-hmenu"`), and as a last resort returns a flat command list (`fallback: "flat-mainmenu-commands"`); fails with `OPERATION_FAILED` when none can be built.
+ * Get the main menu as a tree. The host builds it from its menu tree, falls back to the Win32 menus (`source: "v1-hmenu"`), and as a last resort returns a flat command list (`fallback: "flat-mainmenu-commands"`). A source that cannot build a tree permits fallback; unreadable state in a built tree fails with `OPERATION_FAILED` instead of returning guessed availability. Root filtering keeps full command paths. Addressability is independent of enabled.
  */
 export interface MenuGetMainMenuParams {
     /**
@@ -2264,7 +2590,7 @@ export interface MenuGetMainMenuParams {
 
 /**
  * Parameters for `menu.runContextCommand`.
- * Run a context-menu command on the playing track, or on the active playlist selection when nothing is playing; fails with `NO_ACTIVE_ITEM` when there is neither. A name that matches no command fails with `MENU_COMMAND_NOT_FOUND`, a GUID that no command owns with `NOT_FOUND`.
+ * Run a context-menu command on the playing track, or on the active playlist selection when nothing is playing; fails with `NO_ACTIVE_ITEM` when there is neither. A name that matches no command fails with `MENU_COMMAND_NOT_FOUND`, a GUID that no command owns with `NOT_FOUND`. The call answers when the command returns: one that shows a modal dialog answers only after the dialog closes.
  */
 export interface MenuRunContextCommandParams {
     /** The command: a GUID or a command name. */
@@ -2275,7 +2601,7 @@ export interface MenuRunContextCommandParams {
 
 /**
  * Parameters for `menu.runContextCommandById`.
- * Run the context-menu item whose `commandId` a `menu.getContextMenu` call reported. The menu is rebuilt from `mode` and `handles`, so pass the `handles` that call used and the `mode` it reported, not `auto` again. An id is a position in the rebuilt menu, not a name: an id past its end fails with `NOT_FOUND`, but when the tracks, the selection, the playing track or the installed components changed since, the same id can run another item without failing.
+ * Run the context-menu item whose `commandId` a `menu.getContextMenu` call reported. The menu is rebuilt from `mode` and `handles`, so pass the `handles` that call used and the `mode` it reported, not `auto` again. An id is a position in the rebuilt menu, not a name: an id past its end fails with `NOT_FOUND`, but when the tracks, the selection, the playing track or the installed components changed since, the same id can run another item without failing. Pass `expectPath` and `expectTarget` together to rule that out: the host then runs the item only when the rebuilt menu matches what that call reported, and otherwise fails without running anything, with `details.reason` set: `NOT_FOUND` (`targetChanged`, `commandChanged`), `MENU_MATCH_AMBIGUOUS` (`ambiguousPath`), `MENU_ITEM_DISABLED` (`disabled`), or `NOT_SUPPORTED` (`unsupportedTargetMode`) for `mode: "playlist"`. Reopen the menu after such a failure. The call answers when the command returns: one that shows a modal dialog answers only after the dialog closes.
  */
 export interface MenuRunContextCommandByIdParams {
     /** The `commandId` of a context-menu node. */
@@ -2287,11 +2613,15 @@ export interface MenuRunContextCommandByIdParams {
     mode?: string;
     /** The `handles` the menu was built with; see `menu.getContextMenu`. */
     handles?: JsonValue[];
+    /** The node's `path` as `menu.getContextMenu` reported it. Give it with `expectTarget`: the item at `id` must have this path, and no other node may share it. */
+    expectPath?: string;
+    /** The `targetKey` that `menu.getContextMenu` reported. Give it with `expectPath`: the tracks resolved now must give the same key. */
+    expectTarget?: string;
 }
 
 /**
  * Parameters for `menu.runMainMenuCommand`.
- * Run a main-menu command addressed by GUID, leaf name or slash-separated path. A disabled command fails with `MENU_ITEM_DISABLED`; a name that matches several commands fails with `MENU_MATCH_AMBIGUOUS` and lists them in `candidates`; a name that matches none fails with `MENU_COMMAND_NOT_FOUND`, and a GUID that no command owns with `NOT_FOUND`.
+ * Run a main-menu command addressed by GUID, leaf name or slash-separated path. A disabled command fails with `MENU_ITEM_DISABLED`. Paths match every ancestor; a wrong prefix never falls back to a leaf name. Ambiguous identities fail with `MENU_MATCH_AMBIGUOUS` and `details.candidates`; a missing name/path is `MENU_COMMAND_NOT_FOUND`, a missing GUID is `NOT_FOUND`. Addressing a dynamic leaf by GUID requires both GUIDs. Unreadable state fails with `OPERATION_FAILED`. The call answers when the command returns: one that shows a modal dialog, such as renaming a playlist, answers only after the dialog closes.
  */
 export interface MenuRunMainMenuCommandParams {
     /** The command: a GUID such as `{11213A01-...}`, a leaf name, or a slash-separated path. Prefer the GUID, the one form that does not depend on the host's language. */
@@ -2374,7 +2704,7 @@ export interface MetadataEmbedArtworkParams {
 
 /**
  * Parameters for `metadata.probeBatchAsync`.
- * Start a cancellable batch probe on a worker thread and return a receipt at once. The results arrive in batches on `metadata:probeProgress`, every 64 results or 100 ms, followed by one `metadata:probeComplete`. Each result says whether its info came from the cache or the disk, and a failure is classified as `not-found`, `unsupported-format` or `read-error`.
+ * Start a cancellable batch probe on a worker thread and return a receipt at once. The results arrive in batches on `metadata:probeProgress`, every 64 results or 100 ms, followed by one `metadata:probeComplete`. Each result says whether its info came from the cache or the disk, and a failure is classified as `not-found`, `unsupported-format` or `read-error`. Values and field names use the same UTF-8 handling as `metadata.read`.
  */
 export interface MetadataProbeBatchAsyncParams {
     /** Paths to probe, reported one result each, in this order. A `|subsong:N` suffix selects a subsong; the `#N` spelling is not recognized, since it would split a file name that ends in `#<digits>`. Every path is checked before anything starts; one refused path fails the whole call with `PERMISSION_DENIED` and no `operationId`. */
@@ -2388,7 +2718,7 @@ export interface MetadataProbeBatchAsyncParams {
 
 /**
  * Parameters for `metadata.read`.
- * Read the tags and technical info of one track. The host reads its cached info and falls back to reading the file when that info cannot be had or has no title tag; a track that cannot be opened or read fails with `OPERATION_FAILED`.
+ * Read the tags and technical info of one track. The host reads its cached info and falls back to reading the file when that info cannot be had or has no title tag; a track that cannot be opened or read fails with `OPERATION_FAILED`. Invalid UTF-8 in values is replaced with U+FFFD; fields whose names are invalid UTF-8 are omitted, without changing the file.
  */
 export interface MetadataReadParams {
     /** Track path; a `|subsong:N` suffix or a trailing `#N` selects a subsong. */
@@ -2402,7 +2732,7 @@ export interface MetadataReadParams {
 
 /**
  * Parameters for `metadata.readBatch`.
- * Read the flat fields of several tracks, one row per path. A path that cannot be read gets a row with its own error and does not fail the call. The reads run on the main thread; prefer `metadata.probeBatchAsync` for many files.
+ * Read the flat fields of several tracks, one row per path. A path that cannot be read gets a row with its own error and does not fail the call. The reads run on the main thread; prefer `metadata.probeBatchAsync` for many files. UTF-8 handling is the same as `metadata.read`.
  */
 export interface MetadataReadBatchParams {
     /** Track paths, each resolved on its own; a `|subsong:N` suffix or a trailing `#N` selects a subsong, and there is no batch-wide `cueIndex`. An empty list is an empty success. */
@@ -2411,7 +2741,7 @@ export interface MetadataReadBatchParams {
 
 /**
  * Parameters for `metadata.readByPath`.
- * Read one track as a flat object: every tag and technical-info field becomes a top-level key under its upper-case name, beside `path`. The track is read the same way as by `metadata.read`, with the same failures.
+ * Read one track as a flat object: every tag and technical-info field becomes a top-level key under its upper-case name, beside `path`. The track is read the same way as by `metadata.read`, with the same failures and UTF-8 handling. Only ASCII letters in names are upper-cased.
  */
 export interface MetadataReadByPathParams {
     /** Track path; a `|subsong:N` suffix or a trailing `#N` selects a subsong. */
@@ -2861,7 +3191,7 @@ export interface PlaycountSetParams {
 export interface PlaylistAddHandlesParams {
     /** Index of the playlist; omitted, the active playlist. An index past the last playlist fails with `INVALID_INDEX`; with this omitted and no active playlist the call fails with `NO_ACTIVE_ITEM`. */
     playlist?: number;
-    /** A playlist's GUID instead of its index, written with braces as `playlist.getAll` and every result or event that names a playlist report it; either hex case is accepted. It keeps naming the same playlist while other playlists are added, removed or reordered, which an index does not. Giving both this and the index, or a malformed GUID, fails with `INVALID_PARAMS`. A playlist that no longer exists fails with `NOT_FOUND`; the call never falls back to another playlist. A malformed GUID and a missing playlist carry the GUID given as `details.playlistGuid`. */
+    /** Persistent unique identifier of a playlist (bracketed GUID, case-insensitive), used in place of a mutable index. Mutually exclusive with `playlist`; passing both or an invalid format fails with `INVALID_PARAMS`. Fails with `NOT_FOUND` if the playlist does not exist, never falling back. Invalid-format and not-found failures return the given GUID in `details.playlistGuid`. */
     playlistGuid?: string;
     /** Tracks to append: each a path with an optional `|subsong:N` suffix, or `{ path, subsong }`. */
     handles: JsonValue[];
@@ -2874,7 +3204,7 @@ export interface PlaylistAddHandlesParams {
 export interface PlaylistAddPathsParams {
     /** Index of the playlist; omitted, the active playlist. An index past the last playlist fails with `INVALID_INDEX`; with this omitted and no active playlist the call fails with `NO_ACTIVE_ITEM`. */
     playlist?: number;
-    /** A playlist's GUID instead of its index, written with braces as `playlist.getAll` and every result or event that names a playlist report it; either hex case is accepted. It keeps naming the same playlist while other playlists are added, removed or reordered, which an index does not. Giving both this and the index, or a malformed GUID, fails with `INVALID_PARAMS`. A playlist that no longer exists fails with `NOT_FOUND`; the call never falls back to another playlist. A malformed GUID and a missing playlist carry the GUID given as `details.playlistGuid`. */
+    /** Persistent unique identifier of a playlist (bracketed GUID, case-insensitive), used in place of a mutable index. Mutually exclusive with `playlist`; passing both or an invalid format fails with `INVALID_PARAMS`. Fails with `NOT_FOUND` if the playlist does not exist, never falling back. Invalid-format and not-found failures return the given GUID in `details.playlistGuid`. */
     playlistGuid?: string;
     /** Files, folders or URLs; a `|subsong:N` suffix selects a subsong. */
     paths: string[];
@@ -2887,7 +3217,7 @@ export interface PlaylistAddPathsParams {
 export interface PlaylistAddPathsAsyncParams {
     /** Index of the playlist; omitted, the active playlist. An index past the last playlist fails with `INVALID_INDEX`; with this omitted and no active playlist the call fails with `NO_ACTIVE_ITEM`. */
     playlist?: number;
-    /** A playlist's GUID instead of its index, written with braces as `playlist.getAll` and every result or event that names a playlist report it; either hex case is accepted. It keeps naming the same playlist while other playlists are added, removed or reordered, which an index does not. Giving both this and the index, or a malformed GUID, fails with `INVALID_PARAMS`. A playlist that no longer exists fails with `NOT_FOUND`; the call never falls back to another playlist. A malformed GUID and a missing playlist carry the GUID given as `details.playlistGuid`. */
+    /** Persistent unique identifier of a playlist (bracketed GUID, case-insensitive), used in place of a mutable index. Mutually exclusive with `playlist`; passing both or an invalid format fails with `INVALID_PARAMS`. Fails with `NOT_FOUND` if the playlist does not exist, never falling back. Invalid-format and not-found failures return the given GUID in `details.playlistGuid`. */
     playlistGuid?: string;
     /** Files, folders, URLs or playlist files; a `|subsong:N` suffix selects a subsong. */
     paths: string[];
@@ -2900,7 +3230,7 @@ export interface PlaylistAddPathsAsyncParams {
 export interface PlaylistAddPathsSequentialParams {
     /** Index of the playlist; omitted, the active playlist. An index past the last playlist fails with `INVALID_INDEX`; with this omitted and no active playlist the call fails with `NO_ACTIVE_ITEM`. */
     playlist?: number;
-    /** A playlist's GUID instead of its index, written with braces as `playlist.getAll` and every result or event that names a playlist report it; either hex case is accepted. It keeps naming the same playlist while other playlists are added, removed or reordered, which an index does not. Giving both this and the index, or a malformed GUID, fails with `INVALID_PARAMS`. A playlist that no longer exists fails with `NOT_FOUND`; the call never falls back to another playlist. A malformed GUID and a missing playlist carry the GUID given as `details.playlistGuid`. */
+    /** Persistent unique identifier of a playlist (bracketed GUID, case-insensitive), used in place of a mutable index. Mutually exclusive with `playlist`; passing both or an invalid format fails with `INVALID_PARAMS`. Fails with `NOT_FOUND` if the playlist does not exist, never falling back. Invalid-format and not-found failures return the given GUID in `details.playlistGuid`. */
     playlistGuid?: string;
     /** Files, folders or URLs, in the order to add them; a `|subsong:N` suffix selects a subsong. */
     paths: string[];
@@ -2913,7 +3243,7 @@ export interface PlaylistAddPathsSequentialParams {
 export interface PlaylistClearParams {
     /** Index of the playlist to empty; omitted, the active playlist. An index past the last playlist fails with `INVALID_INDEX`; with this omitted and no active playlist the call fails with `NO_ACTIVE_ITEM`. */
     playlist?: number;
-    /** A playlist's GUID instead of its index, written with braces as `playlist.getAll` and every result or event that names a playlist report it; either hex case is accepted. It keeps naming the same playlist while other playlists are added, removed or reordered, which an index does not. Giving both this and the index, or a malformed GUID, fails with `INVALID_PARAMS`. A playlist that no longer exists fails with `NOT_FOUND`; the call never falls back to another playlist. A malformed GUID and a missing playlist carry the GUID given as `details.playlistGuid`. */
+    /** Persistent unique identifier of a playlist (bracketed GUID, case-insensitive), used in place of a mutable index. Mutually exclusive with `playlist`; passing both or an invalid format fails with `INVALID_PARAMS`. Fails with `NOT_FOUND` if the playlist does not exist, never falling back. Invalid-format and not-found failures return the given GUID in `details.playlistGuid`. */
     playlistGuid?: string;
 }
 
@@ -2924,7 +3254,7 @@ export interface PlaylistClearParams {
 export interface PlaylistConvertToAutoplaylistParams {
     /** Index of the playlist to convert; omitted, the active playlist. An index past the last playlist fails with `INVALID_INDEX`; with this omitted and no active playlist the call fails with `NO_ACTIVE_ITEM`. */
     playlist?: number;
-    /** A playlist's GUID instead of its index, written with braces as `playlist.getAll` and every result or event that names a playlist report it; either hex case is accepted. It keeps naming the same playlist while other playlists are added, removed or reordered, which an index does not. Giving both this and the index, or a malformed GUID, fails with `INVALID_PARAMS`. A playlist that no longer exists fails with `NOT_FOUND`; the call never falls back to another playlist. A malformed GUID and a missing playlist carry the GUID given as `details.playlistGuid`. */
+    /** Persistent unique identifier of a playlist (bracketed GUID, case-insensitive), used in place of a mutable index. Mutually exclusive with `playlist`; passing both or an invalid format fails with `INVALID_PARAMS`. Fails with `NOT_FOUND` if the playlist does not exist, never falling back. Invalid-format and not-found failures return the given GUID in `details.playlistGuid`. */
     playlistGuid?: string;
     /** Library query that selects the tracks, in foobar2000's query syntax. */
     query: string;
@@ -2979,13 +3309,37 @@ export interface PlaylistCreateAutoplaylistParams {
 }
 
 /**
+ * Parameters for `playlist.createManagedAutoplaylist`.
+ * Create an autoplaylist whose query and sorting are managed by this component. Requires foo_ui_webview2 to remain installed. Invalid configuration is rejected before creating the playlist. Success reports the configuration snapshot, not completed track rebuilding or disk persistence.
+ */
+export interface PlaylistCreateManagedAutoplaylistParams {
+    /**
+     * Name of the new playlist; at most 65536 UTF-8 bytes, without NUL.
+     * @default "New Autoplaylist"
+     */
+    name?: string;
+    /** foobar2000 library query, at most 65536 UTF-8 bytes. Blank text and NUL are rejected. */
+    query: string;
+    /**
+     * Independent Title Formatting sort. Empty uses the query's sorting or the host default. A nonempty value conflicts with explicit SORT BY in the query. At most 65536 UTF-8 bytes, without NUL.
+     * @default ""
+     */
+    sort?: string;
+    /**
+     * Keep tracks sorted and prevent manual reordering.
+     * @default false
+     */
+    keepSorted?: boolean;
+}
+
+/**
  * Parameters for `playlist.deselectAll`.
  * Clear the selection of a playlist.
  */
 export interface PlaylistDeselectAllParams {
     /** Index of the playlist; omitted, the active playlist. An index past the last playlist fails with `INVALID_INDEX`; with this omitted and no active playlist the call fails with `NO_ACTIVE_ITEM`. */
     playlist?: number;
-    /** A playlist's GUID instead of its index, written with braces as `playlist.getAll` and every result or event that names a playlist report it; either hex case is accepted. It keeps naming the same playlist while other playlists are added, removed or reordered, which an index does not. Giving both this and the index, or a malformed GUID, fails with `INVALID_PARAMS`. A playlist that no longer exists fails with `NOT_FOUND`; the call never falls back to another playlist. A malformed GUID and a missing playlist carry the GUID given as `details.playlistGuid`. */
+    /** Persistent unique identifier of a playlist (bracketed GUID, case-insensitive), used in place of a mutable index. Mutually exclusive with `playlist`; passing both or an invalid format fails with `INVALID_PARAMS`. Fails with `NOT_FOUND` if the playlist does not exist, never falling back. Invalid-format and not-found failures return the given GUID in `details.playlistGuid`. */
     playlistGuid?: string;
 }
 
@@ -2996,7 +3350,7 @@ export interface PlaylistDeselectAllParams {
 export interface PlaylistDuplicateParams {
     /** Index of the playlist to copy; omitted, the active playlist. An index past the last playlist fails with `INVALID_INDEX`; with this omitted and no active playlist the call fails with `NO_ACTIVE_ITEM`. */
     playlist?: number;
-    /** A playlist's GUID instead of its index, written with braces as `playlist.getAll` and every result or event that names a playlist report it; either hex case is accepted. It keeps naming the same playlist while other playlists are added, removed or reordered, which an index does not. Giving both this and the index, or a malformed GUID, fails with `INVALID_PARAMS`. A playlist that no longer exists fails with `NOT_FOUND`; the call never falls back to another playlist. A malformed GUID and a missing playlist carry the GUID given as `details.playlistGuid`. */
+    /** Persistent unique identifier of a playlist (bracketed GUID, case-insensitive), used in place of a mutable index. Mutually exclusive with `playlist`; passing both or an invalid format fails with `INVALID_PARAMS`. Fails with `NOT_FOUND` if the playlist does not exist, never falling back. Invalid-format and not-found failures return the given GUID in `details.playlistGuid`. */
     playlistGuid?: string;
     /** Name of the copy; omitted or empty, the original name followed by ` (Copy)`. */
     name?: string;
@@ -3009,10 +3363,12 @@ export interface PlaylistDuplicateParams {
 export interface PlaylistFocusTrackParams {
     /** Index of the playlist; omitted, the active playlist. An index past the last playlist fails with `INVALID_INDEX`; with this omitted and no active playlist the call fails with `NO_ACTIVE_ITEM`. */
     playlist?: number;
-    /** A playlist's GUID instead of its index, written with braces as `playlist.getAll` and every result or event that names a playlist report it; either hex case is accepted. It keeps naming the same playlist while other playlists are added, removed or reordered, which an index does not. Giving both this and the index, or a malformed GUID, fails with `INVALID_PARAMS`. A playlist that no longer exists fails with `NOT_FOUND`; the call never falls back to another playlist. A malformed GUID and a missing playlist carry the GUID given as `details.playlistGuid`. */
+    /** Persistent unique identifier of a playlist (bracketed GUID, case-insensitive), used in place of a mutable index. Mutually exclusive with `playlist`; passing both or an invalid format fails with `INVALID_PARAMS`. Fails with `NOT_FOUND` if the playlist does not exist, never falling back. Invalid-format and not-found failures return the given GUID in `details.playlistGuid`. */
     playlistGuid?: string;
     /** Row to focus; omitted or negative, the playlist loses its focus. */
     index?: number;
+    /** Expected content version for optimistic concurrency control. When mismatched, mutations are aborted with `STALE_TARGET` (`details.current` carries current version). Omitted, no check is made. */
+    expectedVersion?: string;
 }
 
 /**
@@ -3028,24 +3384,35 @@ export type PlaylistGetActiveParams = Record<string, never>;
 export type PlaylistGetAllParams = Record<string, never>;
 
 /**
+ * Parameters for `playlist.getAutoplaylistConfig`.
+ * Read the configuration of an autoplaylist managed by this component. Specify exactly one target. Ordinary playlists and playlists from other providers fail with `NOT_SUPPORTED` (with `details.reason`).
+ */
+export interface PlaylistGetAutoplaylistConfigParams {
+    /** Playlist index; required unless playlistGuid is given. No active-playlist default. */
+    playlist?: number;
+    /** Persistent unique identifier of a playlist (bracketed GUID, case-insensitive), used in place of a mutable index. Mutually exclusive with `playlist`; passing both or an invalid format fails with `INVALID_PARAMS`. Fails with `NOT_FOUND` if the playlist does not exist, never falling back. Invalid-format and not-found failures return the given GUID in `details.playlistGuid`. */
+    playlistGuid?: string;
+}
+
+/**
  * Parameters for `playlist.getAutoplaylistInfo`.
- * Describe a playlist's autoplaylist status.
+ * Describe a playlist's autoplaylist status and native editor availability without opening UI. Provider query failures fail with `OPERATION_FAILED`; an unknown capability is not a failure.
  */
 export interface PlaylistGetAutoplaylistInfoParams {
     /** Index of the playlist; omitted, the active playlist. An index past the last playlist fails with `INVALID_INDEX`; with this omitted and no active playlist the call fails with `NO_ACTIVE_ITEM`. */
     playlist?: number;
-    /** A playlist's GUID instead of its index, written with braces as `playlist.getAll` and every result or event that names a playlist report it; either hex case is accepted. It keeps naming the same playlist while other playlists are added, removed or reordered, which an index does not. Giving both this and the index, or a malformed GUID, fails with `INVALID_PARAMS`. A playlist that no longer exists fails with `NOT_FOUND`; the call never falls back to another playlist. A malformed GUID and a missing playlist carry the GUID given as `details.playlistGuid`. */
+    /** Persistent unique identifier of a playlist (bracketed GUID, case-insensitive), used in place of a mutable index. Mutually exclusive with `playlist`; passing both or an invalid format fails with `INVALID_PARAMS`. Fails with `NOT_FOUND` if the playlist does not exist, never falling back. Invalid-format and not-found failures return the given GUID in `details.playlistGuid`. */
     playlistGuid?: string;
 }
 
 /**
  * Parameters for `playlist.getAutoplaylistQuery`.
- * Describe a playlist's autoplaylist status, as `playlist.getAutoplaylistInfo` does. foobar2000 does not expose the query of an autoplaylist, so `query` is always `null`.
+ * Describe a playlist's autoplaylist status without editor capability fields. foobar2000 does not expose the query of an autoplaylist, so `query` is always `null`.
  */
 export interface PlaylistGetAutoplaylistQueryParams {
     /** Index of the playlist; omitted, the active playlist. An index past the last playlist fails with `INVALID_INDEX`; with this omitted and no active playlist the call fails with `NO_ACTIVE_ITEM`. */
     playlist?: number;
-    /** A playlist's GUID instead of its index, written with braces as `playlist.getAll` and every result or event that names a playlist report it; either hex case is accepted. It keeps naming the same playlist while other playlists are added, removed or reordered, which an index does not. Giving both this and the index, or a malformed GUID, fails with `INVALID_PARAMS`. A playlist that no longer exists fails with `NOT_FOUND`; the call never falls back to another playlist. A malformed GUID and a missing playlist carry the GUID given as `details.playlistGuid`. */
+    /** Persistent unique identifier of a playlist (bracketed GUID, case-insensitive), used in place of a mutable index. Mutually exclusive with `playlist`; passing both or an invalid format fails with `INVALID_PARAMS`. Fails with `NOT_FOUND` if the playlist does not exist, never falling back. Invalid-format and not-found failures return the given GUID in `details.playlistGuid`. */
     playlistGuid?: string;
 }
 
@@ -3068,7 +3435,7 @@ export type PlaylistGetCountParams = Record<string, never>;
 export interface PlaylistGetFocusedTrackParams {
     /** Index of the playlist; omitted, the active playlist. */
     playlist?: number;
-    /** A playlist's GUID instead of its index, written as the results and events that name a playlist report it, for a query that answers an empty result for a missing playlist: a GUID no playlist has answers the same way. Either hex case is accepted. Giving both this and the index, or a malformed GUID, fails with `INVALID_PARAMS`. */
+    /** Persistent unique identifier of a playlist, used in place of an index. For read queries where a missing target returns an empty result instead of failing. Mutually exclusive with `playlist`; passing both or an invalid format fails with `INVALID_PARAMS`. */
     playlistGuid?: string;
 }
 
@@ -3079,7 +3446,7 @@ export interface PlaylistGetFocusedTrackParams {
 export interface PlaylistGetFocusTrackParams {
     /** Index of the playlist; omitted, the active playlist. An index past the last playlist fails with `INVALID_INDEX`; with this omitted and no active playlist the call fails with `NO_ACTIVE_ITEM`. */
     playlist?: number;
-    /** A playlist's GUID instead of its index, written with braces as `playlist.getAll` and every result or event that names a playlist report it; either hex case is accepted. It keeps naming the same playlist while other playlists are added, removed or reordered, which an index does not. Giving both this and the index, or a malformed GUID, fails with `INVALID_PARAMS`. A playlist that no longer exists fails with `NOT_FOUND`; the call never falls back to another playlist. A malformed GUID and a missing playlist carry the GUID given as `details.playlistGuid`. */
+    /** Persistent unique identifier of a playlist (bracketed GUID, case-insensitive), used in place of a mutable index. Mutually exclusive with `playlist`; passing both or an invalid format fails with `INVALID_PARAMS`. Fails with `NOT_FOUND` if the playlist does not exist, never falling back. Invalid-format and not-found failures return the given GUID in `details.playlistGuid`. */
     playlistGuid?: string;
 }
 
@@ -3092,7 +3459,7 @@ export interface PlaylistGetGroupRunsParams {
     patterns: string[];
     /** Playlist index; omitted, the active playlist. */
     playlist?: number;
-    /** A playlist's GUID instead of its index, written with braces as `playlist.getAll` and every result or event that names a playlist report it; either hex case is accepted. It keeps naming the same playlist while other playlists are added, removed or reordered, which an index does not. Giving both this and the index, or a malformed GUID, fails with `INVALID_PARAMS`. A playlist that no longer exists fails with `NOT_FOUND`; the call never falls back to another playlist. A malformed GUID and a missing playlist carry the GUID given as `details.playlistGuid`. */
+    /** Persistent unique identifier of a playlist (bracketed GUID, case-insensitive), used in place of a mutable index. Mutually exclusive with `playlist`; passing both or an invalid format fails with `INVALID_PARAMS`. Fails with `NOT_FOUND` if the playlist does not exist, never falling back. Invalid-format and not-found failures return the given GUID in `details.playlistGuid`. */
     playlistGuid?: string;
 }
 
@@ -3103,7 +3470,7 @@ export interface PlaylistGetGroupRunsParams {
 export interface PlaylistGetLockInfoParams {
     /** Index of the playlist; omitted, the active playlist. An index past the last playlist fails with `INVALID_INDEX`; with this omitted and no active playlist the call fails with `NO_ACTIVE_ITEM`. */
     playlist?: number;
-    /** A playlist's GUID instead of its index, written with braces as `playlist.getAll` and every result or event that names a playlist report it; either hex case is accepted. It keeps naming the same playlist while other playlists are added, removed or reordered, which an index does not. Giving both this and the index, or a malformed GUID, fails with `INVALID_PARAMS`. A playlist that no longer exists fails with `NOT_FOUND`; the call never falls back to another playlist. A malformed GUID and a missing playlist carry the GUID given as `details.playlistGuid`. */
+    /** Persistent unique identifier of a playlist (bracketed GUID, case-insensitive), used in place of a mutable index. Mutually exclusive with `playlist`; passing both or an invalid format fails with `INVALID_PARAMS`. Fails with `NOT_FOUND` if the playlist does not exist, never falling back. Invalid-format and not-found failures return the given GUID in `details.playlistGuid`. */
     playlistGuid?: string;
 }
 
@@ -3116,7 +3483,7 @@ export interface PlaylistGetMatchingRowsParams {
     query: string;
     /** Playlist index; omitted, the active playlist. */
     playlist?: number;
-    /** A playlist's GUID instead of its index, written with braces as `playlist.getAll` and every result or event that names a playlist report it; either hex case is accepted. It keeps naming the same playlist while other playlists are added, removed or reordered, which an index does not. Giving both this and the index, or a malformed GUID, fails with `INVALID_PARAMS`. A playlist that no longer exists fails with `NOT_FOUND`; the call never falls back to another playlist. A malformed GUID and a missing playlist carry the GUID given as `details.playlistGuid`. */
+    /** Persistent unique identifier of a playlist (bracketed GUID, case-insensitive), used in place of a mutable index. Mutually exclusive with `playlist`; passing both or an invalid format fails with `INVALID_PARAMS`. Fails with `NOT_FOUND` if the playlist does not exist, never falling back. Invalid-format and not-found failures return the given GUID in `details.playlistGuid`. */
     playlistGuid?: string;
 }
 
@@ -3133,7 +3500,7 @@ export type PlaylistGetPlayingParams = Record<string, never>;
 export interface PlaylistGetSelectedTracksParams {
     /** Playlist index; omitted, the active playlist. */
     playlist?: number;
-    /** A playlist's GUID instead of its index, written with braces as `playlist.getAll` and every result or event that names a playlist report it; either hex case is accepted. It keeps naming the same playlist while other playlists are added, removed or reordered, which an index does not. Giving both this and the index, or a malformed GUID, fails with `INVALID_PARAMS`. A playlist that no longer exists fails with `NOT_FOUND`; the call never falls back to another playlist. A malformed GUID and a missing playlist carry the GUID given as `details.playlistGuid`. */
+    /** Persistent unique identifier of a playlist (bracketed GUID, case-insensitive), used in place of a mutable index. Mutually exclusive with `playlist`; passing both or an invalid format fails with `INVALID_PARAMS`. Fails with `NOT_FOUND` if the playlist does not exist, never falling back. Invalid-format and not-found failures return the given GUID in `details.playlistGuid`. */
     playlistGuid?: string;
 }
 
@@ -3144,7 +3511,7 @@ export interface PlaylistGetSelectedTracksParams {
 export interface PlaylistGetSelectionParams {
     /** Index of the playlist; omitted, the active playlist. An index past the last playlist fails with `INVALID_INDEX`; with this omitted and no active playlist the call fails with `NO_ACTIVE_ITEM`. */
     playlist?: number;
-    /** A playlist's GUID instead of its index, written with braces as `playlist.getAll` and every result or event that names a playlist report it; either hex case is accepted. It keeps naming the same playlist while other playlists are added, removed or reordered, which an index does not. Giving both this and the index, or a malformed GUID, fails with `INVALID_PARAMS`. A playlist that no longer exists fails with `NOT_FOUND`; the call never falls back to another playlist. A malformed GUID and a missing playlist carry the GUID given as `details.playlistGuid`. */
+    /** Persistent unique identifier of a playlist (bracketed GUID, case-insensitive), used in place of a mutable index. Mutually exclusive with `playlist`; passing both or an invalid format fails with `INVALID_PARAMS`. Fails with `NOT_FOUND` if the playlist does not exist, never falling back. Invalid-format and not-found failures return the given GUID in `details.playlistGuid`. */
     playlistGuid?: string;
 }
 
@@ -3155,7 +3522,7 @@ export interface PlaylistGetSelectionParams {
 export interface PlaylistGetTrackCountParams {
     /** Index of the playlist; omitted, the active playlist. */
     playlist?: number;
-    /** A playlist's GUID instead of its index, written as the results and events that name a playlist report it, for a query that answers an empty result for a missing playlist: a GUID no playlist has answers the same way. Either hex case is accepted. Giving both this and the index, or a malformed GUID, fails with `INVALID_PARAMS`. */
+    /** Persistent unique identifier of a playlist, used in place of an index. For read queries where a missing target returns an empty result instead of failing. Mutually exclusive with `playlist`; passing both or an invalid format fails with `INVALID_PARAMS`. */
     playlistGuid?: string;
 }
 
@@ -3166,7 +3533,7 @@ export interface PlaylistGetTrackCountParams {
 export interface PlaylistGetTracksParams {
     /** Playlist index; omitted, the active playlist. */
     playlist?: number;
-    /** A playlist's GUID instead of its index, written as the results and events that name a playlist report it, for a query that answers an empty result for a missing playlist: a GUID no playlist has answers the same way. Either hex case is accepted. Giving both this and the index, or a malformed GUID, fails with `INVALID_PARAMS`. */
+    /** Persistent unique identifier of a playlist, used in place of an index. For read queries where a missing target returns an empty result instead of failing. Mutually exclusive with `playlist`; passing both or an invalid format fails with `INVALID_PARAMS`. */
     playlistGuid?: string;
     /**
      * First row to return.
@@ -3180,7 +3547,7 @@ export interface PlaylistGetTracksParams {
     count?: number;
     /** Extra columns, each a Title Formatting pattern under a name of your choosing; every row carries their values under `formats`, in projected rows too. */
     formats?: Record<string, string>;
-    /** Keys each row carries besides `index`; omitted, the whole row. The names are those `library.query` takes; an unknown name fails with `INVALID_PARAMS` and is listed in `details.unknownFields`. */
+    /** Keys each row carries besides `index`; omitted, the whole row. The names are those `library.query` takes; an unknown name fails with `INVALID_PARAMS` and is listed in `details.unknownFields`. The optional `albumId` is omitted when unavailable, even when requested. */
     fields?: string[];
 }
 
@@ -3193,7 +3560,7 @@ export interface PlaylistGetTracksAtParams {
     rows: number[];
     /** Playlist index; omitted, the active playlist. */
     playlist?: number;
-    /** A playlist's GUID instead of its index, written as the results and events that name a playlist report it, for a query that answers an empty result for a missing playlist: a GUID no playlist has answers the same way. Either hex case is accepted. Giving both this and the index, or a malformed GUID, fails with `INVALID_PARAMS`. */
+    /** Persistent unique identifier of a playlist, used in place of an index. For read queries where a missing target returns an empty result instead of failing. Mutually exclusive with `playlist`; passing both or an invalid format fails with `INVALID_PARAMS`. */
     playlistGuid?: string;
     /** Extra columns, as in `playlist.getTracks`. */
     formats?: Record<string, string>;
@@ -3208,7 +3575,7 @@ export interface PlaylistGetTracksAtParams {
 export interface PlaylistInsertTracksParams {
     /** Index of the playlist; omitted, the active playlist. An index past the last playlist fails with `INVALID_INDEX`; with this omitted and no active playlist the call fails with `NO_ACTIVE_ITEM`. */
     playlist?: number;
-    /** A playlist's GUID instead of its index, written with braces as `playlist.getAll` and every result or event that names a playlist report it; either hex case is accepted. It keeps naming the same playlist while other playlists are added, removed or reordered, which an index does not. Giving both this and the index, or a malformed GUID, fails with `INVALID_PARAMS`. A playlist that no longer exists fails with `NOT_FOUND`; the call never falls back to another playlist. A malformed GUID and a missing playlist carry the GUID given as `details.playlistGuid`. */
+    /** Persistent unique identifier of a playlist (bracketed GUID, case-insensitive), used in place of a mutable index. Mutually exclusive with `playlist`; passing both or an invalid format fails with `INVALID_PARAMS`. Fails with `NOT_FOUND` if the playlist does not exist, never falling back. Invalid-format and not-found failures return the given GUID in `details.playlistGuid`. */
     playlistGuid?: string;
     /**
      * Row before which the tracks go; past the last row, they are appended.
@@ -3217,16 +3584,18 @@ export interface PlaylistInsertTracksParams {
     position?: number;
     /** Tracks to insert: each a path with an optional `|subsong:N` suffix, or `{ path, subsong }`. */
     handles: JsonValue[];
+    /** Expected content version for optimistic concurrency control. When mismatched, mutations are aborted with `STALE_TARGET` (`details.current` carries current version). Omitted, no check is made. */
+    expectedVersion?: string;
 }
 
 /**
  * Parameters for `playlist.isAutoplaylist`.
- * Report whether a playlist is an autoplaylist: one foobar2000 fills from a library query, or one carrying a lock whose name contains `Auto` (autoplaylists that other components manage).
+ * Report whether a playlist has an autoplaylist-manager client, including third-party clients, or is recognized by the compatible lock-name rule containing `Auto`.
  */
 export interface PlaylistIsAutoplaylistParams {
     /** Index of the playlist; omitted, the active playlist. An index past the last playlist fails with `INVALID_INDEX`; with this omitted and no active playlist the call fails with `NO_ACTIVE_ITEM`. */
     playlist?: number;
-    /** A playlist's GUID instead of its index, written with braces as `playlist.getAll` and every result or event that names a playlist report it; either hex case is accepted. It keeps naming the same playlist while other playlists are added, removed or reordered, which an index does not. Giving both this and the index, or a malformed GUID, fails with `INVALID_PARAMS`. A playlist that no longer exists fails with `NOT_FOUND`; the call never falls back to another playlist. A malformed GUID and a missing playlist carry the GUID given as `details.playlistGuid`. */
+    /** Persistent unique identifier of a playlist (bracketed GUID, case-insensitive), used in place of a mutable index. Mutually exclusive with `playlist`; passing both or an invalid format fails with `INVALID_PARAMS`. Fails with `NOT_FOUND` if the playlist does not exist, never falling back. Invalid-format and not-found failures return the given GUID in `details.playlistGuid`. */
     playlistGuid?: string;
 }
 
@@ -3237,7 +3606,7 @@ export interface PlaylistIsAutoplaylistParams {
 export interface PlaylistIsLockedParams {
     /** Index of the playlist; omitted, the active playlist. With this omitted and no active playlist the call fails with `NO_ACTIVE_ITEM`. */
     playlist?: number;
-    /** A playlist's GUID instead of its index, written with braces as `playlist.getAll` and every result or event that names a playlist report it; either hex case is accepted. It keeps naming the same playlist while other playlists are added, removed or reordered, which an index does not. Giving both this and the index, or a malformed GUID, fails with `INVALID_PARAMS`. A playlist that no longer exists fails with `NOT_FOUND`; the call never falls back to another playlist. A malformed GUID and a missing playlist carry the GUID given as `details.playlistGuid`. */
+    /** Persistent unique identifier of a playlist (bracketed GUID, case-insensitive), used in place of a mutable index. Mutually exclusive with `playlist`; passing both or an invalid format fails with `INVALID_PARAMS`. Fails with `NOT_FOUND` if the playlist does not exist, never falling back. Invalid-format and not-found failures return the given GUID in `details.playlistGuid`. */
     playlistGuid?: string;
 }
 
@@ -3248,22 +3617,24 @@ export interface PlaylistIsLockedParams {
 export interface PlaylistMoveTracksParams {
     /** Index of the playlist; omitted, the active playlist. An index past the last playlist fails with `INVALID_INDEX`; with this omitted and no active playlist the call fails with `NO_ACTIVE_ITEM`. */
     playlist?: number;
-    /** A playlist's GUID instead of its index, written with braces as `playlist.getAll` and every result or event that names a playlist report it; either hex case is accepted. It keeps naming the same playlist while other playlists are added, removed or reordered, which an index does not. Giving both this and the index, or a malformed GUID, fails with `INVALID_PARAMS`. A playlist that no longer exists fails with `NOT_FOUND`; the call never falls back to another playlist. A malformed GUID and a missing playlist carry the GUID given as `details.playlistGuid`. */
+    /** Persistent unique identifier of a playlist (bracketed GUID, case-insensitive), used in place of a mutable index. Mutually exclusive with `playlist`; passing both or an invalid format fails with `INVALID_PARAMS`. Fails with `NOT_FOUND` if the playlist does not exist, never falling back. Invalid-format and not-found failures return the given GUID in `details.playlistGuid`. */
     playlistGuid?: string;
     /** Rows to move; they replace the current selection first. Omitted or empty, the current selection moves. */
     items?: number[];
     /** How many positions to move: negative towards the top, positive towards the bottom. */
     delta: number;
+    /** Expected content version for optimistic concurrency control. When mismatched, mutations are aborted with `STALE_TARGET` (`details.current` carries current version). Omitted, no check is made. */
+    expectedVersion?: string;
 }
 
 /**
  * Parameters for `playlist.playTrack`.
- * Play a row of a playlist, as double-clicking it does. A row past the last one fails with `INVALID_INDEX`.
+ * Play a row of a playlist, as double-clicking it does. A row past the last one fails with `INVALID_INDEX`. With `deferred`, `expectedVersion` is compared again when playback starts; if the rows changed by then, nothing plays.
  */
 export interface PlaylistPlayTrackParams {
     /** Index of the playlist; omitted, the active playlist. An index past the last playlist fails with `INVALID_INDEX`; with this omitted and no active playlist the call fails with `NO_ACTIVE_ITEM`. */
     playlist?: number;
-    /** A playlist's GUID instead of its index, written with braces as `playlist.getAll` and every result or event that names a playlist report it; either hex case is accepted. It keeps naming the same playlist while other playlists are added, removed or reordered, which an index does not. Giving both this and the index, or a malformed GUID, fails with `INVALID_PARAMS`. A playlist that no longer exists fails with `NOT_FOUND`; the call never falls back to another playlist. A malformed GUID and a missing playlist carry the GUID given as `details.playlistGuid`. */
+    /** Persistent unique identifier of a playlist (bracketed GUID, case-insensitive), used in place of a mutable index. Mutually exclusive with `playlist`; passing both or an invalid format fails with `INVALID_PARAMS`. Fails with `NOT_FOUND` if the playlist does not exist, never falling back. Invalid-format and not-found failures return the given GUID in `details.playlistGuid`. */
     playlistGuid?: string;
     /**
      * Row to play.
@@ -3280,6 +3651,8 @@ export interface PlaylistPlayTrackParams {
      * @default false
      */
     muted?: boolean;
+    /** Expected content version for optimistic concurrency control. When mismatched, mutations are aborted with `STALE_TARGET` (`details.current` carries current version). Omitted, no check is made. */
+    expectedVersion?: string;
 }
 
 /**
@@ -3289,7 +3662,7 @@ export interface PlaylistPlayTrackParams {
 export interface PlaylistRedoParams {
     /** Index of the playlist; omitted, the active playlist. An index past the last playlist fails with `INVALID_INDEX`; with this omitted and no active playlist the call fails with `NO_ACTIVE_ITEM`. */
     playlist?: number;
-    /** A playlist's GUID instead of its index, written with braces as `playlist.getAll` and every result or event that names a playlist report it; either hex case is accepted. It keeps naming the same playlist while other playlists are added, removed or reordered, which an index does not. Giving both this and the index, or a malformed GUID, fails with `INVALID_PARAMS`. A playlist that no longer exists fails with `NOT_FOUND`; the call never falls back to another playlist. A malformed GUID and a missing playlist carry the GUID given as `details.playlistGuid`. */
+    /** Persistent unique identifier of a playlist (bracketed GUID, case-insensitive), used in place of a mutable index. Mutually exclusive with `playlist`; passing both or an invalid format fails with `INVALID_PARAMS`. Fails with `NOT_FOUND` if the playlist does not exist, never falling back. Invalid-format and not-found failures return the given GUID in `details.playlistGuid`. */
     playlistGuid?: string;
 }
 
@@ -3300,18 +3673,18 @@ export interface PlaylistRedoParams {
 export interface PlaylistRemoveParams {
     /** Index of the playlist to delete; omitted, the active playlist. An index past the last playlist fails with `INVALID_INDEX`; with this omitted and no active playlist the call fails with `NO_ACTIVE_ITEM`. */
     playlist?: number;
-    /** A playlist's GUID instead of its index, written with braces as `playlist.getAll` and every result or event that names a playlist report it; either hex case is accepted. It keeps naming the same playlist while other playlists are added, removed or reordered, which an index does not. Giving both this and the index, or a malformed GUID, fails with `INVALID_PARAMS`. A playlist that no longer exists fails with `NOT_FOUND`; the call never falls back to another playlist. A malformed GUID and a missing playlist carry the GUID given as `details.playlistGuid`. */
+    /** Persistent unique identifier of a playlist (bracketed GUID, case-insensitive), used in place of a mutable index. Mutually exclusive with `playlist`; passing both or an invalid format fails with `INVALID_PARAMS`. Fails with `NOT_FOUND` if the playlist does not exist, never falling back. Invalid-format and not-found failures return the given GUID in `details.playlistGuid`. */
     playlistGuid?: string;
 }
 
 /**
  * Parameters for `playlist.removeAutoplaylist`.
- * Turn an autoplaylist back into an ordinary playlist that keeps its current tracks. An autoplaylist that another component manages cannot be released this way: the call succeeds with `source` `dui` and changes nothing, and `playlist.remove` deletes it. A playlist that is not an autoplaylist fails with `NOT_FOUND`.
+ * Release an autoplaylist-manager client, including a third-party client, keeping the current tracks. A compatible automatic-playlist lock without a manager client cannot be released this way: the call succeeds with `source` `dui` and changes nothing; `playlist.remove` deletes that playlist. A playlist that is not an autoplaylist fails with `NOT_FOUND`.
  */
 export interface PlaylistRemoveAutoplaylistParams {
     /** Index of the playlist; omitted, the active playlist. An index past the last playlist fails with `INVALID_INDEX`; with this omitted and no active playlist the call fails with `NO_ACTIVE_ITEM`. */
     playlist?: number;
-    /** A playlist's GUID instead of its index, written with braces as `playlist.getAll` and every result or event that names a playlist report it; either hex case is accepted. It keeps naming the same playlist while other playlists are added, removed or reordered, which an index does not. Giving both this and the index, or a malformed GUID, fails with `INVALID_PARAMS`. A playlist that no longer exists fails with `NOT_FOUND`; the call never falls back to another playlist. A malformed GUID and a missing playlist carry the GUID given as `details.playlistGuid`. */
+    /** Persistent unique identifier of a playlist (bracketed GUID, case-insensitive), used in place of a mutable index. Mutually exclusive with `playlist`; passing both or an invalid format fails with `INVALID_PARAMS`. Fails with `NOT_FOUND` if the playlist does not exist, never falling back. Invalid-format and not-found failures return the given GUID in `details.playlistGuid`. */
     playlistGuid?: string;
 }
 
@@ -3322,7 +3695,7 @@ export interface PlaylistRemoveAutoplaylistParams {
 export interface PlaylistRemoveSelectedTracksParams {
     /** Index of the playlist; omitted, the active playlist. An index past the last playlist fails with `INVALID_INDEX`; with this omitted and no active playlist the call fails with `NO_ACTIVE_ITEM`. */
     playlist?: number;
-    /** A playlist's GUID instead of its index, written with braces as `playlist.getAll` and every result or event that names a playlist report it; either hex case is accepted. It keeps naming the same playlist while other playlists are added, removed or reordered, which an index does not. Giving both this and the index, or a malformed GUID, fails with `INVALID_PARAMS`. A playlist that no longer exists fails with `NOT_FOUND`; the call never falls back to another playlist. A malformed GUID and a missing playlist carry the GUID given as `details.playlistGuid`. */
+    /** Persistent unique identifier of a playlist (bracketed GUID, case-insensitive), used in place of a mutable index. Mutually exclusive with `playlist`; passing both or an invalid format fails with `INVALID_PARAMS`. Fails with `NOT_FOUND` if the playlist does not exist, never falling back. Invalid-format and not-found failures return the given GUID in `details.playlistGuid`. */
     playlistGuid?: string;
 }
 
@@ -3333,10 +3706,12 @@ export interface PlaylistRemoveSelectedTracksParams {
 export interface PlaylistRemoveTracksParams {
     /** Index of the playlist; omitted, the active playlist. An index past the last playlist fails with `INVALID_INDEX`; with this omitted and no active playlist the call fails with `NO_ACTIVE_ITEM`. */
     playlist?: number;
-    /** A playlist's GUID instead of its index, written with braces as `playlist.getAll` and every result or event that names a playlist report it; either hex case is accepted. It keeps naming the same playlist while other playlists are added, removed or reordered, which an index does not. Giving both this and the index, or a malformed GUID, fails with `INVALID_PARAMS`. A playlist that no longer exists fails with `NOT_FOUND`; the call never falls back to another playlist. A malformed GUID and a missing playlist carry the GUID given as `details.playlistGuid`. */
+    /** Persistent unique identifier of a playlist (bracketed GUID, case-insensitive), used in place of a mutable index. Mutually exclusive with `playlist`; passing both or an invalid format fails with `INVALID_PARAMS`. Fails with `NOT_FOUND` if the playlist does not exist, never falling back. Invalid-format and not-found failures return the given GUID in `details.playlistGuid`. */
     playlistGuid?: string;
     /** Rows to remove. */
     items: number[];
+    /** Expected content version for optimistic concurrency control. When mismatched, mutations are aborted with `STALE_TARGET` (`details.current` carries current version). Omitted, no check is made. */
+    expectedVersion?: string;
 }
 
 /**
@@ -3346,7 +3721,7 @@ export interface PlaylistRemoveTracksParams {
 export interface PlaylistRenameParams {
     /** Index of the playlist to rename. An index past the last playlist fails with `INVALID_INDEX`. Give this or `playlistGuid`; with neither the call fails with `INVALID_PARAMS`. */
     playlist?: number;
-    /** A playlist's GUID instead of its index, written with braces as `playlist.getAll` and every result or event that names a playlist report it; either hex case is accepted. It keeps naming the same playlist while other playlists are added, removed or reordered, which an index does not. Giving both this and the index, or a malformed GUID, fails with `INVALID_PARAMS`. A playlist that no longer exists fails with `NOT_FOUND`; the call never falls back to another playlist. A malformed GUID and a missing playlist carry the GUID given as `details.playlistGuid`. */
+    /** Persistent unique identifier of a playlist (bracketed GUID, case-insensitive), used in place of a mutable index. Mutually exclusive with `playlist`; passing both or an invalid format fails with `INVALID_PARAMS`. Fails with `NOT_FOUND` if the playlist does not exist, never falling back. Invalid-format and not-found failures return the given GUID in `details.playlistGuid`. */
     playlistGuid?: string;
     /** New name. */
     name: string;
@@ -3359,10 +3734,12 @@ export interface PlaylistRenameParams {
 export interface PlaylistReorderParams {
     /** Index of the playlist; omitted, the active playlist. An index past the last playlist fails with `INVALID_INDEX`; with this omitted and no active playlist the call fails with `NO_ACTIVE_ITEM`. */
     playlist?: number;
-    /** A playlist's GUID instead of its index, written with braces as `playlist.getAll` and every result or event that names a playlist report it; either hex case is accepted. It keeps naming the same playlist while other playlists are added, removed or reordered, which an index does not. Giving both this and the index, or a malformed GUID, fails with `INVALID_PARAMS`. A playlist that no longer exists fails with `NOT_FOUND`; the call never falls back to another playlist. A malformed GUID and a missing playlist carry the GUID given as `details.playlistGuid`. */
+    /** Persistent unique identifier of a playlist (bracketed GUID, case-insensitive), used in place of a mutable index. Mutually exclusive with `playlist`; passing both or an invalid format fails with `INVALID_PARAMS`. Fails with `NOT_FOUND` if the playlist does not exist, never falling back. Invalid-format and not-found failures return the given GUID in `details.playlistGuid`. */
     playlistGuid?: string;
     /** For each new row, the current row of the track that goes there; every row exactly once. */
     newOrder: number[];
+    /** Expected content version for optimistic concurrency control. When mismatched, mutations are aborted with `STALE_TARGET` (`details.current` carries current version). Omitted, no check is made. */
+    expectedVersion?: string;
 }
 
 /**
@@ -3383,7 +3760,7 @@ export interface PlaylistReorderPlaylistsParams {
 export interface PlaylistReplaceAllAndPlayParams {
     /** Index of the playlist; omitted, the active playlist. An index past the last playlist fails with `INVALID_INDEX`; with this omitted and no active playlist the call fails with `NO_ACTIVE_ITEM`. */
     playlist?: number;
-    /** A playlist's GUID instead of its index, written with braces as `playlist.getAll` and every result or event that names a playlist report it; either hex case is accepted. It keeps naming the same playlist while other playlists are added, removed or reordered, which an index does not. Giving both this and the index, or a malformed GUID, fails with `INVALID_PARAMS`. A playlist that no longer exists fails with `NOT_FOUND`; the call never falls back to another playlist. A malformed GUID and a missing playlist carry the GUID given as `details.playlistGuid`. */
+    /** Persistent unique identifier of a playlist (bracketed GUID, case-insensitive), used in place of a mutable index. Mutually exclusive with `playlist`; passing both or an invalid format fails with `INVALID_PARAMS`. Fails with `NOT_FOUND` if the playlist does not exist, never falling back. Invalid-format and not-found failures return the given GUID in `details.playlistGuid`. */
     playlistGuid?: string;
     /** The new content: files, folders or URLs. */
     paths: string[];
@@ -3411,7 +3788,7 @@ export interface PlaylistReplaceAllAndPlayParams {
 export interface PlaylistReverseParams {
     /** Index of the playlist; omitted, the active playlist. An index past the last playlist fails with `INVALID_INDEX`; with this omitted and no active playlist the call fails with `NO_ACTIVE_ITEM`. */
     playlist?: number;
-    /** A playlist's GUID instead of its index, written with braces as `playlist.getAll` and every result or event that names a playlist report it; either hex case is accepted. It keeps naming the same playlist while other playlists are added, removed or reordered, which an index does not. Giving both this and the index, or a malformed GUID, fails with `INVALID_PARAMS`. A playlist that no longer exists fails with `NOT_FOUND`; the call never falls back to another playlist. A malformed GUID and a missing playlist carry the GUID given as `details.playlistGuid`. */
+    /** Persistent unique identifier of a playlist (bracketed GUID, case-insensitive), used in place of a mutable index. Mutually exclusive with `playlist`; passing both or an invalid format fails with `INVALID_PARAMS`. Fails with `NOT_FOUND` if the playlist does not exist, never falling back. Invalid-format and not-found failures return the given GUID in `details.playlistGuid`. */
     playlistGuid?: string;
 }
 
@@ -3422,7 +3799,7 @@ export interface PlaylistReverseParams {
 export interface PlaylistSelectAllParams {
     /** Index of the playlist; omitted, the active playlist. An index past the last playlist fails with `INVALID_INDEX`; with this omitted and no active playlist the call fails with `NO_ACTIVE_ITEM`. */
     playlist?: number;
-    /** A playlist's GUID instead of its index, written with braces as `playlist.getAll` and every result or event that names a playlist report it; either hex case is accepted. It keeps naming the same playlist while other playlists are added, removed or reordered, which an index does not. Giving both this and the index, or a malformed GUID, fails with `INVALID_PARAMS`. A playlist that no longer exists fails with `NOT_FOUND`; the call never falls back to another playlist. A malformed GUID and a missing playlist carry the GUID given as `details.playlistGuid`. */
+    /** Persistent unique identifier of a playlist (bracketed GUID, case-insensitive), used in place of a mutable index. Mutually exclusive with `playlist`; passing both or an invalid format fails with `INVALID_PARAMS`. Fails with `NOT_FOUND` if the playlist does not exist, never falling back. Invalid-format and not-found failures return the given GUID in `details.playlistGuid`. */
     playlistGuid?: string;
 }
 
@@ -3433,8 +3810,27 @@ export interface PlaylistSelectAllParams {
 export interface PlaylistSetActiveParams {
     /** Index of the playlist to activate. Give this or `playlistGuid`; with neither the call fails with `INVALID_PARAMS`. */
     playlist?: number;
-    /** A playlist's GUID instead of its index, written with braces as `playlist.getAll` and every result or event that names a playlist report it; either hex case is accepted. It keeps naming the same playlist while other playlists are added, removed or reordered, which an index does not. Giving both this and the index, or a malformed GUID, fails with `INVALID_PARAMS`. A playlist that no longer exists fails with `NOT_FOUND`; the call never falls back to another playlist. A malformed GUID and a missing playlist carry the GUID given as `details.playlistGuid`. */
+    /** Persistent unique identifier of a playlist (bracketed GUID, case-insensitive), used in place of a mutable index. Mutually exclusive with `playlist`; passing both or an invalid format fails with `INVALID_PARAMS`. Fails with `NOT_FOUND` if the playlist does not exist, never falling back. Invalid-format and not-found failures return the given GUID in `details.playlistGuid`. */
     playlistGuid?: string;
+}
+
+/**
+ * Parameters for `playlist.setAutoplaylistConfig`.
+ * Edit configuration of a managed autoplaylist against its expected revision. Omitted fields keep existing values; provide at least one modification. Unchanged values do not advance revision or trigger rebuilds. Stale revisions fail with `OPERATION_FAILED` (`details.reason: 'revisionConflict'`). Configuration is validated before write. Host failures may leave changes partially applied: `details.state` (`unchanged`, `changed`, or `unknown`) covers the configuration only, and `details.current` is included only when the current state is known. Neither success nor failure indicates disk persistence or finished track rebuilds.
+ */
+export interface PlaylistSetAutoplaylistConfigParams {
+    /** Playlist index; required unless playlistGuid is given. No active-playlist default. */
+    playlist?: number;
+    /** Persistent unique identifier of a playlist (bracketed GUID, case-insensitive), used in place of a mutable index. Mutually exclusive with `playlist`; passing both or an invalid format fails with `INVALID_PARAMS`. Fails with `NOT_FOUND` if the playlist does not exist, never falling back. Invalid-format and not-found failures return the given GUID in `details.playlistGuid`. */
+    playlistGuid?: string;
+    /** Opaque revision from the most recent configuration snapshot. Invalid after restart or provider replacement. */
+    expectedRevision: string;
+    /** New query, at most 65536 UTF-8 bytes. Blank text and NUL are rejected; omitted keeps the query. */
+    query?: string;
+    /** New independent sort; empty clears it, omitted keeps it. Conflicts with query SORT BY when nonempty. At most 65536 UTF-8 bytes, without NUL. */
+    sort?: string;
+    /** New keep-sorted setting; omitted keeps the current manager flag. */
+    keepSorted?: boolean;
 }
 
 /**
@@ -3444,10 +3840,12 @@ export interface PlaylistSetActiveParams {
 export interface PlaylistSetFocusedTrackParams {
     /** Index of the playlist; omitted, the active playlist. An index past the last playlist fails with `INVALID_INDEX`; with this omitted and no active playlist the call fails with `NO_ACTIVE_ITEM`. */
     playlist?: number;
-    /** A playlist's GUID instead of its index, written with braces as `playlist.getAll` and every result or event that names a playlist report it; either hex case is accepted. It keeps naming the same playlist while other playlists are added, removed or reordered, which an index does not. Giving both this and the index, or a malformed GUID, fails with `INVALID_PARAMS`. A playlist that no longer exists fails with `NOT_FOUND`; the call never falls back to another playlist. A malformed GUID and a missing playlist carry the GUID given as `details.playlistGuid`. */
+    /** Persistent unique identifier of a playlist (bracketed GUID, case-insensitive), used in place of a mutable index. Mutually exclusive with `playlist`; passing both or an invalid format fails with `INVALID_PARAMS`. Fails with `NOT_FOUND` if the playlist does not exist, never falling back. Invalid-format and not-found failures return the given GUID in `details.playlistGuid`. */
     playlistGuid?: string;
     /** Row to focus; omitted or negative, the playlist loses its focus. */
     index?: number;
+    /** Expected content version for optimistic concurrency control. When mismatched, mutations are aborted with `STALE_TARGET` (`details.current` carries current version). Omitted, no check is made. */
+    expectedVersion?: string;
 }
 
 /**
@@ -3457,7 +3855,7 @@ export interface PlaylistSetFocusedTrackParams {
 export interface PlaylistSetSelectionParams {
     /** Index of the playlist; omitted, the active playlist. An index past the last playlist fails with `INVALID_INDEX`; with this omitted and no active playlist the call fails with `NO_ACTIVE_ITEM`. */
     playlist?: number;
-    /** A playlist's GUID instead of its index, written with braces as `playlist.getAll` and every result or event that names a playlist report it; either hex case is accepted. It keeps naming the same playlist while other playlists are added, removed or reordered, which an index does not. Giving both this and the index, or a malformed GUID, fails with `INVALID_PARAMS`. A playlist that no longer exists fails with `NOT_FOUND`; the call never falls back to another playlist. A malformed GUID and a missing playlist carry the GUID given as `details.playlistGuid`. */
+    /** Persistent unique identifier of a playlist (bracketed GUID, case-insensitive), used in place of a mutable index. Mutually exclusive with `playlist`; passing both or an invalid format fails with `INVALID_PARAMS`. Fails with `NOT_FOUND` if the playlist does not exist, never falling back. Invalid-format and not-found failures return the given GUID in `details.playlistGuid`. */
     playlistGuid?: string;
     /** Rows to select; an empty list selects nothing. */
     indices: number[];
@@ -3466,6 +3864,19 @@ export interface PlaylistSetSelectionParams {
      * @default true
      */
     clearOthers?: boolean;
+    /** Expected content version for optimistic concurrency control. When mismatched, mutations are aborted with `STALE_TARGET` (`details.current` carries current version). Omitted, no check is made. */
+    expectedVersion?: string;
+}
+
+/**
+ * Parameters for `playlist.showAutoplaylistUI`.
+ * Accept a request to open the native editor of an explicitly named autoplaylist. Give exactly one of `playlist` and `playlistGuid`. Acceptance precedes the queued native call; its normal return or failure is reported by `playlist:autoplaylistUIResult` to the same calling document. Subscribe before calling because the event can arrive before the acceptance promise resolves. The request does not activate the playlist or start playback. A normal native return does not report whether a window appeared, the user saved changes, cancelled, or closed the editor.
+ */
+export interface PlaylistShowAutoplaylistUIParams {
+    /** Playlist index when the host first handles the request. Required unless `playlistGuid` is supplied; use the GUID to preserve identity across that initial queueing delay. */
+    playlist?: number;
+    /** Persistent unique identifier of a playlist (bracketed GUID, case-insensitive), used in place of a mutable index. Mutually exclusive with `playlist`; passing both or an invalid format fails with `INVALID_PARAMS`. Fails with `NOT_FOUND` if the playlist does not exist, never falling back. Invalid-format and not-found failures return the given GUID in `details.playlistGuid`. */
+    playlistGuid?: string;
 }
 
 /**
@@ -3475,7 +3886,7 @@ export interface PlaylistSetSelectionParams {
 export interface PlaylistShuffleParams {
     /** Index of the playlist; omitted, the active playlist. An index past the last playlist fails with `INVALID_INDEX`; with this omitted and no active playlist the call fails with `NO_ACTIVE_ITEM`. */
     playlist?: number;
-    /** A playlist's GUID instead of its index, written with braces as `playlist.getAll` and every result or event that names a playlist report it; either hex case is accepted. It keeps naming the same playlist while other playlists are added, removed or reordered, which an index does not. Giving both this and the index, or a malformed GUID, fails with `INVALID_PARAMS`. A playlist that no longer exists fails with `NOT_FOUND`; the call never falls back to another playlist. A malformed GUID and a missing playlist carry the GUID given as `details.playlistGuid`. */
+    /** Persistent unique identifier of a playlist (bracketed GUID, case-insensitive), used in place of a mutable index. Mutually exclusive with `playlist`; passing both or an invalid format fails with `INVALID_PARAMS`. Fails with `NOT_FOUND` if the playlist does not exist, never falling back. Invalid-format and not-found failures return the given GUID in `details.playlistGuid`. */
     playlistGuid?: string;
 }
 
@@ -3486,7 +3897,7 @@ export interface PlaylistShuffleParams {
 export interface PlaylistSortParams {
     /** Index of the playlist; omitted, the active playlist. An index past the last playlist fails with `INVALID_INDEX`; with this omitted and no active playlist the call fails with `NO_ACTIVE_ITEM`. */
     playlist?: number;
-    /** A playlist's GUID instead of its index, written with braces as `playlist.getAll` and every result or event that names a playlist report it; either hex case is accepted. It keeps naming the same playlist while other playlists are added, removed or reordered, which an index does not. Giving both this and the index, or a malformed GUID, fails with `INVALID_PARAMS`. A playlist that no longer exists fails with `NOT_FOUND`; the call never falls back to another playlist. A malformed GUID and a missing playlist carry the GUID given as `details.playlistGuid`. */
+    /** Persistent unique identifier of a playlist (bracketed GUID, case-insensitive), used in place of a mutable index. Mutually exclusive with `playlist`; passing both or an invalid format fails with `INVALID_PARAMS`. Fails with `NOT_FOUND` if the playlist does not exist, never falling back. Invalid-format and not-found failures return the given GUID in `details.playlistGuid`. */
     playlistGuid?: string;
     /**
      * Title Formatting pattern to sort by.
@@ -3512,7 +3923,7 @@ export interface PlaylistSortParams {
 export interface PlaylistUndoParams {
     /** Index of the playlist; omitted, the active playlist. An index past the last playlist fails with `INVALID_INDEX`; with this omitted and no active playlist the call fails with `NO_ACTIVE_ITEM`. */
     playlist?: number;
-    /** A playlist's GUID instead of its index, written with braces as `playlist.getAll` and every result or event that names a playlist report it; either hex case is accepted. It keeps naming the same playlist while other playlists are added, removed or reordered, which an index does not. Giving both this and the index, or a malformed GUID, fails with `INVALID_PARAMS`. A playlist that no longer exists fails with `NOT_FOUND`; the call never falls back to another playlist. A malformed GUID and a missing playlist carry the GUID given as `details.playlistGuid`. */
+    /** Persistent unique identifier of a playlist (bracketed GUID, case-insensitive), used in place of a mutable index. Mutually exclusive with `playlist`; passing both or an invalid format fails with `INVALID_PARAMS`. Fails with `NOT_FOUND` if the playlist does not exist, never falling back. Invalid-format and not-found failures return the given GUID in `details.playlistGuid`. */
     playlistGuid?: string;
 }
 
@@ -3574,12 +3985,14 @@ export interface PortPostMessageToParams {
 export interface QueueAddParams {
     /** Playlist the positions refer to; the active playlist when omitted. An index past the last playlist fails with `INVALID_INDEX`; with this omitted and no active playlist the call fails with `NO_ACTIVE_ITEM`. */
     playlist?: number;
-    /** A playlist's GUID instead of its index, written with braces as `playlist.getAll` and every result or event that names a playlist report it; either hex case is accepted. It keeps naming the same playlist while other playlists are added, removed or reordered, which an index does not. Giving both this and the index, or a malformed GUID, fails with `INVALID_PARAMS`. A playlist that no longer exists fails with `NOT_FOUND`; the call never falls back to another playlist. A malformed GUID and a missing playlist carry the GUID given as `details.playlistGuid`. */
+    /** Persistent unique identifier of a playlist (bracketed GUID, case-insensitive), used in place of a mutable index. Mutually exclusive with `playlist`; passing both or an invalid format fails with `INVALID_PARAMS`. Fails with `NOT_FOUND` if the playlist does not exist, never falling back. Invalid-format and not-found failures return the given GUID in `details.playlistGuid`. */
     playlistGuid?: string;
     /** Rows to queue, in order. Takes precedence over `track`. */
     tracks?: number[];
     /** A single row to queue; read only when `tracks` is absent. */
     track?: number;
+    /** Act only while the playlist that the rows belong to still has this `contentVersion`, as its reads report it. A different version changes nothing and fails with `STALE_TARGET`, the current version carried as `details.current`. Omitted, no check is made. */
+    expectedPlaylistVersion?: string;
 }
 
 /**
@@ -3626,7 +4039,7 @@ export type QueueGetCountParams = Record<string, never>;
 
 /**
  * Parameters for `queue.insertNext`.
- * Insert tracks so they play next, ahead of everything already queued. A track that is already queued is moved instead of queued twice. `items` land before `paths`; each block keeps its own order. A call with neither `paths` nor `items` fails with `INVALID_PARAMS`. Every entry of `items` is checked before any path is resolved, and one bad entry fails the whole call with nothing written: an entry naming its playlist by neither or both of `playlist` and `playlistGuid`, or by a malformed GUID, fails with `INVALID_PARAMS`, a GUID no playlist has with `NOT_FOUND`, a playlist index or row out of range with `INVALID_INDEX`. A path the media-root check refuses fails the whole call with `PERMISSION_DENIED`; a path that resolves to nothing is dropped and counted in `invalidCount`, and when nothing at all is left to insert the call fails with `NOT_FOUND`. A playlist row that changed while the paths were resolved fails the call with `OPERATION_FAILED`, and so does a queue that cannot be rebuilt.
+ * Insert tracks so they play next, ahead of everything already queued. A track that is already queued is moved instead of queued twice. `items` land before `paths`; each block keeps its own order. A call with neither `paths` nor `items` fails with `INVALID_PARAMS`. Every entry of `items` is checked before any path is resolved, and one bad entry fails the whole call with nothing written: an entry naming its playlist by neither or both of `playlist` and `playlistGuid`, or by a malformed GUID, fails with `INVALID_PARAMS`, a GUID no playlist has with `NOT_FOUND`, a playlist index or row out of range with `INVALID_INDEX`. A path the media-root check refuses fails the whole call with `PERMISSION_DENIED`; a path that resolves to nothing is dropped and counted in `invalidCount`, and when nothing at all is left to insert the call fails with `NOT_FOUND`. A playlist row that changed while the paths were resolved fails the call with `OPERATION_FAILED`, and so does a queue that cannot be rebuilt. `expectedVersion` is compared when the queue is written, after the paths are resolved.
  */
 export interface QueueInsertNextParams {
     /** File paths or URLs, each optionally with a `|subsong:N` suffix. The entries they produce carry no playlist position. */
@@ -3638,6 +4051,8 @@ export interface QueueInsertNextParams {
      * @default 0
      */
     position?: number;
+    /** Expected content version for optimistic concurrency control. When mismatched, mutations are aborted with `STALE_TARGET` (`details.current` carries current version). Omitted, no check is made. */
+    expectedVersion?: string;
 }
 
 /**
@@ -3647,6 +4062,8 @@ export interface QueueInsertNextParams {
 export interface QueueMoveToTopParams {
     /** Position of the entry to promote; `0` is already the front and is refused. */
     index: number;
+    /** Expected content version for optimistic concurrency control. When mismatched, mutations are aborted with `STALE_TARGET` (`details.current` carries current version). Omitted, no check is made. */
+    expectedVersion?: string;
 }
 
 /**
@@ -3659,6 +4076,8 @@ export interface QueuePlayNowParams {
      * @default 0
      */
     index?: number;
+    /** Expected content version for optimistic concurrency control. When mismatched, mutations are aborted with `STALE_TARGET` (`details.current` carries current version). Omitted, no check is made. */
+    expectedVersion?: string;
 }
 
 /**
@@ -3670,6 +4089,8 @@ export interface QueueRemoveParams {
     index?: number;
     /** Queue positions to remove; read only when `index` is absent. */
     indices?: number[];
+    /** Expected content version for optimistic concurrency control. When mismatched, mutations are aborted with `STALE_TARGET` (`details.current` carries current version). Omitted, no check is made. */
+    expectedVersion?: string;
 }
 
 /**
@@ -3679,6 +4100,8 @@ export interface QueueRemoveParams {
 export interface QueueSetContentsParams {
     /** The new queue, in order. At most `max(256, current queue length)` entries; more fail with `INVALID_PARAMS`. */
     items: QueueContentRef[];
+    /** Expected content version for optimistic concurrency control. When mismatched, mutations are aborted with `STALE_TARGET` (`details.current` carries current version). Omitted, no check is made. */
+    expectedVersion?: string;
 }
 
 /**
@@ -4181,7 +4604,7 @@ export interface TrayClearMenuItemsParams {
 
 /**
  * Parameters for `tray.create`.
- * Create the tray icon. Call it once before any other `tray.*` method: without it the other calls succeed but no icon shows, no tray event fires and `isVisible` reports `false`. Fails in panel mode, when the main window has no handle, and when the shell refuses the icon.
+ * Create the tray icon. It must exist to receive input or display notifications. Keeps the click action previously set with `setClickAction`, including on repeated calls. Fails in panel mode, when the main window has no handle, and when the shell refuses the icon.
  */
 export interface TrayCreateParams {
     /** Icon to show. */
@@ -4195,7 +4618,7 @@ export interface TrayCreateParams {
 
 /**
  * Parameters for `tray.destroy`.
- * Remove the tray icon.
+ * Remove the tray icon, cancel pending clicks and reset the click action to `event`. A main window hidden to the tray is shown again, since nothing else could bring it back.
  */
 export type TrayDestroyParams = Record<string, never>;
 
@@ -4221,8 +4644,17 @@ export interface TrayRemoveMenuItemsParams {
 }
 
 /**
+ * Parameters for `tray.setClickAction`.
+ * Set the process-wide left-click action, even before `create`. `event` is the default and emits the existing click events. `toggleMainWindow` hides a visible, non-minimized standalone main window, or shows, restores and requests focus otherwise, without page execution or the old click events. A double-click performs one toggle. Pending clicks are cancelled on every setter call; the latest successful caller wins. Shell recreation preserves this setting; `destroy` resets it. Fails with `PANEL_MODE_UNSUPPORTED` in panels. Remove legacy click handlers that issue window commands before enabling native actions; already queued page events cannot be recalled. The OS may refuse foreground activation.
+ */
+export interface TraySetClickActionParams {
+    /** `event` sends clicks to pages; `toggleMainWindow` executes once natively per gesture. */
+    action: "event" | "toggleMainWindow";
+}
+
+/**
  * Parameters for `tray.setCloseToTray`.
- * Hide the window to the tray instead of quitting when it is closed.
+ * Hide the window to the tray instead of quitting when it is closed. Without a tray icon from `create` the window is minimized instead, so it can still be found on the taskbar. `create` resets this from the preferences, so call it afterwards.
  */
 export interface TraySetCloseToTrayParams {
     /** `true` hides to the tray. */
@@ -4279,7 +4711,7 @@ export interface TraySetMenuZonesParams {
 
 /**
  * Parameters for `tray.setMinimizeToTray`.
- * Hide the window to the tray instead of the taskbar when it is minimized.
+ * Hide the window to the tray instead of the taskbar when it is minimized. Without a tray icon from `create` the window is minimized as usual. `create` resets this from the preferences, so call it afterwards.
  */
 export interface TraySetMinimizeToTrayParams {
     /** `true` hides to the tray. */
@@ -4647,10 +5079,10 @@ export interface WindowFlashTaskbarParams {
 
 /**
  * Parameters for `window.focus`.
- * Bring a window to the foreground, restoring it first when minimized and showing it when hidden. Fails with `NOT_FOUND` when there is no such window.
+ * Bring a window to the foreground, restoring it first when minimized and showing it when hidden. An explicit id targets exactly that window; omission targets the caller's top-level window, including the host of a panel. Fails with `NOT_FOUND` when the target no longer exists. Supersedes older popup focus-restoration work without changing the popup's no-activate policy. Success means the request was made; Windows may refuse to grant the foreground.
  */
 export interface WindowFocusParams {
-    /** Target window: `main` or a popup id; omitted or empty, the calling window. There is no fallback to the main window: a caller that is not one of the plugin's windows fails with `NOT_FOUND`, and a DUI/CUI panel with `PANEL_MODE_UNSUPPORTED`. */
+    /** `main` or a popup id. Omitted or empty, focus the caller's top-level window, including the foobar2000 host in DUI/CUI panel mode. An unknown explicit id fails with `NOT_FOUND`. */
     windowId?: string;
 }
 
@@ -4764,7 +5196,7 @@ export type WindowGetTitlebarInfoParams = Record<string, never>;
 
 /**
  * Parameters for `window.getZoom`.
- * Report the zoom factor of the calling window's WebView and the window's DPI. Without a WebView of its own the call reports zoom `1` and leaves out `dpi` and `dpiScale`.
+ * Report the zoom factor of the calling window's WebView, the window's DPI and the Windows text size; the page's `devicePixelRatio` is `dpiScale * textScaleFactor * zoom`. Without a WebView of its own the call reports zoom `1` and leaves out `dpi` and `dpiScale`.
  */
 export type WindowGetZoomParams = Record<string, never>;
 
@@ -4868,7 +5300,7 @@ export interface WindowSendMessageParams {
 
 /**
  * Parameters for `window.setAcrylic`.
- * Turn the acrylic backdrop of a window on or off. The setting is stored even when the window does not draw it right away; the call then fails with `OPERATION_FAILED` and the failure carries the result fields. Fails in panel mode.
+ * Enable or disable the Acrylic backdrop material on a window. If the effect cannot be applied immediately, the configuration is still saved; the call fails with `OPERATION_FAILED` and includes result fields in the error response. Not supported in panel mode.
  */
 export interface WindowSetAcrylicParams {
     /** Target window: `main` or a popup id; omitted or empty, the calling window. There is no fallback to the main window: a caller that is not one of the plugin's windows fails with `NOT_FOUND`, and a DUI/CUI panel with `PANEL_MODE_UNSUPPORTED`. */
@@ -4896,7 +5328,7 @@ export interface WindowSetAlwaysOnTopParams {
 
 /**
  * Parameters for `window.setBackdropPolicy`.
- * Merge per-field overrides into a window's backdrop policy; a `null` value removes that override. The overrides are stored even when the window does not draw the result right away, for example while it is still hidden at startup; the call then fails with `OPERATION_FAILED`.
+ * Merge per-field overrides into a window's backdrop policy; passing `null` removes that override. Overrides are saved even if the window cannot apply them immediately (such as while hidden at startup); the call then fails with `OPERATION_FAILED`.
  */
 export interface WindowSetBackdropPolicyParams {
     /** Target window: `main` or a popup id; omitted or empty, the calling window. There is no fallback to the main window: a caller that is not one of the plugin's windows fails with `NOT_FOUND`, and a DUI/CUI panel with `PANEL_MODE_UNSUPPORTED`. */
@@ -4907,7 +5339,7 @@ export interface WindowSetBackdropPolicyParams {
 
 /**
  * Parameters for `window.setBackgroundTransparency`.
- * Make a window's WebView background transparent, so the backdrop effect shows through, or opaque. Fails in panel mode, and with `OPERATION_FAILED` when neither the window nor its WebView took the change; that failure carries the result fields unless the window has no WebView.
+ * Set the window WebView background to transparent (revealing backdrop material effects) or opaque. Not supported in panel mode. Fails with `OPERATION_FAILED` (carrying result fields when the window has a WebView) if neither the window nor the WebView accepted the change.
  */
 export interface WindowSetBackgroundTransparencyParams {
     /** Target window: `main` or a popup id; omitted or empty, the calling window. There is no fallback to the main window: a caller that is not one of the plugin's windows fails with `NOT_FOUND`, and a DUI/CUI panel with `PANEL_MODE_UNSUPPORTED`. */
@@ -4921,7 +5353,7 @@ export interface WindowSetBackgroundTransparencyParams {
 
 /**
  * Parameters for `window.setBlur`.
- * Turn the blur-behind effect of a window on or off. The setting is stored even when the window does not draw it right away; the call then fails with `OPERATION_FAILED` and the failure carries `enabled`. Fails in panel mode.
+ * Enable or disable the blur-behind effect on a window. If the effect cannot be applied immediately, the configuration is still saved; the call fails with `OPERATION_FAILED` and includes `enabled` in the error response. Not supported in panel mode.
  */
 export interface WindowSetBlurParams {
     /** Target window: `main` or a popup id; omitted or empty, the calling window. There is no fallback to the main window: a caller that is not one of the plugin's windows fails with `NOT_FOUND`, and a DUI/CUI panel with `PANEL_MODE_UNSUPPORTED`. */
@@ -4964,7 +5396,7 @@ export interface WindowSetClickThroughParams {
 
 /**
  * Parameters for `window.setClickThroughExcludeRegions`.
- * Set the rectangles of a popup that keep taking mouse input while it lets input pass through, replacing the earlier ones. Rectangles are CSS pixels of the page, scaled by the popup's DPI; rectangles without a positive width and height are skipped, and at most 32 are kept. Targets as `window.setClickThrough` does.
+ * Set the rectangles of a popup that keep taking mouse input while it lets input pass through, replacing the earlier ones. Rectangles are CSS pixels of the popup's page, scaled by its `devicePixelRatio`: the popup's DPI, the Windows text size and the page zoom. Set them again when `devicePixelRatio` changes. Rectangles without a positive width and height are skipped, and at most 32 are kept. Targets as `window.setClickThrough` does.
  */
 export interface WindowSetClickThroughExcludeRegionsParams {
     /** Id of the popup; omitted or empty, the calling window. */
@@ -4987,7 +5419,7 @@ export interface WindowSetCornerPreferenceParams {
 
 /**
  * Parameters for `window.setDarkMode`.
- * Switch a window's backdrop between its dark and light variant. The setting is stored even when the window does not draw it right away; the call then fails with `OPERATION_FAILED` and the failure carries `enabled`. Fails in panel mode.
+ * Switch a window's backdrop between dark and light themes. If the change cannot be applied immediately, the configuration is still saved; the call fails with `OPERATION_FAILED` and includes `enabled` in the error response. Not supported in panel mode.
  */
 export interface WindowSetDarkModeParams {
     /** Target window: `main` or a popup id; omitted or empty, the calling window. There is no fallback to the main window: a caller that is not one of the plugin's windows fails with `NOT_FOUND`, and a DUI/CUI panel with `PANEL_MODE_UNSUPPORTED`. */
@@ -5012,7 +5444,7 @@ export interface WindowSetDevServerConfigParams {
 
 /**
  * Parameters for `window.setDragRegions`.
- * Set the rectangles that drag the calling window, the main window or a popup, replacing the earlier ones. Rectangles are CSS pixels of the page, scaled by the window's DPI; rectangles without a positive width and height are skipped. Fails in panel mode, and with `NOT_FOUND` when the caller is neither the main window nor a popup.
+ * Set draggable rectangles for the calling window (main window or popup), replacing earlier ones. Rectangles use page CSS pixels and are scaled by `devicePixelRatio` (window DPI, text scaling, and zoom). Update these rectangles whenever `devicePixelRatio` changes. Rectangles without positive width and height are ignored. Fails in panel mode, or with `NOT_FOUND` if the caller is neither the main window nor a popup.
  */
 export interface WindowSetDragRegionsParams {
     /** The drag rectangles; omitted, none. */
@@ -5049,10 +5481,10 @@ export interface WindowSetFullscreenParams {
 
 /**
  * Parameters for `window.setMaximizeButtonRegion`.
- * Tell the host where the page draws the main window's maximize button, so that on Windows 11 hovering it offers Snap layouts as a standard window's button does. The rectangle is CSS pixels of the page, scaled by the window's DPI and the page zoom, the same factor as `devicePixelRatio`, and replaces the earlier one; `region` omitted, or without a positive width and height, removes it. While the window is frameless, resizable and not full screen, the host answers the rectangle as the window's maximize button and passes the mouse input it receives there on to the page, so the button keeps its hover and pressed styles and its own click handler; on Windows 10 and in every other state the rectangle stays ordinary page content. Set it again whenever layout moves the button; a navigation or reload of the page removes it. Main window only: fails with `NOT_SUPPORTED` from a popup, in panel mode, and with `NOT_FOUND` when the caller is no window.
+ * Register the custom maximize button rectangle on the main window to enable Windows 11 Snap layouts. The rectangle uses page CSS pixels and scales with `devicePixelRatio`. It replaces any previous rectangle; omitting `region` or passing non-positive dimensions clears the registration. When the window is frameless, resizable, and not fullscreen, the host reports this area as the system maximize button while forwarding mouse events to the page (preserving CSS hover styles and click handlers). On Windows 10 or in other states, the area behaves as normal page content. Re-register whenever button layout moves or `devicePixelRatio` changes. Page reload or navigation clears this registration. Main window only: fails with `NOT_SUPPORTED` from popups, in panel mode, or with `NOT_FOUND` without a window.
  */
 export interface WindowSetMaximizeButtonRegionParams {
-    /** Where the page draws the maximize button; omitted, the host forgets the button. */
+    /** Custom maximize button bounding box in CSS pixels; omitted or zero-sized to clear. */
     region?: WindowRegion;
 }
 
@@ -5077,7 +5509,7 @@ export interface WindowSetMaxSizeParams {
 
 /**
  * Parameters for `window.setMica`.
- * Turn the Mica backdrop of a window on or off. The setting is stored even when the window does not draw it right away, for example while it is still hidden at startup; the call then fails with `OPERATION_FAILED` and the failure carries the result fields. Fails in panel mode.
+ * Enable or disable the Mica backdrop material on a window. If the effect cannot be applied immediately (such as while the window is hidden at startup), the configuration is still saved; the call fails with `OPERATION_FAILED` and includes result fields in the error response. Not supported in panel mode.
  */
 export interface WindowSetMicaParams {
     /** Target window: `main` or a popup id; omitted or empty, the calling window. There is no fallback to the main window: a caller that is not one of the plugin's windows fails with `NOT_FOUND`, and a DUI/CUI panel with `PANEL_MODE_UNSUPPORTED`. */
@@ -5138,7 +5570,7 @@ export interface WindowSetMinSizeParams {
 
 /**
  * Parameters for `window.setNoDragRegions`.
- * Set the rectangles that never drag the calling window, such as buttons inside a drag area, replacing the earlier ones. Rectangles are CSS pixels of the page, scaled by the window's DPI; rectangles without a positive width and height are skipped. Fails in panel mode, and with `NOT_FOUND` when the caller is neither the main window nor a popup.
+ * Set non-draggable exclusion rectangles (such as buttons inside a drag area), replacing earlier ones. Rectangles use page CSS pixels and are scaled by `devicePixelRatio`. Update these rectangles whenever `devicePixelRatio` changes. Rectangles without positive width and height are ignored. Fails in panel mode, or with `NOT_FOUND` if the caller is neither the main window nor a popup.
  */
 export interface WindowSetNoDragRegionsParams {
     /** The no-drag rectangles; omitted, none. */
@@ -5460,6 +5892,40 @@ export interface ApiParamsMap {
     "jitQueue.preloadBatch": JitQueuePreloadBatchParams;
     "jitQueue.skip": JitQueueSkipParams;
     "jitQueue.stop": JitQueueStopParams;
+    /** @experimental */
+    "jitSession.adoptNative": JitSessionAdoptNativeParams;
+    /** @experimental */
+    "jitSession.claimControl": JitSessionClaimControlParams;
+    /** @experimental */
+    "jitSession.create": JitSessionCreateParams;
+    /** @experimental */
+    "jitSession.discover": JitSessionDiscoverParams;
+    /** @experimental */
+    "jitSession.getCapabilities": JitSessionGetCapabilitiesParams;
+    /** @experimental */
+    "jitSession.getNativeContext": JitSessionGetNativeContextParams;
+    /** @experimental */
+    "jitSession.getOperation": JitSessionGetOperationParams;
+    /** @experimental */
+    "jitSession.getState": JitSessionGetStateParams;
+    /** @experimental */
+    "jitSession.play": JitSessionPlayParams;
+    /** @experimental */
+    "jitSession.playNative": JitSessionPlayNativeParams;
+    /** @experimental */
+    "jitSession.prepareAdoption": JitSessionPrepareAdoptionParams;
+    /** @experimental */
+    "jitSession.release": JitSessionReleaseParams;
+    /** @experimental */
+    "jitSession.setNativeNext": JitSessionSetNativeNextParams;
+    /** @experimental */
+    "jitSession.setNativeQueue": JitSessionSetNativeQueueParams;
+    /** @experimental */
+    "jitSession.setNext": JitSessionSetNextParams;
+    /** @experimental */
+    "jitSession.skip": JitSessionSkipParams;
+    /** @experimental */
+    "jitSession.stop": JitSessionStopParams;
     "keyboard.getRegisteredHotkeys": KeyboardGetRegisteredHotkeysParams;
     "keyboard.registerHotkey": KeyboardRegisterHotkeyParams;
     "keyboard.registerShortcut": KeyboardRegisterShortcutParams;
@@ -5475,6 +5941,7 @@ export interface ApiParamsMap {
     "library.getArtistTracks": LibraryGetArtistTracksParams;
     "library.getByPath": LibraryGetByPathParams;
     "library.getCacheStats": LibraryGetCacheStatsParams;
+    "library.getChanges": LibraryGetChangesParams;
     "library.getCount": LibraryGetCountParams;
     "library.getFieldValues": LibraryGetFieldValuesParams;
     "library.getGenres": LibraryGetGenresParams;
@@ -5483,6 +5950,7 @@ export interface ApiParamsMap {
     "library.getRoots": LibraryGetRootsParams;
     "library.getStats": LibraryGetStatsParams;
     "library.getStatus": LibraryGetStatusParams;
+    "library.getTracks": LibraryGetTracksParams;
     "library.invalidateCache": LibraryInvalidateCacheParams;
     "library.isEnabled": LibraryIsEnabledParams;
     "library.query": LibraryQueryParams;
@@ -5572,11 +6040,13 @@ export interface ApiParamsMap {
     "playlist.convertToAutoplaylist": PlaylistConvertToAutoplaylistParams;
     "playlist.create": PlaylistCreateParams;
     "playlist.createAutoplaylist": PlaylistCreateAutoplaylistParams;
+    "playlist.createManagedAutoplaylist": PlaylistCreateManagedAutoplaylistParams;
     "playlist.deselectAll": PlaylistDeselectAllParams;
     "playlist.duplicate": PlaylistDuplicateParams;
     "playlist.focusTrack": PlaylistFocusTrackParams;
     "playlist.getActive": PlaylistGetActiveParams;
     "playlist.getAll": PlaylistGetAllParams;
+    "playlist.getAutoplaylistConfig": PlaylistGetAutoplaylistConfigParams;
     "playlist.getAutoplaylistInfo": PlaylistGetAutoplaylistInfoParams;
     "playlist.getAutoplaylistQuery": PlaylistGetAutoplaylistQueryParams;
     "playlist.getAvailableColumns": PlaylistGetAvailableColumnsParams;
@@ -5609,8 +6079,10 @@ export interface ApiParamsMap {
     "playlist.reverse": PlaylistReverseParams;
     "playlist.selectAll": PlaylistSelectAllParams;
     "playlist.setActive": PlaylistSetActiveParams;
+    "playlist.setAutoplaylistConfig": PlaylistSetAutoplaylistConfigParams;
     "playlist.setFocusedTrack": PlaylistSetFocusedTrackParams;
     "playlist.setSelection": PlaylistSetSelectionParams;
+    "playlist.showAutoplaylistUI": PlaylistShowAutoplaylistUIParams;
     "playlist.shuffle": PlaylistShuffleParams;
     "playlist.sort": PlaylistSortParams;
     "playlist.undo": PlaylistUndoParams;
@@ -5681,6 +6153,7 @@ export interface ApiParamsMap {
     "tray.getMenuItems": TrayGetMenuItemsParams;
     "tray.isVisible": TrayIsVisibleParams;
     "tray.removeMenuItems": TrayRemoveMenuItemsParams;
+    "tray.setClickAction": TraySetClickActionParams;
     "tray.setCloseToTray": TraySetCloseToTrayParams;
     "tray.setContextMenu": TraySetContextMenuParams;
     "tray.setIcon": TraySetIconParams;

@@ -25,8 +25,10 @@ export interface ArtworkOptions {
  * call has `success: false` with a `code`.
  */
 export const artwork = {
+    /** Retrieve album artwork for the currently playing track. */
     getCurrent: (type?: AlbumArtType) =>
         call('artwork.getCurrent', { type }),
+    /** Retrieve album artwork for a track by its file path. */
     getByPath: (path: string, type?: AlbumArtType) =>
         call('artwork.getByPath', { path, type }),
     /**
@@ -88,12 +90,14 @@ export const artwork = {
         const sep = url.includes('?') ? '&' : '?';
         return url + sep + 'maxSize=' + encodeURIComponent(String(maxSize));
     },
+    /** List all available artwork types and files for a track. */
     getAvailableArtwork: (path: string) => call('artwork.getAvailableArtwork', { path }),
     /** Without `path` the host reads the playing track. */
     getAvailableTypes: (path?: string) =>
         call('artwork.getAvailableTypes', {
             ...(path ? { path } : {}),
         }),
+    /** Retrieve album artwork for multiple track paths in one batch call. */
     getBatch: (paths: string[], type?: AlbumArtType) =>
         call('artwork.getBatch', {
             paths,
@@ -131,6 +135,7 @@ export const artwork = {
                 ...(opts?.maxSize != null ? { maxSize: opts.maxSize } : {}),
             },
         ),
+    /** List image files located within the specified folder. */
     getFolderImages: (directory: string) =>
         call('artwork.getFolderImages', {
             directory,

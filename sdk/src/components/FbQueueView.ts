@@ -1,18 +1,3 @@
-/**
- * `<fb-queue-view>` — playback-queue list.
- *
- * Attribute:
- * - `columns`: comma-separated list of column ids
- *   (default `'index,title,artist,duration'`).
- *
- * Reflects host attributes `count` and `empty` (set when the queue is
- * empty so themes can `:host([empty]) [part=empty] { display: block }`).
- *
- * Emits:
- * - `fb-queue-context` on right-click (theme owns the menu).
- * - `fb-queue-remove` on row double-click after the host removal succeeded.
- */
-
 import { FbBaseElement } from './FbBaseElement.js';
 import { formatTime } from './constants.js';
 import { getFb } from './runtime.js';
@@ -27,6 +12,20 @@ interface QueueRowItem {
     [key: string]: JsonValue;
 }
 
+/**
+ * `<fb-queue-view>` — playback-queue list.
+ *
+ * Attribute:
+ * - `columns`: comma-separated list of column ids
+ *   (default `'index,title,artist,duration'`).
+ *
+ * Reflects host attributes `count` and `empty` (set when the queue is
+ * empty so themes can `:host([empty]) [part=empty] { display: block }`).
+ *
+ * Emits:
+ * - `fb-queue-context` on right-click (theme owns the menu).
+ * - `fb-queue-remove` on row double-click after the host removal succeeded.
+ */
 export class FbQueueView extends FbBaseElement {
     private _container!: HTMLDivElement;
     private _columns: string[] = ['index', 'title', 'artist', 'duration'];

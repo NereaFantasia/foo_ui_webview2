@@ -1,3 +1,7 @@
+import { FbBaseElement } from './FbBaseElement.js';
+import { formatTime } from './constants.js';
+import { getFb } from './runtime.js';
+
 /**
  * `<fb-time-total>` — total track duration display (`m:ss` /
  * `h:mm:ss`).
@@ -6,11 +10,6 @@
  * `duration` (some hosts only fire a minimal track-changed event)
  * falls back to a `fb.player.getCurrentTrack()` lookup.
  */
-
-import { FbBaseElement } from './FbBaseElement.js';
-import { formatTime } from './constants.js';
-import { getFb } from './runtime.js';
-
 export class FbTimeTotal extends FbBaseElement {
     private _seconds = 0;
     private _text!: HTMLSpanElement;

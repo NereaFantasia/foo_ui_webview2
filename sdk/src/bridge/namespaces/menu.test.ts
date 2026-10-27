@@ -42,6 +42,36 @@ function flush(): Promise<void> {
     return new Promise((resolve) => setTimeout(resolve, 0));
 }
 
+describe('main-menu addresses', () => {
+    beforeEach(() => vi.resetModules());
+    afterEach(() => vi.unstubAllGlobals());
+
+    it('preserves root options and diagnostic candidates', async () => {
+        const native = makeNative();
+        const result = { success: true, items: [{ type: 'command', enabled: true,
+            executable: false, unaddressableReason: 'ambiguousMatch', addressCandidates: [
+                { path: 'View/One/Show', guid: '{A}', subGuid: '{B}', groupGuid: '{GROUP}' },
+            ] }] };
+        native.invoke.mockResolvedValue(result);
+        vi.stubGlobal('window', { fb2k: native });
+        const { menu } = await import('./menu.js');
+        expect(await menu.getMainMenu('View/One', { locale: 'zh-CN', i18n: false })).toBe(result);
+        expect(native.invoke).toHaveBeenCalledWith('menu.getMainMenu', {
+            root: 'View/One', locale: 'zh-CN', i18n: false,
+        });
+    });
+
+    it('forwards both dynamic identifiers and resolves business failures unchanged', async () => {
+        const native = makeNative();
+        const failure = { success: false, code: 'MENU_ITEM_DISABLED', error: 'Disabled', details: { guid: '{A}' } };
+        native.invoke.mockResolvedValue(failure);
+        vi.stubGlobal('window', { fb2k: native });
+        const { menu } = await import('./menu.js');
+        expect(await menu.runMainMenuCommand('{A}', { subGuid: '{B}' })).toBe(failure);
+        expect(native.invoke).toHaveBeenCalledWith('menu.runMainMenuCommand', { command: '{A}', subGuid: '{B}' });
+    });
+});
+
 describe('menu.show', () => {
     beforeEach(() => vi.resetModules());
     afterEach(() => vi.unstubAllGlobals());

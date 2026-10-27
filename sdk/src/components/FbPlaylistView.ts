@@ -1,3 +1,43 @@
+import { FbBaseElement } from './FbBaseElement.js';
+import { formatTime } from './constants.js';
+import { getFb } from './runtime.js';
+import type { PlaylistRef } from '../bridge/playlistRef.js';
+import type { JsonValue } from '../types/json.js';
+import type {
+    FbTrackContextDetail,
+    FbTrackPlayDetail,
+    FbTrackSelectDetail,
+} from './types.js';
+
+/** Row pool element with extra render-state metadata. */
+interface RowEl extends HTMLDivElement {
+    _built?: boolean;
+    _colKey?: string;
+    _empty?: boolean;
+}
+
+/** Rating cell with extra metadata for hover-preview and click handling. */
+interface RatingCell extends HTMLSpanElement {
+    _ratingVal?: number;
+    _ratingBuilt?: boolean;
+    _ratingHandler?: (e: MouseEvent) => void;
+    _trackPath?: string;
+}
+
+/** Loose track shape used by the playlist data cache. */
+interface PlaylistTrackData {
+    /** Values of the `formats` columns, by column id. */
+    formats?: Record<string, string>;
+    duration?: number;
+    rating?: number;
+    bitrate?: number;
+    sampleRate?: number;
+    fileSize?: number;
+    path?: string;
+    absolutePath?: string;
+    [key: string]: JsonValue;
+}
+
 /**
  * `<fb-playlist-view>` — virtually-scrolled playlist row view.
  *
@@ -55,47 +95,6 @@
  * The {@link RowEl} / {@link RatingCell} interfaces type these
  * extensions — same lifecycle, no behavioural drift.
  */
-
-import { FbBaseElement } from './FbBaseElement.js';
-import { formatTime } from './constants.js';
-import { getFb } from './runtime.js';
-import type { PlaylistRef } from '../bridge/playlistRef.js';
-import type { JsonValue } from '../types/json.js';
-import type {
-    FbTrackContextDetail,
-    FbTrackPlayDetail,
-    FbTrackSelectDetail,
-} from './types.js';
-
-/** Row pool element with extra render-state metadata. */
-interface RowEl extends HTMLDivElement {
-    _built?: boolean;
-    _colKey?: string;
-    _empty?: boolean;
-}
-
-/** Rating cell with extra metadata for hover-preview and click handling. */
-interface RatingCell extends HTMLSpanElement {
-    _ratingVal?: number;
-    _ratingBuilt?: boolean;
-    _ratingHandler?: (e: MouseEvent) => void;
-    _trackPath?: string;
-}
-
-/** Loose track shape used by the playlist data cache. */
-interface PlaylistTrackData {
-    /** Values of the `formats` columns, by column id. */
-    formats?: Record<string, string>;
-    duration?: number;
-    rating?: number;
-    bitrate?: number;
-    sampleRate?: number;
-    fileSize?: number;
-    path?: string;
-    absolutePath?: string;
-    [key: string]: JsonValue;
-}
-
 export class FbPlaylistView extends FbBaseElement {
     /** What the `playlist` attribute names; `null` follows the active playlist. */
     private _source: PlaylistRef | null = null;
@@ -140,16 +139,7 @@ export class FbPlaylistView extends FbBaseElement {
     private _viewport!: HTMLDivElement;
     private _scrollContent!: HTMLDivElement;
 
-    /**
-     * Column-id → track-property mapping.
-     *
-     * Accepts both the snake_case / camelCase IDs the host emits and the
-     * Chinese column IDs that `foo_playcount` exposes to other components.
-     * The Chinese entries are **data identifiers**, not UI labels, and
-     * must be kept verbatim so that playlist columns authored with
-     * `foo_playcount`'s default localised headers resolve to the right
-     * track property.
-     */
+    /** Column IDs that read a track property under a different name. */
     private static get _colMap(): Record<string, string> {
         return {
             album_artist: 'albumArtist',
@@ -161,12 +151,6 @@ export class FbPlaylistView extends FbBaseElement {
             play_count: 'playCount',
             first_played: 'firstPlayed',
             last_played: 'lastPlayed',
-            // foo_playcount Chinese ids (external data keys, not UI text)
-            播放次数: 'playCount',
-            首次播放: 'firstPlayed',
-            最近播放: 'lastPlayed',
-            添加日期: 'added',
-            等级: 'rating',
         };
     }
 
@@ -546,10 +530,7 @@ export class FbPlaylistView extends FbBaseElement {
         track: PlaylistTrackData,
         index: number,
     ): void {
-        const isRatingCol = (col: string): boolean =>
-            // `'等级'` is the `foo_playcount` Chinese column ID (data
-            // identifier), not UI text — see `_colMap` JSDoc.
-            col === '等级' || col === 'rating';
+        const isRatingCol = (col: string): boolean => col === 'rating';
         const colKey = this._columns.join(',');
         if (row._built && row._colKey === colKey) {
             this._columns.forEach((col, ci) => {
@@ -880,6 +861,16 @@ export class FbPlaylistView extends FbBaseElement {
         this._sub('playback:trackChanged', () => {
             void this._refreshPlayingIndex();
         });
+        // Tags or statistics of some tracks changed (a rating, a play count,
+        // an edit). Too many to name means every kept row may be stale.
+        this._sub('metadb:changed', (data) => {
+            if (data.truncated) {
+                this._dataCache.clear();
+                this._updateRows();
+            } else {
+                void this._refreshChanged(new Set(data.handles));
+            }
+        });
         this._sub('playback:stopped', (data) => {
             // A stop that makes way for the next track is followed by its
             // `playback:trackChanged`; clearing here would only flicker.
@@ -888,6 +879,34 @@ export class FbPlaylistView extends FbBaseElement {
             this._setPlayingIndex(-1);
         });
         void this._loadPlaylist();
+    }
+
+    /**
+     * Read again the kept rows whose track is in `handles`. They stay on
+     * screen with the old values until the new ones arrive.
+     */
+    private async _refreshChanged(handles: ReadonlySet<string>): Promise<void> {
+        const rows: number[] = [];
+        for (const [index, track] of this._dataCache) {
+            if (typeof track.handle === 'string' && handles.has(track.handle)) rows.push(index);
+        }
+        if (rows.length === 0) return;
+        try {
+            const pl = await this._target();
+            if (pl === null) return;
+            const fmts =
+                Object.keys(this._formats).length > 0
+                    ? this._formats
+                    : undefined;
+            const page = await getFb().playlist.getTracksAt(pl, rows, fmts);
+            if (page.success === false || this._shown !== pl) return;
+            for (const t of page.tracks as unknown as PlaylistTrackData[]) {
+                this._dataCache.set(Number(t.index), t);
+            }
+            this._updateRows();
+        } catch {
+            /* silent */
+        }
     }
 
     /**

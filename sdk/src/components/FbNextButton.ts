@@ -1,3 +1,7 @@
+import { FbBaseElement } from './FbBaseElement.js';
+import { getFb } from './runtime.js';
+import type { FbNextDetail } from './types.js';
+
 /**
  * `<fb-next-button>` — jumps to the next track.
  *
@@ -6,11 +10,6 @@
  *
  * Emits `fb-next` after the host call resolves.
  */
-
-import { FbBaseElement } from './FbBaseElement.js';
-import { getFb } from './runtime.js';
-import type { FbNextDetail } from './types.js';
-
 export class FbNextButton extends FbBaseElement {
     private _btn!: HTMLButtonElement;
 

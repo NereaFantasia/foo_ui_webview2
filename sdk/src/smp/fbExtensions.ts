@@ -1,17 +1,4 @@
 import type { JsonValue } from '../types/json.js';
-/**
- * SMP-style extensions on the runtime `fb` object.
- *
- * Spider Monkey Panel scripts expect properties / methods directly on
- * `fb` (e.g. `fb.Play()`, `fb.Volume = -10`, `fb.IsPlaying`,
- * `fb.TitleFormat(expr)`). This module attaches them to the runtime
- * aggregate without overriding any value the bridge already supplies.
- *
- * Cache-rollback rule: every cache-backed setter writes the new value
- * optimistically, fires the C++ invoke, and on rejection reverts the
- * cache value so subsequent reads stay consistent with the host.
- */
-
 import type { ExtensibleFb, SmpBridgeShape } from './bridgeShape.js';
 import type { MenuTreeNode } from '../types/generated/schema-types.js';
 import { typedCall } from '../utils/typedCall.js';
@@ -27,6 +14,19 @@ import { stripSubsongSuffix } from './handleId.js';
 import { smpWarn } from './smpLog.js';
 import type { SMPPlman, SmpCompatCache, SmpHandleLike } from './types.js';
 import { clamp, normalizeHandleList, successOf, toHandleId } from './utils.js';
+
+/**
+ * SMP-style extensions on the runtime `fb` object.
+ *
+ * Spider Monkey Panel scripts expect properties / methods directly on
+ * `fb` (e.g. `fb.Play()`, `fb.Volume = -10`, `fb.IsPlaying`,
+ * `fb.TitleFormat(expr)`). This module attaches them to the runtime
+ * aggregate without overriding any value the bridge already supplies.
+ *
+ * Cache-rollback rule: every cache-backed setter writes the new value
+ * optimistically, fires the C++ invoke, and on rejection reverts the
+ * cache value so subsequent reads stay consistent with the host.
+ */
 
 /**
  * Track keys requested from `library.search` by `fb.GetQueryItems`.
@@ -92,27 +92,29 @@ function _toHandleIds(handleOrList: unknown): string[] {
 }
 
 /**
- * `commandId` of the first command whose slash-separated `path` equals
- * `command`, ignoring case, the way SMP names context-menu commands (for
- * example `Playback Statistics/Rating/5`); `null` when the menu has none.
+ * The first command whose slash-separated `path` equals `command`, ignoring
+ * case, the way SMP names context-menu commands (for example
+ * `Playback Statistics/Rating/5`); `null` when the menu has none.
  */
-function _findContextCommandId(
+function _findContextCommand(
     items: readonly MenuTreeNode[] | undefined,
     command: string,
-): number | null {
+): { id: number; path: string } | null {
     const wanted = command.toLowerCase();
-    const walk = (nodes: readonly MenuTreeNode[] | undefined): number | null => {
+    const walk = (
+        nodes: readonly MenuTreeNode[] | undefined,
+    ): { id: number; path: string } | null => {
         for (const node of nodes ?? []) {
             if (node.type === 'submenu') {
-                const id = walk(node.children);
-                if (id !== null) return id;
+                const found = walk(node.children);
+                if (found !== null) return found;
             } else if (
                 node.type === 'command' &&
                 typeof node.commandId === 'number' &&
                 typeof node.path === 'string' &&
                 node.path.toLowerCase() === wanted
             ) {
-                return node.commandId;
+                return { id: node.commandId, path: node.path };
             }
         }
         return null;
@@ -672,12 +674,20 @@ export function attachFbExtensions(
                 mode: 'handles',
                 handles,
             }));
-            const id = _findContextCommandId(menu?.items, name);
-            if (id === null) return false;
+            const found = _findContextCommand(menu?.items, name);
+            if (found === null) return false;
+            // A host that reports `targetKey` refuses, rather than runs another
+            // item, when the rebuilt menu or tracks differ; older hosts reject
+            // the two keys, so send them only then.
+            const check =
+                typeof menu?.targetKey === 'string'
+                    ? { expectPath: found.path, expectTarget: menu.targetKey }
+                    : {};
             const res = successOf(await _invoke('menu.runContextCommandById', {
-                id,
+                id: found.id,
                 mode: 'handles',
                 handles,
+                ...check,
             }));
             return !!res?.success;
         },

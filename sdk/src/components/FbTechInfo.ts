@@ -1,3 +1,8 @@
+import { FbBaseElement } from './FbBaseElement.js';
+import { getFb } from './runtime.js';
+
+type TechField = 'all' | 'codec' | 'bitrate' | 'samplerate' | 'channels';
+
 /**
  * `<fb-tech-info>` — technical info row (codec / bitrate / samplerate
  * / channels).
@@ -9,12 +14,6 @@
  * Channel display: `2 → 'Stereo'`, `1 → 'Mono'`, anything else →
  * `'<n>ch'`.
  */
-
-import { FbBaseElement } from './FbBaseElement.js';
-import { getFb } from './runtime.js';
-
-type TechField = 'all' | 'codec' | 'bitrate' | 'samplerate' | 'channels';
-
 export class FbTechInfo extends FbBaseElement {
     private _text!: HTMLSpanElement;
 

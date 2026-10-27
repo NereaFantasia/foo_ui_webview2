@@ -1,25 +1,3 @@
-/**
- * `<fb-library-filesystem-tree>` — filesystem-style library browser.
- *
- * Walks the typed library tree starting from `library.getRoots()`,
- * lazily expanding directories via `library.browseTree`. When
- * `include-files="true"` is set, file rows are also rendered and
- * selectable.
- *
- * Selection model is identical to {@link FbLibraryTree} (single /
- * Ctrl-toggle / Shift-range / DUI-style right-click promotion).
- *
- * Events:
- * - `fb-library-fs-select`  — selection changed.
- * - `fb-library-fs-play`    — row double-clicked.
- * - `fb-library-fs-context` — right-click (`{ ..., x, y }`).
- *
- * Attributes (observed):
- * - `root-id`        — pin the tree to a specific root (skips the
- *                      multi-root header). Default unset.
- * - `include-files`  — `'true'` to render track rows as well.
- */
-
 import { FbBaseElement } from './FbBaseElement.js';
 import { formatTime } from './constants.js';
 import { getFb } from './runtime.js';
@@ -68,6 +46,27 @@ interface FsCacheEntry {
     files: FsFile[];
 }
 
+/**
+ * `<fb-library-filesystem-tree>` — filesystem-style library browser.
+ *
+ * Walks the typed library tree starting from `library.getRoots()`,
+ * lazily expanding directories via `library.browseTree`. When
+ * `include-files="true"` is set, file rows are also rendered and
+ * selectable.
+ *
+ * Selection model is identical to {@link FbLibraryTree} (single /
+ * Ctrl-toggle / Shift-range / DUI-style right-click promotion).
+ *
+ * Events:
+ * - `fb-library-fs-select`  — selection changed.
+ * - `fb-library-fs-play`    — row double-clicked.
+ * - `fb-library-fs-context` — right-click (`{ ..., x, y }`).
+ *
+ * Attributes (observed):
+ * - `root-id`        — pin the tree to a specific root (skips the
+ *                      multi-root header). Default unset.
+ * - `include-files`  — `'true'` to render track rows as well.
+ */
 export class FbLibraryFilesystemTree extends FbBaseElement {
     private _container!: HTMLElement;
     private _rootId: string | null = null;
@@ -213,7 +212,8 @@ export class FbLibraryFilesystemTree extends FbBaseElement {
         };
         this._sub('library:itemsAdded', invalidate);
         this._sub('library:itemsRemoved', invalidate);
-        this._sub('library:itemsModified', invalidate);
+        // No library:itemsModified: the tree follows paths, and a modified
+        // track keeps its path (a moved file is removed and added).
         this._sub('library:initialized', invalidate);
         void this._loadRoots();
     }

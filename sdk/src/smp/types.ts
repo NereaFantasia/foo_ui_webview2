@@ -1,5 +1,9 @@
 import type { JsonValue } from '../types/json.js';
 import type { JsonObject } from '../types/json.js';
+import type { MenuTreeNode } from '../types/generated/schema-types.js';
+import type { PlaylistInfo, TrackInfo } from '../types/responses.js';
+import type { FbMetadbHandleList } from './classes/FbMetadbHandleList.js';
+
 /**
  * `foo-webview-sdk/smp` — Spider Monkey Panel compatibility types.
  *
@@ -27,9 +31,6 @@ import type { JsonObject } from '../types/json.js';
  * their constructor / method signatures are emitted by tsup from the
  * runtime classes themselves.
  */
-
-import type { PlaylistInfo, TrackInfo } from '../types/responses.js';
-import type { FbMetadbHandleList } from './classes/FbMetadbHandleList.js';
 
 // ---------------------------------------------------------------------------
 // Event names
@@ -354,6 +355,14 @@ export interface SmpRawMenuItem {
     guid?: string;
     /** Sub-command GUID of a dynamic submenu child. */
     subGuid?: string;
+    /** Whether the host can uniquely address this main-menu command. */
+    executable?: boolean;
+    /** Native source, including the dynamic kind when its child identifier is missing. */
+    source?: MenuTreeNode['source'];
+    /** Why the host cannot provide a complete main-menu execution address. */
+    unaddressableReason?: MenuTreeNode['unaddressableReason'];
+    /** Diagnostic alternatives, never an automatic dispatch choice. */
+    addressCandidates?: MenuTreeNode['addressCandidates'];
     children?: SmpRawMenuItem[];
 }
 

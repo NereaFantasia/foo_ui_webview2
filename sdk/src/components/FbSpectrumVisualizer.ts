@@ -1,3 +1,14 @@
+import { FbBaseElement } from './FbBaseElement.js';
+import { getFb } from './runtime.js';
+import { typedCall } from '../utils/typedCall.js';
+import type { AudioSpectrumPayload } from '../types/events.js';
+import type { FbSpectrumDataDetail } from './types.js';
+
+/** The page's `fb.invoke`, typed by the declared methods; read on every call. */
+const invokeHost = typedCall((...args: [method: string, params?: object]) => getFb().invoke(...args));
+
+type SpectrumPayload = AudioSpectrumPayload | { spectrum?: number[] };
+
 /**
  * `<fb-spectrum-visualizer>` — real-time FFT spectrum display.
  *
@@ -20,18 +31,6 @@
  * Cleanup: cancels the rAF loop, the colour-cache interval, the
  * `ResizeObserver`, and unsubscribes the spectrum stream on disconnect.
  */
-
-import { FbBaseElement } from './FbBaseElement.js';
-import { getFb } from './runtime.js';
-import { typedCall } from '../utils/typedCall.js';
-import type { AudioSpectrumPayload } from '../types/events.js';
-import type { FbSpectrumDataDetail } from './types.js';
-
-/** The page's `fb.invoke`, typed by the declared methods; read on every call. */
-const invokeHost = typedCall((...args: [method: string, params?: object]) => getFb().invoke(...args));
-
-type SpectrumPayload = AudioSpectrumPayload | { spectrum?: number[] };
-
 export class FbSpectrumVisualizer extends FbBaseElement {
     private _canvas!: HTMLCanvasElement | null;
     private _ctx!: CanvasRenderingContext2D | null;

@@ -1,3 +1,10 @@
+import { FbBaseElement } from './FbBaseElement.js';
+import { getFb } from './runtime.js';
+import type { FullWaveformOptions, FullWaveformResult } from '../types/responses.js';
+import type { FbSeekDetail } from './types.js';
+
+type NormalizeMode = 'adaptive' | 'gamma' | 'histogram';
+
 /**
  * `<fb-waveform>` — full-track waveform overview with playback cursor.
  *
@@ -24,14 +31,6 @@
  * - `progress` — `0…1` cursor position.
  * - `error`    — last failure code (only when `status="failed"`).
  */
-
-import { FbBaseElement } from './FbBaseElement.js';
-import { getFb } from './runtime.js';
-import type { FullWaveformOptions, FullWaveformResult } from '../types/responses.js';
-import type { FbSeekDetail } from './types.js';
-
-type NormalizeMode = 'adaptive' | 'gamma' | 'histogram';
-
 export class FbWaveform extends FbBaseElement {
     private _canvas!: HTMLCanvasElement;
     private _ctx!: CanvasRenderingContext2D;

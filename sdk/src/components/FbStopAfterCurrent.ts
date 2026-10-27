@@ -1,3 +1,7 @@
+import { FbBaseElement } from './FbBaseElement.js';
+import { getFb } from './runtime.js';
+import type { FbStopAfterCurrentToggleDetail } from './types.js';
+
 /**
  * `<fb-stop-after-current>` — toggles the host's "stop after current
  * track" flag.
@@ -5,11 +9,6 @@
  * Reflects the boolean state via the host attribute `active` and the
  * `aria-pressed` ARIA attribute.
  */
-
-import { FbBaseElement } from './FbBaseElement.js';
-import { getFb } from './runtime.js';
-import type { FbStopAfterCurrentToggleDetail } from './types.js';
-
 export class FbStopAfterCurrent extends FbBaseElement {
     private _btn!: HTMLButtonElement;
 

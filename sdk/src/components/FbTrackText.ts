@@ -1,3 +1,7 @@
+import { FbBaseElement } from './FbBaseElement.js';
+import { getFb } from './runtime.js';
+import type { Track } from '../types/generated/schema-types.js';
+
 /**
  * `<fb-track-text>` — generic single-field track-text display.
  *
@@ -11,11 +15,6 @@
  *
  * Updates on `playback:trackChanged` and `playback:dynamicInfoTrack`.
  */
-
-import { FbBaseElement } from './FbBaseElement.js';
-import { getFb } from './runtime.js';
-import type { Track } from '../types/generated/schema-types.js';
-
 export class FbTrackText extends FbBaseElement {
     private _text!: HTMLSpanElement;
 

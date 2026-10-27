@@ -340,13 +340,21 @@ function httpDownload(
  * JSON text.
  */
 export const http = {
+    /** Send a GET request. */
     get: httpGet,
+    /** Send a POST request with an optional body. */
     post: httpPost,
+    /** Send a PUT request with an optional body. */
     put: httpPut,
+    /** Send a DELETE request with an optional body. */
     delete: httpDelete,
+    /** Send a PATCH request with an optional body. */
     patch: httpPatch,
+    /** Send a HEAD request. */
     head: httpHead,
+    /** Download a URL into a file, creating missing folders. */
     download: httpDownload,
+    /** Cancel an in-flight HTTP request or download by its requestId. */
     abort: (requestId: string) =>
         call('http.abort', { requestId }),
     /** Detach the default failure logger; see {@link disableDefaultHttpDownloadLogger}. */

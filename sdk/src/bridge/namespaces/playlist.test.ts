@@ -13,6 +13,8 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { expectFailure, expectSuccess } from './__tests__/expectEnvelope.js';
+import type { PlaylistAutoplaylistUIResultPayload } from '../../types/generated/events.js';
+import type { PlaylistShowAutoplaylistUIResponse } from '../../types/generated/responses.js';
 
 interface MockNative {
     invoke: ReturnType<typeof vi.fn>;
@@ -31,6 +33,183 @@ function makeNative(): MockNative {
         },
     };
 }
+
+describe('playlist namespace — native autoplaylist editor', () => {
+    const GUID = '{12345678-1111-2222-3031-323334353637}';
+    const OTHER_GUID = '{00000000-1111-2222-3333-444444444444}';
+    const EVENT = 'playlist:autoplaylistUIResult';
+
+    function makeEditorNative() {
+        const native = makeNative();
+        const listeners = new Set<(event: PlaylistAutoplaylistUIResultPayload) => void>();
+        native.on.mockImplementation((name, callback) => {
+            if (name === EVENT) listeners.add(callback);
+        });
+        native.off.mockImplementation((name, callback) => {
+            if (name === EVENT) listeners.delete(callback);
+        });
+        return {
+            native,
+            emit: (event: PlaylistAutoplaylistUIResultPayload) => {
+                for (const listener of listeners) listener(event);
+            },
+        };
+    }
+
+    beforeEach(() => {
+        vi.resetModules();
+    });
+
+    afterEach(() => {
+        vi.unstubAllGlobals();
+    });
+
+    it.each([
+        [2, { playlist: 2 }],
+        [GUID, { playlistGuid: GUID }],
+    ] as const)('opens explicit target %s and resolves on acceptance without a result event', async (target, params) => {
+        const native = makeNative();
+        const accepted = { success: true, accepted: true, operationId: 'open-1', playlistGuid: GUID };
+        native.invoke.mockResolvedValue(accepted);
+        vi.stubGlobal('window', { fb2k: native });
+        const { playlist } = await import('./playlist.js');
+
+        await expect(playlist.showAutoplaylistUI(target)).resolves.toEqual(accepted);
+
+        expect(native.invoke).toHaveBeenCalledWith('playlist.showAutoplaylistUI', params);
+        expect(native.on).not.toHaveBeenCalled();
+    });
+
+    it('preserves a pre-acceptance business failure and its reason', async () => {
+        const native = makeNative();
+        const failure = {
+            success: false,
+            error: 'An editor call is already in progress',
+            code: 'OPERATION_FAILED',
+            details: { reason: 'requestInProgress' },
+        };
+        native.invoke.mockResolvedValue(failure);
+        vi.stubGlobal('window', { fb2k: native });
+        const { playlist } = await import('./playlist.js');
+
+        await expect(playlist.showAutoplaylistUI(GUID)).resolves.toEqual(failure);
+    });
+
+    it('delivers success and failure results until the subscription is removed', async () => {
+        const { native, emit } = makeEditorNative();
+        vi.stubGlobal('window', { fb2k: native });
+        const { playlist } = await import('./playlist.js');
+        const callback = vi.fn();
+        const off = playlist.onAutoplaylistUIResult(callback);
+        const success = { operationId: 'open-1', playlistGuid: GUID, success: true };
+        const failure: PlaylistAutoplaylistUIResultPayload = {
+            operationId: 'open-2',
+            playlistGuid: OTHER_GUID,
+            success: false,
+            error: 'The playlist no longer exists',
+            code: 'NOT_FOUND',
+            reason: 'targetGone',
+        };
+
+        emit(success);
+        emit(failure);
+        off();
+        emit(success);
+
+        expect(callback.mock.calls).toEqual([[success], [failure]]);
+        expect(native.off).toHaveBeenCalledWith(EVENT, callback);
+    });
+
+    it('delivers an early result before the acceptance promise is handled', async () => {
+        const { native, emit } = makeEditorNative();
+        vi.stubGlobal('window', { fb2k: native });
+        const { playlist } = await import('./playlist.js');
+        const order: string[] = [];
+        const result = { operationId: 'early', playlistGuid: GUID, success: true };
+        const off = playlist.onAutoplaylistUIResult((event) => {
+            expect(event).toEqual(result);
+            order.push('result');
+        });
+        native.invoke.mockImplementation(async () => {
+            emit(result);
+            return { success: true, accepted: true, operationId: 'early', playlistGuid: GUID };
+        });
+
+        const accepted = await playlist.showAutoplaylistUI(GUID);
+        order.push('accepted');
+
+        expectSuccess(accepted);
+        expect(order).toEqual(['result', 'accepted']);
+        off();
+    });
+
+    it('lets a consumer match two GUIDs by operationId despite reversed acceptance order', async () => {
+        const { native, emit } = makeEditorNative();
+        const respond = new Map<string, (response: PlaylistShowAutoplaylistUIResponse) => void>();
+        native.invoke.mockImplementation((_method, params: { playlistGuid: string }) =>
+            new Promise<PlaylistShowAutoplaylistUIResponse>((resolve) => {
+                respond.set(params.playlistGuid, resolve);
+            }),
+        );
+        vi.stubGlobal('window', { fb2k: native });
+        const { playlist } = await import('./playlist.js');
+        const early = new Map<string, PlaylistAutoplaylistUIResultPayload>();
+        const matched: PlaylistAutoplaylistUIResultPayload[] = [];
+        const off = playlist.onAutoplaylistUIResult((event) => {
+            if (early.size === 2) early.delete(early.keys().next().value!);
+            early.set(event.operationId, event);
+        });
+        const open = async (guid: string) => {
+            const accepted = await playlist.showAutoplaylistUI(guid);
+            expectSuccess(accepted);
+            const result = early.get(accepted.operationId);
+            expect(result?.playlistGuid).toBe(accepted.playlistGuid);
+            if (result) matched.push(result);
+            early.delete(accepted.operationId);
+        };
+
+        const first = open(GUID);
+        const second = open(OTHER_GUID);
+        const firstResult = { operationId: 'first', playlistGuid: GUID, success: true };
+        const secondResult: PlaylistAutoplaylistUIResultPayload = {
+            operationId: 'second', playlistGuid: OTHER_GUID, success: false,
+            error: 'Provider failed', code: 'OPERATION_FAILED', reason: 'providerFailed',
+        };
+        emit(firstResult);
+        emit(secondResult);
+        respond.get(OTHER_GUID)!({ success: true, accepted: true, operationId: 'second', playlistGuid: OTHER_GUID });
+        await second;
+        respond.get(GUID)!({ success: true, accepted: true, operationId: 'first', playlistGuid: GUID });
+        await first;
+
+        expect(matched).toEqual([secondResult, firstResult]);
+        expect(early.size).toBe(0);
+        off();
+        early.clear();
+    });
+
+    it('keeps query results separate from editor capability information', async () => {
+        const native = makeNative();
+        const info = {
+            success: true, playlist: 0, isAutoplaylist: true, source: 'dui',
+            keepSorted: false, editorAvailability: 'unknown',
+            editorAvailabilityReason: 'unverifiedLock',
+        };
+        const query = {
+            success: true, playlist: 0, isAutoplaylist: true, source: 'dui',
+            keepSorted: false, query: null,
+        };
+        native.invoke.mockResolvedValueOnce(info).mockResolvedValueOnce(query);
+        vi.stubGlobal('window', { fb2k: native });
+        const { playlist } = await import('./playlist.js');
+
+        await expect(playlist.getAutoplaylistInfo(GUID)).resolves.toEqual(info);
+        const result = await playlist.getAutoplaylistQuery(GUID);
+        expect(result).toEqual(query);
+        expect(result).not.toHaveProperty('editorAvailability');
+        expect(result).not.toHaveProperty('editorAvailabilityReason');
+    });
+});
 
 describe('playlist namespace — envelopes pass through', () => {
     beforeEach(() => {
@@ -454,5 +633,94 @@ describe('playlist namespace — a playlist by index or by GUID', () => {
                 { playlist: 1, rows: [0], formats: { r: '%rating%' }, fields: ['title'] },
             ],
         ]);
+    });
+});
+describe('playlist namespace — managed configuration', () => {
+    const GUID = '{12345678-1111-2222-3031-323334353637}';
+    const OTHER_GUID = '{00000000-1111-2222-3333-444444444444}';
+    const snapshot = { success: true, playlistGuid: GUID, query: 'artist IS Test', sort: '', keepSorted: false, revision: 'opaque-a' };
+
+    beforeEach(() => vi.resetModules());
+    afterEach(() => vi.unstubAllGlobals());
+
+    async function setup() {
+        const native = makeNative();
+        native.invoke.mockResolvedValue(snapshot);
+        vi.stubGlobal('window', { fb2k: native });
+        return { native, playlist: (await import('./playlist.js')).playlist };
+    }
+
+    it('creates a managed playlist without filling omitted options', async () => {
+        const { native, playlist } = await setup();
+        await expect(playlist.createManagedAutoplaylist('Test', 'artist IS Test')).resolves.toEqual(snapshot);
+        expect(native.invoke).toHaveBeenCalledWith('playlist.createManagedAutoplaylist', { name: 'Test', query: 'artist IS Test' });
+    });
+
+    it('preserves explicit empty sorting and false on creation', async () => {
+        const { native, playlist } = await setup();
+        await playlist.createManagedAutoplaylist('Test', 'artist IS Test', '', false);
+        expect(native.invoke).toHaveBeenCalledWith('playlist.createManagedAutoplaylist', {
+            name: 'Test', query: 'artist IS Test', sort: '', keepSorted: false,
+        });
+    });
+
+    it.each([[2, { playlist: 2 }], [GUID, { playlistGuid: GUID }]] as const)(
+        'reads and updates explicit target %s without filling omitted fields', async (target, params) => {
+            const { native, playlist } = await setup();
+            await expect(playlist.getAutoplaylistConfig(target)).resolves.toEqual(snapshot);
+            await expect(playlist.setAutoplaylistConfig(target, { expectedRevision: 'opaque-a', query: 'artist IS Next' })).resolves.toEqual(snapshot);
+            expect(native.invoke.mock.calls).toEqual([
+                ['playlist.getAutoplaylistConfig', params],
+                ['playlist.setAutoplaylistConfig', { ...params, expectedRevision: 'opaque-a', query: 'artist IS Next' }],
+            ]);
+        },
+    );
+
+    it('sends clearing values together without inventing a query', async () => {
+        const { native, playlist } = await setup();
+        await playlist.setAutoplaylistConfig(GUID, { expectedRevision: 'opaque-a', sort: '', keepSorted: false });
+        expect(native.invoke).toHaveBeenCalledWith('playlist.setAutoplaylistConfig', {
+            playlistGuid: GUID, expectedRevision: 'opaque-a', sort: '', keepSorted: false,
+        });
+    });
+
+    it('preserves conflict and partial-failure envelopes', async () => {
+        const { native, playlist } = await setup();
+        const failure = { success: false, error: 'Refresh failed', code: 'OPERATION_FAILED', details: {
+            reason: 'refreshFailed', state: 'changed', current: snapshot,
+        } };
+        native.invoke.mockResolvedValue(failure);
+        await expect(playlist.setAutoplaylistConfig(GUID, { expectedRevision: 'old', sort: '%title%' })).resolves.toEqual(failure);
+        await expect(playlist.getAutoplaylistConfig(GUID)).resolves.toEqual(failure);
+        await expect(playlist.createManagedAutoplaylist('Test', 'NOT ALL')).resolves.toEqual(failure);
+    });
+
+    it('lets transport failures reject', async () => {
+        const { native, playlist } = await setup();
+        native.invoke.mockRejectedValue(new Error('Bridge disconnected'));
+        await expect(playlist.getAutoplaylistConfig(GUID)).rejects.toThrow('Bridge disconnected');
+    });
+
+    it('subscribes to both playlist identities and removes the listener on disposal', async () => {
+        const { native, playlist } = await setup();
+        const listeners = new Set<(value: { playlistGuid: string; revision: string }) => void>();
+        native.on.mockImplementation((name, callback) => {
+            if (name === 'playlist:autoplaylistConfigChanged') listeners.add(callback);
+        });
+        native.off.mockImplementation((name, callback) => {
+            if (name === 'playlist:autoplaylistConfigChanged') listeners.delete(callback);
+        });
+        const callback = vi.fn();
+        const unsubscribe = playlist.onAutoplaylistConfigChanged(callback);
+        for (const listener of listeners) {
+            listener({ playlistGuid: GUID, revision: 'one' });
+            listener({ playlistGuid: OTHER_GUID, revision: 'two' });
+        }
+        expect(callback.mock.calls).toEqual([
+            [{ playlistGuid: GUID, revision: 'one' }], [{ playlistGuid: OTHER_GUID, revision: 'two' }],
+        ]);
+        unsubscribe();
+        expect(listeners.size).toBe(0);
+        expect(native.invoke).not.toHaveBeenCalled();
     });
 });

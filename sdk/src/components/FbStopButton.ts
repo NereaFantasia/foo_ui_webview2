@@ -1,3 +1,7 @@
+import { FbBaseElement } from './FbBaseElement.js';
+import { getFb } from './runtime.js';
+import type { FbStopDetail } from './types.js';
+
 /**
  * `<fb-stop-button>` — stops playback.
  *
@@ -6,11 +10,6 @@
  *
  * Emits `fb-stop` after the host call resolves.
  */
-
-import { FbBaseElement } from './FbBaseElement.js';
-import { getFb } from './runtime.js';
-import type { FbStopDetail } from './types.js';
-
 export class FbStopButton extends FbBaseElement {
     private _btn!: HTMLButtonElement;
 

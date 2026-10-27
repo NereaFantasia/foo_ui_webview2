@@ -12,8 +12,10 @@ export const replaygain = {
         call('replaygain.get', {
             paths: Array.isArray(paths) ? paths : [paths],
         }),
+    /** Read the ReplayGain source mode and processing mode. */
     getMode: () =>
         call('replaygain.getMode'),
+    /** Change the ReplayGain source mode, processing mode, or both. */
     setMode: (
         sourceMode: NonNullable<ReplaygainSetModeParams['sourceMode']>,
         processingMode?: ReplaygainSetModeParams['processingMode'],
@@ -22,13 +24,16 @@ export const replaygain = {
             sourceMode,
             ...(processingMode ? { processingMode } : {}),
         }),
+    /** Read the two ReplayGain preamps, in dB. */
     getPreamp: () =>
         call('replaygain.getPreamp'),
+    /** Change one or both ReplayGain preamps in dB. */
     setPreamp: (withRg?: number, withoutRg?: number) =>
         call('replaygain.setPreamp', {
             ...(withRg != null ? { withRg } : {}),
             ...(withoutRg != null ? { withoutRg } : {}),
         }),
+    /** Read the complete ReplayGain configuration: modes, preamps, and active status. */
     getSettings: () =>
         call('replaygain.getSettings'),
     /**
@@ -48,6 +53,7 @@ export const replaygain = {
             paths,
             ...(opts?.mode ? { mode: opts.mode } : {}),
         }),
+    /** Remove ReplayGain values from the specified files. */
     clear: (paths: string[]) =>
         call('replaygain.clear', {
             paths,

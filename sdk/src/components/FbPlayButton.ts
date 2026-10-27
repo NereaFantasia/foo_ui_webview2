@@ -1,3 +1,7 @@
+import { FbBaseElement } from './FbBaseElement.js';
+import { getFb } from './runtime.js';
+import type { FbPauseDetail, FbPlayDetail } from './types.js';
+
 /**
  * `<fb-play-button>` — toggles between play and pause.
  *
@@ -10,11 +14,6 @@
  * Emits `fb-play` when entering the playing state, `fb-pause`
  * otherwise. Both events bubble through the Shadow DOM boundary.
  */
-
-import { FbBaseElement } from './FbBaseElement.js';
-import { getFb } from './runtime.js';
-import type { FbPauseDetail, FbPlayDetail } from './types.js';
-
 export class FbPlayButton extends FbBaseElement {
     private _btn!: HTMLButtonElement;
     private _playSlot!: HTMLSlotElement;

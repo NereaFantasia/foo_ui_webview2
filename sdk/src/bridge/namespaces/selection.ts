@@ -17,8 +17,9 @@ export const selection = {
     /** Omitting `limit` caps the page at 100 and reports `truncated`; `limit: 0` returns everything. */
     get: (opts?: SelectionGetParams) =>
         call('selection.get', opts || {}),
+    /** Report the type of the current global selection, as a numeric index and name. */
     getType: () => call('selection.getType'),
-    /** Handles are native paths with an optional `|subsong:N` suffix; at least one is required. */
+    /** Replace the global selection with the given track paths. Handles can have `|subsong:N` suffixes. */
     set: (handles: string[]) =>
         call('selection.set', {
             handles,
@@ -31,6 +32,7 @@ export const selection = {
         call('selection.setPlaylistTracking', {
             mode,
         }),
+    /** Report which source the user's Selection Viewer preference favours (`prefer_playing` or `prefer_selection`). */
     getViewerMode: () =>
         call('selection.getViewerMode'),
     /** With `includeTrackInfo` the response carries the shared `Track` row as `track`. */

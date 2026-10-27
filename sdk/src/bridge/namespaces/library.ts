@@ -19,9 +19,11 @@ import type {
 import type {
     LibraryBrowseTreeParams,
     LibraryGetAlbumsParams,
+    LibraryGetAlbumTracksParams,
     LibraryGetArtistAlbumsParams,
     LibraryGetAllParams,
     LibraryGetArtistsParams,
+    LibraryGetChangesParams,
     LibraryGetRecentlyAddedParams,
     LibrarySearchParams,
 } from '../../types/generated/params.js';
@@ -69,6 +71,10 @@ export const library = {
             ...(limit != null ? { limit } : {}),
             ...(options && typeof options === 'object' ? options : {}),
         }),
+    /**
+     * List albums across the library, grouped by album name plus album artist.
+     * Tracks without an `album` tag are skipped.
+     */
     getAlbums: (options?: number | LibraryGetAlbumsParams) =>
         call(
             'library.getAlbums',
@@ -93,9 +99,13 @@ export const library = {
             limit,
             ...(options && typeof options === 'object' ? options : {}),
         }),
+    /** Report every genre in the library with its track count, ordered by name. */
     getGenres: () => call('library.getGenres'),
+    /** Report aggregate track, album, and artist counts over the whole library. */
     getStats: () => call('library.getStats'),
+    /** Report whether the library is enabled and how many tracks it holds. */
     getStatus: () => call('library.getStatus'),
+    /** Report the total number of tracks in the library. */
     getCount: () => call('library.getCount'),
     /**
      * Fetch library tracks: `count` tracks from position `start`, sent as the
@@ -213,10 +223,28 @@ export const library = {
             }
         });
     },
+    /** Ask foobar2000 to rescan the library folders. */
     refresh: () => call('library.refresh'),
+    /** Look up one file in the library and return its track metadata. */
     getByPath: (path: string) =>
         call('library.getByPath', {
             path,
+        }),
+    /**
+     * Fetch the library revision and tracks changed after `since` for local incremental sync.
+     * Pass previous `epoch` and `revision`; when omitted or mismatched, returns `resync: true`
+     * with full handles. Fails with `OPERATION_PENDING` while the library is still loading.
+     */
+    getChanges: (params: LibraryGetChangesParams = {}) =>
+        call('library.getChanges', params),
+    /**
+     * Fetch library rows for up to 5000 handles in the given order. Missing handles are reported
+     * in `missing`. Optional `fields` restricts row keys, as in {@link library.query}.
+     */
+    getTracks: (handles: string[], fields?: string[]) =>
+        call('library.getTracks', {
+            handles,
+            ...(fields != null ? { fields } : {}),
         }),
     /**
      * Append `paths` to a playlist, by default the active one. Pass the playlist's `guid` rather
@@ -230,7 +258,9 @@ export const library = {
         }),
 
     // ── Roots / typed tree ──────────────────────────────────────────────
+    /** Report the library's root folders. */
     getRoots: () => call('library.getRoots'),
+    /** Browse the logical library hierarchy starting from a root folder. */
     browseTree: (params: LibraryBrowseTreeParams) =>
         call('library.browseTree', {
             rootId: params.rootId,
@@ -244,6 +274,7 @@ export const library = {
         }),
 
     // ── Filesystem-based directory listing ──────────────────────────────
+    /** Browse a directory path on disk within the media library. */
     browseDirectory: (path: string, includeFiles?: boolean) =>
         call(
             'library.browseDirectory',
@@ -256,22 +287,35 @@ export const library = {
      * Tracks of one album from {@link getAlbums}, sorted by disc number, then
      * track number, then library order.
      *
-     * Pass the row's `name` and `albumArtist` as they are: both are compared
-     * byte for byte, and `total` then equals the row's `trackCount`. The row's
-     * `artist` is not the same key, and an album artist that is `""` must be
-     * passed as `""`. A pair no row has resolves with no tracks and no `row`.
+     * Pass the row's `name` and `albumArtist` as they are. Without `albumId`,
+     * both are compared byte for byte, and `total` equals the row's
+     * `trackCount`. The row's `artist` is not the same key, and an album
+     * artist that is `""` must be passed as `""`. A pair no row has resolves
+     * with no tracks and no `row`.
      * The grouping is kept by the host until the library changes, so repeated
      * calls do not rescan the library.
+     *
+     * When the row supplies `albumId`, pass it in `options` to identify the
+     * original album rather than its display names. An empty or malformed ID
+     * fails with `INVALID_PARAMS`; it never falls back to a name lookup.
      *
      * @example
      *   const page = await fb.library.getAlbums({ limit: 1 });
      *   const album = page.success ? page.albums[0] : undefined;
      *   if (album) {
-     *       const res = await fb.library.getAlbumTracks(album.name, album.albumArtist);
+     *       const res = await fb.library.getAlbumTracks(album.name, album.albumArtist, album);
      *   }
      */
-    getAlbumTracks: (album: string, albumArtist: string) =>
-        call('library.getAlbumTracks', { album, albumArtist }),
+    getAlbumTracks: (
+        album: string,
+        albumArtist: string,
+        options?: Pick<LibraryGetAlbumTracksParams, 'albumId'>,
+    ) =>
+        call('library.getAlbumTracks', {
+            album,
+            albumArtist,
+            ...(options?.albumId !== undefined ? { albumId: options.albumId } : {}),
+        }),
     /**
      * Albums an artist appears on, as rows shaped like `library.getAlbums`.
      *
@@ -290,6 +334,8 @@ export const library = {
      * artist appears on, not the whole album — `getAlbums` returns the
      * album-wide figures for the same row. Rendering a row here as an album
      * card will therefore understate it.
+     * The row's `tracks`, when present, identify those contributing members;
+     * use them instead of display names to distinguish equal-looking rows.
      *
      * Rows are grouped by album name alone, so identically titled albums by
      * different artists collapse into one row; tracks whose `album` tag is
@@ -326,8 +372,16 @@ export const library = {
             artist,
             ...(limit != null ? { limit } : {}),
         }),
+    /** Report diagnostic cache hit/miss statistics for library queries and indexes. */
     getCacheStats: () =>
         call('library.getCacheStats'),
+    /**
+     * Report every distinct value of one metadata tag across the library with track counts.
+     *
+     * @param field - Metadata tag name (e.g. `'genre'`, `'date'`).
+     * @param limit - Maximum distinct values to return.
+     * @param separator - Separator for multi-value tags.
+     */
     getFieldValues: (field: string, limit?: number, separator?: string) =>
         call('library.getFieldValues', {
             field,
@@ -629,10 +683,12 @@ export const library = {
     },
 
     // ── Convenience queries ─────────────────────────────────────────────
+    /** Draw tracks at random from the whole library without duplicates. */
     getRandomTracks: (count?: number) =>
         call('library.getRandomTracks', {
             ...(count != null ? { count } : {}),
         }),
+    /** Report the most recently added tracks of the library. */
     getRecentlyAdded: (
         limit?: number,
         sortBy?: LibraryGetRecentlyAddedParams['sortBy'],
@@ -641,8 +697,10 @@ export const library = {
             ...(limit != null ? { limit } : {}),
             ...(sortBy ? { sortBy } : {}),
         }),
+    /** Invalidate cached library query results and directory tree indexes. */
     invalidateCache: () =>
         call('library.invalidateCache'),
+    /** Report whether the foobar2000 media library is enabled. */
     isEnabled: () => call('library.isEnabled'),
     /**
      * Run a foobar2000 query expression with an optional Title Formatting
@@ -664,5 +722,6 @@ export const library = {
             ...(limit != null ? { limit } : {}),
             ...(fields != null ? { fields } : {}),
         }),
+    /** Request foobar2000 to rescan the configured library folders. */
     rescan: () => call('library.rescan'),
 };

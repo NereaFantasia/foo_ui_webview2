@@ -45,6 +45,13 @@ export class ApiCallError extends Error {
  *   }
  */
 export function unwrap<R extends { success: boolean }>(response: R): SuccessOf<R>;
+/**
+ * Extract one property from the success branch of a response, throwing if the call failed.
+ *
+ * @param response The API envelope returned by a bridge call.
+ * @param key Property key of the success branch to extract.
+ * @throws {@link ApiCallError} when `success` is `false`.
+ */
 export function unwrap<R extends { success: boolean }, K extends keyof SuccessOf<R>>(
     response: R,
     key: K,

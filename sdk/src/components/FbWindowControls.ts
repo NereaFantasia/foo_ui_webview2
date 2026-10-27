@@ -1,3 +1,13 @@
+import { FbBaseElement } from './FbBaseElement.js';
+import { OwnWindowStateFilter, learnOwnWindowId } from './ownWindowState.js';
+import { getFb } from './runtime.js';
+import type { WindowStateChangedPayload } from '../types/generated/events.js';
+import type {
+    FbWindowCloseDetail,
+    FbWindowMaximizeDetail,
+    FbWindowMinimizeDetail,
+} from './types.js';
+
 /**
  * `<fb-window-controls>` — minimize / maximize-or-restore / close
  * button group.
@@ -17,17 +27,6 @@
  * ignored, and events that arrive before `fb.ui.getCurrentWindowId()`
  * answers are held until it does (see {@link OwnWindowStateFilter}).
  */
-
-import { FbBaseElement } from './FbBaseElement.js';
-import { OwnWindowStateFilter, learnOwnWindowId } from './ownWindowState.js';
-import { getFb } from './runtime.js';
-import type { WindowStateChangedPayload } from '../types/generated/events.js';
-import type {
-    FbWindowCloseDetail,
-    FbWindowMaximizeDetail,
-    FbWindowMinimizeDetail,
-} from './types.js';
-
 export class FbWindowControls extends FbBaseElement {
     private _minBtn!: HTMLButtonElement;
     private _maxBtn!: HTMLButtonElement;

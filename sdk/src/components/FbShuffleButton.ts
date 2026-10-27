@@ -1,3 +1,8 @@
+import { FbBaseElement } from './FbBaseElement.js';
+import { SHUFFLE_ORDERS } from './constants.js';
+import { getFb } from './runtime.js';
+import type { FbShuffleToggleDetail } from './types.js';
+
 /**
  * `<fb-shuffle-button>` — toggles between sequential and shuffle
  * playback orders.
@@ -8,12 +13,6 @@
  *
  * Reflects the host attribute `active` and `aria-pressed` for ARIA.
  */
-
-import { FbBaseElement } from './FbBaseElement.js';
-import { SHUFFLE_ORDERS } from './constants.js';
-import { getFb } from './runtime.js';
-import type { FbShuffleToggleDetail } from './types.js';
-
 export class FbShuffleButton extends FbBaseElement {
     private _btn!: HTMLButtonElement;
 

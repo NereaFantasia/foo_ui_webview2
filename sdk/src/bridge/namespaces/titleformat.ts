@@ -72,6 +72,7 @@ export const titleformat = {
             'titleformat.evalFieldsBatch',
             { paths, fields },
         ),
+    /** List commonly used title formatting fields, keyed by a readable name. */
     getBuiltinFields: () =>
         call('titleformat.getBuiltinFields'),
 };

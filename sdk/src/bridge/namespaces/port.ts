@@ -10,8 +10,10 @@ import type { JsonValue } from '../../types/json.js';
  * that handle. Receivers subscribe with {@link port.onMessage}.
  */
 export const port = {
+    /** Open a port on a named channel for the calling window and announce it with `port:connected`. */
     connect: (name: string) =>
         call('port.connect', { name }),
+    /** Close a port and announce it with `port:disconnected`. */
     disconnect: (portId: string) =>
         call('port.disconnect', {
             portId,
@@ -22,6 +24,7 @@ export const port = {
             portId,
             message,
         }),
+    /** Send a message to one port, as a `port:message` event to that port's window. */
     postMessageTo: (
         portId: string,
         targetPortId: string,
@@ -38,10 +41,13 @@ export const port = {
             'port.getPorts',
             name === undefined ? {} : { name },
         ),
+    /** Subscribe to incoming messages on ports. Returns an unsubscribe function. */
     onMessage: (handler: (data: unknown) => void) =>
         subscribe('port:message', handler),
+    /** Subscribe to port disconnection events. Returns an unsubscribe function. */
     onDisconnect: (handler: (data: unknown) => void) =>
         subscribe('port:disconnected', handler),
+    /** Subscribe to port connection events. Returns an unsubscribe function. */
     onConnect: (handler: (data: unknown) => void) =>
         subscribe('port:connected', handler),
 };

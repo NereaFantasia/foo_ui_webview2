@@ -1,17 +1,3 @@
-/**
- * `FbMetadbHandleList` — ordered collection of {@link FbMetadbHandle}.
- *
- * Matches the Spider Monkey Panel handle-list shape: indexed access
- * via `list[i]`, a `Count` getter, mutation via
- * `Add` / `AddRange` / `Remove*`, and helpers for total duration / file
- * size. Indexed read-write is implemented with a `Proxy` so consumer
- * code that relies on `list[0] = newHandle` keeps working.
- *
- * Implements the SMP runtime contract; the only TS-specific addition
- * is the `Iterable<FbMetadbHandle>` declaration so `for ... of` is
- * automatically typed.
- */
-
 import { FbMetadbHandle } from './FbMetadbHandle.js';
 import type { SmpHandleLike } from '../types.js';
 
@@ -69,6 +55,19 @@ function _buildProxy(target: FbMetadbHandleList): FbMetadbHandleList {
     });
 }
 
+/**
+ * `FbMetadbHandleList` — ordered collection of {@link FbMetadbHandle}.
+ *
+ * Matches the Spider Monkey Panel handle-list shape: indexed access
+ * via `list[i]`, a `Count` getter, mutation via
+ * `Add` / `AddRange` / `Remove*`, and helpers for total duration / file
+ * size. Indexed read-write is implemented with a `Proxy` so consumer
+ * code that relies on `list[0] = newHandle` keeps working.
+ *
+ * Implements the SMP runtime contract; the only TS-specific addition
+ * is the `Iterable<FbMetadbHandle>` declaration so `for ... of` is
+ * automatically typed.
+ */
 export class FbMetadbHandleList implements Iterable<FbMetadbHandle> {
     private _items: FbMetadbHandle[] = [];
 
@@ -84,11 +83,13 @@ export class FbMetadbHandleList implements Iterable<FbMetadbHandle> {
         return this._items.length;
     }
 
+    /** Append a handle to the end of the list. */
     Add(handle: HandleInput): boolean {
         this._items.push(_toHandle(handle));
         return true;
     }
 
+    /** Append a collection or iterable of handles to the end of the list. */
     AddRange(list: HandleListLike): boolean {
         if (!list) return false;
 
@@ -128,6 +129,7 @@ export class FbMetadbHandleList implements Iterable<FbMetadbHandle> {
         return false;
     }
 
+    /** Remove all handles from the list. */
     RemoveAll(): boolean {
         this._items.length = 0;
         return true;
@@ -169,6 +171,7 @@ export class FbMetadbHandleList implements Iterable<FbMetadbHandle> {
         return total;
     }
 
+    /** Iterate over the handles in this list. */
     [Symbol.iterator](): Iterator<FbMetadbHandle> {
         return this._items[Symbol.iterator]();
     }
