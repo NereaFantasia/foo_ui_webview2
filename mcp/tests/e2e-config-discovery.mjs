@@ -687,50 +687,88 @@ async function runIntrospectionCases(bridge, recorder) {
         { success: true, count: "> 5", each: "a braced GUID", matchingListedPages: "> 0" },
     );
 
-    // The main-menu tree walks static slots and the children of dynamic slots
-    // through one recursion, so a leaf's `source` has to come from its own
-    // `subGuid`, not from the value the walk was started with. Which tier
-    // answered decides what to expect: on the v2 tree a leaf with `subGuid`
-    // must say `mainmenu_dynamic` and one without `mainmenu_static`; on the v1
-    // HMENU fallback (what a localized host answers) every leaf says
-    // `hmenu_fallback` even when a `subGuid` was back-filled for it. The
-    // dynamic branch is therefore only exercised on a host that answers with
-    // the v2 tree and has at least one dynamic child (a "switch to playlist"
-    // entry, an output device); `dynamicLeaves` in the observation shows
-    // whether this run reached it.
     const mainMenu = await invoke("menu.getMainMenu", {});
-    const leaves = [];
-    const collectLeaves = (nodes) => {
-        for (const node of nodes ?? []) {
-            if (node?.type === "command") leaves.push(node);
-            else if (node?.type === "submenu") collectLeaves(node.children);
+    const flatten = (nodes) => (nodes ?? []).flatMap((node) => node.type === "command" ? [node] : flatten(node.children));
+    const leaves = flatten(mainMenu.items);
+    const tier = mainMenu.fallback ? "flat" : mainMenu.source === "v1-hmenu" ? "v1-hmenu" : "v2-tree";
+    recorder.assertCase(
+        "CD-35 main-menu source and complete execution addresses agree",
+        mainMenu.success === true && leaves.length > 0 && leaves.every((leaf) =>
+            typeof leaf.available === "boolean" && leaf.available === leaf.enabled &&
+            (tier !== "v1-hmenu" || leaf.source === "hmenu_fallback") &&
+            (leaf.source !== "mainmenu_dynamic" || leaf.subGuid || leaf.executable === false) &&
+            (!leaf.executable || typeof leaf.guid === "string") &&
+            (leaf.executable || typeof leaf.unaddressableReason === "string")),
+        { tier, count: leaves.length, unaddressable: leaves.filter((leaf) => !leaf.executable).map((leaf) =>
+            ({ path: leaf.path, reason: leaf.unaddressableReason })) },
+        { completeAddress: "every executable leaf", unavailable: "explicit reason, independent of enabled" },
+    );
+
+    const submenus = [];
+    const collectSubmenus = (nodes) => {
+        for (const node of nodes ?? []) if (node.type === "submenu") {
+            submenus.push(node);
+            collectSubmenus(node.children);
         }
     };
-    collectLeaves(mainMenu.items);
-    const tier = mainMenu.fallback ? "flat" : mainMenu.source === "v1-hmenu" ? "v1-hmenu" : "v2-tree";
-    const dynamicLeaves = leaves.filter((leaf) => typeof leaf.subGuid === "string");
-    const staticLeaves = leaves.filter((leaf) => leaf.subGuid === undefined);
-    const expectedDynamic = tier === "v1-hmenu" ? "hmenu_fallback" : "mainmenu_dynamic";
-    const expectedStatic = tier === "v1-hmenu" ? "hmenu_fallback" : "mainmenu_static";
-    recorder.assertCase(
-        "CD-35 a main-menu leaf's source follows its own address: subGuid marks it dynamic",
-        mainMenu.success === true &&
-            leaves.length > 0 &&
-            dynamicLeaves.every((leaf) => leaf.source === expectedDynamic) &&
-            staticLeaves.every((leaf) => leaf.source === expectedStatic),
-        {
-            tier,
-            leaves: leaves.length,
-            dynamicLeaves: dynamicLeaves.length,
-            dynamicSources: [...new Set(dynamicLeaves.map((leaf) => leaf.source))],
-            staticSources: [...new Set(staticLeaves.map((leaf) => leaf.source))],
-        },
-        {
-            dynamicSources: [expectedDynamic],
-            staticSources: [expectedStatic],
-            dynamicLeaves: "> 0 only on a v2-tree host with dynamic children",
-        },
-    );
+    collectSubmenus(mainMenu.items);
+    const nested = submenus.find((node) => node.path?.includes("/") && flatten(node.children).length > 0);
+    if (nested) {
+        const scoped = await invoke("menu.getMainMenu", { root: nested.path });
+        const expected = flatten(nested.children).map((node) => node.path);
+        const actual = flatten(scoped.items).map((node) => node.path);
+        recorder.assertCase("CD-36 root filtering retains complete main-menu paths",
+            scoped.success === true && scoped.rootMatched === true &&
+                JSON.stringify(actual) === JSON.stringify(expected),
+            { root: nested.path, actual }, { paths: expected });
+    } else {
+        recorder.assertCase("CD-36 root filtering retains complete main-menu paths", true,
+            { skipped: "no nested submenu in this source" }, { skipped: "needs a nested tree" });
+    }
+
+    // A disabled leaf keeps this negative test inert even on a host with the old leaf-only resolver.
+    const disabled = leaves.find((node) => node.enabled === false && node.executable && node.label && node.guid);
+    if (disabled) {
+        const wrong = await bridge.invokeRaw("menu.runMainMenuCommand", { command: "__missing_menu_root__/" + disabled.label });
+        const denied = await bridge.invokeRaw("menu.runMainMenuCommand", {
+            command: disabled.guid, ...(disabled.subGuid ? { subGuid: disabled.subGuid } : {}),
+        });
+        recorder.assertCase("CD-37 wrong ancestors fail and a disabled stable address stays disabled",
+            wrong.kind === "result" && wrong.value?.code === "MENU_COMMAND_NOT_FOUND" &&
+                denied.kind === "result" && denied.value?.code === "MENU_ITEM_DISABLED",
+            { path: disabled.path, wrong, denied },
+            { wrong: "MENU_COMMAND_NOT_FOUND", denied: "MENU_ITEM_DISABLED" });
+    } else {
+        recorder.assertCase("CD-37 wrong ancestors fail and a disabled stable address stays disabled", true,
+            { skipped: "no addressable disabled command" }, { skipped: "needs an inert negative-test target" });
+    }
+
+    // Both playlists belong to this test and are removed by stable identity.
+    const prefix = `menu-identity-long-${Date.now()}-`;
+    const names = [510, 700].map((length) => prefix + "X".repeat(length - prefix.length));
+    const created = [];
+    try {
+        for (const name of names) {
+            const result = await invoke("playlist.create", { name });
+            if (!result.success || !result.guid) throw new Error("Unable to create long-name menu fixture");
+            created.push(result.guid);
+        }
+        const sample = await invoke("menu.getMainMenu", {});
+        const rows = flatten(sample.items).filter((node) => node.label?.startsWith(prefix));
+        const targets = names.map((name) => rows.find((node) => node.label === name));
+        recorder.assertCase("CD-38 long main-menu labels cannot alias a shorter prefix command",
+            targets.every((node) => node?.executable === true && node.subGuid) &&
+                new Set(targets.map((node) => node?.subGuid)).size === 2,
+            { rows: rows.map((node) => ({ length: node.label.length, guid: node.guid,
+                subGuid: node.subGuid, executable: node.executable })) },
+            { lengths: [510, 700], distinctDynamicAddresses: 2 });
+    } finally {
+        for (const playlistGuid of created) {
+            const removed = await invoke("playlist.remove", { playlistGuid });
+            if (!removed.success) throw new Error(`Unable to remove owned menu fixture ${playlistGuid}`);
+        }
+    }
+
 }
 
 async function runAdvancedConfigCases(bridge, recorder) {

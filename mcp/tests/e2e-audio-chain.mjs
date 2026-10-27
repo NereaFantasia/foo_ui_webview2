@@ -255,16 +255,17 @@ async function runChainRefusalCases(bridge, recorder, entryChain) {
         },
     );
 
-    const [noIndex, badIndex, noFrom, noTo, badRange, same] = await Promise.all([
+    // A move onto itself needs an entry to exist, so it is checked in the round trip below
+    // on the processor added there (AC-22); the entry chain may be empty.
+    const [noIndex, badIndex, noFrom, noTo, badRange] = await Promise.all([
         invoke("dsp.removeDsp", {}),
         invoke("dsp.removeDsp", { index: 9999 }),
         invoke("dsp.moveDsp", { to: 0 }),
         invoke("dsp.moveDsp", { from: 0 }),
         invoke("dsp.moveDsp", { from: 0, to: 9999 }),
-        invoke("dsp.moveDsp", { from: 0, to: 0 }),
     ]);
     recorder.assertCase(
-        "AC-08 removeDsp and moveDsp each name the index key they are missing, refuse one past the end, and treat a move onto itself as a success that says it did nothing",
+        "AC-08 removeDsp and moveDsp each name the index key they are missing and refuse one past the end",
         noIndex?.success === false &&
             noIndex.code === "INVALID_PARAMS" &&
             /^index is required/i.test(noIndex.error ?? "") &&
@@ -279,17 +280,11 @@ async function runChainRefusalCases(bridge, recorder, entryChain) {
             /^to is required/i.test(noTo.error ?? "") &&
             badRange?.success === false &&
             badRange.code === "INVALID_INDEX" &&
-            /out of range/i.test(badRange.error ?? "") &&
-            same?.success === true &&
-            same.message === "No change needed" &&
-            same.from === 0 &&
-            same.to === 0 &&
-            !("movedDsp" in same),
-        { noIndex, badIndex, noFrom, noTo, badRange, same },
+            /out of range/i.test(badRange.error ?? ""),
+        { noIndex, badIndex, noFrom, noTo, badRange },
         {
             missingKeys: "the generated parser names from, to or index with INVALID_PARAMS",
             outOfRange: { error: "Index out of range", code: "INVALID_INDEX" },
-            selfMove: { success: true, message: "No change needed", from: 0, to: 0, movedDspPresent: false },
         },
     );
 
@@ -396,6 +391,23 @@ async function runChainRoundTripCases(bridge, recorder, entryChain, candidate, c
         {
             afterMove: "the moved processor first, the others in their original order",
             afterMoveBack: "identical to the chain before the move",
+        },
+    );
+
+    const same = await invoke("dsp.moveDsp", { from: tailIndex, to: tailIndex });
+    const afterSame = await invoke("dsp.getChain", {});
+    recorder.assertCase(
+        "AC-22 moveDsp onto its own index succeeds, says it did nothing and leaves the chain as it was",
+        same?.success === true &&
+            same.message === "No change needed" &&
+            same.from === tailIndex &&
+            same.to === tailIndex &&
+            !("movedDsp" in same) &&
+            guidsOf(afterSame).join() === guidsOf(afterAdd).join(),
+        { same, afterSame: guidsOf(afterSame) },
+        {
+            same: { success: true, message: "No change needed", from: tailIndex, to: tailIndex, movedDspPresent: false },
+            afterSame: "identical to the chain before the move",
         },
     );
 

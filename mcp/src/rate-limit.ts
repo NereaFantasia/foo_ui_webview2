@@ -1,25 +1,25 @@
 /**
- * A token-bucket limit on tool calls, shared by every tool of the server.
+ * Token-bucket rate limiter for tool execution across the server.
  */
 
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 
 import { errorResult } from "./tool-results.js";
 
-/** How many calls the server takes. */
+/** Configuration options for the token-bucket rate limiter. */
 export interface RateLimitOptions {
-    /** Calls allowed back to back before the rate applies. */
+    /** Maximum number of burst calls allowed before rate limiting applies. */
     burst: number;
-    /** Calls allowed per second once the burst is spent. */
+    /** Sustained call rate allowed per second once burst capacity is exhausted. */
     perSecond: number;
-    /** Clock in milliseconds; `Date.now` by default. */
+    /** Timestamp provider returning epoch milliseconds; defaults to `Date.now`. */
     now?: () => number;
 }
 
-/** The server's default budget: 40 calls in a burst, then 20 a second. */
+/** Default rate limit: burst capacity of 40 calls, refilling at 20 calls per second. */
 export const DEFAULT_RATE_LIMIT: Readonly<RateLimitOptions> = { burst: 40, perSecond: 20 };
 
-/** Counts tool calls against a budget that refills at a steady rate. */
+/** Tracks tool invocation rate against a token bucket that refills steadily over time. */
 export class CallRateLimiter {
     private readonly burst: number;
     private readonly perSecond: number;
@@ -39,10 +39,10 @@ export class CallRateLimiter {
     }
 
     /**
-     * Take one call from the budget.
+     * Consumes one token from the budget.
      *
-     * @returns `0` when the call may go ahead, otherwise the milliseconds to
-     *   wait before one will.
+     * @returns `0` if the call is permitted immediately, or the number of milliseconds
+     *   to wait before a token becomes available.
      */
     take(): number {
         const now = this.now();
@@ -55,7 +55,7 @@ export class CallRateLimiter {
         return Math.ceil(((1 - this.tokens) * 1000) / this.perSecond);
     }
 
-    /** The refusal a call over the budget gets. */
+    /** Formats an error result when a call exceeds the rate limit. */
     refusal(waitMs: number): CallToolResult {
         return errorResult(
             `Rate limit: this server takes ${this.burst} calls in a burst and ${this.perSecond} a second after that. ` +
@@ -64,7 +64,7 @@ export class CallRateLimiter {
     }
 }
 
-/** A tool handler that first takes its call from `limiter`, and is refused when none is left. */
+/** Wraps a tool handler with rate limiting, returning a refusal error if the rate limit is exceeded. */
 export function withRateLimit<A extends unknown[]>(
     limiter: CallRateLimiter | undefined,
     handler: (...args: A) => Promise<CallToolResult>

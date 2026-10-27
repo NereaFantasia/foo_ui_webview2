@@ -43,6 +43,7 @@ import {
     requireResponsiveBridge,
     resolvePort,
 } from "./lib/e2e-harness.mjs";
+import { dirname, win32 } from "node:path";
 import { resolveFixtureArea, waitForLibraryEntry } from "./lib/fixture-area.mjs";
 import {
     makeSolidPng,
@@ -737,8 +738,13 @@ async function runPlaylistItemCases(bridge, recorder, fixtures, scratch, scratch
         },
     );
 
+    // Path security denies a portable spelling foobar2000 cannot resolve, so the
+    // handler's own refusal is only reached with one it does resolve.
+    const version = await invoke("config.getVersionInfo", {});
+    const instance = version?.profilePath ? dirname(version.profilePath) : "";
+    const relative = instance ? win32.relative(instance, fixtures.front) : "";
     const fileRelative = await invoke("artwork.getForTrack", {
-        path: "file-relative://something.flac",
+        path: `file-relative://${relative}`,
     });
     recorder.assertCase(
         "AW-28 getForTrack refuses a playlist-relative path outright with INVALID_PATH and points at the endpoint that can resolve one",
@@ -746,7 +752,7 @@ async function runPlaylistItemCases(bridge, recorder, fixtures, scratch, scratch
             fileRelative.code === "INVALID_PATH" &&
             /file-relative:\/\/ paths require playlist context/i.test(fileRelative.error ?? "") &&
             /getByPlaylistItem/.test(fileRelative.error ?? ""),
-        { fileRelative },
+        { instance, relative, fileRelative },
         { success: false, code: "INVALID_PATH", error: "names artwork.getByPlaylistItem as the alternative" },
     );
 }

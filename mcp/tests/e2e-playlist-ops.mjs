@@ -273,7 +273,11 @@ async function runReadShapeCases(bridge, recorder, scratch, subjects) {
         "PO-08 a hand-made playlist is not an autoplaylist, and all three endpoints say so",
         isAuto?.isAutoplaylist === false &&
             autoInfo?.isAutoplaylist === false &&
+            autoInfo?.editorAvailability === "unavailable" &&
+            autoInfo?.editorAvailabilityReason === "notAutoplaylist" &&
             autoQuery?.isAutoplaylist === false &&
+            !Object.hasOwn(autoQuery, "editorAvailability") &&
+            !Object.hasOwn(autoQuery, "editorAvailabilityReason") &&
             autoQuery?.query === null,
         { isAutoplaylist: isAuto, info: autoInfo, query: autoQuery },
         { allThree: "isAutoplaylist false", query: null },
@@ -602,13 +606,13 @@ async function runOrderCases(bridge, recorder, collector, scratch) {
     recorder.assertCase(
         "PO-22 reordering is announced with the number of rows involved",
         reorderEvents.length > reorderSeen &&
-            sameSet(keysOf(lastReorder?.payload), ["playlist", "playlistGuid", "count"]) &&
+            sameSet(keysOf(lastReorder?.payload), ["playlist", "playlistGuid", "count", "contentVersion"]) &&
             lastReorder?.payload?.count === SUBJECT_COUNT,
         {
             newEvents: reorderEvents.length - reorderSeen,
             payload: lastReorder?.payload,
         },
-        { payloadKeys: ["count", "playlist", "playlistGuid"], count: SUBJECT_COUNT },
+        { payloadKeys: ["contentVersion", "count", "playlist", "playlistGuid"], count: SUBJECT_COUNT },
     );
 
     // undo/redo report whether a step was there to restore, which is the only
@@ -735,10 +739,10 @@ async function runContentCases(bridge, recorder, collector, scratch, subjects) {
     recorder.assertCase(
         "PO-27 an insertion is announced with where it landed and how many rows arrived",
         addedEvents.length > addedSeen &&
-            sameSet(keysOf(lastAdded?.payload), ["playlist", "playlistGuid", "start", "count"]) &&
+            sameSet(keysOf(lastAdded?.payload), ["playlist", "playlistGuid", "start", "count", "contentVersion"]) &&
             lastAdded?.payload?.count === 1,
         { newEvents: addedEvents.length - addedSeen, payload: lastAdded?.payload },
-        { payloadKeys: ["count", "playlist", "playlistGuid", "start"], count: 1 },
+        { payloadKeys: ["contentVersion", "count", "playlist", "playlistGuid", "start"], count: 1 },
     );
 
     // Sequential adding exists so that the order of the given paths survives; the
@@ -850,18 +854,21 @@ async function runContentCases(bridge, recorder, collector, scratch, subjects) {
                 "operationId",
                 "playlistGuid",
                 "success",
+                "status",
                 "addedCount",
                 "totalCount",
             ]) &&
             GUID_SHAPE.test(receipt?.playlistGuid ?? "") &&
             completion.payload?.playlistGuid === receipt?.playlistGuid &&
             completion.payload?.success === true &&
+            completion.payload?.status === "completed" &&
             completion.payload?.addedCount === 1 &&
             completion.payload?.totalCount === 1,
         { payload: completion?.payload, receipt },
         {
-            payloadKeys: ["addedCount", "operationId", "playlistGuid", "success", "totalCount"],
+            payloadKeys: ["addedCount", "operationId", "playlistGuid", "status", "success", "totalCount"],
             playlistGuid: "the receipt's",
+            status: "completed",
             addedCount: 1,
         },
     );
@@ -909,11 +916,11 @@ async function runContentCases(bridge, recorder, collector, scratch, subjects) {
     recorder.assertCase(
         "PO-33 a removal is announced with the count transition rather than the indices",
         removalEvents.length > removedSeen &&
-            sameSet(keysOf(lastRemoval?.payload), ["playlist", "playlistGuid", "oldCount", "newCount"]) &&
+            sameSet(keysOf(lastRemoval?.payload), ["playlist", "playlistGuid", "oldCount", "newCount", "contentVersion"]) &&
             lastRemoval?.payload?.newCount === afterSelectedRemoval.length,
         { newEvents: removalEvents.length - removedSeen, payload: lastRemoval?.payload },
         {
-            payloadKeys: ["newCount", "oldCount", "playlist", "playlistGuid"],
+            payloadKeys: ["contentVersion", "newCount", "oldCount", "playlist", "playlistGuid"],
             newCount: afterSelectedRemoval.length,
         },
     );
@@ -971,7 +978,11 @@ async function runPlaylistLevelCases(bridge, recorder, collector, scratch, subje
             auto?.playlist === auto?.index &&
             autoInfo?.isAutoplaylist === true &&
             autoInfo?.source === "sdk" &&
+            autoInfo?.editorAvailability === "available" &&
+            autoInfo?.editorAvailabilityReason === "supported" &&
             typeof autoInfo?.keepSorted === "boolean" &&
+            !Object.hasOwn(autoQuery, "editorAvailability") &&
+            !Object.hasOwn(autoQuery, "editorAvailabilityReason") &&
             autoQuery?.query === null &&
             typeof autoQuery?.note === "string",
         { created: auto, info: autoInfo, query: autoQuery },
@@ -1144,9 +1155,36 @@ async function runPlaylistLevelCases(bridge, recorder, collector, scratch, subje
     );
 }
 
-async function runRefusalCases(bridge, recorder) {
+async function runRefusalCases(bridge, recorder, scratch) {
     const { invoke } = bridge;
     const outOfRange = 99999;
+
+    const all = await invoke("playlist.getAll", {});
+    const guid = all.playlists[scratch].guid;
+    const missingGuid = "{00000000-0000-0000-0000-000000000001}";
+    if (all.playlists.some((entry) => entry.guid === missingGuid)) {
+        throw new Error("The missing GUID fixture unexpectedly exists");
+    }
+    const refusalCases = [
+        [{}, "INVALID_PARAMS"],
+        [{ playlist: scratch, playlistGuid: guid }, "INVALID_PARAMS"],
+        [{ playlist: -1 }, "INVALID_PARAMS"],
+        [{ playlist: outOfRange }, "INVALID_INDEX"],
+        [{ playlistGuid: "invalid-guid" }, "INVALID_PARAMS"],
+        [{ playlistGuid: missingGuid }, "NOT_FOUND", "targetGone"],
+        [{ playlistGuid: guid }, "NOT_SUPPORTED", "notAutoplaylist"],
+    ];
+    for (const [params, code, reason] of refusalCases) {
+        const response = await invoke("playlist.showAutoplaylistUI", params);
+        recorder.assertCase(
+            `PO-43c editor refuses ${JSON.stringify(params)}`,
+            response?.success === false && response?.code === code &&
+                (reason === undefined || response?.details?.reason === reason) &&
+                response?.accepted === undefined && response?.operationId === undefined,
+            { params, response },
+            { code, reason, accepted: false },
+        );
+    }
 
     const [sorted, movedTracks, cleared, removedTracks, tracks, count, reversed, selected] =
         await Promise.all([
@@ -1468,6 +1506,7 @@ async function runMovedTargetCases(bridge, recorder, collector, names, playlistF
             : "PO-62 tracks expanded by addPathsAsync go into its target after the target moved during the expansion",
         receipt?.success === true &&
             swapped?.success === true &&
+            completion?.status === "completed" &&
             completion?.addedCount === expected &&
             counts.target === expected &&
             counts.other === 0 &&
@@ -1475,7 +1514,7 @@ async function runMovedTargetCases(bridge, recorder, collector, names, playlistF
             added[0].payload?.playlist === targetNow &&
             targetNow !== target.index,
         { receipt, swapped, completion, itemsAdded: added.map((event) => event.payload), indexNow: targetNow, counts },
-        { addedCount: expected, counts: { target: expected, other: 0 }, itemsAddedAt: "the new index" },
+        { status: "completed", addedCount: expected, counts: { target: expected, other: 0 }, itemsAddedAt: "the new index" },
     );
 
     const doomed = await invoke("playlist.create", { name: names.removedTarget });
@@ -1494,15 +1533,17 @@ async function runMovedTargetCases(bridge, recorder, collector, names, playlistF
     recorder.assertCase(
         removalLost
             ? "PO-63 addPathsAsync with the target removed during the expansion: not exercised, the expansion finished first"
-            : "PO-63 tracks expanded by addPathsAsync after its target was removed are dropped, not written into the playlist that took its index",
+            : "PO-63 tracks expanded by addPathsAsync after its target was removed are dropped, not written into the playlist that took its index, and the completion says why",
         lateReceipt?.success === true &&
             removed?.success === true &&
             completion?.success === true &&
+            completion?.status === "failed" &&
+            completion?.reason === "targetRemoved" &&
             completion?.addedCount === 0 &&
             nextCount === 0 &&
             added.length === 0,
         { receipt: lateReceipt, removed, completion, itemsAdded: added.map((event) => event.payload), nextCount },
-        { addedCount: 0, nextCount: 0, itemsAdded: "none" },
+        { status: "failed", reason: "targetRemoved", addedCount: 0, nextCount: 0, itemsAdded: "none" },
     );
 }
 
@@ -2042,7 +2083,7 @@ try {
         await runOrderCases(bridge, recorder, collector, scratch);
         await runContentCases(bridge, recorder, collector, scratch, subjects);
         await runPlaylistLevelCases(bridge, recorder, collector, scratch, subjects, names);
-        await runRefusalCases(bridge, recorder);
+        await runRefusalCases(bridge, recorder, scratch);
         await runIdentityCases(bridge, recorder, subjects, names);
         await runWindowingCases(bridge, recorder, subjects, names);
 

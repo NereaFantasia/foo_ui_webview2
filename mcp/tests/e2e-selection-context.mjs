@@ -577,7 +577,7 @@ async function runExecuteCases(bridge, recorder, hasTarget) {
             /invalid subguid/i.test(badSubGuid.error ?? "") &&
             unknownGuid?.success === false &&
             unknownGuid.code === "NOT_FOUND" &&
-            /no main-menu command owns/i.test(unknownGuid.error ?? "") &&
+            /no main-menu leaf owns/i.test(unknownGuid.error ?? "") &&
             unknownGuid.guid === UNKNOWN_GUID &&
             unknownGuid.dynamic === false,
         { noGuid, badGuid, badSubGuid, unknownGuid },

@@ -34,7 +34,6 @@ import {
     closeClient,
     connectBridgePage,
     createBridge,
-    createEventCollector,
     createRecorder,
     envInt,
     report,
@@ -754,7 +753,70 @@ async function runTreeCases(bridge, recorder, area, root, fixtures) {
     );
 }
 
-async function runCacheCases(bridge, recorder, collector) {
+/**
+ * Watches library:getAllResult and keeps only a summary of each payload in the page.
+ * A full-library result can hold every track of a large library (about 144 MB for
+ * 100,000 tracks), which cannot come back through CDP by value within a poll, and
+ * the page is busy receiving it for several seconds; each poll therefore allows the
+ * full invoke timeout.
+ */
+async function watchGetAllResults(bridge) {
+    const key = JSON.stringify(`__fb2kE2eGetAll_${runId}`);
+    await bridge.evaluateValue(
+        `(() => {
+            const store = { summaries: [], handler: null };
+            store.handler = (p) => {
+                store.summaries.push({
+                    requestId: p?.requestId,
+                    total: p?.total,
+                    rows: Array.isArray(p?.tracks) ? p.tracks.length : 0,
+                    items: Array.isArray(p?.items) ? p.items.length : 0,
+                    offset: p?.offset,
+                    limit: p?.limit,
+                    fromCache: p?.fromCache,
+                    error: p?.error,
+                });
+            };
+            window.fb2k.on("library:getAllResult", store.handler);
+            window[${key}] = store;
+            return true;
+        })()`,
+        false,
+        invokeTimeoutMs,
+    );
+
+    const read = () =>
+        bridge.evaluateValue(`window[${key}]?.summaries ?? []`, false, invokeTimeoutMs);
+
+    async function waitForRequest(requestId) {
+        const deadline = Date.now() + eventTimeoutMs;
+        for (;;) {
+            const found = (await read()).find((summary) => summary.requestId === requestId);
+            if (found || Date.now() >= deadline) return found;
+            await new Promise((resolve) => setTimeout(resolve, 100));
+        }
+    }
+
+    async function stop() {
+        await bridge
+            .evaluateValue(
+                `(() => {
+                    const store = window[${key}];
+                    if (!store) return false;
+                    window.fb2k.off("library:getAllResult", store.handler);
+                    delete window[${key}];
+                    return true;
+                })()`,
+                false,
+                invokeTimeoutMs,
+            )
+            .catch(() => undefined);
+    }
+
+    return { waitForRequest, stop };
+}
+
+async function runCacheCases(bridge, recorder, getAllResults) {
     const { invoke } = bridge;
 
     // albums, artists and status are kept by the API layer rather than by the
@@ -840,31 +902,25 @@ async function runCacheCases(bridge, recorder, collector) {
         { pending: true, requestId: "a non-empty id" },
     );
 
-    await collector.waitFor(
-        (events) => events.some((event) => event.payload?.requestId === receipt?.requestId),
-        { timeoutMs: eventTimeoutMs, pollMs: 100 },
-    );
-    const delivered = collector.received.find(
-        (event) => event.payload?.requestId === receipt?.requestId,
-    );
+    const delivered = await getAllResults.waitForRequest(receipt?.requestId);
     recorder.assertCase(
         "LR-33 the result arrives on library:getAllResult under the receipt it was promised",
         delivered !== undefined &&
-            delivered.payload?.total === total &&
-            (delivered.payload?.tracks ?? []).length === total &&
-            delivered.payload?.error === undefined &&
-            delivered.payload?.fromCache === false &&
-            (delivered.payload?.items ?? []).length === total &&
-            delivered.payload?.offset === 0 &&
-            delivered.payload?.limit === total + 10,
+            delivered.total === total &&
+            delivered.rows === total &&
+            delivered.error === undefined &&
+            delivered.fromCache === false &&
+            delivered.items === total &&
+            delivered.offset === 0 &&
+            delivered.limit === total + 10,
         {
             eventArrived: delivered !== undefined,
-            total: delivered?.payload?.total,
-            rows: (delivered?.payload?.tracks ?? []).length,
-            items: (delivered?.payload?.items ?? []).length,
-            offset: delivered?.payload?.offset,
-            limit: delivered?.payload?.limit,
-            error: delivered?.payload?.error,
+            total: delivered?.total,
+            rows: delivered?.rows,
+            items: delivered?.items,
+            offset: delivered?.offset,
+            limit: delivered?.limit,
+            error: delivered?.error,
             expectedTotal: total,
         },
         { rows: total, items: total, offset: 0, limit: total + 10, error: undefined, fromCache: false },
@@ -1242,9 +1298,7 @@ try {
         context.reportedPath = fixtureFacts.reportedPath;
         await runTreeCases(bridge, recorder, area, root, fixtures);
 
-        collector = await createEventCollector(bridge, ["library:getAllResult"], {
-            collectorId: runId,
-        });
+        collector = await watchGetAllResults(bridge);
         await runCacheCases(bridge, recorder, collector);
         await runRefusalCases(bridge, recorder, root);
 

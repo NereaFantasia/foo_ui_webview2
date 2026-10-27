@@ -44,8 +44,10 @@
  * usable bridge on the DevTools port, default 20000).
  */
 
+import { existsSync } from "node:fs";
 import { createServer as createHttpServer } from "node:http";
 import { createServer } from "node:net";
+import { join } from "node:path";
 
 import CDP from "chrome-remote-interface";
 
@@ -1224,7 +1226,7 @@ async function runBeforeCloseCases(bridge, recorder, events, createdPopups, plac
 }
 
 const DEV_SERVER_FALLBACK_CASE_NAMES = [
-    "WP-30 with the development server switched on but unreachable, a new popup falls back to the local template like the main window: its page comes from the virtual host with its windowId, and webview.getSource reports a folder source",
+    "WP-30 with the development server switched on but unreachable, a new popup falls back like the main window: to a local template on the virtual host with its windowId, or to the built-in page when no template folder has an index.html, and webview.getSource reports which",
 ];
 const LOCAL_FOLDER_SOURCES = ["panelTemplate", "activeTemplate", "componentDirectory", "defaultTemplate"];
 
@@ -1289,14 +1291,35 @@ async function runDevServerFallbackCases(bridge, recorder, createdPopups, placem
         finalUrl.startsWith("https://foo-ui-webview2.local/") &&
         new RegExp(`[?&]windowId=${popupId}(?:[&#]|$)`).test(finalUrl);
     const restored = await invoke("window.getDevServerConfig", {});
+
+    // The host shows its built-in page only when none of the folders it tries holds an
+    // index.html: the active template, foo_ui_webview2_resources\dist next to the
+    // component, and the default template. They are read from the disk this suite runs on.
+    const templatesDirectory = source?.value?.templatesDirectory;
+    const componentPath = (await bridge.invokeRaw("misc.getComponentPath", {}))?.value?.path;
+    const localPages =
+        typeof templatesDirectory === "string" && typeof componentPath === "string"
+            ? [
+                  join(templatesDirectory, String(source.value.activeTemplateName ?? ""), "index.html"),
+                  join(componentPath, "foo_ui_webview2_resources", "dist", "index.html"),
+                  join(templatesDirectory, "default", "index.html"),
+              ]
+            : null;
+    const presentPages = localPages?.filter((page) => existsSync(page)) ?? null;
+    const folderFallback =
+        fromVirtualHost &&
+        LOCAL_FOLDER_SOURCES.includes(source?.value?.source) &&
+        typeof source?.value?.directory === "string";
+    const builtInFallback =
+        source?.value?.source === "builtInPage" &&
+        presentPages?.length === 0 &&
+        !finalUrl.startsWith(deadUrl);
     recorder.assertCase(
         DEV_SERVER_FALLBACK_CASE_NAMES[0],
         created?.success === true &&
             attach.stage === "ready" &&
-            fromVirtualHost &&
             source?.value?.success === true &&
-            LOCAL_FOLDER_SOURCES.includes(source.value.source) &&
-            typeof source.value.directory === "string" &&
+            (folderFallback || builtInFallback) &&
             restored?.useDevServer === original?.useDevServer &&
             restored?.devServerUrl === original?.devServerUrl,
         {
@@ -1306,12 +1329,17 @@ async function runDevServerFallbackCases(bridge, recorder, createdPopups, placem
             attachWaitedMs: attach.waitedMs,
             finalUrl: finalUrl.slice(0, 160),
             source: source?.value,
+            localPages,
+            presentPages,
             restored,
             original,
         },
         {
-            finalUrl: "https://foo-ui-webview2.local/...?windowId=<the popup id>",
-            source: { source: LOCAL_FOLDER_SOURCES.join(" | "), directory: "the mapped folder" },
+            withLocalPage: {
+                finalUrl: "https://foo-ui-webview2.local/...?windowId=<the popup id>",
+                source: { source: LOCAL_FOLDER_SOURCES.join(" | "), directory: "the mapped folder" },
+            },
+            withoutLocalPage: { source: "builtInPage", presentPages: [] },
             restored: "equal to original",
         },
     );

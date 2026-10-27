@@ -5,6 +5,29 @@ All notable changes to foo-ui-webview2-mcp will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+Released together with foo_ui_webview2 2.1.0. The new actions and parameters
+need that version of the host; 2.0.0 rejects them.
+
+### Added
+
+- Managed autoplaylists: `fb2k_playlist_manage` takes
+  `playlist.createManagedAutoplaylist` and `playlist.setAutoplaylistConfig`,
+  and `fb2k_playlist_read` takes `playlist.getAutoplaylistConfig`. A managed
+  autoplaylist's query, sort and keep-sorted setting can be read and changed
+  after it is created. Pass the `revision` you read as `expectedRevision`; if
+  the configuration changed since, nothing changes and the call fails with
+  `details.reason: 'revisionConflict'`.
+- Version checks on position-based edits. These actions take
+  `expectedVersion`, the `contentVersion` returned with the rows you read:
+  `playlist.insertTracks`, `removeTracks`, `moveTracks`, `reorder`,
+  `setSelection`, `setFocusedTrack` and `playTrack`, and `queue.remove`,
+  `moveToTop`, `setContents`, `insertNext` and `playNow`. If the rows changed
+  since, nothing changes and the call fails with `STALE_TARGET`. `queue.add`,
+  and each playlist row passed to `queue.setContents` or `queue.insertNext`,
+  take `expectedPlaylistVersion` for the playlist the row comes from.
+
 ## [0.2.0] - 2026-10-06
 
 Released together with foo_ui_webview2 2.0.0, whose host methods these tools

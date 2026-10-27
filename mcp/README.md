@@ -149,7 +149,7 @@ method, as compact JSON. `artwork.getCurrent` and `artwork.getForTrack` are the 
 cover comes back as an image, with the other fields as JSON.
 
 <!-- mcp-tools:begin -->
-**10 bridge tools** covering 90 host methods, grouped by namespace and by what they change; the page tools follow below. Each tool takes an `action`, the host method to call, and that method's parameters beside it. A parameter marked `?` is optional; types, ranges and defaults are in each tool's input schema.
+**10 bridge tools** covering 93 host methods, grouped by namespace and by what they change; the page tools follow below. Each tool takes an `action`, the host method to call, and that method's parameters beside it. A parameter marked `?` is optional; types, ranges and defaults are in each tool's input schema.
 
 ### `fb2k_playback_read`
 
@@ -185,7 +185,7 @@ Control playback: start, pause, stop, skip, seek, set or step the volume, mute, 
 | `playback.playPause` | — | Toggle between playing and paused; starts playback when stopped. |
 | `playback.random` | — | Start a random track of the active playlist. |
 | `playback.playPath` | `path` | Append one file to the active playlist and play it; a playlist is created when there is none. |
-| `playlist.playTrack` | `playlist?`, `playlistGuid?`, `index`, `deferred?`, `muted?` | Play a row of a playlist, as double-clicking it does. |
+| `playlist.playTrack` | `playlist?`, `playlistGuid?`, `index`, `deferred?`, `muted?`, `expectedVersion?` | Play a row of a playlist, as double-clicking it does. |
 | `playback.setPosition` | `position` | Seek within the current track, playing or paused. |
 | `playback.setVolume` | `volume` | Set the output volume as a percentage; values outside `0` to `100` are clamped. |
 | `playback.volumeUp` | — | Raise the volume by one of the host's steps: one decibel, landing on a whole decibel. |
@@ -198,7 +198,7 @@ Control playback: start, pause, stop, skip, seek, set or step the volume, mute, 
 
 ### `fb2k_playlist_read`
 
-read-only · 12 actions
+read-only · 13 actions
 
 Read playlists: the list of playlists (index, guid, name, track count, whether active, playing, locked or an autoplaylist), a page of one playlist's tracks or the rows picked by number, the rows whose tracks match a query, its selection and focus, its lock and autoplaylist details, and the columns the playlist view offers. Changes nothing.
 
@@ -214,12 +214,13 @@ Read playlists: the list of playlists (index, guid, name, track count, whether a
 | `playlist.getSelection` | `playlist?`, `playlistGuid?` | List the selected rows of a playlist. |
 | `playlist.getFocusedTrack` | `playlist?`, `playlistGuid?` | Report the focused row of a playlist. |
 | `playlist.getLockInfo` | `playlist?`, `playlistGuid?` | Report whether a playlist carries a lock, such as an autoplaylist's. |
-| `playlist.getAutoplaylistInfo` | `playlist?`, `playlistGuid?` | Describe a playlist's autoplaylist status. |
+| `playlist.getAutoplaylistInfo` | `playlist?`, `playlistGuid?` | Describe a playlist's autoplaylist status and native editor availability without opening UI. |
+| `playlist.getAutoplaylistConfig` | `playlist?`, `playlistGuid?` | Read the configuration of an autoplaylist managed by this component. |
 | `playlist.getAvailableColumns` | — | List the playlist columns that foobar2000 and the installed components define for the Default UI playlist view. |
 
 ### `fb2k_playlist_manage`
 
-destructive · 8 actions
+destructive · 10 actions
 
 Manage the playlists themselves: create, remove, rename, duplicate and reorder them, and turn a playlist into an autoplaylist that a library query fills, or back into a normal one.
 
@@ -231,8 +232,10 @@ Manage the playlists themselves: create, remove, rename, duplicate and reorder t
 | `playlist.remove` | `playlist` | Delete a playlist. |
 | `playlist.reorderPlaylists` | `newOrder?`, `newOrderGuids?` | Reorder the playlist list, giving for each new position either the current index of the playlist that goes there (`newOrder`) or its GUID (`newOrderGuids`); give exactly one of the two, or the call fails with `INVALID_PARAMS`. |
 | `playlist.createAutoplaylist` | `name?`, `query`, `sort?`, `keepSorted?` | Create a playlist that foobar2000 fills from a library query and keeps up to date. |
+| `playlist.createManagedAutoplaylist` | `name?`, `query`, `sort?`, `keepSorted?` | Create an autoplaylist whose query and sorting are managed by this component. |
+| `playlist.setAutoplaylistConfig` | `playlist?`, `playlistGuid?`, `expectedRevision`, `query?`, `sort?`, `keepSorted?` | Edit configuration of a managed autoplaylist against its expected revision. |
 | `playlist.convertToAutoplaylist` | `playlist?`, `playlistGuid?`, `query`, `sort?`, `keepSorted?` | Turn an existing playlist into an autoplaylist; its tracks are replaced by the query results. |
-| `playlist.removeAutoplaylist` | `playlist?`, `playlistGuid?` | Turn an autoplaylist back into an ordinary playlist that keeps its current tracks. |
+| `playlist.removeAutoplaylist` | `playlist?`, `playlistGuid?` | Release an autoplaylist-manager client, including a third-party client, keeping the current tracks. |
 
 ### `fb2k_playlist_edit`
 
@@ -245,13 +248,13 @@ Change the tracks of a playlist: add files, folders or tracks, insert, remove, m
 | `playlist.addPaths` | `playlist?`, `playlistGuid?`, `paths` | Append files, folders or URLs to a playlist, saving an undo point first. |
 | `playlist.addPathsSequential` | `playlist?`, `playlistGuid?`, `paths` | Append paths to a playlist in the given order, saving an undo point first; a path that expands to several tracks (a folder, a cue sheet) keeps its place. |
 | `playlist.addHandles` | `playlist?`, `playlistGuid?`, `handles` | Append tracks to a playlist, saving an undo point first. |
-| `playlist.insertTracks` | `playlist?`, `playlistGuid?`, `position?`, `handles` | Insert tracks at a position of a playlist, saving an undo point first. |
+| `playlist.insertTracks` | `playlist?`, `playlistGuid?`, `position?`, `handles`, `expectedVersion?` | Insert tracks at a position of a playlist, saving an undo point first. |
 | `playlist.replaceAllAndPlay` | `playlist?`, `playlistGuid?`, `paths`, `playIndex?`, `stopFirst?`, `autoPlay?` | Replace the whole content of a playlist and play it: stop playback, clear the playlist (saving an undo point), add the paths as `playlist.addPaths` does, make the playlist active and play or focus `playIndex`. |
-| `playlist.removeTracks` | `playlist?`, `playlistGuid?`, `items` | Remove rows from a playlist, saving an undo point first. |
+| `playlist.removeTracks` | `playlist?`, `playlistGuid?`, `items`, `expectedVersion?` | Remove rows from a playlist, saving an undo point first. |
 | `playlist.removeSelectedTracks` | `playlist?`, `playlistGuid?` | Remove the selected rows from a playlist, saving an undo point first. |
 | `playlist.clear` | `playlist?`, `playlistGuid?` | Remove every track from a playlist, saving an undo point first. |
-| `playlist.moveTracks` | `playlist?`, `playlistGuid?`, `items?`, `delta` | Move the selected rows of a playlist by `delta` positions, saving an undo point first. |
-| `playlist.reorder` | `playlist?`, `playlistGuid?`, `newOrder` | Reorder a playlist's tracks, saving an undo point first: `newOrder[i]` is the current row of the track that moves to row `i`. |
+| `playlist.moveTracks` | `playlist?`, `playlistGuid?`, `items?`, `delta`, `expectedVersion?` | Move the selected rows of a playlist by `delta` positions, saving an undo point first. |
+| `playlist.reorder` | `playlist?`, `playlistGuid?`, `newOrder`, `expectedVersion?` | Reorder a playlist's tracks, saving an undo point first: `newOrder[i]` is the current row of the track that moves to row `i`. |
 | `playlist.sort` | `playlist?`, `playlistGuid?`, `pattern?`, `descending?`, `selectedOnly?` | Sort a playlist by a Title Formatting pattern, saving an undo point first. |
 | `playlist.shuffle` | `playlist?`, `playlistGuid?` | Put a playlist's tracks in random order, saving an undo point first. |
 | `playlist.reverse` | `playlist?`, `playlistGuid?` | Reverse the order of a playlist's tracks, saving an undo point first. |
@@ -267,10 +270,10 @@ Change which playlist is active and which of its rows are selected or focused. T
 | Action | Params | Description |
 |--------|--------|-------------|
 | `playlist.setActive` | `playlist?`, `playlistGuid?` | Make a playlist the active one. |
-| `playlist.setSelection` | `playlist?`, `playlistGuid?`, `indices`, `clearOthers?` | Select rows of a playlist. |
+| `playlist.setSelection` | `playlist?`, `playlistGuid?`, `indices`, `clearOthers?`, `expectedVersion?` | Select rows of a playlist. |
 | `playlist.selectAll` | `playlist?`, `playlistGuid?` | Select every row of a playlist. |
 | `playlist.deselectAll` | `playlist?`, `playlistGuid?` | Clear the selection of a playlist. |
-| `playlist.setFocusedTrack` | `playlist?`, `playlistGuid?`, `index` | Move the focus of a playlist to a row, or remove it. |
+| `playlist.setFocusedTrack` | `playlist?`, `playlistGuid?`, `index`, `expectedVersion?` | Move the focus of a playlist to a row, or remove it. |
 
 ### `fb2k_library_read`
 
@@ -293,13 +296,13 @@ Change the playback queue: add playlist rows or files, insert tracks to play nex
 
 | Action | Params | Description |
 |--------|--------|-------------|
-| `queue.add` | `playlist?`, `playlistGuid?`, `tracks?`, `track?` | Queue one or more tracks by their position in a playlist. |
+| `queue.add` | `playlist?`, `playlistGuid?`, `tracks?`, `track?`, `expectedPlaylistVersion?` | Queue one or more tracks by their position in a playlist. |
 | `queue.addPaths` | `paths`, `useQueuePlaylist?`, `playlist?`, `playlistGuid?` | Queue tracks by path. |
-| `queue.insertNext` | `paths?`, `items?`, `position?` | Insert tracks so they play next, ahead of everything already queued. |
-| `queue.setContents` | `items` | Replace the whole queue with an ordered list of references. |
-| `queue.moveToTop` | `index` | Move a queued entry to the front so it plays next. |
-| `queue.playNow` | `index?` | Play the queue entry at `index` now, moving it to the front first when it is not already there. |
-| `queue.remove` | `index?`, `indices?` | Remove one entry by `index`, or several by `indices`. |
+| `queue.insertNext` | `paths?`, `items?`, `position?`, `expectedVersion?` | Insert tracks so they play next, ahead of everything already queued. |
+| `queue.setContents` | `items`, `expectedVersion?` | Replace the whole queue with an ordered list of references. |
+| `queue.moveToTop` | `index`, `expectedVersion?` | Move a queued entry to the front so it plays next. |
+| `queue.playNow` | `index?`, `expectedVersion?` | Play the queue entry at `index` now, moving it to the front first when it is not already there. |
+| `queue.remove` | `index?`, `indices?`, `expectedVersion?` | Remove one entry by `index`, or several by `indices`. |
 | `queue.clear` | — | Empty the queue. |
 
 ### `fb2k_track_read`

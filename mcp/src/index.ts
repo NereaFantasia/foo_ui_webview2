@@ -1,9 +1,9 @@
 #!/usr/bin/env node
 /**
- * foo-ui-webview2-mcp — MCP Server entry point.
+ * foo-ui-webview2-mcp — MCP server entry point.
  *
- * Connects to the fb2k WebView2 over CDP and exposes the bridge API as
- * MCP tools. Transport: stdio.
+ * Connects to foobar2000's WebView2 instance over CDP and exposes bridge
+ * APIs and page inspection tools via stdio transport.
  */
 
 import { createRequire } from "node:module";
@@ -22,7 +22,7 @@ import { bridgeTools } from "./generated/bridge-tools.js";
 
 const flag = (name: string) => process.env[name] === "1" || process.env[name] === "true";
 
-/** A positive integer environment variable, or the fallback when it is unset or not one. */
+/** Parses a positive integer from an environment variable, returning `fallback` if unset or invalid. */
 function positiveInt(name: string, fallback: number): number {
     const raw = process.env[name];
     if (raw === undefined || raw === "") return fallback;
@@ -35,8 +35,8 @@ function positiveInt(name: string, fallback: number): number {
 // ── CDP connection parameters ──
 const CDP_PORT = parseInt(process.env.FB2K_CDP_PORT || "9222", 10);
 const CDP_HOST = process.env.FB2K_CDP_HOST || "localhost";
-// Optional URL substring to pin the CDP page target when several WebViews
-// (popups, panels, overlays) share the debugging port.
+// Optional URL substring filter to target a specific WebView2 instance
+// when multiple panels, popups, or overlays share the remote debugging port.
 const CDP_TARGET_URL = process.env.FB2K_CDP_TARGET_URL || "";
 
 // ── Tool options ──
@@ -45,7 +45,7 @@ const ENABLE_EVAL = flag("FB2K_ENABLE_EVAL");
 const MAX_RESPONSE_CHARS = positiveInt("FB2K_MAX_RESPONSE_CHARS", DEFAULT_MAX_RESPONSE_CHARS);
 const MAX_IMAGE_BYTES = positiveInt("FB2K_MAX_IMAGE_BYTES", DEFAULT_MAX_IMAGE_BYTES);
 
-// The server reports the version of the package it ships in.
+// Reports server version from package metadata.
 const { version } = createRequire(import.meta.url)("../package.json") as { version: string };
 
 // ── Initialization ──
@@ -87,7 +87,7 @@ async function main() {
         tools: tools.length,
     });
 
-    // Pre-connect CDP to remove cold-start latency on the first tool call.
+    // Eagerly pre-connect to CDP in the background to eliminate cold-start latency on the initial tool call.
     cdp.connect().then(() => {
         logger.info("CDP pre-connected", { host: CDP_HOST, port: CDP_PORT });
     }).catch(() => {

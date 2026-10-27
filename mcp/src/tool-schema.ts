@@ -10,15 +10,15 @@ import type {
 } from "./types.js";
 
 /**
- * Build the Zod property shape registered for an MCP bridge tool.
+ * Builds the Zod property shape registered for an MCP bridge tool.
  *
- * Defaults are validated and injected for optional properties. Malformed
- * declarations fail before the MCP server starts.
+ * Validates and injects default values for optional properties. Fails early
+ * during server startup if schema declarations are malformed.
  *
- * @param inputSchema - Declarative input contract for one MCP tool or action.
- * @returns A Zod raw shape suitable for `McpServer.registerTool()`.
- * @throws When required names, keyword/type combinations, defaults, bounds,
- * enums, arrays, or nested schemas are invalid.
+ * @param inputSchema - Declarative input contract for an MCP tool or action.
+ * @returns A Zod raw property shape suitable for `McpServer.registerTool()`.
+ * @throws When required properties, keywords, defaults, bounds, enums,
+ *   arrays, or nested schemas are invalid.
  */
 export function buildToolInputShape(
     inputSchema: InputSchema
@@ -33,13 +33,13 @@ export function buildToolInputShape(
 }
 
 /**
- * Build the complete top-level schema of an MCP tool or of one of its actions.
+ * Builds the complete top-level Zod schema for an MCP tool or action.
  *
- * Undeclared top-level arguments are refused: every schema comes from a host
- * method declaration, and the host refuses keys its declaration does not name.
+ * Disallows undeclared top-level arguments: each schema reflects a host
+ * method declaration, and the host rejects arguments not defined in its contract.
  *
- * @param inputSchema - Declarative input contract for one MCP tool or action.
- * @returns A strict Zod object that validates the declared arguments.
+ * @param inputSchema - Declarative input contract for an MCP tool or action.
+ * @returns A strict Zod object schema enforcing declared arguments and security constraints.
  * @throws When the input declaration is malformed.
  */
 export function buildToolInputSchema(
@@ -161,8 +161,8 @@ function buildPropertySchemaUnchecked(
             schema = buildObjectSchema(property, path, activePaths);
             break;
         case "json":
-            // Any JSON value; the shared safety check still refuses prototype-sensitive keys,
-            // cycles and non-JSON values anywhere inside it.
+            // Permits arbitrary JSON values while enforcing safety checks against
+            // prototype-sensitive keys, circular references, and non-JSON values.
             schema = addRawObjectSafetyCheck(z.unknown(), path);
             break;
     }
@@ -431,11 +431,12 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 /**
- * Find an object key or cycle that cannot safely cross the JSON bridge.
+ * Traverses a runtime value to detect prototype-sensitive keys, circular references,
+ * or non-JSON types that cannot safely cross the bridge boundary.
  *
- * @param value - Runtime value to inspect without cloning it.
- * @param path - Human-readable root path used in validation errors.
- * @returns A path-bearing issue, or undefined when the value is safe.
+ * @param value - Runtime value to inspect without cloning.
+ * @param path - Root path used for formatting validation error paths.
+ * @returns A formatted error description with property path, or `undefined` if safe.
  */
 export function findRuntimeValueIssue(
     value: unknown,
@@ -445,10 +446,14 @@ export function findRuntimeValueIssue(
 }
 
 /**
- * Find prototype-sensitive keys in a pre-serialization SDK message object.
+ * Detects prototype-sensitive keys and circular references in a pre-serialization SDK message object.
  *
- * Undefined internal fields are allowed here because stdio JSON serialization
- * omits them before the strict raw-message validation boundary.
+ * Permits `undefined` properties because JSON serialization on stdio transports
+ * drops undefined fields prior to strict inbound message validation.
+ *
+ * @param value - Pre-serialization message object to inspect.
+ * @param path - Root path used for formatting error locations.
+ * @returns A formatted error description with property path, or `undefined` if safe.
  */
 export function findUnsafeObjectStructureIssue(
     value: unknown,

@@ -1007,6 +1007,39 @@ async function runFullWaveformCases(bridge, recorder, fixtures) {
             { signedHasNegative: hasNegative, plain: { cached: plainAfter.res?.cached, signed: plainAfter.res?.signed, min: plainMin } },
             { signedHasNegative: true, plain: { cached: true, signed: false, min: ">= 0" } },
         );
+
+        const formatsAndCache = [];
+        for (const method of ["rms", "peak"]) {
+            for (const scale of ["linear", "db"]) {
+                for (const signed of [false, true]) {
+                    const shape = { method, scale, signed };
+                    const fresh = await requestWaveform(bridge, collector, fixtures.minus20.path, {
+                        ...shape,
+                        preferCache: false,
+                    });
+                    const hit = await requestWaveform(bridge, collector, fixtures.minus20.path, shape);
+                    const ready = fresh.event?.name === "audio:fullWaveformReady" ? fresh.event.payload : null;
+                    const same = ready !== null && ["sampleRate", "channels", "duration", "waveform", "maxAmplitude"]
+                        .every((field) => JSON.stringify(ready[field]) === JSON.stringify(hit.res?.[field]));
+                    formatsAndCache.push({
+                        ...shape,
+                        passed: fresh.res?.status === "pending" && isHit(hit, method, signed) &&
+                            ready?.sampleRate === 48000 && ready.channels === 1 && ready.duration === 20 &&
+                            ready.method === method && ready.scale === scale && ready.signed === signed &&
+                            hit.res.scale === scale && same,
+                        freshFormat: { sampleRate: ready?.sampleRate, channels: ready?.channels, duration: ready?.duration },
+                        cachedFormat: { sampleRate: hit.res?.sampleRate, channels: hit.res?.channels, duration: hit.res?.duration },
+                        same,
+                    });
+                }
+            }
+        }
+        recorder.assertCase(
+            "AV-44 a 48 kHz mono file reports its decoded format, duration and identical waveform/amplitude on asynchronous completion and a cache hit for every method, scale and signed combination",
+            formatsAndCache.every((entry) => entry.passed),
+            formatsAndCache,
+            { sampleRate: 48000, channels: 1, duration: 20, identicalCache: true },
+        );
     } finally {
         await collector.stop();
     }

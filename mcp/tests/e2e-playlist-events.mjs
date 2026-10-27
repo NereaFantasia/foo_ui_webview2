@@ -42,6 +42,8 @@ const EVENT_NAMES = [
     "playlist:itemsAdded",
     "playlist:itemsRemoved",
     "playlist:removed",
+    "playlist:lockChanged",
+    "playlist:autoplaylistUIResult",
 ];
 
 function eventsNamed(received, name) {
@@ -173,6 +175,42 @@ try {
             { payload: { playlist: scratchIndex, oldCount: paths.length, newCount: 0 } },
         );
     }
+
+    const lockEventsBefore = eventsNamed(collector.received, "playlist:lockChanged").length;
+    const converted = await bridge.invoke("playlist.convertToAutoplaylist", {
+        playlistGuid: created.guid,
+        query: "title IS __autoplaylist_event_fixture_missing__",
+        sort: "%title%",
+        keepSorted: true,
+    });
+    const lockedEvents = await waitForEvent(collector, "playlist:lockChanged", lockEventsBefore + 1);
+    const lockedInfo = await bridge.invoke("playlist.getAutoplaylistInfo", { playlistGuid: created.guid });
+    const reverted = await bridge.invoke("playlist.removeAutoplaylist", { playlistGuid: created.guid });
+    const unlockedEvents = await waitForEvent(collector, "playlist:lockChanged", lockedEvents.length + 1);
+    const unlockedInfo = await bridge.invoke("playlist.getAutoplaylistInfo", { playlistGuid: created.guid });
+    const transitions = unlockedEvents.slice(lockEventsBefore).filter(
+        (event) => event.payload?.playlistGuid === created.guid,
+    );
+    recorder.assertCase(
+        "PE-08 native lock events signal that autoplaylist capabilities can be read again",
+        converted?.success === true && reverted?.success === true &&
+            transitions.some((event) => event.payload.locked === true) &&
+            transitions.at(-1)?.payload.locked === false &&
+            lockedInfo?.editorAvailability === "available" && lockedInfo?.keepSorted === true &&
+            unlockedInfo?.editorAvailability === "unavailable" &&
+            unlockedInfo?.editorAvailabilityReason === "notAutoplaylist",
+        { transitions, lockedInfo, unlockedInfo },
+        { lockTransitions: [true, false], capabilityTransitions: ["available", "unavailable"] },
+    );
+    const refused = await bridge.invoke("playlist.showAutoplaylistUI", { playlistGuid: created.guid });
+    await bridge.invoke("playlist.getAll", {});
+    recorder.assertCase(
+        "PE-09 queries and rejected editor requests do not emit a completion result",
+        refused?.success === false && refused?.code === "NOT_SUPPORTED" &&
+            eventsNamed(collector.received, "playlist:autoplaylistUIResult").length === 0,
+        { refused, results: eventsNamed(collector.received, "playlist:autoplaylistUIResult") },
+        { completionCount: 0 },
+    );
 
     // Restoring the entry playlist before the removal keeps the scratch index
     // valid: removing the active playlist would shift activation on its own and

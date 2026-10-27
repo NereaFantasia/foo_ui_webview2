@@ -929,6 +929,16 @@ async function runConstraintAndStateCases(bridge, recorder, entry, geometry) {
     );
 
     // ---- focus / blur last: success carries no outcome, getState does ----
+    const missingFocus = await invoke("window.focus", { windowId: "__missing_focus_target__" });
+    recorder.assertCase("W-56 an explicit missing focus target never falls back to main",
+        missingFocus.success === false && missingFocus.code === "NOT_FOUND",
+        missingFocus, { success: false, code: "NOT_FOUND" });
+    const explicitMainFocus = await invoke("window.focus", { windowId: "main" });
+    const explicitMainState = await waitForState(invoke, "focused", true);
+    recorder.assertCase("W-57 explicit main focus requests foreground for the main window",
+        explicitMainFocus.success === true && explicitMainState.focused === true,
+        { result: explicitMainFocus, focused: explicitMainState.focused },
+        { success: true, focused: true });
     const focusResponse = await invoke("window.focus", {});
     const focusedState = await waitForState(invoke, "focused", true);
     recorder.assertCase(

@@ -1,7 +1,8 @@
 /**
- * Structured logger (JSON lines to stderr)
+ * Structured logger writing JSON-formatted lines to stderr.
  *
- * MCP uses stdout for protocol messages, so all logging goes to stderr.
+ * Stdout is reserved for MCP JSON-RPC protocol transport, requiring all diagnostics
+ * and operational logging to be routed to stderr.
  */
 
 type LogLevel = "info" | "warn" | "error" | "debug";

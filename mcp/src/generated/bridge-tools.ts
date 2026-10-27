@@ -103,7 +103,7 @@ export const bridgeTools: readonly ToolDefinition[] = [
     },
     {
         "name": "fb2k_playback_control",
-        "description": "Control playback: start, pause, stop, skip, seek, set or step the volume, mute, pick the playback order, stop after the current track, and play a given file or playlist row.\n\nPass one of these as `action`, with the parameters it lists; `?` marks an optional one.\n- playback.play: Start playback of the current track\n- playback.pause: Pause playback\n- playback.stop: Stop playback\n- playback.next: Skip to the next track\n- playback.previous: Go to the previous track\n- playback.playPause: Toggle play/pause state\n- playback.random: Play a random track\n- playback.playPath(path): Play a single track by file path, supports subsong format (path|subsong:N)\n- playlist.playTrack(playlist?, playlistGuid?, index, deferred?, muted?): Play a specific track in a playlist\n- playback.setPosition(position): Seek to a specific playback position\n- playback.setVolume(volume): Set the playback volume\n- playback.volumeUp: Increase volume by one step\n- playback.volumeDown: Decrease volume by one step\n- playback.mute(muted?): Set mute state\n- playback.toggleMute: Toggle mute state\n- playback.setPlaybackOrder(order?, name?): Set playback order by index (order) or by name (name); give exactly one\n- playback.setStopAfterCurrent(enabled): Set stop-after-current toggle\n- playback.toggleStopAfterCurrent: Toggle stop-after-current",
+        "description": "Control playback: start, pause, stop, skip, seek, set or step the volume, mute, pick the playback order, stop after the current track, and play a given file or playlist row.\n\nPass one of these as `action`, with the parameters it lists; `?` marks an optional one.\n- playback.play: Start playback of the current track\n- playback.pause: Pause playback\n- playback.stop: Stop playback\n- playback.next: Skip to the next track\n- playback.previous: Go to the previous track\n- playback.playPause: Toggle play/pause state\n- playback.random: Play a random track\n- playback.playPath(path): Play a single track by file path, supports subsong format (path|subsong:N)\n- playlist.playTrack(playlist?, playlistGuid?, index, deferred?, muted?, expectedVersion?): Play a specific track in a playlist\n- playback.setPosition(position): Seek to a specific playback position\n- playback.setVolume(volume): Set the playback volume\n- playback.volumeUp: Increase volume by one step\n- playback.volumeDown: Decrease volume by one step\n- playback.mute(muted?): Set mute state\n- playback.toggleMute: Toggle mute state\n- playback.setPlaybackOrder(order?, name?): Set playback order by index (order) or by name (name); give exactly one\n- playback.setStopAfterCurrent(enabled): Set stop-after-current toggle\n- playback.toggleStopAfterCurrent: Toggle stop-after-current",
         "annotations": {
             "readOnlyHint": false,
             "destructiveHint": false,
@@ -163,6 +163,10 @@ export const bridgeTools: readonly ToolDefinition[] = [
                 "muted": {
                     "type": "boolean",
                     "description": "`playback.mute`: `true` to mute, `false` to unmute. `playlist.playTrack`: mute before starting; the mute stays afterwards."
+                },
+                "expectedVersion": {
+                    "type": "string",
+                    "description": "Expected content version for optimistic concurrency control. When mismatched, mutations are aborted with `STALE_TARGET` (`details.current` carries current version). Omitted, no check is made."
                 },
                 "position": {
                     "type": "number",
@@ -282,6 +286,9 @@ export const bridgeTools: readonly ToolDefinition[] = [
                         "muted": {
                             "type": "boolean",
                             "default": false
+                        },
+                        "expectedVersion": {
+                            "type": "string"
                         }
                     },
                     "required": [
@@ -394,7 +401,7 @@ export const bridgeTools: readonly ToolDefinition[] = [
     },
     {
         "name": "fb2k_playlist_read",
-        "description": "Read playlists: the list of playlists (index, guid, name, track count, whether active, playing, locked or an autoplaylist), a page of one playlist's tracks or the rows picked by number, the rows whose tracks match a query, its selection and focus, its lock and autoplaylist details, and the columns the playlist view offers. Changes nothing.\n\nPass one of these as `action`, with the parameters it lists; `?` marks an optional one.\n- playlist.getAll: Get names, track counts, and active/playing status of all playlists\n- playlist.getActive: Get details of the currently active playlist\n- playlist.getPlaying: Get currently playing playlist details\n- playlist.getTracks(playlist?, playlistGuid?, start?, count?, formats?, fields?): Get tracks from a playlist (supports pagination)\n- playlist.getTracksAt(rows, playlist?, playlistGuid?, formats?, fields?): Get tracks of a playlist by row number, such as the rows playlist.getMatchingRows returns\n- playlist.getMatchingRows(query, playlist?, playlistGuid?): Get the row numbers of a playlist whose tracks match a foobar2000 query (e.g. artist HAS beatles)\n- playlist.getSelectedTracks(playlist?, playlistGuid?): Get info of all selected tracks in a playlist\n- playlist.getSelection(playlist?, playlistGuid?): Get indices of selected tracks in a playlist\n- playlist.getFocusedTrack(playlist?, playlistGuid?): Get focused track index in a playlist\n- playlist.getLockInfo(playlist?, playlistGuid?): Get playlist lock information\n- playlist.getAutoplaylistInfo(playlist?, playlistGuid?): Get autoplaylist details (flags, source, etc.)\n- playlist.getAvailableColumns: Get available DUI playlist column definitions (ID, name, format, sort pattern)",
+        "description": "Read playlists: the list of playlists (index, guid, name, track count, whether active, playing, locked or an autoplaylist), a page of one playlist's tracks or the rows picked by number, the rows whose tracks match a query, its selection and focus, its lock and autoplaylist details, and the columns the playlist view offers. Changes nothing.\n\nPass one of these as `action`, with the parameters it lists; `?` marks an optional one.\n- playlist.getAll: Get names, track counts, and active/playing status of all playlists\n- playlist.getActive: Get details of the currently active playlist\n- playlist.getPlaying: Get currently playing playlist details\n- playlist.getTracks(playlist?, playlistGuid?, start?, count?, formats?, fields?): Get tracks from a playlist (supports pagination)\n- playlist.getTracksAt(rows, playlist?, playlistGuid?, formats?, fields?): Get tracks of a playlist by row number, such as the rows playlist.getMatchingRows returns\n- playlist.getMatchingRows(query, playlist?, playlistGuid?): Get the row numbers of a playlist whose tracks match a foobar2000 query (e.g. artist HAS beatles)\n- playlist.getSelectedTracks(playlist?, playlistGuid?): Get info of all selected tracks in a playlist\n- playlist.getSelection(playlist?, playlistGuid?): Get indices of selected tracks in a playlist\n- playlist.getFocusedTrack(playlist?, playlistGuid?): Get focused track index in a playlist\n- playlist.getLockInfo(playlist?, playlistGuid?): Get playlist lock information\n- playlist.getAutoplaylistInfo(playlist?, playlistGuid?): Get autoplaylist details (flags, source, etc.)\n- playlist.getAutoplaylistConfig(playlist?, playlistGuid?): Read query, sorting and revision for an autoplaylist managed by this component\n- playlist.getAvailableColumns: Get available DUI playlist column definitions (ID, name, format, sort pattern)",
         "annotations": {
             "readOnlyHint": true,
             "openWorldHint": false
@@ -417,12 +424,13 @@ export const bridgeTools: readonly ToolDefinition[] = [
                         "playlist.getFocusedTrack",
                         "playlist.getLockInfo",
                         "playlist.getAutoplaylistInfo",
+                        "playlist.getAutoplaylistConfig",
                         "playlist.getAvailableColumns"
                     ]
                 },
                 "playlist": {
                     "type": "integer",
-                    "description": "Playlist index; omitted, the active playlist.",
+                    "description": "Playlist index; omitted, the active playlist, except that getAutoplaylistConfig requires exactly one of playlist or playlistGuid.",
                     "minimum": 0
                 },
                 "playlistGuid": {
@@ -661,6 +669,20 @@ export const bridgeTools: readonly ToolDefinition[] = [
                     }
                 }
             },
+            "playlist.getAutoplaylistConfig": {
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "playlist": {
+                            "type": "integer",
+                            "minimum": 0
+                        },
+                        "playlistGuid": {
+                            "type": "string"
+                        }
+                    }
+                }
+            },
             "playlist.getAvailableColumns": {
                 "inputSchema": {
                     "type": "object",
@@ -671,7 +693,7 @@ export const bridgeTools: readonly ToolDefinition[] = [
     },
     {
         "name": "fb2k_playlist_manage",
-        "description": "Manage the playlists themselves: create, remove, rename, duplicate and reorder them, and turn a playlist into an autoplaylist that a library query fills, or back into a normal one.\n\nPass one of these as `action`, with the parameters it lists; `?` marks an optional one.\n- playlist.create(name, position?): Create a new empty playlist\n- playlist.duplicate(playlist?, playlistGuid?, name?): Duplicate a playlist (with all tracks)\n- playlist.rename(playlist?, playlistGuid?, name): Rename a playlist\n- playlist.remove(playlist): Remove a playlist\n- playlist.reorderPlaylists(newOrder?, newOrderGuids?): Reorder all playlists\n- playlist.createAutoplaylist(name?, query, sort?, keepSorted?): Create an autoplaylist (smart playlist) that auto-populates based on a query\n- playlist.convertToAutoplaylist(playlist?, playlistGuid?, query, sort?, keepSorted?): Convert an existing playlist to an autoplaylist\n- playlist.removeAutoplaylist(playlist?, playlistGuid?): Remove autoplaylist status (convert back to normal playlist)",
+        "description": "Manage the playlists themselves: create, remove, rename, duplicate and reorder them, and turn a playlist into an autoplaylist that a library query fills, or back into a normal one.\n\nPass one of these as `action`, with the parameters it lists; `?` marks an optional one.\n- playlist.create(name, position?): Create a new empty playlist\n- playlist.duplicate(playlist?, playlistGuid?, name?): Duplicate a playlist (with all tracks)\n- playlist.rename(playlist?, playlistGuid?, name): Rename a playlist\n- playlist.remove(playlist): Remove a playlist\n- playlist.reorderPlaylists(newOrder?, newOrderGuids?): Reorder all playlists\n- playlist.createAutoplaylist(name?, query, sort?, keepSorted?): Create an autoplaylist (smart playlist) that auto-populates based on a query\n- playlist.createManagedAutoplaylist(name?, query, sort?, keepSorted?): Create an editable autoplaylist that requires this component to remain installed\n- playlist.setAutoplaylistConfig(playlist?, playlistGuid?, expectedRevision, query?, sort?, keepSorted?): Edit a managed autoplaylist configuration using its expected revision\n- playlist.convertToAutoplaylist(playlist?, playlistGuid?, query, sort?, keepSorted?): Convert an existing playlist to an autoplaylist\n- playlist.removeAutoplaylist(playlist?, playlistGuid?): Remove autoplaylist status (convert back to normal playlist)",
         "annotations": {
             "readOnlyHint": false,
             "destructiveHint": true,
@@ -691,13 +713,15 @@ export const bridgeTools: readonly ToolDefinition[] = [
                         "playlist.remove",
                         "playlist.reorderPlaylists",
                         "playlist.createAutoplaylist",
+                        "playlist.createManagedAutoplaylist",
+                        "playlist.setAutoplaylistConfig",
                         "playlist.convertToAutoplaylist",
                         "playlist.removeAutoplaylist"
                     ]
                 },
                 "name": {
                     "type": "string",
-                    "description": "`playlist.create` and `playlist.createAutoplaylist`: name of the new playlist. `playlist.rename`: the new name. `playlist.duplicate`: name of the copy; omitted, the original name followed by ` (Copy)`."
+                    "description": "Creation actions: name of the new playlist. `playlist.rename`: the new name. `playlist.duplicate`: name of the copy; omitted, the original name followed by ` (Copy)`."
                 },
                 "position": {
                     "type": "integer",
@@ -706,7 +730,7 @@ export const bridgeTools: readonly ToolDefinition[] = [
                 },
                 "playlist": {
                     "type": "integer",
-                    "description": "Index of the playlist to act on; omitted, the active playlist, except that `playlist.rename` needs this or `playlistGuid`. An index past the last playlist fails with `INVALID_INDEX`.",
+                    "description": "Index of the playlist to act on; omitted, the active playlist, except that rename and setAutoplaylistConfig require this or playlistGuid. An index past the last playlist fails with INVALID_INDEX.",
                     "minimum": 0
                 },
                 "playlistGuid": {
@@ -726,21 +750,24 @@ export const bridgeTools: readonly ToolDefinition[] = [
                     "description": "For each new position, the `guid` of the playlist that goes there, as `playlist.getAll` reports it; every playlist exactly once.",
                     "items": {
                         "type": "string",
-                        "description": "A playlist's GUID instead of its index, written with braces as `playlist.getAll` and every result or event that names a playlist report it; either hex case is accepted. It keeps naming the same playlist while other playlists are added, removed or reordered, which an index does not. Giving both this and the index, or a malformed GUID, fails with `INVALID_PARAMS`. A playlist that no longer exists fails with `NOT_FOUND`; the call never falls back to another playlist. A malformed GUID and a missing playlist carry the GUID given as `details.playlistGuid`."
+                        "description": "Persistent unique identifier of a playlist (bracketed GUID, case-insensitive), used in place of a mutable index. Mutually exclusive with `playlist`; passing both or an invalid format fails with `INVALID_PARAMS`. Fails with `NOT_FOUND` if the playlist does not exist, never falling back. Invalid-format and not-found failures return the given GUID in `details.playlistGuid`."
                     }
                 },
                 "query": {
                     "type": "string",
-                    "description": "Library query that selects the tracks, in foobar2000's query syntax.",
-                    "minLength": 1
+                    "description": "foobar2000 library query. Managed configuration requires nonblank text of at most 65536 UTF-8 bytes without NUL. For setAutoplaylistConfig, omission keeps the current query."
                 },
                 "sort": {
                     "type": "string",
-                    "description": "Title Formatting pattern to sort the results by; empty, library order."
+                    "description": "Independent Title Formatting sort. Managed configuration rejects explicit query SORT BY combined with nonempty sort; at most 65536 UTF-8 bytes without NUL. For setAutoplaylistConfig, omission keeps the current value and an empty string clears it."
                 },
                 "keepSorted": {
                     "type": "boolean",
-                    "description": "Keep the playlist sorted by `sort`: when set, the user cannot reorder its tracks."
+                    "description": "Keep tracks sorted and prevent manual reordering. For setAutoplaylistConfig, omission keeps the current flag; creation defaults to false."
+                },
+                "expectedRevision": {
+                    "type": "string",
+                    "description": "Opaque revision from the most recent configuration snapshot. Invalid after restart or provider replacement."
                 }
             },
             "required": [
@@ -862,6 +889,60 @@ export const bridgeTools: readonly ToolDefinition[] = [
                     ]
                 }
             },
+            "playlist.createManagedAutoplaylist": {
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "name": {
+                            "type": "string",
+                            "default": "New Autoplaylist"
+                        },
+                        "query": {
+                            "type": "string"
+                        },
+                        "sort": {
+                            "type": "string",
+                            "default": ""
+                        },
+                        "keepSorted": {
+                            "type": "boolean",
+                            "default": false
+                        }
+                    },
+                    "required": [
+                        "query"
+                    ]
+                }
+            },
+            "playlist.setAutoplaylistConfig": {
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "playlist": {
+                            "type": "integer",
+                            "minimum": 0
+                        },
+                        "playlistGuid": {
+                            "type": "string"
+                        },
+                        "expectedRevision": {
+                            "type": "string"
+                        },
+                        "query": {
+                            "type": "string"
+                        },
+                        "sort": {
+                            "type": "string"
+                        },
+                        "keepSorted": {
+                            "type": "boolean"
+                        }
+                    },
+                    "required": [
+                        "expectedRevision"
+                    ]
+                }
+            },
             "playlist.convertToAutoplaylist": {
                 "inputSchema": {
                     "type": "object",
@@ -909,7 +990,7 @@ export const bridgeTools: readonly ToolDefinition[] = [
     },
     {
         "name": "fb2k_playlist_edit",
-        "description": "Change the tracks of a playlist: add files, folders or tracks, insert, remove, move, reorder, sort, shuffle or reverse rows, clear it, replace everything and play, and undo or redo.\n\nPass one of these as `action`, with the parameters it lists; `?` marks an optional one.\n- playlist.addPaths(playlist?, playlistGuid?, paths): Add tracks by file/folder paths to a playlist\n- playlist.addPathsSequential(playlist?, playlistGuid?, paths): Add file paths to a playlist sequentially\n- playlist.addHandles(playlist?, playlistGuid?, handles): Add tracks by handle list (no auto CUE expansion)\n- playlist.insertTracks(playlist?, playlistGuid?, position?, handles): Insert tracks into a playlist by handle\n- playlist.replaceAllAndPlay(playlist?, playlistGuid?, paths, playIndex?, stopFirst?, autoPlay?): Atomic operation: clear playlist, add new tracks and play\n- playlist.removeTracks(playlist?, playlistGuid?, items): Remove tracks by index from a playlist\n- playlist.removeSelectedTracks(playlist?, playlistGuid?): Remove all selected tracks from a playlist\n- playlist.clear(playlist?, playlistGuid?): Clear all tracks from a playlist\n- playlist.moveTracks(playlist?, playlistGuid?, items?, delta): Move selected tracks in a playlist (up/down)\n- playlist.reorder(playlist?, playlistGuid?, newOrder): Reorder tracks in a playlist by custom order\n- playlist.sort(playlist?, playlistGuid?, pattern?, descending?, selectedOnly?): Sort playlist by title format pattern\n- playlist.shuffle(playlist?, playlistGuid?): Shuffle track order in a playlist\n- playlist.reverse(playlist?, playlistGuid?): Reverse track order in a playlist\n- playlist.undo(playlist?, playlistGuid?): Undo last playlist operation\n- playlist.redo(playlist?, playlistGuid?): Redo last undone playlist operation",
+        "description": "Change the tracks of a playlist: add files, folders or tracks, insert, remove, move, reorder, sort, shuffle or reverse rows, clear it, replace everything and play, and undo or redo.\n\nPass one of these as `action`, with the parameters it lists; `?` marks an optional one.\n- playlist.addPaths(playlist?, playlistGuid?, paths): Add tracks by file/folder paths to a playlist\n- playlist.addPathsSequential(playlist?, playlistGuid?, paths): Add file paths to a playlist sequentially\n- playlist.addHandles(playlist?, playlistGuid?, handles): Add tracks by handle list (no auto CUE expansion)\n- playlist.insertTracks(playlist?, playlistGuid?, position?, handles, expectedVersion?): Insert tracks into a playlist by handle\n- playlist.replaceAllAndPlay(playlist?, playlistGuid?, paths, playIndex?, stopFirst?, autoPlay?): Atomic operation: clear playlist, add new tracks and play\n- playlist.removeTracks(playlist?, playlistGuid?, items, expectedVersion?): Remove tracks by index from a playlist\n- playlist.removeSelectedTracks(playlist?, playlistGuid?): Remove all selected tracks from a playlist\n- playlist.clear(playlist?, playlistGuid?): Clear all tracks from a playlist\n- playlist.moveTracks(playlist?, playlistGuid?, items?, delta, expectedVersion?): Move selected tracks in a playlist (up/down)\n- playlist.reorder(playlist?, playlistGuid?, newOrder, expectedVersion?): Reorder tracks in a playlist by custom order\n- playlist.sort(playlist?, playlistGuid?, pattern?, descending?, selectedOnly?): Sort playlist by title format pattern\n- playlist.shuffle(playlist?, playlistGuid?): Shuffle track order in a playlist\n- playlist.reverse(playlist?, playlistGuid?): Reverse track order in a playlist\n- playlist.undo(playlist?, playlistGuid?): Undo last playlist operation\n- playlist.redo(playlist?, playlistGuid?): Redo last undone playlist operation",
         "annotations": {
             "readOnlyHint": false,
             "destructiveHint": true,
@@ -969,6 +1050,10 @@ export const bridgeTools: readonly ToolDefinition[] = [
                     "type": "integer",
                     "description": "Row before which the tracks go; past the last row, they are appended.",
                     "minimum": 0
+                },
+                "expectedVersion": {
+                    "type": "string",
+                    "description": "Expected content version for optimistic concurrency control. When mismatched, mutations are aborted with `STALE_TARGET` (`details.current` carries current version). Omitted, no check is made."
                 },
                 "playIndex": {
                     "type": "integer",
@@ -1115,6 +1200,9 @@ export const bridgeTools: readonly ToolDefinition[] = [
                                 "type": "json"
                             },
                             "minItems": 1
+                        },
+                        "expectedVersion": {
+                            "type": "string"
                         }
                     },
                     "required": [
@@ -1176,6 +1264,9 @@ export const bridgeTools: readonly ToolDefinition[] = [
                                 "type": "integer",
                                 "minimum": 0
                             }
+                        },
+                        "expectedVersion": {
+                            "type": "string"
                         }
                     },
                     "required": [
@@ -1231,6 +1322,9 @@ export const bridgeTools: readonly ToolDefinition[] = [
                         },
                         "delta": {
                             "type": "integer"
+                        },
+                        "expectedVersion": {
+                            "type": "string"
                         }
                     },
                     "required": [
@@ -1255,6 +1349,9 @@ export const bridgeTools: readonly ToolDefinition[] = [
                                 "type": "integer",
                                 "minimum": 0
                             }
+                        },
+                        "expectedVersion": {
+                            "type": "string"
                         }
                     },
                     "required": [
@@ -1348,7 +1445,7 @@ export const bridgeTools: readonly ToolDefinition[] = [
     },
     {
         "name": "fb2k_playlist_select",
-        "description": "Change which playlist is active and which of its rows are selected or focused. The tracks themselves are left alone.\n\nPass one of these as `action`, with the parameters it lists; `?` marks an optional one.\n- playlist.setActive(playlist?, playlistGuid?): Set the active playlist\n- playlist.setSelection(playlist?, playlistGuid?, indices, clearOthers?): Set selected items in a playlist\n- playlist.selectAll(playlist?, playlistGuid?): Select all tracks in a playlist\n- playlist.deselectAll(playlist?, playlistGuid?): Deselect all tracks in a playlist\n- playlist.setFocusedTrack(playlist?, playlistGuid?, index): Set focused track in a playlist",
+        "description": "Change which playlist is active and which of its rows are selected or focused. The tracks themselves are left alone.\n\nPass one of these as `action`, with the parameters it lists; `?` marks an optional one.\n- playlist.setActive(playlist?, playlistGuid?): Set the active playlist\n- playlist.setSelection(playlist?, playlistGuid?, indices, clearOthers?, expectedVersion?): Set selected items in a playlist\n- playlist.selectAll(playlist?, playlistGuid?): Select all tracks in a playlist\n- playlist.deselectAll(playlist?, playlistGuid?): Deselect all tracks in a playlist\n- playlist.setFocusedTrack(playlist?, playlistGuid?, index, expectedVersion?): Set focused track in a playlist",
         "annotations": {
             "readOnlyHint": false,
             "destructiveHint": false,
@@ -1389,6 +1486,10 @@ export const bridgeTools: readonly ToolDefinition[] = [
                 "clearOthers": {
                     "type": "boolean",
                     "description": "Deselect every other row; `false` adds `indices` to the current selection."
+                },
+                "expectedVersion": {
+                    "type": "string",
+                    "description": "Expected content version for optimistic concurrency control. When mismatched, mutations are aborted with `STALE_TARGET` (`details.current` carries current version). Omitted, no check is made."
                 },
                 "index": {
                     "type": "integer",
@@ -1436,6 +1537,9 @@ export const bridgeTools: readonly ToolDefinition[] = [
                         "clearOthers": {
                             "type": "boolean",
                             "default": true
+                        },
+                        "expectedVersion": {
+                            "type": "string"
                         }
                     },
                     "required": [
@@ -1485,6 +1589,9 @@ export const bridgeTools: readonly ToolDefinition[] = [
                         "index": {
                             "type": "integer",
                             "minimum": 0
+                        },
+                        "expectedVersion": {
+                            "type": "string"
                         }
                     },
                     "required": [
@@ -1655,7 +1762,7 @@ export const bridgeTools: readonly ToolDefinition[] = [
     },
     {
         "name": "fb2k_queue_edit",
-        "description": "Change the playback queue: add playlist rows or files, insert tracks to play next, remove entries, move one to the front, replace or clear the whole queue, and play an entry now. Read the queue with `queue.get` on fb2k_playback_read.\n\nPass one of these as `action`, with the parameters it lists; `?` marks an optional one.\n- queue.add(playlist?, playlistGuid?, tracks?, track?): Add playlist tracks to the playback queue\n- queue.addPaths(paths, useQueuePlaylist?, playlist?, playlistGuid?): Add tracks by file path/URL to the playback queue\n- queue.insertNext(paths?, items?, position?): Insert tracks by path or by playlist item reference so they play next, ahead of everything already queued; at the target position the item references land first, then the paths, and a track already in the queue is moved rather than queued a second time.\n- queue.setContents(items): Replace the entire playback queue with an ordered list of references, either existing queue slots or playlist items. An empty array clears the queue. Any entry with an unrecognized shape fails the whole call and leaves the queue unchanged.\n- queue.moveToTop(index): Move a queue item to the top (play next)\n- queue.playNow(index?): Play the queue entry at the given index immediately, moving it to the front of the queue first if it is not already there\n- queue.remove(index?, indices?): Remove items from the playback queue\n- queue.clear: Clear the entire playback queue",
+        "description": "Change the playback queue: add playlist rows or files, insert tracks to play next, remove entries, move one to the front, replace or clear the whole queue, and play an entry now. Read the queue with `queue.get` on fb2k_playback_read.\n\nPass one of these as `action`, with the parameters it lists; `?` marks an optional one.\n- queue.add(playlist?, playlistGuid?, tracks?, track?, expectedPlaylistVersion?): Add playlist tracks to the playback queue\n- queue.addPaths(paths, useQueuePlaylist?, playlist?, playlistGuid?): Add tracks by file path/URL to the playback queue\n- queue.insertNext(paths?, items?, position?, expectedVersion?): Insert tracks by path or by playlist item reference so they play next, ahead of everything already queued; at the target position the item references land first, then the paths, and a track already in the queue is moved rather than queued a second time.\n- queue.setContents(items, expectedVersion?): Replace the entire playback queue with an ordered list of references, either existing queue slots or playlist items. An empty array clears the queue. Any entry with an unrecognized shape fails the whole call and leaves the queue unchanged.\n- queue.moveToTop(index, expectedVersion?): Move a queue item to the top (play next)\n- queue.playNow(index?, expectedVersion?): Play the queue entry at the given index immediately, moving it to the front of the queue first if it is not already there\n- queue.remove(index?, indices?, expectedVersion?): Remove items from the playback queue\n- queue.clear: Clear the entire playback queue",
         "annotations": {
             "readOnlyHint": false,
             "destructiveHint": true,
@@ -1701,6 +1808,10 @@ export const bridgeTools: readonly ToolDefinition[] = [
                     "description": "A single row to queue; read only when `tracks` is absent.",
                     "minimum": 0
                 },
+                "expectedPlaylistVersion": {
+                    "type": "string",
+                    "description": "Act only while the playlist that the rows belong to still has this `contentVersion`, as its reads report it. A different version changes nothing and fails with `STALE_TARGET`, the current version carried as `details.current`. Omitted, no check is made."
+                },
                 "paths": {
                     "type": "array",
                     "description": "File paths or URLs, each optionally with a `|subsong:N` suffix.",
@@ -1734,6 +1845,10 @@ export const bridgeTools: readonly ToolDefinition[] = [
                                         "type": "integer",
                                         "description": "Row in that playlist.",
                                         "minimum": 0
+                                    },
+                                    "expectedPlaylistVersion": {
+                                        "type": "string",
+                                        "description": "Act only while the playlist that the rows belong to still has this `contentVersion`, as its reads report it. A different version changes nothing and fails with `STALE_TARGET`, the current version carried as `details.current`. Omitted, no check is made."
                                     }
                                 },
                                 "required": [
@@ -1765,6 +1880,10 @@ export const bridgeTools: readonly ToolDefinition[] = [
                                         "type": "integer",
                                         "description": "Row in that playlist; needs `playlist` or `playlistGuid` as well.",
                                         "minimum": 0
+                                    },
+                                    "expectedPlaylistVersion": {
+                                        "type": "string",
+                                        "description": "Only with a playlist row; given with `queueIndex`, the call fails with `INVALID_PARAMS`."
                                     }
                                 },
                                 "additionalProperties": false
@@ -1776,6 +1895,10 @@ export const bridgeTools: readonly ToolDefinition[] = [
                     "type": "integer",
                     "description": "Where to insert, counted after any moved entries are taken out; `0` is the front.",
                     "minimum": 0
+                },
+                "expectedVersion": {
+                    "type": "string",
+                    "description": "Expected content version for optimistic concurrency control. When mismatched, mutations are aborted with `STALE_TARGET` (`details.current` carries current version). Omitted, no check is made."
                 },
                 "index": {
                     "type": "integer",
@@ -1817,6 +1940,9 @@ export const bridgeTools: readonly ToolDefinition[] = [
                         "track": {
                             "type": "integer",
                             "minimum": 0
+                        },
+                        "expectedPlaylistVersion": {
+                            "type": "string"
                         }
                     }
                 }
@@ -1874,6 +2000,9 @@ export const bridgeTools: readonly ToolDefinition[] = [
                                     "item": {
                                         "type": "integer",
                                         "minimum": 0
+                                    },
+                                    "expectedPlaylistVersion": {
+                                        "type": "string"
                                     }
                                 },
                                 "required": [
@@ -1886,6 +2015,9 @@ export const bridgeTools: readonly ToolDefinition[] = [
                             "type": "integer",
                             "minimum": 0,
                             "default": 0
+                        },
+                        "expectedVersion": {
+                            "type": "string"
                         }
                     }
                 }
@@ -1913,10 +2045,16 @@ export const bridgeTools: readonly ToolDefinition[] = [
                                     "item": {
                                         "type": "integer",
                                         "minimum": 0
+                                    },
+                                    "expectedPlaylistVersion": {
+                                        "type": "string"
                                     }
                                 },
                                 "additionalProperties": false
                             }
+                        },
+                        "expectedVersion": {
+                            "type": "string"
                         }
                     },
                     "required": [
@@ -1931,6 +2069,9 @@ export const bridgeTools: readonly ToolDefinition[] = [
                         "index": {
                             "type": "integer",
                             "minimum": 0
+                        },
+                        "expectedVersion": {
+                            "type": "string"
                         }
                     },
                     "required": [
@@ -1946,6 +2087,9 @@ export const bridgeTools: readonly ToolDefinition[] = [
                             "type": "integer",
                             "minimum": 0,
                             "default": 0
+                        },
+                        "expectedVersion": {
+                            "type": "string"
                         }
                     }
                 }
@@ -1964,6 +2108,9 @@ export const bridgeTools: readonly ToolDefinition[] = [
                                 "type": "integer",
                                 "minimum": 0
                             }
+                        },
+                        "expectedVersion": {
+                            "type": "string"
                         }
                     }
                 }

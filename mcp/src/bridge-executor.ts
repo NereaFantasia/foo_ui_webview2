@@ -1,9 +1,9 @@
 /**
- * Bridge executor.
+ * Bridge executor module.
  *
- * Calls host methods through `fb2k.invoke()` over CDP and turns their
- * results into MCP tool results. Arguments arrive already checked against
- * the method's schema (see `bridge-tools.ts`).
+ * Invokes host API methods via `fb2k.invoke()` over CDP and formats their
+ * results into MCP tool responses. Arguments are pre-validated against the
+ * method's schema prior to invocation (see `bridge-tools.ts`).
  */
 
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
@@ -12,21 +12,21 @@ import { CdpClient } from "./cdp-client.js";
 import { errorResult, jsonResult, pictureResult, type ResultLimits } from "./tool-results.js";
 
 /**
- * Executes bridge API calls over CDP and normalizes their results into
- * the shape expected by MCP tools.
+ * Executes bridge API calls over CDP and formats their results into
+ * the response structures expected by MCP tools.
  */
 export class BridgeExecutor {
     constructor(private readonly cdp: CdpClient) {}
 
     /**
-     * Invoke a bridge API method and return a normalized result.
+     * Invokes a bridge API method and returns a normalized result envelope.
      *
-     * Never throws: transport or host errors are captured into the
-     * returned {@link BridgeResult} with `success: false`.
+     * Never throws. Transport and host errors are captured in the returned
+     * {@link BridgeResult} with `success: false`.
      *
-     * @param method - Bridge method id, e.g. `"playback.play"`.
+     * @param method - Bridge method identifier, e.g. `"playback.play"`.
      * @param params - Optional method arguments.
-     * @returns A {@link BridgeResult} wrapping the data or error message.
+     * @returns A {@link BridgeResult} containing either response data or error details.
      */
     async call(
         method: string,
@@ -59,27 +59,27 @@ export class BridgeExecutor {
     }
 
     /**
-     * Capture a screenshot and return it as a base64-encoded image.
+     * Captures a screenshot and returns it as a base64-encoded image string.
      *
-     * @param options - When `fullPage` is true, captures the full page
-     *   instead of just the current viewport.
+     * @param options - When `fullPage` is true, captures the entire page layout
+     *   instead of only the current viewport.
      */
     async screenshot(options?: { fullPage?: boolean }): Promise<string> {
         return this.cdp.screenshot(options);
     }
 
     /**
-     * Evaluate an arbitrary JavaScript expression in the page and return
-     * its result.
+     * Evaluates an arbitrary JavaScript expression in the page context and
+     * returns its evaluated result.
      */
     async evaluate(expression: string): Promise<unknown> {
         return this.cdp.evaluate(expression);
     }
 
     /**
-     * Retrieve the page's most recent console messages, oldest first.
+     * Retrieves recent page console messages in chronological order (oldest first).
      *
-     * @param limit - Most messages to return; omitted, the client's default.
+     * @param limit - Maximum message count to return; defaults to the client limit.
      */
     async getConsoleMessages(limit?: number): Promise<Array<{ level: string; text: string }>> {
         return this.cdp.getConsoleMessages(limit);
@@ -96,8 +96,8 @@ function isHandlerFailure(value: unknown): value is Record<string, unknown> & {
 }
 
 /**
- * Format a failed bridge call for MCP text content without discarding the
- * stable host error code or structured details.
+ * Formats a failed bridge call into a readable error string for MCP text content,
+ * preserving stable error codes and structured details.
  */
 export function formatBridgeFailure(result: BridgeResult): string {
     const lines = [`Error: ${result.error ?? "Unknown bridge error"}`];
@@ -110,19 +110,20 @@ export function formatBridgeFailure(result: BridgeResult): string {
     return lines.join("\n");
 }
 
-/** How a bridge tool handler shapes a successful result. */
+/** Configuration options for shaping successful bridge tool results. */
 export interface BridgeResultOptions extends ResultLimits {
     /**
-     * The result field that holds a picture as a `data:<mime>;base64,` URL;
-     * the picture is sent as an image rather than inside the JSON text.
+     * Result field holding a `data:<mime>;base64,` picture URL. When set,
+     * the picture is extracted and returned as an image block instead of raw JSON text.
      */
     image?: string;
 }
 
 /**
- * Create the handler that calls one bridge method with already validated
- * arguments: the result as compact JSON text, with the picture of
- * `options.image` as an image, or the host failure as a tool execution error.
+ * Creates a tool handler for a single bridge method with pre-validated arguments.
+ *
+ * Returns successful results as compact JSON text (or extracts `options.image` as an
+ * image block when specified). Returns host and transport failures as tool execution errors.
  */
 export function createBridgeToolHandler(
     bridge: Pick<BridgeExecutor, "call">,
@@ -148,8 +149,8 @@ export interface BridgeResult {
     data?: unknown;
     /** Error message; present when `success` is false. */
     error?: string;
-    /** Stable host error code when the handler returned one. */
+    /** Stable host error code when provided by the handler. */
     code?: string;
-    /** Structured host error context when the handler returned it. */
+    /** Structured host error context when provided by the handler. */
     details?: unknown;
 }

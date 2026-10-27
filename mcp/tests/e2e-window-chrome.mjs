@@ -802,6 +802,10 @@ async function runPolicyCases(bridge, recorder, events, entry) {
 async function runDragRegionCases(bridge, recorder) {
     const { invoke, invokeRaw } = bridge;
     const dpi = await invoke("window.getDpiScale", {});
+    // The rectangles are scaled by the page's devicePixelRatio: DPI, Windows text size and zoom.
+    const zoom = await invoke("window.getZoom", {});
+    const pageScale = zoom ? zoom.dpiScale * zoom.textScaleFactor * zoom.zoom : undefined;
+    const isPageScale = (value) => typeof value === "number" && Math.abs(value - pageScale) < 1e-9;
 
     // Two legal rectangles (the second relies on x and y defaulting to 0), one
     // with zero width and one with negative height; the last two are dropped.
@@ -814,25 +818,27 @@ async function runDragRegionCases(bridge, recorder) {
 
     const drag = await invoke("window.setDragRegions", { regions });
     recorder.assertCase(
-        "WC-25 setDragRegions takes {x,y,width,height} in CSS pixels, silently drops elements with width<=0 or height<=0, counts the survivors and reports the dpiScale getDpiScale also reports",
-        hasKeys(drag, ["success", "count", "dpiScale"]) &&
+        "WC-25 setDragRegions takes {x,y,width,height} in CSS pixels, silently drops elements with width<=0 or height<=0, counts the survivors, reports the dpiScale getDpiScale also reports and the scale getZoom implies",
+        hasKeys(drag, ["success", "count", "dpiScale", "scale"]) &&
             drag.success === true &&
             drag.count === 2 &&
             drag.dpiScale > 0 &&
-            drag.dpiScale === dpi?.scale,
-        { response: drag, getDpiScale: dpi, submitted: regions.length },
-        { success: true, count: 2, dpiScale: dpi?.scale },
+            drag.dpiScale === dpi?.scale &&
+            isPageScale(drag.scale),
+        { response: drag, getDpiScale: dpi, getZoom: zoom, submitted: regions.length },
+        { success: true, count: 2, dpiScale: dpi?.scale, scale: pageScale },
     );
 
     const noDrag = await invoke("window.setNoDragRegions", { regions });
     recorder.assertCase(
-        "WC-26 setNoDragRegions applies the same element contract, drop rule, count and dpiScale as setDragRegions",
-        hasKeys(noDrag, ["success", "count", "dpiScale"]) &&
+        "WC-26 setNoDragRegions applies the same element contract, drop rule, count, dpiScale and scale as setDragRegions",
+        hasKeys(noDrag, ["success", "count", "dpiScale", "scale"]) &&
             noDrag.success === true &&
             noDrag.count === 2 &&
-            noDrag.dpiScale === dpi?.scale,
+            noDrag.dpiScale === dpi?.scale &&
+            isPageScale(noDrag.scale),
         { response: noDrag, getDpiScale: dpi },
-        { success: true, count: 2, dpiScale: dpi?.scale },
+        { success: true, count: 2, dpiScale: dpi?.scale, scale: pageScale },
     );
 
     const clearDrag = await invoke("window.clearDragRegions", {});
@@ -848,7 +854,7 @@ async function runDragRegionCases(bridge, recorder) {
     const notArray = await invokeRaw("window.setNoDragRegions", { regions: "top" });
     recorder.assertCase(
         "WC-28 a missing regions parameter is an empty list (success with count 0); a non-array one fails with INVALID_PARAMS",
-        hasKeys(noParam, ["success", "count", "dpiScale"]) &&
+        hasKeys(noParam, ["success", "count", "dpiScale", "scale"]) &&
             noParam.success === true &&
             noParam.count === 0 &&
             refused(notArray),

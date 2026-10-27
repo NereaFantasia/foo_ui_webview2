@@ -1,33 +1,30 @@
 /**
- * Tool results shared by the bridge and page tools: text, errors, JSON and
- * pictures, with long text cut to a size the client's context can take.
+ * Result formatting helpers for bridge and page tools (text, errors, JSON, and images)
+ * with output size clamping.
  */
 
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 
-/** Longest text result by default, in characters (roughly 25,000 tokens). */
+/** Default maximum response length in characters (roughly 25,000 tokens). */
 export const DEFAULT_MAX_RESPONSE_CHARS = 100_000;
 
-/**
- * Largest picture sent as an image by default, in bytes: 3.75 MiB, which
- * base64-encodes to the 5 MiB the Claude API accepts for one image.
- */
+/** Default maximum decoded image size in bytes (3.75 MiB, base64-encoded to ~5 MiB). */
 export const DEFAULT_MAX_IMAGE_BYTES = 3_932_160;
 
-/** Size limits of one tool result. */
+/** Size thresholds applied to tool execution results. */
 export interface ResultLimits {
-    /** Longest text, in characters; a longer one is cut. */
+    /** Maximum character count for text results before truncation. */
     maxResponseChars?: number;
-    /** Largest picture sent as an image, in decoded bytes; a larger one is left out. */
+    /** Maximum decoded byte size for images before omission. */
     maxImageBytes?: number;
 }
 
-// The picture types MCP clients commonly display; other types are left out of the result.
+// MIME types supported by common MCP image viewers; others are omitted from the result.
 const IMAGE_TYPES = new Set(["image/png", "image/jpeg", "image/gif", "image/webp"]);
 
 /**
- * A text result. Text longer than `maxChars` is cut there and ends with a
- * note that says how long it was and how to ask for less.
+ * Formats a plain text result. Strings exceeding `maxChars` are truncated
+ * with an explanatory note indicating the original length and paging suggestions.
  */
 export function textResult(text: string, maxChars = DEFAULT_MAX_RESPONSE_CHARS): CallToolResult {
     return { content: [{ type: "text", text: cut(text, maxChars) }] };
@@ -41,23 +38,26 @@ function cut(text: string, maxChars: number): string {
     return text.slice(0, maxChars) + note;
 }
 
-/** A tool execution error, which the client passes to the model so it can correct the call. */
+/** Formats an error result, returned to the model with `isError: true` for corrective action. */
 export function errorResult(text: string): CallToolResult {
     return { content: [{ type: "text", text }], isError: true };
 }
 
-/** A value as compact JSON text; `undefined` becomes `null`. */
+/** Formats data as compact JSON text, mapping `undefined` to `null`. */
 export function jsonResult(data: unknown, maxChars = DEFAULT_MAX_RESPONSE_CHARS): CallToolResult {
     return textResult(JSON.stringify(data ?? null), maxChars);
 }
 
 /**
- * A result whose `field` holds a picture as a `data:<mime>;base64,` URL: the
- * other fields as compact JSON text, followed by the picture as an image.
- * Without such a URL in `field`, for example when no picture was found, the
- * whole value is JSON text. A picture of a type outside PNG, JPEG, GIF and
- * WebP, or larger than `maxImageBytes`, is left out, and the text says why;
- * its base64 never goes into the text.
+ * Formats a result containing an embedded image URL in `field`.
+ *
+ * If `field` contains a valid `data:<mime>;base64,` URL within supported formats
+ * (PNG, JPEG, GIF, WebP) and size limits, the image is extracted into an MCP image
+ * block, and remaining fields are returned as compact JSON text.
+ *
+ * If `field` is missing or invalid, the entire object is returned as JSON text.
+ * If the image exceeds `maxImageBytes` or uses an unsupported format, the image
+ * is omitted with an explanatory note appended to the JSON text.
  */
 export function pictureResult(data: unknown, field: string, limits: ResultLimits = {}): CallToolResult {
     const maxChars = limits.maxResponseChars ?? DEFAULT_MAX_RESPONSE_CHARS;
@@ -82,7 +82,7 @@ export function pictureResult(data: unknown, field: string, limits: ResultLimits
     };
 }
 
-/** The message of a thrown value. */
+/** Extracts an error message from a thrown value. */
 export function errorMessage(err: unknown): string {
     return err instanceof Error ? err.message : String(err);
 }
@@ -92,9 +92,8 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 /**
- * The MIME type, base64 payload and decoded size of a base64 data URL, or
- * `undefined` when the value is not one or its payload is not valid base64,
- * which a client would refuse as image data.
+ * Parses a base64 data URL into its MIME type, payload, and decoded byte count.
+ * Returns `undefined` if the format or base64 payload is invalid.
  */
 function parseDataUrl(value: string): { mimeType: string; data: string; bytes: number } | undefined {
     const header = /^data:([\w.+-]+\/[\w.+-]+);base64,/i.exec(value.slice(0, 128));

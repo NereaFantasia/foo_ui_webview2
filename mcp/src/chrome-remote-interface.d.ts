@@ -1,3 +1,7 @@
+/**
+ * Type declarations for the `chrome-remote-interface` library, covering
+ * the subset of Chrome DevTools Protocol domains utilized by the MCP server.
+ */
 declare module "chrome-remote-interface" {
     interface Target {
         type: string;
@@ -61,7 +65,7 @@ declare module "chrome-remote-interface" {
             }): Promise<void>;
             clearDeviceMetricsOverride(): Promise<void>;
         };
-        /** Listens for `disconnect` or a protocol event such as `Runtime.consoleAPICalled`. */
+        /** Registers an event listener for connection lifecycle events (e.g. `disconnect`) or protocol domain events. */
         on(event: string, callback: (params: unknown) => void): void;
         close(): Promise<void>;
     }

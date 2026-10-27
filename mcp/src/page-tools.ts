@@ -1,6 +1,8 @@
 /**
- * Page tools: inspect, and optionally script, the WebView2 page through the
- * Chrome DevTools Protocol rather than through a bridge method.
+ * Page inspection and execution tools.
+ *
+ * Provides inspection (screenshots, DOM snapshots, console logs) and optional
+ * script execution directly in the WebView2 page via Chrome DevTools Protocol.
  */
 
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
@@ -13,28 +15,28 @@ import { withRateLimit, type CallRateLimiter } from "./rate-limit.js";
 import { DEFAULT_MAX_RESPONSE_CHARS, errorMessage, errorResult, jsonResult, textResult } from "./tool-results.js";
 import type { ToolAnnotations } from "./types.js";
 
-/** How the page tools are registered. */
+/** Registration options and execution constraints for page tools. */
 export interface PageToolOptions {
-    /** Leave out the tools that can change anything. */
+    /** When true, omits mutating tools (`readOnlyHint: false`). */
     readOnly?: boolean;
-    /** Register `fb2k_page_evaluate`, which runs arbitrary JavaScript in the page. */
+    /** When true, registers `fb2k_page_evaluate` for running arbitrary JavaScript in the page. */
     enableEval?: boolean;
-    /** Longest text result, in characters; a longer one is cut. */
+    /** Maximum character count for text results before truncation. */
     maxResponseChars?: number;
-    /** Budget every call takes from; omitted, calls are not limited. */
+    /** Rate limiter applied to tool executions; omitted if calls are unthrottled. */
     limiter?: CallRateLimiter;
 }
 
-/** What the page tools need from the bridge executor. */
+/** Bridge executor methods required by page tools. */
 export type PageAccess = Pick<BridgeExecutor, "screenshot" | "evaluate" | "getConsoleMessages">;
 
-/** Name of the read-only page tool: screenshot, DOM snapshot and console messages. */
+/** Name of the read-only inspection tool (screenshots, DOM snapshots, and console logs). */
 export const PAGE_INSPECT = "fb2k_page_inspect";
-/** Name of the tool that runs JavaScript in the page; registered only with `enableEval` and outside read-only mode. */
+/** Name of the script execution tool; registered only when `enableEval` is enabled and `readOnly` is false. */
 export const PAGE_EVALUATE = "fb2k_page_evaluate";
 
 const INSPECT_ANNOTATIONS: ToolAnnotations = { readOnlyHint: true, openWorldHint: false };
-// The page can call every bridge method, so an expression can change anything and reach anywhere.
+// Evaluated scripts can access the window.fb2k bridge and invoke any host method without restriction.
 const EVALUATE_ANNOTATIONS: ToolAnnotations = {
     readOnlyHint: false,
     destructiveHint: true,
@@ -51,8 +53,7 @@ const INSPECT_DESCRIPTION = [
     "- consoleMessages(limit?): the page's recent console messages and uncaught exceptions, oldest first",
 ].join("\n");
 
-// Walks the document and prints one line per element; text only for an element whose one
-// child is a text node, cut to 80 characters.
+// Traverses the DOM tree and formats each element as a line of text, truncating leaf text nodes to 80 characters.
 const DOM_SNAPSHOT_SCRIPT = `
 (function() {
     function walk(el, depth) {
@@ -92,9 +93,9 @@ const evaluateSchema = z.strictObject({
 });
 
 /**
- * Register the page tools.
+ * Registers page tools with the MCP server based on configured options.
  *
- * @returns The names of the tools registered.
+ * @returns Array of registered tool names.
  */
 export function registerPageTools(server: McpServer, page: PageAccess, options: PageToolOptions = {}): string[] {
     const maxChars = options.maxResponseChars ?? DEFAULT_MAX_RESPONSE_CHARS;

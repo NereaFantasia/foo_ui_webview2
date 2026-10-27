@@ -119,7 +119,7 @@
       "description": "Read playlists: the list of playlists (index, guid, name, track count, whether active, playing, locked or an autoplaylist), a page of one playlist's tracks or the rows picked by number, the rows whose tracks match a query, its selection and focus, its lock and autoplaylist details, and the columns the playlist view offers. Changes nothing.",
       "zh": "读取播放列表：播放列表清单（每项带索引、guid、名称、曲目数，以及是否活动、正在播放、带锁或自动播放列表），某个播放列表的一页曲目或按行号挑出的行、曲目符合查询的行、选中项与焦点，锁与自动播放列表的详情，以及播放列表视图可用的列。不改动任何东西。",
       "params": {
-        "playlist": "Playlist index; omitted, the active playlist.",
+        "playlist": "Playlist index; omitted, the active playlist, except that getAutoplaylistConfig requires exactly one of playlist or playlistGuid.",
         "playlistGuid": "The playlist's `guid` from `playlist.getAll`, in place of `playlist`; it keeps naming the same playlist when others are added, removed or moved, which an index does not. Give one of the two. A GUID no playlist has answers an empty result in `playlist.getTracks`, `playlist.getTracksAt` and `playlist.getFocusedTrack`, and fails with `NOT_FOUND` elsewhere.",
         "formats": "Extra columns, each a Title Formatting pattern under a name of your choosing; every row carries their values under `formats`, in projected rows too.",
         "fields": "Keys each row carries besides `index`; omitted, the whole row. The names are those `library.query` takes; an unknown name fails with `INVALID_PARAMS` and is listed in `details.unknownFields`."
@@ -165,6 +165,9 @@
         "playlist.getAutoplaylistInfo": {
           "description": "Get autoplaylist details (flags, source, etc.)"
         },
+        "playlist.getAutoplaylistConfig": {
+          "description": "Read query, sorting and revision for an autoplaylist managed by this component"
+        },
         "playlist.getAvailableColumns": {
           "description": "Get available DUI playlist column definitions (ID, name, format, sort pattern)"
         }
@@ -174,8 +177,11 @@
       "description": "Manage the playlists themselves: create, remove, rename, duplicate and reorder them, and turn a playlist into an autoplaylist that a library query fills, or back into a normal one.",
       "zh": "管理播放列表本身：新建、删除、改名、复制与重排，以及把播放列表转成由媒体库查询填充的自动播放列表，或转回普通播放列表。",
       "params": {
-        "name": "`playlist.create` and `playlist.createAutoplaylist`: name of the new playlist. `playlist.rename`: the new name. `playlist.duplicate`: name of the copy; omitted, the original name followed by ` (Copy)`.",
-        "playlist": "Index of the playlist to act on; omitted, the active playlist, except that `playlist.rename` needs this or `playlistGuid`. An index past the last playlist fails with `INVALID_INDEX`.",
+        "name": "Creation actions: name of the new playlist. `playlist.rename`: the new name. `playlist.duplicate`: name of the copy; omitted, the original name followed by ` (Copy)`.",
+        "playlist": "Index of the playlist to act on; omitted, the active playlist, except that rename and setAutoplaylistConfig require this or playlistGuid. An index past the last playlist fails with INVALID_INDEX.",
+        "query": "foobar2000 library query. Managed configuration requires nonblank text of at most 65536 UTF-8 bytes without NUL. For setAutoplaylistConfig, omission keeps the current query.",
+        "sort": "Independent Title Formatting sort. Managed configuration rejects explicit query SORT BY combined with nonempty sort; at most 65536 UTF-8 bytes without NUL. For setAutoplaylistConfig, omission keeps the current value and an empty string clears it.",
+        "keepSorted": "Keep tracks sorted and prevent manual reordering. For setAutoplaylistConfig, omission keeps the current flag; creation defaults to false.",
         "playlistGuid": "The playlist's `guid` from `playlist.getAll`, in place of `playlist`; it keeps naming the same playlist when others are added, removed or moved, which an index does not. Give one of the two."
       },
       "actions": {
@@ -207,6 +213,12 @@
         },
         "playlist.createAutoplaylist": {
           "description": "Create an autoplaylist (smart playlist) that auto-populates based on a query"
+        },
+        "playlist.createManagedAutoplaylist": {
+          "description": "Create an editable autoplaylist that requires this component to remain installed"
+        },
+        "playlist.setAutoplaylistConfig": {
+          "description": "Edit a managed autoplaylist configuration using its expected revision"
         },
         "playlist.convertToAutoplaylist": {
           "description": "Convert an existing playlist to an autoplaylist"

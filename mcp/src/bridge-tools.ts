@@ -16,21 +16,22 @@ import {
 } from "./tool-schema.js";
 import type { InputSchema, ToolDefinition } from "./types.js";
 
-/** How the bridge tools are registered, with the size limits of their results. */
+/** Registration options and result size limits for bridge tools. */
 export interface BridgeToolOptions extends ResultLimits {
-    /** Register only the tools whose actions change nothing. */
+    /** When true, registers only tools whose actions do not modify state (`readOnlyHint: true`). */
     readOnly?: boolean;
-    /** Budget every call takes from; omitted, calls are not limited. */
+    /** Rate limiter applied to tool executions; omitted if calls are unthrottled. */
     limiter?: CallRateLimiter;
 }
 
 /**
- * Register the bridge tools with their merged schemas and annotations.
+ * Registers bridge tools with the MCP server using their aggregated schemas and annotations.
  *
- * @param server - MCP server that will expose the tools.
- * @param bridge - Bridge executor used by every registered handler.
+ * @param server - MCP server instance exposing the tools.
+ * @param bridge - Bridge executor used by tool handlers.
  * @param tools - Declarative tool definitions to register.
- * @returns The names of the tools registered.
+ * @param options - Tool registration and rate limiting options.
+ * @returns Array of registered tool names.
  * @throws When a tool or action schema is malformed.
  */
 export function registerBridgeTools(
@@ -53,10 +54,12 @@ export function registerBridgeTools(
 }
 
 /**
- * Create the handler of a bridge tool: it picks the action's host method,
- * checks the other arguments against that method's exact schema, and calls
- * it. Arguments the method would refuse come back as a tool execution error
- * that names the problem and lists what the method takes.
+ * Creates the dispatch handler for a multi-action bridge tool.
+ *
+ * Resolves the target host method from the `action` argument and validates
+ * remaining arguments against the method's specific input schema.
+ * If validation fails or the action is unknown, returns a descriptive error result.
+ * Otherwise, forwards the validated parameters to the bridge method.
  *
  * @throws When an action schema is malformed.
  */
@@ -90,7 +93,7 @@ export function createActionToolHandler(
     };
 }
 
-/** The parameters of an action for an error message, required ones marked. */
+/** Formats action parameter names for error messages, marking required fields. */
 function describeParams(schema: InputSchema): string {
     const required = new Set(schema.required ?? []);
     const keys = Object.keys(schema.properties);
@@ -98,12 +101,12 @@ function describeParams(schema: InputSchema): string {
     return keys.map((k) => (required.has(k) ? `\`${k}\` (required)` : `\`${k}\``)).join(", ");
 }
 
-/** Validation issues as one line each: where, then what is wrong. */
+/** Formats Zod validation issues into a single descriptive string: location followed by issue. */
 function formatIssues(error: z.ZodError): string {
     return error.issues
         .map((issue) => {
             const where = issue.path.map(String).join(".");
-            // A missing required argument reads better said plainly than as a type mismatch.
+            // Format missing required fields plainly rather than as generic undefined type mismatches.
             if (where && issue.code === "invalid_type" && /received undefined$/.test(issue.message)) {
                 return `\`${where}\` is required`;
             }
@@ -113,10 +116,10 @@ function formatIssues(error: z.ZodError): string {
 }
 
 /**
- * Guard inbound MCP messages before SDK record parsing can normalize unsafe keys.
+ * Guards inbound MCP messages before SDK record parsing normalizes prototype-polluting keys.
  *
  * @param transport - Server-side transport owned by the MCP server.
- * @returns A transport proxy that rejects unsafe JSON-RPC values.
+ * @returns A transport proxy that rejects unsafe JSON-RPC payloads.
  */
 export function guardBridgeTransport(transport: Transport): Transport {
     return new BridgeTransportGuard(transport);

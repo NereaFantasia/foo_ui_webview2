@@ -59,10 +59,20 @@ describe("工具面", () => {
         ]);
     });
 
-    it("共 90 个 action，每个宿主方法只属于一个工具", () => {
+    it("共 93 个 action，每个宿主方法只属于一个工具", () => {
         const all = bridgeTools.flatMap((t) => Object.keys(t.actions));
-        expect(all).toHaveLength(90);
+        expect(all).toHaveLength(93);
         expect(new Set(all).size).toBe(all.length);
+    });
+
+    it("智能列表配置按读取和管理分组，设置必须带期望版本", () => {
+        expect(tool("fb2k_playlist_read").actions).toHaveProperty("playlist.getAutoplaylistConfig");
+        expect(Object.keys(tool("fb2k_playlist_manage").actions)).toEqual(expect.arrayContaining([
+            "playlist.createManagedAutoplaylist", "playlist.setAutoplaylistConfig",
+        ]));
+        expect(action("playlist.setAutoplaylistConfig").required).toContain("expectedRevision");
+        expect(property("playlist.setAutoplaylistConfig", "keepSorted").default).toBeUndefined();
+        expect(property("playlist.setAutoplaylistConfig", "sort").default).toBeUndefined();
     });
 
     it("废弃、别名与被覆盖的方法不再暴露", () => {
@@ -204,6 +214,7 @@ describe("覆盖表的限制", () => {
             "index",
             "deferred",
             "muted",
+            "expectedVersion",
         ]);
         // playlist 必填时再给 playlistGuid 就是两者都给，宿主以 INVALID_PARAMS 拒绝
         expect(keys("playlist.remove")).toEqual(["playlist"]);

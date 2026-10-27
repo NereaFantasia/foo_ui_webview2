@@ -143,7 +143,7 @@ npm start
 工具的注解对其中每个 action 都成立，所以只读工具不会改动任何东西。调用到达 foobar2000 之前，服务器按所选方法自己的声明检查参数；方法会拒绝的情况以工具错误返回，说明问题并列出该方法接受的参数。返回值就是该方法经 `fb2k.invoke()` 返回的内容，以紧凑 JSON 给出。`artwork.getCurrent` 与 `artwork.getForTrack` 例外：封面以图片返回，其余字段仍是 JSON。
 
 <!-- mcp-tools:begin -->
-**10 个 Bridge 工具**，覆盖 90 个宿主方法，按命名空间与是否改动东西分组；页面工具见下文。每个工具接收 `action`（要调用的宿主方法），该方法的参数与它并列传入。带 `?` 的参数可以省略；参数的类型、取值范围与默认值见各工具的输入 schema。
+**10 个 Bridge 工具**，覆盖 93 个宿主方法，按命名空间与是否改动东西分组；页面工具见下文。每个工具接收 `action`（要调用的宿主方法），该方法的参数与它并列传入。带 `?` 的参数可以省略；参数的类型、取值范围与默认值见各工具的输入 schema。
 
 ### `fb2k_playback_read`
 
@@ -159,9 +159,9 @@ npm start
 | `playback.getVolume` | — | 以宿主用的两种刻度报告输出音量，以及是否静音。 |
 | `playback.getPlaybackOrder` | — | 报告当前播放顺序，同时给出序号与名称。 |
 | `playback.getStopAfterCurrent` | — | 报告是否在当前曲目结束后停止。 |
-| `playback.getCurrentTrackIndex` | `includeTrackInfo?` | 定位正在播放的曲目在播放列表中的位置。 |
+| `playback.getCurrentTrackIndex` | `includeTrackInfo?` | 定位当前播放曲目在所在播放列表中的索引位置。 |
 | `playback.getPlayingPlaylist` | — | 报告最近一次起播所在的播放列表。 |
-| `queue.get` | — | 按播放顺序读取整个播放队列。 |
+| `queue.get` | — | 按播放顺序读取完整待播队列；不分页一次性返回全量条目 |
 
 ### `fb2k_playback_control`
 
@@ -178,8 +178,8 @@ npm start
 | `playback.previous` | — | 按当前播放顺序跳到上一首。 |
 | `playback.playPause` | — | 在播放与暂停之间切换；停止状态下开始播放。 |
 | `playback.random` | — | 从活动播放列表里随机起播一首。 |
-| `playback.playPath` | `path` | 把一个文件追加到活动播放列表并播放；没有活动列表时新建一个。 |
-| `playlist.playTrack` | `playlist?`, `playlistGuid?`, `index`, `deferred?`, `muted?` | 播放播放列表中的一行，与双击它相同。 |
+| `playback.playPath` | `path` | 追加单个文件至活动播放列表并立即播放；无活动列表时自动创建。 |
+| `playlist.playTrack` | `playlist?`, `playlistGuid?`, `index`, `deferred?`, `muted?`, `expectedVersion?` | 播放播放列表中的一行，与双击它相同。 |
 | `playback.setPosition` | `position` | 在当前曲目内定位，播放中或暂停中均可。 |
 | `playback.setVolume` | `volume` | 按百分比设置输出音量；超出 `0` 到 `100` 的值被夹到范围内。 |
 | `playback.volumeUp` | — | 按宿主的步长调高音量：一分贝，落在整数分贝上。 |
@@ -192,7 +192,7 @@ npm start
 
 ### `fb2k_playlist_read`
 
-只读 · 12 个 action
+只读 · 13 个 action
 
 读取播放列表：播放列表清单（每项带索引、guid、名称、曲目数，以及是否活动、正在播放、带锁或自动播放列表），某个播放列表的一页曲目或按行号挑出的行、曲目符合查询的行、选中项与焦点，锁与自动播放列表的详情，以及播放列表视图可用的列。不改动任何东西。
 
@@ -208,12 +208,13 @@ npm start
 | `playlist.getSelection` | `playlist?`, `playlistGuid?` | 列出播放列表中被选中的行。 |
 | `playlist.getFocusedTrack` | `playlist?`, `playlistGuid?` | 报告播放列表的焦点行。 |
 | `playlist.getLockInfo` | `playlist?`, `playlistGuid?` | 报告一个播放列表是否带锁，例如自动播放列表的锁。 |
-| `playlist.getAutoplaylistInfo` | `playlist?`, `playlistGuid?` | 描述一个播放列表的自动播放列表状态。 |
+| `playlist.getAutoplaylistInfo` | `playlist?`, `playlistGuid?` | 描述播放列表的自动列表状态及原生编辑器可用性，不打开 UI。 |
+| `playlist.getAutoplaylistConfig` | `playlist?`, `playlistGuid?` | 读取由本组件托管的自动播放列表配置。 |
 | `playlist.getAvailableColumns` | — | 列出 foobar2000 与已装组件为默认界面播放列表视图定义的列。 |
 
 ### `fb2k_playlist_manage`
 
-破坏性 · 8 个 action
+破坏性 · 10 个 action
 
 管理播放列表本身：新建、删除、改名、复制与重排，以及把播放列表转成由媒体库查询填充的自动播放列表，或转回普通播放列表。
 
@@ -225,8 +226,10 @@ npm start
 | `playlist.remove` | `playlist` | 删除一个播放列表。 |
 | `playlist.reorderPlaylists` | `newOrder?`, `newOrderGuids?` | 重排播放列表的顺序，为每个新位置给出放到那里的播放列表的当前索引（`newOrder`）或它的 GUID（`newOrderGuids`）；两者恰好给一个，否则以 `INVALID_PARAMS` 失败。 |
 | `playlist.createAutoplaylist` | `name?`, `query`, `sort?`, `keepSorted?` | 新建一个由 foobar2000 按媒体库查询填充并保持更新的播放列表。 |
+| `playlist.createManagedAutoplaylist` | `name?`, `query`, `sort?`, `keepSorted?` | 创建由本组件托管查询与排序配置的自动播放列表（依赖本组件持续安装）。 |
+| `playlist.setAutoplaylistConfig` | `playlist?`, `playlistGuid?`, `expectedRevision`, `query?`, `sort?`, `keepSorted?` | 基于预期版本号修改托管自动播放列表的配置。 |
 | `playlist.convertToAutoplaylist` | `playlist?`, `playlistGuid?`, `query`, `sort?`, `keepSorted?` | 把已有的播放列表变成自动播放列表，曲目换成查询结果。 |
-| `playlist.removeAutoplaylist` | `playlist?`, `playlistGuid?` | 把自动播放列表变回保留当前曲目的普通列表。 |
+| `playlist.removeAutoplaylist` | `playlist?`, `playlistGuid?` | 解除 autoplaylist manager client（包括第三方 client），保留当前曲目。 |
 
 ### `fb2k_playlist_edit`
 
@@ -239,13 +242,13 @@ npm start
 | `playlist.addPaths` | `playlist?`, `playlistGuid?`, `paths` | 把文件、文件夹或 URL 追加到播放列表，事先保存撤销点。 |
 | `playlist.addPathsSequential` | `playlist?`, `playlistGuid?`, `paths` | 按传入顺序把路径追加到播放列表，事先保存撤销点；展开成多首曲目的路径（文件夹、cue）占住它自己的位置。 |
 | `playlist.addHandles` | `playlist?`, `playlistGuid?`, `handles` | 把曲目追加到播放列表，事先保存撤销点。 |
-| `playlist.insertTracks` | `playlist?`, `playlistGuid?`, `position?`, `handles` | 在播放列表的某个位置插入曲目，事先保存撤销点。 |
+| `playlist.insertTracks` | `playlist?`, `playlistGuid?`, `position?`, `handles`, `expectedVersion?` | 在播放列表的某个位置插入曲目，事先保存撤销点。 |
 | `playlist.replaceAllAndPlay` | `playlist?`, `playlistGuid?`, `paths`, `playIndex?`, `stopFirst?`, `autoPlay?` | 替换播放列表的全部内容并播放：停止播放，清空列表（保存撤销点），按 `playlist.addPaths` 的方式加入路径，把列表设为活动列表，再播放或聚焦 `playIndex`。 |
-| `playlist.removeTracks` | `playlist?`, `playlistGuid?`, `items` | 从播放列表移除行，事先保存撤销点。 |
+| `playlist.removeTracks` | `playlist?`, `playlistGuid?`, `items`, `expectedVersion?` | 从播放列表移除行，事先保存撤销点。 |
 | `playlist.removeSelectedTracks` | `playlist?`, `playlistGuid?` | 从播放列表移除选中的行，事先保存撤销点。 |
 | `playlist.clear` | `playlist?`, `playlistGuid?` | 移除播放列表里的全部曲目，事先保存撤销点。 |
-| `playlist.moveTracks` | `playlist?`, `playlistGuid?`, `items?`, `delta` | 把播放列表中选中的行移动 `delta` 个位置，事先保存撤销点。 |
-| `playlist.reorder` | `playlist?`, `playlistGuid?`, `newOrder` | 重排播放列表的曲目，事先保存撤销点：`newOrder[i]` 是移到第 `i` 行的那首曲目的当前行号。 |
+| `playlist.moveTracks` | `playlist?`, `playlistGuid?`, `items?`, `delta`, `expectedVersion?` | 把播放列表中选中的行移动 `delta` 个位置，事先保存撤销点。 |
+| `playlist.reorder` | `playlist?`, `playlistGuid?`, `newOrder`, `expectedVersion?` | 重排播放列表的曲目，事先保存撤销点：`newOrder[i]` 是移到第 `i` 行的那首曲目的当前行号。 |
 | `playlist.sort` | `playlist?`, `playlistGuid?`, `pattern?`, `descending?`, `selectedOnly?` | 按 Title Formatting 模式给播放列表排序，事先保存撤销点。 |
 | `playlist.shuffle` | `playlist?`, `playlistGuid?` | 把播放列表的曲目打乱成随机顺序，事先保存撤销点。 |
 | `playlist.reverse` | `playlist?`, `playlistGuid?` | 把播放列表的曲目顺序倒过来，事先保存撤销点。 |
@@ -261,10 +264,10 @@ npm start
 | Action | 参数 | 说明 |
 |--------|--------|-------------|
 | `playlist.setActive` | `playlist?`, `playlistGuid?` | 把一个播放列表设为活动列表。 |
-| `playlist.setSelection` | `playlist?`, `playlistGuid?`, `indices`, `clearOthers?` | 选中播放列表中的行。 |
+| `playlist.setSelection` | `playlist?`, `playlistGuid?`, `indices`, `clearOthers?`, `expectedVersion?` | 选中播放列表中的行。 |
 | `playlist.selectAll` | `playlist?`, `playlistGuid?` | 选中播放列表中的全部行。 |
 | `playlist.deselectAll` | `playlist?`, `playlistGuid?` | 清除播放列表中的选中。 |
-| `playlist.setFocusedTrack` | `playlist?`, `playlistGuid?`, `index` | 把播放列表的焦点移到一行，或去掉焦点。 |
+| `playlist.setFocusedTrack` | `playlist?`, `playlistGuid?`, `index`, `expectedVersion?` | 把播放列表的焦点移到一行，或去掉焦点。 |
 
 ### `fb2k_library_read`
 
@@ -274,10 +277,10 @@ npm start
 
 | Action | 参数 | 说明 |
 |--------|--------|-------------|
-| `library.search` | `query`, `offset?`, `limit?`, `fields?` | 符合 foobar2000 查询表达式的曲目中的一页，按媒体库顺序：`SORT BY` 子句会被接受但不生效。 |
-| `library.getAlbums` | `sort?`, `query?`, `offset?`, `limit?`, `includeTracks?`, `useCache?` | 整个媒体库的专辑，按专辑名加专辑艺术家分组；没有 `album` 标签的曲目跳过。 |
-| `library.getArtists` | `sort?`, `limit?`, `includeAlbums?` | 每位署名艺术家及其参与计数：多值 `artist` 的每个值各成一行。 |
-| `library.getStats` | — | 整个媒体库的汇总计数。 |
+| `library.search` | `query`, `offset?`, `limit?`, `fields?` | 分页检索符合 foobar2000 查询表达式的曲目，固定按媒体库原生顺序排列（支持传入 `SORT BY` 子句但不生效）；查询解析失败时以 `INVALID_PARAMS` 失败（`details.param` 为 `query`）；`query` 为空或媒体库未启用时均返回空列表；数据在后台线程序列化写出 |
+| `library.getAlbums` | `sort?`, `query?`, `offset?`, `limit?`, `includeTracks?`, `useCache?` | 获取全媒体库专辑列表，按专辑名加专辑艺术家归组并跳过缺失 `album` 标签的曲目；完整查询结果（`offset: 0`、未传 `includeTracks` 且全部专辑均在 `limit` 内）将缓存至媒体库变更，后续参数一致的调用直接复用缓存；归组缓存同时共享给 `library.getAlbumTracks`，避免重复全库遍历；媒体库未启用时返回空列表 |
+| `library.getArtists` | `sort?`, `limit?`, `includeAlbums?` | 获取全媒体库所有署名艺术家及其参与统计；多值 `artist` 的每个取值单独成行；全库扫描结果将缓存至媒体库变更；媒体库未启用时以 `LIBRARY_DISABLED` 失败 |
+| `library.getStats` | — | 获取全媒体库汇总统计计数；每次调用均实时遍历全库，媒体库未启用时各项计数均为 `0` |
 
 ### `fb2k_queue_edit`
 
@@ -287,14 +290,14 @@ npm start
 
 | Action | 参数 | 说明 |
 |--------|--------|-------------|
-| `queue.add` | `playlist?`, `playlistGuid?`, `tracks?`, `track?` | 按播放列表中的位置把一首或多首曲目加入队列。 |
-| `queue.addPaths` | `paths`, `useQueuePlaylist?`, `playlist?`, `playlistGuid?` | 按路径把曲目加入队列。 |
-| `queue.insertNext` | `paths?`, `items?`, `position?` | 插入曲目使其下一首播放，排在已入队的所有条目之前。 |
-| `queue.setContents` | `items` | 用一份有序引用列表替换整个队列。 |
-| `queue.moveToTop` | `index` | 把队列中的一条移到队首，使其下一首播放。 |
-| `queue.playNow` | `index?` | 立即播放队列中 `index` 处的条目；它不在队首时先移到队首。 |
-| `queue.remove` | `index?`, `indices?` | 按 `index` 移除一条，或按 `indices` 移除多条。 |
-| `queue.clear` | — | 清空队列。 |
+| `queue.add` | `playlist?`, `playlistGuid?`, `tracks?`, `track?`, `expectedPlaylistVersion?` | 按播放列表行号将一首或多首曲目追加至待播队列；超出列表范围的索引自动忽略，无任一有效索引时以 `INVALID_INDEX` 失败，负数索引以 `INVALID_PARAMS` 失败 |
+| `queue.addPaths` | `paths`, `useQueuePlaylist?`, `playlist?`, `playlistGuid?` | 按文件路径或 URL 将曲目加入待播队列；宿主会先将曲目追加至播放列表（默认专用 `[WebView Queue]` 列表，不存在则自动创建）后再入队；目标列表已锁定时以 `LOCKED` 失败且不执行追加与入队；路径解析后重新定位目标列表，若期间被删除则以 `OPERATION_FAILED` 失败；未通过媒体根目录安全检查时整次调用以 `PERMISSION_DENIED` 失败；解析失败的无效路径自动丢弃，无任一有效曲目时以 `NOT_FOUND` 失败并在 `invalidCount` 中注明 |
+| `queue.insertNext` | `paths?`, `items?`, `position?`, `expectedVersion?` | 将指定曲目插入待播队列前端以便下一首播放；已存在于队列中的曲目直接前移而不重复入队；`items` 列表排在 `paths` 列表之前，各自保持输入顺序；未提供 `paths` 与 `items` 时以 `INVALID_PARAMS` 失败；在解析路径前预检所有 `items` 引用，任一项非法立即失败且不写入变更；路径未通过媒体根目录安全检查以 `PERMISSION_DENIED` 失败；无效路径自动丢弃并计入 `invalidCount`，无任一有效曲目插入时以 `NOT_FOUND` 失败；路径解析期间播放列表发生变动或队列重建失败以 `OPERATION_FAILED` 失败；在路径解析完成后写入队列前校验 `expectedVersion` |
+| `queue.setContents` | `items`, `expectedVersion?` | 使用指定的有序引用列表全量替换当前待播队列；任一引用项校验失败整次调用立即终止且不写入变更；传入空列表等同清空队列；播放列表索引以调用到达时的状态为准，使用 `playlistGuid` 可稳定引用目标列表；单项同时传入 `playlist` 与 `playlistGuid` 或 GUID 格式非法时以 `INVALID_PARAMS` 失败，GUID 未匹配到列表时以 `NOT_FOUND` 失败 |
+| `queue.moveToTop` | `index`, `expectedVersion?` | 将指定队列位置的条目移动至队首以便下一首播放；仅调整队列排序，保持其他条目的相对顺序；传入 `index: 0`、越界索引或队列为空时均以 `INVALID_INDEX` 失败；队列重建失败时以 `OPERATION_FAILED` 失败（附带 `queueCount`） |
+| `queue.playNow` | `index?`, `expectedVersion?` | 立即起播队列中指定索引的条目；若目标不在队首则先行移至队首；队列为空时以 `NOT_FOUND` 失败，索引越界以 `INVALID_INDEX` 失败；条目移动后队列重建失败时以 `OPERATION_FAILED` 失败且不起播 |
+| `queue.remove` | `index?`, `indices?`, `expectedVersion?` | 按队列索引 `index` 或索引列表 `indices` 从待播队列中移除条目；队列为空时一律以 `NOT_FOUND` 失败；单项 `index` 越界以 `INVALID_INDEX` 失败；批量移除时跳过重复或越界索引，无任一有效索引时以 `INVALID_INDEX` 失败（错误详情附带 `removedCount: 0` 与 `queueCount`）；未提供索引或传入负数时以 `INVALID_PARAMS` 失败 |
+| `queue.clear` | — | 清空待播队列中的所有条目 |
 
 ### `fb2k_track_read`
 
@@ -304,12 +307,12 @@ npm start
 
 | Action | 参数 | 说明 |
 |--------|--------|-------------|
-| `metadata.read` | `path`, `cueIndex?` | 读取单个曲目的标签与技术信息。 |
-| `metadata.readRaw` | `path`, `cueIndex?` | 绕过宿主缓存，直接从文件读取单个曲目的标签与技术信息；结果同 `metadata.read`，另加 `source`。 |
-| `metadata.readBatch` | `paths` | 读取多个曲目的扁平字段，每个路径一行。 |
-| `rating.get` | `path`, `cueIndex?` | 读取曲目 0 到 5 的评分：foo_playcount 的 `%rating%` 在 1 到 5 之间时优先，否则取文件的 `RATING` 标签并夹到 0..5。 |
-| `artwork.getForTrack` | `path`, `type?` | 经专辑封面管理器读图片（也会找到文件夹封面）并量尺寸。 |
-| `artwork.getCurrent` | `type?` | 读正在播放曲目的图片。 |
+| `metadata.read` | `path`, `cueIndex?` | 读取单个曲目的元数据标签与音频技术信息；优先读取宿主内存缓存，若缓存缺失或未收录标题标签则回退至直接读取音频文件；文件无法打开或读取失败时以 `OPERATION_FAILED` 失败；字段值中的非法 UTF-8 字符替换为 U+FFFD，字段名包含非法 UTF-8 的项自动省略且不修改原文件 |
+| `metadata.readRaw` | `path`, `cueIndex?` | 绕过宿主内存缓存，直接从物理文件读取单个曲目的元数据标签与技术信息；返回结构同 `metadata.read` 且额外附带 `source: "file"` 字段；文件读取失败以 `OPERATION_FAILED` 失败 |
+| `metadata.readBatch` | `paths` | 批量读取多个曲目的扁平元数据字段，按输入路径顺序逐行返回；单项路径读取失败在对应行报告自身错误而不导致整次调用失败；在宿主主线程同步执行（大量文件推荐改用 `metadata.probeBatchAsync`）；UTF-8 字符处理规则同 `metadata.read` |
+| `rating.get` | `path`, `cueIndex?` | 获取指定曲目的星级评分（范围 0 至 5；优先读取 foo_playcount 维护的 1 至 5 星 %rating% 统计数据，未找到时回退读取音频文件的 RATING 标签并夹取至 0 至 5 区间；0 表示未评分；无法读取标签或文件不存在时不返回错误，统一视作无 RATING 标签处理） |
+| `artwork.getForTrack` | `path`, `type?` | 通过专辑封面管理器读取曲目封面（包含内嵌封面及所在目录的外置封面文件）并获取尺寸；从 PNG 头信息解析 `width` 与 `height`（其他格式返回 `0`）；`file-relative://` 路径以 `INVALID_PATH` 拒绝 |
+| `artwork.getCurrent` | `type?` | 读取当前正在播放曲目的封面图片；按顺序尝试三种检索策略并在 `source` 中指明胜出源；未在播放时返回 `available: false`（`reason: "no_track"`），均未查得图片时返回 `reason: "not_found"` |
 
 ### `fb2k_track_write`
 
@@ -319,11 +322,11 @@ npm start
 
 | Action | 参数 | 说明 |
 |--------|--------|-------------|
-| `metadata.write` | `path`, `tags`, `cueIndex?` | 把对单个曲目的标签写入排入队列并立即返回。 |
-| `metadata.writeBatch` | `items` | 每条排入一次 `metadata.write`，报告成功排入的条数。 |
-| `rating.set` | `path?`, `rating`, `cueIndex?` | 通过 foo_playcount 的右键菜单设置评分，菜单不可用时改写文件的 `RATING` 标签。 |
-| `metadata.embedArtwork` | `path`, `imageData`, `type?`, `target?`, `filename?` | 把图片写进曲目的标签、写成音频旁的图片文件，或两者都写。 |
-| `metadata.removeEmbeddedArt` | `path`, `type?`, `removeAll?` | 删除文件里嵌入的图片：删一种类型，或在省略 `type`、设置 `removeAll` 时删除全部。 |
+| `metadata.write` | `path`, `tags`, `cueIndex?` | 将针对单个曲目的标签写入请求加入后台队列并立即返回；foobar2000 宿主在后台线程执行物理文件写入，并在操作完成后向所有窗口广播 `metadata:writeComplete` 事件；请求中未包含有效待写标签时直接返回成功且不派发后台写入 |
+| `metadata.writeBatch` | `items` | 批量排入多个曲目的标签写入请求，并报告成功入队的数量；已派发的单项写入在完成后独立广播 `metadata:writeComplete` 事件（不存在的文件在此阶段亦计入入队成功）；若有条目参数非法则整次调用以 `OPERATION_FAILED` 失败（错误详情附带 `successCount`、`failCount` 与 `errors` 列表，其他合法项照常入队） |
+| `rating.set` | `path?`, `rating`, `cueIndex?` | 设置指定曲目的星级评分（优先通过 foo_playcount 上下文菜单写入统计，菜单不可用时回退写入音频文件的 RATING 标签；省略 path 时优先为正在播放的曲目评分，无播放曲目时回退为当前活动播放列表的选中项，两者均无时返回 NO_ACTIVE_ITEM 失败） |
+| `metadata.embedArtwork` | `path`, `imageData`, `type?`, `target?`, `filename?` | 将封面图片写入音频文件内嵌标签、写为同目录下的独立图片文件或两处同时写入；指定单个目标时返回该目标的写入结果；同时指定两处目标时在 `results` 下分别列出各自状态，仅当两处写入均失败时整次调用以 `OPERATION_FAILED` 失败 |
+| `metadata.removeEmbeddedArt` | `path`, `type?`, `removeAll?` | 从音频文件中移除内嵌的封面图片；支持按 `type` 删除指定类型，或在省略 `type` 及设置 `removeAll: true` 时全量清空；音频格式不受专辑封面编辑器支持时以 `NOT_SUPPORTED` 失败 |
 <!-- mcp-tools:end -->
 
 ### 页面工具

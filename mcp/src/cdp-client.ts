@@ -2,8 +2,7 @@
  * CDP connection manager.
  *
  * Establishes and maintains a connection to the WebView2 Chrome DevTools
- * Protocol endpoint. Defaults to `localhost:9222` (the WebView2
- * remote-debugging-port).
+ * Protocol endpoint, defaulting to `localhost:9222` (the WebView2 remote-debugging-port).
  */
 
 import CDP from "chrome-remote-interface";
@@ -78,16 +77,16 @@ const SUSPENDED_PAGE_HINT =
 /** Element type of `CDP.List()` results, derived from the library types. */
 type CdpTarget = Awaited<ReturnType<typeof CDP.List>>[number];
 
-/** Console messages kept, the newest ones. */
+/** Maximum number of recent console messages retained in memory. */
 export const CONSOLE_CAPACITY = 200;
-/** Console messages returned when the caller names no limit. */
+/** Default number of console messages returned when no limit is specified. */
 export const DEFAULT_CONSOLE_LIMIT = 100;
 
-/** One console message or uncaught exception of the page. */
+/** Log entry captured from a page console call or uncaught exception. */
 export interface ConsoleMessage {
-    /** The console method (`log`, `warning`, `error`, …), or `exception` for an uncaught one. */
+    /** Log severity or source (`log`, `warning`, `error`, or `exception` for uncaught errors). */
     level: string;
-    /** The message text, arguments joined by spaces. */
+    /** Formatted message text with arguments delimited by spaces. */
     text: string;
 }
 
@@ -115,13 +114,12 @@ export class CdpClient {
     }
 
     /**
-     * Connect to the WebView2 CDP endpoint, picking a page target (see
-     * remarks on target selection in the class description).
+     * Connects to the WebView2 CDP endpoint and attaches to the target page.
      *
      * No-op if already connected.
      *
-     * @throws When no suitable page target is found, the connection fails,
-     *   or the connection attempt exceeds `connectTimeoutMs`.
+     * @throws When no matching page target is found, connection establishment fails,
+     *   or the attempt exceeds `connectTimeoutMs`.
      */
     async connect(): Promise<void> {
         if (this.client) return;
@@ -147,8 +145,8 @@ export class CdpClient {
                 target: pageTarget,
             });
 
-            // Record the page's console. Enabling Runtime below also delivers the
-            // messages the page logged earlier and the browser still holds.
+            // Listen for console calls and unhandled exceptions. Enabling the Runtime domain
+            // also flushes buffered messages logged prior to connection establishment.
             this.client.on("Runtime.consoleAPICalled", (event: unknown) => {
                 this.recordConsole(consoleCallMessage(event));
             });
@@ -156,16 +154,15 @@ export class CdpClient {
                 this.recordConsole(exceptionMessage(event));
             });
 
-            // Enable the Runtime and Page domains (Page is needed for
-            // screenshots and layout operations).
+            // Enable Runtime and Page domains (Page is required for screenshots and layout metrics).
             await Promise.all([
                 this.client.Runtime.enable(),
                 this.client.Page.enable(),
             ]);
 
-            // 1x1 warmup screenshot to initialize the WebView2 render
-            // pipeline, avoiding the ~8s latency on the first real
-            // screenshot. Bounded so a suspended page cannot stall connect().
+            // Issue a 1x1 warmup screenshot to prime the WebView2 rendering pipeline,
+            // preventing an ~8s latency spike on the initial real screenshot request.
+            // Bounded with a timeout so a suspended page does not block connection.
             await this.withTimeout(
                 this.client.Page.captureScreenshot({
                     format: "png",
@@ -178,7 +175,7 @@ export class CdpClient {
             this.reconnectCount = 0;
             this.touch();
 
-            // Drop the cached client when the connection is lost.
+            // Clear client reference when the WebSocket connection closes.
             this.client.on("disconnect", () => {
                 this.client = null;
             });
@@ -192,13 +189,12 @@ export class CdpClient {
     }
 
     /**
-     * Pick the page target to attach to.
+     * Selects the target page for CDP attachment.
      *
-     * Auxiliary WebViews (such as the tray menu overlay) are rendered via
-     * `NavigateToString` and always report `about:blank`; however, a main
-     * window without a deployed template shows the built-in test page and
-     * reports `about:blank` too. Targets with a concrete URL are therefore
-     * preferred and `about:blank` is used only as a fallback, never excluded.
+     * Auxiliary WebViews (such as the tray menu overlay) use `NavigateToString` and
+     * report `about:blank`. However, a main window without a deployed template shows
+     * the built-in test page and also reports `about:blank`. Targets with concrete URLs
+     * are therefore prioritized, while `about:blank` serves as a fallback.
      */
     private selectPageTarget(targets: CdpTarget[]): CdpTarget {
         const candidates = targets.filter(
@@ -257,14 +253,13 @@ export class CdpClient {
     }
 
     /**
-     * Ensure a healthy connection is available.
+     * Ensures an active, healthy CDP connection is available.
      *
-     * A cached connection that has been idle for longer than `pingIdleMs`
-     * is health-checked first; if the ping fails, the stale connection is
-     * dropped and a new one is established with exponential backoff (up to
-     * `maxReconnect` attempts).
+     * If the cached connection has been idle longer than `pingIdleMs`, it is validated
+     * with a health check. If the check fails, the connection is closed and re-established
+     * with exponential backoff (up to `maxReconnect` attempts).
      *
-     * @throws The last connection error if all attempts fail.
+     * @throws The final connection error if all reconnection attempts fail.
      */
     async ensureConnected(): Promise<void> {
         if (this.client) {
@@ -295,17 +290,17 @@ export class CdpClient {
     }
 
     /**
-     * Execute `fb2k.invoke()` inside the WebView2 page over CDP.
+     * Invokes `window.fb2k.invoke()` within the WebView2 page over CDP.
      *
-     * @param method - Bridge API method id, e.g. `"playback.play"`.
-     * @param params - Optional argument object.
+     * @param method - Bridge API method identifier, e.g. `"playback.play"`.
+     * @param params - Optional method arguments object.
      * @returns The value returned by the bridge method.
-     * @throws When the method name is malformed or the bridge call fails.
+     * @throws When the method identifier is malformed or the bridge invocation fails.
      */
     async invoke(method: string, params?: Record<string, unknown>): Promise<unknown> {
         await this.ensureConnected();
 
-        // Validate the method format to prevent JS injection.
+        // Validate method format to guard against JavaScript injection.
         if (!/^[a-zA-Z][a-zA-Z0-9]*\.[a-zA-Z][a-zA-Z0-9]*$/.test(method)) {
             throw new Error(`Invalid method name: "${method}". Expected format: namespace.method`);
         }
@@ -335,7 +330,7 @@ export class CdpClient {
     }
 
     /**
-     * Evaluate an arbitrary JavaScript expression in the WebView2 page.
+     * Evaluates an arbitrary JavaScript expression in the WebView2 page context.
      */
     async evaluate(expression: string): Promise<unknown> {
         await this.ensureConnected();
@@ -347,10 +342,10 @@ export class CdpClient {
     }
 
     /**
-     * Capture a screenshot of the WebView2 page.
+     * Captures a screenshot of the WebView2 page.
      *
-     * @param options - When `fullPage` is true, the viewport is resized to
-     *   the full content size before capturing.
+     * @param options - When `fullPage` is true, the viewport is temporarily resized
+     *   to match the full scrollable content size before capture.
      * @returns Base64-encoded PNG image data.
      */
     async screenshot(options?: { fullPage?: boolean }): Promise<string> {
@@ -364,7 +359,7 @@ export class CdpClient {
 
     private async screenshotInternal(options?: { fullPage?: boolean }): Promise<string> {
         if (options?.fullPage) {
-            // Measure the full page size.
+            // Measure full scrollable content size and apply layout override.
             const metrics = await this.client!.Page.getLayoutMetrics();
             const { width, height } = metrics.contentSize;
             await this.client!.Emulation.setDeviceMetricsOverride({
@@ -388,12 +383,12 @@ export class CdpClient {
     }
 
     /**
-     * The page's most recent console messages and uncaught exceptions, oldest
-     * first. They are collected from the first connection on, together with the
-     * earlier ones the page still holds then; up to {@link CONSOLE_CAPACITY} are
-     * kept, across reconnects.
+     * Retrieves recent page console messages and uncaught exceptions in chronological order (oldest first).
      *
-     * @param limit - Most messages to return, the newest ones.
+     * Captures messages starting from initial connection (including pre-connection messages
+     * buffered by the browser). Retains up to {@link CONSOLE_CAPACITY} entries across reconnections.
+     *
+     * @param limit - Maximum number of recent messages to return; defaults to {@link DEFAULT_CONSOLE_LIMIT}.
      */
     async getConsoleMessages(limit = DEFAULT_CONSOLE_LIMIT): Promise<ConsoleMessage[]> {
         await this.ensureConnected();
@@ -428,7 +423,7 @@ export class CdpClient {
         return result.value;
     }
 
-    /** Cheap liveness probe for a cached connection; never throws. */
+    /** Lightweight liveness probe for cached connections; evaluates a trivial expression and never throws. */
     private async pingCachedClient(): Promise<boolean> {
         if (!this.client) return false;
         try {
@@ -479,8 +474,8 @@ const isRecord = (value: unknown): value is Record<string, unknown> =>
     value !== null && typeof value === "object" && !Array.isArray(value);
 
 /**
- * One argument of a console call as text. Primitives arrive by value; objects
- * arrive as remote references, of which only the description is printable.
+ * Formats a console argument into readable text. Primitives are stringified by value,
+ * while object remote references are represented by their description or type.
  */
 function remoteObjectText(arg: unknown): string {
     if (!isRecord(arg)) return String(arg);
@@ -492,14 +487,14 @@ function remoteObjectText(arg: unknown): string {
     return typeof arg.type === "string" ? arg.type : "?";
 }
 
-/** A `Runtime.consoleAPICalled` event as a message, or null when it is malformed. */
+/** Converts a `Runtime.consoleAPICalled` event into a {@link ConsoleMessage}, or `null` if malformed. */
 function consoleCallMessage(event: unknown): ConsoleMessage | null {
     if (!isRecord(event) || typeof event.type !== "string") return null;
     const args = Array.isArray(event.args) ? event.args : [];
     return { level: event.type, text: args.map(remoteObjectText).join(" ") };
 }
 
-/** A `Runtime.exceptionThrown` event as a message, or null when it is malformed. */
+/** Converts a `Runtime.exceptionThrown` event into a {@link ConsoleMessage}, or `null` if malformed. */
 function exceptionMessage(event: unknown): ConsoleMessage | null {
     if (!isRecord(event) || !isRecord(event.exceptionDetails)) return null;
     const details = event.exceptionDetails;

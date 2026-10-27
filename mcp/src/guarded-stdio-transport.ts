@@ -11,7 +11,8 @@ import {
 import { findRuntimeValueIssue } from "./tool-schema.js";
 
 /**
- * Stdio transport that validates raw JSON values before MCP SDK normalization.
+ * Stdio server transport that validates inbound JSON-RPC payloads for prototype pollution
+ * and structural safety prior to SDK message parsing.
  */
 export class GuardedStdioServerTransport implements Transport {
     private buffer = Buffer.alloc(0);
@@ -171,6 +172,10 @@ export class GuardedStdioServerTransport implements Transport {
     }
 }
 
+/**
+ * Extracts a valid JSON-RPC request identifier (`string` or safe integer) from a raw message,
+ * verifying that the object adheres to basic JSON-RPC 2.0 structure.
+ */
 export function getValidRequestId(value: unknown): RequestId | undefined {
     if (!isPlainObject(value)) {
         return undefined;
