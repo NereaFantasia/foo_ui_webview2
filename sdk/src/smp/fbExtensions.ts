@@ -29,7 +29,8 @@ import { clamp, normalizeHandleList, successOf, toHandleId } from './utils.js';
  */
 
 /**
- * Track keys requested from `library.search` by `fb.GetQueryItems`.
+ * Track keys requested from `library.search` by `fb.GetQueryItems` and
+ * `fb.GetLibraryItems`.
  *
  * Exactly the keys `FbMetadbHandle` reads out of a track-info object:
  * `absolutePath` / `path` / `subsong` back `Path` and `SubSong`,
@@ -45,6 +46,9 @@ const QUERY_ITEM_FIELDS = [
     'duration',
     'fileSize',
 ];
+
+/** Rows per `library.search` request in `fb.GetLibraryItems`. */
+const LIBRARY_PAGE_SIZE = 5000;
 
 /** Attach a property only if it is not already defined on `target`. */
 function _defineIfMissing(
@@ -361,33 +365,26 @@ export function attachFbExtensions(
     _defineIfMissing(fbExt, 'GetLibraryItems', {
         value: async () => {
             const list = new FbMetadbHandleList();
-            const chunk = 500;
-            let offset = 0;
-            let total: number | null = null;
 
-            while (total === null || offset < total) {
-                const res = successOf(await _invoke('library.getAll', {
+            // Paged because the host's main thread is held in proportion to
+            // the size of each response. Tracks removed between pages move
+            // later rows up, so a concurrently modified library can lose rows.
+            for (let offset = 0; ;) {
+                const res = successOf(await _invoke('library.search', {
+                    query: 'ALL',
                     offset,
-                    limit: chunk,
+                    limit: LIBRARY_PAGE_SIZE,
+                    fields: QUERY_ITEM_FIELDS,
                 }));
-                const tracks: unknown[] = Array.isArray(res?.tracks)
-                    ? res!.tracks!
-                    : Array.isArray(res?.items)
-                        ? res!.items!
-                        : [];
-
-                if (!Array.isArray(tracks) || tracks.length === 0) break;
+                const tracks = Array.isArray(res?.tracks) ? res.tracks : [];
 
                 for (const t of tracks) {
-                    list.Add(new FbMetadbHandle(t as SmpHandleLike));
+                    list.Add(new FbMetadbHandle(t));
                 }
 
-                if (typeof res?.total === 'number') total = res.total;
                 offset += tracks.length;
-
-                if (tracks.length < chunk && (total === null || offset >= total)) break;
+                if (!res?.hasMore || tracks.length === 0) return list;
             }
-            return list;
         },
     });
     _defineIfMissing(fbExt, 'GetQueryItems', {

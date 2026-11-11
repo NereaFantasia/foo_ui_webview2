@@ -26,7 +26,7 @@ export type ApiUnregisteredPayload = SystemApiInfo;
 
 /**
  * Payload of the `app:beforeQuit` event.
- * foobar2000 is exiting. Sent once, before any window or panel of the plugin closes, to every page: the main window's, popups' and panels', whatever the interface and whether or not background mode is on. Best effort only: the event is queued to each page and the host does not wait. The pages close right after, so a handler may not run or finish, and a call it makes to the host is unlikely to be answered.
+ * foobar2000 is exiting. Sent once, before any window or panel of the plugin closes, to every page: the main window's, popups' and panels', whatever the interface and whether or not background mode is on. Delivery is best-effort: the event is queued to each page without awaiting handlers. The pages close right after, so a handler may not run or finish, and a host call it makes may go unanswered.
  */
 export type AppBeforeQuitPayload = Record<string, never>;
 
@@ -43,7 +43,7 @@ export type AudioDspPresetChangedPayload = Record<string, never>;
 export interface AudioFullWaveformFailedPayload {
     /** Id from the `pending` answer. */
     taskId: string;
-    /** The path the request gave. */
+    /** Source track path specified in the request. */
     path: string;
     /** What went wrong. */
     error: string;
@@ -58,7 +58,7 @@ export interface AudioFullWaveformFailedPayload {
 export interface AudioFullWaveformReadyPayload {
     /** Id from the `pending` answer. */
     taskId: string;
-    /** The path the request gave. */
+    /** Source track path specified in the request. */
     path: string;
     /** One value per point, in `scale`; in `[-1, 1]` when `signed`, else in `[0, 1]`. */
     waveform: number[];
@@ -95,7 +95,7 @@ export type AudioOutputDeviceChangedPayload = Record<string, never>;
 export interface AudioPcmFailedPayload {
     /** Id from the `audio.decodePcm` answer. */
     taskId: string;
-    /** The path the request gave. */
+    /** Source track path specified in the request. */
     path: string;
     /** What went wrong. */
     error: string;
@@ -110,11 +110,11 @@ export interface AudioPcmFailedPayload {
 export interface AudioPcmReadyPayload {
     /** Id from the `audio.decodePcm` answer. */
     taskId: string;
-    /** The path the request gave. */
+    /** Source track path specified in the request. */
     path: string;
     /** Samples per second per channel. */
     sampleRate: number;
-    /** Channel count in the buffer; `1` when the request set `mono`. */
+    /** Channel count in the buffer; `1` when `mono` is requested. */
     channels: number;
     /** Frames per channel in the buffer. */
     frames: number;
@@ -146,7 +146,7 @@ export interface AudioReplaygainModeChangedPayload {
 export interface AudioSpectrumPayload {
     /** Subscription the frame belongs to; absent when the request named none. */
     subscriptionId?: string;
-    /** What the frame carries. */
+    /** Output data format contained in this frame. */
     output: "bands" | "bins";
     /** Band frames: one value per band in the frame's `scale`; `weighted` values lie in `[0, 1]`, `db` values have a floor of `-160`. Bin frames with `channels: 'mix'`: one power value in dB per bin. */
     spectrum?: number[];
@@ -232,7 +232,7 @@ export interface DndDragEndedPayload {
     result: "failed";
     /** Why no files were attached: `PERMISSION_DENIED` when the token was unknown, expired, already spent, superseded by a later `prepareDrag` or minted for another window; `INVALID_PARAMS` when `dataTransfer.effectAllowed` was not exactly `copy`, which `dnd.applyDragToken` sets correctly; `OPERATION_FAILED` when the file list could not be attached to the drag. */
     code: "PERMISSION_DENIED" | "INVALID_PARAMS" | "OPERATION_FAILED";
-    /** Human-readable reason; never contains a filesystem path. */
+    /** Human-readable error description; physical paths are omitted. */
     error: string;
 }
 
@@ -550,7 +550,7 @@ export interface JitSessionStateChangedPayload {
 
 /**
  * Payload of the `keyboard:hotkey` event.
- * A hotkey registered with `keyboard.registerHotkey` was pressed. It goes to the window that registered it. A hotkey stays registered after that window closes; its presses then go to the main window's page.
+ * A hotkey registered with `keyboard.registerHotkey` was pressed. It goes to the window that registered it.
  */
 export interface KeyboardHotkeyPayload {
     /** The id `keyboard.registerHotkey` returned. */
@@ -731,7 +731,7 @@ export interface MetadataWriteCompletePayload {
  * The metadata of tracks changed: tags were written or read again, or a component such as `foo_playcount` asked foobar2000 to show its fields anew (`fromHook`). Each entry names its track by `handle`, the key the track rows of other methods carry, so a single track of a cue sheet or a multi-track file can be told from the rest of the file.
  */
 export interface MetadbChangedPayload {
-    /** Up to 50 of the changed tracks, in no particular order. An invalid entry is skipped, so the list can hold fewer than the smaller of `count` and 50. `handles` names all of them. */
+    /** Up to 50 changed track entries in unspecified order. Invalid entries are skipped, meaning the returned array length may be less than `min(count, 50)`. Complete track identifiers are listed in `handles`. */
     tracks: MetadbChangedTrackItem[];
     /** How many tracks changed, at least `1`; can exceed the length of `tracks`. */
     count: number;
@@ -1552,9 +1552,9 @@ export interface WindowPopupClosedPayload {
 export interface WindowPopupOpenedPayload {
     /** Id of the popup. */
     windowId: string;
-    /** Title the popup was created with. */
+    /** Initial title specified when the popup was created. */
     title: string;
-    /** URL the popup was created with. */
+    /** Initial URL specified when the popup was created. */
     url: string;
 }
 

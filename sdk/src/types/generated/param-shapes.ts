@@ -564,7 +564,8 @@ export const API_PARAM_SHAPES: { readonly [M in keyof ApiParamsMap]: ParamShape 
     "discovery.executeContextMenuByPath": {
         "keys": {
             "path": null,
-            "trackPath": null
+            "trackPath": null,
+            "target": null
         },
         "required": [
             "path"
@@ -573,7 +574,8 @@ export const API_PARAM_SHAPES: { readonly [M in keyof ApiParamsMap]: ParamShape 
     "discovery.executeContextMenuCommand": {
         "keys": {
             "guid": null,
-            "force": null
+            "force": null,
+            "target": null
         },
         "required": [
             "guid"
@@ -1307,6 +1309,15 @@ export const API_PARAM_SHAPES: { readonly [M in keyof ApiParamsMap]: ParamShape 
         "required": [
             "key",
             "action"
+        ]
+    },
+    "keyboard.setReservedKeys": {
+        "keys": {
+            "keys": null,
+            "all": null
+        },
+        "required": [
+            "keys"
         ]
     },
     "keyboard.unregisterHotkey": {

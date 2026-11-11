@@ -467,9 +467,13 @@ export const playlist = {
             ...playlistTarget(playlist),
         }),
     /**
-     * Read autoplaylist state with `query: null`; foobar2000 does not expose
-     * the query text. Editor capability is available from `getAutoplaylistInfo`.
-     * The same provider-source and unreadable `keepSorted` rules apply here.
+     * Read autoplaylist state with its `query` and `sort`. Both are read live
+     * from foobar2000's built-in query/sort client and are `null` for any other
+     * provider, a list managed by this component (use `getAutoplaylistConfig`),
+     * or a configuration that cannot be parsed; `note` says which. Test `query`
+     * before `sort`, which older hosts omit. Editor capability is available from
+     * `getAutoplaylistInfo`. The same provider-source and unreadable `keepSorted`
+     * rules apply here.
      */
     getAutoplaylistQuery: (playlist: PlaylistRef) =>
         call('playlist.getAutoplaylistQuery', {
@@ -575,9 +579,9 @@ export const playlist = {
 
     // === Advanced operations ===
     /**
-     * Stop, clear, add the paths, activate the playlist and play or focus
-     * `playIndex`. When nothing could be added the call fails with `NOT_FOUND`
-     * and the playlist stays empty.
+     * Stop, clear, add the paths in the given order, activate the playlist and
+     * play or focus `playIndex`, counted in that order. When nothing could be
+     * added the call fails with `NOT_FOUND` and the playlist stays empty.
      */
     replaceAllAndPlay: (options: PlaylistReplaceAllAndPlayParams) =>
         call('playlist.replaceAllAndPlay', options),

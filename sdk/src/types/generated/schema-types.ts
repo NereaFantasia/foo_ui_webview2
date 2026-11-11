@@ -12,10 +12,10 @@ import type { JsonValue } from '../json.js';
 
 // ── Named interfaces from src/api/schema ────────────────────────────────
 /**
- * One track, as every method whose declaration returns whole rows reports it: the playing track, a media library row, a playlist row, a queue entry. Containers add their own fields (a row number, a queue position) on top of these.
+ * Metadata and playback properties of a single track, shared by playback, library, playlist, and queue endpoints. Containers extend this structure with domain-specific fields such as playlist row indices or queue positions.
  */
 export interface Track {
-    /** The key that identifies the track across endpoints: `absolutePath`, with a `|subsong:N` suffix when `subsong` is not `0`. The same track yields the same handle from every such method; because of the suffix it is not a plain file path, and a method that takes a path documents whether it accepts one. */
+    /** Cross-endpoint unique track identifier: formatted as `absolutePath`, appended with `|subsong:N` when `subsong` is non-zero. The same track yields the same handle from every method. Differs from standard filesystem paths; endpoints document whether handle identifiers are accepted in place of paths. */
     handle: string;
     /** Path as foobar2000 stores it: `file://` for a local file, `file-relative://` for a path stored relative to the foobar2000 folder (a portable install), or a remote URL. No subsong suffix. */
     path: string;
@@ -35,7 +35,7 @@ export interface Track {
     albumId?: string;
     /** Every ALBUM ARTIST value joined with `", "`; empty when untagged. */
     albumArtist: string;
-    /** Every ALBUM ARTIST value in tag order, so `albumArtists.join(", ")` equals `albumArtist`; empty when untagged. `library.getAlbums` files a track that has an `album` under the name `album` and the album artist `albumArtists[0]`, or `artists[0]` when this array is empty (`""` when both are); those are the `name` and `albumArtist` of that album's row. When `albumId` is present, use it instead: replacement characters can make display names equal. */
+    /** All ALBUM ARTIST values in tag order (`albumArtists.join(", ")` equals `albumArtist`); empty array when untagged. In `library.getAlbums`, a track that has an `album` is filed under the name `album` and the album artist `albumArtists[0]` (falling back to `artists[0]`, or `""` when both are empty); those are the `name` and `albumArtist` of that album's row. When `albumId` is present, match by `albumId` instead of display names to avoid collision from character replacement. */
     albumArtists: string[];
     /** Every GENRE value joined with `", "`; empty when untagged. */
     genre: string;
@@ -57,15 +57,15 @@ export interface Track {
     channels: number;
     /** Codec name as the decoder reports it, such as `FLAC` or `MP3`; empty when unknown. */
     codec: string;
-    /** Rating from 0 to 5: the `%rating%` statistic (foo_playcount) when it is 1 to 5, otherwise the RATING tag clamped to that range; `0` when neither rates the track. */
+    /** Rating value from 0 to 5. Prefers the `%rating%` statistic (foo_playcount) if within 1..5; otherwise falls back to the RATING tag clamped to 0..5; `0` if neither is present. */
     rating: number;
 }
 
 /**
- * A track projected down to the fields a caller asked for.
+ * Track representation containing a subset of fields requested by the caller.
  */
 export interface TrackPartial {
-    /** The key that identifies the track across endpoints: `absolutePath`, with a `|subsong:N` suffix when `subsong` is not `0`. The same track yields the same handle from every such method; because of the suffix it is not a plain file path, and a method that takes a path documents whether it accepts one. */
+    /** Cross-endpoint unique track identifier: formatted as `absolutePath`, appended with `|subsong:N` when `subsong` is non-zero. The same track yields the same handle from every method. Differs from standard filesystem paths; endpoints document whether handle identifiers are accepted in place of paths. */
     handle?: string;
     /** Path as foobar2000 stores it: `file://` for a local file, `file-relative://` for a path stored relative to the foobar2000 folder (a portable install), or a remote URL. No subsong suffix. */
     path?: string;
@@ -85,7 +85,7 @@ export interface TrackPartial {
     albumId?: string;
     /** Every ALBUM ARTIST value joined with `", "`; empty when untagged. */
     albumArtist?: string;
-    /** Every ALBUM ARTIST value in tag order, so `albumArtists.join(", ")` equals `albumArtist`; empty when untagged. `library.getAlbums` files a track that has an `album` under the name `album` and the album artist `albumArtists[0]`, or `artists[0]` when this array is empty (`""` when both are); those are the `name` and `albumArtist` of that album's row. When `albumId` is present, use it instead: replacement characters can make display names equal. */
+    /** All ALBUM ARTIST values in tag order (`albumArtists.join(", ")` equals `albumArtist`); empty array when untagged. In `library.getAlbums`, a track that has an `album` is filed under the name `album` and the album artist `albumArtists[0]` (falling back to `artists[0]`, or `""` when both are empty); those are the `name` and `albumArtist` of that album's row. When `albumId` is present, match by `albumId` instead of display names to avoid collision from character replacement. */
     albumArtists?: string[];
     /** Every GENRE value joined with `", "`; empty when untagged. */
     genre?: string;
@@ -107,7 +107,7 @@ export interface TrackPartial {
     channels?: number;
     /** Codec name as the decoder reports it, such as `FLAC` or `MP3`; empty when unknown. */
     codec?: string;
-    /** Rating from 0 to 5: the `%rating%` statistic (foo_playcount) when it is 1 to 5, otherwise the RATING tag clamped to that range; `0` when neither rates the track. */
+    /** Rating value from 0 to 5. Prefers the `%rating%` statistic (foo_playcount) if within 1..5; otherwise falls back to the RATING tag clamped to 0..5; `0` if neither is present. */
     rating?: number;
 }
 
@@ -119,15 +119,15 @@ export interface SystemApiInfo {
     fullName: string;
     /** Display name of the owning plugin; `foo_ui_webview2` for built-in methods. */
     plugin: string;
-    /** Namespace part of the name. */
+    /** Namespace component of the method name. */
     namespace: string;
-    /** Method part of the name. */
+    /** Method name component without namespace. */
     method: string;
-    /** Description given at registration; empty when none. */
+    /** Method description provided during registration; empty string if omitted. */
     description: string;
-    /** Version given at registration. */
+    /** Method API version declared during registration. */
     version: string;
-    /** `true` when an external plugin registered it. */
+    /** Whether the method was registered by an external plugin. */
     isExternal: boolean;
 }
 
@@ -135,19 +135,19 @@ export interface SystemApiInfo {
  * One registered external plugin.
  */
 export interface SystemPluginInfo {
-    /** Display name. */
+    /** Plugin display name. */
     name: string;
-    /** Namespace the plugin owns; unique among plugins. */
+    /** Namespace unique to this plugin. */
     namespace: string;
-    /** Plugin version. */
+    /** Plugin version string. */
     version: string;
-    /** Author. */
+    /** Plugin author. */
     author: string;
-    /** Description. */
+    /** Plugin description. */
     description: string;
-    /** Number of entries in `apis`. */
+    /** Number of methods in `apis`. */
     apiCount: number;
-    /** Full names of the methods the plugin registered. */
+    /** Full method names registered by the plugin. */
     apis: string[];
 }
 
@@ -727,7 +727,7 @@ export interface JitSessionDiscovery {
 }
 
 export interface JitSessionAttempt {
-    /** Caller's entry identifier. */
+    /** Caller-provided entry identifier. */
     entryId: string;
     /** Host's identifier of this attempt; a replay of the same entry gets a new one. */
     attemptId: string;
@@ -740,7 +740,7 @@ export interface JitSessionAttempt {
 }
 
 export interface JitSessionNextEntry {
-    /** Caller's entry identifier. */
+    /** Caller-provided entry identifier. */
     entryId: string;
     /** Display title. */
     title: string;
@@ -882,6 +882,8 @@ export interface KeyboardHotkey {
     action: string;
     /** The `global` flag given at registration; `false` for a shortcut. */
     global: boolean;
+    /** Id of the window that registered the hotkey, the one its presses go to. Absent for a shortcut, and for a hotkey whose caller could not be matched to a window. */
+    windowId?: string;
 }
 
 /**
@@ -1040,7 +1042,7 @@ export interface LibraryDirectoryNodeInfo {
  * One track row of a library list: the shared track fields plus `index`.
  */
 export interface LibraryTrackPartial {
-    /** The key that identifies the track across endpoints: `absolutePath`, with a `|subsong:N` suffix when `subsong` is not `0`. The same track yields the same handle from every such method; because of the suffix it is not a plain file path, and a method that takes a path documents whether it accepts one. */
+    /** Cross-endpoint unique track identifier: formatted as `absolutePath`, appended with `|subsong:N` when `subsong` is non-zero. The same track yields the same handle from every method. Differs from standard filesystem paths; endpoints document whether handle identifiers are accepted in place of paths. */
     handle?: string;
     /** Path as foobar2000 stores it: `file://` for a local file, `file-relative://` for a path stored relative to the foobar2000 folder (a portable install), or a remote URL. No subsong suffix. */
     path?: string;
@@ -1060,7 +1062,7 @@ export interface LibraryTrackPartial {
     albumId?: string;
     /** Every ALBUM ARTIST value joined with `", "`; empty when untagged. */
     albumArtist?: string;
-    /** Every ALBUM ARTIST value in tag order, so `albumArtists.join(", ")` equals `albumArtist`; empty when untagged. `library.getAlbums` files a track that has an `album` under the name `album` and the album artist `albumArtists[0]`, or `artists[0]` when this array is empty (`""` when both are); those are the `name` and `albumArtist` of that album's row. When `albumId` is present, use it instead: replacement characters can make display names equal. */
+    /** All ALBUM ARTIST values in tag order (`albumArtists.join(", ")` equals `albumArtist`); empty array when untagged. In `library.getAlbums`, a track that has an `album` is filed under the name `album` and the album artist `albumArtists[0]` (falling back to `artists[0]`, or `""` when both are empty); those are the `name` and `albumArtist` of that album's row. When `albumId` is present, match by `albumId` instead of display names to avoid collision from character replacement. */
     albumArtists?: string[];
     /** Every GENRE value joined with `", "`; empty when untagged. */
     genre?: string;
@@ -1082,7 +1084,7 @@ export interface LibraryTrackPartial {
     channels?: number;
     /** Codec name as the decoder reports it, such as `FLAC` or `MP3`; empty when unknown. */
     codec?: string;
-    /** Rating from 0 to 5: the `%rating%` statistic (foo_playcount) when it is 1 to 5, otherwise the RATING tag clamped to that range; `0` when neither rates the track. */
+    /** Rating value from 0 to 5. Prefers the `%rating%` statistic (foo_playcount) if within 1..5; otherwise falls back to the RATING tag clamped to 0..5; `0` if neither is present. */
     rating?: number;
     /** Row number; the list the row is in says what it counts. */
     index?: number;
@@ -1481,7 +1483,7 @@ export interface PlaylistTrack extends Track {
     lastPlayed?: string;
     /** `%added%` as foo_playcount formats it; absent when empty, on rows of `playlist.getSelectedTracks` and on rows of a `fields` request. */
     added?: string;
-    /** The `formats` columns of `playlist.getTracks`, by the names given; present only when `formats` was passed. */
+    /** Named Title Formatting columns; present only when `formats` was requested. */
     formats?: Record<string, string>;
 }
 
@@ -1489,7 +1491,7 @@ export interface PlaylistTrack extends Track {
  * One playlist row: the shared track fields plus the row number and two more tags.
  */
 export interface PlaylistTrackPartial {
-    /** The key that identifies the track across endpoints: `absolutePath`, with a `|subsong:N` suffix when `subsong` is not `0`. The same track yields the same handle from every such method; because of the suffix it is not a plain file path, and a method that takes a path documents whether it accepts one. */
+    /** Cross-endpoint unique track identifier: formatted as `absolutePath`, appended with `|subsong:N` when `subsong` is non-zero. The same track yields the same handle from every method. Differs from standard filesystem paths; endpoints document whether handle identifiers are accepted in place of paths. */
     handle?: string;
     /** Path as foobar2000 stores it: `file://` for a local file, `file-relative://` for a path stored relative to the foobar2000 folder (a portable install), or a remote URL. No subsong suffix. */
     path?: string;
@@ -1509,7 +1511,7 @@ export interface PlaylistTrackPartial {
     albumId?: string;
     /** Every ALBUM ARTIST value joined with `", "`; empty when untagged. */
     albumArtist?: string;
-    /** Every ALBUM ARTIST value in tag order, so `albumArtists.join(", ")` equals `albumArtist`; empty when untagged. `library.getAlbums` files a track that has an `album` under the name `album` and the album artist `albumArtists[0]`, or `artists[0]` when this array is empty (`""` when both are); those are the `name` and `albumArtist` of that album's row. When `albumId` is present, use it instead: replacement characters can make display names equal. */
+    /** All ALBUM ARTIST values in tag order (`albumArtists.join(", ")` equals `albumArtist`); empty array when untagged. In `library.getAlbums`, a track that has an `album` is filed under the name `album` and the album artist `albumArtists[0]` (falling back to `artists[0]`, or `""` when both are empty); those are the `name` and `albumArtist` of that album's row. When `albumId` is present, match by `albumId` instead of display names to avoid collision from character replacement. */
     albumArtists?: string[];
     /** Every GENRE value joined with `", "`; empty when untagged. */
     genre?: string;
@@ -1531,7 +1533,7 @@ export interface PlaylistTrackPartial {
     channels?: number;
     /** Codec name as the decoder reports it, such as `FLAC` or `MP3`; empty when unknown. */
     codec?: string;
-    /** Rating from 0 to 5: the `%rating%` statistic (foo_playcount) when it is 1 to 5, otherwise the RATING tag clamped to that range; `0` when neither rates the track. */
+    /** Rating value from 0 to 5. Prefers the `%rating%` statistic (foo_playcount) if within 1..5; otherwise falls back to the RATING tag clamped to 0..5; `0` if neither is present. */
     rating?: number;
     /** Row in the playlist, from `0`. */
     index?: number;
@@ -1547,7 +1549,7 @@ export interface PlaylistTrackPartial {
     lastPlayed?: string;
     /** `%added%` as foo_playcount formats it; absent when empty, on rows of `playlist.getSelectedTracks` and on rows of a `fields` request. */
     added?: string;
-    /** The `formats` columns of `playlist.getTracks`, by the names given; present only when `formats` was passed. */
+    /** Named Title Formatting columns; present only when `formats` was requested. */
     formats?: Record<string, string>;
 }
 
@@ -1573,7 +1575,7 @@ export interface PlaylistGroupRun {
     count: number;
     /** The group key as the first row of the run spells it. */
     key: string;
-    /** Second-level runs inside this one; present only when two patterns were given. */
+    /** Second-level runs inside this one; present only when two patterns were provided. */
     sub?: PlaylistGroupSubRun[];
 }
 
@@ -1963,7 +1965,7 @@ export interface WindowInfo {
     isMain: boolean;
     /** Window title. */
     title: string;
-    /** Popups only: the `url` the popup was created with. */
+    /** Popups only: initial URL specified when the popup was created. */
     url?: string;
     /** Popups only: the behavior preset; `legacy` when the popup was created without one. */
     profile?: "legacy" | "standard" | "miniPlayer" | "desktopLyrics";

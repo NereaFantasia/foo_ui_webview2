@@ -5,6 +5,39 @@ All notable changes to the foo-webview-sdk will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- `keyboard.setReservedKeys(keys, options?)` keeps key combinations with the page while it has
+  the focus, even when foobar2000 has a keyboard shortcut for them. `{ all: true }` keeps every
+  key, for example while the page records a shortcut. The list is cleared when the page
+  navigates or reloads.
+- `discovery.executeContextMenuCommand` and `discovery.executeContextMenuByPath` take `target`
+  (`'auto'`, `'selection'`, `'nowPlaying'` or `'playlistSelection'`) to choose the tracks the
+  command acts on. `'auto'`, the default, keeps the previous behavior.
+- `playlist.getAutoplaylistQuery` returns the `query` and the new `sort` of a list driven by
+  foobar2000's built-in query/sort client. Both are `null` for other providers and for lists
+  managed by this component; older hosts omit `sort`.
+- Hotkey entries of `keyboard.getRegisteredHotkeys` carry `windowId`, the window that
+  registered the hotkey.
+
+### Changed
+
+- `fb.GetLibraryItems` in the SMP compatibility layer pages through `library.search` and reads
+  only the fields handles use. A library of 100,000 tracks took about 0.8 seconds instead of
+  about 4.2 in testing, with the same tracks in the same order.
+
+### Deprecated
+
+- `keyboard.registerShortcut` only stores the combination; nothing matches key presses against
+  it. It will be removed in 3.0. Listen for `keydown` in the page instead.
+
+### Fixed
+
+- `playlist.replaceAllAndPlay` keeps the rows in the order of `paths`, so `playIndex` plays the
+  path it names.
+
 ## [2.1.0] - 2026-10-27
 
 Released together with foo_ui_webview2 2.1.0.

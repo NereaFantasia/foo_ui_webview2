@@ -5,9 +5,9 @@
 //
 // GetQueryItems issues at most two `library.search` calls regardless of
 // hit count: a one-row probe for the total, then a single projected
-// fetch. GetLibraryItems keeps paging `library.getAll` in 500-row
-// chunks because that pipeline has no projection and a whole-library
-// single shot would materialise it all at once.
+// fetch. GetLibraryItems pages `library.search` with the same projection,
+// because a whole-library single response would hold the host's main thread
+// for as long as it takes to deliver.
 
 import { describe, expect, it, vi } from 'vitest';
 
@@ -234,26 +234,62 @@ describe('fb.GetQueryItems', () => {
 });
 
 describe('fb.GetLibraryItems', () => {
-    it('keeps paging library.getAll in 500-row chunks', async () => {
-        const total = 1200;
-        const { ext, calls } = setup((call) => {
+    /** A host whose `library.search` pages over `total` rows. */
+    function library(total: number, failAtOffset?: number): ReturnType<typeof setup> {
+        return setup((call) => {
             const offset = Number(call.params.offset ?? 0);
+            if (offset === failAtOffset) {
+                return { success: false, error: 'failed', code: 'OPERATION_FAILED' };
+            }
             const limit = Number(call.params.limit ?? 0);
             const count = Math.max(0, Math.min(limit, total - offset));
             const tracks = Array.from({ length: count }, (_v, i) =>
                 row(`C:\\lib-${offset + i}.flac`),
             );
-            return { tracks, total };
+            return { success: true, tracks, total, hasMore: offset + count < total };
         });
+    }
+
+    it('pages library.search over the whole library with the handle projection', async () => {
+        const total = 12000;
+        const { ext, calls } = library(total);
 
         const list = await ext.GetLibraryItems();
-        const pages = callsTo(calls, 'library.getAll');
+        const pages = callsTo(calls, 'library.search');
 
-        expect(pages).toHaveLength(3);
-        expect(pages.map((p) => p.params.limit)).toEqual([500, 500, 500]);
-        expect(pages.map((p) => p.params.offset)).toEqual([0, 500, 1000]);
+        expect(pages.map((p) => p.params.offset)).toEqual([0, 5000, 10000]);
+        expect(pages.every((p) => p.params.query === 'ALL')).toBe(true);
+        expect(pages.every((p) => p.params.limit === 5000)).toBe(true);
+        expect(pages[0]!.params.fields).toEqual([
+            'absolutePath',
+            'path',
+            'subsong',
+            'duration',
+            'fileSize',
+        ]);
+        expect(callsTo(calls, 'library.getAll')).toEqual([]);
         expect(list.Count).toBe(total);
-        expect(pages.every((p) => !('fields' in p.params))).toBe(true);
+        expect(list[total - 1].Path).toBe('C:\\lib-11999.flac');
+        expect(list.CalcTotalDuration()).toBe(total);
+        expect(list.CalcTotalSize()).toBe(total * 2);
+    });
+
+    it('makes one request for an empty library', async () => {
+        const { ext, calls } = library(0);
+
+        const list = await ext.GetLibraryItems();
+
+        expect(callsTo(calls, 'library.search')).toHaveLength(1);
+        expect(list.Count).toBe(0);
+    });
+
+    it('returns the rows read so far when a later page fails', async () => {
+        const { ext, calls } = library(12000, 5000);
+
+        const list = await ext.GetLibraryItems();
+
+        expect(callsTo(calls, 'library.search')).toHaveLength(2);
+        expect(list.Count).toBe(5000);
     });
 });
 

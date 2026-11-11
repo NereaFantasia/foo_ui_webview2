@@ -197,7 +197,7 @@ describe('playlist namespace — native autoplaylist editor', () => {
         };
         const query = {
             success: true, playlist: 0, isAutoplaylist: true, source: 'dui',
-            keepSorted: false, query: null,
+            keepSorted: false, query: null, sort: null,
         };
         native.invoke.mockResolvedValueOnce(info).mockResolvedValueOnce(query);
         vi.stubGlobal('window', { fb2k: native });

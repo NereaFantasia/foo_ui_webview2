@@ -173,6 +173,7 @@ import type {
     KeyboardGetRegisteredHotkeysParams,
     KeyboardRegisterHotkeyParams,
     KeyboardRegisterShortcutParams,
+    KeyboardSetReservedKeysParams,
     KeyboardUnregisterHotkeyParams,
     LibraryAddToPlaylistParams,
     LibraryBrowseDirectoryParams,
@@ -645,6 +646,7 @@ import type {
     KeyboardGetRegisteredHotkeysResponse,
     KeyboardRegisterHotkeyResponse,
     KeyboardRegisterShortcutResponse,
+    KeyboardSetReservedKeysResponse,
     KeyboardUnregisterHotkeyResponse,
     LibraryAddToPlaylistResponse,
     LibraryBrowseDirectoryResponse,
@@ -1138,7 +1140,9 @@ export interface ApiMethodMap {
     "jitSession.stop": [JitSessionStopParams, JitSessionStopResponse];
     "keyboard.getRegisteredHotkeys": [KeyboardGetRegisteredHotkeysParams, KeyboardGetRegisteredHotkeysResponse];
     "keyboard.registerHotkey": [KeyboardRegisterHotkeyParams, KeyboardRegisterHotkeyResponse];
+    /** @deprecated Has no effect and will be removed in 3.0; listen for `keydown` in the page instead. */
     "keyboard.registerShortcut": [KeyboardRegisterShortcutParams, KeyboardRegisterShortcutResponse];
+    "keyboard.setReservedKeys": [KeyboardSetReservedKeysParams, KeyboardSetReservedKeysResponse];
     "keyboard.unregisterHotkey": [KeyboardUnregisterHotkeyParams, KeyboardUnregisterHotkeyResponse];
     "library.addToPlaylist": [LibraryAddToPlaylistParams, LibraryAddToPlaylistResponse];
     "library.browseDirectory": [LibraryBrowseDirectoryParams, LibraryBrowseDirectoryResponse];

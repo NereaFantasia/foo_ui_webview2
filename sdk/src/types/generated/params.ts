@@ -14,7 +14,7 @@ import type { ArtworkBatchItem, DspChainSpec, FileFilter, FileOpEntry, MetadataW
 
 /**
  * Parameters for `artwork.getAvailableArtwork`.
- * Report which picture types a file embeds and which cover files sit next to it.
+ * Report which picture types a file embeds and which cover files sit next to it. A file that is only in the cloud and not yet downloaded is not opened, so it embeds no pictures.
  */
 export interface ArtworkGetAvailableArtworkParams {
     /** Track path; a `|subsong:N` suffix is dropped. */
@@ -23,7 +23,7 @@ export interface ArtworkGetAvailableArtworkParams {
 
 /**
  * Parameters for `artwork.getAvailableTypes`.
- * List the picture types embedded in a file, in the fixed probe order front, back, disc, icon, artist. Without `path` the playing track is used; with nothing playing the call fails with `NO_ACTIVE_ITEM`. A file that is missing, cannot be read or has a format without embedded pictures is not an error: it lists no types.
+ * List the picture types embedded in a file, in the fixed probe order front, back, disc, icon, artist. Without `path` the playing track is used; with nothing playing the call fails with `NO_ACTIVE_ITEM`. A file that is missing, cannot be read or has a format without embedded pictures is not an error: it lists no types. A file that is only in the cloud and not yet downloaded is not opened and lists no types either.
  */
 export interface ArtworkGetAvailableTypesParams {
     /** Track path; omitted for the playing track. */
@@ -32,7 +32,7 @@ export interface ArtworkGetAvailableTypesParams {
 
 /**
  * Parameters for `artwork.getBatch`.
- * Read one picture type from several files with the album art extractor, one row per path in the given order; a file without the picture gets a row with `available: false`.
+ * Read one picture type from several files with the album art extractor, one row per path in the given order; a file without the picture gets a row with `available: false`, as does a file that is only in the cloud and not yet downloaded, which is not opened.
  */
 export interface ArtworkGetBatchParams {
     /** Track paths; a `|subsong:N` suffix is dropped. */
@@ -46,7 +46,7 @@ export interface ArtworkGetBatchParams {
 
 /**
  * Parameters for `artwork.getByPath`.
- * Read a picture straight from the file at `path` with the album art extractor. The `|subsong:N` suffix is dropped, since pictures belong to the file; a `file-relative://` path is refused with `INVALID_PATH`, because only a playlist row can resolve it.
+ * Read a picture straight from the file at `path` with the album art extractor. The `|subsong:N` suffix is dropped, since pictures belong to the file; a `file-relative://` path is refused with `INVALID_PATH`, because only a playlist row can resolve it. A file that is only in the cloud and not yet downloaded is not opened and has no picture.
  */
 export interface ArtworkGetByPathParams {
     /** Track path: native, `file://`, or with a `|subsong:N` suffix. */
@@ -60,7 +60,7 @@ export interface ArtworkGetByPathParams {
 
 /**
  * Parameters for `artwork.getByPlaylistItem`.
- * Read the picture of a playlist row through the album art manager. A negative `playlist` means the active playlist and a negative `index` means the first row. A row past the end, an empty playlist included, fails with `NOT_FOUND`. A playlist index past the last playlist fails with `INVALID_INDEX`, a `playlistGuid` no playlist has with `NOT_FOUND`, and no active playlist when the active one is meant with `NO_ACTIVE_ITEM`. A row without the picture is a success with `available` `false`.
+ * Read the picture of a playlist row through the album art manager. A negative `playlist` means the active playlist and a negative `index` means the first row. A row past the end, an empty playlist included, fails with `NOT_FOUND`. A playlist index past the last playlist fails with `INVALID_INDEX`, a `playlistGuid` no playlist has with `NOT_FOUND`, and no active playlist when the active one is meant with `NO_ACTIVE_ITEM`. A row without the picture is a success with `available` `false`; so is a row whose file is only in the cloud and not yet downloaded, which is not opened.
  */
 export interface ArtworkGetByPlaylistItemParams {
     /**
@@ -84,7 +84,7 @@ export interface ArtworkGetByPlaylistItemParams {
 
 /**
  * Parameters for `artwork.getCurrent`.
- * Read the picture of the playing track. Three lookups are tried in order and `source` names the one that answered; `available: false` with `reason: "no_track"` when nothing is playing and `reason: "not_found"` when none of them had a picture.
+ * Read the picture of the playing track. Three lookups are tried in order and `source` names the one that answered; `available: false` with `reason: "no_track"` when nothing is playing and `reason: "not_found"` when none of them had a picture. A file that is only in the cloud and not yet downloaded is not opened, so the file lookups find nothing.
  */
 export interface ArtworkGetCurrentParams {
     /**
@@ -153,7 +153,7 @@ export interface ArtworkGetFolderImagesParams {
 
 /**
  * Parameters for `artwork.getForTrack`.
- * Read a picture through the album art manager, which also finds folder covers, and measure it. `width` and `height` are read from the PNG header and are `0` for other formats. A `file-relative://` path is refused with `INVALID_PATH`.
+ * Read a picture through the album art manager, which also finds folder covers, and measure it. `width` and `height` are read from the PNG header and are `0` for other formats. A `file-relative://` path is refused with `INVALID_PATH`. A file that is only in the cloud and not yet downloaded is not opened and has no picture.
  */
 export interface ArtworkGetForTrackParams {
     /** Track path: native, `file://`, or with a `|subsong:N` suffix. */
@@ -176,7 +176,7 @@ export interface ArtworkGetLyricsParams {
 
 /**
  * Parameters for `artwork.getMetadata`.
- * Read the album-level tags of a track, plus whether the file embeds any picture and whether it carries a lyrics tag. The tags come from the host's cached track info when complete; a local file it has not read is read from disk, and a remote or unrecognised path keeps whatever the cache has, which can be blank. Without `path` the playing track is used; with nothing playing the call fails with `NO_ACTIVE_ITEM`. A path no track can be made for fails with `NOT_FOUND`, a local file that cannot be read with `OPERATION_FAILED`. Invalid UTF-8 in returned tag values is replaced with U+FFFD without changing the file.
+ * Read the album-level tags of a track, plus whether the file embeds any picture and whether it carries a lyrics tag. The tags come from the host's cached track info when complete; a local file it has not read is read from disk, and a remote or unrecognised path keeps whatever the cache has, which can be blank. Without `path` the playing track is used; with nothing playing the call fails with `NO_ACTIVE_ITEM`. A path no track can be made for fails with `NOT_FOUND`, a local file that cannot be read with `OPERATION_FAILED`. Invalid UTF-8 in returned tag values is replaced with U+FFFD without changing the file. A file that is only in the cloud and not yet downloaded is not opened for the picture check, so `hasEmbedded` is `false`.
  */
 export interface ArtworkGetMetadataParams {
     /** Track path; omitted for the playing track. */
@@ -241,7 +241,7 @@ export interface AudioGenerateFullWaveformParams {
     /** Subsong index, 0-based; takes precedence over a subsong in `path`. */
     cueIndex?: number;
     /**
-     * Number of points, clamped to 64 to 4096. A track is decoded once per resolution; the other options are computed from the cache.
+     * Waveform point resolution, clamped to 64..4096. Audio is decoded once per resolution; subsequent variations are computed from cache.
      * @default 256
      */
     resolution?: number;
@@ -339,7 +339,7 @@ export interface AudioGetWaveformParams {
      */
     duration?: number;
     /**
-     * `true` keeps PCM polarity, clamped to `[-1, 1]`; `false` maps the magnitude from -70 to 0 dB onto `[0, 1]`.
+     * When `true`, preserves bipolar PCM waveform clamped to `[-1, 1]`; when `false`, maps magnitude from -70..0 dB to `[0, 1]`.
      * @default false
      */
     signed?: boolean;
@@ -383,12 +383,12 @@ export interface AudioSubscribeSpectrumParams {
      */
     fftSize?: number;
     /**
-     * Band output only: number of bands, clamped to 8 to `fftSize / 2`.
+     * Band output only: number of bands, clamped to 8..`fftSize / 2`.
      * @default 48
      */
     bands?: number;
     /**
-     * Frames per second, clamped to 1 to 60.
+     * Frames per second, clamped to 1..60.
      * @default 30
      */
     fps?: number;
@@ -429,7 +429,7 @@ export interface AudioSubscribeSpectrumParams {
  * @experimental
  */
 export interface AudioSubscribeStreamParams {
-    /** Subscription id chosen by the caller; the host generates one (`pcmstream_N`) when absent. Subscribing again with the same id from the same page replaces the earlier subscription. */
+    /** Custom subscription ID; when omitted, the host generates one (`pcmstream_N`). Re-subscribing with an existing ID from the same page replaces the previous subscription. */
     subscriptionId?: string;
     /** Callback interval to request from foobar2000, in seconds. The core rounds it to its own tick of about 16 ms and never goes above 200 ms; one subscription asking for a short interval shortens it for every stream subscription in the component. Defaults to the core's 200 ms. */
     interval?: number;
@@ -846,18 +846,23 @@ export interface DialogSaveFileParams {
 
 /**
  * Parameters for `discovery.executeContextMenuByPath`.
- * Run a context-menu command addressed by its slash-separated label path, such as `Playback Statistics/Rating/5`. Each segment must match one label exactly after normalization (mnemonic `&`, trailing ellipsis, accelerator text and ASCII case are ignored). A path matching several commands is refused with `INVALID_PARAMS` and the candidates listed; one matching none is `NOT_FOUND`.
+ * Run a context-menu command addressed by its slash-separated label path, such as `Playback Statistics/Rating/5`. Each segment must match one label exactly after normalization (mnemonic `&`, trailing ellipsis, accelerator text and ASCII case are ignored). A path matching several commands is refused with `INVALID_PARAMS` and the candidates listed; one matching none is `NOT_FOUND`. Giving both `trackPath` and a `target` other than `auto` is `INVALID_PARAMS`.
  */
 export interface DiscoveryExecuteContextMenuByPathParams {
     /** Slash-separated label path of the command, such as `Playback Statistics/Rating/5`. */
     path: string;
     /** Run against this track instead of the current target. A `|subsong:N` suffix selects a subsong; without one the first subsong of the file is used. */
     trackPath?: string;
+    /**
+     * Which tracks the command runs against when `trackPath` is absent.
+     * @default "auto"
+     */
+    target?: "auto" | "selection" | "nowPlaying" | "playlistSelection";
 }
 
 /**
  * Parameters for `discovery.executeContextMenuCommand`.
- * Run a context-menu command by GUID against the playing track, or the active playlist selection when nothing is playing. A command the host would never draw (`FORCE_OFF`) is refused with `NOT_SUPPORTED` unless `force` is set; no target at all is `NO_ACTIVE_ITEM`.
+ * Run a context-menu command by GUID against the tracks `target` names; by default the playing track, or the active playlist selection when nothing is playing. A command the host would never draw (`FORCE_OFF`) is refused with `NOT_SUPPORTED` unless `force` is set; no target at all is `NO_ACTIVE_ITEM`.
  */
 export interface DiscoveryExecuteContextMenuCommandParams {
     /** Command GUID in `{...}` form, as `discovery.getContextMenuCommands` reports it. */
@@ -867,6 +872,11 @@ export interface DiscoveryExecuteContextMenuCommandParams {
      * @default false
      */
     force?: boolean;
+    /**
+     * Which tracks the command runs against.
+     * @default "auto"
+     */
+    target?: "auto" | "selection" | "nowPlaying" | "playlistSelection";
 }
 
 /**
@@ -1962,13 +1972,13 @@ export interface JitSessionStopParams {
 
 /**
  * Parameters for `keyboard.getRegisteredHotkeys`.
- * List the registered hotkeys followed by the shortcuts.
+ * List the registered hotkeys followed by the shortcuts. Shortcut entries go away with `registerShortcut` in 3.0.
  */
 export type KeyboardGetRegisteredHotkeysParams = Record<string, never>;
 
 /**
  * Parameters for `keyboard.registerHotkey`.
- * Register a system-wide hotkey on the main window. When it is pressed the registering window receives `keyboard:hotkey` with `{ id, key, action }`. Windows refuses a combination another program already holds.
+ * Register a system-wide hotkey. When it is pressed the registering window receives `keyboard:hotkey` with `{ id, key, action }`, whichever program has the focus. The combination must hold Ctrl, Alt or Win, except a media key alone; Ctrl+A, C, V, X, Y, Z, Ctrl+Shift+Z, Alt+F4, Alt+Tab, Alt+Space and Ctrl+Esc are refused too, all with `INVALID_PARAMS`. A combination a window of this component already holds fails with `OPERATION_FAILED` naming that window; one Windows refuses, because another program or a global foobar2000 shortcut holds it, fails with `OPERATION_FAILED` and the Windows error in `details.win32Error`. The hotkey is released when the registering page navigates or reloads and when its window closes.
  */
 export interface KeyboardRegisterHotkeyParams {
     /** The combination to register. */
@@ -1984,7 +1994,8 @@ export interface KeyboardRegisterHotkeyParams {
 
 /**
  * Parameters for `keyboard.registerShortcut`.
- * Store a key combination as a WebView-local shortcut under the given action name. It is listed by `getRegisteredHotkeys` with `id` `0` and removed by `unregisterHotkey` with the key.
+ * Store a key combination under the given action name. Nothing matches key presses against stored shortcuts. It is listed by `getRegisteredHotkeys` with `id` `0` and removed by `unregisterHotkey` with the key.
+ * @deprecated Has no effect and will be removed in 3.0; listen for `keydown` in the page instead.
  */
 export interface KeyboardRegisterShortcutParams {
     /** The combination to store. */
@@ -1994,8 +2005,22 @@ export interface KeyboardRegisterShortcutParams {
 }
 
 /**
+ * Parameters for `keyboard.setReservedKeys`.
+ * Replace the calling page's reserved keys. While the page has the focus, the keys selected in the component preferences run the foobar2000 shortcuts bound to them; a reserved combination stays with the page even when foobar2000 has a shortcut for it. The list is cleared when the page navigates or reloads and when its window closes. A key string that does not parse fails with `INVALID_PARAMS` and leaves the list unchanged; passing an empty list releases all reserved keys. With `all`, every key stays with the page, for example while the page records a shortcut; F12 in development server mode and system-wide hotkeys are excluded, and F5 reloads the page unless a `keydown` listener calls `preventDefault()`.
+ */
+export interface KeyboardSetReservedKeysParams {
+    /** Combinations to keep for the page, written like `registerHotkey` keys; duplicates are fine. */
+    keys: string[];
+    /**
+     * Keep every key for the page, not only `keys`. A later call without it keeps only `keys` again.
+     * @default false
+     */
+    all?: boolean;
+}
+
+/**
  * Parameters for `keyboard.unregisterHotkey`.
- * Remove a hotkey by its id, or a hotkey or shortcut by its key string; exactly one of the two must be given.
+ * Remove a hotkey by its id, or a hotkey or shortcut by its key string; exactly one of the two must be given. Removing a shortcut goes away with `registerShortcut` in 3.0.
  */
 export interface KeyboardUnregisterHotkeyParams {
     /** Id from `registerHotkey`. */
@@ -2801,7 +2826,7 @@ export interface MetadataRemoveFieldParams {
 
 /**
  * Parameters for `metadata.removeTag`.
- * Queue the removal of tags from one track and return at once. The outcome arrives as `metadata:writeComplete` with `operation: "removeTag"`, broadcast to every window.
+ * Queue the removal of tags from one track and return at once. The outcome arrives as `metadata:writeComplete` with `operation: "removeTag"`, broadcast to every window. A WAV file that would hold non-ASCII tag text after the removal is refused as in `metadata.write`.
  */
 export interface MetadataRemoveTagParams {
     /** Track path; a `|subsong:N` suffix or a trailing `#N` selects a subsong. */
@@ -2817,7 +2842,7 @@ export interface MetadataRemoveTagParams {
 
 /**
  * Parameters for `metadata.write`.
- * Queue a tag write to one track and return at once. foobar2000 writes the file in the background and reports the outcome as `metadata:writeComplete`, broadcast to every window. A request that leaves nothing to write succeeds without dispatching.
+ * Queue a tag write to one track and return at once. foobar2000 writes the file in the background and reports the outcome as `metadata:writeComplete`, broadcast to every window. A request that leaves nothing to write succeeds without dispatching. A WAV file that would hold non-ASCII tag text after the write is refused with `NOT_SUPPORTED` (`details.reason` is `wavInfoNonAscii`) and left untouched, because foobar2000 stores WAV tag text as ASCII in the RIFF INFO chunk and turns every other character into `?`.
  */
 export interface MetadataWriteParams {
     /** Track path; a `|subsong:N` suffix or a trailing `#N` selects a subsong. */
@@ -3003,7 +3028,7 @@ export type PlaybackGetVolumeParams = Record<string, never>;
 
 /**
  * Parameters for `playback.mute`.
- * Mute or unmute; a call that asks for the state already in effect does nothing. Unmuting restores the level from before the mute.
+ * Mute or unmute; calls requesting the active state are ignored. Unmuting restores the volume from before muting.
  */
 export interface PlaybackMuteParams {
     /**
@@ -3021,7 +3046,7 @@ export type PlaybackNextParams = Record<string, never>;
 
 /**
  * Parameters for `playback.pause`.
- * Pause playback. Does nothing when stopped.
+ * Pause playback. No-op when stopped.
  */
 export type PlaybackPauseParams = Record<string, never>;
 
@@ -3096,7 +3121,7 @@ export interface PlaybackSetPlaybackOrderParams {
 
 /**
  * Parameters for `playback.setPosition`.
- * Seek within the current track, playing or paused. The position is clamped to the track: negative values seek to the start, values past the end stop just short of it so playback does not advance to the next track; a track of unknown length has no upper bound. With nothing playing the call fails with `NO_ACTIVE_ITEM`, and a track that cannot seek, such as most streams, fails with `NOT_SUPPORTED`.
+ * Seek within the current track (playing or paused). Target position is clamped to the track boundary: negative values seek to the beginning, values exceeding duration clamp just before the end to prevent track advance; tracks of unknown length have no upper clamp. Fails with `NO_ACTIVE_ITEM` with nothing playing, or `NOT_SUPPORTED` for a track that cannot seek, such as most streams.
  */
 export interface PlaybackSetPositionParams {
     /** Target position in seconds. */
@@ -3114,10 +3139,10 @@ export interface PlaybackSetStopAfterCurrentParams {
 
 /**
  * Parameters for `playback.setVolume`.
- * Set the output volume as a percentage; values outside `0` to `100` are clamped. `0` mutes.
+ * Set output volume as a percentage. Valid range is 0..100 with automatic clamping; `0` mutes.
  */
 export interface PlaybackSetVolumeParams {
-    /** Volume as a percentage; clamped to `0` to `100`. */
+    /** Output volume percentage; valid range 0..100 with automatic clamping. */
     volume: number;
 }
 
@@ -3407,7 +3432,7 @@ export interface PlaylistGetAutoplaylistInfoParams {
 
 /**
  * Parameters for `playlist.getAutoplaylistQuery`.
- * Describe a playlist's autoplaylist status without editor capability fields. foobar2000 does not expose the query of an autoplaylist, so `query` is always `null`.
+ * Describe a playlist's autoplaylist status without editor capability fields, and read the query and sort of a list driven by foobar2000's built-in query/sort client. The read does not open UI or change the list; it reflects the client's current state on every call. Lists of any other provider (third-party, managed by this component, lock-only) and lists whose configuration cannot be decoded return `null` for both, with `note` saying which; `getAutoplaylistConfig` reads the managed ones.
  */
 export interface PlaylistGetAutoplaylistQueryParams {
     /** Index of the playlist; omitted, the active playlist. An index past the last playlist fails with `INVALID_INDEX`; with this omitted and no active playlist the call fails with `NO_ACTIVE_ITEM`. */
@@ -3547,13 +3572,13 @@ export interface PlaylistGetTracksParams {
     count?: number;
     /** Extra columns, each a Title Formatting pattern under a name of your choosing; every row carries their values under `formats`, in projected rows too. */
     formats?: Record<string, string>;
-    /** Keys each row carries besides `index`; omitted, the whole row. The names are those `library.query` takes; an unknown name fails with `INVALID_PARAMS` and is listed in `details.unknownFields`. The optional `albumId` is omitted when unavailable, even when requested. */
+    /** Keys each row carries besides `index`; omitted, the whole row. The names are case-sensitive and are those `library.query` takes; an unknown name fails with `INVALID_PARAMS` and is listed in `details.unknownFields`. The optional `albumId` is omitted if no album identifier exists. */
     fields?: string[];
 }
 
 /**
  * Parameters for `playlist.getTracksAt`.
- * Rows of a playlist picked by row number, in the order given, such as the rows `playlist.getMatchingRows` answers, which need not be adjacent. Each row is shaped as in `playlist.getTracks` and carries its `index`; a row past the last one is skipped, and a row given twice comes back twice. A playlist index past the last one, a `playlistGuid` no playlist has, and no active playlist when both are omitted, answer an empty result as `playlist.getTracks` does.
+ * Rows of a playlist picked by row number, in the order given, such as the rows `playlist.getMatchingRows` answers, which need not be adjacent. Each row is shaped as in `playlist.getTracks` and carries its `index`; a row past the last one is skipped, and duplicate indices are returned multiple times. A playlist index past the last one, a `playlistGuid` that matches no playlist, or an omitted playlist with no active playlist returns an empty result set.
  */
 export interface PlaylistGetTracksAtParams {
     /** Rows to read, in the order to return them. */
@@ -3612,14 +3637,14 @@ export interface PlaylistIsLockedParams {
 
 /**
  * Parameters for `playlist.moveTracks`.
- * Move the selected rows of a playlist by `delta` positions, saving an undo point first. With `items`, the selection is first replaced by those rows; the caller's own selection is lost. A locked playlist fails with `LOCKED`.
+ * Move the selected rows of a playlist by `delta` positions, saving an undo point first. When `items` is specified, it replaces the current selection before moving, and the caller's own selection is lost. A locked playlist fails with `LOCKED`.
  */
 export interface PlaylistMoveTracksParams {
     /** Index of the playlist; omitted, the active playlist. An index past the last playlist fails with `INVALID_INDEX`; with this omitted and no active playlist the call fails with `NO_ACTIVE_ITEM`. */
     playlist?: number;
     /** Persistent unique identifier of a playlist (bracketed GUID, case-insensitive), used in place of a mutable index. Mutually exclusive with `playlist`; passing both or an invalid format fails with `INVALID_PARAMS`. Fails with `NOT_FOUND` if the playlist does not exist, never falling back. Invalid-format and not-found failures return the given GUID in `details.playlistGuid`. */
     playlistGuid?: string;
-    /** Rows to move; they replace the current selection first. Omitted or empty, the current selection moves. */
+    /** Target row indices to move; specified indices replace the current playlist selection before moving. When omitted or empty, moves the currently selected rows. */
     items?: number[];
     /** How many positions to move: negative towards the top, positive towards the bottom. */
     delta: number;
@@ -3629,7 +3654,7 @@ export interface PlaylistMoveTracksParams {
 
 /**
  * Parameters for `playlist.playTrack`.
- * Play a row of a playlist, as double-clicking it does. A row past the last one fails with `INVALID_INDEX`. With `deferred`, `expectedVersion` is compared again when playback starts; if the rows changed by then, nothing plays.
+ * Play a row of a playlist, as double-clicking it does. A row past the last one fails with `INVALID_INDEX`. With `deferred`, `expectedVersion` is verified again before starting playback; if rows changed in between, playback is skipped.
  */
 export interface PlaylistPlayTrackParams {
     /** Index of the playlist; omitted, the active playlist. An index past the last playlist fails with `INVALID_INDEX`; with this omitted and no active playlist the call fails with `NO_ACTIVE_ITEM`. */
@@ -3755,7 +3780,7 @@ export interface PlaylistReorderPlaylistsParams {
 
 /**
  * Parameters for `playlist.replaceAllAndPlay`.
- * Replace the whole content of a playlist and play it: stop playback, clear the playlist (saving an undo point), add the paths as `playlist.addPaths` does, make the playlist active and play or focus `playIndex`. When nothing could be added the call fails with `NOT_FOUND`, and the playlist stays empty. A locked playlist fails with `LOCKED` before anything changes. The paths are resolved after the clear, as in `playlist.addPaths`: a playlist moved meanwhile is still the one filled and played; one removed meanwhile fails with `OPERATION_FAILED`, and one locked meanwhile fails with `LOCKED` and stays empty.
+ * Replace the whole content of a playlist and play it: stop playback, clear the playlist (saving an undo point), add the paths in the given order as `playlist.addPathsSequential` does, make the playlist active and play or focus `playIndex`. Unlike `playlist.addPaths`, duplicates are kept and the user's incoming-item order is not applied. Entries longer than 2048 characters, and entries that resolve to nothing, are skipped. When nothing could be added the call fails with `NOT_FOUND`, and the playlist stays empty. A locked playlist fails with `LOCKED` before anything changes. The paths are resolved after the clear, as in `playlist.addPaths`: a playlist moved meanwhile is still the one filled and played; one removed meanwhile fails with `OPERATION_FAILED`, and one locked meanwhile fails with `LOCKED` and stays empty.
  */
 export interface PlaylistReplaceAllAndPlayParams {
     /** Index of the playlist; omitted, the active playlist. An index past the last playlist fails with `INVALID_INDEX`; with this omitted and no active playlist the call fails with `NO_ACTIVE_ITEM`. */
@@ -3765,7 +3790,7 @@ export interface PlaylistReplaceAllAndPlayParams {
     /** The new content: files, folders or URLs. */
     paths: string[];
     /**
-     * Row to play, or to focus with `autoPlay` `false`; past the last row, the first one. The rows do not keep the order of `paths`, so this names a position, not one of the given paths.
+     * Row to play, or to focus with `autoPlay` `false`; past the last row, the first one. The rows follow the order of `paths`: when every path is one track, this is the index of the path to play. A path that expands to several tracks (a folder, a cue sheet) takes that many rows, and a skipped path takes none.
      * @default 0
      */
     playIndex?: number;
@@ -3905,7 +3930,7 @@ export interface PlaylistSortParams {
      */
     pattern?: string;
     /**
-     * Reverse the whole playlist after sorting. The reversal covers every track, the unselected ones too, even with `selectedOnly`.
+     * Reverse the whole playlist after sorting. The reversal covers all tracks, even when `selectedOnly` is set.
      * @default false
      */
     descending?: boolean;
@@ -4120,7 +4145,7 @@ export interface RatingGetParams {
 
 /**
  * Parameters for `rating.set`.
- * Set a track's rating through foo_playcount's context menu, or write the file's `RATING` tag when that menu is not available. Without `path` the playing track is rated, or else the active playlist's selection; with neither the call fails with `NO_ACTIVE_ITEM`.
+ * Set a track's rating through foo_playcount's context menu, or write the file's `RATING` tag when that menu is not available. Without `path` the playing track is rated, or else the active playlist's selection; with neither the call fails with `NO_ACTIVE_ITEM`. The tag fallback fails with `NOT_SUPPORTED` for a WAV file that holds non-ASCII tag text, as in `metadata.write`.
  */
 export interface RatingSetParams {
     /** Track path; a `|subsong:N` suffix or a trailing `#N` selects a subsong. Omit it for the playing track, or else the active playlist's selection. */
@@ -4136,7 +4161,7 @@ export interface RatingSetParams {
 
 /**
  * Parameters for `replaygain.clear`.
- * Remove the ReplayGain values from files. The tags are rewritten in the background; read the files again to see the values gone.
+ * Remove the ReplayGain values from files. The tags are rewritten in the background; read the files again to see the values gone. If any WAV file holds non-ASCII tag text, the call fails with `NOT_SUPPORTED` and writes nothing, as in `metadata.write`.
  */
 export interface ReplaygainClearParams {
     /** Tracks whose ReplayGain values are removed. A `|subsong:N` suffix selects a subsong, such as one track of a CUE sheet; a path without it means the first track. */
@@ -4877,13 +4902,13 @@ export type WindowBlurParams = Record<string, never>;
  * Send a message to every window except the caller, delivered as `window:message` with `{ sourceWindowId, message }`.
  */
 export interface WindowBroadcastParams {
-    /** The message, delivered as `message` of the event. `null` counts as missing. */
+    /** The message, delivered as `message` of the event. Passing `null` is treated as omitted. */
     message: JsonValue;
 }
 
 /**
  * Parameters for `window.cancelClose`.
- * Keep the calling popup open after it received `window:beforeClose`; nothing happens when no close is pending. Fails with `NOT_FOUND` when the caller is not a popup.
+ * Keep the calling popup open after it received `window:beforeClose`; ignored when no close is pending. Fails with `NOT_FOUND` when the caller is not a popup.
  */
 export type WindowCancelCloseParams = Record<string, never>;
 
@@ -4916,7 +4941,7 @@ export type WindowClearNoDragRegionsParams = Record<string, never>;
 
 /**
  * Parameters for `window.close`.
- * Close the calling window as the system close command does. Succeeds without doing anything when there is no window. Fails in panel mode.
+ * Close the calling window as the system close command does. Succeeds with no operation when there is no window. Fails in panel mode.
  */
 export type WindowCloseParams = Record<string, never>;
 
@@ -4937,7 +4962,7 @@ export interface WindowClosePopupParams {
 
 /**
  * Parameters for `window.confirmClose`.
- * Let the calling popup close after it received `window:beforeClose`; nothing happens when no close is pending. Fails with `NOT_FOUND` when the caller is not a popup.
+ * Let the calling popup close after it received `window:beforeClose`; ignored when no close is pending. Fails with `NOT_FOUND` when the caller is not a popup.
  */
 export type WindowConfirmCloseParams = Record<string, never>;
 
@@ -5294,7 +5319,7 @@ export type WindowRestoreParams = Record<string, never>;
 export interface WindowSendMessageParams {
     /** Id of the receiving window. */
     targetWindowId: string;
-    /** The message, delivered as `message` of the event. `null` counts as missing. */
+    /** The message, delivered as `message` of the event. Passing `null` is treated as omitted. */
     message: JsonValue;
 }
 
@@ -5928,7 +5953,9 @@ export interface ApiParamsMap {
     "jitSession.stop": JitSessionStopParams;
     "keyboard.getRegisteredHotkeys": KeyboardGetRegisteredHotkeysParams;
     "keyboard.registerHotkey": KeyboardRegisterHotkeyParams;
+    /** @deprecated Has no effect and will be removed in 3.0; listen for `keydown` in the page instead. */
     "keyboard.registerShortcut": KeyboardRegisterShortcutParams;
+    "keyboard.setReservedKeys": KeyboardSetReservedKeysParams;
     "keyboard.unregisterHotkey": KeyboardUnregisterHotkeyParams;
     "library.addToPlaylist": LibraryAddToPlaylistParams;
     "library.browseDirectory": LibraryBrowseDirectoryParams;

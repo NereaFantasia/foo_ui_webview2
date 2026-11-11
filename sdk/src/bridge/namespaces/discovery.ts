@@ -63,16 +63,18 @@ export const discovery = {
             opts,
         ),
     /**
-     * Executes a context-menu command by GUID against the current selection (or
-     * the playing track).
+     * Executes a context-menu command by GUID against the tracks `target` names.
+     * The default, `'auto'`, is the playing track, or the active playlist
+     * selection when nothing is playing; `'selection'` matches what foobar2000's
+     * own context-menu shortcuts act on.
      *
      * A `FORCE_OFF` command is refused rather than dispatched: the SDK treats
      * that state as "keyboard-shortcut list only", so the host never draws it and
      * running it would perform something the user could not have clicked. The
      * refusal fails with `NOT_SUPPORTED` and carries `hidden: true`. Pass
      * `{ force: true }` to dispatch anyway. `DEFAULT_OFF` commands (hidden unless
-     * Shift is held) are still invocable and are never refused. With nothing
-     * selected or playing the call fails with `NO_ACTIVE_ITEM`.
+     * Shift is held) are still invocable and are never refused. When the target
+     * holds no track the call fails with `NO_ACTIVE_ITEM`.
      */
     executeContextMenuCommand: (opts: DiscoveryExecuteContextMenuCommandParams) =>
         call(
@@ -93,6 +95,8 @@ export const discovery = {
      * `match: 'ambiguous'` and a `candidates` list of full names; use it to
      * refine the path, or address the command by GUID via
      * {@link executeContextMenuCommand}, which is the only stable identifier.
+     * `target` picks the tracks as for that method; it cannot be combined with
+     * `trackPath`.
      */
     executeContextMenuByPath: (opts: DiscoveryExecuteContextMenuByPathParams) =>
         call(
