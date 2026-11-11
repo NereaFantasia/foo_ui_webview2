@@ -186,11 +186,11 @@ Control playback: start, pause, stop, skip, seek, set or step the volume, mute, 
 | `playback.random` | — | Start a random track of the active playlist. |
 | `playback.playPath` | `path` | Append one file to the active playlist and play it; a playlist is created when there is none. |
 | `playlist.playTrack` | `playlist?`, `playlistGuid?`, `index`, `deferred?`, `muted?`, `expectedVersion?` | Play a row of a playlist, as double-clicking it does. |
-| `playback.setPosition` | `position` | Seek within the current track, playing or paused. |
-| `playback.setVolume` | `volume` | Set the output volume as a percentage; values outside `0` to `100` are clamped. |
+| `playback.setPosition` | `position` | Seek within the current track (playing or paused). |
+| `playback.setVolume` | `volume` | Set output volume as a percentage. |
 | `playback.volumeUp` | — | Raise the volume by one of the host's steps: one decibel, landing on a whole decibel. |
 | `playback.volumeDown` | — | Lower the volume by one of the host's steps: one decibel, landing on a whole decibel. |
-| `playback.mute` | `muted?` | Mute or unmute; a call that asks for the state already in effect does nothing. |
+| `playback.mute` | `muted?` | Mute or unmute; calls requesting the active state are ignored. |
 | `playback.toggleMute` | — | Flip the mute state and report the new one. |
 | `playback.setPlaybackOrder` | `order?`, `name?` | Select a playback order by index or by name; exactly one of the two must be given. |
 | `playback.setStopAfterCurrent` | `enabled` | Arm or disarm stopping after the current track. |
@@ -249,7 +249,7 @@ Change the tracks of a playlist: add files, folders or tracks, insert, remove, m
 | `playlist.addPathsSequential` | `playlist?`, `playlistGuid?`, `paths` | Append paths to a playlist in the given order, saving an undo point first; a path that expands to several tracks (a folder, a cue sheet) keeps its place. |
 | `playlist.addHandles` | `playlist?`, `playlistGuid?`, `handles` | Append tracks to a playlist, saving an undo point first. |
 | `playlist.insertTracks` | `playlist?`, `playlistGuid?`, `position?`, `handles`, `expectedVersion?` | Insert tracks at a position of a playlist, saving an undo point first. |
-| `playlist.replaceAllAndPlay` | `playlist?`, `playlistGuid?`, `paths`, `playIndex?`, `stopFirst?`, `autoPlay?` | Replace the whole content of a playlist and play it: stop playback, clear the playlist (saving an undo point), add the paths as `playlist.addPaths` does, make the playlist active and play or focus `playIndex`. |
+| `playlist.replaceAllAndPlay` | `playlist?`, `playlistGuid?`, `paths`, `playIndex?`, `stopFirst?`, `autoPlay?` | Replace the whole content of a playlist and play it: stop playback, clear the playlist (saving an undo point), add the paths in the given order as `playlist.addPathsSequential` does, make the playlist active and play or focus `playIndex`. |
 | `playlist.removeTracks` | `playlist?`, `playlistGuid?`, `items`, `expectedVersion?` | Remove rows from a playlist, saving an undo point first. |
 | `playlist.removeSelectedTracks` | `playlist?`, `playlistGuid?` | Remove the selected rows from a playlist, saving an undo point first. |
 | `playlist.clear` | `playlist?`, `playlistGuid?` | Remove every track from a playlist, saving an undo point first. |

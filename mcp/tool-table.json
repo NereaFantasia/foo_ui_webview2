@@ -234,7 +234,7 @@
       "params": {
         "playlist": "Index of the playlist to change; omitted, the active playlist. An index past the last playlist fails with `INVALID_INDEX`.",
         "playlistGuid": "The playlist's `guid` from `playlist.getAll`, in place of `playlist`; it keeps naming the same playlist when others are added, removed or moved, which an index does not. Give one of the two.",
-        "paths": "Files, folders or URLs; a `|subsong:N` suffix selects a subsong. For `playlist.replaceAllAndPlay` they are the new content; `playlist.addPathsSequential` adds them in this order.",
+        "paths": "Files, folders or URLs; a `|subsong:N` suffix selects a subsong. For `playlist.replaceAllAndPlay` they are the new content. `playlist.replaceAllAndPlay` and `playlist.addPathsSequential` keep this order; `playlist.addPaths` sorts as foobar2000's Add Files does.",
         "handles": "Tracks to add: each a path with an optional `|subsong:N` suffix, or `{ path, subsong }`.",
         "items": "Rows to remove (`playlist.removeTracks`) or to move (`playlist.moveTracks`; omitted or empty, the current selection moves)."
       },

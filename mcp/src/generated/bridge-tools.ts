@@ -175,7 +175,7 @@ export const bridgeTools: readonly ToolDefinition[] = [
                 },
                 "volume": {
                     "type": "number",
-                    "description": "Volume as a percentage; clamped to `0` to `100`.",
+                    "description": "Output volume percentage; valid range 0..100 with automatic clamping.",
                     "minimum": 0,
                     "maximum": 100
                 },
@@ -1032,7 +1032,7 @@ export const bridgeTools: readonly ToolDefinition[] = [
                 },
                 "paths": {
                     "type": "array",
-                    "description": "Files, folders or URLs; a `|subsong:N` suffix selects a subsong. For `playlist.replaceAllAndPlay` they are the new content; `playlist.addPathsSequential` adds them in this order.",
+                    "description": "Files, folders or URLs; a `|subsong:N` suffix selects a subsong. For `playlist.replaceAllAndPlay` they are the new content. `playlist.replaceAllAndPlay` and `playlist.addPathsSequential` keep this order; `playlist.addPaths` sorts as foobar2000's Add Files does.",
                     "items": {
                         "type": "string"
                     },
@@ -1057,7 +1057,7 @@ export const bridgeTools: readonly ToolDefinition[] = [
                 },
                 "playIndex": {
                     "type": "integer",
-                    "description": "Row to play, or to focus with `autoPlay` `false`; past the last row, the first one. The rows do not keep the order of `paths`, so this names a position, not one of the given paths.",
+                    "description": "Row to play, or to focus with `autoPlay` `false`; past the last row, the first one. The rows follow the order of `paths`: when every path is one track, this is the index of the path to play. A path that expands to several tracks (a folder, a cue sheet) takes that many rows, and a skipped path takes none.",
                     "minimum": 0
                 },
                 "stopFirst": {
@@ -1094,7 +1094,7 @@ export const bridgeTools: readonly ToolDefinition[] = [
                 },
                 "descending": {
                     "type": "boolean",
-                    "description": "Reverse the whole playlist after sorting. The reversal covers every track, the unselected ones too, even with `selectedOnly`."
+                    "description": "Reverse the whole playlist after sorting. The reversal covers all tracks, even when `selectedOnly` is set."
                 },
                 "selectedOnly": {
                     "type": "boolean",

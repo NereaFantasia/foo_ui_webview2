@@ -963,8 +963,8 @@ async function runPlaylistLevelCases(bridge, recorder, collector, scratch, subje
     );
 
     // Converting to an autoplaylist and back is the pair a consumer can drive.
-    // The query it was created with is not readable afterwards, which the endpoint
-    // says out loud rather than returning an empty string.
+    // A list created through the built-in query/sort client reads back what it was
+    // created with, so a consumer can prefill an editor from it.
     const auto = await invoke("playlist.createAutoplaylist", {
         name: names.auto,
         query: "%genre% IS Game",
@@ -972,7 +972,7 @@ async function runPlaylistLevelCases(bridge, recorder, collector, scratch, subje
     const autoInfo = await invoke("playlist.getAutoplaylistInfo", { playlist: auto?.index });
     const autoQuery = await invoke("playlist.getAutoplaylistQuery", { playlist: auto?.index });
     recorder.assertCase(
-        "PO-36 createAutoplaylist echoes the query, while reading it back afterwards is not supported",
+        "PO-36 createAutoplaylist echoes the query, and the built-in client reads it back with its sort",
         auto?.success === true &&
             auto?.query === "%genre% IS Game" &&
             auto?.playlist === auto?.index &&
@@ -983,10 +983,12 @@ async function runPlaylistLevelCases(bridge, recorder, collector, scratch, subje
             typeof autoInfo?.keepSorted === "boolean" &&
             !Object.hasOwn(autoQuery, "editorAvailability") &&
             !Object.hasOwn(autoQuery, "editorAvailabilityReason") &&
-            autoQuery?.query === null &&
-            typeof autoQuery?.note === "string",
+            autoQuery?.query === "%genre% IS Game" &&
+            autoQuery?.sort === "" &&
+            autoQuery?.keepSorted === autoInfo?.keepSorted &&
+            !Object.hasOwn(autoQuery, "note"),
         { created: auto, info: autoInfo, query: autoQuery },
-        { isAutoplaylist: true, query: null, note: "a message saying the query is not exposed" },
+        { isAutoplaylist: true, query: "%genre% IS Game", sort: "", note: "absent" },
     );
 
     const converted = await invoke("playlist.convertToAutoplaylist", {
@@ -1016,8 +1018,10 @@ async function runPlaylistLevelCases(bridge, recorder, collector, scratch, subje
 
     // replaceAllAndPlay is the atomic clear+add. Playback is kept out of it:
     // stopFirst false leaves whatever is playing alone and autoPlay false focuses
-    // the row instead of starting it.
-    const replacementPaths = subjects.slice(0, 3).map((track) => track.absolutePath);
+    // the row instead of starting it. The paths go in reversed, against the
+    // order the subjects were read in, so an incoming-item sort could not leave
+    // them where they were given by chance.
+    const replacementPaths = subjects.slice(0, 3).map((track) => track.absolutePath).reverse();
     const replaced = await invoke("playlist.replaceAllAndPlay", {
         playlist: duplicated?.index,
         paths: replacementPaths,
@@ -1054,24 +1058,22 @@ async function runPlaylistLevelCases(bridge, recorder, collector, scratch, subje
         },
     );
 
-    // The rows land as a set, not in the order the paths were given - unlike
-    // addPathsSequential, which exists for exactly that guarantee (PO-28). It
-    // matters here because playIndex then points at whichever row happens to be
-    // at that position: "replace with this list and play the third one" plays a
-    // different track than the caller named. Recorded rather than asserted as a
-    // contract, since the endpoint never promised an order.
+    // The rows keep the order of the paths, as addPathsSequential's do (PO-28),
+    // so playIndex names one of the given paths: "replace with this list and play
+    // the third one" focuses the third path, not whatever an incoming-item sort
+    // put at that row.
     const orderPreserved = JSON.stringify(afterReplace) === JSON.stringify(replacementPaths);
     recorder.assertCase(
-        "PO-39 the replacement order is characterized, so a change to it becomes visible",
-        typeof orderPreserved === "boolean" && afterReplace.length === replacementPaths.length,
+        "PO-39 replaceAllAndPlay keeps the order of paths, so playIndex focuses the path the caller named",
+        orderPreserved && afterReplace[focusAfter?.index] === replacementPaths[2],
         {
             given: replacementPaths,
             landed: afterReplace,
             orderPreserved,
-            rowAtPlayIndex: afterReplace[2],
+            rowAtFocus: afterReplace[focusAfter?.index],
             rowTheCallerNamed: replacementPaths[2],
         },
-        { orderPreserved: "pinned as observed; addPathsSequential is the ordered spelling" },
+        { orderPreserved: true, rowAtFocus: replacementPaths[2] },
     );
 
     // Reordering the playlist list needs a permutation of every playlist, so the

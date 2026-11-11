@@ -210,7 +210,7 @@ async function checkElement(popup, path) {
             const change = reason => listeners.forEach(listener => listener({ reason, state: clock.state, position }));
             follower = new fb.MediaElementFollower(element, { clock });
             await follower.setSource(${JSON.stringify(path)});
-            const assigned = element.src.startsWith('https://foo-ui-webview2.local/fb2k-media/');
+            const assigned = element.src.startsWith('https://fb2k-routes.invalid/fb2k-media/');
             await waitFor(() => element.readyState >= 1 && !element.seeking && Math.abs(element.currentTime - position) < 0.02);
             const initiallyAligned = element.paused && Math.abs(element.currentTime - 1.25) < 0.02;
             clock.state = 'playing'; change('state');

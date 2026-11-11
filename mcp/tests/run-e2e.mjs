@@ -76,6 +76,7 @@ const SUITES = [
     "e2e-library-albums.mjs",
     "e2e-library-sync.mjs",
     "e2e-media-write.mjs",
+    "e2e-wav-tag-guard.mjs",
     "e2e-replaygain.mjs",
     "e2e-artwork-read.mjs",
     "e2e-metadata-batch.mjs",

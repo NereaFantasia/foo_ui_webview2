@@ -101,7 +101,7 @@ try {
     const info = success(await bridge.invoke('playlist.getAutoplaylistInfo', { playlistGuid: guid }));
     check('managed configuration and native editor capabilities are separate', info.configAvailability === 'available' && info.configAvailabilityReason === 'supported' && info.editorAvailability === 'unavailable', info, 'config available, native editor unavailable');
     const oldQuery = success(await bridge.invoke('playlist.getAutoplaylistQuery', { playlistGuid: guid }));
-    check('the existing query getter keeps its null contract', oldQuery.query === null, oldQuery, { query: null });
+    check('the query getter leaves a managed list null and points to the config getter', oldQuery.query === null && oldQuery.sort === null && /getAutoplaylistConfig/.test(oldQuery.note ?? ''), oldQuery, { query: null, sort: null, note: 'mentions getAutoplaylistConfig' });
     check('the getter reads original text and current flags', same(config(await read(guid)), config(current)), await read(guid), current);
 
     await collector.drain();
