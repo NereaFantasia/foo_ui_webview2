@@ -65,9 +65,31 @@ protected:
     // ========== WebViewPanel virtual overrides ==========
     
     void OnWebViewReady() override;
-    
+
+    // Columns UI 的全局背景色（colour_background）。
+    COLORREF QueryHostBackground() override;
+
 private:
     static constexpr wchar_t CLASS_NAME[] = L"WebViewCuiPanel";
+
+    // 接收 Columns UI 全局颜色的变化。只用全局颜色，不实现 colours::client，
+    // 所以面板不会出现在 Columns UI 的颜色设置里，也就不存在重复登记的问题。
+    class ColourListener final : public cui::colours::common_callback {
+    public:
+        explicit ColourListener(WebViewCuiPanel& owner) : m_owner(owner) {}
+        void on_colour_changed(uint32_t changedItemsMask) const override;
+        void on_bool_changed(uint32_t changedItemsMask) const override;
+    private:
+        WebViewCuiPanel& m_owner;
+    };
+
+    // 背景色变了：宿主窗口重绘，WebView 的不透明底色跟上。不依赖页面是否就绪。
+    void OnHostColoursChanged();
+    void RegisterColourListener();
+    void UnregisterColourListener();
+
+    std::unique_ptr<ColourListener> m_colourListener;
+    cui::colours::manager::ptr m_colourManager;
     
     static bool RegisterWindowClass();
     static bool s_classRegistered;

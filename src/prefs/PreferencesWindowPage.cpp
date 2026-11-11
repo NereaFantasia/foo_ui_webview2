@@ -7,6 +7,7 @@
 #include "prefs/PreferencesFields.h"
 #include "prefs/PreferencesPage.h"
 #include "settings/SecurityConfig.h"
+#include "webview/HostShortcutRelay.h"
 #include "window/TaskbarIntegration.h"
 #include "window/TrayIcon.h"
 #include "utils/I18n.h"
@@ -41,6 +42,16 @@ enum ControlIds {
     IDC_CHK_TASKBAR_BUTTONS = 1221,
     IDC_CHK_TASKBAR_PROGRESS = 1222,
     IDC_STATIC_TASKBAR_NOTE = 1223,
+
+    IDC_GROUP_SHORTCUTS = 1230,
+    IDC_STATIC_SHORTCUTS_INTRO = 1231,
+    IDC_CHK_RELAY_CTRL = 1232,
+    IDC_CHK_RELAY_ALT = 1233,
+    IDC_CHK_RELAY_WIN = 1234,
+    IDC_CHK_RELAY_FKEYS = 1235,
+    IDC_CHK_RELAY_MEDIA = 1236,
+    IDC_CHK_RELAY_BARE = 1237,
+    IDC_STATIC_SHORTCUTS_NOTE = 1238,
 };
 
 // 复选框控件 ID 与字段下标的对应；OnMessage 与 SyncControlsFromDraft 都按它走。
@@ -56,7 +67,26 @@ constexpr CheckBinding kChecks[] = {
     {IDC_CHK_CLOSE_TO_TRAY, window::CloseToTray},
     {IDC_CHK_TASKBAR_BUTTONS, window::TaskbarButtons},
     {IDC_CHK_TASKBAR_PROGRESS, window::TaskbarProgress},
+    {IDC_CHK_RELAY_CTRL, window::RelayCtrl},
+    {IDC_CHK_RELAY_ALT, window::RelayAlt},
+    {IDC_CHK_RELAY_WIN, window::RelayWin},
+    {IDC_CHK_RELAY_FKEYS, window::RelayFKeys},
+    {IDC_CHK_RELAY_MEDIA, window::RelayMedia},
+    {IDC_CHK_RELAY_BARE, window::RelayBare},
 };
+
+// 快捷键转发开关与 host_shortcut_relay::Category 位的对应；不是转发开关时返回 0。
+unsigned RelayBit(size_t field) {
+    switch (field) {
+    case window::RelayCtrl: return host_shortcut_relay::kCtrl;
+    case window::RelayAlt: return host_shortcut_relay::kAlt;
+    case window::RelayWin: return host_shortcut_relay::kWin;
+    case window::RelayFKeys: return host_shortcut_relay::kFKeys;
+    case window::RelayMedia: return host_shortcut_relay::kMedia;
+    case window::RelayBare: return host_shortcut_relay::kBare;
+    default: return 0;
+    }
+}
 
 }  // namespace
 
@@ -114,6 +144,11 @@ prefs_draft::Snapshot WebViewPrefsWindowInstance::ReadSnapshotFromConfig() const
     s.SetBool(window::CloseToTray, GetCloseToTrayPreference());
     s.SetBool(window::TaskbarButtons, GetTaskbarButtonsEnabled());
     s.SetBool(window::TaskbarProgress, GetTaskbarProgressEnabled());
+    const unsigned relay = GetShortcutRelayCategories();
+    for (size_t field : {window::RelayCtrl, window::RelayAlt, window::RelayWin, window::RelayFKeys,
+                         window::RelayMedia, window::RelayBare}) {
+        s.SetBool(field, (relay & RelayBit(field)) != 0);
+    }
     return s;
 }
 
@@ -152,6 +187,17 @@ bool WebViewPrefsWindowInstance::WriteField(size_t field, const prefs_draft::Sna
         case window::TaskbarProgress:
             SetTaskbarProgressEnabled(v);
             return GetTaskbarProgressEnabled() == v;
+        case window::RelayCtrl:
+        case window::RelayAlt:
+        case window::RelayWin:
+        case window::RelayFKeys:
+        case window::RelayMedia:
+        case window::RelayBare: {
+            const unsigned bit = RelayBit(field);
+            const unsigned current = GetShortcutRelayCategories();
+            SetShortcutRelayCategories(v ? (current | bit) : (current & ~bit));
+            return ((GetShortcutRelayCategories() & bit) != 0) == v;
+        }
         default:
             break;
         }
@@ -170,6 +216,12 @@ std::wstring WebViewPrefsWindowInstance::FieldDisplayName(size_t field) const {
     case window::CloseToTray: return TR("Close to tray", "关闭到托盘");
     case window::TaskbarButtons: return TR("Thumbnail toolbar playback buttons", "任务栏缩略图播放按钮");
     case window::TaskbarProgress: return TR("Playback progress on the taskbar button", "任务栏播放进度");
+    case window::RelayCtrl: return TR("Shortcuts: Ctrl combinations", "快捷键：Ctrl 组合");
+    case window::RelayAlt: return TR("Shortcuts: Alt combinations", "快捷键：Alt 组合");
+    case window::RelayWin: return TR("Shortcuts: Win combinations", "快捷键：Win 组合");
+    case window::RelayFKeys: return TR("Shortcuts: F1–F24", "快捷键：F1–F24");
+    case window::RelayMedia: return TR("Shortcuts: media keys", "快捷键：媒体键");
+    case window::RelayBare: return TR("Shortcuts: other keys", "快捷键：其他按键");
     default: break;
     }
     return {};
@@ -208,6 +260,7 @@ void WebViewPrefsWindowInstance::CreateControls(HWND hwnd) {
     create(L"BUTTON", WS_EX_TRANSPARENT, TR("Window", "窗口"), BS_GROUPBOX, IDC_GROUP_WINDOW);
     create(L"BUTTON", WS_EX_TRANSPARENT, TR("Tray", "托盘"), BS_GROUPBOX, IDC_GROUP_TRAY);
     create(L"BUTTON", WS_EX_TRANSPARENT, TR("Taskbar", "任务栏"), BS_GROUPBOX, IDC_GROUP_TASKBAR);
+    create(L"BUTTON", WS_EX_TRANSPARENT, TR("Keyboard shortcuts", "快捷键"), BS_GROUPBOX, IDC_GROUP_SHORTCUTS);
 
     // ---- Window ----
     createCheck(IDC_CHK_REMEMBER_POSITION, TR("Remember window position and size", "记住窗口位置和大小"));
@@ -239,6 +292,21 @@ void WebViewPrefsWindowInstance::CreateControls(HWND hwnd) {
            "播放按钮重启后生效，主题自定义的按钮不受影响。进度条显示播放位置，暂停时使用暂停颜色；"
            "停止播放或时长未知时隐藏。主题自行设置的进度条会保留到下一次播放状态变化。"));
 
+    // ---- Keyboard shortcuts ----
+    createNote(IDC_STATIC_SHORTCUTS_INTRO,
+        TR("While a page has the focus, these keys run foobar2000 keyboard shortcuts. Keys without a shortcut "
+           "still reach the page.",
+           "页面有焦点时，下列按键按 foobar2000 的快捷键执行；没设快捷键的按键仍交给页面。"));
+    createCheck(IDC_CHK_RELAY_CTRL, TR("Ctrl combinations", "Ctrl 组合"));
+    createCheck(IDC_CHK_RELAY_ALT, TR("Alt combinations", "Alt 组合"));
+    createCheck(IDC_CHK_RELAY_WIN, TR("Win combinations", "Win 组合"));
+    createCheck(IDC_CHK_RELAY_FKEYS, TR("F1–F24", "F1–F24"));
+    createCheck(IDC_CHK_RELAY_MEDIA, TR("Media keys (may run twice)", "媒体键（可能执行两次）"));
+    createCheck(IDC_CHK_RELAY_BARE,
+        TR("Other keys, such as Space and the arrow keys", "其他按键，如空格、方向键"));
+    createNote(IDC_STATIC_SHORTCUTS_NOTE,
+        TR("Typing and editing in text boxes are not affected.", "输入框里的打字和编辑不受影响。"));
+
     SyncControlsFromDraft();
 }
 
@@ -261,6 +329,17 @@ void WebViewPrefsWindowInstance::LayoutContent(prefs_layout::PageLayoutBuilder& 
     builder.CheckBox(IDC_CHK_TASKBAR_BUTTONS);
     builder.CheckBox(IDC_CHK_TASKBAR_PROGRESS);
     builder.Note(IDC_STATIC_TASKBAR_NOTE);
+    builder.EndGroup();
+
+    builder.BeginGroup(IDC_GROUP_SHORTCUTS, {});
+    builder.Note(IDC_STATIC_SHORTCUTS_INTRO);
+    builder.CheckBox(IDC_CHK_RELAY_CTRL);
+    builder.CheckBox(IDC_CHK_RELAY_ALT);
+    builder.CheckBox(IDC_CHK_RELAY_WIN);
+    builder.CheckBox(IDC_CHK_RELAY_FKEYS);
+    builder.CheckBox(IDC_CHK_RELAY_MEDIA);
+    builder.CheckBox(IDC_CHK_RELAY_BARE);
+    builder.Note(IDC_STATIC_SHORTCUTS_NOTE);
     builder.EndGroup();
 }
 
@@ -295,9 +374,9 @@ void WebViewPrefsWindowInstance::RefreshTrayState() {
     }
     if (HWND note = GetDlgItem(hwnd(), IDC_STATIC_TRAY_NOTE)) {
         SetWindowTextW(note, hasIcon
-            ? TR("The tray icon is created by the current theme through the tray API; these switches take effect "
+            ? TR("The tray icon is created by the current theme; these switches take effect "
                  "immediately on Apply. Values set by the theme at run time are not written back here.",
-                 "托盘图标由当前主题通过 tray API 创建；这两项 Apply 后立即生效。主题在运行期改的值不会写回这里。")
+                 "托盘图标由当前主题创建；这两项在应用后立即生效。主题在运行期间修改的值不会写回此处。")
             : TR("The current theme has not created a tray icon, so these switches have nothing to act on. "
                  "The values are saved and take effect once an icon exists.",
                  "当前主题未创建托盘图标，这两项暂无作用；设置会保存，图标创建后生效。"));

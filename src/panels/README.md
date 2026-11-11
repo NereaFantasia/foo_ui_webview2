@@ -92,6 +92,7 @@ user changes panel config (config dialog)
 
 - **Add a panel config field**: add the field in `PanelConfig` and **bump `CURRENT_VERSION`**, update `Serialize/Deserialize` and `Write/Read` in sync, and include it in the `operator==` comparison (otherwise hot-reload won't detect the change); deserialization of older versions must provide a default value.
 - **Add config UI**: add controls in `PanelConfigDialog`, shared by DUI/CUI, to avoid writing a separate set on each side.
+- **Panel background**: the transparent parts of a page show what the host window painted behind it, so a panel window must not use `WS_CLIPCHILDREN` (the WebView's child windows cover the whole client area, and the style keeps the host from painting under them) and must fill the client area with the host's current background colour in `WM_ERASEBKGND`. A new host integration overrides `WebViewPanel::QueryHostBackground()`, repaints its window when the colours change, and calls `RefreshHostBackground()`; without the override the default stays `#1e1e1e`.
 - **Panel-specific behavior**: prefer driving it with `PanelConfig` fields (such as `grabFocus`/`enableDevTools`) rather than piling boolean branches into the panel classes; common capabilities should sink down to the `WebViewPanel` base class so the three modes can share them.
 
 ---

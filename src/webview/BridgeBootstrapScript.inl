@@ -275,6 +275,90 @@ constexpr const wchar_t* kBridgeBootstrapScript = LR"(
             if (e.defaultPrevented || fbDndKeepsDefault(e)) return;
             e.preventDefault();
         });
-        
+    )" LR"(
+        // Keys the host cannot route on its own. Letters, digits, Space and
+        // punctuation never reach its accelerator handler; the arrows, Home,
+        // End, PageUp and PageDown do, but it leaves them to the page because
+        // they edit text. Outside an editable element they go to the
+        // foobar2000 keyboard shortcuts. The host answers synchronously whether
+        // a shortcut ran, and only then is the default action (scrolling,
+        // activating the focused button) cancelled. Runs after the page's own
+        // keydown listeners, see fbAfterPageKeydown below.
+        const fbIsTextKeyCode = (k) => k === 32 || (k >= 48 && k <= 57) || (k >= 65 && k <= 90) ||
+            (k >= 96 && k <= 111) || (k >= 186 && k <= 192) || (k >= 219 && k <= 223);
+        // composedPath()[0] rather than target: on window, target is retargeted
+        // to the shadow host, which hides an input inside a component.
+        const fbIsEditableTarget = (e) => {
+            const path = typeof e.composedPath === 'function' ? e.composedPath() : [];
+            const first = path.length ? path[0] : e.target;
+            const el = first && first.nodeType === 1 ? first : first && first.parentElement;
+            if (!el) return false;
+            return el.isContentEditable || !!el.closest('input, textarea, select');
+        };
+        // While a key whose press ran a shortcut is held down, its repeats only
+        // cancel the default action; the shortcut runs once per press.
+        let fbRelayedKey = '';
+        const fbRelayUnhandledKey = (e) => {
+            const signature = e.keyCode + ':' + e.ctrlKey + e.shiftKey + e.altKey + e.metaKey;
+            if (e.repeat) {
+                if (signature === fbRelayedKey && !e.defaultPrevented) e.preventDefault();
+                return;
+            }
+            fbRelayedKey = '';
+            if (e.defaultPrevented || e.isComposing || e.keyCode === 229) return;
+            if (e.altKey || e.metaKey) return;
+            const k = e.keyCode;
+            const caretKey = k >= 35 && k <= 40;   // End, Home and the arrows
+            const pageKey = k === 33 || k === 34;  // PageUp, PageDown
+            if (e.ctrlKey ? !caretKey : !(caretKey || pageKey || fbIsTextKeyCode(k))) return;
+            let mainFrame = false;
+            try { mainFrame = window.top === window; } catch (err) { mainFrame = false; }
+            if (!mainFrame || fbIsEditableTarget(e)) return;
+            const objects = window.chrome && window.chrome.webview && window.chrome.webview.hostObjects;
+            if (!objects) return;
+            let ran = false;
+            try {
+                // Modifiers as MOD_CONTROL (2) and MOD_SHIFT (4).
+                ran = objects.sync.fb2kShortcutRelay.relay(k, (e.ctrlKey ? 2 : 0) | (e.shiftKey ? 4 : 0)) === true;
+            } catch (err) {
+                return;
+            }
+            if (ran) {
+                fbRelayedKey = signature;
+                e.preventDefault();
+            }
+        };
+    )" LR"(
+        // F5 reaches the page only after a trusted page has finished loading;
+        // otherwise the host reloads without asking the page. A listener that
+        // cancels the key press keeps F5 for the page. Inside a frame the top
+        // document is reloaded, which fails when it has another origin.
+        const fbReloadUnlessCancelled = (e) => {
+            if (e.defaultPrevented || e.repeat) return;
+            try { window.top.location.reload(); } catch (err) { /* cross-origin top document */ }
+        };
+        // Both keydown decisions need e.defaultPrevented as the page leaves it.
+        // During dispatch, a capture listener on window appends a one-shot
+        // bubble listener to window; it runs after every keydown listener the
+        // page added before the key press, those on window included. The
+        // original add/removeEventListener are used so that a page patching
+        // them neither sees nor wraps these listeners.
+        const fbAddListener = EventTarget.prototype.addEventListener;
+        const fbRemoveListener = EventTarget.prototype.removeEventListener;
+        let fbAfterPageKeydown = null;
+        fbAddListener.call(window, 'keydown', (e) => {
+            // Left over when the page stopped the propagation of an earlier key press.
+            if (fbAfterPageKeydown) fbRemoveListener.call(window, 'keydown', fbAfterPageKeydown);
+            const listener = (ev) => {
+                fbRemoveListener.call(window, 'keydown', listener);
+                if (fbAfterPageKeydown === listener) fbAfterPageKeydown = null;
+                if (ev !== e) return;
+                if (ev.keyCode === 116) fbReloadUnlessCancelled(ev);  // F5
+                else fbRelayUnhandledKey(ev);
+            };
+            fbAfterPageKeydown = listener;
+            fbAddListener.call(window, 'keydown', listener);
+        }, true);
+
         console.log('[fb2k] Bridge initialized');
     )";

@@ -67,6 +67,12 @@ enum Index : size_t {
     CloseToTray,
     TaskbarButtons,
     TaskbarProgress,
+    RelayCtrl,
+    RelayAlt,
+    RelayWin,
+    RelayFKeys,
+    RelayMedia,
+    RelayBare,
     Count,
 };
 
@@ -85,6 +91,13 @@ inline prefs_draft::FieldTable Table() {
     // 缩略图工具栏只能在任务栏按钮创建时装一次，开关改动后重启才生效。
     fields[TaskbarButtons] = FieldSpec{"taskbarButtons", Kind::Bool, Value::Bool(true), 0, true, nullptr};
     fields[TaskbarProgress] = FieldSpec{"taskbarProgress", Kind::Bool, Value::Bool(false), 0, false, nullptr};
+    // 快捷键转发范围，默认值与 host_shortcut_relay::kDefaultCategories 一致；每次按键都读，不影响重启。
+    fields[RelayCtrl] = FieldSpec{"relayCtrl", Kind::Bool, Value::Bool(true), 0, false, nullptr};
+    fields[RelayAlt] = FieldSpec{"relayAlt", Kind::Bool, Value::Bool(true), 0, false, nullptr};
+    fields[RelayWin] = FieldSpec{"relayWin", Kind::Bool, Value::Bool(true), 0, false, nullptr};
+    fields[RelayFKeys] = FieldSpec{"relayFKeys", Kind::Bool, Value::Bool(true), 0, false, nullptr};
+    fields[RelayMedia] = FieldSpec{"relayMedia", Kind::Bool, Value::Bool(false), 0, false, nullptr};
+    fields[RelayBare] = FieldSpec{"relayBare", Kind::Bool, Value::Bool(false), 0, false, nullptr};
     return fields;
 }
 

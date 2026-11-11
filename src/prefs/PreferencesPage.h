@@ -56,6 +56,11 @@ void SetTaskbarButtonsEnabled(bool value);
 bool GetTaskbarProgressEnabled();
 void SetTaskbarProgressEnabled(bool value);
 
+// WebView 内按键转交 foobar2000 快捷键的范围，host_shortcut_relay::Category 的位掩码（Window 子页）。
+// 每次按键都读，Apply 后立即生效。
+unsigned GetShortcutRelayCategories();
+void SetShortcutRelayCategories(unsigned categories);
+
 // 性能（Performance 子页）。
 // 预热：initquit::on_init 是否在启动时创建 WebView2 环境；关闭后首个窗口创建时按需创建。改动后下次启动生效。
 bool GetPreheatEnabled();

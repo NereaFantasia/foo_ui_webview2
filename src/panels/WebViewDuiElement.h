@@ -46,7 +46,13 @@ public:
     
     // 最小/最大尺寸
     ui_element_min_max_info get_min_max_info() override;
-    
+
+    // 编辑模式：把「配置...」并入 DUI 的标准编辑菜单（替换、剪切、复制、粘贴等由宿主提供）。
+    bool edit_mode_context_menu_test(const POINT& p_point, bool p_fromkeyboard) override;
+    void edit_mode_context_menu_build(const POINT& p_point, bool p_fromkeyboard, HMENU p_menu, unsigned p_id_base) override;
+    void edit_mode_context_menu_command(const POINT& p_point, bool p_fromkeyboard, unsigned p_id, unsigned p_id_base) override;
+    bool edit_mode_context_menu_get_focus_point(POINT& p_point) override;
+
     // 初始化窗口
     void Initialize(HWND parent);
     
@@ -54,7 +60,10 @@ protected:
     // ========== WebViewPanel 虚函数重写 ==========
     
     void OnWebViewReady() override;
-    
+
+    // DUI 当前的背景色（ui_color_background）。
+    COLORREF QueryHostBackground() override;
+
 private:
     // 窗口类名
     static constexpr wchar_t CLASS_NAME[] = L"WebViewDuiElement";
@@ -83,6 +92,21 @@ private:
     
     // 绘制编辑模式占位符
     void PaintEditModePlaceholder(HDC hdc, const RECT& rc);
+
+    // 占位符上显示的文字。页面来源要查文件系统，配置变了或重新进入编辑模式时才重新算，绘制只读缓存。
+    struct PlaceholderText {
+        bool valid = false;
+        PanelConfig forConfig;
+        std::wstring title;
+        std::wstring source;
+        std::wstring options;
+        std::wstring hint;
+    };
+    PlaceholderText m_placeholder;
+    void UpdatePlaceholderText();
+
+    // DUI 当前的文字色（ui_color_text）。
+    COLORREF QueryHostText();
 };
 
 // ============================================

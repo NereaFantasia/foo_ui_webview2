@@ -217,9 +217,9 @@ interface SetParams {
 
 interface SetResult {
   /**
-   * How many tracks were handed to the selection holder, i.e. the handles that resolved. Not a
-   * read-back: see `set` for how long the selection lasts.
-   * @zh 成功提交至选区持有者的有效曲目句柄总数（该数值为实际解析提交的条数而非重读校验结果；选区维持生命周期见 set 方法说明）
+   * Number of resolved track handles committed to the selection holder. Represents the count
+   * of resolved items rather than a verified read-back; see `set` for selection lifetime.
+   * @zh 提交至选区持有者的已解析曲目总数。此值为成功提交的项数而非回读校验结果；选区生命周期参见 `set` 方法说明
    */
   count: Int;
 }

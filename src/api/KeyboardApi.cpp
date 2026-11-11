@@ -6,27 +6,33 @@
 #include "api/BridgeCore.h"
 #include "api/CallerContext.h"
 #include "api/EventEmit.h"
+#include "api/KeyboardHotkeyRules.h"
 #include "api/TypedApi.h"
 #include "api/generated/KeyboardSchema.h"
 #include "core/WebViewContext.h"
 #include <map>
 #include <mutex>
+#include <set>
+#include <utility>
+#include <vector>
 
 namespace {
     using json = nlohmann::json;
     namespace keyboard = api::keyboard;
-    
-    // Get main window handle
+    using keyboard_hotkey_rules::ParseKeyString;
+
+    // 已废弃，不要再调用：热键改注册到组件自己的消息窗口（见下文 EnsureHotkeyWindow）后没有调用方。
+    // 取 foobar2000 主窗口句柄，取不到时退回当前活动窗口。
     HWND GetMainWindowHandle() {
         HWND hwnd = core_api::get_main_window();
         if (hwnd) return hwnd;
         return GetActiveWindow();
     }
-    
+
     //==========================================================================
     // Hotkey management
     //==========================================================================
-    
+
     struct HotkeyInfo {
         int id;
         std::string key;
@@ -37,110 +43,85 @@ namespace {
         HWND callerHwnd = nullptr;     // 注册者的 panel hwnd
         std::string callerWindowId;    // 注册者的 windowId
     };
-    
+
     std::map<int, HotkeyInfo> g_hotkeys;
     std::map<std::string, HotkeyInfo> g_shortcuts;  // WebView shortcuts (non-global)
     std::mutex g_hotkeyMutex;
     int g_nextHotkeyId = 0x0001;  // Start from 1
-    
+
+    // RegisterHotKey 给应用程序留的 id 范围是 0x0000–0xBFFF。
+    constexpr int kMaxHotkeyId = 0xBFFF;
+
+    // 页面的保留键（keyboard.setReservedKeys）：按页面所在的面板窗口归属，元素为 (MOD_* 修饰键, 虚拟键)。
+    // 写在 API handler，读在按键转发；两边都在主线程，锁只为与热键表保持同一套约定。
+    std::map<HWND, std::set<std::pair<UINT, UINT>>> g_reservedKeys;
+    // setReservedKeys 带 all 的页面：全部按键都留给页面，例如录制快捷键期间（规格 §13.1）
+    std::set<HWND> g_reservedAllPages;
+
     //==========================================================================
-    // Helper: Parse key string to modifiers and virtual key
+    // Hotkey message window
+    //
+    // 热键注册在本组件自己的 message-only 窗口上，WM_HOTKEY 在它的窗口过程里处理。
+    // foobar2000 主窗口的窗口过程不归本组件，注册在它上面的热键收不到消息；message_filter
+    // 在模态循环里又不执行。窗口与注册都在主线程（handler 经 inMainThread 执行），
+    // 满足 RegisterHotKey「窗口属于调用线程」的要求。
     //==========================================================================
-    bool ParseKeyString(const std::string& keyStr, UINT& modifiers, UINT& vk) {
-        modifiers = 0;
-        vk = 0;
-        
-        std::string key = keyStr;
-        
-        // Parse modifiers
-        auto findAndRemove = [&key](const std::string& mod, UINT flag, UINT& mods) {
-            size_t pos;
-            std::string lowerKey = key;
-            std::transform(lowerKey.begin(), lowerKey.end(), lowerKey.begin(), ::tolower);
-            std::string lowerMod = mod;
-            std::transform(lowerMod.begin(), lowerMod.end(), lowerMod.begin(), ::tolower);
-            
-            while ((pos = lowerKey.find(lowerMod + "+")) != std::string::npos) {
-                mods |= flag;
-                key.erase(pos, mod.length() + 1);
-                lowerKey.erase(pos, lowerMod.length() + 1);
-            }
-        };
-        
-        findAndRemove("Ctrl", MOD_CONTROL, modifiers);
-        findAndRemove("Control", MOD_CONTROL, modifiers);
-        findAndRemove("Alt", MOD_ALT, modifiers);
-        findAndRemove("Shift", MOD_SHIFT, modifiers);
-        findAndRemove("Win", MOD_WIN, modifiers);
-        
-        // Trim whitespace
-        while (!key.empty() && (key[0] == ' ' || key[0] == '+'))
-            key = key.substr(1);
-        while (!key.empty() && (key.back() == ' ' || key.back() == '+'))
-            key.pop_back();
-        
-        // Convert key to uppercase for comparison
-        std::string upperKey = key;
-        std::transform(upperKey.begin(), upperKey.end(), upperKey.begin(), ::toupper);
-        
-        // Map key name to virtual key
-        static const std::map<std::string, UINT> keyMap = {
-            // Letters
-            {"A", 'A'}, {"B", 'B'}, {"C", 'C'}, {"D", 'D'}, {"E", 'E'},
-            {"F", 'F'}, {"G", 'G'}, {"H", 'H'}, {"I", 'I'}, {"J", 'J'},
-            {"K", 'K'}, {"L", 'L'}, {"M", 'M'}, {"N", 'N'}, {"O", 'O'},
-            {"P", 'P'}, {"Q", 'Q'}, {"R", 'R'}, {"S", 'S'}, {"T", 'T'},
-            {"U", 'U'}, {"V", 'V'}, {"W", 'W'}, {"X", 'X'}, {"Y", 'Y'}, {"Z", 'Z'},
-            
-            // Numbers
-            {"0", '0'}, {"1", '1'}, {"2", '2'}, {"3", '3'}, {"4", '4'},
-            {"5", '5'}, {"6", '6'}, {"7", '7'}, {"8", '8'}, {"9", '9'},
-            
-            // Function keys
-            {"F1", VK_F1}, {"F2", VK_F2}, {"F3", VK_F3}, {"F4", VK_F4},
-            {"F5", VK_F5}, {"F6", VK_F6}, {"F7", VK_F7}, {"F8", VK_F8},
-            {"F9", VK_F9}, {"F10", VK_F10}, {"F11", VK_F11}, {"F12", VK_F12},
-            
-            // Special keys
-            {"SPACE", VK_SPACE}, {"ENTER", VK_RETURN}, {"RETURN", VK_RETURN},
-            {"TAB", VK_TAB}, {"ESCAPE", VK_ESCAPE}, {"ESC", VK_ESCAPE},
-            {"BACKSPACE", VK_BACK}, {"DELETE", VK_DELETE}, {"DEL", VK_DELETE},
-            {"INSERT", VK_INSERT}, {"INS", VK_INSERT},
-            {"HOME", VK_HOME}, {"END", VK_END},
-            {"PAGEUP", VK_PRIOR}, {"PAGEDOWN", VK_NEXT},
-            {"UP", VK_UP}, {"DOWN", VK_DOWN}, {"LEFT", VK_LEFT}, {"RIGHT", VK_RIGHT},
-            
-            // Media keys
-            {"PLAYPAUSE", VK_MEDIA_PLAY_PAUSE}, {"MEDIASTOP", VK_MEDIA_STOP},
-            {"NEXTTRACK", VK_MEDIA_NEXT_TRACK}, {"PREVTRACK", VK_MEDIA_PREV_TRACK},
-            {"VOLUMEUP", VK_VOLUME_UP}, {"VOLUMEDOWN", VK_VOLUME_DOWN},
-            {"VOLUMEMUTE", VK_VOLUME_MUTE},
-            
-            // Punctuation
-            {"-", VK_OEM_MINUS}, {"=", VK_OEM_PLUS},
-            {"[", VK_OEM_4}, {"]", VK_OEM_6},
-            {";", VK_OEM_1}, {"'", VK_OEM_7},
-            {",", VK_OEM_COMMA}, {".", VK_OEM_PERIOD},
-            {"/", VK_OEM_2}, {"\\", VK_OEM_5},
-            {"`", VK_OEM_3},
-        };
-        
-        auto it = keyMap.find(upperKey);
-        if (it != keyMap.end()) {
-            vk = it->second;
-            return true;
+
+    constexpr wchar_t kHotkeyWindowClass[] = L"foo_ui_webview2_HotkeyWindow";
+    HWND g_hotkeyWindow = nullptr;
+    bool g_hotkeyClassRegistered = false;
+
+    LRESULT CALLBACK HotkeyWindowProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
+        if (msg == WM_HOTKEY) {
+            ProcessHotkeyMessage(static_cast<int>(wParam));
+            return 0;
         }
-        
-        // Single character
-        if (upperKey.length() == 1) {
-            unsigned char c = static_cast<unsigned char>(upperKey[0]);
-            if ((c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9')) {
-                vk = static_cast<UINT>(c);
-                return true;
+        return DefWindowProcW(hwnd, msg, wParam, lParam);
+    }
+
+    HWND EnsureHotkeyWindow() {
+        if (g_hotkeyWindow && IsWindow(g_hotkeyWindow)) return g_hotkeyWindow;
+        HINSTANCE instance = core_api::get_my_instance();
+        if (!g_hotkeyClassRegistered) {
+            WNDCLASSEXW wc{};
+            wc.cbSize = sizeof(wc);
+            wc.lpfnWndProc = HotkeyWindowProc;
+            wc.hInstance = instance;
+            wc.lpszClassName = kHotkeyWindowClass;
+            if (!RegisterClassExW(&wc) && GetLastError() != ERROR_CLASS_ALREADY_EXISTS) {
+                return nullptr;
+            }
+            g_hotkeyClassRegistered = true;
+        }
+        g_hotkeyWindow = CreateWindowExW(0, kHotkeyWindowClass, L"", 0, 0, 0, 0, 0,
+                                         HWND_MESSAGE, nullptr, instance, nullptr);
+        return g_hotkeyWindow;
+    }
+
+    // 取一个未被占用的 id；表满时返回 0。调用方持有 g_hotkeyMutex。
+    int AllocateHotkeyIdLocked() {
+        for (int tries = 0; tries < kMaxHotkeyId; ++tries) {
+            if (g_nextHotkeyId < 1 || g_nextHotkeyId > kMaxHotkeyId) g_nextHotkeyId = 1;
+            const int id = g_nextHotkeyId++;
+            if (!g_hotkeys.contains(id)) return id;
+        }
+        return 0;
+    }
+
+    // 注销并移除满足条件的热键。调用方持有 g_hotkeyMutex。
+    template <typename Pred>
+    size_t RemoveHotkeysLocked(Pred pred) {
+        size_t removed = 0;
+        for (auto it = g_hotkeys.begin(); it != g_hotkeys.end();) {
+            if (pred(it->second)) {
+                if (g_hotkeyWindow) UnregisterHotKey(g_hotkeyWindow, it->first);
+                it = g_hotkeys.erase(it);
+                ++removed;
+            } else {
+                ++it;
             }
         }
-        
-        return false;
+        return removed;
     }
 
     //==========================================================================
@@ -151,23 +132,43 @@ namespace {
         if (!ParseKeyString(p.key, modifiers, vk) || vk == 0) {
             return api::Fail("Invalid key string: " + p.key, ApiErrorCode::INVALID_PARAMS);
         }
+        if (const char* reason = keyboard_hotkey_rules::RejectReason(modifiers, vk)) {
+            return api::Fail("Hotkey " + p.key + " " + reason, ApiErrorCode::INVALID_PARAMS);
+        }
 
-        HWND hwnd = GetMainWindowHandle();
+        HWND hwnd = EnsureHotkeyWindow();
         if (!hwnd) {
-            return api::Fail("Window not available", ApiErrorCode::OPERATION_FAILED);
+            const DWORD error = GetLastError();
+            return api::Fail("Hotkey window not available (error " + std::to_string(error) + ")",
+                             ApiErrorCode::OPERATION_FAILED, {{"details", json{{"win32Error", error}}}});
         }
 
         std::lock_guard<std::mutex> lock(g_hotkeyMutex);
 
-        int id = g_nextHotkeyId++;
+        // 系统对同一线程上重复的组合同样报 1409，先查自己的表，才能说清是谁持有。
+        for (const auto& [heldId, held] : g_hotkeys) {
+            if (held.modifiers == modifiers && held.vk == vk) {
+                const std::string holder = held.callerWindowId.empty() ? "an unknown window" : "window " + held.callerWindowId;
+                return api::Fail("Hotkey " + p.key + " is already registered by " + holder + " of this component (id " +
+                                     std::to_string(heldId) + ")",
+                                 ApiErrorCode::OPERATION_FAILED, {{"details", json{{"id", heldId}, {"windowId", held.callerWindowId}}}});
+            }
+        }
 
-        // Register with Windows
-        // Note: Add MOD_NOREPEAT to prevent repeated WM_HOTKEY when key is held
+        const int id = AllocateHotkeyIdLocked();
+        if (id == 0) {
+            return api::Fail("No hotkey id left", ApiErrorCode::OPERATION_FAILED);
+        }
+
+        // MOD_NOREPEAT: holding the keys down does not repeat WM_HOTKEY.
         if (!RegisterHotKey(hwnd, id, modifiers | MOD_NOREPEAT, vk)) {
-            DWORD error = GetLastError();
-            return api::Fail(
-                "Failed to register hotkey (error " + std::to_string(error) + "). Key may already be registered.",
-                ApiErrorCode::OPERATION_FAILED);
+            const DWORD error = GetLastError();
+            if (error == ERROR_HOTKEY_ALREADY_REGISTERED) {
+                return api::Fail("Hotkey " + p.key + " is held by another program or by a global shortcut of foobar2000",
+                                 ApiErrorCode::OPERATION_FAILED, {{"details", json{{"win32Error", error}}}});
+            }
+            return api::Fail("Failed to register hotkey " + p.key + " (error " + std::to_string(error) + ")",
+                             ApiErrorCode::OPERATION_FAILED, {{"details", json{{"win32Error", error}}}});
         }
 
         // Store hotkey info (capture caller identity for panel-mode routing)
@@ -190,6 +191,7 @@ namespace {
 
     //==========================================================================
     // keyboard.registerShortcut - Register WebView shortcut (non-global)
+    // 已废弃：只登记，没有任何代码按它匹配按键；3.0 移除。
     //==========================================================================
     api::Result<void> KeyboardRegisterShortcut(const keyboard::RegisterShortcutParams& p) {
         UINT modifiers, vk;
@@ -223,16 +225,14 @@ namespace {
             return api::Fail("id and key cannot both be given", ApiErrorCode::INVALID_PARAMS);
         }
 
-        HWND hwnd = GetMainWindowHandle();
-
         std::lock_guard<std::mutex> lock(g_hotkeyMutex);
 
         if (p.id) {
             // Unregister by ID
             auto it = g_hotkeys.find(static_cast<int>(*p.id));
             if (it != g_hotkeys.end()) {
-                if (hwnd) {
-                    UnregisterHotKey(hwnd, it->first);
+                if (g_hotkeyWindow) {
+                    UnregisterHotKey(g_hotkeyWindow, it->first);
                 }
                 g_hotkeys.erase(it);
                 return api::Ok();
@@ -241,8 +241,8 @@ namespace {
             // Unregister by key string
             for (auto it = g_hotkeys.begin(); it != g_hotkeys.end(); ++it) {
                 if (it->second.key == *p.key) {
-                    if (hwnd) {
-                        UnregisterHotKey(hwnd, it->first);
+                    if (g_hotkeyWindow) {
+                        UnregisterHotKey(g_hotkeyWindow, it->first);
                     }
                     g_hotkeys.erase(it);
                     return api::Ok();
@@ -273,6 +273,7 @@ namespace {
             row.key = info.key;
             row.action = info.action;
             row.global = info.isGlobal;
+            if (!info.callerWindowId.empty()) row.windowId = info.callerWindowId;
             result.hotkeys.push_back(std::move(row));
         }
         for (const auto& [key, info] : g_shortcuts) {
@@ -286,38 +287,119 @@ namespace {
         return result;
     }
 
+    //==========================================================================
+    // keyboard.setReservedKeys - Keys that stay with the page
+    //==========================================================================
+    api::Result<void> KeyboardSetReservedKeys(const keyboard::SetReservedKeysParams& p, const CallerContext& caller) {
+        std::set<std::pair<UINT, UINT>> keys;
+        for (const std::string& key : p.keys) {
+            UINT modifiers, vk;
+            if (!ParseKeyString(key, modifiers, vk) || vk == 0) {
+                return api::Fail("Invalid key string: " + key, ApiErrorCode::INVALID_PARAMS);
+            }
+            keys.emplace(modifiers, vk);
+        }
+
+        std::lock_guard<std::mutex> lock(g_hotkeyMutex);
+        if (keys.empty()) {
+            g_reservedKeys.erase(caller.callerHwnd);
+        } else {
+            g_reservedKeys[caller.callerHwnd] = std::move(keys);
+        }
+        if (p.all) {
+            g_reservedAllPages.insert(caller.callerHwnd);
+        } else {
+            g_reservedAllPages.erase(caller.callerHwnd);
+        }
+        return api::Ok();
+    }
+
+    //==========================================================================
+    // 退出时注销全部热键并销毁消息窗口
+    //==========================================================================
+    class HotkeyShutdownInitQuit : public initquit {
+    public:
+        void on_quit() override {
+            // 从 on_quit 抛出会打断宿主的关停序列，自己兜住
+            try {
+                std::lock_guard<std::mutex> lock(g_hotkeyMutex);
+                RemoveHotkeysLocked([](const HotkeyInfo&) { return true; });
+                g_shortcuts.clear();
+                g_reservedKeys.clear();
+                g_reservedAllPages.clear();
+                if (g_hotkeyWindow) {
+                    DestroyWindow(g_hotkeyWindow);
+                    g_hotkeyWindow = nullptr;
+                }
+                if (g_hotkeyClassRegistered) {
+                    UnregisterClassW(kHotkeyWindowClass, core_api::get_my_instance());
+                    g_hotkeyClassRegistered = false;
+                }
+            } catch (...) {
+            }
+        }
+    };
+
+    static initquit_factory_t<HotkeyShutdownInitQuit> g_hotkey_shutdown_initquit;
+
 } // anonymous namespace
 
 //==========================================================================
 // Process hotkey message from WM_HOTKEY
 //==========================================================================
 void ProcessHotkeyMessage(int id) {
-    std::lock_guard<std::mutex> lock(g_hotkeyMutex);
-
-    auto it = g_hotkeys.find(id);
-    if (it != g_hotkeys.end()) {
-        using Hotkey = keyboard::events::Hotkey;
-        keyboard::HotkeyPayload payload;
+    keyboard::HotkeyPayload payload;
+    std::string callerWindowId;
+    HWND callerHwnd = nullptr;
+    {
+        std::lock_guard<std::mutex> lock(g_hotkeyMutex);
+        auto it = g_hotkeys.find(id);
+        if (it == g_hotkeys.end()) return;
         payload.id = id;
         payload.key = it->second.key;
         payload.action = it->second.action;
-        // 路由到注册此 hotkey 的调用者实例。注册窗口关闭时热键不会注销，
-        // 前两级都找不到该窗口，按键落到单例 bridge（主窗口的页面）。
-        auto& wvc = WebViewContext::GetInstance();
-        bool sent = false;
-        if (!it->second.callerWindowId.empty()) {
-            sent = api::emit::SendTo<Hotkey>(it->second.callerWindowId, payload);
-        }
-        if (!sent && it->second.callerHwnd) {
-            if (auto* bridge = wvc.GetBridge(it->second.callerHwnd)) {
-                api::emit::Emit<Hotkey>(*bridge, payload);
-                sent = true;
-            }
-        }
-        if (!sent) {
-            api::emit::Emit<Hotkey>(BridgeCore::GetInstance(), payload);
+        callerWindowId = it->second.callerWindowId;
+        callerHwnd = it->second.callerHwnd;
+    }
+
+    // 投递时不持锁：页面收到事件后可能立即调用本命名空间的方法。
+    // 路由到注册此 hotkey 的调用者实例；两级都找不到时落到单例 bridge（主窗口的页面）。
+    // 窗口关闭与页面导航会注销它名下的热键（CleanupPageKeyboard），正常情况下前两级总能命中。
+    using Hotkey = keyboard::events::Hotkey;
+    auto& wvc = WebViewContext::GetInstance();
+    bool sent = false;
+    if (!callerWindowId.empty()) {
+        sent = api::emit::SendTo<Hotkey>(callerWindowId, payload);
+    }
+    if (!sent && callerHwnd) {
+        if (auto* bridge = wvc.GetBridge(callerHwnd)) {
+            api::emit::Emit<Hotkey>(*bridge, payload);
+            sent = true;
         }
     }
+    if (!sent) {
+        api::emit::Emit<Hotkey>(BridgeCore::GetInstance(), payload);
+    }
+}
+
+//==========================================================================
+// Release what a page registered: its hotkeys and its reserved keys
+//==========================================================================
+void CleanupPageKeyboard(HWND page) {
+    if (!page) return;
+    std::lock_guard<std::mutex> lock(g_hotkeyMutex);
+    RemoveHotkeysLocked([page](const HotkeyInfo& info) { return info.callerHwnd == page; });
+    g_reservedKeys.erase(page);
+    g_reservedAllPages.erase(page);
+}
+
+bool IsReservedKey(HWND page, UINT vk, UINT modifiers) {
+    std::lock_guard<std::mutex> lock(g_hotkeyMutex);
+    if (g_reservedAllPages.contains(page)) return true;
+    const auto it = g_reservedKeys.find(page);
+    if (it == g_reservedKeys.end()) return false;
+    const UINT mods = modifiers & (MOD_CONTROL | MOD_ALT | MOD_SHIFT | MOD_WIN);
+    return it->second.contains({mods, vk});
 }
 
 //==========================================================================
@@ -336,5 +418,8 @@ void RegisterKeyboardApi() {
     // keyboard.getRegisteredHotkeys - List registered hotkeys
     api::RegisterApi("keyboard.getRegisteredHotkeys", KeyboardGetRegisteredHotkeys);
 
-    LOG("Keyboard API registered (4 APIs)");
+    // keyboard.setReservedKeys - Keys that stay with the page
+    api::RegisterApi("keyboard.setReservedKeys", KeyboardSetReservedKeys);
+
+    LOG("Keyboard API registered (5 APIs)");
 }

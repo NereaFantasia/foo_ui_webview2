@@ -966,12 +966,13 @@ inline bool FromJson(const json& j, GetAutoplaylistInfoParams& out, std::string&
 }
 
 struct GetAutoplaylistQueryResult {
-    static constexpr std::array<std::string_view, 8> kFields{{"isAutoplaylist", "playlist", "playlistGuid", "query", "keepSorted", "source", "note", "lockName"}};
+    static constexpr std::array<std::string_view, 9> kFields{{"isAutoplaylist", "playlist", "playlistGuid", "query", "sort", "keepSorted", "source", "note", "lockName"}};
 
     bool isAutoplaylist{};
     std::int64_t playlist{};
     std::string playlistGuid{};
     std::optional<std::string> query{};
+    std::optional<std::string> sort{};
     std::optional<bool> keepSorted{};
     std::optional<std::string> source{};
     std::optional<std::string> note{};
@@ -984,6 +985,7 @@ inline json ToJson(const GetAutoplaylistQueryResult& v) {
     api::results::Put(j, "playlist", v.playlist);
     api::results::Put(j, "playlistGuid", v.playlistGuid);
     api::results::PutNullable(j, "query", v.query);
+    api::results::PutNullable(j, "sort", v.sort);
     api::results::Put(j, "keepSorted", v.keepSorted);
     api::results::Put(j, "source", v.source);
     api::results::Put(j, "note", v.note);

@@ -31,8 +31,8 @@ HRESULT WebViewHost::SetBackgroundTransparent(bool transparent) {
             // 完全透明背景 - 让 DWM 效果穿透
             bgColor = { 0, 0, 0, 0 };  // Alpha = 0
         } else {
-            // 不透明深色背景
-            bgColor = { 255, 30, 30, 30 };  // #1e1e1e
+            bgColor = { 255, GetRValue(opaqueBackground_), GetGValue(opaqueBackground_),
+                        GetBValue(opaqueBackground_) };
         }
         
         window_behavior_trace::Com(parentHwnd_, "controller.put_DefaultBackgroundColor", transparent ? 0 : 255);
@@ -44,6 +44,12 @@ HRESULT WebViewHost::SetBackgroundTransparent(bool transparent) {
     }
     
     return hr;
+}
+
+HRESULT WebViewHost::SetOpaqueBackgroundColor(COLORREF color) {
+    opaqueBackground_ = color;
+    if (!controller_ || isBackgroundTransparent_) return S_OK;
+    return SetBackgroundTransparent(false);
 }
 
 void WebViewHost::RefreshForDwmEffect() {
@@ -69,7 +75,8 @@ void WebViewHost::RefreshForDwmEffect() {
     if (SUCCEEDED(controller_->QueryInterface(IID_PPV_ARGS(&controller2))) && controller2) {
         const COREWEBVIEW2_COLOR bgColor = isBackgroundTransparent_
             ? COREWEBVIEW2_COLOR{ 0, 0, 0, 0 }
-            : COREWEBVIEW2_COLOR{ 255, 30, 30, 30 };
+            : COREWEBVIEW2_COLOR{ 255, GetRValue(opaqueBackground_), GetGValue(opaqueBackground_),
+                                  GetBValue(opaqueBackground_) };
         window_behavior_trace::Com(parentHwnd_, "controller.put_DefaultBackgroundColor",
                                    isBackgroundTransparent_ ? 0 : 255);
         controller2->put_DefaultBackgroundColor(bgColor);

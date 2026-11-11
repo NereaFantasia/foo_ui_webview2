@@ -1,4 +1,4 @@
-#include "pch.h"
+﻿#include "pch.h"
 #include "ArtworkRequestParser.h"
 
 #include <limits>
@@ -9,7 +9,8 @@ namespace {
 
 constexpr std::string_view kFb2kPrefix = "fb2k://artwork/";
 constexpr std::string_view kArtworkPrefix = "artwork://";
-constexpr std::string_view kSameOriginPrefix = "https://foo-ui-webview2.local/fb2k-artwork/";
+// 不能用做过虚拟主机映射的主机名，原因见 media/MediaService.h 的 kUrlPrefix。
+constexpr std::string_view kHttpsPrefix = "https://fb2k-routes.invalid/fb2k-artwork/";
 
 struct RouteMatch {
     Route route;
@@ -30,8 +31,8 @@ std::optional<RouteMatch> MatchRoute(std::string_view uri) noexcept {
     if (uri.starts_with(kArtworkPrefix)) {
         return RouteMatch{Route::ArtworkScheme, kArtworkPrefix.size()};
     }
-    if (uri.starts_with(kSameOriginPrefix)) {
-        return RouteMatch{Route::SameOriginHttps, kSameOriginPrefix.size()};
+    if (uri.starts_with(kHttpsPrefix)) {
+        return RouteMatch{Route::Https, kHttpsPrefix.size()};
     }
     return std::nullopt;
 }

@@ -59,8 +59,11 @@ export interface Api {
   /**
    * Queue a tag write to one track and return at once. foobar2000 writes the file in the
    * background and reports the outcome as `metadata:writeComplete`, broadcast to every window. A
-   * request that leaves nothing to write succeeds without dispatching.
-   * @zh 将针对单个曲目的标签写入请求加入后台队列并立即返回；foobar2000 宿主在后台线程执行物理文件写入，并在操作完成后向所有窗口广播 `metadata:writeComplete` 事件；请求中未包含有效待写标签时直接返回成功且不派发后台写入
+   * request that leaves nothing to write succeeds without dispatching. A WAV file that would hold
+   * non-ASCII tag text after the write is refused with `NOT_SUPPORTED` (`details.reason` is
+   * `wavInfoNonAscii`) and left untouched, because foobar2000 stores WAV tag text as ASCII in the
+   * RIFF INFO chunk and turns every other character into `?`.
+   * @zh 将针对单个曲目的标签写入请求加入后台队列并立即返回；foobar2000 宿主在后台线程执行物理文件写入，并在操作完成后向所有窗口广播 `metadata:writeComplete` 事件；请求中未包含有效待写标签时直接返回成功且不派发后台写入；目标为 WAV 且写入后标签含非 ASCII 文本时以 `NOT_SUPPORTED` 拒绝（`details.reason` 为 `wavInfoNonAscii`）且不改动文件，因为 foobar2000 在 WAV 的 RIFF INFO 块里只存 ASCII，其余字符一律写成 `?`
    * @effect destructive
    * @idempotent
    */
@@ -100,8 +103,9 @@ export interface Api {
 
   /**
    * Queue the removal of tags from one track and return at once. The outcome arrives as
-   * `metadata:writeComplete` with `operation: "removeTag"`, broadcast to every window.
-   * @zh 将针对单个曲目的标签删除请求加入后台队列并立即返回；操作完成后向所有窗口广播 `operation: "removeTag"` 的 `metadata:writeComplete` 事件
+   * `metadata:writeComplete` with `operation: "removeTag"`, broadcast to every window. A WAV file
+   * that would hold non-ASCII tag text after the removal is refused as in `metadata.write`.
+   * @zh 将针对单个曲目的标签删除请求加入后台队列并立即返回；操作完成后向所有窗口广播 `operation: "removeTag"` 的 `metadata:writeComplete` 事件；目标为 WAV 且删除后标签仍含非 ASCII 文本时与 `metadata.write` 一样被拒绝
    */
   removeTag(params: RemoveTagParams): RemoveTagResult;
 

@@ -110,7 +110,7 @@ advconfig_i18n::CheckboxFactory g_cfg_cdp_keepalive(
 // 本地网络访问开关 (默认关闭) - SSRF 防护用。fb.http.* 每次请求实时读取，不需要重启。
 advconfig_i18n::CheckboxFactory g_cfg_local_network(
     {"Allow HTTP access to local network (127.0.0.1, 192.168.x.x)",
-     "允许 HTTP 访问本地网络 (127.0.0.1、192.168.x.x)"},
+     "允许 HTTP 访问本地网络（127.0.0.1、192.168.x.x）"},
     guid_adv_local_network,
     guid_adv_branch_webview,
     1.0,

@@ -4,8 +4,9 @@ export interface Api {
   /**
    * Read the picture of the playing track. Three lookups are tried in order and `source`
    * names the one that answered; `available: false` with `reason: "no_track"` when nothing
-   * is playing and `reason: "not_found"` when none of them had a picture.
-   * @zh 读取当前正在播放曲目的封面图片；按顺序尝试三种检索策略并在 `source` 中指明胜出源；未在播放时返回 `available: false`（`reason: "no_track"`），均未查得图片时返回 `reason: "not_found"`
+   * is playing and `reason: "not_found"` when none of them had a picture. A file that is only in
+   * the cloud and not yet downloaded is not opened, so the file lookups find nothing.
+   * @zh 读取当前正在播放曲目的封面图片；按顺序尝试三种检索策略并在 `source` 中指明胜出源；未在播放时返回 `available: false`（`reason: "no_track"`），均未查得图片时返回 `reason: "not_found"`；仅在云端、尚未下载的文件不会被打开，基于文件的检索视为无图片
    * @effect read
    */
   getCurrent(params: GetCurrentParams): GetCurrentResult;
@@ -13,16 +14,18 @@ export interface Api {
   /**
    * Read a picture straight from the file at `path` with the album art extractor. The
    * `|subsong:N` suffix is dropped, since pictures belong to the file; a `file-relative://`
-   * path is refused with `INVALID_PATH`, because only a playlist row can resolve it.
-   * @zh 使用专辑封面提取器直接从指定文件路径中读取内嵌图片；自动剥离 `|subsong:N` 子曲目后缀（图片归属于物理文件本身）；`file-relative://` 相对路径以 `INVALID_PATH` 拒绝（仅播放列表行可解析该协议）
+   * path is refused with `INVALID_PATH`, because only a playlist row can resolve it. A file that
+   * is only in the cloud and not yet downloaded is not opened and has no picture.
+   * @zh 使用专辑封面提取器直接从指定文件路径中读取内嵌图片；自动剥离 `|subsong:N` 子曲目后缀（图片归属于物理文件本身）；`file-relative://` 相对路径以 `INVALID_PATH` 拒绝（仅播放列表行可解析该协议）；仅在云端、尚未下载的文件不会被打开，按无图片处理
    */
   getByPath(params: GetByPathParams): GetByPathResult;
 
   /**
    * Read a picture through the album art manager, which also finds folder covers, and measure
    * it. `width` and `height` are read from the PNG header and are `0` for other formats. A
-   * `file-relative://` path is refused with `INVALID_PATH`.
-   * @zh 通过专辑封面管理器读取曲目封面（包含内嵌封面及所在目录的外置封面文件）并获取尺寸；从 PNG 头信息解析 `width` 与 `height`（其他格式返回 `0`）；`file-relative://` 路径以 `INVALID_PATH` 拒绝
+   * `file-relative://` path is refused with `INVALID_PATH`. A file that is only in the cloud and
+   * not yet downloaded is not opened and has no picture.
+   * @zh 通过专辑封面管理器读取曲目封面（包含内嵌封面及所在目录的外置封面文件）并获取尺寸；从 PNG 头信息解析 `width` 与 `height`（其他格式返回 `0`）；`file-relative://` 路径以 `INVALID_PATH` 拒绝；仅在云端、尚未下载的文件不会被打开，按无图片处理
    * @effect read
    */
   getForTrack(params: GetForTrackParams): GetForTrackResult;
@@ -33,8 +36,9 @@ export interface Api {
    * an empty playlist included, fails with `NOT_FOUND`. A playlist index past the last playlist
    * fails with `INVALID_INDEX`, a `playlistGuid` no playlist has with `NOT_FOUND`, and no active
    * playlist when the active one is meant with `NO_ACTIVE_ITEM`. A row without the picture is a
-   * success with `available` `false`.
-   * @zh 通过专辑封面管理器读取指定播放列表行的封面图片；传入负数 `playlist` 表示活动播放列表，传入负数 `index` 表示首行；行索引越界或空列表以 `NOT_FOUND` 失败，播放列表索引越界以 `INVALID_INDEX` 失败，`playlistGuid` 不存在以 `NOT_FOUND` 失败，未指定且无活动播放列表时以 `NO_ACTIVE_ITEM` 失败；该行无图片时成功返回 `available: false`
+   * success with `available` `false`; so is a row whose file is only in the cloud and not yet
+   * downloaded, which is not opened.
+   * @zh 通过专辑封面管理器读取指定播放列表行的封面图片；传入负数 `playlist` 表示活动播放列表，传入负数 `index` 表示首行；行索引越界或空列表以 `NOT_FOUND` 失败，播放列表索引越界以 `INVALID_INDEX` 失败，`playlistGuid` 不存在以 `NOT_FOUND` 失败，未指定且无活动播放列表时以 `NO_ACTIVE_ITEM` 失败；该行无图片时成功返回 `available: false`，文件仅在云端、尚未下载时同样如此，且不会被打开
    */
   getByPlaylistItem(params: GetByPlaylistItemParams): GetByPlaylistItemResult;
 
@@ -42,8 +46,9 @@ export interface Api {
    * List the picture types embedded in a file, in the fixed probe order front, back, disc,
    * icon, artist. Without `path` the playing track is used; with nothing playing the call
    * fails with `NO_ACTIVE_ITEM`. A file that is missing, cannot be read or has a format without
-   * embedded pictures is not an error: it lists no types.
-   * @zh 列出指定音频文件内嵌的图片类型列表，按固定探测顺序（front、back、disc、icon、artist）排列；省略 `path` 时检测当前播放曲目（未播放时以 `NO_ACTIVE_ITEM` 失败）；文件缺失、不可读或格式不支持内嵌图片时不报错，返回空类型列表
+   * embedded pictures is not an error: it lists no types. A file that is only in the cloud and
+   * not yet downloaded is not opened and lists no types either.
+   * @zh 列出指定音频文件内嵌的图片类型列表，按固定探测顺序（front、back、disc、icon、artist）排列；省略 `path` 时检测当前播放曲目（未播放时以 `NO_ACTIVE_ITEM` 失败）；文件缺失、不可读或格式不支持内嵌图片时不报错，返回空类型列表；仅在云端、尚未下载的文件不会被打开，同样返回空类型列表
    */
   getAvailableTypes(params: GetAvailableTypesParams): GetAvailableTypesResult;
 
@@ -89,21 +94,25 @@ export interface Api {
    * whatever the cache has, which can be blank. Without `path` the playing track is used; with
    * nothing playing the call fails with `NO_ACTIVE_ITEM`. A path no track can be made for fails
    * with `NOT_FOUND`, a local file that cannot be read with `OPERATION_FAILED`. Invalid UTF-8
-   * in returned tag values is replaced with U+FFFD without changing the file.
-   * @zh 读取曲目的专辑级基本标签，并检测文件是否内嵌图片或包含歌词标签；缓存完备时优先取自缓存，未缓存的本地文件从磁盘读取；省略 `path` 时检测当前播放曲目（未播放时以 `NO_ACTIVE_ITEM` 失败）；无法解析曲目以 `NOT_FOUND` 失败，文件不可读以 `OPERATION_FAILED` 失败；返回标签中的非法 UTF-8 替换为 U+FFFD 且不修改原文件
+   * in returned tag values is replaced with U+FFFD without changing the file. A file that is only
+   * in the cloud and not yet downloaded is not opened for the picture check, so `hasEmbedded` is
+   * `false`.
+   * @zh 读取曲目的专辑级基本标签，并检测文件是否内嵌图片或包含歌词标签；缓存完备时优先取自缓存，未缓存的本地文件从磁盘读取；省略 `path` 时检测当前播放曲目（未播放时以 `NO_ACTIVE_ITEM` 失败）；无法解析曲目以 `NOT_FOUND` 失败，文件不可读以 `OPERATION_FAILED` 失败；返回标签中的非法 UTF-8 替换为 U+FFFD 且不修改原文件；仅在云端、尚未下载的文件不会为检测图片而被打开，`hasEmbedded` 为 `false`
    */
   getMetadata(params: GetMetadataParams): GetMetadataResult;
 
   /**
    * Read one picture type from several files with the album art extractor, one row per path in
-   * the given order; a file without the picture gets a row with `available: false`.
-   * @zh 使用专辑封面提取器批量读取多个音频文件的同一种封面图片；按输入路径顺序逐行返回，目标文件未包含该图片类型时对应行返回 `available: false`
+   * the given order; a file without the picture gets a row with `available: false`, as does a
+   * file that is only in the cloud and not yet downloaded, which is not opened.
+   * @zh 使用专辑封面提取器批量读取多个音频文件的同一种封面图片；按输入路径顺序逐行返回，目标文件未包含该图片类型时对应行返回 `available: false`，文件仅在云端、尚未下载时同样如此，且不会被打开
    */
   getBatch(params: GetBatchParams): GetBatchResult;
 
   /**
-   * Report which picture types a file embeds and which cover files sit next to it.
-   * @zh 探测指定文件内嵌的图片类型以及同目录下存在的外置封面文件
+   * Report which picture types a file embeds and which cover files sit next to it. A file that
+   * is only in the cloud and not yet downloaded is not opened, so it embeds no pictures.
+   * @zh 探测指定文件内嵌的图片类型以及同目录下存在的外置封面文件；仅在云端、尚未下载的文件不会被打开，视为无内嵌图片
    */
   getAvailableArtwork(params: GetAvailableArtworkParams): GetAvailableArtworkResult;
 

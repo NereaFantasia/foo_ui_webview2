@@ -9,6 +9,7 @@
 #include "prefs/PreferencesFields.h"
 #include "prefs/PreferencesZoom.h"
 #include "prefs/PreferencesCdpPort.h"
+#include "webview/HostShortcutRelay.h"
 #include "webview/WebViewHost.h"
 #include "settings/AdvancedConfig.h"
 #include "settings/SecurityConfig.h"
@@ -86,6 +87,11 @@ static constexpr GUID guid_cfg_taskbar_buttons =
 static constexpr GUID guid_cfg_taskbar_progress =
     { 0x9e4060d0, 0x2dc2, 0x477f, { 0xaa, 0x97, 0x0b, 0x73, 0xaa, 0xd9, 0xf7, 0x1e } };
 
+// Window 子页的快捷键转发范围，host_shortcut_relay::Category 的位掩码
+// {226357AB-0BA5-4A8D-B499-46C0400268D8}
+static constexpr GUID guid_cfg_shortcut_relay =
+    { 0x226357ab, 0x0ba5, 0x4a8d, { 0xb4, 0x99, 0x46, 0xc0, 0x40, 0x02, 0x68, 0xd8 } };
+
 // Performance 子页的预热开关与默认缩放。深度挂起的开关在 main.cpp（security_config），不在这里。
 // {FB43CF51-7672-4E15-BD55-9E617E5A8CFA}
 static constexpr GUID guid_cfg_preheat =
@@ -113,6 +119,8 @@ static cfg_var_modern::cfg_bool cfg_minimize_to_tray(guid_cfg_minimize_to_tray, 
 static cfg_var_modern::cfg_bool cfg_close_to_tray(guid_cfg_close_to_tray, false);
 static cfg_var_modern::cfg_bool cfg_taskbar_buttons(guid_cfg_taskbar_buttons, true);
 static cfg_var_modern::cfg_bool cfg_taskbar_progress(guid_cfg_taskbar_progress, false);
+static cfg_var_modern::cfg_int cfg_shortcut_relay(guid_cfg_shortcut_relay,
+                                                  static_cast<int>(host_shortcut_relay::kDefaultCategories));
 static cfg_var_modern::cfg_bool cfg_preheat(guid_cfg_preheat, true);
 static cfg_var_modern::cfg_int cfg_default_zoom_percent(guid_cfg_default_zoom_percent, prefs_zoom::kDefaultPercent);
 static cfg_var_modern::cfg_int cfg_cdp_port(guid_cfg_cdp_port, prefs_cdp::kDefaultPort);
@@ -223,7 +231,8 @@ bool CreateTemplate(const std::string& name) {
         body {
             font-family: 'Segoe UI', sans-serif;
             background: transparent;
-            color: white;
+            /* 中性灰：透明处透出宿主背景色，白字在浅色背景下看不见 */
+            color: #8a8a8a;
             display: flex;
             align-items: center;
             justify-content: center;
@@ -234,7 +243,7 @@ bool CreateTemplate(const std::string& name) {
             padding: 40px;
         }
         h1 { font-size: 2rem; margin-bottom: 1rem; }
-        p { opacity: 0.7; }
+        p { font-size: 0.9rem; }
     </style>
 </head>
 <body>
@@ -369,6 +378,18 @@ bool GetTaskbarProgressEnabled() {
 
 void SetTaskbarProgressEnabled(bool value) {
     cfg_taskbar_progress.set(value);
+}
+
+// ============================================
+// 快捷键转发范围（Window 子页）
+// ============================================
+
+unsigned GetShortcutRelayCategories() {
+    return static_cast<unsigned>(cfg_shortcut_relay.get()) & host_shortcut_relay::kAllCategories;
+}
+
+void SetShortcutRelayCategories(unsigned categories) {
+    cfg_shortcut_relay.set(static_cast<int>(categories & host_shortcut_relay::kAllCategories));
 }
 
 // ============================================
@@ -530,8 +551,8 @@ std::wstring WebViewPreferencesInstance::ValidationMessage(const prefs_draft::Va
         if (result.error == prefs_draft::ValidationError::Missing) {
             return TR("The selected template folder does not exist or has no index.html.\n"
                       "Create it with Manage... or choose another template, then apply again.",
-                      "所选模板目录不存在或没有 index.html。\n"
-                      "请用“管理...”创建，或改选其他模板后再应用。");
+                      "所选模板文件夹不存在或缺少 index.html。\n"
+                      "请通过“管理...”新建，或改选其他模板后再应用。");
         }
     }
     return PreferencesPageBase::ValidationMessage(result);
@@ -856,7 +877,7 @@ void WebViewPreferencesInstance::CreateControls(HWND hwnd) {
     createStatic(IDC_STATIC_PATH, TR("Template folder", "模板文件夹"), 0);
     // 只读但可选中、可横向滚动、可复制：完整路径留在控件里，不写省略串。
     createReadOnlyEdit(IDC_EDIT_PATH, WS_EX_CLIENTEDGE, WS_TABSTOP);
-    createButton(IDC_BTN_OPEN_FOLDER, TR("Open...", "打开..."), BS_PUSHBUTTON);
+    createButton(IDC_BTN_OPEN_FOLDER, TR("Open", "打开"), BS_PUSHBUTTON);
     
     // ---- Appearance ----
     createStatic(IDC_STATIC_LANGUAGE, TR("Component language", "组件语言"), 0);
@@ -871,8 +892,8 @@ void WebViewPreferencesInstance::CreateControls(HWND hwnd) {
     // 说明行只讲语言，排在语言下拉框之下、背景效果之上；背景效果 Apply 后即时刷新，不需要重启。
     // 语言切换不会重绘已创建的控件：TR/TRU 在控件创建时求值一次。
     createStatic(IDC_STATIC_LANGUAGE_NOTE,
-        TR("Component language: applies to newly opened component dialogs; menus and panel descriptions update after a restart.",
-           "组件语言：对新打开的组件对话框生效；菜单与面板描述在重启后更新。"), 0);
+        TR("Applies to newly opened component dialogs; menus and panel descriptions update after a restart.",
+           "对新打开的组件对话框生效；菜单与面板描述在重启后更新。"), 0);
     
     createStatic(IDC_STATIC_BACKDROP, TR("Default window backdrop", "默认窗口背景效果"), 0);
     HWND hComboBackdrop = createCombo(IDC_COMBO_BACKDROP);
@@ -894,7 +915,7 @@ void WebViewPreferencesInstance::CreateControls(HWND hwnd) {
     createStatic(IDC_STATIC_TOOLS_NOTE,
         TR("Window, performance and developer settings are on the sub-pages in the tree on the left; "
            "security exceptions are in Advanced Preferences under Tools > WebView2 UI.",
-           "窗口、性能、开发者设置在左侧子页；安全例外在 高级首选项 > Tools > WebView2 UI。"), 0);
+           "窗口、性能与开发者设置在左侧子页；安全例外请前往 高级首选项 > 工具 > WebView2 UI。"), 0);
     
     // 模板列表与路径
     RefreshTemplateList(hwnd);

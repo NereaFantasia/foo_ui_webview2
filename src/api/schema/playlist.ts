@@ -193,9 +193,13 @@ export interface Api {
   getAutoplaylistInfo(params: GetAutoplaylistInfoParams): GetAutoplaylistInfoResult;
 
   /**
-   * Describe a playlist's autoplaylist status without editor capability fields. foobar2000 does
-   * not expose the query of an autoplaylist, so `query` is always `null`.
-   * @zh 描述播放列表的自动列表状态，不包含编辑器能力字段。foobar2000 不公开自动播放列表的查询语句，所以 `query` 总是 `null`。
+   * Describe a playlist's autoplaylist status without editor capability fields, and read the
+   * query and sort of a list driven by foobar2000's built-in query/sort client. The read does
+   * not open UI or change the list; it reflects the client's current state on every call.
+   * Lists of any other provider (third-party, managed by this component, lock-only) and lists
+   * whose configuration cannot be decoded return `null` for both, with `note` saying which;
+   * `getAutoplaylistConfig` reads the managed ones.
+   * @zh 描述播放列表的自动列表状态（不含编辑器能力字段），并读出由 foobar2000 内置 query/sort 客户端驱动的列表的查询与排序。读取不打开界面、不改动列表，每次调用都反映客户端的当前状态。其他提供者（第三方、本组件托管、仅有锁）的列表，以及配置无法解码的列表，`query` 与 `sort` 都是 `null`，`note` 说明原因；托管列表用 `getAutoplaylistConfig` 读取。
    */
   getAutoplaylistQuery(params: GetAutoplaylistQueryParams): GetAutoplaylistQueryResult;
 
@@ -254,7 +258,7 @@ export interface Api {
   /**
    * Reverse the order of a playlist's tracks, saving an undo point first. A locked playlist fails
    * with `LOCKED`.
-   * @zh 把播放列表的曲目顺序倒过来，事先保存撤销点。已上锁的列表以 `LOCKED` 失败。
+   * @zh 反转播放列表中的曲目顺序，操作前自动保存撤销历史。若目标列表已锁定，以 `LOCKED` 失败。
    * @effect destructive
    */
   reverse(params: ReverseParams): void;
@@ -327,19 +331,19 @@ export interface Api {
   removeSelectedTracks(params: RemoveSelectedTracksParams): void;
 
   /**
-   * Move the selected rows of a playlist by `delta` positions, saving an undo point first. With
-   * `items`, the selection is first replaced by those rows; the caller's own selection is lost. A
-   * locked playlist fails with `LOCKED`.
-   * @zh 把播放列表中选中的行移动 `delta` 个位置，事先保存撤销点。给了 `items` 时先把选中换成这些行，调用方原有的选中随之丢失。已上锁的列表以 `LOCKED` 失败。
+   * Move the selected rows of a playlist by `delta` positions, saving an undo point first. When
+   * `items` is specified, it replaces the current selection before moving, and the caller's own selection is lost. A locked playlist fails
+   * with `LOCKED`.
+   * @zh 将播放列表中选中的曲目平移 `delta` 个位置，操作前自动保存撤销历史。若指定 `items`，移动前先用这些行替换现有选区，调用方原有的选区随之丢失。若目标列表已锁定，以 `LOCKED` 失败。
    * @effect destructive
    */
   moveTracks(params: MoveTracksParams): MoveTracksResult;
 
   /**
    * Play a row of a playlist, as double-clicking it does. A row past the last one fails with
-   * `INVALID_INDEX`. With `deferred`, `expectedVersion` is compared again when playback starts;
-   * if the rows changed by then, nothing plays.
-   * @zh 播放播放列表中的一行，与双击它相同。超出最后一行的行号以 `INVALID_INDEX` 失败。给了 `deferred` 时，开始播放前会再比对一次 `expectedVersion`；那时行已变过就不播放。
+   * `INVALID_INDEX`. With `deferred`, `expectedVersion` is verified again before starting playback;
+   * if rows changed in between, playback is skipped.
+   * @zh 播放指定索引的播放列表曲目，效果与双击该行相同。索引超出范围以 `INVALID_INDEX` 失败。若传入 `deferred: true`，实际起播前将校验列表 `contentVersion` 与 `expectedVersion` 是否一致；若列表内容已变更则取消起播。
    * @effect write
    */
   playTrack(params: PlayTrackParams): void;
@@ -438,13 +442,16 @@ export interface Api {
 
   /**
    * Replace the whole content of a playlist and play it: stop playback, clear the playlist
-   * (saving an undo point), add the paths as `playlist.addPaths` does, make the playlist active
-   * and play or focus `playIndex`. When nothing could be added the call fails with `NOT_FOUND`,
+   * (saving an undo point), add the paths in the given order as `playlist.addPathsSequential`
+   * does, make the playlist active and play or focus `playIndex`. Unlike `playlist.addPaths`,
+   * duplicates are kept and the user's incoming-item order is not applied. Entries longer than
+   * 2048 characters, and entries that resolve to nothing, are skipped. When nothing could be
+   * added the call fails with `NOT_FOUND`,
    * and the playlist stays empty. A locked playlist fails with `LOCKED` before anything changes.
    * The paths are resolved after the clear, as in `playlist.addPaths`: a playlist moved meanwhile
    * is still the one filled and played; one removed meanwhile fails with `OPERATION_FAILED`, and
    * one locked meanwhile fails with `LOCKED` and stays empty.
-   * @zh 替换播放列表的全部内容并播放：停止播放，清空列表（保存撤销点），按 `playlist.addPaths` 的方式加入路径，把列表设为活动列表，再播放或聚焦 `playIndex`。一首都没加上时以 `NOT_FOUND` 失败，列表保持为空。已上锁的列表在任何改动之前以 `LOCKED` 失败。路径在清空之后解析，处理同 `playlist.addPaths`：期间被挪动的列表照样被填充和播放；期间被删掉时以 `OPERATION_FAILED` 失败；期间被上锁时以 `LOCKED` 失败，列表保持为空。
+   * @zh 替换播放列表的全部内容并播放：停止播放，清空列表（保存撤销点），像 `playlist.addPathsSequential` 那样按传入顺序加入路径，把列表设为活动列表，再播放或聚焦 `playIndex`。与 `playlist.addPaths` 不同，重复项保留，也不按用户设置的新增项顺序排序。超过 2048 个字符的项与解析不出任何曲目的项跳过。一首都没加上时以 `NOT_FOUND` 失败，列表保持为空。已上锁的列表在任何改动之前以 `LOCKED` 失败。路径在清空之后解析，处理同 `playlist.addPaths`：期间被挪动的列表照样被填充和播放；期间被删掉时以 `OPERATION_FAILED` 失败；期间被上锁时以 `LOCKED` 失败，列表保持为空。
    * @effect destructive
    */
   replaceAllAndPlay(params: ReplaceAllAndPlayParams): ReplaceAllAndPlayResult;
@@ -503,11 +510,10 @@ export interface Api {
   /**
    * Rows of a playlist picked by row number, in the order given, such as the rows
    * `playlist.getMatchingRows` answers, which need not be adjacent. Each row is shaped as in
-   * `playlist.getTracks` and carries its `index`; a row past the last one is skipped, and a row
-   * given twice comes back twice. A playlist index past the last one, a `playlistGuid` no playlist
-   * has, and no active playlist when both are omitted, answer an empty result as
-   * `playlist.getTracks` does.
-   * @zh 按行号挑出的播放列表行，按传入顺序，例如 `playlist.getMatchingRows` 回答的那些不一定相邻的行。每行的形状与 `playlist.getTracks` 相同并带 `index`；超出最后一行的行号跳过，给了两次的行返回两次。播放列表索引超出最后一个、没有列表持有的 `playlistGuid`，以及两者都省略且没有活动播放列表时，与 `playlist.getTracks` 一样回答空结果。
+   * `playlist.getTracks` and carries its `index`; a row past the last one is skipped, and duplicate
+   * indices are returned multiple times. A playlist index past the last one, a `playlistGuid` that matches no playlist,
+   * or an omitted playlist with no active playlist returns an empty result set.
+   * @zh 按行号数组获取播放列表曲目，保持传入顺序，例如 `playlist.getMatchingRows` 返回的、不一定相邻的行。每行格式与 `playlist.getTracks` 相同并包含 `index` 字段；超出有效范围的行号将被忽略，重复指定的行号重复返回。若播放列表索引超出范围、指定的 `playlistGuid` 不存在，或未指定列表且当前无活动列表，均返回空结果。
    * @effect read
    */
   getTracksAt(params: GetTracksAtParams): GetTracksAtResult;
@@ -680,9 +686,8 @@ interface PlaylistTrack extends Track {
    */
   added?: string;
   /**
-   * The `formats` columns of `playlist.getTracks`, by the names given; present only when `formats`
-   * was passed.
-   * @zh `playlist.getTracks` 的 `formats` 列，按给定的列名；只在传了 `formats` 时出现。
+   * Named Title Formatting columns; present only when `formats` was requested.
+   * @zh 命名 Title Formatting 求值结果字典；仅在调用显式指定 `formats` 参数时返回。
    */
   formats?: Record<string, string>;
 }
@@ -708,8 +713,8 @@ interface PlaylistGroupRun {
    */
   key: string;
   /**
-   * Second-level runs inside this one; present only when two patterns were given.
-   * @zh 这一游程内的第二级游程；只在给了两个模式时出现。
+   * Second-level runs inside this one; present only when two patterns were provided.
+   * @zh 当前游程内的二级子分组游程；仅在指定两个分组模式时返回。
    */
   sub?: PlaylistGroupSubRun[];
 }
@@ -1467,8 +1472,8 @@ interface GetAutoplaylistQueryParams {
 interface GetAutoplaylistQueryResult {
   /**
    * Whether the playlist is an autoplaylist; `keepSorted`, `source`, `note` and `lockName` are
-   * present only when it is.
-   * @zh 播放列表是否为自动播放列表；`keepSorted`、`source`、`note` 与 `lockName` 只在它是时出现。
+   * present only when true.
+   * @zh 指示播放列表是否为自动播放列表；`keepSorted`、`source`、`note` 与 `lockName` 仅当此值为 `true` 时返回。
    */
   isAutoplaylist: boolean;
   /**
@@ -1478,10 +1483,18 @@ interface GetAutoplaylistQueryResult {
   playlist: Int;
   playlistGuid: ReportedPlaylistGuid;
   /**
-   * Always `null`: foobar2000 does not expose the query.
-   * @zh 总是 `null`：foobar2000 不公开查询语句。
+   * The list's query, read from foobar2000's built-in query/sort client. `null` when the
+   * provider is another one, the configuration cannot be decoded, or the playlist is not an
+   * autoplaylist; `note` says which for an autoplaylist.
+   * @zh 列表的查询语句，从 foobar2000 内置 query/sort 客户端读出。提供者是其他类型、配置无法解码，或播放列表不是自动播放列表时为 `null`；自动播放列表的原因见 `note`。
    */
   query: string | null;
+  /**
+   * The independent sort expression, an empty string when none is set. `null` exactly when
+   * `query` is `null`. A host older than this field omits it, so test `query` first.
+   * @zh 独立的排序表达式，没有设置时为空串。与 `query` 同时为 `null`。早于本字段的宿主不返回它，应先判断 `query`。
+   */
+  sort: string | null;
   /**
    * Whether the manager-backed autoplaylist keeps its tracks sorted. The `false` value for
    * `source: 'dui'` is a placeholder for an unreadable lock configuration.
@@ -1495,8 +1508,10 @@ interface GetAutoplaylistQueryResult {
    */
   source?: 'sdk' | 'dui';
   /**
-   * Says that the query is not available.
-   * @zh 说明查询语句不可得。
+   * Why `query` is `null` for an autoplaylist: the provider does not support reading, the
+   * configuration cannot be parsed, or the list is managed (use `getAutoplaylistConfig`).
+   * Absent when `query` was read.
+   * @zh 自动播放列表的 `query` 为 `null` 的原因：提供者不支持读取、配置无法解析，或列表由本组件托管（改用 `getAutoplaylistConfig`）。读到 `query` 时不出现。
    */
   note?: string;
   /**
@@ -1635,9 +1650,8 @@ interface SortParams {
    */
   pattern?: string;
   /**
-   * Reverse the whole playlist after sorting. The reversal covers every track, the unselected
-   * ones too, even with `selectedOnly`.
-   * @zh 排序后把整个播放列表倒过来。倒序覆盖全部曲目，即使设了 `selectedOnly`，未选中的也一样。
+   * Reverse the whole playlist after sorting. The reversal covers all tracks, even when `selectedOnly` is set.
+   * @zh 排序完成后反转曲目顺序。反转作用于播放列表中全部曲目；即使指定了 `selectedOnly`，未选中曲目同样参与反转。
    * @default false
    */
   descending?: boolean;
@@ -1881,9 +1895,9 @@ interface MoveTracksParams {
   playlist?: Int;
   playlistGuid?: PlaylistGuid;
   /**
-   * Rows to move; they replace the current selection first. Omitted or empty, the current
-   * selection moves.
-   * @zh 要移动的行，先用它们替换当前选中。省略或为空时移动当前选中的行。
+   * Target row indices to move; specified indices replace the current playlist selection before moving.
+   * When omitted or empty, moves the currently selected rows.
+   * @zh 待移动的目标行索引数组；指定时先覆盖当前选中项再执行位移，省略或为空数组时直接移动当前选中的行
    * @minimum 0
    */
   items?: Int[];
@@ -2312,8 +2326,10 @@ interface ReplaceAllAndPlayParams {
   paths: string[];
   /**
    * Row to play, or to focus with `autoPlay` `false`; past the last row, the first one. The rows
-   * do not keep the order of `paths`, so this names a position, not one of the given paths.
-   * @zh 要播放的行，`autoPlay` 为 `false` 时是要聚焦的行；超出最后一行时取第一行。各行不保持 `paths` 的顺序，所以它指的是位置，而不是传入的某个路径。
+   * follow the order of `paths`: when every path is one track, this is the index of the path to
+   * play. A path that expands to several tracks (a folder, a cue sheet) takes that many rows, and
+   * a skipped path takes none.
+   * @zh 要播放的行，`autoPlay` 为 `false` 时是要聚焦的行；超出最后一行时取第一行。各行按 `paths` 的顺序排列：每条路径都只对应一首时，它就是要播放的那条路径的下标。展开成多首曲目的路径（文件夹、cue）占相应的多行，被跳过的路径不占行。
    * @default 0
    * @minimum 0
    */
@@ -2392,11 +2408,11 @@ interface GetTracksParams {
    */
   formats?: Record<string, string>;
   /**
-   * Keys each row carries besides `index`; omitted, the whole row. The names are those
-   * `library.query` takes; an unknown name fails with `INVALID_PARAMS` and is listed in
-   * `details.unknownFields`.
-   * The optional `albumId` is omitted when unavailable, even when requested.
-   * @zh 每行除 `index` 外带的键；省略时为整行。可用的名字与 `library.query` 相同；未知的名字以 `INVALID_PARAMS` 失败，并列在 `details.unknownFields` 里。没有可选的 `albumId` 时省略该键，即使请求了它也是如此。
+   * Keys each row carries besides `index`; omitted, the whole row. The names are case-sensitive
+   * and are those `library.query` takes; an unknown name fails with `INVALID_PARAMS` and is listed
+   * in `details.unknownFields`.
+   * The optional `albumId` is omitted if no album identifier exists.
+   * @zh 每行除 `index` 外包含的字段；省略时返回整行。字段名称区分大小写，可用字段与 `library.query` 相同；未知字段名以 `INVALID_PARAMS` 失败并列入 `details.unknownFields`。若曲目无关联专辑标识，则不包含可选字段 `albumId`。
    * @minItems 1
    */
   fields?: string[];

@@ -437,15 +437,18 @@ struct ExecuteContextMenuCommandParams {
 
     std::string guid{};
     bool force = false;
+    std::string target = "auto";
 };
 
 inline bool FromJson(const json& j, ExecuteContextMenuCommandParams& out, std::string& error, const std::string& where) {
     api::params::Reader r(j, error, where);
     return r.IsObject()
-        && r.OnlyKeys({"guid", "force"})
+        && r.OnlyKeys({"guid", "force", "target"})
         && r.Required("guid", out.guid)
         && r.MinLength("guid", out.guid, 1)
-        && r.Optional("force", out.force);
+        && r.Optional("force", out.force)
+        && r.Optional("target", out.target)
+        && r.OneOf("target", out.target, {"auto", "selection", "nowPlaying", "playlistSelection"});
 }
 
 struct ExecuteContextMenuByPathResult {
@@ -475,15 +478,18 @@ struct ExecuteContextMenuByPathParams {
 
     std::string path{};
     std::optional<std::string> trackPath{};
+    std::string target = "auto";
 };
 
 inline bool FromJson(const json& j, ExecuteContextMenuByPathParams& out, std::string& error, const std::string& where) {
     api::params::Reader r(j, error, where);
     return r.IsObject()
-        && r.OnlyKeys({"path", "trackPath"})
+        && r.OnlyKeys({"path", "trackPath", "target"})
         && r.Required("path", out.path)
         && r.MinLength("path", out.path, 1)
-        && r.Optional("trackPath", out.trackPath);
+        && r.Optional("trackPath", out.trackPath)
+        && r.Optional("target", out.target)
+        && r.OneOf("target", out.target, {"auto", "selection", "nowPlaying", "playlistSelection"});
 }
 
 struct DiscoveryContextMenuTreeNode {

@@ -202,6 +202,19 @@ public:
     virtual api::autoplaylist_editor::Probe probe_autoplaylist_editor(size_t playlist) const = 0;
     /** @brief Whether the provider implements this component's editable configuration protocol. */
     virtual bool is_managed_autoplaylist(size_t) const { return false; }
+
+    enum class AutoplaylistQueryStatus {
+        Unsupported,  // not a client whose configuration this service reads
+        Unreadable,   // a supported client whose configuration could not be decoded
+        Ok,
+    };
+    struct AutoplaylistQueryRead {
+        AutoplaylistQueryStatus status = AutoplaylistQueryStatus::Unsupported;
+        std::string query;
+        std::string sort;
+    };
+    /** @brief Read the current query and sort of a foobar2000 built-in autoplaylist client. Main thread only. */
+    virtual AutoplaylistQueryRead read_autoplaylist_query(size_t) const { return {}; }
     /** @brief Convert the playlist into an autoplaylist driven by a query/sort. */
     virtual void add_autoplaylist_client(size_t playlist, const char* query, const char* sort, uint32_t flags) = 0;
     /** @brief Detach the autoplaylist client, leaving a normal playlist. */
@@ -288,6 +301,6 @@ public:
         PathInsertOutcome outcome = PathInsertOutcome::Ok;
         size_t playlist = 0;  // index of the target when the tracks went in
     };
-    /** @brief Clear the playlist and re-add tracks from the given paths. */
+    /** @brief Clear the playlist and re-add tracks from the given paths, in the given order. */
     virtual ReplaceAllResult replace_all(size_t playlist, const nlohmann::json& paths) = 0;
 };

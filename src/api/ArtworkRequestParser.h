@@ -17,7 +17,7 @@ inline constexpr int kMaxSizeLimit = 2048;
 enum class Route {
     Fb2kArtwork,
     ArtworkScheme,
-    SameOriginHttps,
+    Https,
 };
 
 enum class MaxSizeSource {

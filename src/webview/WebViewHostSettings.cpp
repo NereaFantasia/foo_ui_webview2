@@ -1,16 +1,27 @@
 ﻿/**
  * WebViewHostSettings.cpp - WebViewHost 的 WebView2 设置
  *
- * 脚本、DevTools、自动填充、SmartScreen 与 app-region 等开关，以及把 Ctrl+P、Ctrl+O、
- * Ctrl+N 转给 foobar2000 的 AcceleratorKeyPressed 处理。
+ * 脚本、DevTools、自动填充、SmartScreen 与 app-region 等开关，以及 WebView 有焦点时的
+ * AcceleratorKeyPressed 处理：F5 重载与转交 foobar2000 快捷键。
  */
 #include "pch.h"
 #include "webview/WebViewHost.h"
 #include "settings/SecurityConfig.h"
+#include "webview/HostShortcutRelay.h"
 #include <wrl/event.h>
-#include <foobar2000/SDK/menu_helpers.h>  // For standard_commands
 
 using namespace Microsoft::WRL;
+
+namespace {
+
+// 只让 Chromium 不处理这一次按键，按键仍送到页面。运行时没有这个接口时返回 false
+bool DisableBrowserAccelerator(ICoreWebView2AcceleratorKeyPressedEventArgs* args) {
+    wil::com_ptr<ICoreWebView2AcceleratorKeyPressedEventArgs2> args2;
+    return SUCCEEDED(args->QueryInterface(IID_PPV_ARGS(&args2))) &&
+           SUCCEEDED(args2->put_IsBrowserAcceleratorKeyEnabled(FALSE));
+}
+
+}  // namespace
 
 void WebViewHost::SetupSettings() {
     wil::com_ptr<ICoreWebView2Settings> settings;
@@ -33,10 +44,12 @@ void WebViewHost::SetupSettings() {
     LOG(enableDevTools ? "DevTools ENABLED (config/debug)" : "DevTools DISABLED (default)");
     
     // 更多设置 (需要更高版本接口)
+    // 浏览器快捷键开着时 Chromium 自己处理 F5，按键回调把 F5 交给页面前要先对这次按键关掉它
+    bool browserAcceleratorKeys = true;
     if (wil::com_ptr<ICoreWebView2Settings3> settings3;
         SUCCEEDED(settings->QueryInterface(IID_PPV_ARGS(&settings3))) && !enableDevTools) {
         // 仅在禁用 DevTools 时禁用快捷键
-        settings3->put_AreBrowserAcceleratorKeysEnabled(FALSE);  // 禁用 F5/Ctrl+R/F12 等
+        browserAcceleratorKeys = FAILED(settings3->put_AreBrowserAcceleratorKeysEnabled(FALSE));  // 禁用 F5/Ctrl+R/F12 等
     }
 
     // ============================================
@@ -71,12 +84,13 @@ void WebViewHost::SetupSettings() {
     }
     
     // ============================================
-    // 拦截快捷键，转发给 foobar2000 处理
-    // 解决 Ctrl+P 等快捷键被 WebView 拦截的问题
+    // WebView 有焦点时的按键：F5 由组件重载，其余按转发规则交给 foobar2000 快捷键
+    // （webview/HostShortcutRelay.h，热键转发规格 §5）
     // ============================================
     controller_->add_AcceleratorKeyPressed(
         Callback<ICoreWebView2AcceleratorKeyPressedEventHandler>(
-            [](ICoreWebView2Controller* /*sender*/, ICoreWebView2AcceleratorKeyPressedEventArgs* args) {
+            [this, browserAcceleratorKeys](ICoreWebView2Controller* /*sender*/,
+                                           ICoreWebView2AcceleratorKeyPressedEventArgs* args) {
                 COREWEBVIEW2_KEY_EVENT_KIND kind;
                 args->get_KeyEventKind(&kind);
                 
@@ -88,38 +102,31 @@ void WebViewHost::SetupSettings() {
                 
                 UINT key;
                 args->get_VirtualKey(&key);
-                
-                bool isCtrl = (GetKeyState(VK_CONTROL) & 0x8000) != 0;
-                bool isAlt = (GetKeyState(VK_MENU) & 0x8000) != 0;
-                bool isShift = (GetKeyState(VK_SHIFT) & 0x8000) != 0;
-                
-                // Ctrl+P (Preferences) - 直接调用 foobar2000 命令
-                if (key == 'P' && isCtrl && !isAlt && !isShift) {
+
+                COREWEBVIEW2_PHYSICAL_KEY_STATUS status{};
+                args->get_PhysicalKeyStatus(&status);
+                const bool repeat = status.WasKeyDown != FALSE;
+
+                // F5 重载是组件自带的按键，不交给 foobar2000 快捷键，各类窗口一致（规格 §5.6）。可信页面载入完成后，
+                // 按键先交给页面：页面的 keydown 监听都没有取消它时，由引导脚本重载（BridgeBootstrapScript.inl）。
+                // 页面在加载中、加载失败或来源不可信时，由组件直接重载并置 Handled：加载中页面的监听可能还没挂上，
+                // 错误页里由组件重载才确定会重试原地址。开发者模式下置 Handled 同时挡住 Chromium 自己的重载
+                if (key == VK_F5) {
+                    if (currentDocumentLoaded_ && IsCurrentDocumentTrusted() &&
+                        (!browserAcceleratorKeys || DisableBrowserAccelerator(args))) {
+                        return S_OK;
+                    }
                     args->put_Handled(TRUE);
-                    LOG("Intercepted Ctrl+P, opening foobar2000 Preferences");
-                    standard_commands::run_main(standard_commands::guid_main_preferences);
+                    if (!repeat) Reload();
                     return S_OK;
                 }
-                
-                // 其他常用 foobar2000 快捷键
-                // Ctrl+O (Open)
-                if (key == 'O' && isCtrl && !isAlt && !isShift) {
+
+                // 其余按键按转发规则交给 foobar2000 快捷键（规格 §5.1）；编辑快捷键、打字键等由规则排除，留给页面。
+                // 执行的命令可能关掉本窗口，TryRelay 返回后只碰 args。
+                const HWND page = parentHwnd_;
+                if (host_shortcut_relay::TryRelay(page, key, host_shortcut_relay::CurrentModifiers(), repeat)) {
                     args->put_Handled(TRUE);
-                    LOG("Intercepted Ctrl+O, opening file dialog");
-                    standard_commands::run_main(standard_commands::guid_main_open);
-                    return S_OK;
                 }
-                
-                // Ctrl+N (New Playlist)
-                if (key == 'N' && isCtrl && !isAlt && !isShift) {
-                    args->put_Handled(TRUE);
-                    LOG("Intercepted Ctrl+N, creating new playlist");
-                    standard_commands::run_main(standard_commands::guid_main_create_playlist);
-                    return S_OK;
-                }
-                
-                // 注意：不要拦截 Ctrl+C/V/X/A/Z 等编辑快捷键，让 WebView 处理
-                
                 return S_OK;
             }
         ).Get(),

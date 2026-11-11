@@ -202,8 +202,8 @@ interface DragEndedPayload {
    */
   code: 'PERMISSION_DENIED' | 'INVALID_PARAMS' | 'OPERATION_FAILED';
   /**
-   * Human-readable reason; never contains a filesystem path.
-   * @zh 可读的原因；从不包含文件路径。
+   * Human-readable error description; physical paths are omitted.
+   * @zh 人类可读的错误描述信息（已剥离文件系统物理路径）
    */
   error: string;
 }
@@ -212,7 +212,7 @@ interface GetPathsAsyncParams {
   /**
    * Session to query, from a `dnd:*` payload. Omit it, or pass an empty string, for the session
    * that is active or most recently ended for this window.
-   * @zh 要查询的会话，取自 `dnd:*` 载荷。省略或传空串则查本窗口当前活动或最近结束的会话。
+   * @zh 待查询的拖放会话标识 sessionId（取自 dnd:* 事件载荷；省略或传入空字符串时查询当前窗口处于活动状态或最近结束的会话）。
    */
   sessionId?: string;
 }

@@ -634,9 +634,9 @@ interface CopyAsyncParams {
 
 interface CopyAsyncResult {
   /**
-   * Id of the operation, starting with `fileop_`. The events of the operation carry it, and
-   * `file.cancelOp` takes it.
-   * @zh 批量操作任务 ID，以 `fileop_` 开头；该操作的事件带有此 ID，`file.cancelOp` 也用它
+   * Batch operation task identifier, prefixed with `fileop_`. Related lifecycle events carry
+   * this ID, and it can be passed to `file.cancelOp` to abort the operation.
+   * @zh 批量操作任务标识符，以 `fileop_` 为前缀；后续关联事件均携带此 ID，亦可传入 `file.cancelOp` 中止操作
    */
   operationId: string;
   /**
@@ -672,9 +672,9 @@ interface MoveAsyncParams {
 
 interface MoveAsyncResult {
   /**
-   * Id of the operation, starting with `fileop_`. The events of the operation carry it, and
-   * `file.cancelOp` takes it.
-   * @zh 批量操作任务 ID，以 `fileop_` 开头；该操作的事件带有此 ID，`file.cancelOp` 也用它
+   * Batch operation task identifier, prefixed with `fileop_`. Related lifecycle events carry
+   * this ID, and it can be passed to `file.cancelOp` to abort the operation.
+   * @zh 批量操作任务标识符，以 `fileop_` 为前缀；后续关联事件均携带此 ID，亦可传入 `file.cancelOp` 中止操作
    */
   operationId: string;
   /**
@@ -706,9 +706,9 @@ interface DeleteAsyncParams {
 
 interface DeleteAsyncResult {
   /**
-   * Id of the operation, starting with `fileop_`. The events of the operation carry it, and
-   * `file.cancelOp` takes it.
-   * @zh 批量操作任务 ID，以 `fileop_` 开头；该操作的事件带有此 ID，`file.cancelOp` 也用它
+   * Batch operation task identifier, prefixed with `fileop_`. Related lifecycle events carry
+   * this ID, and it can be passed to `file.cancelOp` to abort the operation.
+   * @zh 批量操作任务标识符，以 `fileop_` 为前缀；后续关联事件均携带此 ID，亦可传入 `file.cancelOp` 中止操作
    */
   operationId: string;
   /**

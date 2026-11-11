@@ -60,11 +60,11 @@ static ParsedPlayablePath ParsePlayablePath(const std::string& input) {
 // 将前端 paths 解析为 metadb_handle，优先处理 path|subsong:N，普通路径批量走 process_locations
 // 修复：批量调用 process_locations 避免逐条调用导致弹窗风暴
 //
-// 顺序语义（playlist.addPaths / replaceAllAndPlay 共用）：普通路径段传 p_filter=true，
+// 顺序语义（playlist.addPaths 专用）：普通路径段传 p_filter=true，
 // 即 fb2k 原生"添加文件"的 incoming item filter——按指针排序去重后再按用户配置的
 // incoming sorter 排序（见 SDK playlist.h 对 incoming item filter 的说明）。因此输出顺序
 // **不是**输入顺序，也会去掉重复项；这是已发布行为，保持不变（queue.addPaths 取同一做法）。
-// 需要严格保持输入顺序的调用方走 add_paths_sequential。
+// 需要严格保持输入顺序的调用方走 ResolvePathsInOrder。
 static void ResolvePathsToHandles(const json& paths, metadb_handle_list& outItems, size_t& invalidCount) {
     auto piif = playlist_incoming_item_filter::get();
 
@@ -141,6 +141,62 @@ static void ResolvePathsToHandles(const json& paths, metadb_handle_list& outItem
     } else if (batchPaths.get_count() > 0) {
         invalidCount += batchPaths.get_count();
     }
+}
+
+// 按输入顺序把前端 paths 解析为 metadb_handle（playlist.addPathsSequential /
+// replaceAllAndPlay 共用）。两者的调用方要按自己给的顺序得到行：addPathsSequential 的
+// 契约就是保序，replaceAllAndPlay 的 playIndex 要指向调用方点名的那首，而 incoming
+// sorter 的结果取决于用户设置，页面事先算不出来。
+//
+// 因此与 ResolvePathsToHandles 刻意不同：普通路径段传 p_filter=false 关掉
+// filter_items 的按指针排序去重，段内输出顺序即输入顺序；只把"连续普通路径段"
+// 合成一次 process_locations 调用（避免逐条调用的进度框风暴），段与段之间、以及
+// 与 `|subsong:N` 项之间按原始出现顺序拼接。一条路径展开出的 N 个 handle
+// （文件夹、cue、多 subsong 文件）天然占据该路径在段内的位置。与 QueueApi 的
+// ResolveInsertNextPaths 同一做法。
+//
+// invalidCount 与 ResolvePathsToHandles 同一口径：逐项能判定的无效项各计一次；
+// process_locations 不报告每条输入展开出的 handle 边界，一段整体解析不出曲目时整段计入。
+static void ResolvePathsInOrder(const json& paths, metadb_handle_list& outItems, size_t& invalidCount) {
+    auto piif = playlist_incoming_item_filter::get();
+    pfc::string_list_impl runBatch;
+    auto flushRun = [&]() {
+        if (runBatch.get_count() == 0) return;
+        metadb_handle_list resolved;
+        piif->process_locations(runBatch, resolved, /*p_filter=*/false, nullptr, nullptr,
+                                core_api::get_main_window());
+        if (resolved.get_count() == 0) {
+            invalidCount += runBatch.get_count();
+        }
+        outItems += resolved;
+        runBatch.remove_all();
+    };
+
+    for (const auto& path : paths) {
+        if (!path.is_string()) {
+            invalidCount++;
+            continue;
+        }
+        ParsedPlayablePath parsed = ParsePlayablePath(path.get<std::string>());
+        // 超长 URL 的拒收理由同 ResolvePathsToHandles
+        if (parsed.path.empty() || parsed.path.length() > ApiLimits::MAX_STREAM_URL_LENGTH) {
+            invalidCount++;
+            continue;
+        }
+
+        if (parsed.hasSubsong) {
+            flushRun();
+            metadb_handle_ptr handle = SubsongUtils::CreateCanonicalHandle(parsed.path, parsed.subsong);
+            if (handle.is_valid()) {
+                outItems.add_item(handle);
+            } else {
+                invalidCount++;
+            }
+            continue;
+        }
+        runBatch.add_item(parsed.path.c_str());
+    }
+    flushRun();
 }
 
 // 将 JSON handles 数组（支持 object {path,subsong} 和 string 两种格式）解析为 metadb_handle_list
@@ -609,46 +665,15 @@ IPlaylistService::AddPathsResult Fb2kPlaylistService::add_handles(
 }
 
 // playlist.addPathsSequential 的契约是"按给定顺序逐条追加"（SDK JSDoc: one-by-one），
-// 因此与 ResolvePathsToHandles 刻意不同：普通路径段传 p_filter=false 关掉
-// filter_items 的按指针排序去重，段内输出顺序即输入顺序；只把"连续普通路径段"
-// 合成一次 process_locations 调用（避免逐条调用的进度框风暴），段与段之间、以及
-// 与 `|subsong:N` 项之间按原始出现顺序拼接。一条路径展开出的 N 个 handle
-// （cue / 多 subsong 文件）天然占据该路径在段内的位置。与 QueueApi 的
-// ResolveInsertNextPaths 同一做法。
+// 解析见 ResolvePathsInOrder。
 IPlaylistService::AddPathsSequentialResult Fb2kPlaylistService::add_paths_sequential(
     size_t playlist, const json& paths) {
     auto plm = playlist_manager::get();
-    auto piif = playlist_incoming_item_filter::get();
     const api::PinnedPlaylist target(*this, playlist);
 
     metadb_handle_list ordered;
-    pfc::string_list_impl runBatch;
-    auto flushRun = [&]() {
-        if (runBatch.get_count() == 0) return;
-        metadb_handle_list resolved;
-        piif->process_locations(runBatch, resolved, /*p_filter=*/false, nullptr, nullptr,
-                                core_api::get_main_window());
-        ordered += resolved;
-        runBatch.remove_all();
-    };
-
-    for (const auto& path : paths) {
-        if (!path.is_string()) continue;
-        ParsedPlayablePath parsed = ParsePlayablePath(path.get<std::string>());
-        if (parsed.path.empty()) continue;
-        if (parsed.path.length() > ApiLimits::MAX_STREAM_URL_LENGTH) continue;
-
-        if (parsed.hasSubsong) {
-            flushRun();
-            metadb_handle_ptr handle = SubsongUtils::CreateCanonicalHandle(parsed.path, parsed.subsong);
-            if (handle.is_valid()) {
-                ordered.add_item(handle);
-            }
-            continue;
-        }
-        runBatch.add_item(parsed.path.c_str());
-    }
-    flushRun();
+    size_t invalidCount = 0;  // addPathsSequential 的应答不报无效项，声明里写的是跳过
+    ResolvePathsInOrder(paths, ordered, invalidCount);
 
     AddPathsSequentialResult r;
     r.order = json::array();
@@ -807,8 +832,9 @@ IPlaylistService::ReplaceAllResult Fb2kPlaylistService::replace_all(
     r.clearedCount = plm->playlist_get_item_count(playlist);
     plm->playlist_clear(playlist);
 
+    // 保序解析：playIndex 按 paths 的顺序指认曲目（见 ResolvePathsInOrder）
     metadb_handle_list items;
-    ResolvePathsToHandles(paths, items, r.invalidCount);
+    ResolvePathsInOrder(paths, items, r.invalidCount);
 
     // 清空之后才解析，解析时开过模态进度框，列表可能已被拖动、删掉或上锁。一首都没解析
     // 出来也先找回，被删掉时报删掉而不是报没有曲目。
@@ -1969,15 +1995,30 @@ api::Result<pl::GetAutoplaylistInfoResult> PlaylistGetAutoplaylistInfo(const pl:
 }
 
 
-// Get autoplaylist query string
+// Get autoplaylist query and sort
 api::Result<pl::GetAutoplaylistQueryResult> PlaylistGetAutoplaylistQuery(const pl::GetAutoplaylistQueryParams& p) {
     auto* svc = s_playlistService;
     size_t index = 0;
     if (auto failure = ResolvePlaylist(svc, p, index)) return std::move(*failure);
 
-    // query 恒为 null：SDK 不公开自动播放列表的查询语句
     auto result = AutoplaylistStateOf<pl::GetAutoplaylistQueryResult>(svc, index);
-    if (result.isAutoplaylist) result.note = "Query string not exposed by SDK";
+    if (!result.isAutoplaylist) return result;
+
+    // 只读内置 query/sort 客户端；托管列表有自己的读取接口，其他提供者的配置字节没有公开格式
+    const bool managed = svc->is_managed_autoplaylist(index);
+    IPlaylistService::AutoplaylistQueryRead read;
+    if (!managed && result.source == "sdk") read = svc->read_autoplaylist_query(index);
+
+    if (read.status == IPlaylistService::AutoplaylistQueryStatus::Ok) {
+        result.query = std::move(read.query);
+        result.sort = std::move(read.sort);
+    } else if (managed) {
+        result.note = "Managed by this component; read it with playlist.getAutoplaylistConfig";
+    } else if (read.status == IPlaylistService::AutoplaylistQueryStatus::Unreadable) {
+        result.note = "The autoplaylist configuration could not be parsed";
+    } else {
+        result.note = "The autoplaylist provider does not support reading its query";
+    }
     return result;
 }
 

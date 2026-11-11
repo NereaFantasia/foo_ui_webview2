@@ -358,10 +358,12 @@ namespace {
                 FinishLyricsGet(*lookup, responder);
                 return;
             }
+            std::vector<std::string> paths;
+            for (const auto& candidate : lookup->candidates) paths.push_back(WideToUtf8(candidate.wstring()));
             api::RunOnMediaRead(responder, [lookup, responder] {
                 ReadLyricsFile(*lookup);
                 FinishLyricsGet(*lookup, responder);
-            });
+            }, std::move(paths));
         });
     }
 
@@ -408,7 +410,7 @@ namespace {
             }
         } catch (const std::exception&) {}
 
-        api::RunOnMediaRead(responder, [lookup, responder] { FindLyrics(lookup, responder); });
+        api::RunOnMediaRead(responder, [lookup, responder] { FindLyrics(lookup, responder); }, {lookup->path});
     }
 
     //==========================================================================
@@ -634,7 +636,7 @@ namespace {
                 }
                 api::Send(responder, Answer(std::move(result)));
             });
-        });
+        }, {p.path});
     }
 
 } // anonymous namespace

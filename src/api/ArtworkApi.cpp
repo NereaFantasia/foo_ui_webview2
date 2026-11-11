@@ -372,6 +372,15 @@ api::Failure FileRelativeRefused(const std::string& path, const char* apiName) {
                      ApiErrorCode::INVALID_PATH);
 }
 
+// A media file that exists only in the cloud has no artwork for the API: opening it would
+// download it, as the fb2k://artwork handler already avoids. Probes the file system, so it
+// runs on the media read queue only.
+bool OnlineOnlyNoArtwork(const std::string& path, const char* api) {
+    if (!slow_media_path::IsOnlineOnly(path)) return false;
+    LOG("[PATH_HOOK] api=%s resultKind=online-only (not opened)", api);
+    return true;
+}
+
 // ========== Current Playing Artwork ==========
 
 // Methods 2 and 3 of artwork.getCurrent; both open the track's file.
@@ -380,6 +389,11 @@ api::Result<art::GetCurrentResult> CurrentArtworkFromFile(art::GetCurrentResult 
                                                           const GUID& artType) {
     try {
         const char* trackPath = track->get_path();
+        if (OnlineOnlyNoArtwork(trackPath, "artwork.getCurrent")) {
+            result.reason = "not_found";
+            result.path = trackPath;
+            return result;
+        }
 
         // Method 2: album_art_manager_v2 (more comprehensive)
         abort_callback_dummy abort;
@@ -457,7 +471,7 @@ void ArtworkGetCurrent(const art::GetCurrentParams& p, const DeferredResponder& 
 
     api::AnswerFromMediaRead(responder, [result, track, artType] {
         return CurrentArtworkFromFile(result, track, artType);
-    });
+    }, {track->get_path()});
 }
 
 // Extractor-path contract: native path, file://, path|subsong:N (subsong stripped, the
@@ -471,6 +485,7 @@ api::Result<art::GetByPathResult> ArtworkGetByPath(const art::GetByPathParams& p
     result.available = false;
     result.type = p.type;
     result.path = p.path;
+    if (OnlineOnlyNoArtwork(p.path, "artwork.getByPath")) return result;
 
     auto [filePath, subsong] = ArtworkParseSubsongPath(p.path);
     pfc::string8 canonicalPath;
@@ -512,6 +527,7 @@ api::Result<art::GetForTrackResult> ArtworkGetForTrack(const art::GetForTrackPar
     result.available = false;
     result.type = p.type;
     result.path = p.path;
+    if (OnlineOnlyNoArtwork(p.path, "artwork.getForTrack")) return result;
     const GUID artType = StringToArtType(p.type);
 
     try {
@@ -547,6 +563,7 @@ api::Result<art::GetByPlaylistItemResult> PlaylistItemArtwork(art::GetByPlaylist
                                                                const metadb_handle_ptr& track,
                                                                const GUID& artType) {
     try {
+        if (OnlineOnlyNoArtwork(track->get_path(), "artwork.getByPlaylistItem")) return result;
         abort_callback_dummy abort;
         album_art_data::ptr data;
         if (!QueryManagerArtwork(track, artType, data, abort)) return result;
@@ -599,11 +616,12 @@ void ArtworkGetByPlaylistItem(const art::GetByPlaylistItemParams& p, const Defer
 
     api::AnswerFromMediaRead(responder, [result, track, artType] {
         return PlaylistItemArtwork(result, track, artType);
-    });
+    }, {track->get_path()});
 }
 
 api::Result<art::GetAvailableTypesResult> AvailableTypesOf(const std::string& path) {
     art::GetAvailableTypesResult result;
+    if (OnlineOnlyNoArtwork(path, "artwork.getAvailableTypes")) return result;
 
     try {
         abort_callback_dummy abort;
@@ -642,7 +660,7 @@ void ArtworkGetAvailableTypes(const art::GetAvailableTypesParams& p, const Defer
         }
         path = track->get_path();
     }
-    api::AnswerFromMediaRead(responder, [path] { return AvailableTypesOf(path); });
+    api::AnswerFromMediaRead(responder, [path] { return AvailableTypesOf(path); }, {path});
 }
 
 // ========== fb2k:// Protocol URL helpers ==========
@@ -713,6 +731,13 @@ bool TakeNowPlayingIfNoPath(const std::string& path, const char* apiName, metadb
     return true;
 }
 
+// The file a path-or-playing-track call reads, for the media read queue.
+std::vector<std::string> MediaPathsFor(const std::string& path, const metadb_handle_ptr& track) {
+    if (!path.empty()) return {path};
+    if (track.is_valid()) return {track->get_path()};
+    return {};
+}
+
 // `track` is the playing track when `path` is empty.
 api::Result<art::GetLyricsResult> TrackLyrics(const std::string& path, metadb_handle_ptr track) {
     try {
@@ -751,7 +776,9 @@ void ArtworkGetLyrics(const art::GetLyricsParams& p, const DeferredResponder& re
     std::string path = p.path.value_or("");
     metadb_handle_ptr track;
     if (!TakeNowPlayingIfNoPath(path, "artwork.getLyrics", track, responder)) return;
-    api::AnswerFromMediaRead(responder, [path = std::move(path), track] { return TrackLyrics(path, track); });
+    auto paths = MediaPathsFor(path, track);
+    api::AnswerFromMediaRead(responder, [path = std::move(path), track] { return TrackLyrics(path, track); },
+                             std::move(paths));
 }
 
 // `track` is the playing track when `path` is empty.
@@ -786,7 +813,10 @@ api::Result<art::GetMetadataResult> TrackMetadata(const std::string& path, metad
         bool hasEmbedded = false;
         try {
             abort_callback_dummy abort;
-            auto extractor = album_art_extractor::g_open(nullptr, track->get_path(), abort);
+            album_art_extractor_instance_ptr extractor;
+            if (!OnlineOnlyNoArtwork(track->get_path(), "artwork.getMetadata")) {
+                extractor = album_art_extractor::g_open(nullptr, track->get_path(), abort);
+            }
             if (extractor.is_valid()) {
                 static const GUID embeddedTypes[] = {
                     album_art_ids::cover_front, album_art_ids::cover_back,
@@ -821,7 +851,9 @@ void ArtworkGetMetadata(const art::GetMetadataParams& p, const DeferredResponder
     std::string path = p.path.value_or("");
     metadb_handle_ptr track;
     if (!TakeNowPlayingIfNoPath(path, "artwork.getMetadata", track, responder)) return;
-    api::AnswerFromMediaRead(responder, [path = std::move(path), track] { return TrackMetadata(path, track); });
+    auto paths = MediaPathsFor(path, track);
+    api::AnswerFromMediaRead(responder, [path = std::move(path), track] { return TrackMetadata(path, track); },
+                             std::move(paths));
 }
 
 // ========== Extended Artwork APIs ==========
@@ -835,6 +867,10 @@ api::Result<art::GetBatchResult> ArtworkGetBatch(const art::GetBatchParams& p) {
         art::ArtworkBatchRow row;
         row.path = path;
         row.available = false;
+        if (OnlineOnlyNoArtwork(path, "artwork.getBatch")) {
+            result.artworks.push_back(std::move(row));
+            continue;
+        }
         try {
             abort_callback_dummy abort;
             auto [filePath, subsong] = ArtworkParseSubsongPath(path);
@@ -863,7 +899,10 @@ api::Result<art::GetAvailableArtworkResult> AvailableArtworkOf(const std::string
 
     try {
         abort_callback_dummy abort;
-        auto extractor = album_art_extractor::g_open(nullptr, filePath.c_str(), abort);
+        album_art_extractor_instance_ptr extractor;
+        if (!OnlineOnlyNoArtwork(filePath, "artwork.getAvailableArtwork")) {
+            extractor = album_art_extractor::g_open(nullptr, filePath.c_str(), abort);
+        }
 
         if (extractor.is_valid()) {
             static const struct { const char* name; GUID id; } artTypes[] = {
@@ -922,9 +961,10 @@ void ArtworkGetAvailableArtwork(const art::GetAvailableArtworkParams& p, const D
     // Resolving file-relative:// goes through the SDK, main thread only.
     std::string scanPath;
     if (!SubsongUtils::TryResolveNativeMediaPath(filePath, scanPath)) scanPath.clear();
+    std::vector<std::string> paths{filePath};
     api::AnswerFromMediaRead(responder, [filePath = std::move(filePath), scanPath = std::move(scanPath)] {
         return AvailableArtworkOf(filePath, scanPath);
-    });
+    }, std::move(paths));
 }
 
 api::Result<art::GetFb2kUrlByPathBatchResult> ArtworkGetFb2kUrlByPathBatch(const art::GetFb2kUrlByPathBatchParams& p) {

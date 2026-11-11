@@ -131,6 +131,19 @@ Config DecodeConfiguration(const std::vector<uint8_t>& bytes) {
     return config;
 }
 
+QuerySort DecodeBuiltinConfiguration(const std::vector<uint8_t>& bytes) {
+    if (bytes.size() > 2 * MaxTextBytes + 8) throw ValidationError("configuration", "Configuration exceeds size limit");
+    size_t offset = 0;
+    QuerySort result;
+    result.query = ReadText(bytes, offset);
+    result.sort = ReadText(bytes, offset);
+    if (offset != bytes.size()) throw ValidationError("configuration", "Unexpected configuration data");
+    // 只校验编码，不要求查询非空：这里是如实读出核心客户端当前的内容，不是校验写入。
+    ValidateText(result.query, "query");
+    ValidateText(result.sort, "sort");
+    return result;
+}
+
 ConfigState::ConfigState(Config initial)
     : published_(std::move(initial)), observed_(published_), identity_(NewIdentity()) {
     ValidateText(published_.query, "query", true);

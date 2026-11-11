@@ -14,9 +14,9 @@ export interface Events {
 
 interface ChangedPayload {
   /**
-   * Up to 50 of the changed tracks, in no particular order. An invalid entry is skipped, so the
-   * list can hold fewer than the smaller of `count` and 50. `handles` names all of them.
-   * @zh 最多 50 首变化的曲目，顺序不固定。无效条目会被跳过，所以条数可能少于 `count` 与 50 中的较小者。全部变化的曲目见 `handles`。
+   * Up to 50 changed track entries in unspecified order. Invalid entries are skipped,
+   * meaning the returned array length may be less than `min(count, 50)`. Complete track identifiers are listed in `handles`.
+   * @zh 发生变更的曲目样本（最多 50 首，顺序不固定）。无效条目会自动过滤，实际返回项数可能小于 `min(count, 50)`；全量受影响曲目标识参见 `handles`
    */
   tracks: MetadbChangedTrackItem[];
   /**

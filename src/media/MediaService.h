@@ -8,5 +8,8 @@ MediaTokens& Tokens();
 bool CanRead(const std::wstring& path);
 std::string Utf8(const std::wstring& text);
 std::wstring Wide(const std::string& text);
-constexpr const wchar_t* kUrlPrefix = L"https://foo-ui-webview2.local/fb2k-media/";
+// 主机名只靠 WebResourceRequested 应答，不能是做过 SetVirtualHostNameToFolderMapping 的主机：
+// 映射主机上的请求不进事件，页面只会得到 ERR_FILE_NOT_FOUND。.invalid 不会被解析，拦截失效时请求也不会出网。
+// 封面路由的主机名在 ArtworkRequestParser.cpp，两处须保持一致。
+constexpr const wchar_t* kUrlPrefix = L"https://fb2k-routes.invalid/fb2k-media/";
 }

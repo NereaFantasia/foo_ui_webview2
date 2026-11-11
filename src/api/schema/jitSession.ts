@@ -498,13 +498,13 @@ interface JitNativeContextSummary {
 
 interface JitSessionAttempt {
   /**
-   * Caller's entry identifier.
-   * @zh 调用方给的条目标识
+   * Caller-provided entry identifier.
+   * @zh 调用方指定的条目标识
    */
   entryId: string;
   /**
    * Host's identifier of this attempt; a replay of the same entry gets a new one.
-   * @zh 宿主给这次尝试的标识；同一条目重播会得到新的标识
+   * @zh 宿主分配的单次播放尝试标识；同一条目重播时将生成新标识
    */
   attemptId: string;
   /**
@@ -527,8 +527,8 @@ interface JitSessionAttempt {
 
 interface JitSessionNextEntry {
   /**
-   * Caller's entry identifier.
-   * @zh 调用方给的条目标识
+   * Caller-provided entry identifier.
+   * @zh 调用方指定的条目标识
    */
   entryId: string;
   /**
@@ -1363,7 +1363,7 @@ interface JitNativeContextDetail {
 interface JitNativeEntry {
   /**
    * Host's reference, valid within this context only.
-   * @zh 宿主给的引用，只在本上下文内有效
+   * @zh 宿主提供的引用，仅在当前上下文内有效
    */
   nativeRef: string;
   /**

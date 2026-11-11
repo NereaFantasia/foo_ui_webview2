@@ -1,7 +1,7 @@
 ﻿/**
  * WebViewHostArtwork.cpp - WebViewHost 的封面协议
  *
- * fb2k://artwork、artwork:// 与同源 /fb2k-artwork/ 路由的 WebResourceRequested 处理，
+ * fb2k://artwork、artwork:// 与 https 上的 /fb2k-artwork/ 路由的 WebResourceRequested 处理，
  * 以及进程级的缩放封面缓存与负缓存。
  */
 #include "pch.h"
@@ -195,7 +195,7 @@ static bool TryRespondFromScaledCache(
 
 // ==========================================================================
 // Custom protocol handler
-// fb2k://artwork, artwork://, https://foo-ui-webview2.local/fb2k-artwork/*
+// fb2k://artwork, artwork://, https://fb2k-routes.invalid/fb2k-artwork/*
 // ==========================================================================
 void WebViewHost::SetupCustomProtocol() {
     if (!webview_) {
@@ -224,13 +224,14 @@ void WebViewHost::SetupCustomProtocol() {
         LOG("Failed to add artwork:// filter, HRESULT: ", pfc::format_hex((uint32_t)hr));
     }
     
-    // 添加同源 HTTPS 路由过滤器 - 用于 Canvas CORS 支持
-    std::wstring sameOriginArtworkFilter(L"https://foo-ui-webview2.local/fb2k-artwork/*");
-    hr = webview2->AddWebResourceRequestedFilter(sameOriginArtworkFilter.c_str(), COREWEBVIEW2_WEB_RESOURCE_CONTEXT_ALL);
+    // 添加 HTTPS 路由过滤器 - 用于 Canvas CORS 支持：响应带 Access-Control-Allow-Origin: *，
+    // 页面给 <img> 设 crossorigin 即可读回像素。主机名不能是做过虚拟主机映射的那个（见 media/MediaService.h）。
+    std::wstring httpsArtworkFilter(L"https://fb2k-routes.invalid/fb2k-artwork/*");
+    hr = webview2->AddWebResourceRequestedFilter(httpsArtworkFilter.c_str(), COREWEBVIEW2_WEB_RESOURCE_CONTEXT_ALL);
     if (FAILED(hr)) {
-        LOG("Failed to add same-origin artwork filter, HRESULT: ", pfc::format_hex((uint32_t)hr));
+        LOG("Failed to add https artwork filter, HRESULT: ", pfc::format_hex((uint32_t)hr));
     } else {
-        LOG("✓ Added same-origin artwork route filter");
+        LOG("✓ Added https artwork route filter");
     }
     
     // 注册请求处理程序
@@ -251,15 +252,15 @@ void WebViewHost::SetupCustomProtocol() {
                 
                 std::wstring uriStr(uri.get());
                 
-                // 检查是否是我们的自定义协议或同源路由
+                // 检查是否是我们的自定义协议或 https 路由
                 std::wstring fb2kPrefix(L"fb2k://artwork/");
                 std::wstring artworkPrefix(L"artwork://");
                 bool isFb2kArtwork = (uriStr.find(fb2kPrefix) == 0);
                 bool isArtworkScheme = (uriStr.find(artworkPrefix) == 0);
-                std::wstring sameOriginPrefix(L"https://foo-ui-webview2.local/fb2k-artwork/");
-                bool isSameOriginArtwork = (uriStr.find(sameOriginPrefix) == 0);
-                
-                if (!isFb2kArtwork && !isArtworkScheme && !isSameOriginArtwork) {
+                std::wstring httpsPrefix(L"https://fb2k-routes.invalid/fb2k-artwork/");
+                bool isHttpsArtwork = (uriStr.find(httpsPrefix) == 0);
+
+                if (!isFb2kArtwork && !isArtworkScheme && !isHttpsArtwork) {
                     return S_OK;  // 不是我们的协议
                 }
                 

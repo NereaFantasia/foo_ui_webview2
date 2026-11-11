@@ -30,6 +30,7 @@
 #include "api/ShellApi.h"
 #include "api/HttpApi.h"
 #include "api/KeyboardApi.h"
+#include "webview/HostShortcutRelay.h"
 #include "api/UiApi.h"
 #include "api/LyricsApi.h"
 #include "api/MetadataApi.h"
@@ -1093,34 +1094,27 @@ LRESULT MainWindow::HandleMessage(UINT msg, WPARAM wParam, LPARAM lParam) {
             return 0;
             
         case WM_KEYDOWN:
+        case WM_SYSKEYDOWN: {
+            // 键盘焦点在宿主窗口时按键才到这里；WebView 有焦点时走 AcceleratorKeyPressed（规格 §5.3）。
+            // 输入法开着时 wParam 多为 VK_PROCESSKEY，先还原真实键码。
+            const UINT vk = host_shortcut_relay::HostWindowKey(hwnd_, wParam);
+            const bool repeat = (lParam & (1 << 30)) != 0;
             // F12 to open DevTools (仅开发服务器模式允许)
-            if (wParam == VK_F12 && webView_ && webView_->IsReady()) {
+            if (msg == WM_KEYDOWN && vk == VK_F12 && webView_ && webView_->IsReady()) {
                 if (security_config::UseDevServer()) {
                     webView_->OpenDevTools();
                 }
             }
             // F5 to reload
-            else if (wParam == VK_F5 && webView_ && webView_->IsReady()) {
+            else if (msg == WM_KEYDOWN && vk == VK_F5 && webView_ && webView_->IsReady()) {
                 webView_->Reload();
             }
-            // Check if this key is bound to Preferences command
-            else {
-                // Get the GUID for Preferences command
-                GUID prefsGuid = standard_commands::guid_main_preferences;
-                
-                // Check common keyboard shortcuts for Preferences
-                bool isCtrlDown = (GetKeyState(VK_CONTROL) & 0x8000) != 0;
-                bool isShiftDown = (GetKeyState(VK_SHIFT) & 0x8000) != 0;
-                bool isAltDown = (GetKeyState(VK_MENU) & 0x8000) != 0;
-                
-                // Default shortcut for Preferences is Ctrl+P
-                if (wParam == 'P' && isCtrlDown && !isShiftDown && !isAltDown) {
-                    LOG("Preferences shortcut detected (Ctrl+P), opening preferences");
-                    standard_commands::run_main(prefsGuid);
-                    return 0;  // Prevent WebView from handling this key
-                }
+            // 其余按键按转发规则交给 foobar2000 快捷键；执行后本窗口可能已关，直接返回。
+            else if (host_shortcut_relay::TryRelayFromHostWindow(hwnd_, wParam, vk, host_shortcut_relay::CurrentModifiers(), repeat)) {
+                return 0;
             }
             break;
+        }
             
         // ============================================
         // Visual Hosting 模式：客户区光标同步

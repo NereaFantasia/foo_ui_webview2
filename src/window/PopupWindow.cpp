@@ -9,6 +9,7 @@
 #include "core/WebViewContext.h"
 #include "prefs/PreferencesPage.h"
 #include "settings/SecurityConfig.h"
+#include "webview/HostShortcutRelay.h"
 #include "webview/WebViewHost.h"
 #include "api/AudioApi.h"
 #include "api/BridgeCore.h"
@@ -1103,21 +1104,31 @@ LRESULT PopupWindow::HandleMessage(UINT msg, WPARAM wParam, LPARAM lParam) {
         }
             
         case WM_KEYDOWN:
-            if (menuDismissCallback_ && wParam == VK_ESCAPE) {
+        case WM_SYSKEYDOWN: {
+            // 键盘焦点在弹窗宿主时按键才到这里（程序激活弹窗后焦点就停在宿主，规格 §5.3）。
+            // 输入法开着时 wParam 多为 VK_PROCESSKEY，先还原真实键码。
+            const UINT vk = host_shortcut_relay::HostWindowKey(hwnd_, wParam);
+            const bool repeat = (lParam & (1 << 30)) != 0;
+            if (msg == WM_KEYDOWN && menuDismissCallback_ && vk == VK_ESCAPE) {
                 menuDismissCallback_("escape", nullptr);   // 键盘路径无失活对端
                 return 0;
             }
             // F12 开发者工具（仅开发服务器模式）
-            if (wParam == VK_F12 && webView_ && webView_->IsReady()) {
+            if (msg == WM_KEYDOWN && vk == VK_F12 && webView_ && webView_->IsReady()) {
                 if (security_config::UseDevServer()) {
                     webView_->OpenDevTools();
                 }
             }
             // F5 刷新
-            else if (wParam == VK_F5 && webView_ && webView_->IsReady()) {
+            else if (msg == WM_KEYDOWN && vk == VK_F5 && webView_ && webView_->IsReady()) {
                 webView_->Reload();
             }
+            // 其余按键按转发规则交给 foobar2000 快捷键；执行后本窗口可能已关，直接返回。
+            else if (host_shortcut_relay::TryRelayFromHostWindow(hwnd_, wParam, vk, host_shortcut_relay::CurrentModifiers(), repeat)) {
+                return 0;
+            }
             break;
+        }
         
         // ============================================
         // Visual Hosting 模式：客户区光标同步

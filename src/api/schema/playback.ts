@@ -9,8 +9,8 @@ export interface Api {
   play(): void;
 
   /**
-   * Pause playback. Does nothing when stopped.
-   * @zh 暂停播放；停止状态下什么也不做。
+   * Pause playback. No-op when stopped.
+   * @zh 暂停播放；停止状态下静默忽略。
    * @effect write
    * @idempotent
    */
@@ -75,12 +75,11 @@ export interface Api {
   getPosition(): GetPositionResult;
 
   /**
-   * Seek within the current track, playing or paused. The position is clamped to the track:
-   * negative values seek to the start, values past the end stop just short of it so playback
-   * does not advance to the next track; a track of unknown length has no upper bound. With
-   * nothing playing the call fails with `NO_ACTIVE_ITEM`, and a track that cannot seek, such as
-   * most streams, fails with `NOT_SUPPORTED`.
-   * @zh 在当前曲目内定位，播放中或暂停中均可。位置会被夹到曲目范围内：负数定位到开头，超过时长的值停在结尾稍前，免得跳到下一首；时长未知的曲目没有上限。没在播放时以 `NO_ACTIVE_ITEM` 失败，不能定位的曲目（大多数网络流）以 `NOT_SUPPORTED` 失败。
+   * Seek within the current track (playing or paused). Target position is clamped to the track
+   * boundary: negative values seek to the beginning, values exceeding duration clamp just before
+   * the end to prevent track advance; tracks of unknown length have no upper clamp. Fails with
+   * `NO_ACTIVE_ITEM` with nothing playing, or `NOT_SUPPORTED` for a track that cannot seek, such as most streams.
+   * @zh 在当前播放或暂停的曲目内定位。目标位置自动钳位至曲目有效区间：负值重置至起点，超出时长时钳位至结尾前临界点以避免切歌；未知时长的曲目不设上限。没有正在播放的曲目时以 `NO_ACTIVE_ITEM` 失败，不能定位的曲目（如大多数网络流）以 `NOT_SUPPORTED` 失败
    * @effect write
    * @idempotent
    */
@@ -94,8 +93,8 @@ export interface Api {
   getVolume(): GetVolumeResult;
 
   /**
-   * Set the output volume as a percentage; values outside `0` to `100` are clamped. `0` mutes.
-   * @zh 按百分比设置输出音量；超出 `0` 到 `100` 的值被夹到范围内。`0` 即静音。
+   * Set output volume as a percentage. Valid range is 0..100 with automatic clamping; `0` mutes.
+   * @zh 按百分比设置输出音量。有效范围 0..100，超出自动钳位；`0` 表示静音
    * @effect write
    * @idempotent
    */
@@ -116,9 +115,9 @@ export interface Api {
   volumeDown(): void;
 
   /**
-   * Mute or unmute; a call that asks for the state already in effect does nothing. Unmuting
-   * restores the level from before the mute.
-   * @zh 静音或取消静音；要求的状态已经生效时什么也不做。取消静音恢复静音前的音量。
+   * Mute or unmute; calls requesting the active state are ignored. Unmuting
+   * restores the volume from before muting.
+   * @zh 静音或取消静音；目标状态已生效时静默忽略。解除静音恢复先前的音量。
    * @effect write
    * @idempotent
    */
@@ -499,13 +498,13 @@ interface SetPositionParams {
 
 interface SetPositionResult {
   /**
-   * The position asked for, before clamping.
-   * @zh 请求的位置，未夹取。
+   * Requested seek position before clamping.
+   * @zh 原始请求的目标位置（钳位前）
    */
   requestedPosition: number;
   /**
-   * The position handed to the host after clamping to the track.
-   * @zh 夹到曲目范围内后交给宿主的位置。
+   * Effective seek position applied to the playback engine after clamping to track boundaries.
+   * @zh 钳位至曲目有效区间后实际应用的目标位置
    */
   actualPosition: number;
   /**
@@ -563,8 +562,8 @@ interface GetVolumeResult {
 
 interface SetVolumeParams {
   /**
-   * Volume as a percentage; clamped to `0` to `100`.
-   * @zh 音量百分比；夹到 `0` 到 `100`。
+   * Output volume percentage; valid range 0..100 with automatic clamping.
+   * @zh 音量百分比；有效范围 0..100，超出自动钳位
    */
   volume: number;
 }
@@ -743,9 +742,8 @@ interface PlayPathsResult {
    */
   tracksAdded: Int;
   /**
-   * The `startIndex` given, echoed even when it was past the end and playback started at the
-   * first added track.
-   * @zh 传入的 `startIndex` 原样回显；它超出范围、实际从第一首起播时也是如此。
+   * Echoes the requested `startIndex`, even if out of range and playback started at the first track.
+   * @zh 回显传入的 `startIndex`；即使索引超出范围且实际从首曲起播，仍回显原始传入值。
    */
   startedAt: Int;
 }

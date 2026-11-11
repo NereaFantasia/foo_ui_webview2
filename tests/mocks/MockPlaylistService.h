@@ -157,6 +157,7 @@ public:
     mutable int getAutoplaylistFlagsCallCount = 0;
     mutable size_t lastGetAutoFlagsPlaylist = SIZE_MAX;
     uint32_t autoplaylistFlagsResult = 0;
+    AutoplaylistQueryRead autoplaylistQueryReadResult;
     // Playlist-level reorder
     int reorderPlaylistsCallCount = 0;
     std::vector<size_t> lastReorderPlaylistsOrder;
@@ -302,6 +303,7 @@ public:
         getAutoplaylistFlagsCallCount = 0;
         lastGetAutoFlagsPlaylist = SIZE_MAX;
         autoplaylistFlagsResult = 0;
+        autoplaylistQueryReadResult = {};
         reorderPlaylistsCallCount = 0;
         lastReorderPlaylistsOrder.clear();
         reorderPlaylistsResult = true;
@@ -656,6 +658,10 @@ public:
         lastAddAutoQuery = query;
         lastAddAutoSort = sort;
         lastAddAutoFlags = flags;
+    }
+
+    AutoplaylistQueryRead read_autoplaylist_query(size_t) const override {
+        return autoplaylistQueryReadResult;
     }
 
     void remove_autoplaylist_client(size_t playlist) override {

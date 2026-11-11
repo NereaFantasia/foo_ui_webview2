@@ -181,9 +181,8 @@ void WebViewPrefsPerformanceInstance::CreateControls(HWND hwnd) {
     createCheck(IDC_CHK_PREHEAT,
         TR("Create the WebView2 environment when foobar2000 starts", "foobar2000 启动时预先创建 WebView2 环境"));
     createNote(IDC_STATIC_PREHEAT_NOTE,
-        TR("Starts creating the WebView2 environment at startup. When off, creation starts when a window first "
-           "needs it. Takes effect after a restart.",
-           "启动时开始创建 WebView2 环境。关闭后，首次打开需要它的窗口时才开始创建。重启后生效。"));
+        TR("When off, the environment is created on demand when a window first needs it. Takes effect after a restart.",
+           "关闭后，将在首次打开需要它的窗口时按需创建。重启后生效。"));
 
     // ---- Hidden windows ----
     createCheck(IDC_CHK_DEEP_SUSPEND,

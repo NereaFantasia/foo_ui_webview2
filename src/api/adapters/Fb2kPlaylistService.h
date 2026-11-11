@@ -364,6 +364,30 @@ public:
         return managed_autoplaylist::IsManaged(playlist);
     }
 
+    AutoplaylistQueryRead read_autoplaylist_query(size_t playlist) const override {
+        core_api::ensure_main_thread();
+        // foobar2000 核心 query/sort 客户端的提供者 GUID；只认它，其他提供者的配置字节不解析。
+        constexpr GUID builtinProvider{0x51b653f4, 0xa2d7, 0x4810, {0x99, 0xbd, 0x06, 0x72, 0x47, 0x12, 0x17, 0x5a}};
+        AutoplaylistQueryRead result;
+        const auto manager = autoplaylist_manager::get();
+        if (!manager->is_client_present(playlist)) return result;
+        try {
+            const auto client = manager->query_client(playlist);
+            if (client.is_empty() || client->get_guid() != builtinProvider) return result;
+            result.status = AutoplaylistQueryStatus::Unreadable;
+            pfc::array_t<uint8_t> raw;
+            client->get_configuration(raw);
+            const auto decoded = managed_autoplaylist::DecodeBuiltinConfiguration(
+                std::vector<uint8_t>(raw.get_ptr(), raw.get_ptr() + raw.get_size()));
+            result.query = decoded.query;
+            result.sort = decoded.sort;
+            result.status = AutoplaylistQueryStatus::Ok;
+        } catch (...) {
+            // 读取或解码失败都按不可读处理，保留已判定的状态
+        }
+        return result;
+    }
+
     void remove_autoplaylist_client(size_t playlist) override {
         autoplaylist_manager::get()->remove_client(playlist);
     }

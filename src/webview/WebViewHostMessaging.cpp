@@ -73,6 +73,7 @@ void WebViewHost::RegisterMessageHandler() {
                 if (UINT64 id = 0; args && SUCCEEDED(args->get_NavigationId(&id))) {
                     latestNavigationId_ = id;
                 }
+                currentDocumentLoaded_ = false;
                 // 记录导航请求；文件 drop 是否触发导航，由拖放取证日志判断。
                 if (fb2k_dnd::DndTraceEnabled() && args) {
                     TraceNavigationRequest("nav.starting", parentHwnd_, args);
@@ -109,6 +110,7 @@ void WebViewHost::RegisterMessageHandler() {
                 UINT64 completedId = 0;
                 args->get_NavigationId(&completedId);
                 lastNavigationSuperseded_ = !success && completedId != latestNavigationId_;
+                currentDocumentLoaded_ = success && completedId == latestNavigationId_;
                 if (success) {
                     LOG("Navigation completed successfully");
                 } else {

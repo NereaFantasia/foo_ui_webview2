@@ -43,10 +43,11 @@ export interface Api {
   getContextMenuCommands(params: GetContextMenuCommandsParams): GetContextMenuCommandsResult;
 
   /**
-   * Run a context-menu command by GUID against the playing track, or the active playlist
-   * selection when nothing is playing. A command the host would never draw (`FORCE_OFF`) is
-   * refused with `NOT_SUPPORTED` unless `force` is set; no target at all is `NO_ACTIVE_ITEM`.
-   * @zh 按 GUID 对当前目标曲目执行右键菜单命令（优先作用于正在播放的曲目，未播放时作用于活动播放列表的选中项；宿主永不绘制的命令 FORCE_OFF 默认以 NOT_SUPPORTED 拒绝，除非显式指定 force 为 true；无可用目标曲目时返回 NO_ACTIVE_ITEM）
+   * Run a context-menu command by GUID against the tracks `target` names; by default the playing
+   * track, or the active playlist selection when nothing is playing. A command the host would
+   * never draw (`FORCE_OFF`) is refused with `NOT_SUPPORTED` unless `force` is set; no target at
+   * all is `NO_ACTIVE_ITEM`.
+   * @zh 按 GUID 对 `target` 指定的曲目执行右键菜单命令，缺省时优先作用于正在播放的曲目，未播放时作用于活动播放列表的选中项；宿主永不绘制的命令 FORCE_OFF 默认以 NOT_SUPPORTED 拒绝，除非显式指定 force 为 true；无可用目标曲目时返回 NO_ACTIVE_ITEM
    */
   executeContextMenuCommand(params: ExecuteContextMenuCommandParams): ExecuteContextMenuCommandResult;
 
@@ -55,8 +56,9 @@ export interface Api {
    * `Playback Statistics/Rating/5`. Each segment must match one label exactly after
    * normalization (mnemonic `&`, trailing ellipsis, accelerator text and ASCII case are ignored).
    * A path matching several commands is refused with `INVALID_PARAMS` and the candidates listed;
-   * one matching none is `NOT_FOUND`.
-   * @zh 按斜杠分隔的标签路径执行右键菜单命令（如 Playback Statistics/Rating/5；各级路径在规范化后须唯一匹配一个菜单标签，忽略助记符 &、末尾省略号、快捷键文本与 ASCII 大小写；命中多个候选时返回 INVALID_PARAMS 并列出歧义候选，未命中任何命令返回 NOT_FOUND）
+   * one matching none is `NOT_FOUND`. Giving both `trackPath` and a `target` other than `auto` is
+   * `INVALID_PARAMS`.
+   * @zh 按斜杠分隔的标签路径执行右键菜单命令（如 Playback Statistics/Rating/5；各级路径在规范化后须唯一匹配一个菜单标签，忽略助记符 &、末尾省略号、快捷键文本与 ASCII 大小写；命中多个候选时返回 INVALID_PARAMS 并列出歧义候选，未命中任何命令返回 NOT_FOUND）。同时给出 `trackPath` 与 `auto` 以外的 `target` 时返回 `INVALID_PARAMS`
    */
   executeContextMenuByPath(params: ExecuteContextMenuByPathParams): ExecuteContextMenuByPathResult;
 
@@ -128,6 +130,15 @@ type MenuNodeSource =
  * Why an entry cannot be executed; empty when it can.
  * @zh 菜单项不可执行的具体原因（可执行时为空字符串）
  */
+/**
+ * Tracks a context-menu command runs against. `auto` is the playing track, else the active
+ * playlist selection. `selection` is the selection foobar2000's own context shortcuts use: the one
+ * a theme handed over through `selection`, or another element's. `nowPlaying` is the playing track
+ * only; `playlistSelection` the active playlist selection only.
+ * @zh 右键菜单命令的作用对象。`auto` 为正在播放的曲目，未播放时为活动播放列表的选区；`selection` 为 foobar2000 自己的上下文快捷键所用的选区，即主题经 `selection` 交给宿主的那一份，或其他界面元素的选区；`nowPlaying` 只取正在播放的曲目；`playlistSelection` 只取活动播放列表的选区
+ */
+type ContextCommandTarget = 'auto' | 'selection' | 'nowPlaying' | 'playlistSelection';
+
 type MenuUnaddressableReason = '' | 'separator' | 'dynamicParent' | 'noStableIdentifier' | 'emptyNode';
 
 /**
@@ -816,6 +827,12 @@ interface ExecuteContextMenuCommandParams {
    * @default false
    */
   force?: boolean;
+  /**
+   * Which tracks the command runs against.
+   * @zh 命令作用于哪些曲目
+   * @default "auto"
+   */
+  target?: ContextCommandTarget;
 }
 
 interface ExecuteContextMenuCommandResult {
@@ -865,6 +882,12 @@ interface ExecuteContextMenuByPathParams {
    * @security MediaRead
    */
   trackPath?: string;
+  /**
+   * Which tracks the command runs against when `trackPath` is absent.
+   * @zh 未给 `trackPath` 时命令作用于哪些曲目
+   * @default "auto"
+   */
+  target?: ContextCommandTarget;
 }
 
 interface ExecuteContextMenuByPathResult {

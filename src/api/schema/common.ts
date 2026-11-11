@@ -46,28 +46,25 @@ export type ContentVersion = string;
 export type ExpectedContentVersion = string;
 
 /**
- * How an operation ended: `completed` when everything it was asked to do was done; `partial` when
- * some of it was done and the rest was not; `cancelled` when the user or the caller stopped it;
- * `failed` when none of it was done; `unknown` when the host cannot tell, as with commands that
- * report nothing back.
- * @zh 操作如何结束：`completed` 要求的都做完了；`partial` 做了一部分，其余没做成；`cancelled` 被用户或调用方停下；`failed` 什么也没做成；`unknown` 宿主无从得知，例如不回报结果的命令。
+ * Operation completion status: `completed` when all requested operations finished successfully;
+ * `partial` when only some operations succeeded; `cancelled` when cancelled by user or caller;
+ * `failed` when no operation succeeded; `unknown` when host cannot determine status (such as menu commands without completion feedback).
+ * @zh 操作完成状态：`completed` 表示全部请求项已成功完成；`partial` 表示部分项完成、其余未完成；`cancelled` 表示操作被用户或调用方取消；`failed` 表示全部项均未成功；`unknown` 表示宿主无法获取执行结果（如未提供状态回报的菜单命令）。
  */
 export type OperationStatus = 'completed' | 'partial' | 'cancelled' | 'failed' | 'unknown';
 
 /**
- * One track, as every method whose declaration returns whole rows reports it: the playing
- * track, a media library row, a playlist row, a queue entry. Containers add their own fields
- * (a row number, a queue position) on top of these.
- * @zh 一首曲目；声明中返回整行曲目的方法（正在播放、媒体库行、播放列表行、队列项）都用这一形状，容器再在它之上加自己的字段（行号、队列位置等）。
+ * Metadata and playback properties of a single track, shared by playback, library,
+ * playlist, and queue endpoints. Containers extend this structure with domain-specific fields
+ * such as playlist row indices or queue positions.
+ * @zh 曲目基础元数据与回放属性，由播放状态、媒体库、播放列表与播放队列等端点通用返回。具体容器可在本结构基础上扩展行索引或队列位次等专用字段
  */
 export interface Track {
   /**
-   * The key that identifies the track across endpoints: `absolutePath`, with a `|subsong:N`
-   * suffix when `subsong` is not `0`. The same track yields the same handle from every such
-   * method; because
-   * of the suffix it is not a plain file path, and a method that takes a path documents whether
-   * it accepts one.
-   * @zh 跨端点识别同一首曲目的键：`absolutePath`，`subsong` 不为 `0` 时带 `|subsong:N` 后缀。同一首曲目在这些方法里得到同一个 handle；因为带后缀，它不是普通文件路径，接收路径的方法会各自说明是否接受它。
+   * Cross-endpoint unique track identifier: formatted as `absolutePath`, appended with `|subsong:N`
+   * when `subsong` is non-zero. The same track yields the same handle from every method. Differs from standard filesystem paths; endpoints document
+   * whether handle identifiers are accepted in place of paths.
+   * @zh 跨端点曲目唯一标识：格式为 `absolutePath`，`subsong` 非 0 时追加 `|subsong:N` 后缀。同一首曲目在所有方法中的 handle 相同。因包含后缀故不同于普通文件路径，各路径参数接口均单独说明是否接受此标识
    */
   handle: string;
   /**
@@ -111,7 +108,7 @@ export interface Track {
   /**
    * Opaque album identity when its original name or album artist contains invalid UTF-8.
    * Use this instead of the display names to match an album row; absent for ordinary names.
-   * @zh 原始专辑名或专辑艺术家含非法 UTF-8 时提供的不透明身份标识。此时用它匹配专辑行，不用显示名称；普通名称不带此字段。
+   * @zh 原始专辑名或专辑艺术家含非法 UTF-8 时提供的不透明身份标识。出现此标识时优先据此匹配专辑行，避免依赖显示名称；标准名称不包含此字段
    */
   albumId?: string;
   /**
@@ -120,12 +117,12 @@ export interface Track {
    */
   albumArtist: string;
   /**
-   * Every ALBUM ARTIST value in tag order, so `albumArtists.join(", ")` equals `albumArtist`;
-   * empty when untagged. `library.getAlbums` files a track that has an `album` under the name
-   * `album` and the album artist `albumArtists[0]`, or `artists[0]` when this array is empty
-   * (`""` when both are); those are the `name` and `albumArtist` of that album's row. When
-   * `albumId` is present, use it instead: replacement characters can make display names equal.
-   * @zh 全部 ALBUM ARTIST 值，按标签顺序，`albumArtists.join(", ")` 等于 `albumArtist`；没有标签时为空数组。`library.getAlbums` 把有 `album` 的曲目归入名为 `album`、专辑艺术家为 `albumArtists[0]` 的专辑，本数组为空时取 `artists[0]`（两者都空时为 `""`）；这两个值就是该专辑行的 `name` 与 `albumArtist`。存在 `albumId` 时应改用它匹配，因为替换字符可能让不同原始名称显示相同。
+   * All ALBUM ARTIST values in tag order (`albumArtists.join(", ")` equals `albumArtist`);
+   * empty array when untagged. In `library.getAlbums`, a track that has an `album` is filed under
+   * the name `album` and the album artist `albumArtists[0]` (falling back to `artists[0]`, or `""`
+   * when both are empty); those are the `name` and `albumArtist` of that album's row. When `albumId`
+   * is present, match by `albumId` instead of display names to avoid collision from character replacement.
+   * @zh 按标签顺序排列的全部 ALBUM ARTIST 值，`albumArtists.join(", ")` 等于 `albumArtist`；无标签时为空数组。`library.getAlbums` 把有 `album` 的曲目归入名为 `album`、专辑艺术家为 `albumArtists[0]` 的专辑（本数组为空时回退至 `artists[0]`，两者都空时为 `""`）；这两个值即该专辑行的 `name` 与 `albumArtist`。存在 `albumId` 时优先按其匹配，避免替换字符导致显示名冲突
    */
   albumArtists: string[];
   /**
@@ -179,16 +176,16 @@ export interface Track {
    */
   codec: string;
   /**
-   * Rating from 0 to 5: the `%rating%` statistic (foo_playcount) when it is 1 to 5, otherwise
-   * the RATING tag clamped to that range; `0` when neither rates the track.
-   * @zh 评分 0 到 5：`%rating%` 统计值（foo_playcount）在 1 到 5 之间时用它，否则用 RATING 标签并夹到该范围；两处都没有评分时为 `0`。
+   * Rating value from 0 to 5. Prefers the `%rating%` statistic (foo_playcount) if within 1..5;
+   * otherwise falls back to the RATING tag clamped to 0..5; `0` if neither is present.
+   * @zh 评分（0 到 5）。优先读取 1..5 范围内的 `%rating%` 统计字段（foo_playcount）；否则回退至 RATING 标签并钳位到 0..5；两处均未提供时为 0
    */
   rating: Int;
 }
 
 /**
- * A track projected down to the fields a caller asked for.
- * @zh 按调用方要求的字段投影后的曲目。
+ * Track representation containing a subset of fields requested by the caller.
+ * @zh 按请求字段投影的曲目子集对象
  */
 export type TrackPartial = Partial<Track>;
 
@@ -208,28 +205,28 @@ export interface SystemApiInfo {
    */
   plugin: string;
   /**
-   * Namespace part of the name.
-   * @zh 名字里的命名空间部分。
+   * Namespace component of the method name.
+   * @zh 方法所属命名空间
    */
   namespace: string;
   /**
-   * Method part of the name.
-   * @zh 名字里的方法部分。
+   * Method name component without namespace.
+   * @zh 不含命名空间的方法名
    */
   method: string;
   /**
-   * Description given at registration; empty when none.
-   * @zh 注册时给的描述；没有时为空。
+   * Method description provided during registration; empty string if omitted.
+   * @zh 注册时声明的方法描述；未提供时为空字符串
    */
   description: string;
   /**
-   * Version given at registration.
-   * @zh 注册时给的版本。
+   * Method API version declared during registration.
+   * @zh 注册时声明的 API 版本
    */
   version: string;
   /**
-   * `true` when an external plugin registered it.
-   * @zh 由外部插件注册时为 `true`。
+   * Whether the method was registered by an external plugin.
+   * @zh 是否由外部插件注册
    */
   isExternal: boolean;
 }
@@ -240,38 +237,38 @@ export interface SystemApiInfo {
  */
 export interface SystemPluginInfo {
   /**
-   * Display name.
-   * @zh 显示名。
+   * Plugin display name.
+   * @zh 插件显示名称
    */
   name: string;
   /**
-   * Namespace the plugin owns; unique among plugins.
-   * @zh 插件拥有的命名空间；插件之间唯一。
+   * Namespace unique to this plugin.
+   * @zh 插件独占的命名空间标识
    */
   namespace: string;
   /**
-   * Plugin version.
-   * @zh 插件版本。
+   * Plugin version string.
+   * @zh 插件版本字符串
    */
   version: string;
   /**
-   * Author.
-   * @zh 作者。
+   * Plugin author.
+   * @zh 插件作者
    */
   author: string;
   /**
-   * Description.
-   * @zh 描述。
+   * Plugin description.
+   * @zh 插件功能描述
    */
   description: string;
   /**
-   * Number of entries in `apis`.
-   * @zh `apis` 的条数。
+   * Number of methods in `apis`.
+   * @zh 插件注册的方法总数
    */
   apiCount: Int;
   /**
-   * Full names of the methods the plugin registered.
-   * @zh 插件注册的方法全名。
+   * Full method names registered by the plugin.
+   * @zh 插件注册的方法完整全名列表
    */
   apis: string[];
 }

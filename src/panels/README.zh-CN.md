@@ -92,6 +92,7 @@ WebViewPanel (core/)
 
 - **新增面板配置项**：在 `PanelConfig` 加字段并 **提升 `CURRENT_VERSION`**，同步更新 `Serialize/Deserialize` 与 `Write/Read`，并在 `operator==` 里纳入比较（否则热重载检测不到变化）；旧版本反序列化要给默认值。
 - **新增配置 UI**：在 `PanelConfigDialog` 增控件，DUI/CUI 共用，避免两边各写一套。
+- **面板背景**：页面透明处露出的是宿主窗口自己画的背景，所以面板窗口不要带 `WS_CLIPCHILDREN`（WebView 的子窗口盖满客户区，带了就画不到它下面），并在 `WM_ERASEBKGND` 里用宿主当前的背景色填满。新的宿主集成重写 `WebViewPanel::QueryHostBackground()`，换色时重绘窗口并调用 `RefreshHostBackground()`；不重写则保持缺省的 `#1e1e1e`。
 - **面板专属行为**：优先用 `PanelConfig` 字段（如 `grabFocus`/`enableDevTools`）驱动，避免在面板类里堆布尔分支；通用能力应下沉到 `WebViewPanel` 基类让三种模式共享。
 
 ---

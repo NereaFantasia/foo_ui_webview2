@@ -23,8 +23,8 @@ TEST(ArtworkRequestParser, ParsesSupportedRoutes) {
             Route::Fb2kArtwork, "E:\\Music\\track.flac"},
         {"artwork://E%3A%5CMusic%5Ctrack.flac",
             Route::ArtworkScheme, "E:\\Music\\track.flac"},
-        {"https://foo-ui-webview2.local/fb2k-artwork/E%3A%5CMusic%5Ctrack.flac",
-            Route::SameOriginHttps, "E:\\Music\\track.flac"},
+        {"https://fb2k-routes.invalid/fb2k-artwork/E%3A%5CMusic%5Ctrack.flac",
+            Route::Https, "E:\\Music\\track.flac"},
     };
     for (const auto& c : cases) {
         const auto result = artwork_request::Parse(c.uri);
@@ -173,7 +173,7 @@ TEST(ArtworkRequestParser, AppliesTypeAndSizeContractToEveryRoute) {
     constexpr const char* routes[] = {
         "fb2k://artwork/track?type=cover_back&maxSize=512",
         "artwork://track?type=cover_back&maxSize=512",
-        "https://foo-ui-webview2.local/fb2k-artwork/track?type=cover_back&maxSize=512",
+        "https://fb2k-routes.invalid/fb2k-artwork/track?type=cover_back&maxSize=512",
     };
     for (const char* uri : routes) {
         const auto result = artwork_request::Parse(uri);

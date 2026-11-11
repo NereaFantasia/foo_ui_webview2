@@ -28,9 +28,9 @@ export interface Api {
   restore(): void;
 
   /**
-   * Close the calling window as the system close command does. Succeeds without doing anything
+   * Close the calling window as the system close command does. Succeeds with no operation
    * when there is no window. Fails in panel mode.
-   * @zh 像系统关闭命令那样关闭调用方窗口。没有窗口时什么也不做并照常成功。面板模式下失败。
+   * @zh 触发窗口关闭操作（等同于系统关闭指令）。无窗口时静默成功。面板模式下失败。
    */
   close(): void;
 
@@ -556,16 +556,16 @@ export interface Api {
   setBackdropPolicy(params: SetBackdropPolicyParams): SetBackdropPolicyResult;
 
   /**
-   * Keep the calling popup open after it received `window:beforeClose`; nothing happens when no
+   * Keep the calling popup open after it received `window:beforeClose`; ignored when no
    * close is pending. Fails with `NOT_FOUND` when the caller is not a popup.
-   * @zh 收到 `window:beforeClose` 后让调用方 popup 保持打开；没有待定的关闭时什么也不做。调用方不是 popup 时以 `NOT_FOUND` 失败。
+   * @zh 收到 `window:beforeClose` 后阻止调用方 popup 关闭；无待定关闭操作时静默忽略。调用方不是 popup 时以 `NOT_FOUND` 失败。
    */
   cancelClose(): void;
 
   /**
-   * Let the calling popup close after it received `window:beforeClose`; nothing happens when no
+   * Let the calling popup close after it received `window:beforeClose`; ignored when no
    * close is pending. Fails with `NOT_FOUND` when the caller is not a popup.
-   * @zh 收到 `window:beforeClose` 后让调用方 popup 关闭；没有待定的关闭时什么也不做。调用方不是 popup 时以 `NOT_FOUND` 失败。
+   * @zh 收到 `window:beforeClose` 后允许调用方 popup 关闭；无待定关闭操作时静默忽略。调用方不是 popup 时以 `NOT_FOUND` 失败。
    */
   confirmClose(): void;
 
@@ -892,13 +892,13 @@ interface PopupOpenedPayload {
    */
   windowId: string;
   /**
-   * Title the popup was created with.
-   * @zh 创建 popup 时给的标题。
+   * Initial title specified when the popup was created.
+   * @zh 弹出窗口创建时指定的初始标题
    */
   title: string;
   /**
-   * URL the popup was created with.
-   * @zh 创建 popup 时给的 URL。
+   * Initial URL specified when the popup was created.
+   * @zh 弹出窗口创建时指定的初始 URL
    */
   url: string;
 }
@@ -1662,8 +1662,8 @@ interface SetMicaResult {
    */
   variant: string;
   /**
-   * Echo of `darkMode`; present when it was given.
-   * @zh 回显 `darkMode`；传了才有。
+   * Echo of `darkMode`; present only when specified in the request.
+   * @zh 回显请求中的 `darkMode`；未指定该参数时不返回。
    */
   darkMode?: boolean;
 }
@@ -1701,8 +1701,8 @@ interface SetMicaEffectResult {
    */
   variant: string;
   /**
-   * Echo of `darkMode`; present when it was given.
-   * @zh 回显 `darkMode`；传了才有。
+   * Echo of `darkMode`; present only when specified in the request.
+   * @zh 回显请求中的 `darkMode`；未指定该参数时不返回。
    */
   darkMode?: boolean;
 }
@@ -1747,8 +1747,8 @@ interface SetAcrylicResult {
    */
   enabled: boolean;
   /**
-   * Echo of `darkMode`; present when it was given.
-   * @zh 回显 `darkMode`；传了才有。
+   * Echo of `darkMode`; present only when specified in the request.
+   * @zh 回显请求中的 `darkMode`；未指定该参数时不返回。
    */
   darkMode?: boolean;
 }
@@ -2233,13 +2233,13 @@ interface WindowInfo {
    */
   title: string;
   /**
-   * Popups only: the `url` the popup was created with.
-   * @zh 仅 popup：创建 popup 时给的 `url`。
+   * Popups only: initial URL specified when the popup was created.
+   * @zh 仅适用于弹出窗口：创建时指定的初始 URL
    */
   url?: string;
   /**
    * Popups only: the behavior preset; `legacy` when the popup was created without one.
-   * @zh 仅 popup：行为预设；创建时没给预设为 `legacy`。
+   * @zh 仅适用于弹出窗口：行为预设；创建时未指定则为 `legacy`
    */
   profile?: 'legacy' | 'standard' | 'miniPlayer' | 'desktopLyrics';
   /**
@@ -2515,16 +2515,16 @@ interface SendMessageParams {
    */
   targetWindowId: string;
   /**
-   * The message, delivered as `message` of the event. `null` counts as missing.
-   * @zh 消息，作为事件的 `message` 送达。`null` 按没传处理。
+   * The message, delivered as `message` of the event. Passing `null` is treated as omitted.
+   * @zh 消息正文，作为事件的 `message` 送达；传入 `null` 视同未指定。
    */
   message: Json;
 }
 
 interface BroadcastParams {
   /**
-   * The message, delivered as `message` of the event. `null` counts as missing.
-   * @zh 消息，作为事件的 `message` 送达。`null` 按没传处理。
+   * The message, delivered as `message` of the event. Passing `null` is treated as omitted.
+   * @zh 消息正文，作为事件的 `message` 送达；传入 `null` 视同未指定。
    */
   message: Json;
 }

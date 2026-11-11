@@ -192,9 +192,28 @@ protected:
     bool NavigateToLocalFrontend();
     
     virtual std::wstring GetTestPageHtml() const;
-    
+
+    /**
+     * 面板所在宿主（DUI、CUI）当前的背景色，每次现取。WebView 不透明时用它做底色；
+     * 透明时由宿主窗口自己用它擦除背景，页面透明处露出的就是这个颜色。
+     * 缺省返回 WebViewHost::kDefaultOpaqueBackground，不读宿主配色的面板保持原有外观。
+     */
+    virtual COLORREF QueryHostBackground();
+
     // ========== 辅助方法 ==========
-    
+
+    /**
+     * 按「透明背景」设置把面板的 WebView 背景设到位：透明，或以 QueryHostBackground() 的颜色铺底。
+     * 只对面板模式生效；WebView 不可用时不做事。
+     */
+    void ApplyPanelBackground(bool transparent);
+
+    /**
+     * 宿主换色后调用：让 WebView 的不透明底色跟上 QueryHostBackground()。
+     * 宿主窗口的重绘由调用方负责，它不依赖 WebView 是否就绪。
+     */
+    void RefreshHostBackground();
+
     void RegisterAllApis();
     
     void InitializeCallbacks();

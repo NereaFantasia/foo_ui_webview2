@@ -43,8 +43,9 @@ export interface Api {
 
   /**
    * Remove the ReplayGain values from files. The tags are rewritten in the background; read the
-   * files again to see the values gone.
-   * @zh 批量从指定音频文件标签中清除 ReplayGain 增益信息（标签在后台异步重写）
+   * files again to see the values gone. If any WAV file holds non-ASCII tag text, the call fails
+   * with `NOT_SUPPORTED` and writes nothing, as in `metadata.write`.
+   * @zh 批量从指定音频文件标签中清除 ReplayGain 增益信息（标签在后台异步重写）；其中任一 WAV 含非 ASCII 标签文本时整次调用以 `NOT_SUPPORTED` 失败且不写任何文件，原因同 `metadata.write`
    */
   clear(params: ClearParams): ClearResult;
 

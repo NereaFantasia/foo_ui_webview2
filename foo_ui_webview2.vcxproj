@@ -198,6 +198,7 @@
     <ClCompile Include="src\ui\UserInterface.cpp" />
     <ClCompile Include="src\prefs\PreferencesPage.cpp" />
     <ClCompile Include="src\prefs\PreferencesTemplateActions.cpp" />
+    <ClCompile Include="src\prefs\TemplateNamePrompt.cpp" />
     <ClCompile Include="src\prefs\ApiInventoryWindow.cpp" />
     <ClCompile Include="src\prefs\PreferencesPageBase.cpp" />
     <ClCompile Include="src\prefs\PreferencesDeveloperPage.cpp" />
@@ -268,6 +269,7 @@
     <ClCompile Include="src\webview\WebViewHostCrashRecovery.cpp" />
     <ClCompile Include="src\webview\WebViewHostFocus.cpp" />
     <ClCompile Include="src\webview\WebViewHostSettings.cpp" />
+    <ClCompile Include="src\webview\HostShortcutRelay.cpp" />
     <ClCompile Include="src\webview\WebViewHostOrigin.cpp" />
     <ClCompile Include="src\webview\OriginPolicy.cpp" />
     <ClCompile Include="src\webview\TextScaleFactor.cpp" />
@@ -376,6 +378,9 @@
     <ClCompile Include="lib\columns_ui-sdk\ui_extension.cpp">
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
     </ClCompile>
+    <ClCompile Include="lib\columns_ui-sdk\colours.cpp">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+    </ClCompile>
   </ItemGroup>
 
   <!-- 头文件 -->
@@ -407,6 +412,7 @@
     <ClInclude Include="src\prefs\PreferencesPerformancePage.h" />
     <ClInclude Include="src\prefs\PreferencesZoom.h" />
     <ClInclude Include="src\prefs\PreferencesTemplateName.h" />
+    <ClInclude Include="src\prefs\TemplateNamePrompt.h" />
     <ClInclude Include="src\settings\AdvconfigI18n.h" />
     <ClInclude Include="src\settings\AdvancedConfig.h" />
     <ClInclude Include="src\settings\SecurityConfig.h" />
@@ -570,6 +576,8 @@
     <ClInclude Include="src\api\ShellApi.h" />
     <ClInclude Include="src\api\HttpApi.h" />
     <ClInclude Include="src\api\KeyboardApi.h" />
+    <ClInclude Include="src\api\KeyboardHotkeyRules.h" />
+    <ClInclude Include="src\webview\HostShortcutRelay.h" />
     <ClInclude Include="src\api\UiApi.h" />
     <ClInclude Include="src\api\CursorApi.h" />
     <ClInclude Include="src\api\LyricsApi.h" />
@@ -622,6 +630,7 @@
     <ClInclude Include="src\callbacks\MetadbCallback.h" />
     <ClInclude Include="src\panels\PanelConfig.h" />
     <ClInclude Include="src\panels\PanelConfigDialog.h" />
+    <ClInclude Include="src\panels\PanelDpi.h" />
     <ClInclude Include="src\panels\WebViewDuiElement.h" />
     <ClInclude Include="src\panels\WebViewCuiPanel.h" />
     <ClInclude Include="src\selection\SelectionWatcher.h" />

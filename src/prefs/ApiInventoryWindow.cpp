@@ -542,7 +542,7 @@ void WebViewPreferencesInstance::OnShowApiList(HWND hwnd) {
     HWND hApiWnd = CreateWindowExW(
         WS_EX_TOOLWINDOW,
         className,
-        TR("WebView2 UI - API && External Plugin Services", "WebView2 UI - API && 外部插件服务"),
+        TR("WebView2 UI - API & External Plugin Services", "WebView2 UI - API 与外部插件服务"),
         WS_OVERLAPPEDWINDOW | WS_VISIBLE,
         x, y, width, height,
         nullptr,  // 无父窗口，独立窗口

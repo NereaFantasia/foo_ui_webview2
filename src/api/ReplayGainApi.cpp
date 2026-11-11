@@ -3,6 +3,7 @@
 
 #include "pch.h"
 #include "api/ReplayGainApi.h"
+#include "api/TagWriteGuard.h"
 #include "api/TypedApi.h"
 #include "api/generated/ReplaygainSchema.h"
 #include "utils/SubsongUtils.h"
@@ -292,6 +293,15 @@ namespace {
             for (const std::string& path : params.paths) {
                 const metadb_handle_ptr handle = SubsongUtils::CreateTrackHandle(path);
                 if (handle.is_valid()) {
+                    // 清除会重写整个标签块；任何一个 WAV 带非 ASCII 文本就整次拒绝，不写其余文件
+                    if (api::tag_guard::FoldsNonAscii(handle->get_path())) {
+                        const auto container = SubsongUtils::GetInfoOrReadFile(handle);
+                        if (container.is_valid()) {
+                            if (auto field = api::tag_guard::FirstNonAsciiField(container->info())) {
+                                return api::tag_guard::Refusal(path, *field);
+                            }
+                        }
+                    }
                     handles.add_item(handle);
                     foundCount++;
                 }

@@ -10,6 +10,7 @@
 #include "webview/dnd/DndRegistrar.h"
 #include "api/BridgeCore.h"
 #include "api/EventEmit.h"
+#include "api/KeyboardApi.h"
 #include "api/PortHub.h"
 #include "api/generated/PanelSchema.h"
 #include "api/generated/WebviewSchema.h"
@@ -74,12 +75,14 @@ bool WebViewPanel::InitializeWebView(HWND hwnd, WebViewPanelMode mode) {
         HandleNavigationCompleted(success);
     });
 
-    // 页面开始顶层导航时，旧页面打开的端口随它关闭。回调在新文档存在之前、UI 线程上
-    // 运行，新页面的消息同样在 UI 线程上分发且只能晚于它，所以新页面重新打开的端口不会被清掉。
+    // 页面开始顶层导航时，旧页面打开的端口、注册的全局热键与保留键随它关闭。回调在新文档存在之前、
+    // UI 线程上运行，新页面的消息同样在 UI 线程上分发且只能晚于它，所以新页面重新打开的端口
+    // 与热键不会被清掉。
     webView_->SetNavigationStartingCallback([this, myGeneration, weakAlive]() {
         if (weakAlive.expired()) return;
         if (myGeneration != webViewGeneration_) return;
         PortHub::Instance().CleanupPagePorts(hwnd_);
+        CleanupPageKeyboard(hwnd_);
         OnTopLevelNavigationStarting();
     });
 
@@ -162,8 +165,9 @@ void WebViewPanel::DestroyWebView() {
     if (hwnd_ && webViewReady_) {
         WebViewContext::GetInstance().UnregisterInstance(hwnd_);
         // 页面随 WebView 一起消失，它打开的端口也关闭；先注销再清理，
-        // port:disconnected 不再投给这个正在销毁的页面。
+        // port:disconnected 不再投给这个正在销毁的页面。它注册的全局热键与保留键一并注销。
         PortHub::Instance().CleanupPagePorts(hwnd_);
+        CleanupPageKeyboard(hwnd_);
     }
     
     webView_.reset();
@@ -175,6 +179,22 @@ void WebViewPanel::DestroyWebView() {
 
 bool WebViewPanel::IsWebViewOperable() const {
     return webView_ && webView_->IsReady() && !webViewProcessDead_;
+}
+
+COLORREF WebViewPanel::QueryHostBackground() {
+    return WebViewHost::kDefaultOpaqueBackground;
+}
+
+void WebViewPanel::ApplyPanelBackground(bool transparent) {
+    if (!IsPanelMode() || !IsWebViewOperable()) return;
+    // 先记下底色再切换透明度：切到不透明时一次到位，不会先闪一下旧颜色。
+    webView_->SetOpaqueBackgroundColor(QueryHostBackground());
+    webView_->SetBackgroundTransparent(transparent);
+}
+
+void WebViewPanel::RefreshHostBackground() {
+    if (!IsPanelMode() || !IsWebViewOperable()) return;
+    webView_->SetOpaqueBackgroundColor(QueryHostBackground());
 }
 
 void WebViewPanel::ResizeWebView() {
@@ -221,17 +241,20 @@ void WebViewPanel::OnWebViewReady() {
     LOG("WebViewPanel::OnWebViewReady");
     
     ResizeWebView();
-    
+
+    // SetupWebView 对所有宿主一律设成透明；面板在这里换成配置里保存的值。
+    ApplyPanelBackground(panelConfig_.transparentBackground);
+
     bridge_->SetWebView(webView_.get());
-    
+
     RegisterAllApis();
-    
+
     InitializeCallbacks();
-    
+
     webView_->SetMessageHandler([this](const std::wstring& json) {
         HandleWebMessage(json);
     });
-    
+
     // 全局或面板任一开启 DevTools 即可用。
     if (panelConfig_.enableDevTools && !security_config::IsDevToolsEnabled()) {
         if (auto* wv = webView_->GetWebView()) {
@@ -358,8 +381,9 @@ void WebViewPanel::OnWebViewProcessFailed(COREWEBVIEW2_PROCESS_FAILED_KIND faile
         webViewProcessDead_ = true;
         if (hwnd_) {
             WebViewContext::GetInstance().UnregisterInstance(hwnd_);
-            // 页面已不可用，它打开的端口不再有人接收。
+            // 页面已不可用，它打开的端口与注册的热键不再有人接收。
             PortHub::Instance().CleanupPagePorts(hwnd_);
+            CleanupPageKeyboard(hwnd_);
         }
     }
 
@@ -480,7 +504,7 @@ void WebViewPanel::ApplyConfig(const PanelConfig& oldCfg, const PanelConfig& new
         LOG("WebViewPanel::ApplyConfig - Transparent background changed: ", 
             oldCfg.transparentBackground ? "true" : "false", " -> ", 
             newCfg.transparentBackground ? "true" : "false");
-        webView_->SetBackgroundTransparent(newCfg.transparentBackground);
+        ApplyPanelBackground(newCfg.transparentBackground);
     }
     
     // grabFocus 在运行时读取，无需额外操作。

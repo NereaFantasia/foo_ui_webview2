@@ -732,6 +732,42 @@ namespace {
         return items.get_count() != 0;
     }
 
+    // `target` 选定的作用对象（热键转发规格 §13.2）。auto 沿用 TryGetContextTarget，不带调用方 GUID，
+    // 执行路径与加这个参数之前相同；其余取值同时给出 foobar2000 区分作用对象用的调用方 GUID
+    struct ContextTarget {
+        bool withCaller = false;
+        GUID caller = pfc::guid_null;
+    };
+
+    bool TryGetContextTargetFor(const std::string& target, metadb_handle_list& items, ContextTarget& out) {
+        out = {};
+        if (target == "auto") return TryGetContextTarget(items);
+        items.remove_all();
+        out.withCaller = true;
+        if (target == "selection") {
+            // foobar2000 自己的上下文快捷键（process_keydown_simple）取的就是这份选区
+            auto selection = ui_selection_manager::get();
+            selection->get_selection(items);
+            out.caller = selection->get_selection_type();
+            if (out.caller == pfc::guid_null) out.caller = contextmenu_item::caller_undefined;
+        } else if (target == "nowPlaying") {
+            metadb_handle_ptr nowPlaying;
+            if (playback_control::get()->get_now_playing(nowPlaying)) items.add_item(nowPlaying);
+            out.caller = contextmenu_item::caller_now_playing;
+        } else {
+            playlist_manager::get()->activeplaylist_get_selected_items(items);
+            out.caller = contextmenu_item::caller_active_playlist_selection;
+        }
+        return items.get_count() != 0;
+    }
+
+    const char* NoContextTargetMessage(const std::string& target) {
+        if (target == "selection") return "The selection is empty";
+        if (target == "nowPlaying") return "Nothing is playing";
+        if (target == "playlistSelection") return "Nothing is selected in the active playlist";
+        return "No track selected or playing";
+    }
+
     api::Result<discovery::ExecuteContextMenuCommandResult> ExecuteContextMenuCommand(
         const discovery::ExecuteContextMenuCommandParams& params) {
         GUID cmdGuid;
@@ -740,8 +776,9 @@ namespace {
         }
 
         metadb_handle_list items;
-        if (!TryGetContextTarget(items)) {
-            return api::Fail("No track selected or playing", ApiErrorCode::NO_ACTIVE_ITEM);
+        ContextTarget target;
+        if (!TryGetContextTargetFor(params.target, items, target)) {
+            return api::Fail(NoContextTargetMessage(params.target), ApiErrorCode::NO_ACTIVE_ITEM);
         }
 
         // Pre-flight check before run_command_context: the SDK documents a
@@ -770,7 +807,10 @@ namespace {
                               {"resolved", resolved}, {"force", params.force}});
         }
 
-        if (!menu_helpers::run_command_context(cmdGuid, pfc::guid_null, items)) {
+        const bool ran = target.withCaller
+            ? menu_helpers::run_command_context_ex(cmdGuid, pfc::guid_null, items, target.caller)
+            : menu_helpers::run_command_context(cmdGuid, pfc::guid_null, items);
+        if (!ran) {
             if (!resolved) {
                 return api::Fail("No context-menu command owns this guid", ApiErrorCode::NOT_FOUND,
                                  {{"guid", params.guid}, {"hidden", false}, {"resolved", false},
@@ -862,8 +902,13 @@ namespace {
         const discovery::ExecuteContextMenuByPathParams& params) {
         // Get target track(s)
         metadb_handle_list items;
+        ContextTarget target;
 
-        if (params.trackPath.has_value() && !params.trackPath->empty()) {
+        const bool hasTrackPath = params.trackPath.has_value() && !params.trackPath->empty();
+        if (hasTrackPath && params.target != "auto") {
+            return api::Fail("trackPath and target cannot be given together", ApiErrorCode::INVALID_PARAMS);
+        }
+        if (hasTrackPath) {
             // 曲目路径可带 "|subsong:N"：拆掉后缀再规范化，CUE 子曲目按自身执行命令，
             // 不带后缀时指第一首。
             metadb_handle_ptr handle = SubsongUtils::CreateTrackHandle(*params.trackPath);
@@ -872,13 +917,17 @@ namespace {
             }
         }
 
-        if (items.get_count() == 0 && !TryGetContextTarget(items)) {
-            return api::Fail("No track selected or playing", ApiErrorCode::NO_ACTIVE_ITEM);
+        if (items.get_count() == 0 && !TryGetContextTargetFor(params.target, items, target)) {
+            return api::Fail(NoContextTargetMessage(params.target), ApiErrorCode::NO_ACTIVE_ITEM);
         }
 
         // Create context menu manager and initialize
         auto mgr = contextmenu_manager::g_create();
-        mgr->init_context(items, contextmenu_manager::flag_view_full);
+        if (target.withCaller) {
+            mgr->init_context_ex(items, contextmenu_manager::flag_view_full, target.caller);
+        } else {
+            mgr->init_context(items, contextmenu_manager::flag_view_full);
+        }
 
         contextmenu_node* root = mgr->get_root();
         if (!root) {

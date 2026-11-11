@@ -22,6 +22,7 @@ struct UnregisterHotkeyParams;
 struct KeyboardHotkey;
 struct GetRegisteredHotkeysResult;
 struct GetRegisteredHotkeysParams;
+struct SetReservedKeysParams;
 struct HotkeyPayload;
 inline json ToJson(const RegisterHotkeyResult& v);
 inline bool FromJson(const json& j, RegisterHotkeyParams& out, std::string& error, const std::string& where = {});
@@ -30,6 +31,7 @@ inline bool FromJson(const json& j, UnregisterHotkeyParams& out, std::string& er
 inline json ToJson(const KeyboardHotkey& v);
 inline json ToJson(const GetRegisteredHotkeysResult& v);
 inline bool FromJson(const json& j, GetRegisteredHotkeysParams& out, std::string& error, const std::string& where = {});
+inline bool FromJson(const json& j, SetReservedKeysParams& out, std::string& error, const std::string& where = {});
 inline json ToJson(const HotkeyPayload& v);
 
 struct RegisterHotkeyResult {
@@ -103,12 +105,13 @@ inline bool FromJson(const json& j, UnregisterHotkeyParams& out, std::string& er
 }
 
 struct KeyboardHotkey {
-    static constexpr std::array<std::string_view, 4> kFields{{"id", "key", "action", "global"}};
+    static constexpr std::array<std::string_view, 5> kFields{{"id", "key", "action", "global", "windowId"}};
 
     std::int64_t id{};
     std::string key{};
     std::string action{};
     bool global{};
+    std::optional<std::string> windowId{};
 };
 
 inline json ToJson(const KeyboardHotkey& v) {
@@ -117,6 +120,7 @@ inline json ToJson(const KeyboardHotkey& v) {
     api::results::Put(j, "key", v.key);
     api::results::Put(j, "action", v.action);
     api::results::Put(j, "global", v.global);
+    api::results::Put(j, "windowId", v.windowId);
     return j;
 }
 
@@ -142,6 +146,23 @@ inline bool FromJson(const json& j, GetRegisteredHotkeysParams&, std::string& er
     api::params::Reader r(j, error, where);
     return r.IsObject()
         && r.OnlyKeys({});
+}
+
+struct SetReservedKeysParams {
+    static constexpr const char* kMethod = "keyboard.setReservedKeys";
+    static constexpr std::array<api::params::PathParam, 0> kPathParams{};
+    using Result = void;
+
+    std::vector<std::string> keys{};
+    bool all = false;
+};
+
+inline bool FromJson(const json& j, SetReservedKeysParams& out, std::string& error, const std::string& where) {
+    api::params::Reader r(j, error, where);
+    return r.IsObject()
+        && r.OnlyKeys({"keys", "all"})
+        && r.Required("keys", out.keys)
+        && r.Optional("all", out.all);
 }
 
 struct HotkeyPayload {

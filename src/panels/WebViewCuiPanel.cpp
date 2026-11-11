@@ -10,6 +10,7 @@
 #include "api/BridgeCore.h"
 #include "api/EventEmit.h"
 #include "api/generated/PanelSchema.h"
+#include "webview/HostShortcutRelay.h"
 #include "webview/WebViewHost.h"
 #include "window/WindowManager.h"
 
@@ -32,6 +33,55 @@ WebViewCuiPanel::WebViewCuiPanel() {
 
 WebViewCuiPanel::~WebViewCuiPanel() {
     FB2K_console_print("[WebViewCuiPanel] Destruct");
+    UnregisterColourListener();
+}
+
+// ============================================
+// Columns UI 颜色
+// ============================================
+
+COLORREF WebViewCuiPanel::QueryHostBackground() {
+    // helper 取不到 Columns UI 服务时回退系统色。每次现建：只在擦除与换色时调用。
+    return cui::colours::helper().get_colour(cui::colours::colour_background);
+}
+
+void WebViewCuiPanel::ColourListener::on_colour_changed(uint32_t changedItemsMask) const {
+    if (changedItemsMask & cui::colours::colour_flag_background) {
+        m_owner.OnHostColoursChanged();
+    }
+}
+
+void WebViewCuiPanel::ColourListener::on_bool_changed(uint32_t changedItemsMask) const {
+    // 切换深色模式会整套换色，通知里不一定带 colour_flag_background。
+    if (changedItemsMask & cui::colours::bool_flag_dark_mode_enabled) {
+        m_owner.OnHostColoursChanged();
+    }
+}
+
+void WebViewCuiPanel::OnHostColoursChanged() {
+    if (m_hostWnd && IsWindow(m_hostWnd)) {
+        InvalidateRect(m_hostWnd, nullptr, TRUE);
+    }
+    RefreshHostBackground();
+}
+
+void WebViewCuiPanel::RegisterColourListener() {
+    if (m_colourListener) return;
+    cui::colours::manager::ptr api;
+    if (!fb2k::std_api_try_get(api)) return;
+    m_colourListener = std::make_unique<ColourListener>(*this);
+    m_colourManager = api;
+    // 旧版 Columns UI 的 register_common_callback 是空实现，不会收到通知；
+    // 此时擦除仍现取颜色，只是换色后要等下一次重绘才更新。
+    m_colourManager->register_common_callback(m_colourListener.get());
+}
+
+void WebViewCuiPanel::UnregisterColourListener() {
+    if (m_colourListener && m_colourManager.is_valid()) {
+        m_colourManager->deregister_common_callback(m_colourListener.get());
+    }
+    m_colourListener.reset();
+    m_colourManager.reset();
 }
 
 // ============================================
@@ -49,7 +99,7 @@ bool WebViewCuiPanel::RegisterWindowClass() {
     wc.cbWndExtra = sizeof(void*);
     wc.hInstance = core_api::get_my_instance();
     wc.hCursor = LoadCursor(nullptr, IDC_ARROW);
-    wc.hbrBackground = (HBRUSH)(COLOR_WINDOW + 1);
+    wc.hbrBackground = nullptr;  // 背景由 WM_ERASEBKGND 按 Columns UI 配色画
     wc.lpszClassName = CLASS_NAME;
     
     if (RegisterClassExW(&wc) == 0) {
@@ -92,11 +142,14 @@ HWND WebViewCuiPanel::create_or_transfer_window(
     m_host = p_host;
     
     // Create window (no WS_VISIBLE - host will show when ready)
+    //
+    // 不带 WS_CLIPCHILDREN：WebView 的子窗口盖满整个客户区，带了它，宿主窗口的背景就画不到
+    // 子窗口下面，页面透明处露出的像素换色后没人重画（见 WebViewDuiElement 的同一处注释）。
     m_hostWnd = CreateWindowExW(
         WS_EX_CONTROLPARENT,
         CLASS_NAME,
         L"WebView2 CUI Panel",
-        WS_CHILD | WS_CLIPCHILDREN,
+        WS_CHILD | WS_CLIPSIBLINGS,
         p_position.x, p_position.y,
         p_position.cx, p_position.cy,
         wnd_parent,
@@ -111,7 +164,9 @@ HWND WebViewCuiPanel::create_or_transfer_window(
     }
     
     FB2K_console_print("[WebViewCuiPanel] Window created");
-    
+
+    RegisterColourListener();
+
     // 在初始化 WebView 前应用已恢复的面板配置
     if (panelConfig_.HasTemplateOverride()) {
         FB2K_console_print("[WebViewCuiPanel] Using panel template: ", panelConfig_.templateName.c_str());
@@ -125,7 +180,9 @@ HWND WebViewCuiPanel::create_or_transfer_window(
 
 void WebViewCuiPanel::destroy_window() {
     FB2K_console_print("[WebViewCuiPanel] destroy_window");
-    
+
+    UnregisterColourListener();
+
     // 注销面板引用计数（仅在 OnWebViewReady 中注册成功后才注销）
     if (IsWebViewReady()) {
         WindowManager::GetInstance().UnregisterPanel();
@@ -250,6 +307,17 @@ LRESULT WebViewCuiPanel::HandleMessage(HWND hwnd, UINT msg, WPARAM wParam, LPARA
             return 0;
         }
         
+        // 用 Columns UI 当前的背景色填满客户区，包括 WebView 子窗口下面：页面透明处露出的就是它。
+        case WM_ERASEBKGND: {
+            RECT rc;
+            GetClientRect(hwnd, &rc);
+            if (HBRUSH brush = CreateSolidBrush(QueryHostBackground())) {
+                FillRect(reinterpret_cast<HDC>(wParam), &rc, brush);
+                DeleteObject(brush);
+            }
+            return 1;
+        }
+
         // ============================================
         // 焦点管理（用于 Selection API）
         // ============================================
@@ -264,20 +332,30 @@ LRESULT WebViewCuiPanel::HandleMessage(HWND hwnd, UINT msg, WPARAM wParam, LPARA
         }
         
         // Keyboard shortcuts
+        // 键盘焦点在面板宿主窗口时按键才到这里；WebView 有焦点时走 AcceleratorKeyPressed（规格 §5.3）。
         case WM_KEYDOWN:
+        case WM_SYSKEYDOWN: {
+            // 输入法开着时 wParam 多为 VK_PROCESSKEY，先还原真实键码。
+            const UINT vk = host_shortcut_relay::HostWindowKey(hwnd, wParam);
+            const bool repeat = (lParam & (1 << 30)) != 0;
             // F12 to open DevTools (only in dev server mode)
-            if (wParam == VK_F12 && GetWebView() && GetWebView()->IsReady()) {
+            if (msg == WM_KEYDOWN && vk == VK_F12 && GetWebView() && GetWebView()->IsReady()) {
                 if (security_config::UseDevServer()) {
                     GetWebView()->OpenDevTools();
                     return 0;
                 }
             }
             // F5 to reload
-            else if (wParam == VK_F5 && GetWebView() && GetWebView()->IsReady()) {
+            else if (msg == WM_KEYDOWN && vk == VK_F5 && GetWebView() && GetWebView()->IsReady()) {
                 GetWebView()->Reload();
                 return 0;
             }
+            // 其余按键按转发规则交给 foobar2000 快捷键；执行后本面板可能已销毁，直接返回。
+            else if (host_shortcut_relay::TryRelayFromHostWindow(hwnd, wParam, vk, host_shortcut_relay::CurrentModifiers(), repeat)) {
+                return 0;
+            }
             break;
+        }
         
         // Mouse message forwarding (needed for Visual Hosting mode)
         case WM_MOUSEMOVE:

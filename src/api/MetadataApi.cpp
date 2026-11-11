@@ -16,6 +16,7 @@
 #include "api/EventEmit.h"
 #include "api/ProbeFailureClassifier.h"
 #include "api/RatingResolve.h"
+#include "api/TagWriteGuard.h"
 #include "api/TypedApi.h"
 #include "api/generated/MetadataSchema.h"
 #include "api/generated/RatingSchema.h"
@@ -646,6 +647,30 @@ private:
   std::vector<std::string> m_tagsToRemove;
 };
 
+// 把 filter 的改动套在当前标签的副本上，结果含非 ASCII 且目标是 WAV 时拒写，
+// 原因见 api/TagWriteGuard.h。读不出当前标签时放行：写入线程同样读不出，会自行失败
+static std::optional<api::Failure> CheckWavInfoSafe(const metadb_handle_ptr &handle,
+                                                    const char *canonicalPath,
+                                                    t_uint32 subsong,
+                                                    const std::string &path,
+                                                    file_info_filter &filter) {
+  if (!api::tag_guard::FoldsNonAscii(canonicalPath)) {
+    return std::nullopt;
+  }
+  file_info_impl info;
+  if (!ReadMetadataInfoWithFallback(handle, canonicalPath, subsong, info)) {
+    return std::nullopt;
+  }
+  filter.apply_filter(handle, handle->get_filestats(), info);
+  auto field = api::tag_guard::FirstNonAsciiField(info);
+  if (!field) {
+    return std::nullopt;
+  }
+  console::printf("metadata: refused WAV tag write, non-ASCII text in %s (%s)",
+                  field->c_str(), path.c_str());
+  return api::tag_guard::Refusal(path, *field);
+}
+
 // Async completion_notify wrapper (revised after crash analysis)
 //
 // DESIGN: We CANNOT block or pump messages on the main thread because:
@@ -750,6 +775,12 @@ static std::variant<md::WriteResult, api::Failure> WriteTagsCore(const md::Write
     // Create filter and handle list
     service_ptr_t<file_info_filter> filter =
         fb2k::service_new<TagUpdateFilter>(tagsToSet, tagsToRemove);
+
+    if (auto refusal = CheckWavInfoSafe(handle, canonicalPath.c_str(),
+                                        static_cast<t_uint32>(parsed.subsongIndex), path,
+                                        *filter)) {
+      return std::move(*refusal);
+    }
 
     metadb_handle_list handles;
     handles.add_item(handle);
@@ -1070,6 +1101,12 @@ api::Result<R> RemoveTags(const std::string &path, const std::vector<std::string
     std::map<std::string, std::vector<std::string>> emptyTags;
     service_ptr_t<file_info_filter> filter =
         fb2k::service_new<TagUpdateFilter>(emptyTags, tagsToRemove);
+
+    if (auto refusal = CheckWavInfoSafe(handle, canonicalPath.c_str(),
+                                        static_cast<t_uint32>(parsed.subsongIndex), path,
+                                        *filter)) {
+      return std::move(*refusal);
+    }
 
     metadb_handle_list handles;
     handles.add_item(handle);

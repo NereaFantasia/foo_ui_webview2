@@ -101,6 +101,67 @@ TEST(AutoplaylistConfigPersistence, RejectsEveryTruncatedPrefixAndUnknownFormat)
     EXPECT_THROW(DecodeConfiguration(encoded), ValidationError);
 }
 
+// 核心客户端的配置块：两段 u32 小端长度前缀的 UTF-8，别无其他。
+std::vector<uint8_t> BuiltinBlock(std::string_view query, std::string_view sort) {
+    std::vector<uint8_t> bytes;
+    for (const auto text : {query, sort}) {
+        for (unsigned shift = 0; shift < 32; shift += 8) bytes.push_back(static_cast<uint8_t>(text.size() >> shift));
+        bytes.insert(bytes.end(), text.begin(), text.end());
+    }
+    return bytes;
+}
+
+TEST(AutoplaylistBuiltinConfiguration, DecodesRealWorldSamples) {
+    const std::pair<std::string_view, std::string_view> samples[] = {
+        {"ALL", "%album% | %album artist% | %discnumber% | %tracknumber%"},
+        {"%rating% GREATER 3", "%rating%"},
+        {"%play_count% GREATER 10", "%play_count%"},
+        {"%length_seconds% GREATER 600", "%length%"},
+        {"", ""},
+    };
+    for (const auto& [query, sort] : samples) {
+        const auto decoded = DecodeBuiltinConfiguration(BuiltinBlock(query, sort));
+        EXPECT_EQ(decoded.query, query);
+        EXPECT_EQ(decoded.sort, sort);
+    }
+}
+
+TEST(AutoplaylistBuiltinConfiguration, KeepsChineseQuotesAndSortByVerbatim) {
+    const std::string query = "artist HAS \"周杰伦\" SORT BY %date%";
+    const auto decoded = DecodeBuiltinConfiguration(BuiltinBlock(query, ""));
+    EXPECT_EQ(decoded.query, query);
+    EXPECT_EQ(decoded.sort, "");
+}
+
+TEST(AutoplaylistBuiltinConfiguration, RejectsEveryTruncatedPrefix) {
+    const auto block = BuiltinBlock("%rating% GREATER 3", "%rating%");
+    for (size_t size = 0; size < block.size(); ++size) {
+        const std::vector<uint8_t> truncated(block.begin(), block.begin() + size);
+        EXPECT_THROW(DecodeBuiltinConfiguration(truncated), ValidationError) << size;
+    }
+}
+
+TEST(AutoplaylistBuiltinConfiguration, RejectsLengthOverrunTrailingBytesAndBadText) {
+    auto overrun = BuiltinBlock("ALL", "x");
+    overrun[0] = 0xff;
+    EXPECT_THROW(DecodeBuiltinConfiguration(overrun), ValidationError);
+
+    auto trailing = BuiltinBlock("ALL", "x");
+    trailing.push_back(0);
+    EXPECT_THROW(DecodeBuiltinConfiguration(trailing), ValidationError);
+
+    EXPECT_THROW(DecodeBuiltinConfiguration(BuiltinBlock(std::string_view("\xc0\xaf", 2), "")), ValidationError);
+    EXPECT_THROW(DecodeBuiltinConfiguration(BuiltinBlock("ALL", std::string_view("\xe2\x82", 2))), ValidationError);
+    EXPECT_THROW(DecodeBuiltinConfiguration(BuiltinBlock(std::string_view("A\0B", 3), "")), ValidationError);
+    EXPECT_THROW(DecodeBuiltinConfiguration({}), ValidationError);
+}
+
+TEST(AutoplaylistBuiltinConfiguration, EnforcesTheSameTextLimitAsManagedConfiguration) {
+    EXPECT_NO_THROW(DecodeBuiltinConfiguration(BuiltinBlock(std::string(MaxTextBytes, 'a'), std::string(MaxTextBytes, 'b'))));
+    EXPECT_THROW(DecodeBuiltinConfiguration(BuiltinBlock(std::string(MaxTextBytes + 1, 'a'), "")), ValidationError);
+    EXPECT_THROW(DecodeBuiltinConfiguration(BuiltinBlock("", std::string(MaxTextBytes + 1, 'b'))), ValidationError);
+}
+
 TEST_F(AutoplaylistConfigTest, FirstFlagsObservationIsBaselineAndInstancesHaveDistinctRevisions) {
     const auto first = Read();
     EXPECT_EQ(first.revision, Read().revision);

@@ -232,7 +232,13 @@ public:
     
     // 设置 WebView 背景透明度（用于 DWM 效果穿透）
     HRESULT SetBackgroundTransparent(bool transparent);
-    
+
+    // 不透明背景所用的颜色的缺省值（#1e1e1e）。
+    static constexpr COLORREF kDefaultOpaqueBackground = RGB(30, 30, 30);
+
+    // 改不透明背景所用的颜色。当前已是不透明时立即生效，否则只记下，下次转为不透明时使用。
+    HRESULT SetOpaqueBackgroundColor(COLORREF color);
+
     // 刷新 WebView 渲染（DWM 效果变更后调用）
     void RefreshForDwmEffect();
 
@@ -339,6 +345,7 @@ private:
     HWND parentHwnd_ = nullptr;
     bool useVisualHosting_ = true;           // Visual Hosting 模式标记
     bool isBackgroundTransparent_ = false;   // 跟踪透明状态
+    COLORREF opaqueBackground_ = kDefaultOpaqueBackground;  // 不透明状态下的背景色
     bool zoomOverriddenByTheme_ = false;     // 主题调过缩放 API，默认缩放偏好不再覆盖
 
     // WebView 输入焦点状态（用于决定是否让 fb2k 快捷键优先）
@@ -401,6 +408,8 @@ private:
     FocusChangedCallback focusChangedCallback_;
     NavigationCompletedCallback navigationCompletedCallback_;
     bool lastNavigationSuperseded_ = false;
+    // 最近一次开始的导航已成功完成，当前文档里有引导脚本；导航开始时清除。F5 据此决定交不交给页面
+    bool currentDocumentLoaded_ = false;
     InitFailure lastInitFailure_;
 
     // 记下失败并写一条带环境信息的 lifecycle 日志。

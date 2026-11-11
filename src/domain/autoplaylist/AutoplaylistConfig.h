@@ -45,6 +45,17 @@ std::vector<uint8_t> EncodeConfiguration(const Config& config);
 /** Reject unknown versions, invalid strings and truncated configurations. */
 Config DecodeConfiguration(const std::vector<uint8_t>& bytes);
 
+struct QuerySort {
+    std::string query;
+    std::string sort;
+};
+/**
+ * Decode the configuration block of foobar2000's built-in query/sort client: two u32-LE
+ * length-prefixed UTF-8 texts and nothing after them. The layout is not a published SDK
+ * contract, so any deviation throws ValidationError instead of returning part of a text.
+ */
+QuerySort DecodeBuiltinConfiguration(const std::vector<uint8_t>& bytes);
+
 struct CompiledConfig {
     virtual ~CompiledConfig() = default;
 };

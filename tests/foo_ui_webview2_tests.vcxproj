@@ -138,6 +138,7 @@
     </ClCompile>
     <ClCompile Include="test_error_envelope.cpp" />
     <ClCompile Include="test_base64.cpp" />
+    <ClCompile Include="test_tag_write_guard.cpp" />
     <ClCompile Include="test_guid_utils.cpp" />
     <ClCompile Include="test_artwork_cache_key.cpp" />
     <ClCompile Include="test_artwork_cache_p1.cpp" />
@@ -147,6 +148,8 @@
     <ClCompile Include="test_artwork_instrumentation.cpp" />
     <ClCompile Include="test_subsong_utils.cpp" />
     <ClCompile Include="test_lyrics_file_policy.cpp" />
+    <ClCompile Include="test_keyboard_hotkey_rules.cpp" />
+    <ClCompile Include="test_host_shortcut_relay.cpp" />
     <ClCompile Include="test_subsong_path.cpp" />
     <ClCompile Include="test_canonical_handle.cpp" />
     <ClCompile Include="test_string_utils.cpp" />
@@ -177,6 +180,7 @@
     <ClCompile Include="test_network_share_resolver.cpp" />
     <ClCompile Include="test_media_container_path.cpp" />
     <ClCompile Include="test_media_read_path.cpp" />
+    <ClCompile Include="test_slow_media_path.cpp" />
     <ClCompile Include="test_menu_handle_list_dedup.cpp" />
     <ClCompile Include="test_media_membership_index.cpp" />
     <ClCompile Include="test_path_canonical_cache.cpp" />

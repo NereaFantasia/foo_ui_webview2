@@ -246,10 +246,10 @@ void WebViewPrefsDeveloperInstance::CreateControls(HWND hwnd) {
     createNote(IDC_STATIC_DEV_SERVER_URL, TR("URL", "URL"));
     create(L"EDIT", WS_EX_CLIENTEDGE, L"", WS_TABSTOP | ES_LEFT | ES_AUTOHSCROLL, IDC_EDIT_DEV_SERVER_URL);
     createNote(IDC_STATIC_DEV_SERVER_NOTE,
-        TR("Applies on Apply: the main window and panels that follow the global template reload from the "
+        TR("Takes effect on Apply: the main window and panels that follow the global template reload from the "
            "development server (or from the local template when the URL is empty or the switch is off). "
            "Panels with their own template or URL and popup windows are not affected.",
-           "按下应用即生效：主窗口与跟随全局模板的面板会从开发服务器重载（URL 留空或关闭开关时回到本地模板）。"
+           "应用后立即生效：主窗口与跟随全局模板的面板会从开发服务器重载（URL 留空或关闭开关时回到本地模板）。"
            "显式指定模板或 URL 的面板与弹出窗口不受影响。"));
 
     // ---- CDP remote debugging ----
@@ -270,7 +270,7 @@ void WebViewPrefsDeveloperInstance::CreateControls(HWND hwnd) {
     createNote(IDC_STATIC_ADVANCED_NOTE,
         TR("Security exceptions (local network access, insecure TLS, CDP keep-alive) are configured in Advanced Preferences "
            "under Tools > WebView2 UI.",
-           "安全例外（本地网络访问、不安全 TLS、CDP 保活）在 高级首选项 > Tools > WebView2 UI 中配置。"));
+           "安全例外（本地网络访问、不安全 TLS、CDP 保持后台活动）在 高级首选项 > 工具 > WebView2 UI 中配置。"));
 
     SyncControlsFromDraft();
 }

@@ -91,7 +91,7 @@ TEST(PreferencesDraftDefaults, MatchConfigDefaults) {
     EXPECT_EQ(d.GetInt(Language), 0);   // Auto
 }
 
-// 窗口子页：七个开关的默认值与各配置变量一致；只有后台模式与缩略图按钮影响重启。
+// 窗口子页：各开关的默认值与各配置变量一致；只有后台模式与缩略图按钮影响重启。
 TEST(PreferencesWindowFields, DefaultsAndRestartFlagsMatchDesign) {
     const FieldTable fields = window::Table();
     const Snapshot d = Defaults(fields);
@@ -103,6 +103,13 @@ TEST(PreferencesWindowFields, DefaultsAndRestartFlagsMatchDesign) {
     EXPECT_FALSE(d.GetBool(window::CloseToTray));
     EXPECT_TRUE(d.GetBool(window::TaskbarButtons));
     EXPECT_FALSE(d.GetBool(window::TaskbarProgress));
+    // 快捷键转发范围：默认转 Ctrl、Alt、Win 组合与 F 键，媒体键与其他按键默认不转。
+    EXPECT_TRUE(d.GetBool(window::RelayCtrl));
+    EXPECT_TRUE(d.GetBool(window::RelayAlt));
+    EXPECT_TRUE(d.GetBool(window::RelayWin));
+    EXPECT_TRUE(d.GetBool(window::RelayFKeys));
+    EXPECT_FALSE(d.GetBool(window::RelayMedia));
+    EXPECT_FALSE(d.GetBool(window::RelayBare));
     for (size_t i = 0; i < fields.size(); ++i) {
         const bool restart = (i == window::BackgroundMode || i == window::TaskbarButtons);
         EXPECT_EQ(fields[i].affectsRestart, restart) << fields[i].key;
