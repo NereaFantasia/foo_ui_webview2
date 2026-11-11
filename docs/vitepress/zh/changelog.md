@@ -1,5 +1,64 @@
 # 更新日志
 
+## v2.2.0 (未发布)
+
+### 新功能
+
+#### 键盘
+- **WebView 内的按键执行 foobar2000 的快捷键**：页面有焦点时，用户在「首选项 > 键盘快捷键」里绑定的命令照常执行；没有绑定快捷键的按键仍交给页面。焦点在输入框里时，打字与文本编辑键留给页面；焦点在输入框之外时，空格、字母、方向键这类单键也能执行快捷键。参与的按键由组件首选项「窗口 > 快捷键」选定，默认为含 Ctrl、Alt 或 Win 的组合（包括 Ctrl+方向键）与 F1 到 F24；单键需要开启「其他按键」。按住按键不放时，快捷键只执行一次。详见 [WebView 内的快捷键](./api/keyboard.md#webview-内的快捷键)。
+- **[`keyboard.setReservedKeys`](./api/keyboard.md#keyboard-setreservedkeys) 把组合留给页面**：列出的组合即使在 foobar2000 里绑定了快捷键，也交给页面处理，主题自己的快捷键因此优先于用户的绑定。列表归属于页面，页面导航、重载或所在窗口关闭时清空。
+- **`keyboard.setReservedKeys` 的 `all` 把全部按键留给页面**，适用于页面在自绘的快捷键编辑器里录制按键等场景。系统级热键与开发服务器模式下的 F12 仍然生效。
+
+#### 右键菜单
+- **右键菜单命令可以指定作用对象**：[`discovery.executeContextMenuCommand`](./api/discovery.md#discovery-executecontextmenucommand) 与 [`discovery.executeContextMenuByPath`](./api/discovery.md#discovery-executecontextmenubypath) 新增 `target`：
+  - `selection`：foobar2000 自己的上下文快捷键所用的选区。
+  - `nowPlaying`：只作用于正在播放的曲目。
+  - `playlistSelection`：只作用于活动播放列表的选中项。
+  - `auto`（缺省）：作用于正在播放的曲目，未播放时作用于活动播放列表的选中项，与原来的行为相同。
+
+#### 面板
+- **Default UI 编辑模式的占位符标明面板身份**：占位符显示面板名、页面来源与已开启的选项，同一布局里有多个 WebView 面板时可以据此区分。它使用 Default UI 的配色与字体，尺寸随 DPI 缩放，空间不足时省略次要的行。双击占位符打开面板配置。
+- **面板配置对话框可以新建模板、打开模板文件夹**：模板下拉框旁新增「新建...」与「打开文件夹」。新模板的名称沿用偏好设置页的规则：只能使用字母、数字、连字符和下划线，且不能与现有模板重名（不区分大小写）。新建的模板自动选中，点「确定」后才写入面板配置。
+- **面板配置对话框重新排版**：设置项分为「页面」「行为」两组，边框样式移入「行为」组。「允许此网站访问……」只在填写外部网址后显示；此前它始终显示，未启用时为灰色。
+
+#### 播放列表
+- **[`playlist.getAutoplaylistQuery`](./api/playlist.md#playlist-getautoplaylistquery) 能读出内置自动播放列表的查询与排序**：列表由 foobar2000 自带的 query/sort 客户端驱动时（例如在 Default UI 里创建或经 `playlist.createAutoplaylist` 创建的列表），`query` 为列表当前的查询语句，新增的 `sort` 为排序表达式，未设置排序时为空串。两者在每次调用时重新读取。对于其他提供者的列表与本组件托管的列表，`query` 与 `sort` 均为 `null`，原因见 `note`。早期版本对所有列表都返回 `query: null`，应答里也没有 `sort` 字段。
+
+### 变更
+
+- **[`keyboard.registerHotkey`](./api/keyboard.md#keyboard-registerhotkey) 拒绝会在所有程序里占用常用按键的组合**：组合必须包含 Ctrl、Alt 或 Win，媒体键可以单独注册。Ctrl+A、C、V、X、Y、Z，Ctrl+Shift+Z，Ctrl+Esc，Alt+F4、Alt+Tab 与 Alt+Space 同样被拒绝。被拒绝的组合以 `INVALID_PARAMS` 失败。这些组合此前能注册成功，但热键从未触发（见「修复」）。
+- **组合已被占用时，错误信息指明持有者**：组合已由本组件注册时，[`keyboard.registerHotkey`](./api/keyboard.md#keyboard-registerhotkey) 以 `OPERATION_FAILED` 失败，`details` 给出该注册的 `id` 与 `windowId`。组合被其他程序或 foobar2000 的全局快捷键占用时，同样以 `OPERATION_FAILED` 失败，`details.win32Error` 为 Windows 错误码。
+- **注册热键的窗口关闭时，热键随之注销**：此前窗口关闭后热键仍保持注册，按键事件改发给主窗口的页面。Default UI 或 Columns UI 布局里没有主窗口页面，关闭的面板会继续占用该组合，重建的面板也无法再次注册。
+- **[`keyboard.getRegisteredHotkeys`](./api/keyboard.md#keyboard-getregisteredhotkeys) 的热键条目新增 `windowId`**：注册该热键、接收其按键事件的窗口。
+- **Ctrl+P、Ctrl+O、Ctrl+N 按用户在 foobar2000 里的绑定执行**：此前页面有焦点时，这三个组合固定执行打开首选项、打开文件与新建播放列表，不随用户的绑定改变。现在它们与其他按键一样，执行「首选项 > 键盘快捷键」里设置的快捷键。没有绑定时，按键交给页面。
+- **F5 重载有焦点的页面，页面自行处理时除外**：此前焦点在页面里时，F5 是一次普通按键，只有焦点在页面之外才重载页面；开启开发者工具时由浏览器重载。现在页面先收到这次按键。页面的 `keydown` 监听都没有调用 `preventDefault()` 时，组件在各类窗口里都会重载页面。页面正在加载或加载失败时，F5 直接重载。详见 [WebView 内的快捷键](./api/keyboard.md#webview-内的快捷键)。
+- **`keyboard.registerShortcut` 已废弃，将在 3.0 移除**：它只登记组合，不会按它匹配任何按键。页面内的快捷键请监听 `keydown`。
+- **SMP 兼容层的 `fb.GetLibraryItems` 更快**：它改为经 `library.search` 分页读取，并且只读取句柄用到的字段。在约 10 万首曲目的媒体库上实测，耗时从约 4.2 秒降到约 0.8 秒。返回的曲目与顺序不变。
+
+### 修复
+
+#### 键盘
+- **[`keyboard.registerHotkey`](./api/keyboard.md#keyboard-registerhotkey) 注册的热键能够触发**：热键此前注册在 foobar2000 的主窗口上，组件不会收到该窗口的 `WM_HOTKEY` 消息，因此注册成功，`keyboard:hotkey` 却从未派发。现在热键注册在组件自己的消息窗口上，按下时事件发给注册它的窗口。页面导航或重载时，它注册的热键随之注销，重载后的页面可以再次注册同一组合。退出 foobar2000 时，全部热键注销。
+
+#### 标签写入
+- **WAV 标签写入不再毁坏非 ASCII 标签**：[`metadata.write`](./api/metadata.md#metadata-write)、[`metadata.writeBatch`](./api/metadata.md#metadata-writebatch)、[`metadata.removeTag`](./api/metadata.md#metadata-removetag)、[`metadata.removeField`](./api/metadata.md#metadata-removefield)、[`rating.set`](./api/rating.md#rating-set) 的标签回退、`lyrics.save` 的内嵌目标与 [`replaygain.clear`](./api/replaygain.md#replaygain-clear) 遇到写入后标签含非 ASCII 文本的 WAV 文件时拒绝写入，以 `NOT_SUPPORTED` 失败，`details.reason` 为 `wavInfoNonAscii`，文件保持不变。foobar2000 把 WAV 标签以 ASCII 存入 RIFF INFO 块，其他字符一律写成 `?`；它还会把 GBK 编码的 INFO 块按 Latin-1 读入，因此即使只修改其他字段，重写这类文件也会把原有标签永久替换为 `?`。标签全为 ASCII 的 WAV 文件照常写入，其他格式不受影响。
+
+#### 媒体读取与封面
+- **经目录映射加载的页面可以使用媒体流与封面地址**：页面经 `foo-ui-webview2.local` 这类目录映射加载时（打包的主题即是如此），宿主签发的媒体流地址与封面地址此前一律以 `ERR_FILE_NOT_FOUND` 失败。这两类地址现在使用主机 `fb2k-routes.invalid`，该主机不经过任何目录映射。这些地址对任何页面都是跨源地址，页面要从 Canvas 读取封面像素时，须给 `<img>` 设置 `crossorigin`。
+- **卡住的云端或网络读取不再阻塞本地读取**：封面与歌词的读取此前共用一条队列，读取云端占位文件或不可达的网络共享时一旦卡住，之后的本地读取都会超时，直到重启 foobar2000。网络共享与映射网络盘上的文件，以及仅在云端的文件，现在在单独的队列里读取。
+- **取封面不再下载仅在云端的文件**：对于本地磁盘上仅在云端的文件，[`artwork.getCurrent`](./api/artwork.md#artwork-getcurrent)、[`getByPath`](./api/artwork.md#artwork-getbypath)、[`getForTrack`](./api/artwork.md#artwork-getfortrack)、[`getByPlaylistItem`](./api/artwork.md#artwork-getbyplaylistitem)、[`getBatch`](./api/artwork.md#artwork-getbatch)、[`getAvailableTypes`](./api/artwork.md#artwork-getavailabletypes)、[`getAvailableArtwork`](./api/artwork.md#artwork-getavailableartwork) 与 `getMetadata` 不打开文件，直接按无封面返回。此前这些方法会下载整个文件。感谢 [@Sijie20](https://github.com/Sijie20) 报告。
+
+#### 播放列表
+- **[`playlist.replaceAllAndPlay`](./api/playlist.md#playlist-replaceallandplay) 播放 `playIndex` 指定的曲目**：此前写入的行会去重，并按用户设置的新增项顺序重排，而 `playIndex` 按重排后的行计数，重排结果与 `paths` 的顺序不同时就会播放另一首。现在各行保持 `paths` 的顺序；每条路径只对应一首曲目时，`playIndex` 即要播放的路径的下标。重复的路径保留，文件夹内的曲目按 foobar2000 展开文件夹的顺序加入。感谢 [@LYY-LZH](https://github.com/LYY-LZH) 报告。
+
+#### 面板
+- **Default UI 编辑模式下右键单击面板，弹出 Default UI 的标准编辑菜单**：菜单提供替换、剪切、复制与粘贴，「配置...」也在其中。此前只弹出「配置...」一项。
+- **编辑模式开启时新建的面板立即显示占位符**：此前新面板显示满尺寸的页面，右键单击由页面接收，无法打开面板配置。
+- **面板的透明区域跟随 foobar2000 的配色**：页面没有绘制背景的区域显示宿主当前的背景色：Default UI 面板为 Default UI 的背景色，Columns UI 面板为 Columns UI 的全局背景色。在首选项里修改配色后，这些区域立即随之改变。此前 Default UI 面板保持面板创建时的颜色，Columns UI 面板始终为白色。
+- **面板设置「透明背景」在面板创建时即生效**：保存为不透明的面板，在重启 foobar2000 或重建面板后仍为不透明；此前该设置只在切换时生效。不透明背景改为宿主的背景色，不再固定为深灰色（`#1e1e1e`）。
+- **新建、重命名模板的起名对话框跟随 foobar2000 的深浅色模式**：此前它始终为浅色。
+- **新建模板的起始页文字改为中性灰**：此前文字为白色，面板透明区域显示浅色背景时无法看清。已有模板不受影响。
+
 ## v2.1.0 (2026-10-27)
 
 ### 新功能

@@ -10,11 +10,11 @@ Signature: `fb.file.cancelOp(operationId: string): Promise<FileCancelOpResponse>
 | --- | --- | --- | --- |
 | `operationId` | `string` | Yes | Id from the receipt of `copyAsync()`, `moveAsync()` or `deleteAsync()` |
 
-Stops an operation started by `copyAsync()`, `moveAsync()` or `deleteAsync()`. Resolves with `cancelled: true` when the operation was still running and has been told to stop. `cancelled: false` means it had already finished or never existed; the two cases are deliberately indistinguishable.
+Stops an operation started by `copyAsync()`, `moveAsync()`, or `deleteAsync()`. Resolves with `cancelled: true` when the operation was still running and has been instructed to stop. `cancelled: false` indicates that it had already finished or the `operationId` was not found.
 
-Cancellation takes effect part-way through a batch. A copy or move stops within the current file and removes its partial copy; a delete stops at the next entry. Entries already done keep their results, every remaining entry is reported as `skipped` with `reason: 'cancelled'`, and the run still ends with a `file:opComplete` carrying `cancelled: true`.
+Cancellation takes effect during batch processing: a copy or move operation aborts at the current file and removes any incomplete target copy; a delete operation aborts before the next entry. Completed entries retain their outcomes, remaining entries are marked as `skipped` with `reason: 'cancelled'`, and execution concludes with a `file:opComplete` event carrying `cancelled: true`.
 
-Closing a popup cancels the operations that popup started. A panel has no such hook, so its operations run to the end unless this method stops them. Quitting foobar2000 cancels every running operation, and no further events are sent for them.
+Closing a popup window automatically cancels operations initiated by that window. Operations initiated by a panel run until completion unless explicitly stopped via this method. Quitting foobar2000 cancels all active operations and emits no further events.
 
 ```javascript
 const started = await fb.file.deleteAsync(['%profile%\\my-panel\\old-cache']);
@@ -29,10 +29,10 @@ const { cancelled } = res;
 
 Signature: `fb.file.copy(source: string, destination: string, opts?: Omit<FileCopyParams, 'source' | 'destination'>): Promise<FileCopyResponse>`
 
-Copies a file or a whole directory tree and blocks until the copy is done; use
-[`copyAsync()`](#copyasync-items-options) for anything large. The parent
+Synchronously copies a file or directory tree, blocking until completion; use
+[`copyAsync()`](#copyasync-items-options) for large datasets. The parent
 directory of `destination` must already exist. `opts.overwrite` defaults to
-`false`, so an existing destination is left untouched unless you opt in.
+`false`, leaving existing destinations untouched unless explicitly enabled.
 
 ```javascript
 await fb.file.copy('C:\\Music\\track.flac', 'C:\\Backup\\track.flac');
@@ -49,14 +49,14 @@ Signature: `fb.file.copyAsync(items: FileOpEntry[], options?: FileOpAsyncOptions
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `items` | `FileOpEntry[]` | Yes | `{ source, destination }` pairs, at least one. A missing parent directory of `destination` is created; when `destination` is an existing directory and `source` is a file, the file goes inside it under its own name |
+| `items` | `FileOpEntry[]` | Yes | Array of `{ source, destination }` entries, at least one. Missing parent directories of `destination` are created automatically; when `destination` is an existing directory and `source` is a file, the file is placed inside it using its source filename |
 | `options.overwrite` | `boolean` | No | Replace an existing file destination instead of skipping it; defaults to `false` |
 
 Copies a batch of files and directories on a host worker thread, so the UI does not block. Resolves at once with a receipt: `operationId`, which starts with `fileop_`, and `totalCount`, the number of entries accepted. The results arrive in batches on `file:opProgress`, followed by one `file:opComplete`; see [Events](#events).
 
-One result is reported per entry, not per file: a directory entry is reported once its whole tree has been walked. Copying a directory onto an existing directory merges into it and skips the files already present without reporting them, so the entry still ends as `status: 'ok'`. A file entry whose destination exists is reported as `skipped` with `reason: 'already-exists'` unless `overwrite` is set.
+Progress is reported per task entry rather than per individual file: a directory entry reports once its entire subtree has been processed. Copying a directory onto an existing destination directory merges contents and skips conflicting existing files without separate reports, completing the entry as `status: 'ok'`. A file entry whose destination exists reports `skipped` with `reason: 'already-exists'` unless `overwrite` is enabled.
 
-Every path is checked before anything starts, `source` for reading and `destination` for writing. One refused path fails the whole call with `PERMISSION_DENIED`, and no `operationId` is produced. At most 8 batch operations run at a time across the process; beyond that the call fails with `OPERATION_FAILED`.
+All paths undergo pre-validation before execution: `source` is checked for read permissions and `destination` for write permissions. If any path fails validation, the entire call fails with `PERMISSION_DENIED` without creating an `operationId`. The process enforces a limit of 8 concurrent batch operations, failing with `OPERATION_FAILED` when exceeded.
 
 ```javascript
 const res = await fb.file.copyAsync([
@@ -71,9 +71,7 @@ const { operationId } = res;
 
 Signature: `fb.file.delete(path: string, opts?: Omit<FileDeleteParams, 'path'>): Promise<FileDeleteResponse>`
 
-Deletes the file-system entry. `opts.moveToTrash` defaults to `true` on the
-host; pass `false` for a permanent delete, which fails on a directory that is
-not empty. [`deleteAsync()`](#deleteasync-paths-options) can remove one.
+Deletes a file or directory. `opts.moveToTrash` defaults to `true` (Recycle Bin); passing `false` deletes permanently. Synchronous permanent deletion of a non-empty directory fails; use [`deleteAsync()`](#deleteasync-paths-options) to delete non-empty directories.
 
 ```javascript
 // Recycle Bin (default)
@@ -92,7 +90,7 @@ Signature: `fb.file.deleteAsync(paths: string[], options?: FileDeleteAsyncOption
 | `paths` | `string[]` | Yes | Paths to delete, at least one |
 | `options.moveToTrash` | `boolean` | No | Send each entry to the Recycle Bin; defaults to `true`. `false` deletes permanently |
 
-Deletes a batch without blocking the UI, with the same receipt and events as `copyAsync()`; its results carry no `destination`. Recycle Bin deletes go through the shell, which needs the host's main thread, so they run there in batches of 16. Permanent deletes run on a worker thread and remove directories that are not empty, which the synchronous `delete()` refuses to do.
+Asynchronously deletes a batch of files and directories without blocking the UI; receipts and events match `copyAsync()` (omitting `destination` in results). Recycle Bin deletions execute on the host main thread via Shell APIs in batches of 16 entries. Permanent deletions execute on worker threads and remove non-empty directories, which the synchronous `delete()` refuses to do.
 
 Every path is checked for writing before anything starts. One refused path fails the whole call with `PERMISSION_DENIED`, and no `operationId` is produced.
 
@@ -137,11 +135,7 @@ Signature: `fb.file.list(path: string, options?: Omit<FileListParams, 'path'>): 
 
 Lists matching files and directories. `options.pattern` defaults to `*`; `options.recursive` defaults to `false`. The response exposes `files`, `directories`, and the compatibility alias `items`; with `recursive` set, the entries are full paths instead of names.
 
-`options.pattern` filters files only; directories are always listed. Only `*`,
-`*.*` and a single extension such as `*.flac` are understood. A pattern that
-does not start with `*.` matches every file, and a `*.ext` pattern is compared,
-ignoring case, with the file name's extension, so `*.{flac,mp3}` matches
-nothing.
+`options.pattern` filters files only; directories are always listed. Patterns support `*`, `*.*`, and single extension patterns (such as `*.flac`): patterns not starting with `*.` match all files; `*.ext` patterns perform case-insensitive comparison against file extensions (compound patterns such as `*.{flac,mp3}` are not supported).
 
 ```javascript
 const result = await fb.file.list('C:\\Music', {
@@ -164,7 +158,7 @@ await fb.file.mkdir('C:\\Config\\my-panel\\logs');
 
 Signature: `fb.file.move(source: string, destination: string): Promise<FileMoveResponse>`
 
-Moves a file-system entry to a new path. An existing file at `destination` is replaced.
+Moves a file or directory to a new path; an existing file at `destination` is replaced.
 
 ```javascript
 await fb.file.move('C:\\Inbox\\notes.txt', 'C:\\Archive\\notes.txt');
@@ -177,9 +171,9 @@ Signature: `fb.file.moveAsync(items: FileOpEntry[], options?: FileOpAsyncOptions
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `items` | `FileOpEntry[]` | Yes | `{ source, destination }` pairs, at least one |
-| `options.overwrite` | `boolean` | No | Replace an existing **file** destination; defaults to `false`, while the synchronous `move()` always replaces one. An existing **directory** destination is never replaced: on the same volume such an entry ends as `skipped` or `failed` |
+| `options.overwrite` | `boolean` | No | Applies only to **file** destinations: whether to replace existing destination files; defaults to `false` (synchronous `move()` always replaces). Existing **directory** destinations are never replaced; on the same volume such entries complete as `skipped` or `failed` |
 
-Moves a batch without blocking the UI, with the same receipt and events as `copyAsync()`. Within one volume a move is a rename. Across volumes the host copies the entry and then deletes the source; that entry reports `status: 'ok'` with `reason: 'cross-volume'`. Unlike `copyAsync()`, a directory whose destination already exists is reported as `skipped` with `reason: 'already-exists'` rather than merged.
+Asynchronously moves a batch of files and directories without blocking the UI; receipts and events match `copyAsync()`. Moves within the same volume execute as renames; across volumes, the host copies the entry and deletes the source, reporting `status: 'ok'` with `reason: 'cross-volume'`. Unlike `copyAsync()`, if the destination directory exists, the entry reports `skipped` with `reason: 'already-exists'` without merging.
 
 Every path is checked for writing before anything starts, `source` included, since a move deletes it. One refused path fails the whole call with `PERMISSION_DENIED`, and no `operationId` is produced.
 
@@ -218,9 +212,9 @@ await fb.file.rename('C:\\Music\\old.flac', 'new.flac');
 
 Signature: `fb.file.write(path: string, content: string, options?: Omit<FileWriteParams, 'path' | 'content'>): Promise<FileWriteResponse>`
 
-Writes text to a file. `options.encoding` defaults to `utf-8`; set `options.append` to append instead of replacing the file (it defaults to `false`). Resolves with `bytesWritten`, the size of the file after the write; with `append` that is the whole file, not just the part added.
+Writes text to a file. `options.encoding` defaults to `utf-8`; set `options.append` to `true` to append content instead of overwriting (defaults to `false`). Resolves with `bytesWritten`, representing the total file size in bytes after the write; with `append` enabled, this reflects the entire file size rather than only the appended bytes.
 
-Set `options.atomic` for files that must never be read half-written, such as settings or a pointer to the current version: the host writes a temporary file next to the target and swaps it in with one rename. It cannot be combined with `append`. The temporary file needs room in the target's folder too; see [Path length](/api/file#path-length) for the limits.
+For critical files that require transactional integrity (such as configuration files or version markers), enable `options.atomic`: the host writes to a temporary file in the target directory and replaces the destination via an atomic rename. This option cannot be combined with `append`. The destination directory must accommodate temporary filename lengths; see [Path length](/api/file#path-length).
 
 ```javascript
 await fb.file.write('%profile%\\webview-ui\\my-theme\\current.json', JSON.stringify({ version: '2.1.0' }), {
@@ -234,7 +228,7 @@ await fb.file.write('C:\\Logs\\theme.log', 'Theme initialized\n', { append: true
 
 ## Binary payloads
 
-When the page already holds bytes or a Data URL, use the byte helpers:
+When handling binary byte arrays or Data URLs, use the binary helper methods:
 
 - `readBinary(path): Promise<Uint8Array>` decodes the host response.
 - `writeBinary(path, bytes, options?)` accepts `ArrayBuffer | Uint8Array`.
@@ -271,8 +265,8 @@ await fb.file.write('C:\\Config\\icon-copy.ico', `base64:${source.content}`, {
 
 `copyAsync()`, `moveAsync()` and `deleteAsync()` report their results through two events. Both go to the page that started the operation; when that window is gone by then, they go to the main window's page instead, and are dropped if the main window has no WebView attached.
 
-- `file:opProgress` carries `operationId`, `op` (`copy`, `move` or `delete`), `done` (entries reported so far, failures included), `total` (entries accepted) and `results`, the results of this batch only, in request order. A batch goes out once 64 results are pending or 100 ms have passed since the previous one, and the last partial batch arrives before `file:opComplete`.
-- `file:opComplete` is the last event of a run and carries `operationId`, `op`, `total`, `successCount`, `skippedCount`, `failureCount` and `cancelled`. It is sent after a cancel and when entries failed too. It is skipped only when foobar2000 is shutting down or the worker fails unexpectedly, so a listener that cleans up on it should keep its own timeout. Afterwards [`cancelOp()`](#cancelop-operationid) reports `cancelled: false` for that `operationId`.
+- `file:opProgress` carries `operationId`, `op` (`copy`, `move` or `delete`), `done` (cumulative processed count, including failures), `total` (accepted entries count), and `results` (current batch results, preserving request order). Batches dispatch when 64 entries accumulate or 100 ms elapse since the previous batch; the final partial batch arrives before `file:opComplete`.
+- `file:opComplete` is the final event of an operation, carrying `operationId`, `op`, `total`, `successCount`, `skippedCount`, `failureCount`, and `cancelled`. It is emitted following cancellations or partial failures; it is omitted only during host process shutdown or abnormal worker crashes, so listeners awaiting completion should maintain a timeout guard. Calling [`cancelOp()`](#cancelop-operationid) after completion yields `cancelled: false`.
 
 Each result carries `source` and `destination` as requested, with path variables unexpanded (`deleteAsync()` results have no `destination`), and `status`: `ok`, `skipped` or `failed`. `reason` is absent when the entry was carried out plainly; otherwise it is `already-exists` or `cancelled` with `skipped`, `not-found`, `permission`, `path-too-long` or `io-error` with `failed`, and `cross-volume` with `ok`. `path-too-long` is explained under [Path length](/api/file#path-length).
 

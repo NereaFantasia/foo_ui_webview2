@@ -12,7 +12,7 @@
 
 返回 `{ success, count, results }`。每条 `PlaycountInfo` 结果都有自己的 `success`，可能含 `playCount`、`firstPlayed`、`lastPlayed`、`added`、`rating` 和 `inLibrary`。
 
-宿主对这个调用的处理和 `get()` 完全一样：每个路径一行，顺序与请求一致，每行原样回显 `path`，含 `|subsong:N` 后缀。从未播放的曲目 `playCount` 为 `0`；`rating` 取 1 到 5，未评分时不出现；各日期未知时不出现。解析不到的路径那一行为 `success: false`，带 `error`。没装 foo_playcount 时次数读作 `0`，日期不出现。
+宿主对本调用的处理与 `get()` 完全相同：按请求顺序逐项解析路径并返回对应条目，条目原样回显 `path`（包含 `|subsong:N` 后缀）。未播放曲目的 `playCount` 为 `0`；`rating` 范围为 1 至 5，未评分时缺省；时间戳字段在无记录时缺省。无法解析的路径条目标记为 `success: false` 并包含 `error` 描述。若未安装 foo_playcount 组件，播放计数均返回 `0` 且日期字段缺省。
 
 ```javascript
 const result = await fb.playcount.getBatch([
@@ -41,7 +41,7 @@ const stats = await fb.playcount.getStats();
 | `count` | `number` | 是 | 为保持签名兼容而保留的参数 |
 
 ::: warning 已弃用
-该方法已弃用。foo_playcount 不提供修改播放统计的途径，所以宿主总是以 `code: 'NOT_SUPPORTED'` 让调用失败，Promise 返回 `{ success: false }`。SDK 只发送 `path`，`count` 不会传到宿主。评分请用 `fb.rating.set()`，播放次数由实际播放更新。
+该方法已废弃。底层组件不支持外部直接修改播放统计数据，调用始终返回带有 `code: 'NOT_SUPPORTED'` 的失败响应。SDK 仅向宿主传递 `path` 参数，忽略 `count`。评分修改请使用 `fb.rating.set()`，播放计数仅在曲目播放时由系统自动更新。
 :::
 
 ```javascript
@@ -59,7 +59,7 @@ const result = await fb.playcount.set('E:\\Music\\song.flac', 10);
 | --- | --- | --- | --- |
 | `path` | `string` | 是 | 曲目路径；带 `\|subsong:N` 后缀时选 CUE 子曲目 |
 
-`fb.playcount.get()` 使用 `paths: [path]` 调用已注册的 `playcount.get` handler，返回它的信封 `{ count, results }`，这首曲目的条目就是 `results[0]`；调用失败时返回失败信封。条目的字段同 `getBatch()`：`success`、`playCount`、`rating`（未评分时不出现）、`inLibrary`，以及已知时才出现的日期 `firstPlayed`、`lastPlayed` 和 `added`。
+`fb.playcount.get()` 将单曲路径包装为单元素数组调用 `playcount.get`，成功时返回信封对象 `{ count, results }`，目标曲目详情位于 `results[0]`；调用失败时返回失败信封。条目数据结构与 `getBatch()` 一致：包含 `success`、`playCount`、`rating`（未评分时缺省）、`inLibrary`，以及在有记录时提供的 `firstPlayed`、`lastPlayed` 与 `added` 时间戳。
 
 ```javascript
 const res = await fb.playcount.get('E:\\Music\\song.flac');

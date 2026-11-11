@@ -4,7 +4,7 @@ The same web page can run in three host modes, and the mode determines its scope
 
 | Mode | Where the page appears | What it controls |
 | --- | --- | --- |
-| Standalone | `WebView2 UI` is the active user interface; the page is the whole foobar2000 window | The window itself: dimensions, caption, system backdrop, tray icon, taskbar button |
+| Standalone | `Webview2 UI` is the Default User Interface; the page is the whole foobar2000 window | The window itself: dimensions, caption, system backdrop, tray icon, taskbar button |
 | DUI panel | A `WebView2 Panel` element in a Default UI layout | Only its own rectangular area |
 | CUI panel | A `WebView2 Panel` element in a Columns UI layout | Only its own rectangular area |
 

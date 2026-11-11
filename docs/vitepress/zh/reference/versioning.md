@@ -23,7 +23,7 @@
 - SDK（`foo-webview-sdk`）与宿主插件主版本保持对齐：2.x 版本的 SDK 专用于 2.x 插件。
 - 新增接口在文档与类型中注明首发支持版本。主题可通过 `config.getVersionInfo()` 获取 `plugin.version` 检测当前宿主运行时的支持情况。
 - 宿主插件严格拒收未声明的参数：较早版本的 2.x 宿主接收到未声明的未知参数时，调用将以 `INVALID_PARAMS` 显式失败，绝不静默忽略。
-- MCP 服务端（`foo-ui-webview2-mcp`）采用独立版本管理，在 0.x 阶段不提供长期向后兼容承诺。
+- MCP 服务端（`foo-ui-webview2-mcp`）采用独立版本管理，在 0.x 阶段不作兼容性承诺。
 
 ## 1.x 历史说明 {#_1-x}
 

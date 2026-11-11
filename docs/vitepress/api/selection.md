@@ -28,6 +28,10 @@ Read the current global selection as a page of handles. Observes state only; not
 `success` is `true` on success. On failure the response is `{ success: false, error, code }`; see [Error codes](../reference/errors.md) for `code`.
 <!-- api-schema:end -->
 
+::: warning Performance Notice
+When `limit` is omitted, selections larger than 100 tracks are automatically capped at the first 100 items. An explicit `limit` is never narrowed automatically; pass `limit: 0` to retrieve all items from `offset` onward.
+:::
+
 The `100` cap applies only when `limit` is omitted — an explicit `limit` is honored as given, and `limit: 0` means "no limit", returning every entry from `offset` onward.
 
 `truncated: true` appears only when the automatic cap was actually applied, that is when the selection exceeds 100 **and** `limit` was omitted. Asking for `limit: 10` out of a 250-item selection is not truncation and reports nothing. The field is never present with a `false` value, so test for its presence rather than its value, and use `hasMore` to decide whether to page further. `count` is the total size of the selection, not the number of entries returned.
@@ -58,6 +62,14 @@ This method takes no parameters.
 ```js
 const result = await fb2k.invoke('selection.getType');
 ```
+
+| type | typeName | Description |
+| --- | --- | --- |
+| 0 | `now_playing` | Currently playing track |
+| 1 | `active_playlist_selection` | User selection within the active playlist |
+| 2 | `active_playlist` | Entire active playlist |
+| 3 | `playlist_manager` | Playlist manager context |
+| 5 | `media_library_viewer` | Media library viewer context |
 
 ### selection.getViewerMode
 
@@ -123,7 +135,7 @@ Replace the global selection with the given tracks. Handles are minted from the 
 
 | Field | Type | Description |
 | --- | --- | --- |
-| `count` | `integer` | How many tracks were handed to the selection holder, i.e. the handles that resolved. Not a read-back: see `set` for how long the selection lasts. |
+| `count` | `integer` | Number of resolved track handles committed to the selection holder. Represents the count of resolved items rather than a verified read-back; see `set` for selection lifetime. |
 
 `success` is `true` on success. On failure the response is `{ success: false, error, code }`; see [Error codes](../reference/errors.md) for `code`.
 <!-- api-schema:end -->
@@ -155,6 +167,13 @@ Set the selection to the whole active playlist, or to that playlist's own select
 ```js
 await fb2k.invoke('selection.setPlaylistTracking', { mode: 'playlist' });
 ```
+
+| mode value | Description |
+| --- | --- |
+| `selection` | Track user-selected items in the active playlist |
+| `playlist` | Track the entire active playlist |
+
+`mode` accepts only the two enum values above; other values are rejected with `INVALID_PARAMS`.
 
 ## Selection behavior
 

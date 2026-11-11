@@ -354,12 +354,13 @@ if (hit) {
 ### discovery.executeContextMenuCommand
 
 <!-- api-schema:begin discovery.executeContextMenuCommand -->
-按 GUID 对当前目标曲目执行右键菜单命令（优先作用于正在播放的曲目，未播放时作用于活动播放列表的选中项；宿主永不绘制的命令 FORCE_OFF 默认以 NOT_SUPPORTED 拒绝，除非显式指定 force 为 true；无可用目标曲目时返回 NO_ACTIVE_ITEM）
+按 GUID 对 `target` 指定的曲目执行右键菜单命令，缺省时优先作用于正在播放的曲目，未播放时作用于活动播放列表的选中项；宿主永不绘制的命令 FORCE_OFF 默认以 NOT_SUPPORTED 拒绝，除非显式指定 force 为 true；无可用目标曲目时返回 NO_ACTIVE_ITEM
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
 | `guid` | `string` | 是 | {...} 格式的命令 GUID（取自 discovery.getContextMenuCommands）不能为空。 |
 | `force` | `boolean` | 否 | 是否强制派发宿主永不绘制的隐藏命令（FORCE_OFF）默认 `false`。 |
+| `target` | `"auto" \| "selection" \| "nowPlaying" \| "playlistSelection"` | 否 | 命令作用于哪些曲目默认 `"auto"`。 |
 
 **返回值**
 
@@ -382,12 +383,13 @@ if (hit) {
 ### discovery.executeContextMenuByPath
 
 <!-- api-schema:begin discovery.executeContextMenuByPath -->
-按斜杠分隔的标签路径执行右键菜单命令（如 Playback Statistics/Rating/5；各级路径在规范化后须唯一匹配一个菜单标签，忽略助记符 &、末尾省略号、快捷键文本与 ASCII 大小写；命中多个候选时返回 INVALID_PARAMS 并列出歧义候选，未命中任何命令返回 NOT_FOUND）
+按斜杠分隔的标签路径执行右键菜单命令（如 Playback Statistics/Rating/5；各级路径在规范化后须唯一匹配一个菜单标签，忽略助记符 &、末尾省略号、快捷键文本与 ASCII 大小写；命中多个候选时返回 INVALID_PARAMS 并列出歧义候选，未命中任何命令返回 NOT_FOUND）。同时给出 `trackPath` 与 `auto` 以外的 `target` 时返回 `INVALID_PARAMS`
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
 | `path` | `string` | 是 | 斜杠分隔的命令标签路径（例如 Playback Statistics/Rating/5）不能为空。 |
 | `trackPath` | `string` | 否 | 显式指定执行的目标曲目路径（省略时取当前播放或选中的曲目；支持 \|subsong:N 子曲目后缀，缺省取首个子曲目） |
+| `target` | `"auto" \| "selection" \| "nowPlaying" \| "playlistSelection"` | 否 | 未给 `trackPath` 时命令作用于哪些曲目默认 `"auto"`。 |
 
 **返回值**
 
@@ -447,7 +449,7 @@ if (hit) {
 ## 发现范围与执行规则
 
 - 返回结果枚举当前 foobar2000 进程中已注册的服务；计数与名称会随已安装组件和 host 配置而变化。
-- `discovery.executeMainMenuCommand` 与 `discovery.executeContextMenuCommand` 要求格式合法的 GUID：格式非法以 `INVALID_PARAMS` 失败，没有命令拥有它以 `NOT_FOUND` 失败。右键菜单命令优先作用于正在播放曲目，否则作用于活动播放列表选中项；两者都没有时以 `NO_ACTIVE_ITEM` 失败。
-- `discovery.executeContextMenuByPath` 要求 `path`；可选 `trackPath` 受媒体读取安全策略保护。省略时，runtime 使用相同的正在播放/选中项回退逻辑。
+- `discovery.executeMainMenuCommand` 与 `discovery.executeContextMenuCommand` 要求格式合法的 GUID：格式非法以 `INVALID_PARAMS` 失败，没有命令拥有它以 `NOT_FOUND` 失败。右键菜单命令作用于 `target` 指定的曲目：缺省时优先作用于正在播放曲目，否则作用于活动播放列表选中项；`selection`、`nowPlaying`、`playlistSelection` 只取其中一种来源。目标里没有曲目时以 `NO_ACTIVE_ITEM` 失败。
+- `discovery.executeContextMenuByPath` 要求 `path`；可选 `trackPath` 受媒体读取安全策略保护。省略时由 `target` 选定曲目，取值同 `discovery.executeContextMenuCommand`；同时给出 `trackPath` 与 `auto` 以外的 `target` 时以 `INVALID_PARAMS` 失败。
 - `discovery.getContextMenuTree` 是诊断输出，需要活动目标曲目；递归深度与每节点子项数均有上限，任何裁剪都通过 `truncated` / `depthExceeded` / `childrenExceeded` 显式上报，生效上限由 `maxDepth` 与 `maxChildrenPerNode` 回显。
 - `discovery.searchCommands` 要求非空 `query`，按不区分大小写匹配主菜单与右键菜单两侧的命令名称、描述与菜单路径。大小写折叠仅作用于 ASCII，UTF-8 多字节序列（如无大小写可折叠的中文标签）原样通过。`scope` 只接受 `all`、`mainmenu`、`contextmenu`，其他取值以 `INVALID_PARAMS` 失败。

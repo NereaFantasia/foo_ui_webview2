@@ -2,7 +2,7 @@
 
 > **foobar2000 最低版本**: 2.0+
 
-foo_ui_webview2 是一个 foobar2000 UI 组件：它通过 Microsoft WebView2 承载前端页面，并开放完整的播放器控制与状态通知。主题本质是标准 Web 工程，支持 HTML、CSS、JavaScript 及各类现代前端框架；组件负责将其渲染为主窗口或嵌入其他界面的面板。
+foo_ui_webview2 是一个 foobar2000 UI 组件：它通过 Microsoft WebView2 承载前端页面，并使网页能够控制播放器。主题本质是标准 Web 工程，支持 HTML、CSS、JavaScript 及各类现代前端框架；组件负责将其渲染为主窗口或嵌入其他界面的面板。
 
 <a id="主要特性"></a>
 <a id="key-features"></a>
@@ -13,23 +13,25 @@ foo_ui_webview2 是一个 foobar2000 UI 组件：它通过 Microsoft WebView2 �
 
 页面与播放器的所有交互均经过此 Bridge 通道。在 foobar2000 之外（例如普通浏览器标签页），页面不存在 `window.fb2k`，SDK 调用将以 `NOT_SUPPORTED` 错误信封解决（resolve）。加载哪个页面及路径如何解析，由[页面从哪里加载](./page-loading.md)中定义的优先级规则决定。
 
-## bridge 与 SDK
+<a id="bridge-与-sdk"></a>
 
-只用 bridge 就能写任何主题，但它的调用是没有类型的字符串。npm 包 `foo-webview-sdk` 在它之上加了三层：
+## Bridge 基础与 SDK 分层
 
-- `fb.*` 方法（`fb.player.play()`、`fb.playlist.getAll()`），带 TypeScript 类型，调用的是同样的宿主方法；
-- `fb-*` Web Components，例如播放按钮、播放列表视图，它们自己与宿主通信，本身不带任何样式；
-- SMP 兼容层，用于移植 Spider Monkey Panel 脚本。
+开发者可直接基于底层 Bridge 进行全功能主题开发；但原生 `fb2k.invoke` 与事件监听依赖字符串标识符，缺乏静态类型约束。官方 npm 包 `foo-webview-sdk` 在 Bridge 基础协议之上构建了三层递进的抽象能力：
+
+- **类型化客户端 API (`fb.*`)**：如 `fb.player.play()`、`fb.playlist.getAll()`，提供 TypeScript 类型定义与自动补全，底层调用相同的宿主方法。
+- **功能性 Web Components (`fb-*`)**：如播放控制按钮、播放列表视图等开箱即用的自定义元素，内置与宿主的实时状态同步与交互逻辑，遵循无视觉偏见的零样式设计（仅提供 Part 与 Slot 供主题样式化）。
+- **SMP 兼容层**：面向 Spider Monkey Panel (SMP) 现有脚本的移植适配层，模拟经典对象的属性与事件体系。
 
 组件提供 400 多个方法和 100 多个事件，按命名空间分组，例如 `playback`、`playlist`、`library`、`window`。[API 概述](/zh/api/overview)列出每个命名空间的方法数和所在页面，[SDK 命名空间](/zh/sdk/namespaces)列出对应的 `fb.*` 封装。
 
-::: tip 从 Spider Monkey Panel (SMP) 迁移？
+::: tip 从 Spider Monkey Panel (SMP) 迁移
 SDK 自带 SMP 兼容层，包含：
-- **35 个 SMP 事件映射**：`on_playback_new_track` 等 SMP 事件名直接可用
+- **35 个 SMP 事件映射**：`on_playback_new_track` 等核心事件原生对齐
 - **8 个包装器类**：`FbMetadbHandle`、`FbTitleFormat`、`ContextMenuManager` 等
-- **完整的 `fb` / `plman` 对象**：同步属性、播放控制、播放列表管理
+- **完整的 `fb` / `plman` 对象**：支持同步属性访问、播放控制与播放列表管理
 
-兼容层用「缓存 + 事件」把异步的宿主调用包装成同步属性，以符合 SMP 的同步语义。缓存是最终一致的，适合 UI 渲染；需要精确控制的事务性操作，直接用 `fb2k.invoke()`。SMP 的 GDI/GDI+ 绘图（`on_paint(gr)` 等）无法移植，这部分要用 HTML、CSS 或 Canvas 重写。见 [SMP 兼容层](/zh/reference/smp-compat)。
+兼容层采用「本地缓存 + 事件驱动」机制将异步宿主调用适配为 SMP 同步属性模型。该缓存具备最终一致性，适合 UI 渲染；若需进行精确的事务性控制，可直接调用原生 `fb2k.invoke()`。注意：原 SMP 中基于 Windows GDI/GDI+ 的即时绘制逻辑（如 `on_paint(gr)` 回调及绘图上下文 API）无法直接映射，此类视觉渲染应采用现代化标准 Web 技术栈（HTML、CSS、SVG 或 Canvas 2D/WebGL）进行重构。详见 [SMP 兼容层](/zh/reference/smp-compat)。
 :::
 
 ## 设计原则

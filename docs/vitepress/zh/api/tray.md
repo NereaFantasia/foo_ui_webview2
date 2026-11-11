@@ -214,7 +214,7 @@ await fb2k.invoke('tray.setContextMenu', {
 });
 ```
 
-**nowplaying 自动补全（`autoNowPlaying`）**：开启后，`type: 'nowplaying'` 项中**前端没传的字段**会在右键弹出时由后端用当前曲目自动补全（前端传了就用前端的，**前端优先**）。`title` 走 `%title%`（自动回退文件名），`subtitle` 走 `%artist%`，兼容流媒体动态标题。
+**正在播放自动填充（`autoNowPlaying`）**：启用后，若 `type: 'nowplaying'` 菜单项未显式指定 `title`、`subtitle` 或 `cover`，宿主将在弹出菜单时使用当前曲目信息自动填充；显式传入的字段优先。`title` 采用 `%title%` 模式（缺失时回退为文件名），`subtitle` 采用 `%artist%` 模式，兼容流媒体动态标题。
 
 `cover` 自动补全仅适用于 `render: 'webview'`，只读 now-playing 的**内存封面缓存**，不做磁盘回退。缓存无封面时字段留空，前端可自行传入 `cover`，支持 `http(s)://`、`data:` 和裸 base64。最长边超过 **64 px** 时尝试缩到 64 px 并重编码为 JPEG；原图不超过 64 px，或缩图失败时，沿用原始字节与格式。所选图像字节超过 **256 KiB** 时省略封面，此检查发生在 base64 编码之前。默认样式表以 40×40 CSS px 绘制；64 px 缩略图在 125% 显示缩放下绘制到约 51 CSS px 以上时会放大采样。
 
@@ -429,7 +429,7 @@ await fb2k.invoke('tray.setContextMenu', {
 成功时 `success` 为 `true`；失败时返回 `{ success: false, error, code }`，`code` 见[错误码](../reference/errors.md)。
 <!-- api-schema:end -->
 
-宿主在主线程上一步做完整次替换，菜单也在主线程上构建，所以右键看到的要么是旧菜单、要么是新菜单，不会是两者拼起来的。同一页面的调用按发出顺序执行：连发两次更新，留下的是后一次。
+右键弹出的始终是替换前或替换后的完整菜单：宿主在主线程上一次完成整个替换，菜单也在主线程上构建。同一页面的调用按发出顺序执行，连续多次更新时以最后一次为准。
 
 ```javascript
 await fb2k.invoke('tray.setMenuZones', {
@@ -781,7 +781,9 @@ console.log('当前用户菜单项：', items);
 await fb2k.invoke('tray.removeMenuItems', { ids: ['revealInExplorer', 'copyPath'] });
 ```
 
-> **语义提示**：`tray:beforeContextMenu` 是异步通知，handler 内的菜单改动只影响下一次菜单弹出，不阻塞本次弹出。若希望首次右键菜单也包含上下文项，应在 `playback:trackChanged` 中同步预填充。两次右键靠得很近时两个 handler 会交错执行：用 `clearMenuItems` 加 `appendMenuItems` 拼菜单会把行加两遍，`setMenuZones` 整份替换则只留下后一次。
+> **语义提示**：`tray:beforeContextMenu` 是异步通知。宿主不等 handler 执行完就弹出菜单，handler 内的菜单改动从下一次弹出起生效。要让首次右键弹出的菜单就包含上下文项，应在 `playback:trackChanged` 中预先填充。
+>
+> 在 handler 中更新整份菜单时，应调用 `setMenuZones`。两次右键间隔很短时，两个 handler 会交错执行：`setMenuZones` 只保留后一次替换的内容，依次调用 `clearMenuItems` 与 `appendMenuItems` 则会把同一批行添加两次。
 
 ## 契约补充
 
@@ -827,7 +829,7 @@ await fb2k.invoke('tray.setContextMenu', {
 
 托盘菜单由 `tray.setContextMenu` 配置，后续可使用 `tray.appendMenuItems`、
 `tray.removeMenuItems`、`tray.clearMenuItems` 与 `tray.setMenuItemState` 更新。
-整份菜单要换时调用一次 `tray.setMenuZones`，不要把这几个方法串起来调，这样中途打开的菜单不会只显示一半更新。
+替换整份菜单时，应调用一次 `tray.setMenuZones`，而不是依次调用上述方法：在两次调用之间打开的菜单只会显示部分更新。
 `tray:menuItemClicked` 通常携带 `{ id }`；rating、slider 与 segmented 控件还会提供
 `value`。由插件原生执行的项**不会**触发该事件：内置 `showPlaybackControls` /
 `showSystemItems` 注入项，以及声明了 `playbackAction` 的项，直接执行其命令。
@@ -850,10 +852,7 @@ await fb2k.invoke('tray.setContextMenu', {
 | `_sys_show` | 显示主窗口 | 恢复并前置主窗口，保留其最大化 / 正常放置状态 |
 | `_sys_exit` | Exit foobar2000 | 真正退出应用，绕过 `setCloseToTray` |
 
-两项都原生执行，因此**不发** `tray:menuItemClicked`。这对 `_sys_show` 是必要设计：
-隐藏到托盘会对主页面施加 `put_IsVisible(FALSE)` + 深度挂起（`TrySuspend`），renderer
-被冻结，`tray:menuItemClicked` 的 handler 根本跑不起来，也就无法自行调用
-`window.focus`。偏偏在这个项唯一有用的状态下，前端事件路线是死的。
+两项均由宿主原生路由执行，不派发 `tray:menuItemClicked` 事件。由于主窗口隐藏到系统托盘时，页面会被施加不可见与深度挂起状态（`TrySuspend`），渲染进程被冻结且 JavaScript 事件循环暂停；若依赖前端事件派发将无法执行窗口恢复操作。
 
 若想自绘该行而不用注入项，直接使用精确、大小写敏感的 id `_sys_show`（或 `_sys_exit`）：
 它获得同样的原生路由，你的 `label` / `icon` 被保留，对应的注入项则自动跳过。形似 id
@@ -861,7 +860,7 @@ await fb2k.invoke('tray.setContextMenu', {
 
 这套提升只认精确 id、**不看 `type`**，所以 `type: 'nowplaying'` 的封面卡也可以挂
 `id: '_sys_show'`，点它同样原生恢复主窗口。但该用法**仅在 `render: 'webview'` 下成立**：
-原生后端把 `nowplaying` 画成不可点击的灰色标题行，点不动，也不会触发任何路由。
+在原生菜单模式下，`nowplaying` 渲染为不可点击的禁用标题项，不响应交互。
 
 ```js
 fb2k.on('taskbar:buttonClicked', ({ id }) => console.log(id));
@@ -888,4 +887,4 @@ fb2k.on('playback:trackChanged', () => {});
 成功时 `success` 为 `true`；失败时返回 `{ success: false, error, code }`，`code` 见[错误码](../reference/errors.md)。
 <!-- api-schema:end -->
 
-旧主题默认仍使用点击事件。新主题应在初始化时移除旧点击回调中的窗口命令，然后选择原生模式；两个托盘开关的设置不受影响。
+旧主题默认仍使用点击事件。新主题应在初始化时移除旧版点击回调中的窗口命令并启用原生托盘模式；最小化到托盘与关闭到托盘两项设置不受影响。

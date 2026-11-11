@@ -9,9 +9,9 @@ A template is a folder with an `index.html` under the profile's resource root, `
 ```text
 <profile>/
 └── webview-ui/                 resource root
-    ├── default/                the template used when none is chosen
+    ├── default/                default template when none is specified
     │   └── index.html
-    └── my-theme/               any other template
+    └── my-theme/               custom theme template
         ├── index.html
         └── assets/
 ```
@@ -22,25 +22,28 @@ Local pages are served via the custom virtual origin `https://foo-ui-webview2.lo
 
 ## The order
 
-For the main window, the background window and each panel, the first of these that applies wins:
+The main window, background window, and UI panels evaluate candidates in sequence and load the first matching source:
 
-1. **Development server.** When `Use development server (HMR hot reload)` is on and a URL is set, every window and panel loads that URL. If it cannot be reached, loading continues with step 2.
-2. **The panel's URL override.** A panel whose configuration has a URL loads it.
-3. **The panel's own template**, when it names one and that folder has an `index.html`.
-4. **The global active template**, when its folder has an `index.html`.
-5. **`foo_ui_webview2_resources\dist`** in the component directory, when an `index.html` is present; empty directories are skipped.
-6. **`<profile>\webview-ui\default\`**, when it has an `index.html`.
-7. **A built-in page.** The main window and the background window show a test page with buttons that try out the API; a panel shows "Frontend not found. Please install a template."
+1. **Development server**: When `Use development server (HMR hot reload)` is enabled with a valid URL, all windows and panels prioritize this URL; if unreachable, resolution falls back to subsequent candidates.
+2. **Panel URL override**: Loads the dedicated URL if configured on the individual panel.
+3. **Panel-specific template**: Loads the panel's explicitly configured template directory when it contains an `index.html` entry point.
+4. **Global active template**: Loads the globally configured active template when its directory contains `index.html`.
+5. **Component distribution directory**: Loads `foo_ui_webview2_resources\dist` in the component directory when `index.html` exists; skipped if empty or missing the entry point.
+6. **Default template**: Loads `<profile>\webview-ui\default\` when it contains `index.html`.
+7. **Built-in fallback page**: When no candidate matches, the main and background windows load the built-in API test page, while panels display "Frontend not found. Please install a template."
 
-Popups opened via `window.createPopup` follow distinct resolution rules: they request `<page>.html` from the active template (or development server), appending `windowId` in query parameters. If the development server is unreachable, the popup falls back to the template file; if no valid HTML is found, it renders 'Frontend not found'.
+Popups opened via `window.createPopup` follow independent resolution rules: they load the specified page file (such as `<page>.html`) directly from the active template (or development server), appending `windowId` to query parameters. If the development server is unreachable, popups fall back to the local template file; when no template folder has an `index.html`, they show the "Frontend not found" page.
 
-## When pages reload
+<a id="when-pages-reload"></a>
 
-- `Apply` on the preferences page after picking another template reloads the main window and the panels that follow the global template. Panels with their own template or URL keep their page.
-- `Apply` after changing the development-server settings reloads the same windows.
-- Neither `Apply` reloads popup windows: an open popup keeps its page, and popups opened afterwards follow the new settings.
-- While the development server is on, a template change does not reload anything: pages keep coming from the server.
-- Changing a panel's template or URL in its configuration dialog reloads that panel.
+## Reload triggers {#reload-triggers}
+
+Page reloading is governed by explicit configuration changes and application events across window scopes:
+
+- **Preferences application**: Modifying the active template or development server settings and clicking `Apply` immediately reloads the main window and all panels inheriting the global template; panels with explicit template or URL overrides remain unaffected.
+- **Development server precedence**: While the development server remains active, switching the global template does not trigger reloads because pages continue serving from the development server.
+- **Panel-level configuration**: Modifying a panel's dedicated template or URL override within its configuration dialog reloads that specific panel only.
+- **Popup window lifecycle**: Applying preferences never reloads active popup windows; updated settings apply only to popups opened after the change.
 
 ## Related
 

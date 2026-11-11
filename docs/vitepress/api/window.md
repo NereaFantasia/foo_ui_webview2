@@ -27,7 +27,7 @@ Send a message to every window except the caller, delivered as `window:message` 
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `message` | `any` | Yes | The message, delivered as `message` of the event. `null` counts as missing. |
+| `message` | `any` | Yes | The message, delivered as `message` of the event. Passing `null` is treated as omitted. |
 
 **Returns**
 
@@ -41,7 +41,7 @@ await fb2k.invoke('window.broadcast', { message: { type: 'themeChanged', theme: 
 ### window.cancelClose
 
 <!-- api-schema:begin window.cancelClose -->
-Keep the calling popup open after it received `window:beforeClose`; nothing happens when no close is pending. Fails with `NOT_FOUND` when the caller is not a popup.
+Keep the calling popup open after it received `window:beforeClose`; ignored when no close is pending. Fails with `NOT_FOUND` when the caller is not a popup.
 
 This method takes no parameters.
 
@@ -128,7 +128,7 @@ const result = await fb2k.invoke('window.clearNoDragRegions');
 ### window.close
 
 <!-- api-schema:begin window.close -->
-Close the calling window as the system close command does. Succeeds without doing anything when there is no window. Fails in panel mode.
+Close the calling window as the system close command does. Succeeds with no operation when there is no window. Fails in panel mode.
 
 This method takes no parameters.
 
@@ -179,7 +179,7 @@ await fb2k.invoke('window.closePopup', { windowId: 'popup-1' });
 ### window.confirmClose
 
 <!-- api-schema:begin window.confirmClose -->
-Let the calling popup close after it received `window:beforeClose`; nothing happens when no close is pending. Fails with `NOT_FOUND` when the caller is not a popup.
+Let the calling popup close after it received `window:beforeClose`; ignored when no close is pending. Fails with `NOT_FOUND` when the caller is not a popup.
 
 This method takes no parameters.
 
@@ -357,7 +357,7 @@ This method takes no parameters.
 | `items[].windowId` | `string` | `main` or the popup id. |
 | `items[].isMain` | `boolean` | Whether this is the main window. |
 | `items[].title` | `string` | Window title. |
-| `items[].url` | `string` | Popups only: the `url` the popup was created with. |
+| `items[].url` | `string` | Popups only: initial URL specified when the popup was created. |
 | `items[].profile` | `"legacy" \| "standard" \| "miniPlayer" \| "desktopLyrics"` | Popups only: the behavior preset; `legacy` when the popup was created without one. |
 | `items[].behavior` | `Record<string, any>` | Popups only: the behavior overrides set on the popup. |
 | `items[].resolvedBehavior` | `WindowPopupBehaviorState` | Popups only: the behavior in effect. |
@@ -1061,7 +1061,7 @@ Send a message to one window, delivered as `window:message` with `{ sourceWindow
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `targetWindowId` | `string` | Yes | Id of the receiving window. Must not be empty. |
-| `message` | `any` | Yes | The message, delivered as `message` of the event. `null` counts as missing. |
+| `message` | `any` | Yes | The message, delivered as `message` of the event. Passing `null` is treated as omitted. |
 
 **Returns**
 
@@ -1091,7 +1091,7 @@ Enable or disable the Acrylic backdrop material on a window. If the effect canno
 | Field | Type | Description |
 | --- | --- | --- |
 | `enabled` | `boolean` | Echo of `enabled`. |
-| `darkMode` | `boolean` | Echo of `darkMode`; present when it was given. |
+| `darkMode` | `boolean` | Echo of `darkMode`; present only when specified in the request. |
 
 `success` is `true` on success. On failure the response is `{ success: false, error, code }`; see [Error codes](../reference/errors.md) for `code`.
 <!-- api-schema:end -->
@@ -1455,15 +1455,7 @@ Register the custom maximize button rectangle on the main window to enable Windo
 `success` is `true` on success. On failure the response is `{ success: false, error, code }`; see [Error codes](../reference/errors.md) for `code`.
 <!-- api-schema:end -->
 
-Windows 11 shows Snap layouts only over a window's maximize button, which for a
-page-drawn button means the host has to answer that rectangle as the button. The
-button then no longer receives the mouse from Windows directly; the host passes the
-input on, so `:hover`, `:active` and `click` keep working, and the page's click
-handler still does the maximizing. Keep the rectangle current: set it after the
-first layout and again whenever the button moves (window resize, maximize and
-restore, DPI or zoom changes). Where `snapLayouts` is `true`, drop the button's
-`title` and name it with `aria-label` instead, since the tooltip would cover the
-flyout.
+In Windows 11, the operating system triggers Snap layouts only over the native maximize button. For custom, page-drawn maximize buttons, the host responds to hit-testing with the supplied rectangle as the system maximize button. Mouse events are forwarded to the WebView so that `:hover`, `:active`, and `click` behaviors remain intact, while maximizing is handled by the page's click handler. The rectangle should remain synchronized with the DOM: register it after initial layout and recalculate on window resize, maximize/restore, or DPI/zoom changes. When `snapLayouts` is `true`, remove the button's HTML `title` attribute and use `aria-label` instead to prevent tooltips from obscuring the Snap flyout.
 
 ```js
 const button = document.getElementById('maximize');
@@ -1522,7 +1514,7 @@ Enable or disable the Mica backdrop material on a window. If the effect cannot b
 | --- | --- | --- |
 | `enabled` | `boolean` | Echo of `enabled`. |
 | `variant` | `string` | The variant used, `mica` or `mica-alt`. |
-| `darkMode` | `boolean` | Echo of `darkMode`; present when it was given. |
+| `darkMode` | `boolean` | Echo of `darkMode`; present only when specified in the request. |
 
 `success` is `true` on success. On failure the response is `{ success: false, error, code }`; see [Error codes](../reference/errors.md) for `code`.
 <!-- api-schema:end -->
@@ -1551,7 +1543,7 @@ Same as `window.setMica`.
 | --- | --- | --- |
 | `enabled` | `boolean` | Echo of `enabled`. |
 | `variant` | `string` | The variant used, `mica` or `mica-alt`. |
-| `darkMode` | `boolean` | Echo of `darkMode`; present when it was given. |
+| `darkMode` | `boolean` | Echo of `darkMode`; present only when specified in the request. |
 
 `success` is `true` on success. On failure the response is `{ success: false, error, code }`; see [Error codes](../reference/errors.md) for `code`.
 <!-- api-schema:end -->
@@ -1702,11 +1694,7 @@ Set whether the user can resize a window by its frame. Setting the value the win
 `success` is `true` on success. On failure the response is `{ success: false, error, code }`; see [Error codes](../reference/errors.md) for `code`.
 <!-- api-schema:end -->
 
-Every window shell supports this at runtime, including fully borderless popups (`frame: false` plus `transparent: true` with no backdrop effect): those windows collapse their entire non-client area, so adding a sizing border changes hit-testing without altering appearance. `success: false` therefore indicates a genuine Win32 failure — the style could not be written, or the frame could not be refreshed — not an unsupported window shape; the requested state is not committed in that case.
-
-::: warning Behavior change
-This call previously always targeted the main window regardless of caller, so invoking it from a popup reconfigured the main window instead.
-:::
+Every window shell supports this at runtime, including fully borderless popups (`frame: false` plus `transparent: true` with no backdrop effect): those windows collapse their entire non-client area, so adding a sizing border changes hit-testing without altering appearance. `success: false` therefore indicates a genuine Win32 failure — the style could not be written, or the frame could not be refreshed — not an unsupported window shape; the requested state is not committed in that case. This method always targets the calling context window or the explicit target named in `windowId`.
 
 ```js
 await fb2k.invoke('window.setResizable', { resizable: false });

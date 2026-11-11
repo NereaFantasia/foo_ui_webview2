@@ -1,6 +1,6 @@
 # JIT Session 会话 API
 
-提供显式 JIT 播放会话与租约控制中枢，支持混合队列调度、原生上下文无缝接管（Adoption）与动态条目预取机制。
+`jitSession` 命名空间的方法：为自行决定播放顺序的协调方提供显式会话，例如混合本地文件与在线曲目的队列。宿主播放当前条目，并缓冲其后的一条；完整队列由协调方维护。
 
 ::: warning 实验性
 本命名空间的方法仍可能变化。`jitQueue` 保持不变；两者共用宿主的执行层，会话期间调用 `jitQueue` 会接管会话。
@@ -110,13 +110,13 @@
 | `state.phase` | `"active" \| "stopped" \| "released"` | 会话执行播放时为 `active`，停止后为 `stopped`，`jitSession.release` 或被 `jitQueue` 接管后为 `released`；已接纳的原生上下文尚未结束时被接管，会话保持 `stopped` |
 | `state.phaseReason` | `"user" \| "command" \| "external" \| "legacyTakeover" \| null` | 会话最近一次停止或释放的原因；没有时为 null |
 | `state.current` | `JitSessionAttempt \| null` | 当前尝试；没有时为 null |
-| `state.current.entryId` | `string` | 调用方给的条目标识 |
-| `state.current.attemptId` | `string` | 宿主给这次尝试的标识；同一条目重播会得到新的标识 |
+| `state.current.entryId` | `string` | 调用方指定的条目标识 |
+| `state.current.attemptId` | `string` | 宿主分配的单次播放尝试标识；同一条目重播时将生成新标识 |
 | `state.current.title` | `string` | 显示标题 |
 | `state.current.status` | `"preparing" \| "playing" \| "ended"` | 开始播放之前为 `preparing`，之后为 `playing`；尝试结束后为 `ended` |
 | `state.current.nativeRef` | `string` | 条目播放的原生引用，用于接纳的当前曲目或原生供给；资源地址条目不含此字段 |
 | `state.next` | `JitSessionNextEntry \| null` | 下一条；没有时为 null |
-| `state.next.entryId` | `string` | 调用方给的条目标识 |
+| `state.next.entryId` | `string` | 调用方指定的条目标识 |
 | `state.next.title` | `string` | 显示标题 |
 | `state.next.operationId` | `string` | 把它加入缓冲的操作 |
 | `state.next.nativeRef` | `string` | 条目播放的原生引用，用于原生供给；资源地址条目不含此字段 |
@@ -389,7 +389,7 @@
 | `context.sourceCount` | `integer` | 快照时正在播放的播放列表的行数 |
 | `total` | `integer` | 该集合的总项数 |
 | `items` | `JitNativeEntry[]` | 本页内容 |
-| `items[].nativeRef` | `string` | 宿主给的引用，只在本上下文内有效 |
+| `items[].nativeRef` | `string` | 宿主提供的引用，仅在当前上下文内有效 |
 | `items[].entryId` | `string \| null` | 绑定到这个引用的调用方条目；供给之前为 null |
 | `items[].path` | `string` | 曲目的 foobar2000 路径 |
 | `items[].subsong` | `integer` | 文件内的子曲目序号 |
@@ -543,13 +543,13 @@
 | `state.phase` | `"active" \| "stopped" \| "released"` | 会话执行播放时为 `active`，停止后为 `stopped`，`jitSession.release` 或被 `jitQueue` 接管后为 `released`；已接纳的原生上下文尚未结束时被接管，会话保持 `stopped` |
 | `state.phaseReason` | `"user" \| "command" \| "external" \| "legacyTakeover" \| null` | 会话最近一次停止或释放的原因；没有时为 null |
 | `state.current` | `JitSessionAttempt \| null` | 当前尝试；没有时为 null |
-| `state.current.entryId` | `string` | 调用方给的条目标识 |
-| `state.current.attemptId` | `string` | 宿主给这次尝试的标识；同一条目重播会得到新的标识 |
+| `state.current.entryId` | `string` | 调用方指定的条目标识 |
+| `state.current.attemptId` | `string` | 宿主分配的单次播放尝试标识；同一条目重播时将生成新标识 |
 | `state.current.title` | `string` | 显示标题 |
 | `state.current.status` | `"preparing" \| "playing" \| "ended"` | 开始播放之前为 `preparing`，之后为 `playing`；尝试结束后为 `ended` |
 | `state.current.nativeRef` | `string` | 条目播放的原生引用，用于接纳的当前曲目或原生供给；资源地址条目不含此字段 |
 | `state.next` | `JitSessionNextEntry \| null` | 下一条；没有时为 null |
-| `state.next.entryId` | `string` | 调用方给的条目标识 |
+| `state.next.entryId` | `string` | 调用方指定的条目标识 |
 | `state.next.title` | `string` | 显示标题 |
 | `state.next.operationId` | `string` | 把它加入缓冲的操作 |
 | `state.next.nativeRef` | `string` | 条目播放的原生引用，用于原生供给；资源地址条目不含此字段 |

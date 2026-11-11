@@ -120,9 +120,9 @@ async function addPathsAndWait(paths) {
 }
 ```
 
-- **Missed events.** Where a method offers a state query (such as `jitSession.getOperation`), use it after a reload, or when the event may have come before you subscribed.
-- **Commands report nothing back.** Menu commands answer with `completion: 'unknown'`: foobar2000 does not say whether a command finished or whether a dialog it opened was cancelled.
-- **A timeout is not a failure.** `fb2k.invoke()` waits 30 seconds for an answer, then rejects with `code: 'TIMEOUT'`. The host may still be running the call, or may have finished it; its late answer is dropped. A menu command that shows a modal dialog, such as renaming a playlist, keeps its call waiting until the dialog closes.
+- **Missed events.** Where a method offers a state query (such as `jitSession.getOperation`), use it after a reload, or when the event may have arrived before subscription.
+- **Commands do not report completion.** Menu command responses include `completion: 'unknown'`: foobar2000 does not report whether a command completed execution or whether a dialog it opened was cancelled.
+- **A timeout is not a failure.** `fb2k.invoke()` waits 30 seconds for a response, then rejects with `code: 'TIMEOUT'`. The host may still be executing the operation or may have already completed it; late responses are dropped, so callers should treat the outcome as unknown. Menu commands that display modal dialogs (such as renaming a playlist) block the call until the dialog closes.
 
 ## Important notes
 
@@ -185,7 +185,7 @@ When calling path-based APIs such as `artwork.getForTrack`, pass `absolutePath`,
 | `C:\` `D:\` | Local file | `D:\Music\song.flac` |
 | `file://` | URI form | `file://D:/Music/song.flac` |
 | `file-relative://` | Relative path | `file-relative://../../song.flac` |
-| `archive://` | Archive entry | `archive://D:\Album.zip|track01.flac` |
+| `archive://` | Archive entry | `archive://D:\Album.zip\|track01.flac` |
 | `cdda://` | CD track | `cdda://E,1` |
 | `http://` `https://` | Network stream | `https://stream.example.com/live` |
 

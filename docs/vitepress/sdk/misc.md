@@ -1,12 +1,12 @@
 # fb.misc Host Actions
 
-`fb.misc` runs a few foobar2000 host actions: it reports the installation, profile, and component directories, opens the console, Preferences, and Media Library Search windows, shows a popup message, and restarts or exits foobar2000.
+`fb.misc` provides foobar2000 host lifecycle and environment actions: querying installation, profile, and component paths, opening native console, Preferences, and Media Library Search dialogs, displaying popup messages, and restarting or exiting the host process.
 
 ## exit()
 
 Signature: `fb.misc.exit(): Promise<MiscExitResponse>`
 
-Asks foobar2000 to exit.
+Requests foobar2000 to terminate the host process gracefully.
 
 ```javascript
 const res = await fb.misc.exit();
@@ -17,7 +17,7 @@ if (res.success === false) throw new Error(res.error);
 
 Signature: `fb.misc.getComponentPath(): Promise<MiscGetComponentPathResponse>`
 
-Reports the directory the component DLL was loaded from, as a native path in `path`. `value` holds the same directory for themes that read that field.
+Resolves with the native absolute directory path where the component DLL is located, populated in the `path` field. The `value` field contains the identical path for backward compatibility.
 
 ```javascript
 const r = await fb.misc.getComponentPath();
@@ -29,7 +29,7 @@ console.log(r.path);
 
 Signature: `fb.misc.getFoobarPath(): Promise<MiscGetFoobarPathResponse>`
 
-Reports the foobar2000 installation directory as `path` (and `value`, the same directory).
+Resolves with the native absolute path of the foobar2000 installation directory, returned in both `path` and `value` fields.
 
 ```javascript
 const res = await fb.misc.getFoobarPath();
@@ -41,7 +41,7 @@ const { path } = res;
 
 Signature: `fb.misc.getProfilePath(): Promise<MiscGetProfilePathResponse>`
 
-Reports the foobar2000 profile directory, where configuration and components live, as `path` (and `value`, the same directory).
+Resolves with the native absolute path of the foobar2000 user profile directory (storing configurations and components), returned in both `path` and `value` fields.
 
 ```javascript
 const res = await fb.misc.getProfilePath();
@@ -53,7 +53,7 @@ const { path } = res;
 
 Signature: `fb.misc.restart(): Promise<MiscRestartResponse>`
 
-Asks foobar2000 to restart.
+Requests foobar2000 to restart the host process.
 
 ```javascript
 await fb.misc.restart();
@@ -63,7 +63,7 @@ await fb.misc.restart();
 
 Signature: `fb.misc.showConsole(): Promise<MiscShowConsoleResponse>`
 
-Opens the foobar2000 console window. To write lines to the console, use [fb.console](./console.md).
+Opens the native foobar2000 console window. To output log lines to the console, use [fb.console](./console.md).
 
 ```javascript
 await fb.misc.showConsole();
@@ -75,9 +75,9 @@ Signature: `fb.misc.showLibrarySearch(query?: string): Promise<MiscShowLibrarySe
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `query` | `string` | No | Query filled into the search box. Empty or omitted opens a blank search |
+| `query` | `string` | No | Search query pre-populated in the search input; empty or omitted opens an empty search window |
 
-Opens the Media Library Search window. The response's `query` is the query the window opened with.
+Opens the native foobar2000 Media Library Search window. The `query` field in the response reflects the query expression applied upon initialization.
 
 ```javascript
 await fb.misc.showLibrarySearch('artist IS Beatles');
@@ -89,10 +89,10 @@ Signature: `fb.misc.showPopupMessage(message: string, title?: string): Promise<M
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `message` | `string` | Yes | Body text of the dialog; must not be empty |
-| `title` | `string` | No | Title bar text; the host uses `"Message"` when it is empty or omitted |
+| `message` | `string` | Yes | Body text for the dialog; must not be an empty string |
+| `title` | `string` | No | Title bar text; defaults to `"Message"` when empty or omitted |
 
-Shows a foobar2000 popup message dialog. The call returns once the dialog is shown, not when it is closed. An empty `message` fails with `INVALID_PARAMS`.
+Displays a native foobar2000 popup message dialog. The call resolves immediately once the dialog is created and displayed, without blocking until dismissal. Passing an empty string for `message` fails with `INVALID_PARAMS`.
 
 ```javascript
 await fb.misc.showPopupMessage('Operation completed', 'Notice');
@@ -102,7 +102,7 @@ await fb.misc.showPopupMessage('Operation completed', 'Notice');
 
 Signature: `fb.misc.showPreferences(): Promise<MiscShowPreferencesResponse>`
 
-Opens the foobar2000 Preferences dialog.
+Opens the native foobar2000 Preferences dialog.
 
 ```javascript
 await fb.misc.showPreferences();

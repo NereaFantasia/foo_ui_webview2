@@ -8,7 +8,7 @@ The overview page contains three groups:
 
 - **Web template**: Active template and its directory. `Manage...` creates, renames, or deletes templates (new templates are named by the user); `Open...` opens the template directory in the system file manager when present.
 - **Appearance**: Component language (Auto / English / Chinese) and default window backdrop effect (e.g. Mica, Acrylic, or none). Language changes apply to newly opened component dialogs immediately; menus and panel descriptions update after restarting foobar2000.
-- **Tools**: Read-only development-server status line, plus buttons linking to the Advanced branch and the public API reference.
+- **Tools**: Read-only development-server status line, plus buttons that open the Advanced branch and the API list (`API and services...`).
 
 ## Sub-pages
 

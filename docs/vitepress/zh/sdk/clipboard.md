@@ -6,7 +6,7 @@
 
 签名：`fb.clipboard.read(): Promise<ClipboardReadResponse>`
 
-读取剪贴板：告知其中有没有文本、文件列表与图片，并给出文本与文件路径。
+读取系统剪贴板内容，返回剪贴板数据格式标志（是否存在文本、文件列表或图片）以及提取的文本内容与文件路径列表。
 
 ```javascript
 const res = await fb.clipboard.read();
@@ -28,7 +28,7 @@ await fb.clipboard.write('来自主题的文本');
 
 签名：`fb.clipboard.writeFiles(paths: string[]): Promise<ClipboardWriteFilesResponse>`
 
-写入文件路径列表，可粘贴到能接收文件的程序里。
+将文件路径列表以原生文件拖拽格式写入剪贴板，支持粘贴到资源管理器及其他支持文件操作的外部应用程序。
 
 ```javascript
 const result = await fb.clipboard.writeFiles([
@@ -41,7 +41,7 @@ const result = await fb.clipboard.writeFiles([
 
 签名：`fb.clipboard.writeHTML(html: string, plainText?: string): Promise<ClipboardWriteHTMLResponse>`
 
-以 `HTML Format` 把 HTML 写入剪贴板，同时写入纯文本回退：`plainText` 非空时用它，缺省或为空时用 HTML 文本本身。
+以 `HTML Format` 格式将富文本写入剪贴板，同时写入纯文本回退内容：指定非空 `plainText` 时采用该文本，若缺省或为空字符串则以 HTML 源码作为纯文本回退。
 
 ```javascript
 await fb.clipboard.writeHTML('<strong>正在播放</strong>', '正在播放');

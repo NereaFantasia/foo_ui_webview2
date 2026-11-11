@@ -12,7 +12,7 @@
 | artwork.getFb2kUrlByPath() | fb2k:// URL | 任意曲目懒加载 | ★★★★★ |
 | artwork.getFb2kUrlByPathBatch() | fb2k:// URL 数组 | 批量封面 | ★★★★★ |
 | artwork.getCurrent() | Base64 dataUrl | 需要立即显示 | ★★★ |
-| artwork.getForTrack() | Base64 dataUrl | 单曲封面+缩放 | ★★★ |
+| artwork.getForTrack() | Base64 dataUrl | 按路径获取单曲封面 | ★★★ |
 
 ### artwork.getFb2kUrl
 
@@ -126,7 +126,7 @@ const result = await fb2k.invoke('artwork.getFb2kUrlByPathBatch', {
 
 需要真实图片内容时，应使用 `getCurrent`、`getByPath`、`getForTrack`、`getByPlaylistItem` 或 `getBatch`，它们返回标准 `data:image/...;base64,...`。落盘时取逗号后的裸 Base64 payload，再以 `content: 'base64:' + payload` 和 `encoding: 'binary'` 调用 `file.write`；传给 `metadata.embedArtwork` 时则只传裸 payload，不要带 Data URL 头或 `base64:`。
 
-::: tip 新格式（v1.4.0+）
+::: tip 路径参数编码规范
 路径放在 query string 的 `path` 参数中，避免 Chromium URL 规范化解码 `%5C`/`%2F` 导致 Windows 路径损坏。 旧格式 `fb2k://artwork/{encodedPath}?type=...` 仍向后兼容。
 :::
 
@@ -156,7 +156,7 @@ if (artwork.available) {
 ### artwork.getCurrent
 
 <!-- api-schema:begin artwork.getCurrent -->
-读取当前正在播放曲目的封面图片；按顺序尝试三种检索策略并在 `source` 中指明胜出源；未在播放时返回 `available: false`（`reason: "no_track"`），均未查得图片时返回 `reason: "not_found"`
+读取当前正在播放曲目的封面图片；按顺序尝试三种检索策略并在 `source` 中指明胜出源；未在播放时返回 `available: false`（`reason: "no_track"`），均未查得图片时返回 `reason: "not_found"`；仅在云端、尚未下载的文件不会被打开，基于文件的检索视为无图片
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
@@ -179,11 +179,21 @@ if (artwork.available) {
 <!-- api-schema:end -->
 
 | source 值 | 说明 |
+| --- | --- |
+| `now_playing_manager` | 正在播放的前置封面内存缓存数据 |
+| `album_art_manager_v2` | 由 foobar2000 专辑封面管理器（Album Art Manager V2）解析得出的封面 |
+| `extractor` | 由底层文件元数据提取器（Extractor）直接解析物理文件得出的封面 |
+
+```javascript
+const res = await fb2k.invoke('artwork.getCurrent');
+if (res.success === false) throw new Error(res.error);
+const { available, dataUrl, source } = res;
+```
 
 ### artwork.getByPath
 
 <!-- api-schema:begin artwork.getByPath -->
-使用专辑封面提取器直接从指定文件路径中读取内嵌图片；自动剥离 `|subsong:N` 子曲目后缀（图片归属于物理文件本身）；`file-relative://` 相对路径以 `INVALID_PATH` 拒绝（仅播放列表行可解析该协议）
+使用专辑封面提取器直接从指定文件路径中读取内嵌图片；自动剥离 `|subsong:N` 子曲目后缀（图片归属于物理文件本身）；`file-relative://` 相对路径以 `INVALID_PATH` 拒绝（仅播放列表行可解析该协议）；仅在云端、尚未下载的文件不会被打开，按无图片处理
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
@@ -215,7 +225,7 @@ if (artwork.available) {
 ### artwork.getForTrack
 
 <!-- api-schema:begin artwork.getForTrack -->
-通过专辑封面管理器读取曲目封面（包含内嵌封面及所在目录的外置封面文件）并获取尺寸；从 PNG 头信息解析 `width` 与 `height`（其他格式返回 `0`）；`file-relative://` 路径以 `INVALID_PATH` 拒绝
+通过专辑封面管理器读取曲目封面（包含内嵌封面及所在目录的外置封面文件）并获取尺寸；从 PNG 头信息解析 `width` 与 `height`（其他格式返回 `0`）；`file-relative://` 路径以 `INVALID_PATH` 拒绝；仅在云端、尚未下载的文件不会被打开，按无图片处理
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
@@ -239,21 +249,21 @@ if (artwork.available) {
 <!-- api-schema:end -->
 
 ::: tip 性能建议
-列表/网格视图中使用 `artwork.getCurrent` 或 `artwork.getByPlaylistItem` 的 `maxSize: 200` 可将数据传输量从 ~2MB 减少到 ~15KB。`artwork.getForTrack` 不支持 `maxSize` 参数。
+在列表与网格视图中，向 `artwork.getFb2kUrl`、`artwork.getFb2kUrlByPath` 或 `artwork.getFb2kUrlByPathBatch` 传入 `maxSize`（例如 `200`），宿主会返回缩小后的图片。返回 Data URL 的方法（`artwork.getCurrent`、`artwork.getByPlaylistItem`、`artwork.getForTrack`）不接受 `maxSize`，按图片原有尺寸返回。
 :::
 
 ::: warning width / height 限制
 `width` 和 `height` 仅对 **PNG** 格式封面返回实际尺寸。JPEG、GIF、BMP、WebP 格式返回值为 `0`。
 :::
 
-::: warning
+::: warning 相对路径约束
 如果曲目路径是 `file-relative://` 格式，请使用 `artwork.getByPlaylistItem`。
 :::
 
 ### artwork.getByPlaylistItem
 
 <!-- api-schema:begin artwork.getByPlaylistItem -->
-通过专辑封面管理器读取指定播放列表行的封面图片；传入负数 `playlist` 表示活动播放列表，传入负数 `index` 表示首行；行索引越界或空列表以 `NOT_FOUND` 失败，播放列表索引越界以 `INVALID_INDEX` 失败，`playlistGuid` 不存在以 `NOT_FOUND` 失败，未指定且无活动播放列表时以 `NO_ACTIVE_ITEM` 失败；该行无图片时成功返回 `available: false`
+通过专辑封面管理器读取指定播放列表行的封面图片；传入负数 `playlist` 表示活动播放列表，传入负数 `index` 表示首行；行索引越界或空列表以 `NOT_FOUND` 失败，播放列表索引越界以 `INVALID_INDEX` 失败，`playlistGuid` 不存在以 `NOT_FOUND` 失败，未指定且无活动播放列表时以 `NO_ACTIVE_ITEM` 失败；该行无图片时成功返回 `available: false`，文件仅在云端、尚未下载时同样如此，且不会被打开
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
@@ -281,7 +291,7 @@ if (artwork.available) {
 ### artwork.getAvailableTypes
 
 <!-- api-schema:begin artwork.getAvailableTypes -->
-列出指定音频文件内嵌的图片类型列表，按固定探测顺序（front、back、disc、icon、artist）排列；省略 `path` 时检测当前播放曲目（未播放时以 `NO_ACTIVE_ITEM` 失败）；文件缺失、不可读或格式不支持内嵌图片时不报错，返回空类型列表
+列出指定音频文件内嵌的图片类型列表，按固定探测顺序（front、back、disc、icon、artist）排列；省略 `path` 时检测当前播放曲目（未播放时以 `NO_ACTIVE_ITEM` 失败）；文件缺失、不可读或格式不支持内嵌图片时不报错，返回空类型列表；仅在云端、尚未下载的文件不会被打开，同样返回空类型列表
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
@@ -299,7 +309,7 @@ if (artwork.available) {
 ### artwork.getAvailableArtwork
 
 <!-- api-schema:begin artwork.getAvailableArtwork -->
-探测指定文件内嵌的图片类型以及同目录下存在的外置封面文件
+探测指定文件内嵌的图片类型以及同目录下存在的外置封面文件；仅在云端、尚未下载的文件不会被打开，视为无内嵌图片
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
@@ -367,7 +377,7 @@ if (artwork.available) {
 ### artwork.getMetadata
 
 <!-- api-schema:begin artwork.getMetadata -->
-读取曲目的专辑级基本标签，并检测文件是否内嵌图片或包含歌词标签；缓存完备时优先取自缓存，未缓存的本地文件从磁盘读取；省略 `path` 时检测当前播放曲目（未播放时以 `NO_ACTIVE_ITEM` 失败）；无法解析曲目以 `NOT_FOUND` 失败，文件不可读以 `OPERATION_FAILED` 失败；返回标签中的非法 UTF-8 替换为 U+FFFD 且不修改原文件
+读取曲目的专辑级基本标签，并检测文件是否内嵌图片或包含歌词标签；缓存完备时优先取自缓存，未缓存的本地文件从磁盘读取；省略 `path` 时检测当前播放曲目（未播放时以 `NO_ACTIVE_ITEM` 失败）；无法解析曲目以 `NOT_FOUND` 失败，文件不可读以 `OPERATION_FAILED` 失败；返回标签中的非法 UTF-8 替换为 U+FFFD 且不修改原文件；仅在云端、尚未下载的文件不会为检测图片而被打开，`hasEmbedded` 为 `false`
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
@@ -397,7 +407,7 @@ if (artwork.available) {
 ### artwork.getBatch
 
 <!-- api-schema:begin artwork.getBatch -->
-使用专辑封面提取器批量读取多个音频文件的同一种封面图片；按输入路径顺序逐行返回，目标文件未包含该图片类型时对应行返回 `available: false`
+使用专辑封面提取器批量读取多个音频文件的同一种封面图片；按输入路径顺序逐行返回，目标文件未包含该图片类型时对应行返回 `available: false`，文件仅在云端、尚未下载时同样如此，且不会被打开
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |

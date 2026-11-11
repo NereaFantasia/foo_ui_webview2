@@ -2,7 +2,7 @@
 
 `fb.ui` is the SDK facade over the native `window.*` APIs plus `ui.showContextMenu`, and covers window management. Methods return promises and act on the calling window unless their entry says otherwise.
 
-`isFullscreen`, `isResizable`, `getMinSize` / `setMinSize`, `getMaxSize` / `setMaxSize`, `setResizable`, `setDarkMode`, `setFrameless` and the four fullscreen methods take an optional trailing `windowId` that names `main` or a popup. Omitted, they act on the calling window.
+`isFullscreen`, `isResizable`, `getMinSize` / `setMinSize`, `getMaxSize` / `setMaxSize`, `setResizable`, `setDarkMode`, `setFrameless`, and fullscreen methods support an optional `windowId` parameter targeting `main` or a specific popup window; omitted, they default to the calling window.
 
 ## Basic window controls
 
@@ -187,7 +187,7 @@ const { x, y, width, height } = res;
 
 ### setBounds(opts)
 
-Sets the window position and size in one call. Only `x`, `y`, `width` and `height` are sent, so the object `getBounds` resolves with can be edited and passed back.
+Sets the window position and dimensions in one call. The wrapper sends only `x`, `y`, `width`, and `height`, so an object returned by `getBounds()` can be modified and passed back as is.
 
 ```javascript
 await fb.ui.setBounds({ x: 100, y: 100, width: 1280, height: 720 });
@@ -360,7 +360,7 @@ await fb.ui.flashTaskbar(3); // Flash 3 times
 
 ### showSystemMenu(x, y, w?, h?)
 
-Shows the system menu at a given position, in screen pixels. With a positive `w` and `h`, the menu opens below the rectangle `x`, `y`, `w`, `h` and keeps clear of it; otherwise it opens at `x`, `y`. When `w` is provided, the wrapper sends both `w` and `h`.
+Shows the system menu at a given position, in screen pixels. With positive `w` and `h`, the menu opens below the rectangle `x`, `y`, `w`, `h` and keeps clear of it; otherwise it opens at `x`, `y`. When `w` is provided, the wrapper sends both `w` and `h`.
 
 Signature: `fb.ui.showSystemMenu(x: number, y: number, w?: number, h?: number): Promise<WindowShowSystemMenuResponse>`
 
@@ -616,7 +616,7 @@ await fb.ui.setFrameless(true);
 
 ### createPopup(opts)
 
-Creates a popup window. Each popup has its own BridgeCore and WebView2 instance. The options type is `WindowCreatePopupOptions`: the declared `WindowCreatePopupParams` with `profile`, `behavior` and `backdropPolicy` typed. The response is `WindowCreatePopupResponse` (`{ windowId }`).
+Creates a popup window. Each popup operates with an independent BridgeCore and WebView2 instance. The options type `WindowCreatePopupOptions` provides strongly-typed configurations for `profile`, `behavior`, and `backdropPolicy`, resolving with `WindowCreatePopupResponse` (`{ windowId }`).
 
 ```javascript
 const popup = await fb.ui.createPopup({
@@ -710,7 +710,7 @@ await fb.ui.closeAllPopups();
 
 ### getAllWindows()
 
-Lists every window. The response carries `items`: the main window first, then the popups. Each entry has its `windowId`, `title`, `bounds` and `capabilities`, the backdrop policy overrides that were set (`backdropPolicy`) and the policy in effect (`resolvedBackdropPolicy`). Entries are discriminated by `isMain` (`MainWindowInfo | PopupWindowInfo`); only popups carry `url`, `profile`, `behavior` and `resolvedBehavior`.
+Lists all active windows. The response carries `items` with the main window first followed by popup windows. Each entry includes `windowId`, `title`, `bounds`, and `capabilities`, alongside user-configured `backdropPolicy` overrides and the active `resolvedBackdropPolicy`. Entries are discriminated by `isMain` (`MainWindowInfo | PopupWindowInfo`), with `url`, `profile`, `behavior`, and `resolvedBehavior` specific to `PopupWindowInfo`.
 
 Signature: `fb.ui.getAllWindows(): Promise<WindowListResponse>`
 
@@ -760,7 +760,7 @@ Signature: `fb.ui.getBackdropPolicy(windowId?: string): Promise<WindowGetBackdro
 | --- | --- | --- | --- |
 | `windowId` | `string` | No | Target window ID; omitted, the calling window |
 
-`setBackdropPolicy` takes flat fields (`activeEffect`, `inactiveEffect` and the other `WindowBackdropPolicyPatch` fields) plus an optional `windowId`. The wrapper sends them to the host as `{ backdropPolicy }`, so do not nest `backdropPolicy` yourself. A `null` field removes that override.
+`setBackdropPolicy` takes flat fields (`activeEffect`, `inactiveEffect` and the other `WindowBackdropPolicyPatch` fields) plus an optional `windowId`. The wrapper sends them to the host as `{ backdropPolicy }`, so do not wrap them in a nested `backdropPolicy` yourself. A `null` field removes that override.
 
 `inactiveEffect` values: `inherit` \| `system` \| `none` \| `mica` \| `mica-alt` \| `acrylic` (`WindowInactiveBackdropEffect`). `inherit` is the host default: the unfocused window keeps the resolved `activeEffect`, and DWM dims it. `system` hands the unfocused frame back to the platform backdrop.
 

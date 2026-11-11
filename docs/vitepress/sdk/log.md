@@ -1,12 +1,12 @@
 # fb.log Log File
 
-`fb.log` writes, reads, and clears the SDK host log file, `webview_ui.log` in the foobar2000 profile directory. For messages sent to the foobar2000 console window instead, use `fb.console`.
+`fb.log` provides file logging operations (write, read, and clear) targeting the host log file `webview_ui.log` in the foobar2000 profile directory. To send messages to the foobar2000 console window instead, use `fb.console`.
 
 ## clear()
 
 Signature: `fb.log.clear(): Promise<LogClearResponse>`
 
-Empties `webview_ui.log`. A file chosen with `write()`'s `options.file` is not touched.
+Clears `webview_ui.log`. Custom files written through `options.file` of `write()` remain intact.
 
 ```javascript
 const result = await fb.log.clear();
@@ -18,9 +18,9 @@ Signature: `fb.log.read(lines?: number): Promise<LogReadResponse>`
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `lines` | `number` | No | Maximum number of lines; the host defaults to 100 |
+| `lines` | `number` | No | Maximum number of trailing lines to return; defaults to 100 |
 
-Reads the last `lines` lines of `webview_ui.log`. The response carries `content` (the lines joined with `\n`), `lines`, `lineCount`, and `totalLines`, the line count of the whole file. A file that does not exist yet reads as empty, and then `lines` and `totalLines` are absent.
+Reads the trailing `lines` lines of `webview_ui.log`. The response contains `content` (concatenated lines joined with `\n`), `lines` array, `lineCount`, and `totalLines` (total line count of the entire file). If the log file does not exist, it is treated as empty, and `lines` and `totalLines` are omitted from the response.
 
 ```javascript
 const res = await fb.log.read(100);
@@ -34,14 +34,14 @@ Signature: `fb.log.write(message: string, options?: LogWriteParams): Promise<Log
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `message` | `string` | Yes | Text to write. An empty string fails with `INVALID_PARAMS` |
-| `options.level` | `string` | No | Log level, written upper-cased in brackets before the message; defaults to `'info'` |
-| `options.append` | `boolean` | No | Appends when `true`; `false` replaces the file's content with this line. Defaults to `true` |
-| `options.timestamp` | `boolean` | No | Prefixes the line with the local time as `[YYYY-MM-DD HH:MM:SS.mmm]`; defaults to `true` |
-| `options.file` | `string` | No | Another file in the profile directory: a plain file name ending in `.log` or `.txt` that is not a Windows device name such as `CON`. Any other value is ignored and the line goes to `webview_ui.log` |
-| `options.args` | `JsonValue[]` | No | Ignored here: the host reads `args` only when `message` is absent, and `fb.log.write` always sends `message` |
+| `message` | `string` | Yes | Text payload to write. Passing an empty string fails with `INVALID_PARAMS` |
+| `options.level` | `string` | No | Log level identifier, formatted uppercase in square brackets preceding the message; defaults to `'info'` |
+| `options.append` | `boolean` | No | Write mode; appends when `true`, overwrites the entire file content when `false`. Defaults to `true` |
+| `options.timestamp` | `boolean` | No | Timestamp toggle; prefixes the entry with local timestamp formatted as `[YYYY-MM-DD HH:MM:SS.mmm]`. Defaults to `true` |
+| `options.file` | `string` | No | Alternative target file within the profile directory: must be a bare filename ending with `.log` or `.txt`, excluding reserved Windows device names (such as `CON`, `PRN`, `NUL`). Any non-conforming value is ignored and falls back to writing to `webview_ui.log` |
+| `options.args` | `JsonValue[]` | No | Reserved parameter: the host parser examines `args` only when `message` is omitted; because `fb.log.write` always provides `message`, this parameter is ignored |
 
-The response's `path` is the full path of the file that was written.
+The `path` field in the response contains the resolved absolute path of the target log file.
 
 ```javascript
 const result = await fb.log.write('Playback started', {

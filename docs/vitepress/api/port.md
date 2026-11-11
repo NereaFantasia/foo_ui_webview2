@@ -118,6 +118,16 @@ Send a message to one port, as a `port:message` event to that port's window. An 
 await fb2k.invoke('port.postMessageTo', { portId: 'port_00000001', targetPortId: 'port_00000002', message: { text: 'sync' } });
 ```
 
+## PortHub events
+
+| Event | Trigger | Payload fields |
+| --- | --- | --- |
+| `port:connected` | Port created | `portId`, `name`, `windowId` |
+| `port:disconnected` | Port destroyed or window cleaned up | `portId`, `name`, `windowId` |
+| `port:message` | Message received on port | `portId`, `sourcePortId`, `sourceWindowId`, `message` |
+| `state:changed` | `state.set` (non-silent) | `key`, `value`, `previousValue`, `sourceWindowId`, `expiresAt?` |
+| `state:deleted` | `state.delete` or TTL expiry | `key`, `sourceWindowId`, `reason` |
+
 ## Routing and PortHub events
 
 - `port.connect` binds the new port to the invoking window. Only that owner may disconnect it or send through it; `port.postMessage` excludes the sending port and routes `port:message` to peer ports on the same name.

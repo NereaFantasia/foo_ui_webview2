@@ -254,7 +254,11 @@ Albums of the whole library, grouped by album name plus album artist; tracks wit
 `success` is `true` on success. On failure the response is `{ success: false, error, code }`; see [Error codes](../reference/errors.md) for `code`.
 <!-- api-schema:end -->
 
-> Albums are grouped by album name plus the first value of `album artist`, falling back to the first value of `artist` when that tag is absent. A row's `artist` and `albumArtist` both carry whichever of the two the host resolved, so on an album with no `album artist` tag both report the first credited artist of the first track seen. Neither key is a per-track credit, and a multi-value `album artist` contributes only its first value. To list the albums one artist appears on, use `library.getArtistAlbums`.
+> Albums are grouped by album name plus the first value of `album artist`, falling back to the first value of `artist` when that tag is absent. In `library.getAlbums`, both `artist` and `albumArtist` reflect the aggregated group value: on an album without an `album artist` tag, both fields report the first credited artist of the first track seen rather than per-track credits; a multi-value `album artist` contributes only its first value to grouping. To retrieve albums associated with a contributing artist, use `library.getArtistAlbums`.
+
+::: tip Performance Optimization
+Setting `includeCover: true` retrieves album covers in batch along with album metadata, avoiding separate calls to `artwork.getForTrack`. Covers support JPEG, PNG, GIF, and WebP formats with automatic MIME detection.
+:::
 
 ```js
 // Minimal call: first 100 albums sorted by name
@@ -307,7 +311,7 @@ Tracks of the whole library in library order, one page at a time. A request from
 `success` is `true` on success. On failure the response is `{ success: false, error, code }`; see [Error codes](../reference/errors.md) for `code`.
 <!-- api-schema:end -->
 
-> `artists` holds the atomic values behind `artist`: `artists.join(', ')` is exactly `artist`, so a multi-value tag can be recovered from `artists` and not from `artist`. It is on every shared `Track` row — the media-library track APIs, `playlist.getTracks`, `playback.getCurrentTrack`, `queue.get` and the track events — and on the flat answer of `library.getByPath`; artwork payloads do not carry it. `albumArtists` does the same for `albumArtist` wherever a `Track` row is returned: its first value, or `artists[0]` when it is empty, is the album artist `library.getAlbums` groups the track under.
+> `artists` provides the array of individual strings behind `artist`, satisfying `artists.join(', ') === artist`. Multi-value tags can be fully recovered from `artists`. It is included on every shared `Track` row (media-library track APIs, `playlist.getTracks`, `playback.getCurrentTrack`, `queue.get`, and track events) and on the flat response of `library.getByPath`; artwork payloads do not carry it. `albumArtists` does the same for `albumArtist` wherever a `Track` row is returned: its first element (falling back to `artists[0]` when empty) represents the album artist used by `library.getAlbums` for grouping.
 
 ```js
 // Minimal call: first 100 tracks
@@ -361,11 +365,11 @@ The albums an artist appears on. `trackCount`, `duration` and `discCount` count 
 `success` is `true` on success. On failure the response is `{ success: false, error, code }`; see [Error codes](../reference/errors.md) for `code`.
 <!-- api-schema:end -->
 
-> A row carries the same keys as a `library.getAlbums` row except `coverDataUrl` and the canonical `albumId`, with `tracks` containing the exact members of this artist's group: `name`, `artist`, `albumArtist`, `trackCount`, `discCount`, `duration`, `year`, `genre`, `label`, `firstTrackPath` and `firstTrackAbsolutePath`. For cover art, pass `firstTrackAbsolutePath` to `artwork.getForTrack` — `firstTrackPath` can be a `file-relative://` URI, which that endpoint refuses. A failure raised by the endpoint itself (library disabled, a failed search) still carries an empty `albums`; a parameter error does not.
+> Each row carries `name`, `artist`, `albumArtist`, `trackCount`, `discCount`, `duration`, `year`, `genre`, `label`, `firstTrackPath`, `firstTrackAbsolutePath` and `tracks`: the keys of a `library.getAlbums` row except `coverDataUrl` and the canonical `albumId`. `tracks` lists the tracks credited to this artist in the group. For cover art, pass `firstTrackAbsolutePath` to `artwork.getForTrack`; `firstTrackPath` can be a `file-relative://` URI, which that method rejects. A failure reported by the method itself (library disabled, failed search) still includes an empty `albums`; the response to a parameter error has no `albums`.
 
-> **`trackCount`, `duration` and `discCount` count only the tracks this artist appears on**, not the whole album. `library.getAlbums` returns the album-wide figures for the same album, so the two disagree on any album the artist appears on only partly — a one-track guest spot on a 20-track compilation reports `trackCount: 1`. Rendering a row here as an album card will understate it.
+> **`trackCount`, `duration` and `discCount` count only the tracks this artist appears on**, not the whole album. If the artist appears on only part of an album, values reported here are smaller than the complete album metrics from `library.getAlbums`. To render complete album cards, query `library.getAlbums` instead.
 
-> `total` counts albums before `limit` truncation. There is no `offset`: when `hasMore` is true, the only way to see the rest is a larger `limit`.
+> `total` reflects total matching albums before `limit` truncation. This endpoint does not support `offset` pagination; when `hasMore` is true, retrieve remaining items by increasing `limit`.
 
 > A name from `library.getArtists` matches here even when it is not the first of several credited artists, because the host compares each atomic tag value. The joined `artist` string on a track object is not a valid key — pass one artist name. Under `substring`, a short name also returns albums by other artists whose name contains it, and its case rule is asymmetric: a lowercase letter in the query matches either case in the tag, while an uppercase letter demands uppercase in the same position — `camellia` finds `Camellia`, `CAMELLIA` does not. `exact` is free of this.
 
@@ -514,7 +518,7 @@ Look up one file in the library and return its main fields as a flat object. A f
 
 > Multi-value tags in `artist` / `albumArtist` / `genre` / `composer` (only the fields this API actually returns) are joined with `, ` in their original order, without de-duplication.
 
-> `artists` holds the atomic values behind `artist`: `artists.join(', ')` is exactly `artist`, so a multi-value tag can be recovered from `artists` and not from `artist`. It is on every shared `Track` row — the media-library track APIs, `playlist.getTracks`, `playback.getCurrentTrack`, `queue.get` and the track events — and on the flat answer of `library.getByPath`; artwork payloads do not carry it. `albumArtists` does the same for `albumArtist` wherever a `Track` row is returned: its first value, or `artists[0]` when it is empty, is the album artist `library.getAlbums` groups the track under. This API is a flat object, so `artists` is the only array key it gains.
+> `artists` provides the array of individual strings behind `artist`, satisfying `artists.join(', ') === artist`. Multi-value tags can be fully recovered from `artists`. It is included on every shared `Track` row (media-library track APIs, `playlist.getTracks`, `playback.getCurrentTrack`, `queue.get`, and track events) and on the flat response of `library.getByPath`; artwork payloads do not carry it. `albumArtists` does the same for `albumArtist` wherever a `Track` row is returned: its first element (falling back to `artists[0]` when empty) represents the album artist used by `library.getAlbums` for grouping. This API is a flat object, so `artists` is the only array key it gains.
 
 ```js
 const res = await fb2k.invoke('library.getByPath', {
@@ -830,7 +834,7 @@ Fetch library rows in the given handle order without reading media files. Missin
 | Field | Type | Description |
 | --- | --- | --- |
 | `tracks` | `LibraryTrackPartial[]` | Found rows in the order of `handles`; `index` is the position in this list. Contains requested `fields`; `albumId` omitted when unavailable. |
-| `tracks[].handle` | `string` | The key that identifies the track across endpoints: `absolutePath`, with a `\|subsong:N` suffix when `subsong` is not `0`. The same track yields the same handle from every such method; because of the suffix it is not a plain file path, and a method that takes a path documents whether it accepts one. |
+| `tracks[].handle` | `string` | Cross-endpoint unique track identifier: formatted as `absolutePath`, appended with `\|subsong:N` when `subsong` is non-zero. The same track yields the same handle from every method. Differs from standard filesystem paths; endpoints document whether handle identifiers are accepted in place of paths. |
 | `tracks[].path` | `string` | Path as foobar2000 stores it: `file://` for a local file, `file-relative://` for a path stored relative to the foobar2000 folder (a portable install), or a remote URL. No subsong suffix. |
 | `tracks[].absolutePath` | `string` | Native filesystem path without the subsong suffix; the same as `path` for a remote URL. |
 | `tracks[].subsong` | `integer` | Subsong identifier the decoder assigns inside the file, not necessarily a sequence number; `0` for a whole file and for a remote stream. |
@@ -840,7 +844,7 @@ Fetch library rows in the given handle order without reading media files. Missin
 | `tracks[].album` | `string` | First ALBUM value; empty when untagged. |
 | `tracks[].albumId` | `string` | Opaque album identity when its original name or album artist contains invalid UTF-8. Use this instead of the display names to match an album row; absent for ordinary names. |
 | `tracks[].albumArtist` | `string` | Every ALBUM ARTIST value joined with `", "`; empty when untagged. |
-| `tracks[].albumArtists` | `string[]` | Every ALBUM ARTIST value in tag order, so `albumArtists.join(", ")` equals `albumArtist`; empty when untagged. `library.getAlbums` files a track that has an `album` under the name `album` and the album artist `albumArtists[0]`, or `artists[0]` when this array is empty (`""` when both are); those are the `name` and `albumArtist` of that album's row. When `albumId` is present, use it instead: replacement characters can make display names equal. |
+| `tracks[].albumArtists` | `string[]` | All ALBUM ARTIST values in tag order (`albumArtists.join(", ")` equals `albumArtist`); empty array when untagged. In `library.getAlbums`, a track that has an `album` is filed under the name `album` and the album artist `albumArtists[0]` (falling back to `artists[0]`, or `""` when both are empty); those are the `name` and `albumArtist` of that album's row. When `albumId` is present, match by `albumId` instead of display names to avoid collision from character replacement. |
 | `tracks[].genre` | `string` | Every GENRE value joined with `", "`; empty when untagged. |
 | `tracks[].date` | `string` | First DATE value as tagged, such as `2019` or `2019-05-01`; empty when untagged. |
 | `tracks[].trackNumber` | `integer` | TRACKNUMBER read as an integer; `0` when absent or not a number. |
@@ -851,7 +855,7 @@ Fetch library rows in the given handle order without reading media files. Missin
 | `tracks[].sampleRate` | `integer` | Sample rate in Hz; `0` when unknown. |
 | `tracks[].channels` | `integer` | Channel count; `0` when unknown. |
 | `tracks[].codec` | `string` | Codec name as the decoder reports it, such as `FLAC` or `MP3`; empty when unknown. |
-| `tracks[].rating` | `integer` | Rating from 0 to 5: the `%rating%` statistic (foo_playcount) when it is 1 to 5, otherwise the RATING tag clamped to that range; `0` when neither rates the track. |
+| `tracks[].rating` | `integer` | Rating value from 0 to 5. Prefers the `%rating%` statistic (foo_playcount) if within 1..5; otherwise falls back to the RATING tag clamped to 0..5; `0` if neither is present. |
 | `tracks[].index` | `integer` | Row number; the list the row is in says what it counts. |
 | `missing` | `string[]` | Handles not found in the library, in the order given. |
 
@@ -924,7 +928,7 @@ Tracks matching a foobar2000 query, optionally sorted by `sort`, up to `limit`. 
 | Field | Type | Description |
 | --- | --- | --- |
 | `tracks` | `LibraryTrackPartial[]` | The matches, sorted by `sort` or in library order; `index` is the position in this list. Each row carries the `fields` asked for; `albumId` is omitted when unavailable. |
-| `tracks[].handle` | `string` | The key that identifies the track across endpoints: `absolutePath`, with a `\|subsong:N` suffix when `subsong` is not `0`. The same track yields the same handle from every such method; because of the suffix it is not a plain file path, and a method that takes a path documents whether it accepts one. |
+| `tracks[].handle` | `string` | Cross-endpoint unique track identifier: formatted as `absolutePath`, appended with `\|subsong:N` when `subsong` is non-zero. The same track yields the same handle from every method. Differs from standard filesystem paths; endpoints document whether handle identifiers are accepted in place of paths. |
 | `tracks[].path` | `string` | Path as foobar2000 stores it: `file://` for a local file, `file-relative://` for a path stored relative to the foobar2000 folder (a portable install), or a remote URL. No subsong suffix. |
 | `tracks[].absolutePath` | `string` | Native filesystem path without the subsong suffix; the same as `path` for a remote URL. |
 | `tracks[].subsong` | `integer` | Subsong identifier the decoder assigns inside the file, not necessarily a sequence number; `0` for a whole file and for a remote stream. |
@@ -934,7 +938,7 @@ Tracks matching a foobar2000 query, optionally sorted by `sort`, up to `limit`. 
 | `tracks[].album` | `string` | First ALBUM value; empty when untagged. |
 | `tracks[].albumId` | `string` | Opaque album identity when its original name or album artist contains invalid UTF-8. Use this instead of the display names to match an album row; absent for ordinary names. |
 | `tracks[].albumArtist` | `string` | Every ALBUM ARTIST value joined with `", "`; empty when untagged. |
-| `tracks[].albumArtists` | `string[]` | Every ALBUM ARTIST value in tag order, so `albumArtists.join(", ")` equals `albumArtist`; empty when untagged. `library.getAlbums` files a track that has an `album` under the name `album` and the album artist `albumArtists[0]`, or `artists[0]` when this array is empty (`""` when both are); those are the `name` and `albumArtist` of that album's row. When `albumId` is present, use it instead: replacement characters can make display names equal. |
+| `tracks[].albumArtists` | `string[]` | All ALBUM ARTIST values in tag order (`albumArtists.join(", ")` equals `albumArtist`); empty array when untagged. In `library.getAlbums`, a track that has an `album` is filed under the name `album` and the album artist `albumArtists[0]` (falling back to `artists[0]`, or `""` when both are empty); those are the `name` and `albumArtist` of that album's row. When `albumId` is present, match by `albumId` instead of display names to avoid collision from character replacement. |
 | `tracks[].genre` | `string` | Every GENRE value joined with `", "`; empty when untagged. |
 | `tracks[].date` | `string` | First DATE value as tagged, such as `2019` or `2019-05-01`; empty when untagged. |
 | `tracks[].trackNumber` | `integer` | TRACKNUMBER read as an integer; `0` when absent or not a number. |
@@ -945,7 +949,7 @@ Tracks matching a foobar2000 query, optionally sorted by `sort`, up to `limit`. 
 | `tracks[].sampleRate` | `integer` | Sample rate in Hz; `0` when unknown. |
 | `tracks[].channels` | `integer` | Channel count; `0` when unknown. |
 | `tracks[].codec` | `string` | Codec name as the decoder reports it, such as `FLAC` or `MP3`; empty when unknown. |
-| `tracks[].rating` | `integer` | Rating from 0 to 5: the `%rating%` statistic (foo_playcount) when it is 1 to 5, otherwise the RATING tag clamped to that range; `0` when neither rates the track. |
+| `tracks[].rating` | `integer` | Rating value from 0 to 5. Prefers the `%rating%` statistic (foo_playcount) if within 1..5; otherwise falls back to the RATING tag clamped to 0..5; `0` if neither is present. |
 | `tracks[].index` | `integer` | Row number; the list the row is in says what it counts. |
 | `total` | `integer` | Matches, before `limit`. |
 
@@ -1024,7 +1028,7 @@ One page of the tracks matching a foobar2000 query, in library order: a `SORT BY
 | Field | Type | Description |
 | --- | --- | --- |
 | `tracks` | `LibraryTrackPartial[]` | This page of the matches in library order; `index` is the position among all matches. Each row carries the `fields` asked for; `albumId` is omitted when unavailable. |
-| `tracks[].handle` | `string` | The key that identifies the track across endpoints: `absolutePath`, with a `\|subsong:N` suffix when `subsong` is not `0`. The same track yields the same handle from every such method; because of the suffix it is not a plain file path, and a method that takes a path documents whether it accepts one. |
+| `tracks[].handle` | `string` | Cross-endpoint unique track identifier: formatted as `absolutePath`, appended with `\|subsong:N` when `subsong` is non-zero. The same track yields the same handle from every method. Differs from standard filesystem paths; endpoints document whether handle identifiers are accepted in place of paths. |
 | `tracks[].path` | `string` | Path as foobar2000 stores it: `file://` for a local file, `file-relative://` for a path stored relative to the foobar2000 folder (a portable install), or a remote URL. No subsong suffix. |
 | `tracks[].absolutePath` | `string` | Native filesystem path without the subsong suffix; the same as `path` for a remote URL. |
 | `tracks[].subsong` | `integer` | Subsong identifier the decoder assigns inside the file, not necessarily a sequence number; `0` for a whole file and for a remote stream. |
@@ -1034,7 +1038,7 @@ One page of the tracks matching a foobar2000 query, in library order: a `SORT BY
 | `tracks[].album` | `string` | First ALBUM value; empty when untagged. |
 | `tracks[].albumId` | `string` | Opaque album identity when its original name or album artist contains invalid UTF-8. Use this instead of the display names to match an album row; absent for ordinary names. |
 | `tracks[].albumArtist` | `string` | Every ALBUM ARTIST value joined with `", "`; empty when untagged. |
-| `tracks[].albumArtists` | `string[]` | Every ALBUM ARTIST value in tag order, so `albumArtists.join(", ")` equals `albumArtist`; empty when untagged. `library.getAlbums` files a track that has an `album` under the name `album` and the album artist `albumArtists[0]`, or `artists[0]` when this array is empty (`""` when both are); those are the `name` and `albumArtist` of that album's row. When `albumId` is present, use it instead: replacement characters can make display names equal. |
+| `tracks[].albumArtists` | `string[]` | All ALBUM ARTIST values in tag order (`albumArtists.join(", ")` equals `albumArtist`); empty array when untagged. In `library.getAlbums`, a track that has an `album` is filed under the name `album` and the album artist `albumArtists[0]` (falling back to `artists[0]`, or `""` when both are empty); those are the `name` and `albumArtist` of that album's row. When `albumId` is present, match by `albumId` instead of display names to avoid collision from character replacement. |
 | `tracks[].genre` | `string` | Every GENRE value joined with `", "`; empty when untagged. |
 | `tracks[].date` | `string` | First DATE value as tagged, such as `2019` or `2019-05-01`; empty when untagged. |
 | `tracks[].trackNumber` | `integer` | TRACKNUMBER read as an integer; `0` when absent or not a number. |
@@ -1045,7 +1049,7 @@ One page of the tracks matching a foobar2000 query, in library order: a `SORT BY
 | `tracks[].sampleRate` | `integer` | Sample rate in Hz; `0` when unknown. |
 | `tracks[].channels` | `integer` | Channel count; `0` when unknown. |
 | `tracks[].codec` | `string` | Codec name as the decoder reports it, such as `FLAC` or `MP3`; empty when unknown. |
-| `tracks[].rating` | `integer` | Rating from 0 to 5: the `%rating%` statistic (foo_playcount) when it is 1 to 5, otherwise the RATING tag clamped to that range; `0` when neither rates the track. |
+| `tracks[].rating` | `integer` | Rating value from 0 to 5. Prefers the `%rating%` statistic (foo_playcount) if within 1..5; otherwise falls back to the RATING tag clamped to 0..5; `0` if neither is present. |
 | `tracks[].index` | `integer` | Row number; the list the row is in says what it counts. |
 | `total` | `integer` | Matches, before `offset` and `limit`. |
 | `offset` | `integer` | The `offset` applied. |
@@ -1085,15 +1089,30 @@ pulling only incremental changes. Both `handle` values and the revision reported
 `library.getChanges` persist across restarts.
 
 ```js @ts-nocheck
-const LIMIT = 5000;
+const PAGE = 5000;
+const FIELDS = ['handle', 'title', 'artist', 'album', 'duration'];
 
 async function fetchRows(handles) {
-    for (let i = 0; i < handles.length; i += LIMIT) {
-        const res = await fb2k.invoke('library.getTracks', { handles: handles.slice(i, i + LIMIT) });
+    for (let i = 0; i < handles.length; i += PAGE) {
+        const res = await fb2k.invoke('library.getTracks', { handles: handles.slice(i, i + PAGE), fields: FIELDS });
         if (res.success === false) throw new Error(res.error);
         await store.put(res.tracks);
         await store.delete(res.missing);
     }
+}
+
+async function rebuild(handles) {
+    await store.clear();
+    const seen = new Set();
+    let hasMore = true;
+    for (let offset = 0; hasMore; offset += PAGE) {
+        const res = await fb2k.invoke('library.search', { query: 'ALL', offset, limit: PAGE, fields: FIELDS });
+        if (res.success === false) throw new Error(res.error);
+        await store.put(res.tracks);
+        for (const track of res.tracks) seen.add(track.handle);
+        hasMore = res.hasMore;
+    }
+    await fetchRows(handles.filter((handle) => !seen.has(handle)));
 }
 
 async function sync() {
@@ -1101,8 +1120,7 @@ async function sync() {
     const res = await fb2k.invoke('library.getChanges', { epoch, since: revision });
     if (res.success === false) throw new Error(res.error);
     if (res.resync) {
-        await store.clear();
-        await fetchRows(res.handles);
+        await rebuild(res.handles);
     } else {
         await store.delete(res.removed);
         await fetchRows(res.changed);
@@ -1117,6 +1135,10 @@ async function sync() {
 - During runtime, debounce calls to `sync()` on receiving any `library:items*` event. The sync
   protocol does not rely on the `handles` carried by the events, so truncated event batches do
   not cause missed updates.
+- `library.getTracks` resolves each handle on the main thread, so a large batch blocks the UI. Use
+  it for small sets of changed rows, and page through `library.search` to rebuild the whole copy.
+- If tracks leave the library while paging, later rows move up and a page can skip some. After
+  the last page, fetch any entries of `handles` that were not read.
 - Any changes that occur while rows are being fetched will have a higher revision than the current
   response and will be picked up on the next `sync()`; overwriting rows is idempotent.
 - During startup loading, foobar2000 announces existing library tracks via `library:itemsAdded`.
@@ -1138,13 +1160,11 @@ Scenarios not tracked by revisions:
 restricts which track keys each returned row carries. Omitting `fields`, or
 passing `null`, returns every key of a library track row.
 
-When `fields` is present, each row holds only the requested keys and no
-others. A requested optional `albumId` is omitted when unavailable. Rows whose
-metadata container could not be read still carry the requested non-optional
-keys, filled with type defaults (empty string, zero). The response envelope itself is unchanged:
-`library.query` still returns `success` / `tracks` / `total`, and
-`library.search` still returns `success` / `tracks` / `total` / `offset` /
-`limit` / `hasMore`.
+When `fields` is specified, returned track rows contain only the requested keys
+and no others. Tracks with unreadable metadata populate non-optional
+keys with type defaults (empty string, zero). The optional `albumId` is omitted if
+no album identifier exists. Outer response properties (such as `total`, `offset`,
+and `hasMore`) remain unchanged.
 
 **Accepted key names** (exact match, case-sensitive):
 
@@ -1154,7 +1174,7 @@ keys, filled with type defaults (empty string, zero). The response envelope itse
 
 > Multi-value tags in `artist` / `albumArtist` / `genre` / `composer` (only the fields this API actually returns) are joined with `, ` in their original order, without de-duplication.
 
-> `artists` holds the atomic values behind `artist`: `artists.join(', ')` is exactly `artist`, so a multi-value tag can be recovered from `artists` and not from `artist`. It is on every shared `Track` row — the media-library track APIs, `playlist.getTracks`, `playback.getCurrentTrack`, `queue.get` and the track events — and on the flat answer of `library.getByPath`; artwork payloads do not carry it. `albumArtists` does the same for `albumArtist` wherever a `Track` row is returned: its first value, or `artists[0]` when it is empty, is the album artist `library.getAlbums` groups the track under. Projecting an array without its joined string (or the other way round) is allowed; each pair is read in one pass. On a row whose metadata container could not be read, a requested `artists` or `albumArtists` comes back as `[]`.
+> `artists` provides the array of individual strings behind `artist`, satisfying `artists.join(', ') === artist`. Multi-value tags can be fully recovered from `artists`. It is included on every shared `Track` row (media-library track APIs, `playlist.getTracks`, `playback.getCurrentTrack`, `queue.get`, and track events) and on the flat response of `library.getByPath`; artwork payloads do not carry it. `albumArtists` does the same for `albumArtist` wherever a `Track` row is returned: its first element (falling back to `artists[0]` when empty) represents the album artist used by `library.getAlbums` for grouping. An array may be projected independently of its joined string. For tracks with unreadable metadata, a requested `artists` or `albumArtists` returns `[]`.
 
 Duplicate names are de-duplicated. `rating` is only computed when it is
 requested (or when `fields` is omitted), which is where most of the saving on
@@ -1203,9 +1223,7 @@ lever, and there are two:
 | Projection | `fields: [...]` | Full-field down to `['absolutePath']` is roughly 4.6× less payload (44.3 → 9.6 MiB at 80,000 rows) |
 | Paging | `offset` / `limit` | Occupancy scales with the rows in that page, so it can be brought under any target |
 
-**Supported access pattern**: up to about 20,000 rows per call after paging
-and/or projection, which keeps a single call's main-thread occupancy under
-100 ms. Past that, page it — do not ask one call for everything.
+**Supported access pattern**: up to approximately 20,000 rows per call after paging or projection, keeping a single call's main-thread occupancy under 100 ms. For larger result sets, use pagination rather than requesting the entire collection in a single call.
 
 ::: warning 32-bit (x86) hosts must avoid large result sets
 A 32-bit process has roughly 2–4 GB of user address space, and a whole-library
@@ -1234,7 +1252,7 @@ sets — treat them as guidance, not a budget.
 - `library.getRoots` and `library.browseTree` are the typed library-navigation APIs. `library.browseDirectory` is the legacy path-prefix projection and does not represent the real root set.
 - `library.getAlbums` adds `coverDataUrl` only when `includeCover` is enabled and artwork is available. It is a `data:image/...` URL, not an `fb2k://` URL.
 - `library.search` and `library.query` use foobar2000 query syntax. The implementation relies on `search_filter_v2`; clients should treat invalid expressions as a handler error rather than attempting to parse the syntax locally.
-- `library.getStatus` and `library.getCount` enumerate through `enum_items` rather than returning a `metadb_handle_list`. The `library_callback_v2` callback invalidates the cache before it broadcasts the events below. A `library:itemsModified` keeps the directory index behind `library.getRoots` and `library.browseTree`, since paths do not change; one with `fromHook: true` drops only the kept `library.getAll` list. Every event names the changed tracks in `handles`, and none when `truncated`.
+- `library.getStatus` and `library.getCount` perform lightweight enumeration on the host without materializing a full handle list. The underlying callback invalidates query caches before broadcasting events. In `library:itemsModified`, the directory tree index used by `library.getRoots` and `library.browseTree` is preserved because file paths remain unchanged; notifications with `fromHook: true` clear only the cached full-library list. Each event payload names the changed tracks in `handles`, omitting them when truncated (`truncated: true`).
 
 ## Library events
 

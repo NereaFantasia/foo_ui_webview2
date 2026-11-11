@@ -12,17 +12,17 @@ if (res.success === false) throw new Error(res.error);
 // res.playlists: [{index: 0, guid: "{…}", name: "Default", trackCount: 100, isActive: true, isPlaying: false, isLocked: false, isAutoplaylist: false}, ...]
 ```
 
-菜单或选择器列出播放列表时记下各自的 `guid`，用户选定后原样传回：
+构建列表选择菜单或下拉项时，建议保存各播放列表的 `guid`，并在用户确认选择时传入：
 
 ```javascript
 const res = await fb.playlist.getAll();
 if (res.success === false) throw new Error(res.error);
 const target = res.playlists.find((p) => p.name === '收藏');
-// 稍后菜单关闭时再调用；这期间播放列表清单可能已经变了
+// 跨异步生命周期调用时使用 GUID，避免因并发增删或重排导致索引错位
 if (target) await fb.library.addToPlaylist(['E:\\Music\\song.flac'], target.guid);
 ```
 
-::: tip
+::: tip `PlaylistInfo` 不含时长
 `PlaylistInfo` 不包含 `duration` 字段。如需播放列表的总时长，请调用 `fb.playlist.getActive()` 或 `fb.playlist.getPlaying()`。
 :::
 
@@ -51,7 +51,7 @@ await fb.playlist.setActive(1);
 | formats | Record<string, string>? | 具名的 Title Formatting 附加列；每行在 `formats` 下带上它们的值 |
 | fields | string[]? | 要返回的曲目字段；每行包含所选字段和 `index` |
 
-返回分页响应 `{ playlist, start, count, total, tracks }`；`fields` 能收窄行，所以行的类型是 `PlaylistTrackPartial`。
+返回分页对象 `{ playlist, start, count, total, tracks }`，由于 `fields` 可以限定每行包含的键，`tracks` 的元素类型为 `PlaylistTrackPartial`。
 
 ```javascript
 const page = await fb.playlist.getTracks(0, 200, 200, undefined, ['title', 'album']);
@@ -61,7 +61,7 @@ console.log(`${page.tracks.length} / ${page.total}`);
 
 `fields` 可用的名字与 `library.query` 相同，区分大小写。省略时返回整行，整行还带 `composer`、`comment` 与 foo_playcount 的播放统计。请求被拒（比如字段名未知）时返回 `{ success: false, code: 'INVALID_PARAMS' }`。
 
-每页都带 `contentVersion`，`getGroupRuns()` 的应答也带。版本相同的分页读自同一份行。版本不同说明期间有行被插入、删除、重排或替换，`total` 不变也一样。
+每页响应均包含 `contentVersion`，`getGroupRuns()` 的应答亦同。相同 `contentVersion` 的分页来自同一数据快照。若 `contentVersion` 发生变更，指示列表期间经历了插入、删除、重排或替换操作（即使曲目总数 `total` 保持未变）。
 
 ## getTracksPage(index, start, count, formats?, fields?)
 
@@ -69,9 +69,9 @@ console.log(`${page.tracks.length} / ${page.total}`);
 
 ## getGroupRuns(patterns, index?)
 
-把整份播放列表按顺序切成分组游程，只返回游程边界，不返回行。
+按顺序计算播放列表的分组区间，仅返回分组游程边界与统计元数据（不包含具体曲目行）。
 
-游程是相邻且分组键相同的最长一段，比较时按 ASCII 的 `A-Z`/`a-z` 折叠大小写。不重排行，所以游程顺序就是列表顺序。
+游程是相邻且分组键相同的最长一段，比较时按 ASCII 的 `A-Z`/`a-z` 折叠大小写。分组计算不重排原始曲目，游程在数组中的相对顺序与列表中曲目的物理顺序严格一致。
 
 | 参数 | 类型 | 说明 |
 | --- | --- | --- |
@@ -88,17 +88,17 @@ const { runs, total } = res;
 // runs[1].sub[0].start 是全表绝对行号，不是父游程内的偏移
 ```
 
-成功时，`runs` 覆盖整份列表。非空列表的 `runs[0].start` 为 0，相邻游程首尾相接，`count` 之和等于 `total`。空列表返回 `total: 0` 和 `runs: []`。`sub` 只在传了两个模式时出现，其 `start` 与父游程采用相同的绝对行号。
+成功时，`runs` 覆盖整份列表。非空列表的 `runs[0].start` 为 0，相邻游程首尾相接，`count` 之和等于 `total`。空列表返回 `total: 0` 和 `runs: []`。`sub` 仅在指定两个分组模式时返回，其 `start` 采用与父级游程相同的绝对行索引。
 
-与 `getTracks()` 搭配可实现分组虚拟列表：游程提供组头位置，界面据此计算滚动总高度，可见页的曲目行另行获取。只有平均每组约 10 首时，10 万首才对应约 1 万个一级游程。响应大小取决于分组键和二级游程数量；完整曲目行的大小还取决于请求字段及元数据内容。
+与 `getTracks()` 搭配可实现分组虚拟列表：由游程提供组头位置以计算滚动总高度，可见视口的曲目行按需分页获取。对于 10 万首曲目的列表，仅当每个游程平均约含 10 首时，顶层游程才约为 1 万个。响应开销主要取决于分组键长度与二级游程数量；完整曲目行的开销则取决于请求字段及元数据大小。
 
-若模式让每行单独成组，`runs` 的长度就等于 `total`。宿主不设上限，每个游程的字节数也不固定；请选能合并相邻曲目的模式。
+若分组模式导致每行单独成组，`runs` 数组长度将等同于 `total`。宿主对游程数量不设硬性限制，建议选用能够合理合并相邻曲目的模式。
 
-`patterns` 形状不对或模式编译失败，返回 `{ success: false, code: 'INVALID_PARAMS' }`；空模式或编译失败的模式由 `details.pattern` 给出下标。播放列表索引超出最后一个时返回 `INVALID_INDEX`，省略索引且没有活动播放列表时返回 `NO_ACTIVE_ITEM`。
+`patterns` 格式无效或表达式语法错误，返回 `{ success: false, code: 'INVALID_PARAMS' }`；空模式或编译失败的模式由 `details.pattern` 指明错误下标。播放列表索引超出有效范围时返回 `INVALID_INDEX`；省略索引且当前无活动播放列表时返回 `NO_ACTIVE_ITEM`。
 
 ## getMatchingRows(query, index?) / getTracksAt(index, rows, formats?, fields?)
 
-不管列表多长，筛选都只要两次调用。`getMatchingRows()` 返回 `{ playlist, playlistGuid, total, items, count }`，`items` 是曲目符合 foobar2000 查询的行，升序。`getTracksAt()` 按行号读行，按传入顺序，形状与 `getTracks()` 相同；超出最后一行的行号跳过，每行都带 `index`。
+筛选大型播放列表采用两步操作：先由 `getMatchingRows()` 执行查询并返回匹配行号索引列表（`{ playlist, playlistGuid, total, items, count }`，`items` 为升序行号），再由 `getTracksAt()` 批量读取指定行号的曲目行数据。`getTracksAt()` 按传入顺序返回行对象（格式与 `getTracks()` 相同），超出有效范围的行号自动忽略，返回行均附带 `index`。
 
 ```javascript
 const guid = '{A9624480-77F0-4A2B-A76F-7EAB0C2EEC1C}';
@@ -110,9 +110,9 @@ if (hits.success === false) {
 }
 ```
 
-解析器拒绝的查询、或带 `SORT BY` 的查询，返回 `INVALID_PARAMS` 并带 `details.param: 'query'`；`error` 文字是宿主语言的原文。查询里的小写字母匹配标签里的任意大小写，大写字母只匹配同样的大写。列表不存在时 `getMatchingRows()` 失败（`INVALID_INDEX`、`NOT_FOUND`、`NO_ACTIVE_ITEM`），`getTracksAt()` 则与 `getTracks()` 一样回答空结果。
+无法解析的查询语法或包含 `SORT BY` 的表达式将以 `INVALID_PARAMS` 拒绝，并附带 `details.param: 'query'`；`error` 文本使用宿主的界面语言。查询中的小写字母可匹配标签中的任意大小写，大写字母只匹配大写。播放列表不存在时 `getMatchingRows()` 失败（返回 `INVALID_INDEX`、`NOT_FOUND` 或 `NO_ACTIVE_ITEM`）；`getTracksAt()` 则与 `getTracks()` 一致，返回包含空数组的成功响应。
 
-这些行是快照。`playlist:itemsAdded`、`itemsRemoved`、`itemsReordered`、`itemsReplaced` 事件的 `contentVersion` 与它们不同时丢掉重取；收到 `metadb:changed` 时也要重取，因为改标签不会改变版本。`%added% DURING LAST 2 WEEKS` 这类随时间变化的查询，结果也会在没有任何事件的情况下变化。
+返回的行索引属于静态快照。当收到 `playlist:itemsAdded`、`itemsRemoved`、`itemsReordered`、`itemsReplaced` 事件且其 `contentVersion` 不一致时，应废弃旧索引并重新查询；由于标签修改不会触发版本号变更，收到 `metadb:changed` 事件时亦须重新拉取。此外，包含时间计算的查询（如 `%added% DURING LAST 2 WEEKS`）其匹配集会随系统时间推移而动态漂移。
 
 ## playTrack(playlistIndex, trackIndex, options?)
 
@@ -209,7 +209,7 @@ await fb.playlist.rename(0, 'Favorites');
 
 ## duplicate(index, name?)
 
-复制播放列表。返回 `{success, index, sourcePlaylist, newPlaylist, name, trackCount}`。`name` 省略或为空时，副本名为原名后加 ` (Copy)`。
+复制播放列表。返回 `{success, index, sourcePlaylist, newPlaylist, name, trackCount}`。当 `name` 省略或为空串时，新播放列表名称以原名称附加 ` (Copy)` 后缀命名。
 
 ```javascript
 const r = await fb.playlist.duplicate(0);
@@ -273,7 +273,7 @@ await fb.playlist.removeSelectedTracks(0);
 
 ## getFocused(index) / setFocused(index, trackIndex)
 
-获取/设置焦点曲目（光标位置）。`getFocused` 返回 `{playlist, index}`，播放列表没有焦点或不存在时 `index` 为 `-1`；`setFocused` 的 `trackIndex` 为负数时去掉焦点。
+获取或设置焦点曲目（光标位置）。`getFocused` 返回 `{playlist, index}`，播放列表无焦点或列表不存在时 `index` 为 `-1`；`setFocused` 传入负数 `trackIndex` 可清除当前播放列表的焦点光标。
 
 ```javascript
 const r = await fb.playlist.getFocused(0);
@@ -287,7 +287,7 @@ await fb.playlist.setFocused(0, 10);
 获取选中曲目索引/详细信息。
 
 - `getSelection` 返回 `{items: number[], count, playlist}`
-- `getSelectedTracks` 返回 `{ playlist, count, tracks }`，行是整行 `PlaylistTrack`，不带播放统计。没有选中曲目时成功并给出空的 `tracks`；播放列表不存在时返回失败信封，两者因此分得开。
+- `getSelectedTracks` 返回 `{ playlist, count, tracks }`，每项为完整 `PlaylistTrack` 行对象（不包含播放统计）。选区为空时返回 `tracks: []`；若指定的播放列表不存在，则返回失败错误信封。
 
 ```javascript
 const sel = await fb.playlist.getSelection(0); // {items: [0, 5, 10], count: 3}
@@ -404,9 +404,9 @@ await fb.playlist.createAutoplaylist(
 | `unavailable` | `noEditor` | 提供者明确表示没有编辑器 |
 | `unknown` | `legacyClient` | client 没有能力探测接口 |
 | `unknown` | `unverifiedLock` | 兼容识别的自动列表锁没有能力探测接口 |
-| `unavailable` | `notAutoplaylist` | 这是普通列表 |
+| `unavailable` | `notAutoplaylist` | 常规静态播放列表 |
 
-`available` 不保证某次调用会显示窗口；`unknown` 可以尝试调用，但无法预判结果。查询提供者时抛异常，以 `OPERATION_FAILED` 失败，不会报告为 `unavailable`。
+`available` 不保证调用后必定弹出窗口；`unknown` 允许发起调用尝试，但无法提前预判结果。查询提供者发生内部异常时，以 `OPERATION_FAILED` 失败，不归类为 `unavailable`。
 
 `source:'sdk'` 表示 autoplaylist manager 管理的 client，也包括第三方 client。`source:'dui'` 表示按既有 `Auto` 锁名规则识别的列表，不代表当前 UI 模式或编辑器能力。这条锁路径的 `keepSorted:false` 是配置不可读时的占位值，不能当作实际设置。普通列表返回 `isAutoplaylist:false`，不带 `source` 或 `keepSorted`。
 
@@ -422,7 +422,7 @@ if (info.isAutoplaylist) {
 
 签名：`fb.playlist.getAutoplaylistQuery(index: PlaylistRef): Promise<PlaylistGetAutoplaylistQueryResponse>`
 
-读取智能播放列表状态及 `query`。foobar2000 不公开查询语句，所以 `query` 始终为 `null`；是智能播放列表时，响应的 `note` 也会说明这一点。`source` 和不可读 `keepSorted` 的含义同上；这个方法不返回编辑器能力字段，需要时用 `getAutoplaylistInfo()`。
+读取智能播放列表配置，同时返回 `query` 与 `sort`。由 foobar2000 内置 query/sort 客户端驱动的列表，两者均为客户端当前生效的参数，每次调用重新读取；未配置排序模式时 `sort` 为空字符串。第三方提供者、本组件托管的列表（使用 `getAutoplaylistConfig()` 读取）或配置无法解析时，两者返回 `null`，并通过 `note` 描述原因。早期宿主版本可能不包含 `sort` 字段，读取时应先校验 `query` 再访问 `sort`。`source` 与不可读 `keepSorted` 的语义同前文所述；该方法不包含编辑器能力字段，需检测编辑器可用性时请使用 `getAutoplaylistInfo()`。
 
 ```javascript
 const res = await fb.playlist.getAutoplaylistQuery(0);
@@ -533,7 +533,7 @@ await fb.playlist.convertToAutoplaylist(0, '%rating% GREATER 3', '%rating%', tru
 
 签名：`fb.playlist.removeAutoplaylist(index: PlaylistRef): Promise<PlaylistRemoveAutoplaylistResponse>`
 
-解除 autoplaylist manager 管理的 client，包括第三方 client，保留当前曲目并变回普通列表，此时响应的 `source` 为 `sdk`。只有在没有 manager client、仅由兼容规则识别到自动列表锁时，调用才返回 `source` 为 `dui` 并带 `note`，但什么也不改；要删除这样的列表用 `remove()`。不是智能播放列表时以 `NOT_FOUND` 失败。
+解除 autoplaylist manager 管理的 client，包括第三方 client，保留当前曲目并变回普通列表，此时响应的 `source` 为 `sdk`。只有在没有 manager client、仅由兼容规则识别到自动列表锁时，调用返回 `source: 'dui'` 及说明 `note`，且不修改列表状态。若需清理该列表，请调用 `remove()`。不是智能播放列表时以 `NOT_FOUND` 失败。
 
 ```javascript
 await fb.playlist.removeAutoplaylist(0);
@@ -550,13 +550,13 @@ const info = await fb.playlist.getLockInfo(0);   // {playlist, isLocked}
 
 ## replaceAllAndPlay(options)
 
-原子操作：清空 + 添加 + 播放。返回 `{success, addedCount}`。
+清空播放列表，按传入顺序加入 `paths`，把它设为活动列表，再播放或聚焦 `playIndex`。返回值与失败情形见 [`playlist.replaceAllAndPlay`](../api/playlist.md#playlist-replaceallandplay)。
 
 | 参数 | 类型 | 说明 |
 | --- | --- | --- |
 | options.playlist | number | 播放列表索引 |
-| options.paths | string[] | 文件路径数组 |
-| options.playIndex | number | 播放起始索引（默认 0） |
+| options.paths | string[] | 文件路径数组，各行按这个顺序排列 |
+| options.playIndex | number | 要播放的行，按 `paths` 的顺序计（默认 0） |
 | options.stopFirst | boolean | 是否先停止当前播放（默认 true） |
 | options.autoPlay | boolean | 是否自动播放（默认 true），false 只装载不播放 |
 
@@ -570,7 +570,7 @@ await fb.playlist.replaceAllAndPlay({
 
 ## reorderPlaylists(order)
 
-重新排序播放列表。`order` 是新的顺序，每个播放列表恰好出现一次：全部用当前索引，或全部用 `getAll()` 报告的 `guid`。索引按宿主处理这次调用时的清单解读，所以用早先 `getAll()` 拼出的顺序，只要期间加了一张又删了一张，就会排错列表；GUID 始终指向读取时的那些列表，没有列表持有的 GUID 以 `NOT_FOUND` 失败。
+重新排序播放列表。`order` 指定新的排列顺序，所有播放列表必须且仅能出现一次：可全量传入当前物理索引，或全量传入 `getAll()` 获取的 `guid`。传入索引时按宿主处理请求时的实时清单解析，若并发增删可能导致目标播放列表错位；使用 GUID 则精确锁定目标播放列表，引用不存在的 GUID 时以 `NOT_FOUND` 失败。
 
 ```javascript
 await fb.playlist.reorderPlaylists([2, 0, 1]); // 将第3个移到最前
@@ -652,7 +652,7 @@ console.log(created.playlistGuid, created.revision);
 
 签名：`fb.playlist.getAutoplaylistConfig(playlist: PlaylistRef): Promise<PlaylistGetAutoplaylistConfigResponse>`
 
-读取提供者的查询原文、独立排序、当前保持排序标志和不透明配置版本。传入 GUID 可以在列表重排后继续指向同一列表。`getAutoplaylistInfo().configAvailability` 表示主题是否能提供自绘配置表单；原生编辑器可用性是另一个维度。其他提供者返回 `NOT_SUPPORTED`。`getAutoplaylistQuery` 继续遵守 `query: null` 的既有约定。
+读取提供者的查询原文、独立排序、当前保持排序标志和不透明配置版本。传入 GUID 可以在列表重排后继续指向同一列表。`getAutoplaylistInfo().configAvailability` 表示主题是否能提供自绘配置表单；原生编辑器可用性是另一个维度。其他提供者返回 `NOT_SUPPORTED`；由内置 query/sort 客户端驱动的列表，用 `getAutoplaylistQuery` 读取其查询与排序。
 
 ## setAutoplaylistConfig(playlist, options)
 

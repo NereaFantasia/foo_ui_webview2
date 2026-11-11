@@ -175,7 +175,7 @@ if (eq) {
 成功时 `success` 为 `true`；失败时返回 `{ success: false, error, code }`，`code` 见[错误码](../reference/errors.md)。
 <!-- api-schema:end -->
 
-> 无论升序或降序移动，返回的 `to` 均与传入的目标索引一致；重排效果器顺序应始终使用本接口（`setChain` 仅接收 `guid` 且按默认参数重建，无法保留已有配置）。
+> 无论升序或降序移动，返回的 `to` 均与传入的目标索引一致；重排效果器顺序应始终使用本接口（`setChain` 只接受 `guid`，按默认预设重建每个效果器）。
 
 ### dsp.setChain
 
@@ -205,7 +205,7 @@ if (eq) {
 | 元素不是对象 | `dsps[0] must be an object` | `INVALID_PARAMS` |
 | 缺 `guid` 或为空串 | `dsps[0].guid is required` | `INVALID_PARAMS` |
 | `guid` 不是字符串 | `dsps[0].guid must be a string` | `INVALID_PARAMS` |
-| 元素带了别的键 | `unknown parameter 'dsps[0].index'` | `INVALID_PARAMS` |
+| 包含未知属性键 | `unknown parameter 'dsps[0].index'` | `INVALID_PARAMS` |
 | GUID 格式非法 | `dsps[0]: Invalid GUID format: <值>` | `INVALID_PARAMS` |
 | GUID 合法但该 DSP 未安装 | `dsps[0]: DSP not found or no default preset: <值>` | `NOT_FOUND` |
 
@@ -220,4 +220,4 @@ await fb2k.invoke('dsp.setChain', {
 });
 ```
 
-> 传入空数组将清空整条活动链。由于本接口仅接收 `guid`，各效果器均按其默认预设加载；参数能否保留**取决于具体 DSP 组件的内部实现**（多数 foobar2000 内置效果器将参数保存在全局配置，故能保留设置；而 VST 包装器或部分第三方 DSP 按实例存参，将重置回默认值）；禁止将 `dsp.getChain` 的结果直接回传给 `setChain` 执行重排，效果器重排必须使用 `dsp.moveDsp`。
+> 传入空数组将清空整条活动链。由于该接口仅接收 `guid`，各效果器均按其默认预设加载；参数能否保留取决于具体 DSP 组件的内部实现（多数 foobar2000 内置效果器把参数保存在全局配置里，因而保留设置；VST 包装器或部分第三方 DSP 按实例保存参数，会重置回默认值）。不可将 `dsp.getChain` 的返回对象原样回传至 `setChain` 执行重排；重排效果器应使用 `dsp.moveDsp`。

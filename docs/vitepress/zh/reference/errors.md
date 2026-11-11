@@ -59,7 +59,7 @@ foo_ui_webview2 的所有 API 在失败时遵循统一的错误信封结构。
 
 ### 超时
 
-`fb2k.invoke()` 等待应答 30 秒，之后以 `code` 为 `TIMEOUT` 的 `Error` 拒绝。宿主可能仍在执行这次调用，也可能已经做完，迟到的应答会被丢弃，所以结果应当作未知处理。见[操作结果](./bridge.md#operation-results)。
+`fb2k.invoke()` 等待响应的最长时间为 30 秒，超时将以 `code` 为 `TIMEOUT` 的 `Error` 拒绝。此时宿主可能仍在执行该操作或已执行完毕，迟延到达的响应将被丢弃，调用方应将操作结果视为状态未知。详见[操作结果](./bridge.md#operation-results)。
 
 ## 标准错误码 (ApiErrorCode)
 
@@ -75,7 +75,7 @@ foo_ui_webview2 的所有 API 在失败时遵循统一的错误信封结构。
 
 | Code | 说明 |
 | --- | --- |
-| `REQUIRED_PARAM` | 必填参数缺失。历史端点 `audio.cancelFullWaveform` 返回此码；其余端点缺少必填参数时返回 `INVALID_PARAMS`（错误消息标明缺失参数名） |
+| `REQUIRED_PARAM` | 必填参数缺失。目前没有方法返回此码：缺少必填参数时以 `INVALID_PARAMS` 失败，错误消息为 `<name> is required` |
 | `INVALID_PARAMS` | 参数值非法 |
 | `INVALID_INDEX` | 索引越界（播放列表、曲目等） |
 
@@ -124,12 +124,12 @@ foo_ui_webview2 的所有 API 在失败时遵循统一的错误信封结构。
 
 ### 菜单与端口
 
-菜单命令调用与端口通信定义了以下专用错误码：
+菜单命令调用与端口通信定义了以下专用错误码。它们在上面的通用错误码之前就已发布，保持原样：
 
 | Code | 说明 |
 | --- | --- |
 | `MENU_ITEM_DISABLED` | 菜单命令存在但被禁用（`menu.runMainMenuCommand`） |
-| `MENU_MATCH_AMBIGUOUS` | 命令名或路径匹配到多条命令，失败里的 `candidates` 列出它们（`menu.runMainMenuCommand`） |
+| `MENU_MATCH_AMBIGUOUS` | 命令名或路径匹配到多条命令，失败的 `details.candidates` 列出它们（`menu.runMainMenuCommand`） |
 | `MENU_COMMAND_NOT_FOUND` | 没有菜单命令是这个名称或路径（`menu.runMainMenuCommand`、`menu.runContextCommand`） |
 | `PORT_NOT_FOUND` | 没有打开的端口是这个 id（`port.disconnect`、`port.postMessage`、`port.postMessageTo`） |
 | `TARGET_NOT_FOUND` | `port.postMessageTo` 的目标端口不存在 |
@@ -172,6 +172,6 @@ fb2k.on('http:response', (data) => {
 ## 兼容性说明 {#向后兼容}
 
 - 同步 API 失败响应均保证包含 `success: false` 与面向人类排障的 `error` 文本描述。
-- 机器可读的 `code` 字段覆盖所有标准错误分类，消费方应优先使用 `code` 进行逻辑分流与国际化提示。
+- 机器可读的 `code` 字段覆盖所有标准错误分类，消费方应优先使用 `code` 进行逻辑分流与国际化提示；读取较旧宿主的载荷时，应将 `code` 视为可选字段。
 - artwork 相关端点额外提供专用 `available` 字段指示封面可用性。
 - 框架级拒绝与业务 handler 抛出的未捕获异常均被包装为标准错误信封。

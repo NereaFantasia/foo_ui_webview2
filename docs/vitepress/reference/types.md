@@ -5,11 +5,11 @@ Common data shapes returned across multiple namespaces. Method-specific return t
 ## Track
 
 <!-- api-schema:begin type:Track -->
-One track, as every method whose declaration returns whole rows reports it: the playing track, a media library row, a playlist row, a queue entry. Containers add their own fields (a row number, a queue position) on top of these.
+Metadata and playback properties of a single track, shared by playback, library, playlist, and queue endpoints. Containers extend this structure with domain-specific fields such as playlist row indices or queue positions.
 
 | Field | Type | Description |
 | --- | --- | --- |
-| `handle` | `string` | The key that identifies the track across endpoints: `absolutePath`, with a `\|subsong:N` suffix when `subsong` is not `0`. The same track yields the same handle from every such method; because of the suffix it is not a plain file path, and a method that takes a path documents whether it accepts one. |
+| `handle` | `string` | Cross-endpoint unique track identifier: formatted as `absolutePath`, appended with `\|subsong:N` when `subsong` is non-zero. The same track yields the same handle from every method. Differs from standard filesystem paths; endpoints document whether handle identifiers are accepted in place of paths. |
 | `path` | `string` | Path as foobar2000 stores it: `file://` for a local file, `file-relative://` for a path stored relative to the foobar2000 folder (a portable install), or a remote URL. No subsong suffix. |
 | `absolutePath` | `string` | Native filesystem path without the subsong suffix; the same as `path` for a remote URL. |
 | `subsong` | `integer` | Subsong identifier the decoder assigns inside the file, not necessarily a sequence number; `0` for a whole file and for a remote stream. |
@@ -19,7 +19,7 @@ One track, as every method whose declaration returns whole rows reports it: the 
 | `album` | `string` | First ALBUM value; empty when untagged. |
 | `albumId` | `string` | Opaque album identity when its original name or album artist contains invalid UTF-8. Use this instead of the display names to match an album row; absent for ordinary names. |
 | `albumArtist` | `string` | Every ALBUM ARTIST value joined with `", "`; empty when untagged. |
-| `albumArtists` | `string[]` | Every ALBUM ARTIST value in tag order, so `albumArtists.join(", ")` equals `albumArtist`; empty when untagged. `library.getAlbums` files a track that has an `album` under the name `album` and the album artist `albumArtists[0]`, or `artists[0]` when this array is empty (`""` when both are); those are the `name` and `albumArtist` of that album's row. When `albumId` is present, use it instead: replacement characters can make display names equal. |
+| `albumArtists` | `string[]` | All ALBUM ARTIST values in tag order (`albumArtists.join(", ")` equals `albumArtist`); empty array when untagged. In `library.getAlbums`, a track that has an `album` is filed under the name `album` and the album artist `albumArtists[0]` (falling back to `artists[0]`, or `""` when both are empty); those are the `name` and `albumArtist` of that album's row. When `albumId` is present, match by `albumId` instead of display names to avoid collision from character replacement. |
 | `genre` | `string` | Every GENRE value joined with `", "`; empty when untagged. |
 | `date` | `string` | First DATE value as tagged, such as `2019` or `2019-05-01`; empty when untagged. |
 | `trackNumber` | `integer` | TRACKNUMBER read as an integer; `0` when absent or not a number. |
@@ -30,13 +30,13 @@ One track, as every method whose declaration returns whole rows reports it: the 
 | `sampleRate` | `integer` | Sample rate in Hz; `0` when unknown. |
 | `channels` | `integer` | Channel count; `0` when unknown. |
 | `codec` | `string` | Codec name as the decoder reports it, such as `FLAC` or `MP3`; empty when unknown. |
-| `rating` | `integer` | Rating from 0 to 5: the `%rating%` statistic (foo_playcount) when it is 1 to 5, otherwise the RATING tag clamped to that range; `0` when neither rates the track. |
+| `rating` | `integer` | Rating value from 0 to 5. Prefers the `%rating%` statistic (foo_playcount) if within 1..5; otherwise falls back to the RATING tag clamped to 0..5; `0` if neither is present. |
 <!-- api-schema:end -->
 
 ## TrackPartial
 
 <!-- api-schema:begin type:TrackPartial -->
-A track projected down to the fields a caller asked for.
+Track representation containing a subset of fields requested by the caller.
 
 Every field of [Track](./types.md#track), each optional.
 <!-- api-schema:end -->
@@ -50,11 +50,11 @@ One registered method.
 | --- | --- | --- |
 | `fullName` | `string` | Full method name, `namespace.method`. |
 | `plugin` | `string` | Display name of the owning plugin; `foo_ui_webview2` for built-in methods. |
-| `namespace` | `string` | Namespace part of the name. |
-| `method` | `string` | Method part of the name. |
-| `description` | `string` | Description given at registration; empty when none. |
-| `version` | `string` | Version given at registration. |
-| `isExternal` | `boolean` | `true` when an external plugin registered it. |
+| `namespace` | `string` | Namespace component of the method name. |
+| `method` | `string` | Method name component without namespace. |
+| `description` | `string` | Method description provided during registration; empty string if omitted. |
+| `version` | `string` | Method API version declared during registration. |
+| `isExternal` | `boolean` | Whether the method was registered by an external plugin. |
 <!-- api-schema:end -->
 
 ## SystemPluginInfo
@@ -64,11 +64,11 @@ One registered external plugin.
 
 | Field | Type | Description |
 | --- | --- | --- |
-| `name` | `string` | Display name. |
-| `namespace` | `string` | Namespace the plugin owns; unique among plugins. |
-| `version` | `string` | Plugin version. |
-| `author` | `string` | Author. |
-| `description` | `string` | Description. |
-| `apiCount` | `integer` | Number of entries in `apis`. |
-| `apis` | `string[]` | Full names of the methods the plugin registered. |
+| `name` | `string` | Plugin display name. |
+| `namespace` | `string` | Namespace unique to this plugin. |
+| `version` | `string` | Plugin version string. |
+| `author` | `string` | Plugin author. |
+| `description` | `string` | Plugin description. |
+| `apiCount` | `integer` | Number of methods in `apis`. |
+| `apis` | `string[]` | Full method names registered by the plugin. |
 <!-- api-schema:end -->

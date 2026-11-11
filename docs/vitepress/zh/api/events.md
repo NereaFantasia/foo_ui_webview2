@@ -35,7 +35,7 @@ foo_ui_webview2 的运行时事件 payload 参考。事件名使用 **冒号格�
 ### app:beforeQuit
 
 <!-- api-schema:begin event:app:beforeQuit -->
-foobar2000 正在退出。在插件的任何窗口或面板关闭之前发一次，送到所有页面：主窗口、popup 与面板的页面，不论界面是哪个、是否开了后台模式。只是尽力而为：事件排进各页面的队列，宿主不等待。页面紧接着就会关闭，处理函数不一定来得及运行或跑完，它向宿主发出的调用多半得不到答复。
+foobar2000 正在退出。该事件在组件的所有窗口及面板关闭前向所有页面派发一次（包含主窗口、弹窗和各类面板，不论当前使用哪种界面、是否开启后台模式）。该事件为尽力交付（best-effort）模式：宿主将事件加入页面队列后即继续退出流程，不会等待页面处理完成。页面随即关闭，事件监听器可能来不及运行或执行完毕，其中发出的 API 调用也可能收不到应答。
 
 发给所有窗口。
 
@@ -70,7 +70,7 @@ foobar2000 的播放 DSP 链变了，比如加了一个 DSP 或载入了预设�
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
 | `taskId` | `string` | `pending` 应答里的 id。 |
-| `path` | `string` | 请求给的路径。 |
+| `path` | `string` | 请求指定的曲目路径 |
 | `error` | `string` | 出错的描述。 |
 | `code` | `"CANCELLED" \| "INVALID_HANDLE" \| "NO_INFO" \| "INVALID_PARAMS" \| "DECODER_FAILED" \| "DECODE_FAILED" \| "UNKNOWN_ERROR"` | 被 `audio.cancelFullWaveform` 取消时为 `CANCELLED`；否则是解码失败的原因。 |
 <!-- api-schema:end -->
@@ -87,7 +87,7 @@ foobar2000 的播放 DSP 链变了，比如加了一个 DSP 或载入了预设�
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
 | `taskId` | `string` | `pending` 应答里的 id。 |
-| `path` | `string` | 请求给的路径。 |
+| `path` | `string` | 请求指定的曲目路径 |
 | `waveform` | `number[]` | 每个点一个值，刻度为 `scale`；`signed` 时在 `[-1, 1]` 内，否则在 `[0, 1]` 内。 |
 | `maxAmplitude` | `number` | 归一化前所选序列的最大值，线性满幅单位：`linear` 下 `waveform[i] * maxAmplitude` 是绝对电平；`db` 下 dBFS 为 `(v * 60 - 60) + 20 * log10(maxAmplitude)`。 |
 | `duration` | `number` | 曲目时长，秒。 |
@@ -124,7 +124,7 @@ foobar2000 的输出配置变了，比如输出设备。
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
 | `taskId` | `string` | `audio.decodePcm` 应答里的 id。 |
-| `path` | `string` | 请求给的路径。 |
+| `path` | `string` | 请求指定的曲目路径 |
 | `error` | `string` | 出错的描述。 |
 | `code` | `"CANCELLED" \| "ORIGIN_DENIED" \| "OPERATION_FAILED" \| "INVALID_PARAMS" \| "DECODER_FAILED" \| "DECODE_FAILED" \| "NOT_SUPPORTED" \| "UNKNOWN_ERROR"` | 被 `audio.cancelDecodePcm` 取消时为 `CANCELLED`；页面来源不再可信时为 `ORIGIN_DENIED`；缓冲分配或投递失败时为 `OPERATION_FAILED`；否则是解码失败的原因。`INVALID_PARAMS` 表示 `start` 到了或越过了曲目末尾。 |
 <!-- api-schema:end -->
@@ -141,9 +141,9 @@ foobar2000 的输出配置变了，比如输出设备。
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
 | `taskId` | `string` | `audio.decodePcm` 应答里的 id。 |
-| `path` | `string` | 请求给的路径。 |
+| `path` | `string` | 请求指定的曲目路径 |
 | `sampleRate` | `integer` | 每声道每秒的样本数。 |
-| `channels` | `integer` | 缓冲里的声道数；请求设了 `mono` 时为 `1`。 |
+| `channels` | `integer` | 缓冲区声道数；请求指定 `mono` 时为 `1`。 |
 | `frames` | `integer` | 缓冲里每声道的帧数。 |
 | `start` | `number` | 第一帧的曲目时间，秒。 |
 | `end` | `number` | 紧接最后一帧之后的曲目时间，秒。 |
@@ -178,7 +178,7 @@ foobar2000 播放的某项 ReplayGain 设置变了，不只是音源模式。
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
 | `subscriptionId` | `string` | 帧所属的订阅；请求没指定订阅时不带此键。 |
-| `output` | `"bands" \| "bins"` | 帧里给的是什么。 |
+| `output` | `"bands" \| "bins"` | 当前频谱帧包含的数据格式 |
 | `spectrum` | `number[]` | 频带帧：每个频带一个值，刻度为帧的 `scale`；`weighted` 在 `[0, 1]` 内，`db` 下限 `-160`。`channels: 'mix'` 的频点帧：每个频点一个功率值，dB。 |
 | `left` | `number[]` | `channels: 'stereo'` 的频点帧：第一个声道，每个频点一个 dB 值。 |
 | `right` | `number[]` | `channels: 'stereo'` 的频点帧：第二个声道，单声道流时重复第一个。 |
@@ -317,7 +317,7 @@ foobar2000 播放的某项 ReplayGain 设置变了，不只是音源模式。
 | --- | --- | --- |
 | `result` | `"failed"` | 恒为 `failed`：宿主只报告拒绝。 |
 | `code` | `"PERMISSION_DENIED" \| "INVALID_PARAMS" \| "OPERATION_FAILED"` | 没有附带文件的原因：token 未知、过期、已用过、被之后的 `prepareDrag` 取代或属于别的窗口时为 `PERMISSION_DENIED`；`dataTransfer.effectAllowed` 不恰好是 `copy` 时为 `INVALID_PARAMS`（`dnd.applyDragToken` 会正确设置它）；文件列表无法附到拖动上时为 `OPERATION_FAILED`。 |
-| `error` | `string` | 可读的原因；从不包含文件路径。 |
+| `error` | `string` | 人类可读的错误描述信息（已剥离文件系统物理路径） |
 <!-- api-schema:end -->
 
 ## file 事件
@@ -494,7 +494,7 @@ foobar2000 播放的某项 ReplayGain 设置变了，不只是音源模式。
 ### keyboard:hotkey
 
 <!-- api-schema:begin event:keyboard:hotkey -->
-全局热键触发事件；定向投递给发起注册该热键的窗口页面（若注册窗口已关闭，热键仍然保持注册有效，后续触发将重定向投递至主窗口页面）
+全局热键触发事件，定向投递给发起注册的窗口页面
 
 发给订阅或任务所属的页面。
 
@@ -728,7 +728,7 @@ foobar2000 启动阶段载入媒体库完毕且宿主完成缓存清理后触发
 
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
-| `tracks` | `MetadbChangedTrackItem[]` | 最多 50 首变化的曲目，顺序不固定。无效条目会被跳过，所以条数可能少于 `count` 与 50 中的较小者。全部变化的曲目见 `handles`。 |
+| `tracks` | `MetadbChangedTrackItem[]` | 发生变更的曲目样本（最多 50 首，顺序不固定）。无效条目会自动过滤，实际返回项数可能小于 `min(count, 50)`；全量受影响曲目标识参见 `handles` |
 | `tracks[].handle` | `string` | 曲目的键，构成方式与曲目行的 `handle` 相同：原生路径（没有原生形式的位置用 foobar2000 自己的路径），`subsong` 不为 `0` 时带 `\|subsong:N`。与同一首曲目在 `library.query`、`playlist.getTracks` 等方法返回的行里的 `handle` 相等。 |
 | `tracks[].path` | `string` | 原生形式的文件路径；没有原生形式的位置（如网络流）给 foobar2000 自己的路径。不带 subsong，所以 cue 或多曲目文件里的各首 `path` 相同，要靠 `handle` 区分。 |
 | `tracks[].subsong` | `integer` | 文件内的子曲目标识，与曲目行的 `subsong` 相同；整个文件为 `0`。 |
@@ -1298,9 +1298,9 @@ foobar2000 报告它的默认播放列表格式变了。
 | `reason` | `"targetGone" \| "notAutoplaylist" \| "noEditor" \| "queryFailed" \| "dispatchFailed" \| "providerFailed"` | 失败的检查或原生调用环节，仅在 `success` 为 `false` 时出现。 |
 <!-- api-schema:end -->
 
-请先订阅，再调用 [`playlist.showAutoplaylistUI`](playlist.md#playlist-showautoplaylistui)：事件可能早于页面处理受理响应。按 `operationId` 关联，不按到达顺序判断；[SDK 有界示例](../sdk/playlist.md#onautoplaylistuiresult-callback) 展示早到结果处理及清理。失败载荷始终带 `error`、`code` 和 `reason`，成功载荷不带这三个字段。
+应在调用 [`playlist.showAutoplaylistUI`](playlist.md#playlist-showautoplaylistui) 前完成事件订阅：由于底层调度时序，该事件可能早于页面接收到受理响应。业务逻辑应通过 `operationId` 关联请求与响应，避免依赖消息到达顺序；早到结果处理与清理可参考 [SDK 示例](../sdk/playlist.md#onautoplaylistuiresult-callback)。失败载荷包含 `error`、`code` 与 `reason`，成功载荷中省略该三项属性。
 
-结果只描述一次原生调用，非模态编辑器可能在调用返回后仍然打开。它不能代替曲目或锁事件，也不报告 saved、cancelled 或 closed 状态。导航或销毁后丢弃投递，不转发到其他文档或主窗口。原文档仍有效但目标已删除时，`NOT_FOUND` / `targetGone` 优先于同时发生的提供者异常。
+该结果仅反映原生编辑器调用的执行状态；非模态编辑器在调用返回后仍可能保持打开。该事件不替代播放列表条目或锁状态变更事件，亦不反映编辑器的保存、取消或关闭操作。调用方页面导航或销毁后自动取消事件投递，不向其他文档或主窗口转发。当调用文档仍有效但目标列表已被删除时，优先报告 `NOT_FOUND` / `targetGone`，而不是同时发生的提供者异常。
 
 ### playlist:lockChanged
 
@@ -1811,8 +1811,8 @@ foobar2000 Default UI 宿主字体配置变更事件；仅投递给承载于 Def
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
 | `windowId` | `string` | popup 的 id。 |
-| `title` | `string` | 创建 popup 时给的标题。 |
-| `url` | `string` | 创建 popup 时给的 URL。 |
+| `title` | `string` | 弹出窗口创建时指定的初始标题 |
+| `url` | `string` | 弹出窗口创建时指定的初始 URL |
 <!-- api-schema:end -->
 
 ### window:popupClosed

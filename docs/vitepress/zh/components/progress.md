@@ -2,7 +2,7 @@
 
 ## `<fb-seek-bar>` {#fb-seek-bar}
 
-播放进度条，支持鼠标拖拽、滚轮与键盘步进定位。
+播放进度条，支持鼠标点击、拖拽和键盘控制。
 
 ```html
 <fb-seek-bar></fb-seek-bar>

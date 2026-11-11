@@ -2,6 +2,13 @@
 
 Provides explicit hide, restore, and visibility state tracking for the client-area cursor.
 
+::: tip Relationship with CSS
+We recommend combining CSS and the Cursor API:
+
+- CSS `cursor: none` remains the preferred visual mechanism for hover interactions within the WebView.
+- When a theme needs to hide the cursor **without hover transitions** (such as after 3 seconds of inactivity in a fullscreen player), call `cursor.setHidden(true)` so the C++ host intercepts `WM_SETCURSOR` in the parent window and executes `SetCursor(nullptr)`.
+:::
+
 ## cursor
 
 ### cursor.isHidden
@@ -42,8 +49,28 @@ Hide or restore the client-area cursor of the calling window. Only a call that c
 `success` is `true` on success. On failure the response is `{ success: false, error, code }`; see [Error codes](../reference/errors.md) for `code`.
 <!-- api-schema:end -->
 
+::: tip Idempotent Behavior
+When invoked repeatedly with the same `hidden` value, the host fires the `cursor:hiddenChanged` event only on the first call that actually flips the state; subsequent calls return `success: true, changed: false`. Themes can therefore use reference counting or a `Set` to coordinate multiple independent hide requests.
+:::
+
 ```js
 await fb2k.invoke('cursor.setHidden', { hidden: true });
+```
+
+## Events
+
+### cursor:hiddenChanged
+
+Sent to the calling window only when `cursor.setHidden` actually changes the hidden state. Not broadcast across windows.
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `hidden` | `boolean` | New cursor hidden state |
+
+```js
+fb2k.on('cursor:hiddenChanged', ({ hidden }) => {
+    document.documentElement.classList.toggle('cursor-hidden', hidden);
+});
 ```
 
 ## Cursor visibility lifecycle

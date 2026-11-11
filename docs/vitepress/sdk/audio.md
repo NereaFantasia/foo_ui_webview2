@@ -67,12 +67,12 @@ The returned function calls `audio.unsubscribeSpectrum` to release host visualiz
 :::
 
 ::: tip Low-level control
-`fb.audio.subscribeSpectrum()` generates and manages its own `subscriptionId`; read it from `ready` when you need it, for example to poll that subscription with `getSpectrum`. Use low-level `fb2k.invoke('audio.subscribeSpectrum', ...)` when you need to choose the subscription ID yourself, replace a same-ID subscription, or run caller-level diagnostics.
+`fb.audio.subscribeSpectrum()` automatically generates and manages its own `subscriptionId`; retrieve it from the resolved `ready` object when polling via `getSpectrum()`. Use low-level `fb2k.invoke('audio.subscribeSpectrum', ...)` when you need to specify custom subscription identifiers, replace a same-ID subscription, or run caller-level diagnostics.
 :::
 
 ## getSpectrum(options?)
 
-Polls the current spectrum buffer once. An active `subscribeSpectrum` host subscription is still required. Resolves with `AudioGetSpectrumResponse`: one frame plus `success`, a silence frame while playback is paused or stopped, or `success: false` when no data is available yet. To draw in step with the display, pass the `subscriptionId` from `ready` and call this from `requestAnimationFrame`, one call at a time and no more often than the frame rate you need; see [`audio.getSpectrum`](../api/audio.md#audio-getspectrum).
+Polls the current spectrum buffer once. An active `subscribeSpectrum` host subscription is required. Resolves with `AudioGetSpectrumResponse` containing spectrum frame data: a silence frame while playback is paused or stopped, or `success: false` when data has not yet been generated. For displays synchronized with refresh rates, supply the resolved `subscriptionId` in `requestAnimationFrame`, one call at a time and no more often than the target frame rate; see [`audio.getSpectrum`](../api/audio.md#audio-getspectrum).
 
 | Parameter | Type | Description |
 | --- | --- | --- |
@@ -104,7 +104,7 @@ Returns a short waveform window from the current playback stream. Call `subscrib
 | options.duration | number | Window duration in seconds, greater than 0 and at most 1: the most recent `duration` seconds, ending at the visualization stream's current time. Defaults to `0.05` |
 | options.signed | boolean | Preserve signed PCM polarity, clamped to `[-1, 1]`. Defaults to `false` |
 | options.channels | `'mix' \| 'stereo'` | `'mix'` (default) returns one averaged `waveform`; `'stereo'` returns the first two channels as `left` and `right`, with `right` equal to `left` on a mono stream |
-| options.points | number | Thin the window to this many evenly spaced samples, without averaging; an integer in `[2, 65536]`. Every sample is returned when omitted |
+| options.points | number | Number of evenly spaced samples to extract without averaging; an integer in `[2, 65536]`. Omitted, all samples in the window are returned |
 
 The answer also carries `channels`, `sampleRate` and `channelCount` of the visualization stream. Invalid options fail with `code: 'INVALID_PARAMS'`.
 
@@ -186,7 +186,7 @@ const result4 = await fb.audio.generateFullWaveform('E:\\Music\\song.flac', {
     method: 'rms'
 });
 
-// Drop the request when the user moves on to another track
+// Cancel in-flight request when track changes
 const controller = new AbortController();
 fb.audio.generateFullWaveform('E:\\Music\\song.flac', { signal: controller.signal })
     .catch((err) => {
@@ -260,7 +260,7 @@ Decodes a track, or a range of it, into float32 PCM and resolves with a `PcmBuff
 
 | Member | Description |
 | --- | --- |
-| `sampleRate`, `channels`, `frames` | Format of the samples; `channels` is 1 with `mono` |
+| `sampleRate`, `channels`, `frames` | Format of the samples; `channels` is 1 when `mono` was requested |
 | `duration` | `frames / sampleRate`, in seconds |
 | `start` | Track time of the first frame, in seconds |
 | `truncated` | The audio ran past the size estimated from the track length, or its format changed partway; the samples end at the cut |
@@ -275,7 +275,7 @@ Decodes a track, or a range of it, into float32 PCM and resolves with a `PcmBuff
 `getChannelView()` returns views of read-only shared memory. Writing to them crashes the renderer process, which takes the whole foobar2000 window with it. The method is deliberately not called `getChannelData`: Web Audio's method of that name returns an array you may modify. Use `toAudioBuffer()` when you need a copy you can change.
 :::
 
-Call `release()` when you are done. After `transfer()` the `PcmBuffer` gives out no more views and `release()` does nothing; views you took earlier keep working until the buffer is actually transferred with `postMessage`, and are detached (`byteLength` 0) from then on. A worker cannot release the buffer, so to free it early, transfer it back to the page and pass it to `chrome.webview.releaseBuffer`. The buffer still starts with its header, which `readPcmHeader()` from the SDK reads.
+Call `release()` when finished to free shared memory. After `transfer()` is invoked, this `PcmBuffer` can no longer create new views and `release()` becomes a no-op; views obtained earlier remain readable until the buffer is transferred via `postMessage`, after which they become detached (`byteLength` 0). A Web Worker cannot release the buffer; to free it early, transfer it back to the page and pass it to `chrome.webview.releaseBuffer`. The buffer header contains audio format metadata readable via `readPcmHeader()`.
 
 **Failures** reject with a `PcmDecodeError`, whose `code` is the host's: `INVALID_PARAMS` (also for a range too large for one buffer: 256 MiB in 64-bit foobar2000, 64 MiB in 32-bit), `INVALID_PATH`, `NO_INFO`, `NOT_SUPPORTED` (outside a WebView2 host, on a runtime without shared buffers, or with no resampler for the conversion), `CANCELLED`, `DECODE_FAILED` and the other codes listed under [`audio.decodePcm`](../api/audio.md#audio-decodepcm). A timeout rejects with code `TIMEOUT`. Both an abort and a timeout cancel the host task.
 
@@ -348,14 +348,14 @@ requestAnimationFrame(tick);
 stream.unsubscribe();
 ```
 
-### Computing a spectrum yourself
+### Custom spectrum calculation {#computing-a-spectrum-yourself}
 
-Bin output uses foobar2000's FFT, whose Gaussian window is fixed. To choose the window function, zero-pad, combine several FFT sizes or use another transform, compute the spectrum from the live PCM stream:
+Bin output uses foobar2000's FFT, whose Gaussian window is fixed. To choose custom window functions, zero-padding, or alternative transforms, compute directly from the live PCM stream:
 
-- Ask for the shortest interval, `interval: 0.016`; at the 200 ms default the spectrum would change five times a second. The interval applies to every stream subscription in the component.
-- Chunks then arrive every 16 ms on average but unevenly (3 to 50 ms apart in measurements), so some display frames see no new samples; draw the previous spectrum again or smooth over time.
-- The samples are taken before ReplayGain, so levels differ from `audio:spectrum` by the ReplayGain gain. The stream trails what is heard by about as much as the visualization stream does, a little over ten milliseconds in measurements, plus the wait for the next chunk.
-- `read()` returns only the frames written since the previous call, so keep the last `N` samples yourself, and bring your own FFT. `segments` marks where media time restarts after a seek or track change; clear the history there if one spectrum must not mix the two.
+- Request the shortest interval `interval: 0.016` (the default 200 ms updates only ~5 times per second). This setting affects all active stream subscriptions across the component.
+- Chunks arrive every 16 ms on average with dynamic jitter (approx. 3–50 ms); when a rendering frame receives no new samples, redraw the previous frame or apply temporal smoothing.
+- Samples are tapped before ReplayGain processing, so levels differ from `audio:spectrum` by the ReplayGain gain. Relative latency to audible output mirrors the standard visualization pipeline (~10+ ms plus chunk buffering).
+- `read()` delivers only frames written since the previous call; maintain a local history buffer of the most recent `N` samples for FFT analysis. `segments` marks where media time restarts after a seek or track change; clear the history there so that one spectrum does not mix the two.
 
 ```javascript
 /**
@@ -390,7 +390,7 @@ Experimental API; it may change in future releases.
 
 Signature: `fb.audio.unsubscribeStream(subscriptionId?: string): Promise<AudioUnsubscribeStreamResponse>`
 
-Removes this page's stream subscriptions on the host: the one with `subscriptionId`, or all of them when omitted. `PcmStream.unsubscribe()` already does this for its own subscription; call this directly only for subscriptions made with `fb2k.invoke`. Resolves with `removed`, the number of subscriptions removed; subscriptions of other pages are never counted or removed.
+Removes this page's stream subscriptions on the host: the one with `subscriptionId`, or all of them when omitted. `PcmStream.unsubscribe()` handles its own teardown; call this directly only for subscriptions made with `fb2k.invoke`. Resolves with `removed`, the number of subscriptions removed; subscriptions of other pages are unaffected.
 
 ```javascript
 const res = await fb.audio.unsubscribeStream();
@@ -416,7 +416,7 @@ if (result.success) {
 
 ## setChannelMode(mode)
 
-Chooses which channels the visualization stream carries. It applies to spectrum frames and `getWaveform`, not to what is heard. Any other `mode` fails with `INVALID_PARAMS`.
+Configures channels included in the visualization pipeline, applying to spectrum frames and `getWaveform()` without affecting audible playback. Unsupported `mode` values fail with `INVALID_PARAMS`.
 
 | Parameter | Type | Description |
 | --- | --- | --- |
@@ -479,7 +479,7 @@ console.log(stream.channels, stream.sampleRate);
 
 Signature: `fb.audio.isVisualizationAvailable(): Promise<AudioIsVisualizationAvailableResponse>`
 
-Reports, as `available`, whether foobar2000 offers a visualization stream; spectrum frames and `getWaveform()` need one.
+Returns `available` indicating whether foobar2000 supports the visualization pipeline (required by spectrum frames and `getWaveform()`).
 
 ```javascript
 const res = await fb.audio.isVisualizationAvailable();

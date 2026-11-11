@@ -16,7 +16,7 @@ Shows a modal confirmation dialog with custom buttons.
 | `options.defaultButton` | `number` | No | Index of the initially focused button; defaults to `0` |
 | `options.buttons` | `string[]` | No | Custom button labels, in order |
 
-`response` is the zero-based index of the clicked button. With the default buttons `['OK', 'Cancel']`, `0` means confirmed and `1` cancelled; there is no `confirmed` flag. Escape and the close button do not dismiss the dialog, so every result comes from a button click. `-1` appears only when not even the host's fallback message box could be shown.
+`response` returns the zero-based index of the clicked button. Default button choices are OK and Cancel, where `0` indicates confirmation and `1` indicates cancellation; the response does not contain a `confirmed` boolean property. Esc and the window close button cannot dismiss the dialog; return values always originate from button clicks. A `response` of `-1` occurs only when even the host's fallback message box fails to display.
 
 ```javascript
 const res = await fb.dialog.confirm({
@@ -34,7 +34,7 @@ if (response === 0) {
 
 Signature: `fb.dialog.openFile(options?: DialogOpenFileParams): Promise<DialogOpenFileResponse>`
 
-Opens the native file picker. Returns `{ success: true, canceled, filePaths }`, or the failure envelope `{ success: false, error, code }` when the dialog cannot be shown. Set `multiple` to allow multiple selections; other options include `title`, `defaultPath` (honored on every open), and `filters`, an array of `{ name, extensions }` entries. Write `extensions` without the leading dot, such as `flac`; `*` matches every file.
+Opens the native file picker dialog. Returns `{ success: true, canceled, filePaths }` on success, or a failure envelope when the dialog fails to display. Set `multiple: true` to permit multi-selection; additional options include `title`, `defaultPath` (applied on every invocation), and `filters`. `filters` is an array of `{ name, extensions }` objects, where `extensions` contains file extensions without leading dots (such as `flac`); `*` matches all files.
 
 ```javascript
 const result = await fb.dialog.openFile({
@@ -48,7 +48,7 @@ const result = await fb.dialog.openFile({
 
 Signature: `fb.dialog.openFolder(options?: DialogOpenFolderParams): Promise<DialogOpenFolderResponse>`
 
-Opens the native folder picker. Accepts an optional `title` and an optional `defaultPath` — the folder the dialog opens in, every time it is shown; silently ignored when the path does not resolve to a folder, and `%music%` expands to the user's Music folder. Returns `{ success: true, canceled, folderPath }` (or the failure envelope `{ success: false, error, code }` when the dialog cannot be shown); `folderPath` is whatever the user confirmed, which need not be `defaultPath`.
+Opens the native folder picker dialog. Accepts optional `title` and `defaultPath` parameters: `defaultPath` designates the initial directory each time the dialog opens, which is ignored if the path does not resolve to a valid folder; path variables like `%music%` expand to the current user Music directory. Resolves with `{ success: true, canceled, folderPath }` on success, or a failure envelope if the dialog fails to display. `folderPath` contains the directory path confirmed by the user.
 
 ```javascript
 const result = await fb.dialog.openFolder({
@@ -61,7 +61,7 @@ const result = await fb.dialog.openFolder({
 
 Signature: `fb.dialog.saveFile(options?: DialogSaveFileParams): Promise<DialogSaveFileResponse>`
 
-Opens the native save picker. Returns `{ success: true, canceled, filePath }`, or the failure envelope `{ success: false, error, code }` when the dialog cannot be shown. Options include `title`, `defaultName`, and `filters`, an array of `{ name, extensions }` entries.
+Opens the native file save dialog. Returns `{ success: true, canceled, filePath }` on success, or a failure envelope when the dialog fails to display. Options include `title`, `defaultName` (suggested filename), and `filters` (array of `{ name, extensions }` objects).
 
 ```javascript
 const result = await fb.dialog.saveFile({ defaultName: 'playlist.m3u8' });

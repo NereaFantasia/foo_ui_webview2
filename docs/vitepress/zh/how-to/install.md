@@ -20,7 +20,7 @@ foobar2000 自 v2.0 起引入 64 位架构支持。组件安装包同时包含 x
 4. **重启应用**：重启 foobar2000 使组件生效
 5. **选择主界面**：前往 `File → Preferences → Display → Default User Interface`，将当前界面切换为 `Webview2 UI`
 
-::: info
+::: info 组件标识
 `.fb2k-component` 是 foobar2000 官方组件安装包格式。请使用 foobar2000 的组件安装流程安装；不要把它当作普通 zip 手工解压到 profile。
 :::
 

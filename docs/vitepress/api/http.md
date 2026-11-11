@@ -2,11 +2,53 @@
 
 Provides WinHTTP-backed network request methods supporting GET, POST, PUT, DELETE, PATCH, HEAD, file downloads, and cancellation.
 
+::: warning Security Restrictions
+
+- Only `http://` and `https://` protocols are permitted.
+- Private and local-network destinations are blocked by default for SSRF mitigation (including IPv4/IPv6 private ranges).
+- **Redirect security**: SSRF rules are re-evaluated on every redirect hop (up to 10 redirects).
+- Single response body size is capped at 100 MB; single download size is capped at 500 MB.
+- Maximum concurrent asynchronous requests: 10 (including async downloads).
+- Detailed diagnostic information is returned when TLS handshake fails.
+- An option in foobar2000's Advanced Preferences allows requests to local-network destinations.
+- Intended strictly for trusted external endpoints.
+
+:::
+
 ## Custom User-Agent
 
 Set `headers: { 'User-Agent': 'MyTheme/1.0' }` to identify your theme. This works for GET, POST, PUT, DELETE, PATCH, HEAD and downloads. Without an override, the host sends `foo_ui_webview2/1.0 (WinHTTP)`.
 
 Custom headers apply only to the initial request. After a redirect, they are omitted and `User-Agent` returns to the host default. Use the final URL directly when a service requires your User-Agent on every request.
+
+## Shared request options
+
+`http.get`, `http.post`, `http.put`, `http.delete`, and `http.patch` share identical parameters, except that the latter four add an optional `body`. `http.head` omits `responseType`, and `http.download` adds `saveTo` with synchronous default execution and 60000 ms default timeout.
+
+### HTTP method support matrix
+
+| Method | Request body | Response body | Default timeout | Notes |
+| --- | --- | --- | --- | --- |
+| `http.get` | No | Yes | 30000 ms | Standard GET request |
+| `http.post` | Yes | Yes | 30000 ms | Sends string or JSON object/array |
+| `http.put` | Yes | Yes | 30000 ms | Replaces target resource |
+| `http.delete` | Optional | Yes | 30000 ms | Deletes target resource |
+| `http.patch` | Yes | Yes | 30000 ms | Partial resource update |
+| `http.head` | No | Headers only | 30000 ms | No `responseType`; returns headers and optional `contentLength` |
+| `http.download` | No | File on disk | 60000 ms | Saves directly to `saveTo`; synchronous by default |
+
+### responseType values
+
+| Value | Raw body type (C++ backend) | Decoded type via SDK facade |
+| --- | --- | --- |
+| `text` | UTF-8 string | `string` |
+| `base64` | Base64 string | `string` |
+| `arraybuffer` | Base64 string (internal transport) | `ArrayBuffer` (auto-decoded by SDK) |
+| `binary` | Base64 string (`arraybuffer` alias) | `ArrayBuffer` (same as above) |
+
+::: tip Binary Response Handling
+When calling through the SDK facade `fb.http.get(url, { responseType: 'arraybuffer' })`, `body` is automatically decoded into an `ArrayBuffer`. When calling directly via `bridge.invoke('http.get', ...)`, `body` remains a Base64-encoded string and must be decoded manually by the theme.
+:::
 
 ## http
 
@@ -306,4 +348,15 @@ await fb2k.invoke('http.put', {
 - Only `http` and `https` URLs are accepted. Private or local-network destinations are denied unless the host's Advanced Settings permits them; redirects are checked again at every hop and the redirect limit is 10.
 - Failures carry `code`, in the reply and in the `http:response` / `http:downloadComplete` events alike: `PERMISSION_DENIED` for a denied local or private destination, `INVALID_PARAMS` for a URL that does not parse or whose scheme is not `http` or `https`, `CANCELLED` (with `cancelled: true`) after `http.abort`, and `OPERATION_FAILED` for network errors, `redirect: "error"` meeting a redirect (with `status`), and the size limits.
 - `insecureTls: true` takes effect only when the caller opts in **and** the host's invalid-certificate setting is enabled. This bypass is unsuitable for public Internet traffic.
+
+::: warning Security Risks
+Enabling `insecureTls` skips all certificate verification (including expired certificates, hostname mismatches, and untrusted CAs). Use this only in controlled scenarios:
+
+- Accessing internal services with self-signed certificates
+- Local development and debugging
+- **Never enable this for public Internet traffic** — it completely disables HTTPS man-in-the-middle protections
+
+A safer alternative is to import the target CA certificate into the system trusted root store.
+:::
+
 - Response bodies are limited to 100 MB and downloads to 500 MB. `http.download.saveTo` is a write-protected path parameter and is subject to the Bridge security policy.

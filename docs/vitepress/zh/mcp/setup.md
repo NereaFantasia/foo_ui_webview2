@@ -163,6 +163,6 @@ MCP Server 启动
 
 两者均连接 `localhost:9222` 的同一个 WebView2 实例。
 
-::: tip
+::: tip 便携版配置
 WebView2 CDP 同一时刻仅支持一个客户端连接同一 target。如果 chrome-devtools-mcp 已连接，foo-ui-webview2-mcp 可能需要等待其断开。
 :::

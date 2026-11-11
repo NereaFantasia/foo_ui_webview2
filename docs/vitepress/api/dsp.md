@@ -234,7 +234,7 @@ Every entry must resolve to an installed DSP. The call is rejected as a whole wi
 | Element is not an object | `dsps[0] must be an object` | `INVALID_PARAMS` |
 | `guid` missing or empty | `dsps[0].guid is required` | `INVALID_PARAMS` |
 | `guid` not a string | `dsps[0].guid must be a string` | `INVALID_PARAMS` |
-| Element carries another key | `unknown parameter 'dsps[0].index'` | `INVALID_PARAMS` |
+| Element contains unexpected keys | `unknown parameter 'dsps[0].index'` | `INVALID_PARAMS` |
 | `guid` malformed | `dsps[0]: Invalid GUID format: <value>` | `INVALID_PARAMS` |
 | `guid` well-formed but DSP not installed | `dsps[0]: DSP not found or no default preset: <guid>` | `NOT_FOUND` |
 

@@ -1,5 +1,64 @@
 # Changelog
 
+## v2.2.0 (Unreleased)
+
+### New features
+
+#### Keyboard
+- **Key presses in the WebView run foobar2000 keyboard shortcuts**: while a page has the focus, the commands the user bound under Preferences > Keyboard Shortcuts run. A key without a shortcut reaches the page. In a text box, typing and text editing keys stay with the page; outside a text box, single keys such as Space, letters and the arrow keys can run shortcuts as well. The component's preferences, Window > Keyboard shortcuts, select the keys that take part. By default these are combinations with Ctrl, Alt or Win, Ctrl with an arrow key included, and F1 to F24; single keys need "Other keys". A key held down runs its shortcut once. See [Keyboard shortcuts inside the WebView](./api/keyboard.md#keyboard-shortcuts-inside-the-webview).
+- **[`keyboard.setReservedKeys`](./api/keyboard.md#keyboard-setreservedkeys) keeps combinations for the page**: a listed combination reaches the page even when foobar2000 has a shortcut for it, so a theme's own shortcut takes precedence over the user's binding. The list belongs to the page and is cleared when the page navigates or reloads and when its window closes.
+- **`all` on `keyboard.setReservedKeys` keeps every key for the page**, for example while the page records a shortcut in its own editor. System-wide hotkeys and F12 in development server mode still take effect.
+
+#### Context menu
+- **Context-menu commands can name the tracks they act on**: [`discovery.executeContextMenuCommand`](./api/discovery.md#discovery-executecontextmenucommand) and [`discovery.executeContextMenuByPath`](./api/discovery.md#discovery-executecontextmenubypath) take a `target`:
+  - `selection`: the selection that foobar2000's own context-menu shortcuts use.
+  - `nowPlaying`: only the playing track.
+  - `playlistSelection`: only the selection in the active playlist.
+  - `auto`, the default: the playing track, or the selection in the active playlist when nothing is playing, as before.
+
+#### Panels
+- **The Default UI edit-mode placeholder identifies the panel**: it shows the panel name, the page source and the options that are turned on, so several WebView panels in one layout can be told apart. It uses Default UI's colours and font, scales with DPI and leaves out less important lines when space is short. Double-clicking the placeholder opens the panel configuration.
+- **The panel configuration dialog can create a template and open the template folder**: New... and Open Folder are next to the template drop-down. A new name follows the rules of the preferences page: letters, numbers, hyphens and underscores only, and no name already in use, ignoring case. The new template is selected and is written to the panel configuration only when OK is clicked.
+- **The panel configuration dialog has a new layout**: the settings form two groups, Page and Behavior, and Edge Style is now under Behavior. "Allow this site to access…" appears only after an external URL is entered; it used to be shown greyed out.
+
+#### Playlists
+- **[`playlist.getAutoplaylistQuery`](./api/playlist.md#playlist-getautoplaylistquery) reads the query and sort of built-in autoplaylists**: for a list driven by foobar2000's own query/sort client, such as one created in Default UI or with `playlist.createAutoplaylist`, `query` is the current query and the new `sort` is the sort expression, an empty string when none is set. Both are read on every call. For lists of other providers and lists managed by this component, `query` and `sort` are `null`, and `note` gives the reason. Earlier versions return `query: null` for every list and no `sort` field.
+
+### Changes
+
+- **[`keyboard.registerHotkey`](./api/keyboard.md#keyboard-registerhotkey) refuses combinations that would take common keys from every program**: a combination must contain Ctrl, Alt or Win; a media key can be registered alone. Ctrl+A, C, V, X, Y and Z, Ctrl+Shift+Z, Ctrl+Esc, Alt+F4, Alt+Tab and Alt+Space are refused as well. A refused combination fails with `INVALID_PARAMS`. These combinations used to register, but no hotkey ever fired (see Fixed).
+- **A taken combination is reported with its holder**: when this component has already registered the combination, [`keyboard.registerHotkey`](./api/keyboard.md#keyboard-registerhotkey) fails with `OPERATION_FAILED`, and `details` gives the `id` and `windowId` of that registration. When another program or a global foobar2000 shortcut holds it, the call fails with `OPERATION_FAILED`, and `details.win32Error` holds the Windows error code.
+- **Hotkeys are released when the window that registered them closes**: a hotkey used to stay registered after its window closed, and its presses went to the main window's page. A Default UI or Columns UI layout has no main window page, so a closed panel kept the combination and a recreated panel could not register it again.
+- **Hotkey entries of [`keyboard.getRegisteredHotkeys`](./api/keyboard.md#keyboard-getregisteredhotkeys) have a new `windowId`**: the window that registered the hotkey and receives its presses.
+- **Ctrl+P, Ctrl+O and Ctrl+N follow the user's foobar2000 bindings**: while a page had the focus, these combinations always opened Preferences, opened files and created a playlist, whatever the user had bound. They now run the shortcuts set under Preferences > Keyboard Shortcuts, like any other key. A combination without a binding reaches the page.
+- **F5 reloads a page that has the focus unless the page handles the key**: F5 used to reach the page as an ordinary key press, and the page reloaded only when the focus was outside it, or through the browser when developer tools were enabled. The page now receives the key press first. When no `keydown` listener calls `preventDefault()`, the component reloads the page, in every window type. While the page is loading or after it failed to load, F5 reloads at once. See [Keyboard shortcuts inside the WebView](./api/keyboard.md#keyboard-shortcuts-inside-the-webview).
+- **`keyboard.registerShortcut` is deprecated and will be removed in 3.0**: it stores the combination, but no key press is matched against it. For shortcuts inside the page, listen for `keydown`.
+- **`fb.GetLibraryItems` in the SMP compatibility layer is faster**: it pages through `library.search` and reads only the fields that handles use. On a library of about 100,000 tracks, the call took about 0.8 seconds instead of 4.2 in testing. It returns the same tracks in the same order.
+
+### Fixed
+
+#### Keyboard
+- **Hotkeys registered with [`keyboard.registerHotkey`](./api/keyboard.md#keyboard-registerhotkey) fire**: they were registered on the foobar2000 main window, whose `WM_HOTKEY` messages the component does not receive, so registration succeeded but `keyboard:hotkey` was never sent. Hotkeys are now registered on a message window of the component, and a press goes to the window that registered the hotkey. A page's hotkeys are released when the page navigates or reloads, so a reloaded page can register the same combination again. All hotkeys are released when foobar2000 exits.
+
+#### Tag Writing
+- **WAV tag writes no longer destroy non-ASCII tags**: [`metadata.write`](./api/metadata.md#metadata-write), [`metadata.writeBatch`](./api/metadata.md#metadata-writebatch), [`metadata.removeTag`](./api/metadata.md#metadata-removetag), [`metadata.removeField`](./api/metadata.md#metadata-removefield), the tag fallback of [`rating.set`](./api/rating.md#rating-set), the embedded target of `lyrics.save` and [`replaygain.clear`](./api/replaygain.md#replaygain-clear) refuse to write a WAV file whose tags would then contain non-ASCII text. They fail with `NOT_SUPPORTED`, `details.reason` is `wavInfoNonAscii`, and the file is unchanged. foobar2000 stores WAV tags in the RIFF INFO chunk as ASCII and writes every other character as `?`. It also reads a GBK-encoded INFO chunk as Latin-1, so rewriting such a file, even to change another field, replaces its original tags with `?` for good. WAV files whose tags are all ASCII are written as before, and other formats are not affected.
+
+#### Media Reading and Artwork
+- **Media stream and cover URLs work in pages loaded through a folder mapping**: in pages loaded through a folder mapping such as `foo-ui-webview2.local`, which is how packaged themes load, the media stream and cover URLs issued by the host always failed with `ERR_FILE_NOT_FOUND`. Both kinds of URL now use the host `fb2k-routes.invalid`, which no folder mapping covers. These URLs are cross-origin for every page, so a page that reads cover pixels from a canvas must set `crossorigin` on the `<img>`.
+- **A stuck cloud or network read no longer blocks local reads**: cover and lyrics reads shared one queue, so a read of a cloud placeholder file or an unreachable network share that hung made every later local read time out until foobar2000 was restarted. Files on network shares and mapped drives, and files that are only in the cloud, are now read on a separate queue.
+- **Reading the cover of a cloud-only file no longer downloads the file**: for a file on a local drive that is only in the cloud, [`artwork.getCurrent`](./api/artwork.md#artwork-getcurrent), [`getByPath`](./api/artwork.md#artwork-getbypath), [`getForTrack`](./api/artwork.md#artwork-getfortrack), [`getByPlaylistItem`](./api/artwork.md#artwork-getbyplaylistitem), [`getBatch`](./api/artwork.md#artwork-getbatch), [`getAvailableTypes`](./api/artwork.md#artwork-getavailabletypes), [`getAvailableArtwork`](./api/artwork.md#artwork-getavailableartwork) and `getMetadata` report no cover without opening the file. They used to download the whole file. Thanks to [@Sijie20](https://github.com/Sijie20) for reporting.
+
+#### Playlists
+- **[`playlist.replaceAllAndPlay`](./api/playlist.md#playlist-replaceallandplay) plays the track that `playIndex` names**: the rows it wrote were deduplicated and sorted by the user's order for incoming items, while `playIndex` counted the sorted rows, so another track played whenever that order differed from `paths`. The rows now follow the order of `paths`; when every path is one track, `playIndex` is the index of the path to play. Duplicate paths are kept, and the tracks of a folder are added in the order foobar2000 expands the folder. Thanks to [@LYY-LZH](https://github.com/LYY-LZH) for reporting.
+
+#### Panels
+- **Right-clicking a panel in Default UI edit mode opens Default UI's standard edit menu**: Replace, Cut, Copy and Paste are available, and Configure... is in the same menu. Only Configure... used to appear.
+- **A panel created while edit mode is on shows its placeholder at once**: it used to show the page at full size, so the page received the right-click and the panel could not be configured.
+- **Transparent areas of a panel follow foobar2000's colours**: where the page draws no background, the panel shows the host's current background colour: Default UI's background colour in a Default UI panel, and the Columns UI global background colour in a Columns UI panel. When the colours are changed in Preferences, these areas change at once. A Default UI panel used to keep the colour it had when it was created, and a Columns UI panel was always white.
+- **The panel setting "Transparent Background" takes effect when the panel is created**: a panel saved as opaque stays opaque after foobar2000 restarts or the panel is rebuilt; the setting used to apply only when it was toggled. The opaque background is now the host's background colour instead of a fixed dark grey (`#1e1e1e`).
+- **The name dialog for creating and renaming templates follows foobar2000's light and dark mode**: it was always light.
+- **The starter page of a new template uses neutral grey text**: the text was white and could not be read where the transparent part of a panel shows a light background. Existing templates are not changed.
+
 ## v2.1.0 (2026-10-27)
 
 ### New features

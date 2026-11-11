@@ -1,6 +1,6 @@
 # fb.queue 播放队列
 
-`fb.queue` 管理 foobar2000 的播放队列。它和 `fb.jitQueue` 提供的即时队列是两回事。
+`fb.queue` 管理 foobar2000 原生待播队列（与 `fb.jitQueue` 提供的即时动态队列属于独立机制）。
 
 ## setContents(items)
 
@@ -10,7 +10,7 @@
 | --- | --- | --- |
 | `items` | `QueueContentRef[]` | 有序的队列槽位或播放列表曲目引用列表 |
 
-任一条目形态无法识别都会让整次调用在写入前整体失败——与逐项跳过越界下标的 `fb.queue.add` 不同。传入 `[]` 会清空队列，等价于 `fb.queue.clear()`。
+若存在格式无法识别的条目，整次调用将在写入前直接拒绝并失败（与逐项跳过无效索引的 `fb.queue.add` 行为不同）。传入空数组 `[]` 将清空当前队列，等价于调用 `fb.queue.clear()`。
 
 应在用户松手结束拖拽重排手势时调用一次，不要在拖拽过程中逐帧调用：每次调用都会清空并重建整个队列。
 
@@ -28,7 +28,7 @@ await fb.queue.setContents([{ queueIndex: 2 }, { queueIndex: 0 }, { queueIndex: 
 | `entries` | `Array<string \| QueueListRef>` | 文件路径或 URL（可带 `\|subsong:N` 后缀）、播放列表位置，或两者混合 |
 | `position` | `number?` | 移除所有被移动条目之后的插入下标，默认 `0` |
 
-新插入的路径条目不带播放列表位置，游标无法跟随该曲目的列表位置；按路径移动既有条目时，会保留其有效坐标。需要指定列表位置时，传入 `QueueListRef`。混合数组按类型拆分：坐标项在前，路径项在后，各块内部保序。曲目互不相同时，`[p1, I1, p2]` 入队后为 `I1, p1, p2`；需要精确交错顺序时，随后调用 `setContents`。所有条目按曲目去重；重复坐标中优先保留首个已在队列中的输入坐标，都不匹配时才保留首个输入坐标。曲目在输入块内的顺序仍取首次出现的位置。
+通过文件路径插入的新条目不关联播放列表坐标，播放光标无法跟随到该曲目的位置；按路径移动既有队列条目时，保留其原有的有效播放列表坐标。如需关联播放列表上下文，应传入 `QueueListRef`。包含不同类型的混合数组在处理时将按类型归类：坐标条目排在首块，路径条目排在其后，各自保持原输入顺序。若所有曲目互不相同，输入序列 `[p1, I1, p2]` 处理后顺序为 `[I1, p1, p2]`；如需严格的交错顺序，应在插入后调用 `setContents()` 重排。输入条目基于曲目实体执行去重；若存在重复坐标，优先保留已存在于队列中的首个匹配坐标，均不匹配时保留首个输入坐标。各曲目在对应分块内的位置均以其首次出现为准。
 
 返回值区分 `insertedCount`（新入队曲目数）与 `movedCount`（被移动的既有条目数）。`invalidCount` 是输入路径数减去解析所得的曲目数，负数按零返回；文件夹或容器展开可能抵消失败项，因此它不是精确的失败路径数。任一位置条目有问题，整次调用在写入前失败。
 
@@ -57,13 +57,13 @@ await fb.queue.playNow(2); // 移到队首并播放第 3 项
 
 ## remove(target)
 
-移除队列条目：传一个位置时作为宿主的 `index` 发出；传位置数组时作为 `indices` 发出，一次调用全部移除。
+从待播队列中移除条目：传入单个数字时按 `index` 指定单项；传入数字数组时按 `indices` 批量移除。
 
 | 参数 | 类型 | 说明 |
 | --- | --- | --- |
 | `target` | `number \| number[]` | 一个队列位置，或队列位置数组 |
 
-传数组时，重复与越界的位置跳过，返回值带 `removedCount`；传单个位置时返回值带 `removedIndex`。两种都带 `queueCount`，即移除后的队列长度。给出的位置一个都不在范围内时以 `INVALID_INDEX` 失败。用数组一次移除，不会出现逐个移除同一批位置时的下标错位。
+传入数组时，重复与越界的索引将被自动忽略，响应包含 `removedCount`；传入单个位置时响应包含 `removedIndex`。两种形式均返回操作后的队列长度 `queueCount`。若指定的位置全部超出有效范围，以 `INVALID_INDEX` 失败。使用数组批量移除可避免因逐项删除导致的索引动态漂移。
 
 ```javascript
 const one = await fb.queue.remove(0);
@@ -84,9 +84,9 @@ console.log(many.removedCount, many.queueCount);
 | `opts.playlist` | `number` | 否 | 行号所在的播放列表；省略时为活动播放列表 |
 | `opts.playlistGuid` | `string` | 否 | 播放列表的 `guid`（取自 `playlist.getAll`），用来代替 `playlist` |
 | `opts.tracks` | `number[]` | 否 | 要入队的行，按顺序；优先于 `track` |
-| `opts.track` | `number` | 否 | 要入队的单个行；只在没传 `tracks` 时读取 |
+| `opts.track` | `number` | 否 | 单曲行号；仅在未指定 `tracks` 时生效 |
 
-按播放列表中的行号把一首或多首曲目加入队列。超出最后一行的行号跳过；一个都不在范围内时以 `INVALID_INDEX` 失败，负数行号以 `INVALID_PARAMS` 失败。`playlist` 超出最后一个播放列表时以 `INVALID_INDEX` 失败；省略 `playlist` 且没有活动播放列表时以 `NO_ACTIVE_ITEM` 失败。同时给了 `playlist` 和 `playlistGuid`，或 GUID 格式不对，以 `INVALID_PARAMS` 失败；列表已不存在时以 `NOT_FOUND` 失败。
+按播放列表中的行号把一首或多首曲目加入队列。超出有效范围的行号将被忽略；若全部行号均无效，以 `INVALID_INDEX` 失败，负数行号以 `INVALID_PARAMS` 失败。`playlist` 索引超出范围以 `INVALID_INDEX` 失败；省略 `playlist` 且无活动播放列表时以 `NO_ACTIVE_ITEM` 失败。若同时指定 `playlist` 与 `playlistGuid`，或 GUID 格式无效，以 `INVALID_PARAMS` 失败；目标列表不存在时以 `NOT_FOUND` 失败。
 
 返回值带 `addedCount`（入队的行数）和 `queueCount`（之后的队列长度）。
 
@@ -109,7 +109,7 @@ console.log(result.addedCount, result.queueCount);
 
 按路径或 URL 把曲目加入队列。入队需要曲目先在某个播放列表里，所以路径会先追加到一个播放列表，默认是专用的 `[WebView Queue]` 列表。每条路径或 URL 最多 2048 字符，超长的条目跳过并计入 `invalidCount`。
 
-目标播放列表已上锁时以 `LOCKED` 失败，不添加也不入队。同时给了 `playlist` 和 `playlistGuid`，或 GUID 格式不对，以 `INVALID_PARAMS` 失败；列表已不存在时以 `NOT_FOUND` 失败。路径解析完会重新查找目标列表：期间被挪动，曲目照样加进它，返回值里的 `playlist` 是它的新索引；期间被删掉，以 `OPERATION_FAILED` 失败，不入队。
+目标播放列表已锁定时以 `LOCKED` 失败，不执行添加与入队。若同时指定 `playlist` 与 `playlistGuid`，或 GUID 格式无效，以 `INVALID_PARAMS` 失败；目标列表不存在时以 `NOT_FOUND` 失败。解析路径后重新定位目标播放列表：若期间列表被移动，曲目仍将追加至该列表并返回更新后的 `playlist` 索引；若期间列表被删除，调用以 `OPERATION_FAILED` 失败且不入队。
 
 返回值带 `addedCount`（追加并入队的曲目数）、`invalidCount`（`paths` 里没有解析出曲目的条数，含超长条目）、`playlist`（曲目被追加到的播放列表）和 `queueCount`。
 
@@ -145,7 +145,7 @@ const result = await fb.queue.flush();
 
 签名：`fb.queue.get(): Promise<QueueGetResponse>`
 
-按播放顺序读取整个播放队列，不分页，返回 `{ items, count }`。每个 `QueueItem` 是共享的 `Track` 曲目行，加上 `queueIndex`（在队列中的位置，从 `0` 起），以及 `playlist`、`playlistGuid` 和 `playlistItem`（条目入队时所在的播放列表位置）。没有记下位置，或者记下的位置上已不是这首曲目时，三者都为 `null`：它是按路径入队的，或者之后行或列表被删、被挪动过。
+按播放顺序读取待播队列的全量数据（不执行分页），返回 `{ items, count }`。每个 `QueueItem` 包含共享的 `Track` 曲目属性、当前队列索引 `queueIndex`（从 `0` 开始），以及关联的播放列表信息（`playlist`、`playlistGuid` 和 `playlistItem`）。若条目通过路径直接入队，或入队后所引用的行或播放列表被删除、移动，上述播放列表关联字段将返回 `null`。
 
 ```javascript
 const queue = await fb.queue.get();

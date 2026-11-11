@@ -7,12 +7,13 @@ The `discovery` namespace provides methods to enumerate services registered in t
 ### discovery.executeContextMenuByPath
 
 <!-- api-schema:begin discovery.executeContextMenuByPath -->
-Run a context-menu command addressed by its slash-separated label path, such as `Playback Statistics/Rating/5`. Each segment must match one label exactly after normalization (mnemonic `&`, trailing ellipsis, accelerator text and ASCII case are ignored). A path matching several commands is refused with `INVALID_PARAMS` and the candidates listed; one matching none is `NOT_FOUND`.
+Run a context-menu command addressed by its slash-separated label path, such as `Playback Statistics/Rating/5`. Each segment must match one label exactly after normalization (mnemonic `&`, trailing ellipsis, accelerator text and ASCII case are ignored). A path matching several commands is refused with `INVALID_PARAMS` and the candidates listed; one matching none is `NOT_FOUND`. Giving both `trackPath` and a `target` other than `auto` is `INVALID_PARAMS`.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `path` | `string` | Yes | Slash-separated label path of the command, such as `Playback Statistics/Rating/5`. Must not be empty. |
 | `trackPath` | `string` | No | Run against this track instead of the current target. A `\|subsong:N` suffix selects a subsong; without one the first subsong of the file is used. |
+| `target` | `"auto" \| "selection" \| "nowPlaying" \| "playlistSelection"` | No | Which tracks the command runs against when `trackPath` is absent. Default: `"auto"`. |
 
 **Returns**
 
@@ -36,12 +37,13 @@ Matching is never a substring test, so `Rating/1` cannot resolve to `Rating/10`.
 ### discovery.executeContextMenuCommand
 
 <!-- api-schema:begin discovery.executeContextMenuCommand -->
-Run a context-menu command by GUID against the playing track, or the active playlist selection when nothing is playing. A command the host would never draw (`FORCE_OFF`) is refused with `NOT_SUPPORTED` unless `force` is set; no target at all is `NO_ACTIVE_ITEM`.
+Run a context-menu command by GUID against the tracks `target` names; by default the playing track, or the active playlist selection when nothing is playing. A command the host would never draw (`FORCE_OFF`) is refused with `NOT_SUPPORTED` unless `force` is set; no target at all is `NO_ACTIVE_ITEM`.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `guid` | `string` | Yes | Command GUID in `{...}` form, as `discovery.getContextMenuCommands` reports it. Must not be empty. |
 | `force` | `boolean` | No | Dispatch even a command the host would never draw. Default: `false`. |
+| `target` | `"auto" \| "selection" \| "nowPlaying" \| "playlistSelection"` | No | Which tracks the command runs against. Default: `"auto"`. |
 
 **Returns**
 
@@ -59,7 +61,7 @@ Run a context-menu command by GUID against the playing track, or the active play
 
 A `FORCE_OFF` command is refused rather than dispatched: the SDK treats that state as keyboard-shortcut only, so the host never renders it and running it would perform an action unavailable in the UI. The refusal fails with `NOT_SUPPORTED` and carries `hidden: true`, `name`, `resolved`, and `force`. `DEFAULT_OFF` commands (hidden unless Shift is held) remain reachable and are never refused. A GUID that no registered item owns fails with `NOT_FOUND` and `resolved: false`.
 
-Both the refusal and success paths return `hidden` and `resolved`, distinguishing successful execution from builds that omit the field.
+The refusal and the success response both carry `hidden` and `resolved`, so their absence means that the build does not report these fields.
 
 ```js
 const res = await fb2k.invoke('discovery.getContextMenuCommands');
@@ -496,9 +498,9 @@ const { results } = res;
 ## Discovery scope and execution rules
 
 - Results enumerate services registered in the current foobar2000 process; counts and names vary with installed components and host configuration.
-- `discovery.executeMainMenuCommand` and `discovery.executeContextMenuCommand` require a well-formed GUID; a malformed one fails with `INVALID_PARAMS`, and a GUID that no command owns fails with `NOT_FOUND`. A context command applies to the now-playing item when available, otherwise to the active playlist selection; with neither it fails with `NO_ACTIVE_ITEM`.
+- `discovery.executeMainMenuCommand` and `discovery.executeContextMenuCommand` require a well-formed GUID; a malformed one fails with `INVALID_PARAMS`, and a GUID that no command owns fails with `NOT_FOUND`. A context command applies to the tracks `target` names: by default the now-playing item when available, otherwise the active playlist selection; `selection`, `nowPlaying` and `playlistSelection` pick one source. With no track there it fails with `NO_ACTIVE_ITEM`.
 - Components that build their main-menu subtree at runtime (`mainmenu_commands_v2`, for example ESLyric) are expanded by `discovery.getMainMenuCommands` and `discovery.searchCommands`. Expanded entries are identified by `guid` plus `subGuid`, and `discovery.executeMainMenuCommand` dispatches them through the dynamic execution path when `subGuid` is supplied.
 - Dynamic submenus are a snapshot of the moment the call is made: their contents can depend on the current track, selection, or component state.
-- `discovery.executeContextMenuByPath` requires `path`; optional `trackPath` is subject to media-read security. Without it, the runtime uses the same now-playing/selection fallback.
+- `discovery.executeContextMenuByPath` requires `path`; optional `trackPath` is subject to media-read security. Without it, `target` picks the tracks as for `executeContextMenuCommand`; giving both `trackPath` and a `target` other than `auto` fails with `INVALID_PARAMS`.
 - `discovery.getContextMenuTree` provides diagnostic output and requires an active target item. Recursion depth and per-node child counts are both bounded, and any clipping is reported through `truncated` / `depthExceeded` / `childrenExceeded` rather than left silent; applied limits are returned in `maxDepth` and `maxChildrenPerNode`.
 - `discovery.searchCommands` requires a non-empty `query` and performs a case-insensitive match over command names, descriptions, and menu paths across both the main menu and the context menu. Case folding is ASCII-only, so UTF-8 multi-byte sequences pass through unchanged. `scope` accepts only `all`, `mainmenu`, and `contextmenu`; any other value fails with `INVALID_PARAMS`.

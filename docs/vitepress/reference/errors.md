@@ -59,7 +59,7 @@ Invalid requests or unknown methods are rejected by BridgeCore before a handler 
 
 ### Timeouts
 
-`fb2k.invoke()` waits 30 seconds for an answer. Then it rejects with an `Error` whose `code` is `TIMEOUT`. The host may still be running the call, or may have finished it, and the late answer is dropped, so treat the outcome as unknown. See [operation results](./bridge.md#operation-results).
+`fb2k.invoke()` waits up to 30 seconds for a response, then rejects with an `Error` whose `code` is `TIMEOUT`. The host may still be executing the operation or may have already completed it; late responses are dropped, so callers should treat the outcome as unknown. See [operation results](./bridge.md#operation-results).
 
 ## Standard error codes (`ApiErrorCode`)
 
@@ -75,7 +75,7 @@ Invalid requests or unknown methods are rejected by BridgeCore before a handler 
 
 | Code | Meaning |
 | --- | --- |
-| `REQUIRED_PARAM` | A required parameter is missing. Returned by legacy endpoint `audio.cancelFullWaveform`; other endpoints report missing parameters as `INVALID_PARAMS` (with the missing parameter named in the message) |
+| `REQUIRED_PARAM` | A required parameter is missing. No method currently returns it: a missing parameter fails with `INVALID_PARAMS` and the message `<name> is required` |
 | `INVALID_PARAMS` | A parameter value is invalid |
 | `INVALID_INDEX` | An index is out of range |
 
@@ -124,12 +124,12 @@ Invalid requests or unknown methods are rejected by BridgeCore before a handler 
 
 ### Menu and port
 
-Specialized error codes for menu command invocation and inter-component port messaging:
+Specialized error codes for menu command invocation and inter-component port messaging. They were published before the shared codes above and are kept as they are:
 
 | Code | Meaning |
 | --- | --- |
 | `MENU_ITEM_DISABLED` | The menu command exists but is disabled (`menu.runMainMenuCommand`) |
-| `MENU_MATCH_AMBIGUOUS` | A command name or path matched several commands; the failure lists them in `candidates` (`menu.runMainMenuCommand`) |
+| `MENU_MATCH_AMBIGUOUS` | A command name or path matched several commands; the failure lists them in `details.candidates` (`menu.runMainMenuCommand`) |
 | `MENU_COMMAND_NOT_FOUND` | No menu command has that name or path (`menu.runMainMenuCommand`, `menu.runContextCommand`) |
 | `PORT_NOT_FOUND` | No open port has that id (`port.disconnect`, `port.postMessage`, `port.postMessageTo`) |
 | `TARGET_NOT_FOUND` | The target port of `port.postMessageTo` does not exist |
@@ -168,6 +168,6 @@ fb2k.on('http:response', (data) => {
 ## Compatibility notes
 
 - Synchronous API failure responses consistently provide `success: false` and a human-readable `error` description.
-- Machine-readable `code` fields cover all standard error categories; consumers should branch on `code` rather than parsing error message strings.
+- Machine-readable `code` fields cover all standard error categories; consumers should branch on `code` rather than parsing error message strings, and treat `code` as optional when reading payloads from older hosts.
 - Artwork endpoints provide an additional `available` boolean field indicating cover image presence.
 - Both framework-level rejections and unhandled handler exceptions are packaged into standard error envelopes.

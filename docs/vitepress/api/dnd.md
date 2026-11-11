@@ -16,11 +16,9 @@ calls, so pages track the cursor with the HTML5 `dragover` event instead.
 
 **A page accepts a drop the HTML5 way**, by calling `preventDefault()` in `dragover`
 over the element that takes it. Where no handler does, the host refuses the drop on
-the page's behalf: the cursor shows "forbidden", releasing there drops nothing and
-sends no `dnd:drop`, and the browser does not open the dropped file by itself. Text
-fields keep their default text drop. For the first half second after a drag enters
-the window, before the page has answered, the cursor shows "copy", so it does not
-flicker on the way in; a drop released in that time is delivered.
+the page's behalf: the cursor shows "forbidden", the drop is rejected, no `dnd:drop`
+event is emitted, and the browser is prevented from opening the file. Text
+fields keep their default text drop. During the first 500 ms after entering the window, the cursor defaults to "copy" before the page responds, preventing cursor flicker; drops released during this interval are delivered normally.
 
 `dnd:enter`, `dnd:drop` and `dnd.getPathsAsync` report the drag's `source`:
 `self` when it started in this window's page, `other-window` when it started in
@@ -167,17 +165,13 @@ if it has not expired.
 **A refusal at drag start is reported on `dnd:dragEnded`** with
 `{ result: 'failed', code, error }`: `PERMISSION_DENIED` (token unknown, expired,
 spent, superseded or from another window), `INVALID_PARAMS` (`effectAllowed` was
-not `'copy'`), `OPERATION_FAILED` (the file list could not be attached). A refusal
-does not cancel the drag: the host blanks the token text and lets the drag go on as
-an ordinary page drag without files, so a drop inside the page, such as an album
-onto a playlist, still works. Only if the token text cannot be blanked is the drag
-cancelled. The event is
+not `'copy'`), `OPERATION_FAILED` (the file list could not be attached). A refusal does not cancel the drag: the host clears the token string and falls back to a plain web drag without files, allowing intra-page drops (such as dragging an album onto a playlist) to proceed; the drag is aborted only if the token string cannot be cleared. The event is
 **not** a completion notice: when the host accepts the token no event follows, the
 drag runs like any page drag with the browser's drag image, and the outcome is in
 the element's own `dragend` (`dataTransfer.dropEffect` is `'copy'` when a target
 took the files, `'none'` when cancelled or refused). While the drag is in progress
 the host window waits for the drop target exactly as it does for a plain HTML5
-drag. Drags without the token prefix are untouched and never produce
+drag. Drags without the token prefix continue normally and do not emit
 `dnd:dragEnded`.
 
 What lands is always a physical file: a track inside a cue sheet or multi-track
@@ -188,7 +182,7 @@ Error codes: `NOT_FOUND` (calling window has no drag-drop registration),
 `ORIGIN_DENIED` (origin not trusted; reported after shape errors and before any path is looked at),
 `NOT_SUPPORTED` (`dragOut` is `false`), `INVALID_PARAMS` (`paths` missing, empty
 or not all strings), `INVALID_PATH` (an entry has no local file behind it;
-`paths[i]` indexes the array you passed), `PERMISSION_DENIED` (an entry refused by
+`paths[i]` indexes the supplied array), `PERMISSION_DENIED` (an entry refused by
 path security; `paths[i]` indexes the normalised, de-duplicated list),
 `OPERATION_FAILED` (a token could not be created). Messages never contain a path.
 Handler failures resolve with an error envelope; transport failures can still reject.
@@ -223,9 +217,11 @@ This method takes no parameters.
 `success` is `true` on success. On failure the response is `{ success: false, error, code }`; see [Error codes](../reference/errors.md) for `code`.
 <!-- api-schema:end -->
 
-This endpoint does not start a drag. The host handler resolves with
-`{ success: false, code: 'NOT_SUPPORTED' }`; test `success`, since this error
-does not reject the promise. Transport failures can still reject. Use `dnd.prepareDrag`.
+::: tip Drag Out Delegation
+Drag out functionality is provided by `dnd.prepareDrag`. This method returns `{ success: false, code: 'NOT_SUPPORTED' }`.
+
+The Promise resolves to this error envelope rather than rejecting — the host delivers handler-level errors as normal responses, so check `res.success` explicitly. Transport failures can still reject.
+:::
 
 ```js
 const r = await fb2k.invoke('dnd.startDrag'); // resolves: { success: false, code: 'NOT_SUPPORTED' }

@@ -8,7 +8,7 @@
 
 - **延迟补偿与阶梯推进**：`playback.getPosition`、`playback:timeHighRes` 与 `playback:stateChanged` 报告的播放位置均已扣除输出缓冲与 DSP 延迟，同步歌词或音视频时**无需重复扣减**。底层音频引擎的读数呈阶梯式更新（通常每 10–30 ms 前进一步），此更新步长不同于 `playback:timeHighRes` 约每 100 ms 派发一次的广播频率。
 - **采样基准与时间外推**：`hostTime` 记录宿主读取位置的系统时间（Unix 毫秒，与前端 `Date.now()` 同源）。两次采样之间可通过 `hostTime` 线性外推估算位置，但无法消除起播、跳转、恢复播放或交叉渐变时的瞬态停滞与跳变；视频同步推荐使用 SDK 的 [MediaElementFollower](../sdk/media.md)。
-- **时间事件判据**：`playback:time` 仅提供粗粒度的显示用位置（约每秒一次），不包含采样时间戳。`playback:seeked.position` 与 `playback.setPosition` 返回的 `actualPosition` 为设定的跳转目标；跳转后瞬时采集到的 `newPosition` 或收到的 `playback:timeHighRes` 因处于引擎稳定期，读数仍可能为旧位置。
+- **时间事件判据**：`playback:time` 仅提供粗粒度的显示用位置（约每秒一次），不包含采样时间戳。`playback:seeked.position` 与 `playback.setPosition` 返回的 `actualPosition` 为设定的跳转目标；定位后立即采样得到的 `newPosition` 仍可能是旧位置。
 
 ## playback
 
@@ -199,7 +199,7 @@ const result = await fb2k.invoke('playback.getVolume');
 ### playback.mute
 
 <!-- api-schema:begin playback.mute -->
-静音或取消静音；要求的状态已经生效时什么也不做。取消静音恢复静音前的音量。
+静音或取消静音；目标状态已生效时静默忽略。解除静音恢复先前的音量。
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
@@ -233,7 +233,7 @@ const result = await fb2k.invoke('playback.next');
 ### playback.pause
 
 <!-- api-schema:begin playback.pause -->
-暂停播放；停止状态下什么也不做。
+暂停播放；停止状态下静默忽略。
 
 无参数。
 
@@ -306,7 +306,7 @@ const result = await fb2k.invoke('playback.playOrPause');
 await fb2k.invoke('playback.playPath', { path: 'C:\\Music\\song.flac' });
 ```
 
-用 `path|subsong:N` 形式可以指定 CUE 中的某个子曲目。handler 会先把文件路径和可选的 subsong 后缀拆开，再开始播放。
+支持以 `path|subsong:N` 格式指定 CUE 关联文件中的具体子曲目。后端将自动解析文件路径与子曲目序号后起播。
 
 ### playback.playPaths
 
@@ -324,7 +324,7 @@ await fb2k.invoke('playback.playPath', { path: 'C:\\Music\\song.flac' });
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
 | `tracksAdded` | `integer` | 加入播放列表的曲目数。 |
-| `startedAt` | `integer` | 传入的 `startIndex` 原样回显；它超出范围、实际从第一首起播时也是如此。 |
+| `startedAt` | `integer` | 回显传入的 `startIndex`；即使索引超出范围且实际从首曲起播，仍回显原始传入值。 |
 | `skippedPaths` | `integer` | 调用前被路径安全检查丢弃的路径数；只在至少丢弃一条时出现。 |
 
 成功时 `success` 为 `true`；失败时返回 `{ success: false, error, code }`，`code` 见[错误码](../reference/errors.md)。
@@ -406,7 +406,7 @@ const result = await fb2k.invoke('playback.random');
 成功时 `success` 为 `true`；失败时返回 `{ success: false, error, code }`，`code` 见[错误码](../reference/errors.md)。
 <!-- api-schema:end -->
 
-`order`（序号）与 `name`（名称）必须恰好给一个；序号 `0` default、`1` repeat-playlist、`2` repeat-track、`3` random、`4` shuffle-tracks、`5` shuffle-albums、`6` shuffle-folders。序号越界、名称不存在、两个键同时给或都不给，都以 `INVALID_PARAMS` 拒绝且顺序不变。响应报告调用后生效的顺序，不是回显输入。
+`order`（索引）与 `name`（名称）参数二者必选其一。有效模式包括：`0`（default）、`1`（repeat-playlist）、`2`（repeat-track）、`3`（random）、`4`（shuffle-tracks）、`5`（shuffle-albums）、`6`（shuffle-folders）。索引越界、名称无效、同时传入或均未传入时，调用以 `INVALID_PARAMS` 失败且维持当前播放顺序。返回值中的 `order` 与 `name` 反映操作执行后生效的实际播放顺序。
 
 ```js
 await fb2k.invoke('playback.setPlaybackOrder', { name: 'random' });
@@ -415,7 +415,7 @@ await fb2k.invoke('playback.setPlaybackOrder', { name: 'random' });
 ### playback.setPosition
 
 <!-- api-schema:begin playback.setPosition -->
-在当前曲目内定位，播放中或暂停中均可。位置会被夹到曲目范围内：负数定位到开头，超过时长的值停在结尾稍前，免得跳到下一首；时长未知的曲目没有上限。没在播放时以 `NO_ACTIVE_ITEM` 失败，不能定位的曲目（大多数网络流）以 `NOT_SUPPORTED` 失败。
+在当前播放或暂停的曲目内定位。目标位置自动钳位至曲目有效区间：负值重置至起点，超出时长时钳位至结尾前临界点以避免切歌；未知时长的曲目不设上限。没有正在播放的曲目时以 `NO_ACTIVE_ITEM` 失败，不能定位的曲目（如大多数网络流）以 `NOT_SUPPORTED` 失败
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
@@ -425,8 +425,8 @@ await fb2k.invoke('playback.setPlaybackOrder', { name: 'random' });
 
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
-| `requestedPosition` | `number` | 请求的位置，未夹取。 |
-| `actualPosition` | `number` | 夹到曲目范围内后交给宿主的位置。 |
+| `requestedPosition` | `number` | 原始请求的目标位置（钳位前） |
+| `actualPosition` | `number` | 钳位至曲目有效区间后实际应用的目标位置 |
 | `oldPosition` | `number` | 定位前读到的位置，单位秒，与 `playback.getPosition` 一样已补偿输出延迟。 |
 | `newPosition` | `number` | 定位后立即读到的位置，单位秒，与 `playback.getPosition` 一样已补偿输出延迟；引擎可能尚未稳定，因此仍可能是旧位置。 |
 | `hostTime` | `number` | 读 `newPosition` 时宿主的系统时间，Unix 纪元毫秒，带小数，与 `Date.now()` 是同一个时钟。 |
@@ -465,11 +465,11 @@ await fb2k.invoke('playback.setStopAfterCurrent', { enabled: true });
 ### playback.setVolume
 
 <!-- api-schema:begin playback.setVolume -->
-按百分比设置输出音量；超出 `0` 到 `100` 的值被夹到范围内。`0` 即静音。
+按百分比设置输出音量。有效范围 0..100，超出自动钳位；`0` 表示静音
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
-| `volume` | `number` | 是 | 音量百分比；夹到 `0` 到 `100`。 |
+| `volume` | `number` | 是 | 音量百分比；有效范围 0..100，超出自动钳位 |
 
 **返回值**
 

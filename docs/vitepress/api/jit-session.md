@@ -1,6 +1,6 @@
 # JIT Session API
 
-Provides explicit JIT playback sessions with lease control, supporting hybrid queue scheduling, native playback adoption, and dynamic entry prefetching.
+Methods of the `jitSession` namespace: an explicit session for a coordinator that decides the play order itself, such as a queue mixing local files and online tracks. The host plays the current entry and the one buffered after it; the coordinator maintains the full queue.
 
 ::: warning Experimental
 The methods of this namespace may still change. `jitQueue` stays as it is; the two share the host's execution, and a `jitQueue` call made during a session takes the session over.
@@ -110,13 +110,13 @@ Read a consistent snapshot of a session. The snapshot never contains the control
 | `state.phase` | `"active" \| "stopped" \| "released"` | `active` while the session runs playback, `stopped` after a stop, `released` after `jitSession.release` or a `jitQueue` takeover; a takeover while an adopted native context is open leaves it `stopped`. |
 | `state.phaseReason` | `"user" \| "command" \| "external" \| "legacyTakeover" \| null` | Why the session last stopped or was released, or null. |
 | `state.current` | `JitSessionAttempt \| null` | The current attempt, or null. |
-| `state.current.entryId` | `string` | Caller's entry identifier. |
+| `state.current.entryId` | `string` | Caller-provided entry identifier. |
 | `state.current.attemptId` | `string` | Host's identifier of this attempt; a replay of the same entry gets a new one. |
 | `state.current.title` | `string` | Display title. |
 | `state.current.status` | `"preparing" \| "playing" \| "ended"` | `preparing` until playback starts, then `playing`; `ended` once the attempt finished. |
 | `state.current.nativeRef` | `string` | The native reference the entry plays, for an adopted current track or a native supply; absent for a location. |
 | `state.next` | `JitSessionNextEntry \| null` | The next entry, or null. |
-| `state.next.entryId` | `string` | Caller's entry identifier. |
+| `state.next.entryId` | `string` | Caller-provided entry identifier. |
 | `state.next.title` | `string` | Display title. |
 | `state.next.operationId` | `string` | Operation adding it to the buffer. |
 | `state.next.nativeRef` | `string` | The native reference the entry plays, for a native supply; absent for a location. |
@@ -543,13 +543,13 @@ Sent to the page that owns the subscription or task.
 | `state.phase` | `"active" \| "stopped" \| "released"` | `active` while the session runs playback, `stopped` after a stop, `released` after `jitSession.release` or a `jitQueue` takeover; a takeover while an adopted native context is open leaves it `stopped`. |
 | `state.phaseReason` | `"user" \| "command" \| "external" \| "legacyTakeover" \| null` | Why the session last stopped or was released, or null. |
 | `state.current` | `JitSessionAttempt \| null` | The current attempt, or null. |
-| `state.current.entryId` | `string` | Caller's entry identifier. |
+| `state.current.entryId` | `string` | Caller-provided entry identifier. |
 | `state.current.attemptId` | `string` | Host's identifier of this attempt; a replay of the same entry gets a new one. |
 | `state.current.title` | `string` | Display title. |
 | `state.current.status` | `"preparing" \| "playing" \| "ended"` | `preparing` until playback starts, then `playing`; `ended` once the attempt finished. |
 | `state.current.nativeRef` | `string` | The native reference the entry plays, for an adopted current track or a native supply; absent for a location. |
 | `state.next` | `JitSessionNextEntry \| null` | The next entry, or null. |
-| `state.next.entryId` | `string` | Caller's entry identifier. |
+| `state.next.entryId` | `string` | Caller-provided entry identifier. |
 | `state.next.title` | `string` | Display title. |
 | `state.next.operationId` | `string` | Operation adding it to the buffer. |
 | `state.next.nativeRef` | `string` | The native reference the entry plays, for a native supply; absent for a location. |

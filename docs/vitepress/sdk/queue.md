@@ -1,6 +1,6 @@
 # fb.queue Playback Queue
 
-`fb.queue` manages the foobar2000 playback queue. It is distinct from the just-in-time queue exposed as `fb.jitQueue`.
+`fb.queue` manages foobar2000's native playback queue (independent of the just-in-time queue exposed by `fb.jitQueue`).
 
 ## setContents(items)
 
@@ -10,7 +10,7 @@ Replaces the entire queue with an ordered list of `QueueContentRef` entries — 
 | --- | --- | --- |
 | `items` | `QueueContentRef[]` | Ordered list of queue-slot or playlist-item references |
 
-Any entry with an unrecognized shape fails the whole call before anything is written — unlike `fb.queue.add`, which skips out-of-range entries individually. Passing `[]` clears the queue, equivalent to `fb.queue.clear()`.
+Any entry with an unrecognized shape causes the entire call to be rejected before anything is written (unlike `fb.queue.add`, which skips invalid indices individually). Passing an empty array `[]` clears the queue, equivalent to calling `fb.queue.clear()`.
 
 Call this once when the user releases a drag-to-reorder gesture, not on every intermediate frame: each call flushes and rebuilds the whole queue.
 
@@ -28,7 +28,7 @@ Inserts tracks so they play next, ahead of everything already queued. Each entry
 | `entries` | `Array<string \| QueueListRef>` | File paths or URLs (optionally with a `\|subsong:N` suffix), playlist positions, or a mix |
 | `position` | `number?` | Insertion index after any moved entries are removed; defaults to `0` |
 
-New path entries have no playlist position, so the playback cursor cannot follow that track's position; moving an existing entry by path preserves its usable coordinate. Pass a `QueueListRef` to select a particular playlist position. A mixed array is split by type: coordinates first, paths second, with each block keeping its order. For distinct tracks, `[p1, I1, p2]` queues as `I1, p1, p2`; use `setContents` afterwards if the exact interleaving matters. All entries deduplicate by track. For duplicate coordinates, the first supplied coordinate already present in the queue is retained, or the first supplied coordinate if none matches. The track keeps its first-occurrence order within the input block.
+New path entries are not associated with playlist positions, so the playback cursor cannot follow that track's position; moving an existing entry by path preserves its valid playlist coordinate. Pass a `QueueListRef` to retain playlist context. Mixed arrays are partitioned by type: playlist coordinates are processed in the first block and paths in the second, each preserving its input order. For distinct tracks, the sequence `[p1, I1, p2]` queues as `[I1, p1, p2]`; call `setContents()` afterwards if exact interleaving is required. Entries deduplicate by track identity; for duplicate coordinates, the first coordinate already present in the queue is retained, falling back to the first supplied coordinate. Each track preserves the position of its first occurrence within its block.
 
 The response separates `insertedCount` (new tracks) and `movedCount` (relocated existing entries). `invalidCount` is the input path count minus the resolved track count, floored at zero; folder or container expansion can offset failed paths, so it is not an exact failure count. One bad position entry fails the whole call before anything is written.
 
@@ -57,13 +57,13 @@ await fb.queue.playNow(2); // promote and play the 3rd entry
 
 ## remove(target)
 
-Removes queue entries: one position, sent as the host's `index`, or an array of positions, sent as `indices` and removed in one call.
+Removes queue entries: pass a single number to remove by `index`, or an array of numbers to remove multiple entries by `indices` in one call.
 
 | Parameter | Type | Description |
 | --- | --- | --- |
 | `target` | `number \| number[]` | A queue position, or an array of queue positions |
 
-With an array, duplicate and out-of-range positions are skipped and the response reports `removedCount`; with a single position it reports `removedIndex`. Both report `queueCount`, the queue length afterwards. The call fails with `INVALID_INDEX` when no given position is in range. Removing an array in one call avoids the index shift that removing the same positions one by one would cause.
+When an array is supplied, duplicate and out-of-range positions are skipped and the response reports `removedCount`; with a single position it reports `removedIndex`. Both forms return the updated queue length as `queueCount`. If all specified positions are out of range, the call fails with `INVALID_INDEX`. Removing entries in batch via an array avoids index drift caused by sequential removals.
 
 ```javascript
 const one = await fb.queue.remove(0);
@@ -84,9 +84,9 @@ Signature: `fb.queue.add(opts: QueueAddParams): Promise<QueueAddResponse>`
 | `opts.playlist` | `number` | No | Playlist the rows belong to; the active playlist when omitted |
 | `opts.playlistGuid` | `string` | No | The playlist's `guid` from `playlist.getAll`, in place of `playlist` |
 | `opts.tracks` | `number[]` | No | Rows to queue, in order; takes precedence over `track` |
-| `opts.track` | `number` | No | A single row to queue; read only when `tracks` is absent |
+| `opts.track` | `number` | No | A single row to queue; read only when `tracks` is omitted |
 
-Queues one or more playlist rows by position. Rows past the last one are skipped; when none is in range the call fails with `INVALID_INDEX`, and a negative row fails with `INVALID_PARAMS`. A `playlist` index past the last playlist fails with `INVALID_INDEX`; with `playlist` omitted and no active playlist the call fails with `NO_ACTIVE_ITEM`. Giving both `playlist` and `playlistGuid`, or a malformed GUID, fails with `INVALID_PARAMS`, and a playlist that no longer exists fails with `NOT_FOUND`.
+Queues one or more playlist rows by position. Rows past the last one are skipped; when none is in range the call fails with `INVALID_INDEX`, and a negative row fails with `INVALID_PARAMS`. A `playlist` index past the last playlist fails with `INVALID_INDEX`; with `playlist` omitted and no active playlist the call fails with `NO_ACTIVE_ITEM`. Providing both `playlist` and `playlistGuid`, or a malformed GUID, fails with `INVALID_PARAMS`, and a playlist that no longer exists fails with `NOT_FOUND`.
 
 The response carries `addedCount`, the number of rows queued, and `queueCount`, the queue length afterwards.
 
@@ -109,7 +109,7 @@ Signature: `fb.queue.addPaths(paths: string[], opts?: Omit<QueueAddPathsParams, 
 
 Queues tracks by path or URL. A queue entry needs playlist membership, so the paths are appended to a playlist first: by default the dedicated `[WebView Queue]` playlist. Each path or URL is limited to 2048 characters; longer entries are skipped and counted in `invalidCount`.
 
-A locked target playlist fails with `LOCKED`, and nothing is added or queued. Giving both `playlist` and `playlistGuid`, or a malformed GUID, fails with `INVALID_PARAMS`; a playlist that no longer exists fails with `NOT_FOUND`. The target is looked up again after the paths are resolved: if it moved in the meantime it still gets the tracks and `playlist` in the response is its new index; if it was removed, the call fails with `OPERATION_FAILED` and nothing is queued.
+A locked target playlist fails with `LOCKED`, and nothing is added or queued. Providing both `playlist` and `playlistGuid`, or a malformed GUID, fails with `INVALID_PARAMS`; a playlist that no longer exists fails with `NOT_FOUND`. The target is looked up again after the paths are resolved: if it moved in the meantime it still gets the tracks and `playlist` in the response is its new index; if it was removed, the call fails with `OPERATION_FAILED` and nothing is queued.
 
 The response carries `addedCount` (tracks appended and queued), `invalidCount` (entries of `paths` that produced no track, over-length ones included), `playlist` (the playlist the tracks went to), and `queueCount`.
 
@@ -145,7 +145,7 @@ const result = await fb.queue.flush();
 
 Signature: `fb.queue.get(): Promise<QueueGetResponse>`
 
-Reads the whole queue in play order, without paging, and returns `{ items, count }`. Each `QueueItem` is the shared `Track` row plus `queueIndex`, its position in the queue from `0`, and `playlist`, `playlistGuid` and `playlistItem`, the playlist position the entry was queued from. All three are `null` when the entry has no recorded position that still holds its track: it was queued by path, or rows or the playlist were removed or moved since.
+Reads the entire queue in playback order without pagination, returning `{ items, count }`. Each `QueueItem` contains shared `Track` attributes, the queue index `queueIndex` (0-based), and associated playlist coordinates (`playlist`, `playlistGuid`, and `playlistItem`). All three are `null` when the entry has no recorded position that still holds its track: it was queued by path, or its rows or playlist have since been removed or moved.
 
 ```javascript
 const queue = await fb.queue.get();

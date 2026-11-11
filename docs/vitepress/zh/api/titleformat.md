@@ -141,7 +141,7 @@ const r = await fb2k.invoke('titleformat.evalFields', {
 成功时 `success` 为 `true`；失败时返回 `{ success: false, error, code }`，`code` 见[错误码](../reference/errors.md)。
 <!-- api-schema:end -->
 
-内部合并所有字段为单次调用，处理 100 条路径 × 10 个字段仅需 100 次 `format_title()` 调用。
+宿主将所有字段合并为一次格式化调用：100 个路径 × 10 个字段只需执行 100 次 `format_title()`。
 
 响应示例：
 
@@ -192,7 +192,7 @@ const r = await fb2k.invoke('titleformat.evalFields', {
 }
 ```
 
-::: tip
+::: tip 表达式编译缓存
 完整字段列表包含标准标签、技术信息、文件信息、foo_playcount 字段和常用组合模式。
 :::
 

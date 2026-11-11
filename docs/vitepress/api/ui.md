@@ -40,6 +40,10 @@ Open the main window's own context menu. Coordinates that are omitted, not posit
 await fb2k.invoke('ui.showContextMenu');
 ```
 
+::: tip Automatic Coordinate Correction
+When supplied coordinates deviate by more than 50 pixels from the physical cursor position, the host automatically snaps to the current system cursor position, ensuring accurate positioning across multi-monitor setups and high-DPI scaling.
+:::
+
 ### ui.showCustomMenu
 
 <!-- api-schema:begin ui.showCustomMenu -->
@@ -130,6 +134,10 @@ Ask the calling window's page to show a toast: nothing is painted natively, the 
 ```js
 await fb2k.invoke('ui.showToast', { message: 'Playlist saved', type: 'success' });
 ```
+
+::: tip Frontend Rendering Model
+`ui.showToast` does not draw UI natively in C++. Instead, it dispatches a `ui:toast` event directed to the calling window; the frontend listens for this event and renders the toast using the active theme's UI component for consistent visuals.
+:::
 
 ## Interaction delivery and limitations
 

@@ -128,7 +128,7 @@ A task that fails sends one `audio:pcmFailed` (`{ taskId, path, code, error }`) 
 
 The buffer starts with a 64-byte little-endian header followed by float32 samples, one run of `capacityFrames` samples per channel: sample `i` of channel `c` is at byte `64 + (c × capacityFrames + i) × 4`. `capacityFrames` is the u32 at byte 24 of the header; only the first `frames` samples of each run are audio (`frames` is also the u32 at byte 32).
 
-- The buffer is **read-only shared memory**. Writing to it crashes the page's renderer process, and with it the whole foobar2000 window. Copy the samples first, for example into an `AudioBuffer`, if you need to change them.
+- The buffer is **read-only shared memory**; do not write to it: writing crashes the page's renderer process, and with it the whole foobar2000 window. Copy the samples first (for example into an `AudioBuffer`) if modification is required.
 - Every listener of one `sharedbufferreceived` event gets the same `ArrayBuffer`. Call `chrome.webview.releaseBuffer(buffer)` once, after the last use; any access after that throws `TypeError`.
 - One buffer holds at most 256 MiB in 64-bit foobar2000 and 64 MiB in 32-bit. The host estimates the size from the track length before decoding, adding one second of slack, and rejects a larger request with `INVALID_PARAMS`, `details.estimatedBytes` and `details.limitBytes`. Five minutes of 44.1 kHz stereo take about 106 MB; lower `sampleRate`, set `mono` or decode shorter ranges to stay under the limit.
 - `truncated` is `true` when the audio ran past that estimate (the file is longer than its reported length) or its format changed partway, as in chained Ogg streams; the buffer holds the part before the cut.
@@ -164,7 +164,7 @@ Compute a waveform of a whole track. A cache hit answers `ready` with the wavefo
 | --- | --- | --- | --- |
 | `path` | `string` | Yes | Track path; a `\|subsong:N` suffix selects a subsong. Must not be empty. |
 | `cueIndex` | `integer` | No | Subsong index, 0-based; takes precedence over a subsong in `path`. At least `0`. |
-| `resolution` | `integer` | No | Number of points, clamped to 64 to 4096. A track is decoded once per resolution; the other options are computed from the cache. Default: `256`. |
+| `resolution` | `integer` | No | Waveform point resolution, clamped to 64..4096. Audio is decoded once per resolution; subsequent variations are computed from cache. Default: `256`. |
 | `method` | `"rms" \| "peak"` | No | How each point is taken. Default: `"rms"`. |
 | `scale` | `"linear" \| "db"` | No | Scale of the points: `linear`, or `db`, where 60 dB below the track's own maximum maps to 0. Ignored when `signed` is set. Default: `"linear"`. |
 | `signed` | `boolean` | No | Keep PCM polarity; points fall in `[-1, 1]`. Default: `false`. |
@@ -194,6 +194,15 @@ Compute a waveform of a whole track. A cache hit answers `ready` with the wavefo
 On a cache miss, requests for the same track and `resolution` that are already in flight share one decode; each keeps its own `taskId` and gets a ready event in its own shape. At most two tracks decode at once and the rest wait in submission order, which counts toward the caller's own timeout. Cancel a request that is no longer needed with `audio.cancelFullWaveform`. Every `taskId` gets exactly one terminal event, ready or failed (`code: "CANCELLED"` when cancelled); a cache hit answers synchronously without one. Requests from a popup that closes, or still pending when foobar2000 exits, are dropped without an event.
 
 Errors known at request time come back in the answer: `INVALID_PARAMS`, `INVALID_PATH` (the file cannot be found or read) and `OPERATION_FAILED` (foobar2000 is shutting down, or any other error). A decode that fails later ends with `audio:fullWaveformFailed`.
+
+::: tip Path and Fallback Semantics
+
+- The C++ layer parses `path|subsong:N`, canonicalizes the path, and uses that canonical path for `handle_create()`, decoding, and cache keys.
+- If both `cueIndex` and `path|subsong:N` are supplied, `cueIndex` takes precedence.
+- If cached metadata lacks `duration`, `samplerate`, or `channels`, the host attempts a direct file read before reporting failure.
+- **Normalization**: Values are normalized against the maximum value of the sequence (`rms` uses maximum window RMS, `peak` uses peak amplitude, `signed` uses absolute peak). This value is returned as `maxAmplitude`. For `linear`, absolute level is restored via `waveform[i] * maxAmplitude`; for `db`, dBFS = `(v * 60 - 60) + 20 * log10(maxAmplitude)`. A track is decoded only once per `resolution`; other combinations of `method`, `signed`, and `scale` are computed from cache.
+
+:::
 
 ```js
 // Minimal call: cache hit returns status 'ready', otherwise 'pending' + taskId
@@ -297,7 +306,7 @@ Compute one spectrum frame on demand. At least one spectrum subscription must ex
 | Field | Type | Description |
 | --- | --- | --- |
 | `subscriptionId` | `string` | Subscription the frame belongs to; absent when the request named none. |
-| `output` | `"bands" \| "bins"` | What the frame carries. |
+| `output` | `"bands" \| "bins"` | Output data format contained in this frame. |
 | `spectrum` | `number[]` | Band frames: one value per band in the frame's `scale`; `weighted` values lie in `[0, 1]`, `db` values have a floor of `-160`. Bin frames with `channels: 'mix'`: one power value in dB per bin. |
 | `left` | `number[]` | Bin frames with `channels: 'stereo'`: the first channel, one dB value per bin. |
 | `right` | `number[]` | Bin frames with `channels: 'stereo'`: the second channel, or the first again for a mono stream. |
@@ -442,7 +451,7 @@ Return the most recent `duration` seconds of the visualization stream, ending at
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `duration` | `number` | No | Window length in seconds, greater than 0. At most `1`. Default: `0.05`. |
-| `signed` | `boolean` | No | `true` keeps PCM polarity, clamped to `[-1, 1]`; `false` maps the magnitude from -70 to 0 dB onto `[0, 1]`. Default: `false`. |
+| `signed` | `boolean` | No | When `true`, preserves bipolar PCM waveform clamped to `[-1, 1]`; when `false`, maps magnitude from -70..0 dB to `[0, 1]`. Default: `false`. |
 | `channels` | `"mix" \| "stereo"` | No | `mix` averages the channels into `waveform`; `stereo` returns the first two channels as `left` and `right`. Default: `"mix"`. |
 | `points` | `integer` | No | Thin the window to this many evenly spaced samples, without averaging; every sample is returned when omitted. Between `2` and `65536` inclusive. |
 
@@ -461,6 +470,10 @@ Return the most recent `duration` seconds of the visualization stream, ending at
 
 `success` is `true` on success. On failure the response is `{ success: false, error, code }`; see [Error codes](../reference/errors.md) for `code`.
 <!-- api-schema:end -->
+
+::: warning Live Stream Only
+This API retrieves real-time waveform slices from the **currently playing stream**, not an offline waveform of the entire track. To generate an offline waveform for a full file, use `audio.generateFullWaveform`.
+:::
 
 - With one channel `right` equals `left`. Channels beyond the second are ignored, not mixed in. After `audio.setChannelMode` with `'mono'` the stream has one channel.
 - Within `duration` seconds of starting playback, a seek or a manual track change, the part of the window before the restart is zeros.
@@ -533,8 +546,8 @@ Subscribe to spectrum frames of the playing audio. Each subscription keeps its o
 | --- | --- | --- | --- |
 | `subscriptionId` | `string` | No | Key of the subscription; subscribing again with the same id replaces that subscription. When omitted, the key is derived from the calling window and `event`. Must not be empty. |
 | `fftSize` | `integer` | No | FFT size, a power of two; other values fail with `INVALID_PARAMS`. Band output raises it for 32 or more bands; bin output uses it as given. 65536 is this component's ceiling, not a foobar2000 limit, and costs about 1.5 s of PCM per frame. Between `256` and `65536` inclusive. Default: `1024`. |
-| `bands` | `integer` | No | Band output only: number of bands, clamped to 8 to `fftSize / 2`. Default: `48`. |
-| `fps` | `integer` | No | Frames per second, clamped to 1 to 60. Default: `30`. |
+| `bands` | `integer` | No | Band output only: number of bands, clamped to 8..`fftSize / 2`. Default: `48`. |
+| `fps` | `integer` | No | Frames per second, clamped to 1..60. Default: `30`. |
 | `scale` | `"weighted" \| "db"` | No | Band scale, `weighted` when omitted. With `output: 'bins'` omit it or pass `db`; anything else fails with `INVALID_PARAMS`. |
 | `output` | `"bands" \| "bins"` | No | What the frames carry; `bands` is ignored for bin output. Default: `"bands"`. |
 | `channels` | `"mix" \| "stereo"` | No | Bin output only; `stereo` with band output fails with `INVALID_PARAMS`. Default: `"mix"`. |
@@ -547,10 +560,10 @@ Subscribe to spectrum frames of the playing audio. Each subscription keeps its o
 
 | Field | Type | Description |
 | --- | --- | --- |
-| `subscriptionId` | `string` | The subscription's key, as given or derived. |
+| `subscriptionId` | `string` | Subscription identifier, as explicitly specified or derived by the host. |
 | `fftSize` | `integer` | Requested FFT size; frames report the size actually used. |
-| `bands` | `integer` | Band count after clamping. |
-| `fps` | `integer` | Frame rate after clamping. |
+| `bands` | `integer` | Effective band count after clamping. |
+| `fps` | `integer` | Effective frame rate after clamping. |
 | `scale` | `"weighted" \| "db"` | Scale in use; always `db` for bin output. |
 | `backgroundThrottle` | `boolean` | As requested. |
 | `minFrequency` | `number` | Lower edge of the range in Hz, as requested. |
@@ -591,7 +604,7 @@ With `output: 'bins'` each frame carries the FFT's linear bins without the band 
 - A value is `10 · log10(p) − 2.75` dB, where `p` is the bin's squared magnitude (`stereo`) or its mean over the channels (`mix`), rounded to 0.01 dB with a floor of `-160`. The powers of the bins a full-scale sine's main lobe covers sum to 0 dB, so adding bins as powers, `10 · log10(Σ 10^(v / 10))`, gives the `db` band value for the same range. The peak bin alone reads lower because foobar2000's FFT uses a Gaussian window, which spreads a sine over neighbouring bins: at 48 kHz and 8192 points a 0 dBFS 1 kHz sine reads -3.18 dB in its peak bin, with six bins within 40 dB of it.
 - Bin `k` (from 1; the DC bin is never sent) is included when its centre `k · sampleRate / fftSize` lies in `[minFrequency, maxFrequency)`. Pass a `minFrequency` below 20 to receive the lowest bins as well.
 - A silence frame keeps the length and `firstBin` of the subscription's previous frame, filled with `-160`; before any frame it is empty.
-- To choose the window function, zero-pad or use another transform, compute the spectrum yourself from the PCM of `audio.subscribeStream`; see [Computing a spectrum yourself](../sdk/audio.md#computing-a-spectrum-yourself).
+- For custom window functions, zero-padding, or alternative transforms, compute directly from `audio.subscribeStream` PCM; see [Custom spectrum calculation](../sdk/audio.md#computing-a-spectrum-yourself).
 
 Frames are JSON, about 7 bytes per value. Estimated sizes and pull round trips at 48 kHz over the default range, from JSON answers of the same size measured on one machine:
 
@@ -604,8 +617,20 @@ Frames are JSON, about 7 bytes per value. Estimated sizes and pull round trips a
 
 Most of this time is spent on foobar2000's main thread, so pick the frame rate by size. When one tick of pushed frames takes longer than the frame interval, every subscription skips the next tick.
 
+::: warning Sampling Size Limit
+`fftSize` must be a power of 2 between 256 and 65536; other values return an error. The upper limit of 65536 is enforced by the component rather than foobar2000. At 65536, each frame processes approximately 1.5 seconds of PCM, which is intended primarily for scenarios requiring raw bin resolution.
+:::
+
 ::: tip Band output
 Band output (`output: 'bands'`) is kept for compatibility and its values do not change. It maps the bins onto log-spaced bands, interpolates bands narrower than one bin from the neighbouring bins, and raises `fftSize` to at least 4096 or 8192 for 32 or 64 bands; `weighted` also applies a tilt, a bass shelf below 200 Hz and a display curve. New code should use bin output.
+:::
+
+::: tip Subscription and Event Semantics
+
+- `subscriptionId` is optional: without it, the host derives the subscription key from the calling window and `event`. The SDK helper `fb.audio.subscribeSpectrum()` does not expose it.
+- Re-supplying an existing `subscriptionId` updates/replaces that subscription.
+- The default `audio:spectrum` event and custom named `event` payloads match the spectrum frame table above.
+
 :::
 
 ```js
@@ -639,7 +664,7 @@ Subscribe to live playback PCM audio. Audio chunks played by foobar2000 are copi
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `subscriptionId` | `string` | No | Subscription id chosen by the caller; the host generates one (`pcmstream_N`) when absent. Subscribing again with the same id from the same page replaces the earlier subscription. Must not be empty. |
+| `subscriptionId` | `string` | No | Custom subscription ID; when omitted, the host generates one (`pcmstream_N`). Re-subscribing with an existing ID from the same page replaces the previous subscription. Must not be empty. |
 | `interval` | `number` | No | Callback interval to request from foobar2000, in seconds. The core rounds it to its own tick of about 16 ms and never goes above 200 ms; one subscription asking for a short interval shortens it for every stream subscription in the component. Defaults to the core's 200 ms. Between `0.01` and `0.2` inclusive. |
 | `bufferSeconds` | `number` | No | Ring buffer length, in seconds. Reduced when the buffer would exceed 64 MiB. Between `0.1` and `10` inclusive. Default: `1`. |
 
@@ -647,7 +672,7 @@ Subscribe to live playback PCM audio. Audio chunks played by foobar2000 are copi
 
 | Field | Type | Description |
 | --- | --- | --- |
-| `subscriptionId` | `string` | The subscription's id, as given or generated. |
+| `subscriptionId` | `string` | Subscription ID, as specified by caller or generated by host. |
 | `interval` | `number` | Interval requested from the core; absent when the core's default is used. |
 | `bufferSeconds` | `number` | Ring buffer length registered, in seconds. |
 
@@ -656,15 +681,15 @@ Subscribe to live playback PCM audio. Audio chunks played by foobar2000 are copi
 
 The samples do not travel through the JSON channel. Once audio plays, the page receives a `sharedbufferreceived` event on `window.chrome.webview`: `e.getBuffer()` is the ring buffer and `e.additionalData` is `{ purpose: 'audio.subscribeStream', subscriptionId, epoch, sampleRate, channels, capacityFrames, headerBytes: 64 }`. The same event arrives again with `epoch + 1` when the sample rate or channel count changes (a track in another format, or a DSP that changes the channel count); one `audio:stream` event `{ subscriptionId, type: 'ended', epoch, reason: 'format-change' }` then names the epoch that ended, whose buffer also has its `ended` flag set.
 
-The buffer starts with the same 64-byte header as `audio.decodePcm` buffers, followed by **interleaved** float32 frames: the frame in slot `s` has channel `c` at byte `64 + (s × channels + c) × 4`. In the header, `capacityFrames` (u32 at byte 24) is the number of slots, `writeFrames` (u32 at byte 32) counts frames written so far and wraps at 2^32, `writeSlot` (u32 at byte 60) is the slot the next frame goes to, `seq` (u32 at byte 28) is odd while the host writes, and bit 0 of `flags` (u32 at byte 36) is set once the host stops writing. Read like this: load `seq` and try again later if it is odd; copy the frames you want, newest ending at `writeSlot`; load `seq` again and start over if it changed. A reader that falls behind by more than `capacityFrames` has lost the oldest frames: `dropped = writeFrames − readFrames − capacityFrames` when positive. The SDK method `fb.audio.subscribeStream` does all of this and returns planar `Float32Array` chunks; a page that uses it should not also handle these buffers itself.
+The buffer starts with the same 64-byte header as `audio.decodePcm` buffers, followed by **interleaved** float32 frames: the frame in slot `s` has channel `c` at byte `64 + (s × channels + c) × 4`. In the header, `capacityFrames` (u32 at byte 24) is the number of slots, `writeFrames` (u32 at byte 32) counts frames written so far and wraps at 2^32, `writeSlot` (u32 at byte 60) is the slot the next frame goes to, `seq` (u32 at byte 28) is odd while the host writes, and bit 0 of `flags` (u32 at byte 36) is set once the host stops writing. Consumers must follow the sequence lock protocol: retry if `seq` is odd (host is writing) or if `seq` changes between the start and end of reading; the newest frame ends at `writeSlot`. Readers falling behind by more than `capacityFrames` lose the oldest frames: `dropped = max(0, writeFrames − readFrames − capacityFrames)`. The SDK method `fb.audio.subscribeStream` encapsulates this protocol and delivers planar `Float32Array` chunks directly; a page that uses it should not also handle these buffers itself.
 
 - The samples are taken after the DSP chain and before ReplayGain and the volume control: what the DSP chain outputs, at full scale. Unlike `audio:spectrum`, they do not include ReplayGain.
-- The buffer is **read-only shared memory**. Writing to it crashes the page's renderer process, and with it the whole foobar2000 window. Call `chrome.webview.releaseBuffer(buffer)` once you are done with an epoch: after `audio:stream` reports it ended, and for the last epoch after unsubscribing.
+- The buffer is **read-only shared memory**; do not write to it: writing crashes the page's renderer process, and with it the whole foobar2000 window. Call `chrome.webview.releaseBuffer(buffer)` when finished with an epoch, including when `audio:stream` reports an epoch ended and for the final epoch after unsubscribing.
 - Chunks arrive about every 200 ms by default and at most about every 16 ms (`interval`). The first chunk after playback starts or resumes can hold up to 0.8 s of audio, so a `bufferSeconds` below that loses frames at every start.
-- Nothing arrives while playback is stopped or paused; `writeFrames` stops growing. Seeking and track changes within the same format do not reset the buffer.
-- A page may hold up to 8 stream subscriptions; a ninth answers `OPERATION_FAILED`. Subscribing again with the same `subscriptionId` replaces the earlier subscription: its buffer gets the `ended` flag, no event is sent, and the next epoch continues the count.
-- Errors known at request time come back in the answer: `INVALID_PARAMS` for values out of range or unknown keys, `NOT_SUPPORTED` when the WebView2 runtime cannot share buffers or the calling page cannot be located, `OPERATION_FAILED` when foobar2000 is shutting down or the page already has 8 subscriptions.
-- Subscriptions end without an event when the page navigates away, its window or panel closes, or foobar2000 exits.
+- While playback is stopped or paused, no new samples are written and `writeFrames` ceases incrementing. Seeking and track changes within the same format do not reset the buffer.
+- Each page supports up to 8 active stream subscriptions; exceeding this limit fails with `OPERATION_FAILED`. Subscribing with an existing `subscriptionId` replaces the previous subscription: its buffer receives the `ended` flag with no event dispatched, and the subsequent epoch continues counting.
+- Synchronous validation errors are returned in the response: `INVALID_PARAMS` for out-of-range values or unknown keys, `NOT_SUPPORTED` when the WebView2 runtime cannot share buffers or the calling page cannot be located, and `OPERATION_FAILED` when the host is shutting down or the 8-subscription limit is reached.
+- Subscriptions end automatically without emitting events when the page navigates, its window or panel closes, or foobar2000 exits.
 
 ```js
 const sub = await fb2k.invoke('audio.subscribeStream', { subscriptionId: 'meter', bufferSeconds: 0.5 });
@@ -730,7 +755,7 @@ await fb2k.invoke('audio.unsubscribeStream', { subscriptionId: 'meter' });
 ## Runtime behavior notes
 
 - **Subscription identity & dispatching**: `audio.subscribeSpectrum` creates a spectrum subscription for the calling window, replacing any existing subscription with the same `subscriptionId`. When `subscriptionId` is omitted, the key is derived from the calling window and `event`. Frames arrive under the specified `event` name (defaulting to `audio:spectrum`). SDK's `fb.audio.subscribeSpectrum()` creates the same underlying subscription.
-- **Timer scheduling & FFT deduplication**: Subscriptions maintain independent parameters. A dedicated host timer thread ticks at the highest requested `fps` using high-resolution timers; each subscription delivers a frame only when its own interval elapses. Subscriptions sharing the same effective FFT size, band count, `scale`, and frequency range share a single FFT calculation per tick. Host main-thread dispatch overhead scales with frame count (~0.5 ms per frame).
+- **Timer scheduling & FFT deduplication**: Subscriptions maintain independent parameters. A dedicated host timer thread ticks at the highest requested `fps` using high-resolution timers; each subscription delivers a frame only when its own interval elapses, so pushed frames arrive close to the requested rate. Subscriptions sharing the same effective FFT size, band count, `scale`, and frequency range share a single FFT calculation per tick. Host main-thread dispatch overhead scales with frame count (~0.5 ms per frame).
 - **Signal tap point**: The `scale: 'db'` mode measures the signal after ReplayGain and DSP processing but before output volume attenuation; adjusting player volume does not alter spectrum readings.
 - **Visualization stream dependency**: `audio.getSpectrum` and `audio.getWaveform` query the real-time visualization stream. If no spectrum subscriptions exist, both calls fail with `OPERATION_FAILED`. If playback is active but stream buffers have not yet accumulated data, `audio.getSpectrum` also fails; during pause or stop, it returns a silent frame.
 - **Full waveform lifecycle**: `audio.generateFullWaveform` immediately returns `status: "ready"` with cached data on cache hit, or `status: "pending"` with a `taskId` on cache miss. The caller subsequently receives `audio:fullWaveformReady` or `audio:fullWaveformFailed`. An explicit `cueIndex` parameter takes precedence over a `path|subsong:N` suffix.

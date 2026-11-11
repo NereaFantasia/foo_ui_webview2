@@ -12,7 +12,7 @@ Signature: `fb.playcount.getBatch(paths: string[]): Promise<PlaycountGetBatchRes
 
 Returns `{ success, count, results }`. Each `PlaycountInfo` result carries its own `success` flag and may include `playCount`, `firstPlayed`, `lastPlayed`, `added`, `rating`, and `inLibrary`.
 
-The host treats this call exactly like `get()`: one row per path in request order, each echoing its `path` as given, `|subsong:N` suffix included. `playCount` is `0` for a track never played, `rating` runs from 1 to 5 and is absent when the track is unrated, and each date is absent when unknown. A path that cannot be resolved gets `success: false` and an `error`. Without foo_playcount installed, counts read as `0` and the dates are absent.
+The host treats this call exactly like `get()`: it resolves paths in request order, echoing each `path` verbatim (including any `|subsong:N` suffix). `playCount` is `0` for unplayed tracks; `rating` ranges from 1 to 5 and is omitted when unrated; timestamp fields are omitted when unrecorded. Paths that fail to resolve are marked with `success: false` and an `error` description. When foo_playcount is not installed, play counts read as `0` and dates are omitted.
 
 ```javascript
 const result = await fb.playcount.getBatch([
@@ -41,7 +41,7 @@ Signature: `fb.playcount.set(path: string, count: number): Promise<PlaycountSetR
 | `count` | `number` | Yes | Compatibility argument accepted by the SDK facade |
 
 ::: warning Deprecated
-This method is deprecated. foo_playcount offers no way to change playback statistics, so the host always fails the call with `code: 'NOT_SUPPORTED'` and the promise resolves `{ success: false }`. The SDK sends only `path`; `count` is kept for signature compatibility and never reaches the host. Use `fb.rating.set()` for ratings, and let actual playback update play counts.
+This method is deprecated. The underlying component provides no interface to modify playback statistics, so the call always fails with `code: 'NOT_SUPPORTED'` and the promise resolves with `{ success: false }`. The SDK sends only the `path` parameter, ignoring `count`. Use `fb.rating.set()` to update ratings; play counts update automatically during playback.
 :::
 
 ```javascript
@@ -59,7 +59,7 @@ Signature: `fb.playcount.get(path: string): Promise<PlaycountGetResponse>`
 | --- | --- | --- | --- |
 | `path` | `string` | Yes | Track path; a `\|subsong:N` suffix selects a CUE subsong |
 
-`fb.playcount.get()` calls the registered `playcount.get` handler with `paths: [path]` and resolves with its envelope `{ count, results }`, so the track's entry is `results[0]`; a failed call resolves with a failure envelope. The entry has the fields described under `getBatch()`: `success`, `playCount`, `rating` (absent when unrated), `inLibrary`, and the dates `firstPlayed`, `lastPlayed`, and `added` when known.
+`fb.playcount.get()` invokes `playcount.get` with `paths: [path]`, resolving with `{ count, results }` where `results[0]` holds the track details; failed calls resolve with a failure envelope. Entry properties match `getBatch()`: `success`, `playCount`, `rating` (omitted when unrated), `inLibrary`, and timestamp fields `firstPlayed`, `lastPlayed`, and `added` when recorded.
 
 ```javascript
 const res = await fb.playcount.get('E:\\Music\\song.flac');

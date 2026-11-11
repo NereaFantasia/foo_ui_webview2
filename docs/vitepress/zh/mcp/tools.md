@@ -40,19 +40,19 @@
 | Action | 参数 | 说明 |
 |--------|--------|-------------|
 | [`playback.play`](../api/playback.md#playback-play) | — | 开始播放；暂停中则继续。 |
-| [`playback.pause`](../api/playback.md#playback-pause) | — | 暂停播放；停止状态下什么也不做。 |
+| [`playback.pause`](../api/playback.md#playback-pause) | — | 暂停播放；停止状态下静默忽略。 |
 | [`playback.stop`](../api/playback.md#playback-stop) | — | 停止播放。 |
 | [`playback.next`](../api/playback.md#playback-next) | — | 按当前播放顺序跳到下一首。 |
 | [`playback.previous`](../api/playback.md#playback-previous) | — | 按当前播放顺序跳到上一首。 |
 | [`playback.playPause`](../api/playback.md#playback-playpause) | — | 在播放与暂停之间切换；停止状态下开始播放。 |
 | [`playback.random`](../api/playback.md#playback-random) | — | 从活动播放列表里随机起播一首。 |
 | [`playback.playPath`](../api/playback.md#playback-playpath) | `path` | 追加单个文件至活动播放列表并立即播放；无活动列表时自动创建。 |
-| [`playlist.playTrack`](../api/playlist.md#playlist-playtrack) | `playlist?`, `playlistGuid?`, `index`, `deferred?`, `muted?`, `expectedVersion?` | 播放播放列表中的一行，与双击它相同。 |
-| [`playback.setPosition`](../api/playback.md#playback-setposition) | `position` | 在当前曲目内定位，播放中或暂停中均可。 |
-| [`playback.setVolume`](../api/playback.md#playback-setvolume) | `volume` | 按百分比设置输出音量；超出 `0` 到 `100` 的值被夹到范围内。 |
+| [`playlist.playTrack`](../api/playlist.md#playlist-playtrack) | `playlist?`, `playlistGuid?`, `index`, `deferred?`, `muted?`, `expectedVersion?` | 播放指定索引的播放列表曲目，效果与双击该行相同。 |
+| [`playback.setPosition`](../api/playback.md#playback-setposition) | `position` | 在当前播放或暂停的曲目内定位。 |
+| [`playback.setVolume`](../api/playback.md#playback-setvolume) | `volume` | 按百分比设置输出音量。 |
 | [`playback.volumeUp`](../api/playback.md#playback-volumeup) | — | 按宿主的步长调高音量：一分贝，落在整数分贝上。 |
 | [`playback.volumeDown`](../api/playback.md#playback-volumedown) | — | 按宿主的步长调低音量：一分贝，落在整数分贝上。 |
-| [`playback.mute`](../api/playback.md#playback-mute) | `muted?` | 静音或取消静音；要求的状态已经生效时什么也不做。 |
+| [`playback.mute`](../api/playback.md#playback-mute) | `muted?` | 静音或取消静音；目标状态已生效时静默忽略。 |
 | [`playback.toggleMute`](../api/playback.md#playback-togglemute) | — | 翻转静音状态并报告新状态。 |
 | [`playback.setPlaybackOrder`](../api/playback.md#playback-setplaybackorder) | `order?`, `name?` | 按序号或名称选择播放顺序；两者必须恰好给一个。 |
 | [`playback.setStopAfterCurrent`](../api/playback.md#playback-setstopaftercurrent) | `enabled` | 设置或取消在当前曲目结束后停止。 |
@@ -70,7 +70,7 @@
 | [`playlist.getActive`](../api/playlist.md#playlist-getactive) | — | 描述活动播放列表，即用户正在看的那个。 |
 | [`playlist.getPlaying`](../api/playlist.md#playlist-getplaying) | — | 描述正在播放的播放列表，即播放从中取下一首的那个。 |
 | [`playlist.getTracks`](../api/playlist.md#playlist-gettracks) | `playlist?`, `playlistGuid?`, `start?`, `count?`, `formats?`, `fields?` | 播放列表的一页行。 |
-| [`playlist.getTracksAt`](../api/playlist.md#playlist-gettracksat) | `rows`, `playlist?`, `playlistGuid?`, `formats?`, `fields?` | 按行号挑出的播放列表行，按传入顺序，例如 `playlist.getMatchingRows` 回答的那些不一定相邻的行。 |
+| [`playlist.getTracksAt`](../api/playlist.md#playlist-gettracksat) | `rows`, `playlist?`, `playlistGuid?`, `formats?`, `fields?` | 按行号数组获取播放列表曲目，保持传入顺序，例如 `playlist.getMatchingRows` 返回的、不一定相邻的行。 |
 | [`playlist.getMatchingRows`](../api/playlist.md#playlist-getmatchingrows) | `query`, `playlist?`, `playlistGuid?` | 播放列表里曲目符合 foobar2000 查询的行，按列表顺序；不管列表多长都只要一次调用，各行本身用 `playlist.getTracksAt` 读取。 |
 | [`playlist.getSelectedTracks`](../api/playlist.md#playlist-getselectedtracks) | `playlist?`, `playlistGuid?` | 播放列表里选中的行，按列表顺序，不带播放统计。 |
 | [`playlist.getSelection`](../api/playlist.md#playlist-getselection) | `playlist?`, `playlistGuid?` | 列出播放列表中被选中的行。 |
@@ -111,15 +111,15 @@
 | [`playlist.addPathsSequential`](../api/playlist.md#playlist-addpathssequential) | `playlist?`, `playlistGuid?`, `paths` | 按传入顺序把路径追加到播放列表，事先保存撤销点；展开成多首曲目的路径（文件夹、cue）占住它自己的位置。 |
 | [`playlist.addHandles`](../api/playlist.md#playlist-addhandles) | `playlist?`, `playlistGuid?`, `handles` | 把曲目追加到播放列表，事先保存撤销点。 |
 | [`playlist.insertTracks`](../api/playlist.md#playlist-inserttracks) | `playlist?`, `playlistGuid?`, `position?`, `handles`, `expectedVersion?` | 在播放列表的某个位置插入曲目，事先保存撤销点。 |
-| [`playlist.replaceAllAndPlay`](../api/playlist.md#playlist-replaceallandplay) | `playlist?`, `playlistGuid?`, `paths`, `playIndex?`, `stopFirst?`, `autoPlay?` | 替换播放列表的全部内容并播放：停止播放，清空列表（保存撤销点），按 `playlist.addPaths` 的方式加入路径，把列表设为活动列表，再播放或聚焦 `playIndex`。 |
+| [`playlist.replaceAllAndPlay`](../api/playlist.md#playlist-replaceallandplay) | `playlist?`, `playlistGuid?`, `paths`, `playIndex?`, `stopFirst?`, `autoPlay?` | 替换播放列表的全部内容并播放：停止播放，清空列表（保存撤销点），像 `playlist.addPathsSequential` 那样按传入顺序加入路径，把列表设为活动列表，再播放或聚焦 `playIndex`。 |
 | [`playlist.removeTracks`](../api/playlist.md#playlist-removetracks) | `playlist?`, `playlistGuid?`, `items`, `expectedVersion?` | 从播放列表移除行，事先保存撤销点。 |
 | [`playlist.removeSelectedTracks`](../api/playlist.md#playlist-removeselectedtracks) | `playlist?`, `playlistGuid?` | 从播放列表移除选中的行，事先保存撤销点。 |
 | [`playlist.clear`](../api/playlist.md#playlist-clear) | `playlist?`, `playlistGuid?` | 移除播放列表里的全部曲目，事先保存撤销点。 |
-| [`playlist.moveTracks`](../api/playlist.md#playlist-movetracks) | `playlist?`, `playlistGuid?`, `items?`, `delta`, `expectedVersion?` | 把播放列表中选中的行移动 `delta` 个位置，事先保存撤销点。 |
+| [`playlist.moveTracks`](../api/playlist.md#playlist-movetracks) | `playlist?`, `playlistGuid?`, `items?`, `delta`, `expectedVersion?` | 将播放列表中选中的曲目平移 `delta` 个位置，操作前自动保存撤销历史。 |
 | [`playlist.reorder`](../api/playlist.md#playlist-reorder) | `playlist?`, `playlistGuid?`, `newOrder`, `expectedVersion?` | 重排播放列表的曲目，事先保存撤销点：`newOrder[i]` 是移到第 `i` 行的那首曲目的当前行号。 |
 | [`playlist.sort`](../api/playlist.md#playlist-sort) | `playlist?`, `playlistGuid?`, `pattern?`, `descending?`, `selectedOnly?` | 按 Title Formatting 模式给播放列表排序，事先保存撤销点。 |
 | [`playlist.shuffle`](../api/playlist.md#playlist-shuffle) | `playlist?`, `playlistGuid?` | 把播放列表的曲目打乱成随机顺序，事先保存撤销点。 |
-| [`playlist.reverse`](../api/playlist.md#playlist-reverse) | `playlist?`, `playlistGuid?` | 把播放列表的曲目顺序倒过来，事先保存撤销点。 |
+| [`playlist.reverse`](../api/playlist.md#playlist-reverse) | `playlist?`, `playlistGuid?` | 反转播放列表中的曲目顺序，操作前自动保存撤销历史。 |
 | [`playlist.undo`](../api/playlist.md#playlist-undo) | `playlist?`, `playlistGuid?` | 把播放列表恢复到上一个撤销点。 |
 | [`playlist.redo`](../api/playlist.md#playlist-redo) | `playlist?`, `playlistGuid?` | 重新应用上一次 `playlist.undo` 撤销的改动。 |
 
@@ -179,8 +179,8 @@
 | [`metadata.readRaw`](../api/metadata.md#metadata-readraw) | `path`, `cueIndex?` | 绕过宿主内存缓存，直接从物理文件读取单个曲目的元数据标签与技术信息；返回结构同 `metadata.read` 且额外附带 `source: "file"` 字段；文件读取失败以 `OPERATION_FAILED` 失败 |
 | [`metadata.readBatch`](../api/metadata.md#metadata-readbatch) | `paths` | 批量读取多个曲目的扁平元数据字段，按输入路径顺序逐行返回；单项路径读取失败在对应行报告自身错误而不导致整次调用失败；在宿主主线程同步执行（大量文件推荐改用 `metadata.probeBatchAsync`）；UTF-8 字符处理规则同 `metadata.read` |
 | [`rating.get`](../api/rating.md#rating-get) | `path`, `cueIndex?` | 获取指定曲目的星级评分（范围 0 至 5；优先读取 foo_playcount 维护的 1 至 5 星 %rating% 统计数据，未找到时回退读取音频文件的 RATING 标签并夹取至 0 至 5 区间；0 表示未评分；无法读取标签或文件不存在时不返回错误，统一视作无 RATING 标签处理） |
-| [`artwork.getForTrack`](../api/artwork.md#artwork-getfortrack) | `path`, `type?` | 通过专辑封面管理器读取曲目封面（包含内嵌封面及所在目录的外置封面文件）并获取尺寸；从 PNG 头信息解析 `width` 与 `height`（其他格式返回 `0`）；`file-relative://` 路径以 `INVALID_PATH` 拒绝 |
-| [`artwork.getCurrent`](../api/artwork.md#artwork-getcurrent) | `type?` | 读取当前正在播放曲目的封面图片；按顺序尝试三种检索策略并在 `source` 中指明胜出源；未在播放时返回 `available: false`（`reason: "no_track"`），均未查得图片时返回 `reason: "not_found"` |
+| [`artwork.getForTrack`](../api/artwork.md#artwork-getfortrack) | `path`, `type?` | 通过专辑封面管理器读取曲目封面（包含内嵌封面及所在目录的外置封面文件）并获取尺寸；从 PNG 头信息解析 `width` 与 `height`（其他格式返回 `0`）；`file-relative://` 路径以 `INVALID_PATH` 拒绝；仅在云端、尚未下载的文件不会被打开，按无图片处理 |
+| [`artwork.getCurrent`](../api/artwork.md#artwork-getcurrent) | `type?` | 读取当前正在播放曲目的封面图片；按顺序尝试三种检索策略并在 `source` 中指明胜出源；未在播放时返回 `available: false`（`reason: "no_track"`），均未查得图片时返回 `reason: "not_found"`；仅在云端、尚未下载的文件不会被打开，基于文件的检索视为无图片 |
 
 ### `fb2k_track_write`
 
@@ -190,9 +190,9 @@
 
 | Action | 参数 | 说明 |
 |--------|--------|-------------|
-| [`metadata.write`](../api/metadata.md#metadata-write) | `path`, `tags`, `cueIndex?` | 将针对单个曲目的标签写入请求加入后台队列并立即返回；foobar2000 宿主在后台线程执行物理文件写入，并在操作完成后向所有窗口广播 `metadata:writeComplete` 事件；请求中未包含有效待写标签时直接返回成功且不派发后台写入 |
+| [`metadata.write`](../api/metadata.md#metadata-write) | `path`, `tags`, `cueIndex?` | 将针对单个曲目的标签写入请求加入后台队列并立即返回；foobar2000 宿主在后台线程执行物理文件写入，并在操作完成后向所有窗口广播 `metadata:writeComplete` 事件；请求中未包含有效待写标签时直接返回成功且不派发后台写入；目标为 WAV 且写入后标签含非 ASCII 文本时以 `NOT_SUPPORTED` 拒绝（`details.reason` 为 `wavInfoNonAscii`）且不改动文件，因为 foobar2000 在 WAV 的 RIFF INFO 块里只存 ASCII，其余字符一律写成 `?` |
 | [`metadata.writeBatch`](../api/metadata.md#metadata-writebatch) | `items` | 批量排入多个曲目的标签写入请求，并报告成功入队的数量；已派发的单项写入在完成后独立广播 `metadata:writeComplete` 事件（不存在的文件在此阶段亦计入入队成功）；若有条目参数非法则整次调用以 `OPERATION_FAILED` 失败（错误详情附带 `successCount`、`failCount` 与 `errors` 列表，其他合法项照常入队） |
-| [`rating.set`](../api/rating.md#rating-set) | `path?`, `rating`, `cueIndex?` | 设置指定曲目的星级评分（优先通过 foo_playcount 上下文菜单写入统计，菜单不可用时回退写入音频文件的 RATING 标签；省略 path 时优先为正在播放的曲目评分，无播放曲目时回退为当前活动播放列表的选中项，两者均无时返回 NO_ACTIVE_ITEM 失败） |
+| [`rating.set`](../api/rating.md#rating-set) | `path?`, `rating`, `cueIndex?` | 设置指定曲目的星级评分（优先通过 foo_playcount 上下文菜单写入统计，菜单不可用时回退写入音频文件的 RATING 标签；省略 path 时优先为正在播放的曲目评分，无播放曲目时回退为当前活动播放列表的选中项，两者均无时返回 NO_ACTIVE_ITEM 失败）；回退写标签时，目标是含非 ASCII 标签文本的 WAV 则与 `metadata.write` 一样以 `NOT_SUPPORTED` 失败 |
 | [`metadata.embedArtwork`](../api/metadata.md#metadata-embedartwork) | `path`, `imageData`, `type?`, `target?`, `filename?` | 将封面图片写入音频文件内嵌标签、写为同目录下的独立图片文件或两处同时写入；指定单个目标时返回该目标的写入结果；同时指定两处目标时在 `results` 下分别列出各自状态，仅当两处写入均失败时整次调用以 `OPERATION_FAILED` 失败 |
 | [`metadata.removeEmbeddedArt`](../api/metadata.md#metadata-removeembeddedart) | `path`, `type?`, `removeAll?` | 从音频文件中移除内嵌的封面图片；支持按 `type` 删除指定类型，或在省略 `type` 及设置 `removeAll: true` 时全量清空；音频格式不受专辑封面编辑器支持时以 `NOT_SUPPORTED` 失败 |
 <!-- mcp-tools:end -->

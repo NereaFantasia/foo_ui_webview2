@@ -133,7 +133,7 @@ const { handles, count, hasMore } = res;
 
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
-| `count` | `integer` | 成功提交至选区持有者的有效曲目句柄总数（该数值为实际解析提交的条数而非重读校验结果；选区维持生命周期见 set 方法说明） |
+| `count` | `integer` | 提交至选区持有者的已解析曲目总数。此值为成功提交的项数而非回读校验结果；选区生命周期参见 `set` 方法说明 |
 
 成功时 `success` 为 `true`；失败时返回 `{ success: false, error, code }`，`code` 见[错误码](../reference/errors.md)。
 <!-- api-schema:end -->

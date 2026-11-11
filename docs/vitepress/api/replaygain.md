@@ -7,7 +7,7 @@ Provides ReplayGain mode configuration, preamp adjustment, tag inspection/cleari
 ### replaygain.clear
 
 <!-- api-schema:begin replaygain.clear -->
-Remove the ReplayGain values from files. The tags are rewritten in the background; read the files again to see the values gone.
+Remove the ReplayGain values from files. The tags are rewritten in the background; read the files again to see the values gone. If any WAV file holds non-ASCII tag text, the call fails with `NOT_SUPPORTED` and writes nothing, as in `metadata.write`.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |

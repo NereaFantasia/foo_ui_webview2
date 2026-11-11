@@ -13,23 +13,25 @@ The component injects a global `window.fb2k` object into every loaded page. Call
 
 All interactions between the web page and the player traverse this Bridge channel. Outside foobar2000 (such as in an ordinary browser tab), `window.fb2k` is absent, and SDK calls resolve with a `NOT_SUPPORTED` failure envelope. Target page selection and directory resolution follow the priority rules detailed in [How a page is found](./page-loading.md).
 
-## The bridge and the SDK
+<a id="the-bridge-and-the-sdk"></a>
 
-The bridge is enough for any theme, but its calls are untyped strings. The npm package `foo-webview-sdk` adds three layers on top of it:
+## Bridge foundation and SDK layering
 
-- `fb.*` methods (`fb.player.play()`, `fb.playlist.getAll()`), typed in TypeScript, which call the same host methods;
-- `fb-*` Web Components, such as a play button or a playlist view, which talk to the host themselves and carry no styling of their own;
-- an SMP compatibility layer for porting Spider Monkey Panel scripts.
+Developers can build full-featured themes directly using the underlying Bridge; however, raw `fb2k.invoke` calls and event subscriptions rely on string identifiers without compile-time type guarantees. The official npm package `foo-webview-sdk` provides three tiered abstraction layers on top of the wire protocol:
+
+- **Typed client APIs (`fb.*`)**: Methods such as `fb.player.play()` and `fb.playlist.getAll()` provide TypeScript definitions and IDE autocompletion, and call the same host methods.
+- **Functional Web Components (`fb-*`)**: Out-of-the-box custom elements such as playback controls and playlist views, encapsulating host communication and state synchronization with zero built-in visual styling (exposing CSS parts and slots for custom design).
+- **SMP compatibility layer**: A migration adapter for existing Spider Monkey Panel (SMP) scripts, emulating its objects, properties, and events.
 
 The component exposes more than 400 methods and 100 events, grouped into namespaces such as `playback`, `playlist`, `library` and `window`. The [API overview](/api/overview) lists every namespace with its method count and the page that documents it; [SDK namespaces](/sdk/namespaces) lists the `fb.*` wrappers over them.
 
-::: tip Migrating from Spider Monkey Panel (SMP)?
-The SDK includes an SMP compatibility layer:
-- **35 SMP event mappings**: SMP names such as `on_playback_new_track` work directly
-- **8 wrapper classes**: `FbMetadbHandle`, `FbTitleFormat`, `ContextMenuManager`, and more
-- **Full `fb` / `plman` objects**: sync properties, playback control, and playlist management
+::: tip Migrating from Spider Monkey Panel (SMP)
+The SDK includes an SMP compatibility layer providing:
+- **35 SMP event mappings**: Direct alignment for core event hooks like `on_playback_new_track`
+- **8 wrapper classes**: `FbMetadbHandle`, `FbTitleFormat`, `ContextMenuManager`, and related utilities
+- **Full `fb` / `plman` objects**: Synchronous properties, playback controls, and playlist manipulation
 
-A **cache + event** model wraps the asynchronous host calls as synchronous properties to match SMP's semantics. The cache is eventually consistent, which suits UI rendering; for precise transactional control, call `fb2k.invoke()` directly. SMP's GDI/GDI+ drawing (`on_paint(gr)` and the like) cannot be ported: rewrite that part with HTML, CSS or Canvas. See [SMP compatibility](/reference/smp-compat).
+The compatibility layer employs a "local cache + event stream" architecture to bridge asynchronous host endpoints into SMP's synchronous property model. While this eventually-consistent cache suits UI rendering, operations that need precise transactional control should invoke `fb2k.invoke()` directly. Note: Legacy GDI/GDI+ immediate-mode drawing logic (such as `on_paint(gr)` callbacks and graphics context calls) cannot be ported directly; visual rendering must be rebuilt using modern Web standards (HTML, CSS, SVG, or Canvas 2D/WebGL). See [SMP compatibility](/reference/smp-compat).
 :::
 
 ## Design principles

@@ -11,7 +11,7 @@
 | path | string | 是 | 文件的绝对路径；CUE 条目可以带 `\|subsong:N` 后缀 |
 | opts.cueIndex | number | 否 | 显式指定的 CUE 子曲目序号，优先于 `\|subsong:N` 后缀 |
 
-返回值为 `{ path, rating, storage }`，`storage` 为 `stats` 表示来自 foo_playcount，否则为 `file`。foo_playcount 的 `%rating%` 在 1 到 5 之间时优先，否则取文件的 `RATING` 标签并夹到 0 到 5。`0` 表示未评分。两处都没有评分时 `storage` 也是 `file`，所以它区分不了「没有标签」和「标签里存的是 0」。路径打不开时以 `OPERATION_FAILED` 失败。
+返回值为 `{ path, rating, storage }`；`storage` 为 `'stats'` 表示读取自 foo_playcount 统计数据库，为 `'file'` 表示读取自音频标签。若 foo_playcount 中记录的 `%rating%` 处于 1 至 5 之间则优先采用；否则读取文件内置的 `RATING` 标签并限定在 0 至 5 范围内。`0` 表示未评分。若统计数据库与文件标签均无有效评分，`storage` 默认为 `'file'`。音频文件无法打开时返回 `OPERATION_FAILED`。
 
 ```javascript
 const result = await fb.rating.get('E:\\Music\\song.flac');
@@ -29,9 +29,9 @@ console.log(result.rating, result.storage); // 0-5
 | rating | number | 是 | 0 到 5 的整数；`0` 清除评分 |
 | opts.cueIndex | number | 否 | 显式指定的 CUE 子曲目序号，优先于 `\|subsong:N` 后缀 |
 
-通过 foo_playcount 右键菜单里的评分命令设置评分。该命令不可用时，宿主改为派发一次文件 `RATING` 标签的写入。评分超出 0 到 5 时以 `INVALID_PARAMS` 失败。
+通过 foo_playcount 提供的上下文菜单命令写入评分。该命令不可用时，宿主改为异步写入音频文件的 `RATING` 标签。评分数值超出 0 至 5 范围时返回 `INVALID_PARAMS`。
 
-返回 `{ path, rating, storage }`。foo_playcount 的命令执行了时 `storage` 为 `stats`，响应在 `menuPath` 里给出执行的菜单路径；派发了标签写入时 `storage` 为 `file`，原因在 `note` 里。
+返回 `{ path, rating, storage }`。若通过 foo_playcount 菜单写入成功，`storage` 为 `'stats'`，并在 `menuPath` 中记录执行路径；若回退为音频文件标签写入，`storage` 为 `'file'`，并在 `note` 中说明回退原因。
 
 ```javascript
 await fb.rating.set('E:\\Music\\song.flac', 4);

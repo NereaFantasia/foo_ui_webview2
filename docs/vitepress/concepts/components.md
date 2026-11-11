@@ -6,9 +6,9 @@ The `fb-*` custom elements from `foo-webview-sdk/components` are standard Web Co
 
 A component's shadow DOM enforces strict style encapsulation and structural layout only. It declares no opinionated colors, backgrounds, typography, borders, margins, shadows, or transition animations (an unstyled `fb-seek-bar` renders no visible color blocks). The theme dictates all visual styling through three mechanisms:
 
-- **CSS parts**: internal elements carry a `part` name, styled from outside with `::part()`, for example `fb-seek-bar::part(fill)`.
-- **Host attributes**: state is mirrored as attributes on the element itself, such as `[playing]` on `<fb-play-button>`, `[active]` on `<fb-shuffle-button>` and `[muted]` on `<fb-volume-control>`, so CSS can react to it.
-- **Slots**: replaceable content, such as the play and pause icons of `<fb-play-button>`, can be swapped for the theme's own markup.
+- **CSS parts (Sub-element styling)**: Key internal DOM nodes expose explicit `part` attributes, allowing external stylesheets to target them through the standard `::part()` pseudo-element across Shadow DOM boundaries (such as styling `fb-seek-bar::part(fill)`).
+- **Host attributes (State reflection)**: Real-time runtime states are mirrored as attributes directly on the host element (such as `[playing]` on `<fb-play-button>`, `[active]` on `<fb-shuffle-button>`, or `[muted]` on `<fb-volume-control>`), enabling state-driven CSS rules via attribute selectors.
+- **Slots (Content projection)**: Named or default slots allow themes to project custom markup and SVG icons directly into structural placeholders within the Shadow DOM (such as swapping custom play and pause icons inside `<fb-play-button>`).
 
 Keeping looks out of the components is what lets one set of elements fit any theme; [Style the components](/how-to/style-components) shows the hooks in use.
 

@@ -2,7 +2,7 @@
 
 `fb.ui` 封装了 `window.*` 底层 API 与 `ui.showContextMenu`，提供窗口管理的完整能力。方法都返回 Promise；除非条目另有说明，都作用于调用方窗口。
 
-`isFullscreen`、`isResizable`、`getMinSize` / `setMinSize`、`getMaxSize` / `setMaxSize`、`setResizable`、`setDarkMode`、`setFrameless` 与四个全屏方法可以在参数末尾多传一个 `windowId`，指定 `main` 或某个 popup；省略时作用于调用方窗口。
+`isFullscreen`、`isResizable`、`getMinSize` / `setMinSize`、`getMaxSize` / `setMaxSize`、`setResizable`、`setDarkMode`、`setFrameless` 以及全屏相关方法均支持可选的 `windowId` 参数，用于显式指定 `main` 或目标 popup 窗口；省略时默认作用于调用方所在窗口。
 
 ## 基本窗口控制
 
@@ -187,7 +187,7 @@ const { x, y, width, height } = res;
 
 ### setBounds(opts)
 
-一次性设置窗口位置和大小。只发送 `x`、`y`、`width`、`height` 四个键，所以 `getBounds` 回来的对象改完可以直接传回。
+一次性设置窗口的位置与尺寸。封装只发送 `x`、`y`、`width`、`height` 四个键，因此 `getBounds()` 返回的对象修改后可直接传回。
 
 ```javascript
 await fb.ui.setBounds({ x: 100, y: 100, width: 1280, height: 720 });
@@ -360,7 +360,7 @@ await fb.ui.flashTaskbar(3); // 闪烁 3 次
 
 ### showSystemMenu(x, y, w?, h?)
 
-在指定位置显示系统菜单，坐标是屏幕像素。`w` 与 `h` 都为正时，菜单在矩形 `x`、`y`、`w`、`h` 下方弹出并避开它，否则在 `x`、`y` 处弹出。传了 `w` 时，封装层会同时发送 `w` 和 `h`。
+在指定屏幕坐标显示系统菜单。若 `w` 与 `h` 均为正值，菜单将避开指定的屏幕矩形区域在下方弹出；否则直接在 `(x, y)` 坐标处弹出。指定 `w` 时，SDK 封装会同时发送 `w` 与 `h`。
 
 签名：`fb.ui.showSystemMenu(x: number, y: number, w?: number, h?: number): Promise<WindowShowSystemMenuResponse>`
 
@@ -616,7 +616,7 @@ await fb.ui.setFrameless(true);
 
 ### createPopup(opts)
 
-创建弹出窗口。每个 popup 拥有独立的 BridgeCore + WebView2 实例。参数类型是 `WindowCreatePopupOptions`：声明的 `WindowCreatePopupParams`，其中 `profile`、`behavior`、`backdropPolicy` 换成了强类型；返回 `WindowCreatePopupResponse`（`{ windowId }`）。
+创建弹出窗口。每个 popup 拥有独立的 BridgeCore 与 WebView2 实例。参数类型为 `WindowCreatePopupOptions`，为 `profile`、`behavior` 与 `backdropPolicy` 提供强类型支持；成功时返回包含 `windowId` 的 `WindowCreatePopupResponse`。
 
 ```javascript
 const popup = await fb.ui.createPopup({
@@ -710,7 +710,7 @@ await fb.ui.closeAllPopups();
 
 ### getAllWindows()
 
-获取所有窗口列表。响应的 `items` 里主窗口在前，其后是各 popup。每个条目带 `windowId`、`title`、`bounds` 与 `capabilities`，以及设置过的背景策略覆盖（`backdropPolicy`）与实际生效的策略（`resolvedBackdropPolicy`）。条目按 `isMain` 区分（`MainWindowInfo | PopupWindowInfo`），只有 popup 带 `url`、`profile`、`behavior` 与 `resolvedBehavior`。
+获取全部已打开窗口的列表。响应 `items` 中主窗口位列首项，后续为各 popup 窗口。每个条目均包含 `windowId`、`title`、`bounds` 与 `capabilities`，以及配置的背景覆盖策略（`backdropPolicy`）与系统当前解析策略（`resolvedBackdropPolicy`）。条目类型通过 `isMain` 进行联合区分（`MainWindowInfo | PopupWindowInfo`），其中 `url`、`profile`、`behavior` 与 `resolvedBehavior` 仅属于 `PopupWindowInfo`。
 
 签名：`fb.ui.getAllWindows(): Promise<WindowListResponse>`
 
@@ -760,7 +760,7 @@ await fb.ui.setPopupBehavior({
 | --- | --- | --- | --- |
 | windowId | string | 否 | 目标窗口 ID；省略时查询调用方窗口 |
 
-`setBackdropPolicy` 接受平铺字段（`activeEffect`、`inactiveEffect` 以及 `WindowBackdropPolicyPatch` 的其余字段）和可选的 `windowId`。封装层会组装成 `{ backdropPolicy }` 发给宿主，调用方不要再包一层 `backdropPolicy`。值为 `null` 的字段删除该覆盖。
+`setBackdropPolicy` 接受平铺字段（`activeEffect`、`inactiveEffect` 以及 `WindowBackdropPolicyPatch` 的其余字段）和可选的 `windowId`。封装以 `{ backdropPolicy }` 的形式发送给宿主，因此调用方不要自行嵌套 `backdropPolicy`。值为 `null` 的字段删除该覆盖。
 
 `inactiveEffect` 取值：`inherit` \| `system` \| `none` \| `mica` \| `mica-alt` \| `acrylic`（`WindowInactiveBackdropEffect`）。`inherit` 为宿主默认值，表示失焦时沿用已解析的 `activeEffect`，由 DWM 负责失焦变暗；`system` 表示失焦时交还平台背景。
 

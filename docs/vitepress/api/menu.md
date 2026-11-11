@@ -218,6 +218,10 @@ Run the context-menu item whose `commandId` a `menu.getContextMenu` call reporte
 await fb2k.invoke('menu.runContextCommandById', { id: 3 });
 ```
 
+::: warning Menu Item Index Scope and Validation
+`commandId` represents a dynamic entry index within a specific rebuilt menu tree. If the track selection or player state changes between calls, the same index may resolve to a different command. When calling `runContextCommandById`, pass `expectPath` and `expectTarget` to enforce pre-execution consistency validation; see [Command Targets and Completion Results](../sdk/menu.md#command-targets).
+:::
+
 ### menu.runMainMenuCommand
 
 <!-- api-schema:begin menu.runMainMenuCommand -->
@@ -250,7 +254,7 @@ Failure is reported as `success: false` with a `code`:
 | `code` | Meaning |
 | --- | --- |
 | `MENU_ITEM_DISABLED` | Command exists but is currently greyed out |
-| `MENU_MATCH_AMBIGUOUS` | Name matched several commands; see `candidates` |
+| `MENU_MATCH_AMBIGUOUS` | Name matched several commands; see `details.candidates` |
 | `MENU_COMMAND_NOT_FOUND` | No command matched |
 | `NOT_FOUND` | No command owns the GUID |
 
@@ -329,9 +333,13 @@ Show the host's native context menu at the mouse pointer for the tracks `mode` s
 await fb2k.invoke('menu.showNativePopup', { mode: 'nowPlaying' });
 ```
 
+::: tip Native Popup Mechanism
+Native menus open asynchronously via a Win32 timer mechanism, preventing UI deadlocks during bridge event callbacks. The popup coordinates anchor directly to the current system cursor position, preventing coordinate offsets across high-DPI and mixed-DPI multi-monitor environments.
+:::
+
 ## Owner-family behavior and limits
 
-- `menu.getContextMenu`, `menu.runContextCommandById`, and `menu.showNativePopup` use `mode` to select `handles`, `nowPlaying`, `selection`, or `playlist` context. `auto` evaluates those sources in sequence, ending with active playlist context. In `handles` mode, every path is validated for media access before creating track handles. `menu.showNativePopup` positions at screen cursor coordinates and returns immediately after triggering popup display.
+- `menu.getContextMenu`, `menu.runContextCommandById`, and `menu.showNativePopup` use `mode` to select `handles`, `nowPlaying`, `selection`, or `playlist` context. `auto` evaluates those sources in sequence, ending with active playlist context. In `handles` mode, every path is validated for media access before creating track handles. `menu.showNativePopup` uses screen cursor coordinates and returns before the native menu is displayed.
 - `menu.show` displays a custom HTML overlay after resource validation. `menu.close` dismisses the active overlay; internal `menu.__*` endpoints are not part of the public API surface.
 
 ## Contract supplements

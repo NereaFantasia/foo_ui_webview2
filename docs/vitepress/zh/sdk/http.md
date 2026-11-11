@@ -57,7 +57,7 @@ await fb.http.patch('https://api.example.com/items/42', { title: '新标题' });
 
 签名：`fb.http.head(url: string, options?: Omit<HttpRequestOptions, 'responseType'>): Promise<HttpHeadResponse>`
 
-派发 HEAD 请求。和 `get()` 一样默认异步：要直接拿到响应就传 `{ async: false }`，否则结果经 `http:response` 到达。同步响应可能包含解析后的便利字段 `contentLength`。
+派发 HEAD 请求。与 `get()` 类似，请求默认异步执行；指定 `{ async: false }` 可直接获取完整响应，否则响应通过 `http:response` 事件送达。同步响应可能包含解析后的便利字段 `contentLength`。
 
 ```javascript
 const res = await fb.http.head('https://example.com/file.zip', { async: false });
@@ -69,9 +69,9 @@ console.log(res.status, res.contentLength);
 
 签名：`fb.http.request(url: string, options?: HttpRequestOptions): Promise<HttpGetSuccess | HttpBinarySuccess>`
 
-以事件驱动方式发出 GET，等到对应的 `http:response` 事件到达才 resolve；宿主同步返回时也能处理。客户端看门狗默认 35 秒，传了宿主超时则为 `options.timeout + 5000`。无论从哪条路径结束，SDK 都会移除自己的事件监听并清掉看门狗。
+发起事件驱动的 GET 请求，等到对应的 `http:response` 事件到达后兑现；宿主同步返回的应答同样可以处理。客户端超时时间默认为 35 秒；若指定了 `options.timeout`，则客户端超时时间自动设置为 `options.timeout + 5000` 毫秒。SDK 在每条完成路径上都会移除事件监听并清除超时计时。
 
-与其他方法不同，`request()` 只以成功的响应 resolve，失败一律 reject：宿主报告的失败变成以其 `error` 为消息的 `Error`，经 `http:response` 送达的失败另把整个载荷放在错误的 `response` 属性上；看门狗超时同样 reject。
+与其他方法不同，`request()` 仅在收到成功响应时 resolve，发生错误时一律 reject：若宿主同步返回错误，则抛出以 `error` 为消息的 `Error`；若通过 `http:response` 事件接收到失败，则将完整载荷附加在错误对象的 `response` 属性上；客户端看门狗超时同样触发 reject。
 
 ```javascript
 try {
@@ -100,7 +100,7 @@ const receipt = await fb.http.download(
 
 签名：`fb.http.abort(requestId: string): Promise<HttpAbortResponse>`
 
-按回执里的 `requestId` 取消进行中的异步请求或下载。请求已经结束时 `cancelled` 为 `false`。
+根据回执中的 `requestId` 取消进行中的异步请求或下载。若请求已结束，返回结果中的 `cancelled` 为 `false`。
 
 ```javascript
 const receipt = await fb.http.download(
@@ -138,9 +138,9 @@ fb.on('http:downloadComplete', (e) => {
 | `responseType` | `'text' \| 'base64' \| 'arraybuffer' \| 'binary'` | 响应体的解码方式 |
 | `insecureTls` | `boolean` | 请求跳过无效证书检查，宿主的高级设置也允许时才生效 |
 
-`arraybuffer` 与 `binary` 由 SDK 把宿主以 base64 传回的响应体解码成 `ArrayBuffer`。携带凭据或个人数据的请求不要打开 `insecureTls`。已弃用的 `verifyTls`、`sync` 选项，以及 `download()` 的 `requestId` 选项都不起作用，也不会发给宿主。
+`arraybuffer` 与 `binary` 由 SDK 将宿主传回的 Base64 响应体解码为 `ArrayBuffer`。携带凭据或个人数据的请求请勿启用 `insecureTls`。已弃用的 `verifyTls`、`sync` 选项，以及 `download()` 的 `requestId` 选项均已失效且不再传递给宿主。
 
 ## 事件
 
-- `http:response` 携带回执里的 `requestId` 与结果：成功时有 `status`、`headers`、`body`、`responseType`（HEAD 另有 `contentLength`），失败时有 `error` 与 `code`（被 `abort()` 取消时另有 `cancelled: true`）。
-- `http:downloadComplete` 携带 `requestId`：成功时有 `status`、`bytesWritten`、`path`，失败时有 `error` 与 `code`（被 `abort()` 取消时另有 `cancelled: true`）。
+- `http:response` 携带回执中的 `requestId` 与结果：成功时包含 `status`、`headers`、`body`、`responseType`（HEAD 请求额外包含 `contentLength`）；失败时包含 `error` 与 `code`（若被 `abort()` 取消，则包含 `cancelled: true`）。
+- `http:downloadComplete` 携带 `requestId`：成功时包含 `status`、`bytesWritten`、`path`；失败时包含 `error` 与 `code`（若被 `abort()` 取消，则包含 `cancelled: true`）。

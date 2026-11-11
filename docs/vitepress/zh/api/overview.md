@@ -3,7 +3,7 @@
 页面经 `fb2k.invoke('namespace.method', params)` 调用的全部方法，按命名空间列出。事件见[事件 API](./events.md)。SDK 把这些方法封装为 `fb.*`，见 [SDK 命名空间](../sdk/namespaces.md)。
 
 <!-- api-schema:begin index:namespaces -->
-共 470 个方法，分属 42 个命名空间。
+共 471 个方法，分属 42 个命名空间。
 
 | 命名空间 | 方法数 | 所在页面 |
 | --- | ---: | --- |
@@ -22,7 +22,7 @@
 | `http` | 8 | [HTTP API](./http.md) |
 | `jitQueue` | 8 | [JIT Queue 即时队列 API](./jit-queue.md) |
 | `jitSession` | 17 | [JIT Session 会话 API](./jit-session.md) |
-| `keyboard` | 4 | [Keyboard 键盘 API](./keyboard.md) |
+| `keyboard` | 5 | [Keyboard 键盘 API](./keyboard.md) |
 | `library` | 27 | [Library API](./library.md) |
 | `log` | 3 | [Log 日志文件 API](./log.md) |
 | `lyrics` | 3 | [Lyrics 歌词 API](./lyrics.md) |
@@ -55,5 +55,5 @@
 
 ## 调用约定
 
-- 方法名用点号（`playback.play`），事件名用冒号（`playback:trackChanged`）；事件名不能拿来调用。
-- 形如 `namespace.__method` 的名字属于组件自带的页面（例如托盘菜单），不是公开 API。
+- 方法名采用点号分隔（`playback.play`），事件名采用冒号分隔（`playback:trackChanged`）；事件名不可用于调用。
+- 以 `namespace.__method` 命名的接口属于组件内置私有页面（如系统托盘菜单），非公开 API。

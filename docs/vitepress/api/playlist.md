@@ -4,12 +4,12 @@ Playlist management, track operations, autoplaylists, and helpers.
 
 ## Targeting a playlist {#naming-a-playlist}
 
-Methods that operate on an individual playlist accept either `playlist` (a 0-based index) or `playlistGuid` (a persistent unique identifier). The two parameters are mutually exclusive; passing both fails with `INVALID_PARAMS`.
+Methods that act on a single playlist identify it by either `playlist` (its index) or `playlistGuid`. Pass only one of the two; passing both fails with `INVALID_PARAMS`.
 
-- **Index (`playlist`)**: Points to the position occupied when the host processes the call. Index values can shift as playlists are inserted, removed, or reordered.
-- **GUID (`playlistGuid`)**: Assigned upon creation and globally unique. A GUID stays bound to the playlist across renames and reordering; calls targeting a removed GUID fail with `NOT_FOUND`.
+- **Index (`playlist`)**: Refers to whichever playlist occupies that position when the host handles the call. Once playlists are removed or reordered, the same index can refer to a different playlist, for example while a menu listing the playlists is still open.
+- **GUID (`playlistGuid`)**: Stays with its playlist. A call made with it reaches that playlist, or fails with `NOT_FOUND` if the playlist has been removed. Playlists with the same name have different GUIDs.
 
-Endpoints returning playlist info (`getAll`, `getActive`, `getPlaying`, `create`, `duplicate`, `createAutoplaylist`) include `guid`; results that identify a playlist by index also carry `playlistGuid`. `playlist:*` events identify playlists by GUID in their payloads. Cross-namespace methods (such as `library.addToPlaylist` and `queue.add`) also accept `playlistGuid`.
+`playlist.getAll`, `getActive`, `getPlaying`, `create`, `duplicate`, and `createAutoplaylist` report each playlist's GUID as `guid`. Results that identify a playlist by index also carry its GUID as `playlistGuid`, and `playlist:*` events identify playlists by GUID; see each event's payload for the field name. `library.addToPlaylist`, `queue.add`, `queue.addPaths`, and `artwork.getByPlaylistItem` accept the same two keys, as does each entry of `queue.setContents` and `queue.insertNext`. `playlist.reorderPlaylists` takes the new order as GUIDs in `newOrderGuids`.
 
 ```javascript
 const res = await fb2k.invoke('playlist.getAll');
@@ -72,12 +72,12 @@ This method takes no parameters.
 `success` is `true` on success. On failure the response is `{ success: false, error, code }`; see [Error codes](../reference/errors.md) for `code`.
 <!-- api-schema:end -->
 
-::: warning Breaking Change (v1.1.18)
-`playlist.getAll` no longer returns `duration` (avoids loading every track across every playlist). Use `playlist.getActive` or `playlist.getPlaying` when you need a single playlist duration.
+::: warning Duration Field Omission
+`playlist.getAll` does not return `duration` (avoids loading every track across every playlist). Use `playlist.getActive` or `playlist.getPlaying` when you need a single playlist duration.
 :::
 
-::: tip v1.1.18 added
-The `isAutoplaylist` field is now inlined in `playlist.getAll`; you no longer need per-playlist `playlist.isAutoplaylist` calls.
+::: tip Autoplaylist Flag
+The `isAutoplaylist` field is inlined in `playlist.getAll`; you do not need per-playlist `playlist.isAutoplaylist` calls.
 :::
 
 ### playlist.getActive
@@ -293,7 +293,7 @@ A page of a playlist's rows. Without `fields` each row is a whole playlist row w
 | `start` | `integer` | No | First row to return. At least `0`. Default: `0`. |
 | `count` | `integer` | No | Most rows to return. At least `0`. Default: `100`. |
 | `formats` | `Record<string, string>` | No | Extra columns, each a Title Formatting pattern under a name of your choosing; every row carries their values under `formats`, in projected rows too. |
-| `fields` | `string[]` | No | Keys each row carries besides `index`; omitted, the whole row. The names are those `library.query` takes; an unknown name fails with `INVALID_PARAMS` and is listed in `details.unknownFields`. The optional `albumId` is omitted when unavailable, even when requested. Must not be empty. |
+| `fields` | `string[]` | No | Keys each row carries besides `index`; omitted, the whole row. The names are case-sensitive and are those `library.query` takes; an unknown name fails with `INVALID_PARAMS` and is listed in `details.unknownFields`. The optional `albumId` is omitted if no album identifier exists. Must not be empty. |
 
 **Returns**
 
@@ -305,7 +305,7 @@ A page of a playlist's rows. Without `fields` each row is a whole playlist row w
 | `count` | `integer` | Rows returned. |
 | `total` | `integer` | Rows in the playlist; `0` when it does not exist. |
 | `tracks` | `PlaylistTrackPartial[]` | The rows from `start`: whole rows, or `index` plus the `fields` asked for. |
-| `tracks[].handle` | `string` | The key that identifies the track across endpoints: `absolutePath`, with a `\|subsong:N` suffix when `subsong` is not `0`. The same track yields the same handle from every such method; because of the suffix it is not a plain file path, and a method that takes a path documents whether it accepts one. |
+| `tracks[].handle` | `string` | Cross-endpoint unique track identifier: formatted as `absolutePath`, appended with `\|subsong:N` when `subsong` is non-zero. The same track yields the same handle from every method. Differs from standard filesystem paths; endpoints document whether handle identifiers are accepted in place of paths. |
 | `tracks[].path` | `string` | Path as foobar2000 stores it: `file://` for a local file, `file-relative://` for a path stored relative to the foobar2000 folder (a portable install), or a remote URL. No subsong suffix. |
 | `tracks[].absolutePath` | `string` | Native filesystem path without the subsong suffix; the same as `path` for a remote URL. |
 | `tracks[].subsong` | `integer` | Subsong identifier the decoder assigns inside the file, not necessarily a sequence number; `0` for a whole file and for a remote stream. |
@@ -315,7 +315,7 @@ A page of a playlist's rows. Without `fields` each row is a whole playlist row w
 | `tracks[].album` | `string` | First ALBUM value; empty when untagged. |
 | `tracks[].albumId` | `string` | Opaque album identity when its original name or album artist contains invalid UTF-8. Use this instead of the display names to match an album row; absent for ordinary names. |
 | `tracks[].albumArtist` | `string` | Every ALBUM ARTIST value joined with `", "`; empty when untagged. |
-| `tracks[].albumArtists` | `string[]` | Every ALBUM ARTIST value in tag order, so `albumArtists.join(", ")` equals `albumArtist`; empty when untagged. `library.getAlbums` files a track that has an `album` under the name `album` and the album artist `albumArtists[0]`, or `artists[0]` when this array is empty (`""` when both are); those are the `name` and `albumArtist` of that album's row. When `albumId` is present, use it instead: replacement characters can make display names equal. |
+| `tracks[].albumArtists` | `string[]` | All ALBUM ARTIST values in tag order (`albumArtists.join(", ")` equals `albumArtist`); empty array when untagged. In `library.getAlbums`, a track that has an `album` is filed under the name `album` and the album artist `albumArtists[0]` (falling back to `artists[0]`, or `""` when both are empty); those are the `name` and `albumArtist` of that album's row. When `albumId` is present, match by `albumId` instead of display names to avoid collision from character replacement. |
 | `tracks[].genre` | `string` | Every GENRE value joined with `", "`; empty when untagged. |
 | `tracks[].date` | `string` | First DATE value as tagged, such as `2019` or `2019-05-01`; empty when untagged. |
 | `tracks[].trackNumber` | `integer` | TRACKNUMBER read as an integer; `0` when absent or not a number. |
@@ -326,7 +326,7 @@ A page of a playlist's rows. Without `fields` each row is a whole playlist row w
 | `tracks[].sampleRate` | `integer` | Sample rate in Hz; `0` when unknown. |
 | `tracks[].channels` | `integer` | Channel count; `0` when unknown. |
 | `tracks[].codec` | `string` | Codec name as the decoder reports it, such as `FLAC` or `MP3`; empty when unknown. |
-| `tracks[].rating` | `integer` | Rating from 0 to 5: the `%rating%` statistic (foo_playcount) when it is 1 to 5, otherwise the RATING tag clamped to that range; `0` when neither rates the track. |
+| `tracks[].rating` | `integer` | Rating value from 0 to 5. Prefers the `%rating%` statistic (foo_playcount) if within 1..5; otherwise falls back to the RATING tag clamped to 0..5; `0` if neither is present. |
 | `tracks[].index` | `integer` | Row in the playlist, from `0`. |
 | `tracks[].composer` | `string` | Every COMPOSER value joined with `", "`; empty when untagged. |
 | `tracks[].comment` | `string` | First COMMENT value; empty when untagged. |
@@ -334,7 +334,7 @@ A page of a playlist's rows. Without `fields` each row is a whole playlist row w
 | `tracks[].firstPlayed` | `string` | `%first_played%` as foo_playcount formats it; absent when empty, on rows of `playlist.getSelectedTracks` and on rows of a `fields` request. |
 | `tracks[].lastPlayed` | `string` | `%last_played%` as foo_playcount formats it; absent when empty, on rows of `playlist.getSelectedTracks` and on rows of a `fields` request. |
 | `tracks[].added` | `string` | `%added%` as foo_playcount formats it; absent when empty, on rows of `playlist.getSelectedTracks` and on rows of a `fields` request. |
-| `tracks[].formats` | `Record<string, string>` | The `formats` columns of `playlist.getTracks`, by the names given; present only when `formats` was passed. |
+| `tracks[].formats` | `Record<string, string>` | Named Title Formatting columns; present only when `formats` was requested. |
 | `contentVersion` | `string` | Pages can be joined only when this matches; absent when the playlist does not exist. |
 
 `success` is `true` on success. On failure the response is `{ success: false, error, code }`; see [Error codes](../reference/errors.md) for `code`.
@@ -345,7 +345,7 @@ A page of a playlist's rows. Without `fields` each row is a whole playlist row w
 > `rating` first reads `%rating%` and uses a value from `1` to `5`. If that value is missing or outside this range, it reads the file's `RATING` tag and clamps it to `0`-`5`; no available rating gives `0` (unrated). `rating.get` uses the same rule: `storage` is `'stats'` for an accepted `%rating%` value and `'file'` otherwise, including when no file tag exists.
 
 ::: tip Extra columns (`formats`)
-`formats` maps column names to Title Formatting patterns; every row, projected rows included, carries the evaluated values under its own `formats` object:
+`formats` maps column names to Title Formatting patterns; each track (including projected tracks) carries the evaluated values under its own `formats` object:
 
 ```javascript
 const result = await fb2k.invoke('playlist.getTracks', {
@@ -355,7 +355,7 @@ const result = await fb2k.invoke('playlist.getTracks', {
         codec: '%codec%'
     }
 });
-// Each row gains formats: { myRating: '5', codec: 'FLAC' }
+// Each row includes formats: { myRating: '5', codec: 'FLAC' }
 ```
 :::
 
@@ -364,7 +364,7 @@ const result = await fb2k.invoke('playlist.getTracks', {
 :::
 
 ::: tip Projection (`fields` parameter)
-Pass `fields` to get back only the fields you name. `index` is always present, whether you ask for it or not.
+Specifying `fields` limits the returned object to the selected fields; `index` is always included.
 
 ```javascript
 const page = await fb2k.invoke('playlist.getTracks', {
@@ -373,9 +373,9 @@ const page = await fb2k.invoke('playlist.getTracks', {
 });
 ```
 
-Accepted names are `index`, `handle`, `title`, `artist`, `artists`, `album`, `albumId`, `albumArtist`, `albumArtists`, `genre`, `date`, `trackNumber`, `discNumber`, `duration`, `path`, `absolutePath`, `fileSize`, `bitrate`, `sampleRate`, `channels`, `codec`, `subsong` and `rating`. The optional `albumId` is omitted when unavailable. Names are matched exactly and are case sensitive; an unknown one fails the whole call with `INVALID_PARAMS` and lists the offenders in `details.unknownFields`, so a typo never silently drops a field. `composer`, `comment` and the play statistics are not accepted; they come only with whole rows.
+Accepted names are `index`, `handle`, `title`, `artist`, `artists`, `album`, `albumId`, `albumArtist`, `albumArtists`, `genre`, `date`, `trackNumber`, `discNumber`, `duration`, `path`, `absolutePath`, `fileSize`, `bitrate`, `sampleRate`, `channels`, `codec`, `subsong` and `rating`. The optional `albumId` is omitted when unavailable. Field names are case sensitive. Supplying unrecognized fields causes the invocation to fail with `INVALID_PARAMS`, listing them under `details.unknownFields`. `composer`, `comment`, and play-count fields cannot be projected and are returned only on full rows.
 
-Leaving out `handle`, `absolutePath` and `rating` avoids resolving the filesystem path and evaluating `%rating%` for each row. To get play statistics alongside a projection, ask for them through `formats`.
+Omitting `handle`, `absolutePath`, and `rating` avoids resolving filesystem paths and evaluating `%rating%` per row. To retrieve play statistics during projection, request them via `formats`.
 :::
 
 ### playlist.getGroupRuns
@@ -400,7 +400,7 @@ Split a whole playlist into runs of adjacent rows whose group key is equal, with
 | `runs[].start` | `integer` | First row of the run. |
 | `runs[].count` | `integer` | Rows in the run. |
 | `runs[].key` | `string` | The group key as the first row of the run spells it. |
-| `runs[].sub` | `PlaylistGroupSubRun[]` | Second-level runs inside this one; present only when two patterns were given. |
+| `runs[].sub` | `PlaylistGroupSubRun[]` | Second-level runs inside this one; present only when two patterns were provided. |
 | `runs[].sub[].start` | `integer` | First row of the run. |
 | `runs[].sub[].count` | `integer` | Rows in the run. |
 | `runs[].sub[].key` | `string` | The second-level key as the first row of the run spells it. |
@@ -477,7 +477,7 @@ A lowercase letter in the query matches either case in the tag, an uppercase one
 ### playlist.getTracksAt
 
 <!-- api-schema:begin playlist.getTracksAt -->
-Rows of a playlist picked by row number, in the order given, such as the rows `playlist.getMatchingRows` answers, which need not be adjacent. Each row is shaped as in `playlist.getTracks` and carries its `index`; a row past the last one is skipped, and a row given twice comes back twice. A playlist index past the last one, a `playlistGuid` no playlist has, and no active playlist when both are omitted, answer an empty result as `playlist.getTracks` does.
+Rows of a playlist picked by row number, in the order given, such as the rows `playlist.getMatchingRows` answers, which need not be adjacent. Each row is shaped as in `playlist.getTracks` and carries its `index`; a row past the last one is skipped, and duplicate indices are returned multiple times. A playlist index past the last one, a `playlistGuid` that matches no playlist, or an omitted playlist with no active playlist returns an empty result set.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
@@ -496,7 +496,7 @@ Rows of a playlist picked by row number, in the order given, such as the rows `p
 | `total` | `integer` | Rows in the playlist; `0` when it does not exist. |
 | `count` | `integer` | Rows returned. |
 | `tracks` | `PlaylistTrackPartial[]` | The rows in the order asked for, skipping those past the last row. |
-| `tracks[].handle` | `string` | The key that identifies the track across endpoints: `absolutePath`, with a `\|subsong:N` suffix when `subsong` is not `0`. The same track yields the same handle from every such method; because of the suffix it is not a plain file path, and a method that takes a path documents whether it accepts one. |
+| `tracks[].handle` | `string` | Cross-endpoint unique track identifier: formatted as `absolutePath`, appended with `\|subsong:N` when `subsong` is non-zero. The same track yields the same handle from every method. Differs from standard filesystem paths; endpoints document whether handle identifiers are accepted in place of paths. |
 | `tracks[].path` | `string` | Path as foobar2000 stores it: `file://` for a local file, `file-relative://` for a path stored relative to the foobar2000 folder (a portable install), or a remote URL. No subsong suffix. |
 | `tracks[].absolutePath` | `string` | Native filesystem path without the subsong suffix; the same as `path` for a remote URL. |
 | `tracks[].subsong` | `integer` | Subsong identifier the decoder assigns inside the file, not necessarily a sequence number; `0` for a whole file and for a remote stream. |
@@ -506,7 +506,7 @@ Rows of a playlist picked by row number, in the order given, such as the rows `p
 | `tracks[].album` | `string` | First ALBUM value; empty when untagged. |
 | `tracks[].albumId` | `string` | Opaque album identity when its original name or album artist contains invalid UTF-8. Use this instead of the display names to match an album row; absent for ordinary names. |
 | `tracks[].albumArtist` | `string` | Every ALBUM ARTIST value joined with `", "`; empty when untagged. |
-| `tracks[].albumArtists` | `string[]` | Every ALBUM ARTIST value in tag order, so `albumArtists.join(", ")` equals `albumArtist`; empty when untagged. `library.getAlbums` files a track that has an `album` under the name `album` and the album artist `albumArtists[0]`, or `artists[0]` when this array is empty (`""` when both are); those are the `name` and `albumArtist` of that album's row. When `albumId` is present, use it instead: replacement characters can make display names equal. |
+| `tracks[].albumArtists` | `string[]` | All ALBUM ARTIST values in tag order (`albumArtists.join(", ")` equals `albumArtist`); empty array when untagged. In `library.getAlbums`, a track that has an `album` is filed under the name `album` and the album artist `albumArtists[0]` (falling back to `artists[0]`, or `""` when both are empty); those are the `name` and `albumArtist` of that album's row. When `albumId` is present, match by `albumId` instead of display names to avoid collision from character replacement. |
 | `tracks[].genre` | `string` | Every GENRE value joined with `", "`; empty when untagged. |
 | `tracks[].date` | `string` | First DATE value as tagged, such as `2019` or `2019-05-01`; empty when untagged. |
 | `tracks[].trackNumber` | `integer` | TRACKNUMBER read as an integer; `0` when absent or not a number. |
@@ -517,7 +517,7 @@ Rows of a playlist picked by row number, in the order given, such as the rows `p
 | `tracks[].sampleRate` | `integer` | Sample rate in Hz; `0` when unknown. |
 | `tracks[].channels` | `integer` | Channel count; `0` when unknown. |
 | `tracks[].codec` | `string` | Codec name as the decoder reports it, such as `FLAC` or `MP3`; empty when unknown. |
-| `tracks[].rating` | `integer` | Rating from 0 to 5: the `%rating%` statistic (foo_playcount) when it is 1 to 5, otherwise the RATING tag clamped to that range; `0` when neither rates the track. |
+| `tracks[].rating` | `integer` | Rating value from 0 to 5. Prefers the `%rating%` statistic (foo_playcount) if within 1..5; otherwise falls back to the RATING tag clamped to 0..5; `0` if neither is present. |
 | `tracks[].index` | `integer` | Row in the playlist, from `0`. |
 | `tracks[].composer` | `string` | Every COMPOSER value joined with `", "`; empty when untagged. |
 | `tracks[].comment` | `string` | First COMMENT value; empty when untagged. |
@@ -525,7 +525,7 @@ Rows of a playlist picked by row number, in the order given, such as the rows `p
 | `tracks[].firstPlayed` | `string` | `%first_played%` as foo_playcount formats it; absent when empty, on rows of `playlist.getSelectedTracks` and on rows of a `fields` request. |
 | `tracks[].lastPlayed` | `string` | `%last_played%` as foo_playcount formats it; absent when empty, on rows of `playlist.getSelectedTracks` and on rows of a `fields` request. |
 | `tracks[].added` | `string` | `%added%` as foo_playcount formats it; absent when empty, on rows of `playlist.getSelectedTracks` and on rows of a `fields` request. |
-| `tracks[].formats` | `Record<string, string>` | The `formats` columns of `playlist.getTracks`, by the names given; present only when `formats` was passed. |
+| `tracks[].formats` | `Record<string, string>` | Named Title Formatting columns; present only when `formats` was requested. |
 | `contentVersion` | `string` | The row numbers hold only while the playlist keeps this version; absent when the playlist does not exist. |
 
 `success` is `true` on success. On failure the response is `{ success: false, error, code }`; see [Error codes](../reference/errors.md) for `code`.
@@ -534,7 +534,7 @@ Rows of a playlist picked by row number, in the order given, such as the rows `p
 ### playlist.playTrack
 
 <!-- api-schema:begin playlist.playTrack -->
-Play a row of a playlist, as double-clicking it does. A row past the last one fails with `INVALID_INDEX`. With `deferred`, `expectedVersion` is compared again when playback starts; if the rows changed by then, nothing plays.
+Play a row of a playlist, as double-clicking it does. A row past the last one fails with `INVALID_INDEX`. With `deferred`, `expectedVersion` is verified again before starting playback; if rows changed in between, playback is skipped.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
@@ -598,13 +598,13 @@ Remove the selected rows from a playlist, saving an undo point first. A locked p
 ### playlist.moveTracks
 
 <!-- api-schema:begin playlist.moveTracks -->
-Move the selected rows of a playlist by `delta` positions, saving an undo point first. With `items`, the selection is first replaced by those rows; the caller's own selection is lost. A locked playlist fails with `LOCKED`.
+Move the selected rows of a playlist by `delta` positions, saving an undo point first. When `items` is specified, it replaces the current selection before moving, and the caller's own selection is lost. A locked playlist fails with `LOCKED`.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `playlist` | `integer` | No | Index of the playlist; omitted, the active playlist. An index past the last playlist fails with `INVALID_INDEX`; with this omitted and no active playlist the call fails with `NO_ACTIVE_ITEM`. At least `0`. |
 | `playlistGuid` | `string` | No | Persistent unique identifier of a playlist (bracketed GUID, case-insensitive), used in place of a mutable index. Mutually exclusive with `playlist`; passing both or an invalid format fails with `INVALID_PARAMS`. Fails with `NOT_FOUND` if the playlist does not exist, never falling back. Invalid-format and not-found failures return the given GUID in `details.playlistGuid`. |
-| `items` | `integer[]` | No | Rows to move; they replace the current selection first. Omitted or empty, the current selection moves. Each item: at least `0`. |
+| `items` | `integer[]` | No | Target row indices to move; specified indices replace the current playlist selection before moving. When omitted or empty, moves the currently selected rows. Each item: at least `0`. |
 | `delta` | `integer` | Yes | How many positions to move: negative towards the top, positive towards the bottom. |
 | `expectedVersion` | `string` | No | Expected content version for optimistic concurrency control. When mismatched, mutations are aborted with `STALE_TARGET` (`details.current` carries current version). Omitted, no check is made. |
 
@@ -921,7 +921,7 @@ See the [complete SDK subscription example](../sdk/playlist.md#onautoplaylistuir
 ### playlist.getAutoplaylistQuery
 
 <!-- api-schema:begin playlist.getAutoplaylistQuery -->
-Describe a playlist's autoplaylist status without editor capability fields. foobar2000 does not expose the query of an autoplaylist, so `query` is always `null`.
+Describe a playlist's autoplaylist status without editor capability fields, and read the query and sort of a list driven by foobar2000's built-in query/sort client. The read does not open UI or change the list; it reflects the client's current state on every call. Lists of any other provider (third-party, managed by this component, lock-only) and lists whose configuration cannot be decoded return `null` for both, with `note` saying which; `getAutoplaylistConfig` reads the managed ones.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
@@ -932,13 +932,14 @@ Describe a playlist's autoplaylist status without editor capability fields. foob
 
 | Field | Type | Description |
 | --- | --- | --- |
-| `isAutoplaylist` | `boolean` | Whether the playlist is an autoplaylist; `keepSorted`, `source`, `note` and `lockName` are present only when it is. |
+| `isAutoplaylist` | `boolean` | Whether the playlist is an autoplaylist; `keepSorted`, `source`, `note` and `lockName` are present only when true. |
 | `playlist` | `integer` | Index of the playlist. |
 | `playlistGuid` | `string` | Unique identifier of the playlist, formatted as `{XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX}`. Pass as `playlistGuid` to reliably target this playlist. |
-| `query` | `string \| null` | Always `null`: foobar2000 does not expose the query. |
+| `query` | `string \| null` | The list's query, read from foobar2000's built-in query/sort client. `null` when the provider is another one, the configuration cannot be decoded, or the playlist is not an autoplaylist; `note` says which for an autoplaylist. |
+| `sort` | `string \| null` | The independent sort expression, an empty string when none is set. `null` exactly when `query` is `null`. A host older than this field omits it, so test `query` first. |
 | `keepSorted` | `boolean` | Whether the manager-backed autoplaylist keeps its tracks sorted. The `false` value for `source: 'dui'` is a placeholder for an unreadable lock configuration. |
 | `source` | `"sdk" \| "dui"` | `sdk` identifies the autoplaylist-manager path, including third-party clients; `dui` identifies the existing automatic-lock name heuristic. Neither identifies the current UI or editor support. |
-| `note` | `string` | Says that the query is not available. |
+| `note` | `string` | Why `query` is `null` for an autoplaylist: the provider does not support reading, the configuration cannot be parsed, or the list is managed (use `getAutoplaylistConfig`). Absent when `query` was read. |
 | `lockName` | `string` | Name of the playlist's lock, present when `source` is `dui`. |
 
 `success` is `true` on success. On failure the response is `{ success: false, error, code }`; see [Error codes](../reference/errors.md) for `code`.
@@ -946,7 +947,8 @@ Describe a playlist's autoplaylist status without editor capability fields. foob
 
 ```js
 const q = await fb2k.invoke('playlist.getAutoplaylistQuery', { playlist: 0 });
-// q.query is null even when q.isAutoplaylist is true
+// q.query and q.sort are strings for a list driven by the built-in query/sort client,
+// otherwise null with q.note saying why
 ```
 
 ### playlist.getAvailableColumns
@@ -1082,7 +1084,7 @@ The selected rows of a playlist in playlist order, without the play statistics. 
 | `tracks[].firstPlayed` | `string` | `%first_played%` as foo_playcount formats it; absent when empty, on rows of `playlist.getSelectedTracks` and on rows of a `fields` request. |
 | `tracks[].lastPlayed` | `string` | `%last_played%` as foo_playcount formats it; absent when empty, on rows of `playlist.getSelectedTracks` and on rows of a `fields` request. |
 | `tracks[].added` | `string` | `%added%` as foo_playcount formats it; absent when empty, on rows of `playlist.getSelectedTracks` and on rows of a `fields` request. |
-| `tracks[].formats` | `Record<string, string>` | The `formats` columns of `playlist.getTracks`, by the names given; present only when `formats` was passed. |
+| `tracks[].formats` | `Record<string, string>` | Named Title Formatting columns; present only when `formats` was requested. |
 | `count` | `integer` | Rows returned. |
 | `contentVersion` | `string` | The row numbers in `tracks` hold only while the playlist keeps this version. |
 
@@ -1314,14 +1316,14 @@ await fb2k.invoke('playlist.reorderPlaylists', { newOrder: [2, 0, 1] });
 ### playlist.replaceAllAndPlay
 
 <!-- api-schema:begin playlist.replaceAllAndPlay -->
-Replace the whole content of a playlist and play it: stop playback, clear the playlist (saving an undo point), add the paths as `playlist.addPaths` does, make the playlist active and play or focus `playIndex`. When nothing could be added the call fails with `NOT_FOUND`, and the playlist stays empty. A locked playlist fails with `LOCKED` before anything changes. The paths are resolved after the clear, as in `playlist.addPaths`: a playlist moved meanwhile is still the one filled and played; one removed meanwhile fails with `OPERATION_FAILED`, and one locked meanwhile fails with `LOCKED` and stays empty.
+Replace the whole content of a playlist and play it: stop playback, clear the playlist (saving an undo point), add the paths in the given order as `playlist.addPathsSequential` does, make the playlist active and play or focus `playIndex`. Unlike `playlist.addPaths`, duplicates are kept and the user's incoming-item order is not applied. Entries longer than 2048 characters, and entries that resolve to nothing, are skipped. When nothing could be added the call fails with `NOT_FOUND`, and the playlist stays empty. A locked playlist fails with `LOCKED` before anything changes. The paths are resolved after the clear, as in `playlist.addPaths`: a playlist moved meanwhile is still the one filled and played; one removed meanwhile fails with `OPERATION_FAILED`, and one locked meanwhile fails with `LOCKED` and stays empty.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `playlist` | `integer` | No | Index of the playlist; omitted, the active playlist. An index past the last playlist fails with `INVALID_INDEX`; with this omitted and no active playlist the call fails with `NO_ACTIVE_ITEM`. At least `0`. |
 | `playlistGuid` | `string` | No | Persistent unique identifier of a playlist (bracketed GUID, case-insensitive), used in place of a mutable index. Mutually exclusive with `playlist`; passing both or an invalid format fails with `INVALID_PARAMS`. Fails with `NOT_FOUND` if the playlist does not exist, never falling back. Invalid-format and not-found failures return the given GUID in `details.playlistGuid`. |
 | `paths` | `string[]` | Yes | The new content: files, folders or URLs. Must not be empty. |
-| `playIndex` | `integer` | No | Row to play, or to focus with `autoPlay` `false`; past the last row, the first one. The rows do not keep the order of `paths`, so this names a position, not one of the given paths. At least `0`. Default: `0`. |
+| `playIndex` | `integer` | No | Row to play, or to focus with `autoPlay` `false`; past the last row, the first one. The rows follow the order of `paths`: when every path is one track, this is the index of the path to play. A path that expands to several tracks (a folder, a cue sheet) takes that many rows, and a skipped path takes none. At least `0`. Default: `0`. |
 | `stopFirst` | `boolean` | No | Stop playback first, when something is playing. Default: `true`. |
 | `autoPlay` | `boolean` | No | Play `playIndex`; `false` only focuses it. Default: `true`. |
 
@@ -1457,7 +1459,7 @@ Sort a playlist by a Title Formatting pattern, saving an undo point first. A loc
 | `playlist` | `integer` | No | Index of the playlist; omitted, the active playlist. An index past the last playlist fails with `INVALID_INDEX`; with this omitted and no active playlist the call fails with `NO_ACTIVE_ITEM`. At least `0`. |
 | `playlistGuid` | `string` | No | Persistent unique identifier of a playlist (bracketed GUID, case-insensitive), used in place of a mutable index. Mutually exclusive with `playlist`; passing both or an invalid format fails with `INVALID_PARAMS`. Fails with `NOT_FOUND` if the playlist does not exist, never falling back. Invalid-format and not-found failures return the given GUID in `details.playlistGuid`. |
 | `pattern` | `string` | No | Title Formatting pattern to sort by. Default: `"%title%"`. |
-| `descending` | `boolean` | No | Reverse the whole playlist after sorting. The reversal covers every track, the unselected ones too, even with `selectedOnly`. Default: `false`. |
+| `descending` | `boolean` | No | Reverse the whole playlist after sorting. The reversal covers all tracks, even when `selectedOnly` is set. Default: `false`. |
 | `selectedOnly` | `boolean` | No | Sort only the selected tracks among themselves, keeping the others in place. Default: `false`. |
 
 **Returns**

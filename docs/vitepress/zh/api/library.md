@@ -2,7 +2,7 @@
 
 检索与浏览媒体库曲目、专辑、艺术家，管理根目录索引、增量同步与全库缓存。
 
-> ⚠️ 绝大多数 Library API 依赖 foobar2000 媒体库处于启用状态；未配置媒体库目录时返回空结果或报错 `error: "Library not enabled"`。枚举物理根目录推荐使用 `library.getRoots`；`library.browseDirectory` 仅保留为旧版路径前缀投影视图。
+> ⚠️ 绝大多数 Library API 依赖 foobar2000 媒体库处于启用状态；未启用时返回空结果或报错 `error: "Library not enabled"`。枚举物理根目录推荐使用 `library.getRoots`；`library.browseDirectory` 仅保留为旧版路径前缀投影视图。
 
 ## 媒体库状态
 
@@ -137,7 +137,7 @@ const { count } = res;
 
 > `artist` / `albumArtist` / `genre` / `composer`（仅指该 API 实际返回的字段）的多值标签按 `, ` 原序拼接，不去重。
 
-> `artists` 是 `artist` 的原子值数组：`artists.join(', ')` 恰好等于 `artist`，多值标签只能从 `artists` 精确还原，从 `artist` 还原不了。每个共享的 `Track` 行都带它（媒体库的曲目 API、`playlist.getTracks`、`playback.getCurrentTrack`、`queue.get` 与曲目事件），`library.getByPath` 的扁平结果也带；artwork 载荷不带。凡返回 `Track` 行的地方，`albumArtists` 对 `albumArtist` 同理：它的第一个值（为空时取 `artists[0]`）就是 `library.getAlbums` 给这首曲目归组用的专辑艺术家。
+> `artists` 为 `artist` 的原子字符串数组，满足 `artists.join(', ')` 等于 `artist`。多值标签可由 `artists` 完整无损还原。共享 `Track` 对象（媒体库曲目 API、`playlist.getTracks`、`playback.getCurrentTrack`、`queue.get` 与曲目相关事件）及 `library.getByPath` 的扁平结果均包含该字段（`artwork` 载荷除外）。`albumArtists` 与 `albumArtist` 同样遵循该规则：其首个元素（若为空则回退取 `artists[0]`）对应 `library.getAlbums` 用于专辑归组的专辑艺术家。
 
 ```javascript
 // 分页获取
@@ -175,7 +175,7 @@ const page2 = await fb2k.invoke('library.getAll', { offset: 50, limit: 50 });
 
 > `artist` / `albumArtist` / `genre` / `composer`（仅指该 API 实际返回的字段）的多值标签按 `, ` 原序拼接，不去重。
 
-> `artists` 是 `artist` 的原子值数组：`artists.join(', ')` 恰好等于 `artist`，多值标签只能从 `artists` 精确还原，从 `artist` 还原不了。每个共享的 `Track` 行都带它（媒体库的曲目 API、`playlist.getTracks`、`playback.getCurrentTrack`、`queue.get` 与曲目事件），`library.getByPath` 的扁平结果也带；artwork 载荷不带。凡返回 `Track` 行的地方，`albumArtists` 对 `albumArtist` 同理：它的第一个值（为空时取 `artists[0]`）就是 `library.getAlbums` 给这首曲目归组用的专辑艺术家。本 API 返回扁平对象，因此只多 `artists` 这一个数组键。
+> `artists` 为 `artist` 的原子字符串数组，满足 `artists.join(', ')` 等于 `artist`。多值标签可由 `artists` 完整无损还原。共享 `Track` 对象（媒体库曲目 API、`playlist.getTracks`、`playback.getCurrentTrack`、`queue.get` 与曲目相关事件）及 `library.getByPath` 的扁平结果均包含该字段（`artwork` 载荷除外）。`albumArtists` 与 `albumArtist` 同样遵循该规则：其首个元素（若为空则回退取 `artists[0]`）对应 `library.getAlbums` 用于专辑归组的专辑艺术家。本 API 返回扁平对象，因此只多 `artists` 这一个数组键。
 
 ```javascript
 const result = await fb2k.invoke('library.getByPath', { path: 'C:\\Music\\song.flac' });
@@ -235,7 +235,7 @@ if (result.found) {
 <!-- api-schema:end -->
 
 
-> 专辑按「专辑名 + `album artist` 首值」分组，`album artist` 标签不存在时回退到 `artist` 首值。行里的 `artist` 与 `albumArtist` 装的都是宿主解析出的那一个值，所以在没有 `album artist` 标签的专辑上，两个键报的都是首见曲目的第一位署名艺术家。两个键都不是逐曲目的署名，而多值 `album artist` 只有首值参与。要列出某位艺术家参与的专辑，用 `library.getArtistAlbums`。
+> `library.getAlbums` 按「专辑名 + `album artist` 首值」分组；若 `album artist` 标签缺失则回退到 `artist` 首值。返回行中的 `artist` 与 `albumArtist` 均为分组聚合解析值：在未声明 `album artist` 标签的专辑中，两个字段均反映该专辑首见曲目的首位署名艺术家，非逐曲目独立署名；多值 `album artist` 仅首值参与分组。若需按参与艺术家完整检索关联专辑，请使用 `library.getArtistAlbums`。
 
 > `coverDataUrl` 仅当 `includeCover: true` 且封面不超过 `coverMaxSize` KB 时返回。
 
@@ -448,13 +448,13 @@ const { items } = res;
 成功时 `success` 为 `true`；失败时返回 `{ success: false, error, code }`，`code` 见[错误码](../reference/errors.md)。
 <!-- api-schema:end -->
 
-> 行的键集与 `library.getAlbums` 的行相同，不带 `coverDataUrl` 与 canonical 专辑的 `albumId`，另有 `tracks` 引用该艺人在本组中的成员：`name`、`artist`、`albumArtist`、`trackCount`、`discCount`、`duration`、`year`、`genre`、`label`、`firstTrackPath` 与 `firstTrackAbsolutePath`。要封面就把 `firstTrackAbsolutePath` 交给 `artwork.getForTrack`——`firstTrackPath` 可能是 `file-relative://` 形态，那种形态该端点不受理。端点自己报的失败（媒体库未启用、查询出错）仍带空的 `albums`；参数错误不带。
+> 每行包含 `name`、`artist`、`albumArtist`、`trackCount`、`discCount`、`duration`、`year`、`genre`、`label`、`firstTrackPath`、`firstTrackAbsolutePath` 与 `tracks`，即 `library.getAlbums` 行中除 `coverDataUrl` 与 canonical 专辑 `albumId` 以外的键。`tracks` 列出该艺术家在本组中参与的曲目。如需封面，应将 `firstTrackAbsolutePath` 传给 `artwork.getForTrack`：`firstTrackPath` 可能是 `file-relative://` URI，该方法不受理这种路径。方法自身报告的失败（媒体库未启用、查询出错）仍带有空的 `albums`；参数错误的应答里没有 `albums`。
 
-> **`trackCount`、`duration` 与 `discCount` 只统计该艺术家参与的曲目**，不是整张专辑。同一张专辑在 `library.getAlbums` 那边给的是整张的数字，所以只要该艺术家只参与了一部分，两边就不一致——在一张 20 轨合辑上客串一首，这里报的是 `trackCount: 1`。拿本端点的行当专辑卡渲染会把数字显示得偏小。
+> `trackCount`、`duration` 与 `discCount` 仅统计当前艺术家参与的曲目，而非整张专辑的总量。若该艺术家仅参与专辑部分曲目，本端点返回的统计值将小于 `library.getAlbums` 报告的整专数据。若需渲染完整的专辑信息卡片，建议直接查询 `library.getAlbums`。
 
-> `total` 是截断前的专辑数。本端点没有 `offset`：`hasMore` 为真时，唯一的办法是加大 `limit` 重取。
+> `total` 表示截断前的匹配专辑总数。本端点不支持 `offset` 分页；若 `hasMore: true`，须通过增大 `limit` 重新获取更多结果。
 
-> `library.getArtists` 给出的名字在这里能命中，即使它不是某曲目多位艺术家中的第一位——宿主是拿每个原子标签值逐个比较的。曲目对象上拼接后的 `artist` 串不能当键用，请传单个艺术家名。`substring` 下短名还会带回名字里含它的其他艺术家的专辑，且它的大小写规则不对称：查询里的小写字母能匹配标签里的任意大小写，大写字母则要求标签同一位置也是大写——`camellia` 命中 `Camellia`，`CAMELLIA` 命不中。`exact` 不受这条影响。
+> `library.getArtists` 返回的艺术家名称可直接用于查询，宿主将对每个原子标签值逐个比较，因此多位艺术家中非首位的名字也能匹配。传入的查询参数须为单个艺术家名称，不可使用曲目对象中已拼接的 `artist` 字符串。在 `substring` 匹配模式下，短名称还会匹配到名称中包含它的其他艺术家；该模式的大小写规则具有非对称性：小写字母可匹配任意大小写标签，大写字母要求标签严格大写（例如 `camellia` 可匹配 `Camellia`，而 `CAMELLIA` 无法匹配）。`exact` 模式不受此非对称规则影响。
 
 > 本端点只按专辑名分组，因此同名不同艺术家的专辑会并成一行。`album` 标签缺失的曲目归入 `(Unknown Album)`；标签存在但值为空串时自成一组、组名为空串。`library.getAlbums` 这两点都不同：它按专辑名加专辑艺术家分组，并且跳过专辑名缺失或为空的曲目。
 
@@ -705,7 +705,7 @@ const root = await fb2k.invoke('library.browseDirectory', { includeFiles: false 
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
 | `tracks` | `LibraryTrackPartial[]` | 当前分页匹配的曲目列表，按媒体库原生顺序排列；`index` 为在全部匹配曲目中的位置；各行仅包含 `fields` 要求的字段 |
-| `tracks[].handle` | `string` | 跨端点识别同一首曲目的键：`absolutePath`，`subsong` 不为 `0` 时带 `\|subsong:N` 后缀。同一首曲目在这些方法里得到同一个 handle；因为带后缀，它不是普通文件路径，接收路径的方法会各自说明是否接受它。 |
+| `tracks[].handle` | `string` | 跨端点曲目唯一标识：格式为 `absolutePath`，`subsong` 非 0 时追加 `\|subsong:N` 后缀。同一首曲目在所有方法中的 handle 相同。因包含后缀故不同于普通文件路径，各路径参数接口均单独说明是否接受此标识 |
 | `tracks[].path` | `string` | foobar2000 存储的路径：本地文件是 `file://`，相对 foobar2000 目录存储的路径（便携安装）是 `file-relative://`，网络流是 URL。不带子曲目后缀。 |
 | `tracks[].absolutePath` | `string` | 不带子曲目后缀的原生文件系统路径；网络流与 `path` 相同。 |
 | `tracks[].subsong` | `integer` | 解码器在文件内分配的子曲目标识，不一定是连续序号；整个文件和网络流都是 `0`。 |
@@ -713,9 +713,9 @@ const root = await fb2k.invoke('library.browseDirectory', { includeFiles: false 
 | `tracks[].artist` | `string` | 全部 ARTIST 值用 `", "` 连接；没有标签时为空。 |
 | `tracks[].artists` | `string[]` | 全部 ARTIST 值，按标签顺序；没有标签时为空数组。 |
 | `tracks[].album` | `string` | 第一个 ALBUM 值；没有标签时为空。 |
-| `tracks[].albumId` | `string` | 原始专辑名或专辑艺术家含非法 UTF-8 时提供的不透明身份标识。此时用它匹配专辑行，不用显示名称；普通名称不带此字段。 |
+| `tracks[].albumId` | `string` | 原始专辑名或专辑艺术家含非法 UTF-8 时提供的不透明身份标识。出现此标识时优先据此匹配专辑行，避免依赖显示名称；标准名称不包含此字段 |
 | `tracks[].albumArtist` | `string` | 全部 ALBUM ARTIST 值用 `", "` 连接；没有标签时为空。 |
-| `tracks[].albumArtists` | `string[]` | 全部 ALBUM ARTIST 值，按标签顺序，`albumArtists.join(", ")` 等于 `albumArtist`；没有标签时为空数组。`library.getAlbums` 把有 `album` 的曲目归入名为 `album`、专辑艺术家为 `albumArtists[0]` 的专辑，本数组为空时取 `artists[0]`（两者都空时为 `""`）；这两个值就是该专辑行的 `name` 与 `albumArtist`。存在 `albumId` 时应改用它匹配，因为替换字符可能让不同原始名称显示相同。 |
+| `tracks[].albumArtists` | `string[]` | 按标签顺序排列的全部 ALBUM ARTIST 值，`albumArtists.join(", ")` 等于 `albumArtist`；无标签时为空数组。`library.getAlbums` 把有 `album` 的曲目归入名为 `album`、专辑艺术家为 `albumArtists[0]` 的专辑（本数组为空时回退至 `artists[0]`，两者都空时为 `""`）；这两个值即该专辑行的 `name` 与 `albumArtist`。存在 `albumId` 时优先按其匹配，避免替换字符导致显示名冲突 |
 | `tracks[].genre` | `string` | 全部 GENRE 值用 `", "` 连接；没有标签时为空。 |
 | `tracks[].date` | `string` | 第一个 DATE 值，按标签原样，如 `2019` 或 `2019-05-01`；没有标签时为空。 |
 | `tracks[].trackNumber` | `integer` | TRACKNUMBER 按整数读取；缺失或不是数字时为 `0`。 |
@@ -726,7 +726,7 @@ const root = await fb2k.invoke('library.browseDirectory', { includeFiles: false 
 | `tracks[].sampleRate` | `integer` | 采样率，单位 Hz；未知时为 `0`。 |
 | `tracks[].channels` | `integer` | 声道数；未知时为 `0`。 |
 | `tracks[].codec` | `string` | 解码器报告的编码名，如 `FLAC`、`MP3`；未知时为空。 |
-| `tracks[].rating` | `integer` | 评分 0 到 5：`%rating%` 统计值（foo_playcount）在 1 到 5 之间时用它，否则用 RATING 标签并夹到该范围；两处都没有评分时为 `0`。 |
+| `tracks[].rating` | `integer` | 评分（0 到 5）。优先读取 1..5 范围内的 `%rating%` 统计字段（foo_playcount）；否则回退至 RATING 标签并钳位到 0..5；两处均未提供时为 0 |
 | `tracks[].index` | `integer` | 当前上下文列表中的行索引序号 |
 | `total` | `integer` | 满足查询条件的匹配曲目总数（分页前） |
 | `offset` | `integer` | 实际生效的分页起始偏移量 |
@@ -772,7 +772,7 @@ const albums = await fb2k.invoke('library.search', {
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
 | `tracks` | `LibraryTrackPartial[]` | 匹配的曲目列表，按 `sort` 或媒体库顺序排列；`index` 为在当前结果列表中的位置；各行仅包含 `fields` 要求的字段 |
-| `tracks[].handle` | `string` | 跨端点识别同一首曲目的键：`absolutePath`，`subsong` 不为 `0` 时带 `\|subsong:N` 后缀。同一首曲目在这些方法里得到同一个 handle；因为带后缀，它不是普通文件路径，接收路径的方法会各自说明是否接受它。 |
+| `tracks[].handle` | `string` | 跨端点曲目唯一标识：格式为 `absolutePath`，`subsong` 非 0 时追加 `\|subsong:N` 后缀。同一首曲目在所有方法中的 handle 相同。因包含后缀故不同于普通文件路径，各路径参数接口均单独说明是否接受此标识 |
 | `tracks[].path` | `string` | foobar2000 存储的路径：本地文件是 `file://`，相对 foobar2000 目录存储的路径（便携安装）是 `file-relative://`，网络流是 URL。不带子曲目后缀。 |
 | `tracks[].absolutePath` | `string` | 不带子曲目后缀的原生文件系统路径；网络流与 `path` 相同。 |
 | `tracks[].subsong` | `integer` | 解码器在文件内分配的子曲目标识，不一定是连续序号；整个文件和网络流都是 `0`。 |
@@ -780,9 +780,9 @@ const albums = await fb2k.invoke('library.search', {
 | `tracks[].artist` | `string` | 全部 ARTIST 值用 `", "` 连接；没有标签时为空。 |
 | `tracks[].artists` | `string[]` | 全部 ARTIST 值，按标签顺序；没有标签时为空数组。 |
 | `tracks[].album` | `string` | 第一个 ALBUM 值；没有标签时为空。 |
-| `tracks[].albumId` | `string` | 原始专辑名或专辑艺术家含非法 UTF-8 时提供的不透明身份标识。此时用它匹配专辑行，不用显示名称；普通名称不带此字段。 |
+| `tracks[].albumId` | `string` | 原始专辑名或专辑艺术家含非法 UTF-8 时提供的不透明身份标识。出现此标识时优先据此匹配专辑行，避免依赖显示名称；标准名称不包含此字段 |
 | `tracks[].albumArtist` | `string` | 全部 ALBUM ARTIST 值用 `", "` 连接；没有标签时为空。 |
-| `tracks[].albumArtists` | `string[]` | 全部 ALBUM ARTIST 值，按标签顺序，`albumArtists.join(", ")` 等于 `albumArtist`；没有标签时为空数组。`library.getAlbums` 把有 `album` 的曲目归入名为 `album`、专辑艺术家为 `albumArtists[0]` 的专辑，本数组为空时取 `artists[0]`（两者都空时为 `""`）；这两个值就是该专辑行的 `name` 与 `albumArtist`。存在 `albumId` 时应改用它匹配，因为替换字符可能让不同原始名称显示相同。 |
+| `tracks[].albumArtists` | `string[]` | 按标签顺序排列的全部 ALBUM ARTIST 值，`albumArtists.join(", ")` 等于 `albumArtist`；无标签时为空数组。`library.getAlbums` 把有 `album` 的曲目归入名为 `album`、专辑艺术家为 `albumArtists[0]` 的专辑（本数组为空时回退至 `artists[0]`，两者都空时为 `""`）；这两个值即该专辑行的 `name` 与 `albumArtist`。存在 `albumId` 时优先按其匹配，避免替换字符导致显示名冲突 |
 | `tracks[].genre` | `string` | 全部 GENRE 值用 `", "` 连接；没有标签时为空。 |
 | `tracks[].date` | `string` | 第一个 DATE 值，按标签原样，如 `2019` 或 `2019-05-01`；没有标签时为空。 |
 | `tracks[].trackNumber` | `integer` | TRACKNUMBER 按整数读取；缺失或不是数字时为 `0`。 |
@@ -793,7 +793,7 @@ const albums = await fb2k.invoke('library.search', {
 | `tracks[].sampleRate` | `integer` | 采样率，单位 Hz；未知时为 `0`。 |
 | `tracks[].channels` | `integer` | 声道数；未知时为 `0`。 |
 | `tracks[].codec` | `string` | 解码器报告的编码名，如 `FLAC`、`MP3`；未知时为空。 |
-| `tracks[].rating` | `integer` | 评分 0 到 5：`%rating%` 统计值（foo_playcount）在 1 到 5 之间时用它，否则用 RATING 标签并夹到该范围；两处都没有评分时为 `0`。 |
+| `tracks[].rating` | `integer` | 评分（0 到 5）。优先读取 1..5 范围内的 `%rating%` 统计字段（foo_playcount）；否则回退至 RATING 标签并钳位到 0..5；两处均未提供时为 0 |
 | `tracks[].index` | `integer` | 当前上下文列表中的行索引序号 |
 | `total` | `integer` | 满足查询条件的曲目总数（`limit` 截断前） |
 
@@ -865,7 +865,7 @@ const paths = await fb2k.invoke('library.query', {
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
 | `tracks` | `LibraryTrackPartial[]` | 查找到的曲目列表，保持与输入 `handles` 严格一致的顺序；`index` 为在当前返回列表中的位置；各行仅包含 `fields` 要求的字段 |
-| `tracks[].handle` | `string` | 跨端点识别同一首曲目的键：`absolutePath`，`subsong` 不为 `0` 时带 `\|subsong:N` 后缀。同一首曲目在这些方法里得到同一个 handle；因为带后缀，它不是普通文件路径，接收路径的方法会各自说明是否接受它。 |
+| `tracks[].handle` | `string` | 跨端点曲目唯一标识：格式为 `absolutePath`，`subsong` 非 0 时追加 `\|subsong:N` 后缀。同一首曲目在所有方法中的 handle 相同。因包含后缀故不同于普通文件路径，各路径参数接口均单独说明是否接受此标识 |
 | `tracks[].path` | `string` | foobar2000 存储的路径：本地文件是 `file://`，相对 foobar2000 目录存储的路径（便携安装）是 `file-relative://`，网络流是 URL。不带子曲目后缀。 |
 | `tracks[].absolutePath` | `string` | 不带子曲目后缀的原生文件系统路径；网络流与 `path` 相同。 |
 | `tracks[].subsong` | `integer` | 解码器在文件内分配的子曲目标识，不一定是连续序号；整个文件和网络流都是 `0`。 |
@@ -873,9 +873,9 @@ const paths = await fb2k.invoke('library.query', {
 | `tracks[].artist` | `string` | 全部 ARTIST 值用 `", "` 连接；没有标签时为空。 |
 | `tracks[].artists` | `string[]` | 全部 ARTIST 值，按标签顺序；没有标签时为空数组。 |
 | `tracks[].album` | `string` | 第一个 ALBUM 值；没有标签时为空。 |
-| `tracks[].albumId` | `string` | 原始专辑名或专辑艺术家含非法 UTF-8 时提供的不透明身份标识。此时用它匹配专辑行，不用显示名称；普通名称不带此字段。 |
+| `tracks[].albumId` | `string` | 原始专辑名或专辑艺术家含非法 UTF-8 时提供的不透明身份标识。出现此标识时优先据此匹配专辑行，避免依赖显示名称；标准名称不包含此字段 |
 | `tracks[].albumArtist` | `string` | 全部 ALBUM ARTIST 值用 `", "` 连接；没有标签时为空。 |
-| `tracks[].albumArtists` | `string[]` | 全部 ALBUM ARTIST 值，按标签顺序，`albumArtists.join(", ")` 等于 `albumArtist`；没有标签时为空数组。`library.getAlbums` 把有 `album` 的曲目归入名为 `album`、专辑艺术家为 `albumArtists[0]` 的专辑，本数组为空时取 `artists[0]`（两者都空时为 `""`）；这两个值就是该专辑行的 `name` 与 `albumArtist`。存在 `albumId` 时应改用它匹配，因为替换字符可能让不同原始名称显示相同。 |
+| `tracks[].albumArtists` | `string[]` | 按标签顺序排列的全部 ALBUM ARTIST 值，`albumArtists.join(", ")` 等于 `albumArtist`；无标签时为空数组。`library.getAlbums` 把有 `album` 的曲目归入名为 `album`、专辑艺术家为 `albumArtists[0]` 的专辑（本数组为空时回退至 `artists[0]`，两者都空时为 `""`）；这两个值即该专辑行的 `name` 与 `albumArtist`。存在 `albumId` 时优先按其匹配，避免替换字符导致显示名冲突 |
 | `tracks[].genre` | `string` | 全部 GENRE 值用 `", "` 连接；没有标签时为空。 |
 | `tracks[].date` | `string` | 第一个 DATE 值，按标签原样，如 `2019` 或 `2019-05-01`；没有标签时为空。 |
 | `tracks[].trackNumber` | `integer` | TRACKNUMBER 按整数读取；缺失或不是数字时为 `0`。 |
@@ -886,7 +886,7 @@ const paths = await fb2k.invoke('library.query', {
 | `tracks[].sampleRate` | `integer` | 采样率，单位 Hz；未知时为 `0`。 |
 | `tracks[].channels` | `integer` | 声道数；未知时为 `0`。 |
 | `tracks[].codec` | `string` | 解码器报告的编码名，如 `FLAC`、`MP3`；未知时为空。 |
-| `tracks[].rating` | `integer` | 评分 0 到 5：`%rating%` 统计值（foo_playcount）在 1 到 5 之间时用它，否则用 RATING 标签并夹到该范围；两处都没有评分时为 `0`。 |
+| `tracks[].rating` | `integer` | 评分（0 到 5）。优先读取 1..5 范围内的 `%rating%` 统计字段（foo_playcount）；否则回退至 RATING 标签并钳位到 0..5；两处均未提供时为 0 |
 | `tracks[].index` | `integer` | 当前上下文列表中的行索引序号 |
 | `missing` | `string[]` | 未在媒体库中找到或媒体库禁用时的 handle 列表，保持输入顺序 |
 
@@ -896,15 +896,30 @@ const paths = await fb2k.invoke('library.query', {
 ### 用法
 
 ```js @ts-nocheck
-const LIMIT = 5000;
+const PAGE = 5000;
+const FIELDS = ['handle', 'title', 'artist', 'album', 'duration'];
 
 async function fetchRows(handles) {
-    for (let i = 0; i < handles.length; i += LIMIT) {
-        const res = await fb2k.invoke('library.getTracks', { handles: handles.slice(i, i + LIMIT) });
+    for (let i = 0; i < handles.length; i += PAGE) {
+        const res = await fb2k.invoke('library.getTracks', { handles: handles.slice(i, i + PAGE), fields: FIELDS });
         if (res.success === false) throw new Error(res.error);
         await store.put(res.tracks);
         await store.delete(res.missing);
     }
+}
+
+async function rebuild(handles) {
+    await store.clear();
+    const seen = new Set();
+    let hasMore = true;
+    for (let offset = 0; hasMore; offset += PAGE) {
+        const res = await fb2k.invoke('library.search', { query: 'ALL', offset, limit: PAGE, fields: FIELDS });
+        if (res.success === false) throw new Error(res.error);
+        await store.put(res.tracks);
+        for (const track of res.tracks) seen.add(track.handle);
+        hasMore = res.hasMore;
+    }
+    await fetchRows(handles.filter((handle) => !seen.has(handle)));
 }
 
 async function sync() {
@@ -912,8 +927,7 @@ async function sync() {
     const res = await fb2k.invoke('library.getChanges', { epoch, since: revision });
     if (res.success === false) throw new Error(res.error);
     if (res.resync) {
-        await store.clear();
-        await fetchRows(res.handles);
+        await rebuild(res.handles);
     } else {
         await store.delete(res.removed);
         await fetchRows(res.changed);
@@ -924,6 +938,8 @@ async function sync() {
 
 - 冷启动时先读取本地副本渲染界面，随后调用 `sync()`。媒体库加载完成前调用会以 `OPERATION_PENDING` 失败；可先检查 `library.getStatus` 的 `initialized` 字段，或等待 `library:initialized` 事件触发。
 - 运行期间，监听到任意 `library:items*` 事件后防抖调用 `sync()`。同步机制不依赖事件携带的 `handles`，即使批量变更事件被截断也不会遗漏。
+- `library.getTracks` 在主线程逐个解析 handle，批量大时会阻塞界面，适合取少量变化的行。整库重建用 `library.search` 翻页。
+- 翻页期间有曲目移出时，后面的行会前移，可能跳过几行，所以翻完要按 `handles` 补取没读到的行。
 - 批量拉取曲目行期间产生的新变更，其修订号高于本次同步应答，会在下次 `sync()` 中再次返回；覆盖写入同一行数据幂等无害。
 - foobar2000 启动加载期间会广播全量 `library:itemsAdded`，此阶段不推进修订号。关闭期间产生的离线变更将在 `library:initialized` 之后陆续分发。
 
@@ -937,7 +953,7 @@ async function sync() {
 
 `library.query` 与 `library.search` 支持可选参数 `fields`，用来限定每行返回哪些曲目字段。省略 `fields` 或传 `null` 时，每行输出媒体库曲目行的全部键。
 
-传 `fields` 时，每行只包含请求的键，不附带任何未请求字段；元数据容器读取失败的条目仍输出请求的非可选键，取自元数据的字段以类型默认值填充（空串、0）。可选的 `albumId` 在没有标识时省略，即使请求了该键也是如此。响应信封不受影响：`library.query` 仍返回 `success` / `tracks` / `total`，`library.search` 仍返回 `success` / `tracks` / `total` / `offset` / `limit` / `hasMore`。
+指定 `fields` 时，返回的曲目行仅包含所选字段。无法读取元数据的曲目以默认值填充非可选字段（空字符串或 `0`）；若曲目无关联专辑标识，则不包含可选字段 `albumId`。外层响应属性（如 `total`、`offset`、`hasMore`）保持不变。
 
 **可用字段名**（精确匹配、大小写敏感）：
 
@@ -945,7 +961,7 @@ async function sync() {
 
 > `artist` / `albumArtist` / `genre` / `composer`（仅指该 API 实际返回的字段）的多值标签按 `, ` 原序拼接，不去重。
 
-> `artists` 是 `artist` 的原子值数组：`artists.join(', ')` 恰好等于 `artist`，多值标签只能从 `artists` 精确还原，从 `artist` 还原不了。每个共享的 `Track` 行都带它（媒体库的曲目 API、`playlist.getTracks`、`playback.getCurrentTrack`、`queue.get` 与曲目事件），`library.getByPath` 的扁平结果也带；artwork 载荷不带。凡返回 `Track` 行的地方，`albumArtists` 对 `albumArtist` 同理：它的第一个值（为空时取 `artists[0]`）就是 `library.getAlbums` 给这首曲目归组用的专辑艺术家。数组与对应的拼接串可单独投影其一，每一对都同源于一次取值；元数据容器读取失败的损坏条目上，被请求的 `artists` 或 `albumArtists` 返回 `[]`。
+> `artists` 为 `artist` 的原子字符串数组，满足 `artists.join(', ')` 等于 `artist`。多值标签可由 `artists` 完整无损还原。共享 `Track` 对象（媒体库曲目 API、`playlist.getTracks`、`playback.getCurrentTrack`、`queue.get` 与曲目相关事件）及 `library.getByPath` 的扁平结果均包含该字段（`artwork` 载荷除外）。`albumArtists` 与 `albumArtist` 同样遵循该规则：其首个元素（若为空则回退取 `artists[0]`）对应 `library.getAlbums` 用于专辑归组的专辑艺术家。`artists` 数组与 `artist` 字符串可独立投影。对于无法读取元数据的损坏曲目，若请求了 `artists` 或 `albumArtists`，其返回值为空数组 `[]`。
 
 重复字段名会去重。`rating` 仅在被请求（或省略 `fields`）时才计算——不请求 `rating` 的投影查询因此省下大部分开销。
 
@@ -985,7 +1001,7 @@ const bad = await fb2k.invoke('library.query', {
 | 投影 | `fields: [...]` | 全字段降到 `['absolutePath']` 后载荷约缩到 1/4.6（8 万行时 44.3 → 9.6 MiB） |
 | 分页 | `offset` / `limit` | 占用只与该页行数成正比，可压到任意目标以下 |
 
-**受支持的访问模式**：分页、投影任一或并用后，每次调用约 ≤2 万行，此时单次调用的主线程占用低于 100ms。超出这个量级请分页，不要靠一次调用拿全部。
+**受支持的访问模式**：分页、投影任一或并用后，每次调用约 ≤2 万行，此时单次调用的主线程占用低于 100ms。若数据规模超过此范围，请采用分页获取，避免单次全量查询。
 
 ::: warning 32 位（x86）宿主须规避大结果集
 32 位进程的用户态地址空间约 2–4 GB，而一次全库全字段响应在解析期间会同时以多种形态驻留（宿主侧 UTF-8 串、宽串、渲染进程侧物化值）。估算的瞬时峰值：
@@ -1115,23 +1131,6 @@ const albums = await fb2k.invoke('library.getAlbums', { useCache: true });
 成功时 `success` 为 `true`；失败时返回 `{ success: false, error, code }`，`code` 见[错误码](../reference/errors.md)。
 <!-- api-schema:end -->
 
-## 事件
-
-| 事件 | 描述 | 数据 |
-| --- | --- | --- |
-| library:itemsAdded | 媒体库新增曲目 | { count, handles, truncated, timestamp } |
-| library:itemsRemoved | 媒体库删除曲目 | { count, handles, truncated, timestamp } |
-| library:itemsModified | 媒体库曲目元数据变化 | { count, handles, truncated, fromHook, timestamp } |
-| library:initialized | 媒体库初始化完成 | { timestamp } |
-
-```javascript
-fb2k.on('library:itemsAdded', async (data) => {
-    console.log(`新增 ${data.count} 首曲目`);
-    // 缓存已自动失效，重新加载数据
-    await fb2k.invoke('library.getStats');
-});
-```
-
 ## 其他公开 API
 
 
@@ -1181,15 +1180,23 @@ const { values: artists } = res2;
 - `library.getRoots` 和 `library.browseTree` 是类型化的媒体库导航 API。`library.browseDirectory` 是旧的路径前缀投影视图，不代表真实根目录集合。
 - `library.getAlbums` 仅在 `includeCover` 启用且存在封面时添加 `coverDataUrl`。该字段是 `data:image/...` URL，而不是 `fb2k://` URL。
 - `library.search` 和 `library.query` 使用 foobar2000 查询语法，底层实现使用 `search_filter_v2`；客户端不应自行解析语法，并应处理表达式非法时 handler 返回的错误。
-- `library.getStatus` 和 `library.getCount` 通过 `enum_items` 枚举，不会返回 `metadb_handle_list`。`library_callback_v2` 回调会先使缓存失效，再广播下列事件。`library:itemsModified` 保留 `library.getRoots` 与 `library.browseTree` 用的目录索引，因为路径不变；`fromHook: true` 的只清掉保留的 `library.getAll` 列表。每个事件都用 `handles` 列出变化的曲目，`truncated` 时不列。
+- `library.getStatus` 与 `library.getCount` 在宿主端轻量枚举，不物化全量句柄列表。底层变更通知触发时，宿主将先清除内部查询缓存，再向各 WebView 广播事件。`library:itemsModified` 事件中，由于文件物理路径未变，目录树索引（`library.getRoots` 与 `library.browseTree` 所用）保持有效；携带 `fromHook: true` 的通知仅清除缓存的全库列表。各事件载荷通过 `handles` 数组返回变动的曲目列表；若发生截断（`truncated: true`），则省略具体句柄列表。
 
-## 媒体库事件 Contract
+## 事件（Library）
 
 四个事件均广播到每个 WebView。
 
-| 事件 | Payload |
-| --- | --- |
-| `library:itemsAdded` | `{ count, handles, truncated, timestamp }` |
-| `library:itemsRemoved` | `{ count, handles, truncated, timestamp }` |
-| `library:itemsModified` | `{ count, handles, truncated, fromHook, timestamp }` |
-| `library:initialized` | `{ timestamp }` |
+| 事件 | 描述 | Payload |
+| --- | --- | --- |
+| `library:itemsAdded` | 媒体库新增曲目 | `{ count, handles, truncated, timestamp }` |
+| `library:itemsRemoved` | 媒体库删除曲目 | `{ count, handles, truncated, timestamp }` |
+| `library:itemsModified` | 媒体库曲目元数据变化 | `{ count, handles, truncated, fromHook, timestamp }` |
+| `library:initialized` | 媒体库初始化完成 | `{ timestamp }` |
+
+```javascript
+fb2k.on('library:itemsAdded', async (data) => {
+    console.log(`新增 ${data.count} 首曲目`);
+    // 缓存已自动失效，重新加载数据
+    await fb2k.invoke('library.getStats');
+});
+```

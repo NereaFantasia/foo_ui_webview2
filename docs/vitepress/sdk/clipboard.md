@@ -6,7 +6,7 @@
 
 Signature: `fb.clipboard.read(): Promise<ClipboardReadResponse>`
 
-Reads the clipboard: which of text, a file list and an image it holds, plus the text and the file paths.
+Reads system clipboard content, returning format availability flags (text, file list, image) along with extracted text and file paths.
 
 ```javascript
 const res = await fb.clipboard.read();
@@ -28,7 +28,7 @@ await fb.clipboard.write('Copied from the theme');
 
 Signature: `fb.clipboard.writeFiles(paths: string[]): Promise<ClipboardWriteFilesResponse>`
 
-Writes a list of file paths for pasting into file-aware applications.
+Writes a list of file paths to the clipboard in native file drop format for pasting into File Explorer and file-aware applications.
 
 ```javascript
 const result = await fb.clipboard.writeFiles([
@@ -41,7 +41,7 @@ const result = await fb.clipboard.writeFiles([
 
 Signature: `fb.clipboard.writeHTML(html: string, plainText?: string): Promise<ClipboardWriteHTMLResponse>`
 
-Writes HTML to the clipboard as `HTML Format`, together with a plain-text fallback: `plainText` when it is non-empty, otherwise the HTML text itself.
+Writes rich text to the clipboard as `HTML Format` with a plain-text fallback: uses `plainText` when provided and non-empty; defaults to the raw HTML source text when omitted or empty.
 
 ```javascript
 await fb.clipboard.writeHTML('<strong>Now playing</strong>', 'Now playing');

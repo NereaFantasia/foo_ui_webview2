@@ -10,7 +10,7 @@
 
 | 属性 | 类型 | 默认值 | 说明 |
 | --- | --- | --- | --- |
-| `source` | string | `'any'` | 传递给 SDK 封装层的歌词来源类型 |
+| `source` | string | `'any'` | 歌词检索的来源类型 |
 | `scroll` | string | `'smooth'` | 滚动模式：仅取值 `smooth` 时启用平滑滚动，其余情况为自动即时滚动 |
 | `has-lyrics` | boolean | — | 只读反映当前曲目是否成功渲染出歌词 |
 | `current-line` | string | — | 只读反映当前高亮行索引（从 0 起始，无高亮时为 -1） |

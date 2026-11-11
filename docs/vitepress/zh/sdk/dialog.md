@@ -16,7 +16,7 @@
 | `options.defaultButton` | `number` | 否 | 默认聚焦的按钮索引；默认 `0` |
 | `options.buttons` | `string[]` | 否 | 自定义按钮文本，按顺序排列 |
 
-`response` 是被点按钮的索引，从 0 开始。默认按钮组是“确定”“取消”，`0` 表示确认、`1` 表示取消；没有 `confirmed` 字段。Esc 与关闭按钮不能关闭对话框，结果总是来自按钮点击；只有连宿主的备用消息框都无法显示时，`response` 才为 `-1`。
+`response` 返回所点击按钮的从 0 开始的数字索引。默认按钮组为“确定”与“取消”，其中 `0` 表示确认、`1` 表示取消；响应中不包含 `confirmed` 字段。Esc 键与窗口关闭按钮均无法直接关闭对话框，返回值始终来源于按钮点击；仅当连宿主的后备消息框也无法弹出时，`response` 返回 `-1`。
 
 ```javascript
 const res = await fb.dialog.confirm({
@@ -34,7 +34,7 @@ if (response === 0) {
 
 签名：`fb.dialog.openFile(options?: DialogOpenFileParams): Promise<DialogOpenFileResponse>`
 
-打开文件选择对话框。返回 `{ success: true, canceled, filePaths }`；对话框无法显示时返回失败信封 `{ success: false, error, code }`。`multiple` 为 `true` 时允许多选；其他选项有 `title`、`defaultPath`（每次打开都生效）和 `filters`。`filters` 是 `{ name, extensions }` 数组，`extensions` 只写扩展名本身，不带点，如 `flac`；`*` 匹配所有文件。
+弹出原生文件选择对话框。成功时返回 `{ success: true, canceled, filePaths }`；对话框无法显示时返回失败信封。设置 `multiple: true` 支持多选；可选参数包含 `title`、`defaultPath`（每次调用时定位初始目录）与 `filters`。`filters` 为 `{ name, extensions }` 对象数组，`extensions` 仅填写不含前导点的扩展名（如 `flac`）；传入 `*` 匹配所有文件。
 
 ```javascript
 const result = await fb.dialog.openFile({
@@ -48,7 +48,7 @@ const result = await fb.dialog.openFile({
 
 签名：`fb.dialog.openFolder(options?: DialogOpenFolderParams): Promise<DialogOpenFolderResponse>`
 
-打开文件夹选择对话框。可选参数 `title` 与 `defaultPath`：后者是对话框打开时定位到的目录，每次打开都定位；路径解析不到文件夹时静默忽略，`%music%` 展开为当前用户的音乐文件夹。返回 `{ success: true, canceled, folderPath }`（对话框无法显示时返回失败信封 `{ success: false, error, code }`），`folderPath` 是用户实际确认的目录，不一定等于 `defaultPath`。
+弹出原生文件夹选择对话框。支持可选参数 `title` 与 `defaultPath`：`defaultPath` 指定对话框打开时的初始定位目录，若路径无法解析为有效文件夹则自动忽略；支持使用 `%music%` 等内置变量展开为当前用户的音乐目录。成功时返回 `{ success: true, canceled, folderPath }`；对话框无法显示时返回失败信封。`folderPath` 为用户实际选择并确认的目录路径。
 
 ```javascript
 const result = await fb.dialog.openFolder({
@@ -61,7 +61,7 @@ const result = await fb.dialog.openFolder({
 
 签名：`fb.dialog.saveFile(options?: DialogSaveFileParams): Promise<DialogSaveFileResponse>`
 
-打开文件保存对话框。返回 `{ success: true, canceled, filePath }`；对话框无法显示时返回失败信封 `{ success: false, error, code }`。选项有 `title`、`defaultName` 和 `filters`，`filters` 是 `{ name, extensions }` 数组。
+弹出原生文件保存对话框。成功时返回 `{ success: true, canceled, filePath }`；对话框无法显示时返回失败信封。选项包含 `title`、`defaultName`（建议文件名）与 `filters`（`{ name, extensions }` 结构数组）。
 
 ```javascript
 const result = await fb.dialog.saveFile({ defaultName: 'playlist.m3u8' });

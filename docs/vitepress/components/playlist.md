@@ -20,7 +20,7 @@ Playlist tab strip with ArrowLeft/ArrowRight keyboard navigation, drag reorderin
 
 Each `tab` part receives a `locked` attribute when the playlist is locked, and carries its playlist's GUID as `data-guid`.
 
-The tabs address playlists by GUID: a click activates the tab's playlist even if others were added or removed since the tabs were drawn, and a tab whose playlist is gone activates nothing. `fb-playlist-select` and `fb-playlist-reorder` fire only once the host has done it.
+Tabs bind playlists by GUID: additions or removals of other playlists do not change a tab's target playlist; clicking a tab for a deleted playlist triggers no selection. `fb-playlist-select` and `fb-playlist-reorder` fire after the host completes the operation.
 
 **Events:**
 
@@ -108,7 +108,7 @@ Virtualized playlist view with an rAF-driven DOM pool. It supports Ctrl/Shift se
 | `track-count` | string | — | Read-only total track count |
 | `selected-count` | string | — | Read-only selected track count |
 
-The `play_count`, `first_played`, `last_played` and `added` columns show foo_playcount's fields, and `rating` shows five clickable stars. To show any other column that [`fb.playlist.getAvailableColumns()`](../sdk/playlist.md#getavailablecolumns) lists, put its `pattern` in `formats` under a column ID of your choice and add that ID to `columns`. Don't use the column's `name` as the ID: it is display text in foobar2000's language.
+The `play_count`, `first_played`, `last_played` and `added` columns show foo_playcount's fields, and `rating` shows five clickable stars. To display any other column listed by [`fb.playlist.getAvailableColumns()`](../sdk/playlist.md#getavailablecolumns), map the column's `pattern` to a custom column ID in `formats` and include that ID in `columns`. Do not use the column's `name` as an ID, as it represents localized display text that varies with the foobar2000 language.
 
 ```html
 <fb-playlist-view columns="index,title,play_count,rating,mood"
@@ -119,7 +119,7 @@ The `play_count`, `first_played`, `last_played` and `added` columns show foo_pla
 
 Each `row` part may reflect the `selected`, `focused`, and `playing` states as attributes.
 
-A GUID in `playlist` keeps the view on that playlist while others are added, removed or reordered, and leaves it empty once the playlist is removed. An index shows whichever playlist is at that position and is looked up again after playlists are added, removed or reordered. Without the attribute the view follows the active playlist and shows nothing while there is none. Once it knows which playlist it shows, the view addresses it by GUID in every host call, and each event detail below carries that GUID as `playlistGuid`.
+A GUID in `playlist` keeps the view on that playlist while others are added, removed or reordered, and leaves it empty once the playlist is removed. An index shows whichever playlist is at that position and is looked up again after playlists are added, removed or reordered. Without the attribute the view follows the active playlist and shows nothing while there is none. Once the target playlist is determined, the component references it by GUID in subsequent host invocations and carries `playlistGuid` in all event details.
 
 **Events:**
 

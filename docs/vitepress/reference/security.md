@@ -1,12 +1,12 @@
 # Security model and trust boundaries {#security-reference}
 
-This component functions as a specialized foobar2000 UI host. Themes originate from the user or trusted community sources; installing a theme shares substantially the same trust model as installing a native foobar2000 component.
+This component functions as a specialized foobar2000 UI host. Themes originate from the user or other trusted sources; installing a theme shares substantially the same trust model as installing a foobar2000 component.
 
 Security goals are therefore geared toward **fail-safe protection** (preventing unintentional defects in themes from altering protected system assets), rather than full hostile **sandboxing** against untrusted code.
 
 ## Threat model
 
-- Primary security guardrails rely on PathSecurity specifications and origin validation rules.
+- Primary security guardrails rely on PathSecurity specifications and protocol restrictions.
 - `shell.exec` and `shell.spawn` intentionally omit an executable file whitelist: interpreters such as `cmd /c` would bypass it, so it cannot serve as a security boundary.
 - Path-bearing Bridge APIs enforce decorator-based validation, returning `PERMISSION_DENIED` when paths violate policy and `INVALID_PARAMS` on malformed inputs.
 

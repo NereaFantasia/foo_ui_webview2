@@ -32,7 +32,7 @@ Counts are taken from the `@security` and `@pathKey` declarations in `src/api/sc
 - Independent write channels: `Write`, `MediaWrite`, and `FileWrite` form three separate write channels
 :::
 
-::: warning FileWrite scope considerations
+::: warning FileWrite is broader than MediaWrite
 `FileWrite` permits writes to arbitrary paths on non-system drives, as well as any path inside a media-library watch folder (including on the system drive). It constitutes the widest write channel exposed by the component, intentionally designed for arbitrary file operations via `file.*` (where imposing media-membership rules would prevent creating new files or folders). Security audits of third-party themes should prioritize reviewing `file.*` invocations.
 :::
 
@@ -224,7 +224,7 @@ These endpoints manage their own policy outside ordinary decorator specs:
 ### Common rejections
 
 - Device paths: `\\.\...` and `\\?\...`
-- Directory traversal: any path segment that is `.` or `..` (periods inside a name, such as `Bonus Track..flac`, are allowed)
+- Directory traversal: any path segment that is `.` or `..` (consecutive periods within a file name, such as `Bonus Track..flac`, are valid path characters)
 - Empty or relative paths (absolute paths required)
 
 ### Read
@@ -294,13 +294,14 @@ drive letter (UNC excluded), or media-library / playlist context. MediaWrite's
 sidecar step is absent here.
 
 ::: warning FileWrite accepts any non-system drive
-This is the widest write channel currently exposed. `file.delete` and
-`file.write` will therefore accept arbitrary destinations on `D:`, `E:` and so
-on. The allowance exists because `file.mkdir` and `file.write` create paths that
-by definition cannot already be in a library or playlist, so the membership
-steps alone would reject every call. Watch folders are different: since
-`is_path_addable` checks configuration rather than membership, new paths inside
-a configured folder are admitted without needing this allowance.
+This is the widest write channel currently exposed; `file.delete` and
+`file.write` accept arbitrary destinations on other drives such as `D:` or `E:`.
+This allowance is maintained to permit `file.mkdir` and `file.write` to create
+new paths on data volumes, which by definition cannot yet exist in a library
+or playlist and would otherwise be rejected by membership checks alone.
+Watch folders are different: since `is_path_addable` checks configuration rather
+than membership, new paths inside a configured folder are admitted without
+needing this allowance.
 
 **The test applies to the drive letter after canonicalization, not to the one in
 the path as passed in.** If a user directory is redirected onto a non-system

@@ -28,7 +28,7 @@
 ### rating.set
 
 <!-- api-schema:begin rating.set -->
-设置指定曲目的星级评分（优先通过 foo_playcount 上下文菜单写入统计，菜单不可用时回退写入音频文件的 RATING 标签；省略 path 时优先为正在播放的曲目评分，无播放曲目时回退为当前活动播放列表的选中项，两者均无时返回 NO_ACTIVE_ITEM 失败）
+设置指定曲目的星级评分（优先通过 foo_playcount 上下文菜单写入统计，菜单不可用时回退写入音频文件的 RATING 标签；省略 path 时优先为正在播放的曲目评分，无播放曲目时回退为当前活动播放列表的选中项，两者均无时返回 NO_ACTIVE_ITEM 失败）；回退写标签时，目标是含非 ASCII 标签文本的 WAV 则与 `metadata.write` 一样以 `NOT_SUPPORTED` 失败
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |

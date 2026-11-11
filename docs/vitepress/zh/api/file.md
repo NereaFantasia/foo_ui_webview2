@@ -307,7 +307,7 @@ await fb2k.invoke('file.copy', {
 
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
-| `operationId` | `string` | 批量操作任务 ID，以 `fileop_` 开头；该操作的事件带有此 ID，`file.cancelOp` 也用它 |
+| `operationId` | `string` | 批量操作任务标识符，以 `fileop_` 为前缀；后续关联事件均携带此 ID，亦可传入 `file.cancelOp` 中止操作 |
 | `totalCount` | `integer` | 本次操作受理的条目总数，对应事件里的 `total` |
 
 成功时 `success` 为 `true`；失败时返回 `{ success: false, error, code }`，`code` 见[错误码](../reference/errors.md)。
@@ -339,7 +339,7 @@ const receipt = await fb2k.invoke('file.copyAsync', {
 
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
-| `operationId` | `string` | 批量操作任务 ID，以 `fileop_` 开头；该操作的事件带有此 ID，`file.cancelOp` 也用它 |
+| `operationId` | `string` | 批量操作任务标识符，以 `fileop_` 为前缀；后续关联事件均携带此 ID，亦可传入 `file.cancelOp` 中止操作 |
 | `totalCount` | `integer` | 本次操作受理的条目总数，对应事件里的 `total` |
 
 成功时 `success` 为 `true`；失败时返回 `{ success: false, error, code }`，`code` 见[错误码](../reference/errors.md)。
@@ -369,7 +369,7 @@ const receipt = await fb2k.invoke('file.moveAsync', {
 
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
-| `operationId` | `string` | 批量操作任务 ID，以 `fileop_` 开头；该操作的事件带有此 ID，`file.cancelOp` 也用它 |
+| `operationId` | `string` | 批量操作任务标识符，以 `fileop_` 为前缀；后续关联事件均携带此 ID，亦可传入 `file.cancelOp` 中止操作 |
 | `totalCount` | `integer` | 本次操作受理的条目总数，对应事件里的 `total` |
 
 成功时 `success` 为 `true`；失败时返回 `{ success: false, error, code }`，`code` 见[错误码](../reference/errors.md)。
@@ -469,6 +469,6 @@ fb2k.on('file:opComplete', ({ operationId, successCount, cancelled }) => {
 ## 文件边界
 
 - 路径展开与安全校验：文件 API 在访问前自动展开 `%profile%`、`%component%`、`%music%`、`%APPDATA%` 与 `%TEMP%` 变量。每个端点按照注册的 `SecurityLevel` 进行权限校验：读取端点走 `Read` 级别，所有写入端点走 `FileWrite` 级别，逐端点权限映射详见[权限系统](/zh/reference/permissions)。`file.write` 自动创建缺失的父目录，`file.delete` 默认移入回收站。
-- 错误与隐私安全：`file.*` 所有调用失败均包含标准错误信息 `error` 与错误码 `code`。由底层文件系统抛出的错误还会携带原始 Win32 错误号 `details.value`。为保护用户隐私，`error` 与 `details` 中绝不包含任何文件路径。
+- 错误与隐私安全：`file.*` 所有调用失败均包含标准错误信息 `error` 与错误码 `code`。底层文件系统抛出的错误还会携带原始 Win32 错误码 `details.value`。`error` 与 `details` 中都不会出现文件路径。
 - 路径与元数据返回形式：`file.list` 在非递归模式下返回文件名列表，递归模式下返回完整路径列表。`file.getInfo` 查询不存在的路径时返回成功响应，结果中 `exists: false` 且不包含其余元数据字段。
-- 异步批量与同步操作边界：异步方法（`copyAsync`、`moveAsync`、`deleteAsync`）仅返回任务回执，逐条明细仅通过 `file:opProgress` 与 `file:opComplete` 事件载荷推送；这两类事件采用单窗口定向投递，因此载荷中的 `results` 包含路径，而错误信封和系统日志中始终脱敏。同步方法（`copy`、`move`、`delete`）的行为不受异步操作影响。
+- 异步批量与同步操作边界：异步方法（`copyAsync`、`moveAsync`、`deleteAsync`）仅返回任务回执，逐条处理明细通过 `file:opProgress` 与 `file:opComplete` 事件载荷定向投递至调用窗口；事件载荷中的 `results` 包含具体路径，错误信封与日志则不含路径。同步方法（`copy`、`move`、`delete`）仍可用于需要立即完成的操作。

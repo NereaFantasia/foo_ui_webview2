@@ -25,7 +25,7 @@ This method takes no parameters.
 `success` is `true` on success. On failure the response is `{ success: false, error, code }`; see [Error codes](../reference/errors.md) for `code`.
 <!-- api-schema:end -->
 
-The result describes the page as originally loaded by the host. `activeTemplateName` reflects current configuration at call time: comparing it with `templateName` indicates whether the active template has changed since load.
+The result describes the page as originally loaded by the host. `activeTemplateName` is read at the time of the call: for a page loaded from the active template, comparing it with `templateName` shows whether the user has picked another template since.
 
 ```js
 const source = await fb2k.invoke('webview.getSource');

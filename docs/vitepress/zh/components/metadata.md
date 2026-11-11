@@ -55,7 +55,7 @@ el.addEventListener('fb-search-result', e => {
 
 ## `<fb-console>` {#fb-console}
 
-foobar2000 控制台实时日志查看器，定时轮询宿主控制台输出并对日志行实施安全 HTML 转义。
+foobar2000 控制台日志查看器，定时轮询宿主控制台输出，所有日志行均经过 HTML 转义。
 
 ```html
 <fb-console></fb-console>

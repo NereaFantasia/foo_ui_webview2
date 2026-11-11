@@ -1,6 +1,6 @@
 # 路径权限模型参考 {#权限系统}
 
-涉及文件路径的 Bridge API 会先由 BridgeCore 路径安全规范（Path-security spec）在执行业务 handler 之前进行拦截校验。校验过程包括路径规范化解析、受保护目录过滤及媒体库成员资格判定；未通过校验的请求直接阻断且不进入业务处理函数。被安全策略拒绝的路径返回 `PERMISSION_DENIED`；参数形状或类型错误返回 `INVALID_PARAMS`。
+涉及文件路径的 Bridge API 会先由 BridgeCore 路径安全规范（Path-security spec）在执行业务 handler 之前进行拦截校验。校验过程可能涉及文件位置解析、文件系统查询与媒体库成员资格判定；未通过校验的请求直接阻断且不进入业务处理函数。被安全策略拒绝的路径返回 `PERMISSION_DENIED`；参数形状或类型错误返回 `INVALID_PARAMS`。
 
 计数来自 `src/api/schema/*.ts` 里的 `@security` 与 `@pathKey` 声明，各注册点的路径安全 spec 都由它们生成：
 
@@ -32,7 +32,7 @@
 - 独立写通道：`Write`、`MediaWrite` 与 `FileWrite` 是三条平行的独立写入通道
 :::
 
-::: warning FileWrite 权限边界说明
+::: warning FileWrite 比 MediaWrite 宽
 `FileWrite` 允许写入非系统盘上的任意路径，以及媒体库监视目录内的任意路径（包括系统盘），是当前暴露面最宽的写通道。该通道专为 `file.*` 通用文件操作设计（而非局限于已建库的媒体文件），若套用媒体写入规则将导致无法新建文件或目录。代码审计或审查第三方主题时，应优先审计此通道的调用点。
 :::
 
@@ -217,7 +217,7 @@ if (result.success === false) {
 ### 通用拦截
 
 - 设备路径：`\\.\...`、`\\?\...`
-- 目录遍历：路径中某一级恰好是 `.` 或 `..`（名字内部的句点，如 `Bonus Track..flac`，不受影响）
+- 目录遍历：路径中某一级恰好是 `.` 或 `..`（文件名内部包含的连续句点，如 `Bonus Track..flac`，属于合法路径）
 - 空路径 / 相对路径：必须是绝对路径
 
 ### Read
@@ -279,9 +279,9 @@ FileWrite 走自己的校验链，并非 MediaWrite 的超集：通用拒绝与�
 FileWrite 中不存在。
 
 ::: warning FileWrite 放行任意非系统盘
-这是当前暴露面最宽的写通道，`file.delete` 与 `file.write` 因此会接受 `D:`、`E:`
-等盘上的任意目标。该放行之所以保留，是因为 `file.mkdir` 与 `file.write` 创建的
-路径按定义不可能预先存在于媒体库或播放列表中，只按成员性放行会拒绝每一次调用。
+这是当前暴露面最宽的写通道，`file.delete` 与 `file.write` 会接受 `D:`、`E:`
+等盘上的任意目标。保留该放行规则以允许 `file.mkdir` 与 `file.write` 在常规数据分区
+创建新路径；由于新建路径预先不存在于媒体库或播放列表中，若仅按成员性校验将拒绝调用。
 监视目录不同：`is_path_addable` 判的是配置而非成员性，监视目录内的新建路径不依
 赖本放行即可通过。
 

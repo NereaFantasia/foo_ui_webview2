@@ -35,7 +35,7 @@ The payload is a [SystemApiInfo](../reference/types.md#systemapiinfo).
 ### app:beforeQuit
 
 <!-- api-schema:begin event:app:beforeQuit -->
-foobar2000 is exiting. Sent once, before any window or panel of the plugin closes, to every page: the main window's, popups' and panels', whatever the interface and whether or not background mode is on. Best effort only: the event is queued to each page and the host does not wait. The pages close right after, so a handler may not run or finish, and a call it makes to the host is unlikely to be answered.
+foobar2000 is exiting. Sent once, before any window or panel of the plugin closes, to every page: the main window's, popups' and panels', whatever the interface and whether or not background mode is on. Delivery is best-effort: the event is queued to each page without awaiting handlers. The pages close right after, so a handler may not run or finish, and a host call it makes may go unanswered.
 
 Sent to every window.
 
@@ -70,7 +70,7 @@ Sent to the page that made the call.
 | Field | Type | Description |
 | --- | --- | --- |
 | `taskId` | `string` | Id from the `pending` answer. |
-| `path` | `string` | The path the request gave. |
+| `path` | `string` | Source track path specified in the request. |
 | `error` | `string` | What went wrong. |
 | `code` | `"CANCELLED" \| "INVALID_HANDLE" \| "NO_INFO" \| "INVALID_PARAMS" \| "DECODER_FAILED" \| "DECODE_FAILED" \| "UNKNOWN_ERROR"` | `CANCELLED` after `audio.cancelFullWaveform`; otherwise why decoding failed. |
 <!-- api-schema:end -->
@@ -87,7 +87,7 @@ Sent to the page that made the call.
 | Field | Type | Description |
 | --- | --- | --- |
 | `taskId` | `string` | Id from the `pending` answer. |
-| `path` | `string` | The path the request gave. |
+| `path` | `string` | Source track path specified in the request. |
 | `waveform` | `number[]` | One value per point, in `scale`; in `[-1, 1]` when `signed`, else in `[0, 1]`. |
 | `maxAmplitude` | `number` | The largest value of the selected sequence before normalisation, in linear full-scale units: with `linear`, `waveform[i] * maxAmplitude` is the absolute level; with `db`, dBFS is `(v * 60 - 60) + 20 * log10(maxAmplitude)`. |
 | `duration` | `number` | Track duration in seconds. |
@@ -124,7 +124,7 @@ Sent to the page that owns the subscription or task.
 | Field | Type | Description |
 | --- | --- | --- |
 | `taskId` | `string` | Id from the `audio.decodePcm` answer. |
-| `path` | `string` | The path the request gave. |
+| `path` | `string` | Source track path specified in the request. |
 | `error` | `string` | What went wrong. |
 | `code` | `"CANCELLED" \| "ORIGIN_DENIED" \| "OPERATION_FAILED" \| "INVALID_PARAMS" \| "DECODER_FAILED" \| "DECODE_FAILED" \| "NOT_SUPPORTED" \| "UNKNOWN_ERROR"` | `CANCELLED` after `audio.cancelDecodePcm`; `ORIGIN_DENIED` when the page origin stopped being trusted; `OPERATION_FAILED` when the buffer could not be allocated or posted; otherwise why decoding failed. `INVALID_PARAMS` means `start` is at or beyond the end of the track. |
 <!-- api-schema:end -->
@@ -141,9 +141,9 @@ Sent to the page that owns the subscription or task.
 | Field | Type | Description |
 | --- | --- | --- |
 | `taskId` | `string` | Id from the `audio.decodePcm` answer. |
-| `path` | `string` | The path the request gave. |
+| `path` | `string` | Source track path specified in the request. |
 | `sampleRate` | `integer` | Samples per second per channel. |
-| `channels` | `integer` | Channel count in the buffer; `1` when the request set `mono`. |
+| `channels` | `integer` | Channel count in the buffer; `1` when `mono` is requested. |
 | `frames` | `integer` | Frames per channel in the buffer. |
 | `start` | `number` | Track time of the first frame, in seconds. |
 | `end` | `number` | Track time right after the last frame, in seconds. |
@@ -178,7 +178,7 @@ Sent to the page that owns the subscription or task. A subscriber can have it de
 | Field | Type | Description |
 | --- | --- | --- |
 | `subscriptionId` | `string` | Subscription the frame belongs to; absent when the request named none. |
-| `output` | `"bands" \| "bins"` | What the frame carries. |
+| `output` | `"bands" \| "bins"` | Output data format contained in this frame. |
 | `spectrum` | `number[]` | Band frames: one value per band in the frame's `scale`; `weighted` values lie in `[0, 1]`, `db` values have a floor of `-160`. Bin frames with `channels: 'mix'`: one power value in dB per bin. |
 | `left` | `number[]` | Bin frames with `channels: 'stereo'`: the first channel, one dB value per bin. |
 | `right` | `number[]` | Bin frames with `channels: 'stereo'`: the second channel, or the first again for a mono stream. |
@@ -317,7 +317,7 @@ Sent to the page of the window or panel it concerns.
 | --- | --- | --- |
 | `result` | `"failed"` | Always `failed`: the host reports only refusals. |
 | `code` | `"PERMISSION_DENIED" \| "INVALID_PARAMS" \| "OPERATION_FAILED"` | Why no files were attached: `PERMISSION_DENIED` when the token was unknown, expired, already spent, superseded by a later `prepareDrag` or minted for another window; `INVALID_PARAMS` when `dataTransfer.effectAllowed` was not exactly `copy`, which `dnd.applyDragToken` sets correctly; `OPERATION_FAILED` when the file list could not be attached to the drag. |
-| `error` | `string` | Human-readable reason; never contains a filesystem path. |
+| `error` | `string` | Human-readable error description; physical paths are omitted. |
 <!-- api-schema:end -->
 
 ## file events
@@ -494,7 +494,7 @@ Sent to the page that made the call.
 ### keyboard:hotkey
 
 <!-- api-schema:begin event:keyboard:hotkey -->
-A hotkey registered with `keyboard.registerHotkey` was pressed. It goes to the window that registered it. A hotkey stays registered after that window closes; its presses then go to the main window's page.
+A hotkey registered with `keyboard.registerHotkey` was pressed. It goes to the window that registered it.
 
 Sent to the page that owns the subscription or task.
 
@@ -728,7 +728,7 @@ Sent to every window.
 
 | Field | Type | Description |
 | --- | --- | --- |
-| `tracks` | `MetadbChangedTrackItem[]` | Up to 50 of the changed tracks, in no particular order. An invalid entry is skipped, so the list can hold fewer than the smaller of `count` and 50. `handles` names all of them. |
+| `tracks` | `MetadbChangedTrackItem[]` | Up to 50 changed track entries in unspecified order. Invalid entries are skipped, meaning the returned array length may be less than `min(count, 50)`. Complete track identifiers are listed in `handles`. |
 | `tracks[].handle` | `string` | The track's key, built the way a track row's `handle` is: the native path (foobar2000's own path for a location that has none), with `\|subsong:N` when `subsong` is not `0`. It equals the `handle` of the same track in rows from `library.query`, `playlist.getTracks` and the like. |
 | `tracks[].path` | `string` | The file path in native form, or foobar2000's own path for a location that has none, such as a stream. It carries no subsong, so every track of a cue sheet or a multi-track file has the same `path`; `handle` tells them apart. |
 | `tracks[].subsong` | `integer` | Subsong identifier inside the file, as a track row's `subsong`; `0` for a whole file. |
@@ -1811,8 +1811,8 @@ Sent to every window.
 | Field | Type | Description |
 | --- | --- | --- |
 | `windowId` | `string` | Id of the popup. |
-| `title` | `string` | Title the popup was created with. |
-| `url` | `string` | URL the popup was created with. |
+| `title` | `string` | Initial title specified when the popup was created. |
+| `url` | `string` | Initial URL specified when the popup was created. |
 <!-- api-schema:end -->
 
 ### window:popupClosed

@@ -27,7 +27,7 @@ A newly created panel defaults to the global active template. To customize its c
 | --- | --- |
 | `Template` | `(Follow global)`, or a dedicated template folder under `<profile>\webview-ui\` specific to this panel |
 | `URL Override (optional)` | A direct URL to load instead of any local template; takes precedence over `Template` |
-| `Allow this site to access foobar2000 and this computer` | Grants the override URL access to invoke host APIs (including file system access and shell execution). Loopback addresses (`localhost`, `127.x.x.x`, `[::1]`) are implicitly trusted and grayed out. External origins require manual authorization; changing the URL to another origin resets this permission |
+| `Allow this site to access foobar2000 and this computer` | Grants the override URL access to invoke host APIs (including file system access and shell execution). Loopback addresses (`localhost`, `127.x.x.x`, `[::1]`) are trusted automatically, and the checkbox is hidden for them. A page from any other origin loads normally but cannot call the API until this box is checked. The approval applies to one origin: changing the URL to a different origin clears it |
 | `Resources path` | Read-only: the absolute directory path currently loaded by the panel, with notes on fallback status |
 | `Transparent Background`, `Grab Focus`, `Enable Drag & Drop`, `Enable DevTools` | Individual panel toggles; `Enable DevTools` stacks on top of global developer settings |
 | `Edge Style` | Panel border style: None, Sunken, or Grey |

@@ -121,8 +121,8 @@ async function addPathsAndWait(paths) {
 ```
 
 - **错过的事件。** 方法提供状态查询时（如 `jitSession.getOperation`），页面重载后、或事件可能早于订阅到达时，用它补查。
-- **命令不回报结果。** 菜单命令的应答带 `completion: 'unknown'`：foobar2000 不报告命令是否做完，也不报告它打开的对话框是否被取消。
-- **超时不等于失败。** `fb2k.invoke()` 等待应答 30 秒，之后以 `code: 'TIMEOUT'` 拒绝。宿主可能仍在执行这次调用，也可能已经做完；迟到的应答会被丢弃。弹出模态对话框的菜单命令（如重命名播放列表）会让调用一直等到对话框关闭。
+- **命令不回报结果。** 菜单命令的应答带 `completion: 'unknown'`：foobar2000 宿主不提供菜单命令的完成状态回报，亦不报告其弹出的对话框是否被取消。
+- **超时不等于失败。** `fb2k.invoke()` 等待响应的最长时间为 30 秒，超时将以 `code: 'TIMEOUT'` 拒绝。此时宿主可能仍在执行该操作或已执行完毕，后续到达的迟延响应将被丢弃，调用方应将操作结果视为状态未知。弹出模态对话框的菜单命令（如重命名播放列表）将持续阻塞调用，直至对话框关闭。
 
 ## 重要注意事项
 
@@ -185,7 +185,7 @@ API 返回的曲目对象包含两个路径字段：
 | `C:\` `D:\` | 本地物理文件 | `D:\Music\song.flac` |
 | `file://` | URI 协议格式 | `file://D:/Music/song.flac` |
 | `file-relative://` | 相对路径 | `file-relative://../../song.flac` |
-| `archive://` | 压缩包归档条目 | `archive://D:\Album.zip|track01.flac` |
+| `archive://` | 压缩包归档条目 | `archive://D:\Album.zip\|track01.flac` |
 | `cdda://` | CD 音轨 | `cdda://E,1` |
 | `http://` `https://` | 网络流媒体 | `https://stream.example.com/live` |
 

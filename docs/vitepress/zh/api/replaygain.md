@@ -166,7 +166,7 @@ await fb2k.invoke('replaygain.setPreamp', { withRg: 3.0, withoutRg: -3.0 });
 ### replaygain.clear
 
 <!-- api-schema:begin replaygain.clear -->
-批量从指定音频文件标签中清除 ReplayGain 增益信息（标签在后台异步重写）
+批量从指定音频文件标签中清除 ReplayGain 增益信息（标签在后台异步重写）；其中任一 WAV 含非 ASCII 标签文本时整次调用以 `NOT_SUPPORTED` 失败且不写任何文件，原因同 `metadata.write`
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |

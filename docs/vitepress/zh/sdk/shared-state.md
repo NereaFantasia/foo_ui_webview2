@@ -2,9 +2,7 @@
 
 `fb.sharedState` 提供跨窗口键值存储。它不同于同步的 `fb.state` 播放状态镜像：共享状态值可设置 TTL，并通过 `state:*` 事件族发布变化。
 
-该存储是组件 `PortHub` 单例持有的进程内内存。在当前 foobar2000 进程中，
-本组件的多个 WebView 窗口可共享；它不写磁盘、重启后丢失，也不与其它进程
-或 SMP 运行时共享。
+该存储由组件 `PortHub` 单例在进程内存中维护。在当前 foobar2000 进程生命周期内，本组件创建的所有 WebView 窗口均可共享该状态。数据仅保存在内存中，进程退出后丢失，且不与其他进程或 SMP 脚本运行时共享。
 
 ## delete(key)
 
@@ -14,7 +12,7 @@
 | --- | --- | --- | --- |
 | `key` | `string` | 是 | 要移除的键 |
 
-响应里的 `existed` 表示调用前键是否存在；删掉一个存在的键时发出 `state:deleted`，其 `reason` 为 `'deleted'`。
+返回对象中的 `existed` 表示删除前该键是否存在；若删除已存在的键，将广播 `state:deleted` 事件并携带 `reason: 'deleted'`。
 
 ```javascript
 const result = await fb.sharedState.delete('playlist:active-filter');
@@ -28,7 +26,7 @@ const result = await fb.sharedState.delete('playlist:active-filter');
 | --- | --- | --- | --- |
 | `pattern` | `string` | 否 | 键的模式，默认 `'*'` |
 
-返回 `{ keys }`，顺序不固定。`'*'` 匹配全部键；以 `*` 结尾的模式按前缀匹配，如 `'playlist:*'`；其余按整个键精确匹配，中间的 `*` 只是普通字符。查询前先清除已过期的键，每个过期的键都会发出 `reason` 为 `'expired'` 的 `state:deleted`。
+返回匹配的键列表 `{ keys }`，元素顺序未作保证。`'*'` 匹配所有键；以 `*` 结尾的模式按前缀匹配（如 `'playlist:*'`）；其余模式执行全键精确匹配，中间出现的 `*` 视为普通字符。查询前自动清理已过期的键，每个过期被清理的键均触发一次 `reason` 为 `'expired'` 的 `state:deleted` 事件。
 
 ```javascript
 const res = await fb.sharedState.keys('playlist:*');
@@ -43,11 +41,11 @@ const { keys } = res;
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
 | `key` | `string` | 是 | 要写入的键 |
-| `value` | `unknown` | 是 | 可序列化为 JSON 的值；顶层 `null` 会被拒绝，删除键用 `delete()` |
+| `value` | `unknown` | 是 | 可序列化为 JSON 的数据值；顶层传入 `null` 将被拒绝，移除键请使用 `delete()` |
 | `silent` | `boolean` | 否 | 为 `true` 时不发出变更事件，默认 `false` |
-| `ttlMs` | `number` | 否 | 存活时间，单位毫秒；不给或不大于 0 时不过期 |
+| `ttlMs` | `number` | 否 | 存活时间（毫秒）；若省略或小于等于 0，则该键永不过期 |
 
-写入后广播 `state:changed`（`silent` 为 `true` 时不发），载荷带 `key`、`value`、`previousValue`（新键为 `null`）与 `sourceWindowId`。给了正的 `ttlMs` 时，结果与事件都带 `expiresAt`，即 Unix 纪元起的毫秒数。
+写入完成后广播 `state:changed` 事件（`silent` 为 `true` 时静默写入不发送事件），载荷包含 `key`、`value`、`previousValue`（键首次创建时为 `null`）与 `sourceWindowId`。若指定了正数 `ttlMs`，方法返回值及变更事件载荷中均包含过期时间戳 `expiresAt`（Unix 时间戳，毫秒）。
 
 ```javascript
 await fb.sharedState.set('playlist:active-filter', 'favorites', false, 60_000);

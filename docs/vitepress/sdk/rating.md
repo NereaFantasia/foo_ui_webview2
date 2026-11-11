@@ -11,7 +11,7 @@ Signature: `fb.rating.get(path: string, opts?: { cueIndex?: number }): Promise<R
 | path | string | Yes | Absolute file path; may include a `\|subsong:N` suffix for a CUE entry |
 | opts.cueIndex | number | No | Explicit CUE subsong index; takes precedence over a `\|subsong:N` suffix |
 
-Returns `{ path, rating, storage }`; `storage` is `stats` for a foo_playcount rating and `file` otherwise. A foo_playcount `%rating%` between 1 and 5 wins; otherwise the file's `RATING` tag is read and clamped to 0-5. `0` means unrated. `storage` is also `file` when neither source has a rating, so it cannot tell a missing tag from a stored `0`. A path that cannot be opened fails with `OPERATION_FAILED`.
+Returns `{ path, rating, storage }`; `storage` is `'stats'` when read from the foo_playcount database and `'file'` when read from audio tags. A foo_playcount `%rating%` between 1 and 5 takes precedence; otherwise the file's `RATING` tag is read and clamped to 0–5. `0` indicates unrated. If neither source specifies a rating, `storage` defaults to `'file'`. A path that cannot be opened fails with `OPERATION_FAILED`.
 
 ```javascript
 const result = await fb.rating.get('E:\\Music\\song.flac');
@@ -29,9 +29,9 @@ Signature: `fb.rating.set(path: string, rating: number, opts?: { cueIndex?: numb
 | rating | number | Yes | Integer from 0 to 5; `0` clears the rating |
 | opts.cueIndex | number | No | Explicit CUE subsong index; takes precedence over a `\|subsong:N` suffix |
 
-Sets the track's rating through foo_playcount's rating command in the context menu. When that command is not available, the host dispatches a write of the file's `RATING` tag instead. A rating outside 0-5 fails with `INVALID_PARAMS`.
+Sets track rating via foo_playcount context menu commands. When that command is not available, the host falls back to asynchronously writing the file's `RATING` tag. Ratings outside 0–5 fail with `INVALID_PARAMS`.
 
-Returns `{ path, rating, storage }`. `storage` is `stats` when foo_playcount's command ran, and the response then names it in `menuPath`; `storage` is `file` when the tag write was dispatched, with the reason in `note`.
+Returns `{ path, rating, storage }`. `storage` is `'stats'` when updated through foo_playcount (with the menu path recorded in `menuPath`); `storage` is `'file'` when falling back to tag writing (with the reason noted in `note`).
 
 ```javascript
 await fb.rating.set('E:\\Music\\song.flac', 4);

@@ -2,7 +2,7 @@
 
 ## Endpoint mapping
 
-`fb.player` method names are SDK-side aliases and do not always match the underlying `fb2k.invoke` endpoint. Use this table when calling the bridge directly, or when a `Method not found` error names something like `playback.prev`.
+The methods on `fb.player` are developer-friendly convenience aliases, with some names mapped differently from the underlying `fb2k.invoke` endpoints. Consult this table when communicating through the bridge directly or debugging endpoint names:
 
 | Method | Invokes |
 | --- | --- |
@@ -141,7 +141,7 @@ const state = await fb.player.getState();
 
 ## getCurrentTrack()
 
-Returns `PlaybackGetCurrentTrackResponse`: `found` says whether a track is loaded, and `track`, the shared [Track](../reference/types.md#track) row, is present only then. The host never answers `null`.
+Returns `PlaybackGetCurrentTrackResponse`: `found` indicates whether a track is loaded, and `track` (the shared [Track](../reference/types.md#track) row) is present only when `found` is `true`. The host omits `track` rather than returning `null`.
 
 > `artist`, `albumArtist` and `genre` join multi-value tags with `, ` in tag order; `artists` and `albumArtists` carry the atomic values behind `artist` and `albumArtist`.
 
@@ -158,7 +158,7 @@ if (!result.found) {
 
 ## getPosition()
 
-Returns the current position and duration in seconds, plus path/subsong information when exposed by the host. `hostTime` is the system time the host read the position at, in Unix milliseconds on the clock `Date.now()` reads: while playing, `pos.position + (Date.now() - pos.hostTime) / 1000` is where playback is now. [`PlaybackClock`](#playbackclock) keeps that estimate up to date.
+Returns current playback position and duration in seconds, plus path and subsong details. `hostTime` represents the host-side sampling timestamp in Unix milliseconds (sharing the clock of `Date.now()`): during playback, real-time position can be computed as `pos.position + (Date.now() - pos.hostTime) / 1000`. [`PlaybackClock`](#playbackclock) keeps this estimate up to date between updates.
 
 ```javascript
 const pos = await fb.player.getPosition();
@@ -245,7 +245,7 @@ await fb.player.volumeDown();
 
 Signature: `fb.player.getPlayingPlaylist(): Promise<PlaybackGetPlayingPlaylistResponse>`
 
-Reports the playlist playback was last started from: `found`, `playlist` (its index), `playlistGuid` and `name`. When none is known, `found` is `false`, `playlist` and `playlistGuid` are `null` and `name` is absent. foobar2000 keeps the pointer after playback stops, so a stopped instance that has played before still reports one.
+Reports the playlist playback was last started from: `found`, `playlist` (index), `playlistGuid`, and `name`. When no playlist history exists, `found` is `false`, `playlist` and `playlistGuid` are `null`, and `name` is omitted. foobar2000 retains this playlist reference after playback stops, allowing stopped instances to report the last active playback source.
 
 ```javascript
 const res = await fb.player.getPlayingPlaylist();
@@ -267,7 +267,7 @@ if (res.success) console.log(res.isPlaying ? 'Playing' : 'Paused');
 
 Signature: `fb.player.toggleMute(): Promise<PlaybackToggleMuteResponse>`
 
-Flips the mute state and resolves with `{ muted }`, whether output is muted afterwards. `playback:volumeChanged` follows, its payload carrying `muted`.
+Toggles mute state and resolves with `{ muted }` indicating the resulting status. A `playback:volumeChanged` event is broadcast afterwards carrying `muted`.
 
 ```javascript
 const res = await fb.player.toggleMute();
@@ -278,7 +278,7 @@ if (res.success) console.log(res.muted ? 'Muted' : 'Unmuted');
 
 Signature: `fb.player.toggleStopAfterCurrent(): Promise<PlaybackToggleStopAfterCurrentResponse>`
 
-Flips "stop after current" and resolves with `{ enabled }`, the value afterwards. The change broadcasts `playback:stopAfterCurrentChanged` with `{ enabled }`.
+Toggles the "stop after current track" setting and resolves with `{ enabled }` indicating the active status. State changes broadcast `playback:stopAfterCurrentChanged` carrying `{ enabled }`.
 
 ```javascript
 const res = await fb.player.toggleStopAfterCurrent();
@@ -289,15 +289,15 @@ if (res.success) console.log(res.enabled ? 'Stops after this track' : 'Keeps pla
 
 `import { PlaybackClock } from 'foo-webview-sdk/bridge'`, or `new fb.PlaybackClock()` with the `<script>` bundle.
 
-Estimates where foobar2000 is in the playing track at any moment, for things that move with the audio between position updates: a progress bar, word-timed lyrics, a muted `<video>` that follows playback. The host stamps every position with `hostTime`, the system time it read the position at, so the clock knows how old a position is when it arrives and moves on from there with `performance.now()`.
+Interpolates real-time playback position between discrete host events, designed for high-refresh rendering tasks such as progress bars, word-timed lyrics, and muted companion videos. The host attaches `hostTime`, the system time at which it read the position, to each sample; the clock uses it to tell how old a sample is on arrival and advances from there with `performance.now()`.
 
-- It follows `playback:timeHighRes`, `playback:seeked`, `playback:stateChanged` and `playback:trackChanged`, and reads `playback.getState` and `playback.getPosition` when created, when the page becomes visible again, and on `resync()`. `ready` resolves once the first read settled and never rejects.
-- `resync()` ignores read failures by default. Use `resync({ rejectOnFailure: true })` when playback must wait for a fresh snapshot: both calls must succeed before either answer is applied. A host failure rejects with `ApiCallError`, preserving its `code`; bridge failures also reject. An overlapping read that prevents a complete fresh snapshot can reject the strict request, so handle failure before resuming media.
-- `position(at?)` is the estimate in seconds at `at` on the `performance.now()` scale, now when omitted, kept within `duration` when the length is known. It does not move while `state` is `paused`, and is `0` while `stopped`.
-- An update that disagrees with the estimate by a little moves it by a quarter of the difference, so the position does not stutter on the host's reading jitter. A difference above `resyncThresholdSeconds` (0.25 by default) replaces the estimate. Right after a seek, updates that still carry the old position are ignored.
-- `onChange(listener)` reports every jump: `start` for the first read, `seek`, `state`, `track`, and `resync` for a replaced estimate or a `resync()` read. A muted video that follows playback seeks on these and otherwise only adjusts its rate.
-- Updates older than `maxDeliveryDelayMs` (1000 by default), or that look older or newer than possible because the system time was changed in between, are ignored. With a host that does not send `hostTime`, updates count as read when they arrive, so the estimate trails the audio by the delivery delay.
-- Call `dispose()` when done.
+- Tracks `playback:timeHighRes`, `playback:seeked`, `playback:stateChanged`, and `playback:trackChanged` events. It samples `playback.getState` and `playback.getPosition` upon creation, when the page becomes visible, and on `resync()`. `ready` resolves once initial synchronization completes and never rejects.
+- `resync()` ignores read failures by default. When playback resumption requires a verified fresh snapshot, use `resync({ rejectOnFailure: true })`: both calls must succeed before readings are applied. Host failures reject with `ApiCallError` preserving the native `code`; bridge transport errors also reject. If concurrent requests prevent acquiring a complete snapshot, strict synchronization may reject and should be handled before continuing playback.
+- `position(at?)` returns the estimated position in seconds at the given `performance.now()` timestamp (defaulting to now), bounded by `duration` when known. The value remains static while `state` is `paused` and returns `0` when `stopped`.
+- When deviation between incoming events and current estimation is small, the clock moves its estimate by a quarter of the difference to prevent visual jitter caused by host sampling noise. If deviation exceeds `resyncThresholdSeconds` (0.25 s by default), the clock immediately snaps to the reported position. Delayed updates arriving immediately after a seek are discarded.
+- `onChange(listener)` notifies listeners of non-continuous jumps: `start` upon initial readiness, `seek`, `state`, `track`, and `resync` following manual synchronization or threshold realignment. Muted companion videos align timestamps on these transitions and adjust playback rates during steady playback.
+- Updates delayed past `maxDeliveryDelayMs` (1000 ms by default) or bearing anomalous timestamps caused by system clock adjustments are ignored. If the host omits `hostTime`, updates fall back to arrival time as the sampling baseline, introducing a small latency equal to transport delay.
+- Call `dispose()` when the instance is no longer needed.
 
 ```javascript
 import { PlaybackClock } from 'foo-webview-sdk/bridge';

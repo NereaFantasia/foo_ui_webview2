@@ -10,7 +10,7 @@
 | --- | --- | --- | --- |
 | paths | string[] | 是 | 要清除 ReplayGain 元数据的文件路径，至少一条。带 `\|subsong:N` 后缀时选子曲目，如 CUE 里的一首 |
 
-从文件中移除 ReplayGain 值。响应带 `clearedCount`，即交给标签写入器的文件数。标签在后台重写，要再用 `get()` 读一次文件才能看到值消失。
+从音频文件中移除 ReplayGain 元数据。响应包含 `clearedCount`，指示提交给标签写入器的文件数量。由于文件标签在后台异步重写，可通过 `get()` 再次查询以确认标签已完全清除。
 
 ```javascript
 const result = await fb.replaygain.clear(['E:\\Music\\song.flac']);
@@ -24,9 +24,9 @@ const result = await fb.replaygain.clear(['E:\\Music\\song.flac']);
 | --- | --- | --- | --- |
 | paths | string \| string[] | 是 | 单个文件路径或路径数组；SDK 总是以 `{ paths: string[] }` 发送 |
 
-逐曲目返回结果，音轨和专辑的增益、峰值字段按文件实际存储的情况出现。响应带 `count` 和 `results`，每个请求路径一行，按请求顺序。每行（`ReplayGainTrackInfo`）原样带回请求的 `path`，并有 `success`；读不了的文件是带 `error` 的失败行，不是失败的调用。
+响应包含 `count` 与 `results` 数组，按请求顺序对应每个文件路径。每项结果包含原请求 `path` 与 `success` 标志；若单个文件无法读取，该行将返回带 `error` 的局部失败项，而不导致整个调用失败。
 
-读得出的行带 `hasReplayGain`，以及文件存有的那些值：`trackGain`、`albumGain` 是形如 `-7.25 dB` 的文本，`trackPeak`、`albumPeak` 是六位小数的文本；同样的值以数字形式放在 `trackGainRaw`、`albumGainRaw`（dB）和 `trackPeakRaw`、`albumPeakRaw`（线性幅度）中。路径带 `|subsong:N` 后缀时选子曲目，如 CUE 里的一首；不带后缀读第一首。
+读取成功的曲目包含 `hasReplayGain` 标识及已存储的增益数据：格式化文本 `trackGain` 与 `albumGain`（如 `-7.25 dB`），格式化峰值 `trackPeak` 与 `albumPeak`（保留六位小数）；对应的数值分别通过 `trackGainRaw`、`albumGainRaw`（单位 dB）与 `trackPeakRaw`、`albumPeakRaw`（线性幅度）提供。路径包含 `|subsong:N` 后缀时定位指定子曲目；未包含后缀时默认读取首个子曲目。
 
 ```javascript
 const result = await fb.replaygain.get('E:\\Music\\song.flac');
@@ -42,7 +42,7 @@ for (const row of res.results) {
 
 签名：`fb.replaygain.getMode(): Promise<ReplaygainGetModeResponse>`
 
-返回 `sourceMode` 和 `processingMode`。`sourceMode` 是播放时应用的增益来源：`none` 不应用，`track`、`album` 用对应的存储值，`auto` 跟随播放顺序（随机时用音轨增益，否则用专辑增益）。`processingMode` 是应用什么：`gain` 只应用增益，`peak` 只做峰值限制，`gain_and_peak` 两者都做，`none` 什么都不做。
+返回 `sourceMode` 和 `processingMode`。`sourceMode` 指示播放时应用的增益来源：`none` 不应用，`track`、`album` 采用对应的存储值，`auto` 跟随播放顺序（随机模式采用音轨增益，否则采用专辑增益）。`processingMode` 指示处理模式：`gain` 仅应用增益调整，`peak` 仅执行峰值限制，`gain_and_peak` 同时应用增益与峰值限制，`none` 禁用所有处理。
 
 ```javascript
 const result = await fb.replaygain.getMode();
@@ -77,7 +77,7 @@ const result = await fb.replaygain.getSettings();
 | paths | string[] | 是 | 要扫描的文件；空列表返回 `INVALID_PARAMS`。带 `\|subsong:N` 后缀时选子曲目，如 CUE 里的一首 |
 | opts | `{ mode?: 'track' \| 'album' }` | 否 | `mode` 默认为 `'track'`，逐文件扫描音轨增益；`'album'` 把所选文件当作一张专辑扫描 |
 
-通过右键菜单命令对文件启动 foobar2000 自带的 ReplayGain 扫描。扫描发起后 Promise 即 resolve，结果随后由扫描器写入文件。响应带 `scannedCount`、扫描使用的 `mode`，以及 `note`：一句固定的英文说明，指出扫描在后台进行。
+通过原生菜单命令调用 foobar2000 内置的 ReplayGain 扫描器。扫描任务发起后即返回响应回执，计算结果随后在后台写入文件。响应包含 `scannedCount`、生效的 `mode` 以及指示任务后台执行的提示文本 `note`。
 
 ```javascript
 await fb.replaygain.scan(['E:\\Music\\one.flac'], { mode: 'track' });
@@ -96,7 +96,7 @@ console.log(`正在以 ${res.mode} 模式扫描 ${res.scannedCount} 个文件`);
 | sourceMode | string | 是 | 音源模式：`none`、`track`、`album` 或 `auto`；`byPlaybackOrder` 是 `auto` 的旧写法，同样接受 |
 | processingMode | string | 否 | 处理模式：`none`、`gain`、`gain_and_peak` 或 `peak`；省略时保持原值 |
 
-修改音源模式，给了 `processingMode` 时一并修改处理模式。响应报告修改后生效的 `sourceMode` 和 `processingMode`，以及表示这次调用是否改了什么的 `changed`。
+修改音源模式；若指定了 `processingMode`，则同时更新处理模式。返回生效的 `sourceMode`、`processingMode` 以及指示配置是否发生变更的布尔值 `changed`。
 
 ```javascript
 const result = await fb.replaygain.setMode('track');
@@ -111,7 +111,7 @@ const result = await fb.replaygain.setMode('track');
 | withRg | number | 否 | 带 ReplayGain 的曲目的预增益，单位 dB，范围 -24 到 24 |
 | withoutRg | number | 否 | 不带 ReplayGain 的曲目的预增益，单位 dB，范围 -24 到 24 |
 
-只发送给了值的参数，没给的预增益保持原值。响应报告修改后生效的 `withRg` 和 `withoutRg`，以及表示这次调用是否改了什么的 `changed`。
+设置 ReplayGain 预增益；未指定的参数保持原值。返回生效的 `withRg`、`withoutRg` 以及指示配置是否发生变更的布尔值 `changed`。
 
 ```javascript
 const result = await fb.replaygain.setPreamp(6, 0);

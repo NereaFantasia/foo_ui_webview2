@@ -618,6 +618,7 @@ presets.forEach(p => console.log(`${p.index}: ${p.name}`));
 <!-- api-schema:end -->
 
 | mode 值 | 含义 |
+| :--- | :--- |
 | 0 | none |
 | 1 | track |
 | 2 | album |

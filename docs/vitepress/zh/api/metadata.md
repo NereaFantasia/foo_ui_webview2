@@ -222,7 +222,7 @@ const { cancelled } = res;
 写入元数据标签到文件。使用 `metadb_io_v2::update_info_async` 异步写入。标签键名自动转为大写。
 
 <!-- api-schema:begin metadata.write -->
-将针对单个曲目的标签写入请求加入后台队列并立即返回；foobar2000 宿主在后台线程执行物理文件写入，并在操作完成后向所有窗口广播 `metadata:writeComplete` 事件；请求中未包含有效待写标签时直接返回成功且不派发后台写入
+将针对单个曲目的标签写入请求加入后台队列并立即返回；foobar2000 宿主在后台线程执行物理文件写入，并在操作完成后向所有窗口广播 `metadata:writeComplete` 事件；请求中未包含有效待写标签时直接返回成功且不派发后台写入；目标为 WAV 且写入后标签含非 ASCII 文本时以 `NOT_SUPPORTED` 拒绝（`details.reason` 为 `wavInfoNonAscii`）且不改动文件，因为 foobar2000 在 WAV 的 RIFF INFO 块里只存 ASCII，其余字符一律写成 `?`
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
@@ -268,7 +268,7 @@ await fb2k.invoke('metadata.write', {
 移除指定标签。标签名自动转为大写。
 
 <!-- api-schema:begin metadata.removeTag -->
-将针对单个曲目的标签删除请求加入后台队列并立即返回；操作完成后向所有窗口广播 `operation: "removeTag"` 的 `metadata:writeComplete` 事件
+将针对单个曲目的标签删除请求加入后台队列并立即返回；操作完成后向所有窗口广播 `operation: "removeTag"` 的 `metadata:writeComplete` 事件；目标为 WAV 且删除后标签仍含非 ASCII 文本时与 `metadata.write` 一样被拒绝
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
@@ -447,7 +447,7 @@ await fb2k.invoke('metadata.embedArtwork', {
 
 ### metadata:writeComplete
 
-`metadata.write` 或 `metadata.removeTag` 异步写入完成时向所有打开的窗口广播此事件。
+`metadata.write`、`metadata.writeBatch`、`metadata.removeTag` 或 `metadata.removeField` 的异步写入完成时，向所有打开的窗口广播此事件。
 
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |

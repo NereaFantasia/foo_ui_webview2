@@ -10,7 +10,7 @@ foo_ui_webview2 提供 **36 个无样式 Web Components**（Custom Elements）�
 
 - **零样式功能积木**：组件仅包含结构排版与流式布局，不预设任何视觉样式主张（无 `color`、`background`、`font`、`padding`、`margin`、`border-radius`、`box-shadow`、`transition` 等）。所有视觉呈现均由宿主主题通过 CSS 定义。
 - **CSS Part 与 Slot 规范**：内部元素通过 kebab-case 命名的 `part` 属性暴露，供外部使用 `::part()` 选择器定义外观；可替换的视觉图元（如播放/暂停图标）通过 `slot` 插槽开放。
-- **只读宿主属性**：内部运行状态通过只读宿主属性向外反映（如 `[playing]`、`[disabled]`、`[active]`、`[muted]`），供主题编写状态驱动的选择器样式。
+- **只读宿主属性**：内部运行状态通过只读宿主属性向外反映（如 `[playing]`、`[active]`、`[muted]`），供主题编写状态驱动的选择器样式。
 - **右键菜单分离**：组件在右键触发时不弹出原生菜单，仅向外派发包含屏幕坐标与条目上下文的 CustomEvent（`bubbles: true` 且 `composed: true`，如 `fb-track-context`、`fb-playlist-context`、`fb-queue-context`、`fb-library-context`），由主题统一调用 `ui.showCustomMenu` 弹出上下文菜单。
 
 ## 组件速查表
@@ -89,7 +89,7 @@ foo_ui_webview2 提供 **36 个无样式 Web Components**（Custom Elements）�
 | --- | --- |
 | [`<fb-properties-panel>`](./metadata#fb-properties-panel) | 只读曲目详细属性查看面板 |
 | [`<fb-search-bar>`](./metadata#fb-search-bar) | 媒体库搜索输入框 |
-| [`<fb-console>`](./metadata#fb-console) | foobar2000 控制台实时日志查看器 |
+| [`<fb-console>`](./metadata#fb-console) | foobar2000 控制台查看器 |
 
 ### I. 媒体库（2 个）
 

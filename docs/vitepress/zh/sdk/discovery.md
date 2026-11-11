@@ -49,7 +49,7 @@ if (cmd) await fb.discovery.executeMainMenuCommand(cmd.guid, cmd.subGuid);
 
 签名：`fb.discovery.executeContextMenuCommand(options: DiscoveryExecuteContextMenuCommandParams): Promise<DiscoveryExecuteContextMenuCommandResponse>`
 
-按 `options.guid` 执行上下文菜单命令。命令作用于正在播放的曲目，没有播放时作用于活动播放列表的选中项；两者都没有时以 `NO_ACTIVE_ITEM` 失败。
+按 `options.guid` 执行上下文菜单命令，作用于 `options.target` 指定的曲目。缺省的 `'auto'` 为正在播放的曲目，没有播放时为活动播放列表的选中项；`'selection'` 为 foobar2000 自己的上下文快捷键所用的选区，即主题经 `selection` 交给宿主的那一份，或其他界面元素的选区；`'nowPlaying'` 只取正在播放的曲目，`'playlistSelection'` 只取活动播放列表的选中项。目标里没有曲目时以 `NO_ACTIVE_ITEM` 失败。
 
 `FORCE_OFF` 的命令会被拒绝而非派发：宿主从不绘制它，执行等于做了一件用户根本点不到的事。拒绝时返回 `success: false`，错误码为 `NOT_SUPPORTED`，并带 `hidden: true`；传 `{ force: true }` 可强制派发。`DEFAULT_OFF`（按 Shift 才显示）仍可调用，永不拒绝。
 
@@ -66,7 +66,7 @@ if (cmd) await fb.discovery.executeContextMenuCommand({ guid: cmd.guid });
 
 签名：`fb.discovery.executeContextMenuByPath(options: DiscoveryExecuteContextMenuByPathParams): Promise<DiscoveryExecuteContextMenuByPathResponse>`
 
-按菜单 `path` 执行上下文菜单项，也可通过 `trackPath` 指定曲目。省略 `trackPath` 时作用于正在播放的曲目，没有播放时作用于活动播放列表的选中项；都没有时以 `NO_ACTIVE_ITEM` 失败。`trackPath` 可带 `|subsong:N` 后缀，不带时指文件的第一首。
+按菜单 `path` 执行上下文菜单项，也可通过 `trackPath` 指定曲目。省略 `trackPath` 时作用于 `target` 指定的曲目，取值同 `executeContextMenuCommand()`；目标里没有曲目时以 `NO_ACTIVE_ITEM` 失败。同时给出 `trackPath` 与 `'auto'` 以外的 `target` 时以 `INVALID_PARAMS` 失败。`trackPath` 可带 `|subsong:N` 后缀，不带时指文件的第一首。
 
 `path` 用斜杠分隔，如 `Playback Statistics/Rating/5`。每一段都要在规范化后恰好匹配一个菜单标签，规范化忽略助记符 `&`、末尾省略号、快捷键文本与 ASCII 大小写。匹配从不按子串比较，所以 `Rating/1` 不会匹配到 `Rating/10`。路径匹配到多个命令时不会随便挑一个，而是以 `INVALID_PARAMS` 拒绝，并在 `candidates` 里列出各候选的完整名；一个都匹配不到时以 `NOT_FOUND` 失败。需要稳定标识时，改用 `executeContextMenuCommand()` 按 GUID 执行。
 

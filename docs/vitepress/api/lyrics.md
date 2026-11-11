@@ -2,6 +2,10 @@
 
 The `lyrics` namespace provides methods to query, read, and save embedded tags and sidecar lyrics files.
 
+::: tip SDK Wrapper
+We recommend using the `fb.lyrics.*` SDK wrapper rather than constructing raw JSON parameters manually.
+:::
+
 ## lyrics
 
 ### lyrics.exists
@@ -108,6 +112,16 @@ await fb2k.invoke('lyrics.save', {
 });
 ```
 
+### Target options
+
+| Target | Behavior |
+| --- | --- |
+| `file` | Writes to the audio file directory; see the next section for default naming |
+| `embedded` | Asynchronously writes to track metadata tags; listen for `metadata:writeComplete` for the final result |
+| `all` | Writes both the sidecar file and the embedded tag, reporting each outcome |
+
+The bridge `target` parameter is an array (defaults to `["file"]`, while the SDK also accepts a single string). Whether a container and track support embedded tag writes depends on the foobar2000 input decoder plugin; a successful dispatch indicates the task was queued, not that disk write has completed.
+
 ## Sidecar lookup {#sidecar-lookup}
 
 Only the audio file's directory is searched. The profile folder and subdirectories are not searched, and names are not matched by similarity.
@@ -163,7 +177,7 @@ Successful file saves and metadata changes invalidate the 1200 ms read cache. Em
 
 The `config` save target has been removed; `all` writes to `file` and `embedded` only. Legacy lyrics files stored in the profile folder are neither deleted nor searched.
 
-Numbered `.NN.lrc` and shared album-stem files are no longer matched automatically for subsongs. To access an existing sidecar file with custom naming, pass its exact `filename` without renaming the file on disk.
+Numbered `.NN.lrc` and shared album-stem files are no longer matched automatically for subsongs. If you know which track an existing file belongs to, pass its exact `filename` without renaming it.
 
 ## Related
 

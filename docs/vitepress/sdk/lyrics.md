@@ -1,6 +1,6 @@
 # fb.lyrics Lyrics
 
-`fb.lyrics` locates, checks, and saves lyrics for a track. When no path is supplied to `get()`, the host uses the currently playing track.
+`fb.lyrics` provides lookup, existence inspection, and persistence operations for track lyrics. When the `path` parameter is omitted in `get()`, the host automatically targets the currently playing track.
 
 ## exists(path)
 
@@ -8,12 +8,12 @@ Signature: `fb.lyrics.exists(path: string, options?: Omit<LyricsExistsParams, 'p
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `path` | `string` | Yes | Track path to inspect; a `\|subsong:N` suffix selects a subsong |
-| `options.filename` | `string` | No | Exact file name beside the audio, including its extension; empty or omitted uses automatic lookup |
+| `path` | `string` | Yes | Track file path to inspect; supports appending a `\|subsong:N` suffix to target a specific subsong index |
+| `options.filename` | `string` | No | Exact filename for the sidecar lyrics file beside the audio (including extension); empty or omitted applies default automatic lookup rules |
 
-Lists existing known lyrics tags and sidecar files, including empty ones. File candidates and access checks match `get()`; an explicit filename restricts only the file candidates, and embedded tags are still checked.
+Inspects and returns existing known lyrics metadata tags and companion sidecar files (including zero-byte empty files). File candidate resolution and filesystem access policies are identical to `get()`; supplying an explicit filename constrains only the sidecar candidate list while embedded tag inspection remains active.
 
-Returns `{ exists, sources }`; `sources` lists every source found, such as `embedded` or `file:song.lrc`.
+Resolves with `{ exists, sources }`, where `sources` is an array of matched source identifiers (such as `embedded` or `file:song.lrc`).
 
 ```javascript
 const res = await fb.lyrics.exists('E:\\Music\\song.flac');
@@ -27,13 +27,13 @@ Signature: `fb.lyrics.get(path?: string, options?: Omit<LyricsGetParams, 'path'>
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `path` | `string` | No | Track path; omit it to use the current track. With nothing playing the call then fails with `NO_ACTIVE_ITEM` |
-| `options.source` | `string` | No | `'embedded'`, `'file'`, or `'any'`; defaults to `'any'`, which checks the embedded tags first, then the sidecar files |
-| `options.type` | `string` | No | `'synced'`, `'unsynced'`, or `'any'`; defaults to `'any'` |
-| `options.format` | `string` | No | `'lrc'`, `'txt'`, or `'any'`; defaults to `'any'`, which tries `.lrc` before `.txt`. Applies to the sidecar lookup only |
-| `options.filename` | `string` | No | Exact file name beside the audio; a non-empty value replaces automatic candidates and ignores `format`. `source` and `type` still apply |
+| `path` | `string` | No | Track file path; omitted to target the currently active track. With nothing playing, the call fails with `NO_ACTIVE_ITEM` |
+| `options.source` | `string` | No | Source filter; accepted values are `'embedded'`, `'file'`, or `'any'`. Defaults to `'any'` (inspects embedded tags first, falling back to sidecar files) |
+| `options.type` | `string` | No | Lyrics type filter; accepted values are `'synced'` (timestamped), `'unsynced'` (plain text), or `'any'`. Defaults to `'any'` |
+| `options.format` | `string` | No | Sidecar file format filter; accepted values are `'lrc'`, `'txt'`, or `'any'`. Defaults to `'any'` (tries `.lrc` before `.txt`). Applies to sidecar file lookups only |
+| `options.filename` | `string` | No | Exact sidecar filename beside the audio file; a non-empty string overrides candidate generation rules and bypasses `format`, while `source` and `type` filters remain enforced |
 
-Returns `LyricsGetResponse`. Check `success`, then `available`; matches can include `source`, `sourcePath`, `tagName`, `lyrics`, and `synced`. Automatic lookup uses the audio stem only for verified single-track files, then the first-artist/title name; subsongs use only the latter. See [file lookup and naming](/api/lyrics#sidecar-lookup).
+Resolves with a `LyricsGetResponse` structure. Callers must evaluate `success`, then inspect `available` to determine whether lyrics were located; matched results include `source`, `sourcePath`, `tagName`, `lyrics`, and `synced`. Automatic resolution policy: verified single-track audio files check for an identical base filename before trying `<First Artist> - <Title>`; subsong tracks only attempt the artist/title pattern. See [Sidecar lookup and naming](/api/lyrics#sidecar-lookup).
 
 ```javascript
 const path = 'E:\\Music\\song.flac';
@@ -42,20 +42,22 @@ const embedded = await fb.lyrics.get(path, { source: 'embedded' });
 const result = await fb.lyrics.get(undefined, { type: 'synced' });
 ```
 
-## Save Lyrics
+## save(path, lyricsText, options?) {#save-lyrics}
 
-`fb.lyrics.save(path, lyricsText, options?)` invokes `lyrics.save`. `options` is `LyricsSaveOptions` and can include `filename`, `tagName`, `format`, and `target`; a single-string `target` is sent to the host as a one-element array.
+Signature: `fb.lyrics.save(path: string, lyricsText: string, options?: LyricsSaveOptions): Promise<LyricsSaveResponse>`
+
+Invokes the underlying `lyrics.save` endpoint to persist lyrics text. The `options` parameter accepts `target`, `filename`, `tagName`, and `format`; if `target` is passed as a single string, the SDK normalizes it into a single-element array before sending to the host.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `path` | `string` | Yes | Track path the lyrics belong to |
 | `lyricsText` | `string` | Yes | Lyrics text to save |
-| `options.target` | `LyricsSaveTarget \| LyricsSaveTarget[]` | No | `'file'` (a sidecar next to the audio file, the default), `'embedded'` (a tag in the file), or `'all'` for both |
-| `options.filename` | `string` | No | Exact file name, including its extension, for the `file` target. A non-empty value overrides the default name and `format` |
-| `options.tagName` | `string` | No | Tag the `embedded` target writes; defaults to `'LYRICS'` |
-| `options.format` | `string` | No | `'lrc'` or `'txt'`, the extension for a default sidecar name; defaults to `'lrc'`. Ignored for a non-empty `filename` |
+| `options.target` | `LyricsSaveTarget \| LyricsSaveTarget[]` | No | Save destination; accepted values are `'file'` (sidecar file beside the audio, default), `'embedded'` (metadata tag within the audio container), or `'all'` (persists to both) |
+| `options.filename` | `string` | No | Exact filename (including extension) for the `file` target. Supplying a non-empty string overrides default naming rules and ignores `format` |
+| `options.tagName` | `string` | No | Metadata tag field name for `embedded` target writes; defaults to `'LYRICS'` |
+| `options.format` | `string` | No | Sidecar file format extension (`'lrc'` or `'txt'`); defaults to `'lrc'`. Ignored when a non-empty `filename` is provided |
 
-The SDK return type is `LyricsSaveResponse`. With one target it describes that write (`savedTo` for a file, the tag-write receipt for `embedded`); with several targets each outcome is keyed under `results`, and the call fails with `OPERATION_FAILED` only when every target failed. The `embedded` target only queues the tag write: `dispatched: true` in its receipt means it was queued, and the final outcome arrives as the `metadata:writeComplete` event.
+Resolves with a `LyricsSaveResponse` structure. When targeting a single destination, the response describes that specific operation (`savedTo` absolute path for `file`, asynchronous receipt for `embedded`). When targeting multiple destinations, individual outcomes are keyed under `results`, and the overall operation fails with `OPERATION_FAILED` only when all targets fail. Note that the `embedded` target only submits an asynchronous tag write to the host queue: `dispatched: true` in the receipt confirms queue ingestion, with final persistence status delivered via the `metadata:writeComplete` event.
 
 ```javascript
 const result = await fb.lyrics.save(
@@ -76,8 +78,8 @@ await fb.lyrics.save(path, text); // sidecar file only
 await fb.lyrics.save(path, text, { filename: 'chosen.lrc' });
 const chosen = await fb.lyrics.get(path, { source: 'file', filename: 'chosen.lrc' });
 const found = await fb.lyrics.exists(path, { filename: 'chosen.lrc' });
-const all = await fb.lyrics.save(path, text, { target: 'all' }); // file and tag
+const all = await fb.lyrics.save(path, text, { target: 'all' }); // both sidecar file and embedded metadata
 if (all.success === false) throw new Error(all.error);
 ```
 
-All three methods apply the same Windows filename validation. Missing tags prevent deriving a subsong's default file name; specify `filename` in that case. File saves invalidate cached reads before returning, while embedded writes invalidate them when metadata changes. The removed `config` target and older subsong names are covered in the [migration notes](/api/lyrics#migrating-older-callers).
+All three methods enforce standardized Windows filename validation rules. When track metadata tags are missing, the host cannot automatically derive a subsong's sidecar filename; an explicit `filename` must be provided. Sidecar file writes invalidate read caches prior to returning; embedded writes invalidate caches after underlying metadata modifications complete on disk. For details regarding the removed `config` target and legacy subsong naming compatibility, refer to [Migration Notes](/api/lyrics#migrating-older-callers).

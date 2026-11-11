@@ -2,12 +2,22 @@
 
 Methods for reading and resolving embedded and external album artwork, supporting `fb2k://` protocol URLs, Base64 Data URLs, batch lookups, and scaling.
 
+## Artwork retrieval comparison
+
+| Method | Return format | Typical use case | Recommendation |
+| --- | --- | --- | --- |
+| `artwork.getFb2kUrl()` | `fb2k://` URL | Currently playing track | ★★★★★ |
+| `artwork.getFb2kUrlByPath()` | `fb2k://` URL | Lazy loading for any track | ★★★★★ |
+| `artwork.getFb2kUrlByPathBatch()` | `fb2k://` URL array | Batch cover retrieval | ★★★★★ |
+| `artwork.getCurrent()` | Base64 Data URL | Immediate inline rendering | ★★★ |
+| `artwork.getForTrack()` | Base64 Data URL | Single track cover by path | ★★★ |
+
 ## artwork
 
 ### artwork.getAvailableArtwork
 
 <!-- api-schema:begin artwork.getAvailableArtwork -->
-Report which picture types a file embeds and which cover files sit next to it.
+Report which picture types a file embeds and which cover files sit next to it. A file that is only in the cloud and not yet downloaded is not opened, so it embeds no pictures.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
@@ -37,7 +47,7 @@ const { artworks, sources } = res;
 ### artwork.getAvailableTypes
 
 <!-- api-schema:begin artwork.getAvailableTypes -->
-List the picture types embedded in a file, in the fixed probe order front, back, disc, icon, artist. Without `path` the playing track is used; with nothing playing the call fails with `NO_ACTIVE_ITEM`. A file that is missing, cannot be read or has a format without embedded pictures is not an error: it lists no types.
+List the picture types embedded in a file, in the fixed probe order front, back, disc, icon, artist. Without `path` the playing track is used; with nothing playing the call fails with `NO_ACTIVE_ITEM`. A file that is missing, cannot be read or has a format without embedded pictures is not an error: it lists no types. A file that is only in the cloud and not yet downloaded is not opened and lists no types either.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
@@ -63,7 +73,7 @@ const { types } = res;
 ### artwork.getBatch
 
 <!-- api-schema:begin artwork.getBatch -->
-Read one picture type from several files with the album art extractor, one row per path in the given order; a file without the picture gets a row with `available: false`.
+Read one picture type from several files with the album art extractor, one row per path in the given order; a file without the picture gets a row with `available: false`, as does a file that is only in the cloud and not yet downloaded, which is not opened.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
@@ -95,7 +105,7 @@ const { artworks } = res;
 ### artwork.getByPath
 
 <!-- api-schema:begin artwork.getByPath -->
-Read a picture straight from the file at `path` with the album art extractor. The `|subsong:N` suffix is dropped, since pictures belong to the file; a `file-relative://` path is refused with `INVALID_PATH`, because only a playlist row can resolve it.
+Read a picture straight from the file at `path` with the album art extractor. The `|subsong:N` suffix is dropped, since pictures belong to the file; a `file-relative://` path is refused with `INVALID_PATH`, because only a playlist row can resolve it. A file that is only in the cloud and not yet downloaded is not opened and has no picture.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
@@ -124,10 +134,18 @@ if (res.success === false) throw new Error(res.error);
 const { available, dataUrl } = res;
 ```
 
+::: tip Path Contract
+
+- **Supported**: Native paths, `file://` prefixes, and `path|subsong:N` (`subsong` is stripped; extractor operates at file level)
+- **Rejected**: `file-relative://` paths return an explicit error; use `artwork.getByPlaylistItem` instead
+- Paths are normalized to canonical paths internally
+
+:::
+
 ### artwork.getByPlaylistItem
 
 <!-- api-schema:begin artwork.getByPlaylistItem -->
-Read the picture of a playlist row through the album art manager. A negative `playlist` means the active playlist and a negative `index` means the first row. A row past the end, an empty playlist included, fails with `NOT_FOUND`. A playlist index past the last playlist fails with `INVALID_INDEX`, a `playlistGuid` no playlist has with `NOT_FOUND`, and no active playlist when the active one is meant with `NO_ACTIVE_ITEM`. A row without the picture is a success with `available` `false`.
+Read the picture of a playlist row through the album art manager. A negative `playlist` means the active playlist and a negative `index` means the first row. A row past the end, an empty playlist included, fails with `NOT_FOUND`. A playlist index past the last playlist fails with `INVALID_INDEX`, a `playlistGuid` no playlist has with `NOT_FOUND`, and no active playlist when the active one is meant with `NO_ACTIVE_ITEM`. A row without the picture is a success with `available` `false`; so is a row whose file is only in the cloud and not yet downloaded, which is not opened.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
@@ -163,7 +181,7 @@ const { available, dataUrl } = res;
 ### artwork.getCurrent
 
 <!-- api-schema:begin artwork.getCurrent -->
-Read the picture of the playing track. Three lookups are tried in order and `source` names the one that answered; `available: false` with `reason: "no_track"` when nothing is playing and `reason: "not_found"` when none of them had a picture.
+Read the picture of the playing track. Three lookups are tried in order and `source` names the one that answered; `available: false` with `reason: "no_track"` when nothing is playing and `reason: "not_found"` when none of them had a picture. A file that is only in the cloud and not yet downloaded is not opened, so the file lookups find nothing.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
@@ -295,6 +313,19 @@ const result = await fb2k.invoke('artwork.getFb2kUrlByPathBatch', {
 });
 ```
 
+### Recommended cover dimensions
+
+| Scenario | `maxSize` | Typical size |
+| --- | --- | --- |
+| Playlist thumbnail | 50–100 | 2–5 KB |
+| Sidebar card | 200–300 | 10–20 KB |
+| Main player cover | 400–600 | 30–60 KB |
+| Fullscreen / modal view | 1000+ | 100–500 KB |
+
+::: tip Path Parameter Encoding
+Pass the track path in the query string `path` parameter to prevent Chromium URL canonicalization from decoding `%5C` / `%2F` and corrupting Windows paths. The legacy format `fb2k://artwork/{encodedPath}?type=...` remains supported for backward compatibility.
+:::
+
 ### artwork.getFolderImages
 
 <!-- api-schema:begin artwork.getFolderImages -->
@@ -327,7 +358,7 @@ const { images } = res;
 ### artwork.getForTrack
 
 <!-- api-schema:begin artwork.getForTrack -->
-Read a picture through the album art manager, which also finds folder covers, and measure it. `width` and `height` are read from the PNG header and are `0` for other formats. A `file-relative://` path is refused with `INVALID_PATH`.
+Read a picture through the album art manager, which also finds folder covers, and measure it. `width` and `height` are read from the PNG header and are `0` for other formats. A `file-relative://` path is refused with `INVALID_PATH`. A file that is only in the cloud and not yet downloaded is not opened and has no picture.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
@@ -359,6 +390,18 @@ if (res.success === false) throw new Error(res.error);
 const { available, dataUrl } = res;
 ```
 
+::: tip Performance Recommendation
+In list and grid views, pass `maxSize` (for example `200`) to `artwork.getFb2kUrl`, `artwork.getFb2kUrlByPath` or `artwork.getFb2kUrlByPathBatch` so the host sends a scaled-down picture. The Data URL methods (`artwork.getCurrent`, `artwork.getByPlaylistItem`, `artwork.getForTrack`) do not accept `maxSize` and return the picture at its stored size.
+:::
+
+::: warning width / height Limitation
+`width` and `height` return actual dimensions only for **PNG** pictures. For JPEG, GIF, BMP, and WebP, they return `0`.
+:::
+
+::: warning Relative Path Constraint
+If the track path uses the `file-relative://` scheme, use `artwork.getByPlaylistItem` instead.
+:::
+
 ### artwork.getLyrics
 
 <!-- api-schema:begin artwork.getLyrics -->
@@ -389,7 +432,7 @@ const { available, lyrics } = res;
 ### artwork.getMetadata
 
 <!-- api-schema:begin artwork.getMetadata -->
-Read the album-level tags of a track, plus whether the file embeds any picture and whether it carries a lyrics tag. The tags come from the host's cached track info when complete; a local file it has not read is read from disk, and a remote or unrecognised path keeps whatever the cache has, which can be blank. Without `path` the playing track is used; with nothing playing the call fails with `NO_ACTIVE_ITEM`. A path no track can be made for fails with `NOT_FOUND`, a local file that cannot be read with `OPERATION_FAILED`. Invalid UTF-8 in returned tag values is replaced with U+FFFD without changing the file.
+Read the album-level tags of a track, plus whether the file embeds any picture and whether it carries a lyrics tag. The tags come from the host's cached track info when complete; a local file it has not read is read from disk, and a remote or unrecognised path keeps whatever the cache has, which can be blank. Without `path` the playing track is used; with nothing playing the call fails with `NO_ACTIVE_ITEM`. A path no track can be made for fails with `NOT_FOUND`, a local file that cannot be read with `OPERATION_FAILED`. Invalid UTF-8 in returned tag values is replaced with U+FFFD without changing the file. A file that is only in the cloud and not yet downloaded is not opened for the picture check, so `hasEmbedded` is `false`.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |

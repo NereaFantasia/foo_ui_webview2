@@ -57,7 +57,7 @@ await fb.http.patch('https://api.example.com/items/42', { title: 'Renamed' });
 
 Signature: `fb.http.head(url: string, options?: Omit<HttpRequestOptions, 'responseType'>): Promise<HttpHeadResponse>`
 
-Dispatches a HEAD request. Like `get()`, it is asynchronous by default: pass `{ async: false }` to get the response itself, otherwise the result arrives as `http:response`. A synchronous response may include the parsed `contentLength` convenience field.
+Dispatches a HEAD request. Like `get()`, it is asynchronous by default: pass `{ async: false }` for a direct response; otherwise the result arrives via `http:response`. A synchronous response may include the parsed `contentLength` convenience field.
 
 ```javascript
 const res = await fb.http.head('https://example.com/file.zip', { async: false });
@@ -69,9 +69,9 @@ console.log(res.status, res.contentLength);
 
 Signature: `fb.http.request(url: string, options?: HttpRequestOptions): Promise<HttpGetSuccess | HttpBinarySuccess>`
 
-Performs an event-driven GET and resolves only after the matching `http:response` event arrives. It also handles a synchronous host response. A client-side watchdog defaults to 35 seconds, or to `options.timeout + 5000` when a host timeout is supplied. The SDK removes its event listener and clears the watchdog on every completion path.
+Performs an event-driven GET and resolves once the matching `http:response` event arrives; a synchronous host response is handled as well. The client-side timeout defaults to 35 seconds, or `options.timeout + 5000` ms when `options.timeout` is specified. The SDK removes its event listener and clears the timeout on every completion path.
 
-Unlike the other methods, `request()` resolves only with a successful response and rejects for every failure: a failure the host reports becomes an `Error` with its `error` as the message, and one delivered through `http:response` also carries the whole payload as the error's `response` property. The watchdog firing rejects as well.
+Unlike other methods, `request()` resolves only on a successful response and rejects on failure: a host-reported failure throws an `Error` with its `error` string as the message; a failure delivered via `http:response` attaches the full payload to the `response` property of the `Error` instance. Client watchdog timeout also triggers rejection.
 
 ```javascript
 try {
@@ -100,7 +100,7 @@ const receipt = await fb.http.download(
 
 Signature: `fb.http.abort(requestId: string): Promise<HttpAbortResponse>`
 
-Cancels an in-flight async request or download by the `requestId` of its receipt. `cancelled` is `false` when the request had already ended.
+Cancels an in-flight asynchronous request or download by its receipt `requestId`. If the request has already completed, `cancelled` is `false`.
 
 ```javascript
 const receipt = await fb.http.download(
@@ -138,9 +138,9 @@ fb.on('http:downloadComplete', (e) => {
 | `responseType` | `'text' \| 'base64' \| 'arraybuffer' \| 'binary'` | Response decoding mode |
 | `insecureTls` | `boolean` | Requests invalid-certificate bypass when the host advanced setting also permits it |
 
-For `arraybuffer` or `binary`, the SDK decodes the host's base64 transport body into an `ArrayBuffer`. Do not enable `insecureTls` for requests carrying credentials or personal data. The deprecated `verifyTls` and `sync` options, and the `requestId` option of `download()`, have no effect and are not sent to the host.
+For `arraybuffer` or `binary`, the SDK decodes the host base64 transport payload into an `ArrayBuffer`. Avoid enabling `insecureTls` for requests carrying credentials or sensitive data. The deprecated `verifyTls` and `sync` options, as well as the `requestId` option of `download()`, have no effect and are omitted from host requests.
 
 ## Events
 
-- `http:response` carries the `requestId` of the receipt with the outcome: `status`, `headers`, `body` and `responseType` on success (plus `contentLength` for HEAD), or `error` and `code` on failure (plus `cancelled: true` after `abort()`).
-- `http:downloadComplete` carries the `requestId` with `status`, `bytesWritten` and `path` on success, or `error` and `code` on failure (plus `cancelled: true` after `abort()`).
+- `http:response` carries the receipt `requestId` and result: on success, it includes `status`, `headers`, `body`, and `responseType` (plus `contentLength` for HEAD requests); on failure, it includes `error` and `code` (plus `cancelled: true` when cancelled by `abort()`).
+- `http:downloadComplete` carries the `requestId`: on success, it includes `status`, `bytesWritten`, and `path`; on failure, it includes `error` and `code` (plus `cancelled: true` when cancelled by `abort()`).

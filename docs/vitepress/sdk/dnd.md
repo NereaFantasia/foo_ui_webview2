@@ -20,14 +20,11 @@ top-level document as `window.__fbDndSession` before any `dnd:*` listener runs.
 
 A page accepts a drop the HTML5 way: `dragover` calls `preventDefault()` over the
 element that takes it. Where no handler does, the host refuses the drop for the
-page. The cursor shows "forbidden", releasing there drops nothing and sends no
-`dnd:drop`, and the browser does not open the dropped file by itself. Text fields
+page. The cursor shows "forbidden", releasing there drops nothing, emits no
+`dnd:drop`, and prevents the browser from opening the dropped file. Text fields
 keep their default text drop.
 
-For the first half second after a drag enters the window the page has not answered
-yet, so the cursor shows "copy" rather than flickering to "forbidden" on the way in;
-a drop released in that time is still delivered. After that the cursor follows the
-page's answer as the pointer moves.
+During the first 500 ms after entering the window, the cursor defaults to copy before the page responds, preventing transient flashes of the forbidden icon; drops during this interval are delivered normally. Thereafter, the cursor updates dynamically based on page responses.
 
 ```javascript
 document.getElementById('playlist')?.addEventListener('dragover', (event) => {
@@ -105,9 +102,7 @@ the same cursor fields; `dnd:leave` carries only `sessionId`.
 
 ### Where a drag came from
 
-`source` on `dnd:enter`, `dnd:drop` and `getPathsAsync` tells a drag the page
-started itself apart from files dragged in from outside, so a page that handles
-its own drag through HTML5 events can ignore the host's copy of the same files:
+The `source` field in `dnd:enter`, `dnd:drop`, and `getPathsAsync` distinguishes between gestures originating from the current window and files dragged from outside. If the page already handles internal drag-and-drop via HTML5 events, this property allows ignoring duplicate host-dispatched paths:
 
 | Value | The drag started in |
 | --- | --- |
@@ -115,9 +110,7 @@ its own drag through HTML5 events can ignore the host's copy of the same files:
 | `'other-window'` | another window of the same foobar2000: the main window or a popup |
 | `'external'` | anywhere else: Explorer, another application, another foobar2000 process, or a Default UI / Columns UI panel |
 
-The host marks every drag that starts in a window it hosts and reads the mark back
-when the drag enters a window. Any program can imitate the mark, so use `source` to
-decide how to handle a drop, not as a security check.
+The host tags drag gestures initiated within its managed windows and reads the tag when entering destination windows. Because external applications could fabricate similar tags, `source` should only guide drop handling and must not serve as a security boundary.
 
 ```javascript
 fb.on('dnd:drop', ({ source, paths }) => {
@@ -133,8 +126,8 @@ Signature: `fb.dnd.getPaths(): string[]`
 Synchronous snapshot read, and therefore best-effort. Returns an empty array when
 no session is active, when the drag carries no file list, when the origin is not
 trusted with paths, or when the host has not published the session yet — a fast
-drag can reach the page's `drop` handler before publication completes. Keep this
-for optimistic UI and use `getPathsAsync` as the real source.
+drag can reach the page's `drop` handler before publication completes. This method is
+recommended only for optimistic UI rendering; use `getPathsAsync` for reliable data fetching.
 
 ```javascript
 const optimistic = fb.dnd.getPaths();
@@ -160,13 +153,11 @@ element.addEventListener('dragover', (event) => {
 ## Shortcut targets
 
 Dragging a shortcut puts the `.lnk` file itself in the dropped list, and
-foobar2000 cannot play that. So every path source above is joined by a parallel
+foobar2000 cannot play it directly. So each path source above is accompanied by a corresponding
 array of shortcut targets: `resolvedPaths` on the `dnd:enter` / `dnd:drop`
 payloads and on `getPathsAsync`, and `getResolvedPaths()` for the snapshot.
 
-`paths` is never rewritten. The index correspondence with `DataTransfer.files` is
-a fixed contract, so the target appears beside the original entry rather than in
-place of it, and a page decides for itself which one to use.
+`paths` is never rewritten. Its indices align strictly with `DataTransfer.files`; resolved targets are provided alongside original paths rather than replacing them, allowing applications to select the appropriate path.
 
 ### getResolvedPaths()
 
@@ -187,17 +178,10 @@ available:
 `null` is used in every one of those cases — never an empty string — so a
 truthiness test is enough to tell "resolved" from "not resolved".
 
-::: warning A target is where the shortcut points, not proof the file is there
-A **broken** shortcut does *not* report `null`. Windows returns the target path
-the `.lnk` recorded whether or not anything still exists at it, so a non-null
-entry means "this is where the shortcut points" and nothing more.
+::: warning Resolved targets represent recorded paths and do not guarantee file existence
+Broken shortcuts do not return `null`. Windows returns the static target path recorded inside the `.lnk` file regardless of whether the file still exists on disk, so a non-null entry indicates only that a target path was recorded.
 
-The host deliberately does not check: it reads shortcuts on the thread the
-dragging application is blocked on, so a filesystem probe per entry is exactly
-what must not happen there. Handle the missing-file case in the page — the
-cheapest form is to let the call you pass the path to report its own failure
-(`playlist.addPaths` comes back with `addedCount` and `invalidCount`, so a
-vanished target shows up as a shortfall rather than as a thrown error).
+The host deliberately omits disk probing to avoid blocking the drag-source UI thread during synchronous drag interactions. Applications should handle nonexistent targets when consuming paths, for example by checking `addedCount` and `invalidCount` returned by `playlist.addPaths`.
 :::
 
 ```javascript
@@ -294,13 +278,7 @@ share them where it belongs.
 
 ## Dragging files out
 
-The reverse direction: a page element the user can drag into Explorer or another
-application, where it arrives as real files. The page never handles paths at drag
-time. It exchanges them for a one-shot **token** beforehand, writes the token into
-the drag when it starts, and the host swaps the token for the already-validated
-file list. From there the drag is an ordinary page drag: the browser draws the
-drag image, the cursor follows the target, and the page's own `dragend` reports
-the outcome.
+Reverse drag-out: allows users to drag draggable page elements directly into Windows File Explorer or external applications as real files. The page never directly handles raw paths during the drag gesture; instead, it requests a single-use token in advance. When the drag starts, the token is written to DataTransfer, and the host resolves it to the validated file list. Standard browser drag mechanics manage the remaining interaction, and the outcome is reported via `dragend`.
 
 Check `dragOut` on [`getCapabilities()`](#getcapabilities) before offering the
 gesture.
@@ -313,18 +291,13 @@ Validates the paths and returns a token for the next drag out of this window.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `paths` | `string[]` | Yes | Locations to drag out, at least one. Accepts native paths, `file://` URLs, `file-relative://` URLs (a portable install's form for media on the program's volume, resolved by foobar2000), `archive://` / `unpack://` entries, and the `path\|subsong:N` form (the suffix is dropped and the container is dragged). A track's `path` and its `absolutePath` are both accepted |
+| `paths` | `string[]` | Yes | Locations to drag out, at least one. Accepts native paths, `file://` URLs, `file-relative://` URLs (portable-mode relative paths resolved by foobar2000), `archive://` and `unpack://` entries, and `path\|subsong:N` syntax (the subsong suffix is stripped to drag the container); accepts either `path` or `absolutePath` from track objects |
 
 Returns `{ success: true, token }`. The token is opaque; the only thing to do with
 it is pass it to [`applyDragToken`](#applydragtoken-datatransfer-token).
 
-::: warning Call this before the drag starts, not inside `dragstart`
-The drag data store is writable only while the `dragstart` handler runs
-synchronously. A token that arrives after an `await` inside that handler cannot be
-written any more — `setData` fails silently and the drag goes out empty. Request the
-token on `pointerdown` (or `mousedown`), keep it, and use it synchronously in
-`dragstart`. A very fast press-and-move can still outrun the request; if the token
-has not arrived when `dragstart` fires, let the drag proceed as an ordinary one.
+::: warning Call before drag begins, not inside `dragstart`
+The drag data store is writable only during synchronous execution of the `dragstart` handler. Performing `await` inside `dragstart` causes subsequent `setData` calls to fail silently, resulting in drops without files. Request and cache tokens during `pointerdown` (or `mousedown`), then inject the token synchronously inside `dragstart`. If dragging begins before token acquisition completes, the operation proceeds as a standard web drag gesture.
 :::
 
 Token rules:
@@ -340,10 +313,7 @@ A token that breaks any of these is refused when the drag starts, with a
 drag without files.
 
 ::: tip What arrives at the target is always a physical file
-A track inside a cue sheet or a multi-track container drags the whole container.
-An `archive://` or `unpack://` entry drags the whole archive. Several requested
-entries can therefore collapse into one file, and the position inside the
-container is not carried across.
+A track inside a CUE sheet or multi-track container exports the underlying container file; `archive://` and `unpack://` items export the entire archive file. Multiple track entries may coalesce into a single physical file, and internal cuesheet/subsong offsets do not accompany the exported files.
 :::
 
 Paths are normalised to native paths and then validated the same way as for
@@ -363,8 +333,8 @@ files independently of `dragend`.
 | `ORIGIN_DENIED` | The document origin is not trusted to drag files out. Checked before any path is inspected |
 | `NOT_SUPPORTED` | `dragOut` is `false` for this window |
 | `INVALID_PARAMS` | `paths` missing, empty, or not all strings |
-| `INVALID_PATH` | An entry has no local file behind it (a stream, a `cdda://` track). `paths[i]` indexes **the array you passed** |
-| `PERMISSION_DENIED` | An entry was refused by path security. `paths[i]` indexes the **normalised, de-duplicated** list, which can be shorter than yours |
+| `INVALID_PATH` | Specified item does not map to a local file (e.g. network stream or `cdda://` track); `paths[i]` reflects the index in the input array |
+| `PERMISSION_DENIED` | Specified item rejected by path security policy; `paths[i]` reflects the index in the normalized, deduplicated list |
 | `OPERATION_FAILED` | A token could not be created |
 
 Error messages never contain a path.
@@ -377,18 +347,11 @@ Writes the token into a `dragstart` event so the host attaches the files. Must b
 called synchronously inside the `dragstart` handler. It does two things, and both
 are required:
 
-1. sets the `text/plain` entry to the token carrier (`fb2k-dnd-token/1:` followed
-   by the token), replacing anything the page put there — the host recognises a
-   drag-out by that marker
-2. sets `effectAllowed` to `'copy'`
+1. Sets `text/plain` to the token payload (`fb2k-dnd-token/1:` followed by token), overriding existing text content so the host recognizes the gesture as a file drag-out
+2. Sets `effectAllowed` to `'copy'`
 
 ::: danger `effectAllowed` must be exactly `'copy'`
-Once the file list is attached, a *move* is carried out by the drop target, not by
-the page or the host: Explorer moves files by default when the destination is on
-the same drive as the source. The host therefore attaches no files to a drag whose
-allowed effects are wider than copy (`INVALID_PARAMS` on `dnd:dragEnded`), and only
-the page's own drag is left. Leaving `effectAllowed` unset means
-`copy | move | link`, which gets no files. Do not change it after `applyDragToken`.
+After files are attached, the drop action is executed directly by the destination application. When destination and source reside on the same drive partition, Windows File Explorer defaults to moving files. To prevent source files from being deleted by external targets, the host strictly requires copy-only gestures: if `effectAllowed` permits wider operations than copy, the host refuses to attach files (emitting `dnd:dragEnded` with `INVALID_PARAMS`) and falls back to a standard web drag. Omitting `effectAllowed` implies `copy | move | link` and likewise prevents file attachment. Do not modify `effectAllowed` after calling `applyDragToken`.
 :::
 
 The `text/plain` slot is not available for page text during a drag-out. The host
@@ -434,11 +397,7 @@ the drag cancelled. Returns an unsubscribe function.
 A valid token is consumed before checking `effectAllowed` or attaching the file list. After `INVALID_PARAMS` or `OPERATION_FAILED`, request a fresh token before retrying.
 
 ::: warning This is not a completion notice
-When the host accepts the token there is **no event**. The drag proceeds like any
-page drag and the outcome is in the element's own `dragend`:
-`dataTransfer.dropEffect` is `'copy'` when a target took the files and `'none'`
-when the drag was cancelled or the target refused. Put your clean-up in `dragend`,
-and use `dnd:dragEnded` to tell the user (or yourself) why a drag carried no files.
+No dedicated completion event is emitted when the host accepts the token. Drag interactions follow standard web drag lifecycles, with outcomes reported in the element native `dragend` handler: `dataTransfer.dropEffect` of `'copy'` indicates the target accepted files, while `'none'` indicates cancellation or refusal. Place cleanup logic inside `dragend`; `dnd:dragEnded` serves only to diagnose why files failed to attach during gesture initiation.
 :::
 
 ```javascript
@@ -450,20 +409,10 @@ const off = fb.dnd.onDragEnded(({ code, error }) => {
 
 ### What to expect during a drag-out
 
-- A drag that carries a token is either handed over with the files attached, or
-  falls back to an ordinary page drag without files: a drop inside the page still
-  works, and a drop on Explorer produces no file and no token text. If the token
-  text cannot be blanked, the drag is cancelled instead. It never drags the token
-  text out.
-- Drags that do **not** carry a token — the page dragging its own text, an image
-  or a link — are untouched and never produce `dnd:dragEnded`.
-- While the drag is in progress the host window waits for the drop target to
-  respond, exactly as it does for any HTML5 drag out of a WebView. A target that
-  is slow to accept holds the window for that long; this is how WebView2 drags
-  work and not something the page can shorten.
-- Inside an `<iframe>` the token exchange goes through the same `invoke` channel
-  as everything else. Do not rely on framing as a security boundary; the host's
-  origin check is the boundary.
+- Drag gestures with valid tokens attach physical files if accepted by the host; if attachment fails, they fall back to standard web drags without external files, while internal page drop handlers remain functional. Dropping into File Explorer produces neither files nor raw token strings. If token text cannot be sanitized, the gesture is cancelled.
+- Drag gestures without tokens (text, images, hyperlinks) are unaffected and do not emit `dnd:dragEnded`.
+- During drag interactions, the host window waits synchronously for destination responses, matching native WebView2 behavior. External application delays cannot be bypassed by the page.
+- Inside an `<iframe>`, token exchanges use the standard `invoke` channel. Do not rely on framing as a security boundary; the host's origin check is the boundary.
 
 ## Not supported
 

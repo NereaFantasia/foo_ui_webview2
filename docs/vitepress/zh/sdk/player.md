@@ -2,7 +2,7 @@
 
 ## 底层端点对照
 
-`fb.player` 的方法名是 SDK 侧别名，不一定与底层 `fb2k.invoke` 端点同名。直接调用 bridge，或者 `Method not found` 报出 `playback.prev` 这类名字时，按此表查端点。
+`fb.player` 提供的方法为面向开发者的便利封装别名，部分方法名与底层 `fb2k.invoke` 端点存在映射差异。直接使用 bridge 通信或进行错误排查时，可参考下表映射关系：
 
 | 方法 | 调用的端点 |
 | --- | --- |
@@ -141,7 +141,7 @@ const state = await fb.player.getState();
 
 ## getCurrentTrack()
 
-返回 `PlaybackGetCurrentTrackResponse`：`found` 表示是否有曲目载入，有时才带 `track`，即共享的 [Track](../reference/types.md#track) 行。宿主从不返回 `null`。
+返回 `PlaybackGetCurrentTrackResponse`：`found` 指示当前是否载入曲目；仅在 `found` 为 `true` 时包含 `track` 字段（格式参见 [Track](../reference/types.md#track)）。当未载入曲目时，`track` 字段省略而非返回 `null`。
 
 > `artist`、`albumArtist`、`genre` 的多值标签按 `, ` 原序拼接；`artists`、`albumArtists` 分别是 `artist`、`albumArtist` 背后的各个原始值。
 
@@ -158,7 +158,7 @@ if (!result.found) {
 
 ## getPosition()
 
-获取当前播放位置。返回 `{position, duration, subsong, path, hostTime}`。`hostTime` 是宿主读到这个位置时的系统时间，Unix 毫秒，与 `Date.now()` 是同一个时钟：播放时 `pos.position + (Date.now() - pos.hostTime) / 1000` 就是现在播放到的位置。[`PlaybackClock`](#playbackclock) 会持续更新这个估计。
+获取当前播放位置。返回 `{position, duration, subsong, path, hostTime}`。`hostTime` 表示宿主采样该位置时的系统时间戳（Unix 毫秒），与 `Date.now()` 共享相同时钟基准：播放状态下的实时位置可通过 `pos.position + (Date.now() - pos.hostTime) / 1000` 计算得出。[`PlaybackClock`](#playbackclock) 在两次更新之间持续推算这一位置。
 
 ```javascript
 const pos = await fb.player.getPosition();
@@ -244,7 +244,7 @@ await fb.player.volumeDown();
 
 签名：`fb.player.getPlayingPlaylist(): Promise<PlaybackGetPlayingPlaylistResponse>`
 
-报告最近一次起播所在的播放列表：`found`、`playlist`（序号）、`playlistGuid` 与 `name`。没有已知的列表时 `found` 为 `false`，`playlist` 与 `playlistGuid` 为 `null`，不带 `name`。foobar2000 在停止后仍保留这个指针，所以播放过的实例在停止态也会报告。
+返回最近一次发起播放的播放列表信息：包含 `found`、`playlist`（索引）、`playlistGuid` 与 `name`。若无历史播放列表，`found` 为 `false`，`playlist` 与 `playlistGuid` 为 `null` 且不附带 `name`。foobar2000 宿主在停止播放后仍保留该播放列表引用，因此停止状态下仍可读取最近播放来源。
 
 ```javascript
 const res = await fb.player.getPlayingPlaylist();
@@ -266,7 +266,7 @@ if (res.success) console.log(res.isPlaying ? '正在播放' : '已暂停');
 
 签名：`fb.player.toggleMute(): Promise<PlaybackToggleMuteResponse>`
 
-翻转静音状态，返回 `{ muted }`，即翻转后是否静音。之后广播 `playback:volumeChanged`，载荷带 `muted`。
+切换静音状态，返回 `{ muted }` 指示切换后的静音状态。随后广播 `playback:volumeChanged` 事件，载荷携带 `muted`。
 
 ```javascript
 const res = await fb.player.toggleMute();
@@ -277,7 +277,7 @@ if (res.success) console.log(res.muted ? '已静音' : '已取消静音');
 
 签名：`fb.player.toggleStopAfterCurrent(): Promise<PlaybackToggleStopAfterCurrentResponse>`
 
-翻转「播完当前曲目后停止」，返回 `{ enabled }`，即翻转后的值。选项变化时广播 `playback:stopAfterCurrentChanged`，载荷为 `{ enabled }`。
+切换「当前曲目播放完毕后停止」设置，返回 `{ enabled }` 指示切换后的生效状态。选项变化时广播 `playback:stopAfterCurrentChanged` 事件，载荷为 `{ enabled }`。
 
 ```javascript
 const res = await fb.player.toggleStopAfterCurrent();
@@ -288,15 +288,15 @@ if (res.success) console.log(res.enabled ? '本曲结束后停止' : '继续播�
 
 `import { PlaybackClock } from 'foo-webview-sdk/bridge'`；用 `<script>` 包时写 `new fb.PlaybackClock()`。
 
-估计任一时刻 foobar2000 播放到当前曲目的哪里，供两次位置推送之间也要跟着音频走的东西用：进度条、逐字歌词、跟随播放的静音 `<video>`。宿主给每个位置都带上 `hostTime`，即读到它时的系统时间，所以位置到达时时钟知道它已经过去多久，之后用 `performance.now()` 往前推。
+在位置事件推送间隙估算当前曲目的实时播放进度，适用于高频渲染场景（如进度条动画、卡拉 OK 逐字歌词以及静音伴随视频渲染）。宿主在每个位置采样上附带 `hostTime`，即读取该位置时的系统时间；时钟据此判断采样到达时已过去多久，再以 `performance.now()` 向前推算。
 
-- 它跟随 `playback:timeHighRes`、`playback:seeked`、`playback:stateChanged` 与 `playback:trackChanged`，并在创建时、页面重新可见时和调用 `resync()` 时读一次 `playback.getState` 与 `playback.getPosition`。`ready` 在第一次读取结束后兑现，不会拒绝。
-- `resync()` 默认忽略读取失败。播放必须等到新快照时，使用 `resync({ rejectOnFailure: true })`：两次调用都成功后才应用读数。宿主失败以保留 `code` 的 `ApiCallError` 拒绝，桥调用异常也会拒绝。重叠请求导致无法取得完整新快照时，严格请求可能被拒绝，恢复媒体播放前须处理失败。
-- `position(at?)` 返回 `at` 时刻的估计，单位秒；`at` 用 `performance.now()` 的刻度，省略时取现在。已知时长时不超出 `duration`。`state` 为 `paused` 时位置不动，为 `stopped` 时为 `0`。
-- 推送与估计相差不大时，估计只向推送挪四分之一，免得位置随宿主读数的抖动而跳。相差超过 `resyncThresholdSeconds`（默认 0.25）时直接换成推送的位置。跳转刚发生后，仍带着旧位置的推送会被忽略。
-- `onChange(listener)` 报告每一次跳变：第一次读取为 `start`，另有 `seek`、`state`、`track`，以及估计被换掉或 `resync()` 读取之后的 `resync`。跟随播放的静音视频在这些时刻跳转，其余时间只调整播放速率。
-- 比 `maxDeliveryDelayMs`（默认 1000）还旧的推送，以及因为系统时间中途被改而显得过旧或来自未来的推送，一律忽略。宿主不发 `hostTime` 时，推送按到达时刻算作读取时刻，估计会比音频晚一个投递延迟。
-- 用完调用 `dispose()`。
+- 它跟随 `playback:timeHighRes`、`playback:seeked`、`playback:stateChanged` 与 `playback:trackChanged` 事件，并在创建时、页面重新可见时和调用 `resync()` 时读取 `playback.getState` 与 `playback.getPosition`。`ready` 在首次读取完成后兑现，不会被拒绝。
+- `resync()` 默认忽略读取失败。若必须等待新快照方可恢复播放，可使用 `resync({ rejectOnFailure: true })`：两次调用均成功后才应用读数。宿主失败将以保留 `code` 的 `ApiCallError` 拒绝，bridge 通信异常亦会拒绝。当存在并发读取导致无法取得完整新快照时，严格请求可能被拒绝，在恢复媒体播放前须妥善处理该失败。
+- `position(at?)` 返回指定时间戳的估算位置（单位秒）；`at` 基于 `performance.now()` 刻度，省略时取当前时间。已知时长时不超出 `duration`。`state` 为 `paused` 时位置保持静态，为 `stopped` 时固定为 `0`。
+- 当推送值与估算值偏差较小时，时钟只将估算值向推送值修正偏差的四分之一，避免宿主采样抖动引发渲染跳变。当偏差超过 `resyncThresholdSeconds`（默认 0.25 秒）时，立即对齐为最新推送值。寻轨跳转生效后到达的滞后推送将被自动忽略。
+- `onChange(listener)` 监听位置发生不连续跳变的事件：初次就绪时触发 `start`，其余触发原因包含 `seek`、`state`、`track`，以及偏差校正或 `resync()` 主动同步。跟随播放的静音伴随视频可在这些关键时刻执行精准对齐，其余时间仅调整播放速率。
+- 延迟超过 `maxDeliveryDelayMs`（默认 1000 毫秒）的过期推送、或因系统时钟调整导致的异常时间戳推送均被自动忽略。若宿主未提供 `hostTime`，将以事件到达时刻作为采样基准，估算值将比实际音频输出滞后一个投递延迟。
+- 实例不再使用时，调用 `dispose()` 释放资源。
 
 ```javascript
 import { PlaybackClock } from 'foo-webview-sdk/bridge';

@@ -13,8 +13,8 @@
 | --- | --- | --- | --- |
 | `subscriptionId` | `string` | 否 | 订阅的键；用同一 id 再订阅会替换该订阅。缺省时由调用方窗口与 `event` 推出。不能为空。 |
 | `fftSize` | `integer` | 否 | FFT 点数，须为 2 的幂，否则返回 `INVALID_PARAMS`。频带输出在 32 个频带及以上时会提升它；频点输出按给定值用。65536 是本组件自定的上限，不是 foobar2000 的限制，每帧要约 1.5 s 的 PCM。取值 `256` 到 `65536`（含端点）。默认 `1024`。 |
-| `bands` | `integer` | 否 | 仅频带输出：频带数，夹到 8 到 `fftSize / 2`。默认 `48`。 |
-| `fps` | `integer` | 否 | 每秒帧数，夹到 1 到 60。默认 `30`。 |
+| `bands` | `integer` | 否 | 仅频带输出：频带数，有效范围 8 到 `fftSize / 2`，超出自动钳位默认 `48`。 |
+| `fps` | `integer` | 否 | 每秒帧数，有效范围 1 到 60，超出自动钳位默认 `30`。 |
 | `scale` | `"weighted" \| "db"` | 否 | 频带刻度，缺省为 `weighted`。`output: 'bins'` 时不传或传 `db`，其他值返回 `INVALID_PARAMS`。 |
 | `output` | `"bands" \| "bins"` | 否 | 帧里给什么；频点输出时忽略 `bands`。默认 `"bands"`。 |
 | `channels` | `"mix" \| "stereo"` | 否 | 仅频点输出；频带输出配 `stereo` 返回 `INVALID_PARAMS`。默认 `"mix"`。 |
@@ -27,10 +27,10 @@
 
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
-| `subscriptionId` | `string` | 订阅的键，调用方给的或推出的。 |
+| `subscriptionId` | `string` | 订阅标识符（由调用方指定或由宿主确定） |
 | `fftSize` | `integer` | 请求的 FFT 点数；帧里报实际用的点数。 |
-| `bands` | `integer` | 夹取后的频带数。 |
-| `fps` | `integer` | 夹取后的帧率。 |
+| `bands` | `integer` | 钳位生效后的实际频带数 |
+| `fps` | `integer` | 钳位生效后的实际帧率 |
 | `scale` | `"weighted" \| "db"` | 使用的刻度；频点输出恒为 `db`。 |
 | `backgroundThrottle` | `boolean` | 同请求。 |
 | `minFrequency` | `number` | 范围下限，Hz，同请求。 |
@@ -71,7 +71,7 @@
 - 每个值是 `10 · log10(p) − 2.75` dB，`p` 是该频点幅度的平方（`stereo`）或它在各声道上的平均（`mix`），按 0.01 dB 取整，下限 `-160`。满幅正弦主瓣所落各频点的功率之和是 0 dB，所以把频点按功率相加，即 `10 · log10(Σ 10^(v / 10))`，就得到同一区间的 `db` 频带值。单看峰值频点会低一些，因为 foobar2000 的 FFT 用高斯窗，正弦的能量会分到相邻频点上：48 kHz、8192 点下，0 dBFS 的 1 kHz 正弦在峰值频点读 -3.18 dB，距峰值 40 dB 以内的有 6 个频点。
 - 频点 `k`（从 1 起，直流频点不发）的中心频率 `k · sampleRate / fftSize` 落在 `[minFrequency, maxFrequency)` 内时才出。要 20 Hz 以下的频点，把 `minFrequency` 设得更低。
 - 静音帧沿用该订阅上一帧的长度与 `firstBin`，值全为 `-160`；之前没有帧时为空。
-- 要自选窗函数、补零或换别的变换，就用 `audio.subscribeStream` 的 PCM 自己算，见[自己算频谱](../sdk/audio.md#自己算频谱)。
+- 如需使用自定义窗函数、补零或其他变换算法，可通过 `audio.subscribeStream` 获取 PCM 流自行计算，参见[自定义频谱计算](../sdk/audio.md#自己算频谱)。
 
 帧走 JSON，每个值约 7 字节。下表是 48 kHz、缺省区间下的体积与拉取往返时间，按同样大小的 JSON 应答在一台机器上实测后估算：
 
@@ -84,7 +84,7 @@
 
 这些时间大多花在 foobar2000 的主线程上，帧率要按体积选。推送的一拍耗时超过帧间隔时，所有订阅都会跳过下一拍。
 
-::: warning
+::: warning 采样尺寸限制
 `fftSize` 必须是 2 的幂（256 到 65536），否则返回错误。65536 是组件自己的封顶，不是 foobar2000 的限制；这一档每帧要处理约 1.5 秒的 PCM，只在需要原始 bin 分辨率时使用。
 :::
 
@@ -94,7 +94,7 @@
 
 ::: tip 订阅与事件语义
 
-- `subscriptionId` 只在 low-level `fb2k.invoke('audio.*')` 场景下需要；SDK `fb.audio.subscribeSpectrum()` 不公开它。
+- `subscriptionId` 可省略：省略时，宿主根据调用方窗口与 `event` 确定订阅键。SDK 的 `fb.audio.subscribeSpectrum()` 不公开该参数。
 - 若重复传入同一个 `subscriptionId`，语义是更新/覆盖该订阅。
 - 默认 `audio:spectrum` 与自定义 `event` 的 payload 都是上表的帧。
 
@@ -178,7 +178,7 @@ await fb2k.invoke('audio.unsubscribeSpectrum');
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
 | `subscriptionId` | `string` | 帧所属的订阅；请求没指定订阅时不带此键。 |
-| `output` | `"bands" \| "bins"` | 帧里给的是什么。 |
+| `output` | `"bands" \| "bins"` | 当前频谱帧包含的数据格式 |
 | `spectrum` | `number[]` | 频带帧：每个频带一个值，刻度为帧的 `scale`；`weighted` 在 `[0, 1]` 内，`db` 下限 `-160`。`channels: 'mix'` 的频点帧：每个频点一个功率值，dB。 |
 | `left` | `number[]` | `channels: 'stereo'` 的频点帧：第一个声道，每个频点一个 dB 值。 |
 | `right` | `number[]` | `channels: 'stereo'` 的频点帧：第二个声道，单声道流时重复第一个。 |
@@ -241,7 +241,7 @@ requestAnimationFrame(tick);
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
 | `duration` | `number` | 否 | 窗口长度，秒，须大于 0。不大于 `1`。默认 `0.05`。 |
-| `signed` | `boolean` | 否 | 为 `true` 时保留 PCM 正负，夹到 `[-1, 1]`；为 `false` 时把 -70 到 0 dB 的幅度映射到 `[0, 1]`。默认 `false`。 |
+| `signed` | `boolean` | 否 | 为 `true` 时保留 PCM 双极性幅度并钳位至 `[-1, 1]`；为 `false` 时将 -70 到 0 dB 幅度映射到 `[0, 1]`默认 `false`。 |
 | `channels` | `"mix" \| "stereo"` | 否 | `mix` 把各声道平均成 `waveform`；`stereo` 把前两个声道分别给成 `left` 与 `right`。默认 `"mix"`。 |
 | `points` | `integer` | 否 | 把窗口抽成这么多个等距样本，不做平均；缺省返回全部样本。取值 `2` 到 `65536`（含端点）。 |
 
@@ -372,7 +372,7 @@ if (result.success === true) {
 | --- | --- | --- | --- |
 | `path` | `string` | 是 | 曲目路径；带 `\|subsong:N` 后缀时选子曲目。不能为空。 |
 | `cueIndex` | `integer` | 否 | 子曲目序号，从 0 起；优先于路径里的子曲目。不小于 `0`。 |
-| `resolution` | `integer` | 否 | 点数，夹到 64 到 4096。每个点数只解码一次，其余选项从缓存算。默认 `256`。 |
+| `resolution` | `integer` | 否 | 采样点数，有效范围 64 到 4096，超出自动钳位。相同点数仅解码一次，其他显示选项从缓存计算默认 `256`。 |
 | `method` | `"rms" \| "peak"` | 否 | 每个点的取值方式。默认 `"rms"`。 |
 | `scale` | `"linear" \| "db"` | 否 | 点的刻度：`linear`，或 `db`（比曲目自身最大值低 60 dB 处映射为 0）；`signed` 时忽略。默认 `"linear"`。 |
 | `signed` | `boolean` | 否 | 保留 PCM 正负；点在 `[-1, 1]` 内。默认 `false`。 |
@@ -699,7 +699,7 @@ if (result.available) {
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
-| `subscriptionId` | `string` | 否 | 调用方给的订阅 id；缺省时宿主生成（`pcmstream_N`）。同一页面用同一 id 再订阅会替换先前的订阅。不能为空。 |
+| `subscriptionId` | `string` | 否 | 调用方指定的订阅 ID；缺省时由宿主自动生成（`pcmstream_N`）。同页面重复使用相同 ID 订阅将替换既有订阅不能为空。 |
 | `interval` | `number` | 否 | 向 foobar2000 请求的回调间隔，秒。核心按自己约 16 ms 的节拍取整，最长 200 ms；一个订阅要短间隔，全组件的流订阅都会跟着变短。缺省用核心的 200 ms。取值 `0.01` 到 `0.2`（含端点）。 |
 | `bufferSeconds` | `number` | 否 | 环形缓冲长度，秒。整块缓冲超过 64 MiB 时按 64 MiB 折算。取值 `0.1` 到 `10`（含端点）。默认 `1`。 |
 
@@ -707,7 +707,7 @@ if (result.available) {
 
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
-| `subscriptionId` | `string` | 订阅 id，调用方给的或宿主生成的。 |
+| `subscriptionId` | `string` | 订阅 ID（调用方指定或宿主自动生成） |
 | `interval` | `number` | 实际请求核心的间隔；交给核心缺省时不带此键。 |
 | `bufferSeconds` | `number` | 登记的环形缓冲长度，秒。 |
 
@@ -716,15 +716,15 @@ if (result.available) {
 
 样本不走 JSON 通道。播放一开始，页面就会在 `window.chrome.webview` 上收到 `sharedbufferreceived` 事件：`e.getBuffer()` 是环形缓冲，`e.additionalData` 是 `{ purpose: 'audio.subscribeStream', subscriptionId, epoch, sampleRate, channels, capacityFrames, headerBytes: 64 }`。采样率或声道数变化时（换到别的格式的曲目，或加了改声道数的 DSP）同一事件再来一次、`epoch` 加一；随后一条 `audio:stream` 事件 `{ subscriptionId, type: 'ended', epoch, reason: 'format-change' }` 指出结束的那一代，它的缓冲头也置了 `ended` 位。
 
-缓冲开头是与 `audio.decodePcm` 相同的 64 字节头，其后是**交错**的 float32 帧：槽位 `s` 的帧、声道 `c` 在字节 `64 + (s × channels + c) × 4`。头部里 `capacityFrames`（字节 24 的 u32）是槽位数，`writeFrames`（字节 32）是累计写入帧数、2^32 回绕，`writeSlot`（字节 60）是下一帧要写的槽位，`seq`（字节 28）在宿主写入期间为奇数，`flags`（字节 36）的 bit 0 在宿主停止写入后置位。读法：先读 `seq`，是奇数就稍后再来；拷出要读的帧，最新一帧在 `writeSlot` 之前；再读一次 `seq`，变了就重来。落后超过 `capacityFrames` 帧就丢了最旧的帧：`dropped = writeFrames − readFrames − capacityFrames`（取正）。SDK 的 `fb.audio.subscribeStream` 把这些都做了，返回按声道分开的 `Float32Array`；用它的页面不要再自己处理这些缓冲。
+缓冲开头是与 `audio.decodePcm` 相同的 64 字节头，其后是**交错**的 float32 帧：槽位 `s` 的帧、声道 `c` 位于偏移 `64 + (s × channels + c) × 4` 字节处。头部中 `capacityFrames`（偏移 24，u32）为槽位数，`writeFrames`（偏移 32）为累计写入帧数（模 2^32），`writeSlot`（偏移 60）为下一待写入槽位，`seq`（偏移 28）在宿主写入期间为奇数，`flags`（偏移 36）的 bit 0 在宿主停止写入后置位。读取时须遵循序列锁协议：读取前若 `seq` 为奇数表示宿主正在写入，应等待重试；读取后若 `seq` 发生变动则说明发生并发修改，须重新读取。最新一帧在 `writeSlot` 之前。若消费者滞后超过 `capacityFrames` 帧，旧帧将被覆盖丢弃：`dropped = max(0, writeFrames − readFrames − capacityFrames)`。SDK 方法 `fb.audio.subscribeStream` 已封装此同步逻辑并直接返回分离声道的 `Float32Array` 数据流；使用该方法的页面不应再自行处理这些缓冲。
 
 - 样本取自 DSP 链之后、ReplayGain 与音量之前：是 DSP 链的输出、满幅电平。与 `audio:spectrum` 不同，不含 ReplayGain。
-- 缓冲是**只读共享内存**，写入会让页面的渲染进程崩溃，整个 foobar2000 窗口随之一起。用完一代就调 `chrome.webview.releaseBuffer(buffer)`：`audio:stream` 报告结束的那一代，以及退订后的最后一代。
+- 缓冲区为**只读共享内存**，禁止向其写入数据（写入会导致页面的渲染进程崩溃，整个 foobar2000 窗口随之失效）。每个生命周期代（epoch）使用完毕后应显式调用 `chrome.webview.releaseBuffer(buffer)` 释放内存引用，包括 `audio:stream` 报告流结束的代，以及退订后的最终代。
 - 块缺省约每 200 ms 到一次，最短约 16 ms（`interval`）。起播或续播后的首块最多带 0.8 s 音频，`bufferSeconds` 小于它就会在每次起播时丢帧。
-- 停止或暂停期间什么都不来，`writeFrames` 不再增长。同一格式下 seek 与换曲不会重置缓冲。
-- 每个页面最多 8 个流订阅，第 9 个回 `OPERATION_FAILED`。用同一 `subscriptionId` 再订阅会替换先前的订阅：旧缓冲置 `ended` 位、不发事件，下一代接着数。
-- 请求时能判定的错误在应答里回：越界或未知键回 `INVALID_PARAMS`，WebView2 运行时不支持共享缓冲或定位不到调用方页面回 `NOT_SUPPORTED`，foobar2000 正在退出或本页面已有 8 个订阅回 `OPERATION_FAILED`。
-- 页面导航、窗口或面板关闭、foobar2000 退出时订阅直接结束，不发事件。
+- 停止或暂停播放期间暂停输出样本，`writeFrames` 停止自增。音频流格式未变更时的 seek 与曲目切换不会重置缓冲区。
+- 单页面最大支持 8 个活跃流订阅；超出上限时返回 `OPERATION_FAILED`。传入已有的 `subscriptionId` 时将替换旧订阅：旧缓冲区置位 `ended` 且不再触发事件，新流自下一代（epoch）继续递增。
+- 请求参数校验错误直接同步返回：参数越界或未知键返回 `INVALID_PARAMS`；WebView2 运行时不支持共享缓冲区或未能定位调用方页面时返回 `NOT_SUPPORTED`；宿主正在退出或订阅数量超过上限时返回 `OPERATION_FAILED`。
+- 页面发生导航、宿主窗口或面板关闭、foobar2000 退出时，流订阅自动注销且不再广播事件。
 
 ```js
 const sub = await fb2k.invoke('audio.subscribeStream', { subscriptionId: 'meter', bufferSeconds: 0.5 });
@@ -872,7 +872,7 @@ const { runtime, decode } = res;
 ## 运行时行为说明
 
 - **频谱订阅与标识**：`audio.subscribeSpectrum` 为调用方窗口创建频谱订阅；传入相同 `subscriptionId` 时将替换已有订阅。若省略 `subscriptionId`，订阅键由调用方窗口标识与 `event` 联合推导。帧数据以 `event` 作为事件名派发（默认 `audio:spectrum`）。SDK 的 `fb.audio.subscribeSpectrum()` 使用相同底层机制。
-- **调度线程与性能优化**：各频谱订阅独立维护参数。宿主后台计时线程运行在高精度定时器上，以所有订阅中的最高 `fps` 作为调度节拍；各订阅仅在自身周期到达时派发帧。当多个订阅具有相同的实际 FFT 大小、频带数、`scale` 与频率范围时，单拍内复用同一次 FFT 运算。主线程帧派发开销随帧率递增（单帧约 0.5 ms）。
+- **调度线程与性能优化**：各频谱订阅独立维护参数。宿主后台计时线程运行在高精度定时器上，以所有订阅中的最高 `fps` 作为调度节拍；各订阅仅在自身周期到达时派发帧，因此实际推送帧率接近请求值。当多个订阅具有相同的实际 FFT 大小、频带数、`scale` 与频率范围时，单拍内复用同一次 FFT 运算。主线程帧派发开销随帧率递增（单帧约 0.5 ms）。
 - **信号采样点**：`scale: 'db'` 刻度采样自 ReplayGain 与 DSP 之后、系统主音量控制之前的音频信号，因此调节输出音量不会改变频谱读数。
 - **可视化流依赖**：`audio.getSpectrum` 与 `audio.getWaveform` 依赖实时可视化流。当不存在任何频谱订阅时，两类调用均以 `OPERATION_FAILED` 失败；正在播放但流缓冲尚无数据时亦返回失败；暂停或停止状态下则返回全零静音帧。
 - **全曲波形生成生命周期**：`audio.generateFullWaveform` 若命中缓存，直接返回带有数据的 `status: "ready"`；未命中则返回带有 `taskId` 的 `status: "pending"`，并在后台解码完成后通过 `audio:fullWaveformReady` 或 `audio:fullWaveformFailed` 交付。入参中的 `cueIndex` 优先级高于 `path|subsong:N` 后缀。

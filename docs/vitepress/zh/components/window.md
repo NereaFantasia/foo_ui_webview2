@@ -84,9 +84,9 @@ el.addEventListener('fb-window-close', e => { /* 关闭 */ });
 **JS API：**
 
 ```js
-const windowId = await el.open();  // 打开弹窗，返回 windowId
-el.close();                         // 关闭弹窗
-console.log(el.windowId);           // 当前窗口 ID
+const windowId = await el.open();  // 打开弹窗；返回窗口 ID 或 null
+await el.close();                  // 请求关闭；已关闭时无操作
+console.log(el.windowId);          // 当前窗口 ID 或 null
 ```
 
 **事件：**

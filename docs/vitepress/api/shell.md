@@ -25,6 +25,14 @@ Start a process from a command line and return at once; nothing is waited for. C
 `success` is `true` on success. On failure the response is `{ success: false, error, code }`; see [Error codes](../reference/errors.md) for `code`.
 <!-- api-schema:end -->
 
+::: warning Security Boundaries
+`shell.exec` does not enforce an executable allowlist (themes are trusted under the same security boundary as native foobar2000 components). If `cwd` is supplied, the host performs path validation and rejects paths crossing directory boundaries. For destructive filesystem operations, prefer the `file.*` APIs which are protected by path blacklists.
+:::
+
+::: tip Invocation Semantics
+`shell.exec` uses fire-and-forget semantics: a successful call indicates only that the underlying process was created, not that the external command or service is fully initialized or completed.
+:::
+
 ```js
 await fb2k.invoke('shell.exec', {
 	command: 'ffprobe',
@@ -111,6 +119,10 @@ Start a process from an executable and an argument list. With `waitForExitMs` th
 
 `success` is `true` on success. On failure the response is `{ success: false, error, code }`; see [Error codes](../reference/errors.md) for `code`.
 <!-- api-schema:end -->
+
+::: warning Security Boundaries
+`shell.spawn` does not restrict executable names (based on equal trust in theme authors). When passing an absolute executable path or `cwd`, the host performs path validation and rejects paths targeting protected directories.
+:::
 
 ```js
 const res = await fb2k.invoke('shell.spawn', {

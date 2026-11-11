@@ -7,10 +7,7 @@ Choose an API according to the representation you need:
 
 Read `available` before consuming `dataUrl` or `url`.
 
-These representations are not interchangeable. An `fb2k://` URL is resolved
-only inside this component's WebView2 and is not persistable image content.
-Direct reads return a standard Data URL; saving it requires extracting the
-Base64 payload and adapting it to the destination API's wire contract.
+These URI formats serve distinct purposes: an `fb2k://` URL is resolved only inside this component's WebView2 and is not persistable image content. Direct reads return standard Data URLs; saving one requires extracting the Base64 payload and adapting it to the destination API's wire contract.
 
 ## getFb2kUrl(type?, options?)
 
@@ -150,7 +147,7 @@ Signature: `fb.artwork.getAvailableArtwork(path: string): Promise<ArtworkGetAvai
 | --- | --- | --- | --- |
 | `path` | `string` | Yes | Audio path; a `\|subsong:N` suffix is dropped |
 
-Reports which picture types the file embeds and which cover files sit next to it. `artworks` lists the embedded pictures in probe order and `available` tells whether there is at least one. `sources` holds `embedded` once when any picture is embedded, then `folder:<name>` for each `cover`, `folder`, `front` or `album` file (`.jpg` or `.png`) found beside the file.
+Reports embedded artwork types in the file alongside associated external cover files in the same directory. `artworks` lists embedded picture types in probe order, while `available` indicates whether the file embeds at least one picture. If embedded art is present, `sources` starts with `embedded`, followed by `folder:<filename>` for adjacent images matching cover naming rules (`cover`, `folder`, `front`, or `album` with `.jpg` or `.png` extensions).
 
 ```javascript
 const available = await fb.artwork.getAvailableArtwork('E:\\Music\\song.flac');
@@ -188,7 +185,7 @@ Signature: `fb.artwork.getLyrics(path?: string): Promise<ArtworkGetLyricsRespons
 | --- | --- | --- | --- |
 | `path` | `string` | No | Audio path; omitted for the playing track |
 
-Reads the lyrics tag of the track. `LYRICS`, `UNSYNCED LYRICS`, `UNSYNCEDLYRICS`, `SYNCEDLYRICS` and `SYNCED LYRICS` are probed in that order and the first non-empty one wins: `available` tells whether one was found, `tag` names it, `lyrics` holds the text, and `synced` is `true` when the tag name marks the lyrics as synced. The host's cached track info is used when complete; a local file it has not read is read from disk. With `path` omitted and nothing playing the call fails with `NO_ACTIVE_ITEM`; a path no track can be made for fails with `NOT_FOUND`, and a local file that cannot be read with `OPERATION_FAILED`.
+Reads embedded lyrics tags from the track. The probe searches `LYRICS`, `UNSYNCED LYRICS`, `UNSYNCEDLYRICS`, `SYNCEDLYRICS`, and `SYNCED LYRICS` in priority order, resolving the first non-empty tag: `available` indicates whether lyrics were found, `tag` reports the matched tag name, `lyrics` contains the text, and `synced` is `true` when the tag name marks the lyrics as synced. The host uses its cached track info when complete, falling back to disk reads for local files it has not read. Omitting `path` when stopped fails with `NO_ACTIVE_ITEM`; paths that cannot be resolved to tracks fail with `NOT_FOUND`; unreadable local files fail with `OPERATION_FAILED`.
 
 ```javascript
 const lyrics = await fb.artwork.getLyrics('E:\\Music\\song.flac');
@@ -202,7 +199,7 @@ Signature: `fb.artwork.getMetadata(path?: string): Promise<ArtworkGetMetadataRes
 | --- | --- | --- | --- |
 | `path` | `string` | No | Audio path; omitted for the playing track |
 
-Reads the album-level tags of the track: `album`, `artist`, `albumArtist`, `title`, `year`, `genre`, `trackNumber` and `discNumber`, each empty when absent, with multi-value tags joined by `, `. `hasEmbedded` tells whether the file embeds any picture and `hasLyrics` whether it carries a lyrics tag, even an empty one. A remote or unrecognised path keeps whatever the host's cache has, which can be blank. Failures are those of `getLyrics()`.
+Reads album-level metadata tags: `album`, `artist`, `albumArtist`, `title`, `year`, `genre`, `trackNumber`, and `discNumber`, returning empty values when absent, with multi-value tags joined by `, `. `hasEmbedded` indicates whether the file contains embedded pictures, and `hasLyrics` indicates the presence of a lyrics tag (including empty ones). For a remote or unrecognized path, the result contains only what the host has cached, which can be empty. Failure behavior matches `getLyrics()`.
 
 ```javascript
 const metadata = await fb.artwork.getMetadata('E:\\Music\\song.flac');

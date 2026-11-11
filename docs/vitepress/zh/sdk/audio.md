@@ -67,12 +67,12 @@ bins();
 :::
 
 ::: tip low-level 分工
-SDK `fb.audio.subscribeSpectrum()` 自己生成并管理 `subscriptionId`，需要时从 `ready` 读出，例如拿它调 `getSpectrum` 轮询这个订阅。如果你要自己指定订阅 ID、覆盖同名订阅，或做 caller 粒度调试，请改用 low-level `fb2k.invoke('audio.subscribeSpectrum', ...)`。
+SDK 的 `fb.audio.subscribeSpectrum()` 自动生成并管理 `subscriptionId`；如需通过 `getSpectrum()` 针对该订阅进行轮询，可从 `ready` 解析对象中获取该标识。若需显式指定订阅 ID、替换同 ID 的订阅或进行调用方层面的诊断，可直接调用底层接口 `fb2k.invoke('audio.subscribeSpectrum', ...)`。
 :::
 
 ## getSpectrum(options?)
 
-单次获取当前频谱数据（轮询模式）。仍需要先调用 `subscribeSpectrum` 启动可视化流。结果类型为 `AudioGetSpectrumResponse`：一帧加 `success`；暂停或停止时是静音帧，还没有数据时是 `success: false`。画面要跟显示器逐帧对齐时，传入 `ready` 里的 `subscriptionId`，在 `requestAnimationFrame` 里调用，同时只发一个请求，频率不超过需要的帧率；详见 [`audio.getSpectrum`](../api/audio.md#audio-getspectrum)。
+单次获取当前频谱数据（轮询模式）。调用前须先通过 `subscribeSpectrum` 启动可视化数据流。返回类型为包含频谱帧数据的 `AudioGetSpectrumResponse`；播放处于暂停或停止状态时返回静音帧，尚未生成数据时返回 `success: false`。若需与显示器刷新率逐帧同步渲染，可在 `requestAnimationFrame` 回调中传入已就绪的 `subscriptionId` 进行轮询，每次只发一个请求，频率不高于目标帧率；详见 [`audio.getSpectrum`](../api/audio.md#audio-getspectrum)。
 
 | 参数 | 类型 | 说明 |
 | --- | --- | --- |
@@ -104,7 +104,7 @@ unsubscribe();
 | options.duration | number | 窗口时长（秒），大于 0 且不超过 1，取截至可视化流当前时刻的最近 `duration` 秒。默认 `0.05` |
 | options.signed | boolean | 保留 PCM 极性，夹到 `[-1, 1]`。默认 `false` |
 | options.channels | `'mix' \| 'stereo'` | `'mix'`（默认）返回平均成一路的 `waveform`；`'stereo'` 把前两路分别放进 `left` 与 `right`，单声道流的 `right` 等于 `left` |
-| options.points | number | 等距取这么多个样本，不做平均；取 `[2, 65536]` 内的整数。不给时返回全部样本 |
+| options.points | number | 等距采样的样本点数（不执行平均计算）；接受 `[2, 65536]` 范围内的整数。省略时返回指定窗口内的全量样本 |
 
 应答另带可视化流的 `channels`、`sampleRate` 与 `channelCount`。参数不合法时回 `code: 'INVALID_PARAMS'`。
 
@@ -184,7 +184,7 @@ const result4 = await fb.audio.generateFullWaveform('E:\\Music\\song.flac', {
     method: 'rms'
 });
 
-// 用户切到别的曲目时丢掉这次请求
+// 切换曲目时取消进行中的请求
 const controller = new AbortController();
 fb.audio.generateFullWaveform('E:\\Music\\song.flac', { signal: controller.signal })
     .catch((err) => {
@@ -258,7 +258,7 @@ if (pending.status === 'pending') {
 
 | 成员 | 说明 |
 | --- | --- |
-| `sampleRate`、`channels`、`frames` | 样本格式；设了 `mono` 时 `channels` 为 1 |
+| `sampleRate`、`channels`、`frames` | 样本格式；指定 `mono` 时 `channels` 为 1 |
 | `duration` | `frames / sampleRate`，秒 |
 | `start` | 第一帧对应的曲目时刻，秒 |
 | `truncated` | 音频超出了按曲目长度估算的大小，或中途换了格式；样本到截断处为止 |
@@ -273,7 +273,7 @@ if (pending.status === 'pending') {
 `getChannelView()` 返回的是只读共享内存上的视图。写入会让渲染进程崩溃，整个 foobar2000 窗口随之失效。这个方法刻意不叫 `getChannelData`：Web Audio 的同名方法返回可以修改的数组。要可改的副本，用 `toAudioBuffer()`。
 :::
 
-用完调用 `release()`。`transfer()` 之后这个 `PcmBuffer` 不再给出视图，`release()` 也不起作用；此前取得的视图仍可读，直到缓冲真被 `postMessage` 转走，之后这些视图分离（`byteLength` 为 0）。Worker 里释放不了缓冲，想早点释放，就把它转回页面再交给 `chrome.webview.releaseBuffer`。缓冲开头仍是它的头部，可以用 SDK 的 `readPcmHeader()` 读。
+处理完成后应调用 `release()` 释放共享内存。执行 `transfer()` 后，该 `PcmBuffer` 将无法再创建新视图且 `release()` 不再有效；此前获取的视图在底层缓冲被 `postMessage` 所有权转移前仍保持可读，转移后原有视图将发生分离（`byteLength` 变为 0）。Web Worker 无法释放缓冲；如需提前释放内存，可将缓冲转移回页面，再传给 `chrome.webview.releaseBuffer`。缓冲区起始处包含音频格式元数据，可通过 SDK 的 `readPcmHeader()` 解析。
 
 **失败**时以 `PcmDecodeError` reject，其 `code` 取宿主的错误码：`INVALID_PARAMS`（区间超出单块缓冲上限时也是它：64 位 foobar2000 为 256 MiB，32 位为 64 MiB）、`INVALID_PATH`、`NO_INFO`、`NOT_SUPPORTED`（不在 WebView2 宿主里、运行时不支持共享缓冲，或没有重采样器支持这次转换）、`CANCELLED`、`DECODE_FAILED`，以及 [`audio.decodePcm`](../api/audio.md#audio-decodepcm) 列出的其他错误码。超时以 `code: 'TIMEOUT'` reject。中止与超时都会取消宿主任务。
 
@@ -346,14 +346,14 @@ requestAnimationFrame(tick);
 stream.unsubscribe();
 ```
 
-### 自己算频谱
+### 自定义频谱计算 {#自己算频谱}
 
-频点输出用的是 foobar2000 的 FFT，窗函数固定为高斯窗。要自选窗函数、补零、组合多种 FFT 点数或换别的变换，就从实时 PCM 自己算：
+频点输出基于 foobar2000 的内置 FFT 计算，固定采用高斯窗。若需自定义窗函数、补零扩展、多分辨率 FFT 组合或采用其他变换算法，可直接消费实时 PCM 流自行计算：
 
-- 请求最短的间隔 `interval: 0.016`；缺省 200 ms 时频谱每秒只变五次。这个间隔对全组件的流订阅生效。
-- 这时平均每 16 ms 来一块，但间隔不匀（实测 3 到 50 ms），有些显示帧拿不到新样本，重画上一帧频谱或做时间平滑即可。
-- 样本取在 ReplayGain 之前，电平与 `audio:spectrum` 差一个 ReplayGain 增益。它比听到的声音晚的时间与可视化流相当，实测十几毫秒，另加等下一块的时间。
-- `read()` 只返回上次调用之后写入的帧，最近 `N` 个样本要自己留着，FFT 库也要自带。seek 或换曲后 `segments` 标出媒体时间重新开始的位置；不想让一帧频谱跨过这里，就在这里清空历史。
+- 指定最小采集间隔 `interval: 0.016`（默认 200 ms 时每秒仅刷新约 5 次）。该配置作用于当前组件的所有活跃流订阅。
+- 尽管平均每 16 ms 生成一块数据，实际投递间隔存在动态波动（约 3–50 ms）；若渲染帧未获取到新样本，可沿用上一帧数据或采用时间加权平滑。
+- 采样点位于 ReplayGain 处理前，因此电平与 `audio:spectrum` 相差一个 ReplayGain 增益。相对物理音频输出的延迟与常规可视化流相当（约十数毫秒及等待下一数据块的时间）。
+- `read()` 仅返回自上次读取以来新写入的帧数据，调用方须自行维护最近 `N` 个历史样本缓冲以执行 FFT 变换。发生定位或切歌时，`segments` 标记时间重置边界；如需避免频域跨段污染，可在边界处重置历史样本。
 
 ```javascript
 /**
@@ -388,7 +388,7 @@ function startLiveSpectrum(fft, draw) {
 
 签名：`fb.audio.unsubscribeStream(subscriptionId?: string): Promise<AudioUnsubscribeStreamResponse>`
 
-在宿主移除本页面的流订阅：给了 `subscriptionId` 就移除那一个，不给就全部移除。`PcmStream.unsubscribe()` 已经会为自己的订阅做这件事；只有用 `fb2k.invoke` 发起的订阅才需要直接调用。resolve 值里的 `removed` 是移除的订阅数；别的页面的订阅不计也不动。
+移除当前页面的音频流订阅：指定 `subscriptionId` 时移除对应订阅；省略时移除当前页面的全部流订阅。`PcmStream.unsubscribe()` 已内部集成退订逻辑，直接调用本方法主要用于清理通过 `fb2k.invoke` 创建的底层订阅。返回值中的 `removed` 为实际移除的订阅数量；其他页面的订阅不受影响。
 
 ```javascript
 const res = await fb.audio.unsubscribeStream();
@@ -414,7 +414,7 @@ if (result.success) {
 
 ## setChannelMode(mode)
 
-选择可视化流带哪些声道，作用于频谱帧与 `getWaveform`，不影响播放出来的声音。其他 `mode` 值以 `INVALID_PARAMS` 失败。
+配置可视化流包含的声道分量，作用于频谱帧与 `getWaveform()`，不影响实际音频播放输出。不支持的 `mode` 取值以 `INVALID_PARAMS` 失败。
 
 | 参数 | 类型 | 说明 |
 | --- | --- | --- |
@@ -477,7 +477,7 @@ console.log(stream.channels, stream.sampleRate);
 
 签名：`fb.audio.isVisualizationAvailable(): Promise<AudioIsVisualizationAvailableResponse>`
 
-以 `available` 报告 foobar2000 是否提供可视化流；频谱帧与 `getWaveform()` 都要靠它。
+返回 `available` 指示 foobar2000 是否支持可视化数据流（频谱帧与 `getWaveform()` 均依赖该能力）。
 
 ```javascript
 const res = await fb.audio.isVisualizationAvailable();

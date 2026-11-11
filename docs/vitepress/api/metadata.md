@@ -299,7 +299,7 @@ await fb2k.invoke('metadata.removeField', {
 ### metadata.removeTag
 
 <!-- api-schema:begin metadata.removeTag -->
-Queue the removal of tags from one track and return at once. The outcome arrives as `metadata:writeComplete` with `operation: "removeTag"`, broadcast to every window.
+Queue the removal of tags from one track and return at once. The outcome arrives as `metadata:writeComplete` with `operation: "removeTag"`, broadcast to every window. A WAV file that would hold non-ASCII tag text after the removal is refused as in `metadata.write`.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
@@ -331,7 +331,7 @@ await fb2k.invoke('metadata.removeTag', {
 ### metadata.write
 
 <!-- api-schema:begin metadata.write -->
-Queue a tag write to one track and return at once. foobar2000 writes the file in the background and reports the outcome as `metadata:writeComplete`, broadcast to every window. A request that leaves nothing to write succeeds without dispatching.
+Queue a tag write to one track and return at once. foobar2000 writes the file in the background and reports the outcome as `metadata:writeComplete`, broadcast to every window. A request that leaves nothing to write succeeds without dispatching. A WAV file that would hold non-ASCII tag text after the write is refused with `NOT_SUPPORTED` (`details.reason` is `wavInfoNonAscii`) and left untouched, because foobar2000 stores WAV tag text as ASCII in the RIFF INFO chunk and turns every other character into `?`.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
@@ -354,6 +354,10 @@ Queue a tag write to one track and return at once. foobar2000 writes the file in
 
 `success` is `true` on success. On failure the response is `{ success: false, error, code }`; see [Error codes](../reference/errors.md) for `code`.
 <!-- api-schema:end -->
+
+::: tip Write Lifecycle
+`metadata.write` returns `dispatched: true` immediately, indicating that the task has been accepted into foobar2000's background write queue. Actual completion is announced broadcast-wide via the `metadata:writeComplete` event.
+:::
 
 ```js
 await fb2k.invoke('metadata.write', {
@@ -396,6 +400,31 @@ const res = await fb2k.invoke('metadata.writeBatch', {
 });
 if (res.success === false) throw new Error(res.error);
 const { successCount, failCount } = res;
+```
+
+## Events
+
+### metadata:writeComplete
+
+Broadcast to all open windows when asynchronous writing started by `metadata.write`, `metadata.writeBatch`, `metadata.removeTag` or `metadata.removeField` completes.
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `operation` | `string` | Initiating operation (`"write"` or `"removeTag"`) |
+| `path` | `string` | Audio file path |
+| `subsong` | `number` | Target subsong index |
+| `code` | `number` | Completion status code (`0` success, `1` aborted, `2` error) |
+| `success` | `boolean` | Whether the write succeeded |
+| `status` | `string` | Status identifier (`"success"`, `"aborted"`, or `"error"`) |
+
+```js
+fb2k.on('metadata:writeComplete', (e) => {
+    if (e.success) {
+        console.log(`Write complete: ${e.path} subsong=${e.subsong}`);
+    } else {
+        console.error(`Write failed: ${e.status}`);
+    }
+});
 ```
 
 ## Usage notes

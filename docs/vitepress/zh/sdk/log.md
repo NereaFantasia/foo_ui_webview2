@@ -1,12 +1,12 @@
 # fb.log 日志文件
 
-`fb.log` 写入、读取和清空 SDK 宿主的日志文件，即 foobar2000 配置目录里的 `webview_ui.log`。要把消息写到 foobar2000 控制台窗口，用 `fb.console`。
+`fb.log` 提供宿主文件日志的写入、读取与清空操作，默认文件位于 foobar2000 配置目录下的 `webview_ui.log`。若需输出日志至 foobar2000 宿主控制台窗口，请使用 `fb.console`。
 
 ## clear()
 
 签名：`fb.log.clear(): Promise<LogClearResponse>`
 
-清空 `webview_ui.log`。用 `write()` 的 `options.file` 指定的文件不受影响。
+清空主日志文件 `webview_ui.log`。通过 `write()` 中 `options.file` 独立输出的自定义日志文件不受影响。
 
 ```javascript
 const result = await fb.log.clear();
@@ -18,9 +18,9 @@ const result = await fb.log.clear();
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
-| `lines` | `number` | 否 | 最多返回的行数，宿主默认 100 |
+| `lines` | `number` | 否 | 最大返回行数，缺省为 100 |
 
-读取 `webview_ui.log` 末尾的 `lines` 行。响应含 `content`（各行以 `\n` 连接）、`lines`、`lineCount`，以及整个文件的行数 `totalLines`。文件还不存在时按空文件返回，此时没有 `lines` 与 `totalLines`。
+读取 `webview_ui.log` 末尾的 `lines` 行。响应包含 `content`（以 `\n` 拼接的完整文本）、`lines` 行数组、`lineCount` 以及整个文件的总行数 `totalLines`。若目标文件尚未创建，将按空文件处理返回，此时响应对象中不包含 `lines` 与 `totalLines` 字段。
 
 ```javascript
 const res = await fb.log.read(100); // 最近 100 行
@@ -34,14 +34,14 @@ const { lines } = res;
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
-| `message` | `string` | 是 | 要写的文本。空串以 `INVALID_PARAMS` 失败 |
-| `options.level` | `string` | 否 | 日志级别，转成大写后写在消息前的方括号里；默认 `'info'` |
-| `options.append` | `boolean` | 否 | 为 `true` 时追加；为 `false` 时用这一行替换文件内容。默认 `true` |
-| `options.timestamp` | `boolean` | 否 | 在行首加上本地时间，形如 `[YYYY-MM-DD HH:MM:SS.mmm]`；默认 `true` |
-| `options.file` | `string` | 否 | 配置目录里的另一个文件：单纯的文件名，以 `.log` 或 `.txt` 结尾，且不是 `CON` 这类 Windows 设备名。其他值一律忽略，这一行写进 `webview_ui.log` |
-| `options.args` | `JsonValue[]` | 否 | 在这里不起作用：宿主只在没有 `message` 时才读 `args`，而 `fb.log.write` 总会发出 `message` |
+| `message` | `string` | 是 | 待写入文本内容。空字符串将以 `INVALID_PARAMS` 错误拒绝 |
+| `options.level` | `string` | 否 | 日志级别标识，格式化为大写并以方括号包裹追加于消息前；缺省为 `'info'` |
+| `options.append` | `boolean` | 否 | 写入模式；为 `true` 时执行追加写入，为 `false` 时覆盖文件全部内容。缺省为 `true` |
+| `options.timestamp` | `boolean` | 否 | 时间戳开关；启用时在行首添加本地时间戳 `[YYYY-MM-DD HH:MM:SS.mmm]`。缺省为 `true` |
+| `options.file` | `string` | 否 | 自定义输出文件名，仅限 foobar2000 配置目录内的直接文件：须以 `.log` 或 `.txt` 为扩展名，且不可为 Windows 保留设备名称（如 `CON`、`PRN`、`NUL` 等）。非法或不符合规则的值将被忽略并回退写入至默认 `webview_ui.log` |
+| `options.args` | `JsonValue[]` | 否 | 保留参数：C++ 宿主仅在缺少 `message` 字段时解析 `args` 数组；SDK 封装始终传递 `message`，此参数不生效 |
 
-响应里的 `path` 是实际写入的文件的完整路径。
+响应中的 `path` 字段为实际写入文件的绝对路径。
 
 ```javascript
 const result = await fb.log.write('播放开始', {

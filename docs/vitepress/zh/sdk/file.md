@@ -10,11 +10,11 @@
 | --- | --- | --- | --- |
 | `operationId` | `string` | 是 | `copyAsync()`、`moveAsync()` 或 `deleteAsync()` 回执里的 id |
 
-停止由 `copyAsync()`、`moveAsync()` 或 `deleteAsync()` 启动的操作。操作仍在进行、已通知它停止时返回 `cancelled: true`；`cancelled: false` 表示操作已结束或从未存在，这两种情况故意不作区分。
+停止由 `copyAsync()`、`moveAsync()` 或 `deleteAsync()` 启动的操作。若操作仍在进行并已收到停止信号，返回 `cancelled: true`；若操作已结束或不存在对应 ID，返回 `cancelled: false`。
 
-取消在批次中途生效：复制或移动在当前文件内停下，并删掉这个文件复制了一半的副本；删除在下一条之前停下。已完成的条目保留各自的结果，其余条目记为 `skipped`、`reason: 'cancelled'`，收尾仍会发一条 `cancelled: true` 的 `file:opComplete`。
+取消操作在批次执行中途即时生效：复制或移动操作在当前文件处理边界终止，并清理该文件已写入的未完成副本；删除操作在处理下一条目之前终止。已完成的条目保留其实际结果，未执行的条目标记为 `skipped` 且 `reason` 为 `'cancelled'`，最后由携带 `cancelled: true` 的 `file:opComplete` 事件完成收尾。
 
-关闭 popup 窗口会取消它发起的操作。panel 没有这个时机，它发起的操作会一直跑到结束，除非用本方法停掉。退出 foobar2000 会取消所有进行中的操作，之后不再为它们发送任何事件。
+关闭弹出窗口（popup）会自动取消由该窗口发起的文件操作。面板（panel）生命周期内发起的操作将持续执行直至完成，除非显式调用本方法终止。退出 foobar2000 主程序将取消所有正在进行的操作，且不再派发后续事件。
 
 ```javascript
 const started = await fb.file.deleteAsync(['%profile%\\my-panel\\old-cache']);
@@ -29,7 +29,7 @@ const { cancelled } = res;
 
 签名：`fb.file.copy(source: string, destination: string, opts?: Omit<FileCopyParams, 'source' | 'destination'>): Promise<FileCopyResponse>`
 
-复制文件或整棵目录树，复制完成前一直阻塞；体量大时改用 [`copyAsync()`](#copyasync-items-options)。`destination` 的父目录必须已经存在。`opts.overwrite` 默认为 `false`，目标已存在时不覆盖，除非显式开启。
+同步复制文件或完整目录树，操作阻塞至复制完成；大体量数据建议使用 [`copyAsync()`](#copyasync-items-options)。`destination` 的父级目录必须预先存在。`opts.overwrite` 默认为 `false`，目标已存在时不覆盖现有文件。
 
 ```javascript
 await fb.file.copy('C:\\Music\\track.flac', 'C:\\Backup\\track.flac');
@@ -46,14 +46,14 @@ await fb.file.copy('C:\\Music\\track.flac', 'C:\\Backup\\track.flac', {
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
-| `items` | `FileOpEntry[]` | 是 | `{ source, destination }` 数组，至少一条。`destination` 缺失的父目录会自动创建；`destination` 是已存在的目录而 `source` 是文件时，文件以原名放进该目录 |
+| `items` | `FileOpEntry[]` | 是 | `{ source, destination }` 对象数组，至少包含一条。若 `destination` 缺失上级目录将自动创建；若 `destination` 为已存在的目录且 `source` 为文件，文件将使用原文件名存入该目录 |
 | `options.overwrite` | `boolean` | 否 | 目标文件已存在时覆盖而不是跳过，默认 `false` |
 
 在宿主 worker 线程上批量复制文件和目录，不阻塞 UI。调用立即返回回执：`operationId`（以 `fileop_` 开头）和 `totalCount`（受理的条目数）。结果经 `file:opProgress` 分批送达，最后是一条 `file:opComplete`，见[事件](#事件)。
 
-结果按条目上报，不按文件：目录条目要等整棵树走完才上报一次。目录复制到已存在的目录时会并入其中，目录里已有的文件直接跳过、不单独上报，该条目仍记为 `status: 'ok'`。文件条目的目标已存在时记为 `skipped`、`reason: 'already-exists'`，除非设置了 `overwrite`。
+进度结果按任务条目而非单个物理文件上报：目录条目在遍历并处理完整棵子树后上报一次。当目录复制到已存在的同名目录时将执行合并，目录内已存在的冲突文件直接跳过且不单独上报，该目录条目仍记录为 `status: 'ok'`。文件条目的目标已存在时标记为 `skipped` 且 `reason` 为 `'already-exists'`（显式开启 `overwrite` 除外）。
 
-开始之前逐条检查全部路径，`source` 按读取、`destination` 按写入检查。任何一条被拒，整次调用都以 `PERMISSION_DENIED` 失败，不产生 `operationId`。全进程同时最多进行 8 个批量操作，超出时以 `OPERATION_FAILED` 失败。
+操作开始前对所有路径执行预检：`source` 校验读取权限，`destination` 校验写入权限。若任意路径校验未通过，整个调用直接失败并返回 `PERMISSION_DENIED`，不分配 `operationId`。当前进程并发批量操作上限为 8 个，超出上限时返回 `OPERATION_FAILED`。
 
 ```javascript
 const res = await fb.file.copyAsync([
@@ -68,7 +68,7 @@ const { operationId } = res;
 
 签名：`fb.file.delete(path: string, opts?: Omit<FileDeleteParams, 'path'>): Promise<FileDeleteResponse>`
 
-删除文件或目录。宿主端 `opts.moveToTrash` 默认为 `true`；传 `false` 则永久删除，此时非空目录会删除失败，要删非空目录请用 [`deleteAsync()`](#deleteasync-paths-options)。
+删除文件或目录。`opts.moveToTrash` 默认为 `true`（移至回收站）；若设置为 `false` 则执行永久删除。同步永久删除非空目录会失败，清除非空目录请使用 [`deleteAsync()`](#deleteasync-paths-options)。
 
 ```javascript
 // 移到回收站（默认）
@@ -87,7 +87,7 @@ await fb.file.delete('C:\\Config\\cache.tmp', { moveToTrash: false });
 | `paths` | `string[]` | 是 | 要删除的路径，至少一条 |
 | `options.moveToTrash` | `boolean` | 否 | 把每一条移入回收站，默认 `true`；为 `false` 时永久删除 |
 
-批量删除，不阻塞 UI，回执和事件同 `copyAsync()`，结果不带 `destination`。移入回收站要经过 shell，而 shell 只能在宿主主线程上调用，所以这类删除在主线程上每 16 条一批执行。永久删除走 worker 线程，并且能删除非空目录，这是同步的 `delete()` 做不到的。
+批量异步删除文件与目录，不阻塞用户界面；回执与事件结构与 `copyAsync()` 一致（结果中不含 `destination`）。移入回收站通过 Shell API 在宿主主线程以每批 16 条执行。永久删除在工作线程异步执行，并能删除非空目录，同步的 `delete()` 则拒绝这样做。
 
 开始之前逐条按写入检查全部路径。任何一条被拒，整次调用都以 `PERMISSION_DENIED` 失败，不产生 `operationId`。
 
@@ -132,7 +132,7 @@ console.log(info.size, info.modified);
 
 列出匹配的文件与目录。`options.pattern` 默认为 `*`，`options.recursive` 默认为 `false`。响应带 `files`、`directories` 与兼容别名 `items`；设置 `recursive` 时各项是完整路径而不是名称。
 
-`options.pattern` 只过滤文件，目录总会列出。只认 `*`、`*.*` 和单个扩展名（如 `*.flac`）：不以 `*.` 开头的写法匹配全部文件；`*.ext` 写法不区分大小写地与文件扩展名比较，所以 `*.{flac,mp3}` 一个都匹配不上。
+`options.pattern` 仅用于过滤文件，目录项始终全部列出。模式支持 `*`、`*.*` 以及单扩展名格式（如 `*.flac`）：不以 `*.` 开头的模式匹配所有文件；`*.ext` 模式与文件扩展名执行不区分大小写的比较（通配符组合如 `*.{flac,mp3}` 不受支持）。
 
 ```javascript
 const result = await fb.file.list('C:\\Music', {
@@ -155,7 +155,7 @@ await fb.file.mkdir('C:\\Config\\my-panel\\logs');
 
 签名：`fb.file.move(source: string, destination: string): Promise<FileMoveResponse>`
 
-把文件或目录移到新路径，`destination` 处已有的文件直接替换。
+将文件或目录移动到新路径；若 `destination` 处已存在同名文件将被覆盖。
 
 ```javascript
 await fb.file.move('C:\\Inbox\\notes.txt', 'C:\\Archive\\notes.txt');
@@ -168,9 +168,9 @@ await fb.file.move('C:\\Inbox\\notes.txt', 'C:\\Archive\\notes.txt');
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
 | `items` | `FileOpEntry[]` | 是 | `{ source, destination }` 数组，至少一条 |
-| `options.overwrite` | `boolean` | 否 | 只对**文件**目标生效：目标文件已存在时替换，默认 `false`；同步的 `move()` 总是替换。已存在的**目录**目标永远不替换，同卷下这样的条目以 `skipped` 或 `failed` 结束 |
+| `options.overwrite` | `boolean` | 否 | 仅对目标为**文件**时生效：目标文件已存在时是否覆盖，默认 `false`（同步的 `move()` 始终覆盖）。已存在的目标**目录**不可被覆盖，同卷冲突时条目以 `skipped` 或 `failed` 结束 |
 
-批量移动，不阻塞 UI，回执和事件同 `copyAsync()`。同卷移动是一次改名；跨卷时宿主先复制该条目再删除源，该条目记为 `status: 'ok'`、`reason: 'cross-volume'`。和 `copyAsync()` 不同，目标目录已存在时记为 `skipped`、`reason: 'already-exists'`，不会并入。
+批量异步移动文件与目录，不阻塞用户界面；回执与事件结构与 `copyAsync()` 一致。同一卷内的移动执行重命名；跨卷移动时宿主先执行复制再删除源文件，成功条目标记为 `status: 'ok'` 且 `reason` 为 `'cross-volume'`。与 `copyAsync()` 的合并行为不同，若目标目录已存在，条目直接标记为 `skipped` 且 `reason` 为 `'already-exists'`，不执行合并。
 
 开始之前逐条按写入检查全部路径，`source` 也不例外，因为移动会删掉它。任何一条被拒，整次调用都以 `PERMISSION_DENIED` 失败，不产生 `operationId`。
 
@@ -209,9 +209,9 @@ await fb.file.rename('C:\\Music\\old.flac', 'new.flac');
 
 签名：`fb.file.write(path: string, content: string, options?: Omit<FileWriteParams, 'path' | 'content'>): Promise<FileWriteResponse>`
 
-将文本写入文件。`options.encoding` 默认为 `utf-8`；设置 `options.append` 可追加内容而不是覆盖文件（默认 `false`）。返回的 `bytesWritten` 是写入后文件的字节数；设置 `append` 时是整个文件的大小，不只是新增的部分。
+将文本写入文件。`options.encoding` 默认为 `utf-8`；设置 `options.append` 为 `true` 时追加到文件末尾（默认 `false` 为覆盖写入）。返回的 `bytesWritten` 为写入后文件的总字节数；追加模式下该值为整个文件的当前大小。
 
-设置、指向当前版本的指针这类绝不能被读到一半的文件，设置 `options.atomic`：宿主先在目标旁边写一个临时文件，再用一次改名换上去。它不能与 `append` 同用。临时文件也要在目标所在文件夹放得下，长度上限见[路径长度](/zh/api/file#路径长度)。
+对于配置或版本指针等需要保证写入完整性的关键文件，可启用 `options.atomic`（原子写入）：宿主在同目录下创建临时文件写入完整内容后，再通过一次改名替换目标文件。该选项不能与 `append` 同时使用。目标所在目录需具备足够的路径长度余量，详见[路径长度](/zh/api/file#路径长度)。
 
 ```javascript
 await fb.file.write('%profile%\\webview-ui\\my-theme\\current.json', JSON.stringify({ version: '2.1.0' }), {
@@ -225,7 +225,7 @@ await fb.file.write('C:\\Logs\\theme.log', '主题已初始化\n', { append: tru
 
 ## 二进制 payload
 
-页面手里已经是字节或 Data URL 时，用这几个字节辅助方法：
+当已持有二进制字节或 Data URL 时，可使用以下二进制辅助方法：
 
 - `readBinary(path): Promise<Uint8Array>` 解码宿主响应。
 - `writeBinary(path, bytes, options?)` 接受 `ArrayBuffer | Uint8Array`。
@@ -260,8 +260,8 @@ await fb.file.write('C:\\Config\\icon-copy.ico', `base64:${source.content}`, {
 
 `copyAsync()`、`moveAsync()` 和 `deleteAsync()` 通过两个事件报告结果。两个事件都发给发起操作的页面；发起窗口届时已关闭的，改发给主窗口的页面，主窗口没有挂 WebView 时事件直接丢弃。
 
-- `file:opProgress` 带 `operationId`、`op`（`copy`、`move` 或 `delete`）、`done`（各批累计上报的条目数，含失败的）、`total`（受理的条目数）和 `results`（仅本批的结果，顺序与请求一致）。积满 64 条或距上一批过了 100 ms 就发一批，最后不满一批的结果在 `file:opComplete` 之前送达。
-- `file:opComplete` 是一次操作的最后一个事件，带 `operationId`、`op`、`total`、`successCount`、`skippedCount`、`failureCount` 和 `cancelled`。取消之后、有条目失败时也会发；只有 foobar2000 正在退出或 worker 意外失败时不发，所以靠它收尾的监听方应自带超时。之后对该 `operationId` 调用 [`cancelOp()`](#cancelop-operationid) 会得到 `cancelled: false`。
+- `file:opProgress` 携带 `operationId`、`op`（`copy`、`move` 或 `delete`）、`done`（已处理条目累计计数，含失败项）、`total`（已受理条目总数）及 `results`（当前批次处理结果，与请求顺序一致）。每累计 64 条结果或距上次派发间隔满 100 毫秒派发一次，最终批次在 `file:opComplete` 之前送达。
+- `file:opComplete` 为批次操作的最终事件，携带 `operationId`、`op`、`total`、`successCount`、`skippedCount`、`failureCount` 及 `cancelled`。在取消操作后或部分条目失败时该事件仍会派发；仅在 foobar2000 主程序退出或工作线程异常崩溃时静默终止，依赖该事件进行清理的监听逻辑应设置超时保护。操作结束后调用 [`cancelOp()`](#cancelop-operationid) 返回 `cancelled: false`。
 
 每条结果带请求里原样的 `source` 和 `destination`（不展开路径变量；`deleteAsync()` 的结果没有 `destination`），以及 `status`：`ok`、`skipped` 或 `failed`。条目直接完成时没有 `reason`；否则 `skipped` 配 `already-exists` 或 `cancelled`，`failed` 配 `not-found`、`permission`、`path-too-long` 或 `io-error`，`ok` 配 `cross-volume`。`path-too-long` 的含义见[路径长度](/zh/api/file#路径长度)。
 

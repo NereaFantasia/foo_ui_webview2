@@ -6,7 +6,7 @@ Methods of the `playback` namespace.
 
 - **Latency compensation & stepped advancement**: `playback.getPosition`, `playback:timeHighRes`, and `playback:stateChanged` report positions that already account for output-buffer and DSP latency. **Do not subtract latency again** when synchronizing lyrics or media. Audio engine readings advance in discrete steps (typically updating every 10–30 ms), independent of the ~100 ms broadcast interval of `playback:timeHighRes`.
 - **Sampling timestamps & extrapolation**: `hostTime` records the host system timestamp when the position was sampled (Unix epoch milliseconds, on the same clock as `Date.now()`). Linear extrapolation can estimate inter-sample positions, but cannot eliminate transient stalls or discontinuities during startup, seeking, pause-resume, or crossfading. For video synchronization, use the SDK's [MediaElementFollower](../sdk/media.md).
-- **Position event semantics**: `playback:time` provides a coarse display update (~once per second) without sample timestamps. `playback:seeked.position` and `playback.setPosition.actualPosition` represent the seek target; the immediately sampled `newPosition` or the subsequent `playback:timeHighRes` may still reflect the pre-seek position while the audio engine settles.
+- **Position event semantics**: `playback:time` provides a coarse display update (~once per second) without sample timestamps. `playback:seeked.position` and `playback.setPosition.actualPosition` represent the seek target; the immediately sampled `newPosition` may still contain the old position.
 
 ## playback
 
@@ -197,7 +197,7 @@ const result = await fb2k.invoke('playback.getVolume');
 ### playback.mute
 
 <!-- api-schema:begin playback.mute -->
-Mute or unmute; a call that asks for the state already in effect does nothing. Unmuting restores the level from before the mute.
+Mute or unmute; calls requesting the active state are ignored. Unmuting restores the volume from before muting.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
@@ -231,7 +231,7 @@ const result = await fb2k.invoke('playback.next');
 ### playback.pause
 
 <!-- api-schema:begin playback.pause -->
-Pause playback. Does nothing when stopped.
+Pause playback. No-op when stopped.
 
 This method takes no parameters.
 
@@ -304,7 +304,7 @@ Append one file to the active playlist and play it; a playlist is created when t
 await fb2k.invoke('playback.playPath', { path: 'C:\\Music\\song.flac' });
 ```
 
-Use a `path|subsong:N` value to address a CUE subsong explicitly. The handler separates the file path from the optional subsong suffix before playback.
+Use a `path|subsong:N` value to address an explicit CUE subsong. The path and subsong index are parsed before playback starts.
 
 ### playback.playPaths
 
@@ -322,7 +322,7 @@ Add several files to the active playlist and start playing one of them. Entries 
 | Field | Type | Description |
 | --- | --- | --- |
 | `tracksAdded` | `integer` | Number of tracks added to the playlist. |
-| `startedAt` | `integer` | The `startIndex` given, echoed even when it was past the end and playback started at the first added track. |
+| `startedAt` | `integer` | Echoes the requested `startIndex`, even if out of range and playback started at the first track. |
 | `skippedPaths` | `integer` | Number of paths the security check dropped before the call ran; present only when at least one was dropped. |
 
 `success` is `true` on success. On failure the response is `{ success: false, error, code }`; see [Error codes](../reference/errors.md) for `code`.
@@ -404,7 +404,7 @@ Select a playback order by index or by name; exactly one of the two must be give
 `success` is `true` on success. On failure the response is `{ success: false, error, code }`; see [Error codes](../reference/errors.md) for `code`.
 <!-- api-schema:end -->
 
-Pass exactly one of `order` (the index) and `name`; the indices are `0` default, `1` repeat-playlist, `2` repeat-track, `3` random, `4` shuffle-tracks, `5` shuffle-albums, `6` shuffle-folders. An index outside that range, a name no order has, both keys at once, or neither is refused with `INVALID_PARAMS` and the order is left alone. The response reports the order in effect after the call, not the input.
+Pass either `order` (index) or `name`. Available modes are: `0` (default), `1` (repeat-playlist), `2` (repeat-track), `3` (random), `4` (shuffle-tracks), `5` (shuffle-albums), and `6` (shuffle-folders). Passing out-of-range indices, invalid names, both keys, or neither fails with `INVALID_PARAMS` and leaves the active order unchanged. The response fields `order` and `name` report the order in effect after execution.
 
 ```js
 await fb2k.invoke('playback.setPlaybackOrder', { name: 'random' });
@@ -413,7 +413,7 @@ await fb2k.invoke('playback.setPlaybackOrder', { name: 'random' });
 ### playback.setPosition
 
 <!-- api-schema:begin playback.setPosition -->
-Seek within the current track, playing or paused. The position is clamped to the track: negative values seek to the start, values past the end stop just short of it so playback does not advance to the next track; a track of unknown length has no upper bound. With nothing playing the call fails with `NO_ACTIVE_ITEM`, and a track that cannot seek, such as most streams, fails with `NOT_SUPPORTED`.
+Seek within the current track (playing or paused). Target position is clamped to the track boundary: negative values seek to the beginning, values exceeding duration clamp just before the end to prevent track advance; tracks of unknown length have no upper clamp. Fails with `NO_ACTIVE_ITEM` with nothing playing, or `NOT_SUPPORTED` for a track that cannot seek, such as most streams.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
@@ -423,8 +423,8 @@ Seek within the current track, playing or paused. The position is clamped to the
 
 | Field | Type | Description |
 | --- | --- | --- |
-| `requestedPosition` | `number` | The position asked for, before clamping. |
-| `actualPosition` | `number` | The position handed to the host after clamping to the track. |
+| `requestedPosition` | `number` | Requested seek position before clamping. |
+| `actualPosition` | `number` | Effective seek position applied to the playback engine after clamping to track boundaries. |
 | `oldPosition` | `number` | Position read before the seek, in seconds, with the same latency compensation as `playback.getPosition`. |
 | `newPosition` | `number` | Position read right after the seek, in seconds, with the same latency compensation as `playback.getPosition`; the engine may still be settling, so this can still be the old position. |
 | `hostTime` | `number` | Host system time when `newPosition` was read, Unix epoch milliseconds with a fractional part, the same clock as `Date.now()`. |
@@ -463,11 +463,11 @@ await fb2k.invoke('playback.setStopAfterCurrent', { enabled: true });
 ### playback.setVolume
 
 <!-- api-schema:begin playback.setVolume -->
-Set the output volume as a percentage; values outside `0` to `100` are clamped. `0` mutes.
+Set output volume as a percentage. Valid range is 0..100 with automatic clamping; `0` mutes.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `volume` | `number` | Yes | Volume as a percentage; clamped to `0` to `100`. |
+| `volume` | `number` | Yes | Output volume percentage; valid range 0..100 with automatic clamping. |
 
 **Returns**
 

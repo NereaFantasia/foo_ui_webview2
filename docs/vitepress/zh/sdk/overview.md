@@ -1,6 +1,6 @@
 # SDK 概述
 
-**foo_ui_webview2 SDK** 是原生 bridge 之上带类型的高层封装：把直接调用 `window.fb2k.invoke()` 换成简洁的命名空间方法，并提供带类型的事件、响应式状态以及可选的 Web Components。怎样安装和加载它，见[在主题里加载 SDK](/zh/how-to/load-sdk)。
+**foo_ui_webview2 SDK** 是构建在原生 bridge 基础上的强类型高层封装：将底层的 `window.fb2k.invoke()` 调用组织为清晰的领域命名空间方法，并提供类型安全的事件订阅、响应式状态管理以及可选的 Web Components。安装与引入指引参见[在主题中加载 SDK](/zh/how-to/load-sdk)。
 
 ## 原生 bridge 与 SDK
 
@@ -25,7 +25,7 @@ npm 包名为 `foo-webview-sdk`，公开的导出有：
 | `foo-webview-sdk/components.global` | 注册全部内置 `fb-*` 元素的 IIFE 全局包 |
 | `foo-webview-sdk/smp-compat.global` | 兼容层的 IIFE 全局包 |
 
-导入 `foo-webview-sdk/components` 不会自动注册元素。要调用 `registerComponents()`，它把注册的元素绑定到 `foo-webview-sdk` 导出的 SDK 实例。`components.global.js` 在加载时就注册全部元素。
+直接导入 `foo-webview-sdk/components` 不会自动注册自定义元素。调用 `registerComponents()` 可完成注册，并将组件绑定至当前导出的 SDK 实例。作为对照，`components.global.js` 全局脚本包在加载时即自动注册全部内置元素。
 
 ## 可用性
 
@@ -38,11 +38,11 @@ if (fb.isAvailable()) {
 }
 ```
 
-原生 bridge 注入得晚时，`fb.ready()` 在它可用后 resolve。在宿主之外，每个调用都会在 100 ms 后 resolve `{ success: false, code: 'NOT_SUPPORTED', error, details: { method } }`，事件不会触发。
+若原生 bridge 初始化稍有延迟，可调用 `fb.ready()` 等待其就绪并 resolve。在非 foobar2000 宿主环境中，所有 API 调用均在 100 ms 后以 `{ success: false, code: 'NOT_SUPPORTED', error, details: { method } }` 响应，且不会派发任何事件。
 
 ## 结果与失败
 
-每个命名空间方法都 resolve 宿主的信封：成功时是带 `success: true` 的结果字段，失败时是 `{ success: false, error, code, details? }`。方法不会因为它报告的失败而抛错，列表方法也不会把失败换成空数组。只有宿主直接拒绝的请求（方法不存在、handler 内部抛异常、30 秒内没有应答）才会 reject。唯一的例外是 [`fb.http.request()`](./http.md#request-url-options)：它等待结果事件，任何失败都 reject。
+各命名空间方法均 resolve 宿主返回的标准结果信封：成功时包含 `success: true` 与业务数据字段；失败时返回 `{ success: false, error, code, details? }`。业务调用失败不会触发 Promise rejection，列表查询亦不会在失败时静默替换为空数组。仅当请求被框架级直接拒绝（如方法未注册、处理函数抛出未捕获异常或 30 秒请求超时）时才会导致 Promise reject。唯一的例外是 [`fb.http.request()`](./http.md#request-url-options)：该方法采用异步任务等待模式，任何阶段失败均会 reject。
 
 `unwrap(res)` 返回成功分支，`unwrap(res, key)` 返回其中一个字段；失败时两者都抛出带 `code` 与 `details` 的 `ApiCallError`。`<script>` 全局包里它们是 `fb.unwrap` 与 `fb.ApiCallError`。
 
@@ -59,7 +59,7 @@ try {
 
 ## 给测试替身用的参数键表
 
-`foo-webview-sdk/schema` 让代替宿主的测试替身拒收与宿主相同的调用，不必手抄一份声明。`findParamKeyProblem(method, params)` 按宿主在 handler 运行前的规则检查一次调用的键：方法没有声明的键、缺少或为 `null` 的必填键，连同所在路径一起报告。它只查键名，不查取值类型与范围。`API_PARAM_SHAPES` 是每个已声明方法的同一份数据。
+借助 `foo-webview-sdk/schema` 模块，替代宿主的测试替身可以按宿主的规则拒绝同样的调用，无需手动复制声明。`findParamKeyProblem(method, params)` 模拟宿主分发前的校验逻辑：检测未声明的未知参数键、缺失或为 `null` 的必填字段，并定位所在属性路径。该工具专注于键名形态检查，不验证参数类型与取值范围。`API_PARAM_SHAPES` 按方法名列出各已声明方法的参数形态，即上述检查所依据的数据。
 
 ```ts
 import { findParamKeyProblem } from 'foo-webview-sdk/schema';

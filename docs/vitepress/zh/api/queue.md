@@ -62,7 +62,7 @@ await fb2k.invoke('queue.addPaths', {
 
 将播放列表中的曲目添加到队列。支持单个曲目或批量添加。
 
-`tracks` 与 `track` 二选一——`tracks` 为数组时优先，`track` 被忽略。越界下标会被跳过，因此一条都没匹配上时以 `INVALID_INDEX` 失败并带 `addedCount: 0`；空 `tracks` 数组同理。`playlist` 无效时以 `INVALID_INDEX` 失败（`Invalid playlist index`），两个字段都没传是 `INVALID_PARAMS`。`tracks` 的元素必须是整数——非数字元素由参数校验拒绝，不会被当作可跳过的条目。
+`tracks` 与 `track` 二选一——`tracks` 为数组时优先，`track` 被忽略。越界下标会被跳过，因此一条都没匹配上时以 `INVALID_INDEX` 失败并带 `addedCount: 0`；空 `tracks` 数组同理。`playlist` 无效时以 `INVALID_INDEX` 失败（`Invalid playlist index`），若两个字段均未指定，以 `INVALID_PARAMS` 失败。`tracks` 的元素必须是整数——非数字元素由参数校验拒绝，不会被当作可跳过的条目。
 
 ```javascript
 // 添加单个曲目
@@ -250,7 +250,7 @@ await fb2k.invoke('queue.moveToTop', { index: 3 });
 
 用一份有序引用列表替换整个队列。
 
-任一条目形态无法识别时，整次调用在写入前就以 `INVALID_PARAMS` 整体失败——与 `queue.add` 逐项跳过越界下标不同，这里任何一条无效引用都会拒绝整次调用并保持队列不变。`queueCount` 无论成功还是失败都会带上。传入空数组会清空队列，等价于 `queue.clear`。`items.length` 上限为 `max(256, 当前队列长度)`，超限会失败且不改变队列。
+若任一条目结构无法识别或引用无效，调用在写入前直接以 `INVALID_PARAMS` 失败并维持队列不变。返回值与错误详情中均包含 `queueCount` 字段。传入空数组将清空整个队列，行为等价于 `queue.clear`。`items.length` 的上限为 `max(256, 当前队列长度)`，超出上限时调用失败且不变更队列内容。
 
 ::: tip 拖拽重排的调用方式
 应在用户**松手时**调用一次 `setContents`，不要在拖拽过程中逐帧调用——每次调用都会清空并重建整个队列，拖拽期间逐帧调用是无意义的额外开销，还会造成明显卡顿。
@@ -302,14 +302,14 @@ await fb2k.invoke('queue.setContents', { items: [] });
 
 所有输入条目按曲目去重，不按位置。重复 `items` 中，优先保留首个已在队列中的输入坐标；都不匹配时才保留首个输入坐标，曲目在输入块内的顺序仍取首次出现的位置。移动时优先选择坐标完全匹配的既有条目，否则移动该曲目的首个队列条目并赋予所选坐标。仅按路径移动时保留既有条目的有效坐标，只有新插入的路径条目不带坐标。`queue.add` 和 `queue.setContents` 保留重复引用。`insertedCount + movedCount` 少于输入条目数，可能是去重或无效路径所致；文件夹和容器路径也可能展开为多首曲目。
 
-两个数组都为空或都未传时以 `INVALID_PARAMS` 失败（`No paths or items specified`）；`items` 不是数组时报 `items must be an array`；没有 `items` 且 `paths` 一个有效曲目都解析不出时以 `NOT_FOUND` 失败（`No valid tracks found`）并带 `invalidCount`。坐标越界是 `INVALID_INDEX`，取不到该列表项是 `NOT_FOUND`，解析路径期间列表被改是 `OPERATION_FAILED`，错误都指明 `items[i]`。
+若两个参数均省略或均为空数组，调用以 `INVALID_PARAMS` 失败（`No paths or items specified`）；`items` 不是数组时以 `items must be an array` 失败。若未指定 `items` 且 `paths` 无法解析出任何有效曲目，调用以 `NOT_FOUND` 失败（`No valid tracks found`）并附带 `invalidCount`。对于 `items[i]`：坐标越界返回 `INVALID_INDEX`；目标列表项不存在返回 `NOT_FOUND`；路径解析期间列表被修改返回 `OPERATION_FAILED`。错误信息均指明出错的具体索引 `items[i]`。
 
 ::: warning 已知限定：旧版 `|subsong:N` 匹配
-经旧版 `queue.addPaths` 的 `path|subsong:N` 语法进入队列的曲目，再次传给 `insertNext` 时可能匹配不上"已在队列中"——结果是重复入队而不是被移动。这只影响升级前已入队的曲目，新调用不受影响。多 subsong 文件的裸路径与该路径显式带 `|subsong:0` 后缀也被视为两个不同的身份，而非等价——不要假设它们会互相去重。
+经 `queue.addPaths` 接受的 `path|subsong:N` 后缀进入队列的曲目，再次传给 `insertNext` 时可能无法识别为既有条目，导致重复入队而非移动。该差异仅存在于升级前已进入队列的历史项；新的调用不受影响。对于包含多个子曲目的音频文件，无后缀路径与带有显式 `|subsong:0` 后缀的路径被视为不同条目，系统不执行跨格式等价去重。
 :::
 
 ::: warning 已知限定：播放游标不会跟随按路径插播的曲目
-经 `paths` 入队的条目不带播放列表位置（它们不写入任何播放列表，这正是保持播放列表干净的代价）。foobar2000 因而把它们视为"列表外播放"：播放期间 `playback.getCurrentTrackIndex` 查不到位置；播完后从**插播前正在播放的那一项的下一项**继续，而不是从插播曲目在列表中的位置继续。当插播曲目本身也在正在播放的列表里时有两个可见后果：顺序在原处接续（如第 8 项 → 插播项 → 第 9 项），且顺序播到该曲目时它会**再播一次**。经 `items` 入队的条目与 `queue.add({ playlist, tracks })` 入队的条目一样带位置，没有这一行为——游标会跳到被消费项处继续。已知曲目在列表中的位置时，请改传 `items`。已入队条目若其列表位置失效（所引用的列表被清空），经 `moveToTop` / `setContents` / `playNow` 重建队列后也会退化为同样的无位置形态。
+经 `paths` 入队的条目不携带播放列表位置信息。在 foobar2000 内部，此类条目被视作列表外播放：播放期间 `playback.getCurrentTrackIndex` 无法查询到列表索引；播放完成后，播放器将从插播前正在播放曲目的后一项继续播放，而非从该插播曲目在列表中的物理位置继续。若插播曲目本身亦位于当前正在播放的列表中，播放顺序将在原位置接续（例如：第 8 项 → 插播项 → 第 9 项），且后续轮候到该曲目在列表中的序号时将再次播放。经 `items` 入队的条目携带确切列表坐标，播放消费后游标自动移动至该位置接续。若已知曲目所在列表位置，建议优先通过 `items` 入队。已入队条目引用的播放列表若被清空，经 `moveToTop`、`setContents` 或 `playNow` 重建后，其坐标信息将同样退化为无位置形态。
 
 `playback.previous` 受同一机制影响。foobar2000 的"上一曲"按游标在列表中的位置推算，不按播放历史，已消费的队列条目也不会放回。无位置条目播放期间按上一曲，落到**被打断那一项的前一项**（被打断的曲目本身被跳过）；带位置条目播放期间按上一曲，落到该条目自身列表位置的前一项。两种情况都不会回到被打断的曲目。
 :::

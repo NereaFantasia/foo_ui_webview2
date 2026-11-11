@@ -34,7 +34,7 @@ C++ BridgeCore -> foobar2000 SDK
 | Characteristic | Behavior |
 | --- | --- |
 | Pre-connect | Initiates a CDP connection on startup; retries on the first tool call if disconnected |
-| Screenshot warm-up | Captures a 1×1 PNG to warm up the rendering pipeline before taking real screenshots |
+| Screenshot warm-up | Each successful CDP connection performs a best-effort 1×1 PNG capture before real screenshots |
 | Automatic reconnect | Reconnects automatically with 1 s, 2 s, and 4 s exponential backoff delays |
 | Console recording | Buffers console messages and uncaught exceptions (including pre-existing logs, up to 200) |
 | Rate limit | Allows bursts of up to 40 calls, sustained at 20 calls/second |

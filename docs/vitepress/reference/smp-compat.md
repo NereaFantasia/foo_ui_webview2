@@ -20,8 +20,8 @@ The Spider Monkey Panel (SMP) compatibility layer enables running SMP-style scri
 
 ## Architecture differences from the lower-level API
 
-::: warning Read this before porting scripts
-The compatibility layer intentionally preserves SMP synchronous-read semantics. It is not a 1:1 transparent rewrite of every `fb2k.invoke()` call.
+::: warning Architecture Differences
+The compatibility layer intentionally preserves SMP synchronous-read semantics (eventual consistency via cached state and events versus asynchronous Promises in `fb2k.invoke()`). It is not a 1:1 transparent rewrite of every `fb2k.invoke()` call.
 :::
 
 ### Why a cache exists
@@ -56,7 +56,7 @@ plman.ActivePlaylist = 2;
 
 ### Considerations {#risks}
 
-1. Transient cache and backend divergence after a failed write: rejected writes roll back upon event receipt, but invalid client inputs (such as an out-of-range index) remain until the next event-driven synchronization
+1. Transient cache and backend divergence after a failed write: a rejected call (missing method, exception, or timeout) rolls the cache back, but a failure result (such as an out-of-range index) does not and remains until the next event-driven synchronization
 2. Initialization ordering: always `await window.smp.ready` before reading properties
 3. Non-1:1 behaviors listed in the differences table below
 
@@ -291,6 +291,147 @@ Remove cache-related listeners. Call on unload/navigation.
 smp.dispose();
 ```
 
+## Wrapper classes
+
+### FbMetadbHandle
+
+```javascript
+const handle = new FbMetadbHandle('C:\\Music\\song.flac');
+handle.Path;       // File path
+handle.RawPath;    // Same as Path (for compatibility)
+handle.SubSong;    // Subsong index
+handle.Length;     // Duration (seconds)
+handle.FileSize;   // Size in bytes
+handle.HandleId;   // Canonical identifier (including subsong suffix)
+handle.Compare(other); // Comparison
+await handle.GetFileInfo(); // Returns FbFileInfo
+```
+
+### FbMetadbHandleList
+
+```javascript
+const list = fb.CreateHandleList();
+list.Add(handle);  list.AddRange(otherList);
+list.Count;  list[0];  // Proxy index-based access
+list.Find(handle);  list.Clone();
+list.Remove(handle);  list.RemoveById(0); // Remove by index
+list.RemoveAll();
+list.Convert();  // Convert to JavaScript array
+list.CalcTotalDuration();  list.CalcTotalSize();
+```
+
+### FbTitleFormat
+
+```javascript
+const tf = fb.TitleFormat('%title% - %artist%');
+await tf.Eval();                     // Current playing track
+await tf.EvalWithMetadb(handle);     // Specific handle
+await tf.EvalWithMetadbs(handleList); // Batch evaluation
+```
+
+### FbProfiler
+
+```javascript
+const p = fb.CreateProfiler('MyTask');
+// ... execute work ...
+console.log(p.Time + 'ms');
+p.Print();  p.Reset();
+```
+
+### FbFileInfo
+
+```javascript
+const info = await handle.GetFileInfo();
+info.MetaCount;  info.InfoCount;
+info.MetaFind('artist');  info.MetaName(0);
+info.MetaValueCount(0);   // Number of values for a specific metadata field
+info.MetaValue(0, 0);     // meta[index][value_index]
+info.InfoFind('codec');   info.InfoName(0);   info.InfoValue(0);
+```
+
+### ContextMenuManager
+
+```javascript
+const cm = fb.CreateContextMenuManager();
+cm.InitNowPlaying();  // Or cm.InitContext(handleList) / cm.InitContextPlaylist()
+const items = await cm.BuildMenu();
+// Display via ui.showCustomMenu or a custom HTML menu
+await cm.ExecuteByID(selectedId);
+```
+
+### MainMenuManager
+
+```javascript
+const mm = fb.CreateMainMenuManager();
+mm.Init('file');  // file/edit/view/playback/library/help
+const items = await mm.BuildMenu();
+await mm.ExecuteByID(selectedId);
+```
+
+### Clipboard Operations
+
+| Method | Return | Description |
+| --- | --- | --- |
+| `fb.CheckClipboardContents()` | `boolean` | Whether clipboard contains files |
+| `fb.GetClipboardContents()` | `FbMetadbHandleList` | Retrieve file handles from clipboard |
+| `fb.CopyHandleListToClipboard(handles)` | `boolean` | Copy file paths to clipboard |
+
+```javascript
+if (await fb.CheckClipboardContents()) {
+    const list = await fb.GetClipboardContents();
+    console.log('Clipboard has', list.Count, 'files');
+}
+
+await fb.CopyHandleListToClipboard(myHandleList);
+```
+
+### DSP and Audio Output
+
+| Method | Return | Description |
+| --- | --- | --- |
+| `fb.GetDSPPresets()` | `string` (JSON) | Get available DSP presets |
+| `fb.SetDSPPreset(index)` | `void` | Set active DSP preset |
+| `fb.GetOutputDevices()` | `string` (JSON) | Get list of audio output devices |
+| `fb.SetOutputDevice(guid, deviceId)` | `void` | Set active audio output device |
+
+> `GetDSPPresets` / `GetOutputDevices` return JSON strings (matching SMP behavior) and must be parsed with `JSON.parse()`.
+
+```javascript
+const devices = JSON.parse(await fb.GetOutputDevices());
+const wasapi = devices.find(d => d.name.includes('WASAPI'));
+if (wasapi) await fb.SetOutputDevice(wasapi.outputId, wasapi.deviceId);
+```
+
+### Environment and Commands
+
+| Method / Property | Type | Description |
+| --- | --- | --- |
+| `fb.Version` | `string` (read-only) | foobar2000 version string |
+| `fb.RunContextCommandWithMetadb(cmd, handle)` | `boolean` | Execute context command on specific handle; see matching rules below |
+| `fb.ClearPlaylist()` | `boolean` | Clear active playlist |
+| `fb.GetLibraryRelativePath(handle)` | `string` | Get path relative to foobar2000 installation directory |
+
+### Playlist Queue Operations
+
+| Method | Return | Description |
+| --- | --- | --- |
+| `plman.AddPlaylistItemToPlaybackQueue(pl, item)` | `boolean` | Add playlist item to playback queue |
+| `plman.GetPlaybackQueueHandles()` | `FbMetadbHandleList` | Retrieve all tracks currently in playback queue |
+| `plman.IsPlaylistItemSelected(pl, item)` | `boolean` | Check whether a playlist item is selected |
+| `plman.FindOrCreatePlaylist(name)` | `number` | Find existing playlist by name or create a new one |
+| `plman.MovePlaylist(from, to)` | `boolean` | Reorder playlist positions |
+
+```javascript
+// Add 3rd track of 1st playlist to playback queue
+await plman.AddPlaylistItemToPlaybackQueue(0, 2);
+
+// Find or create playlist
+const idx = await plman.FindOrCreatePlaylist('My Favorites');
+
+// Move 4th playlist to 1st position
+await plman.MovePlaylist(3, 0);
+```
+
 ## Known non-1:1 differences
 
 | API | Limitation | Notes |
@@ -306,6 +447,10 @@ smp.dispose();
 | All methods | Promise-based where C++ is async | Unlike original SMP sync APIs |
 | GDI / canvas APIs | unsupported | Use HTML/CSS/Canvas instead |
 
+::: warning Matching Rules for RunContextCommandWithMetadb
+The context menu is constructed for the specified tracks. `cmd` is compared case-insensitively against the full slash-separated path from the root of the menu, and the first matching command is executed. If no command matches, menu creation fails, or execution fails, the method returns `false` without falling back to current selection or now playing tracks.
+:::
+
 ## window helpers
 
 | Method | Notes | Lower-level API |
@@ -313,6 +458,22 @@ smp.dispose();
 | `window.GetProperty(name, default?)` | Persistent property read | `config.get` with `smp.prop.` prefix |
 | `window.SetProperty(name, value)` | Persistent property write (`null` removes) | `config.set` / `config.remove` |
 | `window.NotifyOthers(name, info)` | Broadcast to other windows | `window.broadcast` |
+
+## utils object
+
+`sdk/smp/utils-compat.js` provides the SMP `utils` global object.
+
+### Pure JS Methods (no backend dependency)
+
+| Method | Return | Description |
+| --- | --- | --- |
+| `utils.Version` | `string` | Compatibility layer version |
+| `utils.FormatDuration(seconds)` | `string` | Seconds → `H:MM:SS` or `M:SS` |
+| `utils.FormatFileSize(bytes)` | `string` | Bytes → human-readable size (`KB`/`MB`/`GB`) |
+| `utils.SplitFilePath(path)` | `[dir, name, ext]` | Split file path into directory, file name, and extension |
+| `utils.PathWildcardMatch(path, pattern)` | `boolean` | Wildcard pattern matching (`*`, `?`) |
+| `utils.DateStringFromTimestamp(ts)` | `string` | Unix timestamp → formatted date string |
+| `utils.CheckFont(name)` | `boolean` | Check whether a font is installed and available |
 
 ## Migration example
 

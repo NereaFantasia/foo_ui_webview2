@@ -51,7 +51,7 @@ el.addEventListener('fb-library-added', e => {
 - **album**: 专辑列表 → 展开显示曲目（子节点类型 `track`）
 - **genre**: 流派列表 → 展开显示匹配曲目
 
-事件 detail 里的 `artist` 取自该行的 `data-artist`。艺术家视图的 `album` 子节点上是它的上级艺术家，这一行代表这位艺术家在该专辑上的曲目；专辑视图的分组上是专辑艺术家。事件及 `selected` 中的每项还可能带 `albumId` 或确切的成员 `tracks`。调用 `el.addToPlaylist(key, type, artist, detail)` 时把事件 detail 作为第四个参数传回，即可保留身份与子曲目。明确的空 `tracks` 数组表示没有成员，不会再按名称查找。原始标签含非法 UTF-8 时，仅凭显示名称可能无法区分专辑。
+事件 detail 中的 `artist` 取自该行的 `data-artist`。在艺术家视图中，`album` 子节点对应其所属艺术家，该行代表该艺术家在对应专辑中的曲目；在专辑视图中，分组节点对应专辑艺术家。事件及 `selected` 中的条目还可能包含 `albumId` 或确切的成员 `tracks`。调用 `el.addToPlaylist(key, type, artist, detail)` 时，若将事件 detail 传入第四个参数，可保留专辑标识与子曲目清单。显式空 `tracks` 数组表示无成员曲目，不再执行按名回退查找。原始元数据标签包含非法 UTF-8 字符时，仅依赖显示名称可能导致同名专辑无法区分。
 
 ## `<fb-library-filesystem-tree>` {#fb-library-filesystem-tree}
 

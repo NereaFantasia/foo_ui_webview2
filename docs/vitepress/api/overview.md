@@ -3,7 +3,7 @@
 The methods a page calls with `fb2k.invoke('namespace.method', params)`, by namespace. Events are listed in [Events API](./events.md). The SDK wraps these methods as `fb.*`; see [SDK namespaces](../sdk/namespaces.md).
 
 <!-- api-schema:begin index:namespaces -->
-470 methods in 42 namespaces.
+471 methods in 42 namespaces.
 
 | Namespace | Methods | Documented on |
 | --- | ---: | --- |
@@ -22,7 +22,7 @@ The methods a page calls with `fb2k.invoke('namespace.method', params)`, by name
 | `http` | 8 | [Http API](./http.md) |
 | `jitQueue` | 8 | [JIT Queue API](./jit-queue.md) |
 | `jitSession` | 17 | [JIT Session API](./jit-session.md) |
-| `keyboard` | 4 | [Keyboard API](./keyboard.md) |
+| `keyboard` | 5 | [Keyboard API](./keyboard.md) |
 | `library` | 27 | [Library API](./library.md) |
 | `log` | 3 | [Log API](./log.md) |
 | `lyrics` | 3 | [Lyrics API](./lyrics.md) |
@@ -55,5 +55,5 @@ Two further methods, `test.echo` and `test.ping`, exist for testing the bridge i
 
 ## Conventions
 
-- Method names use dot format (`playback.play`); event names use colon format (`playback:trackChanged`). An event name cannot be invoked.
-- Names of the form `namespace.__method` belong to pages the component ships itself, such as the tray menu, and are not part of the API.
+- Method names use dot format (`playback.play`); event names use colon format (`playback:trackChanged`). Event names cannot be invoked.
+- Names of the form `namespace.__method` belong to private internal pages (such as the system tray menu) and are not public APIs.

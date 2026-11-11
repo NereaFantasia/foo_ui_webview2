@@ -99,6 +99,16 @@ fb2k.on('playback:stateChanged', ({ state }) => {
 
 `state` 不在枚举内、`value` 不在 0 到 1 之间时返回 `INVALID_PARAMS`。
 
+### 任务栏进度状态对照表
+
+| 状态 | 视觉呈现 | value 取值 | 语义与场景 |
+| --- | --- | --- | --- |
+| `none` | 无进度条 | 忽略 | 清除并隐藏任务栏进度指示 |
+| `indeterminate` | 持续走马灯脉冲 | 忽略 | 表示进行中但耗时不确定的任务 |
+| `normal` | 绿色填充 | `0.0` - `1.0` | 正常播放或任务推进进度 |
+| `error` | 红色填充 | `0.0` - `1.0` | 遇到错误中断状态 |
+| `paused` | 黄色填充 | `0.0` - `1.0` | 暂停播放或临时挂起的操作 |
+
 ```javascript
 // 缓存最近一次已知时长；playback:time 只携带 position。
 let currentDuration = 0;

@@ -10,7 +10,7 @@ The components follow unified architectural conventions that keep behavior decou
 
 - **Zero-style functional blocks**: Components contain only layout structure and flow rules, with no visual styling opinions (no `color`, `background`, `font`, `padding`, `margin`, `border-radius`, `box-shadow`, or `transition`). All visual aesthetics are defined by the host theme through CSS.
 - **CSS Part and Slot specifications**: Internal elements are exposed through kebab-case `part` attributes for styling via the `::part()` pseudo-element. Replaceable visual content (such as play/pause icons) is provided through `slot` elements.
-- **Read-only host attributes**: Internal runtime state is reflected outwards through read-only host attributes (e.g. `[playing]`, `[disabled]`, `[active]`, `[muted]`), enabling state-driven attribute selectors in theme CSS.
+- **Read-only host attributes**: Internal runtime state is reflected outwards through read-only host attributes (e.g. `[playing]`, `[active]`, `[muted]`), enabling state-driven attribute selectors in theme CSS.
 - **Context menu separation**: Components never display native context menus directly on right click. Instead, they dispatch composed bubbling `CustomEvent`s containing screen coordinates and item context (such as `fb-track-context`, `fb-playlist-context`, `fb-queue-context`, and `fb-library-context`), allowing themes to surface custom menus through `ui.showCustomMenu`.
 
 ## Component Reference
@@ -42,7 +42,7 @@ Each entry below summarizes a component, linking to its reference page with attr
 | Tag | Description |
 | --- | --- |
 | [`<fb-track-text>`](./track-info#fb-track-text) | Track text from a metadata field or Title Formatting expression |
-| [`<fb-cover-art>`](./track-info#fb-cover-art) | Cover art image with SDK URL helper lookup and standard artwork fallback |
+| [`<fb-cover-art>`](./track-info#fb-cover-art) | Cover art with an optional SDK URL-helper lookup and standard artwork fallback |
 | [`<fb-time-current>`](./track-info#fb-time-current) | Current playback time display |
 | [`<fb-time-total>`](./track-info#fb-time-total) | Track total duration display |
 | [`<fb-time-remaining>`](./track-info#fb-time-remaining) | Track remaining time display |
@@ -89,7 +89,7 @@ Each entry below summarizes a component, linking to its reference page with attr
 | --- | --- |
 | [`<fb-properties-panel>`](./metadata#fb-properties-panel) | Read-only track properties panel |
 | [`<fb-search-bar>`](./metadata#fb-search-bar) | Media library search input |
-| [`<fb-console>`](./metadata#fb-console) | Real-time foobar2000 console log viewer |
+| [`<fb-console>`](./metadata#fb-console) | foobar2000 console viewer |
 
 ### I. Media Library (2)
 

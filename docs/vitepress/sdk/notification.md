@@ -1,20 +1,22 @@
 # fb.notification Notifications
 
-`fb.notification` wraps the `ui.*` notification, toast, and custom-menu handlers behind one SDK namespace.
+`fb.notification` provides integrated operations for system balloon notifications, in-app toast messages, and native context menus, wrapping the underlying `ui.showNotification`, `ui.showToast`, and `ui.showCustomMenu` APIs.
 
 ## hide()
 
 Signature: `fb.notification.hide(): Promise<UiHideNotificationResponse>`
 
-Hides the balloon that `show()` displayed; does nothing when none is shown.
+Hides the balloon notification shown by `show()`; has no effect if no notification is displayed.
 
 ```javascript
 const result = await fb.notification.hide();
 ```
 
-## Show a Notification
+## show(options) {#show-a-notification}
 
-`fb.notification.show(options: UiShowNotificationParams)` invokes `ui.showNotification`, which shows a Windows balloon notification from the plugin's notification icon and creates the icon on first use. The options are `title`, `body`, `silent`, and `timeout` in milliseconds (a hint to the shell, default 5000). At least one of `title` and `body` must be given; the text key is `body`, not `message`. The response's `id` is the notification's sequence number, starting at `1`.
+Signature: `fb.notification.show(options: UiShowNotificationParams): Promise<UiShowNotificationResponse>`
+
+Displays a Windows balloon notification originating from the component's notification tray icon (created on first call if not yet initialized). Options include `title`, `body`, `silent`, and `timeout` in milliseconds (passed as a hint to the Windows Shell, defaults to 5000). At least one of `title` or `body` must be provided; the notification body field is `body`. The `id` field in the response represents a 1-based sequential notification identifier.
 
 ```javascript
 await fb.notification.show({
@@ -24,11 +26,13 @@ await fb.notification.show({
 });
 ```
 
-## Show a Toast
+## showToast(options) {#show-a-toast}
 
-`fb.notification.showToast(options: UiShowToastParams)` invokes `ui.showToast`. The options include `message`, `duration` (milliseconds, default 3000), `type` (`'info'`, `'success'`, `'warning'`, or `'error'`, default `'info'`), and `position` (default `'bottom-right'`).
+Signature: `fb.notification.showToast(options: UiShowToastParams): Promise<UiShowToastResponse>`
 
-The host paints nothing itself: it delivers the payload to the calling window's page as the typed `ui:toast` event with `UiToastPayload`, and the page renders the toast.
+Options include `message`, `duration` (display duration in milliseconds, defaults to 3000), `type` (`'info'`, `'success'`, `'warning'`, or `'error'`, defaults to `'info'`), and `position` (defaults to `'bottom-right'`).
+
+The host does not render UI elements directly; instead, it dispatches the parameters as a typed `ui:toast` event (with payload `UiToastPayload`) to the calling window's page for frontend rendering.
 
 ```javascript
 await fb.notification.showToast({
@@ -39,11 +43,13 @@ await fb.notification.showToast({
 });
 ```
 
-## Show a Custom Menu
+## showCustomMenu(options) {#show-a-custom-menu}
 
-`fb.notification.showCustomMenu(options: UiShowCustomMenuParams): Promise<UiShowCustomMenuResponse>` invokes `ui.showCustomMenu`, which opens a native popup menu at the system cursor and waits for the choice. The response's `selectedId` is the clicked item ID, or `null` when the menu is dismissed. A chosen row is also announced to the calling window as `ui:menuItemClicked` with `{ id, label }`.
+Signature: `fb.notification.showCustomMenu(options: UiShowCustomMenuParams): Promise<UiShowCustomMenuResponse>`
 
-`x`, `y`, and `suppressDefault` are accepted for compatibility and have no effect; the menu always opens at the system cursor.
+Opens a modal native popup menu at the current system cursor coordinates and waits for user selection. The `selectedId` field in the response contains the ID of the clicked item, or `null` if the menu is dismissed without selection. An accepted choice also dispatches a `ui:menuItemClicked` event (`{ id, label }`) to the calling window.
+
+The `x`, `y`, and `suppressDefault` options are retained for backward compatibility and do not affect placement; the menu always opens at the current system cursor position.
 
 ```javascript
 const res = await fb.notification.showCustomMenu({

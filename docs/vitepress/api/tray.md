@@ -277,9 +277,9 @@ Replace the user rows of one menu zone (`config.customPosition`, default `top`);
 the native or WebView menu backend. For WebView-rendered item icons, use
 `items[].iconSvg`; the native backend is text-only.
 
-With `config.autoNowPlaying` on, any `cover` / `title` / `subtitle` you leave
-empty on a `type: 'nowplaying'` item is filled from the current track when the
-menu opens; a value you supply always wins. `cover` auto-fill is
+With `config.autoNowPlaying` enabled, omitted `cover`, `title`, and `subtitle`
+fields on a `type: 'nowplaying'` item are automatically populated from the active track when the
+menu opens; explicitly specified fields take precedence. `cover` auto-fill is
 `render: 'webview'` only and reads the now-playing in-memory art cache with no
 disk fallback, so it stays empty for sources foobar2000 cannot extract art from
 (most streams — pass `cover` yourself there). Art whose longest side exceeds
@@ -318,6 +318,10 @@ Replace the tray icon image; fails while no icon is created.
 // icoBase64: raw Base64-encoded .ico file bytes
 await fb2k.invoke('tray.setIcon', { icon: icoBase64 });
 ```
+
+::: warning Top-Level Icon Format
+Top-level `icon` parameters in `taskbar.*` and `tray.create` / `tray.setIcon` are not generic image inputs; they accept only raw Base64-encoded `.ico` file bytes. PNG, JPEG, SVG, Data URLs, and `base64:` wire strings will not parse as expected. On failure, taskbar buttons fall back to default icons, overlays are cleared, and the tray icon falls back to the main foobar2000 icon.
+:::
 
 ### tray.setMenuItemState
 
@@ -448,10 +452,10 @@ Replace the user rows of all three zones in one call; a zone that is not given i
 `success` is `true` on success. On failure the response is `{ success: false, error, code }`; see [Error codes](../reference/errors.md) for `code`.
 <!-- api-schema:end -->
 
-The host applies the whole call in one step on the main thread, where the menu is
-also built, so a right-click shows either the old menu or the new one, never a
-mix of both. Calls from one page run in the order they were sent: of two updates
-sent back to back, the later one is what remains.
+A right-click always shows either the complete previous menu or the complete new
+one: the host applies the whole replacement in a single step on the main thread,
+which also builds the menu. Calls from the same page run in the order they were
+sent, so when several updates are sent in succession, the last one takes effect.
 
 ```js
 await fb2k.invoke('tray.setMenuZones', {
@@ -658,3 +662,19 @@ Set the process-wide left-click action, even before `create`. `event` is the def
 <!-- api-schema:end -->
 
 Existing themes keep click events by default. New themes should remove window commands from their old click handlers during initialization, then select native mode. The minimize-to-tray and close-to-tray settings are unaffected.
+
+### Tray events
+
+| Event | Payload | Description |
+| --- | --- | --- |
+| `tray:click` | `{ button: number, x: number, y: number }` | Tray icon was clicked (`button`: 0 for left mouse button) |
+| `tray:doubleClick` | `{ x: number, y: number }` | Tray icon was double-clicked |
+| `tray:menuItemClicked` | `{ id: string, value?: number }` | Custom user item or rich control triggered. Built-in items and items with `playbackAction` do **not** emit this event |
+| `tray:beforeContextMenu` | `{ x: number, y: number }` | Asynchronous notification before context menu displays; item mutations inside the handler apply to subsequent popups |
+
+```javascript
+fb2k.on('tray:click', ({ button, x, y }) => console.log(button, x, y));
+fb2k.on('tray:doubleClick', ({ x, y }) => console.log(x, y));
+fb2k.on('tray:beforeContextMenu', ({ x, y }) => console.log(x, y));
+fb2k.on('tray:menuItemClicked', ({ id, value }) => console.log(id, value));
+```

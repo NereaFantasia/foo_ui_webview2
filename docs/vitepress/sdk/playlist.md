@@ -12,17 +12,17 @@ if (res.success === false) throw new Error(res.error);
 // res.playlists: [{index: 0, guid: "{…}", name: "Default", trackCount: 100, isActive: true, isPlaying: false, isLocked: false, isAutoplaylist: false}, ...]
 ```
 
-::: tip
+::: tip `PlaylistInfo` has no duration
 `PlaylistInfo` does not expose a `duration` field. Its fields are `index`, `guid`, `name`, `trackCount`, `isActive`, `isPlaying`, `isLocked` and `isAutoplaylist`; `getActive()` and `getPlaying()` report the duration.
 :::
 
-Keep the `guid` of each playlist a menu or picker offers, and pass it back when the user chooses:
+When populating menus or selectors, store the `guid` of each playlist and pass it upon user selection:
 
 ```javascript
 const res = await fb.playlist.getAll();
 if (res.success === false) throw new Error(res.error);
 const target = res.playlists.find((p) => p.name === 'Favorites');
-// Later, when the menu closes; the playlist list may have changed meanwhile
+// Using GUID ensures targeting the intended playlist even if indices shift concurrently
 if (target) await fb.library.addToPlaylist(['E:\\Music\\song.flac'], target.guid);
 ```
 
@@ -41,7 +41,7 @@ await fb.playlist.setActive(1);
 
 ## getTracks(index, start, count)
 
-Fetches a slice of playlist tracks. Resolves with the page `{ playlist, start, count, total, tracks }`; rows are typed `PlaylistTrackPartial` because `fields` can narrow them.
+Fetches a slice of playlist tracks. Resolves with the page object `{ playlist, start, count, total, tracks }`, where `tracks` contains `PlaylistTrackPartial` rows.
 
 | Parameter | Type | Description |
 | --- | --- | --- |
@@ -59,7 +59,7 @@ console.log(`${page.tracks.length} of ${page.total}`);
 
 `fields` draws from the same case-sensitive list `library.query` takes. Omit it to keep the whole row, which also carries `composer`, `comment` and the foo_playcount statistics. A rejected request, such as one naming an unknown field, resolves with `{ success: false, code: 'INVALID_PARAMS' }`.
 
-Each page carries `contentVersion`, and so does the answer of `getGroupRuns()`. Pages with the same version come from the same rows. A different version means rows were added, removed, reordered or replaced in between, even when `total` is unchanged.
+Each page payload carries `contentVersion`, as does `getGroupRuns()`. Pages with matching `contentVersion` belong to the same data snapshot. A differing `contentVersion` indicates rows were inserted, deleted, reordered, or replaced concurrently, even if `total` remains unchanged.
 
 ## getTracksPage(index, start, count, formats?, fields?)
 
@@ -67,9 +67,9 @@ Deprecated: the same call as `getTracks()`, resolving with the same page. Use `g
 
 ## getGroupRuns(patterns, index?)
 
-Groups a whole playlist into consecutive runs and returns only the run boundaries, never the rows.
+Calculates playlist groupings in order, returning boundary positions and counts without track rows.
 
-A run is a maximal stretch of adjacent tracks whose group key is equal, compared case-insensitively over ASCII `A-Z`/`a-z`. Rows are never reordered, so runs follow playlist order.
+A run is a maximal stretch of adjacent tracks whose group key is equal, compared case-insensitively over ASCII `A-Z`/`a-z`. Grouping preserves track order without reordering rows, so runs strictly mirror the playlist's physical sequence.
 
 | Parameter | Type | Description |
 | --- | --- | --- |
@@ -86,17 +86,17 @@ const { runs, total } = res;
 // runs[1].sub[0].start is an absolute row index, not an offset in the parent
 ```
 
-On success, `runs` covers the whole playlist. For a non-empty playlist, `runs[0].start` is 0, adjacent runs meet end to end, and the `count` values sum to `total`. An empty playlist returns `total: 0` and `runs: []`. `sub` appears only when two patterns are given, and its `start` uses the same absolute basis as the parent's.
+On success, `runs` covers the whole playlist. For a non-empty playlist, `runs[0].start` is 0, adjacent runs meet end to end, and the `count` values sum to `total`. An empty playlist returns `total: 0` and `runs: []`. `sub` appears only when two patterns are specified, and its `start` uses the same absolute basis as the parent's.
 
-Pair it with `getTracks()` to drive a grouped virtual list: the runs give header positions and let the UI calculate total scroll height; each visible page of rows is fetched separately. A 100k-track playlist yields roughly 10k top-level runs only if each run contains about 10 tracks on average. Payload size depends on the group keys and any second-level runs; the size of full track rows also depends on the requested fields and metadata.
+Pair it with `getTracks()` to drive a grouped virtual list: runs provide group header positions to compute total scroll height, while track rows in the visible viewport are fetched on demand. A 100k-track playlist yields roughly 10k top-level runs only if each run contains about 10 tracks on average. Response overhead depends on group key lengths and secondary runs, whereas track rows scale with requested fields and metadata.
 
-A pattern that groups every row on its own makes `runs` as long as `total`. There is no cap or fixed byte size per run; choose patterns that combine adjacent tracks.
+If a pattern places every track into its own group, `runs` length equals `total`. The host imposes no arbitrary ceiling on run counts; choose patterns that effectively consolidate contiguous tracks.
 
-Malformed `patterns`, or a pattern that fails to compile, resolves with `{ success: false, code: 'INVALID_PARAMS' }`; for an empty pattern or one that fails to compile, `details.pattern` carries its index. A playlist index past the last one resolves with `INVALID_INDEX`, and an omitted index with no active playlist with `NO_ACTIVE_ITEM`.
+Malformed `patterns` or expressions that fail to compile resolve with `{ success: false, code: 'INVALID_PARAMS' }`; for empty or unparseable patterns, `details.pattern` indicates the failing index. A playlist index outside the valid range resolves with `INVALID_INDEX`; omitting the index when there is no active playlist resolves with `NO_ACTIVE_ITEM`.
 
 ## getMatchingRows(query, index?) / getTracksAt(index, rows, formats?, fields?)
 
-Filter a playlist of any length in two calls. `getMatchingRows()` resolves with `{ playlist, playlistGuid, total, items, count }`, `items` being the rows whose tracks match the foobar2000 query, ascending. `getTracksAt()` reads rows by number in the order given, shaped as in `getTracks()`; rows past the last one are skipped, and every row carries its `index`.
+Filtering large playlists requires two steps: `getMatchingRows()` executes the query and returns matching row indices (`{ playlist, playlistGuid, total, items, count }`, with `items` in ascending order), followed by `getTracksAt()` to fetch row data for selected indices. `getTracksAt()` preserves the input order (matching `getTracks()` row format); out-of-range indices are skipped, and each returned row includes `index`.
 
 ```javascript
 const guid = '{A9624480-77F0-4A2B-A76F-7EAB0C2EEC1C}';
@@ -108,9 +108,9 @@ if (hits.success === false) {
 }
 ```
 
-A query the parser rejects, or one carrying `SORT BY`, resolves with `INVALID_PARAMS` and `details.param: 'query'`; the `error` text is in the host's language. A lowercase letter matches either case in the tag, an uppercase one only the same case. `getMatchingRows()` fails for a playlist that does not exist (`INVALID_INDEX`, `NOT_FOUND`, `NO_ACTIVE_ITEM`); `getTracksAt()` answers an empty result, as `getTracks()` does.
+Queries rejected by the parser or containing `SORT BY` fail with `INVALID_PARAMS` carrying `details.param: 'query'`; the `error` text is in the host's language. Lowercase search terms match case-insensitively, while uppercase characters match exact casing only. When the targeted playlist does not exist, `getMatchingRows()` fails (with `INVALID_INDEX`, `NOT_FOUND`, or `NO_ACTIVE_ITEM`), whereas `getTracksAt()` returns an empty result identical to `getTracks()`.
 
-The rows are a snapshot. Drop them when the `contentVersion` of a `playlist:itemsAdded`, `itemsRemoved`, `itemsReordered` or `itemsReplaced` event differs from theirs, and on `metadb:changed`: the version does not change when tags are edited. A query that depends on the time, such as `%added% DURING LAST 2 WEEKS`, also drifts with no event.
+The returned rows represent a point-in-time snapshot. When a `playlist:itemsAdded`, `itemsRemoved`, `itemsReordered`, or `itemsReplaced` event arrives with a mismatched `contentVersion`, discard the snapshot and re-query; because tag edits do not bump `contentVersion`, `metadb:changed` events also warrant re-fetching. Additionally, time-dependent queries (such as `%added% DURING LAST 2 WEEKS`) drift naturally without playlist events.
 
 ## playTrack(playlistIndex, trackIndex, options?)
 
@@ -207,7 +207,7 @@ await fb.playlist.rename(0, 'Favorites');
 
 ## duplicate(index, name?)
 
-Duplicates a playlist and resolves with `PlaylistDuplicateResponse`, whose `index` is the copy. With `name` omitted or empty, the copy is named after the original with ` (Copy)` appended.
+Duplicates a playlist and resolves with `PlaylistDuplicateResponse`, whose `index` is the copy. When `name` is omitted or empty, the new playlist is named with ` (Copy)` appended to the original name.
 
 ```javascript
 const r = await fb.playlist.duplicate(0);
@@ -271,7 +271,7 @@ await fb.playlist.removeSelectedTracks(0);
 
 ## getFocused(index) / setFocused(index, trackIndex)
 
-Gets or sets the focused playlist item. `getFocused()` resolves with `{ playlist, index }`, `index` being `-1` when the playlist has no focus or does not exist; a negative `trackIndex` makes `setFocused()` remove the focus.
+Gets or sets the focused playlist track (cursor position). `getFocused()` resolves with `{ playlist, index }`, with `index` being `-1` when no track is focused or the playlist does not exist; passing a negative `trackIndex` to `setFocused()` clears the focus cursor.
 
 ```javascript
 const r = await fb.playlist.getFocused(0);
@@ -285,7 +285,7 @@ await fb.playlist.setFocused(0, 10);
 Gets selected indices or selected track details.
 
 - `getSelection()` resolves with `{ items: number[], count, playlist }`.
-- `getSelectedTracks()` resolves with `{ playlist, count, tracks }`, the rows as whole `PlaylistTrack`s without the play statistics. An empty selection succeeds with an empty `tracks`; a playlist that does not exist resolves with a failure envelope, so the two stay distinguishable.
+- `getSelectedTracks()` resolves with `{ playlist, count, tracks }`, where rows are complete `PlaylistTrack` objects without play statistics. An empty selection returns `tracks: []`; if the targeted playlist does not exist, it resolves with a failure envelope.
 
 ```javascript
 const sel = await fb.playlist.getSelection(0); // {items: [0, 5, 10], count: 3}
@@ -402,9 +402,9 @@ Reads autoplaylist metadata and editor capability without opening UI. Every succ
 | `unavailable` | `noEditor` | The provider explicitly reports no editor |
 | `unknown` | `legacyClient` | The client has no capability probe |
 | `unknown` | `unverifiedLock` | An automatic-playlist lock has no capability probe |
-| `unavailable` | `notAutoplaylist` | This is an ordinary playlist |
+| `unavailable` | `notAutoplaylist` | Standard static playlist |
 
-`available` does not guarantee a window will appear. `unknown` permits an attempt but cannot predict its outcome. A provider query that throws fails with `OPERATION_FAILED`; it is not reported as `unavailable`.
+`available` does not guarantee a dialog window will open. `unknown` permits an invocation attempt but cannot predict the result. An internal exception during provider query fails with `OPERATION_FAILED` rather than being classified as `unavailable`.
 
 `source: 'sdk'` identifies an autoplaylist-manager client, including third-party clients. `source: 'dui'` means a lock recognized by the existing `Auto` name rule; it identifies neither the current UI mode nor editor support. Its `keepSorted: false` is a placeholder because the lock's setting cannot be read. Ordinary playlists report `isAutoplaylist: false` without `source` or `keepSorted`.
 
@@ -420,7 +420,7 @@ if (info.isAutoplaylist) {
 
 Signature: `fb.playlist.getAutoplaylistQuery(index: PlaylistRef): Promise<PlaylistGetAutoplaylistQueryResponse>`
 
-Reads autoplaylist state with `query`, which is always `null`: foobar2000 does not expose an autoplaylist's query. An autoplaylist response also includes a `note` explaining this. The `source` and unreadable `keepSorted` rules above apply, but this method does not return editor capability fields; use `getAutoplaylistInfo()` for those.
+Reads autoplaylist configuration, returning both `query` and `sort`. For playlists managed by foobar2000's built-in query/sort client, both values reflect current client parameters re-read on every call; `sort` returns an empty string when unsorted. For third-party providers, component-managed autoplaylists (retrieved via `getAutoplaylistConfig()`), or unparseable configurations, both fields return `null` with explanatory details in `note`. Legacy hosts may omit the `sort` field entirely, so verify `query` before accessing `sort`. The `source` and unreadable `keepSorted` rules apply as described above; this method excludes editor capability fields, which should be queried via `getAutoplaylistInfo()`.
 
 ```javascript
 const res = await fb.playlist.getAutoplaylistQuery(0);
@@ -531,7 +531,7 @@ await fb.playlist.convertToAutoplaylist(0, '%rating% GREATER 3', '%rating%', tru
 
 Signature: `fb.playlist.removeAutoplaylist(index: PlaylistRef): Promise<PlaylistRemoveAutoplaylistResponse>`
 
-Releases an autoplaylist-manager client, including a third-party client, and keeps the current tracks in an ordinary playlist; the response's `source` is then `sdk`. If there is no manager client and only a compatible automatic-playlist lock is recognized, the call succeeds with `source` `dui` and a `note` but changes nothing; `remove()` deletes such a playlist. A playlist that is not an autoplaylist fails with `NOT_FOUND`.
+Releases an autoplaylist-manager client, including a third-party client, and keeps the current tracks in an ordinary playlist; the response's `source` is then `sdk`. If there is no manager client and only a compatible automatic-playlist lock is recognized, the call returns `source: 'dui'` with `note` and leaves the playlist unmodified; call `remove()` to delete it. A playlist that is not an autoplaylist fails with `NOT_FOUND`.
 
 ```javascript
 await fb.playlist.removeAutoplaylist(0);
@@ -548,13 +548,13 @@ const info = await fb.playlist.getLockInfo(0);   // {playlist, isLocked}
 
 ## replaceAllAndPlay(options)
 
-Atomically clears a playlist, adds paths, and optionally starts playback.
+Clears a playlist, adds `paths` in the given order, makes the playlist active and plays or focuses `playIndex`. See [`playlist.replaceAllAndPlay`](../api/playlist.md#playlist-replaceallandplay) for the result and the failure cases.
 
 | Parameter | Type | Description |
 | --- | --- | --- |
 | `options.playlist` | `number` | Playlist index |
-| `options.paths` | `string[]` | Paths to load |
-| `options.playIndex` | `number?` | Start index; host default is `0` |
+| `options.paths` | `string[]` | Paths to load; the rows follow this order |
+| `options.playIndex` | `number?` | Row to play, counted in the order of `paths`; host default is `0` |
 | `options.stopFirst` | `boolean?` | Stop current playback first; host default is `true` |
 | `options.autoPlay` | `boolean?` | Start playback; host default is `true` |
 
@@ -568,7 +568,7 @@ await fb.playlist.replaceAllAndPlay({
 
 ## reorderPlaylists(order)
 
-Reorders all playlists. `order` is the new sequence, every playlist exactly once: all current indices, or all `guid`s from `getAll()`. Indices are read as the host handles the call, so an order built from an earlier `getAll()` moves the wrong playlists once one was added and another removed in between; GUIDs keep naming the playlists they were read from, and a GUID no playlist has fails with `NOT_FOUND`.
+Reorders all playlists. `order` specifies the new arrangement, where every playlist must appear exactly once: pass either current numeric indices or `guid` identifiers obtained from `getAll()`. Indices are evaluated against the playlist collection at the time of execution, where concurrent insertions or deletions may cause playlist mismatch; using GUIDs guarantees targeting the intended playlists, and referencing a missing GUID fails with `NOT_FOUND`.
 
 ```javascript
 await fb.playlist.reorderPlaylists([2, 0, 1]);
@@ -650,7 +650,7 @@ console.log(created.playlistGuid, created.revision);
 
 Signature: `fb.playlist.getAutoplaylistConfig(playlist: PlaylistRef): Promise<PlaylistGetAutoplaylistConfigResponse>`
 
-Reads the provider's original query, independent sort, current keep-sorted flag and opaque configuration revision. Pass a playlist GUID to keep addressing the same playlist after reordering. `getAutoplaylistInfo().configAvailability` tells a theme whether it can offer its own configuration form; native editor availability is a separate capability. Other providers return `NOT_SUPPORTED`. `getAutoplaylistQuery` retains its `query: null` contract.
+Reads the provider's original query, independent sort, current keep-sorted flag and opaque configuration revision. Pass a playlist GUID to keep addressing the same playlist after reordering. `getAutoplaylistInfo().configAvailability` tells a theme whether it can offer its own configuration form; native editor availability is a separate capability. Other providers return `NOT_SUPPORTED`; for a list driven by the built-in query/sort client, `getAutoplaylistQuery` reads its query and sort.
 
 ## setAutoplaylistConfig(playlist, options)
 

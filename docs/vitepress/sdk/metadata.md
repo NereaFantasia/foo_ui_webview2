@@ -13,7 +13,7 @@ Signature: `fb.metadata.read(path: string, opts?: Omit<MetadataReadParams, 'path
 
 Returns `{ success, path, tags, info }`. `tags` preserves upstream key casing and each value is a `string` or `string[]`. `info` carries `duration`, `bitrate`, `sampleRate`, `channels`, and `codec`.
 
-The host reads its cached info first and reads the file itself when that info is missing or has no title tag. A track that cannot be opened or read fails with `OPERATION_FAILED`.
+The host inspects cached metadata first; if missing or lacking a title tag, it reads the audio file directly from disk. Tracks that cannot be opened or parsed fail with `OPERATION_FAILED`.
 
 ```javascript
 const result = await fb.metadata.read('E:\\Music\\song.flac');
@@ -34,7 +34,7 @@ Signature: `fb.metadata.readBatch(paths: string[]): Promise<MetadataReadBatchRes
 
 Returns `results`, one envelope per requested path, plus the aggregate counters `total`, `successCount`, and `errorCount`.
 
-Each path is resolved on its own and may carry its own `|subsong:N` suffix; there is no batch-wide `cueIndex`. A successful row holds the flat, upper-cased field map in `tags`, as `readByPath()` returns it but without `path` and without a track number taken from the file name. A path that cannot be read gets a row with `success: false` and its own `error` instead of failing the call. The reads run on the host's main thread; for many files use `probeBatchAsync()`.
+Each path is resolved independently and may include a `|subsong:N` suffix; batch-level `cueIndex` is not supported. Successful entries provide a flat metadata map in `tags` with uppercase keys (matching `readByPath()`, but omitting `path` and without inferring track numbers from filenames). Paths that fail to read are returned with `success: false` and individual `error` details without failing the batch request. Reads execute synchronously on the host main thread; use `probeBatchAsync()` for large numbers of files.
 
 ```javascript
 const result = await fb.metadata.readBatch([
@@ -54,7 +54,7 @@ Signature: `fb.metadata.readByPath(path: string, opts?: Omit<MetadataReadByPathP
 
 Returns the flat `metadata.readByPath` object. Tag keys become top-level fields alongside host status and path fields. This method does not invoke `metadata.readRaw`.
 
-Every tag and technical-info field is keyed by its upper-case name, such as `TITLE` or `SAMPLERATE`. A tag with several values is a `string[]`; technical-info fields are strings. `DURATION` is always present, in seconds with three decimals (`215.400`). `FILESIZE` appears only when the host knows the size, so a file the library has not indexed has none. When the file has no `TRACKNUMBER` tag, it is taken from a leading number of up to three digits in the file name (`07 - Song.flac`), and is absent when there is none. The track is read as by `read()`, with the same failures; `canonicalPath` appears only on the file-open failure envelope.
+All tag and technical info fields use uppercase keys (such as `TITLE` and `SAMPLERATE`). Multi-value tags are returned as `string[]`; technical info fields are strings. `DURATION` is always present, formatted in seconds with three decimal places (e.g. `215.400`). `FILESIZE` is included only when file size is known to the host; unindexed media files may omit this field. When a file lacks a `TRACKNUMBER` tag, the host attempts to parse a leading numeric prefix of up to three digits from the filename (e.g. `07 - Song.flac`), omitting the field if no number is found. Read logic and failure cases match `read()`; `canonicalPath` appears only in failure envelopes when files cannot be opened.
 
 ```javascript
 const fields = await fb.metadata.readByPath('E:\\Music\\song.flac');
@@ -91,7 +91,7 @@ Signature: `fb.metadata.removeTag(path: string, tags: string[], opts?: Omit<Meta
 | `tags` | `string[]` | Yes | Tag names to remove |
 | `opts.cueIndex` | `number` | No | 1-based track index inside a CUE sheet or image; targets a single contained track instead of the container |
 
-Dispatches an asynchronous removal and returns its receipt. Tag names are upper-cased, and `removedTags` lists them in the order given; an empty `tags` removes nothing and succeeds without dispatching. Observe `metadata:writeComplete` for the final outcome.
+Dispatches an asynchronous tag deletion task and returns a receipt. Tag names are normalized to uppercase, and `removedTags` preserves input order; if `tags` is empty, the method succeeds immediately without dispatching file operations. Final execution status is reported via `metadata:writeComplete`.
 
 `removeField()` and `removeTag()` share one host handler, so both accept the same `cueIndex` option.
 
@@ -114,13 +114,13 @@ Signature: `fb.metadata.write(path: string, tags: JsonObject, opts?: Omit<Metada
 | `tags` | `JsonObject` | Yes | Tag updates; `null`, an empty string or an empty array removes the corresponding tag |
 | `opts.cueIndex` | `number` | No | 1-based track index inside a CUE sheet or image; writes tags to that single contained track instead of the container |
 
-Tag names are upper-cased, so keys that differ only in case name the same tag. A string is written as it is, an integer or a fraction as its decimal text (`2.5` becomes `2.500000`), and a boolean or object is ignored.
+Tag names are normalized to uppercase; keys differing only in case refer to the same tag. String values are written verbatim; numeric values are formatted as decimal strings (e.g. `2.5` becomes `2.500000`); booleans and objects are ignored.
 
-A non-empty string array replaces all values of a tag. Order, duplicates and whitespace are preserved; commas and semicolons inside a value are not separators. An empty array removes the tag. A non-string, empty or NUL-containing array element fails the track with `INVALID_PARAMS` before any of its tags are queued; the error identifies the tag and zero-based element index.
+A non-empty string array replaces all values for that tag, preserving element ordering, duplicates, and whitespace without treating commas or semicolons as delimiters. An empty array removes the tag. If an array contains non-string elements, empty strings, or NUL characters, the track fails immediately with `INVALID_PARAMS` without dispatching any tag modifications; error payloads include the tag name and 0-based element index.
 
-For array writes, `tagsApplied` contains the array; removals, including empty arrays, are reported as `null`. `tagsSet` and `tagsRemoved` count fields, not values. A file format or tag writer may limit multivalue support; check the completion event for the final write result.
+For array updates, `tagsApplied` echoes the written array; deletions (including empty arrays) are reported as `null`. `tagsSet` and `tagsRemoved` track affected fields rather than individual value counts. Multivalue tag capabilities depend on the underlying audio container and tag writer; inspect the completion event for final write results.
 
-Dispatches the write and returns a receipt with `dispatched`, `handlePath`, `subsong`, `tagsApplied`, and the tag counters, or only `note: "No tags to update"` when nothing was left to write. `canonicalPath` appears only on the file-open failure envelope. The receipt is not the final write result.
+On successful dispatch, the call returns an operation receipt containing `dispatched`, `handlePath`, `subsong`, `tagsApplied`, and field counters; if no modifications are required, the receipt returns `note: "No tags to update"`. `canonicalPath` appears only in failure envelopes when files cannot be opened. Receipts indicate task acceptance only, not completed disk writes.
 
 ```javascript
 await fb.metadata.write('E:\\Music\\song.flac', {
@@ -176,9 +176,9 @@ const raw = await fb.metadata.readRaw('E:\\Music\\album.flac', {
 
 ## Cancellable Batch Probe
 
-`readBatch()` reads every path on the host's main thread, so a few hundred files that are not in the library will freeze the UI until it finishes, and there is no way to stop it. `probeBatchAsync()` covers the same ground without either problem: reads run on a worker thread, the call can be cancelled, and each failure is classified instead of collapsing into one generic message.
+`readBatch()` parses metadata synchronously on the host main thread, which can cause UI latency when processing unindexed files and cannot be aborted in progress. `probeBatchAsync()` performs disk inspection asynchronously on worker threads, supports mid-flight cancellation, and classifies specific failure reasons.
 
-`read()`, `readBatch()`, `readRaw()` and `readByPath()` also return real `duration` / `bitrate` / `sampleRate` for files the library has never seen; `probeBatchAsync()` is for batches large enough that blocking the main thread matters.
+`read()`, `readBatch()`, `readRaw()`, and `readByPath()` likewise report accurate `duration`, `bitrate`, and `sampleRate` for unindexed files; `probeBatchAsync()` is designed for high-volume scenarios where main thread blocking must be avoided.
 
 ### probeBatchAsync(paths, options?)
 
@@ -230,17 +230,17 @@ if (res.success === false) throw new Error(res.error);
 const { cancelled } = res;
 ```
 
-Cancellation interrupts the disk read in progress rather than waiting for it. `metadata:probeComplete` still arrives, carrying `cancelled: true`; paths not yet reached are never reported, and the interrupted path is reported as neither a success nor a failure. `cancelled` is `false` when the operation had already finished or never existed — the two cases are deliberately indistinguishable.
+Cancelling aborts active disk reads immediately rather than waiting for task completion. The `metadata:probeComplete` event is still emitted with `cancelled: true`; unreached paths are omitted from subsequent results, and the interrupted track is omitted from both success and failure counters. A `cancelled` value of `false` indicates that the operation had already finished or the `operationId` was not found.
 
 ### Batching and event volume
 
-Progress events are batched, never one per path: results accumulate until 64 are pending or 100ms have passed since the previous batch, whichever comes first. A fully cached batch of 10000 paths therefore collapses to roughly `ceil(10000 / 64)` events. A disk-bound batch trades extra events for a progress signal that keeps moving — that is what the 100ms bound buys. The final partial batch always arrives before `metadata:probeComplete`.
+Progress events are dispatched in batched intervals: a batch is emitted whenever 64 items accumulate or 100ms elapse since the previous batch, whichever comes first. For example, 10,000 fully cached tracks consolidate into roughly `ceil(10000 / 64)` events. Disk-heavy runs use the 100ms time boundary to provide steady progress updates. The final partial batch always arrives before `metadata:probeComplete`.
 
-### Path validation is all-or-nothing
+### Batch Path Validation Policy {#path-validation-is-all-or-nothing}
 
-Every entry in `paths` is checked against the host's media-read policy **before** the handler runs. If any single entry fails, the whole call is rejected with `PERMISSION_DENIED` and no `operationId` is produced — there is no partial run and no per-entry `invalid-path` result. Filter paths on the page side if a mixed batch has to be tolerated.
+All paths in the input list undergo host media-read security checks before task execution. If any single path fails validation, the entire call is rejected with `PERMISSION_DENIED`, generating no `operationId`, executing no partial reads, and reporting no per-entry `invalid-path` result. When processing mixed or unverified sources, filter paths before invoking the API.
 
-The same pre-handler stage also rejects a `paths` that is not an array, or an entry that is not a string, but those come back as `INVALID_PARAMS` rather than `PERMISSION_DENIED`. Branch on `code` if the two need different handling.
+If `paths` is not an array or contains non-string elements, validation returns `INVALID_PARAMS` instead of `PERMISSION_DENIED`. Applications should branch on `code` accordingly.
 
 ### Known boundaries
 
@@ -282,11 +282,11 @@ await fb.metadata.embedArtworkFromDataUrl(
 `data:image/...;base64,` header, the `file.write`-specific `base64:` marker, or
 an `fb2k://` URL.
 
-- Omitting `target` writes the embedded picture only.
-- `'embedded'` writes through the host's tag container and may fail for formats such as CUE.
-- `'file'` writes a sidecar such as `cover.<ext>`; the extension is inferred from the image bytes. A `|subsong:N` suffix is dropped, so every track of a CUE sheet shares one image.
-- `['embedded', 'file']` or `'all'` runs both targets. The result then carries each target's own outcome under `results.embedded` and `results.file`, and the call fails with `OPERATION_FAILED` only when both failed.
-- `filename` applies only to file output; path separators and `..` are rejected.
+- When `target` is omitted, artwork is written exclusively as embedded picture.
+- `'embedded'` writes to the audio file embedded tag container; certain formats (such as CUE sheets) may not support embedded artwork.
+- `'file'` writes a sidecar image in the same directory (e.g. `cover.<ext>`), with the file extension inferred from image bytes. Any `|subsong:N` suffix is automatically stripped, ensuring all tracks belonging to a CUE sheet share the same image file.
+- `['embedded', 'file']` or `'all'` targets both embedded and sidecar destinations. The response reports results under `results.embedded` and `results.file` respectively; the operation fails with `OPERATION_FAILED` only when both destinations fail.
+- `filename` applies only to sidecar file output; path separators and `..` are rejected.
 
 `type` defaults to `'front'`. Image data that decodes to no bytes fails with `INVALID_PARAMS`.
 
@@ -305,7 +305,7 @@ const result = await fb.metadata.embedArtwork(
 
 ### removeEmbeddedArt(path, options?)
 
-`fb.metadata.removeEmbeddedArt()` accepts `type` and `removeAll` through `MetadataRemoveEmbeddedArtParams`. Omitting `type`, or setting `removeAll: true`, removes every picture. The response may include `removedTypes`: `['all']` when every picture went in one step, otherwise the types removed. A format the album art editor does not support fails with `NOT_SUPPORTED`.
+`fb.metadata.removeEmbeddedArt()` accepts `type` and `removeAll` parameters. Omitting `type` or specifying `removeAll: true` removes all embedded pictures. Successful responses include `removedTypes`: returning `['all']` when removing all pictures, or listing the specific removed picture types. Audio file formats unsupported by the album art editor fail with `NOT_SUPPORTED`.
 
 ```javascript
 await fb.metadata.removeEmbeddedArt('E:\\Music\\song.flac', {

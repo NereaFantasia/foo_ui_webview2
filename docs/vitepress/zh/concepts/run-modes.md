@@ -4,11 +4,11 @@
 
 | 模式 | 页面承载位置 | 页面控制范围 |
 | --- | --- | --- |
-| 独立窗口 | 作为 Default User Interface 的顶层用户界面，页面承载整个 foobar2000 窗口 | 顶层窗口本身：尺寸、标题栏、系统材质背景、托盘图标、任务栏按钮 |
+| 独立窗口 | `Webview2 UI` 是 Default User Interface，页面即整个 foobar2000 窗口 | 顶层窗口本身：尺寸、标题栏、系统材质背景、托盘图标、任务栏按钮 |
 | DUI 面板 | Default UI 布局中的 `WebView2 Panel` 面板元素 | 仅限面板自身的可视矩形区域 |
 | CUI 面板 | Columns UI 布局中的 `WebView2 Panel` 面板元素 | 仅限面板自身的可视矩形区域 |
 
-[后台模式](/zh/how-to/background-mode)提供第四种运行方式：在保留 Default UI 或 Columns UI 为主界面的同时，独立弹出或隐式运行一个 WebView2 UI 辅助窗口。
+[后台模式](/zh/how-to/background-mode)提供第四种运行方式：与 Default UI 或 Columns UI 并行运行一个独立的 WebView2 UI 窗口。
 
 ## 不变的部分
 

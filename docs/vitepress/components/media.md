@@ -10,7 +10,7 @@ Lyrics panel displaying synchronized LRC or plain-text lyrics. Synchronized line
 
 | Attribute | Type | Default | Description |
 | --- | --- | --- | --- |
-| `source` | string | `'any'` | Lyrics source passed to the SDK wrapper |
+| `source` | string | `'any'` | Lyric source type for retrieval |
 | `scroll` | string | `'smooth'` | Uses smooth scrolling for the exact value `smooth`; otherwise uses automatic scrolling |
 | `has-lyrics` | boolean | — | Read-only reflection of whether lyrics were rendered |
 | `current-line` | string | — | Read-only zero-based active-line index, or `-1` |

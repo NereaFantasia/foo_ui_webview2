@@ -36,7 +36,7 @@ const { rating, storage } = res;
 ### rating.set
 
 <!-- api-schema:begin rating.set -->
-Set a track's rating through foo_playcount's context menu, or write the file's `RATING` tag when that menu is not available. Without `path` the playing track is rated, or else the active playlist's selection; with neither the call fails with `NO_ACTIVE_ITEM`.
+Set a track's rating through foo_playcount's context menu, or write the file's `RATING` tag when that menu is not available. Without `path` the playing track is rated, or else the active playlist's selection; with neither the call fails with `NO_ACTIVE_ITEM`. The tag fallback fails with `NOT_SUPPORTED` for a WAV file that holds non-ASCII tag text, as in `metadata.write`.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |

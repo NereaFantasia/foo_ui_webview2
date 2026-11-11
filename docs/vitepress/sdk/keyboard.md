@@ -6,7 +6,7 @@
 
 Signature: `fb.keyboard.getRegisteredHotkeys(): Promise<KeyboardGetRegisteredHotkeysResponse>`
 
-Returns `{ success, hotkeys }`. Each `HotkeyInfo` contains `id`, `key`, `action`, and `global`. Hotkeys come first, then shortcuts; a shortcut has `id` `0` and `global` `false`.
+Returns `{ success, hotkeys }`. Each `HotkeyInfo` contains `id`, `key`, `action`, and `global`; a hotkey entry also has `windowId`, the window that registered it and receives its presses. The returned list orders hotkeys first, followed by shortcuts; shortcut entries have `id` `0` and `global` `false`. Shortcut entries will be removed alongside `registerShortcut()` in 3.0.
 
 ```javascript
 const res = await fb.keyboard.getRegisteredHotkeys();
@@ -23,7 +23,11 @@ Signature: `fb.keyboard.registerShortcut(key: string, action: string): Promise<K
 | `key` | `string` | Yes | Shortcut key expression |
 | `action` | `string` | Yes | Action name stored with the shortcut |
 
-Stores the key combination as a WebView-local shortcut under the given action name. Unlike `registerHotkey()`, it takes no options object and registers nothing system-wide. `getRegisteredHotkeys()` lists the shortcut with `id` `0`, and `unregisterHotkey({ key })` removes it.
+::: warning Deprecated
+`registerShortcut()` has no effect and will be removed in 3.0. Listen for `keydown` in the page for in-page shortcuts.
+:::
+
+Registers the key combination under the specified action name, but no host logic matches key presses against it. Unlike `registerHotkey()`, this method accepts no options object and performs no system-wide registration. `getRegisteredHotkeys()` lists it with `id` `0`, and `unregisterHotkey({ key })` removes it.
 
 ```javascript
 const result = await fb.keyboard.registerShortcut('Space', 'toggle');
@@ -38,12 +42,29 @@ Signature: `fb.keyboard.unregisterHotkey(options: KeyboardUnregisterHotkeyParams
 | `options.key` | `string` | No | Registered key expression |
 | `options.id` | `number` | No | Numeric registration ID |
 
-Removes a hotkey or a shortcut. Give exactly one of `id` and `key`: `id` removes a hotkey by the number `registerHotkey()` returned, and `key` removes a hotkey or a shortcut by the string it was registered with.
+Removes a hotkey or shortcut. Exactly one of `id` or `key` must be provided: `id` removes a hotkey by the numeric ID returned by `registerHotkey()`; `key` removes a hotkey or shortcut by its registered key combination string. Removing shortcuts by `key` will be removed alongside `registerShortcut()` in 3.0.
 
 ```javascript
 const result = await fb.keyboard.unregisterHotkey({
 	key: 'Ctrl+Shift+P',
 });
+```
+
+## setReservedKeys(keys)
+
+Signature: `fb.keyboard.setReservedKeys(keys: string[], options?: { all?: boolean }): Promise<KeyboardSetReservedKeysResponse>`
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `keys` | `string[]` | Yes | Combinations to keep for the page, written like the `key` of `registerHotkey()` |
+| `options.all` | `boolean` | No | Keep every key for the page, not only `keys`; defaults to `false` |
+
+Replaces this page's reserved keys. While the page has focus, the keys selected in the component preferences run the foobar2000 shortcuts bound to them under Preferences > Keyboard Shortcuts; combinations specified in the reserved list are dispatched directly to the page `keydown` event even if foobar2000 defines matching shortcuts. The reserved list resets when navigating, reloading, or closing the window; pass an empty array to clear all reservations. Invalid key strings fail with `INVALID_PARAMS` and leave the list unchanged. Setting `{ all: true }` routes all keys to the page (such as during shortcut recording); a subsequent call with explicit `keys` restores selective forwarding. System-level hotkeys and F12 in development server mode are excluded, and F5 reloads the page unless a `keydown` listener calls `preventDefault()`. For forwarding rules, see [Keyboard shortcuts inside the WebView](../api/keyboard.md#keyboard-shortcuts-inside-the-webview).
+
+```javascript
+await fb.keyboard.setReservedKeys(['Ctrl+F', 'Ctrl+S']);
+// While recording a shortcut
+await fb.keyboard.setReservedKeys(['Ctrl+F', 'Ctrl+S'], { all: true });
 ```
 
 ## Register a Hotkey
@@ -56,11 +77,13 @@ Signature: `fb.keyboard.registerHotkey(key: string, action: string, options?: Om
 | `action` | `string` | Yes | Action name reported back in the `keyboard:hotkey` payload |
 | `options.global` | `boolean` | No | Recorded on the entry and reported by `getRegisteredHotkeys()`; defaults to `true` |
 
-`fb.keyboard.registerHotkey(key, action, options?)` registers a system-wide hotkey through `keyboard.registerHotkey`. `options` is `Omit<KeyboardRegisterHotkeyParams, 'key' | 'action'>` and can set `global`. On success the response carries `id`, a number from `1`; `unregisterHotkey({ id })` takes it, and `getRegisteredHotkeys()` reports it as `HotkeyInfo.id`.
+`fb.keyboard.registerHotkey(key, action, options?)` registers a system-wide hotkey through `keyboard.registerHotkey`. `options` is `Omit<KeyboardRegisterHotkeyParams, 'key' | 'action'>` and can set `global`. On success, returns a positive integer `id` (starting from `1`), which can be passed to `unregisterHotkey({ id })` and matches `HotkeyInfo.id` in `getRegisteredHotkeys()`.
 
-The hotkey is registered on the main window and is system-wide whatever `global` says. Windows refuses a combination another program already holds.
+Hotkeys are registered by the component message window and are system-wide regardless of the `global` value. Combinations must include `Ctrl`, `Alt`, or `Win` (except standalone media keys). Reserved system combinations (such as `Ctrl+A/C/V/X/Y/Z`, `Ctrl+Shift+Z`, `Alt+F4`, `Alt+Tab`, `Alt+Space`, and `Ctrl+Esc`) are rejected with `INVALID_PARAMS`. If a combination is already held by a window of this component, another application, or a foobar2000 global shortcut, the call fails with `OPERATION_FAILED`; when another application or a foobar2000 global shortcut holds it, `details.win32Error` contains the Win32 error code.
 
-A key combination joins the modifiers `Ctrl` (or `Control`), `Alt`, `Shift`, and `Win` with `+` to a key name: a letter, a digit, `F1` to `F12`, `Space`, `Enter`, `Tab`, `Escape`, `Backspace`, `Delete`, `Insert`, `Home`, `End`, `PageUp`, `PageDown`, an arrow key, one of the media keys `PlayPause`, `MediaStop`, `NextTrack`, `PrevTrack`, `VolumeUp`, `VolumeDown`, `VolumeMute`, or a punctuation key. Case does not matter.
+Registered hotkeys are automatically released when the page navigates, reloads, or closes; they must be re-registered upon page load.
+
+Key combinations join modifier keys (`Ctrl` or `Control`, `Alt`, `Shift`, `Win`) with a base key name using `+`. Base key names include letters, digits, function keys (`F1`–`F12`), `Space`, `Enter`, `Tab`, `Escape`, `Backspace`, `Delete`, `Insert`, `Home`, `End`, `PageUp`, `PageDown`, arrow keys, media keys (`PlayPause`, `MediaStop`, `NextTrack`, `PrevTrack`, `VolumeUp`, `VolumeDown`, `VolumeMute`), or punctuation keys. Key names are case-insensitive.
 
 ```javascript
 const result = await fb.keyboard.registerHotkey(
@@ -74,7 +97,7 @@ const result = await fb.keyboard.registerHotkey(
 
 When a registered hotkey fires, `keyboard:hotkey` carries `KeyboardHotkeyPayload` with `id`, `key`, and `action`.
 
-The event goes to the window that registered the hotkey. The hotkey stays registered after that window closes, and its presses then go to the main window's page.
+The event goes to the window that registered the hotkey.
 
 ```javascript
 const off = fb.on('keyboard:hotkey', ({ id, key, action }) => {

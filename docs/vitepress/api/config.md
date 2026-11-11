@@ -686,4 +686,4 @@ const result = await fb2k.invoke('config.showLibraryPreferences');
 
 Output and advanced preference methods interact directly with foobar2000 services. Specifically, `config.setOutputDevice` requires valid `outputId` and `deviceId` GUIDs, while `config.setOutputBuffer` accepts either seconds in `bufferLength` or milliseconds in `milliseconds`. Advanced preference entries require a valid `guid`; the expected `value` type depends on the entry's underlying preference type rather than a single unified schema.
 
-Cursor-follow and ReplayGain setters accept documented compatibility parameters. For ReplayGain, `mode` and `value` are numeric, while `sourceMode` accepts `track`, `album`, `auto`, `byPlaybackOrder`, or `none`. The handler returns `INVALID_PARAMS` when given an unrecognized string mode.
+Cursor-follow and ReplayGain setters accept documented compatibility parameters. For ReplayGain, `mode` and `value` are numeric, while `sourceMode` accepts `track`, `album`, `auto`, `byPlaybackOrder`, or `none`. The handler returns `INVALID_PARAMS` for an unknown string `sourceMode`.

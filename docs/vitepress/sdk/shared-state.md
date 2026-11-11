@@ -2,10 +2,7 @@
 
 `fb.sharedState` exposes a cross-window key/value store. It is distinct from the synchronous `fb.state` playback mirror: shared-state values can be assigned a TTL and changes are published through the `state:*` event family.
 
-The store is process-local memory owned by the component's `PortHub` singleton.
-It is shared by this component's WebView windows in the current foobar2000
-process, but it is not persisted to disk, does not survive restart, and is not
-shared with other processes or SMP runtimes.
+The store is maintained in process memory by the component `PortHub` singleton. It is shared across all WebView windows managed by this component in the current foobar2000 process. Data resides only in memory, does not persist across restarts, and is not shared with other processes or SMP runtimes.
 
 ## delete(key)
 
@@ -15,7 +12,7 @@ Signature: `fb.sharedState.delete(key: string): Promise<StateDeleteResponse>`
 | --- | --- | --- | --- |
 | `key` | `string` | Yes | Logical key to remove |
 
-The response's `existed` tells whether the key existed before the call. Removing a key that existed emits `state:deleted` with `reason: 'deleted'`.
+The response's `existed` property indicates whether the key existed prior to deletion; deleting an existing key emits `state:deleted` with `reason: 'deleted'`.
 
 ```javascript
 const result = await fb.sharedState.delete('playlist:active-filter');
@@ -29,7 +26,7 @@ Signature: `fb.sharedState.keys(pattern?: string): Promise<StateKeysResponse>`
 | --- | --- | --- | --- |
 | `pattern` | `string` | No | Key pattern; defaults to `'*'` |
 
-Resolves with the matching keys as `{ keys }`, in no particular order. `'*'` matches every key; a pattern ending in `*` matches by prefix, such as `'playlist:*'`; any other pattern matches one whole key, a `*` elsewhere being an ordinary character. Expired keys are swept first, and each one broadcasts `state:deleted` with `reason: 'expired'`.
+Resolves with `{ keys }` containing matched keys in undefined order. `'*'` matches all keys; patterns ending with `*` perform prefix matching (such as `'playlist:*'`); all other patterns perform exact key matching, treating any middle `*` as a literal character. Expired keys are swept before evaluation, and each purged key emits `state:deleted` with `reason: 'expired'`.
 
 ```javascript
 const res = await fb.sharedState.keys('playlist:*');
@@ -44,11 +41,11 @@ Signature: `fb.sharedState.set(key: string, value: JsonValue, silent?: boolean, 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `key` | `string` | Yes | Logical key to update |
-| `value` | `unknown` | Yes | JSON-serializable value. A top-level `null` is refused; remove a key with `delete()` |
+| `value` | `unknown` | Yes | JSON-serializable value. A top-level `null` is rejected; use `delete()` to remove a key |
 | `silent` | `boolean` | No | Suppresses the change event when `true`; defaults to `false` |
-| `ttlMs` | `number` | No | Time to live in milliseconds; omitted, `0` or less, the value does not expire |
+| `ttlMs` | `number` | No | Time to live in milliseconds; when omitted or non-positive, the key does not expire |
 
-Broadcasts `state:changed` afterwards unless `silent` is `true`, with `key`, `value`, `previousValue` (`null` for a new key) and `sourceWindowId`. With a positive `ttlMs`, the result and the event both carry `expiresAt`, in milliseconds since the Unix epoch.
+Upon successful write, broadcasts `state:changed` (suppressed when `silent` is `true`); payload includes `key`, `value`, `previousValue` (`null` for newly created keys), and `sourceWindowId`. When positive `ttlMs` is specified, the method return value and the event payload both carry `expiresAt` (Unix epoch timestamp in milliseconds).
 
 ```javascript
 await fb.sharedState.set('playlist:active-filter', 'favorites', false, 60_000);

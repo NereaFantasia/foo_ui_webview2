@@ -86,11 +86,7 @@ const result = await fb2k.invoke('output.getSettings');
 Informational only — output configuration is owned by foobar2000 Preferences, and
 `config.setOutputDevice` is the way to switch devices.
 
-**Avoid `availableOutputs` in new code.** It is a bare list of display names with
-two observed problems: modules that share a display name are indistinguishable,
-and some modules report an empty name. Its order comes from service enumeration
-and is **not stable between calls**, so array indices are not usable as
-identifiers. Use `output.getEntries`, which pairs each name with its GUID.
+**Avoid `availableOutputs` in new code.** It is a bare list of display names with two known limitations: modules that share a display name cannot be distinguished, and some modules report empty names. Furthermore, array order depends on service enumeration and is **not stable between calls**, making array indices unsuitable as persistent identifiers. Use `output.getEntries`, which pairs each name with its GUID.
 
 ## Runtime behavior notes
 

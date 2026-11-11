@@ -57,6 +57,10 @@ Change the calling panel's configuration. Only the keys below can be set from a 
 await fb2k.invoke('panel.setConfig', { grabFocus: true });
 ```
 
+::: warning Security and Permission Constraints
+`enableDevTools`, `urlOverride`, and `templateName` govern template loading and debugging security. They can only be modified manually through the panel configuration dialog and cannot be dynamically overridden via API.
+:::
+
 ## Owner-family behavior and limits
 
 - `panel.setConfig` changes only its documented panel fields.

@@ -13,7 +13,7 @@
 
 返回 `{ success, path, tags, info }`。`tags` 的键保留文件里原样的大小写，每个值是 `string` 或 `string[]`。`info` 含 `duration`、`bitrate`、`sampleRate`、`channels` 和 `codec`。
 
-宿主先读缓存的信息，拿不到或其中没有标题标签时改为直接读文件。打不开或读不出的曲目以 `OPERATION_FAILED` 失败。
+宿主优先读取缓存信息；若未命中缓存或缓存中不含标题标签，则直接从底层音频文件读取。无法打开或读取失败的曲目返回 `OPERATION_FAILED`。
 
 ```javascript
 const result = await fb.metadata.read('E:\\Music\\song.flac');
@@ -34,7 +34,7 @@ const track3 = await fb.metadata.read('E:\\Music\\album.cue', { cueIndex: 3 });
 
 返回 `results`，每个请求路径一个条目，另有汇总计数 `total`、`successCount` 和 `errorCount`。
 
-每个路径独立解析，可以各带 `|subsong:N` 后缀；没有整批的 `cueIndex`。成功的行在 `tags` 里放键名大写的扁平字段表，同 `readByPath()` 的返回，但不带 `path`，也不从文件名取曲目号。读不出的路径那一行为 `success: false`，带自己的 `error`，不会让整次调用失败。读取在宿主主线程上进行；文件多时改用 `probeBatchAsync()`。
+各路径独立解析，可分别指定 `|subsong:N` 后缀；该方法不支持整批指定 `cueIndex`。读取成功的条目在 `tags` 中提供大写键名的扁平字段表（与 `readByPath()` 结构一致，但不包含 `path` 且不尝试从文件名推断音轨编号）。无法读取的路径条目标记为 `success: false` 并包含独立 `error`，不会导致整批调用失败。读取操作在宿主主线程同步执行；大量文件场景建议使用 `probeBatchAsync()`。
 
 ```javascript
 const result = await fb.metadata.readBatch([
@@ -54,7 +54,7 @@ const result = await fb.metadata.readBatch([
 
 返回扁平的 `metadata.readByPath` 对象：标签键和宿主的状态、路径字段并列在顶层。本方法不会调用 `metadata.readRaw`。
 
-每个标签和技术信息字段都以大写名为键，如 `TITLE`、`SAMPLERATE`。多值标签是 `string[]`，技术信息字段是字符串。`DURATION` 总会出现，以秒计，保留三位小数（`215.400`）。`FILESIZE` 只在宿主知道文件大小时出现，所以媒体库还没索引的文件没有它。文件没有 `TRACKNUMBER` 标签时，从文件名开头不超过三位的数字取得（`07 - Song.flac`），取不到时不出现。读取方式和失败情形同 `read()`；`canonicalPath` 只出现在打不开文件时的失败信封里。
+标签及技术信息字段均以大写键名表示（如 `TITLE`、`SAMPLERATE`）。多值标签类型为 `string[]`，技术信息字段为字符串。`DURATION` 始终存在，以秒为单位保留三位小数（如 `215.400`）。`FILESIZE` 仅在宿主已解析文件大小时返回；未入库索引的文件可能缺失该字段。若音频元数据未包含 `TRACKNUMBER` 标签，方法尝试提取文件名开头至多三位的前导数字（如 `07 - Song.flac`）；若无法提取则省略此字段。读取逻辑与错误处理与 `read()` 相同；规范化路径 `canonicalPath` 仅在文件无法打开时返回于错误信封中。
 
 ```javascript
 const fields = await fb.metadata.readByPath('E:\\Music\\song.flac');
@@ -91,7 +91,7 @@ const receipt = await fb.metadata.removeField(
 | `tags` | `string[]` | 是 | 要删除的标签名 |
 | `opts.cueIndex` | `number` | 否 | CUE 或镜像内的曲目序号，从 1 开始；只作用于其中这一首，不作用于整个容器 |
 
-异步派发删除并返回回执。标签名会转成大写，`removedTags` 按给出的顺序列出它们；`tags` 为空时不删除任何标签，直接成功，不派发。最终结果看 `metadata:writeComplete`。
+异步派发标签删除任务并返回操作回执。标签名自动转换为大写，`removedTags` 按输入顺序返回；若 `tags` 为空，操作立即成功返回且不派发任何写入任务。最终执行结果通过 `metadata:writeComplete` 事件通知。
 
 `removeField()` 和 `removeTag()` 共用同一个宿主 handler，所以都接受同样的 `cueIndex` 选项。
 
@@ -114,13 +114,13 @@ await fb.metadata.removeTag('E:\\Music\\album.cue', ['COMMENT'], {
 | `tags` | `JsonObject` | 是 | 要改的标签；值为 `null`、空字符串或空数组时删除对应标签 |
 | `opts.cueIndex` | `number` | 否 | CUE 或镜像内的曲目序号，从 1 开始；只把标签写到其中这一首，不写到整个容器 |
 
-标签名会转成大写，所以只有大小写不同的键指同一个标签。字符串原样写入，整数或小数写成十进制文本（`2.5` 写成 `2.500000`），布尔或对象被忽略。
+标签名自动转换为大写规范化，仅大小写不同的键视为同一标签。字符串值原样写入；数值转换为十进制文本（如 `2.5` 格式化为 `2.500000`）；布尔值与对象类型将被忽略。
 
-非空字符串数组替换该标签的全部值，保留顺序、重复值和空白，值里的逗号、分号不会被当作分隔符。空数组删除该标签。数组含非字符串、空字符串或 NUL 时，该曲目以 `INVALID_PARAMS` 失败，不派发它的任何字段；错误中包含标签名和从 0 起的元素下标。
+非空字符串数组将替换该标签的所有现有值，保留元素顺序、重复项及空白字符，字符串内的逗号或分号不作为分隔符解析。空数组用于删除对应标签。若数组包含非字符串、空字符串或 NUL 字符，该曲目整体以 `INVALID_PARAMS` 失败且不派发任何字段变更；错误载荷中包含违规标签名及首个错误元素的从 0 计数下标。
 
-数组写入时，`tagsApplied` 保留数组；删除时（含空数组）记为 `null`。`tagsSet`、`tagsRemoved` 按字段计数，不按值的数量计数。文件格式或标签写入器可能限制多值支持，最终写入结果仍须查看完成事件。
+数组写入时，`tagsApplied` 回显该数组；执行删除时（含传入空数组）标记为 `null`。`tagsSet` 与 `tagsRemoved` 统计受影响的字段数，而非值元素数量。受底层音频格式及标签写入器限制，多值标签支持可能存在差异，最终状态应以完成事件为准。
 
-派发写入并返回回执，含 `dispatched`、`handlePath`、`subsong`、`tagsApplied` 和标签计数；没有可写内容时只有 `note: "No tags to update"`。`canonicalPath` 只出现在打不开文件时的失败信封里。回执不是最终的写入结果。
+派发成功后返回操作回执，包含 `dispatched`、`handlePath`、`subsong`、`tagsApplied` 及受影响字段计数；若无可更新字段，则回执仅包含 `note: "No tags to update"`。`canonicalPath` 仅在文件无法打开时包含于失败信封中。回执仅代表任务受理，不代表磁盘写入已完成。
 
 ```javascript
 await fb.metadata.write('E:\\Music\\song.flac', {
@@ -176,9 +176,9 @@ const raw = await fb.metadata.readRaw('E:\\Music\\album.flac', {
 
 ## 可取消的批量探测
 
-`readBatch()` 在宿主主线程上逐个读取，几百个未入库文件会把 UI 冻到读完为止，而且中途停不下来。`probeBatchAsync()` 做同一件事但没有这两个问题：读盘在 worker 线程、调用可取消、每个失败都有分类，不再合并成一条通用错误。
+`readBatch()` 在宿主主线程同步读取元数据，大量未入库文件可能导致界面短暂停顿且无法中途取消。`probeBatchAsync()` 将磁盘探测移至工作线程异步执行，支持中途取消，并提供细分的错误分类。
 
-`read()`、`readBatch()`、`readRaw()`、`readByPath()` 对未入库文件同样返回真实的 `duration` / `bitrate` / `sampleRate`；`probeBatchAsync()` 用于批量大到阻塞主线程会成问题的场合。
+`read()`、`readBatch()`、`readRaw()` 及 `readByPath()` 针对未入库文件同样返回准确的 `duration`、`bitrate` 及 `sampleRate`；`probeBatchAsync()` 适用于避免主线程阻塞的大批量文件探测场景。
 
 ### probeBatchAsync(paths, options?)
 
@@ -230,17 +230,17 @@ if (res.success === false) throw new Error(res.error);
 const { cancelled } = res;
 ```
 
-取消会打断正在进行的读盘，而不是等它读完。`metadata:probeComplete` 仍会到达并带 `cancelled: true`；还没轮到的路径不会出现在任何结果里，被打断的那一条既不计成功也不计失败。`cancelled` 为 `false` 表示该操作已结束或从未存在 —— 这两种情况故意不可区分。
+取消操作会立即中断正在执行的磁盘读取。`metadata:probeComplete` 事件仍会派发并携带 `cancelled: true`；尚未开始处理的路径不会包含在后续事件中，被打断的当前条目不计入成功或失败计数。若 `cancelled` 为 `false`，表示指定操作已完成或不存在对应 ID。
 
 ### 分批与事件量
 
-进度事件分批发射，绝不逐条：累计 64 条或距上次发射满 100ms，先到者触发。所以 10000 条全缓存命中的批次大约收敛到 `ceil(10000 / 64)` 个事件。读盘为主的批次会用更多事件换一个持续走动的进度信号 —— 100ms 上界换来的正是这个。最后一批一定排在 `metadata:probeComplete` 之前。
+进度事件采用批量合并策略派发：每累计 64 条结果或距离上次派发达到 100 毫秒时触发一次。例如完全命中缓存的 10000 条路径将聚合为约 `ceil(10000 / 64)` 次事件派发。磁盘读取场景则依靠 100 毫秒的时间窗口保持平滑的进度反馈。最终批次的进度事件始终优先于 `metadata:probeComplete` 事件派发。
 
-### 路径校验是整批全过或整批拒绝
+### 路径整批校验机制 {#路径校验是整批全过或整批拒绝}
 
-`paths` 的每一条都在 handler 执行**之前**过宿主的媒体读策略。任一条不过，整个调用就以 `PERMISSION_DENIED` 被拒且不产生 `operationId` —— 没有部分执行，也没有逐条的 `invalid-path` 结果。需要容忍混合批次就在页面侧先自行过滤。
+`paths` 列表中的所有路径均在请求处理前接受宿主媒体读取策略校验。若其中任何一条路径未通过校验，整个调用直接拒绝并返回 `PERMISSION_DENIED`，不生成 `operationId`，不执行部分探测，也不会为单条路径返回 `invalid-path` 结果。如需处理混合来源路径，应在前端预先过滤校验。
 
-同一道前置校验也会拒掉非数组的 `paths` 与非字符串的条目，但这类返回的是 `INVALID_PARAMS` 而不是 `PERMISSION_DENIED`。两者需要区别处理时按 `code` 分支。
+若 `paths` 参数非数组或元素包含非字符串类型，前置校验将返回 `INVALID_PARAMS`。业务逻辑可根据返回的 `code` 区分处理。
 
 ### 已知边界
 
@@ -280,11 +280,11 @@ await fb.metadata.embedArtworkFromDataUrl(
 `imageData` 只接受裸 Base64 payload，不能包含 `data:image/...;base64,`
 头、`file.write` 专用的 `base64:` 标记或 `fb2k://` URL。
 
-- 省略 `target` 时只写嵌入图片。
-- `'embedded'` 通过宿主标签容器写入；CUE 等格式可能不支持。
-- `'file'` 写入 `cover.<ext>` 等同目录图片，扩展名根据图片字节推断。`|subsong:N` 后缀会被去掉，所以同一个 CUE 的全部曲目共用一张图。
-- `['embedded', 'file']` 或 `'all'` 同时执行两个目标。此时结果在 `results.embedded` 和 `results.file` 下分别给出各目标的结果，只有两者都失败时调用才以 `OPERATION_FAILED` 失败。
-- `filename` 只作用于文件输出；路径分隔符和 `..` 会被拒绝。
+- 省略 `target` 时默认仅写入嵌入式封面。
+- `'embedded'` 写入音频文件内置标签容器；部分格式（如 CUE 关联文件）可能不支持。
+- `'file'` 写入同目录旁注图片（如 `cover.<ext>`），文件扩展名根据图片实际字节自动推断。路径中的 `|subsong:N` 后缀将被自动剥除，确保同一 CUE 下的所有曲目引用同一封面文件。
+- `['embedded', 'file']` 或 `'all'` 同时写入内置封面与同目录文件。返回结果分别通过 `results.embedded` 与 `results.file` 提供各目标的执行状态；仅当两个写入目标均失败时，整体调用才返回 `OPERATION_FAILED`。
+- `filename` 仅适用于同目录文件写入；参数中禁止包含路径分隔符或 `..`。
 
 `type` 默认为 `'front'`。图片数据解不出任何字节时以 `INVALID_PARAMS` 失败。
 
@@ -303,7 +303,7 @@ const result = await fb.metadata.embedArtwork(
 
 ### removeEmbeddedArt(path, options?)
 
-`fb.metadata.removeEmbeddedArt()` 通过 `MetadataRemoveEmbeddedArtParams` 接受 `type` 与 `removeAll`。省略 `type` 或设置 `removeAll: true` 时删除全部图片。响应可能包含 `removedTypes`：一次删掉全部图片时为 `['all']`，否则是删除的各个类型。专辑封面编辑器不支持的格式以 `NOT_SUPPORTED` 失败。
+`fb.metadata.removeEmbeddedArt()` 接受 `type` 与 `removeAll` 参数。省略 `type` 或设置 `removeAll: true` 时将移除所有嵌入图片。成功响应包含 `removedTypes`：全量删除时返回 `['all']`，否则列出已移除的具体封面类型。若当前音频文件格式不支持专辑封面编辑，调用返回 `NOT_SUPPORTED`。
 
 ```javascript
 await fb.metadata.removeEmbeddedArt('E:\\Music\\song.flac', {

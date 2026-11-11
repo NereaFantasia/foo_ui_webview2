@@ -65,6 +65,16 @@ Set the progress bar drawn on the taskbar button. Once a theme sets it, the plug
 await fb2k.invoke('taskbar.setProgress', { state: 'normal', value: 0.42 });
 ```
 
+### Taskbar progress states
+
+| State | Visual appearance | Value usage | Description |
+| --- | --- | --- | --- |
+| `none` | No progress bar | Ignored | Resets and hides the taskbar progress indicator |
+| `indeterminate` | Continuous marquee pulsing | Ignored | Indicates an ongoing task of undetermined length |
+| `normal` | Green fill | `0.0` - `1.0` | Normal progress representation |
+| `error` | Red fill | `0.0` - `1.0` | Error condition encountered |
+| `paused` | Yellow fill | `0.0` - `1.0` | Paused playback or temporarily suspended operation |
+
 ### taskbar.setThumbnailButtons
 
 <!-- api-schema:begin taskbar.setThumbnailButtons -->
@@ -120,6 +130,12 @@ An empty or missing `id` is rejected with `INVALID_PARAMS`.
 ```js
 await fb2k.invoke('taskbar.updateButton', { id: 'pp', tooltip: 'Pause' });
 ```
+
+## Events
+
+| Event | Payload | Description |
+| --- | --- | --- |
+| `taskbar:buttonClicked` | `{ id: string }` | Emitted when a thumbnail toolbar custom button is clicked |
 
 ## Runtime lifecycle, menu data, and events
 

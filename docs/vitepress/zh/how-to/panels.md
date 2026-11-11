@@ -27,7 +27,7 @@
 | --- | --- |
 | `Template` | `(Follow global)`，或 `<profile>\webview-ui\` 下只给该面板使用的专属模板文件夹 |
 | `URL Override (optional)` | 不加载本地模板、直接加载的 URL 地址；优先级高于 `Template` |
-| `Allow this site to access foobar2000 and this computer` | 授权该 URL 覆盖页面调用宿主 API（包括文件读写与系统命令执行）。本机环回地址（`localhost`、`127.x.x.x`、`[::1]`）默认受信任且该复选框置灰。外网域名须手动勾选授权；URL 改为其他来源时该授权自动重置 |
+| `Allow this site to access foobar2000 and this computer` | 授权该 URL 覆盖页面调用宿主 API（包括文件读写与系统命令执行）。本机环回地址（`localhost`、`127.x.x.x`、`[::1]`）自动受信任，不显示该复选框。其他来源（origin）的页面可以正常加载，但勾选之前不能调用 API。授权按来源记录：URL 改为其他来源后，勾选会被清除 |
 | `Resources path` | 只读：当前面板实际加载的物理目录绝对路径，发生回退时附带说明 |
 | `Transparent Background`、`Grab Focus`、`Enable Drag & Drop`、`Enable DevTools` | 面板独立开关；`Enable DevTools` 与全局开发者设置叠加生效 |
 | `Edge Style` | 面板边框样式：无边框（None）、凹陷（Sunken）或灰边（Grey） |

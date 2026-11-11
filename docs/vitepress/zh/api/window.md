@@ -579,7 +579,7 @@ await fb2k.invoke('window.setBackdropPolicy', {
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
-| `message` | `any` | 是 | 消息，作为事件的 `message` 送达。`null` 按没传处理。 |
+| `message` | `any` | 是 | 消息正文，作为事件的 `message` 送达；传入 `null` 视同未指定。 |
 
 **返回值**
 
@@ -594,7 +594,7 @@ await fb2k.invoke('window.broadcast', { message: { type: 'themeChanged', theme: 
 ### window.cancelClose
 
 <!-- api-schema:begin window.cancelClose -->
-收到 `window:beforeClose` 后让调用方 popup 保持打开；没有待定的关闭时什么也不做。调用方不是 popup 时以 `NOT_FOUND` 失败。
+收到 `window:beforeClose` 后阻止调用方 popup 关闭；无待定关闭操作时静默忽略。调用方不是 popup 时以 `NOT_FOUND` 失败。
 
 无参数。
 
@@ -669,7 +669,7 @@ const result = await fb2k.invoke('window.clearNoDragRegions');
 ### window.close
 
 <!-- api-schema:begin window.close -->
-像系统关闭命令那样关闭调用方窗口。没有窗口时什么也不做并照常成功。面板模式下失败。
+触发窗口关闭操作（等同于系统关闭指令）。无窗口时静默成功。面板模式下失败。
 
 无参数。
 
@@ -723,7 +723,7 @@ await fb2k.invoke('window.closePopup', { windowId: 'popup-1' });
 ### window.confirmClose
 
 <!-- api-schema:begin window.confirmClose -->
-收到 `window:beforeClose` 后让调用方 popup 关闭；没有待定的关闭时什么也不做。调用方不是 popup 时以 `NOT_FOUND` 失败。
+收到 `window:beforeClose` 后允许调用方 popup 关闭；无待定关闭操作时静默忽略。调用方不是 popup 时以 `NOT_FOUND` 失败。
 
 无参数。
 
@@ -888,8 +888,8 @@ await fb2k.invoke('window.flashTaskbar');
 | `items[].windowId` | `string` | `main` 或 popup 的 id。 |
 | `items[].isMain` | `boolean` | 是否为主窗口。 |
 | `items[].title` | `string` | 窗口标题。 |
-| `items[].url` | `string` | 仅 popup：创建 popup 时给的 `url`。 |
-| `items[].profile` | `"legacy" \| "standard" \| "miniPlayer" \| "desktopLyrics"` | 仅 popup：行为预设；创建时没给预设为 `legacy`。 |
+| `items[].url` | `string` | 仅适用于弹出窗口：创建时指定的初始 URL |
+| `items[].profile` | `"legacy" \| "standard" \| "miniPlayer" \| "desktopLyrics"` | 仅适用于弹出窗口：行为预设；创建时未指定则为 `legacy` |
 | `items[].behavior` | `Record<string, any>` | 仅 popup：在 popup 上设置的行为覆盖。 |
 | `items[].resolvedBehavior` | `WindowPopupBehaviorState` | 仅 popup：实际生效的行为。 |
 | `items[].resolvedBehavior.showInTaskbar` | `boolean` | 是否出现在任务栏上。 |
@@ -1042,7 +1042,7 @@ const result = await fb2k.invoke('window.getDevServerConfig');
 
 数值单位为物理像素；宿主以 DIP 存储约束，并按**目标窗口**的 DPI 换算。`0` 表示无上限，且换算前后精确不变。
 
-返回的是**请求值**，不是当前窗口尺寸。「物理 → DIP → 物理」的往返会量化到整数 DIP，故在非 100% 缩放下 `get` 与传给 `set` 的值每轴最多相差 1px（例如 125% 下 `202px` 读回为 `203px`）。请把 getter 理解为「在 ±1px 内复述你设置的约束」，而非精确相等。`0` 不受此影响。
+返回值为配置记录值，非当前窗口的实时尺寸。由于「物理像素 → DIP → 物理像素」往返换算时量化到整数 DIP，在非 100% 缩放比率下，查询值与设定值每轴可能存在至多 1px 的舍入偏差（例如 125% 缩放下 202px 读取回 203px）。设定为 0 时不受舍入影响。
 
 ```js
 const result = await fb2k.invoke('window.getMaxSize');
@@ -1071,7 +1071,7 @@ const result = await fb2k.invoke('window.getMaxSize');
 
 数值单位为物理像素；宿主以 DIP 存储约束，并按**目标窗口**的 DPI 换算。
 
-返回的是**请求值**，不是当前窗口尺寸。「物理 → DIP → 物理」的往返会量化到整数 DIP，故在非 100% 缩放下 `get` 与传给 `set` 的值每轴最多相差 1px（例如 125% 下 `202px` 读回为 `203px`）。请把 getter 理解为「在 ±1px 内复述你设置的约束」，而非精确相等。
+返回值为配置记录值，非当前窗口的实时尺寸。由于「物理像素 → DIP → 物理像素」往返换算时量化到整数 DIP，在非 100% 缩放比率下，查询值与设定值每轴可能存在至多 1px 的舍入偏差（例如 125% 缩放下 202px 读取回 203px）。
 
 ```js
 const result = await fb2k.invoke('window.getMinSize');
@@ -1333,7 +1333,7 @@ const result = await fb2k.invoke('window.restore');
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
 | `targetWindowId` | `string` | 是 | 接收窗口的 id。不能为空。 |
-| `message` | `any` | 是 | 消息，作为事件的 `message` 送达。`null` 按没传处理。 |
+| `message` | `any` | 是 | 消息正文，作为事件的 `message` 送达；传入 `null` 视同未指定。 |
 
 **返回值**
 
@@ -1364,7 +1364,7 @@ await fb2k.invoke('window.sendMessage', {
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
 | `enabled` | `boolean` | 回显 `enabled`。 |
-| `darkMode` | `boolean` | 回显 `darkMode`；传了才有。 |
+| `darkMode` | `boolean` | 回显请求中的 `darkMode`；未指定该参数时不返回。 |
 
 成功时 `success` 为 `true`；失败时返回 `{ success: false, error, code }`，`code` 见[错误码](../reference/errors.md)。
 <!-- api-schema:end -->
@@ -1623,12 +1623,7 @@ await fb2k.invoke('window.setFrameless', { frameless: true });
 成功时 `success` 为 `true`；失败时返回 `{ success: false, error, code }`，`code` 见[错误码](../reference/errors.md)。
 <!-- api-schema:end -->
 
-Windows 11 只在窗口的最大化键上弹出贴靠布局，页面自绘的按钮要由宿主把那块矩形
-当作按钮回答。这样按钮就不再直接从 Windows 收到鼠标，由宿主转交，所以 `:hover`、
-`:active` 与 `click` 照常有效，最大化仍由页面自己的点击处理完成。矩形要保持最新：
-首次布局后设置一次，按钮挪动时（窗口缩放、最大化与还原、DPI 或缩放变化）再设置。
-`snapLayouts` 为 `true` 时去掉按钮的 `title`，改用 `aria-label` 命名，否则提示会挡住
-浮层。
+在 Windows 11 中，系统仅在原生最大化按钮区域触发贴靠布局（Snap Layouts）。对于前端自绘的最大化按钮，宿主在命中测试中将指定矩形响应为原生最大化按钮。宿主将鼠标消息无缝转发至 WebView，按钮的 `:hover`、`:active` 样式与 `click` 事件正常触发，最大化逻辑仍由前端点击事件控制。矩形区域应保持与 DOM 同步：在首次渲染布局后设置，并在窗口尺寸变更、最大化/还原或 DPI 缩放变动时重新计算设置。当 `snapLayouts` 为 `true` 时，应移除按钮的 HTML `title` 属性并改用 `aria-label`，避免系统原生提示条遮挡贴靠布局浮层。
 
 ```js
 const button = document.getElementById('maximize');
@@ -1688,12 +1683,12 @@ await fb2k.invoke('window.setMaxSize', { width: 1920, height: 1080 });
 | --- | --- | --- |
 | `enabled` | `boolean` | 回显 `enabled`。 |
 | `variant` | `string` | 实际使用的变体，`mica` 或 `mica-alt`。 |
-| `darkMode` | `boolean` | 回显 `darkMode`；传了才有。 |
+| `darkMode` | `boolean` | 回显请求中的 `darkMode`；未指定该参数时不返回。 |
 
 成功时 `success` 为 `true`；失败时返回 `{ success: false, error, code }`，`code` 见[错误码](../reference/errors.md)。
 <!-- api-schema:end -->
 
-只有 `mica-alt` 会选择备用变体；其余取值（包括无法识别的值）都会被**静默归一化**为 `mica` 而不报错。返回的 `variant` 是归一化后的请求值，不是屏幕上实际的效果：popup 不支持 Mica Alt、会被降级，所以对 popup 可能回 `variant: "mica-alt"` 而实际得到别的背景。`success` 反映材质是否真正应用成功——即使窗口有效，平台拒绝该效果时也可能为 `false`。
+仅 `mica-alt` 启用备用变体；其余取值（含未识别值）均归一化为 `mica`。返回的 `variant` 是归一化后的设定值，不代表屏幕上的实际效果：弹出窗口不支持 Mica Alt，会降级为其他背景，此时返回值仍可能为 `variant: "mica-alt"`。`success` 反映底层合成效果是否成功应用；即使窗口有效，平台拒绝该效果时也可能为 `false`。
 
 ```js
 await fb2k.invoke('window.setMica', { enabled: true, variant: 'mica-alt' });
@@ -1718,7 +1713,7 @@ await fb2k.invoke('window.setMica', { enabled: true, variant: 'mica-alt' });
 | --- | --- | --- |
 | `enabled` | `boolean` | 回显 `enabled`。 |
 | `variant` | `string` | 实际使用的变体，`mica` 或 `mica-alt`。 |
-| `darkMode` | `boolean` | 回显 `darkMode`；传了才有。 |
+| `darkMode` | `boolean` | 回显请求中的 `darkMode`；未指定该参数时不返回。 |
 
 成功时 `success` 为 `true`；失败时返回 `{ success: false, error, code }`，`code` 见[错误码](../reference/errors.md)。
 <!-- api-schema:end -->
@@ -1825,11 +1820,7 @@ await fb2k.invoke('window.setPosition', { x: 100, y: 100 });
 成功时 `success` 为 `true`；失败时返回 `{ success: false, error, code }`，`code` 见[错误码](../reference/errors.md)。
 <!-- api-schema:end -->
 
-所有窗口 shell 都支持运行时切换，包括完全无边框的 popup（`frame: false` 且 `transparent: true` 且无背景效果）：这类窗口会把整个非客户区收掉，故新增尺寸边框只改变命中测试，不改变外观。因此 `success: false` 表示 Win32 调用**真实失败**（样式未写入或帧刷新失败），而非「窗口形态不支持」；此时请求态不会被提交。
-
-::: warning 行为变更
-此前该调用无论来自哪个窗口都硬改主窗口，故从 popup 调用会改错窗口。
-:::
+所有窗口 Shell 均支持在运行时动态切换边框模式，包括完全无边框的弹出窗口（`frame: false`、`transparent: true` 且无背景效果）：该类窗口移除了整个非客户区，调整边框仅影响边缘命中测试，不改变视觉外观。`success: false` 表示底层 Win32 样式修改或帧刷新未成功执行，此时请求的状态不会提交。该方法始终作用于当前调用上下文窗口或由 `windowId` 显式指定的目标窗口。
 
 ```js
 await fb2k.invoke('window.setResizable', { resizable: false });

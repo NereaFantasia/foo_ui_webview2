@@ -7,9 +7,9 @@ Returns the portable configuration value as `{ success, key, value, found }`.
 | Parameter | Type | Description |
 | --- | --- | --- |
 | `key` | `string` | Configuration key |
-| `defaultValue` | `JsonValue` (optional) | Value to answer with when the key is not stored; sent as the host's `default`. Omitted from the call when `undefined` |
+| `defaultValue` | `JsonValue` (optional) | Value to return when the key is not stored; passed as host parameter `default`. Omitted from the call when `undefined` |
 
-A key that is not stored is not an error: `found` is `false` and `value` is `defaultValue`, or `null` when no default is given. Falsy defaults such as `0`, `false` and `''` are sent as given.
+A key that is not stored is not considered an error: `found` is `false` and `value` resolves to `defaultValue`, or `null` when no default is specified. Falsy defaults such as `0`, `false`, and `''` are sent as provided.
 
 ```javascript
 const result = await fb.config.get('theme');
@@ -41,7 +41,7 @@ await fb.config.remove('theme');
 
 ## getAll()
 
-Reads the whole store. Resolves with `{ items, configs, count }`: `items` maps every key to its value, `configs` is the same map under its older name, and `count` is the number of keys. Fails with `OPERATION_FAILED` when the store cannot be read.
+Reads the whole store. Resolves with `{ items, configs, count }`: `items` maps every key to its value, `configs` is the backward-compatible alias, and `count` is the number of keys. Fails with `OPERATION_FAILED` when the store cannot be read.
 
 ```javascript
 const res = await fb.config.getAll();
@@ -51,7 +51,7 @@ for (const [key, value] of Object.entries(res.items)) console.log(key, value);
 
 ## export()
 
-Reads the whole store both as a map and as JSON text. Resolves with `{ data, json, count }`: `data` is the map `getAll()` reports as `items`, and `json` is `data` serialized as one compact JSON text. Fails with `OPERATION_FAILED` when the store cannot be read.
+Reads the whole store as both a key-value map and serialized JSON text. Resolves with `{ data, json, count }`: `data` matches `items` from `getAll()`, and `json` is `data` serialized as compact JSON text. Fails with `OPERATION_FAILED` when the store cannot be read.
 
 ```javascript
 const res = await fb.config.export();
@@ -89,7 +89,7 @@ Resolves with `{ devices, count }`; each device carries `name`, `outputId`, `dev
 
 ### getOutputConfig()
 
-Reports the output settings in effect as `OutputConfig`: `outputId` and `deviceId` (GUIDs rendered as `{...}`), `bufferLength` in seconds, `bitDepth` in bits, `useDither`, `useFades`, and the optional `outputName` and `deviceName`. `outputName` is absent when no installed module has the `outputId`; `deviceName` is absent when the module does not name the device.
+Reports the active output configuration as `OutputConfig`: `outputId` and `deviceId` (GUID strings), `bufferLength` in seconds, `bitDepth` in bits, `useDither`, `useFades`, and optional `outputName` and `deviceName`. `outputName` is omitted when no installed module matches `outputId`; `deviceName` is omitted when the module does not provide a device name.
 
 ```javascript
 const out = await fb.config.getOutputConfig();
@@ -144,11 +144,11 @@ await fb.config.resetAdvancedConfig('{some-guid}');
 
 ### getPreferencesPages()
 
-Lists every preferences page and branch of foobar2000. Resolves with `{ pages, count }`, where `pages` is a `PreferencesPage[]` with all pages first and all branches after them. Each entry has `name`, `guid`, `parentGuid` (the page or branch it sits under) and `sortPriority` (lower sorts first, `0` sorts by name); a branch also has `isBranch: true`.
+Lists all preferences pages and branches in foobar2000. Resolves with `{ pages, count }`, where `pages` is a `PreferencesPage[]` array listing all regular pages first, followed by branches. Each entry includes `name`, `guid`, `parentGuid` (GUID of the parent page or branch), and `sortPriority` (lower numbers sort earlier; `0` sorts by name); branch entries include `isBranch: true`.
 
 ### getPreferencesStandardGuids()
 
-Reports the GUIDs of foobar2000's standard preferences pages, rendered as `{...}`: 17 keys such as `root`, `core`, `display`, `playback`, `output`, `mediaLibrary`, `advanced`, `tools`, `dsp` and `keyboardShortcuts`. A top-level page has one of them as its `parentGuid`.
+Reports the GUIDs of standard foobar2000 preferences pages (17 predefined keys, such as `root`, `core`, `display`, `playback`, `output`, `mediaLibrary`, `advanced`, `tools`, `dsp`, and `keyboardShortcuts`). A top-level page matches one of these as its `parentGuid`.
 
 ```javascript
 const [pagesRes, std] = await Promise.all([
@@ -167,7 +167,7 @@ Reports the media library's state as `LibraryStatus`: `enabled` (at least one li
 
 ### getLibraryFilePatterns()
 
-Reports where foobar2000 puts newly encoded, copied or moved files. Resolves with the optional `tracks` and `images`, each `{ directory, format }`: `directory` is the target folder and `format` the title formatting pattern for the subfolders and file name below it. A pattern that is not configured is absent, so with neither configured the result is `success: true` alone.
+Reports folder organization rules for newly converted, copied, or moved tracks. Resolves with optional `tracks` and `images` rules, each structured as `{ directory, format }`: `directory` is the destination folder, and `format` is the title formatting pattern for subdirectories and filenames. Unconfigured rules are omitted; when neither is configured, the result contains only `success: true`.
 
 ### showLibraryPreferences()
 
@@ -196,7 +196,7 @@ Reports the selected DSP preset as `{ index, name, isActive }`. When none is sel
 
 ### setActiveDspPreset(index)
 
-Selects a DSP preset by index, which replaces the whole active DSP chain with the preset's. Nothing selects "no preset" again afterwards.
+Selects a DSP preset by index, replacing the active DSP chain with the preset's chain. Selecting a preset cannot be undone to restore an unselected state.
 
 ```javascript
 const res = await fb.config.getDspPresets();
@@ -210,11 +210,11 @@ if (active.success && active.isActive) console.log(active.name);
 
 ### getCursorFollowPlayback() / setCursorFollowPlayback(enabled)
 
-Reads or writes foobar2000's "cursor follows playback" setting. The getter resolves with `{ enabled, value }`, where `value` is the older name of `enabled`; the setter resolves with the `enabled` it wrote. A change of the setting broadcasts `playback:cursorFollowChanged` with `{ enabled }`.
+Reads or sets foobar2000's "cursor follows playback" setting. The getter resolves with `{ enabled, value }` (`value` is the legacy alias of `enabled`); the setter resolves with the assigned `enabled`. Setting changes broadcast `playback:cursorFollowChanged` with `{ enabled }`.
 
 ### getPlaybackFollowCursor() / setPlaybackFollowCursor(enabled)
 
-Reads or writes foobar2000's "playback follows cursor" setting, with the same result shapes. A change of the setting broadcasts `playback:followCursorChanged` with `{ enabled }`.
+Reads or sets foobar2000's "playback follows cursor" setting, using the same return format. Setting changes broadcast `playback:followCursorChanged` with `{ enabled }`.
 
 ### getReplaygainMode() / setReplaygainMode(mode)
 

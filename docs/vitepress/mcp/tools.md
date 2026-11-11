@@ -48,11 +48,11 @@ Control playback: start, pause, stop, skip, seek, set or step the volume, mute, 
 | [`playback.random`](../api/playback.md#playback-random) | — | Start a random track of the active playlist. |
 | [`playback.playPath`](../api/playback.md#playback-playpath) | `path` | Append one file to the active playlist and play it; a playlist is created when there is none. |
 | [`playlist.playTrack`](../api/playlist.md#playlist-playtrack) | `playlist?`, `playlistGuid?`, `index`, `deferred?`, `muted?`, `expectedVersion?` | Play a row of a playlist, as double-clicking it does. |
-| [`playback.setPosition`](../api/playback.md#playback-setposition) | `position` | Seek within the current track, playing or paused. |
-| [`playback.setVolume`](../api/playback.md#playback-setvolume) | `volume` | Set the output volume as a percentage; values outside `0` to `100` are clamped. |
+| [`playback.setPosition`](../api/playback.md#playback-setposition) | `position` | Seek within the current track (playing or paused). |
+| [`playback.setVolume`](../api/playback.md#playback-setvolume) | `volume` | Set output volume as a percentage. |
 | [`playback.volumeUp`](../api/playback.md#playback-volumeup) | — | Raise the volume by one of the host's steps: one decibel, landing on a whole decibel. |
 | [`playback.volumeDown`](../api/playback.md#playback-volumedown) | — | Lower the volume by one of the host's steps: one decibel, landing on a whole decibel. |
-| [`playback.mute`](../api/playback.md#playback-mute) | `muted?` | Mute or unmute; a call that asks for the state already in effect does nothing. |
+| [`playback.mute`](../api/playback.md#playback-mute) | `muted?` | Mute or unmute; calls requesting the active state are ignored. |
 | [`playback.toggleMute`](../api/playback.md#playback-togglemute) | — | Flip the mute state and report the new one. |
 | [`playback.setPlaybackOrder`](../api/playback.md#playback-setplaybackorder) | `order?`, `name?` | Select a playback order by index or by name; exactly one of the two must be given. |
 | [`playback.setStopAfterCurrent`](../api/playback.md#playback-setstopaftercurrent) | `enabled` | Arm or disarm stopping after the current track. |
@@ -111,7 +111,7 @@ Change the tracks of a playlist: add files, folders or tracks, insert, remove, m
 | [`playlist.addPathsSequential`](../api/playlist.md#playlist-addpathssequential) | `playlist?`, `playlistGuid?`, `paths` | Append paths to a playlist in the given order, saving an undo point first; a path that expands to several tracks (a folder, a cue sheet) keeps its place. |
 | [`playlist.addHandles`](../api/playlist.md#playlist-addhandles) | `playlist?`, `playlistGuid?`, `handles` | Append tracks to a playlist, saving an undo point first. |
 | [`playlist.insertTracks`](../api/playlist.md#playlist-inserttracks) | `playlist?`, `playlistGuid?`, `position?`, `handles`, `expectedVersion?` | Insert tracks at a position of a playlist, saving an undo point first. |
-| [`playlist.replaceAllAndPlay`](../api/playlist.md#playlist-replaceallandplay) | `playlist?`, `playlistGuid?`, `paths`, `playIndex?`, `stopFirst?`, `autoPlay?` | Replace the whole content of a playlist and play it: stop playback, clear the playlist (saving an undo point), add the paths as `playlist.addPaths` does, make the playlist active and play or focus `playIndex`. |
+| [`playlist.replaceAllAndPlay`](../api/playlist.md#playlist-replaceallandplay) | `playlist?`, `playlistGuid?`, `paths`, `playIndex?`, `stopFirst?`, `autoPlay?` | Replace the whole content of a playlist and play it: stop playback, clear the playlist (saving an undo point), add the paths in the given order as `playlist.addPathsSequential` does, make the playlist active and play or focus `playIndex`. |
 | [`playlist.removeTracks`](../api/playlist.md#playlist-removetracks) | `playlist?`, `playlistGuid?`, `items`, `expectedVersion?` | Remove rows from a playlist, saving an undo point first. |
 | [`playlist.removeSelectedTracks`](../api/playlist.md#playlist-removeselectedtracks) | `playlist?`, `playlistGuid?` | Remove the selected rows from a playlist, saving an undo point first. |
 | [`playlist.clear`](../api/playlist.md#playlist-clear) | `playlist?`, `playlistGuid?` | Remove every track from a playlist, saving an undo point first. |

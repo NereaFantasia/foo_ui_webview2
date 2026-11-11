@@ -7,9 +7,9 @@
 | 参数 | 类型 | 说明 |
 | --- | --- | --- |
 | key | string | 配置键名 |
-| defaultValue | JsonValue（可选） | 键不存在时用来回答的值，作为宿主的 `default` 发出；为 `undefined` 时不发 |
+| defaultValue | JsonValue（可选） | 键不存在时返回的默认值，作为宿主参数 `default` 发送；为 `undefined` 时不传递 |
 
-> 键不存在不算错误：`found` 为 `false`，`value` 为 `defaultValue`，没给默认值时为 `null`。`0`、`false`、`''` 这类假值默认值照样发出。
+> 键不存在不视为调用失败：此时 `found` 为 `false`，`value` 返回 `defaultValue`；未指定默认值时返回 `null`。`0`、`false` 与 `''` 等假值（falsy）默认值均正常回传。
 
 ```javascript
 const result = await fb.config.get('theme');
@@ -42,7 +42,7 @@ await fb.config.remove('theme');
 
 ## getAll()
 
-读取整个存储。返回 `{ items, configs, count }`：`items` 是每个键及其值，`configs` 是同一个映射的旧名字，`count` 是键数。存储读不出来时以 `OPERATION_FAILED` 失败。
+读取所有配置项。返回 `{ items, configs, count }`：`items` 为键值映射表，`configs` 为向后兼容别名，`count` 为键总数。存储读取失败时返回 `OPERATION_FAILED`。
 
 ```javascript
 const res = await fb.config.getAll();
@@ -52,7 +52,7 @@ for (const [key, value] of Object.entries(res.items)) console.log(key, value);
 
 ## export()
 
-读取整个存储，同时给出映射与 JSON 文本。返回 `{ data, json, count }`：`data` 与 `getAll()` 的 `items` 是同一个映射，`json` 是把 `data` 序列化成的一段紧凑 JSON 文本。存储读不出来时以 `OPERATION_FAILED` 失败。
+读取所有配置项并返回对象映射与序列化 JSON 文本。返回 `{ data, json, count }`：`data` 等同于 `getAll()` 的 `items` 映射，`json` 为 `data` 序列化后的紧凑 JSON 文本。存储读取失败时返回 `OPERATION_FAILED`。
 
 ```javascript
 const res = await fb.config.export();
@@ -90,7 +90,7 @@ console.log(res.components.length);
 
 ### getOutputConfig()
 
-报告当前生效的输出设置 `OutputConfig`：`outputId` 与 `deviceId`（形如 `{...}` 的 GUID）、`bufferLength`（秒）、`bitDepth`（位）、`useDither`、`useFades`，以及可选的 `outputName`、`deviceName`。没有已安装的模块对应 `outputId` 时不带 `outputName`，模块不给设备命名时不带 `deviceName`。
+获取当前生效的输出配置 `OutputConfig`：`outputId` 与 `deviceId`（GUID 字符串）、`bufferLength`（秒）、`bitDepth`（位深度）、`useDither`、`useFades`，以及可选的 `outputName`、`deviceName`。若未安装对应 `outputId` 的输出插件则省略 `outputName`；若插件未为设备命名则省略 `deviceName`。
 
 ```javascript
 const out = await fb.config.getOutputConfig();
@@ -104,7 +104,7 @@ console.log(out.deviceName ?? out.deviceId, `${out.bufferLength * 1000} ms`);
 
 ### setOutputBuffer(ms)
 
-设置输出缓冲区大小。返回 `{success}`。
+设置输出缓冲区大小。传入数字时解析为毫秒。对象参数形式接受 `milliseconds` 或原生的 `bufferLength`（秒）；若两者同时传入，宿主优先采用 `milliseconds`。解析后的有效取值范围为 `0.05` 至 `2.0` 秒。返回 `{success}`。
 
 ```javascript
 const res = await fb.config.getOutputDevices();
@@ -144,11 +144,11 @@ await fb.config.resetAdvancedConfig('{some-guid}');
 
 ### getPreferencesPages()
 
-列出 foobar2000 的全部首选项页面与分支。返回 `{ pages, count }`，`pages` 是 `PreferencesPage[]`，先列所有页面、再列所有分支。每项有 `name`、`guid`、`parentGuid`（上级页面或分支的 GUID）与 `sortPriority`（越小越靠前，`0` 按名称排序）；分支另带 `isBranch: true`。
+列出 foobar2000 的全部首选项页面与分支。返回 `{ pages, count }`，其中 `pages` 为 `PreferencesPage[]` 数组，首部列出所有常规页面，尾部列出所有分支。每个条目包含 `name`、`guid`、`parentGuid`（所属上级页面或分支的 GUID）与 `sortPriority`（数值越小排序越靠前，`0` 表示按名称排序）；分支条目额外包含 `isBranch: true`。
 
 ### getPreferencesStandardGuids()
 
-报告 foobar2000 标准首选项页面的 GUID，形如 `{...}`，共 17 个键，例如 `root`、`core`、`display`、`playback`、`output`、`mediaLibrary`、`advanced`、`tools`、`dsp`、`keyboardShortcuts`。顶层页面的 `parentGuid` 是其中之一。
+获取 foobar2000 标准首选项页面的内置 GUID 集合（包含 17 个预置键，如 `root`、`core`、`display`、`playback`、`output`、`mediaLibrary`、`advanced`、`tools`、`dsp`、`keyboardShortcuts`）。顶层页面的 `parentGuid` 对应其中之一。
 
 ```javascript
 const [pagesRes, std] = await Promise.all([
@@ -167,7 +167,7 @@ const displayPages = pagesRes.pages.filter((p) => p.parentGuid === std.display);
 
 ### getLibraryFilePatterns()
 
-报告 foobar2000 把新编码、复制或移动的文件放到哪里。返回可选的 `tracks`（曲目）与 `images`（专辑图片），各为 `{ directory, format }`：`directory` 是目标文件夹，`format` 是其下子文件夹与文件名所用的标题格式化模式。没有配置的模式不出现，两者都没配置时结果只有 `success: true`。
+获取 foobar2000 针对新转码、复制或移动文件的路径归档规则。返回可选的 `tracks`（曲目）与 `images`（封面图片）规则，结构均为 `{ directory, format }`：`directory` 为目标基础目录，`format` 为其下子文件夹与文件名的标题格式化模式。未配置对应规则时字段缺省；两者均未配置时结果仅包含 `success: true`。
 
 ### showLibraryPreferences()
 
@@ -196,7 +196,7 @@ if (!status.enabled) {
 
 ### setActiveDspPreset(index)
 
-按索引选中一个 DSP 预设，用它整条替换当前 DSP 链。选中之后无法再回到「未选中」。
+按索引激活指定的 DSP 预设，使用该预设完整替换当前的活跃 DSP 链。选中预设后不支持直接恢复为“无预设”状态。
 
 ```javascript
 const res = await fb.config.getDspPresets();
@@ -210,15 +210,15 @@ if (active.success && active.isActive) console.log(active.name);
 
 ### getCursorFollowPlayback() / setCursorFollowPlayback(enabled)
 
-读写 foobar2000 的「光标跟随播放」设置。getter 返回 `{ enabled, value }`，`value` 是 `enabled` 的旧名字；setter 返回写入的 `enabled`。设置改变时广播 `playback:cursorFollowChanged`，载荷为 `{ enabled }`。
+读取或设置 foobar2000 的「光标跟随播放」配置。读取方法返回 `{ enabled, value }`（`value` 为 `enabled` 的兼容别名）；设置方法返回写入的 `enabled`。配置项变更时广播 `playback:cursorFollowChanged` 事件并携带 `{ enabled }`。
 
 ### getPlaybackFollowCursor() / setPlaybackFollowCursor(enabled)
 
-读写 foobar2000 的「播放跟随光标」设置，返回形状同上。设置改变时广播 `playback:followCursorChanged`，载荷为 `{ enabled }`。
+读取或设置 foobar2000 的「播放跟随光标」配置，返回值结构同上。配置项变更时广播 `playback:followCursorChanged` 事件并携带 `{ enabled }`。
 
 ### getReplaygainMode() / setReplaygainMode(mode)
 
-获取/设置 ReplayGain 模式。
+获取或设置 ReplayGain 模式。读取方法返回数值 `mode` 与兼容别名 `value`。设置方法接受 `0..3` 数值，或 `'none' | 'track' | 'album' | 'byPlaybackOrder' | 'auto'` 字符串枚举（其中 `'auto'` 解析为模式 3）。
 
 | 值 | 模式 |
 | --- | --- |

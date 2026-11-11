@@ -107,7 +107,7 @@ Track IDs are strings. Times are in seconds, dimensions in pixels, sample rates 
 
 ### Chapters
 
-foobar2000 plays each chapter of an MP4 or Matroska file as its own subsong, with playback position starting at 0 at chapter start. The `chapters` array lists entries in container order:
+foobar2000 plays each chapter of an MP4 or Matroska file as its own subsong, with playback position starting at 0 at chapter start. `chapters` lists them in the same order as the subsongs:
 
 - MP4 uses the QuickTime chapter track when present (following foobar2000 behavior) and Nero `chpl` otherwise. The text track carrying chapter titles is reported with `type: 'other'` rather than subtitles.
 - Matroska lists top-level chapters for each edition sequentially, including hidden and disabled entries; nested chapters are omitted. When multiple editions exist, `edition` identifies the owning edition index.

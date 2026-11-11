@@ -81,7 +81,7 @@ const runnable = res.stateKnown
 
 Signature: `fb.discovery.executeContextMenuCommand(options: DiscoveryExecuteContextMenuCommandParams): Promise<DiscoveryExecuteContextMenuCommandResponse>`
 
-Executes a context-menu command by `options.guid`. The command runs against the playing track, or the active playlist selection when nothing is playing; with neither, the call fails with `NO_ACTIVE_ITEM`.
+Executes a context-menu command by `options.guid` against the tracks `options.target` names. The default, `'auto'`, is the playing track, or the active playlist selection when nothing is playing. `'selection'` is the selection foobar2000's own context-menu shortcuts act on: the one the theme handed over through `selection`, or another element's. `'nowPlaying'` is the playing track only, `'playlistSelection'` the active playlist selection only. When the target holds no track, the call fails with `NO_ACTIVE_ITEM`.
 
 A `FORCE_OFF` command is refused rather than dispatched: the host never draws it, so running it would perform something the user could not have clicked. The refusal comes back as `success: false` with the code `NOT_SUPPORTED` and `hidden: true`; pass `{ force: true }` to dispatch anyway. `DEFAULT_OFF` commands (hidden unless Shift is held) are still invocable and are never refused.
 
@@ -98,7 +98,7 @@ if (cmd) await fb.discovery.executeContextMenuCommand({ guid: cmd.guid });
 
 Signature: `fb.discovery.executeContextMenuByPath(options: DiscoveryExecuteContextMenuByPathParams): Promise<DiscoveryExecuteContextMenuByPathResponse>`
 
-Executes a context-menu item by menu `path`, optionally for `trackPath`. Without `trackPath` the command runs against the playing track, or the active playlist selection when nothing is playing; with no target at all the call fails with `NO_ACTIVE_ITEM`. `trackPath` accepts a `|subsong:N` suffix; without one the file's first subsong is used.
+Executes a context-menu item by menu `path`, optionally for `trackPath`. Without `trackPath` the command runs against the tracks `target` names, as for `executeContextMenuCommand()`; with no track there the call fails with `NO_ACTIVE_ITEM`. Giving both `trackPath` and a `target` other than `'auto'` fails with `INVALID_PARAMS`. `trackPath` accepts a `|subsong:N` suffix; without one the file's first subsong is used.
 
 `path` is slash-separated, such as `Playback Statistics/Rating/5`. Each segment must match one menu label exactly after normalization: the mnemonic `&`, a trailing ellipsis, accelerator text, and ASCII case are ignored. Matching is never a substring test, so `Rating/1` cannot resolve to `Rating/10`. A path that matches several commands is refused with `INVALID_PARAMS` and a `candidates` list of full names instead of being guessed; one that matches none fails with `NOT_FOUND`. Use `executeContextMenuCommand()` with a GUID when you need a stable identifier.
 

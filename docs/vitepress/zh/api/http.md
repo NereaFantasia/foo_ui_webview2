@@ -10,7 +10,7 @@
 - 单次响应体上限 100MB，单次下载上限 500MB
 - 最大并发异步请求数 10（含异步下载）
 - TLS 连接失败时返回详细诊断信息
-- 可在高级设置中配置内网白名单
+- 可在 foobar2000 高级设置中启用相应选项，允许访问本机与局域网地址
 - 建议仅用于访问可信的外部 API
 
 :::
@@ -24,6 +24,18 @@
 ## 共享请求选项
 
 `http.get`、`http.post`、`http.put`、`http.delete`、`http.patch` 的参数相同，只是后四个多一个 `body`；`http.head` 没有 `responseType`，`http.download` 另有 `saveTo`，默认同步、超时 60000 毫秒。各方法的参数表见下文，下面两项需要额外说明。
+
+### HTTP 方法支持矩阵
+
+| 方法 | 请求体 body | 响应体 body | 默认超时 | 说明 |
+| --- | --- | --- | --- | --- |
+| `http.get` | 否 | 是 | 30000 ms | 标准 GET 请求 |
+| `http.post` | 是 | 是 | 30000 ms | 支持字符串或 JSON 对象/数组 |
+| `http.put` | 是 | 是 | 30000 ms | 替换目标资源 |
+| `http.delete` | 是（可选） | 是 | 30000 ms | 删除目标资源 |
+| `http.patch` | 是 | 是 | 30000 ms | 部分修改目标资源 |
+| `http.head` | 否 | 仅响应头 | 30000 ms | 无 `responseType`，可返回 `contentLength` |
+| `http.download` | 否 | 写入文件 | 60000 ms | 保存至 `saveTo` 路径，默认同步执行 |
 
 ### responseType 取值
 

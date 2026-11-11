@@ -17,7 +17,7 @@ Pages or build scripts can update these preferences programmatically via `fb.ui.
 
 ## Troubleshooting fallback to local templates {#if-the-old-theme-appears-instead}
 
-When foobar2000 fails to connect to the specified development server, it falls back to the active local template. Verify that the development server process is actively running and listening on the designated address (configuring `strictPort: true` in Vite prevents silent port drift). Once confirmed, press `Apply` again or restart foobar2000.
+When foobar2000 fails to connect to the specified development server, it falls back to the active local template. Verify that the development server process is actively running and listening on the designated address (with `strictPort: true`, Vite fails to start instead of moving to another port when the port is in use). Once confirmed, press `Apply` again or restart foobar2000.
 
 ## Open the developer tools
 

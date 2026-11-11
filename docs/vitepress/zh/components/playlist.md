@@ -20,7 +20,7 @@
 
 `tab` 上 `locked` 属性标识锁定的播放列表，`data-guid` 是该列表的 GUID。
 
-标签栏按 GUID 指定列表：标签画出来之后别的列表再增删，点击激活的仍是这个标签的列表；列表已被删掉的标签什么也不激活。`fb-playlist-select` 与 `fb-playlist-reorder` 在宿主完成之后才派发。
+标签栏通过 GUID 绑定播放列表：标签渲染后即使其他列表发生增删，点击对应标签仍激活最初关联的列表；若目标列表已被移除，点击时不产生激活行为。`fb-playlist-select` 与 `fb-playlist-reorder` 事件在宿主操作完成后派发。
 
 **事件：**
 
@@ -109,7 +109,7 @@ el.addEventListener('fb-header-context', e => {
 | `track-count` | string | — | 只读反映当前列表曲目总数 |
 | `selected-count` | string | — | 只读反映当前选中的曲目总数 |
 
-`play_count`、`first_played`、`last_played`、`added` 四列显示 foo_playcount 的字段，`rating` 列显示五颗可点击的星。要显示 [`fb.playlist.getAvailableColumns()`](../sdk/playlist.md#getavailablecolumns) 列出的其他列，把该列的 `pattern` 放进 `formats`，键用你自己取的列 ID，再把这个 ID 写进 `columns`。不要拿列的 `name` 当 ID：它是随 foobar2000 语言变化的显示文字。
+`play_count`、`first_played`、`last_played`、`added` 四列显示 foo_playcount 的字段，`rating` 列显示五颗可点击的星。若需展示 [`fb.playlist.getAvailableColumns()`](../sdk/playlist.md#getavailablecolumns) 列出的其他列，可将该列的 `pattern` 映射至自定义列 ID 并配置到 `formats`，再将该 ID 添加至 `columns`。列对象的 `name` 随 foobar2000 界面语言动态变化，不可作为稳定 ID 使用。
 
 ```html
 <fb-playlist-view columns="index,title,play_count,rating,mood"
@@ -120,7 +120,7 @@ el.addEventListener('fb-header-context', e => {
 
 `row` 上的状态属性（可用于 CSS 选择器）：`selected`、`focused`、`playing`。
 
-`playlist` 给 GUID 时，别的列表增删或重排，视图仍显示这个列表；它被删掉后视图变空。给序号时显示位于该位置的列表，列表增删或重排后重新查一次。不给时跟随活动列表，没有活动列表就什么也不显示。视图知道自己显示哪个列表之后，每次调用宿主都按 GUID 指定它，下面各事件的 detail 也以 `playlistGuid` 带上这个 GUID。
+若 `playlist` 设置为 GUID，当其他播放列表增删或重排时，视图仍保持锁定该列表；若该列表被移除，视图变为空白。若设置为索引序号，视图展示对应位置的列表，列表变动时重新定位索引。若未指定该属性，视图自动跟随当前活动播放列表。组件确定目标列表后，与宿主的后续交互及事件 `detail` 均统一使用 `playlistGuid` 寻址。
 
 **事件：**
 

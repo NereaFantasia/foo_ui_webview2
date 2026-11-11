@@ -4,7 +4,7 @@ The `file` namespace provides synchronous and asynchronous file system operation
 
 ## Path length
 
-foobar2000 does not opt in to Windows long paths, constraining the host to classic Win32 limits: an expanded path can have at most 259 characters, and a created folder at most 247. Synchronous methods reject longer paths with `OPERATION_FAILED` and `details.value: 206` (the Win32 `ERROR_FILENAME_EXCED_RANGE` code) rather than reporting them as missing. Atomic `file.write` also requires room in the target folder for its temporary file (`.~<process id>-<sequence>.tmp`). Batch operations (`file.copyAsync`, `file.moveAsync`, and `file.deleteAsync`) report paths exceeding this limit as `failed` with `reason: "path-too-long"`.
+foobar2000 does not opt in to Windows long paths, constraining the host to classic Win32 limits: an expanded path can have at most 259 characters, and a created folder at most 247. Synchronous methods reject longer paths with `OPERATION_FAILED` and `details.value: 206` (the Win32 `ERROR_FILENAME_EXCED_RANGE` code) rather than reporting them as missing. Atomic `file.write` also requires room in the target folder for its temporary file (`.~<process id>-<sequence>.tmp`). Batch operations (`file.copyAsync`, `file.moveAsync`, and `file.deleteAsync`) report paths exceeding this limit as `failed` with `reason: "path-too-long"`, including when a path inside a copied folder exceeds the limit.
 
 ## file
 
@@ -28,7 +28,7 @@ Stop an operation started by `file.copyAsync`, `file.moveAsync` or `file.deleteA
 
 `cancelled: false` indicates that the operation had already completed or did not exist (the two cases are intentionally indistinguishable). A cancelled copy or move aborts the active file and deletes its partial copy; a cancelled delete stops before the next entry. Already processed entries retain their outcomes, remaining entries are reported as `skipped` / `cancelled`, and the operation concludes with a final `file:opComplete` event carrying `cancelled: true`.
 
-Closing a **popup** window that initiated an operation cancels it automatically, as does quitting foobar2000. A panel host does not have an automatic cancellation hook: its operations run to completion unless stopped with `file.cancelOp`.
+Closing a **popup** window that initiated an operation cancels it automatically, as does quitting foobar2000. A panel host does not have an automatic cancellation hook: its operations run to completion unless stopped with `file.cancelOp`, and their events are delivered through the fallback described in [Async file operation events](#file-op-events).
 
 ```js
 const res = await fb2k.invoke('file.cancelOp', { operationId });
@@ -80,7 +80,7 @@ Start a cancellable batch copy on a worker thread and return a receipt at once. 
 
 | Field | Type | Description |
 | --- | --- | --- |
-| `operationId` | `string` | Id of the operation, starting with `fileop_`. The events of the operation carry it, and `file.cancelOp` takes it. |
+| `operationId` | `string` | Batch operation task identifier, prefixed with `fileop_`. Related lifecycle events carry this ID, and it can be passed to `file.cancelOp` to abort the operation. |
 | `totalCount` | `integer` | Number of entries accepted; the events report it as `total`. |
 
 `success` is `true` on success. On failure the response is `{ success: false, error, code }`; see [Error codes](../reference/errors.md) for `code`.
@@ -129,7 +129,7 @@ Start a cancellable batch delete, with the same receipt and events as `file.copy
 
 | Field | Type | Description |
 | --- | --- | --- |
-| `operationId` | `string` | Id of the operation, starting with `fileop_`. The events of the operation carry it, and `file.cancelOp` takes it. |
+| `operationId` | `string` | Batch operation task identifier, prefixed with `fileop_`. Related lifecycle events carry this ID, and it can be passed to `file.cancelOp` to abort the operation. |
 | `totalCount` | `integer` | Number of entries accepted; the events report it as `total`. |
 
 `success` is `true` on success. On failure the response is `{ success: false, error, code }`; see [Error codes](../reference/errors.md) for `code`.
@@ -302,13 +302,13 @@ Start a cancellable batch move on a worker thread, with the same receipt and eve
 
 | Field | Type | Description |
 | --- | --- | --- |
-| `operationId` | `string` | Id of the operation, starting with `fileop_`. The events of the operation carry it, and `file.cancelOp` takes it. |
+| `operationId` | `string` | Batch operation task identifier, prefixed with `fileop_`. Related lifecycle events carry this ID, and it can be passed to `file.cancelOp` to abort the operation. |
 | `totalCount` | `integer` | Number of entries accepted; the events report it as `total`. |
 
 `success` is `true` on success. On failure the response is `{ success: false, error, code }`; see [Error codes](../reference/errors.md) for `code`.
 <!-- api-schema:end -->
 
-The return value is a dispatch receipt; batch results arrive via `file:opProgress` and conclude with `file:opComplete`. Within a single volume, a move executes as an instant filesystem rename. Across volumes, the runtime copies data and then deletes the source; the entry reports `status: "ok"` with `reason: "cross-volume"` to indicate fallback overhead. Directories support cross-volume moves asynchronously, unlike synchronous `file.move`.
+The return value is a dispatch receipt; batch results arrive via `file:opProgress` and conclude with `file:opComplete`. Within a single volume, a move is a rename regardless of size. Across volumes, the runtime copies data and then deletes the source; the entry reports `status: "ok"` with `reason: "cross-volume"` to indicate fallback overhead. Directories support cross-volume moves asynchronously, unlike synchronous `file.move`.
 
 Unlike `file.copyAsync`, moving a directory onto an existing directory reports `skipped` with `reason: "already-exists"` rather than merging contents. Setting `overwrite: true` does not merge directories.
 
@@ -405,7 +405,7 @@ await fb2k.invoke('file.write', {
 });
 ```
 
-For binary writes, Base64 decoding occurs only when **both** conditions are met: `encoding` is `'binary'` and `content` starts with `base64:`. The prefix is a Bridge protocol marker stripped prior to decoding. Raw Base64 strings, `data:image/...;base64,...` Data URLs, and `fb2k://` URLs are not decoded; passing them as-is will write literal ASCII text rather than decoded bytes.
+For binary writes, Base64 decoding occurs only when **both** conditions are met: `encoding` is `'binary'` and `content` starts with `base64:`. The prefix is a Bridge protocol marker stripped prior to decoding. Raw Base64 strings, `data:image/...;base64,...` Data URLs, and `fb2k://` URLs are not decoded; such input is written as its literal text, and the call can still report `success: true`.
 
 ```js
 const binary = await fb2k.invoke('file.read', {
@@ -478,6 +478,6 @@ fb2k.on('file:opComplete', ({ operationId, successCount, cancelled }) => {
 ## File boundaries
 
 - File APIs expand `%profile%`, `%component%`, `%music%`, `%APPDATA%`, and `%TEMP%` before access. Each endpoint is validated against its registered `SecurityLevel` (`Read` for read endpoints, `FileWrite` for all `file.*` write endpoints); see the [Permissions reference](/reference/permissions). `file.write` creates missing parent directories, while `file.delete` defaults to the Recycle Bin.
-- Every `file.*` failure returns a `code` alongside `error`. A failure raised by the filesystem also carries `details.value` (the raw Win32 error number). Neither `error` nor `details` ever contains a file path.
+- Every `file.*` failure returns a `code` alongside `error`. Failures originating in the filesystem also carry `details.value` (the raw Win32 error code). Neither `error` nor `details` ever contains a file path.
 - `file.list` returns bare names in non-recursive mode and full paths in recursive mode. `file.getInfo` returns `exists: false` as a successful result when a target does not exist.
-- Async batch operations (`copyAsync`, `moveAsync`, and `deleteAsync`) return only a dispatch receipt; per-item outcomes appear solely in `file:opProgress` and `file:opComplete` payloads. Those events are delivered to the initiating window, which is why their `results` carry paths while general error envelopes and logs do not. Synchronous `file.copy`, `file.move`, and `file.delete` remain available for immediate operations.
+- Async batch operations (`copyAsync`, `moveAsync`, and `deleteAsync`) return a dispatch receipt; itemized results are delivered through `file:opProgress` and `file:opComplete` events targeted to the calling window. Event payloads include path references, whereas error envelopes and logs sanitize paths. Synchronous `file.copy`, `file.move`, and `file.delete` remain available for immediate operations.

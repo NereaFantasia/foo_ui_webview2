@@ -4,12 +4,12 @@
 
 ## 指定播放列表
 
-操作单个播放列表的 API 支持通过 `playlist`（从 0 开始的序号）或 `playlistGuid`（唯一标识）指定目标。两者互斥；同时传入将以 `INVALID_PARAMS` 失败。
+作用于单个播放列表的方法用 `playlist`（序号）或 `playlistGuid` 指定目标。两者只能传一个，同时传入以 `INVALID_PARAMS` 失败。
 
-- **序号（`playlist`）**：表示调用执行时列表所在的瞬时位置。列表增删或重排可能导致序号漂移。
-- **GUID（`playlistGuid`）**：在播放列表创建时分配并全局唯一。即使列表重命名或位置变动，GUID 始终跟随列表；目标不存在时以 `NOT_FOUND` 失败。
+- **序号（`playlist`）**：指宿主处理调用时位于该位置的播放列表。列表被删除或重排后，同一序号可能指向另一个列表，例如在列出播放列表的菜单打开期间。
+- **GUID（`playlistGuid`）**：始终对应同一个播放列表。用 GUID 发起的调用只作用于该列表；列表已删除时以 `NOT_FOUND` 失败。同名播放列表的 GUID 也各不相同。
 
-返回播放列表信息的方法（`getAll`、`getActive`、`getPlaying`、`create`、`duplicate`、`createAutoplaylist`）均携带 `guid`；按序号指明列表的结果另附 `playlistGuid`。`playlist:*` 事件在载荷中以 GUID 标识列表。跨命名空间接口（如 `library.addToPlaylist`、`queue.add`）同样支持传入 `playlistGuid`。
+`playlist.getAll`、`getActive`、`getPlaying`、`create`、`duplicate` 与 `createAutoplaylist` 以 `guid` 返回列表的 GUID。按序号指明列表的结果会另以 `playlistGuid` 附上 GUID；`playlist:*` 事件同样以 GUID 标识列表，字段名见各事件的载荷。`library.addToPlaylist`、`queue.add`、`queue.addPaths` 与 `artwork.getByPlaylistItem` 也接受这两个键，`queue.setContents` 与 `queue.insertNext` 的每个条目同样接受。`playlist.reorderPlaylists` 通过 `newOrderGuids` 以 GUID 指定新顺序。
 
 ```javascript
 const res = await fb2k.invoke('playlist.getAll');
@@ -72,11 +72,11 @@ const { count } = res;
 成功时 `success` 为 `true`；失败时返回 `{ success: false, error, code }`，`code` 见[错误码](../reference/errors.md)。
 <!-- api-schema:end -->
 
-::: warning Breaking Change (v1.1.18)
-`playlist.getAll` 不再返回 `duration` 字段（避免 N 个播放列表 × M 首曲目的全量加载开销）。如需获取单个播放列表的 duration，请使用 `playlist.getActive` 或 `playlist.getPlaying`。
+::: warning 字段省略说明
+`playlist.getAll` 不返回 `duration` 字段（避免 N 个播放列表 × M 首曲目的全量加载开销）。如需获取单个播放列表的 duration，请使用 `playlist.getActive` 或 `playlist.getPlaying`。
 :::
 
-::: tip v1.1.18+
+::: tip 自动播放列表标记
 `isAutoplaylist` 字段已内联到 `playlist.getAll` 返回值中，无需再逐个调用 `playlist.isAutoplaylist`。
 :::
 
@@ -287,7 +287,7 @@ await fb2k.invoke('playlist.rename', { playlist: 0, name: 'My Favorites' });
 | `start` | `integer` | 否 | 返回的第一行。不小于 `0`。默认 `0`。 |
 | `count` | `integer` | 否 | 最多返回的行数。不小于 `0`。默认 `100`。 |
 | `formats` | `Record<string, string>` | 否 | 额外的列，每列是一个 Title Formatting 模式，列名自定；每行（包括投影的行）在 `formats` 下带上它们的值。 |
-| `fields` | `string[]` | 否 | 每行除 `index` 外带的键；省略时为整行。可用的名字与 `library.query` 相同；未知的名字以 `INVALID_PARAMS` 失败，并列在 `details.unknownFields` 里。没有可选的 `albumId` 时省略该键，即使请求了它也是如此。不能为空。 |
+| `fields` | `string[]` | 否 | 每行除 `index` 外包含的字段；省略时返回整行。字段名称区分大小写，可用字段与 `library.query` 相同；未知字段名以 `INVALID_PARAMS` 失败并列入 `details.unknownFields`。若曲目无关联专辑标识，则不包含可选字段 `albumId`。不能为空。 |
 
 **返回值**
 
@@ -299,7 +299,7 @@ await fb2k.invoke('playlist.rename', { playlist: 0, name: 'My Favorites' });
 | `count` | `integer` | 返回的行数。 |
 | `total` | `integer` | 播放列表的行数；列表不存在时为 `0`。 |
 | `tracks` | `PlaylistTrackPartial[]` | 从 `start` 起的行：整行，或 `index` 加上 `fields` 要求的键。 |
-| `tracks[].handle` | `string` | 跨端点识别同一首曲目的键：`absolutePath`，`subsong` 不为 `0` 时带 `\|subsong:N` 后缀。同一首曲目在这些方法里得到同一个 handle；因为带后缀，它不是普通文件路径，接收路径的方法会各自说明是否接受它。 |
+| `tracks[].handle` | `string` | 跨端点曲目唯一标识：格式为 `absolutePath`，`subsong` 非 0 时追加 `\|subsong:N` 后缀。同一首曲目在所有方法中的 handle 相同。因包含后缀故不同于普通文件路径，各路径参数接口均单独说明是否接受此标识 |
 | `tracks[].path` | `string` | foobar2000 存储的路径：本地文件是 `file://`，相对 foobar2000 目录存储的路径（便携安装）是 `file-relative://`，网络流是 URL。不带子曲目后缀。 |
 | `tracks[].absolutePath` | `string` | 不带子曲目后缀的原生文件系统路径；网络流与 `path` 相同。 |
 | `tracks[].subsong` | `integer` | 解码器在文件内分配的子曲目标识，不一定是连续序号；整个文件和网络流都是 `0`。 |
@@ -307,9 +307,9 @@ await fb2k.invoke('playlist.rename', { playlist: 0, name: 'My Favorites' });
 | `tracks[].artist` | `string` | 全部 ARTIST 值用 `", "` 连接；没有标签时为空。 |
 | `tracks[].artists` | `string[]` | 全部 ARTIST 值，按标签顺序；没有标签时为空数组。 |
 | `tracks[].album` | `string` | 第一个 ALBUM 值；没有标签时为空。 |
-| `tracks[].albumId` | `string` | 原始专辑名或专辑艺术家含非法 UTF-8 时提供的不透明身份标识。此时用它匹配专辑行，不用显示名称；普通名称不带此字段。 |
+| `tracks[].albumId` | `string` | 原始专辑名或专辑艺术家含非法 UTF-8 时提供的不透明身份标识。出现此标识时优先据此匹配专辑行，避免依赖显示名称；标准名称不包含此字段 |
 | `tracks[].albumArtist` | `string` | 全部 ALBUM ARTIST 值用 `", "` 连接；没有标签时为空。 |
-| `tracks[].albumArtists` | `string[]` | 全部 ALBUM ARTIST 值，按标签顺序，`albumArtists.join(", ")` 等于 `albumArtist`；没有标签时为空数组。`library.getAlbums` 把有 `album` 的曲目归入名为 `album`、专辑艺术家为 `albumArtists[0]` 的专辑，本数组为空时取 `artists[0]`（两者都空时为 `""`）；这两个值就是该专辑行的 `name` 与 `albumArtist`。存在 `albumId` 时应改用它匹配，因为替换字符可能让不同原始名称显示相同。 |
+| `tracks[].albumArtists` | `string[]` | 按标签顺序排列的全部 ALBUM ARTIST 值，`albumArtists.join(", ")` 等于 `albumArtist`；无标签时为空数组。`library.getAlbums` 把有 `album` 的曲目归入名为 `album`、专辑艺术家为 `albumArtists[0]` 的专辑（本数组为空时回退至 `artists[0]`，两者都空时为 `""`）；这两个值即该专辑行的 `name` 与 `albumArtist`。存在 `albumId` 时优先按其匹配，避免替换字符导致显示名冲突 |
 | `tracks[].genre` | `string` | 全部 GENRE 值用 `", "` 连接；没有标签时为空。 |
 | `tracks[].date` | `string` | 第一个 DATE 值，按标签原样，如 `2019` 或 `2019-05-01`；没有标签时为空。 |
 | `tracks[].trackNumber` | `integer` | TRACKNUMBER 按整数读取；缺失或不是数字时为 `0`。 |
@@ -320,7 +320,7 @@ await fb2k.invoke('playlist.rename', { playlist: 0, name: 'My Favorites' });
 | `tracks[].sampleRate` | `integer` | 采样率，单位 Hz；未知时为 `0`。 |
 | `tracks[].channels` | `integer` | 声道数；未知时为 `0`。 |
 | `tracks[].codec` | `string` | 解码器报告的编码名，如 `FLAC`、`MP3`；未知时为空。 |
-| `tracks[].rating` | `integer` | 评分 0 到 5：`%rating%` 统计值（foo_playcount）在 1 到 5 之间时用它，否则用 RATING 标签并夹到该范围；两处都没有评分时为 `0`。 |
+| `tracks[].rating` | `integer` | 评分（0 到 5）。优先读取 1..5 范围内的 `%rating%` 统计字段（foo_playcount）；否则回退至 RATING 标签并钳位到 0..5；两处均未提供时为 0 |
 | `tracks[].index` | `integer` | 在播放列表中的行号，从 `0` 起。 |
 | `tracks[].composer` | `string` | 全部 COMPOSER 值用 `", "` 连接；没有标签时为空。 |
 | `tracks[].comment` | `string` | 第一个 COMMENT 值；没有标签时为空。 |
@@ -328,7 +328,7 @@ await fb2k.invoke('playlist.rename', { playlist: 0, name: 'My Favorites' });
 | `tracks[].firstPlayed` | `string` | foo_playcount 格式化的 `%first_played%`；为空时不出现，`playlist.getSelectedTracks` 的行与带 `fields` 的请求的行里也不出现。 |
 | `tracks[].lastPlayed` | `string` | foo_playcount 格式化的 `%last_played%`；为空时不出现，`playlist.getSelectedTracks` 的行与带 `fields` 的请求的行里也不出现。 |
 | `tracks[].added` | `string` | foo_playcount 格式化的 `%added%`；为空时不出现，`playlist.getSelectedTracks` 的行与带 `fields` 的请求的行里也不出现。 |
-| `tracks[].formats` | `Record<string, string>` | `playlist.getTracks` 的 `formats` 列，按给定的列名；只在传了 `formats` 时出现。 |
+| `tracks[].formats` | `Record<string, string>` | 命名 Title Formatting 求值结果字典；仅在调用显式指定 `formats` 参数时返回。 |
 | `contentVersion` | `string` | 各页的此值相同才能拼接。列表不存在时，应答里没有此字段。 |
 
 成功时 `success` 为 `true`；失败时返回 `{ success: false, error, code }`，`code` 见[错误码](../reference/errors.md)。
@@ -339,7 +339,7 @@ await fb2k.invoke('playlist.rename', { playlist: 0, name: 'My Favorites' });
 > `rating` 优先读取 `%rating%`，采用 `1` 至 `5` 的有效值。该值缺失或越界时，改读文件的 `RATING` 标签并限制到 `0` 至 `5`；两处都无评分时返回 `0`（未评分）。`rating.get` 使用相同规则：采用 `%rating%` 值时 `storage` 为 `'stats'`，其余情况为 `'file'`，包括文件标签不存在的情况。
 
 ::: tip 附加列（`formats` 参数）
-`formats` 把列名映射到 Title Formatting 模式；每行（包括投影的行）在自己的 `formats` 对象里带上求值结果：
+`formats` 参数将自定义列名映射到 Title Formatting 模式；各曲目（含字段投影曲目）在对应的 `formats` 对象中返回求值结果：
 
 ```javascript
 const result = await fb2k.invoke('playlist.getTracks', {
@@ -349,16 +349,16 @@ const result = await fb2k.invoke('playlist.getTracks', {
         codec: '%codec%'
     }
 });
-// 每行多出 formats: { myRating: '5', codec: 'FLAC' }
+// 返回对象中包含 formats: { myRating: '5', codec: 'FLAC' }
 ```
 :::
 
-::: tip
+::: tip 路径说明
 `absolutePath` 是本地文件系统路径，可直接用于 `artwork.getForTrack` 等 API。`path` 是 foobar2000 内部格式。
 :::
 
 ::: tip 字段投影（`fields` 参数）
-传入 `fields` 后只返回所选字段，`index` 始终保留。
+指定 `fields` 后仅返回所选字段，`index` 始终保留。
 
 ```javascript
 const page = await fb2k.invoke('playlist.getTracks', {
@@ -367,9 +367,9 @@ const page = await fb2k.invoke('playlist.getTracks', {
 });
 ```
 
-可用的名字是 `index`、`handle`、`title`、`artist`、`artists`、`album`、`albumArtist`、`albumArtists`、`albumId`、`genre`、`date`、`trackNumber`、`discNumber`、`duration`、`path`、`absolutePath`、`fileSize`、`bitrate`、`sampleRate`、`channels`、`codec`、`subsong` 与 `rating`。名字精确匹配且区分大小写，出现未知名整次调用以 `INVALID_PARAMS` 失败，并在 `details.unknownFields` 里列出它们——拼错不会静默丢字段。请求了可选的 `albumId`，但曲目没有该标识时，结果会省略这个键。`composer`、`comment` 与播放统计不接受，它们只随整行返回。
+可用字段包括 `index`、`handle`、`title`、`artist`、`artists`、`album`、`albumArtist`、`albumArtists`、`albumId`、`genre`、`date`、`trackNumber`、`discNumber`、`duration`、`path`、`absolutePath`、`fileSize`、`bitrate`、`sampleRate`、`channels`、`codec`、`subsong` 与 `rating`。字段名称精确匹配且区分大小写；传入未知字段时调用以 `INVALID_PARAMS` 失败，并在 `details.unknownFields` 中列出无效字段列表。曲目无有效 `albumId` 时省略该键。`composer`、`comment` 与播放统计字段不支持按字段投影，仅在全量返回时提供。
 
-不要 `handle`、`absolutePath` 与 `rating` 可以省掉逐行解析文件系统路径和求值 `%rating%`。投影时要播放统计，通过 `formats` 请求。
+排除 `handle`、`absolutePath` 与 `rating` 可免除逐行解析物理路径和计算 `%rating%` 的开销。如需在投影模式下获取播放统计，请通过 `formats` 请求。
 :::
 
 ### playlist.getGroupRuns
@@ -394,7 +394,7 @@ const page = await fb2k.invoke('playlist.getTracks', {
 | `runs[].start` | `integer` | 游程的第一行。 |
 | `runs[].count` | `integer` | 游程的行数。 |
 | `runs[].key` | `string` | 分组键，取游程第一行的写法。 |
-| `runs[].sub` | `PlaylistGroupSubRun[]` | 这一游程内的第二级游程；只在给了两个模式时出现。 |
+| `runs[].sub` | `PlaylistGroupSubRun[]` | 当前游程内的二级子分组游程；仅在指定两个分组模式时返回。 |
 | `runs[].sub[].start` | `integer` | 游程的第一行。 |
 | `runs[].sub[].count` | `integer` | 游程的行数。 |
 | `runs[].sub[].key` | `string` | 第二级分组键，取游程第一行的写法。 |
@@ -471,7 +471,7 @@ if (hits.success) {
 ### playlist.getTracksAt
 
 <!-- api-schema:begin playlist.getTracksAt -->
-按行号挑出的播放列表行，按传入顺序，例如 `playlist.getMatchingRows` 回答的那些不一定相邻的行。每行的形状与 `playlist.getTracks` 相同并带 `index`；超出最后一行的行号跳过，给了两次的行返回两次。播放列表索引超出最后一个、没有列表持有的 `playlistGuid`，以及两者都省略且没有活动播放列表时，与 `playlist.getTracks` 一样回答空结果。
+按行号数组获取播放列表曲目，保持传入顺序，例如 `playlist.getMatchingRows` 返回的、不一定相邻的行。每行格式与 `playlist.getTracks` 相同并包含 `index` 字段；超出有效范围的行号将被忽略，重复指定的行号重复返回。若播放列表索引超出范围、指定的 `playlistGuid` 不存在，或未指定列表且当前无活动列表，均返回空结果。
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
@@ -490,7 +490,7 @@ if (hits.success) {
 | `total` | `integer` | 播放列表的行数；列表不存在时为 `0`。 |
 | `count` | `integer` | 返回的行数。 |
 | `tracks` | `PlaylistTrackPartial[]` | 按请求顺序排列的行，超出最后一行的已跳过。 |
-| `tracks[].handle` | `string` | 跨端点识别同一首曲目的键：`absolutePath`，`subsong` 不为 `0` 时带 `\|subsong:N` 后缀。同一首曲目在这些方法里得到同一个 handle；因为带后缀，它不是普通文件路径，接收路径的方法会各自说明是否接受它。 |
+| `tracks[].handle` | `string` | 跨端点曲目唯一标识：格式为 `absolutePath`，`subsong` 非 0 时追加 `\|subsong:N` 后缀。同一首曲目在所有方法中的 handle 相同。因包含后缀故不同于普通文件路径，各路径参数接口均单独说明是否接受此标识 |
 | `tracks[].path` | `string` | foobar2000 存储的路径：本地文件是 `file://`，相对 foobar2000 目录存储的路径（便携安装）是 `file-relative://`，网络流是 URL。不带子曲目后缀。 |
 | `tracks[].absolutePath` | `string` | 不带子曲目后缀的原生文件系统路径；网络流与 `path` 相同。 |
 | `tracks[].subsong` | `integer` | 解码器在文件内分配的子曲目标识，不一定是连续序号；整个文件和网络流都是 `0`。 |
@@ -498,9 +498,9 @@ if (hits.success) {
 | `tracks[].artist` | `string` | 全部 ARTIST 值用 `", "` 连接；没有标签时为空。 |
 | `tracks[].artists` | `string[]` | 全部 ARTIST 值，按标签顺序；没有标签时为空数组。 |
 | `tracks[].album` | `string` | 第一个 ALBUM 值；没有标签时为空。 |
-| `tracks[].albumId` | `string` | 原始专辑名或专辑艺术家含非法 UTF-8 时提供的不透明身份标识。此时用它匹配专辑行，不用显示名称；普通名称不带此字段。 |
+| `tracks[].albumId` | `string` | 原始专辑名或专辑艺术家含非法 UTF-8 时提供的不透明身份标识。出现此标识时优先据此匹配专辑行，避免依赖显示名称；标准名称不包含此字段 |
 | `tracks[].albumArtist` | `string` | 全部 ALBUM ARTIST 值用 `", "` 连接；没有标签时为空。 |
-| `tracks[].albumArtists` | `string[]` | 全部 ALBUM ARTIST 值，按标签顺序，`albumArtists.join(", ")` 等于 `albumArtist`；没有标签时为空数组。`library.getAlbums` 把有 `album` 的曲目归入名为 `album`、专辑艺术家为 `albumArtists[0]` 的专辑，本数组为空时取 `artists[0]`（两者都空时为 `""`）；这两个值就是该专辑行的 `name` 与 `albumArtist`。存在 `albumId` 时应改用它匹配，因为替换字符可能让不同原始名称显示相同。 |
+| `tracks[].albumArtists` | `string[]` | 按标签顺序排列的全部 ALBUM ARTIST 值，`albumArtists.join(", ")` 等于 `albumArtist`；无标签时为空数组。`library.getAlbums` 把有 `album` 的曲目归入名为 `album`、专辑艺术家为 `albumArtists[0]` 的专辑（本数组为空时回退至 `artists[0]`，两者都空时为 `""`）；这两个值即该专辑行的 `name` 与 `albumArtist`。存在 `albumId` 时优先按其匹配，避免替换字符导致显示名冲突 |
 | `tracks[].genre` | `string` | 全部 GENRE 值用 `", "` 连接；没有标签时为空。 |
 | `tracks[].date` | `string` | 第一个 DATE 值，按标签原样，如 `2019` 或 `2019-05-01`；没有标签时为空。 |
 | `tracks[].trackNumber` | `integer` | TRACKNUMBER 按整数读取；缺失或不是数字时为 `0`。 |
@@ -511,7 +511,7 @@ if (hits.success) {
 | `tracks[].sampleRate` | `integer` | 采样率，单位 Hz；未知时为 `0`。 |
 | `tracks[].channels` | `integer` | 声道数；未知时为 `0`。 |
 | `tracks[].codec` | `string` | 解码器报告的编码名，如 `FLAC`、`MP3`；未知时为空。 |
-| `tracks[].rating` | `integer` | 评分 0 到 5：`%rating%` 统计值（foo_playcount）在 1 到 5 之间时用它，否则用 RATING 标签并夹到该范围；两处都没有评分时为 `0`。 |
+| `tracks[].rating` | `integer` | 评分（0 到 5）。优先读取 1..5 范围内的 `%rating%` 统计字段（foo_playcount）；否则回退至 RATING 标签并钳位到 0..5；两处均未提供时为 0 |
 | `tracks[].index` | `integer` | 在播放列表中的行号，从 `0` 起。 |
 | `tracks[].composer` | `string` | 全部 COMPOSER 值用 `", "` 连接；没有标签时为空。 |
 | `tracks[].comment` | `string` | 第一个 COMMENT 值；没有标签时为空。 |
@@ -519,7 +519,7 @@ if (hits.success) {
 | `tracks[].firstPlayed` | `string` | foo_playcount 格式化的 `%first_played%`；为空时不出现，`playlist.getSelectedTracks` 的行与带 `fields` 的请求的行里也不出现。 |
 | `tracks[].lastPlayed` | `string` | foo_playcount 格式化的 `%last_played%`；为空时不出现，`playlist.getSelectedTracks` 的行与带 `fields` 的请求的行里也不出现。 |
 | `tracks[].added` | `string` | foo_playcount 格式化的 `%added%`；为空时不出现，`playlist.getSelectedTracks` 的行与带 `fields` 的请求的行里也不出现。 |
-| `tracks[].formats` | `Record<string, string>` | `playlist.getTracks` 的 `formats` 列，按给定的列名；只在传了 `formats` 时出现。 |
+| `tracks[].formats` | `Record<string, string>` | 命名 Title Formatting 求值结果字典；仅在调用显式指定 `formats` 参数时返回。 |
 | `contentVersion` | `string` | 列表仍是此版本时，行号才有效。列表不存在时，应答里没有此字段。 |
 
 成功时 `success` 为 `true`；失败时返回 `{ success: false, error, code }`，`code` 见[错误码](../reference/errors.md)。
@@ -528,7 +528,7 @@ if (hits.success) {
 ### playlist.playTrack
 
 <!-- api-schema:begin playlist.playTrack -->
-播放播放列表中的一行，与双击它相同。超出最后一行的行号以 `INVALID_INDEX` 失败。给了 `deferred` 时，开始播放前会再比对一次 `expectedVersion`；那时行已变过就不播放。
+播放指定索引的播放列表曲目，效果与双击该行相同。索引超出范围以 `INVALID_INDEX` 失败。若传入 `deferred: true`，实际起播前将校验列表 `contentVersion` 与 `expectedVersion` 是否一致；若列表内容已变更则取消起播。
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
@@ -590,13 +590,13 @@ await fb2k.invoke('playlist.playTrack', { playlist: 0, index: 0, deferred: true 
 ### playlist.moveTracks
 
 <!-- api-schema:begin playlist.moveTracks -->
-把播放列表中选中的行移动 `delta` 个位置，事先保存撤销点。给了 `items` 时先把选中换成这些行，调用方原有的选中随之丢失。已上锁的列表以 `LOCKED` 失败。
+将播放列表中选中的曲目平移 `delta` 个位置，操作前自动保存撤销历史。若指定 `items`，移动前先用这些行替换现有选区，调用方原有的选区随之丢失。若目标列表已锁定，以 `LOCKED` 失败。
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
 | `playlist` | `integer` | 否 | 播放列表的索引；省略时为活动播放列表。超出最后一个播放列表的索引以 `INVALID_INDEX` 失败；省略且没有活动播放列表时以 `NO_ACTIVE_ITEM` 失败。不小于 `0`。 |
 | `playlistGuid` | `string` | 否 | 播放列表的持久唯一标识（带花括号 GUID，大小写均可）。用于替代易变序号。与序号互斥，同时传入或格式非法以 `INVALID_PARAMS` 失败。列表不存在时以 `NOT_FOUND` 失败，不回退至其他列表。格式非法或列表不存在时，错误详情均带回 `details.playlistGuid`。 |
-| `items` | `integer[]` | 否 | 要移动的行，先用它们替换当前选中。省略或为空时移动当前选中的行。每一项不小于 `0`。 |
+| `items` | `integer[]` | 否 | 待移动的目标行索引数组；指定时先覆盖当前选中项再执行位移，省略或为空数组时直接移动当前选中的行每一项不小于 `0`。 |
 | `delta` | `integer` | 是 | 移动的位置数：负数向上，正数向下。 |
 | `expectedVersion` | `string` | 否 | 预期内容版本，用于乐观并发控制。版本不匹配时不执行变更并以 `STALE_TARGET` 失败（`details.current` 返回当前最新版本）。省略时不校验。 |
 
@@ -922,7 +922,7 @@ if (info.isAutoplaylist) console.log(info.source, info.keepSorted);
 ### playlist.getAutoplaylistQuery
 
 <!-- api-schema:begin playlist.getAutoplaylistQuery -->
-描述播放列表的自动列表状态，不包含编辑器能力字段。foobar2000 不公开自动播放列表的查询语句，所以 `query` 总是 `null`。
+描述播放列表的自动列表状态（不含编辑器能力字段），并读出由 foobar2000 内置 query/sort 客户端驱动的列表的查询与排序。读取不打开界面、不改动列表，每次调用都反映客户端的当前状态。其他提供者（第三方、本组件托管、仅有锁）的列表，以及配置无法解码的列表，`query` 与 `sort` 都是 `null`，`note` 说明原因；托管列表用 `getAutoplaylistConfig` 读取。
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
@@ -933,13 +933,14 @@ if (info.isAutoplaylist) console.log(info.source, info.keepSorted);
 
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
-| `isAutoplaylist` | `boolean` | 播放列表是否为自动播放列表；`keepSorted`、`source`、`note` 与 `lockName` 只在它是时出现。 |
+| `isAutoplaylist` | `boolean` | 指示播放列表是否为自动播放列表；`keepSorted`、`source`、`note` 与 `lockName` 仅当此值为 `true` 时返回。 |
 | `playlist` | `integer` | 播放列表的索引。 |
 | `playlistGuid` | `string` | 播放列表的唯一标识，格式为 `{XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX}`。后续可作为 `playlistGuid` 稳定引用该列表。 |
-| `query` | `string \| null` | 总是 `null`：foobar2000 不公开查询语句。 |
+| `query` | `string \| null` | 列表的查询语句，从 foobar2000 内置 query/sort 客户端读出。提供者是其他类型、配置无法解码，或播放列表不是自动播放列表时为 `null`；自动播放列表的原因见 `note`。 |
+| `sort` | `string \| null` | 独立的排序表达式，没有设置时为空串。与 `query` 同时为 `null`。早于本字段的宿主不返回它，应先判断 `query`。 |
 | `keepSorted` | `boolean` | manager 管理的自动列表是否保持排序。`source:'dui'` 的 `false` 是不可读锁配置的占位值。 |
 | `source` | `"sdk" \| "dui"` | `sdk` 表示 autoplaylist manager 路径，也包括第三方 client；`dui` 表示既有锁名启发式识别。两者都不表示当前界面类型或编辑器能力。 |
-| `note` | `string` | 说明查询语句不可得。 |
+| `note` | `string` | 自动播放列表的 `query` 为 `null` 的原因：提供者不支持读取、配置无法解析，或列表由本组件托管（改用 `getAutoplaylistConfig`）。读到 `query` 时不出现。 |
 | `lockName` | `string` | 播放列表的锁的名字，`source` 为 `dui` 时出现。 |
 
 成功时 `success` 为 `true`；失败时返回 `{ success: false, error, code }`，`code` 见[错误码](../reference/errors.md)。
@@ -947,7 +948,8 @@ if (info.isAutoplaylist) console.log(info.source, info.keepSorted);
 
 ```js
 const q = await fb2k.invoke('playlist.getAutoplaylistQuery', { playlist: 0 });
-// 即便 q.isAutoplaylist 为 true，q.query 仍为 null
+// 由内置 query/sort 客户端驱动的列表，q.query 与 q.sort 是字符串；
+// 其他情况为 null，原因见 q.note
 ```
 
 
@@ -1091,7 +1093,7 @@ const { isLocked } = res;
 | `tracks[].firstPlayed` | `string` | foo_playcount 格式化的 `%first_played%`；为空时不出现，`playlist.getSelectedTracks` 的行与带 `fields` 的请求的行里也不出现。 |
 | `tracks[].lastPlayed` | `string` | foo_playcount 格式化的 `%last_played%`；为空时不出现，`playlist.getSelectedTracks` 的行与带 `fields` 的请求的行里也不出现。 |
 | `tracks[].added` | `string` | foo_playcount 格式化的 `%added%`；为空时不出现，`playlist.getSelectedTracks` 的行与带 `fields` 的请求的行里也不出现。 |
-| `tracks[].formats` | `Record<string, string>` | `playlist.getTracks` 的 `formats` 列，按给定的列名；只在传了 `formats` 时出现。 |
+| `tracks[].formats` | `Record<string, string>` | 命名 Title Formatting 求值结果字典；仅在调用显式指定 `formats` 参数时返回。 |
 | `count` | `integer` | 返回的行数。 |
 | `contentVersion` | `string` | 列表仍是此版本时，`tracks` 中的行号才有效。 |
 
@@ -1332,14 +1334,14 @@ await fb2k.invoke('playlist.reorderPlaylists', { newOrder: [2, 0, 1] });
 ### playlist.replaceAllAndPlay
 
 <!-- api-schema:begin playlist.replaceAllAndPlay -->
-替换播放列表的全部内容并播放：停止播放，清空列表（保存撤销点），按 `playlist.addPaths` 的方式加入路径，把列表设为活动列表，再播放或聚焦 `playIndex`。一首都没加上时以 `NOT_FOUND` 失败，列表保持为空。已上锁的列表在任何改动之前以 `LOCKED` 失败。路径在清空之后解析，处理同 `playlist.addPaths`：期间被挪动的列表照样被填充和播放；期间被删掉时以 `OPERATION_FAILED` 失败；期间被上锁时以 `LOCKED` 失败，列表保持为空。
+替换播放列表的全部内容并播放：停止播放，清空列表（保存撤销点），像 `playlist.addPathsSequential` 那样按传入顺序加入路径，把列表设为活动列表，再播放或聚焦 `playIndex`。与 `playlist.addPaths` 不同，重复项保留，也不按用户设置的新增项顺序排序。超过 2048 个字符的项与解析不出任何曲目的项跳过。一首都没加上时以 `NOT_FOUND` 失败，列表保持为空。已上锁的列表在任何改动之前以 `LOCKED` 失败。路径在清空之后解析，处理同 `playlist.addPaths`：期间被挪动的列表照样被填充和播放；期间被删掉时以 `OPERATION_FAILED` 失败；期间被上锁时以 `LOCKED` 失败，列表保持为空。
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
 | `playlist` | `integer` | 否 | 播放列表的索引；省略时为活动播放列表。超出最后一个播放列表的索引以 `INVALID_INDEX` 失败；省略且没有活动播放列表时以 `NO_ACTIVE_ITEM` 失败。不小于 `0`。 |
 | `playlistGuid` | `string` | 否 | 播放列表的持久唯一标识（带花括号 GUID，大小写均可）。用于替代易变序号。与序号互斥，同时传入或格式非法以 `INVALID_PARAMS` 失败。列表不存在时以 `NOT_FOUND` 失败，不回退至其他列表。格式非法或列表不存在时，错误详情均带回 `details.playlistGuid`。 |
 | `paths` | `string[]` | 是 | 新的内容：文件、文件夹或 URL。不能为空。 |
-| `playIndex` | `integer` | 否 | 要播放的行，`autoPlay` 为 `false` 时是要聚焦的行；超出最后一行时取第一行。各行不保持 `paths` 的顺序，所以它指的是位置，而不是传入的某个路径。不小于 `0`。默认 `0`。 |
+| `playIndex` | `integer` | 否 | 要播放的行，`autoPlay` 为 `false` 时是要聚焦的行；超出最后一行时取第一行。各行按 `paths` 的顺序排列：每条路径都只对应一首时，它就是要播放的那条路径的下标。展开成多首曲目的路径（文件夹、cue）占相应的多行，被跳过的路径不占行。不小于 `0`。默认 `0`。 |
 | `stopFirst` | `boolean` | 否 | 正在播放时先停止播放。默认 `true`。 |
 | `autoPlay` | `boolean` | 否 | 播放 `playIndex`；为 `false` 时只聚焦它。默认 `true`。 |
 
@@ -1365,7 +1367,7 @@ await fb2k.invoke('playlist.replaceAllAndPlay', { paths: ['C:\\Music\\song.flac'
 ### playlist.reverse
 
 <!-- api-schema:begin playlist.reverse -->
-把播放列表的曲目顺序倒过来，事先保存撤销点。已上锁的列表以 `LOCKED` 失败。
+反转播放列表中的曲目顺序，操作前自动保存撤销历史。若目标列表已锁定，以 `LOCKED` 失败。
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
@@ -1481,7 +1483,7 @@ await fb2k.invoke('playlist.shuffle', { playlist: 0 });
 | `playlist` | `integer` | 否 | 播放列表的索引；省略时为活动播放列表。超出最后一个播放列表的索引以 `INVALID_INDEX` 失败；省略且没有活动播放列表时以 `NO_ACTIVE_ITEM` 失败。不小于 `0`。 |
 | `playlistGuid` | `string` | 否 | 播放列表的持久唯一标识（带花括号 GUID，大小写均可）。用于替代易变序号。与序号互斥，同时传入或格式非法以 `INVALID_PARAMS` 失败。列表不存在时以 `NOT_FOUND` 失败，不回退至其他列表。格式非法或列表不存在时，错误详情均带回 `details.playlistGuid`。 |
 | `pattern` | `string` | 否 | 排序依据，Title Formatting 模式。默认 `"%title%"`。 |
-| `descending` | `boolean` | 否 | 排序后把整个播放列表倒过来。倒序覆盖全部曲目，即使设了 `selectedOnly`，未选中的也一样。默认 `false`。 |
+| `descending` | `boolean` | 否 | 排序完成后反转曲目顺序。反转作用于播放列表中全部曲目；即使指定了 `selectedOnly`，未选中曲目同样参与反转。默认 `false`。 |
 | `selectedOnly` | `boolean` | 否 | 只在选中的曲目之间排序，其余曲目位置不变。默认 `false`。 |
 
 **返回值**
@@ -1534,7 +1536,7 @@ await fb2k.invoke('playlist.undo', { playlist: 0 });
 | `playlist:defaultFormatChanged` | 默认播放列表格式变化后。 | `{}` |
 | `playlist:addComplete` | 异步路径添加操作完成后。 | `{ operationId, success, addedCount, totalCount }` |
 
-当 foobar2000 回调没有具体的前一个或后一个索引时，`from`、`to`、`oldIndex` 与 `newIndex` 可以为 `-1`。
+当底层 foobar2000 回调未提供具体索引时，`from`、`to`、`oldIndex` 与 `newIndex` 回退为 `-1`。
 ## playlist.createManagedAutoplaylist
 
 <!-- api-schema:begin playlist.createManagedAutoplaylist -->

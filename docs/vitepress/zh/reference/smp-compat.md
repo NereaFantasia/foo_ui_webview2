@@ -56,7 +56,7 @@ plman.ActivePlaylist = 2;
 - SMP 脚本的同步读取语义得以保留，`fb.IsPlaying`、`plman.PlaylistCount` 等立即返回。
 - 适合高频 UI 渲染场景，无需每帧进行异步 `await`。
 - setter 采用即时更新本地缓存 + 异步通知后端的机制，使赋值后立即重新读取能够得到预期值。
-- 无死锁风险：依托 Chromium 消息循环与事件驱动机制，与底层 Bridge 共享安全架构。
+- 无死锁风险：依托 Chromium 消息循环与事件驱动机制，与底层 Bridge 共享同一通信架构。
 - 无额外越权面：所有底层调用统一由 BridgeCore 接入并经历同等权限检查。
 
 ### 风险与注意事项

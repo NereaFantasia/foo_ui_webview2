@@ -17,12 +17,10 @@ Windows 把拖入的文件列表交给原生窗口而非页面，浏览器引擎
 ## 接受放下
 
 页面按 HTML5 的方式接受放下：在接收放下的元素上，`dragover` 里调
-`preventDefault()`。没有处理函数这样做的地方，宿主替页面拒收：光标显示禁止，松手
-什么也不放下，也不发 `dnd:drop`，浏览器也不会自己打开拖进来的文件。文本框保留默认
+`preventDefault()`。没有处理函数这样做的地方，宿主替页面拒收：光标显示禁止，松手时拒绝放置操作，不派发 `dnd:drop` 事件，并阻止浏览器默认打开拖入的文件。文本框保留默认
 的文本放下。
 
-拖动进入窗口后的头半秒，页面还没答复，光标先显示复制，免得刚进来时闪成禁止；这段
-时间里松手的放下照常送达。之后光标随指针移动跟着页面的答复变。
+拖动进入窗口的前 500 毫秒内，在页面响应前光标默认显示复制样式以避免瞬间闪烁为禁止图标；此时间窗内触发的放置操作仍会正常派发。随后光标样式将根据页面的事件响应实时更新。
 
 ```javascript
 document.getElementById('playlist')?.addEventListener('dragover', (event) => {
@@ -96,9 +94,7 @@ fb.on('dnd:drop', (data) => {
 
 ### 拖动的来源
 
-`dnd:enter`、`dnd:drop` 与 `getPathsAsync` 里的 `source` 区分「页面自己拖出去的」和
-「从外面拖进来的文件」。页面已经用 HTML5 事件处理了自己的拖动时，可以据此忽略宿主
-送来的同一批文件：
+`dnd:enter`、`dnd:drop` 及 `getPathsAsync` 返回的 `source` 区分当前窗口拖出项与外部拖入文件。若页面已通过 HTML5 原生事件处理了内部拖放，可据此忽略宿主派发的重复文件路径：
 
 | 值 | 拖动从哪里开始 |
 | --- | --- |
@@ -106,8 +102,7 @@ fb.on('dnd:drop', (data) => {
 | `'other-window'` | 同一个 foobar2000 的另一个窗口：主窗口或 popup |
 | `'external'` | 其余地方：资源管理器、别的程序、另一个 foobar2000 进程，或 Default UI / Columns UI 面板 |
 
-宿主给它承载的窗口里开始的每次拖动加一个标记，拖动进入窗口时再读回来。任何程序都能
-仿造这个标记，所以 `source` 只用来决定怎样处理放下，不要当作安全检查。
+宿主为所承载窗口发起的拖放操作附加内部标记，并在进入目标窗口时读取校验。由于外部程序可构造类似标记，`source` 仅用于辅助判定放置逻辑，不可作为安全鉴权边界。
 
 ```javascript
 fb.on('dnd:drop', ({ source, paths }) => {
@@ -122,7 +117,7 @@ fb.on('dnd:drop', ({ source, paths }) => {
 
 同步读取快照，因此仅为尽力而为。以下情况返回空数组：无活动会话、拖放未携带
 文件列表、origin 不被信任、宿主尚未发布会话——快速拖放可能在发布完成前就抵达
-页面的 `drop` 处理函数。请把它留给乐观 UI，真实数据源用 `getPathsAsync`。
+页面的 `drop` 处理函数。该方法建议仅用于乐观 UI 预显，实际业务数据请使用 `getPathsAsync`。
 
 ```javascript
 const optimistic = fb.dnd.getPaths();
@@ -146,12 +141,11 @@ element.addEventListener('dragover', (event) => {
 
 ## 快捷方式目标
 
-拖入快捷方式时，列表里给出的是 `.lnk` 文件本身，foobar2000 不认识它。因此上面
-每一条路径来源都配了一个平行数组：`dnd:enter` / `dnd:drop` 载荷与
+拖入快捷方式时，列表里给出的是 `.lnk` 文件本身，foobar2000 无法直接播放该文件。因此上述
+每个路径来源均提供对应的解析目标数组：`dnd:enter` / `dnd:drop` 载荷与
 `getPathsAsync` 上的 `resolvedPaths`，以及读取快照的 `getResolvedPaths()`。
 
-`paths` **不做任何改写**。它与 `DataTransfer.files` 的下标对应是固定契约，所以
-目标是**并列**在原条目旁边，而非取代它——用哪一个由页面自己决定。
+`paths` **不做任何改写**。其与 `DataTransfer.files` 的下标保持严格一一对应，解析目标与原路径并行提供而非就地替换，由前端业务逻辑按需选用。
 
 ### getResolvedPaths()
 
@@ -169,15 +163,10 @@ element.addEventListener('dragover', (event) => {
 以上每一种情况都用 `null`，**绝不会是空字符串**，因此判断真值即可区分「已解析」
 与「未解析」。
 
-::: warning 目标只是快捷方式的指向，不代表那个文件还在
-**断链**的快捷方式**不会**报 `null`。无论目标是否还存在，Windows 都会把 `.lnk`
-里记录的目标路径交回来，所以非 `null` 的条目只意味着「快捷方式指向这里」，仅此
-而已。
+::: warning 解析目标仅表示快捷方式指向的路径，不保证目标文件依然存在
+目标失效（断链）的快捷方式不会返回 `null`。无论目标文件是否存在，Windows API 均直接返回 `.lnk` 中记录的静态路径，因此非 `null` 仅表示该项记录了目标路径。
 
-宿主刻意不做检查：读取快捷方式发生在拖动源应用被阻塞等待的那个线程上，逐条做
-文件系统探测正是这里绝不能做的事。请在页面侧处理「目标已不存在」——最省事的做法
-是让接收该路径的调用自己报告失败（`playlist.addPaths` 会返回 `addedCount` 与
-`invalidCount`，目标消失表现为数量差，而不是抛错）。
+宿主未在此处进行文件存在性校验，以避免在拖放源线程阻塞等待期间进行高延迟的文件系统探测。页面应在消费路径时处理文件不存在的情况，例如调用 `playlist.addPaths` 时根据返回的 `addedCount` 与 `invalidCount` 确认实际导入数量。
 :::
 
 ```javascript
@@ -268,11 +257,7 @@ fb.on('dnd:capabilitiesChanged', (caps) => {
 
 ## 拖出文件
 
-反方向：页面上一个可拖动的元素，用户把它拖进资源管理器或其他应用时落下的是真实
-文件。页面在拖放时刻**从不经手路径**：它事先把路径换成一枚一次性 **token**，拖放
-开始时把 token 写进拖放数据，宿主再用 token 换回已经校验过的文件列表。此后这次
-拖放就是一次普通的网页拖放——浏览器绘制拖影，光标随目标变化，结局由页面自己的
-`dragend` 反映。
+反向拖放：允许用户将页面内的可拖拽元素直接拖出至资源管理器或其他外部应用程序，并在放置时提供真实物理文件。页面在拖放过程中不直接暴露或传递文件系统路径，而是预先申请一次性安全凭证（token）；拖放开始时将 token 写入拖放数据，宿主据此关联并注入已通过校验的文件列表。随后拖放行为由浏览器标准拖放流程接管，最终完成状态由页面的 `dragend` 事件接收。
 
 提供这个手势之前，先查 [`getCapabilities()`](#getcapabilities) 的 `dragOut`。
 
@@ -284,17 +269,13 @@ fb.on('dnd:capabilitiesChanged', (caps) => {
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
-| `paths` | `string[]` | 是 | 要拖出的位置，至少一条。接受原生路径、`file://` URL、`file-relative://` URL（便携安装下与程序同卷媒体的路径形态，交由 foobar2000 解析）、`archive://` / `unpack://` 项，以及 `路径\|subsong:N` 形式（后缀会被去掉，拖走容器）。曲目对象的 `path` 与 `absolutePath` 都可以传 |
+| `paths` | `string[]` | 是 | 要拖出的位置，至少一条。接受原生路径、`file://` URL、`file-relative://` URL（便携模式下同卷相对路径，由 foobar2000 解析）、`archive://` 与 `unpack://` 虚拟路径，以及 `路径\|subsong:N` 形式（后缀将被剥除并拖出容器文件）；支持传入曲目对象的 `path` 或 `absolutePath` 属性 |
 
 返回 `{ success: true, token }`。token 是不透明的，唯一用途是交给
 [`applyDragToken`](#applydragtoken-datatransfer-token)。
 
 ::: warning 在拖放开始之前调用，不要在 `dragstart` 里调用
-拖放数据存储只在 `dragstart` 处理函数同步执行期间可写。在该处理函数里 `await`
-之后拿到的 token 已经写不进去了——`setData` 静默失败，拖放空着出去。请在
-`pointerdown`（或 `mousedown`）时请求 token 并保存，在 `dragstart` 里同步使用。
-按下后立刻拖动仍可能抢在请求回包之前触发 `dragstart`；此时页面手里没有 token，
-就让这次拖放按普通拖放进行。
+拖放数据载荷仅在 `dragstart` 事件处理函数的同步执行阶段允许写入。在 `dragstart` 中执行 `await` 会导致后续 `setData` 无法写入数据，导致拖放操作丢失文件附件。建议在 `pointerdown`（或 `mousedown`）阶段提前请求并缓存 token，并在 `dragstart` 中同步注入。若在 token 响应返回前即触发拖拽，未持有 token 的操作将回退为普通网页拖放。
 :::
 
 token 规则：
@@ -308,9 +289,7 @@ token 规则：
 拖放本身作为不带文件的普通网页拖放继续进行。
 
 ::: tip 落到目标的永远是物理文件
-cue 或多曲目容器里的一条曲目拖走的是整个容器文件；`archive://` / `unpack://` 项
-拖走的是整个压缩包。因此传入的多项可能折叠成一个文件，容器内的定位信息不会随
-之传递。
+CUE 表或多曲目音频容器中的单首曲目将导出其宿主容器文件；`archive://` 与 `unpack://` 虚拟路径导出对应的压缩包物理文件。因此多个虚拟子项可能合并为同一物理文件，且容器内的分轨定位信息不会随外部文件传递。
 :::
 
 路径先归一化为原生路径，再按与 `queue.addPaths` 相同的方式校验。处理函数返回的
@@ -328,8 +307,8 @@ cue 或多曲目容器里的一条曲目拖走的是整个容器文件；`archiv
 | `ORIGIN_DENIED` | 文档 origin 不受信任，不允许拖出文件。此判定先于任何路径检查 |
 | `NOT_SUPPORTED` | 本窗口 `dragOut` 为 `false` |
 | `INVALID_PARAMS` | `paths` 缺失、为空，或元素不全是字符串 |
-| `INVALID_PATH` | 某项背后没有本地文件（流媒体、`cdda://` 曲目）。`paths[i]` 是**你传入数组**的下标 |
-| `PERMISSION_DENIED` | 某项被路径安全策略拒绝。`paths[i]` 是**归一化去重后**列表的下标，可能短于你的数组 |
+| `INVALID_PATH` | 指定项未对应本地物理文件（如网络流媒体或 `cdda://` 音轨）；`paths[i]` 对应输入数组中的索引 |
+| `PERMISSION_DENIED` | 指定项未通过路径安全策略校验；`paths[i]` 对应规范化与去重后路径列表中的索引 |
 | `OPERATION_FAILED` | 无法创建 token |
 
 错误信息不含路径本体。
@@ -341,16 +320,11 @@ cue 或多曲目容器里的一条曲目拖走的是整个容器文件；`archiv
 把 token 写进 `dragstart` 事件，让宿主挂上文件。必须在 `dragstart` 处理函数内
 **同步**调用。它做两件事，两件都不可少：
 
-1. 把 `text/plain` 设为 token 载体（`fb2k-dnd-token/1:` 后接 token），覆盖页面
-   放进去的任何内容——宿主凭这个标记识别「这是一次拖出」
+1. 将 `text/plain` 设置为 token 载荷（`fb2k-dnd-token/1:` 后接 token），覆盖页面此前设置的内容，宿主据此标识当前拖放操作关联外部文件
 2. 把 `effectAllowed` 设为 `'copy'`
 
 ::: danger `effectAllowed` 必须恰为 `'copy'`
-文件列表挂上之后，**移动**是由放置目标执行的，不是页面或宿主：当目的地与源在同一
-分区时，资源管理器默认就是移动。因此允许效果比 copy 更宽的拖放，宿主一律不挂文件
-（`dnd:dragEnded` 报 `INVALID_PARAMS`），这次拖放只剩页面内的普通拖放。不设
-`effectAllowed` 等于 `copy | move | link`，同样挂不上文件。`applyDragToken` 之后
-不要再改它。
+附加文件列表后，放置操作由目标程序直接执行。当源文件与目标目录位于同一磁盘分区时，Windows 资源管理器默认执行移动操作。为避免源文件被外部程序直接移除，宿主强制要求拖放操作仅允许复制：若 `effectAllowed` 包含比 copy 更宽的权限，宿主将拒绝附加文件列表（触发 `dnd:dragEnded` 并报告 `INVALID_PARAMS`），拖放操作回退为常规网页拖放。未显式设置 `effectAllowed` 相当于声明 `copy | move | link`，同样会导致文件附加失败。在调用 `applyDragToken` 后请勿修改 `effectAllowed`。
 :::
 
 拖出期间 `text/plain` 槽位不能再放页面文本。宿主在拖放离开之前把它置空，因此以
@@ -393,10 +367,7 @@ trackEl.addEventListener('dragend', (e) => {
 有效 token 在检查 `effectAllowed` 和附加文件列表之前就已消费。因此收到 `INVALID_PARAMS` 或 `OPERATION_FAILED` 后，重试前也必须申请新 token。
 
 ::: warning 这不是拖放结束通知
-宿主接受 token 之后**没有事件**。拖放像任何网页拖放一样进行，结局在元素自己的
-`dragend` 里：`dataTransfer.dropEffect` 为 `'copy'` 表示目标接收了文件，为
-`'none'` 表示取消或目标拒收。收尾逻辑放在 `dragend`；`dnd:dragEnded` 用来告诉
-用户（或你自己）为什么一次拖动没有带上文件。
+宿主成功接受 token 后不发送专门的完成事件。拖放交互遵循标准网页拖放生命周期，最终状态由元素的原生 `dragend` 事件确定：`dataTransfer.dropEffect` 为 `'copy'` 表示目标已接受文件，为 `'none'` 表示操作取消或被目标拒绝。后续清理逻辑应在 `dragend` 中执行；`dnd:dragEnded` 仅用于在拖拽初始化失败时获取未附加文件的原因。
 :::
 
 ```javascript
@@ -408,15 +379,10 @@ const off = fb.dnd.onDragEnded(({ code, error }) => {
 
 ### 拖出期间会发生什么
 
-- 带 token 的拖放要么被接手（文件已挂上），要么退回不带文件的普通网页拖放：页面内
-  的放下照常有效，拖到资源管理器既不产生文件，也不带出 token 文本。token 文本抹不掉
-  时这次拖放被取消。它**绝不会**把 token 文本拖出去。
-- **不带** token 的拖放——页面拖自己的文字、图片、链接——不受任何影响，也不会产生
-  `dnd:dragEnded`。
-- 拖放进行期间，宿主窗口等待放置目标响应，与从 WebView 拖出的任何 HTML5 拖放完全
-  一样。目标接受得慢，窗口就等得久；这是 WebView2 拖放的工作方式，页面无法缩短。
-- 在 `<iframe>` 里，token 交换走与其他调用相同的 `invoke` 通道。不要把嵌框当作
-  安全边界；宿主的 origin 检查才是边界。
+- 携带有效 token 的拖放若被宿主接管则附加物理文件；若未成功附加，则降级为不含外部文件的常规网页拖放，页面内部放置逻辑仍可正常响应。拖出到资源管理器既不会生成文件，也不会泄露 token 原始文本。若 token 无法清除，该次拖放将被取消。
+- 未携带 token 的常规拖放（文本、图片、超链接）不受此机制影响，不会触发 `dnd:dragEnded` 事件。
+- 拖放过程中，宿主窗口同步等待放置目标响应，交互行为与 WebView2 原生拖拽完全一致。目标程序响应延迟会导致交互等待，页面无法缩短该系统调用耗时。
+- 在 `<iframe>` 里，token 交互复用通用的 `invoke` 通道。安全边界是宿主的 origin 校验，不能依赖 iframe 嵌入关系。
 
 ## 不支持的能力
 
